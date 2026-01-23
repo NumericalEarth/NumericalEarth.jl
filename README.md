@@ -1,51 +1,57 @@
 <!-- Title -->
 <h1 align="center">
-  ClimaOcean.jl
+  NumericalEarth.jl
 </h1>
 
 <!-- description -->
 <p align="center">
-  <strong>🌎 A framework for realistic ocean-only and coupled ocean + sea-ice simulations driven by prescribed atmospheres and based on <a href=https://github.com/CliMA/Oceananigans.jl>Oceananigans</a> and <a href=https://github.com/CliMA/ClimaSeaIce.jl>ClimaSeaIce</a></strong>.
+  <strong>A flexible framework for coupling Earth system model components with prescribed or prognostic data, built on <a href="https://github.com/CliMA/Oceananigans.jl">Oceananigans</a>.</strong>
 </p>
 
 ###
 
 [![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.7677442.svg?style=flat-square)](https://doi.org/10.5281/zenodo.7677442)
 [![Build status](https://badge.buildkite.com/3113cca353b83df3b5855d3f0d69827124614aef7017c835d2.svg?style=flat-square)](https://buildkite.com/clima/climaocean-ci)
-[![Documentation](https://img.shields.io/badge/documentation-stable%20release-blue?style=flat-square)](https://clima.github.io/ClimaOceanDocumentation/stable/)
-[![Documentation](https://img.shields.io/badge/documentation-in%20development-orange?style=flat-square)](https://clima.github.io/ClimaOceanDocumentation/dev/)
 
-## Installation
+## Overview
 
-ClimaOcean is a registered package. To install from a Julia REPL:
+NumericalEarth.jl provides infrastructure for running Earth system model components—ocean, atmosphere, sea ice, and others—coupled together or driven by prescribed datasets. The coupling interface is generic: plug in Oceananigans for ocean dynamics, ClimaSeaIce for sea ice, SpeedyWeather or other atmospheric models, or use reanalysis products like JRA55 and ERA5 as prescribed forcing.
+
+The package handles the complexity of component communication: interpolating between grids, computing air-sea fluxes via similarity theory, managing radiative transfer, and synchronizing time-stepping across components with different temporal resolutions.
+
+NumericalEarth.jl also serves as a sandbox for developing and testing interface parameterizations—bulk flux formulations, roughness length models, albedo schemes, and other boundary layer physics—in a modular environment where they can be validated against observations before deployment in production climate models.
+
+## Data Wrangling
+
+Running realistic Earth system simulations requires wrangling gigabytes of observational and reanalysis data into formats your model can ingest. NumericalEarth.jl abstracts away this pain. Point the package at a dataset and a target grid, and it handles the downloading, caching, and regridding automatically.
+
+The `Metadatum` abstraction provides a unified interface: whether you're initializing ocean temperature from reanalysis or prescribing atmospheric boundary conditions, the workflow is the same.
 
 ```julia
-julia> using Pkg
+using NumericalEarth
+using Dates
 
-julia> Pkg.add("ClimaOcean")
+# Load temperature from reanalysis on a specific date
+T_init = Metadatum(:temperature; date=DateTime(1993, 1, 1), dataset=ECCO2Daily())
 
-julia> Pkg.instantiate()
+# Build a prescribed atmosphere from JRA55
+atmosphere = JRA55PrescribedAtmosphere(arch)
 ```
 
-Use `Pkg.add(url="https://github.com/CliMA/ClimaOcean.jl.git", rev="main")` to install the latest version of `ClimaOcean`.
-For more information, see the [documentation for `Pkg.jl`](https://pkgdocs.julialang.org).
+## A core abstraction: `CoupledModel`
 
-## Why? What's the difference between ClimaOcean and [Oceananigans](https://github.com/CliMA/Oceananigans.jl)?
+The coupling infrastructure is anchored by `CoupledModel`, which encapsulates the component models—ocean, sea ice, atmosphere—and specifies how they communicate. Each component can be either prognostic (time-stepped by its own dynamics) or prescribed (interpolated from data). The model handles flux computations at interfaces, grid interpolation between components, and synchronized time-stepping.
 
-Oceananigans is a general-purpose library for ocean-flavored fluid dynamics.
-ClimaOcean implements a framework for driving realistic Oceananigans simulations with prescribed atmospheres, and coupling them to prognostic sea ice simulations.
+We conceive of `CoupledModel` as a model in its own right, not just a container for components. This means it works with all the Oceananigans tools you'd use for any other model—`run!(simulation)`, `Callback`, `Checkpointer`, output writers, and the rest.
 
-### A core abstraction: `ClimaOcean.OceanSeaIceModel`
-
-Our system for realistic modeling is anchored by `ClimaOcean.OceanSeaIceModel`, which encapsulates the ocean simulation, sea ice simulation, prescribed atmospheric state, and specifies how the three communicate.
-To illustrate how `OceanSeaIceModel` works we set up a simulation on a grid with 10 vertical levels and 1/4-degree horizontal resolution:
+To illustrate, here's a global ocean simulation driven by prescribed atmospheric reanalysis:
 
 ```julia
 using Oceananigans
 using Oceananigans.Units
 using Dates
 using CUDA
-import ClimaOcean
+import NumericalEarth
 
 arch = GPU()
 grid = LatitudeLongitudeGrid(arch,
@@ -55,27 +61,26 @@ grid = LatitudeLongitudeGrid(arch,
                              latitude = (-70, 70),
                              z = (-3000, 0))
 
-bathymetry = ClimaOcean.regrid_bathymetry(grid) # builds gridded bathymetry based on ETOPO1
+bathymetry = NumericalEarth.regrid_bathymetry(grid)
 grid = ImmersedBoundaryGrid(grid, GridFittedBottom(bathymetry))
 
-# Build an ocean simulation initialized to the ECCO state estimate version 2 on Jan 1, 1993
-ocean = ClimaOcean.ocean_simulation(grid)
+# Build an ocean simulation initialized to the ECCO state estimate
+ocean = NumericalEarth.ocean_simulation(grid)
 start_date = DateTime(1993, 1, 1)
 set!(ocean.model,
-     T=ClimaOcean.Metadatum(:temperature; date=start_date, dataset=ClimaOcean.ECCO2Daily()),
-     S=ClimaOcean.Metadatum(:salinity;    date=start_date, dataset=ClimaOcean.ECCO2Daily()))
+     T=NumericalEarth.Metadatum(:temperature; date=start_date, dataset=NumericalEarth.ECCO2Daily()),
+     S=NumericalEarth.Metadatum(:salinity;    date=start_date, dataset=NumericalEarth.ECCO2Daily()))
 
-# Build and run an OceanSeaIceModel (with no sea ice component) forced by JRA55 reanalysis
-atmosphere = ClimaOcean.JRA55PrescribedAtmosphere(arch)
-coupled_model = ClimaOcean.OceanSeaIceModel(ocean; atmosphere)
+# Couple the ocean to JRA55 atmospheric forcing
+atmosphere = NumericalEarth.JRA55PrescribedAtmosphere(arch)
+coupled_model = NumericalEarth.CoupledModel(ocean; atmosphere)
 simulation = Simulation(coupled_model, Δt=20minutes, stop_time=30days)
 run!(simulation)
 ```
 
-The simulation above achieves approximately 8 simulated years per day of wall time on an Nvidia H100 GPU.
+This simulation achieves approximately 8 simulated years per day of wall time on an Nvidia H100 GPU.
 
-Since `ocean.model` is an `Oceananigans.HydrostaticFreeSurfaceModel`, we can leverage `Oceananigans` features in our scripts.
-For example, to plot the surface speed at the end of the simulation we write
+Since `ocean.model` is an `Oceananigans.HydrostaticFreeSurfaceModel`, we can leverage Oceananigans features directly. For example, to plot the surface speed at the end of the simulation:
 
 ```julia
 u, v, w = ocean.model.velocities
@@ -90,24 +95,27 @@ which produces
 
 ![image](https://github.com/user-attachments/assets/4c484b93-38fe-4840-bf7d-63a3a59d29e1)
 
-### Additional features: a utility for `ocean_simulation`s and data wrangling
+## Installation
 
-A second core abstraction in ClimaOcean is `ocean_simulation`. `ocean_simulation` configures an Oceananigans model for realistic simulations including temperature and salinity, the TEOS-10 equation of state, boundary conditions to store computed air-sea fluxes, the automatically-calibrated turbulence closure `CATKEVerticalDiffusivity`, and the [`WENOVectorInvariant` advection scheme](https://doi.org/10.1029/2023MS004130) for mesoscale-turbulence-resolving simulations.
+NumericalEarth is a registered package. To install from a Julia REPL:
 
-ClimaOcean also provides convenience features for wrangling datasets of bathymetry, ocean temperature, salinity, ocean velocity fields, and prescribed atmospheric states.
+```julia
+julia> using Pkg
 
-ClimaOcean is built on top of Oceananigans and [ClimaSeaIce](https://github.com/CliMA/ClimaSeaIce.jl), so it's important that ClimaOcean users become proficient with [Oceananigans](https://github.com/CliMA/Oceananigans.jl).
-Note that though ClimaOcean is currently focused on hydrostatic modeling with `Oceananigans.HydrostaticFreeSurfaceModel`, realistic nonhydrostatic modeling is also within the scope of this package.
+julia> Pkg.add("NumericalEarth")
 
+julia> Pkg.instantiate()
+```
 
-### Citing
+Use `Pkg.add(url="https://github.com/NumericalEarth/NumericalEarth.jl.git", rev="main")` to install the latest development version.
 
-If you use ClimaOcean for your research, teaching, or fun 🤩, everyone in our community will be grateful
-if you give credit by citing the corresponding Zenodo record, e.g.,
+## Citing
 
-> Wagner, G. L. et al. (2025). CliMA/ClimaOcean.jl: v0.8.10 (v0.8.10). Zenodo. https://doi.org/10.5281/zenodo.7677442
+If you use NumericalEarth for your research, teaching, or fun, we'd be grateful if you cite the corresponding Zenodo record:
 
-and also the recent [preprint submitted to the Journal of Advances in Modeling Earth Systems](https://doi.org/10.48550/arXiv.2502.14148) that presents an overview of all the things that make Oceananigans unique:
+> Wagner, G. L. et al. (2025). NumericalEarth.jl: v0.9.0 (v0.9.0). Zenodo. https://doi.org/10.5281/zenodo.7677442
+
+and the Oceananigans overview paper submitted to the Journal of Advances in Modeling Earth Systems:
 
 > "High-level, high-resolution ocean modeling at all scales with Oceananigans"
 >
@@ -115,7 +123,7 @@ and also the recent [preprint submitted to the Journal of Advances in Modeling E
 > Chris Hill, Tomas Chor, Jago Strong-Wright, Xin Kai Lee, Francis Poulin, Andre Souza, Keaton J. Burns,
 > Siddhartha Bishnu, John Marshall, and Raffaele Ferrari
 >
-> submitted to the Journal of Advances in Modeling Earth Systems, arXiv:[2502.14148](https://doi.org/10.48550/arXiv.2502.14148)
+> arXiv:[2502.14148](https://doi.org/10.48550/arXiv.2502.14148)
 
 <details><summary>bibtex</summary>
   <pre><code>@article{Oceananigans-overview-paper-2025,
