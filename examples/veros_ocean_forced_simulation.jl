@@ -26,8 +26,6 @@ VerosModule.install_veros()
 VerosModule.remove_outputs(:global_4deg)
 
 # Actually loading and instantiating the Veros setup in the variable `ocean`.
-# This setup uses by default a different time-step for tracers and momentum, 
-# so we set it to the same value (1800 seconds) for both.
 
 ocean = VerosModule.VerosOceanSimulation("global_4deg", :GlobalFourDegreeSetup)
 
