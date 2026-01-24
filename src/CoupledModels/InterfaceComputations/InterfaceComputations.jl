@@ -26,13 +26,13 @@ export
     # Friction velocity formulations
     MomentumBasedFrictionVelocity
 
-using ..OceanSeaIceModels: default_gravitational_acceleration,
+using ..CoupledModels: default_gravitational_acceleration,
                            default_freshwater_density,
                            thermodynamics_parameters,
                            surface_layer_height,
                            boundary_layer_height
 
-import ClimaOcean: stateindex
+import NumericalEarth: stateindex
 import Oceananigans.Simulations: initialize!
 
 #####

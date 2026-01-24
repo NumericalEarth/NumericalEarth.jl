@@ -2,7 +2,7 @@ using Distributed
 Distributed.addprocs(2)
 
 @everywhere begin
-    using ClimaOcean
+    using NumericalEarth
     using CUDA
     using Documenter
     using DocumenterCitations
@@ -58,7 +58,7 @@ end
 
 format = Documenter.HTML(collapselevel = 2,
                          size_threshold = nothing,
-                         canonical = "https://clima.github.io/ClimaOceanDocumentation/stable/")
+                         canonical = "https://clima.github.io/NumericalEarthDocumentation/stable/")
 
 pages = [
     "Home" => "index.md",
@@ -66,7 +66,7 @@ pages = [
     "Examples" => examples_pages,
 
     "Developers" => [
-        "OceanSeaIceModel interface" => "literated/slab_ocean.md",
+        "CoupledModel interface" => "literated/slab_ocean.md",
         ],
 
     "Vertical grids" => "vertical_grids.md",
@@ -88,15 +88,15 @@ pages = [
 ]
 
 modules = Module[]
-ClimaOceanSpeedyWeatherExt = isdefined(Base, :get_extension) ? Base.get_extension(ClimaOcean, :ClimaOceanSpeedyWeatherExt) : ClimaOcean.ClimaOceanSpeedyWeatherExt
+NumericalEarthSpeedyWeatherExt = isdefined(Base, :get_extension) ? Base.get_extension(NumericalEarth, :NumericalEarthSpeedyWeatherExt) : NumericalEarth.NumericalEarthSpeedyWeatherExt
 
-for m in [ClimaOcean, ClimaOceanSpeedyWeatherExt]
+for m in [NumericalEarth, NumericalEarthSpeedyWeatherExt]
     if !isnothing(m)
         push!(modules, m)
     end
 end
 
-makedocs(; sitename = "ClimaOcean.jl",
+makedocs(; sitename = "NumericalEarth.jl",
          format, pages, modules,
          plugins = [bib],
          doctest = true,
@@ -133,7 +133,7 @@ end
 ci_build = get(ENV, "CI", nothing) == "true"
 
 if ci_build
-    deploydocs(repo = "github.com/CliMA/ClimaOceanDocumentation.git",
+    deploydocs(repo = "github.com/CliMA/NumericalEarthDocumentation.git",
                deploy_config = Documenter.Buildkite(),
                versions = ["stable" => "v^", "dev" => "dev", "v#.#.#"],
                forcepush = true,

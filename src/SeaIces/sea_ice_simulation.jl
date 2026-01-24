@@ -4,8 +4,8 @@ using ClimaSeaIce.SeaIceThermodynamics: IceWaterThermalEquilibrium
 using ClimaSeaIce.SeaIceDynamics: SplitExplicitSolver, SemiImplicitStress, SeaIceMomentumEquation, StressBalanceFreeDrift
 using ClimaSeaIce.Rheologies: IceStrength, ElastoViscoPlasticRheology
 
-using ClimaOcean.OceanSeaIceModels: ocean_surface_salinity, ocean_surface_velocities
-using ClimaOcean.Oceans: Default
+using NumericalEarth.CoupledModels: ocean_surface_salinity, ocean_surface_velocities
+using NumericalEarth.Oceans: Default
 
 default_rotation_rate = Oceananigans.defaults.planet_rotation_rate
 
@@ -99,7 +99,7 @@ function sea_ice_dynamics(grid, ocean=nothing;
 end
 
 #####
-##### Extending OceanSeaIceModels interface
+##### Extending CoupledModels interface
 #####
 
 sea_ice_thickness(sea_ice::Simulation{<:SeaIceModel}) = sea_ice.model.ice_thickness

@@ -7,7 +7,7 @@ using Scratch
 test_group = get(ENV, "TEST_GROUP", :all)
 test_group = Symbol(test_group)
 
-using ClimaOcean.DataWrangling: download_dataset
+using NumericalEarth.DataWrangling: download_dataset
 
 function delete_inpainted_files(dir)
     @info "Cleaning inpainted files..."
@@ -33,8 +33,8 @@ if test_group == :init || test_group == :all
     ##### Download bathymetry data
     #####
 
-    ETOPOmetadata = Metadatum(:bottom_height, dataset=ClimaOcean.ETOPO.ETOPO2022())
-    ClimaOcean.DataWrangling.download_dataset(ETOPOmetadata)
+    ETOPOmetadata = Metadatum(:bottom_height, dataset=NumericalEarth.ETOPO.ETOPO2022())
+    NumericalEarth.DataWrangling.download_dataset(ETOPOmetadata)
 
 
     #####
@@ -102,8 +102,8 @@ if test_group == :bathymetry || test_group == :all
     include("test_bathymetry.jl")
 end
 
-if test_group == :ocean_sea_ice_model || test_group == :all
-    include("test_ocean_sea_ice_model.jl")
+if test_group == :coupled_model || test_group == :all
+    include("test_coupled_model.jl")
     include("test_diagnostics.jl")
 end
 

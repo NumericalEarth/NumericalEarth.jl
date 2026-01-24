@@ -14,12 +14,12 @@
 # and sea ice thickness from the ECCO state estimate.
 #
 # For this example, we need `Oceananigans.HydrostaticFreeSurfaceModel` (the ocean), `ClimaSeaIce.SeaIceModel` (the sea ice) and
-# `SpeedyWeather.PrimitiveWetModel` (the atmosphere). All these are coupled and orchestrated by the `ClimaOcean.OceanSeaIceModel`
+# `SpeedyWeather.PrimitiveWetModel` (the atmosphere). All these are coupled and orchestrated by the `NumericalEarth.CoupledModel`
 # (the coupled system).
 #
 # The XESMF.jl package is used to regrid fields between the atmosphere and ocean--sea ice components.
 
-using Oceananigans, SpeedyWeather, XESMF, ClimaOcean
+using Oceananigans, SpeedyWeather, XESMF, NumericalEarth
 using NCDatasets, CairoMakie
 using Oceananigans.Units
 using Printf, Statistics, Dates
@@ -47,7 +47,7 @@ nothing #hide
 momentum_advection   = VectorInvariant()
 tracer_advection     = WENO(order=5)
 free_surface         = SplitExplicitFreeSurface(grid; substeps=40)
-catke_closure        = ClimaOcean.Oceans.default_ocean_closure()
+catke_closure        = NumericalEarth.Oceans.default_ocean_closure()
 eddy_closure         = Oceananigans.TurbulenceClosures.IsopycnalSkewSymmetricDiffusivity(κ_skew=1e3, κ_symmetric=1e3)
 viscous_closure      = Oceananigans.TurbulenceClosures.HorizontalScalarBiharmonicDiffusivity(ν=1e12)
 closures             = (catke_closure, eddy_closure, viscous_closure)
@@ -74,7 +74,7 @@ Oceananigans.set!(sea_ice.model, h=Metadatum(:sea_ice_thickness, dataset=ECCO4Mo
 # ## Atmosphere model configuration
 # The atmosphere is provided by SpeedyWeather.jl. Here, we configure a T63L4 model with a 3-hour output interval.
 # The `atmosphere_simulation` function takes care of building an atmosphere model with appropriate
-# hooks so that ClimaOcean can compute inter-component fluxes.
+# hooks so that NumericalEarth can compute inter-component fluxes.
 nlayers = 4
 spectral_grid = SpeedyWeather.SpectralGrid(; trunc=63, nlayers, Grid=FullClenshawGrid)
 atmosphere = atmosphere_simulation(spectral_grid, output=true)
@@ -101,7 +101,7 @@ nothing #hide
 # Since radiation is idealized in this example, we set the emissivities to zero.
 
 radiation = Radiation(ocean_emissivity=0.0, sea_ice_emissivity=0.0)
-earth_model = OceanSeaIceModel(ocean, sea_ice; atmosphere, radiation)
+earth_model = CoupledModel(ocean, sea_ice; atmosphere, radiation)
 
 # ## Building and running the simulation
 #

@@ -13,7 +13,7 @@ Example
 =======
 
 ```jldoctest
-using ClimaOcean.OceanSeaIceModels: MomentumBasedFrictionVelocity
+using NumericalEarth.CoupledModels: MomentumBasedFrictionVelocity
 
 fv = MomentumBasedFrictionVelocity()
 

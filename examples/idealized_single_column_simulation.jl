@@ -1,4 +1,4 @@
-using ClimaOcean
+using NumericalEarth
 using ClimaSeaIce
 using Oceananigans
 using Oceananigans.Units
@@ -40,8 +40,8 @@ Tᵢ(z) = T₀ + dTdz * z
 set!(ocean.model, T=Tᵢ, S=S₀)
 
 atmosphere_ocean_flux_formulation = SimilarityTheoryFluxes(stability_functions=nothing)
-interfaces = ClimaOcean.OceanSeaIceModels.ComponentInterfaces(atmosphere, ocean; atmosphere_ocean_flux_formulation)
-model = OceanSeaIceModel(ocean; atmosphere, radiation)
+interfaces = NumericalEarth.CoupledModels.ComponentInterfaces(atmosphere, ocean; atmosphere_ocean_flux_formulation)
+model = CoupledModel(ocean; atmosphere, radiation)
 
 Qv  = model.interfaces.atmosphere_ocean_interface.fluxes.latent_heat
 Qc  = model.interfaces.atmosphere_ocean_interface.fluxes.sensible_heat

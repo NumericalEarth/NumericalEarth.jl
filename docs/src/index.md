@@ -1,21 +1,21 @@
-# ClimaOcean.jl
+# NumericalEarth.jl
 
 🌎 Realistic ocean-only and coupled ocean-sea ice simulations driven by prescribed atmospheres and based on [Oceananigans](https://github.com/CliMA/Oceananigans.jl) and [ClimaSeaIce](https://github.com/CliMA/ClimaSeaIce.jl).
 
-ClimaOcean implements a framework for coupling prescribed or prognostic representations of the ocean, sea ice, and atmosphere state.
+NumericalEarth implements a framework for coupling prescribed or prognostic representations of the ocean, sea ice, and atmosphere state.
 Fluxes of heat, momentum, and freshwater are computed across the interfaces of its component models according to either Monin--Obukhov similarity theory,
 or coefficient-based "bulk formula".
-ClimaOcean builds off Oceananigans, which provides tools for gridded finite-volume computations on CPUs and GPUs and building ocean-flavored fluid dynamics simulations. ClimaSeaIce, which provides software for both stand-alone and coupled sea ice simulations, is also built with Oceananigans.
+NumericalEarth builds off Oceananigans, which provides tools for gridded finite-volume computations on CPUs and GPUs and building ocean-flavored fluid dynamics simulations. ClimaSeaIce, which provides software for both stand-alone and coupled sea ice simulations, is also built with Oceananigans.
 
-ClimaOcean's core abstraction is [`OceanSeaIceModel`](@ref), which encapsulates the ocean, sea ice, and atmosphere state, and interfacial flux parameterizations.
-ClimaOcean also implements [`ocean_simulation`](@ref), a utility for building realistic, hydrostatic ocean simulations with Oceananigans ensuring compatibility with `OceanSeaIceModel`.
+NumericalEarth's core abstraction is [`CoupledModel`](@ref), which encapsulates the ocean, sea ice, and atmosphere state, and interfacial flux parameterizations.
+NumericalEarth also implements [`ocean_simulation`](@ref), a utility for building realistic, hydrostatic ocean simulations with Oceananigans ensuring compatibility with `CoupledModel`.
 
-ClimaOcean is written in Julia by the [Climate Modeling Alliance](https://clima.caltech.edu)
+NumericalEarth is written in Julia by the [Climate Modeling Alliance](https://clima.caltech.edu)
 and heroic external collaborators.
 
 ## Installation
 
-ClimaOcean is a [registered Julia package](https://julialang.org/packages/). So to install it,
+NumericalEarth is a [registered Julia package](https://julialang.org/packages/). So to install it,
 
 1. [Download Julia](https://julialang.org/downloads/).
 
@@ -24,11 +24,11 @@ ClimaOcean is a [registered Julia package](https://julialang.org/packages/). So 
 ```julia
 julia> using Pkg
 
-julia> Pkg.add("ClimaOcean")
+julia> Pkg.add("NumericalEarth")
 ```
 
 !!! compat "Julia 1.10 is required"
-    ClimaOcean requires Julia 1.10 or later.
+    NumericalEarth requires Julia 1.10 or later.
 
 ## Quick start
 
@@ -39,7 +39,7 @@ using Oceananigans
 using Oceananigans.Units
 using Dates
 using CUDA
-import ClimaOcean
+import NumericalEarth
 
 arch = GPU()
 grid = LatitudeLongitudeGrid(arch,
@@ -49,19 +49,19 @@ grid = LatitudeLongitudeGrid(arch,
                              latitude = (-70, 70),
                              z = (-3000, 0))
 
-bathymetry = ClimaOcean.regrid_bathymetry(grid) # builds gridded bathymetry based on ETOPO1
+bathymetry = NumericalEarth.regrid_bathymetry(grid) # builds gridded bathymetry based on ETOPO1
 grid = ImmersedBoundaryGrid(grid, GridFittedBottom(bathymetry))
 
 # Build an ocean simulation initialized to the ECCO state estimate version 2 on Jan 1, 1993
-ocean = ClimaOcean.ocean_simulation(grid)
+ocean = NumericalEarth.ocean_simulation(grid)
 start_date = DateTime(1993, 1, 1)
 set!(ocean.model,
-     T=ClimaOcean.Metadatum(:temperature; date=start_date, dataset=ClimaOcean.ECCO2Daily()),
-     S=ClimaOcean.Metadatum(:salinity;    date=start_date, dataset=ClimaOcean.ECCO2Daily()))
+     T=NumericalEarth.Metadatum(:temperature; date=start_date, dataset=NumericalEarth.ECCO2Daily()),
+     S=NumericalEarth.Metadatum(:salinity;    date=start_date, dataset=NumericalEarth.ECCO2Daily()))
 
-# Build and run an OceanSeaIceModel (with no sea ice component) forced by JRA55 reanalysis
-atmosphere = ClimaOcean.JRA55PrescribedAtmosphere(arch)
-coupled_model = ClimaOcean.OceanSeaIceModel(ocean; atmosphere)
+# Build and run an CoupledModel (with no sea ice component) forced by JRA55 reanalysis
+atmosphere = NumericalEarth.JRA55PrescribedAtmosphere(arch)
+coupled_model = NumericalEarth.CoupledModel(ocean; atmosphere)
 simulation = Simulation(coupled_model, Δt=20minutes, stop_time=30days)
 run!(simulation)
 ```

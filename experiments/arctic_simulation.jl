@@ -1,12 +1,12 @@
-using ClimaOcean
+using NumericalEarth
 using ClimaSeaIce
 using Oceananigans
 using Oceananigans.Grids
 using Oceananigans.Units
 using Oceananigans.OrthogonalSphericalShellGrids
-using ClimaOcean.Oceans
-using ClimaOcean.ECCO
-using ClimaOcean.DataWrangling
+using NumericalEarth.Oceans
+using NumericalEarth.ECCO
+using NumericalEarth.DataWrangling
 using ClimaSeaIce.SeaIceThermodynamics: IceWaterThermalEquilibrium
 using Printf
 
@@ -42,7 +42,7 @@ momentum_advection = WENOVectorInvariant(order=3)
 tracer_advection   = WENO(order=3)
 
 free_surface = SplitExplicitFreeSurface(grid; cfl=0.7)
-closure = ClimaOcean.Oceans.default_ocean_closure()
+closure = NumericalEarth.Oceans.default_ocean_closure()
 
 ocean = ocean_simulation(grid;
                          momentum_advection,
@@ -96,7 +96,7 @@ radiation  = Radiation()
 ##### Arctic coupled model
 #####
 
-arctic = OceanSeaIceModel(ocean, sea_ice; atmosphere, radiation)
+arctic = CoupledModel(ocean, sea_ice; atmosphere, radiation)
 arctic = Simulation(arctic, Δt=5minutes, stop_time=365days)
 
 # Sea-ice variables

@@ -1,4 +1,4 @@
-using ClimaOcean.NearGlobalSimulations: one_degree_near_global_simulation
+using NumericalEarth.NearGlobalSimulations: one_degree_near_global_simulation
 
 using Oceananigans
 using Oceananigans.Units

@@ -1,103 +1,103 @@
 # Public Documentation
 
-Documentation for `ClimaOcean.jl`'s public interface.
+Documentation for `NumericalEarth.jl`'s public interface.
 
 See the Internals section of the manual for internal package docs covering all submodules.
 
-## ClimaOcean
+## NumericalEarth
 
 ```@autodocs
-Modules = [ClimaOcean]
+Modules = [NumericalEarth]
 Private = false
 ```
 
 ## Diagnostics
 
 ```@autodocs
-Modules = [ClimaOcean.Diagnostics]
+Modules = [NumericalEarth.Diagnostics]
 Private = false
 ```
 
 ## InitialConditions
 
 ```@autodocs
-Modules = [ClimaOcean.InitialConditions]
+Modules = [NumericalEarth.InitialConditions]
 Private = false
 ```
 
 ## DataWrangling
 
 ```@autodocs
-Modules = [ClimaOcean.DataWrangling]
+Modules = [NumericalEarth.DataWrangling]
 Private = false
 ```
 
 ## ECCO
 
 ```@autodocs
-Modules = [ClimaOcean.ECCO]
+Modules = [NumericalEarth.ECCO]
 Private = false
 ```
 
 ## EN4
 
 ```@autodocs
-Modules = [ClimaOcean.EN4]
+Modules = [NumericalEarth.EN4]
 Private = false
 ```
 
 ## ETOPO
 
 ```@autodocs
-Modules = [ClimaOcean.ETOPO]
+Modules = [NumericalEarth.ETOPO]
 Private = false
 ```
 
 ## JRA55
 
 ```@autodocs
-Modules = [ClimaOcean.JRA55]
+Modules = [NumericalEarth.JRA55]
 Private = false
 ```
 
 ## Bathymetry
 
 ```@autodocs
-Modules = [ClimaOcean.Bathymetry]
+Modules = [NumericalEarth.Bathymetry]
 Private = false
 ```
 
 ## Atmospheres
 
 ```@autodocs
-Modules = [ClimaOcean.Atmospheres]
+Modules = [NumericalEarth.Atmospheres]
 Private = false
 ```
 
 ## Oceans
 
 ```@autodocs
-Modules = [ClimaOcean.Oceans]
+Modules = [NumericalEarth.Oceans]
 Private = false
 ```
 
 ## SeaIces
 
 ```@autodocs
-Modules = [ClimaOcean.SeaIces]
+Modules = [NumericalEarth.SeaIces]
 Private = false
 ```
 
-## OceanSeaIceModels
+## CoupledModels
 
 ```@autodocs
-Modules = [ClimaOcean.OceanSeaIceModels]
+Modules = [NumericalEarth.CoupledModels]
 Private = false
 ```
 
-## OceanSeaIceModels.InterfaceComputations
+## CoupledModels.InterfaceComputations
 
 ```@autodocs
-Modules = [ClimaOcean.OceanSeaIceModels.InterfaceComputations]
+Modules = [NumericalEarth.CoupledModels.InterfaceComputations]
 Private = false
 ```

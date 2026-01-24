@@ -24,7 +24,7 @@ steps:
       - "julia --project -e 'using Pkg; Pkg.precompile(strict=true)'"
       - "julia --project -e 'using Pkg; Pkg.status()'"
 
-      - "echo '--- Initialize ClimaOcean test suite'"
+      - "echo '--- Initialize NumericalEarth test suite'"
       - "julia --project -e 'using CUDA; CUDA.precompile_runtime()'"
       - "julia --project -e 'using Pkg; Pkg.test()'"
     concurrency: 1
@@ -118,7 +118,7 @@ steps:
       set -euo pipefail
 
       case "{{ matrix.case }}" in
-        "🧊 OceanSeaIceModel") export TEST_GROUP="ocean_sea_ice_model" ;;
+        "🧊 CoupledModel") export TEST_GROUP="coupled_model" ;;
         *) echo "Unknown GPU(10G) matrix case: {{ matrix.case }}"; exit 2 ;;
       esac
 
@@ -132,7 +132,7 @@ steps:
     matrix:
       setup:
         case:
-          - "🧊 OceanSeaIceModel"
+          - "🧊 CoupledModel"
 
   - label: "{{ matrix.case }} GPU tests (32G)"
     key: "gpu_tests_32g"

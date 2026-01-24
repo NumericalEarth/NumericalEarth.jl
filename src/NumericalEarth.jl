@@ -1,14 +1,14 @@
-module ClimaOcean
+module NumericalEarth
 
 # Use the README as the module docs
 @doc let
     path = joinpath(dirname(@__DIR__), "README.md")
     include_dependency(path)
     read(path, String)
-end ClimaOcean
+end NumericalEarth
 
 export
-    OceanSeaIceModel,
+    CoupledModel,
     FreezingLimitedOceanTemperature,
     Radiation,
     LatitudeDependentAlbedo,
@@ -84,7 +84,7 @@ end
 ##### Source code
 #####
 
-include("OceanSeaIceModels/OceanSeaIceModels.jl")
+include("CoupledModels/CoupledModels.jl")
 include("Oceans/Oceans.jl")
 include("Atmospheres/Atmospheres.jl")
 include("SeaIces/SeaIces.jl")
@@ -97,18 +97,18 @@ using .DataWrangling
 using .DataWrangling: ETOPO, ECCO, GLORYS, EN4, JRA55
 using .Bathymetry
 using .InitialConditions
-using .OceanSeaIceModels
+using .CoupledModels
 using .Atmospheres
 using .Oceans
 using .SeaIces
 
-using ClimaOcean.OceanSeaIceModels: ComponentInterfaces, MomentumRoughnessLength, ScalarRoughnessLength
-using ClimaOcean.DataWrangling.ETOPO
-using ClimaOcean.DataWrangling.ECCO
-using ClimaOcean.DataWrangling.GLORYS
-using ClimaOcean.DataWrangling.EN4
-using ClimaOcean.DataWrangling.JRA55
-using ClimaOcean.DataWrangling.JRA55: JRA55NetCDFBackend
+using NumericalEarth.CoupledModels: ComponentInterfaces, MomentumRoughnessLength, ScalarRoughnessLength
+using NumericalEarth.DataWrangling.ETOPO
+using NumericalEarth.DataWrangling.ECCO
+using NumericalEarth.DataWrangling.GLORYS
+using NumericalEarth.DataWrangling.EN4
+using NumericalEarth.DataWrangling.JRA55
+using NumericalEarth.DataWrangling.JRA55: JRA55NetCDFBackend
 
 using PrecompileTools: @setup_workload, @compile_workload
 
@@ -120,7 +120,7 @@ using PrecompileTools: @setup_workload, @compile_workload
         grid = Oceananigans.OrthogonalSphericalShellGrids.TripolarGrid(CPU(); size=(Nx, Ny, Nz), halo=(7, 7, 7), z)
         grid = ImmersedBoundaryGrid(grid, GridFittedBottom((x, y) -> -5000))
         # ocean = ocean_simulation(grid)
-        # model = OceanSeaIceModel(ocean)
+        # model = CoupledModel(ocean)
     end
 end
 

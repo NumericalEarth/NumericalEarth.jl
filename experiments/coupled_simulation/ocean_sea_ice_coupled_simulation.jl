@@ -1,4 +1,4 @@
-using ClimaOcean
+using NumericalEarth
 using Oceananigans
 using Oceananigans.Units
 using Oceananigans.Grids
@@ -8,7 +8,7 @@ using Dates
 using Printf
 
 using Oceananigans.Utils: launch!
-using ClimaOcean.DataWrangling: NearestNeighborInpainting
+using NumericalEarth.DataWrangling: NearestNeighborInpainting
 using ClimaSeaIce.SeaIceThermodynamics: melting_temperature
 using Oceananigans.Grids: architecture
 using KernelAbstractions: @kernel, @index
@@ -50,7 +50,7 @@ using Oceananigans.TurbulenceClosures: IsopycnalSkewSymmetricDiffusivity,
 using Oceananigans.TurbulenceClosures.TKEBasedVerticalDiffusivities: CATKEVerticalDiffusivity
 
 eddy_closure = IsopycnalSkewSymmetricDiffusivity(κ_skew=1e3, κ_symmetric=1e3, skew_flux_formulation=DiffusiveFormulation())
-vertical_mixing = ClimaOcean.Oceans.default_ocean_closure()
+vertical_mixing = NumericalEarth.Oceans.default_ocean_closure()
 
 closure = (eddy_closure, vertical_mixing)
 
@@ -86,7 +86,7 @@ set!(ocean.model, T=temperature, S=salinity)
 set!(sea_ice.model.ice_thickness,     ice_thickness,     inpainting=NearestNeighborInpainting(1))
 set!(sea_ice.model.ice_concentration, ice_concentration, inpainting=NearestNeighborInpainting(1))
 
-earth_model = OceanSeaIceModel(ocean, sea_ice; atmosphere, radiation)
+earth_model = CoupledModel(ocean, sea_ice; atmosphere, radiation)
 earth = Simulation(earth_model; Δt=30minutes, stop_iteration=10, stop_time=30days)
 
 u, v, _ = ocean.model.velocities

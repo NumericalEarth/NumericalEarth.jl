@@ -1,18 +1,18 @@
 # # Surface fluxes from prescribed ocean and atmosphere
 #
-# ClimaOcean uses bulk formulae to estimate the surface exchange of momentum,
+# NumericalEarth uses bulk formulae to estimate the surface exchange of momentum,
 # heat, and water vapor between the atmosphere and the ocean.
 #
-# This example demonstrates an example of the turbulent surface flux calculations performed in ClimaOcean
+# This example demonstrates an example of the turbulent surface flux calculations performed in NumericalEarth
 # using ECCO2 data for the ocean and JRA55 data for the atmosphere.
 #
-# For this example, we need ClimaOcean with its DataWrangling modules: ECCO2 and JRA55.
+# For this example, we need NumericalEarth with its DataWrangling modules: ECCO2 and JRA55.
 # We also need Oceananigans for the ImmersedBoundaryGrid and Field utilities, and CairoMakie to plot.
 
-using ClimaOcean
-using ClimaOcean.ECCO
-using ClimaOcean.JRA55
-using ClimaOcean.Oceans
+using NumericalEarth
+using NumericalEarth.ECCO
+using NumericalEarth.JRA55
+using NumericalEarth.Oceans
 using Oceananigans
 using Dates
 using CairoMakie
@@ -66,7 +66,7 @@ set!(ocean.model; T=T_metadata, S=S_metadata)
 # uses the two-band shortwave (visible and UV) + longwave (mid and far infrared)
 # decomposition of the radiation spectrum.
 
-coupled_model = OceanSeaIceModel(ocean; atmosphere, radiation=Radiation(eltype))
+coupled_model = CoupledModel(ocean; atmosphere, radiation=Radiation(eltype))
 
 # Now that the surface fluxes are computed, we can extract and visualize them.
 # The turbulent fluxes are stored in `coupled_model.interfaces.atmosphere_ocean_interface.fluxes`.

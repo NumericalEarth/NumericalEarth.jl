@@ -15,7 +15,7 @@ For example, consider global temperature from January 1st, 2010 from the
 [EN4 dataset](https://www.metoffice.gov.uk/hadobs/en4/),
 
 ```@example metadata
-using ClimaOcean, Dates
+using NumericalEarth, Dates
 
 metadatum = Metadatum(:temperature;
                       dataset = EN4Monthly(),
@@ -64,7 +64,7 @@ The key ingredients stored in a [`Metadata`](@ref) or [`Metadatum`](@ref) object
 - the variable name (for example `:temperature` or `:u_velocity`);
 - the dataset (such as `EN4Monthly`, `ECCO2Daily`, or `GLORYSMonthly`);
 - the temporal coverage: either a single timestamp (`Metadatum`) or a range/vector of dates (`Metadata`);
-- an optional [`BoundingBox`](@ref ClimaOcean.DataWrangling.BoundingBox) describing regional subsets in
+- an optional [`BoundingBox`](@ref NumericalEarth.DataWrangling.BoundingBox) describing regional subsets in
   longitude, latitude, or depth;
 - the on-disk `dir`ectory where the dataset are be cached.
 
@@ -74,7 +74,7 @@ them unnecessarily.
 
 ## Supported datasets
 
-ClimaOcean currently ships connectors for the following data products:
+NumericalEarth currently ships connectors for the following data products:
 
 | Dataset            | Supported Variables                                      | Documentation Link                                                                                 |
 |--------------------|-----------------------------------------------------------|-----------------------------------------------------------------------------------------------------|
