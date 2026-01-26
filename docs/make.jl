@@ -10,7 +10,7 @@ Distributed.addprocs(2)
 
     ENV["DATADEPS_ALWAYS_ACCEPT"] = "true"
 
-    bib_filepath = joinpath(dirname(@__FILE__), "NumericalEarth.bib")
+    bib_filepath = joinpath(dirname(@__FILE__), "src", "NumericalEarth.bib")
     bib = CitationBibliography(bib_filepath, style=:authoryear)
 
     #####
@@ -58,7 +58,7 @@ end
 
 format = Documenter.HTML(collapselevel = 2,
                          size_threshold = nothing,
-                         canonical = "https://clima.github.io/NumericalEarthDocumentation/stable/")
+                         canonical = "https://numericalearth.github.io/NumericalEarthDocumentation/stable/")
 
 pages = [
     "Home" => "index.md",
