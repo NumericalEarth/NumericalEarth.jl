@@ -12,8 +12,8 @@
 
 [![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.7677442.svg?style=flat-square)](https://doi.org/10.5281/zenodo.7677442)
 [![Build status](https://badge.buildkite.com/3113cca353b83df3b5855d3f0d69827124614aef7017c835d2.svg?style=flat-square)](https://buildkite.com/clima/NumericalEarth-ci)
-[![Documentation](https://img.shields.io/badge/documentation-stable%20release-blue?style=flat-square)](https://clima.github.io/NumericalEarthDocumentation/stable/)
-[![Documentation](https://img.shields.io/badge/documentation-in%20development-orange?style=flat-square)](https://clima.github.io/NumericalEarthDocumentation/dev/)
+[![Documentation](https://img.shields.io/badge/documentation-stable%20release-blue?style=flat-square)](https://numericalearth.github.io/NumericalEarthDocumentation/stable/)
+[![Documentation](https://img.shields.io/badge/documentation-in%20development-orange?style=flat-square)](https://numericalearth.github.io/NumericalEarthDocumentation/dev/)
 
 ## Installation
 
