@@ -29,6 +29,7 @@ import ClimaOcean.OceanSeaIceModels: interpolate_state!,
                                      heat_capacity,
                                      ocean_temperature,
                                      ocean_salinity,
+                                     ocean_surface_temperature,
                                      ocean_surface_salinity,
                                      ocean_surface_velocities
 
@@ -72,6 +73,11 @@ function ocean_surface_salinity(ocean::Simulation{<:HydrostaticFreeSurfaceModel}
     return interior(ocean.model.tracers.S, :, :, kᴺ:kᴺ)
 end
 
+function ocean_surface_temperature(ocean::Simulation{<:HydrostaticFreeSurfaceModel})
+    kᴺ = size(ocean.model.grid, 3)
+    return interior(ocean.model.tracers.T, :, :, kᴺ:kᴺ)
+end
+
 function ocean_surface_velocities(ocean::Simulation{<:HydrostaticFreeSurfaceModel})
     kᴺ = size(ocean.model.grid, 3)
     return view(ocean.model.velocities.u, :, :, kᴺ), view(ocean.model.velocities.v, :, :, kᴺ)
@@ -85,11 +91,10 @@ function ComponentExchanger(ocean::Simulation{<:HydrostaticFreeSurfaceModel}, gr
     ocean_grid = ocean.model.grid
     
     if ocean_grid == grid
-        kᴺ = grid.Nz
-        u = view(ocean.model.velocities.u, :, :, 1:kᴺ)
-        v = view(ocean.model.velocities.v, :, :, 1:kᴺ)
-        T = view(ocean.model.tracers.T,    :, :, 1:kᴺ)
-        S = view(ocean.model.tracers.S,    :, :, 1:kᴺ)
+        u = ocean.model.velocities.u 
+        v = ocean.model.velocities.v 
+        T = ocean.model.tracers.T      
+        S = ocean.model.tracers.S      
     else
         u = Field{Center, Center, Nothing}(grid)
         v = Field{Center, Center, Nothing}(grid)

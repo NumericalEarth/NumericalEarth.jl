@@ -1,4 +1,4 @@
-# # One-degree global ocean--sea ice simulation
+# # [One-degree global ocean--sea ice simulation](@id one-degree-ocean-seaice)
 #
 # This example configures a global ocean--sea ice simulation at 1ᵒ horizontal resolution with
 # realistic bathymetry and a few closures including the "Gent-McWilliams" `IsopycnalSkewSymmetricDiffusivity`.
@@ -53,7 +53,7 @@ grid = ImmersedBoundaryGrid(underlying_grid, GridFittedBottom(bottom_height);
 
 using Oceananigans.TurbulenceClosures: IsopycnalSkewSymmetricDiffusivity, AdvectiveFormulation
 
-eddy_closure = IsopycnalSkewSymmetricDiffusivity(κ_skew=1e3, κ_symmetric=1e3, skew_flux_formulation=AdvectiveFormulation()) 
+eddy_closure = IsopycnalSkewSymmetricDiffusivity(κ_skew=1e3, κ_symmetric=1e3, skew_flux_formulation=AdvectiveFormulation())
 vertical_mixing = ClimaOcean.Oceans.default_ocean_closure()
 
 # ### Ocean simulation
@@ -161,7 +161,7 @@ ocean.output_writers[:surface] = JLD2Writer(ocean.model, ocean_outputs;
                                             indices = (:, :, grid.Nz),
                                             overwrite_existing = true)
 
-sea_ice.output_writers[:surface] = JLD2Writer(ocean.model, sea_ice_outputs;
+sea_ice.output_writers[:surface] = JLD2Writer(sea_ice.model, sea_ice_outputs;
                                               schedule = TimeInterval(1days),
                                               filename = "sea_ice_one_degree_surface_fields",
                                               overwrite_existing = true)
