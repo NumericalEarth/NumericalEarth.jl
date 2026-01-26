@@ -1,4 +1,4 @@
-using Distributed
+dusing Distributed
 Distributed.addprocs(2)
 
 @everywhere begin
@@ -133,7 +133,7 @@ end
 ci_build = get(ENV, "CI", nothing) == "true"
 
 if ci_build
-    deploydocs(repo = "github.com/CliMA/NumericalEarthDocumentation.git",
+    deploydocs(repo = "github.com/NumericalEarth/NumericalEarthDocumentation.git",
                deploy_config = Documenter.Buildkite(),
                versions = ["stable" => "v^", "dev" => "dev", "v#.#.#"],
                forcepush = true,
