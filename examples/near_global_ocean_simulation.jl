@@ -1,7 +1,7 @@
 # # Near-global ocean simulation
 #
 # This example sets up and runs a near-global ocean simulation using the Oceananigans.jl and
-# ClimaOcean.jl. The simulation covers latitudes from 75°S to 75°N, with a horizontal
+# NumericalEarth.jl. The simulation covers latitudes from 75°S to 75°N, with a horizontal
 # resolution of 1/4 degree and 40 vertical levels.
 #
 # The simulation's results are visualized with the CairoMakie.jl package.
@@ -9,12 +9,12 @@
 # ## Initial setup with package imports
 #
 # We begin by importing the necessary Julia packages for visualization (CairoMakie),
-# ocean modeling (Oceananigans, ClimaOcean), handling dates and times (CFTime, Dates),
+# ocean modeling (Oceananigans, NumericalEarth), handling dates and times (CFTime, Dates),
 # and CUDA for running on CUDA-enabled GPUs.
 # These packages provide the foundational tools for setting up the simulation environment,
 # including grid setup, physical processes modeling, and data visualization.
 
-using ClimaOcean
+using NumericalEarth
 using Oceananigans
 using Oceananigans.Units
 using CairoMakie
@@ -100,7 +100,7 @@ radiation = Radiation(arch)
 
 # The atmospheric data is prescribed using the JRA55 dataset.
 # The JRA55 dataset provides atmospheric data such as temperature, humidity, and winds
-# to calculate turbulent fluxes using bulk formulae, see [`InterfaceComputations`](@ref ClimaOcean.OceanSeaIceModels.InterfaceComputations).
+# to calculate turbulent fluxes using bulk formulae, see [`InterfaceComputations`](@ref NumericalEarth.OceanSeaIceModels.InterfaceComputations).
 # The number of snapshots that are loaded into memory is determined by
 # the `backend`. Here, we load 41 snapshots at a time into memory.
 

@@ -13,7 +13,7 @@
 # - Evolving temperature based on net heat fluxes from the atmosphere and sea ice
 # - Having no ocean dynamics (no velocities)
 #
-# To integrate a slab ocean into `OceanSeaIceModel`, we need to extend several methods from ClimaOcean's `OceanSeaIceModels.jl` and
+# To integrate a slab ocean into `OceanSeaIceModel`, we need to extend several methods from NumericalEarth's `OceanSeaIceModels.jl` and
 # `InterfaceComputations.jl` modules as well as Oceananigans' TimeSteppers.jl module
 #
 # 1. `ComponentExchanger`: Defines how to extract state from the component for flux computations
@@ -56,8 +56,8 @@ Base.show(io::IO, slab_ocean::SlabOcean) = print(io, Base.summary(slab_ocean))
 # Here, we assume that the ocean is on the same grid as the exchange grid, so that the regridder is "nothing" and the state variables are the same as the ocean surface state.
 # The flux computation requires also ocean surface salinity and velocities to compute the turbulent fluxes.
 
-using ClimaOcean.OceanSeaIceModels.InterfaceComputations
-using ClimaOcean.OceanSeaIceModels: ocean_surface_salinity, ocean_surface_velocities
+using NumericalEarth.OceanSeaIceModels.InterfaceComputations
+using NumericalEarth.OceanSeaIceModels: ocean_surface_salinity, ocean_surface_velocities
 
 function InterfaceComputations.ComponentExchanger(slab_ocean::SlabOcean, exchange_grid)
     T = slab_ocean.temperature
@@ -83,7 +83,7 @@ end
 # In the OceanSeaIceModels.jl module, we define the thermodynamic properties of the ocean component as well as all the helper functions
 # needed to retrieve the ocean state and surface state.
 
-using ClimaOcean.OceanSeaIceModels
+using NumericalEarth.OceanSeaIceModels
 
 OceanSeaIceModels.reference_density(::SlabOcean) = 1025.0
 OceanSeaIceModels.heat_capacity(::SlabOcean) = 3990.0
@@ -95,7 +95,7 @@ OceanSeaIceModels.ocean_temperature(slab_ocean::SlabOcean) = slab_ocean.temperat
 # These will be used to update the ocean state in the `time_step!` method. In this case, we can use the
 # `update_net_ocean_fluxes!` function from the Oceans.jl module.
 
-using ClimaOcean.Oceans
+using NumericalEarth.Oceans
 
 OceanSeaIceModels.update_net_fluxes!(coupled_model, slab_ocean::SlabOcean) =
     Oceans.update_net_ocean_fluxes!(coupled_model, slab_ocean, slab_ocean.grid)
@@ -121,7 +121,7 @@ end
 # We use the JRA55 reanalysis for the atmosphere and the ECCO4Monthly dataset to initialize our slab ocean.
 # We also initialize the sea ice with climatological data and see how the sea ice evolves.
 
-using ClimaOcean
+using NumericalEarth
 using Oceananigans
 using Oceananigans.Units
 using Dates
@@ -134,14 +134,14 @@ grid = ImmersedBoundaryGrid(grid, GridFittedBottom(bottom_height); active_cells_
 slab_ocean = SlabOcean(grid)
 set!(slab_ocean.temperature, Metadatum(:temperature, dataset=ECCO4Monthly()))
 
-atmosphere = ClimaOcean.JRA55PrescribedAtmosphere(arch)
+atmosphere = NumericalEarth.JRA55PrescribedAtmosphere(arch)
 
-sea_ice = ClimaOcean.sea_ice_simulation(grid, slab_ocean, advection=WENO(order=7))
+sea_ice = NumericalEarth.sea_ice_simulation(grid, slab_ocean, advection=WENO(order=7))
 set!(sea_ice.model, h=Metadatum(:sea_ice_thickness,     dataset=ECCO4Monthly()),
                     ℵ=Metadatum(:sea_ice_concentration, dataset=ECCO4Monthly()))
 
 interfaces = ComponentInterfaces(atmosphere, slab_ocean, sea_ice; exchange_grid=grid)
-coupled_model = ClimaOcean.OceanSeaIceModel(slab_ocean, sea_ice; atmosphere, interfaces)
+coupled_model = NumericalEarth.OceanSeaIceModel(slab_ocean, sea_ice; atmosphere, interfaces)
 
 simulation = Simulation(coupled_model, Δt=60minutes, stop_time=120days)
 run!(simulation)

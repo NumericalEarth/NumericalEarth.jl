@@ -1,8 +1,8 @@
 using ClimaSeaIce.SeaIceThermodynamics: melting_temperature
 using ClimaSeaIce.SeaIceThermodynamics: LinearLiquidus
-using ClimaOcean.OceanSeaIceModels
-using ClimaOcean.OceanSeaIceModels: NoSeaIceInterface
-using ClimaOcean.OceanSeaIceModels.InterfaceComputations
+using NumericalEarth.OceanSeaIceModels
+using NumericalEarth.OceanSeaIceModels: NoSeaIceInterface
+using NumericalEarth.OceanSeaIceModels.InterfaceComputations
 
 #####
 ##### A workaround when you don't have a sea ice model

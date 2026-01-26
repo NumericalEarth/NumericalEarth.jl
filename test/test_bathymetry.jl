@@ -2,10 +2,10 @@ include("runtests_setup.jl")
 
 using Oceananigans
 using Statistics
-using ClimaOcean
+using NumericalEarth
 
-using ClimaOcean.Bathymetry: remove_minor_basins!
-using ClimaOcean.DataWrangling.ETOPO
+using NumericalEarth.Bathymetry: remove_minor_basins!
+using NumericalEarth.DataWrangling.ETOPO
 
 @testset "Bathymetry construction and smoothing" begin
     @info "Testing Bathymetry construction and smoothing..."
@@ -13,7 +13,7 @@ using ClimaOcean.DataWrangling.ETOPO
         ETOPOmetadata = Metadatum(:bottom_height, dataset=ETOPO2022())
 
         # Testing downloading
-        ClimaOcean.DataWrangling.download_dataset(ETOPOmetadata)
+        NumericalEarth.DataWrangling.download_dataset(ETOPOmetadata)
         @test isfile(metadata_path(ETOPOmetadata))
 
         grid = LatitudeLongitudeGrid(arch;

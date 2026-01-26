@@ -1,6 +1,6 @@
 include("runtests_setup.jl")
 
-using ClimaOcean.OceanSeaIceModels.InterfaceComputations:
+using NumericalEarth.OceanSeaIceModels.InterfaceComputations:
                                    ComponentInterfaces,
                                    celsius_to_kelvin,
                                    convert_to_kelvin,
@@ -15,12 +15,12 @@ using CUDA
 using KernelAbstractions: @kernel, @index
 using Oceananigans.TimeSteppers: update_state!
 using Oceananigans.Units: hours, days
-using ClimaOcean.DataWrangling: all_dates
+using NumericalEarth.DataWrangling: all_dates
 
 using ClimaSeaIce.SeaIceDynamics
 using ClimaSeaIce.Rheologies
 
-import ClimaOcean.OceanSeaIceModels.InterfaceComputations: surface_specific_humidity
+import NumericalEarth.OceanSeaIceModels.InterfaceComputations: surface_specific_humidity
 
 using Statistics: mean, std
 

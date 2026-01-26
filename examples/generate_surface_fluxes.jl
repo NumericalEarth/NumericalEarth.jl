@@ -1,18 +1,18 @@
 # # Surface fluxes from prescribed ocean and atmosphere
 #
-# ClimaOcean uses bulk formulae to estimate the surface exchange of momentum,
+# NumericalEarth uses bulk formulae to estimate the surface exchange of momentum,
 # heat, and water vapor between the atmosphere and the ocean.
 #
-# This example demonstrates an example of the turbulent surface flux calculations performed in ClimaOcean
+# This example demonstrates an example of the turbulent surface flux calculations performed in NumericalEarth
 # using ECCO2 data for the ocean and JRA55 data for the atmosphere.
 #
-# For this example, we need ClimaOcean with its DataWrangling modules: ECCO2 and JRA55.
+# For this example, we need NumericalEarth with its DataWrangling modules: ECCO2 and JRA55.
 # We also need Oceananigans for the ImmersedBoundaryGrid and Field utilities, and CairoMakie to plot.
 
-using ClimaOcean
-using ClimaOcean.ECCO
-using ClimaOcean.JRA55
-using ClimaOcean.Oceans
+using NumericalEarth
+using NumericalEarth.ECCO
+using NumericalEarth.JRA55
+using NumericalEarth.Oceans
 using Oceananigans
 using Dates
 using CairoMakie

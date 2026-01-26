@@ -3,7 +3,7 @@ include("runtests_setup.jl")
 using MPI
 MPI.Init()
 
-using ClimaOcean.DataWrangling: metadata_path
+using NumericalEarth.DataWrangling: metadata_path
 using Oceananigans.DistributedComputations
 using Oceananigans.DistributedComputations: reconstruct_global_grid
 using CFTime
@@ -45,7 +45,7 @@ end
 
 struct TrivalBathymetry end
 
-import ClimaOcean.DataWrangling: download_dataset, z_interfaces, longitude_interfaces, latitude_interfaces, metadata_filename
+import NumericalEarth.DataWrangling: download_dataset, z_interfaces, longitude_interfaces, latitude_interfaces, metadata_filename
 
 download_dataset(::Metadatum{<:TrivalBathymetry, Nothing, Nothing}) = nothing
 Base.size(::TrivalBathymetry) = (Nλ, Nφ, 1)

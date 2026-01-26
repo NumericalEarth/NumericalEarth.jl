@@ -6,13 +6,13 @@ using NCDatasets
 using Printf
 
 using Oceananigans.Fields: Center
-using ClimaOcean.DataWrangling: Metadata, Metadatum, metadata_path
+using NumericalEarth.DataWrangling: Metadata, Metadatum, metadata_path
 using Dates: DateTime, Day, Month
 
 import Oceananigans.Fields:
     location
 
-import ClimaOcean.DataWrangling:
+import NumericalEarth.DataWrangling:
     all_dates,
     dataset_variable_name,
     default_download_directory,

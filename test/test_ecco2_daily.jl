@@ -1,7 +1,7 @@
 include("runtests_setup.jl")
 
-using ClimaOcean
-using ClimaOcean.DataWrangling: NearestNeighborInpainting, metadata_path, native_times, download_dataset
+using NumericalEarth
+using NumericalEarth.DataWrangling: NearestNeighborInpainting, metadata_path, native_times, download_dataset
 
 using Dates
 using Oceananigans.Grids: topology
@@ -39,7 +39,7 @@ for arch in test_architectures
                 datum = first(metadata)
                 ψ = Field(datum, arch, inpainting=NearestNeighborInpainting(2))
                 @test ψ isa Field
-                datapath = ClimaOcean.DataWrangling.inpainted_metadata_path(datum)
+                datapath = NumericalEarth.DataWrangling.inpainted_metadata_path(datum)
                 @test isfile(datapath)
             end
         end

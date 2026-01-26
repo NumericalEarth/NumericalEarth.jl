@@ -1,10 +1,10 @@
 include("runtests_setup.jl")
 
-using ClimaOcean.OceanSeaIceModels: IceBathHeatFlux,
+using NumericalEarth.OceanSeaIceModels: IceBathHeatFlux,
                                      ThreeEquationHeatFlux,
                                      MomentumBasedFrictionVelocity
 
-using ClimaOcean.OceanSeaIceModels.InterfaceComputations: compute_interface_heat_flux,
+using NumericalEarth.OceanSeaIceModels.InterfaceComputations: compute_interface_heat_flux,
                                                           get_friction_velocity,
                                                           solve_interface_conditions,
                                                           SeaIceOceanInterface,

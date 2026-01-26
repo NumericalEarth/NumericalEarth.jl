@@ -1,11 +1,11 @@
-using ClimaOcean
+using NumericalEarth
 using CairoMakie
 using Oceananigans
 using Oceananigans.Units
 using Printf
 
-Qswt = ClimaOcean.JRA55.JRA55FieldTimeSeries(:downwelling_shortwave_radiation)
-rht  = ClimaOcean.JRA55.JRA55FieldTimeSeries(:relative_humidity)
+Qswt = NumericalEarth.JRA55.JRA55FieldTimeSeries(:downwelling_shortwave_radiation)
+rht  = NumericalEarth.JRA55.JRA55FieldTimeSeries(:relative_humidity)
 
 function lonlat2xyz(lons::AbstractVector, lats::AbstractVector)
     x = [cosd(lat) * cosd(lon) for lon in lons, lat in lats]

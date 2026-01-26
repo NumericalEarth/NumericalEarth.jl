@@ -19,42 +19,78 @@ on:
       - 'test/**'
       - 'Project.toml'
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ startsWith(github.ref, 'refs/pull/') }}
+
+env:
+  ECCO_USERNAME: ${{ secrets.ECCO_USERNAME }}
+  ECCO_WEBDAV_PASSWORD: ${{ secrets.ECCO_WEBDAV_PASSWORD }}
+  COPERNICUS_USERNAME: ${{ secrets.COPERNICUS_SERVICE_USERNAME }}
+  COPERNICUS_PASSWORD: ${{ secrets.COPERNICUS_USERNAME_PASSWORD }}
+
 jobs:
-  downloading:
-    name: Downloading - Julia ${{ matrix.version }} - ${{ matrix.os }} - ${{ matrix.arch }} - ${{ github.event_name }}
+  cpu_tests:
+    name: ${{ matrix.test_group }} - Julia ${{ matrix.version }} - ${{ matrix.os }}
     runs-on: ${{ matrix.os }}
-    timeout-minutes: 60
+    timeout-minutes: 120
     strategy:
       fail-fast: false
       matrix:
         version:
-          - '1.12'
+          - '1.12.4'
         os:
           - ubuntu-latest
-          # - windows-latest 
         arch:
-          - x64
-        include:
-          - os: macOS-latest
-            arch: aarch64
-            version: '1.12'
+          - 'default'
+        test_group:
+          - JRA55
+          - ecco2_monthly
+          - ecco2_daily
+          - ecco4_en4
+          - fluxes
+          - bathymetry
+          - checkpointing
+          - speedy_weather
+          - downloading
     steps:
+      - name: Show available storage before cleanup
+        run: |
+          echo " --> df -h /"
+          df -h /
+          echo " --> df -a /"
+          df -a /
+      - name: Free Disk Space
+        uses: jlumbroso/free-disk-space@54081f138730dfa15788a46383842cd2f914a1be # v1.3.1
+        with:
+          tool-cache: true
+          # Removing "large packages" alone takes a couple of minutes, it could
+          # be switched to true if more space is needed (it'd save ~5 GB or so)
+          large-packages: false
+      - name: Cleanup /opt
+        run: |
+          sudo rm -rf /opt/*
+      - name: Show available storage after cleanup
+        run: |
+          echo " --> df -h /"
+          df -h /
+          echo " --> df -a /"
+          df -a /
       - uses: actions/checkout@v6
-      - uses: julia-actions/setup-julia@latest
+      - uses: julia-actions/setup-julia@v2
         with:
           version: ${{ matrix.version }}
           arch: ${{ matrix.arch }}
       - uses: julia-actions/cache@v2
-      - uses: julia-actions/julia-buildpkg@v1
       - uses: julia-actions/julia-runtest@v1
         env:
-          TEST_GROUP: "downloading"
-          ECCO_USERNAME: ${{ secrets.ECCO_USERNAME }} # To download ECCO data from the podaac website
-          ECCO_WEBDAV_PASSWORD: ${{ secrets.ECCO_WEBDAV_PASSWORD }} # To download ECCO data from the podaac website
+          TEST_GROUP: ${{ matrix.test_group }}
+          
       - uses: julia-actions/julia-processcoverage@v1
       - uses: codecov/codecov-action@v5
         with:
           files: lcov.info
+          flags: ${{ matrix.test_group }}
           token: ${{ secrets.CODECOV_TOKEN }}
 
   cds_downloading:
@@ -65,16 +101,15 @@ jobs:
       fail-fast: false
       matrix:
         version:
-          - '1.12'
+          - '1.12.4'
         os:
           - ubuntu-latest
-          # - windows-latest
         arch:
-          - x64
+          - default
         include:
           - os: macOS-latest
             arch: aarch64
-            version: '1.12'
+            version: '1.12.4'
     steps:
       - uses: actions/checkout@v6
       - uses: julia-actions/setup-julia@latest
@@ -114,7 +149,7 @@ jobs:
         os:
           - ubuntu-latest
         arch:
-          - x64
+          - default
     steps:
       - uses: actions/checkout@v6
       - uses: julia-actions/setup-julia@latest
@@ -132,39 +167,3 @@ jobs:
         with:
           files: lcov.info
           token: ${{ secrets.CODECOV_TOKEN }}
-  
-  speedy_weather:
-    name: SpeedyWeather extension - Julia ${{ matrix.version }} - ${{ matrix.os }} - ${{ matrix.arch }} - ${{ github.event_name }}
-    runs-on: ${{ matrix.os }}
-    timeout-minutes: 80
-    strategy:
-      fail-fast: false
-      matrix:
-        version:
-          - '1.12'
-        os:
-          - ubuntu-latest
-        arch:
-          - x64
-        include:
-          - os: macOS-latest
-            arch: aarch64
-            version: '1.12'
-    steps:
-      - uses: actions/checkout@v6
-      - uses: julia-actions/setup-julia@latest
-        with:
-          version: ${{ matrix.version }}
-          arch: ${{ matrix.arch }}
-      - uses: julia-actions/cache@v2
-      - uses: julia-actions/julia-buildpkg@v1
-      - uses: julia-actions/julia-runtest@v1
-        env:
-          TEST_GROUP: "speedy_weather"
-          GPU_TEST: "false"
-      - uses: julia-actions/julia-processcoverage@v1
-      - uses: codecov/codecov-action@v5
-        with:
-          files: lcov.info
-  #         token: ${{ secrets.CODECOV_TOKEN }}
-          

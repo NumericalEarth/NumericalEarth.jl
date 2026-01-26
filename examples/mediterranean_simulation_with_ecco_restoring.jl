@@ -1,7 +1,7 @@
 # # Mediterranean simulation with restoring to ECCO
 #
 # This example is a comprehensive example of setting up and running a high-resolution ocean
-# simulation for the Mediterranean Sea using the Oceananigans and ClimaOcean packages, with
+# simulation for the Mediterranean Sea using the Oceananigans and NumericalEarth packages, with
 # a focus on restoring temperature and salinity fields from the ECCO (Estimating the Circulation
 # and Climate of the Ocean) dataset.
 #
@@ -11,15 +11,15 @@
 # ## Initial Setup with Package Imports
 #
 # We begin by importing necessary Julia packages for visualization (CairoMakie), ocean modeling
-# (Oceananigans, ClimaOcean), and handling of dates and times (CFTime, Dates).
+# (Oceananigans, NumericalEarth), and handling of dates and times (CFTime, Dates).
 # These packages provide the foundational tools for creating the simulation environment,
 # including grid setup, physical processes modeling, and data visualization.
 
 using CairoMakie
 using Oceananigans
 using Oceananigans.Units
-using ClimaOcean
-using ClimaOcean.ECCO
+using NumericalEarth
+using NumericalEarth.ECCO
 using Printf
 using Dates
 using CUDA
