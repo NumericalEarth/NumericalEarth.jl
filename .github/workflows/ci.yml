@@ -42,7 +42,7 @@ jobs:
         os:
           - ubuntu-latest
         arch:
-          - x64
+          - 'default'
         test_group:
           - JRA55
           - ecco2_monthly
