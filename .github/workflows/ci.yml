@@ -52,6 +52,28 @@ jobs:
           - bathymetry
           - checkpointing
     steps:
+      - name: Show available storage before cleanup
+        run: |
+          echo " --> df -h /"
+          df -h /
+          echo " --> df -a /"
+          df -a /
+      - name: Free Disk Space
+        uses: jlumbroso/free-disk-space@54081f138730dfa15788a46383842cd2f914a1be # v1.3.1
+        with:
+          tool-cache: true
+          # Removing "large packages" alone takes a couple of minutes, it could
+          # be switched to true if more space is needed (it'd save ~5 GB or so)
+          large-packages: false
+      - name: Cleanup /opt
+        run: |
+          sudo rm -rf /opt/*
+      - name: Show available storage after cleanup
+        run: |
+          echo " --> df -h /"
+          df -h /
+          echo " --> df -a /"
+          df -a /
       - uses: actions/checkout@v6
       - uses: julia-actions/setup-julia@v2
         with:
