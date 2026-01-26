@@ -97,12 +97,12 @@ which produces
 
 ## Installation
 
-NumericalEarth is a registered package. To install from a Julia REPL:
+NumericalEarth is not yet a registered package (we are working on it). To install from a Julia REPL:
 
 ```julia
 julia> using Pkg
 
-julia> Pkg.add("NumericalEarth")
+julia> Pkg.add("https://github.com/NumericalEarth/NumericalEarth.jl/")
 
 julia> Pkg.instantiate()
 ```
