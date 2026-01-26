@@ -1,14 +1,14 @@
-using ClimaOcean
+using NumericalEarth
 using Oceananigans
 using CUDA
 using Test
 
-using ClimaOcean.DataWrangling
-using ClimaOcean.DataWrangling: metadata_path
-using ClimaOcean.EN4
-using ClimaOcean.ECCO
-using ClimaOcean.ETOPO
-using ClimaOcean.JRA55
+using NumericalEarth.DataWrangling
+using NumericalEarth.DataWrangling: metadata_path
+using NumericalEarth.EN4
+using NumericalEarth.ECCO
+using NumericalEarth.ETOPO
+using NumericalEarth.JRA55
 
 using Oceananigans.Architectures: architecture, on_architecture
 using Oceananigans.OutputReaders: interpolate!
@@ -143,7 +143,7 @@ function test_ocean_metadata_utilities(arch, dataset, dates, inpainting;
 
         datum = first(metadata)
         ψ = Field(datum, arch, inpainting=NearestNeighborInpainting(2))
-        datapath = ClimaOcean.DataWrangling.inpainted_metadata_path(datum)
+        datapath = NumericalEarth.DataWrangling.inpainted_metadata_path(datum)
         @test isfile(datapath)
     end
 

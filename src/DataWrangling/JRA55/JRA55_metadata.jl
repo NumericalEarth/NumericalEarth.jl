@@ -4,15 +4,15 @@ using Downloads
 
 using Oceananigans.DistributedComputations
 
-using ClimaOcean.DataWrangling
-using ClimaOcean.DataWrangling: Metadata, metadata_path, download_progress, AnyDateTime
+using NumericalEarth.DataWrangling
+using NumericalEarth.DataWrangling: Metadata, metadata_path, download_progress, AnyDateTime
 
 import Dates: year, month, day
 import Oceananigans.Fields: set!
 import Base
 
 import Oceananigans.Fields: set!, location
-import ClimaOcean.DataWrangling: all_dates, metadata_filename, download_dataset, default_download_directory, available_variables
+import NumericalEarth.DataWrangling: all_dates, metadata_filename, download_dataset, default_download_directory, available_variables
 
 struct MultiYearJRA55 end
 struct RepeatYearJRA55 end

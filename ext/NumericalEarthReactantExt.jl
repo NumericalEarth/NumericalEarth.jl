@@ -1,10 +1,10 @@
-module ClimaOceanReactantExt
+module NumericalEarthReactantExt
 
 using Reactant
 using Oceananigans.Architectures: ReactantState
 using Oceananigans.DistributedComputations: Distributed
 
-using ClimaOcean: OceanSeaIceModel
+using NumericalEarth: OceanSeaIceModel
 
 import Oceananigans
 import Oceananigans.Models: initialization_update_state!
@@ -20,4 +20,4 @@ const ReactantOSIM{I, A, O, F, C} = Union{
 
 initialization_update_state!(model::ReactantOSIM) = nothing
 
-end # module ClimaOceanReactantExt
+end # module NumericalEarthReactantExt

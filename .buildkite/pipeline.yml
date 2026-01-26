@@ -24,11 +24,11 @@ steps:
       - "julia --project -e 'using Pkg; Pkg.precompile(strict=true)'"
       - "julia --project -e 'using Pkg; Pkg.status()'"
 
-      - "echo '--- Initialize ClimaOcean test suite'"
+      - "echo '--- Initialize NumericalEarth test suite'"
       - "julia --project -e 'using CUDA; CUDA.precompile_runtime()'"
       - "julia --project -e 'using Pkg; Pkg.test()'"
     concurrency: 1
-    concurrency_group: 'depot/climaocean-ci'
+    concurrency_group: 'depot/NumericalEarth-ci'
     agents:
       slurm_gpus: 1
       slurm_cpus_per_task: 8

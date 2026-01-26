@@ -14,7 +14,7 @@ using Oceananigans.OrthogonalSphericalShellGrids
 using Oceananigans.Operators
 using KernelAbstractions: @kernel, @index
 
-import ClimaOcean.OceanSeaIceModels: interpolate_state!,
+import NumericalEarth.OceanSeaIceModels: interpolate_state!,
                                      sea_ice_concentration,
                                      sea_ice_thickness,
                                      reference_density,
@@ -22,7 +22,7 @@ import ClimaOcean.OceanSeaIceModels: interpolate_state!,
                                      update_net_fluxes!,
                                      default_sea_ice
 
-import ClimaOcean.OceanSeaIceModels.InterfaceComputations: ComponentExchanger,
+import NumericalEarth.OceanSeaIceModels.InterfaceComputations: ComponentExchanger,
                                                            compute_atmosphere_sea_ice_fluxes!,
                                                            compute_sea_ice_ocean_fluxes!,
                                                            net_fluxes,
