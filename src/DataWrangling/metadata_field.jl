@@ -1,6 +1,6 @@
 using NCDatasets
 using JLD2
-using ClimaOcean.InitialConditions: interpolate!
+using NumericalEarth.InitialConditions: interpolate!
 
 import Oceananigans.Fields: set!, Field
 

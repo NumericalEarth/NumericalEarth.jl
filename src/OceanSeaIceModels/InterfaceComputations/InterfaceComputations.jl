@@ -32,7 +32,7 @@ using ..OceanSeaIceModels: default_gravitational_acceleration,
                            surface_layer_height,
                            boundary_layer_height
 
-import ClimaOcean: stateindex
+import NumericalEarth: stateindex
 import Oceananigans.Simulations: initialize!
 
 #####

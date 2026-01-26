@@ -5,14 +5,14 @@ using Oceananigans.Utils: launch!
 using Oceananigans.Operators: intrinsic_vector
 using XESMF
 
-using ClimaOcean.OceanSeaIceModels: sea_ice_concentration
+using NumericalEarth.OceanSeaIceModels: sea_ice_concentration
 
 # TODO: Implement conservative regridding when ready
 # using ConservativeRegridding 
 # using GeoInterface: Polygon, LinearRing
-import ClimaOcean.OceanSeaIceModels: update_net_fluxes!, interpolate_state!
-import ClimaOcean.Atmospheres: atmosphere_regridder
-import ClimaOcean.OceanSeaIceModels.InterfaceComputations: net_fluxes, ComponentExchanger
+import NumericalEarth.OceanSeaIceModels: update_net_fluxes!, interpolate_state!
+import NumericalEarth.Atmospheres: atmosphere_regridder
+import NumericalEarth.OceanSeaIceModels.InterfaceComputations: net_fluxes, ComponentExchanger
 
 # We do not need this...
 net_fluxes(::SpeedySimulation) = nothing

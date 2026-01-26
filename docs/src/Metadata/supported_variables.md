@@ -1,6 +1,6 @@
 # Supported datasets
 
-ClimaOcean currently ships connectors for the following data products:
+NumericalEarth currently ships connectors for the following data products:
 
 | Dataset            | Supported Variables                                      | Documentation Link                                                                                 |
 |--------------------|-----------------------------------------------------------|-----------------------------------------------------------------------------------------------------|

@@ -1,12 +1,12 @@
 # # Generate bathymetry data for the Mediterranean Sea
 #
 # This example shows how to configure an Immersed boundary grid with realistic bathymetry
-# using ClimaOcean.jl by generating the bathymetry data for the Mediterranean Sea.
+# using NumericalEarth.jl by generating the bathymetry data for the Mediterranean Sea.
 #
 # For this example, we need Oceananigans for the LatitudeLongitudeGrid and Field utilities,
-# ClimaOcean to donwload and regrid the bathymetry, and CairoMakie to visualize the grid.
+# NumericalEarth to donwload and regrid the bathymetry, and CairoMakie to visualize the grid.
 
-using ClimaOcean
+using NumericalEarth
 using Oceananigans
 using CairoMakie
 
@@ -29,7 +29,7 @@ grid = LatitudeLongitudeGrid(size = (Nλ, Nφ, 1),
                              halo = (7, 7, 1))
 
 # Next, we generate the bathymetry data for the Mediterranean Sea using the
-# `regrid_bathymetry` function from ClimaOcean. The function downloads the bathymetry
+# `regrid_bathymetry` function from NumericalEarth. The function downloads the bathymetry
 # data from the ETOPO1 dataset, regrids it to the provided grid, and returns the
 # bathymetry field. The three different regidding procedures below demonstrate the effect
 # of different parameters on the generated bathymetry:

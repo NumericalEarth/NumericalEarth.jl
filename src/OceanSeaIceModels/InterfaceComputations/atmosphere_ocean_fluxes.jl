@@ -10,7 +10,7 @@ function compute_atmosphere_ocean_fluxes!(coupled_model)
     atmosphere_fields = exchanger.atmosphere.state
 
     # Simplify NamedTuple to reduce parameter space consumption.
-    # See https://github.com/CliMA/ClimaOcean.jl/issues/116.
+    # See https://github.com/CliMA/NumericalEarth.jl/issues/116.
     atmosphere_data = merge(atmosphere_fields, 
                             (; h_bℓ = boundary_layer_height(coupled_model.atmosphere)))
 

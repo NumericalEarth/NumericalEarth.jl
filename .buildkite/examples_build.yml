@@ -6,7 +6,7 @@ env:
   JULIA_PKG_SERVER_REGISTRY_PREFERENCE: eager
   JULIA_NUM_PRECOMPILE_TASKS: 8
   JULIA_NUM_THREADS: 8
-  CUDA_VISIBLE_DEVICES: "0,1,2,3" # Devices for building ClimaOcean docs (at the moment only 2 and 3 are used)
+  CUDA_VISIBLE_DEVICES: "0,1,2,3" # Devices for building NumericalEarth docs (at the moment only 2 and 3 are used)
 
 steps:
   - label: "initialize"
@@ -22,7 +22,7 @@ steps:
       # force the initialization of the CUDA runtime as it is lazily loaded by default
       - "$TARTARUS_HOME/julia-$JULIA_VERSION/bin/julia --color=yes --project -e 'using CUDA; CUDA.precompile_runtime()'"
     agents:
-      queue: ClimaOcean-docs
+      queue: NumericalEarth-docs
 
   - wait
 
@@ -32,7 +32,7 @@ steps:
       - "$TARTARUS_HOME/julia-$JULIA_VERSION/bin/julia --color=yes --project=docs/ -e 'using Pkg; Pkg.develop(PackageSpec(path=pwd())); Pkg.instantiate(); Pkg.precompile(; strict=true)'"
       - "$TARTARUS_HOME/julia-$JULIA_VERSION/bin/julia --color=yes --project=docs/ docs/make.jl"
     agents:
-      queue: ClimaOcean-docs
+      queue: NumericalEarth-docs
 
     env:
       TMPDIR: "$TARTARUS_HOME/tmp"

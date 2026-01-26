@@ -1,15 +1,15 @@
-module ClimaOceanCopernicusClimateDataStoreExt
+module NumericalEarthCopernicusClimateDataStoreExt
 
-using ClimaOcean
+using NumericalEarth
 using CopernicusClimateDataStore
 
 using Oceananigans
 using Oceananigans.DistributedComputations: @root
 
 using Dates
-using ClimaOcean.DataWrangling.ERA5: ERA5Metadata, ERA5Metadatum, ERA5_dataset_variable_names
+using NumericalEarth.DataWrangling.ERA5: ERA5Metadata, ERA5Metadatum, ERA5_dataset_variable_names
 
-import ClimaOcean.DataWrangling: download_dataset
+import NumericalEarth.DataWrangling: download_dataset
 
 """
     download_dataset(metadata::ERA5Metadata; kwargs...)
@@ -49,7 +49,7 @@ function download_dataset(meta::ERA5Metadatum;
                           additional_kw...)
 
     output_directory = meta.dir
-    output_filename = ClimaOcean.DataWrangling.metadata_filename(meta)
+    output_filename = NumericalEarth.DataWrangling.metadata_filename(meta)
     output_path = joinpath(output_directory, output_filename)
 
     # Skip if file already exists
@@ -112,7 +112,7 @@ end
 
 build_era5_area(::Nothing) = nothing
 
-const BBOX = ClimaOcean.DataWrangling.BoundingBox
+const BBOX = NumericalEarth.DataWrangling.BoundingBox
 
 function build_era5_area(bbox::BBOX)
     # ERA5/era5cli uses (lat_max, lon_min, lat_min, lon_max) ordering
@@ -134,5 +134,5 @@ function build_era5_area(bbox::BBOX)
     return (lat = (lat_min, lat_max), lon = (lon_min, lon_max))
 end
 
-end # module ClimaOceanCopernicusClimateDataStoreExt
+end # module NumericalEarthCopernicusClimateDataStoreExt
 

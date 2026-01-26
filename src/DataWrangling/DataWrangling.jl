@@ -173,7 +173,7 @@ Arguments
 
     within julia. More detailed instructions for obtaining WebDAV credentials are at:
 
-        https://github.com/CliMA/ClimaOcean.jl/blob/main/src/DataWrangling/ECCO/README.md
+        https://github.com/CliMA/NumericalEarth.jl/blob/main/src/DataWrangling/ECCO/README.md
 """
 function download_dataset end # methods specific to datasets are added within each dataset module
 function inpainted_metadata_path end

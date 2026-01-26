@@ -1,6 +1,6 @@
-using ClimaOcean
-using ClimaOcean.ECCO
-using ClimaOcean.ECCO: all_ECCO_dates
+using NumericalEarth
+using NumericalEarth.ECCO
+using NumericalEarth.ECCO: all_ECCO_dates
 using Oceananigans
 using Oceananigans.Utils
 using Oceananigans.Fields: ZeroField, location, VelocityFields
@@ -18,7 +18,7 @@ import Oceananigans.Models: update_model_field_time_series!
 import Oceananigans.TimeSteppers: time_step!, update_state!, reset!, tick!
 import Oceananigans.Simulations: timestepper
 
-import ClimaOcean.OceanSeaIceModels: reference_density, heat_capacity
+import NumericalEarth.OceanSeaIceModels: reference_density, heat_capacity
 
 #####
 ##### A Data structure that holds flux statistics
