@@ -58,7 +58,7 @@ between the ocean/ice surface and the atmosphere using constant transfer coeffic
 # Example
 ```jldoctest
 using Oceananigans
-using ClimaOcean
+using NumericalEarth
 
 grid = RectilinearGrid(size=3, z=(-1, 0), topology=(Flat, Flat, Bounded))
 ocean = ocean_simulation(grid; timestepper = :QuasiAdamsBashforth2)

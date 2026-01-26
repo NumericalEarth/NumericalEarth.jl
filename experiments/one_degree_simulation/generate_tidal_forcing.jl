@@ -1,5 +1,5 @@
-using ClimaOcean
-using ClimaOcean.DataWrangling.JRA55: JRA55_field_time_series
+using NumericalEarth
+using NumericalEarth.DataWrangling.JRA55: JRA55_field_time_series
 using Oceananigans
 using Tidejinks
 using Dates

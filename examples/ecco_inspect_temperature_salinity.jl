@@ -3,7 +3,7 @@ using Oceananigans.ImmersedBoundaries: mask_immersed_field!
 
 using CairoMakie
 using Printf
-using ClimaOcean
+using NumericalEarth
 using CFTime
 using Dates
 
@@ -11,7 +11,7 @@ arch = CPU()
 Nx = 360 ÷ 4
 Ny = 160 ÷ 4
 
-z = ClimaOcean.DataWrangling.ECCO.ECCO_z
+z = NumericalEarth.DataWrangling.ECCO.ECCO_z
 z = z[20:end]
 Nz = length(z) - 1
 

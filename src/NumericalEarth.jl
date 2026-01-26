@@ -1,11 +1,11 @@
-module ClimaOcean
+module NumericalEarth
 
 # Use the README as the module docs
 @doc let
     path = joinpath(dirname(@__DIR__), "README.md")
     include_dependency(path)
     read(path, String)
-end ClimaOcean
+end NumericalEarth
 
 export
     OceanSeaIceModel,
@@ -102,13 +102,13 @@ using .Atmospheres
 using .Oceans
 using .SeaIces
 
-using ClimaOcean.OceanSeaIceModels: ComponentInterfaces, MomentumRoughnessLength, ScalarRoughnessLength
-using ClimaOcean.DataWrangling.ETOPO
-using ClimaOcean.DataWrangling.ECCO
-using ClimaOcean.DataWrangling.GLORYS
-using ClimaOcean.DataWrangling.EN4
-using ClimaOcean.DataWrangling.JRA55
-using ClimaOcean.DataWrangling.JRA55: JRA55NetCDFBackend
+using NumericalEarth.OceanSeaIceModels: ComponentInterfaces, MomentumRoughnessLength, ScalarRoughnessLength
+using NumericalEarth.DataWrangling.ETOPO
+using NumericalEarth.DataWrangling.ECCO
+using NumericalEarth.DataWrangling.GLORYS
+using NumericalEarth.DataWrangling.EN4
+using NumericalEarth.DataWrangling.JRA55
+using NumericalEarth.DataWrangling.JRA55: JRA55NetCDFBackend
 
 using PrecompileTools: @setup_workload, @compile_workload
 

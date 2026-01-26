@@ -1,5 +1,5 @@
-using ClimaOcean
-using ClimaOcean.Diagnostics: MixedLayerDepthField
+using NumericalEarth
+using NumericalEarth.Diagnostics: MixedLayerDepthField
 using Oceananigans
 using CairoMakie
 using Printf
@@ -12,7 +12,7 @@ arch = CPU()
 Nx = 360
 Ny = 160
 
-z = ClimaOcean.DataWrangling.ECCO.ECCO_z
+z = NumericalEarth.DataWrangling.ECCO.ECCO_z
 z = z[20:end]
 Nz = length(z) - 1
 
