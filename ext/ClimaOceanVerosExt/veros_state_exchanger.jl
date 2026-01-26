@@ -1,6 +1,6 @@
-using ClimaOcean.Oceans
+using NumericalEarth.Oceans
 
-import ClimaOcean.OceanSeaIceModels.InterfaceComputations: 
+import NumericalEarth.OceanSeaIceModels.InterfaceComputations: 
     net_fluxes,
     sea_ice_ocean_interface, 
     atmosphere_ocean_interface, 
@@ -8,11 +8,11 @@ import ClimaOcean.OceanSeaIceModels.InterfaceComputations:
     ComponentExchanger,
     default_exchange_grid
 
-import ClimaOcean.OceanSeaIceModels:
+import NumericalEarth.OceanSeaIceModels:
     interpolate_state!,
     update_net_fluxes!
 
-import ClimaOcean.Oceans: get_radiative_forcing
+import NumericalEarth.Oceans: get_radiative_forcing
 
 function ComponentExchanger(ocean::VerosOceanSimulation, grid) 
     state = (; u = Field{Face, Center, Nothing}(grid),

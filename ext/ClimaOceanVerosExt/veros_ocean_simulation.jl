@@ -8,15 +8,15 @@ import Oceananigans.TimeSteppers: time_step!, initialize!
 
 import Oceananigans.Architectures: architecture
 
-import ClimaOcean.OceanSeaIceModels: default_nan_checker
-import ClimaOcean.OceanSeaIceModels: reference_density, 
+import NumericalEarth.OceanSeaIceModels: default_nan_checker
+import NumericalEarth.OceanSeaIceModels: reference_density, 
                                      heat_capacity, 
                                      ocean_temperature, 
                                      ocean_salinity, 
                                      ocean_surface_salinity,
                                      ocean_surface_velocities
 
-import ClimaOcean.Oceans: ocean_simulation
+import NumericalEarth.Oceans: ocean_simulation
 
 import Base: eltype
 
@@ -55,7 +55,7 @@ function patch_veros_signal_handling()
     # Monkey-patch signal.signal() to handle invalid handlers gracefully
     # This is needed because PythonCall-wrapped objects aren't recognized
     # as valid callable handlers by Python's signal.signal()
-    if not hasattr(signal, '_climaocean_patched'):
+    if not hasattr(signal, '_NumericalEarth_patched'):
         _original_signal = signal.signal
         
         def _patched_signal(signum, handler):
@@ -75,20 +75,20 @@ function patch_veros_signal_handling()
                 return _original_signal(signum, signal.SIG_DFL)
         
         signal.signal = _patched_signal
-        signal._climaocean_patched = True
+        signal._NumericalEarth_patched = True
     
     # Also patch Veros's signal wrapper to skip signal handling entirely
     try:
         import veros.signals
         # Only patch if not already patched
-        if not hasattr(veros.signals, '_climaocean_patched'):
+        if not hasattr(veros.signals, '_NumericalEarth_patched'):
             def _patched_dnd_wrapper():
                 # Skip signal handling entirely when running from PythonCall
                 # The signal handlers aren't needed when Veros is embedded in Julia
                 pass
             
             veros.signals.dnd_wrapper = _patched_dnd_wrapper
-            veros.signals._climaocean_patched = True
+            veros.signals._NumericalEarth_patched = True
     except (ImportError, AttributeError):
         # If veros.signals doesn't exist or can't be patched, that's okay
         # This might happen if Veros version doesn't have signal handling
@@ -101,7 +101,7 @@ struct VerosOceanSimulation{S}
 end
 
 default_nan_checker(model::OceanSeaIceModel{<:Any, <:Any, <:VerosOceanSimulation}) = nothing
-initialize!(::ClimaOceanVerosExt.VerosOceanSimulation{Py}) = nothing
+initialize!(::NumericalEarthVerosExt.VerosOceanSimulation{Py}) = nothing
 
 function time_step!(ocean::VerosOceanSimulation, Δt) 
     # Align the timesteps

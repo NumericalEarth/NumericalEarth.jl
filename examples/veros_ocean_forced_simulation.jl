@@ -1,13 +1,13 @@
 # # An Ocean Simulation at 4ᵒ Resolution Forced by JRA55 Reanalysis 
 #
-# This example showcases the use of ClimaOcean's PythonCall extension to run a
+# This example showcases the use of NumericalEarth's PythonCall extension to run a
 # near-global ocean simulation at 4-degree resolution using the Veros ocean model.
 # The ocean is forced by the JRA55 reanalysis data
 #
-# For this example, we need Oceananigans, ClimaOcean, Dates, CUDA, and
+# For this example, we need Oceananigans, NumericalEarth, Dates, CUDA, and
 # CairoMakie to visualize the simulation.
 
-using ClimaOcean
+using NumericalEarth
 using PythonCall
 using Oceananigans, Oceananigans.Units
 using CairoMakie
@@ -20,7 +20,7 @@ using Printf
 # Before importing the setup, we need to ensure that the Veros module is installed and loaded
 # and that every output is removed to avoid conflicts.
 
-VerosModule = Base.get_extension(ClimaOcean, :ClimaOceanVerosExt)
+VerosModule = Base.get_extension(NumericalEarth, :NumericalEarthVerosExt)
 
 VerosModule.install_veros()
 VerosModule.remove_outputs(:global_4deg)
@@ -31,7 +31,7 @@ ocean = VerosModule.VerosOceanSimulation("global_4deg", :GlobalFourDegreeSetup)
 
 # The loaded Veros setup contains a `set_forcing` method which computes the fluxes as restoring from climatology.
 # We replace it with a custom function that only computes the TKE forcing (which depends on the wind stresses
-# that we set in ClimaOcean). This way our u, v, T, S forcings are not overwritten. 
+# that we set in NumericalEarth). This way our u, v, T, S forcings are not overwritten. 
 # The `set_forcing_tke_only` method defined below is modified from the `set_forcing` method defined in 
 # https://github.com/team-ocean/veros/blob/main/veros/setups/global_4deg/global_4deg.py
 

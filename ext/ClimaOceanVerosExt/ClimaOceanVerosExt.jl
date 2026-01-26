@@ -1,6 +1,6 @@
-module ClimaOceanVerosExt
+module NumericalEarthVerosExt
 
-using ClimaOcean
+using NumericalEarth
 using CondaPkg
 using PythonCall
 using Oceananigans
@@ -8,4 +8,4 @@ using Oceananigans
 include("veros_ocean_simulation.jl")
 include("veros_state_exchanger.jl")
 
-end # module ClimaOceanVerosExt
+end # module NumericalEarthVerosExt

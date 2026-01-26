@@ -46,7 +46,7 @@ NumericalEarthCopernicusClimateDataStoreExt = "CopernicusClimateDataStore"
 NumericalEarthCopernicusMarineExt = "CopernicusMarine"
 NumericalEarthReactantExt = "Reactant"
 NumericalEarthSpeedyWeatherExt = ["SpeedyWeather", "XESMF"]
-ClimaOceanVerosExt = ["PythonCall", "CondaPkg"]
+NumericalEarthVerosExt = ["PythonCall", "CondaPkg"]
 
 [compat]
 Adapt = "4"
