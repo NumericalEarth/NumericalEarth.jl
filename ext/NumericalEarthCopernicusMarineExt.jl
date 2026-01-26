@@ -1,15 +1,15 @@
-module ClimaOceanCopernicusMarineExt
+module NumericalEarthCopernicusMarineExt
 
-using ClimaOcean
+using NumericalEarth
 using CopernicusMarine
 
 using Oceananigans
 using Oceananigans.DistributedComputations: @root
 
 using Dates: DateTime
-using ClimaOcean.DataWrangling.GLORYS: GLORYSMetadata, GLORYSMetadatum
+using NumericalEarth.DataWrangling.GLORYS: GLORYSMetadata, GLORYSMetadatum
 
-import ClimaOcean.DataWrangling: download_dataset
+import NumericalEarth.DataWrangling: download_dataset
 
 # Download each date individually, instead of downloading the entire dataset at once.
 # This is useful for a possible extension of the temporal horizon of the dataset.
@@ -28,21 +28,21 @@ function download_dataset(meta::GLORYSMetadatum;
                           additional_kw...)
 
     output_directory = meta.dir
-    output_filename = ClimaOcean.DataWrangling.metadata_filename(meta)
+    output_filename = NumericalEarth.DataWrangling.metadata_filename(meta)
     output_path = joinpath(output_directory, output_filename)
     isfile(output_path) && return output_path
 
     toolbox = CopernicusMarine.copernicusmarine
 
-    variable_name = ClimaOcean.DataWrangling.GLORYS.GLORYS_dataset_variable_names[meta.name]
+    variable_name = NumericalEarth.DataWrangling.GLORYS.GLORYS_dataset_variable_names[meta.name]
     variables = CopernicusMarine.pylist([variable_name])
 
-    dataset_id = ClimaOcean.DataWrangling.GLORYS.copernicusmarine_dataset_id(meta.dataset)
-    datetime_kw = if meta.dataset isa ClimaOcean.DataWrangling.GLORYS.GLORYSStatic
+    dataset_id = NumericalEarth.DataWrangling.GLORYS.copernicusmarine_dataset_id(meta.dataset)
+    datetime_kw = if meta.dataset isa NumericalEarth.DataWrangling.GLORYS.GLORYSStatic
         NamedTuple()
     else
-        start_datetime = ClimaOcean.DataWrangling.GLORYS.start_date_str(meta.dates)
-        end_datetime = ClimaOcean.DataWrangling.GLORYS.end_date_str(meta.dates)
+        start_datetime = NumericalEarth.DataWrangling.GLORYS.start_date_str(meta.dates)
+        end_datetime = NumericalEarth.DataWrangling.GLORYS.end_date_str(meta.dates)
         (; start_datetime, end_datetime)
     end
 
@@ -77,7 +77,7 @@ longitude_bounds_kw(::Nothing) = NamedTuple()
 latitude_bounds_kw(::Nothing) = NamedTuple()
 depth_bounds_kw(::Nothing) = NamedTuple()
 
-const BBOX = ClimaOcean.DataWrangling.BoundingBox
+const BBOX = NumericalEarth.DataWrangling.BoundingBox
 
 longitude_bounds_kw(bounding_box::BBOX) = longitude_bounds_kw(bounding_box.longitude)
 latitude_bounds_kw(bounding_box::BBOX) = latitude_bounds_kw(bounding_box.latitude)
@@ -101,4 +101,4 @@ function depth_bounds_kw(z)
     return (; minimum_depth, maximum_depth)
 end
 
-end # module ClimaOceanCopernicusMarineExt
+end # module NumericalEarthCopernicusMarineExt

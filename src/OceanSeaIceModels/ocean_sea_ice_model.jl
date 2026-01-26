@@ -122,7 +122,7 @@ The model uses similarity theory for turbulent fluxes between components. You ca
 by creating a new `SimilarityTheoryFluxes` object with your desired stability functions. For example:
 
 ```jldoctest ocean_sea_ice_model
-using ClimaOcean
+using NumericalEarth
 using Oceananigans
 
 grid = RectilinearGrid(size=10, z=(-100, 0), topology=(Flat, Flat, Bounded))
@@ -133,13 +133,13 @@ ocean = ocean_simulation(grid, timestepper = :QuasiAdamsBashforth2)
 stability_functions = nothing
 
 # Atmosphere-sea ice specific stability functions
-stability_functions = ClimaOcean.OceanSeaIceModels.atmosphere_sea_ice_stability_functions(Float64)
+stability_functions = NumericalEarth.OceanSeaIceModels.atmosphere_sea_ice_stability_functions(Float64)
 
 # Edson et al. (2013) stability functions
-stability_functions = ClimaOcean.OceanSeaIceModels.atmosphere_ocean_stability_functions(Float64)
+stability_functions = NumericalEarth.OceanSeaIceModels.atmosphere_ocean_stability_functions(Float64)
 
 atmosphere_ocean_fluxes = SimilarityTheoryFluxes(; stability_functions)
-interfaces = ClimaOcean.OceanSeaIceModels.ComponentInterfaces(nothing, ocean; atmosphere_ocean_fluxes)
+interfaces = NumericalEarth.OceanSeaIceModels.ComponentInterfaces(nothing, ocean; atmosphere_ocean_fluxes)
 model = OceanSeaIceModel(ocean; interfaces)
 
 # output

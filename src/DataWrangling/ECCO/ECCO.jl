@@ -7,7 +7,7 @@ export ECCO2DarwinMonthly, ECCO4DarwinMonthly
 export retrieve_data
 
 using Oceananigans
-using ClimaOcean
+using NumericalEarth
 using NCDatasets
 using Dates
 using Adapt
@@ -16,7 +16,7 @@ using Downloads
 
 using Oceananigans.DistributedComputations: @root
 
-using ClimaOcean.DataWrangling:
+using NumericalEarth.DataWrangling:
     netrc_downloader,
     BoundingBox,
     metadata_path,
@@ -33,7 +33,7 @@ using Dates: year, month, day
 
 import Oceananigans: location
 
-import ClimaOcean.DataWrangling:
+import NumericalEarth.DataWrangling:
     default_download_directory,
     all_dates,
     metadata_filename,
@@ -287,15 +287,15 @@ function download_dataset(metadata::ECCOMetadata)
             filepath = metadata_path(metadatum)
 
             if !isfile(filepath)
-                instructions_msg = "\n See ClimaOcean.jl/src/DataWrangling/ECCO/README.md for instructions."
+                instructions_msg = "\n See NumericalEarth.jl/src/DataWrangling/ECCO/README.md for instructions."
                 if isnothing(username)
                     msg = "Could not find the ECCO_USERNAME environment variable. \
-                            See ClimaOcean.jl/src/DataWrangling/ECCO/README.md for instructions on obtaining \
+                            See NumericalEarth.jl/src/DataWrangling/ECCO/README.md for instructions on obtaining \
                             and setting your ECCO_USERNAME and ECCO_WEBDAV_PASSWORD." * instructions_msg
                     throw(ArgumentError(msg))
                 elseif isnothing(password)
                     msg = "Could not find the ECCO_WEBDAV_PASSWORD environment variable. \
-                            See ClimaOcean.jl/src/DataWrangling/ECCO/README.md for instructions on obtaining \
+                            See NumericalEarth.jl/src/DataWrangling/ECCO/README.md for instructions on obtaining \
                             and setting your ECCO_USERNAME and ECCO_WEBDAV_PASSWORD." * instructions_msg
                     throw(ArgumentError(msg))
                 end

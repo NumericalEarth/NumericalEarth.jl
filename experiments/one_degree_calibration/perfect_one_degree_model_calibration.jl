@@ -3,7 +3,7 @@ using Oceananigans.Units
 using Oceananigans.Utils: WallTimeInterval
 using Oceananigans.BuoyancyFormulations: buoyancy
 using Oceananigans.Models.HydrostaticFreeSurfaceModels: VerticalVorticityField
-using ClimaOcean.NearGlobalSimulations: one_degree_near_global_simulation
+using NumericalEarth.NearGlobalSimulations: one_degree_near_global_simulation
 using ParameterEstimocean
 using ParameterEstimocean.Utils: map_gpus_to_ranks!
 using ParameterEstimocean.Observations: FieldTimeSeriesCollector

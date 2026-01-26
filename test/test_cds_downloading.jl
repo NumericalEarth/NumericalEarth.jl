@@ -3,9 +3,9 @@ include("runtests_setup.jl")
 using CopernicusClimateDataStore
 using NCDatasets
 
-using ClimaOcean.DataWrangling.ERA5
-using ClimaOcean.DataWrangling.ERA5: ERA5Hourly, ERA5Monthly, ERA5_dataset_variable_names
-using ClimaOcean.DataWrangling: metadata_path, download_dataset
+using NumericalEarth.DataWrangling.ERA5
+using NumericalEarth.DataWrangling.ERA5: ERA5Hourly, ERA5Monthly, ERA5_dataset_variable_names
+using NumericalEarth.DataWrangling: metadata_path, download_dataset
 
 using Dates
 
@@ -18,7 +18,7 @@ start_date = DateTime(2005, 2, 16, 12)
     dataset = ERA5Hourly()
     
     # Use a small bounding box to reduce download time
-    bounding_box = ClimaOcean.DataWrangling.BoundingBox(longitude=(0, 5), latitude=(40, 45))
+    bounding_box = NumericalEarth.DataWrangling.BoundingBox(longitude=(0, 5), latitude=(40, 45))
 
     @testset "Download ERA5 temperature data" begin
         variable = :temperature
@@ -98,7 +98,7 @@ start_date = DateTime(2005, 2, 16, 12)
         @test Nt == 1     # Single time step
         
         # Test that ERA5 is correctly identified as 2D
-        @test ClimaOcean.DataWrangling.ERA5.is_three_dimensional(metadatum) == false
+        @test NumericalEarth.DataWrangling.ERA5.is_three_dimensional(metadatum) == false
     end
 
     @testset "ERA5 Monthly dataset" begin
@@ -106,7 +106,7 @@ start_date = DateTime(2005, 2, 16, 12)
         @test monthly_dataset isa ERA5Monthly
         
         # Test that all_dates returns a valid range
-        dates = ClimaOcean.DataWrangling.all_dates(monthly_dataset, :temperature)
+        dates = NumericalEarth.DataWrangling.all_dates(monthly_dataset, :temperature)
         @test first(dates) == DateTime("1940-01-01")
         @test step(dates) == Month(1)
     end
@@ -137,7 +137,7 @@ start_date = DateTime(2005, 2, 16, 12)
 
             # Clean up
             rm(filepath; force=true)
-            inpainted_path = ClimaOcean.DataWrangling.inpainted_metadata_path(metadatum)
+            inpainted_path = NumericalEarth.DataWrangling.inpainted_metadata_path(metadatum)
             isfile(inpainted_path) && rm(inpainted_path; force=true)
         end
 
@@ -168,7 +168,7 @@ start_date = DateTime(2005, 2, 16, 12)
 
             # Clean up
             rm(filepath; force=true)
-            inpainted_path = ClimaOcean.DataWrangling.inpainted_metadata_path(metadatum)
+            inpainted_path = NumericalEarth.DataWrangling.inpainted_metadata_path(metadatum)
             isfile(inpainted_path) && rm(inpainted_path; force=true)
         end
     end

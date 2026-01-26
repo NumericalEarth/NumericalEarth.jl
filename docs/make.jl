@@ -1,6 +1,5 @@
-using ClimaOcean
 using Distributed
-using ClimaOcean
+using NumericalEarth
 using CUDA
 using Documenter
 using DocumenterCitations
@@ -8,7 +7,7 @@ using Literate
 
 ENV["DATADEPS_ALWAYS_ACCEPT"] = "true"
 
-bib_filepath = joinpath(dirname(@__FILE__), "climaocean.bib")
+bib_filepath = joinpath(dirname(@__FILE__), "numericalearth.bib")
 bib = CitationBibliography(bib_filepath, style=:authoryear)
 
 #####
@@ -46,7 +45,7 @@ end
 Distributed.addprocs(2)
 
 @everywhere begin
-    using ClimaOcean
+    using NumericalEarth
     using CUDA
     using Documenter
     using DocumenterCitations
@@ -54,7 +53,7 @@ Distributed.addprocs(2)
 
     ENV["DATADEPS_ALWAYS_ACCEPT"] = "true"
 
-    bib_filepath = joinpath(dirname(@__FILE__), "climaocean.bib")
+    bib_filepath = joinpath(dirname(@__FILE__), "src", "NumericalEarth.bib")
     bib = CitationBibliography(bib_filepath, style=:authoryear)
 
     #####
@@ -99,7 +98,7 @@ end
 
 format = Documenter.HTML(collapselevel = 2,
                          size_threshold = nothing,
-                         canonical = "https://clima.github.io/ClimaOceanDocumentation/stable/")
+                         canonical = "https://numericalearth.github.io/NumericalEarthDocumentation/stable/")
 
 pages = [
     "Home" => "index.md",
@@ -129,16 +128,16 @@ pages = [
 ]
 
 modules = Module[]
-ClimaOceanSpeedyWeatherExt = isdefined(Base, :get_extension) ? Base.get_extension(ClimaOcean, :ClimaOceanSpeedyWeatherExt) : ClimaOcean.ClimaOceanSpeedyWeatherExt
-ClimaOceanVerosExt = isdefined(Base, :get_extension) ? Base.get_extension(ClimaOcean, :ClimaOceanVerosExt) : ClimaOcean.ClimaOceanVerosExt
+NumericalEarthSpeedyWeatherExt = isdefined(Base, :get_extension) ? Base.get_extension(NumericalEarth, :NumericalEarthSpeedyWeatherExt) : NumericalEarth.NumericalEarthSpeedyWeatherExt
+NumericalEarthVerosExt = isdefined(Base, :get_extension) ? Base.get_extension(NumericalEarth, :NumericalEarthVerosExt) : NumericalEarth.NumericalEarthVerosExt
 
-for m in [ClimaOcean, ClimaOceanSpeedyWeatherExt, ClimaOceanVerosExt]
+for m in [NumericalEarth, NumericalEarthSpeedyWeatherExt, NumericalEarthVerosExt]
     if !isnothing(m)
         push!(modules, m)
     end
 end
 
-makedocs(; sitename = "ClimaOcean.jl",
+makedocs(; sitename = "NumericalEarth.jl",
          format, pages, modules,
          plugins = [bib],
          doctest = true,
@@ -175,7 +174,7 @@ end
 ci_build = get(ENV, "CI", nothing) == "true"
 
 if ci_build
-    deploydocs(repo = "github.com/CliMA/ClimaOceanDocumentation.git",
+    deploydocs(repo = "github.com/NumericalEarth/NumericalEarthDocumentation.git",
                deploy_config = Documenter.Buildkite(),
                versions = ["stable" => "v^", "dev" => "dev", "v#.#.#"],
                forcepush = true,

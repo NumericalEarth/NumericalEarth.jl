@@ -3,7 +3,7 @@ module EN4
 export EN4Metadatum, EN4_immersed_grid, adjusted_EN4_tracers, initialize!
 export EN4Monthly
 
-using ClimaOcean
+using NumericalEarth
 using Oceananigans
 using NCDatasets
 using JLD2
@@ -33,7 +33,7 @@ using Dates
 using Downloads
 import ZipFile
 
-import ClimaOcean.DataWrangling:
+import NumericalEarth.DataWrangling:
     all_dates,
     metadata_filename,
     download_dataset,

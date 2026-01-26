@@ -2,8 +2,8 @@ include("runtests_setup.jl")
 
 @testset "Availability of JRA55 data" begin
     @info "Testing that we can download all the JRA55 data..."
-    for name in ClimaOcean.DataWrangling.JRA55.JRA55_variable_names
-        fts = ClimaOcean.JRA55.JRA55FieldTimeSeries(name; backend=ClimaOcean.JRA55.JRA55NetCDFBackend(2))
+    for name in NumericalEarth.DataWrangling.JRA55.JRA55_variable_names
+        fts = NumericalEarth.JRA55.JRA55FieldTimeSeries(name; backend=NumericalEarth.JRA55.JRA55NetCDFBackend(2))
         @test isfile(fts.path)
         rm(fts.path; force=true)
     end
@@ -14,19 +14,19 @@ end
 
         @info "Testing that we can download $(typeof(dataset)) data..."
 
-        variables = dataset isa ECCO2Daily ?         keys(ClimaOcean.ECCO.ECCO2_dataset_variable_names) :
-                    dataset isa ECCO2Monthly ?       keys(ClimaOcean.ECCO.ECCO2_dataset_variable_names) :
-                    dataset isa ECCO4Monthly ?       keys(ClimaOcean.ECCO.ECCO4_dataset_variable_names) :
-                    dataset isa ECCO4DarwinMonthly ? keys(ClimaOcean.ECCO.ECCO_darwin_dataset_variable_names) :
-                    dataset isa ECCO2DarwinMonthly ? keys(ClimaOcean.ECCO.ECCO_darwin_dataset_variable_names) :
-                    dataset isa EN4Monthly ?         keys(ClimaOcean.EN4.EN4_dataset_variable_names) :
+        variables = dataset isa ECCO2Daily ?         keys(NumericalEarth.ECCO.ECCO2_dataset_variable_names) :
+                    dataset isa ECCO2Monthly ?       keys(NumericalEarth.ECCO.ECCO2_dataset_variable_names) :
+                    dataset isa ECCO4Monthly ?       keys(NumericalEarth.ECCO.ECCO4_dataset_variable_names) :
+                    dataset isa ECCO4DarwinMonthly ? keys(NumericalEarth.ECCO.ECCO_darwin_dataset_variable_names) :
+                    dataset isa ECCO2DarwinMonthly ? keys(NumericalEarth.ECCO.ECCO_darwin_dataset_variable_names) :
+                    dataset isa EN4Monthly ?         keys(NumericalEarth.EN4.EN4_dataset_variable_names) :
                     error("what am I supposed to download?")
 
         for variable in variables
             metadata = Metadata(variable; dates=DateTimeProlepticGregorian(1993, 1, 1), dataset)
             filepath = metadata_path(metadata)
             isfile(filepath) && rm(filepath; force=true)
-            ClimaOcean.DataWrangling.download_dataset(metadata)
+            NumericalEarth.DataWrangling.download_dataset(metadata)
             @test isfile(filepath)
             rm(filepath; force=true)
         end
@@ -38,5 +38,5 @@ end
     metadata = Metadatum(:bottom_height, dataset=ETOPO2022())
     filepath = metadata_path(metadata)
     isfile(filepath) && rm(filepath; force=true)
-    ClimaOcean.DataWrangling.download_dataset(metadata)
+    NumericalEarth.DataWrangling.download_dataset(metadata)
 end

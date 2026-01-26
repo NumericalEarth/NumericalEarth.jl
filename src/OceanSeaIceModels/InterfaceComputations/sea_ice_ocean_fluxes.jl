@@ -1,5 +1,5 @@
 using Oceananigans.Operators: Δzᶜᶜᶜ
-using ClimaOcean.OceanSeaIceModels: ocean_temperature, ocean_salinity
+using NumericalEarth.OceanSeaIceModels: ocean_temperature, ocean_salinity
 using ClimaSeaIce.SeaIceThermodynamics: melting_temperature
 using ClimaSeaIce.SeaIceDynamics: x_momentum_stress, y_momentum_stress
 

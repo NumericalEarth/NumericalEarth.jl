@@ -324,7 +324,7 @@ hasclosure(closure, ClosureType) = closure isa ClosureType
 hasclosure(closure_tuple::Tuple, ClosureType) = any(hasclosure(c, ClosureType) for c in closure_tuple)
 
 #####
-##### Extending ClimaOcean interface
+##### Extending NumericalEarth interface
 #####
 
 reference_density(ocean::Simulation{<:HydrostaticFreeSurfaceModel}) = reference_density(ocean.model.buoyancy.formulation)

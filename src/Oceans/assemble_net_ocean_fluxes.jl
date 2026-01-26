@@ -1,9 +1,9 @@
 using Printf
 using Oceananigans.Operators: ℑxᶠᵃᵃ, ℑyᵃᶠᵃ
 using Oceananigans.Forcings: MultipleForcings
-using ClimaOcean.OceanSeaIceModels: OceanSeaIceModel, NoOceanInterfaceModel, NoInterfaceModel
+using NumericalEarth.OceanSeaIceModels: OceanSeaIceModel, NoOceanInterfaceModel, NoInterfaceModel
 
-using ClimaOcean.OceanSeaIceModels.InterfaceComputations: interface_kernel_parameters, 
+using NumericalEarth.OceanSeaIceModels.InterfaceComputations: interface_kernel_parameters, 
                                                           computed_fluxes, 
                                                           get_possibly_zero_flux, 
                                                           sea_ice_concentration,
@@ -36,7 +36,7 @@ function update_net_ocean_fluxes!(coupled_model, ocean_model, grid)
     sea_ice_ocean_fluxes = computed_fluxes(coupled_model.interfaces.sea_ice_ocean_interface)
 
     # Simplify NamedTuple to reduce parameter space consumption.
-    # See https://github.com/CliMA/ClimaOcean.jl/issues/116.
+    # See https://github.com/CliMA/NumericalEarth.jl/issues/116.
     atmosphere_fields = coupled_model.interfaces.exchanger.atmosphere.state
 
     downwelling_radiation = (Qs = atmosphere_fields.Qs.data,

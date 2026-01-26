@@ -3,7 +3,7 @@ using Oceananigans.Grids: _node
 using Oceananigans.Fields: FractionalIndices, interpolate
 using Oceananigans.OutputReaders: TimeInterpolator
 
-using ClimaOcean.Oceans: forcing_barotropic_potential
+using NumericalEarth.Oceans: forcing_barotropic_potential
 
 """Interpolate the atmospheric state onto the ocean / sea-ice grid."""
 function interpolate_state!(exchanger, grid, atmosphere::PrescribedAtmosphere, coupled_model)
@@ -42,7 +42,7 @@ function interpolate_state!(exchanger, grid, atmosphere::PrescribedAtmosphere, c
     space_fractional_indices = exchanger.regridder
 
     # Simplify NamedTuple to reduce parameter space consumption.
-    # See https://github.com/CliMA/ClimaOcean.jl/issues/116.
+    # See https://github.com/CliMA/NumericalEarth.jl/issues/116.
     atmosphere_data = (u = atmosphere_fields.u.data,
                        v = atmosphere_fields.v.data,
                        T = atmosphere_fields.T.data,
