@@ -7,13 +7,13 @@ using Printf
 using Scratch
 
 using Oceananigans.Fields: Center
-using ClimaOcean.DataWrangling: Metadata, Metadatum, metadata_path
+using NumericalEarth.DataWrangling: Metadata, Metadatum, metadata_path
 using Dates
 using Dates: DateTime, Day, Month, Hour
 
 import Oceananigans.Fields: location
 
-import ClimaOcean.DataWrangling:
+import NumericalEarth.DataWrangling:
     all_dates,
     dataset_variable_name,
     default_download_directory,
@@ -65,7 +65,7 @@ is_three_dimensional(::ERA5Metadata) = false
 Base.size(metadata::ERA5Metadata) = (1440, 721, 1, length(metadata.dates))
 Base.size(::ERA5Metadatum) = (1440, 721, 1, 1)
 
-# Variable name mappings from ClimaOcean names to ERA5/era5cli variable names
+# Variable name mappings from NumericalEarth names to ERA5/era5cli variable names
 # The era5cli tool uses these short names for downloading
 ERA5_dataset_variable_names = Dict(
     :temperature                     => "2m_temperature",

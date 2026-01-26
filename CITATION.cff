@@ -2,9 +2,9 @@
 # Visit https://bit.ly/cffinit to generate yours today!
 
 cff-version: 1.2.0
-title: ClimaOcean.jl
+title: NumericalEarth.jl
 message: >
-  If you use ClimaOcean.jl in your research, teaching, or
+  If you use NumericalEarth.jl in your research, teaching, or
   for fun, please cite it using the metadata below.
 type: software
 authors:
@@ -36,8 +36,8 @@ identifiers:
   - type: doi
     value: 10.5281/zenodo.7677442
     description: The concept DOI of the work
-repository-code: 'https://github.com/CliMA/ClimaOcean.jl'
-url: 'https://github.com/CliMA/ClimaOcean.jl'
+repository-code: 'https://github.com/CliMA/NumericalEarth.jl'
+url: 'https://github.com/CliMA/NumericalEarth.jl'
 keywords:
   - ocean modelling
   - regional ocean modelling

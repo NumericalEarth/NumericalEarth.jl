@@ -1,4 +1,4 @@
-using ClimaOcean
+using NumericalEarth
 using Oceananigans
 using Oceananigans.Units
 using Oceananigans.Grids
@@ -8,7 +8,7 @@ using Dates
 using Printf
 
 using Oceananigans.Utils: launch!
-using ClimaOcean.DataWrangling: NearestNeighborInpainting
+using NumericalEarth.DataWrangling: NearestNeighborInpainting
 using ClimaSeaIce.SeaIceThermodynamics: melting_temperature
 using Oceananigans.Grids: architecture
 using KernelAbstractions: @kernel, @index
@@ -50,7 +50,7 @@ using Oceananigans.TurbulenceClosures: IsopycnalSkewSymmetricDiffusivity,
 using Oceananigans.TurbulenceClosures.TKEBasedVerticalDiffusivities: CATKEVerticalDiffusivity
 
 eddy_closure = IsopycnalSkewSymmetricDiffusivity(κ_skew=1e3, κ_symmetric=1e3, skew_flux_formulation=DiffusiveFormulation())
-vertical_mixing = ClimaOcean.Oceans.default_ocean_closure()
+vertical_mixing = NumericalEarth.Oceans.default_ocean_closure()
 
 closure = (eddy_closure, vertical_mixing)
 

@@ -11,10 +11,10 @@
 
 # ```julia
 # using Pkg
-# pkg"add Oceananigans, ClimaOcean, CairoMakie"
+# pkg"add Oceananigans, NumericalEarth, CairoMakie"
 # ```
 
-using ClimaOcean
+using NumericalEarth
 using Oceananigans
 using Oceananigans: prognostic_fields
 using Oceananigans.Units
@@ -39,7 +39,7 @@ grid = RectilinearGrid(size = 200,
 
 # # An "ocean simulation"
 #
-# Next, we use ClimaOcean's `ocean_simulation` constructor to build a realistic
+# Next, we use NumericalEarth's `ocean_simulation` constructor to build a realistic
 # ocean simulation on the single-column grid,
 
 ocean = ocean_simulation(grid; Δt=10minutes, coriolis=FPlane(latitude = φ★))

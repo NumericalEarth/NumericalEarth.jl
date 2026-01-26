@@ -1,14 +1,14 @@
-import ClimaOcean.Atmospheres: atmosphere_simulation
+import NumericalEarth.Atmospheres: atmosphere_simulation
 
 # Make sure the atmospheric parameters from SpeedyWeather can be used in the compute fluxes function
-import ClimaOcean.OceanSeaIceModels:
+import NumericalEarth.OceanSeaIceModels:
     thermodynamics_parameters,
     boundary_layer_height,
     surface_layer_height
 
 const SpeedySimulation = SpeedyWeather.Simulation
-const SpeedyCoupledModel = ClimaOcean.OceanSeaIceModel{<:Any, <:SpeedySimulation}
-const SpeedyNoSeaIceCoupledModel = ClimaOcean.OceanSeaIceModel{<:Union{Nothing, ClimaOcean.SeaIces.FreezingLimitedOceanTemperature}, <:SpeedySimulation}
+const SpeedyCoupledModel = NumericalEarth.OceanSeaIceModel{<:Any, <:SpeedySimulation}
+const SpeedyNoSeaIceCoupledModel = NumericalEarth.OceanSeaIceModel{<:Union{Nothing, NumericalEarth.SeaIces.FreezingLimitedOceanTemperature}, <:SpeedySimulation}
 
 Base.summary(::SpeedySimulation) = "SpeedyWeather.Simulation"
 
@@ -18,7 +18,7 @@ function Oceananigans.TimeSteppers.time_step!(atmos::SpeedySimulation, Δt)
     nsteps = ceil(Int, Δt / Δt_atmos)
 
     if (Δt / Δt_atmos) % 1 != 0
-        @warn "ClimaOcean only supports atmosphere timesteps that are integer divisors of the ESM timesteps"
+        @warn "NumericalEarth only supports atmosphere timesteps that are integer divisors of the ESM timesteps"
     end
 
     for _ in 1:nsteps
@@ -40,7 +40,7 @@ boundary_layer_height(atmos::SpeedySimulation) = 600
 
 # This is a _hack_!! The parameters should be consistent with what is specified in SpeedyWeather
 thermodynamics_parameters(atmos::SpeedySimulation) =
-    ClimaOcean.Atmospheres.AtmosphereThermodynamicsParameters(Float32)
+    NumericalEarth.Atmospheres.AtmosphereThermodynamicsParameters(Float32)
 
 function initialize_atmospheric_state!(simulation::SpeedyWeather.Simulation)
     progn, diagn, model  = SpeedyWeather.unpack(simulation)

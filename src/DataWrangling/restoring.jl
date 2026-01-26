@@ -10,7 +10,7 @@ using NCDatasets
 
 using Dates: Second
 
-import ClimaOcean: stateindex
+import NumericalEarth: stateindex
 import Oceananigans.Forcings: materialize_forcing
 
 # Variable names for restorable data
@@ -18,7 +18,7 @@ struct Temperature end
 struct Salinity end
 struct UVelocity end
 struct VVelocity end
-# Add ClimaOceanBiogeochemistry fields
+# Add NumericalEarthBiogeochemistry fields
 struct DissolvedInorganicCarbon end
 struct Alkalinity end
 struct Nitrate end
