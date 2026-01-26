@@ -3,6 +3,7 @@ include("runtests_setup.jl")
 using Test
 using NumericalEarth
 using Oceananigans
+using PythonCall, CondaPkg
 
 @testset "Veros ocean model interface" begin
     # Test that the Veros extension is available
