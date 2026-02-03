@@ -2,7 +2,7 @@ using StaticArrays
 using Thermodynamics
 using OffsetArrays
 
-using ..OceanSeaIceModels: reference_density,
+using ..EarthSystemModels: reference_density,
                            heat_capacity,
                            sea_ice_concentration,
                            sea_ice_thickness,

@@ -1,7 +1,7 @@
-module OceanSeaIceModels
+module EarthSystemModels
 
 export
-    OceanSeaIceModel,
+    EarthSystemModel,
     SimilarityTheoryFluxes,
     CoefficientBasedFluxes,
     FreezingLimitedOceanTemperature,
@@ -63,8 +63,8 @@ include("InterfaceComputations/InterfaceComputations.jl")
 
 using .InterfaceComputations
 
-include("ocean_sea_ice_model.jl")
-include("time_step_ocean_sea_ice_model.jl")
+include("earth_system_model.jl")
+include("time_step_earth_system_model.jl")
 
 #####
 #####  Fallbacks for no-interface models
@@ -77,10 +77,10 @@ const NoOceanInterface  = ComponentInterfaces{<:Nothing, <:AtmosphereInterface, 
 const NoAtmosInterface  = ComponentInterfaces{<:Nothing, <:Nothing, <:SeaIceOceanInterface}
 const NoInterface       = ComponentInterfaces{<:Nothing, <:Nothing, <:Nothing}
 
-const NoSeaIceInterfaceModel = OceanSeaIceModel{I, A, O, <:NoSeaIceInterface} where {I, A, O}
-const NoAtmosInterfaceModel  = OceanSeaIceModel{I, A, O, <:NoAtmosInterface}  where {I, A, O}
-const NoOceanInterfaceModel  = OceanSeaIceModel{I, A, O, <:NoOceanInterface}  where {I, A, O}
-const NoInterfaceModel       = OceanSeaIceModel{I, A, O, <:NoInterface}  where {I, A, O}
+const NoSeaIceInterfaceModel = EarthSystemModel{I, A, O, <:NoSeaIceInterface} where {I, A, O}
+const NoAtmosInterfaceModel  = EarthSystemModel{I, A, O, <:NoAtmosInterface}  where {I, A, O}
+const NoOceanInterfaceModel  = EarthSystemModel{I, A, O, <:NoOceanInterface}  where {I, A, O}
+const NoInterfaceModel       = EarthSystemModel{I, A, O, <:NoInterface}  where {I, A, O}
 
 InterfaceComputations.compute_atmosphere_sea_ice_fluxes!(::NoSeaIceInterfaceModel) = nothing
 InterfaceComputations.compute_sea_ice_ocean_fluxes!(::NoSeaIceInterfaceModel) = nothing

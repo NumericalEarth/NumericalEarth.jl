@@ -4,7 +4,7 @@ using Reactant
 using Oceananigans.Architectures: ReactantState
 using Oceananigans.DistributedComputations: Distributed
 
-using NumericalEarth: OceanSeaIceModel
+using NumericalEarth: EarthSystemModel
 
 import Oceananigans
 import Oceananigans.Models: initialization_update_state!
@@ -14,8 +14,8 @@ const OceananigansReactantExt = Base.get_extension(
 )
 
 const ReactantOSIM{I, A, O, F, C} = Union{
-    OceanSeaIceModel{I, A, O, F, C, <:ReactantState},
-    OceanSeaIceModel{I, A, O, F, C, <:Distributed{ReactantState}},
+    EarthSystemModel{I, A, O, F, C, <:ReactantState},
+    EarthSystemModel{I, A, O, F, C, <:Distributed{ReactantState}},
 }
 
 initialization_update_state!(model::ReactantOSIM) = nothing

@@ -18,7 +18,7 @@ import Oceananigans.Models: update_model_field_time_series!
 import Oceananigans.TimeSteppers: time_step!, update_state!, reset!, tick!
 import Oceananigans.Simulations: timestepper
 
-import NumericalEarth.OceanSeaIceModels: reference_density, heat_capacity
+import NumericalEarth.EarthSystemModels: reference_density, heat_capacity
 
 #####
 ##### A Data structure that holds flux statistics
@@ -197,7 +197,7 @@ atmosphere = JRA55PrescribedAtmosphere(arch; backend=JRA55NetCDFBackend(1000))
 ##### A prescribed earth...
 #####
 
-earth_model = OceanSeaIceModel(ocean, nothing; atmosphere, radiation = Radiation(ocean_emissivity=0, ocean_albedo=1))
+earth_model = EarthSystemModel(ocean, nothing; atmosphere, radiation = Radiation(ocean_emissivity=0, ocean_albedo=1))
 earth = Simulation(earth_model, Δt=3hours, stop_time=365days)
 
 wall_time = Ref(time_ns())

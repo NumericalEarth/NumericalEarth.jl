@@ -82,7 +82,7 @@ steps:
       set -euo pipefail
 
       case "{{ matrix.case }}" in
-        "🧊 OceanSeaIceModel") export TEST_GROUP="ocean_sea_ice_model" ;;
+        "🌍 EarthSystemModel") export TEST_GROUP="earth_system_model" ;;
         *) echo "Unknown GPU(10G) matrix case: {{ matrix.case }}"; exit 2 ;;
       esac
 
@@ -96,7 +96,7 @@ steps:
     matrix:
       setup:
         case:
-          - "🧊 OceanSeaIceModel"
+          - "🌍 EarthSystemModel"
 
   - label: "{{ matrix.case }} GPU tests (32G)"
     key: "gpu_tests_32g"

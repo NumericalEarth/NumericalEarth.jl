@@ -66,7 +66,7 @@ pages = [
     "Examples" => examples_pages,
 
     "Developers" => [
-        "OceanSeaIceModel interface" => "literated/slab_ocean.md",
+        "EarthSystemModel interface" => "literated/slab_ocean.md",
         ],
 
     "Vertical grids" => "vertical_grids.md",

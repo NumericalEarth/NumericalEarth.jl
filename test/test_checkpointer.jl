@@ -3,10 +3,10 @@ include("runtests_setup.jl")
 using Glob
 using Oceananigans.OutputWriters: Checkpointer
 
-@testset "OceanSeaIceModel checkpointing" begin
+@testset "EarthSystemModel checkpointing" begin
     for arch in test_architectures
         A = typeof(arch)
-        @info "Testing OceanSeaIceModel checkpointing on $A"
+        @info "Testing EarthSystemModel checkpointing on $A"
 
         # Create a minimal grid
         grid = LatitudeLongitudeGrid(arch;
@@ -30,7 +30,7 @@ using Oceananigans.OutputWriters: Checkpointer
             backend = JRA55NetCDFBackend(4)
             atmosphere = JRA55PrescribedAtmosphere(arch; backend)
 
-            return OceanSeaIceModel(ocean, sea_ice; atmosphere)
+            return EarthSystemModel(ocean, sea_ice; atmosphere)
         end
 
         # Reference run: 3 iterations, then continue to 6

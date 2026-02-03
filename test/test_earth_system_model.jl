@@ -2,7 +2,7 @@ include("runtests_setup.jl")
 
 using CUDA
 using Oceananigans.OrthogonalSphericalShellGrids
-using NumericalEarth.OceanSeaIceModels: above_freezing_ocean_temperature!
+using NumericalEarth.EarthSystemModels: above_freezing_ocean_temperature!
 using ClimaSeaIce.SeaIceThermodynamics: melting_temperature
 using ClimaSeaIce.SeaIceDynamics
 using ClimaSeaIce.Rheologies
@@ -38,7 +38,7 @@ using ClimaSeaIce.Rheologies
             backend = JRA55NetCDFBackend(4)
             atmosphere = JRA55PrescribedAtmosphere(arch; backend)
             radiation = Radiation(arch)
-            coupled_model = OceanSeaIceModel(ocean; atmosphere, radiation)
+            coupled_model = EarthSystemModel(ocean; atmosphere, radiation)
             Δt = 60
             for n = 1:3
                 time_step!(coupled_model, Δt)
@@ -72,7 +72,7 @@ using ClimaSeaIce.Rheologies
 
             # Fluxes are computed when the model is constructed, so we just test that this works.
             @test begin
-                coupled_model = OceanSeaIceModel(ocean; atmosphere, radiation)
+                coupled_model = EarthSystemModel(ocean; atmosphere, radiation)
                 time_step!(coupled_model, 1)
                 true
             end
@@ -98,7 +98,7 @@ using ClimaSeaIce.Rheologies
             # Fluxes are computed when the model is constructed, so we just test that this works.
             # And that we can time step with sea ice
             @test begin
-                coupled_model = OceanSeaIceModel(ocean, sea_ice; atmosphere, radiation)
+                coupled_model = EarthSystemModel(ocean, sea_ice; atmosphere, radiation)
                 time_step!(coupled_model, 1)
                 true
             end

@@ -1,9 +1,9 @@
 using Printf
 using Oceananigans.Operators: ℑxᶠᵃᵃ, ℑyᵃᶠᵃ
 using Oceananigans.Forcings: MultipleForcings
-using NumericalEarth.OceanSeaIceModels: OceanSeaIceModel, NoOceanInterfaceModel, NoInterfaceModel
+using NumericalEarth.EarthSystemModels: EarthSystemModel, NoOceanInterfaceModel, NoInterfaceModel
 
-using NumericalEarth.OceanSeaIceModels.InterfaceComputations: interface_kernel_parameters, 
+using NumericalEarth.EarthSystemModels.InterfaceComputations: interface_kernel_parameters, 
                                                           computed_fluxes, 
                                                           get_possibly_zero_flux, 
                                                           sea_ice_concentration,
@@ -45,7 +45,7 @@ function update_net_ocean_fluxes!(coupled_model, ocean_model, grid)
     freshwater_flux = atmosphere_fields.Mp.data
 
     ice_concentration = sea_ice_concentration(sea_ice)
-    ocean_salinity = OceanSeaIceModels.ocean_salinity(ocean_model)
+    ocean_salinity = EarthSystemModels.ocean_salinity(ocean_model)
     atmos_ocean_properties = coupled_model.interfaces.atmosphere_ocean_interface.properties
     ocean_properties = coupled_model.interfaces.ocean_properties
     kernel_parameters = interface_kernel_parameters(grid)

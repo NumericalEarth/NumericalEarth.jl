@@ -102,8 +102,8 @@ if test_group == :bathymetry || test_group == :all
     include("test_bathymetry.jl")
 end
 
-if test_group == :ocean_sea_ice_model || test_group == :all
-    include("test_ocean_sea_ice_model.jl")
+if test_group == :earth_system_model || test_group == :all
+    include("test_earth_system_model.jl")
     include("test_diagnostics.jl")
 end
 

@@ -40,8 +40,8 @@ Tᵢ(z) = T₀ + dTdz * z
 set!(ocean.model, T=Tᵢ, S=S₀)
 
 atmosphere_ocean_flux_formulation = SimilarityTheoryFluxes(stability_functions=nothing)
-interfaces = NumericalEarth.OceanSeaIceModels.ComponentInterfaces(atmosphere, ocean; atmosphere_ocean_flux_formulation)
-model = OceanSeaIceModel(ocean; atmosphere, radiation)
+interfaces = NumericalEarth.EarthSystemModels.ComponentInterfaces(atmosphere, ocean; atmosphere_ocean_flux_formulation)
+model = EarthSystemModel(ocean; atmosphere, radiation)
 
 Qv  = model.interfaces.atmosphere_ocean_interface.fluxes.latent_heat
 Qc  = model.interfaces.atmosphere_ocean_interface.fluxes.sensible_heat

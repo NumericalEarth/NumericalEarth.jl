@@ -8,7 +8,7 @@ module NumericalEarth
 end NumericalEarth
 
 export
-    OceanSeaIceModel,
+    EarthSystemModel,
     FreezingLimitedOceanTemperature,
     Radiation,
     LatitudeDependentAlbedo,
@@ -84,7 +84,7 @@ end
 ##### Source code
 #####
 
-include("OceanSeaIceModels/OceanSeaIceModels.jl")
+include("EarthSystemModels/EarthSystemModels.jl")
 include("Oceans/Oceans.jl")
 include("Atmospheres/Atmospheres.jl")
 include("SeaIces/SeaIces.jl")
@@ -97,12 +97,12 @@ using .DataWrangling
 using .DataWrangling: ETOPO, ECCO, GLORYS, EN4, JRA55
 using .Bathymetry
 using .InitialConditions
-using .OceanSeaIceModels
+using .EarthSystemModels
 using .Atmospheres
 using .Oceans
 using .SeaIces
 
-using NumericalEarth.OceanSeaIceModels: ComponentInterfaces, MomentumRoughnessLength, ScalarRoughnessLength
+using NumericalEarth.EarthSystemModels: ComponentInterfaces, MomentumRoughnessLength, ScalarRoughnessLength
 using NumericalEarth.DataWrangling.ETOPO
 using NumericalEarth.DataWrangling.ECCO
 using NumericalEarth.DataWrangling.GLORYS
@@ -120,7 +120,7 @@ using PrecompileTools: @setup_workload, @compile_workload
         grid = Oceananigans.OrthogonalSphericalShellGrids.TripolarGrid(CPU(); size=(Nx, Ny, Nz), halo=(7, 7, 7), z)
         grid = ImmersedBoundaryGrid(grid, GridFittedBottom((x, y) -> -5000))
         # ocean = ocean_simulation(grid)
-        # model = OceanSeaIceModel(ocean)
+        # model = EarthSystemModel(ocean)
     end
 end
 
