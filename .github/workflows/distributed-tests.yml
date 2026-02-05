@@ -1,0 +1,49 @@
+name: Distributed Tests
+
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/distributed-tests.yml'
+      - 'ext/**'
+      - 'src/**'
+      - 'test/**'
+      - 'Project.toml'
+  push:
+    branches:
+      - main
+    tags: '*'
+    paths:
+      - '.github/workflows/distributed-tests.yml'
+      - 'ext/**'
+      - 'src/**'
+      - 'test/**'
+      - 'Project.toml'
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ startsWith(github.ref, 'refs/pull/') }}
+
+env:
+  OPENBLAS_NUM_THREADS: 1
+  JULIA_NUM_PRECOMPILE_TASKS: 8
+
+jobs:
+  distributed_tests:
+    name: Distributed MPI tests (4 ranks)
+    runs-on: self-hosted
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v6
+      - uses: julia-actions/setup-julia@v2
+        with:
+          version: '1.12.4'
+      - name: Instantiate and precompile
+        run: |
+          julia --project -e 'using Pkg; Pkg.instantiate(verbose=true)'
+          julia --project -e 'using Pkg; Pkg.precompile(strict=true)'
+      - name: Install mpiexecjl
+        run: julia --project -e 'using MPI; MPI.install_mpiexecjl(destdir=".")'
+      - name: Run distributed tests
+        env:
+          TEST_GROUP: distributed
+        run: ./mpiexecjl -np 4 julia --project -e 'using Pkg; Pkg.test()'

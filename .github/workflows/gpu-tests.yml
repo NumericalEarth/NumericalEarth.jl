@@ -1,0 +1,84 @@
+name: GPU Tests
+
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/gpu-tests.yml'
+      - 'ext/**'
+      - 'src/**'
+      - 'test/**'
+      - 'Project.toml'
+  push:
+    branches:
+      - main
+    tags: '*'
+    paths:
+      - '.github/workflows/gpu-tests.yml'
+      - 'ext/**'
+      - 'src/**'
+      - 'test/**'
+      - 'Project.toml'
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ startsWith(github.ref, 'refs/pull/') }}
+
+env:
+  OPENBLAS_NUM_THREADS: 1
+  JULIA_NUM_PRECOMPILE_TASKS: 8
+  CUDA_VISIBLE_DEVICES: "0"
+  ECCO_USERNAME: ${{ secrets.ECCO_USERNAME }}
+  ECCO_WEBDAV_PASSWORD: ${{ secrets.ECCO_WEBDAV_PASSWORD }}
+  COPERNICUS_USERNAME: ${{ secrets.COPERNICUS_SERVICE_USERNAME }}
+  COPERNICUS_PASSWORD: ${{ secrets.COPERNICUS_USERNAME_PASSWORD }}
+
+jobs:
+  init:
+    name: Initialize GPU environment
+    runs-on: self-hosted
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v6
+      - uses: julia-actions/setup-julia@v2
+        with:
+          version: '1.12.4'
+      - name: Instantiate and precompile
+        run: |
+          julia --project -e 'using Pkg; Pkg.instantiate(verbose=true)'
+          julia --project -e 'using Pkg; Pkg.precompile(strict=true)'
+          julia --project -e 'using Pkg; Pkg.status()'
+      - name: Precompile CUDA runtime
+        run: julia --project -e 'using CUDA; CUDA.precompile_runtime()'
+      - name: Download test data
+        env:
+          TEST_GROUP: init
+          GPU_TEST: "true"
+        run: julia --project -e 'using Pkg; Pkg.test()'
+
+  gpu_tests:
+    name: ${{ matrix.test_group }} (GPU)
+    needs: init
+    runs-on: self-hosted
+    timeout-minutes: 120
+    strategy:
+      fail-fast: false
+      matrix:
+        test_group:
+          - ecco2_monthly
+          - ecco2_daily
+          - ecco4_en4
+          - fluxes
+          - bathymetry
+          - checkpointing
+          - earth_system_model
+          - JRA55
+    steps:
+      - uses: actions/checkout@v6
+      - uses: julia-actions/setup-julia@v2
+        with:
+          version: '1.12.4'
+      - name: Run ${{ matrix.test_group }} tests
+        env:
+          TEST_GROUP: ${{ matrix.test_group }}
+          GPU_TEST: "true"
+        run: julia --project -e 'using Pkg; Pkg.test()'
