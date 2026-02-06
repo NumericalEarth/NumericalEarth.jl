@@ -96,7 +96,7 @@ radiation  = Radiation()
 ##### Arctic coupled model
 #####
 
-arctic = EarthSystemModel(ocean, sea_ice; atmosphere, radiation)
+arctic = OceanSeaIceModel(ocean, sea_ice; atmosphere, radiation)
 arctic = Simulation(arctic, Δt=5minutes, stop_time=365days)
 
 # Sea-ice variables

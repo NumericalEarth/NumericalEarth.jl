@@ -328,16 +328,16 @@ and a "coefficient model" with a constant drag coefficient ``C_D = 2 × 10^{-3}`
 ```@example interface_fluxes
 neutral_similarity_fluxes = SimilarityTheoryFluxes(stability_functions=nothing)
 interfaces = ComponentInterfaces(atmosphere, ocean; atmosphere_ocean_fluxes=neutral_similarity_fluxes)
-default_model = EarthSystemModel(ocean; atmosphere, interfaces)
+default_model = OceanOnlyModel(ocean; atmosphere, interfaces)
 
 momentum_roughness_length = MomentumRoughnessLength(wave_formulation=0.04)
 neutral_similarity_fluxes = SimilarityTheoryFluxes(stability_functions=nothing; momentum_roughness_length)
 interfaces = ComponentInterfaces(atmosphere, ocean; atmosphere_ocean_fluxes=neutral_similarity_fluxes)
-increased_roughness_model = EarthSystemModel(ocean; atmosphere, interfaces)
+increased_roughness_model = OceanOnlyModel(ocean; atmosphere, interfaces)
 
 coefficient_fluxes = CoefficientBasedFluxes(drag_coefficient=2e-3)
 interfaces = ComponentInterfaces(atmosphere, ocean; atmosphere_ocean_fluxes=coefficient_fluxes)
-coefficient_model = EarthSystemModel(ocean; atmosphere, interfaces)
+coefficient_model = OceanOnlyModel(ocean; atmosphere, interfaces)
 ```
 
 Note that `EarthSystemModel` computes fluxes upon instantiation, so after constructing

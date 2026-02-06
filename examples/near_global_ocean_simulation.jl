@@ -112,7 +112,7 @@ atmosphere = JRA55PrescribedAtmosphere(arch; backend = JRA55NetCDFBackend(41),
 # Next we assemble the ocean, atmosphere, and radiation
 # into a coupled model,
 
-coupled_model = EarthSystemModel(ocean; atmosphere, radiation)
+coupled_model = OceanOnlyModel(ocean; atmosphere, radiation)
 
 # We then create a coupled simulation.
 

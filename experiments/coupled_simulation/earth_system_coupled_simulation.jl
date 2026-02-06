@@ -86,7 +86,7 @@ set!(ocean.model, T=temperature, S=salinity)
 set!(sea_ice.model.ice_thickness,     ice_thickness,     inpainting=NearestNeighborInpainting(1))
 set!(sea_ice.model.ice_concentration, ice_concentration, inpainting=NearestNeighborInpainting(1))
 
-earth_model = EarthSystemModel(ocean, sea_ice; atmosphere, radiation)
+earth_model = OceanSeaIceModel(ocean, sea_ice; atmosphere, radiation)
 earth = Simulation(earth_model; Δt=30minutes, stop_iteration=10, stop_time=30days)
 
 u, v, _ = ocean.model.velocities

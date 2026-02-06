@@ -61,7 +61,7 @@ set!(ocean.model,
 
 # Build and run an EarthSystemModel (with no sea ice component) forced by JRA55 reanalysis
 atmosphere = NumericalEarth.JRA55PrescribedAtmosphere(arch)
-coupled_model = NumericalEarth.EarthSystemModel(ocean; atmosphere)
+coupled_model = NumericalEarth.OceanOnlyModel(ocean; atmosphere)
 simulation = Simulation(coupled_model, Δt=20minutes, stop_time=30days)
 run!(simulation)
 ```

@@ -73,7 +73,7 @@ set!(ocean.model,
 
 # Couple the ocean to JRA55 atmospheric forcing
 atmosphere = NumericalEarth.JRA55PrescribedAtmosphere(arch)
-coupled_model = NumericalEarth.EarthSystemModel(ocean; atmosphere)
+coupled_model = NumericalEarth.OceanOnlyModel(ocean; atmosphere)
 simulation = Simulation(coupled_model, Δt=20minutes, stop_time=30days)
 run!(simulation)
 ```

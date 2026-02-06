@@ -80,21 +80,24 @@ heat_capacity(unsupported) =
     throw(ArgumentError("Cannot deduce the heat capacity from $(typeof(unsupported))"))
 
 """
-    EarthSystemModel(ocean, sea_ice=FreezingLimitedOceanTemperature(eltype(ocean.model));
-                     atmosphere = nothing,
-                     radiation = Radiation(architecture(ocean.model)),
-                     clock = deepcopy(ocean.model.clock),
+    EarthSystemModel(atmosphere, ocean, sea_ice;
+                     radiation = Radiation(),
+                     clock = Clock{Float64}(time=0),
                      ocean_reference_density = reference_density(ocean),
                      ocean_heat_capacity = heat_capacity(ocean),
                      sea_ice_reference_density = reference_density(sea_ice),
                      sea_ice_heat_capacity = heat_capacity(sea_ice),
                      interfaces = nothing)
 
-Construct a coupled ocean-sea ice model that simulates the interaction between ocean and sea ice components.
+Construct a coupled earth system model with an atmosphere, ocean, and sea ice component.
+For simpler configurations, see [`OceanOnlyModel`](@ref) and [`OceanSeaIceModel`](@ref).
 
 Arguments
 ==========
 
+- `atmosphere`: A representation of a possibly time-dependent atmospheric state.
+                For a prognostic atmosphere, use `atmosphere_simulation`. For prescribed
+                atmospheric forcing, use `JRA55PrescribedAtmosphere` or `PrescribedAtmosphere`.
 - `ocean`: A representation of a possibly time-dependent ocean state. Currently, only `Oceananigans.Simulation`s
            of `Oceananigans.HydrostaticFreeSurfaceModel` are tested.
 - `sea_ice`: A representation of a possibly time-dependent sea ice state.
@@ -105,13 +108,12 @@ Arguments
 Keyword Arguments
 ==================
 
-- `atmosphere`: A representation of a possibly time-dependent atmospheric state. Default: `nothing`.
 - `radiation`: Radiation component used to compute surface fluxes at the bottom of the atmosphere.
 - `clock`: Keeps track of time.
-- `ocean_reference_density`: Reference density for the ocean. Defaults to value from ocean model
-- `ocean_heat_capacity`: Heat capacity for the ocean. Defaults to value from ocean model
-- `sea_ice_reference_density`: Reference density for sea ice. Defaults to value from sea ice model
-- `sea_ice_heat_capacity`: Heat capacity for sea ice. Defaults to value from sea ice model
+- `ocean_reference_density`: Reference density for the ocean. Defaults to value from ocean model.
+- `ocean_heat_capacity`: Heat capacity for the ocean. Defaults to value from ocean model.
+- `sea_ice_reference_density`: Reference density for sea ice. Defaults to value from sea ice model.
+- `sea_ice_heat_capacity`: Heat capacity for sea ice. Defaults to value from sea ice model.
 - `interfaces`: Component interfaces for coupling. Defaults to `nothing` and will be constructed automatically.
   To customize the sea ice-ocean heat flux formulation, create interfaces manually using `ComponentInterfaces`.
 
@@ -140,7 +142,7 @@ stability_functions = NumericalEarth.EarthSystemModels.atmosphere_ocean_stabilit
 
 atmosphere_ocean_fluxes = SimilarityTheoryFluxes(; stability_functions)
 interfaces = NumericalEarth.EarthSystemModels.ComponentInterfaces(nothing, ocean; atmosphere_ocean_fluxes)
-model = EarthSystemModel(ocean; interfaces)
+model = OceanOnlyModel(ocean; interfaces)
 
 # output
 EarthSystemModel{CPU}(time = 0 seconds, iteration = 0)
@@ -157,8 +159,7 @@ The available stability function options include:
 - Custom stability functions can be created by defining functions of the "stability parameter"
   (the flux Richardson number), `ζ`.
 """
-function EarthSystemModel(ocean, sea_ice=default_sea_ice();
-                          atmosphere = nothing,
+function EarthSystemModel(atmosphere, ocean, sea_ice;
                           radiation = Radiation(),
                           clock = Clock{Float64}(time=0),
                           ocean_reference_density = reference_density(ocean),
@@ -212,6 +213,65 @@ function EarthSystemModel(ocean, sea_ice=default_sea_ice();
 
     return earth_system_model
 end
+
+"""
+    OceanOnlyModel(ocean; atmosphere=nothing, radiation=Radiation(), kw...)
+
+Construct an ocean-only model without a sea ice component.
+This is a convenience constructor for [`EarthSystemModel`](@ref) that sets `sea_ice`
+to `FreezingLimitedOceanTemperature` (a simple freezing limiter that does not evolve sea ice variables).
+
+The `atmosphere` keyword can be used to specify a prescribed atmospheric forcing
+(e.g., `JRA55PrescribedAtmosphere`). All other keyword arguments are forwarded
+to `EarthSystemModel`.
+
+```jldoctest
+using NumericalEarth
+using Oceananigans
+
+grid = RectilinearGrid(size=10, z=(-100, 0), topology=(Flat, Flat, Bounded))
+ocean = ocean_simulation(grid, timestepper = :QuasiAdamsBashforth2)
+model = OceanOnlyModel(ocean)
+
+# output
+EarthSystemModel{CPU}(time = 0 seconds, iteration = 0)
+├── ocean: HydrostaticFreeSurfaceModel{CPU, RectilinearGrid}(time = 0 seconds, iteration = 0)
+├── atmosphere: Nothing
+├── sea_ice: FreezingLimitedOceanTemperature{ClimaSeaIce.SeaIceThermodynamics.LinearLiquidus{Float64}}
+└── interfaces: ComponentInterfaces
+```
+"""
+OceanOnlyModel(ocean; atmosphere = nothing, kw...) = EarthSystemModel(atmosphere, ocean, default_sea_ice(); kw...)
+
+"""
+    OceanSeaIceModel(ocean, sea_ice; atmosphere=nothing, radiation=Radiation(), kw...)
+
+Construct a coupled ocean--sea ice model.
+This is a convenience constructor for [`EarthSystemModel`](@ref) with an explicit sea ice component
+and an optional prescribed atmosphere.
+
+The `atmosphere` keyword can be used to specify a prescribed atmospheric forcing
+(e.g., `JRA55PrescribedAtmosphere`). All other keyword arguments are forwarded
+to `EarthSystemModel`.
+
+```jldoctest
+using NumericalEarth
+using Oceananigans
+
+grid = RectilinearGrid(size=10, z=(-100, 0), topology=(Flat, Flat, Bounded))
+ocean = ocean_simulation(grid, timestepper = :QuasiAdamsBashforth2)
+sea_ice = FreezingLimitedOceanTemperature()
+model = OceanSeaIceModel(ocean, sea_ice)
+
+# output
+EarthSystemModel{CPU}(time = 0 seconds, iteration = 0)
+├── ocean: HydrostaticFreeSurfaceModel{CPU, RectilinearGrid}(time = 0 seconds, iteration = 0)
+├── atmosphere: Nothing
+├── sea_ice: FreezingLimitedOceanTemperature{ClimaSeaIce.SeaIceThermodynamics.LinearLiquidus{Float64}}
+└── interfaces: ComponentInterfaces
+```
+"""
+OceanSeaIceModel(ocean, sea_ice; atmosphere = nothing, kw...) = EarthSystemModel(atmosphere, ocean, sea_ice; kw...)
 
 time(coupled_model::EarthSystemModel) = coupled_model.clock.time
 

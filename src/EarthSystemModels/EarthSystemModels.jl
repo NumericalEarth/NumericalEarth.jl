@@ -2,6 +2,8 @@ module EarthSystemModels
 
 export
     EarthSystemModel,
+    OceanOnlyModel,
+    OceanSeaIceModel,
     SimilarityTheoryFluxes,
     CoefficientBasedFluxes,
     FreezingLimitedOceanTemperature,

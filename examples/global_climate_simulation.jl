@@ -101,7 +101,7 @@ nothing #hide
 # Since radiation is idealized in this example, we set the emissivities to zero.
 
 radiation = Radiation(ocean_emissivity=0.0, sea_ice_emissivity=0.0)
-earth_model = EarthSystemModel(ocean, sea_ice; atmosphere, radiation)
+earth_model = EarthSystemModel(atmosphere, ocean, sea_ice; radiation)
 
 # ## Building and running the simulation
 #

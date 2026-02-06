@@ -106,7 +106,7 @@ atmosphere = JRA55PrescribedAtmosphere(arch; backend=JRA55NetCDFBackend(80),
 
 # With Runge-Kutta 3rd order time-stepping we can safely use a timestep of 20 minutes.
 
-coupled_model = EarthSystemModel(ocean, sea_ice; atmosphere, radiation)
+coupled_model = OceanSeaIceModel(ocean, sea_ice; atmosphere, radiation)
 simulation = Simulation(coupled_model; Δt=20minutes, stop_time=365days)
 
 # ### A progress messenger

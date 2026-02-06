@@ -197,7 +197,7 @@ atmosphere = JRA55PrescribedAtmosphere(arch; backend=JRA55NetCDFBackend(1000))
 ##### A prescribed earth...
 #####
 
-earth_model = EarthSystemModel(ocean, nothing; atmosphere, radiation = Radiation(ocean_emissivity=0, ocean_albedo=1))
+earth_model = OceanOnlyModel(ocean; atmosphere, radiation = Radiation(ocean_emissivity=0, ocean_albedo=1))
 earth = Simulation(earth_model, Δt=3hours, stop_time=365days)
 
 wall_time = Ref(time_ns())

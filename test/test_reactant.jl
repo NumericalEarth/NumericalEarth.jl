@@ -34,7 +34,7 @@ end
     atmosphere  = PrescribedAtmosphere(atmos_grid, atmos_times)
 
     radiation = Radiation(arch)
-    coupled_model = EarthSystemModel(ocean; atmosphere, radiation)
+    coupled_model = OceanOnlyModel(ocean; atmosphere, radiation)
 
     # Test that Reactant does _not_ initialize in the constructor for EarthSystemModel
     exchanger = coupled_model.interfaces.exchanger.atmosphere

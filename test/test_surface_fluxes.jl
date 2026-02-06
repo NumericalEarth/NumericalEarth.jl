@@ -98,7 +98,7 @@ end
                 fill!(parent(ocean.model.tracers.T), Tₒ)
 
                 # Compute the turbulent fluxes (neglecting radiation)
-                coupled_model    = EarthSystemModel(ocean; atmosphere, interfaces)
+                coupled_model    = OceanOnlyModel(ocean; atmosphere, interfaces)
                 turbulent_fluxes = coupled_model.interfaces.atmosphere_ocean_interface.fluxes
 
                 # Make sure all fluxes are (almost) zero!
@@ -135,7 +135,7 @@ end
             # mid-latitude ocean conditions
             set!(ocean.model, u = 0, v = 0, T = 15, S = 30)
 
-            coupled_model = EarthSystemModel(ocean; atmosphere, interfaces)
+            coupled_model = OceanOnlyModel(ocean; atmosphere, interfaces)
 
             # Now manually compute the fluxes:
             Tₒ = ocean.model.tracers.T[1, 1, 1] + celsius_to_kelvin
@@ -205,7 +205,7 @@ end
             # Always cooling!
             fill!(atmosphere.tracers.T, 273.15 - 20)
 
-            coupled_model = EarthSystemModel(ocean, sea_ice; atmosphere, radiation)
+            coupled_model = OceanSeaIceModel(ocean, sea_ice; atmosphere, radiation)
 
             # Test that the temperature has snapped up to freezing
             @test minimum(ocean.model.tracers.T) == 0
@@ -245,7 +245,7 @@ end
         fill!(ocean.model.tracers.T,   -2.0)
 
         # Test that we populate the sea-ice ocean stress
-        earth = EarthSystemModel(ocean, sea_ice; atmosphere, radiation=Radiation())
+        earth = OceanSeaIceModel(ocean, sea_ice; atmosphere, radiation=Radiation())
 
         τx = earth.interfaces.sea_ice_ocean_interface.fluxes.x_momentum
         τy = earth.interfaces.sea_ice_ocean_interface.fluxes.y_momentum
@@ -289,7 +289,7 @@ end
         radiation  = Radiation(ocean_albedo=0.1, ocean_emissivity=1.0)
         sea_ice    = nothing
 
-        coupled_model = EarthSystemModel(ocean, sea_ice; atmosphere, radiation)
+        coupled_model = OceanSeaIceModel(ocean, sea_ice; atmosphere, radiation)
         times = 0:1hours:1days
         Ntimes = length(times)
 
