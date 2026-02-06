@@ -1,6 +1,8 @@
 name: Documentation
 
 on:
+  pull_request:
+    types: [labeled]
   push:
     branches:
       - main
@@ -19,6 +21,13 @@ jobs:
     name: Build documentation
     runs-on: [self-hosted, tartarus, gpu-3]
     timeout-minutes: 1440
+    # Only run on push to main/tags, or if the PR has the 'build-docs' label
+    if: |
+      github.event_name == 'push' || 
+      (github.event_name == 'pull_request' && contains(github.event.pull_request.labels.*.name, 'build-docs'))
+    permissions:
+      contents: write  # Required for deploying docs to gh-pages
+      pull-requests: read  # Required for reading PR labels
     steps:
       - uses: actions/checkout@v6
       - uses: julia-actions/setup-julia@v2
