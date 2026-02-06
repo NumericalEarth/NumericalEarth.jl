@@ -119,12 +119,8 @@ for file in files
     rm(file)
 end
 
-ci_build = get(ENV, "CI", nothing) == "true"
-
-if ci_build
-    deploydocs(repo = "github.com/NumericalEarth/NumericalEarthDocumentation.git",
-               versions = ["stable" => "v^", "dev" => "dev", "v#.#.#"],
-               forcepush = true,
-               devbranch = "main",
-               push_preview = true)
-end
+deploydocs(repo = "github.com/NumericalEarth/NumericalEarthDocumentation.git",
+           versions = ["stable" => "v^", "dev" => "dev", "v#.#.#" => "v#.#.#"],
+           forcepush = true,
+           devbranch = "main",
+           push_preview = true)
