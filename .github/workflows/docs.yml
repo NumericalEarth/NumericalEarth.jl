@@ -44,4 +44,4 @@ jobs:
           # Workaround for SSL verification errors with Downloads.jl
           # ref: https://github.com/JuliaLang/Downloads.jl/issues/97
           JULIA_SSL_NO_VERIFY: "**"
-        run: julia --project=docs/ docs/make.jl
+        run: julia --project=docs --color=yes docs/make.jl
