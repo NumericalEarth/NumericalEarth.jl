@@ -124,7 +124,7 @@ jobs:
         env:
           TEST_GROUP: init
           GPU_TEST: "true"
-        run: julia --project -e 'using Pkg; Pkg.test()'
+        run: julia --project --color=yes -e 'using Pkg; Pkg.test()'
 
   gpu_tests:
     name: ${{ matrix.test_group }} (GPU)
