@@ -156,7 +156,7 @@ jobs:
         env:
           TEST_GROUP: ${{ matrix.test_group }}
           GPU_TEST: "true"
-        run: julia --project -e 'using Pkg; Pkg.test()'
+        run: julia --project --color=yes -e 'using Pkg; Pkg.test()'
 
   #####
   ##### Specialized tests (GitHub-hosted runners)
