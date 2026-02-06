@@ -122,7 +122,6 @@ ci_build = get(ENV, "CI", nothing) == "true"
 
 if ci_build
     deploydocs(repo = "github.com/NumericalEarth/NumericalEarthDocumentation.git",
-               deploy_config = Documenter.Buildkite(),
                versions = ["stable" => "v^", "dev" => "dev", "v#.#.#"],
                forcepush = true,
                devbranch = "main",
