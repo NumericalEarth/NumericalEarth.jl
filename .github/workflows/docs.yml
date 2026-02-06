@@ -1,0 +1,50 @@
+name: Documentation
+
+on:
+  pull_request:
+    types: [labeled]
+  push:
+    branches:
+      - main
+    tags: '*'
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  JULIA_NUM_PRECOMPILE_TASKS: 8
+  JULIA_NUM_THREADS: 8
+
+jobs:
+  build_docs:
+    name: Build documentation
+    runs-on: [self-hosted, tartarus, gpu-3]
+    timeout-minutes: 1440
+    # Only run on push to main/tags, or if the PR has the 'build-docs' label
+    if: |
+      github.event_name == 'push' || 
+      (github.event_name == 'pull_request' && contains(github.event.pull_request.labels.*.name, 'build-docs'))
+    steps:
+      - uses: actions/checkout@v6
+      - uses: julia-actions/setup-julia@v2
+        with:
+          version: '1.12.4'
+      - name: Instantiate and precompile
+        shell: julia --project --color=yes {0}
+        run: |
+          using Pkg
+          Pkg.instantiate(verbose=true)
+          Pkg.precompile(strict=true)
+          
+          using CUDA
+          CUDA.precompile_runtime()
+      - name: Build documentation
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          DOCUMENTER_KEY: ${{ secrets.DOCUMENTER_KEY }}
+          JULIA_DEBUG: Documenter
+          # Workaround for SSL verification errors with Downloads.jl
+          # ref: https://github.com/JuliaLang/Downloads.jl/issues/97
+          JULIA_SSL_NO_VERIFY: "**"
+        run: julia --project=docs --color=yes docs/make.jl
