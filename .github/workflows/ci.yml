@@ -95,12 +95,12 @@ jobs:
           token: ${{ secrets.CODECOV_TOKEN }}
 
   #####
-  ##### GPU tests (self-hosted runner)
+  ##### GPU tests (self-hosted runner on Tartarus)
   #####
 
   gpu_init:
     name: Initialize GPU environment
-    runs-on: self-hosted
+    runs-on: [self-hosted, tartarus, gpu]
     timeout-minutes: 120
     env:
       OPENBLAS_NUM_THREADS: 1
@@ -129,7 +129,7 @@ jobs:
   gpu_tests:
     name: ${{ matrix.test_group }} (GPU)
     needs: gpu_init
-    runs-on: self-hosted
+    runs-on: [self-hosted, tartarus, gpu]
     timeout-minutes: 120
     strategy:
       fail-fast: false

@@ -18,7 +18,7 @@ env:
 jobs:
   build_docs:
     name: Build documentation
-    runs-on: self-hosted
+    runs-on: [self-hosted, tartarus, gpu]
     timeout-minutes: 1440
     steps:
       - uses: actions/checkout@v6
