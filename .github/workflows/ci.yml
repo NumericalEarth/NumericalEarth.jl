@@ -17,7 +17,7 @@ on:
       - 'ext/**'
       - 'src/**'
       - 'test/**'
-      - 'Project.toml'
+paths: *paths
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
