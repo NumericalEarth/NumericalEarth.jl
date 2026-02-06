@@ -262,4 +262,4 @@ jobs:
       - name: Run distributed tests
         env:
           TEST_GROUP: distributed
-        run: ./mpiexecjl -np 4 julia --project -e 'using Pkg; Pkg.test()'
+        run: ./mpiexecjl -np 4 julia --project --color=yes -e 'using Pkg; Pkg.test()'
