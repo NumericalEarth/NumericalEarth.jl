@@ -25,6 +25,9 @@ jobs:
     if: |
       github.event_name == 'push' || 
       (github.event_name == 'pull_request' && contains(github.event.pull_request.labels.*.name, 'build-docs'))
+    permissions:
+      contents: write  # Required for deploying docs to gh-pages
+      pull-requests: read  # Required for reading PR labels
     steps:
       - uses: actions/checkout@v6
       - uses: julia-actions/setup-julia@v2
