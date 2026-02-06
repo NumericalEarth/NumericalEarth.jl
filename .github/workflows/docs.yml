@@ -13,12 +13,11 @@ concurrency:
 env:
   JULIA_NUM_PRECOMPILE_TASKS: 8
   JULIA_NUM_THREADS: 8
-  CUDA_VISIBLE_DEVICES: "2,3"
 
 jobs:
   build_docs:
     name: Build documentation
-    runs-on: [self-hosted, tartarus, gpu]
+    runs-on: [self-hosted, tartarus-3]
     timeout-minutes: 1440
     steps:
       - uses: actions/checkout@v6
