@@ -2,7 +2,7 @@ name: Documentation
 
 on:
   pull_request:
-    types: [labeled]
+    types: [opened, reopened]
   push:
     branches:
       - main
