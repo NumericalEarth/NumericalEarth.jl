@@ -42,6 +42,8 @@ jobs:
           
           using CUDA
           CUDA.precompile_runtime()
+      - name: Instantiate docs folder
+        run: julia --project=docs --color=yes 'using Pkg; Pkg.instantiate(verbose=true)'
       - name: Build documentation
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
