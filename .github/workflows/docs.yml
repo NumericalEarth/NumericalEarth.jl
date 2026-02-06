@@ -9,6 +9,7 @@ on:
       - "src/**"
       - "Project.toml"
   push:
+    paths: *paths
     branches:
       - main
     tags: '*'
