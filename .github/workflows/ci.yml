@@ -29,9 +29,13 @@ env:
   COPERNICUS_USERNAME: ${{ secrets.COPERNICUS_SERVICE_USERNAME }}
   COPERNICUS_PASSWORD: ${{ secrets.COPERNICUS_USERNAME_PASSWORD }}
 
+#####
+##### CPU tests (GitHub-hosted runners)
+#####
+
 jobs:
   cpu_tests:
-    name: ${{ matrix.test_group }} - Julia ${{ matrix.version }} - ${{ matrix.os }}
+    name: ${{ matrix.test_group }} (CPU) - Julia ${{ matrix.version }}
     runs-on: ${{ matrix.os }}
     timeout-minutes: 120
     strategy:
@@ -64,8 +68,6 @@ jobs:
         uses: jlumbroso/free-disk-space@54081f138730dfa15788a46383842cd2f914a1be # v1.3.1
         with:
           tool-cache: true
-          # Removing "large packages" alone takes a couple of minutes, it could
-          # be switched to true if more space is needed (it'd save ~5 GB or so)
           large-packages: false
       - name: Cleanup /opt
         run: |
@@ -85,13 +87,78 @@ jobs:
       - uses: julia-actions/julia-runtest@v1
         env:
           TEST_GROUP: ${{ matrix.test_group }}
-          
       - uses: julia-actions/julia-processcoverage@v1
       - uses: codecov/codecov-action@v5
         with:
           files: lcov.info
           flags: ${{ matrix.test_group }}
           token: ${{ secrets.CODECOV_TOKEN }}
+
+  #####
+  ##### GPU tests (self-hosted runner on Tartarus)
+  #####
+
+  gpu_init:
+    name: Initialize GPU environment
+    runs-on: [self-hosted, tartarus, gpu]
+    timeout-minutes: 120
+    env:
+      OPENBLAS_NUM_THREADS: 1
+      JULIA_NUM_PRECOMPILE_TASKS: 8
+    steps:
+      - uses: actions/checkout@v6
+      - uses: julia-actions/setup-julia@v2
+        with:
+          version: '1.12.4'
+      - name: Instantiate and precompile
+        shell: julia --project --color=yes {0}
+        run: |
+          using Pkg
+          Pkg.instantiate(verbose=true)
+          Pkg.precompile(strict=true)
+          Pkg.status()
+      - name: Precompile CUDA runtime
+        run: julia --project --color=yes -e 'using CUDA; CUDA.precompile_runtime()'
+      - name: Download test data
+        env:
+          TEST_GROUP: init
+          GPU_TEST: "true"
+        run: julia --project --color=yes -e 'using Pkg; Pkg.test()'
+
+  gpu_tests:
+    name: ${{ matrix.test_group }} (GPU)
+    needs: gpu_init
+    runs-on: [self-hosted, tartarus, gpu]
+    timeout-minutes: 120
+    strategy:
+      fail-fast: false
+      matrix:
+        test_group:
+          - ecco2_monthly
+          - ecco2_daily
+          - ecco4_en4
+          - fluxes
+          - bathymetry
+          - checkpointing
+          - earth_system_model
+          - JRA55
+    env:
+      OPENBLAS_NUM_THREADS: 1
+      JULIA_NUM_PRECOMPILE_TASKS: 8
+    steps:
+      - uses: actions/checkout@v6
+      - uses: julia-actions/setup-julia@v2
+        with:
+          version: '1.12.4'
+      - name: Run ${{ matrix.test_group }} tests
+        env:
+          TEST_GROUP: ${{ matrix.test_group }}
+          GPU_TEST: "true"
+        run: julia --project --color=yes -e 'using Pkg; Pkg.test()'
+
+  #####
+  ##### Specialized tests (GitHub-hosted runners)
+  #####
 
   cds_downloading:
     name: CDS Downloading - Julia ${{ matrix.version }} - ${{ matrix.os }} - ${{ matrix.arch }} - ${{ github.event_name }}
@@ -167,3 +234,32 @@ jobs:
         with:
           files: lcov.info
           token: ${{ secrets.CODECOV_TOKEN }}
+
+  #####
+  ##### Distributed MPI tests (GitHub-hosted runners)
+  #####
+
+  distributed_tests:
+    name: Distributed MPI tests (4 ranks)
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    env:
+      OPENBLAS_NUM_THREADS: 1
+      JULIA_NUM_PRECOMPILE_TASKS: 8
+    steps:
+      - uses: actions/checkout@v6
+      - uses: julia-actions/setup-julia@v2
+        with:
+          version: '1.12.4'
+      - name: Instantiate and precompile
+        shell: julia --project --color=yes {0}
+        run: |
+          using Pkg
+          Pkg.instantiate(verbose=true)
+          Pkg.precompile(strict=true)
+      - name: Install mpiexecjl
+        run: julia --project --color=yes -e 'using MPI; MPI.install_mpiexecjl(destdir=".")'
+      - name: Run distributed tests
+        env:
+          TEST_GROUP: distributed
+        run: ./mpiexecjl -np 4 julia --project --color=yes -e 'using Pkg; Pkg.test()'

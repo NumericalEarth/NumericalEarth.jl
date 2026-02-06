@@ -1,52 +1,40 @@
-dusing Distributed
-Distributed.addprocs(2)
+using NumericalEarth
+using CUDA
+using Documenter
+using DocumenterCitations
+using Literate
 
-@everywhere begin
-    using NumericalEarth
-    using CUDA
-    using Documenter
-    using DocumenterCitations
-    using Literate
+ENV["DATADEPS_ALWAYS_ACCEPT"] = "true"
 
-    ENV["DATADEPS_ALWAYS_ACCEPT"] = "true"
+bib_filepath = joinpath(dirname(@__FILE__), "src", "NumericalEarth.bib")
+bib = CitationBibliography(bib_filepath, style=:authoryear)
 
-    bib_filepath = joinpath(dirname(@__FILE__), "src", "NumericalEarth.bib")
-    bib = CitationBibliography(bib_filepath, style=:authoryear)
+#####
+##### Generate examples
+#####
 
-    #####
-    ##### Generate examples
-    #####
+const EXAMPLES_DIR   = joinpath(@__DIR__, "..", "examples")
+const OUTPUT_DIR     = joinpath(@__DIR__, "src/literated")
+const DEVELOPERS_DIR = joinpath(@__DIR__, "src/developers")
 
-    const EXAMPLES_DIR   = joinpath(@__DIR__, "..", "examples")
-    const OUTPUT_DIR     = joinpath(@__DIR__, "src/literated")
-    const DEVELOPERS_DIR = joinpath(@__DIR__, "src/developers")
+examples_pages = [
+    "Single-column ocean simulation" => "literated/single_column_os_papa_simulation.md",
+    "One-degree ocean--sea ice simulation" => "literated/one_degree_simulation.md",
+    "Near-global ocean simulation" => "literated/near_global_ocean_simulation.md",
+    "Global climate simulation" => "literated/global_climate_simulation.md",
+]
 
-    examples_pages = [
-        "Single-column ocean simulation" => "literated/single_column_os_papa_simulation.md",
-        "One-degree ocean--sea ice simulation" => "literated/one_degree_simulation.md",
-        "Near-global ocean simulation" => "literated/near_global_ocean_simulation.md",
-        "Global climate simulation" => "literated/global_climate_simulation.md",
-    ]
-
-    to_be_literated = map(examples_pages) do (_, mdpath)
-        replace(basename(mdpath), ".md" => ".jl")
-    end
+to_be_literated = map(examples_pages) do (_, mdpath)
+    replace(basename(mdpath), ".md" => ".jl")
 end
 
-Distributed.pmap(1:length(to_be_literated)) do n
-    device = Distributed.myid()
-    @info "switching to device $(device)"
-    CUDA.device!(device) # Set the correct GPU, the used GPUs will be number 2 and 3
-    file = to_be_literated[n]
-    filepath = joinpath(EXAMPLES_DIR, file)
-    withenv("JULIA_DEBUG" => "Literate") do
-        Literate.markdown(filepath, OUTPUT_DIR; flavor = Literate.DocumenterFlavor(), execute = true)
-    end
-    GC.gc(true)
-    CUDA.reclaim()
+file = to_be_literated[n]
+filepath = joinpath(EXAMPLES_DIR, file)
+withenv("JULIA_DEBUG" => "Literate") do
+    Literate.markdown(filepath, OUTPUT_DIR; flavor = Literate.DocumenterFlavor(), execute = true)
 end
-
-Distributed.rmprocs()
+GC.gc(true)
+CUDA.reclaim()
 
 withenv("JULIA_DEBUG" => "Literate") do
     Literate.markdown(joinpath(DEVELOPERS_DIR, "slab_ocean.jl"), OUTPUT_DIR; flavor = Literate.DocumenterFlavor(), execute = true)
