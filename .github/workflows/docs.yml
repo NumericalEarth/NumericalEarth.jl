@@ -34,8 +34,6 @@ jobs:
           
           using CUDA
           CUDA.precompile_runtime()
-      - name: Setup docs project
-        run: julia --project=docs/ -e 'using Pkg; Pkg.develop(PackageSpec(path=pwd())); Pkg.instantiate(); Pkg.precompile(strict=true)'
       - name: Build documentation
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
