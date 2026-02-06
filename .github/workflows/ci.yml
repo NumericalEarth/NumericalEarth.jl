@@ -112,10 +112,12 @@ jobs:
         with:
           version: '1.12.4'
       - name: Instantiate and precompile
+        shell: julia --project --color=yes {0}
         run: |
-          julia --project -e 'using Pkg; Pkg.instantiate(verbose=true)'
-          julia --project -e 'using Pkg; Pkg.precompile(strict=true)'
-          julia --project -e 'using Pkg; Pkg.status()'
+          using Pkg
+          Pkg.instantiate(verbose=true)
+          Pkg.precompile(strict=true)
+          Pkg.status()
       - name: Precompile CUDA runtime
         run: julia --project -e 'using CUDA; CUDA.precompile_runtime()'
       - name: Download test data
