@@ -2,7 +2,12 @@ name: Documentation
 
 on:
   pull_request:
-    types: [opened, reopened]
+    paths: &paths
+      - ".github/workflows/docs.yml"
+      - "docs/**"
+      - "examples/**"
+      - "src/**"
+      - "Project.toml"
   push:
     branches:
       - main
