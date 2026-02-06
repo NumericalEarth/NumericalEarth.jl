@@ -258,7 +258,7 @@ jobs:
           julia --project -e 'using Pkg; Pkg.instantiate(verbose=true)'
           julia --project -e 'using Pkg; Pkg.precompile(strict=true)'
       - name: Install mpiexecjl
-        run: julia --project -e 'using MPI; MPI.install_mpiexecjl(destdir=".")'
+        run: julia --project --color=yes -e 'using MPI; MPI.install_mpiexecjl(destdir=".")'
       - name: Run distributed tests
         env:
           TEST_GROUP: distributed
