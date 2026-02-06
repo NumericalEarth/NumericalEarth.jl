@@ -28,13 +28,14 @@ to_be_literated = map(examples_pages) do (_, mdpath)
     replace(basename(mdpath), ".md" => ".jl")
 end
 
-file = to_be_literated[n]
-filepath = joinpath(EXAMPLES_DIR, file)
-withenv("JULIA_DEBUG" => "Literate") do
-    Literate.markdown(filepath, OUTPUT_DIR; flavor = Literate.DocumenterFlavor(), execute = true)
+for file in to_be_literated
+    filepath = joinpath(EXAMPLES_DIR, file)
+    withenv("JULIA_DEBUG" => "Literate") do
+        Literate.markdown(filepath, OUTPUT_DIR; flavor = Literate.DocumenterFlavor(), execute = true)
+    end 
+    GC.gc(true)
+    CUDA.reclaim()
 end
-GC.gc(true)
-CUDA.reclaim()
 
 withenv("JULIA_DEBUG" => "Literate") do
     Literate.markdown(joinpath(DEVELOPERS_DIR, "slab_ocean.jl"), OUTPUT_DIR; flavor = Literate.DocumenterFlavor(), execute = true)
