@@ -128,7 +128,7 @@ jobs:
   gpu_tests:
     name: ${{ matrix.test_group }} (GPU)
     needs: gpu_init
-    runs-on: [self-hosted, tartarus, gpu]
+    runs-on: [self-hosted, tartarus, gpu-2]
     timeout-minutes: 120
     strategy:
       fail-fast: false
