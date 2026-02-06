@@ -9,20 +9,20 @@ on:
       - 'test/**'
       - 'Project.toml'
   push:
+    paths: *paths
     branches:
       - main
     tags: '*'
-    paths:
-      - '.github/workflows/ci.yml'
-      - 'ext/**'
-      - 'src/**'
-      - 'test/**'
-paths: *paths
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: ${{ startsWith(github.ref, 'refs/pull/') }}
+  cancel-in-progress: true
 
+# needed to allow julia-actions/cache to delete old caches that it has created
+permissions:
+  actions: write
+  contents: read
+  
 env:
   ECCO_USERNAME: ${{ secrets.ECCO_USERNAME }}
   ECCO_WEBDAV_PASSWORD: ${{ secrets.ECCO_WEBDAV_PASSWORD }}
