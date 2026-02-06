@@ -254,9 +254,11 @@ jobs:
         with:
           version: '1.12.4'
       - name: Instantiate and precompile
+        shell: julia --project --color=yes {0}
         run: |
-          julia --project -e 'using Pkg; Pkg.instantiate(verbose=true)'
-          julia --project -e 'using Pkg; Pkg.precompile(strict=true)'
+          using Pkg
+          Pkg.instantiate(verbose=true)
+          Pkg.precompile(strict=true)
       - name: Install mpiexecjl
         run: julia --project --color=yes -e 'using MPI; MPI.install_mpiexecjl(destdir=".")'
       - name: Run distributed tests
