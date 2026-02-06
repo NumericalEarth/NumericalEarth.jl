@@ -26,9 +26,14 @@ jobs:
         with:
           version: '1.12.4'
       - name: Instantiate and precompile
+        shell: julia --project --color=yes {0}
         run: |
-          julia --project -e 'using Pkg; Pkg.instantiate(verbose=true); Pkg.precompile(strict=true)'
-          julia --project -e 'using CUDA; CUDA.precompile_runtime()'
+          using Pkg
+          Pkg.instantiate(verbose=true)
+          Pkg.precompile(strict=true)
+          
+          using CUDA
+          CUDA.precompile_runtime()
       - name: Setup docs project
         run: julia --project=docs/ -e 'using Pkg; Pkg.develop(PackageSpec(path=pwd())); Pkg.instantiate(); Pkg.precompile(strict=true)'
       - name: Build documentation
