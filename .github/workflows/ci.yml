@@ -119,7 +119,7 @@ jobs:
           Pkg.precompile(strict=true)
           Pkg.status()
       - name: Precompile CUDA runtime
-        run: julia --project -e 'using CUDA; CUDA.precompile_runtime()'
+        run: julia --project --color=yes -e 'using CUDA; CUDA.precompile_runtime()'
       - name: Download test data
         env:
           TEST_GROUP: init
