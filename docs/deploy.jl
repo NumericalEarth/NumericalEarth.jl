@@ -10,7 +10,8 @@ for (root, _, filenames) in walkdir(@__DIR__)
     end
 end
 
-deploydocs(repo = "github.com/NumericalEarth/NumericalEarthDocumentation.git",
+deploydocs(repo = "github.com/NumericalEarth/NumericalEarth.jl",
+           deploy_repo = "github.com/NumericalEarth/NumericalEarthDocumentation.git",
            versions = ["stable" => "v^", "dev" => "dev", "v#.#.#" => "v#.#.#"],
            forcepush = true,
            devbranch = "main",
