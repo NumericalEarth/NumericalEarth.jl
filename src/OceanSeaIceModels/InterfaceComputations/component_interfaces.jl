@@ -14,7 +14,7 @@ using ClimaSeaIce: SeaIceModel
 
 using Oceananigans: HydrostaticFreeSurfaceModel, architecture
 using Oceananigans.Units: Time
-using Oceananigans.Grids: inactive_node, node, topology
+using Oceananigans.Grids: inactive_node, node, topology, architecture
 using Oceananigans.BoundaryConditions: fill_halo_regions!
 using Oceananigans.Fields: ConstantField, interpolate, FractionalIndices
 using Oceananigans.Utils: launch!, KernelParameters
@@ -272,6 +272,16 @@ function default_ao_specific_humidity(ocean)
     return ImpureSaturationSpecificHumidity(phase, x_H₂O)
 end
 
+function default_ao_fluxes(FT)
+    stability_functions = atmosphere_ocean_stability_functions(FT)
+    return SimilarityTheoryFluxes(FT; stability_functions)
+end
+
+function default_ai_fluxes(FT)
+    stability_functions = atmosphere_sea_ice_stability_functions(FT)
+    return SimilarityTheoryFluxes(FT; stability_functions)
+end
+
 """
     ComponentInterfaces(atmosphere, ocean, sea_ice=nothing; kwargs...)
 
@@ -303,8 +313,8 @@ function ComponentInterfaces(atmosphere, ocean, sea_ice=nothing;
                              exchange_grid = ocean.model.grid,
                              radiation = Radiation(),
                              freshwater_density = default_freshwater_density,
-                             atmosphere_ocean_fluxes = SimilarityTheoryFluxes(eltype(exchange_grid)),
-                             atmosphere_sea_ice_fluxes = atmosphere_sea_ice_similarity_theory(eltype(exchange_grid)),
+                             atmosphere_ocean_fluxes = default_ao_fluxes(eltype(exchange_grid)),
+                             atmosphere_sea_ice_fluxes = default_ai_fluxes(eltype(exchange_grid)),
                              sea_ice_ocean_heat_flux = ThreeEquationHeatFlux(sea_ice),
                              atmosphere_ocean_interface_temperature = BulkTemperature(),
                              atmosphere_ocean_velocity_difference = RelativeVelocity(),
@@ -319,7 +329,11 @@ function ComponentInterfaces(atmosphere, ocean, sea_ice=nothing;
                              sea_ice_heat_capacity = heat_capacity(sea_ice),
                              gravitational_acceleration = default_gravitational_acceleration)
 
-    FT = eltype(exchange_grid)
+    FT   = eltype(exchange_grid)
+    arch = architecture(exchange_grid)
+
+    atmosphere_ocean_fluxes   = on_architecture(arch, atmosphere_ocean_fluxes)
+    atmosphere_sea_ice_fluxes = on_architecture(arch, atmosphere_sea_ice_fluxes)
 
     ocean_reference_density    = convert(FT, ocean_reference_density)
     ocean_heat_capacity        = convert(FT, ocean_heat_capacity)
