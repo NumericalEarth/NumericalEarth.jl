@@ -9,6 +9,9 @@ end NumericalEarth
 
 export
     EarthSystemModel,
+    OceanOnlyModel,
+    OceanSeaIceModel,
+    default_sea_ice,
     FreezingLimitedOceanTemperature,
     Radiation,
     LatitudeDependentAlbedo,
@@ -102,7 +105,7 @@ using .Atmospheres
 using .Oceans
 using .SeaIces
 
-using NumericalEarth.EarthSystemModels: ComponentInterfaces, MomentumRoughnessLength, ScalarRoughnessLength
+using NumericalEarth.EarthSystemModels: ComponentInterfaces, MomentumRoughnessLength, ScalarRoughnessLength, default_sea_ice
 using NumericalEarth.DataWrangling.ETOPO
 using NumericalEarth.DataWrangling.ECCO
 using NumericalEarth.DataWrangling.GLORYS
