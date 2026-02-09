@@ -24,7 +24,6 @@ permissions:
   contents: read
   
 env:
-  JULIA_DEPOT_PATH: "/storage5/github-action-runners/julia-depot"
   ECCO_USERNAME: ${{ secrets.ECCO_USERNAME }}
   ECCO_WEBDAV_PASSWORD: ${{ secrets.ECCO_WEBDAV_PASSWORD }}
   COPERNICUS_USERNAME: ${{ secrets.COPERNICUS_SERVICE_USERNAME }}
@@ -119,7 +118,12 @@ jobs:
           Pkg.precompile(strict=true)
           Pkg.status()
       - name: Precompile CUDA runtime
-        run: julia --project --color=yes -e 'using CUDA; CUDA.precompile_runtime()'
+        shell: julia --project --color=yes {0}
+        run: |
+          using Pkg
+          using CUDA
+          CUDA.precompile_runtime()
+          Pkg.instantiate(verbose=true)
       - name: Download test data
         env:
           TEST_GROUP: init
@@ -153,6 +157,7 @@ jobs:
           version: '1.12.4'
       - name: Run ${{ matrix.test_group }} tests
         env:
+          JULIA_DEPOT_PATH: "/storage5/github-action-runners/julia-depot"
           TEST_GROUP: ${{ matrix.test_group }}
           GPU_TEST: "true"
         run: julia --project --color=yes -e 'using Pkg; Pkg.test()'

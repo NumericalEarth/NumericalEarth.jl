@@ -19,7 +19,6 @@ concurrency:
   cancel-in-progress: true
 
 env:
-  JULIA_DEPOT_PATH: "/storage5/github-action-runners/julia-depot"
   JULIA_NUM_PRECOMPILE_TASKS: 8
   JULIA_NUM_THREADS: 8
   NUMERICAL_EARTH_LABEL_BUILD_ALL_EXAMPLES: 'build all examples'
@@ -62,6 +61,7 @@ jobs:
       - name: Build documentation
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          JULIA_DEPOT_PATH: "/storage5/github-action-runners/julia-depot"
           JULIA_DEBUG: Documenter
           JULIA_SSL_NO_VERIFY: "**"
         run: julia --project=docs --color=yes docs/make.jl
@@ -112,6 +112,7 @@ jobs:
         run:
           julia --color=yes docs/deploy.jl
         env:
+          JULIA_DEPOT_PATH: "/storage5/github-action-runners/julia-depot"
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           DOCUMENTER_KEY: ${{ secrets.DOCUMENTER_KEY }}
 
