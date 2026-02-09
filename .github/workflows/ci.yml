@@ -126,6 +126,7 @@ jobs:
           Pkg.instantiate(verbose=true)
       - name: Download test data
         env:
+          JULIA_DEPOT_PATH: "/storage5/github-action-runners/julia-depot"
           TEST_GROUP: init
           GPU_TEST: "true"
         run: julia --project --color=yes -e 'using Pkg; Pkg.test()'
