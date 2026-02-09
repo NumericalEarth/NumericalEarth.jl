@@ -24,6 +24,7 @@ permissions:
   contents: read
   
 env:
+  JULIA_DEPOT_PATH: "/storage5/github-action-runners/julia-depot"
   ECCO_USERNAME: ${{ secrets.ECCO_USERNAME }}
   ECCO_WEBDAV_PASSWORD: ${{ secrets.ECCO_WEBDAV_PASSWORD }}
   COPERNICUS_USERNAME: ${{ secrets.COPERNICUS_SERVICE_USERNAME }}

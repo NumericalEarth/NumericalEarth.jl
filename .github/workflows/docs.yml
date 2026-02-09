@@ -19,6 +19,7 @@ concurrency:
   cancel-in-progress: true
 
 env:
+  JULIA_DEPOT_PATH: "/storage5/github-action-runners/julia-depot"
   JULIA_NUM_PRECOMPILE_TASKS: 8
   JULIA_NUM_THREADS: 8
   NUMERICAL_EARTH_LABEL_BUILD_ALL_EXAMPLES: 'build all examples'
