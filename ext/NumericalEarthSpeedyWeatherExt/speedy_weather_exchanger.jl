@@ -5,14 +5,14 @@ using Oceananigans.Utils: launch!
 using Oceananigans.Operators: intrinsic_vector
 using XESMF
 
-using NumericalEarth.OceanSeaIceModels: sea_ice_concentration
+using NumericalEarth.EarthSystemModels: sea_ice_concentration
 
 # TODO: Implement conservative regridding when ready
-# using ConservativeRegridding 
+# using ConservativeRegridding
 # using GeoInterface: Polygon, LinearRing
-import NumericalEarth.OceanSeaIceModels: update_net_fluxes!, interpolate_state!
+import NumericalEarth.EarthSystemModels: update_net_fluxes!, interpolate_state!
 import NumericalEarth.Atmospheres: atmosphere_regridder
-import NumericalEarth.OceanSeaIceModels.InterfaceComputations: net_fluxes, ComponentExchanger
+import NumericalEarth.EarthSystemModels.InterfaceComputations: net_fluxes, ComponentExchanger
 
 # We do not need this...
 net_fluxes(::SpeedySimulation) = nothing
@@ -128,7 +128,7 @@ function update_net_fluxes!(coupled_model, atmos::SpeedySimulation)
 end
 
 # Simple case -> there is no sea ice!
-function update_net_fluxes!(coupled_model::SpeedyNoSeaIceCoupledModel, atmos::SpeedySimulation)
+function update_net_fluxes!(coupled_model::SpeedyNoSeaIceEarthSystemModel, atmos::SpeedySimulation)
     regrid!   = coupled_model.interfaces.exchanger.atmosphere.regridder.to_atmosphere
     ao_fluxes = coupled_model.interfaces.atmosphere_ocean_interface.fluxes
     Qco = ao_fluxes.sensible_heat

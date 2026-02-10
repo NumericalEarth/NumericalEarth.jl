@@ -1,16 +1,16 @@
 # Turbulent fluxes at component interfaces
 
-To motivate this tutorial, we first note that `ClimaOcean`'s [`OceanSeaIceModel`](@ref) has essentially two goals:
+To motivate this tutorial, we first note that `NumericalEarth`'s [`EarthSystemModel`](@ref) has essentially two goals:
 
 1. Manage time-stepping multiple component models forward simultaneously,
 2. Compute and communicate fluxes between the component models.
 
-This tutorial therefore touches on the latter of the two main purposes of `OceanSeaIceModel`:
+This tutorial therefore touches on the latter of the two main purposes of `EarthSystemModel`:
 computing turbulent fluxes between model components.
 
 ## Component interfaces we consider
 
-The `OceanSeaIceModel` has atmosphere, ocean, and sea ice components (and will someday also have land and radiation components).
+The `EarthSystemModel` has atmosphere, ocean, and sea ice components (and will someday also have land and radiation components).
 We envision that the tutorial will eventually cover all turbulent flux computations; for the time being we
 focus on atmosphere-ocean fluxes.
 Future expansions of this tutorial should cover atmosphere-sea ice fluxes, ocean-sea ice fluxes, ocean-land fluxes,
@@ -286,7 +286,7 @@ at which the atmospheric velocity is computed to form the relative velocity ``Δ
 Most observational campaigns use ``h = 10 \, \mathrm{m}`` and most drag coefficients reported in the
 literature pertain to ``h=10 \, \mathrm{m}``.
 
-To compute fluxes with ClimaOcean, we build an `OceanSeaIceModel` with an atmosphere and ocean state
+To compute fluxes with NumericalEarth, we build an `EarthSystemModel` with an atmosphere and ocean state
 concocted such that we can evaluate fluxes over a range of relative atmosphere and oceanic conditions.
 For this we use a ``200 × 200`` horizontal grid and start with atmospheric winds that vary from
 the relatively calm ``u_a(10 \, \mathrm{m}) = 0.5 \, \mathrm{m \, s^{-1}}`` to a
@@ -328,19 +328,19 @@ and a "coefficient model" with a constant drag coefficient ``C_D = 2 × 10^{-3}`
 ```@example interface_fluxes
 neutral_similarity_fluxes = SimilarityTheoryFluxes(stability_functions=nothing)
 interfaces = ComponentInterfaces(atmosphere, ocean; atmosphere_ocean_fluxes=neutral_similarity_fluxes)
-default_model = OceanSeaIceModel(ocean; atmosphere, interfaces)
+default_model = OceanOnlyModel(ocean; atmosphere, interfaces)
 
 momentum_roughness_length = MomentumRoughnessLength(wave_formulation=0.04)
 neutral_similarity_fluxes = SimilarityTheoryFluxes(stability_functions=nothing; momentum_roughness_length)
 interfaces = ComponentInterfaces(atmosphere, ocean; atmosphere_ocean_fluxes=neutral_similarity_fluxes)
-increased_roughness_model = OceanSeaIceModel(ocean; atmosphere, interfaces)
+increased_roughness_model = OceanOnlyModel(ocean; atmosphere, interfaces)
 
 coefficient_fluxes = CoefficientBasedFluxes(drag_coefficient=2e-3)
 interfaces = ComponentInterfaces(atmosphere, ocean; atmosphere_ocean_fluxes=coefficient_fluxes)
-coefficient_model = OceanSeaIceModel(ocean; atmosphere, interfaces)
+coefficient_model = OceanOnlyModel(ocean; atmosphere, interfaces)
 ```
 
-Note that `OceanSeaIceModel` computes fluxes upon instantiation, so after constructing
+Note that `EarthSystemModel` computes fluxes upon instantiation, so after constructing
 the two models we are ready to analyze the results.
 We first verify that the similarity model friction velocity has been computed successfully,
 
@@ -393,7 +393,7 @@ extrema(u★_EC)
 ```
 
 Finally, we plot the results to compare the estimated friction velocity and effective
-drag coefficient from the polynomials expressions with the two `OceanSeaIceModel`s:
+drag coefficient from the polynomials expressions with the two `EarthSystemModel`s:
 
 ```@example interface_fluxes
 using CairoMakie
@@ -575,7 +575,7 @@ Similar formulas hold for temperature and water vapor,
 Let's plot some stability functions:
 
 ```@example interface_fluxes
-using ClimaOcean.OceanSeaIceModels.InterfaceComputations:
+using NumericalEarth.EarthSystemModels.InterfaceComputations:
     EdsonMomentumStabilityFunction,     # Edson et al. 2013
     EdsonScalarStabilityFunction,       # Edson et al. 2013
     ShebaMomentumStabilityFunction,     # Grachev et al. 2007
@@ -650,7 +650,7 @@ In the skin temperature case, the air-surface temperature difference ``Δ \theta
 that enters into the air-surface specific humidity difference ``Δ q`` also change each iterate.
 
 ```@example interface_fluxes
-using ClimaOcean.OceanSeaIceModels.InterfaceComputations: surface_specific_humidity
+using NumericalEarth.EarthSystemModels.InterfaceComputations: surface_specific_humidity
 
 ρₐ = 1.2 # guess
 Tₒ = 273.15 + 20 # in Kelvin
@@ -769,7 +769,7 @@ where:
 The melt rate follows directly from the heat flux: ``q = Q / \mathscr{L}`` where ``\mathscr{L}`` is the latent heat of fusion.
 
 ```@example interface_fluxes
-using ClimaOcean.OceanSeaIceModels: IceBathHeatFlux
+using NumericalEarth.EarthSystemModels: IceBathHeatFlux
 
 # Default parameters
 flux = IceBathHeatFlux()
@@ -778,7 +778,7 @@ flux = IceBathHeatFlux()
 The friction velocity can be specified as a constant value or computed dynamically from the ice-ocean momentum stress:
 
 ```@example interface_fluxes
-using ClimaOcean.OceanSeaIceModels: MomentumBasedFrictionVelocity
+using NumericalEarth.EarthSystemModels: MomentumBasedFrictionVelocity
 
 # With momentum-based friction velocity
 flux = IceBathHeatFlux(heat_transfer_coefficient = 0.006,
@@ -820,7 +820,7 @@ The ratio ``R = \alpha_h / \alpha_s`` (typically around 35) reflects the differe
 salt, with heat diffusing faster than salt [hieronymus2021comparison](@citep).
 
 ```@example interface_fluxes
-using ClimaOcean.OceanSeaIceModels: ThreeEquationHeatFlux
+using NumericalEarth.EarthSystemModels: ThreeEquationHeatFlux
 
 # Default parameters (αₕ = 0.0095, αₛ = αₕ/35)
 flux = ThreeEquationHeatFlux()
@@ -870,7 +870,7 @@ ocean temperatures for fixed ocean salinity ``S_o = 34 \, \mathrm{g \, kg^{-1}}`
 ```@example interface_fluxes
 using CairoMakie
 using ClimaSeaIce.SeaIceThermodynamics: LinearLiquidus, melting_temperature, ConductiveFlux
-using ClimaOcean.OceanSeaIceModels.InterfaceComputations: compute_interface_heat_flux
+using NumericalEarth.EarthSystemModels.InterfaceComputations: compute_interface_heat_flux
 using Oceananigans.Fields: ZeroField, ConstantField
 
 # Formulations

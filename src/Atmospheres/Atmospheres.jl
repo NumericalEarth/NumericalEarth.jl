@@ -13,17 +13,17 @@ using Oceananigans.Units: Time
 using Adapt
 using Thermodynamics.Parameters: AbstractThermodynamicsParameters
 using KernelAbstractions: @kernel, @index
-using NumericalEarth.OceanSeaIceModels.InterfaceComputations: interface_kernel_parameters
+using NumericalEarth.EarthSystemModels.InterfaceComputations: interface_kernel_parameters
 
 import Oceananigans.TimeSteppers: time_step!, update_state!
 
-import NumericalEarth.OceanSeaIceModels: interpolate_state!, 
-                                     update_net_fluxes!, 
-                                     thermodynamics_parameters, 
-                                     surface_layer_height, 
+import NumericalEarth.EarthSystemModels: interpolate_state!,
+                                     update_net_fluxes!,
+                                     thermodynamics_parameters,
+                                     surface_layer_height,
                                      boundary_layer_height
 
-import NumericalEarth.OceanSeaIceModels.InterfaceComputations: ComponentExchanger, initialize!, net_fluxes
+import NumericalEarth.EarthSystemModels.InterfaceComputations: ComponentExchanger, initialize!, net_fluxes
 
 # Can be extended by atmosphere models
 function atmosphere_simulation end

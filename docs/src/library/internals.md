@@ -86,16 +86,16 @@ Modules = [NumericalEarth.SeaIces]
 Public = false
 ```
 
-## OceanSeaIceModels
+## EarthSystemModels
 
 ```@autodocs
-Modules = [NumericalEarth.OceanSeaIceModels]
+Modules = [NumericalEarth.EarthSystemModels]
 Public = false
 ```
 
-## OceanSeaIceModels.InterfaceComputations
+## EarthSystemModels.InterfaceComputations
 
 ```@autodocs
-Modules = [NumericalEarth.OceanSeaIceModels.InterfaceComputations]
+Modules = [NumericalEarth.EarthSystemModels.InterfaceComputations]
 Public = false
 ```

@@ -6,7 +6,7 @@ using ClimaSeaIce: SeaIceModel, SeaIceThermodynamics
 using Oceananigans.Grids: φnode
 using Printf
 
-function time_step!(coupled_model::OceanSeaIceModel, Δt; callbacks=[])
+function time_step!(coupled_model::EarthSystemModel, Δt; callbacks=[])
     ocean = coupled_model.ocean
     sea_ice = coupled_model.sea_ice
     atmosphere = coupled_model.atmosphere
@@ -30,7 +30,7 @@ function time_step!(coupled_model::OceanSeaIceModel, Δt; callbacks=[])
     return nothing
 end
 
-function update_state!(coupled_model::OceanSeaIceModel)
+function update_state!(coupled_model::EarthSystemModel)
 
     # The three components
     ocean      = coupled_model.ocean

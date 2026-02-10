@@ -1,4 +1,4 @@
-using NumericalEarth.OceanSeaIceModels.InterfaceComputations: computed_fluxes, 
+using NumericalEarth.EarthSystemModels.InterfaceComputations: computed_fluxes, 
                                                           get_possibly_zero_flux,
                                                           interface_kernel_parameters,
                                                           convert_to_kelvin,

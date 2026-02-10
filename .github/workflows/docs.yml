@@ -60,7 +60,12 @@ jobs:
         run: julia --project=docs --color=yes -e 'using Pkg; Pkg.instantiate(verbose=true)'
       - name: Build documentation
         env:
+          ECCO_USERNAME: ${{ secrets.ECCO_USERNAME }}
+          ECCO_WEBDAV_PASSWORD: ${{ secrets.ECCO_WEBDAV_PASSWORD }}
+          COPERNICUS_USERNAME: ${{ secrets.COPERNICUS_SERVICE_USERNAME }}
+          COPERNICUS_PASSWORD: ${{ secrets.COPERNICUS_USERNAME_PASSWORD }}
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          JULIA_DEPOT_PATH: "/storage5/github-action-runners/julia-depot"
           JULIA_DEBUG: Documenter
           JULIA_SSL_NO_VERIFY: "**"
         run: julia --project=docs --color=yes docs/make.jl
@@ -100,17 +105,11 @@ jobs:
         # examples, we don't need them on the website.
         run:
           rm -fv docs/build/literated/*.jld2
-      - name: Instantiate docs environment
-        shell: julia --color=yes {0}
-        run: |
-          # We only need `Documenter` for publishing the docs, let's not
-          # reinstall the world all over again.
-          using Pkg
-          Pkg.add(; name="Documenter", version="1")
       - name: Deploy documentation
         run:
-          julia --color=yes docs/deploy.jl
+          julia --project=docs --color=yes docs/deploy.jl
         env:
+          JULIA_DEPOT_PATH: "/storage5/github-action-runners/julia-depot"
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           DOCUMENTER_KEY: ${{ secrets.DOCUMENTER_KEY }}
 
