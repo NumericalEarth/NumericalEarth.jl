@@ -107,7 +107,7 @@ jobs:
           rm -fv docs/build/literated/*.jld2
       - name: Deploy documentation
         run:
-          julia --color=yes docs/deploy.jl
+          julia --project=docs --color=yes docs/deploy.jl
         env:
           JULIA_DEPOT_PATH: "/storage5/github-action-runners/julia-depot"
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
