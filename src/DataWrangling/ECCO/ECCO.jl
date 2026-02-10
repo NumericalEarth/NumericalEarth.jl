@@ -292,13 +292,8 @@ function download_dataset(metadata::ECCOMetadata)
     # The directory will be deleted after the download is complete
     @root mktempdir(dir) do tmp
 
-        # Create authenticated downloader only if credentials are available
-        downloader = if !isnothing(username) && !isnothing(password)
-            netrc_downloader(username, password, "ecco.jpl.nasa.gov", tmp)
-        else
-            nothing
-        end
-
+        # Write down the username and password in a .netrc file
+        downloader = netrc_downloader(username, password, "ecco.jpl.nasa.gov", tmp)
         ntasks = Threads.nthreads()
 
         asyncmap(metadata; ntasks) do metadatum # Distribute the download among tasks
@@ -307,20 +302,20 @@ function download_dataset(metadata::ECCOMetadata)
             filepath = metadata_path(metadatum)
 
             if !isfile(filepath)
-                if !isnothing(downloader)
-                    @info "Downloading ECCO data: $(metadatum.name) in $(metadatum.dir)..."
-                    DataWrangling.download_with_fallback(fileurl, filepath; downloader)
-                else
-                    # No ECCO credentials — try fallback from NumericalEarthArtifacts
-                    filename = basename(filepath)
-                    fallback = DataWrangling.ARTIFACTS_BASE_URL * filename
-                    @warn "ECCO credentials not set (ECCO_USERNAME / ECCO_WEBDAV_PASSWORD). " *
-                          "Attempting fallback download from NumericalEarthArtifacts..."
-                    if haskey(ENV, "GITHUB_ACTIONS")
-                        println(stderr, "::warning title=Missing ECCO credentials::ECCO_USERNAME/ECCO_WEBDAV_PASSWORD not set. Using NumericalEarthArtifacts fallback for $(filename).")
-                    end
-                    Downloads.download(fallback, filepath; progress=download_progress)
+                instructions_msg = "\n See NumericalEarth.jl/src/DataWrangling/ECCO/README.md for instructions."
+                if isnothing(username)
+                    msg = "Could not find the ECCO_USERNAME environment variable. \
+                            See NumericalEarth.jl/src/DataWrangling/ECCO/README.md for instructions on obtaining \
+                            and setting your ECCO_USERNAME and ECCO_WEBDAV_PASSWORD." * instructions_msg
+                    throw(ArgumentError(msg))
+                elseif isnothing(password)
+                    msg = "Could not find the ECCO_WEBDAV_PASSWORD environment variable. \
+                            See NumericalEarth.jl/src/DataWrangling/ECCO/README.md for instructions on obtaining \
+                            and setting your ECCO_USERNAME and ECCO_WEBDAV_PASSWORD." * instructions_msg
+                    throw(ArgumentError(msg))
                 end
+                @info "Downloading ECCO data: $(metadatum.name) in $(metadatum.dir)..."
+                Downloads.download(fileurl, filepath; downloader, progress=download_progress)
             end
         end
     end
