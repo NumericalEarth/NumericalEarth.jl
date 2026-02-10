@@ -25,61 +25,62 @@ env:
   NUMERICAL_EARTH_LABEL_BUILD_ALL_EXAMPLES: 'build all examples'
 
 jobs:
-  # build-docs:
-  #   name: Build documentation
-  #   runs-on: [self-hosted, tartarus, gpu-3]
-  #   timeout-minutes: 1440
-  #   permissions:
-  #     actions: write
-  #     contents: write
-  #     pull-requests: read
-  #     statuses: write
-  #   steps:
-  #     - uses: actions/checkout@v6
-  #     - uses: julia-actions/setup-julia@v2
-  #       with:
-  #         version: '1.12.4'
-  #     - name: Set NUMERICAL_EARTH_BUILD_ALL_EXAMPLES
-  #       shell: bash
-  #       run: |
-  #         if [[ ('${{ github.event_name }}' == 'push' && ('${{ github.ref }}' == 'refs/heads/main' || '${{ github.ref }}' == refs/tags/v*)) || ('${{ github.event_name }}' == 'pull_request' && ${{ contains(github.event.pull_request.labels.*.name, env.NUMERICAL_EARTH_LABEL_BUILD_ALL_EXAMPLES) }} == true) ]]; then
-  #             NUMERICAL_EARTH_BUILD_ALL_EXAMPLES=true
-  #         else
-  #             NUMERICAL_EARTH_BUILD_ALL_EXAMPLES=false
-  #         fi
-  #         echo "NUMERICAL_EARTH_BUILD_ALL_EXAMPLES=${NUMERICAL_EARTH_BUILD_ALL_EXAMPLES}" | tee "${GITHUB_ENV}"
-  #     - name: Instantiate and precompile
-  #       shell: julia --project --color=yes {0}
-  #       run: |
-  #         using Pkg
-  #         Pkg.instantiate(verbose=true)
-  #         Pkg.precompile(strict=true)
+  build-docs:
+    name: Build documentation
+    runs-on: [self-hosted, tartarus, gpu-3]
+    timeout-minutes: 1440
+    permissions:
+      actions: write
+      contents: write
+      pull-requests: read
+      statuses: write
+    steps:
+      - uses: actions/checkout@v6
+      - uses: julia-actions/setup-julia@v2
+        with:
+          version: '1.12.4'
+      - name: Set NUMERICAL_EARTH_BUILD_ALL_EXAMPLES
+        shell: bash
+        run: |
+          if [[ ('${{ github.event_name }}' == 'push' && ('${{ github.ref }}' == 'refs/heads/main' || '${{ github.ref }}' == refs/tags/v*)) || ('${{ github.event_name }}' == 'pull_request' && ${{ contains(github.event.pull_request.labels.*.name, env.NUMERICAL_EARTH_LABEL_BUILD_ALL_EXAMPLES) }} == true) ]]; then
+              NUMERICAL_EARTH_BUILD_ALL_EXAMPLES=true
+          else
+              NUMERICAL_EARTH_BUILD_ALL_EXAMPLES=false
+          fi
+          echo "NUMERICAL_EARTH_BUILD_ALL_EXAMPLES=${NUMERICAL_EARTH_BUILD_ALL_EXAMPLES}" | tee "${GITHUB_ENV}"
+      - name: Instantiate and precompile
+        shell: julia --project --color=yes {0}
+        run: |
+          using Pkg
+          Pkg.instantiate(verbose=true)
+          Pkg.precompile(strict=true)
 
-  #         using CUDA
-  #         CUDA.precompile_runtime()
-  #     - name: Instantiate docs folder
-  #       run: julia --project=docs --color=yes -e 'using Pkg; Pkg.instantiate(verbose=true)'
-  #     - name: Build documentation
-  #       env:
-  #         ECCO_USERNAME: ${{ secrets.ECCO_USERNAME }}
-  #         ECCO_WEBDAV_PASSWORD: ${{ secrets.ECCO_WEBDAV_PASSWORD }}
-  #         COPERNICUS_USERNAME: ${{ secrets.COPERNICUS_SERVICE_USERNAME }}
-  #         COPERNICUS_PASSWORD: ${{ secrets.COPERNICUS_USERNAME_PASSWORD }}
-  #         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-  #         JULIA_DEBUG: Documenter
-  #         JULIA_SSL_NO_VERIFY: "**"
-  #       run: julia --project=docs --color=yes docs/make.jl
-  #     - uses: actions/upload-artifact@v6
-  #       with:
-  #         name: documentation-build
-  #         path: docs/build
-  #         retention-days: 10
+          using CUDA
+          CUDA.precompile_runtime()
+      - name: Instantiate docs folder
+        run: julia --project=docs --color=yes -e 'using Pkg; Pkg.instantiate(verbose=true)'
+      - name: Build documentation
+        env:
+          ECCO_USERNAME: ${{ secrets.ECCO_USERNAME }}
+          ECCO_WEBDAV_PASSWORD: ${{ secrets.ECCO_WEBDAV_PASSWORD }}
+          COPERNICUS_USERNAME: ${{ secrets.COPERNICUS_SERVICE_USERNAME }}
+          COPERNICUS_PASSWORD: ${{ secrets.COPERNICUS_USERNAME_PASSWORD }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          JULIA_DEBUG: Documenter
+          JULIA_SSL_NO_VERIFY: "**"
+        run: julia --project=docs --color=yes docs/make.jl
+      - uses: actions/upload-artifact@v6
+        with:
+          name: documentation-build
+          path: docs/build
+          retention-days: 10
+
   deploy-docs:
     # We want to deploy docs if:
     # * it's a push, but only to main
     # * it's a PR, but not from a fork
     # * on a release
-    # needs: build-docs
+    needs: build-docs
     if: ${{ (github.event_name == 'push' && (github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v'))) || (github.event_name == 'pull_request' && ! github.event.pull_request.head.repo.fork) }}
     permissions:
       actions: write
