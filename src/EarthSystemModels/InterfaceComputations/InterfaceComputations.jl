@@ -26,7 +26,7 @@ export
     # Friction velocity formulations
     MomentumBasedFrictionVelocity
 
-using ..OceanSeaIceModels: default_gravitational_acceleration,
+using ..EarthSystemModels: default_gravitational_acceleration,
                            default_freshwater_density,
                            thermodynamics_parameters,
                            surface_layer_height,

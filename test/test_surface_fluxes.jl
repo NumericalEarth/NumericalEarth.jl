@@ -1,6 +1,6 @@
 include("runtests_setup.jl")
 
-using NumericalEarth.OceanSeaIceModels.InterfaceComputations:
+using NumericalEarth.EarthSystemModels.InterfaceComputations:
                                    ComponentInterfaces,
                                    celsius_to_kelvin,
                                    convert_to_kelvin,
@@ -20,7 +20,7 @@ using NumericalEarth.DataWrangling: all_dates
 using ClimaSeaIce.SeaIceDynamics
 using ClimaSeaIce.Rheologies
 
-import NumericalEarth.OceanSeaIceModels.InterfaceComputations: surface_specific_humidity
+import NumericalEarth.EarthSystemModels.InterfaceComputations: surface_specific_humidity
 
 using Statistics: mean, std
 
@@ -98,7 +98,7 @@ end
                 fill!(parent(ocean.model.tracers.T), Tₒ)
 
                 # Compute the turbulent fluxes (neglecting radiation)
-                coupled_model    = OceanSeaIceModel(ocean; atmosphere, interfaces)
+                coupled_model    = OceanOnlyModel(ocean; atmosphere, interfaces)
                 turbulent_fluxes = coupled_model.interfaces.atmosphere_ocean_interface.fluxes
 
                 # Make sure all fluxes are (almost) zero!
@@ -135,7 +135,7 @@ end
             # mid-latitude ocean conditions
             set!(ocean.model, u = 0, v = 0, T = 15, S = 30)
 
-            coupled_model = OceanSeaIceModel(ocean; atmosphere, interfaces)
+            coupled_model = OceanOnlyModel(ocean; atmosphere, interfaces)
 
             # Now manually compute the fluxes:
             Tₒ = ocean.model.tracers.T[1, 1, 1] + celsius_to_kelvin

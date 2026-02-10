@@ -27,7 +27,7 @@ Example
 =======
 
 ```jldoctest
-using NumericalEarth.OceanSeaIceModels: IceBathHeatFlux
+using NumericalEarth.EarthSystemModels: IceBathHeatFlux
 
 flux = IceBathHeatFlux(heat_transfer_coefficient = 0.006, friction_velocity = 0.002)
 
@@ -97,7 +97,7 @@ Example
 =======
 
 ```jldoctest
-using NumericalEarth.OceanSeaIceModels: ThreeEquationHeatFlux
+using NumericalEarth.EarthSystemModels: ThreeEquationHeatFlux
 
 flux = ThreeEquationHeatFlux()
 

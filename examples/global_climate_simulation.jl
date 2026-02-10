@@ -14,7 +14,7 @@
 # and sea ice thickness from the ECCO state estimate.
 #
 # For this example, we need `Oceananigans.HydrostaticFreeSurfaceModel` (the ocean), `ClimaSeaIce.SeaIceModel` (the sea ice) and
-# `SpeedyWeather.PrimitiveWetModel` (the atmosphere). All these are coupled and orchestrated by the `NumericalEarth.OceanSeaIceModel`
+# `SpeedyWeather.PrimitiveWetModel` (the atmosphere). All these are coupled and orchestrated by the `NumericalEarth.EarthSystemModel`
 # (the coupled system).
 #
 # The XESMF.jl package is used to regrid fields between the atmosphere and ocean--sea ice components.
@@ -101,7 +101,7 @@ nothing #hide
 # Since radiation is idealized in this example, we set the emissivities to zero.
 
 radiation = Radiation(ocean_emissivity=0.0, sea_ice_emissivity=0.0)
-earth_model = OceanSeaIceModel(ocean, sea_ice; atmosphere, radiation)
+earth_model = EarthSystemModel(atmosphere, ocean, sea_ice; radiation)
 
 # ## Building and running the simulation
 #
