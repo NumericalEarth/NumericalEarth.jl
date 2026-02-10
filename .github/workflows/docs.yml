@@ -60,6 +60,10 @@ jobs:
         run: julia --project=docs --color=yes -e 'using Pkg; Pkg.instantiate(verbose=true)'
       - name: Build documentation
         env:
+          ECCO_USERNAME: ${{ secrets.ECCO_USERNAME }}
+          ECCO_WEBDAV_PASSWORD: ${{ secrets.ECCO_WEBDAV_PASSWORD }}
+          COPERNICUS_USERNAME: ${{ secrets.COPERNICUS_SERVICE_USERNAME }}
+          COPERNICUS_PASSWORD: ${{ secrets.COPERNICUS_USERNAME_PASSWORD }}
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           JULIA_DEPOT_PATH: "/storage5/github-action-runners/julia-depot"
           JULIA_DEBUG: Documenter
