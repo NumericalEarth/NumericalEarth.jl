@@ -105,13 +105,6 @@ jobs:
         # examples, we don't need them on the website.
         run:
           rm -fv docs/build/literated/*.jld2
-      - name: Instantiate docs environment
-        shell: julia --color=yes {0}
-        run: |
-          # We only need `Documenter` for publishing the docs, let's not
-          # reinstall the world all over again.
-          using Pkg
-          Pkg.add(; name="Documenter", version="1")
       - name: Deploy documentation
         run:
           julia --color=yes docs/deploy.jl
