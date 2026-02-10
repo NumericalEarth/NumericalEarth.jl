@@ -40,9 +40,12 @@ we can build a `Simulation`, attach callbacks and output writers, and run it:
 
 ```jldoctest esm
 using Oceananigans.Units
+using Logging
 
 simulation = Simulation(model, Δt=20minutes, stop_time=1hour)
-run!(simulation)
+with_logger(NullLogger()) do
+    run!(simulation)
+end
 model
 
 # output
@@ -80,6 +83,7 @@ When you want prognostic sea ice, use `OceanSeaIceModel`. It takes an ocean simu
 a sea ice component as positional arguments:
 
 ```jldoctest esm
+ocean = ocean_simulation(grid, timestepper = :QuasiAdamsBashforth2)
 sea_ice = FreezingLimitedOceanTemperature()
 model = OceanSeaIceModel(ocean, sea_ice)
 
