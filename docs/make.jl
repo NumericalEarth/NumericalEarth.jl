@@ -73,6 +73,8 @@ format = Documenter.HTML(collapselevel = 2,
 pages = [
     "Home" => "index.md",
 
+    "EarthSystemModel" => "earth_system_model.md",
+
     "Examples" => examples_pages,
 
     "Developers" => developer_pages,

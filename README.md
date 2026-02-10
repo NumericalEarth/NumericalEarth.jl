@@ -11,7 +11,9 @@
 ###
 
 [![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.7677442.svg?style=flat-square)](https://doi.org/10.5281/zenodo.7677442)
-[![Build status](https://badge.buildkite.com/3113cca353b83df3b5855d3f0d69827124614aef7017c835d2.svg?style=flat-square)](https://buildkite.com/clima/climaocean-ci)
+[![CI](https://github.com/NumericalEarth/NumericalEarth.jl/actions/workflows/ci.yml/badge.svg)](https://github.com/NumericalEarth/NumericalEarth.jl/actions/workflows/ci.yml)
+[![Stable docs](https://img.shields.io/badge/docs-stable-blue.svg?style=flat-square)](https://numericalearth.github.io/NumericalEarthDocumentation/stable/)
+[![Dev docs](https://img.shields.io/badge/docs-dev-blue.svg?style=flat-square)](https://numericalearth.github.io/NumericalEarthDocumentation/dev/)
 
 ## Overview
 
