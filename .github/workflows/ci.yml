@@ -52,6 +52,7 @@ jobs:
           - ecco2_monthly
           - ecco2_daily
           - ecco4_en4
+          - ecco_atmosphere
           - fluxes
           - bathymetry
           - checkpointing
@@ -143,6 +144,7 @@ jobs:
           - ecco2_monthly
           - ecco2_daily
           - ecco4_en4
+          - ecco_atmosphere
           - fluxes
           - bathymetry
           - checkpointing
