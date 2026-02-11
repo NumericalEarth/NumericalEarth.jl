@@ -272,3 +272,20 @@ jobs:
   #       env:
   #         TEST_GROUP: distributed
   #       run: ./mpiexecjl -np 4 julia --project --color=yes -e 'using Pkg; Pkg.test()'
+
+  #####
+  ##### The final test (a final check)
+  #####
+
+  ci:
+    name: CI
+    needs:
+      - cpu_tests
+      - gpu_init
+      - gpu_tests
+      - cds_downloading
+      - reactant
+    runs-on: ubuntu-latest
+    if: ${{ success() }}
+    steps:
+      - run: echo "All CI jobs passed successfully."
