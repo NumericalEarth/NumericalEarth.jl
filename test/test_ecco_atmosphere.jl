@@ -41,8 +41,10 @@ using NumericalEarth.ECCO: ECCOPrescribedAtmosphere, ECCO4Monthly
         # This is consistent with JRA55 convention
         CUDA.@allowscalar begin
             # Get some sample values (not all zeros)
-            Qs_data = parent(Qs)
-            Ql_data = parent(Ql)
+            # Use interior() to avoid checking halo regions which may
+            # contain uninitialized memory on GPU
+            Qs_data = interior(Qs)
+            Ql_data = interior(Ql)
 
             # Longwave radiation should be positive (always some downwelling longwave)
             @test all(Ql_data .>= 0)
