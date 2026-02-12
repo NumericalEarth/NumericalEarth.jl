@@ -1,5 +1,6 @@
 # Common test setup file to make stand-alone tests easy
 include("runtests_setup.jl")
+include("download_utils.jl")
 
 using CUDA
 using Scratch
@@ -34,14 +35,25 @@ if test_group == :init || test_group == :all
     #####
 
     ETOPOmetadata = Metadatum(:bottom_height, dataset=NumericalEarth.ETOPO.ETOPO2022())
-    NumericalEarth.DataWrangling.download_dataset(ETOPOmetadata)
-
+    download_dataset_with_fallback(metadata_path(ETOPOmetadata); dataset_name="ETOPO2022") do
+        NumericalEarth.DataWrangling.download_dataset(ETOPOmetadata)
+    end
 
     #####
     ##### Download JRA55 data
     #####
 
-    atmosphere = JRA55PrescribedAtmosphere(backend=JRA55NetCDFBackend(2))
+    try
+        atmosphere = JRA55PrescribedAtmosphere(backend=JRA55NetCDFBackend(2))
+    catch e
+        @warn "Original JRA55 download failed, trying NumericalEarthArtifacts fallback..." exception=(e, catch_backtrace())
+        emit_ci_warning("Broken JRA55 download", "Original source failed during init")
+        for name in NumericalEarth.DataWrangling.JRA55.JRA55_variable_names
+            datum = Metadatum(name; dataset=JRA55.RepeatYearJRA55())
+            download_from_artifacts(metadata_path(datum))
+        end
+        atmosphere = JRA55PrescribedAtmosphere(backend=JRA55NetCDFBackend(2))
+    end
 
     #####
     ##### Download Dataset data
@@ -56,12 +68,17 @@ if test_group == :init || test_group == :all
         temperature_metadata = Metadata(:temperature; dataset, dates)
         salinity_metadata    = Metadata(:salinity; dataset, dates)
 
-        download_dataset(temperature_metadata)
-        download_dataset(salinity_metadata)
+        for md in (temperature_metadata, salinity_metadata)
+            download_dataset_with_fallback(metadata_path(md); dataset_name="$(typeof(dataset)) $(md.name)") do
+                download_dataset(md)
+            end
+        end
 
         if dataset isa Union{ECCO2DarwinMonthly, ECCO4DarwinMonthly}
             PO₄_metadata = Metadata(:phosphate; dataset, dates)
-            download_dataset(PO₄_metadata)
+            download_dataset_with_fallback(metadata_path(PO₄_metadata); dataset_name="$(typeof(dataset)) phosphate") do
+                download_dataset(PO₄_metadata)
+            end
         end
     end
 end
