@@ -43,7 +43,7 @@ and primes denote deviations from the horizontal average.
     which is implicit in the context of typical global Earth system modeling.
     Explicit time-averaging is required to evaluate flux observations, however,
     and may also be warranted for high-resolution coupled modeling.
-    Flux computations in ClimaOcean currently compute fluxes in terms of the instantaneous states
+    Flux computations in NumericalEarth currently compute fluxes in terms of the instantaneous states
     of its components, but spatial coarse-graining and time-averaging for computing fluxes at high
     resolution should be the subject of future research.
 
@@ -105,7 +105,7 @@ In both cases, computing turbulent fluxes requires:
     and atmospheric equation of state are
 
     ```@example interface_fluxes
-    using ClimaOcean.Atmospheres: AtmosphereThermodynamicsParameters
+    using NumericalEarth.Atmospheres: AtmosphereThermodynamicsParameters
     AtmosphereThermodynamicsParameters()
     ```
 
@@ -132,10 +132,10 @@ coefficient and vapor flux coefficient.
 The simplest method for computing fluxes is merely to prescribe ``C_D``, ``C_\theta``, and ``C_q``
 as constants -- typically with a magnitude around ``5 × 10^{-4}``--``2 × 10^{-3}``.
 A comprehensive example is given below, but we note briefly here that
-`ClimaOcean` supports the computation of turbulent fluxes with constant coefficients via
+`NumericalEarth` supports the computation of turbulent fluxes with constant coefficients via
 
 ```@example interface_fluxes
-using ClimaOcean
+using NumericalEarth
 
 coefficient_fluxes = CoefficientBasedFluxes(drag_coefficient=2e-3,
                                             heat_transfer_coefficient=2e-3,
@@ -218,7 +218,7 @@ The free parameter ``\mathbb{C}_g`` is often called
 between ``0`` and ``0.03`` [edson2013exchange](@citep).
 
 ```@example
-using ClimaOcean
+using NumericalEarth
 using CairoMakie
 set_theme!(Theme(fontsize=14, linewidth=4))
 
@@ -240,10 +240,10 @@ u★ = 1e-2:5e-3:3e-1
 
 fig = Figure(size=(800, 400))
 ax1 = Axis(fig[1, 1], xlabel="Friction velocity, u★ (m s⁻¹)", ylabel="Momentum roughness length ℓᵤ (m)")
-lines!(ax1, u★, ℓd, label="ClimaOcean default")
+lines!(ax1, u★, ℓd, label="NumericalEarth default")
 lines!(ax1, u★, ℓg, label="Charnock")
 lines!(ax1, u★, ℓν, label="Smooth wall")
-lines!(ax1, u★, ℓ2, color=:black, label="ClimaOcean default with ℂg = 0.011")
+lines!(ax1, u★, ℓ2, color=:black, label="NumericalEarth default with ℂg = 0.011")
 
 ax2 = Axis(fig[1, 2], xlabel="Friction velocity, u★ (m s⁻¹)", ylabel="Momentum roughness length, ℓᵤ (m)")
 u★ = 0.1:0.1:10
@@ -263,7 +263,7 @@ fig
 
 ## Computing fluxes and the effective similarity drag coefficient
 
-ClimaOcean's default roughness length for air-sea fluxes is a function of the
+NumericalEarth's default roughness length for air-sea fluxes is a function of the
 friction velocity ``u_\star``.
 This formulation produces a nonlinear equation for ``u_\star``, in terms of ``Δ u = u_a(h) - u_o``,
 which we emphasize by rearranging the similarity profile
@@ -296,7 +296,7 @@ surface salinity ``S_o = 35 \, \mathrm{g \, kg^{-1}}`` -- but the surface temper
 
 ```@example interface_fluxes
 using Oceananigans
-using ClimaOcean
+using NumericalEarth
 
 # Atmosphere velocities
 Nx = Ny = 200
@@ -406,13 +406,13 @@ Cᴰ_rough = @. (u★_rough / uₐ)^2
 
 fig = Figure(size=(800, 400))
 axu = Axis(fig[1:2, 1], xlabel="uₐ (m s⁻¹) at 10 m", ylabel="u★ (m s⁻¹)")
-lines!(axu, uₐ, u★, label="ClimaOcean default")
+lines!(axu, uₐ, u★, label="NumericalEarth default")
 lines!(axu, uₐ, u★_rough, label="Increased roughness model")
 lines!(axu, uₐ, u★_LY, label="Large and Yeager (2009) polynomial fit")
 lines!(axu, uₐ, u★_EC, label="ECMWF polynomial fit (Edson et al. 2013)")
 
 axd = Axis(fig[1:2, 2], xlabel="uₐ (m s⁻¹) at 10 m", ylabel="1000 × Cᴰ")
-lines!(axd, uₐ, 1000 .* Cᴰ_default, label="ClimaOcean default")
+lines!(axd, uₐ, 1000 .* Cᴰ_default, label="NumericalEarth default")
 lines!(axd, uₐ, 1000 .* Cᴰ_rough, label="Increased roughness model")
 lines!(axd, uₐ, 1000 .* Cᴰ_LY, label="Large and Yeager (2009) polynomial fit")
 lines!(axd, uₐ, 1000 .* Cᴰ_EC, label="ECMWF polynomial fit (Edson et al. 2013)")
@@ -539,7 +539,7 @@ Pr(\zeta=0) \equiv \frac{\tilde{\psi}_\theta(0)}{\tilde{\psi}_u(0)} = \tilde{\ps
 
 and observations suggest that ``\tilde{\psi}_θ(0) ≈ 0.7``.
 Otherwise, the interpretation of variations in ``\tilde{\psi}_\theta`` (increased by stability, decreased by instability)is similar as for momentum.
-We typically use the same "scalar" stability function to scale the vertical profiles of both temperature and water vapor, but neverthless ClimaOcean retains the possibility of an independent ``\tilde{\psi}_q``.
+We typically use the same "scalar" stability function to scale the vertical profiles of both temperature and water vapor, but neverthless NumericalEarth retains the possibility of an independent ``\tilde{\psi}_q``.
 
 ### The Monin--Obhukhov self-similar vertical profiles
 
@@ -719,7 +719,7 @@ q_\star = \frac{C_q}{\sqrt{C_D}} \, Δ q \, \sqrt{\frac{U}{| Δ \bm{u} |}} \\
 
 When sea ice is present, the exchange of heat, salt, and momentum between the ocean and ice is critical for both
 ocean circulation and sea ice evolution.
-ClimaOcean provides two formulations for computing sea ice-ocean heat fluxes:
+NumericalEarth provides two formulations for computing sea ice-ocean heat fluxes:
 a simpler bulk formula (`IceBathHeatFlux`) and the full three-equation thermodynamic model (`ThreeEquationHeatFlux`).
 
 ### Overview of sea ice-ocean coupling
