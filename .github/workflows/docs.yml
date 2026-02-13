@@ -21,6 +21,7 @@ concurrency:
 env:
   JULIA_NUM_PRECOMPILE_TASKS: 8
   JULIA_NUM_THREADS: 8
+  JULIA_DEPOT_PATH: "/storage5/github-action-runners/julia-depot"
   NUMERICAL_EARTH_LABEL_BUILD_ALL_EXAMPLES: 'build all examples'
 
 jobs:
@@ -65,7 +66,6 @@ jobs:
           COPERNICUS_USERNAME: ${{ secrets.COPERNICUS_SERVICE_USERNAME }}
           COPERNICUS_PASSWORD: ${{ secrets.COPERNICUS_USERNAME_PASSWORD }}
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          JULIA_DEPOT_PATH: "/storage5/github-action-runners/julia-depot"
           JULIA_DEBUG: Documenter
           JULIA_SSL_NO_VERIFY: "**"
         run: julia --project=docs --color=yes docs/make.jl
@@ -87,7 +87,7 @@ jobs:
       contents: write
       pull-requests: read
       statuses: write
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, tartarus]
     timeout-minutes: 30
     concurrency:
       group: docs-pushing
@@ -106,10 +106,7 @@ jobs:
         run:
           rm -fv docs/build/literated/*.jld2
       - name: Deploy documentation
-        run:
-          julia --project=docs --color=yes docs/deploy.jl
         env:
-          JULIA_DEPOT_PATH: "/storage5/github-action-runners/julia-depot"
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           DOCUMENTER_KEY: ${{ secrets.DOCUMENTER_KEY }}
-
+        run: julia --color=yes docs/deploy.jl

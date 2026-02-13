@@ -8,10 +8,20 @@
   <strong>🌎 A flexible framework for coupling Earth system model components with prescribed or prognostic data, built on <a href="https://github.com/CliMA/Oceananigans.jl">Oceananigans</a>.</strong>
 </p>
 
-###
-
-[![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.7677442.svg?style=flat-square)](https://doi.org/10.5281/zenodo.7677442)
-[![Build status](https://badge.buildkite.com/3113cca353b83df3b5855d3f0d69827124614aef7017c835d2.svg?style=flat-square)](https://buildkite.com/clima/climaocean-ci)
+<p align="center">
+  <a href="https://doi.org/10.5281/zenodo.7677442">
+    <img src="https://zenodo.org/badge/DOI/10.5281/zenodo.7677442.svg?style=flat-square" alt="DOI">
+  </a>
+  <a href="https://github.com/NumericalEarth/NumericalEarth.jl/actions/workflows/ci.yml">
+    <img src="https://github.com/NumericalEarth/NumericalEarth.jl/actions/workflows/ci.yml/badge.svg" alt="CI">
+  </a>
+  <a href="https://numericalearth.github.io/NumericalEarthDocumentation/stable/">
+    <img src="https://img.shields.io/badge/docs-stable-blue.svg?style=flat-square" alt="Stable docs">
+  </a>
+  <a href="https://numericalearth.github.io/NumericalEarthDocumentation/dev/">
+    <img src="https://img.shields.io/badge/docs-dev-orange.svg?style=flat-square" alt="Dev docs">
+  </a>
+</p>
 
 ## Overview
 
