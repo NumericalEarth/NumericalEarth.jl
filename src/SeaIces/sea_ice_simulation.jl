@@ -73,10 +73,13 @@ function sea_ice_simulation(grid, ocean=nothing;
     return sea_ice
 end
 
+default_coriolis(ocean::Simulation) = ocean.model.coriolis
+default_coriolis(ocean::Nothing) = HydrostaticSphericalCoriolis(; rotation_rate=default_rotation_rate)
+
 function sea_ice_dynamics(grid, ocean=nothing;
                           sea_ice_ocean_drag_coefficient = 5.5e-3,
                           rheology = ElastoViscoPlasticRheology(),
-                          coriolis = HydrostaticSphericalCoriolis(; rotation_rate=default_rotation_rate),
+                          coriolis = default_coriolis(ocean),
                           free_drift = nothing,
                           solver = SplitExplicitSolver(120))
 
