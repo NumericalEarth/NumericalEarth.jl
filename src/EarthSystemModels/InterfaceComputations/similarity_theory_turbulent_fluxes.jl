@@ -203,8 +203,7 @@ function iterate_interface_fluxes(flux_formulation::SimilarityTheoryFluxes,
                                  atmosphere_state,
                                  approximate_interface_state)
 
-    Umin = flux_formulation.minimum_bulk_velocity
-    U = max(Umin, sqrt(Δu^2 + Δv^2 + Uᴳ^2))
+    U = sqrt(Δu^2 + Δv^2 + Uᴳ^2)
 
     # Compute roughness length scales (pass surface temperature for viscosity calculation)
     ℓu₀ = roughness_length(ℓu, u★, U, ℂₐ, Tₛ)
