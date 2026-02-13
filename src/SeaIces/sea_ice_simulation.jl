@@ -20,6 +20,7 @@ function sea_ice_simulation(grid, ocean=nothing;
                             dynamics = sea_ice_dynamics(grid, ocean),
                             bottom_heat_boundary_condition = nothing,
                             top_heat_boundary_condition = nothing,
+                            timestepper = :SplitRungeKutta3, 
                             phase_transitions = PhaseTransitions(; ice_heat_capacity, ice_density),
                             conductivity = 2, # kg m s⁻³ K⁻¹
                             internal_heat_flux = ConductiveFlux(; conductivity))
@@ -60,6 +61,7 @@ function sea_ice_simulation(grid, ocean=nothing;
                                 ice_consolidation_thickness,
                                 ice_thermodynamics,
                                 dynamics,
+                                timestepper,
                                 bottom_heat_flux,
                                 top_heat_flux)
 
