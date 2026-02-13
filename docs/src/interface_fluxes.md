@@ -682,7 +682,7 @@ u★ = stability_model.interfaces.atmosphere_ocean_interface.fluxes.friction_vel
 fig = Figure(size=(800, 600))
 axu = Axis(fig[2, 1], xlabel="Wind speed uₐ (m s⁻¹)", ylabel="Air-sea temperature difference (K)")
 axθ = Axis(fig[2, 2], xlabel="Wind speed uₐ (m s⁻¹)", ylabel="Air-sea temperature difference (K)")
-axC = Axis(fig[1, 1:2], xlabel="Wind speed uₐ (m s⁻¹)", ylabel="Cᴰ / neutral Cᴰ")
+axC = Axis(fig[3, 1:2], xlabel="Wind speed uₐ (m s⁻¹)", ylabel="Cᴰ / neutral Cᴰ")
 
 ΔT = Tₐ .- Tₒ
 ΔT = dropdims(ΔT, dims=1)
