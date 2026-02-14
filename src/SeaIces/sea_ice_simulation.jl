@@ -4,6 +4,8 @@ using ClimaSeaIce.SeaIceThermodynamics: IceWaterThermalEquilibrium
 using ClimaSeaIce.SeaIceDynamics: SplitExplicitSolver, SemiImplicitStress, SeaIceMomentumEquation, StressBalanceFreeDrift
 using ClimaSeaIce.Rheologies: IceStrength, ElastoViscoPlasticRheology
 
+using Oceananigans.TimeSteppers: SplitRungeKuttaTimeStepper
+
 using NumericalEarth.EarthSystemModels: ocean_surface_salinity, ocean_surface_velocities
 using NumericalEarth.Oceans: Default
 
