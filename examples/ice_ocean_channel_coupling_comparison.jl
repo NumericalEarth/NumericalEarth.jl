@@ -75,16 +75,18 @@ const h₀ = 0.5   # initial ice thickness (m)
 const ℵ₀ = 0.9   # initial ice concentration
 
 # Time stepping
-const Δt = 10minutes
 const stop_time = 200days
 
 # =====================
 # Grid (shared)
 # =====================
 
-grid = RectilinearGrid(size = (Nx, Ny, Nz),
+using CUDA
+
+grid = RectilinearGrid(GPU(), size = (Nx, Ny, Nz),
                        x = (0, Lx),
                        y = (0, Ly),
+                       halo = (7, 7, 7),
                        z = z_faces,
                        topology = (Periodic, Bounded, Bounded))
 
@@ -106,8 +108,8 @@ Sᵢ(x, y, z) = S_deep + (S_surface - S_deep) * exp(z / 100)
 Uses a 1×1 cell grid covering the ocean domain so that the regridder can compute
 valid fractional indices (a fully Flat atmosphere grid triggers a bug when paired
 with a non-Flat ocean grid)."""
-function build_atmosphere()
-    atmosphere_grid  = RectilinearGrid(size = (1, 1),
+function build_atmosphere(arch)
+    atmosphere_grid  = RectilinearGrid(arch; size = (1, 1),
                                        x = (0, Lx),
                                        y = (0, Ly),
                                        topology = (Periodic, Bounded, Flat))
@@ -135,13 +137,19 @@ method that recomputes ice-ocean fluxes at each RK3 substage.
 When the ocean uses `:QuasiAdamsBashforth2` and sea ice uses `:ForwardEuler`,
 the default sequential coupling is used (sea ice steps first, then ocean).
 """
-function build_coupled_simulation(; ocean_timestepper,
-                                    sea_ice_timestepper,
-                                    output_prefix)
+function build_coupled_simulation(grid; ocean_timestepper,
+                                        sea_ice_timestepper,
+                                        output_prefix)
 
     # --- Atmosphere (fresh instance) ---
-    atmosphere = build_atmosphere()
+    atmosphere = build_atmosphere(Oceananigans.Architectures.architecture(grid))
     radiation  = Radiation(ocean_albedo=0.06, sea_ice_albedo=0.7)
+    
+    Δt = if ocean_timestepper == :SplitRungeKutta3
+        15minutes
+    else
+        5minutes
+    end
 
     # --- Ocean ---
     ocean = ocean_simulation(grid;
@@ -153,9 +161,7 @@ function build_coupled_simulation(; ocean_timestepper,
                              tracer_advection = WENO(order=7))
 
     set!(ocean.model, T=Tᵢ, S=Sᵢ)
-
-
-    sea_ice = sea_ice_simulation(ocean, grid; advection = WENO(order=7))
+    sea_ice = sea_ice_simulation(grid, ocean; advection = WENO(order=7, minimum_buffer_upwind_order=1), timestepper = sea_ice_timestepper)
     set!(sea_ice.model, h=h₀, ℵ=ℵ₀)
 
     # --- Coupled Model ---
@@ -178,6 +184,80 @@ function build_coupled_simulation(; ocean_timestepper,
                                                  filename = output_prefix * "_sea_ice",
                                                  overwrite_existing = true,
                                                  array_type = Array{Float32})
+
+    # --- Flux Output Writers ---
+
+    # Ocean net surface fluxes (momentum + tracers)
+    ocean_flux_outputs = (; τx = coupled_model.interfaces.net_fluxes.ocean.u,
+                            τy = coupled_model.interfaces.net_fluxes.ocean.v,
+                            JT = coupled_model.interfaces.net_fluxes.ocean.T,
+                            JS = coupled_model.interfaces.net_fluxes.ocean.S)
+
+    ocean.output_writers[:fluxes] = JLD2Writer(ocean.model, ocean_flux_outputs;
+                                               schedule = TimeInterval(1days),
+                                               filename = output_prefix * "_ocean_fluxes",
+                                               overwrite_existing = true,
+                                               array_type = Array{Float32})
+
+    # Atmosphere-ocean component fluxes
+    ao = coupled_model.interfaces.atmosphere_ocean_interface.fluxes
+    ao_flux_outputs = (; Qc_ao = ao.sensible_heat,
+                         Qv_ao = ao.latent_heat,
+                         Mv_ao = ao.water_vapor,
+                         τx_ao = ao.x_momentum,
+                         τy_ao = ao.y_momentum)
+
+    ocean.output_writers[:ao_fluxes] = JLD2Writer(ocean.model, ao_flux_outputs;
+                                                   schedule = TimeInterval(1days),
+                                                   filename = output_prefix * "_ao_fluxes",
+                                                   overwrite_existing = true,
+                                                   array_type = Array{Float32})
+
+    # Sea ice-ocean interface fluxes
+    io = coupled_model.interfaces.sea_ice_ocean_interface.fluxes
+    io_flux_outputs = (; Qi  = io.interface_heat,
+                         Qf  = io.frazil_heat,
+                         Sio = io.salt)
+
+    ocean.output_writers[:io_fluxes] = JLD2Writer(ocean.model, io_flux_outputs;
+                                                   schedule = TimeInterval(1days),
+                                                   filename = output_prefix * "_io_fluxes",
+                                                   overwrite_existing = true,
+                                                   array_type = Array{Float32})
+
+    # Sea ice top fluxes (from atmosphere)
+    sea_ice_top = coupled_model.interfaces.net_fluxes.sea_ice.top
+    si_top_outputs = (; Q_top  = sea_ice_top.heat,
+                        τx_top = sea_ice_top.u,
+                        τy_top = sea_ice_top.v)
+
+    sea_ice.output_writers[:top_fluxes] = JLD2Writer(sea_ice.model, si_top_outputs;
+                                                      schedule = TimeInterval(1days),
+                                                      filename = output_prefix * "_sea_ice_top_fluxes",
+                                                      overwrite_existing = true,
+                                                      array_type = Array{Float32})
+
+    # Sea ice bottom flux (from ocean)
+    si_bottom_outputs = (; Q_bottom = coupled_model.interfaces.net_fluxes.sea_ice.bottom.heat)
+
+    sea_ice.output_writers[:bottom_fluxes] = JLD2Writer(sea_ice.model, si_bottom_outputs;
+                                                         schedule = TimeInterval(1days),
+                                                         filename = output_prefix * "_sea_ice_bottom_fluxes",
+                                                         overwrite_existing = true,
+                                                         array_type = Array{Float32})
+
+    # Atmosphere-sea ice component fluxes
+    ai = coupled_model.interfaces.atmosphere_sea_ice_interface.fluxes
+    ai_flux_outputs = (; Qc_ai = ai.sensible_heat,
+                         Qv_ai = ai.latent_heat,
+                         τx_ai = ai.x_momentum,
+                         τy_ai = ai.y_momentum)
+
+    sea_ice.output_writers[:ai_fluxes] = JLD2Writer(sea_ice.model, ai_flux_outputs;
+                                                     schedule = TimeInterval(1days),
+                                                     filename = output_prefix * "_ai_fluxes",
+                                                     overwrite_existing = true,
+                                                     array_type = Array{Float32})
 
     # --- Progress callback ---
     wall_clock = Ref(time_ns())
@@ -213,7 +293,7 @@ end
 @info " Case 1: AB2 + Forward Euler (loosely coupled)"
 @info "═══════════════════════════════════════════════════"
 
-sim_ab2 = build_coupled_simulation(ocean_timestepper = :QuasiAdamsBashforth2,
+sim_ab2 = build_coupled_simulation(grid; ocean_timestepper = :QuasiAdamsBashforth2,
                                    sea_ice_timestepper = :ForwardEuler,
                                    output_prefix = "ab2_fe")
 run!(sim_ab2)
@@ -227,7 +307,7 @@ run!(sim_ab2)
 @info " Case 2: RK3 + RK3 (tightly coupled)"
 @info "═══════════════════════════════════════════════════"
 
-sim_rk3 = build_coupled_simulation(ocean_timestepper = :SplitRungeKutta3,
+sim_rk3 = build_coupled_simulation(grid; ocean_timestepper = :SplitRungeKutta3,
                                    sea_ice_timestepper = :SplitRungeKutta3,
                                    output_prefix = "rk3_rk3")
 run!(sim_rk3)
@@ -282,7 +362,11 @@ using Statistics: mean
 @info ""
 @info "Output files:"
 @info "  AB2+FE:  ab2_fe_ocean_surface.jld2,  ab2_fe_sea_ice.jld2"
+@info "           ab2_fe_ocean_fluxes.jld2,    ab2_fe_ao_fluxes.jld2,    ab2_fe_io_fluxes.jld2"
+@info "           ab2_fe_sea_ice_top_fluxes.jld2,  ab2_fe_sea_ice_bottom_fluxes.jld2,  ab2_fe_ai_fluxes.jld2"
 @info "  RK3+RK3: rk3_rk3_ocean_surface.jld2, rk3_rk3_sea_ice.jld2"
+@info "           rk3_rk3_ocean_fluxes.jld2,   rk3_rk3_ao_fluxes.jld2,   rk3_rk3_io_fluxes.jld2"
+@info "           rk3_rk3_sea_ice_top_fluxes.jld2, rk3_rk3_sea_ice_bottom_fluxes.jld2, rk3_rk3_ai_fluxes.jld2"
 
 # ==============================================
 #  Visualization
