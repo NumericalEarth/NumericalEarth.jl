@@ -76,12 +76,15 @@ end
 default_coriolis(ocean::Simulation) = ocean.model.coriolis
 default_coriolis(ocean::Nothing) = HydrostaticSphericalCoriolis(; rotation_rate=default_rotation_rate)
 
+default_solver(ocean) = SplitExplicitSolver(120)
+default_solver(ocean::Simulation) = ocean.model.timestepper isa SplitRungeKuttaTimeStepper ? SplitExplicitSolver(360) : SplitExplicitSolver(120)
+
 function sea_ice_dynamics(grid, ocean=nothing;
                           sea_ice_ocean_drag_coefficient = 5.5e-3,
                           rheology = ElastoViscoPlasticRheology(),
                           coriolis = default_coriolis(ocean),
                           free_drift = nothing,
-                          solver = SplitExplicitSolver(120))
+                          solver = default_solver(ocean))
 
     SSU, SSV = ocean_surface_velocities(ocean)
     sea_ice_ocean_drag_coefficient = convert(eltype(grid), sea_ice_ocean_drag_coefficient)
