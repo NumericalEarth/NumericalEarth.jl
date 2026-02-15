@@ -8,6 +8,7 @@ import Oceananigans.TimeSteppers: time_step!, initialize!
 
 import Oceananigans.Architectures: architecture
 
+using NumericalEarth.EarthSystemModels: EarthSystemModel
 import NumericalEarth.EarthSystemModels: default_nan_checker
 import NumericalEarth.EarthSystemModels: reference_density, 
                                      heat_capacity, 
@@ -100,7 +101,7 @@ struct VerosOceanSimulation{S}
     setup :: S
 end
 
-default_nan_checker(model::OceanSeaIceModel{<:Any, <:Any, <:VerosOceanSimulation}) = nothing
+default_nan_checker(model::EarthSystemModel{<:Any, <:Any, <:VerosOceanSimulation}) = nothing
 initialize!(::NumericalEarthVerosExt.VerosOceanSimulation{Py}) = nothing
 
 function time_step!(ocean::VerosOceanSimulation, Δt) 
@@ -112,8 +113,8 @@ function time_step!(ocean::VerosOceanSimulation, Δt)
     ocean.setup.step(ocean.setup.state)
 end
 
-architecture(model::OceanSeaIceModel{<:Any, <:Any, <:VerosOceanSimulation}) = CPU()
-eltype(model::OceanSeaIceModel{<:Any, <:Any, <:VerosOceanSimulation}) = Float64
+architecture(model::EarthSystemModel{<:Any, <:Any, <:VerosOceanSimulation}) = CPU()
+eltype(model::EarthSystemModel{<:Any, <:Any, <:VerosOceanSimulation}) = Float64
 
 reference_density(ocean::VerosOceanSimulation) = pyconvert(eltype(ocean), ocean.setup.state.settings.rho_0)
 heat_capacity(ocean::VerosOceanSimulation) = convert(eltype(ocean), 3995)
