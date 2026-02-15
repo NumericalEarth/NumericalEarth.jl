@@ -29,15 +29,15 @@ mkpath(OUTPUT_DIR)
 # Set `build_always = false` for long-running examples that should only be built
 # on pushes to `main`/tags, or when the `build all examples` label is added to a PR.
 examples = [
-    Example("Single-column ocean simulation", "single_column_os_papa_simulation", true),
-    Example("One-degree ocean--sea ice simulation", "one_degree_simulation", false),
-    Example("Near-global ocean simulation", "near_global_ocean_simulation", false),
-    Example("Global climate simulation", "global_climate_simulation", false),
+    # Example("Single-column ocean simulation", "single_column_os_papa_simulation", true),
+    # Example("One-degree ocean--sea ice simulation", "one_degree_simulation", false),
+    # Example("Near-global ocean simulation", "near_global_ocean_simulation", false),
+    # Example("Global climate simulation", "global_climate_simulation", false),
 ]
 
 # Developer examples from docs/src/developers/ directory
 developer_examples = [
-    Example("OceanSeaIceModel interface", "slab_ocean", false),
+    # Example("OceanSeaIceModel interface", "slab_ocean", false),
 ]
 
 # Filter out long-running examples unless NUMERICAL_EARTH_BUILD_ALL_EXAMPLES is set
