@@ -58,7 +58,7 @@ jobs:
           - checkpointing
           - speedy_weather
           - downloading
-          - veros
+another bugfix          - veros
     steps:
       - name: Show available storage before cleanup
         run: |
