@@ -29,7 +29,7 @@ Returns a NamedTuple containing package information if successful.
 Also patches Veros's signal handling to work with PythonCall.
 """
 function install_veros()
-    CondaPkg.add_pip("veros")
+    CondaPkg.add_pip("veros", version="@ https://github.com/team-ocean/veros/archive/refs/heads/main.zip")
     cli = CondaPkg.which("veros")
     
     # Patch signal handling as early as possible
@@ -215,10 +215,13 @@ function VerosOceanSimulation(setup::String, setup_name::Symbol)
     # Patch again before setup() in case Veros imports more modules
     patch_veros_signal_handling()
 
+    # Remove any existing output files to avoid "file exists" errors from Veros diagnostics
+    remove_outputs(Symbol(setup))
+
     # instantiate the setup
     ocean.setup()
 
-    return VerosOceanSimulation(ocean) 
+    return VerosOceanSimulation(ocean)
 end
 
 # We assume that if we pass a python object, this is a veros simulation
