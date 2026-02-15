@@ -106,10 +106,9 @@ EarthSystemModels.update_net_fluxes!(coupled_model, slab_ocean::SlabOcean) =
 # For a slab ocean, this method advances temperature through the computed flux. Note the convention
 # that the fluxes are positive when they are leaving the ocean component (cooling the ocean).
 
-import Oceananigans.TimeSteppers: time_step!
 using Oceananigans.TimeSteppers: tick!
 
-function time_step!(slab_ocean::SlabOcean, Δt)
+function Oceananigans.TimeSteppers.time_step!(slab_ocean::SlabOcean, Δt)
     tick!(slab_ocean.clock, Δt)
     parent(slab_ocean.temperature) .-= parent(slab_ocean.temperature_flux) .* Δt ./ slab_ocean.grid.Lz
     return nothing
@@ -141,7 +140,7 @@ set!(sea_ice.model, h=Metadatum(:sea_ice_thickness,     dataset=ECCO4Monthly()),
                     ℵ=Metadatum(:sea_ice_concentration, dataset=ECCO4Monthly()))
 
 interfaces = ComponentInterfaces(atmosphere, slab_ocean, sea_ice; exchange_grid=grid)
-coupled_model = NumericalEarth.EarthSystemModel(slab_ocean, sea_ice; atmosphere, interfaces)
+coupled_model = NumericalEarth.EarthSystemModel(atmosphere, slab_ocean, sea_ice; interfaces)
 
 simulation = Simulation(coupled_model, Δt=60minutes, stop_time=120days)
 run!(simulation)
