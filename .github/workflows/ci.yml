@@ -22,7 +22,7 @@ concurrency:
 permissions:
   actions: write
   contents: read
-  
+
 env:
   ECCO_USERNAME: ${{ secrets.ECCO_USERNAME }}
   ECCO_WEBDAV_PASSWORD: ${{ secrets.ECCO_WEBDAV_PASSWORD }}
@@ -42,7 +42,7 @@ jobs:
       fail-fast: false
       matrix:
         version:
-          - '1.12.4'
+          - '1.12.5'
         os:
           - ubuntu-latest
         arch:
@@ -110,7 +110,7 @@ jobs:
       - uses: actions/checkout@v6
       - uses: julia-actions/setup-julia@v2
         with:
-          version: '1.12.4'
+          version: '1.12.5'
       - name: Instantiate and precompile
         shell: julia --project --color=yes {0}
         run: |
@@ -157,7 +157,7 @@ jobs:
       - uses: actions/checkout@v6
       - uses: julia-actions/setup-julia@v2
         with:
-          version: '1.12.4'
+          version: '1.12.5'
       - name: Run ${{ matrix.test_group }} tests
         env:
           JULIA_DEPOT_PATH: "/storage5/github-action-runners/julia-depot"
@@ -177,7 +177,7 @@ jobs:
       fail-fast: false
       matrix:
         version:
-          - '1.12.4'
+          - '1.12.5'
         os:
           - ubuntu-latest
         arch:
@@ -185,7 +185,7 @@ jobs:
         include:
           - os: macOS-latest
             arch: aarch64
-            version: '1.12.4'
+            version: '1.12.5'
     steps:
       - uses: actions/checkout@v6
       - uses: julia-actions/setup-julia@latest
@@ -259,7 +259,7 @@ jobs:
   #     - uses: actions/checkout@v6
   #     - uses: julia-actions/setup-julia@v2
   #       with:
-  #         version: '1.12.4'
+  #         version: '1.12.5'
   #     - name: Instantiate and precompile
   #       shell: julia --project --color=yes {0}
   #       run: |
