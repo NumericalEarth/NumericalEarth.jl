@@ -121,11 +121,7 @@ Use `Pkg.add(url="https://github.com/NumericalEarth/NumericalEarth.jl.git", rev=
 
 ## Citing
 
-If you use NumericalEarth for your research, teaching, or fun, we'd be grateful if you cite the corresponding Zenodo record:
-
-> Wagner, G. L. et al. (2025). NumericalEarth.jl: v0.9.0 (v0.9.0). Zenodo. https://doi.org/10.5281/zenodo.7677442
-
-and the Oceananigans overview paper submitted to the Journal of Advances in Modeling Earth Systems:
+If you use NumericalEarth for your research, teaching, or fun, we'd be grateful if you cite the Oceananigans overview paper submitted to the Journal of Advances in Modeling Earth Systems:
 
 > "High-level, high-resolution ocean modeling at all scales with Oceananigans"
 >
