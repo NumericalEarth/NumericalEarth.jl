@@ -29,13 +29,13 @@ using PythonCall, CondaPkg
     ocean = VerosModule.VerosOceanSimulation("global_4deg", :GlobalFourDegreeSetup)
     
     # Test interface
-    ρₒ = NumericalEarth.OceanSeaIceModels.reference_density(ocean)
-    cₚ = NumericalEarth.OceanSeaIceModels.heat_capacity(ocean)
+    ρₒ = NumericalEarth.EarthSystemModels.reference_density(ocean)
+    cₚ = NumericalEarth.EarthSystemModels.heat_capacity(ocean)
     @test ρₒ isa Real
     @test cₚ isa Real
     
-    T = NumericalEarth.OceanSeaIceModels.ocean_temperature(ocean)
-    S = NumericalEarth.OceanSeaIceModels.ocean_salinity(ocean)
+    T = NumericalEarth.EarthSystemModels.ocean_temperature(ocean)
+    S = NumericalEarth.EarthSystemModels.ocean_salinity(ocean)
     
     @test !isnothing(T)
     @test !isnothing(S)
@@ -43,8 +43,8 @@ using PythonCall, CondaPkg
     @test length(size(T)) == 3
     @test length(size(S)) == 3
     
-    S_surf = NumericalEarth.OceanSeaIceModels.ocean_surface_salinity(ocean)
-    u_surf, v_surf = NumericalEarth.OceanSeaIceModels.ocean_surface_velocities(ocean)
+    S_surf = NumericalEarth.EarthSystemModels.ocean_surface_salinity(ocean)
+    u_surf, v_surf = NumericalEarth.EarthSystemModels.ocean_surface_velocities(ocean)
     
     @test !isnothing(S_surf)
     @test !isnothing(u_surf)

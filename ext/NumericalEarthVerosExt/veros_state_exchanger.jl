@@ -1,6 +1,6 @@
 using NumericalEarth.Oceans
 
-import NumericalEarth.OceanSeaIceModels.InterfaceComputations: 
+import NumericalEarth.EarthSystemModels.InterfaceComputations: 
     net_fluxes,
     sea_ice_ocean_interface, 
     atmosphere_ocean_interface, 
@@ -8,7 +8,7 @@ import NumericalEarth.OceanSeaIceModels.InterfaceComputations:
     ComponentExchanger,
     default_exchange_grid
 
-import NumericalEarth.OceanSeaIceModels:
+import NumericalEarth.EarthSystemModels:
     interpolate_state!,
     update_net_fluxes!
 
