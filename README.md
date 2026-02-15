@@ -8,10 +8,20 @@
   <strong>🌎 A flexible framework for coupling Earth system model components with prescribed or prognostic data, built on <a href="https://github.com/CliMA/Oceananigans.jl">Oceananigans</a>.</strong>
 </p>
 
-###
-
-[![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.7677442.svg?style=flat-square)](https://doi.org/10.5281/zenodo.7677442)
-[![Build status](https://badge.buildkite.com/3113cca353b83df3b5855d3f0d69827124614aef7017c835d2.svg?style=flat-square)](https://buildkite.com/clima/NumericalEarth-ci)
+<p align="center">
+  <a href="https://doi.org/10.5281/zenodo.7677442">
+    <img src="https://zenodo.org/badge/DOI/10.5281/zenodo.7677442.svg?style=flat-square" alt="DOI">
+  </a>
+  <a href="https://github.com/NumericalEarth/NumericalEarth.jl/actions/workflows/ci.yml">
+    <img src="https://github.com/NumericalEarth/NumericalEarth.jl/actions/workflows/ci.yml/badge.svg" alt="CI">
+  </a>
+  <a href="https://numericalearth.github.io/NumericalEarthDocumentation/stable/">
+    <img src="https://img.shields.io/badge/docs-stable-blue.svg?style=flat-square" alt="Stable docs">
+  </a>
+  <a href="https://numericalearth.github.io/NumericalEarthDocumentation/dev/">
+    <img src="https://img.shields.io/badge/docs-dev-orange.svg?style=flat-square" alt="Dev docs">
+  </a>
+</p>
 
 ## Overview
 
@@ -38,11 +48,11 @@ T_init = Metadatum(:temperature; date=DateTime(1993, 1, 1), dataset=ECCO2Daily()
 atmosphere = JRA55PrescribedAtmosphere(arch)
 ```
 
-## A core abstraction: `CoupledModel`
+## A core abstraction: `EarthSystemModel`
 
-The coupling infrastructure is anchored by `CoupledModel`, which encapsulates the component models—ocean, sea ice, atmosphere—and specifies how they communicate. Each component can be either prognostic (time-stepped by its own dynamics) or prescribed (interpolated from data). The model handles flux computations at interfaces, grid interpolation between components, and synchronized time-stepping.
+The coupling infrastructure is anchored by `EarthSystemModel`, which encapsulates the component models—ocean, sea ice, atmosphere—and specifies how they communicate. Each component can be either prognostic (time-stepped by its own dynamics) or prescribed (interpolated from data). The model handles flux computations at interfaces, grid interpolation between components, and synchronized time-stepping.
 
-We conceive of `CoupledModel` as a model in its own right, not just a container for components. This means it works with all the Oceananigans tools you'd use for any other model—`run!(simulation)`, `Callback`, `Checkpointer`, output writers, and the rest.
+We conceive of `EarthSystemModel` as a model in its own right, not just a container for components. This means it works with all the Oceananigans tools you'd use for any other model—`run!(simulation)`, `Callback`, `Checkpointer`, output writers, and the rest.
 
 To illustrate, here's a global ocean simulation driven by prescribed atmospheric reanalysis:
 
@@ -73,7 +83,7 @@ set!(ocean.model,
 
 # Couple the ocean to JRA55 atmospheric forcing
 atmosphere = NumericalEarth.JRA55PrescribedAtmosphere(arch)
-coupled_model = NumericalEarth.CoupledModel(ocean; atmosphere)
+coupled_model = NumericalEarth.OceanOnlyModel(ocean; atmosphere)
 simulation = Simulation(coupled_model, Δt=20minutes, stop_time=30days)
 run!(simulation)
 ```

@@ -1,8 +1,8 @@
 name = "NumericalEarth"
-uuid = "0376089a-ecfe-4b0e-a64f-9c555d74d754"
+uuid = "904d977b-046a-4731-8b86-9235c0d1ef02"
 license = "MIT"
-version = "0.9.0"
-authors = ["Climate Modeling Alliance and contributors"]
+version = "0.1.0"
+authors = ["NumericalEarth contributors"]
 
 [deps]
 Adapt = "79e6a3ab-5dfb-504d-930d-738a2a938a0e"
@@ -11,6 +11,7 @@ CUDA = "052768ef-5323-5732-b1bb-66c8b64840ba"
 ClimaSeaIce = "6ba0ff68-24e6-4315-936c-2e99227c95a4"
 CopernicusClimateDataStore = "bce3f73f-acea-4481-bd86-df89ecc2cb46"
 CubicSplines = "9c784101-8907-5a6d-9be6-98f00873c89b"
+CUDA_Compiler_jll = "d1e2174e-dfdc-576e-b43e-73b79eb1aca8"
 DataDeps = "124859b0-ceae-595e-8997-d05f6a7a8dfe"
 Dates = "ade2ca70-3891-5945-98fb-dc099432e06a"
 DocStringExtensions = "ffbed154-4ef7-542d-bbb7-c09d3a79fcae"
@@ -51,7 +52,8 @@ NumericalEarthVerosExt = ["PythonCall", "CondaPkg"]
 [compat]
 Adapt = "4"
 CFTime = "0.1, 0.2"
-CUDA = "4, 5"
+CUDA = "5.9.5"
+CUDA_Compiler_jll = "v0.3.1"
 ClimaSeaIce = "0.4.2"
 CondaPkg = "0.2.33"
 CopernicusClimateDataStore = "0.1"

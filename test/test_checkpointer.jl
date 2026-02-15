@@ -3,10 +3,10 @@ include("runtests_setup.jl")
 using Glob
 using Oceananigans.OutputWriters: Checkpointer
 
-@testset "OceanSeaIceModel checkpointing" begin
+@testset "EarthSystemModel checkpointing" begin
     for arch in test_architectures
         A = typeof(arch)
-        @info "Testing OceanSeaIceModel checkpointing on $A"
+        @info "Testing EarthSystemModel checkpointing on $A"
 
         # Create a minimal grid
         grid = LatitudeLongitudeGrid(arch;

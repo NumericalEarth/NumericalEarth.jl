@@ -1,14 +1,14 @@
 import NumericalEarth.Atmospheres: atmosphere_simulation
 
 # Make sure the atmospheric parameters from SpeedyWeather can be used in the compute fluxes function
-import NumericalEarth.OceanSeaIceModels:
+import NumericalEarth.EarthSystemModels:
     thermodynamics_parameters,
     boundary_layer_height,
     surface_layer_height
 
 const SpeedySimulation = SpeedyWeather.Simulation
-const SpeedyCoupledModel = NumericalEarth.OceanSeaIceModel{<:Any, <:SpeedySimulation}
-const SpeedyNoSeaIceCoupledModel = NumericalEarth.OceanSeaIceModel{<:Union{Nothing, NumericalEarth.SeaIces.FreezingLimitedOceanTemperature}, <:SpeedySimulation}
+const SpeedyEarthSystemModel = NumericalEarth.EarthSystemModel{<:Any, <:SpeedySimulation}
+const SpeedyNoSeaIceEarthSystemModel = NumericalEarth.EarthSystemModel{<:Union{Nothing, NumericalEarth.SeaIces.FreezingLimitedOceanTemperature}, <:SpeedySimulation}
 
 Base.summary(::SpeedySimulation) = "SpeedyWeather.Simulation"
 

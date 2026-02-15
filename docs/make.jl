@@ -1,4 +1,3 @@
-using Distributed
 using NumericalEarth
 using CUDA
 using Documenter
@@ -7,94 +6,66 @@ using Literate
 
 ENV["DATADEPS_ALWAYS_ACCEPT"] = "true"
 
-bib_filepath = joinpath(dirname(@__FILE__), "numericalearth.bib")
+bib_filepath = joinpath(dirname(@__FILE__), "src", "NumericalEarth.bib")
 bib = CitationBibliography(bib_filepath, style=:authoryear)
 
 #####
-##### Generate examples
+##### Example definition and filtering
 #####
+
+struct Example
+    title::String
+    basename::String
+    build_always::Bool
+end
 
 const EXAMPLES_DIR   = joinpath(@__DIR__, "..", "examples")
 const OUTPUT_DIR     = joinpath(@__DIR__, "src/literated")
 const DEVELOPERS_DIR = joinpath(@__DIR__, "src/developers")
 
-# Make sure the atmospheric data for the examples is downloaded
-JRA55PrescribedAtmosphere() # This command downloads the atmospheric data used by the examples
+mkpath(OUTPUT_DIR)
 
-# CPU examples do not benefit from Distributed
-CPU_example_pages = [
-    "Veros ocean simulation" => "literated/veros_ocean_forced_simulation.md",
-    "Single-column ocean simulation" => "literated/single_column_os_papa_simulation.md",
-    "Global climate simulation" => "literated/global_climate_simulation.md",
+# Examples from examples/ directory.
+# Set `build_always = false` for long-running examples that should only be built
+# on pushes to `main`/tags, or when the `build all examples` label is added to a PR.
+examples = [
+    Example("Single-column ocean simulation", "single_column_os_papa_simulation", true),
+    Example("One-degree ocean--sea ice simulation", "one_degree_simulation", false),
+    Example("Near-global ocean simulation", "near_global_ocean_simulation", false),
+    Example("Global climate simulation", "global_climate_simulation", false),
+    Example("Veros ocean simulation" => "literated/veros_ocean_forced_simulation.md", true), # For the moment just to test, then put it to false
 ]
 
-CPU_to_be_literated = map(CPU_example_pages) do (_, mdpath)
-    replace(basename(mdpath), ".md" => ".jl")
+# Developer examples from docs/src/developers/ directory
+developer_examples = [
+    Example("OceanSeaIceModel interface", "slab_ocean", false),
+]
+
+# Filter out long-running examples unless NUMERICAL_EARTH_BUILD_ALL_EXAMPLES is set
+build_all = get(ENV, "NUMERICAL_EARTH_BUILD_ALL_EXAMPLES", "false") == "true"
+filter!(x -> x.build_always || build_all, examples)
+filter!(x -> x.build_always || build_all, developer_examples)
+
+#####
+##### Generate examples using Literate (each in a subprocess for memory isolation)
+#####
+
+for example in examples
+    script_path = joinpath(EXAMPLES_DIR, example.basename * ".jl")
+    run(`$(Base.julia_cmd()) --color=yes --project=$(dirname(Base.active_project())) $(joinpath(@__DIR__, "literate.jl")) $(script_path) $(OUTPUT_DIR)`)
 end
 
-for n in 1:length(CPU_to_be_literated)
-    file = CPU_to_be_literated[n]
-    filepath = joinpath(EXAMPLES_DIR, file)
-    withenv("JULIA_DEBUG" => "Literate") do
-        Literate.markdown(filepath, OUTPUT_DIR; flavor = Literate.DocumenterFlavor(), execute = true)
-    end
-    GC.gc(true)
-end
-
-# Using one GPU per example
-Distributed.addprocs(2)
-
-@everywhere begin
-    using NumericalEarth
-    using CUDA
-    using Documenter
-    using DocumenterCitations
-    using Literate
-
-    ENV["DATADEPS_ALWAYS_ACCEPT"] = "true"
-
-    bib_filepath = joinpath(dirname(@__FILE__), "src", "NumericalEarth.bib")
-    bib = CitationBibliography(bib_filepath, style=:authoryear)
-
-    #####
-    ##### Generate examples
-    #####
-
-    const EXAMPLES_DIR   = joinpath(@__DIR__, "..", "examples")
-    const OUTPUT_DIR     = joinpath(@__DIR__, "src/literated")
-
-    GPU_example_pages = [
-        "One-degree ocean--sea ice simulation" => "literated/one_degree_simulation.md",
-        "Near-global ocean simulation" => "literated/near_global_ocean_simulation.md",
-    ]
-
-    GPU_to_be_literated = map(GPU_example_pages) do (_, mdpath)
-        replace(basename(mdpath), ".md" => ".jl")
-    end
-end
-
-Distributed.pmap(1:length(GPU_to_be_literated)) do n
-    device = Distributed.myid()
-    @info "switching to device $(device)"
-    CUDA.device!(device) # Set the correct GPU, the used GPUs will be number 2 and 3
-    file = GPU_to_be_literated[n]
-    filepath = joinpath(EXAMPLES_DIR, file)
-    withenv("JULIA_DEBUG" => "Literate") do
-        Literate.markdown(filepath, OUTPUT_DIR; flavor = Literate.DocumenterFlavor(), execute = true)
-    end
-    GC.gc(true)
-    CUDA.reclaim()
-end
-
-Distributed.rmprocs()
-
-withenv("JULIA_DEBUG" => "Literate") do
-    Literate.markdown(joinpath(DEVELOPERS_DIR, "slab_ocean.jl"), OUTPUT_DIR; flavor = Literate.DocumenterFlavor(), execute = true)
+for example in developer_examples
+    script_path = joinpath(DEVELOPERS_DIR, example.basename * ".jl")
+    run(`$(Base.julia_cmd()) --color=yes --project=$(dirname(Base.active_project())) $(joinpath(@__DIR__, "literate.jl")) $(script_path) $(OUTPUT_DIR)`)
 end
 
 #####
-##### Build and deploy docs
+##### Build docs
 #####
+
+examples_pages = [ex.title => joinpath("literated", ex.basename * ".md") for ex in examples]
+developer_pages = [ex.title => joinpath("literated", ex.basename * ".md") for ex in developer_examples]
 
 format = Documenter.HTML(collapselevel = 2,
                          size_threshold = nothing,
@@ -103,11 +74,11 @@ format = Documenter.HTML(collapselevel = 2,
 pages = [
     "Home" => "index.md",
 
-    "Examples" => [CPU_example_pages..., GPU_example_pages...],
+    "EarthSystemModel" => "earth_system_model.md",
 
-    "Developers" => [
-        "OceanSeaIceModel interface" => "literated/slab_ocean.md",
-        ],
+    "Examples" => examples_pages,
+
+    "Developers" => developer_pages,
 
     "Vertical grids" => "vertical_grids.md",
 
@@ -149,35 +120,3 @@ makedocs(; sitename = "NumericalEarth.jl",
          clean = true,
          warnonly = [:cross_references, :missing_docs],
          checkdocs = :exports)
-
-@info "Clean up temporary .jld2, .nc, and .mp4 output created by doctests or literated examples..."
-
-"""
-    recursive_find(directory, pattern)
-
-Return list of filepaths within `directory` that contains the `pattern::Regex`.
-"""
-recursive_find(directory, pattern) =
-    mapreduce(vcat, walkdir(directory)) do (root, dirs, files)
-        joinpath.(root, filter(contains(pattern), files))
-    end
-
-files = []
-for pattern in [r"\.jld2", r"\.nc"]
-    global files = vcat(files, recursive_find(@__DIR__, pattern))
-end
-
-for file in files
-    rm(file)
-end
-
-ci_build = get(ENV, "CI", nothing) == "true"
-
-if ci_build
-    deploydocs(repo = "github.com/NumericalEarth/NumericalEarthDocumentation.git",
-               deploy_config = Documenter.Buildkite(),
-               versions = ["stable" => "v^", "dev" => "dev", "v#.#.#"],
-               forcepush = true,
-               devbranch = "main",
-               push_preview = true)
-end

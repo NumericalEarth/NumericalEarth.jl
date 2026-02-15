@@ -88,16 +88,16 @@ Modules = [NumericalEarth.SeaIces]
 Private = false
 ```
 
-## OceanSeaIceModels
+## EarthSystemModels
 
 ```@autodocs
-Modules = [NumericalEarth.OceanSeaIceModels]
+Modules = [NumericalEarth.EarthSystemModels]
 Private = false
 ```
 
-## OceanSeaIceModels.InterfaceComputations
+## EarthSystemModels.InterfaceComputations
 
 ```@autodocs
-Modules = [NumericalEarth.OceanSeaIceModels.InterfaceComputations]
+Modules = [NumericalEarth.EarthSystemModels.InterfaceComputations]
 Private = false
 ```

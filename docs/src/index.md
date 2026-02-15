@@ -7,15 +7,15 @@ Fluxes of heat, momentum, and freshwater are computed across the interfaces of i
 or coefficient-based "bulk formula".
 NumericalEarth builds off Oceananigans, which provides tools for gridded finite-volume computations on CPUs and GPUs and building ocean-flavored fluid dynamics simulations. ClimaSeaIce, which provides software for both stand-alone and coupled sea ice simulations, is also built with Oceananigans.
 
-NumericalEarth's core abstraction is [`OceanSeaIceModel`](@ref), which encapsulates the ocean, sea ice, and atmosphere state, and interfacial flux parameterizations.
-NumericalEarth also implements [`ocean_simulation`](@ref), a utility for building realistic, hydrostatic ocean simulations with Oceananigans ensuring compatibility with `OceanSeaIceModel`.
+NumericalEarth's core abstraction is [`EarthSystemModel`](@ref), which encapsulates the ocean, sea ice, and atmosphere state, and interfacial flux parameterizations.
+NumericalEarth also implements [`ocean_simulation`](@ref), a utility for building realistic, hydrostatic ocean simulations with Oceananigans ensuring compatibility with `EarthSystemModel`.
 
 NumericalEarth is written in Julia by the [Climate Modeling Alliance](https://clima.caltech.edu)
 and heroic external collaborators.
 
 ## Installation
 
-NumericalEarth is a [registered Julia package](https://julialang.org/packages/). So to install it,
+NumericalEarth is not yet a registered package (we are working on it). To install from a Julia REPL:
 
 1. [Download Julia](https://julialang.org/downloads/).
 
@@ -24,8 +24,12 @@ NumericalEarth is a [registered Julia package](https://julialang.org/packages/).
 ```julia
 julia> using Pkg
 
-julia> Pkg.add("NumericalEarth")
+julia> Pkg.add("https://github.com/NumericalEarth/NumericalEarth.jl/")
+
+julia> Pkg.instantiate()
 ```
+
+Use `Pkg.add(url="https://github.com/NumericalEarth/NumericalEarth.jl.git", rev="main")` to install the latest development version.
 
 !!! compat "Julia 1.10 is required"
     NumericalEarth requires Julia 1.10 or later.
@@ -49,7 +53,7 @@ grid = LatitudeLongitudeGrid(arch,
                              latitude = (-70, 70),
                              z = (-3000, 0))
 
-bathymetry = NumericalEarth.regrid_bathymetry(grid) # builds gridded bathymetry based on ETOPO1
+bathymetry = NumericalEarth.regrid_bathymetry(grid) # builds gridded bathymetry based on ETOPO2022
 grid = ImmersedBoundaryGrid(grid, GridFittedBottom(bathymetry))
 
 # Build an ocean simulation initialized to the ECCO state estimate version 2 on Jan 1, 1993
@@ -59,9 +63,9 @@ set!(ocean.model,
      T=NumericalEarth.Metadatum(:temperature; date=start_date, dataset=NumericalEarth.ECCO2Daily()),
      S=NumericalEarth.Metadatum(:salinity;    date=start_date, dataset=NumericalEarth.ECCO2Daily()))
 
-# Build and run an OceanSeaIceModel (with no sea ice component) forced by JRA55 reanalysis
+# Build and run an EarthSystemModel (with no sea ice component) forced by JRA55 reanalysis
 atmosphere = NumericalEarth.JRA55PrescribedAtmosphere(arch)
-coupled_model = NumericalEarth.OceanSeaIceModel(ocean; atmosphere)
+coupled_model = NumericalEarth.OceanOnlyModel(ocean; atmosphere)
 simulation = Simulation(coupled_model, Δt=20minutes, stop_time=30days)
 run!(simulation)
 ```

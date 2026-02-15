@@ -1,9 +1,16 @@
 include("runtests_setup.jl")
+include("download_utils.jl")
 
 @testset "Availability of JRA55 data" begin
     @info "Testing that we can download all the JRA55 data..."
     for name in NumericalEarth.DataWrangling.JRA55.JRA55_variable_names
-        fts = NumericalEarth.JRA55.JRA55FieldTimeSeries(name; backend=NumericalEarth.JRA55.JRA55NetCDFBackend(2))
+        # Build a Metadatum to determine the expected file path
+        datum = Metadatum(name; dataset=JRA55.RepeatYearJRA55())
+        filepath = metadata_path(datum)
+
+        fts = download_dataset_with_fallback(filepath; dataset_name="JRA55 $name") do
+            NumericalEarth.JRA55.JRA55FieldTimeSeries(name; backend=NumericalEarth.JRA55.JRA55NetCDFBackend(2))
+        end
         @test isfile(fts.path)
         rm(fts.path; force=true)
     end
@@ -26,7 +33,10 @@ end
             metadata = Metadata(variable; dates=DateTimeProlepticGregorian(1993, 1, 1), dataset)
             filepath = metadata_path(metadata)
             isfile(filepath) && rm(filepath; force=true)
-            NumericalEarth.DataWrangling.download_dataset(metadata)
+
+            download_dataset_with_fallback(filepath; dataset_name="$(typeof(dataset)) $variable") do
+                NumericalEarth.DataWrangling.download_dataset(metadata)
+            end
             @test isfile(filepath)
             rm(filepath; force=true)
         end
@@ -38,5 +48,9 @@ end
     metadata = Metadatum(:bottom_height, dataset=ETOPO2022())
     filepath = metadata_path(metadata)
     isfile(filepath) && rm(filepath; force=true)
-    NumericalEarth.DataWrangling.download_dataset(metadata)
+
+    download_dataset_with_fallback(filepath; dataset_name="ETOPO2022") do
+        NumericalEarth.DataWrangling.download_dataset(metadata)
+    end
+    @test isfile(filepath)
 end

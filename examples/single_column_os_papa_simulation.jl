@@ -97,7 +97,7 @@ current_figure()
 
 # We continue constructing a simulation.
 radiation = Radiation()
-coupled_model = OceanSeaIceModel(ocean; atmosphere, radiation)
+coupled_model = OceanOnlyModel(ocean; atmosphere, radiation)
 simulation = Simulation(coupled_model, Δt=ocean.Δt, stop_time=30days)
 
 wall_clock = Ref(time_ns())

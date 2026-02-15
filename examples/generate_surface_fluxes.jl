@@ -66,7 +66,7 @@ set!(ocean.model; T=T_metadata, S=S_metadata)
 # uses the two-band shortwave (visible and UV) + longwave (mid and far infrared)
 # decomposition of the radiation spectrum.
 
-coupled_model = OceanSeaIceModel(ocean; atmosphere, radiation=Radiation(eltype))
+coupled_model = OceanOnlyModel(ocean; atmosphere, radiation=Radiation(eltype))
 
 # Now that the surface fluxes are computed, we can extract and visualize them.
 # The turbulent fluxes are stored in `coupled_model.interfaces.atmosphere_ocean_interface.fluxes`.
