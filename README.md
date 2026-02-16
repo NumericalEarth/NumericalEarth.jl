@@ -31,6 +31,22 @@ The package handles the complexity of component communication: interpolating bet
 
 NumericalEarth.jl also serves as a sandbox for developing and testing interface parameterizations—bulk flux formulations, roughness length models, albedo schemes, and other boundary layer physics—in a modular environment where they can be validated against observations before deployment in production climate models.
 
+## Installation instructions
+
+NumericalEarth is a [registered Julia package](https://julialang.org/packages/). So to install it,
+
+1. [Download Julia](https://julialang.org/downloads/) (version 1.10 or later).
+
+2. Launch Julia and type
+
+```julia
+julia> using Pkg
+
+julia> Pkg.add("NumericalEarth")
+```
+
+This installs the latest version that's _compatible with your current environment_.
+
 ## Data Wrangling
 
 Running realistic Earth system simulations requires wrangling gigabytes of observational and reanalysis data into formats your model can ingest. NumericalEarth.jl abstracts away this pain. Point the package at a dataset and a target grid, and it handles the downloading, caching, and regridding automatically.

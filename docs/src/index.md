@@ -15,19 +15,19 @@ and heroic external collaborators.
 
 ## Installation
 
-NumericalEarth is not yet a registered package (we are working on it). To install from a Julia REPL:
+NumericalEarth is a [registered Julia package](https://julialang.org/packages/). So to install it,
 
-1. [Download Julia](https://julialang.org/downloads/).
+1. [Download Julia](https://julialang.org/downloads/) (version 1.10 or later).
 
 2. Launch Julia and type
 
 ```julia
 julia> using Pkg
 
-julia> Pkg.add("https://github.com/NumericalEarth/NumericalEarth.jl/")
-
-julia> Pkg.instantiate()
+julia> Pkg.add("NumericalEarth")
 ```
+
+This installs the latest version that's _compatible with your current environment_.
 
 Use `Pkg.add(url="https://github.com/NumericalEarth/NumericalEarth.jl.git", rev="main")` to install the latest development version.
 
