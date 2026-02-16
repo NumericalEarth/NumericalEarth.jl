@@ -11,11 +11,11 @@ import Oceananigans.Architectures: architecture
 using NumericalEarth.EarthSystemModels: EarthSystemModel
 import NumericalEarth.EarthSystemModels: default_nan_checker
 import NumericalEarth.EarthSystemModels: reference_density, 
-                                     heat_capacity, 
-                                     ocean_temperature, 
-                                     ocean_salinity, 
-                                     ocean_surface_salinity,
-                                     ocean_surface_velocities
+                                         heat_capacity, 
+                                         ocean_temperature, 
+                                         ocean_salinity, 
+                                         ocean_surface_salinity,
+                                         ocean_surface_velocities
 
 import NumericalEarth.Oceans: ocean_simulation
 
