@@ -117,9 +117,9 @@ add_callback!(simulation, save_variables, IterationInterval(10))
 
 run!(simulation)
 
-iter = Observable(1)
-ui = @lift(u[$iter])
-vi = @lift(v[$iter])
+n = Observable(1)
+un = @lift(u[$n])
+vn = @lift(v[$n])
 Nt = length(u)
 
 fig = Figure(resolution = (1000, 700))
