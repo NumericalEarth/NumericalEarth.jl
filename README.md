@@ -5,7 +5,7 @@
 
 <!-- description -->
 <p align="center">
-  <strong>🌎 A flexible framework for coupling Earth system model components with prescribed or prognostic data, built on <a href="https://github.com/CliMA/Oceananigans.jl">Oceananigans</a>.</strong>
+  <strong>🌎 A framework for simulating the Earth system at all scales with prescribed or prognostic atmosphere, ocean, sea ice and land components, based on <a href="https://github.com/CliMA/Oceananigans.jl">Oceananigans</a>.</strong>
 </p>
 
 <p align="center">
