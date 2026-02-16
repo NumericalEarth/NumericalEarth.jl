@@ -674,7 +674,7 @@ interior(atmosphere.tracers.T) .= Tₐ
 
 # Build a model with the default (Edson) stability functions to show non-neutral effects
 stability_interfaces = ComponentInterfaces(atmosphere, ocean)
-stability_model = OceanSeaIceModel(ocean; atmosphere, interfaces=stability_interfaces)
+stability_model = OceanOnlyModel(ocean; atmosphere, interfaces=stability_interfaces)
 
 u★ = stability_model.interfaces.atmosphere_ocean_interface.fluxes.friction_velocity
 θ★ = stability_model.interfaces.atmosphere_ocean_interface.fluxes.temperature_scale
