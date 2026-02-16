@@ -125,14 +125,8 @@ Nt = length(u)
 fig = Figure(resolution = (1000, 700))
 ax1 = Axis(fig[1, 1]; title = "Surface zonal velocity (m/s)", xlabel = "", ylabel = "Latitude")
 ax2 = Axis(fig[2, 1]; title = "Surface meridional velocity (m/s)", xlabel = "", ylabel = "Latitude")
-
-grid = coupled_model.interfaces.exchanger.grid
-
-λ = λnodes(grid, Center())
-φ = φnodes(grid, Center())
-
-hm1 = heatmap!(ax1, λ, φ, ui, colormap = :bwr,     colorrange = (-0.2, 0.2))
-hm2 = heatmap!(ax2, λ, φ, vi, colormap = :bwr,     colorrange = (-0.2, 0.2))
+hm1 = heatmap!(ax1, un, colormap = :bwr, colorrange = (-0.2, 0.2))
+hm2 = heatmap!(ax2, vn, colormap = :bwr, colorrange = (-0.2, 0.2))
 
 Colorbar(fig[1, 2], hm1)
 Colorbar(fig[2, 2], hm2)
