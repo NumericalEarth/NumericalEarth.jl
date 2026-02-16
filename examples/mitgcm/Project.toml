@@ -1,0 +1,9 @@
+[deps]
+MITgcm = "dce5fa8e-68ce-4431-a242-9469c69627a0"
+NumericalEarth = "904d977b-046a-4731-8b86-9235c0d1ef02"
+Oceananigans = "9e8cae18-63c1-5223-a75c-80ca9d6e9a09"
+Printf = "de0858da-6303-5e67-8744-51eddeeeb8d7"
+
+[sources]
+MITgcm = {url = "https://github.com/simone-silvestri/MITgcm.jl.git", rev = "ss-gf-jmc/mitgcm-running-in-julia"}
+NumericalEarth = {path = "../.."}

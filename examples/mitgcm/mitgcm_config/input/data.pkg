@@ -1,0 +1,8 @@
+# Package configuration for coupled library mode.
+# EXF is disabled: surface forcing comes from the host (Julia).
+# KPP is enabled for vertical mixing.
+ &PACKAGES
+ useGMRedi      = .TRUE.,
+ useKPP         = .TRUE.,
+ useDiagnostics = .TRUE.,
+ &
