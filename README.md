@@ -21,6 +21,9 @@
   <a href="https://numericalearth.github.io/NumericalEarthDocumentation/dev/">
     <img src="https://img.shields.io/badge/docs-dev-orange.svg?style=flat-square" alt="Dev docs">
   </a>
+  <a href="https://codecov.io/gh/NumericalEarth/NumericalEarth.jl" >
+    <img src="https://codecov.io/gh/NumericalEarth/NumericalEarth.jl/graph/badge.svg?token=xYvliEy4Dz"/>
+  </a>
 </p>
 
 ## Overview
