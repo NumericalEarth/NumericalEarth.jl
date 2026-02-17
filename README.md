@@ -126,14 +126,12 @@ which produces
 
 ## Installation
 
-NumericalEarth is not yet a registered package (we are working on it). To install from a Julia REPL:
+NumericalEarth is a [registered Julia package](https://julialang.org/packages/). To install from a Julia REPL:
 
 ```julia
 julia> using Pkg
 
-julia> Pkg.add("https://github.com/NumericalEarth/NumericalEarth.jl/")
-
-julia> Pkg.instantiate()
+julia> Pkg.add("NumericalEarth")
 ```
 
 Use `Pkg.add(url="https://github.com/NumericalEarth/NumericalEarth.jl.git", rev="main")` to install the latest development version.
