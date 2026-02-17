@@ -33,6 +33,7 @@ examples = [
     Example("One-degree ocean--sea ice simulation", "one_degree_simulation", false),
     Example("Near-global ocean simulation", "near_global_ocean_simulation", false),
     Example("Global climate simulation", "global_climate_simulation", false),
+    Example("Atmosphere–slab ocean coupling", "atmosphere_slab_ocean", false),
 ]
 
 # Developer examples from docs/src/developers/ directory

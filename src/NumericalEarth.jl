@@ -11,6 +11,8 @@ export
     EarthSystemModel,
     OceanOnlyModel,
     OceanSeaIceModel,
+    AtmosphereOceanModel,
+    SlabOcean,
     default_sea_ice,
     FreezingLimitedOceanTemperature,
     Radiation,
