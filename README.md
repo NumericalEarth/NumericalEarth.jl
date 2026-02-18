@@ -9,8 +9,8 @@
 </p>
 
 <p align="center">
-  <a href="https://doi.org/10.5281/zenodo.7677442">
-    <img src="https://zenodo.org/badge/DOI/10.5281/zenodo.7677442.svg?style=flat-square" alt="DOI">
+  <a href="https://doi.org/10.5281/zenodo.18665405">
+    <img src="https://zenodo.org/badge/DOI/10.5281/zenodo.18665405.svg?style=flat-square" alt="DOI">
   </a>
   <a href="https://github.com/NumericalEarth/NumericalEarth.jl/actions/workflows/ci.yml">
     <img src="https://github.com/NumericalEarth/NumericalEarth.jl/actions/workflows/ci.yml/badge.svg" alt="CI">
@@ -138,7 +138,12 @@ Use `Pkg.add(url="https://github.com/NumericalEarth/NumericalEarth.jl.git", rev=
 
 ## Citing
 
-If you use NumericalEarth for your research, teaching, or fun, we'd be grateful if you cite the Oceananigans overview paper submitted to the Journal of Advances in Modeling Earth Systems:
+If you use NumericalEarth for your research, teaching, or fun 🤩, everyone in our community will be grateful
+if you give credit by citing the corresponding Zenodo record, e.g.,
+
+> Wagner, G. L. et al. (2026). NumericalEarth/NumericalEarth.jl: v0.1.1 (v0.1.1). Zenodo. https://doi.org/10.5281/zenodo.18665405
+
+and also the recent [preprint submitted to the Journal of Advances in Modeling Earth Systems](https://doi.org/10.48550/arXiv.2502.14148) that presents an overview of all the things that make Oceananigans unique:
 
 > "High-level, high-resolution ocean modeling at all scales with Oceananigans"
 >
