@@ -13,10 +13,6 @@
 # ```
 #
 # where ``J^T`` is the temperature flux (in K m/s) assembled by the coupling framework.
-#
-# The atmospheric setup is similar to Breeze's PrescribedSST example: 2D moist
-# convection driven by a top-hat SST pattern, with wind- and stability-dependent
-# bulk exchange coefficients.
 
 using NumericalEarth
 using Breeze
@@ -26,40 +22,21 @@ using Printf
 
 # ## Grid setup
 #
-# Same 2D domain as the PrescribedSST example: 20 km × 10 km with 128×128 resolution.
+# A 2D domain (x-z plane): 20 km wide × 10 km tall with 128×128 resolution.
 
 grid = RectilinearGrid(size = (128, 128), halo = (5, 5),
                        x = (-10kilometers, 10kilometers),
                        z = (0, 10kilometers),
                        topology = (Periodic, Flat, Bounded))
 
-# ## Sea surface temperature
-#
-# The SST is a mutable `Field` on a 1D horizontal grid. It is shared between the
-# atmosphere boundary conditions and the slab ocean, so updates to SST are automatically
-# seen by the atmosphere on the next timestep.
-
-θ₀ = 285 # K
-ΔT = 4   # K
-T₀_func(x) = θ₀ + ΔT / 2 * sign(cos(2π * x / grid.Lx))
-
-sst_grid = RectilinearGrid(grid.architecture,
-                           size = grid.Nx,
-                           halo = grid.Hx,
-                           x = (-10kilometers, 10kilometers),
-                           topology = (Periodic, Flat, Flat))
-
-SST = CenterField(sst_grid)
-set!(SST, T₀_func)
-
 # ## Atmosphere
 #
 # `atmosphere_simulation` constructs a Breeze `AtmosphereModel` with sensible defaults
 # (anelastic dynamics, warm-phase saturation adjustment microphysics, WENO advection).
-# Passing `sea_surface_temperature` automatically sets up bulk surface exchange
-# boundary conditions for momentum, heat, and moisture.
+# Surface fluxes are handled by the `EarthSystemModel` coupling framework.
 
-atmosphere = atmosphere_simulation(grid; sea_surface_temperature=SST, potential_temperature=θ₀)
+θ₀ = 285 # K
+atmosphere = atmosphere_simulation(grid; potential_temperature=θ₀)
 
 # ## Initial conditions
 
@@ -68,9 +45,16 @@ set!(atmosphere, θ=reference_state.potential_temperature, u=1)
 
 # ## Slab ocean
 #
-# A 50 m deep slab ocean with standard seawater properties.
+# A 50 m deep slab ocean with constant initial temperature, on a 1D horizontal grid.
 
-ocean = SlabOcean(SST, depth=50, density=1025, heat_capacity=4000)
+sst_grid = RectilinearGrid(grid.architecture,
+                           size = grid.Nx,
+                           halo = grid.Hx,
+                           x = (-10kilometers, 10kilometers),
+                           topology = (Periodic, Flat, Flat))
+
+ocean = SlabOcean(sst_grid, depth=50, density=1025, heat_capacity=4000)
+set!(ocean, T=θ₀)
 
 # ## Coupled model
 #
@@ -136,7 +120,7 @@ function save_output(sim)
     push!(timeseries.θ,  Array(interior(computed_fields[4], :, 1, :)))
     push!(timeseries.qˡ, Array(interior(computed_fields[5], :, 1, :)))
     push!(timeseries.qᵗ, Array(interior(computed_fields[6], :, 1, :)))
-    push!(timeseries.SST, Array(interior(SST, :, 1, 1)))
+    push!(timeseries.SST, Array(interior(ocean.temperature, :, 1, 1)))
     push!(timeseries.t, time(sim))
     return nothing
 end
@@ -147,6 +131,7 @@ add_callback!(simulation, save_output, TimeInterval(2minutes))
 
 @info "Running atmosphere–slab ocean coupled simulation..."
 run!(simulation)
+SST = ocean.temperature
 @info "Simulation complete. Final SST range: $(minimum(SST)) to $(maximum(SST)) K"
 
 # ## Animation
@@ -183,7 +168,7 @@ heatmap!(ax_ξ, x_atmo, z_atmo, ξn; colormap=:balance, colorrange=(-0.05, 0.05)
 heatmap!(ax_θ, x_atmo, z_atmo, θn; colormap=:thermal, colorrange=(θ₀ - 1, θ₀ + 3))
 heatmap!(ax_q, x_atmo, z_atmo, qˡn; colormap=:dense, colorrange=(0, 1))
 lines!(ax_sst, x_sst, sstn; color=:red, linewidth=2)
-ylims!(ax_sst, θ₀ - ΔT/2 - 0.5, θ₀ + ΔT/2 + 0.5)
+ylims!(ax_sst, θ₀ - 2, θ₀ + 2)
 
 title = @lift "Atmosphere–slab ocean coupling, t = " * prettytime(timeseries.t[$n])
 Label(fig[0, 1:2], title, fontsize=18)

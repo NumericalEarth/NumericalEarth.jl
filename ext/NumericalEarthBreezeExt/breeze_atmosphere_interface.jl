@@ -100,11 +100,8 @@ update_net_fluxes!(coupled_model, ::BreezeAtmosphere) = nothing
 Construct an `EarthSystemModel` coupling a Breeze `AtmosphereModel` with a `SlabOcean`.
 
 The exchange grid is set to the slab ocean's grid, and the ocean temperature units
-are set to Kelvin (consistent with Breeze's temperature convention).
-
-The slab ocean SST field should be the same field used in the atmosphere's boundary
-conditions (if any), so that updates to SST are automatically seen by the atmosphere
-on the next time step.
+are set to Kelvin (consistent with Breeze's temperature convention). Surface fluxes
+are computed by the ESM similarity theory and applied to the slab ocean.
 """
 function AtmosphereOceanModel(atmosphere::BreezeAtmosphere, ocean::SlabOcean; kw...)
     exchange_grid = ocean.grid
