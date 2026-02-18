@@ -87,6 +87,10 @@ pages = [
     ],
     "Interface fluxes" => "interface_fluxes.md",
 
+    "Appendix" => [
+        "Notation" => "appendix/notation.md",
+    ],
+
     "Library" => [
         "Contents"       => "library/outline.md",
         "Public"         => "library/public.md",

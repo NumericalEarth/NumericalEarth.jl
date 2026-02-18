@@ -9,7 +9,7 @@ function ComponentExchanger(atmosphere::PrescribedAtmosphere, grid)
                q  = Field{Center, Center, Nothing}(grid),
                Qs = Field{Center, Center, Nothing}(grid),
                Qℓ = Field{Center, Center, Nothing}(grid),
-               Mp = Field{Center, Center, Nothing}(grid))
+               Jᶜ = Field{Center, Center, Nothing}(grid))
 
     return ComponentExchanger(state, regridder)
 end

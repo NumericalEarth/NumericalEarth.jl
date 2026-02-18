@@ -26,7 +26,7 @@ function update_net_fluxes!(coupled_model, sea_ice::Simulation{<:SeaIceModel})
     downwelling_radiation = (Qs = atmosphere_fields.Qs.data,
                              Qℓ = atmosphere_fields.Qℓ.data)
 
-    freshwater_flux = atmosphere_fields.Mp.data
+    freshwater_flux = atmosphere_fields.Jᶜ.data
 
     atmos_sea_ice_properties = coupled_model.interfaces.atmosphere_sea_ice_interface.properties
     sea_ice_properties = coupled_model.interfaces.sea_ice_properties
@@ -78,8 +78,8 @@ end
         
         Qs = downwelling_radiation.Qs[i, j, 1]
         Qℓ = downwelling_radiation.Qℓ[i, j, 1]
-        Qc = get_possibly_zero_flux(atmosphere_sea_ice_fluxes, :sensible_heat)[i, j, 1] # sensible or "conductive" heat flux
-        Qv = get_possibly_zero_flux(atmosphere_sea_ice_fluxes, :latent_heat)[i, j, 1]   # latent heat flux
+        𝒬ᵀ = get_possibly_zero_flux(atmosphere_sea_ice_fluxes, :sensible_heat)[i, j, 1] # sensible or "conductive" heat flux
+        𝒬ᵛ = get_possibly_zero_flux(atmosphere_sea_ice_fluxes, :latent_heat)[i, j, 1]   # latent heat flux
         Qf = get_possibly_zero_flux(sea_ice_ocean_fluxes, :frazil_heat)[i, j, 1]        # frazil heat flux
         Qi = get_possibly_zero_flux(sea_ice_ocean_fluxes, :interface_heat)[i, j, 1]   # interfacial heat flux
     end
@@ -95,7 +95,7 @@ end
     Qs = transmitted_shortwave_radiation(i, j, kᴺ, grid, time, α, Qs)
     Qℓ = absorbed_longwave_radiation(i, j, kᴺ, grid, time, ϵ, Qℓ)
 
-    ΣQt = (Qs + Qℓ + Qu + Qc + Qv) * (ℵi > 0) # If ℵi == 0 there is no heat flux from the top!
+    ΣQt = (Qs + Qℓ + Qu + 𝒬ᵀ + 𝒬ᵛ) * (ℵi > 0) # If ℵi == 0 there is no heat flux from the top!
     ΣQb = Qf + Qi
 
     # Mask fluxes over land for convenience

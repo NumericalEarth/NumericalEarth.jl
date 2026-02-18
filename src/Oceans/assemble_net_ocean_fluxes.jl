@@ -42,7 +42,7 @@ function update_net_ocean_fluxes!(coupled_model, ocean_model, grid)
     downwelling_radiation = (Qs = atmosphere_fields.Qs.data,
                              Qℓ = atmosphere_fields.Qℓ.data)
 
-    freshwater_flux = atmosphere_fields.Mp.data
+    freshwater_flux = atmosphere_fields.Jᶜ.data
 
     ice_concentration = sea_ice_concentration(sea_ice)
     ocean_salinity = EarthSystemModels.ocean_salinity(ocean_model)
@@ -100,12 +100,12 @@ end
         Tₛ = ocean_surface_temperature[i, j, 1]
         Tₛ = convert_to_kelvin(ocean_properties.temperature_units, Tₛ)
 
-        Mp  = freshwater_flux[i, j, 1] # Prescribed freshwater flux
+        Jᶜ  = freshwater_flux[i, j, 1] # Prescribed freshwater (condensate) flux
         Qs  = downwelling_radiation.Qs[i, j, 1] # Downwelling shortwave radiation
         Qℓ  = downwelling_radiation.Qℓ[i, j, 1] # Downwelling longwave radiation
-        Qc  = get_possibly_zero_flux(atmos_ocean_fluxes, :sensible_heat)[i, j, 1] # sensible or "conductive" heat flux
-        Qv  = get_possibly_zero_flux(atmos_ocean_fluxes, :latent_heat)[i, j, 1] # latent heat flux
-        Mv  = get_possibly_zero_flux(atmos_ocean_fluxes, :water_vapor)[i, j, 1] # mass flux of water vapor
+        𝒬ᵀ  = get_possibly_zero_flux(atmos_ocean_fluxes, :sensible_heat)[i, j, 1] # sensible or "conductive" heat flux
+        𝒬ᵛ  = get_possibly_zero_flux(atmos_ocean_fluxes, :latent_heat)[i, j, 1] # latent heat flux
+        Jᵛ  = get_possibly_zero_flux(atmos_ocean_fluxes, :water_vapor)[i, j, 1] # mass flux of water vapor
     end
 
     # Compute radiation fluxes (radiation is multiplied by the fraction of ocean, 1 - sea ice concentration)
@@ -124,7 +124,7 @@ end
     Qss = shortwave_radiative_forcing(i, j, grid, penetrating_radiation, Qts, ocean_properties)
 
     # Compute the total heat flux
-    ΣQao = (Qu + Qc + Qv) * (1 - ℵᵢ) + Qaℓ + Qss
+    ΣQao = (Qu + 𝒬ᵀ + 𝒬ᵛ) * (1 - ℵᵢ) + Qaℓ + Qss
 
     @inbounds begin
         # Write radiative components of the heat flux for diagnostic purposes
@@ -137,12 +137,12 @@ end
     # by dividing with the ocean reference density.
     # Also switch the sign, for some reason we are given freshwater flux as positive down.
     ρₒ⁻¹ = 1 / ocean_properties.reference_density
-    ΣFao = - Mp * ρₒ⁻¹
+    ΣFao = - Jᶜ * ρₒ⁻¹
 
     # Add the contribution from the turbulent water vapor flux, which has
     # a different sign convention as the prescribed water mass fluxes (positive upwards)
-    Fv = Mv * ρₒ⁻¹
-    ΣFao += Fv
+    Jᵛₒ = Jᵛ * ρₒ⁻¹
+    ΣFao += Jᵛₒ
 
     # Compute fluxes for u, v, T, and S from momentum, heat, and freshwater fluxes
     τx = net_ocean_fluxes.u

@@ -145,9 +145,9 @@ simulation.callbacks[:progress] = Callback(progress, IterationInterval(100))
 τy = simulation.model.interfaces.net_fluxes.ocean.v
 JT = simulation.model.interfaces.net_fluxes.ocean.T
 Js = simulation.model.interfaces.net_fluxes.ocean.S
-E  = simulation.model.interfaces.atmosphere_ocean_interface.fluxes.water_vapor
-Qc = simulation.model.interfaces.atmosphere_ocean_interface.fluxes.sensible_heat
-Qv = simulation.model.interfaces.atmosphere_ocean_interface.fluxes.latent_heat
+Jᵛ = simulation.model.interfaces.atmosphere_ocean_interface.fluxes.water_vapor
+𝒬ᵀ = simulation.model.interfaces.atmosphere_ocean_interface.fluxes.sensible_heat
+𝒬ᵛ = simulation.model.interfaces.atmosphere_ocean_interface.fluxes.latent_heat
 ρₒ = simulation.model.interfaces.ocean_properties.reference_density
 cₚ = simulation.model.interfaces.ocean_properties.heat_capacity
 
@@ -157,7 +157,7 @@ Q = ρₒ * cₚ * JT
 N² = buoyancy_frequency(ocean.model)
 κc = ocean.model.closure_fields.κc
 
-fluxes = (; ρτx, ρτy, E, Js, Qv, Qc)
+fluxes = (; ρτx, ρτy, Jᵛ, Js, 𝒬ᵛ, 𝒬ᵀ)
 auxiliary_fields = (; N², κc)
 u, v, w = ocean.model.velocities
 T, S, e = ocean.model.tracers
@@ -186,15 +186,15 @@ e  = FieldTimeSeries(filename, "e")
 N² = FieldTimeSeries(filename, "N²")
 κ  = FieldTimeSeries(filename, "κc")
 
-Qv = FieldTimeSeries(filename, "Qv")
-Qc = FieldTimeSeries(filename, "Qc")
+𝒬ᵛ = FieldTimeSeries(filename, "𝒬ᵛ")
+𝒬ᵀ = FieldTimeSeries(filename, "𝒬ᵀ")
 Js = FieldTimeSeries(filename, "Js")
-Ev = FieldTimeSeries(filename, "E")
+Ev = FieldTimeSeries(filename, "Jᵛ")
 ρτx = FieldTimeSeries(filename, "ρτx")
 ρτy = FieldTimeSeries(filename, "ρτy")
 
 Nz = size(T, 3)
-times = Qc.times
+times = 𝒬ᵀ.times
 
 ua  = atmosphere.velocities.u
 va  = atmosphere.velocities.v
@@ -273,8 +273,8 @@ lines!(axT, times, interior(T, 1, 1, Nz, :), color=colors[2], linewidth=4, label
 vlines!(axT, tn, linewidth=4, color=(:black, 0.5))
 axislegend(axT)
 
-lines!(axQ, times, interior(Qv, 1, 1, 1, 1:Nt),    color=colors[2], label="Sensible",  linewidth=2)
-lines!(axQ, times, interior(Qc, 1, 1, 1, 1:Nt),    color=colors[3], label="Latent",    linewidth=2)
+lines!(axQ, times, interior(𝒬ᵛ, 1, 1, 1, 1:Nt),    color=colors[2], label="Latent",    linewidth=2)
+lines!(axQ, times, interior(𝒬ᵀ, 1, 1, 1, 1:Nt),    color=colors[3], label="Sensible",  linewidth=2)
 lines!(axQ, times, - interior(Qsw, 1, 1, 1, 1:Nt), color=colors[4], label="Shortwave", linewidth=2)
 lines!(axQ, times, - interior(Qlw, 1, 1, 1, 1:Nt), color=colors[5], label="Longwave",  linewidth=2)
 vlines!(axQ, tn, linewidth=4, color=(:black, 0.5))

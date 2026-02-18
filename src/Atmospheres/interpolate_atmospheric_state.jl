@@ -50,7 +50,7 @@ function interpolate_state!(exchanger, grid, atmosphere::PrescribedAtmosphere, c
                        q = atmosphere_fields.q.data,
                        Qs = atmosphere_fields.Qs.data,
                        Qℓ = atmosphere_fields.Qℓ.data,
-                       Mp = atmosphere_fields.Mp.data)
+                       Jᶜ = atmosphere_fields.Jᶜ.data)
 
     kernel_parameters = interface_kernel_parameters(grid)
 
@@ -79,7 +79,7 @@ function interpolate_state!(exchanger, grid, atmosphere::PrescribedAtmosphere, c
     # Separately interpolate the auxiliary freshwater fluxes, which may
     # live on a different grid than the primary fluxes and atmospheric state.
     auxiliary_freshwater_flux = atmosphere.auxiliary_freshwater_flux
-    interpolated_prescribed_freshwater_flux = atmosphere_data.Mp
+    interpolated_prescribed_freshwater_flux = atmosphere_data.Jᶜ
 
     if !isnothing(auxiliary_freshwater_flux)
         # TODO: do not assume that `auxiliary_freshater_flux` is a tuple
@@ -166,7 +166,7 @@ end
         surface_atmos_state.q[i, j, 1] = qₐ
         surface_atmos_state.Qs[i, j, 1] = Qs
         surface_atmos_state.Qℓ[i, j, 1] = Qℓ
-        surface_atmos_state.Mp[i, j, 1] = Mh
+        surface_atmos_state.Jᶜ[i, j, 1] = Mh
     end
 end
 
