@@ -50,14 +50,16 @@ filter!(x -> x.build_always || build_all, developer_examples)
 ##### Generate examples using Literate (each in a subprocess for memory isolation)
 #####
 
+literate_env = addenv(ENV, "JULIA_GC_NO_GENERATIONAL" => "1")
+
 for example in examples
     script_path = joinpath(EXAMPLES_DIR, example.basename * ".jl")
-    run(`$(Base.julia_cmd()) --color=yes --project=$(dirname(Base.active_project())) $(joinpath(@__DIR__, "literate.jl")) $(script_path) $(OUTPUT_DIR)`)
+    run(addenv(`$(Base.julia_cmd()) --color=yes --project=$(dirname(Base.active_project())) $(joinpath(@__DIR__, "literate.jl")) $(script_path) $(OUTPUT_DIR)`, literate_env))
 end
 
 for example in developer_examples
     script_path = joinpath(DEVELOPERS_DIR, example.basename * ".jl")
-    run(`$(Base.julia_cmd()) --color=yes --project=$(dirname(Base.active_project())) $(joinpath(@__DIR__, "literate.jl")) $(script_path) $(OUTPUT_DIR)`)
+    run(addenv(`$(Base.julia_cmd()) --color=yes --project=$(dirname(Base.active_project())) $(joinpath(@__DIR__, "literate.jl")) $(script_path) $(OUTPUT_DIR)`, literate_env))
 end
 
 #####
@@ -99,9 +101,10 @@ pages = [
 ]
 
 modules = Module[]
-NumericalEarthSpeedyWeatherExt = isdefined(Base, :get_extension) ? Base.get_extension(NumericalEarth, :NumericalEarthSpeedyWeatherExt) : NumericalEarth.NumericalEarthSpeedyWeatherExt
+NumericalEarthSpeedyWeatherExt = isdefined(Base, :get_extension) ? Base.get_extension(NumericalEarth, :NumericalEarthSpeedyWeatherExt) : nothing
+NumericalEarthBreezeExt = isdefined(Base, :get_extension) ? Base.get_extension(NumericalEarth, :NumericalEarthBreezeExt) : nothing
 
-for m in [NumericalEarth, NumericalEarthSpeedyWeatherExt]
+for m in [NumericalEarth, NumericalEarthSpeedyWeatherExt, NumericalEarthBreezeExt]
     if !isnothing(m)
         push!(modules, m)
     end

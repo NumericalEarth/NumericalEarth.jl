@@ -57,6 +57,7 @@ jobs:
           - bathymetry
           - checkpointing
           - speedy_weather
+          - breeze
           - downloading
     steps:
       - name: Show available storage before cleanup
