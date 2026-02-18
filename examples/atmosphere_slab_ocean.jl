@@ -109,7 +109,7 @@ qᵗ = ρqᵗ / ρ₀
 
 filename = "atmosphere_slab_ocean"
 
-simulation.output_writers[:fields] = JLD2OutputWriter(atmosphere, (; s, ξ, T, θ, qˡ, qᵗ);
+simulation.output_writers[:fields] = JLD2Writer(atmosphere, (; s, ξ, T, θ, qˡ, qᵗ);
     filename,
     schedule = TimeInterval(2minutes),
     overwrite_existing = true)
