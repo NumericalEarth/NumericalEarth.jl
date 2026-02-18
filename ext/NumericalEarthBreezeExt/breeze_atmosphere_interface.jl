@@ -1,7 +1,7 @@
 using Oceananigans.Grids: Center
 using NumericalEarth.Atmospheres: AtmosphereThermodynamicsParameters
 using NumericalEarth.Oceans: SlabOcean
-using NumericalEarth.EarthSystemModels.InterfaceComputations: DegreesKelvin
+using NumericalEarth.EarthSystemModels.InterfaceComputations: DegreesKelvin, interface_kernel_parameters
 
 const BreezeAtmosphere = Breeze.AtmosphereModel
 
@@ -75,7 +75,8 @@ function interpolate_state!(exchanger, exchange_grid, atmosphere::BreezeAtmosphe
     Mp = hasproperty(μ, :precipitation_rate) ? μ.precipitation_rate : ZeroField()
 
     arch = architecture(exchange_grid)
-    launch!(arch, exchange_grid, :xy,
+    kernel_parameters = interface_kernel_parameters(exchange_grid)
+    launch!(arch, exchange_grid, kernel_parameters,
             _interpolate_breeze_state!,
             state, u, v, T, qᵗ, p₀, Mp)
 

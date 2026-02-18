@@ -1,4 +1,4 @@
-# # Atmosphere–slab ocean coupling
+# # Atmospheric convection over a slab ocean
 #
 # This example demonstrates coupling a Breeze atmospheric LES with a slab ocean model
 # using NumericalEarth's `EarthSystemModel` framework. The sea surface temperature (SST)
@@ -115,45 +115,33 @@ add_callback!(simulation, progress, IterationInterval(200))
 
 # ## Output
 #
-# Save atmosphere fields, SST, and computed interface fluxes.
-
-output_filename = "atmosphere_slab_ocean"
+# Collect snapshots of atmosphere fields and SST via callbacks for visualization.
 
 s = sqrt(u^2 + w^2)
 ξ = ∂z(u) - ∂x(w)
 qᵗ = atmosphere.specific_moisture
 
-atmo_outputs = (; s, ξ, T, θ, qˡ, qᵗ)
+saved_fields = (; s, ξ, T, θ, qˡ, qᵗ)
+computed_fields = [compute!(Field(f)) for f in saved_fields]
 
-ow = JLD2Writer(model, atmo_outputs;
-                filename = output_filename * "_atmo.jld2",
-                schedule = TimeInterval(2minutes),
-                overwrite_existing = true)
+timeseries = (s=[], ξ=[], T=[], θ=[], qˡ=[], qᵗ=[], SST=[], t=Float64[])
 
-simulation.output_writers[:atmo] = ow
-
-# Save SST separately on its own grid
-sst_ow = JLD2Writer(model, (; SST);
-                     filename = output_filename * "_sst.jld2",
-                     schedule = TimeInterval(2minutes),
-                     overwrite_existing = true)
-
-simulation.output_writers[:sst] = sst_ow
-
-# Save the ESM-computed interface fluxes
-ao_interface = model.interfaces.atmosphere_ocean_interface
-if !isnothing(ao_interface)
-    Q_sensible = ao_interface.fluxes.sensible_heat
-    Q_latent = ao_interface.fluxes.latent_heat
-    flux_outputs = (; Q_sensible, Q_latent)
-
-    flux_ow = JLD2Writer(model, flux_outputs;
-                         filename = output_filename * "_fluxes.jld2",
-                         schedule = TimeInterval(2minutes),
-                         overwrite_existing = true)
-
-    simulation.output_writers[:fluxes] = flux_ow
+function save_output(sim)
+    for f in computed_fields
+        compute!(f)
+    end
+    push!(timeseries.s,  Array(interior(computed_fields[1], :, 1, :)))
+    push!(timeseries.ξ,  Array(interior(computed_fields[2], :, 1, :)))
+    push!(timeseries.T,  Array(interior(computed_fields[3], :, 1, :)))
+    push!(timeseries.θ,  Array(interior(computed_fields[4], :, 1, :)))
+    push!(timeseries.qˡ, Array(interior(computed_fields[5], :, 1, :)))
+    push!(timeseries.qᵗ, Array(interior(computed_fields[6], :, 1, :)))
+    push!(timeseries.SST, Array(interior(SST, :, 1, 1)))
+    push!(timeseries.t, time(sim))
+    return nothing
 end
+
+add_callback!(simulation, save_output, TimeInterval(2minutes))
 
 # ## Run
 
@@ -167,11 +155,7 @@ run!(simulation)
 
 using CairoMakie
 
-atmo_ds = FieldDataset(output_filename * "_atmo.jld2")
-sst_ds = FieldDataset(output_filename * "_sst.jld2")
-
-times = atmo_ds["s"].times
-Nt = length(times)
+Nt = length(timeseries.t)
 
 fig = Figure(size = (1200, 800), fontsize = 14)
 
@@ -183,16 +167,16 @@ ax_sst = Axis(fig[3, 1:2], title="Sea surface temperature (K)", xlabel="x (km)",
 
 n = Observable(1)
 
-x_atmo = grid.xᶜᵃᵃ[1:grid.Nx] ./ 1e3
-z_atmo = grid.zᵃᵃᶜ[1:grid.Nz] ./ 1e3
-x_sst = sst_grid.xᶜᵃᵃ[1:sst_grid.Nx] ./ 1e3
+x_atmo = xnodes(grid, Center()) ./ 1e3
+z_atmo = znodes(grid, Center()) ./ 1e3
+x_sst = xnodes(sst_grid, Center()) ./ 1e3
 
-sn  = @lift interior(atmo_ds["s"][$n],  :, 1, :)
-ξn  = @lift interior(atmo_ds["ξ"][$n],  :, 1, :)
-θn  = @lift interior(atmo_ds["θ"][$n],  :, 1, :)
-qˡn = @lift interior(atmo_ds["qˡ"][$n], :, 1, :) .* 1e3  # Convert to g/kg
+sn  = @lift timeseries.s[$n]
+ξn  = @lift timeseries.ξ[$n]
+θn  = @lift timeseries.θ[$n]
+qˡn = @lift timeseries.qˡ[$n] .* 1e3
 
-sstn = @lift interior(sst_ds["SST"][$n], :, 1, 1)
+sstn = @lift timeseries.SST[$n]
 
 heatmap!(ax_s, x_atmo, z_atmo, sn; colormap=:speed, colorrange=(0, 5))
 heatmap!(ax_ξ, x_atmo, z_atmo, ξn; colormap=:balance, colorrange=(-0.05, 0.05))
@@ -201,15 +185,15 @@ heatmap!(ax_q, x_atmo, z_atmo, qˡn; colormap=:dense, colorrange=(0, 1))
 lines!(ax_sst, x_sst, sstn; color=:red, linewidth=2)
 ylims!(ax_sst, θ₀ - ΔT/2 - 0.5, θ₀ + ΔT/2 + 0.5)
 
-title = @lift "Atmosphere–slab ocean coupling, t = " * prettytime(times[$n])
+title = @lift "Atmosphere–slab ocean coupling, t = " * prettytime(timeseries.t[$n])
 Label(fig[0, 1:2], title, fontsize=18)
 
 @info "Rendering animation..."
-record(fig, output_filename * ".mp4", 1:Nt; framerate=12) do i
+record(fig, "atmosphere_slab_ocean.mp4", 1:Nt; framerate=12) do i
     n[] = i
 end
 
-@info "Animation saved to $(output_filename).mp4"
+@info "Animation saved."
 nothing #hide
 
 # ![](atmosphere_slab_ocean.mp4)
