@@ -102,7 +102,7 @@ add_callback!(simulation, progress, IterationInterval(200))
 # Collect snapshots of atmosphere fields and SST via callbacks for visualization.
 
 s = sqrt(u^2 + w^2)
-ξ = ∂z(u) - ∂x(w)
+ξ = ∂x(w) - ∂z(u)
 qᵗ = atmosphere.specific_moisture
 
 saved_fields = (; s, ξ, T, θ, qˡ, qᵗ)
