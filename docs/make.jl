@@ -38,7 +38,7 @@ examples = [
 
 # Developer examples from docs/src/developers/ directory
 developer_examples = [
-    Example("OceanSeaIceModel interface", "slab_ocean", false),
+    Example("EarthSystemModel interface", "slab_ocean", false),
 ]
 
 # Filter out long-running examples unless NUMERICAL_EARTH_BUILD_ALL_EXAMPLES is set
