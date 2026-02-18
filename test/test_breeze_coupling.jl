@@ -69,7 +69,8 @@ end
         @test model.clock.time > 0
 
         SST_after = Array(interior(SST))
-        # SST should have changed
+        # SST should have changed and contain no NaN
+        @test !any(isnan, SST_after)
         @test SST_after ≉ SST_before
     end
 

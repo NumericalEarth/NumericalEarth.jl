@@ -6,7 +6,6 @@ import Oceananigans
 
 using Oceananigans.Utils: launch!
 using Oceananigans.Grids: architecture
-using Oceananigans.Fields: ZeroField
 using Oceananigans.BoundaryConditions: fill_halo_regions!
 using KernelAbstractions: @kernel, @index
 

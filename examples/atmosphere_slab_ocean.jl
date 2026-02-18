@@ -2,17 +2,17 @@
 #
 # This example demonstrates coupling a Breeze atmospheric LES with a slab ocean model
 # using NumericalEarth's `EarthSystemModel` framework. The sea surface temperature (SST)
-# evolves in response to the atmospheric surface heat fluxes computed by the ESM's
-# similarity theory.
+# evolves in response to the atmospheric surface heat fluxes computed by similarity theory.
 #
 # The slab ocean model represents a well-mixed ocean layer of fixed depth ``H`` with the
 # SST tendency equation:
 #
 # ```math
-# \frac{∂T}{∂t} = -\frac{J^T}{H}
+# \frac{∂T}{∂t} = \frac{Q}{ρ \, c_p \, H}
 # ```
 #
-# where ``J^T`` is the temperature flux (in K m/s) assembled by the coupling framework.
+# where ``Q`` is the net downward surface heat flux (W/m²), ``ρ`` is the seawater density,
+# ``c_p`` is the heat capacity, and ``H`` is the slab depth.
 
 using NumericalEarth
 using Breeze
@@ -99,33 +99,32 @@ add_callback!(simulation, progress, IterationInterval(200))
 
 # ## Output
 #
-# Collect snapshots of atmosphere fields and SST via callbacks for visualization.
+# Save atmosphere fields with a JLD2 output writer.
 
 s = sqrt(u^2 + w^2)
 ξ = ∂x(w) - ∂z(u)
-qᵗ = atmosphere.specific_moisture
+ρqᵗ = atmosphere.moisture_density
+ρ₀ = atmosphere.dynamics.reference_state.density
+qᵗ = ρqᵗ / ρ₀
 
-saved_fields = (; s, ξ, T, θ, qˡ, qᵗ)
-computed_fields = [compute!(Field(f)) for f in saved_fields]
+filename = "atmosphere_slab_ocean"
 
-timeseries = (s=[], ξ=[], T=[], θ=[], qˡ=[], qᵗ=[], SST=[], t=Float64[])
+simulation.output_writers[:fields] = JLD2OutputWriter(atmosphere, (; s, ξ, T, θ, qˡ, qᵗ);
+    filename,
+    schedule = TimeInterval(2minutes),
+    overwrite_existing = true)
 
-function save_output(sim)
-    for f in computed_fields
-        compute!(f)
-    end
-    push!(timeseries.s,  Array(interior(computed_fields[1], :, 1, :)))
-    push!(timeseries.ξ,  Array(interior(computed_fields[2], :, 1, :)))
-    push!(timeseries.T,  Array(interior(computed_fields[3], :, 1, :)))
-    push!(timeseries.θ,  Array(interior(computed_fields[4], :, 1, :)))
-    push!(timeseries.qˡ, Array(interior(computed_fields[5], :, 1, :)))
-    push!(timeseries.qᵗ, Array(interior(computed_fields[6], :, 1, :)))
-    push!(timeseries.SST, Array(interior(ocean.temperature, :, 1, 1)))
-    push!(timeseries.t, time(sim))
-    return nothing
+# Track SST evolution with a callback (different grid from atmosphere).
+
+SST_timeseries = [Array(interior(ocean.temperature, :, 1, 1))]
+SST_times = [0.0]
+
+function save_sst!(sim)
+    push!(SST_timeseries, Array(interior(ocean.temperature, :, 1, 1)))
+    push!(SST_times, time(sim))
 end
 
-add_callback!(simulation, save_output, TimeInterval(2minutes))
+add_callback!(simulation, save_sst!, TimeInterval(2minutes))
 
 # ## Run
 
@@ -140,7 +139,13 @@ SST = ocean.temperature
 
 using CairoMakie
 
-Nt = length(timeseries.t)
+st  = FieldTimeSeries(filename * ".jld2", "s")
+ξt  = FieldTimeSeries(filename * ".jld2", "ξ")
+θt  = FieldTimeSeries(filename * ".jld2", "θ")
+qˡt = FieldTimeSeries(filename * ".jld2", "qˡ")
+
+times = st.times
+Nt = length(times)
 
 fig = Figure(size = (1200, 800), fontsize = 14)
 
@@ -156,12 +161,12 @@ x_atmo = xnodes(grid, Center()) ./ 1e3
 z_atmo = znodes(grid, Center()) ./ 1e3
 x_sst = xnodes(sst_grid, Center()) ./ 1e3
 
-sn  = @lift timeseries.s[$n]
-ξn  = @lift timeseries.ξ[$n]
-θn  = @lift timeseries.θ[$n]
-qˡn = @lift timeseries.qˡ[$n] .* 1e3
+sn  = @lift interior(st[$n], :, 1, :)
+ξn  = @lift interior(ξt[$n], :, 1, :)
+θn  = @lift interior(θt[$n], :, 1, :)
+qˡn = @lift interior(qˡt[$n], :, 1, :) .* 1e3
 
-sstn = @lift timeseries.SST[$n]
+sstn = @lift SST_timeseries[$n]
 
 heatmap!(ax_s, x_atmo, z_atmo, sn; colormap=:speed, colorrange=(0, 5))
 heatmap!(ax_ξ, x_atmo, z_atmo, ξn; colormap=:balance, colorrange=(-0.05, 0.05))
@@ -170,7 +175,7 @@ heatmap!(ax_q, x_atmo, z_atmo, qˡn; colormap=:dense, colorrange=(0, 1))
 lines!(ax_sst, x_sst, sstn; color=:red, linewidth=2)
 ylims!(ax_sst, θ₀ - 2, θ₀ + 2)
 
-title = @lift "Atmosphere–slab ocean coupling, t = " * prettytime(timeseries.t[$n])
+title = @lift "Atmosphere–slab ocean coupling, t = " * prettytime(times[$n])
 Label(fig[0, 1:2], title, fontsize=18)
 
 @info "Rendering animation..."

@@ -17,7 +17,8 @@ thermodynamics_parameters(::BreezeAtmosphere) = AtmosphereThermodynamicsParamete
 ##### Surface layer and boundary layer height
 #####
 
-# Height of the lowest atmospheric cell center (the "surface layer")
+# Height of the lowest atmospheric cell center (the "surface layer").
+# Note: for stretched grids on GPU, this may require allowscalar.
 function surface_layer_height(atmosphere::BreezeAtmosphere)
     grid = atmosphere.grid
     return Oceananigans.zspacing(1, 1, 1, grid, Center(), Center(), Center()) / 2
@@ -46,18 +47,18 @@ end
 ##### Interpolate atmospheric state onto exchange grid
 #####
 
-@kernel function _interpolate_breeze_state!(state, u, v, T, qᵗ, p₀, Mp)
+@kernel function _interpolate_breeze_state!(state, u, v, T, ρqᵗ, ρ₀, p₀)
     i, j = @index(Global, NTuple)
 
     @inbounds begin
         state.u[i, j, 1]  = u[i, j, 1]
         state.v[i, j, 1]  = v[i, j, 1]
         state.T[i, j, 1]  = T[i, j, 1]
-        state.q[i, j, 1]  = qᵗ[i, j, 1]
+        state.q[i, j, 1]  = ρqᵗ[i, j, 1] / ρ₀[i, j, 1]
         state.p[i, j, 1]  = p₀
         state.Qs[i, j, 1] = 0
         state.Qℓ[i, j, 1] = 0
-        state.Mp[i, j, 1] = Mp[i, j, 1]
+        state.Mp[i, j, 1] = 0
     end
 end
 
@@ -65,20 +66,18 @@ function interpolate_state!(exchanger, exchange_grid, atmosphere::BreezeAtmosphe
     state = exchanger.state
     u, v, w = atmosphere.velocities
     T = atmosphere.temperature
-    qᵗ = atmosphere.specific_moisture
+    ρqᵗ = atmosphere.moisture_density
 
-    # Surface pressure from reference state (constant for anelastic dynamics)
-    p₀ = atmosphere.dynamics.reference_state.surface_pressure
-
-    # Surface precipitation rate from microphysics (if available)
-    μ = atmosphere.microphysical_fields
-    Mp = hasproperty(μ, :precipitation_rate) ? μ.precipitation_rate : ZeroField()
+    # Reference state (anelastic dynamics)
+    ref = atmosphere.dynamics.reference_state
+    ρ₀ = ref.density
+    p₀ = ref.surface_pressure
 
     arch = architecture(exchange_grid)
     kernel_parameters = interface_kernel_parameters(exchange_grid)
     launch!(arch, exchange_grid, kernel_parameters,
             _interpolate_breeze_state!,
-            state, u, v, T, qᵗ, p₀, Mp)
+            state, u, v, T, ρqᵗ, ρ₀, p₀)
 
     return nothing
 end
