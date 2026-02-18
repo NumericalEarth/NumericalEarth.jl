@@ -99,7 +99,7 @@ add_callback!(simulation, progress, IterationInterval(200))
 
 # ## Output
 #
-# Save atmosphere fields with a JLD2 output writer.
+# Collect snapshots of atmosphere fields and SST via callbacks for visualization.
 
 s = sqrt(u^2 + w^2)
 ξ = ∂x(w) - ∂z(u)
@@ -107,24 +107,27 @@ s = sqrt(u^2 + w^2)
 ρ₀ = atmosphere.dynamics.reference_state.density
 qᵗ = ρqᵗ / ρ₀
 
-filename = "atmosphere_slab_ocean"
+saved_fields = (; s, ξ, T, θ, qˡ, qᵗ)
+computed_fields = [compute!(Field(f)) for f in saved_fields]
 
-simulation.output_writers[:fields] = JLD2Writer(atmosphere, (; s, ξ, T, θ, qˡ, qᵗ);
-    filename,
-    schedule = TimeInterval(2minutes),
-    overwrite_existing = true)
+timeseries = (s=[], ξ=[], T=[], θ=[], qˡ=[], qᵗ=[], SST=[], t=Float64[])
 
-# Track SST evolution with a callback (different grid from atmosphere).
-
-SST_timeseries = [Array(interior(ocean.temperature, :, 1, 1))]
-SST_times = [0.0]
-
-function save_sst!(sim)
-    push!(SST_timeseries, Array(interior(ocean.temperature, :, 1, 1)))
-    push!(SST_times, time(sim))
+function save_output(sim)
+    for f in computed_fields
+        compute!(f)
+    end
+    push!(timeseries.s,  Array(interior(computed_fields[1], :, 1, :)))
+    push!(timeseries.ξ,  Array(interior(computed_fields[2], :, 1, :)))
+    push!(timeseries.T,  Array(interior(computed_fields[3], :, 1, :)))
+    push!(timeseries.θ,  Array(interior(computed_fields[4], :, 1, :)))
+    push!(timeseries.qˡ, Array(interior(computed_fields[5], :, 1, :)))
+    push!(timeseries.qᵗ, Array(interior(computed_fields[6], :, 1, :)))
+    push!(timeseries.SST, Array(interior(ocean.temperature, :, 1, 1)))
+    push!(timeseries.t, time(sim))
+    return nothing
 end
 
-add_callback!(simulation, save_sst!, TimeInterval(2minutes))
+add_callback!(simulation, save_output, TimeInterval(2minutes))
 
 # ## Run
 
@@ -139,13 +142,7 @@ SST = ocean.temperature
 
 using CairoMakie
 
-st  = FieldTimeSeries(filename * ".jld2", "s")
-ξt  = FieldTimeSeries(filename * ".jld2", "ξ")
-θt  = FieldTimeSeries(filename * ".jld2", "θ")
-qˡt = FieldTimeSeries(filename * ".jld2", "qˡ")
-
-times = st.times
-Nt = length(times)
+Nt = length(timeseries.t)
 
 fig = Figure(size = (1200, 800), fontsize = 14)
 
@@ -161,12 +158,12 @@ x_atmo = xnodes(grid, Center()) ./ 1e3
 z_atmo = znodes(grid, Center()) ./ 1e3
 x_sst = xnodes(sst_grid, Center()) ./ 1e3
 
-sn  = @lift interior(st[$n], :, 1, :)
-ξn  = @lift interior(ξt[$n], :, 1, :)
-θn  = @lift interior(θt[$n], :, 1, :)
-qˡn = @lift interior(qˡt[$n], :, 1, :) .* 1e3
+sn  = @lift timeseries.s[$n]
+ξn  = @lift timeseries.ξ[$n]
+θn  = @lift timeseries.θ[$n]
+qˡn = @lift timeseries.qˡ[$n] .* 1e3
 
-sstn = @lift SST_timeseries[$n]
+sstn = @lift timeseries.SST[$n]
 
 heatmap!(ax_s, x_atmo, z_atmo, sn; colormap=:speed, colorrange=(0, 5))
 heatmap!(ax_ξ, x_atmo, z_atmo, ξn; colormap=:balance, colorrange=(-0.05, 0.05))
@@ -175,7 +172,7 @@ heatmap!(ax_q, x_atmo, z_atmo, qˡn; colormap=:dense, colorrange=(0, 1))
 lines!(ax_sst, x_sst, sstn; color=:red, linewidth=2)
 ylims!(ax_sst, θ₀ - 2, θ₀ + 2)
 
-title = @lift "Atmosphere–slab ocean coupling, t = " * prettytime(times[$n])
+title = @lift "Atmosphere–slab ocean coupling, t = " * prettytime(timeseries.t[$n])
 Label(fig[0, 1:2], title, fontsize=18)
 
 @info "Rendering animation..."
