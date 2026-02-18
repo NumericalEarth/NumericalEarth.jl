@@ -5,7 +5,6 @@ export
     OceanOnlyModel,
     OceanSeaIceModel,
     AtmosphereOceanModel,
-    SlabOcean,
     SimilarityTheoryFluxes,
     CoefficientBasedFluxes,
     FreezingLimitedOceanTemperature,

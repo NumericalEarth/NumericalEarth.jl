@@ -1,6 +1,6 @@
 module Oceans
 
-export ocean_simulation
+export ocean_simulation, SlabOcean
 
 using Oceananigans
 using Oceananigans.Units
@@ -56,6 +56,7 @@ all while respecting user input and changing this to a new value if specified.
 default_or_override(default::Default, possibly_alternative_default=default.value) = possibly_alternative_default
 default_or_override(override, alternative_default=nothing) = override
 
+include("slab_ocean.jl")
 include("barotropic_potential_forcing.jl")
 include("radiative_forcing.jl")
 include("ocean_simulation.jl")
