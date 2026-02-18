@@ -2,36 +2,37 @@ using Oceananigans.TimeSteppers: Clock, tick!
 using Oceananigans.Fields: ConstantField, ZeroField
 
 """
-    SlabOcean(sea_surface_temperature;
+    SlabOcean(temperature;
               sea_surface_salinity = nothing,
-              mixed_layer_depth = 50,
+              depth = 50,
               density = 1025,
               heat_capacity = 4000,
               clock = Clock{FT}(time=0))
 
 A slab ocean component for `EarthSystemModel`. Represents the ocean as a single
-well-mixed layer of fixed depth, with sea surface temperature (SST) evolving
-in response to surface heat fluxes.
+well-mixed layer of fixed depth, with temperature evolving in response to
+net surface heat fluxes:
 
-The SST tendency equation is:
+    ∂T/∂t = Q / (ρ cₚ H)
 
-    ∂T/∂t = -Jᵀ / H
+where `Q` is the net downward surface heat flux (W/m²), `ρ` is the seawater density,
+`cₚ` is the heat capacity, and `H` is the slab depth.
 
-where `H` is the mixed layer depth and `Jᵀ` is the temperature flux
-(in units of K m/s) assembled by the `EarthSystemModel` coupling.
+Internally, the `EarthSystemModel` coupling assembles a temperature flux `Jᵀ` (in K m/s),
+so the tendency is computed as `∂T/∂t = -Jᵀ / H`.
 
 Arguments
 =========
 
-- `sea_surface_temperature`: An Oceananigans `Field` representing the SST (in Kelvin or Celsius
-  depending on the coupled model configuration).
+- `temperature`: An Oceananigans `Field` representing the slab temperature (in Kelvin
+  or Celsius depending on the coupled model configuration).
 
 Keyword Arguments
 =================
 
 - `sea_surface_salinity`: An Oceananigans `Field` representing sea surface salinity, or `nothing`
   to use a constant default of 35 psu. Default: `nothing`.
-- `mixed_layer_depth`: Depth of the slab in meters. Default: 50.
+- `depth`: Depth of the slab in meters. Default: 50.
 - `density`: Seawater density in kg/m³. Default: 1025.
 - `heat_capacity`: Seawater specific heat capacity in J/(kg·K). Default: 4000.
 - `clock`: Clock for tracking slab ocean time. Default: `Clock{FT}(time=0)` where `FT` is the
@@ -40,35 +41,35 @@ Keyword Arguments
 struct SlabOcean{FT, G, Clk, T, S, F, H, ρ, C}
     grid :: G
     clock :: Clk
-    sea_surface_temperature :: T
+    temperature :: T
     sea_surface_salinity :: S
     temperature_flux :: F
-    mixed_layer_depth :: H
+    depth :: H
     density :: ρ
     heat_capacity :: C
 end
 
-function SlabOcean(sea_surface_temperature;
-                   FT = eltype(sea_surface_temperature.grid),
+function SlabOcean(temperature;
+                   FT = eltype(temperature.grid),
                    sea_surface_salinity = nothing,
-                   mixed_layer_depth = 50,
+                   depth = 50,
                    density = 1025,
                    heat_capacity = 4000,
                    clock = Clock{FT}(time=0))
 
-    grid = sea_surface_temperature.grid
+    grid = temperature.grid
     temperature_flux = CenterField(grid)
 
-    return SlabOcean{FT}(grid, clock, sea_surface_temperature, sea_surface_salinity,
-                         temperature_flux, mixed_layer_depth, density, heat_capacity)
+    return SlabOcean{FT}(grid, clock, temperature, sea_surface_salinity,
+                         temperature_flux, depth, density, heat_capacity)
 end
 
 # Inner constructor that captures FT
-SlabOcean{FT}(grid, clock, sst, sss, tf, mld, ρ, c) where FT =
-    SlabOcean{FT, typeof(grid), typeof(clock), typeof(sst), typeof(sss),
-              typeof(tf), typeof(mld), typeof(ρ), typeof(c)}(grid, clock, sst, sss, tf, mld, ρ, c)
+SlabOcean{FT}(grid, clock, T, sss, tf, d, ρ, c) where FT =
+    SlabOcean{FT, typeof(grid), typeof(clock), typeof(T), typeof(sss),
+              typeof(tf), typeof(d), typeof(ρ), typeof(c)}(grid, clock, T, sss, tf, d, ρ, c)
 
-Base.summary(ocean::SlabOcean) = "SlabOcean(H=$(ocean.mixed_layer_depth) m)"
+Base.summary(ocean::SlabOcean) = "SlabOcean(H=$(ocean.depth) m)"
 Base.show(io::IO, ocean::SlabOcean) = print(io, summary(ocean))
 Base.eltype(::SlabOcean{FT}) where FT = FT
 
@@ -78,10 +79,10 @@ Base.eltype(::SlabOcean{FT}) where FT = FT
 
 reference_density(ocean::SlabOcean) = ocean.density
 heat_capacity(ocean::SlabOcean) = ocean.heat_capacity
-ocean_temperature(ocean::SlabOcean) = ocean.sea_surface_temperature
+ocean_temperature(ocean::SlabOcean) = ocean.temperature
 ocean_salinity(ocean::SlabOcean{FT, G, Clk, T, Nothing}) where {FT, G, Clk, T} = ConstantField(convert(FT, 35))
 ocean_salinity(ocean::SlabOcean) = ocean.sea_surface_salinity
-ocean_surface_temperature(ocean::SlabOcean) = ocean.sea_surface_temperature
+ocean_surface_temperature(ocean::SlabOcean) = ocean.temperature
 ocean_surface_salinity(ocean::SlabOcean{FT, G, Clk, T, Nothing}) where {FT, G, Clk, T} = ConstantField(convert(FT, 35))
 ocean_surface_salinity(ocean::SlabOcean) = ocean.sea_surface_salinity
 ocean_surface_velocities(::SlabOcean{FT}) where FT = ZeroField(FT), ZeroField(FT)
@@ -91,7 +92,7 @@ ocean_surface_velocities(::SlabOcean{FT}) where FT = ZeroField(FT), ZeroField(FT
 #####
 
 function ComponentExchanger(ocean::SlabOcean, exchange_grid)
-    T = ocean.sea_surface_temperature
+    T = ocean.temperature
     S = ocean_surface_salinity(ocean)
     u, v = ocean_surface_velocities(ocean)
     return ComponentExchanger((; u, v, T, S), nothing)
@@ -118,9 +119,9 @@ update_net_fluxes!(coupled_model, ocean::SlabOcean) =
 
 function Oceananigans.TimeSteppers.time_step!(ocean::SlabOcean, Δt)
     tick!(ocean.clock, Δt)
-    T = ocean.sea_surface_temperature
+    T = ocean.temperature
     Jᵀ = ocean.temperature_flux
-    H = ocean.mixed_layer_depth
+    H = ocean.depth
     parent(T) .-= parent(Jᵀ) .* Δt ./ H
     return nothing
 end
@@ -129,10 +130,10 @@ end
 ##### Checkpointing
 #####
 
-Oceananigans.prognostic_state(ocean::SlabOcean) = (; T = Array(interior(ocean.sea_surface_temperature)))
+Oceananigans.prognostic_state(ocean::SlabOcean) = (; T = Array(interior(ocean.temperature)))
 
 function Oceananigans.restore_prognostic_state!(ocean::SlabOcean, state)
-    interior(ocean.sea_surface_temperature) .= state.T
+    interior(ocean.temperature) .= state.T
     return ocean
 end
 

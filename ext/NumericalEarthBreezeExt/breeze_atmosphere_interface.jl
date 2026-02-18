@@ -1,3 +1,4 @@
+using Oceananigans.Grids: Center
 using NumericalEarth.Atmospheres: AtmosphereThermodynamicsParameters
 using NumericalEarth.Oceans: SlabOcean
 using NumericalEarth.EarthSystemModels.InterfaceComputations: DegreesKelvin
@@ -19,7 +20,7 @@ thermodynamics_parameters(::BreezeAtmosphere) = AtmosphereThermodynamicsParamete
 # Height of the lowest atmospheric cell center (the "surface layer")
 function surface_layer_height(atmosphere::BreezeAtmosphere)
     grid = atmosphere.grid
-    return grid.Lz / grid.Nz / 2
+    return Oceananigans.zspacing(1, 1, 1, grid, Center(), Center(), Center()) / 2
 end
 
 boundary_layer_height(::BreezeAtmosphere) = 600
@@ -45,28 +46,38 @@ end
 ##### Interpolate atmospheric state onto exchange grid
 #####
 
+@kernel function _interpolate_breeze_state!(state, u, v, T, qᵗ, p₀, Mp)
+    i, j = @index(Global, NTuple)
+
+    @inbounds begin
+        state.u[i, j, 1]  = u[i, j, 1]
+        state.v[i, j, 1]  = v[i, j, 1]
+        state.T[i, j, 1]  = T[i, j, 1]
+        state.q[i, j, 1]  = qᵗ[i, j, 1]
+        state.p[i, j, 1]  = p₀
+        state.Qs[i, j, 1] = 0
+        state.Qℓ[i, j, 1] = 0
+        state.Mp[i, j, 1] = Mp[i, j, 1]
+    end
+end
+
 function interpolate_state!(exchanger, exchange_grid, atmosphere::BreezeAtmosphere, coupled_model)
     state = exchanger.state
     u, v, w = atmosphere.velocities
     T = atmosphere.temperature
     qᵗ = atmosphere.specific_moisture
 
-    # Extract surface layer (k=1) values and put on exchange grid
-    # Note: u is at Face locations in x, so this introduces a half-cell shift.
-    # For flux computations, this approximation is acceptable.
-    Oceananigans.interior(state.u, :, :, 1) .= @views Oceananigans.interior(u, :, :, 1)
-    Oceananigans.interior(state.v, :, :, 1) .= @views Oceananigans.interior(v, :, :, 1)
-    Oceananigans.interior(state.T, :, :, 1) .= @views Oceananigans.interior(T, :, :, 1)
-    Oceananigans.interior(state.q, :, :, 1) .= @views Oceananigans.interior(qᵗ, :, :, 1)
-
     # Surface pressure from reference state (constant for anelastic dynamics)
     p₀ = atmosphere.dynamics.reference_state.surface_pressure
-    Oceananigans.set!(state.p, p₀)
 
-    # Radiation and precipitation: not computed by Breeze LES
-    Oceananigans.set!(state.Qs, 0)
-    Oceananigans.set!(state.Qℓ, 0)
-    Oceananigans.set!(state.Mp, 0)
+    # Surface precipitation rate from microphysics (if available)
+    μ = atmosphere.microphysical_fields
+    Mp = hasproperty(μ, :precipitation_rate) ? μ.precipitation_rate : ZeroField()
+
+    arch = architecture(exchange_grid)
+    launch!(arch, exchange_grid, :xy,
+            _interpolate_breeze_state!,
+            state, u, v, T, qᵗ, p₀, Mp)
 
     return nothing
 end
@@ -102,15 +113,15 @@ function AtmosphereOceanModel(atmosphere::BreezeAtmosphere, ocean::SlabOcean; kw
                                      ocean_temperature_units = DegreesKelvin(),
                                      ocean_reference_density = ocean.density,
                                      ocean_heat_capacity = ocean.heat_capacity,
-                                     sea_ice_reference_density = 0.0,
-                                     sea_ice_heat_capacity = 0.0)
+                                     sea_ice_reference_density = 0,
+                                     sea_ice_heat_capacity = 0)
 
     return NumericalEarth.EarthSystemModel(atmosphere, ocean, nothing;
                                            interfaces,
                                            ocean_reference_density = ocean.density,
                                            ocean_heat_capacity = ocean.heat_capacity,
-                                           sea_ice_reference_density = 0.0,
-                                           sea_ice_heat_capacity = 0.0,
+                                           sea_ice_reference_density = 0,
+                                           sea_ice_heat_capacity = 0,
                                            kw...)
 end
 

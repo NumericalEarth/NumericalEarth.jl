@@ -1,5 +1,4 @@
 using Breeze
-using Breeze: BulkDrag, BulkSensibleHeatFlux, BulkVaporFlux
 using NumericalEarth
 using Oceananigans
 using Oceananigans.Units
@@ -15,12 +14,7 @@ function build_test_model()
                            z = (0, 10kilometers),
                            topology = (Periodic, Flat, Bounded))
 
-    p₀, θ₀ = 101325, 285
-    constants = ThermodynamicConstants()
-    reference_state = ReferenceState(grid, constants; surface_pressure=p₀, potential_temperature=θ₀)
-    dynamics = AnelasticDynamics(reference_state)
-    microphysics = SaturationAdjustment(equilibrium = WarmPhaseEquilibrium())
-
+    θ₀ = 285
     ΔT = 4
     T₀_func(x) = θ₀ + ΔT / 2 * sign(cos(2π * x / grid.Lx))
 
@@ -33,24 +27,35 @@ function build_test_model()
     SST = CenterField(sst_grid)
     set!(SST, T₀_func)
 
-    coef = PolynomialCoefficient(roughness_length = 1.5e-4)
-    ρu_bcs = FieldBoundaryConditions(bottom=BulkDrag(coefficient=coef, gustiness=1e-2, surface_temperature=SST))
-    ρv_bcs = FieldBoundaryConditions(bottom=BulkDrag(coefficient=coef, gustiness=1e-2, surface_temperature=SST))
-    ρe_bcs = FieldBoundaryConditions(bottom=BulkSensibleHeatFlux(coefficient=coef, gustiness=1e-2, surface_temperature=SST))
-    ρqᵗ_bcs = FieldBoundaryConditions(bottom=BulkVaporFlux(coefficient=coef, gustiness=1e-2, surface_temperature=SST))
+    atmosphere = atmosphere_simulation(grid; sea_surface_temperature=SST, potential_temperature=θ₀)
+    set!(atmosphere, θ=atmosphere.dynamics.reference_state.potential_temperature, u=1)
 
-    atmosphere = AtmosphereModel(grid; microphysics, dynamics,
-                                 boundary_conditions = (ρu=ρu_bcs, ρv=ρv_bcs, ρe=ρe_bcs, ρqᵗ=ρqᵗ_bcs))
-
-    set!(atmosphere, θ=reference_state.potential_temperature, u=1)
-
-    ocean = SlabOcean(SST, mixed_layer_depth=50, density=1025, heat_capacity=4000)
+    ocean = SlabOcean(SST, depth=50, density=1025, heat_capacity=4000)
     model = AtmosphereOceanModel(atmosphere, ocean)
 
     return model
 end
 
 @testset "AtmosphereOceanModel with Breeze" begin
+    @testset "atmosphere_simulation" begin
+        grid = RectilinearGrid(size = (16, 16), halo = (5, 5),
+                               x = (-10kilometers, 10kilometers),
+                               z = (0, 10kilometers),
+                               topology = (Periodic, Flat, Bounded))
+
+        sst_grid = RectilinearGrid(grid.architecture,
+                                   size = grid.Nx,
+                                   halo = grid.Hx,
+                                   x = (-10kilometers, 10kilometers),
+                                   topology = (Periodic, Flat, Flat))
+
+        SST = CenterField(sst_grid)
+        set!(SST, 285)
+
+        atmos = atmosphere_simulation(grid; sea_surface_temperature=SST)
+        @test atmos isa Breeze.AtmosphereModel
+    end
+
     @testset "Construction" begin
         model = build_test_model()
 
@@ -62,14 +67,11 @@ end
         # Check that interfaces were created
         @test !isnothing(model.interfaces)
         @test !isnothing(model.interfaces.atmosphere_ocean_interface)
-
-        # SST field is shared between ocean and atmosphere BCs
-        @test model.ocean.sea_surface_temperature === model.ocean.sea_surface_temperature
     end
 
     @testset "Time stepping" begin
         model = build_test_model()
-        SST = model.ocean.sea_surface_temperature
+        SST = model.ocean.temperature
         SST_before = Array(interior(SST))
 
         simulation = Simulation(model, Δt=10, stop_iteration=10)
@@ -85,7 +87,7 @@ end
 
     @testset "SST responds to fluxes" begin
         model = build_test_model()
-        SST = model.ocean.sea_surface_temperature
+        SST = model.ocean.temperature
         SST_initial_max = maximum(SST)
 
         simulation = Simulation(model, Δt=10, stop_iteration=50)

@@ -19,8 +19,7 @@
 # bulk exchange coefficients.
 
 using NumericalEarth
-using Breeze
-using Breeze: BulkDrag, BulkSensibleHeatFlux, BulkVaporFlux
+using Breeze #hide
 using Oceananigans
 using Oceananigans.Units
 using Printf
@@ -34,26 +33,14 @@ grid = RectilinearGrid(size = (128, 128), halo = (5, 5),
                        z = (0, 10kilometers),
                        topology = (Periodic, Flat, Bounded))
 
-# ## Atmosphere setup
-#
-# Anelastic dynamics with warm-phase saturation adjustment microphysics.
-
-p₀, θ₀ = 101325, 285 # Pa, K
-constants = ThermodynamicConstants()
-reference_state = ReferenceState(grid, constants; surface_pressure=p₀, potential_temperature=θ₀)
-dynamics = AnelasticDynamics(reference_state)
-microphysics = SaturationAdjustment(equilibrium = WarmPhaseEquilibrium())
-
-momentum_advection = WENO(order=9)
-scalar_advection = WENO(order=5)
-
 # ## Sea surface temperature
 #
 # The SST is a mutable `Field` on a 1D horizontal grid. It is shared between the
 # atmosphere boundary conditions and the slab ocean, so updates to SST are automatically
 # seen by the atmosphere on the next timestep.
 
-ΔT = 4 # K
+θ₀ = 285 # K
+ΔT = 4   # K
 T₀_func(x) = θ₀ + ΔT / 2 * sign(cos(2π * x / grid.Lx))
 
 sst_grid = RectilinearGrid(grid.architecture,
@@ -65,27 +52,25 @@ sst_grid = RectilinearGrid(grid.architecture,
 SST = CenterField(sst_grid)
 set!(SST, T₀_func)
 
-# ## Atmosphere boundary conditions
+# ## Atmosphere
 #
-# We use Breeze's polynomial bulk exchange coefficients. The same SST field
-# is passed to the BCs and to the slab ocean.
+# `atmosphere_simulation` constructs a Breeze `AtmosphereModel` with sensible defaults
+# (anelastic dynamics, warm-phase saturation adjustment microphysics, WENO advection).
+# Passing `sea_surface_temperature` automatically sets up bulk surface exchange
+# boundary conditions for momentum, heat, and moisture.
 
-Uᵍ = 1e-2
-coef = PolynomialCoefficient(roughness_length = 1.5e-4)
+atmosphere = atmosphere_simulation(grid; sea_surface_temperature=SST, potential_temperature=θ₀)
 
-ρu_bcs = FieldBoundaryConditions(bottom=BulkDrag(coefficient=coef, gustiness=Uᵍ, surface_temperature=SST))
-ρv_bcs = FieldBoundaryConditions(bottom=BulkDrag(coefficient=coef, gustiness=Uᵍ, surface_temperature=SST))
-ρe_bcs = FieldBoundaryConditions(bottom=BulkSensibleHeatFlux(coefficient=coef, gustiness=Uᵍ, surface_temperature=SST))
-ρqᵗ_bcs = FieldBoundaryConditions(bottom=BulkVaporFlux(coefficient=coef, gustiness=Uᵍ, surface_temperature=SST))
+# ## Initial conditions
 
-atmosphere = AtmosphereModel(grid; momentum_advection, scalar_advection, microphysics, dynamics,
-                             boundary_conditions = (ρu=ρu_bcs, ρv=ρv_bcs, ρe=ρe_bcs, ρqᵗ=ρqᵗ_bcs))
+reference_state = atmosphere.dynamics.reference_state
+set!(atmosphere, θ=reference_state.potential_temperature, u=1)
 
 # ## Slab ocean
 #
 # A 50 m deep slab ocean with standard seawater properties.
 
-ocean = SlabOcean(SST, mixed_layer_depth=50, density=1025, heat_capacity=4000)
+ocean = SlabOcean(SST, depth=50, density=1025, heat_capacity=4000)
 
 # ## Coupled model
 #
@@ -93,10 +78,6 @@ ocean = SlabOcean(SST, mixed_layer_depth=50, density=1025, heat_capacity=4000)
 # and ocean through the similarity theory turbulent flux computation.
 
 model = AtmosphereOceanModel(atmosphere, ocean)
-
-# ## Initial conditions
-
-set!(atmosphere, θ=reference_state.potential_temperature, u=1)
 
 # ## Simulation
 #
@@ -120,7 +101,7 @@ function progress(sim)
     umax = maximum(abs, u)
     wmax = maximum(abs, w)
 
-    sst = sim.model.ocean.sea_surface_temperature
+    sst = sim.model.ocean.temperature
     sst_min = minimum(sst)
     sst_max = maximum(sst)
 
