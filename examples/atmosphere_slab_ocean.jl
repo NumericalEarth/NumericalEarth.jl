@@ -45,7 +45,7 @@ set!(atmosphere, θ=reference_state.potential_temperature, u=1)
 
 # ## Slab ocean
 #
-# A 50 m deep slab ocean with constant initial temperature, on a 1D horizontal grid.
+# A 50 meter-deep slab ocean with constant initial temperature, on a 1D horizontal grid.
 
 sst_grid = RectilinearGrid(grid.architecture,
                            size = grid.Nx,
@@ -67,7 +67,7 @@ model = AtmosphereOceanModel(atmosphere, ocean)
 #
 # Run for 4 hours with a fixed timestep.
 
-simulation = Simulation(model, Δt=10, stop_time=4hours)
+simulation = Simulation(model, Δt=1, stop_time=4hours)
 
 # ## Diagnostics
 
