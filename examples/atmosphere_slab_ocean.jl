@@ -19,7 +19,7 @@
 # bulk exchange coefficients.
 
 using NumericalEarth
-using Breeze #hide
+using Breeze
 using Oceananigans
 using Oceananigans.Units
 using Printf
