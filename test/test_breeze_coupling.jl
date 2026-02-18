@@ -8,8 +8,9 @@ NumericalEarthBreezeExt = Base.get_extension(NumericalEarth, :NumericalEarthBree
 @test !isnothing(NumericalEarthBreezeExt)
 
 # Helper to build a fresh atmosphere + slab ocean model
-function build_test_model()
-    grid = RectilinearGrid(size = (16, 16), halo = (5, 5),
+function build_test_model(arch)
+    grid = RectilinearGrid(arch,
+                           size = (16, 16), halo = (5, 5),
                            x = (-10kilometers, 10kilometers),
                            z = (0, 10kilometers),
                            topology = (Periodic, Flat, Bounded))
@@ -19,7 +20,7 @@ function build_test_model()
     atmosphere = atmosphere_simulation(grid; potential_temperature=θ₀)
     set!(atmosphere, θ=atmosphere.dynamics.reference_state.potential_temperature, u=1)
 
-    sst_grid = RectilinearGrid(grid.architecture,
+    sst_grid = RectilinearGrid(arch,
                                size = grid.Nx,
                                halo = grid.Hx,
                                x = (-10kilometers, 10kilometers),
@@ -34,54 +35,59 @@ function build_test_model()
 end
 
 @testset "AtmosphereOceanModel with Breeze" begin
-    @testset "atmosphere_simulation" begin
-        grid = RectilinearGrid(size = (16, 16), halo = (5, 5),
-                               x = (-10kilometers, 10kilometers),
-                               z = (0, 10kilometers),
-                               topology = (Periodic, Flat, Bounded))
+    for arch in test_architectures
+        A = typeof(arch)
 
-        atmos = atmosphere_simulation(grid)
-        @test atmos isa Breeze.AtmosphereModel
-    end
+        @testset "atmosphere_simulation on $A" begin
+            grid = RectilinearGrid(arch,
+                                   size = (16, 16), halo = (5, 5),
+                                   x = (-10kilometers, 10kilometers),
+                                   z = (0, 10kilometers),
+                                   topology = (Periodic, Flat, Bounded))
 
-    @testset "Construction" begin
-        model = build_test_model()
+            atmos = atmosphere_simulation(grid)
+            @test atmos isa Breeze.AtmosphereModel
+        end
 
-        @test model isa EarthSystemModel
-        @test model.ocean isa SlabOcean
-        @test model.atmosphere isa Breeze.AtmosphereModel
-        @test model.architecture isa CPU
+        @testset "Construction on $A" begin
+            model = build_test_model(arch)
 
-        # Check that interfaces were created
-        @test !isnothing(model.interfaces)
-        @test !isnothing(model.interfaces.atmosphere_ocean_interface)
-    end
+            @test model isa EarthSystemModel
+            @test model.ocean isa SlabOcean
+            @test model.atmosphere isa Breeze.AtmosphereModel
+            @test model.architecture isa typeof(arch)
 
-    @testset "Time stepping" begin
-        model = build_test_model()
-        SST = model.ocean.temperature
-        SST_before = Array(interior(SST))
+            # Check that interfaces were created
+            @test !isnothing(model.interfaces)
+            @test !isnothing(model.interfaces.atmosphere_ocean_interface)
+        end
 
-        simulation = Simulation(model, Δt=10, stop_iteration=10)
-        run!(simulation)
+        @testset "Time stepping on $A" begin
+            model = build_test_model(arch)
+            SST = model.ocean.temperature
+            SST_before = Array(interior(SST))
 
-        @test model.clock.iteration == 10
-        @test model.clock.time > 0
+            simulation = Simulation(model, Δt=10, stop_iteration=10)
+            run!(simulation)
 
-        SST_after = Array(interior(SST))
-        # SST should have changed and contain no NaN
-        @test !any(isnan, SST_after)
-        @test SST_after ≉ SST_before
-    end
+            @test model.clock.iteration == 10
+            @test model.clock.time > 0
 
-    @testset "SST responds to fluxes" begin
-        model = build_test_model()
+            SST_after = Array(interior(SST))
+            # SST should have changed and contain no NaN
+            @test !any(isnan, SST_after)
+            @test SST_after ≉ SST_before
+        end
 
-        simulation = Simulation(model, Δt=10, stop_iteration=50)
-        run!(simulation)
+        @testset "SST responds to fluxes on $A" begin
+            model = build_test_model(arch)
 
-        # Check that the ESM interface fluxes are nonzero
-        ao_fluxes = model.interfaces.atmosphere_ocean_interface.fluxes
-        @test maximum(abs, ao_fluxes.sensible_heat) > 0
+            simulation = Simulation(model, Δt=10, stop_iteration=50)
+            run!(simulation)
+
+            # Check that the ESM interface fluxes are nonzero
+            ao_fluxes = model.interfaces.atmosphere_ocean_interface.fluxes
+            @test maximum(abs, ao_fluxes.sensible_heat) > 0
+        end
     end
 end

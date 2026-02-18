@@ -150,6 +150,7 @@ jobs:
           - bathymetry
           - checkpointing
           - earth_system_model
+          - breeze
           - JRA55
     env:
       OPENBLAS_NUM_THREADS: 1
