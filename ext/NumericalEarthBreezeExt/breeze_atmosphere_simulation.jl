@@ -7,8 +7,9 @@ using Breeze: ThermodynamicConstants, ReferenceState, AnelasticDynamics,
                           surface_pressure = 101325,
                           potential_temperature = 285,
                           thermodynamic_constants = ThermodynamicConstants(eltype(grid)),
-                          dynamics = ...,
-                          microphysics = ...,
+                          dynamics = AnelasticDynamics(ReferenceState(grid, thermodynamic_constants;
+                                                                      surface_pressure, potential_temperature)),
+                          microphysics = SaturationAdjustment(equilibrium = WarmPhaseEquilibrium()),
                           momentum_advection = WENO(order=9),
                           scalar_advection = WENO(order=5),
                           boundary_conditions = NamedTuple(),
@@ -31,7 +32,7 @@ Keyword Arguments
 - `potential_temperature`: Reference potential temperature in K. Default: 285.
 - `thermodynamic_constants`: Breeze `ThermodynamicConstants`. Default: `ThermodynamicConstants(eltype(grid))`.
 - `dynamics`: Dynamics formulation. Default: `AnelasticDynamics` with the given reference state.
-- `microphysics`: Microphysics scheme. Default: `SaturationAdjustment(equilibrium=WarmPhaseEquilibrium())`.
+- `microphysics`: Microphysics scheme. Default: `SaturationAdjustment(equilibrium = WarmPhaseEquilibrium())`.
 - `momentum_advection`: Advection scheme for momentum. Default: `WENO(order=9)`.
 - `scalar_advection`: Advection scheme for scalars. Default: `WENO(order=5)`.
 - `boundary_conditions`: Named tuple of boundary conditions. Default: `NamedTuple()`.
