@@ -1,7 +1,6 @@
 using Oceananigans.Grids: Center
 using NumericalEarth.Atmospheres: AtmosphereThermodynamicsParameters
-using NumericalEarth.Oceans: SlabOcean
-using NumericalEarth.EarthSystemModels.InterfaceComputations: DegreesKelvin, interface_kernel_parameters
+using NumericalEarth.EarthSystemModels.InterfaceComputations: interface_kernel_parameters
 
 const BreezeAtmosphere = Breeze.AtmosphereModel
 
@@ -88,39 +87,6 @@ end
 
 net_fluxes(::BreezeAtmosphere) = nothing
 update_net_fluxes!(coupled_model, ::BreezeAtmosphere) = nothing
-
-#####
-##### AtmosphereOceanModel constructor for Breeze
-#####
-
-"""
-    AtmosphereOceanModel(atmosphere::Breeze.AtmosphereModel, ocean::SlabOcean; kw...)
-
-Construct an `EarthSystemModel` coupling a Breeze `AtmosphereModel` with a `SlabOcean`.
-
-The exchange grid is set to the slab ocean's grid, and the ocean temperature units
-are set to Kelvin (consistent with Breeze's temperature convention). Surface fluxes
-are computed by the ESM similarity theory and applied to the slab ocean.
-"""
-function AtmosphereOceanModel(atmosphere::BreezeAtmosphere, ocean::SlabOcean; kw...)
-    exchange_grid = ocean.grid
-
-    interfaces = ComponentInterfaces(atmosphere, ocean, nothing;
-                                     exchange_grid,
-                                     ocean_temperature_units = DegreesKelvin(),
-                                     ocean_reference_density = ocean.density,
-                                     ocean_heat_capacity = ocean.heat_capacity,
-                                     sea_ice_reference_density = 0,
-                                     sea_ice_heat_capacity = 0)
-
-    return NumericalEarth.EarthSystemModel(atmosphere, ocean, nothing;
-                                           interfaces,
-                                           ocean_reference_density = ocean.density,
-                                           ocean_heat_capacity = ocean.heat_capacity,
-                                           sea_ice_reference_density = 0,
-                                           sea_ice_heat_capacity = 0,
-                                           kw...)
-end
 
 #####
 ##### CFL wizard support

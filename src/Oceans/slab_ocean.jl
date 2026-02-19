@@ -1,4 +1,5 @@
 using Oceananigans.TimeSteppers: Clock, tick!
+using Oceananigans.BoundaryConditions: fill_halo_regions!
 using Oceananigans.Fields: ConstantField, ZeroField
 
 """
@@ -121,7 +122,8 @@ function Oceananigans.TimeSteppers.time_step!(ocean::SlabOcean, Δt)
     T = ocean.temperature
     Jᵀ = ocean.temperature_flux
     H = ocean.depth
-    parent(T) .-= parent(Jᵀ) .* Δt ./ H
+    interior(T) .-= interior(Jᵀ) .* Δt ./ H
+    fill_halo_regions!(T)
     return nothing
 end
 
@@ -137,3 +139,38 @@ function Oceananigans.restore_prognostic_state!(ocean::SlabOcean, state)
 end
 
 Oceananigans.restore_prognostic_state!(ocean::SlabOcean, ::Nothing) = ocean
+
+#####
+##### AtmosphereOceanModel constructor for SlabOcean
+#####
+
+using NumericalEarth.EarthSystemModels.InterfaceComputations: DegreesKelvin, ComponentInterfaces
+
+"""
+    AtmosphereOceanModel(atmosphere, ocean::SlabOcean; kw...)
+
+Construct an `EarthSystemModel` coupling an atmosphere with a `SlabOcean`.
+
+The exchange grid is set to the slab ocean's grid, and the ocean temperature units
+are set to Kelvin. Surface fluxes are computed by the ESM similarity theory
+and applied to the slab ocean.
+"""
+function EarthSystemModels.AtmosphereOceanModel(atmosphere, ocean::SlabOcean; kw...)
+    exchange_grid = ocean.grid
+
+    interfaces = ComponentInterfaces(atmosphere, ocean, nothing;
+                                     exchange_grid,
+                                     ocean_temperature_units = DegreesKelvin(),
+                                     ocean_reference_density = ocean.density,
+                                     ocean_heat_capacity = ocean.heat_capacity,
+                                     sea_ice_reference_density = 0,
+                                     sea_ice_heat_capacity = 0)
+
+    return EarthSystemModels.EarthSystemModel(atmosphere, ocean, nothing;
+                                              interfaces,
+                                              ocean_reference_density = ocean.density,
+                                              ocean_heat_capacity = ocean.heat_capacity,
+                                              sea_ice_reference_density = 0,
+                                              sea_ice_heat_capacity = 0,
+                                              kw...)
+end
