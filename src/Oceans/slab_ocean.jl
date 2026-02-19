@@ -81,6 +81,8 @@ Base.eltype(::SlabOcean{FT}) where FT = FT
 
 reference_density(ocean::SlabOcean) = ocean.density
 heat_capacity(ocean::SlabOcean) = ocean.heat_capacity
+exchange_grid(ocean::SlabOcean) = ocean.grid
+temperature_units(::SlabOcean) = DegreesKelvin()
 ocean_temperature(ocean::SlabOcean) = ocean.temperature
 ocean_salinity(ocean::SlabOcean{FT}) where FT = ConstantField(convert(FT, 35))
 ocean_surface_temperature(ocean::SlabOcean) = ocean.temperature
@@ -117,13 +119,18 @@ update_net_fluxes!(coupled_model, ocean::SlabOcean) =
 ##### Time stepping
 #####
 
+@kernel function _step_slab_temperature!(T, Jᵀ, Δt, H)
+    i, j = @index(Global, NTuple)
+    @inbounds T[i, j, 1] -= Jᵀ[i, j, 1] * Δt / H
+end
+
 function Oceananigans.TimeSteppers.time_step!(ocean::SlabOcean, Δt)
     tick!(ocean.clock, Δt)
-    T = ocean.temperature
-    Jᵀ = ocean.temperature_flux
-    H = ocean.depth
-    interior(T) .-= interior(Jᵀ) .* Δt ./ H
-    fill_halo_regions!(T)
+    grid = ocean.grid
+    arch = architecture(grid)
+    launch!(arch, grid, :xy, _step_slab_temperature!,
+            ocean.temperature, ocean.temperature_flux, Δt, ocean.depth)
+    fill_halo_regions!(ocean.temperature)
     return nothing
 end
 
@@ -139,38 +146,3 @@ function Oceananigans.restore_prognostic_state!(ocean::SlabOcean, state)
 end
 
 Oceananigans.restore_prognostic_state!(ocean::SlabOcean, ::Nothing) = ocean
-
-#####
-##### AtmosphereOceanModel constructor for SlabOcean
-#####
-
-using NumericalEarth.EarthSystemModels.InterfaceComputations: DegreesKelvin, ComponentInterfaces
-
-"""
-    AtmosphereOceanModel(atmosphere, ocean::SlabOcean; kw...)
-
-Construct an `EarthSystemModel` coupling an atmosphere with a `SlabOcean`.
-
-The exchange grid is set to the slab ocean's grid, and the ocean temperature units
-are set to Kelvin. Surface fluxes are computed by the ESM similarity theory
-and applied to the slab ocean.
-"""
-function EarthSystemModels.AtmosphereOceanModel(atmosphere, ocean::SlabOcean; kw...)
-    exchange_grid = ocean.grid
-
-    interfaces = ComponentInterfaces(atmosphere, ocean, nothing;
-                                     exchange_grid,
-                                     ocean_temperature_units = DegreesKelvin(),
-                                     ocean_reference_density = ocean.density,
-                                     ocean_heat_capacity = ocean.heat_capacity,
-                                     sea_ice_reference_density = 0,
-                                     sea_ice_heat_capacity = 0)
-
-    return EarthSystemModels.EarthSystemModel(atmosphere, ocean, nothing;
-                                              interfaces,
-                                              ocean_reference_density = ocean.density,
-                                              ocean_heat_capacity = ocean.heat_capacity,
-                                              sea_ice_reference_density = 0,
-                                              sea_ice_heat_capacity = 0,
-                                              kw...)
-end
