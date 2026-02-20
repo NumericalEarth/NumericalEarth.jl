@@ -18,14 +18,13 @@ radiative intensity, `J` for mass flux, and `τ` for kinematic momentum flux.
 - _Component_: `ᵃᵗ` (atmosphere), `ᵒᶜ` (ocean), `ˢⁱ` (sea ice), `ˡᵈ` (land)
 - _Interface pair_: `ᵃᵒ` (atm–ocean), `ᵃⁱ` (atm–ice), `ⁱᵒ` (ice–ocean)
 - _Direction_: `ˣ` / `ʸ` (spatial), `ˢʷ` / `ˡʷ` (shortwave / longwave)
-- _Radiative process_: `ᵗʳ` (transmitted), `ᵃᵇ` (absorbed), `ᵖⁿ` (penetrating)
-- _Other process_: `ⁱⁿᵗ` (interface), `ᶠʳᶻ` (frazil)
+- _Process_: `ⁱⁿᵗ` (interface), `ᶠʳᶻ` (frazil)
 
 **Modifier arrows** `ꜜ` (`\^downarrow`) and `ꜛ` (`\^uparrow`) denote
 downwelling and upwelling directions in radiative fluxes.
 
-**Subscripts** encode a small set of additional labels, such as
-`★` (similarity-theory scale).
+**Subscripts** encode radiative process (`ₜ` transmitted, `ₐ` absorbed,
+`ₚ` penetrating) and the similarity-theory scale `★`.
 
 For example, `𝒬ᵛ` is the latent (vapor) heat flux, `ℐꜜˢʷ` is the downwelling
 shortwave radiative intensity, and `τˣ` is the zonal kinematic momentum flux.
@@ -83,9 +82,6 @@ denote the _component_ or _location_.
 | ``\mathrm{io}`` | `ⁱᵒ` | ice–ocean interface | ``\mathcal{Q}^{\mathrm{io}}`` (ice–ocean heat flux) |
 | ``\mathrm{sw}`` | `ˢʷ` | shortwave | ``\mathscr{I}`` ꜜ ``{}^{\mathrm{sw}}`` (downwelling shortwave) |
 | ``\mathrm{lw}`` | `ˡʷ` | longwave | ``\mathscr{I}`` ꜜ ``{}^{\mathrm{lw}}`` (downwelling longwave) |
-| ``\mathrm{tr}`` | `ᵗʳ` | transmitted | ``\mathscr{I}^{\mathrm{tr}}`` (transmitted radiation) |
-| ``\mathrm{ab}`` | `ᵃᵇ` | absorbed | ``\mathscr{I}^{\mathrm{ab}}`` (absorbed radiation) |
-| ``\mathrm{pn}`` | `ᵖⁿ` | penetrating | ``\mathscr{I}^{\mathrm{pn}}`` (penetrating radiation) |
 
 ### Modifier arrows
 
@@ -98,6 +94,9 @@ denote the _component_ or _location_.
 
 | Label | Code | Meaning | Example |
 |:-----:|:----:|:--------|:--------|
+| ``t`` | `ₜ` | transmitted | ``\mathscr{I}_{t}^{\mathrm{sw}}`` (transmitted shortwave) |
+| ``a`` | `ₐ` | absorbed | ``\mathscr{I}_{a}^{\mathrm{lw}}`` (absorbed longwave) |
+| ``p`` | `ₚ` | penetrating | ``\mathscr{I}_{p}^{\mathrm{sw}}`` (penetrating shortwave) |
 | ``\star`` | `★` | similarity theory scale | ``u_\star`` (friction velocity) |
 
 ## Atmosphere state variables
@@ -164,14 +163,14 @@ denote the _component_ or _location_.
 | ``\mathscr{I}_\downarrow^{\mathrm{lw}}`` | `ℐꜜˡʷ` | downwelling longwave | Downwelling longwave radiation (W m⁻²) |
 | ``\mathscr{I}_\uparrow^{\mathrm{lw}}`` | `ℐꜛˡʷ` | upwelling longwave | Emitted longwave radiation (W m⁻²) |
 
-| ``\mathscr{I}^{\mathrm{tr,sw}}`` | `ℐᵗʳˢʷ` | transmitted shortwave | Shortwave passing through the surface, ``(1-\alpha) \mathscr{I}_\downarrow^{\mathrm{sw}}`` (W m⁻²) |
-| ``\mathscr{I}^{\mathrm{ab,lw}}`` | `ℐᵃᵇˡʷ` | absorbed longwave | Longwave absorbed at the surface, ``\epsilon \mathscr{I}_\downarrow^{\mathrm{lw}}`` (W m⁻²) |
-| ``\mathscr{I}^{\mathrm{pn,sw}}`` | `ℐᵖⁿˢʷ` | penetrating shortwave | Shortwave penetrating into the ocean interior (W m⁻²) |
+| ``\mathscr{I}_{t}^{\mathrm{sw}}`` | `ℐₜˢʷ` | transmitted shortwave | Shortwave passing through the surface, ``(1-\alpha) \mathscr{I}_\downarrow^{\mathrm{sw}}`` (W m⁻²) |
+| ``\mathscr{I}_{a}^{\mathrm{lw}}`` | `ℐₐˡʷ` | absorbed longwave | Longwave absorbed at the surface, ``\epsilon \mathscr{I}_\downarrow^{\mathrm{lw}}`` (W m⁻²) |
+| ``\mathscr{I}_{p}^{\mathrm{sw}}`` | `ℐₚˢʷ` | penetrating shortwave | Shortwave penetrating into the ocean interior (W m⁻²) |
 
 Radiative fluxes use ``\mathscr{I}`` (`ℐ`, for "intensity") with a modifier
 arrow (`ꜜ`/`ꜛ` for downwelling/upwelling) and superscript band (`ˢʷ`/`ˡʷ`).
-Derived radiative quantities combine a process label (`ᵗʳ`, `ᵃᵇ`, `ᵖⁿ`) with
-a band label.
+Derived radiative quantities use a subscript process label (`ₜ`, `ₐ`, `ₚ`)
+with a superscript band.
 
 ## Turbulent interface fluxes
 
@@ -268,5 +267,7 @@ collects the less obvious completions used in this notation.
 | `ⁿ` | `\^n` | Superscript n |
 | `ᶠ` | `\^f` | Superscript f |
 | `ʳ` | `\^r` | Superscript r |
-| `ᵇ` | `\^b` | Superscript b |
 | `ᶻ` | `\^z` | Superscript z |
+| `ₜ` | `\_t` | Subscript t (transmitted) |
+| `ₐ` | `\_a` | Subscript a (absorbed) |
+| `ₚ` | `\_p` | Subscript p (penetrating) |
