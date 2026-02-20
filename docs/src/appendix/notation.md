@@ -213,3 +213,45 @@ where applicable.
 | `ρτʸ` | `surface_downward_northward_stress` |
 | `hˢⁱ` | `sea_ice_thickness` |
 | `ℵ` | `sea_ice_area_fraction` |
+
+## Typing Unicode symbols in Julia
+
+Most symbols can be entered in the Julia REPL and in editors with Julia support
+by typing a LaTeX-like abbreviation followed by `<tab>`. The table below
+collects the less obvious completions used in this notation.
+
+| Symbol | Tab completion | Description |
+|:------:|:---------------|:------------|
+| `𝒬` | `\scrQ` | Script Q (heat flux) |
+| `ℐ` | `\scrI` | Script I (radiative intensity) |
+| `ℒ` | `\scrL` | Script L (latent heat) |
+| `τ` | `\tau` | Tau (kinematic stress) |
+| `ρ` | `\rho` | Rho (density) |
+| `σ` | `\sigma` | Sigma (Stefan–Boltzmann constant) |
+| `α` | `\alpha` | Alpha (albedo) |
+| `ϵ` | `\epsilon` | Epsilon (emissivity) |
+| `ℵ` | `\aleph` | Aleph (ice concentration) |
+| `ϰ` | `\varkappa` | Varkappa (von Kármán constant) |
+| `★` | `\bigstar` | Star (similarity-theory scale) |
+| `ꜜ` | `\^downarrow` | Modifier down arrow (downwelling) |
+| `ꜛ` | `\^uparrow` | Modifier up arrow (upwelling) |
+| `ᵛ` | `\^v` | Superscript v |
+| `ᵀ` | `\^T` | Superscript T |
+| `ˢ` | `\^s` | Superscript s |
+| `ʷ` | `\^w` | Superscript w |
+| `ⁱ` | `\^i` | Superscript i |
+| `ˡ` | `\^l` | Superscript l |
+| `ᵖ` | `\^p` | Superscript p |
+| `ᵐ` | `\^m` | Superscript m |
+| `ᵈ` | `\^d` | Superscript d |
+| `ᴰ` | `\^D` | Superscript D |
+| `ˣ` | `\^x` | Superscript x |
+| `ʸ` | `\^y` | Superscript y |
+| `ᵃ` | `\^a` | Superscript a |
+| `ᵗ` | `\^t` | Superscript t |
+| `ᵒ` | `\^o` | Superscript o |
+| `ᶜ` | `\^c` | Superscript c |
+| `ⁿ` | `\^n` | Superscript n |
+| `ᶠ` | `\^f` | Superscript f |
+| `ʳ` | `\^r` | Superscript r |
+| `ᶻ` | `\^z` | Superscript z |
