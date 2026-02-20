@@ -4,12 +4,13 @@ export regrid_bathymetry
 
 using Downloads
 using ImageMorphology
+using JLD2
 using KernelAbstractions: @kernel, @index
 using Oceananigans
 using Oceananigans.Architectures: architecture, on_architecture
 using Oceananigans.BoundaryConditions
 using Oceananigans.DistributedComputations
-using Oceananigans.DistributedComputations: DistributedGrid, reconstruct_global_grid, all_reduce
+using Oceananigans.DistributedComputations: DistributedGrid, reconstruct_global_grid, all_reduce, @root
 using Oceananigans.Fields: interpolate!
 using Oceananigans.Grids: x_domain, y_domain, topology
 using Oceananigans.Utils: launch!
@@ -21,14 +22,142 @@ using Scratch
 using ..DataWrangling: Metadatum, native_grid, metadata_path, download_dataset
 using ..DataWrangling.ETOPO: ETOPO2022
 
+# Scratch space for cached regridded bathymetry files
+bathymetry_cache_dir::String = ""
+function __init__()
+    global bathymetry_cache_dir = @get_scratch!("bathymetry_cache")
+end
+
+#####
+##### BathymetryRegridding configuration
+#####
+
+struct BathymetryRegridding
+    grid_type            :: String
+    grid_size            :: Tuple{Int, Int}
+    longitude            :: Tuple{Float64, Float64}
+    latitude             :: Tuple{Float64, Float64}
+    topology             :: Tuple{Symbol, Symbol}
+    float_type           :: Symbol
+    height_above_water   :: Union{Nothing, Float64}
+    minimum_depth        :: Float64
+    interpolation_passes :: Int
+    major_basins         :: Float64
+    dataset              :: String
+end
+
+function BathymetryRegridding(grid, metadata;
+                              height_above_water = nothing,
+                              minimum_depth = 0,
+                              interpolation_passes = 1,
+                              major_basins = 1)
+
+    Nx, Ny, _ = size(grid)
+    TX, TY, _ = topology(grid)
+    lon = x_domain(grid)
+    lat = y_domain(grid)
+    FT = eltype(grid)
+    grid_type_name = string(typeof(grid).name.wrapper)
+    dataset_name = string(typeof(metadata.dataset))
+    haw = isnothing(height_above_water) ? nothing : Float64(height_above_water)
+
+    return BathymetryRegridding(grid_type_name,
+                                (Nx, Ny),
+                                (Float64(lon[1]), Float64(lon[2])),
+                                (Float64(lat[1]), Float64(lat[2])),
+                                (Symbol(TX), Symbol(TY)),
+                                Symbol(FT),
+                                haw,
+                                Float64(minimum_depth),
+                                Int(interpolation_passes),
+                                Float64(major_basins),
+                                dataset_name)
+end
+
+function Base.:(==)(a::BathymetryRegridding, b::BathymetryRegridding)
+    return a.grid_type            == b.grid_type &&
+           a.grid_size            == b.grid_size &&
+           a.longitude            == b.longitude &&
+           a.latitude             == b.latitude &&
+           a.topology             == b.topology &&
+           a.float_type           == b.float_type &&
+           a.height_above_water   == b.height_above_water &&
+           a.minimum_depth        == b.minimum_depth &&
+           a.interpolation_passes == b.interpolation_passes &&
+           a.major_basins         == b.major_basins &&
+           a.dataset              == b.dataset
+end
+
+function Base.hash(c::BathymetryRegridding, h::UInt)
+    h = hash(c.grid_type, h)
+    h = hash(c.grid_size, h)
+    h = hash(c.longitude, h)
+    h = hash(c.latitude, h)
+    h = hash(c.topology, h)
+    h = hash(c.float_type, h)
+    h = hash(c.height_above_water, h)
+    h = hash(c.minimum_depth, h)
+    h = hash(c.interpolation_passes, h)
+    h = hash(c.major_basins, h)
+    h = hash(c.dataset, h)
+    return h
+end
+
+#####
+##### Cache file management
+#####
+
+function cache_filename(config::BathymetryRegridding)
+    Nx, Ny = config.grid_size
+    lon0, lon1 = config.longitude
+    lat0, lat1 = config.latitude
+    h = string(hash(config) % UInt32, base=16, pad=8)
+    return "bathymetry_$(Nx)x$(Ny)_$(lon0)_$(lon1)_$(lat0)_$(lat1)_$(h).jld2"
+end
+
+function load_bathymetry_cache(config::BathymetryRegridding)
+    filepath = joinpath(bathymetry_cache_dir, cache_filename(config))
+    isfile(filepath) || return nothing
+
+    try
+        jldopen(filepath, "r") do file
+            stored_config = file["config"]
+            if stored_config == config
+                @info "Loading cached bathymetry from $filepath"
+                return file["bottom_height"]
+            else
+                return nothing
+            end
+        end
+    catch err
+        @warn "Failed to load bathymetry cache from $filepath: $err"
+        return nothing
+    end
+end
+
+function save_bathymetry_cache(config::BathymetryRegridding, bottom_height::AbstractArray)
+    filepath = joinpath(bathymetry_cache_dir, cache_filename(config))
+    try
+        jldopen(filepath, "w") do file
+            file["config"] = config
+            file["bottom_height"] = bottom_height
+        end
+        @info "Saved bathymetry cache to $filepath"
+    catch err
+        @warn "Failed to save bathymetry cache to $filepath: $err"
+    end
+    return nothing
+end
+
 # methods specific to bathymetric datasets live within dataset modules
 
 """
     regrid_bathymetry(target_grid, metadata;
                       height_above_water = nothing,
                       minimum_depth = 0,
-                      major_basins = 1
-                      interpolation_passes = 1)
+                      major_basins = 1,
+                      interpolation_passes = 1,
+                      cache = true)
 
 Return bathymetry that corresponds to  `metadata` onto `target_grid`.
 
@@ -69,20 +198,47 @@ Keyword Arguments
                   that are retained by [`remove_minor_basins!`](@ref). Basins are removed by order of size:
                   the smallest basins are removed first. `major_basins = 1` retains only the largest basin.
                   If `Inf` then no basins are removed. Default: 1.
+
+- `cache`: If `true` (default), caches the regridded bathymetry to disk and reuses it on subsequent
+           calls with the same grid and parameters. Set to `false` to force recomputation.
 """
 function regrid_bathymetry(target_grid, metadata;
                            height_above_water = nothing,
                            minimum_depth = 0,
                            interpolation_passes = 1,
-                           major_basins = 1) # Allow an `Inf` number of "lakes"
+                           major_basins = 1,
+                           cache = true)
+
+    config = BathymetryRegridding(target_grid, metadata;
+                                  height_above_water, minimum_depth,
+                                  interpolation_passes, major_basins)
+
+    # Try loading from cache
+    if cache
+        cached_data = load_bathymetry_cache(config)
+        if !isnothing(cached_data)
+            target_z = Field{Center, Center, Nothing}(target_grid)
+            set!(target_z, cached_data)
+            fill_halo_regions!(target_z)
+            return target_z
+        end
+    end
 
     download_dataset(metadata)
 
-    return _regrid_bathymetry(target_grid, metadata;
-                              height_above_water,
-                              minimum_depth,
-                              interpolation_passes,
-                              major_basins)
+    target_z = _regrid_bathymetry(target_grid, metadata;
+                                  height_above_water,
+                                  minimum_depth,
+                                  interpolation_passes,
+                                  major_basins)
+
+    # Save to cache
+    if cache
+        bottom_height = on_architecture(CPU(), interior(target_z, :, :, 1))
+        save_bathymetry_cache(config, Array(bottom_height))
+    end
+
+    return target_z
 end
 
 # regrid the bathymetry assuming the data is already downloaded
@@ -139,13 +295,13 @@ function _regrid_bathymetry(target_grid, metadata;
 end
 
 """
-    regrid_bathymetry(target_grid; dataset=ETOPO2022(), kw...)
+    regrid_bathymetry(target_grid; dataset=ETOPO2022(), cache=true, kw...)
 
 Regrid bathymetry from `dataset` onto `target_grid`. Default: `dataset = ETOPO2022()`.
 """
-function regrid_bathymetry(target_grid; dataset = ETOPO2022(), kw...)
+function regrid_bathymetry(target_grid; dataset = ETOPO2022(), cache = true, kw...)
     metadatum = Metadatum(:bottom_height; dataset)
-    return regrid_bathymetry(target_grid, metadatum; kw...)
+    return regrid_bathymetry(target_grid, metadatum; cache, kw...)
 end
 
 # Regridding bathymetry for distributed grids, we handle the whole process
@@ -154,23 +310,36 @@ function regrid_bathymetry(target_grid::DistributedGrid, metadata;
                            height_above_water = nothing,
                            minimum_depth = 0,
                            interpolation_passes = 1,
-                           major_basins = 1)
-
-    download_dataset(metadata)
+                           major_basins = 1,
+                           cache = true)
 
     global_grid = reconstruct_global_grid(target_grid)
     global_grid = on_architecture(CPU(), global_grid)
     arch = architecture(target_grid)
     Nx, Ny, _ = size(global_grid)
 
-    # If all ranks open a gigantic bathymetry and the memory is
-    # shared, we could easily have OOM errors.
-    # We perform the reconstruction only on rank 0 and share the result.
+    config = BathymetryRegridding(global_grid, metadata;
+                                  height_above_water, minimum_depth,
+                                  interpolation_passes, major_basins)
+
+    # download_dataset uses @root internally; all ranks must call it
+    download_dataset(metadata)
+
+    # Only rank 0 performs cache lookup and computation to avoid OOM
     bottom_height = if arch.local_rank == 0
-        # use regrid method that assumes data is downloaded
-        bottom_field = _regrid_bathymetry(global_grid, metadata;
-                                          height_above_water, minimum_depth, interpolation_passes, major_basins)
-        bottom_field.data[1:Nx, 1:Ny, 1]
+        cached_data = cache ? load_bathymetry_cache(config) : nothing
+        if !isnothing(cached_data)
+            cached_data
+        else
+            bottom_field = _regrid_bathymetry(global_grid, metadata;
+                                              height_above_water, minimum_depth,
+                                              interpolation_passes, major_basins)
+            bh = Array(bottom_field.data[1:Nx, 1:Ny, 1])
+            if cache
+                save_bathymetry_cache(config, bh)
+            end
+            bh
+        end
     else
         zeros(Nx, Ny)
     end
