@@ -16,8 +16,10 @@ radiative intensity, `J` for mass flux, and `τ` for kinematic momentum flux.
 
 - _Phase or species_: `ᵛ` (vapor), `ˡ` (liquid), `ⁱ` (ice), `ᶜ` (condensate)
 - _Component_: `ᵃᵗ` (atmosphere), `ᵒᶜ` (ocean), `ˢⁱ` (sea ice), `ˡᵈ` (land)
+- _Interface pair_: `ᵃᵒ` (atm–ocean), `ᵃⁱ` (atm–ice), `ⁱᵒ` (ice–ocean)
 - _Direction_: `ˣ` / `ʸ` (spatial), `ˢʷ` / `ˡʷ` (shortwave / longwave)
-- _Process_: `ⁱⁿᵗ` (interface), `ᶠʳᶻ` (frazil)
+- _Radiative process_: `ᵗʳ` (transmitted), `ᵃᵇ` (absorbed), `ᵖⁿ` (penetrating)
+- _Other process_: `ⁱⁿᵗ` (interface), `ᶠʳᶻ` (frazil)
 
 **Modifier arrows** `ꜜ` (`\^downarrow`) and `ꜛ` (`\^uparrow`) denote
 downwelling and upwelling directions in radiative fluxes.
@@ -76,8 +78,14 @@ denote the _component_ or _location_.
 | ``\mathrm{oc}`` | `ᵒᶜ` | ocean | ``\rho^{\mathrm{oc}}`` (ocean reference density) |
 | ``\mathrm{si}`` | `ˢⁱ` | sea ice | ``h^{\mathrm{si}}`` (sea ice thickness) |
 | ``\mathrm{ld}`` | `ˡᵈ` | land | |
+| ``\mathrm{ao}`` | `ᵃᵒ` | atmosphere–ocean interface | ``\mathcal{Q}^{\mathrm{ao}}`` (atm–ocean heat flux) |
+| ``\mathrm{ai}`` | `ᵃⁱ` | atmosphere–ice interface | ``\mathcal{Q}^{\mathrm{ai}}`` (atm–ice heat flux) |
+| ``\mathrm{io}`` | `ⁱᵒ` | ice–ocean interface | ``\mathcal{Q}^{\mathrm{io}}`` (ice–ocean heat flux) |
 | ``\mathrm{sw}`` | `ˢʷ` | shortwave | ``\mathscr{I}`` ꜜ ``{}^{\mathrm{sw}}`` (downwelling shortwave) |
 | ``\mathrm{lw}`` | `ˡʷ` | longwave | ``\mathscr{I}`` ꜜ ``{}^{\mathrm{lw}}`` (downwelling longwave) |
+| ``\mathrm{tr}`` | `ᵗʳ` | transmitted | ``\mathscr{I}^{\mathrm{tr}}`` (transmitted radiation) |
+| ``\mathrm{ab}`` | `ᵃᵇ` | absorbed | ``\mathscr{I}^{\mathrm{ab}}`` (absorbed radiation) |
+| ``\mathrm{pn}`` | `ᵖⁿ` | penetrating | ``\mathscr{I}^{\mathrm{pn}}`` (penetrating radiation) |
 
 ### Modifier arrows
 
@@ -156,8 +164,14 @@ denote the _component_ or _location_.
 | ``\mathscr{I}_\downarrow^{\mathrm{lw}}`` | `ℐꜜˡʷ` | downwelling longwave | Downwelling longwave radiation (W m⁻²) |
 | ``\mathscr{I}_\uparrow^{\mathrm{lw}}`` | `ℐꜛˡʷ` | upwelling longwave | Emitted longwave radiation (W m⁻²) |
 
+| ``\mathscr{I}^{\mathrm{tr,sw}}`` | `ℐᵗʳˢʷ` | transmitted shortwave | Shortwave passing through the surface, ``(1-\alpha) \mathscr{I}_\downarrow^{\mathrm{sw}}`` (W m⁻²) |
+| ``\mathscr{I}^{\mathrm{ab,lw}}`` | `ℐᵃᵇˡʷ` | absorbed longwave | Longwave absorbed at the surface, ``\epsilon \mathscr{I}_\downarrow^{\mathrm{lw}}`` (W m⁻²) |
+| ``\mathscr{I}^{\mathrm{pn,sw}}`` | `ℐᵖⁿˢʷ` | penetrating shortwave | Shortwave penetrating into the ocean interior (W m⁻²) |
+
 Radiative fluxes use ``\mathscr{I}`` (`ℐ`, for "intensity") with a modifier
 arrow (`ꜜ`/`ꜛ` for downwelling/upwelling) and superscript band (`ˢʷ`/`ˡʷ`).
+Derived radiative quantities combine a process label (`ᵗʳ`, `ᵃᵇ`, `ᵖⁿ`) with
+a band label.
 
 ## Turbulent interface fluxes
 
@@ -254,4 +268,5 @@ collects the less obvious completions used in this notation.
 | `ⁿ` | `\^n` | Superscript n |
 | `ᶠ` | `\^f` | Superscript f |
 | `ʳ` | `\^r` | Superscript r |
+| `ᵇ` | `\^b` | Superscript b |
 | `ᶻ` | `\^z` | Superscript z |
