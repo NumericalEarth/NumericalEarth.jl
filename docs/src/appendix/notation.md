@@ -3,6 +3,87 @@
 This page summarizes the mathematical and code notation used in NumericalEarth.jl,
 following the conventions established in [Breeze.jl](https://github.com/CliMA/Breeze.jl).
 
+## How the notation works
+
+Variable names are built from three parts:
+
+```
+base symbol + superscript + subscript
+```
+
+**Base symbols** are single characters (often script letters) that identify the
+physical category of a quantity — for example, `𝒬` for heat flux, `ℐ` for
+radiative intensity, `J` for mass flux, and `τ` for kinematic momentum flux.
+
+**Superscripts** refine the meaning in several ways:
+
+- _Phase or species_: `ᵛ` (vapor), `ˡ` (liquid), `ⁱ` (ice), `ᶜ` (condensate)
+- _Component_: `ᵃᵗ` (atmosphere), `ᵒᶜ` (ocean), `ˢⁱ` (sea ice), `ˡᵈ` (land)
+- _Direction_: `ˣ` / `ʸ` (spatial), `ᵈⁿ` / `ᵘᵖ` (downwelling / upwelling)
+- _Process_: `ⁱⁿᵗ` (interface), `ᶠʳᶻ` (frazil)
+
+**Subscripts** encode a small set of additional labels: `ₚ` (constant pressure)
+and `★` (similarity-theory scale).
+
+For example, `𝒬ᵛ` is the latent (vapor) heat flux, `ℐᵈⁿ_sw` is the downwelling
+shortwave radiative intensity, and `τˣ` is the zonal kinematic momentum flux.
+
+In Julia code, superscripts are entered with Unicode (e.g. `\scrQ<tab>` → `𝒬`,
+then `\^v<tab>` → `ᵛ`). The subscript `_sw` and `_lw` for radiation band use
+ordinary underscores because Unicode subscript characters for these letters
+are not available.
+
+## Base flux symbols
+
+| Math | Code | Tab completion | Meaning |
+|:----:|:----:|:---------------|:--------|
+| ``\mathcal{Q}`` | `𝒬` | `\scrQ` | Heat flux (W m⁻²) |
+| ``\mathscr{I}`` | `ℐ` | `\scrI` | Radiative intensity (W m⁻²) |
+| ``J`` | `J` | | Mass flux (kg m⁻² s⁻¹) |
+| ``\tau`` | `τ` | `\tau` | Kinematic momentum flux (m² s⁻²) |
+| ``\mathcal{L}`` | `ℒ` | `\scrL` | Latent heat (J kg⁻¹) |
+
+Note: ``\tau^x`` (`τˣ`) is the _kinematic_ momentum flux (stress divided
+by density). The mass-weighted stress is ``\rho \tau^x`` (`ρτˣ`, in N m⁻²).
+
+These base symbols are combined with superscript and subscript labels
+(documented below) to form specific variable names.
+
+## Superscript and subscript labels
+
+Superscripts and subscripts are used systematically to label physical quantities.
+Superscripts generally denote the _type_ or _phase_ of a quantity, while subscripts
+denote the _component_ or _location_.
+
+### Superscript labels
+
+| Label | Code | Meaning | Example |
+|:-----:|:----:|:--------|:--------|
+| ``v`` | `ᵛ` | water vapor | ``\mathcal{Q}^v`` (latent heat flux) |
+| ``T`` | `ᵀ` | temperature / sensible | ``\mathcal{Q}^T`` (sensible heat flux) |
+| ``c`` | `ᶜ` | condensate | ``J^c`` (precipitation mass flux) |
+| ``S`` | `ˢ` | salinity | ``J^S`` (salinity flux) |
+| ``i`` | `ⁱ` | ice | ``\mathcal{L}^i`` (latent heat of sublimation) |
+| ``\ell`` | `ˡ` | liquid | ``\mathcal{L}^\ell`` (latent heat of vaporization) |
+| ``D`` | `ᴰ` | drag | ``C^D`` (drag coefficient) |
+| ``\mathrm{int}`` | `ⁱⁿᵗ` | interface | ``T^{\mathrm{int}}`` (interface temperature) |
+| ``\mathrm{frz}`` | `ᶠʳᶻ` | frazil | ``\mathcal{Q}^{\mathrm{frz}}`` (frazil heat flux) |
+| ``x`` | `ˣ` | zonal / x-direction | ``\tau^x`` (zonal kinematic stress) |
+| ``y`` | `ʸ` | meridional / y-direction | ``\tau^y`` (meridional kinematic stress) |
+| ``\mathrm{at}`` | `ᵃᵗ` | atmosphere | ``\rho^{\mathrm{at}}`` (air density) |
+| ``\mathrm{oc}`` | `ᵒᶜ` | ocean | ``\rho^{\mathrm{oc}}`` (ocean reference density) |
+| ``\mathrm{si}`` | `ˢⁱ` | sea ice | ``h^{\mathrm{si}}`` (sea ice thickness) |
+| ``\mathrm{ld}`` | `ˡᵈ` | land | |
+| ``\mathrm{dn}`` | `ᵈⁿ` | downwelling | ``\mathscr{I}^{\mathrm{dn}}`` (downwelling radiation) |
+| ``\mathrm{up}`` | `ᵘᵖ` | upwelling | ``\mathscr{I}^{\mathrm{up}}`` (upwelling radiation) |
+
+### Subscript labels
+
+| Label | Code | Meaning | Example |
+|:-----:|:----:|:--------|:--------|
+| ``p`` | `ₚ` | pressure | ``c_p`` (isobaric heat capacity) |
+| ``\star`` | `★` | similarity theory scale | ``u_\star`` (friction velocity) |
+
 ## Atmosphere state variables
 
 | Math | Code | Property | Description |
@@ -12,8 +93,8 @@ following the conventions established in [Breeze.jl](https://github.com/CliMA/Br
 | ``q`` | `q` | specific humidity | Mass mixing ratio of water vapor (kg kg⁻¹) |
 | ``u`` | `u` | zonal velocity | Eastward wind component (m s⁻¹) |
 | ``v`` | `v` | meridional velocity | Northward wind component (m s⁻¹) |
-| ``Q_s`` | `Qs` | downwelling shortwave | Downwelling shortwave radiation (W m⁻²) |
-| ``Q_\ell`` | `Qℓ` | downwelling longwave | Downwelling longwave radiation (W m⁻²) |
+| ``\mathscr{I}^{\mathrm{dn}}_{\mathrm{sw}}`` | `ℐᵈⁿ_sw` | downwelling shortwave | Downwelling shortwave radiation (W m⁻²) |
+| ``\mathscr{I}^{\mathrm{dn}}_{\mathrm{lw}}`` | `ℐᵈⁿ_lw` | downwelling longwave | Downwelling longwave radiation (W m⁻²) |
 | ``J^c`` | `Jᶜ` | condensate flux | Precipitation (condensate) mass flux (kg m⁻² s⁻¹) |
 | ``h_{b\ell}`` | `h_bℓ` | boundary layer height | Atmospheric boundary layer height (m) |
 
@@ -25,16 +106,16 @@ following the conventions established in [Breeze.jl](https://github.com/CliMA/Br
 | ``S`` | `S` | salinity | Practical salinity (g kg⁻¹) |
 | ``u`` | `u` | zonal velocity | Eastward ocean velocity (m s⁻¹) |
 | ``v`` | `v` | meridional velocity | Northward ocean velocity (m s⁻¹) |
-| ``\rho_o`` | `ρₒ` | reference density | Ocean reference density (kg m⁻³) |
-| ``c_o`` | `cₒ` | heat capacity | Ocean heat capacity (J kg⁻¹ K⁻¹) |
+| ``\rho^{\mathrm{oc}}`` | `ρᵒᶜ` | reference density | Ocean reference density (kg m⁻³) |
+| ``c^{\mathrm{oc}}`` | `cᵒᶜ` | heat capacity | Ocean heat capacity (J kg⁻¹ K⁻¹) |
 
 ## Sea ice state variables
 
 | Math | Code | Property | Description |
 |:----:|:----:|:---------|:------------|
-| ``h_i`` | `hᵢ` | ice thickness | Sea ice thickness (m) |
+| ``h^{\mathrm{si}}`` | `hˢⁱ` | ice thickness | Sea ice thickness (m) |
 | ``\aleph`` | `ℵ` | ice concentration | Areal fraction of ice cover (–) |
-| ``S^i`` | `Sⁱ` | ice salinity | Sea ice bulk salinity (g kg⁻¹) |
+| ``S^{\mathrm{si}}`` | `Sˢⁱ` | ice salinity | Sea ice bulk salinity (g kg⁻¹) |
 
 ## Radiation properties
 
@@ -59,6 +140,17 @@ following the conventions established in [Breeze.jl](https://github.com/CliMA/Br
 | ``\ell`` | `ℓ` | roughness length | Aerodynamic roughness length (m) |
 | ``\varkappa`` | `ϰ` | von Kármán constant | ``\approx 0.4`` (–) |
 
+## Radiative fluxes
+
+| Math | Code | Property | Description |
+|:----:|:----:|:---------|:------------|
+| ``\mathscr{I}^{\mathrm{dn}}_{\mathrm{sw}}`` | `ℐᵈⁿ_sw` | downwelling shortwave | Downwelling shortwave radiation (W m⁻²) |
+| ``\mathscr{I}^{\mathrm{dn}}_{\mathrm{lw}}`` | `ℐᵈⁿ_lw` | downwelling longwave | Downwelling longwave radiation (W m⁻²) |
+| ``\mathscr{I}^{\mathrm{up}}_{\mathrm{lw}}`` | `ℐᵘᵖ_lw` | upwelling longwave | Emitted longwave radiation (W m⁻²) |
+
+Radiative fluxes use ``\mathscr{I}`` (`ℐ`, for "intensity") with superscript
+direction (`dn`/`up`) and subscript band (`sw`/`lw`).
+
 ## Turbulent interface fluxes
 
 | Math | Code | Property | Description |
@@ -66,8 +158,10 @@ following the conventions established in [Breeze.jl](https://github.com/CliMA/Br
 | ``\mathcal{Q}^v`` | `𝒬ᵛ` | latent heat flux | Turbulent latent heat flux (W m⁻²) |
 | ``\mathcal{Q}^T`` | `𝒬ᵀ` | sensible heat flux | Turbulent sensible heat flux (W m⁻²) |
 | ``J^v`` | `Jᵛ` | water vapor flux | Turbulent mass flux of water vapor (kg m⁻² s⁻¹) |
-| ``\rho \tau_x`` | `ρτx` | zonal momentum flux | Zonal wind stress (N m⁻²) |
-| ``\rho \tau_y`` | `ρτy` | meridional momentum flux | Meridional wind stress (N m⁻²) |
+| ``\tau^x`` | `τˣ` | zonal kinematic stress | Kinematic zonal momentum flux (m² s⁻²) |
+| ``\tau^y`` | `τʸ` | meridional kinematic stress | Kinematic meridional momentum flux (m² s⁻²) |
+| ``\rho \tau^x`` | `ρτˣ` | zonal wind stress | Mass-weighted zonal stress (N m⁻²) |
+| ``\rho \tau^y`` | `ρτʸ` | meridional wind stress | Mass-weighted meridional stress (N m⁻²) |
 
 ## Net ocean fluxes
 
@@ -75,6 +169,7 @@ following the conventions established in [Breeze.jl](https://github.com/CliMA/Br
 |:----:|:----:|:---------|:------------|
 | ``J^T`` | `Jᵀ` | temperature flux | Net ocean temperature flux (K m s⁻¹) |
 | ``J^S`` | `Jˢ` | salinity flux | Net ocean salinity flux (g kg⁻¹ m s⁻¹) |
+| ``\mathcal{Q}^{\mathrm{frz}}`` | `𝒬ᶠʳᶻ` | frazil heat flux | Heat released by frazil ice formation (W m⁻²) |
 
 ## Thermodynamic properties
 
@@ -83,7 +178,7 @@ following the conventions established in [Breeze.jl](https://github.com/CliMA/Br
 | ``\mathcal{L}^\ell`` | `ℒˡ` | latent heat of vaporization | Liquid-phase latent heat (J kg⁻¹) |
 | ``\mathcal{L}^i`` | `ℒⁱ` | latent heat of sublimation | Ice-phase latent heat (J kg⁻¹) |
 | ``c_p`` | `cₚ` | heat capacity of air | Moist isobaric heat capacity (J kg⁻¹ K⁻¹) |
-| ``\rho_a`` | `ρₐ` | air density | Atmospheric air density (kg m⁻³) |
+| ``\rho^{\mathrm{at}}`` | `ρᵃᵗ` | air density | Atmospheric air density (kg m⁻³) |
 
 ## CF standard name mapping
 
@@ -100,12 +195,12 @@ where applicable.
 | `v` (atm) | `northward_wind` |
 | `q` | `specific_humidity` |
 | `p` | `air_pressure` |
-| `Qs` | `surface_downwelling_shortwave_flux_in_air` |
-| `Qℓ` | `surface_downwelling_longwave_flux_in_air` |
+| `ℐᵈⁿ_sw` | `surface_downwelling_shortwave_flux_in_air` |
+| `ℐᵈⁿ_lw` | `surface_downwelling_longwave_flux_in_air` |
 | `𝒬ᵛ` | `surface_upward_latent_heat_flux` |
 | `𝒬ᵀ` | `surface_upward_sensible_heat_flux` |
 | `Jᵛ` | `water_evapotranspiration_flux` |
-| `ρτx` | `surface_downward_eastward_stress` |
-| `ρτy` | `surface_downward_northward_stress` |
-| `hᵢ` | `sea_ice_thickness` |
+| `ρτˣ` | `surface_downward_eastward_stress` |
+| `ρτʸ` | `surface_downward_northward_stress` |
+| `hˢⁱ` | `sea_ice_thickness` |
 | `ℵ` | `sea_ice_area_fraction` |
