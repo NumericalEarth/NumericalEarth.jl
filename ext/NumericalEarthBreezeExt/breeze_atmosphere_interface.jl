@@ -1,4 +1,5 @@
 using Oceananigans.Grids: Center
+using Breeze.AtmosphereModels: thermodynamic_density
 using NumericalEarth.Atmospheres: AtmosphereThermodynamicsParameters
 using NumericalEarth.EarthSystemModels.InterfaceComputations: interface_kernel_parameters
 
@@ -82,11 +83,59 @@ function interpolate_state!(exchanger, exchange_grid, atmosphere::BreezeAtmosphe
 end
 
 #####
-##### Net fluxes: Breeze atmosphere handles its own BCs
+##### Net fluxes: extract coupling flux fields from Breeze boundary conditions
 #####
 
-net_fluxes(::BreezeAtmosphere) = nothing
-update_net_fluxes!(coupled_model, ::BreezeAtmosphere) = nothing
+function net_fluxes(atmosphere::BreezeAtmosphere)
+    # Momentum flux fields (direct FluxBoundaryCondition on ρu, ρv)
+    ρu = atmosphere.momentum.ρu.boundary_conditions.bottom.condition
+    ρv = atmosphere.momentum.ρv.boundary_conditions.bottom.condition
+
+    # Energy flux field: ρe BC was converted to ρθ by Breeze's materialization,
+    # wrapped in EnergyFluxBoundaryConditionFunction.
+    # First .condition unwraps BoundaryCondition, second .condition extracts the
+    # original field from EnergyFluxBoundaryConditionFunction.
+    ρe = thermodynamic_density(atmosphere.formulation).boundary_conditions.bottom.condition.condition
+
+    # Moisture flux field (direct FluxBoundaryCondition on ρqᵗ)
+    ρqᵗ = atmosphere.moisture_density.boundary_conditions.bottom.condition
+
+    return (; ρu, ρv, ρe, ρqᵗ)
+end
+
+#####
+##### Assemble ESM similarity-theory fluxes into Breeze bottom BCs
+#####
+
+@kernel function _assemble_net_atmosphere_fluxes!(net, ao_fluxes)
+    i, j = @index(Global, NTuple)
+    @inbounds begin
+        τx = ao_fluxes.x_momentum[i, j, 1]
+        τy = ao_fluxes.y_momentum[i, j, 1]
+        Qc = ao_fluxes.sensible_heat[i, j, 1]
+        Fv = ao_fluxes.water_vapor[i, j, 1]
+
+        net.ρu[i, j, 1]  = τx
+        net.ρv[i, j, 1]  = τy
+        net.ρe[i, j, 1]  = Qc   # sensible heat only; latent heat handled by moisture flux
+        net.ρqᵗ[i, j, 1] = Fv
+    end
+end
+
+function update_net_fluxes!(coupled_model, atmosphere::BreezeAtmosphere)
+    net = coupled_model.interfaces.net_fluxes.atmosphere
+    isnothing(net) && return nothing
+
+    ao_fluxes = computed_fluxes(coupled_model.interfaces.atmosphere_ocean_interface)
+    isnothing(ao_fluxes) && return nothing
+
+    grid = atmosphere.grid
+    arch = architecture(grid)
+    params = interface_kernel_parameters(grid)
+
+    launch!(arch, grid, params, _assemble_net_atmosphere_fluxes!, net, ao_fluxes)
+    return nothing
+end
 
 #####
 ##### CFL wizard support

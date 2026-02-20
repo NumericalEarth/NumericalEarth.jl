@@ -1,3 +1,6 @@
+using Oceananigans.Fields: Field
+using Oceananigans.Grids: Center
+
 using Breeze: ThermodynamicConstants, ReferenceState, AnelasticDynamics,
              SaturationAdjustment, WarmPhaseEquilibrium,
              AtmosphereModel
@@ -50,6 +53,22 @@ function atmosphere_simulation(grid;
                                scalar_advection = Oceananigans.WENO(order=5),
                                boundary_conditions = NamedTuple(),
                                kw...)
+
+    # Create 2D flux fields for ESM coupling
+    Jᵘ = Field{Center, Center, Nothing}(grid)
+    Jᵛ = Field{Center, Center, Nothing}(grid)
+    Jᵉ = Field{Center, Center, Nothing}(grid)
+    Jᵐ = Field{Center, Center, Nothing}(grid)
+
+    coupling_bcs = (
+        ρu  = FieldBoundaryConditions(bottom = FluxBoundaryCondition(Jᵘ)),
+        ρv  = FieldBoundaryConditions(bottom = FluxBoundaryCondition(Jᵛ)),
+        ρe  = FieldBoundaryConditions(bottom = FluxBoundaryCondition(Jᵉ)),
+        ρqᵗ = FieldBoundaryConditions(bottom = FluxBoundaryCondition(Jᵐ)),
+    )
+
+    # User BCs override coupling defaults
+    boundary_conditions = merge(coupling_bcs, boundary_conditions)
 
     return AtmosphereModel(grid; dynamics, microphysics,
                            momentum_advection, scalar_advection,

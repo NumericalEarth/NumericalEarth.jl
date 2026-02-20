@@ -41,7 +41,10 @@ atmosphere = atmosphere_simulation(grid; potential_temperature=θ₀)
 # ## Initial conditions
 
 reference_state = atmosphere.dynamics.reference_state
-set!(atmosphere, θ=reference_state.potential_temperature, u=1)
+
+# Small random perturbations near the surface seed convective instability.
+θᵢ(x, z) = reference_state.potential_temperature + 0.1 * randn() * (z < 500)
+set!(atmosphere, θ=θᵢ, u=1)
 
 # ## Slab ocean
 #
@@ -54,7 +57,7 @@ sst_grid = RectilinearGrid(grid.architecture,
                            topology = (Periodic, Flat, Flat))
 
 ocean = SlabOcean(sst_grid, depth=50, density=1025, heat_capacity=4000)
-set!(ocean, T=θ₀)
+set!(ocean, T=θ₀ + 3)
 
 # ## Coupled model
 #
