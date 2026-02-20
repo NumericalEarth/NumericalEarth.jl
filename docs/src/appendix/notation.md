@@ -5,11 +5,8 @@ following the conventions established in [Breeze.jl](https://github.com/CliMA/Br
 
 ## How the notation works
 
-Variable names are built from three parts:
-
-```
-base symbol + superscript + subscript
-```
+Variable names are built by combining a **base symbol** with **superscripts**
+and, occasionally, a short plain-text **tag**.
 
 **Base symbols** are single characters (often script letters) that identify the
 physical category of a quantity — for example, `𝒬` for heat flux, `ℐ` for
@@ -19,19 +16,21 @@ radiative intensity, `J` for mass flux, and `τ` for kinematic momentum flux.
 
 - _Phase or species_: `ᵛ` (vapor), `ˡ` (liquid), `ⁱ` (ice), `ᶜ` (condensate)
 - _Component_: `ᵃᵗ` (atmosphere), `ᵒᶜ` (ocean), `ˢⁱ` (sea ice), `ˡᵈ` (land)
-- _Direction_: `ˣ` / `ʸ` (spatial), `ᵈⁿ` / `ᵘᵖ` (downwelling / upwelling)
+- _Direction_: `ˣ` / `ʸ` (spatial), `ˢʷ` / `ˡʷ` (shortwave / longwave)
 - _Process_: `ⁱⁿᵗ` (interface), `ᶠʳᶻ` (frazil)
 
-**Subscripts** encode a small set of additional labels: `ₚ` (constant pressure)
-and `★` (similarity-theory scale).
+**Modifier arrows** `ꜜ` (`\^downarrow`) and `ꜛ` (`\^uparrow`) denote
+downwelling and upwelling directions in radiative fluxes.
 
-For example, `𝒬ᵛ` is the latent (vapor) heat flux, `ℐᵈⁿ_sw` is the downwelling
+**Subscripts** encode a small set of additional labels, such as
+`★` (similarity-theory scale).
+
+For example, `𝒬ᵛ` is the latent (vapor) heat flux, `ℐꜜˢʷ` is the downwelling
 shortwave radiative intensity, and `τˣ` is the zonal kinematic momentum flux.
 
 In Julia code, superscripts are entered with Unicode (e.g. `\scrQ<tab>` → `𝒬`,
-then `\^v<tab>` → `ᵛ`). The subscript `_sw` and `_lw` for radiation band use
-ordinary underscores because Unicode subscript characters for these letters
-are not available.
+then `\^v<tab>` → `ᵛ`). The modifier arrows `ꜜ` and `ꜛ` are entered with
+`\^downarrow<tab>` and `\^uparrow<tab>`.
 
 ## Base flux symbols
 
@@ -65,6 +64,9 @@ denote the _component_ or _location_.
 | ``S`` | `ˢ` | salinity | ``J^S`` (salinity flux) |
 | ``i`` | `ⁱ` | ice | ``\mathcal{L}^i`` (latent heat of sublimation) |
 | ``\ell`` | `ˡ` | liquid | ``\mathcal{L}^\ell`` (latent heat of vaporization) |
+| ``p`` | `ᵖ` | constant pressure | ``c^{pm}`` (moist isobaric heat capacity) |
+| ``m`` | `ᵐ` | mixture (moist air) | ``c^{pm}`` (moist isobaric heat capacity) |
+| ``d`` | `ᵈ` | dry (air) | ``c^{pd}`` (dry air heat capacity) |
 | ``D`` | `ᴰ` | drag | ``C^D`` (drag coefficient) |
 | ``\mathrm{int}`` | `ⁱⁿᵗ` | interface | ``T^{\mathrm{int}}`` (interface temperature) |
 | ``\mathrm{frz}`` | `ᶠʳᶻ` | frazil | ``\mathcal{Q}^{\mathrm{frz}}`` (frazil heat flux) |
@@ -74,14 +76,20 @@ denote the _component_ or _location_.
 | ``\mathrm{oc}`` | `ᵒᶜ` | ocean | ``\rho^{\mathrm{oc}}`` (ocean reference density) |
 | ``\mathrm{si}`` | `ˢⁱ` | sea ice | ``h^{\mathrm{si}}`` (sea ice thickness) |
 | ``\mathrm{ld}`` | `ˡᵈ` | land | |
-| ``\mathrm{dn}`` | `ᵈⁿ` | downwelling | ``\mathscr{I}^{\mathrm{dn}}`` (downwelling radiation) |
-| ``\mathrm{up}`` | `ᵘᵖ` | upwelling | ``\mathscr{I}^{\mathrm{up}}`` (upwelling radiation) |
+| ``\mathrm{sw}`` | `ˢʷ` | shortwave | ``\mathscr{I}`` ꜜ ``{}^{\mathrm{sw}}`` (downwelling shortwave) |
+| ``\mathrm{lw}`` | `ˡʷ` | longwave | ``\mathscr{I}`` ꜜ ``{}^{\mathrm{lw}}`` (downwelling longwave) |
+
+### Modifier arrows
+
+| Symbol | Code | Tab completion | Meaning |
+|:------:|:----:|:---------------|:--------|
+| ꜜ | `ꜜ` | `\^downarrow` | downwelling |
+| ꜛ | `ꜛ` | `\^uparrow` | upwelling |
 
 ### Subscript labels
 
 | Label | Code | Meaning | Example |
 |:-----:|:----:|:--------|:--------|
-| ``p`` | `ₚ` | pressure | ``c_p`` (isobaric heat capacity) |
 | ``\star`` | `★` | similarity theory scale | ``u_\star`` (friction velocity) |
 
 ## Atmosphere state variables
@@ -93,8 +101,8 @@ denote the _component_ or _location_.
 | ``q`` | `q` | specific humidity | Mass mixing ratio of water vapor (kg kg⁻¹) |
 | ``u`` | `u` | zonal velocity | Eastward wind component (m s⁻¹) |
 | ``v`` | `v` | meridional velocity | Northward wind component (m s⁻¹) |
-| ``\mathscr{I}^{\mathrm{dn}}_{\mathrm{sw}}`` | `ℐᵈⁿ_sw` | downwelling shortwave | Downwelling shortwave radiation (W m⁻²) |
-| ``\mathscr{I}^{\mathrm{dn}}_{\mathrm{lw}}`` | `ℐᵈⁿ_lw` | downwelling longwave | Downwelling longwave radiation (W m⁻²) |
+| ``\mathscr{I}_\downarrow^{\mathrm{sw}}`` | `ℐꜜˢʷ` | downwelling shortwave | Downwelling shortwave radiation (W m⁻²) |
+| ``\mathscr{I}_\downarrow^{\mathrm{lw}}`` | `ℐꜜˡʷ` | downwelling longwave | Downwelling longwave radiation (W m⁻²) |
 | ``J^c`` | `Jᶜ` | condensate flux | Precipitation (condensate) mass flux (kg m⁻² s⁻¹) |
 | ``h_{b\ell}`` | `h_bℓ` | boundary layer height | Atmospheric boundary layer height (m) |
 
@@ -144,12 +152,12 @@ denote the _component_ or _location_.
 
 | Math | Code | Property | Description |
 |:----:|:----:|:---------|:------------|
-| ``\mathscr{I}^{\mathrm{dn}}_{\mathrm{sw}}`` | `ℐᵈⁿ_sw` | downwelling shortwave | Downwelling shortwave radiation (W m⁻²) |
-| ``\mathscr{I}^{\mathrm{dn}}_{\mathrm{lw}}`` | `ℐᵈⁿ_lw` | downwelling longwave | Downwelling longwave radiation (W m⁻²) |
-| ``\mathscr{I}^{\mathrm{up}}_{\mathrm{lw}}`` | `ℐᵘᵖ_lw` | upwelling longwave | Emitted longwave radiation (W m⁻²) |
+| ``\mathscr{I}_\downarrow^{\mathrm{sw}}`` | `ℐꜜˢʷ` | downwelling shortwave | Downwelling shortwave radiation (W m⁻²) |
+| ``\mathscr{I}_\downarrow^{\mathrm{lw}}`` | `ℐꜜˡʷ` | downwelling longwave | Downwelling longwave radiation (W m⁻²) |
+| ``\mathscr{I}_\uparrow^{\mathrm{lw}}`` | `ℐꜛˡʷ` | upwelling longwave | Emitted longwave radiation (W m⁻²) |
 
-Radiative fluxes use ``\mathscr{I}`` (`ℐ`, for "intensity") with superscript
-direction (`dn`/`up`) and subscript band (`sw`/`lw`).
+Radiative fluxes use ``\mathscr{I}`` (`ℐ`, for "intensity") with a modifier
+arrow (`ꜜ`/`ꜛ` for downwelling/upwelling) and superscript band (`ˢʷ`/`ˡʷ`).
 
 ## Turbulent interface fluxes
 
@@ -177,7 +185,8 @@ direction (`dn`/`up`) and subscript band (`sw`/`lw`).
 |:----:|:----:|:---------|:------------|
 | ``\mathcal{L}^\ell`` | `ℒˡ` | latent heat of vaporization | Liquid-phase latent heat (J kg⁻¹) |
 | ``\mathcal{L}^i`` | `ℒⁱ` | latent heat of sublimation | Ice-phase latent heat (J kg⁻¹) |
-| ``c_p`` | `cₚ` | heat capacity of air | Moist isobaric heat capacity (J kg⁻¹ K⁻¹) |
+| ``c^{pm}`` | `cᵖᵐ` | moist air heat capacity | Moist isobaric specific heat (J kg⁻¹ K⁻¹) |
+| ``c^{pd}`` | `cᵖᵈ` | dry air heat capacity | Dry-air isobaric specific heat (J kg⁻¹ K⁻¹) |
 | ``\rho^{\mathrm{at}}`` | `ρᵃᵗ` | air density | Atmospheric air density (kg m⁻³) |
 
 ## CF standard name mapping
@@ -195,8 +204,8 @@ where applicable.
 | `v` (atm) | `northward_wind` |
 | `q` | `specific_humidity` |
 | `p` | `air_pressure` |
-| `ℐᵈⁿ_sw` | `surface_downwelling_shortwave_flux_in_air` |
-| `ℐᵈⁿ_lw` | `surface_downwelling_longwave_flux_in_air` |
+| `ℐꜜˢʷ` | `surface_downwelling_shortwave_flux_in_air` |
+| `ℐꜜˡʷ` | `surface_downwelling_longwave_flux_in_air` |
 | `𝒬ᵛ` | `surface_upward_latent_heat_flux` |
 | `𝒬ᵀ` | `surface_upward_sensible_heat_flux` |
 | `Jᵛ` | `water_evapotranspiration_flux` |
