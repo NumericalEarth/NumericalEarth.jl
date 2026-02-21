@@ -118,8 +118,10 @@ full_interfaces = ComponentInterfaces(full_ocean_atmos, ocean; atmosphere_ocean_
 slab_model = AtmosphereOceanModel(slab_ocean_atmos, slab_ocean; interfaces = slab_interfaces)
 full_model = AtmosphereOceanModel(full_ocean_atmos, ocean; interfaces = full_interfaces)
 
-slab_sim = Simulation(slab_model, Δt=1, stop_time=4hours)
-full_sim = Simulation(full_model, Δt=1, stop_time=4hours)
+Δt = 2
+stop_time = 4hours
+slab_sim = Simulation(slab_model; Δt, stop_time)
+full_sim = Simulation(full_model; Δt, stop_time)
 
 # ## Progress callbacks
 
@@ -153,13 +155,13 @@ function full_progress(sim)
     return nothing
 end
 
-add_callback!(slab_sim, slab_progress, IterationInterval(400))
-add_callback!(full_sim, full_progress, IterationInterval(400))
+add_callback!(slab_sim, slab_progress, IterationInterval(600))
+add_callback!(full_sim, full_progress, IterationInterval(600))
 
 # ## Output writers
 #
-# Slab simulation: atmospheric θ and u (for heatmaps and profiles), plus slab SST.
-# Full simulation: atmospheric θ, u, cloud water, and w, plus full-depth ocean T.
+# * Slab simulation: atmospheric θ and u (for heatmaps and profiles), plus slab SST.
+# * Full simulation: atmospheric θ, u, cloud water, and w, plus full-depth ocean temperature T.
 
 u_s, v_s, w_s = slab_ocean_atmos.velocities
 θ_s = liquid_ice_potential_temperature(slab_ocean_atmos)
@@ -167,14 +169,12 @@ u_s, v_s, w_s = slab_ocean_atmos.velocities
 slab_sim.output_writers[:atmos] = JLD2Writer(slab_model, (; θ=θ_s, u=u_s),
                                              filename = "slab_ocean_atmos",
                                              schedule = TimeInterval(2minutes),
-                                             overwrite_existing = true,
-                                             including = Symbol[])
+                                             overwrite_existing = true)
 
 slab_sim.output_writers[:sst] = JLD2Writer(slab_model, (; SST=slab_ocean.temperature),
                                            filename = "sst_slab",
                                            schedule = TimeInterval(2minutes),
-                                           overwrite_existing = true,
-                                           including = Symbol[])
+                                           overwrite_existing = true)
 
 u_f, v_f, w_f = full_ocean_atmos.velocities
 θ_f = liquid_ice_potential_temperature(full_ocean_atmos)
@@ -183,14 +183,12 @@ qˡ_f = full_ocean_atmos.microphysical_fields.qˡ
 full_sim.output_writers[:atmos] = JLD2Writer(full_model, (; θ=θ_f, u=u_f, qˡ=qˡ_f, w=w_f),
                                              filename = "full_ocean_atmos",
                                              schedule = TimeInterval(2minutes),
-                                             overwrite_existing = true,
-                                             including = Symbol[])
+                                             overwrite_existing = true)
 
 full_sim.output_writers[:ocean] = JLD2Writer(full_model, (; T=ocean.model.tracers.T),
                                              filename = "ocean_full",
                                              schedule = TimeInterval(2minutes),
-                                             overwrite_existing = true,
-                                             including = Symbol[])
+                                             overwrite_existing = true)
 
 # ## Run both simulations sequentially
 
@@ -236,17 +234,17 @@ x_ocean = xnodes(ocean_grid, Center()) ./ 1000  # km
 
 fig = Figure(size = (1600, 900), fontsize = 12)
 
-ax_θ   = Axis(fig[1, 1], title="θₗᵢ (K) — atmos (slab ocean)",   ylabel="z (km)")
-ax_u   = Axis(fig[2, 1], title="u (m/s) — atmos (slab ocean)",   ylabel="z (km)")
-ax_sst = Axis(fig[3, 1], title="SST (K)",                        xlabel="x (km)", ylabel="SST (K)")
+ax_θ   = Axis(fig[1, 1], title="θₗᵢ (K) — atmos (slab ocean)", ylabel="z (km)")
+ax_u   = Axis(fig[2, 1], title="u (m/s) — atmos (slab ocean)", ylabel="z (km)")
+ax_sst = Axis(fig[3, 1], title="SST (K)",                      xlabel="x (km)", ylabel="SST (K)")
 
 ax_qˡ = Axis(fig[1, 2], title="Cloud water (kg/kg) — atmos (full ocean)", ylabel="z (km)")
 ax_w  = Axis(fig[2, 2], title="w (m/s) — atmos (full ocean)",             ylabel="z (km)")
-ax_oT = Axis(fig[3, 2], title="Ocean T (°C)",                    xlabel="x (km)", ylabel="z (m)")
+ax_oT = Axis(fig[3, 2], title="Ocean T (°C)",            xlabel="x (km)", ylabel="z (km)")
 
-ax_θp = Axis(fig[1, 3], title="⟨θ⟩(z)", xlabel="θ (K)", ylabel="z (km)")
+ax_θp = Axis(fig[1, 3], title="⟨θ⟩(z)", xlabel="θ (K)",   ylabel="z (km)")
 ax_up = Axis(fig[2, 3], title="⟨u⟩(z)", xlabel="u (m/s)", ylabel="z (km)")
-ax_Tp = Axis(fig[3, 3], title="⟨T⟩(z)", xlabel="T (°C)", ylabel="z (m)")
+ax_Tp = Axis(fig[3, 3], title="⟨T⟩(z)", xlabel="T (°C)",  ylabel="z (km)")
 
 colsize!(fig.layout, 3, Relative(0.15))
 
@@ -259,8 +257,8 @@ end
 n = Observable(1)
 
 # Left column
-θn  = @lift θ_slab_ts[$n]
-un  = @lift u_slab_ts[$n]
+θn = @lift θ_slab_ts[$n]
+un = @lift u_slab_ts[$n]
 sstn_slab = @lift sst_slab_ts[$n]
 # Convert full ocean surface T from °C to K for the SST comparison
 ocean_sst_kelvin = @lift interior(T_ocean_ts[$n], :, 1, Nz_ocean) .+ celsius_to_kelvin
@@ -281,14 +279,14 @@ sst_avg_celsius = @lift fill(mean(sst_slab_ts[$n]) - celsius_to_kelvin, 2)
 
 # ### Plot
 
-heatmap!(ax_θ,  θn;  colormap=:thermal, colorrange=(θᵃᵗ - 1, θᵃᵗ + 3))
-heatmap!(ax_u,  un;  colormap=:balance, colorrange=(-15, 15))
-heatmap!(ax_qˡ, qˡn; colormap=Reverse(:Blues_4),   colorrange=(0, 5e-4))
-heatmap!(ax_w,  wn;  colormap=:balance, colorrange=(-10, 10))
-heatmap!(ax_oT, oTn; colormap=:thermal, colorrange=(T₀ - 1.5, T₀ + 0.5))
+heatmap!(ax_θ,  θn;  colormap=:thermal,          colorrange=(θᵃᵗ - 1, θᵃᵗ + 3))
+heatmap!(ax_u,  un;  colormap=:balance,          colorrange=(-15, 15))
+heatmap!(ax_qˡ, qˡn; colormap=Reverse(:Blues_4), colorrange=(0, 5e-4))
+heatmap!(ax_w,  wn;  colormap=:balance,          colorrange=(-10, 10))
+heatmap!(ax_oT, oTn; colormap=:thermal,          colorrange=(T₀ - 1.5, T₀ + 0.5))
 
-lines!(ax_sst, sstn_slab;                  color=:red,  linewidth=2, label="Slab (10m)")
-lines!(ax_sst, x_ocean, ocean_sst_kelvin;  color=:blue, linewidth=2, label="Full (CATKE)")
+lines!(ax_sst, sstn_slab;                 color=:red,  linewidth=2, label="Slab (10m)")
+lines!(ax_sst, x_ocean, ocean_sst_kelvin; color=:blue, linewidth=2, label="Full (CATKE)")
 axislegend(ax_sst, position=:rb)
 ylims!(ax_sst, Tᵒᶜ - 1, Tᵒᶜ + 2)
 
@@ -299,7 +297,7 @@ axislegend(ax_θp, position=:rt)
 lines!(ax_up, u_avg_slab; color=:red,  linewidth=1.5)
 lines!(ax_up, u_avg_full; color=:blue, linewidth=1.5)
 
-lines!(ax_Tp, T_avg_ocean;                  color=:blue, linewidth=1.5, label="Full")
+lines!(ax_Tp, T_avg_ocean;                   color=:blue, linewidth=1.5, label="Full")
 lines!(ax_Tp, sst_avg_celsius, [-50.0, 0.0]; color=:red,  linewidth=1.5, label="Slab")
 axislegend(ax_Tp, position=:lb)
 xlims!(ax_Tp, T₀ - 2, T₀ + 0.5)
