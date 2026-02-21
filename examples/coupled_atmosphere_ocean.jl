@@ -51,7 +51,7 @@ atmosphere_ocean = atmosphere_simulation(grid; potential_temperature=θᵃᵗ, c
 # We initialize both atmospheres with the reference potential temperature profile
 # plus small random perturbations below 500 m. These perturbations seed convective
 # instability, which develops into turbulent convection driven by surface heat fluxes.
-# A background zonal wind of 1 m/s provides a nonzero wind speed for the
+# A background zonal wind `U₀` provides a nonzero wind speed for the
 # similarity theory flux computation.
 
 reference_state = atmosphere_slab.dynamics.reference_state
