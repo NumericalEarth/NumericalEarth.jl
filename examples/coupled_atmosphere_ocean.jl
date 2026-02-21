@@ -1,0 +1,321 @@
+# # Atmospheric convection: slab ocean vs full ocean
+#
+# This example demonstrates coupling a Breeze atmospheric large eddy simulation (LES)
+# with two different ocean models using NumericalEarth's `EarthSystemModel` framework:
+#
+# 1. **Slab ocean** (50m depth) — a well-mixed layer that responds uniformly to surface fluxes
+# 2. **Full hydrostatic ocean** (100m depth) — with CATKE turbulent mixing and stratification
+#
+# The atmosphere drives convective turbulence over a warm ocean surface. The coupling
+# framework computes turbulent surface fluxes (sensible heat, latent heat, and momentum)
+# using Monin--Obukhov similarity theory. These fluxes cool the ocean and heat
+# the atmosphere, creating a two-way feedback loop.
+#
+# By comparing the two models, we can see how ocean vertical mixing and stratification
+# affect the SST response to atmospheric forcing.
+
+using NumericalEarth
+using Breeze
+using Oceananigans
+using Oceananigans.Units
+using Printf
+using Statistics: mean
+
+# ## Grid setup
+#
+# We use a 2D domain in the x-z plane: 20 km wide and 10 km tall with
+# 128 × 128 grid points. The `Periodic` x-topology allows convective cells
+# to wrap around, and `Flat` y-topology makes this a 2D simulation.
+
+grid = RectilinearGrid(size = (128, 128), halo = (5, 5),
+                       x = (-10kilometers, 10kilometers),
+                       z = (0, 10kilometers),
+                       topology = (Periodic, Flat, Bounded))
+
+# ## Two independent atmospheres
+#
+# Each coupled model needs its own Breeze atmosphere instance because the
+# `EarthSystemModel` writes boundary conditions into the atmosphere.
+# Both are initialized identically.
+
+Tᵒᶜ = 250 # K
+θᵃᵗ = 290 # K
+U₀ = 10 # m/s
+coriolis = FPlane(latitude=33)
+
+atmosphere_slab = atmosphere_simulation(grid; potential_temperature=θᵃᵗ, coriolis=coriolis)
+atmosphere_ocean = atmosphere_simulation(grid; potential_temperature=θᵃᵗ, coriolis=coriolis)
+
+# ## Atmospheric initial conditions
+#
+# We initialize both atmospheres with the reference potential temperature profile
+# plus small random perturbations below 500 m. These perturbations seed convective
+# instability, which develops into turbulent convection driven by surface heat fluxes.
+# A background zonal wind of 1 m/s provides a nonzero wind speed for the
+# similarity theory flux computation.
+
+reference_state = atmosphere_slab.dynamics.reference_state
+
+θᵢ(x, z) = reference_state.potential_temperature + 0.1 * randn() * (z < 500)
+set!(atmosphere_slab, θ=θᵢ, u=U₀)
+set!(atmosphere_ocean, θ=θᵢ, u=U₀)
+
+# ## Slab ocean (50m depth)
+#
+# The slab ocean represents a well-mixed ocean layer of fixed depth.
+# Its temperature is in Kelvin (the coupling framework handles the conversion).
+# We use 50m to match the mixed layer depth of the full ocean,
+# so that any differences in SST evolution are due to the ocean model
+# dynamics rather than the effective heat capacity.
+
+sst_grid = RectilinearGrid(grid.architecture,
+                           size = grid.Nx,
+                           halo = grid.Hx,
+                           x = (-10kilometers, 10kilometers),
+                           topology = (Periodic, Flat, Flat))
+
+slab_ocean = SlabOcean(sst_grid, depth=10)
+set!(slab_ocean, T=Tᵒᶜ)
+
+# ## Full hydrostatic ocean (100m depth with CATKE mixing)
+#
+# The full ocean uses a `HydrostaticFreeSurfaceModel` with the default TEOS-10
+# equation of state and CATKE vertical mixing. The grid is 100m deep with 20
+# levels (5m vertical resolution). We disable advection since this is primarily
+# a 1D vertical mixing problem.
+#
+# Since TEOS-10 expects temperature in degrees Celsius, the ocean temperature
+# is initialized accordingly. The coupling framework automatically converts
+# from Celsius to Kelvin for the flux computation.
+
+ocean_grid = RectilinearGrid(grid.architecture,
+                             size = (grid.Nx, 20),
+                             halo = (grid.Hx, 5),
+                             x = (-10kilometers, 10kilometers),
+                             z = (-50, 0),
+                             topology = (Periodic, Flat, Bounded))
+
+ocean = ocean_simulation(ocean_grid; coriolis,
+                         momentum_advection = nothing,
+                         tracer_advection = nothing,
+                         Δt = 1,
+                         warn = false)
+
+celsius_to_kelvin = 273.15
+T₀ = Tᵒᶜ - celsius_to_kelvin  # surface temperature in °C
+Tᵢ(x, z) = z > -10 ? T₀ : T₀ + z/50 + 1  # linear cooling below 10m
+set!(ocean.model, T=Tᵢ, S=35)
+
+# ## Coupled models
+#
+# We disable gustiness in the similarity theory flux computation so the surface
+# wind speed is determined entirely by the resolved velocity field.
+
+atmosphere_ocean_fluxes = SimilarityTheoryFluxes(gustiness_parameter=0, minimum_gustiness=0)
+
+slab_interfaces = ComponentInterfaces(atmosphere_slab, slab_ocean; atmosphere_ocean_fluxes)
+full_interfaces = ComponentInterfaces(atmosphere_ocean, ocean; atmosphere_ocean_fluxes)
+
+slab_model = AtmosphereOceanModel(atmosphere_slab, slab_ocean; interfaces = slab_interfaces)
+full_model = AtmosphereOceanModel(atmosphere_ocean, ocean; interfaces = full_interfaces)
+
+slab_sim = Simulation(slab_model, Δt=1, stop_time=4hours)
+full_sim = Simulation(full_model, Δt=1, stop_time=4hours)
+
+# ## Progress callbacks
+
+function slab_progress(sim)
+    atmos = sim.model.atmosphere
+    u, v, w = atmos.velocities
+    umax = maximum(abs, u)
+    wmax = maximum(abs, w)
+    sst = sim.model.ocean.temperature
+    sst_min = minimum(sst)
+    sst_max = maximum(sst)
+    msg = @sprintf("[Slab] Iter: %d, t = %s, max|u|: %.2e, max|w|: %.2e, SST: (%.3f, %.3f)",
+                    iteration(sim), prettytime(sim), umax, wmax, sst_min, sst_max)
+    @info msg
+    return nothing
+end
+
+function full_progress(sim)
+    atmos = sim.model.atmosphere
+    u, v, w = atmos.velocities
+    umax = maximum(abs, u)
+    wmax = maximum(abs, w)
+    T = sim.model.ocean.model.tracers.T
+    Nz = size(sim.model.ocean.model.grid, 3)
+    sst_surface = view(interior(T), :, 1, Nz)
+    sst_min = minimum(sst_surface)
+    sst_max = maximum(sst_surface)
+    msg = @sprintf("[Full] Iter: %d, t = %s, max|u|: %.2e, max|w|: %.2e, SST: (%.3f, %.3f)",
+                    iteration(sim), prettytime(sim), umax, wmax, sst_min, sst_max)
+    @info msg
+    return nothing
+end
+
+add_callback!(slab_sim, slab_progress, IterationInterval(400))
+add_callback!(full_sim, full_progress, IterationInterval(400))
+
+# ## Output writers
+#
+# Slab simulation: atmospheric θ and u (for heatmaps and profiles), plus slab SST.
+# Full simulation: atmospheric θ, u, cloud water, and w, plus full-depth ocean T.
+
+u_s, v_s, w_s = atmosphere_slab.velocities
+θ_s = liquid_ice_potential_temperature(atmosphere_slab)
+
+slab_sim.output_writers[:atmos] = JLD2Writer(slab_model, (; θ=θ_s, u=u_s),
+                                             filename = "atmosphere_slab",
+                                             schedule = TimeInterval(2minutes),
+                                             overwrite_existing = true,
+                                             including = Symbol[])
+
+slab_sim.output_writers[:sst] = JLD2Writer(slab_model, (; SST=slab_ocean.temperature),
+                                           filename = "sst_slab",
+                                           schedule = TimeInterval(2minutes),
+                                           overwrite_existing = true,
+                                           including = Symbol[])
+
+u_f, v_f, w_f = atmosphere_ocean.velocities
+θ_f = liquid_ice_potential_temperature(atmosphere_ocean)
+qˡ_f = atmosphere_ocean.microphysical_fields.qˡ
+
+full_sim.output_writers[:atmos] = JLD2Writer(full_model, (; θ=θ_f, u=u_f, qˡ=qˡ_f, w=w_f),
+                                             filename = "atmosphere_full",
+                                             schedule = TimeInterval(2minutes),
+                                             overwrite_existing = true,
+                                             including = Symbol[])
+
+full_sim.output_writers[:ocean] = JLD2Writer(full_model, (; T=ocean.model.tracers.T),
+                                             filename = "ocean_full",
+                                             schedule = TimeInterval(2minutes),
+                                             overwrite_existing = true,
+                                             including = Symbol[])
+
+# ## Run both simulations sequentially
+
+@info "Running slab ocean coupled simulation..."
+run!(slab_sim)
+@info "Slab ocean simulation complete."
+
+@info "Running full ocean coupled simulation..."
+run!(full_sim)
+@info "Full ocean simulation complete."
+
+# ## Animation
+#
+# The animation has three columns:
+# - **Left**: slab atmosphere (θ, u) and SST comparison line plot
+# - **Middle**: full ocean atmosphere (cloud water, w) and ocean temperature cross-section
+# - **Right** (narrow): horizontal-mean vertical profiles from both simulations
+#
+# The SST comparison converts the full ocean surface temperature from °C to K
+# so both curves are on the same Kelvin scale as the slab ocean.
+
+using CairoMakie
+
+θ_slab_ts = FieldTimeSeries("atmosphere_slab.jld2", "θ"; grid)
+u_slab_ts = FieldTimeSeries("atmosphere_slab.jld2", "u"; grid)
+sst_slab_ts = FieldTimeSeries("sst_slab.jld2", "SST"; grid=sst_grid)
+
+θ_full_ts = FieldTimeSeries("atmosphere_full.jld2", "θ"; grid)
+u_full_ts = FieldTimeSeries("atmosphere_full.jld2", "u"; grid)
+qˡ_full_ts = FieldTimeSeries("atmosphere_full.jld2", "qˡ"; grid)
+w_full_ts = FieldTimeSeries("atmosphere_full.jld2", "w"; grid)
+T_ocean_ts = FieldTimeSeries("ocean_full.jld2", "T"; grid=ocean_grid)
+
+times = θ_slab_ts.times
+Nt = length(times)
+Nz_ocean = size(ocean_grid, 3)
+
+# Coordinate arrays for manual line plots.
+
+x_ocean = xnodes(ocean_grid, Center()) ./ 1000  # km
+
+# ### Figure layout
+
+fig = Figure(size = (1600, 900), fontsize = 12)
+
+ax_θ   = Axis(fig[1, 1], title="θₗᵢ (K) — slab atmos",          ylabel="z (km)")
+ax_u   = Axis(fig[2, 1], title="u (m/s) — slab atmos",           ylabel="z (km)")
+ax_sst = Axis(fig[3, 1], title="SST (K)",                        xlabel="x (km)", ylabel="SST (K)")
+
+ax_qˡ = Axis(fig[1, 2], title="Cloud water (g/kg) — full atmos", ylabel="z (km)")
+ax_w  = Axis(fig[2, 2], title="w (m/s) — full atmos",            ylabel="z (km)")
+ax_oT = Axis(fig[3, 2], title="Ocean T (°C)",                    xlabel="x (km)", ylabel="z (m)")
+
+ax_θp = Axis(fig[1, 3], title="⟨θ⟩(z)", xlabel="θ (K)", ylabel="z (km)")
+ax_up = Axis(fig[2, 3], title="⟨u⟩(z)", xlabel="u (m/s)", ylabel="z (km)")
+ax_Tp = Axis(fig[3, 3], title="⟨T⟩(z)", xlabel="T (°C)", ylabel="z (m)")
+
+colsize!(fig.layout, 3, Relative(0.15))
+
+for ax in (ax_θ, ax_u, ax_qˡ, ax_w)
+    hidexdecorations!(ax, ticks=false)
+end
+
+# ### Observables
+
+n = Observable(1)
+
+# Left column
+θn  = @lift θ_slab_ts[$n]
+un  = @lift u_slab_ts[$n]
+sstn_slab = @lift sst_slab_ts[$n]
+# Convert full ocean surface T from °C to K for the SST comparison
+ocean_sst_kelvin = @lift interior(T_ocean_ts[$n], :, 1, Nz_ocean) .+ celsius_to_kelvin
+
+# Middle column
+qˡn = @lift qˡ_full_ts[$n]
+wn  = @lift w_full_ts[$n]
+oTn = @lift T_ocean_ts[$n]
+
+# Right column — horizontal-mean profiles
+θ_avg_slab = @lift Field(Average(θ_slab_ts[$n], dims=1))
+θ_avg_full = @lift Field(Average(θ_full_ts[$n], dims=1))
+u_avg_slab = @lift Field(Average(u_slab_ts[$n], dims=1))
+u_avg_full = @lift Field(Average(u_full_ts[$n], dims=1))
+T_avg_ocean = @lift Field(Average(T_ocean_ts[$n], dims=1))
+# Convert slab SST from K to °C for the ocean T profile comparison
+sst_avg_celsius = @lift fill(mean(sst_slab_ts[$n]) - celsius_to_kelvin, 2)
+
+# ### Plot
+
+heatmap!(ax_θ,  θn;  colormap=:thermal, colorrange=(θᵃᵗ - 1, θᵃᵗ + 3))
+heatmap!(ax_u,  un;  colormap=:balance, colorrange=(-15, 15))
+heatmap!(ax_qˡ, qˡn; colormap=:dense,   colorrange=(0, 0.5))
+heatmap!(ax_w,  wn;  colormap=:balance, colorrange=(-10, 10))
+heatmap!(ax_oT, oTn; colormap=:thermal, colorrange=(T₀ - 1.5, T₀ + 0.5))
+
+lines!(ax_sst, sstn_slab;                  color=:red,  linewidth=2, label="Slab (50m)")
+lines!(ax_sst, x_ocean, ocean_sst_kelvin;  color=:blue, linewidth=2, label="Full (CATKE)")
+axislegend(ax_sst, position=:rb)
+ylims!(ax_sst, Tᵒᶜ - 1, Tᵒᶜ + 2)
+
+lines!(ax_θp, θ_avg_slab; color=:red,  linewidth=1.5, label="Slab")
+lines!(ax_θp, θ_avg_full; color=:blue, linewidth=1.5, label="Full")
+axislegend(ax_θp, position=:rt)
+
+lines!(ax_up, u_avg_slab; color=:red,  linewidth=1.5)
+lines!(ax_up, u_avg_full; color=:blue, linewidth=1.5)
+
+lines!(ax_Tp, T_avg_ocean;                  color=:blue, linewidth=1.5, label="Full")
+lines!(ax_Tp, sst_avg_celsius, [-50.0, 0.0]; color=:red,  linewidth=1.5, label="Slab")
+axislegend(ax_Tp, position=:lb)
+xlims!(ax_Tp, T₀ - 2, T₀ + 0.5)
+
+title = @lift "Atmosphere–ocean coupling comparison, t = " * prettytime(times[$n])
+Label(fig[0, 1:3], title, fontsize=16)
+
+# ### Record
+
+@info "Rendering animation..."
+record(fig, "coupled_atmosphere_ocean.mp4", 1:Nt; framerate=12) do nn
+    n[] = nn
+end
+
+@info "Animation saved."
+nothing #hide
+
+# ![](coupled_atmosphere_ocean.mp4)
