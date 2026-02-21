@@ -76,16 +76,10 @@ mutable struct ComponentInterfaces{AO, ASI, SIO, C, AP, OP, SIP, EX, P}
     properties :: P
 end
 
-# Possible units for temperature and salinity
-struct DegreesCelsius end
-struct DegreesKelvin end
-
-const celsius_to_kelvin = 273.15
-@inline convert_to_kelvin(::DegreesCelsius, T::FT) where FT = T + convert(FT, celsius_to_kelvin)
-@inline convert_to_kelvin(::DegreesKelvin, T) = T
-
-@inline convert_from_kelvin(::DegreesCelsius, T::FT) where FT = T - convert(FT, celsius_to_kelvin)
-@inline convert_from_kelvin(::DegreesKelvin, T) = T
+using ..EarthSystemModels: DegreesCelsius, DegreesKelvin,
+                           celsius_to_kelvin,
+                           convert_to_kelvin, convert_from_kelvin,
+                           exchange_grid, temperature_units
 
 Base.summary(crf::ComponentInterfaces) = "ComponentInterfaces"
 Base.show(io::IO, crf::ComponentInterfaces) = print(io, summary(crf))
@@ -300,7 +294,7 @@ Keyword Arguments
 - `gravitational_acceleration`: gravitational acceleration. Default: `default_gravitational_acceleration`.
 """
 function ComponentInterfaces(atmosphere, ocean, sea_ice=nothing;
-                             exchange_grid = ocean.model.grid,
+                             exchange_grid = exchange_grid(ocean),
                              radiation = Radiation(),
                              freshwater_density = default_freshwater_density,
                              atmosphere_ocean_fluxes = SimilarityTheoryFluxes(eltype(exchange_grid)),
@@ -313,7 +307,7 @@ function ComponentInterfaces(atmosphere, ocean, sea_ice=nothing;
                              atmosphere_sea_ice_velocity_difference = RelativeVelocity(),
                              ocean_reference_density = reference_density(ocean),
                              ocean_heat_capacity = heat_capacity(ocean),
-                             ocean_temperature_units = DegreesCelsius(),
+                             ocean_temperature_units = temperature_units(ocean),
                              sea_ice_temperature_units = DegreesCelsius(),
                              sea_ice_reference_density = reference_density(sea_ice),
                              sea_ice_heat_capacity = heat_capacity(sea_ice),
