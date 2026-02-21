@@ -101,8 +101,8 @@ ocean = ocean_simulation(ocean_grid; coriolis,
                          warn = false)
 
 celsius_to_kelvin = 273.15
-T₀ = Tᵒᶜ - celsius_to_kelvin  # surface temperature in °C
-Tᵢ(x, z) = z > -10 ? T₀ : T₀ + z/50 + 1  # linear cooling below 10m
+T₀ = Tᵒᶜ - celsius_to_kelvin                 # surface temperature in °C
+Tᵢ(x, z) = z > -10 ? T₀ : T₀ + (z + 10) /50  # linear cooling below 10m
 set!(ocean.model, T=Tᵢ, S=35)
 
 # ## Coupled models
