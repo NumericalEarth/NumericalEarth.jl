@@ -120,8 +120,10 @@ end
 @testset "Bathymetry caching round-trip" begin
     @info "Testing bathymetry caching round-trip..."
 
+    # Use a grid size distinct from the first test block (100x100, 200x200)
+    # to avoid loading GPU-computed cache on CPU (floating-point differences).
     grid = LatitudeLongitudeGrid(CPU();
-                                 size = (100, 100, 10),
+                                 size = (80, 80, 10),
                                  longitude = (0, 100),
                                  latitude = (0, 50),
                                  z = (-6000, 0))
