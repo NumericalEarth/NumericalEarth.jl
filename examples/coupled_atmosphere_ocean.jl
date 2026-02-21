@@ -284,7 +284,7 @@ sst_avg_celsius = @lift fill(mean(sst_slab_ts[$n]) - celsius_to_kelvin, 2)
 
 heatmap!(ax_θ,  θn;  colormap=:thermal, colorrange=(θᵃᵗ - 1, θᵃᵗ + 3))
 heatmap!(ax_u,  un;  colormap=:balance, colorrange=(-15, 15))
-heatmap!(ax_qˡ, qˡn; colormap=:dense,   colorrange=(0, 0.5))
+heatmap!(ax_qˡ, qˡn; colormap=Reverse(:Blues_4),   colorrange=(0, 5e-4))
 heatmap!(ax_w,  wn;  colormap=:balance, colorrange=(-10, 10))
 heatmap!(ax_oT, oTn; colormap=:thermal, colorrange=(T₀ - 1.5, T₀ + 0.5))
 
