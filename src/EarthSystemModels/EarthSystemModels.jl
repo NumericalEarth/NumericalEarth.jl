@@ -67,7 +67,6 @@ include("InterfaceComputations/InterfaceComputations.jl")
 using .InterfaceComputations
 
 include("earth_system_model.jl")
-include("atmosphere_ocean_model.jl")
 include("time_step_earth_system_model.jl")
 
 #####
