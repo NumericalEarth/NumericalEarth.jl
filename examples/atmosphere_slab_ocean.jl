@@ -97,14 +97,14 @@ model = AtmosphereOceanModel(atmosphere, ocean)
 
 # ## Simulation
 #
-# We run for 4 hours with a 1-second timestep. This is long enough for
+# We run for 4 hours with a 2-second timestep. This is long enough for
 # convective turbulence to develop and for the SST to cool appreciably.
 
-simulation = Simulation(model, Δt=1, stop_time=4hours)
+simulation = Simulation(model, Δt=2, stop_time=4hours)
 
 # ## Progress callback
 #
-# Print a summary of the simulation state every 400 iterations (~7 minutes),
+# Print a summary of the simulation state every so often,
 # including the maximum wind speed and the SST range across the domain.
 
 function progress(sim)
@@ -124,13 +124,13 @@ function progress(sim)
     return nothing
 end
 
-add_callback!(simulation, progress, IterationInterval(400))
+add_callback!(simulation, progress, IterationInterval(500))
 
 # ## Output writers
 #
 # We define two `JLD2Writer`s: one for atmospheric fields and one for SST.
 # Atmosphere outputs include wind speed ``s = \sqrt{u^2 + w^2}``,
-# vorticity ``ξ = ∂w/∂x - ∂u/∂z``, temperature ``T``,
+# vorticity ``ξ = ∂u/∂z - ∂w/∂x``, temperature ``T``,
 # liquid-ice potential temperature ``θ_{li}``, cloud liquid water ``q^ℓ``,
 # and total specific humidity ``q^t``. These are saved every 2 minutes.
 
@@ -139,7 +139,7 @@ T = atmosphere.temperature
 θ = liquid_ice_potential_temperature(atmosphere)
 qˡ = atmosphere.microphysical_fields.qˡ
 s = sqrt(u^2 + w^2)
-ξ = ∂x(w) - ∂z(u)
+ξ = ∂z(u) - ∂x(w)
 ρqᵗ = atmosphere.moisture_density
 ρ₀ = atmosphere.dynamics.reference_state.density
 qᵗ = ρqᵗ / ρ₀
@@ -189,7 +189,7 @@ fig = Figure(size = (1200, 800), fontsize = 14)
 ax_s = Axis(fig[1, 1], title="Wind speed (m/s)", xlabel="x (km)", ylabel="z (km)")
 ax_ξ = Axis(fig[1, 2], title="Vorticity (1/s)", xlabel="x (km)", ylabel="z (km)")
 ax_θ = Axis(fig[2, 1], title="θₗᵢ (K)", xlabel="x (km)", ylabel="z (km)")
-ax_q = Axis(fig[2, 2], title="Cloud water (g/kg)", xlabel="x (km)", ylabel="z (km)")
+ax_q = Axis(fig[2, 2], title="Cloud water (kg/kg)", xlabel="x (km)", ylabel="z (km)")
 ax_sst = Axis(fig[3, 1:2], title="Sea surface temperature (K)", xlabel="x (km)", ylabel="SST (K)")
 
 # Use Observables to drive the animation. Indexing a `FieldTimeSeries` with an
@@ -206,7 +206,7 @@ sstn = @lift sst_ts[$n]
 heatmap!(ax_s, sn; colormap=:speed, colorrange=(0, 10))
 heatmap!(ax_ξ, ξn; colormap=:balance, colorrange=(-0.05, 0.05))
 heatmap!(ax_θ, θn; colormap=:thermal, colorrange=(θ₀ - 1, θ₀ + 2))
-heatmap!(ax_q, qˡn; colormap=:dense, colorrange=(0, 0.5))
+heatmap!(ax_q, qˡn; colormap=Reverse(:Blues_4), colorrange=(0, 0.0005))
 lines!(ax_sst, sstn; color=:red, linewidth=2)
 ylims!(ax_sst, θ₀, θ₀ + 22)
 
