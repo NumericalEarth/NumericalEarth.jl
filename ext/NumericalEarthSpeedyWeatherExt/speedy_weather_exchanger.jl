@@ -38,7 +38,7 @@ function ComponentExchanger(atmosphere::SpeedySimulation, exchange_grid)
                q  = Field{Center, Center, Nothing}(exchange_grid),
                Qs = Field{Center, Center, Nothing}(exchange_grid),
                Qℓ = Field{Center, Center, Nothing}(exchange_grid),
-               Mp = Field{Center, Center, Nothing}(exchange_grid))
+               Jᶜ = Field{Center, Center, Nothing}(exchange_grid))
     
     return ComponentExchanger(state, regridder)
 end
@@ -68,7 +68,7 @@ function interpolate_state!(exchanger, exchange_grid, atmos::SpeedySimulation, c
     regrid!(exchange_state.p,  pa)
     regrid!(exchange_state.Qs, Qsa)
     regrid!(exchange_state.Qℓ, Qℓa)
-    regrid!(exchange_state.Mp, Mpa)
+    regrid!(exchange_state.Jᶜ, Mpa)
 
     arch = architecture(exchange_grid)
 
@@ -83,7 +83,7 @@ function interpolate_state!(exchanger, exchange_grid, atmos::SpeedySimulation, c
     fill_halo_regions!(exchange_state.p)
     fill_halo_regions!(exchange_state.Qs)
     fill_halo_regions!(exchange_state.Qℓ)
-    fill_halo_regions!(exchange_state.Mp)
+    fill_halo_regions!(exchange_state.Jᶜ)
 
     return nothing
 end

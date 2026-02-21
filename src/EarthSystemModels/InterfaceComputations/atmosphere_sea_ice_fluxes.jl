@@ -149,21 +149,21 @@ end
 
     ρₐ = AtmosphericThermodynamics.air_density(ℂₐ, Tₐ, pₐ, qₐ)
     cₚ = AtmosphericThermodynamics.cp_m(ℂₐ, qₐ) # moist heat capacity
-    ℰs = AtmosphericThermodynamics.latent_heat_sublim(ℂₐ, Tₐ)
+    ℒⁱ = AtmosphericThermodynamics.latent_heat_sublim(ℂₐ, Tₐ)
 
     # Store fluxes
-    Qv = interface_fluxes.latent_heat
-    Qc = interface_fluxes.sensible_heat
-    Fv = interface_fluxes.water_vapor
+    𝒬ᵛ = interface_fluxes.latent_heat
+    𝒬ᵀ = interface_fluxes.sensible_heat
+    Jᵛ = interface_fluxes.water_vapor
     ρτx = interface_fluxes.x_momentum
     ρτy = interface_fluxes.y_momentum
     Ts = interface_temperature
 
     @inbounds begin
         # +0: cooling, -0: heating
-        Qv[i, j, 1]  = - ρₐ * u★ * q★ * ℰs
-        Qc[i, j, 1]  = - ρₐ * cₚ * u★ * θ★
-        Fv[i, j, 1]  = - ρₐ * u★ * q★
+        𝒬ᵛ[i, j, 1]  = - ρₐ * u★ * q★ * ℒⁱ
+        𝒬ᵀ[i, j, 1]  = - ρₐ * cₚ * u★ * θ★
+        Jᵛ[i, j, 1]  = - ρₐ * u★ * q★
         ρτx[i, j, 1] = + ρₐ * τx
         ρτy[i, j, 1] = + ρₐ * τy
         Ts[i, j, 1]  = convert_from_kelvin(sea_ice_properties.temperature_units, Ψₛ.T)

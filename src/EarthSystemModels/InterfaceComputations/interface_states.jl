@@ -245,12 +245,12 @@ end
 # Tₛⁿ⁺¹ = = (Tᵢ - δ / κ * (Jᵃ - 4 α Tₛⁿ⁴)) / (1 + 4 δ σ ϵ Tₛⁿ³ / ρ c κ)
 #
 # corresponding to a linearization of the outgoing longwave radiation term.
-@inline function flux_balance_temperature(st::SkinTemperature{<:DiffusiveFlux}, Ψₛ, ℙₛ, Qc, Qv, Qu, Qd, Ψᵢ, ℙᵢ, Ψₐ, ℙₐ)
-    Qa = Qv + Qu + Qd # Net flux (positive out of the ocean)
+@inline function flux_balance_temperature(st::SkinTemperature{<:DiffusiveFlux}, Ψₛ, ℙₛ, 𝒬ᵀ, 𝒬ᵛ, Qu, Qd, Ψᵢ, ℙᵢ, Ψₐ, ℙₐ)
+    Qa = 𝒬ᵛ + Qu + Qd # Net flux (positive out of the ocean)
     F  = st.internal_flux
     ρ  = ℙᵢ.reference_density
     c  = ℙᵢ.heat_capacity
-    Qa = (Qv + Qu + Qd) # Net flux excluding sensible heat (positive out of the ocean)
+    Qa = (𝒬ᵛ + Qu + Qd) # Net flux excluding sensible heat (positive out of the ocean)
     λ  = 1 / (ρ * c) # m³ K J⁻¹
     Jᵀ = Qa * λ
 
@@ -258,16 +258,16 @@ end
     # We use to compute the sensible heat flux
     Tₐ = surface_atmosphere_temperature(Ψₐ, ℙₐ)
     ΔT = Tₐ - Ψₛ.T
-    Ωc = ifelse(ΔT == 0, zero(ΔT), Qc / ΔT * λ) # Sensible heat transfer coefficient (W/m²K)
+    Ωc = ifelse(ΔT == 0, zero(ΔT), 𝒬ᵀ / ΔT * λ) # Sensible heat transfer coefficient (W/m²K)
 
     # Computing the flux balance temperature
     return (Ψᵢ.T * F.κ - (Jᵀ + Ωc * Tₐ) * F.δ) / (F.κ - Ωc * F.δ)
 end
 
-# Qv + Qu + Qd + Ωc * (Tₐ - Tˢ) + k / h * (Tˢ - Tᵢ) = 0
-# where Ωc (the sensible heat transfer coefficient) is given by Ωc = Qc / (Tₐ - Tˢ)
-# ⟹  Tₛ = (Tᵢ * k - (Qv + Qu + Qd + Ωc * Tₐ) * h / (k - Ωc * h)
-@inline function flux_balance_temperature(st::SkinTemperature{<:ClimaSeaIce.ConductiveFlux}, Ψₛ, ℙₛ, Qc, Qv, Qu, Qd, Ψᵢ, ℙᵢ, Ψₐ, ℙₐ)
+# 𝒬ᵛ + Qu + Qd + Ωc * (Tₐ - Tˢ) + k / h * (Tˢ - Tᵢ) = 0
+# where Ωc (the sensible heat transfer coefficient) is given by Ωc = 𝒬ᵀ / (Tₐ - Tˢ)
+# ⟹  Tₛ = (Tᵢ * k - (𝒬ᵛ + Qu + Qd + Ωc * Tₐ) * h / (k - Ωc * h)
+@inline function flux_balance_temperature(st::SkinTemperature{<:ClimaSeaIce.ConductiveFlux}, Ψₛ, ℙₛ, 𝒬ᵀ, 𝒬ᵛ, Qu, Qd, Ψᵢ, ℙᵢ, Ψₐ, ℙₐ)
     F  = st.internal_flux
     k  = F.conductivity
     h  = Ψᵢ.h
@@ -282,8 +282,8 @@ end
     # We use to compute the sensible heat flux
     Tₐ = surface_atmosphere_temperature(Ψₐ, ℙₐ)
     ΔT = Tₐ - Tₛ⁻
-    Ωc = ifelse(ΔT == 0, zero(h), Qc / ΔT) # Sensible heat transfer coefficient (W/m²K)
-    Qa = (Qv + Qu + Qd) # Net flux excluding sensible heat (positive out of the ocean)
+    Ωc = ifelse(ΔT == 0, zero(h), 𝒬ᵀ / ΔT) # Sensible heat transfer coefficient (W/m²K)
+    Qa = (𝒬ᵛ + Qu + Qd) # Net flux excluding sensible heat (positive out of the ocean)
 
     # Computing the flux balance temperature
     T★ = (Tᵢ * k - (Qa + Ωc * Tₐ) * h) / (k - Ωc * h)
@@ -327,7 +327,7 @@ end
 
     # TODO: this depends on the phase of the interface
     #ℰv = 0 #AtmosphericThermodynamics.latent_heat_vapor(ℂₐ, Tₐ)
-    ℰs = AtmosphericThermodynamics.latent_heat_sublim(ℂₐ, Tₐ)
+    ℒⁱ = AtmosphericThermodynamics.latent_heat_sublim(ℂₐ, Tₐ)
 
     # upwelling radiation is calculated explicitly
     Tₛ⁻ = interface_state.T # approximate interface temperature from previous iteration
@@ -345,13 +345,13 @@ end
     q★ = interface_state.q★
 
     # Turbulent heat fluxes, sensible + latent (positive out of the ocean)
-    Qc = - ρₐ * cₐ * u★ * θ★ # = - ρₐ cₐ u★ Ch / sqrt(Cd) * (θₐ - Tₛ)
-    Qv = - ρₐ * ℰs * u★ * q★
+    𝒬ᵀ = - ρₐ * cₐ * u★ * θ★ # = - ρₐ cₐ u★ Ch / sqrt(Cd) * (θₐ - Tₛ)
+    𝒬ᵛ = - ρₐ * ℒⁱ * u★ * q★
 
     Tₛ = flux_balance_temperature(st,
                                   interface_state,
                                   interface_properties,
-                                  Qc, Qv, Qu, Qd,
+                                  𝒬ᵀ, 𝒬ᵛ, Qu, Qd,
                                   interior_state,
                                   interior_properties,
                                   atmosphere_state,

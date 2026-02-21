@@ -15,7 +15,7 @@ f = 0     # Coriolis parameter
 Tₐ = 273.15 - 10 # Kelvin
 u₁₀ = 10 # wind at 10 m, m/s
 qₐ = 0.01 # specific humidity
-Qℓ = 400 # shortwave radiation (W m⁻², positive means heating right now)
+Qs = 400 # shortwave radiation (W m⁻², positive means heating right now)
 
 # Build the atmosphere
 radiation = Radiation(ocean_albedo=0.1)
@@ -26,7 +26,7 @@ atmosphere = PrescribedAtmosphere(atmosphere_grid, atmosphere_times)
 parent(atmosphere.tracers.T) .= Tₐ     # K
 parent(atmosphere.velocities.u) .= u₁₀ # m/s
 parent(atmosphere.tracers.q) .= qₐ     # mass ratio
-parent(atmosphere.downwelling_radiation.shortwave) .= Qℓ # W
+parent(atmosphere.downwelling_radiation.shortwave) .= Qs # W
 
 # Build ocean model at rest with initial temperature stratification
 grid = RectilinearGrid(size=20, z=(-100, 0), topology=(Flat, Flat, Bounded))
@@ -43,11 +43,11 @@ atmosphere_ocean_fluxes = SimilarityTheoryFluxes(stability_functions=nothing)
 interfaces = NumericalEarth.EarthSystemModels.ComponentInterfaces(atmosphere, ocean; atmosphere_ocean_fluxes)
 model = OceanOnlyModel(ocean; atmosphere, interfaces)
 
-Qv  = model.interfaces.atmosphere_ocean_interface.fluxes.latent_heat
-Qc  = model.interfaces.atmosphere_ocean_interface.fluxes.sensible_heat
+𝒬ᵛ  = model.interfaces.atmosphere_ocean_interface.fluxes.latent_heat
+𝒬ᵀ  = model.interfaces.atmosphere_ocean_interface.fluxes.sensible_heat
 τx  = model.interfaces.atmosphere_ocean_interface.fluxes.x_momentum
 τy  = model.interfaces.atmosphere_ocean_interface.fluxes.y_momentum
-Fv  = model.interfaces.atmosphere_ocean_interface.fluxes.water_vapor
+Jᵛ  = model.interfaces.atmosphere_ocean_interface.fluxes.water_vapor
 
 # TODO: the total fluxes are defined on _interfaces_ between components:
 # atmopshere_ocean, atmosphere_sea_ice, ocean_sea_ice. They aren't defined wrt to

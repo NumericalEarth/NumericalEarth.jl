@@ -162,18 +162,18 @@ end
 
             τx = - ρₐ * u★^2 * Δu / sqrt(Δu^2 + Δv^2)
             τy = - ρₐ * u★^2 * Δv / sqrt(Δu^2 + Δv^2)
-            Qs = - ρₐ * cp * u★ * θ★
-            Mv = - ρₐ * u★ * q★
-            Ql = - ρₐ * u★ * q★ * ℰv
+            𝒬ᵀ = - ρₐ * cp * u★ * θ★
+            Jᵛ = - ρₐ * u★ * q★
+            𝒬ᵛ = - ρₐ * u★ * q★ * ℰv
 
             turbulent_fluxes = coupled_model.interfaces.atmosphere_ocean_interface.fluxes
 
             # Make sure fluxes agree with the hand-calculated ones
             @test turbulent_fluxes.x_momentum[1, 1, 1]    ≈ τx
             @test turbulent_fluxes.y_momentum[1, 1, 1]    ≈ τy
-            @test turbulent_fluxes.sensible_heat[1, 1, 1] ≈ Qs
-            @test turbulent_fluxes.latent_heat[1, 1, 1]   ≈ Ql
-            @test turbulent_fluxes.water_vapor[1, 1, 1]   ≈ Mv
+            @test turbulent_fluxes.sensible_heat[1, 1, 1] ≈ 𝒬ᵀ
+            @test turbulent_fluxes.latent_heat[1, 1, 1]   ≈ 𝒬ᵛ
+            @test turbulent_fluxes.water_vapor[1, 1, 1]   ≈ Jᵛ
         end
 
         @info " Testing FreezingLimitedOceanTemperature..."
