@@ -43,8 +43,8 @@ Tᵒᶜ = 250 # K
 U₀ = 10 # m/s
 coriolis = FPlane(latitude=33)
 
-atmosphere_slab = atmosphere_simulation(grid; potential_temperature=θᵃᵗ, coriolis=coriolis)
-atmosphere_ocean = atmosphere_simulation(grid; potential_temperature=θᵃᵗ, coriolis=coriolis)
+slab_ocean_atmos = atmosphere_simulation(grid; potential_temperature=θᵃᵗ, coriolis)
+full_ocean_atmos = atmosphere_simulation(grid; potential_temperature=θᵃᵗ, coriolis)
 
 # ## Atmospheric initial conditions
 #
@@ -54,11 +54,11 @@ atmosphere_ocean = atmosphere_simulation(grid; potential_temperature=θᵃᵗ, c
 # A background zonal wind `U₀` provides a nonzero wind speed for the
 # similarity theory flux computation.
 
-reference_state = atmosphere_slab.dynamics.reference_state
+reference_state = slab_ocean_atmos.dynamics.reference_state
 
 θᵢ(x, z) = reference_state.potential_temperature + 0.1 * randn() * (z < 500)
-set!(atmosphere_slab, θ=θᵢ, u=U₀)
-set!(atmosphere_ocean, θ=θᵢ, u=U₀)
+set!(slab_ocean_atmos, θ=θᵢ, u=U₀)
+set!(full_ocean_atmos, θ=θᵢ, u=U₀)
 
 # ## Slab ocean (10m depth)
 #
@@ -112,11 +112,11 @@ set!(ocean.model, T=Tᵢ, S=35)
 
 atmosphere_ocean_fluxes = SimilarityTheoryFluxes(gustiness_parameter=0, minimum_gustiness=0)
 
-slab_interfaces = ComponentInterfaces(atmosphere_slab, slab_ocean; atmosphere_ocean_fluxes)
-full_interfaces = ComponentInterfaces(atmosphere_ocean, ocean; atmosphere_ocean_fluxes)
+slab_interfaces = ComponentInterfaces(slab_ocean_atmos, slab_ocean; atmosphere_ocean_fluxes)
+full_interfaces = ComponentInterfaces(full_ocean_atmos, ocean; atmosphere_ocean_fluxes)
 
-slab_model = AtmosphereOceanModel(atmosphere_slab, slab_ocean; interfaces = slab_interfaces)
-full_model = AtmosphereOceanModel(atmosphere_ocean, ocean; interfaces = full_interfaces)
+slab_model = AtmosphereOceanModel(slab_ocean_atmos, slab_ocean; interfaces = slab_interfaces)
+full_model = AtmosphereOceanModel(full_ocean_atmos, ocean; interfaces = full_interfaces)
 
 slab_sim = Simulation(slab_model, Δt=1, stop_time=4hours)
 full_sim = Simulation(full_model, Δt=1, stop_time=4hours)
@@ -161,11 +161,11 @@ add_callback!(full_sim, full_progress, IterationInterval(400))
 # Slab simulation: atmospheric θ and u (for heatmaps and profiles), plus slab SST.
 # Full simulation: atmospheric θ, u, cloud water, and w, plus full-depth ocean T.
 
-u_s, v_s, w_s = atmosphere_slab.velocities
-θ_s = liquid_ice_potential_temperature(atmosphere_slab)
+u_s, v_s, w_s = slab_ocean_atmos.velocities
+θ_s = liquid_ice_potential_temperature(slab_ocean_atmos)
 
 slab_sim.output_writers[:atmos] = JLD2Writer(slab_model, (; θ=θ_s, u=u_s),
-                                             filename = "atmosphere_slab",
+                                             filename = "slab_ocean_atmos",
                                              schedule = TimeInterval(2minutes),
                                              overwrite_existing = true,
                                              including = Symbol[])
@@ -176,12 +176,12 @@ slab_sim.output_writers[:sst] = JLD2Writer(slab_model, (; SST=slab_ocean.tempera
                                            overwrite_existing = true,
                                            including = Symbol[])
 
-u_f, v_f, w_f = atmosphere_ocean.velocities
-θ_f = liquid_ice_potential_temperature(atmosphere_ocean)
-qˡ_f = atmosphere_ocean.microphysical_fields.qˡ
+u_f, v_f, w_f = full_ocean_atmos.velocities
+θ_f = liquid_ice_potential_temperature(full_ocean_atmos)
+qˡ_f = full_ocean_atmos.microphysical_fields.qˡ
 
 full_sim.output_writers[:atmos] = JLD2Writer(full_model, (; θ=θ_f, u=u_f, qˡ=qˡ_f, w=w_f),
-                                             filename = "atmosphere_full",
+                                             filename = "full_ocean_atmos",
                                              schedule = TimeInterval(2minutes),
                                              overwrite_existing = true,
                                              including = Symbol[])
@@ -205,8 +205,8 @@ run!(full_sim)
 # ## Animation
 #
 # The animation has three columns:
-# - **Left**: slab atmosphere (θ, u) and SST comparison line plot
-# - **Middle**: full ocean atmosphere (cloud water, w) and ocean temperature cross-section
+# - **Left**: atmosphere over slab ocean (θ, u) and SST comparison line plot
+# - **Middle**: atmosphere over full ocean (cloud water, w) and ocean temperature cross-section
 # - **Right** (narrow): horizontal-mean vertical profiles from both simulations
 #
 # The SST comparison converts the full ocean surface temperature from °C to K
@@ -214,14 +214,14 @@ run!(full_sim)
 
 using CairoMakie
 
-θ_slab_ts = FieldTimeSeries("atmosphere_slab.jld2", "θ"; grid)
-u_slab_ts = FieldTimeSeries("atmosphere_slab.jld2", "u"; grid)
+θ_slab_ts = FieldTimeSeries("slab_ocean_atmos.jld2", "θ"; grid)
+u_slab_ts = FieldTimeSeries("slab_ocean_atmos.jld2", "u"; grid)
 sst_slab_ts = FieldTimeSeries("sst_slab.jld2", "SST"; grid=sst_grid)
 
-θ_full_ts = FieldTimeSeries("atmosphere_full.jld2", "θ"; grid)
-u_full_ts = FieldTimeSeries("atmosphere_full.jld2", "u"; grid)
-qˡ_full_ts = FieldTimeSeries("atmosphere_full.jld2", "qˡ"; grid)
-w_full_ts = FieldTimeSeries("atmosphere_full.jld2", "w"; grid)
+θ_full_ts = FieldTimeSeries("full_ocean_atmos.jld2", "θ"; grid)
+u_full_ts = FieldTimeSeries("full_ocean_atmos.jld2", "u"; grid)
+qˡ_full_ts = FieldTimeSeries("full_ocean_atmos.jld2", "qˡ"; grid)
+w_full_ts = FieldTimeSeries("full_ocean_atmos.jld2", "w"; grid)
 T_ocean_ts = FieldTimeSeries("ocean_full.jld2", "T"; grid=ocean_grid)
 
 times = θ_slab_ts.times
@@ -236,12 +236,12 @@ x_ocean = xnodes(ocean_grid, Center()) ./ 1000  # km
 
 fig = Figure(size = (1600, 900), fontsize = 12)
 
-ax_θ   = Axis(fig[1, 1], title="θₗᵢ (K) — slab atmos",          ylabel="z (km)")
-ax_u   = Axis(fig[2, 1], title="u (m/s) — slab atmos",           ylabel="z (km)")
+ax_θ   = Axis(fig[1, 1], title="θₗᵢ (K) — atmos (slab ocean)",   ylabel="z (km)")
+ax_u   = Axis(fig[2, 1], title="u (m/s) — atmos (slab ocean)",   ylabel="z (km)")
 ax_sst = Axis(fig[3, 1], title="SST (K)",                        xlabel="x (km)", ylabel="SST (K)")
 
-ax_qˡ = Axis(fig[1, 2], title="Cloud water (kg/kg) — full atmos", ylabel="z (km)")
-ax_w  = Axis(fig[2, 2], title="w (m/s) — full atmos",            ylabel="z (km)")
+ax_qˡ = Axis(fig[1, 2], title="Cloud water (kg/kg) — atmos (full ocean)", ylabel="z (km)")
+ax_w  = Axis(fig[2, 2], title="w (m/s) — atmos (full ocean)",             ylabel="z (km)")
 ax_oT = Axis(fig[3, 2], title="Ocean T (°C)",                    xlabel="x (km)", ylabel="z (m)")
 
 ax_θp = Axis(fig[1, 3], title="⟨θ⟩(z)", xlabel="θ (K)", ylabel="z (km)")
@@ -310,11 +310,11 @@ Label(fig[0, 1:3], title, fontsize=16)
 # ### Record
 
 @info "Rendering animation..."
-record(fig, "coupled_atmosphere_ocean.mp4", 1:Nt; framerate=12) do nn
+record(fig, "coupled_full_ocean_atmos.mp4", 1:Nt; framerate=12) do nn
     n[] = nn
 end
 
 @info "Animation saved."
 nothing #hide
 
-# ![](coupled_atmosphere_ocean.mp4)
+# ![](coupled_full_ocean_atmos.mp4)
