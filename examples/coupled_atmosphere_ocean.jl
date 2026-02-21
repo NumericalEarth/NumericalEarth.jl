@@ -243,7 +243,7 @@ ax_θ   = Axis(fig[1, 1], title="θₗᵢ (K) — slab atmos",          ylabel="
 ax_u   = Axis(fig[2, 1], title="u (m/s) — slab atmos",           ylabel="z (km)")
 ax_sst = Axis(fig[3, 1], title="SST (K)",                        xlabel="x (km)", ylabel="SST (K)")
 
-ax_qˡ = Axis(fig[1, 2], title="Cloud water (g/kg) — full atmos", ylabel="z (km)")
+ax_qˡ = Axis(fig[1, 2], title="Cloud water (kg/kg) — full atmos", ylabel="z (km)")
 ax_w  = Axis(fig[2, 2], title="w (m/s) — full atmos",            ylabel="z (km)")
 ax_oT = Axis(fig[3, 2], title="Ocean T (°C)",                    xlabel="x (km)", ylabel="z (m)")
 
