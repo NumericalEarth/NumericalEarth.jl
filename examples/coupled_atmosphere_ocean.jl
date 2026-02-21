@@ -3,8 +3,8 @@
 # This example demonstrates coupling a Breeze atmospheric large eddy simulation (LES)
 # with two different ocean models using NumericalEarth's `EarthSystemModel` framework:
 #
-# 1. **Slab ocean** (50m depth) — a well-mixed layer that responds uniformly to surface fluxes
-# 2. **Full hydrostatic ocean** (100m depth) — with CATKE turbulent mixing and stratification
+# 1. **Slab ocean** (10m depth) — a well-mixed layer that responds uniformly to surface fluxes
+# 2. **Full hydrostatic ocean** (50m depth) — with CATKE turbulent mixing and stratification
 #
 # The atmosphere drives convective turbulence over a warm ocean surface. The coupling
 # framework computes turbulent surface fluxes (sensible heat, latent heat, and momentum)
@@ -60,13 +60,10 @@ reference_state = atmosphere_slab.dynamics.reference_state
 set!(atmosphere_slab, θ=θᵢ, u=U₀)
 set!(atmosphere_ocean, θ=θᵢ, u=U₀)
 
-# ## Slab ocean (50m depth)
+# ## Slab ocean (10m depth)
 #
 # The slab ocean represents a well-mixed ocean layer of fixed depth.
 # Its temperature is in Kelvin (the coupling framework handles the conversion).
-# We use 50m to match the mixed layer depth of the full ocean,
-# so that any differences in SST evolution are due to the ocean model
-# dynamics rather than the effective heat capacity.
 
 sst_grid = RectilinearGrid(grid.architecture,
                            size = grid.Nx,
@@ -77,11 +74,11 @@ sst_grid = RectilinearGrid(grid.architecture,
 slab_ocean = SlabOcean(sst_grid, depth=10)
 set!(slab_ocean, T=Tᵒᶜ)
 
-# ## Full hydrostatic ocean (100m depth with CATKE mixing)
+# ## Full hydrostatic ocean (50m depth with CATKE mixing)
 #
 # The full ocean uses a `HydrostaticFreeSurfaceModel` with the default TEOS-10
-# equation of state and CATKE vertical mixing. The grid is 100m deep with 20
-# levels (5m vertical resolution). We disable advection since this is primarily
+# equation of state and CATKE vertical mixing. The grid is 50m deep with 20
+# levels (2.5m vertical resolution). We disable advection since this is primarily
 # a 1D vertical mixing problem.
 #
 # Since TEOS-10 expects temperature in degrees Celsius, the ocean temperature
@@ -290,7 +287,7 @@ heatmap!(ax_qˡ, qˡn; colormap=Reverse(:Blues_4),   colorrange=(0, 5e-4))
 heatmap!(ax_w,  wn;  colormap=:balance, colorrange=(-10, 10))
 heatmap!(ax_oT, oTn; colormap=:thermal, colorrange=(T₀ - 1.5, T₀ + 0.5))
 
-lines!(ax_sst, sstn_slab;                  color=:red,  linewidth=2, label="Slab (50m)")
+lines!(ax_sst, sstn_slab;                  color=:red,  linewidth=2, label="Slab (10m)")
 lines!(ax_sst, x_ocean, ocean_sst_kelvin;  color=:blue, linewidth=2, label="Full (CATKE)")
 axislegend(ax_sst, position=:rb)
 ylims!(ax_sst, Tᵒᶜ - 1, Tᵒᶜ + 2)
