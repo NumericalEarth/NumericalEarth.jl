@@ -234,8 +234,8 @@ function regrid_bathymetry(target_grid, metadata;
 
     # Save to cache
     if cache
-        bottom_height = on_architecture(CPU(), interior(target_z, :, :, 1))
-        save_bathymetry_cache(config, Array(bottom_height))
+        bottom_height = Array(interior(target_z, :, :, 1))
+        save_bathymetry_cache(config, bottom_height)
     end
 
     return target_z
