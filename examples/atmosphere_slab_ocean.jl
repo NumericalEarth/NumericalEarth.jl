@@ -35,8 +35,9 @@ grid = RectilinearGrid(size = (128, 128), halo = (5, 5),
 # (anelastic dynamics, warm-phase saturation adjustment microphysics, WENO advection).
 # Surface fluxes are handled by the `EarthSystemModel` coupling framework.
 
-θ₀ = 285 # K
-atmosphere = atmosphere_simulation(grid; potential_temperature=θ₀)
+θᵃᵗ = 270 # K
+Tᵒᶜ = 290 # K
+atmosphere = atmosphere_simulation(grid; potential_temperature=θᵃᵗ)
 
 # ## Initial conditions
 
@@ -56,8 +57,8 @@ sst_grid = RectilinearGrid(grid.architecture,
                            x = (-10kilometers, 10kilometers),
                            topology = (Periodic, Flat, Flat))
 
-ocean = SlabOcean(sst_grid, depth=50, density=1025, heat_capacity=4000)
-set!(ocean, T=θ₀ + 3)
+ocean = SlabOcean(sst_grid, depth=1, density=1025, heat_capacity=4000)
+set!(ocean, T=Tᵒᶜ)
 
 # ## Coupled model
 #
@@ -168,19 +169,19 @@ qˡn = @lift timeseries.qˡ[$n] .* 1e3
 
 sstn = @lift timeseries.SST[$n]
 
-heatmap!(ax_s, x_atmo, z_atmo, sn; colormap=:speed, colorrange=(0, 5))
-heatmap!(ax_ξ, x_atmo, z_atmo, ξn; colormap=:balance, colorrange=(-0.05, 0.05))
-heatmap!(ax_θ, x_atmo, z_atmo, θn; colormap=:thermal, colorrange=(θ₀ - 1, θ₀ + 3))
-heatmap!(ax_q, x_atmo, z_atmo, qˡn; colormap=:dense, colorrange=(0, 1))
-lines!(ax_sst, x_sst, sstn; color=:red, linewidth=2)
-ylims!(ax_sst, θ₀ - 2, θ₀ + 2)
+heatmap!(ax_s, sn; colormap=:speed, colorrange=(0, 10))
+heatmap!(ax_ξ, ξn; colormap=:balance, colorrange=(-0.05, 0.05))
+heatmap!(ax_θ, θn; colormap=:thermal, colorrange=(θᵃᵗ - 1, θᵃᵗ + 2))
+heatmap!(ax_q, qˡn; colormap=:dense, colorrange=(0, 0.5))
+lines!(ax_sst, sstn; color=:red, linewidth=2)
+ylims!(ax_sst, Tᵒᶜ - 4, Tᵒᶜ + 1)
 
 title = @lift "Atmosphere–slab ocean coupling, t = " * prettytime(timeseries.t[$n])
 Label(fig[0, 1:2], title, fontsize=18)
 
 @info "Rendering animation..."
-record(fig, "atmosphere_slab_ocean.mp4", 1:Nt; framerate=12) do i
-    n[] = i
+record(fig, "atmosphere_slab_ocean.mp4", 1:Nt; framerate=12) do nn
+    n[] = nn
 end
 
 @info "Animation saved."
