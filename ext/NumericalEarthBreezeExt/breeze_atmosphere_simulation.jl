@@ -2,8 +2,8 @@ using Oceananigans.Fields: Field
 using Oceananigans.Grids: Center
 
 using Breeze: ThermodynamicConstants, ReferenceState, AnelasticDynamics,
-             SaturationAdjustment, WarmPhaseEquilibrium,
-             AtmosphereModel
+              SaturationAdjustment, WarmPhaseEquilibrium,
+              AtmosphereModel
 
 """
     atmosphere_simulation(grid;
