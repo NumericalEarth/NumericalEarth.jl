@@ -81,9 +81,9 @@ const NoAtmosInterface  = ComponentInterfaces{<:Nothing, <:Nothing, <:SeaIceOcea
 const NoInterface       = ComponentInterfaces{<:Nothing, <:Nothing, <:Nothing}
 
 const NoSeaIceInterfaceModel = EarthSystemModel{I, A, O, <:NoSeaIceInterface} where {I, A, O}
-const NoAtmosInterfaceModel  = EarthSystemModel{I, A, O, <:NoAtmosInterface}  where {I, A, O}
-const NoOceanInterfaceModel  = EarthSystemModel{I, A, O, <:NoOceanInterface}  where {I, A, O}
-const NoInterfaceModel       = EarthSystemModel{I, A, O, <:NoInterface}  where {I, A, O}
+const NoAtmosInterfaceModel  = EarthSystemModel{I, A, O, <:NoAtmosInterface} where {I, A, O}
+const NoOceanInterfaceModel  = EarthSystemModel{I, A, O, <:NoOceanInterface} where {I, A, O}
+const NoInterfaceModel       = EarthSystemModel{I, A, O, <:NoInterface} where {I, A, O}
 
 InterfaceComputations.compute_atmosphere_sea_ice_fluxes!(::NoSeaIceInterfaceModel) = nothing
 InterfaceComputations.compute_sea_ice_ocean_fluxes!(::NoSeaIceInterfaceModel) = nothing
