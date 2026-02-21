@@ -88,8 +88,10 @@ set!(slab_ocean, T=Tᵒᶜ)
 # is initialized accordingly. The coupling framework automatically converts
 # from Celsius to Kelvin for the flux computation.
 
+Nz_ocean = 20
+
 ocean_grid = RectilinearGrid(grid.architecture,
-                             size = (grid.Nx, 20),
+                             size = (grid.Nx, Nz_ocean),
                              halo = (grid.Hx, 5),
                              x = (-10kilometers, 10kilometers),
                              z = (-50, 0),
