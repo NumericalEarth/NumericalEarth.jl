@@ -26,7 +26,6 @@ export
     JRA55PrescribedAtmosphere,
     JRA55NetCDFBackend,
     regrid_bathymetry,
-    retrieve_bathymetry,
     Metadata,
     Metadatum,
     ECCOMetadatum,
