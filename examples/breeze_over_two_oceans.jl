@@ -1,4 +1,4 @@
-# # Atmospheric convection: slab ocean vs full ocean
+# # Atmospheric convection over a slab ocean vs a hydrostatic ocean
 #
 # This example demonstrates coupling a Breeze atmospheric large eddy simulation (LES)
 # with two different ocean models using NumericalEarth's `EarthSystemModel` framework:
