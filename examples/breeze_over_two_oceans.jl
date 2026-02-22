@@ -308,11 +308,11 @@ Label(fig[0, 1:3], title, fontsize=16)
 # ### Record
 
 @info "Rendering animation..."
-record(fig, "coupled_full_ocean_atmos.mp4", 1:Nt; framerate=12) do nn
+record(fig, "breeze_over_two_oceans.mp4", 1:Nt; framerate=12) do nn
     n[] = nn
 end
 
 @info "Animation saved."
 nothing #hide
 
-# ![](coupled_full_ocean_atmos.mp4)
+# ![](breeze_over_two_oceans.mp4)
