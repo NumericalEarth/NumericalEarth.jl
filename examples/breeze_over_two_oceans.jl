@@ -77,9 +77,9 @@ set!(slab_ocean, T=Tᵒᶜ)
 # ## Full hydrostatic ocean (50m depth with CATKE mixing)
 #
 # The full ocean uses a `HydrostaticFreeSurfaceModel` with the default TEOS-10
-# equation of state and CATKE vertical mixing. The grid is 50m deep with 20
-# levels (2.5m vertical resolution). We disable advection since this is primarily
-# a 1D vertical mixing problem.
+# equation of state and CATKE vertical mixing parameterization. The grid has 20
+# vertical levels (2.5m vertical resolution). We disable advection since this is
+# primarily a 1D vertical mixing problem.
 #
 # Since TEOS-10 expects temperature in degrees Celsius, the ocean temperature
 # is initialized accordingly. The coupling framework automatically converts
@@ -97,7 +97,7 @@ ocean_grid = RectilinearGrid(grid.architecture,
 ocean = ocean_simulation(ocean_grid; coriolis,
                          momentum_advection = nothing,
                          tracer_advection = nothing,
-                         Δt = 1,
+                         Δt = 2,
                          warn = false)
 
 celsius_to_kelvin = 273.15
@@ -118,7 +118,7 @@ full_interfaces = ComponentInterfaces(full_ocean_atmos, ocean; atmosphere_ocean_
 slab_model = AtmosphereOceanModel(slab_ocean_atmos, slab_ocean; interfaces = slab_interfaces)
 full_model = AtmosphereOceanModel(full_ocean_atmos, ocean; interfaces = full_interfaces)
 
-Δt = 2
+Δt = 2seconds
 stop_time = 4hours
 slab_sim = Simulation(slab_model; Δt, stop_time)
 full_sim = Simulation(full_model; Δt, stop_time)
@@ -168,12 +168,12 @@ u_s, v_s, w_s = slab_ocean_atmos.velocities
 
 slab_sim.output_writers[:atmos] = JLD2Writer(slab_model, (; θ=θ_s, u=u_s),
                                              filename = "slab_ocean_atmos",
-                                             schedule = TimeInterval(2minutes),
+                                             schedule = TimeInterval(1minute),
                                              overwrite_existing = true)
 
 slab_sim.output_writers[:sst] = JLD2Writer(slab_model, (; SST=slab_ocean.temperature),
                                            filename = "sst_slab",
-                                           schedule = TimeInterval(2minutes),
+                                           schedule = TimeInterval(1minute),
                                            overwrite_existing = true)
 
 u_f, v_f, w_f = full_ocean_atmos.velocities
@@ -182,12 +182,12 @@ qˡ_f = full_ocean_atmos.microphysical_fields.qˡ
 
 full_sim.output_writers[:atmos] = JLD2Writer(full_model, (; θ=θ_f, u=u_f, qˡ=qˡ_f, w=w_f),
                                              filename = "full_ocean_atmos",
-                                             schedule = TimeInterval(2minutes),
+                                             schedule = TimeInterval(1minute),
                                              overwrite_existing = true)
 
 full_sim.output_writers[:ocean] = JLD2Writer(full_model, (; T=ocean.model.tracers.T),
                                              filename = "ocean_full",
-                                             schedule = TimeInterval(2minutes),
+                                             schedule = TimeInterval(1minute),
                                              overwrite_existing = true)
 
 # ## Run both simulations sequentially
@@ -242,8 +242,8 @@ ax_qˡ = Axis(fig[1, 2], title="Cloud water (kg/kg) — atmos (full ocean)", yla
 ax_w  = Axis(fig[2, 2], title="w (m/s) — atmos (full ocean)",             ylabel="z (km)")
 ax_oT = Axis(fig[3, 2], title="Ocean T (°C)",            xlabel="x (km)", ylabel="z (km)")
 
-ax_θp = Axis(fig[1, 3], title="⟨θ⟩(z)", xlabel="θ (K)",   ylabel="z (km)")
-ax_up = Axis(fig[2, 3], title="⟨u⟩(z)", xlabel="u (m/s)", ylabel="z (km)")
+ax_θp = Axis(fig[1, 3], title="⟨θ⟩(z)", xlabel="θ (K)",   ylabel="z (km)", limits=((θᵃᵗ-1, θᵃᵗ+4), nothing))
+ax_up = Axis(fig[2, 3], title="⟨u⟩(z)", xlabel="u (m/s)", ylabel="z (km)", limits=((-10, 25), nothing))
 ax_Tp = Axis(fig[3, 3], title="⟨T⟩(z)", xlabel="T (°C)",  ylabel="z (km)")
 
 colsize!(fig.layout, 3, Relative(0.15))
@@ -280,9 +280,9 @@ sst_avg_celsius = @lift fill(mean(sst_slab_ts[$n]) - celsius_to_kelvin, 2)
 # ### Plot
 
 heatmap!(ax_θ,  θn;  colormap=:thermal,          colorrange=(θᵃᵗ - 1, θᵃᵗ + 3))
-heatmap!(ax_u,  un;  colormap=:balance,          colorrange=(-15, 15))
+heatmap!(ax_u,  un;  colormap=:balance,          colorrange=(-25, 25))
 heatmap!(ax_qˡ, qˡn; colormap=Reverse(:Blues_4), colorrange=(0, 5e-4))
-heatmap!(ax_w,  wn;  colormap=:balance,          colorrange=(-10, 10))
+heatmap!(ax_w,  wn;  colormap=:balance,          colorrange=(-20, 20))
 heatmap!(ax_oT, oTn; colormap=:thermal,          colorrange=(T₀ - 1.5, T₀ + 0.5))
 
 lines!(ax_sst, sstn_slab;                 color=:red,  linewidth=2, label="Slab (10m)")
@@ -300,7 +300,7 @@ lines!(ax_up, u_avg_full; color=:blue, linewidth=1.5)
 lines!(ax_Tp, T_avg_ocean;                   color=:blue, linewidth=1.5, label="Full")
 lines!(ax_Tp, sst_avg_celsius, [-50.0, 0.0]; color=:red,  linewidth=1.5, label="Slab")
 axislegend(ax_Tp, position=:lb)
-xlims!(ax_Tp, T₀ - 2, T₀ + 0.5)
+xlims!(ax_Tp, T₀ - 1, T₀ + 0.5)
 
 title = @lift "Atmosphere–ocean coupling comparison, t = " * prettytime(times[$n])
 Label(fig[0, 1:3], title, fontsize=16)
