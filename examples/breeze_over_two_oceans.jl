@@ -288,7 +288,7 @@ heatmap!(ax_oT, oTn; colormap=:thermal,          colorrange=(T₀ - 1.5, T₀ + 
 lines!(ax_sst, sstn_slab;                 color=:red,  linewidth=2, label="Slab (10m)")
 lines!(ax_sst, x_ocean, ocean_sst_kelvin; color=:blue, linewidth=2, label="Full (CATKE)")
 axislegend(ax_sst, position=:rb)
-ylims!(ax_sst, Tᵒᶜ - 1, Tᵒᶜ + 2)
+ylims!(ax_sst, Tᵒᶜ - 0.7, Tᵒᶜ + 0.2)
 
 lines!(ax_θp, θ_avg_slab; color=:red,  linewidth=1.5, label="Slab")
 lines!(ax_θp, θ_avg_full; color=:blue, linewidth=1.5, label="Full")
@@ -299,7 +299,6 @@ lines!(ax_up, u_avg_full; color=:blue, linewidth=1.5)
 
 lines!(ax_Tp, T_avg_ocean;                   color=:blue, linewidth=1.5, label="Full")
 lines!(ax_Tp, sst_avg_celsius, [-50.0, 0.0]; color=:red,  linewidth=1.5, label="Slab")
-axislegend(ax_Tp, position=:lb)
 xlims!(ax_Tp, T₀ - 1, T₀ + 0.5)
 
 title = @lift "Atmosphere–ocean coupling comparison, t = " * prettytime(times[$n])
