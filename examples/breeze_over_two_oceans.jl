@@ -228,7 +228,7 @@ Nz_ocean = size(ocean_grid, 3)
 
 # Coordinate arrays for manual line plots.
 
-x_ocean = xnodes(ocean_grid, Center()) ./ 1000  # km
+x_ocean = xnodes(ocean_grid, Center())
 
 # ### Figure layout
 
