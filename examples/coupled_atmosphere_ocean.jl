@@ -38,8 +38,8 @@ grid = RectilinearGrid(size = (128, 128), halo = (5, 5),
 # `EarthSystemModel` writes boundary conditions into the atmosphere.
 # Both are initialized identically.
 
-Tᵒᶜ = 250 # K
-θᵃᵗ = 290 # K
+Tᵒᶜ = 290 # K
+θᵃᵗ = 250 # K
 U₀ = 10 # m/s
 coriolis = FPlane(latitude=33)
 
