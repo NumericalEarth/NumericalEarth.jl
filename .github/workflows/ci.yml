@@ -22,7 +22,7 @@ concurrency:
 permissions:
   actions: write
   contents: read
-  
+
 env:
   ECCO_USERNAME: ${{ secrets.ECCO_USERNAME }}
   ECCO_WEBDAV_PASSWORD: ${{ secrets.ECCO_WEBDAV_PASSWORD }}
@@ -42,7 +42,7 @@ jobs:
       fail-fast: false
       matrix:
         version:
-          - '1.12.4'
+          - '1.12.5'
         os:
           - ubuntu-latest
         arch:
@@ -52,10 +52,12 @@ jobs:
           - ecco2_monthly
           - ecco2_daily
           - ecco4_en4
+          - ecco_atmosphere
           - fluxes
           - bathymetry
           - checkpointing
           - speedy_weather
+          - breeze
           - downloading
     steps:
       - name: Show available storage before cleanup
@@ -109,7 +111,7 @@ jobs:
       - uses: actions/checkout@v6
       - uses: julia-actions/setup-julia@v2
         with:
-          version: '1.12.4'
+          version: '1.12.5'
       - name: Instantiate and precompile
         shell: julia --project --color=yes {0}
         run: |
@@ -143,10 +145,12 @@ jobs:
           - ecco2_monthly
           - ecco2_daily
           - ecco4_en4
+          - ecco_atmosphere
           - fluxes
           - bathymetry
           - checkpointing
           - earth_system_model
+          - breeze
           - JRA55
     env:
       OPENBLAS_NUM_THREADS: 1
@@ -155,7 +159,7 @@ jobs:
       - uses: actions/checkout@v6
       - uses: julia-actions/setup-julia@v2
         with:
-          version: '1.12.4'
+          version: '1.12.5'
       - name: Run ${{ matrix.test_group }} tests
         env:
           JULIA_DEPOT_PATH: "/storage5/github-action-runners/julia-depot"
@@ -175,7 +179,7 @@ jobs:
       fail-fast: false
       matrix:
         version:
-          - '1.12.4'
+          - '1.12.5'
         os:
           - ubuntu-latest
         arch:
@@ -183,7 +187,7 @@ jobs:
         include:
           - os: macOS-latest
             arch: aarch64
-            version: '1.12.4'
+            version: '1.12.5'
     steps:
       - uses: actions/checkout@v6
       - uses: julia-actions/setup-julia@latest
@@ -257,7 +261,7 @@ jobs:
   #     - uses: actions/checkout@v6
   #     - uses: julia-actions/setup-julia@v2
   #       with:
-  #         version: '1.12.4'
+  #         version: '1.12.5'
   #     - name: Instantiate and precompile
   #       shell: julia --project --color=yes {0}
   #       run: |
@@ -270,3 +274,20 @@ jobs:
   #       env:
   #         TEST_GROUP: distributed
   #       run: ./mpiexecjl -np 4 julia --project --color=yes -e 'using Pkg; Pkg.test()'
+
+  #####
+  ##### The final test (a final check)
+  #####
+
+  ci:
+    name: CI
+    needs:
+      - cpu_tests
+      - gpu_init
+      - gpu_tests
+      - cds_downloading
+      - reactant
+    runs-on: ubuntu-latest
+    if: ${{ success() }}
+    steps:
+      - run: echo "All CI jobs passed successfully."

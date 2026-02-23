@@ -1,7 +1,9 @@
 include("runtests_setup.jl")
+include("download_utils.jl")
 
 using NumericalEarth.JRA55: download_JRA55_cache
 using NumericalEarth.Atmospheres: PrescribedAtmosphere
+using NumericalEarth.DataWrangling: compute_native_date_range
 
 @testset "JRA55 and data wrangling utilities" begin
     for arch in test_architectures
@@ -132,7 +134,6 @@ using NumericalEarth.Atmospheres: PrescribedAtmosphere
 
         @info "Testing MultiYearJRA55 data on $A..."
         dataset = JRA55.MultiYearJRA55()
-        dates = NumericalEarth.DataWrangling.all_dates(dataset, :temperature)
 
         # Test that when date range spans two years both netCDF files are downloaded
         # and concatenated when reading the data.
@@ -143,10 +144,17 @@ using NumericalEarth.Atmospheres: PrescribedAtmosphere
 
         # Use a temporary directory so different architectures don't clash
         mktempdir("./") do dir
-            
-            Ta = JRA55FieldTimeSeries(:temperature, arch; dataset, start_date, end_date, backend, dir)
+            # Compute expected file paths so we can fall back to artifacts if needed
+            native_dates = NumericalEarth.DataWrangling.all_dates(dataset, :temperature)
+            dates = compute_native_date_range(native_dates, start_date, end_date)
+            metadata = Metadata(:temperature; dataset, dates, dir)
+            filepaths = unique(metadata_path(metadata))
+
+            Ta = download_dataset_with_fallback(filepaths; dataset_name="MultiYearJRA55 :temperature") do
+                JRA55FieldTimeSeries(:temperature, arch; dataset, start_date, end_date, backend, dir)
+            end
             @test Second(end_date - start_date).value ≈ Ta.times[end] - Ta.times[1]
-            
+
             # Test we can access all the data
             for t in eachindex(Ta.times)
                 @test Ta[t] isa Field
