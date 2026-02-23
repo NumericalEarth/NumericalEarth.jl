@@ -11,6 +11,8 @@ export
     EarthSystemModel,
     OceanOnlyModel,
     OceanSeaIceModel,
+    AtmosphereOceanModel,
+    SlabOcean,
     default_sea_ice,
     FreezingLimitedOceanTemperature,
     Radiation,
@@ -26,7 +28,6 @@ export
     JRA55PrescribedAtmosphere,
     JRA55NetCDFBackend,
     regrid_bathymetry,
-    retrieve_bathymetry,
     Metadata,
     Metadatum,
     ECCOMetadatum,
@@ -106,6 +107,7 @@ using .Oceans
 using .SeaIces
 
 using NumericalEarth.EarthSystemModels: ComponentInterfaces, MomentumRoughnessLength, ScalarRoughnessLength, default_sea_ice
+
 using NumericalEarth.DataWrangling.ETOPO
 using NumericalEarth.DataWrangling.ECCO
 using NumericalEarth.DataWrangling.GLORYS
