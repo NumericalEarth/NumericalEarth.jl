@@ -321,15 +321,20 @@ end
 hasclosure(closure, ClosureType) = closure isa ClosureType
 hasclosure(closure_tuple::Tuple, ClosureType) = any(hasclosure(c, ClosureType) for c in closure_tuple)
 
+const OceananigansModelSimulations = Union{
+    Simulation{<:HydrostaticFreeSurfaceModel},
+    Simulation{<:NonhydrostaticModel}
+}
+
 #####
 ##### Extending NumericalEarth interface
 #####
 
-reference_density(ocean::Simulation{<:HydrostaticFreeSurfaceModel}) = reference_density(ocean.model.buoyancy.formulation)
+reference_density(ocean::OceananigansModelSimulations) = reference_density(ocean.model.buoyancy.formulation)
 reference_density(buoyancy_formulation::SeawaterBuoyancy) = reference_density(buoyancy_formulation.equation_of_state)
 reference_density(eos::TEOS10EquationOfState) = eos.reference_density
 
-heat_capacity(ocean::Simulation{<:HydrostaticFreeSurfaceModel}) = heat_capacity(ocean.model.buoyancy.formulation)
+heat_capacity(ocean::OceananigansModelSimulations) = heat_capacity(ocean.model.buoyancy.formulation)
 heat_capacity(buoyancy_formulation::SeawaterBuoyancy) = heat_capacity(buoyancy_formulation.equation_of_state)
 
 function heat_capacity(::TEOS10EquationOfState{FT}) where FT
