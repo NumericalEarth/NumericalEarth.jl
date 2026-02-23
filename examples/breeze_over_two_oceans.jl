@@ -97,8 +97,7 @@ ocean_grid = RectilinearGrid(grid.architecture,
                              topology = (Periodic, Flat, Bounded))
 
 ocean = ocean_simulation(ocean_grid; coriolis,
-                         timestepper = :QuasiAdamsBashforth2,
-                         closure = TKEDissipationVerticalDiffusivity(),
+                         closure = CATKEVerticalDiffusivity(), # note ocean_simulation default does not work.
                          momentum_advection = nothing,
                          tracer_advection = nothing,
                          Δt = 2,
