@@ -231,6 +231,11 @@ times = θ_slab_ts.times
 Nt = length(times)
 Nzᵒᶜ = size(ocean_grid, 3)
 
+# Convert from °C to K
+for n in 1:Nt
+    T_ocean_ts[n].data .+= celsius_to_kelvin
+end
+
 # Coordinate arrays for manual line plots.
 
 x_ocean = xnodes(ocean_grid, Center())
@@ -266,8 +271,7 @@ n = Observable(1)
 un  = @lift u_slab_ts[$n]
 ssn = @lift s_slab_ts[$n]
 sstn_slab = @lift sst_slab_ts[$n]
-# Convert full ocean surface T from °C to K for the SST comparison
-ocean_sst_kelvin = @lift interior(T_ocean_ts[$n], :, 1, Nzᵒᶜ) .+ celsius_to_kelvin
+ocean_sst = @lift interior(T_ocean_ts[$n], :, 1, Nzᵒᶜ)
 
 # Middle column
 qˡn = @lift qˡ_full_ts[$n]
@@ -280,8 +284,7 @@ oTn = @lift T_ocean_ts[$n]
 u_avg_slab = @lift Field(Average(u_slab_ts[$n], dims=1))
 u_avg_full = @lift Field(Average(u_full_ts[$n], dims=1))
 T_avg_ocean = @lift Field(Average(T_ocean_ts[$n], dims=1))
-# Convert slab SST from K to °C for the ocean T profile comparison
-sst_avg_celsius = @lift fill(mean(sst_slab_ts[$n]) - celsius_to_kelvin, 2)
+sst_avg = @lift fill(mean(sst_slab_ts[$n]), 2)
 
 # ### Plot
 
@@ -289,10 +292,10 @@ heatmap!(ax_θ,  θn;  colormap=:thermal,          colorrange=(θᵃᵗ - 1, θ�
 heatmap!(ax_ss, ssn; colormap=:speed,            colorrange=(0, 30))
 heatmap!(ax_qˡ, qˡn; colormap=Reverse(:Blues_4), colorrange=(0, 5e-4))
 heatmap!(ax_sf, sfn; colormap=:speed,            colorrange=(0, 30))
-heatmap!(ax_oT, oTn; colormap=:thermal,          colorrange=(T₀ - 1.5, T₀ + 0.5))
+heatmap!(ax_oT, oTn; colormap=:thermal,          colorrange=(Tᵒᶜ - 1.5, Tᵒᶜ + 0.5))
 
-lines!(ax_sst, sstn_slab;                 color=:red,  linewidth=2, label="Slab (10m)")
-lines!(ax_sst, x_ocean, ocean_sst_kelvin; color=:blue, linewidth=2, label="Full")
+lines!(ax_sst, sstn_slab;          color=:red,  linewidth=2, label="Slab (10m)")
+lines!(ax_sst, x_ocean, ocean_sst; color=:blue, linewidth=2, label="Full")
 axislegend(ax_sst, position=:rb)
 ylims!(ax_sst, Tᵒᶜ - 0.7, Tᵒᶜ + 0.2)
 
@@ -303,9 +306,9 @@ axislegend(ax_θp, position=:rt)
 lines!(ax_up, u_avg_slab; color=:red,  linewidth=1.5)
 lines!(ax_up, u_avg_full; color=:blue, linewidth=1.5)
 
-lines!(ax_Tp, T_avg_ocean;                   color=:blue, linewidth=1.5, label="Full")
-lines!(ax_Tp, sst_avg_celsius, [-50.0, 0.0]; color=:red,  linewidth=1.5, label="Slab")
-xlims!(ax_Tp, T₀ - 1, T₀ + 0.5)
+lines!(ax_Tp, T_avg_ocean;           color=:blue, linewidth=1.5, label="Full")
+lines!(ax_Tp, sst_avg, [-50.0, 0.0]; color=:red,  linewidth=1.5, label="Slab")
+xlims!(ax_Tp, Tᵒᶜ - 1, Tᵒᶜ + 0.5)
 
 title = @lift "Atmosphere–ocean coupling comparison, t = " * prettytime(times[$n])
 Label(fig[0, 1:3], title, fontsize=16)
