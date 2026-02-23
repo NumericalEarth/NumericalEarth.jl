@@ -20,9 +20,9 @@ using NumericalEarth.EarthSystemModels.InterfaceComputations: interface_kernel_p
 #####
 
 # Fallback for an ocean-only model (it has no interfaces!)
-update_net_fluxes!(coupled_model::Union{NoOceanInterfaceModel, NoInterfaceModel}, ocean::Simulation{<:HydrostaticFreeSurfaceModel}) = nothing
+update_net_fluxes!(coupled_model::Union{NoOceanInterfaceModel, NoInterfaceModel}, ocean::OceananigansModelSimulations) = nothing
 
-update_net_fluxes!(coupled_model, ocean::Simulation{<:HydrostaticFreeSurfaceModel}) = 
+update_net_fluxes!(coupled_model, ocean::OceananigansModelSimulations) =
     update_net_ocean_fluxes!(coupled_model, ocean, ocean.model.grid)
 
 # A generic ocean flux assembler for a coupled model with both an atmosphere and sea ice
