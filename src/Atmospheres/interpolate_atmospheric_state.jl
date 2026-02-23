@@ -26,9 +26,9 @@ function interpolate_state!(exchanger, grid, atmosphere::PrescribedAtmosphere, c
     atmosphere_tracers = (T = atmosphere.tracers.T.data,
                           q = atmosphere.tracers.q.data)
 
-    Qs = atmosphere.downwelling_radiation.shortwave
-    Qℓ = atmosphere.downwelling_radiation.longwave
-    downwelling_radiation = (shortwave=Qs.data, longwave=Qℓ.data)
+    ℐꜜˢʷ = atmosphere.downwelling_radiation.shortwave
+    ℐꜜˡʷ = atmosphere.downwelling_radiation.longwave
+    downwelling_radiation = (shortwave=ℐꜜˢʷ.data, longwave=ℐꜜˡʷ.data)
     freshwater_flux = map(ϕ -> ϕ.data, atmosphere.freshwater_flux)
     atmosphere_pressure = atmosphere.pressure.data
 
@@ -43,14 +43,14 @@ function interpolate_state!(exchanger, grid, atmosphere::PrescribedAtmosphere, c
 
     # Simplify NamedTuple to reduce parameter space consumption.
     # See https://github.com/CliMA/NumericalEarth.jl/issues/116.
-    atmosphere_data = (u = atmosphere_fields.u.data,
-                       v = atmosphere_fields.v.data,
-                       T = atmosphere_fields.T.data,
-                       p = atmosphere_fields.p.data,
-                       q = atmosphere_fields.q.data,
-                       Qs = atmosphere_fields.Qs.data,
-                       Qℓ = atmosphere_fields.Qℓ.data,
-                       Jᶜ = atmosphere_fields.Jᶜ.data)
+    atmosphere_data = (u    = atmosphere_fields.u.data,
+                       v    = atmosphere_fields.v.data,
+                       T    = atmosphere_fields.T.data,
+                       p    = atmosphere_fields.p.data,
+                       q    = atmosphere_fields.q.data,
+                       ℐꜜˢʷ = atmosphere_fields.ℐꜜˢʷ.data,
+                       ℐꜜˡʷ = atmosphere_fields.ℐꜜˡʷ.data,
+                       Jᶜ   = atmosphere_fields.Jᶜ.data)
 
     kernel_parameters = interface_kernel_parameters(grid)
 
@@ -108,10 +108,10 @@ function interpolate_state!(exchanger, grid, atmosphere::PrescribedAtmosphere, c
     # TODO: find a better design for this that doesn't have redundant
     # arrays for the barotropic potential
     potential = forcing_barotropic_potential(coupled_model.ocean)
-    ρₒ = coupled_model.interfaces.ocean_properties.reference_density
+    ρᵒᶜ = coupled_model.interfaces.ocean_properties.reference_density
 
     if !isnothing(potential)
-        parent(potential) .= parent(atmosphere_data.p) ./ ρₒ
+        parent(potential) .= parent(atmosphere_data.p) ./ ρᵒᶜ
     end
 end
 
@@ -141,14 +141,14 @@ end
     t_itp = time_interpolator
     atmos_args = (x_itp, t_itp, atmos_backend, atmos_time_indexing)
 
-    uₐ = interp_atmos_time_series(atmos_velocities.u, atmos_args...)
-    vₐ = interp_atmos_time_series(atmos_velocities.v, atmos_args...)
-    Tₐ = interp_atmos_time_series(atmos_tracers.T,    atmos_args...)
-    qₐ = interp_atmos_time_series(atmos_tracers.q,    atmos_args...)
-    pₐ = interp_atmos_time_series(atmos_pressure,     atmos_args...)
+    uᵃᵗ = interp_atmos_time_series(atmos_velocities.u, atmos_args...)
+    vᵃᵗ = interp_atmos_time_series(atmos_velocities.v, atmos_args...)
+    Tᵃᵗ = interp_atmos_time_series(atmos_tracers.T,    atmos_args...)
+    qᵃᵗ = interp_atmos_time_series(atmos_tracers.q,    atmos_args...)
+    pᵃᵗ = interp_atmos_time_series(atmos_pressure,     atmos_args...)
 
-    Qs = interp_atmos_time_series(downwelling_radiation.shortwave, atmos_args...)
-    Qℓ = interp_atmos_time_series(downwelling_radiation.longwave,  atmos_args...)
+    ℐꜜˢʷ = interp_atmos_time_series(downwelling_radiation.shortwave, atmos_args...)
+    ℐꜜˡʷ = interp_atmos_time_series(downwelling_radiation.longwave,  atmos_args...)
 
     # Usually precipitation
     Mh = interp_atmos_time_series(prescribed_freshwater_flux, atmos_args...)
@@ -156,16 +156,16 @@ end
     # Convert atmosphere velocities (usually defined on a latitude-longitude grid) to
     # the frame of reference of the native grid
     kᴺ = size(exchange_grid, 3) # index of the top ocean cell
-    uₐ, vₐ = intrinsic_vector(i, j, kᴺ, exchange_grid, uₐ, vₐ)
+    uᵃᵗ, vᵃᵗ = intrinsic_vector(i, j, kᴺ, exchange_grid, uᵃᵗ, vᵃᵗ)
 
     @inbounds begin
-        surface_atmos_state.u[i, j, 1] = uₐ
-        surface_atmos_state.v[i, j, 1] = vₐ
-        surface_atmos_state.T[i, j, 1] = Tₐ
-        surface_atmos_state.p[i, j, 1] = pₐ
-        surface_atmos_state.q[i, j, 1] = qₐ
-        surface_atmos_state.Qs[i, j, 1] = Qs
-        surface_atmos_state.Qℓ[i, j, 1] = Qℓ
+        surface_atmos_state.u[i, j, 1] = uᵃᵗ
+        surface_atmos_state.v[i, j, 1] = vᵃᵗ
+        surface_atmos_state.T[i, j, 1] = Tᵃᵗ
+        surface_atmos_state.p[i, j, 1] = pᵃᵗ
+        surface_atmos_state.q[i, j, 1] = qᵃᵗ
+        surface_atmos_state.ℐꜜˢʷ[i, j, 1] = ℐꜜˢʷ
+        surface_atmos_state.ℐꜜˡʷ[i, j, 1] = ℐꜜˡʷ
         surface_atmos_state.Jᶜ[i, j, 1] = Mh
     end
 end

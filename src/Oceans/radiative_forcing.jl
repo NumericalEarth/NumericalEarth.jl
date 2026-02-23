@@ -67,21 +67,21 @@ end
 compute_radiative_forcing!(T_forcing, downwelling_shortwave_radiation, coupled_model) = nothing # fallback
 
 function compute_radiative_forcing!(tcr::TwoColorRadiation, downwelling_shortwave_radiation, coupled_model)
-    ρₒ = coupled_model.interfaces.ocean_properties.reference_density
-    cₒ = coupled_model.interfaces.ocean_properties.heat_capacity
+    ρᵒᶜ = coupled_model.interfaces.ocean_properties.reference_density
+    cᵒᶜ = coupled_model.interfaces.ocean_properties.heat_capacity
     J⁰ = tcr.surface_flux
-    Qs = downwelling_shortwave_radiation
-    parent(J⁰) .= - parent(Qs) ./ (ρₒ * cₒ)
+    ℐꜜˢʷ = downwelling_shortwave_radiation
+    parent(J⁰) .= - parent(ℐꜜˢʷ) ./ (ρᵒᶜ * cᵒᶜ)
     return nothing
 end
 
-@inline shortwave_radiative_forcing(i, j, grid, Fᵀ, Qts, ocean_properties) = Qts
+@inline shortwave_radiative_forcing(i, j, grid, Fᵀ, ℐₜˢʷ, ocean_properties) = ℐₜˢʷ
 
 @inline function shortwave_radiative_forcing(i, j, grid, tcr::TwoColorRadiation, Iˢʷ, ocean_properties)
-    ρₒ = ocean_properties.reference_density
-    cₒ = ocean_properties.heat_capacity
+    ρᵒᶜ = ocean_properties.reference_density
+    cᵒᶜ = ocean_properties.heat_capacity
     J₀ = tcr.surface_flux
-    @inbounds J₀[i, j,  1] = - Iˢʷ / (ρₒ * cₒ)
+    @inbounds J₀[i, j,  1] = - Iˢʷ / (ρᵒᶜ * cᵒᶜ)
     return zero(Iˢʷ)
 end
 

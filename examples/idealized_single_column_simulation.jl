@@ -12,10 +12,10 @@ N² = 1e-5 # Buoyancy gradient due to temperature stratification
 f = 0     # Coriolis parameter
 
 # Atmospheric state parameters
-Tₐ = 273.15 - 10 # Kelvin
+Tᵃᵗ = 273.15 - 10 # Kelvin
 u₁₀ = 10 # wind at 10 m, m/s
-qₐ = 0.01 # specific humidity
-Qs = 400 # shortwave radiation (W m⁻², positive means heating right now)
+qᵃᵗ = 0.01 # specific humidity
+ℐꜜˢʷ = 400 # shortwave radiation (W m⁻², positive means heating right now)
 
 # Build the atmosphere
 radiation = Radiation(ocean_albedo=0.1)
@@ -23,10 +23,10 @@ atmosphere_grid = RectilinearGrid(size=(), topology=(Flat, Flat, Flat))
 atmosphere_times = range(0, 1days, length=3)
 atmosphere = PrescribedAtmosphere(atmosphere_grid, atmosphere_times)
 
-parent(atmosphere.tracers.T) .= Tₐ     # K
+parent(atmosphere.tracers.T) .= Tᵃᵗ     # K
 parent(atmosphere.velocities.u) .= u₁₀ # m/s
-parent(atmosphere.tracers.q) .= qₐ     # mass ratio
-parent(atmosphere.downwelling_radiation.shortwave) .= Qs # W
+parent(atmosphere.tracers.q) .= qᵃᵗ     # mass ratio
+parent(atmosphere.downwelling_radiation.shortwave) .= ℐꜜˢʷ # W
 
 # Build ocean model at rest with initial temperature stratification
 grid = RectilinearGrid(size=20, z=(-100, 0), topology=(Flat, Flat, Bounded))
@@ -45,8 +45,8 @@ model = OceanOnlyModel(ocean; atmosphere, interfaces)
 
 𝒬ᵛ  = model.interfaces.atmosphere_ocean_interface.fluxes.latent_heat
 𝒬ᵀ  = model.interfaces.atmosphere_ocean_interface.fluxes.sensible_heat
-τx  = model.interfaces.atmosphere_ocean_interface.fluxes.x_momentum
-τy  = model.interfaces.atmosphere_ocean_interface.fluxes.y_momentum
+τˣ  = model.interfaces.atmosphere_ocean_interface.fluxes.x_momentum
+τʸ  = model.interfaces.atmosphere_ocean_interface.fluxes.y_momentum
 Jᵛ  = model.interfaces.atmosphere_ocean_interface.fluxes.water_vapor
 
 # TODO: the total fluxes are defined on _interfaces_ between components:

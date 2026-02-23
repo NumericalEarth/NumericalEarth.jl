@@ -159,10 +159,10 @@ end
 
 # Momentum roughness length should be different from scalar roughness length.
 # Temperature and water vapor can be considered the same (Edson et al. 2013)
-@inline function roughness_length(ℓ::MomentumRoughnessLength{FT}, u★, Uₐ, ℂₐ=nothing, Tₐ=nothing) where FT
-    ν = compute_air_kinematic_viscosity(ℓ.air_kinematic_viscosity, ℂₐ, Tₐ)
+@inline function roughness_length(ℓ::MomentumRoughnessLength{FT}, u★, Uᵃᵗ, ℂᵃᵗ=nothing, Tᵃᵗ=nothing) where FT
+    ν = compute_air_kinematic_viscosity(ℓ.air_kinematic_viscosity, ℂᵃᵗ, Tᵃᵗ)
     g = ℓ.gravitational_acceleration
-    ℂg = gravity_wave_parameter(ℓ.wave_formulation, Uₐ)
+    ℂg = gravity_wave_parameter(ℓ.wave_formulation, Uᵃᵗ)
     ℂν = ℓ.smooth_wall_parameter
 
     ℓᵂ = ℂg * u★^2 / g # gravity wave roughness length
@@ -196,9 +196,9 @@ ReynoldsScalingFunction(FT = Oceananigans.defaults.FloatType; A = 5.85e-5, b = 0
 @inline (s::ReynoldsScalingFunction)(R★, args...) = ifelse(R★ == 0, convert(eltype(R★), 0), s.A / R★ ^ s.b)
 
 # Edson 2013 formulation of scalar roughness length in terms of momentum roughness length ℓu
-@inline function roughness_length(ℓ::ScalarRoughnessLength{FT}, ℓu, u★, Uₐ, ℂₐ=nothing, Tₐ=nothing) where FT
+@inline function roughness_length(ℓ::ScalarRoughnessLength{FT}, ℓu, u★, Uᵃᵗ, ℂᵃᵗ=nothing, Tᵃᵗ=nothing) where FT
     # Roughness Reynolds number
-    ν = compute_air_kinematic_viscosity(ℓ.air_kinematic_viscosity, ℂₐ, Tₐ)
+    ν = compute_air_kinematic_viscosity(ℓ.air_kinematic_viscosity, ℂᵃᵗ, Tᵃᵗ)
     R★ = ℓu * u★ / ν
 
     # implementation of scalar roughness length
@@ -211,9 +211,9 @@ ReynoldsScalingFunction(FT = Oceananigans.defaults.FloatType; A = 5.85e-5, b = 0
 end
 
 # Convenience for users
-@inline (ℓ::MomentumRoughnessLength{FT})(u★, Uₐ=nothing, ℂₐ=nothing, Tₐ=nothing) where FT =
-    roughness_length(ℓ, u★, ℂₐ, Tₐ)
+@inline (ℓ::MomentumRoughnessLength{FT})(u★, Uᵃᵗ=nothing, ℂᵃᵗ=nothing, Tᵃᵗ=nothing) where FT =
+    roughness_length(ℓ, u★, ℂᵃᵗ, Tᵃᵗ)
 
-@inline function (ℓ::ScalarRoughnessLength{FT})(u★, Uₐ=nothing, ℂₐ=nothing, Tₐ=nothing) where FT
-    roughness_length(ℓ, u★, ℂₐ, Tₐ)
+@inline function (ℓ::ScalarRoughnessLength{FT})(u★, Uᵃᵗ=nothing, ℂᵃᵗ=nothing, Tᵃᵗ=nothing) where FT
+    roughness_length(ℓ, u★, ℂᵃᵗ, Tᵃᵗ)
 end

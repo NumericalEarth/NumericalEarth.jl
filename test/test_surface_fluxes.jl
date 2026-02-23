@@ -25,10 +25,10 @@ import NumericalEarth.EarthSystemModels.InterfaceComputations: surface_specific_
 using Statistics: mean, std
 
 struct FixedSpecificHumidity{FT}
-    qₒ :: FT
+    qᵒᶜ :: FT
 end
 
-@inline surface_specific_humidity(h::FixedSpecificHumidity, args...) = h.qₒ
+@inline surface_specific_humidity(h::FixedSpecificHumidity, args...) = h.qᵒᶜ
 
 @testset "Test surface fluxes" begin
     for arch in test_architectures
@@ -50,30 +50,30 @@ end
 
         CUDA.@allowscalar begin
             h  = atmosphere.surface_layer_height
-            pₐ = atmosphere.pressure[1][1, 1, 1]
+            pᵃᵗ = atmosphere.pressure[1][1, 1, 1]
 
-            Tₐ = 15 + celsius_to_kelvin
-            qₐ = 0.003
+            Tᵃᵗ = 15 + celsius_to_kelvin
+            qᵃᵗ = 0.003
 
-            uₐ = atmosphere.velocities.u[1][1, 1, 1]
-            vₐ = atmosphere.velocities.v[1][1, 1, 1]
+            uᵃᵗ = atmosphere.velocities.u[1][1, 1, 1]
+            vᵃᵗ = atmosphere.velocities.v[1][1, 1, 1]
 
-            ℂₐ = atmosphere.thermodynamics_parameters
+            ℂᵃᵗ = atmosphere.thermodynamics_parameters
 
-            fill!(parent(atmosphere.tracers.T),    Tₐ)
-            fill!(parent(atmosphere.tracers.q),    qₐ)
-            fill!(parent(atmosphere.velocities.u), uₐ)
-            fill!(parent(atmosphere.velocities.v), vₐ)
-            fill!(parent(atmosphere.pressure),     pₐ)
+            fill!(parent(atmosphere.tracers.T),    Tᵃᵗ)
+            fill!(parent(atmosphere.tracers.q),    qᵃᵗ)
+            fill!(parent(atmosphere.velocities.u), uᵃᵗ)
+            fill!(parent(atmosphere.velocities.v), vᵃᵗ)
+            fill!(parent(atmosphere.pressure),     pᵃᵗ)
 
             # Force the saturation humidity of the ocean to be
             # equal to the atmospheric saturation humidity
-            atmosphere_ocean_interface_specific_humidity = FixedSpecificHumidity(qₐ)
+            atmosphere_ocean_interface_specific_humidity = FixedSpecificHumidity(qᵃᵗ)
 
             # Thermodynamic parameters of the atmosphere
-            cp = Thermodynamics.cp_m(ℂₐ, qₐ)
-            ρₐ = Thermodynamics.air_density(ℂₐ, Tₐ, pₐ, qₐ)
-            ℰv = Thermodynamics.latent_heat_vapor(ℂₐ, Tₐ)
+            cp = Thermodynamics.cp_m(ℂᵃᵗ, qᵃᵗ)
+            ρᵃᵗ = Thermodynamics.air_density(ℂᵃᵗ, Tᵃᵗ, pᵃᵗ, qᵃᵗ)
+            ℰv = Thermodynamics.latent_heat_vapor(ℂᵃᵗ, Tᵃᵗ)
 
             # No radiation equivalent
             radiation = Radiation(ocean_emissivity=0, ocean_albedo=1)
@@ -91,11 +91,11 @@ end
 
                 # Ensure that the ΔT between atmosphere and ocean is zero
                 # Note that the Δθ accounts for the "lapse rate" at height h
-                Tₒ = Tₐ - celsius_to_kelvin + h / cp * g
+                Tᵒᶜ = Tᵃᵗ - celsius_to_kelvin + h / cp * g
 
-                fill!(parent(ocean.model.velocities.u), uₐ)
-                fill!(parent(ocean.model.velocities.v), vₐ)
-                fill!(parent(ocean.model.tracers.T), Tₒ)
+                fill!(parent(ocean.model.velocities.u), uᵃᵗ)
+                fill!(parent(ocean.model.velocities.v), vᵃᵗ)
+                fill!(parent(ocean.model.tracers.T), Tᵒᶜ)
 
                 # Compute the turbulent fluxes (neglecting radiation)
                 coupled_model    = OceanOnlyModel(ocean; atmosphere, interfaces)
@@ -139,20 +139,20 @@ end
             coupled_model = OceanOnlyModel(ocean; atmosphere, interfaces)
 
             # Now manually compute the fluxes:
-            Tₒ = ocean.model.tracers.T[1, 1, 1] + celsius_to_kelvin
-            Sₒ = ocean.model.tracers.S[1, 1, 1]
+            Tᵒᶜ = ocean.model.tracers.T[1, 1, 1] + celsius_to_kelvin
+            Sᵒᶜ = ocean.model.tracers.S[1, 1, 1]
 
             interface_properties = interfaces.atmosphere_ocean_interface.properties
             q_formulation = interface_properties.specific_humidity_formulation
-            qₒ = surface_specific_humidity(q_formulation, ℂₐ, Tₐ, pₐ, qₐ, Tₒ, Sₒ)
+            qᵒᶜ = surface_specific_humidity(q_formulation, ℂᵃᵗ, Tᵃᵗ, pᵃᵗ, qᵃᵗ, Tᵒᶜ, Sᵒᶜ)
             g  = ocean.model.buoyancy.formulation.gravitational_acceleration
 
             # Differences!
-            Δu = uₐ
-            Δv = vₐ
+            Δu = uᵃᵗ
+            Δv = vᵃᵗ
             ΔU = sqrt(Δu^2 + Δv^2)
-            Δθ = Tₐ - Tₒ + h / cp * g
-            Δq = qₐ - qₒ
+            Δθ = Tᵃᵗ - Tᵒᶜ + h / cp * g
+            Δq = qᵃᵗ - qᵒᶜ
             ϰ  = similarity_theory.von_karman_constant
 
             # Characteristic scales
@@ -160,17 +160,17 @@ end
             θ★ = ϰ / log(h / ℓ) * Δθ
             q★ = ϰ / log(h / ℓ) * Δq
 
-            τx = - ρₐ * u★^2 * Δu / sqrt(Δu^2 + Δv^2)
-            τy = - ρₐ * u★^2 * Δv / sqrt(Δu^2 + Δv^2)
-            𝒬ᵀ = - ρₐ * cp * u★ * θ★
-            Jᵛ = - ρₐ * u★ * q★
-            𝒬ᵛ = - ρₐ * u★ * q★ * ℰv
+            τˣ = - ρᵃᵗ * u★^2 * Δu / sqrt(Δu^2 + Δv^2)
+            τʸ = - ρᵃᵗ * u★^2 * Δv / sqrt(Δu^2 + Δv^2)
+            𝒬ᵀ = - ρᵃᵗ * cp * u★ * θ★
+            Jᵛ = - ρᵃᵗ * u★ * q★
+            𝒬ᵛ = - ρᵃᵗ * u★ * q★ * ℰv
 
             turbulent_fluxes = coupled_model.interfaces.atmosphere_ocean_interface.fluxes
 
             # Make sure fluxes agree with the hand-calculated ones
-            @test turbulent_fluxes.x_momentum[1, 1, 1]    ≈ τx
-            @test turbulent_fluxes.y_momentum[1, 1, 1]    ≈ τy
+            @test turbulent_fluxes.x_momentum[1, 1, 1]    ≈ τˣ
+            @test turbulent_fluxes.y_momentum[1, 1, 1]    ≈ τʸ
             @test turbulent_fluxes.sensible_heat[1, 1, 1] ≈ 𝒬ᵀ
             @test turbulent_fluxes.latent_heat[1, 1, 1]   ≈ 𝒬ᵛ
             @test turbulent_fluxes.water_vapor[1, 1, 1]   ≈ Jᵛ
@@ -248,12 +248,12 @@ end
         # Test that we populate the sea-ice ocean stress
         earth = OceanSeaIceModel(ocean, sea_ice; atmosphere, radiation=Radiation())
 
-        τx = earth.interfaces.sea_ice_ocean_interface.fluxes.x_momentum
-        τy = earth.interfaces.sea_ice_ocean_interface.fluxes.y_momentum
+        τˣ = earth.interfaces.sea_ice_ocean_interface.fluxes.x_momentum
+        τʸ = earth.interfaces.sea_ice_ocean_interface.fluxes.y_momentum
 
         CUDA.@allowscalar begin
-            @test τx[1, 1, 1] == sqrt(0.1^2 + 0.2^2) * 0.1
-            @test τy[1, 1, 1] == sqrt(0.1^2 + 0.2^2) * 0.2
+            @test τˣ[1, 1, 1] == sqrt(0.1^2 + 0.2^2) * 0.1
+            @test τʸ[1, 1, 1] == sqrt(0.1^2 + 0.2^2) * 0.2
         end
     end
 end

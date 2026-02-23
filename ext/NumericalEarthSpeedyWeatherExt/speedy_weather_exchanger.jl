@@ -36,8 +36,8 @@ function ComponentExchanger(atmosphere::SpeedySimulation, exchange_grid)
                T  = Field{Center, Center, Nothing}(exchange_grid),
                p  = Field{Center, Center, Nothing}(exchange_grid),
                q  = Field{Center, Center, Nothing}(exchange_grid),
-               Qs = Field{Center, Center, Nothing}(exchange_grid),
-               Qℓ = Field{Center, Center, Nothing}(exchange_grid),
+               ℐꜜˢʷ = Field{Center, Center, Nothing}(exchange_grid),
+               ℐꜜˡʷ = Field{Center, Center, Nothing}(exchange_grid),
                Jᶜ = Field{Center, Center, Nothing}(exchange_grid))
     
     return ComponentExchanger(state, regridder)
@@ -57,18 +57,18 @@ function interpolate_state!(exchanger, exchange_grid, atmos::SpeedySimulation, c
     Ta  = RingGrids.field_view(atmos.diagnostic_variables.grid.temp_grid,  :, surface_layer).data
     qa  = RingGrids.field_view(atmos.diagnostic_variables.grid.humid_grid, :, surface_layer).data
     pa  = exp.(atmos.diagnostic_variables.grid.pres_grid.data)
-    Qsa = atmos.diagnostic_variables.physics.surface_shortwave_down.data
-    Qℓa = atmos.diagnostic_variables.physics.surface_longwave_down.data
-    Mpa = atmos.diagnostic_variables.physics.total_precipitation_rate.data
+    ℐꜜˢʷ = atmos.diagnostic_variables.physics.surface_shortwave_down.data
+    ℐꜜˡʷ = atmos.diagnostic_variables.physics.surface_longwave_down.data
+    Jᶜ  = atmos.diagnostic_variables.physics.total_precipitation_rate.data
 
-    regrid!(exchange_state.u,  ua)
-    regrid!(exchange_state.v,  va)
-    regrid!(exchange_state.T,  Ta)
-    regrid!(exchange_state.q,  qa)
-    regrid!(exchange_state.p,  pa)
-    regrid!(exchange_state.Qs, Qsa)
-    regrid!(exchange_state.Qℓ, Qℓa)
-    regrid!(exchange_state.Jᶜ, Mpa)
+    regrid!(exchange_state.u,    ua)
+    regrid!(exchange_state.v,    va)
+    regrid!(exchange_state.T,    Ta)
+    regrid!(exchange_state.q,    qa)
+    regrid!(exchange_state.p,    pa)
+    regrid!(exchange_state.ℐꜜˢʷ, ℐꜜˢʷ)
+    regrid!(exchange_state.ℐꜜˡʷ, ℐꜜˡʷ)
+    regrid!(exchange_state.Jᶜ,   Jᶜ)
 
     arch = architecture(exchange_grid)
 
@@ -81,8 +81,8 @@ function interpolate_state!(exchanger, exchange_grid, atmos::SpeedySimulation, c
     fill_halo_regions!(exchange_state.T)
     fill_halo_regions!(exchange_state.q)
     fill_halo_regions!(exchange_state.p)
-    fill_halo_regions!(exchange_state.Qs)
-    fill_halo_regions!(exchange_state.Qℓ)
+    fill_halo_regions!(exchange_state.ℐꜜˢʷ)
+    fill_halo_regions!(exchange_state.ℐꜜˡʷ)
     fill_halo_regions!(exchange_state.Jᶜ)
 
     return nothing
@@ -104,24 +104,24 @@ function update_net_fluxes!(coupled_model, atmos::SpeedySimulation)
     ao_fluxes = coupled_model.interfaces.atmosphere_ocean_interface.fluxes
     ai_fluxes = coupled_model.interfaces.atmosphere_sea_ice_interface.fluxes
 
-    Qco = ao_fluxes.sensible_heat
-    Qci = ai_fluxes.sensible_heat
-    Mvo = ao_fluxes.water_vapor
-    Mvi = ai_fluxes.water_vapor
-    ℵ   = interior(sea_ice_concentration(coupled_model.sea_ice))
+    𝒬ᵀᵃᵒ = ao_fluxes.sensible_heat
+    𝒬ᵀᵃⁱ = ai_fluxes.sensible_heat
+    Jᵛᵃᵒ = ao_fluxes.water_vapor
+    Jᵛᵃⁱ = ai_fluxes.water_vapor
+    ℵ    = interior(sea_ice_concentration(coupled_model.sea_ice))
 
     # All the location of these fluxes will change
-    Qca = atmos.prognostic_variables.ocean.sensible_heat_flux.data
-    Mva = atmos.prognostic_variables.ocean.surface_humidity_flux.data
+    𝒬ᵀ_speedy = atmos.prognostic_variables.ocean.sensible_heat_flux.data
+    Jᵛ_speedy = atmos.prognostic_variables.ocean.surface_humidity_flux.data
     sst = atmos.prognostic_variables.ocean.sea_surface_temperature.data
     To  = coupled_model.interfaces.atmosphere_ocean_interface.temperature
     Ti  = coupled_model.interfaces.atmosphere_sea_ice_interface.temperature
 
     # TODO: Figure out how we are going to deal with upwelling radiation
-    # TODO: regrid longwave rather than a mixed surface temperature 
+    # TODO: regrid longwave rather than a mixed surface temperature
     # TODO: This does not work on GPUs!!
-    regrid!(Qca, vec(interior(Qco) .* (1 .- ℵ) .+ ℵ .* interior(Qci)))
-    regrid!(Mva, vec(interior(Mvo) .* (1 .- ℵ) .+ ℵ .* interior(Mvi)))
+    regrid!(𝒬ᵀ_speedy, vec(interior(𝒬ᵀᵃᵒ) .* (1 .- ℵ) .+ ℵ .* interior(𝒬ᵀᵃⁱ)))
+    regrid!(Jᵛ_speedy, vec(interior(Jᵛᵃᵒ) .* (1 .- ℵ) .+ ℵ .* interior(Jᵛᵃⁱ)))
     regrid!(sst, vec(interior(To)  .* (1 .- ℵ) .+ ℵ .* interior(Ti) .+ 273.15))
 
     return nothing
@@ -131,19 +131,19 @@ end
 function update_net_fluxes!(coupled_model::SpeedyNoSeaIceEarthSystemModel, atmos::SpeedySimulation)
     regrid!   = coupled_model.interfaces.exchanger.atmosphere.regridder.to_atmosphere
     ao_fluxes = coupled_model.interfaces.atmosphere_ocean_interface.fluxes
-    Qco = ao_fluxes.sensible_heat
-    Mvo = ao_fluxes.water_vapor
+    𝒬ᵀᵃᵒ = ao_fluxes.sensible_heat
+    Jᵛᵃᵒ = ao_fluxes.water_vapor
 
     # All the location of these fluxes will change
-    Qca = atmos.prognostic_variables.ocean.sensible_heat_flux.data
-    Mva = atmos.prognostic_variables.ocean.surface_humidity_flux.data
+    𝒬ᵀ_speedy = atmos.prognostic_variables.ocean.sensible_heat_flux.data
+    Jᵛ_speedy = atmos.prognostic_variables.ocean.surface_humidity_flux.data
     sst = atmos.prognostic_variables.ocean.sea_surface_temperature.data
     To  = coupled_model.interfaces.atmosphere_ocean_interface.temperature
 
     # TODO: Figure out how we are going to deal with upwelling radiation
     # TODO: This does not work on GPUs!!
-    regrid!(Qca, vec(interior(Qco)))
-    regrid!(Mva, vec(interior(Mvo)))
+    regrid!(𝒬ᵀ_speedy, vec(interior(𝒬ᵀᵃᵒ)))
+    regrid!(Jᵛ_speedy, vec(interior(Jᵛᵃᵒ)))
     regrid!(sst, vec(interior(To) .+ 273.15))
 
     return nothing

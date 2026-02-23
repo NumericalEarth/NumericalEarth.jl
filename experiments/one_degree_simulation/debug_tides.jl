@@ -9,7 +9,7 @@ using Statistics
 import SPICE
 
 backend = JRA55NetCDFBackend(41)
-ρₒ = 1020
+ρᵒᶜ = 1020
 pa = JRA55_field_time_series(:sea_level_pressure; backend)
 grid = pa.grid
 
@@ -37,7 +37,7 @@ for n = 1:Nt
     parent(Φ☾t[n]) .= parent(Φ)
 
     pan = parent(pa[n])
-    parent(Φpt[n]) .= (pan .- mean(pan)) ./ ρₒ
+    parent(Φpt[n]) .= (pan .- mean(pan)) ./ ρᵒᶜ
 end
 
 #=

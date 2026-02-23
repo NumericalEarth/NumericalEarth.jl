@@ -73,9 +73,9 @@ end
 function InterfaceComputations.net_fluxes(slab_ocean::SlabOcean)
     grid = slab_ocean.grid
     Jˢ = Field{Center, Center, Nothing}(grid)
-    τx = Field{Center, Center, Nothing}(grid)
-    τy = Field{Center, Center, Nothing}(grid)
-    return (T=slab_ocean.temperature_flux, S=Jˢ, u=τx, v=τy)
+    τˣ = Field{Center, Center, Nothing}(grid)
+    τʸ = Field{Center, Center, Nothing}(grid)
+    return (T=slab_ocean.temperature_flux, S=Jˢ, u=τˣ, v=τʸ)
 end
 
 # ##  Extend the EarthSystemModels.jl module
