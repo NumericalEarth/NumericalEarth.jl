@@ -159,8 +159,8 @@ function full_progress(sim)
     return nothing
 end
 
-add_callback!(slab_sim, slab_progress, IterationInterval(600))
-add_callback!(full_sim, full_progress, IterationInterval(600))
+add_callback!(slab_sim, slab_progress, IterationInterval(400))
+add_callback!(full_sim, full_progress, IterationInterval(400))
 
 # ## Output writers
 #
