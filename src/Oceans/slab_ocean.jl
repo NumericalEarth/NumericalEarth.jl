@@ -1,6 +1,7 @@
 using Oceananigans.TimeSteppers: Clock, tick!
 using Oceananigans.BoundaryConditions: fill_halo_regions!
 using Oceananigans.Fields: ConstantField, ZeroField
+using Oceananigans.Utils: prettytime, prettysummary
 
 """
     SlabOcean(grid;
@@ -71,8 +72,20 @@ function Oceananigans.set!(ocean::SlabOcean; T=nothing)
     return nothing
 end
 
-Base.summary(ocean::SlabOcean) = "SlabOcean(H=$(ocean.depth) m)"
-Base.show(io::IO, ocean::SlabOcean) = print(io, summary(ocean))
+function Base.summary(ocean::SlabOcean{FT}) where FT
+    A = nameof(typeof(architecture(ocean.grid)))
+    G = nameof(typeof(ocean.grid))
+    return string("SlabOcean{$FT, $A, $G}",
+                  "(time = ", prettytime(ocean.clock.time), ", iteration = ", ocean.clock.iteration, ")")
+end
+
+function Base.show(io::IO, ocean::SlabOcean)
+    print(io, summary(ocean), "\n",
+          "├── grid: ", summary(ocean.grid), "\n",
+          "├── depth: ", prettysummary(ocean.depth), "\n",
+          "├── density: ", prettysummary(ocean.density), "\n",
+          "└── heat_capacity: ", prettysummary(ocean.heat_capacity))
+end
 Base.eltype(::SlabOcean{FT}) where FT = FT
 
 #####
