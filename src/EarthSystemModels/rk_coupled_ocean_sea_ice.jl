@@ -8,9 +8,12 @@ TCM  = EarthSystemModel{<:RKSI, <:Any, <:RKHM}
 
 function time_step_ocean_sea_ice_components!(coupled_model::TCM, ocean::RKHM, sea_ice::RKSI, Δt)
 
+    ocean_callbacks = ocean.callbacks
+    sea_ice_callbacks = sea_ice.callbacks
+
     if coupled_model.clock.iteration == 0
-        update_state!(ocean.model, [])
-        update_state!(sea_ice.model, [])
+        update_state!(ocean.model, ocean_callbacks)
+        update_state!(sea_ice.model, sea_ice_callbacks)
     end
 
     cache_current_fields!(ocean.model)
@@ -27,17 +30,22 @@ function time_step_ocean_sea_ice_components!(coupled_model::TCM, ocean::RKHM, se
 
         # Perform the substep
         Δτ = Δt / β
-        rk_substep!(ocean.model, Δτ, [])
-        rk_substep!(sea_ice.model, Δτ, [])
+        rk_substep!(ocean.model, Δτ, ocean_callbacks)
+        rk_substep!(sea_ice.model, Δτ, sea_ice_callbacks)
 
         # Update the state
-        update_state!(ocean.model, [])
-        update_state!(sea_ice.model, [])
+        update_state!(ocean.model, ocean_callbacks)
+        update_state!(sea_ice.model, sea_ice_callbacks)
 
         compute_sea_ice_ocean_fluxes!(coupled_model)
         update_net_fluxes!(coupled_model, ocean)
         update_net_fluxes!(coupled_model, sea_ice)
     end
+
+    # TODO: 
+    # add here all the callbacks infrastructure from the ocean and
+    # sea ice components which now lives in the `time_step!(simulation)`
+    # framework
 
     # Finalize step
     tick!(coupled_model.clock, Δt)

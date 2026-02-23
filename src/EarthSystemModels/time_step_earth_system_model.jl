@@ -28,10 +28,7 @@ end
 function time_step_ocean_sea_ice_components!(coupled_model, ocean, sea_ice, Δt)
     # Eventually, split out into OceanOnlyModel
     !isnothing(sea_ice) && time_step!(sea_ice, Δt)
-    
-    # TODO after ice time-step:
-    #  - Adjust ocean heat flux if the ice completely melts?
-    !isnothing(ocean) && time_step!(ocean, Δt)
+    !isnothing(ocean)   && time_step!(ocean, Δt)
 
     return nothing
 end
