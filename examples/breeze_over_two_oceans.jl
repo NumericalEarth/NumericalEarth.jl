@@ -251,11 +251,11 @@ ax_sst = Axis(fig[3, 1], title="SST (K)",               xlabel="x (m)", ylabel="
 
 ax_qˡ = Axis(fig[1, 2], title="Cloud water (kg/kg) — atmos (full ocean)", ylabel="z (m)")
 ax_sf = Axis(fig[2, 2], title="√(u² + w²) — atmos (full ocean)",          ylabel="z (m)")
-ax_oT = Axis(fig[3, 2], title="Ocean T (°C)",             xlabel="x (m)", ylabel="z (m)")
+ax_oT = Axis(fig[3, 2], title="Ocean T (Κ)",              xlabel="x (m)", ylabel="z (m)")
 
-ax_θp = Axis(fig[1, 3], title="⟨θ⟩(z)", xlabel="θ (K)",   ylabel="z (m)", limits=((θᵃᵗ-1, θᵃᵗ+4), nothing))
-ax_up = Axis(fig[2, 3], title="⟨u⟩(z)", xlabel="u (m/s)", ylabel="z (m)", limits=((-10, 25), nothing))
-ax_Tp = Axis(fig[3, 3], title="⟨T⟩(z)", xlabel="T (°C)",  ylabel="z (m)")
+ax_θp = Axis(fig[1, 3], title="⟨θ⟩(z)", xlabel="θ (K)",   ylabel="z (m)")
+ax_up = Axis(fig[2, 3], title="⟨u⟩(z)", xlabel="u (m/s)", ylabel="z (m)")
+ax_Tp = Axis(fig[3, 3], title="⟨T⟩(z)", xlabel="T (Κ)",   ylabel="z (m)")
 
 colsize!(fig.layout, 3, Relative(0.15))
 
@@ -302,10 +302,12 @@ ylims!(ax_sst, Tᵒᶜ - 0.7, Tᵒᶜ + 0.2)
 
 lines!(ax_θp, θ_avg_slab; color=:red,  linewidth=1.5, label="Slab")
 lines!(ax_θp, θ_avg_full; color=:blue, linewidth=1.5, label="Full")
+xlims!(ax_θp, θᵃᵗ - 1, θᵃᵗ + 4)
 axislegend(ax_θp, position=:rt)
 
 lines!(ax_up, u_avg_slab; color=:red,  linewidth=1.5)
 lines!(ax_up, u_avg_full; color=:blue, linewidth=1.5)
+xlims!(ax_up, -10, 25)
 
 lines!(ax_Tp, T_avg_ocean;           color=:blue, linewidth=1.5, label="Full")
 lines!(ax_Tp, sst_avg, [-50.0, 0.0]; color=:red,  linewidth=1.5, label="Slab")
