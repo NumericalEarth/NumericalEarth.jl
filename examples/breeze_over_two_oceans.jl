@@ -167,9 +167,10 @@ add_callback!(full_sim, full_progress, IterationInterval(400))
 # * Full simulation: atmospheric θ, u, cloud water, and w, plus full-depth ocean temperature T.
 
 u_s, v_s, w_s = slab_ocean_atmos.velocities
+s_s = @at (Center, Center, Center) √(u_s^2 + v_s^2 + w_s^2)
 θ_s = liquid_ice_potential_temperature(slab_ocean_atmos)
 
-slab_sim.output_writers[:atmos] = JLD2Writer(slab_model, (; θ=θ_s, u=u_s),
+slab_sim.output_writers[:atmos] = JLD2Writer(slab_model, (; θ=θ_s, u=u_s, s=s_s),
                                              filename = "slab_ocean_atmos",
                                              schedule = TimeInterval(1minute),
                                              overwrite_existing = true)
@@ -180,10 +181,11 @@ slab_sim.output_writers[:sst] = JLD2Writer(slab_model, (; SST=slab_ocean.tempera
                                            overwrite_existing = true)
 
 u_f, v_f, w_f = full_ocean_atmos.velocities
+s_f = @at (Center, Center, Center) √(u_f^2 + v_f^2 + w_f^2)
 θ_f = liquid_ice_potential_temperature(full_ocean_atmos)
 qˡ_f = full_ocean_atmos.microphysical_fields.qˡ
 
-full_sim.output_writers[:atmos] = JLD2Writer(full_model, (; θ=θ_f, u=u_f, qˡ=qˡ_f, w=w_f),
+full_sim.output_writers[:atmos] = JLD2Writer(full_model, (; θ=θ_f, u=u_f, w=w_f, s=s_f, qˡ=qˡ_f),
                                              filename = "full_ocean_atmos",
                                              schedule = TimeInterval(1minute),
                                              overwrite_existing = true)
@@ -217,12 +219,12 @@ using CairoMakie
 
 θ_slab_ts = FieldTimeSeries("slab_ocean_atmos.jld2", "θ"; grid)
 u_slab_ts = FieldTimeSeries("slab_ocean_atmos.jld2", "u"; grid)
+s_slab_ts = FieldTimeSeries("slab_ocean_atmos.jld2", "s"; grid)
 sst_slab_ts = FieldTimeSeries("sst_slab.jld2", "SST"; grid=sst_grid)
 
 θ_full_ts = FieldTimeSeries("full_ocean_atmos.jld2", "θ"; grid)
-u_full_ts = FieldTimeSeries("full_ocean_atmos.jld2", "u"; grid)
+s_full_ts = FieldTimeSeries("full_ocean_atmos.jld2", "s"; grid)
 qˡ_full_ts = FieldTimeSeries("full_ocean_atmos.jld2", "qˡ"; grid)
-w_full_ts = FieldTimeSeries("full_ocean_atmos.jld2", "w"; grid)
 T_ocean_ts = FieldTimeSeries("ocean_full.jld2", "T"; grid=ocean_grid)
 
 times = θ_slab_ts.times
@@ -237,12 +239,12 @@ x_ocean = xnodes(ocean_grid, Center())
 
 fig = Figure(size = (1600, 900), fontsize = 12)
 
-ax_θ   = Axis(fig[1, 1], title="θₗᵢ (K) — atmos (slab ocean)", ylabel="z (m)")
-ax_u   = Axis(fig[2, 1], title="u (m/s) — atmos (slab ocean)", ylabel="z (m)")
-ax_sst = Axis(fig[3, 1], title="SST (K)",                      xlabel="x (m)", ylabel="SST (K)")
+ax_θ   = Axis(fig[1, 1], title="θₗᵢ (K) — atmos (slab ocean)",          ylabel="z (m)")
+ax_ss  = Axis(fig[2, 1], title="√(u² + w²) (m/s) — atmos (slab ocean)", ylabel="z (m)")
+ax_sst = Axis(fig[3, 1], title="SST (K)",               xlabel="x (m)", ylabel="SST (K)")
 
 ax_qˡ = Axis(fig[1, 2], title="Cloud water (kg/kg) — atmos (full ocean)", ylabel="z (m)")
-ax_w  = Axis(fig[2, 2], title="w (m/s) — atmos (full ocean)",             ylabel="z (m)")
+ax_sf = Axis(fig[2, 2], title="√(u² + w²) — atmos (full ocean)",          ylabel="z (m)")
 ax_oT = Axis(fig[3, 2], title="Ocean T (°C)",             xlabel="x (m)", ylabel="z (m)")
 
 ax_θp = Axis(fig[1, 3], title="⟨θ⟩(z)", xlabel="θ (K)",   ylabel="z (m)", limits=((θᵃᵗ-1, θᵃᵗ+4), nothing))
@@ -251,7 +253,7 @@ ax_Tp = Axis(fig[3, 3], title="⟨T⟩(z)", xlabel="T (°C)",  ylabel="z (m)")
 
 colsize!(fig.layout, 3, Relative(0.15))
 
-for ax in (ax_θ, ax_u, ax_qˡ, ax_w)
+for ax in (ax_θ, ax_ss, ax_qˡ, ax_sf)
     hidexdecorations!(ax, ticks=false)
 end
 
@@ -260,15 +262,16 @@ end
 n = Observable(1)
 
 # Left column
-θn = @lift θ_slab_ts[$n]
-un = @lift u_slab_ts[$n]
+θn  = @lift θ_slab_ts[$n]
+un  = @lift u_slab_ts[$n]
+ssn = @lift s_slab_ts[$n]
 sstn_slab = @lift sst_slab_ts[$n]
 # Convert full ocean surface T from °C to K for the SST comparison
 ocean_sst_kelvin = @lift interior(T_ocean_ts[$n], :, 1, Nzᵒᶜ) .+ celsius_to_kelvin
 
 # Middle column
 qˡn = @lift qˡ_full_ts[$n]
-wn  = @lift w_full_ts[$n]
+sfn  = @lift s_full_ts[$n]
 oTn = @lift T_ocean_ts[$n]
 
 # Right column — horizontal-mean profiles
@@ -283,9 +286,9 @@ sst_avg_celsius = @lift fill(mean(sst_slab_ts[$n]) - celsius_to_kelvin, 2)
 # ### Plot
 
 heatmap!(ax_θ,  θn;  colormap=:thermal,          colorrange=(θᵃᵗ - 1, θᵃᵗ + 3))
-heatmap!(ax_u,  un;  colormap=:balance,          colorrange=(-30, 30))
+heatmap!(ax_ss, ssn; colormap=:speed,            colorrange=(0, 30))
 heatmap!(ax_qˡ, qˡn; colormap=Reverse(:Blues_4), colorrange=(0, 5e-4))
-heatmap!(ax_w,  wn;  colormap=:balance,          colorrange=(-25, 25))
+heatmap!(ax_sf, sfn; colormap=:speed,            colorrange=(0, 30))
 heatmap!(ax_oT, oTn; colormap=:thermal,          colorrange=(T₀ - 1.5, T₀ + 0.5))
 
 lines!(ax_sst, sstn_slab;                 color=:red,  linewidth=2, label="Slab (10m)")
