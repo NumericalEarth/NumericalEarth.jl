@@ -6,7 +6,7 @@ import NumericalEarth.EarthSystemModels.InterfaceComputations:
     atmosphere_ocean_interface, 
     initialize!,
     ComponentExchanger,
-    default_exchange_grid
+    exchange_grid
 
 import NumericalEarth.EarthSystemModels:
     interpolate_state!,
