@@ -27,7 +27,11 @@ using Statistics: mean
 # 128 × 128 grid points. The `Periodic` x-topology allows convective cells
 # to wrap around, and `Flat` y-topology makes this a 2D simulation.
 
-grid = RectilinearGrid(size = (128, 128), halo = (5, 5),
+Nxᵃᵗ = 64 # Atmosphere horizontal resolution (shared with ocean)
+Nzᵃᵗ = 64 # Atmosphere vertical resolution
+Nzᵒᶜ = 20 # Hydrostatic ocean vertical resolution
+
+grid = RectilinearGrid(size = (Nxᵃᵗ, Nzᵃᵗ), halo = (5, 5),
                        x = (-10kilometers, 10kilometers),
                        z = (0, 10kilometers),
                        topology = (Periodic, Flat, Bounded))
@@ -85,24 +89,24 @@ set!(slab_ocean, T=Tᵒᶜ)
 # is initialized accordingly. The coupling framework automatically converts
 # from Celsius to Kelvin for the flux computation.
 
-Nz_ocean = 20
-
 ocean_grid = RectilinearGrid(grid.architecture,
-                             size = (grid.Nx, Nz_ocean),
+                             size = (grid.Nx, Nzᵒᶜ),
                              halo = (grid.Hx, 5),
                              x = (-10kilometers, 10kilometers),
                              z = (-50, 0),
                              topology = (Periodic, Flat, Bounded))
 
 ocean = ocean_simulation(ocean_grid; coriolis,
+                         timestepper = :QuasiAdamsBashforth2,
+                         closure = TKEDissipationVerticalDiffusivity(),
                          momentum_advection = nothing,
                          tracer_advection = nothing,
                          Δt = 2,
                          warn = false)
 
 celsius_to_kelvin = 273.15
-T₀ = Tᵒᶜ - celsius_to_kelvin                 # surface temperature in °C
-Tᵢ(x, z) = z > -10 ? T₀ : T₀ + (z + 10) /50  # linear cooling below 10m
+T₀ = Tᵒᶜ - celsius_to_kelvin               # surface temperature in °C
+Tᵢ(x, z) = T₀ + (z + 10) / 50 * (z < -10)  # linear stratification below 10m
 set!(ocean.model, T=Tᵢ, S=35)
 
 # ## Coupled models
@@ -118,7 +122,7 @@ full_interfaces = ComponentInterfaces(full_ocean_atmos, ocean; atmosphere_ocean_
 slab_model = AtmosphereOceanModel(slab_ocean_atmos, slab_ocean; interfaces = slab_interfaces)
 full_model = AtmosphereOceanModel(full_ocean_atmos, ocean; interfaces = full_interfaces)
 
-Δt = 2seconds
+Δt = 5seconds
 stop_time = 4hours
 slab_sim = Simulation(slab_model; Δt, stop_time)
 full_sim = Simulation(full_model; Δt, stop_time)
@@ -224,7 +228,7 @@ T_ocean_ts = FieldTimeSeries("ocean_full.jld2", "T"; grid=ocean_grid)
 
 times = θ_slab_ts.times
 Nt = length(times)
-Nz_ocean = size(ocean_grid, 3)
+Nzᵒᶜ = size(ocean_grid, 3)
 
 # Coordinate arrays for manual line plots.
 
@@ -261,7 +265,7 @@ n = Observable(1)
 un = @lift u_slab_ts[$n]
 sstn_slab = @lift sst_slab_ts[$n]
 # Convert full ocean surface T from °C to K for the SST comparison
-ocean_sst_kelvin = @lift interior(T_ocean_ts[$n], :, 1, Nz_ocean) .+ celsius_to_kelvin
+ocean_sst_kelvin = @lift interior(T_ocean_ts[$n], :, 1, Nzᵒᶜ) .+ celsius_to_kelvin
 
 # Middle column
 qˡn = @lift qˡ_full_ts[$n]
