@@ -223,6 +223,7 @@ s_slab_ts = FieldTimeSeries("slab_ocean_atmos.jld2", "s"; grid)
 sst_slab_ts = FieldTimeSeries("sst_slab.jld2", "SST"; grid=sst_grid)
 
 θ_full_ts = FieldTimeSeries("full_ocean_atmos.jld2", "θ"; grid)
+u_full_ts = FieldTimeSeries("full_ocean_atmos.jld2", "u"; grid)
 s_full_ts = FieldTimeSeries("full_ocean_atmos.jld2", "s"; grid)
 qˡ_full_ts = FieldTimeSeries("full_ocean_atmos.jld2", "qˡ"; grid)
 T_ocean_ts = FieldTimeSeries("ocean_full.jld2", "T"; grid=ocean_grid)
