@@ -34,11 +34,12 @@ examples = [
     Example("Near-global ocean simulation", "near_global_ocean_simulation", false),
     Example("Global climate simulation", "global_climate_simulation", false),
     Example("Veros ocean simulation", "veros_ocean_forced_simulation", true), # For the moment just to test, then put it to false
+    Example("Breeze over two oceans", "breeze_over_two_oceans", false),
 ]
 
 # Developer examples from docs/src/developers/ directory
 developer_examples = [
-    Example("OceanSeaIceModel interface", "slab_ocean", false),
+    Example("EarthSystemModel interface", "slab_ocean", false),
 ]
 
 # Filter out long-running examples unless NUMERICAL_EARTH_BUILD_ALL_EXAMPLES is set
@@ -101,8 +102,9 @@ pages = [
 modules = Module[]
 NumericalEarthSpeedyWeatherExt = isdefined(Base, :get_extension) ? Base.get_extension(NumericalEarth, :NumericalEarthSpeedyWeatherExt) : NumericalEarth.NumericalEarthSpeedyWeatherExt
 NumericalEarthVerosExt = isdefined(Base, :get_extension) ? Base.get_extension(NumericalEarth, :NumericalEarthVerosExt) : NumericalEarth.NumericalEarthVerosExt
+NumericalEarthBreezeExt = isdefined(Base, :get_extension) ? Base.get_extension(NumericalEarth, :NumericalEarthBreezeExt) : nothing
 
-for m in [NumericalEarth, NumericalEarthSpeedyWeatherExt, NumericalEarthVerosExt]
+for m in [NumericalEarth, NumericalEarthSpeedyWeatherExt, NumericalEarthBreezeExt, NumericalEarthVerosExt]
     if !isnothing(m)
         push!(modules, m)
     end

@@ -57,6 +57,7 @@ jobs:
           - bathymetry
           - checkpointing
           - speedy_weather
+          - breeze
           - downloading
           - veros
     steps:
@@ -150,6 +151,7 @@ jobs:
           - bathymetry
           - checkpointing
           - earth_system_model
+          - breeze
           - JRA55
     env:
       OPENBLAS_NUM_THREADS: 1

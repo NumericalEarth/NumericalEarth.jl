@@ -5,12 +5,12 @@
 
 <!-- description -->
 <p align="center">
-  <strong>🌎 A flexible framework for coupling Earth system model components with prescribed or prognostic data, built on <a href="https://github.com/CliMA/Oceananigans.jl">Oceananigans</a>.</strong>
+  <strong>🌎 A framework for simulating the Earth system at all scales with prescribed or prognostic atmosphere, ocean, sea ice and land components, based on <a href="https://github.com/CliMA/Oceananigans.jl">Oceananigans</a>.</strong>
 </p>
 
 <p align="center">
-  <a href="https://doi.org/10.5281/zenodo.7677442">
-    <img src="https://zenodo.org/badge/DOI/10.5281/zenodo.7677442.svg?style=flat-square" alt="DOI">
+  <a href="https://doi.org/10.5281/zenodo.18665405">
+    <img src="https://zenodo.org/badge/DOI/10.5281/zenodo.18665405.svg?style=flat-square" alt="DOI">
   </a>
   <a href="https://github.com/NumericalEarth/NumericalEarth.jl/actions/workflows/ci.yml">
     <img src="https://github.com/NumericalEarth/NumericalEarth.jl/actions/workflows/ci.yml/badge.svg" alt="CI">
@@ -21,6 +21,9 @@
   <a href="https://numericalearth.github.io/NumericalEarthDocumentation/dev/">
     <img src="https://img.shields.io/badge/docs-dev-orange.svg?style=flat-square" alt="Dev docs">
   </a>
+  <a href="https://codecov.io/gh/NumericalEarth/NumericalEarth.jl" >
+    <img src="https://codecov.io/gh/NumericalEarth/NumericalEarth.jl/graph/badge.svg?token=xYvliEy4Dz"/>
+  </a>
 </p>
 
 ## Overview
@@ -30,6 +33,22 @@ NumericalEarth.jl provides infrastructure for running Earth system model compone
 The package handles the complexity of component communication: interpolating between grids, computing air-sea fluxes via similarity theory, managing radiative transfer, and synchronizing time-stepping across components with different temporal resolutions.
 
 NumericalEarth.jl also serves as a sandbox for developing and testing interface parameterizations—bulk flux formulations, roughness length models, albedo schemes, and other boundary layer physics—in a modular environment where they can be validated against observations before deployment in production climate models.
+
+## Installation instructions
+
+NumericalEarth is a [registered Julia package](https://julialang.org/packages/). So to install it,
+
+1. [Download Julia](https://julialang.org/downloads/) (version 1.10 or later).
+
+2. Launch Julia and type
+
+```julia
+julia> using Pkg
+
+julia> Pkg.add("NumericalEarth")
+```
+
+This installs the latest version that's _compatible with your current environment_.
 
 ## Data Wrangling
 
@@ -107,25 +126,24 @@ which produces
 
 ## Installation
 
-NumericalEarth is not yet a registered package (we are working on it). To install from a Julia REPL:
+NumericalEarth is a [registered Julia package](https://julialang.org/packages/). To install from a Julia REPL:
 
 ```julia
 julia> using Pkg
 
-julia> Pkg.add("https://github.com/NumericalEarth/NumericalEarth.jl/")
-
-julia> Pkg.instantiate()
+julia> Pkg.add("NumericalEarth")
 ```
 
 Use `Pkg.add(url="https://github.com/NumericalEarth/NumericalEarth.jl.git", rev="main")` to install the latest development version.
 
 ## Citing
 
-If you use NumericalEarth for your research, teaching, or fun, we'd be grateful if you cite the corresponding Zenodo record:
+If you use NumericalEarth for your research, teaching, or fun 🤩, everyone in our community will be grateful
+if you give credit by citing the corresponding Zenodo record, e.g.,
 
-> Wagner, G. L. et al. (2025). NumericalEarth.jl: v0.9.0 (v0.9.0). Zenodo. https://doi.org/10.5281/zenodo.7677442
+> Wagner, G. L. et al. (2026). NumericalEarth/NumericalEarth.jl: v0.1.1 (v0.1.1). Zenodo. https://doi.org/10.5281/zenodo.18665405
 
-and the Oceananigans overview paper submitted to the Journal of Advances in Modeling Earth Systems:
+and also the recent [preprint submitted to the Journal of Advances in Modeling Earth Systems](https://doi.org/10.48550/arXiv.2502.14148) that presents an overview of all the things that make Oceananigans unique:
 
 > "High-level, high-resolution ocean modeling at all scales with Oceananigans"
 >
