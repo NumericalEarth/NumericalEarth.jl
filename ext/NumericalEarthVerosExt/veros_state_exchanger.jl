@@ -23,7 +23,7 @@ function ComponentExchanger(ocean::VerosOceanSimulation, grid)
     return ComponentExchanger(state, nothing)
 end
 
-default_exchange_grid(atmosphere, ocean::VerosOceanSimulation, sea_ice) = surface_grid(ocean)
+exchange_grid(atmosphere, ocean::VerosOceanSimulation, sea_ice) = surface_grid(ocean)
 
 @inline function net_fluxes(ocean::VerosOceanSimulation)
     grid = surface_grid(ocean)
