@@ -44,7 +44,7 @@ Container for sea ice-ocean interface data including fluxes, formulation, and in
 Fields
 ======
 
-- `fluxes::J`: named tuple of flux fields (interface_heat, frazil_heat, salt, x_momentum, y_momentum)
+- `fluxes::J`: `SeaIceOceanFluxes` containing interface_heat, frazil_heat, salt, x_momentum, y_momentum
 - `flux_formulation::F`: heat flux formulation (`IceBathHeatFlux` or `ThreeEquationHeatFlux`)
 - `temperature::T`: interface temperature field (ocean surface view or computed field)
 - `salinity::S`: interface salinity field (ocean surface view or computed field)
@@ -59,10 +59,62 @@ end
 # Utilities to get the computed fluxes
 @inline computed_fluxes(interface::AtmosphereInterface)  = interface.fluxes
 @inline computed_fluxes(interface::SeaIceOceanInterface) = interface.fluxes
-@inline computed_fluxes(::Nothing) = nothing
 
-@inline get_possibly_zero_flux(fluxes, name)    = getfield(fluxes, name)
-@inline get_possibly_zero_flux(::Nothing, name) = ZeroField()
+struct AtmosphereOceanFluxes{F}
+    latent_heat           :: F
+    sensible_heat         :: F
+    water_vapor           :: F
+    x_momentum            :: F
+    y_momentum            :: F
+    friction_velocity     :: F
+    temperature_scale     :: F
+    water_vapor_scale     :: F
+    upwelling_longwave    :: F
+    downwelling_longwave  :: F
+    downwelling_shortwave :: F
+end
+
+function AtmosphereOceanFluxes(grid)
+    F = Field{Center, Center, Nothing}
+    return AtmosphereOceanFluxes(F(grid), F(grid), F(grid),
+                                 F(grid), F(grid), F(grid),
+                                 F(grid), F(grid), F(grid),
+                                 F(grid), F(grid))
+end
+
+AtmosphereOceanFluxes(::Nothing) = AtmosphereOceanFluxes{ZeroField}(ntuple(_ -> ZeroField(), 11)...)
+
+struct AtmosphereSeaIceFluxes{F}
+    latent_heat   :: F
+    sensible_heat :: F
+    water_vapor   :: F
+    x_momentum    :: F
+    y_momentum    :: F
+end
+
+function AtmosphereSeaIceFluxes(grid)
+    F = Field{Center, Center, Nothing}
+    return AtmosphereSeaIceFluxes(F(grid), F(grid), F(grid), F(grid), F(grid))
+end
+
+AtmosphereSeaIceFluxes(::Nothing) = AtmosphereSeaIceFluxes{ZeroField}(ntuple(_ -> ZeroField(), 5)...)
+
+struct SeaIceOceanFluxes{C, FX, FY}
+    interface_heat :: C
+    frazil_heat    :: C
+    salt           :: C
+    x_momentum     :: FX
+    y_momentum     :: FY
+end
+
+function SeaIceOceanFluxes(grid)
+    C  = Field{Center, Center, Nothing}
+    return SeaIceOceanFluxes(C(grid), C(grid), C(grid),
+                             Field{Face, Center, Nothing}(grid),
+                             Field{Center, Face, Nothing}(grid))
+end
+
+SeaIceOceanFluxes(::Nothing) = SeaIceOceanFluxes{ZeroField, ZeroField, ZeroField}(ntuple(_ -> ZeroField(), 5)...)
 
 mutable struct ComponentInterfaces{AO, ASI, SIO, C, AP, OP, SIP, EX, P}
     atmosphere_ocean_interface :: AO
@@ -88,9 +140,9 @@ Base.show(io::IO, crf::ComponentInterfaces) = print(io, summary(crf))
 ##### Atmosphere-Ocean Interface
 #####
 
-atmosphere_ocean_interface(grid, ::Nothing,   ocean,    args...) = nothing
-atmosphere_ocean_interface(grid, ::Nothing,  ::Nothing, args...) = nothing
-atmosphere_ocean_interface(grid, atmosphere, ::Nothing, args...) = nothing
+atmosphere_ocean_interface(grid, ::Nothing,   ocean,    args...) = AtmosphereInterface(AtmosphereOceanFluxes(nothing), nothing, nothing, nothing)
+atmosphere_ocean_interface(grid, ::Nothing,  ::Nothing, args...) = AtmosphereInterface(AtmosphereOceanFluxes(nothing), nothing, nothing, nothing)
+atmosphere_ocean_interface(grid, atmosphere, ::Nothing, args...) = AtmosphereInterface(AtmosphereOceanFluxes(nothing), nothing, nothing, nothing)
 
 function atmosphere_ocean_interface(grid, 
                                     atmosphere,
@@ -101,29 +153,7 @@ function atmosphere_ocean_interface(grid,
                                     velocity_formulation,
                                     specific_humidity_formulation)
 
-    water_vapor           = Field{Center, Center, Nothing}(grid)
-    latent_heat           = Field{Center, Center, Nothing}(grid)
-    sensible_heat         = Field{Center, Center, Nothing}(grid)
-    x_momentum            = Field{Center, Center, Nothing}(grid)
-    y_momentum            = Field{Center, Center, Nothing}(grid)
-    friction_velocity     = Field{Center, Center, Nothing}(grid)
-    temperature_scale     = Field{Center, Center, Nothing}(grid)
-    water_vapor_scale     = Field{Center, Center, Nothing}(grid)
-    upwelling_longwave    = Field{Center, Center, Nothing}(grid)
-    downwelling_longwave  = Field{Center, Center, Nothing}(grid)
-    downwelling_shortwave = Field{Center, Center, Nothing}(grid)
-
-    ao_fluxes = (; latent_heat,
-                   sensible_heat,
-                   water_vapor,
-                   x_momentum,
-                   y_momentum,
-                   friction_velocity,
-                   temperature_scale,
-                   water_vapor_scale,
-                   upwelling_longwave,
-                   downwelling_longwave,
-                   downwelling_shortwave)
+    ao_fluxes = AtmosphereOceanFluxes(grid)
 
     σ = radiation.stefan_boltzmann_constant
     αₐₒ = radiation.reflection.ocean
@@ -144,9 +174,9 @@ end
 ##### Atmosphere-Sea Ice Interface
 #####
 
-atmosphere_sea_ice_interface(grid, atmos, ::Nothing,     args...) = nothing
-atmosphere_sea_ice_interface(grid, ::Nothing, sea_ice,   args...) = nothing
-atmosphere_sea_ice_interface(grid, ::Nothing, ::Nothing, args...) = nothing
+atmosphere_sea_ice_interface(grid, atmos, ::Nothing,     args...) = AtmosphereInterface(AtmosphereSeaIceFluxes(nothing), nothing, nothing, nothing)
+atmosphere_sea_ice_interface(grid, ::Nothing, sea_ice,   args...) = AtmosphereInterface(AtmosphereSeaIceFluxes(nothing), nothing, nothing, nothing)
+atmosphere_sea_ice_interface(grid, ::Nothing, ::Nothing, args...) = AtmosphereInterface(AtmosphereSeaIceFluxes(nothing), nothing, nothing, nothing)
 
 function atmosphere_sea_ice_interface(grid, 
                                       atmosphere,
@@ -156,12 +186,7 @@ function atmosphere_sea_ice_interface(grid,
                                       temperature_formulation,
                                       velocity_formulation)
 
-    water_vapor   = Field{Center, Center, Nothing}(grid)
-    latent_heat   = Field{Center, Center, Nothing}(grid)
-    sensible_heat = Field{Center, Center, Nothing}(grid)
-    x_momentum    = Field{Center, Center, Nothing}(grid)
-    y_momentum    = Field{Center, Center, Nothing}(grid)
-    fluxes = (; latent_heat, sensible_heat, water_vapor, x_momentum, y_momentum)
+    fluxes = AtmosphereSeaIceFluxes(grid)
 
     σ   = radiation.stefan_boltzmann_constant
     αₐᵢ = radiation.reflection.sea_ice
@@ -185,14 +210,14 @@ end
 ##### Sea Ice-Ocean Interface
 #####
 
-sea_ice_ocean_interface(grid, ::Nothing, ocean,     flux_formulation; kwargs...) = nothing
-sea_ice_ocean_interface(grid, ::Nothing, ::Nothing, flux_formulation; kwargs...) = nothing
-sea_ice_ocean_interface(grid, sea_ice,   ::Nothing, flux_formulation; kwargs...) = nothing
+sea_ice_ocean_interface(grid, ::Nothing, ocean,     flux_formulation; kwargs...) = SeaIceOceanInterface(SeaIceOceanFluxes(nothing), nothing, nothing, nothing)
+sea_ice_ocean_interface(grid, ::Nothing, ::Nothing, flux_formulation; kwargs...) = SeaIceOceanInterface(SeaIceOceanFluxes(nothing), nothing, nothing, nothing)
+sea_ice_ocean_interface(grid, sea_ice,   ::Nothing, flux_formulation; kwargs...) = SeaIceOceanInterface(SeaIceOceanFluxes(nothing), nothing, nothing, nothing)
 
 # Disambiguation
-sea_ice_ocean_interface(grid, ::Nothing,     ocean, ::ThreeEquationHeatFlux; kwargs...) = nothing
-sea_ice_ocean_interface(grid, sea_ice,   ::Nothing, ::ThreeEquationHeatFlux; kwargs...) = nothing
-sea_ice_ocean_interface(grid, ::Nothing, ::Nothing, ::ThreeEquationHeatFlux; kwargs...) = nothing
+sea_ice_ocean_interface(grid, ::Nothing,     ocean, ::ThreeEquationHeatFlux; kwargs...) = SeaIceOceanInterface(SeaIceOceanFluxes(nothing), nothing, nothing, nothing)
+sea_ice_ocean_interface(grid, sea_ice,   ::Nothing, ::ThreeEquationHeatFlux; kwargs...) = SeaIceOceanInterface(SeaIceOceanFluxes(nothing), nothing, nothing, nothing)
+sea_ice_ocean_interface(grid, ::Nothing, ::Nothing, ::ThreeEquationHeatFlux; kwargs...) = SeaIceOceanInterface(SeaIceOceanFluxes(nothing), nothing, nothing, nothing)
 
 """
     sea_ice_ocean_interface(grid, sea_ice, ocean, flux_formulation)
@@ -212,18 +237,7 @@ Arguments
 - `flux_formulation`: heat flux formulation (`IceBathHeatFlux` or `ThreeEquationHeatFlux`)
 """
 function sea_ice_ocean_interface(grid, sea_ice, ocean, flux_formulation)
-
-    io_bottom_heat_flux = Field{Center, Center, Nothing}(grid)
-    io_frazil_heat_flux = Field{Center, Center, Nothing}(grid)
-    io_salt_flux = Field{Center, Center, Nothing}(grid)
-    x_momentum = Field{Face, Center, Nothing}(grid)
-    y_momentum = Field{Center, Face, Nothing}(grid)
-
-    io_fluxes = (interface_heat = io_bottom_heat_flux,
-                 frazil_heat = io_frazil_heat_flux,
-                 salt = io_salt_flux,
-                 x_momentum = x_momentum,
-                 y_momentum = y_momentum)
+    io_fluxes = SeaIceOceanFluxes(grid)
 
     # For default flux formulations, interface temperature and salinity point to ocean surface
     Tᵢ = ocean_surface_temperature(ocean)
@@ -233,18 +247,7 @@ function sea_ice_ocean_interface(grid, sea_ice, ocean, flux_formulation)
 end
 
 function sea_ice_ocean_interface(grid, sea_ice, ocean, flux_formulation::ThreeEquationHeatFlux)
-
-    io_bottom_heat_flux = Field{Center, Center, Nothing}(grid)
-    io_frazil_heat_flux = Field{Center, Center, Nothing}(grid)
-    io_salt_flux = Field{Center, Center, Nothing}(grid)
-    x_momentum = Field{Face, Center, Nothing}(grid)
-    y_momentum = Field{Center, Face, Nothing}(grid)
-
-    io_fluxes = (interface_heat = io_bottom_heat_flux,
-                 frazil_heat = io_frazil_heat_flux,
-                 salt = io_salt_flux,
-                 x_momentum = x_momentum,
-                 y_momentum = y_momentum)
+    io_fluxes = SeaIceOceanFluxes(grid)
 
     # Interface temperature and salinity are computed fields
     Tᵢ = Field{Center, Center, Nothing}(grid)

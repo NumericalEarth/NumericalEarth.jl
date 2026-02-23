@@ -3,9 +3,8 @@ using Oceananigans.Operators: ℑxᶠᵃᵃ, ℑyᵃᶠᵃ
 using Oceananigans.Forcings: MultipleForcings
 using NumericalEarth.EarthSystemModels: EarthSystemModel, NoOceanInterfaceModel, NoInterfaceModel
 
-using NumericalEarth.EarthSystemModels.InterfaceComputations: interface_kernel_parameters, 
-                                                          computed_fluxes, 
-                                                          get_possibly_zero_flux, 
+using NumericalEarth.EarthSystemModels.InterfaceComputations: interface_kernel_parameters,
+                                                          computed_fluxes,
                                                           sea_ice_concentration,
                                                           convert_to_kelvin,
                                                           emitted_longwave_radiation,
@@ -89,10 +88,10 @@ end
     i, j = @index(Global, NTuple)
     kᴺ = size(grid, 3)
     time = Time(clock.time)
-    ρτxao = get_possibly_zero_flux(atmos_ocean_fluxes,   :x_momentum) # atmosphere - ocean zonal momentum flux
-    ρτyao = get_possibly_zero_flux(atmos_ocean_fluxes,   :y_momentum) # atmosphere - ocean meridional momentum flux
-    ρτxio = get_possibly_zero_flux(sea_ice_ocean_fluxes, :x_momentum) # sea_ice - ocean zonal momentum flux
-    ρτyio = get_possibly_zero_flux(sea_ice_ocean_fluxes, :y_momentum) # sea_ice - ocean meridional momentum flux
+    ρτxao = atmos_ocean_fluxes.x_momentum   # atmosphere - ocean zonal momentum flux
+    ρτyao = atmos_ocean_fluxes.y_momentum   # atmosphere - ocean meridional momentum flux
+    ρτxio = sea_ice_ocean_fluxes.x_momentum # sea_ice - ocean zonal momentum flux
+    ρτyio = sea_ice_ocean_fluxes.y_momentum # sea_ice - ocean meridional momentum flux
 
     @inbounds begin
         ℵᵢ = sea_ice_concentration[i, j, 1]
@@ -103,9 +102,9 @@ end
         Mp  = freshwater_flux[i, j, 1] # Prescribed freshwater flux
         Qs  = downwelling_radiation.Qs[i, j, 1] # Downwelling shortwave radiation
         Qℓ  = downwelling_radiation.Qℓ[i, j, 1] # Downwelling longwave radiation
-        Qc  = get_possibly_zero_flux(atmos_ocean_fluxes, :sensible_heat)[i, j, 1] # sensible or "conductive" heat flux
-        Qv  = get_possibly_zero_flux(atmos_ocean_fluxes, :latent_heat)[i, j, 1] # latent heat flux
-        Mv  = get_possibly_zero_flux(atmos_ocean_fluxes, :water_vapor)[i, j, 1] # mass flux of water vapor
+        Qc  = atmos_ocean_fluxes.sensible_heat[i, j, 1] # sensible or "conductive" heat flux
+        Qv  = atmos_ocean_fluxes.latent_heat[i, j, 1]   # latent heat flux
+        Mv  = atmos_ocean_fluxes.water_vapor[i, j, 1]   # mass flux of water vapor
     end
 
     # Compute radiation fluxes (radiation is multiplied by the fraction of ocean, 1 - sea ice concentration)
@@ -153,8 +152,8 @@ end
     cₒ = ocean_properties.heat_capacity
 
     @inbounds begin
-        Qio  = get_possibly_zero_flux(sea_ice_ocean_fluxes, :interface_heat)[i, j, 1]
-        Jˢio = get_possibly_zero_flux(sea_ice_ocean_fluxes, :salt)[i, j, 1]
+        Qio  = sea_ice_ocean_fluxes.interface_heat[i, j, 1]
+        Jˢio = sea_ice_ocean_fluxes.salt[i, j, 1]
         Jᵀao = ΣQao  * ρₒ⁻¹ / cₒ
         Jᵀio = Qio * ρₒ⁻¹ / cₒ
     
