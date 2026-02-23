@@ -117,7 +117,7 @@ add_callback!(simulation, save_variables, IterationInterval(10))
 
 run!(simulation)
 
-n = Observable(1)
+n  = Observable(1)
 un = @lift(u[$n])
 vn = @lift(v[$n])
 Nt = length(u)
@@ -132,7 +132,7 @@ Colorbar(fig[1, 2], hm1)
 Colorbar(fig[2, 2], hm2)
 
 CairoMakie.record(fig, "veros_ocean_surface.mp4", 1:Nt, framerate = 8) do nn
-    iter[] = nn
+    n[] = nn
 end
 nothing #hide
 
