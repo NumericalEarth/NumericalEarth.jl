@@ -111,8 +111,8 @@ function update_net_fluxes!(coupled_model, ocean::MITgcmOceanSimulation)
     Nx = size(ocean.xc, 1)
     Ny = size(ocean.xc, 2)
 
-    ρ₀ = ocean.ρ₀
-    cₚ = ocean.cₚ
+    ρ₀ = ocean.reference_density
+    cₚ = ocean.heat_capacity
 
     # Extract assembled fluxes.
     # NumericalEarth computes:
@@ -126,43 +126,29 @@ function update_net_fluxes!(coupled_model, ocean::MITgcmOceanSimulation)
     #   Qsw = shortwave (W/m²) → set to 0 (already included in Qnet)
     #   saltFlux = salt flux (g/m²/s) → derive from Jˢ
 
-    fu_arr       = ocean.fu
-    fv_arr       = ocean.fv
-    qnet_arr     = ocean.qnet
-    empmr_arr    = ocean.empmr
-    qsw_arr      = ocean.qsw
-    saltflux_arr = ocean.saltflux
+    τx = interior(net_ocean_fluxes.u, :, :, 1)
+    τy = interior(net_ocean_fluxes.v, :, :, 1)
+    JT = interior(net_ocean_fluxes.T, :, :, 1)
+    JS = interior(net_ocean_fluxes.S, :, :, 1)
 
-    # τx at (Face, Center): with periodic longitude, interior is (Nx, Ny) — direct match
-    τx_interior = interior(net_ocean_fluxes.u, :, :, 1)
     for j in 1:Ny, i in 1:Nx
-        fu_arr[i, j] = τx_interior[i, j] * ρ₀
+        ocean.fu[i, j]       = - τx[i, j] * ρ₀
+        ocean.fv[i, j]       = - τy[i, j] * ρ₀
+        ocean.qnet[i, j]     = JT[i, j] * ρ₀ * cₚ
+        ocean.saltflux[i, j] = JS[i, j] * ρ₀
     end
 
-    # τy at (Center, Face): with bounded latitude, interior is (Nx, Ny+1).
-    # MITgcm fv(i,j) is at the southern face of cell (i,j), indices 1:Ny.
-    τy_interior = interior(net_ocean_fluxes.v, :, :, 1)
-    for j in 1:Ny, i in 1:Nx
-        fv_arr[i, j] = τy_interior[i, j] * ρ₀
-    end
-
-    # Qnet and salt flux at (Center, Center): interior is (Nx, Ny) — direct match
-    JT_interior = interior(net_ocean_fluxes.T, :, :, 1)
-    JS_interior = interior(net_ocean_fluxes.S, :, :, 1)
-    for j in 1:Ny, i in 1:Nx
-        qnet_arr[i, j]     = JT_interior[i, j] * ρ₀ * cₚ
-        saltflux_arr[i, j] = JS_interior[i, j] * ρ₀
-        empmr_arr[i, j]    = 0.0
-        qsw_arr[i, j]      = 0.0
-    end
+    # These are not needed
+    fill!(ocean.empmr, 0)
+    fill!(ocean.qsw,   0)
 
     # Push to MITgcm
-    set_fu!(ocean.library, fu_arr)
-    set_fv!(ocean.library, fv_arr)
-    set_qnet!(ocean.library, qnet_arr)
-    set_empmr!(ocean.library, empmr_arr)
-    set_qsw!(ocean.library, qsw_arr)
-    set_saltflux!(ocean.library, saltflux_arr)
+    set_fu!(ocean.library,       ocean.fu)
+    set_fv!(ocean.library,       ocean.fv)
+    set_qnet!(ocean.library,     ocean.qnet)
+    set_empmr!(ocean.library,    ocean.empmr)
+    set_qsw!(ocean.library,      ocean.qsw)
+    set_saltflux!(ocean.library, ocean.saltflux)
 
     return nothing
 end

@@ -30,6 +30,7 @@ using NumericalEarth
 using MITgcm
 using Oceananigans
 using Oceananigans.Units
+using CairoMakie
 using Printf
 
 # ## Load the MITgcm ocean
@@ -53,7 +54,7 @@ function load_ocean(; build_output_dir, code_dir, input_dir)
     run_env = get(ENV, "MITGCM_RUN", "")
     if isfile(lib_env) && isdir(run_env)
         @info "Using MITGCM_LIB / MITGCM_RUN environment variables" lib_env run_env
-        return MITgcmOceanSimulation(lib_env, run_env)
+        return MITgcmOceanSimulation(lib_env, run_env; verbose=false)
     end
 
     # Strategy 2: build from source with custom KPP configuration
@@ -66,7 +67,8 @@ function load_ocean(; build_output_dir, code_dir, input_dir)
     return MITgcmOceanSimulation(mitgcm_dir;
                                   output_dir = build_output_dir,
                                   code_dir,
-                                  input_dir)
+                                  input_dir,
+                                  verbose=true)
 end
 
 ocean = load_ocean(; build_output_dir, code_dir, input_dir)
@@ -84,29 +86,14 @@ Nx, Ny, Nr = ocean.library.dims.Nx, ocean.library.dims.Ny, ocean.library.dims.Nr
 #
 # The `JRA55NetCDFBackend(41)` loads 41 time snapshots at a time into memory.
 
-atmosphere = JRA55PrescribedAtmosphere(; backend = JRA55NetCDFBackend(41))
+atmos = JRA55PrescribedAtmosphere()
 
-# ## Create the coupled model
-#
-# We use `OceanSeaIceModel` with no sea-ice model (`nothing`), connecting the
-# MITgcm ocean to the JRA55 atmosphere with a default radiation model.
+# The coupled ocean--atmosphere model.
+# We use the default radiation model and we do not couple an ice model for simplicity.
 
-radiation = Radiation()
-coupled_model = OceanSeaIceModel(ocean, nothing; atmosphere, radiation)
-@info "Coupled model created" coupled_model
-
-# ## Configure the simulation
-#
-# We use a 20-minute coupling timestep (matching MITgcm's native momentum
-# timestep of 1200s) and run for 1 year.
-# Each coupling step:
-# 1. Advances MITgcm by one step (setting all internal timesteps to Δt)
-# 2. Interpolates the JRA55 atmosphere to the current time
-# 3. Computes air–sea fluxes (momentum, heat, freshwater)
-# 4. Passes the fluxes to MITgcm for the next step
-
-Δt = 20minutes
-simulation = Simulation(coupled_model; Δt, stop_time = 365days)
+radiation = Radiation(ocean_emissivity=0.0, sea_ice_emissivity=0.0)
+coupled_model = OceanSeaIceModel(ocean, nothing; atmosphere=atmos, radiation)
+simulation = Simulation(coupled_model; Δt = 1200, stop_time = 60days)
 
 # ## Progress callback
 #
@@ -141,11 +128,94 @@ end
 
 add_callback!(simulation, progress, TimeInterval(10days))
 
+# We also set up a callback to collect the surface velocities (u, v) for later visualization.
+
+u  = []
+v  = []
+η  = []
+fu = []
+fv = []
+
+function save_variables(sim)
+    push!(u,  deepcopy(sim.model.interfaces.exchanger.ocean.state.u))
+    push!(v,  deepcopy(sim.model.interfaces.exchanger.ocean.state.v))
+    push!(η,  deepcopy(sim.model.ocean.etan))
+    push!(fu, deepcopy(sim.model.ocean.fu))
+    push!(fv, deepcopy(sim.model.ocean.fv))
+end
+
+add_callback!(simulation, save_variables, IterationInterval(50))
+
 # ## Run!
 
 @info "Running 1-year simulation with JRA55 forcing..." Δt stop_time=365days
 
 run!(simulation)
+
+# ## Visualize surface velocities
+#
+# We produce an animation of the surface zonal and meridional velocities.
+
+iter = Observable(1)
+ui = @lift begin
+    ut = interior(u[$iter], :, :, 1)
+    ut[ut .== 0] .= NaN
+    ut
+end
+
+vi = @lift begin
+    ut = interior(v[$iter], :, :, 1)
+    ut[ut .== 0] .= NaN
+    ut
+end
+
+ηi = @lift begin
+    ηt = η[$iter]
+    ηt[ηt .== 0] .= NaN
+    ηt
+end
+
+fui = @lift begin
+    ηt = fu[$iter]
+    ηt[ηt .== 0] .= NaN
+    ηt
+end
+
+fvi = @lift begin
+    ηt = fv[$iter]
+    ηt[ηt .== 0] .= NaN
+    ηt
+end
+
+Nt = length(u)
+
+fig = Figure(resolution = (1000, 1000))
+ax1 = Axis(fig[1, 1]; title = "Surface zonal velocity (m/s)", xlabel = "", ylabel = "Latitude")
+ax2 = Axis(fig[2, 1]; title = "Surface meridional velocity (m/s)", xlabel = "", ylabel = "Latitude")
+ax3 = Axis(fig[3, 1]; title = "Sea surface height (m)", xlabel = "", ylabel = "Latitude")
+# ax4 = Axis(fig[4, 1]; title = "Zonal wind stress", xlabel = "", ylabel = "Latitude")
+# ax5 = Axis(fig[5, 1]; title = "Meridional wind stress", xlabel = "", ylabel = "Latitude")
+
+grid = coupled_model.interfaces.exchanger.grid
+
+λ = λnodes(grid, Center())
+φ = φnodes(grid, Center())
+
+hm1 = heatmap!(ax1, λ, φ, ui,  nan_color = :grey, colormap = :bwr, colorrange = (-0.2, 0.2))
+hm2 = heatmap!(ax2, λ, φ, vi,  nan_color = :grey, colormap = :bwr, colorrange = (-0.2, 0.2))
+hm2 = heatmap!(ax3, λ, φ, ηi,  nan_color = :grey, colormap = :bwr, colorrange = (-1.5, 1.5))
+# hm2 = heatmap!(ax4, λ, φ, fui, nan_color = :grey, colormap = :bwr, colorrange = (-0.2, 0.2))
+# hm2 = heatmap!(ax5, λ, φ, fvi, nan_color = :grey, colormap = :bwr, colorrange = (-0.2, 0.2))
+
+Colorbar(fig[1, 2], hm1)
+Colorbar(fig[2, 2], hm2)
+
+CairoMakie.record(fig, "mitgcm_ocean_surface.mp4", 1:Nt, framerate = 8) do nn
+    iter[] = nn
+end
+nothing #hide
+
+# ![](mitgcm_ocean_surface.mp4)
 
 # ## Finalize
 

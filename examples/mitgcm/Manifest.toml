@@ -2,7 +2,7 @@
 
 julia_version = "1.12.5"
 manifest_format = "2.0"
-project_hash = "2e464dea04baf6c29d0a59513746179c735ddc41"
+project_hash = "29f89e219bfee6ea634b0513b15eab447bbec98a"
 
 [[deps.AbstractFFTs]]
 deps = ["LinearAlgebra"]
@@ -958,7 +958,7 @@ version = "1.10.1+0"
 
 [[deps.MITgcm]]
 deps = ["ClimateModels", "DataDeps", "Dataverse", "Dates", "Distributed", "FortranFiles", "Glob", "Libdl", "MeshArrays", "Printf", "Scratch", "SharedArrays", "SparseArrays", "Statistics", "StyledStrings", "UUIDs"]
-git-tree-sha1 = "e1c39a3b74e1ce2939638a98d6cb043743b28a09"
+git-tree-sha1 = "feb8454a7893e549750110e8e4d6dd0e03570465"
 repo-rev = "ss-gf-jmc/mitgcm-running-in-julia"
 repo-url = "https://github.com/simone-silvestri/MITgcm.jl.git"
 uuid = "dce5fa8e-68ce-4431-a242-9469c69627a0"
@@ -1332,6 +1332,17 @@ version = "3.2.3"
 deps = ["Unicode"]
 uuid = "de0858da-6303-5e67-8744-51eddeeeb8d7"
 version = "1.11.0"
+
+[[deps.Profile]]
+deps = ["StyledStrings"]
+uuid = "9abbd945-dff8-562f-b5e8-e1ebf5ef1b79"
+version = "1.11.0"
+
+[[deps.ProfileCanvas]]
+deps = ["Base64", "JSON", "Pkg", "Profile", "REPL"]
+git-tree-sha1 = "990016fb1508b0726a70039f39569720d054c78d"
+uuid = "efd6af41-a80b-495e-886c-e51b0c7d77a3"
+version = "0.1.7"
 
 [[deps.PythonCall]]
 deps = ["CondaPkg", "Dates", "Libdl", "MacroTools", "Markdown", "Pkg", "Serialization", "Tables", "UnsafePointers"]

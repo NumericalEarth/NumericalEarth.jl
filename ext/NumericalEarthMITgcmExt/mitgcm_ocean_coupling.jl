@@ -45,8 +45,8 @@ function time_step!(ocean::MITgcmOceanSimulation, Δt)
     return nothing
 end
 
-reference_density(ocean::MITgcmOceanSimulation) = ocean.ρ₀
-heat_capacity(ocean::MITgcmOceanSimulation) = ocean.cₚ
+reference_density(ocean::MITgcmOceanSimulation) = ocean.reference_density
+heat_capacity(ocean::MITgcmOceanSimulation) = ocean.heat_capacity
 
 ocean_temperature(ocean::MITgcmOceanSimulation) = ocean.theta
 ocean_salinity(ocean::MITgcmOceanSimulation) = ocean.salt

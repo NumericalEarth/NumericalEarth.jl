@@ -116,6 +116,7 @@ end
                      equation_of_state = TEOS10EquationOfState(; reference_density),
                      boundary_conditions::NamedTuple = NamedTuple(),
                      radiative_forcing = default_radiative_forcing(grid),
+                     materialize_buoyancy_gradients = true, 
                      warn = true,
                      verbose = false)
 
@@ -197,6 +198,7 @@ function ocean_simulation(grid;
                           tracer_advection = WENO(order=7),
                           equation_of_state = TEOS10EquationOfState(; reference_density),
                           boundary_conditions::NamedTuple = NamedTuple(),
+                          materialize_buoyancy_gradients = true, 
                           radiative_forcing = default_radiative_forcing(grid),
                           warn = true,
                           verbose = false)
@@ -289,6 +291,7 @@ function ocean_simulation(grid;
     # conditions even when a user-bc is supplied).
     boundary_conditions = merge(default_boundary_conditions, boundary_conditions)
     buoyancy = SeawaterBuoyancy(; gravitational_acceleration, equation_of_state)
+    bouyancy = Oceananigans.BuoyancyFormulations.BuoyancyForce(grid, buoyancy; materialize_gradients = materialize_buoyancy_gradients)
 
     if tracer_advection isa NamedTuple
         tracer_advection = with_tracers(tracers, tracer_advection, default_tracer_advection())
