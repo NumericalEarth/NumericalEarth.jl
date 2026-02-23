@@ -238,17 +238,17 @@ x_ocean = xnodes(ocean_grid, Center())
 
 fig = Figure(size = (1600, 900), fontsize = 12)
 
-ax_θ   = Axis(fig[1, 1], title="θₗᵢ (K) — atmos (slab ocean)", ylabel="z (km)")
-ax_u   = Axis(fig[2, 1], title="u (m/s) — atmos (slab ocean)", ylabel="z (km)")
-ax_sst = Axis(fig[3, 1], title="SST (K)",                      xlabel="x (km)", ylabel="SST (K)")
+ax_θ   = Axis(fig[1, 1], title="θₗᵢ (K) — atmos (slab ocean)", ylabel="z (m)")
+ax_u   = Axis(fig[2, 1], title="u (m/s) — atmos (slab ocean)", ylabel="z (m)")
+ax_sst = Axis(fig[3, 1], title="SST (K)",                      xlabel="x (m)", ylabel="SST (K)")
 
-ax_qˡ = Axis(fig[1, 2], title="Cloud water (kg/kg) — atmos (full ocean)", ylabel="z (km)")
-ax_w  = Axis(fig[2, 2], title="w (m/s) — atmos (full ocean)",             ylabel="z (km)")
-ax_oT = Axis(fig[3, 2], title="Ocean T (°C)",            xlabel="x (km)", ylabel="z (km)")
+ax_qˡ = Axis(fig[1, 2], title="Cloud water (kg/kg) — atmos (full ocean)", ylabel="z (m)")
+ax_w  = Axis(fig[2, 2], title="w (m/s) — atmos (full ocean)",             ylabel="z (m)")
+ax_oT = Axis(fig[3, 2], title="Ocean T (°C)",             xlabel="x (m)", ylabel="z (m)")
 
-ax_θp = Axis(fig[1, 3], title="⟨θ⟩(z)", xlabel="θ (K)",   ylabel="z (km)", limits=((θᵃᵗ-1, θᵃᵗ+4), nothing))
-ax_up = Axis(fig[2, 3], title="⟨u⟩(z)", xlabel="u (m/s)", ylabel="z (km)", limits=((-10, 25), nothing))
-ax_Tp = Axis(fig[3, 3], title="⟨T⟩(z)", xlabel="T (°C)",  ylabel="z (km)")
+ax_θp = Axis(fig[1, 3], title="⟨θ⟩(z)", xlabel="θ (K)",   ylabel="z (m)", limits=((θᵃᵗ-1, θᵃᵗ+4), nothing))
+ax_up = Axis(fig[2, 3], title="⟨u⟩(z)", xlabel="u (m/s)", ylabel="z (m)", limits=((-10, 25), nothing))
+ax_Tp = Axis(fig[3, 3], title="⟨T⟩(z)", xlabel="T (°C)",  ylabel="z (m)")
 
 colsize!(fig.layout, 3, Relative(0.15))
 
@@ -284,13 +284,13 @@ sst_avg_celsius = @lift fill(mean(sst_slab_ts[$n]) - celsius_to_kelvin, 2)
 # ### Plot
 
 heatmap!(ax_θ,  θn;  colormap=:thermal,          colorrange=(θᵃᵗ - 1, θᵃᵗ + 3))
-heatmap!(ax_u,  un;  colormap=:balance,          colorrange=(-25, 25))
+heatmap!(ax_u,  un;  colormap=:balance,          colorrange=(-30, 30))
 heatmap!(ax_qˡ, qˡn; colormap=Reverse(:Blues_4), colorrange=(0, 5e-4))
-heatmap!(ax_w,  wn;  colormap=:balance,          colorrange=(-20, 20))
+heatmap!(ax_w,  wn;  colormap=:balance,          colorrange=(-25, 25))
 heatmap!(ax_oT, oTn; colormap=:thermal,          colorrange=(T₀ - 1.5, T₀ + 0.5))
 
 lines!(ax_sst, sstn_slab;                 color=:red,  linewidth=2, label="Slab (10m)")
-lines!(ax_sst, x_ocean, ocean_sst_kelvin; color=:blue, linewidth=2, label="Full (CATKE)")
+lines!(ax_sst, x_ocean, ocean_sst_kelvin; color=:blue, linewidth=2, label="Full")
 axislegend(ax_sst, position=:rb)
 ylims!(ax_sst, Tᵒᶜ - 0.7, Tᵒᶜ + 0.2)
 
