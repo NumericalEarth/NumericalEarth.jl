@@ -94,7 +94,7 @@ Base.eltype(::SlabOcean{FT}) where FT = FT
 
 reference_density(ocean::SlabOcean) = ocean.density
 heat_capacity(ocean::SlabOcean) = ocean.heat_capacity
-exchange_grid(ocean::SlabOcean) = ocean.grid
+exchange_grid(atmosphere, ocean::SlabOcean, sea_ice) = ocean.grid
 temperature_units(::SlabOcean) = DegreesKelvin()
 ocean_temperature(ocean::SlabOcean) = ocean.temperature
 ocean_salinity(ocean::SlabOcean{FT}) where FT = ConstantField(convert(FT, 35))

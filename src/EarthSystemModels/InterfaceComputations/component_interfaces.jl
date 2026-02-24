@@ -294,7 +294,7 @@ Keyword Arguments
 - `gravitational_acceleration`: gravitational acceleration. Default: `default_gravitational_acceleration`.
 """
 function ComponentInterfaces(atmosphere, ocean, sea_ice=nothing;
-                             exchange_grid = exchange_grid(ocean),
+                             exchange_grid = exchange_grid(atmosphere, ocean, sea_ice),
                              radiation = Radiation(),
                              freshwater_density = default_freshwater_density,
                              atmosphere_ocean_fluxes = SimilarityTheoryFluxes(eltype(exchange_grid)),
