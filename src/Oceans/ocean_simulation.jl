@@ -309,6 +309,7 @@ function ocean_simulation(grid;
     end
 
     ocean_model = HydrostaticFreeSurfaceModel(grid;
+                                              clock,
                                               buoyancy,
                                               closure,
                                               biogeochemistry,
