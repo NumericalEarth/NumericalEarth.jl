@@ -53,7 +53,7 @@ NumericalEarthVerosExt = ["PythonCall", "CondaPkg"]
 
 [compat]
 Adapt = "4"
-Breeze = "0.3.3"
+Breeze = "0.1, 0.2, 0.3"
 CFTime = "0.1, 0.2"
 CUDA = "5.9.5"
 CUDA_Compiler_jll = "v0.3.1"
