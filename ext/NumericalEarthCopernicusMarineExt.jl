@@ -11,7 +11,6 @@ using NumericalEarth.DataWrangling.GLORYS: GLORYSMetadata, GLORYSMetadatum
 
 import NumericalEarth.DataWrangling: download_dataset
 
-
 # Download each date individually, instead of downloading the entire dataset at once.
 # This is useful for a possible extension of the temporal horizon of the dataset.
 function download_dataset(metadata::GLORYSMetadata; kwargs...)

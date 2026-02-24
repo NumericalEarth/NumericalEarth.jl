@@ -140,6 +140,10 @@ if test_group == :speedy_weather || test_group == :all
     include("test_speedy_coupling.jl")
 end
 
+if test_group == :veros || test_group == :all
+    include("test_veros.jl")
+end
+
 if test_group == :breeze || test_group == :all
     include("test_breeze_coupling.jl")
 end

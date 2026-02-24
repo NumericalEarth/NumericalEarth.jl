@@ -13,6 +13,12 @@ const celsius_to_kelvin = 273.15
 @inline convert_from_kelvin(::DegreesKelvin, T) = T
 
 #####
+##### generic defaults
+#####
+
+exchange_grid(atmosphere, ocean, sea_ice) = ocean.model.grid
+
+#####
 ##### Functions extended by sea-ice and ocean models
 #####
 
@@ -23,7 +29,6 @@ ocean_salinity(ocean) = ZeroField()
 ocean_surface_temperature(ocean) = ZeroField()
 ocean_surface_salinity(ocean) = ZeroField()
 ocean_surface_velocities(ocean) = ZeroField(), ZeroField()
-exchange_grid(ocean) = ocean.model.grid
 temperature_units(ocean) = DegreesCelsius()
 
 #####
