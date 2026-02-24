@@ -8,6 +8,7 @@ export Metadata, Metadatum, ECCOMetadatum, EN4Metadatum, all_dates, first_date, 
 export metadata_time_step, metadata_epoch
 export LinearlyTaperedPolarMask
 export DatasetRestoring
+export ERA5Hourly, ERA5Monthly
 
 using Oceananigans
 using Downloads
@@ -172,7 +173,7 @@ Arguments
 
     within julia. More detailed instructions for obtaining WebDAV credentials are at:
 
-        https://github.com/CliMA/ClimaOcean.jl/blob/main/src/DataWrangling/ECCO/README.md
+        https://github.com/CliMA/NumericalEarth.jl/blob/main/src/DataWrangling/ECCO/README.md
 """
 function download_dataset end # methods specific to datasets are added within each dataset module
 function inpainted_metadata_path end
@@ -219,13 +220,15 @@ end
 # Datasets
 include("ETOPO/ETOPO.jl")
 include("ECCO/ECCO.jl")
-include("Copernicus/Copernicus.jl")
+include("GLORYS/GLORYS.jl")
+include("ERA5/ERA5.jl")
 include("EN4/EN4.jl")
 include("JRA55/JRA55.jl")
 
 using .ETOPO
 using .ECCO
-using .Copernicus
+using .GLORYS
+using .ERA5
 using .EN4
 using .JRA55
 

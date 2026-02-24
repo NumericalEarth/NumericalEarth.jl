@@ -1,101 +1,101 @@
 # Private types and functions
 
-Documentation for `ClimaOcean.jl`'s internal interface.
+Documentation for `NumericalEarth.jl`'s internal interface.
 
-## ClimaOcean
+## NumericalEarth
 
 ```@autodocs
-Modules = [ClimaOcean]
+Modules = [NumericalEarth]
 Public = false
 ```
 
 ## Diagnostics
 
 ```@autodocs
-Modules = [ClimaOcean.Diagnostics]
+Modules = [NumericalEarth.Diagnostics]
 Public = false
 ```
 
 ## InitialConditions
 
 ```@autodocs
-Modules = [ClimaOcean.InitialConditions]
+Modules = [NumericalEarth.InitialConditions]
 Public = false
 ```
 
 ## DataWrangling
 
 ```@autodocs
-Modules = [ClimaOcean.DataWrangling]
+Modules = [NumericalEarth.DataWrangling]
 Public = false
 ```
 
 ## ECCO
 
 ```@autodocs
-Modules = [ClimaOcean.ECCO]
+Modules = [NumericalEarth.ECCO]
 Public = false
 ```
 
 ## EN4
 
 ```@autodocs
-Modules = [ClimaOcean.EN4]
+Modules = [NumericalEarth.EN4]
 Public = false
 ```
 
 ## ETOPO
 
 ```@autodocs
-Modules = [ClimaOcean.ETOPO]
+Modules = [NumericalEarth.ETOPO]
 Public = false
 ```
 
 ## JRA55
 
 ```@autodocs
-Modules = [ClimaOcean.JRA55]
+Modules = [NumericalEarth.JRA55]
 Public = false
 ```
 
 ## Bathymetry
 
 ```@autodocs
-Modules = [ClimaOcean.Bathymetry]
+Modules = [NumericalEarth.Bathymetry]
 Public = false
 ```
 
 ## Atmospheres
 
 ```@autodocs
-Modules = [ClimaOcean.Atmospheres]
+Modules = [NumericalEarth.Atmospheres]
 Public = false
 ```
 
 ## Oceans
 
 ```@autodocs
-Modules = [ClimaOcean.Oceans]
+Modules = [NumericalEarth.Oceans]
 Public = false
 ```
 
 ## SeaIces
 
 ```@autodocs
-Modules = [ClimaOcean.SeaIces]
+Modules = [NumericalEarth.SeaIces]
 Public = false
 ```
 
-## OceanSeaIceModels
+## EarthSystemModels
 
 ```@autodocs
-Modules = [ClimaOcean.OceanSeaIceModels]
+Modules = [NumericalEarth.EarthSystemModels]
 Public = false
 ```
 
-## OceanSeaIceModels.InterfaceComputations
+## EarthSystemModels.InterfaceComputations
 
 ```@autodocs
-Modules = [ClimaOcean.OceanSeaIceModels.InterfaceComputations]
+Modules = [NumericalEarth.EarthSystemModels.InterfaceComputations]
 Public = false
 ```

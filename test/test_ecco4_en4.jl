@@ -1,9 +1,9 @@
 include("runtests_setup.jl")
 
-using ClimaOcean
-using ClimaOcean.ECCO
-using ClimaOcean.EN4
-using ClimaOcean.DataWrangling: NearestNeighborInpainting, metadata_path, native_times, download_dataset
+using NumericalEarth
+using NumericalEarth.ECCO
+using NumericalEarth.EN4
+using NumericalEarth.DataWrangling: NearestNeighborInpainting, metadata_path, native_times, download_dataset
 
 using Dates
 using Oceananigans.Grids: topology
@@ -14,8 +14,8 @@ using Oceananigans.Units
 
 using CUDA: @allowscalar
 
-# Inpaint only the first two cells inside the missing mask
-inpainting = NearestNeighborInpainting(2)
+# Inpaint only the first ten cells inside the missing mask
+inpainting = NearestNeighborInpainting(10)
 start_date = DateTime(1993, 1, 1)
 
 test_ecco_en4_datasets = tuple((ds for ds in test_datasets if occursin(r"^E.*4",string(typeof(ds)),))...)
@@ -42,7 +42,7 @@ for arch in test_architectures, dataset in test_ecco_en4_datasets
                 datum = first(metadata)
                 ψ = Field(datum, arch, inpainting=NearestNeighborInpainting(2))
                 @test ψ isa Field
-                datapath = ClimaOcean.DataWrangling.inpainted_metadata_path(datum)
+                datapath = NumericalEarth.DataWrangling.inpainted_metadata_path(datum)
                 @test isfile(datapath)
             end
         end

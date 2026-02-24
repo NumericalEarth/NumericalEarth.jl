@@ -11,11 +11,12 @@
 
 # ```julia
 # using Pkg
-# pkg"add Oceananigans, ClimaOcean, Dates, CairoMakie"
+# pkg"add Oceananigans, NumericalEarth, CairoMakie"
 # ```
 
-using ClimaOcean
+using NumericalEarth
 using Oceananigans
+using Oceananigans: prognostic_fields
 using Oceananigans.Units
 using Oceananigans.Models: buoyancy_frequency
 using Dates
@@ -38,7 +39,7 @@ grid = RectilinearGrid(size = 200,
 
 # # An "ocean simulation"
 #
-# Next, we use ClimaOcean's `ocean_simulation` constructor to build a realistic
+# Next, we use NumericalEarth's `ocean_simulation` constructor to build a realistic
 # ocean simulation on the single-column grid,
 
 ocean = ocean_simulation(grid; Δt=10minutes, coriolis=FPlane(latitude = φ★))
@@ -79,9 +80,9 @@ using CairoMakie
 set_theme!(Theme(linewidth=3, fontsize=24))
 
 fig = Figure(size=(800, 1000))
-axu = Axis(fig[2, 1], xlabel="Days since Jan 1 1990", ylabel="Atmosphere \n velocity (m s⁻¹)")
-axT = Axis(fig[3, 1], xlabel="Days since Jan 1 1990", ylabel="Atmosphere \n temperature (ᵒK)")
-axq = Axis(fig[4, 1], xlabel="Days since Jan 1 1990", ylabel="Atmosphere \n specific humidity")
+axu = Axis(fig[2, 1]; ylabel="Atmosphere \n velocity (m s⁻¹)")
+axT = Axis(fig[3, 1]; ylabel="Atmosphere \n temperature (ᵒK)")
+axq = Axis(fig[4, 1]; ylabel="Atmosphere \n specific humidity", xlabel = "Days since Jan 1, 1990")
 Label(fig[1, 1], "Atmospheric state over ocean station Papa", tellwidth=false)
 
 lines!(axu, t_days, ua, label="Zonal velocity")
@@ -96,7 +97,7 @@ current_figure()
 
 # We continue constructing a simulation.
 radiation = Radiation()
-coupled_model = OceanSeaIceModel(ocean; atmosphere, radiation)
+coupled_model = OceanOnlyModel(ocean; atmosphere, radiation)
 simulation = Simulation(coupled_model, Δt=ocean.Δt, stop_time=30days)
 
 wall_clock = Ref(time_ns())
@@ -158,16 +159,18 @@ N² = buoyancy_frequency(ocean.model)
 
 fluxes = (; ρτx, ρτy, E, Js, Qv, Qc)
 auxiliary_fields = (; N², κc)
-fields = merge(ocean.model.velocities, ocean.model.tracers, auxiliary_fields)
+u, v, w = ocean.model.velocities
+T, S, e = ocean.model.tracers
+fields = merge((; u, v, T, S, e), auxiliary_fields)
 
 # Slice fields at the surface
 outputs = merge(fields, fluxes)
 
 filename = "single_column_omip_$(location_name)"
 
-simulation.output_writers[:jld2] = JLD2Writer(ocean.model, outputs; filename,
-                                              schedule = TimeInterval(3hours),
-                                              overwrite_existing = true)
+ocean.output_writers[:jld2] = JLD2Writer(ocean.model, outputs; filename,
+                                         schedule = TimeInterval(3hours),
+                                         overwrite_existing = true)
 
 run!(simulation)
 

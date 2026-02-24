@@ -1,6 +1,6 @@
 module Oceans
 
-export ocean_simulation
+export ocean_simulation, SlabOcean
 
 using Oceananigans
 using Oceananigans.Units
@@ -21,19 +21,22 @@ using SeawaterPolynomials
 using SeawaterPolynomials.TEOS10: TEOS10EquationOfState
 using KernelAbstractions: @kernel, @index
 
-using ClimaOcean.OceanSeaIceModels
+using NumericalEarth.EarthSystemModels
 
-import ClimaOcean.OceanSeaIceModels: interpolate_state!,
+import NumericalEarth.EarthSystemModels: interpolate_state!,
                                      update_net_fluxes!,
                                      reference_density,
                                      heat_capacity,
+                                     exchange_grid,
+                                     temperature_units,
+                                     DegreesKelvin,
                                      ocean_temperature,
                                      ocean_salinity,
                                      ocean_surface_temperature,
                                      ocean_surface_salinity,
                                      ocean_surface_velocities
 
-import ClimaOcean.OceanSeaIceModels.InterfaceComputations: ComponentExchanger, net_fluxes
+import NumericalEarth.EarthSystemModels.InterfaceComputations: ComponentExchanger, net_fluxes
 
 default_gravitational_acceleration = Oceananigans.defaults.gravitational_acceleration
 default_planet_rotation_rate = Oceananigans.defaults.planet_rotation_rate
@@ -56,6 +59,7 @@ all while respecting user input and changing this to a new value if specified.
 default_or_override(default::Default, possibly_alternative_default=default.value) = possibly_alternative_default
 default_or_override(override, alternative_default=nothing) = override
 
+include("slab_ocean.jl")
 include("barotropic_potential_forcing.jl")
 include("radiative_forcing.jl")
 include("ocean_simulation.jl")

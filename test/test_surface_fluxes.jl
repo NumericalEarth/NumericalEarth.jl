@@ -1,6 +1,6 @@
 include("runtests_setup.jl")
 
-using ClimaOcean.OceanSeaIceModels.InterfaceComputations:
+using NumericalEarth.EarthSystemModels.InterfaceComputations:
                                    ComponentInterfaces,
                                    celsius_to_kelvin,
                                    convert_to_kelvin,
@@ -15,12 +15,12 @@ using CUDA
 using KernelAbstractions: @kernel, @index
 using Oceananigans.TimeSteppers: update_state!
 using Oceananigans.Units: hours, days
-using ClimaOcean.DataWrangling: all_dates
+using NumericalEarth.DataWrangling: all_dates
 
 using ClimaSeaIce.SeaIceDynamics
 using ClimaSeaIce.Rheologies
 
-import ClimaOcean.OceanSeaIceModels.InterfaceComputations: surface_specific_humidity
+import NumericalEarth.EarthSystemModels.InterfaceComputations: surface_specific_humidity
 
 using Statistics: mean, std
 
@@ -71,10 +71,9 @@ end
             atmosphere_ocean_interface_specific_humidity = FixedSpecificHumidity(qₐ)
 
             # Thermodynamic parameters of the atmosphere
-            𝒬ₐ = Thermodynamics.PhaseEquil_pTq(ℂₐ, pₐ, Tₐ, qₐ)
-            cp = Thermodynamics.cp_m(ℂₐ, 𝒬ₐ)
-            ρₐ = Thermodynamics.air_density(ℂₐ, 𝒬ₐ)
-            ℰv = Thermodynamics.latent_heat_vapor(ℂₐ, 𝒬ₐ)
+            cp = Thermodynamics.cp_m(ℂₐ, qₐ)
+            ρₐ = Thermodynamics.air_density(ℂₐ, Tₐ, pₐ, qₐ)
+            ℰv = Thermodynamics.latent_heat_vapor(ℂₐ, Tₐ)
 
             # No radiation equivalent
             radiation = Radiation(ocean_emissivity=0, ocean_albedo=1)
@@ -99,7 +98,7 @@ end
                 fill!(parent(ocean.model.tracers.T), Tₒ)
 
                 # Compute the turbulent fluxes (neglecting radiation)
-                coupled_model    = OceanSeaIceModel(ocean; atmosphere, interfaces)
+                coupled_model    = OceanOnlyModel(ocean; atmosphere, interfaces)
                 turbulent_fluxes = coupled_model.interfaces.atmosphere_ocean_interface.fluxes
 
                 # Make sure all fluxes are (almost) zero!
@@ -128,6 +127,7 @@ end
                                                          temperature_roughness_length = ℓ,
                                                          water_vapor_roughness_length = ℓ,
                                                          gustiness_parameter = 0,
+                                                         minimum_gustiness = 0,
                                                          stability_functions)
 
             interfaces = ComponentInterfaces(atmosphere, ocean;
@@ -136,7 +136,7 @@ end
             # mid-latitude ocean conditions
             set!(ocean.model, u = 0, v = 0, T = 15, S = 30)
 
-            coupled_model = OceanSeaIceModel(ocean; atmosphere, interfaces)
+            coupled_model = OceanOnlyModel(ocean; atmosphere, interfaces)
 
             # Now manually compute the fluxes:
             Tₒ = ocean.model.tracers.T[1, 1, 1] + celsius_to_kelvin
@@ -144,7 +144,7 @@ end
 
             interface_properties = interfaces.atmosphere_ocean_interface.properties
             q_formulation = interface_properties.specific_humidity_formulation
-            qₒ = surface_specific_humidity(q_formulation, ℂₐ, 𝒬ₐ, Tₒ, Sₒ)
+            qₒ = surface_specific_humidity(q_formulation, ℂₐ, Tₐ, pₐ, qₐ, Tₒ, Sₒ)
             g  = ocean.model.buoyancy.formulation.gravitational_acceleration
 
             # Differences!

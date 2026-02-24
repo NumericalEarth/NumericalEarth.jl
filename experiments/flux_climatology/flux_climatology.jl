@@ -1,6 +1,6 @@
-using ClimaOcean
-using ClimaOcean.ECCO
-using ClimaOcean.ECCO: all_ECCO_dates
+using NumericalEarth
+using NumericalEarth.ECCO
+using NumericalEarth.ECCO: all_ECCO_dates
 using Oceananigans
 using Oceananigans.Utils
 using Oceananigans.Fields: ZeroField, location, VelocityFields
@@ -13,11 +13,12 @@ using Adapt
 using Printf
 using KernelAbstractions: @index, @kernel
 
-import Oceananigans.TimeSteppers: time_step!, update_state!, reset!, tick!
-import Oceananigans.Models: timestepper, update_model_field_time_series!
-
-import ClimaOcean.OceanSeaIceModels: reference_density, heat_capacity
 import Oceananigans.Architectures: on_architecture
+import Oceananigans.Models: update_model_field_time_series!
+import Oceananigans.TimeSteppers: time_step!, update_state!, reset!, tick!
+import Oceananigans.Simulations: timestepper
+
+import NumericalEarth.EarthSystemModels: reference_density, heat_capacity
 
 #####
 ##### A Data structure that holds flux statistics
@@ -196,7 +197,7 @@ atmosphere = JRA55PrescribedAtmosphere(arch; backend=JRA55NetCDFBackend(1000))
 ##### A prescribed earth...
 #####
 
-earth_model = OceanSeaIceModel(ocean, nothing; atmosphere, radiation = Radiation(ocean_emissivity=0, ocean_albedo=1))
+earth_model = OceanOnlyModel(ocean; atmosphere, radiation = Radiation(ocean_emissivity=0, ocean_albedo=1))
 earth = Simulation(earth_model, Δt=3hours, stop_time=365days)
 
 wall_time = Ref(time_ns())
@@ -227,5 +228,3 @@ end
 add_callback!(earth, progress, IterationInterval(10))
 
 stats = compute_flux_climatology(earth)
-
-

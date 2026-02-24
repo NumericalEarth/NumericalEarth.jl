@@ -1,8 +1,9 @@
 include("runtests_setup.jl")
+include("download_utils.jl")
 
-using ClimaOcean.JRA55
-using ClimaOcean.JRA55: download_JRA55_cache
-using ClimaOcean.Atmospheres: PrescribedAtmosphere
+using NumericalEarth.JRA55: download_JRA55_cache
+using NumericalEarth.Atmospheres: PrescribedAtmosphere
+using NumericalEarth.DataWrangling: compute_native_date_range
 
 @testset "JRA55 and data wrangling utilities" begin
     for arch in test_architectures
@@ -11,7 +12,7 @@ using ClimaOcean.Atmospheres: PrescribedAtmosphere
 
         # This should download files called "RYF.rsds.1990_1991.nc" and "RYF.tas.1990_1991.nc"
         for test_name in (:downwelling_shortwave_radiation, :temperature)
-            dates = ClimaOcean.DataWrangling.all_dates(JRA55.RepeatYearJRA55(), test_name)
+            dates = NumericalEarth.DataWrangling.all_dates(JRA55.RepeatYearJRA55(), test_name)
             end_date = dates[3]
 
             JRA55_fts = JRA55FieldTimeSeries(test_name, arch; end_date)
@@ -60,7 +61,7 @@ using ClimaOcean.Atmospheres: PrescribedAtmosphere
         @info "Testing interpolate_field_time_series! on $A..."
 
         name  = :downwelling_shortwave_radiation
-        dates = ClimaOcean.DataWrangling.all_dates(JRA55.RepeatYearJRA55(), name)
+        dates = NumericalEarth.DataWrangling.all_dates(JRA55.RepeatYearJRA55(), name)
         end_date = dates[3]
         JRA55_fts = JRA55FieldTimeSeries(name, arch; end_date)
 
@@ -101,7 +102,7 @@ using ClimaOcean.Atmospheres: PrescribedAtmosphere
 
         @info "Testing save_field_time_series! on $A..."
         filepath = "JRA55_downwelling_shortwave_radiation_test_$(string(typeof(arch))).jld2" # different filename for each arch so that the CPU and GPU tests do not crash
-        ClimaOcean.DataWrangling.save_field_time_series!(target_fts, path=filepath, name="Qsw",
+        NumericalEarth.DataWrangling.save_field_time_series!(target_fts, path=filepath, name="Qsw",
                                                          overwrite_existing = true)
         @test isfile(filepath)
 
@@ -133,7 +134,6 @@ using ClimaOcean.Atmospheres: PrescribedAtmosphere
 
         @info "Testing MultiYearJRA55 data on $A..."
         dataset = JRA55.MultiYearJRA55()
-        dates = ClimaOcean.DataWrangling.all_dates(dataset, :temperature)
 
         # Test that when date range spans two years both netCDF files are downloaded
         # and concatenated when reading the data.
@@ -144,10 +144,17 @@ using ClimaOcean.Atmospheres: PrescribedAtmosphere
 
         # Use a temporary directory so different architectures don't clash
         mktempdir("./") do dir
-            
-            Ta = JRA55FieldTimeSeries(:temperature, arch; dataset, start_date, end_date, backend, dir)
+            # Compute expected file paths so we can fall back to artifacts if needed
+            native_dates = NumericalEarth.DataWrangling.all_dates(dataset, :temperature)
+            dates = compute_native_date_range(native_dates, start_date, end_date)
+            metadata = Metadata(:temperature; dataset, dates, dir)
+            filepaths = unique(metadata_path(metadata))
+
+            Ta = download_dataset_with_fallback(filepaths; dataset_name="MultiYearJRA55 :temperature") do
+                JRA55FieldTimeSeries(:temperature, arch; dataset, start_date, end_date, backend, dir)
+            end
             @test Second(end_date - start_date).value ≈ Ta.times[end] - Ta.times[1]
-            
+
             # Test we can access all the data
             for t in eachindex(Ta.times)
                 @test Ta[t] isa Field

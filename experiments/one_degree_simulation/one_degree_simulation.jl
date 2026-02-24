@@ -1,4 +1,4 @@
-using ClimaOcean
+using NumericalEarth
 using Oceananigans.OrthogonalSphericalShellGrids
 using Oceananigans
 using Oceananigans.Units
@@ -21,7 +21,7 @@ view(bottom_height, 73:78, 88:89, 1) .= -1000 # open Gibraltar strait
 
 grid = ImmersedBoundaryGrid(underlying_grid, GridFittedBottom(bottom_height); active_cells_map=true)
 
-catke = ClimaOcean.Oceans.default_ocean_closure()
+catke = NumericalEarth.Oceans.default_ocean_closure()
 viscous_closure = Oceananigans.TurbulenceClosures.HorizontalScalarDiffusivity(ν=2000)
 closure = (catke, viscous_closure)
 
@@ -47,7 +47,7 @@ set!(ocean.model, T=ECCOMetadata(:temperature; dates=first(dates)),
 
 radiation  = Radiation(arch)
 atmosphere = JRA55PrescribedAtmosphere(arch; backend=JRA55NetCDFBackend(41))
-coupled_model = OceanSeaIceModel(ocean; atmosphere, radiation)
+coupled_model = OceanOnlyModel(ocean; atmosphere, radiation)
 
 simulation = Simulation(coupled_model; Δt=10minutes, stop_iteration=100)
 

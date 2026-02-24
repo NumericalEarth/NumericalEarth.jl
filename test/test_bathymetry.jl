@@ -2,10 +2,15 @@ include("runtests_setup.jl")
 
 using Oceananigans
 using Statistics
-using ClimaOcean
+using JLD2
+using NumericalEarth
 
-using ClimaOcean.Bathymetry: remove_minor_basins!
-using ClimaOcean.DataWrangling.ETOPO
+using NumericalEarth.Bathymetry: remove_minor_basins!,
+                                 BathymetryRegridding,
+                                 cache_filename,
+                                 load_bathymetry_cache,
+                                 save_bathymetry_cache
+using NumericalEarth.DataWrangling.ETOPO
 
 @testset "Bathymetry construction and smoothing" begin
     @info "Testing Bathymetry construction and smoothing..."
@@ -13,7 +18,7 @@ using ClimaOcean.DataWrangling.ETOPO
         ETOPOmetadata = Metadatum(:bottom_height, dataset=ETOPO2022())
 
         # Testing downloading
-        ClimaOcean.DataWrangling.download_dataset(ETOPOmetadata)
+        NumericalEarth.DataWrangling.download_dataset(ETOPOmetadata)
         @test isfile(metadata_path(ETOPOmetadata))
 
         grid = LatitudeLongitudeGrid(arch;
@@ -68,4 +73,73 @@ using ClimaOcean.DataWrangling.ETOPO
         # Testing that multiple passes _do_ change the solution when coarsening the grid
         @test parent(control_bottom_height) != parent(interpolated_bottom_height)
     end
+end
+
+@testset "BathymetryRegridding configuration" begin
+    @info "Testing BathymetryRegridding configuration..."
+
+    grid = LatitudeLongitudeGrid(CPU();
+                                 size = (100, 100, 10),
+                                 longitude = (0, 100),
+                                 latitude = (0, 50),
+                                 z = (-6000, 0))
+
+    metadata = Metadatum(:bottom_height, dataset=ETOPO2022())
+
+    # Test construction and equality
+    config1 = BathymetryRegridding(grid, metadata)
+    config2 = BathymetryRegridding(grid, metadata)
+    @test config1 == config2
+    @test hash(config1) == hash(config2)
+
+    # Test that different parameters produce different configs
+    config3 = BathymetryRegridding(grid, metadata; interpolation_passes=5)
+    @test config1 != config3
+    @test hash(config1) != hash(config3)
+
+    config4 = BathymetryRegridding(grid, metadata; minimum_depth=10)
+    @test config1 != config4
+
+    # Test cache filename: same config → same filename
+    @test cache_filename(config1) == cache_filename(config2)
+    # Different config → different filename
+    @test cache_filename(config1) != cache_filename(config3)
+
+    # Test JLD2 round-trip of BathymetryRegridding
+    tmpfile = tempname() * ".jld2"
+    jldopen(tmpfile, "w") do file
+        file["config"] = config1
+    end
+    loaded_config = jldopen(tmpfile, "r") do file
+        file["config"]
+    end
+    rm(tmpfile)
+    @test loaded_config == config1
+end
+
+@testset "Bathymetry caching round-trip" begin
+    @info "Testing bathymetry caching round-trip..."
+
+    # Use a grid size distinct from the first test block (100x100, 200x200)
+    # to avoid loading GPU-computed cache on CPU (floating-point differences).
+    grid = LatitudeLongitudeGrid(CPU();
+                                 size = (80, 80, 10),
+                                 longitude = (0, 100),
+                                 latitude = (0, 50),
+                                 z = (-6000, 0))
+
+    # First call computes and caches
+    result1 = regrid_bathymetry(grid; cache=true)
+
+    # Second call should load from cache and produce the same result
+    result2 = regrid_bathymetry(grid; cache=true)
+    @test parent(result1) == parent(result2)
+
+    # Different parameters should produce different results (cache invalidation)
+    result3 = regrid_bathymetry(grid; cache=true, interpolation_passes=5)
+    @test parent(result1) != parent(result3)
+
+    # cache=false should still produce correct results
+    result4 = regrid_bathymetry(grid; cache=false)
+    @test parent(result1) == parent(result4)
 end

@@ -3,14 +3,14 @@ using Oceananigans.Grids: node
 using Oceananigans.Fields: interpolate, instantiated_location
 using Oceananigans.OutputReaders: Cyclical
 using Oceananigans.Units: Time
-using Oceananigans.Architectures: AbstractArchitecture
+using Oceananigans.Architectures: AbstractArchitecture, on_architecture, architecture
 
 using JLD2
 using NCDatasets
 
 using Dates: Second
 
-import ClimaOcean: stateindex
+import NumericalEarth: stateindex
 import Oceananigans.Forcings: materialize_forcing
 
 # Variable names for restorable data
@@ -18,7 +18,7 @@ struct Temperature end
 struct Salinity end
 struct UVelocity end
 struct VVelocity end
-# Add ClimaOceanBiogeochemistry fields
+# Add NumericalEarthBiogeochemistry fields
 struct DissolvedInorganicCarbon end
 struct Alkalinity end
 struct Nitrate end
@@ -204,6 +204,9 @@ function DatasetRestoring(metadata::Metadata,
                           time_indexing,
                           inpainting,
                           cache_inpainted_data)
+
+    arch = architecture(fts)
+    mask = on_architecture(arch, mask)
 
     # Grab the correct Oceananigans field to restore
     variable_name = metadata.name

@@ -3,7 +3,7 @@ include("runtests_setup.jl")
 using SeawaterPolynomials: TEOS10EquationOfState
 using Oceananigans: location
 using Oceananigans.Models: buoyancy_operation
-using ClimaOcean.Diagnostics: MixedLayerDepthField, MixedLayerDepthOperand
+using NumericalEarth.Diagnostics: MixedLayerDepthField, MixedLayerDepthOperand
 
 for arch in test_architectures, dataset in (ECCO4Monthly(),)
     A = typeof(arch)

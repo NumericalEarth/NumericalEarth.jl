@@ -6,10 +6,10 @@
 # and initialized by temperature, salinity, sea ice concentration, and sea ice thickness
 # from the ECCO state estimate.
 #
-# For this example, we need Oceananigans, ClimaOcean, Dates, CUDA, and
+# For this example, we need Oceananigans, NumericalEarth, Dates, CUDA, and
 # CairoMakie to visualize the simulation.
 
-using ClimaOcean
+using NumericalEarth
 using Oceananigans
 using Oceananigans.Units
 using Dates
@@ -54,7 +54,7 @@ grid = ImmersedBoundaryGrid(underlying_grid, GridFittedBottom(bottom_height);
 using Oceananigans.TurbulenceClosures: IsopycnalSkewSymmetricDiffusivity, AdvectiveFormulation
 
 eddy_closure = IsopycnalSkewSymmetricDiffusivity(κ_skew=1e3, κ_symmetric=1e3, skew_flux_formulation=AdvectiveFormulation())
-vertical_mixing = ClimaOcean.Oceans.default_ocean_closure()
+vertical_mixing = NumericalEarth.Oceans.default_ocean_closure()
 
 # ### Ocean simulation
 # Now we bring everything together to construct the ocean simulation.
@@ -161,7 +161,7 @@ ocean.output_writers[:surface] = JLD2Writer(ocean.model, ocean_outputs;
                                             indices = (:, :, grid.Nz),
                                             overwrite_existing = true)
 
-sea_ice.output_writers[:surface] = JLD2Writer(ocean.model, sea_ice_outputs;
+sea_ice.output_writers[:surface] = JLD2Writer(sea_ice.model, sea_ice_outputs;
                                               schedule = TimeInterval(1days),
                                               filename = "sea_ice_one_degree_surface_fields",
                                               overwrite_existing = true)

@@ -43,14 +43,16 @@ function estimate_maximum_Δt(grid)
     Δy = mean(yspacings(grid))
     Δθ = rad2deg(mean([Δx, Δy])) / grid.radius
 
-    # The maximum Δt is roughly 30minutes / Δθ, giving:
-    # - 30 minutes for a 1 degree ocean
+    # The maximum Δt is roughly 1hours * Δθ, giving:
+    # - 60 minutes for a 1 degree ocean
+    # - 30 minutes for a 0.5 degree ocean
     # - 15 minutes for a 1/4 degree ocean
     # - 7.5 minutes for a 1/8 degree ocean
     # - 3.75 minutes for a 1/16 degree ocean
     # - 1.875 minutes for a 1/32 degree ocean
 
-    Δt = 30minutes / Δθ
+    # We set the maximum Δt to 1 hour
+    Δt = min(1hours, 1hours * Δθ)
 
     return all_reduce(min, Δt, arch)
 end
@@ -307,7 +309,6 @@ function ocean_simulation(grid;
     end
 
     ocean_model = HydrostaticFreeSurfaceModel(grid;
-                                              clock,
                                               buoyancy,
                                               closure,
                                               biogeochemistry,
@@ -329,7 +330,7 @@ hasclosure(closure, ClosureType) = closure isa ClosureType
 hasclosure(closure_tuple::Tuple, ClosureType) = any(hasclosure(c, ClosureType) for c in closure_tuple)
 
 #####
-##### Extending ClimaOcean interface
+##### Extending NumericalEarth interface
 #####
 
 reference_density(ocean::Simulation{<:HydrostaticFreeSurfaceModel}) = reference_density(ocean.model.buoyancy.formulation)

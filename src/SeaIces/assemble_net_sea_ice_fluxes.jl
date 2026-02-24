@@ -1,4 +1,4 @@
-using ClimaOcean.OceanSeaIceModels.InterfaceComputations: computed_fluxes, 
+using NumericalEarth.EarthSystemModels.InterfaceComputations: computed_fluxes, 
                                                           get_possibly_zero_flux,
                                                           interface_kernel_parameters,
                                                           convert_to_kelvin,
@@ -20,7 +20,7 @@ function update_net_fluxes!(coupled_model, sea_ice::Simulation{<:SeaIceModel})
     atmosphere_sea_ice_fluxes = computed_fluxes(coupled_model.interfaces.atmosphere_sea_ice_interface)
 
     # Simplify NamedTuple to reduce parameter space consumption.
-    # See https://github.com/CliMA/ClimaOcean.jl/issues/116.
+    # See https://github.com/CliMA/NumericalEarth.jl/issues/116.
     atmosphere_fields = coupled_model.interfaces.exchanger.atmosphere.state
 
     downwelling_radiation = (Qs = atmosphere_fields.Qs.data,
@@ -31,12 +31,10 @@ function update_net_fluxes!(coupled_model, sea_ice::Simulation{<:SeaIceModel})
     atmos_sea_ice_properties = coupled_model.interfaces.atmosphere_sea_ice_interface.properties
     sea_ice_properties = coupled_model.interfaces.sea_ice_properties
 
-    kernel_parameters = interface_kernel_parameters(grid)
-
     sea_ice_surface_temperature = coupled_model.interfaces.atmosphere_sea_ice_interface.temperature
     ice_concentration = sea_ice_concentration(sea_ice)
     
-    launch!(arch, grid, kernel_parameters,
+    launch!(arch, grid, :xy,
             _assemble_net_sea_ice_fluxes!,
             top_fluxes,
             bottom_heat_flux,

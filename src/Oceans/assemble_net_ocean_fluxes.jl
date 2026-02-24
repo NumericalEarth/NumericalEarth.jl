@@ -1,9 +1,9 @@
 using Printf
 using Oceananigans.Operators: ℑxᶠᵃᵃ, ℑyᵃᶠᵃ
 using Oceananigans.Forcings: MultipleForcings
-using ClimaOcean.OceanSeaIceModels: OceanSeaIceModel, NoOceanInterfaceModel, NoInterfaceModel
+using NumericalEarth.EarthSystemModels: EarthSystemModel, NoOceanInterfaceModel, NoInterfaceModel
 
-using ClimaOcean.OceanSeaIceModels.InterfaceComputations: interface_kernel_parameters, 
+using NumericalEarth.EarthSystemModels.InterfaceComputations: interface_kernel_parameters, 
                                                           computed_fluxes, 
                                                           get_possibly_zero_flux, 
                                                           sea_ice_concentration,
@@ -36,7 +36,7 @@ function update_net_ocean_fluxes!(coupled_model, ocean_model, grid)
     sea_ice_ocean_fluxes = computed_fluxes(coupled_model.interfaces.sea_ice_ocean_interface)
 
     # Simplify NamedTuple to reduce parameter space consumption.
-    # See https://github.com/CliMA/ClimaOcean.jl/issues/116.
+    # See https://github.com/CliMA/NumericalEarth.jl/issues/116.
     atmosphere_fields = coupled_model.interfaces.exchanger.atmosphere.state
 
     downwelling_radiation = (Qs = atmosphere_fields.Qs.data,
@@ -45,15 +45,14 @@ function update_net_ocean_fluxes!(coupled_model, ocean_model, grid)
     freshwater_flux = atmosphere_fields.Mp.data
 
     ice_concentration = sea_ice_concentration(sea_ice)
-    ocean_salinity = OceanSeaIceModels.ocean_salinity(ocean_model)
+    ocean_surface_salinity = EarthSystemModels.ocean_surface_salinity(ocean_model)
     atmos_ocean_properties = coupled_model.interfaces.atmosphere_ocean_interface.properties
     ocean_properties = coupled_model.interfaces.ocean_properties
-    kernel_parameters = interface_kernel_parameters(grid)
 
     ocean_surface_temperature = coupled_model.interfaces.atmosphere_ocean_interface.temperature
     penetrating_radiation = get_radiative_forcing(ocean_model)
 
-    launch!(arch, grid, kernel_parameters,
+    launch!(arch, grid, :xy,
             _assemble_net_ocean_fluxes!,
             net_ocean_fluxes,
             penetrating_radiation,
@@ -61,7 +60,7 @@ function update_net_ocean_fluxes!(coupled_model, ocean_model, grid)
             clock,
             atmos_ocean_fluxes,
             sea_ice_ocean_fluxes,
-            ocean_salinity,
+            ocean_surface_salinity,
             ocean_surface_temperature,
             ice_concentration,
             downwelling_radiation,
@@ -78,7 +77,7 @@ end
                                              clock,
                                              atmos_ocean_fluxes,
                                              sea_ice_ocean_fluxes,
-                                             ocean_salinity,
+                                             ocean_surface_salinity,
                                              ocean_surface_temperature,
                                              sea_ice_concentration,
                                              downwelling_radiation,
@@ -96,7 +95,7 @@ end
 
     @inbounds begin
         ℵᵢ = sea_ice_concentration[i, j, 1]
-        Sₒ = ocean_salinity[i, j, kᴺ]
+        Sₒ = ocean_surface_salinity[i, j, 1]
         Tₛ = ocean_surface_temperature[i, j, 1]
         Tₛ = convert_to_kelvin(ocean_properties.temperature_units, Tₛ)
 

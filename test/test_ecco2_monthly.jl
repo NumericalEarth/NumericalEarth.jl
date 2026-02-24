@@ -1,8 +1,8 @@
 include("runtests_setup.jl")
 
-using ClimaOcean
-using ClimaOcean.ECCO
-using ClimaOcean.DataWrangling: NearestNeighborInpainting, metadata_path, native_times, download_dataset
+using NumericalEarth
+using NumericalEarth.ECCO
+using NumericalEarth.DataWrangling: NearestNeighborInpainting, metadata_path, native_times, download_dataset
 
 using Dates
 using Oceananigans.Grids: topology
@@ -12,8 +12,8 @@ using Oceananigans.Units
 
 using CUDA: @allowscalar
 
-# Inpaint only the first two cells inside the missing mask
-inpainting = NearestNeighborInpainting(2)
+# Inpaint only the first ten cells inside the missing mask
+inpainting = NearestNeighborInpainting(10)
 
 test_ecco_datasets = tuple((ds for ds in test_datasets if occursin(r"^ECCO2.*Monthly",string(typeof(ds)),))...)
 
@@ -24,7 +24,7 @@ for arch in test_architectures, dataset in test_ecco_datasets
     D = typeof(dataset)
 
     if dataset isa ECCO2DarwinMonthly
-        @info "Skipping tests because of failure (see https://github.com/CliMA/ClimaOcean.jl/issues/636)"
+        @info "Skipping tests because of failure (see https://github.com/CliMA/NumericalEarth.jl/issues/636)"
     else
         @testset "$A metadata tests for $D" begin
             @info "Running Metadata tests for $D on $A..."
@@ -45,7 +45,7 @@ for arch in test_architectures, dataset in test_ecco_datasets
                     datum = first(metadata)
                     ψ = Field(datum, arch, inpainting=NearestNeighborInpainting(2))
                     @test ψ isa Field
-                    datapath = ClimaOcean.DataWrangling.inpainted_metadata_path(datum)
+                    datapath = NumericalEarth.DataWrangling.inpainted_metadata_path(datum)
                     @test isfile(datapath)
                 end
             end

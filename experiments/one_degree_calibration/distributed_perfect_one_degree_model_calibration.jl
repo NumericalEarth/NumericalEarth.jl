@@ -3,7 +3,7 @@ using Oceananigans.Units
 using Oceananigans.Utils: WallTimeInterval
 using Oceananigans.Models: buoyancy_operation
 using Oceananigans.Models.HydrostaticFreeSurfaceModels: VerticalVorticityField
-using ClimaOcean.NearGlobalSimulations: one_degree_near_global_simulation
+using NumericalEarth.NearGlobalSimulations: one_degree_near_global_simulation
 
 using ParameterEstimocean
 using ParameterEstimocean.Utils: map_gpus_to_ranks!
@@ -62,12 +62,14 @@ if rank == 0 && initialization
 
     test_simulation.output_writers[:d3] = JLD2Writer(model, model.tracers,
                                                      schedule = IterationInterval(100),
+                                                     including = [:grid],
                                                      filename = prefix * "_fields",
                                                      overwrite_existing = true)
 
     slice_indices = (11, :, :)
     test_simulation.output_writers[:d2] = JLD2Writer(model, model.tracers,
                                                      schedule = IterationInterval(100),
+                                                     including = [:grid],
                                                      filename = prefix * "_slices",
                                                      indices = slice_indices,
                                                      overwrite_existing = true)

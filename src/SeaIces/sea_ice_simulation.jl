@@ -1,12 +1,11 @@
 using ClimaSeaIce
 using ClimaSeaIce: SeaIceModel, SlabSeaIceThermodynamics, PhaseTransitions, ConductiveFlux
 using ClimaSeaIce.SeaIceThermodynamics: IceWaterThermalEquilibrium
-using ClimaSeaIce.Rheologies
 using ClimaSeaIce.SeaIceDynamics: SplitExplicitSolver, SemiImplicitStress, SeaIceMomentumEquation, StressBalanceFreeDrift
 using ClimaSeaIce.Rheologies: IceStrength, ElastoViscoPlasticRheology
 
-using ClimaOcean.OceanSeaIceModels: ocean_surface_salinity, ocean_surface_velocities
-using ClimaOcean.Oceans: Default, u_immersed_bottom_drag, v_immersed_bottom_drag
+using NumericalEarth.EarthSystemModels: ocean_surface_salinity, ocean_surface_velocities
+using NumericalEarth.Oceans: Default, u_immersed_bottom_drag, v_immersed_bottom_drag
 
 default_rotation_rate = Oceananigans.defaults.planet_rotation_rate
 
@@ -53,14 +52,6 @@ function sea_ice_simulation(grid, ocean=nothing;
     bottom_heat_flux = Field{Center, Center, Nothing}(grid)
     top_heat_flux    = Field{Center, Center, Nothing}(grid)
 
-    u_bc = FluxBoundaryCondition(u_immersed_bottom_drag, discrete_form=true, parameters=1e-1)
-    v_bc = FluxBoundaryCondition(v_immersed_bottom_drag, discrete_form=true, parameters=1e-1)
-   
-    # immersed_u_bc = ImmersedBoundaryConditions(top=nothing, bottom=nothing,  west=nothing,  east=nothing, south=u_bc, north=u_bc)
-    # immersed_v_bc = ImmersedBoundaryConditions(top=nothing, bottom=nothing, south=nothing, north=nothing,  west=v_bc,  east=v_bc)
-    # u_bcs = FieldBoundaryConditions(grid, (Face(), Center(), nothing); immersed = immersed_u_bc)
-    # v_bcs = FieldBoundaryConditions(grid, (Center(), Face(), nothing); immersed = immersed_v_bc)
-
     # Build the sea ice model
     sea_ice_model = SeaIceModel(grid;
                                 ice_salinity,
@@ -86,11 +77,11 @@ default_solver(::Oceananigans.TimeSteppers.QuasiAdamsBashforth2TimeStepper) = Sp
 default_solver(::Oceananigans.TimeSteppers.SplitRungeKuttaTimeStepper) = SplitExplicitSolver(360)
 
 function sea_ice_dynamics(grid, ocean=nothing;
-                          sea_ice_ocean_drag_coefficient = 2.5e-3,
+                          sea_ice_ocean_drag_coefficient = 5.5e-3,
                           rheology = ElastoViscoPlasticRheology(),
                           coriolis = HydrostaticSphericalCoriolis(; rotation_rate=default_rotation_rate),
                           free_drift = nothing,
-                          solver = default_solver(ocean))
+                          solver = SplitExplicitSolver(120))
 
     SSU, SSV = ocean_surface_velocities(ocean)
     sea_ice_ocean_drag_coefficient = convert(eltype(grid), sea_ice_ocean_drag_coefficient)
@@ -113,7 +104,7 @@ function sea_ice_dynamics(grid, ocean=nothing;
 end
 
 #####
-##### Extending OceanSeaIceModels interface
+##### Extending EarthSystemModels interface
 #####
 
 sea_ice_thickness(sea_ice::Simulation{<:SeaIceModel}) = sea_ice.model.ice_thickness

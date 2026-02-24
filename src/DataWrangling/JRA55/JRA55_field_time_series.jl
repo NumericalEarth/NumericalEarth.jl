@@ -1,5 +1,5 @@
-using ClimaOcean.DataWrangling: all_dates, native_times
-using ClimaOcean.DataWrangling: compute_native_date_range
+using NumericalEarth.DataWrangling: all_dates, native_times
+using NumericalEarth.DataWrangling: compute_native_date_range
 using Oceananigans.Grids: AbstractGrid
 using Oceananigans.OutputReaders: PartlyInMemory
 using Adapt
@@ -189,6 +189,7 @@ function set!(fts::JRA55NetCDFFTSMultipleYears, backend=fts.backend)
             LX, LY, LZ = location(fts)
             i₁, i₂, j₁, j₂, TX = compute_bounding_indices(nothing, nothing, fts.grid, LX, LY, λc, φc)
 
+
             if issorted(nn)
                 data = ds[name][i₁:i₂, j₁:j₂, nn]
             else
@@ -272,7 +273,7 @@ Keyword arguments
 
 - `end_date`: The ending date to use for the dataset. Default: `end_date(dataset, variable_name)`.
 
-- `dir`: The directory of the data file. Default: `ClimaOcean.JRA55.download_JRA55_cache`.
+- `dir`: The directory of the data file. Default: `NumericalEarth.JRA55.download_JRA55_cache`.
 
 - `time_indexing`: The time indexing scheme for the field time series. Default: `Cyclical()`.
 
@@ -457,7 +458,7 @@ function JRA55FieldTimeSeries(metadata::JRA55Metadata, architecture=CPU(), FT=Fl
         ds = Dataset(filepath)
         data = ds[shortname][i₁:i₂, j₁:j₂, time_indices_in_memory]
         close(ds)
-        
+
         copyto!(interior(fts, :, :, 1, :), data)
         fill_halo_regions!(fts)
 
