@@ -59,6 +59,7 @@ jobs:
           - speedy_weather
           - breeze
           - downloading
+          - veros
     steps:
       - name: Show available storage before cleanup
         run: |

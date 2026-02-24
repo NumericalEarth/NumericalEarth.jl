@@ -116,6 +116,31 @@ end
 
 SeaIceOceanFluxes(::Nothing) = SeaIceOceanFluxes{ZeroField, ZeroField, ZeroField}(ntuple(_ -> ZeroField(), 5)...)
 
+# ZeroFluxes is returned by computed_fluxes(::Nothing) for absent interfaces.
+# It contains the union of all flux field names across interface types.
+struct ZeroFluxes{Z}
+    # Atmosphere-ocean and atmosphere-sea-ice flux fields
+    latent_heat           :: Z
+    sensible_heat         :: Z
+    water_vapor           :: Z
+    x_momentum            :: Z
+    y_momentum            :: Z
+    friction_velocity     :: Z
+    temperature_scale     :: Z
+    water_vapor_scale     :: Z
+    upwelling_longwave    :: Z
+    downwelling_longwave  :: Z
+    downwelling_shortwave :: Z
+    # Sea ice-ocean flux fields
+    interface_heat        :: Z
+    frazil_heat           :: Z
+    salt                  :: Z
+end
+
+ZeroFluxes() = ZeroFluxes{ZeroField}(ntuple(_ -> ZeroField(), 14)...)
+
+@inline computed_fluxes(::Nothing) = ZeroFluxes()
+
 mutable struct ComponentInterfaces{AO, ASI, SIO, C, AP, OP, SIP, EX, P}
     atmosphere_ocean_interface :: AO
     atmosphere_sea_ice_interface :: ASI
@@ -140,9 +165,9 @@ Base.show(io::IO, crf::ComponentInterfaces) = print(io, summary(crf))
 ##### Atmosphere-Ocean Interface
 #####
 
-atmosphere_ocean_interface(grid, ::Nothing,   ocean,    args...) = AtmosphereInterface(AtmosphereOceanFluxes(nothing), nothing, nothing, nothing)
-atmosphere_ocean_interface(grid, ::Nothing,  ::Nothing, args...) = AtmosphereInterface(AtmosphereOceanFluxes(nothing), nothing, nothing, nothing)
-atmosphere_ocean_interface(grid, atmosphere, ::Nothing, args...) = AtmosphereInterface(AtmosphereOceanFluxes(nothing), nothing, nothing, nothing)
+atmosphere_ocean_interface(grid, ::Nothing,   ocean,    args...) = nothing
+atmosphere_ocean_interface(grid, ::Nothing,  ::Nothing, args...) = nothing
+atmosphere_ocean_interface(grid, atmosphere, ::Nothing, args...) = nothing
 
 function atmosphere_ocean_interface(grid, 
                                     atmosphere,
@@ -174,9 +199,9 @@ end
 ##### Atmosphere-Sea Ice Interface
 #####
 
-atmosphere_sea_ice_interface(grid, atmos, ::Nothing,     args...) = AtmosphereInterface(AtmosphereSeaIceFluxes(nothing), nothing, nothing, nothing)
-atmosphere_sea_ice_interface(grid, ::Nothing, sea_ice,   args...) = AtmosphereInterface(AtmosphereSeaIceFluxes(nothing), nothing, nothing, nothing)
-atmosphere_sea_ice_interface(grid, ::Nothing, ::Nothing, args...) = AtmosphereInterface(AtmosphereSeaIceFluxes(nothing), nothing, nothing, nothing)
+atmosphere_sea_ice_interface(grid, atmos, ::Nothing,     args...) = nothing
+atmosphere_sea_ice_interface(grid, ::Nothing, sea_ice,   args...) = nothing
+atmosphere_sea_ice_interface(grid, ::Nothing, ::Nothing, args...) = nothing
 
 function atmosphere_sea_ice_interface(grid, 
                                       atmosphere,
@@ -210,14 +235,14 @@ end
 ##### Sea Ice-Ocean Interface
 #####
 
-sea_ice_ocean_interface(grid, ::Nothing, ocean,     flux_formulation; kwargs...) = SeaIceOceanInterface(SeaIceOceanFluxes(nothing), nothing, nothing, nothing)
-sea_ice_ocean_interface(grid, ::Nothing, ::Nothing, flux_formulation; kwargs...) = SeaIceOceanInterface(SeaIceOceanFluxes(nothing), nothing, nothing, nothing)
-sea_ice_ocean_interface(grid, sea_ice,   ::Nothing, flux_formulation; kwargs...) = SeaIceOceanInterface(SeaIceOceanFluxes(nothing), nothing, nothing, nothing)
+sea_ice_ocean_interface(grid, ::Nothing, ocean,     flux_formulation; kwargs...) = nothing
+sea_ice_ocean_interface(grid, ::Nothing, ::Nothing, flux_formulation; kwargs...) = nothing
+sea_ice_ocean_interface(grid, sea_ice,   ::Nothing, flux_formulation; kwargs...) = nothing
 
 # Disambiguation
-sea_ice_ocean_interface(grid, ::Nothing,     ocean, ::ThreeEquationHeatFlux; kwargs...) = SeaIceOceanInterface(SeaIceOceanFluxes(nothing), nothing, nothing, nothing)
-sea_ice_ocean_interface(grid, sea_ice,   ::Nothing, ::ThreeEquationHeatFlux; kwargs...) = SeaIceOceanInterface(SeaIceOceanFluxes(nothing), nothing, nothing, nothing)
-sea_ice_ocean_interface(grid, ::Nothing, ::Nothing, ::ThreeEquationHeatFlux; kwargs...) = SeaIceOceanInterface(SeaIceOceanFluxes(nothing), nothing, nothing, nothing)
+sea_ice_ocean_interface(grid, ::Nothing,     ocean, ::ThreeEquationHeatFlux; kwargs...) = nothing
+sea_ice_ocean_interface(grid, sea_ice,   ::Nothing, ::ThreeEquationHeatFlux; kwargs...) = nothing
+sea_ice_ocean_interface(grid, ::Nothing, ::Nothing, ::ThreeEquationHeatFlux; kwargs...) = nothing
 
 """
     sea_ice_ocean_interface(grid, sea_ice, ocean, flux_formulation)
@@ -297,7 +322,7 @@ Keyword Arguments
 - `gravitational_acceleration`: gravitational acceleration. Default: `default_gravitational_acceleration`.
 """
 function ComponentInterfaces(atmosphere, ocean, sea_ice=nothing;
-                             exchange_grid = exchange_grid(ocean),
+                             exchange_grid = exchange_grid(atmosphere, ocean, sea_ice),
                              radiation = Radiation(),
                              freshwater_density = default_freshwater_density,
                              atmosphere_ocean_fluxes = SimilarityTheoryFluxes(eltype(exchange_grid)),
