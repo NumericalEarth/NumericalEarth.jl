@@ -2,14 +2,14 @@ function ComponentExchanger(atmosphere::PrescribedAtmosphere, grid)
 
     regridder = atmosphere_regridder(atmosphere, grid)
 
-    state = (; u  = Field{Center, Center, Nothing}(grid),
-               v  = Field{Center, Center, Nothing}(grid),
-               T  = Field{Center, Center, Nothing}(grid),
-               p  = Field{Center, Center, Nothing}(grid),
-               q  = Field{Center, Center, Nothing}(grid),
-               Qs = Field{Center, Center, Nothing}(grid),
-               Qℓ = Field{Center, Center, Nothing}(grid),
-               Mp = Field{Center, Center, Nothing}(grid))
+    state = (; u    = Field{Center, Center, Nothing}(grid),
+               v    = Field{Center, Center, Nothing}(grid),
+               T    = Field{Center, Center, Nothing}(grid),
+               p    = Field{Center, Center, Nothing}(grid),
+               q    = Field{Center, Center, Nothing}(grid),
+               ℐꜜˢʷ = Field{Center, Center, Nothing}(grid),
+               ℐꜜˡʷ = Field{Center, Center, Nothing}(grid),
+               Jᶜ   = Field{Center, Center, Nothing}(grid))
 
     return ComponentExchanger(state, regridder)
 end

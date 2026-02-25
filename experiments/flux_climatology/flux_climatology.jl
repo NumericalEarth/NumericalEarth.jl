@@ -81,19 +81,19 @@ finalize_std!(f::FluxStatistics) = parent(f.std) .= sqrt.(parent(f.std) .- paren
 
 function compute_flux_climatology(earth)
     net_fluxes = earth.model.interfaces.net_fluxes.ocean_surface
-    τx = FluxStatistics(net_fluxes.u)
-    τy = FluxStatistics(net_fluxes.v)
+    τˣ = FluxStatistics(net_fluxes.u)
+    τʸ = FluxStatistics(net_fluxes.v)
     Jᵀ = FluxStatistics(net_fluxes.T)
     Jˢ = FluxStatistics(net_fluxes.S)
 
-    stats = (; τx, τy, Jᵀ, Jˢ)
+    stats = (; τˣ, τʸ, Jᵀ, Jˢ)
 
     function update_flux_stats!(earth)
         Δt = earth.Δt
         stop_time = earth.stop_time
 
-        update_stats!(τx, net_fluxes.u, Δt, stop_time)
-        update_stats!(τy, net_fluxes.v, Δt, stop_time)
+        update_stats!(τˣ, net_fluxes.u, Δt, stop_time)
+        update_stats!(τʸ, net_fluxes.v, Δt, stop_time)
         update_stats!(Jᵀ, net_fluxes.T, Δt, stop_time)
         update_stats!(Jˢ, net_fluxes.S, Δt, stop_time)
 
@@ -104,8 +104,8 @@ function compute_flux_climatology(earth)
 
     run!(earth)
 
-    finalize_std!(τx)
-    finalize_std!(τy)
+    finalize_std!(τˣ)
+    finalize_std!(τʸ)
     finalize_std!(Jᵀ)
     finalize_std!(Jˢ)
 
@@ -129,13 +129,13 @@ function PrescribedOcean(timeseries;
                          grid,
                          clock=Clock{Float64}(time = 0))
 
-    τx = Field{Face, Center, Nothing}(grid)
-    τy = Field{Center, Face, Nothing}(grid)
+    τˣ = Field{Face, Center, Nothing}(grid)
+    τʸ = Field{Center, Face, Nothing}(grid)
     Jᵀ = Field{Center, Center, Nothing}(grid)
     Jˢ = Field{Center, Center, Nothing}(grid)
 
-    u = XFaceField(grid,  boundary_conditions=FieldBoundaryConditions(grid, (Face(),   Center(), Center()), top = FluxBoundaryCondition(τx)))
-    v = YFaceField(grid,  boundary_conditions=FieldBoundaryConditions(grid, (Center(), Face(),   Center()), top = FluxBoundaryCondition(τy)))
+    u = XFaceField(grid,  boundary_conditions=FieldBoundaryConditions(grid, (Face(),   Center(), Center()), top = FluxBoundaryCondition(τˣ)))
+    v = YFaceField(grid,  boundary_conditions=FieldBoundaryConditions(grid, (Center(), Face(),   Center()), top = FluxBoundaryCondition(τʸ)))
     T = CenterField(grid, boundary_conditions=FieldBoundaryConditions(grid, (Center(), Center(), Center()), top = FluxBoundaryCondition(Jᵀ)))
     S = CenterField(grid, boundary_conditions=FieldBoundaryConditions(grid, (Center(), Center(), Center()), top = FluxBoundaryCondition(Jˢ)))
 

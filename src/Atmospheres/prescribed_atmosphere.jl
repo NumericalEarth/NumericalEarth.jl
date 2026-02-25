@@ -45,9 +45,9 @@ function default_atmosphere_tracers(grid, times)
 end
 
 function default_downwelling_radiation(grid, times)
-    Qℓ = FieldTimeSeries{Center, Center, Nothing}(grid, times)
-    Qs = FieldTimeSeries{Center, Center, Nothing}(grid, times)
-    return TwoBandDownwellingRadiation(shortwave=Qs, longwave=Qℓ)
+    ℐꜜˡʷ = FieldTimeSeries{Center, Center, Nothing}(grid, times)
+    ℐꜜˢʷ = FieldTimeSeries{Center, Center, Nothing}(grid, times)
+    return TwoBandDownwellingRadiation(shortwave=ℐꜜˢʷ, longwave=ℐꜜˡʷ)
 end
 
 function default_freshwater_flux(grid, times)
