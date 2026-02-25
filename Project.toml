@@ -6,7 +6,6 @@ authors = ["NumericalEarth contributors"]
 
 [deps]
 Adapt = "79e6a3ab-5dfb-504d-930d-738a2a938a0e"
-Breeze = "660aa2fb-d4c8-4359-a52c-9c057bc511da"
 CFTime = "179af706-886a-5703-950a-314cd64e0468"
 CUDA = "052768ef-5323-5732-b1bb-66c8b64840ba"
 CUDA_Compiler_jll = "d1e2174e-dfdc-576e-b43e-73b79eb1aca8"
@@ -36,6 +35,7 @@ Thermodynamics = "b60c26fb-14c3-4610-9d3e-2d17fe7ff00c"
 ZipFile = "a5390f91-8eb1-5f08-bee0-b1d1ffed6cea"
 
 [weakdeps]
+Breeze = "660aa2fb-d4c8-4359-a52c-9c057bc511da"
 PythonCall = "6099a3de-0909-46bc-b1f4-468b9a2dfc0d"
 CondaPkg = "992eb4ea-22a4-4c89-a5bb-47a3300528ab"
 CopernicusMarine = "cd43e856-93a3-40c8-bc9e-6146cdce14fa"
