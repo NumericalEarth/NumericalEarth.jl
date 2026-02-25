@@ -1,5 +1,4 @@
-using NumericalEarth.EarthSystemModels.InterfaceComputations: computed_fluxes, 
-                                                          get_possibly_zero_flux,
+using NumericalEarth.EarthSystemModels.InterfaceComputations: computed_fluxes,
                                                           interface_kernel_parameters,
                                                           convert_to_kelvin,
                                                           emitted_longwave_radiation,
@@ -76,14 +75,14 @@ end
         
         Qs = downwelling_radiation.Qs[i, j, 1]
         Qℓ = downwelling_radiation.Qℓ[i, j, 1]
-        Qc = get_possibly_zero_flux(atmosphere_sea_ice_fluxes, :sensible_heat)[i, j, 1] # sensible or "conductive" heat flux
-        Qv = get_possibly_zero_flux(atmosphere_sea_ice_fluxes, :latent_heat)[i, j, 1]   # latent heat flux
-        Qf = get_possibly_zero_flux(sea_ice_ocean_fluxes, :frazil_heat)[i, j, 1]        # frazil heat flux
-        Qi = get_possibly_zero_flux(sea_ice_ocean_fluxes, :interface_heat)[i, j, 1]   # interfacial heat flux
+        Qc = atmosphere_sea_ice_fluxes.sensible_heat[i, j, 1] # sensible or "conductive" heat flux
+        Qv = atmosphere_sea_ice_fluxes.latent_heat[i, j, 1]   # latent heat flux
+        Qf = sea_ice_ocean_fluxes.frazil_heat[i, j, 1]        # frazil heat flux
+        Qi = sea_ice_ocean_fluxes.interface_heat[i, j, 1]     # interfacial heat flux
     end
 
-    ρτx = get_possibly_zero_flux(atmosphere_sea_ice_fluxes, :x_momentum) # zonal momentum flux
-    ρτy = get_possibly_zero_flux(atmosphere_sea_ice_fluxes, :y_momentum) # meridional momentum flux
+    ρτx = atmosphere_sea_ice_fluxes.x_momentum # zonal momentum flux
+    ρτy = atmosphere_sea_ice_fluxes.y_momentum # meridional momentum flux
 
     # Compute radiation fluxes
     σ = atmos_sea_ice_properties.radiation.σ
