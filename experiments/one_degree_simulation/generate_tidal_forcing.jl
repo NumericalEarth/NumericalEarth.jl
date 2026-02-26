@@ -14,15 +14,15 @@ pa_with_tides = FieldTimeSeries{Center, Center, Nothing}(pa.grid, pa.times,
                                                          name = "pa",
                                                          backend = OnDisk())
 
-ρₒΦt = FieldTimeSeries{Center, Center, Nothing}(pa.grid, pa.times,
+ρᵒᶜΦt = FieldTimeSeries{Center, Center, Nothing}(pa.grid, pa.times,
                                                 path = "tidal_force_potential.jld2",
-                                                name = "ρₒΦ",
+                                                name = "ρᵒᶜΦ",
                                                 backend = OnDisk())
 
 grid = pa.grid
-ρₒ = 1020
+ρᵒᶜ = 1020
 Φ = Field{Center, Center, Nothing}(grid)
-ρₒΦ = Field(ρₒ * Φ)
+ρᵒᶜΦ = Field(ρᵒᶜ * Φ)
 
 kernel_meta_file = "kernels.txt"
 Tidejinks.wrangle_spice_kernels(kernel_meta_file)
@@ -36,11 +36,11 @@ for n = 1:17 # Nt
     t = DateTime(1993, 1, 1, 1) + dt
     @info "Computing tides at $t"
     Tidejinks.compute_tidal_potential!(Φ, t)
-    compute!(ρₒΦ)
-    set!(ρₒΦt, ρₒΦ, n) #, pa.times[n])
+    compute!(ρᵒᶜΦ)
+    set!(ρᵒᶜΦt, ρᵒᶜΦ, n) #, pa.times[n])
 
-    parent(ρₒΦ) .+= parent(pa[n])
-    set!(pa_with_tides, ρₒΦ, n) #, pa.times[n])
+    parent(ρᵒᶜΦ) .+= parent(pa[n])
+    set!(pa_with_tides, ρᵒᶜΦ, n) #, pa.times[n])
 end
 
 using Statistics
@@ -56,27 +56,27 @@ n = slider.value #Observable(1)
 titlestr = @lift string(pa.times[$n] ./ Oceananigans.Units.days)
 Label(fig[0, 1:2], titlestr)
 
-#pₐ_plus_ρₒΦ = @lift pa_with_tides[$n]
+#pᵃᵗ_plus_ρᵒᶜΦ = @lift pa_with_tides[$n]
 
-pₐ = @lift begin
+pᵃᵗ = @lift begin
     p = pa[$n]
     interior(p, :, :, 1) .- 101325 #mean(p)
 end
 
-mean_ρₒΦ = mean(ρₒΦt)
+mean_ρᵒᶜΦ = mean(ρᵒᶜΦt)
 
-ρₒΦ = @lift begin
-    ρₒΦ = ρₒΦt[$n]
-    interior(ρₒΦ, :, :, 1) .- mean_ρₒΦ
+ρᵒᶜΦ = @lift begin
+    ρᵒᶜΦ = ρᵒᶜΦt[$n]
+    interior(ρᵒᶜΦ, :, :, 1) .- mean_ρᵒᶜΦ
 end
 
-#hm = heatmap!(ax1, pₐ_plus_ρₒΦ)
+#hm = heatmap!(ax1, pᵃᵗ_plus_ρᵒᶜΦ)
 #Colorbar(fig[2, 1], hm, vertical=false)
 
-hm = heatmap!(ax1, pₐ, colormap=:balance, colorrange=(-4000, 4000))
+hm = heatmap!(ax1, pᵃᵗ, colormap=:balance, colorrange=(-4000, 4000))
 Colorbar(fig[2, 1], hm, vertical=false)
 
-hm = heatmap!(ax2, ρₒΦ, colormap=:balance, colorrange=(-4000, 4000))
+hm = heatmap!(ax2, ρᵒᶜΦ, colormap=:balance, colorrange=(-4000, 4000))
 Colorbar(fig[2, 2], hm, vertical=false)
 
 display(fig)

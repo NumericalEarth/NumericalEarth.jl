@@ -13,7 +13,7 @@ using NumericalEarth.EarthSystemModels.InterfaceComputations: interface_kernel_p
                                                           transmitted_shortwave_radiation
                                                           
 
-@inline τᶜᶜᶜ(i, j, k, grid, ρₒ⁻¹, ℵ, ρτᶜᶜᶜ) = @inbounds ρₒ⁻¹ * (1 - ℵ[i, j, k]) * ρτᶜᶜᶜ[i, j, k]
+@inline τᶜᶜᶜ(i, j, k, grid, ρᵒᶜ⁻¹, ℵ, ρτᶜᶜᶜ) = @inbounds ρᵒᶜ⁻¹ * (1 - ℵ[i, j, k]) * ρτᶜᶜᶜ[i, j, k]
 
 #####
 ##### Generic flux assembler
@@ -39,10 +39,10 @@ function update_net_ocean_fluxes!(coupled_model, ocean_model, grid)
     # See https://github.com/CliMA/NumericalEarth.jl/issues/116.
     atmosphere_fields = coupled_model.interfaces.exchanger.atmosphere.state
 
-    downwelling_radiation = (Qs = atmosphere_fields.Qs.data,
-                             Qℓ = atmosphere_fields.Qℓ.data)
+    downwelling_radiation = (ℐꜜˢʷ = atmosphere_fields.ℐꜜˢʷ.data,
+                             ℐꜜˡʷ = atmosphere_fields.ℐꜜˡʷ.data)
 
-    freshwater_flux = atmosphere_fields.Mp.data
+    freshwater_flux = atmosphere_fields.Jᶜ.data
 
     ice_concentration = sea_ice_concentration(sea_ice)
     ocean_surface_salinity = EarthSystemModels.ocean_surface_salinity(ocean_model)
@@ -88,86 +88,86 @@ end
     i, j = @index(Global, NTuple)
     kᴺ = size(grid, 3)
     time = Time(clock.time)
-    ρτxao = get_possibly_zero_flux(atmos_ocean_fluxes,   :x_momentum) # atmosphere - ocean zonal momentum flux
-    ρτyao = get_possibly_zero_flux(atmos_ocean_fluxes,   :y_momentum) # atmosphere - ocean meridional momentum flux
-    ρτxio = get_possibly_zero_flux(sea_ice_ocean_fluxes, :x_momentum) # sea_ice - ocean zonal momentum flux
-    ρτyio = get_possibly_zero_flux(sea_ice_ocean_fluxes, :y_momentum) # sea_ice - ocean meridional momentum flux
+    ρτˣᵃᵒ = get_possibly_zero_flux(atmos_ocean_fluxes,   :x_momentum) # atmosphere - ocean zonal momentum flux
+    ρτʸᵃᵒ = get_possibly_zero_flux(atmos_ocean_fluxes,   :y_momentum) # atmosphere - ocean meridional momentum flux
+    ρτˣⁱᵒ = get_possibly_zero_flux(sea_ice_ocean_fluxes, :x_momentum) # sea_ice - ocean zonal momentum flux
+    ρτʸⁱᵒ = get_possibly_zero_flux(sea_ice_ocean_fluxes, :y_momentum) # sea_ice - ocean meridional momentum flux
 
     @inbounds begin
         ℵᵢ = sea_ice_concentration[i, j, 1]
-        Sₒ = ocean_surface_salinity[i, j, 1]
+        Sᵒᶜ = ocean_surface_salinity[i, j, 1]
         Tₛ = ocean_surface_temperature[i, j, 1]
         Tₛ = convert_to_kelvin(ocean_properties.temperature_units, Tₛ)
 
-        Mp  = freshwater_flux[i, j, 1] # Prescribed freshwater flux
-        Qs  = downwelling_radiation.Qs[i, j, 1] # Downwelling shortwave radiation
-        Qℓ  = downwelling_radiation.Qℓ[i, j, 1] # Downwelling longwave radiation
-        Qc  = get_possibly_zero_flux(atmos_ocean_fluxes, :sensible_heat)[i, j, 1] # sensible or "conductive" heat flux
-        Qv  = get_possibly_zero_flux(atmos_ocean_fluxes, :latent_heat)[i, j, 1] # latent heat flux
-        Mv  = get_possibly_zero_flux(atmos_ocean_fluxes, :water_vapor)[i, j, 1] # mass flux of water vapor
+        Jᶜ  = freshwater_flux[i, j, 1] # Prescribed freshwater (condensate) flux
+        ℐꜜˢʷ = downwelling_radiation.ℐꜜˢʷ[i, j, 1] # Downwelling shortwave radiation
+        ℐꜜˡʷ = downwelling_radiation.ℐꜜˡʷ[i, j, 1] # Downwelling longwave radiation
+        𝒬ᵀ  = get_possibly_zero_flux(atmos_ocean_fluxes, :sensible_heat)[i, j, 1] # sensible or "conductive" heat flux
+        𝒬ᵛ  = get_possibly_zero_flux(atmos_ocean_fluxes, :latent_heat)[i, j, 1] # latent heat flux
+        Jᵛ  = get_possibly_zero_flux(atmos_ocean_fluxes, :water_vapor)[i, j, 1] # mass flux of water vapor
     end
 
     # Compute radiation fluxes (radiation is multiplied by the fraction of ocean, 1 - sea ice concentration)
     σ = atmos_ocean_properties.radiation.σ
     α = atmos_ocean_properties.radiation.α
     ϵ = atmos_ocean_properties.radiation.ϵ
-    Qu  = emitted_longwave_radiation(i, j, kᴺ, grid, time, Tₛ, σ, ϵ) 
-    Qaℓ = absorbed_longwave_radiation(i, j, kᴺ, grid, time, ϵ, Qℓ) 
-  
-    # Compute the interior + surface absorbed shortwave radiation
-    Qts = transmitted_shortwave_radiation(i, j, kᴺ, grid, time, α, Qs)
+    ℐꜛˡʷ = emitted_longwave_radiation(i, j, kᴺ, grid, time, Tₛ, σ, ϵ)
+    ℐₐˡʷ = absorbed_longwave_radiation(i, j, kᴺ, grid, time, ϵ, ℐꜜˡʷ)
 
-    Qaℓ *= (1 - ℵᵢ)
-    Qts *= (1 - ℵᵢ)
-  
-    Qss = shortwave_radiative_forcing(i, j, grid, penetrating_radiation, Qts, ocean_properties)
+    # Compute the interior + surface absorbed shortwave radiation
+    ℐₜˢʷ = transmitted_shortwave_radiation(i, j, kᴺ, grid, time, α, ℐꜜˢʷ)
+
+    ℐₐˡʷ *= (1 - ℵᵢ)
+    ℐₜˢʷ *= (1 - ℵᵢ)
+
+    Qss = shortwave_radiative_forcing(i, j, grid, penetrating_radiation, ℐₜˢʷ, ocean_properties)
 
     # Compute the total heat flux
-    ΣQao = (Qu + Qc + Qv) * (1 - ℵᵢ) + Qaℓ + Qss
+    ΣQao = (ℐꜛˡʷ + 𝒬ᵀ + 𝒬ᵛ) * (1 - ℵᵢ) + ℐₐˡʷ + Qss
 
     @inbounds begin
         # Write radiative components of the heat flux for diagnostic purposes
-        atmos_ocean_fluxes.upwelling_longwave[i, j, 1] = Qu
-        atmos_ocean_fluxes.downwelling_longwave[i, j, 1] = - Qaℓ
-        atmos_ocean_fluxes.downwelling_shortwave[i, j, 1] = - Qts
+        atmos_ocean_fluxes.upwelling_longwave[i, j, 1] = ℐꜛˡʷ
+        atmos_ocean_fluxes.downwelling_longwave[i, j, 1] = - ℐₐˡʷ
+        atmos_ocean_fluxes.downwelling_shortwave[i, j, 1] = - ℐₜˢʷ
     end
 
     # Convert from a mass flux to a volume flux (aka velocity)
     # by dividing with the ocean reference density.
     # Also switch the sign, for some reason we are given freshwater flux as positive down.
-    ρₒ⁻¹ = 1 / ocean_properties.reference_density
-    ΣFao = - Mp * ρₒ⁻¹
+    ρᵒᶜ⁻¹ = 1 / ocean_properties.reference_density
+    ΣFao = - Jᶜ * ρᵒᶜ⁻¹
 
     # Add the contribution from the turbulent water vapor flux, which has
     # a different sign convention as the prescribed water mass fluxes (positive upwards)
-    Fv = Mv * ρₒ⁻¹
-    ΣFao += Fv
+    Jᵛᵒᶜ = Jᵛ * ρᵒᶜ⁻¹
+    ΣFao += Jᵛᵒᶜ
 
     # Compute fluxes for u, v, T, and S from momentum, heat, and freshwater fluxes
-    τx = net_ocean_fluxes.u
-    τy = net_ocean_fluxes.v
+    τˣ = net_ocean_fluxes.u
+    τʸ = net_ocean_fluxes.v
     Jᵀ = net_ocean_fluxes.T
     Jˢ = net_ocean_fluxes.S
     ℵ  = sea_ice_concentration
-    cₒ = ocean_properties.heat_capacity
+    cᵒᶜ = ocean_properties.heat_capacity
 
     @inbounds begin
-        Qio  = get_possibly_zero_flux(sea_ice_ocean_fluxes, :interface_heat)[i, j, 1]
+        𝒬ⁱⁿᵗ = get_possibly_zero_flux(sea_ice_ocean_fluxes, :interface_heat)[i, j, 1]
         Jˢio = get_possibly_zero_flux(sea_ice_ocean_fluxes, :salt)[i, j, 1]
-        Jᵀao = ΣQao  * ρₒ⁻¹ / cₒ
-        Jᵀio = Qio * ρₒ⁻¹ / cₒ
+        Jᵀao = ΣQao  * ρᵒᶜ⁻¹ / cᵒᶜ
+        Jᵀio = 𝒬ⁱⁿᵗ * ρᵒᶜ⁻¹ / cᵒᶜ
     
         # salinity flux > 0 extracts salinity from the ocean --- the opposite of a water vapor flux
-        Jˢao = - Sₒ * ΣFao
+        Jˢao = - Sᵒᶜ * ΣFao
 
-        τxao = ℑxᶠᵃᵃ(i, j, 1, grid, τᶜᶜᶜ, ρₒ⁻¹, ℵ, ρτxao)
-        τyao = ℑyᵃᶠᵃ(i, j, 1, grid, τᶜᶜᶜ, ρₒ⁻¹, ℵ, ρτyao)
-        τxio = ρτxio[i, j, 1] * ρₒ⁻¹ * ℑxᶠᵃᵃ(i, j, 1, grid, ℵ)
-        τyio = ρτyio[i, j, 1] * ρₒ⁻¹ * ℑyᵃᶠᵃ(i, j, 1, grid, ℵ)
+        τˣᵃᵒ = ℑxᶠᵃᵃ(i, j, 1, grid, τᶜᶜᶜ, ρᵒᶜ⁻¹, ℵ, ρτˣᵃᵒ)
+        τʸᵃᵒ = ℑyᵃᶠᵃ(i, j, 1, grid, τᶜᶜᶜ, ρᵒᶜ⁻¹, ℵ, ρτʸᵃᵒ)
+        τˣⁱᵒ = ρτˣⁱᵒ[i, j, 1] * ρᵒᶜ⁻¹ * ℑxᶠᵃᵃ(i, j, 1, grid, ℵ)
+        τʸⁱᵒ = ρτʸⁱᵒ[i, j, 1] * ρᵒᶜ⁻¹ * ℑyᵃᶠᵃ(i, j, 1, grid, ℵ)
 
         # Stresses
-        τx[i, j, 1] = τxao + τxio
-        τy[i, j, 1] = τyao + τyio
+        τˣ[i, j, 1] = τˣᵃᵒ + τˣⁱᵒ
+        τʸ[i, j, 1] = τʸᵃᵒ + τʸⁱᵒ
 
         # Tracer fluxes
         Jᵀ[i, j, 1] = Jᵀao + Jᵀio # Jᵀao is already multiplied by the sea ice concentration

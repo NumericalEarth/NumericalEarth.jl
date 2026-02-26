@@ -30,11 +30,11 @@ using NumericalEarth.ECCO: ECCOPrescribedAtmosphere, ECCO4Monthly
         @test haskey(atmosphere.freshwater_flux, :rain)
 
         # Test downwelling radiation components
-        Qs = atmosphere.downwelling_radiation.shortwave
-        Ql = atmosphere.downwelling_radiation.longwave
+        ℐꜜˢʷ = atmosphere.downwelling_radiation.shortwave
+        ℐꜜˡʷ = atmosphere.downwelling_radiation.longwave
 
-        @test Qs isa FieldTimeSeries
-        @test Ql isa FieldTimeSeries
+        @test ℐꜜˢʷ isa FieldTimeSeries
+        @test ℐꜜˡʷ isa FieldTimeSeries
 
         # Test that downwelling radiation has the correct sign convention
         # Downwelling radiation should be positive (energy coming down to the surface)
@@ -43,18 +43,18 @@ using NumericalEarth.ECCO: ECCOPrescribedAtmosphere, ECCO4Monthly
             # Get some sample values (not all zeros)
             # Use interior() to avoid checking halo regions which may
             # contain uninitialized memory on GPU
-            Qs_data = interior(Qs)
-            Ql_data = interior(Ql)
+            ℐꜜˢʷ_data = interior(ℐꜜˢʷ)
+            ℐꜜˡʷ_data = interior(ℐꜜˡʷ)
 
             # Longwave radiation should be positive (always some downwelling longwave)
-            @test all(Ql_data .>= 0)
+            @test all(ℐꜜˡʷ_data .>= 0)
 
             # Typical ranges for radiation (sanity checks)
             # Shortwave: 0 to ~1400 W/m² (solar constant at TOA)
             # Longwave: ~100 to ~500 W/m² (typical atmospheric emission)
-            @test maximum(Qs_data) < 1500  # W/m²
-            @test maximum(Ql_data) < 600   # W/m²
-            @test maximum(Ql_data) > 50    # W/m² - should have some reasonable values
+            @test maximum(ℐꜜˢʷ_data) < 1500  # W/m²
+            @test maximum(ℐꜜˡʷ_data) < 600   # W/m²
+            @test maximum(ℐꜜˡʷ_data) > 50    # W/m² - should have some reasonable values
         end
 
         # Test grid consistency

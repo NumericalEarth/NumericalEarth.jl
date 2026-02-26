@@ -119,11 +119,11 @@ function progress(sim)
     ρ = sim.model.interfaces.ocean_properties.reference_density
     c = sim.model.interfaces.ocean_properties.heat_capacity
 
-    τx = first(sim.model.interfaces.net_fluxes.ocean.u)
-    τy = first(sim.model.interfaces.net_fluxes.ocean.v)
+    τˣ = first(sim.model.interfaces.net_fluxes.ocean.u)
+    τʸ = first(sim.model.interfaces.net_fluxes.ocean.v)
     Q  = first(sim.model.interfaces.net_fluxes.ocean.T) * ρ * c
 
-    u★ = sqrt(sqrt(τx^2 + τy^2))
+    u★ = sqrt(sqrt(τˣ^2 + τʸ^2))
 
     Nz = size(T, 3)
     msg *= @sprintf(", u★: %.2f m s⁻¹", u★)
@@ -141,23 +141,23 @@ end
 simulation.callbacks[:progress] = Callback(progress, IterationInterval(100))
 
 # Build flux outputs
-τx = simulation.model.interfaces.net_fluxes.ocean.u
-τy = simulation.model.interfaces.net_fluxes.ocean.v
+τˣ = simulation.model.interfaces.net_fluxes.ocean.u
+τʸ = simulation.model.interfaces.net_fluxes.ocean.v
 JT = simulation.model.interfaces.net_fluxes.ocean.T
-Js = simulation.model.interfaces.net_fluxes.ocean.S
-E  = simulation.model.interfaces.atmosphere_ocean_interface.fluxes.water_vapor
-Qc = simulation.model.interfaces.atmosphere_ocean_interface.fluxes.sensible_heat
-Qv = simulation.model.interfaces.atmosphere_ocean_interface.fluxes.latent_heat
-ρₒ = simulation.model.interfaces.ocean_properties.reference_density
-cₚ = simulation.model.interfaces.ocean_properties.heat_capacity
+Jˢ = simulation.model.interfaces.net_fluxes.ocean.S
+Jᵛ = simulation.model.interfaces.atmosphere_ocean_interface.fluxes.water_vapor
+𝒬ᵀ = simulation.model.interfaces.atmosphere_ocean_interface.fluxes.sensible_heat
+𝒬ᵛ = simulation.model.interfaces.atmosphere_ocean_interface.fluxes.latent_heat
+ρᵒᶜ = simulation.model.interfaces.ocean_properties.reference_density
+cᵒᶜ = simulation.model.interfaces.ocean_properties.heat_capacity
 
-Q = ρₒ * cₚ * JT
-ρτx = ρₒ * τx
-ρτy = ρₒ * τy
+Q = ρᵒᶜ * cᵒᶜ * JT
+ρτˣ = ρᵒᶜ * τˣ
+ρτʸ = ρᵒᶜ * τʸ
 N² = buoyancy_frequency(ocean.model)
 κc = ocean.model.closure_fields.κc
 
-fluxes = (; ρτx, ρτy, E, Js, Qv, Qc)
+fluxes = (; ρτˣ, ρτʸ, Jᵛ, Jˢ, 𝒬ᵛ, 𝒬ᵀ)
 auxiliary_fields = (; N², κc)
 u, v, w = ocean.model.velocities
 T, S, e = ocean.model.tracers
@@ -186,22 +186,22 @@ e  = FieldTimeSeries(filename, "e")
 N² = FieldTimeSeries(filename, "N²")
 κ  = FieldTimeSeries(filename, "κc")
 
-Qv = FieldTimeSeries(filename, "Qv")
-Qc = FieldTimeSeries(filename, "Qc")
-Js = FieldTimeSeries(filename, "Js")
-Ev = FieldTimeSeries(filename, "E")
-ρτx = FieldTimeSeries(filename, "ρτx")
-ρτy = FieldTimeSeries(filename, "ρτy")
+𝒬ᵛ = FieldTimeSeries(filename, "𝒬ᵛ")
+𝒬ᵀ = FieldTimeSeries(filename, "𝒬ᵀ")
+Jˢ = FieldTimeSeries(filename, "Jˢ")
+Ev = FieldTimeSeries(filename, "Jᵛ")
+ρτˣ = FieldTimeSeries(filename, "ρτˣ")
+ρτʸ = FieldTimeSeries(filename, "ρτʸ")
 
 Nz = size(T, 3)
-times = Qc.times
+times = 𝒬ᵀ.times
 
 ua  = atmosphere.velocities.u
 va  = atmosphere.velocities.v
 Ta  = atmosphere.tracers.T
 qa  = atmosphere.tracers.q
-Qlw = atmosphere.downwelling_radiation.longwave
-Qsw = atmosphere.downwelling_radiation.shortwave
+ℐꜜˡʷ = atmosphere.downwelling_radiation.longwave
+ℐꜜˢʷ = atmosphere.downwelling_radiation.shortwave
 Pr  = atmosphere.freshwater_flux.rain
 Ps  = atmosphere.freshwater_flux.snow
 
@@ -210,8 +210,8 @@ uat  = zeros(Nt)
 vat  = zeros(Nt)
 Tat  = zeros(Nt)
 qat  = zeros(Nt)
-Qswt = zeros(Nt)
-Qlwt = zeros(Nt)
+ℐꜜˢʷt = zeros(Nt)
+ℐꜜˡʷt = zeros(Nt)
 Pt   = zeros(Nt)
 
 for n = 1:Nt
@@ -220,8 +220,8 @@ for n = 1:Nt
     vat[n]  =  va[1, 1, 1, t]
     Tat[n]  =  Ta[1, 1, 1, t]
     qat[n]  =  qa[1, 1, 1, t]
-    Qswt[n] = Qsw[1, 1, 1, t]
-    Qlwt[n] = Qlw[1, 1, 1, t]
+    ℐꜜˢʷt[n] = ℐꜜˢʷ[1, 1, 1, t]
+    ℐꜜˡʷt[n] = ℐꜜˡʷ[1, 1, 1, t]
     Pt[n]   =  Pr[1, 1, 1, t] + Ps[1, 1, 1, t]
 end
 
@@ -252,10 +252,10 @@ tn = @lift times[$n]
 
 colors = Makie.wong_colors()
 
-ρₒ = coupled_model.interfaces.ocean_properties.reference_density
-τx = interior(ρτx, 1, 1, 1, :) ./ ρₒ
-τy = interior(ρτy, 1, 1, 1, :) ./ ρₒ
-u★ = @. (τx^2 + τy^2)^(1/4)
+ρᵒᶜ = coupled_model.interfaces.ocean_properties.reference_density
+τˣ = interior(ρτˣ, 1, 1, 1, :) ./ ρᵒᶜ
+τʸ = interior(ρτʸ, 1, 1, 1, :) ./ ρᵒᶜ
+u★ = @. (τˣ^2 + τʸ^2)^(1/4)
 
 lines!(axu, times, interior(u, 1, 1, Nz, :), color=colors[1], label="Zonal")
 lines!(axu, times, interior(v, 1, 1, Nz, :), color=colors[2], label="Meridional")
@@ -263,8 +263,8 @@ lines!(axu, times, u★, color=colors[3], label="Ocean-side u★")
 vlines!(axu, tn, linewidth=4, color=(:black, 0.5))
 axislegend(axu)
 
-lines!(axτ, times, interior(ρτx, 1, 1, 1, :), label="Zonal")
-lines!(axτ, times, interior(ρτy, 1, 1, 1, :), label="Meridional")
+lines!(axτ, times, interior(ρτˣ, 1, 1, 1, :), label="Zonal")
+lines!(axτ, times, interior(ρτʸ, 1, 1, 1, :), label="Meridional")
 vlines!(axτ, tn, linewidth=4, color=(:black, 0.5))
 axislegend(axτ)
 
@@ -273,10 +273,10 @@ lines!(axT, times, interior(T, 1, 1, Nz, :), color=colors[2], linewidth=4, label
 vlines!(axT, tn, linewidth=4, color=(:black, 0.5))
 axislegend(axT)
 
-lines!(axQ, times, interior(Qv, 1, 1, 1, 1:Nt),    color=colors[2], label="Sensible",  linewidth=2)
-lines!(axQ, times, interior(Qc, 1, 1, 1, 1:Nt),    color=colors[3], label="Latent",    linewidth=2)
-lines!(axQ, times, - interior(Qsw, 1, 1, 1, 1:Nt), color=colors[4], label="Shortwave", linewidth=2)
-lines!(axQ, times, - interior(Qlw, 1, 1, 1, 1:Nt), color=colors[5], label="Longwave",  linewidth=2)
+lines!(axQ, times, interior(𝒬ᵛ, 1, 1, 1, 1:Nt),    color=colors[2], label="Latent",    linewidth=2)
+lines!(axQ, times, interior(𝒬ᵀ, 1, 1, 1, 1:Nt),    color=colors[3], label="Sensible",  linewidth=2)
+lines!(axQ, times, - interior(ℐꜜˢʷ, 1, 1, 1, 1:Nt), color=colors[4], label="Shortwave", linewidth=2)
+lines!(axQ, times, - interior(ℐꜜˡʷ, 1, 1, 1, 1:Nt), color=colors[5], label="Longwave",  linewidth=2)
 vlines!(axQ, tn, linewidth=4, color=(:black, 0.5))
 axislegend(axQ)
 

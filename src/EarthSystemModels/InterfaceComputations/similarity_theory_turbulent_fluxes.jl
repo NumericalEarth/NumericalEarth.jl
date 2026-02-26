@@ -167,9 +167,9 @@ function iterate_interface_fluxes(flux_formulation::SimilarityTheoryFluxes,
                                   interface_properties,
                                   atmosphere_properties)
 
-    ℂₐ = atmosphere_properties.thermodynamics_parameters
+    ℂᵃᵗ = atmosphere_properties.thermodynamics_parameters
     g  = atmosphere_properties.gravitational_acceleration
-    pₐ = atmosphere_state.p
+    pᵃᵗ = atmosphere_state.p
 
     # "initial" scales because we will recompute them
     u★ = approximate_interface_state.u★
@@ -188,7 +188,7 @@ function iterate_interface_fluxes(flux_formulation::SimilarityTheoryFluxes,
     β  = flux_formulation.gustiness_parameter
 
     # Compute Monin--Obukhov length scale depending on a `buoyancy flux`
-    b★ = buoyancy_scale(θ★, q★, ℂₐ, Tₛ, qₛ, g)
+    b★ = buoyancy_scale(θ★, q★, ℂᵃᵗ, Tₛ, qₛ, g)
 
     # Buoyancy flux characteristic scale for gustiness.
     # In unstable conditions (Jᵇ > 0), gustiness = β * (Jᵇ * h_bℓ)^(1/3).
@@ -206,9 +206,9 @@ function iterate_interface_fluxes(flux_formulation::SimilarityTheoryFluxes,
     U = sqrt(Δu^2 + Δv^2 + Uᴳ^2)
 
     # Compute roughness length scales (pass surface temperature for viscosity calculation)
-    ℓu₀ = roughness_length(ℓu, u★, U, ℂₐ, Tₛ)
-    ℓq₀ = roughness_length(ℓq, ℓu₀, u★, U, ℂₐ, Tₛ)
-    ℓθ₀ = roughness_length(ℓθ, ℓu₀, u★, U, ℂₐ, Tₛ)
+    ℓu₀ = roughness_length(ℓu, u★, U, ℂᵃᵗ, Tₛ)
+    ℓq₀ = roughness_length(ℓq, ℓu₀, u★, U, ℂᵃᵗ, Tₛ)
+    ℓθ₀ = roughness_length(ℓθ, ℓu₀, u★, U, ℂᵃᵗ, Tₛ)
 
     # Transfer coefficients at height `h`
     ϰ = flux_formulation.von_karman_constant
@@ -228,12 +228,12 @@ function iterate_interface_fluxes(flux_formulation::SimilarityTheoryFluxes,
 end
 
 """
-    buoyancy_scale(θ★, q★, ℂₐ, Tₛ, qₛ, g)
+    buoyancy_scale(θ★, q★, ℂᵃᵗ, Tₛ, qₛ, g)
 
 Return the characteristic buoyancy scale `b★` associated with
 the characteristic temperature `θ★`, specific humidity scale `q★`,
 surface temperature `Tₛ`, surface specific humidity `qₛ`,
-atmosphere thermodynamic parameters `ℂₐ`, and gravitational acceleration `g`.
+atmosphere thermodynamic parameters `ℂᵃᵗ`, and gravitational acceleration `g`.
 
 The buoyancy scale is defined in terms of the interface buoyancy flux,
 
@@ -257,9 +257,9 @@ in terms of ``b★`` and additionally the Von Karman constant ``ϰ``,
 L★ = u★² / ϰ b★ .
 ```
 """
-@inline function buoyancy_scale(θ★, q★, ℂₐ, Tₛ, qₛ, g)
-    𝒯ₛ = AtmosphericThermodynamics.virtual_temperature(ℂₐ, Tₛ, qₛ)
-    ε  = AtmosphericThermodynamics.Parameters.Rv_over_Rd(ℂₐ)
+@inline function buoyancy_scale(θ★, q★, ℂᵃᵗ, Tₛ, qₛ, g)
+    𝒯ₛ = AtmosphericThermodynamics.virtual_temperature(ℂᵃᵗ, Tₛ, qₛ)
+    ε  = AtmosphericThermodynamics.Parameters.Rv_over_Rd(ℂᵃᵗ)
     δ  = ε - 1 # typically equal to 0.608
 
     b★ = g / 𝒯ₛ * (θ★ * (1 + δ * qₛ) + δ * 𝒯ₛ * q★)
