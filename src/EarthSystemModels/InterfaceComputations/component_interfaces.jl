@@ -114,6 +114,7 @@ function atmosphere_ocean_interface(grid,
     downwelling_shortwave = Field{Center, Center, Nothing}(grid)
     total_heat_flux       = Field{Center, Center, Nothing}(grid)
     total_freshwater_flux = Field{Center, Center, Nothing}(grid)
+    total_freshwater_flux_with_salt_equiv = Field{Center, Center, Nothing}(grid)
 
     ao_fluxes = (; latent_heat,
                    sensible_heat,
@@ -127,7 +128,8 @@ function atmosphere_ocean_interface(grid,
                    downwelling_longwave,
                    downwelling_shortwave,
                    total_heat_flux,
-                   total_freshwater_flux)
+                   total_freshwater_flux,
+                   total_freshwater_flux_with_salt_equiv)
 
     σ = radiation.stefan_boltzmann_constant
     αₐₒ = radiation.reflection.ocean

@@ -163,6 +163,12 @@ end
     
         # salinity flux > 0 extracts salinity from the ocean --- the opposite of a water vapor flux
         Jˢao = - Sₒ * ΣFao
+        Jˢ_total = (1 - ℵᵢ) * Jˢao + Jˢio
+
+        # Freshwater-equivalent correction from salinity flux using S₀ = 35
+        # M_fw_from_Js = ρₒ * (-Jˢ/S₀), units kg m⁻² s⁻¹
+        S₀ = convert(eltype(Sₒ), 35)
+        ΣMao_with_salt_equiv = ΣMao - ρₒ * Jˢ_total / S₀
 
         τxao = ℑxᶠᵃᵃ(i, j, 1, grid, τᶜᶜᶜ, ρₒ⁻¹, ℵ, ρτxao)
         τyao = ℑyᵃᶠᵃ(i, j, 1, grid, τᶜᶜᶜ, ρₒ⁻¹, ℵ, ρτyao)
@@ -175,6 +181,11 @@ end
 
         # Tracer fluxes
         Jᵀ[i, j, 1] = Jᵀao + Jᵀio # Jᵀao is already multiplied by the sea ice concentration
-        Jˢ[i, j, 1] = (1 - ℵᵢ) * Jˢao + Jˢio
+        Jˢ[i, j, 1] = Jˢ_total
+
+        # Diagnostic freshwater mass fluxes:
+        # - total_freshwater_flux: pure atmosphere mass flux term (-Mp + Mv)
+        # - total_freshwater_flux_with_salt_equiv: includes -Jˢ/S₀ freshwater-equivalent
+        atmos_ocean_fluxes.total_freshwater_flux_with_salt_equiv[i, j, 1] = ΣMao_with_salt_equiv
     end
 end
