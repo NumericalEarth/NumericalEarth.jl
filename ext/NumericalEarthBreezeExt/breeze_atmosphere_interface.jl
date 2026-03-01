@@ -36,8 +36,9 @@ function ComponentExchanger(atmosphere::BreezeAtmosphere, exchange_grid)
                T  = Oceananigans.CenterField(exchange_grid),
                p  = Oceananigans.CenterField(exchange_grid),
                q  = Oceananigans.CenterField(exchange_grid),
-               Qs = Oceananigans.CenterField(exchange_grid),
-               Qℓ = Oceananigans.CenterField(exchange_grid),
+               ℐꜜˢʷ = Oceananigans.CenterField(exchange_grid),
+               ℐꜜˡʷ = Oceananigans.CenterField(exchange_grid),
+               Jᶜ = Oceananigans.CenterField(exchange_grid),
                Mp = Oceananigans.CenterField(exchange_grid))
 
     return ComponentExchanger(state, nothing)
@@ -56,8 +57,9 @@ end
         state.T[i, j, 1]  = T[i, j, 1]
         state.q[i, j, 1]  = ρqᵗ[i, j, 1] / ρ₀[i, j, 1]
         state.p[i, j, 1]  = p₀
-        state.Qs[i, j, 1] = 0
-        state.Qℓ[i, j, 1] = 0
+        state.ℐꜜˢʷ[i, j, 1] = 0
+        state.ℐꜜˡʷ[i, j, 1] = 0
+        state.Jᶜ[i, j, 1] = 0
         state.Mp[i, j, 1] = 0
     end
 end

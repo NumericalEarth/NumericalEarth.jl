@@ -63,9 +63,9 @@ function update_net_fluxes!(coupled_model, ocean::VerosOceanSimulation)
     nx = pyconvert(Int, ocean.setup.state.settings.nx) + 4
     ny = pyconvert(Int, ocean.setup.state.settings.ny) + 4
 
-    ρₒ = pyconvert(eltype(ocean), ocean.setup.state.settings.rho_0)
-    taux = view(parent(net_ocean_fluxes.u), 1:nx, 1:ny, 1) .* ρₒ
-    tauy = view(parent(net_ocean_fluxes.v), 1:nx, 1:ny, 1) .* ρₒ
+    ρᵒᶜ = pyconvert(eltype(ocean), ocean.setup.state.settings.rho_0)
+    taux = view(parent(net_ocean_fluxes.u), 1:nx, 1:ny, 1) .* ρᵒᶜ
+    tauy = view(parent(net_ocean_fluxes.v), 1:nx, 1:ny, 1) .* ρᵒᶜ
 
     set!(ocean, "surface_taux", taux; path=:variables)
     set!(ocean, "surface_tauy", tauy; path=:variables)

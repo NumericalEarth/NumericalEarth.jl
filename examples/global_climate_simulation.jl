@@ -132,17 +132,17 @@ sea_ice.output_writers[:fields] = JLD2Writer(sea_ice.model, sea_ice_fields;
                                              including = [:grid],
                                              filename="sea_ice_fields.jld2")
 
-Qcao = earth.model.interfaces.atmosphere_ocean_interface.fluxes.sensible_heat
-Qvao = earth.model.interfaces.atmosphere_ocean_interface.fluxes.latent_heat
-τxao = earth.model.interfaces.atmosphere_ocean_interface.fluxes.x_momentum
-τyao = earth.model.interfaces.atmosphere_ocean_interface.fluxes.y_momentum
-Qcai = earth.model.interfaces.atmosphere_sea_ice_interface.fluxes.sensible_heat
-Qvai = earth.model.interfaces.atmosphere_sea_ice_interface.fluxes.latent_heat
-τxai = earth.model.interfaces.atmosphere_sea_ice_interface.fluxes.x_momentum
-τyai = earth.model.interfaces.atmosphere_sea_ice_interface.fluxes.y_momentum
-Qoi  = earth.model.interfaces.net_fluxes.sea_ice.bottom.heat
-Soi  = earth.model.interfaces.sea_ice_ocean_interface.fluxes.salt
-fluxes = (; Qcao, Qvao, τxao, τyao, Qcai, Qvai, τxai, τyai, Qoi, Soi)
+𝒬ᵀᵃᵒ = earth.model.interfaces.atmosphere_ocean_interface.fluxes.sensible_heat
+𝒬ᵛᵃᵒ = earth.model.interfaces.atmosphere_ocean_interface.fluxes.latent_heat
+τˣᵃᵒ = earth.model.interfaces.atmosphere_ocean_interface.fluxes.x_momentum
+τʸᵃᵒ = earth.model.interfaces.atmosphere_ocean_interface.fluxes.y_momentum
+𝒬ᵀᵃⁱ = earth.model.interfaces.atmosphere_sea_ice_interface.fluxes.sensible_heat
+𝒬ᵛᵃⁱ = earth.model.interfaces.atmosphere_sea_ice_interface.fluxes.latent_heat
+τˣᵃⁱ = earth.model.interfaces.atmosphere_sea_ice_interface.fluxes.x_momentum
+τʸᵃⁱ = earth.model.interfaces.atmosphere_sea_ice_interface.fluxes.y_momentum
+𝒬ⁱᵒ  = earth.model.interfaces.net_fluxes.sea_ice.bottom.heat
+Jˢⁱᵒ  = earth.model.interfaces.sea_ice_ocean_interface.fluxes.salt
+fluxes = (; 𝒬ᵀᵃᵒ, 𝒬ᵛᵃᵒ, τˣᵃᵒ, τʸᵃᵒ, 𝒬ᵀᵃⁱ, 𝒬ᵛᵃⁱ, τˣᵃⁱ, τʸᵃⁱ, 𝒬ⁱᵒ, Jˢⁱᵒ)
 
 ocean.output_writers[:fluxes] = JLD2Writer(earth.model.ocean.model, fluxes;
                                            overwrite_existing=true,
@@ -205,11 +205,11 @@ SIU = FieldTimeSeries("sea_ice_fields.jld2", "u")
 SIV = FieldTimeSeries("sea_ice_fields.jld2", "v")
 SIA = FieldTimeSeries("sea_ice_fields.jld2", "ℵ")
 
-Qcao = FieldTimeSeries("intercomponent_fluxes.jld2", "Qcao")
-Qvao = FieldTimeSeries("intercomponent_fluxes.jld2", "Qvao")
+𝒬ᵀᵃᵒ = FieldTimeSeries("intercomponent_fluxes.jld2", "𝒬ᵀᵃᵒ")
+𝒬ᵛᵃᵒ = FieldTimeSeries("intercomponent_fluxes.jld2", "𝒬ᵛᵃᵒ")
 
-Nt = min(length(sp[1, 1, :]), length(Qcao))
-times = Qcao.times
+Nt = min(length(sp[1, 1, :]), length(𝒬ᵀᵃᵒ))
+times = 𝒬ᵀᵃᵒ.times
 
 uotmp = Oceananigans.Field{Face, Center, Nothing}(SST.grid)
 votmp = Oceananigans.Field{Center, Face, Nothing}(SST.grid)
@@ -268,8 +268,8 @@ nothing #hide
 
 Tan = @lift Ta[:, :, $iter]
 Ton = @lift interior(SST[$iter], :, :, 1)
-Qcn = @lift interior(Qcao[$iter], :, :, 1)
-Qvn = @lift interior(Qvao[$iter], :, :, 1)
+𝒬ᵀn = @lift interior(𝒬ᵀᵃᵒ[$iter], :, :, 1)
+𝒬ᵛn = @lift interior(𝒬ᵛᵃᵒ[$iter], :, :, 1)
 
 fig = Figure(size = (1000, 2000))
 
@@ -280,8 +280,8 @@ ax4 = Axis(fig[4, 1], title = "Latent heat flux")
 
 hm1 = heatmap!(ax1, Tan; colormap = :plasma, nan_color=:lightgray, colorrange = (-45, 30))
 hm2 = heatmap!(ax2, Ton; colormap = :plasma, nan_color=:lightgray, colorrange = (-2, 32))
-hm3 = heatmap!(ax3, Qcn; colormap = :balance, colorrange = (-200, 200),  nan_color=:lightgray)
-hm4 = heatmap!(ax4, Qvn; colormap = :balance, colorrange = (-200, 200),  nan_color=:lightgray)
+hm3 = heatmap!(ax3, 𝒬ᵀn; colormap = :balance, colorrange = (-200, 200),  nan_color=:lightgray)
+hm4 = heatmap!(ax4, 𝒬ᵛn; colormap = :balance, colorrange = (-200, 200),  nan_color=:lightgray)
 
 Colorbar(fig[1, 2], hm1, label="(ᵒC)")
 Colorbar(fig[2, 2], hm2, label="(ᵒC)")

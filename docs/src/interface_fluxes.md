@@ -300,7 +300,7 @@ using NumericalEarth
 
 # Atmosphere velocities
 Nx = Ny = 200
-uₐ = range(0.5, stop=40, length=Nx) # winds at 10 m, m/s
+uᵃᵗ = range(0.5, stop=40, length=Nx) # winds at 10 m, m/s
 
 # Ocean state parameters
 T₀ = 20   # Surface temperature, ᵒC
@@ -314,7 +314,7 @@ ocean_grid = RectilinearGrid(size=(Nx, Ny, 1); x, y, z, topology=(Periodic, Peri
 # Build the atmosphere
 atmosphere = PrescribedAtmosphere(atmos_grid, surface_layer_height=10)
 interior(atmosphere.tracers.T) .= 273.15 + T₀ # K
-interior(atmosphere.velocities.u, :, :, 1, 1) .= uₐ # m/s
+interior(atmosphere.velocities.u, :, :, 1, 1) .= uᵃᵗ # m/s
 
 kw = (momentum_advection=nothing, tracer_advection=nothing, closure=nothing)
 ocean = ocean_simulation(ocean_grid; kw...)
@@ -355,7 +355,7 @@ given that our atmospheric winds varied from ``0.5`` to ``40 \, \mathrm{m \, s^{
 Computing the drag coefficient for the similarity model is as easy as
 
 ```@example interface_fluxes
-Cᴰ_default = @. (u★ / uₐ)^2
+Cᴰ_default = @. (u★ / uᵃᵗ)^2
 extrema(Cᴰ_default)
 ```
 
@@ -366,7 +366,7 @@ specified:
 ```@example interface_fluxes
 u★_coeff = coefficient_model.interfaces.atmosphere_ocean_interface.fluxes.friction_velocity
 u★_coeff = interior(u★_coeff, :, 1, 1)
-Cᴰ_coeff = @. (u★_coeff / uₐ)^2
+Cᴰ_coeff = @. (u★_coeff / uᵃᵗ)^2
 extrema(Cᴰ_coeff)
 ```
 
@@ -379,16 +379,16 @@ an expression reported by [edson2013exchange](@citet) that was developed at ECMW
 c₁ = 0.0027
 c₂ = 0.000142
 c₃ = 0.0000764
-u★_LY = @. sqrt(c₁ * uₐ + c₂ * uₐ^2 + c₃ * uₐ^3)
-Cᴰ_LY = @. (u★_LY / uₐ)^2
+u★_LY = @. sqrt(c₁ * uᵃᵗ + c₂ * uᵃᵗ^2 + c₃ * uᵃᵗ^3)
+Cᴰ_LY = @. (u★_LY / uᵃᵗ)^2
 
 # From Edson et al. (2013), equation 20
 c₁ = 1.03e-3
 c₂ = 4e-5
 p₁ = 1.48
 p₂ = 0.21
-Cᴰ_EC = @. (c₁ + c₂ * uₐ^p₁) / uₐ^p₂
-u★_EC = @. sqrt(Cᴰ_EC) * uₐ
+Cᴰ_EC = @. (c₁ + c₂ * uᵃᵗ^p₁) / uᵃᵗ^p₂
+u★_EC = @. sqrt(Cᴰ_EC) * uᵃᵗ
 extrema(u★_EC)
 ```
 
@@ -402,20 +402,20 @@ set_theme!(Theme(fontsize=14, linewidth=4))
 # Extract u★ and compute Cᴰ for increased roughness model
 u★_rough = increased_roughness_model.interfaces.atmosphere_ocean_interface.fluxes.friction_velocity
 u★_rough = interior(u★_rough, :, 1, 1)
-Cᴰ_rough = @. (u★_rough / uₐ)^2
+Cᴰ_rough = @. (u★_rough / uᵃᵗ)^2
 
 fig = Figure(size=(800, 400))
-axu = Axis(fig[1:2, 1], xlabel="uₐ (m s⁻¹) at 10 m", ylabel="u★ (m s⁻¹)")
-lines!(axu, uₐ, u★, label="NumericalEarth default")
-lines!(axu, uₐ, u★_rough, label="Increased roughness model")
-lines!(axu, uₐ, u★_LY, label="Large and Yeager (2009) polynomial fit")
-lines!(axu, uₐ, u★_EC, label="ECMWF polynomial fit (Edson et al. 2013)")
+axu = Axis(fig[1:2, 1], xlabel="uᵃᵗ (m s⁻¹) at 10 m", ylabel="u★ (m s⁻¹)")
+lines!(axu, uᵃᵗ, u★, label="NumericalEarth default")
+lines!(axu, uᵃᵗ, u★_rough, label="Increased roughness model")
+lines!(axu, uᵃᵗ, u★_LY, label="Large and Yeager (2009) polynomial fit")
+lines!(axu, uᵃᵗ, u★_EC, label="ECMWF polynomial fit (Edson et al. 2013)")
 
-axd = Axis(fig[1:2, 2], xlabel="uₐ (m s⁻¹) at 10 m", ylabel="1000 × Cᴰ")
-lines!(axd, uₐ, 1000 .* Cᴰ_default, label="NumericalEarth default")
-lines!(axd, uₐ, 1000 .* Cᴰ_rough, label="Increased roughness model")
-lines!(axd, uₐ, 1000 .* Cᴰ_LY, label="Large and Yeager (2009) polynomial fit")
-lines!(axd, uₐ, 1000 .* Cᴰ_EC, label="ECMWF polynomial fit (Edson et al. 2013)")
+axd = Axis(fig[1:2, 2], xlabel="uᵃᵗ (m s⁻¹) at 10 m", ylabel="1000 × Cᴰ")
+lines!(axd, uᵃᵗ, 1000 .* Cᴰ_default, label="NumericalEarth default")
+lines!(axd, uᵃᵗ, 1000 .* Cᴰ_rough, label="Increased roughness model")
+lines!(axd, uᵃᵗ, 1000 .* Cᴰ_LY, label="Large and Yeager (2009) polynomial fit")
+lines!(axd, uᵃᵗ, 1000 .* Cᴰ_EC, label="ECMWF polynomial fit (Edson et al. 2013)")
 
 Legend(fig[3, 1:2], axd, nbanks = 2)
 
@@ -652,13 +652,13 @@ that enters into the air-surface specific humidity difference ``Δ q`` also chan
 ```@example interface_fluxes
 using NumericalEarth.EarthSystemModels.InterfaceComputations: surface_specific_humidity
 
-ρₐ = 1.2 # guess
-Tₒ = 273.15 + 20 # in Kelvin
-Sₒ = 35
+ρᵃᵗ = 1.2 # guess
+Tᵒᶜ = 273.15 + 20 # in Kelvin
+Sᵒᶜ = 35
 interfaces = default_model.interfaces
-ℂₐ = interfaces.atmosphere_properties
+ℂᵃᵗ = interfaces.atmosphere_properties
 q_formulation = interfaces.atmosphere_ocean_interface.properties.specific_humidity_formulation
-qₛ = surface_specific_humidity(q_formulation, ℂₐ, ρₐ, Tₒ, Sₒ)
+qₛ = surface_specific_humidity(q_formulation, ℂᵃᵗ, ρᵃᵗ, Tᵒᶜ, Sᵒᶜ)
 @show qₛ
 ```
 
@@ -668,9 +668,9 @@ We then set the atmospheric state:
 interior(atmosphere.pressure) .= 101352
 interior(atmosphere.tracers.q) .= qₛ
 
-Tₐ = 273.15 .+ range(-40, stop=40, length=Ny)
-Tₐ = reshape(Tₐ, 1, Ny)
-interior(atmosphere.tracers.T) .= Tₐ
+Tᵃᵗ = 273.15 .+ range(-40, stop=40, length=Ny)
+Tᵃᵗ = reshape(Tᵃᵗ, 1, Ny)
+interior(atmosphere.tracers.T) .= Tᵃᵗ
 
 # Build a model with the default (Edson) stability functions to show non-neutral effects
 stability_interfaces = ComponentInterfaces(atmosphere, ocean)
@@ -680,23 +680,23 @@ u★ = stability_model.interfaces.atmosphere_ocean_interface.fluxes.friction_vel
 θ★ = stability_model.interfaces.atmosphere_ocean_interface.fluxes.temperature_scale
 
 fig = Figure(size=(800, 600))
-axu = Axis(fig[2, 1], xlabel="Wind speed uₐ (m s⁻¹)", ylabel="Air-sea temperature difference (K)")
-axθ = Axis(fig[2, 2], xlabel="Wind speed uₐ (m s⁻¹)", ylabel="Air-sea temperature difference (K)")
-axC = Axis(fig[3, 1:2], xlabel="Wind speed uₐ (m s⁻¹)", ylabel="Cᴰ / neutral Cᴰ")
+axu = Axis(fig[2, 1], xlabel="Wind speed uᵃᵗ (m s⁻¹)", ylabel="Air-sea temperature difference (K)")
+axθ = Axis(fig[2, 2], xlabel="Wind speed uᵃᵗ (m s⁻¹)", ylabel="Air-sea temperature difference (K)")
+axC = Axis(fig[3, 1:2], xlabel="Wind speed uᵃᵗ (m s⁻¹)", ylabel="Cᴰ / neutral Cᴰ")
 
-ΔT = Tₐ .- Tₒ
+ΔT = Tᵃᵗ .- Tᵒᶜ
 ΔT = dropdims(ΔT, dims=1)
 
-hmu = heatmap!(axu, uₐ, ΔT, u★, colormap=:speed)
-hmθ = heatmap!(axθ, uₐ, ΔT, θ★, colormap=:balance)
+hmu = heatmap!(axu, uᵃᵗ, ΔT, u★, colormap=:speed)
+hmθ = heatmap!(axθ, uᵃᵗ, ΔT, θ★, colormap=:balance)
 
 Colorbar(fig[1, 1], hmu, label="u★ (m s⁻¹)", vertical=false)
 Colorbar(fig[1, 2], hmθ, label="θ★ (K)", vertical=false)
 
-Cᴰ = [(u★[i, j] / uₐ[i])^2 for i in 1:Nx, j in 1:Ny]
+Cᴰ = [(u★[i, j] / uᵃᵗ[i])^2 for i in 1:Nx, j in 1:Ny]
 
 for j in (1, 20, 50, 100, 150, 200)
-    lines!(axC, uₐ, Cᴰ[:, j] ./ Cᴰ_default, label="ΔT = $(round(ΔT[j], digits=1)) K", alpha=0.8)
+    lines!(axC, uᵃᵗ, Cᴰ[:, j] ./ Cᴰ_default, label="ΔT = $(round(ΔT[j], digits=1)) K", alpha=0.8)
 end
 
 axislegend(axC, orientation=:horizontal, nbanks=2)
@@ -881,40 +881,40 @@ flux³ = ThreeEquationHeatFlux(ConductiveFlux(2.0), ConstantField(-40.0), 0.0095
 # Parameters
 liquidus = LinearLiquidus()
 ocean_properties = (reference_density = 1026.0, heat_capacity = 3991.0)
-ℒ, u★, ρᵢ = 3.34e5, 0.02, 917.0
-Sₒ, Sᵢ, hᵢ, Tᵢ = 34.0, 5.0, 0.5, -40.0
+ℒ, u★, ρˢⁱ = 3.34e5, 0.02, 917.0
+Sᵒᶜ, Sˢⁱ, hˢⁱ, Tˢⁱ = 34.0, 5.0, 0.5, -40.0
 
 # Compute interface conditions
-Tₒ = range(melting_temperature(liquidus, Sₒ), stop=5.0, length=100)
-ice_state = (; S = Sᵢ, h = hᵢ, hc = 0.0, ℵ = 1.0, T = Tᵢ)
+Tᵒᶜ = range(melting_temperature(liquidus, Sᵒᶜ), stop=5.0, length=100)
+ice_state = (; S = Sˢⁱ, h = hˢⁱ, hc = 0.0, ℵ = 1.0, T = Tˢⁱ)
 
-data = map(Tₒ) do T
-    ocean_state = (; T, S = Sₒ)
+data = map(Tᵒᶜ) do T
+    ocean_state = (; T, S = Sᵒᶜ)
     _, q¹, T★¹, S★¹ = compute_interface_heat_flux(flux¹, ocean_state, ice_state, liquidus, ocean_properties, ℒ, u★)
     _, q², T★², S★² = compute_interface_heat_flux(flux², ocean_state, ice_state, liquidus, ocean_properties, ℒ, u★)
     _, q³, T★³, S★³ = compute_interface_heat_flux(flux³, ocean_state, ice_state, liquidus, ocean_properties, ℒ, u★)
-    (; T★¹, S★¹, q¹ = q¹ / ρᵢ * 86400e3, T★², S★², q² = q² / ρᵢ * 86400e3, T★³, S★³, q³ = q³ / ρᵢ * 86400e3)
+    (; T★¹, S★¹, q¹ = q¹ / ρˢⁱ * 86400e3, T★², S★², q² = q² / ρˢⁱ * 86400e3, T★³, S★³, q³ = q³ / ρˢⁱ * 86400e3)
 end
 
 fig = Figure(size=(900, 750))
 
-ax1 = Axis(fig[1, 1], xlabel="Ocean temperature Tₒ (°C)", ylabel="Interface temperature T★ (°C)")
-l1 = lines!(ax1, Tₒ, [d.T★¹ for d in data], linewidth=2)
-l2 = lines!(ax1, Tₒ, [d.T★² for d in data], linewidth=2)
-l3 = lines!(ax1, Tₒ, [d.T★³ for d in data], linewidth=2)
-hlines!(ax1, [melting_temperature(liquidus, Sₒ)], color=:gray, linestyle=:dash)
+ax1 = Axis(fig[1, 1], xlabel="Ocean temperature Tᵒᶜ (°C)", ylabel="Interface temperature T★ (°C)")
+l1 = lines!(ax1, Tᵒᶜ, [d.T★¹ for d in data], linewidth=2)
+l2 = lines!(ax1, Tᵒᶜ, [d.T★² for d in data], linewidth=2)
+l3 = lines!(ax1, Tᵒᶜ, [d.T★³ for d in data], linewidth=2)
+hlines!(ax1, [melting_temperature(liquidus, Sᵒᶜ)], color=:gray, linestyle=:dash)
 
-ax2 = Axis(fig[1, 2], xlabel="Ocean temperature Tₒ (°C)", ylabel="Interface salinity S★ (g/kg)")
-lines!(ax2, Tₒ, [d.S★¹ for d in data], linewidth=2)
-lines!(ax2, Tₒ, [d.S★² for d in data], linewidth=2)
-lines!(ax2, Tₒ, [d.S★³ for d in data], linewidth=2)
-hlines!(ax2, [Sₒ], color=:gray, linestyle=:dash)
-hlines!(ax2, [Sᵢ], color=:gray, linestyle=:dot)
+ax2 = Axis(fig[1, 2], xlabel="Ocean temperature Tᵒᶜ (°C)", ylabel="Interface salinity S★ (g/kg)")
+lines!(ax2, Tᵒᶜ, [d.S★¹ for d in data], linewidth=2)
+lines!(ax2, Tᵒᶜ, [d.S★² for d in data], linewidth=2)
+lines!(ax2, Tᵒᶜ, [d.S★³ for d in data], linewidth=2)
+hlines!(ax2, [Sᵒᶜ], color=:gray, linestyle=:dash)
+hlines!(ax2, [Sˢⁱ], color=:gray, linestyle=:dot)
 
-ax3 = Axis(fig[2, 1:2], xlabel="Ocean temperature Tₒ (°C)", ylabel="Melt rate q (mm/day)")
-lines!(ax3, Tₒ, [d.q¹ for d in data], linewidth=2)
-lines!(ax3, Tₒ, [d.q² for d in data], linewidth=2)
-lines!(ax3, Tₒ, [d.q³ for d in data], linewidth=2)
+ax3 = Axis(fig[2, 1:2], xlabel="Ocean temperature Tᵒᶜ (°C)", ylabel="Melt rate q (mm/day)")
+lines!(ax3, Tᵒᶜ, [d.q¹ for d in data], linewidth=2)
+lines!(ax3, Tᵒᶜ, [d.q² for d in data], linewidth=2)
+lines!(ax3, Tᵒᶜ, [d.q³ for d in data], linewidth=2)
 hlines!(ax3, [0], color=:gray, linestyle=:dash)
 
 Legend(fig[3, 1:2], [l1, l2, l3],
