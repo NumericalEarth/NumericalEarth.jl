@@ -1,13 +1,12 @@
 include("runtests_setup.jl")
 
 using CDSAPI
+using Dates
 using NCDatasets
 
 using NumericalEarth.DataWrangling.ERA5
 using NumericalEarth.DataWrangling.ERA5: ERA5Hourly, ERA5Monthly, ERA5_dataset_variable_names
 using NumericalEarth.DataWrangling: metadata_path, download_dataset
-
-using Dates
 
 # Test date: Kyoto Protocol ratification date, February 16, 2005
 start_date = DateTime(2005, 2, 16, 12)
@@ -16,7 +15,7 @@ start_date = DateTime(2005, 2, 16, 12)
     @info "Testing ERA5 downloading and NetCDF file verification..."
 
     dataset = ERA5Hourly()
-    
+
     # Use a small bounding box to reduce download time
     bounding_box = NumericalEarth.DataWrangling.BoundingBox(longitude=(0, 5), latitude=(40, 45))
 
@@ -34,33 +33,33 @@ start_date = DateTime(2005, 2, 16, 12)
 
         # Verify the NetCDF file structure
         ds = NCDataset(filepath)
-        
+
         # Check that it has the expected variable (t2m for 2m_temperature)
         @test haskey(ds, "t2m")
-        
+
         # Check that it has coordinate variables
         @test haskey(ds, "longitude")
         @test haskey(ds, "latitude")
         @test haskey(ds, "time") || haskey(ds, "valid_time")
-        
+
         # Check data dimensions
         lon = ds["longitude"][:]
         lat = ds["latitude"][:]
         @test length(lon) > 0
         @test length(lat) > 0
-        
+
         # Check that data is within expected bounds
         @test minimum(lon) >= -1  # Allow some tolerance
         @test maximum(lon) <= 6
         @test minimum(lat) >= 39
         @test maximum(lat) <= 46
-        
+
         # Check that the temperature data exists and is valid
         t2m = ds["t2m"]
         @test ndims(t2m) >= 2
-        
+
         close(ds)
-        
+
         # Clean up
         rm(filepath; force=true)
     end
@@ -73,7 +72,7 @@ start_date = DateTime(2005, 2, 16, 12)
         @test haskey(ERA5_dataset_variable_names, :surface_pressure)
         @test haskey(ERA5_dataset_variable_names, :downwelling_shortwave_radiation)
         @test haskey(ERA5_dataset_variable_names, :downwelling_longwave_radiation)
-        
+
         # Verify variable name mappings
         @test ERA5_dataset_variable_names[:temperature] == "2m_temperature"
         @test ERA5_dataset_variable_names[:eastward_velocity] == "10m_u_component_of_wind"
@@ -83,20 +82,20 @@ start_date = DateTime(2005, 2, 16, 12)
     @testset "ERA5 metadata properties" begin
         variable = :temperature
         metadatum = Metadatum(variable; dataset, bounding_box, date=start_date)
-        
+
         # Test metadata properties
         @test metadatum.name == :temperature
         @test metadatum.dataset isa ERA5Hourly
         @test metadatum.dates == start_date
         @test metadatum.bounding_box == bounding_box
-        
+
         # Test size (should be global ERA5 size with 1 time step)
         Nx, Ny, Nz, Nt = size(metadatum)
         @test Nx == 1440  # ERA5 longitude points
-        @test Ny == 721   # ERA5 latitude points  
+        @test Ny == 721   # ERA5 latitude points
         @test Nz == 1     # 2D surface data
         @test Nt == 1     # Single time step
-        
+
         # Test that ERA5 is correctly identified as 2D
         @test NumericalEarth.DataWrangling.ERA5.is_three_dimensional(metadatum) == false
     end
@@ -127,7 +126,7 @@ start_date = DateTime(2005, 2, 16, 12)
     @testset "ERA5 Monthly dataset" begin
         monthly_dataset = ERA5Monthly()
         @test monthly_dataset isa ERA5Monthly
-        
+
         # Test that all_dates returns a valid range
         dates = NumericalEarth.DataWrangling.all_dates(monthly_dataset, :temperature)
         @test first(dates) == DateTime("1940-01-01")
