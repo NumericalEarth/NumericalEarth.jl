@@ -41,6 +41,7 @@ CopernicusMarine = "cd43e856-93a3-40c8-bc9e-6146cdce14fa"
 PythonCall = "6099a3de-0909-46bc-b1f4-468b9a2dfc0d"
 Reactant = "3c362404-f566-11ee-1572-e11a4b42c853"
 SpeedyWeather = "9e226e20-d153-4fed-8a5b-493def4f21a9"
+WorldOceanAtlasTools = "04f20302-f1b9-11e8-29d9-7d841cb0a64a"
 XESMF = "2e0b0046-e7a1-486f-88de-807ee8ffabe5"
 
 [extensions]
@@ -50,6 +51,7 @@ NumericalEarthCopernicusMarineExt = "CopernicusMarine"
 NumericalEarthReactantExt = "Reactant"
 NumericalEarthSpeedyWeatherExt = ["SpeedyWeather", "XESMF"]
 NumericalEarthVerosExt = ["PythonCall", "CondaPkg"]
+NumericalEarthWOAExt = "WorldOceanAtlasTools"
 
 [compat]
 Adapt = "4"
@@ -83,6 +85,7 @@ SpeedyWeather = "0.17.4"
 StaticArrays = "1"
 Statistics = "1.9"
 Thermodynamics = "0.15.3"
+WorldOceanAtlasTools = "0.6"
 XESMF = "0.1.6"
 ZipFile = "0.10"
 julia = "1.10"
@@ -94,6 +97,7 @@ CUDA_Runtime_jll = "76a88914-d11a-5bdc-97e0-2f5a05c973a2"
 Coverage = "a2441757-f6aa-5fb2-8edb-039e3f45d037"
 MPIPreferences = "3da0fdf6-3ccc-4f1b-acd9-58baa6c99267"
 Test = "8dfed614-e22c-5e08-85e1-65c5234f0b40"
+WorldOceanAtlasTools = "04f20302-f1b9-11e8-29d9-7d841cb0a64a"
 
 [targets]
-test = ["Coverage", "Test", "MPIPreferences", "CUDA_Runtime_jll", "Reactant", "CDSAPI", "CopernicusMarine", "XESMF", "SpeedyWeather", "Breeze", "PythonCall", "CondaPkg"]
+test = ["Coverage", "Test", "MPIPreferences", "CUDA_Runtime_jll", "Reactant", "CDSAPI", "CopernicusMarine", "XESMF", "SpeedyWeather", "Breeze", "PythonCall", "CondaPkg", "WorldOceanAtlasTools"]

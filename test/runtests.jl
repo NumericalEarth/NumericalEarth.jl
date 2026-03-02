@@ -147,3 +147,7 @@ end
 if test_group == :breeze || test_group == :all
     include("test_breeze_coupling.jl")
 end
+
+if test_group == :woa || test_group == :all
+    include("test_woa.jl")
+end

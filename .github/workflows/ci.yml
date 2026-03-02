@@ -60,6 +60,7 @@ jobs:
           - breeze
           - downloading
           - veros
+          - woa
     steps:
       - name: Show available storage before cleanup
         run: |
@@ -153,6 +154,7 @@ jobs:
           - earth_system_model
           - breeze
           - JRA55
+          - woa
     env:
       OPENBLAS_NUM_THREADS: 1
       JULIA_NUM_PRECOMPILE_TASKS: 8
