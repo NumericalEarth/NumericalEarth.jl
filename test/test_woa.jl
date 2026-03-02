@@ -1,16 +1,12 @@
 include("runtests_setup.jl")
 
-using NumericalEarth
-using NumericalEarth.WOA
-using NumericalEarth.DataWrangling: NearestNeighborInpainting, metadata_path, download_dataset
-
-using WorldOceanAtlasTools
-
-using Oceananigans
-using Oceananigans.Architectures: on_architecture
+ENV["DATADEPS_ALWAYS_ACCEPT"] = "true"
 
 using CUDA: @allowscalar
-using Test
+using NumericalEarth.WOA
+using NumericalEarth.DataWrangling: NearestNeighborInpainting, metadata_path, download_dataset
+using Oceananigans.Architectures: on_architecture
+using WorldOceanAtlasTools
 
 inpainting = NearestNeighborInpainting(10)
 
