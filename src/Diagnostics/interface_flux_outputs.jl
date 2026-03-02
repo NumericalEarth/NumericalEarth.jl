@@ -10,7 +10,7 @@ By default (`units=:physical`), outputs are converted to physical units:
 Set `units=:tracer` to return raw tracer-flux units.
 If `isolate_sea_ice=true`, the output also includes ocean and sea-ice components.
 """
-function InterfaceFluxOutputs(coupled_model; isolate_sea_ice=false, units=:physical, reference_salinity=35)
+function InterfaceFluxOutputs(coupled_model::EarthSystemModel; isolate_sea_ice=false, units=:physical, reference_salinity=35)
     units in (:physical, :tracer) || throw(ArgumentError("`units` must be `:physical` or `:tracer`."))
 
     T_top_flux = coupled_model.ocean.model.tracers.T.boundary_conditions.top.condition
