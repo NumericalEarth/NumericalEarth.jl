@@ -7,6 +7,7 @@
 
 using Oceananigans
 using NumericalEarth
+using WorldOceanAtlasTools
 using CairoMakie
 
 arch = CPU()
