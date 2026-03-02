@@ -94,7 +94,15 @@ function interface_flux_outputs(coupled_model::EarthSystemModel;
     return merge(temperature_outputs, salinity_outputs)
 end
 
+"""
+    temperature_flux_outputs(coupled_model::EarthSystemModel; units, separate_sea_ice)
 
+Return 2D heat fluxes _or_ the temperature fluxes, derived from the ocean--sea ice model's
+top tracer boundary conditions. Note that the difference of heat and the temperature fluxes
+is simply a scaling factor.
+
+See [`interface_flux_outputs`](@ref) for more details and example usage.
+"""
 function temperature_flux_outputs(coupled_model::EarthSystemModel; units, separate_sea_ice)
     temperature_flux = coupled_model.ocean.model.tracers.T.boundary_conditions.top.condition
 
@@ -128,6 +136,15 @@ function temperature_flux_outputs(coupled_model::EarthSystemModel; units, separa
     return outputs
 end
 
+"""
+    salinity_flux_outputs(coupled_model::EarthSystemModel; units, separate_sea_ice)
+
+Return 2D freshwater mass fluxes _or_ the salinity fluxes, derived from the ocean--sea ice model's
+top tracer boundary conditions. Note that the difference of freshwater mass and the salinity
+fluxes is simply a scaling factor.
+
+See [`interface_flux_outputs`](@ref) for more details and example usage.
+"""
 function salinity_flux_outputs(coupled_model::EarthSystemModel; units, separate_sea_ice, reference_salinity = 35)
     salinity_flux = coupled_model.ocean.model.tracers.S.boundary_conditions.top.condition
 
