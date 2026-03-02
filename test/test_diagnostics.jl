@@ -81,14 +81,13 @@ for arch in test_architectures
 
         T_top_flux = ocean.model.tracers.T.boundary_conditions.top.condition
         S_top_flux = ocean.model.tracers.S.boundary_conditions.top.condition
-        ao_fluxes = coupled_model.interfaces.atmosphere_ocean_interface.fluxes
+        io_fluxes = coupled_model.interfaces.sea_ice_ocean_interface.fluxes
 
         fill!(T_top_flux, 2.0)
         fill!(S_top_flux, 5.0)
-        fill!(ao_fluxes.ocean_temperature_flux, 1.5)
-        fill!(ao_fluxes.sea_ice_temperature_flux, 0.5)
-        fill!(ao_fluxes.ocean_salinity_flux, 4.0)
-        fill!(ao_fluxes.sea_ice_salinity_flux, 1.0)
+        fill!(io_fluxes.frazil_heat, 0.2)
+        fill!(io_fluxes.interface_heat, 0.3)
+        fill!(io_fluxes.salt, 1.0)
 
         ρₒ = coupled_model.interfaces.ocean_properties.reference_density
         cₒ = coupled_model.interfaces.ocean_properties.heat_capacity
@@ -131,6 +130,9 @@ for arch in test_architectures
 
         tracer_outputs = InterfaceFluxOutputs(coupled_model; isolate_sea_ice = true, units = :tracer)
         @test keys(tracer_outputs) == keys(split_outputs)
+        for fld in values(tracer_outputs)
+            compute!(fld)
+        end
 
         @allowscalar begin
             @test tracer_outputs.heat_flux[1, 1, 1] ≈ 2.0
