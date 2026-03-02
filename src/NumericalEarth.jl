@@ -50,7 +50,7 @@ export
     atmosphere_simulation,
     sea_ice_dynamics,
     initialize!,
-    InterfaceFluxOutputs,
+    interface_flux_outputs,
     TracerFluxUnits,
     HeatFreshwaterMassUnits
 

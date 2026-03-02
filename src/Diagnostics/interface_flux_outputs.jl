@@ -2,10 +2,10 @@ struct TracerFluxUnits end
 struct HeatFreshwaterMassUnits end
 
 """
-    InterfaceFluxOutputs(coupled_model::EarthSystemModel;
-                         units = TracerFluxUnits(),
-                         separate_sea_ice = false,
-                         reference_salinity = 35)
+    interface_flux_outputs(coupled_model::EarthSystemModel;
+                           units = HeatFreshwaterMassUnits(),
+                           separate_sea_ice = false,
+                           reference_salinity = 35)
 
 Return 2D heat and freshwater mass fluxes _or_ the temperature and salt fluxes respectively,
 derived from the ocean--sea ice model's top tracer boundary conditions. Note that the difference,
@@ -35,29 +35,35 @@ Keyword Arguments
                         mass fluxes, i.e., ``-ρ₀ Jˢ / S₀``, where ``Jˢ`` is the salt fluxes.
                         Default: 35 g/kg.
 """
-function InterfaceFluxOutputs(coupled_model::EarthSystemModel;
-                              units = HeatFreshwaterMassUnits(),
-                              separate_sea_ice = false,
-                              reference_salinity = 35)
+function interface_flux_outputs(coupled_model::EarthSystemModel;
+                                units = HeatFreshwaterMassUnits(),
+                                separate_sea_ice = false,
+                                reference_salinity = 35)
 
     (units isa HeatFreshwaterMassUnits || units isa TracerFluxUnits) ||
         throw(ArgumentError("units must be `HeatFreshwaterMassUnits()` or `TracerFluxUnits()`"))
 
-    temperature_flux = coupled_model.ocean.model.tracers.T.boundary_conditions.top.condition
-    salinity_flux = coupled_model.ocean.model.tracers.S.boundary_conditions.top.condition
+    temperature_outputs = temperature_flux_outputs(coupled_model; units, separate_sea_ice)
+    salinity_outputs = salinity_flux_outputs(coupled_model; units, separate_sea_ice, reference_salinity)
 
-    ocean_properties = coupled_model.interfaces.ocean_properties
-    ρ₀ = ocean_properties.reference_density
-    cₚ = ocean_properties.heat_capacity
-    S₀ = convert(typeof(ρ₀), reference_salinity)
+    return merge(temperature_outputs, salinity_outputs)
+end
+
+
+function temperature_flux_outputs(coupled_model::EarthSystemModel;
+                                  units = HeatFreshwaterMassUnits(),
+                                  separate_sea_ice = false)
+
+    temperature_flux = coupled_model.ocean.model.tracers.T.boundary_conditions.top.condition
+
+    ρ₀ = coupled_model.interfaces.ocean_properties.reference_density
+    cₚ = coupled_model.interfaces.ocean_properties.heat_capacity
 
     convert_temperature_flux(Jᵀ, ::TracerFluxUnits) = Jᵀ
     convert_temperature_flux(Jᵀ, ::HeatFreshwaterMassUnits) = Field(ρ₀ * cₚ * Jᵀ)
-    convert_salinity_flux(Jˢ, ::TracerFluxUnits) = Jˢ
-    convert_salinity_flux(Jˢ, ::HeatFreshwaterMassUnits) = Field(-ρ₀ * Jˢ / S₀)
 
     ice_ocean_fluxes = coupled_model.interfaces.sea_ice_ocean_interface.fluxes
-    required = (:frazil_heat, :interface_heat, :salt)
+    required = (:frazil_heat, :interface_heat)
 
     for name in required
         hasproperty(ice_ocean_fluxes, name) ||
@@ -66,20 +72,51 @@ function InterfaceFluxOutputs(coupled_model::EarthSystemModel;
 
     frazil_heat_flux = getfield(ice_ocean_fluxes, :frazil_heat)
     heat_flux = temperature_flux + frazil_heat_flux
-    freshwater_flux = salinity_flux
 
-    outputs = (; heat_flux = convert_temperature_flux(heat_flux, units),
-                 freshwater_flux = convert_salinity_flux(freshwater_flux, units))
+    outputs = (; heat_flux = convert_temperature_flux(heat_flux, units))
 
     if separate_sea_ice
         sea_ice_heat_flux = getfield(ice_ocean_fluxes, :interface_heat) + frazil_heat_flux
-        sea_ice_freshwater_flux = getfield(ice_ocean_fluxes, :salt)
         ocean_heat_flux = heat_flux - sea_ice_heat_flux
-        ocean_freshwater_flux = freshwater_flux - sea_ice_freshwater_flux
 
         outputs = merge(outputs, (; ocean_heat_flux = convert_temperature_flux(ocean_heat_flux, units),
-                                    sea_ice_heat_flux = convert_temperature_flux(sea_ice_heat_flux, units),
-                                    ocean_freshwater_flux = convert_salinity_flux(ocean_freshwater_flux, units),
+                                    sea_ice_heat_flux = convert_temperature_flux(sea_ice_heat_flux, units)))
+    end
+
+    return outputs
+end
+
+function salinity_flux_outputs(coupled_model::EarthSystemModel;
+                               units = HeatFreshwaterMassUnits(),
+                               separate_sea_ice = false,
+                               reference_salinity = 35)
+
+    salinity_flux = coupled_model.ocean.model.tracers.S.boundary_conditions.top.condition
+
+    ocean_properties = coupled_model.interfaces.ocean_properties
+    ρ₀ = ocean_properties.reference_density
+    S₀ = convert(typeof(ρ₀), reference_salinity)
+
+    convert_salinity_flux(Jˢ, ::TracerFluxUnits) = Jˢ
+    convert_salinity_flux(Jˢ, ::HeatFreshwaterMassUnits) = Field(-ρ₀ * Jˢ / S₀)
+
+    ice_ocean_fluxes = coupled_model.interfaces.sea_ice_ocean_interface.fluxes
+    required = (:salt,)
+
+    for name in required
+        hasproperty(ice_ocean_fluxes, name) ||
+            throw(ArgumentError("Missing required interface flux field: $(name)."))
+    end
+
+    freshwater_flux = salinity_flux
+
+    outputs = (; freshwater_flux = convert_salinity_flux(freshwater_flux, units))
+
+    if separate_sea_ice
+        sea_ice_freshwater_flux = getfield(ice_ocean_fluxes, :salt)
+        ocean_freshwater_flux = freshwater_flux - sea_ice_freshwater_flux
+
+        outputs = merge(outputs, (; ocean_freshwater_flux = convert_salinity_flux(ocean_freshwater_flux, units),
                                     sea_ice_freshwater_flux = convert_salinity_flux(sea_ice_freshwater_flux, units)))
     end
 
