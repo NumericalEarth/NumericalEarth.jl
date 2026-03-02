@@ -48,7 +48,8 @@ export
     sea_ice_simulation,
     atmosphere_simulation,
     sea_ice_dynamics,
-    initialize!
+    initialize!,
+    InterfaceFluxOutputs
 
 using Oceananigans
 using Oceananigans.Operators: ℑxyᶠᶜᵃ, ℑxyᶜᶠᵃ
@@ -105,6 +106,7 @@ using .EarthSystemModels
 using .Atmospheres
 using .Oceans
 using .SeaIces
+using .Diagnostics: InterfaceFluxOutputs
 
 using NumericalEarth.EarthSystemModels: ComponentInterfaces, MomentumRoughnessLength, ScalarRoughnessLength, default_sea_ice
 

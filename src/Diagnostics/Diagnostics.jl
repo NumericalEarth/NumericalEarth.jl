@@ -1,6 +1,7 @@
 module Diagnostics
 
 export MixedLayerDepthField, MixedLayerDepthOperand
+export InterfaceFluxOutputs
 
 using Oceananigans
 using Oceananigans.Architectures: architecture
@@ -14,5 +15,6 @@ using KernelAbstractions: @index, @kernel
 import Oceananigans.Fields: compute!
 
 include("mixed_layer_depth.jl")
+include("interface_flux_outputs.jl")
 
 end # module
