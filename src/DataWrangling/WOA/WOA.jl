@@ -66,8 +66,8 @@ struct WOAMonthly <: WOAClimatology
     product_year :: Int
 end
 
-WOAAnnual(;  product_year=2013) = WOAAnnual(product_year)
-WOAMonthly(; product_year=2013) = WOAMonthly(product_year)
+WOAAnnual(;  product_year=2023) = WOAAnnual(product_year)
+WOAMonthly(; product_year=2023) = WOAMonthly(product_year)
 
 function default_download_directory(::WOAAnnual)
     return mkpath(joinpath(download_WOA_cache, "annual"))
