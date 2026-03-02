@@ -15,10 +15,17 @@ import ..DataWrangling: convert_units
                            separate_sea_ice = false,
                            reference_salinity = 35)
 
-Return 2D heat and freshwater mass fluxes _or_ the temperature and salt fluxes respectively,
-derived from the ocean--sea ice model's top tracer boundary conditions. Note that the difference,
-e.g., of heat and temperature fluxes is just a multiplicative factor; same for the difference
-between freshwater mass fluxes and salt fluxes.
+Return two-dimensional heat and freshwater mass fluxes _or_ the temperature and salt fluxes
+respectively, derived from the ocean--sea ice model's top tracer boundary conditions.
+Note that the difference, e.g., of heat and temperature fluxes is just a multiplicative factor;
+same for the difference between freshwater mass fluxes and salt fluxes.
+
+All the fluxes and their units are listed below.
+
+* temperature flux: Jᵀ (K m s⁻¹)
+* heat flux: ρ₀ cₚ Jᵀ (J s⁻¹ m⁻²)
+* salinity flux: Jˢ (PSU m s⁻¹)
+* freshwater mass flux: -ρ₀ Jˢ / S₀ (kg s⁻¹ m⁻²)
 
 Arguments
 =========
