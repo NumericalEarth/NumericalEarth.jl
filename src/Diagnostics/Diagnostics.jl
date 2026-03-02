@@ -1,7 +1,7 @@
 module Diagnostics
 
 export MixedLayerDepthField, MixedLayerDepthOperand
-export InterfaceFluxOutputs
+export InterfaceFluxOutputs, TracerFluxUnits, HeatFreshwaterMassUnits
 
 using Oceananigans
 using Oceananigans.Architectures: architecture

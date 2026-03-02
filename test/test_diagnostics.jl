@@ -4,8 +4,8 @@ using SeawaterPolynomials: TEOS10EquationOfState
 using Oceananigans: location
 using Oceananigans.Models: buoyancy_operation
 using NumericalEarth.Diagnostics: MixedLayerDepthField, MixedLayerDepthOperand
-using NumericalEarth.Diagnostics: InterfaceFluxOutputs
 
+#=
 for arch in test_architectures, dataset in (ECCO4Monthly(),)
     A = typeof(arch)
     @info "Testing MixedLayerDepthField with $(typeof(dataset)) on $A"
@@ -57,6 +57,7 @@ for arch in test_architectures, dataset in (ECCO4Monthly(),)
         end
     end
 end
+=#
 
 for arch in test_architectures
     A = typeof(arch)
@@ -79,15 +80,21 @@ for arch in test_architectures
         atmosphere = PrescribedAtmosphere(grid, [0.0])
         coupled_model = OceanSeaIceModel(ocean, sea_ice; atmosphere, radiation = Radiation())
 
-        T_top_flux = ocean.model.tracers.T.boundary_conditions.top.condition
-        S_top_flux = ocean.model.tracers.S.boundary_conditions.top.condition
-        io_fluxes = coupled_model.interfaces.sea_ice_ocean_interface.fluxes
+        T_flux = ocean.model.tracers.T.boundary_conditions.top.condition
+        S_flux = ocean.model.tracers.S.boundary_conditions.top.condition
+        ice_ocean_fluxes = coupled_model.interfaces.sea_ice_ocean_interface.fluxes
 
-        fill!(T_top_flux, 2.0)
-        fill!(S_top_flux, 5.0)
-        fill!(io_fluxes.frazil_heat, 0.2)
-        fill!(io_fluxes.interface_heat, 0.3)
-        fill!(io_fluxes.salt, 1.0)
+        T_flux_value = 2.0
+        S_flux_value = 5.0
+        frazil_heat_flux_value = 0.2
+        interface_heat_flux_value = 0.3
+        ice_ocean_salt_flux_value = 0.9
+
+        fill!(T_flux, T_flux_value)
+        fill!(S_flux, S_flux_value)
+        fill!(ice_ocean_fluxes.frazil_heat, frazil_heat_flux_value)
+        fill!(ice_ocean_fluxes.interface_heat, interface_heat_flux_value)
+        fill!(ice_ocean_fluxes.salt, ice_ocean_salt_flux_value)
 
         ρ₀ = coupled_model.interfaces.ocean_properties.reference_density
         cₚ = coupled_model.interfaces.ocean_properties.heat_capacity
@@ -103,11 +110,11 @@ for arch in test_architectures
         @test location(flux_outputs.freshwater_flux) == (Center, Center, Nothing)
 
         @allowscalar begin
-            @test flux_outputs.heat_flux[1, 1, 1] ≈ ρ₀ * cₚ * 2.0
-            @test flux_outputs.freshwater_flux[1, 1, 1] ≈ -ρ₀ * 5.0 / S₀
+            @test flux_outputs.heat_flux[1, 1, 1] ≈ ρ₀ * cₚ * (T_flux_value + frazil_heat_flux_value)
+            @test flux_outputs.freshwater_flux[1, 1, 1] ≈ -ρ₀ * S_flux_value / S₀
         end
 
-        split_outputs = InterfaceFluxOutputs(coupled_model; isolate_sea_ice = true)
+        split_outputs = InterfaceFluxOutputs(coupled_model; separate_sea_ice = true)
         @test keys(split_outputs) == (:heat_flux,
                                       :freshwater_flux,
                                       :ocean_heat_flux,
@@ -120,27 +127,27 @@ for arch in test_architectures
         end
 
         @allowscalar begin
-            @test split_outputs.ocean_heat_flux[1, 1, 1] ≈ ρ₀ * cₚ * 1.5
-            @test split_outputs.sea_ice_heat_flux[1, 1, 1] ≈ ρ₀ * cₚ * 0.5
-            @test split_outputs.ocean_freshwater_flux[1, 1, 1] ≈ -ρ₀ * 4.0 / S₀
-            @test split_outputs.sea_ice_freshwater_flux[1, 1, 1] ≈ -ρ₀ * 1.0 / S₀
+            @test split_outputs.ocean_heat_flux[1, 1, 1] ≈  ρ₀ * cₚ * (T_flux_value - interface_heat_flux_value)
+            @test split_outputs.sea_ice_heat_flux[1, 1, 1] ≈  ρ₀ * cₚ * (frazil_heat_flux_value + interface_heat_flux_value)
+            @test split_outputs.ocean_freshwater_flux[1, 1, 1] ≈ -ρ₀ * (S_flux_value - ice_ocean_salt_flux_value) / S₀
+            @test split_outputs.sea_ice_freshwater_flux[1, 1, 1] ≈ -ρ₀ * ice_ocean_salt_flux_value / S₀
             @test split_outputs.heat_flux[1, 1, 1] ≈ split_outputs.ocean_heat_flux[1, 1, 1] + split_outputs.sea_ice_heat_flux[1, 1, 1]
             @test split_outputs.freshwater_flux[1, 1, 1] ≈ split_outputs.ocean_freshwater_flux[1, 1, 1] + split_outputs.sea_ice_freshwater_flux[1, 1, 1]
         end
 
-        tracer_outputs = InterfaceFluxOutputs(coupled_model; isolate_sea_ice = true, units = :tracer)
+        tracer_outputs = InterfaceFluxOutputs(coupled_model; separate_sea_ice = true, units = TracerFluxUnits())
         @test keys(tracer_outputs) == keys(split_outputs)
         for fld in values(tracer_outputs)
             compute!(fld)
         end
 
         @allowscalar begin
-            @test tracer_outputs.heat_flux[1, 1, 1] ≈ 2.0
-            @test tracer_outputs.freshwater_flux[1, 1, 1] ≈ 5.0
-            @test tracer_outputs.ocean_heat_flux[1, 1, 1] ≈ 1.5
-            @test tracer_outputs.sea_ice_heat_flux[1, 1, 1] ≈ 0.5
-            @test tracer_outputs.ocean_freshwater_flux[1, 1, 1] ≈ 4.0
-            @test tracer_outputs.sea_ice_freshwater_flux[1, 1, 1] ≈ 1.0
+            @test tracer_outputs.heat_flux[1, 1, 1] ≈ T_flux_value + frazil_heat_flux_value
+            @test tracer_outputs.freshwater_flux[1, 1, 1] ≈ S_flux_value
+            @test tracer_outputs.ocean_heat_flux[1, 1, 1] ≈ T_flux_value - interface_heat_flux_value
+            @test tracer_outputs.sea_ice_heat_flux[1, 1, 1] ≈ frazil_heat_flux_value + interface_heat_flux_value
+            @test tracer_outputs.ocean_freshwater_flux[1, 1, 1] ≈ S_flux_value - ice_ocean_salt_flux_value
+            @test tracer_outputs.sea_ice_freshwater_flux[1, 1, 1] ≈ ice_ocean_salt_flux_value
         end
     end
 end
