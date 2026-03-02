@@ -30,17 +30,17 @@ function InterfaceFluxOutputs(coupled_model; isolate_sea_ice=false, units=:physi
     outputs = (; heat_flux, freshwater_flux)
 
     if isolate_sea_ice
-        ao_fluxes = coupled_model.interfaces.atmosphere_ocean_interface.fluxes
-        required = (:ocean_temperature_flux, :sea_ice_temperature_flux, :ocean_salinity_flux, :sea_ice_salinity_flux)
+        io_fluxes = coupled_model.interfaces.sea_ice_ocean_interface.fluxes
+        required = (:frazil_heat, :interface_heat, :salt)
 
         for name in required
-            hasproperty(ao_fluxes, name) || throw(ArgumentError("Missing required interface flux field: $(name)."))
+            hasproperty(io_fluxes, name) || throw(ArgumentError("Missing required interface flux field: $(name)."))
         end
 
-        ocean_heat_flux = convert_temperature_flux(getfield(ao_fluxes, :ocean_temperature_flux))
-        sea_ice_heat_flux = convert_temperature_flux(getfield(ao_fluxes, :sea_ice_temperature_flux))
-        ocean_freshwater_flux = convert_salinity_flux(getfield(ao_fluxes, :ocean_salinity_flux))
-        sea_ice_freshwater_flux = convert_salinity_flux(getfield(ao_fluxes, :sea_ice_salinity_flux))
+        sea_ice_heat_flux = convert_temperature_flux(getfield(io_fluxes, :frazil_heat)) + convert_temperature_flux(getfield(io_fluxes, :interface_heat))
+        sea_ice_freshwater_flux = convert_salinity_flux(getfield(io_fluxes, :salt))
+        ocean_heat_flux = heat_flux - sea_ice_heat_flux
+        ocean_freshwater_flux = freshwater_flux - sea_ice_freshwater_flux
 
         outputs = merge(outputs, (; ocean_heat_flux,
                                    sea_ice_heat_flux,
