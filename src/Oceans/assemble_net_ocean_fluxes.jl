@@ -1,4 +1,5 @@
 using Printf
+using Oceananigans.Grids: inactive_node
 using Oceananigans.Operators: ℑxᶠᵃᵃ, ℑyᵃᶠᵃ
 using Oceananigans.Forcings: MultipleForcings
 using NumericalEarth.EarthSystemModels: EarthSystemModel, NoOceanInterfaceModel, NoInterfaceModel
@@ -150,6 +151,7 @@ end
     Jˢ = net_ocean_fluxes.S
     ℵ  = sea_ice_concentration
     cᵒᶜ = ocean_properties.heat_capacity
+    inactive = inactive_node(i, j, kᴺ, grid, Center(), Center(), Center())
 
     @inbounds begin
         𝒬ⁱⁿᵗ = get_possibly_zero_flux(sea_ice_ocean_fluxes, :interface_heat)[i, j, 1]
@@ -166,11 +168,11 @@ end
         τʸⁱᵒ = ρτʸⁱᵒ[i, j, 1] * ρᵒᶜ⁻¹ * ℑyᵃᶠᵃ(i, j, 1, grid, ℵ)
 
         # Stresses
-        τˣ[i, j, 1] = τˣᵃᵒ + τˣⁱᵒ
-        τʸ[i, j, 1] = τʸᵃᵒ + τʸⁱᵒ
+        τˣ[i, j, 1] = ifelse(inactive, zero(grid), τˣᵃᵒ + τˣⁱᵒ)
+        τʸ[i, j, 1] = ifelse(inactive, zero(grid), τʸᵃᵒ + τʸⁱᵒ)
 
         # Tracer fluxes
-        Jᵀ[i, j, 1] = Jᵀao + Jᵀio # Jᵀao is already multiplied by the sea ice concentration
-        Jˢ[i, j, 1] = (1 - ℵᵢ) * Jˢao + Jˢio
+        Jᵀ[i, j, 1] = ifelse(inactive, zero(grid), Jᵀao + Jᵀio) # Jᵀao is already multiplied by the sea ice concentration
+        Jˢ[i, j, 1] = ifelse(inactive, zero(grid), (1 - ℵᵢ) * Jˢao + Jˢio)
     end
 end
