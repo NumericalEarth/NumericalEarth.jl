@@ -33,7 +33,7 @@ Keyword Arguments
 
 * `reference_salinity`: Reference salinity ``S₀`` used to convert the salt fluxes to freshwater
                         mass fluxes, i.e., ``-ρ₀ Jˢ / S₀``, where ``Jˢ`` is the salt fluxes.
-                        Default: 35 gr/kg.
+                        Default: 35 g/kg.
 """
 function InterfaceFluxOutputs(coupled_model::EarthSystemModel;
                               units = HeatFreshwaterMass(),
@@ -51,13 +51,13 @@ function InterfaceFluxOutputs(coupled_model::EarthSystemModel;
     cₚ = ocean_properties.heat_capacity
     S₀ = convert(typeof(ρ₀), reference_salinity)
 
-    convert_temperature_flux(Jᵀ, units::TracerFlux) = Jᵀ
-    convert_temperature_flux(Jᵀ, units::HeatFreshwaterMass) = Field(ρ₀ * cₚ * Jᵀ)
-       convert_salinity_flux(Jˢ, units::TracerFlux) = Jˢ
-       convert_salinity_flux(Jˢ, units::HeatFreshwaterMass) = Field(-ρ₀ * Jˢ / S₀)
+    convert_temperature_flux(Jᵀ, ::TracerFlux) = Jᵀ
+    convert_temperature_flux(Jᵀ, ::HeatFreshwaterMass) = Field(ρ₀ * cₚ * Jᵀ)
+       convert_salinity_flux(Jˢ, ::TracerFlux) = Jˢ
+       convert_salinity_flux(Jˢ, ::HeatFreshwaterMass) = Field(-ρ₀ * Jˢ / S₀)
 
-    heat_flux = convert_temperature_flux(T_top_flux)
-    freshwater_flux = convert_salinity_flux(S_top_flux)
+    heat_flux = convert_temperature_flux(T_top_flux, units)
+    freshwater_flux = convert_salinity_flux(S_top_flux, units)
 
     outputs = (; heat_flux, freshwater_flux)
 
