@@ -6,7 +6,7 @@ struct FreshwaterMassFluxUnits end
 import ..DataWrangling: convert_units
 
 @inline convert_units(J, ::TracerFluxUnits; params) = J
-@inline convert_units(Jᵀ, ::HeatFluxUnits; params) = Field(params.ρᵒᶜ * params.cₚ * Jᵀ)
+@inline convert_units(Jᵀ, ::HeatFluxUnits; params) = Field(params.ρᵒᶜ * params.cᵒᶜ * Jᵀ)
 @inline convert_units(Jˢ, ::FreshwaterMassFluxUnits; params) = Field(-params.ρᵒᶜ * Jˢ / params.S₀)
 
 """
@@ -23,7 +23,7 @@ same for the difference between freshwater mass fluxes and salt fluxes.
 All the fluxes and their units are listed below.
 
 * temperature flux: Jᵀ (K m s⁻¹)
-* heat flux: ρᵒᶜ cₚ Jᵀ (J s⁻¹ m⁻²)
+* heat flux: ρᵒᶜ cᵒᶜ Jᵀ (J s⁻¹ m⁻²)
 * salinity flux: Jˢ (PSU m s⁻¹)
 * freshwater mass flux: -ρᵒᶜ Jˢ / S₀ (kg s⁻¹ m⁻²)
 
@@ -126,8 +126,8 @@ function temperature_flux_outputs(coupled_model::EarthSystemModel; units, separa
     temperature_flux = coupled_model.ocean.model.tracers.T.boundary_conditions.top.condition
 
     ρᵒᶜ = coupled_model.interfaces.ocean_properties.reference_density
-    cₚ = coupled_model.interfaces.ocean_properties.heat_capacity
-    params = units isa HeatFluxUnits ? (; ρᵒᶜ, cₚ) : nothing
+    cᵒᶜ = coupled_model.interfaces.ocean_properties.heat_capacity
+    params = units isa HeatFluxUnits ? (; ρᵒᶜ, cᵒᶜ) : nothing
 
     ice_ocean_fluxes = coupled_model.interfaces.sea_ice_ocean_interface.fluxes
     required = (:frazil_heat, :interface_heat)
