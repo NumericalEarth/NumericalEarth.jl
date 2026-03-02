@@ -81,13 +81,14 @@ for arch in test_architectures
         @info "Running WOA Monthly metadata tests on $A..."
 
         @testset "WOA Monthly download and Field creation" begin
-            # Test downloading January temperature
-            metadata = Metadatum(:temperature; dataset=WOAMonthly())
-            download_dataset(metadata)
-            @test isfile(metadata_path(metadata))
+            for name in (:temperature, :salinity)
+                metadata = Metadatum(name; dataset=WOAMonthly())
+                download_dataset(metadata)
+                @test isfile(metadata_path(metadata))
 
-            field = Field(metadata, arch; inpainting=NearestNeighborInpainting(2))
-            @test field isa Field
+                field = Field(metadata, arch; inpainting=NearestNeighborInpainting(2))
+                @test field isa Field
+            end
         end
 
         @testset "Setting a field from WOA Monthly" begin
@@ -98,9 +99,11 @@ for arch in test_architectures
                                          z = (-200, 0))
             field = CenterField(grid)
 
-            @test begin
-                set!(field, Metadatum(:temperature; dataset=WOAMonthly()); inpainting)
-                true
+            for name in (:temperature, :salinity)
+                @test begin
+                    set!(field, Metadatum(name; dataset=WOAMonthly()); inpainting)
+                    true
+                end
             end
         end
     end
