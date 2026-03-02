@@ -1,6 +1,6 @@
 module Diagnostics
 
-export MixedLayerDepthField, MixedLayerDepthOperand, Meridional_Heat_Transport
+export MixedLayerDepthField, MixedLayerDepthOperand, Meridional_Heat_Transport, reset_meridional_heat_transport_state!
 
 using Oceananigans
 using Oceananigans.Architectures: architecture

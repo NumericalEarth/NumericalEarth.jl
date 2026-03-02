@@ -322,12 +322,16 @@ above_freezing_ocean_temperature!(ocean, grid, ::Nothing) = nothing
 ##### Checkpointing
 #####
 
+checkpoint_auxiliary_state(model) = nothing
+restore_auxiliary_state!(model, state) = nothing
+
 function prognostic_state(osm::EarthSystemModel)
     return (clock = prognostic_state(osm.clock),
             ocean = prognostic_state(osm.ocean),
             atmosphere = prognostic_state(osm.atmosphere),
             sea_ice = prognostic_state(osm.sea_ice),
-            interfaces = prognostic_state(osm.interfaces))
+            interfaces = prognostic_state(osm.interfaces),
+            auxiliary = prognostic_state(checkpoint_auxiliary_state(osm)))
 end
 
 function restore_prognostic_state!(osm::EarthSystemModel, state)
@@ -336,6 +340,8 @@ function restore_prognostic_state!(osm::EarthSystemModel, state)
     restore_prognostic_state!(osm.atmosphere, state.atmosphere)
     restore_prognostic_state!(osm.sea_ice, state.sea_ice)
     restore_prognostic_state!(osm.interfaces, state.interfaces)
+    auxiliary_state = hasproperty(state, :auxiliary) ? state.auxiliary : nothing
+    restore_auxiliary_state!(osm, auxiliary_state)
     # Note: we do NOT call update_state! here because:
     # 1. The checkpoint was saved AFTER update_state! was called at the end of that time step
     # 2. Calling update_state! would recompute interface fluxes and overwrite restored state
