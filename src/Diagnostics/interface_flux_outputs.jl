@@ -1,16 +1,42 @@
 """
-    InterfaceFluxOutputs(coupled_model; isolate_sea_ice=false, units=:physical, reference_salinity=35)
+    InterfaceFluxOutputs(model::EarthSystemModel;
+                         units = :tracer_flux,
+                         separate_sea_ice = false,
+                         reference_salinity = 35)
 
-Return 2D surface flux outputs derived from ocean top tracer boundary conditions.
+Return 2D heat and freshwater mass fluxes _or_ the temperature and salt fluxes respectively,
+derived from the ocean--sea ice model's top tracer boundary conditions. Note that the difference,
+e.g., of heat and temperature fluxes is just a multiplicative factor; same for the difference
+between freshwater mass fluxes and salt fluxes.
 
-By default (`units=:physical`), outputs are converted to physical units:
-- heat flux: `W m⁻²`
-- freshwater-equivalent flux: `kg m⁻² s⁻¹`
+Arguments
+=========
 
-Set `units=:tracer` to return raw tracer-flux units.
-If `isolate_sea_ice=true`, the output also includes ocean and sea-ice components.
+* `model`: An `EarthSystemModel`.
+
+
+Keyword Arguments
+=================
+
+* `separate_sea_ice`: If set to `true`, then returns separate fluxes for the ocean and
+                      sea ice model components. If `false` (default), the sum of the
+                      tracer fluxes for the ocean and sea ice model components are output.
+
+* `units`: If `:tracer_flux`, then each of the fluxes are output in units of `tracer`
+           multiplied by a velocity per unit area, i.e., `tracer_unit` m⁻¹ s⁻¹.
+           If `:heat_freshwater_mass` (default), then the temperature fluxes are converted
+           to heat fluxes (W m⁻²) and the salt fluxes are converted to freshwater mass
+           fluxes (kg m⁻² s⁻¹).
+
+* `reference_salinity`: Reference salinity ``S₀`` used to convert the salt fluxes to freshwater
+                        mass fluxes, i.e., ``-ρₒ Jˢ / S₀``, where ``Jˢ`` is the salt fluxes.
+                        Default: 35 gr/kg.
 """
-function InterfaceFluxOutputs(coupled_model::EarthSystemModel; isolate_sea_ice=false, units=:physical, reference_salinity=35)
+function InterfaceFluxOutputs(coupled_model::EarthSystemModel;
+                              units = :tracer_flux,
+                              separate_sea_ice = false,
+                              reference_salinity = 35)
+
     units in (:physical, :tracer) || throw(ArgumentError("`units` must be `:physical` or `:tracer`."))
 
     T_top_flux = coupled_model.ocean.model.tracers.T.boundary_conditions.top.condition
@@ -29,7 +55,7 @@ function InterfaceFluxOutputs(coupled_model::EarthSystemModel; isolate_sea_ice=f
 
     outputs = (; heat_flux, freshwater_flux)
 
-    if isolate_sea_ice
+    if separate_sea_ice
         io_fluxes = coupled_model.interfaces.sea_ice_ocean_interface.fluxes
         required = (:frazil_heat, :interface_heat, :salt)
 
@@ -43,9 +69,9 @@ function InterfaceFluxOutputs(coupled_model::EarthSystemModel; isolate_sea_ice=f
         ocean_freshwater_flux = freshwater_flux - sea_ice_freshwater_flux
 
         outputs = merge(outputs, (; ocean_heat_flux,
-                                   sea_ice_heat_flux,
-                                   ocean_freshwater_flux,
-                                   sea_ice_freshwater_flux))
+                                    sea_ice_heat_flux,
+                                    ocean_freshwater_flux,
+                                    sea_ice_freshwater_flux))
     end
 
     return outputs
