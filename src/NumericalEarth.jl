@@ -51,10 +51,10 @@ export
     sea_ice_dynamics,
     initialize!,
     interface_flux_outputs,
-    TracerFluxUnits,
-    HeatFreshwaterMassFluxUnits,
-    HeatFluxUnits,
-    FreshwaterMassFluxUnits
+    heat_fluxes,
+    temperature_fluxes,
+    salinity_fluxes,
+    freshwater_fluxes
 
 using Oceananigans
 using Oceananigans.Operators: ℑxyᶠᶜᵃ, ℑxyᶜᶠᵃ
