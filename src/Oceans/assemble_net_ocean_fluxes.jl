@@ -140,11 +140,8 @@ end
 
     # Add the contribution from the turbulent water vapor flux, which has
     # a different sign convention as the prescribed water mass fluxes (positive upwards)
-    Fv = Mv * ρₒ⁻¹
-    ΣFao += Fv
-    ΣMao = - Mp + Mv # net freshwater mass flux (kg m⁻² s⁻¹)
-
-    @inbounds atmos_ocean_fluxes.total_freshwater_flux[i, j, 1] = ΣMao
+    Jᵛᵒᶜ = Jᵛ * ρᵒᶜ⁻¹
+    ΣFao += Jᵛᵒᶜ
 
     # Compute fluxes for u, v, T, and S from momentum, heat, and freshwater fluxes
     τˣ = net_ocean_fluxes.u
@@ -161,13 +158,7 @@ end
         Jᵀio = 𝒬ⁱⁿᵗ * ρᵒᶜ⁻¹ / cᵒᶜ
     
         # salinity flux > 0 extracts salinity from the ocean --- the opposite of a water vapor flux
-        Jˢao = - Sₒ * ΣFao
-        Jˢ_total = (1 - ℵᵢ) * Jˢao + Jˢio
-
-        # Freshwater-equivalent correction from salinity flux using S₀ = 35
-        # M_fw_from_Js = ρₒ * (-Jˢ/S₀), units kg m⁻² s⁻¹
-        S₀ = convert(eltype(Sₒ), 35)
-        ΣMao_with_salt_equiv = ΣMao - ρₒ * Jˢ_total / S₀
+        Jˢao = - Sᵒᶜ * ΣFao
 
         τˣᵃᵒ = ℑxᶠᵃᵃ(i, j, 1, grid, τᶜᶜᶜ, ρᵒᶜ⁻¹, ℵ, ρτˣᵃᵒ)
         τʸᵃᵒ = ℑyᵃᶠᵃ(i, j, 1, grid, τᶜᶜᶜ, ρᵒᶜ⁻¹, ℵ, ρτʸᵃᵒ)
@@ -180,12 +171,6 @@ end
 
         # Tracer fluxes
         Jᵀ[i, j, 1] = Jᵀao + Jᵀio # Jᵀao is already multiplied by the sea ice concentration
-        Jˢ[i, j, 1] = Jˢ_total
-
-        # Diagnostic components of the top tracer fluxes.
-        atmos_ocean_fluxes.ocean_temperature_flux[i, j, 1] = Jᵀao
-        atmos_ocean_fluxes.sea_ice_temperature_flux[i, j, 1] = Jᵀio
-        atmos_ocean_fluxes.ocean_salinity_flux[i, j, 1] = Jˢao
-        atmos_ocean_fluxes.sea_ice_salinity_flux[i, j, 1] = Jˢio
+        Jˢ[i, j, 1] = (1 - ℵᵢ) * Jˢao + Jˢio
     end
 end
