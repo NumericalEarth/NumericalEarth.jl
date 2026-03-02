@@ -42,6 +42,8 @@ function read_2d_nemo_variable(ds, name)
     end
 end
 
+const default_south_rows_to_remove_ORCA1 = 35
+
 """
     ORCA1Grid(arch = CPU(), FT::DataType = Float64;
               halo = (4, 4, 4),
@@ -50,7 +52,7 @@ end
               radius = Oceananigans.defaults.planet_radius,
               with_bathymetry = true,
               active_cells_map = true,
-              south_rows_to_remove = 35)
+              south_rows_to_remove = $default_south_rows_to_remove_ORCA1)
 
 Construct an `OrthogonalSphericalShellGrid` with `(Periodic, RightFaceFolded, Bounded)`
 topology using coordinate and metric data from the NEMO eORCA1 mesh_mask file
@@ -80,7 +82,7 @@ Keyword Arguments
 - `with_bathymetry`: If `true`, download the eORCA1 bathymetry and return an `ImmersedBoundaryGrid` with `GridFittedBottom`. Default: `true`.
 - `active_cells_map`: If `true` and `with_bathymetry = true`, build an active cells map
                       for efficient kernel execution over wet cells only. Default: `true`.
-- `south_rows_to_remove`: Number of southern rows to remove from the eORCA grid.  The "extended" eORCA1 grid contains degenerate padding rows 
+- `south_rows_to_remove`: Number of southern rows to remove from the eORCA grid.  The "extended" eORCA1 grid contains degenerate padding rows
                           near Antarctica that are entirely land. Removing them reduces memory usage and computation. Default: `35`.
 """
 function ORCA1Grid(arch = CPU(), FT::DataType = Float64;
@@ -90,7 +92,7 @@ function ORCA1Grid(arch = CPU(), FT::DataType = Float64;
                    radius = Oceananigans.defaults.planet_radius,
                    with_bathymetry = true,
                    active_cells_map = true,
-                   south_rows_to_remove = 10)
+                   south_rows_to_remove = default_south_rows_to_remove_ORCA1)
 
     # Download mesh_mask if not already cached
     cache_dir = init_orca1_cache!()
