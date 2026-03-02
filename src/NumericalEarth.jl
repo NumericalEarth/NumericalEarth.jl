@@ -52,7 +52,9 @@ export
     initialize!,
     interface_flux_outputs,
     TracerFluxUnits,
-    HeatFreshwaterMassUnits
+    HeatFreshwaterMassFluxUnits,
+    HeatFluxUnits,
+    FreshwaterMassFluxUnits
 
 using Oceananigans
 using Oceananigans.Operators: ℑxyᶠᶜᵃ, ℑxyᶜᶠᵃ
