@@ -1,6 +1,6 @@
 module Diagnostics
 
-export MixedLayerDepthField, MixedLayerDepthOperand
+export MixedLayerDepthField, MixedLayerDepthOperand, Meridional_Heat_Transport
 
 using Oceananigans
 using Oceananigans.Architectures: architecture
@@ -14,5 +14,6 @@ using KernelAbstractions: @index, @kernel
 import Oceananigans.Fields: compute!
 
 include("mixed_layer_depth.jl")
+include("MeridionalHeatTransport.jl")
 
 end # module
