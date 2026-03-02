@@ -10,7 +10,7 @@ import NumericalEarth.DataWrangling: download_dataset, metadata_path
 
 # NOAA servers have inconsistent availability across product years.
 # We try the user-specified product_year first, then fall back to others.
-const fallback_product_years = (2023, 2018)
+const fallback_product_years = (2023, 2018, 2013)
 
 function woa_filepath(woa_tracer, product_year, period)
     # Try user-specified product year first
