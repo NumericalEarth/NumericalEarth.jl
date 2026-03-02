@@ -54,7 +54,7 @@ Keyword Arguments
 Examples
 ========
 
-A very basic coupled model and how we can get its `interface_flux_outputs`
+A very basic coupled model and a demo of how we can get its `interface_flux_outputs`.
 
 ```jldoctest interface_flux_outputs
 using NumericalEarth
