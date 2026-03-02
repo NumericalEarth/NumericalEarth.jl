@@ -34,6 +34,51 @@ Keyword Arguments
 * `reference_salinity`: Reference salinity ``S₀`` used to convert the salt fluxes to freshwater
                         mass fluxes, i.e., ``-ρ₀ Jˢ / S₀``, where ``Jˢ`` is the salt fluxes.
                         Default: 35 g/kg.
+
+Examples
+========
+
+A very basic coupled model and how we can get its `interface_flux_outputs`
+
+```jldoctest interface_flux_outputs
+using NumericalEarth
+using Oceananigans
+
+grid = RectilinearGrid(size = (4, 4, 2), extent = (1, 1, 1))
+
+ocean = ocean_simulation(grid;
+                         momentum_advection = nothing,
+                         tracer_advection = nothing,
+                         closure = nothing,
+                         coriolis = nothing,
+                         bottom_drag_coefficient = 0.0)
+
+sea_ice = sea_ice_simulation(grid, ocean)
+atmosphere = PrescribedAtmosphere(grid, [0.0])
+coupled_model = OceanSeaIceModel(ocean, sea_ice; atmosphere, radiation = Radiation())
+
+flux_outputs = interface_flux_outputs(coupled_model)
+
+# output
+NamedTuple with 2 Fields on 4×4×2 RectilinearGrid{Float64, Periodic, Periodic, Bounded} on CPU with 3×3×2 halo:
+├── heat_flux: 4×4×1 Field{Center, Center, Nothing} reduced over dims = (3,) on RectilinearGrid on CPU
+└── freshwater_flux: 4×4×1 Field{Center, Center, Nothing} reduced over dims = (3,) on RectilinearGrid on CPU
+```
+
+If we want to get
+
+```jldoctest interface_flux_outputs
+flux_outputs = interface_flux_outputs(coupled_model, separate_sea_ice = true)
+
+# output
+NamedTuple with 6 Fields on 4×4×2 RectilinearGrid{Float64, Periodic, Periodic, Bounded} on CPU with 3×3×2 halo:
+├── heat_flux: 4×4×1 Field{Center, Center, Nothing} reduced over dims = (3,) on RectilinearGrid on CPU
+├── ocean_heat_flux: 4×4×1 Field{Center, Center, Nothing} reduced over dims = (3,) on RectilinearGrid on CPU
+├── sea_ice_heat_flux: 4×4×1 Field{Center, Center, Nothing} reduced over dims = (3,) on RectilinearGrid on CPU
+├── freshwater_flux: 4×4×1 Field{Center, Center, Nothing} reduced over dims = (3,) on RectilinearGrid on CPU
+├── ocean_freshwater_flux: 4×4×1 Field{Center, Center, Nothing} reduced over dims = (3,) on RectilinearGrid on CPU
+└── sea_ice_freshwater_flux: 4×4×1 Field{Center, Center, Nothing} reduced over dims = (3,) on RectilinearGrid on CPU
+```
 """
 function interface_flux_outputs(coupled_model::EarthSystemModel;
                                 units = HeatFreshwaterMassUnits(),
@@ -50,10 +95,7 @@ function interface_flux_outputs(coupled_model::EarthSystemModel;
 end
 
 
-function temperature_flux_outputs(coupled_model::EarthSystemModel;
-                                  units = HeatFreshwaterMassUnits(),
-                                  separate_sea_ice = false)
-
+function temperature_flux_outputs(coupled_model::EarthSystemModel; units, separate_sea_ice)
     temperature_flux = coupled_model.ocean.model.tracers.T.boundary_conditions.top.condition
 
     ρ₀ = coupled_model.interfaces.ocean_properties.reference_density
@@ -86,11 +128,7 @@ function temperature_flux_outputs(coupled_model::EarthSystemModel;
     return outputs
 end
 
-function salinity_flux_outputs(coupled_model::EarthSystemModel;
-                               units = HeatFreshwaterMassUnits(),
-                               separate_sea_ice = false,
-                               reference_salinity = 35)
-
+function salinity_flux_outputs(coupled_model::EarthSystemModel; units, separate_sea_ice, reference_salinity = 35)
     salinity_flux = coupled_model.ocean.model.tracers.S.boundary_conditions.top.condition
 
     ocean_properties = coupled_model.interfaces.ocean_properties
