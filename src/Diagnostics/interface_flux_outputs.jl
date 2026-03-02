@@ -51,6 +51,11 @@ function InterfaceFluxOutputs(coupled_model::EarthSystemModel;
     cₚ = ocean_properties.heat_capacity
     S₀ = convert(typeof(ρ₀), reference_salinity)
 
+    convert_temperature_flux(Jᵀ, ::TracerFluxUnits) = Jᵀ
+    convert_temperature_flux(Jᵀ, ::HeatFreshwaterMassUnits) = Field(ρ₀ * cₚ * Jᵀ)
+    convert_salinity_flux(Jˢ, ::TracerFluxUnits) = Jˢ
+    convert_salinity_flux(Jˢ, ::HeatFreshwaterMassUnits) = Field(-ρ₀ * Jˢ / S₀)
+
     ice_ocean_fluxes = coupled_model.interfaces.sea_ice_ocean_interface.fluxes
     required = (:frazil_heat, :interface_heat, :salt)
 
@@ -59,27 +64,23 @@ function InterfaceFluxOutputs(coupled_model::EarthSystemModel;
             throw(ArgumentError("Missing required interface flux field: $(name)."))
     end
 
-    convert_temperature_flux(Jᵀ, ::TracerFluxUnits) = Jᵀ
-    convert_temperature_flux(Jᵀ, ::HeatFreshwaterMassUnits) = Field(ρ₀ * cₚ * Jᵀ)
-    convert_salinity_flux(Jˢ, ::TracerFluxUnits) = Jˢ
-    convert_salinity_flux(Jˢ, ::HeatFreshwaterMassUnits) = Field(-ρ₀ * Jˢ / S₀)
+    frazil_heat_flux = getfield(ice_ocean_fluxes, :frazil_heat)
+    heat_flux = temperature_flux + frazil_heat_flux
+    freshwater_flux = salinity_flux
 
-    frazil_heat_flux = convert_temperature_flux(getfield(ice_ocean_fluxes, :frazil_heat), units)
-    heat_flux = convert_temperature_flux(temperature_flux, units) + frazil_heat_flux
-    freshwater_flux = convert_salinity_flux(salinity_flux, units)
-
-    outputs = (; heat_flux, freshwater_flux)
+    outputs = (; heat_flux = convert_temperature_flux(heat_flux, units),
+                 freshwater_flux = convert_salinity_flux(freshwater_flux, units))
 
     if separate_sea_ice
-        sea_ice_heat_flux = convert_temperature_flux(getfield(ice_ocean_fluxes, :interface_heat), units) + frazil_heat_flux
-        sea_ice_freshwater_flux = convert_salinity_flux(getfield(ice_ocean_fluxes, :salt), units)
+        sea_ice_heat_flux = getfield(ice_ocean_fluxes, :interface_heat) + frazil_heat_flux
+        sea_ice_freshwater_flux = getfield(ice_ocean_fluxes, :salt)
         ocean_heat_flux = heat_flux - sea_ice_heat_flux
         ocean_freshwater_flux = freshwater_flux - sea_ice_freshwater_flux
 
-        outputs = merge(outputs, (; ocean_heat_flux,
-                                    sea_ice_heat_flux,
-                                    ocean_freshwater_flux,
-                                    sea_ice_freshwater_flux))
+        outputs = merge(outputs, (; ocean_heat_flux = convert_temperature_flux(ocean_heat_flux, units),
+                                    sea_ice_heat_flux = convert_temperature_flux(sea_ice_heat_flux, units),
+                                    ocean_freshwater_flux = convert_salinity_flux(ocean_freshwater_flux, units),
+                                    sea_ice_freshwater_flux = convert_salinity_flux(sea_ice_freshwater_flux, units)))
     end
 
     return outputs
