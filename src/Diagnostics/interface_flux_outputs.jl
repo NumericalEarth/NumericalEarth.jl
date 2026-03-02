@@ -6,8 +6,8 @@ struct FreshwaterMassFluxUnits end
 import ..DataWrangling: convert_units
 
 @inline convert_units(J, ::TracerFluxUnits; params) = J
-@inline convert_units(Jᵀ, ::HeatFluxUnits; params) = Field(params.ρ₀ * params.cₚ * Jᵀ)
-@inline convert_units(Jˢ, ::FreshwaterMassFluxUnits; params) = Field(-params.ρ₀ * Jˢ / params.S₀)
+@inline convert_units(Jᵀ, ::HeatFluxUnits; params) = Field(params.ρᵒᶜ * params.cₚ * Jᵀ)
+@inline convert_units(Jˢ, ::FreshwaterMassFluxUnits; params) = Field(-params.ρᵒᶜ * Jˢ / params.S₀)
 
 """
     interface_flux_outputs(coupled_model::EarthSystemModel;
@@ -23,9 +23,9 @@ same for the difference between freshwater mass fluxes and salt fluxes.
 All the fluxes and their units are listed below.
 
 * temperature flux: Jᵀ (K m s⁻¹)
-* heat flux: ρ₀ cₚ Jᵀ (J s⁻¹ m⁻²)
+* heat flux: ρᵒᶜ cₚ Jᵀ (J s⁻¹ m⁻²)
 * salinity flux: Jˢ (PSU m s⁻¹)
-* freshwater mass flux: -ρ₀ Jˢ / S₀ (kg s⁻¹ m⁻²)
+* freshwater mass flux: -ρᵒᶜ Jˢ / S₀ (kg s⁻¹ m⁻²)
 
 Arguments
 =========
@@ -47,7 +47,7 @@ Keyword Arguments
            fluxes (kg m⁻² s⁻¹).
 
 * `reference_salinity`: Reference salinity ``S₀`` used to convert the salt fluxes to freshwater
-                        mass fluxes, i.e., ``-ρ₀ Jˢ / S₀``, where ``Jˢ`` is the salt fluxes.
+                        mass fluxes, i.e., ``-ρᵒᶜ Jˢ / S₀``, where ``Jˢ`` is the salt fluxes.
                         Default: 35 g/kg.
 
 
@@ -125,9 +125,9 @@ See [`interface_flux_outputs`](@ref) for more details and example usage.
 function temperature_flux_outputs(coupled_model::EarthSystemModel; units, separate_sea_ice)
     temperature_flux = coupled_model.ocean.model.tracers.T.boundary_conditions.top.condition
 
-    ρ₀ = coupled_model.interfaces.ocean_properties.reference_density
+    ρᵒᶜ = coupled_model.interfaces.ocean_properties.reference_density
     cₚ = coupled_model.interfaces.ocean_properties.heat_capacity
-    params = units isa HeatFluxUnits ? (; ρ₀, cₚ) : nothing
+    params = units isa HeatFluxUnits ? (; ρᵒᶜ, cₚ) : nothing
 
     ice_ocean_fluxes = coupled_model.interfaces.sea_ice_ocean_interface.fluxes
     required = (:frazil_heat, :interface_heat)
@@ -166,9 +166,9 @@ function salinity_flux_outputs(coupled_model::EarthSystemModel; units, separate_
     salinity_flux = coupled_model.ocean.model.tracers.S.boundary_conditions.top.condition
 
     ocean_properties = coupled_model.interfaces.ocean_properties
-    ρ₀ = ocean_properties.reference_density
-    S₀ = convert(typeof(ρ₀), reference_salinity)
-    params = units isa FreshwaterMassFluxUnits ? (; ρ₀, S₀) : nothing
+    ρᵒᶜ = ocean_properties.reference_density
+    S₀ = convert(typeof(ρᵒᶜ), reference_salinity)
+    params = units isa FreshwaterMassFluxUnits ? (; ρᵒᶜ, S₀) : nothing
 
     ice_ocean_fluxes = coupled_model.interfaces.sea_ice_ocean_interface.fluxes
     required = (:salt,)
