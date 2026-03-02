@@ -1,6 +1,6 @@
 include("runtests_setup.jl")
 
-using CopernicusClimateDataStore
+using CDSAPI
 using NCDatasets
 
 using NumericalEarth.DataWrangling.ERA5
@@ -99,6 +99,29 @@ start_date = DateTime(2005, 2, 16, 12)
         
         # Test that ERA5 is correctly identified as 2D
         @test NumericalEarth.DataWrangling.ERA5.is_three_dimensional(metadatum) == false
+    end
+
+    @testset "ERA5 wave variable metadata sizes" begin
+        # Wave variables should be on the 0.5° grid (720×361)
+        for wave_var in (:eastward_stokes_drift, :northward_stokes_drift,
+                         :significant_wave_height, :mean_wave_period, :mean_wave_direction)
+            metadatum = Metadatum(wave_var; dataset, date=start_date)
+            Nx, Ny, Nz, Nt = size(metadatum)
+            @test Nx == 720
+            @test Ny == 361
+            @test Nz == 1
+            @test Nt == 1
+        end
+
+        # Atmospheric variables should remain on the 0.25° grid (1440×721)
+        for atmos_var in (:temperature, :eastward_velocity, :surface_pressure)
+            metadatum = Metadatum(atmos_var; dataset, date=start_date)
+            Nx, Ny, Nz, Nt = size(metadatum)
+            @test Nx == 1440
+            @test Ny == 721
+            @test Nz == 1
+            @test Nt == 1
+        end
     end
 
     @testset "ERA5 Monthly dataset" begin

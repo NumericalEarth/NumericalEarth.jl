@@ -1,7 +1,7 @@
-module NumericalEarthCopernicusClimateDataStoreExt
+module NumericalEarthCDSAPIExt
 
 using NumericalEarth
-using CopernicusClimateDataStore
+using CDSAPI
 
 using Oceananigans
 using Oceananigans.DistributedComputations: @root
@@ -27,13 +27,10 @@ end
 """
     download_dataset(meta::ERA5Metadatum; skip_existing=true, kwargs...)
 
-Download ERA5 data for a single date/time using the CopernicusClimateDataStore package.
-
-The download is performed using `era5cli` through the CopernicusClimateDataStore package.
+Download ERA5 data for a single date/time using the CDSAPI package.
 
 # Keyword Arguments
 - `skip_existing`: Skip download if the file already exists (default: `true`).
-- Additional keyword arguments are passed to `CopernicusClimateDataStore.hourly`.
 
 # Environment Setup
 Before downloading, you must:
@@ -43,10 +40,7 @@ Before downloading, you must:
 
 See https://cds.climate.copernicus.eu/how-to-api for details.
 """
-function download_dataset(meta::ERA5Metadatum;
-                          skip_existing = true,
-                          threads = 1,
-                          additional_kw...)
+function download_dataset(meta::ERA5Metadatum; skip_existing=true)
 
     output_directory = meta.dir
     output_filename = NumericalEarth.DataWrangling.metadata_filename(meta)
@@ -65,42 +59,32 @@ function download_dataset(meta::ERA5Metadatum;
 
     # Extract date information
     date = meta.dates
-    year = Dates.year(date)
-    month = Dates.month(date)
-    day = Dates.day(date)
-    hour = Dates.hour(date)
+    year  = string(Dates.year(date))
+    month = lpad(string(Dates.month(date)), 2, '0')
+    day   = lpad(string(Dates.day(date)), 2, '0')
+    hour  = lpad(string(Dates.hour(date)), 2, '0') * ":00"
 
-    # Build area constraint from bounding box
+    # Build request parameters
+    request = Dict(
+        "product_type"    => ["reanalysis"],
+        "variable"        => [variable_name],
+        "year"            => [year],
+        "month"           => [month],
+        "day"             => [day],
+        "time"            => [hour],
+        "data_format"     => "netcdf",
+        "download_format" => "unarchived",
+    )
+
+    # Add area constraint from bounding box
     area = build_era5_area(meta.bounding_box)
+    if !isnothing(area)
+        request["area"] = area
+    end
 
-    # Build output prefix (filename without extension)
-    output_prefix = first(splitext(output_filename))
-
-    # Perform the download using era5cli via CopernicusClimateDataStore
+    # Perform the download using CDSAPI
     @root begin
-        downloaded_files = CopernicusClimateDataStore.hourly(;
-            variables = variable_name,
-            startyear = year,
-            months = month,
-            days = day,
-            hours = hour,
-            area = area,
-            format = "netcdf",
-            outputprefix = output_prefix,
-            overwrite = !skip_existing,
-            threads = threads,
-            splitmonths = false,
-            directory = output_directory,
-            additional_kw...
-        )
-
-        # era5cli generates its own filename suffix, so rename to our expected name
-        if !isempty(downloaded_files)
-            downloaded_file = first(downloaded_files)
-            if downloaded_file != output_path && isfile(downloaded_file)
-                mv(downloaded_file, output_path; force=true)
-            end
-        end
+        CDSAPI.retrieve("reanalysis-era5-single-levels", request, output_path)
     end
 
     return output_path
@@ -115,9 +99,9 @@ build_era5_area(::Nothing) = nothing
 const BBOX = NumericalEarth.DataWrangling.BoundingBox
 
 function build_era5_area(bbox::BBOX)
-    # ERA5/era5cli uses (lat_max, lon_min, lat_min, lon_max) ordering
+    # CDS API uses [north, west, south, east] ordering
     # BoundingBox has longitude = (west, east), latitude = (south, north)
-    
+
     lon = bbox.longitude
     lat = bbox.latitude
 
@@ -125,14 +109,12 @@ function build_era5_area(bbox::BBOX)
         return nothing
     end
 
-    lon_min = lon[1]  # west
-    lon_max = lon[2]  # east
-    lat_min = lat[1]  # south
-    lat_max = lat[2]  # north
+    west  = lon[1]
+    east  = lon[2]
+    south = lat[1]
+    north = lat[2]
 
-    # Return in era5cli order: (lat_max, lon_min, lat_min, lon_max)
-    return (lat = (lat_min, lat_max), lon = (lon_min, lon_max))
+    return [north, west, south, east]
 end
 
-end # module NumericalEarthCopernicusClimateDataStoreExt
-
+end # module NumericalEarthCDSAPIExt

@@ -28,6 +28,7 @@ env:
   ECCO_WEBDAV_PASSWORD: ${{ secrets.ECCO_WEBDAV_PASSWORD }}
   COPERNICUS_USERNAME: ${{ secrets.COPERNICUS_SERVICE_USERNAME }}
   COPERNICUS_PASSWORD: ${{ secrets.COPERNICUS_USERNAME_PASSWORD }}
+  DATADEPS_ALWAYS_ACCEPT: true
 
 #####
 ##### CPU tests (GitHub-hosted runners)
@@ -60,6 +61,7 @@ jobs:
           - breeze
           - downloading
           - veros
+          - woa
     steps:
       - name: Show available storage before cleanup
         run: |
@@ -153,6 +155,7 @@ jobs:
           - earth_system_model
           - breeze
           - JRA55
+          - woa
     env:
       OPENBLAS_NUM_THREADS: 1
       JULIA_NUM_PRECOMPILE_TASKS: 8
@@ -197,14 +200,6 @@ jobs:
           arch: ${{ matrix.arch }}
       - uses: julia-actions/cache@v2
       - uses: julia-actions/julia-buildpkg@v1
-      - name: Configure era5cli
-        env:
-          CDS_API_KEY: ${{ secrets.CDS_API_KEY }}
-        run: |
-          mkdir -p ~/.config/era5cli
-          echo "url: https://cds.climate.copernicus.eu/api" > ~/.config/era5cli/cds_key.txt
-          echo "key: $CDS_API_KEY" >> ~/.config/era5cli/cds_key.txt
-        shell: bash
       - uses: julia-actions/julia-runtest@v1
         env:
           TEST_GROUP: "cds_downloading"
