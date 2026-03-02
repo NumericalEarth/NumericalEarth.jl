@@ -89,8 +89,8 @@ for arch in test_architectures
         fill!(io_fluxes.interface_heat, 0.3)
         fill!(io_fluxes.salt, 1.0)
 
-        ρₒ = coupled_model.interfaces.ocean_properties.reference_density
-        cₒ = coupled_model.interfaces.ocean_properties.heat_capacity
+        ρ₀ = coupled_model.interfaces.ocean_properties.reference_density
+        cₚ = coupled_model.interfaces.ocean_properties.heat_capacity
         S₀ = 35.0
 
         flux_outputs = InterfaceFluxOutputs(coupled_model)
@@ -103,8 +103,8 @@ for arch in test_architectures
         @test location(flux_outputs.freshwater_flux) == (Center, Center, Nothing)
 
         @allowscalar begin
-            @test flux_outputs.heat_flux[1, 1, 1] ≈ ρₒ * cₒ * 2.0
-            @test flux_outputs.freshwater_flux[1, 1, 1] ≈ -ρₒ * 5.0 / S₀
+            @test flux_outputs.heat_flux[1, 1, 1] ≈ ρ₀ * cₚ * 2.0
+            @test flux_outputs.freshwater_flux[1, 1, 1] ≈ -ρ₀ * 5.0 / S₀
         end
 
         split_outputs = InterfaceFluxOutputs(coupled_model; isolate_sea_ice = true)
@@ -120,10 +120,10 @@ for arch in test_architectures
         end
 
         @allowscalar begin
-            @test split_outputs.ocean_heat_flux[1, 1, 1] ≈ ρₒ * cₒ * 1.5
-            @test split_outputs.sea_ice_heat_flux[1, 1, 1] ≈ ρₒ * cₒ * 0.5
-            @test split_outputs.ocean_freshwater_flux[1, 1, 1] ≈ -ρₒ * 4.0 / S₀
-            @test split_outputs.sea_ice_freshwater_flux[1, 1, 1] ≈ -ρₒ * 1.0 / S₀
+            @test split_outputs.ocean_heat_flux[1, 1, 1] ≈ ρ₀ * cₚ * 1.5
+            @test split_outputs.sea_ice_heat_flux[1, 1, 1] ≈ ρ₀ * cₚ * 0.5
+            @test split_outputs.ocean_freshwater_flux[1, 1, 1] ≈ -ρ₀ * 4.0 / S₀
+            @test split_outputs.sea_ice_freshwater_flux[1, 1, 1] ≈ -ρ₀ * 1.0 / S₀
             @test split_outputs.heat_flux[1, 1, 1] ≈ split_outputs.ocean_heat_flux[1, 1, 1] + split_outputs.sea_ice_heat_flux[1, 1, 1]
             @test split_outputs.freshwater_flux[1, 1, 1] ≈ split_outputs.ocean_freshwater_flux[1, 1, 1] + split_outputs.sea_ice_freshwater_flux[1, 1, 1]
         end
