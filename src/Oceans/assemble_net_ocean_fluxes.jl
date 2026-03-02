@@ -130,7 +130,6 @@ end
         atmos_ocean_fluxes.upwelling_longwave[i, j, 1] = ℐꜛˡʷ
         atmos_ocean_fluxes.downwelling_longwave[i, j, 1] = - ℐₐˡʷ
         atmos_ocean_fluxes.downwelling_shortwave[i, j, 1] = - ℐₜˢʷ
-        atmos_ocean_fluxes.total_heat_flux[i, j, 1] = ΣQao
     end
 
     # Convert from a mass flux to a volume flux (aka velocity)
@@ -141,10 +140,6 @@ end
 
     # Add the contribution from the turbulent water vapor flux, which has
     # a different sign convention as the prescribed water mass fluxes (positive upwards)
-    ΣMao = - Jᶜ + Jᵛ # net freshwater mass flux (kg m⁻² s⁻¹)
-
-    @inbounds atmos_ocean_fluxes.total_freshwater_flux[i, j, 1] = ΣMao
-
     Jᵛᵒᶜ = Jᵛ * ρᵒᶜ⁻¹
     ΣFao += Jᵛᵒᶜ
 
@@ -164,12 +159,8 @@ end
     
         # salinity flux > 0 extracts salinity from the ocean --- the opposite of a water vapor flux
         Jˢao = - Sᵒᶜ * ΣFao
-        Jˢ_total = (1 - ℵᵢ) * Jˢao + Jˢio
-
-        # Freshwater-equivalent correction from salinity flux using S₀ = 35
-        # M_fw_from_Js = ρₒ * (-Jˢ/S₀), units kg m⁻² s⁻¹
-        S₀ = convert(eltype(Sₒ), 35)
-        ΣMao_with_salt_equiv = ΣMao - ρₒ * Jˢ_total / S₀
+        Jˢao *= (1 - ℵᵢ)
+        Jˢ_total = Jˢao + Jˢio
 
         τˣᵃᵒ = ℑxᶠᵃᵃ(i, j, 1, grid, τᶜᶜᶜ, ρᵒᶜ⁻¹, ℵ, ρτˣᵃᵒ)
         τʸᵃᵒ = ℑyᵃᶠᵃ(i, j, 1, grid, τᶜᶜᶜ, ρᵒᶜ⁻¹, ℵ, ρτʸᵃᵒ)
@@ -184,9 +175,10 @@ end
         Jᵀ[i, j, 1] = Jᵀao + Jᵀio # Jᵀao is already multiplied by the sea ice concentration
         Jˢ[i, j, 1] = Jˢ_total
 
-        # Diagnostic freshwater mass fluxes:
-        # - total_freshwater_flux: pure atmosphere mass flux term (-Mp + Mv)
-        # - total_freshwater_flux_with_salt_equiv: includes -Jˢ/S₀ freshwater-equivalent
-        atmos_ocean_fluxes.total_freshwater_flux_with_salt_equiv[i, j, 1] = ΣMao_with_salt_equiv
+        # Diagnostic components of the top tracer fluxes.
+        atmos_ocean_fluxes.ocean_temperature_flux[i, j, 1] = Jᵀao
+        atmos_ocean_fluxes.sea_ice_temperature_flux[i, j, 1] = Jᵀio
+        atmos_ocean_fluxes.ocean_salinity_flux[i, j, 1] = Jˢao
+        atmos_ocean_fluxes.sea_ice_salinity_flux[i, j, 1] = Jˢio
     end
 end
