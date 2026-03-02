@@ -9,6 +9,7 @@ using NumericalEarth.EN4
 using NumericalEarth.ECCO
 using NumericalEarth.ETOPO
 using NumericalEarth.JRA55
+using NumericalEarth.WOA
 
 using Oceananigans.Architectures: architecture, on_architecture
 using Oceananigans.OutputReaders: interpolate!
