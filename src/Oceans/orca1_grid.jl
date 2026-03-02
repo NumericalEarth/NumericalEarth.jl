@@ -90,7 +90,7 @@ function ORCA1Grid(arch = CPU(), FT::DataType = Float64;
                    radius = Oceananigans.defaults.planet_radius,
                    with_bathymetry = true,
                    active_cells_map = true,
-                   south_rows_to_remove = 10)
+                   south_rows_to_remove = 35)
 
     # Download mesh_mask if not already cached
     cache_dir = init_orca1_cache!()
