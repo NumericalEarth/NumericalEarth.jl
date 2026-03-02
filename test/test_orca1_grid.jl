@@ -1,6 +1,7 @@
 using NumericalEarth
 using NumericalEarth.DataWrangling: download_dataset, metadata_path
 using Oceananigans
+using Oceananigans.OrthogonalSphericalShellGrids: TripolarGrid
 using NCDatasets
 using Test
 
@@ -18,6 +19,7 @@ end
     grid = ORCA1Grid(CPU(); Nz=5, z=(-5000, 0), halo=(4, 4, 4))
 
     @test grid isa Oceananigans.Grids.OrthogonalSphericalShellGrid
+    @test grid isa TripolarGrid
     @test grid.Nx == 362
     @test grid.Ny == 332
     @test grid.Nz == 5

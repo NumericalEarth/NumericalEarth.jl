@@ -6,6 +6,7 @@ using Oceananigans.BoundaryConditions: fill_halo_regions!, FPivotZipperBoundaryC
     NoFluxBoundaryCondition, FieldBoundaryConditions
 using Oceananigans.Fields: set!
 using Oceananigans.Grids: RightFaceFolded, generate_coordinate
+using Oceananigans.OrthogonalSphericalShellGrids: Tripolar
 
 # Zenodo record 4436658: eORCA1 mesh_mask and bathymetry
 const ORCA1_mesh_mask_url  = "https://zenodo.org/records/4436658/files/eORCA1.2_mesh_mask.nc"
@@ -125,6 +126,15 @@ function ORCA1Grid(arch = CPU(), FT::DataType = Float64;
         AzFF = e1f .* e2f
     end
 
+    # Extract tripolar pole parameters from F-point coordinates.
+    # The two singularities sit at the F-points with maximum latitude
+    # in the last row.
+    last_row_φ = φFF[:, end]
+    pole_idx   = argmax(last_row_φ)
+    north_poles_latitude  = Float64(last_row_φ[pole_idx])
+    first_pole_longitude  = Float64(λFF[pole_idx, end])
+    southernmost_latitude = Float64(minimum(φCC))
+
     close(ds)
 
     # NEMO stores all variables with size (Nx_nemo, Ny_nemo).
@@ -223,7 +233,7 @@ function ORCA1Grid(arch = CPU(), FT::DataType = Float64;
         on_architecture(arch, map(FT, Azᶜᶠᵃ)),
         on_architecture(arch, map(FT, Azᶠᶠᵃ)),
         convert(FT, radius),
-        nothing)
+        Tripolar(north_poles_latitude, first_pole_longitude, southernmost_latitude))
 
     return grid
 end
