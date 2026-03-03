@@ -15,22 +15,28 @@ const meridional_heat_transport_states = IdDict{Any, MeridionalHeatTransportStat
 
 Return the meridional heat transport for the coupled `esm` using either of two methods:
 
-1. `method = :ohc_tendency` (default):
+Keyword Arguments
+=================
 
-   ```math
-   ∫_{y_S}^y dy [(∫dt ∫dx ∫dz ρᵒᶜ cᵒᶜ ∂ₜT) - (∫dt ∫dx Q)]
-   ```
+* `method`: Determines the method the computation is done. Options are:
+  1. `method = :ohc_tendency` (default):
 
-   where `Q` is the net heat flux into the ocean.
+     ```math
+     ∫_{y_S}^y dy [(∫dt ∫dx ∫dz ρᵒᶜ cᵒᶜ ∂ₜT) - (∫dt ∫dx Q)]
+     ```
 
-2. `method = :vt_instantaneous`:
+     where `Q` is the net heat flux into the ocean.
 
-   ```math
-   ρᵒᶜ cᵒᶜ ∫dx ∫dz v (T - T_{\\rm reference})
-   ```
+  2. `method = :vt_instantaneous`:
 
-Above, ``ρᵒᶜ`` and ``cᵒᶜ`` are the ocean reference density and heat capacity respectively
-and they are inferred from the ocean component, `esm.ocean`.
+     ```math
+     ρᵒᶜ cᵒᶜ ∫dx ∫dz v (T - T_{\\rm reference})
+     ```
+
+  Above, ``ρᵒᶜ`` and ``cᵒᶜ`` are the ocean reference density and heat capacity respectively
+  and they are inferred from the ocean component, `esm.ocean`.
+
+* `reference_temperature`: The reference temperature used for `:vt_instantaneous` method.
 """
 function meridional_heat_transport(esm::EarthSystemModel; method=:ohc_tendency, reference_temperature=0.0)
     if method === :ohc_tendency
