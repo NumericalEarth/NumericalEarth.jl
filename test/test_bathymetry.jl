@@ -1,16 +1,13 @@
 include("runtests_setup.jl")
 
-using Oceananigans
-using Statistics
 using JLD2
-using NumericalEarth
-
 using NumericalEarth.Bathymetry: remove_minor_basins!,
                                  BathymetryRegridding,
                                  cache_filename,
                                  load_bathymetry_cache,
                                  save_bathymetry_cache
 using NumericalEarth.DataWrangling.ETOPO
+using Statistics
 
 @testset "Bathymetry construction and smoothing" begin
     @info "Testing Bathymetry construction and smoothing..."

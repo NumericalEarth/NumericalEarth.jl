@@ -57,7 +57,7 @@ jobs:
           - ecco4_en4
           - ecco_atmosphere
           - fluxes
-          - bathymetry
+          - bathymetry_orca1
           - checkpointing
           - speedy_weather
           - breeze
@@ -152,7 +152,7 @@ jobs:
           - ecco4_en4
           - ecco_atmosphere
           - fluxes
-          - bathymetry
+          - bathymetry_orca1
           - checkpointing
           - earth_system_model
           - breeze
