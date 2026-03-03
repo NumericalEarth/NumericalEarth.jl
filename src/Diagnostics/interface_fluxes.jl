@@ -4,22 +4,22 @@
 ###########################
 
 function frazil_temperature_flux(esm::EarthSystemModel)
-    ice_ocean_fluxes = esm.interfaces.sea_ice_ocean_interface.fluxes
-    frazil_temperature_flux = getfield(ice_ocean_fluxes, :frazil_heat)
+    sea_ice_ocean_fluxes = esm.interfaces.sea_ice_ocean_interface.fluxes
+    frazil_temperature_flux = getfield(sea_ice_ocean_fluxes, :frazil_heat)
     return frazil_temperature_flux
 end
 
 function net_ocean_temperature_flux(esm::EarthSystemModel)
     Jᵀ = esm.ocean.model.tracers.T.boundary_conditions.top.condition
-    ice_ocean_fluxes = esm.interfaces.sea_ice_ocean_interface.fluxes
+    sea_ice_ocean_fluxes = esm.interfaces.sea_ice_ocean_interface.fluxes
     net_ocean_temperature_flux = Jᵀ + frazil_temperature_flux(esm)
     return Field(net_ocean_temperature_flux)
 end
 
 function sea_ice_ocean_temperature_flux(esm::EarthSystemModel)
-    ice_ocean_fluxes = esm.interfaces.sea_ice_ocean_interface.fluxes
+    sea_ice_ocean_fluxes = esm.interfaces.sea_ice_ocean_interface.fluxes
     sea_ice_ocean_temperature_flux =
-        getfield(ice_ocean_fluxes, :interface_heat) + frazil_heat_flux(esm::EarthSystemModel)
+        getfield(sea_ice_ocean_fluxes, :interface_heat) + frazil_heat_flux(esm::EarthSystemModel)
     return Field(sea_ice_ocean_temperature_flux)
 end
 
@@ -72,8 +72,8 @@ function net_ocean_salinity_flux(esm::EarthSystemModel)
 end
 
 function sea_ice_ocean_salinity_flux(esm::EarthSystemModel)
-    ice_ocean_fluxes = esm.interfaces.sea_ice_ocean_interface.fluxes
-    sea_ice_ocean_salinity_flux = getfield(ice_ocean_fluxes, :salt)
+    sea_ice_ocean_fluxes = esm.interfaces.sea_ice_ocean_interface.fluxes
+    sea_ice_ocean_salinity_flux = getfield(sea_ice_ocean_fluxes, :salt)
     return sea_ice_ocean_salinity_flux
 end
 
