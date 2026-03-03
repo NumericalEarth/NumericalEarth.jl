@@ -36,7 +36,9 @@ export
     ECCO2Daily, ECCO2Monthly, ECCO4Monthly,
     ECCO2DarwinMonthly, ECCO4DarwinMonthly,
     EN4Monthly,
+    WOAClimatology, WOAAnnual, WOAMonthly,
     GLORYSDaily, GLORYSMonthly, GLORYSStatic,
+    ORCA1,
     RepeatYearJRA55, MultiYearJRA55,
     first_date,
     last_date,
@@ -45,10 +47,15 @@ export
     LinearlyTaperedPolarMask,
     DatasetRestoring,
     ocean_simulation,
+    ORCA1Grid,
     sea_ice_simulation,
     atmosphere_simulation,
     sea_ice_dynamics,
-    initialize!
+    initialize!,
+    frazil_temperature_flux, net_ocean_temperature_flux, sea_ice_ocean_temperature_flux, atmosphere_ocean_temperature_flux,
+    frazil_heat_flux, net_ocean_heat_flux, sea_ice_ocean_heat_flux, atmosphere_ocean_heat_flux,
+    net_ocean_salinity_flux, sea_ice_ocean_salinity_flux, atmosphere_ocean_salinity_flux,
+    net_ocean_freshwater_flux, sea_ice_ocean_freshwater_flux, atmosphere_ocean_freshwater_flux
 
 using Oceananigans
 using Oceananigans.Operators: ℑxyᶠᶜᵃ, ℑxyᶜᶠᵃ
@@ -98,13 +105,14 @@ include("Bathymetry.jl")
 include("Diagnostics/Diagnostics.jl")
 
 using .DataWrangling
-using .DataWrangling: ETOPO, ECCO, GLORYS, EN4, JRA55
+using .DataWrangling: ETOPO, ECCO, GLORYS, EN4, WOA, JRA55
 using .Bathymetry
 using .InitialConditions
 using .EarthSystemModels
 using .Atmospheres
 using .Oceans
 using .SeaIces
+using .Diagnostics
 
 using NumericalEarth.EarthSystemModels: ComponentInterfaces, MomentumRoughnessLength, ScalarRoughnessLength, default_sea_ice
 
@@ -112,6 +120,8 @@ using NumericalEarth.DataWrangling.ETOPO
 using NumericalEarth.DataWrangling.ECCO
 using NumericalEarth.DataWrangling.GLORYS
 using NumericalEarth.DataWrangling.EN4
+using NumericalEarth.DataWrangling.ORCA
+using NumericalEarth.DataWrangling.WOA
 using NumericalEarth.DataWrangling.JRA55
 using NumericalEarth.DataWrangling.JRA55: JRA55NetCDFBackend
 

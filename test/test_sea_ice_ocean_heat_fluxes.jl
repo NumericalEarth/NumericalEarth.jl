@@ -1,18 +1,18 @@
 include("runtests_setup.jl")
 
 using NumericalEarth.EarthSystemModels: IceBathHeatFlux,
-                                     ThreeEquationHeatFlux,
-                                     MomentumBasedFrictionVelocity
+                                        ThreeEquationHeatFlux,
+                                        MomentumBasedFrictionVelocity
 
 using NumericalEarth.EarthSystemModels.InterfaceComputations: compute_interface_heat_flux,
-                                                          get_friction_velocity,
-                                                          solve_interface_conditions,
-                                                          SeaIceOceanInterface,
-                                                          ComponentInterfaces
+                                                              get_friction_velocity,
+                                                              solve_interface_conditions,
+                                                              SeaIceOceanInterface,
+                                                              ComponentInterfaces
 
 using ClimaSeaIce.SeaIceThermodynamics: LinearLiquidus, melting_temperature
 
-@testset "Sea ice-ocean heat flux formulations" begin
+@testset "Ocean-sea ice heat flux formulations" begin
 
     @testset "IceBathHeatFlux construction" begin
         flux = IceBathHeatFlux()

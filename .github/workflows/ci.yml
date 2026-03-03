@@ -28,6 +28,7 @@ env:
   ECCO_WEBDAV_PASSWORD: ${{ secrets.ECCO_WEBDAV_PASSWORD }}
   COPERNICUS_USERNAME: ${{ secrets.COPERNICUS_SERVICE_USERNAME }}
   COPERNICUS_PASSWORD: ${{ secrets.COPERNICUS_USERNAME_PASSWORD }}
+  DATADEPS_ALWAYS_ACCEPT: true
 
 #####
 ##### CPU tests (GitHub-hosted runners)
@@ -54,12 +55,13 @@ jobs:
           - ecco4_en4
           - ecco_atmosphere
           - fluxes
-          - bathymetry
+          - bathymetry_orca1
           - checkpointing
           - speedy_weather
           - breeze
           - downloading
           - veros
+          - woa
     steps:
       - name: Show available storage before cleanup
         run: |
@@ -148,11 +150,12 @@ jobs:
           - ecco4_en4
           - ecco_atmosphere
           - fluxes
-          - bathymetry
+          - bathymetry_orca1
           - checkpointing
           - earth_system_model
           - breeze
           - JRA55
+          - woa
     env:
       OPENBLAS_NUM_THREADS: 1
       JULIA_NUM_PRECOMPILE_TASKS: 8

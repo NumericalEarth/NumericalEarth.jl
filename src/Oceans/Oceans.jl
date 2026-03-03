@@ -1,6 +1,6 @@
 module Oceans
 
-export ocean_simulation, SlabOcean
+export ocean_simulation, SlabOcean, ORCA1Grid
 
 using Oceananigans
 using Oceananigans.Units
@@ -63,6 +63,7 @@ include("slab_ocean.jl")
 include("barotropic_potential_forcing.jl")
 include("radiative_forcing.jl")
 include("ocean_simulation.jl")
+include("orca1_grid.jl")
 include("assemble_net_ocean_fluxes.jl")
 
 #####

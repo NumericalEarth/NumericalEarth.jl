@@ -45,13 +45,13 @@ end
 
 """
     retrieve_data(metadata)
-    
+
 Retrieve data from netcdf file according to `metadata`.
 """
 function retrieve_data(metadata::Metadatum)
     path = metadata_path(metadata)
     name = dataset_variable_name(metadata)
-    
+
     # NetCDF shenanigans
     ds = Dataset(path)
 
@@ -64,7 +64,7 @@ function retrieve_data(metadata::Metadatum)
         end
     else
         data = ds[name][:, :, 1]
-    end        
+    end
 
     close(ds)
     return data
@@ -136,7 +136,13 @@ function Field(metadata::Metadatum, arch=CPU();
         name = string(metadata.name)
         date = string(metadata.dates)
         dataset = summary(metadata.dataset)
-        @info string("Inpainting ", dataset, " ", name, " data from ", date, "...")
+        info_str = string("Inpainting ", dataset, " ", name, " data")
+        if date !== "nothing"
+            info_str *= string(" from ", date)
+        end
+        info_str *= "..."
+        @info info_str
+
         start_time = time_ns()
 
         inpaint_mask!(field, mask; inpainting)
