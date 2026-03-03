@@ -1,12 +1,12 @@
-using Downloads
-using NCDatasets
-using Oceananigans.Architectures: on_architecture
 using Oceananigans.BoundaryConditions: fill_halo_regions!, FPivotZipperBoundaryCondition,
     NoFluxBoundaryCondition, FieldBoundaryConditions
 using Oceananigans.Fields: set!
 using Oceananigans.Grids: RightFaceFolded, generate_coordinate
 using Oceananigans.ImmersedBoundaries: ImmersedBoundaryGrid, GridFittedBottom
 using Oceananigans.OrthogonalSphericalShellGrids: Tripolar, continue_south!
+
+using ..DataWrangling: dataset_variable_name
+using ..DataWrangling.ORCA: ORCA1, default_south_rows_to_remove
 
 """
     read_2d_nemo_variable(ds, name)
@@ -69,7 +69,7 @@ Positional Arguments
 Keyword Arguments
 =================
 
-- `dataset`: The ORCA dataset to use (e.g., `ORCA1()`). Required.
+- `dataset`: The ORCA dataset to use. Default: `ORCA1()`.
 - `halo`: Halo size tuple `(Hx, Hy, Hz)`. Default: `(4, 4, 4)`.
 - `z`: Vertical coordinate specification. Can be a 2-tuple `(z_bottom, z_top)`, an array of z-interfaces,
        or, e.g., an `ExponentialDiscretization`. Default: `(-6000, 0)`.
@@ -84,7 +84,7 @@ Keyword Arguments
                           Removing them reduces memory usage and computation.
 """
 function ORCAGrid(arch = CPU(), FT::DataType = Float64;
-                  dataset,
+                  dataset = ORCA1(),
                   halo = (4, 4, 4),
                   z = (-6000, 0),
                   Nz = 50,
@@ -94,8 +94,8 @@ function ORCAGrid(arch = CPU(), FT::DataType = Float64;
                   south_rows_to_remove = default_south_rows_to_remove(dataset))
 
     # Download mesh_mask via the metadata interface
-    mesh_meta = mesh_mask_metadatum(dataset)
-    mesh_mask_path = NumericalEarth.DataWrangling.download_dataset(mesh_meta)
+    mesh_meta = Metadatum(:mesh_mask; dataset)
+    mesh_mask_path = download_dataset(mesh_meta)
 
     ds = Dataset(mesh_mask_path)
 
@@ -201,7 +201,6 @@ function ORCAGrid(arch = CPU(), FT::DataType = Float64;
                                   bottom = nothing)
 
     # Fill halo regions for coordinates
-    # Center-y (T, U) data must be trimmed; Face-y (V, F) data used as-is
     λᶜᶜᵃ = halo_filled_data(λCC, helper_grid, bcs, Center, Center)
     λᶠᶜᵃ = halo_filled_data(λFC, helper_grid, bcs, Face,   Center)
     λᶜᶠᵃ = halo_filled_data(λCF, helper_grid, bcs, Center, Face)
@@ -293,10 +292,10 @@ function ORCAGrid(arch = CPU(), FT::DataType = Float64;
     end
 
     # Load bathymetry via the metadata interface
-    bathy_meta = bathymetry_metadatum(dataset)
-    bathymetry_path = NumericalEarth.DataWrangling.download_dataset(bathy_meta)
+    bathy_meta = Metadatum(:bottom_height; dataset)
+    bathymetry_path = download_dataset(bathy_meta)
 
-    bathy_varname = bathymetry_variable_name(dataset)
+    bathy_varname = dataset_variable_name(bathy_meta)
     bathy_ds = Dataset(bathymetry_path)
     bathy_data = Array(bathy_ds[bathy_varname][:, :])
     close(bathy_ds)
@@ -313,12 +312,3 @@ function ORCAGrid(arch = CPU(), FT::DataType = Float64;
 
     return ImmersedBoundaryGrid(underlying_grid, GridFittedBottom(bottom_height); active_cells_map)
 end
-
-"""
-    ORCA1Grid(arch = CPU(), FT::DataType = Float64; kwargs...)
-
-Convenience constructor for `ORCAGrid(arch, FT; dataset=ORCA1(), kwargs...)`.
-See [`ORCAGrid`](@ref) for the full list of keyword arguments.
-"""
-ORCA1Grid(arch = CPU(), FT::DataType = Float64; kwargs...) =
-    ORCAGrid(arch, FT; dataset = NumericalEarth.DataWrangling.ORCA.ORCA1(), kwargs...)

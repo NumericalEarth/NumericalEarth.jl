@@ -1,6 +1,6 @@
 using NumericalEarth
 using NumericalEarth.DataWrangling: download_dataset, metadata_path
-using NumericalEarth.Oceans: default_south_rows_to_remove
+using NumericalEarth.DataWrangling.ORCA: default_south_rows_to_remove
 using Oceananigans
 using Oceananigans.OrthogonalSphericalShellGrids: TripolarGrid
 using Oceananigans.ImmersedBoundaries: ImmersedBoundaryGrid
@@ -40,9 +40,9 @@ end
     @test maximum(underlying.φᶜᶜᵃ) > 80
 end
 
-@testset "ORCA1Grid convenience constructor" begin
-    grid = ORCA1Grid(CPU(); Nz=5, z=(-5000, 0), halo=(4, 4, 4),
-                     with_bathymetry=false)
+@testset "ORCAGrid without bathymetry" begin
+    grid = ORCAGrid(CPU(); dataset=ORCA1(), Nz=5, z=(-5000, 0), halo=(4, 4, 4),
+                    with_bathymetry=false)
 
     @test grid isa Oceananigans.Grids.OrthogonalSphericalShellGrid
     @test grid isa TripolarGrid
