@@ -16,6 +16,6 @@ using NumericalEarth.EarthSystemModels: EarthSystemModel
 import Oceananigans.Fields: compute!
 
 include("mixed_layer_depth.jl")
-include("interface_flux_outputs.jl")
+include("interface_fluxes.jl")
 
 end # module
