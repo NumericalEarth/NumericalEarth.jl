@@ -257,7 +257,7 @@ function ORCA1Grid(arch = CPU(), FT::DataType = Float64;
     # with values from a regular LatitudeLongitudeGrid.
     latitude  = (southernmost_latitude, 90)
     longitude = (-180, 180)
-    latitude_longitude_grid = LatitudeLongitudeGrid(; size = (Nx, Ny, Nz_val),
+    latitude_longitude_grid = LatitudeLongitudeGrid(; size = (Nx, Ny, Nz),
                                                       latitude,
                                                       longitude,
                                                       halo,
@@ -281,7 +281,7 @@ function ORCA1Grid(arch = CPU(), FT::DataType = Float64;
 
     underlying_grid = OrthogonalSphericalShellGrid{Periodic, RightFaceFolded, Bounded}(
         arch,
-        Nx, Ny, Nz_val,
+        Nx, Ny, Nz,
         Hx, Hy, Hz,
         convert(FT, Lz),
         on_architecture(arch, map(FT, λᶜᶜᵃ)),
