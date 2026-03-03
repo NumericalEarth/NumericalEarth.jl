@@ -1,6 +1,8 @@
 module Oceans
 
-export ocean_simulation, SlabOcean, ORCA1Grid
+export ocean_simulation, SlabOcean, ORCAGrid, ORCA1Grid,
+       mesh_mask_metadatum, bathymetry_metadatum,
+       default_south_rows_to_remove, bathymetry_variable_name
 
 using Oceananigans
 using Oceananigans.Units
@@ -59,11 +61,17 @@ all while respecting user input and changing this to a new value if specified.
 default_or_override(default::Default, possibly_alternative_default=default.value) = possibly_alternative_default
 default_or_override(override, alternative_default=nothing) = override
 
+# ORCA grid metadata interface — extended in DataWrangling.ORCA for each dataset
+function mesh_mask_metadatum end
+function bathymetry_metadatum end
+function default_south_rows_to_remove end
+function bathymetry_variable_name end
+
 include("slab_ocean.jl")
 include("barotropic_potential_forcing.jl")
 include("radiative_forcing.jl")
 include("ocean_simulation.jl")
-include("orca1_grid.jl")
+include("orca_grid.jl")
 include("assemble_net_ocean_fluxes.jl")
 
 #####

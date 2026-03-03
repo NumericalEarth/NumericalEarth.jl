@@ -22,6 +22,12 @@ import NumericalEarth.DataWrangling:
     z_interfaces,
     reversed_vertical_axis
 
+import NumericalEarth.Oceans:
+    mesh_mask_metadatum,
+    bathymetry_metadatum,
+    default_south_rows_to_remove,
+    bathymetry_variable_name
+
 download_ORCA_cache::String = ""
 function __init__()
     global download_ORCA_cache = @get_scratch!("ORCA")
@@ -84,5 +90,14 @@ function download_dataset(metadatum::ORCA1Metadatum)
 
     return filepath
 end
+
+#####
+##### Grid metadata interface for ORCAGrid constructor
+#####
+
+mesh_mask_metadatum(dataset::ORCA1) = Metadatum(:mesh_mask; dataset)
+bathymetry_metadatum(dataset::ORCA1) = Metadatum(:bottom_height; dataset)
+default_south_rows_to_remove(::ORCA1) = 35
+bathymetry_variable_name(::ORCA1) = "Bathymetry"
 
 end # module

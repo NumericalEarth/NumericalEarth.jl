@@ -1,6 +1,5 @@
 using Downloads
 using NCDatasets
-using Scratch
 using Oceananigans.Architectures: on_architecture
 using Oceananigans.BoundaryConditions: fill_halo_regions!, FPivotZipperBoundaryCondition,
     NoFluxBoundaryCondition, FieldBoundaryConditions
@@ -8,21 +7,6 @@ using Oceananigans.Fields: set!
 using Oceananigans.Grids: RightFaceFolded, generate_coordinate
 using Oceananigans.ImmersedBoundaries: ImmersedBoundaryGrid, GridFittedBottom
 using Oceananigans.OrthogonalSphericalShellGrids: Tripolar, continue_south!
-
-# Zenodo record 4436658: eORCA1 mesh_mask and bathymetry
-const ORCA1_mesh_mask_url      = "https://zenodo.org/records/4436658/files/eORCA1.2_mesh_mask.nc"
-const ORCA1_mesh_mask_file     = "eORCA1.2_mesh_mask.nc"
-const ORCA1_bathymetry_url     = "https://zenodo.org/records/4436658/files/eORCA_R1_bathy_meter_v2.2.nc"
-const ORCA1_bathymetry_file    = "eORCA_R1_bathy_meter_v2.2.nc"
-
-orca1_cache_dir::String = ""
-function init_orca1_cache!()
-    global orca1_cache_dir
-    if isempty(orca1_cache_dir)
-        orca1_cache_dir = @get_scratch!("ORCA1_grid")
-    end
-    return orca1_cache_dir
-end
 
 """
     read_2d_nemo_variable(ds, name)
@@ -42,9 +26,6 @@ function read_2d_nemo_variable(ds, name)
     end
 end
 
-const default_south_rows_to_remove_ORCA1 = 35
-
-
 # Helper: set data into a Field, fill halos, extract as OffsetArray
 function halo_filled_data(data, helper_grid, bcs, LX, LY)
     field = Field{LX, LY, Center}(helper_grid; boundary_conditions = bcs)
@@ -54,26 +35,30 @@ function halo_filled_data(data, helper_grid, bcs, LX, LY)
 end
 
 """
-    ORCA1Grid(arch = CPU(), FT::DataType = Float64;
-              halo = (4, 4, 4),
-              z = (-6000, 0),
-              Nz = 50,
-              radius = Oceananigans.defaults.planet_radius,
-              with_bathymetry = true,
-              active_cells_map = true,
-              south_rows_to_remove = $default_south_rows_to_remove_ORCA1)
+    ORCAGrid(arch = CPU(), FT::DataType = Float64;
+             dataset,
+             halo = (4, 4, 4),
+             z = (-6000, 0),
+             Nz = 50,
+             radius = Oceananigans.defaults.planet_radius,
+             with_bathymetry = true,
+             active_cells_map = true,
+             south_rows_to_remove = default_south_rows_to_remove(dataset))
 
 Construct an `OrthogonalSphericalShellGrid` with `(Periodic, RightFaceFolded, Bounded)`
-topology using coordinate and metric data from the NEMO eORCA1 `mesh_mask` file
-(Zenodo; doi:10.5281/zenodo.4436658).
+topology using coordinate and metric data from a NEMO eORCA `mesh_mask` file.
+
+The `dataset` keyword argument specifies which ORCA configuration to use (e.g., `ORCA1()`).
+The mesh mask and bathymetry files are downloaded automatically via the
+`DataWrangling.ORCA` metadata interface.
 
 The horizontal grid (including coordinates, scale factors, and areas) is loaded
 directly from the `mesh_mask` NetCDF file, which contains data at all four staggered
 locations (T, U, V, F points). The user provides the vertical discretization via the `z`
 keyword argument.
 
-When `with_bathymetry = true` (the default), the ORCA1 bathymetry is also downloaded
-from Zenodo and the grid is returned as an `ImmersedBoundaryGrid` with a `GridFittedBottom`.
+When `with_bathymetry = true` (the default), the bathymetry is also downloaded
+and the grid is returned as an `ImmersedBoundaryGrid` with a `GridFittedBottom`.
 
 Positional Arguments
 ====================
@@ -84,36 +69,33 @@ Positional Arguments
 Keyword Arguments
 =================
 
+- `dataset`: The ORCA dataset to use (e.g., `ORCA1()`). Required.
 - `halo`: Halo size tuple `(Hx, Hy, Hz)`. Default: `(4, 4, 4)`.
 - `z`: Vertical coordinate specification. Can be a 2-tuple `(z_bottom, z_top)`, an array of z-interfaces,
        or, e.g., an `ExponentialDiscretization`. Default: `(-6000, 0)`.
 - `Nz`: Number of vertical levels (only used when `z` is a 2-tuple). Default: `50`.
 - `radius`: Planet radius. Default: `Oceananigans.defaults.planet_radius`.
-- `with_bathymetry`: If `true`, download the eORCA1 bathymetry and return an `ImmersedBoundaryGrid` with
+- `with_bathymetry`: If `true`, download the bathymetry and return an `ImmersedBoundaryGrid` with
                      `GridFittedBottom`. Default: `true`.
 - `active_cells_map`: If `true` and `with_bathymetry = true`, build an active cells map
                       for efficient kernel execution over wet cells only. Default: `true`.
-- `south_rows_to_remove`: Number of southern rows to remove from the eORCA grid.  The "extended" eORCA1 grid
+- `south_rows_to_remove`: Number of southern rows to remove from the eORCA grid.  The "extended" eORCA grid
                           contains degenerate padding rows near Antarctica that are entirely land.
-                          Removing them reduces memory usage and computation. Default: `35`.
+                          Removing them reduces memory usage and computation.
 """
-function ORCA1Grid(arch = CPU(), FT::DataType = Float64;
-                   halo = (4, 4, 4),
-                   z = (-6000, 0),
-                   Nz = 50,
-                   radius = Oceananigans.defaults.planet_radius,
-                   with_bathymetry = true,
-                   active_cells_map = true,
-                   south_rows_to_remove = default_south_rows_to_remove_ORCA1)
+function ORCAGrid(arch = CPU(), FT::DataType = Float64;
+                  dataset,
+                  halo = (4, 4, 4),
+                  z = (-6000, 0),
+                  Nz = 50,
+                  radius = Oceananigans.defaults.planet_radius,
+                  with_bathymetry = true,
+                  active_cells_map = true,
+                  south_rows_to_remove = default_south_rows_to_remove(dataset))
 
-    # Download mesh_mask if not already cached
-    cache_dir = init_orca1_cache!()
-    mesh_mask_path = joinpath(cache_dir, ORCA1_mesh_mask_file)
-
-    if !isfile(mesh_mask_path)
-        @info "Downloading eORCA1 mesh_mask to $cache_dir..."
-        Downloads.download(ORCA1_mesh_mask_url, mesh_mask_path)
-    end
+    # Download mesh_mask via the metadata interface
+    mesh_meta = mesh_mask_metadatum(dataset)
+    mesh_mask_path = NumericalEarth.DataWrangling.download_dataset(mesh_meta)
 
     ds = Dataset(mesh_mask_path)
 
@@ -169,7 +151,7 @@ function ORCA1Grid(arch = CPU(), FT::DataType = Float64;
     Nx_nemo, Ny_nemo = size(λCC)
     Nx = Nx_nemo
 
-    # The "extended" eORCA1 grid (eORCA) has extra rows near Antarctica
+    # The "extended" eORCA grid (eORCA) has extra rows near Antarctica
     # that are entirely land with degenerate metrics (scale factors ~ 4 m).
     # Removing these rows reduces cost.
     jr = south_rows_to_remove
@@ -310,16 +292,13 @@ function ORCA1Grid(arch = CPU(), FT::DataType = Float64;
         return underlying_grid
     end
 
-    # Load ORCA1 bathymetry
-    bathymetry_path = joinpath(cache_dir, ORCA1_bathymetry_file)
+    # Load bathymetry via the metadata interface
+    bathy_meta = bathymetry_metadatum(dataset)
+    bathymetry_path = NumericalEarth.DataWrangling.download_dataset(bathy_meta)
 
-    if !isfile(bathymetry_path)
-        @info "Downloading eORCA1 bathymetry to $cache_dir..."
-        Downloads.download(ORCA1_bathymetry_url, bathymetry_path)
-    end
-
+    bathy_varname = bathymetry_variable_name(dataset)
     bathy_ds = Dataset(bathymetry_path)
-    bathy_data = Array(bathy_ds["Bathymetry"][:, :])
+    bathy_data = Array(bathy_ds[bathy_varname][:, :])
     close(bathy_ds)
 
     # Chop off the same southern rows from bathymetry
@@ -334,3 +313,12 @@ function ORCA1Grid(arch = CPU(), FT::DataType = Float64;
 
     return ImmersedBoundaryGrid(underlying_grid, GridFittedBottom(bottom_height); active_cells_map)
 end
+
+"""
+    ORCA1Grid(arch = CPU(), FT::DataType = Float64; kwargs...)
+
+Convenience constructor for `ORCAGrid(arch, FT; dataset=ORCA1(), kwargs...)`.
+See [`ORCAGrid`](@ref) for the full list of keyword arguments.
+"""
+ORCA1Grid(arch = CPU(), FT::DataType = Float64; kwargs...) =
+    ORCAGrid(arch, FT; dataset = NumericalEarth.DataWrangling.ORCA.ORCA1(), kwargs...)

@@ -1,12 +1,11 @@
 using NumericalEarth
 using NumericalEarth.DataWrangling: download_dataset, metadata_path
+using NumericalEarth.Oceans: default_south_rows_to_remove
 using Oceananigans
 using Oceananigans.OrthogonalSphericalShellGrids: TripolarGrid
 using Oceananigans.ImmersedBoundaries: ImmersedBoundaryGrid
 using NCDatasets
 using Test
-
-default_south_rows_to_remove = NumericalEarth.Oceans.default_south_rows_to_remove_ORCA1
 
 @testset "ORCA1 Metadatum construction" begin
     bathy_meta = Metadatum(:bottom_height; dataset=ORCA1())
@@ -18,12 +17,12 @@ default_south_rows_to_remove = NumericalEarth.Oceans.default_south_rows_to_remov
     @test mesh_meta.dataset isa ORCA1
 end
 
-@testset "ORCA1Grid with bathymetry (default)" begin
+@testset "ORCAGrid with ORCA1 dataset" begin
     south_rows_to_remove = 43
-    grid = ORCA1Grid(CPU(); Nz=5, z=(-5000, 0), halo=(4, 4, 4), south_rows_to_remove)
+    grid = ORCAGrid(CPU(); dataset=ORCA1(), Nz=5, z=(-5000, 0), halo=(4, 4, 4), south_rows_to_remove)
     @test grid.underlying_grid.Ny == 332-south_rows_to_remove
 
-    grid = ORCA1Grid(CPU(); Nz=5, z=(-5000, 0), halo=(4, 4, 4), south_rows_to_remove=0)
+    grid = ORCAGrid(CPU(); dataset=ORCA1(), Nz=5, z=(-5000, 0), halo=(4, 4, 4), south_rows_to_remove=0)
 
     # Default returns ImmersedBoundaryGrid with bathymetry
     @test grid isa ImmersedBoundaryGrid
@@ -41,7 +40,7 @@ end
     @test maximum(underlying.φᶜᶜᵃ) > 80
 end
 
-@testset "ORCA1Grid without bathymetry" begin
+@testset "ORCA1Grid convenience constructor" begin
     grid = ORCA1Grid(CPU(); Nz=5, z=(-5000, 0), halo=(4, 4, 4),
                      with_bathymetry=false)
 
@@ -49,14 +48,14 @@ end
     @test grid isa TripolarGrid
     @test !(grid isa ImmersedBoundaryGrid)
     @test grid.Nx == 362
-    @test grid.Ny == 332-default_south_rows_to_remove
+    @test grid.Ny == 332-default_south_rows_to_remove(ORCA1())
     @test grid.Nz == 5
 end
 
-@testset "ORCA1Grid with south_rows_to_remove" begin
+@testset "ORCAGrid with south_rows_to_remove" begin
     nremove = 40
-    grid = ORCA1Grid(CPU(); Nz=5, z=(-5000, 0), halo=(4, 4, 4),
-                     south_rows_to_remove=nremove)
+    grid = ORCAGrid(CPU(); dataset=ORCA1(), Nz=5, z=(-5000, 0), halo=(4, 4, 4),
+                    south_rows_to_remove=nremove)
 
     @test grid isa ImmersedBoundaryGrid
     underlying = grid.underlying_grid
