@@ -11,29 +11,27 @@ end
 const meridional_heat_transport_states = IdDict{Any, MeridionalHeatTransportState}()
 
 """
-    meridional_heat_transport(esm::EarthSystemModel; method=:ohc_tendency, T_ref=0.0)
+    meridional_heat_transport(esm::EarthSystemModel; method=:ohc_tendency, reference_temperature=0.0)
 
 Compute meridional heat transport with one of two methods:
 
 1. `method = :ohc_tendency` (default):
 
-   `MHT = CumulativeIntegral((∫ ρₒ cₚ ∫ₓ∫z ∂ₜT dt) - ∫ₓ(∫Q dt), dims=(2))`,
+   `MHT = CumulativeIntegral((∫ ρᵒᶜ cᵒᶜ ∫ₓ∫z ∂ₜT dt) - ∫ₓ(∫Q dt), dims=(2))`,
    where `Q` is `"heat_flux"` from `InterfaceFluxOutputs`.
 
 2. `method = :vt_instantaneous`:
 
-   `MHT = ρₒ cₚ ∫ₓ∫z v * (T - T_ref)`
+   `MHT = ρᵒᶜ cᵒᶜ ∫ₓ∫z v * (T - T_ref)`
 
-`ρₒ` and `cₚ` are inferred from `coupled_model.ocean` via
-`reference_density` and `heat_capacity`.
+`ρᵒᶜ` and `cᵒᶜ` are the ocean reference density and heat capacity respectively
+and they are inferred from `esm.ocean`.
 """
 function meridional_heat_transport(esm::EarthSystemModel; method=:ohc_tendency, reference_temperature=0.0)
-    ρₒ, cₚ = mht_constants(esm)
-
     if method === :ohc_tendency
-        return ohc_tendency_mht(esm, ρₒ, cₚ)
+        return ohc_tendency_mht(esm)
     elseif method === :vt_instantaneous
-        return instantaneous_vt_mht(esm, ρₒ, cₚ, T_ref)
+        return instantaneous_vt_mht(esm, reference_temperature)
     else
         throw(ArgumentError("Unknown MHT method=$(repr(method)). Supported methods are :ohc_tendency and :vt_instantaneous."))
     end
@@ -42,18 +40,18 @@ end
 allocate_storage_like(field) = Field(instantiated_location(field), field.grid; indices=indices(field))
 
 """
-    reset_meridional_heat_transport_state!(coupled_model)
+    reset_meridional_heat_transport_state!(esm)
 
-Clear cached MHT state (cumulative OHC tendency, cumulative heat flux, and clock metadata)
-for `coupled_model`.
-Call this before restarting from a checkpoint or when reusing a model object.
+Clear cached MHT state (cumulative OHC tendency, cumulative heat flux,
+and clock metadata) for a coupled `esm`. This method should be called before
+    restarting from a checkpoint or when reusing a model object.
 """
-function reset_meridional_heat_transport_state!(coupled_model)
-    pop!(meridional_heat_transport_states, coupled_model, nothing)
+function reset_meridional_heat_transport_state!(esm)
+    pop!(meridional_heat_transport_states, esm, nothing)
     return nothing
 end
 
-function initialize_mht_state!(coupled_model, heat_flux_field, ohc_tendency_field, time, iteration)
+function initialize_mht_state!(esm, heat_flux_field, ohc_tendency_field, time, iteration)
     cumulative_ohc_tendency = allocate_storage_like(ohc_tendency_field)
     set!(cumulative_ohc_tendency, 0)
 
@@ -61,12 +59,12 @@ function initialize_mht_state!(coupled_model, heat_flux_field, ohc_tendency_fiel
     set!(cumulative_heat_flux, 0)
 
     state = MeridionalHeatTransportState(cumulative_ohc_tendency, cumulative_heat_flux, time, iteration)
-    meridional_heat_transport_states[coupled_model] = state
+    meridional_heat_transport_states[esm] = state
     return state
 end
 
-function current_heat_flux_field(coupled_model)
-    flux_outputs = InterfaceFluxOutputs(coupled_model;
+function current_heat_flux_field(esm)
+    flux_outputs = InterfaceFluxOutputs(esm;
                                         isolate_sea_ice=false,
                                         units=:physical,
                                         reference_salinity=35)
@@ -77,23 +75,25 @@ function current_heat_flux_field(coupled_model)
     return heat_flux_field
 end
 
-@inline mht_constants(coupled_model) = reference_density(coupled_model.ocean), heat_capacity(coupled_model.ocean)
+function ohc_tendency_mht(esm)
+    ρᵒᶜ = reference_density(esm.ocean)
+    cᵒᶜ = heat_capacity(esm.ocean)
+    heat_flux = current_heat_flux_field(esm)
+    T_tendency = esm.ocean.model.timestepper.Gⁿ.T
 
-function ohc_tendency_mht(coupled_model, ρₒ, cₚ)
-    ocean = coupled_model.ocean
-    heat_flux_field = current_heat_flux_field(coupled_model)
-    ohc_tendency_field = Field(ρₒ * cₚ * Integral(ocean.model.timestepper.Gⁿ.T, dims=(1, 3)))
-    compute!(ohc_tendency_field)
+    ohc_tendency = Field(ρᵒᶜ * cᵒᶜ * Integral(T_tendency, dims=(1, 3)))
+    compute!(ohc_tendency)
 
-    model_time = Float64(ocean.model.clock.time)
-    model_iteration = Int(ocean.model.clock.iteration)
-    state = get(meridional_heat_transport_states, coupled_model, nothing)
-    state === nothing && (state = initialize_mht_state!(coupled_model, heat_flux_field, ohc_tendency_field, model_time, model_iteration))
+    model_time = esm.ocean.model.clock.time
+    model_iteration = esm.ocean.model.clock.iteration
+    state = get(meridional_heat_transport_states, esm, nothing)
+    state === nothing &&
+        (state = initialize_mht_state!(esm, heat_flux, ohc_tendency, model_time, model_iteration))
 
     if model_iteration != state.last_iteration
         Δt = max(0.0, model_time - state.last_time)
         if Δt == 0.0 && model_iteration > 0
-            Δt = Float64(ocean.model.clock.Δt)
+            Δt = ocean.model.clock.Δt
         end
 
         set!(state.cumulative_ohc_tendency, state.cumulative_ohc_tendency + Δt * ohc_tendency_field)
@@ -102,18 +102,21 @@ function ohc_tendency_mht(coupled_model, ρₒ, cₚ)
         state.last_iteration = model_iteration
     end
 
-    flux_int = Integral(state.cumulative_heat_flux, dims=1)
+    ∫heat_flux = Integral(state.cumulative_heat_flux, dims=1)
 
-    return CumulativeIntegral(state.cumulative_ohc_tendency - flux_int, dims=(2))
+    return CumulativeIntegral(state.cumulative_ohc_tendency - ∫heat_flux, dims=(2))
 end
 
-function instantaneous_vt_mht(coupled_model, ρₒ, cₚ, T_ref)
-    ocean_model = coupled_model.ocean.model
-    return ρₒ * cₚ * Integral(ocean_model.velocities.v * (ocean_model.tracers.T - T_ref), dims=(1, 3))
+function instantaneous_vt_mht(esm, reference_temperature)
+    ρᵒᶜ = reference_density(esm.ocean)
+    cᵒᶜ = heat_capacity(esm.ocean)
+    T = esm.ocean.model.tracers.T
+    v = esm.ocean.model.velocities.v
+    return ρᵒᶜ * cᵒᶜ * Integral(v * (T - reference_temperature), dims=(1, 3))
 end
 
-function checkpoint_auxiliary_state(coupled_model::EarthSystemModel)
-    state = get(meridional_heat_transport_states, coupled_model, nothing)
+function checkpoint_auxiliary_state(esm::EarthSystemModel)
+    state = get(meridional_heat_transport_states, esm, nothing)
     state === nothing && return nothing
 
     return (
@@ -126,19 +129,19 @@ function checkpoint_auxiliary_state(coupled_model::EarthSystemModel)
     )
 end
 
-function restore_auxiliary_state!(coupled_model::EarthSystemModel, auxiliary_state)
+function restore_auxiliary_state!(esm::EarthSystemModel, auxiliary_state)
     auxiliary_state === nothing && return nothing
     hasproperty(auxiliary_state, :meridional_heat_transport) || return nothing
 
     mht_state = auxiliary_state.meridional_heat_transport
     mht_state === nothing && return nothing
 
-    heat_flux_field = current_heat_flux_field(coupled_model)
-    ohc_tendency_template = Field(Integral(coupled_model.ocean.model.timestepper.Gⁿ.T, dims=(1, 3)))
+    heat_flux_field = current_heat_flux_field(esm)
+    ohc_tendency_template = Field(Integral(esm.ocean.model.timestepper.Gⁿ.T, dims=(1, 3)))
     compute!(ohc_tendency_template)
 
-    reset_meridional_heat_transport_state!(coupled_model)
-    state = initialize_mht_state!(coupled_model,
+    reset_meridional_heat_transport_state!(esm)
+    state = initialize_mht_state!(esm,
                                   heat_flux_field,
                                   ohc_tendency_template,
                                   Float64(mht_state.last_time),
