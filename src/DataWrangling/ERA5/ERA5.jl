@@ -8,8 +8,8 @@ using Printf
 using Scratch
 using Statistics
 
-using Oceananigans.Fields: Center, CenterField, interior
-using Oceananigans.BoundaryConditions: fill_halo_regions!
+using Oceananigans.Fields: Center
+using Oceananigans: CenterField, interior, fill_halo_regions!, CPU
 using NumericalEarth.DataWrangling: Metadata, Metadatum, metadata_path, native_grid, InverseGravity
 using Dates
 using Dates: DateTime, Day, Month, Hour
