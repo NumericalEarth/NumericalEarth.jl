@@ -197,8 +197,7 @@ function ORCA1Grid(arch = CPU(), FT::DataType = Float64;
 
     # Set up vertical coordinate
     topology = (Periodic, RightFaceFolded, Bounded)
-    Nz_val = z isa Tuple ? Nz : length(z) - 1
-    Lz, z_coord = generate_coordinate(FT, topology, (Nx, Ny, Nz_val), halo, z, :z, 3, CPU())
+    Lz, z_coord = generate_coordinate(FT, topology, (Nx, Ny, Nz), halo, z, :z, 3, CPU())
 
     # Helper RectilinearGrid for filling halo regions
     # Matches the TripolarGrid pattern in Oceananigans
@@ -335,7 +334,8 @@ function ORCA1Grid(arch = CPU(), FT::DataType = Float64;
 
     # NEMO stores bathymetry as positive depth; convert to negative bottom height
     # (Oceananigans convention: z < 0 below sea level)
-    bottom_height = -FT.(bathy_data)
+    bottom_height = - convert.(FT, bathy_data)
+    bottom_height = on_architecture(arch, bottom_height)
 
     return ImmersedBoundaryGrid(underlying_grid, GridFittedBottom(bottom_height); active_cells_map)
 end
