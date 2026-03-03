@@ -19,7 +19,7 @@ end
 function sea_ice_ocean_temperature_flux(esm::EarthSystemModel)
     sea_ice_ocean_fluxes = esm.interfaces.sea_ice_ocean_interface.fluxes
     sea_ice_ocean_temperature_flux =
-        getfield(sea_ice_ocean_fluxes, :interface_heat) + frazil_heat_flux(esm::EarthSystemModel)
+        getfield(sea_ice_ocean_fluxes, :interface_heat) + frazil_temperature_flux(esm)
     return Field(sea_ice_ocean_temperature_flux)
 end
 
