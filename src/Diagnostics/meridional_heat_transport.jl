@@ -47,9 +47,10 @@ allocate_storage_like(field) = Field(instantiated_location(field), field.grid; i
 """
     reset_meridional_heat_transport_state!(esm)
 
-Clear cached MHT state (cumulative OHC tendency, cumulative heat flux,
-and clock metadata) for a coupled `esm`. This method should be called before
-    restarting from a checkpoint or when reusing a model object.
+Clear cached for the meridional heat transport state
+(cumulative OHC tendency, cumulative heat flux, and clock metadata)
+for a coupled `esm`. This method should be called before
+restarting from a checkpoint or when reusing a model object.
 """
 function reset_meridional_heat_transport_state!(esm)
     pop!(meridional_heat_transport_states, esm, nothing)
