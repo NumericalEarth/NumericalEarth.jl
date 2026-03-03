@@ -13,19 +13,24 @@ const meridional_heat_transport_states = IdDict{Any, MeridionalHeatTransportStat
 """
     meridional_heat_transport(esm::EarthSystemModel; method=:ohc_tendency, reference_temperature=0.0)
 
-Compute meridional heat transport with one of two methods:
+Return the meridional heat transport for the coupled `esm` using either of two methods:
 
 1. `method = :ohc_tendency` (default):
 
-   `MHT = CumulativeIntegral((∫ ρᵒᶜ cᵒᶜ ∫ₓ∫z ∂ₜT dt) - ∫ₓ(∫Q dt), dims=(2))`,
-   where `Q` is `"heat_flux"` from `InterfaceFluxOutputs`.
+   ```math
+   ∫_{y_S}^y dy [(∫dt ∫dx ∫dz ρᵒᶜ cᵒᶜ ∂ₜT) - (∫dt ∫dx Q)]
+   ```
+
+   where `Q` is the net heat flux into the ocean.
 
 2. `method = :vt_instantaneous`:
 
-   `MHT = ρᵒᶜ cᵒᶜ ∫ₓ∫z v * (T - T_ref)`
+   ```math
+   ρᵒᶜ cᵒᶜ ∫dx ∫dz v (T - T_{\\rm reference})
+   ```
 
-`ρᵒᶜ` and `cᵒᶜ` are the ocean reference density and heat capacity respectively
-and they are inferred from `esm.ocean`.
+Above, ``ρᵒᶜ`` and ``cᵒᶜ`` are the ocean reference density and heat capacity respectively
+and they are inferred from the ocean component, `esm.ocean`.
 """
 function meridional_heat_transport(esm::EarthSystemModel; method=:ohc_tendency, reference_temperature=0.0)
     if method === :ohc_tendency
@@ -33,7 +38,7 @@ function meridional_heat_transport(esm::EarthSystemModel; method=:ohc_tendency, 
     elseif method === :vt_instantaneous
         return instantaneous_vt_mht(esm, reference_temperature)
     else
-        throw(ArgumentError("Unknown MHT method=$(repr(method)). Supported methods are :ohc_tendency and :vt_instantaneous."))
+        throw(ArgumentError("Unknown method=$(repr(method)). Supported methods are :ohc_tendency and :vt_instantaneous."))
     end
 end
 
