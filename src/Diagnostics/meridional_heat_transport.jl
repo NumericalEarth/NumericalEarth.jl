@@ -27,7 +27,7 @@ Compute meridional heat transport with one of two methods:
 `ρₒ` and `cₚ` are inferred from `coupled_model.ocean` via
 `reference_density` and `heat_capacity`.
 """
-function meridional_heat_transport(esm::EarthSystemModel; method=:ohc_tendency, T_ref=0.0)
+function meridional_heat_transport(esm::EarthSystemModel; method=:ohc_tendency, reference_temperature=0.0)
     ρₒ, cₚ = mht_constants(esm)
 
     if method === :ohc_tendency
@@ -102,7 +102,7 @@ function ohc_tendency_mht(coupled_model, ρₒ, cₚ)
         state.last_iteration = model_iteration
     end
 
-    flux_int = Integral(state.cumulative_heat_flux, dims=(1))
+    flux_int = Integral(state.cumulative_heat_flux, dims=1)
 
     return CumulativeIntegral(state.cumulative_ohc_tendency - flux_int, dims=(2))
 end
