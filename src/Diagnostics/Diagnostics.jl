@@ -1,21 +1,18 @@
 module Diagnostics
 
-<<<<<<< HEAD
-export MixedLayerDepthField, MixedLayerDepthOperand, Meridional_Heat_Transport, reset_meridional_heat_transport_state!
-=======
 export MixedLayerDepthField, MixedLayerDepthOperand
+export meridional_heat_transport, OceanHeatContentTendencyMethod, MeridionalHeatFluxMethod
 export frazil_temperature_flux, net_ocean_temperature_flux, sea_ice_ocean_temperature_flux, atmosphere_ocean_temperature_flux,
        frazil_heat_flux, net_ocean_heat_flux, sea_ice_ocean_heat_flux, atmosphere_ocean_heat_flux,
        net_ocean_salinity_flux, sea_ice_ocean_salinity_flux, atmosphere_ocean_salinity_flux,
        net_ocean_freshwater_flux, sea_ice_ocean_freshwater_flux, atmosphere_ocean_freshwater_flux
->>>>>>> main
 
 using Oceananigans
 using Oceananigans.Architectures: architecture
-using Oceananigans.Models: buoyancy_operation
-using Oceananigans.Grids: new_data, inactive_cell, znode
 using Oceananigans.BoundaryConditions: FieldBoundaryConditions, fill_halo_regions!
 using Oceananigans.Fields: FieldStatus
+using Oceananigans.Grids: new_data, inactive_cell, znode
+using Oceananigans.Models: buoyancy_operation
 using Oceananigans.Utils: launch!
 using KernelAbstractions: @index, @kernel
 using NumericalEarth.EarthSystemModels: EarthSystemModel

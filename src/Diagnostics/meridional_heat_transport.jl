@@ -1,87 +1,111 @@
-import ..EarthSystemModels: EarthSystemModel, checkpoint_auxiliary_state, restore_auxiliary_state!,
-                            reference_density, heat_capacity
+using ..EarthSystemModels: reference_density, heat_capacity
 
-mutable struct MeridionalHeatTransportState
-    cumulative_ohc_tendency::Any
-    cumulative_heat_flux::Any
-    last_time::Float64
-    last_iteration::Int
+import ..EarthSystemModels: EarthSystemModel, checkpoint_auxiliary_state, restore_auxiliary_state!
+
+struct OceanHeatContentTendencyMethod end
+struct MeridionalHeatFluxMethod end
+
+mutable struct MeridionalHeatTransportState{FT, FL}
+    cumulative_ohc_tendency :: FL
+    cumulative_heat_flux :: FL
+    last_time :: FT
+    last_iteration :: Int
 end
 
 const meridional_heat_transport_states = IdDict{Any, MeridionalHeatTransportState}()
 
 """
-    meridional_heat_transport(esm::EarthSystemModel; method=:ohc_tendency, reference_temperature=0.0)
+    meridional_heat_transport(esm::EarthSystemModel, OceanHeatContentTendencyMethod();
+                              reference_temperature=0.0)
 
 Return the meridional heat transport for the coupled `esm` using either of two methods:
+
+Arguments
+=========
+
+* `esm`: An EarthSystemModel.
+
+* `OceanHeatContentTendencyMethod()` or `MeridionalHeatFluxMethod()` denoting the method
+  that the meridional heat transport is computed.
+
+  1. For `OceanHeatContentTendencyMethod()` (default), the meridional heat transport
+     is computed via:
+
+     ```math
+     ∫_{y_S}^y dy [(∫dt ∫dx ∫dz ρᵒᶜ cᵒᶜ ∂ₜT) - (∫dt ∫dx 𝒬)]
+     ```
+
+     where ``y_S`` is the Southern-most latitude of the domain and ``𝒬`` is the
+     net heat flux into the ocean.
+
+  2. For `MeridionalHeatFluxMethod()`, the meridional heat transport is computed via:
+
+     ```math
+     ρᵒᶜ cᵒᶜ ∫dx ∫dz v (T - T_{\\rm ref})
+     ```
+
+  Above, ``ρᵒᶜ`` and ``cᵒᶜ`` are the ocean reference density and heat capacity respectively
+  and they are inferred from the ocean component, `esm.ocean`, and ``T_{\\rm ref}`` is a
+  reference temperature.
+
 
 Keyword Arguments
 =================
 
-* `method`: Determines the method the computation is done. Options are:
-  1. `method = :ohc_tendency` (default):
-
-     ```math
-     ∫_{y_S}^y dy [(∫dt ∫dx ∫dz ρᵒᶜ cᵒᶜ ∂ₜT) - (∫dt ∫dx Q)]
-     ```
-
-     where `Q` is the net heat flux into the ocean.
-
-  2. `method = :vt_instantaneous`:
-
-     ```math
-     ρᵒᶜ cᵒᶜ ∫dx ∫dz v (T - T_{\\rm reference})
-     ```
-
-  Above, ``ρᵒᶜ`` and ``cᵒᶜ`` are the ocean reference density and heat capacity respectively
-  and they are inferred from the ocean component, `esm.ocean`.
-
 * `reference_temperature`: The reference temperature used for `:vt_instantaneous` method.
 """
-function meridional_heat_transport(esm::EarthSystemModel; method=:ohc_tendency, reference_temperature=0.0)
-    if method === :ohc_tendency
-        return ohc_tendency_mht(esm)
-    elseif method === :vt_instantaneous
-        return instantaneous_vt_mht(esm, reference_temperature)
-    else
-        throw(ArgumentError("Unknown method=$(repr(method)). Supported methods are :ohc_tendency and :vt_instantaneous."))
-    end
+function meridional_heat_transport(esm::EarthSystemModel, ::OceanHeatContentTendencyMethod;
+                                   reference_temperature=0.0)
+    return meridional_heat_transport_via_ocean_heat_content_tendency(esm)
 end
 
-allocate_storage_like(field) = Field(instantiated_location(field), field.grid; indices=indices(field))
+function meridional_heat_transport(esm::EarthSystemModel, ::MeridionalHeatFluxMethod;
+                                   reference_temperature=0.0)
+    return meridional_heat_transport_via_meridional_heat_flux(esm; reference_temperature)
+end
+
+meridional_heat_transport(esm::EarthSystemModel) = meridional_heat_transport(esm, OceanHeatContentTendencyMethod())
+
+meridional_heat_transport(esm::EarthSystemModel, method; reference_temperature=0.0) =
+    throw(ArgumentError("Unknown method $(method); choose one of OceanHeatContentTendencyMethod() or MeridionalHeatFluxMethod()."))
 
 """
     reset_meridional_heat_transport_state!(esm)
 
-Clear cached for the meridional heat transport state
-(cumulative OHC tendency, cumulative heat flux, and clock metadata)
-for a coupled `esm`. This method should be called before
-restarting from a checkpoint or when reusing a model object.
+Clear cached for the meridional heat transport state (cumulative ocean heat
+content tendency, cumulative heat flux, and clock metadata) for a coupled
+`esm`. This method should be called before restarting from a checkpoint or
+when reusing a model object.
 """
 function reset_meridional_heat_transport_state!(esm)
     pop!(meridional_heat_transport_states, esm, nothing)
     return nothing
 end
 
-function initialize_mht_state!(esm, heat_flux_field, ohc_tendency_field, time, iteration)
-    cumulative_ohc_tendency = allocate_storage_like(ohc_tendency_field)
+function initialize_mht_state!(esm, heat_flux, ohc_tendency, time, iteration)
+    cumulative_ohc_tendency = deepcopy(ohc_tendency)
     set!(cumulative_ohc_tendency, 0)
 
-    cumulative_heat_flux = allocate_storage_like(heat_flux_field)
+    cumulative_heat_flux = deepcopy(heat_flux)
     set!(cumulative_heat_flux, 0)
 
-    state = MeridionalHeatTransportState(cumulative_ohc_tendency, cumulative_heat_flux, time, iteration)
+    FT = eltype(esm)
+    FL = typeof(cumulative_ohc_tendency)
+    state = MeridionalHeatTransportState{FT, FL}(cumulative_ohc_tendency,
+                                                 cumulative_heat_flux,
+                                                 time,
+                                                 iteration)
     meridional_heat_transport_states[esm] = state
     return state
 end
 
-function ohc_tendency_mht(esm)
+function meridional_heat_transport_via_ocean_heat_content_tendency(esm)
     ρᵒᶜ = reference_density(esm.ocean)
     cᵒᶜ = heat_capacity(esm.ocean)
     heat_flux = net_ocean_heat_flux(esm)
-    T_tendency = esm.ocean.model.timestepper.Gⁿ.T
+    ∂T_∂t = esm.ocean.model.timestepper.Gⁿ.T
 
-    ohc_tendency = Field(ρᵒᶜ * cᵒᶜ * Integral(T_tendency, dims=(1, 3)))
+    ohc_tendency = Field(Integral(ρᵒᶜ * cᵒᶜ * ∂T_∂t, dims=(1, 3)))
     compute!(ohc_tendency)
 
     model_time = esm.ocean.model.clock.time
@@ -107,7 +131,7 @@ function ohc_tendency_mht(esm)
     return CumulativeIntegral(state.cumulative_ohc_tendency - ∫heat_flux, dims=(2))
 end
 
-function instantaneous_vt_mht(esm, reference_temperature)
+function meridional_heat_transport_via_meridional_heat_flux(esm; reference_temperature)
     ρᵒᶜ = reference_density(esm.ocean)
     cᵒᶜ = heat_capacity(esm.ocean)
     T = esm.ocean.model.tracers.T
@@ -136,19 +160,20 @@ function restore_auxiliary_state!(esm::EarthSystemModel, auxiliary_state)
     mht_state = auxiliary_state.meridional_heat_transport
     mht_state === nothing && return nothing
 
-    heat_flux_field = net_ocean_heat_flux(esm)
-    ohc_tendency_template = Field(Integral(esm.ocean.model.timestepper.Gⁿ.T, dims=(1, 3)))
-    compute!(ohc_tendency_template)
+    heat_flux = net_ocean_heat_flux(esm)
+    ∂T_∂t = esm.ocean.model.timestepper.Gⁿ.T
+    ohc_tendency = Field(Integral(∂T_∂t, dims=(1, 3)))
+    compute!(ohc_tendency)
 
     reset_meridional_heat_transport_state!(esm)
     state = initialize_mht_state!(esm,
-                                  heat_flux_field,
-                                  ohc_tendency_template,
-                                  Float64(mht_state.last_time),
-                                  Int(mht_state.last_iteration))
+                                  heat_flux,
+                                  ohc_tendency,
+                                  mht_state.last_time,
+                                  mht_state.last_iteration)
     set!(state.cumulative_ohc_tendency, mht_state.cumulative_ohc_tendency)
     set!(state.cumulative_heat_flux, mht_state.cumulative_heat_flux)
-    state.last_time = Float64(mht_state.last_time)
-    state.last_iteration = Int(mht_state.last_iteration)
+    state.last_time = mht_state.last_time
+    state.last_iteration = mht_state.last_iteration
     return nothing
 end
