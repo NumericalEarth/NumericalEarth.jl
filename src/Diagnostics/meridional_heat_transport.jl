@@ -1,6 +1,6 @@
-using ..EarthSystemModels: reference_density, heat_capacity
+using ..EarthSystemModels: EarthSystemModel, reference_density, heat_capacity
 
-import ..EarthSystemModels: EarthSystemModel, checkpoint_auxiliary_state, restore_auxiliary_state!
+import ..EarthSystemModels: checkpoint_auxiliary_state, restore_auxiliary_state!
 
 struct OceanHeatContentTendencyMethod end
 struct MeridionalHeatFluxMethod end
