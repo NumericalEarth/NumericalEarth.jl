@@ -312,6 +312,146 @@ function _ncvar_copy!(dst, src_var, vname)
     return nothing
 end
 
+"""
+    download_dataset(names::Vector{Symbol}, dataset::ERA5PressureDataset, dates::AbstractVector;
+                     bounding_box=nothing, dir=default_download_directory(dataset), skip_existing=true)
+
+Download multiple ERA5 pressure-level variables for a vector of `dates`, issuing one CDS API
+request per unique calendar day (which may contain multiple hours).
+
+# Example
+```julia
+ds    = ERA5HourlyPressureLevels(levels=[850, 500])
+dates = DateTime(2020, 6, 15, 0) : Hour(6) : DateTime(2020, 6, 16, 18)
+download_dataset([:temperature, :geopotential_height], ds, collect(dates); bounding_box=bbox)
+```
+"""
+function download_dataset(names::Vector{Symbol}, dataset::ERA5PressureDataset,
+                          dates::AbstractVector;
+                          bounding_box = nothing,
+                          dir = NumericalEarth.DataWrangling.default_download_directory(dataset),
+                          skip_existing = true)
+
+    grouped = Dict(d => filter(dt -> Dates.Date(dt) == d, dates)
+                   for d in unique(Dates.Date.(dates)))
+
+    for day in sort(collect(keys(grouped)))
+        _download_era5pl_day(names, dataset, grouped[day]; bounding_box, dir, skip_existing)
+    end
+
+    return nothing
+end
+
+function _download_era5pl_day(names, dataset, day_dates;
+                               bounding_box, dir, skip_existing)
+
+    MDatum    = NumericalEarth.DataWrangling.Metadatum
+    meta_path = NumericalEarth.DataWrangling.metadata_path
+
+    # All (name, dt, output path) triples for this day
+    all_triples = [(name, dt, meta_path(MDatum(name; dataset, date=dt, bounding_box, dir)))
+                   for name in names for dt in day_dates]
+
+    pending = skip_existing ? filter(((_, _, p),) -> !isfile(p), all_triples) : all_triples
+    isempty(pending) && return nothing
+
+    # Unique CDS variable names and hours needed
+    cds_vars   = unique([ERA5PL_dataset_variable_names[name] for (name, _, _) in pending])
+    sorted_dts = sort(unique([dt for (_, dt, _) in pending]))
+    hours_str  = [lpad(string(Dates.hour(dt)), 2, '0') * ":00" for dt in sorted_dts]
+    dt_to_tidx = Dict(dt => i for (i, dt) in enumerate(sorted_dts))
+
+    dt    = first(sorted_dts)
+    year  = string(Dates.year(dt))
+    month = lpad(string(Dates.month(dt)), 2, '0')
+    day   = lpad(string(Dates.day(dt)),   2, '0')
+
+    request = Dict(
+        "product_type"    => ["reanalysis"],
+        "variable"        => cds_vars,
+        "pressure_level"  => [string(p) for p in dataset.levels],
+        "year"            => [year],
+        "month"           => [month],
+        "day"             => [day],
+        "time"            => hours_str,
+        "data_format"     => "netcdf",
+        "download_format" => "unarchived",
+    )
+
+    area = build_era5_area(bounding_box)
+    isnothing(area) || (request["area"] = area)
+
+    mkpath(dir)
+    tmp_path   = joinpath(dir, "_tmp_multi_$(year)$(month)$(day).nc")
+    nc_triples = [(ERA5PL_netcdf_variable_names[name], dt_to_tidx[dt], path)
+                  for (name, dt, path) in pending]
+
+    @root begin
+        CDSAPI.retrieve("reanalysis-era5-pressure-levels", request, tmp_path)
+        _split_era5pl_nc_multistep(tmp_path, nc_triples)
+        rm(tmp_path; force=true)
+    end
+
+    return nothing
+end
+
+function _split_era5pl_nc_multistep(src_path, nc_varname_tidx_path_triples)
+    time_dimnames = Set(["time", "valid_time"])
+
+    NCDatasets.Dataset(src_path, "r") do src
+        unlimited = NCDatasets.unlimited(src)
+
+        for (nc_varname, tidx, dst_path) in nc_varname_tidx_path_triples
+            NCDatasets.Dataset(dst_path, "c") do dst
+                # Collapse the time dimension to 1; keep all others
+                for (dname, dlen) in src.dim
+                    out_len = dname in time_dimnames ? 1 :
+                              dname in unlimited     ? Inf : dlen
+                    NCDatasets.defDim(dst, dname, out_len)
+                end
+
+                for (k, v) in src.attrib
+                    dst.attrib[k] = v
+                end
+
+                for (vname, var) in src
+                    (vname in ERA5PL_COORD_VARS || vname == nc_varname) || continue
+                    _ncvar_copy_tslice!(dst, var, vname, tidx, time_dimnames)
+                end
+            end
+        end
+    end
+end
+
+function _ncvar_copy_tslice!(dst, src_var, vname, tidx, time_dimnames)
+    dims     = NCDatasets.dimnames(src_var)
+    T        = eltype(src_var.var)
+    attribs  = src_var.attrib
+    fill_val = haskey(attribs, "_FillValue") ? attribs["_FillValue"] : nothing
+
+    dst_var = isnothing(fill_val) ?
+        NCDatasets.defVar(dst, vname, T, dims) :
+        NCDatasets.defVar(dst, vname, T, dims; fillvalue=fill_val)
+
+    for (k, v) in attribs
+        k == "_FillValue" && continue
+        dst_var.attrib[k] = v
+    end
+
+    # Slice time dimension; keep all others intact
+    has_time = any(d -> d in time_dimnames, dims)
+    if has_time
+        idx = ntuple(ndims(src_var.var)) do i
+            dims[i] in time_dimnames ? (tidx:tidx) : Colon()
+        end
+        dst_var.var[:] = src_var.var[idx...]
+    else
+        dst_var.var[:] = src_var.var[:]
+    end
+
+    return nothing
+end
+
 #####
 ##### Area/bounding box utilities
 #####
