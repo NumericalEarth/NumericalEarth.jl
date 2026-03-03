@@ -224,6 +224,7 @@ include("ECCO/ECCO.jl")
 include("GLORYS/GLORYS.jl")
 include("ERA5/ERA5.jl")
 include("EN4/EN4.jl")
+include("ORCA/ORCA.jl")
 include("WOA/WOA.jl")
 include("JRA55/JRA55.jl")
 
@@ -232,6 +233,7 @@ using .ECCO
 using .GLORYS
 using .ERA5
 using .EN4
+using .ORCA
 using .WOA
 using .JRA55
 
