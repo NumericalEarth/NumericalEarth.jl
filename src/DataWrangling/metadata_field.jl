@@ -248,6 +248,7 @@ end
 @inline convert_units(C::FT, ::Union{NanomolePerLiter, NanomolePerKilogram})   where FT = C * convert(FT, 1e-6)
 @inline convert_units(C::FT, ::MilliliterPerLiter)                             where FT = C / convert(FT, 22.3916)
 @inline convert_units(C::FT, ::GramPerKilogramMinus35)                         where FT = C + convert(FT, 35)
+@inline convert_units(Φ::FT, ::InverseGravity)                                 where FT = Φ / convert(FT, 9.80665)
 
 
 #####
