@@ -5,7 +5,7 @@ using ClimaSeaIce.SeaIceDynamics: SplitExplicitSolver, SemiImplicitStress, SeaIc
 using ClimaSeaIce.Rheologies: IceStrength, ElastoViscoPlasticRheology
 
 using NumericalEarth.EarthSystemModels: ocean_surface_salinity, ocean_surface_velocities
-using NumericalEarth.Oceans: Default
+using NumericalEarth.Oceans: Default, u_immersed_bottom_drag, v_immersed_bottom_drag
 
 default_rotation_rate = Oceananigans.defaults.planet_rotation_rate
 
@@ -70,6 +70,11 @@ function sea_ice_simulation(grid, ocean=nothing;
 
     return sea_ice
 end
+
+default_solver(::Nothing) = SplitExplicitSolver(120)
+default_solver(ocean::Simulation) = default_solver(ocean.model.timestepper)
+default_solver(::Oceananigans.TimeSteppers.QuasiAdamsBashforth2TimeStepper) = SplitExplicitSolver(120)
+default_solver(::Oceananigans.TimeSteppers.SplitRungeKuttaTimeStepper) = SplitExplicitSolver(360)
 
 function sea_ice_dynamics(grid, ocean=nothing;
                           sea_ice_ocean_drag_coefficient = 5.5e-3,
