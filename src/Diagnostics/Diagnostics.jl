@@ -14,6 +14,6 @@ using KernelAbstractions: @index, @kernel
 import Oceananigans.Fields: compute!
 
 include("mixed_layer_depth.jl")
-include("MeridionalHeatTransport.jl")
+include("meridional_heat_transport.jl")
 
 end # module
