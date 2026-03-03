@@ -3,12 +3,12 @@ include("runtests_setup.jl")
 using MPI
 MPI.Init()
 
-using NumericalEarth.DataWrangling: metadata_path
-using Oceananigans.DistributedComputations
-using Oceananigans.DistributedComputations: reconstruct_global_grid
 using CFTime
 using Dates
 using NCDatasets
+using NumericalEarth.DataWrangling: metadata_path
+using Oceananigans.DistributedComputations
+using Oceananigans.DistributedComputations: reconstruct_global_grid
 
 # We start by building a fake bathymetry on rank 0 and save it to file
 rm("./trivial_bathymetry.nc", force=true)
@@ -94,8 +94,8 @@ end
 
         Nx, Ny, _ = size(local_grid)
         rx, ry, _ = arch.local_index
-        irange    = (rx - 1) * Nx + 1 : rx * Nx
-        jrange    = (ry - 1) * Ny + 1 : ry * Ny
+        irange = (rx - 1) * Nx + 1 : rx * Nx
+        jrange = (ry - 1) * Ny + 1 : ry * Ny
 
         begin
             @test interior(global_height, irange, jrange, 1) == interior(local_height, :, :, 1)
