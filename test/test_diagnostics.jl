@@ -95,7 +95,7 @@ for arch in test_architectures
 
         ρᵒᶜ = esm.interfaces.ocean_properties.reference_density
         cᵒᶜ = esm.interfaces.ocean_properties.heat_capacity
-        S₀ = 34.0 # different than the default
+        S₀ = 34.0 # different from the default value
 
         frazil_heat = frazil_heat_flux(esm)
         net_ocean_heat = net_ocean_heat_flux(esm)
