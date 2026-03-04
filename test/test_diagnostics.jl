@@ -113,8 +113,8 @@ for arch in test_architectures
         net_ocean_salinity = net_ocean_salinity_flux(esm)
         sea_ice_ocean_salinity = sea_ice_ocean_salinity_flux(esm)
         atmosphere_ocean_salinity = atmosphere_ocean_salinity_flux(esm)
-        net_ocean_freshwater = net_ocean_freshwater_flux(esm; reference_salinity = 35)
-        sea_ice_ocean_freshwater = sea_ice_ocean_freshwater_flux(esm; reference_salinity = 35)
+        net_ocean_freshwater = net_ocean_freshwater_flux(esm)
+        sea_ice_ocean_freshwater = sea_ice_ocean_freshwater_flux(esm)
         atmosphere_ocean_freshwater = atmosphere_ocean_freshwater_flux(esm)
 
         for f in (frazil_temperature, net_ocean_temperature, sea_ice_ocean_temperature,

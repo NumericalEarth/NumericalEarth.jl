@@ -105,70 +105,24 @@ function atmosphere_ocean_heat_flux(esm::EarthSystemModel)
     return Field(atmosphere_ocean_heat_flux)
 end
 
-
 ###########################
-### Salinity fluxes
-###########################
-
-"""
-    net_ocean_salinity_flux(esm::EarthSystemModel)
-
-Return the net salinity flux (g/kg m s⁻¹) at the ocean's surface in a coupled `esm`.
-"""
-function net_ocean_salinity_flux(esm::EarthSystemModel)
-    Jˢ = esm.ocean.model.tracers.S.boundary_conditions.top.condition
-    return Jˢ
-end
-
-
-"""
-    sea_ice_ocean_salinity_flux(esm::EarthSystemModel)
-
-Return the sea ice-ocean salinity flux (g/kg m s⁻¹) at the sea ice-ocean interface
-in a coupled `esm`.
-"""
-function sea_ice_ocean_salinity_flux(esm::EarthSystemModel)
-    sea_ice_ocean_salinity_flux = esm.interfaces.sea_ice_ocean_interface.fluxes.salt
-    return sea_ice_ocean_salinity_flux
-end
-
-"""
-    atmosphere_ocean_salinity_flux(esm::EarthSystemModel)
-
-Return the atmosphere-ocean salinity flux (g/kg m s⁻¹) at the atmosphere-ocean
-interface in a coupled `esm`.
-"""
-function atmosphere_ocean_salinity_flux(esm::EarthSystemModel)
-    atmosphere_ocean_salinity_flux =
-        net_ocean_salinity_flux(esm) - sea_ice_ocean_salinity_flux(esm)
-    return Field(atmosphere_ocean_salinity_flux)
-end
-
-
-###########################
-### Freshwater mass fluxes
+### Freshwater volume fluxes
 ###########################
 
 """
     net_ocean_freshwater_flux(esm::EarthSystemModel)
 
-Return the net freshwater mass flux (kg m⁻² s⁻¹) at the ocean's surface in a coupled `esm`.
+Return the net freshwater volume flux (m s⁻¹) at the ocean's surface in a coupled `esm`.
 """
-function net_ocean_freshwater_flux(esm::EarthSystemModel)
-    net_ocean_freshwater_flux = net_ocean_salinity_flux(esm)
-    return Field(net_ocean_freshwater_flux)
-end
+net_ocean_freshwater_flux(esm::EarthSystemModel) = sea_ice_ocean_freshwater_flux(esm) + atmosphere_ocean_freshwater_flux(esm)
 
 """
     sea_ice_ocean_freshwater_flux(esm::EarthSystemModel)
 
-Return the sea ice-ocean freshwater mass flux (kg m⁻² s⁻¹) at the sea ice-ocean interface
+Return the sea ice-ocean freshwater volume flux (m s⁻¹) at the sea ice-ocean interface
 in a coupled `esm`.
 """
-function sea_ice_ocean_freshwater_flux(esm::EarthSystemModel; reference_salinity = 35)
-    sea_ice_ocean_freshwater_flux = esm.interfaces.sea_ice_ocean_interface.fluxes.freshwater_flux
-    return Field(sea_ice_ocean_freshwater_flux)
-end
+sea_ice_ocean_freshwater_flux(esm::EarthSystemModel) = Field(esm.interfaces.sea_ice_ocean_interface.fluxes.freshwater_flux)
 
 """
     atmosphere_ocean_freshwater_flux(esm::EarthSystemModel)
@@ -176,13 +130,4 @@ end
 Return the atmosphere-ocean freshwater volume flux (m s⁻¹) at the atmosphere-ocean
 interface in a coupled `esm`.
 """
-function atmosphere_ocean_freshwater_flux(esm::EarthSystemModel)
-    atmosphere_ocean_interface = if hasproperty(esm, :ocean_atmosphere_interface)
-        esm.ocean_atmosphere_interface
-    else
-        esm.interfaces.atmosphere_ocean_interface
-    end
-
-    atmosphere_ocean_freshwater_flux = atmosphere_ocean_interface.fluxes.freshwater_flux
-    return Field(atmosphere_ocean_freshwater_flux)
-end
+atmosphere_ocean_freshwater_flux(esm::EarthSystemModel) = Field(esm.interfaces.atmosphere_ocean_interface.fluxes.freshwater_flux)
