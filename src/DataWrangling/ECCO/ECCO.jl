@@ -52,7 +52,8 @@ import NumericalEarth.DataWrangling:
     available_variables,
     retrieve_data,
     binary_data_grid,
-    binary_data_size
+    binary_data_size,
+    higher_bound
 
 download_ECCO_cache::String = ""
 function __init__()
@@ -219,6 +220,9 @@ ECCO_location = Dict(
 
 const ECCOMetadata{D} = Metadata{<:ECCODataset, D}
 const ECCOMetadatum   = Metadatum{<:ECCODataset}
+
+# sea surface pressure can exceed 1e5 (the default higher bound for datasets data)
+higher_bound(::ECCOMetadata, ::Val{:sea_level_pressure}) = 1f10
 
 # Note: ECCO downwelling radiation variables (oceQsw, EXFlwdn) are already
 # in positive-downwelling convention, so no sign conversion is needed.
