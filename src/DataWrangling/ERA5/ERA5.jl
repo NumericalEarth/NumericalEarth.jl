@@ -309,7 +309,11 @@ function metadata_prefix(metadata::ERA5PressureMetadata)
         suffix = ""
     end
 
-    prefix = string(var, "_", dataset, "_", start_date, "_", end_date, suffix)
+    if start_date == end_date
+        prefix = string(var, "_", dataset, "_", start_date, suffix)
+    else
+        prefix = string(var, "_", dataset, "_", start_date, "_", end_date, suffix)
+    end
     prefix = colon2dash(prefix)
     prefix = underscore_spaces(prefix)
     return prefix
@@ -330,7 +334,11 @@ function metadata_prefix(metadata::ERA5Metadata)
         suffix = ""
     end
 
-    prefix = string(var, "_", dataset, "_", start_date, "_", end_date, suffix)
+    if start_date == end_date
+        prefix = string(var, "_", dataset, "_", start_date, suffix)
+    else
+        prefix = string(var, "_", dataset, "_", start_date, "_", end_date, suffix)
+    end
     prefix = colon2dash(prefix)
     prefix = underscore_spaces(prefix)
     return prefix
