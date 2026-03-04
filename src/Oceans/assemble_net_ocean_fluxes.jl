@@ -136,17 +136,12 @@ end
     # a different sign convention as the prescribed water mass fluxes (positive upwards)
     Jᵛᵒᶜ = Jᵛ * ρᵒᶜ⁻¹
     ΣFao += Jᵛᵒᶜ
-    ΣFio = get_possibly_zero_flux(sea_ice_ocean_fluxes, :freshwater_flux)[i, j, 1]
-
     @inbounds begin
         # Write radiative components of the heat flux for diagnostic purposes
         atmos_ocean_fluxes.upwelling_longwave[i, j, 1] = ℐꜛˡʷ
         atmos_ocean_fluxes.downwelling_longwave[i, j, 1] = - ℐₐˡʷ
         atmos_ocean_fluxes.downwelling_shortwave[i, j, 1] = - ℐₜˢʷ
         atmos_ocean_fluxes.freshwater_flux[i, j, 1] = ΣFao
-        if !isnothing(sea_ice_ocean_fluxes)
-            sea_ice_ocean_fluxes.freshwater_flux[i, j, 1] = ΣFio
-        end
     end
 
     # Compute fluxes for u, v, T, and S from momentum, heat, and freshwater fluxes
