@@ -84,6 +84,4 @@ Label(fig[0, :],
       "ERA5 Stokes Drift and Surface Wind — $(Dates.format(date, "yyyy-mm-dd HH:MM")) UTC";
       fontsize=20)
 
-save("ERA5_stokes_drift_and_wind.png", fig)
-
-display(fig)
+current_figure()
