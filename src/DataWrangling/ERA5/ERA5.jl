@@ -371,7 +371,7 @@ location(::ERA5Metadata) = (Center, Center, Center)
 longitude_interfaces(::ERA5Metadata) = (0, 360)
 latitude_interfaces(::ERA5Metadata) = (-90, 90)
 
-# ERA5 is a 2D surface dataset, so z is a single level at the surface
+# ERA5 single-levels (2-D) data product
 z_interfaces(::ERA5Metadata) = (0, 1)
 
 # ERA5 data is stored as Float32
@@ -381,25 +381,38 @@ eltype(::ERA5Metadata) = Float32
 ##### Pressure-level vertical coordinate
 #####
 
-# Standard atmosphere height (m) for a given pressure (hPa)
-_std_atm_geopotential_height(p_hPa) = (287.05 * 288.15 / 9.80665) * log(1013.25 / p_hPa)
+const ERA5_gravitational_acceleration = 9.80665
+
+# International Standard Atmosphere height (m) for a given pressure (hPa)
+function standard_atmosphere_geopotential_height(p)
+    g = ERA5_gravitational_acceleration
+    T⁰ = 288.15 # K
+    p⁰ = 1013.25 # hPa
+    Rᵈ = 287.0528 # J/(kg-K)
+
+    return (Rᵈ * T⁰ / g) * log(p⁰ / p)
+end
 
 # Build z-interfaces (Nz+1 values) from pressure levels.
 # Levels may be in any order; output is sorted so k=1 is highest pressure (lowest altitude).
-function _std_atm_z_interfaces(levels)
+function standard_atmosphere_z_interfaces(levels)
+    @info """
+    Calculating z-interfaces based on International Standard Atmosphere...
+    For greater accuracy, use `mean_geopotential_heights`!
+    """
     sorted_levels = sort(levels, rev=true)   # highest pressure first → k=1 is bottom
-    heights = _std_atm_geopotential_height.(Float64.(sorted_levels))
+    heights = standard_atmosphere_geopotential_height.(Float64.(sorted_levels))
     Nz = length(heights)
 
     interfaces = Vector{Float64}(undef, Nz + 1)
 
     if Nz == 1
-        interfaces[1] = max(0.0, heights[1] - 500.0)
-        interfaces[2] = heights[1] + 500.0
+        interfaces[1] = max(0, heights[1] - 500)
+        interfaces[2] = heights[1] + 500
         return interfaces
     end
 
-    interfaces[1] = max(0.0, heights[1] - (heights[2] - heights[1]) / 2)
+    interfaces[1] = max(0, heights[1] - (heights[2] - heights[1]) / 2)
     for k in 2:Nz
         interfaces[k] = (heights[k-1] + heights[k]) / 2
     end
@@ -408,7 +421,8 @@ function _std_atm_z_interfaces(levels)
     return interfaces
 end
 
-z_interfaces(metadata::ERA5PressureMetadata) = _std_atm_z_interfaces(metadata.dataset.levels)
+# ERA5 pressure-levels (3-D) data product
+z_interfaces(metadata::ERA5PressureMetadata) = standard_atmosphere_z_interfaces(metadata.dataset.levels)
 
 #####
 ##### pressure_field — synthetic pressure coordinate field
@@ -453,7 +467,7 @@ function mean_geopotential_heights(metadata::ERA5PressureMetadata; arch=CPU())
                             dir=metadata.dir)
     heights = zeros(length(metadata.dataset.levels))
     for geo_datum in geo_metadata
-        data = retrieve_data(geo_datum) ./ Float32(9.80665)   # Φ → Z (m)
+        data = retrieve_data(geo_datum) ./ Float32(ERA5_gravitational_acceleration)   # Φ → Z (m)
         heights .+= dropdims(mean(data; dims=(1, 2)); dims=(1, 2))
     end
     heights ./= length(geo_metadata)
