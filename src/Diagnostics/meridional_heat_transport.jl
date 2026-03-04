@@ -119,7 +119,7 @@ function meridional_heat_transport_via_ocean_heat_content_tendency(esm)
         (state = initialize_mht_state!(esm, ∫heat_flux, ∫ohc_tendency, model_time, model_iteration))
 
     if model_iteration != state.last_iteration
-        Δt = max(0.0, model_time - state.last_time)
+        Δt = max(0, model_time - state.last_time)
         if Δt == 0.0 && model_iteration > 0
             Δt = ocean.model.clock.Δt
         end
