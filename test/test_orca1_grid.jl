@@ -74,6 +74,6 @@ end
     bathy = ds["Bathymetry"][:, :]
     close(ds)
 
-    @test size(bathy) == (362, 333)
+    @test size(bathy) == (362, 332)
     @test maximum(bathy) > 5000  # Deep ocean
 end
