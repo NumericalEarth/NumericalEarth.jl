@@ -5,7 +5,6 @@ using Oceananigans.Models: buoyancy_operation
 using NumericalEarth.Diagnostics: MixedLayerDepthField, MixedLayerDepthOperand
 using SeawaterPolynomials: TEOS10EquationOfState
 
-#=
 for arch in test_architectures, dataset in (ECCO4Monthly(),)
     A = typeof(arch)
     @info "Testing MixedLayerDepthField with $(typeof(dataset)) on $A"
@@ -57,7 +56,6 @@ for arch in test_architectures, dataset in (ECCO4Monthly(),)
         end
     end
 end
-=#
 
 for arch in test_architectures
     A = typeof(arch)
@@ -127,11 +125,6 @@ for arch in test_architectures
             @test atmosphere_ocean_heat[1, 1, 1] ≈ ρᵒᶜ * cᵒᶜ * T_flux_value - interface_heat_flux_value
             @test sea_ice_ocean_heat[1, 1, 1] ≈ frazil_heat_flux_value + interface_heat_flux_value
             @test net_ocean_heat[1, 1, 1] ≈ atmosphere_ocean_heat[1, 1, 1] + sea_ice_ocean_heat[1, 1, 1]
-
-            @test net_ocean_freshwater[1, 1, 1] ≈ - ρᵒᶜ / S₀ * S_flux_value
-            @test sea_ice_ocean_freshwater[1, 1, 1] ≈ - ρᵒᶜ / S₀ * sea_ice_ocean_salt_flux_value
-            @test atmosphere_ocean_freshwater[1, 1, 1] ≈ - ρᵒᶜ / S₀ * (S_flux_value - sea_ice_ocean_salt_flux_value)
-            @test net_ocean_freshwater[1, 1, 1] ≈ atmosphere_ocean_freshwater[1, 1, 1] + sea_ice_ocean_freshwater[1, 1, 1]
 
             @test net_ocean_freshwater[1, 1, 1] ≈ - ρᵒᶜ / S₀ * S_flux_value
             @test sea_ice_ocean_freshwater[1, 1, 1] ≈ - ρᵒᶜ / S₀ * sea_ice_ocean_salt_flux_value
