@@ -154,11 +154,9 @@ end
 
 Return the net freshwater mass flux (kg m⁻² s⁻¹) at the ocean's surface in a coupled `esm`.
 """
-function net_ocean_freshwater_flux(esm::EarthSystemModel; reference_salinity = 35)
-    ρᵒᶜ = esm.interfaces.ocean_properties.reference_density
-    S₀ = convert(typeof(ρᵒᶜ), reference_salinity)
-    net_ocean_frashwater_flux = - ρᵒᶜ / S₀ * net_ocean_salinity_flux(esm)
-    return Field(net_ocean_frashwater_flux)
+function net_ocean_freshwater_flux(esm::EarthSystemModel)
+    net_ocean_freshwater_flux = net_ocean_salinity_flux(esm)
+    return Field(net_ocean_freshwater_flux)
 end
 
 """
@@ -168,21 +166,23 @@ Return the sea ice-ocean freshwater mass flux (kg m⁻² s⁻¹) at the sea ice-
 in a coupled `esm`.
 """
 function sea_ice_ocean_freshwater_flux(esm::EarthSystemModel; reference_salinity = 35)
-    ρᵒᶜ = esm.interfaces.ocean_properties.reference_density
-    S₀ = convert(typeof(ρᵒᶜ), reference_salinity)
-    sea_ice_ocean_freshwater_flux = - ρᵒᶜ / S₀ * sea_ice_ocean_salinity_flux(esm)
+    sea_ice_ocean_freshwater_flux = esm.interfaces.sea_ice_ocean_interface.fluxes.freshwater_flux
     return Field(sea_ice_ocean_freshwater_flux)
 end
 
 """
     atmosphere_ocean_freshwater_flux(esm::EarthSystemModel)
 
-Return the atmosphere-ocean freshwater mass flux (kg m⁻² s⁻¹) at the atmosphere-ocean
+Return the atmosphere-ocean freshwater volume flux (m s⁻¹) at the atmosphere-ocean
 interface in a coupled `esm`.
 """
-function atmosphere_ocean_freshwater_flux(esm::EarthSystemModel; reference_salinity = 35)
-    ρᵒᶜ = esm.interfaces.ocean_properties.reference_density
-    S₀ = convert(typeof(ρᵒᶜ), reference_salinity)
-    atmosphere_ocean_freshwater_flux = - ρᵒᶜ / S₀ * atmosphere_ocean_salinity_flux(esm)
+function atmosphere_ocean_freshwater_flux(esm::EarthSystemModel)
+    atmosphere_ocean_interface = if hasproperty(esm, :ocean_atmosphere_interface)
+        esm.ocean_atmosphere_interface
+    else
+        esm.interfaces.atmosphere_ocean_interface
+    end
+
+    atmosphere_ocean_freshwater_flux = atmosphere_ocean_interface.fluxes.freshwater_flux
     return Field(atmosphere_ocean_freshwater_flux)
 end

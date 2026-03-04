@@ -123,6 +123,7 @@ end
     𝒬ᶠʳᶻ = fluxes.frazil_heat
     𝒬ⁱⁿᵗ = fluxes.interface_heat
     Jˢ = fluxes.salt
+    ΣF = fluxes.freshwater_flux
     τˣ = fluxes.x_momentum
     τʸ = fluxes.y_momentum
     T★ = interface_temperature
@@ -212,5 +213,7 @@ end
     # Salt flux from melting/freezing:
     # - during ice melt   (qᵐ > 0), fresh meltwater dilutes the ocean
     # - during ice growth (qᶠ < 0), brine rejection adds salt to ocean
-    @inbounds Jˢ[i, j, 1] = (qᵐ + qᶠ) / ρᵒᶜ * (Sᴺ - Sˢⁱ)
+    ΣFio = qᵐ + qᶠ
+    @inbounds Jˢ[i, j, 1] = ΣFio / ρᵒᶜ * (Sᴺ - Sˢⁱ)
+    @inbounds ΣF[i, j, 1] = ΣFio
 end
