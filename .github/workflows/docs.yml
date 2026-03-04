@@ -23,6 +23,8 @@ env:
   JULIA_NUM_THREADS: 8
   JULIA_DEPOT_PATH: "/storage5/github-action-runners/julia-depot"
   NUMERICAL_EARTH_LABEL_BUILD_ALL_EXAMPLES: 'build all examples'
+  CDSAPI_URL: "https://cds.climate.copernicus.eu/api"
+  CDSAPI_KEY: ${{ secrets.CDSAPI_KEY }}
 
 jobs:
   build-docs:
