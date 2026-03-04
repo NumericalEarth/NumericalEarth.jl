@@ -77,5 +77,5 @@ end
 Return the atmosphere-ocean freshwater mass flux (kg m⁻² s⁻¹) at the atmosphere-ocean
 interface in a coupled `esm`.
 """
-atmosphere_ocean_freshwater_flux(esm::EarthSystemModel; reference_salinity = 35)
-    = net_ocean_freshwater_flux(esm) - sea_ice_ocean_freshwater_flux(esm)
+atmosphere_ocean_freshwater_flux(esm::EarthSystemModel; reference_salinity = 35) =
+    net_ocean_freshwater_flux(esm; reference_salinity) - sea_ice_ocean_freshwater_flux(esm; reference_salinity)
