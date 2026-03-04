@@ -20,7 +20,7 @@ end
 @testset "ORCAGrid with ORCA1 dataset" begin
     south_rows_to_remove = 43
     grid = ORCAGrid(CPU(); dataset=ORCA1(), Nz=5, z=(-5000, 0), halo=(4, 4, 4), south_rows_to_remove)
-    @test grid.underlying_grid.Ny == 332 - south_rows_to_remove
+    @test grid.underlying_grid.Ny == 333 - south_rows_to_remove
 
     grid = ORCAGrid(CPU(); dataset=ORCA1(), Nz=5, z=(-5000, 0), halo=(4, 4, 4), south_rows_to_remove=0)
 
@@ -30,7 +30,7 @@ end
     @test underlying isa Oceananigans.Grids.OrthogonalSphericalShellGrid
     @test underlying isa TripolarGrid
     @test underlying.Nx == 362
-    @test underlying.Ny == 332
+    @test underlying.Ny == 333
     @test underlying.Nz == 5
 
     # Coordinates span near-global domain
@@ -48,7 +48,7 @@ end
     @test grid isa TripolarGrid
     @test !(grid isa ImmersedBoundaryGrid)
     @test grid.Nx == 362
-    @test grid.Ny == 332 - default_south_rows_to_remove(ORCA1())
+    @test grid.Ny == 333 - default_south_rows_to_remove(ORCA1())
     @test grid.Nz == 5
 end
 
@@ -60,7 +60,7 @@ end
     @test grid isa ImmersedBoundaryGrid
     underlying = grid.underlying_grid
     @test underlying.Nx == 362
-    @test underlying.Ny == 332 - Nremove
+    @test underlying.Ny == 333 - Nremove
     @test underlying.Nz == 5
 end
 
@@ -74,6 +74,6 @@ end
     bathy = ds["Bathymetry"][:, :]
     close(ds)
 
-    @test size(bathy) == (362, 332)
+    @test size(bathy) == (362, 333)
     @test maximum(bathy) > 5000  # Deep ocean
 end

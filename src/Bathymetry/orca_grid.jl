@@ -26,10 +26,32 @@ function read_2d_nemo_variable(ds, name)
     end
 end
 
-# Helper: set data into a Field, fill halos, extract as OffsetArray
+# Helper: copy NEMO data into a Field, fill halos, extract as OffsetArray.
+#
+# NEMO's Arakawa-C stagger places U[i] / V[j] on the eastern / northern face
+# of T-cell [i,j].  Oceananigans instead defines Face[i] / Face[j] as the
+# western / southern face of Center-cell [i,j].  The mapping is therefore:
+#
+#   Oceananigans Face_x[i] = NEMO U[i-1]  (circular shift in x, periodic)
+#   Oceananigans Face_y[j] = NEMO V[j-1]  (shift +1 in y; row 1 filled by continue_south!)
+#
+# For Face-x we circshift the data by -1 along dimension 1 (periodic wrap).
+# For Face-y we copy into rows 2:Ny_nemo+1, leaving row 1 for continue_south!.
 function halo_filled_data(data, helper_grid, bcs, LX, LY)
+    TX, TY, _ = topology(helper_grid)
+    Nx, Ny, _ = size(helper_grid)
+    Ni = Base.length(LX(), TX(), Nx)
+    Nj_data = size(data, 2)
+
+    # Shift Face-x data by -1 in x (periodic wrap)
+    shifted_data = LX == Face ? circshift(data, (-1, 0)) : data
+
     field = Field{LX, LY, Center}(helper_grid; boundary_conditions = bcs)
-    set!(field, data)
+    if LY == Center  # Center-y: no y-shift
+        field.data[1:Ni, 1:Nj_data, 1] .= shifted_data[1:Ni, 1:Nj_data]
+    else               # Face-y: shift +1 in y
+        field.data[1:Ni, 2:Nj_data+1, 1] .= shifted_data[1:Ni, 1:Nj_data]
+    end
     fill_halo_regions!(field)
     return deepcopy(dropdims(field.data, dims = 3))
 end
@@ -173,16 +195,14 @@ function ORCAGrid(arch = CPU(), FT::DataType = Float64;
 
     southernmost_latitude = Float64(minimum(φCC))
 
-    # NEMO stores all variables with size (Nx, Ny_nemo).  The last row is
-    # always redundant: duplicate for T/U (Center-y), mirror for V/F (Face-y).
-    # With RightFaceFolded topology and Ny = Ny_nemo:
-    #   - Center-y fields have Ny - 1 interior points → trim the duplicate last row
-    #   - Face-y fields have Ny interior points → use all Ny_nemo rows as-is
-    Ny = Ny_nemo
+    # NEMO stores all variables with size (Nx, Ny_nemo).  NEMO V[j] is the
+    # northern face of T-cell j, but Oceananigans Face[j] is the southern face
+    # of Center-cell j.  With Ny = Ny_nemo + 1 and RightFaceFolded:
+    #   - Center-y interior has Ny - 1 = Ny_nemo points  ← matches NEMO T data
+    #   - Face-y   interior has Ny     = Ny_nemo+1 points ← NEMO V data shifted +1
+    # Face-y row 1 (southernmost) has no NEMO data and is filled by continue_south!.
+    Ny = Ny_nemo + 1
     Hx, Hy, Hz = halo
-
-    # Trim helper: for Center-y data, drop the last (fold) row
-    trim_center_y(data) = data[:, 1:Ny_nemo-1]
 
     # Set up vertical coordinate
     topology = (Periodic, RightFaceFolded, Bounded)
@@ -203,33 +223,32 @@ function ORCAGrid(arch = CPU(), FT::DataType = Float64;
                                   bottom = nothing)
 
     # Fill halo regions for coordinates
-    # Center-y (T, U) data must be trimmed; Face-y (V, F) data used as-is
-    λᶜᶜᵃ = halo_filled_data(trim_center_y(λCC), helper_grid, bcs, Center, Center)
-    λᶠᶜᵃ = halo_filled_data(trim_center_y(λFC), helper_grid, bcs, Face,   Center)
-    λᶜᶠᵃ = halo_filled_data(λCF,                helper_grid, bcs, Center, Face)
-    λᶠᶠᵃ = halo_filled_data(λFF,                helper_grid, bcs, Face,   Face)
+    λᶜᶜᵃ = halo_filled_data(λCC, helper_grid, bcs, Center, Center)
+    λᶠᶜᵃ = halo_filled_data(λFC, helper_grid, bcs, Face,   Center)
+    λᶜᶠᵃ = halo_filled_data(λCF, helper_grid, bcs, Center, Face)
+    λᶠᶠᵃ = halo_filled_data(λFF, helper_grid, bcs, Face,   Face)
 
-    φᶜᶜᵃ = halo_filled_data(trim_center_y(φCC), helper_grid, bcs, Center, Center)
-    φᶠᶜᵃ = halo_filled_data(trim_center_y(φFC), helper_grid, bcs, Face,   Center)
-    φᶜᶠᵃ = halo_filled_data(φCF,                helper_grid, bcs, Center, Face)
-    φᶠᶠᵃ = halo_filled_data(φFF,                helper_grid, bcs, Face,   Face)
+    φᶜᶜᵃ = halo_filled_data(φCC, helper_grid, bcs, Center, Center)
+    φᶠᶜᵃ = halo_filled_data(φFC, helper_grid, bcs, Face,   Center)
+    φᶜᶠᵃ = halo_filled_data(φCF, helper_grid, bcs, Center, Face)
+    φᶠᶠᵃ = halo_filled_data(φFF, helper_grid, bcs, Face,   Face)
 
     # Fill halo regions for scale factors
-    Δxᶜᶜᵃ = halo_filled_data(trim_center_y(e1t), helper_grid, bcs, Center, Center)
-    Δxᶠᶜᵃ = halo_filled_data(trim_center_y(e1u), helper_grid, bcs, Face,   Center)
-    Δxᶜᶠᵃ = halo_filled_data(e1v,                helper_grid, bcs, Center, Face)
-    Δxᶠᶠᵃ = halo_filled_data(e1f,                helper_grid, bcs, Face,   Face)
+    Δxᶜᶜᵃ = halo_filled_data(e1t, helper_grid, bcs, Center, Center)
+    Δxᶠᶜᵃ = halo_filled_data(e1u, helper_grid, bcs, Face,   Center)
+    Δxᶜᶠᵃ = halo_filled_data(e1v, helper_grid, bcs, Center, Face)
+    Δxᶠᶠᵃ = halo_filled_data(e1f, helper_grid, bcs, Face,   Face)
 
-    Δyᶜᶜᵃ = halo_filled_data(trim_center_y(e2t), helper_grid, bcs, Center, Center)
-    Δyᶠᶜᵃ = halo_filled_data(trim_center_y(e2u), helper_grid, bcs, Face,   Center)
-    Δyᶜᶠᵃ = halo_filled_data(e2v,                helper_grid, bcs, Center, Face)
-    Δyᶠᶠᵃ = halo_filled_data(e2f,                helper_grid, bcs, Face,   Face)
+    Δyᶜᶜᵃ = halo_filled_data(e2t, helper_grid, bcs, Center, Center)
+    Δyᶠᶜᵃ = halo_filled_data(e2u, helper_grid, bcs, Face,   Center)
+    Δyᶜᶠᵃ = halo_filled_data(e2v, helper_grid, bcs, Center, Face)
+    Δyᶠᶠᵃ = halo_filled_data(e2f, helper_grid, bcs, Face,   Face)
 
     # Fill halo regions for areas
-    Azᶜᶜᵃ = halo_filled_data(trim_center_y(AzCC), helper_grid, bcs, Center, Center)
-    Azᶠᶜᵃ = halo_filled_data(trim_center_y(AzFC), helper_grid, bcs, Face,   Center)
-    Azᶜᶠᵃ = halo_filled_data(AzCF,                helper_grid, bcs, Center, Face)
-    Azᶠᶠᵃ = halo_filled_data(AzFF,                helper_grid, bcs, Face,   Face)
+    Azᶜᶜᵃ = halo_filled_data(AzCC, helper_grid, bcs, Center, Center)
+    Azᶠᶜᵃ = halo_filled_data(AzFC, helper_grid, bcs, Face,   Center)
+    Azᶜᶠᵃ = halo_filled_data(AzCF, helper_grid, bcs, Center, Face)
+    Azᶠᶠᵃ = halo_filled_data(AzFF, helper_grid, bcs, Face,   Face)
 
     # Continue metrics to the south using a reference LatitudeLongitudeGrid.
     # The eORCA grid has degenerate padding cells near the southern boundary
@@ -307,9 +326,6 @@ function ORCAGrid(arch = CPU(), FT::DataType = Float64;
     if jr > 0
         bathy_data = chop_south(bathy_data)
     end
-
-    # Bathymetry is T-point (Center, Center) data: trim last row for RightFaceFolded
-    bathy_data = trim_center_y(bathy_data)
 
     # NEMO stores bathymetry as positive depth; convert to negative bottom height
     # (Oceananigans convention: z < 0 below sea level)
