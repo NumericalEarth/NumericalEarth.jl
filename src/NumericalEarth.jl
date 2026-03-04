@@ -52,7 +52,7 @@ export
     atmosphere_simulation,
     sea_ice_dynamics,
     initialize!,
-    frazil_heat_flux, net_ocean_heat_flux, sea_ice_ocean_heat_flux, atmosphere_ocean_heat_flux,
+    net_ocean_heat_flux, sea_ice_ocean_heat_flux, atmosphere_ocean_heat_flux,
     net_ocean_freshwater_flux, sea_ice_ocean_freshwater_flux, atmosphere_ocean_freshwater_flux
 
 using Oceananigans

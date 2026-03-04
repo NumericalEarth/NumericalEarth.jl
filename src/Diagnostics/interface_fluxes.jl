@@ -4,14 +4,6 @@
 ###########################
 
 """
-    frazil_heat_flux(esm::EarthSystemModel)
-
-Return the two-dimensional frazil heat flux (W m⁻²) in a coupled `esm`.
-"""
-frazil_heat_flux(esm::EarthSystemModel) =
-    esm.interfaces.sea_ice_ocean_interface.fluxes.frazil_heat
-
-"""
     net_ocean_heat_flux(esm::EarthSystemModel)
 
 Return the net heat flux (W m⁻²) at the ocean's surface in a coupled `esm`.
@@ -20,7 +12,8 @@ function net_ocean_heat_flux(esm::EarthSystemModel)
     Jᵀ = esm.ocean.model.tracers.T.boundary_conditions.top.condition # temperature flux
     ρᵒᶜ = esm.interfaces.ocean_properties.reference_density
     cᵒᶜ = esm.interfaces.ocean_properties.heat_capacity
-    return ρᵒᶜ * cᵒᶜ * Jᵀ + frazil_heat_flux(esm)
+    frazil_heat_flux = esm.interfaces.sea_ice_ocean_interface.fluxes.frazil_heat
+    return ρᵒᶜ * cᵒᶜ * Jᵀ + frazil_heat_flux
 end
 
 """
@@ -29,8 +22,10 @@ end
 Return the sea ice-ocean heat flux (W m⁻²) at the sea ice-ocean interface
 in a coupled `esm`.
 """
-sea_ice_ocean_heat_flux(esm::EarthSystemModel) =
-    esm.interfaces.sea_ice_ocean_interface.fluxes.interface_heat + frazil_heat_flux(esm)
+function sea_ice_ocean_heat_flux(esm::EarthSystemModel)
+    frazil_heat_flux = esm.interfaces.sea_ice_ocean_interface.fluxes.frazil_heat
+    return esm.interfaces.sea_ice_ocean_interface.fluxes.interface_heat + frazil_heat_flux
+end
 
 """
     atmosphere_ocean_heat_flux(esm::EarthSystemModel)
