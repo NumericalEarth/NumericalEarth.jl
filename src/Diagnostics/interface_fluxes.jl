@@ -49,7 +49,7 @@ atmosphere_ocean_heat_flux(esm::EarthSystemModel) =
 """
     net_ocean_freshwater_flux(esm::EarthSystemModel)
 
-Return the net freshwater volume flux (m s⁻¹) at the ocean's surface in a coupled `esm`.
+Return the net freshwater mass flux (kg m⁻² s⁻¹) at the ocean's surface in a coupled `esm`.
 """
 net_ocean_freshwater_flux(esm::EarthSystemModel) =
     sea_ice_ocean_freshwater_flux(esm) + atmosphere_ocean_freshwater_flux(esm)
@@ -57,7 +57,7 @@ net_ocean_freshwater_flux(esm::EarthSystemModel) =
 """
     sea_ice_ocean_freshwater_flux(esm::EarthSystemModel)
 
-Return the sea ice-ocean freshwater volume flux (m s⁻¹) at the sea ice-ocean interface
+Return the sea ice-ocean freshwater mass flux (kg m⁻² s⁻¹) at the sea ice-ocean interface
 in a coupled `esm`.
 """
 sea_ice_ocean_freshwater_flux(esm::EarthSystemModel) =
@@ -66,8 +66,9 @@ sea_ice_ocean_freshwater_flux(esm::EarthSystemModel) =
 """
     atmosphere_ocean_freshwater_flux(esm::EarthSystemModel)
 
-Return the atmosphere-ocean freshwater volume flux (m s⁻¹) at the atmosphere-ocean
+Return the atmosphere-ocean freshwater mass flux (kg m⁻² s⁻¹) at the atmosphere-ocean
 interface in a coupled `esm`.
 """
 atmosphere_ocean_freshwater_flux(esm::EarthSystemModel) =
+    esm.interfaces.ocean_properties.reference_density *
     esm.interfaces.atmosphere_ocean_interface.fluxes.freshwater_flux
