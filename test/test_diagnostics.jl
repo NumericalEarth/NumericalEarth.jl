@@ -95,15 +95,15 @@ for arch in test_architectures
 
         ρᵒᶜ = esm.interfaces.ocean_properties.reference_density
         cᵒᶜ = esm.interfaces.ocean_properties.heat_capacity
-        S₀ = 35.0
+        S₀ = 34.0 # different than the default
 
         frazil_heat = frazil_heat_flux(esm)
         net_ocean_heat = net_ocean_heat_flux(esm)
         sea_ice_ocean_heat = sea_ice_ocean_heat_flux(esm)
         atmosphere_ocean_heat = atmosphere_ocean_heat_flux(esm)
-        net_ocean_freshwater = net_ocean_freshwater_flux(esm; reference_salinity = 35)
-        sea_ice_ocean_freshwater = sea_ice_ocean_freshwater_flux(esm; reference_salinity = 35)
-        atmosphere_ocean_freshwater = atmosphere_ocean_freshwater_flux(esm; reference_salinity = 35)
+        net_ocean_freshwater = net_ocean_freshwater_flux(esm; reference_salinity = S₀)
+        sea_ice_ocean_freshwater = sea_ice_ocean_freshwater_flux(esm; reference_salinity = S₀)
+        atmosphere_ocean_freshwater = atmosphere_ocean_freshwater_flux(esm; reference_salinity = S₀)
 
         diags = (frazil_heat, net_ocean_heat, sea_ice_ocean_heat, atmosphere_ocean_heat,
                  net_ocean_freshwater, sea_ice_ocean_freshwater, atmosphere_ocean_freshwater)
