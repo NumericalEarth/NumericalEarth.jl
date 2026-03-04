@@ -69,7 +69,7 @@ Positional Arguments
 Keyword Arguments
 =================
 
-- `dataset`: The ORCA dataset to use. Default: `ORCA1()`.
+- `dataset`: The ORCA dataset to use. Default: `ORCA1()` (from Zenodo; <https://doi.org.10.5281/zenodo.4436658>).
 - `halo`: Halo size tuple `(Hx, Hy, Hz)`. Default: `(4, 4, 4)`.
 - `z`: Vertical coordinate specification. Can be a 2-tuple `(z_bottom, z_top)`, an array of z-interfaces,
        or, e.g., an `ExponentialDiscretization`. Default: `(-6000, 0)`.
