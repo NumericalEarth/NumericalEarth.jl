@@ -121,7 +121,7 @@ end
 
 if test_group == :bathymetry_orca1 || test_group == :all
     include("test_bathymetry.jl")
-    include("test_orca1_grid.jl")
+    include("test_orca_grid.jl")
 end
 
 if test_group == :earth_system_model || test_group == :all
