@@ -45,7 +45,7 @@ Fields
 ======
 
 - `fluxes::J`: named tuple of flux fields (interface_heat, frazil_heat, salt, x_momentum, y_momentum)
-  and freshwater_flux.
+               and freshwater_flux.
 - `flux_formulation::F`: heat flux formulation (`IceBathHeatFlux` or `ThreeEquationHeatFlux`)
 - `temperature::T`: interface temperature field (ocean surface view or computed field)
 - `salinity::S`: interface salinity field (ocean surface view or computed field)
