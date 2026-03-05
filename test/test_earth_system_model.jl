@@ -3,8 +3,8 @@ include("runtests_setup.jl")
 using CUDA
 using Oceananigans.OrthogonalSphericalShellGrids
 using NumericalEarth.EarthSystemModels: above_freezing_ocean_temperature!
-using ClimaSeaIce.SeaIceThermodynamics: melting_temperature
 using ClimaSeaIce.SeaIceDynamics
+using ClimaSeaIce.SeaIceThermodynamics: melting_temperature
 using ClimaSeaIce.Rheologies
 
 @inline kernel_melting_temperature(i, j, k, grid, liquidus, S) = @inbounds melting_temperature(liquidus, S[i, j, k])

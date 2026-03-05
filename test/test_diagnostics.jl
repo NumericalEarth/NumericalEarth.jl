@@ -1,11 +1,9 @@
 include("runtests_setup.jl")
 
-using SeawaterPolynomials: TEOS10EquationOfState
 using Oceananigans: location
-using Oceananigans.Operators: Ay
 using Oceananigans.Models: buoyancy_operation
-using NumericalEarth.Diagnostics: MixedLayerDepthField, MixedLayerDepthOperand
-using NumericalEarth.Diagnostics: Streamfunction, StreamfunctionField, StreamfunctionOperand
+using NumericalEarth.Diagnostics: MixedLayerDepthField, MixedLayerDepthOperand, Streamfunction
+using SeawaterPolynomials: TEOS10EquationOfState
 
 for arch in test_architectures, dataset in (ECCO4Monthly(),)
     A = typeof(arch)
@@ -63,63 +61,175 @@ for arch in test_architectures
     A = typeof(arch)
     @info "Testing Streamfunction diagnostic on $A"
 
-    @testset "Streamfunction modes on $A" begin
+    @testset "Streamfunction on $A" begin
         grid = RectilinearGrid(arch;
-                               size = (8, 6, 5),
-                               x = (0, 1),
-                               y = (-20, 20),
-                               z = (-500, 0),
-                               topology = (Periodic, Bounded, Bounded),
-                               halo = (3, 3, 3))
+                               size = (8, 6, 4),
+                               extent = (1, 1, 1),
+                               topology = (Periodic, Bounded, Bounded))
 
-        eos = TEOS10EquationOfState()
-        buoyancy = SeawaterBuoyancy(; equation_of_state = eos)
-        model = HydrostaticFreeSurfaceModel(grid; buoyancy, tracers = (:T, :S))
+        ρ = CenterField(grid)
+        v = CenterField(grid)
 
-        set!(model, v = (x, y, z) -> 1e-2, T = 10.0, S = 35.0)
+        set!(ρ, (x, y, z) -> 1018 + 4y + 0.5z)
+        set!(v, 1.0)
 
-        ψρy = Streamfunction(model; type = "rho-y", ρmin = 1018, ρmax = 1038, Nρ = 32)
+        bins = 1018:0.25:1023
 
-        @test ψρy isa Field
-        @test ψρy isa StreamfunctionField
-        @test ψρy.operand isa StreamfunctionOperand
+        ψ_hist = Streamfunction(grid;
+                                x_field = ρ,
+                                vel_field = v,
+                                x_bins = bins,
+                                dims = 2,
+                                cumulative = false,
+                                in_sverdrups = false)
 
-        compute!(ψρy)
-        Ψρy = Array(interior(on_architecture(CPU(), ψρy)))
+        ψ_cumulative = Streamfunction(grid;
+                                      x_field = ρ,
+                                      vel_field = v,
+                                      x_bins = bins,
+                                      dims = 2,
+                                      cumulative = true,
+                                      in_sverdrups = false)
 
-        @test all(isfinite, Ψρy)
-        @test size(Ψρy, 1) == 1
+        ψ_tuple_dims = Streamfunction(grid;
+                                      x_field = ρ,
+                                      vel_field = v,
+                                      x_bins = bins,
+                                      dims = (1, 3),
+                                      cumulative = false,
+                                      in_sverdrups = false)
 
-        vAy = Field(model.velocities.v * Ay)
-        compute!(vAy)
-        transport = dropdims(sum(Array(interior(on_architecture(CPU(), vAy))), dims = (1, 3)); dims = (1, 3)) ./ 1e6
+        ψ_inferred_grid = Streamfunction(; x_field = ρ,
+                                          vel_field = v,
+                                          x_bins = bins,
+                                          dims = 2,
+                                          cumulative = false,
+                                          in_sverdrups = false)
 
-        @test Ψρy[1, :, 1] ≈ transport
+        regridder_calls = Ref(0)
+        identity_regridder = (x_field, vel_field) -> begin
+            regridder_calls[] += 1
+            return (x_field, vel_field)
+        end
 
-        ψzρ = Streamfunction(model; type = "z-rho", ρmin = 1018, ρmax = 1038, Nρ = 32)
-        compute!(ψzρ)
-        Ψzρ = Array(interior(on_architecture(CPU(), ψzρ)))
+        ψ_regridded = Streamfunction(grid;
+                                     regridder = identity_regridder,
+                                     x_field = ρ,
+                                     vel_field = v,
+                                     x_bins = bins,
+                                     dims = 2,
+                                     cumulative = false,
+                                     in_sverdrups = false)
 
-        @test all(isfinite, Ψzρ)
-        @test size(Ψzρ, 1) == 1
-        @test size(Ψzρ, 2) == size(interior(vAy), 3)
+        compute!(ψ_hist)
+        compute!(ψ_cumulative)
+        compute!(ψ_tuple_dims)
+        compute!(ψ_inferred_grid)
+        compute!(ψ_regridded)
 
-        depth_transport = dropdims(sum(Array(interior(on_architecture(CPU(), vAy))), dims = (1, 2)); dims = (1, 2)) ./ 1e6
-        @test Ψzρ[1, :, 1] ≈ depth_transport
+        Ψhist = Array(interior(on_architecture(CPU(), ψ_hist)))
+        Ψcum = Array(interior(on_architecture(CPU(), ψ_cumulative)))
+        Ψtuple = Array(interior(on_architecture(CPU(), ψ_tuple_dims)))
+        Ψinferred = Array(interior(on_architecture(CPU(), ψ_inferred_grid)))
 
-        ψxy = Streamfunction(model; type = "lat-lon")
-        compute!(ψxy)
-        Ψxy = Array(interior(on_architecture(CPU(), ψxy)))
+        @test size(Ψhist, 1) == length(bins) - 1
+        @test size(Ψhist, 2) == size(grid, 2)
+        @test size(Ψhist, 3) == 1
+        @test Ψtuple ≈ Ψhist
+        @test Ψinferred ≈ Ψhist
 
-        @test all(isfinite, Ψxy)
-        @test size(Ψxy, 3) == 1
+        expected_cumulative = reverse(cumsum(reverse(Ψhist; dims = 1); dims = 1); dims = 1)
+        @test Ψcum ≈ expected_cumulative
+        @test regridder_calls[] == 1
+    end
+end
 
-        zonal_cumulative = dropdims(sum(Array(interior(on_architecture(CPU(), vAy))), dims = 3); dims = 3) ./ 1e6
-        @test Ψxy[:, :, 1] ≈ cumsum(zonal_cumulative, dims = 1)
+for arch in test_architectures
+    A = typeof(arch)
+    @info "Testing InterfaceFluxOutputs on $A"
 
-        # Alias coverage
-        ψalias = Streamfunction(model; type = "depth-density", ρmin = 1018, ρmax = 1038, Nρ = 32)
-        compute!(ψalias)
-        @test Array(interior(on_architecture(CPU(), ψalias))) ≈ Ψzρ
+    @testset "InterfaceFluxOutputs on $A" begin
+        grid = RectilinearGrid(arch;
+                               size = (4, 4, 2),
+                               extent = (1, 1, 1),
+                               topology = (Periodic, Periodic, Bounded))
+
+        ocean = ocean_simulation(grid;
+                                 momentum_advection = nothing,
+                                 tracer_advection = nothing,
+                                 closure = nothing,
+                                 coriolis = nothing)
+
+        sea_ice = sea_ice_simulation(grid, ocean)
+        atmosphere = PrescribedAtmosphere(grid, [0.0])
+        esm = OceanSeaIceModel(ocean, sea_ice; atmosphere, radiation = Radiation())
+
+        T_flux = ocean.model.tracers.T.boundary_conditions.top.condition
+        S_flux = ocean.model.tracers.S.boundary_conditions.top.condition
+        sea_ice_ocean_fluxes = esm.interfaces.sea_ice_ocean_interface.fluxes
+
+        T_flux_value = 2.0
+        S_flux_value = 5.0
+        frazil_heat_flux_value = 0.2
+        interface_heat_flux_value = 0.3
+        sea_ice_ocean_salt_flux_value = 0.9
+
+        fill!(T_flux, T_flux_value)
+        fill!(S_flux, S_flux_value)
+        fill!(sea_ice_ocean_fluxes.frazil_heat, frazil_heat_flux_value)
+        fill!(sea_ice_ocean_fluxes.interface_heat, interface_heat_flux_value)
+        fill!(sea_ice_ocean_fluxes.salt, sea_ice_ocean_salt_flux_value)
+
+        ρᵒᶜ = esm.interfaces.ocean_properties.reference_density
+        cᵒᶜ = esm.interfaces.ocean_properties.heat_capacity
+        S₀ = 35.0
+
+        frazil_temperature = frazil_temperature_flux(esm)
+        net_ocean_temperature = net_ocean_temperature_flux(esm)
+        sea_ice_ocean_temperature = sea_ice_ocean_temperature_flux(esm)
+        atmosphere_ocean_temperature = atmosphere_ocean_temperature_flux(esm)
+        frazil_heat = frazil_heat_flux(esm)
+        net_ocean_heat = net_ocean_heat_flux(esm)
+        sea_ice_ocean_heat = sea_ice_ocean_heat_flux(esm)
+        atmosphere_ocean_heat = atmosphere_ocean_heat_flux(esm)
+        net_ocean_salinity = net_ocean_salinity_flux(esm)
+        sea_ice_ocean_salinity = sea_ice_ocean_salinity_flux(esm)
+        atmosphere_ocean_salinity = atmosphere_ocean_salinity_flux(esm)
+        net_ocean_freshwater = net_ocean_freshwater_flux(esm; reference_salinity = 35)
+        sea_ice_ocean_freshwater = sea_ice_ocean_freshwater_flux(esm; reference_salinity = 35)
+        atmosphere_ocean_freshwater = atmosphere_ocean_freshwater_flux(esm; reference_salinity = 35)
+
+        for f in (frazil_temperature, net_ocean_temperature, sea_ice_ocean_temperature,
+                  atmosphere_ocean_temperature, frazil_heat, net_ocean_heat, sea_ice_ocean_heat,
+                  atmosphere_ocean_heat, net_ocean_salinity, sea_ice_ocean_salinity,
+                  atmosphere_ocean_salinity, net_ocean_freshwater, sea_ice_ocean_freshwater,
+                  atmosphere_ocean_freshwater)
+
+            @test f isa Field
+            @test location(f) == (Center, Center, Nothing)
+            compute!(f)
+        end
+
+        @allowscalar begin
+            @test net_ocean_heat[1, 1, 1] ≈ ρᵒᶜ * cᵒᶜ * T_flux_value + frazil_heat_flux_value
+            @test atmosphere_ocean_heat[1, 1, 1] ≈ ρᵒᶜ * cᵒᶜ * T_flux_value - interface_heat_flux_value
+            @test sea_ice_ocean_heat[1, 1, 1] ≈ frazil_heat_flux_value + interface_heat_flux_value
+            @test net_ocean_heat[1, 1, 1] ≈ atmosphere_ocean_heat[1, 1, 1] + sea_ice_ocean_heat[1, 1, 1]
+
+            @test net_ocean_freshwater[1, 1, 1] ≈ - ρᵒᶜ / S₀ * S_flux_value
+            @test sea_ice_ocean_freshwater[1, 1, 1] ≈ - ρᵒᶜ / S₀ * sea_ice_ocean_salt_flux_value
+            @test atmosphere_ocean_freshwater[1, 1, 1] ≈ - ρᵒᶜ / S₀ * (S_flux_value - sea_ice_ocean_salt_flux_value)
+            @test net_ocean_freshwater[1, 1, 1] ≈ atmosphere_ocean_freshwater[1, 1, 1] + sea_ice_ocean_freshwater[1, 1, 1]
+
+            @test net_ocean_temperature[1, 1, 1] ≈ T_flux_value + 1 / (ρᵒᶜ * cᵒᶜ) * frazil_heat_flux_value
+            @test atmosphere_ocean_temperature[1, 1, 1] ≈ T_flux_value - 1 / (ρᵒᶜ * cᵒᶜ) * interface_heat_flux_value
+            @test sea_ice_ocean_temperature[1, 1, 1] ≈ 1 / (ρᵒᶜ * cᵒᶜ) * (frazil_heat_flux_value + interface_heat_flux_value)
+            @test net_ocean_temperature[1, 1, 1] ≈ atmosphere_ocean_temperature[1, 1, 1] + sea_ice_ocean_temperature[1, 1, 1]
+
+            @test net_ocean_freshwater[1, 1, 1] ≈ - ρᵒᶜ / S₀ * S_flux_value
+            @test sea_ice_ocean_freshwater[1, 1, 1] ≈ - ρᵒᶜ / S₀ * sea_ice_ocean_salt_flux_value
+            @test atmosphere_ocean_freshwater[1, 1, 1] ≈ - ρᵒᶜ / S₀ * (S_flux_value - sea_ice_ocean_salt_flux_value)
+            @test net_ocean_freshwater[1, 1, 1] ≈ atmosphere_ocean_freshwater[1, 1, 1] + sea_ice_ocean_freshwater[1, 1, 1]
+        end
     end
 end

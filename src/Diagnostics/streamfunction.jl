@@ -1,237 +1,96 @@
-using Oceananigans.Architectures: CPU, architecture, on_architecture
-using Oceananigans.BoundaryConditions: FieldBoundaryConditions, fill_halo_regions!
-using Oceananigans.Fields: FieldStatus, compute!, interior
-using Oceananigans.Grids: Bounded, Flat
-using Oceananigans.Models: seawater_density
-using Oceananigans.Operators: Ay
-
-mutable struct StreamfunctionOperand{V, R, FT}
-    meridional_transport :: V
-    density :: R
-    ρmin :: FT
-    ρmax :: FT
-    Nρ :: Int
-    in_sverdrups :: Bool
-    type :: String
-end
-
-const StreamfunctionField = Field{<:Any, <:Any, <:Any, <:StreamfunctionOperand}
-
-Base.summary(sfo::StreamfunctionOperand) = "StreamfunctionOperand($(sfo.type))"
-
-const ρy_aliases = ("rho-y", "density-latitude")
-const zrho_aliases = ("z-rho", "depth-density", "rho-z", "density-depth")
-const horizontal_aliases = ("horizontal", "lat-lon", "barotropic")
-
 """
-    Streamfunction(model; type="rho-y", ρmin=1020, ρmax=1032, Nρ=200, in_sverdrups=true,
-                   geopotential_height=nothing, condition=nothing, mask=0)
+    Streamfunction(grid;
+                   regridder = nothing,
+                   x_field,
+                   vel_field,
+                   dims = 2,
+                   x_bins = 1020:0.1:1037,
+                   method = :integral,
+                   cumulative = true,
+                   reverse = true,
+                   in_sverdrups = true)
 
-Return a `Field` streamfunction diagnostic.
+Construct a histogram-based streamfunction diagnostic using an `x_field` coordinate
+(for example density) and a velocity/transport-like weight field (`vel_field`).
 
-Supported `type` values:
-- `"rho-y"` (aliases: `"density-latitude"`): output shape `(1, Nyᵥ, Nρ)`
-- `"z-rho"` (aliases: `"depth-density"`, `"rho-z"`, `"density-depth"`): output shape `(1, Nz, Nρ)`
-- `"horizontal"` (aliases: `"lat-lon"`, `"barotropic"`): output shape `(Nx, Nyᵥ, 1)`
+`dims` can be:
+- an `Int` in `1:3`, interpreted as the retained dimension (default `2`, latitude),
+- or an explicit reduction tuple passed directly to `Histogram`.
+
+When `cumulative=true`, the histogram is cumulatively integrated along the bin axis
+(`dims=1` in histogram space), which yields the density-latitude style overturning
+streamfunction used in common diagnostics.
+
+`regridder` is an optional callable hook for pre-processing fields before histogramming.
+If provided, it must return `(x_field_regridded, vel_field_regridded)` when called as
+`regridder(x_field, vel_field)`.
 """
-function Streamfunction(model;
-                        type = "rho-y",
-                        ρmin = 1020,
-                        ρmax = 1032,
-                        Nρ = 200,
-                        in_sverdrups = true,
-                        geopotential_height = nothing,
-                        condition = nothing,
-                        mask = 0)
+function Streamfunction(grid;
+                        regridder = nothing,
+                        x_field,
+                        vel_field,
+                        dims = 2,
+                        x_bins = 1020:0.1:1037,
+                        method = :integral,
+                        cumulative = true,
+                        reverse = true,
+                        in_sverdrups = true)
 
-    normalized_type = normalize_streamfunction_type(type)
+    xf, vf = maybe_regrid_streamfunction_fields(regridder, x_field, vel_field)
 
-    (condition === nothing && mask == 0) || throw(ArgumentError("`condition` and `mask` are not yet implemented for Streamfunction."))
+    xf.grid === grid || throw(ArgumentError("`x_field.grid` does not match the supplied `grid`."))
+    vf.grid === grid || throw(ArgumentError("`vel_field.grid` does not match the supplied `grid`."))
 
-    ρmin = convert(eltype(model.grid), ρmin)
-    ρmax = convert(eltype(model.grid), ρmax)
+    histogram_dims = streamfunction_histogram_dims(dims)
+    bins = (x = collect(x_bins),)
 
-    v_transport = Field(model.velocities.v * Ay)
-    density = if normalized_type == "horizontal"
-        nothing
-    else
-        Nρ > 0 || throw(ArgumentError("Nρ must be positive, got Nρ=$Nρ."))
-        ρmax > ρmin || throw(ArgumentError("ρmax must be greater than ρmin, got ρmin=$ρmin and ρmax=$ρmax."))
-        isnothing(geopotential_height) ? Field(seawater_density(model)) :
-                                         Field(seawater_density(model; geopotential_height))
+    ψ = Field(Histogram(xf;
+                        bins,
+                        weights = vf,
+                        dims = histogram_dims,
+                        method))
+
+    if cumulative
+        ψ = Field(CumulativeIntegral(ψ; dims = 1, reverse))
     end
 
-    @show Nx, Nyᵥ, Nz = size(interior(v_transport))
-    @show Nyᵥ = size(interior(v_transport), 2)
-    @show arch = architecture(model.grid)
-    output_grid = output_streamfunction_grid(arch, normalized_type, Nx, Nyᵥ, Nz, Nρ, ρmin, ρmax)
+    if in_sverdrups
+        ψ = Field(ψ / 1e6)
+    end
 
-    operand = StreamfunctionOperand(v_transport, density, ρmin, ρmax, Nρ, in_sverdrups, normalized_type)
-    loc = (Center(), Center(), Center())
-    indices = (:, :, :)
-    bcs = FieldBoundaryConditions(output_grid, loc)
-    data = new_data(output_grid, loc, indices)
-    status = FieldStatus()
-
-    return Field(loc, output_grid, data, bcs, indices, operand, status)
-end
-
-function compute!(ψ::StreamfunctionField, time=nothing)
-    compute_streamfunction!(ψ)
-    fill_halo_regions!(ψ)
     return ψ
 end
 
-function compute_streamfunction!(ψ::StreamfunctionField)
-    operand = ψ.operand
+"""
+    Streamfunction(; x_field, vel_field, kwargs...)
 
-    compute!(operand.meridional_transport)
-    v = Array(interior(on_architecture(CPU(), operand.meridional_transport)))
-
-    ψ_out = if operand.type == "horizontal"
-        compute_horizontal_streamfunction(v; in_sverdrups = operand.in_sverdrups)
-    else
-        compute!(operand.density)
-        ρ = Array(interior(on_architecture(CPU(), operand.density)))
-
-        if operand.type == "rho-y"
-            compute_rhoy_streamfunction(v, ρ, operand.ρmin, operand.ρmax, operand.Nρ;
-                                        in_sverdrups = operand.in_sverdrups)
-        else
-            compute_depth_density_streamfunction(v, ρ, operand.ρmin, operand.ρmax, operand.Nρ;
-                                                 in_sverdrups = operand.in_sverdrups)
-        end
-    end
-
-    interior(ψ) .= on_architecture(architecture(ψ), ψ_out)
-    return ψ
+Convenience overload that infers `grid` from `x_field.grid`.
+"""
+function Streamfunction(; x_field, vel_field, kwargs...)
+    x_field.grid === vel_field.grid ||
+        throw(ArgumentError("`x_field` and `vel_field` must live on the same grid when `grid` is omitted."))
+    return Streamfunction(x_field.grid; x_field, vel_field, kwargs...)
 end
 
-normalize_streamfunction_type(type::AbstractString) = begin
-    lowercase(type) in ρy_aliases && return "rho-y"
-    lowercase(type) in zrho_aliases && return "z-rho"
-    lowercase(type) in horizontal_aliases && return "horizontal"
-    throw(ArgumentError("Unsupported Streamfunction type=\"$type\". Supported types are \"rho-y\", \"z-rho\", and \"horizontal\"."))
+@inline function streamfunction_histogram_dims(dims::Int)
+    1 <= dims <= 3 || throw(ArgumentError("Integer `dims` must be in 1:3, got dims=$dims."))
+    return Tuple(d for d in (1, 2, 3) if d != dims)
 end
 
-function output_streamfunction_grid(arch, type, Nx, Nyᵥ, Nz, Nρ, ρmin, ρmax)
-    if type == "rho-y"
-        return RectilinearGrid(arch;
-                               size = (1, Nyᵥ, Nρ),
-                               halo = (0, 0, 0),
-                               x = (0, 1),
-                               y = (1, Nyᵥ),
-                               z = (ρmin, ρmax),
-                               topology = (Flat, Bounded, Bounded))
-    elseif type == "z-rho"
-        return RectilinearGrid(arch;
-                               size = (1, Nz, Nρ),
-                               halo = (0, 0, 0),
-                               x = (0, 1),
-                               y = (1, Nz),
-                               z = (ρmin, ρmax),
-                               topology = (Flat, Bounded, Bounded))
-    else
-        return RectilinearGrid(arch;
-                               size = (Nx, Nyᵥ, 1),
-                               halo = (0, 0, 0),
-                               x = (1, Nx),
-                               y = (1, Nyᵥ),
-                               z = (0, 1),
-                               topology = (Bounded, Bounded, Flat))
-    end
+function streamfunction_histogram_dims(dims::Tuple)
+    all(d -> d isa Int && 1 <= d <= 3, dims) ||
+        throw(ArgumentError("Tuple `dims` entries must all be integers in 1:3, got dims=$dims."))
+    return dims
 end
 
-function face_density_from_center_density(ρᶜᶜᶜ, Nyᵥ)
-    Nx, Nyᶜ, Nz = size(ρᶜᶜᶜ)
-    ρᶜᶠᶜ = similar(ρᶜᶜᶜ, Nx, Nyᵥ, Nz)
+streamfunction_histogram_dims(dims) =
+    throw(ArgumentError("Unsupported `dims` type $(typeof(dims)). Use an Int (retained dimension) or a tuple of reduced dimensions."))
 
-    @inbounds for k = 1:Nz, j = 1:Nyᵥ, i = 1:Nx
-        ρᶜᶠᶜ[i, j, k] = if Nyᵥ == Nyᶜ
-            ρᶜᶜᶜ[i, j, k]
-        elseif j == 1
-            ρᶜᶜᶜ[i, 1, k]
-        elseif j > Nyᶜ
-            ρᶜᶜᶜ[i, Nyᶜ, k]
-        else
-            0.5 * (ρᶜᶜᶜ[i, j - 1, k] + ρᶜᶜᶜ[i, j, k])
-        end
-    end
+@inline maybe_regrid_streamfunction_fields(::Nothing, x_field, vel_field) = (x_field, vel_field)
 
-    return ρᶜᶠᶜ
-end
-
-@inline function density_bin_index(ρ, ρmin, Δρ, Nρ)
-    return clamp(Int(floor((ρ - ρmin) / Δρ)) + 1, 1, Nρ)
-end
-
-function compute_rhoy_streamfunction(v, ρᶜᶜᶜ, ρmin, ρmax, Nρ; in_sverdrups = true)
-    Nx, Nyᵥ, Nz = size(v)
-    ρᶜᶠᶜ = face_density_from_center_density(ρᶜᶜᶜ, Nyᵥ)
-    Δρ = (ρmax - ρmin) / Nρ
-    transports = zeros(eltype(v), Nyᵥ, Nρ)
-
-    @inbounds for k = 1:Nz, j = 1:Nyᵥ, i = 1:Nx
-        q = v[i, j, k]
-        ρ = ρᶜᶠᶜ[i, j, k]
-        (isfinite(q) && isfinite(ρ)) || continue
-        r = density_bin_index(ρ, ρmin, Δρ, Nρ)
-        transports[j, r] += q
-    end
-
-    ψρy = similar(transports)
-    @inbounds for j = 1:Nyᵥ
-        running = zero(eltype(transports))
-        for r = Nρ:-1:1
-            running += transports[j, r]
-            ψρy[j, r] = running
-        end
-    end
-
-    in_sverdrups && (ψρy ./= 1e6)
-    return reshape(ψρy, 1, Nyᵥ, Nρ)
-end
-
-function compute_depth_density_streamfunction(v, ρᶜᶜᶜ, ρmin, ρmax, Nρ; in_sverdrups = true)
-    Nx, Nyᵥ, Nz = size(v)
-    ρᶜᶠᶜ = face_density_from_center_density(ρᶜᶜᶜ, Nyᵥ)
-    Δρ = (ρmax - ρmin) / Nρ
-    transports = zeros(eltype(v), Nz, Nρ)
-
-    @inbounds for k = 1:Nz, j = 1:Nyᵥ, i = 1:Nx
-        q = v[i, j, k]
-        ρ = ρᶜᶠᶜ[i, j, k]
-        (isfinite(q) && isfinite(ρ)) || continue
-        r = density_bin_index(ρ, ρmin, Δρ, Nρ)
-        transports[k, r] += q
-    end
-
-    ψzρ = similar(transports)
-    @inbounds for k = 1:Nz
-        running = zero(eltype(transports))
-        for r = Nρ:-1:1
-            running += transports[k, r]
-            ψzρ[k, r] = running
-        end
-    end
-
-    in_sverdrups && (ψzρ ./= 1e6)
-    return reshape(ψzρ, 1, Nz, Nρ)
-end
-
-function compute_horizontal_streamfunction(v; in_sverdrups = true)
-    Nx, Nyᵥ, _ = size(v)
-    zonally_resolved_transport = dropdims(sum(v, dims = 3), dims = 3)
-    ψxy = similar(zonally_resolved_transport)
-
-    @inbounds for j = 1:Nyᵥ
-        running = zero(eltype(zonally_resolved_transport))
-        for i = 1:Nx
-            running += zonally_resolved_transport[i, j]
-            ψxy[i, j] = running
-        end
-    end
-
-    in_sverdrups && (ψxy ./= 1e6)
-    return reshape(ψxy, Nx, Nyᵥ, 1)
+function maybe_regrid_streamfunction_fields(regridder, x_field, vel_field)
+    regridded = regridder(x_field, vel_field)
+    regridded isa Tuple && length(regridded) == 2 ||
+        throw(ArgumentError("`regridder` must return a 2-tuple `(x_field, vel_field)`."))
+    return regridded
 end

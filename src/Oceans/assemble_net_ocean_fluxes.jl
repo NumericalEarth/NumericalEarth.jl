@@ -4,15 +4,15 @@ using Oceananigans.Operators: ℑxᶠᵃᵃ, ℑyᵃᶠᵃ
 using Oceananigans.Forcings: MultipleForcings
 using NumericalEarth.EarthSystemModels: EarthSystemModel, NoOceanInterfaceModel, NoInterfaceModel
 
-using NumericalEarth.EarthSystemModels.InterfaceComputations: interface_kernel_parameters, 
-                                                          computed_fluxes, 
-                                                          get_possibly_zero_flux, 
-                                                          sea_ice_concentration,
-                                                          convert_to_kelvin,
-                                                          emitted_longwave_radiation,
-                                                          absorbed_longwave_radiation,
-                                                          transmitted_shortwave_radiation
-                                                          
+using NumericalEarth.EarthSystemModels.InterfaceComputations: interface_kernel_parameters,
+                                                              computed_fluxes,
+                                                              get_possibly_zero_flux,
+                                                              sea_ice_concentration,
+                                                              convert_to_kelvin,
+                                                              emitted_longwave_radiation,
+                                                              absorbed_longwave_radiation,
+                                                              transmitted_shortwave_radiation
+
 
 @inline τᶜᶜᶜ(i, j, k, grid, ρᵒᶜ⁻¹, ℵ, ρτᶜᶜᶜ) = @inbounds ρᵒᶜ⁻¹ * (1 - ℵ[i, j, k]) * ρτᶜᶜᶜ[i, j, k]
 
@@ -23,7 +23,7 @@ using NumericalEarth.EarthSystemModels.InterfaceComputations: interface_kernel_p
 # Fallback for an ocean-only model (it has no interfaces!)
 update_net_fluxes!(coupled_model::Union{NoOceanInterfaceModel, NoInterfaceModel}, ocean::Simulation{<:HydrostaticFreeSurfaceModel}) = nothing
 
-update_net_fluxes!(coupled_model, ocean::Simulation{<:HydrostaticFreeSurfaceModel}) = 
+update_net_fluxes!(coupled_model, ocean::Simulation{<:HydrostaticFreeSurfaceModel}) =
     update_net_ocean_fluxes!(coupled_model, ocean, ocean.model.grid)
 
 # A generic ocean flux assembler for a coupled model with both an atmosphere and sea ice
@@ -100,12 +100,12 @@ end
         Tₛ = ocean_surface_temperature[i, j, 1]
         Tₛ = convert_to_kelvin(ocean_properties.temperature_units, Tₛ)
 
-        Jᶜ  = freshwater_flux[i, j, 1] # Prescribed freshwater (condensate) flux
+        Jᶜ   = freshwater_flux[i, j, 1] # Prescribed freshwater (condensate) flux
         ℐꜜˢʷ = downwelling_radiation.ℐꜜˢʷ[i, j, 1] # Downwelling shortwave radiation
         ℐꜜˡʷ = downwelling_radiation.ℐꜜˡʷ[i, j, 1] # Downwelling longwave radiation
-        𝒬ᵀ  = get_possibly_zero_flux(atmos_ocean_fluxes, :sensible_heat)[i, j, 1] # sensible or "conductive" heat flux
-        𝒬ᵛ  = get_possibly_zero_flux(atmos_ocean_fluxes, :latent_heat)[i, j, 1] # latent heat flux
-        Jᵛ  = get_possibly_zero_flux(atmos_ocean_fluxes, :water_vapor)[i, j, 1] # mass flux of water vapor
+        𝒬ᵀ   = get_possibly_zero_flux(atmos_ocean_fluxes, :sensible_heat)[i, j, 1] # sensible or "conductive" heat flux
+        𝒬ᵛ   = get_possibly_zero_flux(atmos_ocean_fluxes, :latent_heat)[i, j, 1] # latent heat flux
+        Jᵛ   = get_possibly_zero_flux(atmos_ocean_fluxes, :water_vapor)[i, j, 1] # mass flux of water vapor
     end
 
     # Compute radiation fluxes (radiation is multiplied by the fraction of ocean, 1 - sea ice concentration)
@@ -150,15 +150,15 @@ end
     Jᵀ = net_ocean_fluxes.T
     Jˢ = net_ocean_fluxes.S
     ℵ  = sea_ice_concentration
-    cᵒᶜ = ocean_properties.heat_capacity
+    cᵒᶜ⁻¹ = 1 / ocean_properties.heat_capacity
     inactive = inactive_node(i, j, kᴺ, grid, Center(), Center(), Center())
 
     @inbounds begin
         𝒬ⁱⁿᵗ = get_possibly_zero_flux(sea_ice_ocean_fluxes, :interface_heat)[i, j, 1]
         Jˢio = get_possibly_zero_flux(sea_ice_ocean_fluxes, :salt)[i, j, 1]
-        Jᵀao = ΣQao  * ρᵒᶜ⁻¹ / cᵒᶜ
-        Jᵀio = 𝒬ⁱⁿᵗ * ρᵒᶜ⁻¹ / cᵒᶜ
-    
+        Jᵀao = ΣQao * ρᵒᶜ⁻¹ * cᵒᶜ⁻¹
+        Jᵀio = 𝒬ⁱⁿᵗ * ρᵒᶜ⁻¹ * cᵒᶜ⁻¹
+
         # salinity flux > 0 extracts salinity from the ocean --- the opposite of a water vapor flux
         Jˢao = - Sᵒᶜ * ΣFao
 
