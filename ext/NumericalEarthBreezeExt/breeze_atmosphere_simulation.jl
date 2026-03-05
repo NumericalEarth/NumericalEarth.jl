@@ -55,8 +55,8 @@ function atmosphere_simulation(grid;
                                kw...)
 
     # Create 2D flux fields for ESM coupling
-    τˣ = Field{Center, Center, Nothing}(grid)
-    τʸ = Field{Center, Center, Nothing}(grid)
+    ρτˣ = Field{Center, Center, Nothing}(grid)
+    ρτʸ = Field{Center, Center, Nothing}(grid)
     Jᵉ = Field{Center, Center, Nothing}(grid)
     Jᵛ = Field{Center, Center, Nothing}(grid)
 
@@ -65,8 +65,8 @@ function atmosphere_simulation(grid;
     energy_bc = (; ρe = FieldBoundaryConditions(bottom = FluxBoundaryCondition(Jᵉ)))
 
     momentum_bcs = (
-        ρu = FieldBoundaryConditions(bottom = FluxBoundaryCondition(τˣ)),
-        ρv = FieldBoundaryConditions(bottom = FluxBoundaryCondition(τʸ)),
+        ρu = FieldBoundaryConditions(bottom = FluxBoundaryCondition(ρτˣ)),
+        ρv = FieldBoundaryConditions(bottom = FluxBoundaryCondition(ρτʸ)),
     )
 
     coupling_bcs = merge(momentum_bcs, energy_bc, moisture_bc)
