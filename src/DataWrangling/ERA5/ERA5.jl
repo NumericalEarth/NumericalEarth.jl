@@ -1,13 +1,16 @@
 module ERA5
 
 export ERA5Hourly, ERA5Monthly
+export ERA5HourlyPressureLevels, ERA5MonthlyPressureLevels, ERA5_all_pressure_levels, pressure_field
 
 using NCDatasets
 using Printf
 using Scratch
+using Statistics
 
 using Oceananigans.Fields: Center
-using NumericalEarth.DataWrangling: Metadata, Metadatum, metadata_path
+using Oceananigans: CenterField, interior, fill_halo_regions!, CPU
+using NumericalEarth.DataWrangling: Metadata, Metadatum, metadata_path, native_grid, InverseGravity
 using Dates
 using Dates: DateTime, Day, Month, Hour
 
@@ -24,7 +27,10 @@ import NumericalEarth.DataWrangling:
     inpainted_metadata_path,
     available_variables,
     retrieve_data,
-    metadata_path
+    metadata_path,
+    is_three_dimensional,
+    reversed_vertical_axis,
+    conversion_units
 
 import Base: eltype
 
@@ -47,6 +53,37 @@ struct ERA5Monthly <: ERA5Dataset end
 
 dataset_name(::ERA5Hourly) = "ERA5Hourly"
 dataset_name(::ERA5Monthly) = "ERA5Monthly"
+
+#####
+##### ERA5 pressure-level datasets
+#####
+
+const ERA5_all_pressure_levels = [1, 2, 3, 5, 7, 10, 20, 30, 50, 70, 100, 125, 150,
+    175, 200, 225, 250, 300, 350, 400, 450, 500, 550, 600, 650, 700, 750, 775, 800,
+    825, 850, 875, 900, 925, 950, 975, 1000]
+
+abstract type ERA5PressureDataset <: ERA5Dataset end
+
+struct ERA5HourlyPressureLevels <: ERA5PressureDataset
+    levels :: Vector{Int}
+end
+ERA5HourlyPressureLevels(; levels=ERA5_all_pressure_levels) = ERA5HourlyPressureLevels(levels)
+
+struct ERA5MonthlyPressureLevels <: ERA5PressureDataset
+    levels :: Vector{Int}
+end
+ERA5MonthlyPressureLevels(; levels=ERA5_all_pressure_levels) = ERA5MonthlyPressureLevels(levels)
+
+dataset_name(::ERA5HourlyPressureLevels)  = "ERA5HourlyPressureLevels"
+dataset_name(::ERA5MonthlyPressureLevels) = "ERA5MonthlyPressureLevels"
+
+Base.size(ds::ERA5PressureDataset, variable) = (1440, 721, length(ds.levels))
+
+all_dates(::ERA5HourlyPressureLevels,  var) = range(DateTime("1940-01-01"), stop=DateTime("2024-12-31"), step=Hour(1))
+all_dates(::ERA5MonthlyPressureLevels, var) = range(DateTime("1940-01-01"), stop=DateTime("2024-12-01"), step=Month(1))
+
+const ERA5PressureMetadata{D} = Metadata{<:ERA5PressureDataset, D}
+const ERA5PressureMetadatum   = Metadatum{<:ERA5PressureDataset}
 
 # Wave variables are on a 0.5° grid (720×361), atmospheric variables on 0.25° (1440×721)
 const ERA5_wave_variables = Set([
@@ -71,6 +108,12 @@ const ERA5Metadatum = Metadatum{<:ERA5Dataset}
 
 # ERA5 is a spatially 2D dataset (atmospheric surface variables)
 is_three_dimensional(::ERA5Metadata) = false
+
+# ERA5 pressure-level data is 3D
+is_three_dimensional(::ERA5PressureMetadata) = true
+
+# ERA5 stores pressure levels top-to-bottom; reverse to match Oceananigans bottom-to-top
+reversed_vertical_axis(::ERA5PressureDataset) = true
 
 # Variable name mappings from NumericalEarth names to ERA5/CDS API variable names
 ERA5_dataset_variable_names = Dict(
@@ -126,6 +169,53 @@ ERA5_netcdf_variable_names = Dict(
 
 netcdf_variable_name(metadata::ERA5Metadata) = ERA5_netcdf_variable_names[metadata.name]
 
+#####
+##### ERA5 pressure-level variable name mappings
+#####
+
+ERA5PL_dataset_variable_names = Dict(
+    :temperature                         => "temperature",
+    :eastward_velocity                   => "u_component_of_wind",
+    :northward_velocity                  => "v_component_of_wind",
+    :vertical_velocity                   => "vertical_velocity",
+    :geopotential                        => "geopotential",
+    :geopotential_height                 => "geopotential",
+    :specific_humidity                   => "specific_humidity",
+    :relative_humidity                   => "relative_humidity",
+    :vorticity                           => "vorticity",
+    :divergence                          => "divergence",
+    :potential_vorticity                 => "potential_vorticity",
+    :ozone_mass_mixing_ratio             => "ozone_mass_mixing_ratio",
+    :fraction_of_cloud_cover             => "fraction_of_cloud_cover",
+    :specific_cloud_liquid_water_content => "specific_cloud_liquid_water_content",
+    :specific_cloud_ice_water_content    => "specific_cloud_ice_water_content",
+)
+
+ERA5PL_netcdf_variable_names = Dict(
+    :temperature                         => "t",
+    :eastward_velocity                   => "u",
+    :northward_velocity                  => "v",
+    :vertical_velocity                   => "w",
+    :geopotential                        => "z",
+    :geopotential_height                 => "z",
+    :specific_humidity                   => "q",
+    :relative_humidity                   => "r",
+    :vorticity                           => "vo",
+    :divergence                          => "d",
+    :potential_vorticity                 => "pv",
+    :ozone_mass_mixing_ratio             => "o3",
+    :fraction_of_cloud_cover             => "cc",
+    :specific_cloud_liquid_water_content => "clwc",
+    :specific_cloud_ice_water_content    => "ciwc",
+)
+
+available_variables(::ERA5PressureDataset) = ERA5PL_dataset_variable_names
+dataset_variable_name(md::ERA5PressureMetadata) = ERA5PL_dataset_variable_names[md.name]
+netcdf_variable_name(md::ERA5PressureMetadata)  = ERA5PL_netcdf_variable_names[md.name]
+
+conversion_units(md::ERA5PressureMetadatum) =
+    md.name == :geopotential_height ? InverseGravity() : nothing
+
 """
     retrieve_data(metadata::ERA5Metadatum)
 
@@ -158,6 +248,22 @@ function retrieve_data(metadata::ERA5Metadatum)
     return reshape(data_2d, size(data_2d, 1), size(data_2d, 2), 1)
 end
 
+"""
+    retrieve_data(metadata::ERA5PressureMetadatum)
+
+Retrieve ERA5 pressure-level data from a NetCDF file.
+Returns a 3D array (lon, lat, level) with levels ordered bottom-to-top
+(highest pressure at k=1, lowest pressure at k=Nz).
+"""
+function retrieve_data(metadata::ERA5PressureMetadatum)
+    path = metadata_path(metadata)
+    name = netcdf_variable_name(metadata)
+    ds   = NCDatasets.Dataset(path)
+    data = ds[name][:, :, :, 1]   # (lon, lat, pressure_level, time=1)
+    close(ds)
+    return reverse(data, dims=3)   # flip from ERA5 top-to-bottom to Oceananigans bottom-to-top
+end
+
 #####
 ##### Metadata filename construction
 #####
@@ -165,7 +271,9 @@ end
 function date_str(date::DateTime)
     y = Dates.year(date)
     m = lpad(Dates.month(date), 2, '0')
-    return "$(y)-$(m)"
+    d = lpad(Dates.day(date),   2, '0')
+    h = lpad(Dates.hour(date),  2, '0')
+    return "$(y)-$(m)-$(d)T$(h)"
 end
 
 start_date_str(date::DateTime) = date_str(date)
@@ -186,6 +294,31 @@ function bbox_strs(c)
     return first, second
 end
 
+function metadata_prefix(metadata::ERA5PressureMetadata)
+    var = ERA5PL_dataset_variable_names[metadata.name]
+    dataset = dataset_name(metadata.dataset)
+    start_date = start_date_str(metadata.dates)
+    end_date = end_date_str(metadata.dates)
+    bbox = metadata.bounding_box
+
+    if !isnothing(bbox)
+        w, e = bbox_strs(bbox.longitude)
+        s, n = bbox_strs(bbox.latitude)
+        suffix = string(w, e, s, n)
+    else
+        suffix = ""
+    end
+
+    if start_date == end_date
+        prefix = string(var, "_", dataset, "_", start_date, suffix)
+    else
+        prefix = string(var, "_", dataset, "_", start_date, "_", end_date, suffix)
+    end
+    prefix = colon2dash(prefix)
+    prefix = underscore_spaces(prefix)
+    return prefix
+end
+
 function metadata_prefix(metadata::ERA5Metadata)
     var = ERA5_dataset_variable_names[metadata.name]
     dataset = dataset_name(metadata.dataset)
@@ -201,7 +334,11 @@ function metadata_prefix(metadata::ERA5Metadata)
         suffix = ""
     end
 
-    prefix = string(var, "_", dataset, "_", start_date, "_", end_date, suffix)
+    if start_date == end_date
+        prefix = string(var, "_", dataset, "_", start_date, suffix)
+    else
+        prefix = string(var, "_", dataset, "_", start_date, "_", end_date, suffix)
+    end
     prefix = colon2dash(prefix)
     prefix = underscore_spaces(prefix)
     return prefix
@@ -234,11 +371,108 @@ location(::ERA5Metadata) = (Center, Center, Center)
 longitude_interfaces(::ERA5Metadata) = (0, 360)
 latitude_interfaces(::ERA5Metadata) = (-90, 90)
 
-# ERA5 is a 2D surface dataset, so z is a single level at the surface
+# ERA5 single-levels (2-D) data product
 z_interfaces(::ERA5Metadata) = (0, 1)
 
 # ERA5 data is stored as Float32
 eltype(::ERA5Metadata) = Float32
+
+#####
+##### Pressure-level vertical coordinate
+#####
+
+const ERA5_gravitational_acceleration = 9.80665
+
+# International Standard Atmosphere height (m) for a given pressure (hPa)
+function standard_atmosphere_geopotential_height(p)
+    g = ERA5_gravitational_acceleration
+    T⁰ = 288.15 # K
+    p⁰ = 1013.25 # hPa
+    Rᵈ = 287.0528 # J/(kg-K)
+
+    return (Rᵈ * T⁰ / g) * log(p⁰ / p)
+end
+
+# Build z-interfaces (Nz+1 values) from pressure levels.
+# Levels may be in any order; output is sorted so k=1 is highest pressure (lowest altitude).
+function standard_atmosphere_z_interfaces(levels)
+    @info """
+    Calculating z-interfaces based on International Standard Atmosphere...
+    For greater accuracy, use `mean_geopotential_heights`!
+    """
+    sorted_levels = sort(levels, rev=true)   # highest pressure first → k=1 is bottom
+    heights = standard_atmosphere_geopotential_height.(Float64.(sorted_levels))
+    Nz = length(heights)
+
+    interfaces = Vector{Float64}(undef, Nz + 1)
+
+    if Nz == 1
+        interfaces[1] = max(0, heights[1] - 500)
+        interfaces[2] = heights[1] + 500
+        return interfaces
+    end
+
+    interfaces[1] = max(0, heights[1] - (heights[2] - heights[1]) / 2)
+    for k in 2:Nz
+        interfaces[k] = (heights[k-1] + heights[k]) / 2
+    end
+    interfaces[Nz+1] = heights[Nz] + (heights[Nz] - heights[Nz-1]) / 2
+
+    return interfaces
+end
+
+# ERA5 pressure-levels (3-D) data product
+z_interfaces(metadata::ERA5PressureMetadata) = standard_atmosphere_z_interfaces(metadata.dataset.levels)
+
+#####
+##### pressure_field — synthetic pressure coordinate field
+#####
+
+"""
+    pressure_field(metadata::ERA5PressureMetadatum, arch=CPU(); halo=(3,3,3))
+
+Return a `CenterField` on the native grid of `metadata` filled with the pressure
+value (hPa) at each vertical level. Levels are ordered bottom-to-top (k=1 is the
+highest pressure level).
+"""
+function pressure_field(metadata::ERA5PressureMetadatum, arch=CPU(); halo=(3,3,3))
+    grid = native_grid(metadata, arch; halo)
+    field = CenterField(grid)
+    reversed_levels = sort(metadata.dataset.levels, rev=true)   # highest pressure → k=1
+    for (k, p) in enumerate(reversed_levels)
+        interior(field)[:, :, k] .= Float32(p)
+    end
+    fill_halo_regions!(field)
+    return field
+end
+
+#####
+##### mean_geopotential_heights — data-derived static z-coordinate
+#####
+
+"""
+    mean_geopotential_heights(metadata::ERA5PressureMetadata; arch=CPU())
+
+Compute spatially and temporally averaged geopotential heights (m) for each
+pressure level in `metadata`. This provides more accurate z-coordinates than
+the standard-atmosphere fallback used by `z_interfaces`.
+
+Downloads the `:geopotential` field for every date in `metadata`, divides by g,
+averages over the horizontal domain and all dates, and returns one representative
+height per pressure level in bottom-to-top order (k=1 is highest pressure).
+"""
+function mean_geopotential_heights(metadata::ERA5PressureMetadata; arch=CPU())
+    geo_metadata = Metadata(:geopotential; dataset=metadata.dataset,
+                            dates=metadata.dates, bounding_box=metadata.bounding_box,
+                            dir=metadata.dir)
+    heights = zeros(length(metadata.dataset.levels))
+    for geo_datum in geo_metadata
+        data = retrieve_data(geo_datum) ./ Float32(ERA5_gravitational_acceleration)   # Φ → Z (m)
+        heights .+= dropdims(mean(data; dims=(1, 2)); dims=(1, 2))
+    end
+    heights ./= length(geo_metadata)
+    return heights
+end
 
 end # module ERA5
 

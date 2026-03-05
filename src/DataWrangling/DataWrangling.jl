@@ -9,7 +9,7 @@ export WOAClimatology, WOAAnnual, WOAMonthly
 export metadata_time_step, metadata_epoch
 export LinearlyTaperedPolarMask
 export DatasetRestoring
-export ERA5Hourly, ERA5Monthly
+export ERA5Hourly, ERA5Monthly, ERA5HourlyPressureLevels, ERA5MonthlyPressureLevels
 
 using Oceananigans
 using Downloads
