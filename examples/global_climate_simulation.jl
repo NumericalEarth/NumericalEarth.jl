@@ -47,9 +47,12 @@ nothing #hide
 momentum_advection   = VectorInvariant()
 tracer_advection     = WENO(order=5)
 free_surface         = SplitExplicitFreeSurface(grid; substeps=40)
+using Oceananigans.TurbulenceClosures: IsopycnalSkewSymmetricDiffusivity
+
 catke_closure        = NumericalEarth.Oceans.default_ocean_closure()
 viscous_closure      = area_scaled_biharmonic_viscosity(timescale=15days)
-closures             = (catke_closure, viscous_closure)
+isopycnal_closure    = IsopycnalSkewSymmetricDiffusivity(κ_skew=0, κ_symmetric=1e3)
+closures             = (catke_closure, viscous_closure, isopycnal_closure)
 nothing #hide
 
 # The ocean simulation, complete with initial conditions for temperature and salinity from ECCO.

@@ -47,10 +47,14 @@ grid = ImmersedBoundaryGrid(underlying_grid, GridFittedBottom(bottom_height);
 
 # ### Closures
 #
-# We use an area-scaled biharmonic viscosity for grid-scale dissipation and
+# We use an area-scaled biharmonic viscosity for grid-scale dissipation,
+# an isopycnal symmetric diffusivity for lateral tracer mixing, and
 # the CATKE parameterization for vertical mixing at the upper-ocean boundary layer.
 
+using Oceananigans.TurbulenceClosures: IsopycnalSkewSymmetricDiffusivity
+
 horizontal_viscosity = area_scaled_biharmonic_viscosity(timescale=15days)
+isopycnal_diffusivity = IsopycnalSkewSymmetricDiffusivity(κ_skew=0, κ_symmetric=1e3)
 vertical_mixing = NumericalEarth.Oceans.default_ocean_closure()
 
 # ### Ocean simulation
@@ -62,7 +66,7 @@ momentum_advection = WENOVectorInvariant(order=5)
 tracer_advection   = WENO(order=5)
 
 ocean = ocean_simulation(grid; momentum_advection, tracer_advection, free_surface,
-                         closure=(horizontal_viscosity, vertical_mixing))
+                         closure=(horizontal_viscosity, isopycnal_diffusivity, vertical_mixing))
 
 @info "We've built an ocean simulation with model:"
 @show ocean.model
