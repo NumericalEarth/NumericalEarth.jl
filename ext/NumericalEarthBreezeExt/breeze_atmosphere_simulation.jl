@@ -3,7 +3,7 @@ using Oceananigans.Grids: Center
 
 using Breeze: ThermodynamicConstants, ReferenceState, AnelasticDynamics,
               SaturationAdjustment, WarmPhaseEquilibrium,
-              AtmosphereModel
+              AtmosphereModel, moisture_prognostic_name
 
 """
     atmosphere_simulation(grid;
@@ -60,12 +60,14 @@ function atmosphere_simulation(grid;
     Jᵉ = Field{Center, Center, Nothing}(grid)
     Jᵐ = Field{Center, Center, Nothing}(grid)
 
-    coupling_bcs = (
-        ρu  = FieldBoundaryConditions(bottom = FluxBoundaryCondition(Jᵘ)),
-        ρv  = FieldBoundaryConditions(bottom = FluxBoundaryCondition(Jᵛ)),
-        ρe  = FieldBoundaryConditions(bottom = FluxBoundaryCondition(Jᵉ)),
-        ρqᵗ = FieldBoundaryConditions(bottom = FluxBoundaryCondition(Jᵐ)),
-    )
+    moisture_key = moisture_prognostic_name(microphysics)
+    moisture_bc = NamedTuple{(moisture_key,)}((FieldBoundaryConditions(bottom = FluxBoundaryCondition(Jᵐ)),))
+
+    coupling_bcs = merge((
+        ρu = FieldBoundaryConditions(bottom = FluxBoundaryCondition(Jᵘ)),
+        ρv = FieldBoundaryConditions(bottom = FluxBoundaryCondition(Jᵛ)),
+        ρe = FieldBoundaryConditions(bottom = FluxBoundaryCondition(Jᵉ)),
+    ), moisture_bc)
 
     # User BCs override coupling defaults
     boundary_conditions = merge(coupling_bcs, boundary_conditions)
