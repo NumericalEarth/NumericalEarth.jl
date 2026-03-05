@@ -55,18 +55,18 @@ function atmosphere_simulation(grid;
                                kw...)
 
     # Create 2D flux fields for ESM coupling
-    Jᵘ = Field{Center, Center, Nothing}(grid)
-    Jᵛ = Field{Center, Center, Nothing}(grid)
+    τˣ = Field{Center, Center, Nothing}(grid)
+    τʸ = Field{Center, Center, Nothing}(grid)
     Jᵉ = Field{Center, Center, Nothing}(grid)
-    Jᵛᵉ = Field{Center, Center, Nothing}(grid)
+    Jᵛ = Field{Center, Center, Nothing}(grid)
 
     moisture_key = moisture_prognostic_name(microphysics)
-    moisture_bc = NamedTuple{tuple(moisture_key)}(tuple(FieldBoundaryConditions(bottom = FluxBoundaryCondition(Jᵛᵉ))))
+    moisture_bc = NamedTuple{tuple(moisture_key)}(tuple(FieldBoundaryConditions(bottom = FluxBoundaryCondition(Jᵛ))))
     energy_bc = (; ρe = FieldBoundaryConditions(bottom = FluxBoundaryCondition(Jᵉ)))
 
     momentum_bcs = (
-        ρu = FieldBoundaryConditions(bottom = FluxBoundaryCondition(Jᵘ)),
-        ρv = FieldBoundaryConditions(bottom = FluxBoundaryCondition(Jᵛ)),
+        ρu = FieldBoundaryConditions(bottom = FluxBoundaryCondition(τˣ)),
+        ρv = FieldBoundaryConditions(bottom = FluxBoundaryCondition(τʸ)),
     )
 
     coupling_bcs = merge(momentum_bcs, energy_bc, moisture_bc)
