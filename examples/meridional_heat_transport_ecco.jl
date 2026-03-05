@@ -5,7 +5,7 @@ using Dates
 using Statistics
 using Printf
 
-arch = CPU()
+arch = GPU()
 Nx = 360
 Ny = 180
 Nz = 50
@@ -45,7 +45,7 @@ atmosphere = JRA55PrescribedAtmosphere(arch; backend=JRA55NetCDFBackend(80),
                                        include_rivers_and_icebergs = false)
 esm = OceanSeaIceModel(ocean, sea_ice; atmosphere, radiation)
 
-simulation = Simulation(esm; Δt=20minutes, stop_time=90days)
+simulation = Simulation(esm; Δt=20minutes, stop_time=2*365days)
 
 
 wall_time = Ref(time_ns())
@@ -83,24 +83,39 @@ mht_vT = meridional_heat_transport(esm, MeridionalHeatFluxMethod()) |> Field
 mht_outputs = (; mht_OHC, mht_vT)
 
 ocean.output_writers[:mth] = JLD2Writer(ocean.model, mht_outputs;
-                                        schedule = TimeInterval(1hours),
+                                        schedule = TimeInterval(3hours),
                                         filename = "ocean_one_degree_mht",
                                         overwrite_existing = true)
 
 
 run!(simulation)
 
-##
 
-using GLMakie
+mht_OCH = FieldTimeSeries("ocean_one_degree_mht.jld2", "mht_OHC"; backend = OnDisk())
+mht_vT  = FieldTimeSeries("ocean_one_degree_mht.jld2", "mht_vT"; backend = OnDisk())
+
+times = mht_OCH.times
+Nt = length(times)
+
+mht_OCH_mean = deepcopy(mht_OCH[1][1, :, 1])
+mht_vT_mean = deepcopy(mht_vT[1][1, :, 1])
+
+for j in 1:Nt
+    mht_OCH_mean += mht_OCH[j][1, :, 1]
+    mht_vT_mean  +=  mht_vT[j][1, :, 1]
+end
+@. mht_OCH_mean = mht_OCH_mean / Nt
+@. mht_vT_mean = mht_vT_mean / Nt
+
+
+using CairoMakie
 
 fig = Figure()
-ax1 = Axis(fig[1, 1])
-ax2 = Axis(fig[2, 1])
+ax1 = Axis(fig[1, 1], xlabel="latitude (deg)", ylabel="MHT (PW)")
+ax2 = Axis(fig[2, 1], xlabel="latitude (deg)", ylabel="MHT (PW)")
 
 φ = φnodes(grid, Face())
-lines!(ax1, φ, mht_method1 / 1e15, linewidth=4)
-lines!(ax2, φ, mht_method2 / 1e15, linewidth=4)
-current_figure()
+lines!(ax1, φnodes(grid, Center()), diff(mht_OCH_mean[1:Ny+1]) / 1e15, linewidth=4)
+lines!(ax2, φ, mht_vT_mean[1:Ny+1] / 1e15, linewidth=4)
 
-display(fig)
+save("mht.png", fig)
