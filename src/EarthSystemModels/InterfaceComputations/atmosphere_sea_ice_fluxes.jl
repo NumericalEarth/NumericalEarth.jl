@@ -9,8 +9,8 @@ function compute_atmosphere_sea_ice_fluxes!(coupled_model)
     clock = coupled_model.clock
 
     interior_state = merge(exchanger.sea_ice.state,
-                           (; Tₒ = exchanger.ocean.state.T,
-                              Sₒ = exchanger.ocean.state.S))
+                           (; Tᵒᶜ = exchanger.ocean.state.T,
+                              Sᵒᶜ = exchanger.ocean.state.S))
 
     atmosphere_fields = exchanger.atmosphere.state
 
@@ -67,24 +67,24 @@ end
     FT   = eltype(grid)
 
     @inbounds begin
-        uₐ = atmosphere_state.u[i, j, 1]
-        vₐ = atmosphere_state.v[i, j, 1]
-        Tₐ = atmosphere_state.T[i, j, 1]
-        pₐ = atmosphere_state.p[i, j, 1]
-        qₐ = atmosphere_state.q[i, j, 1]
-        Qs = atmosphere_state.Qs[i, j, 1]
-        Qℓ = atmosphere_state.Qℓ[i, j, 1]
+        uᵃᵗ = atmosphere_state.u[i, j, 1]
+        vᵃᵗ = atmosphere_state.v[i, j, 1]
+        Tᵃᵗ = atmosphere_state.T[i, j, 1]
+        pᵃᵗ = atmosphere_state.p[i, j, 1]
+        qᵃᵗ = atmosphere_state.q[i, j, 1]
+        ℐꜜˢʷ = atmosphere_state.ℐꜜˢʷ[i, j, 1]
+        ℐꜜˡʷ = atmosphere_state.ℐꜜˡʷ[i, j, 1]
 
         # Extract state variables at cell centers
         # Ocean properties below sea ice
-        Tᵢ = interior_state.Tₒ[i, j, kᴺ]
-        Tᵢ = convert_to_kelvin(ocean_properties.temperature_units, Tᵢ)
-        Sᵢ = interior_state.Sₒ[i, j, kᴺ]
+        Tᵒᶜ = interior_state.Tᵒᶜ[i, j, kᴺ]
+        Tᵒᶜ = convert_to_kelvin(ocean_properties.temperature_units, Tᵒᶜ)
+        Sᵒᶜ = interior_state.Sᵒᶜ[i, j, kᴺ]
 
         # Sea ice properties
-        uᵢ = zero(FT) # ℑxᶜᵃᵃ(i, j, 1, grid, interior_state.u)
-        vᵢ = zero(FT) # ℑyᵃᶜᵃ(i, j, 1, grid, interior_state.v)
-        hᵢ = interior_state.h[i, j, 1]
+        uˢⁱ = zero(FT) # ℑxᶜᵃᵃ(i, j, 1, grid, interior_state.u)
+        vˢⁱ = zero(FT) # ℑyᵃᶜᵃ(i, j, 1, grid, interior_state.v)
+        hˢⁱ = interior_state.h[i, j, 1]
         hc = interior_state.hc[i, j, 1]
         ℵᵢ = interior_state.ℵ[i, j, 1]
         Tₛ = interface_temperature[i, j, 1]
@@ -94,30 +94,30 @@ end
     # Build thermodynamic and dynamic states in the atmosphere and interface.
     # Notation:
     #   ⋅ 𝒰 ≡ "dynamic" state vector (thermodynamics + reference height + velocity)
-    ℂₐ = atmosphere_properties.thermodynamics_parameters
-    zₐ = atmosphere_properties.surface_layer_height # elevation of atmos variables relative to interface
+    ℂᵃᵗ = atmosphere_properties.thermodynamics_parameters
+    zᵃᵗ = atmosphere_properties.surface_layer_height # elevation of atmos variables relative to interface
 
-    local_atmosphere_state = (z = zₐ,
-                              u = uₐ,
-                              v = vₐ,
-                              T = Tₐ,
-                              p = pₐ,
-                              q = qₐ,
+    local_atmosphere_state = (z = zᵃᵗ,
+                              u = uᵃᵗ,
+                              v = vᵃᵗ,
+                              T = Tᵃᵗ,
+                              p = pᵃᵗ,
+                              q = qᵃᵗ,
                               h_bℓ = atmosphere_state.h_bℓ)
 
-    downwelling_radiation = (; Qs, Qℓ)
-    local_interior_state = (u=uᵢ, v=vᵢ, T=Tᵢ, S=Sᵢ, h=hᵢ, hc=hc)
+    downwelling_radiation = (; ℐꜜˢʷ, ℐꜜˡʷ)
+    local_interior_state = (u=uˢⁱ, v=vˢⁱ, T=Tᵒᶜ, S=Sᵒᶜ, h=hˢⁱ, hc=hc)
     
     # Estimate initial interface state (FP32 compatible)
     u★ = convert(FT, 1f-4)
 
     # Estimate interface specific humidity using interior temperature
     q_formulation = interface_properties.specific_humidity_formulation
-    qₛ = surface_specific_humidity(q_formulation, ℂₐ, Tₐ, pₐ, qₐ, Tₛ, Sᵢ)
+    qₛ = surface_specific_humidity(q_formulation, ℂᵃᵗ, Tᵃᵗ, pᵃᵗ, qᵃᵗ, Tₛ, Sᵒᶜ)
 
     # Guess
     Sₛ = zero(FT) # what should we use for interface salinity?
-    initial_interface_state = InterfaceState(u★, u★, u★, uᵢ, vᵢ, Tₛ, Sₛ, convert(FT, qₛ))
+    initial_interface_state = InterfaceState(u★, u★, u★, uˢⁱ, vˢⁱ, Tₛ, Sₛ, convert(FT, qₛ))
     not_water = inactive_node(i, j, kᴺ, grid, Center(), Center(), Center())
     ice_free = ℵᵢ == 0
 
@@ -125,7 +125,7 @@ end
     needs_to_converge = stop_criteria isa ConvergenceStopCriteria
 
     if (needs_to_converge && not_water) || ice_free
-        interface_state = InterfaceState(zero(FT), zero(FT), zero(FT), uᵢ, vᵢ, Tᵢ, Sₛ, zero(FT))
+        interface_state = InterfaceState(zero(FT), zero(FT), zero(FT), uˢⁱ, vˢⁱ, Tᵒᶜ, Sₛ, zero(FT))
     else
         interface_state = compute_interface_state(turbulent_flux_formulation,
                                                   initial_interface_state,
@@ -144,28 +144,28 @@ end
     Ψₐ = local_atmosphere_state
     Δu, Δv = velocity_difference(interface_properties.velocity_formulation, Ψₐ, Ψₛ)
     ΔU = sqrt(Δu^2 + Δv^2)
-    τx = - u★^2 * Δu / ΔU
-    τy = - u★^2 * Δv / ΔU
+    τˣ = ifelse(ΔU == 0, zero(ΔU), - u★^2 * Δu / ΔU)
+    τʸ = ifelse(ΔU == 0, zero(ΔU), - u★^2 * Δv / ΔU)
 
-    ρₐ = AtmosphericThermodynamics.air_density(ℂₐ, Tₐ, pₐ, qₐ)
-    cₚ = AtmosphericThermodynamics.cp_m(ℂₐ, qₐ) # moist heat capacity
-    ℰs = AtmosphericThermodynamics.latent_heat_sublim(ℂₐ, Tₐ)
+    ρᵃᵗ = AtmosphericThermodynamics.air_density(ℂᵃᵗ, Tᵃᵗ, pᵃᵗ, qᵃᵗ)
+    cᵖᵐ = AtmosphericThermodynamics.cp_m(ℂᵃᵗ, qᵃᵗ) # moist heat capacity
+    ℒⁱ = AtmosphericThermodynamics.latent_heat_sublim(ℂᵃᵗ, Tᵃᵗ)
 
     # Store fluxes
-    Qv = interface_fluxes.latent_heat
-    Qc = interface_fluxes.sensible_heat
-    Fv = interface_fluxes.water_vapor
-    ρτx = interface_fluxes.x_momentum
-    ρτy = interface_fluxes.y_momentum
+    𝒬ᵛ = interface_fluxes.latent_heat
+    𝒬ᵀ = interface_fluxes.sensible_heat
+    Jᵛ = interface_fluxes.water_vapor
+    ρτˣ = interface_fluxes.x_momentum
+    ρτʸ = interface_fluxes.y_momentum
     Ts = interface_temperature
 
     @inbounds begin
         # +0: cooling, -0: heating
-        Qv[i, j, 1]  = - ρₐ * u★ * q★ * ℰs
-        Qc[i, j, 1]  = - ρₐ * cₚ * u★ * θ★
-        Fv[i, j, 1]  = - ρₐ * u★ * q★
-        ρτx[i, j, 1] = + ρₐ * τx
-        ρτy[i, j, 1] = + ρₐ * τy
+        𝒬ᵛ[i, j, 1]  = - ρᵃᵗ * u★ * q★ * ℒⁱ
+        𝒬ᵀ[i, j, 1]  = - ρᵃᵗ * cᵖᵐ * u★ * θ★
+        Jᵛ[i, j, 1]  = - ρᵃᵗ * u★ * q★
+        ρτˣ[i, j, 1] = + ρᵃᵗ * τˣ
+        ρτʸ[i, j, 1] = + ρᵃᵗ * τʸ
         Ts[i, j, 1]  = convert_from_kelvin(sea_ice_properties.temperature_units, Ψₛ.T)
     end
 end

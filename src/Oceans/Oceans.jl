@@ -1,6 +1,6 @@
 module Oceans
 
-export ocean_simulation
+export ocean_simulation, SlabOcean
 
 using Oceananigans
 using Oceananigans.Units
@@ -27,6 +27,9 @@ import NumericalEarth.EarthSystemModels: interpolate_state!,
                                      update_net_fluxes!,
                                      reference_density,
                                      heat_capacity,
+                                     exchange_grid,
+                                     temperature_units,
+                                     DegreesKelvin,
                                      ocean_temperature,
                                      ocean_salinity,
                                      ocean_surface_temperature,
@@ -56,6 +59,7 @@ all while respecting user input and changing this to a new value if specified.
 default_or_override(default::Default, possibly_alternative_default=default.value) = possibly_alternative_default
 default_or_override(override, alternative_default=nothing) = override
 
+include("slab_ocean.jl")
 include("barotropic_potential_forcing.jl")
 include("radiative_forcing.jl")
 include("ocean_simulation.jl")
@@ -107,9 +111,9 @@ end
 
 function net_fluxes(ocean::Simulation{<:HydrostaticFreeSurfaceModel})
     # TODO: Generalize this to work with any ocean model
-    τx = ocean.model.velocities.u.boundary_conditions.top.condition
-    τy = ocean.model.velocities.v.boundary_conditions.top.condition
-    net_ocean_surface_fluxes = (; u=τx, v=τy)
+    τˣ = ocean.model.velocities.u.boundary_conditions.top.condition
+    τʸ = ocean.model.velocities.v.boundary_conditions.top.condition
+    net_ocean_surface_fluxes = (; u=τˣ, v=τʸ)
 
     tracers = ocean.model.tracers
     ocean_surface_tracer_fluxes = NamedTuple(name => tracers[name].boundary_conditions.top.condition for name in keys(tracers))

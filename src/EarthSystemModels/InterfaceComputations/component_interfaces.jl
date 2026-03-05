@@ -76,16 +76,10 @@ mutable struct ComponentInterfaces{AO, ASI, SIO, C, AP, OP, SIP, EX, P}
     properties :: P
 end
 
-# Possible units for temperature and salinity
-struct DegreesCelsius end
-struct DegreesKelvin end
-
-const celsius_to_kelvin = 273.15
-@inline convert_to_kelvin(::DegreesCelsius, T::FT) where FT = T + convert(FT, celsius_to_kelvin)
-@inline convert_to_kelvin(::DegreesKelvin, T) = T
-
-@inline convert_from_kelvin(::DegreesCelsius, T::FT) where FT = T - convert(FT, celsius_to_kelvin)
-@inline convert_from_kelvin(::DegreesKelvin, T) = T
+using ..EarthSystemModels: DegreesCelsius, DegreesKelvin,
+                           celsius_to_kelvin,
+                           convert_to_kelvin, convert_from_kelvin,
+                           exchange_grid, temperature_units
 
 Base.summary(crf::ComponentInterfaces) = "ComponentInterfaces"
 Base.show(io::IO, crf::ComponentInterfaces) = print(io, summary(crf))
@@ -232,10 +226,10 @@ function sea_ice_ocean_interface(grid, sea_ice, ocean, flux_formulation)
                  y_momentum = y_momentum)
 
     # For default flux formulations, interface temperature and salinity point to ocean surface
-    Tᵢ = ocean_surface_temperature(ocean)
-    Sᵢ = ocean_surface_salinity(ocean)
+    Tⁱⁿᵗ = ocean_surface_temperature(ocean)
+    Sⁱⁿᵗ = ocean_surface_salinity(ocean)
 
-    return SeaIceOceanInterface(io_fluxes, flux_formulation, Tᵢ, Sᵢ)
+    return SeaIceOceanInterface(io_fluxes, flux_formulation, Tⁱⁿᵗ, Sⁱⁿᵗ)
 end
 
 function sea_ice_ocean_interface(grid, sea_ice, ocean, flux_formulation::ThreeEquationHeatFlux)
@@ -253,10 +247,10 @@ function sea_ice_ocean_interface(grid, sea_ice, ocean, flux_formulation::ThreeEq
                  y_momentum = y_momentum)
 
     # Interface temperature and salinity are computed fields
-    Tᵢ = Field{Center, Center, Nothing}(grid)
-    Sᵢ = Field{Center, Center, Nothing}(grid)
+    Tⁱⁿᵗ = Field{Center, Center, Nothing}(grid)
+    Sⁱⁿᵗ = Field{Center, Center, Nothing}(grid)
 
-    return SeaIceOceanInterface(io_fluxes, flux_formulation, Tᵢ, Sᵢ)
+    return SeaIceOceanInterface(io_fluxes, flux_formulation, Tⁱⁿᵗ, Sⁱⁿᵗ)
 end
 
 #####
@@ -271,8 +265,6 @@ function default_ao_specific_humidity(ocean)
     x_H₂O = convert(FT, 0.98)
     return ImpureSaturationSpecificHumidity(phase, x_H₂O)
 end
-
-default_exchange_grid(atmosphere, ocean, sea_ice) = ocean.model.grid
 
 """
     ComponentInterfaces(atmosphere, ocean, sea_ice=nothing; kwargs...)
@@ -302,7 +294,7 @@ Keyword Arguments
 - `gravitational_acceleration`: gravitational acceleration. Default: `default_gravitational_acceleration`.
 """
 function ComponentInterfaces(atmosphere, ocean, sea_ice=nothing;
-                             exchange_grid = default_exchange_grid(atmosphere, ocean, sea_ice),
+                             exchange_grid = exchange_grid(atmosphere, ocean, sea_ice),
                              radiation = Radiation(),
                              freshwater_density = default_freshwater_density,
                              atmosphere_ocean_fluxes = SimilarityTheoryFluxes(eltype(exchange_grid)),
@@ -315,7 +307,7 @@ function ComponentInterfaces(atmosphere, ocean, sea_ice=nothing;
                              atmosphere_sea_ice_velocity_difference = RelativeVelocity(),
                              ocean_reference_density = reference_density(ocean),
                              ocean_heat_capacity = heat_capacity(ocean),
-                             ocean_temperature_units = DegreesCelsius(),
+                             ocean_temperature_units = temperature_units(ocean),
                              sea_ice_temperature_units = DegreesCelsius(),
                              sea_ice_reference_density = reference_density(sea_ice),
                              sea_ice_heat_capacity = heat_capacity(sea_ice),

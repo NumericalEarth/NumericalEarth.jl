@@ -1,4 +1,24 @@
 #####
+##### Temperature units
+#####
+
+struct DegreesCelsius end
+struct DegreesKelvin end
+
+const celsius_to_kelvin = 273.15
+@inline convert_to_kelvin(::DegreesCelsius, T::FT) where FT = T + convert(FT, celsius_to_kelvin)
+@inline convert_to_kelvin(::DegreesKelvin, T) = T
+
+@inline convert_from_kelvin(::DegreesCelsius, T::FT) where FT = T - convert(FT, celsius_to_kelvin)
+@inline convert_from_kelvin(::DegreesKelvin, T) = T
+
+#####
+##### generic defaults
+#####
+
+exchange_grid(atmosphere, ocean, sea_ice) = ocean.model.grid
+
+#####
 ##### Functions extended by sea-ice and ocean models
 #####
 
@@ -9,6 +29,7 @@ ocean_salinity(ocean) = ZeroField()
 ocean_surface_temperature(ocean) = ZeroField()
 ocean_surface_salinity(ocean) = ZeroField()
 ocean_surface_velocities(ocean) = ZeroField(), ZeroField()
+temperature_units(ocean) = DegreesCelsius()
 
 #####
 ##### Functions extended by sea-ice models

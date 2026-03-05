@@ -85,22 +85,22 @@ and interior properties `ℙₛ`, `ℙₐ`, and `ℙᵢ`.
                                        interior_properties)
 
     FT = eltype(approximate_interface_state)
-    ℂₐ = atmosphere_properties.thermodynamics_parameters
+    ℂᵃᵗ = atmosphere_properties.thermodynamics_parameters
 
     # Recompute the saturation specific humidity at the interface based on the new temperature
     q_formulation = interface_properties.specific_humidity_formulation
     Sₛ = approximate_interface_state.S
-    Tₐ = atmosphere_state.T
-    pₐ = atmosphere_state.p
-    qₐ = atmosphere_state.q
-    qₛ = surface_specific_humidity(q_formulation, ℂₐ, Tₐ, pₐ, qₐ, Tₛ, Sₛ)
+    Tᵃᵗ = atmosphere_state.T
+    pᵃᵗ = atmosphere_state.p
+    qᵃᵗ = atmosphere_state.q
+    qₛ = surface_specific_humidity(q_formulation, ℂᵃᵗ, Tᵃᵗ, pᵃᵗ, qᵃᵗ, Tₛ, Sₛ)
 
     # Compute the specific humidity increment
-    Δq = qₐ - qₛ
+    Δq = qᵃᵗ - qₛ
 
-    θₐ = surface_atmosphere_temperature(atmosphere_state, atmosphere_properties)
-    Δθ = θₐ - Tₛ
-    Δh = atmosphere_state.z # Assumption! The surface is at z = 0 -> Δh = zₐ - 0
+    θᵃᵗ = surface_atmosphere_temperature(atmosphere_state, atmosphere_properties)
+    Δθ = θᵃᵗ - Tₛ
+    Δh = atmosphere_state.z # Assumption! The surface is at z = 0 -> Δh = zᵃᵗ - 0
 
     u★, θ★, q★ = iterate_interface_fluxes(flux_formulation,
                                           Tₛ, qₛ, Δθ, Δq, Δh,

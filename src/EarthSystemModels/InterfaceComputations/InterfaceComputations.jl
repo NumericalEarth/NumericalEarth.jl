@@ -46,14 +46,18 @@ net_fluxes(::Nothing) = nothing
 #####
 
 function interface_kernel_parameters(grid)
-    Nx, Ny, Nz = size(grid)
+    Nx, Ny, _ = size(grid)
+    TX, TY, _ = topology(grid)
     single_column_grid = Nx == 1 && Ny == 1
 
     if single_column_grid
         kernel_parameters = KernelParameters(1:1, 1:1)
     else
-        # Compute fluxes into halo regions, ie from 0:Nx+1 and 0:Ny+1
-        kernel_parameters = KernelParameters(0:Nx+1, 0:Ny+1)
+        # Compute fluxes into halo regions (0:N+1) for non-Flat dimensions.
+        # Flat dimensions have no halo cells, so only iterate over the interior.
+        x_range = TX === Flat ? (1:Nx) : (0:Nx+1)
+        y_range = TY === Flat ? (1:Ny) : (0:Ny+1)
+        kernel_parameters = KernelParameters(x_range, y_range)
     end
 
     return kernel_parameters

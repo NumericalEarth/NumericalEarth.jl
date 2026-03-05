@@ -4,9 +4,10 @@ using NumericalEarth.Atmospheres: PrescribedAtmosphere, TwoBandDownwellingRadiat
 
 """
     ECCOPrescribedAtmosphere([architecture = CPU(), FT = Float32];
-                              dataset = ECCO4Montly(),
-                              start_date = first_date(dataset, :temperature),
-                              end_date = last_date(dataset, :temperature),
+                              dataset = ECCO4Monthly(),
+                              start_date = first_date(dataset, :air_temperature),
+                              end_date = last_date(dataset, :air_temperature),
+                              dir = default_download_directory(dataset),
                               time_indices_in_memory = 10,
                               time_indexing = Cyclical(),
                               surface_layer_height = 2,  # meters
@@ -18,25 +19,26 @@ The atmospheric data will be held in `FieldTimeSeries` objects containing
 - air temperature and humidity: T, q
 - surface pressure: p
 - freshwater flux: rain
-- downwelling radiation: Qs, Ql
+- downwelling radiation: ℐꜜˢʷ, ℐꜜˡʷ
 """
 function ECCOPrescribedAtmosphere(architecture = CPU(), FT = Float32;
                                   dataset = ECCO4Monthly(),
                                   start_date = first_date(dataset, :air_temperature),
                                   end_date = last_date(dataset, :air_temperature),
+                                  dir = default_download_directory(dataset),
                                   time_indexing = Cyclical(),
                                   time_indices_in_memory = 10,
                                   surface_layer_height = 2,  # meters
                                   other_kw...)
 
-    ua_meta = Metadata(:eastward_wind;         dataset, start_date, end_date)
-    va_meta = Metadata(:northward_wind;        dataset, start_date, end_date)
-    Ta_meta = Metadata(:air_temperature;       dataset, start_date, end_date)
-    qa_meta = Metadata(:air_specific_humidity; dataset, start_date, end_date)
-    pa_meta = Metadata(:sea_level_pressure;    dataset, start_date, end_date)
-    Ql_meta = Metadata(:downwelling_longwave;  dataset, start_date, end_date)
-    Qs_meta = Metadata(:downwelling_shortwave; dataset, start_date, end_date)
-    Fr_meta = Metadata(:rain_freshwater_flux;  dataset, start_date, end_date)
+    ua_meta = Metadata(:eastward_wind;         dataset, start_date, end_date, dir)
+    va_meta = Metadata(:northward_wind;        dataset, start_date, end_date, dir)
+    Ta_meta = Metadata(:air_temperature;       dataset, start_date, end_date, dir)
+    qa_meta = Metadata(:air_specific_humidity; dataset, start_date, end_date, dir)
+    pa_meta = Metadata(:sea_level_pressure;    dataset, start_date, end_date, dir)
+    ℐꜜˡʷ_meta = Metadata(:downwelling_longwave;  dataset, start_date, end_date, dir)
+    ℐꜜˢʷ_meta = Metadata(:downwelling_shortwave; dataset, start_date, end_date, dir)
+    Fr_meta = Metadata(:rain_freshwater_flux;  dataset, start_date, end_date, dir)
 
     kw = (; time_indices_in_memory, time_indexing)
     kw = merge(kw, other_kw)
@@ -46,10 +48,10 @@ function ECCOPrescribedAtmosphere(architecture = CPU(), FT = Float32;
     Ta = FieldTimeSeries(Ta_meta, architecture; kw...)
     qa = FieldTimeSeries(qa_meta, architecture; kw...)
     pa = FieldTimeSeries(pa_meta, architecture; kw...)
-    Ql = FieldTimeSeries(Ql_meta, architecture; kw...)
-    Qs = FieldTimeSeries(Qs_meta, architecture; kw...)
+    ℐꜜˡʷ = FieldTimeSeries(ℐꜜˡʷ_meta, architecture; kw...)
+    ℐꜜˢʷ = FieldTimeSeries(ℐꜜˢʷ_meta, architecture; kw...)
     Fr = FieldTimeSeries(Fr_meta, architecture; kw...)
-
+    
     auxiliary_freshwater_flux = nothing
     freshwater_flux = (; rain = Fr)
 
@@ -60,7 +62,7 @@ function ECCOPrescribedAtmosphere(architecture = CPU(), FT = Float32;
     tracers = (T = Ta, q = qa)
     pressure = pa
 
-    downwelling_radiation = TwoBandDownwellingRadiation(shortwave=Qs, longwave=Ql)
+    downwelling_radiation = TwoBandDownwellingRadiation(shortwave=ℐꜜˢʷ, longwave=ℐꜜˡʷ)
 
     FT = eltype(ua)
     surface_layer_height = convert(FT, surface_layer_height)

@@ -121,7 +121,7 @@ Stability Functions
 ====================
 
 The model uses similarity theory for turbulent fluxes between components. You can customize the stability functions
-by creating a new `SimilarityTheoryFluxes` object with your desired stability functions. For example:
+by creating a new [`SimilarityTheoryFluxes`](@ref) object with your desired stability functions. For example:
 
 ```jldoctest earth_system_model
 using NumericalEarth
@@ -153,7 +153,7 @@ EarthSystemModel{CPU}(time = 0 seconds, iteration = 0)
 ```
 
 The available stability function options include:
-- `atmosphere_ocean_stability_functions`: Based on [edson2013exchange](@citet)
+- `atmosphere_ocean_stability_functions`: Based on [Edson et al. (2013)](@cite edson2013exchange)
 - `atmosphere_sea_ice_stability_functions`: Specifically designed for atmosphere-sea ice interactions
 - `nothing`: No stability functions will be used
 - Custom stability functions can be created by defining functions of the "stability parameter"
@@ -273,6 +273,15 @@ EarthSystemModel{CPU}(time = 0 seconds, iteration = 0)
 """
 OceanSeaIceModel(ocean, sea_ice; atmosphere = nothing, kw...) = EarthSystemModel(atmosphere, ocean, sea_ice; kw...)
 
+"""
+    AtmosphereOceanModel(atmosphere, ocean; kw...)
+
+Construct a coupled atmosphere--ocean model.
+Convenience constructor for [`EarthSystemModel`](@ref) with an atmosphere and ocean
+but no sea ice. All keyword arguments are forwarded to `EarthSystemModel`.
+"""
+AtmosphereOceanModel(atmosphere, ocean; kw...) = EarthSystemModel(atmosphere, ocean, nothing; kw...)
+
 time(coupled_model::EarthSystemModel) = coupled_model.clock.time
 
 # Check for NaNs in the first prognostic field (generalizes to prescribed velocities).
@@ -313,7 +322,7 @@ above_freezing_ocean_temperature!(ocean, grid, ::Nothing) = nothing
 ##### Checkpointing
 #####
 
-function prognostic_state(osm::EarthSystemModel) 
+function prognostic_state(osm::EarthSystemModel)
     return (clock = prognostic_state(osm.clock),
             ocean = prognostic_state(osm.ocean),
             atmosphere = prognostic_state(osm.atmosphere),

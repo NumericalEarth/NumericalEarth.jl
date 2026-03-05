@@ -29,10 +29,10 @@ using PythonCall, CondaPkg
     ocean = VerosModule.VerosOceanSimulation("global_4deg", :GlobalFourDegreeSetup)
     
     # Test interface
-    ρₒ = NumericalEarth.EarthSystemModels.reference_density(ocean)
-    cₚ = NumericalEarth.EarthSystemModels.heat_capacity(ocean)
-    @test ρₒ isa Real
-    @test cₚ isa Real
+    ρᵒᶜ = NumericalEarth.EarthSystemModels.reference_density(ocean)
+    cᵒᶜ = NumericalEarth.EarthSystemModels.heat_capacity(ocean)
+    @test ρᵒᶜ isa Real
+    @test cᵒᶜ isa Real
     
     T = NumericalEarth.EarthSystemModels.ocean_temperature(ocean)
     S = NumericalEarth.EarthSystemModels.ocean_salinity(ocean)
