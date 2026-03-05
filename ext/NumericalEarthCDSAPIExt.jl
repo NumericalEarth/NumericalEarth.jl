@@ -344,13 +344,14 @@ function download_dataset(names::Vector{Symbol},
                           datetimes::AbstractVector;
                           bounding_box = nothing,
                           dir = NumericalEarth.DataWrangling.default_download_directory(dataset),
-                          skip_existing = true)
+                          skip_existing = true,
+                          cleanup = true)
 
     grouped = Dict(d => filter(dt -> Dates.Date(dt) == d, datetimes)
                    for d in unique(Dates.Date.(datetimes)))
 
     for day in sort(collect(keys(grouped)))
-        _download_era5pl_day(names, dataset, grouped[day]; bounding_box, dir, skip_existing)
+        _download_era5pl_day(names, dataset, grouped[day]; bounding_box, dir, skip_existing, cleanup)
     end
 
     return nothing
@@ -361,12 +362,13 @@ function download_dataset(name::Symbol,
                           datetimes::AbstractVector;
                           bounding_box = nothing,
                           dir = NumericalEarth.DataWrangling.default_download_directory(dataset),
-                          skip_existing = true)
-    return download_dataset([name], dataset, datetimes; bounding_box, dir, skip_existing)
+                          skip_existing = true,
+                          cleanup = true)
+    return download_dataset([name], dataset, datetimes; bounding_box, dir, skip_existing, cleanup)
 end
 
 function _download_era5pl_day(names, dataset, day_dates;
-                               bounding_box, dir, skip_existing)
+                              bounding_box, dir, skip_existing, cleanup)
 
     MDatum    = NumericalEarth.DataWrangling.Metadatum
     meta_path = NumericalEarth.DataWrangling.metadata_path
@@ -412,7 +414,7 @@ function _download_era5pl_day(names, dataset, day_dates;
     @root begin
         CDSAPI.retrieve("reanalysis-era5-pressure-levels", request, tmp_path)
         _split_era5pl_nc_multistep(tmp_path, nc_triples)
-        rm(tmp_path; force=true)
+        cleanup && rm(tmp_path; force=true)
     end
 
     return nothing
