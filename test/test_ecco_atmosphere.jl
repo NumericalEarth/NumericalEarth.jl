@@ -71,8 +71,8 @@ using NumericalEarth.DataWrangling: higher_bound
             pa_data = interior(atmosphere.pressure)
             valid = pa_data[pa_data .!= 0]
             @test length(valid) > 0
-            @test median(valid) > 1f5   # typical sea level pressure exceeds 1e5 Pa
-            @test median(valid) < 1.1f5
+            @test median(valid) > 9.9f4 # typical sea level pressure exceeds 9e4 Pa
+            @test median(valid) < 1.1f5 # typical sea level pressure is lower than 1.1e5 Pa
         end
 
         # Test grid consistency

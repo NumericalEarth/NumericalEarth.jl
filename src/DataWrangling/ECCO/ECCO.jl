@@ -53,7 +53,8 @@ import NumericalEarth.DataWrangling:
     retrieve_data,
     binary_data_grid,
     binary_data_size,
-    higher_bound
+    higher_bound,
+    default_inpainting
 
 download_ECCO_cache::String = ""
 function __init__()
@@ -331,6 +332,29 @@ function inpainted_metadata_filename(metadata::ECCOMetadata)
     original_filename = metadata_filename(metadata)
     without_extension = original_filename[1:end-3]
     return without_extension * "_inpainted.jld2"
+end
+
+ECCO_atmosphere_variables = (
+    :downwelling_shortwave,
+    :downwelling_longwave,
+    :air_temperature,
+    :air_specific_humidity,
+    :sea_level_pressure,
+    :eastward_wind,
+    :northward_wind,
+    :rain_freshwater_flux,
+)
+
+function default_inpainting(metadata::ECCOMetadata)
+    if metadata.name in (:temperature, :salinity)
+        return NearestNeighborInpainting(Inf)
+    elseif metadata.name in (:sea_ice_thickness, :sea_ice_concentration)
+        return nothing
+    elseif metadata.name in ECCO_atmosphere_variables
+        return NearestNeighborInpainting(200)
+    else
+        return NearestNeighborInpainting(5)
+    end
 end
 
 inpainted_metadata_path(metadata::ECCOMetadata) = joinpath(metadata.dir, inpainted_metadata_filename(metadata))
