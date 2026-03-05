@@ -233,10 +233,14 @@ function download_dataset(names::Vector{Symbol}, meta::ERA5PressureMetadatum; sk
 end
 
 """
-    download_dataset(names::Vector{Symbol}, dataset::ERA5PressureDataset;
-                     date, bounding_box=nothing, dir=default_download_directory(dataset))
+    download_dataset(names::Union{Symbol, Vector{Symbol}},
+                     dataset::ERA5PressureDataset,
+                     datetime;
+                     bounding_box=nothing,
+                     dir=default_download_directory(dataset))
 
-Download multiple ERA5 pressure-level variables without requiring a dummy `Metadatum`.
+Download one or more ERA5 pressure-level variables at a single datetime, without requiring a dummy
+`Metadatum`.
 
 # Example
 ```julia
@@ -245,12 +249,17 @@ download_dataset([:temperature, :geopotential_height, :eastward_velocity], ds;
                  date=DateTime(2020, 6, 15, 0), bounding_box=bbox)
 ```
 """
-function download_dataset(names::Vector{Symbol}, dataset::ERA5PressureDataset;
-                          date,
+function download_dataset(names::Vector{Symbol}, dataset::ERA5PressureDataset, datetime;
                           bounding_box = nothing,
                           dir = NumericalEarth.DataWrangling.default_download_directory(dataset))
-    meta = NumericalEarth.DataWrangling.Metadatum(first(names); dataset, date, bounding_box, dir)
+    meta = NumericalEarth.DataWrangling.Metadatum(first(names); dataset, datetime, bounding_box, dir)
     return download_dataset(names, meta)
+end
+
+function download_dataset(name::Symbol, dataset::ERA5PressureDataset, datetime;
+                          bounding_box = nothing,
+                          dir = NumericalEarth.DataWrangling.default_download_directory(dataset))
+    return download_dataset([name], dataset, datetime; bounding_box, dir)
 end
 
 """
@@ -313,10 +322,14 @@ function _ncvar_copy!(dst, src_var, vname)
 end
 
 """
-    download_dataset(names::Vector{Symbol}, dataset::ERA5PressureDataset, dates::AbstractVector;
-                     bounding_box=nothing, dir=default_download_directory(dataset), skip_existing=true)
+    download_dataset(names::Union{Symbol, Vector{Symbol}},
+                     dataset::ERA5PressureDataset,
+                     datetimes::AbstractVector;
+                     bounding_box=nothing,
+                     dir=default_download_directory(dataset),
+                     skip_existing=true)
 
-Download multiple ERA5 pressure-level variables for a vector of `dates`, issuing one CDS API
+Download one or more ERA5 pressure-level variables for a vector of `datetimes`, issuing one CDS API
 request per unique calendar day (which may contain multiple hours).
 
 # Example
@@ -326,20 +339,30 @@ dates = DateTime(2020, 6, 15, 0) : Hour(6) : DateTime(2020, 6, 16, 18)
 download_dataset([:temperature, :geopotential_height], ds, collect(dates); bounding_box=bbox)
 ```
 """
-function download_dataset(names::Vector{Symbol}, dataset::ERA5PressureDataset,
-                          dates::AbstractVector;
+function download_dataset(names::Vector{Symbol},
+                          dataset::ERA5PressureDataset,
+                          datetimes::AbstractVector;
                           bounding_box = nothing,
                           dir = NumericalEarth.DataWrangling.default_download_directory(dataset),
                           skip_existing = true)
 
-    grouped = Dict(d => filter(dt -> Dates.Date(dt) == d, dates)
-                   for d in unique(Dates.Date.(dates)))
+    grouped = Dict(d => filter(dt -> Dates.Date(dt) == d, datetimes)
+                   for d in unique(Dates.Date.(datetimes)))
 
     for day in sort(collect(keys(grouped)))
         _download_era5pl_day(names, dataset, grouped[day]; bounding_box, dir, skip_existing)
     end
 
     return nothing
+end
+
+function download_dataset(name::Symbol,
+                          dataset::ERA5PressureDataset,
+                          datetimes::AbstractVector;
+                          bounding_box = nothing,
+                          dir = NumericalEarth.DataWrangling.default_download_directory(dataset),
+                          skip_existing = true)
+    return download_dataset([name], dataset, datetimes; bounding_box, dir, skip_existing)
 end
 
 function _download_era5pl_day(names, dataset, day_dates;
