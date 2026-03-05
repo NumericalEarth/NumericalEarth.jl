@@ -1,7 +1,7 @@
 # # Global climate simulation
 #
 # This example configures a global ocean--sea ice simulation at 1.5ᵒ horizontal resolution with
-# realistic bathymetry and a few closures including the "Gent-McWilliams" `IsopycnalSkewSymmetricDiffusivity`.
+# realistic bathymetry and an area-scaled biharmonic viscosity for grid-scale dissipation.
 # The atmosphere is represented by a 4-layer [SpeedyWeather](https://github.com/SpeedyWeather/SpeedyWeather.jl)
 # simulation on the T63 spectral grid (this grid has approximately 1.875ᵒ resolution).
 #
@@ -48,9 +48,8 @@ momentum_advection   = VectorInvariant()
 tracer_advection     = WENO(order=5)
 free_surface         = SplitExplicitFreeSurface(grid; substeps=40)
 catke_closure        = NumericalEarth.Oceans.default_ocean_closure()
-eddy_closure         = Oceananigans.TurbulenceClosures.IsopycnalSkewSymmetricDiffusivity(κ_skew=1e3, κ_symmetric=1e3)
-viscous_closure      = Oceananigans.TurbulenceClosures.HorizontalScalarBiharmonicDiffusivity(ν=1e12)
-closures             = (catke_closure, eddy_closure, viscous_closure)
+viscous_closure      = area_scaled_biharmonic_viscosity()
+closures             = (catke_closure, viscous_closure)
 nothing #hide
 
 # The ocean simulation, complete with initial conditions for temperature and salinity from ECCO.
