@@ -4,7 +4,7 @@ import NumericalEarth.EarthSystemModels.InterfaceComputations:
     net_fluxes,
     initialize!,
     ComponentExchanger,
-    default_exchange_grid,
+    exchange_grid,
     compute_sea_ice_ocean_fluxes!
 
 import NumericalEarth.EarthSystemModels:
@@ -32,7 +32,7 @@ function ComponentExchanger(ocean::MITgcmOceanSimulation, grid)
     return ComponentExchanger(state, nothing)
 end
 
-default_exchange_grid(atmosphere, ocean::MITgcmOceanSimulation, sea_ice) = surface_grid(ocean)
+exchange_grid(atmosphere, ocean::MITgcmOceanSimulation, sea_ice) = surface_grid(ocean)
 
 #####
 ##### Net fluxes container
