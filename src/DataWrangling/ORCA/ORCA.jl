@@ -85,4 +85,6 @@ function download_dataset(metadatum::ORCA1Metadatum)
     return filepath
 end
 
+default_south_rows_to_remove(::ORCA1) = 35
+
 end # module
