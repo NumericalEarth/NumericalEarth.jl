@@ -61,13 +61,15 @@ function atmosphere_simulation(grid;
     Jᵛᵉ = Field{Center, Center, Nothing}(grid)
 
     moisture_key = moisture_prognostic_name(microphysics)
-    moisture_bc = NamedTuple{(moisture_key,)}((FieldBoundaryConditions(bottom = FluxBoundaryCondition(Jᵛᵉ)),))
+    moisture_bc = NamedTuple{tuple(moisture_key)}(tuple(FieldBoundaryConditions(bottom = FluxBoundaryCondition(Jᵛᵉ))))
+    energy_bc = (; ρe = FieldBoundaryConditions(bottom = FluxBoundaryCondition(Jᵉ)))
 
-    coupling_bcs = merge((
+    momentum_bcs = (
         ρu = FieldBoundaryConditions(bottom = FluxBoundaryCondition(Jᵘ)),
         ρv = FieldBoundaryConditions(bottom = FluxBoundaryCondition(Jᵛ)),
-        ρe = FieldBoundaryConditions(bottom = FluxBoundaryCondition(Jᵉ)),
-    ), moisture_bc)
+    )
+
+    coupling_bcs = merge(momentum_bcs, energy_bc, moisture_bc)
 
     # User BCs override coupling defaults
     boundary_conditions = merge(coupling_bcs, boundary_conditions)
