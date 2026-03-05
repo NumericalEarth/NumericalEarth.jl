@@ -19,6 +19,7 @@ using Oceananigans.DistributedComputations: @root
 
 using NumericalEarth.DataWrangling:
     netrc_downloader,
+    NearestNeighborInpainting,
     BoundingBox,
     metadata_path,
     GramPerKilogramMinus35,
