@@ -50,7 +50,7 @@ grid = ImmersedBoundaryGrid(underlying_grid, GridFittedBottom(bottom_height);
 # We use an area-scaled biharmonic viscosity for grid-scale dissipation and
 # the CATKE parameterization for vertical mixing at the upper-ocean boundary layer.
 
-horizontal_viscosity = area_scaled_biharmonic_viscosity()
+horizontal_viscosity = area_scaled_biharmonic_viscosity(timescale=15days)
 vertical_mixing = NumericalEarth.Oceans.default_ocean_closure()
 
 # ### Ocean simulation

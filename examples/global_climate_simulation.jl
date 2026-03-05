@@ -48,7 +48,7 @@ momentum_advection   = VectorInvariant()
 tracer_advection     = WENO(order=5)
 free_surface         = SplitExplicitFreeSurface(grid; substeps=40)
 catke_closure        = NumericalEarth.Oceans.default_ocean_closure()
-viscous_closure      = area_scaled_biharmonic_viscosity()
+viscous_closure      = area_scaled_biharmonic_viscosity(timescale=15days)
 closures             = (catke_closure, viscous_closure)
 nothing #hide
 
