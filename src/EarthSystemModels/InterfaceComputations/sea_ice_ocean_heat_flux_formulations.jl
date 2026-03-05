@@ -90,7 +90,7 @@ Fields
 
 - `heat_transfer_coefficient::FT`: turbulent heat exchange coefficient ``\\alpha_h`` (dimensionless)
 - `salt_transfer_coefficient::FT`: turbulent salt exchange coefficient ``\\alpha_s`` (dimensionless)
-- `internal_heat_flux`::F`: diffusive flux inside the sea ice (`ConductiveFlux`)
+- `internal_heat_flux::FT`: diffusive flux inside the sea ice (`ConductiveFlux`)
 - `friction_velocity::U`: friction velocity value or formulation (constant `Number` or `MomentumBasedFrictionVelocity`)
 
 Example
