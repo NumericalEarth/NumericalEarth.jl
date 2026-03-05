@@ -76,48 +76,48 @@ for arch in test_architectures
         bins = 1018:0.25:1023
 
         ψ_hist = Streamfunction(grid;
-                                x_field = ρ,
-                                vel_field = v,
+                                coordinate_field = ρ,
+                                transport_field = v,
                                 x_bins = bins,
-                                dims = 2,
+                                retained_dims = 2,
                                 cumulative = false,
                                 in_sverdrups = false)
 
         ψ_cumulative = Streamfunction(grid;
-                                      x_field = ρ,
-                                      vel_field = v,
+                                      coordinate_field = ρ,
+                                      transport_field = v,
                                       x_bins = bins,
-                                      dims = 2,
+                                      retained_dims = 2,
                                       cumulative = true,
                                       in_sverdrups = false)
 
         ψ_tuple_dims = Streamfunction(grid;
-                                      x_field = ρ,
-                                      vel_field = v,
+                                      coordinate_field = ρ,
+                                      transport_field = v,
                                       x_bins = bins,
-                                      dims = (1, 3),
+                                      retained_dims = (2,),
                                       cumulative = false,
                                       in_sverdrups = false)
 
-        ψ_inferred_grid = Streamfunction(; x_field = ρ,
-                                          vel_field = v,
+        ψ_inferred_grid = Streamfunction(; coordinate_field = ρ,
+                                          transport_field = v,
                                           x_bins = bins,
-                                          dims = 2,
+                                          retained_dims = 2,
                                           cumulative = false,
                                           in_sverdrups = false)
 
         regridder_calls = Ref(0)
-        identity_regridder = (x_field, vel_field) -> begin
+        identity_regridder = (coordinate_field, transport_field) -> begin
             regridder_calls[] += 1
-            return (x_field, vel_field)
+            return (coordinate_field, transport_field)
         end
 
         ψ_regridded = Streamfunction(grid;
                                      regridder = identity_regridder,
-                                     x_field = ρ,
-                                     vel_field = v,
+                                     coordinate_field = ρ,
+                                     transport_field = v,
                                      x_bins = bins,
-                                     dims = 2,
+                                     retained_dims = 2,
                                      cumulative = false,
                                      in_sverdrups = false)
 
