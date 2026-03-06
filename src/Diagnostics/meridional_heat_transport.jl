@@ -1,3 +1,4 @@
+using Oceananigans.TimeSteppers: SplitRungeKuttaTimeStepper, QuasiAdamsBashforth2TimeStepper
 using ..EarthSystemModels: EarthSystemModel, reference_density, heat_capacity
 
 import ..EarthSystemModels: checkpoint_auxiliary_state, restore_auxiliary_state!
@@ -5,133 +6,133 @@ import ..EarthSystemModels: checkpoint_auxiliary_state, restore_auxiliary_state!
 struct OceanHeatContentTendencyMethod end
 struct MeridionalHeatFluxMethod end
 
-mutable struct MeridionalHeatTransportState{FT, OHC, HF}
-    cumulative_∫ohc_tendency :: OHC
-    cumulative_∫heat_flux :: HF
-    last_time :: FT
-    last_iteration :: Int
-end
-
-const meridional_heat_transport_states = IdDict{Any, MeridionalHeatTransportState}()
-
 """
-    meridional_heat_transport(esm::EarthSystemModel, OceanHeatContentTendencyMethod();
-                              reference_temperature=0.0)
+    meridional_heat_transport(esm::EarthSystemModel, MeridionalHeatFluxMethod();
+                              reference_temperature = 0)
 
-Return the meridional heat transport for the coupled `esm` using either of two methods:
+Return the meridional heat transport for the coupled `esm::EarthSystemModel` using either
+two methods: either by directly computing the meridional heat flux or indirectly using
+the total ocean heat content and the ocean heat uptake.
 
 Arguments
 =========
 
 * `esm`: An EarthSystemModel.
 
-* `OceanHeatContentTendencyMethod()` or `MeridionalHeatFluxMethod()` denoting the method
-  that the meridional heat transport is computed.
+* The method for the computation. Available options are: `MeridionalHeatFluxMethod()` (default)
+  and `OceanHeatContentTendencyMethod()`.
 
-  1. For `OceanHeatContentTendencyMethod()` (default), the meridional heat transport
-     is computed via:
+  `MeridionalHeatFluxMethod()` computes the meridional heat transport directly by summing
+  the meridional heat flux; `OceanHeatContentTendencyMethod()` computes the meridional heat
+  transport indirectly using the ocean heat content.
 
-     ```math
-     ∫_{y_S}^y \\mathrm{d}y \\left( ∫\\mathrm{d}t ∫\\mathrm{d}x ∫\\mathrm{d}z \\, ρᵒᶜ cᵒᶜ ∂ₜT  -  ∫\\mathrm{d}t ∫\\mathrm{d}x \\,  𝒬 \\right)
-     ```
-
-     where ``y_S`` is the Southern-most latitude of the domain and ``𝒬`` is the
-     net heat flux into the ocean.
-
-  2. For `MeridionalHeatFluxMethod()`, the meridional heat transport is computed via:
+  1. For `MeridionalHeatFluxMethod()`, the meridional heat transport is computed via:
 
      ```math
-     ρᵒᶜ cᵒᶜ ∫\\mathrm{d}x ∫\\mathrm{d}z \\, v (T - T_{\\rm ref})
+     \\mathrm{MHT} ≡ ρᵒᶜ cᵒᶜ ∫  v (T - T_{\\rm ref}) \\, \\mathrm{d}x \\, \\mathrm{d}z
      ```
 
-  Above, ``ρᵒᶜ`` and ``cᵒᶜ`` are the ocean reference density and heat capacity respectively
-  and they are inferred from the ocean component, `esm.ocean`, and ``T_{\\rm ref}`` is a
-  reference temperature.
+     Above, ``T_{\\rm ref}`` is a reference temperature and ``ρᵒᶜ`` and ``cᵒᶜ`` are the
+     ocean reference density and heat capacity respectively.
 
+  2. For `OceanHeatContentTendencyMethod()` we have:
+
+     Let ``T` be three-dimensional (potential) temperature, `ρᵒᶜ` a reference density,
+     `cᵒᶜ` a heat capacity, `H` the resting depth, and `η` the free-surface elevation.
+
+     The column heat content per unit horizontal area (units of J m⁻²) is:
+
+     ```math
+     ℋ = ρᵒᶜ cᵒᶜ ∫_{-H}^{η} T \\, \\mathrm{d}z
+     ```
+
+     The vertically-integrated heat budget is
+
+     ```math
+     \\frac{∂ℋ}{∂t} = - \\boldsymbol{∇}_h \\cdot \\boldsymbol{F}_h - 𝒬_{\\rm net} + ℛ
+     ```
+
+     where
+
+     * ``\\boldsymbol{F}_h`` is the depth-integrated horizontal heat flux vector (units W m⁻¹),
+       that includes advection and any parameterized lateral/eddy fluxes,
+     * ``- 𝒬_{\\rm net}`` is the net surface heat flux into the ocean at the surface
+       (units W m⁻²), and
+     * ``ℛ`` is the residual sources/sinks and non-closed terms (e.g. numerics, unaccounted
+       physics, mass/volume effects).
+
+     The total ocean heat content (OHC) South of latitude ``φ`` is:
+
+     ```math
+     \\mathrm{OHC}_S(φ, t) ≡ ∫_{A(φ)} ℋ \\, \\mathrm{d}A
+     ```
+
+     where `A(φ)` is the ocean area South of latitude ``φ``.
+
+     Integrating the vertically-integrated budget over `A(φ)` and using the divergence
+     theorem we get
+
+     ```math
+     \\frac{d}{dt} \\, \\mathrm{OHC}_S(φ, t) =
+         - ∮_{∂A(φ)} \\boldsymbol{F}_h \\cdot \\hat{\\boldsymbol{n}} \\, \\mathrm{d}ℓ
+         + ∫_{A(φ)} 𝒬_{\\rm net} \\, \\mathrm{d}A
+         + ∫_{A(φ)} ℛ \\, \\mathrm{d}A
+     ```
+
+     The northward meridional heat transport across latitude ``φ`` is
+
+     ```math
+     \\mathrm{MHT}(φ, t) ≡ - ∮_{\\mathrm{lat}=φ} \\boldsymbol{F}_h \\cdot \\hat{\boldsymbol{n}} \\, \\mathrm{d}ℓ
+     ```
+
+     with the sign convention that ``\\mathrm{MHT} > 0`` is northward.
+
+     Ignoring the residual ``ℛ``, the OHC-based diagnostic relation is
+
+     ```math
+     \\mathrm{MHT} = ∫_{A(φ)} 𝒬_{\\rm net} \\, \\mathrm{d}A - \\frac{d}{dt} \\, \\mathrm{OHC}_S
+     ```
 
 Keyword Arguments
 =================
 
-* `reference_temperature`: The reference temperature used for `MeridionalHeatFluxMethod()`.
+* `reference_temperature`: The reference temperature (in ᵒC) used for `MeridionalHeatFluxMethod()`; default: 0 ᵒC.
 """
 function meridional_heat_transport(esm::EarthSystemModel, ::OceanHeatContentTendencyMethod;
-                                   reference_temperature=0.0)
-    return meridional_heat_transport_via_ocean_heat_content_tendency(esm)
+                                   reference_temperature=0)
+    return meridional_heat_transport_via_ocean_heat_content(esm)
 end
 
 function meridional_heat_transport(esm::EarthSystemModel, ::MeridionalHeatFluxMethod;
-                                   reference_temperature=0.0)
-    return meridional_heat_transport_via_meridional_heat_flux(esm; reference_temperature)
+                                   reference_temperature=0)
+    return meridional_heat_transport_via_meridional_heat_flux(esm; reference_temperature = eltype(esm)(reference_temperature))
 end
 
 meridional_heat_transport(esm::EarthSystemModel) = meridional_heat_transport(esm, OceanHeatContentTendencyMethod())
 
 meridional_heat_transport(esm::EarthSystemModel, method; reference_temperature=0.0) =
-    throw(ArgumentError("Unknown method $(method); choose one of OceanHeatContentTendencyMethod() or MeridionalHeatFluxMethod()."))
+    throw(ArgumentError("Unknown method $(method); choose either MeridionalHeatFluxMethod() or OceanHeatContentTendencyMethod()."))
 
-"""
-    reset_meridional_heat_transport_state!(esm)
-
-Clear cached for the meridional heat transport state (cumulative ocean heat
-content tendency, cumulative heat flux, and clock metadata) for a coupled
-`esm`. This method should be called before restarting from a checkpoint or
-when reusing a model object.
-"""
-function reset_meridional_heat_transport_state!(esm)
-    pop!(meridional_heat_transport_states, esm, nothing)
-    return nothing
-end
-
-function initialize_mht_state!(esm, ∫heat_flux, ∫ohc_tendency, time, iteration)
-    cumulative_∫ohc_tendency = deepcopy(∫ohc_tendency)
-    set!(cumulative_∫ohc_tendency, 0)
-
-    cumulative_∫heat_flux = deepcopy(∫heat_flux)
-    set!(cumulative_∫heat_flux, 0)
-
-    FT = eltype(esm)
-    OHC = typeof(cumulative_∫ohc_tendency)
-    HF = typeof(cumulative_∫heat_flux)
-    state = MeridionalHeatTransportState{FT, OHC, HF}(cumulative_∫ohc_tendency,
-                                                      cumulative_∫heat_flux,
-                                                      time,
-                                                      iteration)
-    meridional_heat_transport_states[esm] = state
-    return state
-end
-
-function meridional_heat_transport_via_ocean_heat_content_tendency(esm)
+function meridional_heat_transport_via_ocean_heat_content(esm)
     ρᵒᶜ = reference_density(esm.ocean)
     cᵒᶜ = heat_capacity(esm.ocean)
-    heat_flux = net_ocean_heat_flux(esm)
-    ∂T_∂t = esm.ocean.model.timestepper.Gⁿ.T
+    ∂T_∂t = temperature_evolution_tendency(esm.ocean.model.timestepper)
+    heat_flux = net_ocean_heat_flux(esm) |> Field
 
-    ∫ohc_tendency = Field(sum(Field(Integral(ρᵒᶜ * cᵒᶜ * ∂T_∂t, dims=1)), dims=3))
-    compute!(∫ohc_tendency)
+    ∂ℋ_∂t = Integral(ρᵒᶜ * cᵒᶜ * ∂T_∂t, dims=3) |> Field
+    ∫sum_dx = Integral(heat_flux + ∂ℋ_∂t, dims=1) |> Field
+    MHT = CumulativeIntegral(- ∫sum_dx, dims=2)
 
-    ∫heat_flux = Field(Integral(heat_flux, dims=1))
-    compute!(∫heat_flux)
+    return MHT
+end
 
-    model_time = esm.ocean.model.clock.time
-    model_iteration = esm.ocean.model.clock.iteration
-    state = get(meridional_heat_transport_states, esm, nothing)
-    state === nothing &&
-        (state = initialize_mht_state!(esm, ∫heat_flux, ∫ohc_tendency, model_time, model_iteration))
+temperature_evolution_tendency(timestepper::SplitRungeKuttaTimeStepper) = timestepper.Gⁿ.T
 
-    if model_iteration != state.last_iteration
-        Δt = max(0, model_time - state.last_time)
-        if Δt == 0.0 && model_iteration > 0
-            Δt = ocean.model.clock.Δt
-        end
-
-        set!(state.cumulative_∫ohc_tendency, state.cumulative_ohc_∫tendency + Δt * ∫ohc_tendency)
-        set!(state.cumulative_∫heat_flux, state.cumulative_∫heat_flux + Δt * ∫heat_flux)
-
-        state.last_time = model_time
-        state.last_iteration = model_iteration
-    end
-
-    return CumulativeIntegral(state.cumulative_∫ohc_tendency - state.cumulative_∫heat_flux, dims=2)
+function temperature_evolution_tendency(timestepper::QuasiAdamsBashforth2TimeStepper)
+    Gⁿ = timestepper.Gⁿ.T
+    G⁻ = timestepper.G⁻.T
+    χ  = timestepper.χ
+    return (3/2 + χ) * Gⁿ - (1/2 + χ) * G⁻
 end
 
 function meridional_heat_transport_via_meridional_heat_flux(esm; reference_temperature)
@@ -139,51 +140,6 @@ function meridional_heat_transport_via_meridional_heat_flux(esm; reference_tempe
     cᵒᶜ = heat_capacity(esm.ocean)
     T = esm.ocean.model.tracers.T
     v = esm.ocean.model.velocities.v
-    mht = Integral(ρᵒᶜ * cᵒᶜ * v * (T - reference_temperature), dims=(1, 3))
-    return mht
-end
-
-function checkpoint_auxiliary_state(esm::EarthSystemModel)
-    state = get(meridional_heat_transport_states, esm, nothing)
-    state === nothing && return nothing
-
-    return (
-        meridional_heat_transport = (
-            cumulative_ohc_tendency = Array(interior(state.cumulative_∫ohc_tendency)),
-            cumulative_heat_flux = Array(interior(state.cumulative_∫heat_flux)),
-            last_time = state.last_time,
-            last_iteration = state.last_iteration
-        ),
-    )
-end
-
-function restore_auxiliary_state!(esm::EarthSystemModel, auxiliary_state)
-    auxiliary_state === nothing && return nothing
-    hasproperty(auxiliary_state, :meridional_heat_transport) || return nothing
-
-    mht_state = auxiliary_state.meridional_heat_transport
-    mht_state === nothing && return nothing
-
-    ρᵒᶜ = reference_density(esm.ocean)
-    cᵒᶜ = heat_capacity(esm.ocean)
-    heat_flux = net_ocean_heat_flux(esm)
-    ∂T_∂t = esm.ocean.model.timestepper.Gⁿ.T
-
-    ∫ohc_tendency = Field(Integral(ρᵒᶜ * cᵒᶜ * ∂T_∂t, dims=(1, 3)))
-    compute!(∫ohc_tendency)
-
-    ∫heat_flux = Field(Integral(heat_flux, dims=1))
-    compute!(∫heat_flux)
-
-    reset_meridional_heat_transport_state!(esm)
-    state = initialize_mht_state!(esm,
-                                  ∫heat_flux,
-                                  ∫ohc_tendency,
-                                  mht_state.last_time,
-                                  mht_state.last_iteration)
-    set!(state.cumulative_∫ohc_tendency, mht_state.∫cumulative_ohc_tendency)
-    set!(state.cumulative_∫heat_flux, mht_state.∫cumulative_heat_flux)
-    state.last_time = mht_state.last_time
-    state.last_iteration = mht_state.last_iteration
-    return nothing
+    MHT = Integral(ρᵒᶜ * cᵒᶜ * v * (T - reference_temperature), dims=(1, 3))
+    return MHT
 end
