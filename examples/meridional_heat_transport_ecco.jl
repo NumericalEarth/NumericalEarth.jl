@@ -78,8 +78,7 @@ end
 # And add it as a callback to the simulation.
 add_callback!(simulation, progress, IterationInterval(200))
 
-mht_OHC= meridional_heat_transport(esm, OceanHeatContentTendencyMethod())
-mht_OHC = Field(mht_OHC)
+mht_OHC= Field(meridional_heat_transport(esm, OceanHeatContentTendencyMethod()))
 mht_vT = Field(meridional_heat_transport(esm, MeridionalHeatFluxMethod()))
 
 ocean.output_writers[:mth] = JLD2Writer(ocean.model, (; mht_OHC, mht_vT);
@@ -96,13 +95,13 @@ using Oceananigans
 mht_OHC = FieldTimeSeries("ocean_one_degree_mht.jld2", "mht_OHC"; backend = OnDisk())
 mht_vT  = FieldTimeSeries("ocean_one_degree_mht.jld2", "mht_vT"; backend = OnDisk())
 
-times = mht_OCH.times
+times = mht_OHC.times
 Nt = length(times)
 
 grid = mht_OHC.grid
 Ny = size(mht_OHC.grid, 2)
 
-mht_OCH_mean = deepcopy(mht_OCH[1][1, :, 1])
+mht_OHC_mean = deepcopy(mht_OHC[1][1, :, 1])
 mht_vT_mean  = deepcopy(mht_vT[1][1, :, 1])
 
 for j in 1:Nt
