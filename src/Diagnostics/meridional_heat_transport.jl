@@ -98,22 +98,21 @@ Keyword Arguments
 
 * `reference_temperature`: The reference temperature (in ᵒC) used for `MeridionalHeatFluxMethod()`; default: 0 ᵒC.
 """
-function meridional_heat_transport(esm::EarthSystemModel, ::OceanHeatContentTendencyMethod;
-                                   reference_temperature=0)
-    return meridional_heat_transport_via_ocean_heat_content(esm)
+function meridional_heat_transport(esm::EarthSystemModel, method=MeridionalHeatFluxMethod(); reference_temperature=0)
+
+    esm.ocean.model.grid.underlying_grid isa OrthogonalSphericalShellGrid &&
+        throw(ArgumentError("meridional_heat_transport diagnostic does not work on OrthogonalSphericalShellGrid at the moment; use LatitudeLongitudeGrid."))
+
+    if method isa MeridionalHeatFluxMethod
+        FT = eltype(esm)
+        reference_temperature = convert(reference_temperature, FT)
+        return meridional_heat_transport_via_meridional_heat_flux(esm; reference_temperature)
+    elseif method isa OceanHeatContentTendencyMethod
+        return meridional_heat_transport_via_ocean_heat_content(esm)
+    else
+        throw(ArgumentError("Unknown method $(method); choose either MeridionalHeatFluxMethod() or OceanHeatContentTendencyMethod()."))
+    end
 end
-
-function meridional_heat_transport(esm::EarthSystemModel, ::MeridionalHeatFluxMethod;
-                                   reference_temperature=0)
-    FT = eltype(esm)
-    reference_temperature = convert(reference_temperature, FT)
-    return meridional_heat_transport_via_meridional_heat_flux(esm; reference_temperature)
-end
-
-meridional_heat_transport(esm::EarthSystemModel) = meridional_heat_transport(esm, OceanHeatContentTendencyMethod())
-
-meridional_heat_transport(esm::EarthSystemModel, method; reference_temperature=0.0) =
-    throw(ArgumentError("Unknown method $(method); choose either MeridionalHeatFluxMethod() or OceanHeatContentTendencyMethod()."))
 
 function meridional_heat_transport_via_meridional_heat_flux(esm; reference_temperature)
     ρᵒᶜ = reference_density(esm.ocean)
