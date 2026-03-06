@@ -5,7 +5,6 @@ using Oceananigans.Models: buoyancy_operation
 using NumericalEarth.Diagnostics: MixedLayerDepthField, MixedLayerDepthOperand
 using SeawaterPolynomials: TEOS10EquationOfState
 
-#=
 for arch in test_architectures, dataset in (ECCO4Monthly(),)
     A = typeof(arch)
     @info "Testing MixedLayerDepthField with $(typeof(dataset)) on $A"
@@ -57,7 +56,7 @@ for arch in test_architectures, dataset in (ECCO4Monthly(),)
         end
     end
 end
-=#
+
 for arch in test_architectures
     A = typeof(arch)
     @info "Testing InterfaceFluxOutputs on $A"
