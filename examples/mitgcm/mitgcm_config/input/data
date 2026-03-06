@@ -27,7 +27,6 @@
  allowFreezing=.TRUE.,
  useRealFreshWaterFlux=.TRUE.,
  useCDscheme=.TRUE.,
- useNHMTerms=.TRUE.,
 # vectorInvariantMomentum=.TRUE.,
 # tempAdvScheme=33,
 # saltAdvScheme=33,

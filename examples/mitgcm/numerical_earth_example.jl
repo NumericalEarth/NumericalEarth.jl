@@ -1,186 +1,143 @@
+# # NumericalEarth Ocean Simulation
+#
+# This script runs Oceananigans on the same grid as the MITgcm `global_oce_latlon`
+# tutorial: 90×40×15, 4°×4° lat-lon, 80S–80N, with JRA55 atmospheric forcing.
+#
+# Initial conditions and bathymetry are read from the MITgcm tutorial binary files
+# (linked into the MITgcm build directory) to ensure an exact match with
+# `mitgcm_ocean_forced_simulation.jl`.
+#
+# Physics: CATKE vertical mixing, GM/Redi, horizontal viscosity.
+# Run for 2 years.
+
 using NumericalEarth
+using MITgcm
 using Oceananigans
 using Oceananigans.Units
-using CairoMakie
 using Printf
+using Statistics
+
+# ## Grid — matches MITgcm global_oce_latlon exactly
+
+Nx, Ny, Nz = 90, 40, 15
 
 Δz = [50., 70., 100., 140., 190., 240., 290., 340., 390., 440., 490., 540., 590., 640., 690.]
 
-z_faces = [0]
-for k in 2:16
-    push!(z_faces, z_faces[k-1] - Δz[k-1])
+z_faces = zeros(Nz + 1)
+z_faces[Nz + 1] = 0.0
+for k in Nz:-1:1
+    z_faces[k] = z_faces[k + 1] - Δz[Nz - k + 1]
 end
 
-z_faces = reverse(z_faces)
-grid = LatitudeLongitudeGrid(size = (90, 40, 15), 
-                            latitude = (-80, 80), 
-                            longitude = (0, 360), 
-                            z = z_faces,
-                            halo = (5, 5, 5))
+grid = LatitudeLongitudeGrid(size = (Nx, Ny, Nz),
+                             latitude = (-80, 80),
+                             longitude = (0, 360),
+                             z = z_faces,
+                             halo = (5, 5, 5))
 
-function read_bin(filepath; dims = (90, 40, 15))
+# ## Bathymetry and initial conditions from MITgcm binary files
+#
+# Build MITgcm first to get the tutorial binary files in the run directory.
+
+example_dir = @__DIR__
+config_dir  = joinpath(example_dir, "mitgcm_config")
+code_dir    = joinpath(config_dir, "code")
+input_dir   = joinpath(config_dir, "input")
+build_dir   = joinpath(example_dir, "build_jra55")
+
+# Build MITgcm (or reuse existing build) to get binary data files
+mitgcm_dir = get(ENV, "MITGCM_DIR", "")
+if !isdir(mitgcm_dir)
+    @info "Downloading MITgcm source..."
+    mitgcm_dir = MITgcm.download_mitgcm_source()
+end
+
+run_dir = joinpath(build_dir, "run")
+if !isdir(run_dir) || !isfile(joinpath(run_dir, "bathymetry.bin"))
+    @info "Building MITgcm to obtain binary data files..."
+    MITgcm.build_mitgcm_library(mitgcm_dir;
+                                output_dir = build_dir,
+                                code_dir,
+                                input_dir)
+end
+
+function read_bin(filepath; dims)
     array = zeros(Float32, prod(dims))
     read!(filepath, array)
     array = bswap.(array)
-    array = array .|> Float64
+    array = Float64.(array)
     return reshape(array, dims...)
 end
 
-bat  = read_bin("bathymetry.bin"; dims = (90, 40))
-Tini = reverse(read_bin("lev_t.bin"), dims=3)
-Sini = reverse(read_bin("lev_s.bin"), dims=3)
-grid = ImmersedBoundaryGrid(grid, GridFittedBottom(bat))
+bathy = read_bin(joinpath(run_dir, "bathymetry.bin"); dims = (Nx, Ny))
+Tini  = reverse(read_bin(joinpath(run_dir, "lev_t.bin"); dims = (Nx, Ny, Nz)), dims = 3)
+Sini  = reverse(read_bin(joinpath(run_dir, "lev_s.bin"); dims = (Nx, Ny, Nz)), dims = 3)
+
+grid = ImmersedBoundaryGrid(grid, GridFittedBottom(bathy))
+
+@info "Grid and bathymetry loaded" Nx Ny Nz
+
+# ## Ocean model — physics matching MITgcm config
 
 using Oceananigans.TurbulenceClosures: IsopycnalSkewSymmetricDiffusivity, AdvectiveFormulation
 
-eddy_closure = IsopycnalSkewSymmetricDiffusivity(κ_skew=1e3, κ_symmetric=1e3, skew_flux_formulation=AdvectiveFormulation())
-catke_closure = NumericalEarth.Oceans.default_ocean_closure()
-vertical_mixing = VerticalScalarDiffusivity(ν=1e-3, κ=3e-5)
+catke_closure   = NumericalEarth.Oceans.default_ocean_closure()
+eddy_closure    = IsopycnalSkewSymmetricDiffusivity(κ_skew=1e3, κ_symmetric=1e3,
+                                                     skew_flux_formulation=AdvectiveFormulation())
+vert_viscosity  = VerticalScalarDiffusivity(ν=1e-3, κ=3e-5)
 horiz_viscosity = HorizontalScalarDiffusivity(ν=5e5)
 
-@info "Building an ocean model"
-
-# ### Ocean simulation
-# Now we bring everything together to construct the ocean simulation.
-# We use a split-explicit timestepping with 70 substeps for the barotropic mode.
-
-free_surface       = ImplicitFreeSurface() # (grid; substeps=40)
+free_surface       = SplitExplicitFreeSurface(grid; substeps=70)
 momentum_advection = VectorInvariant(; vorticity_scheme = Oceananigans.Advection.EnergyConserving())
 tracer_advection   = UpwindBiased(order=3)
 
-ocean = ocean_simulation(grid; momentum_advection, tracer_advection, free_surface, reference_density=1035,
-                         closure=(catke_closure, horiz_viscosity, vertical_mixing), timestepper = :QuasiAdamsBashforth2)
-
-@show ocean.model.coriolis
+ocean = ocean_simulation(grid; momentum_advection, tracer_advection, free_surface,
+                         reference_density = 1035,
+                         closure = (catke_closure, eddy_closure, horiz_viscosity, vert_viscosity))
 
 set!(ocean.model, T=Tini, S=Sini)
 
-atmos = JRA55PrescribedAtmosphere()
+# ## JRA55 forcing — same as MITgcm simulation
 
-# The coupled ocean--atmosphere model.
-# We use the default radiation model and we do not couple an ice model for simplicity.
-
-@info "Building a coupled simulation"
-
+atmos     = JRA55PrescribedAtmosphere()
 radiation = Radiation(ocean_emissivity=0.0, sea_ice_emissivity=0.0)
-coupled_model = OceanOnlyModel(ocean; atmosphere=atmos, radiation)
-nesimulation = Simulation(coupled_model; Δt = 1200, stop_time = 60days)
 
-## Progress callback
-# Print diagnostics every 10 days: SST/SSS ranges and wall-clock time.
+coupled_model = OceanOnlyModel(ocean; atmosphere=atmos, radiation)
+
+Δt        = 1200
+stop_time = 2 * 365days
+simulation = Simulation(coupled_model; Δt, stop_time)
+
+# ## Progress callback
 
 wall_time = Ref(time_ns())
 
 function progress(sim)
-    ocean = sim.model.ocean
-    model = ocean.model
-    niter = model.clock.iteration
-    mtime = model.clock.time
+    model = sim.model.ocean.model
+    T = model.tracers.T
+    S = model.tracers.S
 
-    ocean_sst = view(model.tracers.T, :, :, 15)
-    ocean_sss = view(model.tracers.S, :, :, 15)
+    Tmin, Tmax = minimum(T), maximum(T)
+    Smin, Smax = minimum(S), maximum(S)
+    ηm = mean(model.free_surface.displacement)
 
     elapsed = 1e-9 * (time_ns() - wall_time[])
 
-    @printf("iter %5d | MITgcm iter %6d | day %7.1f | ", iteration(sim), niter, mtime / 86400)
-    @printf("SST: [%6.2f, %5.2f] | SSS: [%5.2f, %5.2f] | wall: %s\n",
-            minimum(ocean_sst), maximum(ocean_sst),
-            minimum(ocean_sss), maximum(ocean_sss),
+    @printf("iter %6d | day %7.1f | SST: [%6.2f, %5.2f] | SSS: [%5.2f, %5.2f] | mean(η): %.4e | wall: %s\n",
+            iteration(sim), time(sim) / 86400,
+            Tmin, Tmax, Smin, Smax, ηm,
             prettytime(elapsed))
 
     wall_time[] = time_ns()
     return nothing
 end
 
-add_callback!(nesimulation, progress, TimeInterval(10days))
+add_callback!(simulation, progress, TimeInterval(10days))
 
-# We also set up a callback to collect the surface velocities (u, v) for later visualization.
+# ## Run
 
-u = []
-v = []
-η = []
-fu = []
-fv = []
+@info "Running Oceananigans + JRA55 simulation..." Δt stop_time
+wall_time[] = time_ns()
+run!(simulation)
 
-function save_variables(sim)
-    push!(u, deepcopy(sim.model.interfaces.exchanger.ocean.state.u))
-    push!(v, deepcopy(sim.model.interfaces.exchanger.ocean.state.v))
-    push!(η, deepcopy(sim.model.ocean.model.free_surface.displacement))
-    push!(fu, deepcopy(sim.model.ocean.model.velocities.u.boundary_conditions.top.condition))
-    push!(fv, deepcopy(sim.model.ocean.model.velocities.v.boundary_conditions.top.condition))
-end
-
-add_callback!(nesimulation, save_variables, IterationInterval(50))
-
-# ## Run!
-
-@info "Running 1-year simulation with JRA55 forcing..." nesimulation.Δt stop_time=365days
-
-run!(nesimulation)
-
-# ## Visualize surface velocities
-#
-# We produce an animation of the surface zonal and meridional velocities.
-
-iter = Observable(1)
-ui = @lift begin
-    ut = interior(u[$iter], :, :, 15)
-    ut[ut .== 0] .= NaN
-    ut
-end
-
-vi = @lift begin
-    ut = interior(v[$iter], :, :, 15)
-    ut[ut .== 0] .= NaN
-    ut
-end
-
-ηi = @lift begin
-    ηt = interior(η[$iter], :, :, 1)
-    ηt[ηt .== 0] .= NaN
-    ηt
-end
-
-fui = @lift begin
-    ηt = interior(fu[$iter], :, :, 1)
-    ηt[ηt .== 0] .= NaN
-    ηt .* 1020
-end
-
-fvi = @lift begin
-    ηt = interior(fv[$iter], :, :, 1)
-    ηt[ηt .== 0] .= NaN
-    ηt .* 1020
-end
-
-Nt = length(u)
-
-fig = Figure(resolution = (1000, 1000))
-ax1 = Axis(fig[1, 1]; title = "Surface zonal velocity (m/s)", xlabel = "", ylabel = "Latitude")
-ax2 = Axis(fig[2, 1]; title = "Surface meridional velocity (m/s)", xlabel = "", ylabel = "Latitude")
-ax3 = Axis(fig[3, 1]; title = "Sea surface height (m)", xlabel = "", ylabel = "Latitude")
-# ax4 = Axis(fig[4, 1]; title = "Zonal wind stress", xlabel = "", ylabel = "Latitude")
-# ax5 = Axis(fig[5, 1]; title = "Meridional wind stress", xlabel = "", ylabel = "Latitude")
-
-grid = coupled_model.interfaces.exchanger.grid
-
-λ = λnodes(grid, Center())
-φ = φnodes(grid, Center())
-
-hm1 = heatmap!(ax1, λ, φ, ui, nan_color = :grey, colormap = :bwr, colorrange = (-0.2, 0.2))
-hm2 = heatmap!(ax2, λ, φ, vi, nan_color = :grey, colormap = :bwr, colorrange = (-0.2, 0.2))
-hm2 = heatmap!(ax3, λ, φ, ηi, nan_color = :grey, colormap = :bwr, colorrange = (-1.5, 1.5))
-# hm2 = heatmap!(ax4, λ, φ, fui, nan_color = :grey, colormap = :bwr, colorrange = (-0.2, 0.2))
-# hm2 = heatmap!(ax5, λ, φ, fvi, nan_color = :grey, colormap = :bwr, colorrange = (-0.2, 0.2))
-
-Colorbar(fig[1, 2], hm1)
-Colorbar(fig[2, 2], hm2)
-
-CairoMakie.record(fig, "numerical_ocean_surface.mp4", 1:Nt, framerate = 8) do nn
-    iter[] = nn
-end
-nothing #hide
-
-# ## Finalize
-
-
+@info "Done!"
