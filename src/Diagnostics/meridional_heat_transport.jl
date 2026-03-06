@@ -105,7 +105,7 @@ function meridional_heat_transport(esm::EarthSystemModel, method=MeridionalHeatF
 
     if method isa MeridionalHeatFluxMethod
         FT = eltype(esm)
-        reference_temperature = convert(reference_temperature, FT)
+        reference_temperature = convert(FT, reference_temperature)
         return meridional_heat_transport_via_meridional_heat_flux(esm; reference_temperature)
     elseif method isa OceanHeatContentTendencyMethod
         return meridional_heat_transport_via_ocean_heat_content(esm)
