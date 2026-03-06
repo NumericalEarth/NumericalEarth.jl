@@ -322,16 +322,12 @@ above_freezing_ocean_temperature!(ocean, grid, ::Nothing) = nothing
 ##### Checkpointing
 #####
 
-checkpoint_auxiliary_state(model) = nothing
-restore_auxiliary_state!(model, state) = nothing
-
 function prognostic_state(osm::EarthSystemModel)
     return (clock = prognostic_state(osm.clock),
             ocean = prognostic_state(osm.ocean),
             atmosphere = prognostic_state(osm.atmosphere),
             sea_ice = prognostic_state(osm.sea_ice),
-            interfaces = prognostic_state(osm.interfaces),
-            auxiliary = prognostic_state(checkpoint_auxiliary_state(osm)))
+            interfaces = prognostic_state(osm.interfaces))
 end
 
 function restore_prognostic_state!(osm::EarthSystemModel, state)
