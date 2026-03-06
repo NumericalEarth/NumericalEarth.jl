@@ -1,7 +1,3 @@
-using Downloads
-using NCDatasets
-using Scratch
-using Oceananigans.Architectures: on_architecture
 using Oceananigans.BoundaryConditions: fill_halo_regions!, FPivotZipperBoundaryCondition,
     NoFluxBoundaryCondition, FieldBoundaryConditions
 using Oceananigans.Fields: set!
@@ -9,20 +5,8 @@ using Oceananigans.Grids: RightFaceFolded, generate_coordinate
 using Oceananigans.ImmersedBoundaries: ImmersedBoundaryGrid, GridFittedBottom
 using Oceananigans.OrthogonalSphericalShellGrids: Tripolar, continue_south!
 
-# Zenodo record 4436658: eORCA1 mesh_mask and bathymetry
-const ORCA1_mesh_mask_url      = "https://zenodo.org/records/4436658/files/eORCA1.2_mesh_mask.nc"
-const ORCA1_mesh_mask_file     = "eORCA1.2_mesh_mask.nc"
-const ORCA1_bathymetry_url     = "https://zenodo.org/records/4436658/files/eORCA_R1_bathy_meter_v2.2.nc"
-const ORCA1_bathymetry_file    = "eORCA_R1_bathy_meter_v2.2.nc"
-
-orca1_cache_dir::String = ""
-function init_orca1_cache!()
-    global orca1_cache_dir
-    if isempty(orca1_cache_dir)
-        orca1_cache_dir = @get_scratch!("ORCA1_grid")
-    end
-    return orca1_cache_dir
-end
+using ..DataWrangling: dataset_variable_name
+using ..DataWrangling.ORCA: ORCA1, default_south_rows_to_remove
 
 """
     read_2d_nemo_variable(ds, name)
@@ -42,29 +26,81 @@ function read_2d_nemo_variable(ds, name)
     end
 end
 
-const default_south_rows_to_remove_ORCA1 = 35
+# Detect periodic overlap columns in NEMO data.
+# The eORCA grid has `n` trailing columns that are copies of the first `n` columns
+# (e.g., columns 361:362 repeat columns 1:2 for eORCA1).
+function periodic_overlap_index(λCC)
+    Nx = size(λCC, 1)
+    for n in min(div(Nx, 4), 10):-1:1
+        if all(isapprox.(λCC[Nx-n+1:Nx, :], λCC[1:n, :]; atol=1e-4))
+            return n
+        end
+    end
+    return 0
+end
+
+# Shift Face-x data by -1 index while preserving the periodic overlap structure.
+# NEMO U[i] is the eastern face of T[i], but Oceananigans Face[i] is the western
+# face of Center[i], so Face[i] should get U[i-1].  A naive circshift breaks the
+# overlap columns; instead we re-slice:
+#   shifted = data[[Nx_unique; 1:Nx-1], :]
+# which gives shifted[i] = data[i-1] with correct overlap at the trailing end.
+function shift_face_x(data, overlap)
+    Nx = size(data, 1)
+    No = Nx - overlap
+    return data[vcat(No, 1:Nx-1), :]
+end
+
+# Helper: copy NEMO data into a Field, fill halos, extract as OffsetArray.
+#
+# Stagger offsets (NEMO → Oceananigans):
+#   Face-x:  shifted by -1 in x via shift_face_x (preserves overlap columns)
+#   Face-y:  shifted by +1 in y (row 1 left empty, filled by continue_south!)
+function halo_filled_data(data, helper_grid, bcs, LX, LY, overlap)
+    TX, TY, _ = topology(helper_grid)
+    Nx, Ny, _ = size(helper_grid)
+    Ni = Base.length(LX(), TX(), Nx)
+    Nj = size(data, 2)
+
+    # Shift Face-x data to account for NEMO vs Oceananigans stagger convention
+    shifted_data = LX === Face ? shift_face_x(data, overlap) : data
+
+    field = Field{LX, LY, Center}(helper_grid; boundary_conditions = bcs)
+    if LY === Center  # Center-y: no y-shift
+        field.data[1:Ni, 1:Nj, 1] .= shifted_data[1:Ni, 1:Nj]
+    else              # Face-y: shift +1 in y
+        field.data[1:Ni, 2:Nj+1, 1] .= shifted_data[1:Ni, 1:Nj]
+    end
+    fill_halo_regions!(field)
+    
+    return deepcopy(dropdims(field.data, dims = 3))
+end
 
 """
-    ORCA1Grid(arch = CPU(), FT::DataType = Float64;
-              halo = (4, 4, 4),
-              z = (-6000, 0),
-              Nz = 50,
-              radius = Oceananigans.defaults.planet_radius,
-              with_bathymetry = true,
-              active_cells_map = true,
-              south_rows_to_remove = $default_south_rows_to_remove_ORCA1)
+    ORCAGrid(arch = CPU(), FT::DataType = Float64;
+             dataset,
+             halo = (4, 4, 4),
+             z = (-6000, 0),
+             Nz = 50,
+             radius = Oceananigans.defaults.planet_radius,
+             with_bathymetry = true,
+             active_cells_map = true,
+             south_rows_to_remove = default_south_rows_to_remove(dataset))
 
 Construct an `OrthogonalSphericalShellGrid` with `(Periodic, RightFaceFolded, Bounded)`
-topology using coordinate and metric data from the NEMO eORCA1 `mesh_mask` file
-(Zenodo; doi:10.5281/zenodo.4436658).
+topology using coordinate and metric data from a NEMO eORCA `mesh_mask` file.
+
+The `dataset` keyword argument specifies which ORCA configuration to use (e.g., `ORCA1()`).
+The mesh mask and bathymetry files are downloaded automatically via the
+`DataWrangling.ORCA` metadata interface.
 
 The horizontal grid (including coordinates, scale factors, and areas) is loaded
 directly from the `mesh_mask` NetCDF file, which contains data at all four staggered
 locations (T, U, V, F points). The user provides the vertical discretization via the `z`
 keyword argument.
 
-When `with_bathymetry = true` (the default), the ORCA1 bathymetry is also downloaded
-from Zenodo and the grid is returned as an `ImmersedBoundaryGrid` with a `GridFittedBottom`.
+When `with_bathymetry = true` (the default), the bathymetry is also downloaded
+and the grid is returned as an `ImmersedBoundaryGrid` with a `GridFittedBottom`.
 
 Positional Arguments
 ====================
@@ -75,36 +111,43 @@ Positional Arguments
 Keyword Arguments
 =================
 
+- `dataset`: The ORCA dataset to use. Default: `ORCA1()` (from Zenodo; <https://doi.org.10.5281/zenodo.4436658>).
 - `halo`: Halo size tuple `(Hx, Hy, Hz)`. Default: `(4, 4, 4)`.
 - `z`: Vertical coordinate specification. Can be a 2-tuple `(z_bottom, z_top)`, an array of z-interfaces,
        or, e.g., an `ExponentialDiscretization`. Default: `(-6000, 0)`.
 - `Nz`: Number of vertical levels (only used when `z` is a 2-tuple). Default: `50`.
 - `radius`: Planet radius. Default: `Oceananigans.defaults.planet_radius`.
-- `with_bathymetry`: If `true`, download the eORCA1 bathymetry and return an `ImmersedBoundaryGrid` with
+- `with_bathymetry`: If `true`, download the bathymetry and return an `ImmersedBoundaryGrid` with
                      `GridFittedBottom`. Default: `true`.
 - `active_cells_map`: If `true` and `with_bathymetry = true`, build an active cells map
                       for efficient kernel execution over wet cells only. Default: `true`.
-- `south_rows_to_remove`: Number of southern rows to remove from the eORCA grid.  The "extended" eORCA1 grid
+- `south_rows_to_remove`: Number of southern rows to remove from the eORCA grid.  The "extended" eORCA grid
                           contains degenerate padding rows near Antarctica that are entirely land.
-                          Removing them reduces memory usage and computation. Default: `35`.
+                          Removing them reduces memory usage and computation.
 """
-function ORCA1Grid(arch = CPU(), FT::DataType = Float64;
-                   halo = (4, 4, 4),
-                   z = (-6000, 0),
-                   Nz = 50,
-                   radius = Oceananigans.defaults.planet_radius,
-                   with_bathymetry = true,
-                   active_cells_map = true,
-                   south_rows_to_remove = default_south_rows_to_remove_ORCA1)
+function ORCAGrid(arch = CPU(), FT::DataType = Float64;
+                  dataset = ORCA1(),
+                  halo = (4, 4, 4),
+                  z = (-6000, 0),
+                  Nz = 50,
+                  radius = Oceananigans.defaults.planet_radius,
+                  with_bathymetry = true,
+                  active_cells_map = true,
+                  south_rows_to_remove = default_south_rows_to_remove(dataset))
 
-    # Download mesh_mask if not already cached
-    cache_dir = init_orca1_cache!()
-    mesh_mask_path = joinpath(cache_dir, ORCA1_mesh_mask_file)
-
-    if !isfile(mesh_mask_path)
-        @info "Downloading eORCA1 mesh_mask to $cache_dir..."
-        Downloads.download(ORCA1_mesh_mask_url, mesh_mask_path)
+    # Validate z specification against Nz (mirrors Oceananigans' input_validation.jl)
+    if z isa AbstractVector
+        Nξ = length(z)
+        if Nξ < Nz + 1
+            throw(ArgumentError("length(z) = $Nξ has too few interfaces for the dimension size $Nz!"))
+        elseif Nξ > Nz + 1
+            throw(ArgumentError("length(z) = $Nξ has too many interfaces for the dimension size $Nz!"))
+        end
     end
+
+    # Download mesh_mask via the metadata interface
+    mesh_meta = Metadatum(:mesh_mask; dataset)
+    mesh_mask_path = download_dataset(mesh_meta)
 
     ds = Dataset(mesh_mask_path)
 
@@ -160,21 +203,23 @@ function ORCA1Grid(arch = CPU(), FT::DataType = Float64;
     Nx_nemo, Ny_nemo = size(λCC)
     Nx = Nx_nemo
 
-    # The "extended" eORCA1 grid (eORCA) has extra rows near Antarctica
+    # Detect periodic overlap columns (e.g., eORCA1 has 2 trailing overlap columns)
+    overlap = periodic_overlap_index(λCC)
+
+    # The "extended" eORCA grid (eORCA) has extra rows near Antarctica
     # that are entirely land with degenerate metrics (scale factors ~ 4 m).
     # Removing these rows reduces cost.
     jr = south_rows_to_remove
     if jr > 0
         chop_south(data) = data[:, jr+1:end]
-
-        λCC = chop_south(λCC);  λFC = chop_south(λFC)
-        λCF = chop_south(λCF);  λFF = chop_south(λFF)
-        φCC = chop_south(φCC);  φFC = chop_south(φFC)
-        φCF = chop_south(φCF);  φFF = chop_south(φFF)
-        e1t = chop_south(e1t);  e1u = chop_south(e1u)
-        e1v = chop_south(e1v);  e1f = chop_south(e1f)
-        e2t = chop_south(e2t);  e2u = chop_south(e2u)
-        e2v = chop_south(e2v);  e2f = chop_south(e2f)
+        λCC  = chop_south(λCC);  λFC  = chop_south(λFC)
+        λCF  = chop_south(λCF);  λFF  = chop_south(λFF)
+        φCC  = chop_south(φCC);  φFC  = chop_south(φFC)
+        φCF  = chop_south(φCF);  φFF  = chop_south(φFF)
+        e1t  = chop_south(e1t);  e1u  = chop_south(e1u)
+        e1v  = chop_south(e1v);  e1f  = chop_south(e1f)
+        e2t  = chop_south(e2t);  e2u  = chop_south(e2u)
+        e2v  = chop_south(e2v);  e2f  = chop_south(e2f)
         AzCC = chop_south(AzCC); AzFC = chop_south(AzFC)
         AzCF = chop_south(AzCF); AzFF = chop_south(AzFF)
 
@@ -183,22 +228,18 @@ function ORCA1Grid(arch = CPU(), FT::DataType = Float64;
 
     southernmost_latitude = Float64(minimum(φCC))
 
-    # NEMO stores all variables with size (Nx, Ny_nemo).
-    # With RightFaceFolded topology and Ny = Ny_nemo:
-    #   - Center-y fields have Ny - 1 interior points (the fold row is handled by BC)
-    #   - Face-y fields have Ny interior points
-    # So we trim Center-y data (T, U points) to Ny-1 rows and keep
-    # Face-y data (V, F points) as-is with all Ny rows.
-    Ny = Ny_nemo
+    # NEMO stores all variables with size (Nx, Ny_nemo).  NEMO V[j] is the
+    # northern face of T-cell j, but Oceananigans Face[j] is the southern face
+    # of Center-cell j.  With Ny = Ny_nemo + 1 and RightFaceFolded:
+    #   - Center-y interior has Ny - 1 = Ny_nemo points  ← matches NEMO T data
+    #   - Face-y   interior has Ny     = Ny_nemo+1 points ← NEMO V data shifted +1
+    # Face-y row 1 (southernmost) has no NEMO data and is filled by continue_south!.
+    Ny = Ny_nemo + 1
     Hx, Hy, Hz = halo
-
-    # Trim helper: for Center-y data, drop the last (fold) row
-    trim_center_y(data) = data[:, 1:Ny_nemo-1]
 
     # Set up vertical coordinate
     topology = (Periodic, RightFaceFolded, Bounded)
-    Nz_val = z isa Tuple ? Nz : length(z) - 1
-    Lz, z_coord = generate_coordinate(FT, topology, (Nx, Ny, Nz_val), halo, z, :z, 3, CPU())
+    Lz, z_coord = generate_coordinate(FT, topology, (Nx, Ny, Nz), halo, z, :z, 3, CPU())
 
     # Helper RectilinearGrid for filling halo regions
     # Matches the TripolarGrid pattern in Oceananigans
@@ -214,42 +255,33 @@ function ORCA1Grid(arch = CPU(), FT::DataType = Float64;
                                   top    = nothing,
                                   bottom = nothing)
 
-    # Helper: set data into a Field, fill halos, extract as OffsetArray
-    function halo_filled_data(data, LX, LY)
-        field = Field{LX, LY, Center}(helper_grid; boundary_conditions = bcs)
-        set!(field, data)
-        fill_halo_regions!(field)
-        return deepcopy(dropdims(field.data, dims = 3))
-    end
-
     # Fill halo regions for coordinates
-    # Center-y (T, U) data must be trimmed; Face-y (V, F) data used as-is
-    λᶜᶜᵃ = halo_filled_data(trim_center_y(λCC), Center, Center)
-    λᶠᶜᵃ = halo_filled_data(trim_center_y(λFC), Face,   Center)
-    λᶜᶠᵃ = halo_filled_data(λCF,                Center, Face)
-    λᶠᶠᵃ = halo_filled_data(λFF,                Face,   Face)
+    λᶜᶜᵃ = halo_filled_data(λCC, helper_grid, bcs, Center, Center, overlap)
+    λᶠᶜᵃ = halo_filled_data(λFC, helper_grid, bcs, Face,   Center, overlap)
+    λᶜᶠᵃ = halo_filled_data(λCF, helper_grid, bcs, Center, Face,   overlap)
+    λᶠᶠᵃ = halo_filled_data(λFF, helper_grid, bcs, Face,   Face,   overlap)
 
-    φᶜᶜᵃ = halo_filled_data(trim_center_y(φCC), Center, Center)
-    φᶠᶜᵃ = halo_filled_data(trim_center_y(φFC), Face,   Center)
-    φᶜᶠᵃ = halo_filled_data(φCF,                Center, Face)
-    φᶠᶠᵃ = halo_filled_data(φFF,                Face,   Face)
+    φᶜᶜᵃ = halo_filled_data(φCC, helper_grid, bcs, Center, Center, overlap)
+    φᶠᶜᵃ = halo_filled_data(φFC, helper_grid, bcs, Face,   Center, overlap)
+    φᶜᶠᵃ = halo_filled_data(φCF, helper_grid, bcs, Center, Face,   overlap)
+    φᶠᶠᵃ = halo_filled_data(φFF, helper_grid, bcs, Face,   Face,   overlap)
 
     # Fill halo regions for scale factors
-    Δxᶜᶜᵃ = halo_filled_data(trim_center_y(e1t), Center, Center)
-    Δxᶠᶜᵃ = halo_filled_data(trim_center_y(e1u), Face,   Center)
-    Δxᶜᶠᵃ = halo_filled_data(e1v,                Center, Face)
-    Δxᶠᶠᵃ = halo_filled_data(e1f,                Face,   Face)
+    Δxᶜᶜᵃ = halo_filled_data(e1t, helper_grid, bcs, Center, Center, overlap)
+    Δxᶠᶜᵃ = halo_filled_data(e1u, helper_grid, bcs, Face,   Center, overlap)
+    Δxᶜᶠᵃ = halo_filled_data(e1v, helper_grid, bcs, Center, Face,   overlap)
+    Δxᶠᶠᵃ = halo_filled_data(e1f, helper_grid, bcs, Face,   Face,   overlap)
 
-    Δyᶜᶜᵃ = halo_filled_data(trim_center_y(e2t), Center, Center)
-    Δyᶠᶜᵃ = halo_filled_data(trim_center_y(e2u), Face,   Center)
-    Δyᶜᶠᵃ = halo_filled_data(e2v,                Center, Face)
-    Δyᶠᶠᵃ = halo_filled_data(e2f,                Face,   Face)
+    Δyᶜᶜᵃ = halo_filled_data(e2t, helper_grid, bcs, Center, Center, overlap)
+    Δyᶠᶜᵃ = halo_filled_data(e2u, helper_grid, bcs, Face,   Center, overlap)
+    Δyᶜᶠᵃ = halo_filled_data(e2v, helper_grid, bcs, Center, Face,   overlap)
+    Δyᶠᶠᵃ = halo_filled_data(e2f, helper_grid, bcs, Face,   Face,   overlap)
 
     # Fill halo regions for areas
-    Azᶜᶜᵃ = halo_filled_data(trim_center_y(AzCC), Center, Center)
-    Azᶠᶜᵃ = halo_filled_data(trim_center_y(AzFC), Face,   Center)
-    Azᶜᶠᵃ = halo_filled_data(AzCF,                Center, Face)
-    Azᶠᶠᵃ = halo_filled_data(AzFF,                Face,   Face)
+    Azᶜᶜᵃ = halo_filled_data(AzCC, helper_grid, bcs, Center, Center, overlap)
+    Azᶠᶜᵃ = halo_filled_data(AzFC, helper_grid, bcs, Face,   Center, overlap)
+    Azᶜᶠᵃ = halo_filled_data(AzCF, helper_grid, bcs, Center, Face,   overlap)
+    Azᶠᶠᵃ = halo_filled_data(AzFF, helper_grid, bcs, Face,   Face,   overlap)
 
     # Continue metrics to the south using a reference LatitudeLongitudeGrid.
     # The eORCA grid has degenerate padding cells near the southern boundary
@@ -258,7 +290,8 @@ function ORCA1Grid(arch = CPU(), FT::DataType = Float64;
     # with values from a regular LatitudeLongitudeGrid.
     latitude  = (southernmost_latitude, 90)
     longitude = (-180, 180)
-    latitude_longitude_grid = LatitudeLongitudeGrid(; size = (Nx, Ny, Nz_val),
+
+    latitude_longitude_grid = LatitudeLongitudeGrid(; size = (Nx, Ny, Nz),
                                                       latitude,
                                                       longitude,
                                                       halo,
@@ -282,7 +315,7 @@ function ORCA1Grid(arch = CPU(), FT::DataType = Float64;
 
     underlying_grid = OrthogonalSphericalShellGrid{Periodic, RightFaceFolded, Bounded}(
         arch,
-        Nx, Ny, Nz_val,
+        Nx, Ny, Nz,
         Hx, Hy, Hz,
         convert(FT, Lz),
         on_architecture(arch, map(FT, λᶜᶜᵃ)),
@@ -313,16 +346,13 @@ function ORCA1Grid(arch = CPU(), FT::DataType = Float64;
         return underlying_grid
     end
 
-    # Load ORCA1 bathymetry
-    bathymetry_path = joinpath(cache_dir, ORCA1_bathymetry_file)
+    # Load bathymetry via the metadata interface
+    bathy_meta = Metadatum(:bottom_height; dataset)
+    bathymetry_path = download_dataset(bathy_meta)
 
-    if !isfile(bathymetry_path)
-        @info "Downloading eORCA1 bathymetry to $cache_dir..."
-        Downloads.download(ORCA1_bathymetry_url, bathymetry_path)
-    end
-
+    bathy_varname = dataset_variable_name(bathy_meta)
     bathy_ds = Dataset(bathymetry_path)
-    bathy_data = Array(bathy_ds["Bathymetry"][:, :])
+    bathy_data = Array(bathy_ds[bathy_varname][:, :])
     close(bathy_ds)
 
     # Chop off the same southern rows from bathymetry
@@ -330,12 +360,13 @@ function ORCA1Grid(arch = CPU(), FT::DataType = Float64;
         bathy_data = chop_south(bathy_data)
     end
 
-    # Bathymetry is T-point (Center, Center) data: trim last row for RightFaceFolded
-    bathy_data = trim_center_y(bathy_data)
-
     # NEMO stores bathymetry as positive depth; convert to negative bottom height
-    # (Oceananigans convention: z < 0 below sea level)
-    bottom_height = -FT.(bathy_data)
+    # (Oceananigans convention: z < 0 below sea level).
+    # In NEMO, bathymetry == 0 means land. We map these to bottom_height = 100
+    # (above sea level) so that GridFittedBottom correctly masks them as land.
+    bottom_height = convert.(FT, bathy_data)
+    bottom_height .= ifelse.(bottom_height .> 0, .-bottom_height, FT(100))
+    bottom_height = on_architecture(arch, bottom_height)
 
     return ImmersedBoundaryGrid(underlying_grid, GridFittedBottom(bottom_height); active_cells_map)
 end
