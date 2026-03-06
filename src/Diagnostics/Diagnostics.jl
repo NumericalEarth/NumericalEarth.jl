@@ -20,7 +20,7 @@ using NumericalEarth.EarthSystemModels: EarthSystemModel
 import Oceananigans.Fields: compute!
 
 include("mixed_layer_depth.jl")
-include("interface_fluxes.jl")
 include("meridional_heat_transport.jl")
+include("interface_fluxes.jl")
 
 end # module
