@@ -55,7 +55,7 @@ NumericalEarthWOAExt = "WorldOceanAtlasTools"
 
 [compat]
 Adapt = "4"
-Breeze = "0.3.3"
+Breeze = "0.4"
 CDSAPI = "2"
 CFTime = "0.1, 0.2"
 CUDA = "5.9.5"
