@@ -2,7 +2,7 @@ include("runtests_setup.jl")
 
 using Oceananigans: location
 using Oceananigans.Models: buoyancy_operation
-using NumericalEarth.Diagnostics: MixedLayerDepthField, MixedLayerDepthOperand
+using NumericalEarth.Diagnostics: MixedLayerDepthField, MixedLayerDepthOperand, Streamfunction
 using SeawaterPolynomials: TEOS10EquationOfState
 
 for arch in test_architectures, dataset in (ECCO4Monthly(),)
@@ -54,6 +54,93 @@ for arch in test_architectures, dataset in (ECCO4Monthly(),)
         if dataset isa ECCO4Monthly
             @test @allowscalar h[1, 1, 1] ≈ 9.2957298 # m
         end
+    end
+end
+
+for arch in test_architectures
+    A = typeof(arch)
+    @info "Testing Streamfunction diagnostic on $A"
+
+    @testset "Streamfunction on $A" begin
+        grid = RectilinearGrid(arch;
+                               size = (8, 6, 4),
+                               extent = (1, 1, 1),
+                               topology = (Periodic, Bounded, Bounded))
+
+        ρ = CenterField(grid)
+        v = CenterField(grid)
+
+        set!(ρ, (x, y, z) -> 1018 + 4y + 0.5z)
+        set!(v, 1.0)
+
+        bins = 1018:0.25:1023
+
+        ψ_hist = Streamfunction(grid;
+                                coordinate_field = ρ,
+                                transport_field = v,
+                                x_bins = bins,
+                                retained_dims = 2,
+                                cumulative = false,
+                                in_sverdrups = false)
+
+        ψ_cumulative = Streamfunction(grid;
+                                      coordinate_field = ρ,
+                                      transport_field = v,
+                                      x_bins = bins,
+                                      retained_dims = 2,
+                                      cumulative = true,
+                                      in_sverdrups = false)
+
+        ψ_tuple_dims = Streamfunction(grid;
+                                      coordinate_field = ρ,
+                                      transport_field = v,
+                                      x_bins = bins,
+                                      retained_dims = (2,),
+                                      cumulative = false,
+                                      in_sverdrups = false)
+
+        ψ_inferred_grid = Streamfunction(; coordinate_field = ρ,
+                                          transport_field = v,
+                                          x_bins = bins,
+                                          retained_dims = 2,
+                                          cumulative = false,
+                                          in_sverdrups = false)
+
+        regridder_calls = Ref(0)
+        identity_regridder = (coordinate_field, transport_field) -> begin
+            regridder_calls[] += 1
+            return (coordinate_field, transport_field)
+        end
+
+        ψ_regridded = Streamfunction(grid;
+                                     regridder = identity_regridder,
+                                     coordinate_field = ρ,
+                                     transport_field = v,
+                                     x_bins = bins,
+                                     retained_dims = 2,
+                                     cumulative = false,
+                                     in_sverdrups = false)
+
+        compute!(ψ_hist)
+        compute!(ψ_cumulative)
+        compute!(ψ_tuple_dims)
+        compute!(ψ_inferred_grid)
+        compute!(ψ_regridded)
+
+        Ψhist = Array(interior(on_architecture(CPU(), ψ_hist)))
+        Ψcum = Array(interior(on_architecture(CPU(), ψ_cumulative)))
+        Ψtuple = Array(interior(on_architecture(CPU(), ψ_tuple_dims)))
+        Ψinferred = Array(interior(on_architecture(CPU(), ψ_inferred_grid)))
+
+        @test size(Ψhist, 1) == length(bins) - 1
+        @test size(Ψhist, 2) == size(grid, 2)
+        @test size(Ψhist, 3) == 1
+        @test Ψtuple ≈ Ψhist
+        @test Ψinferred ≈ Ψhist
+
+        expected_cumulative = reverse(cumsum(reverse(Ψhist; dims = 1); dims = 1); dims = 1)
+        @test Ψcum ≈ expected_cumulative
+        @test regridder_calls[] == 1
     end
 end
 
