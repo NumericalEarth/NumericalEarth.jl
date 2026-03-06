@@ -105,13 +105,24 @@ end
 
 function meridional_heat_transport(esm::EarthSystemModel, ::MeridionalHeatFluxMethod;
                                    reference_temperature=0)
-    return meridional_heat_transport_via_meridional_heat_flux(esm; reference_temperature = eltype(esm)(reference_temperature))
+    FT = eltype(esm)
+    reference_temperature = convert(reference_temperature, FT)
+    return meridional_heat_transport_via_meridional_heat_flux(esm; reference_temperature)
 end
 
 meridional_heat_transport(esm::EarthSystemModel) = meridional_heat_transport(esm, OceanHeatContentTendencyMethod())
 
 meridional_heat_transport(esm::EarthSystemModel, method; reference_temperature=0.0) =
     throw(ArgumentError("Unknown method $(method); choose either MeridionalHeatFluxMethod() or OceanHeatContentTendencyMethod()."))
+
+function meridional_heat_transport_via_meridional_heat_flux(esm; reference_temperature)
+    ρᵒᶜ = reference_density(esm.ocean)
+    cᵒᶜ = heat_capacity(esm.ocean)
+    T = esm.ocean.model.tracers.T
+    v = esm.ocean.model.velocities.v
+    MHT = Integral(ρᵒᶜ * cᵒᶜ * v * (T - reference_temperature), dims=(1, 3))
+    return MHT
+end
 
 function meridional_heat_transport_via_ocean_heat_content(esm)
     ρᵒᶜ = reference_density(esm.ocean)
@@ -133,13 +144,4 @@ function temperature_evolution_tendency(timestepper::QuasiAdamsBashforth2TimeSte
     G⁻ = timestepper.G⁻.T
     χ  = timestepper.χ
     return (3/2 + χ) * Gⁿ - (1/2 + χ) * G⁻
-end
-
-function meridional_heat_transport_via_meridional_heat_flux(esm; reference_temperature)
-    ρᵒᶜ = reference_density(esm.ocean)
-    cᵒᶜ = heat_capacity(esm.ocean)
-    T = esm.ocean.model.tracers.T
-    v = esm.ocean.model.velocities.v
-    MHT = Integral(ρᵒᶜ * cᵒᶜ * v * (T - reference_temperature), dims=(1, 3))
-    return MHT
 end
