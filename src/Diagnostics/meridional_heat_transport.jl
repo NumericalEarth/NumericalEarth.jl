@@ -14,6 +14,11 @@ Return the meridional heat transport for the coupled `esm::EarthSystemModel` usi
 two methods: either by directly computing the meridional heat flux or indirectly using
 the total ocean heat content and the ocean heat uptake.
 
+!!! warning "Only works on LatitudeLongitudeGrid"
+
+    The `meridional_heat_transport` diagnostic currently is only supported only on
+    `LongitudeLatitudeGrid`s.
+
 Arguments
 =========
 
