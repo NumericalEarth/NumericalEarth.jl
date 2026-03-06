@@ -5,6 +5,8 @@ using Dates
 using Statistics
 using Printf
 
+using CUDA; CUDA.device!(3)
+
 arch = GPU()
 Nx = 360
 Ny = 180
@@ -45,8 +47,7 @@ atmosphere = JRA55PrescribedAtmosphere(arch; backend=JRA55NetCDFBackend(80),
                                        include_rivers_and_icebergs = false)
 esm = OceanSeaIceModel(ocean, sea_ice; atmosphere, radiation)
 
-simulation = Simulation(esm; Δt=20minutes, stop_time=2*365days)
-
+simulation = Simulation(esm; Δt=20minutes, stop_time=5*365days)
 
 wall_time = Ref(time_ns())
 
@@ -75,47 +76,53 @@ function progress(sim)
 end
 
 # And add it as a callback to the simulation.
-add_callback!(simulation, progress, TimeInterval(1days))
+add_callback!(simulation, progress, IterationInterval(200))
 
-mht_OHC = meridional_heat_transport(esm, OceanHeatContentTendencyMethod()) |> Field
-mht_vT = meridional_heat_transport(esm, MeridionalHeatFluxMethod()) |> Field
+mht_OHC= meridional_heat_transport(esm, OceanHeatContentTendencyMethod())
+mht_OHC = Field(mht_OHC)
+mht_vT = Field(meridional_heat_transport(esm, MeridionalHeatFluxMethod()))
 
-mht_outputs = (; mht_OHC, mht_vT)
-
-ocean.output_writers[:mth] = JLD2Writer(ocean.model, mht_outputs;
+ocean.output_writers[:mth] = JLD2Writer(ocean.model, (; mht_OHC, mht_vT);
                                         schedule = TimeInterval(3hours),
                                         filename = "ocean_one_degree_mht",
                                         overwrite_existing = true)
 
-
 run!(simulation)
 
+##
 
-mht_OCH = FieldTimeSeries("ocean_one_degree_mht.jld2", "mht_OHC"; backend = OnDisk())
+using Oceananigans
+
+mht_OHC = FieldTimeSeries("ocean_one_degree_mht.jld2", "mht_OHC"; backend = OnDisk())
 mht_vT  = FieldTimeSeries("ocean_one_degree_mht.jld2", "mht_vT"; backend = OnDisk())
 
 times = mht_OCH.times
 Nt = length(times)
 
+grid = mht_OHC.grid
+Ny = size(mht_OHC.grid, 2)
+
 mht_OCH_mean = deepcopy(mht_OCH[1][1, :, 1])
-mht_vT_mean = deepcopy(mht_vT[1][1, :, 1])
+mht_vT_mean  = deepcopy(mht_vT[1][1, :, 1])
 
 for j in 1:Nt
-    mht_OCH_mean += mht_OCH[j][1, :, 1]
+    @info "iteration $j out of $Nt"
+    mht_OHC_mean += mht_OHC[j][1, :, 1]
     mht_vT_mean  +=  mht_vT[j][1, :, 1]
 end
-@. mht_OCH_mean = mht_OCH_mean / Nt
+
+@. mht_OHC_mean = mht_OHC_mean / Nt
 @. mht_vT_mean = mht_vT_mean / Nt
 
 
 using CairoMakie
 
 fig = Figure()
-ax1 = Axis(fig[1, 1], xlabel="latitude (deg)", ylabel="MHT (PW)")
-ax2 = Axis(fig[2, 1], xlabel="latitude (deg)", ylabel="MHT (PW)")
+ax = Axis(fig[1, 1], xlabel="latitude (deg)", ylabel="MHT (PW)")
 
 φ = φnodes(grid, Face())
-lines!(ax1, φnodes(grid, Center()), diff(mht_OCH_mean[1:Ny+1]) / 1e15, linewidth=4)
-lines!(ax2, φ, mht_vT_mean[1:Ny+1] / 1e15, linewidth=4)
+
+lines!(ax, φ, mht_OHC_mean[1:Ny+1] / 1e15, linewidth=4)
+lines!(ax, φ, mht_vT_mean[1:Ny+1]  / 1e15, linewidth=4)
 
 save("mht.png", fig)
