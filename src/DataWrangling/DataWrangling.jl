@@ -210,7 +210,7 @@ function metadata_epoch end
 # cannot be inpainted because zeros in the data are physical, not missing values.
 function default_inpainting(metadata)
     if metadata.name in (:temperature, :salinity)
-        return NearestNeighborInpainting(Inf)
+        return DiffusiveInpainting()
     elseif metadata.name in (:sea_ice_thickness, :sea_ice_concentration)
         return nothing
     else
