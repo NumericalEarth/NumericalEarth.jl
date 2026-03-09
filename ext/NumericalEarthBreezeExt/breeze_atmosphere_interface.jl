@@ -48,14 +48,14 @@ end
 ##### Interpolate atmospheric state onto exchange grid
 #####
 
-@kernel function _interpolate_breeze_state!(state, u, v, T, ρqᵗ, ρ₀, p₀)
+@kernel function _interpolate_breeze_state!(state, u, v, T, ρqᵛᵉ, ρ₀, p₀)
     i, j = @index(Global, NTuple)
 
     @inbounds begin
         state.u[i, j, 1]  = u[i, j, 1]
         state.v[i, j, 1]  = v[i, j, 1]
         state.T[i, j, 1]  = T[i, j, 1]
-        state.q[i, j, 1]  = ρqᵗ[i, j, 1] / ρ₀[i, j, 1]
+        state.q[i, j, 1]  = ρqᵛᵉ[i, j, 1] / ρ₀[i, j, 1]
         state.p[i, j, 1]  = p₀
         state.ℐꜜˢʷ[i, j, 1] = 0
         state.ℐꜜˡʷ[i, j, 1] = 0
@@ -68,7 +68,7 @@ function interpolate_state!(exchanger, exchange_grid, atmosphere::BreezeAtmosphe
     state = exchanger.state
     u, v, w = atmosphere.velocities
     T = atmosphere.temperature
-    ρqᵗ = atmosphere.moisture_density
+    ρqᵛᵉ = atmosphere.moisture_density
 
     # Reference state (anelastic dynamics)
     ref = atmosphere.dynamics.reference_state
@@ -79,7 +79,7 @@ function interpolate_state!(exchanger, exchange_grid, atmosphere::BreezeAtmosphe
     kernel_parameters = interface_kernel_parameters(exchange_grid)
     launch!(arch, exchange_grid, kernel_parameters,
             _interpolate_breeze_state!,
-            state, u, v, T, ρqᵗ, ρ₀, p₀)
+            state, u, v, T, ρqᵛᵉ, ρ₀, p₀)
 
     return nothing
 end
@@ -99,10 +99,10 @@ function net_fluxes(atmosphere::BreezeAtmosphere)
     # original field from EnergyFluxBoundaryConditionFunction.
     ρe = thermodynamic_density(atmosphere.formulation).boundary_conditions.bottom.condition.condition
 
-    # Moisture flux field (direct FluxBoundaryCondition on ρqᵗ)
-    ρqᵗ = atmosphere.moisture_density.boundary_conditions.bottom.condition
+    # Moisture flux field
+    ρqᵛᵉ = atmosphere.moisture_density.boundary_conditions.bottom.condition
 
-    return (; ρu, ρv, ρe, ρqᵗ)
+    return (; ρu, ρv, ρe, ρqᵛᵉ)
 end
 
 #####
@@ -120,7 +120,7 @@ end
         net.ρu[i, j, 1]  = τx
         net.ρv[i, j, 1]  = τy
         net.ρe[i, j, 1]  = Qc   # sensible heat only; latent heat handled by moisture flux
-        net.ρqᵗ[i, j, 1] = Fv
+        net.ρqᵛᵉ[i, j, 1] = Fv
     end
 end
 
