@@ -3,8 +3,8 @@ include("runtests_setup.jl")
 using CUDA
 using Oceananigans.OrthogonalSphericalShellGrids
 using NumericalEarth.EarthSystemModels: above_freezing_ocean_temperature!
-using ClimaSeaIce.SeaIceThermodynamics: melting_temperature
 using ClimaSeaIce.SeaIceDynamics
+using ClimaSeaIce.SeaIceThermodynamics: melting_temperature
 using ClimaSeaIce.Rheologies
 using Oceananigans.TimeSteppers: Clock
 

@@ -39,8 +39,8 @@ function JRA55PrescribedAtmosphere(architecture = CPU(), FT = Float32;
     pa  = JRA55FieldTimeSeries(:sea_level_pressure, architecture, FT;              kw...)
     Fra = JRA55FieldTimeSeries(:rain_freshwater_flux, architecture, FT;            kw...)
     Fsn = JRA55FieldTimeSeries(:snow_freshwater_flux, architecture, FT;            kw...)
-    Ql  = JRA55FieldTimeSeries(:downwelling_longwave_radiation, architecture, FT;  kw...)
-    Qs  = JRA55FieldTimeSeries(:downwelling_shortwave_radiation, architecture, FT; kw...)
+    ℐꜜˡʷ = JRA55FieldTimeSeries(:downwelling_longwave_radiation, architecture, FT;  kw...)
+    ℐꜜˢʷ = JRA55FieldTimeSeries(:downwelling_shortwave_radiation, architecture, FT; kw...)
 
     freshwater_flux = (rain = Fra,
                        snow = Fsn)
@@ -67,7 +67,7 @@ function JRA55PrescribedAtmosphere(architecture = CPU(), FT = Float32;
 
     pressure = pa
 
-    downwelling_radiation = TwoBandDownwellingRadiation(shortwave=Qs, longwave=Ql)
+    downwelling_radiation = TwoBandDownwellingRadiation(shortwave=ℐꜜˢʷ, longwave=ℐꜜˡʷ)
 
     FT = eltype(ua)
     surface_layer_height = convert(FT, surface_layer_height)

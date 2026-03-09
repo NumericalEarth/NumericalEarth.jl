@@ -5,6 +5,7 @@ restoring, or validation.
 module DataWrangling
 
 export Metadata, Metadatum, ECCOMetadatum, EN4Metadatum, all_dates, first_date, last_date
+export WOAClimatology, WOAAnnual, WOAMonthly
 export metadata_time_step, metadata_epoch
 export LinearlyTaperedPolarMask
 export DatasetRestoring
@@ -209,7 +210,7 @@ function metadata_epoch end
 # cannot be inpainted because zeros in the data are physical, not missing values.
 function default_inpainting(metadata)
     if metadata.name in (:temperature, :salinity)
-        return NearestNeighborInpainting(Inf)
+        return DiffusiveInpainting()
     elseif metadata.name in (:sea_ice_thickness, :sea_ice_concentration)
         return nothing
     else
@@ -223,6 +224,8 @@ include("ECCO/ECCO.jl")
 include("GLORYS/GLORYS.jl")
 include("ERA5/ERA5.jl")
 include("EN4/EN4.jl")
+include("ORCA/ORCA.jl")
+include("WOA/WOA.jl")
 include("JRA55/JRA55.jl")
 
 using .ETOPO
@@ -230,6 +233,8 @@ using .ECCO
 using .GLORYS
 using .ERA5
 using .EN4
+using .ORCA
+using .WOA
 using .JRA55
 
 end # module

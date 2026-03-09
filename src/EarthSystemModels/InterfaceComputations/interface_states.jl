@@ -53,26 +53,26 @@ ImpureSaturationSpecificHumidity(phase) = ImpureSaturationSpecificHumidity(phase
 @inline compute_water_mole_fraction(x_H₂O::Number, salinity) = x_H₂O
 
 @inline function surface_specific_humidity(formulation::ImpureSaturationSpecificHumidity,
-                                            ℂₐ, Tₐ, pₐ, qₐ,
+                                            ℂᵃᵗ, Tᵃᵗ, pᵃᵗ, qᵃᵗ,
                                             Tₛ, Sₛ=zero(Tₛ))
     # Extrapolate air density to the surface temperature
     # following an adiabatic ideal gas transformation
-    cvₘ = Thermodynamics.cv_m(ℂₐ, qₐ)
-    Rₐ = Thermodynamics.gas_constant_air(ℂₐ, qₐ)
-    κₐ = cvₘ / Rₐ # 1 / (γ - 1)
-    ρₐ = Thermodynamics.air_density(ℂₐ, Tₐ, pₐ, qₐ)
-    ρₛ = ρₐ * (Tₛ / Tₐ)^κₐ
-    return surface_specific_humidity(formulation, ℂₐ, ρₛ, Tₛ, Sₛ)
+    cvₘ = Thermodynamics.cv_m(ℂᵃᵗ, qᵃᵗ)
+    Rᵃᵗ = Thermodynamics.gas_constant_air(ℂᵃᵗ, qᵃᵗ)
+    κᵃᵗ = cvₘ / Rᵃᵗ # 1 / (γ - 1)
+    ρᵃᵗ = Thermodynamics.air_density(ℂᵃᵗ, Tᵃᵗ, pᵃᵗ, qᵃᵗ)
+    ρₛ = ρᵃᵗ * (Tₛ / Tᵃᵗ)^κᵃᵗ
+    return surface_specific_humidity(formulation, ℂᵃᵗ, ρₛ, Tₛ, Sₛ)
 end
 
-@inline function surface_specific_humidity(formulation::ImpureSaturationSpecificHumidity, ℂₐ, ρₛ::Number, Tₛ, Sₛ=zero(Tₛ))
+@inline function surface_specific_humidity(formulation::ImpureSaturationSpecificHumidity, ℂᵃᵗ, ρₛ::Number, Tₛ, Sₛ=zero(Tₛ))
     FT = eltype(Tₛ)
-    CT = eltype(ℂₐ)
+    CT = eltype(ℂᵃᵗ)
     Tₛ = convert(CT, Tₛ)
     ρₛ = convert(CT, ρₛ)
     phase = formulation.phase
-    p★ = Thermodynamics.saturation_vapor_pressure(ℂₐ, Tₛ, phase)
-    q★ = Thermodynamics.q_vap_from_p_vap(ℂₐ, Tₛ, ρₛ, p★)
+    p★ = Thermodynamics.saturation_vapor_pressure(ℂᵃᵗ, Tₛ, phase)
+    q★ = Thermodynamics.q_vap_from_p_vap(ℂᵃᵗ, Tₛ, ρₛ, p★)
 
     # Compute saturation specific humidity according to Raoult's law
     χ_H₂O = compute_water_mole_fraction(formulation.water_mole_fraction, Sₛ)
@@ -151,16 +151,16 @@ end
 #### Atmospheric temperature
 ####
 
-# Temperature increment including the ``lapse rate'' `α = g / cₚ`
+# Temperature increment including the ``lapse rate'' `α = g / cᵖᵐ`
 function surface_atmosphere_temperature(Ψₐ, ℙₐ)
-    ℂₐ = ℙₐ.thermodynamics_parameters
+    ℂᵃᵗ = ℙₐ.thermodynamics_parameters
     g  = ℙₐ.gravitational_acceleration
-    Tₐ = Ψₐ.T
-    qₐ = Ψₐ.q
-    zₐ = Ψₐ.z
-    Δh = zₐ # Assumption! The surface is at z = 0 -> Δh = zₐ - 0
-    cₐ = AtmosphericThermodynamics.cp_m(ℂₐ, qₐ)
-    return Tₐ + g * Δh / cₐ
+    Tᵃᵗ = Ψₐ.T
+    qᵃᵗ = Ψₐ.q
+    zᵃᵗ = Ψₐ.z
+    Δh = zᵃᵗ # Assumption! The surface is at z = 0 -> Δh = zᵃᵗ - 0
+    cᵃᵗ = AtmosphericThermodynamics.cp_m(ℂᵃᵗ, qᵃᵗ)
+    return Tᵃᵗ + g * Δh / cᵃᵗ
 end
 
 ####
@@ -214,15 +214,15 @@ end
 # The flux balance is solved by computing
 #
 #            κ
-# Jᵃ(Tₛⁿ) + --- (Tₛⁿ⁺¹ - Tᵢ) = 0
+# Jᵃ(Tₛⁿ) + --- (Tₛⁿ⁺¹ - Tˢⁱ) = 0
 #            δ
 #
 # where Jᵃ is the external flux impinging on the surface from above and
-# Jᵢ = - κ (Tₛ - Tᵢ) / δ is the "internal flux" coming up from below.
+# Jᵢ = - κ (Tₛ - Tˢⁱ) / δ is the "internal flux" coming up from below.
 # We have indicated that Jᵃ may depend on the surface temperature from the previous
 # iterate. We thus find that
 #
-# Tₛⁿ⁺¹ = Tᵢ - δ * Jᵃ(Tₛⁿ) / κ
+# Tₛⁿ⁺¹ = Tˢⁱ - δ * Jᵃ(Tₛⁿ) / κ
 #
 # Note that we could also use the fact that Jᵃ(T) = σ * ϵ * T^4 + ⋯
 # to expand Jᵃ around Tⁿ⁺¹,
@@ -233,60 +233,60 @@ end
 # which produces the alternative, semi-implicit flux balance
 #
 #                                      κ
-# Jᵃ(Tₛⁿ) - 4 α Tₛⁿ⁴ + 4 α Tₛⁿ Tₛⁿ³ + --- (Tₛⁿ⁺¹ - Tᵢ) = 0
+# Jᵃ(Tₛⁿ) - 4 α Tₛⁿ⁴ + 4 α Tₛⁿ Tₛⁿ³ + --- (Tₛⁿ⁺¹ - Tˢⁱ) = 0
 #                                      δ
 #
 # with α = σ ϵ / (ρ c) such that
 #
-# Tₛⁿ⁺¹ (κ / δ + 4 α Tₛⁿ³) = κ * Tᵢ / δ - Jᵃ + 4 α Tₛⁿ⁴)
+# Tₛⁿ⁺¹ (κ / δ + 4 α Tₛⁿ³) = κ * Tˢⁱ / δ - Jᵃ + 4 α Tₛⁿ⁴)
 #
 # or
 #
-# Tₛⁿ⁺¹ = = (Tᵢ - δ / κ * (Jᵃ - 4 α Tₛⁿ⁴)) / (1 + 4 δ σ ϵ Tₛⁿ³ / ρ c κ)
+# Tₛⁿ⁺¹ = = (Tˢⁱ - δ / κ * (Jᵃ - 4 α Tₛⁿ⁴)) / (1 + 4 δ σ ϵ Tₛⁿ³ / ρ c κ)
 #
 # corresponding to a linearization of the outgoing longwave radiation term.
-@inline function flux_balance_temperature(st::SkinTemperature{<:DiffusiveFlux}, Ψₛ, ℙₛ, Qc, Qv, Qu, Qd, Ψᵢ, ℙᵢ, Ψₐ, ℙₐ)
-    Qa = Qv + Qu + Qd # Net flux (positive out of the ocean)
+@inline function flux_balance_temperature(st::SkinTemperature{<:DiffusiveFlux}, Ψₛ, ℙₛ, 𝒬ᵀ, 𝒬ᵛ, ℐꜛˡʷ, Qd, Ψᵢ, ℙᵢ, Ψₐ, ℙₐ)
+    Qa = 𝒬ᵛ + ℐꜛˡʷ + Qd # Net flux (positive out of the ocean)
     F  = st.internal_flux
     ρ  = ℙᵢ.reference_density
     c  = ℙᵢ.heat_capacity
-    Qa = (Qv + Qu + Qd) # Net flux excluding sensible heat (positive out of the ocean)
+    Qa = (𝒬ᵛ + ℐꜛˡʷ + Qd) # Net flux excluding sensible heat (positive out of the ocean)
     λ  = 1 / (ρ * c) # m³ K J⁻¹
     Jᵀ = Qa * λ
 
     # Calculating the atmospheric temperature
     # We use to compute the sensible heat flux
-    Tₐ = surface_atmosphere_temperature(Ψₐ, ℙₐ)
-    ΔT = Tₐ - Ψₛ.T
-    Ωc = ifelse(ΔT == 0, zero(ΔT), Qc / ΔT * λ) # Sensible heat transfer coefficient (W/m²K)
+    Tᵃᵗ = surface_atmosphere_temperature(Ψₐ, ℙₐ)
+    ΔT = Tᵃᵗ - Ψₛ.T
+    Ωc = ifelse(ΔT == 0, zero(ΔT), 𝒬ᵀ / ΔT * λ) # Sensible heat transfer coefficient (W/m²K)
 
     # Computing the flux balance temperature
-    return (Ψᵢ.T * F.κ - (Jᵀ + Ωc * Tₐ) * F.δ) / (F.κ - Ωc * F.δ)
+    return (Ψᵢ.T * F.κ - (Jᵀ + Ωc * Tᵃᵗ) * F.δ) / (F.κ - Ωc * F.δ)
 end
 
-# Qv + Qu + Qd + Ωc * (Tₐ - Tˢ) + k / h * (Tˢ - Tᵢ) = 0
-# where Ωc (the sensible heat transfer coefficient) is given by Ωc = Qc / (Tₐ - Tˢ)
-# ⟹  Tₛ = (Tᵢ * k - (Qv + Qu + Qd + Ωc * Tₐ) * h / (k - Ωc * h)
-@inline function flux_balance_temperature(st::SkinTemperature{<:ClimaSeaIce.ConductiveFlux}, Ψₛ, ℙₛ, Qc, Qv, Qu, Qd, Ψᵢ, ℙᵢ, Ψₐ, ℙₐ)
+# 𝒬ᵛ + ℐꜛˡʷ + Qd + Ωc * (Tᵃᵗ - Tˢ) + k / h * (Tˢ - Tˢⁱ) = 0
+# where Ωc (the sensible heat transfer coefficient) is given by Ωc = 𝒬ᵀ / (Tᵃᵗ - Tˢ)
+# ⟹  Tₛ = (Tˢⁱ * k - (𝒬ᵛ + ℐꜛˡʷ + Qd + Ωc * Tᵃᵗ) * h / (k - Ωc * h)
+@inline function flux_balance_temperature(st::SkinTemperature{<:ClimaSeaIce.ConductiveFlux}, Ψₛ, ℙₛ, 𝒬ᵀ, 𝒬ᵛ, ℐꜛˡʷ, Qd, Ψᵢ, ℙᵢ, Ψₐ, ℙₐ)
     F  = st.internal_flux
     k  = F.conductivity
     h  = Ψᵢ.h
     hc = Ψᵢ.hc # Critical thickness for ice consolidation
 
     # Bottom temperature at the melting temperature
-    Tᵢ = ClimaSeaIce.SeaIceThermodynamics.melting_temperature(ℙᵢ.liquidus, Ψᵢ.S)
-    Tᵢ = convert_to_kelvin(ℙᵢ.temperature_units, Tᵢ)
+    Tˢⁱ = ClimaSeaIce.SeaIceThermodynamics.melting_temperature(ℙᵢ.liquidus, Ψᵢ.S)
+    Tˢⁱ = convert_to_kelvin(ℙᵢ.temperature_units, Tˢⁱ)
     Tₛ⁻ = Ψₛ.T
 
     # Calculating the atmospheric temperature
     # We use to compute the sensible heat flux
-    Tₐ = surface_atmosphere_temperature(Ψₐ, ℙₐ)
-    ΔT = Tₐ - Tₛ⁻
-    Ωc = ifelse(ΔT == 0, zero(h), Qc / ΔT) # Sensible heat transfer coefficient (W/m²K)
-    Qa = (Qv + Qu + Qd) # Net flux excluding sensible heat (positive out of the ocean)
+    Tᵃᵗ = surface_atmosphere_temperature(Ψₐ, ℙₐ)
+    ΔT = Tᵃᵗ - Tₛ⁻
+    Ωc = ifelse(ΔT == 0, zero(h), 𝒬ᵀ / ΔT) # Sensible heat transfer coefficient (W/m²K)
+    Qa = (𝒬ᵛ + ℐꜛˡʷ + Qd) # Net flux excluding sensible heat (positive out of the ocean)
 
     # Computing the flux balance temperature
-    T★ = (Tᵢ * k - (Qa + Ωc * Tₐ) * h) / (k - Ωc * h)
+    T★ = (Tˢⁱ * k - (Qa + Ωc * Tᵃᵗ) * h) / (k - Ωc * h)
 
     # Fix a NaN
     T★ = ifelse(isnan(T★), Tₛ⁻, T★)
@@ -304,7 +304,7 @@ end
     Tₛ⁺ = min(Tₛ⁺, Tₘ)
 
     # If the ice is not consolidated, use the bottom temperature
-    Tₛ⁺ = ifelse(h ≥ hc, Tₛ⁺, Tᵢ)
+    Tₛ⁺ = ifelse(h ≥ hc, Tₛ⁺, Tˢⁱ)
     
     return Tₛ⁺
 end
@@ -318,16 +318,16 @@ end
                                                atmosphere_properties,
                                                interior_properties)
 
-    ℂₐ = atmosphere_properties.thermodynamics_parameters
-    Tₐ = atmosphere_state.T
-    pₐ = atmosphere_state.p
-    qₐ = atmosphere_state.q
-    ρₐ = AtmosphericThermodynamics.air_density(ℂₐ, Tₐ, pₐ, qₐ)
-    cₐ = AtmosphericThermodynamics.cp_m(ℂₐ, qₐ) # moist heat capacity
+    ℂᵃᵗ = atmosphere_properties.thermodynamics_parameters
+    Tᵃᵗ = atmosphere_state.T
+    pᵃᵗ = atmosphere_state.p
+    qᵃᵗ = atmosphere_state.q
+    ρᵃᵗ = AtmosphericThermodynamics.air_density(ℂᵃᵗ, Tᵃᵗ, pᵃᵗ, qᵃᵗ)
+    cᵃᵗ = AtmosphericThermodynamics.cp_m(ℂᵃᵗ, qᵃᵗ) # moist heat capacity
 
     # TODO: this depends on the phase of the interface
-    #ℰv = 0 #AtmosphericThermodynamics.latent_heat_vapor(ℂₐ, Tₐ)
-    ℰs = AtmosphericThermodynamics.latent_heat_sublim(ℂₐ, Tₐ)
+    #ℰv = 0 #AtmosphericThermodynamics.latent_heat_vapor(ℂᵃᵗ, Tᵃᵗ)
+    ℒⁱ = AtmosphericThermodynamics.latent_heat_sublim(ℂᵃᵗ, Tᵃᵗ)
 
     # upwelling radiation is calculated explicitly
     Tₛ⁻ = interface_state.T # approximate interface temperature from previous iteration
@@ -335,23 +335,23 @@ end
     ϵ = interface_properties.radiation.ϵ
     α = interface_properties.radiation.α
 
-    Qs = downwelling_radiation.Qs
-    Qℓ = downwelling_radiation.Qℓ
-    Qu = emitted_longwave_radiation(Tₛ⁻, σ, ϵ)
-    Qd = net_absorbed_interface_radiation(Qs, Qℓ, α, ϵ)
+    ℐꜜˢʷ = downwelling_radiation.ℐꜜˢʷ
+    ℐꜜˡʷ = downwelling_radiation.ℐꜜˡʷ
+    ℐꜛˡʷ = emitted_longwave_radiation(Tₛ⁻, σ, ϵ)
+    Qd = net_absorbed_interface_radiation(ℐꜜˢʷ, ℐꜜˡʷ, α, ϵ)
 
     u★ = interface_state.u★
     θ★ = interface_state.θ★
     q★ = interface_state.q★
 
     # Turbulent heat fluxes, sensible + latent (positive out of the ocean)
-    Qc = - ρₐ * cₐ * u★ * θ★ # = - ρₐ cₐ u★ Ch / sqrt(Cd) * (θₐ - Tₛ)
-    Qv = - ρₐ * ℰs * u★ * q★
+    𝒬ᵀ = - ρᵃᵗ * cᵃᵗ * u★ * θ★ # = - ρᵃᵗ cᵃᵗ u★ Ch / sqrt(Cd) * (θᵃᵗ - Tₛ)
+    𝒬ᵛ = - ρᵃᵗ * ℒⁱ * u★ * q★
 
     Tₛ = flux_balance_temperature(st,
                                   interface_state,
                                   interface_properties,
-                                  Qc, Qv, Qu, Qd,
+                                  𝒬ᵀ, 𝒬ᵛ, ℐꜛˡʷ, Qd,
                                   interior_state,
                                   interior_properties,
                                   atmosphere_state,

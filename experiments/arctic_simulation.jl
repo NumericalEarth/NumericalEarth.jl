@@ -107,23 +107,23 @@ v = sea_ice.model.velocities.v
 
 # Fluxes
 Tu = arctic.model.interfaces.atmosphere_sea_ice_interface.temperature
-Qˡ = arctic.model.interfaces.atmosphere_sea_ice_interface.fluxes.latent_heat
-Qˢ = arctic.model.interfaces.atmosphere_sea_ice_interface.fluxes.sensible_heat
-Qⁱ = arctic.model.interfaces.sea_ice_ocean_interface.fluxes.interface_heat
-Qᶠ = arctic.model.interfaces.sea_ice_ocean_interface.fluxes.frazil_heat
-Qᵗ = arctic.model.interfaces.net_fluxes.sea_ice_top.heat
-Qᴮ = arctic.model.interfaces.net_fluxes.sea_ice_bottom.heat
-τx = arctic.model.interfaces.net_fluxes.sea_ice_top.u
-τy = arctic.model.interfaces.net_fluxes.sea_ice_top.v
+𝒬ᵛ = arctic.model.interfaces.atmosphere_sea_ice_interface.fluxes.latent_heat
+𝒬ᵀ = arctic.model.interfaces.atmosphere_sea_ice_interface.fluxes.sensible_heat
+𝒬ⁱⁿᵗ = arctic.model.interfaces.sea_ice_ocean_interface.fluxes.interface_heat
+𝒬ᶠʳᶻ = arctic.model.interfaces.sea_ice_ocean_interface.fluxes.frazil_heat
+𝒬ᵗᵒᵖ = arctic.model.interfaces.net_fluxes.sea_ice_top.heat
+𝒬ᵇᵒᵗ = arctic.model.interfaces.net_fluxes.sea_ice_bottom.heat
+τˣ = arctic.model.interfaces.net_fluxes.sea_ice_top.u
+τʸ = arctic.model.interfaces.net_fluxes.sea_ice_top.v
 
 # Output writers
-arctic.output_writers[:vars] = JLD2Writer(sea_ice.model, (; h, ℵ, u, v, Tu, Qˡ, Qˢ, Qⁱ, Qᶠ, Qᵗ, Qᴮ, τx, τy),
+arctic.output_writers[:vars] = JLD2Writer(sea_ice.model, (; h, ℵ, u, v, Tu, 𝒬ᵛ, 𝒬ᵀ, 𝒬ⁱⁿᵗ, 𝒬ᶠʳᶻ, 𝒬ᵗᵒᵖ, 𝒬ᵇᵒᵗ, τˣ, τʸ),
                                           including = [:grid],
                                           filename = "sea_ice_quantities.jld2",
                                           schedule = IterationInterval(12),
                                           overwrite_existing=true)
 
-arctic.output_writers[:averages] = JLD2Writer(sea_ice.model, (; h, ℵ, Tu, Qˡ, Qˢ, Qⁱ, Qᶠ, Qᵗ, Qᴮ, u, v, τx, τy),
+arctic.output_writers[:averages] = JLD2Writer(sea_ice.model, (; h, ℵ, Tu, 𝒬ᵛ, 𝒬ᵀ, 𝒬ⁱⁿᵗ, 𝒬ᶠʳᶻ, 𝒬ᵗᵒᵖ, 𝒬ᵇᵒᵗ, u, v, τˣ, τʸ),
                                               including = [:grid],
                                               filename = "averaged_sea_ice_quantities.jld2",
                                               schedule = AveragedTimeInterval(1days),
@@ -147,8 +147,8 @@ function progress(sim)
 
     msg1 = @sprintf("time: %s, iteration: %d, Δt: %s, ", prettytime(sim), iteration(sim), prettytime(sim.Δt))
     msg2 = @sprintf("max(h): %.2e m, max(ℵ): %.2e ", hmax, ℵmax)
-    msg3 = @sprintf("max uᵢ: (%.2f, %.2f) m s⁻¹, ", uimax, vimax)
-    msg4 = @sprintf("max uₒ: (%.2f, %.2f) m s⁻¹, ", uomax, vomax)
+    msg3 = @sprintf("max uˢⁱ: (%.2f, %.2f) m s⁻¹, ", uimax, vimax)
+    msg4 = @sprintf("max uᵒᶜ: (%.2f, %.2f) m s⁻¹, ", uomax, vomax)
     msg5 = @sprintf("wall time: %s \n", prettytime(step_time))
 
     @info msg1 * msg2 * msg3 * msg4 * msg5

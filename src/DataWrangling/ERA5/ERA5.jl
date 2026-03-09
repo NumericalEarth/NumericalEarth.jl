@@ -48,8 +48,19 @@ struct ERA5Monthly <: ERA5Dataset end
 dataset_name(::ERA5Hourly) = "ERA5Hourly"
 dataset_name(::ERA5Monthly) = "ERA5Monthly"
 
-# ERA5 has 0.25 degree resolution: 1440 x 721 grid points
-Base.size(::ERA5Dataset, variable) = (1440, 721)
+# Wave variables are on a 0.5° grid (720×361), atmospheric variables on 0.25° (1440×721)
+const ERA5_wave_variables = Set([
+    :eastward_stokes_drift, :northward_stokes_drift,
+    :significant_wave_height, :mean_wave_period, :mean_wave_direction,
+])
+
+function Base.size(::ERA5Dataset, variable)
+    if variable in ERA5_wave_variables
+        return (720, 361, 1)
+    else
+        return (1440, 721, 1)
+    end
+end
 
 # ERA5 reanalysis data available from 1940 to present (we use a practical range here)
 all_dates(::ERA5Hourly, var) = range(DateTime("1940-01-01"), stop=DateTime("2024-12-31"), step=Hour(1))
@@ -61,15 +72,10 @@ const ERA5Metadatum = Metadatum{<:ERA5Dataset}
 # ERA5 is a spatially 2D dataset (atmospheric surface variables)
 is_three_dimensional(::ERA5Metadata) = false
 
-# Size includes Nz=1 for 2D surface data
-Base.size(metadata::ERA5Metadata) = (1440, 721, 1, length(metadata.dates))
-Base.size(::ERA5Metadatum) = (1440, 721, 1, 1)
-
-# Variable name mappings from NumericalEarth names to ERA5/era5cli variable names
-# The era5cli tool uses these short names for downloading
+# Variable name mappings from NumericalEarth names to ERA5/CDS API variable names
 ERA5_dataset_variable_names = Dict(
     :temperature                     => "2m_temperature",
-    :dewpoint_temperature            => "2m_dewpoint_temperature", 
+    :dewpoint_temperature            => "2m_dewpoint_temperature",
     :eastward_velocity               => "10m_u_component_of_wind",
     :northward_velocity              => "10m_v_component_of_wind",
     :surface_pressure                => "surface_pressure",
@@ -81,6 +87,11 @@ ERA5_dataset_variable_names = Dict(
     :total_cloud_cover               => "total_cloud_cover",
     :evaporation                     => "evaporation",
     :specific_humidity               => "specific_humidity",
+    :eastward_stokes_drift           => "u_component_stokes_drift",
+    :northward_stokes_drift          => "v_component_stokes_drift",
+    :significant_wave_height         => "significant_height_of_combined_wind_waves_and_swell",
+    :mean_wave_period                => "mean_wave_period",
+    :mean_wave_direction             => "mean_wave_direction",
 )
 
 # Variables available for download
@@ -91,10 +102,10 @@ available_variables(::ERA5Dataset) = ERA5_dataset_variable_names
 dataset_variable_name(metadata::ERA5Metadata) = ERA5_dataset_variable_names[metadata.name]
 
 # NetCDF short variable names (what's actually in the downloaded files)
-# These differ from the era5cli parameter names above
+# These differ from the CDS API variable names above
 ERA5_netcdf_variable_names = Dict(
     :temperature                     => "t2m",
-    :dewpoint_temperature            => "d2m", 
+    :dewpoint_temperature            => "d2m",
     :eastward_velocity               => "u10",
     :northward_velocity              => "v10",
     :surface_pressure                => "sp",
@@ -106,6 +117,11 @@ ERA5_netcdf_variable_names = Dict(
     :total_cloud_cover               => "tcc",
     :evaporation                     => "e",
     :specific_humidity               => "q",
+    :eastward_stokes_drift           => "ust",
+    :northward_stokes_drift          => "vst",
+    :significant_wave_height         => "swh",
+    :mean_wave_period                => "mwp",
+    :mean_wave_direction             => "mwd",
 )
 
 netcdf_variable_name(metadata::ERA5Metadata) = ERA5_netcdf_variable_names[metadata.name]
