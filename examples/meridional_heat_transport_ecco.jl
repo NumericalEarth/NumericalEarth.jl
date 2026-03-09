@@ -104,7 +104,7 @@ mht_OHC_mean = deepcopy(mht_OHC[1][1, :, 1])
 mht_vT_mean  = deepcopy(mht_vT[1][1, :, 1])
 
 for iter in 1:Nt
-    @info "iteration $j out of $Nt"
+    @info "iteration $iter out of $Nt"
     mht_OHC_mean += mht_OHC[iter][1, :, 1]
     mht_vT_mean  +=  mht_vT[iter][1, :, 1]
 end
