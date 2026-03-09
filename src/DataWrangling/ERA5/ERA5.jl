@@ -217,6 +217,7 @@ netcdf_variable_name(md::ERA5PressureMetadata)  = ERA5PL_netcdf_variable_names[m
 conversion_units(md::ERA5PressureMetadatum) =
     md.name == :geopotential_height ? InverseGravity() : nothing
 
+default_inpainting(md::ERA5Metadatum) = nothing
 default_inpainting(md::ERA5PressureMetadatum) = nothing
 
 """
@@ -245,6 +246,9 @@ function retrieve_data(metadata::ERA5Metadatum)
     end
     
     close(ds)
+
+    # Latitude is stored from 90°N → 90°S
+    data_2d = reverse(data_2d, dims=2)
     
     # Add singleton z-dimension for 3D field compatibility
     # Return as (Nx, Ny, 1)
@@ -264,7 +268,7 @@ function retrieve_data(metadata::ERA5PressureMetadatum)
     ds   = NCDatasets.Dataset(path)
     data = ds[name][:, :, :, 1]   # (lon, lat, pressure_level, time=1)
     close(ds)
-    return data
+    return reverse(data, dims=2)  # Latitude is stored from 90°N → 90°S
 end
 
 #####
