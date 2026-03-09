@@ -64,11 +64,10 @@ function progress(sim)
 
     msg1 = @sprintf("time: %s, iter: %d", prettytime(sim), iteration(sim))
     msg2 = @sprintf(", max|uo|: (%.1e, %.1e, %.1e) m s⁻¹", umax...)
-    msg3 = @sprintf(", extrema(To): (%.1f, %.1f) ᵒC, mean(To(z=0)): %.1f ᵒC", Tmin, Tmax, Tavg)
-    msg4 = @sprintf(", max(e): %.2f m² s⁻²", emax)
-    msg5 = @sprintf(", wall time: %s \n", prettytime(step_time))
+    msg3 = @sprintf(", max(e): %.2f m² s⁻²", emax)
+    msg4 = @sprintf(", wall time: %s \n", prettytime(step_time))
 
-    @info msg1 * msg2 * msg3 * msg4 * msg5
+    @info msg1 * msg2 * msg3 * msg4
 
     wall_time[] = time_ns()
 
