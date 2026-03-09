@@ -42,8 +42,8 @@ Arguments
 
   2. For `OceanHeatContentTendencyMethod()` we have:
 
-     Let ``T` be three-dimensional (potential) temperature, `ρᵒᶜ` a reference density,
-     `cᵒᶜ` a heat capacity, `H` the resting depth, and `η` the free-surface elevation.
+     Let ``T`` be three-dimensional (potential) temperature, ``ρᵒᶜ`` a reference density,
+     ``cᵒᶜ`` the heat capacity, ``H`` the resting depth, and ``η`` the free-surface elevation.
 
      The column heat content per unit horizontal area (units of J m⁻²) is:
 
@@ -87,7 +87,7 @@ Arguments
      The northward meridional heat transport across latitude ``φ`` is
 
      ```math
-     \\mathrm{MHT}(φ, t) ≡ - ∮_{\\mathrm{lat}=φ} \\boldsymbol{F}_h \\cdot \\hat{\boldsymbol{n}} \\, \\mathrm{d}ℓ
+     \\mathrm{MHT}(φ, t) ≡ - ∮_{\\mathrm{lat}=φ} \\boldsymbol{F}_h \\cdot \\hat{\\boldsymbol{n}} \\, \\mathrm{d}ℓ
      ```
 
      with the sign convention that ``\\mathrm{MHT} > 0`` is northward.
@@ -95,7 +95,7 @@ Arguments
      Ignoring the residual ``ℛ``, the OHC-based diagnostic relation is
 
      ```math
-     \\mathrm{MHT} = ∫_{A(φ)} 𝒬_{\\rm net} \\, \\mathrm{d}A - \\frac{d}{dt} \\, \\mathrm{OHC}_S
+     \\mathrm{MHT} = ∫_{A(φ)} 𝒬_{\\rm net} \\, \\mathrm{d}A - \\frac{\\mathrm{d}}{\\mathrm{d}t} \\, \\mathrm{OHC}_S
      ```
 
 Keyword Arguments
