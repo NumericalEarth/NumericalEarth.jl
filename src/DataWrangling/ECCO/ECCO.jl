@@ -348,7 +348,7 @@ ECCO_atmosphere_variables = (
 
 function default_inpainting(metadata::ECCOMetadata)
     if metadata.name in (:temperature, :salinity) || metadata.name in ECCO_atmosphere_variables
-        return NearestNeighborInpainting(Inf)
+        return DiffusiveInpainting()
     elseif metadata.name in (:sea_ice_thickness, :sea_ice_concentration)
         return nothing
     else
