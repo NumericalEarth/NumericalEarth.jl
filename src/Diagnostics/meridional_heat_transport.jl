@@ -61,7 +61,7 @@ Arguments
 
      * ``\\boldsymbol{F}_h`` is the depth-integrated horizontal heat flux vector (units W m⁻¹),
        that includes advection and any parameterized lateral/eddy fluxes,
-     * ``- 𝒬_{\\rm net}`` is the net surface heat flux into the ocean at the surface
+     * ``𝒬_{\\rm net}`` is the [net ocean surface heat flux](@ref NumericalEarth.net_ocean_heat_flux)
        (units W m⁻²), and
      * ``ℛ`` is the residual sources/sinks and non-closed terms (e.g. numerics, unaccounted
        physics, mass/volume effects).
@@ -72,22 +72,22 @@ Arguments
      \\mathrm{OHC}_S(φ, t) ≡ ∫_{A(φ)} ℋ \\, \\mathrm{d}A
      ```
 
-     where `A(φ)` is the ocean area South of latitude ``φ``.
+     where ``A(φ)`` is the ocean area South of latitude ``φ``.
 
-     Integrating the vertically-integrated budget over `A(φ)` and using the divergence
+     Integrating the vertically-integrated budget over ``A(φ)`` and using the divergence
      theorem we get
 
      ```math
      \\frac{d}{dt} \\, \\mathrm{OHC}_S(φ, t) =
          - ∮_{∂A(φ)} \\boldsymbol{F}_h \\cdot \\hat{\\boldsymbol{n}} \\, \\mathrm{d}ℓ
-         + ∫_{A(φ)} 𝒬_{\\rm net} \\, \\mathrm{d}A
+         - ∫_{A(φ)} 𝒬_{\\rm net} \\, \\mathrm{d}A
          + ∫_{A(φ)} ℛ \\, \\mathrm{d}A
      ```
 
      The northward meridional heat transport across latitude ``φ`` is
 
      ```math
-     \\mathrm{MHT}(φ, t) ≡ - ∮_{\\mathrm{lat}=φ} \\boldsymbol{F}_h \\cdot \\hat{\\boldsymbol{n}} \\, \\mathrm{d}ℓ
+     \\mathrm{MHT}(φ, t) ≡ ∮_{\\mathrm{lat}=φ} \\boldsymbol{F}_h \\cdot \\hat{\\boldsymbol{n}} \\, \\mathrm{d}ℓ
      ```
 
      with the sign convention that ``\\mathrm{MHT} > 0`` is northward.
@@ -95,7 +95,7 @@ Arguments
      Ignoring the residual ``ℛ``, the OHC-based diagnostic relation is
 
      ```math
-     \\mathrm{MHT} = ∫_{A(φ)} 𝒬_{\\rm net} \\, \\mathrm{d}A - \\frac{\\mathrm{d}}{\\mathrm{d}t} \\, \\mathrm{OHC}_S
+     \\mathrm{MHT} = - ∫_{A(φ)} 𝒬_{\\rm net} \\, \\mathrm{d}A - \\frac{\\mathrm{d}}{\\mathrm{d}t} \\, \\mathrm{OHC}_S
      ```
 
 Keyword Arguments
