@@ -186,7 +186,7 @@ end
 end
 
 """
-    inpaint_mask!(field, mask; inpainting=NearestNeighborInpainting(Inf))
+    inpaint_mask!(field, mask; inpainting=DiffusiveInpainting())
 
 Inpaint `field` within `mask`, using values outside `mask`.
 In other words, regions where `mask[i, j, k] == 1` is inpainted
