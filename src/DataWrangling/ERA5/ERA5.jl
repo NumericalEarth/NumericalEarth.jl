@@ -20,6 +20,7 @@ import NumericalEarth.DataWrangling:
     all_dates,
     dataset_variable_name,
     default_download_directory,
+    default_inpainting,
     longitude_interfaces,
     latitude_interfaces,
     z_interfaces,
@@ -112,8 +113,8 @@ is_three_dimensional(::ERA5Metadata) = false
 # ERA5 pressure-level data is 3D
 is_three_dimensional(::ERA5PressureMetadata) = true
 
-# ERA5 stores pressure levels top-to-bottom; reverse to match Oceananigans bottom-to-top
-reversed_vertical_axis(::ERA5PressureDataset) = true
+# ERA5 stores pressure levels bottom-to-top
+reversed_vertical_axis(::ERA5PressureDataset) = false
 
 # Variable name mappings from NumericalEarth names to ERA5/CDS API variable names
 ERA5_dataset_variable_names = Dict(
@@ -216,6 +217,8 @@ netcdf_variable_name(md::ERA5PressureMetadata)  = ERA5PL_netcdf_variable_names[m
 conversion_units(md::ERA5PressureMetadatum) =
     md.name == :geopotential_height ? InverseGravity() : nothing
 
+default_inpainting(md::ERA5PressureMetadatum) = nothing
+
 """
     retrieve_data(metadata::ERA5Metadatum)
 
@@ -261,7 +264,7 @@ function retrieve_data(metadata::ERA5PressureMetadatum)
     ds   = NCDatasets.Dataset(path)
     data = ds[name][:, :, :, 1]   # (lon, lat, pressure_level, time=1)
     close(ds)
-    return reverse(data, dims=3)   # flip from ERA5 top-to-bottom to Oceananigans bottom-to-top
+    return data
 end
 
 #####
