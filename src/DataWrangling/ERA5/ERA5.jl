@@ -1,6 +1,9 @@
 module ERA5
 
-export ERA5Hourly, ERA5Monthly
+# 2-D data
+export ERA5SingleLevelsHourly, ERA5SingleLevelsMonthly
+
+# 3-D data
 export ERA5HourlyPressureLevels, ERA5MonthlyPressureLevels, ERA5_all_pressure_levels, pressure_field
 
 using NCDatasets
@@ -49,11 +52,11 @@ abstract type ERA5Dataset end
 
 default_download_directory(::ERA5Dataset) = download_ERA5_cache
 
-struct ERA5Hourly <: ERA5Dataset end
-struct ERA5Monthly <: ERA5Dataset end
+struct ERA5SingleLevelsHourly <: ERA5Dataset end
+struct ERA5SingleLevelsMonthly <: ERA5Dataset end
 
-dataset_name(::ERA5Hourly) = "ERA5Hourly"
-dataset_name(::ERA5Monthly) = "ERA5Monthly"
+dataset_name(::ERA5SingleLevelsHourly)  = "ERA5SingleLevelsHourly"
+dataset_name(::ERA5SingleLevelsMonthly) = "ERA5SingleLevelsMonthly"
 
 #####
 ##### ERA5 pressure-level datasets
@@ -101,8 +104,8 @@ function Base.size(::ERA5Dataset, variable)
 end
 
 # ERA5 reanalysis data available from 1940 to present (we use a practical range here)
-all_dates(::ERA5Hourly, var) = range(DateTime("1940-01-01"), stop=DateTime("2024-12-31"), step=Hour(1))
-all_dates(::ERA5Monthly, var) = range(DateTime("1940-01-01"), stop=DateTime("2024-12-01"), step=Month(1))
+all_dates(::ERA5SingleLevelsHourly,  var) = range(DateTime("1940-01-01"), stop=DateTime("2024-12-31"), step=Hour(1))
+all_dates(::ERA5SingleLevelsMonthly, var) = range(DateTime("1940-01-01"), stop=DateTime("2024-12-01"), step=Month(1))
 
 const ERA5Metadata{D} = Metadata{<:ERA5Dataset, D}
 const ERA5Metadatum = Metadatum{<:ERA5Dataset}
