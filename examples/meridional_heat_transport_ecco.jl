@@ -101,18 +101,8 @@ Nt = length(times)
 grid = mht_OHC.grid
 Ny = size(mht_OHC.grid, 2)
 
-mht_OHC_mean = deepcopy(mht_OHC[1][1, :, 1])
-mht_vT_mean  = deepcopy(mht_vT[1][1, :, 1])
-
-for j in 1:Nt
-    @info "iteration $j out of $Nt"
-    mht_OHC_mean += mht_OHC[j][1, :, 1]
-    mht_vT_mean  +=  mht_vT[j][1, :, 1]
-end
-
-@. mht_OHC_mean = mht_OHC_mean / Nt
-@. mht_vT_mean = mht_vT_mean / Nt
-
+mht_OHC_mean = first(mean(mht_OHC, dims=4))
+mht_vT_mean  = first(mean(mht_vT, dims=4))
 
 using CairoMakie
 
