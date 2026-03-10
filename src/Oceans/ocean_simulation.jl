@@ -43,14 +43,16 @@ function estimate_maximum_Δt(grid)
     Δy = mean(yspacings(grid))
     Δθ = rad2deg(mean([Δx, Δy])) / grid.radius
 
-    # The maximum Δt is roughly 30minutes / Δθ, giving:
-    # - 30 minutes for a 1 degree ocean
+    # The maximum Δt is roughly 1hours * Δθ, giving:
+    # - 60 minutes for a 1 degree ocean
+    # - 30 minutes for a 0.5 degree ocean
     # - 15 minutes for a 1/4 degree ocean
     # - 7.5 minutes for a 1/8 degree ocean
     # - 3.75 minutes for a 1/16 degree ocean
     # - 1.875 minutes for a 1/32 degree ocean
 
-    Δt = 30minutes / Δθ
+    # We set the maximum Δt to 1 hour
+    Δt = min(1hours, 1hours * Δθ)
 
     return all_reduce(min, Δt, arch)
 end
@@ -263,14 +265,14 @@ function ocean_simulation(grid;
     bottom_drag_coefficient = convert(FT, bottom_drag_coefficient)
 
     # Set up boundary conditions using Field
-    top_zonal_momentum_flux      = τx = Field{Face, Center, Nothing}(grid)
-    top_meridional_momentum_flux = τy = Field{Center, Face, Nothing}(grid)
+    top_zonal_momentum_flux      = τˣ = Field{Face, Center, Nothing}(grid)
+    top_meridional_momentum_flux = τʸ = Field{Center, Face, Nothing}(grid)
     top_ocean_heat_flux          = Jᵀ = Field{Center, Center, Nothing}(grid)
     top_salt_flux                = Jˢ = Field{Center, Center, Nothing}(grid)
 
     # Construct ocean boundary conditions including surface forcing and bottom drag
-    u_top_bc = FluxBoundaryCondition(τx)
-    v_top_bc = FluxBoundaryCondition(τy)
+    u_top_bc = FluxBoundaryCondition(τˣ)
+    v_top_bc = FluxBoundaryCondition(τʸ)
     T_top_bc = FluxBoundaryCondition(Jᵀ)
     S_top_bc = FluxBoundaryCondition(Jˢ)
 

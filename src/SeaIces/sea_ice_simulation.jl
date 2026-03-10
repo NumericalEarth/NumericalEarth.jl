@@ -78,15 +78,24 @@ end
 default_coriolis(ocean::Simulation) = ocean.model.coriolis
 default_coriolis(ocean::Nothing) = HydrostaticSphericalCoriolis(; rotation_rate=default_rotation_rate)
 
-default_solver(ocean) = SplitExplicitSolver(120)
-default_solver(ocean::Simulation) = ocean.model.timestepper isa SplitRungeKuttaTimeStepper ? SplitExplicitSolver(360) : SplitExplicitSolver(120)
+default_solver(grid, ocean) = SplitExplicitSolver(grid; substeps=120)
+
+# We assume RK3 has a larger timestep
+function default_solver(grid, ocean::Simulation) 
+    substeps = if ocean.model.timestepper isa SplitRungeKuttaTimeStepper 
+        240
+    else
+        120
+    end
+    return SplitExplicitSolver(grid; substeps)
+end
 
 function sea_ice_dynamics(grid, ocean=nothing;
                           sea_ice_ocean_drag_coefficient = 5.5e-3,
                           rheology = ElastoViscoPlasticRheology(),
                           coriolis = default_coriolis(ocean),
                           free_drift = nothing,
-                          solver = default_solver(ocean))
+                          solver = default_solver(grid, ocean))
 
     SSU, SSV = ocean_surface_velocities(ocean)
     sea_ice_ocean_drag_coefficient = convert(eltype(grid), sea_ice_ocean_drag_coefficient)
@@ -118,7 +127,7 @@ sea_ice_concentration(sea_ice::Simulation{<:SeaIceModel}) = sea_ice.model.ice_co
 heat_capacity(sea_ice::Simulation{<:SeaIceModel}) = sea_ice.model.ice_thermodynamics.phase_transitions.ice_heat_capacity
 reference_density(sea_ice::Simulation{<:SeaIceModel}) = sea_ice.model.ice_thermodynamics.phase_transitions.ice_density
 
-function net_fluxes(sea_ice::Simulation{<:SeaIceModel}) 
+function net_fluxes(sea_ice::Simulation{<:SeaIceModel})
     net_momentum_fluxes = if isnothing(sea_ice.model.dynamics)
         u = Field{Face, Center, Nothing}(sea_ice.model.grid)
         v = Field{Center, Face, Nothing}(sea_ice.model.grid)
@@ -141,17 +150,17 @@ function default_ai_temperature(sea_ice::Simulation{<:SeaIceModel})
 end
 
 # Constructor that accepts the sea-ice model
-function ThreeEquationHeatFlux(sea_ice::Simulation{<:SeaIceModel}, FT::DataType = Oceananigans.defaults.FloatType; 
+function ThreeEquationHeatFlux(sea_ice::Simulation{<:SeaIceModel}, FT::DataType = Oceananigans.defaults.FloatType;
                                heat_transfer_coefficient = 0.0095,
                                salt_transfer_coefficient = heat_transfer_coefficient / 35,
                                friction_velocity = convert(FT, 0.002))
 
     conductive_flux = sea_ice.model.ice_thermodynamics.internal_heat_flux.parameters.flux
     ice_temperature = sea_ice.model.ice_thermodynamics.top_surface_temperature
-    
+
     return ThreeEquationHeatFlux(conductive_flux,
                                  ice_temperature,
                                  convert(FT, heat_transfer_coefficient),
                                  convert(FT, salt_transfer_coefficient),
-                                 friction_velocity) 
+                                 friction_velocity)
 end
