@@ -419,16 +419,15 @@ function standard_atmosphere_z_interfaces(levels)
     interfaces = Vector{Float64}(undef, Nz + 1)
 
     if Nz == 1
-        interfaces[1] = max(0, heights[1] - 500)
-        interfaces[2] = heights[1] + 500
-        return interfaces
+        interfaces[1] = heights[1] - 0.5
+        interfaces[2] = heights[1] + 0.5
+    else
+        interfaces[1] = heights[1] - (heights[2] - heights[1]) / 2
+        for k in 2:Nz
+            interfaces[k] = (heights[k-1] + heights[k]) / 2
+        end
+        interfaces[Nz+1] = heights[Nz] + (heights[Nz] - heights[Nz-1]) / 2
     end
-
-    interfaces[1] = max(0, heights[1] - (heights[2] - heights[1]) / 2)
-    for k in 2:Nz
-        interfaces[k] = (heights[k-1] + heights[k]) / 2
-    end
-    interfaces[Nz+1] = heights[Nz] + (heights[Nz] - heights[Nz-1]) / 2
 
     return interfaces
 end
