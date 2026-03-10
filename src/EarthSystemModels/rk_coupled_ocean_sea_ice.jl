@@ -1,10 +1,10 @@
 using ClimaSeaIce
 using Oceananigans
 using Oceananigans.TimeSteppers: SplitRungeKuttaTimeStepper, rk_substep!, update_state!, cache_current_fields!
-using Oceananigans.Simulations: TimeStepCallsite, TendencyCallsite, UpdateStateCallsite, run_diagnostic!, write_output!
+using Oceananigans.Simulations: Simulation, TimeStepCallsite, TendencyCallsite, UpdateStateCallsite, run_diagnostic!, write_output!
 
-const RKSI = SeaIceModel{<:Any, <:Any, <:Any, <:SplitRungeKuttaTimeStepper}
-const RKHM = HydrostaticFreeSurfaceModel{<:SplitRungeKuttaTimeStepper}
+const RKSI = Simulation{<:SeaIceModel{<:Any, <:Any, <:Any, <:SplitRungeKuttaTimeStepper}}
+const RKHM = Simulation{<:HydrostaticFreeSurfaceModel{<:SplitRungeKuttaTimeStepper}}
 const RKCM = EarthSystemModel{<:RKSI, <:Any, <:RKHM}
 
 const ModelCallsite = Union{TendencyCallsite, UpdateStateCallsite}
@@ -45,8 +45,7 @@ function time_step_ocean_sea_ice_components!(coupled_model::RKCM, ocean::RKHM, s
         update_net_fluxes!(coupled_model, sea_ice)
     end
 
-    # Finalize step
-    tick!(coupled_model.clock, Δt)
+    # Finalize step (coupled_model.clock is ticked in time_step!)
     tick!(ocean.model.clock, Δt)
     tick!(sea_ice.model.clock, Δt)
 
