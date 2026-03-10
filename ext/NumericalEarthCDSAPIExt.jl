@@ -128,10 +128,12 @@ function download_dataset(meta::ERA5PressureMetadatum; skip_existing=true)
     day   = lpad(string(Dates.day(date)),   2, '0')
     hour  = lpad(string(Dates.hour(date)),  2, '0') * ":00"
 
+    p_hPa = [round(Int, p * 1e-2) for p in meta.dataset.levels]
+
     request = Dict(
         "product_type"    => ["reanalysis"],
         "variable"        => [variable_name],
-        "pressure_level"  => [string(p) for p in meta.dataset.levels],
+        "pressure_level"  => [string(p) for p in p_hPa],
         "year"            => [year],
         "month"           => [month],
         "day"             => [day],
@@ -203,10 +205,12 @@ function download_dataset(names::Vector{Symbol}, meta::ERA5PressureMetadatum; sk
     day   = lpad(string(Dates.day(date)),   2, '0')
     hour  = lpad(string(Dates.hour(date)),  2, '0') * ":00"
 
+    p_hPa = [round(Int, p * 1e-2) for p in meta.dataset.levels]
+
     request = Dict(
         "product_type"    => ["reanalysis"],
         "variable"        => cds_vars,
-        "pressure_level"  => [string(p) for p in meta.dataset.levels],
+        "pressure_level"  => [string(p) for p in p_hPa],
         "year"            => [year],
         "month"           => [month],
         "day"             => [day],
@@ -391,10 +395,12 @@ function _download_era5pl_day(names, dataset, day_dates;
     month = lpad(string(Dates.month(dt)), 2, '0')
     day   = lpad(string(Dates.day(dt)),   2, '0')
 
+    p_hPa = [round(Int, p * 1e-2) for p in dataset.levels]
+
     request = Dict(
         "product_type"    => ["reanalysis"],
         "variable"        => cds_vars,
-        "pressure_level"  => [string(p) for p in dataset.levels],
+        "pressure_level"  => [string(p) for p in p_hPa],
         "year"            => [year],
         "month"           => [month],
         "day"             => [day],

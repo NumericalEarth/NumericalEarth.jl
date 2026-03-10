@@ -4,7 +4,8 @@ module ERA5
 export ERA5SingleLevelsHourly, ERA5SingleLevelsMonthly
 
 # 3-D data
-export ERA5HourlyPressureLevels, ERA5MonthlyPressureLevels, ERA5_all_pressure_levels, pressure_field
+export ERA5HourlyPressureLevels, ERA5MonthlyPressureLevels, ERA5_all_pressure_levels, pressure_field, hPa
+export standard_atmosphere_z_interfaces, mean_geopotential_z_interfaces
 
 using NCDatasets
 using Printf
@@ -62,9 +63,10 @@ dataset_name(::ERA5SingleLevelsMonthly) = "ERA5SingleLevelsMonthly"
 ##### ERA5 pressure-level datasets
 #####
 
+const hPa = 100.0
 const ERA5_all_pressure_levels = [1, 2, 3, 5, 7, 10, 20, 30, 50, 70, 100, 125, 150,
     175, 200, 225, 250, 300, 350, 400, 450, 500, 550, 600, 650, 700, 750, 775, 800,
-    825, 850, 875, 900, 925, 950, 975, 1000]
+    825, 850, 875, 900, 925, 950, 975, 1000]*hPa
 
 abstract type ERA5PressureDataset <: ERA5Dataset end
 
@@ -397,7 +399,7 @@ const ERA5_gravitational_acceleration = 9.80665
 function standard_atmosphere_geopotential_height(p)
     g = ERA5_gravitational_acceleration
     T⁰ = 288.15 # K
-    p⁰ = 1013.25 # hPa
+    p⁰ = 1013.25 * hPa
     Rᵈ = 287.0528 # J/(kg-K)
 
     return (Rᵈ * T⁰ / g) * log(p⁰ / p)
