@@ -77,10 +77,10 @@ end
 # And add it as a callback to the simulation.
 add_callback!(simulation, progress, IterationInterval(200))
 
-mht_OHC= Field(meridional_heat_transport(esm, OceanHeatContentTendencyMethod()))
+mht_OHC = Field(meridional_heat_transport(esm, OceanHeatContentTendencyMethod()))
 mht_vT = Field(meridional_heat_transport(esm, MeridionalHeatFluxMethod()))
 
-ocean.output_writers[:mth] = JLD2Writer(ocean.model, (; mht_OHC, mht_vT);
+ocean.output_writers[:mth] = JLD2Writer(ocean.model, (; mht_vT, mht_OHC);
                                         schedule = TimeInterval(3hours),
                                         filename = "ocean_one_degree_mht",
                                         overwrite_existing = true)
