@@ -42,10 +42,11 @@ v_wind_meta   = Metadatum(:northward_velocity;     dataset, date)
 # We build a single `LatitudeLongitudeGrid` and use `set!` to download
 # and interpolate all four variables onto it.
 
-grid = LatitudeLongitudeGrid(size = (1440, 721, 1),
+grid = LatitudeLongitudeGrid(size = (1440, 720, 1),
                              longitude = (0, 360),
                              latitude = (-90, 90),
                              z = (0, 1))
+@show grid
 
 u_stokes = CenterField(grid)
 v_stokes = CenterField(grid)

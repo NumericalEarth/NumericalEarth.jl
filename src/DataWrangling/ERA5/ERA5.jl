@@ -81,7 +81,7 @@ ERA5MonthlyPressureLevels(; levels=ERA5_all_pressure_levels) = ERA5MonthlyPressu
 dataset_name(::ERA5HourlyPressureLevels)  = "ERA5HourlyPressureLevels"
 dataset_name(::ERA5MonthlyPressureLevels) = "ERA5MonthlyPressureLevels"
 
-Base.size(ds::ERA5PressureDataset, variable) = (1440, 721, length(ds.levels))
+Base.size(ds::ERA5PressureDataset, variable) = (1440, 720, length(ds.levels))
 
 all_dates(::ERA5HourlyPressureLevels,  var) = range(DateTime("1940-01-01"), stop=DateTime("2024-12-31"), step=Hour(1))
 all_dates(::ERA5MonthlyPressureLevels, var) = range(DateTime("1940-01-01"), stop=DateTime("2024-12-01"), step=Month(1))
@@ -377,8 +377,8 @@ inpainted_metadata_path(metadata::ERA5Metadata) = joinpath(metadata.dir, inpaint
 
 location(::ERA5Metadata) = (Center, Center, Center)
 
-# ERA5 global coverage: 0-360 longitude, -90 to 90 latitude at 0.25 degree resolution
-longitude_interfaces(::ERA5Metadata) = (0, 360)
+# ERA5 global coverage: 0-359.75 longitude, -90 to 90 latitude at 0.25 degree resolution
+longitude_interfaces(::ERA5Metadata) = (-0.125, 359.875)
 latitude_interfaces(::ERA5Metadata) = (-90, 90)
 
 # ERA5 single-levels (2-D) data product
