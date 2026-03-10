@@ -1,4 +1,5 @@
 using NumericalEarth
+using Statistics
 using ClimaSeaIce
 using Oceananigans
 using Oceananigans.Grids
@@ -12,6 +13,7 @@ using CUDA
 using JLD2
 using Oceananigans.TurbulenceClosures: IsopycnalSkewSymmetricDiffusivity
 using Oceananigans.Coriolis: EENConserving
+using Oceananigans.Models.VarianceDissipationComputations
 
 function omip_simulation(grid; forcing_dir, restoring_dir, filename)
 
@@ -25,7 +27,7 @@ function omip_simulation(grid; forcing_dir, restoring_dir, filename)
     catke_closure = NumericalEarth.Oceans.default_ocean_closure() 
     eddy_closure = IsopycnalSkewSymmetricDiffusivity(κ_skew=250) 
     closure = (catke_closure, eddy_closure, horizontal_viscosity)
-    cosiolis = HydrostaticSphericalCoriolis(scheme = EENConserving())
+    coriolis = HydrostaticSphericalCoriolis(scheme = EENConserving())
 
     dataset = EN4Monthly()
     date = DateTime(1958, 1, 1)
@@ -74,11 +76,11 @@ function omip_simulation(grid; forcing_dir, restoring_dir, filename)
     omip = OceanSeaIceModel(ocean, sea_ice; atmosphere, radiation)
     omip = Simulation(omip, Δt=20minutes, stop_time=100days) 
 
-    omip.output_writers = Checkpointer(omip.model;
-                                    schedule = TimeInterval(90.75days),
-                                    prefix = filename "_checkpoint",
-                                    cleanup = false,
-                                    verbose = true)
+    omip.output_writers[:checkpointer] = Checkpointer(omip.model;
+                                         schedule = TimeInterval(90.75days),
+                                         prefix = filename * "_checkpoint",
+                                         cleanup = false,
+                                         verbose = true)
 
     wall_time = Ref(time_ns())
 
@@ -106,9 +108,6 @@ function omip_simulation(grid; forcing_dir, restoring_dir, filename)
     κu = ocean.model.closure_fields[1].κu
     κc = ocean.model.closure_fields[1].κc
 
-    using Oceananigans.Models.VarianceDissipationComputations
-    include("average_saver.jl")
-
     Uⁿ⁻¹ = Oceananigans.Fields.VelocityFields(grid)
     Uⁿ   = Oceananigans.Fields.VelocityFields(grid)
     ϵT = VarianceDissipation(:T, grid; Uⁿ⁻¹, Uⁿ)
@@ -128,9 +127,9 @@ function omip_simulation(grid; forcing_dir, restoring_dir, filename)
     GSy = ∂y(So)^2 
     GSz = ∂z(So)^2 
 
-    outputs = merge((; GTx, GTy, GTz, GSx, GSy, GSz, uo, vo, wo, To, So, ηo, bo, ηo², uo², vo², To², So², bo², uT, vT, uS, vS, wT, wS, mld, κu, κc), fT, fS)
+    ocean_outputs = merge((; GTx, GTy, GTz, GSx, GSy, GSz, uo, vo, wo, To, So, ηo, bo, ηo², uo², vo², To², So², bo², uT, vT, uS, vS, wT, wS, mld, κu, κc), fT, fS)
 
-    omip.output_writers[:ocean_averages] = JLD2Writer(ocean.model, ice_outputs;
+    omip.output_writers[:ocean_averages] = JLD2Writer(ocean.model, ocean_outputs;
                                                     schedule = AveragedTimeInterval(30.25days),
                                                     filename = filename * "_ocean_averages",
                                                     including = [:grid])
@@ -162,8 +161,6 @@ function omip_simulation(grid; forcing_dir, restoring_dir, filename)
                                             filename = filename * "_fluxes_averages",
                                             including = [:grid],
                                             schedule = AveragedTimeInterval(30.25days))
-
-    using Statistics
 
     function progress(sim)
         sea_ice = sim.model.sea_ice

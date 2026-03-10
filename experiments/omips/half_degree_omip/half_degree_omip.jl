@@ -2,6 +2,10 @@ include("../omip_defaults.jl")
 
 arch = GPU()
 
+Nx = 720
+Ny = 360
+Nz = 100
+
 z_faces = ExponentialDiscretization(Nz, -6000, 0; scale=1800, mutable=true)
 
 const z_surf = z_faces.cᵃᵃᶠ(Nz)
@@ -14,7 +18,7 @@ grid = TripolarGrid(arch;
 bottom_height = regrid_bathymetry(grid; minimum_depth=20, major_basins=1, interpolation_passes=25)
 grid = ImmersedBoundaryGrid(grid, GridFittedBottom(bottom_height); active_cells_map=true)
 
-omip = omip_simulation(grid; forcing_dir, restoring_dir, filename = "halfdegree")
+omip = omip_simulation(grid; forcing_dir="forcing_data", restoring_dir="climatology",filename = "halfdegree")
 
 run!(omip)
 

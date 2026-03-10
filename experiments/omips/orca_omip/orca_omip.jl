@@ -1,7 +1,7 @@
 include("../omip_defaults.jl")
 
 arch = GPU()
-
+Nz   = 100
 z_faces = ExponentialDiscretization(Nz, -6000, 0; scale=1800, mutable=true)
 
 const z_surf = z_faces.cᵃᵃᶠ(Nz)
@@ -12,7 +12,7 @@ grid = ORCAGrid(arch; Nz,
 
 Nx, Ny, Nz = size(grid)
 
-omip = omip_simulation(grid; forcing_dir, restoring_dir, filename = "orca")
+omip = omip_simulation(grid; forcing_dir="forcing_data", restoring_dir="climatology", filename = "orca")
 
 run!(omip)
 
