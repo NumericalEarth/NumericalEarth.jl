@@ -1,15 +1,18 @@
 using ClimaSeaIce
 using Oceananigans
 using Oceananigans.TimeSteppers: SplitRungeKuttaTimeStepper, rk_substep!, update_state!, cache_current_fields!
+using Oceananigans.Simulations: Simulation, TimeStepCallsite, TendencyCallsite, UpdateStateCallsite, run_diagnostic!, write_output!
 
-RKSI = SeaIceModel{<:Any, <:Any, <:Any, <:SplitRungeKuttaTimeStepper}
-RKHM = HydrostaticFreeSurfaceModel{<:SplitRungeKuttaTimeStepper}
-TCM  = EarthSystemModel{<:RKSI, <:Any, <:RKHM}
+const RKSI = Simulation{<:SeaIceModel{<:Any, <:Any, <:Any, <:SplitRungeKuttaTimeStepper}}
+const RKHM = Simulation{<:HydrostaticFreeSurfaceModel{<:SplitRungeKuttaTimeStepper}}
+const RKCM = EarthSystemModel{<:RKSI, <:Any, <:RKHM}
 
-function time_step_ocean_sea_ice_components!(coupled_model::TCM, ocean::RKHM, sea_ice::RKSI, Δt)
+const ModelCallsite = Union{TendencyCallsite, UpdateStateCallsite}
 
-    ocean_callbacks = ocean.callbacks
-    sea_ice_callbacks = sea_ice.callbacks
+function time_step_ocean_sea_ice_components!(coupled_model::RKCM, ocean::RKHM, sea_ice::RKSI, Δt)
+
+    ocean_callbacks = Tuple(cb for cb in values(ocean.callbacks) if cb.callsite isa ModelCallsite)
+    sea_ice_callbacks = Tuple(cb for cb in values(sea_ice.callbacks) if cb.callsite isa ModelCallsite)
 
     if coupled_model.clock.iteration == 0
         update_state!(ocean.model, ocean_callbacks)
@@ -42,13 +45,35 @@ function time_step_ocean_sea_ice_components!(coupled_model::TCM, ocean::RKHM, se
         update_net_fluxes!(coupled_model, sea_ice)
     end
 
-    # Finalize step
-    tick!(coupled_model.clock, Δt)
+    # Finalize step (coupled_model.clock is ticked in time_step!)
     tick!(ocean.model.clock, Δt)
     tick!(sea_ice.model.clock, Δt)
 
-    # TODO: 
-    # add here all the callbacks infrastructure from the ocean and
-    # sea ice components which now lives in the `time_step!(simulation)`
-    # framework
+    # Ocean Callbacks and callback-like things
+    for diag in values(ocean.diagnostics)
+        diag.schedule(ocean.model) && run_diagnostic!(diag, ocean.model)
+    end
+
+    for callback in values(ocean.callbacks)
+        callback.callsite isa TimeStepCallsite && callback.schedule(ocean.model) && callback(ocean)
+    end
+
+    for writer in values(ocean.output_writers)
+        writer.schedule(ocean.model) && write_output!(writer, ocean)
+    end
+
+    # Sea Ice Callbacks and callback-like things
+    for diag in values(sea_ice.diagnostics)
+        diag.schedule(ocean.model) && run_diagnostic!(diag, sea_ice.model)
+    end
+
+    for callback in values(sea_ice.callbacks)
+        callback.callsite isa TimeStepCallsite && callback.schedule(sea_ice.model) && callback(sea_ice)
+    end
+
+    for writer in values(sea_ice.output_writers)
+        writer.schedule(ocean.model) && write_output!(writer, sea_ice)
+    end
+
+    return nothing
 end
