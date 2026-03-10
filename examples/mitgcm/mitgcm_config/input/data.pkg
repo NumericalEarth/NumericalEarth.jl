@@ -2,7 +2,7 @@
 # EXF is disabled: surface forcing comes from the host (Julia).
 # KPP is enabled for vertical mixing.
  &PACKAGES
- useGMRedi      = .TRUE.,
+ useGMRedi      = .FALSE.,
  useKPP         = .TRUE.,
  useDiagnostics = .TRUE.,
  &
