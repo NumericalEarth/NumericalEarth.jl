@@ -2,7 +2,7 @@ include("runtests_setup.jl")
 
 using Oceananigans: location
 using Oceananigans.Models: buoyancy_operation
-using NumericalEarth.Diagnostics: MixedLayerDepthField, MixedLayerDepthOperand, Streamfunction
+using NumericalEarth.Diagnostics: MixedLayerDepthField, MixedLayerDepthOperand, Streamfunction, retained_dims
 using SeawaterPolynomials: TEOS10EquationOfState
 
 for arch in test_architectures, dataset in (ECCO4Monthly(),)
@@ -67,80 +67,49 @@ for arch in test_architectures
                                extent = (1, 1, 1),
                                topology = (Periodic, Bounded, Bounded))
 
-        ρ = CenterField(grid)
-        v = CenterField(grid)
-
-        set!(ρ, (x, y, z) -> 1018 + 4y + 0.5z)
-        set!(v, 1.0)
+        model = NonhydrostaticModel(grid; tracers = (:T, :S))
+        set!(model, T = (x, y, z) -> 1018 + 4y + 0.5z, S = 35, u = 2.0, v = 1.0, w = 0.5)
+        coupled_model = (; ocean = (; model))
 
         bins = 1018:0.25:1023
 
-        ψ_hist = Streamfunction(grid;
-                                coordinate_field = ρ,
-                                transport_field = v,
-                                x_bins = bins,
-                                retained_dims = 2,
-                                cumulative = false,
-                                in_sverdrups = false)
+        ψ_default = Streamfunction(coupled_model;
+                                   x_field = model.tracers.T,
+                                   y_field = retained_dims(2),
+                                   bins = (x_field = bins,),
+                                   in_sverdrups = false)
 
-        ψ_cumulative = Streamfunction(grid;
-                                      coordinate_field = ρ,
-                                      transport_field = v,
-                                      x_bins = bins,
-                                      retained_dims = 2,
-                                      cumulative = true,
-                                      in_sverdrups = false)
+        ψ_scaled = Streamfunction(coupled_model;
+                                  x_field = model.tracers.T,
+                                  y_field = retained_dims(2),
+                                  bins = (x_field = bins,),
+                                  in_sverdrups = true)
 
-        ψ_tuple_dims = Streamfunction(grid;
-                                      coordinate_field = ρ,
-                                      transport_field = v,
-                                      x_bins = bins,
-                                      retained_dims = (2,),
-                                      cumulative = false,
-                                      in_sverdrups = false)
+        ψ_u = Streamfunction(coupled_model;
+                             x_field = model.tracers.T,
+                             y_field = retained_dims(1),
+                             bins = (x_field = bins,),
+                             in_sverdrups = false)
 
-        ψ_inferred_grid = Streamfunction(; coordinate_field = ρ,
-                                          transport_field = v,
-                                          x_bins = bins,
-                                          retained_dims = 2,
-                                          cumulative = false,
-                                          in_sverdrups = false)
+        @test_throws ArgumentError Streamfunction(coupled_model;
+                                                  x_field = model.tracers.T,
+                                                  y_field = retained_dims(2),
+                                                  bins = (x_field = bins, y_field = -90:5:90),
+                                                  in_sverdrups = false)
 
-        regridder_calls = Ref(0)
-        identity_regridder = (coordinate_field, transport_field) -> begin
-            regridder_calls[] += 1
-            return (coordinate_field, transport_field)
-        end
+        compute!(ψ_default)
+        compute!(ψ_scaled)
+        compute!(ψ_u)
 
-        ψ_regridded = Streamfunction(grid;
-                                     regridder = identity_regridder,
-                                     coordinate_field = ρ,
-                                     transport_field = v,
-                                     x_bins = bins,
-                                     retained_dims = 2,
-                                     cumulative = false,
-                                     in_sverdrups = false)
+        Ψdefault = Array(interior(on_architecture(CPU(), ψ_default)))
+        Ψscaled = Array(interior(on_architecture(CPU(), ψ_scaled)))
+        Ψu = Array(interior(on_architecture(CPU(), ψ_u)))
 
-        compute!(ψ_hist)
-        compute!(ψ_cumulative)
-        compute!(ψ_tuple_dims)
-        compute!(ψ_inferred_grid)
-        compute!(ψ_regridded)
-
-        Ψhist = Array(interior(on_architecture(CPU(), ψ_hist)))
-        Ψcum = Array(interior(on_architecture(CPU(), ψ_cumulative)))
-        Ψtuple = Array(interior(on_architecture(CPU(), ψ_tuple_dims)))
-        Ψinferred = Array(interior(on_architecture(CPU(), ψ_inferred_grid)))
-
-        @test size(Ψhist, 1) == length(bins) - 1
-        @test size(Ψhist, 2) == size(grid, 2)
-        @test size(Ψhist, 3) == 1
-        @test Ψtuple ≈ Ψhist
-        @test Ψinferred ≈ Ψhist
-
-        expected_cumulative = reverse(cumsum(reverse(Ψhist; dims = 1); dims = 1); dims = 1)
-        @test Ψcum ≈ expected_cumulative
-        @test regridder_calls[] == 1
+        @test size(Ψdefault, 1) == length(bins) - 1
+        @test size(Ψdefault, 2) == size(grid, 2)
+        @test size(Ψdefault, 3) == 1
+        @test Ψscaled ≈ Ψdefault ./ 1e6
+        @test all(isfinite, Ψu)
     end
 end
 

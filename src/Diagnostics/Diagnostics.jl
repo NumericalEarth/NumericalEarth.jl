@@ -1,7 +1,7 @@
 module Diagnostics
 
 export MixedLayerDepthField, MixedLayerDepthOperand
-export Streamfunction
+export Streamfunction, retained_dims, reduced_dims
 export frazil_temperature_flux, net_ocean_temperature_flux, sea_ice_ocean_temperature_flux, atmosphere_ocean_temperature_flux,
        frazil_heat_flux, net_ocean_heat_flux, sea_ice_ocean_heat_flux, atmosphere_ocean_heat_flux,
        net_ocean_salinity_flux, sea_ice_ocean_salinity_flux, atmosphere_ocean_salinity_flux,

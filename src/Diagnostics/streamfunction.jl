@@ -1,95 +1,89 @@
 """
-    Streamfunction(grid;
-                   regridder = nothing,
-                   coordinate_field,
-                   transport_field,
-                   retained_dims = 2,
-                   x_bins = 1020:0.1:1037,
-                   method = :integral,
-                   cumulative = true,
-                   reverse = true,
+    retained_dims(dim::Int)
+
+Validate and return a retained streamfunction dimension `dim` in `1:3`.
+"""
+@inline function retained_dims(dim::Int)
+    1 <= dim <= 3 || throw(ArgumentError("`dim` must be in 1:3, got dim=$dim."))
+    return dim
+end
+
+"""
+    reduced_dims(dim::Int)
+
+Return reduced dimensions for `Histogram` given retained dimension `dim`.
+"""
+@inline function reduced_dims(dim::Int)
+    d = retained_dims(dim)
+    return Tuple(n for n in (1, 2, 3) if n != d)
+end
+
+"""
+    retained_velocity(velocities, y_field)
+
+Return the velocity component corresponding to retained streamfunction axis `y_field`.
+Velocity components are interpolated to cell centers so they are compatible with
+center-located tracer-like `x_field` inputs.
+"""
+function retained_velocity(velocities, y_field::Int)
+    dim = retained_dims(y_field)
+    grid = velocities.u.grid
+
+    if dim == 1
+        return Field(Oceananigans.AbstractOperations.KernelFunctionOperation{Center, Center, Center}(Oceananigans.Operators.ℑxᶜᵃᵃ, grid, velocities.u))
+    elseif dim == 2
+        return Field(Oceananigans.AbstractOperations.KernelFunctionOperation{Center, Center, Center}(Oceananigans.Operators.ℑyᵃᶜᵃ, grid, velocities.v))
+    else
+        return Field(Oceananigans.AbstractOperations.KernelFunctionOperation{Center, Center, Center}(Oceananigans.Operators.ℑzᵃᵃᶜ, grid, velocities.w))
+    end
+end
+
+"""
+    Streamfunction(coupled_model;
+                   x_field = coupled_model.ocean.model.tracers.T,
+                   y_field = retained_dims(2),
+                   bins = (x_field = -2:1:1027,),
                    in_sverdrups = true)
 
-Construct a histogram-based streamfunction diagnostic using a coordinate-like field
-(for example density) and a transport-like weight field.
+Compute a histogram-based streamfunction diagnostic from `coupled_model`.
 
-`retained_dims` can be:
-- an `Int` in `1:3`,
-- or a tuple of retained dimensions in `1:3`.
+The streamfunction is formed by histogramming `x_field` using weights from the retained
+velocity component implied by `y_field` (default: meridional velocity for `y_field=2`),
+with reduced dimensions given by `reduced_dims(y_field)`.
 
-When `cumulative=true`, the histogram is cumulatively integrated along the bin axis
-(`dims=1` in histogram space), which yields the density-latitude style overturning
-streamfunction used in common diagnostics.
-
-`regridder` is an optional callable hook for pre-processing fields before histogramming.
-If provided, it must return `(coordinate_field_regridded, transport_field_regridded)`
-when called as `regridder(coordinate_field, transport_field)`.
+`bins` must only provide bins for `x_field`. If bins for `y_field` are supplied,
+an `ArgumentError` is thrown because this API retains the native y-axis surfaces.
 """
-function Streamfunction(grid;
-                        regridder = nothing,
-                        coordinate_field,
-                        transport_field,
-                        retained_dims = 2,
-                        x_bins = 1020:0.1:1037,
-                        method = :integral,
-                        cumulative = true,
-                        reverse = true,
+function Streamfunction(coupled_model;
+                        x_field = coupled_model.ocean.model.tracers.T,
+                        y_field = retained_dims(2),
+                        bins = (x_field = -2:1:1027,),
                         in_sverdrups = true)
 
-    coordinate_field, transport_field = maybe_regrid_streamfunction_fields(regridder, coordinate_field, transport_field)
+    ydim = retained_dims(y_field)
+    xbins = validate_streamfunction_bins(bins)
+    weights = retained_velocity(coupled_model.ocean.model.velocities, ydim)
 
-    coordinate_field.grid === grid || throw(ArgumentError("`coordinate_field.grid` does not match the supplied `grid`."))
-    transport_field.grid === grid || throw(ArgumentError("`transport_field.grid` does not match the supplied `grid`."))
+    ψ = Field(Histogram(x_field;
+                        bins = (x_field = xbins,),
+                        weights = weights,
+                        dims = reduced_dims(ydim),
+                        method = :integral))
 
-    histogram_dims = reduction_dims_from_retained(retained_dims)
-    bins = (x = collect(x_bins),)
-
-    ψ = Field(Histogram(coordinate_field;
-                        bins,
-                        weights = transport_field,
-                        dims = histogram_dims,
-                        method))
-
-    ψ = Field(ψ / 1e6)
+    if in_sverdrups
+        ψ = Field(ψ / 1e6)
+    end
 
     return ψ
 end
 
-"""
-    Streamfunction(; coordinate_field, transport_field, kwargs...)
+function validate_streamfunction_bins(bins::NamedTuple)
+    haskey(bins, :y_field) && throw(ArgumentError("`bins` for `y_field` are not supported in this API. " *
+                                                  "Use native retained y-axis surfaces by only supplying `x_field` bins."))
 
-Convenience overload that infers `grid` from `coordinate_field.grid`.
-"""
-function Streamfunction(; coordinate_field,
-                          transport_field,
-                          kwargs...)
-    coordinate_field.grid === transport_field.grid ||
-        throw(ArgumentError("`coordinate_field` and `transport_field` must live on the same grid when `grid` is omitted."))
-    return Streamfunction(coordinate_field.grid; coordinate_field, transport_field, kwargs...)
+    haskey(bins, :x_field) || throw(ArgumentError("`bins` must contain `x_field` bins."))
+    return collect(bins.x_field)
 end
 
-@inline function reduction_dims_from_retained(retained_dims::Int)
-    1 <= retained_dims <= 3 ||
-        throw(ArgumentError("Integer `retained_dims` must be in 1:3, got retained_dims=$retained_dims."))
-    return Tuple(d for d in (1, 2, 3) if d != retained_dims)
-end
-
-function reduction_dims_from_retained(retained_dims::Tuple)
-    isempty(retained_dims) && throw(ArgumentError("`retained_dims` tuple cannot be empty."))
-    all(d -> d isa Int && 1 <= d <= 3, retained_dims) ||
-        throw(ArgumentError("Tuple `retained_dims` entries must all be integers in 1:3, got retained_dims=$retained_dims."))
-    unique_retained = unique(retained_dims)
-    return Tuple(d for d in (1, 2, 3) if !(d in unique_retained))
-end
-
-reduction_dims_from_retained(retained_dims) =
-    throw(ArgumentError("Unsupported `retained_dims` type $(typeof(retained_dims)). Use an Int or tuple of retained dimensions."))
-
-@inline maybe_regrid_streamfunction_fields(::Nothing, coordinate_field, transport_field) = (coordinate_field, transport_field)
-
-function maybe_regrid_streamfunction_fields(regridder, coordinate_field, transport_field)
-    regridded = regridder(coordinate_field, transport_field)
-    regridded isa Tuple && length(regridded) == 2 ||
-        throw(ArgumentError("`regridder` must return a 2-tuple `(coordinate_field, transport_field)`."))
-    return regridded
-end
+validate_streamfunction_bins(bins) =
+    throw(ArgumentError("`bins` must be a NamedTuple like `(x_field = 1020:0.1:1037,)`, got $(typeof(bins))."))
