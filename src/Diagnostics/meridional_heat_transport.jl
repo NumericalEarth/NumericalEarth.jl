@@ -131,7 +131,7 @@ end
 function meridional_heat_transport_via_ocean_heat_content(esm)
     ρᵒᶜ = reference_density(esm.ocean)
     cᵒᶜ = heat_capacity(esm.ocean)
-    ∂T_∂t = temperature_evolution_tendency(esm.ocean.model.timestepper)
+    ∂T_∂t = temperature_tendency(esm.ocean.model.timestepper)
     heat_flux = net_ocean_heat_flux(esm) |> Field
 
     ∂ℋ_∂t = Integral(ρᵒᶜ * cᵒᶜ * ∂T_∂t, dims=3) |> Field
@@ -140,9 +140,9 @@ function meridional_heat_transport_via_ocean_heat_content(esm)
     return MHT
 end
 
-temperature_evolution_tendency(timestepper::SplitRungeKuttaTimeStepper) = timestepper.Gⁿ.T
+temperature_tendency(timestepper::SplitRungeKuttaTimeStepper) = timestepper.Gⁿ.T
 
-function temperature_evolution_tendency(timestepper::QuasiAdamsBashforth2TimeStepper)
+function temperature_tendency(timestepper::QuasiAdamsBashforth2TimeStepper)
     Gᵀⁿ = timestepper.Gⁿ.T
     Gᵀ⁻ = timestepper.G⁻.T
     χ = timestepper.χ
