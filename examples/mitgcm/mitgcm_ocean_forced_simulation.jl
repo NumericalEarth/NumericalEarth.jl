@@ -14,6 +14,7 @@ using MITgcm
 using Oceananigans
 using Oceananigans.Units
 using Printf
+using Statistics
 
 # ## Build and load MITgcm
 
@@ -48,7 +49,7 @@ radiation = Radiation(ocean_emissivity=0.0, sea_ice_emissivity=0.0)
 coupled_model = OceanSeaIceModel(ocean, nothing; atmosphere=atmos, radiation)
 
 Δt        = 1200
-stop_time = 2 * 365days
+stop_time = 360days
 simulation = Simulation(coupled_model; Δt, stop_time)
 
 # ## Progress callback
