@@ -137,7 +137,6 @@ function meridional_heat_transport_via_ocean_heat_content(esm)
     ∂ℋ_∂t = Integral(ρᵒᶜ * cᵒᶜ * ∂T_∂t, dims=3) |> Field
     ∫sum_dx = Integral(heat_flux + ∂ℋ_∂t, dims=1) |> Field
     MHT = CumulativeIntegral(- ∫sum_dx, dims=2)
-
     return MHT
 end
 
