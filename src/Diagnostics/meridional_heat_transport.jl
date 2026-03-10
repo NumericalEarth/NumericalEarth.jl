@@ -1,8 +1,6 @@
 using Oceananigans.TimeSteppers: SplitRungeKuttaTimeStepper, QuasiAdamsBashforth2TimeStepper
 using ..EarthSystemModels: EarthSystemModel, reference_density, heat_capacity
 
-import ..EarthSystemModels: checkpoint_auxiliary_state, restore_auxiliary_state!
-
 struct OceanHeatContentTendencyMethod end
 struct MeridionalHeatFluxMethod end
 
@@ -38,12 +36,13 @@ Arguments
      ```
 
      Above, ``T_{\\rm ref}`` is a reference temperature and ``ρᵒᶜ`` and ``cᵒᶜ`` are the
-     ocean reference density and heat capacity respectively.
+     ocean reference density and specific heat capacity respectively.
 
   2. For `OceanHeatContentTendencyMethod()` we have:
 
-     Let ``T`` be three-dimensional (potential) temperature, ``ρᵒᶜ`` a reference density,
-     ``cᵒᶜ`` the heat capacity, ``H`` the resting depth, and ``η`` the free-surface elevation.
+     Let ``T`` be three-dimensional (potential) temperature, ``ρᵒᶜ`` the ocean reference
+     density, ``cᵒᶜ`` the specific heat capacity, ``H`` the resting depth, and ``η`` the
+     free-surface elevation.
 
      The column heat content per unit horizontal area (units of J m⁻²) is:
 
@@ -92,22 +91,58 @@ Arguments
      \\mathrm{MHT}(φ, t) ≡ ∮_{\\mathrm{lat}=φ} \\boldsymbol{F}_h \\cdot \\hat{\\boldsymbol{n}} \\, \\mathrm{d}ℓ
      ```
 
-     with the understanding that ``\\mathrm{MHT} > 0`` means northward heat transport.
+     with the understanding that ``\\mathrm{MHT} > 0`` implies northward heat transport.
 
      Ignoring the residual ``ℛ``, the OHC-based diagnostic relation is
 
      ```math
-     \\mathrm{MHT} = - ∫_{A(φ)} 𝒬_{\\rm net} \\, \\mathrm{d}A - \\frac{\\mathrm{d}}{\\mathrm{d}t} \\, \\mathrm{OHC}_S
+     \\mathrm{MHT} = - ∫_{A(φ)} 𝒬_{\\rm net} \\, \\mathrm{d}A
+                     - \\frac{\\mathrm{d}}{\\mathrm{d}t} \\, \\mathrm{OHC}_S
      ```
 
 Keyword Arguments
 =================
 
 * `reference_temperature`: The reference temperature (in ᵒC) used for `MeridionalHeatFluxMethod()`; default: 0 ᵒC.
+
+Example
+=======
+
+```jldoctest
+using NumericalEarth
+using Oceananigans
+
+grid = RectilinearGrid(size = (4, 5, 2), extent = (1, 1, 1),
+                       topology = (Periodic, Bounded, Bounded))
+
+ocean = ocean_simulation(grid;
+                         momentum_advection = nothing,
+                         tracer_advection = nothing,
+                         closure = nothing,
+                         coriolis = nothing)
+
+sea_ice = sea_ice_simulation(grid, ocean)
+
+atmosphere = PrescribedAtmosphere(grid, [0.0])
+
+esm = OceanSeaIceModel(ocean, sea_ice; atmosphere, radiation = Radiation())
+
+mht = meridional_heat_transport(esm)
+
+# output
+
+Integral of BinaryOperation at (Center, Face, Center) over dims (1, 3)
+└── operand: BinaryOperation at (Center, Face, Center)
+    └── grid: 4×5×2 RectilinearGrid{Float64, Periodic, Bounded, Bounded} on CPU with 3×3×2 halo
+```
 """
 function meridional_heat_transport(esm::EarthSystemModel, method=MeridionalHeatFluxMethod(); reference_temperature=0)
 
-    esm.ocean.model.grid.underlying_grid isa OrthogonalSphericalShellGrid &&
+    grid = esm.ocean.model.grid
+
+    validation_grid = grid isa ImmersedBoundaryGrid ? grid.underlying_grid : grid
+
+    grid isa OrthogonalSphericalShellGrid &&
         throw(ArgumentError("meridional_heat_transport diagnostic does not work on OrthogonalSphericalShellGrid at the moment; use LatitudeLongitudeGrid."))
 
     if method isa MeridionalHeatFluxMethod
