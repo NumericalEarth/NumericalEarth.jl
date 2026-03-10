@@ -91,7 +91,7 @@ function default_solver(grid, ocean::Simulation)
 end
 
 function sea_ice_dynamics(grid, ocean=nothing;
-                          sea_ice_ocean_drag_coefficient = 5.5e-3,
+                          sea_ice_ocean_drag_coefficient = 3.24e-3,
                           rheology = ElastoViscoPlasticRheology(),
                           coriolis = default_coriolis(ocean),
                           free_drift = nothing,
