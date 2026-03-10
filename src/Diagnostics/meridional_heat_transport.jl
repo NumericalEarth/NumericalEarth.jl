@@ -144,8 +144,8 @@ end
 temperature_evolution_tendency(timestepper::SplitRungeKuttaTimeStepper) = timestepper.Gⁿ.T
 
 function temperature_evolution_tendency(timestepper::QuasiAdamsBashforth2TimeStepper)
-    Gⁿ = timestepper.Gⁿ.T
-    G⁻ = timestepper.G⁻.T
-    χ  = timestepper.χ
-    return (3/2 + χ) * Gⁿ - (1/2 + χ) * G⁻
+    Gᵀⁿ = timestepper.Gⁿ.T
+    Gᵀ⁻ = timestepper.G⁻.T
+    χ = timestepper.χ
+    return (3/2 + χ) * Gᵀⁿ - (1/2 + χ) * Gᵀ⁻
 end
