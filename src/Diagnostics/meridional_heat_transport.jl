@@ -84,13 +84,15 @@ Arguments
         + ∫_{A(φ)} ℛ \\, \\mathrm{d}A
      ```
 
+     where ``∂A(φ)`` is the boundary of ``A(φ)``, i.e., the circle at latitude ``φ``.
+
      The northward meridional heat transport across latitude ``φ`` is
 
      ```math
      \\mathrm{MHT}(φ, t) ≡ ∮_{\\mathrm{lat}=φ} \\boldsymbol{F}_h \\cdot \\hat{\\boldsymbol{n}} \\, \\mathrm{d}ℓ
      ```
 
-     with the sign convention that ``\\mathrm{MHT} > 0`` is northward.
+     with the understanding that ``\\mathrm{MHT} > 0`` means northward heat transport.
 
      Ignoring the residual ``ℛ``, the OHC-based diagnostic relation is
 
