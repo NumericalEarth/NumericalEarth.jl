@@ -78,10 +78,10 @@ Arguments
      theorem we get
 
      ```math
-      \\frac{\\mathrm{d}}{\\mathrm{d}t} \\, \\mathrm{OHC}_S(φ, t) =
-         - ∮_{∂A(φ)} \\boldsymbol{F}_h \\cdot \\hat{\\boldsymbol{n}} \\, \\mathrm{d}ℓ
-         - ∫_{A(φ)} 𝒬_{\\rm net} \\, \\mathrm{d}A
-         + ∫_{A(φ)} ℛ \\, \\mathrm{d}A
+     \\frac{\\mathrm{d}}{\\mathrm{d}t} \\, \\mathrm{OHC}_S(φ, t) =
+        - ∮_{∂A(φ)} \\boldsymbol{F}_h \\cdot \\hat{\\boldsymbol{n}} \\, \\mathrm{d}ℓ
+        - ∫_{A(φ)} 𝒬_{\\rm net} \\, \\mathrm{d}A
+        + ∫_{A(φ)} ℛ \\, \\mathrm{d}A
      ```
 
      The northward meridional heat transport across latitude ``φ`` is
