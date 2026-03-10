@@ -61,7 +61,7 @@ Arguments
 
      * ``\\boldsymbol{F}_h`` is the depth-integrated horizontal heat flux vector (units W m⁻¹),
        that includes advection and any parameterized lateral/eddy fluxes,
-     * ``𝒬_{\\rm net}`` is the [net ocean surface heat flux](@ref NumericalEarth.net_ocean_heat_flux)
+     * ``𝒬_{\\rm net}`` is the [net ocean surface heat flux](@ref NumericalEarth.Diagnostics.net_ocean_heat_flux)
        (units W m⁻²), and
      * ``ℛ`` is the residual sources/sinks and non-closed terms (e.g. numerics, unaccounted
        physics, mass/volume effects).
