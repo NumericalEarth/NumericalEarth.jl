@@ -7,7 +7,7 @@ using Printf
 using Scratch
 
 using Oceananigans.Fields: Center
-using NumericalEarth.DataWrangling: Metadata, Metadatum, metadata_path
+using NumericalEarth.DataWrangling: Metadata, Metadatum, metadata_path, DatewiseFilename
 using Dates
 using Dates: DateTime, Day, Month, Hour
 
@@ -213,16 +213,16 @@ function metadata_filename(metadata::ERA5Metadatum)
 end
 
 function metadata_filename(metadata::ERA5Metadata)
-    return [metadata_filename(metadatum) for metadatum in metadata]
+    return DatewiseFilename([metadata_filename(metadatum) for metadatum in metadata])
 end
 
-function inpainted_metadata_filename(metadata::ERA5Metadata)
-    original_filename = metadata_filename(metadata)
+function inpainted_metadata_filename(metadata::ERA5Metadatum)
+    original_filename = metadata.filename
     without_extension = original_filename[1:end-3]
     return without_extension * "_inpainted.jld2"
 end
 
-inpainted_metadata_path(metadata::ERA5Metadata) = joinpath(metadata.dir, inpainted_metadata_filename(metadata))
+inpainted_metadata_path(metadata::ERA5Metadatum) = joinpath(metadata.dir, inpainted_metadata_filename(metadata))
 
 #####
 ##### Grid interfaces
