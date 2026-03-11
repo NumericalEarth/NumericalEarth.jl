@@ -7,9 +7,12 @@ using ClimaSeaIce.Rheologies: IceStrength, ElastoViscoPlasticRheology
 using Oceananigans.TimeSteppers: SplitRungeKuttaTimeStepper
 
 using NumericalEarth.EarthSystemModels: ocean_surface_salinity, ocean_surface_velocities
-using NumericalEarth.Oceans: Default, u_immersed_bottom_drag, v_immersed_bottom_drag
+using NumericalEarth.Oceans: Default, u_immersed_bottom_drag, v_immersed_bottom_drag, reference_density
 
 default_rotation_rate = Oceananigans.defaults.planet_rotation_rate
+
+ocean_reference_density(ocean::Simulation, FT) = convert(FT, reference_density(ocean))
+ocean_reference_density(::Nothing, FT) = convert(FT, 1026.0)
 
 function sea_ice_simulation(grid, ocean=nothing;
                             Δt = 5minutes,
@@ -98,9 +101,11 @@ function sea_ice_dynamics(grid, ocean=nothing;
                           solver = default_solver(grid, ocean))
 
     SSU, SSV = ocean_surface_velocities(ocean)
-    sea_ice_ocean_drag_coefficient = convert(eltype(grid), sea_ice_ocean_drag_coefficient)
+    FT = eltype(grid)
+    sea_ice_ocean_drag_coefficient = convert(FT, sea_ice_ocean_drag_coefficient)
+    ρₑ = ocean_reference_density(ocean, FT)
 
-    τo  = SemiImplicitStress(uₑ=SSU, vₑ=SSV, Cᴰ=sea_ice_ocean_drag_coefficient)
+    τo  = SemiImplicitStress(uₑ=SSU, vₑ=SSV, Cᴰ=sea_ice_ocean_drag_coefficient, ρₑ=ρₑ)
     τua = Field{Face, Center, Nothing}(grid)
     τva = Field{Center, Face, Nothing}(grid)
 
