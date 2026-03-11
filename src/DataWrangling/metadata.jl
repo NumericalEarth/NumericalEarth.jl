@@ -238,9 +238,7 @@ Base.last(metadata::Metadatum)    = metadata
 Base.iterate(metadata::Metadatum) = (metadata, nothing)
 Base.iterate(::Metadatum, ::Any)  = nothing
 
-function metadata_path(metadata::Metadatum)
-    joinpath(metadata.dir, metadata.filename)
-end
+metadata_path(metadata::Metadatum) = joinpath(metadata.dir, metadata.filename)
 
 function metadata_path(metadata::Metadata)
     fn = metadata.filename
