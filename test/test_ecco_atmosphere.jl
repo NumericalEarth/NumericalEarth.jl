@@ -1,7 +1,9 @@
 include("runtests_setup.jl")
 
+using Statistics: median
 using NumericalEarth.Atmospheres: PrescribedAtmosphere, TwoBandDownwellingRadiation
 using NumericalEarth.ECCO: ECCOPrescribedAtmosphere, ECCO4Monthly
+using NumericalEarth.DataWrangling: higher_bound
 
 @testset "ECCO Prescribed Atmosphere" begin
     for arch in test_architectures
@@ -55,6 +57,22 @@ using NumericalEarth.ECCO: ECCOPrescribedAtmosphere, ECCO4Monthly
             @test maximum(ℐꜜˢʷ_data) < 1500  # W/m²
             @test maximum(ℐꜜˡʷ_data) < 600   # W/m²
             @test maximum(ℐꜜˡʷ_data) > 50    # W/m² - should have some reasonable values
+        end
+
+        # Test that higher_bound for sea_level_pressure is large enough
+        # to avoid masking valid pressure data (~101325 Pa).
+        pa_metadata = Metadata(:sea_level_pressure; dataset, start_date, end_date)
+        other_metadata = Metadata(:temperature; dataset, start_date, end_date)
+        @test higher_bound(pa_metadata, Val(:sea_level_pressure)) == 1f10
+        @test higher_bound(other_metadata, Val(:temperature)) == 1f5  # default
+
+        # Verify pressure field contains physically reasonable values
+        CUDA.@allowscalar begin
+            pa_data = interior(atmosphere.pressure)
+            valid = pa_data[pa_data .!= 0]
+            @test length(valid) > 0
+            @test median(valid) > 9.9f4 # typical sea level pressure exceeds 9e4 Pa
+            @test median(valid) < 1.1f5 # typical sea level pressure is lower than 1.1e5 Pa
         end
 
         # Test grid consistency
