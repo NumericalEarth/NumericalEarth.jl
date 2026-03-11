@@ -103,7 +103,9 @@ Arguments
 Keyword Arguments
 =================
 
-* `reference_temperature`: The reference temperature (in ᵒC) used for `MeridionalHeatFluxMethod()`; default: 0 ᵒC.
+* `reference_temperature`: The reference temperature (in ᵒC) used for `MeridionalHeatFluxMethod()`; default: 0 ᵒC. 
+Note that reference temperature is only relevant where there is a net volume transport through the section, which for the case of global latitude circles there is not. 
+Section-averaged transport could also be considered as a reference temperature to remove residual barotropic volume fluxes in basin-scale/regional analyses where a net volume transport is present. 
 
 Example
 =======
