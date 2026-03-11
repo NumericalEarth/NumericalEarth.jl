@@ -28,7 +28,7 @@ function omip_simulation(grid; forcing_dir, restoring_dir, filename)
     catke_closure = NumericalEarth.Oceans.default_ocean_closure() 
     eddy_closure = IsopycnalSkewSymmetricDiffusivity(κ_skew=250) 
     closure = (catke_closure, eddy_closure, horizontal_viscosity)
-    coriolis = HydrostaticSphericalCoriolis(scheme = EENConserving())
+    coriolis = HydrostaticSphericalCoriolis(scheme = EnstrophyConserving())
 
     # WOA monthly salinity restoring with piston velocity 1/6 m/day
     # following the OMIP protocol (Griffies et al., 2009; Danabasoglu et al., 2014)
@@ -46,6 +46,7 @@ function omip_simulation(grid; forcing_dir, restoring_dir, filename)
                             coriolis,
                             timestepper = :SplitRungeKutta3,
                             free_surface,
+                            radiative_forcing = nothing,
                             forcing = (; S = FS),
                             closure)
 
