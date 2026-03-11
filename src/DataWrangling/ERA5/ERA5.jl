@@ -14,7 +14,7 @@ using Statistics
 
 using Oceananigans.Fields: Center
 using Oceananigans: CenterField, interior, fill_halo_regions!, CPU
-using NumericalEarth.DataWrangling: Metadata, Metadatum, metadata_path, native_grid, InverseGravity
+using NumericalEarth.DataWrangling: Metadata, Metadatum, metadata_path, native_grid, InverseGravity, download_dataset
 using Dates
 using Dates: DateTime, Day, Month, Hour
 
