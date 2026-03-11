@@ -1,6 +1,9 @@
 module OSPapa
 
 export OSPapaPrescribedAtmosphere
+export OSPapaPrescribedFluxes
+export OSPapaPrescribedFluxBoundaryConditions
+export PrescribedFluxCallback
 export OSPapaHourly
 
 using Oceananigans
@@ -11,6 +14,7 @@ using Downloads
 
 using NumericalEarth.DataWrangling: download_progress
 using NumericalEarth.Atmospheres: PrescribedAtmosphere, TwoBandDownwellingRadiation
+using NumericalEarth.Oceans: reference_density, heat_capacity
 
 using NumericalEarth.DataWrangling:
     Metadata,
@@ -61,6 +65,7 @@ function download_ospapa_file(dir=download_OSPapa_cache)
 end
 
 include("OSPapa_prescribed_atmosphere.jl")
+include("OSPapa_prescribed_fluxes.jl")
 include("OSPapa_ocean_observations.jl")
 
 end # module

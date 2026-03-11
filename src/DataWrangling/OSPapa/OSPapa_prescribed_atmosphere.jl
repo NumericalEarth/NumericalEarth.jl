@@ -11,9 +11,14 @@ Arguments
 - `P_hPa`: atmospheric pressure in hPa (mbar)
 """
 function relative_humidity_to_specific_humidity(RH, T_celsius, P_hPa)
-    e_sat = 6.112 * exp(17.67 * T_celsius / (T_celsius + 243.5))
-    e = (RH / 100) * e_sat
-    q = 0.622 * e / (P_hPa - 0.378 * e)
+    Mₐ = 28.9634 # Molar mass of dry air in g/mol
+    Mᵥ = 18.01528 # Molar mass of water vapor in g/mol
+    ε = Mᵥ / Mₐ  # Ratio of molar masses
+
+    eₛ = 6.1094 * exp(17.625 * T_celsius / (T_celsius + 243.04))  # Saturation vapor pressure in hPa
+    eₚ = (RH / 100) * eₛ  # Actual vapor pressure in hPa
+    q = ε * eₚ / (P_hPa - (1 - ε) * eₚ)  # Specific humidity in kg/kg
+
     return q
 end
 
@@ -157,14 +162,14 @@ function OSPapaPrescribedAtmosphere(architecture = CPU(), FT = Float32;
                                       surface_layer_height = convert(FT, surface_layer_height))
 
     Nt = length(times_seconds)
-    parent(atmosphere.velocities.u)                  .= reshape(FT.(uwnd),       1, 1, 1, Nt)
-    parent(atmosphere.velocities.v)                  .= reshape(FT.(vwnd),       1, 1, 1, Nt)
-    parent(atmosphere.tracers.T)                     .= reshape(FT.(T_K),        1, 1, 1, Nt)
-    parent(atmosphere.tracers.q)                     .= reshape(FT.(q),          1, 1, 1, Nt)
-    parent(atmosphere.pressure)                      .= reshape(FT.(P_Pa),       1, 1, 1, Nt)
+    parent(atmosphere.velocities.u)                    .= reshape(FT.(uwnd),       1, 1, 1, Nt)
+    parent(atmosphere.velocities.v)                    .= reshape(FT.(vwnd),       1, 1, 1, Nt)
+    parent(atmosphere.tracers.T)                       .= reshape(FT.(T_K),        1, 1, 1, Nt)
+    parent(atmosphere.tracers.q)                       .= reshape(FT.(q),          1, 1, 1, Nt)
+    parent(atmosphere.pressure)                        .= reshape(FT.(P_Pa),       1, 1, 1, Nt)
     parent(atmosphere.downwelling_radiation.shortwave) .= reshape(FT.(sw),       1, 1, 1, Nt)
     parent(atmosphere.downwelling_radiation.longwave)  .= reshape(FT.(lw),       1, 1, 1, Nt)
-    parent(atmosphere.freshwater_flux.rain)           .= reshape(FT.(rain_kgm2s), 1, 1, 1, Nt)
+    parent(atmosphere.freshwater_flux.rain)            .= reshape(FT.(rain_kgm2s), 1, 1, 1, Nt)
 
     return atmosphere
 end
