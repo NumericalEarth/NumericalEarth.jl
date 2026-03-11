@@ -7,6 +7,7 @@ using Oceananigans.Units
 using NumericalEarth.Oceans
 using NumericalEarth.ECCO
 using NumericalEarth.JRA55
+using NumericalEarth.WOA
 using Printf
 using Dates
 using CUDA
@@ -29,12 +30,15 @@ function omip_simulation(grid; forcing_dir, restoring_dir, filename)
     closure = (catke_closure, eddy_closure, horizontal_viscosity)
     coriolis = HydrostaticSphericalCoriolis(scheme = EENConserving())
 
-    dataset = EN4Monthly()
-    date = DateTime(1958, 1, 1)
-    @inline mask(x, y, z, t) = z ≥ z_surf - 1
-    Smetadata = Metadata(:salinity; dir=restoring_dir, dataset, start_date=date)
+    # WOA monthly salinity restoring with piston velocity 1/6 m/day
+    # following the OMIP protocol (Griffies et al., 2009; Danabasoglu et al., 2014)
+    woa_dataset = WOAMonthly()
+    Smetadata = Metadata(:salinity; dir=restoring_dir, dataset=woa_dataset)
 
-    FS = DatasetRestoring(Smetadata, grid; rate = 1/30days, mask, time_indices_in_memory=10) 
+    piston_velocity = 1/6 # m/day
+    restoring_rate = piston_velocity / (Δzˢ * days)
+    @inline surface_mask(x, y, z, t) = z ≥ zˢ
+    FS = DatasetRestoring(Smetadata, grid; rate=restoring_rate, mask=surface_mask, time_indices_in_memory=12)
 
     ocean = ocean_simulation(grid; Δt=1minutes,
                             momentum_advection,
@@ -45,8 +49,8 @@ function omip_simulation(grid; forcing_dir, restoring_dir, filename)
                             forcing = (; S = FS),
                             closure)
 
-    set!(ocean.model, T=EN4Metadatum(:temperature; dir=restoring_dir,  date),
-                      S=EN4Metadatum(:salinity;    dir=restoring_dir,  date))
+    set!(ocean.model, T=Metadatum(:temperature; dir=restoring_dir, dataset=WOAAnnual()),
+                      S=Metadatum(:salinity;    dir=restoring_dir, dataset=WOAAnnual()))
 
     #####
     ##### A Prognostic Sea-ice model
@@ -63,6 +67,7 @@ function omip_simulation(grid; forcing_dir, restoring_dir, filename)
     #####
 
     dir = forcing_dir
+    date = DateTime(1958, 1, 1)
     dataset = MultiYearJRA55()
     backend = JRA55NetCDFBackend(30)
 

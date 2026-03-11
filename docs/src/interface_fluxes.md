@@ -817,7 +817,7 @@ where:
 - ``\lambda_1, \lambda_2`` are liquidus coefficients
 
 The ratio ``R = \alpha_h / \alpha_s`` (typically around 35) reflects the different molecular diffusivities of heat and
-salt, with heat diffusing faster than salt [hieronymus2021comparison](@citep).
+salt, with heat diffusing faster than salt [shi2021sensitivity](@citep).
 
 ```@example interface_fluxes
 using NumericalEarth.EarthSystemModels: ThreeEquationHeatFlux
@@ -975,4 +975,4 @@ Note: The `ComponentInterfaces` call above is illustrative; it requires fully co
 
 The implementations follow:
 - [holland1999modeling](@citet): foundational three-equation model for ice shelf-ocean interaction
-- [hieronymus2021comparison](@citet): comparison of different ocean-ice flux parameterizations
+- [shi2021sensitivity](@citet): sensitivity of Northern Hemisphere climate to ice-ocean interface heat flux parameterizations

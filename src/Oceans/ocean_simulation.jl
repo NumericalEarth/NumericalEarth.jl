@@ -19,15 +19,15 @@ using Statistics: mean
 #####
 
 @inline ϕ²(i, j, k, grid, ϕ)    = @inbounds ϕ[i, j, k]^2
-@inline spᶠᶜᶜ(i, j, k, grid, Φ) = @inbounds sqrt(Φ.u[i, j, k]^2 + ℑxyᶠᶜᵃ(i, j, k, grid, ϕ², Φ.v))
-@inline spᶜᶠᶜ(i, j, k, grid, Φ) = @inbounds sqrt(Φ.v[i, j, k]^2 + ℑxyᶜᶠᵃ(i, j, k, grid, ϕ², Φ.u))
+@inline spᶠᶜᶜ(i, j, k, grid, Φ, Uᴮ) = @inbounds sqrt(Φ.u[i, j, k]^2 + ℑxyᶠᶜᵃ(i, j, k, grid, ϕ², Φ.v) + Uᴮ^2)
+@inline spᶜᶠᶜ(i, j, k, grid, Φ, Uᴮ) = @inbounds sqrt(Φ.v[i, j, k]^2 + ℑxyᶜᶠᵃ(i, j, k, grid, ϕ², Φ.u) + Uᴮ^2)
 
-@inline u_quadratic_bottom_drag(i, j, grid, c, Φ, μ) = @inbounds - μ * Φ.u[i, j, 1] * spᶠᶜᶜ(i, j, 1, grid, Φ)
-@inline v_quadratic_bottom_drag(i, j, grid, c, Φ, μ) = @inbounds - μ * Φ.v[i, j, 1] * spᶜᶠᶜ(i, j, 1, grid, Φ)
+@inline u_quadratic_bottom_drag(i, j, grid, c, Φ, p) = @inbounds - p.μ * Φ.u[i, j, 1] * spᶠᶜᶜ(i, j, 1, grid, Φ, p.Uᴮ)
+@inline v_quadratic_bottom_drag(i, j, grid, c, Φ, p) = @inbounds - p.μ * Φ.v[i, j, 1] * spᶜᶠᶜ(i, j, 1, grid, Φ, p.Uᴮ)
 
 # Keep a constant linear drag parameter independent on vertical level
-@inline u_immersed_bottom_drag(i, j, k, grid, clock, Φ, μ) = @inbounds - μ * Φ.u[i, j, k] * spᶠᶜᶜ(i, j, k, grid, Φ)
-@inline v_immersed_bottom_drag(i, j, k, grid, clock, Φ, μ) = @inbounds - μ * Φ.v[i, j, k] * spᶜᶠᶜ(i, j, k, grid, Φ)
+@inline u_immersed_bottom_drag(i, j, k, grid, clock, Φ, p) = @inbounds - p.μ * Φ.u[i, j, k] * spᶠᶜᶜ(i, j, k, grid, Φ, p.Uᴮ)
+@inline v_immersed_bottom_drag(i, j, k, grid, clock, Φ, p) = @inbounds - p.μ * Φ.v[i, j, k] * spᶜᶠᶜ(i, j, k, grid, Φ, p.Uᴮ)
 
 #####
 ##### Defaults
@@ -108,6 +108,7 @@ end
                      rotation_rate = default_planet_rotation_rate,
                      gravitational_acceleration = default_gravitational_acceleration,
                      bottom_drag_coefficient = Default(0.003),
+                     drag_bulk_velocity = Default(0.1),
                      forcing = NamedTuple(),
                      biogeochemistry = nothing,
                      timestepper = :SplitRungeKutta3,
@@ -169,6 +170,7 @@ defaults on a per-field basis.
 - `rotation_rate`: Planetary rotation rate used for Coriolis forcing.
 - `gravitational_acceleration`: Gravitational acceleration, passed to buoyancy.
 - `bottom_drag_coefficient`: Bottom drag coefficient. May be a `Default` wrapper.
+- `drag_bulk_velocity`: a minimum velocity for the bottom drag.
 - `forcing`: Named tuple of additional forcing(s) for individual fields.
 - `biogeochemistry`: A biogeochemical model or `nothing`.
 - `timestepper`: Time-stepping scheme; options are `:SplitRungeKutta3` (default), or `:QuasiAdamsBashforth2`.
@@ -191,6 +193,7 @@ function ocean_simulation(grid;
                           rotation_rate = default_planet_rotation_rate,
                           gravitational_acceleration = default_gravitational_acceleration,
                           bottom_drag_coefficient = Default(0.003),
+                          drag_bulk_velocity = Default(0.1),
                           use_barotropic_potential = true,
                           forcing = NamedTuple(),
                           biogeochemistry = nothing,
@@ -201,6 +204,7 @@ function ocean_simulation(grid;
                           equation_of_state = TEOS10EquationOfState(; reference_density),
                           boundary_conditions::NamedTuple = NamedTuple(),
                           radiative_forcing = default_radiative_forcing(grid),
+                          materialize_buoyancy_gradients = true,
                           warn = true,
                           verbose = false)
 
@@ -219,6 +223,8 @@ function ocean_simulation(grid;
     if single_column_simulation
         # Let users put a bottom drag if they want
         bottom_drag_coefficient = default_or_override(bottom_drag_coefficient, zero(grid))
+        drag_bulk_velocity = default_or_override(drag_bulk_velocity, zero(grid))
+        drag_parameters = (μ = bottom_drag_coefficient, Uᴮ = drag_bulk_velocity)
 
         # Don't let users use advection in a single column model
         tracer_advection = nothing
@@ -239,9 +245,13 @@ function ocean_simulation(grid;
         end
 
         bottom_drag_coefficient = default_or_override(bottom_drag_coefficient)
+        drag_bulk_velocity = default_or_override(drag_bulk_velocity)
+        bottom_drag_coefficient = convert(FT, bottom_drag_coefficient)
+        drag_bulk_velocity = convert(FT, drag_bulk_velocity)
+        drag_parameters = (μ = bottom_drag_coefficient, Uᴮ = drag_bulk_velocity)
 
-        u_immersed_drag = FluxBoundaryCondition(u_immersed_bottom_drag, discrete_form=true, parameters=bottom_drag_coefficient)
-        v_immersed_drag = FluxBoundaryCondition(v_immersed_bottom_drag, discrete_form=true, parameters=bottom_drag_coefficient)
+        u_immersed_drag = FluxBoundaryCondition(u_immersed_bottom_drag, discrete_form=true, parameters=drag_parameters)
+        v_immersed_drag = FluxBoundaryCondition(v_immersed_bottom_drag, discrete_form=true, parameters=drag_parameters)
 
         u_immersed_bc = ImmersedBoundaryCondition(bottom=u_immersed_drag)
         v_immersed_bc = ImmersedBoundaryCondition(bottom=v_immersed_drag)
@@ -267,8 +277,6 @@ function ocean_simulation(grid;
         forcing = merge(forcing, (; T=T_forcing))
     end
 
-    bottom_drag_coefficient = convert(FT, bottom_drag_coefficient)
-
     # Set up boundary conditions using Field
     top_zonal_momentum_flux      = τˣ = Field{Face,   Center, Nothing}(grid)
     top_meridional_momentum_flux = τʸ = Field{Center, Face,   Nothing}(grid)
@@ -281,8 +289,8 @@ function ocean_simulation(grid;
     T_top_bc = FluxBoundaryCondition(Jᵀ)
     S_top_bc = FluxBoundaryCondition(Jˢ)
 
-    u_bot_bc = FluxBoundaryCondition(u_quadratic_bottom_drag, discrete_form=true, parameters=bottom_drag_coefficient)
-    v_bot_bc = FluxBoundaryCondition(v_quadratic_bottom_drag, discrete_form=true, parameters=bottom_drag_coefficient)
+    u_bot_bc = FluxBoundaryCondition(u_quadratic_bottom_drag, discrete_form=true, parameters=drag_parameters)
+    v_bot_bc = FluxBoundaryCondition(v_quadratic_bottom_drag, discrete_form=true, parameters=drag_parameters)
 
     default_boundary_conditions = (u = FieldBoundaryConditions(top=u_top_bc, bottom=u_bot_bc, immersed=u_immersed_bc),
                                    v = FieldBoundaryConditions(top=v_top_bc, bottom=v_bot_bc, immersed=v_immersed_bc),
@@ -294,7 +302,7 @@ function ocean_simulation(grid;
     # conditions even when a user-bc is supplied).
     boundary_conditions = merge(default_boundary_conditions, boundary_conditions)
     buoyancy = SeawaterBuoyancy(; gravitational_acceleration, equation_of_state)
-    buoyancy = Oceananigans.BuoyancyFormulations.BuoyancyForce(grid, buoyancy; materialize_gradients=true)
+    buoyancy = Oceananigans.BuoyancyFormulations.BuoyancyForce(grid, buoyancy; materialize_gradients=materialize_buoyancy_gradients)
     
     if tracer_advection isa NamedTuple
         tracer_advection = with_tracers(tracers, tracer_advection, default_tracer_advection())
