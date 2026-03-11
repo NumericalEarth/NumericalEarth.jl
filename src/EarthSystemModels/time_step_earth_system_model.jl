@@ -11,9 +11,9 @@ function time_step!(coupled_model::EarthSystemModel, Δt; callbacks=[])
     sea_ice = coupled_model.sea_ice
     atmosphere = coupled_model.atmosphere
 
-    time_step_ocean_sea_ice_components!(coupled_model, ocean, sea_ice, Δt)
-    
-    # Time step the atmosphere
+    # Eventually, split out into OceanOnlyModel
+    !isnothing(sea_ice)    && time_step!(sea_ice, Δt)
+    !isnothing(ocean)      && time_step!(ocean, Δt)    
     !isnothing(atmosphere) && time_step!(atmosphere, Δt)
 
     # TODO:
@@ -21,14 +21,6 @@ function time_step!(coupled_model::EarthSystemModel, Δt; callbacks=[])
     #   accurate flux computation?
     tick!(coupled_model.clock, Δt)
     update_state!(coupled_model)
-
-    return nothing
-end
-
-function time_step_ocean_sea_ice_components!(coupled_model, ocean, sea_ice, Δt)
-    # Eventually, split out into OceanOnlyModel
-    !isnothing(sea_ice) && time_step!(sea_ice, Δt)
-    !isnothing(ocean)   && time_step!(ocean, Δt)
 
     return nothing
 end
