@@ -105,12 +105,12 @@ end
 ##### ERA5 pressure-level download
 #####
 
-function download_dataset(metadata::ERA5PressureMetadata; kwargs...)
-    paths = Array{String}(undef, length(metadata))
-    for (m, metadatum) in enumerate(metadata)
-        paths[m] = download_dataset(metadatum; kwargs...)
-    end
-    return paths
+function download_dataset(metadata::ERA5PressureMetadata; skip_existing=true, cleanup=true)
+    dates = metadata.dates isa AbstractVector ? metadata.dates : [metadata.dates]
+    download_dataset([metadata.name], metadata.dataset, dates;
+                     bounding_box = metadata.bounding_box,
+                     dir = metadata.dir,
+                     skip_existing, cleanup)
 end
 
 function download_dataset(meta::ERA5PressureMetadatum; skip_existing=true)
