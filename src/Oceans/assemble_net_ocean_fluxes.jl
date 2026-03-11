@@ -128,9 +128,10 @@ end
 
     @inbounds begin
         # Write radiative components of the heat flux for diagnostic purposes
-        atmos_ocean_fluxes.upwelling_longwave[i, j, 1] = ℐꜛˡʷ
-        atmos_ocean_fluxes.downwelling_longwave[i, j, 1] = - ℐₐˡʷ
-        atmos_ocean_fluxes.downwelling_shortwave[i, j, 1] = - ℐₜˢʷ
+        atmos_ocean_fluxes.upwelling_longwave[i, j, 1] = Qu
+        atmos_ocean_fluxes.downwelling_longwave[i, j, 1] = - Qaℓ
+        atmos_ocean_fluxes.downwelling_shortwave[i, j, 1] = - Qts
+        atmos_ocean_fluxes.total_heat_flux[i, j, 1] = ΣQao
     end
 
     # Convert from a mass flux to a volume flux (aka velocity)
@@ -141,8 +142,11 @@ end
 
     # Add the contribution from the turbulent water vapor flux, which has
     # a different sign convention as the prescribed water mass fluxes (positive upwards)
-    Jᵛᵒᶜ = Jᵛ * ρᵒᶜ⁻¹
-    ΣFao += Jᵛᵒᶜ
+    Fv = Mv * ρₒ⁻¹
+    ΣFao += Fv
+    ΣMao = - Mp + Mv # net freshwater mass flux (kg m⁻² s⁻¹)
+
+    @inbounds atmos_ocean_fluxes.total_freshwater_flux[i, j, 1] = ΣMao
 
     # Compute fluxes for u, v, T, and S from momentum, heat, and freshwater fluxes
     τˣ = net_ocean_fluxes.u
