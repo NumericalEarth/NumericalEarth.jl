@@ -14,35 +14,30 @@ end
 """
     DiffusiveInpainting{M, T}
 
-Diffusive inpainting algorithm. Vertical levels are processed top-to-bottom sequentially:
-at each level, missing values are first filled by horizontal neighbor propagation,
-then smoothed by iteratively solving the discrete Laplace equation ∇²ϕ = 0.
-Points that cannot be reached by horizontal propagation fall back to the value
-from the level above (the "previous guess").
-
-This produces smooth extrapolated values that preserve horizontal structure at each
-depth, minimizing artificial gradients near coastlines.
+Diffusive inpainting algorithm. Missing values are first filled by horizontal
+nearest-neighbor propagation, then unreachable points fall back to the level above.
+Finally, all fill points are smoothed to satisfy ∇²ϕ = 0 using red-black
+Gauss-Seidel iteration. Iteration stops when `max|ϕ_new - ϕ_old|` drops
+below `tolerance`, or after `maxiter` iterations.
 """
-struct DiffusiveInpainting{M, T, R}
-    maxiter                :: M
-    tolerance              :: T
-    relaxation_coefficient :: R
+struct DiffusiveInpainting{M, T}
+    maxiter   :: M
+    tolerance :: T
 end
 
 """
-    DiffusiveInpainting(; maxiter=10000, tolerance=1e-6, relaxation_coefficient=0.25)
+    DiffusiveInpainting(; maxiter=10000, tolerance=1e-6)
 
 Construct a `DiffusiveInpainting` algorithm.
 
 Keyword Arguments
 =================
 
-- `maxiter`: Maximum number of Laplacian relaxation sweeps per level. Default: `10000`.
-- `tolerance`: Convergence criterion — relaxation stops when the maximum pointwise hange falls below this value. Default: `1e-6`.
-- `relaxation_coefficient`: Damping factor for the Laplacian smoothing step. Default: `0.25`.
+- `maxiter`: Maximum number of Laplacian smoothing iterations. Default: `1000`.
+- `tolerance`: Convergence threshold on `max|ϕ_new - ϕ_old| / max|ϕ_old|`. Default: `1e-4`.
 """
-DiffusiveInpainting(; maxiter=10000, tolerance=1e-6, relaxation_coefficient=0.25) =
-    DiffusiveInpainting(maxiter, tolerance, relaxation_coefficient)
+DiffusiveInpainting(; maxiter=1000, tolerance=1e-4) =
+    DiffusiveInpainting(maxiter, tolerance)
 
 propagate_horizontally!(field, ::Nothing, substituting_field=deepcopy(field); kw...) = field
 
@@ -147,41 +142,21 @@ end
     end
 end
 
-# Zero out remaining NaN fill points and mark all fill points as good
-@kernel function _finalize_stalled_fill!(field, good, mask)
+# Red-black Gauss-Seidel kernel for ∇²ϕ = 0 on fill points.
+# `color` is 0 (red) or 1 (black): a point (i,j) is active when (i+j) % 2 == color.
+# Each color sweep reads only from the opposite color, so the update is parallel-safe
+# without double-buffering.
+@kernel function _gauss_seidel_sweep!(field, mask, color)
     i, j, k = @index(Global, NTuple)
+
     @inbounds begin
         is_fill   = mask[i, j, k]
-        still_nan = is_fill & isnan(field[i, j, k])
-        field[i, j, k] = ifelse(still_nan, zero(field[i, j, k]), field[i, j, k])
-        good[i, j, k]  = ifelse(is_fill, one(good[i, j, k]), good[i, j, k])
-    end
-end
+        is_active = is_fill & (((i + j) & 1) == color)
 
-# Laplacian relaxation: computes change = relc * (∑neighbors - n_neighbors * center) on fill points.
-# Then applies change in-place: field += change.
-# `mask` is the original fill mask (true = fill point).
-# `good` is the good mask (true = valid data point).
-@kernel function _laplacian_relaxation!(field, change, mask, good, relc)
-    i, j, k = @index(Global, NTuple)
+        ϕ_avg = (field[i - 1, j, k] + field[i + 1, j, k] +
+                 field[i, j - 1, k] + field[i, j + 1, k]) / 4
 
-    @inbounds begin
-        is_fill = mask[i, j, k]
-
-        # Neighbor validity: max(good, fill) — a neighbor counts if it's
-        # either original data or a fill point
-        ge = max(good[i + 1, j, k], mask[i + 1, j, k])
-        gw = max(good[i - 1, j, k], mask[i - 1, j, k])
-        gn = max(good[i, j + 1, k], mask[i, j + 1, k])
-        gs = max(good[i, j - 1, k], mask[i, j - 1, k])
-
-        ϕc = field[i, j, k]
-        Δϕ = relc * ((gs * field[i, j - 1, k] + gn * field[i, j + 1, k]) +
-                     (gw * field[i - 1, j, k] + ge * field[i + 1, j, k]) -
-                     ((gs + gn) + (gw + ge)) * ϕc)
-
-        change[i, j, k] = ifelse(is_fill, Δϕ, zero(Δϕ))
-        field[i, j, k]  = field[i, j, k] + ifelse(is_fill, Δϕ, zero(Δϕ))
+        field[i, j, k] = ifelse(is_active, ϕ_avg, field[i, j, k])
     end
 end
 
@@ -204,11 +179,9 @@ Arguments
     * `NearestNeighborInpainting(maxiter)`: fills missing values with the
        average of surrounding valid neighbors, repeated `maxiter` times.
        For 3D fields, values are first continued downward before horizontal propagation.
-    * `DiffusiveInpainting(; maxiter, tolerance)`: processes levels top-to-bottom. 
-        At each level: 
-        (1) horizontal nearest-neighbor fill, 
-        (2) fallback to the level above for unreachable points, 
-        (3) Laplacian smoothing.
+    * `DiffusiveInpainting(; maxiter, tolerance)`: (1) horizontal nearest-neighbor fill,
+        (2) fallback to the level above for unreachable points,
+        (3) red-black Gauss-Seidel smoothing (∇²ϕ = 0, until convergence or `maxiter`).
     Default: `NearestNeighborInpainting(Inf)`.
 """
 function inpaint_mask!(field, mask; inpainting=DiffusiveInpainting())
@@ -232,7 +205,7 @@ end
 # Diffusive inpainting in three phases, processing all levels simultaneously:
 #   Phase 1: Horizontal nearest-neighbor fill (all levels at once)
 #   Phase 2: Vertical fallback top-to-bottom for stalled points
-#   Phase 3: Laplacian relaxation (all levels at once)
+#   Phase 3: Red-black SOR for ∇²ϕ = 0 (all levels at once)
 function diffusive_inpaint_mask!(field, mask, inpainting)
     grid = field.grid
     arch = architecture(grid)
@@ -242,27 +215,22 @@ function diffusive_inpaint_mask!(field, mask, inpainting)
     launch!(arch, grid, size(field), _nan_mask!, field, mask)
     fill_halo_regions!(field)
 
-    substituting_field = deepcopy(field)
-
-    # `good` tracks which points have valid data (1 = valid, 0 = missing).
-    good = deepcopy(mask)
-    parent(good) .= 1 .- parent(mask)
+    tmp_field = deepcopy(field)
 
     # Phase 1: Horizontal nearest-neighbor fill (all levels simultaneously)
-    fill_horizontally!(field, mask, good, substituting_field, arch, grid)
+    fill_horizontally!(field, mask, tmp_field, arch, grid)
 
     # Phase 2: Vertical fallback top-to-bottom for points still NaN after horizontal fill
     for k in Nz-1:-1:1
         launch!(arch, grid, :xy, _vertical_fallback!, field, mask, k)
     end
 
-    # Finalize: zero any remaining NaN, mark all fill points as good
-    launch!(arch, grid, size(field), _finalize_stalled_fill!, field, good, mask)
+    # Zero any remaining NaN at fill points
+    launch!(arch, grid, size(field), _fill_nans!, field)
     fill_halo_regions!(field)
-    fill_halo_regions!(good)
 
-    # Phase 3: Laplacian relaxation (all levels simultaneously)
-    smooth_field!(field, mask, good, substituting_field, inpainting, arch, grid)
+    # Phase 3: Red-black SOR for ∇²ϕ = 0 (all levels simultaneously)
+    smooth_field!(field, mask, tmp_field, inpainting, arch, grid)
 
     fill_halo_regions!(field)
 
@@ -270,8 +238,7 @@ function diffusive_inpaint_mask!(field, mask, inpainting)
 end
 
 # Horizontal nearest-neighbor fill across all levels simultaneously.
-# One fill_halo_regions! per iteration instead of per level.
-function fill_horizontally!(field, mask, good, substituting_field, arch, grid)
+function fill_horizontally!(field, mask, tmp_field, arch, grid)
     nfill_prev = sum(isnan.(interior(field)) .* interior(mask))
 
     for iter in 1:10_000
@@ -279,8 +246,8 @@ function fill_horizontally!(field, mask, good, substituting_field, arch, grid)
 
         fill_halo_regions!(field)
 
-        launch!(arch, grid, size(field), _propagate_field!, substituting_field, field)
-        launch!(arch, grid, size(field), _substitute_field!, field, substituting_field)
+        launch!(arch, grid, size(field), _propagate_field!, tmp_field, field)
+        launch!(arch, grid, size(field), _substitute_field!, field, tmp_field)
 
         nfill = sum(isnan.(interior(field)) .* interior(mask))
 
@@ -293,21 +260,29 @@ function fill_horizontally!(field, mask, good, substituting_field, arch, grid)
     fill_halo_regions!(field)
 end
 
-# Laplacian relaxation across all levels simultaneously.
-function smooth_field!(field, mask, good, change_field, inpainting, arch, grid)
-    relc = convert(eltype(field), inpainting.relaxation_coefficient)
-    iter = 0
-    δmax = Inf
+# Red-black Gauss-Seidel smoothing for ∇²ϕ = 0 on fill points.
+# Convergence checked every `check_every` iterations via max|ϕ_new - ϕ_old| at fill points.
+function smooth_field!(field, mask, tmp_field, inpainting, arch, grid)
+    check_every = 10
 
-    while iter < inpainting.maxiter && δmax > inpainting.tolerance
+    for iter in 1:inpainting.maxiter
+        # Snapshot for convergence check
+        if iter % check_every == 0
+            parent(tmp_field) .= parent(field)
+        end
+
         fill_halo_regions!(field)
+        launch!(arch, grid, size(field), _gauss_seidel_sweep!, field, mask, 0) # red
+        fill_halo_regions!(field)
+        launch!(arch, grid, size(field), _gauss_seidel_sweep!, field, mask, 1) # black
 
-        # Compute and apply change in one kernel
-        launch!(arch, grid, size(field), _laplacian_relaxation!, field, change_field, mask, good, relc)
-
-        # Convergence: max |Δϕ| over fill points
-        δmax  = maximum(abs.(interior(change_field)) .* interior(mask))
-        iter += 1
+        if iter % check_every == 0
+            diff = interior(field) .- interior(tmp_field)
+            M = maximum(abs, interior(field))
+            δ = maximum(abs, diff .* interior(mask)) / M
+            @debug "Gauss-Seidel smoothing" iter δ
+            δ < inpainting.tolerance && break
+        end
     end
 end
 
