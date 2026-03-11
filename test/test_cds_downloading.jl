@@ -140,11 +140,11 @@ start_date = DateTime(2005, 2, 16, 12)
         # Default constructor uses all 37 standard levels
         ds_full = ERA5HourlyPressureLevels()
         @test ds_full isa ERA5HourlyPressureLevels
-        @test length(ds_full.levels) == 37
+        @test length(ds_full.pressure_levels) == 37
         @test Base.size(ds_full, :temperature) == (1440, 721, 37)
 
         # Subset constructor
-        ds_sub = ERA5HourlyPressureLevels(levels=[850, 500])
+        ds_sub = ERA5HourlyPressureLevels(pressure_levels=[850, 500] .* hPa)
         @test Base.size(ds_sub, :temperature) == (1440, 721, 2)
 
         # Monthly variant
@@ -240,7 +240,7 @@ start_date = DateTime(2005, 2, 16, 12)
 
     @testset "ERA5 pressure-level download and Field on CPU" begin
         arch = CPU()
-        ds_pl = ERA5HourlyPressureLevels(levels=[850, 500])
+        ds_pl = ERA5HourlyPressureLevels(pressure_levels=[850, 500] .* hPa)
 
         @testset "Download and 3D Field" begin
             meta = Metadatum(:temperature; dataset=ds_pl, bounding_box, date=start_date)

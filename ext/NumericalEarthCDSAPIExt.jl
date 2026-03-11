@@ -128,7 +128,7 @@ function download_dataset(meta::ERA5PressureMetadatum; skip_existing=true)
     day   = lpad(string(Dates.day(date)),   2, '0')
     hour  = lpad(string(Dates.hour(date)),  2, '0') * ":00"
 
-    p_hPa = [round(Int, p * 1e-2) for p in meta.dataset.levels]
+    p_hPa = [round(Int, p * 1e-2) for p in meta.dataset.pressure_levels]
 
     request = Dict(
         "product_type"    => ["reanalysis"],
@@ -205,7 +205,7 @@ function download_dataset(names::Vector{Symbol}, meta::ERA5PressureMetadatum; sk
     day   = lpad(string(Dates.day(date)),   2, '0')
     hour  = lpad(string(Dates.hour(date)),  2, '0') * ":00"
 
-    p_hPa = [round(Int, p * 1e-2) for p in meta.dataset.levels]
+    p_hPa = [round(Int, p * 1e-2) for p in meta.dataset.pressure_levels]
 
     request = Dict(
         "product_type"    => ["reanalysis"],
@@ -248,7 +248,7 @@ Download one or more ERA5 pressure-level variables at a single datetime, without
 
 # Example
 ```julia
-ds = ERA5HourlyPressureLevels(levels=[850, 500])
+ds = ERA5HourlyPressureLevels(pressure_levels=[850, 500] .* hPa)
 download_dataset([:temperature, :geopotential_height, :eastward_velocity], ds;
                  date=DateTime(2020, 6, 15, 0), bounding_box=bbox)
 ```
@@ -338,7 +338,7 @@ request per unique calendar day (which may contain multiple hours).
 
 # Example
 ```julia
-ds    = ERA5HourlyPressureLevels(levels=[850, 500])
+ds    = ERA5HourlyPressureLevels(pressure_levels=[850, 500] .* hPa)
 dates = DateTime(2020, 6, 15, 0) : Hour(6) : DateTime(2020, 6, 16, 18)
 download_dataset([:temperature, :geopotential_height], ds, collect(dates); bounding_box=bbox)
 ```
@@ -395,7 +395,7 @@ function _download_era5pl_day(names, dataset, day_dates;
     month = lpad(string(Dates.month(dt)), 2, '0')
     day   = lpad(string(Dates.day(dt)),   2, '0')
 
-    p_hPa = [round(Int, p * 1e-2) for p in dataset.levels]
+    p_hPa = [round(Int, p * 1e-2) for p in dataset.pressure_levels]
 
     request = Dict(
         "product_type"    => ["reanalysis"],

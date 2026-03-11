@@ -70,20 +70,26 @@ const ERA5_all_pressure_levels = [1, 2, 3, 5, 7, 10, 20, 30, 50, 70, 100, 125, 1
 
 abstract type ERA5PressureDataset <: ERA5Dataset end
 
-struct ERA5HourlyPressureLevels <: ERA5PressureDataset
-    levels :: Vector{Int}
+mutable struct ERA5HourlyPressureLevels <: ERA5PressureDataset
+    pressure_levels :: Vector{Float64}
+    z               :: Union{Nothing, Vector{Float64}}
+    ERA5HourlyPressureLevels(pressure_levels, z=nothing) = new(sort(pressure_levels, rev=true), z)
 end
-ERA5HourlyPressureLevels(; levels=ERA5_all_pressure_levels) = ERA5HourlyPressureLevels(levels)
+ERA5HourlyPressureLevels(; pressure_levels=ERA5_all_pressure_levels, z=nothing) =
+    ERA5HourlyPressureLevels(pressure_levels, z)
 
-struct ERA5MonthlyPressureLevels <: ERA5PressureDataset
-    levels :: Vector{Int}
+mutable struct ERA5MonthlyPressureLevels <: ERA5PressureDataset
+    pressure_levels :: Vector{Float64}
+    z               :: Union{Nothing, Vector{Float64}}
+    ERA5MonthlyPressureLevels(pressure_levels, z=nothing) = new(sort(pressure_levels, rev=true), z)
 end
-ERA5MonthlyPressureLevels(; levels=ERA5_all_pressure_levels) = ERA5MonthlyPressureLevels(levels)
+ERA5MonthlyPressureLevels(; pressure_levels=ERA5_all_pressure_levels, z=nothing) =
+    ERA5MonthlyPressureLevels(pressure_levels, z)
 
 dataset_name(::ERA5HourlyPressureLevels)  = "ERA5HourlyPressureLevels"
 dataset_name(::ERA5MonthlyPressureLevels) = "ERA5MonthlyPressureLevels"
 
-Base.size(ds::ERA5PressureDataset, variable) = (1440, 720, length(ds.levels))
+Base.size(ds::ERA5PressureDataset, variable) = (1440, 720, length(ds.pressure_levels))
 
 all_dates(::ERA5HourlyPressureLevels,  var) = range(DateTime("1940-01-01"), stop=DateTime("2024-12-31"), step=Hour(1))
 all_dates(::ERA5MonthlyPressureLevels, var) = range(DateTime("1940-01-01"), stop=DateTime("2024-12-01"), step=Month(1))
@@ -408,10 +414,9 @@ end
 # Build z-interfaces (Nz+1 values) from pressure levels.
 # Levels may be in any order; output is sorted so k=1 is highest pressure (lowest altitude).
 function standard_atmosphere_z_interfaces(levels)
-    @info """
-    Calculating z-interfaces based on International Standard Atmosphere...
-    For greater accuracy, use `mean_geopotential_heights`!
-    """
+    @info "Calculating z-interfaces based on the International Standard Atmosphere... \
+           For greater accuracy, download the :geopotential field and \
+           set `dataset.z = mean_geopotential_z_interfaces(metadata)`"
     sorted_levels = sort(levels, rev=true)   # highest pressure first → k=1 is bottom
     heights = standard_atmosphere_geopotential_height.(Float64.(sorted_levels))
     Nz = length(heights)
@@ -433,7 +438,10 @@ function standard_atmosphere_z_interfaces(levels)
 end
 
 # ERA5 pressure-levels (3-D) data product
-z_interfaces(metadata::ERA5PressureMetadata) = standard_atmosphere_z_interfaces(metadata.dataset.levels)
+function z_interfaces(metadata::ERA5PressureMetadata)
+    z = metadata.dataset.z
+    return isnothing(z) ? standard_atmosphere_z_interfaces(metadata.dataset.pressure_levels) : z
+end
 
 #####
 ##### pressure_field — synthetic pressure coordinate field
@@ -449,7 +457,7 @@ highest pressure level).
 function pressure_field(metadata::ERA5PressureMetadatum, arch=CPU(); halo=(3,3,3))
     grid = native_grid(metadata, arch; halo)
     field = CenterField(grid)
-    reversed_levels = sort(metadata.dataset.levels, rev=true)   # highest pressure → k=1
+    reversed_levels = sort(metadata.dataset.pressure_levels, rev=true)   # highest pressure → k=1
     for (k, p) in enumerate(reversed_levels)
         interior(field)[:, :, k] .= Float32(p)
     end
@@ -462,27 +470,43 @@ end
 #####
 
 """
-    mean_geopotential_heights(metadata::ERA5PressureMetadata; arch=CPU())
+    mean_geopotential_heights(metadata::ERA5PressureMetadata; interfaces=false)
 
 Compute spatially and temporally averaged geopotential heights (m) for each
-pressure level in `metadata`. This provides more accurate z-coordinates than
-the standard-atmosphere fallback used by `z_interfaces`.
+pressure level in `metadata`.
 
 Downloads the `:geopotential` field for every date in `metadata`, divides by g,
 averages over the horizontal domain and all dates, and returns one representative
 height per pressure level in bottom-to-top order (k=1 is highest pressure).
 """
-function mean_geopotential_heights(metadata::ERA5PressureMetadata; arch=CPU())
+function mean_geopotential_heights(metadata::ERA5PressureMetadata)
     geo_metadata = Metadata(:geopotential; dataset=metadata.dataset,
                             dates=metadata.dates, bounding_box=metadata.bounding_box,
                             dir=metadata.dir)
-    heights = zeros(length(metadata.dataset.levels))
+    heights = zeros(length(metadata.dataset.pressure_levels))
+    # average over time
     for geo_datum in geo_metadata
         data = retrieve_data(geo_datum) ./ Float32(ERA5_gravitational_acceleration)   # Φ → Z (m)
+        # average over horizontal dims
         heights .+= dropdims(mean(data; dims=(1, 2)); dims=(1, 2))
     end
     heights ./= length(geo_metadata)
-    return heights
+
+    return sort(heights)
+end
+
+function mean_geopotential_z_interfaces(metadata::ERA5PressureMetadata)
+    return stagger(mean_geopotential_heights(metadata))
+end
+
+function stagger(zc::AbstractVector)
+    # heights are ascending (k=1 = highest pressure = lowest altitude,
+    # consistent with retrieve_data's reverse() and Oceananigans bottom-to-top
+    # convention); bottom and top interfaces are extrapolated
+    zf = (zc[1:end-1] .+ zc[2:end]) / 2     # Nz-1 interior interfaces
+    pushfirst!(zf, zc[1] - (zf[1] - zc[1])) # bottom interface
+    push!(zf, zc[end] + (zc[end] - zf[end])) # top interface
+    return zf
 end
 
 end # module ERA5
