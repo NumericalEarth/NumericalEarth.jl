@@ -219,11 +219,11 @@ available_variables(::ERA5PressureDataset) = ERA5PL_dataset_variable_names
 dataset_variable_name(md::ERA5PressureMetadata) = ERA5PL_dataset_variable_names[md.name]
 netcdf_variable_name(md::ERA5PressureMetadata)  = ERA5PL_netcdf_variable_names[md.name]
 
-conversion_units(md::ERA5PressureMetadatum) =
+conversion_units(md::ERA5PressureMetadata) =
     md.name == :geopotential_height ? InverseGravity() : nothing
 
-default_inpainting(md::ERA5Metadatum) = nothing
-default_inpainting(md::ERA5PressureMetadatum) = nothing
+default_inpainting(md::ERA5Metadata) = nothing
+default_inpainting(md::ERA5PressureMetadata) = nothing
 
 """
     retrieve_data(metadata::ERA5Metadatum)
