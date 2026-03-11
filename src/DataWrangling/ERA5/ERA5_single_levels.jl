@@ -1,8 +1,8 @@
-struct ERA5SingleLevelsHourly <: ERA5Dataset end
-struct ERA5SingleLevelsMonthly <: ERA5Dataset end
+struct ERA5HourlySingleLevel <: ERA5Dataset end
+struct ERA5MonthlySingleLevel <: ERA5Dataset end
 
-dataset_name(::ERA5SingleLevelsHourly)  = "ERA5SingleLevelsHourly"
-dataset_name(::ERA5SingleLevelsMonthly) = "ERA5SingleLevelsMonthly"
+dataset_name(::ERA5HourlySingleLevel)  = "ERA5HourlySingleLevel"
+dataset_name(::ERA5MonthlySingleLevel) = "ERA5MonthlySingleLevel"
 
 # Wave variables are on a 0.5° grid (720×361), atmospheric variables on 0.25° (1440×721)
 const ERA5_wave_variables = Set([
@@ -15,8 +15,8 @@ const ERA5_wave_variables = Set([
 #####
 
 # ERA5 reanalysis data available from 1940 to present (we use a practical range here)
-all_dates(::ERA5SingleLevelsHourly,  var) = range(DateTime("1940-01-01"), stop=DateTime("2024-12-31"), step=Hour(1))
-all_dates(::ERA5SingleLevelsMonthly, var) = range(DateTime("1940-01-01"), stop=DateTime("2024-12-01"), step=Month(1))
+all_dates(::ERA5HourlySingleLevel,  var) = range(DateTime("1940-01-01"), stop=DateTime("2024-12-31"), step=Hour(1))
+all_dates(::ERA5MonthlySingleLevel, var) = range(DateTime("1940-01-01"), stop=DateTime("2024-12-01"), step=Month(1))
 
 # ERA5 single-level data is a spatially 2-D dataset
 is_three_dimensional(::ERA5Metadata) = false

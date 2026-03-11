@@ -5,7 +5,7 @@ using Dates
 using NCDatasets
 
 using NumericalEarth.DataWrangling.ERA5
-using NumericalEarth.DataWrangling.ERA5: ERA5SingleLevelsHourly, ERA5SingleLevelsMonthly, ERA5_dataset_variable_names
+using NumericalEarth.DataWrangling.ERA5: ERA5HourlySingleLevel, ERA5MonthlySingleLevel, ERA5_dataset_variable_names
 using NumericalEarth.DataWrangling.ERA5: ERA5HourlyPressureLevels, ERA5MonthlyPressureLevels,
                                          ERA5_all_pressure_levels, ERA5PL_dataset_variable_names,
                                          pressure_field
@@ -17,7 +17,7 @@ start_date = DateTime(2005, 2, 16, 12)
 @testset "ERA5 data downloading and utilities" begin
     @info "Testing ERA5 downloading and NetCDF file verification..."
 
-    dataset = ERA5SingleLevelsHourly()
+    dataset = ERA5HourlySingleLevel()
 
     # Use a small bounding box to reduce download time
     bounding_box = NumericalEarth.DataWrangling.BoundingBox(longitude=(0, 5), latitude=(40, 45))
@@ -88,7 +88,7 @@ start_date = DateTime(2005, 2, 16, 12)
 
         # Test metadata properties
         @test metadatum.name == :temperature
-        @test metadatum.dataset isa ERA5SingleLevelsHourly
+        @test metadatum.dataset isa ERA5HourlySingleLevel
         @test metadatum.dates == start_date
         @test metadatum.bounding_box == bounding_box
 
@@ -127,8 +127,8 @@ start_date = DateTime(2005, 2, 16, 12)
     end
 
     @testset "ERA5 Monthly dataset" begin
-        monthly_dataset = ERA5SingleLevelsMonthly()
-        @test monthly_dataset isa ERA5SingleLevelsMonthly
+        monthly_dataset = ERA5MonthlySingleLevel()
+        @test monthly_dataset isa ERA5MonthlySingleLevel
 
         # Test that all_dates returns a valid range
         dates = NumericalEarth.DataWrangling.all_dates(monthly_dataset, :temperature)
