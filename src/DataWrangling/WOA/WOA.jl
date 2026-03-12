@@ -88,8 +88,8 @@ all_dates(::WOAMonthly, args...) = [DateTime(2018, m, 1) for m in 1:12]
 # WOA stores depth as positive values, surface first (0 to 5500m)
 reversed_vertical_axis(::WOAClimatology) = true
 
-longitude_interfaces(::WOAClimatology) = (-179.5, 180.5)
-latitude_interfaces(::WOAClimatology) = (-89.5, 89.5)
+longitude_interfaces(::WOAClimatology) = (-180, 180)
+latitude_interfaces(::WOAClimatology) = (-90, 90)
 available_variables(::WOAClimatology) = WOA_variable_names
 
 """
