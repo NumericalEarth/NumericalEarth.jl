@@ -23,9 +23,9 @@ is_three_dimensional(::ERA5Metadata) = false
 
 function Base.size(::ERA5Dataset, variable)
     if variable in ERA5_wave_variables
-        return (720, 361, 1)
+        return (720, 360, 1)
     else
-        return (1440, 721, 1)
+        return (1440, 720, 1)
     end
 end
 
