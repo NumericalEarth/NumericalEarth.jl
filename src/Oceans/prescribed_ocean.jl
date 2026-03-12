@@ -32,14 +32,13 @@ Keyword Arguments
 - `sea_surface_salinity`: `FieldTimeSeries` for SSS.
 - `velocities`: `NamedTuple` of `FieldTimeSeries` for `(u, v)`.
 """
-struct PrescribedOcean{FT, G, Clk, SST, SSS, U, TI, F, ρ, C}
+struct PrescribedOcean{FT, G, Clk, SST, SSS, U, TI, ρ, C}
     grid :: G
     clock :: Clk
     sea_surface_temperature :: SST
     sea_surface_salinity :: SSS
     velocities :: U
     times :: TI
-    temperature_flux :: F
     density :: ρ
     heat_capacity :: C
 end
@@ -69,21 +68,18 @@ function PrescribedOcean(grid, times=[zero(grid)];
                          sea_surface_salinity = default_prescribed_sss(grid, times),
                          velocities = default_prescribed_velocities(grid, times))
 
-    temperature_flux = CenterField(grid)
-
     return PrescribedOcean{FT}(grid, clock,
                                sea_surface_temperature,
                                sea_surface_salinity,
                                velocities, times,
-                               temperature_flux,
                                convert(FT, density),
                                convert(FT, heat_capacity))
 end
 
-PrescribedOcean{FT}(grid, clock, sst, sss, vel, times, tf, ρ, c) where FT =
+PrescribedOcean{FT}(grid, clock, sst, sss, vel, times, ρ, c) where FT =
     PrescribedOcean{FT, typeof(grid), typeof(clock), typeof(sst), typeof(sss),
-                    typeof(vel), typeof(times), typeof(tf), typeof(ρ), typeof(c)}(
-                    grid, clock, sst, sss, vel, times, tf, ρ, c)
+                    typeof(vel), typeof(times), typeof(ρ), typeof(c)}(
+                    grid, clock, sst, sss, vel, times, ρ, c)
 
 function Oceananigans.set!(ocean::PrescribedOcean; T=nothing, S=nothing, u=nothing, v=nothing)
     !isnothing(T) && (parent(ocean.sea_surface_temperature) .= T)
@@ -146,13 +142,7 @@ function ComponentExchanger(ocean::PrescribedOcean, exchange_grid)
     return ComponentExchanger((; u, v, T, S), nothing)
 end
 
-function net_fluxes(ocean::PrescribedOcean)
-    grid = ocean.grid
-    Jˢ = CenterField(grid)
-    τx = CenterField(grid)
-    τy = CenterField(grid)
-    return (T=ocean.temperature_flux, S=Jˢ, u=τx, v=τy)
-end
+net_fluxes(ocean::PrescribedOcean) = nothing
 
 function interpolate_state!(exchanger, grid, ocean::PrescribedOcean, coupled_model)
     # Copy from FieldTimeSeries to exchanger snapshot fields.
