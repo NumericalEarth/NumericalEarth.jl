@@ -198,9 +198,7 @@ function z_interfaces(metadata::ERA5PressureMetadata)
                                 dir=metadata.dir)
         try
             download_dataset(ϕ_metadata)
-            zf = mean_geopotential_z_interfaces(metadata)
-            metadata.dataset.z = zf
-            return zf
+            return mean_geopotential_z_interfaces(metadata)
         catch e
             @warn "Failed to download geopotential data; falling back to standard atmosphere" exception=e
         end
@@ -262,7 +260,7 @@ end
     pressure_field(metadata::ERA5PressureMetadatum, arch=CPU(); halo=(3,3,3))
 
 Return a `CenterField` on the native grid of `metadata` filled with the pressure
-value (hPa) at each vertical level. Levels are ordered bottom-to-top (k=1 is the
+value (Pa) at each vertical level. Levels are ordered bottom-to-top (k=1 is the
 highest pressure level).
 """
 function pressure_field(metadata::ERA5PressureMetadatum, arch=CPU(); halo=(3,3,3))

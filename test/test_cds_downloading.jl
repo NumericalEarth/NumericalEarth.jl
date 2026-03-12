@@ -95,7 +95,7 @@ start_date = DateTime(2005, 2, 16, 12)
         # Test size (should be global ERA5 size with 1 time step)
         Nx, Ny, Nz, Nt = size(metadatum)
         @test Nx == 1440  # ERA5 longitude points
-        @test Ny == 721   # ERA5 latitude points
+        @test Ny == 720   # ERA5 latitude points (poles averaged into adjacent cells)
         @test Nz == 1     # 2D surface data
         @test Nt == 1     # Single time step
 
@@ -104,23 +104,23 @@ start_date = DateTime(2005, 2, 16, 12)
     end
 
     @testset "ERA5 wave variable metadata sizes" begin
-        # Wave variables should be on the 0.5° grid (720×361)
+        # Wave variables should be on the 0.5° grid (720×360)
         for wave_var in (:eastward_stokes_drift, :northward_stokes_drift,
                          :significant_wave_height, :mean_wave_period, :mean_wave_direction)
             metadatum = Metadatum(wave_var; dataset, date=start_date)
             Nx, Ny, Nz, Nt = size(metadatum)
             @test Nx == 720
-            @test Ny == 361
+            @test Ny == 360
             @test Nz == 1
             @test Nt == 1
         end
 
-        # Atmospheric variables should remain on the 0.25° grid (1440×721)
+        # Atmospheric variables should remain on the 0.25° grid (1440×720)
         for atmos_var in (:temperature, :eastward_velocity, :surface_pressure)
             metadatum = Metadatum(atmos_var; dataset, date=start_date)
             Nx, Ny, Nz, Nt = size(metadatum)
             @test Nx == 1440
-            @test Ny == 721
+            @test Ny == 720
             @test Nz == 1
             @test Nt == 1
         end
@@ -141,11 +141,11 @@ start_date = DateTime(2005, 2, 16, 12)
         ds_full = ERA5HourlyPressureLevels()
         @test ds_full isa ERA5HourlyPressureLevels
         @test length(ds_full.pressure_levels) == 37
-        @test Base.size(ds_full, :temperature) == (1440, 721, 37)
+        @test Base.size(ds_full, :temperature) == (1440, 720, 37)
 
         # Subset constructor
         ds_sub = ERA5HourlyPressureLevels(pressure_levels=[850, 500] .* hPa)
-        @test Base.size(ds_sub, :temperature) == (1440, 721, 2)
+        @test Base.size(ds_sub, :temperature) == (1440, 720, 2)
 
         # Monthly variant
         ds_monthly = ERA5MonthlyPressureLevels()
@@ -163,15 +163,15 @@ start_date = DateTime(2005, 2, 16, 12)
     end
 
     @testset "ERA5 pressure-level z_interfaces (standard atmosphere)" begin
-        levels_2 = [850, 500]
-        z = NumericalEarth.DataWrangling.ERA5._std_atm_z_interfaces(levels_2)
+        levels_2 = [850, 500] .* hPa
+        z = standard_atmosphere_z_interfaces(levels_2)
         @test length(z) == 3                    # Nz+1 interfaces
         @test issorted(z)                        # monotonically increasing with altitude
         # 850 hPa ≈ 1457 m, 500 hPa ≈ 5575 m
         @test z[1] < 1457.0 < z[2] < 5575.0 < z[3]
 
         # Single level
-        z1 = NumericalEarth.DataWrangling.ERA5._std_atm_z_interfaces([500])
+        z1 = standard_atmosphere_z_interfaces([500] .* hPa)
         @test length(z1) == 2
         @test z1[1] < z1[2]
     end
@@ -299,10 +299,10 @@ start_date = DateTime(2005, 2, 16, 12)
             @test Nz == 2
 
             @allowscalar begin
-                # k=1 should be 850 hPa (highest pressure, lowest altitude)
-                @test interior(pf)[1, 1, 1] ≈ 850.0f0
-                # k=2 should be 500 hPa
-                @test interior(pf)[1, 1, 2] ≈ 500.0f0
+                # k=1 should be 850 hPa = 85000 Pa (highest pressure, lowest altitude)
+                @test interior(pf)[1, 1, 1] ≈ Float32(850 * hPa)
+                # k=2 should be 500 hPa = 50000 Pa
+                @test interior(pf)[1, 1, 2] ≈ Float32(500 * hPa)
             end
         end
     end
