@@ -43,35 +43,55 @@ end
     stop_criteria = flux_formulation.solver_stop_criteria
     iteration = 0
 
-    #while iterating(Ψₛⁿ, Ψₛ⁻, iteration, stop_criteria)
-        # Ψₛ⁻ = Ψₛⁿ
-        Ψₛ¹ = iterate_interface_state(flux_formulation,
+    while iterating(Ψₛⁿ, Ψₛ⁻, iteration, stop_criteria)
+        Ψₛ⁻ = Ψₛⁿ
+        Ψₛⁿ = iterate_interface_state(flux_formulation,
                                       Ψₛ⁻, Ψₐ, Ψᵢ,
                                       downwelling_radiation,
                                       interface_properties,
                                       atmosphere_properties,
                                       interior_properties)
 
-        Ψₛ² = iterate_interface_state(flux_formulation,
-                                      Ψₛ¹, Ψₐ, Ψᵢ,
-                                      downwelling_radiation,
-                                      interface_properties,
-                                      atmosphere_properties,
-                                      interior_properties)
-
-        Ψₛ³ = iterate_interface_state(flux_formulation,
-                                      Ψₛ², Ψₐ, Ψᵢ,
-                                      downwelling_radiation,
-                                      interface_properties,
-                                      atmosphere_properties,
-                                      interior_properties)
-
-        Ψₛⁿ = Ψₛ³
-
-        #iteration += 1
-    #end
+        iteration += 1
+    end
 
     return Ψₛⁿ
+end
+
+#####
+##### Solver with unrolled iterations
+#####
+
+struct TenUnrolledIterations end
+
+@inline function compute_interface_state(flux_formulation::AbstractTurbulentFluxFormulation{<:TenUnrolledIterations},
+                                         initial_interface_state,
+                                         atmosphere_state,
+                                         interior_state,
+                                         downwelling_radiation,
+                                         interface_properties,
+                                         atmosphere_properties,
+                                         interior_properties)
+
+    args = (downwelling_radiation,
+            interface_properties,
+            atmosphere_properties,
+            interior_properties)
+
+    Ψₐ = atmosphere_state
+    Ψᵢ = interior_state
+    Ψₛ⁰ = initial_interface_state
+    Ψₛ¹ = iterate_interface_state(flux_formulation, Ψₛ⁰, Ψₐ, Ψᵢ, args...)
+    Ψₛ² = iterate_interface_state(flux_formulation, Ψₛ¹, Ψₐ, Ψᵢ, args...)
+    Ψₛ³ = iterate_interface_state(flux_formulation, Ψₛ², Ψₐ, Ψᵢ, args...)
+    Ψₛ⁴ = iterate_interface_state(flux_formulation, Ψₛ³, Ψₐ, Ψᵢ, args...)
+    Ψₛ⁵ = iterate_interface_state(flux_formulation, Ψₛ⁴, Ψₐ, Ψᵢ, args...)
+    Ψₛ⁶ = iterate_interface_state(flux_formulation, Ψₛ⁵, Ψₐ, Ψᵢ, args...)
+    Ψₛ⁷ = iterate_interface_state(flux_formulation, Ψₛ⁶, Ψₐ, Ψᵢ, args...)
+    Ψₛ⁸ = iterate_interface_state(flux_formulation, Ψₛ⁷, Ψₐ, Ψᵢ, args...)
+    Ψₛ⁹ = iterate_interface_state(flux_formulation, Ψₛ⁸, Ψₐ, Ψᵢ, args...)
+
+    return iterate_interface_state(flux_formulation, Ψₛ⁹, Ψₐ, Ψᵢ, args...)
 end
 
 """
