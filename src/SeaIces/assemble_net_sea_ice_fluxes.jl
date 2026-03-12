@@ -23,20 +23,18 @@ function update_net_fluxes!(coupled_model, sea_ice::Simulation{<:SeaIceModel})
     # See https://github.com/CliMA/NumericalEarth.jl/issues/116.
     atmosphere_fields = coupled_model.interfaces.exchanger.atmosphere.state
 
-    downwelling_radiation = (Qs = atmosphere_fields.Qs.data,
-                             Qℓ = atmosphere_fields.Qℓ.data)
+    downwelling_radiation = (ℐꜜˢʷ = atmosphere_fields.ℐꜜˢʷ.data,
+                             ℐꜜˡʷ = atmosphere_fields.ℐꜜˡʷ.data)
 
-    freshwater_flux = atmosphere_fields.Mp.data
+    freshwater_flux = atmosphere_fields.Jᶜ.data
 
     atmos_sea_ice_properties = coupled_model.interfaces.atmosphere_sea_ice_interface.properties
     sea_ice_properties = coupled_model.interfaces.sea_ice_properties
 
-    kernel_parameters = interface_kernel_parameters(grid)
-
     sea_ice_surface_temperature = coupled_model.interfaces.atmosphere_sea_ice_interface.temperature
     ice_concentration = sea_ice_concentration(sea_ice)
     
-    launch!(arch, grid, kernel_parameters,
+    launch!(arch, grid, :xy,
             _assemble_net_sea_ice_fluxes!,
             top_fluxes,
             bottom_heat_flux,
@@ -75,34 +73,34 @@ end
         Ts = surface_temperature[i, j, kᴺ]
         Ts = convert_to_kelvin(sea_ice_properties.temperature_units, Ts)
         ℵi = ice_concentration[i, j, 1]
-        
-        Qs = downwelling_radiation.Qs[i, j, 1]
-        Qℓ = downwelling_radiation.Qℓ[i, j, 1]
-        Qc = get_possibly_zero_flux(atmosphere_sea_ice_fluxes, :sensible_heat)[i, j, 1] # sensible or "conductive" heat flux
-        Qv = get_possibly_zero_flux(atmosphere_sea_ice_fluxes, :latent_heat)[i, j, 1]   # latent heat flux
-        Qf = get_possibly_zero_flux(sea_ice_ocean_fluxes, :frazil_heat)[i, j, 1]        # frazil heat flux
-        Qi = get_possibly_zero_flux(sea_ice_ocean_fluxes, :interface_heat)[i, j, 1]   # interfacial heat flux
+
+        ℐꜜˢʷ = downwelling_radiation.ℐꜜˢʷ[i, j, 1]
+        ℐꜜˡʷ = downwelling_radiation.ℐꜜˡʷ[i, j, 1]
+        𝒬ᵀ   = get_possibly_zero_flux(atmosphere_sea_ice_fluxes, :sensible_heat)[i, j, 1]   # sensible heat flux
+        𝒬ᵛ   = get_possibly_zero_flux(atmosphere_sea_ice_fluxes, :latent_heat)[i, j, 1]     # latent heat flux
+        𝒬ᶠʳᶻ = get_possibly_zero_flux(sea_ice_ocean_fluxes, :frazil_heat)[i, j, 1]          # frazil heat flux
+        𝒬ⁱⁿᵗ = get_possibly_zero_flux(sea_ice_ocean_fluxes, :interface_heat)[i, j, 1]       # interfacial heat flux
     end
 
-    ρτx = get_possibly_zero_flux(atmosphere_sea_ice_fluxes, :x_momentum) # zonal momentum flux
-    ρτy = get_possibly_zero_flux(atmosphere_sea_ice_fluxes, :y_momentum) # meridional momentum flux
+    ρτˣ = get_possibly_zero_flux(atmosphere_sea_ice_fluxes, :x_momentum) # zonal momentum flux
+    ρτʸ = get_possibly_zero_flux(atmosphere_sea_ice_fluxes, :y_momentum) # meridional momentum flux
 
     # Compute radiation fluxes
     σ = atmos_sea_ice_properties.radiation.σ
     α = atmos_sea_ice_properties.radiation.α
     ϵ = atmos_sea_ice_properties.radiation.ϵ
-    Qu = emitted_longwave_radiation(i, j, kᴺ, grid, time, Ts, σ, ϵ) 
-    Qs = transmitted_shortwave_radiation(i, j, kᴺ, grid, time, α, Qs)
-    Qℓ = absorbed_longwave_radiation(i, j, kᴺ, grid, time, ϵ, Qℓ)
+    ℐꜛˡʷ = emitted_longwave_radiation(i, j, kᴺ, grid, time, Ts, σ, ϵ)
+    ℐₜˢʷ = transmitted_shortwave_radiation(i, j, kᴺ, grid, time, α, ℐꜜˢʷ)
+    ℐₐˡʷ = absorbed_longwave_radiation(i, j, kᴺ, grid, time, ϵ, ℐꜜˡʷ)
 
-    ΣQt = (Qs + Qℓ + Qu + Qc + Qv) * (ℵi > 0) # If ℵi == 0 there is no heat flux from the top!
-    ΣQb = Qf + Qi
+    ΣQt = (ℐₜˢʷ + ℐₐˡʷ + ℐꜛˡʷ + 𝒬ᵀ + 𝒬ᵛ) * (ℵi > 0) # If ℵi == 0 there is no heat flux from the top!
+    ΣQb = 𝒬ᶠʳᶻ + 𝒬ⁱⁿᵗ
 
     # Mask fluxes over land for convenience
     inactive = inactive_node(i, j, kᴺ, grid, Center(), Center(), Center())
 
     @inbounds top_fluxes.heat[i, j, 1]  = ifelse(inactive, zero(grid), ΣQt)
-    @inbounds top_fluxes.u[i, j, 1]     = ifelse(inactive, zero(grid), ℑxᶠᵃᵃ(i, j, 1, grid, ρτx))
-    @inbounds top_fluxes.v[i, j, 1]     = ifelse(inactive, zero(grid), ℑyᵃᶠᵃ(i, j, 1, grid, ρτy))
+    @inbounds top_fluxes.u[i, j, 1]     = ifelse(inactive, zero(grid), ℑxᶠᵃᵃ(i, j, 1, grid, ρτˣ))
+    @inbounds top_fluxes.v[i, j, 1]     = ifelse(inactive, zero(grid), ℑyᵃᶠᵃ(i, j, 1, grid, ρτʸ))
     @inbounds bottom_heat_flux[i, j, 1] = ifelse(inactive, zero(grid), ΣQb)
 end

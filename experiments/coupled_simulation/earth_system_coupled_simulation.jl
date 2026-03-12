@@ -118,11 +118,11 @@ earth.output_writers[:free_surface] = JLD2Writer(ocean.model, (; η),
                                                  filename = "free_surface.jld2")
 
 Q  = earth.model.interfaces.net_fluxes.ocean_surface.T
-τx = earth.model.interfaces.net_fluxes.ocean_surface.u
-τy = earth.model.interfaces.net_fluxes.ocean_surface.v
+τˣ = earth.model.interfaces.net_fluxes.ocean_surface.u
+τʸ = earth.model.interfaces.net_fluxes.ocean_surface.v
 PE = earth.model.interfaces.net_fluxes.ocean_surface.S
 
-earth.output_writers[:fluxes] = JLD2Writer(ocean.model, (; Q, τx, τy, PE),
+earth.output_writers[:fluxes] = JLD2Writer(ocean.model, (; Q, τˣ, τʸ, PE),
                                                  schedule = TimeInterval(12hours),
                                                  overwrite_existing = true,
                                                  including = [:grid],

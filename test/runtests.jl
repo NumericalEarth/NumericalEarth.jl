@@ -119,8 +119,9 @@ if test_group == :fluxes || test_group == :all
     include("test_sea_ice_ocean_heat_fluxes.jl")
 end
 
-if test_group == :bathymetry || test_group == :all
+if test_group == :bathymetry_orca1 || test_group == :all
     include("test_bathymetry.jl")
+    include("test_orca_grid.jl")
 end
 
 if test_group == :earth_system_model || test_group == :all
@@ -140,6 +141,14 @@ if test_group == :speedy_weather || test_group == :all
     include("test_speedy_coupling.jl")
 end
 
+if test_group == :veros || test_group == :all
+    include("test_veros.jl")
+end
+
 if test_group == :breeze || test_group == :all
     include("test_breeze_coupling.jl")
+end
+
+if test_group == :woa || test_group == :all
+    include("test_woa.jl")
 end

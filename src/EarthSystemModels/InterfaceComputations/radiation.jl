@@ -98,17 +98,17 @@ const CCC = (Center, Center, Center)
 end
 
 # Split the individual bands
-@inline function absorbed_longwave_radiation(i, j, k, grid, time, ϵ, Qℓ)  
+@inline function absorbed_longwave_radiation(i, j, k, grid, time, ϵ, ℐꜜˡʷ)
     ϵi = stateindex(ϵ, i, j, k, grid, time, CCC)
-    return - ϵi * Qℓ
+    return - ϵi * ℐꜜˡʷ
 end
 
-@inline function transmitted_shortwave_radiation(i, j, k, grid, time, α, Qs)  
-    αi = stateindex(α, i, j, k, grid, time, CCC, Qs) 
-    return - (1 - αi) * Qs 
+@inline function transmitted_shortwave_radiation(i, j, k, grid, time, α, ℐꜜˢʷ)
+    αi = stateindex(α, i, j, k, grid, time, CCC, ℐꜜˢʷ)
+    return - (1 - αi) * ℐꜜˢʷ
 end
 
 # Inside the solver we lose both spatial and temporal information, but the
 # radiative properties have already been computed correctly
-@inline net_absorbed_interface_radiation(Qs, Qℓ, α, ϵ) = - (1 - α) * Qs - ϵ * Qℓ
+@inline net_absorbed_interface_radiation(ℐꜜˢʷ, ℐꜜˡʷ, α, ϵ) = - (1 - α) * ℐꜜˢʷ - ϵ * ℐꜜˡʷ
 @inline emitted_longwave_radiation(T, σ, ϵ) = σ * ϵ * T^4

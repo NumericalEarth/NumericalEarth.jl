@@ -111,7 +111,7 @@ Base.show(io::IO, α::TabulatedAlbedo) = print(io, summary(α))
 @inline simulation_day(time::Time{<:Number})      = time.time ÷ 86400
 @inline seconds_in_day(time::Time{<:Number}, day) = time.time - day * 86400
 
-@inline function stateindex(α::TabulatedAlbedo, i, j, k, grid, time, loc, Qs)
+@inline function stateindex(α::TabulatedAlbedo, i, j, k, grid, time, loc, ℐꜜˢʷ)
     FT = eltype(α)
     λ, φ, z = _node(i, j, k, grid, Center(), Center(), Center())
 
@@ -139,7 +139,7 @@ Base.show(io::IO, α::TabulatedAlbedo) = print(io, summary(α))
     Qmax = α.S₀ * cosθₛ
 
     # Finding the transmissivity and capping it to 1
-    𝓉 = ifelse(Qmax > 0, min(1, Qs / Qmax), 0)
+    𝓉 = ifelse(Qmax > 0, min(1, ℐꜜˢʷ / Qmax), 0)
 
     # finding the i-index in the table (depending on transmissivity)
     # we assume that the transmissivity is tabulated with a constant spacing

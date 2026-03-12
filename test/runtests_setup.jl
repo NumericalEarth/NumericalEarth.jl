@@ -9,6 +9,7 @@ using NumericalEarth.EN4
 using NumericalEarth.ECCO
 using NumericalEarth.ETOPO
 using NumericalEarth.JRA55
+using NumericalEarth.WOA
 
 using Oceananigans.Architectures: architecture, on_architecture
 using Oceananigans.OutputReaders: interpolate!
@@ -104,6 +105,7 @@ function test_timestepping_with_dataset(arch, dataset, start_date, inpainting;
     end
 
     ocean = ocean_simulation(grid; tracers=fldnames, verbose=false)
+    set!(ocean.model, T=20, S=35)
 
     @test begin
         time_step!(ocean)
@@ -213,7 +215,8 @@ function test_timestepping_with_dataset_restoring(arch, dataset, dates, inpainti
     restoring = DatasetRestoring(metadata, arch; inpainting, rate=1/1000)
     forcing = NamedTuple{tuple(fldnames[end])}(tuple(restoring))
     ocean = ocean_simulation(grid; tracers=fldnames, forcing, verbose=false)
-    
+    set!(ocean.model, T=20, S=35)
+
     @test begin
         time_step!(ocean)
         time_step!(ocean)
@@ -250,6 +253,7 @@ function test_cycling_dataset_restoring(arch, dataset, dates, inpainting;
 
     times = native_times(forcing[1].field_time_series.backend.metadata)
     ocean = ocean_simulation(grid, tracers=fldnames, forcing=forcing)
+    set!(ocean.model, T=20, S=35)
 
     # start a bit after time_index
     time_index = 3

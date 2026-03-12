@@ -66,25 +66,25 @@ function InterfaceComputations.compute_sea_ice_ocean_fluxes!(cm::FreezingLimited
     liquidus = cm.sea_ice.liquidus
     grid = ocean.model.grid
     arch = architecture(grid)
-    Sₒ = ocean.model.tracers.S
-    Tₒ = ocean.model.tracers.T
+    Sᵒᶜ = ocean.model.tracers.S
+    Tᵒᶜ = ocean.model.tracers.T
 
-    launch!(arch, grid, :xyz, _above_freezing_ocean_temperature!, Tₒ, Sₒ, liquidus)
+    launch!(arch, grid, :xyz, _above_freezing_ocean_temperature!, Tᵒᶜ, Sᵒᶜ, liquidus)
 
     return nothing
 end
 
-@kernel function _above_freezing_ocean_temperature!(Tₒ, Sₒ, liquidus)
+@kernel function _above_freezing_ocean_temperature!(Tᵒᶜ, Sᵒᶜ, liquidus)
 
     i, j, k = @index(Global, NTuple)
 
     @inbounds begin
-        Sᵢ = Sₒ[i, j, k]
-        Tᵢ = Tₒ[i, j, k]
+        Sᵏ = Sᵒᶜ[i, j, k]
+        Tᵏ = Tᵒᶜ[i, j, k]
     end
 
-    Tₘ = melting_temperature(liquidus, Sᵢ)
-    @inbounds Tₒ[i, j, k] = ifelse(Tᵢ < Tₘ, Tₘ, Tᵢ)
+    Tₘ = melting_temperature(liquidus, Sᵏ)
+    @inbounds Tᵒᶜ[i, j, k] = ifelse(Tᵏ < Tₘ, Tₘ, Tᵏ)
 end
 
 #####
