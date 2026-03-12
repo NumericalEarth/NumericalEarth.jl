@@ -43,16 +43,33 @@ end
     stop_criteria = flux_formulation.solver_stop_criteria
     iteration = 0
 
-    while iterating(Ψₛⁿ, Ψₛ⁻, iteration, stop_criteria)
-        Ψₛ⁻ = Ψₛⁿ
-        Ψₛⁿ = iterate_interface_state(flux_formulation,
+    #while iterating(Ψₛⁿ, Ψₛ⁻, iteration, stop_criteria)
+        # Ψₛ⁻ = Ψₛⁿ
+        Ψₛ¹ = iterate_interface_state(flux_formulation,
                                       Ψₛ⁻, Ψₐ, Ψᵢ,
                                       downwelling_radiation,
                                       interface_properties,
                                       atmosphere_properties,
                                       interior_properties)
-        iteration += 1
-    end
+
+        Ψₛ² = iterate_interface_state(flux_formulation,
+                                      Ψₛ¹, Ψₐ, Ψᵢ,
+                                      downwelling_radiation,
+                                      interface_properties,
+                                      atmosphere_properties,
+                                      interior_properties)
+
+        Ψₛ³ = iterate_interface_state(flux_formulation,
+                                      Ψₛ², Ψₐ, Ψᵢ,
+                                      downwelling_radiation,
+                                      interface_properties,
+                                      atmosphere_properties,
+                                      interior_properties)
+
+        Ψₛⁿ = Ψₛ³
+
+        #iteration += 1
+    #end
 
     return Ψₛⁿ
 end
