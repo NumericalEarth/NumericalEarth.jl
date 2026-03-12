@@ -254,23 +254,22 @@ function metadata_filename(::ECCO4Monthly, name, date, bounding_box)
     return shortname * "_" * yearstr * "_" * monthstr * ".nc"
 end
 
-function _ecco2_is_three_dimensional(name)
+ecco2_is_three_dimensional(name) =
     name == :temperature ||
     name == :salinity ||
     name == :u_velocity ||
     name == :v_velocity
-end
 
 function metadata_filename(dataset::Union{ECCO2Daily, ECCO2Monthly}, name, date, bounding_box)
     shortname = ECCO2_dataset_variable_names[name]
     yearstr   = string(Dates.year(date))
     monthstr  = string(Dates.month(date), pad=2)
-    postfix   = _ecco2_is_three_dimensional(name) ? ".1440x720x50." : ".1440x720."
+    postfix   = ecco2_is_three_dimensional(name) ? ".1440x720x50." : ".1440x720."
 
     if dataset isa ECCO2Monthly
         return shortname * postfix * yearstr * monthstr * ".nc"
     elseif dataset isa ECCO2Daily
-        daystr = _ecco2_is_three_dimensional(name) ? string(Dates.day(date), pad=2) : ""
+        daystr = ecco2_is_three_dimensional(name) ? string(Dates.day(date), pad=2) : ""
         return shortname * postfix * yearstr * monthstr * daystr * ".nc"
     end
 end
