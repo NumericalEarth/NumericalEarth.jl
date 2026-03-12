@@ -168,6 +168,16 @@ function set!(target_field::Field, metadata::Metadatum; kw...)
     grid = target_field.grid
     arch = child_architecture(grid)
     meta_field = Field(metadata, arch; kw...)
+
+    Lzt = grid.Lz
+    Lzm = meta_field.grid.Lz
+    
+    if Lzt > Lzm
+        @warn "The vertical range of the $(metadata.dataset) dataset ($(Lzm) m) is smaller than " *
+              "the target grid ($(Lzt) m). Some vertical levels will not be filled with data, " *
+              "possibly leading to numerical errors."
+    end
+
     interpolate!(target_field, meta_field)
     return target_field
 end
