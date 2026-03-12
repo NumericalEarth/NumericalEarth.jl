@@ -1,6 +1,7 @@
 using NCDatasets
 using JLD2
 using NumericalEarth.InitialConditions: interpolate!
+using Statistics: median
 
 import Oceananigans.Fields: set!, Field
 
@@ -260,6 +261,10 @@ end
 ##### Masking data for inpainting
 #####
 
+# Fallback for lower and higher bounds: 1e5
+lower_bound(metadata, name) = -1f5
+higher_bound(metadata, name) = 1f5
+
 """
     compute_mask(metadata::Metadatum, dataset_field,
                  mask_value = default_mask_value(metadata),
@@ -270,8 +275,8 @@ A boolean field where `true` represents a missing value in the dataset_field.
 """
 function compute_mask(metadata::Metadatum, dataset_field,
                       mask_value = default_mask_value(metadata.dataset),
-                      minimum_value = -1f5,
-                      maximum_value = 1f5)
+                      minimum_value = lower_bound(metadata, Val(metadata.name)),
+                      maximum_value = higher_bound(metadata, Val(metadata.name)))
 
     grid = dataset_field.grid
     arch = Oceananigans.Architectures.architecture(grid)
@@ -290,5 +295,4 @@ end
     @inbounds mask[i, j, k] = is_masked(field[i, j, k], min_value, max_value, mask_value)
 end
 
-@inline is_masked(a, min_value, max_value, mask_value) =
-    isnan(a) | (a <= min_value) | (a >= max_value) | (a == mask_value)
+@inline is_masked(a, min_value, max_value, mask_value) = isnan(a) | (a <= min_value) | (a >= max_value) | (a == mask_value)
