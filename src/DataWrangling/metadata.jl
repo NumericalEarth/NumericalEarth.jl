@@ -117,8 +117,7 @@ function Metadata(variable_name;
     end
 
     if isnothing(filename)
-        temp = Metadata(variable_name, dataset, dates, bounding_box, dir)
-        filename = metadata_filename(temp)
+        filename = _build_filename(dataset, variable_name, dates, bounding_box)
     end
 
     return Metadata(variable_name, dataset, dates, bounding_box, dir, filename)
@@ -165,8 +164,7 @@ function Metadatum(variable_name;
     end
 
     if isnothing(filename)
-        temp = Metadata(variable_name, dataset, date, bounding_box, dir)
-        filename = metadata_filename(temp)
+        filename = metadata_filename(dataset, variable_name, date, bounding_box)
     end
 
     return Metadata(variable_name, dataset, date, bounding_box, dir, filename)
@@ -320,11 +318,25 @@ last_date(dataset, variable_name) = last(all_dates(dataset, variable_name))
 """
     metadata_filename(metadata)
 
-File names of metadata containing multiple dates. The specific version for a `Metadatum` object is
-extended in the data specific modules.
+Return the stored filename(s) of `metadata`.
 """
-metadata_filename(metadata::Metadata) =
-    DatewiseFilename([metadata_filename(metadatum) for metadatum in metadata])
+metadata_filename(metadata::Metadata) = metadata.filename
+
+"""
+    metadata_filename(dataset, name, date, bounding_box)
+
+Compute the filename for a single date. Extended by each dataset module.
+"""
+function metadata_filename end
+
+# Internal: build filename for construction.
+# Single date: delegate to metadata_filename
+_build_filename(dataset, name, date, bounding_box) =
+    metadata_filename(dataset, name, date, bounding_box)
+
+# Multi-date: one filename per date, wrapped in DatewiseFilename
+_build_filename(dataset, name, dates::AbstractArray, bounding_box) =
+    DatewiseFilename([metadata_filename(dataset, name, d, bounding_box) for d in dates])
 
 """
     available_variables(metadata)
