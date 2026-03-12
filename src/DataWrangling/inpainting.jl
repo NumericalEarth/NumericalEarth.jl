@@ -16,7 +16,7 @@ end
 
 Diffusive inpainting algorithm. Vertical levels are processed top-to-bottom sequentially:
 at each level, missing values are first filled by horizontal neighbor propagation,
-then smoothed by iteratively solving the discrete Laplace equation ∇²ϕ = 0.
+then smoothed by iteratively solving the discrete Laplace equation ``∇²ϕ = 0``.
 Points that cannot be reached by horizontal propagation fall back to the value
 from the level above (the "previous guess").
 
