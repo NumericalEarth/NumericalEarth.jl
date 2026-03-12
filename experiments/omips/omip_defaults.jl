@@ -26,7 +26,7 @@ function omip_simulation(grid; forcing_dir, restoring_dir, filename)
 
     horizontal_viscosity = HorizontalScalarBiharmonicDiffusivity(ν=νhb, discrete_form=true, parameters=40days) 
     catke_closure = NumericalEarth.Oceans.default_ocean_closure() 
-    eddy_closure = IsopycnalSkewSymmetricDiffusivity(κ_skew=250) 
+    eddy_closure = IsopycnalSkewSymmetricDiffusivity(κ_skew=500) 
     closure = (catke_closure, eddy_closure, horizontal_viscosity)
     coriolis = HydrostaticSphericalCoriolis(scheme = Oceananigans.Coriolis.EnstrophyConserving())
 
