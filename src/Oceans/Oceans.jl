@@ -1,6 +1,6 @@
 module Oceans
 
-export ocean_simulation, SlabOcean
+export ocean_simulation, SlabOcean, area_scaled_biharmonic_viscosity
 
 using Oceananigans
 using Oceananigans.Units
