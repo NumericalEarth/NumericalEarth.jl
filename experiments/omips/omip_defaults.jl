@@ -38,7 +38,7 @@ function omip_simulation(grid; forcing_dir, restoring_dir, filename)
     piston_velocity = 1/6 # m/day
     restoring_rate = piston_velocity / (Δzˢ * days)
     @inline surface_mask(x, y, z, t) = z ≥ zˢ
-    FS = DatasetRestoring(Smetadata, architecture(grid); rate=restoring_rate, mask=surface_mask, time_indices_in_memory=12)
+    FS = DatasetRestoring(Smetadata, Oceananigans.Architectures.architecture(grid); rate=restoring_rate, mask=surface_mask, time_indices_in_memory=12)
 
     ocean = ocean_simulation(grid; Δt=1minutes,
                             momentum_advection,
