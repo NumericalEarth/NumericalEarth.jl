@@ -23,11 +23,12 @@ function omip_simulation(grid; forcing_dir, restoring_dir, filename)
     free_surface       = SplitExplicitFreeSurface(grid; substeps=150) 
 
     @inline νhb(i, j, k, grid, ℓx, ℓy, ℓz, clock, fields, λ) = Oceananigans.Operators.Az(i, j, k, grid, ℓx, ℓy, ℓz)^2 / λ
+    @inline henyey_diffusivity(x, y, z, t) = max(2e-6, 3e-5 * abs(sind(y)))
 
     horizontal_viscosity = HorizontalScalarBiharmonicDiffusivity(ν=νhb, discrete_form=true, parameters=40days) 
     catke_closure = NumericalEarth.Oceans.default_ocean_closure() 
     eddy_closure = IsopycnalSkewSymmetricDiffusivity(κ_skew=250) 
-    closure = (catke_closure, eddy_closure, horizontal_viscosity)
+    closure = (catke_closure, eddy_closure, horizontal_viscosity, VerticalScalarDiffusivity(κ=henyey_diffusivity, ν=1e-5))
     coriolis = HydrostaticSphericalCoriolis(scheme = Oceananigans.Coriolis.EnstrophyConserving())
 
     # WOA monthly salinity restoring with piston velocity 1/6 m/day
