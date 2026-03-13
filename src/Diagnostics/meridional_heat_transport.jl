@@ -50,7 +50,7 @@ Arguments
      ℋ = ρᵒᶜ cᵒᶜ ∫_{-H}^{η} T \\, \\mathrm{d}z
      ```
 
-     and its time-derivative is a heat flux, ``𝒬 = ∂ℋ/∂t``.
+     and its time-derivative is a heat flux, ``𝒬 ≡ ∂ℋ/∂t``.
 
      The vertically-integrated heat budget is
 
