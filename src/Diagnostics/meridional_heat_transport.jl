@@ -75,7 +75,7 @@ Arguments
 
      where ``A(φ)`` is the ocean area South of latitude ``φ``.
 
-     Integrating the vertically-integrated budget over ``A(φ)`` and using the divergence
+     Integrating the vertically-integrated heat budget over ``A(φ)`` and using the divergence
      theorem we get
 
      ```math
