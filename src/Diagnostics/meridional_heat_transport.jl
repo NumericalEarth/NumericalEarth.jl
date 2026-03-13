@@ -107,12 +107,14 @@ Keyword Arguments
 
 * `reference_temperature`: The reference temperature (in ᵒC) used for `MeridionalHeatFluxMethod()`; default: 0 ᵒC.
 
-  !!! info "Repeat-year forcing"
+  !!! info "Reference temperature"
 
-      The reference temperature is only relevant where there is a net volume transport through the section,
-      which for the case of global latitude circles there is not. Section-averaged transport could also be
-      considered as a reference temperature to remove residual barotropic volume fluxes in basin-scale/regional
-      analyses where a net volume transport is present.
+      The reference temperature is only relevant when we compute the meridional heat transport over a section
+      where there is a net volume transport. If we are computing the diagnostic globally, i.e., around a whole
+      latitude circle, then by necessity there is no net volume transport and thus the reference temperature
+      value is irrelevant. Section-averaged transport could also be considered as a reference temperature to
+      remove residual barotropic volume fluxes in basin-scale/regional analyses where a net volume transport
+      is present.
 
 Example
 =======
