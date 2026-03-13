@@ -175,11 +175,11 @@ end
 function meridional_heat_transport_via_ocean_heat_content(esm)
     ρᵒᶜ = reference_density(esm.ocean)
     cᵒᶜ = heat_capacity(esm.ocean)
-    ∂T_∂t = temperature_tendency(esm.ocean.model.timestepper)
+    ∂t_T = temperature_tendency(esm.ocean.model.timestepper)
     heat_flux = net_ocean_heat_flux(esm) |> Field
 
-    ∂ℋ_∂t = Integral(ρᵒᶜ * cᵒᶜ * ∂T_∂t, dims=3) |> Field
-    ∫sum_dx = Integral(heat_flux + ∂ℋ_∂t, dims=1) |> Field
+    ∂t_ℋ = Integral(ρᵒᶜ * cᵒᶜ * ∂t_T, dims=3) |> Field
+    ∫sum_dx = Integral(heat_flux + ∂t_ℋ, dims=1) |> Field
     MHT = CumulativeIntegral(- ∫sum_dx, dims=2)
     return MHT
 end
