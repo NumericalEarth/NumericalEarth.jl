@@ -70,7 +70,7 @@ Arguments
      The total ocean heat content (OHC) South of latitude ``φ`` is:
 
      ```math
-     \\mathrm{OHC}_S(φ, t) ≡ ∫_{A(φ)} 𝒬 \\, \\mathrm{d}A
+     \\mathrm{OHC}_S(φ, t) ≡ ∫_{A(φ)} ℋ \\, \\mathrm{d}A
      ```
 
      where ``A(φ)`` is the ocean area South of latitude ``φ``.
@@ -98,8 +98,11 @@ Arguments
      Ignoring the residual ``ℛ``, the OHC-based diagnostic relation is
 
      ```math
-     \\mathrm{MHT} = - ∫_{A(φ)} 𝒬ᵃᵒ_{\\rm net} \\, \\mathrm{d}A
-                     - \\frac{\\mathrm{d}}{\\mathrm{d}t} \\, \\mathrm{OHC}_S
+     \\begin{align*}
+         \\mathrm{MHT} & = - ∫_{A(φ)} 𝒬ᵃᵒ_{\\rm net} \\, \\mathrm{d}A
+                           - \\frac{\\mathrm{d}}{\\mathrm{d}t} \\, \\mathrm{OHC}_S \\\\
+                       & = - ∫_{A(φ)} \\left( 𝒬ᵃᵒ_{\\rm net} + 𝒬 \\right) \\, \\mathrm{d}A
+     \\end{align*}
      ```
 
 Keyword Arguments
