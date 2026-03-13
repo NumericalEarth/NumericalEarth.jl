@@ -50,17 +50,19 @@ Arguments
      ℋ = ρᵒᶜ cᵒᶜ ∫_{-H}^{η} T \\, \\mathrm{d}z
      ```
 
+     and its time-derivative is a heat flux, ``𝒬 = ∂ℋ/∂t``.
+
      The vertically-integrated heat budget is
 
      ```math
-     \\frac{∂ℋ}{∂t} = - \\boldsymbol{∇}_h \\cdot \\boldsymbol{F}_h - 𝒬_{\\rm net} + ℛ
+     𝒬 = \\frac{∂ℋ}{∂t} = - \\boldsymbol{∇}_h \\cdot \\boldsymbol{F}_h - 𝒬ᵃᵒ_{\\rm net} + ℛ
      ```
 
      where
 
      * ``\\boldsymbol{F}_h`` is the depth-integrated horizontal heat flux vector (units W m⁻¹),
        that includes advection and any parameterized lateral/eddy fluxes,
-     * ``𝒬_{\\rm net}`` is the [net ocean surface heat flux](@ref NumericalEarth.Diagnostics.net_ocean_heat_flux)
+     * ``𝒬ᵃᵒ_{\\rm net}`` is the [net ocean surface heat flux](@ref NumericalEarth.Diagnostics.net_ocean_heat_flux)
        (units W m⁻²), and
      * ``ℛ`` is the residual sources/sinks and non-closed terms (e.g. numerics, unaccounted
        physics, mass/volume effects).
@@ -68,7 +70,7 @@ Arguments
      The total ocean heat content (OHC) South of latitude ``φ`` is:
 
      ```math
-     \\mathrm{OHC}_S(φ, t) ≡ ∫_{A(φ)} ℋ \\, \\mathrm{d}A
+     \\mathrm{OHC}_S(φ, t) ≡ ∫_{A(φ)} 𝒬 \\, \\mathrm{d}A
      ```
 
      where ``A(φ)`` is the ocean area South of latitude ``φ``.
@@ -79,7 +81,7 @@ Arguments
      ```math
      \\frac{\\mathrm{d}}{\\mathrm{d}t} \\, \\mathrm{OHC}_S(φ, t) =
         - ∮_{∂A(φ)} \\boldsymbol{F}_h \\cdot \\hat{\\boldsymbol{n}} \\, \\mathrm{d}ℓ
-        - ∫_{A(φ)} 𝒬_{\\rm net} \\, \\mathrm{d}A
+        - ∫_{A(φ)} 𝒬ᵃᵒ_{\\rm net} \\, \\mathrm{d}A
         + ∫_{A(φ)} ℛ \\, \\mathrm{d}A
      ```
 
@@ -96,7 +98,7 @@ Arguments
      Ignoring the residual ``ℛ``, the OHC-based diagnostic relation is
 
      ```math
-     \\mathrm{MHT} = - ∫_{A(φ)} 𝒬_{\\rm net} \\, \\mathrm{d}A
+     \\mathrm{MHT} = - ∫_{A(φ)} 𝒬ᵃᵒ_{\\rm net} \\, \\mathrm{d}A
                      - \\frac{\\mathrm{d}}{\\mathrm{d}t} \\, \\mathrm{OHC}_S
      ```
 
@@ -176,11 +178,11 @@ function meridional_heat_transport_via_ocean_heat_content(esm)
     ρᵒᶜ = reference_density(esm.ocean)
     cᵒᶜ = heat_capacity(esm.ocean)
     ∂t_T = temperature_tendency(esm.ocean.model.timestepper)
-    heat_flux = net_ocean_heat_flux(esm) |> Field
+    𝒬ᵃᵒₙₑₜ = net_ocean_heat_flux(esm) |> Field
 
-    ∂t_ℋ = Integral(ρᵒᶜ * cᵒᶜ * ∂t_T, dims=3) |> Field
-    ∫sum_dx = Integral(heat_flux + ∂t_ℋ, dims=1) |> Field
-    MHT = CumulativeIntegral(- ∫sum_dx, dims=2)
+    𝒬 = Integral(ρᵒᶜ * cᵒᶜ * ∂t_T, dims=3) |> Field
+    ∫Σ𝒬_dx = Integral(𝒬ᵃᵒₙₑₜ + 𝒬, dims=1) |> Field
+    MHT = CumulativeIntegral(- ∫Σ𝒬_dx, dims=2)
     return MHT
 end
 
