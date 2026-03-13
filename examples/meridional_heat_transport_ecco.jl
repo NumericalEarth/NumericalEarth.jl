@@ -119,7 +119,9 @@ ax = Axis(fig[1, 1], xlabel="latitude (deg)", ylabel="MHT (PW)")
 
 φ = φnodes(grid, Face())
 
-lines!(ax, φ, mht_OHC_mean[1:Ny+1] / 1e15, linewidth=4)
-lines!(ax, φ, mht_vT_mean[1:Ny+1]  / 1e15, linewidth=4)
+lines!(ax, φ, mht_OHC_mean[1:Ny+1] / 1e15, linewidth=4, label="via OHC")
+lines!(ax, φ, mht_vT_mean[1:Ny+1]  / 1e15, linewidth=4, label="via vT")
+Legend(fig[2, :], ax, orientation=:horizontal)
+Label(fig[0, :], "Meridional heat transport", fontsize=16, tellwidth=false)
 
 save("mht.png", fig)
