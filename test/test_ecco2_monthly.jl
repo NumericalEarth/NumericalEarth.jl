@@ -86,7 +86,7 @@ for arch in test_architectures, dataset in test_ecco_datasets
                 field = CenterField(deep_grid)
                 datum = Metadatum(:temperature; dataset, date=start_date)
 
-                @test_logs (:warn, r"vertical range") set!(field, datum; inpainting=nothing)
+                @test_throws "The vertical range" set!(field, datum; inpainting=nothing)
             end
 
             # Expensive due to the high resolution of ECCO2

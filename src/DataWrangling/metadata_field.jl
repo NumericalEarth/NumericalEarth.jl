@@ -173,9 +173,8 @@ function set!(target_field::Field, metadata::Metadatum; kw...)
     Lzm = meta_field.grid.Lz
     
     if Lzt > Lzm
-        @warn "The vertical range of the $(metadata.dataset) dataset ($(Lzm) m) is smaller than " *
-              "the target grid ($(Lzt) m). Some vertical levels will not be filled with data, " *
-              "possibly leading to numerical errors."
+        throw("The vertical range of the $(metadata.dataset) dataset ($(Lzm) m) is smaller than " *
+              "the target grid ($(Lzt) m). Some vertical levels cannot be filled with data.")
     end
 
     interpolate!(target_field, meta_field)
