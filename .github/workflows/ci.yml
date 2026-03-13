@@ -3,16 +3,16 @@ name: CI
 on:
   pull_request:
     paths: &paths
-      - '.github/workflows/ci.yml'
-      - 'ext/**'
-      - 'src/**'
-      - 'test/**'
-      - 'Project.toml'
+      - ".github/workflows/ci.yml"
+      - "ext/**"
+      - "src/**"
+      - "test/**"
+      - "Project.toml"
   push:
     paths: *paths
     branches:
       - main
-    tags: '*'
+    tags: "*"
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
@@ -45,11 +45,11 @@ jobs:
       fail-fast: false
       matrix:
         version:
-          - '1.12.5'
+          - "1.12.5"
         os:
           - ubuntu-latest
         arch:
-          - 'default'
+          - "default"
         test_group:
           - JRA55
           - ecco2_monthly
@@ -135,22 +135,21 @@ jobs:
       # host's EBS disk) to avoid filling the container's overlay filesystem with
       # large data downloads and compiled artifacts.
       TMPDIR: /__w/_temp
-      JULIA_SCRATCH_DIR: /__w/_scratch
     steps:
       - uses: actions/checkout@v6
       - name: Create workspace temp directories
-        run: mkdir -p "${TMPDIR}" "${JULIA_SCRATCH_DIR}"
+        run: mkdir -p "${TMPDIR}"
       - name: Configure git safe directory
         run: git config --global --add safe.directory ${PWD}
       - name: Copy LocalPreferences
-        run: cp /usr/local/share/julia/environments/numericalearth/LocalPreferences.toml test/. 2>/dev/null || true
+        run: cp -v /usr/local/share/julia/environments/numericalearth/LocalPreferences.toml test/.
       - name: Add CUDA_Runtime_jll to test environment
         run: julia --project --color=yes --check-bounds=yes -e 'using Pkg; Pkg.Registry.update(); Pkg.add("CUDA_Runtime_jll")'
       - name: Run tests
         run: julia --project --color=yes --check-bounds=yes -e '
           using Pkg;
           Pkg.test(; coverage=true,
-            julia_args=["--check-bounds=yes", "--compiled-modules=yes", "-O0"])'
+          julia_args=["--check-bounds=yes", "--compiled-modules=yes", "-O0"])'
 
   #####
   ##### Specialized tests (GitHub-hosted runners)
@@ -164,7 +163,7 @@ jobs:
       fail-fast: false
       matrix:
         version:
-          - '1.12.5'
+          - "1.12.5"
         os:
           - ubuntu-latest
         arch:
@@ -172,7 +171,7 @@ jobs:
         include:
           - os: macOS-latest
             arch: aarch64
-            version: '1.12.5'
+            version: "1.12.5"
     steps:
       - uses: actions/checkout@v6
       - uses: julia-actions/setup-julia@latest
@@ -198,7 +197,7 @@ jobs:
       fail-fast: false
       matrix:
         version:
-          - '1.11.9'
+          - "1.11.9"
         os:
           - ubuntu-latest
         arch:
