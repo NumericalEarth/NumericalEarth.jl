@@ -7,7 +7,7 @@ A structure for computing turbulent fluxes using constant bulk transfer coeffici
 
 $(TYPEDFIELDS)
 """
-struct CoefficientBasedFluxes{CD, CH, CQ, S}
+struct CoefficientBasedFluxes{CD, CH, CQ, S} <: AbstractTurbulentFluxFormulation{S}
     "Coefficient for momentum transfer"
     drag_coefficient :: CD
     "Coefficient for sensible heat transfer"
