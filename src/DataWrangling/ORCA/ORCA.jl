@@ -61,13 +61,13 @@ function metadata_url(metadatum::ORCA1Metadatum)
     end
 end
 
-function metadata_filename(metadatum::ORCA1Metadatum)
-    if metadatum.name == :mesh_mask
+function metadata_filename(::ORCA1, name, date, bounding_box)
+    if name == :mesh_mask
         return "eORCA1.2_mesh_mask.nc"
-    elseif metadatum.name == :bottom_height
+    elseif name == :bottom_height
         return "eORCA_R1_bathy_meter_v2.2.nc"
     else
-        error("Unknown ORCA1 variable: $(metadatum.name)")
+        error("Unknown ORCA1 variable: $name")
     end
 end
 

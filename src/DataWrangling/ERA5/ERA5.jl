@@ -186,43 +186,37 @@ function bbox_strs(c)
     return first, second
 end
 
-function metadata_prefix(metadata::ERA5Metadata)
-    var = ERA5_dataset_variable_names[metadata.name]
-    dataset = dataset_name(metadata.dataset)
-    start_date = start_date_str(metadata.dates)
-    end_date = end_date_str(metadata.dates)
-    bbox = metadata.bounding_box
+function metadata_prefix(dataset::ERA5Dataset, name, date, bounding_box)
+    var = ERA5_dataset_variable_names[name]
+    ds = dataset_name(dataset)
+    start_date = start_date_str(date)
+    end_date = end_date_str(date)
 
-    if !isnothing(bbox)
-        w, e = bbox_strs(bbox.longitude)
-        s, n = bbox_strs(bbox.latitude)
+    if !isnothing(bounding_box)
+        w, e = bbox_strs(bounding_box.longitude)
+        s, n = bbox_strs(bounding_box.latitude)
         suffix = string(w, e, s, n)
     else
         suffix = ""
     end
 
-    prefix = string(var, "_", dataset, "_", start_date, "_", end_date, suffix)
+    prefix = string(var, "_", ds, "_", start_date, "_", end_date, suffix)
     prefix = colon2dash(prefix)
     prefix = underscore_spaces(prefix)
     return prefix
 end
 
-function metadata_filename(metadata::ERA5Metadatum)
-    prefix = metadata_prefix(metadata)
+function metadata_filename(dataset::ERA5Dataset, name, date, bounding_box)
+    prefix = metadata_prefix(dataset, name, date, bounding_box)
     return string(prefix, ".nc")
 end
 
-function metadata_filename(metadata::ERA5Metadata)
-    return [metadata_filename(metadatum) for metadatum in metadata]
-end
-
-function inpainted_metadata_filename(metadata::ERA5Metadata)
-    original_filename = metadata_filename(metadata)
-    without_extension = original_filename[1:end-3]
+function inpainted_metadata_filename(metadata::ERA5Metadatum)
+    without_extension = metadata.filename[1:end-3]
     return without_extension * "_inpainted.jld2"
 end
 
-inpainted_metadata_path(metadata::ERA5Metadata) = joinpath(metadata.dir, inpainted_metadata_filename(metadata))
+inpainted_metadata_path(metadata::ERA5Metadatum) = joinpath(metadata.dir, inpainted_metadata_filename(metadata))
 
 #####
 ##### Grid interfaces
