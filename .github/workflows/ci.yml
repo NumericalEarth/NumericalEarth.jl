@@ -131,7 +131,7 @@ jobs:
       GPU_TEST: "true"
       OPENBLAS_NUM_THREADS: 1
       TEST_GROUP: ${{ matrix.test_group }}
-      # Redirect temp and scratch to the workspace volume (bind-mounted from the
+      # Redirect temp to the workspace volume (bind-mounted from the
       # host's EBS disk) to avoid filling the container's overlay filesystem with
       # large data downloads and compiled artifacts.
       TMPDIR: /__w/_temp
