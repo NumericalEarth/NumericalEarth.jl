@@ -143,8 +143,6 @@ jobs:
         run: git config --global --add safe.directory ${PWD}
       - name: Copy LocalPreferences
         run: cp -v /usr/local/share/julia/environments/numericalearth/LocalPreferences.toml test/.
-      - name: Add CUDA_Runtime_jll to test environment
-        run: julia --project=test --color=yes --check-bounds=yes -e 'using Pkg; Pkg.Registry.update(); Pkg.add("CUDA_Runtime_jll")'
       - name: Run tests
         run: |
           earlyoom -m 3 -s 100 -r 300 --prefer 'julia' &
