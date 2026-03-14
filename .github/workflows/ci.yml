@@ -146,10 +146,13 @@ jobs:
       - name: Add CUDA_Runtime_jll to test environment
         run: julia --project --color=yes --check-bounds=yes -e 'using Pkg; Pkg.Registry.update(); Pkg.add("CUDA_Runtime_jll")'
       - name: Run tests
-        run: julia --project --color=yes --check-bounds=yes -e '
-          using Pkg;
-          Pkg.test(; coverage=true,
-          julia_args=["--check-bounds=yes", "--compiled-modules=yes", "-O0"])'
+        run: |
+          earlyoom -m 3 -s 100 -r 300 --prefer 'julia' &
+          julia --project --color=yes --check-bounds=yes -e '
+              using Pkg;
+              Pkg.test(; coverage=true,
+                       julia_args=["--check-bounds=yes", "--compiled-modules=yes", "-O0"])
+          '
 
   #####
   ##### Specialized tests (GitHub-hosted runners)
