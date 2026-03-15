@@ -31,7 +31,7 @@ NumericalEarth = {path = ".."}
 
 [compat]
 Breeze = "0.4"
-CDSAPI = "2"
+CDSAPI = "2.2.2"
 CFTime = "0.1, 0.2"
 CUDA = "5.9.5"
 ClimaSeaIce = "0.4.4, 0.5"
