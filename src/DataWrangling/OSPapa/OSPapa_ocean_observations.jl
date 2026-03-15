@@ -41,6 +41,7 @@ dataset_variable_name(data::OSPapaMetadata) = OSPapa_dataset_variable_names[data
 
 location(::OSPapaMetadata) = (Center, Center, Center)
 is_three_dimensional(md::OSPapaMetadata) = md.name in (:temperature, :salinity)
+reversed_vertical_axis(::OSPapaHourly) = true
 conversion_units(::OSPapaMetadatum) = nothing
 default_inpainting(::OSPapaMetadata) = nothing
 
@@ -63,8 +64,11 @@ function inpainted_metadata_path(metadata::OSPapaMetadata)
 end
 
 #####
-##### Dates and sizes
+##### Epoch, time step, dates, and sizes
 #####
+
+metadata_epoch(::OSPapaHourly) = DateTime(2007, 6, 7, 23, 0, 0)
+metadata_time_step(::OSPapaHourly) = 3600 # seconds (hourly data)
 
 # Cache the time vector to avoid re-reading the file for every call
 const _ospapa_times_cache = Ref{Vector{DateTime}}()
@@ -99,8 +103,12 @@ function _ospapa_depths(variable, dir=download_OSPapa_cache)
 end
 
 function Base.size(::OSPapaHourly, variable)
-    depths = _ospapa_depths(variable)
-    return (1, 1, length(depths))
+    if variable in (:temperature, :salinity)
+        depths = _ospapa_depths(variable)
+        return (1, 1, length(depths))
+    else
+        return (1, 1, 1)
+    end
 end
 
 #####
@@ -142,11 +150,16 @@ longitude_interfaces(::OSPapaHourly) = (OSPAPA_LONGITUDE, OSPAPA_LONGITUDE)
 latitude_interfaces(::OSPapaHourly)  = (OSPAPA_LATITUDE, OSPAPA_LATITUDE)
 
 function native_grid(metadata::OSPapaMetadata, arch=CPU(); halo=(3, 3, 3))
-    Nz = size(metadata.dataset, metadata.name)[3]
-    z = z_interfaces(metadata)
-    return RectilinearGrid(arch; size=Nz,
-                           x=OSPAPA_LONGITUDE, y=OSPAPA_LATITUDE,
-                           z=z, topology=(Flat, Flat, Bounded), halo=(halo[3],))
+    if is_three_dimensional(metadata)
+        Nz = size(metadata.dataset, metadata.name)[3]
+        z = z_interfaces(metadata)
+        return RectilinearGrid(arch; size=Nz,
+                               x=OSPAPA_LONGITUDE, y=OSPAPA_LATITUDE,
+                               z=z, topology=(Flat, Flat, Bounded), halo=(halo[3],))
+    else
+        return RectilinearGrid(arch; size=(),
+                               topology=(Flat, Flat, Flat))
+    end
 end
 
 #####
@@ -167,30 +180,51 @@ function retrieve_data(metadata::OSPapaMetadatum)
         error("Date $(metadata.dates) not found in OS Papa dataset")
     end
 
-    # Read single profile (spatial dims are (1, 1, Nz))
-    raw = ds[varname][1, 1, :, t_idx]
+    if is_three_dimensional(metadata)
+        # Read single profile (spatial dims are (1, 1, Nz))
+        raw = ds[varname][1, 1, :, t_idx]
 
-    # Apply QC flag filtering: keep only good (1) and probably good (2) data
-    qc_varname = varname * "_QC"
-    if haskey(ds, qc_varname)
-        qc = ds[qc_varname][1, 1, :, t_idx]
-        for i in eachindex(raw)
-            q = ismissing(qc[i]) ? Int8(9) : Int8(qc[i])
-            if q > 2
-                raw[i] = missing
+        # Apply QC flag filtering: keep only good (1) and probably good (2) data
+        qc_varname = varname * "_QC"
+        if haskey(ds, qc_varname)
+            qc = ds[qc_varname][1, 1, :, t_idx]
+            for i in eachindex(raw)
+                q = ismissing(qc[i]) ? Int8(9) : Int8(qc[i])
+                if q > 2
+                    raw[i] = missing
+                end
             end
         end
+
+        close(ds)
+
+        data = Float64.(replace(raw, missing => NaN))
+
+        # NetCDF stores shallow-to-deep, but the grid z-axis is bottom-to-top
+        # (most negative first), so reverse to match grid ordering
+        reverse!(data)
+
+        return reshape(data, 1, 1, :)  # (1, 1, Nz)
+    else
+        # Surface variable: read scalar at the given time index
+        raw = ds[varname][1, 1, 1, t_idx]
+
+        # Apply QC flag filtering
+        qc_varname = varname * "_QC"
+        if haskey(ds, qc_varname)
+            qc = ds[qc_varname][1, 1, 1, t_idx]
+            q = ismissing(qc) ? Int8(9) : Int8(qc)
+            if q > 2
+                raw = missing
+            end
+        end
+
+        close(ds)
+
+        data = Float64(ismissing(raw) ? NaN : raw)
+
+        return reshape([data], 1, 1, 1)  # (1, 1, 1)
     end
-
-    close(ds)
-
-    data = Float64.(replace(raw, missing => NaN))
-
-    # NetCDF stores shallow-to-deep, but the grid z-axis is bottom-to-top
-    # (most negative first), so reverse to match grid ordering
-    reverse!(data)
-
-    return reshape(data, 1, 1, :)  # (1, 1, Nz)
 end
 
 #####

@@ -97,8 +97,8 @@ SI (Kelvin, Pa, kg/m²/s).
 
 Keyword Arguments
 =================
-- `start_date`: start of the time range (default: `DateTime(2007, 6, 8)`)
-- `end_date`: end of the time range (default: `DateTime(2023, 6, 1)`)
+- `start_date`: start of the time range (default: `first_date(OSPapaHourly(), :air_temperature)`)
+- `end_date`: end of the time range (default: `last_date(OSPapaHourly(), :air_temperature)`)
 - `dir`: directory for cached data files
 - `surface_layer_height`: measurement height in meters (default: 2.5, matching
   the buoy's temperature/humidity instruments)
@@ -106,8 +106,8 @@ Keyword Arguments
   (default: 72)
 """
 function OSPapaPrescribedAtmosphere(architecture = CPU(), FT = Float32;
-                                     start_date = DateTime(2007, 6, 8),
-                                     end_date = DateTime(2023, 6, 1),
+                                     start_date = first_date(OSPapaHourly(), :air_temperature),
+                                     end_date = last_date(OSPapaHourly(), :air_temperature),
                                      dir = download_OSPapa_cache,
                                      surface_layer_height = 2.5,
                                      max_gap_hours = 72)
