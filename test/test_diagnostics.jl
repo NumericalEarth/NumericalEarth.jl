@@ -2,7 +2,7 @@ include("runtests_setup.jl")
 
 using Oceananigans: location
 using Oceananigans.Models: buoyancy_operation
-using NumericalEarth.Diagnostics: MixedLayerDepthField, MixedLayerDepthOperand
+using NumericalEarth.Diagnostics: MixedLayerDepthField, MixedLayerDepthOperand, Streamfunction, retained_dims
 using SeawaterPolynomials: TEOS10EquationOfState
 
 for arch in test_architectures, dataset in (ECCO4Monthly(),)
@@ -54,6 +54,62 @@ for arch in test_architectures, dataset in (ECCO4Monthly(),)
         if dataset isa ECCO4Monthly
             @test @allowscalar h[1, 1, 1] ≈ 9.2957298 # m
         end
+    end
+end
+
+for arch in test_architectures
+    A = typeof(arch)
+    @info "Testing Streamfunction diagnostic on $A"
+
+    @testset "Streamfunction on $A" begin
+        grid = RectilinearGrid(arch;
+                               size = (8, 6, 4),
+                               extent = (1, 1, 1),
+                               topology = (Periodic, Bounded, Bounded))
+
+        model = NonhydrostaticModel(grid; tracers = (:T, :S))
+        set!(model, T = (x, y, z) -> 1018 + 4y + 0.5z, S = 35, u = 2.0, v = 1.0, w = 0.5)
+        coupled_model = (; ocean = (; model))
+
+        bins = 1018:0.25:1023
+
+        ψ_default = Streamfunction(coupled_model;
+                                   x_field = model.tracers.T,
+                                   y_field = retained_dims(2),
+                                   bins = (x_field = bins,),
+                                   in_sverdrups = false)
+
+        ψ_scaled = Streamfunction(coupled_model;
+                                  x_field = model.tracers.T,
+                                  y_field = retained_dims(2),
+                                  bins = (x_field = bins,),
+                                  in_sverdrups = true)
+
+        ψ_u = Streamfunction(coupled_model;
+                             x_field = model.tracers.T,
+                             y_field = retained_dims(1),
+                             bins = (x_field = bins,),
+                             in_sverdrups = false)
+
+        @test_throws ArgumentError Streamfunction(coupled_model;
+                                                  x_field = model.tracers.T,
+                                                  y_field = retained_dims(2),
+                                                  bins = (x_field = bins, y_field = -90:5:90),
+                                                  in_sverdrups = false)
+
+        compute!(ψ_default)
+        compute!(ψ_scaled)
+        compute!(ψ_u)
+
+        Ψdefault = Array(interior(on_architecture(CPU(), ψ_default)))
+        Ψscaled = Array(interior(on_architecture(CPU(), ψ_scaled)))
+        Ψu = Array(interior(on_architecture(CPU(), ψ_u)))
+
+        @test size(Ψdefault, 1) == length(bins) - 1
+        @test size(Ψdefault, 2) == size(grid, 2)
+        @test size(Ψdefault, 3) == 1
+        @test Ψscaled ≈ Ψdefault ./ 1e6
+        @test all(isfinite, Ψu)
     end
 end
 
