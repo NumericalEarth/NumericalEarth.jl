@@ -2,7 +2,7 @@ include("runtests_setup.jl")
 
 using CUDA
 using Oceananigans.OrthogonalSphericalShellGrids
-using NumericalEarth.EarthSystemModels: above_freezing_ocean_temperature!
+using NumericalEarth.EarthSystemModels: above_freezing_ocean_temperature!, RKCM
 using ClimaSeaIce.SeaIceDynamics
 using ClimaSeaIce.SeaIceThermodynamics: melting_temperature
 using ClimaSeaIce.Rheologies
@@ -103,5 +103,69 @@ using ClimaSeaIce.Rheologies
                 true
             end
         end
+    end
+end
+
+@testset "RK coupled ocean-sea ice time stepping" begin
+    for arch in test_architectures
+        A = typeof(arch)
+        @info "Testing RK coupled ocean-sea ice time stepping on $A"
+
+        grid = TripolarGrid(arch;
+                            size = (20, 20, 5),
+                            halo = (7, 7, 7),
+                            z = (-1000, 0))
+
+        bottom_height = regrid_bathymetry(grid;
+                                          minimum_depth = 10,
+                                          interpolation_passes = 5,
+                                          major_basins = 1)
+
+        grid = ImmersedBoundaryGrid(grid, GridFittedBottom(bottom_height); active_cells_map=true)
+
+        free_surface = SplitExplicitFreeSurface(grid; substeps=20)
+        backend = JRA55NetCDFBackend(4)
+        atmosphere = JRA55PrescribedAtmosphere(arch; backend)
+        radiation = Radiation(arch)
+
+        # RK3 coupled path
+        ocean = ocean_simulation(grid; free_surface, timestepper = :SplitRungeKutta3)
+        sea_ice = sea_ice_simulation(grid, ocean; advection = WENO(order=7))
+
+        coupled_model = OceanSeaIceModel(ocean, sea_ice; atmosphere, radiation)
+
+        # Verify the RK coupled dispatch is active
+        @test coupled_model isa RKCM
+
+        Δt = 60
+        for n = 1:3
+            time_step!(coupled_model, Δt)
+        end
+
+        # Verify clock advancement
+        @test coupled_model.clock.time ≈ 3Δt
+        @test coupled_model.clock.iteration == 3
+        @test ocean.model.clock.time ≈ 3Δt
+        @test sea_ice.model.clock.time ≈ 3Δt
+
+        # Non-RK fallback path
+        @info "Testing non-RK fallback ocean-sea ice time stepping on $A"
+
+        ocean_ab2 = ocean_simulation(grid; free_surface, timestepper = :QuasiAdamsBashforth2)
+        sea_ice_ab2 = sea_ice_simulation(grid, ocean_ab2;
+                                         advection = WENO(order=7),
+                                         timestepper = :ForwardEuler)
+
+        coupled_model_ab2 = OceanSeaIceModel(ocean_ab2, sea_ice_ab2; atmosphere, radiation)
+
+        # Verify this does NOT use the RK coupled dispatch
+        @test !(coupled_model_ab2 isa RKCM)
+
+        for n = 1:3
+            time_step!(coupled_model_ab2, Δt)
+        end
+
+        @test coupled_model_ab2.clock.time ≈ 3Δt
+        @test coupled_model_ab2.clock.iteration == 3
     end
 end
