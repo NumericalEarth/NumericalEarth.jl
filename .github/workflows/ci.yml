@@ -77,6 +77,8 @@ jobs:
           version: ${{ matrix.version }}
           arch: ${{ matrix.arch }}
       - uses: julia-actions/cache@v3
+        with:
+          cache-scratchspaces: false
       - uses: julia-actions/julia-runtest@v1
         with:
           test_args: '--verbose'
@@ -157,6 +159,8 @@ jobs:
           version: ${{ matrix.version }}
           arch: ${{ matrix.arch }}
       - uses: julia-actions/cache@v3
+        with:
+          cache-scratchspaces: false
       - name: Run tests
         run: |
           julia --project --color=yes --check-bounds=yes -e '
@@ -192,6 +196,8 @@ jobs:
           version: ${{ matrix.version }}
           arch: ${{ matrix.arch }}
       - uses: julia-actions/cache@v3
+        with:
+          cache-scratchspaces: false
       - name: Run tests
         run: |
           julia --project --color=yes --check-bounds=yes -e '
