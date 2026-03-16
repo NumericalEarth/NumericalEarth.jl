@@ -37,10 +37,10 @@ end
     @test underlying.Nz == 5
 
     # Coordinates span near-global domain
-    @test minimum(underlying.λᶜᶜᵃ) < -179
-    @test maximum(underlying.λᶜᶜᵃ) > 179
-    @test minimum(underlying.φᶜᶜᵃ) < -80
-    @test maximum(underlying.φᶜᶜᵃ) > 80
+    @test minimum(underlying.λᶜᶜᵃ.parent) < -179
+    @test maximum(underlying.λᶜᶜᵃ.parent) > 179
+    @test minimum(underlying.φᶜᶜᵃ.parent) < -80
+    @test maximum(underlying.φᶜᶜᵃ.parent) > 80
 end
 
 @testset "ORCAGrid without bathymetry on $(arch)" for arch in test_architectures
