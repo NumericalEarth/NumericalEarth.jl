@@ -157,7 +157,7 @@ jobs:
           version: ${{ matrix.version }}
           arch: ${{ matrix.arch }}
       - uses: julia-actions/cache@v3
-      - name: Run Reactant tests
+      - name: Run tests
         run: |
           julia --project --color=yes --check-bounds=yes -e '
               using Pkg;
@@ -192,7 +192,7 @@ jobs:
           version: ${{ matrix.version }}
           arch: ${{ matrix.arch }}
       - uses: julia-actions/cache@v3
-      - name: Run Reactant tests
+      - name: Run tests
         run: |
           julia --project --color=yes --check-bounds=yes -e '
               using Pkg;
