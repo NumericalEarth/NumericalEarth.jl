@@ -44,7 +44,8 @@ Container for sea ice-ocean interface data including fluxes, formulation, and in
 Fields
 ======
 
-- `fluxes::J`: named tuple of flux fields (interface_heat, frazil_heat, salt, x_momentum, y_momentum)
+- `fluxes::J`: named tuple of flux fields (interface_heat, frazil_heat, salt, x_momentum, y_momentum),
+               and freshwater_flux.
 - `flux_formulation::F`: heat flux formulation (`IceBathHeatFlux` or `ThreeEquationHeatFlux`)
 - `temperature::T`: interface temperature field (ocean surface view or computed field)
 - `salinity::S`: interface salinity field (ocean surface view or computed field)
@@ -109,6 +110,7 @@ function atmosphere_ocean_interface(grid,
     friction_velocity     = Field{Center, Center, Nothing}(grid)
     temperature_scale     = Field{Center, Center, Nothing}(grid)
     water_vapor_scale     = Field{Center, Center, Nothing}(grid)
+    freshwater_flux       = Field{Center, Center, Nothing}(grid)
     upwelling_longwave    = Field{Center, Center, Nothing}(grid)
     downwelling_longwave  = Field{Center, Center, Nothing}(grid)
     downwelling_shortwave = Field{Center, Center, Nothing}(grid)
@@ -121,6 +123,7 @@ function atmosphere_ocean_interface(grid,
                    friction_velocity,
                    temperature_scale,
                    water_vapor_scale,
+                   freshwater_flux,
                    upwelling_longwave,
                    downwelling_longwave,
                    downwelling_shortwave)
@@ -216,12 +219,14 @@ function sea_ice_ocean_interface(grid, sea_ice, ocean, flux_formulation)
     io_bottom_heat_flux = Field{Center, Center, Nothing}(grid)
     io_frazil_heat_flux = Field{Center, Center, Nothing}(grid)
     io_salt_flux = Field{Center, Center, Nothing}(grid)
+    io_freshwater_flux = Field{Center, Center, Nothing}(grid)
     x_momentum = Field{Face, Center, Nothing}(grid)
     y_momentum = Field{Center, Face, Nothing}(grid)
 
     io_fluxes = (interface_heat = io_bottom_heat_flux,
                  frazil_heat = io_frazil_heat_flux,
                  salt = io_salt_flux,
+                 freshwater_flux = io_freshwater_flux,
                  x_momentum = x_momentum,
                  y_momentum = y_momentum)
 
@@ -237,12 +242,14 @@ function sea_ice_ocean_interface(grid, sea_ice, ocean, flux_formulation::ThreeEq
     io_bottom_heat_flux = Field{Center, Center, Nothing}(grid)
     io_frazil_heat_flux = Field{Center, Center, Nothing}(grid)
     io_salt_flux = Field{Center, Center, Nothing}(grid)
+    io_freshwater_flux = Field{Center, Center, Nothing}(grid)
     x_momentum = Field{Face, Center, Nothing}(grid)
     y_momentum = Field{Center, Face, Nothing}(grid)
 
     io_fluxes = (interface_heat = io_bottom_heat_flux,
                  frazil_heat = io_frazil_heat_flux,
                  salt = io_salt_flux,
+                 freshwater_flux = io_freshwater_flux,
                  x_momentum = x_momentum,
                  y_momentum = y_momentum)
 

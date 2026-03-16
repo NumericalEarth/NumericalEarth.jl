@@ -70,9 +70,9 @@ function compute_sea_ice_ocean_fluxes!(interface, ocean, sea_ice, ocean_properti
     return nothing
 end
 
-@kernel function _compute_sea_ice_ocean_stress!(fluxes, 
-                                                grid, 
-                                                clock, 
+@kernel function _compute_sea_ice_ocean_stress!(fluxes,
+                                                grid,
+                                                clock,
                                                 ice_thickness,
                                                 ice_concentration,
                                                 sea_ice_u_velocity,
@@ -83,7 +83,7 @@ end
     τˣ = fluxes.x_momentum
     τʸ = fluxes.y_momentum
     Nz = size(grid, 3)
-    
+
     uˢⁱ = sea_ice_u_velocity
     vˢⁱ = sea_ice_v_velocity
     hˢⁱ = ice_thickness
@@ -123,6 +123,7 @@ end
     𝒬ᶠʳᶻ = fluxes.frazil_heat
     𝒬ⁱⁿᵗ = fluxes.interface_heat
     Jˢ = fluxes.salt
+    ΣF = fluxes.freshwater_flux
     τˣ = fluxes.x_momentum
     τʸ = fluxes.y_momentum
     T★ = interface_temperature
@@ -175,12 +176,12 @@ end
     qᶠ = δ𝒬ᶠʳᶻ / ℰ
 
     @inbounds begin
-        Tᴺ = Tᵒᶜ[i, j, Nz]               
-        Sᴺ = Sᵒᶜ[i, j, Nz]               
-        Sˢⁱ = ice_salinity[i, j, 1]      
-        hˢⁱ = ice_thickness[i, j, 1]     
-        ℵᵢ = ice_concentration[i, j, 1] 
-        hc = ice_consolidation_thickness[i, j, 1] 
+        Tᴺ = Tᵒᶜ[i, j, Nz]
+        Sᴺ = Sᵒᶜ[i, j, Nz]
+        Sˢⁱ = ice_salinity[i, j, 1]
+        hˢⁱ = ice_thickness[i, j, 1]
+        ℵᵢ = ice_concentration[i, j, 1]
+        hc = ice_consolidation_thickness[i, j, 1]
     end
 
     # Extract internal temperature (for ConductiveFluxTEF, zero otherwise)
@@ -198,8 +199,8 @@ end
     # =============================================
     # Returns interfacial heat flux, melt rate qᵐ, and interface T, S
     𝒬ⁱᵒ, qᵐ, Tᵦ, Sᵦ = compute_interface_heat_flux(flux_formulation,
-                                                     ocean_surface_state, ice_state,
-                                                     liquidus, ocean_properties, ℰ, u★)
+                                                  ocean_surface_state, ice_state,
+                                                  liquidus, ocean_properties, ℰ, u★)
 
     # Store interface values and heat flux
     @inbounds T★[i, j, 1] = Tᵦ
@@ -212,5 +213,7 @@ end
     # Salt flux from melting/freezing:
     # - during ice melt   (qᵐ > 0), fresh meltwater dilutes the ocean
     # - during ice growth (qᶠ < 0), brine rejection adds salt to ocean
-    @inbounds Jˢ[i, j, 1] = (qᵐ + qᶠ) / ρᵒᶜ * (Sᴺ - Sˢⁱ)
+    ΣFio = qᵐ + qᶠ
+    @inbounds Jˢ[i, j, 1] = ΣFio / ρᵒᶜ * (Sᴺ - Sˢⁱ)
+    @inbounds ΣF[i, j, 1] = ΣFio
 end
