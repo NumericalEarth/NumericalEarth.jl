@@ -17,6 +17,8 @@ args = parse_args(ARGS)
 delete!(testsuite, "runtests_setup")
 delete!(testsuite, "download_utils")
 
+gpu_test = parse(Bool, get(ENV, "GPU_TEST", "false"))
+
 if filter_tests!(testsuite, args)
     # Remove always CDS downloading and Reactant 
     # since they are treated individually
@@ -25,7 +27,7 @@ if filter_tests!(testsuite, args)
 
     # Remove CPU-only tests when
     # testing on GPUs
-    if GPU_TEST
+    if gpu_test
         delete!(testsuite, "test_veros")
         delete!(testsuite, "test_speedy_coupling")
     end
