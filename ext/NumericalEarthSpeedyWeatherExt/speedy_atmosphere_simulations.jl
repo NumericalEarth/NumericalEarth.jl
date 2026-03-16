@@ -24,7 +24,6 @@ function Oceananigans.TimeSteppers.time_step!(atmos::SpeedySimulation, Δt)
     for _ in 1:nsteps
         SpeedyWeather.timestep!(atmos)
     end
-    return
 end
 
 # The height of near-surface variables used in the turbulent flux solver
@@ -62,24 +61,22 @@ end
 
 Return an atmosphere simulation using `SpeedyWeather.PrimitiveWetModel` on `spectral_grid`.
 """
-function atmosphere_simulation(spectral_grid::SpeedyWeather.SpectralGrid; output = false)
+function atmosphere_simulation(spectral_grid::SpeedyWeather.SpectralGrid; output=false)
     # Surface fluxes
     humidity_flux_ocean = SpeedyWeather.PrescribedOceanHumidityFlux(spectral_grid)
     humidity_flux_land = SpeedyWeather.SurfaceLandHumidityFlux(spectral_grid)
-    surface_humidity_flux = SpeedyWeather.SurfaceHumidityFlux(ocean = humidity_flux_ocean, land = humidity_flux_land)
+    surface_humidity_flux = SpeedyWeather.SurfaceHumidityFlux(ocean=humidity_flux_ocean, land=humidity_flux_land)
 
     ocean_heat_flux = SpeedyWeather.PrescribedOceanHeatFlux(spectral_grid)
     land_heat_flux = SpeedyWeather.SurfaceLandHeatFlux(spectral_grid)
-    surface_heat_flux = SpeedyWeather.SurfaceHeatFlux(ocean = ocean_heat_flux, land = land_heat_flux)
+    surface_heat_flux = SpeedyWeather.SurfaceHeatFlux(ocean=ocean_heat_flux, land=land_heat_flux)
 
     # The atmospheric model
-    atmosphere_model = SpeedyWeather.PrimitiveWetModel(
-        spectral_grid;
-        surface_heat_flux,
-        surface_humidity_flux,
-        ocean = nothing,
-        sea_ice = nothing
-    ) # This is provided by ClimaSeaIce
+    atmosphere_model = SpeedyWeather.PrimitiveWetModel(spectral_grid;
+                                                       surface_heat_flux,
+                                                       surface_humidity_flux,
+                                                       ocean = nothing,
+                                                       sea_ice = nothing) # This is provided by ClimaSeaIce
 
     # Construct the simulation
     atmosphere = SpeedyWeather.initialize!(atmosphere_model)
