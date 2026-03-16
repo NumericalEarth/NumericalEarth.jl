@@ -23,12 +23,12 @@ function relative_humidity_to_specific_humidity(RH, T_celsius, P_hPa)
 end
 
 """
-    fill_gaps!(data; max_gap=72)
+    fill_gaps!(data; max_gap=6)
 
 Fill NaN gaps in a 1D time series using linear interpolation.
 Gaps longer than `max_gap` points are left as NaN with a warning.
 """
-function fill_gaps!(data; max_gap=72)
+function fill_gaps!(data; max_gap=6)
     N = length(data)
     i = 1
     while i <= N
