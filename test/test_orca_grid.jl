@@ -43,7 +43,7 @@ end
     @test maximum(underlying.φᶜᶜᵃ) > 80
 end
 
-@testset "ORCAGrid without bathymetry on $(arch)" for arch in archs
+@testset "ORCAGrid without bathymetry on $(arch)" for arch in test_architectures
     grid = ORCAGrid(arch; dataset=ORCA1(), Nz=5, z=(-5000, 0), halo=(4, 4, 4),
                     with_bathymetry=false)
 
@@ -55,7 +55,7 @@ end
     @test grid.Nz == 5
 end
 
-@testset "ORCAGrid with south_rows_to_remove on $(arch)" for arch in archs
+@testset "ORCAGrid with south_rows_to_remove on $(arch)" for arch in test_architectures
     Nremove = 40
     grid = ORCAGrid(arch; dataset=ORCA1(), Nz=5, z=(-5000, 0), halo=(4, 4, 4),
                     south_rows_to_remove=Nremove)
