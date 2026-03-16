@@ -1,7 +1,9 @@
 using Test
 using Reactant
 using Oceananigans.Models: initialization_update_state!
+using Oceananigans: Oceananigans
 using Oceananigans.Architectures: ReactantState
+using Oceananigans.Grids: LatitudeLongitudeGrid
 using NumericalEarth
 
 gpu_test = get(ENV, "GPU_TEST", "false") == "true"
