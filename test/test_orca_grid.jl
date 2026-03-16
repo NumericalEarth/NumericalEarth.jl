@@ -80,7 +80,7 @@ end
                  :Δyᶜᶜᵃ, :Δyᶠᶜᵃ, :Δyᶜᶠᵃ, :Δyᶠᶠᵃ,
                  :Azᶜᶜᵃ, :Azᶠᶜᵃ, :Azᶜᶠᵃ, :Azᶠᶠᵃ)
         data = getproperty(grid, name)
-        @test all(isfinite, Array(data)) == true
+        @test all(isfinite, Oceananigans.on_architecture(CPU(), data)) == true
     end
 
     # All interior metrics (Δx, Δy, Az) are strictly positive
@@ -89,7 +89,7 @@ end
                  :Δyᶜᶜᵃ, :Δyᶠᶜᵃ, :Δyᶜᶠᵃ, :Δyᶠᶠᵃ,
                  :Azᶜᶜᵃ, :Azᶠᶜᵃ, :Azᶜᶠᵃ, :Azᶠᶠᵃ)
         data = getproperty(grid, name)
-        interior = Array(data)[1:Nx, 1:Ny]
+        interior = Oceananigans.on_architecture(CPU(), data)[1:Nx, 1:Ny]
         @test all(x -> x > 0, interior) == true
     end
 
