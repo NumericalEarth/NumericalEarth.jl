@@ -117,7 +117,7 @@ function Metadata(variable_name;
     end
 
     if isnothing(filename)
-        filename = _build_filename(dataset, variable_name, dates, bounding_box)
+        filename = build_filename(dataset, variable_name, dates, bounding_box)
     end
 
     return Metadata(variable_name, dataset, dates, bounding_box, dir, filename)
@@ -331,11 +331,11 @@ function metadata_filename end
 
 # Internal: build filename for construction.
 # Single date: delegate to metadata_filename
-_build_filename(dataset, name, date, bounding_box) =
+build_filename(dataset, name, date, bounding_box) =
     metadata_filename(dataset, name, date, bounding_box)
 
 # Multi-date: one filename per date, wrapped in DatewiseFilename
-_build_filename(dataset, name, dates::AbstractArray, bounding_box) =
+build_filename(dataset, name, dates::AbstractArray, bounding_box) =
     DatewiseFilename([metadata_filename(dataset, name, d, bounding_box) for d in dates])
 
 """

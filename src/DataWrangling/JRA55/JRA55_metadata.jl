@@ -12,7 +12,7 @@ import Oceananigans.Fields: set!
 import Base
 
 import Oceananigans.Fields: set!, location
-import NumericalEarth.DataWrangling: all_dates, metadata_filename, _build_filename, download_dataset, default_download_directory, available_variables
+import NumericalEarth.DataWrangling: all_dates, metadata_filename, build_filename, download_dataset, default_download_directory, available_variables
 
 struct MultiYearJRA55 end
 struct RepeatYearJRA55 end
@@ -62,7 +62,7 @@ end
 metadata_filename(::RepeatYearJRA55, name, date, bounding_box) =
     "RYF." * JRA55_dataset_variable_names[name] * ".1990_1991.nc"
 
-_build_filename(::RepeatYearJRA55, name, dates::AbstractArray, bounding_box) =
+build_filename(::RepeatYearJRA55, name, dates::AbstractArray, bounding_box) =
     "RYF." * JRA55_dataset_variable_names[name] * ".1990_1991.nc"
 
 function metadata_filename(::MultiYearJRA55, name, date, bounding_box)
