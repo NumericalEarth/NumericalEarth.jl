@@ -20,7 +20,7 @@ using Test
     @test mesh_meta.dataset isa ORCA1
 end
 
-@testset "ORCAGrid with ORCA1 dataset on $(arch)" for arch in archs
+@testset "ORCAGrid with ORCA1 dataset on $(arch)" for arch in test_architectures
     south_rows_to_remove = 43
     grid = ORCAGrid(arch; dataset=ORCA1(), Nz=5, z=(-5000, 0), halo=(4, 4, 4), south_rows_to_remove)
     @test grid.underlying_grid.Ny == 333 - south_rows_to_remove

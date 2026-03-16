@@ -21,9 +21,9 @@ delete!(testsuite, "test_distributed_utils")
 gpu_test = parse(Bool, get(ENV, "GPU_TEST", "false"))
 
 if filter_tests!(testsuite, args)
-    # Remove always CDS downloading and Reactant 
-    # since they are treated individually
+    # Always remove tests that are treated separately
     delete!(testsuite, "test_cds_downloading")
+    delete!(testsuite, "test_distributed_utils")
     delete!(testsuite, "test_reactant")
 
     # Remove CPU-only tests when
