@@ -57,6 +57,10 @@ using ClimaSeaIce.Rheologies
             Tm = KernelFunctionOperation{Center, Center, Center}(kernel_melting_temperature, grid, liquidus, S)
             @test all(T .≥ Tm)
 
+            backend = JRA55NetCDFBackend(4)
+            atmosphere = JRA55PrescribedAtmosphere(arch; backend)
+            radiation = Radiation(arch)
+            
             # Fluxes are computed when the model is constructed, so we just test that this works.
             # And that we can time step with sea ice
             @test begin
