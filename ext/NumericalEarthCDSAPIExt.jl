@@ -10,7 +10,7 @@ using Oceananigans.DistributedComputations: @root
 using Dates
 using NumericalEarth.DataWrangling.ERA5: ERA5Dataset, ERA5Metadata, ERA5Metadatum,
                                          ERA5_dataset_variable_names, ERA5_netcdf_variable_names
-using NumericalEarth.DataWrangling.ERA5: ERA5PressureDataset,
+using NumericalEarth.DataWrangling.ERA5: ERA5PressureLevelsDataset,
                                          ERA5PressureMetadata, ERA5PressureMetadatum,
                                          ERA5PL_dataset_variable_names, ERA5PL_netcdf_variable_names
 
@@ -20,14 +20,14 @@ import NumericalEarth.DataWrangling: download_dataset
 ##### Dispatch helpers — encapsulate single-level vs pressure-level differences
 #####
 
-_cds_product(::ERA5Dataset)         = "reanalysis-era5-single-levels"
-_cds_product(::ERA5PressureDataset) = "reanalysis-era5-pressure-levels"
+_cds_product(::ERA5Dataset)               = "reanalysis-era5-single-levels"
+_cds_product(::ERA5PressureLevelsDataset) = "reanalysis-era5-pressure-levels"
 
-_cds_varnames(::ERA5Dataset)         = ERA5_dataset_variable_names
-_cds_varnames(::ERA5PressureDataset) = ERA5PL_dataset_variable_names
+_cds_varnames(::ERA5Dataset)               = ERA5_dataset_variable_names
+_cds_varnames(::ERA5PressureLevelsDataset) = ERA5PL_dataset_variable_names
 
-_nc_varnames(::ERA5Dataset)         = ERA5_netcdf_variable_names
-_nc_varnames(::ERA5PressureDataset) = ERA5PL_netcdf_variable_names
+_nc_varnames(::ERA5Dataset)               = ERA5_netcdf_variable_names
+_nc_varnames(::ERA5PressureLevelsDataset) = ERA5PL_netcdf_variable_names
 
 # Coordinate / dimension variables to propagate into each split file
 const ERA5_COORD_VARS = Set(["longitude", "latitude",
@@ -39,11 +39,11 @@ const ERA5PL_COORD_VARS = Set(["longitude", "latitude",
                                "time", "valid_time",
                                "expver", "number"])
 
-_coord_vars(::ERA5Dataset)         = ERA5_COORD_VARS
-_coord_vars(::ERA5PressureDataset) = ERA5PL_COORD_VARS
+_coord_vars(::ERA5Dataset)               = ERA5_COORD_VARS
+_coord_vars(::ERA5PressureLevelsDataset) = ERA5PL_COORD_VARS
 
 _extra_request_keys!(request, ::ERA5Dataset) = nothing
-function _extra_request_keys!(request, ds::ERA5PressureDataset)
+function _extra_request_keys!(request, ds::ERA5PressureLevelsDataset)
     p_hPa = [round(Int, p * 1e-2) for p in ds.pressure_levels]
     request["pressure_level"] = [string(p) for p in p_hPa]
 end

@@ -1,10 +1,10 @@
-abstract type ERA5PressureDataset <: ERA5Dataset end
+abstract type ERA5PressureLevelsDataset <: ERA5Dataset end
 
 # ERA5PressureMetadata is a subtype of ERA5Metadata
-const ERA5PressureMetadata{D} = Metadata{<:ERA5PressureDataset, D}
-const ERA5PressureMetadatum   = Metadatum{<:ERA5PressureDataset}
+const ERA5PressureMetadata{D} = Metadata{<:ERA5PressureLevelsDataset, D}
+const ERA5PressureMetadatum   = Metadatum{<:ERA5PressureLevelsDataset}
 
-struct ERA5HourlyPressureLevels <: ERA5PressureDataset
+struct ERA5HourlyPressureLevels <: ERA5PressureLevelsDataset
     pressure_levels        :: Vector{Float64}
     z                      :: Union{Nothing, Vector{Float64}}
     mean_geopotential_height :: Bool
@@ -14,7 +14,7 @@ end
 ERA5HourlyPressureLevels(; pressure_levels=ERA5_all_pressure_levels, z=nothing, mean_geopotential_height=true) =
     ERA5HourlyPressureLevels(pressure_levels, z; mean_geopotential_height)
 
-struct ERA5MonthlyPressureLevels <: ERA5PressureDataset
+struct ERA5MonthlyPressureLevels <: ERA5PressureLevelsDataset
     pressure_levels        :: Vector{Float64}
     z                      :: Union{Nothing, Vector{Float64}}
     mean_geopotential_height :: Bool
@@ -44,9 +44,9 @@ const ERA5_all_pressure_levels = [1, 2, 3, 5, 7, 10, 20, 30, 50, 70, 100, 125, 1
     825, 850, 875, 900, 925, 950, 975, 1000]*hPa
 
 # ERA5 stores pressure levels bottom-to-top
-reversed_vertical_axis(::ERA5PressureDataset) = false
+reversed_vertical_axis(::ERA5PressureLevelsDataset) = false
 
-Base.size(ds::ERA5PressureDataset, variable) = (1440, 720, length(ds.pressure_levels))
+Base.size(ds::ERA5PressureLevelsDataset, variable) = (1440, 720, length(ds.pressure_levels))
 
 #####
 ##### ERA5 pressure-level variable name mappings
@@ -91,7 +91,7 @@ ERA5PL_netcdf_variable_names = Dict(
 )
 
 # Variables available for download
-available_variables(::ERA5PressureDataset) = ERA5PL_dataset_variable_names
+available_variables(::ERA5PressureLevelsDataset) = ERA5PL_dataset_variable_names
 dataset_variable_name(md::ERA5PressureMetadata) = ERA5PL_dataset_variable_names[md.name]
 netcdf_variable_name(md::ERA5PressureMetadata)  = ERA5PL_netcdf_variable_names[md.name]
 
@@ -165,7 +165,7 @@ end
 # Levels may be in any order; output is sorted so k=1 is highest pressure (lowest altitude).
 function standard_atmosphere_z_interfaces(levels)
     @info "Calculating z-interfaces based on the International Standard Atmosphere... \
-    For greater accuracy, set ERA5PressureDataset(; mean_geopotential_height=true)"
+    For greater accuracy, set ERA5PressureLevelsDataset(; mean_geopotential_height=true)"
     sorted_levels = sort(levels, rev=true)   # highest pressure first → k=1 is bottom
     heights = standard_atmosphere_geopotential_height.(Float64.(sorted_levels))
     Nz = length(heights)
