@@ -35,7 +35,7 @@ examples = [
     Example("Global climate simulation", "global_climate_simulation", false),
     Example("Veros ocean simulation", "veros_ocean_forced_simulation", false),
     Example("Breeze over two oceans", "breeze_over_two_oceans", false),
-    Example("ERA5 winds and Stokes drift", "ERA5_winds_and_stokes_drift", false),
+    Example("ERA5 winds and Stokes drift", "ERA5_winds_and_stokes_drift", true),
 ]
 
 # Developer examples from docs/src/developers/ directory
@@ -55,11 +55,13 @@ filter!(x -> x.build_always || build_all, developer_examples)
 for example in examples
     script_path = joinpath(EXAMPLES_DIR, example.basename * ".jl")
     run(`$(Base.julia_cmd()) --color=yes --project=$(dirname(Base.active_project())) $(joinpath(@__DIR__, "literate.jl")) $(script_path) $(OUTPUT_DIR)`)
+    CUDA.reclaim()
 end
 
 for example in developer_examples
     script_path = joinpath(DEVELOPERS_DIR, example.basename * ".jl")
     run(`$(Base.julia_cmd()) --color=yes --project=$(dirname(Base.active_project())) $(joinpath(@__DIR__, "literate.jl")) $(script_path) $(OUTPUT_DIR)`)
+    CUDA.reclaim()
 end
 
 #####

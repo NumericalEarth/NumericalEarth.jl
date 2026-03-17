@@ -55,7 +55,9 @@ end
 function download_dataset(meta::ERA5Metadatum; skip_existing=true)
     output_path = NumericalEarth.DataWrangling.metadata_path(meta)
 
+    # Skip download if file already exists
     skip_existing && isfile(output_path) && return output_path
+
     mkpath(dirname(output_path))
 
     date = meta.dates

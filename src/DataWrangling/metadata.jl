@@ -25,13 +25,28 @@ Create a bounding box with `latitude`, `longitude`, and `z` bounds on the sphere
 BoundingBox(; longitude=nothing, latitude=nothing, z=nothing) =
     BoundingBox(longitude, latitude, z)
 
-struct Metadata{V, D, B}
-    name  :: Symbol
+struct DatewiseFilename{A}
+    filenames :: A
+end
+
+Base.getindex(f::DatewiseFilename, i::Int) = f.filenames[i]
+Base.length(f::DatewiseFilename) = length(f.filenames)
+Base.unique(f::DatewiseFilename) = unique(f.filenames)
+
+getfilename(f::DatewiseFilename, i) = f.filenames[i]
+getfilename(f::String, i) = f
+getfilename(::Nothing, i) = nothing
+
+struct Metadata{V, D, B, S, F}
+    name :: S
     dataset :: V
     dates :: D
     bounding_box :: B
     dir :: String
+    filename :: F
 end
+
+Metadata(name, dataset, dates, bbox, dir) = Metadata(name, dataset, dates, bbox, dir, nothing)
 
 is_three_dimensional(::Metadata) = true
 z_interfaces(md::Metadata) = z_interfaces(md.dataset)
@@ -44,6 +59,7 @@ latitude_interfaces(md::Metadata) = latitude_interfaces(md.dataset)
              dates = all_dates(dataset, variable_name),
              dir = default_download_directory(dataset),
              bounding_box = nothing,
+             filename = nothing,
              start_date = nothing,
              end_date = nothing)
 
@@ -65,14 +81,18 @@ Keyword Arguments
            For a single date, use [`Metadatum`](@ref).
 
 - `start_date`: If `dates = nothing`, we can prescribe the first date of metadata as a date
-                (`Dates.AbstractDateTime` or `CFTime.AbstractCFDateTime`). If outside the 
+                (`Dates.AbstractDateTime` or `CFTime.AbstractCFDateTime`). If outside the
                 date range of the dataset, the first allowable date is chosen. Default: nothing.
 
 - `end_date`: If `dates = nothing`, we can prescribe the last date of metadata as a date
-              (`Dates.AbstractDateTime` or `CFTime.AbstractCFDateTime`). If outside the 
+              (`Dates.AbstractDateTime` or `CFTime.AbstractCFDateTime`). If outside the
                 date range of the dataset, the last allowable date is chosen. Default: nothing.
 
 - `bounding_box`: Specifies the bounds of the dataset. See [`BoundingBox`](@ref).
+
+- `filename`: The filename(s) for the dataset. If `nothing`, the filename is computed from
+              the dataset type. Can be a `String` (single file for all dates) or a
+              `DatewiseFilename` (one file per date).
 
 - `dir`: The directory where the dataset is stored.
 """
@@ -81,6 +101,7 @@ function Metadata(variable_name;
                   dates = all_dates(dataset, variable_name),
                   dir = default_download_directory(dataset),
                   bounding_box = nothing,
+                  filename = nothing,
                   start_date = nothing,
                   end_date = nothing)
 
@@ -95,7 +116,11 @@ function Metadata(variable_name;
         dates = compute_native_date_range(dates, start_date, end_date)
     end
 
-    return Metadata(variable_name, dataset, dates, bounding_box, dir)
+    if isnothing(filename)
+        filename = build_filename(dataset, variable_name, dates, bounding_box)
+    end
+
+    return Metadata(variable_name, dataset, dates, bounding_box, dir, filename)
 end
 
 const AnyDateTime  = Union{AbstractCFDateTime, Dates.AbstractDateTime}
@@ -117,6 +142,7 @@ end
               dataset,
               bounding_box = nothing,
               date = first_date(dataset, variable_name),
+              filename = nothing,
               dir = default_download_directory(dataset))
 
 A specialized constructor for a [`Metadata`](@ref) object with a single date, representative of a snapshot in time.
@@ -125,6 +151,7 @@ function Metadatum(variable_name;
                    dataset,
                    bounding_box = nothing,
                    date = first_date(dataset, variable_name),
+                   filename = nothing,
                    dir = default_download_directory(dataset))
 
     if date isa Date
@@ -136,7 +163,11 @@ function Metadatum(variable_name;
         throw(ArgumentError(msg))
     end
 
-    return Metadata(variable_name, dataset, date, bounding_box, dir)
+    if isnothing(filename)
+        filename = metadata_filename(dataset, variable_name, date, bounding_box)
+    end
+
+    return Metadata(variable_name, dataset, date, bounding_box, dir, filename)
 end
 
 datestr(md::Metadata) = string(first(md.dates), "--", last(md.dates))
@@ -166,6 +197,7 @@ function Base.show(io::IO, metadata::Metadata)
         print(io, "├── bounding_box: ", summary(bbox), '\n')
     end
 
+    print(io, "├── filename: $(metadata.filename)", '\n')
     print(io, "└── dir: $(metadata.dir)")
 end
 
@@ -180,13 +212,18 @@ Base.summary(md::Metadata) = string(metaprefix(md),
 # If only one date, it's a single element array
 Base.length(metadata::Metadatum) = 1
 
-@propagate_inbounds Base.getindex(m::Metadata, i::Int) = Metadata(m.name, m.dataset, m.dates[i],   m.bounding_box, m.dir)
-@propagate_inbounds Base.first(m::Metadata)            = Metadata(m.name, m.dataset, m.dates[1],   m.bounding_box, m.dir)
-@propagate_inbounds Base.last(m::Metadata)             = Metadata(m.name, m.dataset, m.dates[end], m.bounding_box, m.dir)
+@propagate_inbounds Base.getindex(m::Metadata, i::Int) =
+    Metadata(m.name, m.dataset, m.dates[i], m.bounding_box, m.dir, getfilename(m.filename, i))
+
+@propagate_inbounds Base.first(m::Metadata) =
+    Metadata(m.name, m.dataset, m.dates[1], m.bounding_box, m.dir, getfilename(m.filename, 1))
+
+@propagate_inbounds Base.last(m::Metadata) =
+    Metadata(m.name, m.dataset, m.dates[end], m.bounding_box, m.dir, getfilename(m.filename, lastindex(m.dates)))
 
 @inline function Base.iterate(m::Metadata, i=1)
    if (i % UInt) - 1 < length(m)
-        return Metadata(m.name, m.dataset, m.dates[i], m.bounding_box, m.dir), i + 1
+        return Metadata(m.name, m.dataset, m.dates[i], m.bounding_box, m.dir, getfilename(m.filename, i)), i + 1
     else
         return nothing
     end
@@ -199,8 +236,17 @@ Base.last(metadata::Metadatum)    = metadata
 Base.iterate(metadata::Metadatum) = (metadata, nothing)
 Base.iterate(::Metadatum, ::Any)  = nothing
 
-metadata_path(metadata::Metadatum) = joinpath(metadata.dir, metadata_filename(metadata))
-metadata_path(metadata::Metadata) = [metadata_path(metadatum) for metadatum in metadata]
+metadata_path(metadata::Metadatum) = joinpath(metadata.dir, metadata.filename)
+
+function metadata_path(metadata::Metadata)
+    fn = metadata.filename
+    if fn isa DatewiseFilename
+        return [joinpath(metadata.dir, f) for f in fn.filenames]
+    else
+        # Single filename (String) — one file for all dates
+        return joinpath(metadata.dir, fn)
+    end
+end
 
 """
     native_times(metadata; start_time=first(metadata).dates)
@@ -272,10 +318,25 @@ last_date(dataset, variable_name) = last(all_dates(dataset, variable_name))
 """
     metadata_filename(metadata)
 
-File names of metadata containing multiple dates. The specific version for a `Metadatum` object is
-extended in the data specific modules.
+Return the stored filename(s) of `metadata`.
 """
-metadata_filename(metadata) = [metadata_filename(metadatum) for metadatum in metadata]
+metadata_filename(metadata::Metadata) = metadata.filename
+
+"""
+    metadata_filename(dataset, name, date, bounding_box)
+
+Compute the filename for a single date. Extended by each dataset module.
+"""
+function metadata_filename end
+
+# Internal: build filename for construction.
+# Single date: delegate to metadata_filename
+build_filename(dataset, name, date, bounding_box) =
+    metadata_filename(dataset, name, date, bounding_box)
+
+# Multi-date: one filename per date, wrapped in DatewiseFilename
+build_filename(dataset, name, dates::AbstractArray, bounding_box) =
+    DatewiseFilename([metadata_filename(dataset, name, d, bounding_box) for d in dates])
 
 """
     available_variables(metadata)

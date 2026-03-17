@@ -20,8 +20,12 @@ authors:
     given-names: Navid C.
     orcid: 'https://orcid.org/0000-0002-8149-4094'
     affiliation: University of Melbourne
-  - given-names: Jago
-    family-names: Strong-Wright
+  - family-names: Giordano
+    given-names: Mosè
+    orcid: 'https://orcid.org/0000-0002-7218-2873'
+    affiliation: University College London
+  - family-names: Strong-Wright
+    given-names: Jago
     orcid: 'https://orcid.org/0000-0002-7174-5283'
     affiliation: University of Cambridge
   - given-names: Taimoor
