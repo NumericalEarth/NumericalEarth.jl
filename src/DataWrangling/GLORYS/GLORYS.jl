@@ -97,36 +97,35 @@ end
 
 colon2dash(s::String) = replace(s, ":" => "-")
 
-function metadata_prefix(metadata::GLORYSMetadata)
-    var = GLORYS_dataset_variable_names[metadata.name]
-    dataset = dataset_name(metadata.dataset)
-    start_date = start_date_str(metadata.dates)
-    end_date = end_date_str(metadata.dates)
-    bbox = metadata.bounding_box
-    if !isnothing(bbox)
-        w, e = bbox_strs(bbox.longitude)
-        s, n = bbox_strs(bbox.latitude)
+function metadata_prefix(dataset::GLORYSDataset, name, date, bounding_box)
+    var = GLORYS_dataset_variable_names[name]
+    ds = dataset_name(dataset)
+    start_date = start_date_str(date)
+    end_date = end_date_str(date)
+    if !isnothing(bounding_box)
+        w, e = bbox_strs(bounding_box.longitude)
+        s, n = bbox_strs(bounding_box.latitude)
         suffix = string(w, e, s, n)
     else
         suffix = ""
     end
     return string(var, "_",
-                  dataset, "_",
+                  ds, "_",
                   start_date, "_",
                   end_date, suffix) |> colon2dash
 end
 
-function metadata_filename(metadata::GLORYSMetadata)
-    prefix = metadata_prefix(metadata)
+function metadata_filename(dataset::GLORYSDataset, name, date, bounding_box)
+    prefix = metadata_prefix(dataset, name, date, bounding_box)
     return string(prefix, ".nc")
 end
 
-function inpainted_metadata_filename(metadata::GLORYSMetadata)
-    prefix = metadata_prefix(metadata)
+function inpainted_metadata_filename(metadata::GLORYSMetadatum)
+    prefix = metadata_prefix(metadata.dataset, metadata.name, metadata.dates, metadata.bounding_box)
     return string(prefix, "_inpainted.jld2")
 end
 
-inpainted_metadata_path(metadata::GLORYSMetadata) = joinpath(metadata.dir, inpainted_metadata_filename(metadata))
+inpainted_metadata_path(metadata::GLORYSMetadatum) = joinpath(metadata.dir, inpainted_metadata_filename(metadata))
 
 location(::GLORYSMetadata) = (Center, Center, Center)
 longitude_interfaces(::GLORYSMetadata) = (-180, 180)

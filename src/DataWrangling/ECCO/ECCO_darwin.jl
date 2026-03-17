@@ -14,11 +14,11 @@ Base.size(::Metadatum{<:ECCO4DarwinMonthly})    = (720,  360, 50, 1)
 Base.size(data::Metadata{<:ECCO2DarwinMonthly}) = (1440, 720, 50, length(data.dates))
 Base.size(::Metadatum{<:ECCO2DarwinMonthly})    = (1440, 720, 50, 1)
 
-metadata_time_step(::Metadatum{<:ECCO4DarwinMonthly}) = 3600
-metadata_epoch(::Metadatum{<:ECCO4DarwinMonthly}) = DateTime(1992, 1, 1, 12, 0, 0)
+metadata_time_step(::ECCO4DarwinMonthly) = 3600
+metadata_epoch(::ECCO4DarwinMonthly) = DateTime(1992, 1, 1, 12, 0, 0)
 
-metadata_time_step(::Metadatum{<:ECCO2DarwinMonthly}) = 1200
-metadata_epoch(::Metadatum{<:ECCO2DarwinMonthly}) = DateTime(1992, 1, 1, 0, 0, 0)
+metadata_time_step(::ECCO2DarwinMonthly) = 1200
+metadata_epoch(::ECCO2DarwinMonthly) = DateTime(1992, 1, 1, 0, 0, 0)
 
 # The whole range of dates in the different dataset datasets
 all_dates(dataset::ECCO4DarwinMonthly, name) = metadata_epoch(dataset) : Month(1) : DateTime(2023, 3, 1)
@@ -26,21 +26,21 @@ all_dates(dataset::ECCO2DarwinMonthly, name) = metadata_epoch(dataset) : Month(1
 
 # File name generation specific to each Dataset dataset
 """
-    metadata_filename(metadata::Metadatum{<:Union{ECCO2DarwinMonthly, ECCO4DarwinMonthly}})
+    metadata_filename(dataset, name, date, bounding_box)
 
 Generate the filename for a given ECCO Darwin dataset and date.
 
 The filename is constructed using the dataset variable name, and the iteration number is calculated
 from the date and epoch.
 """
-function metadata_filename(metadata::Metadatum{<:Union{ECCO2DarwinMonthly, ECCO4DarwinMonthly}})
-    shortname = dataset_variable_name(metadata)
+function metadata_filename(dataset::Union{ECCO2DarwinMonthly, ECCO4DarwinMonthly}, name, date, bounding_box)
+    shortname = ECCO_darwin_dataset_variable_names[name]
 
-    reference_date = metadata_epoch(metadata)
-    timestep_size  = metadata_time_step(metadata)
+    reference_date = metadata_epoch(dataset)
+    timestep_size  = metadata_time_step(dataset)
 
     # Explicitly convert to Int to avoid return of a float
-    iternum = Int(Dates.value((metadata.dates - reference_date) / (timestep_size * 1e3)))
+    iternum = Int(Dates.value((date - reference_date) / (timestep_size * 1e3)))
     iterstr = string(iternum, pad=10)
 
     return shortname * "." * iterstr * ".data"
@@ -97,8 +97,8 @@ function default_download_directory(::ECCO2DarwinMonthly)
     return mkpath(path)
 end
 
-metadata_url(m::Metadata{<:ECCO4DarwinMonthly}) = ECCO4Darwin_url * "monthly/" * dataset_variable_name(m) * "/" * metadata_filename(m)
-metadata_url(m::Metadata{<:ECCO2DarwinMonthly}) = ECCO2Darwin_url * "monthly/" * dataset_variable_name(m) * "/" * metadata_filename(m)
+metadata_url(m::Metadata{<:ECCO4DarwinMonthly}) = ECCO4Darwin_url * "monthly/" * dataset_variable_name(m) * "/" * m.filename
+metadata_url(m::Metadata{<:ECCO2DarwinMonthly}) = ECCO2Darwin_url * "monthly/" * dataset_variable_name(m) * "/" * m.filename
 
 # Functions for reading the ECCO binary files using MeshArrays
 binary_data_grid(::ECCO4DarwinMonthly) = GridSpec(ID=:LLC90)

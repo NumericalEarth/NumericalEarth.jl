@@ -43,7 +43,7 @@ See https://cds.climate.copernicus.eu/how-to-api for details.
 function download_dataset(meta::ERA5Metadatum; skip_existing=true)
 
     output_directory = meta.dir
-    output_filename = NumericalEarth.DataWrangling.metadata_filename(meta)
+    output_filename = meta.filename
     output_path = joinpath(output_directory, output_filename)
 
     # Skip if file already exists
