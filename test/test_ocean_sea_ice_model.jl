@@ -24,6 +24,7 @@ using ClimaSeaIce.Rheologies
                                 major_basins = 1)
 
         grid = ImmersedBoundaryGrid(grid, GridFittedBottom(bottom_height); active_cells_map=true)
+        free_surface = SplitExplicitFreeSurface(grid; substeps=20)
 
         #####
         ##### Coupled ocean-sea ice and prescribed atmosphere
@@ -39,7 +40,9 @@ using ClimaSeaIce.Rheologies
     
             temperature_metadata = Metadata(:temperature; dataset, dates)
             salinity_metadata    = Metadata(:salinity; dataset, dates)
-        
+
+            ocean = ocean_simulation(grid; free_surface)
+
             sea_ice  = sea_ice_simulation(grid, ocean; advection=WENO(order=7))
             liquidus = sea_ice.model.ice_thermodynamics.phase_transitions.liquidus
 
