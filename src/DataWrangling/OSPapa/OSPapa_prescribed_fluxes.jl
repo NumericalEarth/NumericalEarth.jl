@@ -165,11 +165,11 @@ function PrescribedFluxCallback(ocean, fluxes; ρ₀=reference_density(ocean), c
         # Oceananigans FluxBoundaryCondition: positive = out of domain
         Jᵀ[1, 1, 1] = -Qnet_now / (ρ₀ * cₚ)
 
-        # Salinity: EMP (mm/hr) → salinity flux
+        # Salinity: EMP (mm/hr ≡ kg/m²/hr) → salinity flux
         # EMP > 0 means net evaporation (ocean loses freshwater, salinity increases)
-        # Convert mm/hr → m/s: divide by (1000 * 3600)
+        # Convert mass flux to Boussinesq volume flux: divide by (ρ₀ * 3600)
         EMP_now = interp(fluxes.EMP)
-        EMP_ms = EMP_now / (1000 * 3600)  # mm/hr → m/s of freshwater
+        EMP_ms = EMP_now / (ρ₀ * 3600)  # kg/m²/hr → m/s (Boussinesq volume flux)
 
         # Salinity flux: following assemble_net_ocean_fluxes.jl: Jˢ = -S * ΣFao
         # EMP > 0 = net evaporation = salinity should increase
@@ -259,10 +259,10 @@ function OSPapaPrescribedFluxBoundaryConditions(fluxes, architecture=CPU(); ρ�
         return -interp_flux(p.Qnet, p.times, p.Nt, p.time_indexing, clock.time) / (p.ρ₀ * p.cₚ)
     end
 
-    # Salinity: EMP > 0 = net evaporation → salinity should increase
+    # Salinity: EMP (mm/hr ≡ kg/m²/hr) > 0 = net evaporation → salinity should increase
     # Jˢ = -S * EMP_ms (negative top flux = INTO domain = S increases)
     @inline function Jˢ_bc(i, j, grid, clock, model_fields, p)
-        EMP_ms = interp_flux(p.EMP, p.times, p.Nt, p.time_indexing, clock.time) / (1000 * 3600)
+        EMP_ms = interp_flux(p.EMP, p.times, p.Nt, p.time_indexing, clock.time) / (p.ρ₀ * 3600)
         S = model_fields.S[i, j, grid.Nz]
         return -S * EMP_ms
     end
@@ -270,7 +270,7 @@ function OSPapaPrescribedFluxBoundaryConditions(fluxes, architecture=CPU(); ρ�
     params_τx = (; τx=τx_data, times=times_arch, Nt, time_indexing, ρ₀)
     params_τy = (; τy=τy_data, times=times_arch, Nt, time_indexing, ρ₀)
     params_T  = (; Qnet=Qnet_data, times=times_arch, Nt, time_indexing, ρ₀, cₚ)
-    params_S  = (; EMP=EMP_data, times=times_arch, Nt, time_indexing)
+    params_S  = (; EMP=EMP_data, times=times_arch, Nt, time_indexing, ρ₀)
 
     u_top = FluxBoundaryCondition(τx_bc, discrete_form=true, parameters=params_τx)
     v_top = FluxBoundaryCondition(τy_bc, discrete_form=true, parameters=params_τy)
