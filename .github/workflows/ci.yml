@@ -108,6 +108,7 @@ jobs:
       # host's EBS disk) to avoid filling the container's overlay filesystem with
       # large data downloads and compiled artifacts.
       TMPDIR: /__w/_temp
+      JULIA_DEPOT_PATH: '/__w/_temp/depot:/usr/local/share/julia:'
     steps:
       - uses: actions/checkout@v6
       - name: Create workspace temp directories
