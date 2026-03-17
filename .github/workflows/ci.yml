@@ -38,7 +38,7 @@ env:
 
 jobs:
   cpu_tests:
-    name: ${{ matrix.test_group }} (CPU) - Julia ${{ matrix.version }}
+    name: (CPU) - Julia ${{ matrix.version }}
     runs-on: ${{ matrix.os }}
     timeout-minutes: 120
     strategy:
@@ -50,20 +50,6 @@ jobs:
           - ubuntu-latest
         arch:
           - "default"
-        test_group:
-          - JRA55
-          - ecco2_monthly
-          - ecco2_daily
-          - ecco4_en4
-          - ecco_atmosphere
-          - fluxes
-          - bathymetry_orca1
-          - checkpointing
-          - speedy_weather
-          - breeze
-          - downloading
-          - veros
-          - woa
     steps:
       - name: Show available storage before cleanup
         run: |
@@ -90,15 +76,16 @@ jobs:
         with:
           version: ${{ matrix.version }}
           arch: ${{ matrix.arch }}
-      - uses: julia-actions/cache@v2
+      - uses: julia-actions/cache@v3
+        with:
+          cache-scratchspaces: false
       - uses: julia-actions/julia-runtest@v1
-        env:
-          TEST_GROUP: ${{ matrix.test_group }}
+        with:
+          test_args: '--verbose'
       - uses: julia-actions/julia-processcoverage@v1
       - uses: codecov/codecov-action@v5
         with:
           files: lcov.info
-          flags: ${{ matrix.test_group }}
           token: ${{ secrets.CODECOV_TOKEN }}
 
   #####
@@ -106,7 +93,7 @@ jobs:
   #####
 
   gpu_tests:
-    name: ${{ matrix.test_group }} (GPU)
+    name: (GPU)
     runs-on: aws-linux-nvidia-gpu-l4
     container:
       image: ghcr.io/numericalearth/numerical-earth-docker-images:test-julia_1.12.5
@@ -114,27 +101,14 @@ jobs:
     timeout-minutes: 120
     strategy:
       fail-fast: false
-      matrix:
-        test_group:
-          - ecco2_monthly
-          - ecco2_daily
-          - ecco4_en4
-          - ecco_atmosphere
-          - fluxes
-          - bathymetry_orca1
-          - checkpointing
-          - earth_system_model
-          - breeze
-          - JRA55
-          - woa
     env:
       GPU_TEST: "true"
       OPENBLAS_NUM_THREADS: 1
-      TEST_GROUP: ${{ matrix.test_group }}
       # Redirect temp to the workspace volume (bind-mounted from the
       # host's EBS disk) to avoid filling the container's overlay filesystem with
       # large data downloads and compiled artifacts.
       TMPDIR: /__w/_temp
+      JULIA_DEPOT_PATH: '/__w/_temp/depot:/usr/local/share/julia:'
     steps:
       - uses: actions/checkout@v6
       - name: Create workspace temp directories
@@ -149,13 +123,13 @@ jobs:
           julia --project --color=yes --check-bounds=yes -e '
               using Pkg;
               Pkg.test(; coverage=true,
-                       julia_args=["--check-bounds=yes", "--compiled-modules=yes", "-O0"])
+                       julia_args=["--check-bounds=yes", "--compiled-modules=yes", "-O0"],
+                       test_args=["--verbose"])
           '
       - uses: julia-actions/julia-processcoverage@v1
       - uses: codecov/codecov-action@v5
         with:
           files: lcov.info
-          flags: ${{ matrix.test_group }}
           token: ${{ secrets.CODECOV_TOKEN }}
 
   #####
@@ -163,7 +137,7 @@ jobs:
   #####
 
   cds_downloading:
-    name: CDS Downloading - Julia ${{ matrix.version }} - ${{ matrix.os }} - ${{ matrix.arch }} - ${{ github.event_name }}
+    name: Data Downloading - Julia ${{ matrix.version }} - ${{ matrix.os }} - ${{ matrix.arch }} - ${{ github.event_name }}
     runs-on: ${{ matrix.os }}
     timeout-minutes: 60
     strategy:
@@ -181,21 +155,27 @@ jobs:
             version: "1.12.5"
     steps:
       - uses: actions/checkout@v6
-      - uses: julia-actions/setup-julia@latest
+      - uses: julia-actions/setup-julia@v2
         with:
           version: ${{ matrix.version }}
           arch: ${{ matrix.arch }}
-      - uses: julia-actions/cache@v2
-      - uses: julia-actions/julia-buildpkg@v1
-      - uses: julia-actions/julia-runtest@v1
-        env:
-          TEST_GROUP: "cds_downloading"
+      - uses: julia-actions/cache@v3
+        with:
+          cache-scratchspaces: false
+      - name: Run tests
+        run: |
+          julia --project --color=yes --check-bounds=yes -e '
+              using Pkg;
+              Pkg.test(; coverage=true,
+                        julia_args=["--check-bounds=yes", "--compiled-modules=yes", "-O0"],
+                        test_args=["--verbose", "test_cds_downloading", "test_downloading"])
+          '
       - uses: julia-actions/julia-processcoverage@v1
       - uses: codecov/codecov-action@v5
         with:
           files: lcov.info
           token: ${{ secrets.CODECOV_TOKEN }}
-
+  
   reactant:
     name: Reactant extension - Julia ${{ matrix.version }} - ${{ matrix.os }} - ${{ matrix.arch }} - ${{ github.event_name }}
     runs-on: ${{ matrix.os }}
@@ -211,22 +191,27 @@ jobs:
           - default
     steps:
       - uses: actions/checkout@v6
-      - uses: julia-actions/setup-julia@latest
+      - uses: julia-actions/setup-julia@v2
         with:
           version: ${{ matrix.version }}
           arch: ${{ matrix.arch }}
-      - uses: julia-actions/cache@v2
-      - uses: julia-actions/julia-buildpkg@v1
-      - uses: julia-actions/julia-runtest@v1
-        env:
-          TEST_GROUP: "reactant"
-          GPU_TEST: "false"
+      - uses: julia-actions/cache@v3
+        with:
+          cache-scratchspaces: false
+      - name: Run tests
+        run: |
+          julia --project --color=yes --check-bounds=yes -e '
+              using Pkg;
+              Pkg.test(; coverage=true,
+                        julia_args=["--check-bounds=yes", "--compiled-modules=yes", "-O0"],
+                        test_args=["--verbose", "test_reactant"])
+          '
       - uses: julia-actions/julia-processcoverage@v1
       - uses: codecov/codecov-action@v5
         with:
           files: lcov.info
           token: ${{ secrets.CODECOV_TOKEN }}
-
+  
   #####
   ##### Distributed MPI tests (GitHub-hosted runners)
   #####
