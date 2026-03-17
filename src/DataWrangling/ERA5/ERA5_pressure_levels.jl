@@ -231,7 +231,8 @@ function mean_geopotential_heights(metadata::ERA5PressureMetadata)
     for ϕ_datum in ϕ_metadata
         data = retrieve_data(ϕ_datum) ./ Float32(ERA5_gravitational_acceleration)   # Φ → Z (m)
         # average over horizontal dims
-        heights .+= dropdims(mean(data; dims=(1, 2)); dims=(1, 2))
+        data_mean = mean(data; dims=(1, 2))
+        heights .+= dropdims(data_mean; dims=(1, 2))
     end
     heights ./= length(ϕ_metadata)
 

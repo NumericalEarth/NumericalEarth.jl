@@ -173,13 +173,16 @@ Download multiple ERA5 pressure-level variables for a single date in one CDS API
 The multi-variable NetCDF is split into individual per-variable files.
 """
 function download_dataset(names::Vector{Symbol}, meta::ERA5PressureMetadatum; skip_existing=true)
-    name_path_pairs = [(name, NumericalEarth.DataWrangling.metadata_path(
-                            NumericalEarth.DataWrangling.Metadatum(name;
-                                dataset      = meta.dataset,
-                                bounding_box = meta.bounding_box,
-                                date         = meta.dates,
-                                dir          = meta.dir)))
-                       for name in names]
+    name_path_pairs = []
+    for name in names
+        metadatum = NumericalEarth.DataWrangling.Metadatum(name;
+                                                           dataset      = meta.dataset,
+                                                           bounding_box = meta.bounding_box,
+                                                           date         = meta.dates,
+                                                           dir          = meta.dir)
+        path = NumericalEarth.DataWrangling.metadata_path(metadatum)
+        push!(name_path_pairs, (name, path))
+    end
 
     pending = if skip_existing
         [(n, p) for (n, p) in name_path_pairs if !isfile(p)]
