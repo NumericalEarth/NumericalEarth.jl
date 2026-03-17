@@ -1,18 +1,15 @@
-# Breeze.jl — Agent Rules
+# NumericalEarth.jl — Agent Rules
 
 ## Project Overview
 
-Breeze.jl is Julia software for simulating atmospheric flows.
-It relies on [Oceananigans.jl](https://github.com/CliMA/Oceananigans.jl) for grids, fields, solvers, and advection schemes,
-with extensions to CloudMicrophysics for microphysical schemes, RRTMGP for radiative transfer solvers,
-and interfaces with ClimaOcean for coupled atmosphere-ocean simulations.
+NumericalEarth.jl provides infrastructure for running Earth system model components—ocean, atmosphere, sea ice, and others—coupled together or driven by prescribed datasets. The coupling interface is generic: plug in [Oceananigans.jl](https://github.com/CliMA/Oceananigans.jl) for ocean dynamics, [ClimaSeaIce.jl](https://github.com/CliMA/ClimaSeaIce.jl) for sea ice, SpeedyWeather or other atmospheric models, or use reanalysis products like JRA55 and ERA5 as prescribed forcing.
 
 ## Language & Environment
 
 - **Julia 1.10+** | CPU and GPU (CUDA)
-- **Key packages**: Oceananigans.jl, CloudMicrophysics.jl, RRTMGP.jl, ClimaOcean.jl,
+- **Key packages**: Oceananigans.jl, ClimaSeaIce.jl, SpeedyWeather.jl,
                     KernelAbstractions.jl, CUDA.jl, Enzyme.jl, Reactant.jl
-- **Style**: ExplicitImports.jl for source code; `using Oceananigans` and `using Breeze` for examples
+- **Style**: ExplicitImports.jl for source code; `using NumericalEarth` for examples
 - **Testing**: ParallelTestRunner.jl for distributed testing
 
 ## Critical Rules
@@ -41,9 +38,9 @@ and interfaces with ClimaOcean for coupled atmosphere-ocean simulations.
 - Source code: explicit imports (checked by tests). Never use `import` to extend functions;
   always use `Module.function_name(...) = ...` or `function Module.function_name() ... end`
 - Exports at the top of module files, before other code
-- Import Oceananigans/Breeze names first, then external packages
-- Internal Breeze imports use absolute paths, not relative
-- Examples/docs: rely on `using Oceananigans` and `using Breeze`
+- Import Oceananigans/NumericalEarth names first, then external packages
+- Internal NumericalEarth imports use absolute paths, not relative
+- Examples/docs: rely on `using Oceananigans` and `using NumericalEarth`
 
 ### Docstrings
 
@@ -75,26 +72,16 @@ and interfaces with ClimaOcean for coupled atmosphere-ocean simulations.
 
 ```
 src/
-├── Breeze.jl                  # Main module, exports
-├── Thermodynamics/            # Thermodynamic states & equations
-├── AtmosphereModels/          # Core atmosphere model logic
-├── Microphysics/              # Cloud microphysics
-├── TurbulenceClosures/        # Including those ported from Oceananigans
-├── Advection.jl               # Advection operators for anelastic models
-├── CompressibleEquations/     # Compressible dynamics
-├── AnelasticEquations/        # Anelastic dynamics
-├── ParcelModels/              # Parcel model dynamics
-└── MoistAirBuoyancies.jl      # Legacy buoyancy for Oceananigans.NonhydrostaticModel
+├── NumericalEarth.jl         # Main module, exports
+├── Atmospheres/              # Interfaces for atmospheres (prescribed or diagnostic)
+├── Bathymetry/               # Module for downloading and modifying bathymetry and topography
+├── DataWrangling/            # Interfaces for atmospheres (prescribed or diagnostic)
+├── Diagnostics/              # Various diagnostics from all model components
+├── EarthSystemModels/        # Module that brings all Earth system model components together
+├── InitialConditions/        # Module for initial conditions
+├── Oceans/                   # Interfaces for oceans (prescribed or diagnostic)
+└── SeaIces/                  # Interfaces for sea ices (prescribed or diagnostic)
 ```
-
-## Breeze Formulations
-
-Breeze uses "formulations" for different equation sets. Currently `AnelasticDynamics` in conservation
-form (all prognostics are densities) with two thermodynamic formulations:
-  - `LiquidIcePotentialTemperatureThermodynamics` — prognostic `ρθ`
-  - `StaticEnergyThermodynamics` — prognostic `ρe`
-
-Planned: fully compressible formulation, `EntropyThermodynamics` (prognostic `ρη`).
 
 ## Common Pitfalls
 
