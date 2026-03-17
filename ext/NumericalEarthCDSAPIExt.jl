@@ -20,14 +20,14 @@ import NumericalEarth.DataWrangling: download_dataset
 ##### Dispatch helpers — encapsulate single-level vs pressure-level differences
 #####
 
-_cds_product(::ERA5Dataset)               = "reanalysis-era5-single-levels"
-_cds_product(::ERA5PressureLevelsDataset) = "reanalysis-era5-pressure-levels"
+cds_product(::ERA5Dataset)               = "reanalysis-era5-single-levels"
+cds_product(::ERA5PressureLevelsDataset) = "reanalysis-era5-pressure-levels"
 
-_cds_varnames(::ERA5Dataset)               = ERA5_dataset_variable_names
-_cds_varnames(::ERA5PressureLevelsDataset) = ERA5PL_dataset_variable_names
+cds_varnames(::ERA5Dataset)               = ERA5_dataset_variable_names
+cds_varnames(::ERA5PressureLevelsDataset) = ERA5PL_dataset_variable_names
 
-_nc_varnames(::ERA5Dataset)               = ERA5_netcdf_variable_names
-_nc_varnames(::ERA5PressureLevelsDataset) = ERA5PL_netcdf_variable_names
+nc_varnames(::ERA5Dataset)               = ERA5_netcdf_variable_names
+nc_varnames(::ERA5PressureLevelsDataset) = ERA5PL_netcdf_variable_names
 
 # Coordinate / dimension variables to propagate into each split file
 const ERA5_COORD_VARS = Set(["longitude", "latitude",
@@ -39,11 +39,11 @@ const ERA5PL_COORD_VARS = Set(["longitude", "latitude",
                                "time", "valid_time",
                                "expver", "number"])
 
-_coord_vars(::ERA5Dataset)               = ERA5_COORD_VARS
-_coord_vars(::ERA5PressureLevelsDataset) = ERA5PL_COORD_VARS
+coord_vars(::ERA5Dataset)               = ERA5_COORD_VARS
+coord_vars(::ERA5PressureLevelsDataset) = ERA5PL_COORD_VARS
 
-_extra_request_keys!(request, ::ERA5Dataset) = nothing
-function _extra_request_keys!(request, ds::ERA5PressureLevelsDataset)
+extra_request_keys!(request, ::ERA5Dataset) = nothing
+function extra_request_keys!(request, ds::ERA5PressureLevelsDataset)
     p_hPa = [round(Int, p * 1e-2) for p in ds.pressure_levels]
     request["pressure_level"] = [string(p) for p in p_hPa]
 end
@@ -63,7 +63,7 @@ function download_dataset(meta::ERA5Metadatum; skip_existing=true)
     date = meta.dates
     request = Dict(
         "product_type"    => ["reanalysis"],
-        "variable"        => [_cds_varnames(meta.dataset)[meta.name]],
+        "variable"        => [cds_varnames(meta.dataset)[meta.name]],
         "year"            => [string(Dates.year(date))],
         "month"           => [lpad(string(Dates.month(date)), 2, '0')],
         "day"             => [lpad(string(Dates.day(date)), 2, '0')],
@@ -72,11 +72,11 @@ function download_dataset(meta::ERA5Metadatum; skip_existing=true)
         "download_format" => "unarchived",
     )
 
-    _extra_request_keys!(request, meta.dataset)
+    extra_request_keys!(request, meta.dataset)
     area = build_era5_area(meta.bounding_box)
     isnothing(area) || (request["area"] = area)
 
-    @root CDSAPI.retrieve(_cds_product(meta.dataset), request, output_path)
+    @root CDSAPI.retrieve(cds_product(meta.dataset), request, output_path)
 
     return output_path
 end
@@ -91,14 +91,14 @@ function download_dataset(metadata::ERA5Metadata; skip_existing=true, cleanup=tr
                    for d in unique(Dates.Date.(dates)))
 
     for day in sort(collect(keys(grouped)))
-        _download_era5_day(metadata.name, metadata.dataset, grouped[day];
+        download_era5_day(metadata.name, metadata.dataset, grouped[day];
                            bounding_box = metadata.bounding_box,
                            dir = metadata.dir,
                            skip_existing, cleanup)
     end
 end
 
-function _download_era5_day(name, dataset, day_dates;
+function download_era5_day(name, dataset, day_dates;
                             bounding_box, dir, skip_existing, cleanup)
 
     MDatum    = NumericalEarth.DataWrangling.Metadatum
@@ -121,7 +121,7 @@ function _download_era5_day(name, dataset, day_dates;
 
     request = Dict(
         "product_type"    => ["reanalysis"],
-        "variable"        => [_cds_varnames(dataset)[name]],
+        "variable"        => [cds_varnames(dataset)[name]],
         "year"            => [year],
         "month"           => [month],
         "day"             => [day],
@@ -130,20 +130,20 @@ function _download_era5_day(name, dataset, day_dates;
         "download_format" => "unarchived",
     )
 
-    _extra_request_keys!(request, dataset)
+    extra_request_keys!(request, dataset)
     area = build_era5_area(bounding_box)
     isnothing(area) || (request["area"] = area)
 
     mkpath(dir)
     tmp_path   = joinpath(dir, "_tmp_$(year)$(month)$(day).nc")
-    nc_varname = _nc_varnames(dataset)[name]
+    nc_varname = nc_varnames(dataset)[name]
     nc_triples = [(nc_varname, dt_to_tidx[dt], path) for (dt, path) in pending]
 
     time_dimnames = Set(["time", "valid_time"])
 
     @root begin
-        CDSAPI.retrieve(_cds_product(dataset), request, tmp_path)
-        _split_era5_nc_multistep(tmp_path, nc_triples, _coord_vars(dataset), time_dimnames)
+        CDSAPI.retrieve(cds_product(dataset), request, tmp_path)
+        split_era5_nc_multistep(tmp_path, nc_triples, coord_vars(dataset), time_dimnames)
         cleanup && rm(tmp_path; force=true)
     end
 
@@ -192,7 +192,7 @@ function download_dataset(names::Vector{Symbol}, meta::ERA5PressureMetadatum; sk
 
     isempty(pending) && return [path for (_, path) in name_path_pairs]
 
-    cds_vars = unique([_cds_varnames(meta.dataset)[name] for (name, _) in pending])
+    cds_vars = unique([cds_varnames(meta.dataset)[name] for (name, _) in pending])
 
     date  = meta.dates
     year  = string(Dates.year(date))
@@ -211,18 +211,18 @@ function download_dataset(names::Vector{Symbol}, meta::ERA5PressureMetadatum; sk
         "download_format" => "unarchived",
     )
 
-    _extra_request_keys!(request, meta.dataset)
+    extra_request_keys!(request, meta.dataset)
     area = build_era5_area(meta.bounding_box)
     isnothing(area) || (request["area"] = area)
 
     mkpath(meta.dir)
     tmp_path = joinpath(meta.dir, "_tmp_multi_$(year)$(month)$(day)T$(hour[1:2]).nc")
 
-    nc_name_path_pairs = [(_nc_varnames(meta.dataset)[name], path) for (name, path) in pending]
+    nc_name_path_pairs = [(nc_varnames(meta.dataset)[name], path) for (name, path) in pending]
 
     @root begin
-        CDSAPI.retrieve(_cds_product(meta.dataset), request, tmp_path)
-        _split_era5_nc(tmp_path, nc_name_path_pairs, _coord_vars(meta.dataset))
+        CDSAPI.retrieve(cds_product(meta.dataset), request, tmp_path)
+        split_era5_nc(tmp_path, nc_name_path_pairs, coord_vars(meta.dataset))
         rm(tmp_path; force=true)
     end
 
@@ -264,7 +264,7 @@ function download_dataset(names::Vector{Symbol},
                    for d in unique(Dates.Date.(datetimes)))
 
     for day in sort(collect(keys(grouped)))
-        _download_era5_multivar_day(names, dataset, grouped[day]; bounding_box, dir, skip_existing, cleanup)
+        download_era5_multivar_day(names, dataset, grouped[day]; bounding_box, dir, skip_existing, cleanup)
     end
 
     return nothing
@@ -280,7 +280,7 @@ function download_dataset(name::Symbol,
     return download_dataset([name], dataset, datetimes; bounding_box, dir, skip_existing, cleanup)
 end
 
-function _download_era5_multivar_day(names, dataset, day_dates;
+function download_era5_multivar_day(names, dataset, day_dates;
                                      bounding_box, dir, skip_existing, cleanup)
 
     MDatum    = NumericalEarth.DataWrangling.Metadatum
@@ -292,7 +292,7 @@ function _download_era5_multivar_day(names, dataset, day_dates;
     pending = skip_existing ? filter(((_, _, p),) -> !isfile(p), all_triples) : all_triples
     isempty(pending) && return nothing
 
-    cds_vars   = unique([_cds_varnames(dataset)[name] for (name, _, _) in pending])
+    cds_vars   = unique([cds_varnames(dataset)[name] for (name, _, _) in pending])
     sorted_dts = sort(unique([dt for (_, dt, _) in pending]))
     hours_str  = [lpad(string(Dates.hour(dt)), 2, '0') * ":00" for dt in sorted_dts]
     dt_to_tidx = Dict(dt => i for (i, dt) in enumerate(sorted_dts))
@@ -313,20 +313,20 @@ function _download_era5_multivar_day(names, dataset, day_dates;
         "download_format" => "unarchived",
     )
 
-    _extra_request_keys!(request, dataset)
+    extra_request_keys!(request, dataset)
     area = build_era5_area(bounding_box)
     isnothing(area) || (request["area"] = area)
 
     mkpath(dir)
     tmp_path   = joinpath(dir, "_tmp_multi_$(year)$(month)$(day).nc")
-    nc_triples = [(_nc_varnames(dataset)[name], dt_to_tidx[dt], path)
+    nc_triples = [(nc_varnames(dataset)[name], dt_to_tidx[dt], path)
                   for (name, dt, path) in pending]
 
     time_dimnames = Set(["time", "valid_time"])
 
     @root begin
-        CDSAPI.retrieve(_cds_product(dataset), request, tmp_path)
-        _split_era5_nc_multistep(tmp_path, nc_triples, _coord_vars(dataset), time_dimnames)
+        CDSAPI.retrieve(cds_product(dataset), request, tmp_path)
+        split_era5_nc_multistep(tmp_path, nc_triples, coord_vars(dataset), time_dimnames)
         cleanup && rm(tmp_path; force=true)
     end
 
@@ -338,11 +338,11 @@ end
 #####
 
 """
-    _split_era5_nc(src_path, nc_name_path_pairs, coord_vars)
+    split_era5_nc(src_path, nc_name_path_pairs, coord_vars)
 
 Split a multi-variable NetCDF into individual per-variable files (single time step).
 """
-function _split_era5_nc(src_path, nc_name_path_pairs, coord_vars)
+function split_era5_nc(src_path, nc_name_path_pairs, coord_vars)
     NCDatasets.Dataset(src_path, "r") do src
         for (nc_varname, dst_path) in nc_name_path_pairs
             NCDatasets.Dataset(dst_path, "c") do dst
@@ -357,7 +357,7 @@ function _split_era5_nc(src_path, nc_name_path_pairs, coord_vars)
 
                 for (vname, var) in src
                     (vname in coord_vars || vname == nc_varname) || continue
-                    _ncvar_copy!(dst, var, vname)
+                    ncvar_copy!(dst, var, vname)
                 end
             end
         end
@@ -365,12 +365,12 @@ function _split_era5_nc(src_path, nc_name_path_pairs, coord_vars)
 end
 
 """
-    _split_era5_nc_multistep(src_path, triples, coord_vars, time_dimnames)
+    split_era5_nc_multistep(src_path, triples, coord_vars, time_dimnames)
 
 Split a multi-timestep NetCDF into individual per-variable, per-timestep files.
 `triples` is a vector of `(nc_varname, time_index, dst_path)`.
 """
-function _split_era5_nc_multistep(src_path, nc_varname_tidx_path_triples, coord_vars, time_dimnames)
+function split_era5_nc_multistep(src_path, nc_varname_tidx_path_triples, coord_vars, time_dimnames)
     NCDatasets.Dataset(src_path, "r") do src
         unlimited = NCDatasets.unlimited(src)
 
@@ -388,14 +388,14 @@ function _split_era5_nc_multistep(src_path, nc_varname_tidx_path_triples, coord_
 
                 for (vname, var) in src
                     (vname in coord_vars || vname == nc_varname) || continue
-                    _ncvar_copy_tslice!(dst, var, vname, tidx, time_dimnames)
+                    ncvar_copy_tslice!(dst, var, vname, tidx, time_dimnames)
                 end
             end
         end
     end
 end
 
-function _ncvar_copy!(dst, src_var, vname)
+function ncvar_copy!(dst, src_var, vname)
     dims     = NCDatasets.dimnames(src_var)
     T        = eltype(src_var.var)
     attribs  = src_var.attrib
@@ -414,7 +414,7 @@ function _ncvar_copy!(dst, src_var, vname)
     return nothing
 end
 
-function _ncvar_copy_tslice!(dst, src_var, vname, tidx, time_dimnames)
+function ncvar_copy_tslice!(dst, src_var, vname, tidx, time_dimnames)
     dims     = NCDatasets.dimnames(src_var)
     T        = eltype(src_var.var)
     attribs  = src_var.attrib
