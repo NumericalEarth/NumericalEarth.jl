@@ -12,7 +12,7 @@ import Oceananigans.Fields: set!
 import Base
 
 import Oceananigans.Fields: set!, location
-import NumericalEarth.DataWrangling: all_dates, metadata_filename, download_dataset, default_download_directory, available_variables
+import NumericalEarth.DataWrangling: all_dates, metadata_filename, build_filename, download_dataset, default_download_directory, available_variables
 
 struct MultiYearJRA55 end
 struct RepeatYearJRA55 end
@@ -57,20 +57,20 @@ function JRA55_time_indices(dataset, dates, name)
 end
 
 # File name generation specific to each Dataset dataset
-# Note that `RepeatYearJRA55` has only one file associated, so we can define
-# the filename directly for the whole `Metadata` object, independent of the `dates`
-function metadata_filename(metadata::Metadata{<:RepeatYearJRA55}) # No difference
-    shortname = dataset_variable_name(metadata)
-    return "RYF." * shortname * ".1990_1991.nc"
-end
+# Note that `RepeatYearJRA55` has only one file associated, so the filename
+# is independent of the date. Override the multi-date fallback to return a plain String.
+metadata_filename(::RepeatYearJRA55, name, date, bounding_box) =
+    "RYF." * JRA55_dataset_variable_names[name] * ".1990_1991.nc"
 
-function metadata_filename(metadata::Metadatum{<:MultiYearJRA55})
-    # fix the filename
-    shortname = dataset_variable_name(metadata)
-    year      = Dates.year(metadata.dates)
+build_filename(::RepeatYearJRA55, name, dates::AbstractArray, bounding_box) =
+    "RYF." * JRA55_dataset_variable_names[name] * ".1990_1991.nc"
+
+function metadata_filename(::MultiYearJRA55, name, date, bounding_box)
+    shortname = JRA55_dataset_variable_names[name]
+    year      = Dates.year(date)
     suffix    = "_input4MIPs_atmosphericState_OMIP_MRI-JRA55-do-1-5-0_gr_"
 
-    end_date = last(JRA55_multiple_year_dates[metadata.name])
+    end_date = last(JRA55_multiple_year_dates[name])
     end_hour = Hour(end_date)
 
     if end_hour == Hour(0)
@@ -190,7 +190,7 @@ metadata_url(metadata::Metadata{<:RepeatYearJRA55}) = JRA55_repeat_year_urls[met
 
 function metadata_url(m::Metadata{<:MultiYearJRA55})
     prefix = JRA55_multiple_year_prefix[m.name]
-    return JRA55_multiple_year_url * prefix * "/" * dataset_variable_name(m) * "/gr/v20200916/" * metadata_filename(m)
+    return JRA55_multiple_year_url * prefix * "/" * dataset_variable_name(m) * "/gr/v20200916/" * m.filename
 end
 
 function download_dataset(metadata::JRA55Metadata)

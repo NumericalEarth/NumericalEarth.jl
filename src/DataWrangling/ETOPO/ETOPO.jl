@@ -44,7 +44,7 @@ all_dates(::ETOPO2022, args...) = nothing
 first_date(::ETOPO2022, args...) = nothing
 last_date(::ETOPO2022, args...) = nothing
 
-const ETOPOMetadatum = Metadatum{<:ETOPO2022, <:Any, <:Any}
+const ETOPOMetadatum = Metadatum{<:ETOPO2022}
 
 dataset_variable_name(data::ETOPOMetadatum) = ETOPO_bathymetry_variable_names[data.name]
 
@@ -53,7 +53,7 @@ const ETOPO_url = "https://www.dropbox.com/scl/fi/6pwalcuuzgtpanysn4h6f/" *
 
 z_interfaces(::ETOPOMetadatum) = (0, 1)
 metadata_url(::ETOPOMetadatum) = ETOPO_url
-metadata_filename(metadatum::ETOPOMetadatum) = "ETOPO_2022_v1_60s_N90W180_surface.nc"
+metadata_filename(::ETOPO2022, name, date, bounding_box) = "ETOPO_2022_v1_60s_N90W180_surface.nc"
 
 function download_dataset(metadatum::ETOPOMetadatum)
     fileurl  = metadata_url(metadatum)

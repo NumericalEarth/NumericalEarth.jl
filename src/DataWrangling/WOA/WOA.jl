@@ -148,14 +148,14 @@ metaprefix(::WOAMetadatum) = "WOAMetadatum"
 woa_period(::WOAAnnual, date) = 0
 woa_period(::WOAMonthly, date) = Dates.month(date)
 
-function metadata_filename(metadata::Metadatum{<:WOAAnnual})
-    varname = WOA_variable_names[metadata.name]
+function metadata_filename(::WOAAnnual, name, date, bounding_box)
+    varname = WOA_variable_names[name]
     return "woa_$(varname)_annual.nc"
 end
 
-function metadata_filename(metadata::Metadatum{<:WOAMonthly})
-    varname = WOA_variable_names[metadata.name]
-    m = lpad(Dates.month(metadata.dates), 2, '0')
+function metadata_filename(::WOAMonthly, name, date, bounding_box)
+    varname = WOA_variable_names[name]
+    m = lpad(Dates.month(date), 2, '0')
     return "woa_$(varname)_monthly_$(m).nc"
 end
 
@@ -165,14 +165,13 @@ dataset_variable_name(data::WOAMetadata) = WOA_variable_names[data.name] * "_an"
 location(::WOAMetadata) = (Center, Center, Center)
 is_three_dimensional(::WOAMetadata) = true
 
-function inpainted_metadata_filename(metadata::WOAMetadata)
-    original_filename = metadata_filename(metadata)
-    without_extension = original_filename[1:end-3]
+function inpainted_metadata_filename(metadata::WOAMetadatum)
+    without_extension = metadata.filename[1:end-3]
     var = string(metadata.name)
     return without_extension * "_" * var * "_inpainted.jld2"
 end
 
-inpainted_metadata_path(metadata::WOAMetadata) = joinpath(metadata.dir, inpainted_metadata_filename(metadata))
+inpainted_metadata_path(metadata::WOAMetadatum) = joinpath(metadata.dir, inpainted_metadata_filename(metadata))
 
 # Custom retrieve_data: WOA NetCDF files contain Missing values (from _FillValue)
 # which must be converted to NaN before the GPU kernel in set_metadata_field!.
