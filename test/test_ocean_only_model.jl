@@ -3,21 +3,10 @@ include("runtests_setup.jl")
 using CUDA
 using Oceananigans.OrthogonalSphericalShellGrids
 
-@testset "Time stepping test" begin
-
-    start_date = DateTimeProlepticGregorian(1993, 1, 1)
-    time_resolution = dataset isa ECCO2Daily ? Day(1) : Month(1)
-    end_date = DateTimeProlepticGregorian(1993, 2, 1)
-    dates = start_date : time_resolution : end_date
-
-    temperature_metadata = Metadata(:temperature; dataset, dates)
-    salinity_metadata    = Metadata(:salinity; dataset, dates)
-
+@testset "OceanOnly Time stepping test" begin
     for arch in test_architectures
 
         A = typeof(arch)
-
-        @info "Testing timestepping with $(typeof(dataset)) on $A"
 
         λ★, φ★ = 35.1, 50.1
 
