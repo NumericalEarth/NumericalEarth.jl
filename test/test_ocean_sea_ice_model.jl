@@ -10,26 +10,36 @@ using ClimaSeaIce.Rheologies
 @inline kernel_melting_temperature(i, j, k, grid, liquidus, S) = @inbounds melting_temperature(liquidus, S[i, j, k])
 
 @testset "Time stepping test" begin
-    for dataset in [ECCO4Monthly(), EN4Monthly()]
+    for arch in test_architectures
+        A = typeof(arch)
+        
+        grid = TripolarGrid(arch;
+                            size = (50, 50, 10),
+                            halo = (7, 7, 7),
+                            z = (-5000, 0))
 
-        start_date = DateTimeProlepticGregorian(1993, 1, 1)
-        time_resolution = dataset isa ECCO2Daily ? Day(1) : Month(1)
-        end_date = DateTimeProlepticGregorian(1993, 2, 1)
-        dates = start_date : time_resolution : end_date
+        bottom_height = regrid_bathymetry(grid;
+                                minimum_depth = 10,
+                                interpolation_passes = 5,
+                                major_basins = 1)
 
-        temperature_metadata = Metadata(:temperature; dataset, dates)
-        salinity_metadata    = Metadata(:salinity; dataset, dates)
+        grid = ImmersedBoundaryGrid(grid, GridFittedBottom(bottom_height); active_cells_map=true)
 
-        for arch in test_architectures
+        #####
+        ##### Coupled ocean-sea ice and prescribed atmosphere
+        #####
 
-            A = typeof(arch)
-
+        for dataset in [ECCO4Monthly(), EN4Monthly()]
             @info "Testing timestepping with $(typeof(dataset)) on $A"
 
-            #####
-            ##### Coupled ocean-sea ice and prescribed atmosphere
-            #####
-
+            start_date = DateTimeProlepticGregorian(1993, 1, 1)
+            time_resolution = dataset isa ECCO2Daily ? Day(1) : Month(1)
+            end_date = DateTimeProlepticGregorian(1993, 2, 1)
+            dates = start_date : time_resolution : end_date
+    
+            temperature_metadata = Metadata(:temperature; dataset, dates)
+            salinity_metadata    = Metadata(:salinity; dataset, dates)
+        
             sea_ice  = sea_ice_simulation(grid, ocean; advection=WENO(order=7))
             liquidus = sea_ice.model.ice_thermodynamics.phase_transitions.liquidus
 
