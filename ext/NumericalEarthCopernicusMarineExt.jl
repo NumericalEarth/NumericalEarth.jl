@@ -28,7 +28,7 @@ function download_dataset(meta::GLORYSMetadatum;
                           additional_kw...)
 
     output_directory = meta.dir
-    output_filename = NumericalEarth.DataWrangling.metadata_filename(meta)
+    output_filename = meta.filename
     output_path = joinpath(output_directory, output_filename)
     isfile(output_path) && return output_path
 

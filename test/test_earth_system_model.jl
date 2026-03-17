@@ -54,7 +54,7 @@ using ClimaSeaIce.Rheologies
             grid = TripolarGrid(arch;
                                 size = (50, 50, 10),
                                 halo = (7, 7, 7),
-                                z = (-6000, 0))
+                                z = (-5000, 0))
 
             bottom_height = regrid_bathymetry(grid;
                                               minimum_depth = 10,
