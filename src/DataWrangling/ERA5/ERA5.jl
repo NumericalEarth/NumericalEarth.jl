@@ -103,7 +103,7 @@ function bbox_strs(c)
 end
 
 function metadata_prefix(dataset::ERA5Dataset, name, date, bounding_box)
-    var = ERA5_dataset_variable_names[name]
+    var = available_variables(dataset)[name]
     ds = dataset_name(dataset)
     start_date = start_date_str(date)
     end_date = end_date_str(date)
