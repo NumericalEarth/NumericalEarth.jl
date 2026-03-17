@@ -82,8 +82,8 @@ function atmosphere_simulation(spectral_grid::SpeedyWeather.SpectralGrid; output
         surface_heat_flux,
         surface_humidity_flux,
         ocean = PrescribedOcean(),
-        sea_ice = nothing
-    ) # This is provided by ClimaSeaIce
+        sea_ice = nothing # provided by ClimaSeaIce
+    )
 
     # Construct the simulation
     atmosphere = SpeedyWeather.initialize!(atmosphere_model)
