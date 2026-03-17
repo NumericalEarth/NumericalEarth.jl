@@ -4,7 +4,7 @@ include("download_utils.jl")
 
 using CUDA
 using Scratch
-using NumericalEarth.DataWrangling: download_dataset
+using NumericalEarth.DataWrangling: download_dataset, DataWrangling
 using ParallelTestRunner: find_tests, parse_args, filter_tests!, runtests
 
 # Start with autodiscovered tests
@@ -47,69 +47,69 @@ function delete_inpainted_files(dir)
     end
 end
 
-function __init__()
-    #####
-    ##### Delete inpainted files
-    #####
+# function __init__()
+#     #####
+#     ##### Delete inpainted files
+#     #####
 
-    delete_inpainted_files(@get_scratch!("."))
+#     delete_inpainted_files(@get_scratch!("."))
 
-    #####
-    ##### Download bathymetry data
-    #####
+#     #####
+#     ##### Download bathymetry data
+#     #####
 
-    ETOPOmetadata = Metadatum(:bottom_height, dataset=NumericalEarth.ETOPO.ETOPO2022())
-    download_dataset_with_fallback(metadata_path(ETOPOmetadata); dataset_name="ETOPO2022") do
-        NumericalEarth.DataWrangling.download_dataset(ETOPOmetadata)
-    end
+#     ETOPOmetadata = Metadatum(:bottom_height, dataset=NumericalEarth.ETOPO.ETOPO2022())
+#     download_dataset_with_fallback(metadata_path(ETOPOmetadata); dataset_name="ETOPO2022") do
+#         NumericalEarth.DataWrangling.download_dataset(ETOPOmetadata)
+#     end
 
-    #####
-    ##### Download JRA55 data
-    #####
+#     #####
+#     ##### Download JRA55 data
+#     #####
 
-    try
-        atmosphere = JRA55PrescribedAtmosphere(backend=JRA55NetCDFBackend(2))
-    catch e
-        @warn "Original JRA55 download failed, trying NumericalEarthArtifacts fallback..." exception=(e, catch_backtrace())
-        emit_ci_warning("Broken JRA55 download", "Original source failed during init")
-        for name in NumericalEarth.DataWrangling.JRA55.JRA55_variable_names
-            datum = Metadatum(name; dataset=JRA55.RepeatYearJRA55())
-            download_from_artifacts(metadata_path(datum))
-        end
-        atmosphere = JRA55PrescribedAtmosphere(backend=JRA55NetCDFBackend(2))
-    end
+#     try
+#         atmosphere = JRA55PrescribedAtmosphere(backend=JRA55NetCDFBackend(2))
+#     catch e
+#         @warn "Original JRA55 download failed, trying NumericalEarthArtifacts fallback..." exception=(e, catch_backtrace())
+#         emit_ci_warning("Broken JRA55 download", "Original source failed during init")
+#         for name in NumericalEarth.DataWrangling.JRA55.JRA55_variable_names
+#             datum = Metadatum(name; dataset=JRA55.RepeatYearJRA55())
+#             download_from_artifacts(metadata_path(datum))
+#         end
+#         atmosphere = JRA55PrescribedAtmosphere(backend=JRA55NetCDFBackend(2))
+#     end
 
-    #####
-    ##### Download Dataset data
-    #####
+#     #####
+#     ##### Download Dataset data
+#     #####
 
-    # Download few datasets for tests
-    for dataset in test_datasets
-        time_resolution = dataset isa ECCO2Daily ? Day(1) : Month(1)
-        end_date = start_date + 2 * time_resolution
-        dates = start_date:time_resolution:end_date
+#     # Download few datasets for tests
+#     for dataset in test_datasets
+#         time_resolution = dataset isa ECCO2Daily ? Day(1) : Month(1)
+#         end_date = start_date + 2 * time_resolution
+#         dates = start_date:time_resolution:end_date
 
-        temperature_metadata = Metadata(:temperature; dataset, dates)
-        salinity_metadata    = Metadata(:salinity; dataset, dates)
+#         temperature_metadata = Metadata(:temperature; dataset, dates)
+#         salinity_metadata    = Metadata(:salinity; dataset, dates)
 
-        for md in (temperature_metadata, salinity_metadata)
-            download_dataset_with_fallback(metadata_path(md); dataset_name="$(typeof(dataset)) $(md.name)") do
-                download_dataset(md)
-            end
-        end
+#         for md in (temperature_metadata, salinity_metadata)
+#             download_dataset_with_fallback(metadata_path(md); dataset_name="$(typeof(dataset)) $(md.name)") do
+#                 download_dataset(md)
+#             end
+#         end
 
-        if dataset isa Union{ECCO2DarwinMonthly, ECCO4DarwinMonthly}
-            PO₄_metadata = Metadata(:phosphate; dataset, dates)
-            download_dataset_with_fallback(metadata_path(PO₄_metadata); dataset_name="$(typeof(dataset)) phosphate") do
-                download_dataset(PO₄_metadata)
-            end
-        end
-    end
-end
+#         if dataset isa Union{ECCO2DarwinMonthly, ECCO4DarwinMonthly}
+#             PO₄_metadata = Metadata(:phosphate; dataset, dates)
+#             download_dataset_with_fallback(metadata_path(PO₄_metadata); dataset_name="$(typeof(dataset)) phosphate") do
+#                 download_dataset(PO₄_metadata)
+#             end
+#         end
+#     end
+# end
 
-# Initialize and download required datasets
-__init__()
+# # Initialize and download required datasets
+# __init__()
 
 runtests(NumericalEarth, args; testsuite)
 
-delete_inpainted_files(@get_scratch!("."))
+# delete_inpainted_files(@get_scratch!("."))
