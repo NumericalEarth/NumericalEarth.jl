@@ -6,6 +6,7 @@ using Oceananigans.Architectures: ReactantState
 using Oceananigans.Grids: Bounded, Flat, LatitudeLongitudeGrid, Periodic
 using Oceananigans.Models.HydrostaticFreeSurfaceModels.SplitExplicitFreeSurfaces: SplitExplicitFreeSurface
 using NumericalEarth
+using CUDA
 
 gpu_test = get(ENV, "GPU_TEST", "false") == "true"
 
