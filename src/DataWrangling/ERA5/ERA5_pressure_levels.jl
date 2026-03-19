@@ -269,7 +269,7 @@ function pressure_field(metadata::ERA5PressureMetadatum, arch=CPU(); halo=(3,3,3
     field = CenterField(grid)
     reversed_levels = sort(metadata.dataset.pressure_levels, rev=true)   # highest pressure → k=1
     for (k, p) in enumerate(reversed_levels)
-        interior(field)[:, :, k] .= Float32(p)
+        interior(field, :, :, k) .= Float32(p)
     end
     fill_halo_regions!(field)
     return field
