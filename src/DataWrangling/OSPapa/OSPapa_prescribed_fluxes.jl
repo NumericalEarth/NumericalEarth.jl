@@ -197,6 +197,14 @@ Linearly interpolate a 1D flux time series to time `t` using Oceananigans'
 end
 
 """
+    no_correction(i, j, grid, clock, model_fields, p)
+
+Default correction function that returns zero. Used as the default value for
+the correction keyword arguments in [`OSPapaPrescribedFluxBoundaryConditions`](@ref).
+"""
+no_correction(i, j, grid, clock, model_fields, p) = zero(grid)
+
+"""
     OSPapaPrescribedFluxBoundaryConditions(fluxes, architecture=CPU(); ρ₀=1020.0, cₚ=3991.0)
 
 Create Oceananigans `FluxBoundaryCondition`s for u, v, T, S from prescribed
@@ -218,6 +226,13 @@ Keyword Arguments
 =================
 - `ρ₀`: reference ocean density (default: 1020 kg/m³)
 - `cₚ`: ocean heat capacity (default: 3991 J/(kg·K))
+- `u_correction`: discrete-form correction function added to the zonal stress BC (default: [`no_correction`](@ref))
+- `v_correction`: discrete-form correction function added to the meridional stress BC (default: [`no_correction`](@ref))
+- `T_correction`: discrete-form correction function added to the temperature flux BC (default: [`no_correction`](@ref))
+- `S_correction`: discrete-form correction function added to the freshwater (EMP) flux before computing salinity flux (default: [`no_correction`](@ref))
+
+Each correction function must have the signature `(i, j, grid, clock, model_fields, p)` and return a value
+in the same units as the corresponding flux boundary condition.
 
 Example
 =======
@@ -227,7 +242,12 @@ bcs = OSPapaPrescribedFluxBoundaryConditions(fluxes, GPU())
 ocean = ocean_simulation(grid; Δt=10minutes, boundary_conditions=bcs)
 ```
 """
-function OSPapaPrescribedFluxBoundaryConditions(fluxes, architecture=CPU(); ρ₀=1020.0, cₚ=3991.0)
+function OSPapaPrescribedFluxBoundaryConditions(fluxes, architecture=CPU(); 
+                                                ρ₀=1020.0, cₚ=3991.0, 
+                                                u_correction=no_correction, 
+                                                v_correction=no_correction, 
+                                                T_correction=no_correction, 
+                                                S_correction=no_correction)
 
     flux_times = fluxes.times
     Nt = length(flux_times)
@@ -247,22 +267,22 @@ function OSPapaPrescribedFluxBoundaryConditions(fluxes, architecture=CPU(); ρ�
     # Momentum: ERDDAP TAUX > 0 = eastward stress ON ocean (INTO domain)
     # Oceananigans: positive top flux = OUT of domain → negate
     @inline function τx_bc(i, j, grid, clock, model_fields, p)
-        return -interp_flux(p.τx, p.times, p.Nt, p.time_indexing, clock.time) / p.ρ₀
+        return -interp_flux(p.τx, p.times, p.Nt, p.time_indexing, clock.time) / p.ρ₀ + u_correction(i, j, grid, clock, model_fields, p)
     end
 
     @inline function τy_bc(i, j, grid, clock, model_fields, p)
-        return -interp_flux(p.τy, p.times, p.Nt, p.time_indexing, clock.time) / p.ρ₀
+        return -interp_flux(p.τy, p.times, p.Nt, p.time_indexing, clock.time) / p.ρ₀ + v_correction(i, j, grid, clock, model_fields, p)
     end
 
     # Heat: ERDDAP Qnet > 0 = into ocean → negate for Oceananigans
     @inline function Jᵀ_bc(i, j, grid, clock, model_fields, p)
-        return -interp_flux(p.Qnet, p.times, p.Nt, p.time_indexing, clock.time) / (p.ρ₀ * p.cₚ)
+        return -interp_flux(p.Qnet, p.times, p.Nt, p.time_indexing, clock.time) / (p.ρ₀ * p.cₚ) + T_correction(i, j, grid, clock, model_fields, p)
     end
 
     # Salinity: EMP (mm/hr ≡ kg/m²/hr) > 0 = net evaporation → salinity should increase
     # Jˢ = -S * EMP_ms (negative top flux = INTO domain = S increases)
     @inline function Jˢ_bc(i, j, grid, clock, model_fields, p)
-        EMP_ms = interp_flux(p.EMP, p.times, p.Nt, p.time_indexing, clock.time) / (p.ρ₀ * 3600)
+        EMP_ms = interp_flux(p.EMP, p.times, p.Nt, p.time_indexing, clock.time) / (p.ρ₀ * 3600) + S_correction(i, j, grid, clock, model_fields, p)
         S = model_fields.S[i, j, grid.Nz]
         return -S * EMP_ms
     end
