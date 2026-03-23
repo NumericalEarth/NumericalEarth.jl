@@ -9,7 +9,8 @@ using Oceananigans.DistributedComputations: @root
 
 using Dates
 using NumericalEarth.DataWrangling.ERA5: ERA5Dataset, ERA5Metadata, ERA5Metadatum,
-                                         ERA5_dataset_variable_names, ERA5_netcdf_variable_names
+                                         ERA5_dataset_variable_names, ERA5_netcdf_variable_names,
+                                         ERA5_single_level_accumulated_variables
 using NumericalEarth.DataWrangling.ERA5: ERA5PressureLevelsDataset,
                                          ERA5PressureMetadata, ERA5PressureMetadatum,
                                          ERA5PL_dataset_variable_names, ERA5PL_netcdf_variable_names
@@ -280,8 +281,27 @@ function download_dataset(name::Symbol,
     return download_dataset([name], dataset, datetimes; bounding_box, dir, skip_existing, cleanup)
 end
 
+is_accumulated(name::Symbol) = name in ERA5_single_level_accumulated_variables
+
 function download_era5_multivar_day(names, dataset, day_dates;
                                      bounding_box, dir, skip_existing, cleanup)
+
+    # Split accumulated and instantaneous variables into separate requests
+    # to avoid CDS returning a zipfile with multiple NetCDF files
+    accum_names   = filter(is_accumulated, names)
+    instant_names = filter(!is_accumulated, names)
+
+    for name_group in (accum_names, instant_names)
+        isempty(name_group) && continue
+        download_era5_multivar_day_batch(name_group, dataset, day_dates;
+                                         bounding_box, dir, skip_existing, cleanup)
+    end
+
+    return nothing
+end
+
+function download_era5_multivar_day_batch(names, dataset, day_dates;
+                                           bounding_box, dir, skip_existing, cleanup)
 
     MDatum    = NumericalEarth.DataWrangling.Metadatum
     meta_path = NumericalEarth.DataWrangling.metadata_path

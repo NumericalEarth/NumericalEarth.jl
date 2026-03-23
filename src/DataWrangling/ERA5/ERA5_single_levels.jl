@@ -10,6 +10,21 @@ const ERA5_wave_variables = Set([
     :significant_wave_height, :mean_wave_period, :mean_wave_direction,
 ])
 
+# Mean rate / accumulated variables (CDS "step type" = accum).
+# All other single-level variables are instantaneous.
+# See ECMWF ERA5 documentation, Tables 3 and 4:
+# https://confluence.ecmwf.int/display/CKB/ERA5%3A+data+documentation#ERA5:datadocumentation-Meanrates/fluxesandaccumulations
+const ERA5_single_level_accumulated_variables = Set([
+    :total_precipitation,
+    :mean_surface_sensible_heat_flux,
+    :mean_surface_latent_heat_flux,
+    :mean_surface_momentum_flux_x,
+    :mean_surface_momentum_flux_y,
+    :downwelling_shortwave_radiation,
+    :downwelling_longwave_radiation,
+    :evaporation,
+])
+
 #####
 ##### ERA5 single-level data availability
 #####
@@ -42,9 +57,11 @@ ERA5_dataset_variable_names = Dict(
     :surface_pressure                => "surface_pressure",
     :mean_sea_level_pressure         => "mean_sea_level_pressure",
     :total_precipitation             => "total_precipitation",
+    :mean_surface_momentum_flux_x    => "mean_eastward_turbulent_surface_stress",
+    :mean_surface_momentum_flux_y    => "mean_northward_turbulent_surface_stress",
     :sea_surface_temperature         => "sea_surface_temperature",
-    :surface_sensible_heat_flux      => "surface_sensible_heat_flux",
-    :surface_latent_heat_flux        => "surface_latent_heat_flux",
+    :mean_surface_sensible_heat_flux => "mean_surface_sensible_heat_flux",
+    :mean_surface_latent_heat_flux   => "mean_surface_latent_heat_flux",
     :downwelling_shortwave_radiation => "surface_solar_radiation_downwards",
     :downwelling_longwave_radiation  => "surface_thermal_radiation_downwards",
     :total_cloud_cover               => "total_cloud_cover",
@@ -59,6 +76,8 @@ ERA5_dataset_variable_names = Dict(
 
 # NetCDF short variable names (what's actually in the downloaded files)
 # These differ from the CDS API variable names above
+# The expected shortName (see https://confluence.ecmwf.int/display/CKB/ERA5%3A+data+documentation#heading-Parameterlistings)
+# did not always match the netcdf variable names. In those cases, the longName and units were manually verified.
 ERA5_netcdf_variable_names = Dict(
     :temperature                     => "t2m",
     :dewpoint_temperature            => "d2m",
@@ -67,9 +86,11 @@ ERA5_netcdf_variable_names = Dict(
     :surface_pressure                => "sp",
     :mean_sea_level_pressure         => "msl",
     :total_precipitation             => "tp",
+    :mean_surface_momentum_flux_x    => "avg_iews", # shortName: metss
+    :mean_surface_momentum_flux_y    => "avg_inss", # shortName: mntss
     :sea_surface_temperature         => "sst",
-    :surface_sensible_heat_flux      => "sshf",
-    :surface_latent_heat_flux        => "slhf",
+    :mean_surface_sensible_heat_flux => "avg_ishf", # shortName: msshf
+    :mean_surface_latent_heat_flux   => "avg_slhtf", # shortName: mslhf
     :downwelling_shortwave_radiation => "ssrd",
     :downwelling_longwave_radiation  => "strd",
     :total_cloud_cover               => "tcc",
