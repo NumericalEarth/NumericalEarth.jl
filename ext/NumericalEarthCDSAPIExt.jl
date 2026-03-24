@@ -3,7 +3,6 @@ module NumericalEarthCDSAPIExt
 using NumericalEarth
 using CDSAPI
 
-using Oceananigans
 using Oceananigans.DistributedComputations: @root
 
 using Dates
@@ -76,8 +75,8 @@ function download_dataset(meta::ERA5Metadatum; skip_existing=true)
         "download_format" => "unarchived",
     )
 
-    # Add area constraint from bounding box
-    area = build_era5_area(meta.bounding_box)
+    # Add area constraint from region
+    area = build_era5_area(meta.region)
     if !isnothing(area)
         request["area"] = area
     end
@@ -91,12 +90,13 @@ function download_dataset(meta::ERA5Metadatum; skip_existing=true)
 end
 
 #####
-##### Area/bounding box utilities
+##### Area/region utilities
 #####
 
 build_era5_area(::Nothing) = nothing
 
 const BBOX = NumericalEarth.DataWrangling.BoundingBox
+const COL  = NumericalEarth.DataWrangling.Column
 
 function build_era5_area(bbox::BBOX)
     # CDS API uses [north, west, south, east] ordering
@@ -115,6 +115,14 @@ function build_era5_area(bbox::BBOX)
     north = lat[2]
 
     return [north, west, south, east]
+end
+
+function build_era5_area(col::COL)
+    # Expand column point by ~1° for interpolation
+    ε = 1.0
+    lon = col.longitude
+    lat = col.latitude
+    return [lat + ε, lon - ε, lat - ε, lon + ε]  # [N, W, S, E]
 end
 
 end # module NumericalEarthCDSAPIExt

@@ -46,9 +46,9 @@ function download_dataset(meta::GLORYSMetadatum;
         (; start_datetime, end_datetime)
     end
 
-    lon_kw = longitude_bounds_kw(meta.bounding_box)
-    lat_kw = latitude_bounds_kw(meta.bounding_box)
-    z_kw = depth_bounds_kw(meta.bounding_box)
+    lon_kw = longitude_bounds_kw(meta.region)
+    lat_kw = latitude_bounds_kw(meta.region)
+    z_kw = depth_bounds_kw(meta.region)
 
     kw = (; coordinates_selection_method = "outside",
           skip_existing,
@@ -78,10 +78,26 @@ latitude_bounds_kw(::Nothing) = NamedTuple()
 depth_bounds_kw(::Nothing) = NamedTuple()
 
 const BBOX = NumericalEarth.DataWrangling.BoundingBox
+const COL  = NumericalEarth.DataWrangling.Column
 
-longitude_bounds_kw(bounding_box::BBOX) = longitude_bounds_kw(bounding_box.longitude)
-latitude_bounds_kw(bounding_box::BBOX) = latitude_bounds_kw(bounding_box.latitude)
-depth_bounds_kw(bounding_box::BBOX) = depth_bounds_kw(bounding_box.z)
+longitude_bounds_kw(bbox::BBOX) = longitude_bounds_kw(bbox.longitude)
+latitude_bounds_kw(bbox::BBOX) = latitude_bounds_kw(bbox.latitude)
+depth_bounds_kw(bbox::BBOX) = depth_bounds_kw(bbox.z)
+
+# Column: expand scalar to small range for download
+longitude_bounds_kw(col::COL) = _scalar_longitude_bounds_kw(col.longitude)
+latitude_bounds_kw(col::COL) = _scalar_latitude_bounds_kw(col.latitude)
+depth_bounds_kw(col::COL) = depth_bounds_kw(col.z)
+
+function _scalar_longitude_bounds_kw(lon)
+    ε = 1.0
+    return (; minimum_longitude = lon - ε, maximum_longitude = lon + ε)
+end
+
+function _scalar_latitude_bounds_kw(lat)
+    ε = 1.0
+    return (; minimum_latitude = lat - ε, maximum_latitude = lat + ε)
+end
 
 function longitude_bounds_kw(longitude)
     minimum_longitude = longitude[1]
