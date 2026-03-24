@@ -1,6 +1,6 @@
 module ERA5
 
-export ERA5Hourly, ERA5Monthly
+export ERA5Hourly, ERA5Monthly, ERA5PrescribedAtmosphere
 
 using NCDatasets
 using Printf
@@ -238,6 +238,8 @@ z_interfaces(::ERA5Metadata) = (0, 1)
 
 # ERA5 data is stored as Float32
 eltype(::ERA5Metadata) = Float32
+
+include("ERA5_prescribed_atmosphere.jl")
 
 end # module ERA5
 

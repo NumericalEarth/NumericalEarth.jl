@@ -27,6 +27,7 @@ export
     BulkTemperature,
     PrescribedAtmosphere,
     JRA55PrescribedAtmosphere,
+    ERA5PrescribedAtmosphere,
     JRA55NetCDFBackend,
     regrid_bathymetry,
     Metadata,
