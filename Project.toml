@@ -1,7 +1,7 @@
 name = "NumericalEarth"
 uuid = "904d977b-046a-4731-8b86-9235c0d1ef02"
 license = "MIT"
-version = "0.2.1"
+version = "0.2.2"
 authors = ["NumericalEarth contributors"]
 
 [deps]
@@ -69,7 +69,7 @@ JLD2 = "0.4, 0.5, 0.6"
 KernelAbstractions = "0.9"
 MeshArrays = "0.3, 0.4, 0.5"
 NCDatasets = "0.12, 0.13, 0.14"
-Oceananigans = "0.104.2, 0.105"
+Oceananigans = "0.104.2, 0.105, 0.106"
 OffsetArrays = "1.14"
 PrecompileTools = "1"
 PythonCall = "0.9.28"
