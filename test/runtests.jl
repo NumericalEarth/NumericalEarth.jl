@@ -84,10 +84,12 @@ function __init__()
     ##### Download Dataset data
     #####
 
-    # Download few datasets for tests
+    # Download few datasets for tests.
+    # ECCO4Monthly artifacts only have January 1993; other datasets have 3 dates.
     for dataset in test_datasets
         time_resolution = dataset isa ECCO2Daily ? Day(1) : Month(1)
-        end_date = start_date + 2 * time_resolution
+        n_dates = dataset isa ECCO4Monthly ? 0 : 2
+        end_date = start_date + n_dates * time_resolution
         dates = start_date:time_resolution:end_date
 
         temperature_metadata = Metadata(:temperature; dataset, dates)
