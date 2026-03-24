@@ -14,6 +14,7 @@
 # pkg"add Oceananigans, NumericalEarth, CDSAPI, CopernicusMarine, CairoMakie"
 # ```
 
+using CopernicusMarine
 using NumericalEarth
 using NumericalEarth.DataWrangling: Column
 using NumericalEarth.DataWrangling.ERA5: ERA5Hourly
