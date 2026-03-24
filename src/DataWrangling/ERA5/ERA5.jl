@@ -116,7 +116,11 @@ function metadata_prefix(dataset::ERA5Dataset, name, date, bounding_box)
         suffix = ""
     end
 
-    prefix = string(var, "_", ds, "_", start_date, "_", end_date, suffix)
+    if start_date == end_date
+        prefix = string(var, "_", ds, "_", start_date, suffix)
+    else
+        prefix = string(var, "_", ds, "_", start_date, "_", end_date, suffix)
+    end
     prefix = colon2dash(prefix)
     prefix = underscore_spaces(prefix)
     return prefix
