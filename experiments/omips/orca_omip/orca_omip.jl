@@ -1,10 +1,11 @@
 include("../omip_defaults.jl")
 
 using Oceananigans.Operators: Δzᶜᶜᶜ
+using WorldOceanAtlasTools
 
 arch = GPU()
 Nz   = 100
-z_faces = ExponentialDiscretization(Nz, -6000, 0; scale=1800, mutable=true)
+z_faces = ExponentialDiscretization(Nz, -5500, 0; scale=1600, mutable=true)
 
 grid = ORCAGrid(arch; Nz,
                 z = z_faces,
