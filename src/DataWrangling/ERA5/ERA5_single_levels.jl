@@ -23,6 +23,7 @@ const ERA5_single_level_accumulated_variables = Set([
     :downwelling_shortwave_radiation,
     :downwelling_longwave_radiation,
     :evaporation,
+    :mean_evaporation_rate,
 ])
 
 #####
@@ -66,6 +67,7 @@ ERA5_dataset_variable_names = Dict(
     :downwelling_longwave_radiation  => "surface_thermal_radiation_downwards",
     :total_cloud_cover               => "total_cloud_cover",
     :evaporation                     => "evaporation",
+    :mean_evaporation_rate           => "mean_evaporation_rate",
     :specific_humidity               => "specific_humidity",
     :eastward_stokes_drift           => "u_component_stokes_drift",
     :northward_stokes_drift          => "v_component_stokes_drift",
@@ -75,9 +77,9 @@ ERA5_dataset_variable_names = Dict(
 )
 
 # NetCDF short variable names (what's actually in the downloaded files)
-# These differ from the CDS API variable names above
-# The expected shortName (see https://confluence.ecmwf.int/display/CKB/ERA5%3A+data+documentation#heading-Parameterlistings)
-# did not always match the netcdf variable names. In those cases, the longName and units were manually verified.
+# - These differ from the CDS API variable names above
+# - The expected "shortName" (see https://confluence.ecmwf.int/display/CKB/ERA5%3A+data+documentation#heading-Parameterlistings)
+#   did not always match the netcdf variable names?! In those cases, the longName and units were manually verified.
 ERA5_netcdf_variable_names = Dict(
     :temperature                     => "t2m",
     :dewpoint_temperature            => "d2m",
@@ -95,6 +97,7 @@ ERA5_netcdf_variable_names = Dict(
     :downwelling_longwave_radiation  => "strd",
     :total_cloud_cover               => "tcc",
     :evaporation                     => "e",
+    :mean_evaporation_rate           => "avg_ie", # shortName: mer
     :specific_humidity               => "q",
     :eastward_stokes_drift           => "ust",
     :northward_stokes_drift          => "vst",
