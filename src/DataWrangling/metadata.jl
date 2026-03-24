@@ -330,12 +330,13 @@ Return the name used for the variable `metadata.name` in its raw dataset file.
 function dataset_variable_name end
 
 """
-    dataset_location(metadata)
+    dataset_location(dataset, variable_name)
 
-Return the native field location `(LX, LY, LZ)` for the variable in this
-dataset. Extended by each dataset module.
+Return the native field location `(LX, LY, LZ)` for `variable_name` in
+`dataset`. Defaults to `(Center, Center, Center)`. Only datasets with
+staggered variables (e.g., ECCO velocity fields) need to extend this.
 """
-function dataset_location end
+dataset_location(dataset, variable_name) = (Center, Center, Center)
 
 # Note: all_dates needs to be extended for any new dataset.
 """

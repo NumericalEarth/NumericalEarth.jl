@@ -12,7 +12,6 @@ using Dates: DateTime, Day, Month
 import NumericalEarth.DataWrangling:
     all_dates,
     dataset_variable_name,
-    dataset_location,
     default_download_directory,
     longitude_interfaces,
     latitude_interfaces,
@@ -130,7 +129,6 @@ end
 
 inpainted_metadata_path(metadata::GLORYSMetadatum) = joinpath(metadata.dir, inpainted_metadata_filename(metadata))
 
-dataset_location(::GLORYSMetadata) = (Center, Center, Center)
 longitude_interfaces(::GLORYSMetadata) = (-180, 180)
 latitude_interfaces(::GLORYSMetadata) = (-80, 90)
 

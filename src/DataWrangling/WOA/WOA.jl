@@ -39,7 +39,6 @@ import NumericalEarth.DataWrangling:
     available_variables,
     retrieve_data
 
-import NumericalEarth.DataWrangling: dataset_location
 
 download_WOA_cache::String = ""
 function __init__()
@@ -162,7 +161,6 @@ end
 # WOA NetCDF variables are named "{tracer}_an" for the objectively analyzed field
 dataset_variable_name(data::WOAMetadata) = WOA_variable_names[data.name] * "_an"
 
-dataset_location(::WOAMetadata) = (Center, Center, Center)
 is_three_dimensional(::WOAMetadata) = true
 
 function inpainted_metadata_filename(metadata::WOAMetadatum)

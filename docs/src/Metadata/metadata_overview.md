@@ -64,9 +64,11 @@ The key ingredients stored in a [`Metadata`](@ref) or [`Metadatum`](@ref) object
 - the variable name (for example `:temperature` or `:u_velocity`);
 - the dataset (such as `EN4Monthly`, `ECCO2Daily`, or `GLORYSMonthly`);
 - the temporal coverage: either a single timestamp (`Metadatum`) or a range/vector of dates (`Metadata`);
-- an optional [`BoundingBox`](@ref NumericalEarth.DataWrangling.BoundingBox) describing regional subsets in
-  longitude, latitude, or depth;
-- the on-disk `dir`ectory where the dataset are be cached.
+- an optional `region` describing the spatial extent — either a
+  [`BoundingBox`](@ref NumericalEarth.DataWrangling.BoundingBox) for a rectangular sub-domain,
+  a [`Column`](@ref NumericalEarth.DataWrangling.Column) for a single horizontal location, or
+  `nothing` for the full global domain (see [Regions, locations, and FieldTimeSeries](@ref));
+- the on-disk `dir`ectory where the dataset files are cached.
 
 This bookkeeping lets downstream utilities (for example `set!` or `FieldTimeSeries`) request exactly the
 slices of data they need, and it keeps track of where those slices live so we do not redownload

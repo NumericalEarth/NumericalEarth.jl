@@ -52,8 +52,6 @@ default_mask_value(::ECCO2DarwinMonthly) = 0
 
 dataset_variable_name(data::Metadata{<:Union{ECCO2DarwinMonthly,ECCO4DarwinMonthly}}) = ECCO_darwin_dataset_variable_names[data.name]
 
-dataset_location(::Metadata{<:Union{ECCO2DarwinMonthly, ECCO4DarwinMonthly}}) = (Center, Center, Center)
-
 variable_is_three_dimensional(::Metadata{<:Union{ECCO2DarwinMonthly, ECCO4DarwinMonthly}}) = true
 
 ECCO_darwin_dataset_variable_names = Dict(

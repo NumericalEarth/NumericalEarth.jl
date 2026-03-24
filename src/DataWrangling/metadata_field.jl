@@ -10,7 +10,7 @@ import Oceananigans.Fields: set!, Field, location
 ##### Location with automatic restriction based on region
 #####
 
-location(metadata::Metadata) = restrict_location(dataset_location(metadata), metadata.region)
+location(metadata::Metadata) = restrict_location(dataset_location(metadata.dataset, metadata.name), metadata.region)
 
 restrict_location(loc, ::Nothing) = loc
 restrict_location(loc, ::BoundingBox) = loc
@@ -249,7 +249,7 @@ function _column_field(metadata, arch;
     intermediate_grid = _intermediate_grid_from_file(metadata, arch; halo)
 
     # 3. Load data onto intermediate grid
-    LX, LY, LZ = dataset_location(metadata)
+    LX, LY, LZ = dataset_location(metadata.dataset, metadata.name)
     intermediate_field = Field{LX, LY, LZ}(intermediate_grid)
 
     data = retrieve_data(metadata)

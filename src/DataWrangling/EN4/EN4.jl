@@ -50,7 +50,6 @@ import NumericalEarth.DataWrangling:
     inpainted_metadata_path,
     available_variables
 
-import NumericalEarth.DataWrangling: dataset_location
 
 download_EN4_cache::String = ""
 function __init__()
@@ -168,7 +167,6 @@ end
 
 # Convenience functions
 dataset_variable_name(data::EN4Metadata) = EN4_dataset_variable_names[data.name]
-dataset_location(::EN4Metadata) = (Center, Center, Center)
 is_three_dimensional(::EN4Metadata) = true
 
 ## This function is explicitly for the downloader to check if the zip file/extracted file exists,

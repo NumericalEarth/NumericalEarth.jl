@@ -30,6 +30,8 @@ export
     regrid_bathymetry,
     Metadata,
     Metadatum,
+    BoundingBox,
+    Column,
     ECCOMetadatum,
     EN4Metadatum,
     ETOPO2022,

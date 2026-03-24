@@ -10,7 +10,7 @@ using NumericalEarth.DataWrangling: Metadata, metadata_path, download_progress, 
 import Dates: year, month, day
 import Oceananigans.Fields: set!
 import Base
-import NumericalEarth.DataWrangling: all_dates, metadata_filename, build_filename, download_dataset, default_download_directory, available_variables, dataset_location
+import NumericalEarth.DataWrangling: all_dates, metadata_filename, build_filename, download_dataset, default_download_directory, available_variables
 
 struct MultiYearJRA55 end
 struct RepeatYearJRA55 end
@@ -84,8 +84,6 @@ end
 
 # Convenience functions
 dataset_variable_name(data::JRA55Metadata) = JRA55_dataset_variable_names[data.name]
-dataset_location(::JRA55Metadata) = (Center, Center, Center)
-
 available_variables(::MultiYearJRA55)  = JRA55_variable_names
 available_variables(::RepeatYearJRA55) = JRA55_variable_names
 

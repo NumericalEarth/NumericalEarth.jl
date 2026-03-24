@@ -88,6 +88,7 @@ pages = [
 
     "Metadata" => [
         "Overview" => "Metadata/metadata_overview.md",
+        "Regions, locations, and FieldTimeSeries" => "Metadata/metadata_tutorial.md",
         "Supported variables" => "Metadata/supported_variables.md",
     ],
     "Interface fluxes" => "interface_fluxes.md",

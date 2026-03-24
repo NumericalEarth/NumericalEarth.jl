@@ -14,7 +14,6 @@ using Dates: DateTime, Day, Month, Hour
 import NumericalEarth.DataWrangling:
     all_dates,
     dataset_variable_name,
-    dataset_location,
     default_download_directory,
     longitude_interfaces,
     latitude_interfaces,
@@ -226,7 +225,7 @@ inpainted_metadata_path(metadata::ERA5Metadatum) = joinpath(metadata.dir, inpain
 ##### Grid interfaces
 #####
 
-dataset_location(::ERA5Metadata) = (Center, Center, Center)
+
 
 # ERA5 global coverage: 0-360 longitude, -90 to 90 latitude at 0.25 degree resolution
 longitude_interfaces(::ERA5Metadata) = (0, 360)
