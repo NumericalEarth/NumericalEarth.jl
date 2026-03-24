@@ -193,7 +193,7 @@ function ocean_simulation(grid;
                           rotation_rate = default_planet_rotation_rate,
                           gravitational_acceleration = default_gravitational_acceleration,
                           bottom_drag_coefficient = Default(0.003),
-                          drag_bulk_velocity = Default(0.1),
+                          drag_bulk_velocity = Default(0.05),
                           use_barotropic_potential = true,
                           forcing = NamedTuple(),
                           biogeochemistry = nothing,
