@@ -23,8 +23,8 @@ end
 
 function download_dataset(meta::GLORYSMetadatum;
                           skip_existing=true,
-                          username=get(ENV, "COPERNICUS_USERNAME", nothing),
-                          password=get(ENV, "COPERNICUS_PASSWORD", nothing),
+                          username=get(ENV, "COPERNICUSMARINE_SERVICE_USERNAME", nothing),
+                          password=get(ENV, "COPERNICUSMARINE_SERVICE_PASSWORD", nothing),
                           additional_kw...)
 
     output_directory = meta.dir
