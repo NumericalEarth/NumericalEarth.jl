@@ -95,11 +95,11 @@ end
 
 colon2dash(s::String) = replace(s, ":" => "-")
 
-function _region_suffix(::Nothing)
+function region_suffix(::Nothing)
     return ""
 end
 
-function _region_suffix(region)
+function region_suffix(region)
     w, e = bbox_strs(region.longitude)
     s, n = bbox_strs(region.latitude)
     return string(w, e, s, n)
@@ -110,7 +110,7 @@ function metadata_prefix(dataset::GLORYSDataset, name, date, region)
     ds = dataset_name(dataset)
     start_date = start_date_str(date)
     end_date = end_date_str(date)
-    suffix = _region_suffix(region)
+    suffix = region_suffix(region)
     return string(var, "_",
                   ds, "_",
                   start_date, "_",

@@ -122,29 +122,30 @@ parent(atmosphere.downwelling_radiation.longwave)  .= Qlw
 glorys = GLORYSMonthly()
 glorys_col = Column(λ★, φ★)
 
-T_glorys_meta = Metadatum(:temperature; dataset = glorys, region = glorys_col, date)
-S_glorys_meta = Metadatum(:salinity;    dataset = glorys, region = glorys_col, date)
+sst_meta = Metadatum(:temperature; dataset = glorys, region = glorys_col, date)
+sss_meta = Metadatum(:salinity;    dataset = glorys, region = glorys_col, date)
 
-T_ocean = Field(T_glorys_meta)
-S_ocean = Field(S_glorys_meta)
+sst_field = Field(sst_meta)
+sss_field = Field(sss_meta)
 
-# ## Build a PrescribedOcean from GLORYS
+# Extract the surface values (top of the water column).
+Nz = size(sst_field, 3)
+SST = sst_field[1, 1, Nz]
+SSS = sss_field[1, 1, Nz]
+
+@info "GLORYS ocean at Ocean Station Papa:" SST SSS
+
+# ## Build a PrescribedOcean
 #
-# The `PrescribedOcean` holds the GLORYS T and S profile as its surface
-# state. We use the column grid returned by `native_grid`.
+# The `PrescribedOcean` only needs the surface state — it is analogous
+# to `PrescribedAtmosphere` for the ocean side. We use a 0D grid with
+# `(Flat, Flat, Flat)` topology.
 
-using NumericalEarth.DataWrangling: native_grid
-
-ocean_grid = native_grid(T_glorys_meta)
+ocean_grid = RectilinearGrid(size = (), topology = (Flat, Flat, Flat))
 ocean = PrescribedOcean(ocean_grid, NamedTuple())
 
-# Copy GLORYS data into the ocean fields:
-parent(ocean.tracers.T) .= parent(T_ocean)
-parent(ocean.tracers.S) .= parent(S_ocean)
-
-SST = ocean.tracers.T[1, 1, size(ocean_grid, 3)]
-SSS = ocean.tracers.S[1, 1, size(ocean_grid, 3)]
-@info "GLORYS ocean at Ocean Station Papa:" SST SSS
+set!(ocean.tracers.T, SST)
+set!(ocean.tracers.S, SSS)
 
 # ## Compute fluxes
 #

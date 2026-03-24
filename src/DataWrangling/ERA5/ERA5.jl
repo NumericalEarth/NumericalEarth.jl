@@ -14,6 +14,7 @@ using Dates: DateTime, Day, Month, Hour
 import NumericalEarth.DataWrangling:
     all_dates,
     dataset_variable_name,
+    dataset_location,
     default_download_directory,
     longitude_interfaces,
     latitude_interfaces,
@@ -186,11 +187,11 @@ function bbox_strs(c)
     return first, second
 end
 
-function _region_suffix(::Nothing)
+function region_suffix(::Nothing)
     return ""
 end
 
-function _region_suffix(region)
+function region_suffix(region)
     w, e = bbox_strs(region.longitude)
     s, n = bbox_strs(region.latitude)
     return string(w, e, s, n)
@@ -202,7 +203,7 @@ function metadata_prefix(dataset::ERA5Dataset, name, date, region)
     start_date = start_date_str(date)
     end_date = end_date_str(date)
 
-    suffix = _region_suffix(region)
+    suffix = region_suffix(region)
     prefix = string(var, "_", ds, "_", start_date, "_", end_date, suffix)
     prefix = colon2dash(prefix)
     prefix = underscore_spaces(prefix)
@@ -225,7 +226,8 @@ inpainted_metadata_path(metadata::ERA5Metadatum) = joinpath(metadata.dir, inpain
 ##### Grid interfaces
 #####
 
-
+# ERA5 is a 2D surface dataset — vertical location is Nothing
+dataset_location(::ERA5Dataset, name) = (Center, Center, Nothing)
 
 # ERA5 global coverage: 0-360 longitude, -90 to 90 latitude at 0.25 degree resolution
 longitude_interfaces(::ERA5Metadata) = (0, 360)

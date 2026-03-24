@@ -37,11 +37,12 @@ Keyword Arguments
 - `heat_capacity`: Seawater specific heat in J/(kg·K).  Default: 3995.6.
 - `clock`: `Clock` for tracking ocean time.
 """
-struct PrescribedOcean{FT, G, Clk, U, TR, TS, ρ, C}
+struct PrescribedOcean{FT, G, Clk, U, TR, F, TS, ρ, C}
     grid :: G
     clock :: Clk
     velocities :: U
     tracers :: TR
+    fluxes :: F
     timeseries :: TS
     density :: ρ
     heat_capacity :: C
@@ -53,31 +54,27 @@ function PrescribedOcean(grid, timeseries;
                          heat_capacity = 3995.6,
                          clock = Clock{FT}(time = 0))
 
-    # --- surface flux fields (written by the coupling) ---------
-    τˣ = Field{Face, Center, Nothing}(grid)
-    τʸ = Field{Center, Face, Nothing}(grid)
-    Jᵀ = Field{Center, Center, Nothing}(grid)
-    Jˢ = Field{Center, Center, Nothing}(grid)
-
-    # --- prognostic‑looking fields with flux BCs ---------------
-    u_bcs = FieldBoundaryConditions(grid, (Face(),   Center(), Center()), top = FluxBoundaryCondition(τˣ))
-    v_bcs = FieldBoundaryConditions(grid, (Center(), Face(),   Center()), top = FluxBoundaryCondition(τʸ))
-    T_bcs = FieldBoundaryConditions(grid, (Center(), Center(), Center()), top = FluxBoundaryCondition(Jᵀ))
-    S_bcs = FieldBoundaryConditions(grid, (Center(), Center(), Center()), top = FluxBoundaryCondition(Jˢ))
-
-    u = XFaceField(grid;  boundary_conditions = u_bcs)
-    v = YFaceField(grid;  boundary_conditions = v_bcs)
-    T = CenterField(grid; boundary_conditions = T_bcs)
-    S = CenterField(grid; boundary_conditions = S_bcs)
+    u = CenterField(grid)
+    v = CenterField(grid)
+    T = CenterField(grid)
+    S = CenterField(grid)
 
     velocities = (; u, v, w = ZeroField())
     tracers    = (; T, S)
 
+    # Surface flux fields — written by the coupling, read by net_fluxes
+    τˣ = CenterField(grid)
+    τʸ = CenterField(grid)
+    Jᵀ = CenterField(grid)
+    Jˢ = CenterField(grid)
+    fluxes = (; u = τˣ, v = τʸ, T = Jᵀ, S = Jˢ)
+
     return PrescribedOcean{FT, typeof(grid), typeof(clock),
                            typeof(velocities), typeof(tracers),
-                           typeof(timeseries), typeof(density),
-                           typeof(heat_capacity)}(grid, clock, velocities, tracers,
-                                                  timeseries, density, heat_capacity)
+                           typeof(fluxes), typeof(timeseries),
+                           typeof(density), typeof(heat_capacity)}(
+                               grid, clock, velocities, tracers,
+                               fluxes, timeseries, density, heat_capacity)
 end
 
 #####
@@ -115,20 +112,9 @@ temperature_units(::PrescribedOcean) = DegreesCelsius()
 ocean_temperature(ocean::PrescribedOcean)         = ocean.tracers.T
 ocean_salinity(ocean::PrescribedOcean)             = ocean.tracers.S
 
-function ocean_surface_temperature(ocean::PrescribedOcean)
-    kᴺ = size(ocean.grid, 3)
-    return interior(ocean.tracers.T, :, :, kᴺ:kᴺ)
-end
-
-function ocean_surface_salinity(ocean::PrescribedOcean)
-    kᴺ = size(ocean.grid, 3)
-    return interior(ocean.tracers.S, :, :, kᴺ:kᴺ)
-end
-
-function ocean_surface_velocities(ocean::PrescribedOcean)
-    kᴺ = size(ocean.grid, 3)
-    return view(ocean.velocities.u, :, :, kᴺ), view(ocean.velocities.v, :, :, kᴺ)
-end
+ocean_surface_temperature(ocean::PrescribedOcean) = ocean.tracers.T
+ocean_surface_salinity(ocean::PrescribedOcean)    = ocean.tracers.S
+ocean_surface_velocities(ocean::PrescribedOcean)  = ocean.velocities.u, ocean.velocities.v
 
 #####
 ##### InterfaceComputations interface
@@ -142,13 +128,7 @@ function ComponentExchanger(ocean::PrescribedOcean, exchange_grid)
     return ComponentExchanger((; u, v, T, S), nothing)
 end
 
-function net_fluxes(ocean::PrescribedOcean)
-    τˣ = ocean.velocities.u.boundary_conditions.top.condition
-    τʸ = ocean.velocities.v.boundary_conditions.top.condition
-    Jᵀ = ocean.tracers.T.boundary_conditions.top.condition
-    Jˢ = ocean.tracers.S.boundary_conditions.top.condition
-    return (; T = Jᵀ, S = Jˢ, u = τˣ, v = τʸ)
-end
+net_fluxes(ocean::PrescribedOcean) = ocean.fluxes
 
 interpolate_state!(exchanger, grid, ::PrescribedOcean, coupled_model) = nothing
 

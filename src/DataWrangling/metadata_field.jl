@@ -39,10 +39,10 @@ Returns a `LatitudeLongitudeGrid` for global or `BoundingBox` regions,
 and a column `RectilinearGrid` for `Column` regions.
 """
 native_grid(metadata::Metadata, arch=CPU(); halo=(3, 3, 3)) =
-    _native_grid(metadata, metadata.region, arch; halo)
+    construct_native_grid(metadata, metadata.region, arch; halo)
 
 # Full global grid (no region restriction)
-function _native_grid(metadata, ::Nothing, arch; halo)
+function construct_native_grid(metadata, ::Nothing, arch; halo)
     Nx, Ny, Nz, _ = size(metadata)
     z = z_interfaces(metadata)
     FT = eltype(metadata)
@@ -55,7 +55,7 @@ function _native_grid(metadata, ::Nothing, arch; halo)
 end
 
 # BoundingBox-restricted LatitudeLongitudeGrid
-function _native_grid(metadata, bbox::BoundingBox, arch; halo)
+function construct_native_grid(metadata, bbox::BoundingBox, arch; halo)
     Nx, Ny, Nz, _ = size(metadata)
     z = z_interfaces(metadata)
     FT = eltype(metadata)
@@ -72,7 +72,7 @@ function _native_grid(metadata, bbox::BoundingBox, arch; halo)
 end
 
 # Column RectilinearGrid
-function _native_grid(metadata, col::Column, arch; halo)
+function construct_native_grid(metadata, col::Column, arch; halo)
     _, _, Nz, _ = size(metadata)
     z = z_interfaces(metadata)
     FT = eltype(metadata)
@@ -137,7 +137,7 @@ function Field(metadata::Metadatum, arch=CPU();
     download_dataset(metadata)
 
     if is_column(metadata.region)
-        return _column_field(metadata, arch; inpainting, mask, halo, cache_inpainted_data)
+        return column_field(metadata, arch; inpainting, mask, halo, cache_inpainted_data)
     end
 
     grid = native_grid(metadata, arch; halo)
@@ -236,7 +236,7 @@ end
 
 Internally loads data onto an intermediate LatitudeLongitudeGrid
 and interpolates to the column RectilinearGrid."""
-function _column_field(metadata, arch;
+function column_field(metadata, arch;
                        inpainting = default_inpainting(metadata),
                        mask = nothing,
                        halo = (3, 3, 3),
@@ -246,7 +246,7 @@ function _column_field(metadata, arch;
     column_grid = native_grid(metadata, arch; halo)
 
     # 2. Build an intermediate LatLonGrid from the downloaded data file
-    intermediate_grid = _intermediate_grid_from_file(metadata, arch; halo)
+    intermediate_grid = intermediate_grid_from_file(metadata, arch; halo)
 
     # 3. Load data onto intermediate grid
     LX, LY, LZ = dataset_location(metadata.dataset, metadata.name)
@@ -269,22 +269,22 @@ function _column_field(metadata, arch;
     _, _, LZ_col = location(metadata) # (Nothing, Nothing, LZ)
     column_field = Field{Nothing, Nothing, LZ_col}(column_grid)
 
-    _extract_column!(column_field, intermediate_field, metadata.region)
+    extract_column!(column_field, intermediate_field, metadata.region)
 
     return column_field
 end
 
 # Dispatch extraction on interpolation method
-function _extract_column!(column_field, intermediate_field, col::Column)
-    _extract_column!(column_field, intermediate_field, col, col.interpolation)
+function extract_column!(column_field, intermediate_field, col::Column)
+    extract_column!(column_field, intermediate_field, col, col.interpolation)
 end
 
-function _extract_column!(column_field, intermediate_field, col, ::Linear)
+function extract_column!(column_field, intermediate_field, col, ::Linear)
     interpolate!(column_field, intermediate_field)
     return nothing
 end
 
-function _extract_column!(column_field, intermediate_field, col, ::Nearest)
+function extract_column!(column_field, intermediate_field, col, ::Nearest)
     grid = intermediate_field.grid
     LX, LY, LZ = Oceananigans.Fields.location(intermediate_field)
 
@@ -306,13 +306,13 @@ function _extract_column!(column_field, intermediate_field, col, ::Nearest)
 end
 
 """Build an intermediate LatLonGrid by reading coordinate arrays from the downloaded file."""
-function _intermediate_grid_from_file(metadata, arch; halo)
+function intermediate_grid_from_file(metadata, arch; halo)
     path = metadata_path(metadata)
     ds = Dataset(path)
 
     # Try common coordinate variable names
-    λ = _read_longitude(ds)
-    φ = _read_latitude(ds)
+    λ = read_longitude(ds)
+    φ = read_latitude(ds)
     close(ds)
 
     Nx = length(λ)
@@ -348,7 +348,7 @@ function _intermediate_grid_from_file(metadata, arch; halo)
 end
 
 # Helper to read longitude from NetCDF with common variable names
-function _read_longitude(ds)
+function read_longitude(ds)
     for name in ("longitude", "lon", "LONGITUDE", "LON", "nav_lon")
         if haskey(ds, name)
             return ds[name][:]
@@ -358,7 +358,7 @@ function _read_longitude(ds)
 end
 
 # Helper to read latitude from NetCDF with common variable names
-function _read_latitude(ds)
+function read_latitude(ds)
     for name in ("latitude", "lat", "LATITUDE", "LAT", "nav_lat")
         if haskey(ds, name)
             return ds[name][:]

@@ -96,16 +96,16 @@ depth_bounds_kw(col::COL) = depth_bounds_kw(col.z)
 coordinates_selection_method(::COL{<:Any, <:Any, <:Any, NR}) = "nearest"
 
 # Column with Linear interpolation: expand by a small margin for interpolation
-longitude_bounds_kw(col::COL{<:Any, <:Any, <:Any, LIN}) = _expand_longitude(col.longitude)
-latitude_bounds_kw(col::COL{<:Any, <:Any, <:Any, LIN})  = _expand_latitude(col.latitude)
+longitude_bounds_kw(col::COL{<:Any, <:Any, <:Any, LIN}) = expand_longitude(col.longitude)
+latitude_bounds_kw(col::COL{<:Any, <:Any, <:Any, LIN})  = expand_latitude(col.latitude)
 coordinates_selection_method(::COL{<:Any, <:Any, <:Any, LIN}) = "outside"
 
-function _expand_longitude(lon)
+function expand_longitude(lon)
     ε = 1/6  # slightly more than one GLORYS grid cell (1/12°)
     return (; minimum_longitude = lon - ε, maximum_longitude = lon + ε)
 end
 
-function _expand_latitude(lat)
+function expand_latitude(lat)
     ε = 1/6
     return (; minimum_latitude = lat - ε, maximum_latitude = lat + ε)
 end

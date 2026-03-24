@@ -5,11 +5,7 @@ include("runtests_setup.jl")
         A = typeof(arch)
 
         @testset "Construction on $A" begin
-            grid = RectilinearGrid(arch;
-                                   size = 1,
-                                   x = 0.0, y = 0.0,
-                                   z = (-10, 0),
-                                   topology = (Flat, Flat, Bounded))
+            grid = RectilinearGrid(arch; size = (), topology = (Flat, Flat, Flat))
 
             ocean = PrescribedOcean(grid, NamedTuple())
 
@@ -21,11 +17,7 @@ include("runtests_setup.jl")
         end
 
         @testset "Setting tracer fields on $A" begin
-            grid = RectilinearGrid(arch;
-                                   size = 1,
-                                   x = 0.0, y = 0.0,
-                                   z = (-10, 0),
-                                   topology = (Flat, Flat, Bounded))
+            grid = RectilinearGrid(arch; size = (), topology = (Flat, Flat, Flat))
 
             ocean = PrescribedOcean(grid, NamedTuple())
 
@@ -39,11 +31,7 @@ include("runtests_setup.jl")
         end
 
         @testset "EarthSystemModel interface on $A" begin
-            grid = RectilinearGrid(arch;
-                                   size = 1,
-                                   x = 0.0, y = 0.0,
-                                   z = (-10, 0),
-                                   topology = (Flat, Flat, Bounded))
+            grid = RectilinearGrid(arch; size = (), topology = (Flat, Flat, Flat))
 
             ocean = PrescribedOcean(grid, NamedTuple())
             set!(ocean.tracers.T, 20.0)
@@ -57,11 +45,7 @@ include("runtests_setup.jl")
         end
 
         @testset "AtmosphereOceanModel coupling on $A" begin
-            grid = RectilinearGrid(arch;
-                                   size = 1,
-                                   x = 0.0, y = 0.0,
-                                   z = (-10, 0),
-                                   topology = (Flat, Flat, Bounded))
+            grid = RectilinearGrid(arch; size = (), topology = (Flat, Flat, Flat))
 
             ocean = PrescribedOcean(grid, NamedTuple())
             set!(ocean.tracers.T, 15.0)
@@ -91,11 +75,7 @@ include("runtests_setup.jl")
         end
 
         @testset "Time stepping on $A" begin
-            grid = RectilinearGrid(arch;
-                                   size = 1,
-                                   x = 0.0, y = 0.0,
-                                   z = (-10, 0),
-                                   topology = (Flat, Flat, Bounded))
+            grid = RectilinearGrid(arch; size = (), topology = (Flat, Flat, Flat))
 
             ocean = PrescribedOcean(grid, NamedTuple())
             set!(ocean.tracers.T, 15.0)
@@ -127,11 +107,7 @@ include("runtests_setup.jl")
         end
 
         @testset "OceanOnlyModel guard on $A" begin
-            grid = RectilinearGrid(arch;
-                                   size = 1,
-                                   x = 0.0, y = 0.0,
-                                   z = (-10, 0),
-                                   topology = (Flat, Flat, Bounded))
+            grid = RectilinearGrid(arch; size = (), topology = (Flat, Flat, Flat))
 
             ocean = PrescribedOcean(grid, NamedTuple())
             @test_throws ArgumentError OceanOnlyModel(ocean)
