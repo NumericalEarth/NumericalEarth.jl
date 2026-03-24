@@ -49,8 +49,9 @@ function download_dataset(meta::GLORYSMetadatum;
     lon_kw = longitude_bounds_kw(meta.region)
     lat_kw = latitude_bounds_kw(meta.region)
     z_kw = depth_bounds_kw(meta.region)
+    selection_method = coordinates_selection_method(meta.region)
 
-    kw = (; coordinates_selection_method = "outside",
+    kw = (; coordinates_selection_method = selection_method,
           skip_existing,
           dataset_id,
           variables,
@@ -76,26 +77,36 @@ end
 longitude_bounds_kw(::Nothing) = NamedTuple()
 latitude_bounds_kw(::Nothing) = NamedTuple()
 depth_bounds_kw(::Nothing) = NamedTuple()
+coordinates_selection_method(::Nothing) = "outside"
 
 const BBOX = NumericalEarth.DataWrangling.BoundingBox
 const COL  = NumericalEarth.DataWrangling.Column
+const LIN  = NumericalEarth.DataWrangling.Linear
+const NR   = NumericalEarth.DataWrangling.Nearest
 
 longitude_bounds_kw(bbox::BBOX) = longitude_bounds_kw(bbox.longitude)
 latitude_bounds_kw(bbox::BBOX) = latitude_bounds_kw(bbox.latitude)
 depth_bounds_kw(bbox::BBOX) = depth_bounds_kw(bbox.z)
+coordinates_selection_method(::BBOX) = "outside"
 
-# Column: expand scalar to small range for download
-longitude_bounds_kw(col::COL) = _scalar_longitude_bounds_kw(col.longitude)
-latitude_bounds_kw(col::COL) = _scalar_latitude_bounds_kw(col.latitude)
+# Column with Nearest interpolation: download the single nearest point
+longitude_bounds_kw(col::COL{<:Any, <:Any, <:Any, NR}) = (; minimum_longitude = col.longitude, maximum_longitude = col.longitude)
+latitude_bounds_kw(col::COL{<:Any, <:Any, <:Any, NR})  = (; minimum_latitude = col.latitude, maximum_latitude = col.latitude)
 depth_bounds_kw(col::COL) = depth_bounds_kw(col.z)
+coordinates_selection_method(::COL{<:Any, <:Any, <:Any, NR}) = "nearest"
 
-function _scalar_longitude_bounds_kw(lon)
-    ε = 1.0
+# Column with Linear interpolation: expand by a small margin for interpolation
+longitude_bounds_kw(col::COL{<:Any, <:Any, <:Any, LIN}) = _expand_longitude(col.longitude)
+latitude_bounds_kw(col::COL{<:Any, <:Any, <:Any, LIN})  = _expand_latitude(col.latitude)
+coordinates_selection_method(::COL{<:Any, <:Any, <:Any, LIN}) = "outside"
+
+function _expand_longitude(lon)
+    ε = 1/6  # slightly more than one GLORYS grid cell (1/12°)
     return (; minimum_longitude = lon - ε, maximum_longitude = lon + ε)
 end
 
-function _scalar_latitude_bounds_kw(lat)
-    ε = 1.0
+function _expand_latitude(lat)
+    ε = 1/6
     return (; minimum_latitude = lat - ε, maximum_latitude = lat + ε)
 end
 

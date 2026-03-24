@@ -118,10 +118,9 @@ function build_era5_area(bbox::BBOX)
 end
 
 function build_era5_area(col::COL)
-    # Expand column point by ~1° for interpolation
-    ε = 1.0
-    lon = col.longitude
-    lat = col.latitude
+    # ERA5 is 0.25°; expand by 0.5° (2 grid cells) for interpolation
+    ε = 0.5
+    lon, lat = col.longitude, col.latitude
     return [lat + ε, lon - ε, lat - ε, lon + ε]  # [N, W, S, E]
 end
 
