@@ -133,14 +133,13 @@ end
 const EN4_url_pre2021  = "http://www.metoffice.gov.uk/hadobs/en4/data/en4-2-1/EN.4.2.2/EN.4.2.2.analyses.g10."
 const EN4_url_post2021 = "http://www.metoffice.gov.uk/hadobs/en4/data/en4-2-1/EN.4.2.2.analyses.g10."
 
-function inpainted_metadata_filename(metadata::EN4Metadata)
-    original_filename = metadata_filename(metadata)
-    without_extension = original_filename[1:end-3]
+function inpainted_metadata_filename(metadata::EN4Metadatum)
+    without_extension = metadata.filename[1:end-3]
     var = string(metadata.name)
     return without_extension * "_" * var *"_inpainted.jld2"
 end
 
-inpainted_metadata_path(metadata::EN4Metadata) = joinpath(metadata.dir, inpainted_metadata_filename(metadata))
+inpainted_metadata_path(metadata::EN4Metadatum) = joinpath(metadata.dir, inpainted_metadata_filename(metadata))
 
 """
     EN4Metadatum(name;
@@ -160,10 +159,10 @@ metaprefix(::EN4Metadata) = "EN4Metadata"
 metaprefix(::EN4Metadatum) = "EN4Metadatum"
 
 # Note, EN4 files contain all variables, so the filenames do not
-# depend on metadata.name.
-function metadata_filename(metadata::Metadatum{<:EN4Monthly})
-    yearstr  = string(Dates.year(metadata.dates))
-    monthstr = string(Dates.month(metadata.dates), pad=2)
+# depend on name.
+function metadata_filename(::EN4Monthly, name, date, bounding_box)
+    yearstr  = string(Dates.year(date))
+    monthstr = string(Dates.month(date), pad=2)
     return "EN.4.2.2.f.analysis.g10." * yearstr * lpad(string(monthstr), 2, '0') * ".nc"
 end
 
