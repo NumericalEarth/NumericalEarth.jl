@@ -117,7 +117,7 @@ while the vertical location is preserved.
 `FieldTimeSeries` can be constructed directly from multi-date `Metadata`,
 creating a time-evolving field that loads data on demand:
 
-```@example fts
+```julia
 using NumericalEarth
 using Oceananigans
 using Dates

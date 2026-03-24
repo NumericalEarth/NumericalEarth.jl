@@ -13,6 +13,7 @@ export
     OceanSeaIceModel,
     AtmosphereOceanModel,
     SlabOcean,
+    PrescribedOcean,
     default_sea_ice,
     FreezingLimitedOceanTemperature,
     Radiation,
