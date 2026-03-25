@@ -227,6 +227,7 @@ include("EN4/EN4.jl")
 include("ORCA/ORCA.jl")
 include("WOA/WOA.jl")
 include("JRA55/JRA55.jl")
+include("OSPapa/OSPapa.jl")
 
 using .ETOPO
 using .ECCO
@@ -236,5 +237,6 @@ using .EN4
 using .ORCA
 using .WOA
 using .JRA55
+using .OSPapa
 
 end # module
