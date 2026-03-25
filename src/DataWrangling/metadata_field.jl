@@ -176,8 +176,13 @@ function set!(target_field::Field, metadata::Metadatum; kw...)
 
     Lzt = grid.Lz
     Lzm = meta_field.grid.Lz
-    
-    if Lzt > Lzm
+
+    # Allow up to 1% vertical mismatch. For pressure-level datasets with time-varying
+    # geopotential heights, the per-timestep vertical extent can be slightly smaller
+    # than the temporal-mean extent used for the target grid (e.g. when the atmosphere
+    # is compressed). Oceananigans' interpolate! does not extrapolate, so target points
+    # just outside the source domain will use the nearest interior values.
+    if Lzt > Lzm * (1 + 1e-2)
         throw("The vertical range of the $(metadata.dataset) dataset ($(Lzm) m) is smaller than " *
               "the target grid ($(Lzt) m). Some vertical levels cannot be filled with data.")
     end
