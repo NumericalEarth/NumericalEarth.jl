@@ -9,8 +9,7 @@ using Oceananigans.DistributedComputations: @root
 
 using Dates
 using NumericalEarth.DataWrangling.ERA5: ERA5Dataset, ERA5Metadata, ERA5Metadatum,
-                                         ERA5_dataset_variable_names, ERA5_netcdf_variable_names,
-                                         ERA5_single_level_accumulated_variables
+                                         ERA5_dataset_variable_names, ERA5_netcdf_variable_names
 using NumericalEarth.DataWrangling.ERA5: ERA5PressureLevelsDataset,
                                          ERA5PressureMetadata, ERA5PressureMetadatum,
                                          ERA5PL_dataset_variable_names, ERA5PL_netcdf_variable_names
@@ -47,6 +46,40 @@ extra_request_keys!(request, ::ERA5Dataset) = nothing
 function extra_request_keys!(request, ds::ERA5PressureLevelsDataset)
     p_hPa = [round(Int, p * 1e-2) for p in ds.pressure_levels]
     request["pressure_level"] = [string(p) for p in p_hPa]
+end
+
+#####
+##### ZIP detection — CDS returns a ZIP when mixing step types (inst/accum/avg)
+#####
+
+const ZIP_MAGIC = UInt8[0x50, 0x4b, 0x03, 0x04]
+
+function is_zip(path)
+    open(path, "r") do io
+        magic = read(io, 4)
+        return length(magic) >= 4 && magic == ZIP_MAGIC
+    end
+end
+
+"""
+    foreach_nc(f, download_path, cleanup_dir)
+
+If `download_path` is a ZIP archive (as CDS returns when mixing variable step types),
+extract all NetCDF files and call `f(nc_path)` on each. Otherwise call `f` directly
+on `download_path`.
+"""
+function foreach_nc(f, download_path, cleanup_dir)
+    if is_zip(download_path)
+        tmp_dir = mktempdir(cleanup_dir)
+        run(`unzip -qo $download_path -d $tmp_dir`)
+        nc_files = filter(p -> endswith(p, ".nc"), readdir(tmp_dir; join=true))
+        for nc_file in nc_files
+            f(nc_file)
+        end
+        rm(tmp_dir; recursive=true, force=true)
+    else
+        f(download_path)
+    end
 end
 
 #####
@@ -144,7 +177,9 @@ function download_era5_day(name, dataset, day_dates;
 
     @root begin
         CDSAPI.retrieve(cds_product(dataset), request, tmp_path)
-        split_era5_nc_multistep(tmp_path, nc_triples, coord_vars(dataset), time_dimnames)
+        foreach_nc(tmp_path, dir) do nc_path
+            split_era5_nc_multistep(nc_path, nc_triples, coord_vars(dataset), time_dimnames)
+        end
         cleanup && rm(tmp_path; force=true)
     end
 
@@ -223,7 +258,9 @@ function download_dataset(names::Vector{Symbol}, meta::ERA5PressureMetadatum; sk
 
     @root begin
         CDSAPI.retrieve(cds_product(meta.dataset), request, tmp_path)
-        split_era5_nc(tmp_path, nc_name_path_pairs, coord_vars(meta.dataset))
+        foreach_nc(tmp_path, meta.dir) do nc_path
+            split_era5_nc(nc_path, nc_name_path_pairs, coord_vars(meta.dataset))
+        end
         rm(tmp_path; force=true)
     end
 
@@ -281,27 +318,8 @@ function download_dataset(name::Symbol,
     return download_dataset([name], dataset, datetimes; bounding_box, dir, skip_existing, cleanup)
 end
 
-is_accumulated(name::Symbol) = name in ERA5_single_level_accumulated_variables
-
 function download_era5_multivar_day(names, dataset, day_dates;
                                      bounding_box, dir, skip_existing, cleanup)
-
-    # Split accumulated and instantaneous variables into separate requests
-    # to avoid CDS returning a zipfile with multiple NetCDF files
-    accum_names   = filter(is_accumulated, names)
-    instant_names = filter(!is_accumulated, names)
-
-    for name_group in (accum_names, instant_names)
-        isempty(name_group) && continue
-        download_era5_multivar_day_batch(name_group, dataset, day_dates;
-                                         bounding_box, dir, skip_existing, cleanup)
-    end
-
-    return nothing
-end
-
-function download_era5_multivar_day_batch(names, dataset, day_dates;
-                                           bounding_box, dir, skip_existing, cleanup)
 
     MDatum    = NumericalEarth.DataWrangling.Metadatum
     meta_path = NumericalEarth.DataWrangling.metadata_path
@@ -346,7 +364,9 @@ function download_era5_multivar_day_batch(names, dataset, day_dates;
 
     @root begin
         CDSAPI.retrieve(cds_product(dataset), request, tmp_path)
-        split_era5_nc_multistep(tmp_path, nc_triples, coord_vars(dataset), time_dimnames)
+        foreach_nc(tmp_path, dir) do nc_path
+            split_era5_nc_multistep(nc_path, nc_triples, coord_vars(dataset), time_dimnames)
+        end
         cleanup && rm(tmp_path; force=true)
     end
 
@@ -364,7 +384,9 @@ Split a multi-variable NetCDF into individual per-variable files (single time st
 """
 function split_era5_nc(src_path, nc_name_path_pairs, coord_vars)
     NCDatasets.Dataset(src_path, "r") do src
+        src_varnames = Set(keys(src))
         for (nc_varname, dst_path) in nc_name_path_pairs
+            nc_varname in src_varnames || continue
             NCDatasets.Dataset(dst_path, "c") do dst
                 unlimited = NCDatasets.unlimited(src)
                 for (dname, dlen) in src.dim
@@ -392,9 +414,11 @@ Split a multi-timestep NetCDF into individual per-variable, per-timestep files.
 """
 function split_era5_nc_multistep(src_path, nc_varname_tidx_path_triples, coord_vars, time_dimnames)
     NCDatasets.Dataset(src_path, "r") do src
+        src_varnames = Set(keys(src))
         unlimited = NCDatasets.unlimited(src)
 
         for (nc_varname, tidx, dst_path) in nc_varname_tidx_path_triples
+            nc_varname in src_varnames || continue
             NCDatasets.Dataset(dst_path, "c") do dst
                 for (dname, dlen) in src.dim
                     out_len = dname in time_dimnames ? 1 :
