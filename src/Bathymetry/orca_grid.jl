@@ -103,20 +103,36 @@ The `dataset` keyword argument specifies which ORCA configuration to use (e.g., 
 The mesh mask and bathymetry files are downloaded automatically via the
 `DataWrangling.ORCA` metadata interface.
 
+The horizontal grid (including coordinates, scale factors, and areas) is loaded
+directly from the `mesh_mask` NetCDF file, which contains data at all four staggered
+locations (T, U, V, F points). The user provides the vertical discretization via the `z`
+keyword argument.
+
 When `with_bathymetry = true` (the default), the bathymetry is also downloaded
 and the grid is returned as an `ImmersedBoundaryGrid` with a `GridFittedBottom`.
+
+Positional Arguments
+====================
+
+- `arch`: The architecture (e.g., `CPU()` or `GPU()`). Default: `CPU()`.
+- `FT`: Floating point type. Default: `Float64`.
 
 Keyword Arguments
 =================
 
-- `dataset`: The ORCA dataset to use. Default: `ORCA1()`.
+- `dataset`: The ORCA dataset to use. Default: `ORCA1()` (from Zenodo; <https://doi.org.10.5281/zenodo.4436658>).
 - `halo`: Halo size tuple `(Hx, Hy, Hz)`. Default: `(4, 4, 4)`.
-- `z`: Vertical coordinate specification. Default: `(-6000, 0)`.
+- `z`: Vertical coordinate specification. Can be a 2-tuple `(z_bottom, z_top)`, an array of z-interfaces,
+       or, e.g., an `ExponentialDiscretization`. Default: `(-6000, 0)`.
 - `Nz`: Number of vertical levels (only used when `z` is a 2-tuple). Default: `50`.
 - `radius`: Planet radius. Default: `Oceananigans.defaults.planet_radius`.
-- `with_bathymetry`: If `true`, return an `ImmersedBoundaryGrid` with `GridFittedBottom`. Default: `true`.
-- `active_cells_map`: If `true` and `with_bathymetry = true`, build an active cells map. Default: `true`.
-- `south_rows_to_remove`: Number of degenerate southern rows to remove from the eORCA grid. Default: dataset-specific.
+- `with_bathymetry`: If `true`, download the bathymetry and return an `ImmersedBoundaryGrid` with
+                     `GridFittedBottom`. Default: `true`.
+- `active_cells_map`: If `true` and `with_bathymetry = true`, build an active cells map
+                      for efficient kernel execution over wet cells only. Default: `true`.
+- `south_rows_to_remove`: Number of southern rows to remove from the eORCA grid.  The "extended" eORCA grid
+                          contains degenerate padding rows near Antarctica that are entirely land.
+                          Removing them reduces memory usage and computation.
 """
 function ORCAGrid(arch = CPU(), FT::DataType = Float64;
                   dataset = ORCA1(),
