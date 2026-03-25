@@ -30,17 +30,21 @@ const OSPapa_dataset_variable_names = Dict(
     :shortwave_radiation => "SW",
     :longwave_radiation  => "LW",
     :rain               => "RAIN",
+    :eastward_velocity  => "UCUR",
+    :northward_velocity => "VCUR",
 )
 
 const OSPapa_depth_variable_names = Dict(
-    :temperature => "DEPTH",
-    :salinity    => "DEPPSAL",
+    :temperature        => "DEPTH",
+    :salinity           => "DEPPSAL",
+    :eastward_velocity  => "DEPCUR",
+    :northward_velocity => "DEPCUR",
 )
 
 dataset_variable_name(data::OSPapaMetadata) = OSPapa_dataset_variable_names[data.name]
 
 location(::OSPapaMetadata) = (Center, Center, Center)
-is_three_dimensional(md::OSPapaMetadata) = md.name in (:temperature, :salinity)
+is_three_dimensional(md::OSPapaMetadata) = md.name in (:temperature, :salinity, :eastward_velocity, :northward_velocity)
 reversed_vertical_axis(::OSPapaHourly) = true
 conversion_units(::OSPapaMetadatum) = nothing
 default_inpainting(::OSPapaMetadata) = nothing
@@ -103,7 +107,7 @@ function _ospapa_depths(variable, dir=download_OSPapa_cache)
 end
 
 function Base.size(::OSPapaHourly, variable)
-    if variable in (:temperature, :salinity)
+    if variable in (:temperature, :salinity, :eastward_velocity, :northward_velocity)
         depths = _ospapa_depths(variable)
         return (1, 1, length(depths))
     else
