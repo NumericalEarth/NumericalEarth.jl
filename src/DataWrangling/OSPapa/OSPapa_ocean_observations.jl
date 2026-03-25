@@ -54,6 +54,7 @@ default_inpainting(::OSPapaMetadata) = nothing
 #####
 
 metadata_filename(::OSPapaMetadatum) = OSPAPA_FILENAME
+metadata_filename(::OSPapaHourly, name, date, bounding_box) = OSPAPA_FILENAME
 
 function download_dataset(metadata::OSPapaMetadata)
     download_ospapa_file(metadata.dir)
