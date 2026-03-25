@@ -1,3 +1,5 @@
+include("runtests_setup.jl")
+
 using NumericalEarth
 using NumericalEarth.DataWrangling: download_dataset, metadata_path
 using NumericalEarth.DataWrangling.ORCA: default_south_rows_to_remove
@@ -18,12 +20,12 @@ using Test
     @test mesh_meta.dataset isa ORCA1
 end
 
-@testset "ORCAGrid with ORCA1 dataset" begin
+@testset "ORCAGrid with ORCA1 dataset on $(arch)" for arch in test_architectures
     south_rows_to_remove = 43
-    grid = ORCAGrid(CPU(); dataset=ORCA1(), Nz=5, z=(-5000, 0), halo=(4, 4, 4), south_rows_to_remove)
+    grid = ORCAGrid(arch; dataset=ORCA1(), Nz=5, z=(-5000, 0), halo=(4, 4, 4), south_rows_to_remove)
     @test grid.underlying_grid.Ny == 333 - south_rows_to_remove
 
-    grid = ORCAGrid(CPU(); dataset=ORCA1(), Nz=5, z=(-5000, 0), halo=(4, 4, 4), south_rows_to_remove=0)
+    grid = ORCAGrid(arch; dataset=ORCA1(), Nz=5, z=(-5000, 0), halo=(4, 4, 4), south_rows_to_remove=0)
 
     # Default returns ImmersedBoundaryGrid with bathymetry
     @test grid isa ImmersedBoundaryGrid
@@ -35,14 +37,14 @@ end
     @test underlying.Nz == 5
 
     # Coordinates span near-global domain
-    @test minimum(underlying.λᶜᶜᵃ) < -179
-    @test maximum(underlying.λᶜᶜᵃ) > 179
-    @test minimum(underlying.φᶜᶜᵃ) < -80
-    @test maximum(underlying.φᶜᶜᵃ) > 80
+    @test minimum(underlying.λᶜᶜᵃ.parent) < -179
+    @test maximum(underlying.λᶜᶜᵃ.parent) > 179
+    @test minimum(underlying.φᶜᶜᵃ.parent) < -80
+    @test maximum(underlying.φᶜᶜᵃ.parent) > 80
 end
 
-@testset "ORCAGrid without bathymetry" begin
-    grid = ORCAGrid(CPU(); dataset=ORCA1(), Nz=5, z=(-5000, 0), halo=(4, 4, 4),
+@testset "ORCAGrid without bathymetry on $(arch)" for arch in test_architectures
+    grid = ORCAGrid(arch; dataset=ORCA1(), Nz=5, z=(-5000, 0), halo=(4, 4, 4),
                     with_bathymetry=false)
 
     @test grid isa Oceananigans.Grids.OrthogonalSphericalShellGrid
@@ -53,9 +55,9 @@ end
     @test grid.Nz == 5
 end
 
-@testset "ORCAGrid with south_rows_to_remove" begin
+@testset "ORCAGrid with south_rows_to_remove on $(arch)" for arch in test_architectures
     Nremove = 40
-    grid = ORCAGrid(CPU(); dataset=ORCA1(), Nz=5, z=(-5000, 0), halo=(4, 4, 4),
+    grid = ORCAGrid(arch; dataset=ORCA1(), Nz=5, z=(-5000, 0), halo=(4, 4, 4),
                     south_rows_to_remove=Nremove)
 
     @test grid isa ImmersedBoundaryGrid
@@ -78,7 +80,7 @@ end
                  :Δyᶜᶜᵃ, :Δyᶠᶜᵃ, :Δyᶜᶠᵃ, :Δyᶠᶠᵃ,
                  :Azᶜᶜᵃ, :Azᶠᶜᵃ, :Azᶜᶠᵃ, :Azᶠᶠᵃ)
         data = getproperty(grid, name)
-        @test all(isfinite, data) == true
+        @test all(isfinite, Oceananigans.on_architecture(CPU(), data)) == true
     end
 
     # All interior metrics (Δx, Δy, Az) are strictly positive
@@ -87,7 +89,7 @@ end
                  :Δyᶜᶜᵃ, :Δyᶠᶜᵃ, :Δyᶜᶠᵃ, :Δyᶠᶠᵃ,
                  :Azᶜᶜᵃ, :Azᶠᶜᵃ, :Azᶜᶠᵃ, :Azᶠᶠᵃ)
         data = getproperty(grid, name)
-        interior = data[1:Nx, 1:Ny]
+        interior = Oceananigans.on_architecture(CPU(), data)[1:Nx, 1:Ny]
         @test all(x -> x > 0, interior) == true
     end
 

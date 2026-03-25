@@ -4,11 +4,36 @@ include("download_utils.jl")
 
 using CUDA
 using Scratch
-
-test_group = get(ENV, "TEST_GROUP", :all)
-test_group = Symbol(test_group)
-
 using NumericalEarth.DataWrangling: download_dataset
+using ParallelTestRunner: find_tests, parse_args, filter_tests!, runtests
+
+# Start with autodiscovered tests
+testsuite = find_tests(@__DIR__)
+
+# Parse arguments
+args = parse_args(ARGS)
+
+# download_utils and runtests_setup are not tests!
+delete!(testsuite, "runtests_setup")
+delete!(testsuite, "download_utils")
+delete!(testsuite, "test_distributed_utils")
+
+gpu_test = parse(Bool, get(ENV, "GPU_TEST", "false"))
+
+if filter_tests!(testsuite, args)
+    # Always remove tests that are treated separately
+    delete!(testsuite, "test_downloading")
+    delete!(testsuite, "test_cds_downloading")
+    delete!(testsuite, "test_distributed_utils")
+    delete!(testsuite, "test_reactant")
+
+    # Remove CPU-only tests when
+    # testing on GPUs
+    if gpu_test
+        delete!(testsuite, "test_veros")
+        delete!(testsuite, "test_speedy_coupling")
+    end
+end
 
 function delete_inpainted_files(dir)
     @info "Cleaning inpainted files..."
@@ -23,7 +48,7 @@ function delete_inpainted_files(dir)
     end
 end
 
-if test_group == :init || test_group == :all
+function __init__()
     #####
     ##### Delete inpainted files
     #####
@@ -83,72 +108,9 @@ if test_group == :init || test_group == :all
     end
 end
 
-# Tests JRA55 utilities, plus some DataWrangling utilities
-if test_group == :JRA55 || test_group == :all
-    include("test_jra55.jl")
-end
+# Initialize and download required datasets
+__init__()
 
-if test_group == :ecco2_monthly || test_group == :all
-    include("test_ecco2_monthly.jl")
-end
+runtests(NumericalEarth, args; testsuite)
 
-if test_group == :ecco2_daily || test_group == :all
-    include("test_ecco2_daily.jl")
-end
-
-if test_group == :ecco4_en4 || test_group == :all
-    include("test_ecco4_en4.jl")
-end
-
-if test_group == :ecco_atmosphere || test_group == :all
-    include("test_ecco_atmosphere.jl")
-end
-
-# Tests that we can download JRA55 utilities
-if test_group == :downloading || test_group == :all
-    include("test_downloading.jl")
-end
-
-# Tests that we can download from Copernicus Climate Data Store (ERA5, etc.)
-if test_group == :cds_downloading || test_group == :all
-    include("test_cds_downloading.jl")
-end
-
-if test_group == :fluxes || test_group == :all
-    include("test_surface_fluxes.jl")
-    include("test_sea_ice_ocean_heat_fluxes.jl")
-end
-
-if test_group == :bathymetry_orca1 || test_group == :all
-    include("test_bathymetry.jl")
-    include("test_orca_grid.jl")
-end
-
-if test_group == :earth_system_model || test_group == :all
-    include("test_earth_system_model.jl")
-    include("test_diagnostics.jl")
-end
-
-if test_group == :distributed || test_group == :all
-    include("test_distributed_utils.jl")
-end
-
-if test_group == :reactant || test_group == :all
-    include("test_reactant.jl")
-end
-
-if test_group == :speedy_weather || test_group == :all
-    include("test_speedy_coupling.jl")
-end
-
-if test_group == :veros || test_group == :all
-    include("test_veros.jl")
-end
-
-if test_group == :breeze || test_group == :all
-    include("test_breeze_coupling.jl")
-end
-
-if test_group == :woa || test_group == :all
-    include("test_woa.jl")
-end
+delete_inpainted_files(@get_scratch!("."))

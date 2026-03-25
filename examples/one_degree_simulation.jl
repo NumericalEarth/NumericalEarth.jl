@@ -150,6 +150,7 @@ add_callback!(simulation, progress, TimeInterval(5days))
 # also uses a prognostic turbulent kinetic energy, `e`, to diagnose the vertical mixing length.
 
 ocean_outputs = merge(ocean.model.tracers, ocean.model.velocities)
+free_surface = ocean.model.free_surface.displacement
 sea_ice_outputs = merge((h = sea_ice.model.ice_thickness,
                          ℵ = sea_ice.model.ice_concentration,
                          T = sea_ice.model.ice_thermodynamics.top_surface_temperature),
@@ -160,6 +161,11 @@ ocean.output_writers[:surface] = JLD2Writer(ocean.model, ocean_outputs;
                                             filename = "ocean_one_degree_surface_fields",
                                             indices = (:, :, grid.Nz),
                                             overwrite_existing = true)
+
+ocean.output_writers[:free_surface] = JLD2Writer(ocean.model, (; η = free_surface);
+                                                 schedule = TimeInterval(1days),
+                                                 filename = "ocean_one_degree_free_surface",
+                                                 overwrite_existing = true)
 
 sea_ice.output_writers[:surface] = JLD2Writer(sea_ice.model, sea_ice_outputs;
                                               schedule = TimeInterval(1days),
@@ -181,6 +187,7 @@ uo = FieldTimeSeries("ocean_one_degree_surface_fields.jld2",  "u"; backend = OnD
 vo = FieldTimeSeries("ocean_one_degree_surface_fields.jld2",  "v"; backend = OnDisk())
 To = FieldTimeSeries("ocean_one_degree_surface_fields.jld2",  "T"; backend = OnDisk())
 eo = FieldTimeSeries("ocean_one_degree_surface_fields.jld2",  "e"; backend = OnDisk())
+ηo = FieldTimeSeries("ocean_one_degree_free_surface.jld2",    "η"; backend = OnDisk())
 
 # and sea ice fields with "i":
 ui = FieldTimeSeries("sea_ice_one_degree_surface_fields.jld2", "u"; backend = OnDisk())
@@ -206,6 +213,12 @@ eoₙ = @lift begin
     eₙ = interior(eo[$n])
     eₙ[land] .= NaN
     view(eₙ, :, :, 1)
+end
+
+ηoₙ = @lift begin
+    ηₙ = interior(ηo[$n])
+    ηₙ[land] .= NaN
+    view(ηₙ, :, :, 1)
 end
 
 heₙ = @lift begin
@@ -255,23 +268,26 @@ fig = Figure(size=(1200, 1000))
 title = @lift string("Global 1ᵒ ocean simulation after ", prettytime(times[$n] - times[1]))
 
 axso = Axis(fig[1, 1])
-axsi = Axis(fig[1, 3])
+axηo = Axis(fig[1, 3])
 axTo = Axis(fig[2, 1])
-axhi = Axis(fig[2, 3])
-axeo = Axis(fig[3, 1])
+axeo = Axis(fig[2, 3])
+axsi = Axis(fig[3, 1])
+axhi = Axis(fig[3, 3])
 
-hmo = heatmap!(axso, soₙ, colorrange = (0, 0.5), colormap = :deep,  nan_color=:lightgray)
-hmi = heatmap!(axsi, siₙ, colorrange = (0, 0.5), colormap = :greys, nan_color=:lightgray)
-Colorbar(fig[1, 2], hmo, label = "Ocean Surface speed (m s⁻¹)")
-Colorbar(fig[1, 4], hmi, label = "Sea ice speed (m s⁻¹)")
-
-hmo = heatmap!(axTo, Toₙ, colorrange = (-1, 32), colormap = :magma, nan_color=:lightgray)
-hmi = heatmap!(axhi, heₙ, colorrange =  (0, 4),  colormap = :blues, nan_color=:lightgray)
-Colorbar(fig[2, 2], hmo, label = "Surface Temperature (ᵒC)")
-Colorbar(fig[2, 4], hmi, label = "Effective ice thickness (m)")
-
+hm = heatmap!(axso, soₙ, colorrange = (0, 0.5), colormap = :deep,  nan_color=:lightgray)
+Colorbar(fig[1, 2], hm, label = "Ocean Surface speed (m s⁻¹)")
+hm = heatmap!(axηo, ηoₙ, colorrange = (-1.2, 1.2), colormap = :balance, nan_color=:lightgray)
+Colorbar(fig[1, 4], hm, label = "Sea Surface Height (m)")
+hm = heatmap!(axTo, Toₙ, colorrange = (-1, 32), colormap = :magma, nan_color=:lightgray)
+Colorbar(fig[2, 2], hm, label = "Surface Temperature (ᵒC)")
 hm = heatmap!(axeo, eoₙ, colorrange = (0, 1e-3), colormap = :solar, nan_color=:lightgray)
-Colorbar(fig[3, 2], hm, label = "Turbulent Kinetic Energy (m² s⁻²)")
+Colorbar(fig[2, 4], hm, label = "Turbulent Kinetic Energy (m² s⁻²)")
+
+hm = heatmap!(axsi, siₙ, colorrange = (0, 0.5), colormap = :greys, nan_color=:lightgray)
+Colorbar(fig[1, 4], hm, label = "Sea ice speed (m s⁻¹)")
+hm = heatmap!(axhi, heₙ, colorrange =  (0, 4),  colormap = :blues, nan_color=:lightgray)
+Colorbar(fig[2, 4], hm, label = "Effective ice thickness (m)")
+
 
 for ax in (axso, axsi, axTo, axhi, axeo)
     hidedecorations!(ax)

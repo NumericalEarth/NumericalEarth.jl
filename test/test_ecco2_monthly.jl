@@ -76,6 +76,19 @@ for arch in test_architectures, dataset in test_ecco_datasets
             #     test_cycling_dataset_restoring(arch, dataset, dates, inpainting)
             # end
 
+            @testset "Warning when target grid is deeper than dataset" begin
+                deep_grid = LatitudeLongitudeGrid(arch;
+                                                  size = (10, 10, 10),
+                                                  latitude = (-60, -40),
+                                                  longitude = (10, 15),
+                                                  z = (-100000, 0))
+
+                field = CenterField(deep_grid)
+                datum = Metadatum(:temperature; dataset, date=start_date)
+
+                @test_throws "The vertical range" set!(field, datum; inpainting=nothing)
+            end
+
             # Expensive due to the high resolution of ECCO2
             # @testset "Inpainting algorithm" begin
             #     test_inpainting_algorithm(arch, dataset, start_date, inpainting)

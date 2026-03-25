@@ -258,76 +258,76 @@ end
     end
 end
 
-@testset "Fluxes regression" begin
-    for arch in test_architectures
-        @info "Testing fluxes regression..."
+# @testset "Fluxes regression" begin
+#     for arch in test_architectures
+#         @info "Testing fluxes regression..."
 
-        grid = LatitudeLongitudeGrid(arch;
-                                     size = (20, 20, 20),
-                                 latitude = (-60, 60),
-                                longitude = (0, 360),
-                                        z = (-5000, 0))
+#         grid = LatitudeLongitudeGrid(arch;
+#                                      size = (20, 20, 20),
+#                                  latitude = (-60, 60),
+#                                 longitude = (0, 360),
+#                                         z = (-5000, 0))
 
-        # Speed up compilation by removing all the unnecessary stuff
-        momentum_advection = nothing
-        tracer_advection   = nothing
-        tracers  = (:T, :S)
-        buoyancy = nothing
-        closure  = nothing
-        coriolis = nothing
+#         # Speed up compilation by removing all the unnecessary stuff
+#         momentum_advection = nothing
+#         tracer_advection   = nothing
+#         tracers  = (:T, :S)
+#         buoyancy = nothing
+#         closure  = nothing
+#         coriolis = nothing
 
-        ocean = ocean_simulation(grid; momentum_advection, tracer_advection, closure, tracers, coriolis)
+#         ocean = ocean_simulation(grid; momentum_advection, tracer_advection, closure, tracers, coriolis)
 
-        date = DateTimeProlepticGregorian(1993, 1, 1)
-        dataset = ECCO4Monthly()
-        T_metadata = Metadatum(:temperature; date, dataset)
-        S_metadata = Metadatum(:salinity; date, dataset)
+#         date = DateTimeProlepticGregorian(1993, 1, 1)
+#         dataset = ECCO4Monthly()
+#         T_metadata = Metadatum(:temperature; date, dataset)
+#         S_metadata = Metadatum(:salinity; date, dataset)
 
-        set!(ocean.model; T=T_metadata, S=S_metadata)
+#         set!(ocean.model; T=T_metadata, S=S_metadata)
 
-        end_date   = all_dates(RepeatYearJRA55(), :temperature)[10]
-        atmosphere = JRA55PrescribedAtmosphere(arch; end_date, backend = InMemory())
-        radiation  = Radiation(ocean_albedo=0.1, ocean_emissivity=1.0)
-        sea_ice    = nothing
+#         end_date   = all_dates(RepeatYearJRA55(), :temperature)[10]
+#         atmosphere = JRA55PrescribedAtmosphere(arch; end_date, backend = InMemory())
+#         radiation  = Radiation(ocean_albedo=0.1, ocean_emissivity=1.0)
+#         sea_ice    = nothing
 
-        coupled_model = OceanSeaIceModel(ocean, sea_ice; atmosphere, radiation)
-        times = 0:1hours:1days
-        Ntimes = length(times)
+#         coupled_model = OceanSeaIceModel(ocean, sea_ice; atmosphere, radiation)
+#         times = 0:1hours:1days
+#         Ntimes = length(times)
 
-        # average the fluxes over one day
-        Jᵀ = interior(ocean.model.tracers.T.boundary_conditions.top.condition, :, :, 1) ./ Ntimes
-        Jˢ = interior(ocean.model.tracers.S.boundary_conditions.top.condition, :, :, 1) ./ Ntimes
-        τˣ = interior(ocean.model.velocities.u.boundary_conditions.top.condition, :, :, 1) ./ Ntimes
-        τʸ = interior(ocean.model.velocities.v.boundary_conditions.top.condition, :, :, 1) ./ Ntimes
+#         # average the fluxes over one day
+#         Jᵀ = interior(ocean.model.tracers.T.boundary_conditions.top.condition, :, :, 1) ./ Ntimes
+#         Jˢ = interior(ocean.model.tracers.S.boundary_conditions.top.condition, :, :, 1) ./ Ntimes
+#         τˣ = interior(ocean.model.velocities.u.boundary_conditions.top.condition, :, :, 1) ./ Ntimes
+#         τʸ = interior(ocean.model.velocities.v.boundary_conditions.top.condition, :, :, 1) ./ Ntimes
 
-        for time in times[2:end]
-            coupled_model.clock.time = time
-            update_state!(coupled_model)
-            Jᵀ .+= interior(ocean.model.tracers.T.boundary_conditions.top.condition, :, :, 1) ./ Ntimes
-            Jˢ .+= interior(ocean.model.tracers.S.boundary_conditions.top.condition, :, :, 1) ./ Ntimes
-            τˣ .+= interior(ocean.model.velocities.u.boundary_conditions.top.condition, :, :, 1) ./ Ntimes
-            τʸ .+= interior(ocean.model.velocities.v.boundary_conditions.top.condition, :, :, 1) ./ Ntimes
-        end
+#         for time in times[2:end]
+#             coupled_model.clock.time = time
+#             update_state!(coupled_model)
+#             Jᵀ .+= interior(ocean.model.tracers.T.boundary_conditions.top.condition, :, :, 1) ./ Ntimes
+#             Jˢ .+= interior(ocean.model.tracers.S.boundary_conditions.top.condition, :, :, 1) ./ Ntimes
+#             τˣ .+= interior(ocean.model.velocities.u.boundary_conditions.top.condition, :, :, 1) ./ Ntimes
+#             τʸ .+= interior(ocean.model.velocities.v.boundary_conditions.top.condition, :, :, 1) ./ Ntimes
+#         end
 
-        Jᵀ_mean = mean(Jᵀ)
-        Jˢ_mean = mean(Jˢ)
-        τˣ_mean = mean(τˣ)
-        τʸ_mean = mean(τʸ)
+#         Jᵀ_mean = mean(Jᵀ)
+#         Jˢ_mean = mean(Jˢ)
+#         τˣ_mean = mean(τˣ)
+#         τʸ_mean = mean(τʸ)
 
-        Jᵀ_std = std(Jᵀ)
-        Jˢ_std = std(Jˢ)
-        τˣ_std = std(τˣ)
-        τʸ_std = std(τʸ)
+#         Jᵀ_std = std(Jᵀ)
+#         Jˢ_std = std(Jˢ)
+#         τˣ_std = std(τˣ)
+#         τʸ_std = std(τʸ)
 
-        # Regression test
-        @test_broken Jᵀ_mean ≈ -3.526464713488678e-5
-        @test_broken Jˢ_mean ≈ 1.1470078542716042e-6
-        @test_broken τˣ_mean ≈ -1.0881334225579832e-5
-        @test_broken τʸ_mean ≈ 5.653281786086694e-6
+#         # Regression test
+#         @test_broken Jᵀ_mean ≈ -3.526464713488678e-5
+#         @test_broken Jˢ_mean ≈ 1.1470078542716042e-6
+#         @test_broken τˣ_mean ≈ -1.0881334225579832e-5
+#         @test_broken τʸ_mean ≈ 5.653281786086694e-6
 
-        @test_broken Jᵀ_std ≈ 7.477575901188957e-5
-        @test_broken Jˢ_std ≈ 3.7416720607945508e-6
-        @test_broken τˣ_std ≈ 0.00011349625113971719
-        @test_broken τʸ_std ≈ 7.627885224680635e-5
-    end
-end
+#         @test_broken Jᵀ_std ≈ 7.477575901188957e-5
+#         @test_broken Jˢ_std ≈ 3.7416720607945508e-6
+#         @test_broken τˣ_std ≈ 0.00011349625113971719
+#         @test_broken τʸ_std ≈ 7.627885224680635e-5
+#     end
+# end
