@@ -132,8 +132,7 @@ net_fluxes(ocean::PrescribedOcean) = ocean.fluxes
 
 interpolate_state!(exchanger, grid, ::PrescribedOcean, coupled_model) = nothing
 
-update_net_fluxes!(coupled_model, ocean::PrescribedOcean) =
-    Oceans.update_net_ocean_fluxes!(coupled_model, ocean, ocean.grid)
+update_net_fluxes!(coupled_model, ocean::PrescribedOcean) = nothing
 
 #####
 ##### Time stepping — copy prescribed data into model fields
