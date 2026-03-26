@@ -2,54 +2,59 @@ using Oceananigans.Grids: λnode, φnode, on_architecture
 using ImageMorphology
 
 #####
-##### OceanBasinMask struct
+##### BasinMask struct
 #####
 
 """
-    OceanBasinMask{M, G}
+    BasinMask{M, G, S}
 
-A mask identifying cells belonging to a specific ocean basin.
-The mask is stored as a 2D Field{Center, Center, Nothing} with values:
-- 1.0: cell belongs to the basin
-- 0.0: cell does not belong to the basin
+A mask identifying cells belonging to a specific basin (connected water region).
+
+The mask is stored as a 2D `Field{Center, Center, Nothing}` with `Bool` values:
+- `true`:  cell belongs to the basin
+- `false`: cell does not belong to the basin
+
+`seed_points` is a collection of `(λ, φ)` coordinate pairs used to identify which
+connected component corresponds to the desired basin. The algorithm finds the
+label at each seed point and builds the mask from that label.
 """
-struct OceanBasinMask{M, G, S}
+struct BasinMask{M, G, S}
     mask :: M
     grid :: G
     seed_points :: S
 end
 
-Base.summary(obm::OceanBasinMask) = "OceanBasinMask"
+Base.summary(bm::BasinMask) = "BasinMask"
 
-function Base.show(io::IO, obm::OceanBasinMask)
-    print(io, summary(obm), " on ", summary(obm.grid))
+function Base.show(io::IO, bm::BasinMask)
+    print(io, summary(bm), " on ", summary(bm.grid))
 end
 
 # Forward getindex to mask
-Base.getindex(obm::OceanBasinMask, i, j, k) = obm.mask[i, j, k]
+Base.getindex(bm::BasinMask, i, j, k) = bm.mask[i, j, k]
 
 #####
 ##### Additive basin masks
 #####
 
 """
-    Base.:+(mask1::OceanBasinMask, mask2::OceanBasinMask)
+    Base.:+(mask1::BasinMask, mask2::BasinMask)
 
-Combine two ocean basin masks, returning a new mask that is the union of both.
-Cells that belong to either basin will have value 1.0.
+Combine two basin masks, returning a new mask that is the union of both.
+Cells that belong to either basin will be `true`.
 """
-function Base.:+(mask1::OceanBasinMask, mask2::OceanBasinMask)
+function Base.:+(mask1::BasinMask, mask2::BasinMask)
     grid = mask1.grid
-    combined_mask = Field{Center, Center, Nothing}(grid)
+    combined_mask = Field{Center, Center, Nothing}(grid, Bool)
 
     # Union: cell is in combined mask if it's in either mask
-    parent(combined_mask) .= max.(parent(mask1.mask), parent(mask2.mask))
+    parent(combined_mask) .= parent(mask1.mask) .| parent(mask2.mask)
     fill_halo_regions!(combined_mask)
 
     # Combine seed points
     combined_seeds = (mask1.seed_points..., mask2.seed_points...)
 
-    return OceanBasinMask(combined_mask, grid, combined_seeds)
+    return BasinMask(combined_mask, grid, combined_seeds)
 end
 
 #####
@@ -97,11 +102,9 @@ end
 Create a mask field for all cells with the given label.
 """
 function create_basin_mask_from_label(grid, labels, basin_label)
-    arch = architecture(grid)
     Nx, Ny, _ = size(grid)
-    FT = eltype(grid)
 
-    mask = Field{Center, Center, Nothing}(grid)
+    mask = Field{Center, Center, Nothing}(grid, Bool)
 
     launch!(CPU(), grid, :xy, _compute_basin_mask!,
             mask, grid, labels, basin_label)
@@ -176,7 +179,7 @@ const PACIFIC_SEED_POINTS = [
 ]
 
 #####
-##### OceanBasinMask
+##### BasinMask constructor
 #####
 
 add_barrier(v::AbstractVector, b::Barrier) = [v..., b]
@@ -184,34 +187,44 @@ add_barrier(v::Barrier,        b::Barrier) = [v, b]
 add_barrier(::Nothing,         b::Barrier) = b
 
 """
-    OceanBasinMask(grid;
+    BasinMask(grid;
+              south_boundary = nothing,
+              north_boundary = nothing,
+              seed_points = [(0, 0)],
+              barriers = nothing)
+
+Create a `Bool` mask for a single connected water basin.
+
+The algorithm first labels every connected water region (using `ImageMorphology.label_components`),
+optionally splitting regions with `barriers`. It then retrieves the basin whose label
+matches the first `seed_point` that falls on water.
+
+Multiple `seed_points` are tried in order as fallbacks (the first hit wins);
+multiple `barriers` are applied simultaneously before labeling so that each
+barrier independently blocks water connectivity.
+
+Arguments
+=========
+- `grid`: An `ImmersedBoundaryGrid` whose immersed boundary defines the coastlines.
+
+Keyword Arguments
+=================
+- `south_boundary`: Southern latitude limit — cells south of this become land. Default: `nothing`.
+- `north_boundary`: Northern latitude limit — cells north of this become land. Default: `nothing`.
+- `seed_points`: `(λ, φ)` pairs identifying the target basin. The first seed that lands
+                 on water determines which connected component becomes `true` in the mask.
+                 Multiple seeds are tried as fallbacks for grids where a single point
+                 may fall on land. Default: `[(0, 0)]`.
+- `barriers`: `Barrier`s (or a `Vector` of them) applied before labeling.
+              Each barrier temporarily marks its rectangle as land, preventing the
+              flood-fill from crossing it (e.g., closing Drake Passage separates the
+              Atlantic from the Pacific). Default: `nothing`.
+"""
+function BasinMask(grid;
                    south_boundary = nothing,
                    north_boundary = nothing,
                    seed_points = [(0, 0)],
                    barriers = nothing)
-
-Create a mask identifying cells in the Ocean basin using connected component analysis.
-The algorithm uses labels restricted by south, north, east, and west boundaries with a fill
-algorithm that retrieves the basin corresponding to labels associated with known `seed_points`.
-This ensures the mask exactly follows coastlines.
-
-Arguments
-=========
-- `grid`: The ocean grid (typically an ImmersedBoundaryGrid)
-
-Keyword Arguments
-=================
-- `south_boundary`: Southern latitude limit. Default: nothing
-- `north_boundary`: Northern latitude limit. Default: nothing
-- `seed_points`: Known (λ, φ) points of the ocean basin to retrieve. Default: [(0, 0)]
-- `barriers`: Collection of barriers to apply before labeling. Barriers temporarily
-              separate connected ocean basins (e.g., separating Atlantic from Pacific).
-"""
-function OceanBasinMask(grid;
-                        south_boundary = nothing,
-                        north_boundary = nothing,
-                        seed_points = [(0, 0)],
-                        barriers = nothing)
 
     # The computations are 2D and require serial algorithms, so
     # we perform the computation on the CPU then move the output
@@ -242,26 +255,26 @@ function OceanBasinMask(grid;
     end
 
     if basin_label == 0
-        @warn "Could not find the Ocean basin in grid. Returning empty mask."
-        mask = Field{Center, Center, Nothing}(grid)
-        return OceanBasinMask(mask, grid, seed_points)
+        @warn "Could not find the basin in grid. Returning empty mask."
+        mask = Field{Center, Center, Nothing}(grid, Bool)
+        return BasinMask(mask, grid, seed_points)
     end
 
     # Create mask from label with latitude bounds
     mask = create_basin_mask_from_label(cpu_grid, labels, basin_label)
     mask = Oceananigans.on_architecture(architecture(grid), mask)
 
-    return OceanBasinMask(mask, grid, seed_points)
+    return BasinMask(mask, grid, seed_points)
 end
 
 #####
-##### Convenience functions for specific ocean basins
+##### Convenience functions for Earth's ocean basins
 #####
 
 """
     atlantic_ocean_mask(grid; include_southern_ocean=false, kw...)
 
-Create a mask for the Atlantic Ocean with predefined barriers and seed points.
+Create a mask for Earth's Atlantic Ocean with predefined barriers and seed points.
 
 Keyword Arguments
 =================
@@ -269,7 +282,7 @@ Keyword Arguments
                             sector below the standard separation latitude (~55°S). Default: `false`.
 - `south_boundary`: Southern latitude limit. Default: -50.0 (or -90.0 if `include_southern_ocean=true`)
 - `north_boundary`: Northern latitude limit. Default: 65.0
-- Other keyword arguments are passed to `OceanBasinMask`.
+- Other keyword arguments are passed to `BasinMask`.
 """
 function atlantic_ocean_mask(grid;
                              include_southern_ocean = true,
@@ -283,13 +296,13 @@ function atlantic_ocean_mask(grid;
         barriers = [barriers..., SOUTHERN_OCEAN_SEPARATION_BARRIER]
     end
 
-    return OceanBasinMask(grid; south_boundary, north_boundary, barriers, seed_points, kw...)
+    return BasinMask(grid; south_boundary, north_boundary, barriers, seed_points, kw...)
 end
 
 """
     indian_ocean_mask(grid; include_southern_ocean=false, kw...)
 
-Create a mask for the Indian Ocean with predefined barriers and seed points.
+Create a mask for Earth's Indian Ocean with predefined barriers and seed points.
 
 Keyword Arguments
 =================
@@ -297,7 +310,7 @@ Keyword Arguments
                             sector below the standard separation latitude (~55°S). Default: `false`.
 - `south_boundary`: Southern latitude limit. Default: -50.0 (or -90.0 if `include_southern_ocean=true`)
 - `north_boundary`: Northern latitude limit. Default: 30.0
-- Other keyword arguments are passed to `OceanBasinMask`.
+- Other keyword arguments are passed to `BasinMask`.
 """
 function indian_ocean_mask(grid;
                            include_southern_ocean = true,
@@ -311,28 +324,28 @@ function indian_ocean_mask(grid;
         barriers = [barriers..., SOUTHERN_OCEAN_SEPARATION_BARRIER]
     end
 
-    return OceanBasinMask(grid; south_boundary, north_boundary, barriers, seed_points, kw...)
+    return BasinMask(grid; south_boundary, north_boundary, barriers, seed_points, kw...)
 end
 
 """
     southern_ocean_mask(grid; kw...)
 
-Create a mask for the Southern Ocean with predefined barriers and seed points.
+Create a mask for Earth's Southern Ocean with predefined barriers and seed points.
 Default boundaries: south=-90.0, north=-35.0
 """
 function southern_ocean_mask(grid;
-                           south_boundary = -90.0,
-                           north_boundary = -35.0,
-                           barriers = SOUTHERN_OCEAN_BARRIERS,
-                           seed_points = SOUTHERN_SEED_POINTS,
-                           kw...)
-    return OceanBasinMask(grid; south_boundary, north_boundary, barriers, seed_points, kw...)
+                             south_boundary = -90.0,
+                             north_boundary = -35.0,
+                             barriers = SOUTHERN_OCEAN_BARRIERS,
+                             seed_points = SOUTHERN_SEED_POINTS,
+                             kw...)
+    return BasinMask(grid; south_boundary, north_boundary, barriers, seed_points, kw...)
 end
 
 """
     pacific_ocean_mask(grid; include_southern_ocean=false, kw...)
 
-Create a mask for the Pacific Ocean with predefined barriers and seed points.
+Create a mask for Earth's Pacific Ocean with predefined barriers and seed points.
 
 Keyword Arguments
 =================
@@ -340,7 +353,7 @@ Keyword Arguments
                             sector below the standard separation latitude (~55°S). Default: `false`.
 - `south_boundary`: Southern latitude limit. Default: -50.0 (or -90.0 if `include_southern_ocean=true`)
 - `north_boundary`: Northern latitude limit. Default: 65.0
-- Other keyword arguments are passed to `OceanBasinMask`.
+- Other keyword arguments are passed to `BasinMask`.
 """
 function pacific_ocean_mask(grid;
                             include_southern_ocean = true,
@@ -354,13 +367,13 @@ function pacific_ocean_mask(grid;
         barriers = [barriers..., SOUTHERN_OCEAN_SEPARATION_BARRIER]
     end
 
-    return OceanBasinMask(grid; south_boundary, north_boundary, barriers, seed_points, kw...)
+    return BasinMask(grid; south_boundary, north_boundary, barriers, seed_points, kw...)
 end
 
 """
     arctic_ocean_mask(grid; kw...)
 
-Create a mask for the Arctic Ocean with predefined seed points.
+Create a mask for Earth's Arctic Ocean with predefined seed points.
 Default boundaries: south=65.0, north=91.0
 """
 function arctic_ocean_mask(grid;
@@ -371,5 +384,5 @@ function arctic_ocean_mask(grid;
                            seed_points = [(nothing, 90.0)],
                            kw...)
 
-    return OceanBasinMask(grid; south_boundary, north_boundary, barriers, seed_points, kw...)
+    return BasinMask(grid; south_boundary, north_boundary, barriers, seed_points, kw...)
 end

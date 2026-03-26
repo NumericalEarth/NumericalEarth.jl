@@ -8,7 +8,7 @@ using NumericalEarth.Bathymetry: remove_minor_basins!,
                                  save_bathymetry_cache,
                                  label_ocean_basins,
                                  find_label_at_point,
-                                 OceanBasinMask,
+                                 BasinMask,
                                  atlantic_ocean_mask,
                                  Barrier,
                                  ATLANTIC_OCEAN_BARRIERS
@@ -219,8 +219,8 @@ end
     end
 end
 
-@testset "OceanBasinMask creation" begin
-    @info "Testing OceanBasinMask creation..."
+@testset "BasinMask creation" begin
+    @info "Testing BasinMask creation..."
 
     for arch in test_architectures
         # Create a global grid at 1° resolution (needed to properly resolve
@@ -236,7 +236,7 @@ end
 
         # Test atlantic_ocean_mask creation
         atlantic = atlantic_ocean_mask(ibg)
-        @test atlantic isa OceanBasinMask
+        @test atlantic isa BasinMask
         @test sum(atlantic.mask) > 0  # Should have some ocean cells
 
         mask = on_architecture(CPU(), atlantic.mask)

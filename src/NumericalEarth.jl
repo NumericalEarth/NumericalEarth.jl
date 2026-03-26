@@ -29,7 +29,7 @@ export
     JRA55NetCDFBackend,
     regrid_bathymetry,
     label_ocean_basins,
-    OceanBasinMask,
+    BasinMask,
     Barrier,
     atlantic_ocean_mask,
     indian_ocean_mask,

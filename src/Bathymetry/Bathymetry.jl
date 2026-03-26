@@ -1,7 +1,7 @@
 module Bathymetry
 
 export regrid_bathymetry, ORCAGrid
-export OceanBasinMask
+export BasinMask
 export atlantic_ocean_mask, indian_ocean_mask, southern_ocean_mask, pacific_ocean_mask, arctic_ocean_mask
 export label_ocean_basins
 export Barrier

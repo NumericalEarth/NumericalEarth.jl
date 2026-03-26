@@ -2,14 +2,20 @@ using Oceananigans.OrthogonalSphericalShellGrids: TripolarGridOfSomeKind
 using Oceananigans.Fields: convert_to_0_360
 
 #####
-##### Barrier type for separating ocean basins
+##### Barrier type for separating connected regions
 #####
 
 """
     Barrier{W, E, S, N}
 
-A rectangular geographic region used to separate ocean basins during labeling.
-All cells within this region are temporarily marked as land.
+A rectangular geographic region used to separate connected water regions during labeling.
+All cells within this region are temporarily marked as land, preventing
+the flood-fill from crossing that area.
+
+Note: `Barrier` differs from `BoundingBox` (in `DataWrangling`) in purpose:
+a `BoundingBox` selects a spatial subset of a dataset for downloading/regridding,
+whereas a `Barrier` temporarily blocks water cells so that the connected-component
+labeling algorithm treats the two sides as separate basins.
 
 Fields
 ======
@@ -80,28 +86,28 @@ end
     @inbounds zb[i, j, 1] = ifelse(in_lon & in_lat, zero(grid), zb[i, j, 1])
 end
 
-# Since the strel algorithm in `remove_major_basins` does not recognize periodic boundaries,
-# before removing connected regions, we extend the longitude direction if it is periodic.
-# An extension of half the domain is enough.
-function maybe_extend_longitude(zb_cpu::Field, ::Periodic)
-    Nx = size(zb_cpu, 1)
-    nx = Nx ÷ 2
+# Since the strel algorithm in `label_components` does not recognize periodic boundaries,
+# before labeling connected regions we copy half the longitude extent on each side so that
+# water cells near the boundary are correctly identified as connected.
+function copy_periodic_longitude(zb_cpu::Field, ::Periodic)
+    Nλ = size(zb_cpu, 1)
+    half = Nλ ÷ 2
 
-    zb_data   = zb_cpu.data[1:Nx, :, 1]
+    zb_data   = zb_cpu.data[1:Nλ, :, 1]
     zb_parent = zb_data.parent
 
-    # Add information on the LHS and to the RHS
-    zb_parent = vcat(zb_parent[nx:Nx, :], zb_parent, zb_parent[1:nx, :])
+    # Concatenate a copy of the eastern half on the left and the western half on the right.
+    # This is an O(Nλ × Nφ) CPU allocation, acceptable for the serial labeling step.
+    zb_parent = vcat(zb_parent[half:Nλ, :], zb_parent, zb_parent[1:half, :])
 
-    # Update offsets: the original domain starts at parent index (Nx - nx + 2)
-    # For offset index 1 to map there, we need offset = -(nx + 1)
+    # Update offsets so that index 1 maps back to the original domain start
     yoffsets = zb_cpu.data.offsets[2]
-    xoffsets = - nx - 1
+    xoffsets = - half - 1
 
     return OffsetArray(zb_parent, xoffsets, yoffsets)
 end
 
-maybe_extend_longitude(zb_cpu::Field, tx) = interior(zb_cpu, :, :, 1)
+copy_periodic_longitude(zb_cpu::Field, tx) = interior(zb_cpu, :, :, 1)
 
 """
     label_ocean_basins(zb_field, TX, core_size)
@@ -112,7 +118,7 @@ computing the masks for oceanic basins.
 Handles periodic boundary extension internally and returns labels for the core region only.
 """
 function label_ocean_basins(zb_field, TX, size)
-    zb = maybe_extend_longitude(zb_field, TX()) # Outputs a 2D AbstractArray
+    zb = copy_periodic_longitude(zb_field, TX()) # Outputs a 2D AbstractArray
 
     water = zb .< 0
 
