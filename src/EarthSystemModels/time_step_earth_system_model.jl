@@ -33,7 +33,7 @@ function time_step!(coupled_model::EarthSystemModel, Δt; callbacks=[])
     return nothing
 end
 
-function update_state!(coupled_model::EarthSystemModel)
+function update_state!(coupled_model::EarthSystemModel, callbacks=[])
 
     # The three components
     ocean      = coupled_model.ocean
