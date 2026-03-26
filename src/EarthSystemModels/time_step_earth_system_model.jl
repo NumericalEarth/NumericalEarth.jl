@@ -7,6 +7,8 @@ using Oceananigans.Grids: φnode
 using Printf
 
 function time_step!(coupled_model::EarthSystemModel, Δt; callbacks=[])
+    maybe_prepare_first_time_step!(coupled_model, callbacks)
+    
     ocean = coupled_model.ocean
     sea_ice = coupled_model.sea_ice
     atmosphere = coupled_model.atmosphere
