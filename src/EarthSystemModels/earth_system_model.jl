@@ -61,15 +61,14 @@ function reset!(model::ESM)
 end
 
 # Make sure to initialize the exchanger here
-function initialization_update_state!(model::ESM)
+function initialize!(model::ESM)
     initialize!(model.interfaces.exchanger, model)
-    update_state!(model)
     return nothing
 end
 
-function initialize!(model::ESM)
-    # initialize!(model.ocean)
+function reconcile_state!(model::ESM)
     initialize!(model.interfaces.exchanger, model)
+    update_state!(model)
     return nothing
 end
 
