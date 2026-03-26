@@ -33,18 +33,16 @@ function omip_simulation(grid; forcing_dir, restoring_dir, filename, restart_ite
     closure = (catke_closure, eddy_closure, horizontal_viscosity, VerticalScalarDiffusivity(κ=henyey_diffusivity, ν=1e-5))
     coriolis = HydrostaticSphericalCoriolis(scheme = Oceananigans.Coriolis.EnstrophyConserving())
 
-    # WOA monthly salinity restoring with piston velocity 1/6 m/day
-    # following the OMIP protocol (Griffies et al., 2009; Danabasoglu et al., 2014)
-    woa_dataset = WOAMonthly()
-    Smetadata = Metadata(:salinity; dir=restoring_dir, dataset=woa_dataset)
+    date = DateTime(1958, 1, 1)
+    end_date = DateTime(2018, 1, 1)
+    Smetadata = Metadata(:salinity; dir=restoring_dir, dataset=EN4Monthly(), start_date = date, end_date)
 
+    # Monthly salinity restoring with piston velocity 1/6 m/day
     piston_velocity = 1/6 # m/day
     restoring_rate = piston_velocity / (Δzˢ * days)
     @inline surface_mask(x, y, z, t) = z ≥ zˢ
     FS = DatasetRestoring(Smetadata, Oceananigans.Architectures.architecture(grid); rate=restoring_rate, mask=surface_mask, time_indices_in_memory=12)
-
-    date = DateTime(1958, 1, 1)
-    
+ 
     ocean = ocean_simulation(grid; Δt=1minutes,
                             momentum_advection,
                             tracer_advection,
