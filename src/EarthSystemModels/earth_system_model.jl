@@ -208,7 +208,7 @@ function EarthSystemModel(atmosphere, ocean, sea_ice;
     # Make sure the initial temperature of the ocean
     # is not below freezing and above melting near the surface
     above_freezing_ocean_temperature!(ocean, interfaces.exchanger.grid, sea_ice)
-    initialization_update_state!(earth_system_model)
+    initialize!(earth_system_model)
 
     return earth_system_model
 end
