@@ -27,9 +27,11 @@ for arch in test_architectures, dataset in test_ecco_en4_datasets
         @info "Running Metadata tests for $D on $A..."
 
         time_resolution = dataset isa ECCO2Daily ? Day(1) : Month(1)
-        # ECCO4Monthly fallback artifacts only cover January 1993,
-        # so limit to 1 date for ECCO4 to avoid download failures.
-        n_dates = dataset isa ECCO4Monthly ? 0 : 4
+        # ECCO4 fallback artifacts only cover January 1993,
+        # so limit to 1 date for all ECCO4 variants to avoid download failures.
+        # TODO: when ecco.jpl.nasa.gov is reliable again, revert
+        # ECCO4DarwinMonthly to n_dates=4 so it tests multiple dates.
+        n_dates = dataset isa Union{ECCO4Monthly, ECCO4DarwinMonthly} ? 0 : 4
         end_date = start_date + n_dates * time_resolution
         dates = start_date : time_resolution : end_date
 
@@ -62,7 +64,7 @@ for arch in test_architectures, dataset in test_ecco_en4_datasets
         end
 
         # Multi-date tests require ≥3 dates in artifacts.
-        # ECCO4Monthly artifacts only have January 1993, so skip these for ECCO4.
+        # ECCO4 artifacts only have January 1993, so skip multi-date tests for ECCO4 variants.
         if length(dates) >= 3
             @testset "Field utilities" begin
                 test_ocean_metadata_utilities(arch, dataset, dates, inpainting,
