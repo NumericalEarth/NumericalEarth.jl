@@ -27,12 +27,7 @@ for arch in test_architectures, dataset in test_ecco_en4_datasets
         @info "Running Metadata tests for $D on $A..."
 
         time_resolution = dataset isa ECCO2Daily ? Day(1) : Month(1)
-        # ECCO4 fallback artifacts only cover January 1993,
-        # so limit to 1 date for all ECCO4 variants to avoid download failures.
-        # TODO: when ecco.jpl.nasa.gov is reliable again, revert
-        # ECCO4DarwinMonthly to n_dates=4 so it tests multiple dates.
-        n_dates = dataset isa Union{ECCO4Monthly, ECCO4DarwinMonthly} ? 0 : 4
-        end_date = start_date + n_dates * time_resolution
+        end_date = start_date + 4 * time_resolution
         dates = start_date : time_resolution : end_date
 
         @testset "Fields utilities" begin
@@ -63,31 +58,27 @@ for arch in test_architectures, dataset in test_ecco_en4_datasets
                                            fldnames=test_fields[dataset])
         end
 
-        # Multi-date tests require ≥3 dates in artifacts.
-        # ECCO4 artifacts only have January 1993, so skip multi-date tests for ECCO4 variants.
-        if length(dates) >= 3
-            @testset "Field utilities" begin
-                test_ocean_metadata_utilities(arch, dataset, dates, inpainting,
-                                              varnames=test_names[dataset])
-            end
+        @testset "Field utilities" begin
+            test_ocean_metadata_utilities(arch, dataset, dates, inpainting,
+                                          varnames=test_names[dataset])
+        end
 
-            @testset "DatasetRestoring with LinearlyTaperedPolarMask" begin
-                test_dataset_restoring(arch, dataset, dates, inpainting,
-                                       varnames=test_names[dataset],
-                                       fldnames=test_fields[dataset])
-            end
+        @testset "DatasetRestoring with LinearlyTaperedPolarMask" begin
+            test_dataset_restoring(arch, dataset, dates, inpainting,
+                                   varnames=test_names[dataset],
+                                   fldnames=test_fields[dataset])
+        end
 
-            @testset "Timestepping with DatasetRestoring" begin
-                test_timestepping_with_dataset_restoring(arch, dataset, dates, inpainting,
-                                                         varnames=test_names[dataset],
-                                                         fldnames=test_fields[dataset])
-            end
+        @testset "Timestepping with DatasetRestoring" begin
+            test_timestepping_with_dataset_restoring(arch, dataset, dates, inpainting,
+                                                     varnames=test_names[dataset],
+                                                     fldnames=test_fields[dataset])
+        end
 
-            @testset "Dataset cycling boundaries" begin
-                test_cycling_dataset_restoring(arch, dataset, dates, inpainting,
-                                               varnames=test_names[dataset],
-                                               fldnames=test_fields[dataset])
-            end
+        @testset "Dataset cycling boundaries" begin
+            test_cycling_dataset_restoring(arch, dataset, dates, inpainting,
+                                           varnames=test_names[dataset],
+                                           fldnames=test_fields[dataset])
         end
 
         @testset "Inpainting algorithm" begin

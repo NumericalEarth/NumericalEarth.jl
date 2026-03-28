@@ -94,15 +94,10 @@ function __init__()
     ##### Download Dataset data
     #####
 
-    # Download few datasets for tests.
-    # ECCO4 artifacts (both ECCO4Monthly and ECCO4DarwinMonthly) only have
-    # January 1993; ECCO2 datasets have 3 dates.
-    # TODO: when ecco.jpl.nasa.gov is reliable again, revert ECCO4DarwinMonthly
-    # to n_dates=2 so it tests multiple dates. See also test_ecco4_en4.jl.
+    # Download few datasets for tests
     for dataset in test_datasets
         time_resolution = dataset isa ECCO2Daily ? Day(1) : Month(1)
-        n_dates = dataset isa Union{ECCO4Monthly, ECCO4DarwinMonthly} ? 0 : 2
-        end_date = start_date + n_dates * time_resolution
+        end_date = start_date + 2 * time_resolution
         dates = start_date:time_resolution:end_date
 
         temperature_metadata = Metadata(:temperature; dataset, dates)
