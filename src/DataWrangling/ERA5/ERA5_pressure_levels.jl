@@ -68,6 +68,8 @@ ERA5PL_dataset_variable_names = Dict(
     :fraction_of_cloud_cover             => "fraction_of_cloud_cover",
     :specific_cloud_liquid_water_content => "specific_cloud_liquid_water_content",
     :specific_cloud_ice_water_content    => "specific_cloud_ice_water_content",
+    :specific_rain_water_content         => "specific_rain_water_content",
+    :specific_snow_water_content         => "specific_snow_water_content",
 )
 
 # NetCDF short variable names (what's actually in the downloaded files)
@@ -88,6 +90,8 @@ ERA5PL_netcdf_variable_names = Dict(
     :fraction_of_cloud_cover             => "cc",
     :specific_cloud_liquid_water_content => "clwc",
     :specific_cloud_ice_water_content    => "ciwc",
+    :specific_rain_water_content         => "crwc",
+    :specific_snow_water_content         => "cswc",
 )
 
 # Variables available for download

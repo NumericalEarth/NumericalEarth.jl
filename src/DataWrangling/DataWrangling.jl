@@ -177,19 +177,6 @@ Arguments
         https://github.com/CliMA/NumericalEarth.jl/blob/main/src/DataWrangling/ECCO/README.md
 """
 function download_dataset end # methods specific to datasets are added within each dataset module
-
-# Fallback: if no download extension is loaded, check that all files already exist
-function download_dataset(metadata::Metadata)
-    paths = metadata_path(metadata)
-    paths isa AbstractString && (paths = [paths])
-    missing_files = filter(!isfile, paths)
-    if !isempty(missing_files)
-        n = length(missing_files)
-        error("No download method is available (is the backend package loaded?) " *
-              "and $n data file(s) are missing. First missing: $(first(missing_files))")
-    end
-    return paths
-end
 function inpainted_metadata_path end
 
 """
@@ -249,5 +236,18 @@ using .EN4
 using .ORCA
 using .WOA
 using .JRA55
+
+# Fallback: if no download extension is loaded, check that all files already exist
+function download_dataset(metadata::Metadata)
+    paths = metadata_path(metadata)
+    paths isa AbstractString && (paths = [paths])
+    missing_files = filter(!isfile, paths)
+    if !isempty(missing_files)
+        n = length(missing_files)
+        error("No download method is available (is the backend package loaded?) " *
+              "and $n data file(s) are missing. First missing: $(first(missing_files))")
+    end
+    return paths
+end
 
 end # module
