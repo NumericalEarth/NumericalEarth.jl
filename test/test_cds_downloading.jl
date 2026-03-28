@@ -5,7 +5,10 @@ using Dates
 using NCDatasets
 
 using NumericalEarth.DataWrangling.ERA5
-using NumericalEarth.DataWrangling.ERA5: ERA5Hourly, ERA5Monthly, ERA5_dataset_variable_names
+using NumericalEarth.DataWrangling.ERA5: ERA5HourlySingleLevel, ERA5MonthlySingleLevel, ERA5_dataset_variable_names
+using NumericalEarth.DataWrangling.ERA5: ERA5HourlyPressureLevels, ERA5MonthlyPressureLevels,
+                                         ERA5_all_pressure_levels, ERA5PL_dataset_variable_names,
+                                         pressure_field
 using NumericalEarth.DataWrangling: metadata_path, download_dataset
 
 # Test date: Kyoto Protocol ratification date, February 16, 2005
@@ -14,7 +17,7 @@ start_date = DateTime(2005, 2, 16, 12)
 @testset "ERA5 data downloading and utilities" begin
     @info "Testing ERA5 downloading and NetCDF file verification..."
 
-    dataset = ERA5Hourly()
+    dataset = ERA5HourlySingleLevel()
 
     # Use a small bounding box to reduce download time
     bounding_box = NumericalEarth.DataWrangling.BoundingBox(longitude=(0, 5), latitude=(40, 45))
@@ -85,14 +88,14 @@ start_date = DateTime(2005, 2, 16, 12)
 
         # Test metadata properties
         @test metadatum.name == :temperature
-        @test metadatum.dataset isa ERA5Hourly
+        @test metadatum.dataset isa ERA5HourlySingleLevel
         @test metadatum.dates == start_date
         @test metadatum.bounding_box == bounding_box
 
         # Test size (should be global ERA5 size with 1 time step)
         Nx, Ny, Nz, Nt = size(metadatum)
         @test Nx == 1440  # ERA5 longitude points
-        @test Ny == 721   # ERA5 latitude points
+        @test Ny == 720   # ERA5 latitude points (poles averaged into adjacent cells)
         @test Nz == 1     # 2D surface data
         @test Nt == 1     # Single time step
 
@@ -101,36 +104,76 @@ start_date = DateTime(2005, 2, 16, 12)
     end
 
     @testset "ERA5 wave variable metadata sizes" begin
-        # Wave variables should be on the 0.5° grid (720×361)
+        # Wave variables should be on the 0.5° grid (720×360)
         for wave_var in (:eastward_stokes_drift, :northward_stokes_drift,
                          :significant_wave_height, :mean_wave_period, :mean_wave_direction)
             metadatum = Metadatum(wave_var; dataset, date=start_date)
             Nx, Ny, Nz, Nt = size(metadatum)
             @test Nx == 720
-            @test Ny == 361
+            @test Ny == 360
             @test Nz == 1
             @test Nt == 1
         end
 
-        # Atmospheric variables should remain on the 0.25° grid (1440×721)
+        # Atmospheric variables should remain on the 0.25° grid (1440×720)
         for atmos_var in (:temperature, :eastward_velocity, :surface_pressure)
             metadatum = Metadatum(atmos_var; dataset, date=start_date)
             Nx, Ny, Nz, Nt = size(metadatum)
             @test Nx == 1440
-            @test Ny == 721
+            @test Ny == 720
             @test Nz == 1
             @test Nt == 1
         end
     end
 
     @testset "ERA5 Monthly dataset" begin
-        monthly_dataset = ERA5Monthly()
-        @test monthly_dataset isa ERA5Monthly
+        monthly_dataset = ERA5MonthlySingleLevel()
+        @test monthly_dataset isa ERA5MonthlySingleLevel
 
         # Test that all_dates returns a valid range
         dates = NumericalEarth.DataWrangling.all_dates(monthly_dataset, :temperature)
         @test first(dates) == DateTime("1940-01-01")
         @test step(dates) == Month(1)
+    end
+
+    @testset "ERA5HourlyPressureLevels construction and metadata" begin
+        # Default constructor uses all 37 standard levels
+        ds_full = ERA5HourlyPressureLevels()
+        @test ds_full isa ERA5HourlyPressureLevels
+        @test length(ds_full.pressure_levels) == 37
+        @test Base.size(ds_full, :temperature) == (1440, 720, 37)
+
+        # Subset constructor
+        ds_sub = ERA5HourlyPressureLevels(pressure_levels=[850, 500] .* hPa)
+        @test Base.size(ds_sub, :temperature) == (1440, 720, 2)
+
+        # Monthly variant
+        ds_monthly = ERA5MonthlyPressureLevels()
+        @test ds_monthly isa ERA5MonthlyPressureLevels
+
+        # Metadatum size propagates Nz correctly
+        meta = Metadatum(:temperature; dataset=ds_sub, bounding_box=bounding_box, date=start_date)
+        Nx, Ny, Nz, Nt = size(meta)
+        @test Nz == 2
+        @test NumericalEarth.DataWrangling.ERA5.is_three_dimensional(meta) == true
+
+        # Variable name lookups
+        @test ERA5PL_dataset_variable_names[:temperature] == "temperature"
+        @test ERA5PL_dataset_variable_names[:geopotential_height] == "geopotential"
+    end
+
+    @testset "ERA5 pressure-level z_interfaces (standard atmosphere)" begin
+        levels_2 = [850, 500] .* hPa
+        z = standard_atmosphere_z_interfaces(levels_2)
+        @test length(z) == 3                    # Nz+1 interfaces
+        @test issorted(z)                        # monotonically increasing with altitude
+        # 850 hPa ≈ 1457 m, 500 hPa ≈ 5575 m
+        @test z[1] < 1457.0 < z[2] < 5575.0 < z[3]
+
+        # Single level
+        z1 = standard_atmosphere_z_interfaces([500] .* hPa)
+        @test length(z1) == 2
+        @test z1[1] < z1[2]
     end
 
     for arch in test_architectures
@@ -192,6 +235,75 @@ start_date = DateTime(2005, 2, 16, 12)
             rm(filepath; force=true)
             inpainted_path = NumericalEarth.DataWrangling.inpainted_metadata_path(metadatum)
             isfile(inpainted_path) && rm(inpainted_path; force=true)
+        end
+    end
+
+    @testset "ERA5 pressure-level download and Field on CPU" begin
+        arch = CPU()
+        ds_pl = ERA5HourlyPressureLevels(pressure_levels=[850, 500] .* hPa)
+
+        @testset "Download and 3D Field" begin
+            meta = Metadatum(:temperature; dataset=ds_pl, bounding_box, date=start_date)
+            filepath = metadata_path(meta)
+            isfile(filepath) && rm(filepath; force=true)
+
+            download_dataset(meta)
+            @test isfile(filepath)
+
+            # Verify the NetCDF has a pressure_level dimension and the right variable
+            ds_nc = NCDataset(filepath)
+            @test haskey(ds_nc, "t")
+            @test haskey(ds_nc, "pressure_level") || haskey(ds_nc, "level")
+            close(ds_nc)
+
+            f = Field(meta, arch)
+            @test f isa Field
+            Nx, Ny, Nz = size(f)
+            @test Nz == 2
+
+            @allowscalar begin
+                @test !all(iszero, interior(f))
+                # Temperature at these levels should be in a plausible range (K)
+                @test all(x -> 180 < x < 340, filter(!isnan, vec(interior(f))))
+            end
+
+            rm(filepath; force=true)
+            inpainted_path = NumericalEarth.DataWrangling.inpainted_metadata_path(meta)
+            isfile(inpainted_path) && rm(inpainted_path; force=true)
+        end
+
+        @testset "Geopotential height conversion" begin
+            meta_z = Metadatum(:geopotential_height; dataset=ds_pl, bounding_box, date=start_date)
+            filepath = metadata_path(meta_z)
+            isfile(filepath) && rm(filepath; force=true)
+
+            download_dataset(meta_z)
+            fz = Field(meta_z, arch)
+
+            @allowscalar begin
+                max_z = maximum(filter(!isnan, vec(interior(fz))))
+                # 500 hPa geopotential height ≈ 5500 m
+                @test 4000 < max_z < 7000
+            end
+
+            rm(filepath; force=true)
+            inpainted_path = NumericalEarth.DataWrangling.inpainted_metadata_path(meta_z)
+            isfile(inpainted_path) && rm(inpainted_path; force=true)
+        end
+
+        @testset "pressure_field" begin
+            meta = Metadatum(:temperature; dataset=ds_pl, bounding_box, date=start_date)
+            pf = pressure_field(meta, arch)
+            @test pf isa Field
+            Nx, Ny, Nz = size(pf)
+            @test Nz == 2
+
+            @allowscalar begin
+                # k=1 should be 850 hPa = 85000 Pa (highest pressure, lowest altitude)
+                @test interior(pf)[1, 1, 1] ≈ Float32(850 * hPa)
+                # k=2 should be 500 hPa = 50000 Pa
+                @test interior(pf)[1, 1, 2] ≈ Float32(500 * hPa)
+            end
         end
     end
 end
