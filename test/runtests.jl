@@ -68,6 +68,16 @@ function __init__()
     ##### Download JRA55 data
     #####
 
+    # First, validate any cached JRA55 files and delete corrupt ones
+    for name in NumericalEarth.DataWrangling.JRA55.JRA55_variable_names
+        datum = Metadatum(name; dataset=JRA55.RepeatYearJRA55())
+        path = metadata_path(datum)
+        if isfile(path) && endswith(path, ".nc") && !validate_netcdf(path)
+            @warn "Removing corrupt JRA55 file: $(basename(path))"
+            rm(path; force=true)
+        end
+    end
+
     try
         atmosphere = JRA55PrescribedAtmosphere(backend=JRA55NetCDFBackend(2))
     catch e

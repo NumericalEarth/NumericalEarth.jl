@@ -1,4 +1,5 @@
 using Downloads
+using NCDatasets
 using NumericalEarth.DataWrangling: metadata_path
 
 const ARTIFACTS_BASE_URL = "https://github.com/NumericalEarth/NumericalEarthArtifacts/releases/download/data-v1/"
@@ -9,7 +10,28 @@ function emit_ci_warning(title, message)
     end
 end
 
+"""
+    validate_netcdf(filepath)
+
+Return `true` if `filepath` is a valid NetCDF file that can be opened.
+"""
+function validate_netcdf(filepath)
+    try
+        ds = NCDataset(filepath)
+        close(ds)
+        return true
+    catch
+        return false
+    end
+end
+
 function download_from_artifacts(filepath::AbstractString)
+    # Delete corrupt files so they get re-downloaded
+    if isfile(filepath) && endswith(filepath, ".nc") && !validate_netcdf(filepath)
+        @warn "Deleting corrupt file: $(basename(filepath))"
+        rm(filepath; force=true)
+    end
+
     if !isfile(filepath)
         filename = basename(filepath)
         fallback_url = ARTIFACTS_BASE_URL * filename

@@ -1,9 +1,9 @@
-# # Single-column ocean simulation forced by JRA55 re-analysis
+# # Single-column ocean simulation forced by ERA5 reanalysis
 #
 # In this example, we simulate the evolution of an ocean water column
-# forced by an atmosphere derived from the JRA55 re-analysis.
-# The simulated column is located at ocean station
-# Papa (144.9ᵒ W and 50.1ᵒ N).
+# forced by an atmosphere derived from the ERA5 reanalysis.
+# The simulated column is located at Ocean Station
+# Papa (145ᵒ W and 50ᵒ N).
 #
 # ## Install dependencies
 #
@@ -11,25 +11,25 @@
 
 # ```julia
 # using Pkg
-# pkg"add Oceananigans, NumericalEarth, CairoMakie"
+# pkg"add Oceananigans, NumericalEarth, CDSAPI, CopernicusMarine, CairoMakie"
 # ```
 
+using CopernicusMarine
 using NumericalEarth
+using NumericalEarth.DataWrangling: Column
+using NumericalEarth.DataWrangling.ERA5: ERA5Hourly
 using Oceananigans
-using Oceananigans: prognostic_fields
 using Oceananigans.Units
-using Oceananigans.Models: buoyancy_frequency
 using Dates
 using Printf
 
 # # Construct the grid
 #
 # First, we construct a single-column grid with 2 meter spacing
-# located at ocean station Papa.
+# located at Ocean Station Papa.
 
-# Ocean station papa location
 location_name = "ocean_station_papa"
-λ★, φ★ = 35.1, 50.1
+λ★, φ★ = -145.0, 50.0
 
 grid = RectilinearGrid(size = 200,
                        x = λ★,
@@ -48,22 +48,29 @@ ocean = ocean_simulation(grid; Δt=10minutes, coriolis=FPlane(latitude = φ★))
 
 ocean.model
 
-# We set initial conditions from ECCO4:
+# We set initial conditions from GLORYS, using a `Column` region to
+# download and interpolate data at the exact point:
 
-set!(ocean.model, T=Metadatum(:temperature, dataset=ECCO4Monthly()),
-                  S=Metadatum(:salinity, dataset=ECCO4Monthly()))
+col = Column(λ★, φ★)
 
-# # A prescribed atmosphere based on JRA55 re-analysis
+set!(ocean.model, T=Metadatum(:temperature, dataset=GLORYSMonthly(), region=col),
+                  S=Metadatum(:salinity,    dataset=GLORYSMonthly(), region=col))
+
+# # A prescribed atmosphere based on ERA5 reanalysis
 #
-# We build a `JRA55PrescribedAtmosphere` at the same location as the single-colunm grid
-# which is based on the JRA55 reanalysis.
+# We build an `ERA5PrescribedAtmosphere` at the same location.
+# ERA5 provides 10-meter winds, 2-meter temperature, specific humidity,
+# surface pressure, and downwelling radiation at 0.25° resolution.
 
-atmosphere = JRA55PrescribedAtmosphere(longitude = λ★,
-                                       latitude = φ★,
-                                       end_date = DateTime(1990, 1, 31), # Last day of the simulation
-                                       backend  = InMemory())
+atmosphere = ERA5PrescribedAtmosphere(;
+    dataset = ERA5Hourly(),
+    region = BoundingBox(longitude = (λ★ - 1, λ★ + 1),
+                         latitude  = (φ★ - 1, φ★ + 1)),
+    start_date = DateTime(2020, 1, 1),
+    end_date = DateTime(2020, 1, 31),
+    time_indices_in_memory = 4)
 
-# This builds a representation of the atmosphere on the small grid
+# This builds a representation of the atmosphere on the downloaded grid
 
 atmosphere.grid
 
@@ -82,12 +89,12 @@ set_theme!(Theme(linewidth=3, fontsize=24))
 fig = Figure(size=(800, 1000))
 axu = Axis(fig[2, 1]; ylabel="Atmosphere \n velocity (m s⁻¹)")
 axT = Axis(fig[3, 1]; ylabel="Atmosphere \n temperature (ᵒK)")
-axq = Axis(fig[4, 1]; ylabel="Atmosphere \n specific humidity", xlabel = "Days since Jan 1, 1990")
-Label(fig[1, 1], "Atmospheric state over ocean station Papa", tellwidth=false)
+axq = Axis(fig[4, 1]; ylabel="Atmosphere \n specific humidity", xlabel = "Days since Jan 1, 2020")
+Label(fig[1, 1], "ERA5 atmospheric state over Ocean Station Papa", tellwidth=false)
 
 lines!(axu, t_days, ua, label="Zonal velocity")
 lines!(axu, t_days, va, label="Meridional velocity")
-ylims!(axu, -6, 6)
+ylims!(axu, -20, 20)
 axislegend(axu, framevisible=false, nbanks=2, position=:lb)
 
 lines!(axT, t_days, Ta)
@@ -176,6 +183,8 @@ run!(simulation)
 
 # Now let's load the saved output and visualise.
 
+using Oceananigans.Models: buoyancy_frequency
+
 filename *= ".jld2"
 
 u  = FieldTimeSeries(filename, "u")
@@ -203,7 +212,6 @@ qa  = atmosphere.tracers.q
 ℐꜜˡʷ = atmosphere.downwelling_radiation.longwave
 ℐꜜˢʷ = atmosphere.downwelling_radiation.shortwave
 Pr  = atmosphere.freshwater_flux.rain
-Ps  = atmosphere.freshwater_flux.snow
 
 Nt   = length(times)
 uat  = zeros(Nt)
@@ -222,17 +230,17 @@ for n = 1:Nt
     qat[n]  =  qa[1, 1, 1, t]
     ℐꜜˢʷt[n] = ℐꜜˢʷ[1, 1, 1, t]
     ℐꜜˡʷt[n] = ℐꜜˡʷ[1, 1, 1, t]
-    Pt[n]   =  Pr[1, 1, 1, t] + Ps[1, 1, 1, t]
+    Pt[n]   =  Pr[1, 1, 1, t]
 end
 
 fig = Figure(size=(1800, 1800))
 
-axτ = Axis(fig[1, 1:3], xlabel="Days since Oct 1 1992", ylabel="Wind stress (N m⁻²)")
-axQ = Axis(fig[1, 4:6], xlabel="Days since Oct 1 1992", ylabel="Heat flux (W m⁻²)")
-axu = Axis(fig[2, 1:3], xlabel="Days since Oct 1 1992", ylabel="Velocities (m s⁻¹)")
-axT = Axis(fig[2, 4:6], xlabel="Days since Oct 1 1992", ylabel="Surface temperature (ᵒC)")
-axF = Axis(fig[3, 1:3], xlabel="Days since Oct 1 1992", ylabel="Freshwater volume flux (m s⁻¹)")
-axS = Axis(fig[3, 4:6], xlabel="Days since Oct 1 1992", ylabel="Surface salinity (g kg⁻¹)")
+axτ = Axis(fig[1, 1:3], xlabel="Days since Jan 1 2020", ylabel="Wind stress (N m⁻²)")
+axQ = Axis(fig[1, 4:6], xlabel="Days since Jan 1 2020", ylabel="Heat flux (W m⁻²)")
+axu = Axis(fig[2, 1:3], xlabel="Days since Jan 1 2020", ylabel="Velocities (m s⁻¹)")
+axT = Axis(fig[2, 4:6], xlabel="Days since Jan 1 2020", ylabel="Surface temperature (ᵒC)")
+axF = Axis(fig[3, 1:3], xlabel="Days since Jan 1 2020", ylabel="Freshwater volume flux (m s⁻¹)")
+axS = Axis(fig[3, 4:6], xlabel="Days since Jan 1 2020", ylabel="Surface salinity (g kg⁻¹)")
 
 axuz = Axis(fig[4:5, 1:2], xlabel="Velocities (m s⁻¹)",                ylabel="z (m)")
 axTz = Axis(fig[4:5, 3:4], xlabel="Temperature (ᵒC)",                  ylabel="z (m)")

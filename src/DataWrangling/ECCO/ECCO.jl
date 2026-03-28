@@ -33,8 +33,6 @@ using KernelAbstractions: @kernel, @index
 
 using Dates: year, month, day
 
-import Oceananigans: location
-
 import NumericalEarth.DataWrangling:
     default_download_directory,
     all_dates,
@@ -42,6 +40,7 @@ import NumericalEarth.DataWrangling:
     download_dataset,
     conversion_units,
     dataset_variable_name,
+    dataset_location,
     metaprefix,
     longitude_interfaces,
     latitude_interfaces,
@@ -247,7 +246,7 @@ end
 metaprefix(::ECCOMetadata) = "ECCOMetadata"
 
 # File name generation specific to each dataset
-function metadata_filename(::ECCO4Monthly, name, date, bounding_box)
+function metadata_filename(::ECCO4Monthly, name, date, region)
     shortname = ECCO4_dataset_variable_names[name]
     yearstr   = string(Dates.year(date))
     monthstr  = string(Dates.month(date), pad=2)
@@ -260,7 +259,7 @@ ecco2_is_three_dimensional(name) =
     name == :u_velocity ||
     name == :v_velocity
 
-function metadata_filename(dataset::Union{ECCO2Daily, ECCO2Monthly}, name, date, bounding_box)
+function metadata_filename(dataset::Union{ECCO2Daily, ECCO2Monthly}, name, date, region)
     shortname = ECCO2_dataset_variable_names[name]
     yearstr   = string(Dates.year(date))
     monthstr  = string(Dates.month(date), pad=2)
@@ -278,7 +277,7 @@ end
 dataset_variable_name(data::Metadata{<:ECCO2Daily})   = ECCO2_dataset_variable_names[data.name]
 dataset_variable_name(data::Metadata{<:ECCO2Monthly}) = ECCO2_dataset_variable_names[data.name]
 dataset_variable_name(data::Metadata{<:ECCO4Monthly}) = ECCO4_dataset_variable_names[data.name]
-location(data::ECCOMetadata) = ECCO_location[data.name]
+dataset_location(::ECCODataset, name) = ECCO_location[name]
 
 is_three_dimensional(data::ECCOMetadata) =
     data.name == :temperature ||
