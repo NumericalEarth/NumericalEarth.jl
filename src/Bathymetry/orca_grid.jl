@@ -27,7 +27,7 @@ function read_2d_nemo_variable(ds, name)
 end
 
 # Detect periodic overlap columns in NEMO data.
-# The eORCA grid has `n` trailing columns that are copies of the first `n` columns
+# The eORCA grid has `n` trailing columns that are copies of the first `n` columns 
 # (e.g., columns 361:362 repeat columns 1:2 for eORCA1).
 function periodic_overlap_index(λCC)
     Nx = size(λCC, 1)

@@ -101,10 +101,10 @@ all_dates(::ORCA2, args...) = nothing
 first_date(::ORCA2, args...) = nothing
 last_date(::ORCA2, args...) = nothing
 
-const ORCA1Metadatum = Metadatum{<:ORCA2}
+const ORCA2Metadatum = Metadatum{<:ORCA2}
 
-ORCA1_variable_names = Dict(
-    :bottom_height => "Bathymetry",
+ORCA1_variable_names = Dict( 
+    :bottom_height => "bathy_metry",
     :mesh_mask     => "glamt",
 )
 
@@ -113,13 +113,13 @@ dataset_variable_name(data::ORCA2Metadatum) = ORCA1_variable_names[data.name]
 # Zenodo record 15705144
 const ORCA2_url = "https://zenodo.org/records/15705144/files/ORCA2L75_domaincfg_forcings.tar.gz"
 
-metadata_url(metadatum::ORCA2Metadatum) = ORCA2_url
+metadata_url(::ORCA2Metadatum) = ORCA2_url
 
 function metadata_filename(::ORCA2, name, date, bounding_box)
     if name == :mesh_mask
-        return "coordinates.nc"
+        return "ORCA2L75/ORCA2L75/domain_cfg_orca2l75_nemo5.nc"
     elseif name == :bottom_height
-        return "bathy_meter.nc"
+        return "ORCA2L75/ORCA2L75/domain_cfg_orca2l75_nemo5.nc"
     else
         error("Unknown ORCA2 variable: $name")
     end
@@ -130,18 +130,19 @@ z_interfaces(::ORCA1Metadatum) = nothing
 function download_dataset(metadatum::ORCA2Metadatum)
     fileurl  = metadata_url(metadatum)
     filepath = metadata_path(metadatum)
+    fileroute = metadatum.dir
 
     @root if !isfile(filepath)
         @info "Downloading ORCA2 data: $(metadatum.name) to $(metadatum.dir)..."
-        Downloads.download(fileurl, filepath; progress=download_progress)
-        open(GzipDecompressorStream, tarfile) do io
-            Tar.extract(io, filepath*"/ORCA2L75")
+        Downloads.download(fileurl, fileroute*"ORCA2L75.tar.gz"; progress=download_progress)
+        open(GzipDecompressorStream, fileroute*"ORCA2L75.tar.gz") do io
+            Tar.extract(io, fileroute*"/ORCA2L75")
         end
     end
 
     return filepath
 end
 
-default_south_rows_to_remove(::ORCA2) = 35
+default_south_rows_to_remove(::ORCA2) = 0
 
 end # module
