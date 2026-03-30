@@ -135,7 +135,8 @@ function ORCAGrid(arch = CPU(), FT::DataType = Float64;
                   with_bathymetry = true,
                   active_cells_map = true,
                   south_rows_to_remove = default_south_rows_to_remove(dataset),
-                  chop_bathymetry = false)
+                  chop_bathymetry = false,
+                  remove_closed_basins = true)
 
     # Validate z specification against Nz (mirrors Oceananigans' input_validation.jl)
     if z isa AbstractVector
@@ -370,6 +371,8 @@ function ORCAGrid(arch = CPU(), FT::DataType = Float64;
     bottom_height = convert.(FT, bathy_data)
     bottom_height .= ifelse.(bottom_height .> 0, .-bottom_height, FT(100))
     bottom_height = on_architecture(arch, bottom_height)
+
+    remove_closed_basins && remove_minor_basins!(bottom_height, 1, (underlying_grid.Nx, underlying_grid.Ny))
 
     return ImmersedBoundaryGrid(underlying_grid, GridFittedBottom(bottom_height); active_cells_map)
 end
