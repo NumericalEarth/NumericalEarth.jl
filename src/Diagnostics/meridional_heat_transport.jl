@@ -164,6 +164,11 @@ function meridional_heat_transport(esm::EarthSystemModel, method=MeridionalHeatF
         reference_temperature = convert(FT, reference_temperature)
         return meridional_heat_transport_via_meridional_heat_flux(esm; reference_temperature)
     elseif method isa OceanHeatContentTendencyMethod
+        @warn """
+        Computing the meridional heat transport via the OceanHeatContentTendencyMethod
+                 does not ensure the heat budget is closed!
+                 If you require a closed heat budget, then use the MeridionalHeatFluxMethod.
+        """
         return meridional_heat_transport_via_ocean_heat_content(esm)
     else
         throw(ArgumentError("Unknown method $(method); choose either MeridionalHeatFluxMethod() or OceanHeatContentTendencyMethod()."))
