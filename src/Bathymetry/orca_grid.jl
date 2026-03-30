@@ -358,11 +358,6 @@ function ORCAGrid(arch = CPU(), FT::DataType = Float64;
     bathy_data = Array(bathy_ds[bathy_varname][:, :])
     close(bathy_ds)
 
-   
-    # Chop off the same southern rows from bathymetry
-    if chop_bathymetry & (jr > 0)
-        bathy_data = chop_south(bathy_data)
-    end
 
     # NEMO stores bathymetry as positive depth; convert to negative bottom height
     # (Oceananigans convention: z < 0 below sea level).
@@ -371,7 +366,13 @@ function ORCAGrid(arch = CPU(), FT::DataType = Float64;
     bottom_height = convert.(FT, bathy_data)
     bottom_height .= ifelse.(bottom_height .> 0, .-bottom_height, FT(100))
     remove_closed_basins && remove_minor_basins!(bottom_height, 1, (underlying_grid.Nx, underlying_grid.Ny))
-    bottom_height = on_architecture(arch, bottom_height)
+
+    # Chop off the same southern rows from bathymetry
+    if chop_bathymetry & (jr > 0)
+        bathy_data = chop_south(bathy_data)
+    end
     
+    bottom_height = on_architecture(arch, bottom_height)
+
     return ImmersedBoundaryGrid(underlying_grid, GridFittedBottom(bottom_height); active_cells_map)
 end
