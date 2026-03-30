@@ -61,7 +61,7 @@ function reset!(model::ESM)
 end
 
 # Make sure to initialize the exchanger here
-function initialization_update_state!(model::ESM)
+function Oceananigans.Models.initialization_update_state!(model::ESM)
     initialize!(model.interfaces.exchanger, model)
     update_state!(model)
     return nothing
