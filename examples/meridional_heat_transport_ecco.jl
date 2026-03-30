@@ -15,7 +15,7 @@ Nz = 50
 depth = 5000meters
 z = ExponentialDiscretization(Nz, -depth, 0; scale = depth/4)
 
-underlying_grid = TripolarGrid(arch; size = (Nx, Ny, Nz), halo = (5, 5, 4), z)
+# underlying_grid = TripolarGrid(arch; size = (Nx, Ny, Nz), halo = (5, 5, 4), z)
 underlying_grid = LatitudeLongitudeGrid(arch; size = (Nx, Ny, Nz), halo = (5, 5, 4), z, longitude = (0, 360), latitude = (-80, 80))
 bottom_height = regrid_bathymetry(underlying_grid;
                                   minimum_depth = 10,
