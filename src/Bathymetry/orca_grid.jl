@@ -6,7 +6,7 @@ using Oceananigans.ImmersedBoundaries: ImmersedBoundaryGrid, GridFittedBottom
 using Oceananigans.OrthogonalSphericalShellGrids: Tripolar, continue_south!
 
 using ..DataWrangling: dataset_variable_name
-using ..DataWrangling.ORCA: ORCA1, default_south_rows_to_remove
+using ..DataWrangling.ORCA: ORCA1, ORCA2, default_south_rows_to_remove
 
 """
     read_2d_nemo_variable(ds, name)
@@ -70,6 +70,7 @@ function halo_filled_data(data, helper_grid, bcs, LX, LY, overlap)
         field.data[1:Ni, 1:Nj, 1] .= shifted_data[1:Ni, 1:Nj]
     else              # Face-y: shift +1 in y
         field.data[1:Ni, 2:Nj+1, 1] .= shifted_data[1:Ni, 1:Nj]
+        field.data[1:Ni, 1, 1] .= shifted_data[1:Ni, 1]
     end
     fill_halo_regions!(field)
     
@@ -133,7 +134,8 @@ function ORCAGrid(arch = CPU(), FT::DataType = Float64;
                   radius = Oceananigans.defaults.planet_radius,
                   with_bathymetry = true,
                   active_cells_map = true,
-                  south_rows_to_remove = default_south_rows_to_remove(dataset))
+                  south_rows_to_remove = default_south_rows_to_remove(dataset),
+                  chop_bathymetry = false)
 
     # Validate z specification against Nz (mirrors Oceananigans' input_validation.jl)
     if z isa AbstractVector
@@ -355,11 +357,11 @@ function ORCAGrid(arch = CPU(), FT::DataType = Float64;
     bathy_data = Array(bathy_ds[bathy_varname][:, :])
     close(bathy_ds)
 
-    # TODO: reinstate
-   #= # Chop off the same southern rows from bathymetry
-    if jr > 0
+   
+    # Chop off the same southern rows from bathymetry
+    if chop_bathymetry & (jr > 0)
         bathy_data = chop_south(bathy_data)
-    end=#
+    end
 
     # NEMO stores bathymetry as positive depth; convert to negative bottom height
     # (Oceananigans convention: z < 0 below sea level).

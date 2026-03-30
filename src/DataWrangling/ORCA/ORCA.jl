@@ -103,12 +103,12 @@ last_date(::ORCA2, args...) = nothing
 
 const ORCA2Metadatum = Metadatum{<:ORCA2}
 
-ORCA1_variable_names = Dict( 
+ORCA2_variable_names = Dict( 
     :bottom_height => "bathy_metry",
     :mesh_mask     => "glamt",
 )
 
-dataset_variable_name(data::ORCA2Metadatum) = ORCA1_variable_names[data.name]
+dataset_variable_name(data::ORCA2Metadatum) = ORCA2_variable_names[data.name]
 
 # Zenodo record 15705144
 const ORCA2_url = "https://zenodo.org/records/15705144/files/ORCA2L75_domaincfg_forcings.tar.gz"
