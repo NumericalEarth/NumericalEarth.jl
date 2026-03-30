@@ -370,9 +370,8 @@ function ORCAGrid(arch = CPU(), FT::DataType = Float64;
     # (above sea level) so that GridFittedBottom correctly masks them as land.
     bottom_height = convert.(FT, bathy_data)
     bottom_height .= ifelse.(bottom_height .> 0, .-bottom_height, FT(100))
-    bottom_height = on_architecture(arch, bottom_height)
-
     remove_closed_basins && remove_minor_basins!(bottom_height, 1, (underlying_grid.Nx, underlying_grid.Ny))
-
+    bottom_height = on_architecture(arch, bottom_height)
+    
     return ImmersedBoundaryGrid(underlying_grid, GridFittedBottom(bottom_height); active_cells_map)
 end
