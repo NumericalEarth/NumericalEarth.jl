@@ -19,7 +19,9 @@ export AbstractLand,
        NoRunoff, InfiltrationCapacityRunoff,
        VariablySaturatedHydrology,
        # Atmosphere-facing accessors
-       surface_temperature, surface_saturation
+       surface_temperature, surface_saturation,
+       # Land simulations
+       land_simulation
 
 """
     abstract type AbstractLand end
@@ -46,6 +48,9 @@ using Oceananigans.Utils: launch!, prettysummary, prettytime
 using ..NumericalEarth: NumericalEarth, stateindex
 using ..EarthSystemModels: EarthSystemModels, AbstractPrescribedComponent, surface_temperature
 using ..EarthSystemModels.InterfaceComputations: interface_kernel_parameters, ComponentExchanger
+
+# Extended by external land models
+function land_simulation end
 
 # Closure interfaces
 include("energy_balance/energy_balance.jl")
