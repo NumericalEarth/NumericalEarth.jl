@@ -18,7 +18,7 @@ using NumericalEarth.Atmospheres:
     PrescribedAtmosphere,
     TwoBandDownwellingRadiation
 
-using CUDA: @allowscalar
+using GPUArraysCore: @allowscalar
 
 using NCDatasets
 using JLD2
