@@ -355,10 +355,11 @@ function ORCAGrid(arch = CPU(), FT::DataType = Float64;
     bathy_data = Array(bathy_ds[bathy_varname][:, :])
     close(bathy_ds)
 
-    # Chop off the same southern rows from bathymetry
+    # TODO: reinstate
+   #= # Chop off the same southern rows from bathymetry
     if jr > 0
         bathy_data = chop_south(bathy_data)
-    end
+    end=#
 
     # NEMO stores bathymetry as positive depth; convert to negative bottom height
     # (Oceananigans convention: z < 0 below sea level).
