@@ -25,7 +25,9 @@ export
     SkinTemperature,
     BulkTemperature,
     PrescribedAtmosphere,
+    PrescribedLand,
     JRA55PrescribedAtmosphere,
+    JRA55PrescribedLand,
     JRA55NetCDFBackend,
     regrid_bathymetry,
     Metadata,
@@ -98,6 +100,7 @@ end
 include("EarthSystemModels/EarthSystemModels.jl")
 include("Oceans/Oceans.jl")
 include("Atmospheres/Atmospheres.jl")
+include("Lands/Lands.jl")
 include("SeaIces/SeaIces.jl")
 include("InitialConditions/InitialConditions.jl")
 include("DataWrangling/DataWrangling.jl")
@@ -110,6 +113,7 @@ using .Bathymetry
 using .InitialConditions
 using .EarthSystemModels
 using .Atmospheres
+using .Lands
 using .Oceans
 using .SeaIces
 using .Diagnostics
