@@ -29,7 +29,7 @@ XESMF = "2e0b0046-e7a1-486f-88de-807ee8ffabe5"
 
 [sources]
 NumericalEarth = {path = ".."}
-Breeze = {path = "https://github.com/NumericalEarth/Breeze.jl", rev = "main"}
+Breeze = {url = "https://github.com/NumericalEarth/Breeze.jl", rev = "main"}
 
 [compat]
 Breeze = "0.4"
@@ -46,7 +46,7 @@ JLD2 = "0.4, 0.5, 0.6"
 KernelAbstractions = "0.9"
 MPI = "0.20"
 NCDatasets = "0.12, 0.13, 0.14"
-Oceananigans = "0.106.3"
+Oceananigans = "0.106"
 PythonCall = "0.9.28"
 Reactant = "0.2.235"
 Scratch = "1"
