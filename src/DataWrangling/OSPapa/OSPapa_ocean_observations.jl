@@ -46,7 +46,13 @@ dataset_variable_name(data::OSPapaMetadata) = OSPapa_dataset_variable_names[data
 location(::OSPapaMetadata) = (Center, Center, Center)
 is_three_dimensional(md::OSPapaMetadata) = md.name in (:temperature, :salinity, :eastward_velocity, :northward_velocity)
 reversed_vertical_axis(::OSPapaHourly) = true
-conversion_units(::OSPapaMetadatum) = nothing
+function conversion_units(metadatum::OSPapaMetadatum)
+    if metadatum.name in (:eastward_velocity, :northward_velocity)
+        return CentimetersPerSecond()
+    else
+        return nothing
+    end
+end
 default_inpainting(::OSPapaMetadata) = nothing
 
 #####
@@ -295,6 +301,10 @@ function set!(target_field::Field, metadata::OSPapaMetadatum; kw...)
 
     # Interpolate vertically
     interpolated = _vertical_interpolate(z_src, data_profile, z_dst)
+
+    if metadata.name in (:eastward_velocity, :northward_velocity)
+        interpolated ./= 100 # cm/s → m/s
+    end
 
     interior(target_field, 1, 1, :) .= interpolated
 
