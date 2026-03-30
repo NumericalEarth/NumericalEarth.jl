@@ -1,8 +1,10 @@
 module ORCA
 
-export ORCA1
+export ORCA1, ORCA2
 
 using Downloads
+using Tar
+using CodecZlib
 using Oceananigans
 using Oceananigans.DistributedComputations: @root
 using Scratch
@@ -86,5 +88,60 @@ function download_dataset(metadatum::ORCA1Metadatum)
 end
 
 default_south_rows_to_remove(::ORCA1) = 35
+
+# ORCA2
+struct ORCA2 end
+
+default_download_directory(::ORCA2) = download_ORCA_cache
+reversed_vertical_axis(::ORCA2) = false
+longitude_interfaces(::ORCA2) = (-180, 180)
+latitude_interfaces(::ORCA2) = (-80, 90)
+
+all_dates(::ORCA2, args...) = nothing
+first_date(::ORCA2, args...) = nothing
+last_date(::ORCA2, args...) = nothing
+
+const ORCA1Metadatum = Metadatum{<:ORCA2}
+
+ORCA1_variable_names = Dict(
+    :bottom_height => "Bathymetry",
+    :mesh_mask     => "glamt",
+)
+
+dataset_variable_name(data::ORCA2Metadatum) = ORCA1_variable_names[data.name]
+
+# Zenodo record 15705144
+const ORCA2_url = "https://zenodo.org/records/15705144/files/ORCA2L75_domaincfg_forcings.tar.gz"
+
+metadata_url(metadatum::ORCA2Metadatum) = ORCA2_url
+
+function metadata_filename(::ORCA2, name, date, bounding_box)
+    if name == :mesh_mask
+        return "coordinates.nc"
+    elseif name == :bottom_height
+        return "bathy_meter.nc"
+    else
+        error("Unknown ORCA2 variable: $name")
+    end
+end
+
+z_interfaces(::ORCA1Metadatum) = nothing
+
+function download_dataset(metadatum::ORCA2Metadatum)
+    fileurl  = metadata_url(metadatum)
+    filepath = metadata_path(metadatum)
+
+    @root if !isfile(filepath)
+        @info "Downloading ORCA2 data: $(metadatum.name) to $(metadatum.dir)..."
+        Downloads.download(fileurl, filepath; progress=download_progress)
+        open(GzipDecompressorStream, tarfile) do io
+            Tar.extract(io, filepath*"/ORCA2L75")
+        end
+    end
+
+    return filepath
+end
+
+default_south_rows_to_remove(::ORCA2) = 35
 
 end # module
