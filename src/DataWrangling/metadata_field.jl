@@ -3,8 +3,25 @@ using JLD2
 using NumericalEarth.InitialConditions: interpolate!
 using Statistics: median
 using Oceananigans.Grids: λnodes, φnodes
+using Oceananigans.Architectures: on_architecture
 
 import Oceananigans.Fields: set!, Field, location
+
+"""
+    nearest_index(sorted_nodes, target)
+
+Return the index of the element in `sorted_nodes` nearest to `target`.
+Uses binary search (`searchsortedfirst`) for efficiency on sorted arrays.
+"""
+function nearest_index(sorted_nodes, target)
+    N = length(sorted_nodes)
+    i = searchsortedfirst(sorted_nodes, target)
+    i = clamp(i, 1, N)
+    if i > 1 && abs(sorted_nodes[i-1] - target) < abs(sorted_nodes[i] - target)
+        return i - 1
+    end
+    return i
+end
 
 #####
 ##### Location with automatic restriction based on region
@@ -286,23 +303,23 @@ end
 
 function extract_column!(column_field, intermediate_field, col, ::Nearest)
     grid = intermediate_field.grid
+    arch = architecture(grid)
     LX, LY, LZ = Oceananigans.Fields.location(intermediate_field)
 
-    # Find nearest indices using the intermediate grid's coordinate nodes
-    λnodes_arr = λnodes(grid, LX(); with_halos=false)
-    φnodes_arr = φnodes(grid, LY(); with_halos=false)
-    λ★ = col.longitude
-    φ★ = col.latitude
+    # Find nearest indices on CPU (coordinate arrays are small)
+    λ_cpu = on_architecture(CPU(), λnodes(grid, LX(); with_halos=false))
+    φ_cpu = on_architecture(CPU(), φnodes(grid, LY(); with_halos=false))
+    i★ = nearest_index(λ_cpu, col.longitude)
+    j★ = nearest_index(φ_cpu, col.latitude)
 
-    i★ = argmin(abs.(λnodes_arr .- λ★))
-    j★ = argmin(abs.(φnodes_arr .- φ★))
-
-    Nz = size(column_field, 3)
-    for k in 1:Nz
-        column_field[1, 1, k] = intermediate_field[i★, j★, k]
-    end
+    launch!(arch, column_field.grid, :z, copy_column!, column_field, intermediate_field, i★, j★)
 
     return nothing
+end
+
+@kernel function copy_column!(column_field, source_field, i★, j★)
+    k = @index(Global, Linear)
+    @inbounds column_field[1, 1, k] = source_field[i★, j★, k]
 end
 
 """Build an intermediate LatLonGrid by reading coordinate arrays from the downloaded file."""
