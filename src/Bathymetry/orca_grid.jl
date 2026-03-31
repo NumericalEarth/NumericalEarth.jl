@@ -369,10 +369,12 @@ function ORCAGrid(arch = CPU(), FT::DataType = Float64;
 
     # Chop off the same southern rows from bathymetry
     if chop_bathymetry & (jr > 0)
-        bathy_data = chop_south(bathy_data)
+        bottom_height = chop_south(bottom_height)
     end
-    
-    bottom_height = on_architecture(arch, bottom_height)
+
+    bottom_height_f = Field{Center, Center, Nothing}(underlying_grid)
+
+    set!(bottom_height_f, bottom_height)
 
     return ImmersedBoundaryGrid(underlying_grid, GridFittedBottom(bottom_height); active_cells_map)
 end
