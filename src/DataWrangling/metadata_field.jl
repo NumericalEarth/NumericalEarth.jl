@@ -4,24 +4,9 @@ using NumericalEarth.InitialConditions: interpolate!
 using Statistics: median
 using Oceananigans.Grids: λnodes, φnodes
 using Oceananigans.Architectures: on_architecture
+using Oceananigans.Fields: fractional_x_index, fractional_y_index
 
 import Oceananigans.Fields: set!, Field, location
-
-"""
-    nearest_index(sorted_nodes, target)
-
-Return the index of the element in `sorted_nodes` nearest to `target`.
-Uses binary search (`searchsortedfirst`) for efficiency on sorted arrays.
-"""
-function nearest_index(sorted_nodes, target)
-    N = length(sorted_nodes)
-    i = searchsortedfirst(sorted_nodes, target)
-    i = clamp(i, 1, N)
-    if i > 1 && abs(sorted_nodes[i-1] - target) < abs(sorted_nodes[i] - target)
-        return i - 1
-    end
-    return i
-end
 
 #####
 ##### Location with automatic restriction based on region
@@ -306,11 +291,9 @@ function extract_column!(column_field, intermediate_field, col, ::Nearest)
     arch = architecture(grid)
     LX, LY, LZ = Oceananigans.Fields.location(intermediate_field)
 
-    # Find nearest indices on CPU (coordinate arrays are small)
-    λ_cpu = on_architecture(CPU(), λnodes(grid, LX(); with_halos=false))
-    φ_cpu = on_architecture(CPU(), φnodes(grid, LY(); with_halos=false))
-    i★ = nearest_index(λ_cpu, col.longitude)
-    j★ = nearest_index(φ_cpu, col.latitude)
+    # Use Oceananigans' fractional index machinery (handles cyclic longitude etc.)
+    i★ = round(Int, fractional_x_index(col.longitude, (LX, LY, LZ), grid))
+    j★ = round(Int, fractional_y_index(col.latitude,  (LX, LY, LZ), grid))
 
     launch!(arch, column_field.grid, :z, copy_column!, column_field, intermediate_field, i★, j★)
 
