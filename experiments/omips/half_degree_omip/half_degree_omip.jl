@@ -3,7 +3,7 @@ include("../omip_defaults.jl")
 using Oceananigans.Operators: Δzᶜᶜᶜ
 using WorldOceanAtlasTools
 
-restart_iteration = "120000"
+restart_iteration = nothing # "120000"
 
 arch = GPU()
 
@@ -26,9 +26,17 @@ const Δzˢ = CUDA.@allowscalar Δzᶜᶜᶜ(1, 1, Nz, grid)
 
 omip = omip_simulation(grid; forcing_dir="forcing_data", restart_iteration, restoring_dir="climatology",filename = "halfdegree")
 
-run!(omip)
+profile = get(ENV, "PROFILE", "false")
 
-omip.Δt = 30minutes
-omip.stop_time = 300 * 365days
-
-run!(omip)
+if profile == "true"
+    omip.stop_iteration=100
+    run!(omip)
+else
+    omip.stop_iteration = 18430
+    run!(omip)
+    
+    omip.Δt = 30minutes
+    omip.stop_time = 300 * 365days
+    
+    run!(omip)
+end
