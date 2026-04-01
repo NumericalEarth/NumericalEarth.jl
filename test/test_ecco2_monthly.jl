@@ -61,9 +61,15 @@ for arch in test_architectures, dataset in test_ecco_datasets
             end
 
             @testset "DatasetRestoring with LinearlyTaperedPolarMask" begin
-                test_dataset_restoring(arch, dataset, dates, inpainting, 
+                test_dataset_restoring(arch, dataset, dates, inpainting,
                                     varnames=test_names[dataset],
                                     fldnames=test_fields[dataset])
+            end
+
+            @testset "DatasetRestoring with SurfaceLayerMask" begin
+                test_surface_layer_mask_restoring(arch, dataset, dates, inpainting,
+                                                  varnames=test_names[dataset],
+                                                  fldnames=test_fields[dataset])
             end
 
             @testset "Timestepping with DatasetRestoring" begin
