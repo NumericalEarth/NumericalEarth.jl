@@ -110,6 +110,11 @@ jobs:
       TMPDIR: /__w/_temp
       JULIA_DEPOT_PATH: '/__w/_temp/depot:/usr/local/share/julia:'
     steps:
+      - name: Show available storage
+        run: |
+          df -h /
+          du -sh /usr/local/share/julia/* 2>/dev/null || true
+          du -sh /__w/_temp/* 2>/dev/null || true
       - uses: actions/checkout@v6
       - name: Create workspace temp directories
         run: mkdir -p "${TMPDIR}"
