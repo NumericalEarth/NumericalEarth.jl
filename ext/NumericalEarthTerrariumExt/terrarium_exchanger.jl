@@ -26,8 +26,7 @@ function interpolate_state!(exchanger, exchange_grid, land::LandSimulation, coup
     Ts_exchange = exchanger.state.Ts
 
     # Convert skin temperature from °C to K and copy to exchange grid field
-    set!(Ts_exchange, Ts_land + 273.15)
-    fill_halo_regions!(Ts_exchange) # TODO: is this necessary?
+    parent(Ts_exchange) .= parent(Ts_land) .+ 273.15
 
     return nothing
 end
