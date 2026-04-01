@@ -130,12 +130,14 @@ jobs:
       - name: df after cleanup
         run: |
           df -hT
+      - name: Update registry
+        run: |
+          julia --color=yes -e 'using Pkg; Pkg.Registry.update()'
       - name: Run tests
         run: |
           earlyoom -m 3 -s 100 -r 300 --prefer 'julia' &
           julia --project --color=yes --check-bounds=yes -e '
               using Pkg;
-              Pkg.Registry.update();
               Pkg.test(; coverage=true,
                        julia_args=["--check-bounds=yes", "--compiled-modules=yes", "-O0"],
                        test_args=["--verbose"])
