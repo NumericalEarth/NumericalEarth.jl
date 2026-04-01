@@ -87,7 +87,7 @@ function __init__()
     # Download few datasets for tests
     for dataset in test_datasets
         time_resolution = dataset isa ECCO2Daily ? Day(1) : Month(1)
-        end_date = start_date + 2 * time_resolution
+        end_date = start_date + 1 * time_resolution
         dates = start_date:time_resolution:end_date
 
         temperature_metadata = Metadata(:temperature; dataset, dates)
