@@ -129,7 +129,7 @@ jobs:
               using Pkg;
               Pkg.Registry.update();
               Pkg.test(; coverage=true,
-                       julia_args=["--check-bounds=yes", "--compiled-modules=yes", -O0"],
+                       julia_args=["--check-bounds=yes", "--compiled-modules=yes", "-O0"],
                        test_args=["--verbose"])
           '
       - uses: julia-actions/julia-processcoverage@v1
