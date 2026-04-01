@@ -91,13 +91,12 @@ end
 # water cells near the boundary are correctly identified as connected.
 function copy_periodic_longitude(zb_cpu::Field, ::Periodic)
     Nλ = size(zb_cpu, 1)
-    half = Nλ ÷ 2
-
     zb_data   = zb_cpu.data[1:Nλ, :, 1]
     zb_parent = zb_data.parent
 
     # Concatenate a copy of the eastern half on the left and the western half on the right.
     # This is an O(Nλ × Nφ) CPU allocation, acceptable for the serial labeling step.
+    half = Nλ ÷ 2
     zb_parent = vcat(zb_parent[half:Nλ, :], zb_parent, zb_parent[1:half, :])
 
     # Update offsets so that index 1 maps back to the original domain start
