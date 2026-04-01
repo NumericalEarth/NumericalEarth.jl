@@ -63,4 +63,5 @@ docs/src/literated/
 
 .CondaPkg
 CondaPkg.toml
+docs/plans/*
 !docs/CondaPkg.toml
