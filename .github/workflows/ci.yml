@@ -132,8 +132,12 @@ jobs:
         run: |
           df -hT
       - name: Update registry
+        shell: julia --color=yes {0}
         run: |
-          julia --color=yes -e 'using Pkg; Pkg.Registry.update()'
+          using Pkg
+          Pkg.Registry.rm("General")
+          Pkg.Registry.add("General")
+          Pkg.Registry.update()
       - name: Run tests
         run: |
           earlyoom -m 3 -s 100 -r 300 --prefer 'julia' &
