@@ -373,7 +373,7 @@ end
 
 # Helper to read longitude from NetCDF with common variable names
 function read_longitude(ds)
-    for name in ("longitude", "lon", "LONGITUDE", "LON", "nav_lon")
+    for name in ("longitude", "lon", "LONGITUDE", "LON", "LONGITUDE_T", "nav_lon")
         if haskey(ds, name)
             return ds[name][:]
         end
@@ -383,7 +383,7 @@ end
 
 # Helper to read latitude from NetCDF with common variable names
 function read_latitude(ds)
-    for name in ("latitude", "lat", "LATITUDE", "LAT", "nav_lat")
+    for name in ("latitude", "lat", "LATITUDE", "LAT", "LATITUDE_T", "nav_lat")
         if haskey(ds, name)
             return ds[name][:]
         end
