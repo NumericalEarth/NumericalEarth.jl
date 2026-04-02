@@ -71,6 +71,9 @@ include("tabulated_albedo.jl")
 # Turbulent fluxes
 include("roughness_lengths.jl")
 include("interface_states.jl")
+
+abstract type AbstractTurbulentFluxFormulation{S} end
+
 include("compute_interface_state.jl")
 include("similarity_theory_turbulent_fluxes.jl")
 include("coefficient_based_turbulent_fluxes.jl")
