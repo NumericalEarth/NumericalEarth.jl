@@ -26,10 +26,10 @@ restrict(::Nothing, interfaces, N) = interfaces, N
 
 # TODO support stretched native grids
 function restrict(bbox_interfaces, interfaces, N)
-    Δ = interfaces[2] - interfaces[1]
+    extent = interfaces[end] - interfaces[1]
     rΔ = bbox_interfaces[2] - bbox_interfaces[1]
-    ϵ = rΔ / Δ
-    rN = ceil(Int, ϵ * N)  # Round up to ensure bounding box is covered
+    rN = round(Int, rΔ / extent * N)
+    rN = max(rN, 1)  # at least one cell
     return bbox_interfaces, rN
 end
 
@@ -67,6 +67,9 @@ function construct_native_grid(metadata, bbox::BoundingBox, arch; halo)
     # TODO: can we restrict in `z` as well?
     longitude, Nx = restrict(bbox.longitude, longitude, Nx)
     latitude, Ny = restrict(bbox.latitude, latitude, Ny)
+
+    # Clamp halo so it does not exceed grid size in any dimension
+    halo = min.(halo, (Nx, Ny, Nz))
 
     grid = LatitudeLongitudeGrid(arch, FT; size = (Nx, Ny, Nz),
                                  halo, longitude, latitude, z)
@@ -112,7 +115,15 @@ function retrieve_data(metadata::Metadatum)
         data = ds[name][:, :, 1]
     end
 
+    # ERA5 (and some other datasets) store latitude north-to-south;
+    # flip to south-to-north to match the grid built by intermediate_grid_from_file.
+    φ = read_latitude(ds)
     close(ds)
+
+    if length(φ) > 1 && φ[2] < φ[1]
+        data = reverse(data, dims=2)
+    end
+
     return data
 end
 
@@ -226,7 +237,14 @@ function set!(target_field::Field, metadata::Metadatum; kw...)
               "the target grid ($(Lzt) m). Some vertical levels cannot be filled with data.")
     end
 
-    interpolate!(target_field, meta_field)
+    # For column data (Nothing, Nothing, LZ), Oceananigans' interpolate! hits a
+    # dispatch bug in flatten_node with zero spatial arguments.  Copy directly instead.
+    if is_column(metadata.region)
+        interior(target_field) .= interior(meta_field)
+    else
+        interpolate!(target_field, meta_field)
+    end
+
     return target_field
 end
 
@@ -290,10 +308,11 @@ function extract_column!(column_field, intermediate_field, col, ::Nearest)
     grid = intermediate_field.grid
     arch = architecture(grid)
     LX, LY, LZ = Oceananigans.Fields.location(intermediate_field)
+    locs = (LX(), LY(), LZ())  # fractional index functions expect instances, not types
 
     # Use Oceananigans' fractional index machinery (handles cyclic longitude etc.)
-    i★ = round(Int, fractional_x_index(col.longitude, (LX, LY, LZ), grid))
-    j★ = round(Int, fractional_y_index(col.latitude,  (LX, LY, LZ), grid))
+    i★ = round(Int, fractional_x_index(col.longitude, locs, grid))
+    j★ = round(Int, fractional_y_index(col.latitude,  locs, grid))
 
     launch!(arch, column_field.grid, :z, copy_column!, column_field, intermediate_field, i★, j★)
 
@@ -314,6 +333,11 @@ function intermediate_grid_from_file(metadata, arch; halo)
     λ = read_longitude(ds)
     φ = read_latitude(ds)
     close(ds)
+
+    # Ensure latitude is sorted south-to-north (ERA5 files are often north-to-south)
+    if length(φ) > 1 && φ[2] < φ[1]
+        reverse!(φ)
+    end
 
     Nx = length(λ)
     Ny = length(φ)
