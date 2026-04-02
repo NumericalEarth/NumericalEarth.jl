@@ -31,6 +31,7 @@ env:
   CDSAPI_URL: "https://cds.climate.copernicus.eu/api"
   CDSAPI_KEY: ${{ secrets.CDSAPI_KEY }}
   DATADEPS_ALWAYS_ACCEPT: true
+  JULIA_PKG_SERVER_REGISTRY_PREFERENCE: 'eager'
 
 #####
 ##### CPU tests (GitHub-hosted runners)
@@ -98,6 +99,9 @@ jobs:
     container:
       image: ghcr.io/numericalearth/numerical-earth-docker-images:test-julia_1.12.5
       options: --gpus=all
+      volumes:
+        # Mount host `/usr/local` so that we can delete some stuff afterwards
+        - /usr/local:/host-usr-local
     timeout-minutes: 120
     strategy:
       fail-fast: false
@@ -117,6 +121,23 @@ jobs:
         run: git config --global --add safe.directory ${PWD}
       - name: Copy LocalPreferences
         run: cp -v /usr/local/share/julia/environments/numericalearth/LocalPreferences.toml test/.
+      - name: df before cleanup
+        run: |
+          df -hT
+      - name: Clean up old CUDA toolkits
+        # Save storage by deleting old CUDA toolkits, we'll use v13
+        run: |
+          rm -rf /host-usr-local/cuda-12.*
+      - name: df after cleanup
+        run: |
+          df -hT
+      - name: Update registry
+        shell: julia --color=yes {0}
+        run: |
+          using Pkg
+          Pkg.Registry.rm("General")
+          Pkg.Registry.add("General")
+          Pkg.Registry.update()
       - name: Run tests
         run: |
           earlyoom -m 3 -s 100 -r 300 --prefer 'julia' &
