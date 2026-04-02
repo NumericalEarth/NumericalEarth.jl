@@ -133,7 +133,8 @@ longitude_interfaces(::GLORYSMetadata) = (-180, 180)
 latitude_interfaces(::GLORYSMetadata) = (-80, 90)
 
 function z_interfaces(metadata::GLORYSMetadata)
-    path = metadata_path(metadata)
+    paths = metadata_path(metadata)
+    path = paths isa AbstractVector ? first(paths) : paths
     ds = Dataset(path)
     zc = - reverse(ds["depth"][:])
     close(ds)
