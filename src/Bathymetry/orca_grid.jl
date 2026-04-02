@@ -70,7 +70,6 @@ function halo_filled_data(data, helper_grid, bcs, LX, LY, overlap)
         field.data[1:Ni, 1:Nj, 1] .= shifted_data[1:Ni, 1:Nj]
     else              # Face-y: shift +1 in y
         field.data[1:Ni, 2:Nj+1, 1] .= shifted_data[1:Ni, 1:Nj]
-        field.data[1:Ni, 1, 1] .= shifted_data[1:Ni, 1]
     end
     fill_halo_regions!(field)
     
@@ -134,9 +133,7 @@ function ORCAGrid(arch = CPU(), FT::DataType = Float64;
                   radius = Oceananigans.defaults.planet_radius,
                   with_bathymetry = true,
                   active_cells_map = true,
-                  south_rows_to_remove = default_south_rows_to_remove(dataset),
-                  chop_bathymetry = false,
-                  remove_closed_basins = true)
+                  south_rows_to_remove = default_south_rows_to_remove(dataset))
 
     # Validate z specification against Nz (mirrors Oceananigans' input_validation.jl)
     if z isa AbstractVector
@@ -368,7 +365,7 @@ function ORCAGrid(arch = CPU(), FT::DataType = Float64;
     remove_closed_basins && remove_minor_basins!(bottom_height, 1, (underlying_grid.Nx, underlying_grid.Ny))
 
     # Chop off the same southern rows from bathymetry
-    if chop_bathymetry & (jr > 0)
+    if jr > 0
         bottom_height = chop_south(bottom_height)
     end
 
