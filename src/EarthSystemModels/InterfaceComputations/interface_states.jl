@@ -1,4 +1,4 @@
-using CUDA: @allowscalar
+using GPUArraysCore: @allowscalar
 using Printf
 
 import ClimaSeaIce
