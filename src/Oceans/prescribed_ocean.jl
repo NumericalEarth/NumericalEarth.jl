@@ -62,12 +62,7 @@ function PrescribedOcean(grid, timeseries;
     velocities = (; u, v, w = ZeroField())
     tracers    = (; T, S)
 
-    # Surface flux fields — written by the coupling, read by net_fluxes
-    τˣ = CenterField(grid)
-    τʸ = CenterField(grid)
-    Jᵀ = CenterField(grid)
-    Jˢ = CenterField(grid)
-    fluxes = (; u = τˣ, v = τʸ, T = Jᵀ, S = Jˢ)
+    fluxes = nothing
 
     return PrescribedOcean{FT, typeof(grid), typeof(clock),
                            typeof(velocities), typeof(tracers),
@@ -128,7 +123,7 @@ function ComponentExchanger(ocean::PrescribedOcean, exchange_grid)
     return ComponentExchanger((; u, v, T, S), nothing)
 end
 
-net_fluxes(ocean::PrescribedOcean) = ocean.fluxes
+net_fluxes(ocean::PrescribedOcean) = nothing
 
 interpolate_state!(exchanger, grid, ::PrescribedOcean, coupled_model) = nothing
 

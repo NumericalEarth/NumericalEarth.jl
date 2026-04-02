@@ -23,7 +23,8 @@ import NumericalEarth.DataWrangling:
     inpainted_metadata_path,
     available_variables,
     retrieve_data,
-    metadata_path
+    metadata_path,
+    reversed_latitude_axis
 
 import Base: eltype
 
@@ -46,6 +47,8 @@ struct ERA5Monthly <: ERA5Dataset end
 
 dataset_name(::ERA5Hourly) = "ERA5Hourly"
 dataset_name(::ERA5Monthly) = "ERA5Monthly"
+
+reversed_latitude_axis(::ERA5Dataset) = true
 
 # Wave variables are on a 0.5° grid (720×361), atmospheric variables on 0.25° (1440×721)
 const ERA5_wave_variables = Set([

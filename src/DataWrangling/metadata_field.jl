@@ -115,12 +115,11 @@ function retrieve_data(metadata::Metadatum)
         data = ds[name][:, :, 1]
     end
 
-    # ERA5 (and some other datasets) store latitude north-to-south;
-    # flip to south-to-north to match the grid built by intermediate_grid_from_file.
-    φ = read_latitude(ds)
     close(ds)
 
-    if length(φ) > 1 && φ[2] < φ[1]
+    # ERA5 (and some other datasets) store latitude north-to-south;
+    # flip to south-to-north to match the grid.
+    if reversed_latitude_axis(metadata.dataset)
         data = reverse(data, dims=2)
     end
 
@@ -265,27 +264,16 @@ function column_field(metadata, arch;
     # 1. Build the column grid (the "native grid" for column metadata)
     column_grid = native_grid(metadata, arch; halo)
 
-    # 2. Build an intermediate LatLonGrid from the downloaded data file
-    intermediate_grid = intermediate_grid_from_file(metadata, arch; halo)
+    # 2. Build a full-grid Field using region=nothing (reuses the standard pipeline)
+    global_metadatum = Metadatum(metadata.name;
+                                 dataset = metadata.dataset,
+                                 date = metadata.dates,
+                                 region = nothing)
 
-    # 3. Load data onto intermediate grid
-    LX, LY, LZ = dataset_location(metadata.dataset, metadata.name)
-    intermediate_field = Field{LX, LY, LZ}(intermediate_grid)
-
-    data = retrieve_data(metadata)
-    set_metadata_field!(intermediate_field, data, metadata)
+    intermediate_field = Field(global_metadatum, arch; inpainting, mask, halo, cache_inpainted_data)
     fill_halo_regions!(intermediate_field)
 
-    # 4. Inpaint on intermediate grid if needed
-    if !isnothing(inpainting)
-        if isnothing(mask)
-            mask = compute_mask(metadata, intermediate_field)
-        end
-        inpaint_mask!(intermediate_field, mask; inpainting)
-        fill_halo_regions!(intermediate_field)
-    end
-
-    # 5. Create column field and extract data
+    # 3. Create column field and extract data
     _, _, LZ_col = location(metadata) # (Nothing, Nothing, LZ)
     column_field = Field{Nothing, Nothing, LZ_col}(column_grid)
 
@@ -356,73 +344,6 @@ end
 @kernel function copy_column!(column_field, source_field, i★, j★)
     k = @index(Global, Linear)
     @inbounds column_field[1, 1, k] = source_field[i★, j★, k]
-end
-
-"""Build an intermediate LatLonGrid by reading coordinate arrays from the downloaded file."""
-function intermediate_grid_from_file(metadata, arch; halo)
-    path = metadata_path(metadata)
-    ds = Dataset(path)
-
-    # Try common coordinate variable names
-    λ = read_longitude(ds)
-    φ = read_latitude(ds)
-    close(ds)
-
-    # Ensure latitude is sorted south-to-north (ERA5 files are often north-to-south)
-    if length(φ) > 1 && φ[2] < φ[1]
-        reverse!(φ)
-    end
-
-    Nx = length(λ)
-    Ny = length(φ)
-    _, _, Nz, _ = size(metadata)
-    z = z_interfaces(metadata)
-    FT = eltype(metadata)
-
-    # Build interfaces from cell centers
-    if Nx > 1
-        Δλ = λ[2] - λ[1]
-        λf = vcat(λ .- Δλ/2, [λ[end] + Δλ/2])
-    else
-        Δλ = FT(1) # arbitrary for single cell
-        λf = (λ[1] - Δλ/2, λ[1] + Δλ/2)
-    end
-
-    if Ny > 1
-        Δφ = φ[2] - φ[1]
-        φf = vcat(φ .- Δφ/2, [φ[end] + Δφ/2])
-    else
-        Δφ = FT(1)
-        φf = (φ[1] - Δφ/2, φ[1] + Δφ/2)
-    end
-
-    grid = LatitudeLongitudeGrid(arch, FT;
-                                 size = (Nx, Ny, Nz),
-                                 halo,
-                                 longitude = λf,
-                                 latitude = φf,
-                                 z)
-    return grid
-end
-
-# Helper to read longitude from NetCDF with common variable names
-function read_longitude(ds)
-    for name in ("longitude", "lon", "LONGITUDE", "LON", "LONGITUDE_T", "nav_lon")
-        if haskey(ds, name)
-            return ds[name][:]
-        end
-    end
-    error("Could not find longitude coordinate variable in $(keys(ds))")
-end
-
-# Helper to read latitude from NetCDF with common variable names
-function read_latitude(ds)
-    for name in ("latitude", "lat", "LATITUDE", "LAT", "LATITUDE_T", "nav_lat")
-        if haskey(ds, name)
-            return ds[name][:]
-        end
-    end
-    error("Could not find latitude coordinate variable in $(keys(ds))")
 end
 
 # manglings

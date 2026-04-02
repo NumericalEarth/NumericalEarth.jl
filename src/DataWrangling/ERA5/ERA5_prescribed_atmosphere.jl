@@ -68,7 +68,7 @@ function ERA5PrescribedAtmosphere(architecture::AbstractArchitecture = CPU(), FT
     tracers    = (T = Ta, q = qa)
     pressure   = pa
 
-    freshwater_flux = (rain = Fra, snow = Fra)  # ERA5 only has total_precipitation
+    freshwater_flux = (precipitation = Fra, )  # ERA5 only has total_precipitation
 
     downwelling_radiation = TwoBandDownwellingRadiation(shortwave = ℐꜜˢʷ, longwave = ℐꜜˡʷ)
 
