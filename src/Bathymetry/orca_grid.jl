@@ -133,7 +133,8 @@ function ORCAGrid(arch = CPU(), FT::DataType = Float64;
                   radius = Oceananigans.defaults.planet_radius,
                   with_bathymetry = true,
                   active_cells_map = true,
-                  south_rows_to_remove = default_south_rows_to_remove(dataset))
+                  south_rows_to_remove = default_south_rows_to_remove(dataset),
+                  remove_closed_basins = false)
 
     # Validate z specification against Nz (mirrors Oceananigans' input_validation.jl)
     if z isa AbstractVector
@@ -360,18 +361,16 @@ function ORCAGrid(arch = CPU(), FT::DataType = Float64;
     # (Oceananigans convention: z < 0 below sea level).
     # In NEMO, bathymetry == 0 means land. We map these to bottom_height = 100
     # (above sea level) so that GridFittedBottom correctly masks them as land.
+
     bottom_height = convert.(FT, bathy_data)
     bottom_height .= ifelse.(bottom_height .> 0, .-bottom_height, FT(100))
     remove_closed_basins && remove_minor_basins!(bottom_height, 1, (underlying_grid.Nx, underlying_grid.Ny))
 
     # Chop off the same southern rows from bathymetry
-    if jr > 0
+    if (jr > 0) & !(dataset isa ORCA2)
         bottom_height = chop_south(bottom_height)
     end
-
-    bottom_height_f = Field{Center, Center, Nothing}(underlying_grid)
-
-    set!(bottom_height_f, bottom_height)
+    
 
     return ImmersedBoundaryGrid(underlying_grid, GridFittedBottom(bottom_height); active_cells_map)
 end
