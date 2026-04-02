@@ -164,7 +164,9 @@ end
 function date_str(date::DateTime)
     y = Dates.year(date)
     m = lpad(Dates.month(date), 2, '0')
-    return "$(y)-$(m)"
+    d = lpad(Dates.day(date), 2, '0')
+    h = lpad(Dates.hour(date), 2, '0')
+    return "$(y)-$(m)-$(d)T$(h)"
 end
 
 start_date_str(date::DateTime) = date_str(date)
