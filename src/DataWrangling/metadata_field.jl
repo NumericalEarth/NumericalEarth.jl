@@ -300,8 +300,42 @@ function extract_column!(column_field, intermediate_field, col::Column)
 end
 
 function extract_column!(column_field, intermediate_field, col, ::Linear)
-    interpolate!(column_field, intermediate_field)
+    grid = intermediate_field.grid
+    arch = architecture(grid)
+    LX, LY, LZ = Oceananigans.Fields.location(intermediate_field)
+    locs = (LX(), LY(), LZ())
+
+    # Fractional indices (1-based, continuous)
+    fi = fractional_x_index(col.longitude, locs, grid)
+    fj = fractional_y_index(col.latitude,  locs, grid)
+
+    # Lower-left index and weights
+    i₁ = clamp(floor(Int, fi), 1, size(grid, 1))
+    j₁ = clamp(floor(Int, fj), 1, size(grid, 2))
+    i₂ = clamp(i₁ + 1, 1, size(grid, 1))
+    j₂ = clamp(j₁ + 1, 1, size(grid, 2))
+
+    wx = clamp(fi - floor(fi), 0, 1)
+    wy = clamp(fj - floor(fj), 0, 1)
+
+    launch!(arch, column_field.grid, :z, _bilinear_interpolate_column!,
+            column_field, intermediate_field, i₁, j₁, i₂, j₂, wx, wy)
+
     return nothing
+end
+
+@kernel function _bilinear_interpolate_column!(column_field, source, i₁, j₁, i₂, j₂, wx, wy)
+    k = @index(Global, Linear)
+    @inbounds begin
+        v00 = source[i₁, j₁, k]
+        v10 = source[i₂, j₁, k]
+        v01 = source[i₁, j₂, k]
+        v11 = source[i₂, j₂, k]
+        column_field[1, 1, k] = (1 - wx) * (1 - wy) * v00 +
+                                     wx  * (1 - wy) * v10 +
+                                (1 - wx) *      wy  * v01 +
+                                     wx  *      wy  * v11
+    end
 end
 
 function extract_column!(column_field, intermediate_field, col, ::Nearest)

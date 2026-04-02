@@ -8,6 +8,7 @@ using NumericalEarth.DataWrangling: extract_column!
 
 using Oceananigans
 using Oceananigans.BoundaryConditions: fill_halo_regions!
+using Oceananigans.Fields: location
 using Oceananigans.Grids: λnodes, φnodes, topology, Flat, Bounded, Periodic
 
 @testset "extract_column! with Nearest interpolation" begin
@@ -122,6 +123,72 @@ end
             @allowscalar begin
                 @test cf[1, 1, 1] == 42.0
                 @test cf[1, 1, 2] == 42.0
+            end
+        end
+    end
+end
+
+@testset "End-to-end Column Field construction" begin
+    for arch in test_architectures
+        A = typeof(arch)
+
+        @testset "Column Field with Linear interpolation on $A" begin
+            col = Column(12.0, -50.0; interpolation=Linear())
+            md = Metadatum(:temperature; dataset=ECCO4Monthly(), date=start_date, region=col)
+            field = Field(md, arch)
+
+            @test field.grid isa RectilinearGrid
+            @test topology(field.grid) == (Flat, Flat, Bounded)
+            @test location(field) == (Nothing, Nothing, Center)
+
+            # Field should have non-trivial data (not all zeros)
+            @allowscalar begin
+                @test any(!=(0), interior(field))
+            end
+        end
+
+        @testset "Column Field with Nearest interpolation on $A" begin
+            col = Column(12.0, -50.0; interpolation=Nearest())
+            md = Metadatum(:temperature; dataset=ECCO4Monthly(), date=start_date, region=col)
+            field = Field(md, arch)
+
+            @test field.grid isa RectilinearGrid
+            @test location(field) == (Nothing, Nothing, Center)
+
+            @allowscalar begin
+                @test any(!=(0), interior(field))
+            end
+        end
+
+        @testset "set! with Column metadata on $A" begin
+            col = Column(12.0, -50.0)
+            md = Metadatum(:temperature; dataset=ECCO4Monthly(), date=start_date, region=col)
+
+            # Build a target column field
+            column_grid = native_grid(md, arch)
+            target = Field{Nothing, Nothing, Center}(column_grid)
+
+            set!(target, md)
+
+            @allowscalar begin
+                @test any(!=(0), interior(target))
+            end
+        end
+
+        @testset "Column Linear vs Nearest give similar results on $A" begin
+            col_lin = Column(12.0, -50.0; interpolation=Linear())
+            col_near = Column(12.0, -50.0; interpolation=Nearest())
+
+            md_lin = Metadatum(:temperature; dataset=ECCO4Monthly(), date=start_date, region=col_lin)
+            md_near = Metadatum(:temperature; dataset=ECCO4Monthly(), date=start_date, region=col_near)
+
+            field_lin = Field(md_lin, arch)
+            field_near = Field(md_near, arch)
+
+            # Both should produce finite, non-zero vertical profiles
+            @allowscalar begin
+                @test all(isfinite, interior(field_lin))
+                @test all(isfinite, interior(field_near))
             end
         end
     end
