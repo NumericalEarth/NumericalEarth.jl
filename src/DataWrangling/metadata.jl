@@ -53,9 +53,6 @@ end
 Column(longitude, latitude; z=nothing, interpolation=Linear()) =
     Column(longitude, latitude, z, interpolation)
 
-LatitudeLongitude(latitude, longitude; z=nothing, interpolation=Linear()) =
-    Column(longitude, latitude, z, interpolation)
-
 Base.summary(col::Column) = string("Column(longitude=", prettysummary(col.longitude),
                                    ", latitude=", prettysummary(col.latitude), ")")
 

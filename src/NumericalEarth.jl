@@ -34,7 +34,6 @@ export
     Metadatum,
     BoundingBox,
     Column,
-    LatitudeLongitude,
     ECCOMetadatum,
     EN4Metadatum,
     ETOPO2022,
