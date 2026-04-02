@@ -199,6 +199,44 @@ function test_dataset_restoring(arch, dataset, dates, inpainting;
     return nothing
 end
 
+function test_surface_layer_mask_restoring(arch, dataset, dates, inpainting;
+                                           varnames = (:temperature, :salinity),
+                                           fldnames = (:T, :S),
+                                          )
+    grid = LatitudeLongitudeGrid(arch;
+                                 size = (10, 10, 10),
+                                 latitude = (-75, 75),
+                                 longitude = (0, 360),
+                                 z = (-200, 0),
+                                 halo = (6, 6, 6))
+
+    Nz = size(grid, 3)
+    mask = SurfaceLayerMask()
+
+    for name in varnames
+        metadata = Metadata(name; dates, dataset)
+        var_restoring = DatasetRestoring(metadata, arch; mask, inpainting, rate=1/1000)
+
+        fill!(var_restoring.field_time_series[1], 1.0)
+        fill!(var_restoring.field_time_series[2], 1.0)
+
+        field = NamedTuple{fldnames}(ntuple(i->CenterField(grid), length(fldnames)))
+        clock  = Clock(; time = 0)
+
+        @allowscalar begin
+            # Surface layer should be restored (mask == 1)
+            @test var_restoring(1, 1, Nz, grid, clock, field) == var_restoring.rate
+
+            # Sub-surface layers should not be restored (mask == 0)
+            for k in 1:Nz-1
+                @test var_restoring(1, 1, k, grid, clock, field) == 0
+            end
+        end
+    end
+
+    return nothing
+end
+
 function test_timestepping_with_dataset_restoring(arch, dataset, dates, inpainting;
                                                   varnames = (:temperature, :salinity),
                                                   fldnames = (:T, :S),

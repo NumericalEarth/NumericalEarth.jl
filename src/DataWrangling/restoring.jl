@@ -297,3 +297,8 @@ end
     λ, φ, z = node(i, j, k, grid, LX(), LY(), LZ())
     return mask(φ, z)
 end
+
+""" a mask for restoring only the surface layer (Nz) """
+struct SurfaceLayerMask end
+
+@inline stateindex(mask::SurfaceLayerMask, i, j, k, grid, time, loc) = convert(eltype(grid), k == size(grid, 3))
