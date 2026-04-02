@@ -239,10 +239,10 @@ end
 Internally loads data onto an intermediate LatitudeLongitudeGrid
 and interpolates to the column RectilinearGrid."""
 function column_field(metadata, arch;
-                       inpainting = default_inpainting(metadata),
-                       mask = nothing,
-                       halo = (3, 3, 3),
-                       cache_inpainted_data = true)
+                      inpainting = default_inpainting(metadata),
+                      mask = nothing,
+                      halo = (3, 3, 3),
+                      cache_inpainted_data = true)
 
     # 1. Build the column grid (the "native grid" for column metadata)
     column_grid = native_grid(metadata, arch; halo)

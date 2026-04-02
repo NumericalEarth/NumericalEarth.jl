@@ -162,10 +162,10 @@ using Dates
 
 # ECCO temperature over a date range
 T_fts = FieldTimeSeries(:temperature;
-                          dataset = ECCO4Monthly(),
-                          dir = "path/to/ecco/data",
-                          start_date = Date(1992, 1, 1),
-                          end_date = Date(1992, 6, 1))
+                        dataset = ECCO4Monthly(),
+                        dir = "path/to/ecco/data",
+                        start_date = Date(1992, 1, 1),
+                        end_date = Date(1992, 6, 1))
 
 # JRA55 downwelling shortwave radiation
 Qsw = JRA55FieldTimeSeries(:downwelling_shortwave_radiation;
