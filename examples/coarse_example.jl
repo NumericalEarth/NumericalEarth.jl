@@ -27,7 +27,7 @@ Nz = 31
 depth = 5000meters
 z = ExponentialDiscretization(Nz, -depth, 0; scale = depth/4, mutable = true)
 
-grid = ORCAGri(arch, z = z.face, Nz, dataset = ORCA2())
+grid = ORCAGrid(arch; z, Nz, dataset = ORCA2(), halo = (5, 5, 4))
 
 # ### Closures
 #
