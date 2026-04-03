@@ -148,6 +148,13 @@ function Field(metadata::Metadatum, arch=CPU();
 
     download_dataset(metadata)
 
+    # Column regions need special handling: the downloaded file may contain
+    # more data than a single column (e.g. CopernicusMarine returns a small
+    # grid around the point). Load onto an intermediate grid from the file's
+    # actual dimensions, then extract the column.
+    if metadata.region isa Column
+        return column_field_from_file(metadata, arch; inpainting, mask, halo, cache_inpainted_data)
+    end
 
     grid = native_grid(metadata, arch; halo)
     LX, LY, LZ = location(metadata)
@@ -242,6 +249,77 @@ function set!(target_field::Field, metadata::Metadatum; kw...)
     end
 
     return target_field
+end
+
+#####
+##### Column field construction
+#####
+
+function column_field_from_file(metadata, arch;
+                                inpainting = default_inpainting(metadata),
+                                mask = nothing,
+                                halo = (3, 3, 3),
+                                cache_inpainted_data = true)
+
+    column_grid = native_grid(metadata, arch; halo)
+
+    # Read the file's actual dimensions to build a matching intermediate grid
+    path = metadata_path(metadata)
+    ds = Dataset(path)
+    varname = dataset_variable_name(metadata)
+    var = ds[varname]
+    data_size = size(var)
+    Nx_file, Ny_file = data_size[1], data_size[2]
+
+    # Read coordinate arrays
+    lon_dimname = NCDatasets.dimnames(var)[1]
+    lat_dimname = NCDatasets.dimnames(var)[2]
+    λ = haskey(ds, lon_dimname) ? ds[lon_dimname][:] : ds["longitude"][:]
+    φ = haskey(ds, lat_dimname) ? ds[lat_dimname][:] : ds["latitude"][:]
+    close(ds)
+
+    if reversed_latitude_axis(metadata.dataset)
+        reverse!(φ)
+    end
+
+    _, _, Nz, _ = size(metadata)
+    z = z_interfaces(metadata)
+    FT = eltype(metadata)
+
+    # Build cell interfaces from centers
+    Δλ = Nx_file > 1 ? λ[2] - λ[1] : FT(1)
+    λf = range(λ[1] - Δλ/2, stop = λ[end] + Δλ/2, length = Nx_file + 1)
+
+    Δφ = Ny_file > 1 ? φ[2] - φ[1] : FT(1)
+    φf = range(φ[1] - Δφ/2, stop = φ[end] + Δφ/2, length = Ny_file + 1)
+
+    intermediate_grid = LatitudeLongitudeGrid(arch, FT;
+                                              size = (Nx_file, Ny_file, Nz),
+                                              halo, longitude = λf, latitude = φf, z)
+
+    # Load data onto intermediate grid
+    LX, LY, LZ = dataset_location(metadata.dataset, metadata.name)
+    intermediate_field = Field{LX, LY, LZ}(intermediate_grid)
+
+    data = retrieve_data(metadata)
+    set_metadata_field!(intermediate_field, data, metadata)
+    fill_halo_regions!(intermediate_field)
+
+    # Inpaint if needed
+    if !isnothing(inpainting)
+        if isnothing(mask)
+            mask = compute_mask(metadata, intermediate_field)
+        end
+        inpaint_mask!(intermediate_field, mask; inpainting)
+        fill_halo_regions!(intermediate_field)
+    end
+
+    # Extract column
+    _, _, LZ_col = location(metadata)
+    col_field = Field{Nothing, Nothing, LZ_col}(column_grid)
+    extract_column!(col_field, intermediate_field, metadata.region)
+
+    return col_field
 end
 
 #####

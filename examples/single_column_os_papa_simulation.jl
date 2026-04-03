@@ -51,10 +51,12 @@ ocean.model
 # We set initial conditions from GLORYS, using a `Column` region to
 # download and interpolate data at the exact point:
 
-col = Column(λ★, φ★)
+col = Column(λ★, φ★; interpolation=Nearest())
 
-set!(ocean.model, T=Metadatum(:temperature, dataset=GLORYSMonthly(), region=col),
-                  S=Metadatum(:salinity,    dataset=GLORYSMonthly(), region=col))
+set!(ocean.model, T=Metadatum(:temperature, dataset=GLORYSMonthly(), region=col);
+                  inpainting=nothing)
+set!(ocean.model, S=Metadatum(:salinity,    dataset=GLORYSMonthly(), region=col);
+                  inpainting=nothing)
 
 # # A prescribed atmosphere based on ERA5 reanalysis
 #
