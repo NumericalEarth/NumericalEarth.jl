@@ -64,8 +64,7 @@ set!(ocean.model, T=Metadatum(:temperature, dataset=GLORYSMonthly(), region=col)
 
 atmosphere = ERA5PrescribedAtmosphere(;
     dataset = ERA5Hourly(),
-    region = BoundingBox(longitude = (λ★ - 1, λ★ + 1),
-                         latitude  = (φ★ - 1, φ★ + 1)),
+    region = col,
     start_date = DateTime(2020, 1, 1),
     end_date = DateTime(2020, 1, 31),
     time_indices_in_memory = 4)
