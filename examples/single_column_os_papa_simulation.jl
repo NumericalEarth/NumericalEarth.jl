@@ -28,7 +28,6 @@ using Printf
 
 location_name = "ocean_station_papa"
 λ★, φ★ = -145.0, 50.0
-
 grid = RectilinearGrid(size = 200,
                        x = λ★,
                        y = φ★,
@@ -49,13 +48,11 @@ ocean.model
 # We set initial conditions from GLORYS, using a `Column` region to
 # download and interpolate data at the exact point:
 
-col = Column(λ★, φ★; interpolation=Nearest())
+region = Column(λ★, φ★; interpolation=Nearest())
+T_metadatum = Metadatum(:temperature; dataset=GLORYSMonthly(), region)
+S_metadatum = Metadatum(:salinity;    dataset=GLORYSMonthly(), region)
 
-T_metadatum = Metadatum(:temperature, dataset=GLORYSMonthly(), region=col)
-S_metadatum = Metadatum(:salinity,    dataset=GLORYSMonthly(), region=col)
-
-set!(ocean.model.tracers.T, T_metadatum; inpainting=nothing)
-set!(ocean.model.tracers.S, S_metadatum; inpainting=nothing)
+set!(ocean.model, T=T_metadatum, S=S_metadatum)
 
 # # A prescribed atmosphere from JRA55 reanalysis
 #
@@ -63,7 +60,7 @@ set!(ocean.model.tracers.S, S_metadatum; inpainting=nothing)
 # JRA55 provides 10-meter winds, 2-meter temperature and specific humidity,
 # sea-level pressure, downwelling radiation, and precipitation.
 
-atmosphere = JRA55PrescribedAtmosphere(backend=JRA55NetCDFBackend(24))
+atmosphere = JRA55PrescribedAtmosphere(; backend = JRA55NetCDFBackend(24))
 
 using CairoMakie
 
@@ -195,7 +192,7 @@ Label(fig[0, 1:6], title)
 
 n = Observable(1)
 
-times = (times .- times[1]) ./days
+times = (times .- times[1]) ./ days
 Nt = length(times)
 tn = @lift times[$n]
 
