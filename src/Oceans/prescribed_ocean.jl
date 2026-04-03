@@ -37,12 +37,11 @@ Keyword Arguments
 - `heat_capacity`: Seawater specific heat in J/(kg·K).  Default: 3995.6.
 - `clock`: `Clock` for tracking ocean time.
 """
-struct PrescribedOcean{FT, G, Clk, U, TR, F, TS, ρ, C}
+struct PrescribedOcean{FT, G, Clk, U, TR, TS, ρ, C}
     grid :: G
     clock :: Clk
     velocities :: U
     tracers :: TR
-    fluxes :: F
     timeseries :: TS
     density :: ρ
     heat_capacity :: C
@@ -62,14 +61,12 @@ function PrescribedOcean(grid, timeseries;
     velocities = (; u, v, w = ZeroField())
     tracers    = (; T, S)
 
-    fluxes = nothing
-
     return PrescribedOcean{FT, typeof(grid), typeof(clock),
                            typeof(velocities), typeof(tracers),
-                           typeof(fluxes), typeof(timeseries),
+                           typeof(timeseries),
                            typeof(density), typeof(heat_capacity)}(
                                grid, clock, velocities, tracers,
-                               fluxes, timeseries, density, heat_capacity)
+                               timeseries, density, heat_capacity)
 end
 
 #####
