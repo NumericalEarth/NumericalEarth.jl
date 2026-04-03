@@ -6,7 +6,7 @@ using Oceananigans.ImmersedBoundaries: ImmersedBoundaryGrid, GridFittedBottom
 using Oceananigans.OrthogonalSphericalShellGrids: Tripolar, continue_south!
 
 using ..DataWrangling: dataset_variable_name
-using ..DataWrangling.ORCA: ORCA1, default_south_rows_to_remove
+using ..DataWrangling.ORCA: ORCA1, ORCA2, default_south_rows_to_remove
 
 """
     read_2d_nemo_variable(ds, name)
@@ -27,7 +27,7 @@ function read_2d_nemo_variable(ds, name)
 end
 
 # Detect periodic overlap columns in NEMO data.
-# The eORCA grid has `n` trailing columns that are copies of the first `n` columns
+# The eORCA grid has `n` trailing columns that are copies of the first `n` columns 
 # (e.g., columns 361:362 repeat columns 1:2 for eORCA1).
 function periodic_overlap_index(λCC)
     Nx = size(λCC, 1)
@@ -142,7 +142,8 @@ function ORCAGrid(arch = CPU(), FT::DataType = Float64;
                   radius = Oceananigans.defaults.planet_radius,
                   with_bathymetry = true,
                   active_cells_map = true,
-                  south_rows_to_remove = default_south_rows_to_remove(dataset))
+                  south_rows_to_remove = default_south_rows_to_remove(dataset),
+                  remove_closed_basins = false)
 
     # Download mesh_mask via the metadata interface
     mesh_meta = Metadatum(:mesh_mask; dataset)
@@ -273,7 +274,10 @@ function ORCAGrid(arch = CPU(), FT::DataType = Float64;
     # Land (bathymetry == 0) gets mapped to +100 so GridFittedBottom masks it.
     bottom_height = convert.(FT, bathy_data)
     bottom_height .= ifelse.(bottom_height .> 0, .-bottom_height, FT(100))
-    bottom_height = on_architecture(arch, bottom_height)
+    remove_closed_basins && remove_minor_basins!(bottom_height, 1, (underlying_grid.Nx, underlying_grid.Ny))
+    
+    bathymetry = Field{Center, Center, Nothing}(underlying_grid)
+    set!(bathymetry, bottom_height)
 
-    return ImmersedBoundaryGrid(underlying_grid, GridFittedBottom(bottom_height); active_cells_map)
+    return ImmersedBoundaryGrid(underlying_grid, GridFittedBottom(bathymetry); active_cells_map)
 end
