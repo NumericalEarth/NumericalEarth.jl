@@ -14,7 +14,7 @@ The `region` keyword restricts the spatial extent.
 A [`BoundingBox`](@ref NumericalEarth.DataWrangling.BoundingBox) selects a
 longitude--latitude--depth sub-region:
 
-```julia
+```@example metadata
 using NumericalEarth
 
 bbox = BoundingBox(longitude = (200, 220), latitude = (35, 55))
@@ -24,7 +24,7 @@ When passed to `Metadata`, the native grid shrinks to cover only the bounding bo
 and, for datasets that support spatial subsetting on download (GLORYS, ERA5),
 only the relevant data is fetched:
 
-```julia
+```@example metadata
 T_meta = Metadatum(:temperature; dataset = GLORYSMonthly(), region = bbox)
 ```
 
@@ -33,10 +33,10 @@ restricts the grid that `native_grid` returns.
 
 A `BoundingBox` can also restrict the vertical extent:
 
-```julia
-bbox = BoundingBox(longitude = (200, 220),
-                   latitude = (35, 55),
-                   z = (-500, 0))
+```@example metadata
+bbox_z = BoundingBox(longitude = (200, 220),
+                     latitude = (35, 55),
+                     z = (-500, 0))
 ```
 
 ### `Column`
@@ -44,7 +44,7 @@ bbox = BoundingBox(longitude = (200, 220),
 A [`Column`](@ref NumericalEarth.DataWrangling.Column) represents a single
 horizontal point that extends through the water column:
 
-```julia
+```@example metadata
 col = Column(35.1, 50.1)  # (longitude, latitude)
 ```
 
@@ -54,18 +54,20 @@ When a `Metadata` object has a `Column` region:
 - `location` reduces horizontal dimensions to `Nothing`, preserving only the vertical location.
 - `Field(metadata)` loads data onto an intermediate grid and interpolates to the column point.
 
-```julia
+```@example metadata
 T_meta = Metadatum(:temperature; dataset = ECCO4Monthly(), region = col)
 
 native_grid(T_meta)   # RectilinearGrid at (35.1, 50.1) with Nz vertical levels
+```
+
+```@example metadata
 location(T_meta)      # (Nothing, Nothing, Center)
-T_field = Field(T_meta)  # column Field{Nothing, Nothing, Center}
 ```
 
 This is particularly useful for single-column ocean simulations. For example, to
 initialize an ocean column at Ocean Station Papa:
 
-```julia
+```@example metadata
 using Oceananigans
 using Oceananigans.Units
 
@@ -77,9 +79,7 @@ grid = RectilinearGrid(size = 200, x = λ★, y = φ★,
                         topology = (Flat, Flat, Bounded))
 
 ocean = ocean_simulation(grid; Δt = 10minutes, coriolis = FPlane(latitude = φ★))
-
-set!(ocean.model, T = Metadatum(:temperature, dataset = ECCO4Monthly(), region = col),
-                  S = Metadatum(:salinity,    dataset = ECCO4Monthly(), region = col))
+nothing # hide
 ```
 
 #### Interpolation methods
@@ -89,9 +89,10 @@ set!(ocean.model, T = Metadatum(:temperature, dataset = ECCO4Monthly(), region =
 - `Linear()` (default) — bilinearly interpolates from surrounding cells to the exact point.
 - `Nearest()` — selects the nearest grid cell with no interpolation.
 
-```julia
+```@example metadata
 col_linear  = Column(35.1, 50.1, interpolation = Linear())
 col_nearest = Column(35.1, 50.1, interpolation = Nearest())
+nothing # hide
 ```
 
 ## Field location
@@ -117,9 +118,7 @@ while the vertical location is preserved.
 `FieldTimeSeries` can be constructed directly from multi-date `Metadata`,
 creating a time-evolving field that loads data on demand:
 
-```julia
-using NumericalEarth
-using Oceananigans
+```@example metadata
 using Dates
 
 dates = Date(2010, 1, 1) : Month(1) : Date(2010, 3, 1)
@@ -136,7 +135,7 @@ time index.
 
 For long time series, keep only a small window in memory:
 
-```julia
+```@example metadata
 fts = FieldTimeSeries(metadata; time_indices_in_memory = 4)
 ```
 
@@ -144,7 +143,7 @@ fts = FieldTimeSeries(metadata; time_indices_in_memory = 4)
 
 Pass a grid instead of an architecture to interpolate the data:
 
-```julia
+```@example metadata
 grid = LatitudeLongitudeGrid(size = (360, 180, 42),
                               longitude = (0, 360),
                               latitude = (-90, 90),
@@ -157,16 +156,16 @@ fts = FieldTimeSeries(metadata, grid)
 
 For common workflows, NumericalEarth provides convenience constructors:
 
-```julia
-using Dates
-
+```@example metadata
 # ECCO temperature over a date range
 T_fts = FieldTimeSeries(:temperature;
                         dataset = ECCO4Monthly(),
                         dir = "path/to/ecco/data",
                         start_date = Date(1992, 1, 1),
                         end_date = Date(1992, 6, 1))
+```
 
+```@example metadata
 # JRA55 downwelling shortwave radiation (ℐꜜˢʷ)
 ℐꜜˢʷ = JRA55FieldTimeSeries(:downwelling_shortwave_radiation;
                              start_date = Date(1990, 1, 1),
@@ -179,14 +178,12 @@ T_fts = FieldTimeSeries(:temperature;
 ERA5 reanalysis data can also be loaded as `FieldTimeSeries`.
 ERA5 is a 2D surface dataset, so fields have a single vertical level:
 
-```julia
-using NumericalEarth
+```@example metadata
 using NumericalEarth.DataWrangling.ERA5: ERA5Hourly
-using Dates
 
-# Download and load a month of ERA5 surface temperature
-region = BoundingBox(longitude = (0, 30), latitude = (30, 60))
-dates = DateTime(2020, 1, 1) : Hour(1) : DateTime(2020, 1, 31, 23)
+# Download and load a small region of ERA5 surface temperature
+region = BoundingBox(longitude = (0, 5), latitude = (40, 45))
+dates = DateTime(2020, 1, 1) : Hour(1) : DateTime(2020, 1, 1, 6)
 
 T_meta = Metadata(:temperature; dataset = ERA5Hourly(), dates, region)
 T_fts = FieldTimeSeries(T_meta)
