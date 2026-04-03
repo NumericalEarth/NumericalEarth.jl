@@ -63,7 +63,7 @@ set!(ocean.model.tracers.S, S_metadatum; inpainting=nothing)
 # JRA55 provides 10-meter winds, 2-meter temperature and specific humidity,
 # sea-level pressure, downwelling radiation, and precipitation.
 
-atmosphere = JRA55PrescribedAtmosphere(backend=JRA55NetCDFBackend(2))
+atmosphere = JRA55PrescribedAtmosphere(backend=JRA55NetCDFBackend(24))
 
 using CairoMakie
 
@@ -72,7 +72,7 @@ set_theme!(Theme(linewidth=3, fontsize=24))
 # We continue constructing a simulation.
 radiation = Radiation()
 coupled_model = OceanOnlyModel(ocean; atmosphere, radiation)
-simulation = Simulation(coupled_model, Δt=ocean.Δt, stop_time=2days)
+simulation = Simulation(coupled_model, Δt=ocean.Δt, stop_time=30days)
 
 wall_clock = Ref(time_ns())
 
