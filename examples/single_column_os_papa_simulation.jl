@@ -57,50 +57,17 @@ S_metadatum = Metadatum(:salinity,    dataset=GLORYSMonthly(), region=col)
 set!(ocean.model.tracers.T, T_metadatum; inpainting=nothing)
 set!(ocean.model.tracers.S, S_metadatum; inpainting=nothing)
 
-# # A prescribed atmosphere based on ERA5 reanalysis
+# # A prescribed atmosphere from JRA55 reanalysis
 #
-# We build an `ERA5PrescribedAtmosphere` at the same location.
-# ERA5 provides 10-meter winds, 2-meter temperature, specific humidity,
-# surface pressure, and downwelling radiation at 0.25° resolution.
+# We build a `JRA55PrescribedAtmosphere` for atmospheric forcing.
+# JRA55 provides 10-meter winds, 2-meter temperature and specific humidity,
+# sea-level pressure, downwelling radiation, and precipitation.
 
-atmosphere = ERA5PrescribedAtmosphere(;
-    dataset = ERA5Hourly(),
-    region = col,
-    start_date = DateTime(2020, 1, 1),
-    end_date = DateTime(2020, 1, 3),
-    time_indices_in_memory = 4)
-
-# This builds a representation of the atmosphere on the downloaded grid
-
-atmosphere.grid
-
-# Let's take a look at the atmospheric state
-
-ua = interior(atmosphere.velocities.u, 1, 1, 1, :)
-va = interior(atmosphere.velocities.v, 1, 1, 1, :)
-Ta = interior(atmosphere.tracers.T, 1, 1, 1, :)
-qa = interior(atmosphere.tracers.q, 1, 1, 1, :)
-t_days = atmosphere.times / days
+atmosphere = JRA55PrescribedAtmosphere(backend=JRA55NetCDFBackend(2))
 
 using CairoMakie
 
 set_theme!(Theme(linewidth=3, fontsize=24))
-
-fig = Figure(size=(800, 1000))
-axu = Axis(fig[2, 1]; ylabel="Atmosphere \n velocity (m s⁻¹)")
-axT = Axis(fig[3, 1]; ylabel="Atmosphere \n temperature (ᵒK)")
-axq = Axis(fig[4, 1]; ylabel="Atmosphere \n specific humidity", xlabel = "Days since Jan 1, 2020")
-Label(fig[1, 1], "ERA5 atmospheric state over Ocean Station Papa", tellwidth=false)
-
-lines!(axu, t_days, ua, label="Zonal velocity")
-lines!(axu, t_days, va, label="Meridional velocity")
-ylims!(axu, -20, 20)
-axislegend(axu, framevisible=false, nbanks=2, position=:lb)
-
-lines!(axT, t_days, Ta)
-lines!(axq, t_days, qa)
-
-current_figure()
 
 # We continue constructing a simulation.
 radiation = Radiation()
@@ -161,7 +128,7 @@ cᵒᶜ = simulation.model.interfaces.ocean_properties.heat_capacity
 Q = ρᵒᶜ * cᵒᶜ * JT
 ρτˣ = ρᵒᶜ * τˣ
 ρτʸ = ρᵒᶜ * τʸ
-N² = buoyancy_frequency(ocean.model)
+N² = Oceananigans.Models.buoyancy_frequency(ocean.model)
 κc = ocean.model.closure_fields.κc
 
 fluxes = (; ρτˣ, ρτʸ, Jᵛ, Jˢ, 𝒬ᵛ, 𝒬ᵀ)
@@ -205,33 +172,7 @@ Ev = FieldTimeSeries(filename, "Jᵛ")
 Nz = size(T, 3)
 times = 𝒬ᵀ.times
 
-ua  = atmosphere.velocities.u
-va  = atmosphere.velocities.v
-Ta  = atmosphere.tracers.T
-qa  = atmosphere.tracers.q
-ℐꜜˡʷ = atmosphere.downwelling_radiation.longwave
-ℐꜜˢʷ = atmosphere.downwelling_radiation.shortwave
-Pr  = atmosphere.freshwater_flux.rain
-
-Nt   = length(times)
-uat  = zeros(Nt)
-vat  = zeros(Nt)
-Tat  = zeros(Nt)
-qat  = zeros(Nt)
-ℐꜜˢʷt = zeros(Nt)
-ℐꜜˡʷt = zeros(Nt)
-Pt   = zeros(Nt)
-
-for n = 1:Nt
-    t = Oceananigans.Units.Time(times[n])
-    uat[n]  =  ua[1, 1, 1, t]
-    vat[n]  =  va[1, 1, 1, t]
-    Tat[n]  =  Ta[1, 1, 1, t]
-    qat[n]  =  qa[1, 1, 1, t]
-    ℐꜜˢʷt[n] = ℐꜜˢʷ[1, 1, 1, t]
-    ℐꜜˡʷt[n] = ℐꜜˡʷ[1, 1, 1, t]
-    Pt[n]   =  Pr[1, 1, 1, t]
-end
+Nt = length(times)
 
 fig = Figure(size=(1800, 1800))
 
@@ -276,19 +217,15 @@ lines!(axτ, times, interior(ρτʸ, 1, 1, 1, :), label="Meridional")
 vlines!(axτ, tn, linewidth=4, color=(:black, 0.5))
 axislegend(axτ)
 
-lines!(axT, times, Tat[1:Nt] .- 273.15,      color=colors[1], linewidth=2, linestyle=:dash, label="Atmosphere temperature")
 lines!(axT, times, interior(T, 1, 1, Nz, :), color=colors[2], linewidth=4, label="Ocean surface temperature")
 vlines!(axT, tn, linewidth=4, color=(:black, 0.5))
 axislegend(axT)
 
-lines!(axQ, times, interior(𝒬ᵛ, 1, 1, 1, 1:Nt),    color=colors[2], label="Latent",    linewidth=2)
-lines!(axQ, times, interior(𝒬ᵀ, 1, 1, 1, 1:Nt),    color=colors[3], label="Sensible",  linewidth=2)
-lines!(axQ, times, - interior(ℐꜜˢʷ, 1, 1, 1, 1:Nt), color=colors[4], label="Shortwave", linewidth=2)
-lines!(axQ, times, - interior(ℐꜜˡʷ, 1, 1, 1, 1:Nt), color=colors[5], label="Longwave",  linewidth=2)
+lines!(axQ, times, interior(𝒬ᵛ, 1, 1, 1, 1:Nt), color=colors[2], label="Latent",   linewidth=2)
+lines!(axQ, times, interior(𝒬ᵀ, 1, 1, 1, 1:Nt), color=colors[3], label="Sensible", linewidth=2)
 vlines!(axQ, tn, linewidth=4, color=(:black, 0.5))
 axislegend(axQ)
 
-lines!(axF, times, Pt[1:Nt], label="Prescribed freshwater flux")
 lines!(axF, times, - interior(Ev, 1, 1, 1, 1:Nt), label="Evaporation")
 vlines!(axF, tn, linewidth=4, color=(:black, 0.5))
 axislegend(axF)

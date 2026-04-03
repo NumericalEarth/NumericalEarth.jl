@@ -46,19 +46,11 @@ function ERA5PrescribedAtmosphere(architecture::AbstractArchitecture = CPU(), FT
 
     kw = (; time_indices_in_memory, time_indexing)
 
-    variables = (:eastward_velocity, :northward_velocity,
-                 :temperature, :specific_humidity,
-                 :surface_pressure, :total_precipitation,
-                 :downwelling_longwave_radiation, :downwelling_shortwave_radiation)
-
-    # Pre-download all variables in a single batch request to avoid
-    # 8 separate CDS API calls (each of which queues independently).
-    native_dates = all_dates(dataset, :temperature)
-    dates = compute_native_date_range(native_dates, start_date, end_date)
-    all_metadata = [Metadata(v; dataset, dates, region) for v in variables]
-    download_dataset(all_metadata)
+    kw = (; time_indices_in_memory, time_indexing)
 
     function era5_field_time_series(variable_name)
+        native_dates = all_dates(dataset, variable_name)
+        dates = compute_native_date_range(native_dates, start_date, end_date)
         metadata = Metadata(variable_name; dataset, dates, region)
         return FieldTimeSeries(metadata, architecture; kw...)
     end
@@ -66,7 +58,7 @@ function ERA5PrescribedAtmosphere(architecture::AbstractArchitecture = CPU(), FT
     ua   = era5_field_time_series(:eastward_velocity)
     va   = era5_field_time_series(:northward_velocity)
     Ta   = era5_field_time_series(:temperature)
-    qa   = era5_field_time_series(:specific_humidity)
+    qa   = era5_field_time_series(:dewpoint_temperature)  # ERA5 archives dewpoint, not specific humidity
     pa   = era5_field_time_series(:surface_pressure)
     Fra  = era5_field_time_series(:total_precipitation)
     ℐꜜˡʷ = era5_field_time_series(:downwelling_longwave_radiation)
