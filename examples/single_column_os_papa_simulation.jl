@@ -66,7 +66,7 @@ atmosphere = ERA5PrescribedAtmosphere(;
     dataset = ERA5Hourly(),
     region = col,
     start_date = DateTime(2020, 1, 1),
-    end_date = DateTime(2020, 1, 31),
+    end_date = DateTime(2020, 1, 3),
     time_indices_in_memory = 4)
 
 # This builds a representation of the atmosphere on the downloaded grid
@@ -104,7 +104,7 @@ current_figure()
 # We continue constructing a simulation.
 radiation = Radiation()
 coupled_model = OceanOnlyModel(ocean; atmosphere, radiation)
-simulation = Simulation(coupled_model, Δt=ocean.Δt, stop_time=30days)
+simulation = Simulation(coupled_model, Δt=ocean.Δt, stop_time=2days)
 
 wall_clock = Ref(time_ns())
 
