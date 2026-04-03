@@ -11,6 +11,10 @@ using Oceananigans.BoundaryConditions: fill_halo_regions!
 using Oceananigans.Fields: location
 using Oceananigans.Grids: λnodes, φnodes, topology, Flat, Bounded, Periodic
 
+# Test coordinates for end-to-end Column tests (ECCO4 ocean point)
+const test_longitude = 12.0
+const test_latitude = -50.0
+
 @testset "extract_column! with Nearest interpolation" begin
     for arch in test_architectures
         A = typeof(arch)
@@ -133,7 +137,7 @@ end
         A = typeof(arch)
 
         @testset "Column Field with Linear interpolation on $A" begin
-            col = Column(12.0, -50.0; interpolation=Linear())
+            col = Column(test_longitude, test_latitude; interpolation=Linear())
             md = Metadatum(:temperature; dataset=ECCO4Monthly(), date=start_date, region=col)
             field = Field(md, arch)
 
@@ -148,7 +152,7 @@ end
         end
 
         @testset "Column Field with Nearest interpolation on $A" begin
-            col = Column(12.0, -50.0; interpolation=Nearest())
+            col = Column(test_longitude, test_latitude; interpolation=Nearest())
             md = Metadatum(:temperature; dataset=ECCO4Monthly(), date=start_date, region=col)
             field = Field(md, arch)
 
@@ -161,7 +165,7 @@ end
         end
 
         @testset "set! with Column metadata on $A" begin
-            col = Column(12.0, -50.0)
+            col = Column(test_longitude, test_latitude)
             md = Metadatum(:temperature; dataset=ECCO4Monthly(), date=start_date, region=col)
 
             # Build a target column field
@@ -176,8 +180,8 @@ end
         end
 
         @testset "Column Linear vs Nearest give similar results on $A" begin
-            col_lin = Column(12.0, -50.0; interpolation=Linear())
-            col_near = Column(12.0, -50.0; interpolation=Nearest())
+            col_lin = Column(test_longitude, test_latitude; interpolation=Linear())
+            col_near = Column(test_longitude, test_latitude; interpolation=Nearest())
 
             md_lin = Metadatum(:temperature; dataset=ECCO4Monthly(), date=start_date, region=col_lin)
             md_near = Metadatum(:temperature; dataset=ECCO4Monthly(), date=start_date, region=col_near)
