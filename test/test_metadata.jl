@@ -1,6 +1,6 @@
 include("runtests_setup.jl")
 
-using NumericalEarth.DataWrangling: Column, Linear, Nearest, is_column,
+using NumericalEarth.DataWrangling: Column, Linear, Nearest,
                                     BoundingBox, dataset_location,
                                     restrict_location, native_grid
 
@@ -21,10 +21,10 @@ using Oceananigans.Grids: topology, Flat, Bounded, Periodic
     @test col_z.z == (-400, 0)
 end
 
-@testset "is_column dispatch" begin
-    @test is_column(Column(0, 0)) == true
-    @test is_column(BoundingBox(longitude=(0, 10), latitude=(0, 10))) == false
-    @test is_column(nothing) == false
+@testset "Column isa checks" begin
+    @test Column(0, 0) isa Column
+    @test !(BoundingBox(longitude=(0, 10), latitude=(0, 10)) isa Column)
+    @test !(nothing isa Column)
 end
 
 @testset "restrict_location" begin

@@ -314,19 +314,19 @@ scatterlines!(axκz, κn)
 
 axislegend(axuz)
 
-ulim = max(maximum(abs, u), maximum(abs, v), 1e-6)
+ulim = max(maximum(abs, u), maximum(abs, v))
 xlims!(axuz, -ulim, ulim)
 
 Tmin, Tmax = extrema(T)
 xlims!(axTz, Tmin - 0.1, Tmax + 0.1)
 
-Nmax = max(maximum(N²), 1e-10)
+Nmax = maximum(N²)
 xlims!(axNz, -Nmax/10, Nmax * 1.05)
 
-κmax = max(maximum(κ), 1e-8)
+κmax = maximum(κ)
 xlims!(axκz, 1e-9, κmax * 1.1)
 
-emax = max(maximum(e), 1e-10)
+emax = maximum(e)
 xlims!(axez, 1e-11, emax * 1.1)
 
 Smin, Smax = extrema(S)

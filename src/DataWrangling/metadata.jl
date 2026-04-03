@@ -32,17 +32,6 @@ BoundingBox(; longitude=nothing, latitude=nothing, z=nothing) =
 struct Linear end
 struct Nearest end
 
-"""
-    Column(longitude, latitude; z=nothing, interpolation=Linear())
-
-Create a column region at a single horizontal point `(longitude, latitude)`.
-When used as a `Metadata` region, `native_grid` returns a single-column
-`RectilinearGrid` and `location` reduces horizontal dimensions to `Nothing`.
-
-The `interpolation` keyword controls how data is extracted from the
-surrounding grid cells: `Linear()` (default) linearly interpolates
-to the exact point, while `Nearest()` selects the closest grid cell.
-"""
 struct Column{X, Y, Z, I}
     longitude :: X
     latitude :: Y
@@ -50,14 +39,27 @@ struct Column{X, Y, Z, I}
     interpolation :: I
 end
 
+"""
+    Column(longitude, latitude; z=nothing, interpolation=Linear())
+
+Create a column region at a single horizontal point `(longitude, latitude)`.
+When used as a `Metadata` region, `native_grid` returns a single-column
+`RectilinearGrid` and `location` reduces horizontal dimensions to `Nothing`.
+
+Keyword Arguments
+=================
+
+- `z`: depth range tuple `(z_bottom, z_top)` for restricting downloads
+  (used by CopernicusMarine/GLORYS). Default: `nothing` (full depth).
+- `interpolation`: method for extracting data from the surrounding grid
+  cells. `Linear()` (default) bilinearly interpolates to the exact point;
+  `Nearest()` selects the closest grid cell.
+"""
 Column(longitude, latitude; z=nothing, interpolation=Linear()) =
     Column(longitude, latitude, z, interpolation)
 
 Base.summary(col::Column) = string("Column(longitude=", prettysummary(col.longitude),
                                    ", latitude=", prettysummary(col.latitude), ")")
-
-is_column(::Column) = true
-is_column(_) = false
 
 struct DatewiseFilename{A}
     filenames :: A

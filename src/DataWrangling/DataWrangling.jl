@@ -5,7 +5,7 @@ restoring, or validation.
 module DataWrangling
 
 export Metadata, Metadatum, DatewiseFilename, ECCOMetadatum, EN4Metadatum, all_dates, first_date, last_date
-export BoundingBox, Column, Linear, Nearest, is_column
+export BoundingBox, Column, Linear, Nearest
 export WOAClimatology, WOAAnnual, WOAMonthly
 export metadata_time_step, metadata_epoch
 export LinearlyTaperedPolarMask

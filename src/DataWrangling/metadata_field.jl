@@ -148,7 +148,7 @@ function Field(metadata::Metadatum, arch=CPU();
 
     download_dataset(metadata)
 
-    if is_column(metadata.region)
+    if metadata.region isa Column
         return column_field(metadata, arch; inpainting, mask, halo, cache_inpainted_data)
     end
 
@@ -238,7 +238,7 @@ function set!(target_field::Field, metadata::Metadatum; kw...)
 
     # For column data (Nothing, Nothing, LZ), Oceananigans' interpolate! hits a
     # dispatch bug in flatten_node with zero spatial arguments.  Copy directly instead.
-    if is_column(metadata.region)
+    if metadata.region isa Column
         interior(target_field) .= interior(meta_field)
     else
         interpolate!(target_field, meta_field)
