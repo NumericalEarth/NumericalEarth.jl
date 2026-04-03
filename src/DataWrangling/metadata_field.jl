@@ -261,19 +261,34 @@ function column_field(metadata, arch;
                       halo = (3, 3, 3),
                       cache_inpainted_data = true)
 
-    # 1. Build the column grid (the "native grid" for column metadata)
+    # 1. Download the data and build the column grid
+    download_dataset(metadata)
     column_grid = native_grid(metadata, arch; halo)
 
-    # 2. Build a full-grid Field using region=nothing (reuses the standard pipeline)
-    global_metadatum = Metadatum(metadata.name;
-                                 dataset = metadata.dataset,
-                                 date = metadata.dates,
-                                 region = nothing)
+    # 2. Build an intermediate grid. For datasets that always download globally
+    #    (ECCO), use the dataset's native grid. For datasets that subset on
+    #    download (GLORYS, ERA5), read the file's coordinate arrays since the
+    #    file may be smaller than the global grid.
+    intermediate_grid = intermediate_column_grid(metadata, arch; halo)
 
-    intermediate_field = Field(global_metadatum, arch; inpainting, mask, halo, cache_inpainted_data)
+    # 3. Load data onto intermediate grid
+    LX, LY, LZ = dataset_location(metadata.dataset, metadata.name)
+    intermediate_field = Field{LX, LY, LZ}(intermediate_grid)
+
+    data = retrieve_data(metadata)
+    set_metadata_field!(intermediate_field, data, metadata)
     fill_halo_regions!(intermediate_field)
 
-    # 3. Create column field and extract data
+    # 4. Inpaint on intermediate grid if needed
+    if !isnothing(inpainting)
+        if isnothing(mask)
+            mask = compute_mask(metadata, intermediate_field)
+        end
+        inpaint_mask!(intermediate_field, mask; inpainting)
+        fill_halo_regions!(intermediate_field)
+    end
+
+    # 5. Create column field and extract data
     _, _, LZ_col = location(metadata) # (Nothing, Nothing, LZ)
     column_field = Field{Nothing, Nothing, LZ_col}(column_grid)
 
@@ -281,6 +296,10 @@ function column_field(metadata, arch;
 
     return column_field
 end
+
+# Default: use the dataset's full native grid (works for global datasets like ECCO)
+intermediate_column_grid(metadata, arch; halo) =
+    construct_native_grid(metadata, nothing, arch; halo)
 
 # Dispatch extraction on interpolation method
 function extract_column!(column_field, intermediate_field, col::Column)

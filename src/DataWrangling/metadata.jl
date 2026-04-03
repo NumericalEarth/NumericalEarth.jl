@@ -32,13 +32,6 @@ BoundingBox(; longitude=nothing, latitude=nothing, z=nothing) =
 struct Linear end
 struct Nearest end
 
-struct Column{X, Y, Z, I}
-    longitude :: X
-    latitude :: Y
-    z :: Z
-    interpolation :: I
-end
-
 """
     Column(longitude, latitude; z=nothing, interpolation=Linear())
 
@@ -55,6 +48,13 @@ Keyword Arguments
   cells. `Linear()` (default) bilinearly interpolates to the exact point;
   `Nearest()` selects the closest grid cell.
 """
+struct Column{X, Y, Z, I}
+    longitude :: X
+    latitude :: Y
+    z :: Z
+    interpolation :: I
+end
+
 Column(longitude, latitude; z=nothing, interpolation=Linear()) =
     Column(longitude, latitude, z, interpolation)
 
