@@ -14,103 +14,122 @@ import NumericalEarth.DataWrangling: download_dataset
     download_dataset(metadata::ERA5Metadata; kwargs...)
 
 Download ERA5 data for each date in the metadata, returning paths to downloaded files.
+Downloads all dates for the variable in a single CDS API request when possible.
 """
-function download_dataset(metadata::ERA5Metadata; kwargs...)
-    paths = Array{String}(undef, length(metadata))
-    for (m, metadatum) in enumerate(metadata)
-        paths[m] = download_dataset(metadatum; kwargs...)
+function download_dataset(metadata::ERA5Metadata; skip_existing=true)
+    # Collect all metadatums and check which files are missing
+    all_meta = [m for m in metadata]
+    paths = [joinpath(m.dir, m.filename) for m in all_meta]
+
+    missing_indices = findall(i -> !isfile(paths[i]), eachindex(paths))
+    isempty(missing_indices) && return paths
+
+    missing_meta = all_meta[missing_indices]
+    mkpath(first(missing_meta).dir)
+
+    # Group by unique (year, month, day) to batch hours within each day
+    days = unique(Dates.Date.(m.dates for m in missing_meta))
+    hours = unique(lpad(string(Dates.hour(m.dates)), 2, '0') * ":00" for m in missing_meta)
+    years = unique(string(Dates.year(d)) for d in days)
+    months = unique(lpad(string(Dates.month(d)), 2, '0') for d in days)
+    day_strs = unique(lpad(string(Dates.day(d)), 2, '0') for d in days)
+
+    variable_name = ERA5_dataset_variable_names[metadata.name]
+    region = metadata.region
+
+    # Single CDS request for all dates
+    request = Dict(
+        "product_type"    => ["reanalysis"],
+        "variable"        => [variable_name],
+        "year"            => collect(years),
+        "month"           => collect(months),
+        "day"             => collect(day_strs),
+        "time"            => collect(hours),
+        "data_format"     => "netcdf",
+        "download_format" => "unarchived",
+    )
+
+    area = build_era5_area(region)
+    if !isnothing(area)
+        request["area"] = area
     end
+
+    # Download multi-time file, then split into per-time files
+    dir = first(missing_meta).dir
+    batch_file = joinpath(dir, "era5_batch_$(variable_name).nc")
+
+    @root CDSAPI.retrieve("reanalysis-era5-single-levels", request, batch_file)
+
+    # Split into individual files per time step
+    _split_era5_batch(batch_file, missing_meta)
+    rm(batch_file; force=true)
+
     return paths
 end
 
 using NCDatasets
 
+function _split_era5_batch(batch_file, metadatums)
+    ds = NCDataset(batch_file)
+
+    # Read the time coordinate
+    times = ds["valid_time"][:]
+
+    for m in metadatums
+        output_path = joinpath(m.dir, m.filename)
+        isfile(output_path) && continue
+
+        # Find the time index for this metadatum
+        target_time = m.dates
+        tidx = findfirst(t -> Dates.DateTime(t) == target_time, times)
+        isnothing(tidx) && continue
+
+        varname = ERA5_dataset_variable_names[m.name]
+
+        NCDataset(output_path, "c") do out
+            # Copy spatial dimensions
+            for dimname in ("longitude", "latitude")
+                if haskey(ds, dimname)
+                    src = ds[dimname]
+                    defDim(out, dimname, length(src))
+                    defVar(out, dimname, Array(src), (dimname,); attrib=src.attrib)
+                end
+            end
+            # Single time dimension
+            defDim(out, "valid_time", 1)
+
+            # Copy the variable at the target time
+            if haskey(ds, varname)
+                src = ds[varname]
+                dims = NCDatasets.dimnames(src)
+                spatial_dims = filter(d -> d != "valid_time", dims)
+                out_dims = (spatial_dims..., "valid_time")
+
+                # Select the time slice
+                data = if ndims(src) == 3  # lon, lat, time
+                    src[:, :, tidx:tidx]
+                elseif ndims(src) == 2  # lat, time or lon, time
+                    src[:, tidx:tidx]
+                else
+                    src[tidx:tidx]
+                end
+
+                defVar(out, varname, data, out_dims; attrib=src.attrib)
+            end
+        end
+    end
+
+    close(ds)
+end
+
 """
     download_dataset(metadata_list::AbstractVector{<:ERA5Metadata})
 
-Batch-download ERA5 data for multiple variables in a single CDS API request
-per date, then split the result into per-variable files. This avoids making
-N_variables separate API calls (each of which queues independently).
+Download ERA5 data for multiple Metadata objects.
 """
 function download_dataset(metadata_list::AbstractVector{<:ERA5Metadata})
-    # Collect all unique dates across all metadata
-    all_metadatums = [m for metadata in metadata_list for m in metadata]
-
-    # Check which files already exist
-    missing = filter(m -> !isfile(joinpath(m.dir, m.filename)), all_metadatums)
-    isempty(missing) && return
-
-    # Group missing metadatums by date (to batch variables per date)
-    by_date = Dict{Any, Vector{eltype(missing)}}()
-    for m in missing
-        d = m.dates
-        if !haskey(by_date, d)
-            by_date[d] = eltype(missing)[]
-        end
-        push!(by_date[d], m)
-    end
-
-    for (date, metadatums) in by_date
-        # All metadatums share the same date and region
-        region = first(metadatums).region
-        variable_names = [ERA5_dataset_variable_names[m.name] for m in metadatums]
-
-        year  = string(Dates.year(date))
-        month = lpad(string(Dates.month(date)), 2, '0')
-        day   = lpad(string(Dates.day(date)), 2, '0')
-        hour  = lpad(string(Dates.hour(date)), 2, '0') * ":00"
-
-        request = Dict(
-            "product_type"    => ["reanalysis"],
-            "variable"        => variable_names,
-            "year"            => [year],
-            "month"           => [month],
-            "day"             => [day],
-            "time"            => [hour],
-            "data_format"     => "netcdf",
-            "download_format" => "unarchived",
-        )
-
-        area = build_era5_area(region)
-        if !isnothing(area)
-            request["area"] = area
-        end
-
-        # Download to a temp file, then split into per-variable files
-        dir = first(metadatums).dir
-        mkpath(dir)
-        batch_path = joinpath(dir, "era5_batch_$(year)$(month)$(day)_$(hour[1:2]).nc")
-
-        @root CDSAPI.retrieve("reanalysis-era5-single-levels", request, batch_path)
-
-        # Split the multi-variable file into individual files
-        ds = NCDataset(batch_path)
-        for m in metadatums
-            varname = ERA5_dataset_variable_names[m.name]
-            output_path = joinpath(m.dir, m.filename)
-            isfile(output_path) && continue
-
-            NCDataset(output_path, "c") do out
-                # Copy dimensions
-                for (dimname, dim) in ds.dim
-                    defDim(out, dimname, length(dim))
-                end
-                # Copy coordinate variables
-                for dimname in keys(ds.dim)
-                    if haskey(ds, dimname)
-                        src = ds[dimname]
-                        defVar(out, dimname, Array(src), (dimname,); attrib=src.attrib)
-                    end
-                end
-                # Copy the target variable
-                if haskey(ds, varname)
-                    src = ds[varname]
-                    defVar(out, varname, Array(src), NCDatasets.dimnames(src); attrib=src.attrib)
-                end
-            end
-        end
-        close(ds)
-        rm(batch_path; force=true)
+    for metadata in metadata_list
+        download_dataset(metadata)
     end
 end
 

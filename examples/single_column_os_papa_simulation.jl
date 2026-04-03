@@ -53,10 +53,11 @@ ocean.model
 
 col = Column(λ★, φ★; interpolation=Nearest())
 
-set!(ocean.model, T=Metadatum(:temperature, dataset=GLORYSMonthly(), region=col);
-                  inpainting=nothing)
-set!(ocean.model, S=Metadatum(:salinity,    dataset=GLORYSMonthly(), region=col);
-                  inpainting=nothing)
+T_metadatum = Metadatum(:temperature, dataset=GLORYSMonthly(), region=col)
+S_metadatum = Metadatum(:salinity,    dataset=GLORYSMonthly(), region=col)
+
+set!(ocean.model.tracers.T, T_metadatum; inpainting=nothing)
+set!(ocean.model.tracers.S, S_metadatum; inpainting=nothing)
 
 # # A prescribed atmosphere based on ERA5 reanalysis
 #

@@ -240,13 +240,7 @@ function set!(target_field::Field, metadata::Metadatum; kw...)
               "the target grid ($(Lzt) m). Some vertical levels cannot be filled with data.")
     end
 
-    # For column data (Nothing, Nothing, LZ), Oceananigans' interpolate! hits a
-    # dispatch bug in flatten_node with zero spatial arguments.  Copy directly instead.
-    if metadata.region isa Column
-        interior(target_field) .= interior(meta_field)
-    else
-        interpolate!(target_field, meta_field)
-    end
+    interpolate!(target_field, meta_field)
 
     return target_field
 end
@@ -292,6 +286,8 @@ function column_field_from_file(metadata, arch;
 
     Δφ = Ny_file > 1 ? φ[2] - φ[1] : FT(1)
     φf = range(φ[1] - Δφ/2, stop = φ[end] + Δφ/2, length = Ny_file + 1)
+
+    halo = min.(halo, (Nx_file, Ny_file, Nz))
 
     intermediate_grid = LatitudeLongitudeGrid(arch, FT;
                                               size = (Nx_file, Ny_file, Nz),

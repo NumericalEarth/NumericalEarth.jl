@@ -7,7 +7,8 @@ using NumericalEarth.DataWrangling: FieldTimeSeries,
                                     first_date,
                                     last_date,
                                     all_dates,
-                                    compute_native_date_range
+                                    compute_native_date_range,
+                                    download_dataset
 
 """
     ERA5PrescribedAtmosphere([architecture = CPU(), FT = Float32];
