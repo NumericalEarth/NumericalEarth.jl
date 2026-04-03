@@ -249,12 +249,7 @@ end
 ##### Column field construction
 #####
 
-function column_field_from_file(metadata, arch;
-                                inpainting = default_inpainting(metadata),
-                                mask = nothing,
-                                halo = (3, 3, 3),
-                                cache_inpainted_data = true)
-
+function column_field_from_file(metadata, arch; halo=(3, 3, 3), kw...)
     column_grid = native_grid(metadata, arch; halo)
 
     # Read the file's actual dimensions to build a matching intermediate grid
@@ -293,22 +288,13 @@ function column_field_from_file(metadata, arch;
                                               size = (Nx_file, Ny_file, Nz),
                                               halo, longitude = λf, latitude = φf, z)
 
-    # Load data onto intermediate grid
+    # Load data onto intermediate grid (no inpainting — columns have no horizontal neighbors)
     LX, LY, LZ = dataset_location(metadata.dataset, metadata.name)
     intermediate_field = Field{LX, LY, LZ}(intermediate_grid)
 
     data = retrieve_data(metadata)
     set_metadata_field!(intermediate_field, data, metadata)
     fill_halo_regions!(intermediate_field)
-
-    # Inpaint if needed
-    if !isnothing(inpainting)
-        if isnothing(mask)
-            mask = compute_mask(metadata, intermediate_field)
-        end
-        inpaint_mask!(intermediate_field, mask; inpainting)
-        fill_halo_regions!(intermediate_field)
-    end
 
     # Extract column
     _, _, LZ_col = location(metadata)
