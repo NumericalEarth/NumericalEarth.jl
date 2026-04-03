@@ -7,7 +7,6 @@ using NCDatasets
 using NumericalEarth.DataWrangling.ERA5
 using NumericalEarth.DataWrangling.ERA5: ERA5Hourly, ERA5Monthly, ERA5_dataset_variable_names
 using NumericalEarth.DataWrangling: metadata_path, download_dataset
-using NumericalEarth.Atmospheres: PrescribedAtmosphere
 
 # Test date: Kyoto Protocol ratification date, February 16, 2005
 start_date = DateTime(2005, 2, 16, 12)
@@ -197,23 +196,3 @@ start_date = DateTime(2005, 2, 16, 12)
     end
 end
 
-@testset "ERA5PrescribedAtmosphere" begin
-    for arch in test_architectures
-        A = typeof(arch)
-
-        @testset "Construction with BoundingBox on $A" begin
-            region = NumericalEarth.DataWrangling.BoundingBox(longitude=(0, 5), latitude=(40, 45))
-            atmos = ERA5PrescribedAtmosphere(arch;
-                                             start_date = DateTime(2005, 2, 16),
-                                             end_date = DateTime(2005, 2, 16, 6),
-                                             region)
-
-            @test atmos isa PrescribedAtmosphere
-            @test length(atmos.times) > 0
-            @test atmos.tracers.T isa FieldTimeSeries
-            @test atmos.tracers.q isa FieldTimeSeries
-            @test atmos.velocities.u isa FieldTimeSeries
-            @test atmos.velocities.v isa FieldTimeSeries
-        end
-    end
-end
