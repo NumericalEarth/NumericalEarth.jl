@@ -74,9 +74,10 @@ using Oceananigans.Units
 λ★, φ★ = 35.1, 50.1
 col = Column(λ★, φ★)
 
-grid = RectilinearGrid(size = 200, x = λ★, y = φ★,
-                        z = (-400, 0),
-                        topology = (Flat, Flat, Bounded))
+grid = RectilinearGrid(size = 200,
+                       x = λ★, y = φ★,
+                       z = (-400, 0),
+                       topology = (Flat, Flat, Bounded))
 
 ocean = ocean_simulation(grid; Δt = 10minutes, coriolis = FPlane(latitude = φ★))
 nothing # hide
@@ -90,8 +91,8 @@ nothing # hide
 - `Nearest()` — selects the nearest grid cell with no interpolation.
 
 ```@example metadata
-col_linear  = Column(35.1, 50.1, interpolation = Linear())
-col_nearest = Column(35.1, 50.1, interpolation = Nearest())
+col_linear  = Column(35.1, 50.1; interpolation = Linear())
+col_nearest = Column(35.1, 50.1; interpolation = Nearest())
 nothing # hide
 ```
 
@@ -145,9 +146,9 @@ Pass a grid instead of an architecture to interpolate the data:
 
 ```@example metadata
 grid = LatitudeLongitudeGrid(size = (360, 180, 42),
-                              longitude = (0, 360),
-                              latitude = (-90, 90),
-                              z = (-5000, 0))
+                            longitude = (0, 360),
+                            latitude = (-90, 90),
+                            z = (-5000, 0))
 
 fts = FieldTimeSeries(metadata, grid)
 ```
@@ -159,10 +160,10 @@ For common workflows, NumericalEarth provides convenience constructors:
 ```@example metadata
 # ECCO temperature over a date range
 T_fts = FieldTimeSeries(:temperature;
-                        dataset = ECCO4Monthly(),
-                        dir = "path/to/ecco/data",
+                        dataset    = ECCO4Monthly(),
+                        dir        = "path/to/ecco/data",
                         start_date = Date(1992, 1, 1),
-                        end_date = Date(1992, 6, 1))
+                        end_date   = Date(1992, 6, 1))
 ```
 
 ```@example metadata
