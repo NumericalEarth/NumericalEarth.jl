@@ -276,6 +276,8 @@ function ORCAGrid(arch = CPU(), FT::DataType = Float64;
     bottom_height .= ifelse.(bottom_height .> 0, .-bottom_height, FT(100))
     remove_closed_basins && remove_minor_basins!(bottom_height, 1, (underlying_grid.Nx, underlying_grid.Ny))
     
+    bathymetry = Field{Center, Center, Nothing}(underlying_grid)
+    set!(bathymetry, bottom_height)
 
-    return ImmersedBoundaryGrid(underlying_grid, GridFittedBottom(bottom_height); active_cells_map)
+    return ImmersedBoundaryGrid(underlying_grid, GridFittedBottom(bathymetry); active_cells_map)
 end
