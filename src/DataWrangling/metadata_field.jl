@@ -148,9 +148,6 @@ function Field(metadata::Metadatum, arch=CPU();
 
     download_dataset(metadata)
 
-    if metadata.region isa Column
-        return column_field(metadata, arch; inpainting, mask, halo, cache_inpainted_data)
-    end
 
     grid = native_grid(metadata, arch; halo)
     LX, LY, LZ = location(metadata)
@@ -248,58 +245,8 @@ function set!(target_field::Field, metadata::Metadatum; kw...)
 end
 
 #####
-##### Column field construction
+##### Column extraction utilities
 #####
-
-"""Build a column Field from metadata with a Column region.
-
-Internally loads data onto an intermediate LatitudeLongitudeGrid
-and interpolates to the column RectilinearGrid."""
-function column_field(metadata, arch;
-                      inpainting = default_inpainting(metadata),
-                      mask = nothing,
-                      halo = (3, 3, 3),
-                      cache_inpainted_data = true)
-
-    # 1. Download the data and build the column grid
-    download_dataset(metadata)
-    column_grid = native_grid(metadata, arch; halo)
-
-    # 2. Build an intermediate grid. For datasets that always download globally
-    #    (ECCO), use the dataset's native grid. For datasets that subset on
-    #    download (GLORYS, ERA5), read the file's coordinate arrays since the
-    #    file may be smaller than the global grid.
-    intermediate_grid = intermediate_column_grid(metadata, arch; halo)
-
-    # 3. Load data onto intermediate grid
-    LX, LY, LZ = dataset_location(metadata.dataset, metadata.name)
-    intermediate_field = Field{LX, LY, LZ}(intermediate_grid)
-
-    data = retrieve_data(metadata)
-    set_metadata_field!(intermediate_field, data, metadata)
-    fill_halo_regions!(intermediate_field)
-
-    # 4. Inpaint on intermediate grid if needed
-    if !isnothing(inpainting)
-        if isnothing(mask)
-            mask = compute_mask(metadata, intermediate_field)
-        end
-        inpaint_mask!(intermediate_field, mask; inpainting)
-        fill_halo_regions!(intermediate_field)
-    end
-
-    # 5. Create column field and extract data
-    _, _, LZ_col = location(metadata) # (Nothing, Nothing, LZ)
-    column_field = Field{Nothing, Nothing, LZ_col}(column_grid)
-
-    extract_column!(column_field, intermediate_field, metadata.region)
-
-    return column_field
-end
-
-# Default: use the dataset's full native grid (works for global datasets like ECCO)
-intermediate_column_grid(metadata, arch; halo) =
-    construct_native_grid(metadata, nothing, arch; halo)
 
 # Dispatch extraction on interpolation method
 function extract_column!(column_field, intermediate_field, col::Column)
