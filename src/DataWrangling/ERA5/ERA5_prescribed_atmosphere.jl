@@ -1,5 +1,5 @@
 using NumericalEarth.Atmospheres: PrescribedAtmosphere, TwoBandDownwellingRadiation
-using Oceananigans.Architectures: AbstractArchitecture
+using Oceananigans.Architectures: AbstractArchitecture, CPU
 using Oceananigans.OutputReaders: Cyclical
 
 using NumericalEarth.DataWrangling: FieldTimeSeries,
