@@ -43,6 +43,7 @@ export
     WOAClimatology, WOAAnnual, WOAMonthly,
     GLORYSDaily, GLORYSMonthly, GLORYSStatic,
     ORCA1,
+    ERA5Hourly, ERA5Monthly,
     RepeatYearJRA55, MultiYearJRA55,
     first_date,
     last_date,

@@ -16,8 +16,6 @@
 
 using CopernicusMarine
 using NumericalEarth
-using NumericalEarth: Column, Nearest
-using NumericalEarth.DataWrangling.ERA5: ERA5Hourly
 using Oceananigans
 using Oceananigans.Units
 using Dates
