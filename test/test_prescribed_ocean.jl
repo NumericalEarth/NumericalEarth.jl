@@ -30,6 +30,20 @@ include("runtests_setup.jl")
             end
         end
 
+        @testset "Display and net_fluxes on $A" begin
+            grid = RectilinearGrid(arch; size = (), topology = (Flat, Flat, Flat))
+            ocean = PrescribedOcean(grid, NamedTuple())
+
+            str = summary(ocean)
+            @test occursin("PrescribedOcean", str)
+
+            buf = IOBuffer()
+            show(buf, ocean)
+            @test occursin("PrescribedOcean", String(take!(buf)))
+
+            @test NumericalEarth.EarthSystemModels.InterfaceComputations.net_fluxes(ocean) === nothing
+        end
+
         @testset "EarthSystemModel interface on $A" begin
             grid = RectilinearGrid(arch; size = (), topology = (Flat, Flat, Flat))
 
