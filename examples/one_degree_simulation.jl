@@ -1,7 +1,7 @@
 # # [One-degree global ocean--sea ice simulation](@id one-degree-ocean-seaice)
 #
 # This example configures a global ocean--sea ice simulation at 1ᵒ horizontal resolution with
-# realistic bathymetry and a few closures including the "Gent-McWilliams" `IsopycnalSkewSymmetricDiffusivity`.
+# realistic bathymetry and an area-scaled biharmonic viscosity for grid-scale dissipation.
 # The simulation is forced by repeat-year JRA55 atmospheric reanalysis
 # and initialized by temperature, salinity, sea ice concentration, and sea ice thickness
 # from the ECCO state estimate.
@@ -47,13 +47,14 @@ grid = ImmersedBoundaryGrid(underlying_grid, GridFittedBottom(bottom_height);
 
 # ### Closures
 #
-# We include a Gent-McWilliams isopycnal diffusivity as a parameterization for the mesoscale
-# eddy fluxes. For vertical mixing at the upper-ocean boundary layer we include the CATKE
-# parameterization.
+# We use an area-scaled biharmonic viscosity for grid-scale dissipation,
+# an isopycnal symmetric diffusivity for lateral tracer mixing, and
+# the CATKE parameterization for vertical mixing at the upper-ocean boundary layer.
 
-using Oceananigans.TurbulenceClosures: IsopycnalSkewSymmetricDiffusivity, AdvectiveFormulation
+using Oceananigans.TurbulenceClosures: IsopycnalSkewSymmetricDiffusivity
 
-eddy_closure = IsopycnalSkewSymmetricDiffusivity(κ_skew=1e3, κ_symmetric=1e3, skew_flux_formulation=AdvectiveFormulation())
+horizontal_viscosity = area_scaled_biharmonic_viscosity(timescale=15days)
+isopycnal_diffusivity = IsopycnalSkewSymmetricDiffusivity(κ_skew=0, κ_symmetric=1e3)
 vertical_mixing = NumericalEarth.Oceans.default_ocean_closure()
 
 # ### Ocean simulation
@@ -65,7 +66,7 @@ momentum_advection = WENOVectorInvariant(order=5)
 tracer_advection   = WENO(order=5)
 
 ocean = ocean_simulation(grid; momentum_advection, tracer_advection, free_surface,
-                         closure=(eddy_closure, vertical_mixing))
+                         closure=(horizontal_viscosity, isopycnal_diffusivity, vertical_mixing))
 
 @info "We've built an ocean simulation with model:"
 @show ocean.model
