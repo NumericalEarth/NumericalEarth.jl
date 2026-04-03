@@ -167,11 +167,11 @@ T_fts = FieldTimeSeries(:temperature;
                         start_date = Date(1992, 1, 1),
                         end_date = Date(1992, 6, 1))
 
-# JRA55 downwelling shortwave radiation
-Qsw = JRA55FieldTimeSeries(:downwelling_shortwave_radiation;
-                              start_date = Date(1990, 1, 1),
-                              end_date = Date(1990, 2, 1),
-                              backend = InMemory())
+# JRA55 downwelling shortwave radiation (ℐꜜˢʷ)
+ℐꜜˢʷ = JRA55FieldTimeSeries(:downwelling_shortwave_radiation;
+                             start_date = Date(1990, 1, 1),
+                             end_date = Date(1990, 2, 1),
+                             backend = InMemory())
 ```
 
 ## ERA5 `FieldTimeSeries`
@@ -192,21 +192,4 @@ T_meta = Metadata(:temperature; dataset = ERA5Hourly(), dates, region)
 T_fts = FieldTimeSeries(T_meta)
 ```
 
-### Available ERA5 variables
-
-ERA5 provides atmospheric state variables and surface fluxes:
-
-**State variables:**
-`:temperature`, `:dewpoint_temperature`, `:eastward_velocity`,
-`:northward_velocity`, `:surface_pressure`, `:specific_humidity`
-
-**Radiation:**
-`:downwelling_shortwave_radiation`, `:downwelling_longwave_radiation`
-
-**Surface fluxes and other:**
-`:total_precipitation`, `:evaporation`, `:total_cloud_cover`,
-`:sea_surface_temperature`
-
-**Wave variables (0.5° grid):**
-`:eastward_stokes_drift`, `:northward_stokes_drift`,
-`:significant_wave_height`, `:mean_wave_period`, `:mean_wave_direction`
+See [Supported datasets](@ref) for the full list of available ERA5 variables.
