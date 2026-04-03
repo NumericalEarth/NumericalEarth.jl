@@ -33,7 +33,7 @@ export
     Metadata,
     Metadatum,
     BoundingBox,
-    Column,
+    Column, Linear, Nearest,
     ECCOMetadatum,
     EN4Metadatum,
     ETOPO2022,
