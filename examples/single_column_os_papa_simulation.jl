@@ -60,7 +60,9 @@ set!(ocean.model, T=T_metadatum, S=S_metadatum)
 # JRA55 provides 10-meter winds, 2-meter temperature and specific humidity,
 # sea-level pressure, downwelling radiation, and precipitation.
 
-atmosphere = JRA55PrescribedAtmosphere(; backend = JRA55NetCDFBackend(24))
+atmosphere = JRA55PrescribedAtmosphere(; backend = JRA55NetCDFBackend(24),
+                                        start_date = DateTime(1990, 1, 1),
+                                        end_date = DateTime(1990, 2, 1))
 
 using CairoMakie
 
