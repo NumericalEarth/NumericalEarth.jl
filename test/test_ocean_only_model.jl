@@ -58,5 +58,24 @@ using Oceananigans.OrthogonalSphericalShellGrids
             time_step!(coupled_model, 1)
             true
         end
+
+        #####
+        ##### Ocean with prescribed atmosphere and land
+        #####
+
+        @info "Testing OceanOnlyModel with JRA55PrescribedLand on $A..."
+        land = JRA55PrescribedLand(arch; backend)
+
+        @test begin
+            ocean_with_land = ocean_simulation(grid; free_surface)
+            coupled_model = OceanOnlyModel(ocean_with_land; atmosphere, land, radiation)
+
+            # Verify land exchanger is present
+            @test !isnothing(coupled_model.interfaces.exchanger.land)
+            @test coupled_model.land === land
+
+            time_step!(coupled_model, 1)
+            true
+        end
     end
 end
