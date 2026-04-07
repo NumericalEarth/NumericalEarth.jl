@@ -95,6 +95,16 @@ barometric pressure, shortwave and longwave radiation, and precipitation.
 Relative humidity is converted to specific humidity; units are converted to
 SI (Kelvin, Pa, kg/m²/s).
 
+!!! note "Radiation and albedo"
+    The buoy `SW` and `LW` variables are **downwelling** fluxes. When this
+    atmosphere is used with `OceanOnlyModel`, ClimaOcean applies its own
+    ocean albedo (default α = 0.05) to compute net absorbed shortwave, and
+    computes upwelling longwave from the model SST via Stefan-Boltzmann. This
+    means the resulting net heat flux will differ from the COARE-computed
+    `QNET` available via [`OSPapaPrescribedFluxes`](@ref). If you need the
+    exact observed net fluxes, use [`OSPapaPrescribedFluxBoundaryConditions`](@ref)
+    instead.
+
 Keyword Arguments
 =================
 - `start_date`: start of the time range (default: `first_date(OSPapaHourly(), :air_temperature)`)
@@ -111,6 +121,8 @@ function OSPapaPrescribedAtmosphere(architecture = CPU(), FT = Float32;
                                      dir = download_OSPapa_cache,
                                      surface_layer_height = 2.5,
                                      max_gap_hours = 72)
+
+    on_arch = arr -> Oceananigans.on_architecture(architecture, arr)
 
     filepath = download_ospapa_file(dir)
 
@@ -162,14 +174,14 @@ function OSPapaPrescribedAtmosphere(architecture = CPU(), FT = Float32;
                                       surface_layer_height = convert(FT, surface_layer_height))
 
     Nt = length(times_seconds)
-    parent(atmosphere.velocities.u)                    .= reshape(FT.(uwnd),       1, 1, 1, Nt)
-    parent(atmosphere.velocities.v)                    .= reshape(FT.(vwnd),       1, 1, 1, Nt)
-    parent(atmosphere.tracers.T)                       .= reshape(FT.(T_K),        1, 1, 1, Nt)
-    parent(atmosphere.tracers.q)                       .= reshape(FT.(q),          1, 1, 1, Nt)
-    parent(atmosphere.pressure)                        .= reshape(FT.(P_Pa),       1, 1, 1, Nt)
-    parent(atmosphere.downwelling_radiation.shortwave) .= reshape(FT.(sw),       1, 1, 1, Nt)
-    parent(atmosphere.downwelling_radiation.longwave)  .= reshape(FT.(lw),       1, 1, 1, Nt)
-    parent(atmosphere.freshwater_flux.rain)            .= reshape(FT.(rain_kgm2s), 1, 1, 1, Nt)
+    parent(atmosphere.velocities.u)                    .= on_arch(reshape(FT.(uwnd),       1, 1, 1, Nt))
+    parent(atmosphere.velocities.v)                    .= on_arch(reshape(FT.(vwnd),       1, 1, 1, Nt))
+    parent(atmosphere.tracers.T)                       .= on_arch(reshape(FT.(T_K),        1, 1, 1, Nt))
+    parent(atmosphere.tracers.q)                       .= on_arch(reshape(FT.(q),          1, 1, 1, Nt))
+    parent(atmosphere.pressure)                        .= on_arch(reshape(FT.(P_Pa),       1, 1, 1, Nt))
+    parent(atmosphere.downwelling_radiation.shortwave) .= on_arch(reshape(FT.(sw),         1, 1, 1, Nt))
+    parent(atmosphere.downwelling_radiation.longwave)  .= on_arch(reshape(FT.(lw),         1, 1, 1, Nt))
+    parent(atmosphere.freshwater_flux.rain)            .= on_arch(reshape(FT.(rain_kgm2s), 1, 1, 1, Nt))
 
     return atmosphere
 end

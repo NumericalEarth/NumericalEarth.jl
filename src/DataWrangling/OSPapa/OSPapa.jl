@@ -3,7 +3,6 @@ module OSPapa
 export OSPapaPrescribedAtmosphere
 export OSPapaPrescribedFluxes
 export OSPapaPrescribedFluxBoundaryConditions
-export PrescribedFluxCallback
 export OSPapaHourly
 
 using Oceananigans

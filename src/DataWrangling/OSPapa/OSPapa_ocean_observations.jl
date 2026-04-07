@@ -306,7 +306,8 @@ function set!(target_field::Field, metadata::OSPapaMetadatum; kw...)
         interpolated ./= 100 # cm/s → m/s
     end
 
-    interior(target_field, 1, 1, :) .= interpolated
+    arch = Oceananigans.Architectures.architecture(target_field)
+    interior(target_field, 1, 1, :) .= Oceananigans.on_architecture(arch, interpolated)
 
     return target_field
 end

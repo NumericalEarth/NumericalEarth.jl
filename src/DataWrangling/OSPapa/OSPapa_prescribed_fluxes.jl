@@ -1,5 +1,4 @@
 using Oceananigans.Units
-using Oceananigans.OutputReaders: TimeInterpolator, Cyclical
 
 const ERDDAP_BASE = "https://data.pmel.noaa.gov/pmel/erddap/tabledap"
 const ERDDAP_FLUX_VARS = "time,QLAT,QSEN,QNET,LWNET,SWNET,TAU,TAUX,TAUY,RAIN,EVAP,EMP,TSK"
@@ -96,93 +95,6 @@ function OSPapaPrescribedFluxes(FT = Float64;
               start_date = times_datetime[1])
 end
 
-"""
-    PrescribedFluxCallback(ocean, fluxes; ρ₀=reference_density(ocean), cₚ=heat_capacity(ocean))
-
-Create a `Callback` that applies prescribed air-sea fluxes to an ocean simulation
-at every time step. The callback interpolates flux time series to the current
-model time and writes the result into the ocean's boundary condition fields.
-
-Arguments
-=========
-- `ocean`: an `Oceananigans.Simulation` or ocean model returned by `ocean_simulation`
-- `fluxes`: a `NamedTuple` returned by `OSPapaPrescribedFluxes`
-
-Keyword Arguments
-=================
-- `ρ₀`: reference ocean density (default: from ocean's equation of state, typically 1020 kg/m³)
-- `cₚ`: ocean heat capacity (default: from ocean's equation of state, typically 3991.87 J/(kg·K))
-
-The callback converts:
-- Wind stress (N/m²) → kinematic stress (m²/s²) by dividing by ρ₀
-- Net heat flux (W/m²) → temperature flux (K·m/s) by dividing by ρ₀·cₚ
-- Freshwater flux is applied as a salinity flux using surface salinity
-
-!!! note "Sign conventions"
-    ERDDAP QNET is positive into the ocean (warming). The callback converts
-    to the Oceananigans convention where a positive top flux is *out of* the
-    domain, so the sign is flipped for heat.
-"""
-function PrescribedFluxCallback(ocean, fluxes; ρ₀=reference_density(ocean), cₚ=heat_capacity(ocean))
-    # Pre-extract BC fields (ocean_simulation returns a Simulation)
-    model = ocean.model
-    τˣ = model.velocities.u.boundary_conditions.top.condition
-    τʸ = model.velocities.v.boundary_conditions.top.condition
-    Jᵀ = model.tracers.T.boundary_conditions.top.condition
-    Jˢ = model.tracers.S.boundary_conditions.top.condition
-
-    flux_times = fluxes.times
-    Nt = length(flux_times)
-    Δt = flux_times[end] - flux_times[end-1]
-    period = flux_times[end] - flux_times[1] + Δt
-    time_indexing = Cyclical(period)
-
-    function update_fluxes!(sim)
-        t = sim.model.clock.time
-
-        # Use Oceananigans' TimeInterpolator for consistency with PrescribedAtmosphere
-        time_interpolator = TimeInterpolator(time_indexing, flux_times, t)
-        n₁ = time_interpolator.first_index
-        n₂ = time_interpolator.second_index
-        α  = time_interpolator.fractional_index
-
-        interp(field) = field[n₁] + α * (field[n₂] - field[n₁])
-
-        # Interpolate fluxes
-        τx_now  = interp(fluxes.τx)
-        τy_now  = interp(fluxes.τy)
-        Qnet_now = interp(fluxes.Qnet)
-
-        # Momentum: stress (N/m²) → kinematic stress (m²/s²)
-        # ERDDAP: TAUX > 0 = eastward stress ON ocean (downward momentum flux INTO domain)
-        # Oceananigans FluxBoundaryCondition: positive top flux = OUT of domain
-        # Therefore negate: downward flux into ocean → negative top BC
-        τˣ[1, 1, 1] = -τx_now / ρ₀
-        τʸ[1, 1, 1] = -τy_now / ρ₀
-
-        # Heat: Qnet (W/m²) → temperature flux (K·m/s)
-        # ERDDAP Qnet positive = into ocean (warming)
-        # Oceananigans FluxBoundaryCondition: positive = out of domain
-        Jᵀ[1, 1, 1] = -Qnet_now / (ρ₀ * cₚ)
-
-        # Salinity: EMP (mm/hr ≡ kg/m²/hr) → salinity flux
-        # EMP > 0 means net evaporation (ocean loses freshwater, salinity increases)
-        # Convert mass flux to Boussinesq volume flux: divide by (ρ₀ * 3600)
-        EMP_now = interp(fluxes.EMP)
-        EMP_ms = EMP_now / (ρ₀ * 3600)  # kg/m²/hr → m/s (Boussinesq volume flux)
-
-        # Salinity flux: following assemble_net_ocean_fluxes.jl: Jˢ = -S * ΣFao
-        # EMP > 0 = net evaporation = salinity should increase
-        # Negative Jˢ at top = salt INTO domain = S increases
-        S_surface = model.tracers.S[1, 1, size(model.tracers.S, 3)]
-        Jˢ[1, 1, 1] = -S_surface * EMP_ms
-
-        return nothing
-    end
-
-    return Callback(update_fluxes!, IterationInterval(1))
-end
-
 using Oceananigans.OutputReaders: interpolating_time_indices
 
 """
@@ -234,12 +146,17 @@ Keyword Arguments
 Each correction function must have the signature `(i, j, grid, clock, model_fields, p)` and return a value
 in the same units as the corresponding flux boundary condition.
 
-Example
-=======
+Examples
+========
 ```julia
+# Basic usage on GPU:
 fluxes = OSPapaPrescribedFluxes(; start_date, end_date)
 bcs = OSPapaPrescribedFluxBoundaryConditions(fluxes, GPU())
 ocean = ocean_simulation(grid; Δt=10minutes, boundary_conditions=bcs)
+
+# With a uniform heat flux correction of +5 W/m² to close the heat budget:
+heat_correction = (i, j, grid, clock, model_fields, p) -> 5.0 / (p.ρ₀ * p.cₚ)
+bcs = OSPapaPrescribedFluxBoundaryConditions(fluxes, GPU(); T_correction=heat_correction)
 ```
 """
 function OSPapaPrescribedFluxBoundaryConditions(fluxes, architecture=CPU(); 
