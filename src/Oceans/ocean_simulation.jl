@@ -29,6 +29,10 @@ using Statistics: mean
 @inline u_immersed_bottom_drag(i, j, k, grid, clock, Φ, μ) = @inbounds - μ * Φ.u[i, j, k] * spᶠᶜᶜ(i, j, k, grid, Φ)
 @inline v_immersed_bottom_drag(i, j, k, grid, clock, Φ, μ) = @inbounds - μ * Φ.v[i, j, k] * spᶜᶠᶜ(i, j, k, grid, Φ)
 
+# With or without restoring
+@inline build_top_tracer_bc(flux_field, ::Nothing) = FluxBoundaryCondition(flux_field)
+@inline build_top_tracer_bc(flux_field, restoring) = FluxBoundaryCondition(FluxAndRestoring(flux_field, restoring); discrete_form=true)
+
 #####
 ##### Defaults
 #####
@@ -108,6 +112,7 @@ end
                      gravitational_acceleration = default_gravitational_acceleration,
                      bottom_drag_coefficient = Default(0.003),
                      forcing = NamedTuple(),
+                     surface_restoring = NamedTuple(),
                      biogeochemistry = nothing,
                      timestepper = :SplitRungeKutta3,
                      coriolis = Default(HydrostaticSphericalCoriolis(; rotation_rate)),
@@ -169,6 +174,7 @@ defaults on a per-field basis.
 - `gravitational_acceleration`: Gravitational acceleration, passed to buoyancy.
 - `bottom_drag_coefficient`: Bottom drag coefficient. May be a `Default` wrapper.
 - `forcing`: Named tuple of additional forcing(s) for individual fields.
+- `surface_restoring`: Named tuple of dataset restorings to apply as part of the tracer top boundary condition.
 - `biogeochemistry`: A biogeochemical model or `nothing`.
 - `timestepper`: Time-stepping scheme; options are `:SplitRungeKutta3` (default), or `:QuasiAdamsBashforth2`.
 - `coriolis`: Coriolis object or `Default(...)` wrapper.
@@ -190,6 +196,7 @@ function ocean_simulation(grid;
                           gravitational_acceleration = default_gravitational_acceleration,
                           bottom_drag_coefficient = Default(0.003),
                           forcing = NamedTuple(),
+                          surface_restoring = NamedTuple(),
                           biogeochemistry = nothing,
                           timestepper = :SplitRungeKutta3,
                           coriolis = Default(HydrostaticSphericalCoriolis(; rotation_rate)),
@@ -202,6 +209,14 @@ function ocean_simulation(grid;
                           verbose = false)
 
     FT = eltype(grid)
+
+    # Today only T and S have default top flux fields, so those are the only
+    # tracers we know how to wrap with a restoring. Catch typos / unsupported
+    # keys early.
+    let extras = setdiff(keys(surface_restoring), (:T, :S))
+        isempty(extras) || throw(ArgumentError(
+            "ocean_simulation only supports surface_restoring for :T and :S; got unsupported keys $(Tuple(extras))"))
+    end
 
     if grid isa RectilinearGrid # turn off Coriolis unless user-supplied
         coriolis = default_or_override(coriolis, nothing)
@@ -273,8 +288,8 @@ function ocean_simulation(grid;
     # Construct ocean boundary conditions including surface forcing and bottom drag
     u_top_bc = FluxBoundaryCondition(τˣ)
     v_top_bc = FluxBoundaryCondition(τʸ)
-    T_top_bc = FluxBoundaryCondition(Jᵀ)
-    S_top_bc = FluxBoundaryCondition(Jˢ)
+    T_top_bc = build_top_tracer_bc(Jᵀ, get(surface_restoring, :T, nothing))
+    S_top_bc = build_top_tracer_bc(Jˢ, get(surface_restoring, :S, nothing))
 
     u_bot_bc = FluxBoundaryCondition(u_quadratic_bottom_drag, discrete_form=true, parameters=bottom_drag_coefficient)
     v_bot_bc = FluxBoundaryCondition(v_quadratic_bottom_drag, discrete_form=true, parameters=bottom_drag_coefficient)
