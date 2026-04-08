@@ -3,7 +3,7 @@ using Oceananigans.Operators: ζ₃ᶠᶠᶜ, ℑxᶜᵃᵃ, ℑyᵃᶜᵃ
 using Oceananigans.Architectures: child_architecture
 using Oceananigans.Fields: interpolate!
 using NumericalEarth.DataWrangling: WOAAnnual
-using NumericalEarth.Diagnostics: MixedLayerDepthField, compute_zonal_averages
+using NumericalEarth.Diagnostics: MixedLayerDepthField
 using WorldOceanAtlasTools
 
 @inline function speedᶜᶜᶜ(i, j, k, grid, u, v)
@@ -55,11 +55,9 @@ function compute_report_fields(ocean; dataset = WOAAnnual())
     compute!(h)
     MLD = Array(interior(h, :, :, 1))
 
-    T̄, S̄, φ, z = compute_zonal_averages(grid, T, S)
-
     δT, δS = compute_woa_bias(grid, arch, T, S, Nz, dataset)
 
-    return (; SST, SSS, spd, ζ, MLD, T̄, S̄, δT, δS, φ, z)
+    return (; SST, SSS, spd, ζ, MLD, δT, δS)
 end
 
 """
