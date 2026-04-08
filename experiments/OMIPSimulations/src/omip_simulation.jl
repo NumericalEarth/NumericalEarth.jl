@@ -66,7 +66,8 @@ function omip_simulation(config::Symbol = :half_degree;
     cfg = Val(config)
 
     ocean = build_ocean(cfg, arch;
-                        Nz, depth, κ_skew, κ_symmetric,
+                        Nz, depth, κ_skew, κ_symmetric, 
+                        biharmonic_timescale,
                         restoring_dir, piston_velocity,
                         start_date, end_date)
 
