@@ -210,14 +210,6 @@ function ocean_simulation(grid;
 
     FT = eltype(grid)
 
-    # Today only T and S have default top flux fields, so those are the only
-    # tracers we know how to wrap with a restoring. Catch typos / unsupported
-    # keys early.
-    let extras = setdiff(keys(surface_restoring), (:T, :S))
-        isempty(extras) || throw(ArgumentError(
-            "ocean_simulation only supports surface_restoring for :T and :S; got unsupported keys $(Tuple(extras))"))
-    end
-
     if grid isa RectilinearGrid # turn off Coriolis unless user-supplied
         coriolis = default_or_override(coriolis, nothing)
     else
