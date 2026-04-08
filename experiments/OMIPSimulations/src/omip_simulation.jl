@@ -47,6 +47,7 @@ function omip_simulation(config::Symbol = :half_degree;
                          depth = 5500,
                          κ_skew = 250,
                          κ_symmetric = 100,
+                         biharmonic_timescale = 40days,
                          forcing_dir = "forcing_data",
                          restoring_dir = "climatology",
                          piston_velocity = 1 / 12, # m / s
@@ -162,72 +163,60 @@ function salinity_restoring_forcing(grid, dataset;
 end
 
 #####
-##### Half-degree (tripolar) builder
+##### Grid builder
 #####
 
-function build_ocean(::Val{:half_degree}, arch;
-                     Nz, depth, κ_skew, κ_symmetric,
-                     restoring_dir, piston_velocity,
-                     start_date, end_date)
+function build_grid(config, arch, Nz, depth)
+    
+    Nx = config == Val(:halfdegree)  ? 720 :
+         config == Val(:eightdegree) ? 2160 :
+         throw("Configuration $(config) does not exist") 
 
-    Nx, Ny = 720, 360
-    z_faces = ExponentialDiscretization(Nz, -depth, 0; scale=1600, mutable=true)
+    Ny = Nx ÷ 2
+
+    z_faces = ExponentialDiscretization(Nz, -depth, 0; scale=1300, mutable=true)
 
     base_grid = TripolarGrid(arch;
-                             size = (Nx, Ny, Nz),
-                             z = z_faces,
-                             halo = (7, 7, 7))
+                            size = (Nx, Ny, Nz),
+                            z = z_faces,
+                            halo = (7, 7, 7))
 
     bottom_height = regrid_bathymetry(base_grid;
-                                      minimum_depth = 20,
-                                      major_basins = 1,
-                                      interpolation_passes = 25)
+                                    minimum_depth = 20,
+                                    major_basins = 1,
+                                    interpolation_passes = 25)
 
-    grid = ImmersedBoundaryGrid(base_grid, GridFittedBottom(bottom_height); active_cells_map = true)
-    FS = salinity_restoring_forcing(grid, WOAMonthly(); restoring_dir, piston_velocity, start_date, end_date)
-
-    closure = omip_closure(; κ_skew, κ_symmetric, biharmonic_timescale = 40days)
-    coriolis = HydrostaticSphericalCoriolis(scheme = Oceananigans.Coriolis.EnstrophyConserving())
-
-    ocean = ocean_simulation(grid;
-                             Δt = 1minutes,
-                             momentum_advection = WENOVectorInvariant(order=5),
-                             tracer_advection = WENO(order=7; minimum_buffer_upwind_order=3),
-                             coriolis,
-                             timestepper = :SplitRungeKutta3,
-                             free_surface = SplitExplicitFreeSurface(grid; substeps=150),
-                             forcing = (; S = FS),
-                             closure)
-
-    set!(ocean.model,
-         T = Metadatum(:temperature; dir=restoring_dir, dataset=WOAAnnual()),
-         S = Metadatum(:salinity;    dir=restoring_dir, dataset=WOAAnnual()))
-
-    return ocean
+    return ImmersedBoundaryGrid(base_grid, GridFittedBottom(bottom_height); active_cells_map = true)
 end
 
-#####
-##### ORCA builder
-#####
-
-function build_ocean(::Val{:orca}, arch;
-                     Nz, depth, κ_skew, κ_symmetric,
-                     restoring_dir, piston_velocity,
-                     start_date, end_date)
+function build_grid(::Val{:orca}, arch, Nz, depth)
 
     z_faces = ExponentialDiscretization(Nz, -depth, 0; scale=1600, mutable=true)
 
-    grid = ORCAGrid(arch;
+    return ORCAGrid(arch;
                     dataset = ORCA1(),
                     Nz,
                     z = z_faces,
                     halo = (7, 7, 7),
                     with_bathymetry = true,
                     active_cells_map = true)
+end
 
+
+#####
+##### ORCA builder
+#####
+
+function build_ocean(config, arch;
+                     Nz, depth, κ_skew, κ_symmetric,
+                     restoring_dir, piston_velocity,
+                     biharmonic_timescale,
+                     start_date, end_date)
+
+    grid = build_grid(config, arch, Nz, depth)
     FS = salinity_restoring_forcing(grid, WOAMonthly(); restoring_dir, piston_velocity, start_date, end_date)
 
-    closure = omip_closure(; κ_skew, κ_symmetric, biharmonic_timescale = 15days)
+    closure = omip_closure(; κ_skew, κ_symmetric, biharmonic_timescale)
     coriolis = HydrostaticSphericalCoriolis(scheme = Oceananigans.Coriolis.EnstrophyConserving())
 
     ocean = ocean_simulation(grid;
