@@ -216,10 +216,11 @@ function build_ocean(config, arch;
 
     closure = omip_closure(; κ_skew, κ_symmetric, biharmonic_timescale)
     coriolis = HydrostaticSphericalCoriolis(scheme = Oceananigans.Coriolis.EnstrophyConserving())
+    momentum_advection = config == Val(:tenthdegree) ? WENOVectorInvariant() : WENOVectorInvariant(order=5)
 
     ocean = ocean_simulation(grid;
                              Δt = 1minutes,
-                             momentum_advection = WENOVectorInvariant(order=5),
+                             momentum_advection,
                              tracer_advection = WENO(order=7; minimum_buffer_upwind_order=3),
                              coriolis,
                              timestepper = :SplitRungeKutta3,
