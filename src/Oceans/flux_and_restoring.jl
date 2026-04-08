@@ -33,7 +33,7 @@ Adapt.adapt_structure(to, fr::FluxAndRestoring) =
                      adapt(to, fr.restoring))
 
 @inline function (fr::FluxAndRestoring)(i, j, grid, clock, fields)
-    Nz = grid.Nz
+    Nz = size(grid, 3)
     @inbounds J = fr.flux_field[i, j, 1]
 
     # Restoring accessed as a tendency forcing (compatible with DatasetRestoring)
