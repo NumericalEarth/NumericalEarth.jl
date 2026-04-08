@@ -63,7 +63,6 @@ function add_omip_diagnostics!(simulation;
     JTao = NumericalEarth.Diagnostics.atmosphere_ocean_temperature_flux(model)
     JSn  = NumericalEarth.Diagnostics.net_ocean_salinity_flux(model)
     JSio = NumericalEarth.Diagnostics.sea_ice_ocean_salinity_flux(model)
-    JSao = NumericalEarth.Diagnostics.atmosphere_ocean_salinity_flux(model)
 
     hi = sea_ice.model.ice_thickness
     ℵi = sea_ice.model.ice_concentration
@@ -114,8 +113,7 @@ function add_omip_diagnostics!(simulation;
         :JTio     => JTio,
         :JTao     => JTao,
         :JSn      => JSn,
-        :JSio     => JSio,
-        :JSao     => JSao
+        :JSio     => JSio
     )
 
     if !isnothing(sitemptop)
