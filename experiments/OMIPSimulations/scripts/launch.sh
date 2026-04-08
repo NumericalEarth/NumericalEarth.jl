@@ -3,7 +3,7 @@
 #
 # Usage:
 #   ./launch.sh halfdegree             # half-degree OMIP
-#   ./launch.sh eightdegree            # 1/8-degree OMIP
+#   ./launch.sh tenthdegree            # 1/10-degree OMIP
 #   ./launch.sh orca                   # ORCA OMIP
 #   PROFILE=true ./launch.sh orca      # nsys-profile run
 #   NODE=2904 ./launch.sh orca         # pin to a specific node
@@ -18,11 +18,11 @@ set -euo pipefail
 
 usage() {
     cat <<'USAGE'
-Usage: ./launch.sh <halfdegree|eightdegree|orca> [extra sbatch args...]
+Usage: ./launch.sh <halfdegree|tenthdegree|orca> [extra sbatch args...]
 
 Examples:
   ./launch.sh halfdegree
-  ./launch.sh eightdegree
+  ./launch.sh tenthdegree
   ./launch.sh orca
   PROFILE=true ./launch.sh orca
   NODE=2904 ./launch.sh orca
@@ -43,7 +43,7 @@ case "$CONFIG" in
     half_degree)
         CONFIG="halfdegree"
         ;;
-    orca|eightdegree) ;;
+    orca|tenthdegree) ;;
     -h|--help)
         usage
         exit 0
@@ -60,7 +60,7 @@ JOB_NAME="${JOB_NAME:-$CONFIG}"
 GPUS_PER_NODE=1
 
 case "$CONFIG" in
-    eightdegree)
+    tenthdegree)
         GPUS_PER_NODE=4
         ;;
 esac
@@ -136,15 +136,15 @@ sim = omip_simulation(:orca;
 sim.stop_time = 300 * 365days
 run!(sim; pickup = true)'
         ;;
-    eightdegree)
+    tenthdegree)
         JULIA_EXPR='using OMIPSimulations
 using Oceananigans
 using Oceananigans.Units
 using Oceananigans.DistributedComputations
 using CUDA
 
-# TODO: adjust this block for the 1/8-degree setup details you want.
-sim = omip_simulation(:eight_degree;
+# TODO: adjust this block for the 1/10-degree setup details you want.
+sim = omip_simulation(:tenthdegree;
                       arch = Distributed(GPU(), partition=Partition(1, 4)),
                       Nz = 100,
                       depth = 5500,
@@ -152,8 +152,8 @@ sim = omip_simulation(:eight_degree;
                       κ_symmetric = nothing,
                       biharmonic_timescale = nothing,
                       Δt = 8minutes,
-                      output_dir = "eightdegree_run",
-                      filename_prefix = "eightdegree",
+                      output_dir = "tenthdegree_run",
+                      filename_prefix = "tenthdegree",
                       file_splitting_interval = 180days)
 
 sim.stop_time = 91days
