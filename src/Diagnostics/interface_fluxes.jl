@@ -26,7 +26,6 @@ function net_ocean_temperature_flux(esm::EarthSystemModel)
     return Field(net_ocean_temperature_flux)
 end
 
-
 """
     sea_ice_ocean_temperature_flux(esm::EarthSystemModel)
 
