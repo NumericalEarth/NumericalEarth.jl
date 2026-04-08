@@ -38,9 +38,12 @@ shift || true
 
 case "$CONFIG" in
     halfdegree)
-        CONFIG="half_degree"
+        CONFIG="halfdegree"
         ;;
-    half_degree|orca|eightdegree) ;;
+    half_degree)
+        CONFIG="halfdegree"
+        ;;
+    orca|eightdegree) ;;
     -h|--help)
         usage
         exit 0
@@ -95,13 +98,13 @@ JULIA="${JULIA:-$HOME/julia-1.12.5/bin/julia}"
 
 # Build the Julia expression from the selected config.
 case "$CONFIG" in
-    half_degree)
+    halfdegree)
         JULIA_EXPR='using OMIPSimulations
 using Oceananigans
 using Oceananigans.Units
 using CUDA
 
-sim = omip_simulation(:half_degree;
+sim = omip_simulation(:halfdegree;
                       arch = CPU(),
                       Nz = 70,
                       depth = 5500,
@@ -150,7 +153,7 @@ sim = omip_simulation(:eight_degree;
                       biharmonic_timescale = nothing,
                       Δt = 8minutes,
                       output_dir = "eightdegree_run",
-                      filename_prefix = "eightdegree"
+                      filename_prefix = "eightdegree",
                       file_splitting_interval = 180days)
 
 sim.stop_time = 91days
