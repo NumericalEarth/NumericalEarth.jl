@@ -1,4 +1,5 @@
 using Oceananigans.Units
+using Oceananigans.OutputReaders: Cyclical
 
 const ERDDAP_BASE = "https://data.pmel.noaa.gov/pmel/erddap/tabledap"
 const ERDDAP_FLUX_VARS = "time,QLAT,QSEN,QNET,LWNET,SWNET,TAU,TAUX,TAUY,RAIN,EVAP,EMP,TSK"
