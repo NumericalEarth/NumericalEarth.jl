@@ -66,7 +66,8 @@ case "$CONFIG" in
 esac
 
 SBATCH_ARGS=()
-if [[ -n "${NODE:-}" ]]; then
+NODE="${NODE:-2904}"
+if [[ -n "${NODE}" ]]; then
     SBATCH_ARGS+=(-w "node${NODE}")
 fi
 SBATCH_ARGS+=(--gres="gpu:${GPUS_PER_NODE}")
