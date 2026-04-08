@@ -49,7 +49,7 @@ function omip_simulation(config::Symbol = :half_degree;
                          κ_symmetric = 100,
                          forcing_dir = "forcing_data",
                          restoring_dir = "climatology",
-                         restoring_rate = 1/6,
+                         piston_velocity = 1 / 12, # m / s
                          start_date = DateTime(1958, 1, 1),
                          end_date = DateTime(2018, 1, 1),
                          Δt = 30minutes,
@@ -66,7 +66,7 @@ function omip_simulation(config::Symbol = :half_degree;
 
     ocean = build_ocean(cfg, arch;
                         Nz, depth, κ_skew, κ_symmetric,
-                        restoring_dir, restoring_rate,
+                        restoring_dir, piston_velocity,
                         start_date, end_date)
 
     grid = ocean.model.grid
@@ -141,14 +141,14 @@ end
 
 function salinity_restoring_forcing(grid, dataset;
                                     restoring_dir,
-                                    restoring_rate,
+                                    piston_velocity,
                                     start_date,
                                     end_date)
 
     Nz = size(grid, 3)
     Δz_surface = CUDA.@allowscalar Δzᶜᶜᶜ(1, 1, Nz, grid)
 
-    rate = restoring_rate / (Δz_surface * days)
+    rate = piston_velocity / (Δz_surface * days)
 
     Smetadata = Metadata(:salinity;
                          dir = restoring_dir,
@@ -167,7 +167,7 @@ end
 
 function build_ocean(::Val{:half_degree}, arch;
                      Nz, depth, κ_skew, κ_symmetric,
-                     restoring_dir, restoring_rate,
+                     restoring_dir, piston_velocity,
                      start_date, end_date)
 
     Nx, Ny = 720, 360
@@ -184,7 +184,7 @@ function build_ocean(::Val{:half_degree}, arch;
                                       interpolation_passes = 25)
 
     grid = ImmersedBoundaryGrid(base_grid, GridFittedBottom(bottom_height); active_cells_map = true)
-    FS = salinity_restoring_forcing(grid, WOAMonthly(); restoring_dir, restoring_rate, start_date, end_date)
+    FS = salinity_restoring_forcing(grid, WOAMonthly(); restoring_dir, piston_velocity, start_date, end_date)
 
     closure = omip_closure(; κ_skew, κ_symmetric, biharmonic_timescale = 40days)
     coriolis = HydrostaticSphericalCoriolis(scheme = Oceananigans.Coriolis.EnstrophyConserving())
@@ -212,7 +212,7 @@ end
 
 function build_ocean(::Val{:orca}, arch;
                      Nz, depth, κ_skew, κ_symmetric,
-                     restoring_dir, restoring_rate,
+                     restoring_dir, piston_velocity,
                      start_date, end_date)
 
     z_faces = ExponentialDiscretization(Nz, -depth, 0; scale=1600, mutable=true)
@@ -225,7 +225,7 @@ function build_ocean(::Val{:orca}, arch;
                     with_bathymetry = true,
                     active_cells_map = true)
 
-    FS = salinity_restoring_forcing(grid, WOAMonthly(); restoring_dir, restoring_rate, start_date, end_date)
+    FS = salinity_restoring_forcing(grid, WOAMonthly(); restoring_dir, piston_velocity, start_date, end_date)
 
     closure = omip_closure(; κ_skew, κ_symmetric, biharmonic_timescale = 15days)
     coriolis = HydrostaticSphericalCoriolis(scheme = Oceananigans.Coriolis.EnstrophyConserving())
