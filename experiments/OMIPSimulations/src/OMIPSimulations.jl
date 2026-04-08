@@ -7,6 +7,7 @@ using Dates
 using NCDatasets
 using CUDA
 
+using NumericalEarth
 using NumericalEarth.Oceans: ocean_simulation, default_ocean_closure
 using NumericalEarth.SeaIces: sea_ice_simulation
 using NumericalEarth.EarthSystemModels: OceanSeaIceModel, Radiation
