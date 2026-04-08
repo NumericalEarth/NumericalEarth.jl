@@ -3,14 +3,15 @@ using Oceananigans.Operators: Δzᶜᶜᶜ
 using Oceananigans.TurbulenceClosures: IsopycnalSkewSymmetricDiffusivity
 
 """
-    omip_simulation(config::Symbol = :half_degree; kwargs...)
+    omip_simulation(config::Symbol = :halfdegree; kwargs...)
 
 Create a fully coupled ocean--sea-ice--atmosphere OMIP simulation.
 
 The single positional argument selects the grid configuration:
 
-- `:half_degree` -- 720x360 `TripolarGrid` with EN4Monthly restoring/initial conditions
-- `:orca`        -- NEMO eORCA mesh with WOAMonthly restoring/initial conditions
+- `:halfdegree`  -- 720x360   `TripolarGrid`
+- `:tenthdegree` -- 3600x1800 `TripolarGrid`
+- `:orca`        -- NEMO eORCA mesh
 
 Returns a `Simulation` wrapping an `OceanSeaIceModel`. The simulation
 already has a progress callback attached, and (when `diagnostics=true`)
@@ -41,7 +42,7 @@ plumbing is needed because `NumericalEarth.EarthSystemModels` provides
 - `checkpoint_interval`: interval between checkpoint writes.
 - `output_dir`, `filename_prefix`, `file_splitting_interval`: output configuration.
 """
-function omip_simulation(config::Symbol = :half_degree;
+function omip_simulation(config::Symbol = :halfdegree;
                          arch = CPU(),
                          Nz = 100,
                          depth = 5500,
@@ -170,7 +171,7 @@ end
 function build_grid(config, arch, Nz, depth)
     
     Nx = config == Val(:halfdegree)  ? 720 :
-         config == Val(:eightdegree) ? 2160 :
+         config == Val(:tenthdegree) ? 3600 :
          throw("Configuration $(config) does not exist") 
 
     Ny = Nx ÷ 2
