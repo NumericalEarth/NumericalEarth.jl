@@ -172,7 +172,6 @@ if [[ "${PROFILE:-false}" == "true" ]]; then
                  --force-overwrite true \
                  "$JULIA" --project=.. --check-bounds=no -e "$JULIA_EXPR"
 else
-    "$JULIA" --project=.. --check-bounds=no -e 'using Pkg; Pkg.update("Oceananigans")'
     "$JULIA" --project=.. --check-bounds=no -e "$JULIA_EXPR"
 fi
 EOF
