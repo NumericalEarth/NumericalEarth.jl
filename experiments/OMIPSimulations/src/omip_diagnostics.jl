@@ -57,13 +57,13 @@ function add_omip_diagnostics!(simulation;
     Qc = model.interfaces.atmosphere_ocean_interface.fluxes.sensible_heat
     Qv = model.interfaces.atmosphere_ocean_interface.fluxes.latent_heat
 
-    JTf  = frazil_temperature_flux(model)
-    JTn  = net_ocean_temperature_flux(model)
-    JTio = sea_ice_ocean_temperature_flux(model)
-    JTao = atmosphere_ocean_temperature_flux(model)
-    JSn  = net_ocean_salinity_flux(model)
-    JSio = sea_ice_ocean_salinity_flux(esm::EarthSystemModel)
-    JSao = atmosphere_ocean_salinity_flux(esm::EarthSystemModel)
+    JTf  = NumericalEarth.Diagnostics.frazil_temperature_flux(model)
+    JTn  = NumericalEarth.Diagnostics.net_ocean_temperature_flux(model)
+    JTio = NumericalEarth.Diagnostics.sea_ice_ocean_temperature_flux(model)
+    JTao = NumericalEarth.Diagnostics.atmosphere_ocean_temperature_flux(model)
+    JSn  = NumericalEarth.Diagnostics.net_ocean_salinity_flux(model)
+    JSio = NumericalEarth.Diagnostics.sea_ice_ocean_salinity_flux(model)
+    JSao = NumericalEarth.Diagnostics.atmosphere_ocean_salinity_flux(model)
 
     hi = sea_ice.model.ice_thickness
     ℵi = sea_ice.model.ice_concentration
