@@ -144,9 +144,7 @@ end
 
 function salinity_restoring_forcing(grid, dataset;
                                     restoring_dir,
-                                    piston_velocity,
-                                    start_date,
-                                    end_date)
+                                    piston_velocity)
 
     Nz = size(grid, 3)
     Δz_surface = CUDA.@allowscalar Δzᶜᶜᶜ(1, 1, Nz, grid)
@@ -155,9 +153,7 @@ function salinity_restoring_forcing(grid, dataset;
 
     Smetadata = Metadata(:salinity;
                          dir = restoring_dir,
-                         dataset,
-                         start_date,
-                         end_date)
+                         dataset)
 
     return DatasetRestoring(Smetadata, Oceananigans.Architectures.architecture(grid);
                             rate,
@@ -216,7 +212,7 @@ function build_ocean(config, arch;
                      start_date, end_date)
 
     grid = build_grid(config, arch, Nz, depth)
-    FS = salinity_restoring_forcing(grid, WOAMonthly(); restoring_dir, piston_velocity, start_date, end_date)
+    FS = salinity_restoring_forcing(grid, WOAMonthly(); restoring_dir, piston_velocity)
 
     closure = omip_closure(; κ_skew, κ_symmetric, biharmonic_timescale)
     coriolis = HydrostaticSphericalCoriolis(scheme = Oceananigans.Coriolis.EnstrophyConserving())
