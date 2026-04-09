@@ -120,12 +120,12 @@ function add_omip_diagnostics!(simulation;
         surface_outputs[:sitemptop] = sitemptop
     end
 
-    simulation.output_writers[:surface] = NetCDFWriter(ocean.model, surface_outputs;
-                                                       schedule = AveragedTimeInterval(surface_averaging_interval),
-                                                       dir = output_dir,
-                                                       filename = filename_prefix * "_surface",
-                                                       file_splitting,
-                                                       overwrite_existing = true)
+    simulation.output_writers[:surface] = JLD2Writer(ocean.model, surface_outputs;
+                                                     schedule = AveragedTimeInterval(surface_averaging_interval),
+                                                     dir = output_dir,
+                                                     filename = filename_prefix * "_surface",
+                                                     file_splitting,
+                                                     overwrite_existing = true)
 
     # 3-D fields (including buoyancy)
     bop = Oceananigans.Models.buoyancy_operation(ocean.model)
@@ -143,12 +143,12 @@ function add_omip_diagnostics!(simulation;
         field_outputs[:tke] = ocean.model.tracers.e
     end
 
-    simulation.output_writers[:fields] = NetCDFWriter(ocean.model, field_outputs;
-                                                      schedule = AveragedTimeInterval(field_averaging_interval),
-                                                      dir = output_dir,
-                                                      filename = filename_prefix * "_fields",
-                                                      file_splitting,
-                                                      overwrite_existing = true)
+    simulation.output_writers[:fields] = JLD2Writer(ocean.model, field_outputs;
+                                                    schedule = AveragedTimeInterval(field_averaging_interval),
+                                                    dir = output_dir,
+                                                    filename = filename_prefix * "_fields",
+                                                    file_splitting,
+                                                    overwrite_existing = true)
 
     # Global means and horizontal-mean depth profiles for T, S, b
     average_outputs = Dict{Symbol, Any}(
@@ -160,12 +160,12 @@ function add_omip_diagnostics!(simulation;
         :bo_h  => Average(bop, dims=(1, 2)),
     )
 
-    simulation.output_writers[:averages] = NetCDFWriter(ocean.model, average_outputs;
-                                                        schedule = AveragedTimeInterval(field_mean_interval),
-                                                        dir = output_dir,
-                                                        filename = filename_prefix * "_averages",
-                                                        file_splitting,
-                                                        overwrite_existing = true)
+    simulation.output_writers[:averages] = JLD2Writer(ocean.model, average_outputs;
+                                                      schedule = AveragedTimeInterval(field_mean_interval),
+                                                      dir = output_dir,
+                                                      filename = filename_prefix * "_averages",
+                                                      file_splitting,
+                                                      overwrite_existing = true)
 
     # Checkpointer (drives `run!(sim; pickup=true)`)
     simulation.output_writers[:checkpointer] = Checkpointer(simulation.model;
