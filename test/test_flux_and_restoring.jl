@@ -2,6 +2,7 @@ include("runtests_setup.jl")
 
 using Oceananigans.BoundaryConditions: DiscreteBoundaryFunction
 using NumericalEarth.Oceans: FluxAndRestoring, net_fluxes, net_flux
+using CUDA
 
 # A constant top-cell tendency `G`, mimicking the part of a `DatasetRestoring`
 # that the `FluxAndRestoring` BC actually evaluates: `r * μ * (ψ_dataset - ψ)`.
@@ -64,13 +65,13 @@ end
 
             # Math: J_solver = 0 by default, so BC value = -G * Δz_top
             fields = ocean.model.tracers
-            val = S_top.condition.func(2, 2, grid, ocean.model.clock, fields)
+            CUDA.@allowscalar val = S_top.condition.func(2, 2, grid, ocean.model.clock, fields)
             @test val ≈ -G * Δz_top
 
             # Now pretend the OMIP coupled flux solver wrote into the underlying field
             J = 7.0e-5
             fill!(net_flux(S_top.condition), J)
-            val = S_top.condition.func(2, 2, grid, ocean.model.clock, fields)
+            CUDA.@allowscalar val = S_top.condition.func(2, 2, grid, ocean.model.clock, fields)
             @test val ≈ J - G * Δz_top
         end
     end
