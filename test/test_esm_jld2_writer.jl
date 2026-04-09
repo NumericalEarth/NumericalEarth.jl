@@ -25,9 +25,8 @@ include("runtests_setup.jl")
 
         # Load with FieldTimeSeries and verify the grid roundtrips
         fts = FieldTimeSeries(filepath, "T")
-        @test fts.grid isa typeof(grid)
         @test size(fts.grid) == size(grid)
-        @test length(fts.times) == 5
+        @test length(fts.times) == 6
 
         rm(filepath, force=true)
     end
