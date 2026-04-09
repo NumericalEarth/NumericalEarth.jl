@@ -65,6 +65,7 @@ export
     native_grid
 
 using Oceananigans
+import Oceananigans: location
 using Oceananigans.Operators: ℑxyᶠᶜᵃ, ℑxyᶜᶠᵃ
 using DataDeps
 
