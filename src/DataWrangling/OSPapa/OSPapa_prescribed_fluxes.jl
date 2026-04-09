@@ -200,9 +200,9 @@ function OSPapaPrescribedFluxBoundaryConditions(fluxes, architecture=CPU();
     # Salinity: EMP (mm/hr ≡ kg/m²/hr) > 0 = net evaporation → salinity should increase
     # Jˢ = -S * EMP_ms (negative top flux = INTO domain = S increases)
     @inline function Jˢ_bc(i, j, grid, clock, model_fields, p)
-        EMP_ms = interp_flux(p.EMP, p.times, p.Nt, p.time_indexing, clock.time) / (p.ρ₀ * 3600) + S_correction(i, j, grid, clock, model_fields, p)
+        EMP_ms = interp_flux(p.EMP, p.times, p.Nt, p.time_indexing, clock.time) / (p.ρ₀ * 3600)
         S = model_fields.S[i, j, grid.Nz]
-        return -S * EMP_ms
+        return -S * EMP_ms + S_correction(i, j, grid, clock, model_fields, p)
     end
 
     params_τx = (; τx=τx_data, times=times_arch, Nt, time_indexing, ρ₀)
