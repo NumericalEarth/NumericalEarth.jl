@@ -68,16 +68,6 @@ function __init__()
     ##### Download JRA55 data
     #####
 
-    # First, validate any cached JRA55 files and delete corrupt ones
-    for name in NumericalEarth.DataWrangling.JRA55.JRA55_variable_names
-        datum = Metadatum(name; dataset=JRA55.RepeatYearJRA55())
-        path = metadata_path(datum)
-        if isfile(path) && endswith(path, ".nc") && !validate_netcdf(path)
-            @warn "Removing corrupt JRA55 file: $(basename(path))"
-            rm(path; force=true)
-        end
-    end
-
     try
         atmosphere = JRA55PrescribedAtmosphere(backend=JRA55NetCDFBackend(2))
     catch e
@@ -97,7 +87,7 @@ function __init__()
     # Download few datasets for tests
     for dataset in test_datasets
         time_resolution = dataset isa ECCO2Daily ? Day(1) : Month(1)
-        end_date = start_date + 1 * time_resolution
+        end_date = start_date + 2 * time_resolution
         dates = start_date:time_resolution:end_date
 
         temperature_metadata = Metadata(:temperature; dataset, dates)
