@@ -44,7 +44,6 @@ function Base.show(io::IO, cm::ESM)
     return nothing
 end
 
-# Assumption: We have an ocean!
 # Expose the exchange grid as `model.grid` so that JLD2Writer can save it.
 function Base.getproperty(model::ESM, name::Symbol)
     if name === :grid
