@@ -175,9 +175,9 @@ function build_grid(config, arch, Nz, depth)
     z_faces = ExponentialDiscretization(Nz, -depth, 0; scale=1300, mutable=true)
 
     base_grid = TripolarGrid(arch;
-                            size = (Nx, Ny, Nz),
-                            z = z_faces,
-                            halo = (7, 7, 7))
+                             size = (Nx, Ny, Nz),
+                             z = z_faces,
+                             halo = (7, 7, 7))
 
     bottom_height = regrid_bathymetry(base_grid;
                                     minimum_depth = 20,
