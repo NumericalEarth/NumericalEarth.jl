@@ -11,6 +11,7 @@ export metadata_time_step, metadata_epoch
 export LinearlyTaperedPolarMask
 export DatasetRestoring
 export ERA5Hourly, ERA5Monthly, ERA5PrescribedAtmosphere
+export native_grid
 
 using Oceananigans
 using Downloads
