@@ -119,7 +119,7 @@ while the vertical location is preserved.
 `FieldTimeSeries` can be constructed directly from multi-date `Metadata`,
 creating a time-evolving field that loads data on demand:
 
-```@example metadata
+```julia
 using Dates
 
 dates = Date(2010, 1, 1) : Month(1) : Date(2010, 3, 1)
@@ -136,7 +136,7 @@ time index.
 
 For long time series, keep only a small window in memory:
 
-```@example metadata
+```julia
 fts = FieldTimeSeries(metadata; time_indices_in_memory = 4)
 ```
 
@@ -144,7 +144,7 @@ fts = FieldTimeSeries(metadata; time_indices_in_memory = 4)
 
 Pass a grid instead of an architecture to interpolate the data:
 
-```@example metadata
+```julia
 grid = LatitudeLongitudeGrid(size = (360, 180, 42),
                             longitude = (0, 360),
                             latitude = (-90, 90),
@@ -157,7 +157,7 @@ fts = FieldTimeSeries(metadata, grid)
 
 For common workflows, NumericalEarth provides convenience constructors:
 
-```@example metadata
+```julia
 # ECCO temperature over a date range
 T_fts = FieldTimeSeries(:temperature;
                         dataset    = ECCO4Monthly(),
@@ -166,7 +166,7 @@ T_fts = FieldTimeSeries(:temperature;
                         end_date   = Date(1992, 6, 1))
 ```
 
-```@example metadata
+```julia
 # JRA55 downwelling shortwave radiation (ℐꜜˢʷ)
 ℐꜜˢʷ = JRA55FieldTimeSeries(:downwelling_shortwave_radiation;
                              start_date = Date(1990, 1, 1),
@@ -179,7 +179,7 @@ T_fts = FieldTimeSeries(:temperature;
 ERA5 reanalysis data can also be loaded as `FieldTimeSeries`.
 ERA5 is a 2D surface dataset, so fields have a single vertical level:
 
-```@example metadata
+```julia
 using NumericalEarth.DataWrangling.ERA5: ERA5Hourly
 
 # Download and load a small region of ERA5 surface temperature
