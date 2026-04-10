@@ -203,6 +203,17 @@ end
         @test !isnothing(model_with_land.interfaces.exchanger.land)
         @test model_with_land.land === land
 
+        # Test PrescribedLand display methods
+        @test summary(land) isa String
+        @test contains(sprint(show, land), "PrescribedLand")
+        @test contains(sprint(show, land), "freshwater_flux")
+
+        # Time-step without land exercises get_land_freshwater_flux(::Nothing) path
+        time_step!(model_no_land, 1)
+
+        # Time-step with land exercises interpolate_land_state! kernel
+        time_step!(model_with_land, 1)
+
         @info " Testing FreezingLimitedOceanTemperature..."
 
         grid = LatitudeLongitudeGrid(arch;
