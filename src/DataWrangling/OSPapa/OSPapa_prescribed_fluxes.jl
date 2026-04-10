@@ -1,4 +1,5 @@
 using Oceananigans.Units
+using Oceananigans.Units: Time
 using Oceananigans.OutputReaders: Cyclical
 
 const ERDDAP_BASE = "https://data.pmel.noaa.gov/pmel/erddap/tabledap"
@@ -126,19 +127,6 @@ function OSPapaPrescribedFluxes(FT = Float64;
               start_date)
 end
 
-using Oceananigans.OutputReaders: interpolating_time_indices
-
-"""
-    interp_flux(data, times, Nt, time_indexing, t)
-
-Linearly interpolate a 1D flux time series to time `t` using Oceananigans'
-`interpolating_time_indices`. GPU-kernel safe.
-"""
-@inline function interp_flux(data, times, Nt, time_indexing, t)
-    ñ, n₁, n₂ = interpolating_time_indices(time_indexing, times, t)
-    return @inbounds data[n₁] + ñ * (data[n₂] - data[n₁])
-end
-
 """
     no_correction(i, j, grid, clock, model_fields, p)
 
@@ -199,46 +187,51 @@ function OSPapaPrescribedFluxBoundaryConditions(fluxes, architecture=CPU();
 
     flux_times = fluxes.times
     Nt = length(flux_times)
-    Δt_data = flux_times[2] - flux_times[1]
-    period = flux_times[end] - flux_times[1] + Δt_data
-    time_indexing = Cyclical(period)
+    time_indexing = Cyclical()  # period auto-inferred from times
 
-    # Transfer flux data and times to the appropriate device
+    # Build FieldTimeSeries on a zero-dimensional grid for each flux variable
+    flux_grid = RectilinearGrid(architecture, eltype(flux_times); size=(), topology=(Flat, Flat, Flat))
     on_arch = arr -> Oceananigans.on_architecture(architecture, arr)
 
-    times_arch = on_arch(flux_times)
-    τx_data    = on_arch(fluxes.τx)
-    τy_data    = on_arch(fluxes.τy)
-    Qnet_data  = on_arch(fluxes.Qnet)
-    EMP_data   = on_arch(fluxes.EMP)
+    τx_fts = FieldTimeSeries{Center, Center, Nothing}(flux_grid, flux_times; time_indexing)
+    parent(τx_fts) .= on_arch(reshape(fluxes.τx, 1, 1, 1, Nt))
+
+    τy_fts = FieldTimeSeries{Center, Center, Nothing}(flux_grid, flux_times; time_indexing)
+    parent(τy_fts) .= on_arch(reshape(fluxes.τy, 1, 1, 1, Nt))
+
+    Qnet_fts = FieldTimeSeries{Center, Center, Nothing}(flux_grid, flux_times; time_indexing)
+    parent(Qnet_fts) .= on_arch(reshape(fluxes.Qnet, 1, 1, 1, Nt))
+
+    EMP_fts = FieldTimeSeries{Center, Center, Nothing}(flux_grid, flux_times; time_indexing)
+    parent(EMP_fts) .= on_arch(reshape(fluxes.EMP, 1, 1, 1, Nt))
 
     # Momentum: ERDDAP TAUX > 0 = eastward stress ON ocean (INTO domain)
     # Oceananigans: positive top flux = OUT of domain → negate
     @inline function τx_bc(i, j, grid, clock, model_fields, p)
-        return -interp_flux(p.τx, p.times, p.Nt, p.time_indexing, clock.time) / p.ρ₀ + u_correction(i, j, grid, clock, model_fields, p)
+        return -p.τx[1, 1, 1, Time(clock.time)] / p.ρ₀ + u_correction(i, j, grid, clock, model_fields, p)
     end
 
     @inline function τy_bc(i, j, grid, clock, model_fields, p)
-        return -interp_flux(p.τy, p.times, p.Nt, p.time_indexing, clock.time) / p.ρ₀ + v_correction(i, j, grid, clock, model_fields, p)
+        return -p.τy[1, 1, 1, Time(clock.time)] / p.ρ₀ + v_correction(i, j, grid, clock, model_fields, p)
     end
 
     # Heat: ERDDAP Qnet > 0 = into ocean → negate for Oceananigans
     @inline function Jᵀ_bc(i, j, grid, clock, model_fields, p)
-        return -interp_flux(p.Qnet, p.times, p.Nt, p.time_indexing, clock.time) / (p.ρ₀ * p.cₚ) + T_correction(i, j, grid, clock, model_fields, p)
+        return -p.Qnet[1, 1, 1, Time(clock.time)] / (p.ρ₀ * p.cₚ) + T_correction(i, j, grid, clock, model_fields, p)
     end
 
     # Salinity: EMP (mm/hr ≡ kg/m²/hr) > 0 = net evaporation → salinity should increase
     # Jˢ = -S * EMP_ms (negative top flux = INTO domain = S increases)
     @inline function Jˢ_bc(i, j, grid, clock, model_fields, p)
-        EMP_ms = interp_flux(p.EMP, p.times, p.Nt, p.time_indexing, clock.time) / (p.ρ₀ * 3600)
+        EMP_ms = p.EMP[1, 1, 1, Time(clock.time)] / (p.ρ₀ * 3600)
         S = model_fields.S[i, j, grid.Nz]
         return -S * EMP_ms + S_correction(i, j, grid, clock, model_fields, p)
     end
 
-    params_τx = (; τx=τx_data, times=times_arch, Nt, time_indexing, ρ₀)
-    params_τy = (; τy=τy_data, times=times_arch, Nt, time_indexing, ρ₀)
-    params_T  = (; Qnet=Qnet_data, times=times_arch, Nt, time_indexing, ρ₀, cₚ)
-    params_S  = (; EMP=EMP_data, times=times_arch, Nt, time_indexing, ρ₀)
+    params_τx = (; τx=τx_fts, ρ₀)
+    params_τy = (; τy=τy_fts, ρ₀)
+    params_T  = (; Qnet=Qnet_fts, ρ₀, cₚ)
+    params_S  = (; EMP=EMP_fts, ρ₀)
 
     u_top = FluxBoundaryCondition(τx_bc, discrete_form=true, parameters=params_τx)
     v_top = FluxBoundaryCondition(τy_bc, discrete_form=true, parameters=params_τy)
