@@ -115,6 +115,14 @@ jobs:
       - uses: actions/checkout@v6
       - name: Create workspace temp directories
         run: mkdir -p "${TMPDIR}"
+      - name: Clean Julia depot to free disk space
+        run: |
+          echo "Disk before cleanup:"
+          df -h /__w || true
+          # Remove stale compiled artifacts and logs from the persistent workspace depot
+          rm -rf /__w/_temp/depot/compiled  /__w/_temp/depot/logs  /__w/_temp/depot/scratchspaces
+          echo "Disk after cleanup:"
+          df -h /__w || true
       - name: Configure git safe directory
         run: git config --global --add safe.directory ${PWD}
       - name: Copy LocalPreferences
