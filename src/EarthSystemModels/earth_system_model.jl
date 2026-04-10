@@ -44,20 +44,12 @@ function Base.show(io::IO, cm::ESM)
     return nothing
 end
 
-# Expose the exchange grid as `model.grid` so that JLD2Writer can save it.
-function Base.getproperty(model::ESM, name::Symbol)
-    if name === :grid
-        return getfield(model, :interfaces).exchanger.grid
-    end
-    return getfield(model, name)
-end
-
 architecture(model::ESM)           = model.architecture
 Base.eltype(model::ESM)            = Base.eltype(model.interfaces.exchanger.grid)
 prettytime(model::ESM)             = prettytime(model.clock.time)
 iteration(model::ESM)              = model.clock.iteration
 timestepper(::ESM)                 = nothing
-default_included_properties(::ESM) = [:grid]
+default_included_properties(::ESM) = []
 prognostic_fields(cm::ESM)         = nothing
 fields(::ESM)                      = NamedTuple()
 default_clock(TT)                   = Oceananigans.TimeSteppers.Clock{TT}(0, 0, 1)
