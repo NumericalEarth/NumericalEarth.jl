@@ -29,12 +29,12 @@ for (n, DATASET) in enumerate(orca_datasets)
         @test mesh_meta.dataset isa DATASET
     end
 
-    @testset "ORCAGrid with $name dataset on $(arch)" for arch in test_architectures
+    @testset "ORCATripolarGrid with $name dataset on $(arch)" for arch in test_architectures
         south_rows_to_remove = 15
-        grid = ORCAGrid(arch; dataset, Nz=5, z=(-5000, 0), halo=(4, 4, 4), south_rows_to_remove)
+        grid = ORCATripolarGrid(arch; dataset, Nz=5, z=(-5000, 0), halo=(4, 4, 4), south_rows_to_remove)
         @test grid.underlying_grid.Ny == Ny0 - south_rows_to_remove
 
-        grid = ORCAGrid(arch; dataset, Nz=5, z=(-5000, 0), halo=(4, 4, 4), south_rows_to_remove=0)
+        grid = ORCATripolarGrid(arch; dataset, Nz=5, z=(-5000, 0), halo=(4, 4, 4), south_rows_to_remove=0)
 
         # Default returns ImmersedBoundaryGrid with bathymetry
         @test grid isa ImmersedBoundaryGrid
@@ -52,8 +52,8 @@ for (n, DATASET) in enumerate(orca_datasets)
         @test maximum(underlying.φᶜᶜᵃ.parent) > 80
     end
 
-    @testset "ORCAGrid ($name) without bathymetry on $(arch)" for arch in test_architectures
-        grid = ORCAGrid(arch; dataset, Nz=5, z=(-5000, 0), halo=(4, 4, 4),
+    @testset "ORCATripolarGrid ($name) without bathymetry on $(arch)" for arch in test_architectures
+        grid = ORCATripolarGrid(arch; dataset, Nz=5, z=(-5000, 0), halo=(4, 4, 4),
                         with_bathymetry=false)
 
         @test grid isa Oceananigans.Grids.OrthogonalSphericalShellGrid
@@ -64,9 +64,9 @@ for (n, DATASET) in enumerate(orca_datasets)
         @test grid.Nz == 5
     end
 
-    @testset "ORCAGrid ($name) with south_rows_to_remove on $(arch)" for arch in test_architectures
+    @testset "ORCATripolarGrid ($name) with south_rows_to_remove on $(arch)" for arch in test_architectures
         Nremove = 40
-        grid = ORCAGrid(arch; dataset, Nz=5, z=(-5000, 0), halo=(4, 4, 4),
+        grid = ORCATripolarGrid(arch; dataset, Nz=5, z=(-5000, 0), halo=(4, 4, 4),
                         south_rows_to_remove=Nremove)
 
         @test grid isa ImmersedBoundaryGrid
@@ -76,8 +76,8 @@ for (n, DATASET) in enumerate(orca_datasets)
         @test underlying.Nz == 5
     end
 
-    @testset "ORCAGrid ($name) metric consistency" begin
-        grid = ORCAGrid(CPU(); dataset, Nz=5, z=(-5000, 0), halo=(4, 4, 4), with_bathymetry=false)
+    @testset "ORCATripolarGrid ($name) metric consistency" begin
+        grid = ORCATripolarGrid(CPU(); dataset, Nz=5, z=(-5000, 0), halo=(4, 4, 4), with_bathymetry=false)
 
         Nx, Ny = grid.Nx, grid.Ny
         Hx, Hy = grid.Hx, grid.Hy

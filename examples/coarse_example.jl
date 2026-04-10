@@ -21,13 +21,14 @@ using CUDA
 
 # We start by constructing an underlying TripolarGrid at ~1 degree resolution,
 
+data_path = "/cephfs/home/js2430/store/Global/data"
+
 arch = GPU()
 Nz = 31
 
 depth = 5000meters
 z = ExponentialDiscretization(Nz, -depth, 0; scale = depth/4, mutable = true)
-
-grid = ORCAGrid(arch; z, Nz, dataset = ORCA2(), halo = (5, 5, 4))
+grid = ORCATripolarGrid(arch; dataset = ORCA2(), south_rows_to_remove=0)
 
 # ### Closures
 #
@@ -39,6 +40,7 @@ using Oceananigans.TurbulenceClosures: IsopycnalSkewSymmetricDiffusivity, Advect
 
 eddy_closure = IsopycnalSkewSymmetricDiffusivity(κ_skew=1e3, κ_symmetric=1e3, skew_flux_formulation=AdvectiveFormulation())
 vertical_mixing = NumericalEarth.Oceans.default_ocean_closure()
+background_vertical_mixing = VerticalScalarDiffusivity(ν = 3e-5)
 
 # ### Ocean simulation
 # Now we bring everything together to construct the ocean simulation.
@@ -49,7 +51,7 @@ momentum_advection = WENOVectorInvariant(order=5)
 tracer_advection   = WENO(order=5)
 
 ocean = ocean_simulation(grid; momentum_advection, tracer_advection, free_surface,
-                         closure=(eddy_closure, vertical_mixing))
+                         closure=(eddy_closure, vertical_mixing, background_vertical_mixing))
 
 @info "We've built an ocean simulation with model:"
 @show ocean.model
@@ -68,10 +70,10 @@ sea_ice = sea_ice_simulation(grid, ocean; advection=tracer_advection)
 
 date = DateTime(1993, 1, 1)
 dataset = ECCO4Monthly()
-ecco_temperature           = Metadatum(:temperature; date, dataset)
-ecco_salinity              = Metadatum(:salinity; date, dataset)
-ecco_sea_ice_thickness     = Metadatum(:sea_ice_thickness; date, dataset)
-ecco_sea_ice_concentration = Metadatum(:sea_ice_concentration; date, dataset)
+ecco_temperature           = Metadatum(:temperature; date, dataset, dir = data_path)
+ecco_salinity              = Metadatum(:salinity; date, dataset, dir = data_path)
+ecco_sea_ice_thickness     = Metadatum(:sea_ice_thickness; date, dataset, dir = data_path)
+ecco_sea_ice_concentration = Metadatum(:sea_ice_concentration; date, dataset, dir = data_path)
 
 set!(ocean.model, T=ecco_temperature, S=ecco_salinity)
 set!(sea_ice.model, h=ecco_sea_ice_thickness, ℵ=ecco_sea_ice_concentration)
@@ -81,7 +83,8 @@ set!(sea_ice.model, h=ecco_sea_ice_thickness, ℵ=ecco_sea_ice_concentration)
 # We force the simulation with a JRA55-do atmospheric reanalysis.
 radiation  = Radiation(arch)
 atmosphere = JRA55PrescribedAtmosphere(arch; backend=JRA55NetCDFBackend(80),
-                                       include_rivers_and_icebergs = false)
+                                       include_rivers_and_icebergs = false,
+                                       dir = data_path)
 
 # ### Coupled simulation
 
@@ -157,7 +160,7 @@ sea_ice.output_writers[:surface] = JLD2Writer(sea_ice.model, sea_ice_outputs;
                                               overwrite_existing = true)
 
 # ### Ready to run
-
+#=
 # We are ready to press the big red button and run the simulation.
 run!(simulation)
 
@@ -292,3 +295,4 @@ end
 nothing #hide
 
 # ![](one_degree_global_ocean_surface.mp4)
+=#

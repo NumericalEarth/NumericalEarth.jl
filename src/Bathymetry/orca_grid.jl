@@ -85,8 +85,11 @@ function halo_fill_stagger(CC, FC, CF, FF, helper_grid, bcs, overlap)
     )
 end
 
+fold_topology(::ORCA1) = RightFaceFolded
+fold_topology(::ORCA2) = RightCenterFolded
+
 """
-    ORCAGrid(arch = CPU(), FT::DataType = Float64;
+    ORCATripolarGrid(arch = CPU(), FT::DataType = Float64;
              dataset,
              halo = (4, 4, 4),
              z = (-6000, 0),
@@ -134,7 +137,7 @@ Keyword Arguments
                           contains degenerate padding rows near Antarctica that are entirely land.
                           Removing them reduces memory usage and computation.
 """
-function ORCAGrid(arch = CPU(), FT::DataType = Float64;
+function ORCATripolarGrid(arch = CPU(), FT::DataType = Float64;
                   dataset = ORCA1(),
                   halo = (4, 4, 4),
                   z = (-6000, 0),
@@ -242,7 +245,7 @@ function ORCAGrid(arch = CPU(), FT::DataType = Float64;
     # Build the grid
     to_arch(data) = on_architecture(arch, map(FT, data))
 
-    underlying_grid = OrthogonalSphericalShellGrid{Periodic, RightFaceFolded, Bounded}(
+    underlying_grid = OrthogonalSphericalShellGrid{Periodic, fold_topology(dataset), Bounded}(
         arch,
         Nx, Ny, Nz,
         Hx, Hy, Hz,

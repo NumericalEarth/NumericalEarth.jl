@@ -47,7 +47,7 @@ export
     LinearlyTaperedPolarMask,
     DatasetRestoring,
     ocean_simulation,
-    ORCAGrid,
+    ORCATripolarGrid,
     sea_ice_simulation,
     atmosphere_simulation,
     sea_ice_dynamics,
