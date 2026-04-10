@@ -86,7 +86,7 @@ function add_omip_diagnostics!(simulation;
 
     tossq = tos * tos
     sossq = sos * sos
-    zossq = η * η
+    zossq = Field(η * η)
 
     surface_outputs = Dict{Symbol, Any}(
         :tos      => tos,
