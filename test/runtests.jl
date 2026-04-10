@@ -28,11 +28,12 @@ if filter_tests!(testsuite, args)
     delete!(testsuite, "test_distributed_utils")
     delete!(testsuite, "test_reactant")
 
-    # Remove CPU-only tests when
-    # testing on GPUs
+    # Remove CPU-only tests when testing on GPUs
+    # (test_orca_grid downloads large ORCA1 data; construction is CPU-only)
     if gpu_test
         delete!(testsuite, "test_veros")
         delete!(testsuite, "test_speedy_coupling")
+        delete!(testsuite, "test_orca_grid")
     end
 end
 
