@@ -117,12 +117,14 @@ jobs:
         run: mkdir -p "${TMPDIR}"
       - name: Clean Julia depot to free disk space
         run: |
-          echo "Disk before cleanup:"
-          df -h /__w || true
-          # Remove stale compiled artifacts and logs from the persistent workspace depot
-          rm -rf /__w/_temp/depot/compiled  /__w/_temp/depot/logs  /__w/_temp/depot/scratchspaces
-          echo "Disk after cleanup:"
-          df -h /__w || true
+          echo "=== Disk usage before cleanup ==="
+          df -h / || true
+          du -sh /__w/_temp/depot/* 2>/dev/null || true
+          # Remove stale compiled artifacts, logs, and scratchspaces
+          rm -rf /__w/_temp/depot/compiled /__w/_temp/depot/logs /__w/_temp/depot/scratchspaces
+          rm -rf /__w/_temp/depot/packages  # will be re-resolved during Pkg.test
+          echo "=== Disk usage after cleanup ==="
+          df -h / || true
       - name: Configure git safe directory
         run: git config --global --add safe.directory ${PWD}
       - name: Copy LocalPreferences
