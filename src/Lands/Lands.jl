@@ -3,6 +3,7 @@ module Lands
 export PrescribedLand
 
 using Oceananigans
+using Oceananigans.Utils: launch!
 using Oceananigans.Fields: Center, Face
 using Oceananigans.Grids: grid_name, architecture, prettysummary
 using Oceananigans.OutputReaders: FieldTimeSeries, update_field_time_series!, extract_field_time_series
