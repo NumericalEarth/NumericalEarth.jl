@@ -64,9 +64,20 @@ end
     @test haskey(fluxes, :times)
     @test haskey(fluxes, :start_date)
 
+    # Uniform hourly grid: length must match start_date:Hour(1):end_date
+    expected_Nt = length(OSPAPA_TEST_START:Hour(1):OSPAPA_TEST_END)
+    @test length(fluxes.times) == expected_Nt
+
+    # Times start at 0 and are uniformly spaced at 3600s intervals
+    @test fluxes.times[1] == 0.0
+    @test fluxes.times[end] ≈ (expected_Nt - 1) * 3600.0
+    @test all(diff(fluxes.times) .≈ 3600.0)
+
+    # start_date matches the requested start_date
+    @test fluxes.start_date == OSPAPA_TEST_START
+
     # Times are monotonically increasing
     @test issorted(fluxes.times)
-    @test length(fluxes.times) > 1
 
     # No NaN after gap filling (short window with no large gaps)
     @test all(isfinite, fluxes.Qnet)
