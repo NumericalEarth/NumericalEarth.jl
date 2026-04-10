@@ -275,7 +275,7 @@ jobs:
     needs:
       - cpu_tests
       - gpu_tests
-      - cds_downloading
+      - data_downloading
       - reactant
     runs-on: ubuntu-latest
     if: ${{ success() }}
