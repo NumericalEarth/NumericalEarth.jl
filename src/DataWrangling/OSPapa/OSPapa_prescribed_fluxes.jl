@@ -73,13 +73,43 @@ function OSPapaPrescribedFluxes(FT = Float64;
 
     close(ds)
 
-    # Fill small gaps
+    # Build a uniform hourly grid and map raw (possibly gappy) ERDDAP data onto it.
+    # Timestamps absent from ERDDAP become NaN so fill_gaps! operates on a truly
+    # uniform grid, giving correct time-weighted interpolation (Bug 1) and ensuring
+    # all returned arrays have the same length (Bug 2).
+    uniform_datetimes = start_date:Hour(1):end_date
+    N_uniform = length(uniform_datetimes)
+
+    dt_to_raw_idx = Dict(t => i for (i, t) in enumerate(times_datetime))
+
+    function expand_to_uniform(raw_data)
+        result = fill(NaN, N_uniform)
+        for (j, t) in enumerate(uniform_datetimes)
+            i = get(dt_to_raw_idx, t, nothing)
+            isnothing(i) || (result[j] = raw_data[i])
+        end
+        return result
+    end
+
+    Qlat  = expand_to_uniform(Qlat)
+    Qsen  = expand_to_uniform(Qsen)
+    Qnet  = expand_to_uniform(Qnet)
+    LWnet = expand_to_uniform(LWnet)
+    SWnet = expand_to_uniform(SWnet)
+    τx    = expand_to_uniform(τx)
+    τy    = expand_to_uniform(τy)
+    rain  = expand_to_uniform(rain)
+    evap  = expand_to_uniform(evap)
+    EMP   = expand_to_uniform(EMP)
+    Tsk   = expand_to_uniform(Tsk)
+
+    # fill_gaps! now runs on the uniform grid → time-correct interpolation
     for data in (Qlat, Qsen, Qnet, LWnet, SWnet, τx, τy, rain, evap, EMP, Tsk)
         fill_gaps!(data; max_gap=max_gap_hours)
     end
 
-    # Times in seconds relative to start_date
-    times = FT[Dates.value(t - times_datetime[1]) / 1000 for t in times_datetime]
+    # Times in seconds relative to start_date on the uniform grid
+    times = FT[Dates.value(t - start_date) / 1000 for t in uniform_datetimes]
 
     return (; Qnet = FT.(Qnet),
               Qlat = FT.(Qlat),
@@ -93,7 +123,7 @@ function OSPapaPrescribedFluxes(FT = Float64;
               EMP = FT.(EMP),
               Tsk = FT.(Tsk),
               times,
-              start_date = times_datetime[1])
+              start_date)
 end
 
 using Oceananigans.OutputReaders: interpolating_time_indices
