@@ -1,6 +1,6 @@
 module ECCO
 
-export ECCOMetadatum, ECCO_immersed_grid, adjusted_ECCO_tracers, initialize!
+export ECCOMetadatum, adjusted_ECCO_tracers, initialize!
 export ECCO2Monthly, ECCO4Monthly, ECCO2Daily
 export ECCOPrescribedAtmosphere
 
@@ -166,25 +166,27 @@ available_variables(::ECCO2Daily)   = ECCO2_dataset_variable_names
 available_variables(::ECCO4Monthly) = ECCO4_dataset_variable_names
 
 ECCO4_dataset_variable_names = Dict(
-    :temperature           => "THETA",
-    :salinity              => "SALT",
-    :u_velocity            => "EVEL",
-    :v_velocity            => "NVEL",
-    :free_surface          => "SSH",
-    :sea_ice_thickness     => "SIheff",
-    :sea_ice_concentration => "SIarea",
-    :net_heat_flux         => "oceQnet",
-    :sensible_heat_flux    => "EXFhs",
-    :latent_heat_flux      => "EXFhl",
-    :net_longwave          => "EXFlwnet",
-    :downwelling_shortwave => "oceQsw",
-    :downwelling_longwave  => "EXFlwdn",
-    :air_temperature       => "EXFatemp",
-    :air_specific_humidity => "EXFaqh",
-    :sea_level_pressure    => "EXFpress",
-    :eastward_wind         => "EXFewind",
-    :northward_wind        => "EXFnwind",
-    :rain_freshwater_flux  => "EXFpreci",
+    :temperature            => "THETA",
+    :salinity               => "SALT",
+    :u_velocity             => "EVEL",
+    :v_velocity             => "NVEL",
+    :free_surface           => "SSH",
+    :sea_ice_thickness      => "SIheff",
+    :sea_ice_concentration  => "SIarea",
+    :net_heat_flux          => "oceQnet",
+    :sensible_heat_flux     => "EXFhs",
+    :latent_heat_flux       => "EXFhl",
+    :net_longwave           => "EXFlwnet",
+    :downwelling_shortwave  => "oceQsw",
+    :downwelling_longwave   => "EXFlwdn",
+    :air_temperature        => "EXFatemp",
+    :air_specific_humidity  => "EXFaqh",
+    :sea_level_pressure     => "EXFpress",
+    :eastward_wind          => "EXFewind",
+    :northward_wind         => "EXFnwind",
+    :rain_freshwater_flux   => "EXFpreci",
+    :zonal_wind_stress      => "EXFtaue",
+    :meridional_wind_stress => "EXFtaun",
 )
 
 ECCO2_dataset_variable_names = Dict(
@@ -198,26 +200,28 @@ ECCO2_dataset_variable_names = Dict(
     :net_heat_flux         => "oceQnet",
 )
 
-ECCO_location = Dict(
-    :temperature           => (Center, Center, Center),
-    :salinity              => (Center, Center, Center),
-    :u_velocity            => (Face,   Center, Center),
-    :v_velocity            => (Center, Face,   Center),
-    :free_surface          => (Center, Center, Nothing),
-    :sea_ice_thickness     => (Center, Center, Nothing),
-    :sea_ice_concentration => (Center, Center, Nothing),
-    :net_heat_flux         => (Center, Center, Nothing),
-    :sensible_heat_flux    => (Center, Center, Nothing),
-    :latent_heat_flux      => (Center, Center, Nothing),
-    :net_longwave          => (Center, Center, Nothing),
-    :downwelling_longwave  => (Center, Center, Nothing),
-    :downwelling_shortwave => (Center, Center, Nothing),
-    :air_temperature       => (Center, Center, Nothing),
-    :air_specific_humidity => (Center, Center, Nothing),
-    :sea_level_pressure    => (Center, Center, Nothing),
-    :eastward_wind         => (Center, Center, Nothing),
-    :northward_wind        => (Center, Center, Nothing),
-    :rain_freshwater_flux  => (Center, Center, Nothing),
+ECCO_location = Dict( 
+    :temperature            => (Center, Center, Center),
+    :salinity               => (Center, Center, Center),
+    :u_velocity             => (Face,   Center, Center),
+    :v_velocity             => (Center, Face,   Center),
+    :free_surface           => (Center, Center, Nothing),
+    :sea_ice_thickness      => (Center, Center, Nothing),
+    :sea_ice_concentration  => (Center, Center, Nothing),
+    :net_heat_flux          => (Center, Center, Nothing),
+    :sensible_heat_flux     => (Center, Center, Nothing),
+    :latent_heat_flux       => (Center, Center, Nothing),
+    :net_longwave           => (Center, Center, Nothing),
+    :downwelling_longwave   => (Center, Center, Nothing),
+    :downwelling_shortwave  => (Center, Center, Nothing),
+    :air_temperature        => (Center, Center, Nothing),
+    :air_specific_humidity  => (Center, Center, Nothing),
+    :sea_level_pressure     => (Center, Center, Nothing),
+    :eastward_wind          => (Center, Center, Nothing),
+    :northward_wind         => (Center, Center, Nothing),
+    :rain_freshwater_flux   => (Center, Center, Nothing),
+    :zonal_wind_stress      => (Center, Center, Nothing),
+    :meridional_wind_stress => (Center, Center, Nothing),
 )
 
 const ECCOMetadata{D} = Metadata{<:ECCODataset, D}
