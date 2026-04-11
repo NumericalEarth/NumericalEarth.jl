@@ -77,10 +77,9 @@ end
 # And add it as a callback to the simulation.
 add_callback!(simulation, progress, IterationInterval(200))
 
-mht_OHC = Field(meridional_heat_transport(esm, OceanHeatContentTendencyMethod()))
-mht_vT = Field(meridional_heat_transport(esm, MeridionalHeatFluxMethod()))
+mht = Field(meridional_heat_transport(esm))
 
-ocean.output_writers[:mth] = JLD2Writer(ocean.model, (; mht_vT, mht_OHC);
+ocean.output_writers[:mth] = JLD2Writer(ocean.model, (; mht);
                                         schedule = TimeInterval(3hours),
                                         filename = "ocean_one_degree_mht",
                                         overwrite_existing = true)
@@ -91,26 +90,22 @@ run!(simulation)
 
 using Oceananigans
 
-mht_OHC = FieldTimeSeries("ocean_one_degree_mht.jld2", "mht_OHC"; backend = OnDisk())
-mht_vT  = FieldTimeSeries("ocean_one_degree_mht.jld2", "mht_vT"; backend = OnDisk())
+mht  = FieldTimeSeries("ocean_one_degree_mht.jld2", "mht"; backend = OnDisk())
 
-times = mht_OHC.times
+times = mht.times
 Nt = length(times)
 
-grid = mht_OHC.grid
-Ny = size(mht_OHC.grid, 2)
+grid = mht.grid
+Ny = size(mht.grid, 2)
 
-mht_OHC_mean = deepcopy(mht_OHC[1][1, :, 1])
-mht_vT_mean  = deepcopy(mht_vT[1][1, :, 1])
+mht_mean  = deepcopy(mht[1][1, :, 1])
 
 for iter in 1:Nt
     @info "iteration $iter out of $Nt"
-    mht_OHC_mean += mht_OHC[iter][1, :, 1]
-    mht_vT_mean  +=  mht_vT[iter][1, :, 1]
+    mht_mean  +=  mht[iter][1, :, 1]
 end
 
-@. mht_OHC_mean = mht_OHC_mean / Nt
-@. mht_vT_mean = mht_vT_mean / Nt
+@. mht_mean = mht_mean / Nt
 
 using CairoMakie
 
@@ -119,7 +114,6 @@ ax = Axis(fig[1, 1], xlabel="latitude (deg)", ylabel="MHT (PW)")
 
 φ = φnodes(grid, Face())
 
-lines!(ax, φ, mht_OHC_mean[1:Ny+1] / 1e15, linewidth=4)
-lines!(ax, φ, mht_vT_mean[1:Ny+1]  / 1e15, linewidth=4)
+lines!(ax, φ, mht_mean[1:Ny+1]  / 1e15, linewidth=4)
 
 save("mht.png", fig)
