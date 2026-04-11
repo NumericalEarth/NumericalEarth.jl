@@ -20,8 +20,12 @@ delete!(testsuite, "test_distributed_utils")
 
 gpu_test = parse(Bool, get(ENV, "GPU_TEST", "false"))
 
-specialized_tests = Set(["test_downloading", "test_cds_downloading",
-                         "test_glorys_downloading", "test_reactant"])
+specialized_tests = Set(["test_cds_downloading",
+                         "test_glorys_downloading",
+                         "test_ecco_downloading",
+                         "test_jra55_en4_downloading",
+                         "test_downloading",
+                         "test_reactant"])
 
 # Determine if we're running only specialized tests (which handle their own setup)
 requested_tests = filter(a -> !startswith(a, "-"), ARGS)
@@ -31,9 +35,11 @@ running_specialized_only = !isempty(requested_tests) &&
 if filter_tests!(testsuite, args)
     if !running_specialized_only
         # Remove specialized tests that are treated separately
-        delete!(testsuite, "test_downloading")
         delete!(testsuite, "test_cds_downloading")
         delete!(testsuite, "test_glorys_downloading")
+        delete!(testsuite, "test_ecco_downloading")
+        delete!(testsuite, "test_jra55_en4_downloading")
+        delete!(testsuite, "test_downloading")
         delete!(testsuite, "test_distributed_utils")
         delete!(testsuite, "test_reactant")
     end
