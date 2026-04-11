@@ -176,6 +176,44 @@ end
             @test turbulent_fluxes.water_vapor[1, 1, 1]   ≈ Jᵛ
         end
 
+        @info " Testing surface fluxes with land component..."
+
+        # Test that fluxes work with and without land
+        ocean_no_land = ocean_simulation(grid;
+                                         momentum_advection = nothing,
+                                         tracer_advection = nothing,
+                                         closure = nothing,
+                                         bottom_drag_coefficient = 0)
+
+        set!(ocean_no_land.model, T = 15, S = 30)
+        model_no_land = OceanOnlyModel(ocean_no_land; atmosphere)
+
+        ocean_with_land = ocean_simulation(grid;
+                                           momentum_advection = nothing,
+                                           tracer_advection = nothing,
+                                           closure = nothing,
+                                           bottom_drag_coefficient = 0)
+
+        set!(ocean_with_land.model, T = 15, S = 30)
+        land = JRA55PrescribedLand(arch; backend = InMemory())
+        model_with_land = OceanOnlyModel(ocean_with_land; atmosphere, land)
+
+        # Verify land exchanger is wired up
+        @test isnothing(model_no_land.interfaces.exchanger.land)
+        @test !isnothing(model_with_land.interfaces.exchanger.land)
+        @test model_with_land.land === land
+
+        # Test PrescribedLand display methods
+        @test summary(land) isa String
+        @test contains(sprint(show, land), "PrescribedLand")
+        @test contains(sprint(show, land), "freshwater_flux")
+
+        # Time-step without land exercises get_land_freshwater_flux(::Nothing) path
+        time_step!(model_no_land, 1)
+
+        # Time-step with land exercises interpolate_land_state! kernel
+        time_step!(model_with_land, 1)
+
         @info " Testing FreezingLimitedOceanTemperature..."
 
         grid = LatitudeLongitudeGrid(arch;
