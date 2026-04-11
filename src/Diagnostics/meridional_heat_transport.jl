@@ -150,7 +150,8 @@ Integral of BinaryOperation at (Center, Face, Center) over dims (1, 3)
     └── grid: 4×5×2 RectilinearGrid{Float64, Periodic, Bounded, Bounded} on CPU with 3×3×2 halo
 ```
 """
-function meridional_heat_transport(esm::EarthSystemModel, method=MeridionalHeatFluxMethod(); reference_temperature=0)
+function meridional_heat_transport(esm::EarthSystemModel, method=MeridionalHeatFluxMethod();
+                                   reference_temperature=0)
 
     grid = esm.ocean.model.grid
 
