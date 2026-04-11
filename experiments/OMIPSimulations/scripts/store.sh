@@ -104,6 +104,10 @@ mkdir -p "$DEST_DIR"
 
 shopt -s nullglob
 
+# Infinite loop
+while true
+do
+
 # ------------------------------------------------------------------
 # Part files: *_part<N>.jld2
 # The highest N per filename group is still being written, so it is
@@ -124,6 +128,7 @@ done
 
 moved_parts=0
 kept_parts=0
+
 for f in "$RUN_DIR"/*_part[0-9]*.jld2; do
     base=$(basename "$f")
     tail="${base##*_part}"
@@ -180,4 +185,10 @@ done
 
 echo "Done. Moved ${moved_parts} part file(s) (kept ${kept_parts})," \
      "moved ${moved_ckpts} checkpoint file(s) (kept ${kept_ckpts})."
+
+sleep 3600 # sleep for 1 hour
+
+echo "Sleeping for 1 hour"
+
+done
 EOF
