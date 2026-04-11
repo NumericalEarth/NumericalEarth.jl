@@ -30,7 +30,7 @@ using ClimaSeaIce.SeaIceThermodynamics: LinearLiquidus, melting_temperature
 
     @testset "ThreeEquationHeatFlux construction" begin
         flux = ThreeEquationHeatFlux()
-        @test flux.heat_transfer_coefficient == 0.0095  # Default from Hieronymus et al. (2021)
+        @test flux.heat_transfer_coefficient == 0.0095  # Default from Shi et al. (2021)
         @test flux.salt_transfer_coefficient ≈ 0.0095 / 35  # R = 35
 
         flux2 = ThreeEquationHeatFlux(heat_transfer_coefficient = 0.01,
