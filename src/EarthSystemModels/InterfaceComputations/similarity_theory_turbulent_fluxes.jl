@@ -13,7 +13,7 @@ import Thermodynamics.Parameters: Rv_over_Rd
 ##### Bulk turbulent fluxes based on similarity theory
 #####
 
-struct SimilarityTheoryFluxes{FT, UF, R, B, S}
+struct SimilarityTheoryFluxes{FT, UF, R, B, S} <: AbstractTurbulentFluxFormulation{S}
     von_karman_constant :: FT        # parameter
     turbulent_prandtl_number :: FT   # parameter
     gustiness_parameter :: FT        # bulk velocity parameter
