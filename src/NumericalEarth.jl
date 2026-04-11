@@ -26,6 +26,10 @@ export
     BulkTemperature,
     PrescribedAtmosphere,
     JRA55PrescribedAtmosphere,
+    OSPapaPrescribedAtmosphere,
+    OSPapaPrescribedFluxes,
+    OSPapaPrescribedFluxBoundaryConditions,
+    OSPapaHourly,
     JRA55NetCDFBackend,
     regrid_bathymetry,
     Metadata,
@@ -106,7 +110,7 @@ include("Bathymetry/Bathymetry.jl")
 include("Diagnostics/Diagnostics.jl")
 
 using .DataWrangling
-using .DataWrangling: ETOPO, ECCO, GLORYS, EN4, WOA, JRA55
+using .DataWrangling: ETOPO, ECCO, GLORYS, EN4, WOA, JRA55, OSPapa
 using .Bathymetry
 using .InitialConditions
 using .EarthSystemModels
@@ -125,6 +129,7 @@ using NumericalEarth.DataWrangling.ORCA
 using NumericalEarth.DataWrangling.WOA
 using NumericalEarth.DataWrangling.JRA55
 using NumericalEarth.DataWrangling.JRA55: JRA55NetCDFBackend
+using NumericalEarth.DataWrangling.OSPapa
 
 using PrecompileTools: @setup_workload, @compile_workload
 

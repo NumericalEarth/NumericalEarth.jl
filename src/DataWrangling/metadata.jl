@@ -361,6 +361,7 @@ struct InverseSign end
 
 struct GramPerKilogramMinus35 end # Salinity anomaly
 struct MilliliterPerLiter end # Sometimes for disssolved_oxygen
+struct CentimetersPerSecond end
 
 # Fallback
 conversion_units(metadatum) = nothing
