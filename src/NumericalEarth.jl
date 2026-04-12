@@ -62,7 +62,8 @@ export
     net_ocean_salinity_flux, sea_ice_ocean_salinity_flux, atmosphere_ocean_salinity_flux,
     net_ocean_freshwater_flux, sea_ice_ocean_freshwater_flux, atmosphere_ocean_freshwater_flux,
     location,
-    native_grid
+    native_grid,
+    meridional_heat_transport
 
 using Oceananigans
 import Oceananigans: location
