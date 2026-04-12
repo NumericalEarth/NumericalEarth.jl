@@ -52,6 +52,7 @@ if filter_tests!(testsuite, args)
         delete!(testsuite, "test_orca_grid")
         delete!(testsuite, "test_ecco_atmosphere")
         delete!(testsuite, "test_ecco2_daily")
+        delete!(testsuite, "test_ecco2_monthly")
     end
 end
 
@@ -124,9 +125,13 @@ function __init__()
     #####
 
     # Download few datasets for tests
-    # Skip ECCO2Daily on GPU — files are too large for the GPU runner's disk
-    gpu_test_datasets = filter(d -> !(d isa ECCO2Daily), test_datasets)
-    active_datasets = gpu_test ? gpu_test_datasets : test_datasets
+    # Skip ECCO2 datasets on GPU — their 1440x720x50 files (~450 MB each)
+    # exceed the GPU runner's available disk space
+    active_datasets = if gpu_test
+        filter(d -> !(d isa Union{ECCO2Daily, ECCO2Monthly, ECCO2DarwinMonthly}), test_datasets)
+    else
+        test_datasets
+    end
 
     for dataset in active_datasets
         time_resolution = dataset isa ECCO2Daily ? Day(1) : Month(1)
