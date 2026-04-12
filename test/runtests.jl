@@ -50,6 +50,7 @@ if filter_tests!(testsuite, args)
         delete!(testsuite, "test_veros")
         delete!(testsuite, "test_speedy_coupling")
         delete!(testsuite, "test_orca_grid")
+        delete!(testsuite, "test_ecco_atmosphere")
     end
 end
 
@@ -99,19 +100,21 @@ function __init__()
     end
 
     #####
-    ##### Download ECCO4 atmosphere data (for test_ecco_atmosphere)
+    ##### Download ECCO4 atmosphere data (for test_ecco_atmosphere, CPU only)
     #####
 
-    ecco4_atmos_dataset = ECCO4Monthly()
-    ecco4_atmos_start = DateTime(1992, 1, 1)
-    ecco4_atmos_end   = DateTime(1992, 3, 1)
+    if !gpu_test
+        ecco4_atmos_dataset = ECCO4Monthly()
+        ecco4_atmos_start = DateTime(1992, 1, 1)
+        ecco4_atmos_end   = DateTime(1992, 3, 1)
 
-    for name in NumericalEarth.ECCO.ECCO_atmosphere_variables
-        md = Metadata(name; dataset=ecco4_atmos_dataset,
-                      start_date=ecco4_atmos_start,
-                      end_date=ecco4_atmos_end)
-        download_dataset_with_fallback(metadata_path(md); dataset_name="ECCO4 atmosphere $name") do
-            download_dataset(md)
+        for name in NumericalEarth.ECCO.ECCO_atmosphere_variables
+            md = Metadata(name; dataset=ecco4_atmos_dataset,
+                          start_date=ecco4_atmos_start,
+                          end_date=ecco4_atmos_end)
+            download_dataset_with_fallback(metadata_path(md); dataset_name="ECCO4 atmosphere $name") do
+                download_dataset(md)
+            end
         end
     end
 
