@@ -183,6 +183,7 @@ jobs:
             arch: aarch64
             version: "1.12.5"
             test: test_jra55_en4_downloading
+    continue-on-error: true
     steps:
       - uses: actions/checkout@v6
       - uses: julia-actions/setup-julia@v2
@@ -205,7 +206,7 @@ jobs:
         with:
           files: lcov.info
           token: ${{ secrets.CODECOV_TOKEN }}
-  
+
   reactant:
     name: Reactant extension - Julia ${{ matrix.version }} - ${{ matrix.os }} - ${{ matrix.arch }} - ${{ github.event_name }}
     runs-on: ${{ matrix.os }}

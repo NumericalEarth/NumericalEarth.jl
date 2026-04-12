@@ -99,6 +99,23 @@ function __init__()
     end
 
     #####
+    ##### Download ECCO4 atmosphere data (for test_ecco_atmosphere)
+    #####
+
+    ecco4_atmos_dataset = ECCO4Monthly()
+    ecco4_atmos_start = DateTime(1992, 1, 1)
+    ecco4_atmos_end   = DateTime(1992, 3, 1)
+
+    for name in NumericalEarth.ECCO.ECCO_atmosphere_variables
+        md = Metadata(name; dataset=ecco4_atmos_dataset,
+                      start_date=ecco4_atmos_start,
+                      end_date=ecco4_atmos_end)
+        download_dataset_with_fallback(metadata_path(md); dataset_name="ECCO4 atmosphere $name") do
+            download_dataset(md)
+        end
+    end
+
+    #####
     ##### Download Dataset data
     #####
 
