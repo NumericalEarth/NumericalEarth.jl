@@ -46,8 +46,6 @@ function ERA5PrescribedAtmosphere(architecture::AbstractArchitecture = CPU(), FT
 
     kw = (; time_indices_in_memory, time_indexing)
 
-    kw = (; time_indices_in_memory, time_indexing)
-
     function era5_field_time_series(variable_name)
         native_dates = all_dates(dataset, variable_name)
         dates = compute_native_date_range(native_dates, start_date, end_date)
@@ -58,7 +56,7 @@ function ERA5PrescribedAtmosphere(architecture::AbstractArchitecture = CPU(), FT
     ua   = era5_field_time_series(:eastward_velocity)
     va   = era5_field_time_series(:northward_velocity)
     Ta   = era5_field_time_series(:temperature)
-    qa   = era5_field_time_series(:dewpoint_temperature)  # ERA5 archives dewpoint, not specific humidity
+    qa   = era5_field_time_series(:specific_humidity)
     pa   = era5_field_time_series(:surface_pressure)
     Fra  = era5_field_time_series(:total_precipitation)
     ℐꜜˡʷ = era5_field_time_series(:downwelling_longwave_radiation)
