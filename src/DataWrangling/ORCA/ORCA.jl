@@ -61,7 +61,7 @@ function metadata_url(metadatum::ORCA1Metadatum)
     end
 end
 
-function metadata_filename(::ORCA1, name, date, bounding_box)
+function metadata_filename(::ORCA1, name, date, region)
     if name == :mesh_mask
         return "eORCA1.2_mesh_mask.nc"
     elseif name == :bottom_height
