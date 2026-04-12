@@ -1,11 +1,11 @@
 using Oceananigans.TimeSteppers: SplitRungeKuttaTimeStepper, QuasiAdamsBashforth2TimeStepper
 using ..EarthSystemModels: EarthSystemModel, reference_density, heat_capacity
 
-struct OceanHeatContentTendencyMethod end
-struct MeridionalHeatFluxMethod end
+struct MeridionalFluxMethod end
+struct TendencyMethod end
 
 """
-    meridional_heat_transport(esm::EarthSystemModel, MeridionalHeatFluxMethod();
+    meridional_heat_transport(esm::EarthSystemModel, MeridionalFluxMethod();
                               reference_temperature = 0)
 
 Return the meridional heat transport for the coupled `esm::EarthSystemModel` using either
@@ -22,14 +22,14 @@ Arguments
 
 * `esm`: An EarthSystemModel.
 
-* The method for the computation. Available options are: `MeridionalHeatFluxMethod()` (default)
-  and `OceanHeatContentTendencyMethod()`.
+* The method for the computation. Available options are: `MeridionalFluxMethod()` (default)
+  and `TendencyMethod()`.
 
-  `MeridionalHeatFluxMethod()` computes the meridional heat transport directly by summing
-  the meridional heat flux; `OceanHeatContentTendencyMethod()` computes the meridional heat
+  `MeridionalFluxMethod()` computes the meridional heat transport directly by summing
+  the meridional heat flux; `TendencyMethod()` computes the meridional heat
   transport indirectly using the ocean heat content.
 
-  1. For `MeridionalHeatFluxMethod()`, the meridional heat transport is computed via:
+  1. For `MeridionalFluxMethod()`, the meridional heat transport is computed via:
 
      ```math
      \\mathrm{MHT} ≡ ρᵒᶜ cᵒᶜ ∫  v (T - T_{\\rm ref}) \\, \\mathrm{d}x \\, \\mathrm{d}z
@@ -38,7 +38,7 @@ Arguments
      Above, ``T_{\\rm ref}`` is a reference temperature and ``ρᵒᶜ`` and ``cᵒᶜ`` are the
      ocean reference density and specific heat capacity respectively.
 
-  2. For `OceanHeatContentTendencyMethod()` we have:
+  2. For `TendencyMethod()` we have:
 
      Let ``T`` be three-dimensional (potential) temperature, ``ρᵒᶜ`` the ocean reference
      density, ``cᵒᶜ`` the specific heat capacity, ``H`` the resting depth, and ``η`` the
@@ -108,7 +108,7 @@ Arguments
 Keyword Arguments
 =================
 
-* `reference_temperature`: The reference temperature (in ᵒC) used for `MeridionalHeatFluxMethod()`; default: 0 ᵒC.
+* `reference_temperature`: The reference temperature (in ᵒC) used for `MeridionalFluxMethod()`; default: 0 ᵒC.
 
   !!! info "Reference temperature"
 
@@ -150,7 +150,7 @@ Integral of BinaryOperation at (Center, Face, Center) over dims (1, 3)
     └── grid: 4×5×2 RectilinearGrid{Float64, Periodic, Bounded, Bounded} on CPU with 3×3×2 halo
 ```
 """
-function meridional_heat_transport(esm::EarthSystemModel, method=MeridionalHeatFluxMethod();
+function meridional_heat_transport(esm::EarthSystemModel, method=MeridionalFluxMethod();
                                    reference_temperature=0)
 
     grid = esm.ocean.model.grid
@@ -160,19 +160,19 @@ function meridional_heat_transport(esm::EarthSystemModel, method=MeridionalHeatF
     grid isa OrthogonalSphericalShellGrid &&
         throw(ArgumentError("meridional_heat_transport diagnostic does not work on OrthogonalSphericalShellGrid at the moment; use LatitudeLongitudeGrid."))
 
-    if method isa MeridionalHeatFluxMethod
+    if method isa MeridionalFluxMethod
         FT = eltype(esm)
         reference_temperature = convert(FT, reference_temperature)
         return meridional_heat_transport_via_meridional_heat_flux(esm; reference_temperature)
-    elseif method isa OceanHeatContentTendencyMethod
+    elseif method isa TendencyMethod
         @warn """
-        Computing the meridional heat transport via the OceanHeatContentTendencyMethod
+        Computing the meridional heat transport via the TendencyMethod
                  does not ensure the heat budget is closed!
-                 If you require a closed heat budget, then use the MeridionalHeatFluxMethod.
+                 If you require a closed heat budget, then use the MeridionalFluxMethod.
         """
         return meridional_heat_transport_via_ocean_heat_content(esm)
     else
-        throw(ArgumentError("Unknown method $(method); choose either MeridionalHeatFluxMethod() or OceanHeatContentTendencyMethod()."))
+        throw(ArgumentError("Unknown method $(method); choose either MeridionalFluxMethod() or TendencyMethod()."))
     end
 end
 
