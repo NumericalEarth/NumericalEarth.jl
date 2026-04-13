@@ -49,7 +49,7 @@ for (n, DATASET) in enumerate(orca_datasets)
         @test minimum(underlying.λᶜᶜᵃ.parent) < -179
         @test maximum(underlying.λᶜᶜᵃ.parent) > 179
         @test minimum(underlying.φᶜᶜᵃ.parent) < -70
-        @test maximum(underlying.φᶜᶜᵃ.parent) > 80
+        @test maximum(underlying.φᶜᶜᵃ.parent) > 87
     end
 
     @testset "ORCATripolarGrid ($name) without bathymetry on $(arch)" for arch in test_architectures
