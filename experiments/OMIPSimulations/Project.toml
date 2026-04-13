@@ -1,7 +1,7 @@
 name = "OMIPSimulations"
 uuid = "5ac3a3a1-7b1f-4d7e-9c5e-1e6c9d9b2a4d"
-authors = ["NumericalEarth contributors"]
 version = "0.1.0"
+authors = ["NumericalEarth contributors"]
 
 [deps]
 CUDA = "052768ef-5323-5732-b1bb-66c8b64840ba"
@@ -21,4 +21,6 @@ WorldOceanAtlasTools = "04f20302-f1b9-11e8-29d9-7d841cb0a64a"
 NumericalEarth = {path = "../.."}
 
 [compat]
+ConservativeRegridding = "0.2.0"
+Oceananigans = "0.106.5"
 julia = "1.10"

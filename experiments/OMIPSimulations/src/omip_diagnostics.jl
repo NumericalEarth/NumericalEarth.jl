@@ -33,12 +33,10 @@ function add_omip_diagnostics!(simulation;
                                field_mean_interval = 5days,
                                surface_averaging_interval = 5days,
                                field_averaging_interval = 15days,
-                               checkpoint_interval = 360days,
+                               checkpoint_interval = 720days,
                                output_dir = ".",
                                filename_prefix = "omip",
                                file_splitting_interval = 360days)
-
-    file_splitting = TimeInterval(file_splitting_interval)
 
     model    = simulation.model
     ocean    = model.ocean
@@ -124,7 +122,7 @@ function add_omip_diagnostics!(simulation;
                                                      schedule = AveragedTimeInterval(surface_averaging_interval),
                                                      dir = output_dir,
                                                      filename = filename_prefix * "_surface",
-                                                     file_splitting,
+                                                     file_splitting = TimeInterval(file_splitting_interval),
                                                      overwrite_existing = true)
 
     # 3-D fields (including buoyancy)
@@ -147,7 +145,7 @@ function add_omip_diagnostics!(simulation;
                                                     schedule = AveragedTimeInterval(field_averaging_interval),
                                                     dir = output_dir,
                                                     filename = filename_prefix * "_fields",
-                                                    file_splitting,
+                                                    file_splitting = TimeInterval(file_splitting_interval),
                                                     overwrite_existing = true)
 
     # Global means and horizontal-mean depth profiles for T, S, b
@@ -164,7 +162,7 @@ function add_omip_diagnostics!(simulation;
                                                       schedule = AveragedTimeInterval(field_mean_interval),
                                                       dir = output_dir,
                                                       filename = filename_prefix * "_averages",
-                                                      file_splitting,
+                                                      file_splitting = TimeInterval(file_splitting_interval),
                                                       overwrite_existing = true)
 
     # Checkpointer (drives `run!(sim; pickup=true)`)
