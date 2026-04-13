@@ -120,9 +120,13 @@ jobs:
           echo "=== Disk usage before cleanup ==="
           df -h / || true
           du -sh /__w/_temp/depot/* 2>/dev/null || true
-          # Remove stale compiled artifacts, logs, and scratchspaces
+          # Remove stale compiled artifacts, logs, scratchspaces, and packages
           rm -rf /__w/_temp/depot/compiled /__w/_temp/depot/logs /__w/_temp/depot/scratchspaces
           rm -rf /__w/_temp/depot/packages  # will be re-resolved during Pkg.test
+          # Remove conda environments and pip caches that may persist
+          rm -rf /__w/_temp/depot/conda /__w/_temp/.CondaPkg
+          # Remove old artifacts not referenced by current manifest
+          rm -rf /__w/_temp/depot/artifacts
           echo "=== Disk usage after cleanup ==="
           df -h / || true
       - name: Configure git safe directory
