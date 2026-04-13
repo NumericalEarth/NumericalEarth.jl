@@ -125,8 +125,6 @@ jobs:
           rm -rf /__w/_temp/depot/packages  # will be re-resolved during Pkg.test
           # Remove conda environments and pip caches that may persist
           rm -rf /__w/_temp/depot/conda /__w/_temp/.CondaPkg
-          # Remove old artifacts not referenced by current manifest
-          rm -rf /__w/_temp/depot/artifacts
           echo "=== Disk usage after cleanup ==="
           df -h / || true
       - name: Configure git safe directory
