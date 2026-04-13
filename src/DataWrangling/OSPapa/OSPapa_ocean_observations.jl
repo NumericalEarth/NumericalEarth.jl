@@ -243,13 +243,13 @@ end
 #####
 
 """
-    _vertical_interpolate(z_src, data_src, z_dst)
+    _vertical_interpolate(metadata::OSPapaMetadatum, z_src, data_src, z_dst)
 
 Linearly interpolate a 1D profile from `z_src` centers onto `z_dst` levels.
 NaN values in `data_src` are skipped. Values outside the source range
 are extrapolated from the nearest valid value.
 """
-function _vertical_interpolate(z_src, data_src, z_dst)
+function _vertical_interpolate(::OSPapaMetadatum, z_src, data_src, z_dst)
     result = similar(z_dst, Float64)
 
     # Filter out NaN values
@@ -297,7 +297,7 @@ function set!(target_field::Field, metadata::OSPapaMetadatum; kw...)
     z_dst = collect(znodes(target_field.grid, Center()))
 
     # Interpolate vertically
-    interpolated = _vertical_interpolate(z_src, data_profile, z_dst)
+    interpolated = _vertical_interpolate(metadata, z_src, data_profile, z_dst)
 
     if metadata.name in (:eastward_velocity, :northward_velocity)
         interpolated ./= 100 # cm/s → m/s
