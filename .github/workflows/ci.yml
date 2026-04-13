@@ -287,6 +287,21 @@ jobs:
       - data_downloading
       - reactant
     runs-on: ubuntu-latest
-    if: ${{ success() }}
+    if: ${{ always() }}
     steps:
-      - run: echo "All CI jobs passed successfully."
+      - run: |
+          echo "CPU tests: ${{ needs.cpu_tests.result }}"
+          echo "GPU tests: ${{ needs.gpu_tests.result }}"
+          echo "Reactant: ${{ needs.reactant.result }}"
+          echo "Data downloading: ${{ needs.data_downloading.result }}"
+
+          # Fail if CPU tests or Reactant failed (the required jobs)
+          if [[ "${{ needs.cpu_tests.result }}" != "success" ]]; then
+            echo "::error::CPU tests did not pass"
+            exit 1
+          fi
+          if [[ "${{ needs.reactant.result }}" != "success" ]]; then
+            echo "::error::Reactant tests did not pass"
+            exit 1
+          fi
+          echo "All required CI jobs passed."
