@@ -120,11 +120,11 @@ jobs:
           echo "=== Disk usage before cleanup ==="
           df -h / || true
           du -sh /__w/_temp/depot/* 2>/dev/null || true
-          # Remove stale compiled artifacts, logs, scratchspaces, and packages
-          rm -rf /__w/_temp/depot/compiled /__w/_temp/depot/logs /__w/_temp/depot/scratchspaces
-          rm -rf /__w/_temp/depot/packages  # will be re-resolved during Pkg.test
-          # Remove conda environments and pip caches that may persist
-          rm -rf /__w/_temp/depot/conda /__w/_temp/.CondaPkg
+          # Remove the entire temp depot to reclaim disk space.
+          # Packages and artifacts will be re-resolved from the Docker
+          # image's pre-installed depot during Pkg.test.
+          rm -rf /__w/_temp/depot
+          mkdir -p /__w/_temp/depot
           echo "=== Disk usage after cleanup ==="
           df -h / || true
       - name: Configure git safe directory
