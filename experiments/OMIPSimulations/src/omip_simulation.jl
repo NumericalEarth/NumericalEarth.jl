@@ -207,6 +207,10 @@ end
 ##### ORCA builder
 #####
 
+config_momentum_advection(::Val{:orca}) = VectorInvariant()
+config_momentum_advection(::Val{:halfdegree}) = WENOVectorInvariant(order=5)
+config_momentum_advection(::Val{:tenthdegree}) = WENOVectorInvariant()
+
 function build_ocean(config, arch;
                      Nz, depth, κ_skew, κ_symmetric,
                      restoring_dir, piston_velocity,
@@ -218,7 +222,7 @@ function build_ocean(config, arch;
 
     closure = omip_closure(; κ_skew, κ_symmetric, biharmonic_timescale)
     coriolis = HydrostaticSphericalCoriolis(scheme = Oceananigans.Coriolis.EnstrophyConserving())
-    momentum_advection = config == Val(:tenthdegree) ? WENOVectorInvariant() : WENOVectorInvariant(order=5)
+    momentum_advection = config_momentum_advection(config)
 
     ocean = ocean_simulation(grid;
                              Δt = 1minutes,
