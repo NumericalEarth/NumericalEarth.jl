@@ -75,9 +75,6 @@ function OSPapaPrescribedFluxes(FT = Float64;
     close(ds)
 
     # Build a uniform hourly grid and map raw (possibly gappy) ERDDAP data onto it.
-    # Timestamps absent from ERDDAP become NaN so fill_gaps! operates on a truly
-    # uniform grid, giving correct time-weighted interpolation (Bug 1) and ensuring
-    # all returned arrays have the same length (Bug 2).
     uniform_datetimes = start_date:Hour(1):end_date
     N_uniform = length(uniform_datetimes)
 
@@ -104,7 +101,6 @@ function OSPapaPrescribedFluxes(FT = Float64;
     EMP   = expand_to_uniform(EMP)
     Tsk   = expand_to_uniform(Tsk)
 
-    # fill_gaps! now runs on the uniform grid → time-correct interpolation
     for data in (Qlat, Qsen, Qnet, LWnet, SWnet, τx, τy, rain, evap, EMP, Tsk)
         fill_gaps!(data; max_gap=max_gap_hours)
     end
@@ -206,7 +202,6 @@ function OSPapaPrescribedFluxBoundaryConditions(fluxes, architecture=CPU();
     parent(EMP_fts) .= on_arch(reshape(fluxes.EMP, 1, 1, 1, Nt))
 
     # Momentum: ERDDAP TAUX > 0 = eastward stress ON ocean (INTO domain)
-    # Oceananigans: positive top flux = OUT of domain → negate
     @inline function τx_bc(i, j, grid, clock, model_fields, p)
         return -p.τx[1, 1, 1, Time(clock.time)] / p.ρ₀ + u_correction(i, j, grid, clock, model_fields, p)
     end
@@ -221,7 +216,6 @@ function OSPapaPrescribedFluxBoundaryConditions(fluxes, architecture=CPU();
     end
 
     # Salinity: EMP (mm/hr ≡ kg/m²/hr) > 0 = net evaporation → salinity should increase
-    # Jˢ = -S * EMP_ms (negative top flux = INTO domain = S increases)
     @inline function Jˢ_bc(i, j, grid, clock, model_fields, p)
         EMP_ms = p.EMP[1, 1, 1, Time(clock.time)] / (p.ρ₀ * 3600)
         S = model_fields.S[i, j, grid.Nz]

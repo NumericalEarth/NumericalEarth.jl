@@ -241,9 +241,6 @@ end
 #####
 ##### Custom set! for single-column vertical interpolation
 #####
-##### Oceananigans' interpolate! does not support Flat topologies,
-##### so we manually interpolate in the vertical direction.
-#####
 
 """
     _vertical_interpolate(z_src, data_src, z_dst)
