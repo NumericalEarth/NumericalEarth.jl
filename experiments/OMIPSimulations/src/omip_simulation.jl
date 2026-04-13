@@ -57,9 +57,10 @@ function omip_simulation(config::Symbol = :halfdegree;
                          Δt = 30minutes,
                          stop_time = Inf,
                          diagnostics = true,
-                         surface_averaging_interval = 15days,
+                         field_mean_interval = 5days,
+                         surface_averaging_interval = 5days,
                          field_averaging_interval = 15days,
-                         checkpoint_interval = 90days,
+                         checkpoint_interval = 360days,
                          output_dir = ".",
                          filename_prefix = string(config),
                          file_splitting_interval = 360days)
@@ -98,6 +99,7 @@ function omip_simulation(config::Symbol = :halfdegree;
         add_omip_diagnostics!(simulation;
                               surface_averaging_interval,
                               field_averaging_interval,
+                              field_mean_interval,
                               checkpoint_interval,
                               output_dir,
                               filename_prefix,

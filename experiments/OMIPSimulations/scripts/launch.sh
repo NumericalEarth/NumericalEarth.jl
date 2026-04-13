@@ -106,19 +106,19 @@ using Oceananigans.Units
 using CUDA
 
 sim = omip_simulation(:halfdegree;
-                      arch = CPU(),
+                      arch = GPU(),
                       Nz = 70,
                       depth = 5500,
                       Δt = 20minutes,
                       output_dir = "halfdegree_run",
                       filename_prefix = "halfdegree")
 
-sim.stop_time = 91days
+sim.stop_time = 721days
 run!(sim)
 
-sim.Δt = 30minutes
+sim.Δt = 25minutes
 sim.stop_time = 300 * 365days
-run!(sim; pickup = true)'
+run!(sim)'
         ;;
     orca)
         JULIA_EXPR='using OMIPSimulations
