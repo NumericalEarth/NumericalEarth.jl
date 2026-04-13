@@ -3,6 +3,7 @@ include("runtests_setup.jl")
 using NumericalEarth.OSPapa
 using NumericalEarth.Atmospheres: PrescribedAtmosphere
 using Oceananigans.BoundaryConditions: BoundaryCondition, Flux
+using Oceananigans.Units: minutes
 using CUDA: @allowscalar
 
 const OSPAPA_TEST_START = DateTime(2012, 10, 1)
