@@ -24,6 +24,7 @@ using Oceananigans.Units: Time
 using KernelAbstractions: @kernel, @index
 
 import Oceananigans.Simulations: initialize!
+import Oceananigans.Architectures: on_architecture
 
 #####
 ##### Container for organizing information related to fluxes
@@ -84,6 +85,32 @@ end
 
 AtmosphereOceanFluxes(::Nothing) = AtmosphereOceanFluxes{ZeroField}(ntuple(_ -> ZeroField(), 11)...)
 
+Adapt.adapt_structure(to, fluxes::AtmosphereOceanFluxes) = 
+    AtmosphereOceanFluxes(Adapt.adapt(to, fluxes.latent_heat),
+                          Adapt.adapt(to, fluxes.sensible_heat),
+                          Adapt.adapt(to, fluxes.water_vapor),
+                          Adapt.adapt(to, fluxes.x_momentum),
+                          Adapt.adapt(to, fluxes.y_momentum),
+                          Adapt.adapt(to, fluxes.friction_velocity),
+                          Adapt.adapt(to, fluxes.temperature_scale),
+                          Adapt.adapt(to, fluxes.water_vapor_scale),
+                          Adapt.adapt(to, fluxes.upwelling_longwave),
+                          Adapt.adapt(to, fluxes.downwelling_longwave),
+                          Adapt.adapt(to, fluxes.downwelling_shortwave))
+
+on_architecture(arch, fluxes::AtmosphereOceanFluxes) = 
+    AtmosphereOceanFluxes(on_architecture(arch, fluxes.latent_heat),
+                          on_architecture(arch, fluxes.sensible_heat),
+                          on_architecture(arch, fluxes.water_vapor),
+                          on_architecture(arch, fluxes.x_momentum),
+                          on_architecture(arch, fluxes.y_momentum),
+                          on_architecture(arch, fluxes.friction_velocity),
+                          on_architecture(arch, fluxes.temperature_scale),
+                          on_architecture(arch, fluxes.water_vapor_scale),
+                          on_architecture(arch, fluxes.upwelling_longwave),
+                          on_architecture(arch, fluxes.downwelling_longwave),
+                          on_architecture(arch, fluxes.downwelling_shortwave))
+
 struct AtmosphereSeaIceFluxes{F}
     latent_heat   :: F
     sensible_heat :: F
@@ -98,6 +125,20 @@ function AtmosphereSeaIceFluxes(grid)
 end
 
 AtmosphereSeaIceFluxes(::Nothing) = AtmosphereSeaIceFluxes{ZeroField}(ntuple(_ -> ZeroField(), 5)...)
+
+Adapt.adapt_structure(to, fluxes::AtmosphereSeaIceFluxes) = 
+    AtmosphereSeaIceFluxes(Adapt.adapt(to, fluxes.latent_heat),
+                           Adapt.adapt(to, fluxes.sensible_heat),
+                           Adapt.adapt(to, fluxes.water_vapor),
+                           Adapt.adapt(to, fluxes.x_momentum),
+                           Adapt.adapt(to, fluxes.y_momentum))
+
+on_architecture(arch, fluxes::AtmosphereSeaIceFluxes) = 
+    AtmosphereSeaIceFluxes(on_architecture(arch, fluxes.latent_heat),
+                           on_architecture(arch, fluxes.sensible_heat),
+                           on_architecture(arch, fluxes.water_vapor),
+                           on_architecture(arch, fluxes.x_momentum),
+                           on_architecture(arch, fluxes.y_momentum))
 
 struct SeaIceOceanFluxes{C, FX, FY}
     interface_heat :: C
@@ -115,6 +156,20 @@ function SeaIceOceanFluxes(grid)
 end
 
 SeaIceOceanFluxes(::Nothing) = SeaIceOceanFluxes{ZeroField, ZeroField, ZeroField}(ntuple(_ -> ZeroField(), 5)...)
+
+Adapt.adapt_structure(to, fluxes::SeaIceOceanFluxes) = 
+    SeaIceOceanFluxes(Adapt.adapt(to, fluxes.interface_heat),
+                      Adapt.adapt(to, fluxes.frazil_heat),
+                      Adapt.adapt(to, fluxes.salt),
+                      Adapt.adapt(to, fluxes.x_momentum),
+                      Adapt.adapt(to, fluxes.y_momentum))
+
+on_architecture(arch, fluxes::SeaIceOceanFluxes) = 
+    SeaIceOceanFluxes(on_architecture(arch, fluxes.interface_heat),
+                      on_architecture(arch, fluxes.frazil_heat),
+                      on_architecture(arch, fluxes.salt),
+                      on_architecture(arch, fluxes.x_momentum),
+                      on_architecture(arch, fluxes.y_momentum))
 
 # ZeroFluxes is returned by computed_fluxes(::Nothing) for absent interfaces.
 # It contains the union of all flux field names across interface types.
