@@ -18,12 +18,19 @@ set -euo pipefail
 
 usage() {
     cat <<'USAGE'
-Usage: ./launch.sh <halfdegree|tenthdegree|orca> [extra sbatch args...]
+Usage: ./launch.sh <config> [extra sbatch args...]
+
+Configurations:
+  halfdegree       Half-degree TripolarGrid (default fluxes)
+  orca             ORCA grid (default fluxes)
+  orca_corrected   ORCA grid with corrected COARE 3.6 fluxes
+  orca_ncar        ORCA grid with OMIP-2/NCAR bulk formulae
+  tenthdegree      1/10-degree TripolarGrid (4 GPUs)
 
 Examples:
-  ./launch.sh halfdegree
-  ./launch.sh tenthdegree
   ./launch.sh orca
+  ./launch.sh orca_corrected
+  ./launch.sh orca_ncar
   PROFILE=true ./launch.sh orca
   NODE=2904 ./launch.sh orca
 USAGE
@@ -44,6 +51,7 @@ case "$CONFIG" in
         CONFIG="halfdegree"
         ;;
     orca|tenthdegree) ;;
+    orca_corrected|orca_ncar) ;;
     -h|--help)
         usage
         exit 0
@@ -135,6 +143,48 @@ sim = omip_simulation(:orca;
 
 sim.stop_time = 300 * 365days
 run!(sim; pickup=:latest)'
+        ;;
+    orca_corrected)
+        JULIA_EXPR='using OMIPSimulations
+using Oceananigans
+using Oceananigans.Units
+using CUDA
+
+sim = omip_simulation(:orca;
+                      arch = GPU(),
+                      Nz = 70,
+                      depth = 5500,
+                      κ_skew = 500,
+                      κ_symmetric = 250,
+                      biharmonic_timescale = 10days,
+                      Δt = 30minutes,
+                      flux_configuration = :corrected,
+                      output_dir = "orca_corrected_run",
+                      filename_prefix = "orca_corrected")
+
+sim.stop_time = 300 * 365days
+run!(sim; pickup = true)'
+        ;;
+    orca_ncar)
+        JULIA_EXPR='using OMIPSimulations
+using Oceananigans
+using Oceananigans.Units
+using CUDA
+
+sim = omip_simulation(:orca;
+                      arch = GPU(),
+                      Nz = 70,
+                      depth = 5500,
+                      κ_skew = 500,
+                      κ_symmetric = 250,
+                      biharmonic_timescale = 10days,
+                      Δt = 30minutes,
+                      flux_configuration = :ncar,
+                      output_dir = "orca_ncar_run",
+                      filename_prefix = "orca_ncar")
+
+sim.stop_time = 300 * 365days
+run!(sim; pickup = true)'
         ;;
     tenthdegree)
         JULIA_EXPR='using OMIPSimulations

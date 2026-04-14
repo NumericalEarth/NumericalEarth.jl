@@ -2,6 +2,130 @@ using Printf
 using Oceananigans.Operators: Δzᶜᶜᶜ
 using Oceananigans.TurbulenceClosures: IsopycnalSkewSymmetricDiffusivity
 
+#####
+##### Flux configurations
+#####
+
+"""
+    corrected_atmosphere_ocean_fluxes(FT = Float64)
+
+COARE 3.6-consistent atmosphere-ocean flux formulation with:
+- Wind-dependent Charnock parameter (Edson et al. 2013, eq. 13)
+- COARE logarithmic similarity profile (no ψ(ℓ/L) term)
+- Minimum gustiness = 0.2 m/s (Fairall et al. 2003)
+- Temperature-dependent air viscosity
+"""
+function corrected_atmosphere_ocean_fluxes(FT = Float64) 
+    air_kinematic_viscosity = TemperatureDependentAirViscosity(FT)
+    return SimilarityTheoryFluxes(FT;
+                                  similarity_form              = COARELogarithmicSimilarityProfile(),
+                                  minimum_gustiness            = FT(0.2),
+                                  momentum_roughness_length    = MomentumRoughnessLength(FT;
+                                  wave_formulation             = WindDependentWaveFormulation(FT),
+                                  air_kinematic_viscosity      = TemperatureDependentAirViscosity(FT)),
+                                  temperature_roughness_length = ScalarRoughnessLength(FT; air_kinematic_viscosity),
+                                  water_vapor_roughness_length = ScalarRoughnessLength(FT; air_kinematic_viscosity))
+end
+
+"""
+    corrected_atmosphere_sea_ice_fluxes(FT = Float64)
+
+Atmosphere-sea ice flux formulation with:
+- SHEBA/Paulson+Grachev stability functions (existing default, correct)
+- Fixed momentum roughness z0 = 5e-4 m (CICE/SHEBA standard; Andreas et al. 2010)
+- Fixed scalar roughness z0t = z0q = 5e-5 m (Andreas 1987: z0t ≈ z0/10 at R*≈7)
+- COARE logarithmic similarity profile
+- Minimum gustiness = 0.2 m/s
+"""
+corrected_atmosphere_sea_ice_fluxes(FT = Float64) = 
+    SimilarityTheoryFluxes(FT;
+                           stability_functions          = atmosphere_sea_ice_stability_functions(FT),
+                           similarity_form              = COARELogarithmicSimilarityProfile(),
+                           minimum_gustiness            = FT(0.2),
+                           momentum_roughness_length    = FT(5e-4),
+                           temperature_roughness_length = FT(5e-5),
+                           water_vapor_roughness_length = FT(5e-5))
+
+"""
+    corrected_ice_ocean_heat_flux()
+
+Three-equation ice-ocean heat flux with momentum-based friction velocity
+computed from actual ice-ocean stress (McPhee 1992, 2008; SHEBA median u*≈0.01 m/s).
+"""
+corrected_ice_ocean_heat_flux() = ThreeEquationHeatFlux(; friction_velocity = MomentumBasedFrictionVelocity())
+
+"""
+    ncar_atmosphere_ocean_fluxes(FT = Float64)
+
+OMIP-2 standard atmosphere-ocean flux formulation using Large & Yeager (2004, 2009)
+NCAR bulk formulae:
+- Empirical polynomial drag coefficient
+- Paulson (1970) stability functions with γ=16 (unstable) and -5ζ (stable)
+- Wind speed floor at 0.5 m/s (no convective gustiness)
+- COARE logarithmic similarity profile
+"""
+ncar_atmosphere_ocean_fluxes(FT = Float64) = 
+    SimilarityTheoryFluxes(FT;
+                           stability_functions          = ncar_stability_functions(FT),
+                           similarity_form              = COARELogarithmicSimilarityProfile(),
+                           gustiness_parameter          = FT(0),
+                           minimum_gustiness            = FT(0.5),
+                           momentum_roughness_length    = NCARMomentumRoughnessLength(FT),
+                           temperature_roughness_length = NCARScalarRoughnessLength(FT; coefficient = 32.7),
+                           water_vapor_roughness_length = NCARScalarRoughnessLength(FT; coefficient = 34.6))
+
+"""
+    ncar_atmosphere_sea_ice_fluxes(FT = Float64)
+
+NCAR/CORE atmosphere-sea ice flux formulation with:
+- Paulson (1970) + linear stable stability functions
+- Fixed z0 = z0t = z0q = 5e-4 m (CICE default: no Andreas scalar scaling)
+- Wind speed floor at 0.5 m/s
+"""
+ncar_atmosphere_sea_ice_fluxes(FT = Float64) = 
+    SimilarityTheoryFluxes(FT;
+                           stability_functions          = ncar_stability_functions(FT),
+                           similarity_form              = COARELogarithmicSimilarityProfile(),
+                           gustiness_parameter          = FT(0),
+                           minimum_gustiness            = FT(0.5),
+                           momentum_roughness_length    = FT(5e-4),
+                           temperature_roughness_length = FT(5e-4),
+                           water_vapor_roughness_length = FT(5e-4))
+
+"""
+    build_coupled_model(ocean, sea_ice, atmosphere, radiation, flux_configuration)
+
+Build the `OceanSeaIceModel` with the specified flux configuration.
+Options: `:default`, `:corrected`, `:ncar`.
+"""
+function build_coupled_model(ocean, sea_ice, atmosphere, radiation, flux_configuration)
+    FT = eltype(ocean.model.grid)
+
+    if flux_configuration == :default
+        return OceanSeaIceModel(ocean, sea_ice; atmosphere, radiation)
+    elseif flux_configuration == :corrected
+        return OceanSeaIceModel(ocean, sea_ice;
+                                atmosphere, 
+                                radiation,
+                                atmosphere_ocean_fluxes   = corrected_atmosphere_ocean_fluxes(FT),
+                                atmosphere_sea_ice_fluxes = corrected_atmosphere_sea_ice_fluxes(FT),
+                                sea_ice_ocean_heat_flux   = corrected_ice_ocean_heat_flux())
+    elseif flux_configuration == :ncar
+        return OceanSeaIceModel(ocean, sea_ice;
+                                atmosphere, 
+                                radiation,
+                                atmosphere_ocean_fluxes   = ncar_atmosphere_ocean_fluxes(FT),
+                                atmosphere_sea_ice_fluxes = ncar_atmosphere_sea_ice_fluxes(FT),
+                                sea_ice_ocean_heat_flux   = corrected_ice_ocean_heat_flux())
+    else
+        error("Unknown flux_configuration: $flux_configuration. Options: :default, :corrected, :ncar")
+    end
+end
+
+#####
+##### Main simulation builder
+#####
+
 """
     omip_simulation(config::Symbol = :halfdegree; kwargs...)
 
@@ -37,6 +161,10 @@ plumbing is needed because `NumericalEarth.EarthSystemModels` provides
 - `start_date`, `end_date`: bracket for forcing/restoring metadata. Defaults: 1958-01-01 .. 2018-01-01.
 - `Δt`: simulation time step. Default: `30minutes`.
 - `stop_time`: stop time for the wrapping `Simulation`. Default: `Inf`.
+- `flux_configuration`: surface flux formulation. Options:
+   * `:default` — current defaults (Edson/COARE with constant Charnock 0.02)
+   * `:corrected` — COARE 3.6 with wind-dependent Charnock, fixed ice roughness, momentum-based u*
+   * `:ncar` — OMIP-2 standard Large & Yeager (2004) bulk formulae
 - `diagnostics::Bool`: whether to attach OMIP diagnostics. Default: `true`.
 - `surface_averaging_interval`, `field_averaging_interval`: averaging windows.
 - `checkpoint_interval`: interval between checkpoint writes.
@@ -56,6 +184,7 @@ function omip_simulation(config::Symbol = :halfdegree;
                          end_date = DateTime(2018, 1, 1),
                          Δt = 30minutes,
                          stop_time = Inf,
+                         flux_configuration = :default,
                          diagnostics = true,
                          field_mean_interval = 5days,
                          surface_averaging_interval = 5days,
@@ -82,7 +211,7 @@ function omip_simulation(config::Symbol = :halfdegree;
                                             start_date,
                                             end_date)
 
-    coupled = OceanSeaIceModel(ocean, sea_ice; atmosphere, radiation)
+    coupled = build_coupled_model(ocean, sea_ice, atmosphere, radiation, flux_configuration)
 
     simulation = Simulation(coupled; Δt, stop_time)
 
@@ -116,7 +245,7 @@ end
 @inline νhb(i, j, k, grid, ℓx, ℓy, ℓz, clock, fields, λ) = Oceananigans.Operators.Az(i, j, k, grid, ℓx, ℓy, ℓz)^2 / λ
 
 # Background tracer diffusivity following Henyey et al. (1986).
-@inline henyey_diffusivity(x, y, z, t) = max(2e-6, 3e-5 * abs(sind(y)))
+@inline henyey_diffusivity(x, y, z, t) = max(1e-6, 5e-6 * abs(sind(y)))
 
 function omip_closure(; κ_skew, κ_symmetric, biharmonic_timescale)
     catke = default_ocean_closure()
@@ -191,7 +320,7 @@ end
 
 function build_grid(::Val{:orca}, arch, Nz, depth)
 
-    z_faces = ExponentialDiscretization(Nz, -depth, 0; scale=1600, mutable=true)
+    z_faces = ExponentialDiscretization(Nz, -depth, 0; scale=1300, mutable=true)
 
     return ORCAGrid(arch;
                     dataset = ORCA1(),
@@ -202,13 +331,12 @@ function build_grid(::Val{:orca}, arch, Nz, depth)
                     active_cells_map = true)
 end
 
-
 #####
 ##### ORCA builder
 #####
 
-config_momentum_advection(::Val{:orca}) = VectorInvariant()
-config_momentum_advection(::Val{:halfdegree}) = WENOVectorInvariant(order=5)
+config_momentum_advection(::Val{:orca})        = VectorInvariant()
+config_momentum_advection(::Val{:halfdegree})  = WENOVectorInvariant(order=5)
 config_momentum_advection(::Val{:tenthdegree}) = WENOVectorInvariant()
 
 function build_ocean(config, arch;
