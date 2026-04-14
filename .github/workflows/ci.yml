@@ -97,7 +97,6 @@ jobs:
   gpu_tests:
     name: (GPU)
     runs-on: aws-linux-nvidia-gpu-l4
-    continue-on-error: true  # GPU runner has limited disk (18 GB free); some tests fail from disk exhaustion
     container:
       image: ghcr.io/numericalearth/numerical-earth-docker-images:test-julia_1.12.5
       options: --gpus=all
@@ -121,11 +120,9 @@ jobs:
           echo "=== Disk usage before cleanup ==="
           df -h / || true
           du -sh /__w/_temp/depot/* 2>/dev/null || true
-          # Remove the entire temp depot to reclaim disk space.
-          # Packages and artifacts will be re-resolved from the Docker
-          # image's pre-installed depot during Pkg.test.
-          rm -rf /__w/_temp/depot
-          mkdir -p /__w/_temp/depot
+          # Remove stale compiled artifacts, logs, and scratchspaces
+          rm -rf /__w/_temp/depot/compiled /__w/_temp/depot/logs /__w/_temp/depot/scratchspaces
+          rm -rf /__w/_temp/depot/packages  # will be re-resolved during Pkg.test
           echo "=== Disk usage after cleanup ==="
           df -h / || true
       - name: Configure git safe directory
@@ -287,21 +284,6 @@ jobs:
       - data_downloading
       - reactant
     runs-on: ubuntu-latest
-    if: ${{ always() }}
+    if: ${{ success() }}
     steps:
-      - run: |
-          echo "CPU tests: ${{ needs.cpu_tests.result }}"
-          echo "GPU tests: ${{ needs.gpu_tests.result }}"
-          echo "Reactant: ${{ needs.reactant.result }}"
-          echo "Data downloading: ${{ needs.data_downloading.result }}"
-
-          # Fail if CPU tests or Reactant failed (the required jobs)
-          if [[ "${{ needs.cpu_tests.result }}" != "success" ]]; then
-            echo "::error::CPU tests did not pass"
-            exit 1
-          fi
-          if [[ "${{ needs.reactant.result }}" != "success" ]]; then
-            echo "::error::Reactant tests did not pass"
-            exit 1
-          fi
-          echo "All required CI jobs passed."
+      - run: echo "All CI jobs passed successfully."

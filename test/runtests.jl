@@ -50,10 +50,6 @@ if filter_tests!(testsuite, args)
         delete!(testsuite, "test_veros")
         delete!(testsuite, "test_speedy_coupling")
         delete!(testsuite, "test_orca_grid")
-        delete!(testsuite, "test_ecco_atmosphere")
-        delete!(testsuite, "test_ecco2_daily")
-        delete!(testsuite, "test_ecco2_monthly")
-        delete!(testsuite, "test_ecco4_en4")
     end
 end
 
@@ -126,9 +122,7 @@ function __init__()
     #####
 
     # Download few datasets for tests
-    # Skip on GPU — dataset files are too large for the GPU runner's disk,
-    # and all dataset tests are excluded from GPU (same code paths as CPU)
-    for dataset in (gpu_test ? () : test_datasets)
+    for dataset in test_datasets
         time_resolution = dataset isa ECCO2Daily ? Day(1) : Month(1)
         end_date = start_date + 2 * time_resolution
         dates = start_date:time_resolution:end_date
