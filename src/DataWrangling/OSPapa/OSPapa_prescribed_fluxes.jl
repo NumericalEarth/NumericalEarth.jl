@@ -174,7 +174,7 @@ heat_correction = (i, j, grid, clock, model_fields, p) -> 5.0 / (p.ρ₀ * p.c�
 bcs = OSPapaPrescribedFluxBoundaryConditions(fluxes, GPU(); T_correction=heat_correction)
 ```
 """
-function OSPapaPrescribedFluxBoundaryConditions(fluxes, architecture=CPU(); 
+function os_papa_prescribed_flux_boundary_conditions(fluxes, architecture=CPU(); 
                                                 ρ₀=1020.0, cₚ=3991.0, 
                                                 u_correction=no_correction, 
                                                 v_correction=no_correction, 
