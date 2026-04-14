@@ -61,15 +61,14 @@ function reset!(model::ESM)
 end
 
 # Make sure to initialize the exchanger here
-function initialization_update_state!(model::ESM)
+function initialize!(model::ESM)
     initialize!(model.interfaces.exchanger, model)
-    update_state!(model)
     return nothing
 end
 
-function initialize!(model::ESM)
-    # initialize!(model.ocean)
+function reconcile_state!(model::ESM)
     initialize!(model.interfaces.exchanger, model)
+    update_state!(model)
     return nothing
 end
 
@@ -209,7 +208,7 @@ function EarthSystemModel(atmosphere, ocean, sea_ice;
     # Make sure the initial temperature of the ocean
     # is not below freezing and above melting near the surface
     above_freezing_ocean_temperature!(ocean, interfaces.exchanger.grid, sea_ice)
-    initialization_update_state!(earth_system_model)
+    reconcile_state!(earth_system_model)
 
     return earth_system_model
 end

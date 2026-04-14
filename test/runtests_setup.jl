@@ -62,6 +62,7 @@ end
 #####
 ##### Test utilities
 #####
+
 function test_setting_from_metadata(arch, dataset, start_date, inpainting;
                                     loc = (Center, Center, Center),
                                     varnames = (:temperature, :salinity),
