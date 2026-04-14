@@ -484,15 +484,21 @@ function load_timeseries_case(run_dir, prefix, grid; start_time = 0, stop_time =
 
     fields_file = find_first_file(run_dir, prefix, "fields")
     tke_fts     = FieldTimeSeries(fields_file, "tke"; backend = OnDisk())
+    u_fts       = FieldTimeSeries(fields_file, "uo"; backend = OnDisk())
+    v_fts       = FieldTimeSeries(fields_file, "vo"; backend = OnDisk())
+
     ocean_mask  = build_ocean_mask_3d(grid)
     ocean_cells = sum(ocean_mask)
     tke_mean = [sum(Array(interior(tke_fts[n])) .* ocean_mask) / ocean_cells
                 for n in 1:length(tke_fts.times)]
+
+    ke(n) = @at((Center, Center, Center), u^2 + v^2)
+    ke_mean = [sum(ke(n)) ./ ocean_cells ./ 2 for n in 1:length(u_fts.times)]
     tke_time_in_years = tke_fts.times ./ (365.25 * 24 * 3600)
 
     return (; temperature_mean, salinity_mean, time_in_years,
               temperature_profile, salinity_profile, depth,
-              tke_mean, tke_time_in_years, ocean_mask, fields_file)
+              tke_mean, ke_mean, tke_time_in_years, ocean_mask, fields_file)
 end
 
 TS = Dict{String, Any}()
@@ -506,11 +512,16 @@ end
 # ══════════════════════════════════════════════════════════════
 
 # Figure 13: TKE
-@info "Figure 13: TKE"
-fig = Figure(size = (900, 450), fontsize = 14)
+@info "Figure 13: TKE and KE"
+fig = Figure(size = (900, 600), fontsize = 14)
 ax = Axis(fig[1, 1]; xlabel="Time (years)", ylabel="TKE (m²/s²)", title="Global-mean turbulent kinetic energy")
 for (i, lab) in enumerate(labels)
     lines!(ax, TS[lab].tke_time_in_years, TS[lab].tke_mean; color=case_colors[i], label=lab)
+end
+axislegend(ax; position=:rb)
+ax = Axis(fig[2, 1]; xlabel="Time (years)", ylabel="TKE (m²/s²)", title="Global-mean kinetic energy")
+for (i, lab) in enumerate(labels)
+    lines!(ax, TS[lab].tke_time_in_years, TS[lab].ke_mean; color=case_colors[i], label=lab)
 end
 axislegend(ax; position=:rb)
 savefig(fig, "fig13_tke.png")
@@ -590,26 +601,29 @@ for c in cases
 
     @info "Loading 3-D fields for $lab..."
     fields_file = TS[lab].fields_file
-    to_fts = FieldTimeSeries(fields_file, "to"; backend = OnDisk())
-    so_fts = FieldTimeSeries(fields_file, "so"; backend = OnDisk())
-    bo_fts = FieldTimeSeries(fields_file, "bo"; backend = OnDisk())
+    to_fts = FieldTimeSeries(fields_file, "to";  backend = OnDisk())
+    so_fts = FieldTimeSeries(fields_file, "so";  backend = OnDisk())
+    bo_fts = FieldTimeSeries(fields_file, "bo";  backend = OnDisk())
+    eo_fts = FieldTimeSeries(fields_file, "tke"; backend = OnDisk())
 
-    temperature_mean = compute_time_mean(to_fts; start_time, stop_time)
-    salinity_mean    = compute_time_mean(so_fts; start_time, stop_time)
-    buoyancy_mean    = compute_time_mean(bo_fts; start_time, stop_time)
+    temperature_mean     = compute_time_mean(to_fts; start_time, stop_time)
+    salinity_mean        = compute_time_mean(so_fts; start_time, stop_time)
+    buoyancy_mean        = compute_time_mean(bo_fts; start_time, stop_time)
+    kinetic_energy_mean  = compute_time_mean(eo_fts; start_time, stop_time)
     buoyancy_initial = Array(interior(bo_fts[1]))
 
     @info "Computing zonal means for $lab..."
-    temperature_zonal     = compute_zonal_mean(temperature_mean, ocean_mask, regridder, Nlon, Nlat)
-    salinity_zonal        = compute_zonal_mean(salinity_mean,    ocean_mask, regridder, Nlon, Nlat)
-    buoyancy_zonal        = compute_zonal_mean(buoyancy_mean,    ocean_mask, regridder, Nlon, Nlat)
+    temperature_zonal     = compute_zonal_mean(temperature_mean,     ocean_mask, regridder, Nlon, Nlat)
+    salinity_zonal        = compute_zonal_mean(salinity_mean,        ocean_mask, regridder, Nlon, Nlat)
+    buoyancy_zonal        = compute_zonal_mean(buoyancy_mean,        ocean_mask, regridder, Nlon, Nlat)
+    kinetic_energy_zonal  = compute_zonal_mean(kinetic_energy_mean,  ocean_mask, regridder, Nlon, Nlat)
     temperature_woa_zonal = compute_zonal_mean(D[lab].T_woa_on_grid, ocean_mask, regridder, Nlon, Nlat)
     salinity_woa_zonal    = compute_zonal_mean(D[lab].S_woa_on_grid, ocean_mask, regridder, Nlon, Nlat)
     buoyancy_init_zonal   = compute_zonal_mean(buoyancy_initial,     ocean_mask, regridder, Nlon, Nlat)
 
     depth = collect(znodes(grid, Center()))
 
-    ZM[lab] = (; temperature_zonal, salinity_zonal, buoyancy_zonal,
+    ZM[lab] = (; temperature_zonal, salinity_zonal, buoyancy_zonal, kinetic_energy_zonal,
                 temperature_woa_zonal, salinity_woa_zonal, buoyancy_init_zonal,
                 δtemperature_zonal = temperature_zonal .- temperature_woa_zonal,
                 δsalinity_zonal    = salinity_zonal    .- salinity_woa_zonal,
@@ -629,7 +643,7 @@ buoyancy_levels    = range(-0.04, 0.02, length=13)
 
 # Figure 16: Zonal-mean T, S, b
 @info "Figure 16: Zonal means"
-fig = Figure(size = (600 * length(labels), 900), fontsize = 14)
+fig = Figure(size = (600 * length(labels), 1200), fontsize = 14)
 for (i, lab) in enumerate(labels)
     zm = ZM[lab]
     ax = Axis(fig[1, 2i-1]; xlabel="Latitude", ylabel="Depth (m)", title="$lab: Zonal T")
@@ -649,6 +663,10 @@ for (i, lab) in enumerate(labels)
     contour!(ax, latitude, zm.depth, zm.buoyancy_init_zonal; levels=buoyancy_levels, color=:grey, linestyle=:dash, linewidth=0.8)
     contour!(ax, latitude, zm.depth, zm.buoyancy_zonal; levels=buoyancy_levels, color=:black, linewidth=0.8)
     Colorbar(fig[3, 2i], hm; label="m/s²"); ylims!(ax, (-5500, 0))
+
+    ax = Axis(fig[4, 2i-1]; xlabel="Latitude", ylabel="Depth (m)", title="$lab: Zonal e")
+    hm = heatmap!(ax, latitude, zm.depth, zm.kinetic_energy_zonal; colormap=:solar, nan_color=:lightgray)
+    Colorbar(fig[4, 2i], hm; label="m/s²"); ylims!(ax, (-5500, 0))
 end
 savefig(fig, "fig16_zonal_mean.png")
 
