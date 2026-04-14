@@ -5,7 +5,6 @@ authors = ["NumericalEarth contributors"]
 
 [deps]
 CUDA = "052768ef-5323-5732-b1bb-66c8b64840ba"
-CairoMakie = "13f3f980-e62b-5c42-98c6-ff1f3baf88f0"
 ClimaSeaIce = "6ba0ff68-24e6-4315-936c-2e99227c95a4"
 ConservativeRegridding = "8e50ac2c-eb48-49bc-a402-07c87b949343"
 Dates = "ade2ca70-3891-5945-98fb-dc099432e06a"
@@ -22,5 +21,5 @@ NumericalEarth = {path = "../.."}
 
 [compat]
 ConservativeRegridding = "0.2.0"
-Oceananigans = "0.106.5"
+Oceananigans = "0.106.5, 0.107, 0.189"
 julia = "1.10"
