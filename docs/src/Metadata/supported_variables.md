@@ -11,8 +11,6 @@ NumericalEarth currently ships connectors for the following data products:
 | `EN4Monthly`       | [Supported variables](@ref dataset-en4monthly-vars)       | [Met Office EN4 overview](https://www.metoffice.gov.uk/hadobs/en4/)                                |
 | `GLORYSDaily`      | [Supported variables](@ref dataset-glorysdaily-vars)      | [Copernicus GLORYS product page](https://data.marine.copernicus.eu/product/GLOBAL_MULTIYEAR_PHY_001_030/description) |
 | `GLORYSMonthly`    | [Supported variables](@ref dataset-glorysmonthly-vars)    | [Copernicus GLORYS product page](https://data.marine.copernicus.eu/product/GLOBAL_MULTIYEAR_PHY_001_030/description) |
-| `ERA5Hourly`       | [Supported variables](@ref dataset-era5hourly-vars)       | [ERA5 product page](https://cds.climate.copernicus.eu/datasets/reanalysis-era5-single-levels)      |
-| `ERA5Monthly`      | [Supported variables](@ref dataset-era5monthly-vars)      | [ERA5 product page](https://cds.climate.copernicus.eu/datasets/reanalysis-era5-single-levels)      |
 | `RepeatYearJRA55`  | [Supported variables](@ref dataset-repeatyearjra55-vars)  | [JRA-55 Reanalysis](https://www.data.jma.go.jp/jra/html/JRA-55/index_en.html)                                 |
 | `MultiYearJRA55`   | [Supported variables](@ref dataset-multiyearjra55-vars)   | [JRA-55 Reanalysis](https://www.data.jma.go.jp/jra/html/JRA-55/index_en.html)                                 |
 
@@ -88,37 +86,6 @@ NumericalEarth currently ships connectors for the following data products:
 - `:sea_ice_v_velocity` - Meridional sea-ice drift (m s⁻¹).
 - `:free_surface` - Sea surface height (m).
 - `:depth` - Static bathymetry/depth (m).
-
-## [Supported variables for ERA5Hourly](@id dataset-era5hourly-vars)
-
-**State variables (0.25° grid):**
-- `:temperature` - 2 m air temperature (K).
-- `:dewpoint_temperature` - 2 m dewpoint temperature (K).
-- `:eastward_velocity` - 10 m eastward wind component (m s⁻¹).
-- `:northward_velocity` - 10 m northward wind component (m s⁻¹).
-- `:surface_pressure` - Surface pressure (Pa).
-- `:specific_humidity` - Specific humidity (kg kg⁻¹).
-
-**Radiation (0.25° grid):**
-- `:downwelling_shortwave_radiation` - Surface solar radiation downwards (W m⁻²).
-- `:downwelling_longwave_radiation` - Surface thermal radiation downwards (W m⁻²).
-
-**Surface fluxes and other (0.25° grid):**
-- `:total_precipitation` - Total precipitation (m).
-- `:evaporation` - Evaporation (m of water equivalent).
-- `:total_cloud_cover` - Total cloud cover (dimensionless).
-- `:sea_surface_temperature` - Sea surface temperature (K).
-
-**Wave variables (0.5° grid):**
-- `:eastward_stokes_drift` - Eastward component of Stokes drift (m s⁻¹).
-- `:northward_stokes_drift` - Northward component of Stokes drift (m s⁻¹).
-- `:significant_wave_height` - Significant wave height (m).
-- `:mean_wave_period` - Mean wave period (s).
-- `:mean_wave_direction` - Mean wave direction (degrees).
-
-## [Supported variables for ERA5Monthly](@id dataset-era5monthly-vars)
-
-Same variables as ERA5Hourly, at monthly temporal resolution.
 
 ## [Supported variables for RepeatYearJRA55](@id dataset-repeatyearjra55-vars)
 

@@ -24,7 +24,7 @@ for arch in test_architectures
         @info "Running Metadata tests for $D on $A..."
 
         time_resolution = dataset isa ECCO2Daily ? Day(1) : Month(1)
-        end_date = start_date + 2 * time_resolution
+        end_date = start_date + 4 * time_resolution
         dates = start_date : time_resolution : end_date
 
         @testset "Fields utilities" begin

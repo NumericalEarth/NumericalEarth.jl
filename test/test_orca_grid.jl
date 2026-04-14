@@ -115,8 +115,8 @@ end
     # At interior points, Face[j] should be < Center[j] in latitude.
     imid = Nx ÷ 2
     φF   = grid.φᶜᶠᵃ[imid, 1:Ny]
-    φC   = grid.φᶜᶜᵃ[imid, 1:Ny]
-    nsouth = count(j -> φF[j] < φC[j], 1:Ny)
+    φC   = grid.φᶜᶜᵃ[imid, 1:Ny-1]  # Center has Ny-1 interior points
+    nsouth = count(j -> φF[j] < φC[j], 1:length(φC))
     @test nsouth / length(φC) > 0.95
 
     # Periodic overlap: first and last unique columns should be consistent

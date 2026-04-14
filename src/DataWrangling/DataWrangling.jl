@@ -10,7 +10,7 @@ export WOAClimatology, WOAAnnual, WOAMonthly
 export metadata_time_step, metadata_epoch
 export LinearlyTaperedPolarMask
 export DatasetRestoring
-export ERA5Hourly, ERA5Monthly, ERA5PrescribedAtmosphere
+export ERA5Hourly, ERA5Monthly
 export native_grid
 
 using Oceananigans

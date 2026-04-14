@@ -1,6 +1,6 @@
 module Oceans
 
-export ocean_simulation, SlabOcean, PrescribedOcean
+export ocean_simulation, SlabOcean
 
 using Oceananigans
 using Oceananigans.Units
@@ -29,7 +29,6 @@ import NumericalEarth.EarthSystemModels: interpolate_state!,
                                      heat_capacity,
                                      exchange_grid,
                                      temperature_units,
-                                     DegreesCelsius,
                                      DegreesKelvin,
                                      ocean_temperature,
                                      ocean_salinity,
@@ -61,7 +60,6 @@ default_or_override(default::Default, possibly_alternative_default=default.value
 default_or_override(override, alternative_default=nothing) = override
 
 include("slab_ocean.jl")
-include("prescribed_ocean.jl")
 include("barotropic_potential_forcing.jl")
 include("radiative_forcing.jl")
 include("ocean_simulation.jl")

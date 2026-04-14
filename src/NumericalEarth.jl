@@ -13,7 +13,6 @@ export
     OceanSeaIceModel,
     AtmosphereOceanModel,
     SlabOcean,
-    PrescribedOcean,
     default_sea_ice,
     FreezingLimitedOceanTemperature,
     Radiation,
@@ -27,7 +26,6 @@ export
     BulkTemperature,
     PrescribedAtmosphere,
     JRA55PrescribedAtmosphere,
-    ERA5PrescribedAtmosphere,
     JRA55NetCDFBackend,
     regrid_bathymetry,
     Metadata,
@@ -43,7 +41,6 @@ export
     WOAClimatology, WOAAnnual, WOAMonthly,
     GLORYSDaily, GLORYSMonthly, GLORYSStatic,
     ORCA1,
-    ERA5Hourly, ERA5Monthly,
     RepeatYearJRA55, MultiYearJRA55,
     first_date,
     last_date,
@@ -62,8 +59,7 @@ export
     net_ocean_salinity_flux, sea_ice_ocean_salinity_flux, atmosphere_ocean_salinity_flux,
     net_ocean_freshwater_flux, sea_ice_ocean_freshwater_flux, atmosphere_ocean_freshwater_flux,
     location,
-    native_grid,
-    meridional_heat_transport
+    native_grid
 
 using Oceananigans
 import Oceananigans: location
