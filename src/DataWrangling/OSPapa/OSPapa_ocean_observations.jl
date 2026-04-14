@@ -85,7 +85,7 @@ metadata_time_step(::OSPapaHourly) = 3600 # seconds (hourly data)
 const _ospapa_times_cache = Ref{Vector{DateTime}}()
 const _ospapa_times_cached = Ref(false)
 
-function _ospapa_all_times(dir=download_OSPapa_cache)
+function ospapa_all_times(dir=download_OSPapa_cache)
     if !_ospapa_times_cached[]
         filepath = download_ospapa_file(dir)
         ds = NCDataset(filepath)
@@ -96,7 +96,7 @@ function _ospapa_all_times(dir=download_OSPapa_cache)
     return _ospapa_times_cache[]
 end
 
-all_dates(::OSPapaHourly, variable) = _ospapa_all_times()
+all_dates(::OSPapaHourly, variable) = ospapa_all_times()
 
 # Cache depth arrays per variable
 const _ospapa_depths_cache = Dict{Symbol, Vector{Float64}}()
