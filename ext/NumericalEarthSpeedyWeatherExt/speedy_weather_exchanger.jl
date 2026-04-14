@@ -27,7 +27,10 @@ net_fluxes(::SpeedySimulation) = nothing
 function ComponentExchanger(atmosphere::SpeedySimulation, exchange_grid)
 
     spectral_grid = atmosphere.model.spectral_grid
-    from_atmosphere = Regridder(exchange_grid, spectral_grid)
+    # Use the exchange_grid's manifold for both grids to avoid
+    # radius mismatch between Oceananigans and SpeedyWeather.
+    manifold = GOCore.best_manifold(exchange_grid)
+    from_atmosphere = Regridder(manifold, exchange_grid, spectral_grid)
     to_atmosphere   = transpose(from_atmosphere)
     regridder = (; to_atmosphere, from_atmosphere)
 
