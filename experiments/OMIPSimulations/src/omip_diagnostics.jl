@@ -1,3 +1,6 @@
+
+using JLD2 
+
 """
     add_omip_diagnostics!(simulation; kwargs...)
 
@@ -123,7 +126,8 @@ function add_omip_diagnostics!(simulation;
                                                      dir = output_dir,
                                                      filename = filename_prefix * "_surface",
                                                      file_splitting = TimeInterval(file_splitting_interval),
-                                                     overwrite_existing = true)
+                                                     overwrite_existing = true,
+                                                     jld2_kw = Dict(:compress => ZstdFilter()))
 
     # 3-D fields (including buoyancy)
     bop = Oceananigans.Models.buoyancy_operation(ocean.model)
@@ -146,7 +150,8 @@ function add_omip_diagnostics!(simulation;
                                                     dir = output_dir,
                                                     filename = filename_prefix * "_fields",
                                                     file_splitting = TimeInterval(file_splitting_interval),
-                                                    overwrite_existing = true)
+                                                    overwrite_existing = true,
+                                                    jld2_kw = Dict(:compress => ZstdFilter()))
 
     # Global means and horizontal-mean depth profiles for T, S, b
     average_outputs = Dict{Symbol, Any}(
