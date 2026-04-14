@@ -10,7 +10,24 @@ using CUDA
 using NumericalEarth
 using NumericalEarth.Oceans: ocean_simulation, default_ocean_closure
 using NumericalEarth.SeaIces: sea_ice_simulation
-using NumericalEarth.EarthSystemModels: OceanSeaIceModel, Radiation
+using NumericalEarth.EarthSystemModels: OceanSeaIceModel, Radiation,
+    SimilarityTheoryFluxes,
+    COARELogarithmicSimilarityProfile,
+    LinearStableStabilityFunction,
+    MomentumBasedFrictionVelocity,
+    ThreeEquationHeatFlux,
+    ncar_stability_functions
+
+using NumericalEarth.EarthSystemModels.InterfaceComputations:
+    MomentumRoughnessLength,
+    ScalarRoughnessLength,
+    NCARMomentumRoughnessLength,
+    NCARScalarRoughnessLength,
+    WindDependentWaveFormulation,
+    TemperatureDependentAirViscosity,
+    SimilarityScales,
+    atmosphere_sea_ice_stability_functions
+    
 using NumericalEarth.Bathymetry: regrid_bathymetry, ORCAGrid
 using NumericalEarth.DataWrangling: Metadatum, Metadata, DatasetRestoring,
                                     EN4Monthly, ECCO4Monthly
