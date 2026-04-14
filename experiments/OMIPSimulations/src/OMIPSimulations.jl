@@ -20,6 +20,8 @@ using NumericalEarth.EarthSystemModels: OceanSeaIceModel, Radiation,
     ncar_stability_functions
 
 using NumericalEarth.EarthSystemModels.InterfaceComputations:
+    ComponentInterfaces,
+    CoefficientBasedFluxes,
     MomentumRoughnessLength,
     ScalarRoughnessLength,
     NCARMomentumRoughnessLength,

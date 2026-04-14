@@ -94,27 +94,29 @@ Build the `OceanSeaIceModel` with the specified flux configuration.
 Options: `:default`, `:corrected`, `:ncar`.
 """
 function build_coupled_model(ocean, sea_ice, atmosphere, radiation, flux_configuration)
-    FT = eltype(ocean.model.grid)
-
     if flux_configuration == :default
         return OceanSeaIceModel(ocean, sea_ice; atmosphere, radiation)
-    elseif flux_configuration == :corrected
-        return OceanSeaIceModel(ocean, sea_ice;
-                                atmosphere, 
-                                radiation,
-                                atmosphere_ocean_fluxes   = corrected_atmosphere_ocean_fluxes(FT),
-                                atmosphere_sea_ice_fluxes = corrected_atmosphere_sea_ice_fluxes(FT),
-                                sea_ice_ocean_heat_flux   = corrected_ice_ocean_heat_flux())
+    end
+
+    FT = eltype(ocean.model.grid)
+
+    if flux_configuration == :corrected
+        interfaces = ComponentInterfaces(atmosphere, ocean, sea_ice;
+                                         radiation,
+                                         atmosphere_ocean_fluxes   = corrected_atmosphere_ocean_fluxes(FT),
+                                         atmosphere_sea_ice_fluxes = corrected_atmosphere_sea_ice_fluxes(FT),
+                                         sea_ice_ocean_heat_flux   = corrected_ice_ocean_heat_flux())
     elseif flux_configuration == :ncar
-        return OceanSeaIceModel(ocean, sea_ice;
-                                atmosphere, 
-                                radiation,
-                                atmosphere_ocean_fluxes   = ncar_atmosphere_ocean_fluxes(FT),
-                                atmosphere_sea_ice_fluxes = ncar_atmosphere_sea_ice_fluxes(FT),
-                                sea_ice_ocean_heat_flux   = corrected_ice_ocean_heat_flux())
+        interfaces = ComponentInterfaces(atmosphere, ocean, sea_ice;
+                                         radiation,
+                                         atmosphere_ocean_fluxes   = ncar_atmosphere_ocean_fluxes(FT),
+                                         atmosphere_sea_ice_fluxes = ncar_atmosphere_sea_ice_fluxes(FT),
+                                         sea_ice_ocean_heat_flux   = corrected_ice_ocean_heat_flux())
     else
         error("Unknown flux_configuration: $flux_configuration. Options: :default, :corrected, :ncar")
     end
+
+    return OceanSeaIceModel(ocean, sea_ice; atmosphere, interfaces)
 end
 
 #####

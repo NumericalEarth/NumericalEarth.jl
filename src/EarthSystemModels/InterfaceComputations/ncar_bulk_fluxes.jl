@@ -10,8 +10,8 @@ Unlike `SimilarityTheoryFluxes`, this formulation iterates directly on the trans
 coefficients (Cd, Ch, Ce) rather than on roughness lengths. Key features:
 
 - Neutral 10-m drag coefficient `CdN` from empirical polynomial of neutral wind speed `UN10`
-- Stability-dependent neutral Stanton number: `ChN = 18√CdN` (stable) or `32.7√CdN` (unstable)
-- Neutral Dalton number: `CeN = 34.6√CdN` (both regimes)
+- Stability-dependent neutral Stanton number: `ChN = 18sqrtCdN` (stable) or `32.7sqrtCdN` (unstable)
+- Neutral Dalton number: `CeN = 34.6sqrtCdN` (both regimes)
 - Paulson (1970) / Kansas stability functions: γ = 16, stable branch = -5ζ (bounded at 10)
 - 5 fixed iterations (no convergence check)
 - Wind speed floor at 0.5 m/s
@@ -154,21 +154,21 @@ end
 
     # --- Neutral transfer coefficients ---
     CdN = ncar_neutral_drag_coefficient(UN10)
-    √CdN = sqrt(CdN)
+    sqrtCdN = sqrt(CdN)
 
     # Stability-dependent neutral Stanton number (L&Y eq. 6c-6d)
     stable = ζ > 0
-    ChN = FT(1e-3) * √CdN * ifelse(stable, FT(18), FT(32.7))
-    CeN = FT(1e-3) * FT(34.6) * √CdN
+    ChN = FT(1e-3) * sqrtCdN * ifelse(stable, FT(18), FT(32.7))
+    CeN = FT(1e-3) * FT(34.6) * sqrtCdN
 
     # --- Apply stability corrections (L&Y eq. 10a-10c) ---
-    # Cd = CdN / [1 + √CdN/κ * (log(Δh/h₀) - ψₘ)]²
-    ξₘ = √CdN / κ * (log(Δh / h₀) - ψₘ)
+    # Cd = CdN / [1 + sqrtCdN/κ * (log(Δh/h₀) - ψₘ)]²
+    ξₘ = sqrtCdN / κ * (log(Δh / h₀) - ψₘ)
     Cd = CdN / (1 + ξₘ)^2
 
-    √Cd = sqrt(Cd)
-    ξₕ = √CdN / κ * (log(Δh / h₀) - ψₕ)
-    ratio = √Cd / √CdN
+    sqrtCd = sqrt(Cd)
+    ξₕ = sqrtCdN / κ * (log(Δh / h₀) - ψₕ)
+    ratio = sqrtCd / sqrtCdN
 
     # Ch = ChN * ratio / (1 + ChN * ξₕ)
     Ch = ChN * ratio / (1 + ChN * ξₕ)
@@ -177,9 +177,9 @@ end
     Ce = CeN * ratio / (1 + CeN * ξₕ)
 
     # --- Derive turbulent scales from transfer coefficients ---
-    u★ = √Cd * U
-    θ★ = Ch / √Cd * Δθ
-    q★ = Ce / √Cd * Δq
+    u★ = sqrtCd * U
+    θ★ = Ch / sqrtCd * Δθ
+    q★ = Ce / sqrtCd * Δq
 
     return u★, θ★, q★
 end
