@@ -86,7 +86,7 @@ sbatch "${SBATCH_ARGS[@]}" "$@" <<'EOF'
 #SBATCH -N 1
 #SBATCH --ntasks-per-node=1
 #SBATCH -p sched_mit_raffaele
-#SBATCH --time=02:00:00
+#SBATCH --time=24:00:00
 #SBATCH --mem=4GB
 
 set -euo pipefail
