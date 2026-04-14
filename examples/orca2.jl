@@ -173,6 +173,8 @@ sea_ice.output_writers[:surface] = JLD2Writer(sea_ice.model, sea_ice_outputs;
 # We are ready to press the big red button and run the simulation.
 run!(simulation)
 
+using CairoMakie, GeoMakie
+
 fds_surface     = FieldDataset("surface_"*fname_suffix*".jld2", backend = OnDisk())
 fds_ice         = FieldDataset("sea_ice_"*fname_suffix*".jld2", backend = OnDisk())
 fds_diagnostics = FieldDataset("diagnostics_"*fname_suffix*".jld2")
