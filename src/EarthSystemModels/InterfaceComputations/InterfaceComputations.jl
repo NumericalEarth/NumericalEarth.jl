@@ -14,6 +14,7 @@ export
     ScalarRoughnessLength,
     NCARMomentumRoughnessLength,
     NCARScalarRoughnessLength,
+    NCARBulkFluxes,
     CoefficientBasedFluxes,
     SkinTemperature,
     BulkTemperature,
@@ -80,6 +81,7 @@ include("interface_states.jl")
 include("compute_interface_state.jl")
 include("similarity_theory_turbulent_fluxes.jl")
 include("coefficient_based_turbulent_fluxes.jl")
+include("ncar_bulk_fluxes.jl")
 
 # State exchanger and interfaces
 include("state_exchanger.jl")

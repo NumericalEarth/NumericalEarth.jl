@@ -16,6 +16,7 @@ using NumericalEarth.EarthSystemModels: OceanSeaIceModel, Radiation,
     LinearStableStabilityFunction,
     MomentumBasedFrictionVelocity,
     ThreeEquationHeatFlux,
+    NCARBulkFluxes,
     ncar_stability_functions
 
 using NumericalEarth.EarthSystemModels.InterfaceComputations:

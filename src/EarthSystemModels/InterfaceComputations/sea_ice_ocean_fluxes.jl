@@ -175,12 +175,12 @@ end
     qᶠ = δ𝒬ᶠʳᶻ / ℰ
 
     @inbounds begin
-        Tᴺ = Tᵒᶜ[i, j, Nz]               
-        Sᴺ = Sᵒᶜ[i, j, Nz]               
+        Tᴺ  = Tᵒᶜ[i, j, Nz]               
+        Sᴺ  = Sᵒᶜ[i, j, Nz]               
         Sˢⁱ = ice_salinity[i, j, 1]      
         hˢⁱ = ice_thickness[i, j, 1]     
-        ℵᵢ = ice_concentration[i, j, 1] 
-        hc = ice_consolidation_thickness[i, j, 1] 
+        ℵᵢ  = ice_concentration[i, j, 1] 
+        hc  = ice_consolidation_thickness[i, j, 1] 
     end
 
     # Extract internal temperature (for ConductiveFluxTEF, zero otherwise)

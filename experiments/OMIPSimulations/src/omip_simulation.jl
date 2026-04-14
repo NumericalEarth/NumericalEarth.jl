@@ -57,32 +57,27 @@ corrected_ice_ocean_heat_flux() = ThreeEquationHeatFlux(; friction_velocity = Mo
 """
     ncar_atmosphere_ocean_fluxes(FT = Float64)
 
-OMIP-2 standard atmosphere-ocean flux formulation using Large & Yeager (2004, 2009)
-NCAR bulk formulae:
-- Empirical polynomial drag coefficient
-- Paulson (1970) stability functions with γ=16 (unstable) and -5ζ (stable)
-- Wind speed floor at 0.5 m/s (no convective gustiness)
-- COARE logarithmic similarity profile
+OMIP-2 standard atmosphere-ocean flux formulation using the NCAR/Large & Yeager
+(2004, 2009) bulk algorithm. Iterates directly on transfer coefficients (Cd, Ch, Ce),
+NOT on roughness lengths. Uses 5 fixed iterations with Paulson stability functions.
 """
-ncar_atmosphere_ocean_fluxes(FT = Float64) = 
-    SimilarityTheoryFluxes(FT;
-                           stability_functions          = ncar_stability_functions(FT),
-                           similarity_form              = COARELogarithmicSimilarityProfile(),
-                           gustiness_parameter          = FT(0),
-                           minimum_gustiness            = FT(0.5),
-                           momentum_roughness_length    = NCARMomentumRoughnessLength(FT),
-                           temperature_roughness_length = NCARScalarRoughnessLength(FT; coefficient = 32.7),
-                           water_vapor_roughness_length = NCARScalarRoughnessLength(FT; coefficient = 34.6))
+ncar_atmosphere_ocean_fluxes(FT = Float64) = NCARBulkFluxes(FT)
 
 """
     ncar_atmosphere_sea_ice_fluxes(FT = Float64)
 
-NCAR/CORE atmosphere-sea ice flux formulation with:
-- Paulson (1970) + linear stable stability functions
-- Fixed z0 = z0t = z0q = 5e-4 m (CICE default: no Andreas scalar scaling)
+NCAR/CORE atmosphere-sea ice flux formulation with full Monin-Obukhov
+similarity theory and stability corrections:
+- Paulson (1970) + linear stable (-5ζ) stability functions (same as NCAR ocean)
+- Fixed z0 = z0t = z0q = 5e-4 m (CICE default; SHEBA standard)
 - Wind speed floor at 0.5 m/s
+- COARE logarithmic similarity profile (no ψ(ℓ/L) term)
+
+Over ice the roughness lengths are fixed geometric constants (not wind-dependent),
+so the standard MOST roughness-length iteration is consistent here (unlike the
+ocean case where the NCAR polynomial Cd requires its own solver).
 """
-ncar_atmosphere_sea_ice_fluxes(FT = Float64) = 
+ncar_atmosphere_sea_ice_fluxes(FT = Float64) =
     SimilarityTheoryFluxes(FT;
                            stability_functions          = ncar_stability_functions(FT),
                            similarity_form              = COARELogarithmicSimilarityProfile(),
