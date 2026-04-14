@@ -12,17 +12,21 @@ GOCore.best_manifold(sg::SpeedyWeather.SpectralGrid) = GOCore.best_manifold(sg.g
 treeify(manifold::GOCore.Spherical, sg::SpeedyWeather.SpectralGrid) = treeify(manifold, sg.grid)
 
 function treeify(manifold::GOCore.Spherical, grid::RingGrids.AbstractGrid)
+    # get_gridcell_polygons returns a 5×npoints matrix of (lon, lat) tuples
+    # with vertices in clockwise order: E, S, W, N, E (closed).
+    # We reverse to counter-clockwise (E, N, W, S, E) for correct signed area.
     polygons_matrix = RingGrids.get_gridcell_polygons(grid)
     npoints = size(polygons_matrix, 2)
     lonlat_to_usp = GO.UnitSphereFromGeographic()
 
     polys = Vector{GI.Polygon}(undef, npoints)
     for ij in 1:npoints
-        v1 = lonlat_to_usp(polygons_matrix[1, ij])
-        v2 = lonlat_to_usp(polygons_matrix[2, ij])
-        v3 = lonlat_to_usp(polygons_matrix[3, ij])
-        v4 = lonlat_to_usp(polygons_matrix[4, ij])
-        polys[ij] = GI.Polygon(SA[GI.LinearRing(SA[v1, v2, v3, v4, v1])])
+        vE = lonlat_to_usp(polygons_matrix[1, ij])
+        vS = lonlat_to_usp(polygons_matrix[2, ij])
+        vW = lonlat_to_usp(polygons_matrix[3, ij])
+        vN = lonlat_to_usp(polygons_matrix[4, ij])
+        # CCW: E → N → W → S → E
+        polys[ij] = GI.Polygon(SA[GI.LinearRing(SA[vE, vN, vW, vS, vE])])
     end
 
     return Trees.treeify(manifold, polys)
