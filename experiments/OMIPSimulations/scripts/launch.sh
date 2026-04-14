@@ -117,16 +117,12 @@ sim = omip_simulation(:halfdegree;
                       arch = GPU(),
                       Nz = 70,
                       depth = 5500,
-                      Δt = 20minutes,
+                      Δt = 25minutes,
                       output_dir = "halfdegree_run",
                       filename_prefix = "halfdegree")
 
-sim.stop_time = 721days
-run!(sim)
-
-sim.Δt = 25minutes
 sim.stop_time = 300 * 365days
-run!(sim)'
+run!(sim, pickup=:latest)'
         ;;
     orca)
         JULIA_EXPR='using OMIPSimulations
@@ -146,7 +142,7 @@ sim = omip_simulation(:orca;
                       filename_prefix = "orca")
 
 sim.stop_time = 300 * 365days
-run!(sim; pickup = true)'
+run!(sim; pickup=:latest)'
         ;;
     orca_corrected)
         JULIA_EXPR='using OMIPSimulations
