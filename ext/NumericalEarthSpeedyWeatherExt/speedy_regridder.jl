@@ -6,8 +6,6 @@ import GeoInterface as GI
 
 using StaticArrays: SA
 
-const lonlat_to_unit_sphere = GO.UnitSphereFromGeographic()
-
 GOCore.best_manifold(grid::RingGrids.AbstractGrid) = GO.Spherical()
 GOCore.best_manifold(sg::SpeedyWeather.SpectralGrid) = GOCore.best_manifold(sg.grid)
 
@@ -15,10 +13,13 @@ treeify(manifold::GOCore.Spherical, sg::SpeedyWeather.SpectralGrid) = treeify(ma
 
 # get_gridcell_polygons returns CW (E, S, W, N); reverse to CCW (E, N, W, S)
 function ccw_unit_sphere_polygon(polygons_matrix, ij)
-    vE = lonlat_to_unit_sphere(polygons_matrix[1, ij])
-    vN = lonlat_to_unit_sphere(polygons_matrix[4, ij])
-    vW = lonlat_to_unit_sphere(polygons_matrix[3, ij])
-    vS = lonlat_to_unit_sphere(polygons_matrix[2, ij])
+
+    USFG = GO.UnitSphereFromGeographic()
+
+    vE = USFG(polygons_matrix[1, ij])
+    vN = USFG(polygons_matrix[4, ij])
+    vW = USFG(polygons_matrix[3, ij])
+    vS = USFG(polygons_matrix[2, ij])
     return GI.Polygon(SA[GI.LinearRing(SA[vE, vN, vW, vS, vE])])
 end
 
@@ -44,7 +45,6 @@ end
 function treeify(manifold::GOCore.Spherical, grid::RingGrids.AbstractGrid)
     polygons = RingGrids.get_gridcell_polygons(grid)
     rings    = RingGrids.eachring(grid)
-
     subtrees = Trees.IndexOffsetQuadtreeCursor[]
     offsets  = Int[]
     cumulative = 0
