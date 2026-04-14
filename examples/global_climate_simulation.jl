@@ -17,9 +17,9 @@
 # `SpeedyWeather.PrimitiveWetModel` (the atmosphere). All these are coupled and orchestrated by the `NumericalEarth.EarthSystemModel`
 # (the coupled system).
 #
-# The XESMF.jl package is used to regrid fields between the atmosphere and ocean--sea ice components.
+# The ConservativeRegridding.jl package is used to regrid fields between the atmosphere and ocean--sea ice components.
 
-using Oceananigans, SpeedyWeather, XESMF, NumericalEarth
+using Oceananigans, SpeedyWeather, NumericalEarth
 using NCDatasets, CairoMakie
 using Oceananigans.Units
 using Printf, Statistics, Dates
@@ -76,7 +76,7 @@ Oceananigans.set!(sea_ice.model, h=Metadatum(:sea_ice_thickness, dataset=ECCO4Mo
 # The `atmosphere_simulation` function takes care of building an atmosphere model with appropriate
 # hooks so that NumericalEarth can compute inter-component fluxes.
 nlayers = 4
-spectral_grid = SpeedyWeather.SpectralGrid(; trunc=63, nlayers, Grid=FullClenshawGrid)
+spectral_grid = SpeedyWeather.SpectralGrid(; trunc=63, nlayers)
 atmosphere = atmosphere_simulation(spectral_grid, output=true)
 
 # The atmosphere model already includes some initial conditions as described above:

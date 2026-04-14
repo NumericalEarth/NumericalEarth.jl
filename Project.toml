@@ -8,6 +8,7 @@ authors = ["NumericalEarth contributors"]
 Adapt = "79e6a3ab-5dfb-504d-930d-738a2a938a0e"
 CFTime = "179af706-886a-5703-950a-314cd64e0468"
 ClimaSeaIce = "6ba0ff68-24e6-4315-936c-2e99227c95a4"
+ConservativeRegridding = "8e50ac2c-eb48-49bc-a402-07c87b949343"
 DataDeps = "124859b0-ceae-595e-8997-d05f6a7a8dfe"
 Dates = "ade2ca70-3891-5945-98fb-dc099432e06a"
 DocStringExtensions = "ffbed154-4ef7-542d-bbb7-c09d3a79fcae"
@@ -39,14 +40,13 @@ PythonCall = "6099a3de-0909-46bc-b1f4-468b9a2dfc0d"
 Reactant = "3c362404-f566-11ee-1572-e11a4b42c853"
 SpeedyWeather = "9e226e20-d153-4fed-8a5b-493def4f21a9"
 WorldOceanAtlasTools = "04f20302-f1b9-11e8-29d9-7d841cb0a64a"
-XESMF = "2e0b0046-e7a1-486f-88de-807ee8ffabe5"
 
 [extensions]
 NumericalEarthBreezeExt = "Breeze"
 NumericalEarthCDSAPIExt = "CDSAPI"
 NumericalEarthCopernicusMarineExt = "CopernicusMarine"
 NumericalEarthReactantExt = "Reactant"
-NumericalEarthSpeedyWeatherExt = ["SpeedyWeather", "XESMF"]
+NumericalEarthSpeedyWeatherExt = "SpeedyWeather"
 NumericalEarthVerosExt = ["PythonCall", "CondaPkg"]
 NumericalEarthWOAExt = "WorldOceanAtlasTools"
 
@@ -80,7 +80,7 @@ SpeedyWeather = "0.17.4"
 StaticArrays = "1"
 Statistics = "<0.0.1, 1"
 Thermodynamics = "0.15.3"
+ConservativeRegridding = "0.2"
 WorldOceanAtlasTools = "0.6"
-XESMF = "0.1.6"
 ZipFile = "0.10"
 julia = "1.10"

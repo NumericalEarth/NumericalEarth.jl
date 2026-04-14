@@ -4,9 +4,9 @@ using OffsetArrays
 using KernelAbstractions
 using Statistics
 
-import SpeedyWeather 
-import NumericalEarth 
-import Oceananigans 
+import SpeedyWeather
+import NumericalEarth
+import Oceananigans
 import SpeedyWeather.RingGrids
 
 include("speedy_atmosphere_simulations.jl")

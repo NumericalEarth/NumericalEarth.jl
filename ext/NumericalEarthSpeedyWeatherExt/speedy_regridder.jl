@@ -1,49 +1,29 @@
-using Oceananigans.Grids: AbstractGrid
-using Oceananigans
+using ConservativeRegridding: Trees
+import ConservativeRegridding.Trees: treeify
+import GeometryOpsCore as GOCore
+import GeometryOps as GO
+import GeoInterface as GI
 
-import XESMF: Regridder, xesmf_coordinates
+using StaticArrays: SA
 
-const Grids = Union{SpeedyWeather.SpectralGrid, AbstractGrid}
+GOCore.best_manifold(grid::RingGrids.AbstractGrid) = GO.Spherical()
+GOCore.best_manifold(sg::SpeedyWeather.SpectralGrid) = GOCore.best_manifold(sg.grid)
 
-function Regridder(src::Grids, dst::Grids; method::String="bilinear", periodic=true)
-    src_coords = xesmf_coordinates(src, Center(), Center(), Center())
-    dst_coords = xesmf_coordinates(dst, Center(), Center(), Center())
+treeify(manifold::GOCore.Spherical, sg::SpeedyWeather.SpectralGrid) = treeify(manifold, sg.grid)
 
-    return XESMF.Regridder(src_coords, dst_coords; method, periodic)
-end
+function treeify(manifold::GOCore.Spherical, grid::RingGrids.AbstractGrid)
+    polygons_matrix = RingGrids.get_gridcell_polygons(grid)
+    npoints = size(polygons_matrix, 2)
+    lonlat_to_usp = GO.UnitSphereFromGeographic()
 
-two_dimensionalize(lat::Matrix, lon::Matrix) = lat, lon
+    polys = Vector{GI.Polygon}(undef, npoints)
+    for ij in 1:npoints
+        v1 = lonlat_to_usp(polygons_matrix[1, ij])
+        v2 = lonlat_to_usp(polygons_matrix[2, ij])
+        v3 = lonlat_to_usp(polygons_matrix[3, ij])
+        v4 = lonlat_to_usp(polygons_matrix[4, ij])
+        polys[ij] = GI.Polygon(SA[GI.LinearRing(SA[v1, v2, v3, v4, v1])])
+    end
 
-function two_dimensionalize(lat::AbstractVector, lon::AbstractVector) 
-    Nx  = length(lon)
-    Ny  = length(lat)
-    lat = repeat(lat', Nx)
-    lon = repeat(lon, 1, Ny)
-    return lat, lon
-end
-
-xesmf_coordinates(grid::SpeedyWeather.SpectralGrid, args...) = xesmf_coordinates(grid.grid, args...)
-xesmf_coordinates(grid::SpeedyWeather.RingGrids.AbstractGrid, args...) = 
-    throw(ArgumentError("xesmf_coordinates not implemented for grid type $(typeof(grid)), maybe you meant to pass a FullGrid?"))
-
-function xesmf_coordinates(grid::SpeedyWeather.RingGrids.AbstractFullGrid, args...)
-    lon  = RingGrids.get_lond(grid)
-    lat  = RingGrids.get_latd(grid)
-    dlon = lon[2] - lon[1]
-
-    lat_b = [90, 0.5 .* (lat[1:end-1] .+ lat[2:end])..., -90]
-    lon_b = [lon[1] - dlon / 2, lon .+ dlon / 2...]
-
-    lat,   lon   = two_dimensionalize(lat,   lon)
-    lat_b, lon_b = two_dimensionalize(lat_b, lon_b)
-
-    # Python's xESMF expects 2D arrays with (x, y) coordinates
-    # in which y varies in dim=1 and x varies in dim=2
-    # therefore we transpose the coordinate matrices
-    coords_dictionary = Dict("lat"   => permutedims(lat, (2, 1)),  # φ is latitude
-                             "lon"   => permutedims(lon, (2, 1)),  # λ is longitude
-                             "lat_b" => permutedims(lat_b, (2, 1)),
-                             "lon_b" => permutedims(lon_b, (2, 1)))
-
-    return coords_dictionary
+    return Trees.treeify(manifold, polys)
 end

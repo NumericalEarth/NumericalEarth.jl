@@ -1,4 +1,4 @@
-using SpeedyWeather, XESMF
+using SpeedyWeather
 using NumericalEarth
 using Oceananigans
 using Dates
@@ -7,7 +7,7 @@ using Test
 NumericalEarthSpeedyWeatherExt = Base.get_extension(NumericalEarth, :NumericalEarthSpeedyWeatherExt)
 @test !isnothing(NumericalEarthSpeedyWeatherExt)
 
-spectral_grid = SpeedyWeather.SpectralGrid(trunc=51, nlayers=3, Grid=FullClenshawGrid)
+spectral_grid = SpeedyWeather.SpectralGrid(trunc=51, nlayers=3)
 oceananigans_grid = LatitudeLongitudeGrid(Oceananigans.CPU(); size=(200, 100, 1), latitude=(-80, 80), longitude=(0, 360), z = (0, 1))
 
 ocean = NumericalEarth.Oceans.ocean_simulation(oceananigans_grid; momentum_advection=nothing, tracer_advection=nothing, closure=nothing)
