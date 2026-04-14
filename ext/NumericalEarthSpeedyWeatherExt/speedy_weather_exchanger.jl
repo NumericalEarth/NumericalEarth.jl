@@ -43,34 +43,12 @@ function ComponentExchanger(atmosphere::SpeedySimulation, exchange_grid)
     return ComponentExchanger(state, regridder)
 end
 
-# Regrid from atmosphere (src) onto an Oceananigans field (dst).
-# For reduced grids the regridder has ghost cells: src_areas is longer
-# than the actual data vector, so we zero-pad into src_temp.
 function regrid!(field::Oceananigans.Field, regridder::Regridder, data::AbstractArray)
-    src = vec(data)
-    nsrc = length(regridder.src_areas)
-    if length(src) < nsrc
-        fill!(regridder.src_temp, 0)
-        regridder.src_temp[1:length(src)] .= src
-        regrid!(regridder.dst_temp, regridder, regridder.src_temp)
-        vec(interior(field)) .= regridder.dst_temp
-    else
-        regrid!(vec(interior(field)), regridder, src)
-    end
+    regrid!(vec(interior(field)), regridder, vec(data))
 end
 
-# Regrid from an Oceananigans field (src) onto atmosphere data (dst).
-# For reduced grids the regridder's dst has ghost cells, so we regrid
-# into dst_temp and copy back only the real entries.
 function regrid!(data::AbstractArray, regridder::Regridder, field::Oceananigans.Field)
-    dst = vec(data)
-    ndst = length(regridder.dst_areas)
-    if length(dst) < ndst
-        regrid!(regridder.dst_temp, regridder, regridder.src_temp .= vec(interior(field)))
-        dst .= view(regridder.dst_temp, 1:length(dst))
-    else
-        regrid!(dst, regridder, vec(interior(field)))
-    end
+    regrid!(vec(data), regridder, vec(interior(field)))
 end
 
 # Regrid the atmospheric state on the exchange grid
