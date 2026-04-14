@@ -116,11 +116,11 @@ Keyword Arguments
   (default: 72)
 """
 function OSPapaPrescribedAtmosphere(architecture = CPU(), FT = Float32;
-                                     start_date = first_date(OSPapaHourly(), :air_temperature),
-                                     end_date = last_date(OSPapaHourly(), :air_temperature),
-                                     dir = download_OSPapa_cache,
-                                     surface_layer_height = 2.5,
-                                     max_gap_hours = 72)
+                                    start_date = first_date(OSPapaHourly(), :air_temperature),
+                                    end_date = last_date(OSPapaHourly(), :air_temperature),
+                                    dir = download_OSPapa_cache,
+                                    surface_layer_height = 2.5,
+                                    max_gap_hours = 72)
 
     on_arch = arr -> Oceananigans.on_architecture(architecture, arr)
 
