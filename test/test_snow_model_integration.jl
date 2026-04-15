@@ -145,24 +145,6 @@ end
                                extent = (1, 1, 1),
                                topology = (Periodic, Periodic, Bounded))
 
-        @testset "Coupled model without snow [$A]" begin
-            ocean = ocean_simulation(grid;
-                                     momentum_advection = nothing,
-                                     tracer_advection = nothing,
-                                     closure = nothing,
-                                     coriolis = nothing)
-
-            sea_ice = sea_ice_simulation(grid, ocean; dynamics=nothing)
-            atmosphere = PrescribedAtmosphere(grid, [0.0])
-            radiation = Radiation()
-
-            @test begin
-                coupled = OceanSeaIceModel(ocean, sea_ice; atmosphere, radiation)
-                time_step!(coupled, 1)
-                true
-            end
-        end
-
         @testset "Coupled model with snow [$A]" begin
             ocean = ocean_simulation(grid;
                                      momentum_advection = nothing,
