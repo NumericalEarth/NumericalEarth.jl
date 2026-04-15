@@ -181,7 +181,8 @@ plumbing is needed because `NumericalEarth.EarthSystemModels` provides
 - `κ_skew`, `κ_symmetric`: GM/Redi diffusivities. Defaults: `500`, `100`.
 - `forcing_dir`: directory for JRA55 forcing data. Default: `"forcing_data"`.
 - `restoring_dir`: directory for restoring/IC climatology. Default: `"climatology"`.
-- `restoring_rate`: surface salinity restoring piston velocity in m/day. Default: `1/6`.
+- `piston_velocity`: surface salinity restoring piston velocity in m/day. Default: `1/6`.
+  Restoring is automatically masked by sea ice concentration (no restoring under ice).
 - `start_date`, `end_date`: bracket for forcing/restoring metadata. Defaults: 1958-01-01 .. 2018-01-01.
 - `Δt`: simulation time step. Default: `30minutes`.
 - `stop_time`: stop time for the wrapping `Simulation`. Default: `Inf`.
@@ -203,7 +204,7 @@ function omip_simulation(config::Symbol = :halfdegree;
                          biharmonic_timescale = 40days,
                          forcing_dir = "forcing_data",
                          restoring_dir = "climatology",
-                         piston_velocity = 1 / 12, # m / day
+                         piston_velocity = 1 / 6, # m / day
                          start_date = DateTime(1958, 1, 1),
                          end_date = DateTime(2018, 1, 1),
                          Δt = 30minutes,
@@ -221,13 +222,19 @@ function omip_simulation(config::Symbol = :halfdegree;
 
     cfg = Val(config)
 
-    ocean = build_ocean(cfg, arch;
-                        Nz, depth, κ_skew, κ_symmetric, 
+    # Build the grid first so we can allocate the restoring mask
+    grid = build_grid(cfg, arch, Nz, depth)
+
+    # Pre-allocate restoring mask (1 = open water); updated each step from sea ice concentration
+    ice_free_fraction = Field{Center, Center, Nothing}(grid)
+    set!(ice_free_fraction, 1)
+
+    ocean = build_ocean(cfg, grid;
+                        κ_skew, κ_symmetric,
                         biharmonic_timescale,
                         restoring_dir, piston_velocity,
+                        restoring_mask = ice_free_fraction,
                         start_date, end_date)
-
-    grid = ocean.model.grid
 
     sea_ice = build_sea_ice(cfg, grid, ocean; restoring_dir, with_snow)
 
@@ -245,6 +252,11 @@ function omip_simulation(config::Symbol = :halfdegree;
             mkdir(dir)
         end
     end
+
+    # Callback to sync the restoring mask with sea ice concentration each coupled step
+    ℵ = sea_ice.model.ice_concentration
+    update_restoring_mask!(sim) = parent(ice_free_fraction) .= 1 .- parent(ℵ)
+    add_callback!(simulation, update_restoring_mask!, IterationInterval(1))
 
     wall_time = Ref(time_ns())
     add_callback!(simulation, omip_progress_callback(wall_time), IterationInterval(10))
@@ -300,7 +312,8 @@ end
 
 function salinity_restoring_forcing(grid, dataset;
                                     restoring_dir,
-                                    piston_velocity)
+                                    piston_velocity,
+                                    mask = 1)
 
     Nz = size(grid, 3)
     Δz_surface = CUDA.@allowscalar Δzᶜᶜᶜ(1, 1, Nz, grid)
@@ -312,7 +325,7 @@ function salinity_restoring_forcing(grid, dataset;
                          dataset)
 
     return DatasetRestoring(Smetadata, Oceananigans.Architectures.architecture(grid);
-                            rate,
+                            rate, mask,
                             time_indices_in_memory = 12)
 end
 
@@ -364,14 +377,14 @@ config_momentum_advection(::Val{:orca})        = VectorInvariant()
 config_momentum_advection(::Val{:halfdegree})  = WENOVectorInvariant(order=5)
 config_momentum_advection(::Val{:tenthdegree}) = WENOVectorInvariant()
 
-function build_ocean(config, arch;
-                     Nz, depth, κ_skew, κ_symmetric,
+function build_ocean(config, grid;
+                     κ_skew, κ_symmetric,
                      restoring_dir, piston_velocity,
                      biharmonic_timescale,
+                     restoring_mask = 1,
                      start_date, end_date)
 
-    grid = build_grid(config, arch, Nz, depth)
-    FS = salinity_restoring_forcing(grid, WOAMonthly(); restoring_dir, piston_velocity)
+    FS = salinity_restoring_forcing(grid, WOAMonthly(); restoring_dir, piston_velocity, mask = restoring_mask)
 
     closure = omip_closure(; κ_skew, κ_symmetric, biharmonic_timescale)
     coriolis = HydrostaticSphericalCoriolis(scheme = Oceananigans.Coriolis.EnstrophyConserving())
