@@ -154,7 +154,7 @@ function net_fluxes(sea_ice::Simulation{<:SeaIceModel})
         (; u, v)
     end
 
-    snowfall = sea_ice.model.snowfall
+    snowfall = Field{Center, Center, Nothing}(sea_ice.model.grid)
     net_top_sea_ice_fluxes = merge((; heat=sea_ice.model.external_heat_fluxes.top, snowfall), net_momentum_fluxes)
     net_bottom_sea_ice_fluxes = (; heat=sea_ice.model.external_heat_fluxes.bottom)
 
