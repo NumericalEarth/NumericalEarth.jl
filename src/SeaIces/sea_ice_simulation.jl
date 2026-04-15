@@ -140,8 +140,8 @@ end
 sea_ice_thickness(sea_ice::Simulation{<:SeaIceModel}) = sea_ice.model.ice_thickness
 sea_ice_concentration(sea_ice::Simulation{<:SeaIceModel}) = sea_ice.model.ice_concentration
 
-heat_capacity(sea_ice::Simulation{<:SeaIceModel}) = sea_ice.model.ice_thermodynamics.phase_transitions.ice_heat_capacity
-reference_density(sea_ice::Simulation{<:SeaIceModel}) = sea_ice.model.ice_thermodynamics.phase_transitions.ice_density
+heat_capacity(sea_ice::Simulation{<:SeaIceModel}) = sea_ice.model.ice_thermodynamics.phase_transitions.heat_capacity
+reference_density(sea_ice::Simulation{<:SeaIceModel}) = sea_ice.model.ice_thermodynamics.phase_transitions.density
 
 function net_fluxes(sea_ice::Simulation{<:SeaIceModel})
     net_momentum_fluxes = if isnothing(sea_ice.model.dynamics)
