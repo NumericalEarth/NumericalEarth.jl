@@ -7,7 +7,7 @@ using Oceananigans.DistributedComputations: Distributed
 using NumericalEarth: EarthSystemModel
 
 import Oceananigans
-import Oceananigans.Models: initialization_update_state!
+import NumericalEarth.EarthSystemModels: initialization_update_state!
 
 const OceananigansReactantExt = Base.get_extension(
      Oceananigans, :OceananigansReactantExt
