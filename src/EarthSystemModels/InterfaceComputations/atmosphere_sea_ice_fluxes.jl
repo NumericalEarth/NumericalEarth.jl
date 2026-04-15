@@ -84,18 +84,30 @@ end
         # Sea ice properties
         uˢⁱ = zero(FT) # ℑxᶜᵃᵃ(i, j, 1, grid, interior_state.u)
         vˢⁱ = zero(FT) # ℑyᵃᶜᵃ(i, j, 1, grid, interior_state.v)
-        hˢⁱ = interior_state.h[i, j, 1]
+        hˢⁱ = interior_state.hi[i, j, 1]
+        hˢⁿ = interior_state.hs[i, j, 1]
         hc = interior_state.hc[i, j, 1]
         ℵᵢ = interior_state.ℵ[i, j, 1]
         Tₛ = interface_temperature[i, j, 1]
         Tₛ = convert_to_kelvin(sea_ice_properties.temperature_units, Tₛ)
     end
 
+    # Evaluate state-dependent radiation properties at this grid point.
+    # The albedo may be a struct (e.g., CCSM3SeaIceAlbedo) that reads model fields;
+    # we evaluate it here so the iteration uses a scalar.
+    time = Time(clock.time)
+    σ = interface_properties.radiation.σ
+    α = stateindex(interface_properties.radiation.α, i, j, kᴺ, grid, time, CCC)
+    ϵ = stateindex(interface_properties.radiation.ϵ, i, j, kᴺ, grid, time, CCC)
+    local_radiation = (; σ, α, ϵ)
+    local_interface_properties = InterfaceProperties(local_radiation,
+                                                     interface_properties.specific_humidity_formulation,
+                                                     interface_properties.temperature_formulation,
+                                                     interface_properties.velocity_formulation)
+
     # Build thermodynamic and dynamic states in the atmosphere and interface.
-    # Notation:
-    #   ⋅ 𝒰 ≡ "dynamic" state vector (thermodynamics + reference height + velocity)
     ℂᵃᵗ = atmosphere_properties.thermodynamics_parameters
-    zᵃᵗ = atmosphere_properties.surface_layer_height # elevation of atmos variables relative to interface
+    zᵃᵗ = atmosphere_properties.surface_layer_height
 
     local_atmosphere_state = (z = zᵃᵗ,
                               u = uᵃᵗ,
@@ -106,7 +118,7 @@ end
                               h_bℓ = atmosphere_state.h_bℓ)
 
     downwelling_radiation = (; ℐꜜˢʷ, ℐꜜˡʷ)
-    local_interior_state = (u=uˢⁱ, v=vˢⁱ, T=Tᵒᶜ, S=Sᵒᶜ, h=hˢⁱ, hc=hc)
+    local_interior_state = (u=uˢⁱ, v=vˢⁱ, T=Tᵒᶜ, S=Sᵒᶜ, hi=hˢⁱ, hs=hˢⁿ, hc=hc)
     
     # Estimate initial interface state (FP32 compatible)
     u★ = convert(FT, 1f-4)
@@ -132,7 +144,7 @@ end
                                                   local_atmosphere_state,
                                                   local_interior_state,
                                                   downwelling_radiation,
-                                                  interface_properties,
+                                                  local_interface_properties,
                                                   atmosphere_properties,
                                                   sea_ice_properties)
     end
