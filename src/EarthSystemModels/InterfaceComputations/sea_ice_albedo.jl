@@ -108,7 +108,7 @@ Base.show(io::IO, α::SeaIceAlbedo{FT}) where FT =
     @inbounds Ts = α.surface_temperature[i, j, 1]
 
     # Snow thickness: may be nothing (no snow model)
-    hs = get_snow_thickness(α.snow_thickness, i, j)
+    hs = get_snow_thickness(α.snow_thickness, i, j, grid)
 
     # Temperature-dependent reduction (implicit melt ponds)
     Tm = α.melting_temperature
