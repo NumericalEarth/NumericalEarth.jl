@@ -11,9 +11,9 @@ for arch in test_architectures
 
     @testset "InterfaceFluxOutputs on $A" begin
         grid = RectilinearGrid(arch;
-                               size = (4, 4, 2),
+                               size = (4, 5, 2),
                                extent = (1, 1, 1),
-                               topology = (Periodic, Periodic, Bounded))
+                               topology = (Periodic, Bounded, Bounded))
 
         ocean = ocean_simulation(grid;
                                  momentum_advection = nothing,
