@@ -29,6 +29,7 @@ using NumericalEarth.EarthSystemModels.InterfaceComputations:
     WindDependentWaveFormulation,
     TemperatureDependentAirViscosity,
     SimilarityScales,
+    SeaIceAlbedo,
     atmosphere_sea_ice_stability_functions
     
 using NumericalEarth.Bathymetry: regrid_bathymetry, ORCAGrid

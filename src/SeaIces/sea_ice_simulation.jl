@@ -1,5 +1,6 @@
 using ClimaSeaIce
-using ClimaSeaIce: SeaIceModel, SlabSeaIceThermodynamics, PhaseTransitions, ConductiveFlux
+using ClimaSeaIce: SeaIceModel, PhaseTransitions, ConductiveFlux,
+                   sea_ice_slab_thermodynamics, snow_slab_thermodynamics
 using ClimaSeaIce.SeaIceThermodynamics: IceWaterThermalEquilibrium
 using ClimaSeaIce.SeaIceDynamics: SplitExplicitSolver, SemiImplicitStress, SeaIceMomentumEquation, StressBalanceFreeDrift
 using ClimaSeaIce.Rheologies: IceStrength, ElastoViscoPlasticRheology
@@ -17,7 +18,7 @@ ocean_reference_density(::Nothing, FT) = convert(FT, 1026.0)
 function sea_ice_simulation(grid, ocean=nothing;
                             Δt = 5minutes,
                             ice_salinity = 4, # psu
-                            advection = nothing, # for the moment
+                            advection = nothing,
                             tracers = (),
                             ice_heat_capacity = 2100, # J kg⁻¹ K⁻¹
                             ice_consolidation_thickness = 0.05, # m
@@ -25,10 +26,14 @@ function sea_ice_simulation(grid, ocean=nothing;
                             dynamics = sea_ice_dynamics(grid, ocean),
                             bottom_heat_boundary_condition = nothing,
                             top_heat_boundary_condition = nothing,
-                            timestepper = :SplitRungeKutta3, 
+                            timestepper = :SplitRungeKutta3,
                             phase_transitions = PhaseTransitions(; ice_heat_capacity, ice_density),
-                            conductivity = 2, # kg m s⁻³ K⁻¹
-                            internal_heat_flux = ConductiveFlux(; conductivity))
+                            conductivity = 2, # W m⁻¹ K⁻¹
+                            internal_heat_flux = ConductiveFlux(; conductivity),
+                            with_snow = false,
+                            snow_conductivity = 0.31, # W m⁻¹ K⁻¹
+                            snow_density = 330, # kg m⁻³
+                            snowfall = 0)
 
     # Build consistent boundary conditions for the ice model:
     # - bottom -> flux boundary condition
@@ -43,17 +48,23 @@ function sea_ice_simulation(grid, ocean=nothing;
         if isnothing(ocean)
             surface_ocean_salinity = 0
         else
-            kᴺ = size(grid, 3)
             surface_ocean_salinity = ocean_surface_salinity(ocean)
         end
         bottom_heat_boundary_condition = IceWaterThermalEquilibrium(surface_ocean_salinity)
     end
 
-    ice_thermodynamics = SlabSeaIceThermodynamics(grid;
-                                                  internal_heat_flux,
-                                                  phase_transitions,
-                                                  top_heat_boundary_condition,
-                                                  bottom_heat_boundary_condition)
+    ice_thermodynamics = sea_ice_slab_thermodynamics(grid;
+                                                     internal_heat_flux,
+                                                     phase_transitions,
+                                                     top_heat_boundary_condition,
+                                                     bottom_heat_boundary_condition)
+
+    # Snow thermodynamics (ClimaSeaIce wires the IceSnowConductiveFlux internally)
+    snow_thermodynamics = if with_snow
+        snow_slab_thermodynamics(grid; conductivity = snow_conductivity, density = snow_density)
+    else
+        nothing
+    end
 
     bottom_heat_flux = Field{Center, Center, Nothing}(grid)
     top_heat_flux    = Field{Center, Center, Nothing}(grid)
@@ -65,14 +76,14 @@ function sea_ice_simulation(grid, ocean=nothing;
                                 tracers,
                                 ice_consolidation_thickness,
                                 ice_thermodynamics,
+                                snow_thermodynamics,
+                                snowfall,
                                 dynamics,
                                 timestepper,
                                 bottom_heat_flux,
                                 top_heat_flux)
 
     verbose = false
-
-    # Build the simulation
     sea_ice = Simulation(sea_ice_model; Δt, verbose)
 
     return sea_ice
@@ -143,14 +154,22 @@ function net_fluxes(sea_ice::Simulation{<:SeaIceModel})
         (; u, v)
     end
 
-    net_top_sea_ice_fluxes = merge((; heat=sea_ice.model.external_heat_fluxes.top), net_momentum_fluxes)
+    snowfall = sea_ice.model.snowfall
+    net_top_sea_ice_fluxes = merge((; heat=sea_ice.model.external_heat_fluxes.top, snowfall), net_momentum_fluxes)
     net_bottom_sea_ice_fluxes = (; heat=sea_ice.model.external_heat_fluxes.bottom)
 
     return (; bottom = net_bottom_sea_ice_fluxes, top = net_top_sea_ice_fluxes)
 end
 
 function default_ai_temperature(sea_ice::Simulation{<:SeaIceModel})
-    conductive_flux = sea_ice.model.ice_thermodynamics.internal_heat_flux.parameters.flux
+    snow_thermo = sea_ice.model.snow_thermodynamics
+    if isnothing(snow_thermo)
+        # No snow: use ice-only conductive flux
+        conductive_flux = sea_ice.model.ice_thermodynamics.internal_heat_flux.parameters.flux
+    else
+        # With snow: use combined ice+snow conductive flux from the snow layer
+        conductive_flux = snow_thermo.internal_heat_flux.parameters.flux
+    end
     return SkinTemperature(conductive_flux)
 end
 

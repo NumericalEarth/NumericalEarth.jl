@@ -88,6 +88,32 @@ ncar_atmosphere_sea_ice_fluxes(FT = Float64) =
                            water_vapor_roughness_length = FT(5e-4))
 
 """
+    corrected_radiation(sea_ice)
+
+Radiation with OMIP-2 standard ocean parameters (emissivity = 1.0, albedo = 0.06)
+and CCSM3 temperature/snow/thickness-dependent sea ice albedo.
+"""
+function corrected_radiation(sea_ice)
+    hi = sea_ice.model.ice_thickness
+    hs = sea_ice.model.snow_thickness
+
+    # When snow is present, the snow layer owns the surface temperature;
+    # otherwise the ice top surface temperature is the atmosphere interface.
+    snow_thermo = sea_ice.model.snow_thermodynamics
+    Ts = if isnothing(snow_thermo)
+        sea_ice.model.ice_thermodynamics.top_surface_temperature
+    else
+        snow_thermo.top_surface_temperature
+    end
+
+    sea_ice_albedo = SeaIceAlbedo(hi, hs, Ts)
+
+    return Radiation(; ocean_emissivity  = 1.0,
+                       ocean_albedo      = 0.06,
+                       sea_ice_albedo)
+end
+
+"""
     build_coupled_model(ocean, sea_ice, atmosphere, radiation, flux_configuration)
 
 Build the `OceanSeaIceModel` with the specified flux configuration.
@@ -99,6 +125,7 @@ function build_coupled_model(ocean, sea_ice, atmosphere, radiation, flux_configu
     end
 
     FT = eltype(ocean.model.grid)
+    radiation = corrected_radiation(sea_ice)
 
     if flux_configuration == :corrected
         interfaces = ComponentInterfaces(atmosphere, ocean, sea_ice;
@@ -182,6 +209,7 @@ function omip_simulation(config::Symbol = :halfdegree;
                          Δt = 30minutes,
                          stop_time = Inf,
                          flux_configuration = :default,
+                         with_snow = false,
                          diagnostics = true,
                          field_mean_interval = 5days,
                          surface_averaging_interval = 5days,
@@ -201,7 +229,7 @@ function omip_simulation(config::Symbol = :halfdegree;
 
     grid = ocean.model.grid
 
-    sea_ice = build_sea_ice(cfg, grid, ocean; restoring_dir)
+    sea_ice = build_sea_ice(cfg, grid, ocean; restoring_dir, with_snow)
 
     atmosphere, radiation = omip_atmosphere(arch;
                                             forcing_dir,
@@ -370,8 +398,10 @@ end
 ##### Sea Ice builder
 #####
 
-function build_sea_ice(config, grid, ocean; restoring_dir)
-    sea_ice = sea_ice_simulation(grid, ocean; advection = WENO(order=7, minimum_buffer_upwind_order=1))
+function build_sea_ice(config, grid, ocean; restoring_dir, with_snow = false)
+    sea_ice = sea_ice_simulation(grid, ocean;
+                                 advection = WENO(order=7, minimum_buffer_upwind_order=1),
+                                 with_snow)
 
     set!(sea_ice.model,
          h = Metadatum(:sea_ice_thickness;     dir=restoring_dir, dataset=ECCO4Monthly()),

@@ -9,6 +9,7 @@ export
     Radiation,
     ComponentInterfaces,
     LatitudeDependentAlbedo,
+    SeaIceAlbedo,
     SimilarityTheoryFluxes,
     MomentumRoughnessLength,
     ScalarRoughnessLength,
@@ -73,6 +74,7 @@ end
 include("radiation.jl")
 include("latitude_dependent_albedo.jl")
 include("tabulated_albedo.jl")
+include("sea_ice_albedo.jl")
 
 # Turbulent fluxes
 include("roughness_lengths.jl")

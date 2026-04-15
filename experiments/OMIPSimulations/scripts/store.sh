@@ -47,7 +47,7 @@ case "$CONFIG" in
     halfdegree|half_degree)
         CONFIG="halfdegree"
         ;;
-    orca|tenthdegree|orca_corrected|orca_ncar) ;;
+    orca|tenthdegree|orca_corrected|orca_ncar|orca_corrected_snow|orca_ncar_snow) ;;
     -h|--help)
         usage
         exit 0

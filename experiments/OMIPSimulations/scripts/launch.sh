@@ -51,7 +51,7 @@ case "$CONFIG" in
         CONFIG="halfdegree"
         ;;
     orca|tenthdegree) ;;
-    orca_corrected|orca_ncar) ;;
+    orca_corrected|orca_ncar|orca_corrected_snow|orca_ncar_snow) ;;
     -h|--help)
         usage
         exit 0
@@ -182,6 +182,50 @@ sim = omip_simulation(:orca;
                       flux_configuration = :ncar,
                       output_dir = "orca_ncar_run",
                       filename_prefix = "orca_ncar")
+
+sim.stop_time = 300 * 365days
+run!(sim; pickup = true)'
+        ;;
+    orca_corrected_snow)
+        JULIA_EXPR='using OMIPSimulations
+using Oceananigans
+using Oceananigans.Units
+using CUDA
+
+sim = omip_simulation(:orca;
+                      arch = GPU(),
+                      Nz = 70,
+                      depth = 5500,
+                      κ_skew = 500,
+                      κ_symmetric = 250,
+                      biharmonic_timescale = 10days,
+                      Δt = 30minutes,
+                      flux_configuration = :corrected,
+                      with_snow = true,
+                      output_dir = "orca_corrected_snow_run",
+                      filename_prefix = "orca_corrected_snow")
+
+sim.stop_time = 300 * 365days
+run!(sim; pickup = true)'
+        ;;
+    orca_ncar_snow)
+        JULIA_EXPR='using OMIPSimulations
+using Oceananigans
+using Oceananigans.Units
+using CUDA
+
+sim = omip_simulation(:orca;
+                      arch = GPU(),
+                      Nz = 70,
+                      depth = 5500,
+                      κ_skew = 500,
+                      κ_symmetric = 250,
+                      biharmonic_timescale = 10days,
+                      Δt = 30minutes,
+                      flux_configuration = :ncar,
+                      with_snow = true,
+                      output_dir = "orca_ncar_snow_run",
+                      filename_prefix = "orca_ncar_snow")
 
 sim.stop_time = 300 * 365days
 run!(sim; pickup = true)'
