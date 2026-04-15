@@ -27,7 +27,7 @@ function sea_ice_simulation(grid, ocean=nothing;
                             bottom_heat_boundary_condition = nothing,
                             top_heat_boundary_condition = nothing,
                             timestepper = :SplitRungeKutta3,
-                            phase_transitions = PhaseTransitions(; ice_heat_capacity, ice_density),
+                            phase_transitions = PhaseTransitions(; heat_capacity=ice_heat_capacity, density=ice_density),
                             conductivity = 2, # W m⁻¹ K⁻¹
                             internal_heat_flux = ConductiveFlux(; conductivity),
                             with_snow = false,
