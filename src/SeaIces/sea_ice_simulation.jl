@@ -32,8 +32,7 @@ function sea_ice_simulation(grid, ocean=nothing;
                             internal_heat_flux = ConductiveFlux(; conductivity),
                             with_snow = false,
                             snow_conductivity = 0.31, # W m⁻¹ K⁻¹
-                            snow_density = 330, # kg m⁻³
-                            snowfall = 0)
+                            snow_density = 330) # kg m⁻³
 
     # Build consistent boundary conditions for the ice model:
     # - bottom -> flux boundary condition
@@ -68,6 +67,7 @@ function sea_ice_simulation(grid, ocean=nothing;
 
     bottom_heat_flux = Field{Center, Center, Nothing}(grid)
     top_heat_flux    = Field{Center, Center, Nothing}(grid)
+    snowfall         = Field{Center, Center, Nothing}(grid)
 
     # Build the sea ice model
     sea_ice_model = SeaIceModel(grid;
@@ -154,8 +154,7 @@ function net_fluxes(sea_ice::Simulation{<:SeaIceModel})
         (; u, v)
     end
 
-    snowfall = Field{Center, Center, Nothing}(sea_ice.model.grid)
-    net_top_sea_ice_fluxes = merge((; heat=sea_ice.model.external_heat_fluxes.top, snowfall), net_momentum_fluxes)
+    net_top_sea_ice_fluxes = merge((; heat=sea_ice.model.external_heat_fluxes.top, snowfall=sea_ice.model.snowfall), net_momentum_fluxes)
     net_bottom_sea_ice_fluxes = (; heat=sea_ice.model.external_heat_fluxes.bottom)
 
     return (; bottom = net_bottom_sea_ice_fluxes, top = net_top_sea_ice_fluxes)
