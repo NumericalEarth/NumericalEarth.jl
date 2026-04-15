@@ -51,7 +51,7 @@ vertical_mixing = NumericalEarth.Oceans.default_ocean_closure()
 
 free_surface       = SplitExplicitFreeSurface(grid; substeps=20*3)
 momentum_advection = VectorInvariant()
-tracer_advection   = UpwindBiased(order = 3)
+tracer_advection   = WENO(order=5)
 
 dates = DateTime(1993, 1, 1) : Month(1) : DateTime(1993, 11, 1)
 mask = LinearlyTaperedPolarMask(southern=(-80, -70), northern=(70, 90), z=(-100, 0))
@@ -63,9 +63,7 @@ ocean = ocean_simulation(grid; momentum_advection, tracer_advection, free_surfac
                          closure=(eddy_closure, vertical_mixing, horizontal_viscosity, vertical_diffusivity),
                          forcing = (; S = FS))
 
-sea_ice = sea_ice_simulation(grid, ocean; 
-                             advection=WENO(order=3, minimum_buffer_upwind_order=1),
-                             dynamics = nothing)
+sea_ice = sea_ice_simulation(grid, ocean; dynamics = nothing)
 
 # ### Initial condition
 
@@ -146,8 +144,7 @@ diagnostics = (drake_transport = Field(Integral(view(u, 108, 20:33, :), dims = (
 
 vertical_slices = 
     (atlantic = view(ocean.model.tracers.T, 125, :, :),
-     pacific = view(ocean.model.tracers.T, 66, :, :),
-     amoc = view(v, 100:135, 80, :))
+     pacific = view(ocean.model.tracers.T, 66, :, :))
 
 fname_suffix = "orca2"
 
@@ -233,66 +230,87 @@ end
 
 times = fds_diagnostics["drake_transport"].times
 
+title = @lift string(floor(times[$n]./365days))*" years, "*string(mod(times[$n]/(365days/12), 12))*" months"
+
 λ, φ = nodes(so)
 
 fig = Figure(size=(1200, 1200))
 
-ax = GeoAxis(fig[1:2, 1:2]; dest="+proj=denoy", limits = (-180, 180, -80, 80))#Axis(fig[1, 1])
-ax2 = GeoAxis(fig[1:2, 3:4]; dest="+proj=denoy", limits = (-180, 180, -80, 80))#Axis(fig[1, 3])
+ax = GeoAxis(fig[1:2, 1:4]; dest="+proj=moll", limits = (-180, 180, -80, 80), title)
+ax2 = GeoAxis(fig[3:4, 1:4]; dest="+proj=moll", limits = (-180, 180, -80, 80))
 
-ax3 = GeoAxis(fig[3, 1]; dest="+proj=ortho +lat_0=90", limits = (-180, 180, 40, 90))
-ax4 = GeoAxis(fig[3, 2]; dest="+proj=ortho +lat_0=-90", limits = (-180, 180, -90, -40))
+ax3 = GeoAxis(fig[1, 5:6]; dest="+proj=stere +lat_0=90", limits = (-180, 180, 40, 90))
+ax4 = GeoAxis(fig[2, 5:6]; dest="+proj=stere +lat_0=-90", limits = (-180, 180, -90, -40))
 
-ax5 = GeoAxis(fig[3, 3]; dest="+proj=ortho +lat_0=90", limits = (-180, 180, 40, 90))
-ax6 = GeoAxis(fig[3, 4]; dest="+proj=ortho +lat_0=-90", limits = (-180, 180, -90, -40))
+ax5 = GeoAxis(fig[3, 5:6]; dest="+proj=stere +lat_0=90", limits = (-180, 180, 40, 90))
+ax6 = GeoAxis(fig[4, 5:6]; dest="+proj=stere +lat_0=-90", limits = (-180, 180, -90, -40))
 
-ax7 = Axis(fig[4, 1:2], title = "Atlantic", ylabel = "Depth (m)", xlabel = "Latitude (°)")
-ax8 = Axis(fig[4, 3:4], title = "Pacific", ylabel = "Depth (m)", xlabel = "Latitude (°)")
+ax7 = Axis(fig[5, 1:3], title = "Atlantic", ylabel = "Depth (m)", xlabel = "Latitude (°)")
+ax8 = Axis(fig[5, 4:6], title = "Pacific", ylabel = "Depth (m)", xlabel = "Latitude (°)")
 
-ax9 = Axis(fig[6, 1:2], title = "Drake transport (Sverdrops)")
-ax10 = Axis(fig[6, 3:4], ylabel = "Temperature (°C)", title = "Global Mean", xlabel = "Year")
-ax11 = Axis(fig[6, 3:4], yaxisposition = :right, ylabel = "Salinity (psu)", xlabel = "Year")
-hidexdecorations!(ax11)
+markersize = [[(8*Δx[i, j]/maximum(Δx), 5*Δy[i, j]/maximum(Δy)) for i in 1:Nx, j in 1:Ny]...];
 
-sco = scatter!(ax, [λ...], [φ...], color=spd_plt, colormap=:deep, nan_color=:lightgray, markersize = 3, colorrange = (0, 0.5), marker = :rect)
-sci = scatter!(ax, [λ...], [φ...], color=ice_plt, colormap=:greys, markersize = 3, colorrange = (0, 4), marker = :rect)
+sco = scatter!(ax, [λ...], [φ...], color=spd_plt, colormap=:deep, nan_color=:lightgray; markersize, colorrange = (0, 0.5), marker = :rect)
+sci = scatter!(ax, [λ...], [φ...], color=ice_plt, colormap=:greys; markersize, colorrange = (0, 4), marker = :rect)
 
 scatter!(ax3, [λ...], [φ...], color=spd_plt, colormap=:deep, nan_color=:lightgray, markersize = 3, colorrange = (0, 0.5), marker = :rect)
-scatter!(ax3, [λ...], [φ...], color=ice_plt, colormap=:greys, markersize = 3, colorrange = (0, 4), marker = :rect)
+scatter!(ax3, [λ...], [φ...], color=ice_plt, colormap=:greys; markersize, colorrange = (0, 4), marker = :rect)
 
 scatter!(ax4, [λ...], [φ...], color=spd_plt, colormap=:deep, nan_color=:lightgray, markersize = 3, colorrange = (0, 0.5), marker = :rect)
-scatter!(ax4, [λ...], [φ...], color=ice_plt, colormap=:greys, markersize = 3, colorrange = (0, 4), marker = :rect)
+scatter!(ax4, [λ...], [φ...], color=ice_plt, colormap=:greys; markersize, colorrange = (0, 4), marker = :rect)
 
-Colorbar(fig[0, 1:2], sco, label = "Ocean Surface Speed (m/s)", vertical = false)
-Colorbar(fig[5, 1:2], sci, label = "Sea Ice Effective Thickness (m)", vertical = false)
+Colorbar(fig[1:2, 0], sco, label = "Ocean Surface Speed (m/s)")
+Colorbar(fig[1:2, 7], sci, label = "Sea Ice Effective Thickness (m)")
 
-scT = scatter!(ax2, [λ...], [φ...], color=T_plt, colormap=:magma, markersize = 3, colorrange = (-1, 32), marker = :rect)
-scatter!(ax5, [λ...], [φ...], color=T_plt, colormap=:magma, markersize = 3, colorrange = (-1, 32), marker = :rect)
-scatter!(ax6, [λ...], [φ...], color=T_plt, colormap=:magma, markersize = 3, colorrange = (-1, 32), marker = :rect)
-scTi = scatter!(ax2, [λ...], [φ...], color=ice_T_plt, colormap=:vik, markersize = 3, colorrange = (-2, 0), marker = :rect)
-scatter!(ax5, [λ...], [φ...], color=ice_T_plt, colormap=:vik, markersize = 3, colorrange = (-2, 0), marker = :rect)
-scatter!(ax6, [λ...], [φ...], color=ice_T_plt, colormap=:vik, markersize = 3, colorrange = (-2, 0), marker = :rect)
+scT = scatter!(ax2, [λ...], [φ...], color=T_plt, colormap=:magma; markersize, colorrange = (-1, 32), marker = :rect)
+scatter!(ax5, [λ...], [φ...], color=T_plt, colormap=:magma; markersize, colorrange = (-1, 32), marker = :rect)
+scatter!(ax6, [λ...], [φ...], color=T_plt, colormap=:magma; markersize, colorrange = (-1, 32), marker = :rect)
+scTi = scatter!(ax2, [λ...], [φ...], color=ice_T_plt, colormap=:vik; markersize, colorrange = (-2, 0), marker = :rect)
+scatter!(ax5, [λ...], [φ...], color=ice_T_plt, colormap=:vik; markersize, colorrange = (-2, 0), marker = :rect)
+scatter!(ax6, [λ...], [φ...], color=ice_T_plt, colormap=:vik; markersize, colorrange = (-2, 0), marker = :rect)
 
-Colorbar(fig[0, 3:4], scT, label = "Sea Surface Temperature (°C)", vertical = false)
-Colorbar(fig[5, 3:4], scTi, label = "Ice Surface Temperature (°C)", vertical = false)
+title = @lift string(floor(times[$n]./365days))*" years, "*string(mod(times[$n]/(365days/12), 12))*" months"
+Colorbar(fig[3:4, 0], scT, label = "Sea Surface Temperature (°C)")
+Colorbar(fig[3:4, 7], scTi, label = "Ice Surface Temperature (°C)")
 
 λ, φ, z = nodes(grid, Center(), Center(), Center())
 
 heatmap!(ax7, φ[125, :], z, (@lift interior(fds_slice["atlantic"][$n], 1, :, :)), colormap=:magma, colorrange = (-1, 32), nan_color=:lightgray)
 heatmap!(ax8, φ[66, :], z, (@lift interior(fds_slice["pacific"][$n], 1, :, :)), colormap=:magma, colorrange = (-1, 32), nan_color=:lightgray)
 
-lines!(ax9, times./(365days), interior(fds_diagnostics["drake_transport"], 1, 1, 1, :)./10^6)
-scatter!(ax9, (@lift [times[$n]/(365days)]), (@lift [interior(fds_diagnostics["drake_transport"], 1, 1, 1, $n)[]/10^6]))
-ylims!(ax9, 120, 180)
-
-lines!(ax10, times./(365days), interior(fds_diagnostics["mean_T"], 1, 1, 1, :))
-scatter!(ax10, (@lift [times[$n]/(365days)]), (@lift [interior(fds_diagnostics["mean_T"], 1, 1, 1, $n)[]]))
-lines!(ax11, times./(365days), interior(fds_diagnostics["mean_S"], 1, 1, 1, :))
-scatter!(ax11, (@lift [times[$n]/(365days)]), (@lift [interior(fds_diagnostics["mean_S"], 1, 1, 1, $n)[]]))
-
-title = @lift string(floor(times[$n]./365days))*" years, "*string(mod(times[$n]/(365days/12), 12))*" months"
-Label(fig[-1, :], title, fontsize=18)
-
-record(fig, "orca2.mp4", 1:Nt, framerate = 10) do i
+#=record(fig, "orca2.mp4", 1:Nt, framerate = 10) do i
     n[] = i
-end
+end=#
+save("orca2_snapshot.png", fig)
+nothing #hide
+
+# ![](orca2_snapshot.png)
+
+fig = Figure()
+
+ax = Axis(fig[1, 1], title = "Drake transport (Sverdrops)")
+ax2 = Axis(fig[2, 1], ylabel = "Temperature (°C)", title = "Global Mean")
+ax3 = Axis(fig[2, 1], yaxisposition = :right, ylabel = "Salinity (psu)")
+ax4 = Axis(fig[3, 1], ylabel = "TKE (m²/s)")
+ax5 = Axis(fig[3, 1], yaxisposition = :right, ylabel = "SSH (m)", xlabel = "Year")
+hidexdecorations!(ax3)
+hidexdecorations!(ax5)
+
+lines!(ax, times./(365days), interior(fds_diagnostics["drake_transport"], 1, 1, 1, :)./10^6)
+scatter!(ax, (@lift [times[$n]/(365days)]), (@lift [interior(fds_diagnostics["drake_transport"], 1, 1, 1, $n)[]/10^6]))
+ylims!(ax, 120, 180)
+
+lines!(ax2, times./(365days), interior(fds_diagnostics["mean_T"], 1, 1, 1, :))
+scatter!(ax2, (@lift [times[$n]/(365days)]), (@lift [interior(fds_diagnostics["mean_T"], 1, 1, 1, $n)[]]))
+lines!(ax3, times./(365days), interior(fds_diagnostics["mean_S"], 1, 1, 1, :), color = Makie.wong_colors()[2])
+scatter!(ax3, (@lift [times[$n]/(365days)]), (@lift [interior(fds_diagnostics["mean_S"], 1, 1, 1, $n)[]]), color = Makie.wong_colors()[2])
+
+lines!(ax4, times./(365days), interior(fds_diagnostics["total_TKE"], 1, 1, 1, :))
+scatter!(ax4, (@lift [times[$n]/(365days)]), (@lift [interior(fds_diagnostics["total_TKE"], 1, 1, 1, $n)[]]))
+lines!(ax5, times./(365days), interior(fds_diagnostics["mean_SSH"], 1, 1, 1, :), color = Makie.wong_colors()[2])
+scatter!(ax5, (@lift [times[$n]/(365days)]), (@lift [interior(fds_diagnostics["mean_SSH"], 1, 1, 1, $n)[]]), color = Makie.wong_colors()[2])
+
+save("orca2_diagnostics.png", fig)
+nothing #hide
+
+# ![](orca2_diagnostics.png)
