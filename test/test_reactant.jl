@@ -1,6 +1,6 @@
 using Test
 using Reactant
-using NumericalEarth.EarthSystemModels: initialization_update_state!
+using Oceananigans.Models: initialization_update_state!
 using Oceananigans: Oceananigans
 using Oceananigans.Architectures: ReactantState
 using Oceananigans.Grids: Bounded, Flat, LatitudeLongitudeGrid, Periodic
