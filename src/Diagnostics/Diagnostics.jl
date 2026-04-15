@@ -16,7 +16,7 @@ using Oceananigans.Utils: launch!
 using KernelAbstractions: @index, @kernel
 using Oceananigans.BoundaryConditions: DiscreteBoundaryFunction
 using NumericalEarth.EarthSystemModels: EarthSystemModel
-using NumericalEarth.Oceans: FluxAndRestoring
+using NumericalEarth.Oceans: MultipleFluxes
 
 import Oceananigans.Fields: compute!
 

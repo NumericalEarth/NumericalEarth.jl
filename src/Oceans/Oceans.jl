@@ -62,7 +62,7 @@ default_or_override(override, alternative_default=nothing) = override
 include("slab_ocean.jl")
 include("barotropic_potential_forcing.jl")
 include("radiative_forcing.jl")
-include("flux_and_restoring.jl")
+include("multiple_surface_fluxes.jl")
 include("ocean_simulation.jl")
 include("assemble_net_ocean_fluxes.jl")
 
@@ -111,7 +111,7 @@ function ComponentExchanger(ocean::Simulation{<:HydrostaticFreeSurfaceModel}, gr
 end
 
 @inline net_flux(condition) = condition
-@inline net_flux(bc::FluxAndRestoring) = bc.flux_field
+@inline net_flux(bc::MultipleFluxes) = bc.flux_field
 @inline net_flux(bc::DiscreteBoundaryFunction) = net_flux(bc.func)
 
 function net_fluxes(ocean::Simulation{<:HydrostaticFreeSurfaceModel})

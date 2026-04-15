@@ -8,7 +8,7 @@ export Metadata, Metadatum, DatewiseFilename, ECCOMetadatum, EN4Metadatum, all_d
 export WOAClimatology, WOAAnnual, WOAMonthly
 export metadata_time_step, metadata_epoch
 export LinearlyTaperedPolarMask
-export DatasetRestoring
+export DatasetRestoring, SurfaceFluxRestoring
 export ERA5Hourly, ERA5Monthly
 
 using Oceananigans
