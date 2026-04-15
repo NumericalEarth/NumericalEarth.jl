@@ -82,9 +82,8 @@ function default_free_surface(grid::DistributedGrid;
 end
 
 function default_ocean_closure(FT=Oceananigans.defaults.FloatType)
-    mixing_length = CATKEMixingLength(Cᵇ=0.01)
     turbulent_kinetic_energy_equation = CATKEEquation(Cᵂϵ=1.0)
-    return CATKEVerticalDiffusivity(VerticallyImplicitTimeDiscretization(), FT; mixing_length, turbulent_kinetic_energy_equation)
+    return CATKEVerticalDiffusivity(VerticallyImplicitTimeDiscretization(), FT; turbulent_kinetic_energy_equation)
 end
 
 function default_radiative_forcing(grid)
