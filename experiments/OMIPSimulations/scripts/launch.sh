@@ -142,7 +142,7 @@ sim = omip_simulation(:orca;
                       filename_prefix = "orca")
 
 sim.stop_time = 300 * 365days
-run!(sim; pickup=:latest)'
+run!(sim; pickup=false)'
         ;;
     orca_corrected)
         JULIA_EXPR='using OMIPSimulations
