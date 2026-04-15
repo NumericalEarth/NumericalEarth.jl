@@ -84,24 +84,50 @@ using Oceananigans.Units: hours, days
             @test haskey(fluxes.top, :snowfall)
         end
 
-        @testset "Conductive flux balance: bare ice vs ice+snow [$A]" begin
-            # For thick ice with no snow, R = hi/ki.
-            # With snow on top, R = hs/ks + hi/ki > hi/ki.
-            # Higher R means more insulation → warmer surface temperature
-            # (closer to the atmospheric temperature, further from the bottom).
-            #
-            # We verify R_snow > R_ice by checking the formula directly.
-            ki = 2.0    # ice conductivity
-            ks = 0.31   # snow conductivity
-            hi = 1.0    # ice thickness
-            hs = 0.1    # snow depth
+        @testset "Snow insulates: warmer surface temperature [$A]" begin
+            # Build two coupled models — one without snow, one with snow and
+            # nonzero snow thickness — then compare surface temperatures after
+            # one coupled time step. Snow adds thermal resistance, so the
+            # surface should be warmer (closer to atmosphere) with snow.
+            ocean_grid = RectilinearGrid(arch;
+                                         size = (1, 1, 2),
+                                         extent = (1, 1, 1),
+                                         topology = (Flat, Flat, Bounded))
 
-            R_ice  = hi / ki
-            R_snow = hs / ks + hi / ki
+            function build_coupled(; with_snow)
+                ocean = ocean_simulation(ocean_grid;
+                                         momentum_advection = nothing,
+                                         tracer_advection = nothing,
+                                         closure = nothing,
+                                         coriolis = nothing)
+                set!(ocean.model, T = -1.8, S = 34)
 
-            @test R_snow > R_ice
-            # Snow adds significant thermal resistance
-            @test R_snow / R_ice > 1.5
+                sea_ice = sea_ice_simulation(ocean_grid, ocean;
+                                             dynamics = nothing,
+                                             with_snow)
+                set!(sea_ice.model, h = 1.0, ℵ = 1.0)
+
+                atmosphere = PrescribedAtmosphere(ocean_grid, [0.0])
+                radiation  = Radiation()
+                return OceanSeaIceModel(ocean, sea_ice; atmosphere, radiation)
+            end
+
+            bare  = build_coupled(with_snow = false)
+            snowy = build_coupled(with_snow = true)
+
+            # Give the snowy model some snow
+            set!(snowy.sea_ice.model, hs = 0.2)
+
+            time_step!(bare, 1)
+            time_step!(snowy, 1)
+
+            Ts_bare  = bare.interfaces.atmosphere_sea_ice_interface.temperature
+            Ts_snowy = snowy.interfaces.atmosphere_sea_ice_interface.temperature
+
+            @allowscalar begin
+                # Snow insulation → warmer (or equal) surface temperature
+                @test Ts_snowy[1, 1, 1] ≥ Ts_bare[1, 1, 1]
+            end
         end
     end
 end
