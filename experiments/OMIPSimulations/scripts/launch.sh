@@ -107,7 +107,7 @@ sbatch "${SBATCH_ARGS[@]}" "$@" <<'EOF'
 #SBATCH -N 1
 #SBATCH --ntasks-per-node=1
 #SBATCH -p pi_raffaele
-#SBATCH --time=120:00:00
+#SBATCH --time=72:00:00
 #SBATCH --mem=150GB
 
 source /etc/profile.d/modules.sh
@@ -166,7 +166,7 @@ sim = omip_simulation(:orca;
                       filename_prefix = \"orca\")
 
 sim.stop_time = 300 * 365days
-run!(sim; pickup=false)"
+run!(sim; pickup=:latest)"
         ;;
     orca_corrected)
         JULIA_EXPR="using OMIPSimulations
@@ -189,7 +189,7 @@ sim = omip_simulation(:orca;
                       filename_prefix = \"orca_corrected\")
 
 sim.stop_time = 300 * 365days
-run!(sim; pickup = true)"
+run!(sim; pickup = :latest)"
         ;;
     orca_ncar)
         JULIA_EXPR="using OMIPSimulations
@@ -212,7 +212,7 @@ sim = omip_simulation(:orca;
                       filename_prefix = \"orca_ncar\")
 
 sim.stop_time = 300 * 365days
-run!(sim; pickup = true)"
+run!(sim; pickup = :latest)"
         ;;
     orca_corrected_snow)
         JULIA_EXPR="using OMIPSimulations
@@ -236,7 +236,7 @@ sim = omip_simulation(:orca;
                       filename_prefix = \"orca_corrected_snow\")
 
 sim.stop_time = 300 * 365days
-run!(sim; pickup = true)"
+run!(sim; pickup = :latest)"
         ;;
     orca_ncar_snow)
         JULIA_EXPR="using OMIPSimulations
@@ -260,7 +260,7 @@ sim = omip_simulation(:orca;
                       filename_prefix = \"orca_ncar_snow\")
 
 sim.stop_time = 300 * 365days
-run!(sim; pickup = true)"
+run!(sim; pickup = :latest)"
         ;;
     tenthdegree)
         JULIA_EXPR="using OMIPSimulations
