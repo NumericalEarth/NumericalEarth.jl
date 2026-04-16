@@ -33,7 +33,7 @@ using Oceananigans.Units: hours, days
         end
 
         @testset "sea_ice_simulation with_snow=true [$A]" begin
-            sea_ice = sea_ice_simulation(grid; dynamics=nothing, with_snow=true)
+            sea_ice = sea_ice_simulation(grid; dynamics=nothing, snow_thermodynamics=nothing)
             @test sea_ice isa Simulation
             @test sea_ice.model.snow_thermodynamics !== nothing
             @test sea_ice.model.snow_thickness isa Field
@@ -50,14 +50,14 @@ using Oceananigans.Units: hours, days
             using NumericalEarth.EarthSystemModels.InterfaceComputations: ComponentExchanger
 
             # Without snow: hs should be ZeroField
-            sea_ice = sea_ice_simulation(grid; dynamics=nothing)
+            sea_ice = sea_ice_simulation(grid; dynamics=nothing, snow_thermodynamics=nothing)
             exchanger = ComponentExchanger(sea_ice, grid)
             @test haskey(exchanger.state, :hs)
             @test haskey(exchanger.state, :hi)
             @test exchanger.state.hs isa ZeroField
 
             # With snow: hs should be a Field
-            sea_ice_snow = sea_ice_simulation(grid; dynamics=nothing, with_snow=true)
+            sea_ice_snow = sea_ice_simulation(grid; dynamics=nothing)
             exchanger_snow = ComponentExchanger(sea_ice_snow, grid)
             @test exchanger_snow.state.hs isa Field
         end
@@ -102,9 +102,10 @@ using Oceananigans.Units: hours, days
                                          coriolis = nothing)
                 set!(ocean.model, T = -1.8, S = 34)
 
+                snow_thermodynamics = with_snow ? default_snow_thermodynamics(grid) : nothing
                 sea_ice = sea_ice_simulation(ocean_grid, ocean;
                                              dynamics = nothing,
-                                             with_snow)
+                                             snow_thermodynamics)
                 set!(sea_ice.model, h = 1.0, ℵ = 1.0)
 
                 atmosphere = PrescribedAtmosphere(ocean_grid, [0.0])
@@ -118,7 +119,7 @@ using Oceananigans.Units: hours, days
             # Give the snowy model some snow
             set!(snowy.sea_ice.model, hs = 0.2)
 
-            time_step!(bare, 1)
+            time_step!(bare,  1)
             time_step!(snowy, 1)
 
             Ts_bare  = bare.interfaces.atmosphere_sea_ice_interface.temperature
@@ -153,8 +154,7 @@ end
                                      coriolis = nothing)
 
             sea_ice = sea_ice_simulation(grid, ocean;
-                                         dynamics = nothing,
-                                         with_snow = true)
+                                         dynamics = nothing)
 
             atmosphere = PrescribedAtmosphere(grid, [0.0])
             radiation = Radiation()
@@ -175,7 +175,7 @@ end
 
             sea_ice = sea_ice_simulation(grid, ocean;
                                          dynamics = nothing,
-                                         with_snow = true)
+                                         snow_thermodynamics = nothing)
 
             atmosphere = PrescribedAtmosphere(grid, [0.0])
             radiation = Radiation()
@@ -201,8 +201,7 @@ end
                                      coriolis = nothing)
 
             sea_ice = sea_ice_simulation(grid, ocean;
-                                         dynamics = nothing,
-                                         with_snow = true)
+                                         dynamics = nothing)
 
             ai_temp = NumericalEarth.SeaIces.default_ai_temperature(sea_ice)
             @test ai_temp.internal_flux isa IceSnowConductiveFlux
