@@ -70,7 +70,7 @@ using Oceananigans.Units: hours, days
             @test st isa SkinTemperature
             @test st.internal_flux isa ConductiveFlux
 
-            sea_ice_snow = sea_ice_simulation(grid; dynamics=nothing, with_snow=true)
+            sea_ice_snow = sea_ice_simulation(grid; dynamics=nothing)
             st_snow = default_ai_temperature(sea_ice_snow)
             @test st_snow isa SkinTemperature
             @test st_snow.internal_flux isa IceSnowConductiveFlux
@@ -79,7 +79,7 @@ using Oceananigans.Units: hours, days
         @testset "net_fluxes includes snowfall [$A]" begin
             using NumericalEarth.SeaIces: net_fluxes
 
-            sea_ice = sea_ice_simulation(grid; dynamics=nothing, with_snow=true, snowfall=0)
+            sea_ice = sea_ice_simulation(grid; dynamics=nothing, snowfall=0)
             fluxes = net_fluxes(sea_ice)
             @test haskey(fluxes.top, :snowfall)
         end
