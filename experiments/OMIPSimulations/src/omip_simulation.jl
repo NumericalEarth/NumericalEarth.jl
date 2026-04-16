@@ -377,7 +377,7 @@ end
 ##### ORCA builder
 #####
 
-config_momentum_advection(::Val{:orca})        = VectorInvariant()
+config_momentum_advection(::Val{:orca})        = WENOVectorInvariant(order=5) 
 config_momentum_advection(::Val{:halfdegree})  = WENOVectorInvariant(order=5)
 config_momentum_advection(::Val{:tenthdegree}) = WENOVectorInvariant()
 
@@ -405,8 +405,8 @@ function build_ocean(config, grid;
                              closure)
 
     set!(ocean.model,
-         T = Metadatum(:temperature; dir=restoring_dir, dataset=WOAAnnual(), date=start_date),
-         S = Metadatum(:salinity;    dir=restoring_dir, dataset=WOAAnnual(), date=start_date))
+         T = Metadatum(:temperature; dir=restoring_dir, dataset=EN4Monthly(), date=start_date),
+         S = Metadatum(:salinity;    dir=restoring_dir, dataset=EN4Monthly(), date=start_date))
 
     return ocean
 end
