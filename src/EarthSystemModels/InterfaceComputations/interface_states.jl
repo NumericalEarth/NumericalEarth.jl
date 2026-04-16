@@ -255,13 +255,16 @@ end
     Jᵀ = Qa * λ
 
     # Calculating the atmospheric temperature
-    # We use to compute the sensible heat flux
     Tᵃᵗ = surface_atmosphere_temperature(Ψₐ, ℙₐ)
     ΔT = Tᵃᵗ - Ψₛ.T
-    Ωc = ifelse(ΔT == 0, zero(ΔT), 𝒬ᵀ / ΔT * λ) # Sensible heat transfer coefficient (W/m²K)
 
-    # Computing the flux balance temperature
-    return (Ψᵢ.T * F.κ - (Jᵀ + Ωc * Tᵃᵗ) * F.δ) / (F.κ - Ωc * F.δ)
+    # Flux balance: T★ = (Tᵢ κ - (Jᵀ + Ωc Tᵃᵗ) δ) / (κ - Ωc δ)
+    # where Ωc = 𝒬ᵀ λ / ΔT. Multiply through by ΔT to avoid Inf when ΔT → 0.
+    Ωᵀ = 𝒬ᵀ * λ  # unnormalized sensible heat coefficient (= Ωc * ΔT)
+    D  = F.κ * ΔT - Ωᵀ * F.δ
+    T★ = (Ψᵢ.T * F.κ * ΔT - (Jᵀ * ΔT + Ωᵀ * Tᵃᵗ) * F.δ) / D
+    
+    return ifelse(D == 0, Ψₛ.T, T★)
 end
 
 # Solve the surface flux balance equation:
@@ -278,14 +281,18 @@ end
     Tₛ⁻ = Ψₛ.T
 
     # Linearized sensible heat transfer coefficient: Ωc = 𝒬ᵀ / (Tᵃᵗ - Tₛ)
+    # Rewrite to avoid Inf when ΔT → 0:
+    #   T★ = (Tᵦ - (Qa + Ωc Tᵃᵗ) R) / (1 - Ωc R)
+    # Multiply numerator and denominator by ΔT:
+    #   T★ = (Tᵦ ΔT - (Qa ΔT + 𝒬ᵀ Tᵃᵗ) R) / (ΔT - 𝒬ᵀ R)
     Tᵃᵗ = surface_atmosphere_temperature(Ψₐ, ℙₐ)
     ΔT = Tᵃᵗ - Tₛ⁻
-    Ωc = ifelse(ΔT == 0, zero(R), 𝒬ᵀ / ΔT)
     Qa = 𝒬ᵛ + ℐꜛˡʷ + Qd
 
-    # Flux balance solution
-    T★ = (Tᵦ - (Qa + Ωc * Tᵃᵗ) * R) / (1 - Ωc * R)
-    T★ = ifelse(isnan(T★), Tₛ⁻, T★)
+    # Flux balance solution (multiplied through by ΔT to avoid Inf)
+    D  = ΔT - 𝒬ᵀ * R
+    T★ = (Tᵦ * ΔT - (Qa * ΔT + 𝒬ᵀ * Tᵃᵗ) * R) / D
+    T★ = ifelse(D == 0, Tₛ⁻, T★)
 
     # Cap the temperature step for iteration stability
     ΔT★ = T★ - Tₛ⁻
