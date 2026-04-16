@@ -90,31 +90,31 @@ struct LargeYeagerTransferCoefficients{FT, D, SF}
 end
 
 function LargeYeagerTransferCoefficients(FT = Oceananigans.defaults.FloatType;
-                                  von_karman_constant = 0.4,
-                                  neutral_drag_coefficient = PolynomialNeutralDragCoefficient(FT),
-                                  stability_functions = large_yeager_stability_functions(FT),
-                                  reference_height = 10,
-                                  stanton_stable = 18,
-                                  stanton_unstable = 32.7,
-                                  dalton = 34.6)
+                                         von_karman_constant = 0.4,
+                                         neutral_drag_coefficient = PolynomialNeutralDragCoefficient(FT),
+                                         stability_functions = large_yeager_stability_functions(FT),
+                                         reference_height = 10,
+                                         stanton_stable = 18,
+                                         stanton_unstable = 32.7,
+                                         dalton = 34.6)
 
     return LargeYeagerTransferCoefficients(convert(FT, von_karman_constant),
-                                    neutral_drag_coefficient,
-                                    stability_functions,
-                                    convert(FT, reference_height),
-                                    convert(FT, stanton_stable),
-                                    convert(FT, stanton_unstable),
-                                    convert(FT, dalton))
+                                                   neutral_drag_coefficient,
+                                                   stability_functions,
+                                                   convert(FT, reference_height),
+                                                   convert(FT, stanton_stable),
+                                                   convert(FT, stanton_unstable),
+                                                   convert(FT, dalton))
 end
 
 Adapt.adapt_structure(to, n::LargeYeagerTransferCoefficients) =
     LargeYeagerTransferCoefficients(Adapt.adapt(to, n.von_karman_constant),
-                             Adapt.adapt(to, n.neutral_drag_coefficient),
-                             Adapt.adapt(to, n.stability_functions),
-                             Adapt.adapt(to, n.reference_height),
-                             Adapt.adapt(to, n.stanton_stable),
-                             Adapt.adapt(to, n.stanton_unstable),
-                             Adapt.adapt(to, n.dalton))
+                                    Adapt.adapt(to, n.neutral_drag_coefficient),
+                                    Adapt.adapt(to, n.stability_functions),
+                                    Adapt.adapt(to, n.reference_height),
+                                    Adapt.adapt(to, n.stanton_stable),
+                                    Adapt.adapt(to, n.stanton_unstable),
+                                    Adapt.adapt(to, n.dalton))
 
 Base.summary(::LargeYeagerTransferCoefficients{FT}) where FT = "LargeYeagerTransferCoefficients{$FT}"
 
@@ -227,13 +227,15 @@ end
 ##### Evaluate transfer coefficients (dispatch on coefficient type)
 #####
 
-# Constant coefficients: no stability computation needed
-@inline evaluate_coefficients(coeffs::SimilarityScales{<:Number, <:Number, <:Number}, args...) = (coeffs.momentum, coeffs.temperature, coeffs.water_vapor)
+@inline evaluate_coefficient(C::Number, args...) = C
+@inline evaluate_coefficient(C::Function, args...) = C(args...)
+@inline evaluate_coefficient(C::PolynomialNeutralDragCoefficient, ΔU, args...) = C(ΔU)
 
-# Polynomial drag coefficient (no stability correction): wind-dependent Cd, constant Ch and Cq
-@inline function evaluate_coefficients(coeffs::SimilarityScales{<:PolynomialNeutralDragCoefficient, <:Number, <:Number}, ΔU, args...)
-    Cd = coeffs.momentum(ΔU)
-    return Cd, coeffs.temperature, coeffs.water_vapor
+@inline function evaluate_coefficients(coeffs::SimilarityScales, args...)
+    Cd = evaluate_coefficient(coeffs.momentum, args...)
+    Ch = evaluate_coefficient(coeffs.temperature, args...)
+    Cq = evaluate_coefficient(coeffs.water_vapor, arhs...)
+    return Cd, Ch, Cq
 end
 
 # NCAR transfer coefficients: full L&Y stability correction (eqs. 6c-6d, 10a-10c)
