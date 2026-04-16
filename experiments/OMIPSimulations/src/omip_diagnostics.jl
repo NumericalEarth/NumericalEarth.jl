@@ -121,6 +121,11 @@ function add_omip_diagnostics!(simulation;
         surface_outputs[:sitemptop] = sitemptop
     end
 
+    hs = sea_ice.model.snow_thickness
+    if !isnothing(hs)
+        surface_outputs[:sisnthick] = hs
+    end
+
     simulation.output_writers[:surface] = JLD2Writer(ocean.model, surface_outputs;
                                                      schedule = AveragedTimeInterval(surface_averaging_interval),
                                                      dir = output_dir,
