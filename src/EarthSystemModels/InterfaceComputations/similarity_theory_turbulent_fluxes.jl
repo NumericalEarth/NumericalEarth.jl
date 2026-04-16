@@ -630,3 +630,19 @@ function ncar_stability_functions(FT=Oceananigans.defaults.FloatType)
     scalar   = SplitStabilityFunction(stable, PaulsonScalarStabilityFunction{FT}())
     return SimilarityScales(momentum, scalar, scalar)
 end
+
+"""
+    large_yeager_stability_functions(FT = Float64)
+
+NCAR/Large-Yeager (2004) stability functions combining:
+- Unstable: Paulson (1970) with γ = 16
+- Stable: linear ψ = -5ζ, bounded at |ζ| ≤ 10
+
+Used for OMIP-2 protocol compliance.
+"""
+function large_yeager_stability_functions(FT=Oceananigans.defaults.FloatType)
+    stable   = LinearStableStabilityFunction{FT}()
+    momentum = SplitStabilityFunction(stable, PaulsonMomentumStabilityFunction{FT}())
+    scalar   = SplitStabilityFunction(stable, PaulsonScalarStabilityFunction{FT}())
+    return SimilarityScales(momentum, scalar, scalar)
+end

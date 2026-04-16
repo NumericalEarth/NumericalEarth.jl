@@ -19,6 +19,7 @@ export
     LatitudeDependentAlbedo,
     SimilarityTheoryFluxes,
     CoefficientBasedFluxes,
+    SimilarityScales,
     MomentumRoughnessLength,
     ScalarRoughnessLength,
     ComponentInterfaces,

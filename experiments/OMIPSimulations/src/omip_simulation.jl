@@ -57,11 +57,14 @@ corrected_ice_ocean_heat_flux() = ThreeEquationHeatFlux(; friction_velocity = Mo
 """
     ncar_atmosphere_ocean_fluxes(FT = Float64)
 
-OMIP-2 standard atmosphere-ocean flux formulation using the NCAR/Large & Yeager
+OMIP-2 standard atmosphere-ocean flux formulation using the Large & Yeager
 (2004, 2009) bulk algorithm. Iterates directly on transfer coefficients (Cd, Ch, Ce),
 NOT on roughness lengths. Uses 5 fixed iterations with Paulson stability functions.
 """
-ncar_atmosphere_ocean_fluxes(FT = Float64) = NCARBulkFluxes(FT)
+ncar_atmosphere_ocean_fluxes(FT = Float64) =
+    CoefficientBasedFluxes(FT;
+                           transfer_coefficients = LargeYeagerTransferCoefficients(FT),
+                           solver_stop_criteria = FixedIterations(5))
 
 """
     ncar_atmosphere_sea_ice_fluxes(FT = Float64)
@@ -79,7 +82,7 @@ ocean case where the NCAR polynomial Cd requires its own solver).
 """
 ncar_atmosphere_sea_ice_fluxes(FT = Float64) =
     SimilarityTheoryFluxes(FT;
-                           stability_functions          = ncar_stability_functions(FT),
+                           stability_functions          = large_yeager_stability_functions(FT),
                            similarity_form              = COARELogarithmicSimilarityProfile(),
                            gustiness_parameter          = FT(0),
                            minimum_gustiness            = FT(0.5),
