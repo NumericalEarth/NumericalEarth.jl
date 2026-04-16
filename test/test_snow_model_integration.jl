@@ -25,15 +25,15 @@ using Oceananigans.Units: hours, days
                                topology = (Periodic, Periodic, Bounded))
 
         @testset "sea_ice_simulation with_snow=false [$A]" begin
-            sea_ice = sea_ice_simulation(grid; dynamics=nothing)
+            sea_ice = sea_ice_simulation(grid; dynamics=nothing, snow_thermodynamics=nothing)
             @test sea_ice isa Simulation
             @test sea_ice.model isa SeaIceModel
             @test sea_ice.model.snow_thermodynamics === nothing
-            @test sea_ice.model.ice_thermodynamics.internal_heat_flux isa ConductiveFlux
+            @test sea_ice.model.ice_thermodynamics.internal_heat_flux.parameters.flux isa ConductiveFlux
         end
 
         @testset "sea_ice_simulation with_snow=true [$A]" begin
-            sea_ice = sea_ice_simulation(grid; dynamics=nothing, snow_thermodynamics=nothing)
+            sea_ice = sea_ice_simulation(grid; dynamics=nothing)
             @test sea_ice isa Simulation
             @test sea_ice.model.snow_thermodynamics !== nothing
             @test sea_ice.model.snow_thickness isa Field
@@ -65,7 +65,7 @@ using Oceananigans.Units: hours, days
         @testset "default_ai_temperature dispatches on snow [$A]" begin
             using NumericalEarth.SeaIces: default_ai_temperature
 
-            sea_ice = sea_ice_simulation(grid; dynamics=nothing)
+            sea_ice = sea_ice_simulation(grid; dynamics=nothing, snow_thermodynamics=nothing)
             st = default_ai_temperature(sea_ice)
             @test st isa SkinTemperature
             @test st.internal_flux isa ConductiveFlux
@@ -79,7 +79,7 @@ using Oceananigans.Units: hours, days
         @testset "net_fluxes includes snowfall [$A]" begin
             using NumericalEarth.SeaIces: net_fluxes
 
-            sea_ice = sea_ice_simulation(grid; dynamics=nothing, snowfall=0)
+            sea_ice = sea_ice_simulation(grid; dynamics=nothing)
             fluxes = net_fluxes(sea_ice)
             @test haskey(fluxes.top, :snowfall)
         end
@@ -90,8 +90,8 @@ using Oceananigans.Units: hours, days
             # one coupled time step. Snow adds thermal resistance, so the
             # surface should be warmer (closer to atmosphere) with snow.
             ocean_grid = RectilinearGrid(arch;
-                                         size = (1, 1, 2),
-                                         extent = (1, 1, 1),
+                                         size = 2,
+                                         extent = 1,
                                          topology = (Flat, Flat, Bounded))
 
             function build_coupled(; with_snow)
@@ -102,7 +102,7 @@ using Oceananigans.Units: hours, days
                                          coriolis = nothing)
                 set!(ocean.model, T = -1.8, S = 34)
 
-                snow_thermodynamics = with_snow ? default_snow_thermodynamics(grid) : nothing
+                snow_thermodynamics = with_snow ? default_snow_thermodynamics(ocean_grid) : nothing
                 sea_ice = sea_ice_simulation(ocean_grid, ocean;
                                              dynamics = nothing,
                                              snow_thermodynamics)
