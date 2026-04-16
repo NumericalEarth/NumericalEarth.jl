@@ -215,14 +215,14 @@ function iterate_interface_fluxes(flux_formulation::SimilarityTheoryFluxes,
     L★ = ifelse(b★ == 0, Inf, u★^2 / (ϰ * b★))
     form = flux_formulation.similarity_form
 
-    χu = ϰ / similarity_profile(form, ψu, Δh, ℓu₀, L★)
-    χθ = ϰ / similarity_profile(form, ψθ, Δh, ℓθ₀, L★)
-    χq = ϰ / similarity_profile(form, ψq, Δh, ℓq₀, L★)
+    Φu = similarity_profile(form, ψu, Δh, ℓu₀, L★)
+    Φθ = similarity_profile(form, ψθ, Δh, ℓθ₀, L★)
+    Φq = similarity_profile(form, ψq, Δh, ℓq₀, L★)
 
-    # Recompute
-    u★ = χu * U
-    θ★ = χθ * Δθ
-    q★ = χq * Δq
+    # Recompute (guard against Φ = 0 to avoid Inf)
+    u★ = ifelse(Φu == 0, zero(U),  ϰ / Φu * U)
+    θ★ = ifelse(Φθ == 0, zero(Δθ), ϰ / Φθ * Δθ)
+    q★ = ifelse(Φq == 0, zero(Δq), ϰ / Φq * Δq)
 
     return u★, θ★, q★
 end
