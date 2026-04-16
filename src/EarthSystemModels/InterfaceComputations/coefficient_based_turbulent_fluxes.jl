@@ -278,19 +278,18 @@ end
 
     # Neutral transfer coefficients
     CdN = neutral_drag(UN10)
-    sqrtCdN = sqrt(CdN)
 
     # Stability-dependent neutral Stanton/Dalton numbers (L&Y eq. 6c-6d)
     stable = ζ > 0
-    ChN = sqrtCdN / 1000 * ifelse(stable, ly.stanton_stable, ly.stanton_unstable)
-    CqN = sqrtCdN / 1000 * ly.dalton
+    ChN = sqrt(CdN) / 1000 * ifelse(stable, ly.stanton_stable, ly.stanton_unstable)
+    CqN = sqrt(CdN) / 1000 * ly.dalton
 
     # Stability corrections (L&Y eq. 10a-10c)
-    ξₘ = sqrtCdN / κ * (log(Δh / h₀) - ψₘ)
+    ξₘ = sqrt(CdN) / κ * (log(Δh / h₀) - ψₘ)
     Cd = CdN / (1 + ξₘ)^2
 
-    ξₕ = sqrtCdN / κ * (log(Δh / h₀) - ψₕ)
-    ratio = sqrt(Cd) / sqrtCdN
+    ξₕ = sqrt(CdN) / κ * (log(Δh / h₀) - ψₕ)
+    ratio = sqrt(Cd) / sqrt(CdN)
 
     Ch = ChN * ratio / (1 + ChN * ξₕ)
     Cq = CqN * ratio / (1 + CqN * ξₕ)
@@ -322,8 +321,8 @@ end
                                        atmosphere_properties)
 
     u★ = sqrt(Cd) * ΔU
-    θ★ = Ch / sqrt(Cd) * Δθ
-    q★ = Cq / sqrt(Cd) * Δq
+    θ★ = ifelse(Cd == 0, zero(Δθ), Ch / sqrt(Cd) * Δθ)
+    q★ = ifelse(Cd == 0, zero(Δq), Cq / sqrt(Cd) * Δq)
 
     return u★, θ★, q★
 end
