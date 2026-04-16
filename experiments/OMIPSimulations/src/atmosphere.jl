@@ -9,9 +9,10 @@ function omip_atmosphere(arch;
                          forcing_dir,
                          start_date,
                          end_date,
+                         repeat_year_forcing = false,
                          backend_size = 30)
 
-    dataset = MultiYearJRA55()
+    dataset = repeat_year_forcing ? RepeatYearJRA55() : MultiYearJRA55()
     backend = JRA55NetCDFBackend(backend_size)
 
     atmosphere = JRA55PrescribedAtmosphere(arch;
