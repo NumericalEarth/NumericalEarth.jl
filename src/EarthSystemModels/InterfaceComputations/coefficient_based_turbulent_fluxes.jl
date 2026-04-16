@@ -227,6 +227,10 @@ end
 ##### Evaluate transfer coefficients (dispatch on coefficient type)
 #####
 
+# Minimum wind speed floor: only LargeYeager needs it; constant coefficients don't.
+@inline minimum_wind_speed(::SimilarityScales) = 0
+@inline minimum_wind_speed(ly::LargeYeagerTransferCoefficients) = ly.neutral_drag_coefficient.minimum_wind_speed
+
 @inline evaluate_coefficient(C::Number, args...) = C
 @inline evaluate_coefficient(C::Function, args...) = C(args...)
 @inline evaluate_coefficient(C::PolynomialNeutralDragCoefficient, ΔU, args...) = C(ΔU)
@@ -308,7 +312,9 @@ end
     Δu, Δv = velocity_difference(interface_properties.velocity_formulation,
                                  atmosphere_state,
                                  approximate_interface_state)
-    ΔU = sqrt(Δu^2 + Δv^2)
+
+    Umin = minimum_wind_speed(flux_formulation.transfer_coefficients)
+    ΔU   = max(sqrt(Δu^2 + Δv^2), Umin)
 
     Cd, Ch, Cq = evaluate_coefficients(flux_formulation.transfer_coefficients,
                                        ΔU, Tₛ, qₛ, Δh,
