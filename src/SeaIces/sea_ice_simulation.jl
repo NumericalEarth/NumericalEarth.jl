@@ -20,7 +20,7 @@ function sea_ice_simulation(grid, ocean=nothing;
                             dynamics = sea_ice_dynamics(grid, ocean),
                             bottom_heat_boundary_condition = nothing,
                             top_heat_boundary_condition = nothing,
-                            phase_transitions = PhaseTransitions(; ice_heat_capacity, ice_density),
+                            phase_transitions = PhaseTransitions(; heat_capacity = ice_heat_capacity, density = ice_density),
                             conductivity = 2, # kg m s⁻³ K⁻¹
                             internal_heat_flux = ConductiveFlux(; conductivity))
 
