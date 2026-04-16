@@ -245,6 +245,29 @@ end
 ##### Helper functions
 #####
 
+"""
+    centers_to_interfaces(z_centers)
+
+Compute z-interfaces (cell faces) from cell center positions.
+`z_centers` should be sorted most negative first (deepest first).
+The top face is placed at 0.0 (sea surface). Interior faces are
+midpoints between adjacent centers. The bottom face is extrapolated.
+
+Note: the grid's cell centers (midpoints of faces) will approximately
+but not exactly match the input centers when spacing is irregular.
+"""
+function centers_to_interfaces(z_centers)
+    Nz = length(z_centers)
+    z_faces = zeros(Nz + 1)
+
+    for k in 1:Nz-1
+        z_faces[k+1] = (z_centers[k] + z_centers[k+1]) / 2
+    end
+    # Extrapolate bottom face
+    z_faces[1] = z_centers[1] - (z_faces[2] - z_centers[1])
+    return z_faces
+end
+
 @inline nan_convert_missing(FT, ::Missing) = convert(FT, NaN)
 @inline nan_convert_missing(FT, d::Number) = convert(FT, d)
 
