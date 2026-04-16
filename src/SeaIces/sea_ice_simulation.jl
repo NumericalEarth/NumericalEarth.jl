@@ -15,6 +15,13 @@ default_rotation_rate = Oceananigans.defaults.planet_rotation_rate
 ocean_reference_density(ocean::Simulation, FT) = convert(FT, reference_density(ocean))
 ocean_reference_density(::Nothing, FT) = convert(FT, 1026.0)
 
+function default_snow_thermodynamics(grid)
+    FT = eltype(grid)
+    snow_conductivity = FT(0.31)
+    snow_density = FT(330)
+    return snow_slab_thermodynamics(grid; conductivity = snow_conductivity, density = snow_density)
+end
+
 function sea_ice_simulation(grid, ocean=nothing;
                             Δt = 5minutes,
                             ice_salinity = 4, # psu
@@ -30,9 +37,7 @@ function sea_ice_simulation(grid, ocean=nothing;
                             phase_transitions = PhaseTransitions(; heat_capacity=ice_heat_capacity, density=ice_density),
                             conductivity = 2, # W m⁻¹ K⁻¹
                             internal_heat_flux = ConductiveFlux(; conductivity),
-                            with_snow = false,
-                            snow_conductivity = 0.31, # W m⁻¹ K⁻¹
-                            snow_density = 330) # kg m⁻³
+                            snow_thermodynamics = default_snow_thermodynamics(grid))
 
     # Build consistent boundary conditions for the ice model:
     # - bottom -> flux boundary condition
@@ -57,13 +62,6 @@ function sea_ice_simulation(grid, ocean=nothing;
                                                      phase_transitions,
                                                      top_heat_boundary_condition,
                                                      bottom_heat_boundary_condition)
-
-    # Snow thermodynamics (ClimaSeaIce wires the IceSnowConductiveFlux internally)
-    snow_thermodynamics = if with_snow
-        snow_slab_thermodynamics(grid; conductivity = snow_conductivity, density = snow_density)
-    else
-        nothing
-    end
 
     bottom_heat_flux = Field{Center, Center, Nothing}(grid)
     top_heat_flux    = Field{Center, Center, Nothing}(grid)

@@ -236,7 +236,8 @@ function omip_simulation(config::Symbol = :halfdegree;
                         restoring_mask = ice_free_fraction,
                         start_date, end_date)
 
-    sea_ice = build_sea_ice(cfg, grid, ocean; restoring_dir, with_snow)
+    snow_thermodynamics = with_snow ? NumericalEarth.SeaIces.default_snow_thermodynamics(grid) : nothing
+    sea_ice = build_sea_ice(cfg, grid, ocean; restoring_dir, snow_thermodynamics)
 
     atmosphere, radiation = omip_atmosphere(arch;
                                             forcing_dir,
@@ -411,10 +412,10 @@ end
 ##### Sea Ice builder
 #####
 
-function build_sea_ice(config, grid, ocean; restoring_dir, with_snow = false)
+function build_sea_ice(config, grid, ocean; restoring_dir, snow_thermodynamics = nothing)
     sea_ice = sea_ice_simulation(grid, ocean;
                                  advection = WENO(order=7, minimum_buffer_upwind_order=1),
-                                 with_snow)
+                                 snow_thermodynamics)
 
     set!(sea_ice.model,
          h = Metadatum(:sea_ice_thickness;     dir=restoring_dir, dataset=ECCO4Monthly()),
