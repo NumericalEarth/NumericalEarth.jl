@@ -1,5 +1,5 @@
 using ClimaSeaIce
-using ClimaSeaIce: SeaIceModel, SlabSeaIceThermodynamics, PhaseTransitions, ConductiveFlux
+using ClimaSeaIce: SeaIceModel, SlabThermodynamics, PhaseTransitions, ConductiveFlux
 using ClimaSeaIce.SeaIceThermodynamics: IceWaterThermalEquilibrium
 using ClimaSeaIce.SeaIceDynamics: SplitExplicitSolver, SemiImplicitStress, SeaIceMomentumEquation, StressBalanceFreeDrift
 using ClimaSeaIce.Rheologies: IceStrength, ElastoViscoPlasticRheology
@@ -43,7 +43,7 @@ function sea_ice_simulation(grid, ocean=nothing;
         bottom_heat_boundary_condition = IceWaterThermalEquilibrium(surface_ocean_salinity)
     end
 
-    ice_thermodynamics = SlabSeaIceThermodynamics(grid;
+    ice_thermodynamics = SlabThermodynamics(grid;
                                                   internal_heat_flux,
                                                   phase_transitions,
                                                   top_heat_boundary_condition,
