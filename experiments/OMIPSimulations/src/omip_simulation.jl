@@ -206,6 +206,7 @@ function omip_simulation(config::Symbol = :halfdegree;
                          κ_symmetric = 100,
                          biharmonic_timescale = 40days,
                          forcing_dir = "forcing_data",
+                         staging_dir = nothing,
                          restoring_dir = "climatology",
                          piston_velocity = 1 / 6, # m / day
                          start_date = DateTime(1958, 1, 1),
@@ -242,8 +243,17 @@ function omip_simulation(config::Symbol = :halfdegree;
     snow_thermodynamics = with_snow ? NumericalEarth.SeaIces.default_snow_thermodynamics(grid) : nothing
     sea_ice = build_sea_ice(cfg, grid, ocean; restoring_dir, snow_thermodynamics)
 
+    # When staging_dir is provided, JRA55 data is read from fast scratch
+    # with symlink fallback to the slow source directory.
+    if !isnothing(staging_dir)
+        setup_staging_directory(forcing_dir, staging_dir)
+        atmosphere_dir = staging_dir
+    else
+        atmosphere_dir = forcing_dir
+    end
+
     atmosphere, radiation = omip_atmosphere(arch;
-                                            forcing_dir,
+                                            forcing_dir = atmosphere_dir,
                                             start_date,
                                             end_date)
 
@@ -261,6 +271,16 @@ function omip_simulation(config::Symbol = :halfdegree;
     ℵ = sea_ice.model.ice_concentration
     update_restoring_mask!(sim) = parent(ice_free_fraction) .= 1 .- parent(ℵ)
     add_callback!(simulation, update_restoring_mask!, IterationInterval(1))
+
+    # Stage JRA55 data from slow disk to fast scratch
+    if !isnothing(staging_dir)
+        staging_callback = JRA55DataStagingCallback(; source_dir = forcing_dir,
+                                                      staging_dir,
+                                                      start_date)
+        # Run monthly (≈1440 iterations at Δt=30min) — well ahead of year boundaries.
+        # The callback only copies files at year transitions; otherwise it returns immediately.
+        add_callback!(simulation, staging_callback, IterationInterval(1440))
+    end
 
     wall_time = Ref(time_ns())
     add_callback!(simulation, omip_progress_callback(wall_time), IterationInterval(10))

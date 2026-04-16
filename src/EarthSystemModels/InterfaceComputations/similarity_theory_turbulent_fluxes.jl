@@ -148,16 +148,20 @@ struct LogarithmicSimilarityProfile end
 struct COARELogarithmicSimilarityProfile end
 
 @inline function similarity_profile(::LogarithmicSimilarityProfile, stability_function, h, ℓ, L)
-    ζ = h / L
+    Φn = log(h / ℓ)
+    ζ  = h / L
     ψh = stability_profile(stability_function, ζ)
     ψℓ = stability_profile(stability_function, ℓ / L)
-    return log(h / ℓ) - ψh + ψℓ
+    Φm = Φn / 1000 # stability correction cannot overwhelm the log profile
+    return max(Φn - ψh + ψℓ, Φm)
 end
 
 @inline function similarity_profile(::COARELogarithmicSimilarityProfile, stability_function, h, ℓ, L)
-    ζ = h / L
+    Φn = log(h / ℓ)
+    ζ  = h / L
     ψh = stability_profile(stability_function, ζ)
-    return log(h / ℓ) - ψh
+    Φm = Φn / 1000 # stability correction cannot overwhelm the log profile
+    return max(Φn - ψh, Φm)
 end
 
 function iterate_interface_fluxes(flux_formulation::SimilarityTheoryFluxes,
@@ -215,14 +219,14 @@ function iterate_interface_fluxes(flux_formulation::SimilarityTheoryFluxes,
     L★ = ifelse(b★ == 0, Inf, u★^2 / (ϰ * b★))
     form = flux_formulation.similarity_form
 
-    Φu = similarity_profile(form, ψu, Δh, ℓu₀, L★)
-    Φθ = similarity_profile(form, ψθ, Δh, ℓθ₀, L★)
-    Φq = similarity_profile(form, ψq, Δh, ℓq₀, L★)
+    χu = ϰ / similarity_profile(form, ψu, Δh, ℓu₀, L★)
+    χθ = ϰ / similarity_profile(form, ψθ, Δh, ℓθ₀, L★)
+    χq = ϰ / similarity_profile(form, ψq, Δh, ℓq₀, L★)
 
-    # Recompute (guard against Φ = 0 to avoid Inf)
-    u★ = ifelse(Φu == 0, zero(U),  ϰ / Φu * U)
-    θ★ = ifelse(Φθ == 0, zero(Δθ), ϰ / Φθ * Δθ)
-    q★ = ifelse(Φq == 0, zero(Δq), ϰ / Φq * Δq)
+    # Recompute
+    u★ = χu * U
+    θ★ = χθ * Δθ
+    q★ = χq * Δq
 
     return u★, θ★, q★
 end

@@ -71,6 +71,7 @@ function restore_prognostic_state!(model::SeaIceModel, state)
 end
 
 include("atmosphere.jl")
+include("jra55_data_staging.jl")
 include("omip_simulation.jl")
 include("omip_diagnostics.jl")
 include("report_fields.jl")
