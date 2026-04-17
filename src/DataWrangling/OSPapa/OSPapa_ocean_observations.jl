@@ -49,11 +49,12 @@ location(::OSPapaMetadata) = (Center, Center, Center)
 is_three_dimensional(md::OSPapaMetadata) = md.name in (:temperature, :salinity, :eastward_velocity, :northward_velocity)
 reversed_vertical_axis(::OSPapaHourly) = true
 function conversion_units(metadatum::OSPapaMetadatum)
-    if metadatum.name in (:eastward_velocity, :northward_velocity)
-        return CentimetersPerSecond()
-    else
-        return nothing
-    end
+    name = metadatum.name
+    name == :air_temperature    && return Celsius()
+    name == :sea_level_pressure && return Millibar()
+    name == :rain               && return MillimetersPerHour()
+    name in (:eastward_velocity, :northward_velocity) && return CentimetersPerSecond()
+    return nothing
 end
 default_inpainting(::OSPapaMetadata) = nothing
 
@@ -229,7 +230,7 @@ NaN values in `data_src` are skipped. Values outside the source range
 are extrapolated from the nearest valid value.
 """
 function _vertical_interpolate(::OSPapaMetadatum, z_src, data_src, z_dst)
-    result = similar(z_dst, Float64)``
+    result = similar(z_dst, Float64)
 
     # Filter out NaN values
     valid = .!isnan.(data_src)
@@ -261,12 +262,20 @@ function _vertical_interpolate(::OSPapaMetadatum, z_src, data_src, z_dst)
     return result
 end
 
-# Note: We do not use the generic set! defined in metadata_field.jl because
+# Note: We do not use the generic set! defined in metadata_field.jl for 3D variables because
 # we want to perform a custom vertical interpolation/extrapolation that skips NaNs
-# which is not supported by interpolate!
+# which is not supported by interpolate!. For surface variables there is nothing to
+# interpolate vertically, so we just copy the native-grid data into the target field.
 function set!(target_field::Field, metadata::OSPapaMetadatum; kw...)
     grid = target_field.grid
     arch = child_architecture(grid)
+
+    if !is_three_dimensional(metadata)
+        meta_field = Field(metadata, arch; kw...)
+        parent(target_field) .= parent(meta_field)
+        return target_field
+    end
+
     meta_field = Field(metadata, arch; kw...)
 
     Lzt = grid.Lz

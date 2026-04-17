@@ -279,6 +279,13 @@ end
 
 # Temperature units
 @inline convert_units(T::FT, ::Kelvin) where FT = T - convert(FT, 273.15)
+@inline convert_units(T::FT, ::Celsius) where FT = T + convert(FT, 273.15)
+
+# Pressure units
+@inline convert_units(P::FT, ::Millibar) where FT = P * convert(FT, 100)
+
+# Precipitation rate (assuming ρ_water = 1000 kg/m³, so 1 mm/hr = 1 kg/m²/hr = 1/3600 kg/m²/s)
+@inline convert_units(r::FT, ::MillimetersPerHour) where FT = r / convert(FT, 3600)
 
 # Molar units
 @inline convert_units(C::FT, ::Union{MolePerLiter, MolePerKilogram})           where FT = C * convert(FT, 1e3)

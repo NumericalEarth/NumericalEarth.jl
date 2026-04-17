@@ -10,9 +10,10 @@ using NCDatasets
 using Dates
 using Scratch
 using Downloads
+using Thermodynamics: q_vap_from_RH, Liquid
 
 using NumericalEarth.DataWrangling: download_progress
-using NumericalEarth.Atmospheres: PrescribedAtmosphere, TwoBandDownwellingRadiation
+using NumericalEarth.Atmospheres: PrescribedAtmosphere, TwoBandDownwellingRadiation, AtmosphereThermodynamicsParameters
 using NumericalEarth.Oceans: reference_density, heat_capacity
 
 using NumericalEarth.DataWrangling:
@@ -25,7 +26,11 @@ using NumericalEarth.DataWrangling:
     DatasetRestoring,
     Temperature,
     Salinity,
-    centers_to_interfaces
+    centers_to_interfaces,
+    CentimetersPerSecond,
+    Celsius,
+    Millibar,
+    MillimetersPerHour
 
 import NumericalEarth.DataWrangling:
     default_download_directory,
