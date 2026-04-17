@@ -1,6 +1,6 @@
 #!/bin/bash
 # Move completed OMIP outputs from a live run folder to
-# $DATA/OMIP-data/<CONFIG>_run while a launch.sh job is still running.
+# $DATA/OMIP-data/<RUN_NAME>_run while a launch.sh job is still running.
 #
 # Logic:
 #   - Part files (*_part<N>.jld2): the highest N per filename group is
@@ -12,14 +12,15 @@
 #   - Anything else in the run folder is left untouched.
 #
 # Must be run from the same directory as launch.sh (i.e. this scripts
-# folder) so that <CONFIG>_run resolves the same way it does for the
+# folder) so that <RUN_NAME>_run resolves the same way it does for the
 # running simulation.
 #
 # Usage:
-#   ./store.sh halfdegree
-#   ./store.sh tenthdegree
 #   ./store.sh orca
+#   ./store.sh orca_ncar
+#   ./store.sh orca_corrected_snow_cb0.1
 #
+# The argument is the RUN_NAME (same as the job name from launch.sh).
 # DATA must be set in the calling shell (it is propagated to the
 # sbatch job via --export=ALL).
 
@@ -27,35 +28,29 @@ set -euo pipefail
 
 usage() {
     cat <<'USAGE'
-Usage: ./store.sh <halfdegree|tenthdegree|orca> [extra sbatch args...]
+Usage: ./store.sh <run_name> [extra sbatch args...]
+
+The <run_name> matches the RUN_NAME built by launch.sh, e.g.:
+  orca, orca_ncar, orca_corrected_snow, orca_ncar_cb0.1, halfdegree, ...
 
 Examples:
-  ./store.sh halfdegree
-  ./store.sh tenthdegree
   ./store.sh orca
+  ./store.sh orca_ncar
+  ./store.sh orca_corrected_snow_cb0.1
 USAGE
 }
 
-CONFIG="${1:-}"
-if [[ -z "$CONFIG" ]]; then
+RUN_NAME="${1:-}"
+if [[ -z "$RUN_NAME" ]]; then
     usage
     exit 1
 fi
 shift || true
 
-case "$CONFIG" in
-    halfdegree|half_degree)
-        CONFIG="halfdegree"
-        ;;
-    orca|tenthdegree|orca_corrected|orca_ncar|orca_corrected_snow|orca_ncar_snow) ;;
+case "$RUN_NAME" in
     -h|--help)
         usage
         exit 0
-        ;;
-    *)
-        echo "Error: unknown configuration '$CONFIG'" >&2
-        usage
-        exit 1
         ;;
 esac
 
@@ -64,7 +59,7 @@ if [[ -z "${DATA:-}" ]]; then
     exit 1
 fi
 
-RUN_DIR="${CONFIG}_run"
+RUN_DIR="${RUN_NAME}_run"
 DEST_DIR="${DATA}/OMIP-data/${RUN_DIR}"
 
 if [[ ! -d "$RUN_DIR" ]]; then
@@ -73,13 +68,13 @@ if [[ ! -d "$RUN_DIR" ]]; then
     exit 1
 fi
 
-JOB_NAME="${JOB_NAME:-store_${CONFIG}}"
+JOB_NAME="${JOB_NAME:-store_${RUN_NAME}}"
 
 SBATCH_ARGS=()
-SBATCH_ARGS+=(-o "store_${CONFIG}.out")
-SBATCH_ARGS+=(-e "store_${CONFIG}.err")
+SBATCH_ARGS+=(-o "store_${RUN_NAME}.out")
+SBATCH_ARGS+=(-e "store_${RUN_NAME}.err")
 SBATCH_ARGS+=(-J "$JOB_NAME")
-SBATCH_ARGS+=(--export="ALL,CONFIG=${CONFIG},RUN_DIR=${RUN_DIR},DEST_DIR=${DEST_DIR}")
+SBATCH_ARGS+=(--export="ALL,RUN_NAME=${RUN_NAME},RUN_DIR=${RUN_DIR},DEST_DIR=${DEST_DIR}")
 
 sbatch "${SBATCH_ARGS[@]}" "$@" <<'EOF'
 #!/bin/bash
@@ -91,7 +86,7 @@ sbatch "${SBATCH_ARGS[@]}" "$@" <<'EOF'
 
 set -euo pipefail
 
-echo "Storing ${CONFIG} outputs"
+echo "Storing ${RUN_NAME} outputs"
 echo "  source: $(pwd)/${RUN_DIR}"
 echo "  dest:   ${DEST_DIR}"
 
