@@ -2,11 +2,11 @@
 # Submit an OMIP simulation to SLURM.
 #
 # Usage:
-#   ./launch.sh halfdegree             # half-degree OMIP
-#   ./launch.sh tenthdegree            # 1/10-degree OMIP
-#   ./launch.sh orca                   # ORCA OMIP
-#   PROFILE=true ./launch.sh orca      # nsys-profile run
-#   NODE=2904 ./launch.sh orca         # pin to a specific node
+#   ./launch.sh orca                           # ORCA with default fluxes
+#   NCAR=true ./launch.sh orca                 # ORCA with NCAR bulk formulae
+#   NCAR=true SNOW=true ./launch.sh orca       # ORCA + NCAR + snow
+#   CB=0.1 NCAR=true ./launch.sh orca          # ORCA + NCAR + Cᵇ=0.1
+#   PROFILE=true ./launch.sh orca              # nsys-profile run
 #
 # Credentials (e.g. ECCO_USERNAME, ECCO_WEBDAV_PASSWORD) are NOT set
 # here. Export them in your shell or source a private file before
@@ -21,15 +21,19 @@ usage() {
 Usage: ./launch.sh <config> [extra sbatch args...]
 
 Configurations:
-  halfdegree         Half-degree TripolarGrid (default fluxes)
-  orca               ORCA grid (default fluxes)
-  orca_corrected     ORCA grid with corrected COARE 3.6 fluxes
-  orca_ncar          ORCA grid with OMIP-2/NCAR bulk formulae
-  orca_corrected_snow  ORCA + corrected fluxes + snow
-  orca_ncar_snow     ORCA + NCAR fluxes + snow
-  tenthdegree        1/10-degree TripolarGrid (4 GPUs)
+  halfdegree      Half-degree TripolarGrid
+  orca            ORCA grid
+  tenthdegree     1/10-degree TripolarGrid (4 GPUs)
 
-Environment variables:
+Environment variables (physics):
+  NCAR          Set to "true" for OMIP-2/NCAR bulk formulae
+  CORRECTED     Set to "true" for corrected COARE 3.6 fluxes
+  SNOW          Set to "true" to enable snow thermodynamics
+  CB            CATKE buoyancy mixing length parameter Cᵇ (default: 0.28)
+
+Environment variables (I/O & runtime):
+  BACKEND_SIZE  Number of JRA55 time indices kept in memory (default: 240,
+                i.e. 30 days of 3-hourly data ≈ 2 GB RAM for 11 variables)
   FORCING_DIR   Path to JRA55 forcing data (default: forcing_data)
   STAGING_DIR   Fast scratch directory for JRA55 staging. When set,
                 files are symlinked from FORCING_DIR and progressively
@@ -39,9 +43,12 @@ Environment variables:
   PROFILE       Set to "true" for nsys profiling
 
 Examples:
-  ./launch.sh orca_ncar
-  ./launch.sh orca_corrected_snow
-  FORCING_DIR=/data/jra55 STAGING_DIR=/scratch/jra55_staged ./launch.sh orca_ncar
+  ./launch.sh orca
+  NCAR=true ./launch.sh orca
+  NCAR=true SNOW=true ./launch.sh orca
+  CORRECTED=true SNOW=true ./launch.sh orca
+  CB=0.1 NCAR=true ./launch.sh orca
+  FORCING_DIR=/data/jra55 STAGING_DIR=/scratch/jra55_staged ./launch.sh orca
   PROFILE=true ./launch.sh orca
 USAGE
 }
@@ -54,14 +61,10 @@ fi
 shift || true
 
 case "$CONFIG" in
-    halfdegree)
-        CONFIG="halfdegree"
-        ;;
-    half_degree)
+    halfdegree|half_degree)
         CONFIG="halfdegree"
         ;;
     orca|tenthdegree) ;;
-    orca_corrected|orca_ncar|orca_corrected_snow|orca_ncar_snow) ;;
     -h|--help)
         usage
         exit 0
@@ -73,14 +76,19 @@ case "$CONFIG" in
         ;;
 esac
 
-REPORT_NAME="${REPORT_NAME:-${CONFIG}_report}"
-JOB_NAME="${JOB_NAME:-$CONFIG}"
+# ── Build run name from config + options ──────────────────────────────
+RUN_NAME="$CONFIG"
+[[ "${CORRECTED:-false}" == "true" ]] && RUN_NAME="${RUN_NAME}_corrected"
+[[ "${NCAR:-false}" == "true" ]]      && RUN_NAME="${RUN_NAME}_ncar"
+[[ "${SNOW:-false}" == "true" ]]      && RUN_NAME="${RUN_NAME}_snow"
+[[ -n "${CB:-}" ]]                    && RUN_NAME="${RUN_NAME}_cb${CB}"
+
+REPORT_NAME="${REPORT_NAME:-${RUN_NAME}_report}"
+JOB_NAME="${JOB_NAME:-$RUN_NAME}"
 GPUS_PER_NODE=1
 
 case "$CONFIG" in
-    tenthdegree)
-        GPUS_PER_NODE=4
-        ;;
+    tenthdegree) GPUS_PER_NODE=4 ;;
 esac
 
 SBATCH_ARGS=()
@@ -91,15 +99,15 @@ fi
 SBATCH_ARGS+=(--gres="gpu:${GPUS_PER_NODE}")
 
 if [[ "${PROFILE:-false}" == "true" ]]; then
-    SBATCH_ARGS+=(-o "${CONFIG}_profile.out")
-    SBATCH_ARGS+=(-e "${CONFIG}_profile.err")
+    SBATCH_ARGS+=(-o "${RUN_NAME}_profile.out")
+    SBATCH_ARGS+=(-e "${RUN_NAME}_profile.err")
     SBATCH_ARGS+=(-J "${JOB_NAME}_profile")
-    SBATCH_ARGS+=(--export="ALL,PROFILE=true,REPORT_NAME=${REPORT_NAME},CONFIG=${CONFIG}")
+    SBATCH_ARGS+=(--export="ALL,PROFILE=true,REPORT_NAME=${REPORT_NAME},CONFIG=${CONFIG},RUN_NAME=${RUN_NAME}")
 else
-    SBATCH_ARGS+=(-o "${CONFIG}.out")
-    SBATCH_ARGS+=(-e "${CONFIG}.err")
+    SBATCH_ARGS+=(-o "${RUN_NAME}.out")
+    SBATCH_ARGS+=(-e "${RUN_NAME}.err")
     SBATCH_ARGS+=(-J "$JOB_NAME")
-    SBATCH_ARGS+=(--export="ALL,CONFIG=${CONFIG}")
+    SBATCH_ARGS+=(--export="ALL,CONFIG=${CONFIG},RUN_NAME=${RUN_NAME}")
 fi
 
 sbatch "${SBATCH_ARGS[@]}" "$@" <<'EOF'
@@ -115,17 +123,33 @@ module load nvhpc
 
 JULIA="${JULIA:-$HOME/julia-1.12.5/bin/julia}"
 
-# JRA55 forcing data directories (shared across all configurations)
+# ── Shared environment ────────────────────────────────────────────────
 FORCING_DIR="${FORCING_DIR:-forcing_data}"
-STAGING_DIR="${STAGING_DIR:-}"  # set to a fast scratch path to enable staging
+STAGING_DIR="${STAGING_DIR:-}"
+CB="${CB:-}"
+BACKEND_SIZE="${BACKEND_SIZE:-}"
+NCAR="${NCAR:-false}"
+CORRECTED="${CORRECTED:-false}"
+SNOW="${SNOW:-false}"
 
-# Build staging kwargs string
+# ── Build optional kwargs strings ─────────────────────────────────────
 STAGING_KWARG=""
-if [[ -n "$STAGING_DIR" ]]; then
-    STAGING_KWARG="staging_dir = \"${STAGING_DIR}\","
-fi
+[[ -n "$STAGING_DIR" ]] && STAGING_KWARG="staging_dir = \"${STAGING_DIR}\","
 
-# Build the Julia expression from the selected config.
+CB_KWARG=""
+[[ -n "$CB" ]] && CB_KWARG="Cᵇ = ${CB},"
+
+BACKEND_KWARG=""
+[[ -n "$BACKEND_SIZE" ]] && BACKEND_KWARG="backend_size = ${BACKEND_SIZE},"
+
+FLUX_KWARG=""
+[[ "$NCAR" == "true" ]]      && FLUX_KWARG="flux_configuration = :ncar,"
+[[ "$CORRECTED" == "true" ]] && FLUX_KWARG="flux_configuration = :corrected,"
+
+SNOW_KWARG=""
+[[ "$SNOW" == "true" ]] && SNOW_KWARG="with_snow = true,"
+
+# ── Build Julia expression ────────────────────────────────────────────
 case "$CONFIG" in
     halfdegree)
         JULIA_EXPR="using OMIPSimulations
@@ -137,11 +161,15 @@ sim = omip_simulation(:halfdegree;
                       arch = GPU(),
                       Nz = 70,
                       depth = 5500,
+                      ${CB_KWARG}
+                      ${FLUX_KWARG}
+                      ${SNOW_KWARG}
                       Δt = 25minutes,
                       forcing_dir = \"${FORCING_DIR}\",
                       ${STAGING_KWARG}
-                      output_dir = \"halfdegree_run\",
-                      filename_prefix = \"halfdegree\")
+                      ${BACKEND_KWARG}
+                      output_dir = \"${RUN_NAME}_run\",
+                      filename_prefix = \"${RUN_NAME}\")
 
 sim.stop_time = 300 * 365days
 run!(sim, pickup=:latest)"
@@ -159,105 +187,15 @@ sim = omip_simulation(:orca;
                       κ_skew = 500,
                       κ_symmetric = 250,
                       biharmonic_timescale = 10days,
+                      ${CB_KWARG}
+                      ${FLUX_KWARG}
+                      ${SNOW_KWARG}
                       Δt = 30minutes,
                       forcing_dir = \"${FORCING_DIR}\",
                       ${STAGING_KWARG}
-                      output_dir = \"orca_run\",
-                      filename_prefix = \"orca\")
-
-sim.stop_time = 300 * 365days
-run!(sim; pickup=false)"
-        ;;
-    orca_corrected)
-        JULIA_EXPR="using OMIPSimulations
-using Oceananigans
-using Oceananigans.Units
-using CUDA
-
-sim = omip_simulation(:orca;
-                      arch = GPU(),
-                      Nz = 70,
-                      depth = 5500,
-                      κ_skew = 500,
-                      κ_symmetric = 250,
-                      biharmonic_timescale = 10days,
-                      Δt = 30minutes,
-                      flux_configuration = :corrected,
-                      forcing_dir = \"${FORCING_DIR}\",
-                      ${STAGING_KWARG}
-                      output_dir = \"orca_corrected_run\",
-                      filename_prefix = \"orca_corrected\")
-
-sim.stop_time = 300 * 365days
-run!(sim; pickup = true)"
-        ;;
-    orca_ncar)
-        JULIA_EXPR="using OMIPSimulations
-using Oceananigans
-using Oceananigans.Units
-using CUDA
-
-sim = omip_simulation(:orca;
-                      arch = GPU(),
-                      Nz = 70,
-                      depth = 5500,
-                      κ_skew = 500,
-                      κ_symmetric = 250,
-                      biharmonic_timescale = 10days,
-                      Δt = 30minutes,
-                      flux_configuration = :ncar,
-                      forcing_dir = \"${FORCING_DIR}\",
-                      ${STAGING_KWARG}
-                      output_dir = \"orca_ncar_run\",
-                      filename_prefix = \"orca_ncar\")
-
-sim.stop_time = 300 * 365days
-run!(sim; pickup = true)"
-        ;;
-    orca_corrected_snow)
-        JULIA_EXPR="using OMIPSimulations
-using Oceananigans
-using Oceananigans.Units
-using CUDA
-
-sim = omip_simulation(:orca;
-                      arch = GPU(),
-                      Nz = 70,
-                      depth = 5500,
-                      κ_skew = 500,
-                      κ_symmetric = 250,
-                      biharmonic_timescale = 10days,
-                      Δt = 30minutes,
-                      flux_configuration = :corrected,
-                      with_snow = true,
-                      forcing_dir = \"${FORCING_DIR}\",
-                      ${STAGING_KWARG}
-                      output_dir = \"orca_corrected_snow_run\",
-                      filename_prefix = \"orca_corrected_snow\")
-
-sim.stop_time = 300 * 365days
-run!(sim; pickup = true)"
-        ;;
-    orca_ncar_snow)
-        JULIA_EXPR="using OMIPSimulations
-using Oceananigans
-using Oceananigans.Units
-using CUDA
-
-sim = omip_simulation(:orca;
-                      arch = GPU(),
-                      Nz = 70,
-                      depth = 5500,
-                      κ_skew = 500,
-                      κ_symmetric = 250,
-                      biharmonic_timescale = 10days,
-                      Δt = 30minutes,
-                      flux_configuration = :ncar,
-                      with_snow = true,
-                      forcing_dir = \"${FORCING_DIR}\",
-                      ${STAGING_KWARG}
-                      output_dir = \"orca_ncar_snow_run\",
-                      filename_prefix = \"orca_ncar_snow\")
+                      ${BACKEND_KWARG}
+                      output_dir = \"${RUN_NAME}_run\",
+                      filename_prefix = \"${RUN_NAME}\")
 
 sim.stop_time = 300 * 365days
 run!(sim; pickup = true)"
@@ -276,11 +214,15 @@ sim = omip_simulation(:tenthdegree;
                       κ_skew = nothing,
                       κ_symmetric = nothing,
                       biharmonic_timescale = nothing,
+                      ${CB_KWARG}
+                      ${FLUX_KWARG}
+                      ${SNOW_KWARG}
                       Δt = 8minutes,
                       forcing_dir = \"${FORCING_DIR}\",
                       ${STAGING_KWARG}
-                      output_dir = \"tenthdegree_run\",
-                      filename_prefix = \"tenthdegree\",
+                      ${BACKEND_KWARG}
+                      output_dir = \"${RUN_NAME}_run\",
+                      filename_prefix = \"${RUN_NAME}\",
                       file_splitting_interval = 180days)
 
 sim.stop_time = 91days
@@ -293,7 +235,7 @@ run!(sim; pickup = true)"
 esac
 
 if [[ "${PROFILE:-false}" == "true" ]]; then
-    echo "Profiling ${CONFIG} configuration -> ${REPORT_NAME}"
+    echo "Profiling ${RUN_NAME} -> ${REPORT_NAME}"
     nsys profile --trace=cuda \
                  --output="$REPORT_NAME" \
                  --force-overwrite true \

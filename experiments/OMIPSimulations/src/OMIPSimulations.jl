@@ -9,6 +9,8 @@ using CUDA
 
 using NumericalEarth
 using NumericalEarth.Oceans: ocean_simulation, default_ocean_closure
+using Oceananigans.TurbulenceClosures.TKEBasedVerticalDiffusivities:
+    CATKEVerticalDiffusivity, CATKEMixingLength, CATKEEquation
 using NumericalEarth.SeaIces: sea_ice_simulation
 using NumericalEarth.EarthSystemModels: OceanSeaIceModel, Radiation,
     SimilarityTheoryFluxes,

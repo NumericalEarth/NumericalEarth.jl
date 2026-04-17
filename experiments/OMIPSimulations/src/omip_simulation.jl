@@ -204,9 +204,11 @@ function omip_simulation(config::Symbol = :halfdegree;
                          depth = 5500,
                          κ_skew = 250,
                          κ_symmetric = 100,
+                         Cᵇ = 0.28,
                          biharmonic_timescale = 40days,
                          forcing_dir = "forcing_data",
                          staging_dir = nothing,
+                         backend_size = 50,
                          restoring_dir = "climatology",
                          piston_velocity = 1 / 6, # m / day
                          start_date = DateTime(1958, 1, 1),
@@ -234,7 +236,7 @@ function omip_simulation(config::Symbol = :halfdegree;
     set!(ice_free_fraction, 1)
 
     ocean = build_ocean(cfg, grid;
-                        κ_skew, κ_symmetric,
+                        κ_skew, κ_symmetric, Cᵇ,
                         biharmonic_timescale,
                         restoring_dir, piston_velocity,
                         restoring_mask = ice_free_fraction,
@@ -255,7 +257,8 @@ function omip_simulation(config::Symbol = :halfdegree;
     atmosphere, radiation = omip_atmosphere(arch;
                                             forcing_dir = atmosphere_dir,
                                             start_date,
-                                            end_date)
+                                            end_date,
+                                            backend_size)
 
     coupled = build_coupled_model(ocean, sea_ice, atmosphere, radiation, flux_configuration)
 
@@ -308,8 +311,11 @@ end
 # Background tracer diffusivity following Henyey et al. (1986).
 @inline henyey_diffusivity(x, y, z, t) = max(1e-6, 5e-6 * abs(sind(y)))
 
-function omip_closure(; κ_skew, κ_symmetric, biharmonic_timescale)
-    catke = default_ocean_closure()
+function omip_closure(; κ_skew, κ_symmetric, Cᵇ = 0.28, biharmonic_timescale)
+    mixing_length = CATKEMixingLength(; Cᵇ)
+    catke = CATKEVerticalDiffusivity(VerticallyImplicitTimeDiscretization();
+                                     mixing_length,
+                                     turbulent_kinetic_energy_equation = CATKEEquation(Cᵂϵ=1.0))
 
     eddy  = if isnothing(κ_skew) | isnothing(κ_symmetric)
         nothing
@@ -402,7 +408,7 @@ config_momentum_advection(::Val{:halfdegree})  = WENOVectorInvariant(order=5)
 config_momentum_advection(::Val{:tenthdegree}) = WENOVectorInvariant()
 
 function build_ocean(config, grid;
-                     κ_skew, κ_symmetric,
+                     κ_skew, κ_symmetric, Cᵇ = 0.28,
                      restoring_dir, piston_velocity,
                      biharmonic_timescale,
                      restoring_mask = 1,
@@ -410,7 +416,7 @@ function build_ocean(config, grid;
 
     FS = salinity_restoring_forcing(grid, WOAMonthly(); restoring_dir, piston_velocity, mask = restoring_mask)
 
-    closure = omip_closure(; κ_skew, κ_symmetric, biharmonic_timescale)
+    closure = omip_closure(; κ_skew, κ_symmetric, Cᵇ, biharmonic_timescale)
     coriolis = HydrostaticSphericalCoriolis(scheme = Oceananigans.Coriolis.EnstrophyConserving())
     momentum_advection = config_momentum_advection(config)
 

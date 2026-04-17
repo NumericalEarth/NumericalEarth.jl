@@ -152,14 +152,17 @@ end
 # we need to infer the file name from the metadata and split the data loading
 function set!(fts::JRA55NetCDFFTSMultipleYears, backend=fts.backend)
 
-    metadata = backend.metadata
-
-    filename   = metadata.filename
-    filename   = unique(filename)
+    metadata   = backend.metadata
     name       = dataset_variable_name(metadata)
     start_date = first_date(metadata.dataset, metadata.name)
 
-    for file in filename
+    ftsn = collect(time_indices(fts))
+
+    # Only open files that actually contain needed time indices
+    # (metadata.filename maps each time index to its yearly file)
+    needed_files = unique(getfilename(metadata.filename, n) for n in ftsn)
+
+    for file in needed_files
 
         path = joinpath(metadata.dir, file)
         ds = Dataset(path)
@@ -175,12 +178,9 @@ function set!(fts::JRA55NetCDFFTSMultipleYears, backend=fts.backend)
             file_times[t] = delta
         end
 
-        ftsn = time_indices(fts)
-        ftsn = collect(ftsn)
-
         # Intersect the time indices with the file times
-        nn   = findall(n -> file_times[n] ∈ fts.times[ftsn], file_indices)
-        ftsn = findall(n -> fts.times[n] ∈ file_times[nn], ftsn)
+        nn       = findall(n -> file_times[n] ∈ fts.times[ftsn], file_indices)
+        ftsn_loc = findall(n -> fts.times[n] ∈ file_times[nn], ftsn)
 
         if !isempty(nn)
             # Nodes at the variable location
@@ -189,14 +189,12 @@ function set!(fts::JRA55NetCDFFTSMultipleYears, backend=fts.backend)
             LX, LY, LZ = location(fts)
             i₁, i₂, j₁, j₂, TX = compute_bounding_indices(nothing, nothing, fts.grid, LX, LY, λc, φc)
 
-
             if issorted(nn)
                 data = ds[name][i₁:i₂, j₁:j₂, nn]
             else
-                # The time indices may be cycling past 1; eg ti = [6, 7, 8, 1].
-                # However, DiskArrays does not seem to support loading data with unsorted
-                # indices. So to handle this, we load the data in chunks, where each chunk's
-                # indices are sorted, and then glue the data together.
+                # At the cyclical wrap (end of year 60 → start of year 1),
+                # file-local indices may be unsorted. DiskArrays requires
+                # sorted indices, so we load in two sorted chunks.
                 m = findfirst(n -> n == 1, nn)
                 n1 = nn[1:m-1]
                 n2 = nn[m:end]
@@ -208,11 +206,11 @@ function set!(fts::JRA55NetCDFFTSMultipleYears, backend=fts.backend)
 
             close(ds)
 
-            # We need to set the time index for each file
-            # Find start index corresponding to the underlying data
             for n in 1:length(nn)
-                copyto!(interior(fts, :, :, 1, ftsn[n]), data[:, :, n])
+                copyto!(interior(fts, :, :, 1, ftsn_loc[n]), data[:, :, n])
             end
+        else
+            close(ds)
         end
     end
 
