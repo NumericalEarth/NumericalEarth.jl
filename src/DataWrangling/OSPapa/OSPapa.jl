@@ -24,7 +24,8 @@ using NumericalEarth.DataWrangling:
     NearestNeighborInpainting,
     DatasetRestoring,
     Temperature,
-    Salinity
+    Salinity,
+    centers_to_interfaces
 
 import NumericalEarth.DataWrangling:
     default_download_directory,

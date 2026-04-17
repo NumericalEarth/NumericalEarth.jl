@@ -2,7 +2,9 @@ import Oceananigans: location
 import Oceananigans.Fields: set!
 
 using Oceananigans.Grids: znodes
-using Oceananigans.Architectures: architecture
+using Oceananigans.Fields: CenterField, interpolate!
+using Oceananigans.Architectures: architecture, on_architecture
+using Oceananigans.DistributedComputations: child_architecture
 
 #####
 ##### OSPapaHourly dataset type
@@ -260,28 +262,26 @@ function _vertical_interpolate(::OSPapaMetadatum, z_src, data_src, z_dst)
 end
 
 function set!(target_field::Field, metadata::OSPapaMetadatum; kw...)
-    download_dataset(metadata)
+    grid = target_field.grid
+    arch = child_architecture(grid)
+    meta_field = Field(metadata, arch; kw...)
 
-    # Read the raw profile data
-    data_3d = retrieve_data(metadata)
-    data_profile = data_3d[1, 1, :]
+    Lzt = grid.Lz
+    Lzm = meta_field.grid.Lz
 
-    # Source z-centers (buoy depths)
-    depths = _ospapa_depths(metadata.name)
-    z_src = sort(-depths)  # negative, deepest first
-
-    # Target z-centers
-    z_dst = collect(znodes(target_field.grid, Center()))
-
-    # Interpolate vertically
-    interpolated = _vertical_interpolate(metadata, z_src, data_profile, z_dst)
-
-    if metadata.name in (:eastward_velocity, :northward_velocity)
-        interpolated ./= 100 # cm/s → m/s
+    if Lzt > Lzm
+        throw("The vertical range of the $(metadata.dataset) dataset ($(Lzm) m) is smaller than " *
+              "the target grid ($(Lzt) m). Some vertical levels cannot be filled with data.")
     end
 
-    arch = Oceananigans.Architectures.architecture(target_field)
-    interior(target_field, 1, 1, :) .= Oceananigans.on_architecture(arch, interpolated)
+    # interpolate! is buggy for this single-column case, so use _vertical_interpolate
+    z_src = collect(znodes(meta_field.grid, Center()))
+    z_dst = collect(znodes(grid, Center()))
+    data_profile = Array(interior(meta_field, 1, 1, :))
+
+    interpolated = _vertical_interpolate(metadata, z_src, data_profile, z_dst)
+
+    interior(target_field, 1, 1, :) .= on_architecture(arch, interpolated)
 
     return target_field
 end
