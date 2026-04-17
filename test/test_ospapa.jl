@@ -87,12 +87,12 @@ end
 @testset "OS Papa Prescribed Flux BCs" begin
     for arch in test_architectures
         A = typeof(arch)
-        @info "Testing OSPapaPrescribedFluxBoundaryConditions on $A..."
+        @info "Testing os_papa_prescribed_flux_boundary_conditions on $A..."
 
         fluxes = OSPapaPrescribedFluxes(arch; start_date = OSPAPA_TEST_START,
                                               end_date   = OSPAPA_TEST_END)
 
-        bcs = OSPapaPrescribedFluxBoundaryConditions(fluxes)
+        bcs = os_papa_prescribed_flux_boundary_conditions(fluxes)
 
         # Returns BCs for all four fields
         @test haskey(bcs, :u)
@@ -145,12 +145,12 @@ end
 @testset "OS Papa flux BC simulation" begin
     for arch in test_architectures
         A = typeof(arch)
-        @info "Testing short simulation with OSPapaPrescribedFluxBoundaryConditions on $A..."
+        @info "Testing short simulation with os_papa_prescribed_flux_boundary_conditions on $A..."
 
         fluxes = OSPapaPrescribedFluxes(arch; start_date = OSPAPA_TEST_START,
                                               end_date   = OSPAPA_TEST_END)
 
-        bcs = OSPapaPrescribedFluxBoundaryConditions(fluxes)
+        bcs = os_papa_prescribed_flux_boundary_conditions(fluxes)
 
         grid = RectilinearGrid(arch;
                                size = 10,
