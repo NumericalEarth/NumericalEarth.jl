@@ -5,7 +5,7 @@ using Oceananigans.Grids: RightFaceFolded, generate_coordinate
 using Oceananigans.ImmersedBoundaries: ImmersedBoundaryGrid, GridFittedBottom
 using Oceananigans.OrthogonalSphericalShellGrids: Tripolar, continue_south!
 
-using ..DataWrangling: dataset_variable_name
+using ..DataWrangling: dataset_variable_name, default_download_directory
 using ..DataWrangling.ORCA: ORCA1, ORCA12, default_south_rows_to_remove
 
 """
@@ -24,6 +24,129 @@ function read_2d_nemo_variable(ds, name)
     else
         return Array(var[:, :, 1, 1])
     end
+end
+
+has_all_variables(ds, names) = all(name -> name in keys(ds), names)
+
+function orient_xy(data, Nx, Ny; name = "variable")
+    sx, sy = size(data)
+    if (sx, sy) == (Nx, Ny)
+        return data
+    elseif (sx, sy) == (Ny, Nx)
+        return permutedims(data, (2, 1))
+    else
+        throw(ArgumentError("Cannot orient $name with size $(size(data)) to (Nx, Ny)=($Nx, $Ny)."))
+    end
+end
+
+@inline wrap_longitude(λ) = mod(λ + 180, 360) - 180
+
+@inline function midpoint_longitude(λ₁, λ₂)
+    Δλ = λ₂ - λ₁
+    Δλ = ifelse(Δλ > 180, Δλ - 360, Δλ)
+    Δλ = ifelse(Δλ < -180, Δλ + 360, Δλ)
+    return wrap_longitude(λ₁ + Δλ / 2)
+end
+
+function average_x_periodic(data)
+    Nx, Ny = size(data)
+    avg = similar(data)
+    @inbounds for j in 1:Ny, i in 1:Nx
+        avg[i, j] = (data[i, j] + data[mod1(i+1, Nx), j]) / 2
+    end
+    return avg
+end
+
+function average_y_with_north_copy(data)
+    Nx, Ny = size(data)
+    avg = similar(data)
+    @inbounds for j in 1:Ny-1, i in 1:Nx
+        avg[i, j] = (data[i, j] + data[i, j+1]) / 2
+    end
+    @inbounds for i in 1:Nx
+        avg[i, Ny] = data[i, Ny]
+    end
+    return avg
+end
+
+"""
+    read_orca_staggered_mesh(ds)
+
+Read ORCA horizontal coordinates and metrics.
+
+Supports both:
+- full NEMO staggered mesh files (`glamt/gphit/e1u/...`), and
+- reduced files with only `longitude`, `latitude`, `e1t`, and `e2t`
+  by reconstructing U/V/F staggered fields.
+"""
+function read_orca_staggered_mesh(ds)
+    full_stagger_vars = ("glamt", "glamu", "glamv", "glamf",
+                         "gphit", "gphiu", "gphiv", "gphif",
+                         "e1t", "e1u", "e1v", "e1f",
+                         "e2t", "e2u", "e2v", "e2f")
+
+    if has_all_variables(ds, full_stagger_vars)
+        read_2d = read_2d_nemo_variable
+        λCC, λFC, λCF, λFF = read_2d(ds, "glamt"), read_2d(ds, "glamu"), read_2d(ds, "glamv"), read_2d(ds, "glamf")
+        φCC, φFC, φCF, φFF = read_2d(ds, "gphit"), read_2d(ds, "gphiu"), read_2d(ds, "gphiv"), read_2d(ds, "gphif")
+        e1t, e1u, e1v, e1f = read_2d(ds, "e1t"),   read_2d(ds, "e1u"),   read_2d(ds, "e1v"),   read_2d(ds, "e1f")
+        e2t, e2u, e2v, e2f = read_2d(ds, "e2t"),   read_2d(ds, "e2u"),   read_2d(ds, "e2v"),   read_2d(ds, "e2f")
+
+        if "e1e2t" in keys(ds)
+            AzCC, AzFC = read_2d(ds, "e1e2t"), read_2d(ds, "e1e2u")
+            AzCF, AzFF = read_2d(ds, "e1e2v"), read_2d(ds, "e1e2f")
+        else
+            AzCC, AzFC, AzCF, AzFF = e1t .* e2t, e1u .* e2u, e1v .* e2v, e1f .* e2f
+        end
+
+        return (; λCC, λFC, λCF, λFF, φCC, φFC, φCF, φFF,
+                  e1t, e1u, e1v, e1f, e2t, e2u, e2v, e2f,
+                  AzCC, AzFC, AzCF, AzFF)
+    end
+
+    reduced_vars = ("longitude", "latitude", "e1t", "e2t")
+    has_all_variables(ds, reduced_vars) || throw(ArgumentError("Unsupported ORCA mesh format. Missing required coordinate variables."))
+
+    λ = collect(ds["longitude"][:])
+    φ = collect(ds["latitude"][:])
+    Nx, Ny = length(λ), length(φ)
+
+    e1t = orient_xy(read_2d_nemo_variable(ds, "e1t"), Nx, Ny; name = "e1t")
+    e2t = orient_xy(read_2d_nemo_variable(ds, "e2t"), Nx, Ny; name = "e2t")
+
+    λFC₁ = similar(λ)
+    @inbounds for i in 1:Nx
+        λFC₁[i] = midpoint_longitude(λ[i], λ[mod1(i+1, Nx)])
+    end
+
+    φCF₁ = similar(φ)
+    @inbounds for j in 1:Ny-1
+        φCF₁[j] = (φ[j] + φ[j+1]) / 2
+    end
+    φCF₁[Ny] = φ[Ny]
+
+    λCC = repeat(reshape(λ, Nx, 1), 1, Ny)
+    λFC = repeat(reshape(λFC₁, Nx, 1), 1, Ny)
+    λCF = copy(λCC)
+    λFF = copy(λFC)
+
+    φCC = repeat(reshape(φ, 1, Ny), Nx, 1)
+    φFC = copy(φCC)
+    φCF = repeat(reshape(φCF₁, 1, Ny), Nx, 1)
+    φFF = copy(φCF)
+
+    e1u = average_x_periodic(e1t)
+    e2u = average_x_periodic(e2t)
+    e1v = average_y_with_north_copy(e1t)
+    e2v = average_y_with_north_copy(e2t)
+    e1f = average_x_periodic(e1v)
+    e2f = average_x_periodic(e2v)
+
+    AzCC, AzFC, AzCF, AzFF = e1t .* e2t, e1u .* e2u, e1v .* e2v, e1f .* e2f
+
+    return (; λCC, λFC, λCF, λFF, φCC, φFC, φCF, φFF,
+              e1t, e1u, e1v, e1f, e2t, e2u, e2v, e2f,
+              AzCC, AzFC, AzCF, AzFF)
 end
 
 # Detect periodic overlap columns in NEMO data.
@@ -94,7 +217,8 @@ end
              radius = Oceananigans.defaults.planet_radius,
              with_bathymetry = true,
              active_cells_map = true,
-             south_rows_to_remove = default_south_rows_to_remove(dataset))
+             south_rows_to_remove = default_south_rows_to_remove(dataset),
+             dir = default_download_directory(dataset))
 
 Construct an `OrthogonalSphericalShellGrid` with `(Periodic, RightFaceFolded, Bounded)`
 topology using coordinate and metric data from a NEMO eORCA `mesh_mask` file.
@@ -104,9 +228,10 @@ The mesh mask and bathymetry files are downloaded automatically via the
 `DataWrangling.ORCA` metadata interface.
 
 The horizontal grid (including coordinates, scale factors, and areas) is loaded
-directly from the `mesh_mask` NetCDF file, which contains data at all four staggered
-locations (T, U, V, F points). The user provides the vertical discretization via the `z`
-keyword argument.
+directly from the `mesh_mask` NetCDF file. If all staggered NEMO fields are present
+(`T`, `U`, `V`, `F` points), they are used directly. Otherwise, reduced-coordinate
+files (longitude/latitude plus `e1t` and `e2t`) are supported via reconstructed
+staggered fields.
 
 When `with_bathymetry = true` (the default), the bathymetry is also downloaded
 and the grid is returned as an `ImmersedBoundaryGrid` with a `GridFittedBottom`.
@@ -133,6 +258,8 @@ Keyword Arguments
 - `south_rows_to_remove`: Number of southern rows to remove from the eORCA grid.  The "extended" eORCA grid
                           contains degenerate padding rows near Antarctica that are entirely land.
                           Removing them reduces memory usage and computation.
+- `dir`: Directory to store and look up ORCA files (`mesh_mask` and bathymetry).
+         Defaults to the dataset scratch cache via `default_download_directory(dataset)`.
 """
 function ORCAGrid(arch = CPU(), FT::DataType = Float64;
                   dataset = ORCA1(),
@@ -142,41 +269,31 @@ function ORCAGrid(arch = CPU(), FT::DataType = Float64;
                   radius = Oceananigans.defaults.planet_radius,
                   with_bathymetry = true,
                   active_cells_map = true,
-                  south_rows_to_remove = default_south_rows_to_remove(dataset))
+                  south_rows_to_remove = default_south_rows_to_remove(dataset),
+                  dir = default_download_directory(dataset))
 
     # Download mesh_mask via the metadata interface
-    mesh_meta = Metadatum(:mesh_mask; dataset)
+    mesh_meta = Metadatum(:mesh_mask; dataset, dir)
     mesh_mask_path = download_dataset(mesh_meta)
 
     ds = Dataset(mesh_mask_path)
-
-    # Read 2D arrays at all four NEMO stagger locations:
-    #   T → (Center, Center), U → (Face, Center),
-    #   V → (Center, Face),   F → (Face, Face)
-    read_2d = read_2d_nemo_variable
-
-    λCC, λFC, λCF, λFF = read_2d(ds, "glamt"), read_2d(ds, "glamu"), read_2d(ds, "glamv"), read_2d(ds, "glamf")
-    φCC, φFC, φCF, φFF = read_2d(ds, "gphit"), read_2d(ds, "gphiu"), read_2d(ds, "gphiv"), read_2d(ds, "gphif")
-    e1t, e1u, e1v, e1f = read_2d(ds, "e1t"),   read_2d(ds, "e1u"),   read_2d(ds, "e1v"),   read_2d(ds, "e1f")
-    e2t, e2u, e2v, e2f = read_2d(ds, "e2t"),   read_2d(ds, "e2u"),   read_2d(ds, "e2v"),   read_2d(ds, "e2f")
-
-    # Areas: read pre-computed if available, otherwise compute from scale factors
-    if "e1e2t" in keys(ds)
-        AzCC, AzFC = read_2d(ds, "e1e2t"), read_2d(ds, "e1e2u")
-        AzCF, AzFF = read_2d(ds, "e1e2v"), read_2d(ds, "e1e2f")
-    else
-        AzCC, AzFC, AzCF, AzFF = e1t .* e2t, e1u .* e2u, e1v .* e2v, e1f .* e2f
-    end
-
+    mesh = read_orca_staggered_mesh(ds)
     close(ds)
+
+    λCC, λFC, λCF, λFF = mesh.λCC, mesh.λFC, mesh.λCF, mesh.λFF
+    φCC, φFC, φCF, φFF = mesh.φCC, mesh.φFC, mesh.φCF, mesh.φFF
+    e1t, e1u, e1v, e1f = mesh.e1t, mesh.e1u, mesh.e1v, mesh.e1f
+    e2t, e2u, e2v, e2f = mesh.e2t, mesh.e2u, mesh.e2v, mesh.e2f
+    AzCC, AzFC, AzCF, AzFF = mesh.AzCC, mesh.AzFC, mesh.AzCF, mesh.AzFF
 
     # Extract tripolar pole parameters from F-point coordinates
     last_row_φ = φFF[:, end]
     pole_idx   = argmax(last_row_φ)
-    north_poles_latitude  = Float64(last_row_φ[pole_idx])
-    first_pole_longitude  = Float64(λFF[pole_idx, end])
+    north_poles_latitude = min(Float64(last_row_φ[pole_idx]), 89.999)
+    first_pole_longitude = Float64(λFF[pole_idx, end])
 
     Nx, Ny = size(λCC)
+    Ny_full = Ny
 
     # Detect periodic overlap columns (e.g., eORCA1 has 2 trailing overlap columns)
     overlap = periodic_overlap_index(λCC)
@@ -258,12 +375,15 @@ function ORCAGrid(arch = CPU(), FT::DataType = Float64;
     with_bathymetry || return underlying_grid
 
     # Load bathymetry
-    bathy_meta = Metadatum(:bottom_height; dataset)
+    bathy_meta = Metadatum(:bottom_height; dataset, dir)
     bathymetry_path = download_dataset(bathy_meta)
 
     bathy_ds = Dataset(bathymetry_path)
-    bathy_data = Array(bathy_ds[dataset_variable_name(bathy_meta)][:, :])
+    bathy_name = dataset_variable_name(bathy_meta)
+    bathy_data = read_2d_nemo_variable(bathy_ds, bathy_name)
     close(bathy_ds)
+
+    bathy_data = orient_xy(bathy_data, Nx, Ny_full; name = string(bathy_name))
 
     if jr > 0
         bathy_data = chop(bathy_data)
@@ -271,8 +391,8 @@ function ORCAGrid(arch = CPU(), FT::DataType = Float64;
 
     # NEMO bathymetry is positive depth; convert to negative bottom height.
     # Land (bathymetry == 0) gets mapped to +100 so GridFittedBottom masks it.
-    bottom_height = convert.(FT, bathy_data)
-    bottom_height .= ifelse.(bottom_height .> 0, .-bottom_height, FT(100))
+    bottom_height = FT.(coalesce.(bathy_data, FT(0)))
+    bottom_height .= ifelse.(isfinite.(bottom_height) .& (bottom_height .> 0), .-bottom_height, FT(100))
     bottom_height = on_architecture(arch, bottom_height)
 
     return ImmersedBoundaryGrid(underlying_grid, GridFittedBottom(bottom_height); active_cells_map)

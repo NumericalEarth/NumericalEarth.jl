@@ -54,21 +54,26 @@ last_date(::ORCA12, args...) = nothing
 const ORCA1Metadatum = Metadatum{<:ORCA1}
 const ORCA12Metadatum = Metadatum{<:ORCA12}
 
-ORCA_variable_names = Dict(
+ORCA1_variable_names = Dict(
     :bottom_height => "Bathymetry",
     :mesh_mask     => "glamt",
 )
 
-dataset_variable_name(data::ORCA1Metadatum) = ORCA_variable_names[data.name]
-dataset_variable_name(data::ORCA12Metadatum) = ORCA_variable_names[data.name]
+ORCA12_variable_names = Dict(
+    :bottom_height => "deptho",
+    :mesh_mask     => "e1t",
+)
+
+dataset_variable_name(data::ORCA1Metadatum) = ORCA1_variable_names[data.name]
+dataset_variable_name(data::ORCA12Metadatum) = ORCA12_variable_names[data.name]
 
 # Zenodo record 4436658: eORCA1 mesh_mask and bathymetry
 const ORCA1_mesh_mask_url  = "https://zenodo.org/records/4436658/files/eORCA1.2_mesh_mask.nc"
 const ORCA1_bathymetry_url = "https://zenodo.org/records/4436658/files/eORCA_R1_bathy_meter_v2.2.nc"
 
-# Zenodo records for eORCA12 GO6 mesh mask and bathymetry
-const ORCA12_mesh_mask_url  = "https://zenodo.org/records/13396812/files/grid_mask_eORCA12-GO6.nc"
-const ORCA12_bathymetry_url = "https://zenodo.org/records/13396072/files/bathy_meter_eORCA12-GO6.nc"
+# Google Drive records for GLORYS12 (ORCA12) mesh mask and bathymetry
+const ORCA12_mesh_mask_url  = "https://drive.google.com/uc?export=download&id=1uexKHV9q39bNXTH2V-PQwEiS2Y80J-XZ"
+const ORCA12_bathymetry_url = "https://www.dropbox.com/scl/fi/k8l22pxg80c2ox37pxc4w/GLO-MFC_001_030_mask_bathy.nc?rlkey=9cjlbli6hzvq2tlh6wkxegrsd&dl=1"
 
 function metadata_url(metadatum::ORCA1Metadatum)
     if metadatum.name == :mesh_mask
@@ -102,9 +107,9 @@ end
 
 function metadata_filename(::ORCA12, name, date, bounding_box)
     if name == :mesh_mask
-        return "grid_mask_eORCA12-GO6.nc"
+        return "GLO-MFC_001_030_coordinates.nc"
     elseif name == :bottom_height
-        return "bathy_meter_eORCA12-GO6.nc"
+        return "GLO-MFC_001_030_mask_bathy.nc"
     else
         error("Unknown ORCA12 variable: $name")
     end
