@@ -34,12 +34,12 @@ Environment variables (physics):
 Environment variables (I/O & runtime):
   BACKEND_SIZE  Number of JRA55 time indices kept in memory (default: 240,
                 i.e. 30 days of 3-hourly data ≈ 2 GB RAM for 11 variables)
-  FORCING_DIR   Path to JRA55 forcing data (default: forcing_data)
-  STAGING_DIR   Fast scratch directory for JRA55 staging. When set,
-                a per-run subdirectory (STAGING_DIR/<run_name>) is created
+  FORCING_DIR   Path to JRA55 forcing data (default: ${DATA}forcing_data)
+  STAGING_DIR   Base directory for JRA55 staging (default: ./staged_data).
+                A per-run subdirectory (STAGING_DIR/<run_name>) is created
                 with symlinks from FORCING_DIR; files are progressively
                 copied ahead of each simulated year.
-                Keeps ~50 GB on scratch (current + next year).
+                Keeps ~50 GB per run (current + next year).
   NODE          Pin job to a specific node (default: 2904)
   PROFILE       Set to "true" for nsys profiling
 
@@ -49,7 +49,7 @@ Examples:
   NCAR=true SNOW=true ./launch.sh orca
   CORRECTED=true SNOW=true ./launch.sh orca
   CB=0.1 NCAR=true ./launch.sh orca
-  FORCING_DIR=/data/jra55 STAGING_DIR=/scratch/jra55_staged ./launch.sh orca
+  FORCING_DIR=/other/path/forcing_data STAGING_DIR=/scratch/staged ./launch.sh orca
   PROFILE=true ./launch.sh orca
 USAGE
 }
@@ -125,8 +125,8 @@ module load nvhpc
 JULIA="${JULIA:-$HOME/julia-1.12.5/bin/julia}"
 
 # ── Shared environment ────────────────────────────────────────────────
-FORCING_DIR="${FORCING_DIR:-forcing_data}"
-STAGING_DIR="${STAGING_DIR:-}"
+FORCING_DIR="${FORCING_DIR:-${DATA}forcing_data}"
+STAGING_DIR="${STAGING_DIR:-./staged_data}"
 CB="${CB:-}"
 BACKEND_SIZE="${BACKEND_SIZE:-}"
 NCAR="${NCAR:-false}"
