@@ -217,10 +217,10 @@ function retrieve_data(metadata::OSPapaMetadatum)
     end
 end
 
-#####
-##### Custom set! for single-column vertical interpolation
-#####
-
+# Note: we do not use interpolate! here because
+# 1. We want to skip NaNs and interpolate/extrapolate from nearest valid values, which interpolate! does not support.
+# 2. interpolate! has a bug for single-column fields currently,
+# see https://github.com/CliMA/Oceananigans.jl/issues/5511
 """
     _vertical_interpolate(metadata::OSPapaMetadatum, z_src, data_src, z_dst)
 
@@ -229,7 +229,7 @@ NaN values in `data_src` are skipped. Values outside the source range
 are extrapolated from the nearest valid value.
 """
 function _vertical_interpolate(::OSPapaMetadatum, z_src, data_src, z_dst)
-    result = similar(z_dst, Float64)
+    result = similar(z_dst, Float64)``
 
     # Filter out NaN values
     valid = .!isnan.(data_src)
@@ -261,6 +261,9 @@ function _vertical_interpolate(::OSPapaMetadatum, z_src, data_src, z_dst)
     return result
 end
 
+# Note: We do not use the generic set! defined in metadata_field.jl because
+# we want to perform a custom vertical interpolation/extrapolation that skips NaNs
+# which is not supported by interpolate!
 function set!(target_field::Field, metadata::OSPapaMetadatum; kw...)
     grid = target_field.grid
     arch = child_architecture(grid)
