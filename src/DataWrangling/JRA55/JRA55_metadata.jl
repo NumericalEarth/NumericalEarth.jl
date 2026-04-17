@@ -12,7 +12,7 @@ import Oceananigans.Fields: set!
 import Base
 
 import Oceananigans.Fields: set!, location
-import NumericalEarth.DataWrangling: all_dates, metadata_filename, build_filename, download_dataset, default_download_directory, available_variables
+import NumericalEarth.DataWrangling: all_dates, metadata_filename, build_filename, download_dataset, default_download_directory, available_variables, getfilename
 
 struct MultiYearJRA55 end
 struct RepeatYearJRA55 end
