@@ -6,6 +6,7 @@
 #   NCAR=true ./launch.sh orca                 # ORCA with NCAR bulk formulae
 #   NCAR=true SNOW=true ./launch.sh orca       # ORCA + NCAR + snow
 #   CB=0.1 NCAR=true ./launch.sh orca          # ORCA + NCAR + Cᵇ=0.1
+#   KSKEW=1000 KSYMM=500 ./launch.sh orca      # ORCA with custom eddy diffusivities
 #   PROFILE=true ./launch.sh orca              # nsys-profile run
 #
 # Credentials (e.g. ECCO_USERNAME, ECCO_WEBDAV_PASSWORD) are NOT set
@@ -29,6 +30,8 @@ Environment variables (physics):
   NCAR          Set to "true" for OMIP-2/NCAR bulk formulae
   CORRECTED     Set to "true" for corrected COARE 3.6 fluxes
   SNOW          Set to "true" to enable snow thermodynamics
+  KSKEW         Isopycnal skew diffusivity κ_skew (default: per-config; 0 = off)
+  KSYMM         Isopycnal symmetric diffusivity κ_symmetric (default: per-config; 0 = off)
   CB            CATKE buoyancy mixing length parameter Cᵇ (default: 0.28)
 
 Environment variables (I/O & runtime):
@@ -49,6 +52,8 @@ Examples:
   NCAR=true SNOW=true ./launch.sh orca
   CORRECTED=true SNOW=true ./launch.sh orca
   CB=0.1 NCAR=true ./launch.sh orca
+  KSKEW=1000 KSYMM=500 ./launch.sh orca
+  KSKEW=0 ./launch.sh orca                    # disable eddy closure
   FORCING_DIR=/other/path/forcing_data STAGING_DIR=/scratch/staged ./launch.sh orca
   PROFILE=true ./launch.sh orca
 USAGE
@@ -77,20 +82,56 @@ case "$CONFIG" in
         ;;
 esac
 
+# ── Per-config defaults ───────────────────────────────────────────────
+#                     KSKEW  KSYMM  NZ   DT          BIHARMONIC  ARCH                                             GPUS  EXTRA_USING                              FILE_SPLIT  RUN_CMD
+case "$CONFIG" in
+    halfdegree)
+        DEFAULT_KSKEW=250;  DEFAULT_KSYMM=100; NZ=70;  DT="25minutes"
+        BIHARMONIC="40days"; ARCH="GPU()"; GPUS_PER_NODE=1
+        EXTRA_USING=""; FILE_SPLIT=""
+        RUN_CMD="sim.stop_time = 300 * 365days
+run!(sim, pickup=:latest)"
+        ;;
+    orca)
+        DEFAULT_KSKEW=500;  DEFAULT_KSYMM=250; NZ=70;  DT="30minutes"
+        BIHARMONIC="10days"; ARCH="GPU()"; GPUS_PER_NODE=1
+        EXTRA_USING=""; FILE_SPLIT=""
+        RUN_CMD="sim.stop_time = 300 * 365days
+run!(sim; pickup = :latest)"
+        ;;
+    tenthdegree)
+        DEFAULT_KSKEW=0;    DEFAULT_KSYMM=0;   NZ=100; DT="8minutes"
+        BIHARMONIC="nothing"; ARCH="Distributed(GPU(), partition=Partition(1, 4))"; GPUS_PER_NODE=4
+        EXTRA_USING="using Oceananigans.DistributedComputations"
+        FILE_SPLIT="file_splitting_interval = 180days,"
+        RUN_CMD="sim.stop_time = 91days
+run!(sim)
+
+sim.Δt = 15minutes
+sim.stop_time = 300 * 365days
+run!(sim; pickup = true)"
+        ;;
+esac
+
+# 0 means "no eddy closure" (maps to Julia `nothing`)
+export KSKEW="${KSKEW:-$DEFAULT_KSKEW}"
+export KSYMM="${KSYMM:-$DEFAULT_KSYMM}"
+KSKEW_JULIA="$KSKEW"; [[ "$KSKEW" == "0" ]] && KSKEW_JULIA="nothing"
+KSYMM_JULIA="$KSYMM"; [[ "$KSYMM" == "0" ]] && KSYMM_JULIA="nothing"
+export KSKEW_JULIA KSYMM_JULIA
+export NZ DT BIHARMONIC ARCH EXTRA_USING FILE_SPLIT RUN_CMD
+
 # ── Build run name from config + options ──────────────────────────────
 RUN_NAME="$CONFIG"
-[[ "${CORRECTED:-false}" == "true" ]] && RUN_NAME="${RUN_NAME}_corrected"
-[[ "${NCAR:-false}" == "true" ]]      && RUN_NAME="${RUN_NAME}_ncar"
-[[ "${SNOW:-false}" == "true" ]]      && RUN_NAME="${RUN_NAME}_snow"
-[[ -n "${CB:-}" ]]                    && RUN_NAME="${RUN_NAME}_cb${CB}"
+[[ "${CORRECTED:-false}" == "true" ]]  && RUN_NAME="${RUN_NAME}_corrected"
+[[ "${NCAR:-false}" == "true" ]]       && RUN_NAME="${RUN_NAME}_ncar"
+[[ "${SNOW:-false}" == "true" ]]       && RUN_NAME="${RUN_NAME}_snow"
+[[ -n "${CB:-}" ]]                     && RUN_NAME="${RUN_NAME}_cb${CB}"
+[[ "$KSKEW" != "$DEFAULT_KSKEW" ]]    && RUN_NAME="${RUN_NAME}_kskew${KSKEW}"
+[[ "$KSYMM" != "$DEFAULT_KSYMM" ]]    && RUN_NAME="${RUN_NAME}_ksymm${KSYMM}"
 
 REPORT_NAME="${REPORT_NAME:-${RUN_NAME}_report}"
 JOB_NAME="${JOB_NAME:-$RUN_NAME}"
-GPUS_PER_NODE=1
-
-case "$CONFIG" in
-    tenthdegree) GPUS_PER_NODE=4 ;;
-esac
 
 SBATCH_ARGS=()
 NODE="${NODE:-2904}"
@@ -155,90 +196,32 @@ FLUX_KWARG=""
 SNOW_KWARG=""
 [[ "$SNOW" == "true" ]] && SNOW_KWARG="with_snow = true,"
 
-# ── Build Julia expression ────────────────────────────────────────────
-case "$CONFIG" in
-    halfdegree)
-        JULIA_EXPR="using OMIPSimulations
+# ── Build and run Julia expression ────────────────────────────────────
+JULIA_EXPR="using OMIPSimulations
 using Oceananigans
 using Oceananigans.Units
 using CUDA
+${EXTRA_USING}
 
-sim = omip_simulation(:halfdegree;
-                      arch = GPU(),
-                      Nz = 70,
+sim = omip_simulation(:${CONFIG};
+                      arch = ${ARCH},
+                      Nz = ${NZ},
                       depth = 5500,
+                      κ_skew = ${KSKEW_JULIA},
+                      κ_symmetric = ${KSYMM_JULIA},
+                      biharmonic_timescale = ${BIHARMONIC},
                       ${CB_KWARG}
                       ${FLUX_KWARG}
                       ${SNOW_KWARG}
-                      Δt = 25minutes,
+                      Δt = ${DT},
                       forcing_dir = \"${FORCING_DIR}\",
                       ${STAGING_KWARG}
                       ${BACKEND_KWARG}
+                      ${FILE_SPLIT}
                       output_dir = \"${RUN_NAME}_run\",
                       filename_prefix = \"${RUN_NAME}\")
 
-sim.stop_time = 300 * 365days
-run!(sim, pickup=:latest)"
-        ;;
-    orca)
-        JULIA_EXPR="using OMIPSimulations
-using Oceananigans
-using Oceananigans.Units
-using CUDA
-
-sim = omip_simulation(:orca;
-                      arch = GPU(),
-                      Nz = 70,
-                      depth = 5500,
-                      κ_skew = 500,
-                      κ_symmetric = 250,
-                      biharmonic_timescale = 10days,
-                      ${CB_KWARG}
-                      ${FLUX_KWARG}
-                      ${SNOW_KWARG}
-                      Δt = 30minutes,
-                      forcing_dir = \"${FORCING_DIR}\",
-                      ${STAGING_KWARG}
-                      ${BACKEND_KWARG}
-                      output_dir = \"${RUN_NAME}_run\",
-                      filename_prefix = \"${RUN_NAME}\")
-
-sim.stop_time = 300 * 365days
-run!(sim; pickup = :latest)"
-        ;;
-    tenthdegree)
-        JULIA_EXPR="using OMIPSimulations
-using Oceananigans
-using Oceananigans.Units
-using Oceananigans.DistributedComputations
-using CUDA
-
-sim = omip_simulation(:tenthdegree;
-                      arch = Distributed(GPU(), partition=Partition(1, 4)),
-                      Nz = 100,
-                      depth = 5500,
-                      κ_skew = nothing,
-                      κ_symmetric = nothing,
-                      biharmonic_timescale = nothing,
-                      ${CB_KWARG}
-                      ${FLUX_KWARG}
-                      ${SNOW_KWARG}
-                      Δt = 8minutes,
-                      forcing_dir = \"${FORCING_DIR}\",
-                      ${STAGING_KWARG}
-                      ${BACKEND_KWARG}
-                      output_dir = \"${RUN_NAME}_run\",
-                      filename_prefix = \"${RUN_NAME}\",
-                      file_splitting_interval = 180days)
-
-sim.stop_time = 91days
-run!(sim)
-
-sim.Δt = 15minutes
-sim.stop_time = 300 * 365days
-run!(sim; pickup = true)"
-        ;;
-esac
+${RUN_CMD}"
 
 if [[ "${PROFILE:-false}" == "true" ]]; then
     echo "Profiling ${RUN_NAME} -> ${REPORT_NAME}"
