@@ -1,10 +1,21 @@
-# # [One-degree global ocean--sea ice simulation](@id one-degree-ocean-seaice)
+# # [Coarse global ocean--sea ice simulation](@id coarse-degree-ocean-seaice)
 #
-# This example configures a global ocean--sea ice simulation at 1ᵒ horizontal resolution with
-# realistic bathymetry and a few closures including the "Gent-McWilliams" `IsopycnalSkewSymmetricDiffusivity`.
-# The simulation is forced by repeat-year JRA55 atmospheric reanalysis
-# and initialized by temperature, salinity, sea ice concentration, and sea ice thickness
-# from the ECCO state estimate. 
+# This example configures a global ocean--sea ice simulation on the ["ORCA2" grid](https://www.nemo-ocean.eu/doc/node108.html#Tab_orca_zgr)
+# which is tripolar grid which transitions to a Mercator grid in the tropics to better resolve 
+# equatorial dynamics (as the sign of the coriolis coefficient switches on the equator).
+# The grid nominally has a 2° resolution with meridional refinement to 0.5° in the tropics 
+# and near Antarctica, and refinement to ~0.5° in the Mediterranean, Red, Black and Caspian Seas.
+# The grid has been refined carefully designed by NEMO to carefully capture important physics
+# and maintain anisotropy close to 1 in the ocean, especially in strongly eddying regions such 
+# as the gulf stream. They also provide bathymetry which is refined to represent important straits.
+#
+# The model is forced with by repeat-year JRA55 atmospheric reanalysis and initialized by
+# temperature, salinity, sea ice concentration, and sea ice thickness from the ECCO state estimate. 
+# It includes a few closures:
+# - "Gent-McWilliams" `IsopycnalSkewSymmetricDiffusivity`,
+# - `CATKEVerticalDiffusivity` for vertical convective mixing,
+# - `HorizontalScalarBiharmonicDiffusivity` to damp grid scale noise,
+# - and `VerticalScalarDiffusivity` emulating mixing from internal tides
 #
 # For this example, we need Oceananigans, NumericalEarth, Dates, CUDA, and
 # CairoMakie to visualize the simulation.
@@ -18,15 +29,12 @@ using Statistics
 using CUDA
 
 # ### Grid and Bathymetry
-
-# We start by constructing an underlying TripolarGrid at ~1 degree resolution,
-
 const data_path = has_cuda_gpu() ? "/cephfs/home/js2430/store/Global/data" : "data" #"/home/js2430/rds/hpc-work/GlobalOceanBioME/data"#
 
 arch = GPU()
 Nz = 30
 z = ExponentialDiscretization(Nz, -5500, 0; scale = 1240)
-grid = ORCATripolarGrid(arch; dataset = ORCA2(), z, Nz, remove_closed_basins = true)# ORCATripolarGrid
+grid = ORCATripolarGrid(arch; dataset = ORCA2(), z, Nz, remove_closed_basins = true, halo = (5, 5, 4))# ORCATripolarGrid
 
 # ### Closures
 #
@@ -47,10 +55,16 @@ vertical_diffusivity = VerticalScalarDiffusivity(VerticallyImplicitTimeDiscretiz
 using Oceananigans.TurbulenceClosures: IsopycnalSkewSymmetricDiffusivity
 eddy_closure = IsopycnalSkewSymmetricDiffusivity(κ_skew=500, κ_symmetric=500)
 
-vertical_mixing = NumericalEarth.Oceans.default_ocean_closure()
+using Oceananigans.TurbulenceClosures.TKEBasedVerticalDiffusivities:
+    CATKEVerticalDiffusivity
+
+vertical_mixing = CATKEVerticalDiffusivity(VerticallyImplicitTimeDiscretization(); 
+                                           maximum_tracer_diffusivity = 1,
+                                           maximum_tke_diffusivity = 1,
+                                           maximum_viscosity = 1)
 
 free_surface       = SplitExplicitFreeSurface(grid; substeps=20*3)
-momentum_advection = VectorInvariant()
+momentum_advection = WENOVectorInvariant(order=5)
 tracer_advection   = WENO(order=5)
 
 dates = DateTime(1993, 1, 1) : Month(1) : DateTime(1993, 11, 1)
@@ -95,7 +109,7 @@ atmosphere = JRA55PrescribedAtmosphere(arch; backend=JRA55NetCDFBackend(2920),
 # With Runge-Kutta 3rd order time-stepping we can safely use a timestep of 20 minutes.
 
 coupled_model = OceanSeaIceModel(ocean, sea_ice; atmosphere, radiation)
-simulation = Simulation(coupled_model; Δt=60minutes, stop_time=10*365days)
+simulation = Simulation(coupled_model; Δt=90minutes, stop_time=10*365days)
 
 # ### A progress messenger
 #
@@ -170,7 +184,7 @@ sea_ice.output_writers[:surface] = JLD2Writer(sea_ice.model, sea_ice_outputs;
 # We are ready to press the big red button and run the simulation.
 run!(simulation)
 
-using CairoMakie, GeoMakie
+using CairoMakie
 
 fds_surface     = FieldDataset("surface_"*fname_suffix*".jld2", backend = OnDisk())
 fds_ice         = FieldDataset("sea_ice_"*fname_suffix*".jld2", backend = OnDisk())
@@ -186,11 +200,7 @@ Nt = length(fds_surface["u"])
 uoₙ = Field{Face, Center, Nothing}(grid)
 voₙ = Field{Center, Face, Nothing}(grid)
 
-uiₙ = Field{Face, Center, Nothing}(grid)
-viₙ = Field{Center, Face, Nothing}(grid)
-
 so = Field(sqrt(uoₙ^2 + voₙ^2))
-si = Field(sqrt(uiₙ^2 + viₙ^2))
 
 n = Observable(Nt)
 
@@ -230,44 +240,48 @@ end
 
 times = fds_diagnostics["drake_transport"].times
 
-title = @lift string(floor(times[$n]./365days))*" years, "*string(mod(times[$n]/(365days/12), 12))*" months"
+title = @lift string(floor(times[$n]./365days))*" years, "*string(floor(Int, mod(times[$n]/(365days/12), 12)))*" months"
 
 λ, φ = nodes(so)
 
+Nx, Ny = size(grid)
+Δx = grid.Δxᶜᶜᵃ[1:Nx, 1:Ny]
+Δy = grid.Δyᶜᶜᵃ[1:Nx, 1:Ny]
+markersize = [[(8*Δx[i, j]/maximum(Δx)./cosd(φ[i, j]), 8*Δy[i, j]/maximum(Δy)) for i in 1:Nx, j in 1:Ny]...];
+polar_markersize = [[(12*Δx[i, j]/maximum(Δx), 12*Δy[i, j]/maximum(Δy) .* sind(90-φ[i, j])) for i in 1:Nx, j in 1:Ny]...];
+
 fig = Figure(size=(1200, 1200))
 
-ax = GeoAxis(fig[1:2, 1:4]; dest="+proj=moll", limits = (-180, 180, -80, 80), title)
-ax2 = GeoAxis(fig[3:4, 1:4]; dest="+proj=moll", limits = (-180, 180, -80, 80))
+ax = Axis(fig[1:2, 1:4], limits = (-180, 180, -80, 80), backgroundcolor = :lightgray, xgridvisible = false, ygridvisible = false, title)
+ax2 = Axis(fig[3:4, 1:4], limits = (-180, 180, -80, 80), backgroundcolor = :lightgray, xgridvisible = false, ygridvisible = false)
 
-ax3 = GeoAxis(fig[1, 5:6]; dest="+proj=stere +lat_0=90", limits = (-180, 180, 40, 90))
-ax4 = GeoAxis(fig[2, 5:6]; dest="+proj=stere +lat_0=-90", limits = (-180, 180, -90, -40))
+ax3 = PolarAxis(fig[1, 5:6], rgridvisible = false, thetagridvisible = false)
+ax4 = PolarAxis(fig[2, 5:6], rgridvisible = false, thetagridvisible = false)
 
-ax5 = GeoAxis(fig[3, 5:6]; dest="+proj=stere +lat_0=90", limits = (-180, 180, 40, 90))
-ax6 = GeoAxis(fig[4, 5:6]; dest="+proj=stere +lat_0=-90", limits = (-180, 180, -90, -40))
+ax5 = PolarAxis(fig[3, 5:6], rgridvisible = false, thetagridvisible = false)
+ax6 = PolarAxis(fig[4, 5:6], rgridvisible = false, thetagridvisible = false)
 
 ax7 = Axis(fig[5, 1:3], title = "Atlantic", ylabel = "Depth (m)", xlabel = "Latitude (°)")
 ax8 = Axis(fig[5, 4:6], title = "Pacific", ylabel = "Depth (m)", xlabel = "Latitude (°)")
 
-markersize = [[(8*Δx[i, j]/maximum(Δx), 5*Δy[i, j]/maximum(Δy)) for i in 1:Nx, j in 1:Ny]...];
-
 sco = scatter!(ax, [λ...], [φ...], color=spd_plt, colormap=:deep, nan_color=:lightgray; markersize, colorrange = (0, 0.5), marker = :rect)
 sci = scatter!(ax, [λ...], [φ...], color=ice_plt, colormap=:greys; markersize, colorrange = (0, 4), marker = :rect)
 
-scatter!(ax3, [λ...], [φ...], color=spd_plt, colormap=:deep, nan_color=:lightgray, markersize = 3, colorrange = (0, 0.5), marker = :rect)
-scatter!(ax3, [λ...], [φ...], color=ice_plt, colormap=:greys; markersize, colorrange = (0, 4), marker = :rect)
+scatter!(ax3, π/180 .* [λ...], 90 .-[φ...], color=spd_plt, colormap=:deep, nan_color=:lightgray, markersize = polar_markersize, colorrange = (0, 0.5), marker = :rect, rotation = π/180 .* [λ...])
+scatter!(ax3, π/180 .* [λ...], 90 .-[φ...], color=ice_plt, colormap=:greys; markersize = polar_markersize, colorrange = (0, 4), marker = :rect, rotation = π/180 .* [λ...])
 
-scatter!(ax4, [λ...], [φ...], color=spd_plt, colormap=:deep, nan_color=:lightgray, markersize = 3, colorrange = (0, 0.5), marker = :rect)
-scatter!(ax4, [λ...], [φ...], color=ice_plt, colormap=:greys; markersize, colorrange = (0, 4), marker = :rect)
+scatter!(ax4, π/180 .* [λ...], [φ...] .+ 90, color=spd_plt, colormap=:deep, nan_color=:lightgray, markersize = polar_markersize, colorrange = (0, 0.5), marker = :rect, rotation = π/180 .* [λ...])
+scatter!(ax4, π/180 .* [λ...], [φ...] .+ 90, color=ice_plt, colormap=:greys; markersize = polar_markersize, colorrange = (0, 4), marker = :rect, rotation = π/180 .* [λ...])
 
 Colorbar(fig[1:2, 0], sco, label = "Ocean Surface Speed (m/s)")
 Colorbar(fig[1:2, 7], sci, label = "Sea Ice Effective Thickness (m)")
 
-scT = scatter!(ax2, [λ...], [φ...], color=T_plt, colormap=:magma; markersize, colorrange = (-1, 32), marker = :rect)
-scatter!(ax5, [λ...], [φ...], color=T_plt, colormap=:magma; markersize, colorrange = (-1, 32), marker = :rect)
-scatter!(ax6, [λ...], [φ...], color=T_plt, colormap=:magma; markersize, colorrange = (-1, 32), marker = :rect)
-scTi = scatter!(ax2, [λ...], [φ...], color=ice_T_plt, colormap=:vik; markersize, colorrange = (-2, 0), marker = :rect)
-scatter!(ax5, [λ...], [φ...], color=ice_T_plt, colormap=:vik; markersize, colorrange = (-2, 0), marker = :rect)
-scatter!(ax6, [λ...], [φ...], color=ice_T_plt, colormap=:vik; markersize, colorrange = (-2, 0), marker = :rect)
+scT = scatter!(ax2, [λ...], [φ...], color=T_plt, colormap=:magma; markersize, colorrange = (-1, 32), marker = :rect, nan_color=:lightgray)
+scatter!(ax5, π/180 .* [λ...], 90 .-[φ...], color=T_plt, colormap=:magma; markersize = polar_markersize, colorrange = (-1, 32), marker = :rect, nan_color=:lightgray)
+scatter!(ax6, π/180 .* [λ...], [φ...] .+ 90, color=T_plt, colormap=:magma; markersize = polar_markersize, colorrange = (-1, 32), marker = :rect, nan_color=:lightgray)
+scTi = scatter!(ax2, [λ...], [φ...], color=ice_T_plt, colormap=:roma; markersize, colorrange = (-2, 0), marker = :rect)
+scatter!(ax5, π/180 .* [λ...], 90 .-[φ...], color=ice_T_plt, colormap=:roma; markersize = polar_markersize, colorrange = (-2, 0), marker = :rect)
+scatter!(ax6, π/180 .* [λ...], [φ...] .+ 90, color=ice_T_plt, colormap=:roma; markersize = polar_markersize, colorrange = (-2, 0), marker = :rect)
 
 title = @lift string(floor(times[$n]./365days))*" years, "*string(mod(times[$n]/(365days/12), 12))*" months"
 Colorbar(fig[3:4, 0], scT, label = "Sea Surface Temperature (°C)")
@@ -278,13 +292,18 @@ Colorbar(fig[3:4, 7], scTi, label = "Ice Surface Temperature (°C)")
 heatmap!(ax7, φ[125, :], z, (@lift interior(fds_slice["atlantic"][$n], 1, :, :)), colormap=:magma, colorrange = (-1, 32), nan_color=:lightgray)
 heatmap!(ax8, φ[66, :], z, (@lift interior(fds_slice["pacific"][$n], 1, :, :)), colormap=:magma, colorrange = (-1, 32), nan_color=:lightgray)
 
-#=record(fig, "orca2.mp4", 1:Nt, framerate = 10) do i
+rlims!(ax3, 0, 40); hiderdecorations!(ax3)
+rlims!(ax4, 0, 40); hiderdecorations!(ax4)
+rlims!(ax5, 0, 40); hiderdecorations!(ax5)
+rlims!(ax6, 0, 40); hiderdecorations!(ax6)
+
+record(fig, "orca2.mp4", 1:Nt, framerate = 10) do i
     n[] = i
-end=#
-save("orca2_snapshot.png", fig)
+end
+
 nothing #hide
 
-# ![](orca2_snapshot.png)
+# ![](orca2.mp4)
 
 fig = Figure()
 
