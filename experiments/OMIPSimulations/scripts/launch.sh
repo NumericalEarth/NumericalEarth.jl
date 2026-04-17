@@ -36,8 +36,9 @@ Environment variables (I/O & runtime):
                 i.e. 30 days of 3-hourly data ≈ 2 GB RAM for 11 variables)
   FORCING_DIR   Path to JRA55 forcing data (default: forcing_data)
   STAGING_DIR   Fast scratch directory for JRA55 staging. When set,
-                files are symlinked from FORCING_DIR and progressively
-                copied to STAGING_DIR ahead of each simulated year.
+                a per-run subdirectory (STAGING_DIR/<run_name>) is created
+                with symlinks from FORCING_DIR; files are progressively
+                copied ahead of each simulated year.
                 Keeps ~50 GB on scratch (current + next year).
   NODE          Pin job to a specific node (default: 2904)
   PROFILE       Set to "true" for nsys profiling
@@ -115,7 +116,7 @@ sbatch "${SBATCH_ARGS[@]}" "$@" <<'EOF'
 #SBATCH -N 1
 #SBATCH --ntasks-per-node=1
 #SBATCH -p pi_raffaele
-#SBATCH --time=120:00:00
+#SBATCH --time=72:00:00
 #SBATCH --mem=150GB
 
 source /etc/profile.d/modules.sh
@@ -133,8 +134,13 @@ CORRECTED="${CORRECTED:-false}"
 SNOW="${SNOW:-false}"
 
 # ── Build optional kwargs strings ─────────────────────────────────────
+
+# Per-run staging subdirectory to avoid conflicts between concurrent jobs
 STAGING_KWARG=""
-[[ -n "$STAGING_DIR" ]] && STAGING_KWARG="staging_dir = \"${STAGING_DIR}\","
+if [[ -n "$STAGING_DIR" ]]; then
+    RUN_STAGING_DIR="${STAGING_DIR}/${RUN_NAME}"
+    STAGING_KWARG="staging_dir = \"${RUN_STAGING_DIR}\","
+fi
 
 CB_KWARG=""
 [[ -n "$CB" ]] && CB_KWARG="Cᵇ = ${CB},"
@@ -198,7 +204,7 @@ sim = omip_simulation(:orca;
                       filename_prefix = \"${RUN_NAME}\")
 
 sim.stop_time = 300 * 365days
-run!(sim; pickup = true)"
+run!(sim; pickup = :latest)"
         ;;
     tenthdegree)
         JULIA_EXPR="using OMIPSimulations
