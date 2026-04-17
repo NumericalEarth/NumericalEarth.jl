@@ -27,6 +27,7 @@ using NumericalEarth.DataWrangling:
     Temperature,
     Salinity,
     centers_to_interfaces,
+    fill_gaps!,
     CentimetersPerSecond,
     Celsius,
     Millibar,
