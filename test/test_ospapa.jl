@@ -2,7 +2,7 @@ include("runtests_setup.jl")
 
 using NumericalEarth.OSPapa
 using NumericalEarth.Atmospheres: PrescribedAtmosphere
-using Oceananigans.BoundaryConditions: BoundaryCondition, Flux
+using Oceananigans.BoundaryConditions: BoundaryCondition, Flux, getbc
 using Oceananigans.Units: minutes
 using CUDA: @allowscalar
 
@@ -105,6 +105,26 @@ end
         @test bcs.v.top isa BoundaryCondition{<:Flux}
         @test bcs.T.top isa BoundaryCondition{<:Flux}
         @test bcs.S.top isa BoundaryCondition{<:Flux}
+
+        # Check the implemented sign conventions and salinity-coupled EMP flux.
+        grid = RectilinearGrid(arch;
+                               size = 1,
+                               x = -144.9, y = 50.1,
+                               z = (-10, 0),
+                               topology = (Flat, Flat, Bounded))
+
+        S = CenterField(grid)
+        set!(S, 35)
+
+        clock = Clock(time = 0.0)
+        fields = (; S)
+
+        @allowscalar begin
+            @test getbc(bcs.u.top, 1, 1, grid, clock, fields) ≈ -fluxes.τx[1, 1, 1, 1] / 1020.0
+            @test getbc(bcs.v.top, 1, 1, grid, clock, fields) ≈ -fluxes.τy[1, 1, 1, 1] / 1020.0
+            @test getbc(bcs.T.top, 1, 1, grid, clock, fields) ≈ -fluxes.Qnet[1, 1, 1, 1] / (1020.0 * 3991.0)
+            @test getbc(bcs.S.top, 1, 1, grid, clock, fields) ≈ -35 * fluxes.EMP[1, 1, 1, 1] / (1020.0 * 3600.0)
+        end
     end
 end
 
