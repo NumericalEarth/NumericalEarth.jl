@@ -1,4 +1,4 @@
-using Oceananigans.Architectures: AbstractArchitecture
+using Oceananigans.Architectures: AbstractArchitecture, architecture
 using Oceananigans.Grids: AbstractGrid
 using Oceananigans.Fields: interpolate!
 
@@ -48,8 +48,10 @@ function FieldTimeSeries(metadata::Metadata, grid::AbstractGrid;
                          cache_inpainted_data = true,
                          prefetch = false)
 
-    # Make sure all the required individual files are downloaded
     download_dataset(metadata)
+
+    # Detect "the user's grid IS the native grid" structurally 
+    on_native_grid = grid == native_grid(metadata, architecture(grid))
 
     inpainting isa Int && (inpainting = NearestNeighborInpainting(inpainting))
     inner = DatasetBackend(time_indices_in_memory, metadata; on_native_grid, inpainting, cache_inpainted_data)
