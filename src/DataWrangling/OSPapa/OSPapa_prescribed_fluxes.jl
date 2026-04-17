@@ -4,7 +4,7 @@ using Oceananigans.OutputReaders: Cyclical
 using Oceananigans.Architectures: on_architecture
 
 """
-    OSPapaPrescribedFluxes(architecture, FT = Float64;
+    os_papa_prescribed_fluxes(architecture, FT = Float64;
                             start_date = first_date(OSPapaFluxHourly(), :net_heat_flux),
                             end_date   = last_date(OSPapaFluxHourly(), :net_heat_flux),
                             dir = download_OSPapa_cache,
@@ -32,11 +32,11 @@ Keyword Arguments
 - `max_gap_hours`: maximum gap size (in hours) to fill by linear interpolation
   (default: 72)
 """
-function OSPapaPrescribedFluxes(architecture = CPU(), FT = Float64;
-                                start_date = first_date(OSPapaFluxHourly(), :net_heat_flux),
-                                end_date   = last_date(OSPapaFluxHourly(), :net_heat_flux),
-                                dir = download_OSPapa_cache,
-                                max_gap_hours = 72)
+function os_papa_prescribed_fluxes(architecture = CPU(), FT = Float64;
+                                   start_date = first_date(OSPapaFluxHourly(), :net_heat_flux),
+                                   end_date   = last_date(OSPapaFluxHourly(), :net_heat_flux),
+                                   dir = download_OSPapa_cache,
+                                   max_gap_hours = 72)
 
     mdkw = (; dataset = OSPapaFluxHourly(), start_date, end_date, dir)
 
@@ -74,20 +74,25 @@ the correction keyword arguments in [`os_papa_prescribed_flux_boundary_condition
 no_correction(i, j, grid, clock, model_fields, p) = zero(grid)
 
 """
-    os_papa_prescribed_flux_boundary_conditions(fluxes; ρ₀=1020.0, cₚ=3991.0, ...)
+    os_papa_prescribed_flux_boundary_conditions(fluxes;
+                                                arch=nothing,
+                                                ρ₀=1020.0,
+                                                cₚ=3991.0,
+                                                u_momentum_flux_correction=no_correction,
+                                                v_momentum_flux_correction=no_correction,
+                                                temperature_flux_correction=no_correction,
+                                                salinity_flux_correction=no_correction)
 
 Create Oceananigans `FluxBoundaryCondition`s for u, v, T, S from prescribed
 OS Papa flux data. Returns a `NamedTuple` of `FieldBoundaryConditions` that
 can be passed directly to `ocean_simulation` or `HydrostaticFreeSurfaceModel`
 via the `boundary_conditions` keyword argument.
 
-Uses discrete-form boundary condition functions that index flux time series at
-each grid point during tendency computation — no callback needed. GPU-safe: the
-flux `FieldTimeSeries` are used on the architecture they already carry.
+If `arch` is provided, the flux `FieldTimeSeries` are first moved to that architecture.
 
 Arguments
 =========
-- `fluxes`: a `NamedTuple` returned by [`OSPapaPrescribedFluxes`](@ref)
+- `fluxes`: a `NamedTuple` returned by [`os_papa_prescribed_fluxes`](@ref)
 
 Keyword Arguments
 =================
@@ -96,69 +101,72 @@ Keyword Arguments
   which keeps them on whatever architecture they were built on.
 - `ρ₀`: reference ocean density (default: 1020 kg/m³)
 - `cₚ`: ocean heat capacity (default: 3991 J/(kg·K))
-- `u_correction`: discrete-form correction function added to the zonal stress BC (default: [`no_correction`](@ref))
-- `v_correction`: discrete-form correction function added to the meridional stress BC (default: [`no_correction`](@ref))
-- `T_correction`: discrete-form correction function added to the temperature flux BC (default: [`no_correction`](@ref))
-- `S_correction`: discrete-form correction function added to the freshwater (EMP) flux before computing salinity flux (default: [`no_correction`](@ref))
+- `u_momentum_flux_correction`: discrete-form correction function added to the zonal momentum flux boundary condition (default: [`no_correction`](@ref))
+- `v_momentum_flux_correction`: discrete-form correction function added to the meridional momentum flux boundary condition (default: [`no_correction`](@ref))
+- `temperature_flux_correction`: discrete-form correction function added to the temperature flux boundary condition (default: [`no_correction`](@ref))
+- `salinity_flux_correction`: discrete-form correction function added after converting freshwater flux from `EMP` into the salinity flux boundary condition (default: [`no_correction`](@ref))
 
-Each correction function must have the signature `(i, j, grid, clock, model_fields, p)` and return a value
-in the same units as the corresponding flux boundary condition.
+Each correction function must have the signature
+`(i, j, grid, clock, model_fields, p)` and return a value in the same units as
+the corresponding boundary condition.
 
 Examples
 ========
 ```julia
 # Basic usage on GPU:
-fluxes = OSPapaPrescribedFluxes(GPU(); start_date, end_date)
+fluxes = os_papa_prescribed_fluxes(GPU(); start_date, end_date)
 bcs = os_papa_prescribed_flux_boundary_conditions(fluxes)
 ocean = ocean_simulation(grid; Δt=10minutes, boundary_conditions=bcs)
 
 # With a uniform heat flux correction of +5 W/m² to close the heat budget:
 heat_correction = (i, j, grid, clock, model_fields, p) -> 5.0 / (p.ρ₀ * p.cₚ)
-bcs = os_papa_prescribed_flux_boundary_conditions(fluxes; T_correction=heat_correction)
+bcs = os_papa_prescribed_flux_boundary_conditions(fluxes; temperature_flux_correction=heat_correction)
 ```
 """
 function os_papa_prescribed_flux_boundary_conditions(fluxes;
                                                      arch=nothing,
                                                      ρ₀=1020.0, cₚ=3991.0,
-                                                     u_correction=no_correction,
-                                                     v_correction=no_correction,
-                                                     T_correction=no_correction,
-                                                     S_correction=no_correction)
+                                                     u_momentum_flux_correction=no_correction,
+                                                     v_momentum_flux_correction=no_correction,
+                                                     temperature_flux_correction=no_correction,
+                                                     salinity_flux_correction=no_correction)
 
     if !isnothing(arch)
         fluxes = map(fts -> on_architecture(arch, fts), fluxes)
     end
 
     # Momentum: ERDDAP TAUX > 0 = eastward stress ON ocean (INTO domain)
-    @inline function τx_bc(i, j, grid, clock, model_fields, p)
-        return -p.τx[1, 1, 1, Time(clock.time)] / p.ρ₀ + u_correction(i, j, grid, clock, model_fields, p)
+    @inline function u_momentum_flux_bc(i, j, grid, clock, model_fields, p)
+        return -p.τx[1, 1, 1, Time(clock.time)] / p.ρ₀ + u_momentum_flux_correction(i, j, grid, clock, model_fields, p)
     end
 
-    @inline function τy_bc(i, j, grid, clock, model_fields, p)
-        return -p.τy[1, 1, 1, Time(clock.time)] / p.ρ₀ + v_correction(i, j, grid, clock, model_fields, p)
+    # Momentum: ERDDAP TAUY > 0 = northward stress ON ocean (INTO domain)
+    @inline function v_momentum_flux_bc(i, j, grid, clock, model_fields, p)
+        return -p.τy[1, 1, 1, Time(clock.time)] / p.ρ₀ + v_momentum_flux_correction(i, j, grid, clock, model_fields, p)
     end
 
     # Heat: ERDDAP Qnet > 0 = into ocean → negate for Oceananigans
-    @inline function Jᵀ_bc(i, j, grid, clock, model_fields, p)
-        return -p.Qnet[1, 1, 1, Time(clock.time)] / (p.ρ₀ * p.cₚ) + T_correction(i, j, grid, clock, model_fields, p)
+    @inline function temperature_flux_bc(i, j, grid, clock, model_fields, p)
+        return -p.Qnet[1, 1, 1, Time(clock.time)] / (p.ρ₀ * p.cₚ) + temperature_flux_correction(i, j, grid, clock, model_fields, p)
     end
 
     # Salinity: EMP (mm/hr ≡ kg/m²/hr) > 0 = net evaporation → salinity should increase
-    @inline function Jˢ_bc(i, j, grid, clock, model_fields, p)
-        EMP_ms = p.EMP[1, 1, 1, Time(clock.time)] / (p.ρ₀ * 3600)
+    @inline function salinity_flux_bc(i, j, grid, clock, model_fields, p)
+        # Convert freshwater mass flux from mm/hr (kg/m²/hr) to m/s before applying the salinity flux.
+        evaporation_minus_precipitation = p.EMP[1, 1, 1, Time(clock.time)] / (p.ρ₀ * 3600)
         S = model_fields.S[i, j, grid.Nz]
-        return -S * EMP_ms + S_correction(i, j, grid, clock, model_fields, p)
+        return -S * evaporation_minus_precipitation + salinity_flux_correction(i, j, grid, clock, model_fields, p)
     end
 
-    params_τx = (; τx=fluxes.τx, ρ₀)
-    params_τy = (; τy=fluxes.τy, ρ₀)
-    params_T  = (; Qnet=fluxes.Qnet, ρ₀, cₚ)
-    params_S  = (; EMP=fluxes.EMP, ρ₀)
+    u_momentum_flux_params = (; τx=fluxes.τx, ρ₀)
+    v_momentum_flux_params = (; τy=fluxes.τy, ρ₀)
+    temperature_flux_params = (; Qnet=fluxes.Qnet, ρ₀, cₚ)
+    salinity_flux_params = (; EMP=fluxes.EMP, ρ₀)
 
-    u_top = FluxBoundaryCondition(τx_bc, discrete_form=true, parameters=params_τx)
-    v_top = FluxBoundaryCondition(τy_bc, discrete_form=true, parameters=params_τy)
-    T_top = FluxBoundaryCondition(Jᵀ_bc, discrete_form=true, parameters=params_T)
-    S_top = FluxBoundaryCondition(Jˢ_bc, discrete_form=true, parameters=params_S)
+    u_top = FluxBoundaryCondition(u_momentum_flux_bc, discrete_form=true, parameters=u_momentum_flux_params)
+    v_top = FluxBoundaryCondition(v_momentum_flux_bc, discrete_form=true, parameters=v_momentum_flux_params)
+    T_top = FluxBoundaryCondition(temperature_flux_bc, discrete_form=true, parameters=temperature_flux_params)
+    S_top = FluxBoundaryCondition(salinity_flux_bc, discrete_form=true, parameters=salinity_flux_params)
 
     return (; u = FieldBoundaryConditions(top=u_top),
               v = FieldBoundaryConditions(top=v_top),
