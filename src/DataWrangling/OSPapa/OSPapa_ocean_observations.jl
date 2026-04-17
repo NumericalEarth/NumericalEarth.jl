@@ -223,13 +223,13 @@ end
 # 2. interpolate! has a bug for single-column fields currently,
 # see https://github.com/CliMA/Oceananigans.jl/issues/5511
 """
-    _vertical_interpolate(metadata::OSPapaMetadatum, z_src, data_src, z_dst)
+    vertical_interpolate(metadata::OSPapaMetadatum, z_src, data_src, z_dst)
 
 Linearly interpolate a 1D profile from `z_src` centers onto `z_dst` levels.
 NaN values in `data_src` are skipped. Values outside the source range
 are extrapolated from the nearest valid value.
 """
-function _vertical_interpolate(::OSPapaMetadatum, z_src, data_src, z_dst)
+function vertical_interpolate(::OSPapaMetadatum, z_src, data_src, z_dst)
     result = similar(z_dst, Float64)
 
     # Filter out NaN values
@@ -286,12 +286,12 @@ function set!(target_field::Field, metadata::OSPapaMetadatum; kw...)
               "the target grid ($(Lzt) m). Some vertical levels cannot be filled with data.")
     end
 
-    # interpolate! is buggy for this single-column case, so use _vertical_interpolate
+    # interpolate! is buggy for this single-column case, so use vertical_interpolate
     z_src = collect(znodes(meta_field.grid, Center()))
     z_dst = collect(znodes(grid, Center()))
     data_profile = Array(interior(meta_field, 1, 1, :))
 
-    interpolated = _vertical_interpolate(metadata, z_src, data_profile, z_dst)
+    interpolated = vertical_interpolate(metadata, z_src, data_profile, z_dst)
 
     interior(target_field, 1, 1, :) .= on_architecture(arch, interpolated)
 
