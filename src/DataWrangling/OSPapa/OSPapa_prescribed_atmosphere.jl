@@ -33,7 +33,7 @@ already cached locally.
     computes upwelling longwave from the model SST via Stefan-Boltzmann. This
     means the resulting net heat flux will differ from the COARE-computed
     `QNET` available via [`OSPapaPrescribedFluxes`](@ref). If you need the
-    exact observed net fluxes, use [`OSPapaPrescribedFluxBoundaryConditions`](@ref)
+    exact observed net fluxes, use [`os_papa_prescribed_flux_boundary_conditions`](@ref)
     instead.
 
 Keyword Arguments

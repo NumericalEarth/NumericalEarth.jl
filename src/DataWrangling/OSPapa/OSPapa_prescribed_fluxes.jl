@@ -3,20 +3,8 @@ using Oceananigans.Units: Time
 using Oceananigans.OutputReaders: Cyclical
 using Oceananigans.Architectures: on_architecture
 
-# Rebuild a scalar surface FieldTimeSeries on `arch`. Used when the caller
-# supplies an explicit `architecture` to `OSPapaPrescribedFluxBoundaryConditions`
-# that differs from the one the fluxes were built on.
-function _move_flux_fts(fts, arch)
-    FT = eltype(fts)
-    grid = RectilinearGrid(arch, FT; size=(), topology=(Flat, Flat, Flat))
-    new_fts = FieldTimeSeries{Center, Center, Center}(grid, fts.times;
-                                                      time_indexing = fts.time_indexing)
-    parent(new_fts) .= on_architecture(arch, Array(parent(fts)))
-    return new_fts
-end
-
 """
-    OSPapaPrescribedFluxes(architecture = CPU(), FT = Float64;
+    OSPapaPrescribedFluxes(architecture, FT = Float64;
                             start_date = first_date(OSPapaFluxHourly(), :net_heat_flux),
                             end_date   = last_date(OSPapaFluxHourly(), :net_heat_flux),
                             dir = download_OSPapa_cache,
@@ -81,12 +69,12 @@ end
     no_correction(i, j, grid, clock, model_fields, p)
 
 Default correction function that returns zero. Used as the default value for
-the correction keyword arguments in [`OSPapaPrescribedFluxBoundaryConditions`](@ref).
+the correction keyword arguments in [`os_papa_prescribed_flux_boundary_conditions`](@ref).
 """
 no_correction(i, j, grid, clock, model_fields, p) = zero(grid)
 
 """
-    OSPapaPrescribedFluxBoundaryConditions(fluxes; ρ₀=1020.0, cₚ=3991.0, ...)
+    os_papa_prescribed_flux_boundary_conditions(fluxes; ρ₀=1020.0, cₚ=3991.0, ...)
 
 Create Oceananigans `FluxBoundaryCondition`s for u, v, T, S from prescribed
 OS Papa flux data. Returns a `NamedTuple` of `FieldBoundaryConditions` that
@@ -95,7 +83,7 @@ via the `boundary_conditions` keyword argument.
 
 Uses discrete-form boundary condition functions that index flux time series at
 each grid point during tendency computation — no callback needed. GPU-safe: the
-flux FTSes are already on the architecture supplied to `OSPapaPrescribedFluxes`.
+flux `FieldTimeSeries` are used on the architecture they already carry.
 
 Arguments
 =========
@@ -103,6 +91,9 @@ Arguments
 
 Keyword Arguments
 =================
+- `arch`: target architecture for the flux `FieldTimeSeries`. If provided, each
+  flux FTS is moved to `arch` via `on_architecture`. Defaults to `nothing`,
+  which keeps them on whatever architecture they were built on.
 - `ρ₀`: reference ocean density (default: 1020 kg/m³)
 - `cₚ`: ocean heat capacity (default: 3991 J/(kg·K))
 - `u_correction`: discrete-form correction function added to the zonal stress BC (default: [`no_correction`](@ref))
@@ -118,23 +109,24 @@ Examples
 ```julia
 # Basic usage on GPU:
 fluxes = OSPapaPrescribedFluxes(GPU(); start_date, end_date)
-bcs = OSPapaPrescribedFluxBoundaryConditions(fluxes)
+bcs = os_papa_prescribed_flux_boundary_conditions(fluxes)
 ocean = ocean_simulation(grid; Δt=10minutes, boundary_conditions=bcs)
 
 # With a uniform heat flux correction of +5 W/m² to close the heat budget:
 heat_correction = (i, j, grid, clock, model_fields, p) -> 5.0 / (p.ρ₀ * p.cₚ)
-bcs = OSPapaPrescribedFluxBoundaryConditions(fluxes; T_correction=heat_correction)
+bcs = os_papa_prescribed_flux_boundary_conditions(fluxes; T_correction=heat_correction)
 ```
 """
-function OSPapaPrescribedFluxBoundaryConditions(fluxes, architecture=nothing;
-                                                ρ₀=1020.0, cₚ=3991.0,
-                                                u_correction=no_correction,
-                                                v_correction=no_correction,
-                                                T_correction=no_correction,
-                                                S_correction=no_correction)
+function os_papa_prescribed_flux_boundary_conditions(fluxes;
+                                                     arch=nothing,
+                                                     ρ₀=1020.0, cₚ=3991.0,
+                                                     u_correction=no_correction,
+                                                     v_correction=no_correction,
+                                                     T_correction=no_correction,
+                                                     S_correction=no_correction)
 
-    if !isnothing(architecture)
-        fluxes = map(fts -> _move_flux_fts(fts, architecture), fluxes)
+    if !isnothing(arch)
+        fluxes = map(fts -> on_architecture(arch, fts), fluxes)
     end
 
     # Momentum: ERDDAP TAUX > 0 = eastward stress ON ocean (INTO domain)
