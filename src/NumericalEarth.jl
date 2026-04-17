@@ -28,7 +28,7 @@ export
     JRA55PrescribedAtmosphere,
     OSPapaPrescribedAtmosphere,
     OSPapaPrescribedFluxes,
-    OSPapaPrescribedFluxBoundaryConditions,
+    os_papa_prescribed_flux_boundary_conditions,
     OSPapaHourly,
     JRA55NetCDFBackend,
     regrid_bathymetry,
