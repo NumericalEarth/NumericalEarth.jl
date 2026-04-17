@@ -4,6 +4,7 @@ export OSPapaPrescribedAtmosphere
 export OSPapaPrescribedFluxes
 export OSPapaPrescribedFluxBoundaryConditions
 export OSPapaHourly
+export OSPapaFluxHourly
 
 using Oceananigans
 using NCDatasets
@@ -39,6 +40,7 @@ import NumericalEarth.DataWrangling:
     metadata_epoch,
     metadata_time_step,
     metadata_filename,
+    build_filename,
     download_dataset,
     dataset_variable_name,
     longitude_interfaces,
@@ -75,8 +77,9 @@ function download_ospapa_file(dir=download_OSPapa_cache)
     return filepath
 end
 
+include("OSPapa_ocean_observations.jl")
+include("OSPapa_flux_observations.jl")
 include("OSPapa_prescribed_atmosphere.jl")
 include("OSPapa_prescribed_fluxes.jl")
-include("OSPapa_ocean_observations.jl")
 
 end # module
