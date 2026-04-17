@@ -31,15 +31,6 @@ end
 
 struct ORCA1 end
 
-default_download_directory(::ORCA1) = download_ORCA_cache
-reversed_vertical_axis(::ORCA1) = false
-longitude_interfaces(::ORCA1) = (-180, 180)
-latitude_interfaces(::ORCA1) = (-80, 90)
-
-all_dates(::ORCA1, args...) = nothing
-first_date(::ORCA1, args...) = nothing
-last_date(::ORCA1, args...) = nothing
-
 const ORCA1Metadatum = Metadatum{<:ORCA1}
 
 ORCA1_variable_names = Dict(
@@ -92,15 +83,6 @@ default_south_rows_to_remove(::ORCA1) = 35
 # ORCA2
 struct ORCA2 end
 
-default_download_directory(::ORCA2) = download_ORCA_cache
-reversed_vertical_axis(::ORCA2) = false
-longitude_interfaces(::ORCA2) = (-180, 180)
-latitude_interfaces(::ORCA2) = (-80, 90)
-
-all_dates(::ORCA2, args...) = nothing
-first_date(::ORCA2, args...) = nothing
-last_date(::ORCA2, args...) = nothing
-
 const ORCA2Metadatum = Metadatum{<:ORCA2}
 
 ORCA2_variable_names = Dict( 
@@ -144,5 +126,16 @@ function download_dataset(metadatum::ORCA2Metadatum)
 end
 
 default_south_rows_to_remove(::ORCA2) = 0
+
+const ORCAs = Union{ORCA1, ORCA2}
+
+default_download_directory(::ORCAs) = download_ORCA_cache
+reversed_vertical_axis(::ORCAs) = false
+longitude_interfaces(::ORCAs) = (-180, 180)
+latitude_interfaces(::ORCAs) = (-80, 90)
+
+all_dates(::ORCAs, args...) = nothing
+first_date(::ORCAs, args...) = nothing
+last_date(::ORCAs, args...) = nothing
 
 end # module
