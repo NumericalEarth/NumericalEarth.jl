@@ -7,17 +7,17 @@ August-Roche-Magnus formula for saturation vapor pressure.
 Arguments
 =========
 - `RH`: relative humidity in percent
-- `T_celsius`: air temperature in degrees Celsius
-- `P_hPa`: atmospheric pressure in hPa (mbar)
+- `T`: air temperature in degrees Celsius
+- `P`: atmospheric pressure in hPa (mbar)
 """
-function relative_humidity_to_specific_humidity(RH, T_celsius, P_hPa)
+function relative_humidity_to_specific_humidity(RH, T, P)
     Mₐ = 28.9634 # Molar mass of dry air in g/mol
     Mᵥ = 18.01528 # Molar mass of water vapor in g/mol
     ε = Mᵥ / Mₐ  # Ratio of molar masses
 
-    eₛ = 6.1094 * exp(17.625 * T_celsius / (T_celsius + 243.04))  # Saturation vapor pressure in hPa
+    eₛ = 6.1094 * exp(17.625 * T / (T + 243.04))  # Saturation vapor pressure in hPa
     eₚ = (RH / 100) * eₛ  # Actual vapor pressure in hPa
-    q = ε * eₚ / (P_hPa - (1 - ε) * eₚ)  # Specific humidity in kg/kg
+    q = ε * eₚ / (P - (1 - ε) * eₚ)  # Specific humidity in kg/kg
 
     return q
 end
