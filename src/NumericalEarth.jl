@@ -43,6 +43,7 @@ export
     first_date,
     last_date,
     all_dates,
+    JRA55FieldTimeSeries,
     LinearlyTaperedPolarMask,
     DatasetRestoring,
     ocean_simulation,

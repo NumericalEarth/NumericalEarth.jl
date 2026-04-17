@@ -72,6 +72,27 @@ function compute_bounding_indices(longitude, latitude, grid, LX, LY, λc, φc)
     return i₁, i₂, j₁, j₂, TX
 end
 
+# Migration shim — `JRA55FieldTimeSeries` was removed in favor of the
+# generic `FieldTimeSeries(::Metadata)` path. The shim throws a clear
+# error pointing at the new API; can be deleted once downstream callers
+# (ClimaOcean.jl, user scripts) have migrated.
+function JRA55FieldTimeSeries(args...; kwargs...)
+    error("""
+          `JRA55FieldTimeSeries` was removed; JRA55 now uses the generic
+          dataset API. Migrate as:
+
+              FieldTimeSeries(Metadata(:variable_name; dataset=RepeatYearJRA55(),
+                                                       start_date, end_date, dir),
+                              architecture;
+                              time_indices_in_memory = N,
+                              prefetch = false)
+
+          The `InMemory()` backend is no longer supported for JRA55; pass
+          `time_indices_in_memory = length(metadata)` to keep the whole
+          series in memory.
+          """)
+end
+
 """
     JRA55NetCDFBackend(length [, metadata])
     JRA55NetCDFBackend(start, length, metadata)
@@ -208,42 +229,42 @@ function set!(fts::JRA55NetCDFFTSRepeatYear, backend=fts.backend)
     return nothing
 end
 
-# Tricky case: multiple files per variable -- one file per year --
-# we need to infer the file name from the metadata and split the data loading
+# Multi-year case: one file per calendar year. Match each in-memory slot's
+# date to the file's time axis by (Y, M, D, H, min) components rather than
+# by seconds-since-start. JRA55 files use `DateTimeNoLeap` (365-day)
+# internally; doing seconds arithmetic against a Gregorian
+# `metadata.dates` would diverge by a multiple of 86400 after every leap
+# day passed and silently drop the affected slots. Component matching
+# sidesteps this entirely. Feb 29 of leap years has no entry in the file
+# and is skipped here too.
 function set!(fts::JRA55NetCDFFTSMultipleYears, backend=fts.backend)
 
-    metadata   = backend.metadata
-    name       = dataset_variable_name(metadata)
-    start_date = first_date(metadata.dataset, metadata.name)
+    metadata = backend.metadata
+    name     = dataset_variable_name(metadata)
 
-    ftsn = collect(time_indices(fts))
+    ftsn       = collect(time_indices(fts))
+    slot_dates = metadata.dates[ftsn]
 
-    # Only open files that actually contain needed time indices
-    # (metadata.filename maps each time index to its yearly file)
     needed_files = unique(getfilename(metadata.filename, n) for n in ftsn)
 
     for file in needed_files
 
         path = joinpath(metadata.dir, file)
-        ds = Dataset(path)
+        ds   = Dataset(path)
 
-        # This can be simplified once we start supporting a
-        # datetime `Clock` in Oceananigans
         file_dates = ds["time"][:]
-        file_indices = 1:length(file_dates)
-        file_times = zeros(length(file_dates))
-        for (t, date) in enumerate(file_dates)
-            delta = date - start_date
-            delta = Second(delta).value
-            file_times[t] = delta
+
+        nn       = Int[]
+        ftsn_loc = Int[]
+        for (loc, slot_date) in enumerate(slot_dates)
+            file_idx = jra55_no_leap_file_index(file_dates, slot_date)
+            if !isnothing(file_idx)
+                push!(nn, file_idx)
+                push!(ftsn_loc, loc)
+            end
         end
 
-        # Intersect the time indices with the file times
-        nn       = findall(n -> file_times[n] ∈ fts.times[ftsn], file_indices)
-        ftsn_loc = findall(n -> fts.times[n] ∈ file_times[nn], ftsn)
-
         if !isempty(nn)
-            # Nodes at the variable location
             λc = ds["lon"][:]
             φc = ds["lat"][:]
             LX, LY, LZ = location(fts)
@@ -252,16 +273,17 @@ function set!(fts::JRA55NetCDFFTSMultipleYears, backend=fts.backend)
             if issorted(nn)
                 data = ds[name][i₁:i₂, j₁:j₂, nn]
             else
-                # At the cyclical wrap (end of year 60 → start of year 1),
-                # file-local indices may be unsorted. DiskArrays requires
-                # sorted indices, so we load in two sorted chunks.
-                m = findfirst(n -> n == 1, nn)
+                # Defensive: per-file `nn` is normally sorted because we
+                # iterate `slot_dates` in `ftsn` order and a single file
+                # holds a single contiguous year, but DiskArrays requires
+                # sorted indices so we split at the wrap if it occurs.
+                m  = findfirst(n -> n == 1, nn)
                 n1 = nn[1:m-1]
                 n2 = nn[m:end]
 
                 data1 = ds[name][i₁:i₂, j₁:j₂, n1]
                 data2 = ds[name][i₁:i₂, j₁:j₂, n2]
-                data = cat(data1, data2, dims=3)
+                data  = cat(data1, data2, dims=3)
             end
 
             close(ds)

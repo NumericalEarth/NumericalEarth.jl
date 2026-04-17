@@ -92,6 +92,27 @@ using NumericalEarth.DataWrangling: compute_native_date_range
             end
         end
 
+        @info "Testing Field(::JRA55Metadatum) on $A..."
+        # Locks in: position-based RepeatYear file_index lookup, halo
+        # periodic wrap, and agreement between the per-Metadatum Field
+        # path and the chunked-file FTS path at the same time index.
+        ds_var = :downwelling_shortwave_radiation
+        all_jra55_dates = NumericalEarth.DataWrangling.all_dates(JRA55.RepeatYearJRA55(), ds_var)
+
+        md_first = Metadatum(ds_var; dataset=JRA55.RepeatYearJRA55())
+        f_first  = Field(md_first, arch)
+        @test f_first isa Field
+        @test size(f_first) == (640, 320, 1)
+        CUDA.@allowscalar @test f_first[1, 1, 1] == 430.98105f0
+        CUDA.@allowscalar @test view(f_first.data, 1, :, 1) == view(f_first.data, 641, :, 1)
+
+        md_mid = Metadatum(ds_var; dataset=JRA55.RepeatYearJRA55(), date=all_jra55_dates[100])
+        f_mid  = Field(md_mid, arch)
+        # Same time index loaded via the chunked-file FTS path → must agree
+        fts100 = FieldTimeSeries(Metadata(ds_var; dataset=JRA55.RepeatYearJRA55(), end_date=all_jra55_dates[100]), arch; time_indices_in_memory=100)
+        CUDA.@allowscalar @test f_mid[1, 1, 1]   == fts100[1, 1, 1, 100]
+        CUDA.@allowscalar @test f_mid[640, 1, 1] == fts100[640, 1, 1, 100]
+
         @info "Testing interpolate_field_time_series! on $A..."
 
         name  = :downwelling_shortwave_radiation
