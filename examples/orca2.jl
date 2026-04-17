@@ -29,12 +29,10 @@ using Statistics
 using CUDA
 
 # ### Grid and Bathymetry
-const data_path = has_cuda_gpu() ? "/cephfs/home/js2430/store/Global/data" : "data" #"/home/js2430/rds/hpc-work/GlobalOceanBioME/data"#
-
 arch = GPU()
 Nz = 30
 z = ExponentialDiscretization(Nz, -5500, 0; scale = 1240)
-grid = ORCATripolarGrid(arch; dataset = ORCA2(), z, Nz, remove_closed_basins = true, halo = (5, 5, 4))# ORCATripolarGrid
+grid = ORCATripolarGrid(arch; dataset = ORCA2(), z, Nz, remove_closed_basins = true, halo = (5, 5, 4))
 
 # ### Closures
 #
@@ -69,7 +67,7 @@ tracer_advection   = WENO(order=5)
 
 dates = DateTime(1993, 1, 1) : Month(1) : DateTime(1993, 11, 1)
 mask = LinearlyTaperedPolarMask(southern=(-80, -70), northern=(70, 90), z=(-100, 0))
-salinity = Metadata(:salinity;  dates, dataset=ECCO4DarwinMonthly(), dir = data_path)
+salinity = Metadata(:salinity;  dates, dataset=ECCO4DarwinMonthly())
 rate = 1/6days
 FS = DatasetRestoring(salinity, grid; mask, rate)
 
@@ -85,10 +83,10 @@ sea_ice = sea_ice_simulation(grid, ocean; dynamics = nothing)
 
 date = DateTime(1993, 1, 1)
 dataset = ECCO4Monthly()
-ecco_temperature           = Metadatum(:temperature; date, dataset, dir = data_path)
-ecco_salinity              = Metadatum(:salinity; date, dataset, dir = data_path)
-ecco_sea_ice_thickness     = Metadatum(:sea_ice_thickness; date, dataset, dir = data_path)
-ecco_sea_ice_concentration = Metadatum(:sea_ice_concentration; date, dataset, dir = data_path)
+ecco_temperature           = Metadatum(:temperature; date, dataset)
+ecco_salinity              = Metadatum(:salinity; date, dataset)
+ecco_sea_ice_thickness     = Metadatum(:sea_ice_thickness; date, dataset)
+ecco_sea_ice_concentration = Metadatum(:sea_ice_concentration; date, dataset)
 
 set!(ocean.model, T=ecco_temperature, S=ecco_salinity)
 set!(sea_ice.model, h=ecco_sea_ice_thickness, ℵ=ecco_sea_ice_concentration)
@@ -97,9 +95,8 @@ set!(sea_ice.model, h=ecco_sea_ice_thickness, ℵ=ecco_sea_ice_concentration)
 
 # We force the simulation with a JRA55-do atmospheric reanalysis.
 radiation  = Radiation(arch)
-atmosphere = JRA55PrescribedAtmosphere(arch; backend=JRA55NetCDFBackend(2920),
-                                       include_rivers_and_icebergs = true,
-                                       dir = data_path)
+atmosphere = JRA55PrescribedAtmosphere(arch; backend=JRA55NetCDFBackend(),
+                                       include_rivers_and_icebergs = true)
 
 # ### Coupled simulation
 
@@ -109,7 +106,7 @@ atmosphere = JRA55PrescribedAtmosphere(arch; backend=JRA55NetCDFBackend(2920),
 # With Runge-Kutta 3rd order time-stepping we can safely use a timestep of 20 minutes.
 
 coupled_model = OceanSeaIceModel(ocean, sea_ice; atmosphere, radiation)
-simulation = Simulation(coupled_model; Δt=90minutes, stop_time=10*365days)
+simulation = Simulation(coupled_model; Δt=90minutes, stop_time=5*365days)
 
 # ### A progress messenger
 #
