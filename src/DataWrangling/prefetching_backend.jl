@@ -7,35 +7,14 @@ import Oceananigans.Fields: set!
 """
     PrefetchingBackend{B<:DatasetBackend} <: AbstractInMemoryBackend{Int}
 
-Wrapper around a `DatasetBackend` that hides the next window's I/O behind
-the current window's compute by reading into a *buffer* `FieldTimeSeries`
-on a background `Task`. The next call to `set!` either copies the
-already-loaded buffer into the main FTS (hot path) or falls back to a
-synchronous read (cold path), then schedules the prefetch for the window
-after that.
-
-Fields
-------
-
-- `inner`: the wrapped `DatasetBackend`. Carries the `start`/`length`
-  window, metadata, inpainting setting — the cold-path read and the
-  prefetched read both dispatch through it.
-- `task`: the in-flight prefetch `Task`, or `nothing`.
-- `buffer_fts`: a clone of the main `FieldTimeSeries` whose `data` array
-  is the destination of the prefetch read. Constructed before the task is
-  spawned so that the spawn does not race on FTS construction.
-- `next_start`: the absolute time index at which `buffer_fts` will start
-  once its prefetch task completes — compared against the requested
-  `start` on the next `set!` call to decide hot vs. cold path.
+Wrapper around a `DatasetBackend` that hides the next window's I/O behind the current window's compute by reading into 
+a *buffer* `FieldTimeSeries` on a background `Task`. The next call to `set!` either copies the already-loaded buffer 
+into the main FTS (hot path) or falls back to a synchronous read (cold path), then schedules the prefetch for the window after that.
 """
-mutable struct PrefetchingBackend{B<:DatasetBackend} <: AbstractInMemoryBackend{Int}
+mutable struct PrefetchingBackend{B<:DatasetBackend, F} <: AbstractInMemoryBackend{Int}
     inner :: B
     task :: Union{Task, Nothing}
-    buffer_fts :: Any   # erased: a `FieldTimeSeries` whose concrete type
-                        # depends on grid/loc/inpainting and is only set
-                        # at the first `set!`. Erasing it keeps the
-                        # backend's type stable across reloads so that
-                        # Oceananigans' `new_backend` round-trip type-checks.
+    buffer_fts :: F
     next_start :: Int
 end
 
@@ -51,26 +30,15 @@ function Base.getproperty(p::PrefetchingBackend, name::Symbol)
     end
 end
 
-Base.length(p::PrefetchingBackend) = length(p.inner)
+Base.length(p::PrefetchingBackend)  = length(p.inner)
+Base.summary(p::PrefetchingBackend) = string("PrefetchingBackend(", p.inner.start, ", ", p.inner.length, "; pending_prefetch=", !isnothing(getfield(p, :task)), ")")
 
-Base.summary(p::PrefetchingBackend) =
-    string("PrefetchingBackend(", p.inner.start, ", ", p.inner.length,
-           "; pending_prefetch=", !isnothing(getfield(p, :task)), ")")
-
-# When Oceananigans rolls the in-memory window forward it calls
-# `new_backend(b, start, length)`. Forward the call to the inner backend
-# and preserve the prefetch state — the start passed in here is the new
-# window's start, which `set!(fts::PrefetchingFTS)` will use to decide if
-# the pending prefetch already covers it.
 new_backend(p::PrefetchingBackend, start, length) =
     PrefetchingBackend(new_backend(p.inner, start, length),
                        getfield(p, :task),
                        getfield(p, :buffer_fts),
                        getfield(p, :next_start))
 
-# Dropping prefetch state on adapt — `Task` and the buffer FTS aren't
-# meaningful on a different architecture, and they can't be cleanly
-# serialised across a CPU↔GPU boundary.
 Adapt.adapt_structure(to, p::PrefetchingBackend) = Adapt.adapt(to, p.inner)
 
 const PrefetchingFTS = FlavorOfFTS{<:Any, <:Any, <:Any, <:Any, <:PrefetchingBackend}
