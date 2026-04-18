@@ -52,10 +52,10 @@ const OSPAPA_TEST_END   = DateTime(2012, 10, 3)
 end
 
 @testset "OS Papa Prescribed Fluxes" begin
-    @info "Testing OSPapaPrescribedFluxes on CPU..."
+    @info "Testing os_papa_prescribed_fluxes on CPU..."
 
-    fluxes = OSPapaPrescribedFluxes(; start_date = OSPAPA_TEST_START,
-                                      end_date   = OSPAPA_TEST_END)
+    fluxes = os_papa_prescribed_fluxes(; start_date = OSPAPA_TEST_START,
+                                         end_date   = OSPAPA_TEST_END)
 
     # NamedTuple structure
     @test haskey(fluxes, :Qnet)
@@ -89,8 +89,8 @@ end
         A = typeof(arch)
         @info "Testing os_papa_prescribed_flux_boundary_conditions on $A..."
 
-        fluxes = OSPapaPrescribedFluxes(arch; start_date = OSPAPA_TEST_START,
-                                              end_date   = OSPAPA_TEST_END)
+        fluxes = os_papa_prescribed_fluxes(arch; start_date = OSPAPA_TEST_START,
+                                                 end_date   = OSPAPA_TEST_END)
 
         bcs = os_papa_prescribed_flux_boundary_conditions(fluxes)
 
@@ -167,8 +167,8 @@ end
         A = typeof(arch)
         @info "Testing short simulation with os_papa_prescribed_flux_boundary_conditions on $A..."
 
-        fluxes = OSPapaPrescribedFluxes(arch; start_date = OSPAPA_TEST_START,
-                                              end_date   = OSPAPA_TEST_END)
+        fluxes = os_papa_prescribed_fluxes(arch; start_date = OSPAPA_TEST_START,
+                                                 end_date   = OSPAPA_TEST_END)
 
         bcs = os_papa_prescribed_flux_boundary_conditions(fluxes)
 

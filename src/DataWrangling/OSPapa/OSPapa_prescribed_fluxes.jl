@@ -4,11 +4,11 @@ using Oceananigans.OutputReaders: Cyclical
 using Oceananigans.Architectures: on_architecture
 
 """
-    os_papa_prescribed_fluxes(architecture, FT = Float64;
-                            start_date = first_date(OSPapaFluxHourly(), :net_heat_flux),
-                            end_date   = last_date(OSPapaFluxHourly(), :net_heat_flux),
-                            dir = download_OSPapa_cache,
-                            max_gap_hours = 72)
+    os_papa_prescribed_fluxes(architecture = CPU(), FT = Float64;
+                              start_date = first_date(OSPapaFluxHourly(), :net_heat_flux),
+                              end_date   = last_date(OSPapaFluxHourly(), :net_heat_flux),
+                              dir = download_OSPapa_cache,
+                              max_gap_hours = 72)
 
 Download precomputed air-sea fluxes for Ocean Station Papa from the PMEL ERDDAP
 `ocs_papa_flux` dataset (computed with COARE 3.0b) and return them as a

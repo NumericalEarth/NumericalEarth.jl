@@ -100,7 +100,7 @@ function download_dataset(md::OSPapaFluxMetadata)
 
     if !(md.dates isa AbstractArray)
         error("OSPapaFluxHourly uniform cache $(uniform_path) is missing; " *
-              "construct OSPapaPrescribedFluxes or a multi-date Metadata first.")
+              "construct os_papa_prescribed_fluxes or a multi-date Metadata first.")
     end
 
     start_date = first(md.dates)

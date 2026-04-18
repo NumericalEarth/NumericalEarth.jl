@@ -1,7 +1,7 @@
 module OSPapa
 
 export OSPapaPrescribedAtmosphere
-export OSPapaPrescribedFluxes
+export os_papa_prescribed_fluxes
 export os_papa_prescribed_flux_boundary_conditions
 export OSPapaHourly
 export OSPapaFluxHourly

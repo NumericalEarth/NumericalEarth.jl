@@ -27,7 +27,7 @@ export
     PrescribedAtmosphere,
     JRA55PrescribedAtmosphere,
     OSPapaPrescribedAtmosphere,
-    OSPapaPrescribedFluxes,
+    os_papa_prescribed_fluxes,
     os_papa_prescribed_flux_boundary_conditions,
     OSPapaHourly,
     JRA55NetCDFBackend,
