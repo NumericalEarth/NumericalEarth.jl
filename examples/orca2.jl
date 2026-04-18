@@ -249,7 +249,7 @@ polar_markersize = [[(12*Δx[i, j]/maximum(Δx), 12*Δy[i, j]/maximum(Δy) .* si
 
 fig = Figure(size=(1200, 1200))
 
-ax = Axis(fig[1:2, 1:4], limits = (-180, 180, -80, 80), backgroundcolor = :lightgray, xgridvisible = false, ygridvisible = false, title)
+ax = Axis(fig[1:2, 1:4], limits = (-180, 180, -80, 80), backgroundcolor = :lightgray, xgridvisible = false, ygridvisible = false; title)
 ax2 = Axis(fig[3:4, 1:4], limits = (-180, 180, -80, 80), backgroundcolor = :lightgray, xgridvisible = false, ygridvisible = false)
 
 ax3 = PolarAxis(fig[1, 5:6], rgridvisible = false, thetagridvisible = false)
