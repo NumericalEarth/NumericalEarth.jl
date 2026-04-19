@@ -313,20 +313,15 @@ hidexdecorations!(ax3)
 hidexdecorations!(ax5)
 
 lines!(ax, times./(365days), interior(fds_diagnostics["drake_transport"], 1, 1, 1, :)./10^6)
-scatter!(ax, (@lift [times[$n]/(365days)]), (@lift [interior(fds_diagnostics["drake_transport"], 1, 1, 1, $n)[]/10^6]))
 ylims!(ax, 120, 180)
 
 lines!(ax2, times./(365days), interior(fds_diagnostics["mean_T"], 1, 1, 1, :))
-scatter!(ax2, (@lift [times[$n]/(365days)]), (@lift [interior(fds_diagnostics["mean_T"], 1, 1, 1, $n)[]]))
 lines!(ax3, times./(365days), interior(fds_diagnostics["mean_S"], 1, 1, 1, :), color = Makie.wong_colors()[2])
-scatter!(ax3, (@lift [times[$n]/(365days)]), (@lift [interior(fds_diagnostics["mean_S"], 1, 1, 1, $n)[]]), color = Makie.wong_colors()[2])
-
 lines!(ax4, times./(365days), interior(fds_diagnostics["total_TKE"], 1, 1, 1, :))
-scatter!(ax4, (@lift [times[$n]/(365days)]), (@lift [interior(fds_diagnostics["total_TKE"], 1, 1, 1, $n)[]]))
 lines!(ax5, times./(365days), interior(fds_diagnostics["mean_SSH"], 1, 1, 1, :), color = Makie.wong_colors()[2])
-scatter!(ax5, (@lift [times[$n]/(365days)]), (@lift [interior(fds_diagnostics["mean_SSH"], 1, 1, 1, $n)[]]), color = Makie.wong_colors()[2])
 
 save("orca2_diagnostics.png", fig)
+
 nothing #hide
 
 # ![](orca2_diagnostics.png)
