@@ -22,6 +22,7 @@ import NumericalEarth.DataWrangling: all_dates,
                                      default_inpainting,
                                      getfilename,
                                      z_interfaces,
+                                     native_grid,
                                      longitude_interfaces, 
                                      latitude_interfaces
 
@@ -40,9 +41,29 @@ default_download_directory(::JRA55Dataset) = download_JRA55_cache
 
 Base.size(::JRA55Dataset, variable) = (640, 320, 1)
 
-z_interfaces(::JRA55Metadata) = (0, 10)
 longitude_interfaces(::JRA55Metadata) = (0, 360)
 latitude_interfaces(::JRA55Metadata) = (-90, 90)
+
+function native_grid(metadata::JRA55Metadata, arch=CPU(); halo = (3, 3, 3))
+    Nx, Ny, Nz, _ = size(metadata)
+
+    FT = eltype(metadata)
+
+    longitude = longitude_interfaces(metadata)
+    latitude = latitude_interfaces(metadata)
+
+    bbox = metadata.bounding_box
+    if !isnothing(bbox)
+        longitude, Nx = restrict(bbox.longitude, longitude, Nx)
+        latitude, Ny = restrict(bbox.latitude, latitude, Ny)
+    end
+
+    grid = LatitudeLongitudeGrid(arch, FT; size = (Nx, Ny, Nz),
+                                 halo, longitude, latitude, 
+                                 topology = (Periodic, Bounded, Flat))
+
+    return grid
+end
 
 # JRA55 is a spatially 2D dataset
 is_three_dimensional(data::JRA55Metadata) = false
@@ -108,7 +129,7 @@ end
 
 # Convenience functions
 dataset_variable_name(data::JRA55Metadata) = JRA55_dataset_variable_names[data.name]
-location(::JRA55Metadata) = (Center, Center, Nothing)
+location(::JRA55Metadata) = (Center, Center, Center)
 
 available_variables(::JRA55Dataset) = JRA55_variable_names
 
