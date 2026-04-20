@@ -111,7 +111,7 @@ function corrected_radiation(sea_ice)
 
     sea_ice_albedo = SeaIceAlbedo(hi, hs, Ts)
 
-    return Radiation(; ocean_emissivity  = 1.0,
+    return Radiation(; ocean_emissivity  = 0.97,
                        ocean_albedo      = 0.06,
                        sea_ice_albedo)
 end

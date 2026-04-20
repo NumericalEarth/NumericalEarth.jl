@@ -89,13 +89,17 @@ function default_ocean_closure(FT=Oceananigans.defaults.FloatType)
 end
 
 function default_radiative_forcing(grid)
-    ϵʳ = 0.6 # red fraction
-    λʳ = 1  # red decay scale
-    λᵇ = 16 # blue decay scale
+    # Two-band shortwave penetration in the Paulson & Simpson (1977) form,
+    # I(z) = ϵ₁ I₀ exp(κ₁ z) + (1 - ϵ₁) I₀ exp(κ₂ z).
+    # Defaults are Jerlov Type I (clearest open-ocean water), the
+    # OMIP-2 reference (Griffies et al. 2016, §2.3).
+    surface_fraction = 0.58  # Paulson & Simpson 1977, Table 2, Type I
+    surface_scale    = 0.35  # [m]
+    deep_scale       = 23    # [m]
     forcing = TwoColorRadiation(grid;
-                                first_color_fraction = ϵʳ,
-                                first_absorption_coefficient = 1/λᵇ,
-                                second_absorption_coefficient = 1/λʳ)
+                                first_color_fraction          = surface_fraction,
+                                first_absorption_coefficient  = 1 / surface_scale,
+                                second_absorption_coefficient = 1 / deep_scale)
     return forcing
 end
 

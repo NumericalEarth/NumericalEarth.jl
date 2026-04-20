@@ -273,7 +273,7 @@ struct SurfaceFluxRestoring <: Function
     dataset_restoring :: DatasetRestoring
 end
 
-Adapt.adapt_structure(sf::SurfaceFluxRestoring) = SurfaceFluxRestoring(Adapt.adapt(to, sfr.dataset_restoring))
+Adapt.adapt_structure(to, sf::SurfaceFluxRestoring) = SurfaceFluxRestoring(Adapt.adapt(to, sf.dataset_restoring))
 
 # Top BC convention: tendency contribution = -J / Δz, so to inject
 # `G` in the top cell the flux is `-G * Δz`.
