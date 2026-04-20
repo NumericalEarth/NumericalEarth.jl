@@ -158,13 +158,18 @@ convert_if_number(FT, a::Number) = convert(FT, a)
 convert_if_number(FT, a) = a
 
 convert_transfer_coefficients(FT, c) = c
+convert_transfer_coefficients(FT, c::Tuple) = convert_if_number.(FT, c)
+convert_transfer_coefficients(FT, c::NamedTuple) = (; momentum = convert_if_number(FT, c.momentum)
+                                                      temperature = convert_if_number(FT, c.temperature),
+                                                      water_vapor = convert_if_number(FT, c.water_vapor))
+
 convert_transfer_coefficients(FT, c::SimilarityScales) = SimilarityScales(convert_if_number(FT, c.momentum),
                                                                           convert_if_number(FT, c.temperature),
                                                                           convert_if_number(FT, c.water_vapor))
 
 """
     CoefficientBasedFluxes(FT = Oceananigans.defaults.FloatType;
-                           transfer_coefficients = SimilarityScales(1e-3, 1e-3, 1e-3),
+                           transfer_coefficients = (1e-3, 1e-3, 1e-3),
                            solver_stop_criteria = nothing,
                            solver_tolerance = 1e-8,
                            solver_maxiter = 20)
@@ -182,8 +187,8 @@ Keyword Arguments
 =================
 
 - `transfer_coefficients`: Transfer coefficients for momentum, heat, and moisture.
-  Can be a `SimilarityScales` with constant or callable entries, or an `LargeYeagerTransferCoefficients`.
-  Defaults to `SimilarityScales(1e-3, 1e-3, 1e-3)`.
+  Can be a `SimilarityScales`, a `Tuple`, or a `NamedTuple` with constant or callable entries, 
+  or an `LargeYeagerTransferCoefficients`. Defaults to `(1e-3, 1e-3, 1e-3)`.
 - `solver_stop_criteria`: Criteria for iterative solver convergence. If `nothing`,
                           creates new criteria using `solver_tolerance` and `solver_maxiter`.
 - `solver_tolerance`: Tolerance for solver convergence when creating new stop criteria, defaults to 1e-8.
@@ -199,7 +204,7 @@ using NumericalEarth
 grid = RectilinearGrid(size=3, z=(-1, 0), topology=(Flat, Flat, Bounded))
 ocean = ocean_simulation(grid; timestepper = :QuasiAdamsBashforth2)
 
-ao_fluxes = CoefficientBasedFluxes(transfer_coefficients = SimilarityScales(1e-2, 1e-3, 1e-3))
+ao_fluxes = CoefficientBasedFluxes(transfer_coefficients = (1e-2, 1e-3, 1e-3))
 
 interfaces = ComponentInterfaces(nothing, ocean; atmosphere_ocean_fluxes=ao_fluxes)
 
@@ -208,19 +213,48 @@ ComponentInterfaces
 ```
 """
 function CoefficientBasedFluxes(FT = Oceananigans.defaults.FloatType;
-                                transfer_coefficients = SimilarityScales(1e-3, 1e-3, 1e-3),
+                                transfer_coefficients = (1e-3, 1e-3, 1e-3),
                                 solver_stop_criteria = nothing,
                                 solver_tolerance = 1e-8,
                                 solver_maxiter = 20)
 
+    transfer_coefficients = validate_coefficients(FT, transfer_coefficients)
+    
     if isnothing(solver_stop_criteria)
         solver_tolerance = convert(FT, solver_tolerance)
         solver_stop_criteria = ConvergenceStopCriteria(solver_tolerance, solver_maxiter)
     end
 
-    transfer_coefficients = convert_transfer_coefficients(FT, transfer_coefficients)
-
     return CoefficientBasedFluxes(transfer_coefficients, solver_stop_criteria)
+end
+
+validate_coefficients(FT, ly::LargeYeagerTransferCoefficients) = ly
+validate_coefficients(FT, sc::SimilarityScales) = convert_transfer_coefficients(FT, sc)
+
+function validate_coefficients(FT, nt::NamedTuple)
+    required = (:momentum, :temperature, :water_vapor)
+    missing = filter(k -> !haskey(nt, k), required)
+
+    if !isempty(missing)
+        throw(ArgumentError(
+            "Transfer coefficients NamedTuple must contain keys $(required). " *
+            "Missing keys: $(missing). Received: $(keys(nt))"
+        ))
+    end
+
+    return convert_transfer_coefficients(FT, nt)
+end
+
+function validate_coefficients(FT, tc::Tuple)
+    if length(tc) != 3
+        throw(ArgumentError(
+            "Transfer coefficients must be a tuple of length 3: " *
+            "(momentum, temperature, water_vapor). " *
+            "Got length $(length(tc)) with value $(tc)."
+        ))
+    end
+
+    return convert_transfer_coefficients(FT, tc)
 end
 
 #####
@@ -235,10 +269,17 @@ end
 @inline evaluate_coefficient(C::Function, args...) = C(args...)
 @inline evaluate_coefficient(C::PolynomialNeutralDragCoefficient, ΔU, args...) = C(ΔU)
 
-@inline function evaluate_coefficients(coeffs::SimilarityScales, args...)
+@inline function evaluate_coefficients(coeffs::Union{SimilarityScales, NamedTuple}, args...)
     Cd = evaluate_coefficient(coeffs.momentum,    args...)
     Ch = evaluate_coefficient(coeffs.temperature, args...)
     Cq = evaluate_coefficient(coeffs.water_vapor, args...)
+    return Cd, Ch, Cq
+end
+
+@inline function evaluate_coefficients(coeffs::Tuple, args...)
+    Cd = evaluate_coefficient(coeffs[1],    args...)
+    Ch = evaluate_coefficient(coeffs[2], args...)
+    Cq = evaluate_coefficient(coeffs[3], args...)
     return Cd, Ch, Cq
 end
 
