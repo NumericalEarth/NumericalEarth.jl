@@ -12,13 +12,13 @@ using ..DataWrangling: BoundingBox
 # the 2D bathymetry slice, and barriers act at every depth.
 
 """
-    meridional_barrier(longitude, south, north; width=2.0)
+    meridional_barrier(longitude, south, north; width=2)
 
 Create a narrow meridional `BoundingBox` centered at `longitude` with meridional
 extent `[south, north]` and zonal width `width` degrees. Useful for closing
 straits like Cape Agulhas or Indonesian passages during basin labeling.
 """
-meridional_barrier(longitude, south, north; width=2.0) = BoundingBox(longitude=(longitude - width/2, longitude + width/2), latitude=(south, north))
+meridional_barrier(longitude, south, north; width=2) = BoundingBox(longitude=(longitude - width/2, longitude + width/2), latitude=(south, north))
 
 """
     apply_barrier!(zb, grid, barrier::BoundingBox)

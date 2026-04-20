@@ -128,58 +128,58 @@ end
 ##### Some useful Basin seeds and barriers
 #####
 
-const SOUTHERN_OCEAN_SEPARATION_BARRIER = BoundingBox(longitude=(-180.0, 180.0), latitude=(-56.0, -54.0))
+const SOUTHERN_OCEAN_SEPARATION_BARRIER = BoundingBox(longitude=(-180, 180), latitude=(-56, -54))
 
 const ATLANTIC_OCEAN_BARRIERS = [
-    meridional_barrier(20.0, -90.0, -30.0),   # Cape Agulhas
-    meridional_barrier(289.0, -90.0, -30.0),  # Drake Passage
+    meridional_barrier(20,  -90, -30),   # Cape Agulhas
+    meridional_barrier(289, -90, -30),   # Drake Passage
 ]
 
 const INDIAN_OCEAN_BARRIERS = [
-    meridional_barrier(141.0, -90.0, -3.0),                              # Indonesian side
-    meridional_barrier(20.0,  -90.0, -30.0),                             # Cape Agulhas
-    BoundingBox(longitude=(105.0, 141.0), latitude=(-4.0, -3.0)),        # Indonesian/Asian seas (zonal barrier at 3.5ᵒ S)
+    meridional_barrier(141, -90, -3),                           # Indonesian side
+    meridional_barrier(20,  -90, -30),                          # Cape Agulhas
+    BoundingBox(longitude=(105, 141), latitude=(-4, -3)),       # Indonesian/Asian seas (zonal barrier at 3.5ᵒ S)
 ]
 
 const SOUTHERN_OCEAN_BARRIERS = [SOUTHERN_OCEAN_SEPARATION_BARRIER]
 
 const PACIFIC_OCEAN_BARRIERS = [
-    meridional_barrier(141.0, -90.0, -3.0),                              # Indonesian side
-    meridional_barrier(20.0,  -90.0, -30.0),                             # Cape Agulhas
-    BoundingBox(longitude=(105.0, 141.0), latitude=(-4.0, -3.0)),        # Indonesian/Asian seas (zonal barrier at 3.5ᵒ S)
+    meridional_barrier(141, -90, -3),                           # Indonesian side
+    meridional_barrier(20,  -90, -30),                          # Cape Agulhas
+    BoundingBox(longitude=(105, 141), latitude=(-4, -3)),       # Indonesian/Asian seas (zonal barrier at 3.5ᵒ S)
 ]
 
 # Seed points for Atlantic Ocean (definitely in the Atlantic)
 const ATLANTIC_SEED_POINTS = [
-    (-30.0, 0.0),    # Central equatorial Atlantic
-    (-40.0, 30.0),   # North Atlantic
-    (-25.0, -20.0),  # South Atlantic
+    (-30, 0),    # Central equatorial Atlantic
+    (-40, 30),   # North Atlantic
+    (-25, -20),  # South Atlantic
 ]
 
 # Seed points for Indian Ocean
 const INDIAN_SEED_POINTS = [
-    (70.0, -10.0),   # Central Indian Ocean
-    (60.0, 10.0),    # Arabian Sea region
-    (90.0, -20.0),   # Eastern Indian Ocean
+    (70, -10),   # Central Indian Ocean
+    (60, 10),    # Arabian Sea region
+    (90, -20),   # Eastern Indian Ocean
 ]
 
 # Seed points for Southern Ocean
 const SOUTHERN_SEED_POINTS = [
-    (0.0, -60.0),     # South Atlantic sector
-    (90.0, -60.0),    # Indian Ocean sector
-    (180.0, -60.0),   # Pacific sector (date line)
-    (-90.0, -60.0),   # South Pacific sector
+    (0,   -60),   # South Atlantic sector
+    (90,  -60),   # Indian Ocean sector
+    (180, -60),   # Pacific sector (date line)
+    (-90, -60),   # South Pacific sector
 ]
 
 # Seed points for Pacific Ocean
 const PACIFIC_SEED_POINTS = [
-    (180.0, 0.0),     # Central equatorial Pacific (dateline)
-    (-150.0, 20.0),   # North Pacific (Hawaii region)
-    (-120.0, -20.0),  # South Pacific
-    # Same values but from 0 to 360
-    (180.0, 0.0),             # Central equatorial Pacific
-    (-150.0 + 360, 20.0),     # North Pacific
-    (-120.0 + 360, -20.0),    # South Pacific
+    (180,  0),      # Central equatorial Pacific (dateline)
+    (-150, 20),     # North Pacific (Hawaii region)
+    (-120, -20),    # South Pacific
+    # Same values but mapped to [0, 360)
+    (180,        0),    # Central equatorial Pacific
+    (-150 + 360, 20),   # North Pacific
+    (-120 + 360, -20),  # South Pacific
 ]
 
 #####
@@ -293,8 +293,8 @@ Keyword Arguments
 """
 function atlantic_ocean_basin(grid;
                               include_southern_ocean = true,
-                              south_boundary = include_southern_ocean ? -90.0 : -50.0,
-                              north_boundary = 65.0,
+                              south_boundary = include_southern_ocean ? -90 : -50,
+                              north_boundary = 65,
                               barriers = ATLANTIC_OCEAN_BARRIERS,
                               seed_points = ATLANTIC_SEED_POINTS,
                               kw...)
@@ -321,8 +321,8 @@ Keyword Arguments
 """
 function indian_ocean_basin(grid;
                             include_southern_ocean = true,
-                            south_boundary = include_southern_ocean ? -90.0 : -50.0,
-                            north_boundary = 30.0,
+                            south_boundary = include_southern_ocean ? -90 : -50,
+                            north_boundary = 30,
                             barriers = INDIAN_OCEAN_BARRIERS,
                             seed_points = INDIAN_SEED_POINTS,
                             kw...)
@@ -341,8 +341,8 @@ Build a `Basin` for Earth's Southern Ocean with predefined barriers and seed poi
 Default boundaries: south=-90.0, north=-35.0
 """
 function southern_ocean_basin(grid;
-                              south_boundary = -90.0,
-                              north_boundary = -35.0,
+                              south_boundary = -90,
+                              north_boundary = -35,
                               barriers = SOUTHERN_OCEAN_BARRIERS,
                               seed_points = SOUTHERN_SEED_POINTS,
                               kw...)
@@ -364,8 +364,8 @@ Keyword Arguments
 """
 function pacific_ocean_basin(grid;
                              include_southern_ocean = true,
-                             south_boundary = include_southern_ocean ? -90.0 : -50.0,
-                             north_boundary = 65.0,
+                             south_boundary = include_southern_ocean ? -90 : -50,
+                             north_boundary = 65,
                              barriers = PACIFIC_OCEAN_BARRIERS,
                              seed_points = PACIFIC_SEED_POINTS,
                              kw...)
@@ -385,10 +385,10 @@ Default boundaries: south=65.0, north=91.0
 """
 function arctic_ocean_basin(grid;
                             include_southern_ocean = true,
-                            south_boundary = 65.0,
-                            north_boundary = 91.0,
+                            south_boundary = 65,
+                            north_boundary = 91,
                             barriers = nothing,
-                            seed_points = [(nothing, 90.0)],
+                            seed_points = [(nothing, 90)],
                             kw...)
 
     return Basin(grid; south_boundary, north_boundary, barriers, seed_points, kw...)
