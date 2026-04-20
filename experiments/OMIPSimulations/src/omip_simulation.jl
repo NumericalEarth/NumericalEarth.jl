@@ -228,18 +228,12 @@ function omip_simulation(config::Symbol = :halfdegree;
 
     cfg = Val(config)
 
-    # Build the grid first so we can allocate the restoring mask
     grid = build_grid(cfg, arch, Nz, depth)
-
-    # Pre-allocate restoring mask (1 = open water); updated each step from sea ice concentration
-    ice_free_fraction = Field{Center, Center, Nothing}(grid)
-    set!(ice_free_fraction, 1)
 
     ocean = build_ocean(cfg, grid;
                         κ_skew, κ_symmetric, Cᵇ,
                         biharmonic_timescale,
                         restoring_dir, piston_velocity,
-                        restoring_mask = ice_free_fraction,
                         start_date, end_date)
 
     snow_thermodynamics = with_snow ? NumericalEarth.SeaIces.default_snow_thermodynamics(grid) : nothing
@@ -269,11 +263,6 @@ function omip_simulation(config::Symbol = :halfdegree;
             mkdir(dir)
         end
     end
-
-    # Callback to sync the restoring mask with sea ice concentration each coupled step
-    ℵ = sea_ice.model.ice_concentration
-    update_restoring_mask!(sim) = parent(ice_free_fraction) .= 1 .- parent(ℵ)
-    add_callback!(simulation, update_restoring_mask!, IterationInterval(1))
 
     # Stage JRA55 data from slow disk to fast scratch
     if !isnothing(staging_dir)
@@ -340,23 +329,25 @@ end
 ##### Salinity restoring (shared by both configurations)
 #####
 
-function salinity_restoring_forcing(grid, dataset;
+# Surface-only restoring, applied uniformly in space (no ice mask).
+# Wrapped as a `SurfaceFluxRestoring` so it rides on the ocean's top-flux BC
+# via the `additional_surface_fluxes` kwarg of `ocean_simulation`.
+function salinity_surface_restoring(grid, dataset;
                                     restoring_dir,
-                                    piston_velocity,
-                                    mask = 1)
+                                    piston_velocity)
 
     Nz = size(grid, 3)
     Δz_surface = CUDA.@allowscalar Δzᶜᶜᶜ(1, 1, Nz, grid)
 
     rate = piston_velocity / (Δz_surface * days)
 
-    Smetadata = Metadata(:salinity;
-                         dir = restoring_dir,
-                         dataset)
+    Smetadata = Metadata(:salinity; dir = restoring_dir, dataset)
 
-    return DatasetRestoring(Smetadata, Oceananigans.Architectures.architecture(grid);
-                            rate, mask,
-                            time_indices_in_memory = 12)
+    restoring = DatasetRestoring(Smetadata, Oceananigans.Architectures.architecture(grid);
+                                 rate,
+                                 time_indices_in_memory = 12)
+
+    return SurfaceFluxRestoring(restoring)
 end
 
 #####
@@ -411,10 +402,10 @@ function build_ocean(config, grid;
                      κ_skew, κ_symmetric, Cᵇ = 0.28,
                      restoring_dir, piston_velocity,
                      biharmonic_timescale,
-                     restoring_mask = 1,
                      start_date, end_date)
 
-    FS = salinity_restoring_forcing(grid, WOAMonthly(); restoring_dir, piston_velocity, mask = restoring_mask)
+    salt_restoring = salinity_surface_restoring(grid, WOAMonthly();
+                                                restoring_dir, piston_velocity)
 
     closure = omip_closure(; κ_skew, κ_symmetric, Cᵇ, biharmonic_timescale)
     coriolis = HydrostaticSphericalCoriolis(scheme = Oceananigans.Coriolis.EnstrophyConserving())
@@ -427,7 +418,7 @@ function build_ocean(config, grid;
                              coriolis,
                              timestepper = :SplitRungeKutta3,
                              free_surface = SplitExplicitFreeSurface(grid; substeps=70),
-                             surface_restoring = (; S = FS),
+                             additional_surface_fluxes = (; S = salt_restoring),
                              closure)
 
     set!(ocean.model,

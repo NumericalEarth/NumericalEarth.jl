@@ -35,6 +35,7 @@ using NumericalEarth.EarthSystemModels.InterfaceComputations:
 
 using NumericalEarth.Bathymetry: regrid_bathymetry, ORCAGrid
 using NumericalEarth.DataWrangling: Metadatum, Metadata, DatasetRestoring,
+                                    SurfaceFluxRestoring,
                                     EN4Monthly, ECCO4Monthly
 using NumericalEarth.DataWrangling.WOA: WOAMonthly
 using NumericalEarth.DataWrangling.ORCA: ORCA1
