@@ -236,9 +236,9 @@ end
 @inline evaluate_coefficient(C::PolynomialNeutralDragCoefficient, ΔU, args...) = C(ΔU)
 
 @inline function evaluate_coefficients(coeffs::SimilarityScales, args...)
-    Cd = evaluate_coefficient(coeffs.momentum, args...)
+    Cd = evaluate_coefficient(coeffs.momentum,    args...)
     Ch = evaluate_coefficient(coeffs.temperature, args...)
-    Cq = evaluate_coefficient(coeffs.water_vapor, arhs...)
+    Cq = evaluate_coefficient(coeffs.water_vapor, args...)
     return Cd, Ch, Cq
 end
 
