@@ -97,7 +97,8 @@ end
     ℐₜˢʷ = transmitted_shortwave_radiation(i, j, kᴺ, grid, time, α, ℐꜜˢʷ)
     ℐₐˡʷ = absorbed_longwave_radiation(i, j, kᴺ, grid, time, ϵ, ℐꜜˡʷ)
 
-    ΣQt = (ℐₜˢʷ + ℐₐˡʷ + ℐꜛˡʷ + 𝒬ᵀ + 𝒬ᵛ) * (ℵi > 0) # If ℵi == 0 there is no heat flux from the top!
+    # Atmosphere–sea-ice fluxes are computed at the ice surface (per unit ice area). 
+    ΣQt = (ℐₜˢʷ + ℐₐˡʷ + ℐꜛˡʷ + 𝒬ᵀ + 𝒬ᵛ) * ℵi
     ΣQb = 𝒬ᶠʳᶻ + 𝒬ⁱⁿᵗ
 
     # Mask fluxes over land for convenience
