@@ -195,7 +195,6 @@ function set!(fts::JRA55NetCDFFTSRepeatYear, backend=fts.backend)
     ds = Dataset(path)
 
     # Nodes at the variable location
-
     λc = ds["lon"][:]
     φc = ds["lat"][:]
     LX, LY, LZ = location(fts)

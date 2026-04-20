@@ -40,7 +40,13 @@ const MultiYearJRA55Metadatum  = Metadatum{<:MultiYearJRA55}
 
 default_download_directory(::JRA55Dataset) = download_JRA55_cache
 
-Base.size(::JRA55Dataset, variable) = (640, 320, 1)
+function Base.size(::JRA55Dataset, variable) 
+    if variable ∈ [:river_freshwater_flux, :iceberg_freshwater_flux]
+        (1440, 720, 1)
+    else
+        (640, 320, 1)
+    end
+end
 
 longitude_interfaces(::JRA55Metadata) = (0, 360)
 latitude_interfaces(::JRA55Metadata) = (-90, 90)
