@@ -52,7 +52,6 @@ NumericalEarthWOAExt = "WorldOceanAtlasTools"
 
 [sources]
 ClimaSeaIce = {url = "https://github.com/CliMA/ClimaSeaIce.jl", rev = "ss/refactor-thermodynamics"}
-Breeze = {url = "https://github.com/NumericalEarth/Breeze.jl", rev = "main"}
 
 [compat]
 Adapt = "4"
