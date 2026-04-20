@@ -61,7 +61,7 @@ Adapt.adapt_structure(to, α::SeaIceAlbedo) =
                       melting_temperature = 0.0,
                       temperature_range = 1.0,
                       ocean_albedo = 0.06,
-                      minimum_ice_thickness = 0.5,
+                      minimum_ice_thickness = 0.25,
                       minimum_snow_depth = 0.02)
 
 Construct a CCSM3 sea ice albedo parameterization. Requires references to the sea ice
@@ -81,7 +81,7 @@ function SeaIceAlbedo(ice_thickness, snow_thickness, surface_temperature;
                       melting_temperature = 0.0,
                       temperature_range = 1.0,
                       ocean_albedo = 0.06,
-                      minimum_ice_thickness = 0.5,
+                      minimum_ice_thickness = 0.25,
                       minimum_snow_depth = 0.02)
 
     return SeaIceAlbedo(convert(FT, ice_albedo),
