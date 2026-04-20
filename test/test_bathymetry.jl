@@ -8,8 +8,8 @@ using NumericalEarth.Bathymetry: remove_minor_basins!,
                                  save_bathymetry_cache,
                                  label_ocean_basins,
                                  find_label_at_point,
-                                 BasinMask,
-                                 atlantic_ocean_mask,
+                                 Basin,
+                                 atlantic_ocean_basin,
                                  meridional_barrier,
                                  ATLANTIC_OCEAN_BARRIERS
 using NumericalEarth.DataWrangling: BoundingBox
@@ -209,8 +209,8 @@ end
     end
 end
 
-@testset "BasinMask creation" begin
-    @info "Testing BasinMask creation..."
+@testset "Basin creation" begin
+    @info "Testing Basin creation..."
 
     for arch in test_architectures
         # Create a global grid at 1° resolution (needed to properly resolve
@@ -224,9 +224,9 @@ end
         bottom_height = regrid_bathymetry(grid)
         ibg = ImmersedBoundaryGrid(grid, GridFittedBottom(bottom_height))
 
-        # Test atlantic_ocean_mask creation
-        atlantic = atlantic_ocean_mask(ibg)
-        @test atlantic isa BasinMask
+        # Test atlantic_ocean_basin creation
+        atlantic = atlantic_ocean_basin(ibg)
+        @test atlantic isa Basin
         @test sum(atlantic.mask) > 0  # Should have some ocean cells
 
         mask = on_architecture(CPU(), atlantic.mask)

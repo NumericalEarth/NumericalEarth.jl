@@ -1,8 +1,8 @@
 module Bathymetry
 
 export regrid_bathymetry, ORCAGrid
-export BasinMask
-export atlantic_ocean_mask, indian_ocean_mask, southern_ocean_mask, pacific_ocean_mask, arctic_ocean_mask
+export Basin
+export atlantic_ocean_basin, indian_ocean_basin, southern_ocean_basin, pacific_ocean_basin, arctic_ocean_basin
 export label_ocean_basins
 export meridional_barrier
 
@@ -28,7 +28,7 @@ using ..DataWrangling.ETOPO: ETOPO2022
 
 include("label_ocean_basins.jl")
 include("regrid_bathymetry.jl")
-include("ocean_basin_mask.jl")
+include("ocean_basin.jl")
 include("orca_grid.jl")
 
 end # module
