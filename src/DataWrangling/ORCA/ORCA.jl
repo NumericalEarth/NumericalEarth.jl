@@ -60,7 +60,7 @@ ORCA1_variable_names = Dict(
 )
 
 ORCA12_variable_names = Dict(
-    :bottom_height => "deptho",
+    :bottom_height => "Bathymetry",
     :mesh_mask     => "e1t",
 )
 
