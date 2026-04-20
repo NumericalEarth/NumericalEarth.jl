@@ -17,43 +17,43 @@ import Oceananigans.OutputReaders: new_backend
 import Oceananigans.Fields: set!
 
 mutable struct PrefetchingBackend{B<:DatasetBackend, F<:FieldTimeSeries} <: AbstractInMemoryBackend{Int}
-    inner :: B
+    inner_backend :: B
     pending :: Union{Task, Nothing}
     buffer_fts :: F
     next_start :: Int
 end
 
-PrefetchingBackend(inner::DatasetBackend, buffer_fts::FieldTimeSeries) = PrefetchingBackend{typeof(inner), typeof(buffer_fts)}(inner, nothing, buffer_fts, 0)
+PrefetchingBackend(inner_backend::DatasetBackend, buffer_fts::FieldTimeSeries) = PrefetchingBackend{typeof(inner_backend), typeof(buffer_fts)}(inner_backend, nothing, buffer_fts, 0)
 
 # `:buffer_fts` deliberately warned upon — see race invariant in preamble.
 function Base.getproperty(p::PrefetchingBackend, name::Symbol)
-    if name in (:inner, :pending, :next_start)
+    if name in (:inner_backend, :pending, :next_start)
         return getfield(p, name)
     elseif name == :buffer_fts
         @warn "`buffer_fts` is an inner auxiliary field touched on an hot-loop separate task. " * 
               "Mutating it manually might lead to undefined behavior. It is recommended not modifying it."
         return getfield(p, name)
     else
-        return getproperty(getfield(p, :inner), name)
+        return getproperty(getfield(p, :inner_backend), name)
     end
 end
 
-Base.length(p::PrefetchingBackend) = length(p.inner)
-Base.summary(p::PrefetchingBackend) = string("PrefetchingBackend(", p.inner.start, ", ", p.inner.length, "; pending=", !isnothing(getfield(p, :pending)), ")")
+Base.length(p::PrefetchingBackend) = length(p.inner_backend)
+Base.summary(p::PrefetchingBackend) = string("PrefetchingBackend(", p.inner_backend.start, ", ", p.inner_backend.length, "; pending=", !isnothing(getfield(p, :pending)), ")")
 
 # Mutate in place rather than constructing a fresh wrapper — keeps the
 # `pending`/`buffer_fts`/`next_start` mutable state in exactly one object.
 function new_backend(p::PrefetchingBackend, start, length)
-    setfield!(p, :inner, new_backend(getfield(p, :inner), start, length))
+    setfield!(p, :inner_backend, new_backend(getfield(p, :inner_backend), start, length))
     return p
 end
 
-Adapt.adapt_structure(to, p::PrefetchingBackend) = Adapt.adapt(to, getfield(p, :inner))
+Adapt.adapt_structure(to, p::PrefetchingBackend) = Adapt.adapt(to, getfield(p, :inner_backend))
 
 const PrefetchingFTS = FlavorOfFTS{<:Any, <:Any, <:Any, <:Any, <:PrefetchingBackend}
 
 function set!(fts::PrefetchingFTS, backend::PrefetchingBackend = fts.backend)
-    needed_start  = getfield(backend, :inner).start
+    needed_start  = getfield(backend, :inner_backend).start
     pending       = getfield(backend, :pending)
     pending_start = getfield(backend, :next_start)
     buffer_fts    = getfield(backend, :buffer_fts)
@@ -65,7 +65,7 @@ function set!(fts::PrefetchingFTS, backend::PrefetchingBackend = fts.backend)
         wait(pending)
     else
         !isnothing(pending) && wait(pending)
-        Nm = length(getfield(backend, :inner))
+        Nm = length(getfield(backend, :inner_backend))
         buffer_fts.backend = new_backend(buffer_fts.backend, needed_start, Nm)
         set!(buffer_fts)
     end
@@ -74,12 +74,12 @@ function set!(fts::PrefetchingFTS, backend::PrefetchingBackend = fts.backend)
 
     # Time-indexing-aware next-window prediction: `time_index` wraps
     # via mod1 for Cyclical and clamps to Nt for Linear/Clamp.
-    Nm = length(getfield(backend, :inner))
+    Nm = length(getfield(backend, :inner_backend))
     Nt = length(fts.times)
     new_next = time_index(buffer_fts.backend, fts.time_indexing, Nt, Nm + 1)
 
+    # Linear/Clamp at end-of-data: window can't advance, no prefetch.
     if new_next == needed_start
-        # Linear/Clamp at end-of-data: window can't advance, no prefetch.
         setfield!(backend, :next_start, 0)
         return nothing
     end
