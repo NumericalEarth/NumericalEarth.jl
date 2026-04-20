@@ -3,6 +3,7 @@ using Dates
 using Downloads
 
 using Oceananigans.DistributedComputations
+using Oceananigans.Grids: pop_flat_elements
 
 using NumericalEarth.DataWrangling
 using NumericalEarth.DataWrangling: Metadata, metadata_path, download_progress, AnyDateTime, DatasetBackend
@@ -48,7 +49,7 @@ function native_grid(metadata::JRA55Metadata, arch=CPU(); halo = (3, 3))
     Nx, Ny, Nz, _ = size(metadata)
 
     FT = eltype(metadata)
-
+    halo = pop_flat_elements(halo, (Periodic, Bounded, Flat))
     longitude = longitude_interfaces(metadata)
     latitude = latitude_interfaces(metadata)
 
