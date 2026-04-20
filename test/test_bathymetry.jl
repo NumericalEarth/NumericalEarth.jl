@@ -153,23 +153,23 @@ end
 
     # A barrier is a `BoundingBox` whose horizontal extent defines the rectangle
     # to be treated as land during connected-component labeling.
-    barrier = BoundingBox(longitude=(-10.0, 10.0), latitude=(-5.0, 5.0))
-    @test barrier.longitude == (-10.0, 10.0)
-    @test barrier.latitude  == (-5.0, 5.0)
+    barrier = BoundingBox(longitude=(-10, 10), latitude=(-5, 5))
+    @test barrier.longitude == (-10, 10)
+    @test barrier.latitude  == (-5, 5)
 
     # Test meridional_barrier constructor (longitude, south, north)
-    meridional = meridional_barrier(20.0, -36.0, -30.0)
-    @test meridional.longitude == (19.0, 21.0)   # 20 ± 2/2
-    @test meridional.latitude  == (-36.0, -30.0)
+    meridional = meridional_barrier(20, -36, -30)
+    @test meridional.longitude == (19, 21)   # 20 ± 2/2
+    @test meridional.latitude  == (-36, -30)
 
     # Test meridional_barrier with custom width
-    meridional_wide = meridional_barrier(20.0, -36.0, -30.0; width=4.0)
-    @test meridional_wide.longitude == (18.0, 22.0)
+    meridional_wide = meridional_barrier(20, -36, -30; width=4)
+    @test meridional_wide.longitude == (18, 22)
 
     # Latitude band covering the full longitude range
-    band = BoundingBox(longitude=(-180.0, 180.0), latitude=(-60.0, -55.0))
-    @test band.longitude == (-180.0, 180.0)
-    @test band.latitude  == (-60.0, -55.0)
+    band = BoundingBox(longitude=(-180, 180), latitude=(-60, -55))
+    @test band.longitude == (-180, 180)
+    @test band.latitude  == (-60, -55)
 end
 
 @testset "Ocean basin labeling with barriers" begin
