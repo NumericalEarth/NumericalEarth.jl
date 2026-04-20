@@ -3,6 +3,7 @@ using Dates
 using Downloads
 
 using Oceananigans.DistributedComputations
+using Oceananigans.Grids: pop_flat_elements
 
 using NumericalEarth.DataWrangling
 using NumericalEarth.DataWrangling: Metadata, metadata_path, download_progress, AnyDateTime, DatasetBackend
@@ -22,6 +23,7 @@ import NumericalEarth.DataWrangling: all_dates,
                                      default_inpainting,
                                      getfilename,
                                      z_interfaces,
+                                     native_grid,
                                      longitude_interfaces, 
                                      latitude_interfaces
 
@@ -38,11 +40,37 @@ const MultiYearJRA55Metadatum  = Metadatum{<:MultiYearJRA55}
 
 default_download_directory(::JRA55Dataset) = download_JRA55_cache
 
-Base.size(::JRA55Dataset, variable) = (640, 320, 1)
+function Base.size(::JRA55Dataset, variable) 
+    if variable ∈ [:river_freshwater_flux, :iceberg_freshwater_flux]
+        (1440, 720, 1)
+    else
+        (640, 320, 1)
+    end
+end
 
-z_interfaces(::JRA55Metadata) = (0, 10)
 longitude_interfaces(::JRA55Metadata) = (0, 360)
 latitude_interfaces(::JRA55Metadata) = (-90, 90)
+
+function native_grid(metadata::JRA55Metadata, arch=CPU(); halo = (3, 3))
+    Nx, Ny, Nz, _ = size(metadata)
+
+    FT = eltype(metadata)
+    halo = pop_flat_elements(halo, (Periodic, Bounded, Flat))
+    longitude = longitude_interfaces(metadata)
+    latitude = latitude_interfaces(metadata)
+
+    bbox = metadata.bounding_box
+    if !isnothing(bbox)
+        longitude, Nx = restrict(bbox.longitude, longitude, Nx)
+        latitude, Ny = restrict(bbox.latitude, latitude, Ny)
+    end
+
+    grid = LatitudeLongitudeGrid(arch, FT; size = (Nx, Ny),
+                                 halo, longitude, latitude, 
+                                 topology = (Periodic, Bounded, Flat))
+
+    return grid
+end
 
 # JRA55 is a spatially 2D dataset
 is_three_dimensional(data::JRA55Metadata) = false
@@ -81,11 +109,8 @@ end
 # File name generation specific to each Dataset dataset
 # Note that `RepeatYearJRA55` has only one file associated, so the filename
 # is independent of the date. Override the multi-date fallback to return a plain String.
-metadata_filename(::RepeatYearJRA55, name, date, bounding_box) =
-    "RYF." * JRA55_dataset_variable_names[name] * ".1990_1991.nc"
-
-build_filename(::RepeatYearJRA55, name, dates::AbstractArray, bounding_box) =
-    "RYF." * JRA55_dataset_variable_names[name] * ".1990_1991.nc"
+metadata_filename(::RepeatYearJRA55, name, date, bounding_box) = "RYF." * JRA55_dataset_variable_names[name] * ".1990_1991.nc"
+build_filename(::RepeatYearJRA55, name, dates::AbstractArray, bounding_box) = "RYF." * JRA55_dataset_variable_names[name] * ".1990_1991.nc"
 
 function metadata_filename(::MultiYearJRA55, name, date, bounding_box)
     shortname = JRA55_dataset_variable_names[name]
@@ -108,7 +133,7 @@ end
 
 # Convenience functions
 dataset_variable_name(data::JRA55Metadata) = JRA55_dataset_variable_names[data.name]
-location(::JRA55Metadata) = (Center, Center, Nothing)
+location(::JRA55Metadata) = (Center, Center, Center)
 
 available_variables(::JRA55Dataset) = JRA55_variable_names
 
