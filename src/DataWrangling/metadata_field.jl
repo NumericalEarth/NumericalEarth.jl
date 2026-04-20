@@ -9,11 +9,16 @@ restrict(::Nothing, interfaces, N) = interfaces, N
 
 # TODO support stretched native grids
 function restrict(bbox_interfaces, interfaces, N)
-    Δ = interfaces[2] - interfaces[1]
-    rΔ = bbox_interfaces[2] - bbox_interfaces[1]
-    ϵ = rΔ / Δ
+    LΔ = interfaces[2] - interfaces[1]
+    Δ = LΔ / N
+    grid_interfaces = (bbox_interfaces[1] - Δ/2,
+                       bbox_interfaces[2] + Δ/2)
+
+    rΔ = grid_interfaces[2] - grid_interfaces[1]
+    ϵ = rΔ / LΔ
     rN = ceil(Int, ϵ * N)  # Round up to ensure bounding box is covered
-    return bbox_interfaces, rN
+
+    return grid_interfaces, rN
 end
 
 """
@@ -171,8 +176,13 @@ function set!(target_field::Field, metadata::Metadatum; kw...)
 
     Lzt = grid.Lz
     Lzm = meta_field.grid.Lz
-    
-    if Lzt > Lzm
+
+    # Allow up to 1% vertical mismatch. For pressure-level datasets with time-varying
+    # geopotential heights, the per-timestep vertical extent can be slightly smaller
+    # than the temporal-mean extent used for the target grid (e.g. when the atmosphere
+    # is compressed). Oceananigans' interpolate! does not extrapolate, so target points
+    # just outside the source domain will use the nearest interior values.
+    if Lzt > Lzm * (1 + 1e-2)
         throw("The vertical range of the $(metadata.dataset) dataset ($(Lzm) m) is smaller than " *
               "the target grid ($(Lzt) m). Some vertical levels cannot be filled with data.")
     end
@@ -198,9 +208,12 @@ function set_metadata_field!(field, data, metadatum)
     arch = architecture(grid)
 
     Nx, Ny, Nz = size(metadatum)
+
     mangling = if size(data, 2) == Ny-1
+        @info "Shifting field southward"
         ShiftSouth()
     elseif size(data, 2) == Ny+1
+        @info "Averaging field in north-south dir"
         AverageNorthSouth()
     else
         nothing
@@ -264,6 +277,7 @@ end
 @inline convert_units(C::FT, ::Union{NanomolePerLiter, NanomolePerKilogram})   where FT = C * convert(FT, 1e-6)
 @inline convert_units(C::FT, ::MilliliterPerLiter)                             where FT = C / convert(FT, 22.3916)
 @inline convert_units(C::FT, ::GramPerKilogramMinus35)                         where FT = C + convert(FT, 35)
+@inline convert_units(Φ::FT, ::InverseGravity)                                 where FT = Φ / convert(FT, 9.80665)
 
 
 #####
