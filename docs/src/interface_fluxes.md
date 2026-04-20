@@ -137,7 +137,7 @@ A comprehensive example is given below, but we note briefly here that
 ```@example interface_fluxes
 using NumericalEarth
 
-coefficient_fluxes = CoefficientBasedFluxes(transfer_coefficients = SimilarityScales(2e-3, 2e-3, 1e-3))
+coefficient_fluxes = CoefficientBasedFluxes(transfer_coefficients = (2e-3, 2e-3, 1e-3))
 ```
 
 Alternatively, the drag coefficient can be specified as a wind-speed-dependent polynomial
@@ -146,7 +146,7 @@ at each iteration rather than using a constant:
 
 ```@example interface_fluxes
 poly_drag = PolynomialNeutralDragCoefficient()
-poly_fluxes = CoefficientBasedFluxes(transfer_coefficients = SimilarityScales(poly_drag, 1e-3, 1e-3))
+poly_fluxes = CoefficientBasedFluxes(transfer_coefficients = (poly_drag, 1e-3, 1e-3))
 ```
 
 For the full Large & Yeager (2004) bulk algorithm with stability corrections,
@@ -355,7 +355,7 @@ neutral_similarity_fluxes = SimilarityTheoryFluxes(stability_functions=nothing; 
 interfaces = ComponentInterfaces(atmosphere, ocean; atmosphere_ocean_fluxes=neutral_similarity_fluxes)
 increased_roughness_model = OceanOnlyModel(ocean; atmosphere, interfaces)
 
-coefficient_fluxes = CoefficientBasedFluxes(transfer_coefficients = SimilarityScales(2e-3, 2e-3, 2e-3))
+coefficient_fluxes = CoefficientBasedFluxes(transfer_coefficients = (2e-3, 2e-3, 2e-3))
 interfaces = ComponentInterfaces(atmosphere, ocean; atmosphere_ocean_fluxes=coefficient_fluxes)
 coefficient_model = OceanOnlyModel(ocean; atmosphere, interfaces)
 
