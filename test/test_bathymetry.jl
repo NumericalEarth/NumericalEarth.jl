@@ -10,8 +10,9 @@ using NumericalEarth.Bathymetry: remove_minor_basins!,
                                  find_label_at_point,
                                  BasinMask,
                                  atlantic_ocean_mask,
-                                 Barrier,
+                                 meridional_barrier,
                                  ATLANTIC_OCEAN_BARRIERS
+using NumericalEarth.DataWrangling: BoundingBox
 using NumericalEarth.DataWrangling.ETOPO
 using Statistics
 
@@ -150,36 +151,25 @@ end
 @testset "Barrier geometry" begin
     @info "Testing barrier geometry utilities..."
 
-    # Test Barrier construction with explicit bounds
-    barrier = Barrier(-10.0, 10.0, -5.0, 5.0)
-    @test barrier.west == -10.0
-    @test barrier.east == 10.0
-    @test barrier.south == -5.0
-    @test barrier.north == 5.0
+    # A barrier is a `BoundingBox` whose horizontal extent defines the rectangle
+    # to be treated as land during connected-component labeling.
+    barrier = BoundingBox(longitude=(-10.0, 10.0), latitude=(-5.0, 5.0))
+    @test barrier.longitude == (-10.0, 10.0)
+    @test barrier.latitude  == (-5.0, 5.0)
 
-    # Test Barrier with keyword arguments
-    barrier_kw = Barrier(west=-10.0, east=10.0, south=-5.0, north=5.0)
-    @test barrier_kw.west == -10.0
-    @test barrier_kw.east == 10.0
+    # Test meridional_barrier constructor (longitude, south, north)
+    meridional = meridional_barrier(20.0, -36.0, -30.0)
+    @test meridional.longitude == (19.0, 21.0)   # 20 ± 2/2
+    @test meridional.latitude  == (-36.0, -30.0)
 
-    # Test meridional barrier constructor (3 args + width)
-    meridional = Barrier(20.0, -36.0, -30.0)  # longitude, south, north
-    @test meridional.west == 19.0   # 20 - 2/2
-    @test meridional.east == 21.0   # 20 + 2/2
-    @test meridional.south == -36.0
-    @test meridional.north == -30.0
+    # Test meridional_barrier with custom width
+    meridional_wide = meridional_barrier(20.0, -36.0, -30.0; width=4.0)
+    @test meridional_wide.longitude == (18.0, 22.0)
 
-    # Test meridional barrier with custom width
-    meridional_wide = Barrier(20.0, -36.0, -30.0; width=4.0)
-    @test meridional_wide.west == 18.0
-    @test meridional_wide.east == 22.0
-
-    # Test LatitudeBand
-    band = Barrier(-180.0, 180.0, -60.0, -55.0)
-    @test band.west == -180.0
-    @test band.east == 180.0
-    @test band.south == -60.0
-    @test band.north == -55.0
+    # Latitude band covering the full longitude range
+    band = BoundingBox(longitude=(-180.0, 180.0), latitude=(-60.0, -55.0))
+    @test band.longitude == (-180.0, 180.0)
+    @test band.latitude  == (-60.0, -55.0)
 end
 
 @testset "Ocean basin labeling with barriers" begin

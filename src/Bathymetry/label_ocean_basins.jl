@@ -1,62 +1,31 @@
 using Oceananigans.OrthogonalSphericalShellGrids: TripolarGridOfSomeKind
 using Oceananigans.Fields: convert_to_0_360
-
-#####
-##### Barrier type for separating connected regions
-#####
-
-"""
-    Barrier{W, E, S, N}
-
-A rectangular geographic region used to separate connected water regions during labeling.
-All cells within this region are temporarily marked as land, preventing
-the flood-fill from crossing that area.
-
-Note: `Barrier` differs from `BoundingBox` (in `DataWrangling`) in purpose:
-a `BoundingBox` selects a spatial subset of a dataset for downloading/regridding,
-whereas a `Barrier` temporarily blocks water cells so that the connected-component
-labeling algorithm treats the two sides as separate basins.
-
-Fields
-======
-- `west`: Western longitude limit (degrees)
-- `east`: Eastern longitude limit (degrees)
-- `south`: Southern latitude limit (degrees)
-- `north`: Northern latitude limit (degrees)
-
-Constructors
-============
-- `Barrier(west, east, south, north)`: Create a barrier with explicit bounds
-- `Barrier(; west, east, south, north)`: Keyword argument version
-"""
-struct Barrier{W, E, S, N}
-    west  :: W
-    east  :: E
-    south :: S
-    north :: N
-end
-
-Barrier(; west, east, south, north) = Barrier(west, east, south, north)
-
-"""
-    Barrier(longitude, south, north; width=2.0)
-
-Create a meridional (north-south) barrier at a given longitude.
-Useful for closing straits like Cape Agulhas or Indonesian passages.
-"""
-Barrier(longitude, south, north; width=2.0) = Barrier(longitude - width/2, longitude + width/2, south, north)
+using ..DataWrangling: BoundingBox
 
 #####
 ##### Barrier application functions
 #####
 
-"""
-    apply_barrier!(zb_data, grid, barrier::Barrier)
+# A barrier is a `BoundingBox` whose horizontal extent defines a rectangular
+# region to be temporarily marked as land during connected-component labeling.
+# The `z` field of the `BoundingBox` is ignored: the flood-fill operates on
+# the 2D bathymetry slice, and barriers act at every depth.
 
-Mark all cells within the barrier region as land (z = 0).
 """
-apply_barrier!(zb, grid, barrier::Barrier) =
-    launch!(architecture(grid), grid, :xy, _apply_barrier!, zb, grid, barrier)
+    meridional_barrier(longitude, south, north; width=2.0)
+
+Create a narrow meridional `BoundingBox` centered at `longitude` with meridional
+extent `[south, north]` and zonal width `width` degrees. Useful for closing
+straits like Cape Agulhas or Indonesian passages during basin labeling.
+"""
+meridional_barrier(longitude, south, north; width=2.0) = BoundingBox(longitude=(longitude - width/2, longitude + width/2), latitude=(south, north))
+
+"""
+    apply_barrier!(zb, grid, barrier::BoundingBox)
+
+Mark all cells within the barrier's horizontal region as land (z = 0).
+"""
+apply_barrier!(zb, grid, barrier::BoundingBox) = launch!(architecture(grid), grid, :xy, _apply_barrier!, zb, grid, barrier)
 
 apply_barrier!(zb, grid, barriers::Nothing) = zb
 
@@ -67,21 +36,25 @@ function apply_barrier!(zb, grid, barriers::AbstractVector)
     return zb
 end
 
-@kernel function _apply_barrier!(zb, grid, barrier::Barrier)
+@kernel function _apply_barrier!(zb, grid, barrier::BoundingBox)
     i, j = @index(Global, NTuple)
 
-    in_lon = if isnothing(barrier.west) || (barrier.east - barrier.west >= 360)
+    in_lon = if isnothing(barrier.longitude) || (barrier.longitude[2] - barrier.longitude[1] >= 360)
         true
     else
-        bw = convert_to_0_360(barrier.west)
-        be = convert_to_0_360(barrier.east)
+        bw = convert_to_0_360(barrier.longitude[1])
+        be = convert_to_0_360(barrier.longitude[2])
         λ = λnode(i, j, 1, grid, Center(), Center(), Center())
         λ = convert_to_0_360(λ)
         (bw <= λ <= be)
     end
 
-    φ = φnode(i, j, 1, grid, Center(), Center(), Center())
-    in_lat = barrier.south <= φ <= barrier.north
+    in_lat = if isnothing(barrier.latitude)
+        true
+    else
+        φ = φnode(i, j, 1, grid, Center(), Center(), Center())
+        barrier.latitude[1] <= φ <= barrier.latitude[2]
+    end
 
     @inbounds zb[i, j, 1] = ifelse(in_lon & in_lat, zero(grid), zb[i, j, 1])
 end
@@ -205,9 +178,10 @@ Label connected ocean basins in an ImmersedBoundaryGrid.
 
 Keyword Arguments
 =================
-- `barriers`: Collection of barriers to apply before labeling. Barriers temporarily
-              mark certain cells as land, allowing separation of connected ocean basins
-              (e.g., separating Atlantic from Pacific via the Southern Ocean).
+- `barriers`: Collection of `BoundingBox`es applied before labeling. Each barrier
+              temporarily marks its horizontal rectangle as land, allowing separation
+              of connected ocean basins (e.g., separating Atlantic from Pacific via
+              the Southern Ocean).
 """
 function label_ocean_basins(grid::ImmersedBoundaryGrid; barriers=nothing)
 

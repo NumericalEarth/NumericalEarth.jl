@@ -124,25 +124,25 @@ end
 ##### Some useful Basin seeds and barriers
 #####
 
-const SOUTHERN_OCEAN_SEPARATION_BARRIER = Barrier(-180.0, 180.0, -56.0, -54.0)
+const SOUTHERN_OCEAN_SEPARATION_BARRIER = BoundingBox(longitude=(-180.0, 180.0), latitude=(-56.0, -54.0))
 
 const ATLANTIC_OCEAN_BARRIERS = [
-    Barrier(20.0, -90.0, -30.0),      # Cape Agulhas (meridional barrier)
-    Barrier(289.0, -90.0, -30.0)      # Drake passage (meridional barrier)
+    meridional_barrier(20.0, -90.0, -30.0),   # Cape Agulhas
+    meridional_barrier(289.0, -90.0, -30.0),  # Drake Passage
 ]
 
 const INDIAN_OCEAN_BARRIERS = [
-    Barrier(141.0, -90.0, -3.0),        # Indonesian side (meridional)
-    Barrier(20.0,  -90.0, -30.0),       # Cape Agulhas (meridional barrier)
-    Barrier(105.0, 141.0, -4.0, -3.0),  # Indonesian/Asian seas (zonal barrier at 3.5ᵒ S)
+    meridional_barrier(141.0, -90.0, -3.0),                              # Indonesian side
+    meridional_barrier(20.0,  -90.0, -30.0),                             # Cape Agulhas
+    BoundingBox(longitude=(105.0, 141.0), latitude=(-4.0, -3.0)),        # Indonesian/Asian seas (zonal barrier at 3.5ᵒ S)
 ]
 
 const SOUTHERN_OCEAN_BARRIERS = [SOUTHERN_OCEAN_SEPARATION_BARRIER]
 
 const PACIFIC_OCEAN_BARRIERS = [
-    Barrier(141.0, -90.0, -3.0),        # Indonesian side (meridional)
-    Barrier(20.0,  -90.0, -30.0),       # Cape Agulhas (meridional barrier)
-    Barrier(105.0, 141.0, -4.0, -3.0),  # Indonesian/Asian seas (zonal barrier at 3.5ᵒ S)
+    meridional_barrier(141.0, -90.0, -3.0),                              # Indonesian side
+    meridional_barrier(20.0,  -90.0, -30.0),                             # Cape Agulhas
+    BoundingBox(longitude=(105.0, 141.0), latitude=(-4.0, -3.0)),        # Indonesian/Asian seas (zonal barrier at 3.5ᵒ S)
 ]
 
 # Seed points for Atlantic Ocean (definitely in the Atlantic)
@@ -182,9 +182,9 @@ const PACIFIC_SEED_POINTS = [
 ##### BasinMask constructor
 #####
 
-add_barrier(v::AbstractVector, b::Barrier) = [v..., b]
-add_barrier(v::Barrier,        b::Barrier) = [v, b]
-add_barrier(::Nothing,         b::Barrier) = b
+add_barrier(v::AbstractVector, b::BoundingBox) = [v..., b]
+add_barrier(v::BoundingBox,    b::BoundingBox) = [v, b]
+add_barrier(::Nothing,         b::BoundingBox) = b
 
 """
     BasinMask(grid;
@@ -215,10 +215,11 @@ Keyword Arguments
                  on water determines which connected component becomes `true` in the mask.
                  Multiple seeds are tried as fallbacks for grids where a single point
                  may fall on land. Default: `[(0, 0)]`.
-- `barriers`: `Barrier`s (or a `Vector` of them) applied before labeling.
-              Each barrier temporarily marks its rectangle as land, preventing the
-              flood-fill from crossing it (e.g., closing Drake Passage separates the
-              Atlantic from the Pacific). Default: `nothing`.
+- `barriers`: A `BoundingBox` (or a `Vector` of them) applied before labeling.
+              Each barrier temporarily marks its horizontal rectangle as land,
+              preventing the flood-fill from crossing it (e.g., closing Drake Passage
+              separates the Atlantic from the Pacific). The `z` field of the
+              `BoundingBox` is ignored. Default: `nothing`.
 """
 function BasinMask(grid;
                    south_boundary = nothing,
@@ -233,11 +234,11 @@ function BasinMask(grid;
 
     # Enforce north and south boundaries
     if !isnothing(south_boundary)
-        barriers = add_barrier(barriers, Barrier(nothing, nothing, -90, south_boundary))
+        barriers = add_barrier(barriers, BoundingBox(longitude=nothing, latitude=(-90, south_boundary)))
     end
 
     if !isnothing(north_boundary)
-        barriers = add_barrier(barriers, Barrier(nothing, nothing, north_boundary, 90))
+        barriers = add_barrier(barriers, BoundingBox(longitude=nothing, latitude=(north_boundary, 90)))
     end
 
     # Compute connected component labels for all ocean cells

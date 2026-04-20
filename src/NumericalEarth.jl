@@ -30,7 +30,7 @@ export
     regrid_bathymetry,
     label_ocean_basins,
     BasinMask,
-    Barrier,
+    meridional_barrier,
     atlantic_ocean_mask,
     indian_ocean_mask,
     southern_ocean_mask,
