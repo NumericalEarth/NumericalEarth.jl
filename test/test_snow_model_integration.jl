@@ -29,7 +29,7 @@ using Oceananigans.Units: hours, days
             @test sea_ice isa Simulation
             @test sea_ice.model isa SeaIceModel
             @test sea_ice.model.snow_thermodynamics === nothing
-            @test sea_ice.model.ice_thermodynamics.internal_heat_flux.parameters.flux isa ConductiveFlux
+            @test sea_ice.model.ice_thermodynamics.internal_heat_flux isa ConductiveFlux
         end
 
         @testset "sea_ice_simulation with_snow=true [$A]" begin
@@ -41,7 +41,7 @@ using Oceananigans.Units: hours, days
 
         @testset "PhaseTransitions API [$A]" begin
             sea_ice = sea_ice_simulation(grid; dynamics=nothing)
-            pt = sea_ice.model.ice_thermodynamics.phase_transitions
+            pt = sea_ice.model.phase_transitions
             @test pt.heat_capacity == 2100
             @test pt.density == 900
         end
