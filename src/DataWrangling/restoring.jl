@@ -269,8 +269,8 @@ ocean = ocean_simulation(grid;
     additional_fluxes = (; S = SurfaceFluxRestoring(restoring)))
 ```
 """
-struct SurfaceFluxRestoring <: Function
-    dataset_restoring :: DatasetRestoring
+struct SurfaceFluxRestoring{D} <: Function
+    dataset_restoring :: D # <: Typically a DatasetRestoring
 end
 
 Adapt.adapt_structure(to, sf::SurfaceFluxRestoring) = SurfaceFluxRestoring(Adapt.adapt(to, sf.dataset_restoring))
