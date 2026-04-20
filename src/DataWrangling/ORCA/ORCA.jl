@@ -72,8 +72,8 @@ const ORCA1_mesh_mask_url  = "https://zenodo.org/records/4436658/files/eORCA1.2_
 const ORCA1_bathymetry_url = "https://zenodo.org/records/4436658/files/eORCA_R1_bathy_meter_v2.2.nc"
 
 # Google Drive records for GLORYS12 (ORCA12) mesh mask and bathymetry
-const ORCA12_mesh_mask_url  = "https://drive.google.com/uc?export=download&id=1uexKHV9q39bNXTH2V-PQwEiS2Y80J-XZ"
-const ORCA12_bathymetry_url = "https://www.dropbox.com/scl/fi/k8l22pxg80c2ox37pxc4w/GLO-MFC_001_030_mask_bathy.nc?rlkey=9cjlbli6hzvq2tlh6wkxegrsd&dl=1"
+const ORCA12_mesh_mask_url  = "https://zenodo.org/records/15495870/files/grid_mask_eORCA12-GO6.nc"
+const ORCA12_bathymetry_url = "https://zenodo.org/records/15495870/files/bathy_eORCA12_noclosea_from_GEBCO2021_FillZero_S21TT_CloseaCopy.nc"
 
 function metadata_url(metadatum::ORCA1Metadatum)
     if metadatum.name == :mesh_mask
@@ -107,9 +107,9 @@ end
 
 function metadata_filename(::ORCA12, name, date, bounding_box)
     if name == :mesh_mask
-        return "GLO-MFC_001_030_coordinates.nc"
+        return "grid_mask_eORCA12-GO6.nc"
     elseif name == :bottom_height
-        return "GLO-MFC_001_030_mask_bathy.nc"
+        return "bathy_eORCA12_noclosea_from_GEBCO2021_FillZero_S21TT_CloseaCopy.nc"
     else
         error("Unknown ORCA12 variable: $name")
     end
