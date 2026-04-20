@@ -1,5 +1,6 @@
 using Oceananigans: location
 using Oceananigans.Grids: node
+using Oceananigans.Operators: Δzᶜᶜᶜ
 using Oceananigans.BoundaryConditions: BoundaryConditions
 using Oceananigans.Fields: interpolate, instantiated_location
 using Oceananigans.OutputReaders: Cyclical
