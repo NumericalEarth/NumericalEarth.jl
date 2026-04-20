@@ -112,7 +112,7 @@ end
                      gravitational_acceleration = default_gravitational_acceleration,
                      bottom_drag_coefficient = Default(0.003),
                      forcing = NamedTuple(),
-                     additional_fluxes = NamedTuple(),
+                     additional_surface_fluxes = NamedTuple(),
                      biogeochemistry = nothing,
                      timestepper = :SplitRungeKutta3,
                      coriolis = Default(HydrostaticSphericalCoriolis(; rotation_rate)),
