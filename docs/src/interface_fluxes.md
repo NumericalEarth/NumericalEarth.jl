@@ -145,6 +145,8 @@ following Large & Yeager (2004). In this case `CoefficientBasedFluxes` evaluates
 at each iteration rather than using a constant:
 
 ```@example interface_fluxes
+using NumericalEarth.EarthSystemModels.InterfaceComputations: PolynomialNeutralDragCoefficient
+
 poly_drag = PolynomialNeutralDragCoefficient()
 poly_fluxes = CoefficientBasedFluxes(transfer_coefficients = (poly_drag, 1e-3, 1e-3))
 ```
@@ -155,7 +157,7 @@ use `LargeYeagerTransferCoefficients`. This computes all three transfer coeffici
 stability corrections (L&Y eqs. 6c-6d, 10a-10c):
 
 ```@example interface_fluxes
-using NumericalEarth.EarthSystemModels.InterfaceComputations: FixedIterations
+using NumericalEarth.EarthSystemModels.InterfaceComputations: FixedIterations, LargeYeagerTransferCoefficients
 
 ly = LargeYeagerTransferCoefficients()
 ly_fluxes = CoefficientBasedFluxes(transfer_coefficients = ly,
