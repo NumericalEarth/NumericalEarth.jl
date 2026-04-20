@@ -2,6 +2,7 @@ include("runtests_setup.jl")
 
 using ClimaSeaIce: SeaIceModel, ConductiveFlux
 using ClimaSeaIce.SeaIceThermodynamics: IceSnowConductiveFlux
+using NumericalEarth.SeaIces: default_snow_thermodynamics
 using NumericalEarth.EarthSystemModels.InterfaceComputations:
     ComponentInterfaces,
     SkinTemperature,
