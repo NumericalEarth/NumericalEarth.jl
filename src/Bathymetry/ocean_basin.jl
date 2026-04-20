@@ -37,16 +37,17 @@ end
 Base.getindex(basin::Basin, i, j, k) = basin.mask[i, j, k]
 
 #####
-##### Additive basins
+##### Basin union
 #####
 
 """
-    Base.:+(basin1::Basin, basin2::Basin)
+    Base.:|(basin1::Basin, basin2::Basin)
 
 Combine two basins into a new one whose mask is the union of both. Cells that
-belong to either input basin are `true` in the combined mask.
+belong to either input basin are `true` in the combined mask. This mirrors the
+elementwise `.|` applied to the underlying boolean masks.
 """
-function Base.:+(basin1::Basin, basin2::Basin)
+function Base.:|(basin1::Basin, basin2::Basin)
     grid = basin1.grid
     combined_mask = Field{Center, Center, Nothing}(grid, Bool)
 
