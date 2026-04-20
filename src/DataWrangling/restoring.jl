@@ -190,12 +190,8 @@ Keyword Arguments
 - `cache_inpainted_data`: If `true`, the data is cached to disk after inpainting for later retrieving.
                           Default: `true`.
 
-- `prefetch`: If `true`, the next sliding window is loaded asynchronously
-              on a background thread (`Threads.@spawn`) so the I/O cost of
-              the next reload overlaps the current window's compute. The
-              hot-path reload becomes a memory copy from the prefetched
-              buffer; on a cache miss (e.g. checkpointer restart) the cold
-              path falls back to a synchronous read. Default: `false`.
+- `prefetch`: If `true`, hide the next reload's I/O behind compute via a  background `Threads.@spawn`. 
+              Intended for long-lived FTSes; short-lived ones leak one prefetch task. Default: `false`.
 """
 function DatasetRestoring(metadata::Metadata,
                           arch_or_grid = CPU();

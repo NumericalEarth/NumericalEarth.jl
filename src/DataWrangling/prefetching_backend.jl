@@ -1,20 +1,14 @@
-# Asynchronous prefetch wrapper around `DatasetBackend`. Hides the next
-# sliding-window's I/O behind the current window's compute by reading into
-# a buffer `FieldTimeSeries` on a `Threads.@spawn`-ed task. Every `set!`
-# either copies from the prefetched buffer (hot) or loads synchronously
-# (cold), then schedules the next window's read. The buffer is allocated
-# once at FTS construction and reused for every reload — zero allocation
-# per `set!`.
+# Asynchronous prefetch wrapper around `DatasetBackend`. Hides the next sliding-window's I/O behind the current window's compute
+# by reading into  a buffer `FieldTimeSeries` on a `Threads.@spawn`-ed task. Every `set!`  either copies from the prefetched buffer 
+# (hot) or loads synchronously (cold), then schedules the next window's read. The buffer is allocated once at FTS construction and 
+# reused for every reload — zero allocation per `set!`.
 #
-# Race invariant: between the spawn at the end of one `set!` and the
-# `wait` at the start of the next, the worker is mutating
-# `buffer_fts.data`. No code outside `set!(::PrefetchingFTS)` may touch
-# `buffer_fts` in that window. Two enforcement points: `:buffer_fts` is
-# not forwarded by `getproperty`, and `Adapt.adapt_structure` returns
-# only the inner backend. `wait_for_prefetch!` is the safe drain hook.
+# Race invariant: between the spawn at the end of one `set!` and the `wait` at the start of the next, the worker is mutating
+# `buffer_fts.data`. No code outside `set!(::PrefetchingFTS)` may touch `buffer_fts` in that window. 
+# Two enforcement points: `:buffer_fts` is not forwarded by `getproperty`, and `Adapt.adapt_structure` returns
+# only the inner backend.
 #
-# Requires `JULIA_NUM_THREADS ≥ 2` to actually overlap; one thread makes
-# the spawn cooperatively-scheduled and the optimisation a no-op.
+# Requires `JULIA_NUM_THREADS ≥ 2` to actually overlap; one thread makes the spawn cooperatively-scheduled and the optimisation a no-op.
 
 using Oceananigans.OutputReaders: AbstractInMemoryBackend, FlavorOfFTS, FieldTimeSeries, time_index
 using Oceananigans.Fields: location
@@ -29,12 +23,15 @@ mutable struct PrefetchingBackend{B<:DatasetBackend, F<:FieldTimeSeries} <: Abst
     next_start :: Int
 end
 
-PrefetchingBackend(inner::DatasetBackend, buffer_fts::FieldTimeSeries) =
-    PrefetchingBackend{typeof(inner), typeof(buffer_fts)}(inner, nothing, buffer_fts, 0)
+PrefetchingBackend(inner::DatasetBackend, buffer_fts::FieldTimeSeries) = PrefetchingBackend{typeof(inner), typeof(buffer_fts)}(inner, nothing, buffer_fts, 0)
 
-# `:buffer_fts` deliberately omitted — see race invariant in preamble.
+# `:buffer_fts` deliberately warned upon — see race invariant in preamble.
 function Base.getproperty(p::PrefetchingBackend, name::Symbol)
     if name in (:inner, :pending, :next_start)
+        return getfield(p, name)
+    elseif name == :buffer_fts
+        @warn "`buffer_fts` is an inner auxiliary field touched on an hot-loop separate task. " * 
+              "Mutating it manually might lead to undefined behavior. It is recommended not modifying it."
         return getfield(p, name)
     else
         return getproperty(getfield(p, :inner), name)
@@ -42,10 +39,7 @@ function Base.getproperty(p::PrefetchingBackend, name::Symbol)
 end
 
 Base.length(p::PrefetchingBackend) = length(p.inner)
-
-Base.summary(p::PrefetchingBackend) =
-    string("PrefetchingBackend(", p.inner.start, ", ", p.inner.length,
-           "; pending=", !isnothing(getfield(p, :pending)), ")")
+Base.summary(p::PrefetchingBackend) = string("PrefetchingBackend(", p.inner.start, ", ", p.inner.length, "; pending=", !isnothing(getfield(p, :pending)), ")")
 
 # Mutate in place rather than constructing a fresh wrapper — keeps the
 # `pending`/`buffer_fts`/`next_start` mutable state in exactly one object.
@@ -57,22 +51,6 @@ end
 Adapt.adapt_structure(to, p::PrefetchingBackend) = Adapt.adapt(to, getfield(p, :inner))
 
 const PrefetchingFTS = FlavorOfFTS{<:Any, <:Any, <:Any, <:Any, <:PrefetchingBackend}
-
-"""
-    wait_for_prefetch!(backend::PrefetchingBackend)
-
-Block until the in-flight prefetch task completes, then clear it.
-Required before any code that needs a consistent view of the buffer FTS
-(checkpointing, JLD2 serialisation, manual `getfield(..., :buffer_fts)`).
-"""
-function wait_for_prefetch!(p::PrefetchingBackend)
-    pending = getfield(p, :pending)
-    if !isnothing(pending)
-        wait(pending)
-        setfield!(p, :pending, nothing)
-    end
-    return nothing
-end
 
 function set!(fts::PrefetchingFTS, backend::PrefetchingBackend = fts.backend)
     needed_start  = getfield(backend, :inner).start

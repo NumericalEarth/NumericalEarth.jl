@@ -68,7 +68,7 @@ ocean.set_forcing = set_forcing_tke_only
 # This includes 2-meter wind velocity, temperature, humidity, downwelling longwave and shortwave
 # radiation, as well as freshwater fluxes.
 
-atmos = JRA55PrescribedAtmosphere(; backend = JRA55NetCDFBackend(10))
+atmos = JRA55PrescribedAtmosphere(; time_indices_in_memory = 10)
 
 # The coupled ocean--atmosphere model.
 # We use the default radiation model and we do not couple an ice model for simplicity.

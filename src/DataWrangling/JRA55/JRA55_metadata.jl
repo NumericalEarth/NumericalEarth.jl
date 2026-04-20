@@ -108,7 +108,7 @@ end
 
 # Convenience functions
 dataset_variable_name(data::JRA55Metadata) = JRA55_dataset_variable_names[data.name]
-location(::JRA55Metadata) = (Center, Center, Center)
+location(::JRA55Metadata) = (Center, Center, Nothing)
 
 available_variables(::JRA55Dataset) = JRA55_variable_names
 
