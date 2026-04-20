@@ -273,12 +273,23 @@ scatter!(ax4, π/180 .* [λ...], [φ...] .+ 90, color=ice_plt, colormap=:greys; 
 Colorbar(fig[1:2, 0], sco, label = "Ocean Surface Speed (m/s)")
 Colorbar(fig[1:2, 7], sci, label = "Sea Ice Effective Thickness (m)")
 
+
+lo, hi = -50, 0
+center = -1
+frac = (center - lo) / (hi - lo)
+compressed_roma = cgrad(
+    :roma,
+    [0.0, frac, 1.0], 
+    categorical = false,
+    rev = true
+)
+
 scT = scatter!(ax2, [λ...], [φ...], color=T_plt, colormap=:magma; markersize, colorrange = (-1, 32), marker = :rect, nan_color=:lightgray)
 scatter!(ax5, π/180 .* [λ...], 90 .-[φ...], color=T_plt, colormap=:magma; markersize = polar_markersize, colorrange = (-1, 32), marker = :rect, nan_color=:lightgray)
 scatter!(ax6, π/180 .* [λ...], [φ...] .+ 90, color=T_plt, colormap=:magma; markersize = polar_markersize, colorrange = (-1, 32), marker = :rect, nan_color=:lightgray)
-scTi = scatter!(ax2, [λ...], [φ...], color=ice_T_plt, colormap=:roma; markersize, colorrange = (-2, 0), marker = :rect)
-scatter!(ax5, π/180 .* [λ...], 90 .-[φ...], color=ice_T_plt, colormap=:roma; markersize = polar_markersize, colorrange = (-2, 0), marker = :rect)
-scatter!(ax6, π/180 .* [λ...], [φ...] .+ 90, color=ice_T_plt, colormap=:roma; markersize = polar_markersize, colorrange = (-2, 0), marker = :rect)
+scTi = scatter!(ax2, [λ...], [φ...], color=ice_T_plt, colormap=compressed_roma; markersize, colorrange = (-50, 0), marker = :rect)
+scatter!(ax5, π/180 .* [λ...], 90 .-[φ...], color=ice_T_plt, colormap=compressed_roma; markersize = polar_markersize, colorrange = (-50, 0), marker = :rect)
+scatter!(ax6, π/180 .* [λ...], [φ...] .+ 90, color=ice_T_plt, colormap=compressed_roma; markersize = polar_markersize, colorrange = (-50, 0), marker = :rect)
 
 title = @lift string(floor(times[$n]./365days))*" years, "*string(mod(times[$n]/(365days/12), 12))*" months"
 Colorbar(fig[3:4, 0], scT, label = "Sea Surface Temperature (°C)")
