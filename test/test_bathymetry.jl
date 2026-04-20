@@ -227,7 +227,7 @@ end
         # Test atlantic_ocean_basin creation
         atlantic = atlantic_ocean_basin(ibg)
         @test atlantic isa Basin
-        @test sum(atlantic.mask) > 0  # Should have some ocean cells
+        @test sum(interior(atlantic.mask)) > 0  # Should have some ocean cells
 
         mask = on_architecture(CPU(), atlantic.mask)
 
