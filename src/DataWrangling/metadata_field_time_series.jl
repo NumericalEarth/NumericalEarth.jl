@@ -52,22 +52,27 @@ function FieldTimeSeries(metadata::Metadata, grid::AbstractGrid;
 
     # Detect "the user's grid IS the native grid" structurally 
     on_native_grid = grid == native_grid(metadata, architecture(grid))
+    times = native_times(metadata)
+    
+    # Make sure we do not use more indices then the ones available!
+    if length(times) < time_indices_in_memory
+        time_indices_in_memory = length(times)
+    end
 
     inpainting isa Int && (inpainting = NearestNeighborInpainting(inpainting))
-    inner = DatasetBackend(time_indices_in_memory, metadata; on_native_grid, inpainting, cache_inpainted_data)
+    inner_backend = DatasetBackend(time_indices_in_memory, metadata; on_native_grid, inpainting, cache_inpainted_data)
 
-    times = native_times(metadata)
     loc = LX, LY, LZ = location(metadata)
     boundary_conditions = FieldBoundaryConditions(grid, instantiate.(loc))
 
     if prefetch
         Threads.nthreads() < 2 && @warn "prefetch=true is a no-op with JULIA_NUM_THREADS=$(Threads.nthreads()); start Julia with ≥ 2 threads."
         # Buffer FTS is allocated once and reused per reload (see prefetching_backend.jl).
-        buffer_inner = new_backend(inner, 1, time_indices_in_memory)
+        buffer_inner = new_backend(inner_backend, 1, time_indices_in_memory)
         buffer_fts = FieldTimeSeries{LX, LY, LZ}(grid, times; backend=buffer_inner, time_indexing, boundary_conditions)
-        backend = PrefetchingBackend(inner, buffer_fts)
+        backend = PrefetchingBackend(inner_backend, buffer_fts)
     else
-        backend = inner
+        backend = inner_backend
     end
 
     fts = FieldTimeSeries{LX, LY, LZ}(grid, times; backend, time_indexing, boundary_conditions)
