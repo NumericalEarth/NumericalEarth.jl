@@ -32,7 +32,7 @@ end
 
 @testset "Test surface fluxes" begin
     for arch in test_architectures
-        grid = LatitudeLongitudeGrid(arch;
+        grid = LatitudeLongitudeGrid(arch, Float32;
                                      size = 1,
                                      latitude = 10,
                                      longitude = 10,
@@ -53,7 +53,7 @@ end
             pᵃᵗ = atmosphere.pressure[1][1, 1, 1]
 
             Tᵃᵗ = 15 + celsius_to_kelvin
-            qᵃᵗ = 0.003
+            qᵃᵗ = Float32(0.003)
 
             uᵃᵗ = atmosphere.velocities.u[1][1, 1, 1]
             vᵃᵗ = atmosphere.velocities.v[1][1, 1, 1]
@@ -192,7 +192,7 @@ end
                                   bottom_drag_coefficient = 0.0)
 
         dates = all_dates(RepeatYearJRA55(), :temperature)
-        atmosphere = JRA55PrescribedAtmosphere(arch; end_date=dates[2], backend = InMemory())
+        atmosphere = JRA55PrescribedAtmosphere(arch; end_date=dates[2])
 
         fill!(ocean.model.tracers.T, -2.0)
 
