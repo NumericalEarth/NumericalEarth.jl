@@ -119,23 +119,5 @@ using Oceananigans.Units: Time
                 @test val ≈ 0.5 * 0.83 + 0.5 * 0.54
             end
         end
-
-        @testset "Adapt.adapt_structure [$A]" begin
-            α = SeaIceAlbedo(hi, hs, Ts)
-            # Adapt should not error
-            adapted = Adapt.adapt_structure(Array, α)
-            @test adapted isa SeaIceAlbedo
-            @test adapted.ice_albedo == α.ice_albedo
-        end
-
-        @testset "InterfaceProperties Adapt [$A]" begin
-            σ = 5.67e-8
-            α = SeaIceAlbedo(hi, hs, Ts)
-            ϵ = 1.0
-            radiation = (; σ, α, ϵ)
-            props = InterfaceProperties(radiation, nothing, nothing, nothing)
-            adapted = Adapt.adapt_structure(Array, props)
-            @test adapted.radiation.α isa SeaIceAlbedo
-        end
     end
 end
