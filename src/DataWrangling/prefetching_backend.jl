@@ -30,8 +30,8 @@ function Base.getproperty(p::PrefetchingBackend, name::Symbol)
     if name in (:inner_backend, :pending, :next_start)
         return getfield(p, name)
     elseif name == :buffer_fts
-        @warn "`buffer_fts` is an inner auxiliary field touched on an hot-loop separate task. " * 
-              "Mutating it manually might lead to undefined behavior. It is recommended not modifying it."
+        @warn "`buffer_fts` is an inner auxiliary field touched in a hot loop by a separate task. " *
+              "Mutating it manually might lead to undefined behavior. It is recommended not to modify it."
         return getfield(p, name)
     else
         return getproperty(getfield(p, :inner_backend), name)
