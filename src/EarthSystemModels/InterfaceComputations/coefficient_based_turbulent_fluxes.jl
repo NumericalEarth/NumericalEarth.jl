@@ -159,7 +159,7 @@ convert_if_number(FT, a) = a
 
 convert_transfer_coefficients(FT, c) = c
 convert_transfer_coefficients(FT, c::Tuple) = convert_if_number.(FT, c)
-convert_transfer_coefficients(FT, c::NamedTuple) = (; momentum = convert_if_number(FT, c.momentum)
+convert_transfer_coefficients(FT, c::NamedTuple) = (; momentum    = convert_if_number(FT, c.momentum),
                                                       temperature = convert_if_number(FT, c.temperature),
                                                       water_vapor = convert_if_number(FT, c.water_vapor))
 
@@ -277,7 +277,7 @@ end
 end
 
 @inline function evaluate_coefficients(coeffs::Tuple, args...)
-    Cd = evaluate_coefficient(coeffs[1],    args...)
+    Cd = evaluate_coefficient(coeffs[1], args...)
     Ch = evaluate_coefficient(coeffs[2], args...)
     Cq = evaluate_coefficient(coeffs[3], args...)
     return Cd, Ch, Cq
