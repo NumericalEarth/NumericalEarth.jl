@@ -1,17 +1,18 @@
 include("runtests_setup.jl")
 
 using Oceananigans.BoundaryConditions: DiscreteBoundaryFunction
-using NumericalEarth.Oceans: FluxAndRestoring, net_fluxes, net_flux
+using NumericalEarth.Oceans: MultipleFluxes, net_fluxes, net_flux
+using CUDA
 
 # A constant top-cell tendency `G`, mimicking the part of a `DatasetRestoring`
-# that the `FluxAndRestoring` BC actually evaluates: `r * μ * (ψ_dataset - ψ)`.
+# that the `MultipleFluxes` BC actually evaluates: `r * μ * (ψ_dataset - ψ)`.
 struct ConstantTendency{T}
     G :: T
 end
 
-@inline (c::ConstantTendency)(i, j, k, grid, clock, fields) = c.G
+@inline (c::ConstantTendency)(i, j, grid, clock, fields) = c.G
 
-@testset "FluxAndRestoring boundary condition" begin
+@testset "MultipleFluxes boundary condition" begin
     for arch in test_architectures
         grid = LatitudeLongitudeGrid(arch;
                                      size = (8, 8, 4),
@@ -23,7 +24,7 @@ end
         # The grid has uniform Δz = 100 / 4 = 25 m at the top cell.
         Δz_top = 25.0
 
-        @testset "default path: no surface_restoring" begin
+        @testset "default path: no additional_fluxes" begin
             ocean = ocean_simulation(grid; warn=false)
             S_top = ocean.model.tracers.S.boundary_conditions.top
             T_top = ocean.model.tracers.T.boundary_conditions.top
@@ -42,21 +43,21 @@ end
             G = 1.0e-6  # constant top-cell tendency
             ocean = ocean_simulation(grid;
                                      warn=false,
-                                     surface_restoring=(; S=ConstantTendency(G)))
+                                     additional_fluxes=(; S=ConstantTendency(G)))
 
             S_top = ocean.model.tracers.S.boundary_conditions.top
             T_top = ocean.model.tracers.T.boundary_conditions.top
 
             # S is wrapped, T is left alone
             @test S_top.condition isa DiscreteBoundaryFunction
-            @test S_top.condition.func isa FluxAndRestoring
+            @test S_top.condition.func isa MultipleFluxes
             @test T_top.condition isa Field
 
             fr = S_top.condition.func
             @test fr.flux_field isa Field
             @test size(fr.flux_field) == (8, 8, 1)
 
-            # net_fluxes peeks through DiscreteBoundaryFunction → FluxAndRestoring
+            # net_fluxes peeks through DiscreteBoundaryFunction → MultipleFluxes
             nf = net_fluxes(ocean)
             @test nf.S isa Field
             @test nf.S === fr.flux_field
@@ -64,14 +65,14 @@ end
 
             # Math: J_solver = 0 by default, so BC value = -G * Δz_top
             fields = ocean.model.tracers
-            val = S_top.condition.func(2, 2, grid, ocean.model.clock, fields)
-            @test val ≈ -G * Δz_top
+            CUDA.@allowscalar val = S_top.condition.func(2, 2, grid, ocean.model.clock, fields)
+            @test val ≈ G
 
             # Now pretend the OMIP coupled flux solver wrote into the underlying field
             J = 7.0e-5
             fill!(net_flux(S_top.condition), J)
-            val = S_top.condition.func(2, 2, grid, ocean.model.clock, fields)
-            @test val ≈ J - G * Δz_top
+            CUDA.@allowscalar val = S_top.condition.func(2, 2, grid, ocean.model.clock, fields)
+            @test val ≈ J + G
         end
     end
 end

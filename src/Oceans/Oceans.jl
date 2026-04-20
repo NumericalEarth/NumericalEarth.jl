@@ -1,6 +1,6 @@
 module Oceans
 
-export ocean_simulation, SlabOcean, FluxAndRestoring
+export ocean_simulation, SlabOcean
 
 using Oceananigans
 using Oceananigans.Units
@@ -62,7 +62,7 @@ default_or_override(override, alternative_default=nothing) = override
 include("slab_ocean.jl")
 include("barotropic_potential_forcing.jl")
 include("radiative_forcing.jl")
-include("flux_and_restoring.jl")
+include("multiple_surface_fluxes.jl")
 include("ocean_simulation.jl")
 include("assemble_net_ocean_fluxes.jl")
 
@@ -75,12 +75,12 @@ ocean_temperature(ocean::Simulation{<:HydrostaticFreeSurfaceModel}) = ocean.mode
 
 function ocean_surface_salinity(ocean::Simulation{<:HydrostaticFreeSurfaceModel})
     kᴺ = size(ocean.model.grid, 3)
-    return view(ocean.model.tracers.S.data, :, :, kᴺ:kᴺ)
+    return interior(ocean.model.tracers.S, :, :, kᴺ:kᴺ)
 end
 
 function ocean_surface_temperature(ocean::Simulation{<:HydrostaticFreeSurfaceModel})
     kᴺ = size(ocean.model.grid, 3)
-    return view(ocean.model.tracers.T.data, :, :, kᴺ:kᴺ)
+    return interior(ocean.model.tracers.T, :, :, kᴺ:kᴺ)
 end
 
 function ocean_surface_velocities(ocean::Simulation{<:HydrostaticFreeSurfaceModel})
@@ -111,7 +111,7 @@ function ComponentExchanger(ocean::Simulation{<:HydrostaticFreeSurfaceModel}, gr
 end
 
 @inline net_flux(condition) = condition
-@inline net_flux(bc::FluxAndRestoring) = bc.flux_field
+@inline net_flux(bc::MultipleFluxes) = bc.flux_field
 @inline net_flux(bc::DiscreteBoundaryFunction) = net_flux(bc.func)
 
 function net_fluxes(ocean::Simulation{<:HydrostaticFreeSurfaceModel})

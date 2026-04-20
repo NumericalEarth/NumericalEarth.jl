@@ -1,6 +1,6 @@
 
 @inline flux_field(condition) = condition
-@inline flux_field(bc::FluxAndRestoring) = bc.flux_field
+@inline flux_field(bc::MultipleFluxes) = bc.flux_field
 @inline flux_field(bc::DiscreteBoundaryFunction) = flux_field(bc.func)
 
 ###########################
@@ -29,6 +29,7 @@ function net_ocean_temperature_flux(esm::EarthSystemModel)
     net_ocean_temperature_flux = Jᵀ + frazil_temperature_flux(esm)
     return Field(net_ocean_temperature_flux)
 end
+
 
 """
     sea_ice_ocean_temperature_flux(esm::EarthSystemModel)
