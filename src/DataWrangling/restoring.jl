@@ -188,6 +188,13 @@ Keyword Arguments
 
 - `cache_inpainted_data`: If `true`, the data is cached to disk after inpainting for later retrieving.
                           Default: `true`.
+
+- `prefetch`: If `true`, the next sliding window is loaded asynchronously
+              on a background thread (`Threads.@spawn`) so the I/O cost of
+              the next reload overlaps the current window's compute. The
+              hot-path reload becomes a memory copy from the prefetched
+              buffer; on a cache miss (e.g. checkpointer restart) the cold
+              path falls back to a synchronous read. Default: `false`.
 """
 function DatasetRestoring(metadata::Metadata,
                           arch_or_grid = CPU();
@@ -196,7 +203,8 @@ function DatasetRestoring(metadata::Metadata,
                           time_indices_in_memory = default_time_indices_in_memory(metadata),
                           time_indexing = Cyclical(),
                           inpainting = NearestNeighborInpainting(Inf),
-                          cache_inpainted_data = true)
+                          cache_inpainted_data = true,
+                          prefetch = false)
 
     download_dataset(metadata)
 
@@ -204,7 +212,8 @@ function DatasetRestoring(metadata::Metadata,
                           time_indices_in_memory,
                           time_indexing,
                           inpainting,
-                          cache_inpainted_data)
+                          cache_inpainted_data,
+                          prefetch)
 
     arch = architecture(fts)
     mask = on_architecture(arch, mask)

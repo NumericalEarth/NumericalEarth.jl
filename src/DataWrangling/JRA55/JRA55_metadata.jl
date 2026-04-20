@@ -5,28 +5,50 @@ using Downloads
 using Oceananigans.DistributedComputations
 
 using NumericalEarth.DataWrangling
-using NumericalEarth.DataWrangling: Metadata, metadata_path, download_progress, AnyDateTime
+using NumericalEarth.DataWrangling: Metadata, metadata_path, download_progress, AnyDateTime, DatasetBackend
 
 import Dates: year, month, day
 import Oceananigans.Fields: set!
 import Base
 
 import Oceananigans.Fields: set!, location
-import NumericalEarth.DataWrangling: all_dates, metadata_filename, build_filename, download_dataset, default_download_directory, available_variables, getfilename
+import NumericalEarth.DataWrangling: all_dates, 
+                                     metadata_filename, 
+                                     build_filename, 
+                                     download_dataset, 
+                                     default_download_directory, 
+                                     dataset_variable_name,
+                                     available_variables, 
+                                     default_inpainting,
+                                     getfilename,
+                                     z_interfaces,
+                                     longitude_interfaces, 
+                                     latitude_interfaces
 
-struct MultiYearJRA55 end
-struct RepeatYearJRA55 end
+abstract type JRA55Dataset end
 
-const JRA55Metadata{D} = Metadata{<:Union{<:MultiYearJRA55, <:RepeatYearJRA55}, D}
-const JRA55Metadatum   = Metadatum{<:Union{<:MultiYearJRA55, <:RepeatYearJRA55}}
+struct MultiYearJRA55 <: JRA55Dataset end
+struct RepeatYearJRA55 <: JRA55Dataset  end
 
-default_download_directory(::Union{<:MultiYearJRA55, <:RepeatYearJRA55}) = download_JRA55_cache
+const JRA55Metadata{D} = Metadata{<:JRA55Dataset, D}
+const JRA55Metadatum   = Metadatum{<:JRA55Dataset}
 
-Base.size(data::JRA55Metadata) = (640, 320, length(data.dates))
-Base.size(::JRA55Metadatum)    = (640, 320, 1)
+const RepeatYearJRA55Metadatum = Metadatum{<:RepeatYearJRA55}
+const MultiYearJRA55Metadatum  = Metadatum{<:MultiYearJRA55}
+
+default_download_directory(::JRA55Dataset) = download_JRA55_cache
+
+Base.size(::JRA55Dataset, variable) = (640, 320, 1)
+
+z_interfaces(::JRA55Metadata) = (0, 10)
+longitude_interfaces(::JRA55Metadata) = (0, 360)
+latitude_interfaces(::JRA55Metadata) = (-90, 90)
 
 # JRA55 is a spatially 2D dataset
 is_three_dimensional(data::JRA55Metadata) = false
+
+# Never inpaint JRA55
+default_inpainting(::JRA55Metadata) = nothing
 
 # The whole range of dates in the different dataset datasets
 # NOTE! rivers and icebergs have a different frequency! (typical JRA55 data is three-hourly while rivers and icebergs are daily)
@@ -41,7 +63,7 @@ end
 all_dates(::MultiYearJRA55, name) = JRA55_multiple_year_dates[name]
 
 # Fallback, if we not provide the name, take the highest frequency
-all_dates(dataset::Union{<:MultiYearJRA55, <:RepeatYearJRA55}) = all_dates(dataset, :temperature)
+all_dates(dataset::JRA55Dataset) = all_dates(dataset, :temperature)
 
 # Valid for all JRA55 datasets
 function JRA55_time_indices(dataset, dates, name)
@@ -88,8 +110,7 @@ end
 dataset_variable_name(data::JRA55Metadata) = JRA55_dataset_variable_names[data.name]
 location(::JRA55Metadata) = (Center, Center, Center)
 
-available_variables(::MultiYearJRA55)  = JRA55_variable_names
-available_variables(::RepeatYearJRA55) = JRA55_variable_names
+available_variables(::JRA55Dataset) = JRA55_variable_names
 
 # A list of all variables provided in the JRA55 dataset:
 JRA55_variable_names = (:river_freshwater_flux,
