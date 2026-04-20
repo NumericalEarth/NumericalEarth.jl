@@ -44,7 +44,7 @@ Base.size(::JRA55Dataset, variable) = (640, 320, 1)
 longitude_interfaces(::JRA55Metadata) = (0, 360)
 latitude_interfaces(::JRA55Metadata) = (-90, 90)
 
-function native_grid(metadata::JRA55Metadata, arch=CPU(); halo = (3, 3, 3))
+function native_grid(metadata::JRA55Metadata, arch=CPU(); halo = (3, 3))
     Nx, Ny, Nz, _ = size(metadata)
 
     FT = eltype(metadata)
@@ -58,7 +58,7 @@ function native_grid(metadata::JRA55Metadata, arch=CPU(); halo = (3, 3, 3))
         latitude, Ny = restrict(bbox.latitude, latitude, Ny)
     end
 
-    grid = LatitudeLongitudeGrid(arch, FT; size = (Nx, Ny, Nz),
+    grid = LatitudeLongitudeGrid(arch, FT; size = (Nx, Ny),
                                  halo, longitude, latitude, 
                                  topology = (Periodic, Bounded, Flat))
 
@@ -102,11 +102,8 @@ end
 # File name generation specific to each Dataset dataset
 # Note that `RepeatYearJRA55` has only one file associated, so the filename
 # is independent of the date. Override the multi-date fallback to return a plain String.
-metadata_filename(::RepeatYearJRA55, name, date, bounding_box) =
-    "RYF." * JRA55_dataset_variable_names[name] * ".1990_1991.nc"
-
-build_filename(::RepeatYearJRA55, name, dates::AbstractArray, bounding_box) =
-    "RYF." * JRA55_dataset_variable_names[name] * ".1990_1991.nc"
+metadata_filename(::RepeatYearJRA55, name, date, bounding_box) = "RYF." * JRA55_dataset_variable_names[name] * ".1990_1991.nc"
+build_filename(::RepeatYearJRA55, name, dates::AbstractArray, bounding_box) = "RYF." * JRA55_dataset_variable_names[name] * ".1990_1991.nc"
 
 function metadata_filename(::MultiYearJRA55, name, date, bounding_box)
     shortname = JRA55_dataset_variable_names[name]
