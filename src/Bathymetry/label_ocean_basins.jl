@@ -64,19 +64,21 @@ end
 # water cells near the boundary are correctly identified as connected.
 function copy_periodic_longitude(zb_cpu::Field, ::Periodic)
     Nλ = size(zb_cpu, 1)
+    half = Nλ ÷ 2
+
+    # 2D slice of the bathymetry at the bottom level.
     zb_data   = zb_cpu.data[1:Nλ, :, 1]
-    zb_parent = zb_data.parent
+    zb_parent = parent(zb_data)
 
     # Concatenate a copy of the eastern half on the left and the western half on the right.
     # This is an O(Nλ × Nφ) CPU allocation, acceptable for the serial labeling step.
-    half = Nλ ÷ 2
-    zb_parent = vcat(zb_parent[half:Nλ, :], zb_parent, zb_parent[1:half, :])
+    concatenated_zb = vcat(zb_parent[half:Nλ, :], zb_parent, zb_parent[1:half, :])
 
-    # Update offsets so that index 1 maps back to the original domain start
-    yoffsets = zb_cpu.data.offsets[2]
-    xoffsets = - half - 1
+    # Offsets so that index 1 maps back to the original domain start
+    xoffset = - half - 1
+    yoffset = zb_cpu.data.offsets[2]
 
-    return OffsetArray(zb_parent, xoffsets, yoffsets)
+    return OffsetArray(concatenated_zb, xoffset, yoffset)
 end
 
 copy_periodic_longitude(zb_cpu::Field, tx) = interior(zb_cpu, :, :, 1)
@@ -191,10 +193,11 @@ function label_ocean_basins(grid::ImmersedBoundaryGrid; barriers=nothing)
     TX = topology(cpu_grid, 1)
     zb = cpu_grid.immersed_boundary.bottom_height
 
-    # If barriers are specified, apply them to a copy of the bathymetry
+    # If barriers are specified, apply them to a copy of the bathymetry.
+    # Using `similar(zb)` preserves the field type, which allows for future
+    # bathymetry representations beyond plain 2D `GridFittedBottom` fields.
     if !isnothing(barriers)
-        # Create a temporary field with the modified bathymetry
-        zb_modified = Field{Center, Center, Nothing}(cpu_grid)
+        zb_modified = similar(zb)
         parent(zb_modified) .= parent(zb)
         apply_barrier!(zb_modified, cpu_grid, barriers)
     else
