@@ -16,18 +16,22 @@ dimension layouts: `(x, y)`, `(x, y, z)`, or `(x, y, z, t)`.
 """
 function read_2d_nemo_variable(ds, name)
     var = ds[name]
-    data = Array(var[:])
+    # NOTE: `var[:]` does linear indexing and flattens to 1D.
+    # We need the full shaped array here.
+    data = Array(var)
 
-    # Remove singleton dimensions first (for example t=1 or z=1).
-    singleton_dims = findall(==(1), size(data))
-    if !isempty(singleton_dims)
-        data = dropdims(data; dims = Tuple(singleton_dims))
+    if ndims(data) < 2
+        throw(ArgumentError("Variable $name could not be reduced to 2D. Size after slicing: $(size(data))"))
     end
 
-    # If more than two dimensions remain, conservatively take the first
-    # index along extra dimensions until we get a 2D horizontal slice.
-    while ndims(data) > 2
-        data = selectdim(data, 1, 1)
+    if ndims(data) > 2
+        # Keep the two largest dimensions as horizontal (x, y), and pick
+        # the first index for all other dimensions (for example t=1, z=1).
+        # This handles layouts like (t, x, y), (x, y, t), (t, z, y, x), etc.
+        sizes = collect(size(data))
+        keep = sort(sortperm(sizes; rev = true)[1:2])
+        indices = ntuple(d -> (d in keep ? Colon() : 1), ndims(data))
+        data = @view data[indices...]
     end
 
     if ndims(data) != 2
