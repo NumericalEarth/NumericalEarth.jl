@@ -16,14 +16,25 @@ dimension layouts: `(x, y)`, `(x, y, z)`, or `(x, y, z, t)`.
 """
 function read_2d_nemo_variable(ds, name)
     var = ds[name]
-    nd = ndims(var)
-    if nd == 2
-        return Array(var[:, :])
-    elseif nd == 3
-        return Array(var[:, :, 1])
-    else
-        return Array(var[:, :, 1, 1])
+    data = Array(var[:])
+
+    # Remove singleton dimensions first (for example t=1 or z=1).
+    singleton_dims = findall(==(1), size(data))
+    if !isempty(singleton_dims)
+        data = dropdims(data; dims = Tuple(singleton_dims))
     end
+
+    # If more than two dimensions remain, conservatively take the first
+    # index along extra dimensions until we get a 2D horizontal slice.
+    while ndims(data) > 2
+        data = selectdim(data, 1, 1)
+    end
+
+    if ndims(data) != 2
+        throw(ArgumentError("Variable $name could not be reduced to 2D. Size after slicing: $(size(data))"))
+    end
+
+    return Array(data)
 end
 
 has_all_variables(ds, names) = all(name -> name in keys(ds), names)
@@ -39,6 +50,16 @@ function orient_xy(data, Nx, Ny; name = "variable")
     end
 end
 
+function orient_orca_xy(data; name = "variable")
+    sx, sy = size(data)
+    if sx >= sy
+        return data
+    else
+        # ORCA global grids should have Nx > Ny. If not, we assume (y, x) layout.
+        return permutedims(data, (2, 1))
+    end
+end
+
 @inline wrap_longitude(λ) = mod(λ + 180, 360) - 180
 
 @inline function midpoint_longitude(λ₁, λ₂)
@@ -48,25 +69,192 @@ end
     return wrap_longitude(λ₁ + Δλ / 2)
 end
 
-function average_x_periodic(data)
-    Nx, Ny = size(data)
-    avg = similar(data)
-    @inbounds for j in 1:Ny, i in 1:Nx
-        avg[i, j] = (data[i, j] + data[mod1(i+1, Nx), j]) / 2
-    end
-    return avg
+@inline function cartesian_unit_vector(λ, φ)
+    λr = deg2rad(λ)
+    φr = deg2rad(φ)
+    cφ = cos(φr)
+    return (cφ * cos(λr), cφ * sin(λr), sin(φr))
 end
 
-function average_y_with_north_copy(data)
-    Nx, Ny = size(data)
-    avg = similar(data)
-    @inbounds for j in 1:Ny-1, i in 1:Nx
-        avg[i, j] = (data[i, j] + data[i, j+1]) / 2
+@inline function great_circle_distance(λ₁, φ₁, λ₂, φ₂, radius)
+    φ₁r = deg2rad(φ₁)
+    φ₂r = deg2rad(φ₂)
+    Δφ = φ₂r - φ₁r
+    Δλ = deg2rad(λ₂ - λ₁)
+    a = sin(Δφ / 2)^2 + cos(φ₁r) * cos(φ₂r) * sin(Δλ / 2)^2
+    c = 2 * atan(sqrt(max(a, 0)), sqrt(max(1 - a, 0)))
+    return radius * c
+end
+
+@inline function spherical_midpoint(λ₁, φ₁, λ₂, φ₂)
+    x₁, y₁, z₁ = cartesian_unit_vector(λ₁, φ₁)
+    x₂, y₂, z₂ = cartesian_unit_vector(λ₂, φ₂)
+    x = x₁ + x₂
+    y = y₁ + y₂
+    z = z₁ + z₂
+    n = sqrt(x^2 + y^2 + z^2)
+
+    if n < 1e-12
+        λm = midpoint_longitude(λ₁, λ₂)
+        φm = (φ₁ + φ₂) / 2
+        return λm, φm
     end
+
+    x /= n
+    y /= n
+    z /= n
+
+    λm = wrap_longitude(rad2deg(atan(y, x)))
+    φm = rad2deg(asin(clamp(z, -1, 1)))
+    return λm, φm
+end
+
+@inline function spherical_triangle_excess(a, b, c)
+    α = acos(clamp(b[1] * c[1] + b[2] * c[2] + b[3] * c[3], -1, 1))
+    β = acos(clamp(c[1] * a[1] + c[2] * a[2] + c[3] * a[3], -1, 1))
+    γ = acos(clamp(a[1] * b[1] + a[2] * b[2] + a[3] * b[3], -1, 1))
+    s = (α + β + γ) / 2
+
+    t = tan(s / 2) * tan((s - α) / 2) * tan((s - β) / 2) * tan((s - γ) / 2)
+    t = max(t, 0)
+    return 4 * atan(sqrt(t))
+end
+
+@inline function spherical_quadrilateral_area_unit(λ₁, φ₁, λ₂, φ₂, λ₃, φ₃, λ₄, φ₄)
+    a = cartesian_unit_vector(λ₁, φ₁)
+    b = cartesian_unit_vector(λ₂, φ₂)
+    c = cartesian_unit_vector(λ₃, φ₃)
+    d = cartesian_unit_vector(λ₄, φ₄)
+    return spherical_triangle_excess(a, b, c) + spherical_triangle_excess(a, c, d)
+end
+
+function reconstruct_orca_staggered_mesh_from_t_f_points(λCC, φCC, λFF, φFF; radius)
+    size(λCC) == size(φCC) || throw(ArgumentError("glamt and gphit size mismatch: $(size(λCC)) vs $(size(φCC))."))
+    size(λFF) == size(φFF) || throw(ArgumentError("glamf and gphif size mismatch: $(size(λFF)) vs $(size(φFF))."))
+    size(λCC) == size(λFF) || throw(ArgumentError("T-point and F-point grids must have matching size, got $(size(λCC)) and $(size(λFF))."))
+
+    Nx, Ny = size(λCC)
+    AFT = promote_type(eltype(λCC), eltype(φCC), eltype(λFF), eltype(φFF), typeof(radius))
+
+    λFC = similar(λCC, AFT)
+    φFC = similar(φCC, AFT)
+    λCF = similar(λCC, AFT)
+    φCF = similar(φCC, AFT)
+
+    @inbounds for j in 1:Ny, i in 1:Nx
+        iE = mod1(i + 1, Nx)
+        λm, φm = spherical_midpoint(λCC[i, j], φCC[i, j], λCC[iE, j], φCC[iE, j])
+        λFC[i, j] = λm
+        φFC[i, j] = φm
+    end
+
+    if Ny > 1
+        @inbounds for j in 1:Ny-1, i in 1:Nx
+            λm, φm = spherical_midpoint(λCC[i, j], φCC[i, j], λCC[i, j+1], φCC[i, j+1])
+            λCF[i, j] = λm
+            φCF[i, j] = φm
+        end
+    end
+
+    # Northern V-points are inferred from the northern F-point edge.
     @inbounds for i in 1:Nx
-        avg[i, Ny] = data[i, Ny]
+        iE = mod1(i + 1, Nx)
+        λm, φm = spherical_midpoint(λFF[i, Ny], φFF[i, Ny], λFF[iE, Ny], φFF[iE, Ny])
+        λCF[i, Ny] = λm
+        φCF[i, Ny] = φm
     end
-    return avg
+
+    e1u = similar(λCC, AFT)
+    e2u = similar(λCC, AFT)
+    e1v = similar(λCC, AFT)
+    e2v = similar(λCC, AFT)
+    e1f = similar(λCC, AFT)
+    e2f = similar(λCC, AFT)
+    e1t = similar(λCC, AFT)
+    e2t = similar(λCC, AFT)
+
+    @inbounds for j in 1:Ny, i in 1:Nx
+        iE = mod1(i + 1, Nx)
+        e1u[i, j] = great_circle_distance(λCC[i, j], φCC[i, j], λCC[iE, j], φCC[iE, j], radius)
+        e1v[i, j] = great_circle_distance(λFF[i, j], φFF[i, j], λFF[iE, j], φFF[iE, j], radius)
+        e1f[i, j] = great_circle_distance(λCF[i, j], φCF[i, j], λCF[iE, j], φCF[iE, j], radius)
+    end
+
+    @inbounds for j in 1:Ny-1, i in 1:Nx
+        e2u[i, j] = great_circle_distance(λFC[i, j], φFC[i, j], λFC[i, j+1], φFC[i, j+1], radius)
+        e2v[i, j] = great_circle_distance(λCC[i, j], φCC[i, j], λCC[i, j+1], φCC[i, j+1], radius)
+        e2f[i, j] = great_circle_distance(λFC[i, j], φFC[i, j], λFC[i, j+1], φFC[i, j+1], radius)
+    end
+
+    if Ny > 1
+        @inbounds for i in 1:Nx
+            e2u[i, Ny] = e2u[i, Ny-1]
+            e2v[i, Ny] = e2v[i, Ny-1]
+            e2f[i, Ny] = e2f[i, Ny-1]
+        end
+    else
+        @inbounds for i in 1:Nx
+            e2u[i, 1] = e1u[i, 1]
+            e2v[i, 1] = e1v[i, 1]
+            e2f[i, 1] = e1f[i, 1]
+        end
+    end
+
+    @inbounds for j in 1:Ny, i in 1:Nx
+        iW = mod1(i - 1, Nx)
+        e1t[i, j] = great_circle_distance(λFC[iW, j], φFC[iW, j], λFC[i, j], φFC[i, j], radius)
+    end
+
+    if Ny > 1
+        @inbounds for i in 1:Nx
+            e2t[i, 1] = e2v[i, 1]
+            for j in 2:Ny
+                e2t[i, j] = (e2v[i, j-1] + e2v[i, j]) / 2
+            end
+        end
+    else
+        @inbounds for i in 1:Nx
+            e2t[i, 1] = e2v[i, 1]
+        end
+    end
+
+    AzCC = similar(λCC, AFT)
+    AzFC = e1u .* e2u
+    AzCF = e1v .* e2v
+    AzFF = similar(λCC, AFT)
+
+    if Ny > 1
+        @inbounds for j in 1:Ny-1, i in 1:Nx
+            iE = mod1(i + 1, Nx)
+            A = spherical_quadrilateral_area_unit(λFF[i, j],   φFF[i, j],
+                                                  λFF[iE, j],  φFF[iE, j],
+                                                  λFF[iE, j+1], φFF[iE, j+1],
+                                                  λFF[i, j+1],  φFF[i, j+1])
+            AzCC[i, j] = A * radius^2
+        end
+        @inbounds for i in 1:Nx
+            AzCC[i, Ny] = AzCC[i, Ny-1]
+        end
+
+        @inbounds for j in 2:Ny, i in 1:Nx
+            iW = mod1(i - 1, Nx)
+            A = spherical_quadrilateral_area_unit(λCC[iW, j-1], φCC[iW, j-1],
+                                                  λCC[i, j-1],  φCC[i, j-1],
+                                                  λCC[i, j],    φCC[i, j],
+                                                  λCC[iW, j],   φCC[iW, j])
+            AzFF[i, j] = A * radius^2
+        end
+        @inbounds for i in 1:Nx
+            AzFF[i, 1] = AzFF[i, 2]
+        end
+    else
+        AzCC .= e1t .* e2t
+        AzFF .= AzCC
+    end
+
+    return (; λCC, λFC, λCF, λFF, φCC, φFC, φCF, φFF,
+              e1t, e1u, e1v, e1f, e2t, e2u, e2v, e2f,
+              AzCC, AzFC, AzCF, AzFF)
 end
 
 """
@@ -74,12 +262,12 @@ end
 
 Read ORCA horizontal coordinates and metrics.
 
-Supports both:
-- full NEMO staggered mesh files (`glamt/gphit/e1u/...`), and
-- reduced files with only `longitude`, `latitude`, `e1t`, and `e2t`
-  by reconstructing U/V/F staggered fields.
+Supports:
+- full NEMO staggered mesh variables (`glamt/gphit/e1u/...`), and
+- approximate reconstruction from T/F coordinates only (`glamt/gphit/glamf/gphif`)
+  using Tripolar-style spherical metric assumptions.
 """
-function read_orca_staggered_mesh(ds)
+function read_orca_staggered_mesh(ds; radius = Oceananigans.defaults.planet_radius)
     full_stagger_vars = ("glamt", "glamu", "glamv", "glamf",
                          "gphit", "gphiu", "gphiv", "gphif",
                          "e1t", "e1u", "e1v", "e1f",
@@ -87,14 +275,19 @@ function read_orca_staggered_mesh(ds)
 
     if has_all_variables(ds, full_stagger_vars)
         read_2d = read_2d_nemo_variable
-        λCC, λFC, λCF, λFF = read_2d(ds, "glamt"), read_2d(ds, "glamu"), read_2d(ds, "glamv"), read_2d(ds, "glamf")
-        φCC, φFC, φCF, φFF = read_2d(ds, "gphit"), read_2d(ds, "gphiu"), read_2d(ds, "gphiv"), read_2d(ds, "gphif")
-        e1t, e1u, e1v, e1f = read_2d(ds, "e1t"),   read_2d(ds, "e1u"),   read_2d(ds, "e1v"),   read_2d(ds, "e1f")
-        e2t, e2u, e2v, e2f = read_2d(ds, "e2t"),   read_2d(ds, "e2u"),   read_2d(ds, "e2v"),   read_2d(ds, "e2f")
+        λCC = orient_orca_xy(read_2d(ds, "glamt"); name = "glamt")
+        Nx, Ny = size(λCC)
+
+        orient(data, name) = orient_xy(data, Nx, Ny; name)
+
+        λFC, λCF, λFF = orient(read_2d(ds, "glamu"), "glamu"), orient(read_2d(ds, "glamv"), "glamv"), orient(read_2d(ds, "glamf"), "glamf")
+        φCC, φFC, φCF, φFF = orient(read_2d(ds, "gphit"), "gphit"), orient(read_2d(ds, "gphiu"), "gphiu"), orient(read_2d(ds, "gphiv"), "gphiv"), orient(read_2d(ds, "gphif"), "gphif")
+        e1t, e1u, e1v, e1f = orient(read_2d(ds, "e1t"), "e1t"), orient(read_2d(ds, "e1u"), "e1u"), orient(read_2d(ds, "e1v"), "e1v"), orient(read_2d(ds, "e1f"), "e1f")
+        e2t, e2u, e2v, e2f = orient(read_2d(ds, "e2t"), "e2t"), orient(read_2d(ds, "e2u"), "e2u"), orient(read_2d(ds, "e2v"), "e2v"), orient(read_2d(ds, "e2f"), "e2f")
 
         if "e1e2t" in keys(ds)
-            AzCC, AzFC = read_2d(ds, "e1e2t"), read_2d(ds, "e1e2u")
-            AzCF, AzFF = read_2d(ds, "e1e2v"), read_2d(ds, "e1e2f")
+            AzCC, AzFC = orient(read_2d(ds, "e1e2t"), "e1e2t"), orient(read_2d(ds, "e1e2u"), "e1e2u")
+            AzCF, AzFF = orient(read_2d(ds, "e1e2v"), "e1e2v"), orient(read_2d(ds, "e1e2f"), "e1e2f")
         else
             AzCC, AzFC, AzCF, AzFF = e1t .* e2t, e1u .* e2u, e1v .* e2v, e1f .* e2f
         end
@@ -104,49 +297,18 @@ function read_orca_staggered_mesh(ds)
                   AzCC, AzFC, AzCF, AzFF)
     end
 
-    reduced_vars = ("longitude", "latitude", "e1t", "e2t")
-    has_all_variables(ds, reduced_vars) || throw(ArgumentError("Unsupported ORCA mesh format. Missing required coordinate variables."))
-
-    λ = collect(ds["longitude"][:])
-    φ = collect(ds["latitude"][:])
-    Nx, Ny = length(λ), length(φ)
-
-    e1t = orient_xy(read_2d_nemo_variable(ds, "e1t"), Nx, Ny; name = "e1t")
-    e2t = orient_xy(read_2d_nemo_variable(ds, "e2t"), Nx, Ny; name = "e2t")
-
-    λFC₁ = similar(λ)
-    @inbounds for i in 1:Nx
-        λFC₁[i] = midpoint_longitude(λ[i], λ[mod1(i+1, Nx)])
+    tf_vars = ("glamt", "gphit", "glamf", "gphif")
+    if has_all_variables(ds, tf_vars)
+        read_2d = read_2d_nemo_variable
+        λCC = orient_orca_xy(read_2d(ds, "glamt"); name = "glamt")
+        Nx, Ny = size(λCC)
+        λFF = orient_xy(read_2d(ds, "glamf"), Nx, Ny; name = "glamf")
+        φCC = orient_xy(read_2d(ds, "gphit"), Nx, Ny; name = "gphit")
+        φFF = orient_xy(read_2d(ds, "gphif"), Nx, Ny; name = "gphif")
+        return reconstruct_orca_staggered_mesh_from_t_f_points(λCC, φCC, λFF, φFF; radius)
     end
 
-    φCF₁ = similar(φ)
-    @inbounds for j in 1:Ny-1
-        φCF₁[j] = (φ[j] + φ[j+1]) / 2
-    end
-    φCF₁[Ny] = φ[Ny]
-
-    λCC = repeat(reshape(λ, Nx, 1), 1, Ny)
-    λFC = repeat(reshape(λFC₁, Nx, 1), 1, Ny)
-    λCF = copy(λCC)
-    λFF = copy(λFC)
-
-    φCC = repeat(reshape(φ, 1, Ny), Nx, 1)
-    φFC = copy(φCC)
-    φCF = repeat(reshape(φCF₁, 1, Ny), Nx, 1)
-    φFF = copy(φCF)
-
-    e1u = average_x_periodic(e1t)
-    e2u = average_x_periodic(e2t)
-    e1v = average_y_with_north_copy(e1t)
-    e2v = average_y_with_north_copy(e2t)
-    e1f = average_x_periodic(e1v)
-    e2f = average_x_periodic(e2v)
-
-    AzCC, AzFC, AzCF, AzFF = e1t .* e2t, e1u .* e2u, e1v .* e2v, e1f .* e2f
-
-    return (; λCC, λFC, λCF, λFF, φCC, φFC, φCF, φFF,
-              e1t, e1u, e1v, e1f, e2t, e2u, e2v, e2f,
-              AzCC, AzFC, AzCF, AzFF)
+    throw(ArgumentError("Unsupported ORCA mesh format. Missing either full staggered variables $(full_stagger_vars) or T/F variables $(tf_vars)."))
 end
 
 # Detect periodic overlap columns in NEMO data.
@@ -229,9 +391,9 @@ The mesh mask and bathymetry files are downloaded automatically via the
 
 The horizontal grid (including coordinates, scale factors, and areas) is loaded
 directly from the `mesh_mask` NetCDF file. If all staggered NEMO fields are present
-(`T`, `U`, `V`, `F` points), they are used directly. Otherwise, reduced-coordinate
-files (longitude/latitude plus `e1t` and `e2t`) are supported via reconstructed
-staggered fields.
+(`T`, `U`, `V`, `F` points), they are used directly. If only `T` and `F`
+coordinates are available (`glamt/gphit/glamf/gphif`), staggered coordinates and
+metrics are reconstructed approximately using Tripolar-style spherical assumptions.
 
 When `with_bathymetry = true` (the default), the bathymetry is also downloaded
 and the grid is returned as an `ImmersedBoundaryGrid` with a `GridFittedBottom`.
@@ -277,7 +439,7 @@ function ORCAGrid(arch = CPU(), FT::DataType = Float64;
     mesh_mask_path = download_dataset(mesh_meta)
 
     ds = Dataset(mesh_mask_path)
-    mesh = read_orca_staggered_mesh(ds)
+    mesh = read_orca_staggered_mesh(ds; radius)
     close(ds)
 
     λCC, λFC, λCF, λFF = mesh.λCC, mesh.λFC, mesh.λCF, mesh.λFF
