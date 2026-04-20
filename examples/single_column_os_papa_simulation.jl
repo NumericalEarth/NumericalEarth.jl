@@ -306,7 +306,7 @@ scatterlines!(axκz, κn)
 
 axislegend(axuz)
 
-ulim = max(maximum(abs, u), maximum(abs, v))
+ulim = max(maximum(abs, u), maximum(abs, v), 1e-10)
 xlims!(axuz, -ulim, ulim)
 
 Tmin, Tmax = extrema(T)
