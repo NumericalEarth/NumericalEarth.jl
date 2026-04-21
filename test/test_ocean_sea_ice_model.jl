@@ -44,7 +44,7 @@ using ClimaSeaIce.Rheologies
             ocean = ocean_simulation(grid; free_surface)
 
             sea_ice  = sea_ice_simulation(grid, ocean; advection=WENO(order=7))
-            liquidus = sea_ice.model.ice_thermodynamics.phase_transitions.liquidus
+            liquidus = sea_ice.model.phase_transitions.liquidus
 
             # Set the ocean temperature and salinity
             set!(ocean.model, T=temperature_metadata[1], S=salinity_metadata[1])
