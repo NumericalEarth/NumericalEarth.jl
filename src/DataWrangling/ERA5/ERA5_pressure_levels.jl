@@ -38,10 +38,9 @@ all_dates(::ERA5MonthlyPressureLevels, var) = range(DateTime("1940-01-01"), stop
 # ERA5 pressure-level data is a spatially 3-D dataset
 is_three_dimensional(::ERA5PressureMetadata) = true
 
-const hPa = 100.0
 const ERA5_all_pressure_levels = [1, 2, 3, 5, 7, 10, 20, 30, 50, 70, 100, 125, 150,
     175, 200, 225, 250, 300, 350, 400, 450, 500, 550, 600, 650, 700, 750, 775, 800,
-    825, 850, 875, 900, 925, 950, 975, 1000]*hPa
+    825, 850, 875, 900, 925, 950, 975, 1000] * 100 # hPa -> Pa
 
 # ERA5 stores pressure levels bottom-to-top
 reversed_vertical_axis(::ERA5PressureLevelsDataset) = false
@@ -155,11 +154,11 @@ end
 
 const ERA5_gravitational_acceleration = 9.80665
 
-# International Standard Atmosphere height (m) for a given pressure (hPa)
+# International Standard Atmosphere height (m) for a given pressure
 function standard_atmosphere_geopotential_height(p)
     g = ERA5_gravitational_acceleration
     T⁰ = 288.15 # K
-    p⁰ = 1013.25 * hPa
+    p⁰ = 101325
     Rᵈ = 287.0528 # J/(kg-K)
 
     return (Rᵈ * T⁰ / g) * log(p⁰ / p)
