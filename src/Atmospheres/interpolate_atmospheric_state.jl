@@ -208,7 +208,7 @@ end
 ##### Utility for interpolating tuples of fields
 #####
 
-@inline interp_atmos_time_series(::Nothing, X, time, grid, args...) = zero(grid)
+@inline interp_atmos_time_series(::Nothing, X, time, grid, args...) = 0
 
 # Note: assumes loc = (c, c, nothing) (and the third location should not matter.)
 @inline interp_atmos_time_series(J::AbstractArray, X::FractionalIndices, time, args...) =
