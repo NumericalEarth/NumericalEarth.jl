@@ -1,9 +1,12 @@
 using Oceananigans.BoundaryConditions: fill_halo_regions!, FPivotZipperBoundaryCondition,
     NoFluxBoundaryCondition, FieldBoundaryConditions
-using Oceananigans.Fields: set!
+using Oceananigans.Fields: set!, convert_to_0_360
 using Oceananigans.Grids: RightFaceFolded, generate_coordinate
 using Oceananigans.ImmersedBoundaries: ImmersedBoundaryGrid, GridFittedBottom
 using Oceananigans.OrthogonalSphericalShellGrids: Tripolar, continue_south!
+using CubedSphere.SphericalGeometry: lat_lon_to_cartesian, cartesian_to_lat_lon,
+    spherical_area_quadrilateral
+using Distances: haversine
 
 using ..DataWrangling: dataset_variable_name, default_download_directory
 using ..DataWrangling.ORCA: ORCA1, ORCA12, default_south_rows_to_remove
@@ -64,7 +67,7 @@ function orient_orca_xy(data; name = "variable")
     end
 end
 
-@inline wrap_longitude(λ) = mod(λ + 180, 360) - 180
+@inline wrap_longitude(λ) = convert_to_0_360(λ + 180) - 180
 
 @inline function midpoint_longitude(λ₁, λ₂)
     Δλ = λ₂ - λ₁
@@ -73,26 +76,13 @@ end
     return wrap_longitude(λ₁ + Δλ / 2)
 end
 
-@inline function cartesian_unit_vector(λ, φ)
-    λr = deg2rad(λ)
-    φr = deg2rad(φ)
-    cφ = cos(φr)
-    return (cφ * cos(λr), cφ * sin(λr), sin(φr))
-end
-
 @inline function great_circle_distance(λ₁, φ₁, λ₂, φ₂, radius)
-    φ₁r = deg2rad(φ₁)
-    φ₂r = deg2rad(φ₂)
-    Δφ = φ₂r - φ₁r
-    Δλ = deg2rad(λ₂ - λ₁)
-    a = sin(Δφ / 2)^2 + cos(φ₁r) * cos(φ₂r) * sin(Δλ / 2)^2
-    c = 2 * atan(sqrt(max(a, 0)), sqrt(max(1 - a, 0)))
-    return radius * c
+    return haversine((λ₁, φ₁), (λ₂, φ₂), radius)
 end
 
 @inline function spherical_midpoint(λ₁, φ₁, λ₂, φ₂)
-    x₁, y₁, z₁ = cartesian_unit_vector(λ₁, φ₁)
-    x₂, y₂, z₂ = cartesian_unit_vector(λ₂, φ₂)
+    x₁, y₁, z₁ = lat_lon_to_cartesian(φ₁, λ₁; radius = 1, check_latitude_bounds = false)
+    x₂, y₂, z₂ = lat_lon_to_cartesian(φ₂, λ₂; radius = 1, check_latitude_bounds = false)
     x = x₁ + x₂
     y = y₁ + y₂
     z = z₁ + z₂
@@ -108,28 +98,17 @@ end
     y /= n
     z /= n
 
-    λm = wrap_longitude(rad2deg(atan(y, x)))
-    φm = rad2deg(asin(clamp(z, -1, 1)))
+    φm, λm = cartesian_to_lat_lon(x, y, z)
+    λm = wrap_longitude(λm)
     return λm, φm
 end
 
-@inline function spherical_triangle_excess(a, b, c)
-    α = acos(clamp(b[1] * c[1] + b[2] * c[2] + b[3] * c[3], -1, 1))
-    β = acos(clamp(c[1] * a[1] + c[2] * a[2] + c[3] * a[3], -1, 1))
-    γ = acos(clamp(a[1] * b[1] + a[2] * b[2] + a[3] * b[3], -1, 1))
-    s = (α + β + γ) / 2
-
-    t = tan(s / 2) * tan((s - α) / 2) * tan((s - β) / 2) * tan((s - γ) / 2)
-    t = max(t, 0)
-    return 4 * atan(sqrt(t))
-end
-
 @inline function spherical_quadrilateral_area_unit(λ₁, φ₁, λ₂, φ₂, λ₃, φ₃, λ₄, φ₄)
-    a = cartesian_unit_vector(λ₁, φ₁)
-    b = cartesian_unit_vector(λ₂, φ₂)
-    c = cartesian_unit_vector(λ₃, φ₃)
-    d = cartesian_unit_vector(λ₄, φ₄)
-    return spherical_triangle_excess(a, b, c) + spherical_triangle_excess(a, c, d)
+    a = lat_lon_to_cartesian(φ₁, λ₁; radius = 1, check_latitude_bounds = false)
+    b = lat_lon_to_cartesian(φ₂, λ₂; radius = 1, check_latitude_bounds = false)
+    c = lat_lon_to_cartesian(φ₃, λ₃; radius = 1, check_latitude_bounds = false)
+    d = lat_lon_to_cartesian(φ₄, λ₄; radius = 1, check_latitude_bounds = false)
+    return spherical_area_quadrilateral(a, b, c, d; radius = 1)
 end
 
 function reconstruct_orca_staggered_mesh_from_t_f_points(λCC, φCC, λFF, φFF; radius)
