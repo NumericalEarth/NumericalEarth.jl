@@ -117,7 +117,7 @@ function metadata_filename(::ORCA12, name, date, bounding_box)
 end
 
 z_interfaces(::ORCA1Metadatum) = nothing
-z_interfaces(::ORCA12Metadatum) = nothing
+z_interfaces(::ORCAMetadatum) = nothing
 
 function download_dataset(metadatum::ORCAMetadatum)
     fileurl  = metadata_url(metadatum)
