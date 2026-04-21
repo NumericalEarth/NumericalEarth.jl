@@ -19,8 +19,6 @@ dimension layouts: `(x, y)`, `(x, y, z)`, or `(x, y, z, t)`.
 """
 function read_2d_nemo_variable(ds, name)
     var = ds[name]
-    # NOTE: `var[:]` does linear indexing and flattens to 1D.
-    # We need the full shaped array here.
     data = Array(var)
 
     if ndims(data) < 2
