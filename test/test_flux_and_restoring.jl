@@ -43,7 +43,7 @@ end
             G = 1.0e-6  # constant top-cell tendency
             ocean = ocean_simulation(grid;
                                      warn=false,
-                                     additional_fluxes=(; S=ConstantTendency(G)))
+                                     additional_surface_fluxes=(; S=ConstantTendency(G)))
 
             S_top = ocean.model.tracers.S.boundary_conditions.top
             T_top = ocean.model.tracers.T.boundary_conditions.top

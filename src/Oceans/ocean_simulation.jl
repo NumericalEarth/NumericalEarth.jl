@@ -88,11 +88,9 @@ function default_ocean_closure(FT=Oceananigans.defaults.FloatType)
     return CATKEVerticalDiffusivity(VerticallyImplicitTimeDiscretization(), FT; mixing_length, turbulent_kinetic_energy_equation)
 end
 
+# Two-band shortwave penetration in the Paulson & Simpson (1977) form,
+# Defaults are Jerlov Type I (clearest open-ocean water)
 function default_radiative_forcing(grid)
-    # Two-band shortwave penetration in the Paulson & Simpson (1977) form,
-    # I(z) = ϵ₁ I₀ exp(κ₁ z) + (1 - ϵ₁) I₀ exp(κ₂ z).
-    # Defaults are Jerlov Type I (clearest open-ocean water), the
-    # OMIP-2 reference (Griffies et al. 2016, §2.3).
     surface_fraction = 0.58  # Paulson & Simpson 1977, Table 2, Type I
     surface_scale    = 0.35  # [m]
     deep_scale       = 23    # [m]
@@ -116,7 +114,7 @@ end
                      gravitational_acceleration = default_gravitational_acceleration,
                      bottom_drag_coefficient = Default(0.003),
                      forcing = NamedTuple(),
-                     additional_fluxes = NamedTuple(),
+                     additional_surface_fluxes = NamedTuple(),
                      biogeochemistry = nothing,
                      timestepper = :SplitRungeKutta3,
                      coriolis = Default(HydrostaticSphericalCoriolis(; rotation_rate)),
@@ -178,7 +176,7 @@ defaults on a per-field basis.
 - `gravitational_acceleration`: Gravitational acceleration, passed to buoyancy.
 - `bottom_drag_coefficient`: Bottom drag coefficient. May be a `Default` wrapper.
 - `forcing`: Named tuple of additional forcing(s) for individual fields.
-- `additional_surface_fluxes`: Named tuple of additional top boundary flux conditions (e.g. `(; S=SurfaceRestoring(...))`) for any field (`u`, `v`, `T`, `S`).
+- `additional_surface_fluxes`: Named tuple of additional top boundary flux conditions (e.g. `(; S=SurfaceFluxRestoring(...))`) for any field (`u`, `v`, `T`, `S`).
 - `biogeochemistry`: A biogeochemical model or `nothing`.
 - `timestepper`: Time-stepping scheme; options are `:SplitRungeKutta3` (default), or `:QuasiAdamsBashforth2`.
 - `coriolis`: Coriolis object or `Default(...)` wrapper.

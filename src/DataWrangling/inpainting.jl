@@ -51,12 +51,7 @@ function propagate_horizontally!(inpainting::NearestNeighborInpainting, field, m
         iter += 1
     end
 
-    # Fill any remaining NaN values with the mean of valid data.
-    # Using 0 would be catastrophic for fields like salinity (~34 psu).
-    valid_sum = sum(x -> ifelse(isnan(x), zero(x), x), field; condition=interior(mask))
-    valid_count = sum(x -> !isnan(x), field; condition=interior(mask))
-    fill_value = convert(eltype(field), valid_sum / valid_count)
-    launch!(arch, grid, size(field), _fill_nans!, field, fill_value)
+    launch!(arch, grid, size(field), _fill_nans!, field)
     fill_halo_regions!(field)
 
     return field
@@ -85,7 +80,7 @@ end
     end
 
     FT_NaN = convert(FT, NaN)
-    @inbounds substituting_field[i, j, k] = ifelse(donors == 0, FT_NaN, value / donors)
+    @inbounds substituting_field[i, j, k] = ifelse(value == 0, FT_NaN, value / donors)
 end
 
 @kernel function _substitute_values!(field, substituting_field)
@@ -102,9 +97,9 @@ end
     @inbounds field[i, j, k] = ifelse(mask[i, j, k], FT_NaN, field[i, j, k])
 end
 
-@kernel function _fill_nans!(field, fill_value)
+@kernel function _fill_nans!(field)
     i, j, k = @index(Global, NTuple)
-    @inbounds field[i, j, k] = ifelse(isnan(field[i, j, k]), fill_value, field[i, j, k])
+    @inbounds field[i, j, k] *= !isnan(field[i, j, k])
 end
 
 """
@@ -168,4 +163,68 @@ end
     for k = Nz-1 : -1 : 1
         @inbounds field[i, j, k] = ifelse(mask[i, j, k], field[i, j, k+1], field[i, j, k])
     end
+end
+
+"""
+    fill_gaps!(fts::FieldTimeSeries; max_gap=6)
+    fill_gaps!(data::AbstractArray; max_gap=6)
+    fill_gaps!(data::AbstractVector; max_gap=6)
+
+Fill NaN gaps along the time dimension using linear interpolation. For an
+`AbstractArray`, the last dimension is assumed to be time, and each spatial
+column is filled independently. For a `FieldTimeSeries`, `interior(fts)` is
+copied to the CPU, filled in place, and copied back.
+
+Gaps longer than `max_gap` points are left as NaN with a warning.
+"""
+function fill_gaps!(fts::FieldTimeSeries; max_gap=6)
+    data_cpu = Array(interior(fts))
+    fill_gaps!(data_cpu; max_gap)
+    copyto!(interior(fts), data_cpu)
+    return fts
+end
+
+function fill_gaps!(data::AbstractArray; max_gap=6)
+    spatial_inds = CartesianIndices(size(data)[1:end-1])
+    for I in spatial_inds
+        fill_gaps!(view(data, I, :); max_gap)
+    end
+    return data
+end
+
+function fill_gaps!(data::AbstractVector; max_gap=6)
+    N = length(data)
+    i = 1
+    while i <= N
+        if isnan(data[i])
+            gap_start = i
+            while i <= N && isnan(data[i])
+                i += 1
+            end
+            gap_end = i - 1
+            gap_length = gap_end - gap_start + 1
+
+            if gap_start == 1 || gap_end == N
+                # Edge gap: fill with nearest valid value
+                if gap_start == 1 && gap_end < N
+                    data[gap_start:gap_end] .= data[gap_end + 1]
+                elseif gap_end == N && gap_start > 1
+                    data[gap_start:gap_end] .= data[gap_start - 1]
+                end
+            elseif gap_length > max_gap
+                @warn "Large gap of $gap_length hours at indices $gap_start:$gap_end left unfilled"
+            else
+                # Linear interpolation
+                v0 = data[gap_start - 1]
+                v1 = data[gap_end + 1]
+                for j in gap_start:gap_end
+                    α = (j - gap_start + 1) / (gap_length + 1)
+                    data[j] = v0 + α * (v1 - v0)
+                end
+            end
+        else
+            i += 1
+        end
+    end
+    return data
 end

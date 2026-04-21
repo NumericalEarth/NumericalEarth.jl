@@ -1,5 +1,6 @@
 using Oceananigans: location
 using Oceananigans.Grids: node
+using Oceananigans.Operators: Δzᶜᶜᶜ
 using Oceananigans.BoundaryConditions: BoundaryConditions
 using Oceananigans.Operators: Δzᶜᶜᶜ
 using Oceananigans.Fields: interpolate, instantiated_location
@@ -14,7 +15,6 @@ using Dates: Second
 
 import NumericalEarth: stateindex
 import Oceananigans.Forcings: materialize_forcing
-import Oceananigans.OutputReaders: extract_field_time_series
 
 # Variable names for restorable data
 struct Temperature end
@@ -191,7 +191,7 @@ Keyword Arguments
 - `cache_inpainted_data`: If `true`, the data is cached to disk after inpainting for later retrieving.
                           Default: `true`.
 
-- `prefetch`: If `true`, hide the next reload's I/O behind compute via a  background `Threads.@spawn`. 
+- `prefetch`: If `true`, hide the next reload's I/O behind compute via a background `Threads.@spawn` task.
               Intended for long-lived FTSes; short-lived ones leak one prefetch task. Default: `false`.
 """
 function DatasetRestoring(metadata::Metadata,
@@ -242,7 +242,6 @@ function Base.show(io::IO, dsr::DatasetRestoring)
 end
 
 materialize_forcing(forcing::DatasetRestoring, field, field_name, model_field_names) = forcing
-extract_field_time_series(forcing::DatasetRestoring) = forcing.field_time_series
 
 """
     SurfaceFluxRestoring(dataset_restoring::DatasetRestoring)
@@ -255,7 +254,7 @@ is evaluated at the top cell (`k = Nz`) and the resulting tendency `G` is
 converted to a surface flux as `-G * Δz`, consistent with the Oceananigans
 top-flux sign convention (tendency contribution = `-J / Δz`).
 
-This is intended for use with the `additional_fluxes` keyword argument of
+This is intended for use with the `additional_surface_fluxes` keyword argument of
 [`ocean_simulation`](@ref), allowing a `DatasetRestoring` to contribute an
 additional flux at the surface without overwriting the coupled exchange fluxes.
 
@@ -267,7 +266,7 @@ using NumericalEarth
 
 restoring = DatasetRestoring(metadata, grid; rate = 1 / 30days)
 ocean = ocean_simulation(grid;
-    additional_fluxes = (; S = SurfaceFluxRestoring(restoring)))
+    additional_surface_fluxes = (; S = SurfaceFluxRestoring(restoring)))
 ```
 """
 struct SurfaceFluxRestoring{D} <: Function

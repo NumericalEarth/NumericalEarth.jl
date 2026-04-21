@@ -232,6 +232,7 @@ include("JRA55/JRA55.jl")
 include("HadISST/HadISST.jl")
 include("ERSST/ERSST.jl")
 include("IAP/IAP.jl")
+include("OSPapa/OSPapa.jl")
 
 using .ETOPO
 using .ECCO
@@ -244,5 +245,6 @@ using .JRA55
 using .HadISST
 using .ERSST
 using .IAP
+using .OSPapa
 
 end # module

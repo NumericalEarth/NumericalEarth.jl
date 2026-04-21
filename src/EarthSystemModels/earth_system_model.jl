@@ -44,12 +44,13 @@ function Base.show(io::IO, cm::ESM)
     return nothing
 end
 
+# Assumption: We have an ocean!
 architecture(model::ESM)           = model.architecture
 Base.eltype(model::ESM)            = Base.eltype(model.interfaces.exchanger.grid)
 prettytime(model::ESM)             = prettytime(model.clock.time)
 iteration(model::ESM)              = model.clock.iteration
 timestepper(::ESM)                 = nothing
-default_included_properties(::ESM) = []
+default_included_properties(::ESM) = tuple()
 prognostic_fields(cm::ESM)         = nothing
 fields(::ESM)                      = NamedTuple()
 default_clock(TT)                   = Oceananigans.TimeSteppers.Clock{TT}(0, 0, 1)
@@ -305,7 +306,7 @@ function above_freezing_ocean_temperature!(ocean, grid, sea_ice)
     T = ocean_temperature(ocean)
     S = ocean_salinity(ocean)
     ℵ = sea_ice_concentration(sea_ice)
-    liquidus = sea_ice.model.ice_thermodynamics.phase_transitions.liquidus
+    liquidus = sea_ice.model.phase_transitions.liquidus
 
     arch = architecture(grid)
     launch!(arch, grid, :xy, _above_freezing_ocean_temperature!, T, grid, S, ℵ, liquidus)
