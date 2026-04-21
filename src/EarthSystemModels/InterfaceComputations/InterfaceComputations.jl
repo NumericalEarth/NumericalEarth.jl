@@ -22,6 +22,7 @@ export
     BulkTemperature,
     atmosphere_ocean_stability_functions,
     atmosphere_sea_ice_stability_functions,
+    large_yeager_stability_functions,
     compute_atmosphere_ocean_fluxes!,
     compute_atmosphere_sea_ice_fluxes!,
     compute_sea_ice_ocean_fluxes!,
