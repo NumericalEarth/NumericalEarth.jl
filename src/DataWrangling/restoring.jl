@@ -1,5 +1,6 @@
 using Oceananigans: location
 using Oceananigans.Grids: node
+using Oceananigans.Operators: Δzᶜᶜᶜ
 using Oceananigans.BoundaryConditions: BoundaryConditions
 using Oceananigans.Operators: Δzᶜᶜᶜ
 using Oceananigans.Fields: interpolate, instantiated_location
@@ -253,7 +254,7 @@ is evaluated at the top cell (`k = Nz`) and the resulting tendency `G` is
 converted to a surface flux as `-G * Δz`, consistent with the Oceananigans
 top-flux sign convention (tendency contribution = `-J / Δz`).
 
-This is intended for use with the `additional_fluxes` keyword argument of
+This is intended for use with the `additional_surface_fluxes` keyword argument of
 [`ocean_simulation`](@ref), allowing a `DatasetRestoring` to contribute an
 additional flux at the surface without overwriting the coupled exchange fluxes.
 
@@ -265,7 +266,7 @@ using NumericalEarth
 
 restoring = DatasetRestoring(metadata, grid; rate = 1 / 30days)
 ocean = ocean_simulation(grid;
-    additional_fluxes = (; S = SurfaceFluxRestoring(restoring)))
+    additional_surface_fluxes = (; S = SurfaceFluxRestoring(restoring)))
 ```
 """
 struct SurfaceFluxRestoring{D} <: Function
