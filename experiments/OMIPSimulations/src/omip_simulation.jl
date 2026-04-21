@@ -1,6 +1,16 @@
 using Printf
 using Oceananigans.Operators: Δzᶜᶜᶜ
 using Oceananigans.TurbulenceClosures: IsopycnalSkewSymmetricDiffusivity
+using NumericalEarth.EarthSystemModels.InterfaceComputations: COARELogarithmicSimilarityProfile,
+                                                              WindDependentWaveFormulation,
+                                                              MomentumRoughnessLength,
+                                                              TemperatureDependentAirViscosity,
+                                                              ScalarRoughnessLength,
+                                                              atmosphere_sea_ice_stability_functions,
+                                                              MomentumBasedFrictionVelocity,
+                                                              LargeYeagerTransferCoefficients,
+                                                              FixedIterations,
+                                                              large_yeager_stability_functions
 
 #####
 ##### Flux configurations
