@@ -31,7 +31,7 @@ function interpolate_state!(exchanger, grid, atmosphere::PrescribedAtmosphere, c
     ℐꜜˡʷ = atmosphere.downwelling_radiation.longwave
     downwelling_radiation = (shortwave=ℐꜜˢʷ.data, longwave=ℐꜜˡʷ.data)
     freshwater_flux = map(ϕ -> ϕ.data, atmosphere.freshwater_flux)
-    snowfall_flux = atmosphere.freshwater_flux.snow.data
+    snowfall_flux = haskey(atmosphere.freshwater_flux, :snow) ? atmosphere.freshwater_flux.snow.data : nothing
     atmosphere_pressure = atmosphere.pressure.data
 
     # Extract info for time-interpolation
@@ -208,9 +208,11 @@ end
 ##### Utility for interpolating tuples of fields
 #####
 
+@inline interp_atmos_time_series(::Nothing, X, time, grid, args...) = zero(grid)
+
 # Note: assumes loc = (c, c, nothing) (and the third location should not matter.)
-@inline interp_atmos_time_series(J::AbstractArray, x_itp::FractionalIndices, t_itp, args...) =
-    interpolate(x_itp, t_itp, J, args...)
+@inline interp_atmos_time_series(J::AbstractArray, X::FractionalIndices, time, args...) =
+    interpolate(X, time, J, args...)
 
 @inline interp_atmos_time_series(J::AbstractArray, X, time, grid, args...) =
     interpolate(X, time, J, (Center(), Center(), nothing), grid, args...)
