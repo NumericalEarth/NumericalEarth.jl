@@ -262,6 +262,7 @@ end
 #####
 
 # Minimum wind speed floor: only LargeYeager needs it; constant coefficients don't.
+@inline minimum_wind_speed(::Union{Tuple, NTuple}) = 0
 @inline minimum_wind_speed(::SimilarityScales) = 0
 @inline minimum_wind_speed(ly::LargeYeagerTransferCoefficients) = ly.neutral_drag_coefficient.minimum_wind_speed
 
