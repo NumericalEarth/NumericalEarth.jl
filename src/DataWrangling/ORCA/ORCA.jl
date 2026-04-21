@@ -53,7 +53,9 @@ last_date(::ORCA1, args...) = nothing
 last_date(::ORCA12, args...) = nothing
 
 const ORCA1Metadatum = Metadatum{<:ORCA1}
+const ORCA1Metadatum = Metadatum{<:ORCA1}
 const ORCA12Metadatum = Metadatum{<:ORCA12}
+const ORCAMetadatum = Metadatum{<:ORCADataset}
 
 ORCA1_variable_names = Dict(
     :bottom_height => "Bathymetry",
