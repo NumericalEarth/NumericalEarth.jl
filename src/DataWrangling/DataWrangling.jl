@@ -229,6 +229,9 @@ include("EN4/EN4.jl")
 include("ORCA/ORCA.jl")
 include("WOA/WOA.jl")
 include("JRA55/JRA55.jl")
+include("HadISST/HadISST.jl")
+include("ERSST/ERSST.jl")
+include("IAP/IAP.jl")
 
 using .ETOPO
 using .ECCO
@@ -238,5 +241,8 @@ using .EN4
 using .ORCA
 using .WOA
 using .JRA55
+using .HadISST
+using .ERSST
+using .IAP
 
 end # module

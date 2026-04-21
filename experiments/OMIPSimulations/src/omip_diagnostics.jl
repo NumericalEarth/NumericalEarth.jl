@@ -51,6 +51,9 @@ function add_omip_diagnostics!(simulation;
     u, v, w = ocean.model.velocities
     η = ocean.model.free_surface.displacement
 
+    ρ₀ = NumericalEarth.EarthSystemModels.reference_density(ocean)
+    cₚ = NumericalEarth.EarthSystemModels.heat_capacity(ocean)
+
     τx = model.interfaces.net_fluxes.ocean.u
     τy = model.interfaces.net_fluxes.ocean.v
     JT = model.interfaces.net_fluxes.ocean.T
@@ -158,14 +161,28 @@ function add_omip_diagnostics!(simulation;
                                                     overwrite_existing = true,
                                                     jld2_kw = Dict(:compress => ZstdFilter()))
 
-    # Global means and horizontal-mean depth profiles for T, S, b
+    # Global means and horizontal-mean depth profiles for T, S, b.
+    # Plus the 12 scalars for Iovino et al. 2023 Figure 1 (see
+    # `paper_figures/scalars.jl` for the helpers).
     average_outputs = Dict{Symbol, Any}(
-        :tosga => Average(T),
-        :soga  => Average(S),
-        :bga   => Average(bop),
-        :to_h  => Average(T,   dims=(1, 2)),
-        :so_h  => Average(S,   dims=(1, 2)),
-        :bo_h  => Average(bop, dims=(1, 2)),
+        :tosga     => Average(T),
+        :soga      => Average(S),
+        :bga       => Average(bop),
+        :to_h      => Average(T,   dims=(1, 2)),
+        :so_h      => Average(S,   dims=(1, 2)),
+        :bo_h      => Average(bop, dims=(1, 2)),
+
+        :tosga_nh  => global_volume_T(T;  hemisphere = northern_hemisphere),
+        :tosga_sh  => global_volume_T(T;  hemisphere = southern_hemisphere),
+        :tossga    => global_surface_T(T),
+        :tossga_nh => global_surface_T(T; hemisphere = northern_hemisphere),
+        :tossga_sh => global_surface_T(T; hemisphere = southern_hemisphere),
+        :sossga    => global_surface_S(S),
+        :sossga_nh => global_surface_S(S; hemisphere = northern_hemisphere),
+        :sossga_sh => global_surface_S(S; hemisphere = southern_hemisphere),
+        :ohc300    => global_ohc_300(T, ρ₀, cₚ),
+        :ohc300_nh => global_ohc_300(T, ρ₀, cₚ; hemisphere = northern_hemisphere),
+        :ohc300_sh => global_ohc_300(T, ρ₀, cₚ; hemisphere = southern_hemisphere),
     )
 
     simulation.output_writers[:averages] = JLD2Writer(ocean.model, average_outputs;

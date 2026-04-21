@@ -57,7 +57,10 @@ export
     frazil_heat_flux, net_ocean_heat_flux, sea_ice_ocean_heat_flux, atmosphere_ocean_heat_flux,
     net_ocean_salinity_flux, sea_ice_ocean_salinity_flux, atmosphere_ocean_salinity_flux,
     net_ocean_freshwater_flux, sea_ice_ocean_freshwater_flux, atmosphere_ocean_freshwater_flux,
-    meridional_heat_transport
+    meridional_heat_transport,
+    HadISSTSST, HadISSTICE,
+    ERSSTv5,
+    IAPOceanHeatContent
 
 using Oceananigans
 using Oceananigans.Operators: ℑxyᶠᶜᵃ, ℑxyᶜᶠᵃ
@@ -126,6 +129,9 @@ using NumericalEarth.DataWrangling.ORCA
 using NumericalEarth.DataWrangling.WOA
 using NumericalEarth.DataWrangling.JRA55
 using NumericalEarth.DataWrangling.JRA55: JRA55NetCDFBackend
+using NumericalEarth.DataWrangling.HadISST
+using NumericalEarth.DataWrangling.ERSST
+using NumericalEarth.DataWrangling.IAP
 
 using PrecompileTools: @setup_workload, @compile_workload
 

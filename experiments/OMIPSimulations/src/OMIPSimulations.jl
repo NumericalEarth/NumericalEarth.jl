@@ -76,6 +76,10 @@ end
 include("atmosphere.jl")
 include("jra55_data_staging.jl")
 include("omip_simulation.jl")
+include("paper_figures/hemisphere_masks.jl")
+include("paper_figures/scalars.jl")
+include("paper_figures/en4_proxy.jl")
+include("paper_figures/figure1.jl")
 include("omip_diagnostics.jl")
 include("report_fields.jl")
 
