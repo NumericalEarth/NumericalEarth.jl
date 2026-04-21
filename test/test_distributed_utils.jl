@@ -26,6 +26,8 @@ function distributed_ecco_download_script()
     using CFTime
     using Dates
     using NumericalEarth.DataWrangling: metadata_path
+    using NumericalEarth.ECCO
+    using NumericalEarth.ECCO: download_dataset
     using Oceananigans.DistributedComputations
 
     @testset "Distributed ECCO download" begin
