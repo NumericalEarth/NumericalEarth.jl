@@ -51,12 +51,7 @@ function propagate_horizontally!(inpainting::NearestNeighborInpainting, field, m
         iter += 1
     end
 
-    # Fill any remaining NaN values with the mean of valid data.
-    # Using 0 would be catastrophic for fields like salinity (~34 psu).
-    valid_sum = sum(x -> ifelse(isnan(x), zero(x), x), field; condition=interior(mask))
-    valid_count = sum(x -> !isnan(x), field; condition=interior(mask))
-    fill_value = convert(eltype(field), valid_sum / valid_count)
-    launch!(arch, grid, size(field), _fill_nans!, field, fill_value)
+    launch!(arch, grid, size(field), _fill_nans!, field)
     fill_halo_regions!(field)
 
     return field
@@ -85,7 +80,7 @@ end
     end
 
     FT_NaN = convert(FT, NaN)
-    @inbounds substituting_field[i, j, k] = ifelse(donors == 0, FT_NaN, value / donors)
+    @inbounds substituting_field[i, j, k] = ifelse(value == 0, FT_NaN, value / donors)
 end
 
 @kernel function _substitute_values!(field, substituting_field)
@@ -102,9 +97,9 @@ end
     @inbounds field[i, j, k] = ifelse(mask[i, j, k], FT_NaN, field[i, j, k])
 end
 
-@kernel function _fill_nans!(field, fill_value)
+@kernel function _fill_nans!(field)
     i, j, k = @index(Global, NTuple)
-    @inbounds field[i, j, k] = ifelse(isnan(field[i, j, k]), fill_value, field[i, j, k])
+    @inbounds field[i, j, k] *= !isnan(field[i, j, k])
 end
 
 """

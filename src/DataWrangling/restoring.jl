@@ -14,7 +14,6 @@ using Dates: Second
 
 import NumericalEarth: stateindex
 import Oceananigans.Forcings: materialize_forcing
-import Oceananigans.OutputReaders: extract_field_time_series
 
 # Variable names for restorable data
 struct Temperature end
@@ -242,7 +241,6 @@ function Base.show(io::IO, dsr::DatasetRestoring)
 end
 
 materialize_forcing(forcing::DatasetRestoring, field, field_name, model_field_names) = forcing
-extract_field_time_series(forcing::DatasetRestoring) = forcing.field_time_series
 
 """
     SurfaceFluxRestoring(dataset_restoring::DatasetRestoring)
