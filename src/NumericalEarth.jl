@@ -52,6 +52,7 @@ export
     DatasetRestoring,
     ocean_simulation,
     ORCAGrid,
+    resample_grid,
     sea_ice_simulation,
     atmosphere_simulation,
     sea_ice_dynamics,

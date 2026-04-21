@@ -1,11 +1,13 @@
 include("runtests_setup.jl")
 
 using JLD2
+using Logging
 using NumericalEarth.Bathymetry: remove_minor_basins!,
                                  BathymetryRegridding,
                                  cache_filename,
                                  load_bathymetry_cache,
-                                 save_bathymetry_cache
+                                 save_bathymetry_cache,
+                                 interpolate_bathymetry_in_passes
 using NumericalEarth.DataWrangling.ETOPO
 using Statistics
 
@@ -69,6 +71,38 @@ using Statistics
 
         # Testing that multiple passes _do_ change the solution when coarsening the grid
         @test parent(control_bottom_height) != parent(interpolated_bottom_height)
+    end
+end
+
+@testset "Bathymetry upsampling warning" begin
+    source_grid = LatitudeLongitudeGrid(CPU();
+                                        size = (20, 20, 1),
+                                        longitude = (0, 100),
+                                        latitude = (0, 50),
+                                        z = (-6000, 0))
+
+    native_z = Field{Center, Center, Nothing}(source_grid)
+    set!(native_z, -1000.0)
+    fill_halo_regions!(native_z)
+
+    finer_grid = LatitudeLongitudeGrid(CPU();
+                                       size = (40, 40, 1),
+                                       longitude = (0, 100),
+                                       latitude = (0, 50),
+                                       z = (-6000, 0))
+
+    @test_logs (:warn, r"higher horizontal resolution") match_mode=:any begin
+        interpolate_bathymetry_in_passes(native_z, finer_grid; passes = 2)
+    end
+
+    coarser_grid = LatitudeLongitudeGrid(CPU();
+                                         size = (10, 10, 1),
+                                         longitude = (0, 100),
+                                         latitude = (0, 50),
+                                         z = (-6000, 0))
+
+    @test_logs min_level=Logging.Warn begin
+        interpolate_bathymetry_in_passes(native_z, coarser_grid; passes = 2)
     end
 end
 

@@ -5,7 +5,7 @@ using NumericalEarth.DataWrangling: download_dataset, metadata_path
 using NumericalEarth.DataWrangling.ORCA: default_south_rows_to_remove
 using Oceananigans
 using Oceananigans.OrthogonalSphericalShellGrids: TripolarGrid
-using Oceananigans.ImmersedBoundaries: ImmersedBoundaryGrid
+using Oceananigans.ImmersedBoundaries: ImmersedBoundaryGrid, GridFittedBottom
 using NCDatasets
 using Statistics
 using Test
@@ -157,4 +157,32 @@ end
 
     @test size(bathy) == (362, 332)
     @test maximum(bathy) > 5000  # Deep ocean
+end
+
+@testset "resample_grid horizontal-only behavior" begin
+    source = ORCAGrid(CPU(); dataset=ORCA1(), Nz=5, z=(-5000, 0), halo=(4, 4, 4),
+                      with_bathymetry=false)
+
+    Nx_target, Ny_target = 180, 160
+    resampled = resample_grid(source; size=(Nx_target, Ny_target))
+
+    @test resampled isa Oceananigans.Grids.OrthogonalSphericalShellGrid
+    @test !(resampled isa ImmersedBoundaryGrid)
+    @test resampled.Nx == Nx_target
+    @test resampled.Ny == Ny_target
+    @test resampled.Nz == source.Nz
+
+    @test_throws ArgumentError resample_grid(source; size=(Nx_target, Ny_target), Nz_target = 3)
+    @test_throws ArgumentError resample_grid(source; size=(Nx_target, Ny_target), z = (-3000, 0))
+
+    immersed_source = ImmersedBoundaryGrid(source, GridFittedBottom(fill(-100.0, source.Nx, source.Ny));
+                                           active_cells_map = false)
+
+    @test_logs (:warn, r"Bathymetry resampling is not supported") match_mode=:any begin
+        rs = resample_grid(immersed_source; size=(Nx_target, Ny_target))
+        @test !(rs isa ImmersedBoundaryGrid)
+        @test rs.Nx == Nx_target
+        @test rs.Ny == Ny_target
+        @test rs.Nz == source.Nz
+    end
 end

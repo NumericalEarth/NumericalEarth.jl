@@ -352,6 +352,13 @@ function interpolate_bathymetry_in_passes(native_z, target_grid;
 
     Nλt, Nφt = Nt = size(target_grid)
     Nλn, Nφn = Nn = size(native_z)
+    source_cells = Nλn * Nφn
+    target_cells = Nλt * Nφt
+
+    if target_cells > source_cells
+        upsampling_ratio = target_cells / source_cells
+        @warn "Interpolating bathymetry to higher horizontal resolution (refining, not coarsening)." source_size = (Nλn, Nφn) target_size = (Nλt, Nφt) source_cells target_cells upsampling_ratio
+    end
 
     # Interpolate in passes
     latitude  = y_domain(native_z.grid)
