@@ -26,9 +26,10 @@ download_ORCA_cache::String = ""
 function __init__()
     global download_ORCA_cache = @get_scratch!("ORCA")
 end
+abstract type OrcaDataset end
 
-struct ORCA1 end
-struct ORCA12 end
+struct ORCA1 <: OrcaDataset end
+struct ORCA12 <: OrcaDataset end
 
 default_download_directory(::ORCA1) = download_ORCA_cache
 default_download_directory(::ORCA12) = download_ORCA_cache
