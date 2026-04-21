@@ -1,49 +1,64 @@
-using Oceananigans.Grids: AbstractGrid
-using Oceananigans
+using ConservativeRegridding: Trees, Regridder
+import ConservativeRegridding.Trees: treeify
+import GeometryOpsCore as GOCore
+import GeometryOps as GO
+import GeoInterface as GI
 
-import XESMF: Regridder, xesmf_coordinates
+using StaticArrays: SA
 
-const Grids = Union{SpeedyWeather.SpectralGrid, AbstractGrid}
+GOCore.best_manifold(grid::RingGrids.AbstractGrid) = GO.Spherical()
+GOCore.best_manifold(sg::SpeedyWeather.SpectralGrid) = GOCore.best_manifold(sg.grid)
 
-function Regridder(src::Grids, dst::Grids; method::String="bilinear", periodic=true)
-    src_coords = xesmf_coordinates(src, Center(), Center(), Center())
-    dst_coords = xesmf_coordinates(dst, Center(), Center(), Center())
+treeify(manifold::GOCore.Spherical, sg::SpeedyWeather.SpectralGrid) = treeify(manifold, sg.grid)
 
-    return XESMF.Regridder(src_coords, dst_coords; method, periodic)
+# get_gridcell_polygons returns CW (E, S, W, N); reverse to CCW (E, N, W, S)
+function ccw_unit_sphere_polygon(polygons_matrix, ij)
+
+    USFG = GO.UnitSphereFromGeographic()
+
+    vE = USFG(polygons_matrix[1, ij])
+    vN = USFG(polygons_matrix[4, ij])
+    vW = USFG(polygons_matrix[3, ij])
+    vS = USFG(polygons_matrix[2, ij])
+    return GI.Polygon(SA[GI.LinearRing(SA[vE, vN, vW, vS, vE])])
 end
 
-two_dimensionalize(lat::Matrix, lon::Matrix) = lat, lon
+# Full grids: all rings have the same nlon, so no padding needed.
+# Linear index in ExplicitPolygonGrid matches the RingGrid flat index.
+function treeify(manifold::GOCore.Spherical, grid::RingGrids.AbstractFullGrid)
+    polygons = RingGrids.get_gridcell_polygons(grid)
+    nlat = RingGrids.get_nlat(grid)
+    nlon = RingGrids.get_nlon(grid)
 
-function two_dimensionalize(lat::AbstractVector, lon::AbstractVector) 
-    Nx  = length(lon)
-    Ny  = length(lat)
-    lat = repeat(lat', Nx)
-    lon = repeat(lon, 1, Ny)
-    return lat, lon
+    poly_matrix = [ccw_unit_sphere_polygon(polygons, (j - 1) * nlon + i)
+                   for i in 1:nlon, j in 1:nlat]
+
+    epg  = Trees.ExplicitPolygonGrid(manifold, poly_matrix)
+    tree = Trees.TopDownQuadtreeCursor(epg)
+    return Trees.KnownFullSphereExtentWrapper(tree)
 end
 
-xesmf_coordinates(grid::SpeedyWeather.SpectralGrid, args...) = xesmf_coordinates(grid.grid, args...)
-xesmf_coordinates(grid::SpeedyWeather.RingGrids.AbstractGrid, args...) = 
-    throw(ArgumentError("xesmf_coordinates not implemented for grid type $(typeof(grid)), maybe you meant to pass a FullGrid?"))
+# Reduced grids: variable nlon per ring. Build one sub-tree per latitude ring
+# and combine with MultiTreeWrapper. Each ring is an ExplicitPolygonGrid(nlon_ring, 1)
+# wrapped in IndexOffsetQuadtreeCursor so that emitted indices match RingGrid flat indices.
+# ncells = npoints exactly — no ghost cells, no size mismatch in regrid!.
+function treeify(manifold::GOCore.Spherical, grid::RingGrids.AbstractGrid)
+    polygons = RingGrids.get_gridcell_polygons(grid)
+    rings    = RingGrids.eachring(grid)
+    subtrees = Trees.IndexOffsetQuadtreeCursor[]
+    offsets  = Int[]
+    cumulative = 0
 
-function xesmf_coordinates(grid::SpeedyWeather.RingGrids.AbstractFullGrid, args...)
-    lon  = RingGrids.get_lond(grid)
-    lat  = RingGrids.get_latd(grid)
-    dlon = lon[2] - lon[1]
+    for ring in rings
+        nlon_ring = length(ring)
+        poly_ring = [ccw_unit_sphere_polygon(polygons, ij) for ij in ring]
+        poly_ring = reshape(poly_ring, nlon_ring, 1)
+        epg    = Trees.ExplicitPolygonGrid(manifold, poly_ring)
+        cursor = Trees.IndexOffsetQuadtreeCursor(epg, first(ring) - 1)
+        push!(subtrees, cursor)
+        cumulative += nlon_ring
+        push!(offsets, cumulative)
+    end
 
-    lat_b = [90, 0.5 .* (lat[1:end-1] .+ lat[2:end])..., -90]
-    lon_b = [lon[1] - dlon / 2, lon .+ dlon / 2...]
-
-    lat,   lon   = two_dimensionalize(lat,   lon)
-    lat_b, lon_b = two_dimensionalize(lat_b, lon_b)
-
-    # Python's xESMF expects 2D arrays with (x, y) coordinates
-    # in which y varies in dim=1 and x varies in dim=2
-    # therefore we transpose the coordinate matrices
-    coords_dictionary = Dict("lat"   => permutedims(lat, (2, 1)),  # φ is latitude
-                             "lon"   => permutedims(lon, (2, 1)),  # λ is longitude
-                             "lat_b" => permutedims(lat_b, (2, 1)),
-                             "lon_b" => permutedims(lon_b, (2, 1)))
-
-    return coords_dictionary
+    return Trees.MultiTreeWrapper(subtrees, offsets)
 end
