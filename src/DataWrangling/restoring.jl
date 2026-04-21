@@ -191,7 +191,7 @@ Keyword Arguments
 - `cache_inpainted_data`: If `true`, the data is cached to disk after inpainting for later retrieving.
                           Default: `true`.
 
-- `prefetch`: If `true`, hide the next reload's I/O behind compute via a  background `Threads.@spawn`. 
+- `prefetch`: If `true`, hide the next reload's I/O behind compute via a background `Threads.@spawn` task.
               Intended for long-lived FTSes; short-lived ones leak one prefetch task. Default: `false`.
 """
 function DatasetRestoring(metadata::Metadata,

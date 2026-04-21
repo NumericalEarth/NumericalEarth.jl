@@ -56,8 +56,8 @@ function native_grid(metadata::JRA55Metadata, arch=CPU(); halo = (3, 3))
 
     FT = eltype(metadata)
     halo = pop_flat_elements(halo, (Periodic, Bounded, Flat))
-    longitude = longitude_interfaces(metadata)
-    latitude = latitude_interfaces(metadata)
+
+    longitude, latitude = jra55_native_interfaces(metadata_path(first(metadata)))
 
     bbox = metadata.bounding_box
     if !isnothing(bbox)
@@ -66,10 +66,24 @@ function native_grid(metadata::JRA55Metadata, arch=CPU(); halo = (3, 3))
     end
 
     grid = LatitudeLongitudeGrid(arch, FT; size = (Nx, Ny),
-                                 halo, longitude, latitude, 
+                                 halo, longitude, latitude,
                                  topology = (Periodic, Bounded, Flat))
 
     return grid
+end
+
+function jra55_native_interfaces(path)
+    ds = Dataset(path)
+    λn = Array{Float64}(ds["lon_bnds"][1, :])
+    φn = Array{Float64}(ds["lat_bnds"][1, :])
+    close(ds)
+
+    # `lon_bnds` / `lat_bnds` hold only the left/lower interface,
+    # so we need to append the trailing interface.
+    push!(λn, λn[1] + 360)
+    push!(φn, 90)
+
+    return λn, φn
 end
 
 # JRA55 is a spatially 2D dataset

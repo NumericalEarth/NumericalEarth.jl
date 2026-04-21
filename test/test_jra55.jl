@@ -118,7 +118,7 @@ using NumericalEarth.DataWrangling: compute_native_date_range
         name  = :downwelling_shortwave_radiation
         dates = NumericalEarth.DataWrangling.all_dates(JRA55.RepeatYearJRA55(), name)
         end_date = dates[3]
-        JRA55_fts = FieldTimeSeries(Metadata(name; dataset=JRA55.RepeatYearJRA55(), end_date), arch)
+        JRA55_fts = FieldTimeSeries(Metadata(name; dataset=JRA55.RepeatYearJRA55(), end_date), arch; time_indices_in_memory=3)
 
         # Make target grid and field
         resolution = 1 # degree, eg 1/4
