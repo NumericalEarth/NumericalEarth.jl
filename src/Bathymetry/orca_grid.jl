@@ -434,7 +434,6 @@ function ORCAGrid(arch = CPU(), FT::DataType = Float64;
     first_pole_longitude = Float64(λFF[pole_idx, end])
 
     Nx, Ny = size(λCC)
-    Ny_full = Ny
 
     # Detect periodic overlap columns (e.g., eORCA1 has 2 trailing overlap columns)
     overlap = periodic_overlap_index(λCC)
