@@ -55,16 +55,6 @@ function orient_xy(data, Nx, Ny; name = "variable")
     end
 end
 
-function orient_orca_xy(data; name = "variable")
-    sx, sy = size(data)
-    if sx >= sy
-        return data
-    else
-        # ORCA global grids should have Nx > Ny. If not, we assume (y, x) layout.
-        return permutedims(data, (2, 1))
-    end
-end
-
 @inline wrap_longitude(λ) = convert_to_0_360(λ + 180) - 180
 
 @inline function midpoint_longitude(λ₁, λ₂)
@@ -105,6 +95,106 @@ end
     return spherical_area_quadrilateral(a, b, c, d; radius = 1)
 end
 
+@inline east_idx(i, Nx) = ifelse(i == Nx, 1, i + 1)
+@inline west_idx(i, Nx) = ifelse(i == 1, Nx, i - 1)
+
+@kernel function _reconstruct_λFC_φFC!(λFC, φFC, λCC, φCC, Nx)
+    i, j = @index(Global, NTuple)
+    iE = east_idx(i, Nx)
+    λm, φm = spherical_midpoint(λCC[i, j], φCC[i, j], λCC[iE, j], φCC[iE, j])
+    λFC[i, j] = λm
+    φFC[i, j] = φm
+end
+
+@kernel function _reconstruct_λCF_φCF_interior!(λCF, φCF, λCC, φCC)
+    i, j = @index(Global, NTuple)
+    λm, φm = spherical_midpoint(λCC[i, j], φCC[i, j], λCC[i, j+1], φCC[i, j+1])
+    λCF[i, j] = λm
+    φCF[i, j] = φm
+end
+
+@kernel function _reconstruct_λCF_φCF_north!(λCF, φCF, λFF, φFF, Ny, Nx)
+    i = @index(Global, Linear)
+    iE = east_idx(i, Nx)
+    λm, φm = spherical_midpoint(λFF[i, Ny], φFF[i, Ny], λFF[iE, Ny], φFF[iE, Ny])
+    λCF[i, Ny] = λm
+    φCF[i, Ny] = φm
+end
+
+@kernel function _reconstruct_e1_metrics!(e1u, e1v, e1f, λCC, φCC, λFF, φFF, λCF, φCF, radius, Nx)
+    i, j = @index(Global, NTuple)
+    iE = east_idx(i, Nx)
+    e1u[i, j] = haversine((λCC[i, j], φCC[i, j]), (λCC[iE, j], φCC[iE, j]), radius)
+    e1v[i, j] = haversine((λFF[i, j], φFF[i, j]), (λFF[iE, j], φFF[iE, j]), radius)
+    e1f[i, j] = haversine((λCF[i, j], φCF[i, j]), (λCF[iE, j], φCF[iE, j]), radius)
+end
+
+@kernel function _reconstruct_e2_metrics_interior!(e2u, e2v, e2f, λFC, φFC, λCC, φCC, radius)
+    i, j = @index(Global, NTuple)
+    e2u[i, j] = haversine((λFC[i, j], φFC[i, j]), (λFC[i, j+1], φFC[i, j+1]), radius)
+    e2v[i, j] = haversine((λCC[i, j], φCC[i, j]), (λCC[i, j+1], φCC[i, j+1]), radius)
+    e2f[i, j] = haversine((λFC[i, j], φFC[i, j]), (λFC[i, j+1], φFC[i, j+1]), radius)
+end
+
+@kernel function _fill_north_e2_metrics!(e2u, e2v, e2f, Ny)
+    i = @index(Global, Linear)
+    e2u[i, Ny] = e2u[i, Ny-1]
+    e2v[i, Ny] = e2v[i, Ny-1]
+    e2f[i, Ny] = e2f[i, Ny-1]
+end
+
+@kernel function _fill_single_row_e2_metrics!(e2u, e2v, e2f, e1u, e1v, e1f)
+    i = @index(Global, Linear)
+    e2u[i, 1] = e1u[i, 1]
+    e2v[i, 1] = e1v[i, 1]
+    e2f[i, 1] = e1f[i, 1]
+end
+
+@kernel function _reconstruct_e1t!(e1t, λFC, φFC, radius, Nx)
+    i, j = @index(Global, NTuple)
+    iW = west_idx(i, Nx)
+    e1t[i, j] = haversine((λFC[iW, j], φFC[iW, j]), (λFC[i, j], φFC[i, j]), radius)
+end
+
+@kernel function _reconstruct_e2t!(e2t, e2v)
+    i, j = @index(Global, NTuple)
+    if j == 1
+        e2t[i, 1] = e2v[i, 1]
+    else
+        e2t[i, j] = (e2v[i, j-1] + e2v[i, j]) / 2
+    end
+end
+
+@kernel function _reconstruct_AzCC_interior!(AzCC, λFF, φFF, radius, Nx)
+    i, j = @index(Global, NTuple)
+    iE = east_idx(i, Nx)
+    A = spherical_quadrilateral_area_unit(λFF[i, j],    φFF[i, j],
+                                          λFF[iE, j],   φFF[iE, j],
+                                          λFF[iE, j+1], φFF[iE, j+1],
+                                          λFF[i, j+1],  φFF[i, j+1])
+    AzCC[i, j] = A * radius^2
+end
+
+@kernel function _fill_AzCC_north!(AzCC, Ny)
+    i = @index(Global, Linear)
+    AzCC[i, Ny] = AzCC[i, Ny-1]
+end
+
+@kernel function _reconstruct_AzFF_interior!(AzFF, λCC, φCC, radius, Nx)
+    i, j = @index(Global, NTuple)
+    iW = west_idx(i, Nx)
+    A = spherical_quadrilateral_area_unit(λCC[iW, j-1], φCC[iW, j-1],
+                                          λCC[i, j-1],  φCC[i, j-1],
+                                          λCC[i, j],    φCC[i, j],
+                                          λCC[iW, j],   φCC[iW, j])
+    AzFF[i, j] = A * radius^2
+end
+
+@kernel function _fill_AzFF_south!(AzFF)
+    i = @index(Global, Linear)
+    AzFF[i, 1] = AzFF[i, 2]
+end
+
 function reconstruct_orca_staggered_mesh_from_t_f_points(λCC, φCC, λFF, φFF; radius)
     size(λCC) == size(φCC) || throw(ArgumentError("glamt and gphit size mismatch: $(size(λCC)) vs $(size(φCC))."))
     size(λFF) == size(φFF) || throw(ArgumentError("glamf and gphif size mismatch: $(size(λFF)) vs $(size(φFF))."))
@@ -118,28 +208,24 @@ function reconstruct_orca_staggered_mesh_from_t_f_points(λCC, φCC, λFF, φFF;
     λCF = similar(λCC, AFT)
     φCF = similar(φCC, AFT)
 
-    @inbounds for j in 1:Ny, i in 1:Nx
-        iE = mod1(i + 1, Nx)
-        λm, φm = spherical_midpoint(λCC[i, j], φCC[i, j], λCC[iE, j], φCC[iE, j])
-        λFC[i, j] = λm
-        φFC[i, j] = φm
-    end
+    arch = architecture(λCC)
+    launch_grid = RectilinearGrid(arch;
+                                  size = (Nx, Ny),
+                                  halo = (1, 1),
+                                  x = (0, 1),
+                                  y = (0, 1),
+                                  topology = (Periodic, Bounded, Flat))
+    launch_xy = KernelParameters(1:Nx, 1:Ny)
+
+    launch!(arch, launch_grid, launch_xy, _reconstruct_λFC_φFC!, λFC, φFC, λCC, φCC, Nx)
 
     if Ny > 1
-        @inbounds for j in 1:Ny-1, i in 1:Nx
-            λm, φm = spherical_midpoint(λCC[i, j], φCC[i, j], λCC[i, j+1], φCC[i, j+1])
-            λCF[i, j] = λm
-            φCF[i, j] = φm
-        end
+        launch!(arch, launch_grid, KernelParameters(1:Nx, 1:Ny-1), _reconstruct_λCF_φCF_interior!,
+                λCF, φCF, λCC, φCC)
     end
 
     # Northern V-points are inferred from the northern F-point edge.
-    @inbounds for i in 1:Nx
-        iE = mod1(i + 1, Nx)
-        λm, φm = spherical_midpoint(λFF[i, Ny], φFF[i, Ny], λFF[iE, Ny], φFF[iE, Ny])
-        λCF[i, Ny] = λm
-        φCF[i, Ny] = φm
-    end
+    launch!(arch, launch_grid, KernelParameters(1:Nx), _reconstruct_λCF_φCF_north!, λCF, φCF, λFF, φFF, Ny, Nx)
 
     e1u = similar(λCC, AFT)
     e2u = similar(λCC, AFT)
@@ -150,50 +236,24 @@ function reconstruct_orca_staggered_mesh_from_t_f_points(λCC, φCC, λFF, φFF;
     e1t = similar(λCC, AFT)
     e2t = similar(λCC, AFT)
 
-    @inbounds for j in 1:Ny, i in 1:Nx
-        iE = mod1(i + 1, Nx)
-        e1u[i, j] = haversine((λCC[i, j], φCC[i, j]), (λCC[iE, j], φCC[iE, j]), radius)
-        e1v[i, j] = haversine((λFF[i, j], φFF[i, j]), (λFF[iE, j], φFF[iE, j]), radius)
-        e1f[i, j] = haversine((λCF[i, j], φCF[i, j]), (λCF[iE, j], φCF[iE, j]), radius)
-    end
+    launch!(arch, launch_grid, launch_xy, _reconstruct_e1_metrics!,
+            e1u, e1v, e1f, λCC, φCC, λFF, φFF, λCF, φCF, radius, Nx)
 
-    @inbounds for j in 1:Ny-1, i in 1:Nx
-        e2u[i, j] = haversine((λFC[i, j], φFC[i, j]), (λFC[i, j+1], φFC[i, j+1]), radius)
-        e2v[i, j] = haversine((λCC[i, j], φCC[i, j]), (λCC[i, j+1], φCC[i, j+1]), radius)
-        e2f[i, j] = haversine((λFC[i, j], φFC[i, j]), (λFC[i, j+1], φFC[i, j+1]), radius)
+    if Ny > 1
+        launch!(arch, launch_grid, KernelParameters(1:Nx, 1:Ny-1), _reconstruct_e2_metrics_interior!,
+                e2u, e2v, e2f, λFC, φFC, λCC, φCC, radius)
     end
 
     if Ny > 1
-        @inbounds for i in 1:Nx
-            e2u[i, Ny] = e2u[i, Ny-1]
-            e2v[i, Ny] = e2v[i, Ny-1]
-            e2f[i, Ny] = e2f[i, Ny-1]
-        end
+        launch!(arch, launch_grid, KernelParameters(1:Nx), _fill_north_e2_metrics!, e2u, e2v, e2f, Ny)
     else
-        @inbounds for i in 1:Nx
-            e2u[i, 1] = e1u[i, 1]
-            e2v[i, 1] = e1v[i, 1]
-            e2f[i, 1] = e1f[i, 1]
-        end
+        launch!(arch, launch_grid, KernelParameters(1:Nx), _fill_single_row_e2_metrics!,
+                e2u, e2v, e2f, e1u, e1v, e1f)
     end
 
-    @inbounds for j in 1:Ny, i in 1:Nx
-        iW = mod1(i - 1, Nx)
-        e1t[i, j] = haversine((λFC[iW, j], φFC[iW, j]), (λFC[i, j], φFC[i, j]), radius)
-    end
+    launch!(arch, launch_grid, launch_xy, _reconstruct_e1t!, e1t, λFC, φFC, radius, Nx)
 
-    if Ny > 1
-        @inbounds for i in 1:Nx
-            e2t[i, 1] = e2v[i, 1]
-            for j in 2:Ny
-                e2t[i, j] = (e2v[i, j-1] + e2v[i, j]) / 2
-            end
-        end
-    else
-        @inbounds for i in 1:Nx
-            e2t[i, 1] = e2v[i, 1]
-        end
-    end
+    launch!(arch, launch_grid, launch_xy, _reconstruct_e2t!, e2t, e2v)
 
     AzCC = similar(λCC, AFT)
     AzFC = e1u .* e2u
@@ -201,29 +261,13 @@ function reconstruct_orca_staggered_mesh_from_t_f_points(λCC, φCC, λFF, φFF;
     AzFF = similar(λCC, AFT)
 
     if Ny > 1
-        @inbounds for j in 1:Ny-1, i in 1:Nx
-            iE = mod1(i + 1, Nx)
-            A = spherical_quadrilateral_area_unit(λFF[i, j],   φFF[i, j],
-                                                  λFF[iE, j],  φFF[iE, j],
-                                                  λFF[iE, j+1], φFF[iE, j+1],
-                                                  λFF[i, j+1],  φFF[i, j+1])
-            AzCC[i, j] = A * radius^2
-        end
-        @inbounds for i in 1:Nx
-            AzCC[i, Ny] = AzCC[i, Ny-1]
-        end
+        launch!(arch, launch_grid, KernelParameters(1:Nx, 1:Ny-1), _reconstruct_AzCC_interior!,
+                AzCC, λFF, φFF, radius, Nx)
+        launch!(arch, launch_grid, KernelParameters(1:Nx), _fill_AzCC_north!, AzCC, Ny)
 
-        @inbounds for j in 2:Ny, i in 1:Nx
-            iW = mod1(i - 1, Nx)
-            A = spherical_quadrilateral_area_unit(λCC[iW, j-1], φCC[iW, j-1],
-                                                  λCC[i, j-1],  φCC[i, j-1],
-                                                  λCC[i, j],    φCC[i, j],
-                                                  λCC[iW, j],   φCC[iW, j])
-            AzFF[i, j] = A * radius^2
-        end
-        @inbounds for i in 1:Nx
-            AzFF[i, 1] = AzFF[i, 2]
-        end
+        launch!(arch, launch_grid, KernelParameters(1:Nx, 2:Ny), _reconstruct_AzFF_interior!,
+                AzFF, λCC, φCC, radius, Nx)
+        launch!(arch, launch_grid, KernelParameters(1:Nx), _fill_AzFF_south!, AzFF)
     else
         AzCC .= e1t .* e2t
         AzFF .= AzCC
@@ -252,7 +296,8 @@ function read_orca_staggered_mesh(ds; radius = Oceananigans.defaults.planet_radi
 
     if has_all_variables(ds, full_stagger_vars)
         read_2d = read_2d_nemo_variable
-        λCC = orient_orca_xy(read_2d(ds, "glamt"); name = "glamt")
+        # Assume ORCA horizontal variables are stored as (Nx, Ny).
+        λCC = read_2d(ds, "glamt")
         Nx, Ny = size(λCC)
 
         orient(data, name) = orient_xy(data, Nx, Ny; name)
@@ -277,7 +322,8 @@ function read_orca_staggered_mesh(ds; radius = Oceananigans.defaults.planet_radi
     tf_vars = ("glamt", "gphit", "glamf", "gphif")
     if has_all_variables(ds, tf_vars)
         read_2d = read_2d_nemo_variable
-        λCC = orient_orca_xy(read_2d(ds, "glamt"); name = "glamt")
+        # Assume ORCA horizontal variables are stored as (Nx, Ny).
+        λCC = read_2d(ds, "glamt")
         Nx, Ny = size(λCC)
         λFF = orient_xy(read_2d(ds, "glamf"), Nx, Ny; name = "glamf")
         φCC = orient_xy(read_2d(ds, "gphit"), Nx, Ny; name = "gphit")
