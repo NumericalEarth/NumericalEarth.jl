@@ -7,6 +7,8 @@ using Scratch
 using NumericalEarth.DataWrangling: download_dataset
 using ParallelTestRunner: find_tests, parse_args, filter_tests!, runtests
 
+group = get(ENV, "TEST_GROUP", "all")
+
 # Start with autodiscovered tests
 testsuite = find_tests(@__DIR__)
 
@@ -109,8 +111,10 @@ function __init__()
 end
 
 # Initialize and download required datasets
-__init__()
-
-runtests(NumericalEarth, args; testsuite)
-
-delete_inpainted_files(@get_scratch!("."))
+if group == "distributed_mpi"
+    include("test_distributed_utils.jl")
+else
+    __init__()
+    runtests(NumericalEarth, args; testsuite)
+    delete_inpainted_files(@get_scratch!("."))
+end

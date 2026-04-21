@@ -237,30 +237,27 @@ jobs:
   ##### Distributed MPI tests (GitHub-hosted runners)
   #####
 
-  # distributed_tests:
-  #   name: Distributed MPI tests (4 ranks)
-  #   runs-on: ubuntu-latest
-  #   timeout-minutes: 60
-  #   env:
-  #     OPENBLAS_NUM_THREADS: 1
-  #     JULIA_NUM_PRECOMPILE_TASKS: 8
-  #   steps:
-  #     - uses: actions/checkout@v6
-  #     - uses: julia-actions/setup-julia@v2
-  #       with:
-  #         version: '1.12.5'
-  #     - name: Instantiate and precompile
-  #       shell: julia --project --color=yes {0}
-  #       run: |
-  #         using Pkg
-  #         Pkg.instantiate(verbose=true)
-  #         Pkg.precompile(strict=true)
-  #     - name: Install mpiexecjl
-  #       run: julia --project --color=yes -e 'using MPI; MPI.install_mpiexecjl(destdir=".")'
-  #     - name: Run distributed tests
-  #       env:
-  #         TEST_GROUP: distributed
-  #       run: ./mpiexecjl -np 4 julia --project --color=yes -e 'using Pkg; Pkg.test()'
+  distributed_tests:
+    name: Distributed MPI tests (4 ranks)
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    env:
+      OPENBLAS_NUM_THREADS: 1
+      JULIA_NUM_PRECOMPILE_TASKS: 8
+      TEST_GROUP: distributed_mpi
+    steps:
+      - uses: actions/checkout@v6
+      - uses: julia-actions/setup-julia@v2
+        with:
+          version: "1.12.5"
+          arch: default
+      - uses: julia-actions/cache@v3
+        with:
+          cache-scratchspaces: false
+      - uses: julia-actions/julia-buildpkg@v1
+      - uses: julia-actions/julia-runtest@v1
+        with:
+          test_args: "--verbose"
 
   #####
   ##### The final test (a final check)
@@ -273,6 +270,7 @@ jobs:
       - gpu_tests
       - cds_downloading
       - reactant
+      - distributed_tests
     runs-on: ubuntu-latest
     if: ${{ success() }}
     steps:
