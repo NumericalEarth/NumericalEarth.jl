@@ -245,6 +245,29 @@ end
 ##### Helper functions
 #####
 
+"""
+    centers_to_interfaces(z_centers)
+
+Compute z-interfaces (cell faces) from cell center positions.
+`z_centers` should be sorted most negative first (deepest first).
+The top face is placed at 0.0 (sea surface). Interior faces are
+midpoints between adjacent centers. The bottom face is extrapolated.
+
+Note: the grid's cell centers (midpoints of faces) will approximately
+but not exactly match the input centers when spacing is irregular.
+"""
+function centers_to_interfaces(z_centers)
+    Nz = length(z_centers)
+    z_faces = zeros(Nz + 1)
+
+    for k in 1:Nz-1
+        z_faces[k+1] = (z_centers[k] + z_centers[k+1]) / 2
+    end
+    # Extrapolate bottom face
+    z_faces[1] = z_centers[1] - (z_faces[2] - z_centers[1])
+    return z_faces
+end
+
 @inline nan_convert_missing(FT, ::Missing) = convert(FT, NaN)
 @inline nan_convert_missing(FT, d::Number) = convert(FT, d)
 
@@ -256,6 +279,13 @@ end
 
 # Temperature units
 @inline convert_units(T::FT, ::Kelvin) where FT = T - convert(FT, 273.15)
+@inline convert_units(T::FT, ::Celsius) where FT = T + convert(FT, 273.15)
+
+# Pressure units
+@inline convert_units(P::FT, ::Millibar) where FT = P * convert(FT, 100)
+
+# Precipitation rate (assuming ρ_water = 1000 kg/m³, so 1 mm/hr = 1 kg/m²/hr = 1/3600 kg/m²/s)
+@inline convert_units(r::FT, ::MillimetersPerHour) where FT = r / convert(FT, 3600)
 
 # Molar units
 @inline convert_units(C::FT, ::Union{MolePerLiter, MolePerKilogram})           where FT = C * convert(FT, 1e3)
@@ -264,6 +294,7 @@ end
 @inline convert_units(C::FT, ::Union{NanomolePerLiter, NanomolePerKilogram})   where FT = C * convert(FT, 1e-6)
 @inline convert_units(C::FT, ::MilliliterPerLiter)                             where FT = C / convert(FT, 22.3916)
 @inline convert_units(C::FT, ::GramPerKilogramMinus35)                         where FT = C + convert(FT, 35)
+@inline convert_units(V::FT, ::CentimetersPerSecond)                           where FT = V / convert(FT, 100)
 
 
 #####
