@@ -98,66 +98,43 @@ end
 @inline east_idx(i, Nx) = ifelse(i == Nx, 1, i + 1)
 @inline west_idx(i, Nx) = ifelse(i == 1, Nx, i - 1)
 
-@kernel function _reconstruct_λFC_φFC!(λFC, φFC, λCC, φCC, Nx)
+@kernel function _reconstruct_λFC_φFC_λCF_φCF!(λFC, φFC, λCF, φCF, λCC, φCC, λFF, φFF, Nx, Ny)
     i, j = @index(Global, NTuple)
     iE = east_idx(i, Nx)
-    λm, φm = spherical_midpoint(λCC[i, j], φCC[i, j], λCC[iE, j], φCC[iE, j])
-    λFC[i, j] = λm
-    φFC[i, j] = φm
+    λm₁, φm₁ = spherical_midpoint(λCC[i, j], φCC[i, j], λCC[iE, j], φCC[iE, j])
+    λFC[i, j] = λm₁
+    φFC[i, j] = φm₁
+    if j < Ny
+        λm₂, φm₂ = spherical_midpoint(λCC[i, j], φCC[i, j], λCC[i, j+1], φCC[i, j+1])
+        λCF[i, j] = λm₂
+        φCF[i, j] = φm₂
+    else
+        λm₃, φm₃ = spherical_midpoint(λFF[i, Ny], φFF[i, Ny], λFF[iE, Ny], φFF[iE, Ny])
+        λCF[i, Ny] = λm₃
+        φCF[i, Ny] = φm₃
+    end    
 end
 
-@kernel function _reconstruct_λCF_φCF_interior!(λCF, φCF, λCC, φCC)
-    i, j = @index(Global, NTuple)
-    λm, φm = spherical_midpoint(λCC[i, j], φCC[i, j], λCC[i, j+1], φCC[i, j+1])
-    λCF[i, j] = λm
-    φCF[i, j] = φm
-end
-
-@kernel function _reconstruct_λCF_φCF_north!(λCF, φCF, λFF, φFF, Ny, Nx)
-    i = @index(Global, Linear)
-    iE = east_idx(i, Nx)
-    λm, φm = spherical_midpoint(λFF[i, Ny], φFF[i, Ny], λFF[iE, Ny], φFF[iE, Ny])
-    λCF[i, Ny] = λm
-    φCF[i, Ny] = φm
-end
-
-@kernel function _reconstruct_e1_metrics!(e1u, e1v, e1f, λCC, φCC, λFF, φFF, λCF, φCF, radius, Nx)
+@kernel function _reconstruct_e1_e2_metrics!(e1u, e1v, e1f, e1t, e2u, e2v, e2f, e2t, λCC, φCC, λFF, φFF, λFC, φFC, λCF, φCF, radius, Nx, Ny)
     i, j = @index(Global, NTuple)
     iE = east_idx(i, Nx)
     e1u[i, j] = haversine((λCC[i, j], φCC[i, j]), (λCC[iE, j], φCC[iE, j]), radius)
     e1v[i, j] = haversine((λFF[i, j], φFF[i, j]), (λFF[iE, j], φFF[iE, j]), radius)
     e1f[i, j] = haversine((λCF[i, j], φCF[i, j]), (λCF[iE, j], φCF[iE, j]), radius)
-end
-
-@kernel function _reconstruct_e2_metrics_interior!(e2u, e2v, e2f, λFC, φFC, λCC, φCC, radius)
-    i, j = @index(Global, NTuple)
-    e2u[i, j] = haversine((λFC[i, j], φFC[i, j]), (λFC[i, j+1], φFC[i, j+1]), radius)
-    e2v[i, j] = haversine((λCC[i, j], φCC[i, j]), (λCC[i, j+1], φCC[i, j+1]), radius)
-    e2f[i, j] = haversine((λFC[i, j], φFC[i, j]), (λFC[i, j+1], φFC[i, j+1]), radius)
-end
-
-@kernel function _fill_north_e2_metrics!(e2u, e2v, e2f, Ny)
-    i = @index(Global, Linear)
-    e2u[i, Ny] = e2u[i, Ny-1]
-    e2v[i, Ny] = e2v[i, Ny-1]
-    e2f[i, Ny] = e2f[i, Ny-1]
-end
-
-@kernel function _fill_single_row_e2_metrics!(e2u, e2v, e2f, e1u, e1v, e1f)
-    i = @index(Global, Linear)
-    e2u[i, 1] = e1u[i, 1]
-    e2v[i, 1] = e1v[i, 1]
-    e2f[i, 1] = e1f[i, 1]
-end
-
-@kernel function _reconstruct_e1t!(e1t, λFC, φFC, radius, Nx)
-    i, j = @index(Global, NTuple)
+    if j < Ny
+        e2u[i, j] = haversine((λFC[i, j], φFC[i, j]), (λFC[i, j+1], φFC[i, j+1]), radius)
+        e2v[i, j] = haversine((λCC[i, j], φCC[i, j]), (λCC[i, j+1], φCC[i, j+1]), radius)
+        e2f[i, j] = haversine((λFC[i, j], φFC[i, j]), (λFC[i, j+1], φFC[i, j+1]), radius)
+    else
+        e2u[i, Ny] = e2u[i, Ny-1]
+        e2v[i, Ny] = e2v[i, Ny-1]
+        e2f[i, Ny] = e2f[i, Ny-1]
+        e2u[i, 1]  = e1u[i, 1]
+        e2v[i, 1]  = e1v[i, 1]
+        e2f[i, 1]  = e1f[i, 1]
+    end    
     iW = west_idx(i, Nx)
     e1t[i, j] = haversine((λFC[iW, j], φFC[iW, j]), (λFC[i, j], φFC[i, j]), radius)
-end
-
-@kernel function _reconstruct_e2t!(e2t, e2v)
-    i, j = @index(Global, NTuple)
     if j == 1
         e2t[i, 1] = e2v[i, 1]
     else
@@ -165,37 +142,33 @@ end
     end
 end
 
-@kernel function _reconstruct_AzCC_interior!(AzCC, λFF, φFF, radius, Nx)
+@kernel function _reconstruct_Az_interior!(AzCC, AzFF, λCC, φCC, λFF, φFF, radius, Nx, Ny)
     i, j = @index(Global, NTuple)
     iE = east_idx(i, Nx)
-    A = spherical_quadrilateral_area_unit(λFF[i, j],    φFF[i, j],
-                                          λFF[iE, j],   φFF[iE, j],
-                                          λFF[iE, j+1], φFF[iE, j+1],
-                                          λFF[i, j+1],  φFF[i, j+1])
-    AzCC[i, j] = A * radius^2
+    iW = west_idx(i, Nx)
+    if j < Ny
+        A = spherical_quadrilateral_area_unit(λFF[i, j],    φFF[i, j],
+                                              λFF[iE, j],   φFF[iE, j],
+                                              λFF[iE, j+1], φFF[iE, j+1],
+                                              λFF[i, j+1],  φFF[i, j+1])
+        AzCC[i, j] = A * radius^2
+    end
+    if j > 1
+        A = spherical_quadrilateral_area_unit(λCC[iW, j-1], φCC[iW, j-1],
+                                              λCC[i, j-1],  φCC[i, j-1],
+                                              λCC[i, j],    φCC[i, j],
+                                              λCC[iW, j],   φCC[iW, j])
+        AzFF[i, j] = A * radius^2
+    end
 end
 
-@kernel function _fill_AzCC_north!(AzCC, Ny)
+@kernel function _fill_AzCC_boundaries!(AzCC, AzFF, Ny)
     i = @index(Global, Linear)
     AzCC[i, Ny] = AzCC[i, Ny-1]
-end
-
-@kernel function _reconstruct_AzFF_interior!(AzFF, λCC, φCC, radius, Nx)
-    i, j = @index(Global, NTuple)
-    iW = west_idx(i, Nx)
-    A = spherical_quadrilateral_area_unit(λCC[iW, j-1], φCC[iW, j-1],
-                                          λCC[i, j-1],  φCC[i, j-1],
-                                          λCC[i, j],    φCC[i, j],
-                                          λCC[iW, j],   φCC[iW, j])
-    AzFF[i, j] = A * radius^2
-end
-
-@kernel function _fill_AzFF_south!(AzFF)
-    i = @index(Global, Linear)
     AzFF[i, 1] = AzFF[i, 2]
 end
 
-function reconstruct_orca_staggered_mesh_from_t_f_points(λCC, φCC, λFF, φFF; radius)
+function reconstruct_orca_mesh_from_CC_FF_points(λCC, φCC, λFF, φFF; radius)
     size(λCC) == size(φCC) || throw(ArgumentError("glamt and gphit size mismatch: $(size(λCC)) vs $(size(φCC))."))
     size(λFF) == size(φFF) || throw(ArgumentError("glamf and gphif size mismatch: $(size(λFF)) vs $(size(φFF))."))
     size(λCC) == size(λFF) || throw(ArgumentError("T-point and F-point grids must have matching size, got $(size(λCC)) and $(size(λFF))."))
@@ -203,29 +176,15 @@ function reconstruct_orca_staggered_mesh_from_t_f_points(λCC, φCC, λFF, φFF;
     Nx, Ny = size(λCC)
     AFT = promote_type(eltype(λCC), eltype(φCC), eltype(λFF), eltype(φFF), typeof(radius))
 
-    λFC = similar(λCC, AFT)
-    φFC = similar(φCC, AFT)
-    λCF = similar(λCC, AFT)
-    φCF = similar(φCC, AFT)
+    λFC  = similar(λCC, AFT)
+    φFC  = similar(φCC, AFT)
+    λCF  = similar(λCC, AFT)
+    φCF  = similar(φCC, AFT)
+    dev  = Oceananigans.Architectures.device(architecture(λFC))
 
-    arch = architecture(λCC)
-    launch_grid = RectilinearGrid(arch;
-                                  size = (Nx, Ny),
-                                  halo = (1, 1),
-                                  x = (0, 1),
-                                  y = (0, 1),
-                                  topology = (Periodic, Bounded, Flat))
     launch_xy = KernelParameters(1:Nx, 1:Ny)
 
-    launch!(arch, launch_grid, launch_xy, _reconstruct_λFC_φFC!, λFC, φFC, λCC, φCC, Nx)
-
-    if Ny > 1
-        launch!(arch, launch_grid, KernelParameters(1:Nx, 1:Ny-1), _reconstruct_λCF_φCF_interior!,
-                λCF, φCF, λCC, φCC)
-    end
-
-    # Northern V-points are inferred from the northern F-point edge.
-    launch!(arch, launch_grid, KernelParameters(1:Nx), _reconstruct_λCF_φCF_north!, λCF, φCF, λFF, φFF, Ny, Nx)
+    _reconstruct_λFC_φFC_λCF_φCF!(dev, (Nx, Ny), (16, 16))(λFC, φFC, λCF, φCF, λCC, φCC, λFF, φFF, Nx, Ny)
 
     e1u = similar(λCC, AFT)
     e2u = similar(λCC, AFT)
@@ -236,24 +195,7 @@ function reconstruct_orca_staggered_mesh_from_t_f_points(λCC, φCC, λFF, φFF;
     e1t = similar(λCC, AFT)
     e2t = similar(λCC, AFT)
 
-    launch!(arch, launch_grid, launch_xy, _reconstruct_e1_metrics!,
-            e1u, e1v, e1f, λCC, φCC, λFF, φFF, λCF, φCF, radius, Nx)
-
-    if Ny > 1
-        launch!(arch, launch_grid, KernelParameters(1:Nx, 1:Ny-1), _reconstruct_e2_metrics_interior!,
-                e2u, e2v, e2f, λFC, φFC, λCC, φCC, radius)
-    end
-
-    if Ny > 1
-        launch!(arch, launch_grid, KernelParameters(1:Nx), _fill_north_e2_metrics!, e2u, e2v, e2f, Ny)
-    else
-        launch!(arch, launch_grid, KernelParameters(1:Nx), _fill_single_row_e2_metrics!,
-                e2u, e2v, e2f, e1u, e1v, e1f)
-    end
-
-    launch!(arch, launch_grid, launch_xy, _reconstruct_e1t!, e1t, λFC, φFC, radius, Nx)
-
-    launch!(arch, launch_grid, launch_xy, _reconstruct_e2t!, e2t, e2v)
+    _reconstruct_e1_e2_metrics!(dev, (Nx, Ny), (16, 16))(e1u, e1v, e1f, e1t, e2u, e2v, e2f, e2t, λCC, φCC, λFF, φFF, λFC, φFC, λCF, φCF, radius, Nx, Ny)
 
     AzCC = similar(λCC, AFT)
     AzFC = e1u .* e2u
@@ -261,13 +203,8 @@ function reconstruct_orca_staggered_mesh_from_t_f_points(λCC, φCC, λFF, φFF;
     AzFF = similar(λCC, AFT)
 
     if Ny > 1
-        launch!(arch, launch_grid, KernelParameters(1:Nx, 1:Ny-1), _reconstruct_AzCC_interior!,
-                AzCC, λFF, φFF, radius, Nx)
-        launch!(arch, launch_grid, KernelParameters(1:Nx), _fill_AzCC_north!, AzCC, Ny)
-
-        launch!(arch, launch_grid, KernelParameters(1:Nx, 2:Ny), _reconstruct_AzFF_interior!,
-                AzFF, λCC, φCC, radius, Nx)
-        launch!(arch, launch_grid, KernelParameters(1:Nx), _fill_AzFF_south!, AzFF)
+        _reconstruct_Az_interior!(dev, (Nx, Ny), (16, 16))(AzCC, AzFF, λCC, φCC, λFF, φFF, radius, Nx, Ny)
+        _fill_Az_boundaries!(dev, Nx, 16)(AzCC, AzFF, Ny)
     else
         AzCC .= e1t .* e2t
         AzFF .= AzCC
@@ -289,27 +226,26 @@ Supports:
   using Tripolar-style spherical metric assumptions.
 """
 function read_orca_staggered_mesh(ds; radius = Oceananigans.defaults.planet_radius)
-    full_stagger_vars = ("glamt", "glamu", "glamv", "glamf",
-                         "gphit", "gphiu", "gphiv", "gphif",
-                         "e1t", "e1u", "e1v", "e1f",
-                         "e2t", "e2u", "e2v", "e2f")
+    metrics = ("glamt", "glamu", "glamv", "glamf",
+               "gphit", "gphiu", "gphiv", "gphif",
+               "e1t", "e1u", "e1v", "e1f",
+               "e2t", "e2u", "e2v", "e2f")
 
-    if has_all_variables(ds, full_stagger_vars)
-        read_2d = read_2d_nemo_variable
+    if has_all_variables(ds, metrics)
         # Assume ORCA horizontal variables are stored as (Nx, Ny).
         λCC = read_2d(ds, "glamt")
         Nx, Ny = size(λCC)
 
-        orient(data, name) = orient_xy(data, Nx, Ny; name)
+        orcaread(data, name) = orient_xy(read_2d_nemo_variable(data, name), Nx, Ny; name)
 
-        λFC, λCF, λFF = orient(read_2d(ds, "glamu"), "glamu"), orient(read_2d(ds, "glamv"), "glamv"), orient(read_2d(ds, "glamf"), "glamf")
-        φCC, φFC, φCF, φFF = orient(read_2d(ds, "gphit"), "gphit"), orient(read_2d(ds, "gphiu"), "gphiu"), orient(read_2d(ds, "gphiv"), "gphiv"), orient(read_2d(ds, "gphif"), "gphif")
-        e1t, e1u, e1v, e1f = orient(read_2d(ds, "e1t"), "e1t"), orient(read_2d(ds, "e1u"), "e1u"), orient(read_2d(ds, "e1v"), "e1v"), orient(read_2d(ds, "e1f"), "e1f")
-        e2t, e2u, e2v, e2f = orient(read_2d(ds, "e2t"), "e2t"), orient(read_2d(ds, "e2u"), "e2u"), orient(read_2d(ds, "e2v"), "e2v"), orient(read_2d(ds, "e2f"), "e2f")
+        λCC, λFC, λCF, λFF = orcaread(ds, "glamt"), orcaread(ds, "glamu"), orcaread(ds, "glamv"), orcaread(ds, "glamf")
+        φCC, φFC, φCF, φFF = orcaread(ds, "gphit"), orcaread(ds, "gphiu"), orcaread(ds, "gphiv"), orcaread(ds, "gphif")
+        e1t, e1u, e1v, e1f = orcaread(ds, "e1t"),   orcaread(ds, "e1u"),   orcaread(ds, "e1v"),   orcaread(ds, "e1f")
+        e2t, e2u, e2v, e2f = orcaread(ds, "e2t"),   orcaread(ds, "e2u"),   orcaread(ds, "e2v"),   orcaread(ds, "e2f")
 
         if "e1e2t" in keys(ds)
-            AzCC, AzFC = orient(read_2d(ds, "e1e2t"), "e1e2t"), orient(read_2d(ds, "e1e2u"), "e1e2u")
-            AzCF, AzFF = orient(read_2d(ds, "e1e2v"), "e1e2v"), orient(read_2d(ds, "e1e2f"), "e1e2f")
+            AzCC, AzFC = orcaread(ds, "e1e2t"), orcaread(ds, "e1e2u")
+            AzCF, AzFF = orcaread(ds, "e1e2v"), orcaread(ds, "e1e2f")
         else
             AzCC, AzFC, AzCF, AzFF = e1t .* e2t, e1u .* e2u, e1v .* e2v, e1f .* e2f
         end
@@ -319,16 +255,19 @@ function read_orca_staggered_mesh(ds; radius = Oceananigans.defaults.planet_radi
                   AzCC, AzFC, AzCF, AzFF)
     end
 
-    tf_vars = ("glamt", "gphit", "glamf", "gphif")
-    if has_all_variables(ds, tf_vars)
-        read_2d = read_2d_nemo_variable
+    coords = ("glamt", "gphit", "glamf", "gphif")
+    if has_all_variables(ds, coords)
+
         # Assume ORCA horizontal variables are stored as (Nx, Ny).
         λCC = read_2d(ds, "glamt")
         Nx, Ny = size(λCC)
-        λFF = orient_xy(read_2d(ds, "glamf"), Nx, Ny; name = "glamf")
-        φCC = orient_xy(read_2d(ds, "gphit"), Nx, Ny; name = "gphit")
-        φFF = orient_xy(read_2d(ds, "gphif"), Nx, Ny; name = "gphif")
-        return reconstruct_orca_staggered_mesh_from_t_f_points(λCC, φCC, λFF, φFF; radius)
+
+        orcaread(data, name) = orient_xy(read_2d_nemo_variable(data, name), Nx, Ny; name)
+
+        λFF = orcaread(ds, "glamf")
+        φCC = orcaread(ds, "gphit")
+        φFF = orcaread(ds, "gphif")
+        return reconstruct_orca_mesh_from_CC_FF_points(λCC, φCC, λFF, φFF; radius)
     end
 
     throw(ArgumentError("Unsupported ORCA mesh format. Missing either full staggered variables $(full_stagger_vars) or T/F variables $(tf_vars)."))
@@ -520,10 +459,10 @@ function ORCAGrid(arch = CPU(), FT::DataType = Float64;
                                   bottom = nothing)
 
     # Fill halos for all stagger locations
-    λᶜᶜᵃ, λᶠᶜᵃ, λᶜᶠᵃ, λᶠᶠᵃ    = halo_fill_stagger(λCC, λFC, λCF, λFF, helper_grid, bcs, overlap)
-    φᶜᶜᵃ, φᶠᶜᵃ, φᶜᶠᵃ, φᶠᶠᵃ    = halo_fill_stagger(φCC, φFC, φCF, φFF, helper_grid, bcs, overlap)
-    Δxᶜᶜᵃ, Δxᶠᶜᵃ, Δxᶜᶠᵃ, Δxᶠᶠᵃ = halo_fill_stagger(e1t, e1u, e1v, e1f, helper_grid, bcs, overlap)
-    Δyᶜᶜᵃ, Δyᶠᶜᵃ, Δyᶜᶠᵃ, Δyᶠᶠᵃ = halo_fill_stagger(e2t, e2u, e2v, e2f, helper_grid, bcs, overlap)
+    λᶜᶜᵃ, λᶠᶜᵃ, λᶜᶠᵃ, λᶠᶠᵃ     = halo_fill_stagger(λCC,  λFC,  λCF,  λFF,  helper_grid, bcs, overlap)
+    φᶜᶜᵃ, φᶠᶜᵃ, φᶜᶠᵃ, φᶠᶠᵃ     = halo_fill_stagger(φCC,  φFC,  φCF,  φFF,  helper_grid, bcs, overlap)
+    Δxᶜᶜᵃ, Δxᶠᶜᵃ, Δxᶜᶠᵃ, Δxᶠᶠᵃ = halo_fill_stagger(e1t,  e1u,  e1v,  e1f,  helper_grid, bcs, overlap)
+    Δyᶜᶜᵃ, Δyᶠᶜᵃ, Δyᶜᶠᵃ, Δyᶠᶠᵃ = halo_fill_stagger(e2t,  e2u,  e2v,  e2f,  helper_grid, bcs, overlap)
     Azᶜᶜᵃ, Azᶠᶜᵃ, Azᶜᶠᵃ, Azᶠᶠᵃ = halo_fill_stagger(AzCC, AzFC, AzCF, AzFF, helper_grid, bcs, overlap)
 
     # Fill south halo metrics from a reference LatitudeLongitudeGrid
@@ -554,7 +493,8 @@ function ORCAGrid(arch = CPU(), FT::DataType = Float64;
         to_arch(Δyᶜᶜᵃ), to_arch(Δyᶠᶜᵃ), to_arch(Δyᶜᶠᵃ), to_arch(Δyᶠᶠᵃ),
         to_arch(Azᶜᶜᵃ), to_arch(Azᶠᶜᵃ), to_arch(Azᶜᶠᵃ), to_arch(Azᶠᶠᵃ),
         convert(FT, radius),
-        Tripolar(north_poles_latitude, first_pole_longitude, southernmost_latitude))
+        Tripolar(north_poles_latitude, first_pole_longitude, southernmost_latitude)
+    )
 
     with_bathymetry || return underlying_grid
 
