@@ -231,13 +231,13 @@ function read_orca_staggered_mesh(ds; radius = Oceananigans.defaults.planet_radi
                "e1t", "e1u", "e1v", "e1f",
                "e2t", "e2u", "e2v", "e2f")
 
+    # Assume ORCA horizontal variables are stored as (Nx, Ny).
+    λCC = read_2d_nemo_variable(ds, "glamt")
+    Nx, Ny = size(λCC)
+
+    orcaread(data, name) = orient_xy(read_2d_nemo_variable(data, name), Nx, Ny; name)
+
     if has_all_variables(ds, metrics)
-        # Assume ORCA horizontal variables are stored as (Nx, Ny).
-        λCC = read_2d(ds, "glamt")
-        Nx, Ny = size(λCC)
-
-        orcaread(data, name) = orient_xy(read_2d_nemo_variable(data, name), Nx, Ny; name)
-
         λCC, λFC, λCF, λFF = orcaread(ds, "glamt"), orcaread(ds, "glamu"), orcaread(ds, "glamv"), orcaread(ds, "glamf")
         φCC, φFC, φCF, φFF = orcaread(ds, "gphit"), orcaread(ds, "gphiu"), orcaread(ds, "gphiv"), orcaread(ds, "gphif")
         e1t, e1u, e1v, e1f = orcaread(ds, "e1t"),   orcaread(ds, "e1u"),   orcaread(ds, "e1v"),   orcaread(ds, "e1f")
@@ -257,13 +257,7 @@ function read_orca_staggered_mesh(ds; radius = Oceananigans.defaults.planet_radi
 
     coords = ("glamt", "gphit", "glamf", "gphif")
     if has_all_variables(ds, coords)
-
-        # Assume ORCA horizontal variables are stored as (Nx, Ny).
-        λCC = read_2d(ds, "glamt")
-        Nx, Ny = size(λCC)
-
-        orcaread(data, name) = orient_xy(read_2d_nemo_variable(data, name), Nx, Ny; name)
-
+        λCC = orcaread(ds, "glamt")
         λFF = orcaread(ds, "glamf")
         φCC = orcaread(ds, "gphit")
         φFF = orcaread(ds, "gphif")
@@ -426,10 +420,10 @@ function ORCAGrid(arch = CPU(), FT::DataType = Float64;
     if jr > 0
         chop(data) = data[:, jr+1:end]
 
-        λCC, λFC, λCF, λFF = chop(λCC), chop(λFC), chop(λCF), chop(λFF)
-        φCC, φFC, φCF, φFF = chop(φCC), chop(φFC), chop(φCF), chop(φFF)
-        e1t, e1u, e1v, e1f = chop(e1t), chop(e1u), chop(e1v), chop(e1f)
-        e2t, e2u, e2v, e2f = chop(e2t), chop(e2u), chop(e2v), chop(e2f)
+        λCC, λFC, λCF, λFF     = chop(λCC),  chop(λFC),  chop(λCF),  chop(λFF)
+        φCC, φFC, φCF, φFF     = chop(φCC),  chop(φFC),  chop(φCF),  chop(φFF)
+        e1t, e1u, e1v, e1f     = chop(e1t),  chop(e1u),  chop(e1v),  chop(e1f)
+        e2t, e2u, e2v, e2f     = chop(e2t),  chop(e2u),  chop(e2v),  chop(e2f)
         AzCC, AzFC, AzCF, AzFF = chop(AzCC), chop(AzFC), chop(AzCF), chop(AzFF)
 
         Ny = size(λCC, 2)
@@ -502,12 +496,12 @@ function ORCAGrid(arch = CPU(), FT::DataType = Float64;
     bathy_meta = Metadatum(:bottom_height; dataset, dir)
     bathymetry_path = download_dataset(bathy_meta)
 
-    bathy_ds = Dataset(bathymetry_path)
+    bathy_ds   = Dataset(bathymetry_path)
     bathy_name = dataset_variable_name(bathy_meta)
     bathy_data = read_2d_nemo_variable(bathy_ds, bathy_name)
     close(bathy_ds)
 
-    bathy_data = orient_xy(bathy_data, Nx, Ny_full; name = string(bathy_name))
+    bathy_data = orient_xy(bathy_data, size(bathy_data)...; name = string(bathy_name))
 
     if jr > 0
         bathy_data = chop(bathy_data)
