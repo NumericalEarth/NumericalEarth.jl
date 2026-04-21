@@ -525,36 +525,6 @@ end
 end
 
 #####
-##### Linear stable stability function (ψ = -c ζ, bounded)
-#####
-
-"""
-    LinearStableStabilityFunction{FT}
-
-A simple linear stability function for stable conditions: ``ψ = -c ζ``,
-bounded at ``|ζ| ≤ ζ_{max}``.
-
-Used by the NCAR/Large-Yeager (2004) bulk formulae with ``c = 5`` and ``ζ_{max} = 10``.
-
-References:
-- Large, W.G. & Yeager, S.G. (2004): NCAR/TN-460+STR
-"""
-@kwdef struct LinearStableStabilityFunction{FT} <: AbstractStabilityFunction
-    coefficient :: FT = 5.0
-    maximum_stability_parameter :: FT = 10.0
-end
-
-@inline function stability_profile(ψ::LinearStableStabilityFunction, ζ)
-    c = ψ.coefficient
-    ζmax = ψ.maximum_stability_parameter
-    ζ⁺ = max(zero(ζ), ζ)
-    return -c * min(ζ⁺, ζmax)
-end
-
-Base.summary(::LinearStableStabilityFunction{FT}) where FT = "LinearStableStabilityFunction{$FT}"
-Base.show(io::IO, ::LinearStableStabilityFunction{FT}) where FT = print(io, "LinearStableStabilityFunction{$FT}")
-
-#####
 ##### From Paulson (1970), for unstable boundary layers
 #####
 
