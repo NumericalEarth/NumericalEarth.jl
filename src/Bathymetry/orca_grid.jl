@@ -76,10 +76,6 @@ end
     return wrap_longitude(λ₁ + Δλ / 2)
 end
 
-@inline function great_circle_distance(λ₁, φ₁, λ₂, φ₂, radius)
-    return haversine((λ₁, φ₁), (λ₂, φ₂), radius)
-end
-
 @inline function spherical_midpoint(λ₁, φ₁, λ₂, φ₂)
     x₁, y₁, z₁ = lat_lon_to_cartesian(φ₁, λ₁; radius = 1, check_latitude_bounds = false)
     x₂, y₂, z₂ = lat_lon_to_cartesian(φ₂, λ₂; radius = 1, check_latitude_bounds = false)
@@ -158,15 +154,15 @@ function reconstruct_orca_staggered_mesh_from_t_f_points(λCC, φCC, λFF, φFF;
 
     @inbounds for j in 1:Ny, i in 1:Nx
         iE = mod1(i + 1, Nx)
-        e1u[i, j] = great_circle_distance(λCC[i, j], φCC[i, j], λCC[iE, j], φCC[iE, j], radius)
-        e1v[i, j] = great_circle_distance(λFF[i, j], φFF[i, j], λFF[iE, j], φFF[iE, j], radius)
-        e1f[i, j] = great_circle_distance(λCF[i, j], φCF[i, j], λCF[iE, j], φCF[iE, j], radius)
+        e1u[i, j] = haversine((λCC[i, j], φCC[i, j]), (λCC[iE, j], φCC[iE, j]), radius)
+        e1v[i, j] = haversine((λFF[i, j], φFF[i, j]), (λFF[iE, j], φFF[iE, j]), radius)
+        e1f[i, j] = haversine((λCF[i, j], φCF[i, j]), (λCF[iE, j], φCF[iE, j]), radius)
     end
 
     @inbounds for j in 1:Ny-1, i in 1:Nx
-        e2u[i, j] = great_circle_distance(λFC[i, j], φFC[i, j], λFC[i, j+1], φFC[i, j+1], radius)
-        e2v[i, j] = great_circle_distance(λCC[i, j], φCC[i, j], λCC[i, j+1], φCC[i, j+1], radius)
-        e2f[i, j] = great_circle_distance(λFC[i, j], φFC[i, j], λFC[i, j+1], φFC[i, j+1], radius)
+        e2u[i, j] = haversine((λFC[i, j], φFC[i, j]), (λFC[i, j+1], φFC[i, j+1]), radius)
+        e2v[i, j] = haversine((λCC[i, j], φCC[i, j]), (λCC[i, j+1], φCC[i, j+1]), radius)
+        e2f[i, j] = haversine((λFC[i, j], φFC[i, j]), (λFC[i, j+1], φFC[i, j+1]), radius)
     end
 
     if Ny > 1
@@ -185,7 +181,7 @@ function reconstruct_orca_staggered_mesh_from_t_f_points(λCC, φCC, λFF, φFF;
 
     @inbounds for j in 1:Ny, i in 1:Nx
         iW = mod1(i - 1, Nx)
-        e1t[i, j] = great_circle_distance(λFC[iW, j], φFC[iW, j], λFC[i, j], φFC[i, j], radius)
+        e1t[i, j] = haversine((λFC[iW, j], φFC[iW, j]), (λFC[i, j], φFC[i, j]), radius)
     end
 
     if Ny > 1
