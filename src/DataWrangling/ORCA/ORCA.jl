@@ -119,7 +119,7 @@ end
 z_interfaces(::ORCA1Metadatum) = nothing
 z_interfaces(::ORCA12Metadatum) = nothing
 
-function download_dataset(metadatum::Union{ORCA1Metadatum, ORCA12Metadatum})
+function download_dataset(metadatum::ORCAMetadatum)
     fileurl  = metadata_url(metadatum)
     filepath = metadata_path(metadatum)
 
