@@ -111,10 +111,6 @@ function __init__()
 end
 
 # Initialize and download required datasets
-if group == "distributed_mpi"
-    include("test_distributed_utils.jl")
-else
-    __init__()
-    runtests(NumericalEarth, args; testsuite)
-    delete_inpainted_files(@get_scratch!("."))
-end
+__init__()
+runtests(NumericalEarth, args; testsuite)
+delete_inpainted_files(@get_scratch!("."))
