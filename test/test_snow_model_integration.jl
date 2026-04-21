@@ -2,6 +2,7 @@ include("runtests_setup.jl")
 
 using ClimaSeaIce: SeaIceModel, ConductiveFlux
 using ClimaSeaIce.SeaIceThermodynamics: IceSnowConductiveFlux
+using NumericalEarth.SeaIces: default_snow_thermodynamics
 using NumericalEarth.EarthSystemModels.InterfaceComputations:
     ComponentInterfaces,
     SkinTemperature,
@@ -29,7 +30,7 @@ using Oceananigans.Units: hours, days
             @test sea_ice isa Simulation
             @test sea_ice.model isa SeaIceModel
             @test sea_ice.model.snow_thermodynamics === nothing
-            @test sea_ice.model.ice_thermodynamics.internal_heat_flux.parameters.flux isa ConductiveFlux
+            @test sea_ice.model.ice_thermodynamics.internal_heat_flux isa ConductiveFlux
         end
 
         @testset "sea_ice_simulation with_snow=true [$A]" begin
@@ -41,7 +42,7 @@ using Oceananigans.Units: hours, days
 
         @testset "PhaseTransitions API [$A]" begin
             sea_ice = sea_ice_simulation(grid; dynamics=nothing)
-            pt = sea_ice.model.ice_thermodynamics.phase_transitions
+            pt = sea_ice.model.phase_transitions
             @test pt.heat_capacity == 2100
             @test pt.density == 900
         end
@@ -88,11 +89,15 @@ using Oceananigans.Units: hours, days
             # Build two coupled models — one without snow, one with snow and
             # nonzero snow thickness — then compare surface temperatures after
             # one coupled time step. Snow adds thermal resistance, so the
-            # surface should be warmer (closer to atmosphere) with snow.
+            # surface should be warmer (closer to the warmer atmosphere).
+            #
+            # Radiation is disabled (ε=0) so the surface energy balance
+            # reduces to conductive + turbulent fluxes; otherwise the
+            # Stefan–Boltzmann loss swamps the small snow-insulation signal.
             ocean_grid = RectilinearGrid(arch;
-                                         size = 2,
-                                         extent = 1,
-                                         topology = (Flat, Flat, Bounded))
+                                         size = (1, 1, 2),
+                                         extent = (1, 1, 1),
+                                         topology = (Periodic, Periodic, Bounded))
 
             function build_coupled(; with_snow)
                 ocean = ocean_simulation(ocean_grid;
@@ -107,17 +112,18 @@ using Oceananigans.Units: hours, days
                                              dynamics = nothing,
                                              snow_thermodynamics)
                 set!(sea_ice.model, h = 1.0, ℵ = 1.0)
+                if with_snow
+                    set!(sea_ice.model, hs = 0.2)
+                end
 
                 atmosphere = PrescribedAtmosphere(ocean_grid, [0.0])
-                radiation  = Radiation()
+                parent(atmosphere.velocities.u) .= 2.0
+                radiation = Radiation(ocean_emissivity = 0, sea_ice_emissivity = 0)
                 return OceanSeaIceModel(ocean, sea_ice; atmosphere, radiation)
             end
 
             bare  = build_coupled(with_snow = false)
             snowy = build_coupled(with_snow = true)
-
-            # Give the snowy model some snow
-            set!(snowy.sea_ice.model, hs = 0.2)
 
             time_step!(bare,  1)
             time_step!(snowy, 1)
