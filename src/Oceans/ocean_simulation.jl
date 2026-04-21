@@ -88,11 +88,9 @@ function default_ocean_closure(FT=Oceananigans.defaults.FloatType)
     return CATKEVerticalDiffusivity(VerticallyImplicitTimeDiscretization(), FT; mixing_length, turbulent_kinetic_energy_equation)
 end
 
+# Two-band shortwave penetration in the Paulson & Simpson (1977) form,
+# Defaults are Jerlov Type I (clearest open-ocean water)
 function default_radiative_forcing(grid)
-    # Two-band shortwave penetration in the Paulson & Simpson (1977) form,
-    # I(z) = ϵ₁ I₀ exp(κ₁ z) + (1 - ϵ₁) I₀ exp(κ₂ z).
-    # Defaults are Jerlov Type I (clearest open-ocean water), the
-    # OMIP-2 reference (Griffies et al. 2016, §2.3).
     surface_fraction = 0.58  # Paulson & Simpson 1977, Table 2, Type I
     surface_scale    = 0.35  # [m]
     deep_scale       = 23    # [m]

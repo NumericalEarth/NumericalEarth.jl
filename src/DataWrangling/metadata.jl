@@ -361,6 +361,9 @@ struct InverseSign end
 
 struct GramPerKilogramMinus35 end # Salinity anomaly
 struct MilliliterPerLiter end # Sometimes for disssolved_oxygen
+struct CentimetersPerSecond end
+struct Millibar end               # pressure in mbar (hPa) → Pa
+struct MillimetersPerHour end     # liquid precipitation rate in mm/hr → kg/m²/s
 
 # Fallback
 conversion_units(metadatum) = nothing
