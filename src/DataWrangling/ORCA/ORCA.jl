@@ -26,31 +26,18 @@ download_ORCA_cache::String = ""
 function __init__()
     global download_ORCA_cache = @get_scratch!("ORCA")
 end
-abstract type OrcaDataset end
+abstract type ORCADataset end
 
-struct ORCA1 <: OrcaDataset end
-struct ORCA12 <: OrcaDataset end
+struct ORCA1 <: ORCADataset end
+struct ORCA12 <: ORCADataset end
 
-default_download_directory(::ORCA1) = download_ORCA_cache
-default_download_directory(::ORCA12) = download_ORCA_cache
-
-reversed_vertical_axis(::ORCA1) = false
-reversed_vertical_axis(::ORCA12) = false
-
-longitude_interfaces(::ORCA1) = (-180, 180)
-longitude_interfaces(::ORCA12) = (-180, 180)
-
-latitude_interfaces(::ORCA1) = (-80, 90)
-latitude_interfaces(::ORCA12) = (-80, 90)
-
-all_dates(::ORCA1, args...) = nothing
-all_dates(::ORCA12, args...) = nothing
-
-first_date(::ORCA1, args...) = nothing
-first_date(::ORCA12, args...) = nothing
-
-last_date(::ORCA1, args...) = nothing
-last_date(::ORCA12, args...) = nothing
+default_download_directory(::ORCADataset) = download_ORCA_cache
+reversed_vertical_axis(::ORCADataset) = false
+longitude_interfaces(::ORCADataset) = (-180, 180)
+latitude_interfaces(::ORCADataset) = (-80, 90)
+all_dates(::ORCADataset, args...) = nothing
+first_date(::ORCADataset, args...) = nothing
+last_date(::ORCADataset, args...) = nothing
 
 const ORCA1Metadatum = Metadatum{<:ORCA1}
 const ORCA1Metadatum = Metadatum{<:ORCA1}
@@ -118,7 +105,6 @@ function metadata_filename(::ORCA12, name, date, bounding_box)
     end
 end
 
-z_interfaces(::ORCA1Metadatum) = nothing
 z_interfaces(::ORCAMetadatum) = nothing
 
 function download_dataset(metadatum::ORCAMetadatum)
