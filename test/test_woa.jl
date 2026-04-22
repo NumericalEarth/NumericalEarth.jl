@@ -11,11 +11,8 @@ using WorldOceanAtlasTools
 
 inpainting = NearestNeighborInpainting(10)
 
-# Ensure a WOA Metadatum file is on disk, trying NOAA first and falling back
-# to the NumericalEarthArtifacts mirror. Field(...) and set!(...) rely on the
-# file already being present — see metadata_field.jl for the internal download
-# path — so this helper is called before any Field / set! that references the
-# same metadatum.
+# Ensure a WOA Metadatum file is on disk, trying NOAA first 
+# and falling back to the NumericalEarthArtifacts mirror.
 function ensure_woa_file(metadatum; label)
     filepath = metadata_path(metadatum)
     download_dataset_with_fallback(filepath; dataset_name=label) do
