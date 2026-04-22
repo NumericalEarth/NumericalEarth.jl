@@ -1,4 +1,5 @@
 [deps]
+ArchGDAL = "c9ce4bd3-c3d5-55b8-8973-c0e20141b8c3"
 Breeze = "660aa2fb-d4c8-4359-a52c-9c057bc511da"
 CDSAPI = "8a7b9de3-9c00-473e-88b4-7eccd7ef2fea"
 CFTime = "179af706-886a-5703-950a-314cd64e0468"
@@ -31,6 +32,7 @@ XESMF = "2e0b0046-e7a1-486f-88de-807ee8ffabe5"
 NumericalEarth = {path = ".."}
 
 [compat]
+ArchGDAL = "0.10"
 Breeze = "0.4"
 CDSAPI = "2.2.2"
 CFTime = "0.1, 0.2"
