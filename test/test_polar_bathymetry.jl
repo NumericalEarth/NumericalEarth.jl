@@ -90,6 +90,25 @@ using NumericalEarth.Bathymetry: regrid_bathymetry
 
 end
 
+@testset "validate_dataset_coverage wired into regrid_bathymetry" begin
+    # Out-of-range grid should throw before any download occurs
+    meta = Metadatum(:bottom_height, dataset=IBCSOv2())
+    grid_bad = LatitudeLongitudeGrid(CPU();
+                                     size = (10, 10, 1),
+                                     longitude = (0, 360),
+                                     latitude = (-60, 0),
+                                     z = (-1, 0))
+    @test_throws ErrorException regrid_bathymetry(grid_bad, meta)
+
+    meta = Metadatum(:bottom_height, dataset=IBCAOv5())
+    grid_bad = LatitudeLongitudeGrid(CPU();
+                                     size = (10, 10, 1),
+                                     longitude = (-20, 20),
+                                     latitude = (50, 80),
+                                     z = (-1, 0))
+    @test_throws ErrorException regrid_bathymetry(grid_bad, meta)
+end
+
 @testset "IBCSO regridding" begin
     @info "Testing IBCSO regridding (downloads ~1.5 GB on first run)..."
 

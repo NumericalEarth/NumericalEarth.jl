@@ -19,7 +19,8 @@ using NCDatasets
 using Printf
 using Scratch
 
-using ..DataWrangling: Metadatum, native_grid, metadata_path, download_dataset
+using ..DataWrangling: Metadatum, native_grid, metadata_path, download_dataset,
+                      dataset_variable_name, validate_dataset_coverage
 using ..DataWrangling.ETOPO: ETOPO2022
 
 include("regrid_bathymetry.jl")
