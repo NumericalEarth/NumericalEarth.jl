@@ -44,6 +44,7 @@ Environment variables (I/O & runtime):
                 copied ahead of each simulated year.
                 Keeps ~50 GB per run (current + next year).
   NODE          Pin job to a specific node (default: 2904)
+  THREADS       Number of Julia threads / CPUs per task (default: 4)
   PROFILE       Set to "true" for nsys profiling
 
 Examples:
@@ -140,6 +141,9 @@ if [[ -n "${NODE}" ]]; then
 fi
 SBATCH_ARGS+=(--gres="gpu:${GPUS_PER_NODE}")
 
+export THREADS="${THREADS:-8}"
+SBATCH_ARGS+=(--cpus-per-task="${THREADS}")
+
 if [[ "${PROFILE:-false}" == "true" ]]; then
     SBATCH_ARGS+=(-o "${RUN_NAME}_profile.out")
     SBATCH_ARGS+=(-e "${RUN_NAME}_profile.err")
@@ -223,13 +227,15 @@ sim = omip_simulation(:${CONFIG};
 
 ${RUN_CMD}"
 
+THREADS="${THREADS:-8}"
+
 if [[ "${PROFILE:-false}" == "true" ]]; then
     echo "Profiling ${RUN_NAME} -> ${REPORT_NAME}"
     nsys profile --trace=cuda \
                  --output="$REPORT_NAME" \
                  --force-overwrite true \
-                 "$JULIA" --project=.. --check-bounds=no -e "$JULIA_EXPR"
+                 "$JULIA" --project=.. --check-bounds=no -t "${THREADS}" -e "$JULIA_EXPR"
 else
-    "$JULIA" --project=.. --check-bounds=no -e "$JULIA_EXPR"
+    "$JULIA" --project=.. --check-bounds=no -t "${THREADS}" -e "$JULIA_EXPR"
 fi
 EOF
