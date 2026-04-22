@@ -36,7 +36,7 @@ function compute_sea_ice_ocean_fluxes!(interface, ocean, sea_ice, ocean_properti
     hˢⁱ = sea_ice.model.ice_thickness
     hc = sea_ice.model.ice_consolidation_thickness
 
-    phase_transitions = sea_ice.model.ice_thermodynamics.phase_transitions
+    phase_transitions = sea_ice.model.phase_transitions
     liquidus = phase_transitions.liquidus
     L = phase_transitions.reference_latent_heat
 
@@ -175,12 +175,12 @@ end
     qᶠ = δ𝒬ᶠʳᶻ / ℰ
 
     @inbounds begin
-        Tᴺ = Tᵒᶜ[i, j, Nz]               
-        Sᴺ = Sᵒᶜ[i, j, Nz]               
+        Tᴺ  = Tᵒᶜ[i, j, Nz]               
+        Sᴺ  = Sᵒᶜ[i, j, Nz]               
         Sˢⁱ = ice_salinity[i, j, 1]      
         hˢⁱ = ice_thickness[i, j, 1]     
-        ℵᵢ = ice_concentration[i, j, 1] 
-        hc = ice_consolidation_thickness[i, j, 1] 
+        ℵᵢ  = ice_concentration[i, j, 1] 
+        hc  = ice_consolidation_thickness[i, j, 1] 
     end
 
     # Extract internal temperature (for ConductiveFluxTEF, zero otherwise)
@@ -198,8 +198,8 @@ end
     # =============================================
     # Returns interfacial heat flux, melt rate qᵐ, and interface T, S
     𝒬ⁱᵒ, qᵐ, Tᵦ, Sᵦ = compute_interface_heat_flux(flux_formulation,
-                                                     ocean_surface_state, ice_state,
-                                                     liquidus, ocean_properties, ℰ, u★)
+                                                   ocean_surface_state, ice_state,
+                                                   liquidus, ocean_properties, ℰ, u★)
 
     # Store interface values and heat flux
     @inbounds 𝒬ⁱⁿᵗ[i, j, 1] = 𝒬ⁱᵒ
