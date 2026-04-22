@@ -137,6 +137,7 @@ jobs:
           # Run tests in verbose mode
           TEST_ARGS=(--verbose)
           TEST_ARGS+=(--jobs=$(($(nproc) - 1)))
+          echo "runtest_test_args=${TEST_ARGS[@]}" | tee -a "${GITHUB_ENV}"
       - name: Update registry
         shell: julia --color=yes {0}
         run: |
