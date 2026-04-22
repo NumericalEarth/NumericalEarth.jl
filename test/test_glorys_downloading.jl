@@ -15,6 +15,7 @@ using Oceananigans.Fields: location
         filepath = NumericalEarth.DataWrangling.metadata_path(metadatum)
         isfile(filepath) && rm(filepath; force=true)
         NumericalEarth.DataWrangling.download_dataset(metadatum)
+        @test isfile(filepath)
     end
 end
 
