@@ -100,7 +100,7 @@ function download_dataset(metadatum::IBCAOMetadatum)
         end
 
         @info "Reprojecting IBCAO from Polar Stereographic (EPSG:3996) to WGS84 at 0.01°..."
-        _reproject_ibcao_to_netcdf(tiff_path, nc_path)
+        reproject_ibcao_to_netcdf(tiff_path, nc_path)
         @info "Reprojection complete. Removing raw GeoTIFF to save disk space..."
         rm(tiff_path; force=true)
     end
