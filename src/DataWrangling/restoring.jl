@@ -2,7 +2,6 @@ using Oceananigans: location
 using Oceananigans.Grids: node
 using Oceananigans.Operators: Δzᶜᶜᶜ
 using Oceananigans.BoundaryConditions: BoundaryConditions
-using Oceananigans.Operators: Δzᶜᶜᶜ
 using Oceananigans.Fields: interpolate, instantiated_location
 using Oceananigans.OutputReaders: Cyclical
 using Oceananigans.Units: Time
@@ -269,8 +268,8 @@ ocean = ocean_simulation(grid;
     additional_surface_fluxes = (; S = SurfaceFluxRestoring(restoring)))
 ```
 """
-struct SurfaceFluxRestoring{D} <: Function
-    dataset_restoring :: D # <: Typically a DatasetRestoring
+struct SurfaceFluxRestoring <: Function
+    dataset_restoring :: DatasetRestoring
 end
 
 Adapt.adapt_structure(to, sf::SurfaceFluxRestoring) = SurfaceFluxRestoring(Adapt.adapt(to, sf.dataset_restoring))
