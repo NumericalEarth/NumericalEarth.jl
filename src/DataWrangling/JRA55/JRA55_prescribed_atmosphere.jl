@@ -11,7 +11,7 @@ JRA55PrescribedAtmosphere(arch::Distributed; kw...) =
                               dir = download_JRA55_cache,
                               time_indices_in_memory = 10,
                               time_indexing = Cyclical(),
-                              prefetch = false,
+                              prefetch = true,
                               surface_layer_height = 10,  # meters
                               include_rivers_and_icebergs = false,
                               other_kw...)
@@ -31,7 +31,7 @@ function JRA55PrescribedAtmosphere(architecture = CPU();
                                    dir = download_JRA55_cache,
                                    time_indices_in_memory = 10,
                                    time_indexing = Cyclical(),
-                                   prefetch = false,
+                                   prefetch = true,
                                    surface_layer_height = 10,  # meters
                                    include_rivers_and_icebergs = false,
                                    other_kw...)
