@@ -4,7 +4,7 @@ using NumericalEarth
 using ArchGDAL
 using NCDatasets
 
-import NumericalEarth.DataWrangling.IBCAO: _reproject_ibcao_to_netcdf
+import NumericalEarth.DataWrangling.IBCAO: reproject_ibcao_to_netcdf
 
 function _reproject_ibcao_to_netcdf(tiff_path, nc_path)
     ArchGDAL.read(tiff_path) do src
