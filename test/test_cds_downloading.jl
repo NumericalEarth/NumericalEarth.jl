@@ -1,4 +1,5 @@
 include("runtests_setup.jl")
+include("download_utils.jl")
 
 using CDSAPI
 using Dates
@@ -27,8 +28,10 @@ start_date = DateTime(2005, 2, 16, 12)
         filepath = metadata_path(metadatum)
         isfile(filepath) && rm(filepath; force=true)
 
-        # Download the data
-        download_dataset(metadatum)
+        # Download the data (falls back to NumericalEarthArtifacts if CDS is unreachable)
+        download_dataset_with_fallback(filepath; dataset_name="ERA5Hourly $variable") do
+            download_dataset(metadatum)
+        end
         @test isfile(filepath)
 
         # Verify the NetCDF file structure
@@ -140,9 +143,11 @@ start_date = DateTime(2005, 2, 16, 12)
             variable = :temperature
             metadatum = Metadatum(variable; dataset, bounding_box, date=start_date)
 
-            # Download if not present
+            # Download if not present (falls back to NumericalEarthArtifacts if CDS is unreachable)
             filepath = metadata_path(metadatum)
-            isfile(filepath) || download_dataset(metadatum)
+            isfile(filepath) || download_dataset_with_fallback(filepath; dataset_name="ERA5Hourly $variable") do
+                download_dataset(metadatum)
+            end
 
             # Create a Field from the downloaded data
             ψ = Field(metadatum, arch)
@@ -167,9 +172,11 @@ start_date = DateTime(2005, 2, 16, 12)
             variable = :temperature
             metadatum = Metadatum(variable; dataset, bounding_box, date=start_date)
 
-            # Download if not present
+            # Download if not present (falls back to NumericalEarthArtifacts if CDS is unreachable)
             filepath = metadata_path(metadatum)
-            isfile(filepath) || download_dataset(metadatum)
+            isfile(filepath) || download_dataset_with_fallback(filepath; dataset_name="ERA5Hourly $variable") do
+                download_dataset(metadatum)
+            end
 
             # Create a target grid matching the bounding box region
             grid = LatitudeLongitudeGrid(arch;
