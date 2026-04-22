@@ -131,6 +131,13 @@ jobs:
       - name: df after cleanup
         run: |
           df -hT
+      - name: "Set test arguments"
+        shell: bash
+        run: |
+          # Run tests in verbose mode
+          TEST_ARGS=(--verbose)
+          TEST_ARGS+=(--jobs=$(($(nproc) - 1)))
+          echo "runtest_test_args=${TEST_ARGS[@]}" | tee -a "${GITHUB_ENV}"
       - name: Update registry
         shell: julia --color=yes {0}
         run: |
@@ -145,7 +152,7 @@ jobs:
               using Pkg;
               Pkg.test(; coverage=true,
                        julia_args=["--check-bounds=yes", "--compiled-modules=yes", "-O0"],
-                       test_args=["--verbose"])
+                       test_args=`${{ env.runtest_test_args }}`)
           '
       - uses: julia-actions/julia-processcoverage@v1
       - uses: codecov/codecov-action@v5
