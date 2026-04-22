@@ -101,44 +101,49 @@ end
 @kernel function _reconstruct_λFC_φFC_λCF_φCF!(λFC, φFC, λCF, φCF, λCC, φCC, λFF, φFF, Nx, Ny)
     i, j = @index(Global, NTuple)
     iE = east_idx(i, Nx)
-    λm₁, φm₁ = spherical_midpoint(λCC[i, j], φCC[i, j], λCC[iE, j], φCC[iE, j])
+    iW = west_idx(i, Nx)
+    λm₁, φm₁ = spherical_midpoint(λCC[iW, j], φCC[iW, j], λCC[i, j], φCC[i, j])
     λFC[i, j] = λm₁
     φFC[i, j] = φm₁
-    if j < Ny
-        λm₂, φm₂ = spherical_midpoint(λCC[i, j], φCC[i, j], λCC[i, j+1], φCC[i, j+1])
-        λCF[i, j] = λm₂
-        φCF[i, j] = φm₂
-    else
-        λm₃, φm₃ = spherical_midpoint(λFF[i, Ny], φFF[i, Ny], λFF[iE, Ny], φFF[iE, Ny])
-        λCF[i, Ny] = λm₃
-        φCF[i, Ny] = φm₃
-    end    
+    λm₂, φm₂ = spherical_midpoint(λFF[i, j], φFF[i, j], λFF[iE, j], φFF[iE, j])
+    λCF[i, j] = λm₂
+    φCF[i, j] = φm₂
 end
 
 @kernel function _reconstruct_e1_e2_metrics!(e1u, e1v, e1f, e1t, e2u, e2v, e2f, e2t, λCC, φCC, λFF, φFF, λFC, φFC, λCF, φCF, radius, Nx, Ny)
     i, j = @index(Global, NTuple)
     iE = east_idx(i, Nx)
-    e1u[i, j] = haversine((λCC[i, j], φCC[i, j]), (λCC[iE, j], φCC[iE, j]), radius)
+    iW = west_idx(i, Nx)
+    e1u[i, j] = haversine((λCC[iW, j], φCC[iW, j]), (λCC[i, j], φCC[i, j]), radius)
     e1v[i, j] = haversine((λFF[i, j], φFF[i, j]), (λFF[iE, j], φFF[iE, j]), radius)
     e1f[i, j] = haversine((λCF[i, j], φCF[i, j]), (λCF[iE, j], φCF[iE, j]), radius)
-    if j < Ny
-        e2u[i, j] = haversine((λFC[i, j], φFC[i, j]), (λFC[i, j+1], φFC[i, j+1]), radius)
-        e2v[i, j] = haversine((λCC[i, j], φCC[i, j]), (λCC[i, j+1], φCC[i, j+1]), radius)
-        e2f[i, j] = haversine((λFC[i, j], φFC[i, j]), (λFC[i, j+1], φFC[i, j+1]), radius)
+    if Ny == 1
+        e2u[i, j] = e1u[i, j]
+        e2v[i, j] = e1v[i, j]
+        e2f[i, j] = e1f[i, j]
     else
-        e2u[i, Ny] = e2u[i, Ny-1]
-        e2v[i, Ny] = e2v[i, Ny-1]
-        e2f[i, Ny] = e2f[i, Ny-1]
-        e2u[i, 1]  = e1u[i, 1]
-        e2v[i, 1]  = e1v[i, 1]
-        e2f[i, 1]  = e1f[i, 1]
-    end    
-    iW = west_idx(i, Nx)
+        if j < Ny
+            e2u[i, j] = haversine((λFC[i, j], φFC[i, j]), (λFC[i, j+1], φFC[i, j+1]), radius)
+        else
+            e2u[i, Ny] = e2u[i, Ny-1]
+        end
+
+        if j > 1
+            e2v[i, j] = haversine((λCC[i, j-1], φCC[i, j-1]), (λCC[i, j], φCC[i, j]), radius)
+            e2f[i, j] = haversine((λFC[i, j-1], φFC[i, j-1]), (λFC[i, j], φFC[i, j]), radius)
+        else
+            e2v[i, 1] = e1v[i, 1]
+            e2f[i, 1] = e1f[i, 1]
+        end
+    end
+
     e1t[i, j] = haversine((λFC[iW, j], φFC[iW, j]), (λFC[i, j], φFC[i, j]), radius)
-    if j == 1
-        e2t[i, 1] = e2v[i, 1]
+    if Ny == 1
+        e2t[i, j] = e2v[i, j]
+    elseif j < Ny
+        e2t[i, j] = (e2v[i, j] + e2v[i, j+1]) / 2
     else
-        e2t[i, j] = (e2v[i, j-1] + e2v[i, j]) / 2
+        e2t[i, Ny] = e2v[i, Ny]
     end
 end
 
@@ -174,7 +179,11 @@ function reconstruct_orca_mesh_from_CC_FF_points(λCC, φCC, λFF, φFF; radius)
     size(λCC) == size(λFF) || throw(ArgumentError("T-point and F-point grids must have matching size, got $(size(λCC)) and $(size(λFF))."))
 
     Nx, Ny = size(λCC)
+    overlap = periodic_overlap_index(λCC)
     AFT = promote_type(eltype(λCC), eltype(φCC), eltype(λFF), eltype(φFF), typeof(radius))
+
+    λFFₒ = shift_face_y(shift_face_x(λFF, overlap))
+    φFFₒ = shift_face_y(shift_face_x(φFF, overlap))
 
     λFC  = similar(λCC, AFT)
     φFC  = similar(φCC, AFT)
@@ -184,7 +193,7 @@ function reconstruct_orca_mesh_from_CC_FF_points(λCC, φCC, λFF, φFF; radius)
 
     launch_xy = KernelParameters(1:Nx, 1:Ny)
 
-    _reconstruct_λFC_φFC_λCF_φCF!(dev, (Nx, Ny), (16, 16))(λFC, φFC, λCF, φCF, λCC, φCC, λFF, φFF, Nx, Ny)
+    _reconstruct_λFC_φFC_λCF_φCF!(dev, (Nx, Ny), (16, 16))(λFC, φFC, λCF, φCF, λCC, φCC, λFFₒ, φFFₒ, Nx, Ny)
 
     e1u = similar(λCC, AFT)
     e2u = similar(λCC, AFT)
@@ -195,7 +204,7 @@ function reconstruct_orca_mesh_from_CC_FF_points(λCC, φCC, λFF, φFF; radius)
     e1t = similar(λCC, AFT)
     e2t = similar(λCC, AFT)
 
-    _reconstruct_e1_e2_metrics!(dev, (Nx, Ny), (16, 16))(e1u, e1v, e1f, e1t, e2u, e2v, e2f, e2t, λCC, φCC, λFF, φFF, λFC, φFC, λCF, φCF, radius, Nx, Ny)
+    _reconstruct_e1_e2_metrics!(dev, (Nx, Ny), (16, 16))(e1u, e1v, e1f, e1t, e2u, e2v, e2f, e2t, λCC, φCC, λFFₒ, φFFₒ, λFC, φFC, λCF, φCF, radius, Nx, Ny)
 
     AzCC = similar(λCC, AFT)
     AzFC = e1u .* e2u
@@ -203,14 +212,14 @@ function reconstruct_orca_mesh_from_CC_FF_points(λCC, φCC, λFF, φFF; radius)
     AzFF = similar(λCC, AFT)
 
     if Ny > 1
-        _reconstruct_Az_interior!(dev, (Nx, Ny), (16, 16))(AzCC, AzFF, λCC, φCC, λFF, φFF, radius, Nx, Ny)
-        _fill_Az_boundaries!(dev, Nx, 16)(AzCC, AzFF, Ny)
+        _reconstruct_Az_interior!(dev, (Nx, Ny), (16, 16))(AzCC, AzFF, λCC, φCC, λFFₒ, φFFₒ, radius, Nx, Ny)
+        _fill_AzCC_boundaries!(dev, Nx, 16)(AzCC, AzFF, Ny)
     else
         AzCC .= e1t .* e2t
         AzFF .= AzCC
     end
 
-    return (; λCC, λFC, λCF, λFF, φCC, φFC, φCF, φFF,
+    return (; λCC, λFC, λCF, λFF = λFFₒ, φCC, φFC, φCF, φFF = φFFₒ,
               e1t, e1u, e1v, e1f, e2t, e2u, e2v, e2f,
               AzCC, AzFC, AzCF, AzFF)
 end
@@ -234,18 +243,22 @@ function read_orca_staggered_mesh(ds; radius = Oceananigans.defaults.planet_radi
     # Assume ORCA horizontal variables are stored as (Nx, Ny).
     λCC = read_2d_nemo_variable(ds, "glamt")
     Nx, Ny = size(λCC)
+    overlap = periodic_overlap_index(λCC)
 
     orcaread(data, name) = orient_xy(read_2d_nemo_variable(data, name), Nx, Ny; name)
+    shift_x(data) = shift_face_x(data, overlap)
+    shift_y(data) = shift_face_y(data)
+    shift_xy(data) = shift_y(shift_x(data))
 
     if has_all_variables(ds, metrics)
-        λCC, λFC, λCF, λFF = orcaread(ds, "glamt"), orcaread(ds, "glamu"), orcaread(ds, "glamv"), orcaread(ds, "glamf")
-        φCC, φFC, φCF, φFF = orcaread(ds, "gphit"), orcaread(ds, "gphiu"), orcaread(ds, "gphiv"), orcaread(ds, "gphif")
-        e1t, e1u, e1v, e1f = orcaread(ds, "e1t"),   orcaread(ds, "e1u"),   orcaread(ds, "e1v"),   orcaread(ds, "e1f")
-        e2t, e2u, e2v, e2f = orcaread(ds, "e2t"),   orcaread(ds, "e2u"),   orcaread(ds, "e2v"),   orcaread(ds, "e2f")
+        λCC, λFC, λCF, λFF = orcaread(ds, "glamt"), shift_x(orcaread(ds, "glamu")), shift_y(orcaread(ds, "glamv")), shift_xy(orcaread(ds, "glamf"))
+        φCC, φFC, φCF, φFF = orcaread(ds, "gphit"), shift_x(orcaread(ds, "gphiu")), shift_y(orcaread(ds, "gphiv")), shift_xy(orcaread(ds, "gphif"))
+        e1t, e1u, e1v, e1f = orcaread(ds, "e1t"),   shift_x(orcaread(ds, "e1u")),   shift_y(orcaread(ds, "e1v")),   shift_xy(orcaread(ds, "e1f"))
+        e2t, e2u, e2v, e2f = orcaread(ds, "e2t"),   shift_x(orcaread(ds, "e2u")),   shift_y(orcaread(ds, "e2v")),   shift_xy(orcaread(ds, "e2f"))
 
         if "e1e2t" in keys(ds)
-            AzCC, AzFC = orcaread(ds, "e1e2t"), orcaread(ds, "e1e2u")
-            AzCF, AzFF = orcaread(ds, "e1e2v"), orcaread(ds, "e1e2f")
+            AzCC, AzFC = orcaread(ds, "e1e2t"), shift_x(orcaread(ds, "e1e2u"))
+            AzCF, AzFF = shift_y(orcaread(ds, "e1e2v")), shift_xy(orcaread(ds, "e1e2f"))
         else
             AzCC, AzFC, AzCF, AzFF = e1t .* e2t, e1u .* e2u, e1v .* e2v, e1f .* e2f
         end
@@ -264,7 +277,7 @@ function read_orca_staggered_mesh(ds; radius = Oceananigans.defaults.planet_radi
         return reconstruct_orca_mesh_from_CC_FF_points(λCC, φCC, λFF, φFF; radius)
     end
 
-    throw(ArgumentError("Unsupported ORCA mesh format. Missing either full staggered variables $(full_stagger_vars) or T/F variables $(tf_vars)."))
+    throw(ArgumentError("Unsupported ORCA mesh format. Missing either full staggered variables $(metrics) or T/F variables $(coords)."))
 end
 
 # Detect periodic overlap columns in NEMO data.
@@ -280,49 +293,57 @@ function periodic_overlap_index(λCC)
     return 0
 end
 
-# Shift Face-x data by -1 index while preserving the periodic overlap structure.
-# NEMO U[i] is the eastern face of T[i], but Oceananigans Face[i] is the western
-# face of Center[i], so Face[i] should get U[i-1].
+# Reindex x-face fields from NEMO to Oceananigans.
+# In NEMO, U[i, j] sits on the east face of T[i, j].
+# In Oceananigans, Face-x[i, j] is the west face of Center[i, j].
+# So Oceananigans Face-x[i, j] should receive NEMO U[i-1, j] (with periodic wrap).
+# `overlap` is the duplicated periodic tail-column count; `No = Nx - overlap`
+# maps i=1 to the last unique column instead of a duplicated overlap column.
 function shift_face_x(data, overlap)
     Nx = size(data, 1)
     No = Nx - overlap
     return data[vcat(No, 1:Nx-1), :]
 end
 
+# Reindex y-face fields from NEMO to Oceananigans.
+# NEMO V/F are indexed as faces north of T-row j, while Oceananigans Face-y[j]
+# is treated as the south face of Center-row j. This is a -1 row shift:
+#   out[:, j] <- in[:, j-1] for j >= 2.
+# Row 1 has no southern source row in the input, so we keep in[:, 1] and let
+# halo filling / boundary-condition handling manage the exterior face.
+function shift_face_y(data)
+    Nx, Ny = size(data)
+    shifted = similar(data)
+    shifted[:, 1] .= data[:, 1]
+    if Ny > 1
+        shifted[:, 2:Ny] .= data[:, 1:Ny-1]
+    end
+    return shifted
+end
+
 # Copy NEMO data into a Field on `helper_grid`, fill halos, return as OffsetArray.
 #
-# Stagger offsets (NEMO → Oceananigans):
-#   Face-x: shifted by -1 in x via shift_face_x
-#   Face-y: shifted by +1 in y (row 1 left empty, filled by continue_south!)
-#
-# With RightFaceFolded topology, Face-y fields have Ny+1 interior points.
-# NEMO data (Ny_nemo rows) fills rows 2:Ny+1, covering the fold row at Ny+1.
-function halo_filled_data(data, helper_grid, bcs, LX, LY, overlap)
+# Data is expected to already be in Oceananigans indexing when this is called.
+function halo_filled_data(data, helper_grid, bcs, LX, LY)
     TX, TY, _ = topology(helper_grid)
     Nx, Ny, _ = size(helper_grid)
     Ni = Base.length(LX(), TX(), Nx)
     Nj = size(data, 2)
 
-    shifted_data = LX === Face ? shift_face_x(data, overlap) : data
-
     field = Field{LX, LY, Center}(helper_grid; boundary_conditions = bcs)
-    if LY === Center
-        field.data[1:Ni, 1:Nj, 1] .= shifted_data[1:Ni, 1:Nj]
-    else
-        field.data[1:Ni, 2:Nj+1, 1] .= shifted_data[1:Ni, 1:Nj]
-    end
+    field.data[1:Ni, 1:Nj, 1] .= data[1:Ni, 1:Nj]
     fill_halo_regions!(field)
 
     return deepcopy(dropdims(field.data, dims = 3))
 end
 
 # Fill halos for all four stagger locations (CC, FC, CF, FF) at once.
-function halo_fill_stagger(CC, FC, CF, FF, helper_grid, bcs, overlap)
+function halo_fill_stagger(CC, FC, CF, FF, helper_grid, bcs)
     return (
-        halo_filled_data(CC, helper_grid, bcs, Center, Center, overlap),
-        halo_filled_data(FC, helper_grid, bcs, Face,   Center, overlap),
-        halo_filled_data(CF, helper_grid, bcs, Center, Face,   overlap),
-        halo_filled_data(FF, helper_grid, bcs, Face,   Face,   overlap),
+        halo_filled_data(CC, helper_grid, bcs, Center, Center),
+        halo_filled_data(FC, helper_grid, bcs, Face,   Center),
+        halo_filled_data(CF, helper_grid, bcs, Center, Face),
+        halo_filled_data(FF, helper_grid, bcs, Face,   Face),
     )
 end
 
@@ -405,15 +426,11 @@ function ORCAGrid(arch = CPU(), FT::DataType = Float64;
     AzCC, AzFC, AzCF, AzFF = mesh.AzCC, mesh.AzFC, mesh.AzCF, mesh.AzFF
 
     # Extract tripolar pole parameters from F-point coordinates
-    last_row_φ = φFF[:, end]
-    pole_idx   = argmax(last_row_φ)
-    north_poles_latitude = min(Float64(last_row_φ[pole_idx]), 89.999)
-    first_pole_longitude = Float64(λFF[pole_idx, end])
+    pole_idx = argmax(φFF)
+    north_poles_latitude = min(Float64(φFF[pole_idx]), 89.999)
+    first_pole_longitude = Float64(λFF[pole_idx])
 
     Nx, Ny = size(λCC)
-
-    # Detect periodic overlap columns (e.g., eORCA1 has 2 trailing overlap columns)
-    overlap = periodic_overlap_index(λCC)
 
     # Remove degenerate southern rows from the extended eORCA grid
     jr = south_rows_to_remove
@@ -433,7 +450,7 @@ function ORCAGrid(arch = CPU(), FT::DataType = Float64;
 
     # With RightFaceFolded (Bounded-like) topology:
     #   Center-y has Ny interior points        ← matches NEMO data
-    #   Face-y   has Ny + 1 interior points    ← NEMO V/F data shifted +1, fold at Ny+1
+    #   Face-y   has Ny + 1 interior points
     Hx, Hy, Hz = halo
 
     # Vertical coordinate
@@ -453,11 +470,11 @@ function ORCAGrid(arch = CPU(), FT::DataType = Float64;
                                   bottom = nothing)
 
     # Fill halos for all stagger locations
-    λᶜᶜᵃ, λᶠᶜᵃ, λᶜᶠᵃ, λᶠᶠᵃ     = halo_fill_stagger(λCC,  λFC,  λCF,  λFF,  helper_grid, bcs, overlap)
-    φᶜᶜᵃ, φᶠᶜᵃ, φᶜᶠᵃ, φᶠᶠᵃ     = halo_fill_stagger(φCC,  φFC,  φCF,  φFF,  helper_grid, bcs, overlap)
-    Δxᶜᶜᵃ, Δxᶠᶜᵃ, Δxᶜᶠᵃ, Δxᶠᶠᵃ = halo_fill_stagger(e1t,  e1u,  e1v,  e1f,  helper_grid, bcs, overlap)
-    Δyᶜᶜᵃ, Δyᶠᶜᵃ, Δyᶜᶠᵃ, Δyᶠᶠᵃ = halo_fill_stagger(e2t,  e2u,  e2v,  e2f,  helper_grid, bcs, overlap)
-    Azᶜᶜᵃ, Azᶠᶜᵃ, Azᶜᶠᵃ, Azᶠᶠᵃ = halo_fill_stagger(AzCC, AzFC, AzCF, AzFF, helper_grid, bcs, overlap)
+    λᶜᶜᵃ, λᶠᶜᵃ, λᶜᶠᵃ, λᶠᶠᵃ     = halo_fill_stagger(λCC,  λFC,  λCF,  λFF,  helper_grid, bcs)
+    φᶜᶜᵃ, φᶠᶜᵃ, φᶜᶠᵃ, φᶠᶠᵃ     = halo_fill_stagger(φCC,  φFC,  φCF,  φFF,  helper_grid, bcs)
+    Δxᶜᶜᵃ, Δxᶠᶜᵃ, Δxᶜᶠᵃ, Δxᶠᶠᵃ = halo_fill_stagger(e1t,  e1u,  e1v,  e1f,  helper_grid, bcs)
+    Δyᶜᶜᵃ, Δyᶠᶜᵃ, Δyᶜᶠᵃ, Δyᶠᶠᵃ = halo_fill_stagger(e2t,  e2u,  e2v,  e2f,  helper_grid, bcs)
+    Azᶜᶜᵃ, Azᶠᶜᵃ, Azᶜᶠᵃ, Azᶠᶠᵃ = halo_fill_stagger(AzCC, AzFC, AzCF, AzFF, helper_grid, bcs)
 
     # Fill south halo metrics from a reference LatitudeLongitudeGrid
     # (the eORCA south halo has degenerate/zero values after fill_halo_regions!)
