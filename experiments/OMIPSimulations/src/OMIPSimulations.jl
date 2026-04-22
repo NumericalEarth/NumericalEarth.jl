@@ -14,7 +14,6 @@ using Oceananigans.TurbulenceClosures.TKEBasedVerticalDiffusivities:
 using NumericalEarth.SeaIces: sea_ice_simulation
 using NumericalEarth.EarthSystemModels: OceanSeaIceModel, Radiation,
     SimilarityTheoryFluxes,
-    COARELogarithmicSimilarityProfile,
     LinearStableStabilityFunction,
     MomentumBasedFrictionVelocity,
     ThreeEquationHeatFlux
@@ -22,6 +21,7 @@ using NumericalEarth.EarthSystemModels: OceanSeaIceModel, Radiation,
 using NumericalEarth.EarthSystemModels.InterfaceComputations:
     ComponentInterfaces,
     CoefficientBasedFluxes,
+    COARELogarithmicSimilarityProfile,
     LargeYeagerTransferCoefficients,
     MomentumRoughnessLength,
     ScalarRoughnessLength,
