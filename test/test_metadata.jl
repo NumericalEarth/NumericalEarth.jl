@@ -114,7 +114,7 @@ end
 end
 
 @testset "Metadata region keyword" begin
-    # region keyword replaces bounding_box
+    # region keyword replaces BoundingBox
     col = Column(35.1, 50.1)
     md = Metadatum(:temperature; dataset=ECCO4Monthly(), region=col)
     @test md.region isa Column
