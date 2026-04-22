@@ -1,4 +1,5 @@
 include("runtests_setup.jl")
+include("download_utils.jl")
 
 using CopernicusMarine
 
@@ -14,7 +15,9 @@ using Oceananigans.Fields: location
         metadatum = Metadatum(variable; dataset, bounding_box)
         filepath = NumericalEarth.DataWrangling.metadata_path(metadatum)
         isfile(filepath) && rm(filepath; force=true)
-        NumericalEarth.DataWrangling.download_dataset(metadatum)
+        download_dataset_with_fallback(filepath; dataset_name="GLORYSDaily $variable") do
+            NumericalEarth.DataWrangling.download_dataset(metadatum)
+        end
         @test isfile(filepath)
     end
 end
