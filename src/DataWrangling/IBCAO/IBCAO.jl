@@ -109,6 +109,6 @@ function download_dataset(metadatum::IBCAOMetadatum)
 end
 
 # Implemented in ext/NumericalEarthArchGDALExt.jl when ArchGDAL is loaded.
-function _reproject_ibcao_to_netcdf end
+function reproject_ibcao_to_netcdf end
 
 end # module
