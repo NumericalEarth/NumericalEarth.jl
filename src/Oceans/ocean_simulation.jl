@@ -191,6 +191,7 @@ defaults on a per-field basis.
 function ocean_simulation(grid;
                           Δt = estimate_maximum_Δt(grid),
                           closure = default_ocean_closure(),
+                          clock = Clock(grid),
                           tracers = (:T, :S),
                           free_surface = default_free_surface(grid),
                           reference_density = 1020,
@@ -316,6 +317,7 @@ function ocean_simulation(grid;
     end
 
     ocean_model = HydrostaticFreeSurfaceModel(grid;
+                                              clock,
                                               buoyancy,
                                               closure,
                                               biogeochemistry,
