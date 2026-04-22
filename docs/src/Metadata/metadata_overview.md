@@ -87,3 +87,6 @@ NumericalEarth currently ships connectors for the following data products:
 | `GLORYSMonthly`    | [Supported variables](@ref dataset-glorysmonthly-vars)    | [Copernicus GLORYS product page](https://data.marine.copernicus.eu/product/GLOBAL_MULTIYEAR_PHY_001_030/description) |
 | `RepeatYearJRA55`  | [Supported variables](@ref dataset-repeatyearjra55-vars)  | [JRA-55 Reanalysis](https://www.data.jma.go.jp/jra/html/JRA-55/index_en.html)                                 |
 | `MultiYearJRA55`   | [Supported variables](@ref dataset-multiyearjra55-vars)   | [JRA-55 Reanalysis](https://www.data.jma.go.jp/jra/html/JRA-55/index_en.html)                                 |
+| `IBCSOv2`          | [Supported variables](@ref dataset-ibcsov2-vars)          | [IBCSO product page](https://ibcso.org/ibcso-2024-annual-release/)                                  |
+| `GEBCO2024`        | [Supported variables](@ref dataset-gebco2024-vars)        | [GEBCO 2024 Grid](https://www.gebco.net/data_and_products/gridded_bathymetry_data/)                 |
+| `IBCAOv5`          | [Supported variables](@ref dataset-ibcaov5-vars)          | [IBCAO product page](https://www.gebco.net/data_and_products/gridded_bathymetry_data/arctic_ocean/) |

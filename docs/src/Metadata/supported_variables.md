@@ -13,6 +13,9 @@ NumericalEarth currently ships connectors for the following data products:
 | `GLORYSMonthly`    | [Supported variables](@ref dataset-glorysmonthly-vars)    | [Copernicus GLORYS product page](https://data.marine.copernicus.eu/product/GLOBAL_MULTIYEAR_PHY_001_030/description) |
 | `RepeatYearJRA55`  | [Supported variables](@ref dataset-repeatyearjra55-vars)  | [JRA-55 Reanalysis](https://www.data.jma.go.jp/jra/html/JRA-55/index_en.html)                                 |
 | `MultiYearJRA55`   | [Supported variables](@ref dataset-multiyearjra55-vars)   | [JRA-55 Reanalysis](https://www.data.jma.go.jp/jra/html/JRA-55/index_en.html)                                 |
+| `IBCSOv2`          | [Supported variables](@ref dataset-ibcsov2-vars)          | [IBCSO product page](https://ibcso.org/ibcso-2024-annual-release/)                                  |
+| `GEBCO2024`        | [Supported variables](@ref dataset-gebco2024-vars)        | [GEBCO 2024 Grid](https://www.gebco.net/data_and_products/gridded_bathymetry_data/)                 |
+| `IBCAOv5`          | [Supported variables](@ref dataset-ibcaov5-vars)          | [IBCAO product page](https://www.gebco.net/data_and_products/gridded_bathymetry_data/arctic_ocean/) |
 
 ## [Supported variables for ETOPO2022](@id dataset-etopo2022-vars)
 
@@ -114,3 +117,15 @@ NumericalEarth currently ships connectors for the following data products:
 - `:snow_freshwater_flux` - Precipitation flux from snow/ice (kg m⁻² s⁻¹).
 - `:river_freshwater_flux` - River discharge flux (kg m⁻² s⁻¹).
 - `:iceberg_freshwater_flux` - Iceberg calving flux (kg m⁻² s⁻¹).
+
+## [Supported variables for IBCSOv2](@id dataset-ibcsov2-vars)
+
+- `:bottom_height` - Southern Ocean bathymetry at 500 m resolution, south of 50°S (m).
+
+## [Supported variables for GEBCO2024](@id dataset-gebco2024-vars)
+
+- `:bottom_height` - Global bathymetry and topography at 15 arc-second resolution (m).
+
+## [Supported variables for IBCAOv5](@id dataset-ibcaov5-vars)
+
+- `:bottom_height` - Arctic Ocean bathymetry at 100 m resolution, north of 64°N, including Greenland ice sheet surface elevation (m).
