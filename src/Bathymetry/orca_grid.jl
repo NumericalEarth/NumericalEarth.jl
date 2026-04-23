@@ -532,3 +532,202 @@ function ORCAGrid(arch = CPU(), FT::DataType = Float64;
 
     return ImmersedBoundaryGrid(underlying_grid, GridFittedBottom(bottom_height); active_cells_map)
 end
+
+function _extract_t_and_f_coordinates(grid)
+    Nx, Ny, _ = size(grid)
+    λCC = Array(on_architecture(CPU(), grid.λᶜᶜᵃ[1:Nx, 1:Ny]))
+    φCC = Array(on_architecture(CPU(), grid.φᶜᶜᵃ[1:Nx, 1:Ny]))
+    λFF = Array(on_architecture(CPU(), grid.λᶠᶠᵃ[1:Nx, 1:Ny]))
+    φFF = Array(on_architecture(CPU(), grid.φᶠᶠᵃ[1:Nx, 1:Ny]))
+    return λCC, φCC, λFF, φFF
+end
+
+@inline function _resampled_point(λsrc, φsrc, x, y)
+    Nx, Ny = size(λsrc)
+
+    i0_raw = floor(Int, x)
+    i0 = mod1(i0_raw, Nx)
+    i1 = mod1(i0_raw + 1, Nx)
+    fx = x - floor(x)
+
+    j0 = clamp(floor(Int, y), 1, Ny)
+    j1 = clamp(j0 + 1, 1, Ny)
+    fy = clamp(y - floor(y), 0.0, 1.0)
+
+    w00 = (1 - fx) * (1 - fy)
+    w10 = fx * (1 - fy)
+    w01 = (1 - fx) * fy
+    w11 = fx * fy
+
+    x00, y00, z00 = lat_lon_to_cartesian(φsrc[i0, j0], λsrc[i0, j0]; radius = 1, check_latitude_bounds = false)
+    x10, y10, z10 = lat_lon_to_cartesian(φsrc[i1, j0], λsrc[i1, j0]; radius = 1, check_latitude_bounds = false)
+    x01, y01, z01 = lat_lon_to_cartesian(φsrc[i0, j1], λsrc[i0, j1]; radius = 1, check_latitude_bounds = false)
+    x11, y11, z11 = lat_lon_to_cartesian(φsrc[i1, j1], λsrc[i1, j1]; radius = 1, check_latitude_bounds = false)
+
+    xc = w00 * x00 + w10 * x10 + w01 * x01 + w11 * x11
+    yc = w00 * y00 + w10 * y10 + w01 * y01 + w11 * y11
+    zc = w00 * z00 + w10 * z10 + w01 * z01 + w11 * z11
+
+    nrm = sqrt(xc^2 + yc^2 + zc^2)
+    if nrm < 1e-12
+        return λsrc[i0, j0], φsrc[i0, j0]
+    end
+
+    xc /= nrm
+    yc /= nrm
+    zc /= nrm
+
+    φr, λr = cartesian_to_lat_lon(xc, yc, zc)
+    return wrap_longitude(λr), φr
+end
+
+function _resample_lon_lat(λsrc, φsrc, Nx_target, Ny_target)
+    Nx_src, Ny_src = size(λsrc)
+    T = promote_type(eltype(λsrc), eltype(φsrc), Float64)
+
+    λdst = Matrix{T}(undef, Nx_target, Ny_target)
+    φdst = Matrix{T}(undef, Nx_target, Ny_target)
+
+    xq = 1 .+ (0:Nx_target-1) .* (Nx_src / Nx_target)
+    yq = Ny_target == 1 ? [1.0] : collect(range(1, Ny_src, length = Ny_target))
+
+    @inbounds for j in 1:Ny_target, i in 1:Nx_target
+        λp, φp = _resampled_point(λsrc, φsrc, xq[i], yq[j])
+        λdst[i, j] = λp
+        φdst[i, j] = φp
+    end
+
+    return λdst, φdst
+end
+
+function _build_grid_from_resampled_orca_mesh(mesh;
+                                              arch,
+                                              FT::DataType,
+                                              Nz,
+                                              z,
+                                              halo,
+                                              radius)
+    λCC, λFC, λCF, λFF = mesh.λCC, mesh.λFC, mesh.λCF, mesh.λFF
+    φCC, φFC, φCF, φFF = mesh.φCC, mesh.φFC, mesh.φCF, mesh.φFF
+    e1t, e1u, e1v, e1f = mesh.e1t, mesh.e1u, mesh.e1v, mesh.e1f
+    e2t, e2u, e2v, e2f = mesh.e2t, mesh.e2u, mesh.e2v, mesh.e2f
+    AzCC, AzFC, AzCF, AzFF = mesh.AzCC, mesh.AzFC, mesh.AzCF, mesh.AzFF
+
+    Nx, Ny = size(λCC)
+
+    overlap = periodic_overlap_index(λCC)
+    southernmost_latitude = Float64(minimum(φCC))
+
+    last_row_φ = φFF[:, end]
+    pole_idx = argmax(last_row_φ)
+    north_poles_latitude = min(Float64(last_row_φ[pole_idx]), 89.999)
+    first_pole_longitude = Float64(λFF[pole_idx, end])
+
+    Hx, Hy, Hz = halo
+    topo = (Periodic, RightFaceFolded, Bounded)
+    Lz, z_coord = generate_coordinate(FT, topo, (Nx, Ny, Nz), halo, z, :z, 3, CPU())
+
+    helper_grid = RectilinearGrid(; size = (Nx, Ny), halo = (Hx, Hy),
+                                    x = (0, 1), y = (0, 1),
+                                    topology = (Periodic, RightFaceFolded, Flat))
+
+    bcs = FieldBoundaryConditions(north  = FPivotZipperBoundaryCondition(),
+                                  south  = NoFluxBoundaryCondition(),
+                                  west   = Oceananigans.PeriodicBoundaryCondition(),
+                                  east   = Oceananigans.PeriodicBoundaryCondition(),
+                                  top    = nothing,
+                                  bottom = nothing)
+
+    λᶜᶜᵃ, λᶠᶜᵃ, λᶜᶠᵃ, λᶠᶠᵃ    = halo_fill_stagger(λCC, λFC, λCF, λFF, helper_grid, bcs, overlap)
+    φᶜᶜᵃ, φᶠᶜᵃ, φᶜᶠᵃ, φᶠᶠᵃ    = halo_fill_stagger(φCC, φFC, φCF, φFF, helper_grid, bcs, overlap)
+    Δxᶜᶜᵃ, Δxᶠᶜᵃ, Δxᶜᶠᵃ, Δxᶠᶠᵃ = halo_fill_stagger(e1t, e1u, e1v, e1f, helper_grid, bcs, overlap)
+    Δyᶜᶜᵃ, Δyᶠᶜᵃ, Δyᶜᶠᵃ, Δyᶠᶠᵃ = halo_fill_stagger(e2t, e2u, e2v, e2f, helper_grid, bcs, overlap)
+    Azᶜᶜᵃ, Azᶠᶜᵃ, Azᶜᶠᵃ, Azᶠᶠᵃ = halo_fill_stagger(AzCC, AzFC, AzCF, AzFF, helper_grid, bcs, overlap)
+
+    ref_grid = LatitudeLongitudeGrid(; size = (Nx, Ny, Nz),
+                                       latitude = (southernmost_latitude, 90),
+                                       longitude = (-180, 180),
+                                       halo, z = (0, 1), radius)
+
+    for (field, ref_name) in ((Δxᶜᶜᵃ, :Δxᶜᶜᵃ), (Δxᶠᶜᵃ, :Δxᶠᶜᵃ), (Δxᶜᶠᵃ, :Δxᶜᶠᵃ), (Δxᶠᶠᵃ, :Δxᶠᶠᵃ),
+                              (Δyᶜᶜᵃ, :Δyᶜᶠᵃ), (Δyᶠᶜᵃ, :Δyᶠᶜᵃ), (Δyᶜᶠᵃ, :Δyᶜᶠᵃ), (Δyᶠᶠᵃ, :Δyᶠᶜᵃ),
+                              (Azᶜᶜᵃ, :Azᶜᶜᵃ), (Azᶠᶜᵃ, :Azᶠᶜᵃ), (Azᶜᶠᵃ, :Azᶜᶠᵃ), (Azᶠᶠᵃ, :Azᶠᶠᵃ))
+        continue_south!(field, getproperty(ref_grid, ref_name))
+    end
+
+    to_arch(data) = on_architecture(arch, map(FT, data))
+
+    return OrthogonalSphericalShellGrid{Periodic, RightFaceFolded, Bounded}(
+        arch,
+        Nx, Ny, Nz,
+        Hx, Hy, Hz,
+        convert(FT, Lz),
+        to_arch(λᶜᶜᵃ), to_arch(λᶠᶜᵃ), to_arch(λᶜᶠᵃ), to_arch(λᶠᶠᵃ),
+        to_arch(φᶜᶜᵃ), to_arch(φᶠᶜᵃ), to_arch(φᶜᶠᵃ), to_arch(φᶠᶠᵃ),
+        on_architecture(arch, z_coord),
+        to_arch(Δxᶜᶜᵃ), to_arch(Δxᶠᶜᵃ), to_arch(Δxᶜᶠᵃ), to_arch(Δxᶠᶠᵃ),
+        to_arch(Δyᶜᶜᵃ), to_arch(Δyᶠᶜᵃ), to_arch(Δyᶜᶠᵃ), to_arch(Δyᶠᶠᵃ),
+        to_arch(Azᶜᶜᵃ), to_arch(Azᶠᶜᵃ), to_arch(Azᶜᶠᵃ), to_arch(Azᶠᶠᵃ),
+        convert(FT, radius),
+        Tripolar(north_poles_latitude, first_pole_longitude, southernmost_latitude))
+end
+
+"""
+    resample_grid(source_grid; size, halo = nothing, Nz_target = nothing, z = nothing)
+
+Resample ORCA horizontal grid coordinates/metrics to a new `(Nx, Ny)` horizontal size.
+
+Only horizontal resampling is supported. Vertical resampling is intentionally unsupported.
+If `source_grid` is an `ImmersedBoundaryGrid`, this function warns and returns a non-immersed
+resampled underlying grid (bathymetry is not resampled).
+"""
+function resample_grid(source_grid; size, halo = nothing, Nz_target = nothing, z = nothing)
+    if !(source_grid isa ImmersedBoundaryGrid) &&
+       !(source_grid isa Oceananigans.Grids.OrthogonalSphericalShellGrid)
+        throw(ArgumentError("`resample_grid` expects an ORCA underlying grid or ImmersedBoundaryGrid returned by ORCAGrid. Received $(typeof(source_grid))."))
+    end
+
+    base_grid = source_grid
+    if source_grid isa ImmersedBoundaryGrid
+        @warn "Bathymetry resampling is not supported. The resampled grid will not be an ImmersedBoundaryGrid even if the input grid has attached bathymetry. Recompute bathymetry with regrid_bathymetry(...) after resampling."
+        base_grid = source_grid.underlying_grid
+    end
+
+    if !isnothing(Nz_target)
+        throw(ArgumentError("Vertical resampling is not supported in `resample_grid`. Received `Nz_target = $(Nz_target)`. Only horizontal resampling via `size=(Nx, Ny)` is supported."))
+    end
+
+    if !isnothing(z)
+        throw(ArgumentError("Vertical coordinate overrides are not supported in `resample_grid`. Received `z = $(z)`. The source grid vertical coordinate is always preserved."))
+    end
+
+    Nx_target, Ny_target = if size isa Tuple
+        length(size) == 2 || throw(ArgumentError("`size` must have exactly two entries `(Nx, Ny)` for horizontal resampling. Received size = $(size)."))
+        Int(size[1]), Int(size[2])
+    elseif size isa AbstractVector
+        length(size) == 2 || throw(ArgumentError("`size` must have exactly two entries `[Nx, Ny]` for horizontal resampling. Received size = $(size)."))
+        Int(size[1]), Int(size[2])
+    else
+        throw(ArgumentError("`size` must be a Tuple or Vector with two entries `(Nx, Ny)`. Received $(typeof(size))."))
+    end
+
+    Nx_target > 0 || throw(ArgumentError("Target Nx must be > 0, got Nx = $(Nx_target)."))
+    Ny_target > 0 || throw(ArgumentError("Target Ny must be > 0, got Ny = $(Ny_target)."))
+
+    arch = Oceananigans.Architectures.architecture(base_grid)
+    FT = eltype(base_grid)
+    Nz = base_grid.Nz
+    radius = hasproperty(base_grid, :radius) ? base_grid.radius : Oceananigans.defaults.planet_radius
+    halo_out = isnothing(halo) ? (base_grid.Hx, base_grid.Hy, base_grid.Hz) : Tuple(halo)
+
+    length(halo_out) == 3 || throw(ArgumentError("`halo` must be a 3-tuple `(Hx, Hy, Hz)`. Received halo = $(halo_out)."))
+
+    λCC, φCC, λFF, φFF = _extract_t_and_f_coordinates(base_grid)
+    λCCr, φCCr = _resample_lon_lat(λCC, φCC, Nx_target, Ny_target)
+    λFFr, φFFr = _resample_lon_lat(λFF, φFF, Nx_target, Ny_target)
+
+    mesh = reconstruct_orca_staggered_mesh_from_t_f_points(λCCr, φCCr, λFFr, φFFr; radius)
+    z_interfaces = Array(on_architecture(CPU(), base_grid.z.cᵃᵃᶠ[1:Nz+1]))
+
+    return _build_grid_from_resampled_orca_mesh(mesh; arch, FT, Nz, z = z_interfaces, halo = halo_out, radius)
+end
