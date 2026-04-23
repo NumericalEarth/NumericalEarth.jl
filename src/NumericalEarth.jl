@@ -30,7 +30,6 @@ export
     os_papa_prescribed_fluxes,
     os_papa_prescribed_flux_boundary_conditions,
     OSPapaHourly,
-    JRA55NetCDFBackend,
     regrid_bathymetry,
     Metadata,
     Metadatum,
@@ -128,7 +127,6 @@ using NumericalEarth.DataWrangling.EN4
 using NumericalEarth.DataWrangling.ORCA
 using NumericalEarth.DataWrangling.WOA
 using NumericalEarth.DataWrangling.JRA55
-using NumericalEarth.DataWrangling.JRA55: JRA55NetCDFBackend
 using NumericalEarth.DataWrangling.OSPapa
 
 using PrecompileTools: @setup_workload, @compile_workload

@@ -92,21 +92,6 @@ function JRA55FieldTimeSeries(args...; kwargs...)
           """)
 end
 
-"""
-    JRA55NetCDFBackend(length [, metadata])
-    JRA55NetCDFBackend(start, length, metadata)
-
-Backwards-compatible shorthand for a `DatasetBackend` configured for
-JRA55-style chunked NetCDF input: multiple time instances per file and no
-inpainting (`inpainting = nothing`). Returns a `DatasetBackend` whose
-metadata-driven `set!` dispatches to the JRA55 multi-year or repeat-year
-methods defined below.
-"""
-JRA55NetCDFBackend(length) = DatasetBackend(length, nothing; inpainting=nothing)
-JRA55NetCDFBackend(length, metadata::Metadata) = DatasetBackend(length, metadata; inpainting=nothing)
-JRA55NetCDFBackend(start::Integer, length::Integer) = DatasetBackend(start, length, nothing; inpainting=nothing)
-JRA55NetCDFBackend(start::Integer, length::Integer, metadata) = DatasetBackend(start, length, metadata; inpainting=nothing)
-
 const JRA55NetCDFFTS              = FlavorOfFTS{<:Any, <:Any, <:Any, <:Any, <:DatasetBackend{<:Any, <:Any, <:Any, <:JRA55Metadata}}
 const JRA55NetCDFFTSRepeatYear    = FlavorOfFTS{<:Any, <:Any, <:Any, <:Any, <:DatasetBackend{<:Any, <:Any, <:Any, <:Metadata{<:RepeatYearJRA55}}}
 const JRA55NetCDFFTSMultipleYears = FlavorOfFTS{<:Any, <:Any, <:Any, <:Any, <:DatasetBackend{<:Any, <:Any, <:Any, <:Metadata{<:MultiYearJRA55}}}
