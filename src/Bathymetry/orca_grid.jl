@@ -426,8 +426,8 @@ function ORCAGrid(arch = CPU(), FT::DataType = Float64;
     AzCC, AzFC, AzCF, AzFF = mesh.AzCC, mesh.AzFC, mesh.AzCF, mesh.AzFF
 
     # Extract tripolar pole parameters from F-point coordinates
-    pole_idx = argmax(φFF)
-    north_poles_latitude = min(Float64(φFF[pole_idx]), 89.999)
+    pole_idx = argmin(φFF[:, end])
+    north_poles_latitude = φFF[pole_idx]
     first_pole_longitude = Float64(λFF[pole_idx])
 
     Nx, Ny = size(λCC)
