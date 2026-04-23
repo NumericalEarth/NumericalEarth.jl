@@ -8,8 +8,14 @@ const JRA55_SHORTNAMES = ["tas", "huss", "psl", "uas", "vas", "rlds", "rsds", "p
 
 Populate `staging_dir` with symlinks to every `.nc` file in `source_dir`.
 Reads go through symlinks (slow) until files are staged with `stage_jra55_year!`.
-Also sweeps any leftover `*.tmp` from a killed prior run, since those are
-half-written staging artefacts and would otherwise be mistaken for real copies.
+Also:
+  - sweeps any leftover `*.tmp` from a killed prior run (half-written copies
+    that would otherwise be mistaken for real copies);
+  - replaces any real `.nc` file whose size doesn't match the source with
+    a fresh symlink. A size mismatch means a prior run crashed mid-`cp` and
+    left a truncated file — before this heal, HDF5 reads would fail with
+    `truncated file: eof = X, stored_eof = Y`, and `stage_jra55_year!`
+    would skip it (it only replaces symlinks).
 """
 function setup_staging_directory(source_dir, staging_dir)
     mkpath(staging_dir)
@@ -18,7 +24,17 @@ function setup_staging_directory(source_dir, staging_dir)
     end
     for src in filter(f -> endswith(f, ".nc"), readdir(source_dir; join=true))
         dst = joinpath(staging_dir, basename(src))
-        isfile(dst) || ispath(dst) || symlink(src, dst)
+        if islink(dst)
+            continue                                         # healthy symlink, leave alone
+        elseif isfile(dst)                                    # real file — validate size
+            if filesize(dst) != filesize(src)
+                @warn "setup_staging_directory: size mismatch at $dst ($(filesize(dst)) vs source $(filesize(src))); replacing with symlink"
+                rm(dst; force=true)
+                symlink(src, dst)
+            end
+        elseif !ispath(dst)                                   # nothing there (incl. broken symlink handled by islink above)
+            symlink(src, dst)
+        end
     end
     return staging_dir
 end
