@@ -171,8 +171,8 @@ function set!(target_field::Field, metadata::Metadatum; kw...)
 
     Lzt = grid.Lz
     Lzm = meta_field.grid.Lz
-    
-    if Lzt > Lzm
+
+    if Lzt > Lzm && is_three_dimensional(metadata)
         throw("The vertical range of the $(metadata.dataset) dataset ($(Lzm) m) is smaller than " *
               "the target grid ($(Lzt) m). Some vertical levels cannot be filled with data.")
     end
