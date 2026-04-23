@@ -7,8 +7,6 @@ using Scratch
 using NumericalEarth.DataWrangling: download_dataset
 using ParallelTestRunner: find_tests, parse_args, filter_tests!, runtests
 
-group = get(ENV, "TEST_GROUP", "all")
-
 # Start with autodiscovered tests
 testsuite = find_tests(@__DIR__)
 
@@ -18,7 +16,6 @@ args = parse_args(ARGS)
 # download_utils and runtests_setup are not tests!
 delete!(testsuite, "runtests_setup")
 delete!(testsuite, "download_utils")
-delete!(testsuite, "test_distributed_utils")
 
 gpu_test = parse(Bool, get(ENV, "GPU_TEST", "false"))
 
