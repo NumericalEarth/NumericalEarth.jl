@@ -189,6 +189,7 @@ jobs:
           echo " --> df -a /"
           df -a /
       - name: Free Disk Space
+        if: ${{ runner.os != 'macOS' }}
         uses: jlumbroso/free-disk-space@54081f138730dfa15788a46383842cd2f914a1be # v1.3.1
         with:
           tool-cache: true
