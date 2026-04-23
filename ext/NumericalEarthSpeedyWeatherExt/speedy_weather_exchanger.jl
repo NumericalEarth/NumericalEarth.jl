@@ -59,7 +59,7 @@ function interpolate_state!(exchanger, exchange_grid, atmos::SpeedySimulation, c
     pa  = exp.(atmos.variables.grid.pres_grid.data)
     ℐꜜˢʷ = atmos.variables.parameterizations.surface_shortwave_down.data
     ℐꜜˡʷ = atmos.variables.parameterizations.surface_longwave_down.data
-    Jᶜ  = atmos.variables.parameterizations.rain_rate.data .+ atmos.variables.physics.snow_rate.data
+    Jᶜ  = atmos.variables.parameterizations.rain_rate.data .+ atmos.variables.parameterizations.snow_rate.data
 
     regrid!(exchange_state.u,    ua)
     regrid!(exchange_state.v,    va)
