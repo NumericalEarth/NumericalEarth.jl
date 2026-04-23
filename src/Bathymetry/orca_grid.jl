@@ -419,10 +419,10 @@ function ORCAGrid(arch = CPU(), FT::DataType = Float64;
     mesh = read_orca_staggered_mesh(ds; radius)
     close(ds)
 
-    λCC, λFC, λCF, λFF = mesh.λCC, mesh.λFC, mesh.λCF, mesh.λFF
-    φCC, φFC, φCF, φFF = mesh.φCC, mesh.φFC, mesh.φCF, mesh.φFF
-    e1t, e1u, e1v, e1f = mesh.e1t, mesh.e1u, mesh.e1v, mesh.e1f
-    e2t, e2u, e2v, e2f = mesh.e2t, mesh.e2u, mesh.e2v, mesh.e2f
+    λCC,  λFC,  λCF,  λFF  = mesh.λCC,  mesh.λFC,  mesh.λCF,  mesh.λFF
+    φCC,  φFC,  φCF,  φFF  = mesh.φCC,  mesh.φFC,  mesh.φCF,  mesh.φFF
+    e1t,  e1u,  e1v,  e1f  = mesh.e1t,  mesh.e1u,  mesh.e1v,  mesh.e1f
+    e2t,  e2u,  e2v,  e2f  = mesh.e2t,  mesh.e2u,  mesh.e2v,  mesh.e2f
     AzCC, AzFC, AzCF, AzFF = mesh.AzCC, mesh.AzFC, mesh.AzCF, mesh.AzFF
 
     # Extract tripolar pole parameters from F-point coordinates
