@@ -26,11 +26,12 @@ permissions:
 env:
   ECCO_USERNAME: ${{ secrets.ECCO_USERNAME }}
   ECCO_WEBDAV_PASSWORD: ${{ secrets.ECCO_WEBDAV_PASSWORD }}
-  COPERNICUS_USERNAME: ${{ secrets.COPERNICUS_SERVICE_USERNAME }}
-  COPERNICUS_PASSWORD: ${{ secrets.COPERNICUS_USERNAME_PASSWORD }}
+  COPERNICUS_USERNAME: ${{ secrets.COPERNICUSMARINE_SERVICE_USERNAME }}
+  COPERNICUS_PASSWORD: ${{ secrets.COPERNICUSMARINE_SERVICE_PASSWORD }}
   CDSAPI_URL: "https://cds.climate.copernicus.eu/api"
   CDSAPI_KEY: ${{ secrets.CDSAPI_KEY }}
   DATADEPS_ALWAYS_ACCEPT: true
+  JULIA_PKG_SERVER_REGISTRY_PREFERENCE: 'eager'
 
 #####
 ##### CPU tests (GitHub-hosted runners)
@@ -98,6 +99,9 @@ jobs:
     container:
       image: ghcr.io/numericalearth/numerical-earth-docker-images:test-julia_1.12.5
       options: --gpus=all
+      volumes:
+        # Mount host `/usr/local` so that we can delete some stuff afterwards
+        - /usr/local:/host-usr-local
     timeout-minutes: 120
     strategy:
       fail-fast: false
@@ -117,6 +121,30 @@ jobs:
         run: git config --global --add safe.directory ${PWD}
       - name: Copy LocalPreferences
         run: cp -v /usr/local/share/julia/environments/numericalearth/LocalPreferences.toml test/.
+      - name: df before cleanup
+        run: |
+          df -hT
+      - name: Clean up old CUDA toolkits
+        # Save storage by deleting old CUDA toolkits, we'll use v13
+        run: |
+          rm -rf /host-usr-local/cuda-12.*
+      - name: df after cleanup
+        run: |
+          df -hT
+      - name: "Set test arguments"
+        shell: bash
+        run: |
+          # Run tests in verbose mode
+          TEST_ARGS=(--verbose)
+          TEST_ARGS+=(--jobs=$(($(nproc) - 1)))
+          echo "runtest_test_args=${TEST_ARGS[@]}" | tee -a "${GITHUB_ENV}"
+      - name: Update registry
+        shell: julia --color=yes {0}
+        run: |
+          using Pkg
+          Pkg.Registry.rm("General")
+          Pkg.Registry.add("General")
+          Pkg.Registry.update()
       - name: Run tests
         run: |
           earlyoom -m 3 -s 100 -r 300 --prefer 'julia' &
@@ -124,7 +152,7 @@ jobs:
               using Pkg;
               Pkg.test(; coverage=true,
                        julia_args=["--check-bounds=yes", "--compiled-modules=yes", "-O0"],
-                       test_args=["--verbose"])
+                       test_args=`${{ env.runtest_test_args }}`)
           '
       - uses: julia-actions/julia-processcoverage@v1
       - uses: codecov/codecov-action@v5
