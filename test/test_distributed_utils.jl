@@ -102,6 +102,7 @@ function distributed_bathymetry_interpolation_script()
     longitude_interfaces(::TrivalBathymetry) = (-180, 180)
     latitude_interfaces(::TrivalBathymetry) = (0, 50)
     metadata_filename(::TrivalBathymetry, name, date, bounding_box) = "trivial_bathymetry.nc"
+    metadata_path(::Metadatum{<:TrivalBathymetry}) = bathymetry_path
 
     @testset "Distributed Bathymetry interpolation" begin
         TrivialBathymetry_metadata = Metadata(:z, TrivalBathymetry(), nothing, nothing, @__DIR__)
