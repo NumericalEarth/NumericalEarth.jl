@@ -44,12 +44,12 @@ thermodynamics_parameters(atmos::SpeedySimulation) =
 
 function initialize_atmospheric_state!(simulation::SpeedyWeather.Simulation)
     vars, model = SpeedyWeather.unpack(simulation)
-    (; time) = progn.clock  # current time
+    (; time) = vars.prognostic.clock  # current time
 
     # set the tendencies back to zero for accumulation
     SpeedyWeather.reset_tendencies!(vars)
 
-    if model.physics
+    if !model.dynamics_only
         SpeedyWeather.parameterization_tendencies!(vars, model)
     end
 
