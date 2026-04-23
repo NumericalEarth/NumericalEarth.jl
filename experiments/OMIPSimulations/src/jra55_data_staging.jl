@@ -8,21 +8,57 @@ const JRA55_SHORTNAMES = ["tas", "huss", "psl", "uas", "vas", "rlds", "rsds", "p
 
 Populate `staging_dir` with symlinks to every `.nc` file in `source_dir`.
 Reads go through symlinks (slow) until files are staged with `stage_jra55_year!`.
+Also:
+  - sweeps any leftover `*.tmp` from a killed prior run (half-written copies
+    that would otherwise be mistaken for real copies);
+  - replaces any real `.nc` file whose size doesn't match the source with
+    a fresh symlink. A size mismatch means a prior run crashed mid-`cp` and
+    left a truncated file — before this heal, HDF5 reads would fail with
+    `truncated file: eof = X, stored_eof = Y`, and `stage_jra55_year!`
+    would skip it (it only replaces symlinks).
 """
 function setup_staging_directory(source_dir, staging_dir)
     mkpath(staging_dir)
+    for leftover in filter(f -> endswith(f, ".nc.tmp"), readdir(staging_dir; join=true))
+        rm(leftover; force=true)
+    end
     for src in filter(f -> endswith(f, ".nc"), readdir(source_dir; join=true))
         dst = joinpath(staging_dir, basename(src))
-        isfile(dst) || symlink(src, dst)
+        if islink(dst)
+            continue                                         # healthy symlink, leave alone
+        elseif isfile(dst)                                    # real file — validate size
+            if filesize(dst) != filesize(src)
+                @warn "setup_staging_directory: size mismatch at $dst ($(filesize(dst)) vs source $(filesize(src))); replacing with symlink"
+                rm(dst; force=true)
+                symlink(src, dst)
+            end
+        elseif !ispath(dst)                                   # nothing there (incl. broken symlink handled by islink above)
+            symlink(src, dst)
+        end
     end
     return staging_dir
+end
+
+# Replace `dst` atomically with whatever `make_new!(tmp)` produces at `tmp`.
+# `rename(2)` is atomic on the same filesystem, so concurrent readers either
+# see the old `dst` (symlink or previous real copy) or the new one — never a
+# half-written file. Readers holding an fd to the old inode keep reading it
+# correctly; the kernel keeps the inode alive until they close.
+function atomic_replace!(dst, make_new!)
+    tmp = dst * ".tmp"
+    isfile(tmp) && rm(tmp; force=true)     # stale tmp from a crash — drop it
+    make_new!(tmp)
+    mv(tmp, dst; force=true)
+    return dst
 end
 
 """
     stage_jra55_year!(source_dir, staging_dir, year)
 
 Replace symlinks in `staging_dir` with real copies for all JRA55 files
-matching `year`.  Skips files that are already real copies.
+matching `year`. Skips files that are already real copies. The replacement
+is atomic — a partial copy is never visible at `dst`, so concurrent
+`PrefetchingBackend` readers on background threads cannot race with the `cp`.
 """
 function stage_jra55_year!(source_dir, staging_dir, year)
     year_str = string(year)
@@ -30,8 +66,7 @@ function stage_jra55_year!(source_dir, staging_dir, year)
         for dst in filter(f -> contains(f, name) && contains(f, year_str) && endswith(f, ".nc"), readdir(staging_dir; join=true))
             if islink(dst)
                 src = joinpath(source_dir, basename(dst))
-                rm(dst)
-                cp(src, dst)
+                atomic_replace!(dst, tmp -> cp(src, tmp))
                 @debug "Staged $(basename(dst)) to scratch"
             end
         end
@@ -42,7 +77,8 @@ end
     unstage_jra55_year!(source_dir, staging_dir, year)
 
 Remove real copies for `year` from `staging_dir` and restore symlinks
-to `source_dir`.
+to `source_dir`. Uses the same atomic swap as staging so a concurrent
+reader never sees a missing file at the swap point.
 """
 function unstage_jra55_year!(source_dir, staging_dir, year)
     year_str = string(year)
@@ -50,8 +86,7 @@ function unstage_jra55_year!(source_dir, staging_dir, year)
         for dst in filter(f -> contains(f, name) && contains(f, year_str) && endswith(f, ".nc"), readdir(staging_dir; join=true))
             if isfile(dst) && !islink(dst)
                 src = joinpath(source_dir, basename(dst))
-                rm(dst)
-                symlink(src, dst)
+                atomic_replace!(dst, tmp -> symlink(src, tmp))
                 @debug "Unstaged $(basename(dst)) from scratch"
             end
         end

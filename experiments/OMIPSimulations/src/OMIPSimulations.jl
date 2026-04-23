@@ -14,7 +14,6 @@ using Oceananigans.TurbulenceClosures.TKEBasedVerticalDiffusivities:
 using NumericalEarth.SeaIces: sea_ice_simulation
 using NumericalEarth.EarthSystemModels: OceanSeaIceModel, Radiation,
     SimilarityTheoryFluxes,
-    COARELogarithmicSimilarityProfile,
     LinearStableStabilityFunction,
     MomentumBasedFrictionVelocity,
     ThreeEquationHeatFlux
@@ -22,6 +21,7 @@ using NumericalEarth.EarthSystemModels: OceanSeaIceModel, Radiation,
 using NumericalEarth.EarthSystemModels.InterfaceComputations:
     ComponentInterfaces,
     CoefficientBasedFluxes,
+    COARELogarithmicSimilarityProfile,
     LargeYeagerTransferCoefficients,
     MomentumRoughnessLength,
     ScalarRoughnessLength,
@@ -47,31 +47,6 @@ export omip_simulation,
        add_omip_diagnostics!,
        compute_report_fields,
        compute_woa_bias
-
-# Backwards-compatible restore for checkpoints saved before ClimaSeaIce 0.4.8
-# (which added snow_thickness, snow_thermodynamics, snowfall to SeaIceModel).
-# Old checkpoints lack :snow_thickness in the saved state; this override
-# silently skips the missing field so pickup works across versions.
-using ClimaSeaIce: SeaIceModel
-import Oceananigans: restore_prognostic_state!
-
-function restore_prognostic_state!(model::SeaIceModel, state)
-    restore_prognostic_state!(model.clock, state.clock)
-    restore_prognostic_state!(model.velocities, state.velocities)
-    restore_prognostic_state!(model.ice_thickness, state.ice_thickness)
-    restore_prognostic_state!(model.ice_concentration, state.ice_concentration)
-    restore_prognostic_state!(model.tracers, state.tracers)
-    restore_prognostic_state!(model.timestepper, state.timestepper)
-    restore_prognostic_state!(model.ice_thermodynamics, state.ice_thermodynamics)
-    restore_prognostic_state!(model.dynamics, state.dynamics)
-
-    # New fields in ClimaSeaIce >= 0.4.8 — restore only if checkpoint contains them
-    if hasproperty(state, :snow_thickness)
-        restore_prognostic_state!(model.snow_thickness, state.snow_thickness)
-    end
-
-    return model
-end
 
 include("atmosphere.jl")
 include("jra55_data_staging.jl")

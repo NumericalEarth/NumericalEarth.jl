@@ -19,6 +19,7 @@ function omip_atmosphere(arch;
                                            dataset,
                                            time_indices_in_memory = backend_size,
                                            include_rivers_and_icebergs = true,
+                                           prefetch = true,
                                            start_date,
                                            end_date)
 

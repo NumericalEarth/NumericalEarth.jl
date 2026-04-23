@@ -72,23 +72,27 @@ using NumericalEarth.DataWrangling: compute_native_date_range
 
             @test pf_fts.backend isa NumericalEarth.DataWrangling.PrefetchingBackend
             @test parent(pf_fts.data) == parent(ref_fts.data)              # cold load alignment
-            @test pf_fts.backend.next_start == Nb + 1                       # next prefetch scheduled
+            @test pf_fts.backend.next_start == Nb                           # next prefetch scheduled
 
-            # Reload sequence:
-            #   * Nb+1, 2Nb+1     → straight hot-path advances
-            #   * Nt-Nb+1         → places the next prefetch's window across
-            #                       the end-of-times boundary, exercising the
-            #                       `mod1(start+Nm, Nt)` wrap when scheduling
-            #                       the prefetch
-            #   * 1               → consumes that wrapped prefetch (hot path)
-            #                       at the start of the cycle
-            for next_start in (Nb + 1, 2Nb + 1, Nt - Nb + 1, 1)
+            # Reload sequence mirrors what `update_field_time_series!`
+            # produces at run time — a slide of `Nb - 1` per reload, because
+            # the first `n₂ = n₁ + 1` outside the window triggers it and the
+            # new `start` is set to `n₁` (the last in-memory index of the
+            # previous window):
+            #   * Nb, 2Nb - 1     → hot-path advances; each matches the
+            #                       predictor `start + Nm - 1`
+            #   * Nt - Nb + 1     → arbitrary jump (cold-path); schedules a
+            #                       prefetch whose window crosses the end of
+            #                       times, exercising `mod1(start+Nm-1, Nt)`
+            #   * Nt              → consumes that wrapped prefetch (hot
+            #                       path) at the very end of the cycle
+            for next_start in (Nb, 2Nb - 1, Nt - Nb + 1, Nt)
                 ref_fts.backend = Oceananigans.OutputReaders.new_backend(ref_fts.backend, next_start, Nb)
                 pf_fts.backend  = Oceananigans.OutputReaders.new_backend(pf_fts.backend,  next_start, Nb)
                 set!(ref_fts)
                 set!(pf_fts)
                 @test parent(pf_fts.data) == parent(ref_fts.data)
-                @test pf_fts.backend.next_start == mod1(next_start + Nb, Nt)
+                @test pf_fts.backend.next_start == mod1(next_start + Nb - 1, Nt)
             end
         end
 

@@ -15,7 +15,9 @@ using Oceananigans.BoundaryConditions: FieldBoundaryConditions, fill_halo_region
 using Oceananigans.Fields: FieldStatus
 using Oceananigans.Utils: launch!
 using KernelAbstractions: @index, @kernel
+using Oceananigans.BoundaryConditions: DiscreteBoundaryFunction
 using NumericalEarth.EarthSystemModels: EarthSystemModel
+using NumericalEarth.Oceans: MultipleFluxes
 
 import Oceananigans.Fields: compute!
 

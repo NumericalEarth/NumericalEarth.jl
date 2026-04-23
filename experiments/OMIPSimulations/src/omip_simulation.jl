@@ -414,9 +414,7 @@ function build_ocean(config, grid;
                      biharmonic_timescale,
                      start_date, end_date)
 
-    salt_restoring = salinity_surface_restoring(grid, WOAMonthly();
-                                                restoring_dir, piston_velocity)
-
+    salt_restoring = salinity_surface_restoring(grid, WOAMonthly(); restoring_dir, piston_velocity)
     closure = omip_closure(; κ_skew, κ_symmetric, Cᵇ, biharmonic_timescale)
     coriolis = HydrostaticSphericalCoriolis(scheme = Oceananigans.Coriolis.EnstrophyConserving())
     momentum_advection = config_momentum_advection(config)

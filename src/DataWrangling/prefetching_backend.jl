@@ -61,10 +61,33 @@ function set!(fts::PrefetchingFTS, backend::PrefetchingBackend = fts.backend)
     # Cleared up-front so a failed prefetch isn't re-thrown on every later set!.
     setfield!(backend, :pending, nothing)
 
-    if !isnothing(pending) && pending_start == needed_start
-        wait(pending)
-    else
-        !isnothing(pending) && wait(pending)
+    # Hot path: the pending prefetch already targets `needed_start`. Wait on
+    # it (typically a no-op — the background load finished while compute was
+    # running). A failed prefetch demotes to the synchronous load below, so a
+    # transient I/O error (a brief FS hiccup, a staging race, etc.) doesn't
+    # kill the simulation. The spawn site has already logged the exception
+    # with full variable/window context, so we just print a short warning
+    # here.
+    hot = !isnothing(pending) && pending_start == needed_start
+    if hot
+        try
+            wait(pending)
+        catch
+            m = buffer_fts.backend.metadata
+            @warn "PrefetchingBackend: pending prefetch failed; falling back to synchronous load" dataset=typeof(m.dataset) variable=m.name
+            hot = false
+        end
+    elseif !isnothing(pending)
+        # Stale prefetch targets a different window; drain it and swallow
+        # any failure — we're about to reload from scratch anyway and the
+        # spawn site has already logged the failure if there was one.
+        try
+            wait(pending)
+        catch
+        end
+    end
+
+    if !hot
         Nm = length(getfield(backend, :inner_backend))
         buffer_fts.backend = new_backend(buffer_fts.backend, needed_start, Nm)
         set!(buffer_fts)
@@ -72,11 +95,13 @@ function set!(fts::PrefetchingFTS, backend::PrefetchingBackend = fts.backend)
 
     copyto!(parent(fts.data), parent(buffer_fts.data))
 
-    # Time-indexing-aware next-window prediction: `time_index` wraps
-    # via mod1 for Cyclical and clamps to Nt for Linear/Clamp.
+    # Time-indexing-aware next-window prediction: `time_index` wraps via mod1 for Cyclical and clamps to Nt for Linear/Clamp. 
+    # The next reload fires the first time `n₂ = n₁ + 1` falls outside the current window, which happens when `n₁` hits the 
+    # LAST in-memory index, so the new `start` is `needed_start + Nm - 1`, not `needed_start + Nm` (`update_field_time_series!` sets `start = n₁`). 
+    # Passing `Nm` instead of `Nm + 1` yields that prediction and keeps every reload on the HOT path.
     Nm = length(getfield(backend, :inner_backend))
     Nt = length(fts.times)
-    new_next = time_index(buffer_fts.backend, fts.time_indexing, Nt, Nm + 1)
+    new_next = time_index(buffer_fts.backend, fts.time_indexing, Nt, Nm)
 
     # Linear/Clamp at end-of-data: window can't advance, no prefetch.
     if new_next == needed_start

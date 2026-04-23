@@ -84,7 +84,8 @@ end
         # Sea ice properties
         uˢⁱ = zero(FT) # ℑxᶜᵃᵃ(i, j, 1, grid, interior_state.u)
         vˢⁱ = zero(FT) # ℑyᵃᶜᵃ(i, j, 1, grid, interior_state.v)
-        hˢⁱ = interior_state.h[i, j, 1]
+        hˢⁱ = interior_state.hi[i, j, 1]
+        hˢⁿ = interior_state.hs[i, j, 1]
         hc = interior_state.hc[i, j, 1]
         ℵᵢ = interior_state.ℵ[i, j, 1]
         Tₛ = interface_temperature[i, j, 1]
@@ -117,7 +118,7 @@ end
                               h_bℓ = atmosphere_state.h_bℓ)
 
     downwelling_radiation = (; ℐꜜˢʷ, ℐꜜˡʷ)
-    local_interior_state = (u=uˢⁱ, v=vˢⁱ, T=Tᵒᶜ, S=Sᵒᶜ, h=hˢⁱ, hc=hc)
+    local_interior_state = (u=uˢⁱ, v=vˢⁱ, T=Tᵒᶜ, S=Sᵒᶜ, hi=hˢⁱ, hs=hˢⁿ, hc=hc)
     
     # Estimate initial interface state (FP32 compatible)
     u★ = convert(FT, 1f-4)
