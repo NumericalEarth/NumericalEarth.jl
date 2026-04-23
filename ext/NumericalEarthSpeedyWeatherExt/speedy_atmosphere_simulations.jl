@@ -47,7 +47,7 @@ function initialize_atmospheric_state!(simulation::SpeedyWeather.Simulation)
     (; time) = progn.clock  # current time
 
     # set the tendencies back to zero for accumulation
-    fill!(vars.tendencies, 0, typeof(model))
+    SpeedyWeather.reset_tendencies!(vars)
 
     if model.physics
         SpeedyWeather.parameterization_tendencies!(vars, model)
