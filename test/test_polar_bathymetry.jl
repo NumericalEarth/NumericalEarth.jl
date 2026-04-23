@@ -4,7 +4,8 @@ using NumericalEarth.DataWrangling.IBCSO
 using NumericalEarth.DataWrangling.GEBCO
 using NumericalEarth.DataWrangling.IBCAO
 using NumericalEarth.DataWrangling: longitude_interfaces, latitude_interfaces, z_interfaces,
-                                    dataset_variable_name, validate_dataset_coverage
+                                    dataset_variable_name, validate_dataset_coverage,
+                                    metadata_filename
 using NumericalEarth.Bathymetry: regrid_bathymetry
 
 @testset "Polar bathymetry metadata interfaces" begin
@@ -120,13 +121,13 @@ end
                                   z = (-6000, 0))
 
     meta = Metadatum(:bottom_height, dataset=IBCSOv2())
-    bathy = regrid_bathymetry(grid, meta; cache=false)
+    bathy = regrid_bathymetry(grid, meta; cache=false, height_above_water=0)
     z = interior(bathy, :, :, 1)
 
     # All values should be finite (no NaN or Inf from interpolation gaps)
     @test all(isfinite, z)
 
-    # Drake Passage is deep open ocean: all cells should be below sea level
+    # With height_above_water=0 all land cells are capped at 0
     @test maximum(z) ≤ 0
 
     # Realistic ocean depths: deeper than 500 m, shallower than the deepest ocean
