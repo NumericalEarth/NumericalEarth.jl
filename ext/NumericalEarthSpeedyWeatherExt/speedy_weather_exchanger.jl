@@ -52,11 +52,11 @@ function interpolate_state!(exchanger, exchange_grid, atmos::SpeedySimulation, c
     exchange_state = exchanger.state
     surface_layer  = atmos.model.spectral_grid.nlayers
 
-    ua  = RingGrids.field_view(atmos.variables.grid.u_grid,     :, surface_layer).data
-    va  = RingGrids.field_view(atmos.variables.grid.v_grid,     :, surface_layer).data
-    Ta  = RingGrids.field_view(atmos.variables.grid.temp_grid,  :, surface_layer).data
-    qa  = RingGrids.field_view(atmos.variables.grid.humid_grid, :, surface_layer).data
-    pa  = exp.(atmos.variables.grid.pres_grid.data)
+    ua  = RingGrids.field_view(atmos.variables.grid.u, :, surface_layer).data
+    va  = RingGrids.field_view(atmos.variables.grid.v, :, surface_layer).data
+    Ta  = RingGrids.field_view(atmos.variables.grid.temperature, :, surface_layer).data
+    qa  = RingGrids.field_view(atmos.variables.grid.humidity, :, surface_layer).data
+    pa  = exp.(atmos.variables.grid.pressure.data)
     ℐꜜˢʷ = atmos.variables.parameterizations.surface_shortwave_down.data
     ℐꜜˡʷ = atmos.variables.parameterizations.surface_longwave_down.data
     Jᶜ  = atmos.variables.parameterizations.rain_rate.data .+ atmos.variables.parameterizations.snow_rate.data
