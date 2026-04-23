@@ -56,44 +56,6 @@ using NumericalEarth.DataWrangling: compute_native_date_range
             f₁′ = view(parent(netcdf_JRA55_fts), :, :, 1, 4)
             f₁′ = Array(f₁′)
             @test f₁ == f₁′
-
-            @info "Testing PrefetchingBackend on $A for $test_name..."
-            # Build a reference (cold) FTS and a prefetching FTS over the same
-            # window, then drive each through several reloads. After every
-            # reload the parent data of the prefetching FTS must be byte-
-            # identical to the reference. The first reload exercises the cold
-            # fallback (no prior prefetch); subsequent reloads exercise the
-            # hot path; the wrap from `Nt-3..Nt` back to `1..Nb` exercises the
-            # cyclical prefetch logic (`mod1(start+Nm, Nt)`).
-            ref_fts = FieldTimeSeries(Metadata(test_name; dataset=JRA55.RepeatYearJRA55()), arch;
-                                      time_indices_in_memory=Nb)
-            pf_fts  = FieldTimeSeries(Metadata(test_name; dataset=JRA55.RepeatYearJRA55()), arch;
-                                      time_indices_in_memory=Nb, prefetch=true)
-
-            @test pf_fts.backend isa NumericalEarth.DataWrangling.PrefetchingBackend
-            @test parent(pf_fts.data) == parent(ref_fts.data)              # cold load alignment
-            @test pf_fts.backend.next_start == Nb                           # next prefetch scheduled
-
-            # Reload sequence mirrors what `update_field_time_series!`
-            # produces at run time — a slide of `Nb - 1` per reload, because
-            # the first `n₂ = n₁ + 1` outside the window triggers it and the
-            # new `start` is set to `n₁` (the last in-memory index of the
-            # previous window):
-            #   * Nb, 2Nb - 1     → hot-path advances; each matches the
-            #                       predictor `start + Nm - 1`
-            #   * Nt - Nb + 1     → arbitrary jump (cold-path); schedules a
-            #                       prefetch whose window crosses the end of
-            #                       times, exercising `mod1(start+Nm-1, Nt)`
-            #   * Nt              → consumes that wrapped prefetch (hot
-            #                       path) at the very end of the cycle
-            for next_start in (Nb, 2Nb - 1, Nt - Nb + 1, Nt)
-                ref_fts.backend = Oceananigans.OutputReaders.new_backend(ref_fts.backend, next_start, Nb)
-                pf_fts.backend  = Oceananigans.OutputReaders.new_backend(pf_fts.backend,  next_start, Nb)
-                set!(ref_fts)
-                set!(pf_fts)
-                @test parent(pf_fts.data) == parent(ref_fts.data)
-                @test pf_fts.backend.next_start == mod1(next_start + Nb - 1, Nt)
-            end
         end
 
         @info "Testing Field(::JRA55Metadatum) on $A..."

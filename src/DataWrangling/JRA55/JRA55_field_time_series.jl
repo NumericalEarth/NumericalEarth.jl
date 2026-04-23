@@ -84,8 +84,7 @@ function JRA55FieldTimeSeries(args...; kwargs...)
               FieldTimeSeries(Metadata(:variable_name; dataset=RepeatYearJRA55(),
                                                        start_date, end_date, dir),
                               architecture;
-                              time_indices_in_memory = N,
-                              prefetch = false)
+                              time_indices_in_memory = N)
 
           The `InMemory()` backend is no longer supported for JRA55; pass
           `time_indices_in_memory = length(metadata)` to keep the whole

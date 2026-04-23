@@ -11,7 +11,6 @@ JRA55PrescribedAtmosphere(arch::Distributed; kw...) =
                               dir = download_JRA55_cache,
                               time_indices_in_memory = 10,
                               time_indexing = Cyclical(),
-                              prefetch = false,
                               surface_layer_height = 10,  # meters
                               include_rivers_and_icebergs = false,
                               other_kw...)
@@ -19,10 +18,7 @@ JRA55PrescribedAtmosphere(arch::Distributed; kw...) =
 Return a [`PrescribedAtmosphere`](@ref) representing JRA55 reanalysis data.
 Each atmospheric field is constructed via `FieldTimeSeries(::JRA55Metadata)`,
 which uses a `DatasetBackend` parameterised by JRA55 metadata so that the
-JRA55-specific `set!` (chunked-yearly NetCDF) is dispatched. With
-`prefetch = true` each variable's next sliding window is loaded
-asynchronously on a background thread so the reload spike (~15 s on a
-240-step window across 9 variables) is hidden behind compute.
+JRA55-specific `set!` (chunked-yearly NetCDF) is dispatched.
 """
 function JRA55PrescribedAtmosphere(architecture = CPU();
                                    dataset = RepeatYearJRA55(),
@@ -31,12 +27,11 @@ function JRA55PrescribedAtmosphere(architecture = CPU();
                                    dir = download_JRA55_cache,
                                    time_indices_in_memory = 10,
                                    time_indexing = Cyclical(),
-                                   prefetch = false,
                                    surface_layer_height = 10,  # meters
                                    include_rivers_and_icebergs = false,
                                    other_kw...)
 
-    kw = (; time_indexing, time_indices_in_memory, prefetch)
+    kw = (; time_indexing, time_indices_in_memory)
     kw = merge(kw, other_kw)
 
     jra55_fts(name) = FieldTimeSeries(Metadata(name; dataset, start_date, end_date, dir), architecture; kw...)

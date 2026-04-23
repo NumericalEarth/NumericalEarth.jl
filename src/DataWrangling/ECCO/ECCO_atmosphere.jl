@@ -27,12 +27,11 @@ function ECCOPrescribedAtmosphere(architecture = CPU(), FT = Float32;
                                   end_date = last_date(dataset, :air_temperature),
                                   dir = default_download_directory(dataset),
                                   time_indexing = Cyclical(),
-                                  prefetch = false,
                                   time_indices_in_memory = 10,
                                   surface_layer_height = 2,  # meters
                                   other_kw...)
 
-    kw = (; time_indexing, time_indices_in_memory, prefetch)
+    kw = (; time_indexing, time_indices_in_memory)
     kw = merge(kw, other_kw)
 
     ecco_fts(name) = FieldTimeSeries(Metadata(name; dataset, start_date, end_date, dir), architecture; kw...)
