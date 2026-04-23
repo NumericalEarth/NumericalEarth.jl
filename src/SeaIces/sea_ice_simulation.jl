@@ -34,7 +34,6 @@ function sea_ice_simulation(grid, ocean=nothing;
                             sea_ice_density = 900, # kg m⁻³
                             snow_density = 330, # kg m⁻³
                             dynamics = sea_ice_dynamics(grid, ocean),
-                            timestepper = :SplitRungeKutta3,
                             bottom_heat_boundary_condition = nothing,
                             top_heat_boundary_condition = nothing,
                             timestepper = :SplitRungeKutta3,
@@ -85,8 +84,7 @@ function sea_ice_simulation(grid, ocean=nothing;
                                 dynamics,
                                 timestepper,
                                 bottom_heat_flux,
-                                top_heat_flux,
-                                timestepper)
+                                top_heat_flux)
 
     verbose = false
     sea_ice = Simulation(sea_ice_model; Δt, verbose)
