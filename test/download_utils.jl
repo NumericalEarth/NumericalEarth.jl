@@ -13,7 +13,8 @@ function download_from_artifacts(filepath::AbstractString)
     filename = basename(filepath)
     fallback_url = ARTIFACTS_BASE_URL * filename
     @info "Downloading $filename from NumericalEarthArtifacts fallback..."
-    mktemp(dirname(filepath)) do tmppath
+    mktemp(dirname(filepath)) do tmppath, tmpio
+        close(tmpio)
         Downloads.download(fallback_url, tmppath)
         mv(tmppath, filepath; force=true)
     end
