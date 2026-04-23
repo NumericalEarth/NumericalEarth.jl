@@ -20,6 +20,20 @@ using Test
     @test mesh_meta.dataset isa ORCA1
 end
 
+
+@testset "ORCA12 Metadatum construction" begin
+    bathy_meta = Metadatum(:bottom_height; dataset=ORCA12())
+    @test bathy_meta.name == :bottom_height
+    @test bathy_meta.dataset isa ORCA12
+
+    mesh_meta = Metadatum(:mesh_mask; dataset=ORCA12())
+    @test mesh_meta.name == :mesh_mask
+    @test mesh_meta.dataset isa ORCA12
+
+    @test default_south_rows_to_remove(ORCA12()) == 0
+    @test occursin("eORCA12", metadata_path(mesh_meta))
+    @test occursin("eORCA12", metadata_path(bathy_meta))
+end
 @testset "ORCAGrid with ORCA1 dataset on $(arch)" for arch in test_architectures
     south_rows_to_remove = 43
     grid = ORCAGrid(arch; dataset=ORCA1(), Nz=5, z=(-5000, 0), halo=(4, 4, 4), south_rows_to_remove)
