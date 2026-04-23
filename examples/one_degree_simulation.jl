@@ -96,7 +96,7 @@ set!(sea_ice.model, h=ecco_sea_ice_thickness, ℵ=ecco_sea_ice_concentration)
 
 # We force the simulation with a JRA55-do atmospheric reanalysis.
 radiation  = Radiation(arch)
-atmosphere = JRA55PrescribedAtmosphere(arch; backend=JRA55NetCDFBackend(80),
+atmosphere = JRA55PrescribedAtmosphere(arch; time_indices_in_memory = 80,
                                        include_rivers_and_icebergs = false)
 
 # ### Coupled simulation
@@ -284,9 +284,9 @@ hm = heatmap!(axeo, eoₙ, colorrange = (0, 1e-3), colormap = :solar, nan_color=
 Colorbar(fig[2, 4], hm, label = "Turbulent Kinetic Energy (m² s⁻²)")
 
 hm = heatmap!(axsi, siₙ, colorrange = (0, 0.5), colormap = :greys, nan_color=:lightgray)
-Colorbar(fig[1, 4], hm, label = "Sea ice speed (m s⁻¹)")
+Colorbar(fig[3, 2], hm, label = "Sea ice speed (m s⁻¹)")
 hm = heatmap!(axhi, heₙ, colorrange =  (0, 4),  colormap = :blues, nan_color=:lightgray)
-Colorbar(fig[2, 4], hm, label = "Effective ice thickness (m)")
+Colorbar(fig[3, 4], hm, label = "Effective ice thickness (m)")
 
 
 for ax in (axso, axsi, axTo, axhi, axeo)

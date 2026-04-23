@@ -46,7 +46,7 @@ set!(ocean.model, T=ECCOMetadata(:temperature; dates=first(dates)),
                   S=ECCOMetadata(:salinity;    dates=first(dates)))
 
 radiation  = Radiation(arch)
-atmosphere = JRA55PrescribedAtmosphere(arch; backend=JRA55NetCDFBackend(41))
+atmosphere = JRA55PrescribedAtmosphere(arch; time_indices_in_memory=41)
 coupled_model = OceanOnlyModel(ocean; atmosphere, radiation)
 
 simulation = Simulation(coupled_model; Δt=10minutes, stop_iteration=100)

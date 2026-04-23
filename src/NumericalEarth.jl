@@ -19,6 +19,7 @@ export
     LatitudeDependentAlbedo,
     SimilarityTheoryFluxes,
     CoefficientBasedFluxes,
+    SimilarityScales,
     MomentumRoughnessLength,
     ScalarRoughnessLength,
     ComponentInterfaces,
@@ -26,6 +27,10 @@ export
     BulkTemperature,
     PrescribedAtmosphere,
     JRA55PrescribedAtmosphere,
+    OSPapaPrescribedAtmosphere,
+    os_papa_prescribed_fluxes,
+    os_papa_prescribed_flux_boundary_conditions,
+    OSPapaHourly,
     JRA55NetCDFBackend,
     regrid_bathymetry,
     modify_bathymetry_depth!,
@@ -39,7 +44,7 @@ export
     EN4Monthly,
     WOAClimatology, WOAAnnual, WOAMonthly,
     GLORYSDaily, GLORYSMonthly, GLORYSStatic,
-    ORCA1,
+    ORCA1, ORCA12,
     RepeatYearJRA55, MultiYearJRA55,
     first_date,
     last_date,
@@ -107,7 +112,7 @@ include("Bathymetry/Bathymetry.jl")
 include("Diagnostics/Diagnostics.jl")
 
 using .DataWrangling
-using .DataWrangling: ETOPO, ECCO, GLORYS, EN4, WOA, JRA55
+using .DataWrangling: ETOPO, ECCO, GLORYS, EN4, WOA, JRA55, OSPapa
 using .Bathymetry
 using .InitialConditions
 using .EarthSystemModels
@@ -126,6 +131,7 @@ using NumericalEarth.DataWrangling.ORCA
 using NumericalEarth.DataWrangling.WOA
 using NumericalEarth.DataWrangling.JRA55
 using NumericalEarth.DataWrangling.JRA55: JRA55NetCDFBackend
+using NumericalEarth.DataWrangling.OSPapa
 
 using PrecompileTools: @setup_workload, @compile_workload
 
