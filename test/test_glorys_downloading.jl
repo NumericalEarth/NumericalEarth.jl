@@ -29,7 +29,7 @@ end
         md = Metadatum(:free_surface; dataset, region)
 
         @test !is_three_dimensional(md)
-        @test location(md) === (Center, Center, Nothing)
+        @test location(md) === (Center, Center, Center)
         @test z_interfaces(md) === (-1.0, 0.0)
 
         source = Field(md, arch; inpainting=nothing)
