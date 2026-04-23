@@ -23,6 +23,7 @@ XESMF = "2e0b0046-e7a1-486f-88de-807ee8ffabe5"
 Breeze = {url = "https://github.com/NumericalEarth/Breeze.jl", rev = "main"}
 ClimaSeaIce = {url = "https://github.com/CliMA/ClimaSeaIce.jl", rev = "ss/refactor-thermodynamics"}
 NumericalEarth = {path = ".."}
+Breeze = {url = "https://github.com/NumericalEarth/Breeze.jl/", rev = "main"}
 
 [compat]
 Documenter = "1"

@@ -26,8 +26,8 @@ permissions:
 env:
   ECCO_USERNAME: ${{ secrets.ECCO_USERNAME }}
   ECCO_WEBDAV_PASSWORD: ${{ secrets.ECCO_WEBDAV_PASSWORD }}
-  COPERNICUS_USERNAME: ${{ secrets.COPERNICUS_SERVICE_USERNAME }}
-  COPERNICUS_PASSWORD: ${{ secrets.COPERNICUS_USERNAME_PASSWORD }}
+  COPERNICUS_USERNAME: ${{ secrets.COPERNICUSMARINE_SERVICE_USERNAME }}
+  COPERNICUS_PASSWORD: ${{ secrets.COPERNICUSMARINE_SERVICE_PASSWORD }}
   CDSAPI_URL: "https://cds.climate.copernicus.eu/api"
   CDSAPI_KEY: ${{ secrets.CDSAPI_KEY }}
   DATADEPS_ALWAYS_ACCEPT: true
@@ -136,6 +136,13 @@ jobs:
       - name: df after cleanup
         run: |
           df -hT
+      - name: "Set test arguments"
+        shell: bash
+        run: |
+          # Run tests in verbose mode
+          TEST_ARGS=(--verbose)
+          TEST_ARGS+=(--jobs=$(($(nproc) - 1)))
+          echo "runtest_test_args=${TEST_ARGS[@]}" | tee -a "${GITHUB_ENV}"
       - name: Update registry
         shell: julia --color=yes {0}
         run: |
@@ -150,7 +157,7 @@ jobs:
               using Pkg;
               Pkg.test(; coverage=true,
                        julia_args=["--check-bounds=yes", "--compiled-modules=yes", "-O0"],
-                       test_args=["--verbose"])
+                       test_args=`${{ env.runtest_test_args }}`)
           '
       - uses: julia-actions/julia-processcoverage@v1
       - uses: codecov/codecov-action@v5
