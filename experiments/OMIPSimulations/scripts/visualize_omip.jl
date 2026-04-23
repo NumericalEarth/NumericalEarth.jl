@@ -29,6 +29,8 @@ using Statistics
 using Dates
 using Downloads
 using DelimitedFiles
+using JLD2
+using NCDatasets
 using WorldOceanAtlasTools
 using Oceananigans
 using Oceananigans.Grids: znodes, φnodes, φnode
@@ -37,9 +39,14 @@ using ConservativeRegridding
 using NumericalEarth
 using NumericalEarth.DataWrangling: Metadatum
 using NumericalEarth.DataWrangling.WOA: WOAAnnual
+using NumericalEarth: ECCO4Monthly
 
 mkpath(output_dir)
 @info "Figures will be saved to: $output_dir"
+
+# Cache for observational downloads + derived climatologies
+obs_cache_dir = joinpath(output_dir, "obs_cache")
+mkpath(obs_cache_dir)
 
 # ══════════════════════════════════════════════════════════════
 # Helpers
@@ -84,6 +91,30 @@ function compute_monthly_mean(fts, target_months;
     return avg ./ length(idx)
 end
 
+# Single-pass variant: return 12 monthly means (slot m = nothing if empty).
+# OnDisk reads are the bottleneck, so we pay them once and bin on the fly.
+function compute_monthly_means(fts; start_time = 0, stop_time = Inf,
+                                reference_date = DateTime(1958, 1, 1))
+    idx = in_window(fts; start_time, stop_time)
+    isempty(idx) && error("No snapshots in [$start_time, $stop_time]")
+    sz     = size(Array(interior(fts[first(idx)])))
+    sums   = [zeros(sz) for _ in 1:12]
+    counts = zeros(Int, 12)
+    for n in idx
+        m = month(reference_date + Second(round(Int, fts.times[n])))
+        sums[m]   .+= Array(interior(fts[n]))
+        counts[m] += 1
+    end
+    return [counts[m] > 0 ? sums[m] ./ counts[m] : nothing for m in 1:12]
+end
+
+function cached_download(url; cache_dir = obs_cache_dir)
+    mkpath(cache_dir)
+    path = joinpath(cache_dir, basename(url))
+    isfile(path) || Downloads.download(url, path)
+    return path
+end
+
 function build_land_mask(grid)
     if grid isa ImmersedBoundaryGrid
         bh = Array(interior(grid.immersed_boundary.bottom_height, :, :, 1))
@@ -123,6 +154,116 @@ case_colors = [:firebrick, :royalblue, :seagreen, :darkorange]
 
 savefig(fig, name) = save(joinpath(output_dir, name), fig)
 
+# ── ECCO4 free-surface climatology ────────────────────────────
+# Cache the native-grid mean to avoid re-reading 252 monthly files on every run.
+function ecco_ssh_climatology_native(; start_date = DateTime(1992, 1, 1),
+                                       end_date   = DateTime(2012, 12, 1),
+                                       cache_dir  = obs_cache_dir)
+    cache_file = joinpath(cache_dir, "ssh_ecco4_$(year(start_date))_$(year(end_date))_native.jld2")
+    dates = start_date:Month(1):end_date
+    if isfile(cache_file)
+        return JLD2.load(cache_file, "ssh_mean")
+    end
+    @info "  Computing ECCO4 SSH climatology over $(length(dates)) months (one-time)..."
+    first_field = Field(Metadatum(:free_surface; dataset = ECCO4Monthly(), date = first(dates)), CPU())
+    ssh_mean    = copy(Array(interior(first_field)))
+    for date in dates[2:end]
+        f = Field(Metadatum(:free_surface; dataset = ECCO4Monthly(), date), CPU())
+        ssh_mean .+= Array(interior(f))
+    end
+    ssh_mean ./= length(dates)
+    JLD2.jldsave(cache_file; ssh_mean)
+    return ssh_mean
+end
+
+# Native ECCO mean is grid-invariant across cases — compute once, reuse.
+const ECCO_SSH_NATIVE_MEAN_REF = Ref{Any}(nothing)
+
+function ecco_ssh_on_grid(grid; reference_date = DateTime(1992, 1, 1))
+    if isnothing(ECCO_SSH_NATIVE_MEAN_REF[])
+        ECCO_SSH_NATIVE_MEAN_REF[] = ecco_ssh_climatology_native()
+    end
+    template = Field(Metadatum(:free_surface; dataset = ECCO4Monthly(), date = reference_date), CPU())
+    interior(template) .= ECCO_SSH_NATIVE_MEAN_REF[]
+    dst = Field{Center, Center, Nothing}(grid)
+    interpolate!(dst, template)
+    return dropdims(Array(interior(dst)); dims = 3)
+end
+
+# ── de Boyer Montégut MLD climatology ─────────────────────────
+# Auto-downloads the IFREMER product (2° monthly climatology, DR003 density
+# criterion). Override DBM_MLD_URL / DBM_MLD_FILE / DBM_MLD_VAR to point at a
+# different product. Missing values appear either as Missing or as sentinel
+# values (up to ~1e9); both are mapped out before interpolation.
+const DBM_MLD_URL = get(ENV, "DBM_MLD_URL",
+                        "https://mld.ifremer.fr/data/mld_DR003_c1m_reg2.0.nc")
+
+# Cell-edge vector from center vector: midpoints plus half-spacing at ends.
+# Clamped to ±90 for latitude to avoid constructor errors at the poles.
+function centers_to_edges(centers; clamp_to = nothing)
+    Δfirst = centers[2] - centers[1]
+    Δlast  = centers[end] - centers[end-1]
+    edges  = Vector{Float64}(undef, length(centers) + 1)
+    edges[1]   = centers[1] - Δfirst / 2
+    edges[end] = centers[end] + Δlast / 2
+    for i in 2:length(centers)
+        edges[i] = (centers[i-1] + centers[i]) / 2
+    end
+    if !isnothing(clamp_to)
+        lo, hi = clamp_to
+        edges[1]   = max(edges[1], lo)
+        edges[end] = min(edges[end], hi)
+    end
+    return edges
+end
+
+function dbm_mld_climatology_on_grid(grid;
+                                     file = get(ENV, "DBM_MLD_FILE", joinpath(obs_cache_dir, basename(DBM_MLD_URL))),
+                                     var  = get(ENV, "DBM_MLD_VAR", "mld"))
+    if !isfile(file)
+        try
+            @info "  Downloading dBM MLD climatology from $DBM_MLD_URL"
+            file = cached_download(DBM_MLD_URL)
+        catch e
+            @warn "dBM MLD auto-download failed — skipping reference. Manually download from https://mld.ifremer.fr/Surface_Mixed_Layer_Depth.php and set DBM_MLD_FILE." error=sprint(showerror, e)
+            return nothing
+        end
+    end
+    ds = NCDatasets.NCDataset(file)
+    mld_raw = Array(ds[var][:, :, :])
+    lon_vec = Float64.(Array(ds["lon"][:]))
+    lat_vec = Float64.(Array(ds["lat"][:]))
+    close(ds)
+
+    mld_raw = Float64.(coalesce.(mld_raw, NaN))
+    mld_raw[mld_raw .> 1e8] .= NaN  # dBM DR003 uses ~1e9 as a sentinel on land
+
+    lon_edges = centers_to_edges(lon_vec)
+    lat_edges = centers_to_edges(lat_vec; clamp_to = (-90, 90))
+    Nlon, Nlat, Nm = size(mld_raw)
+
+    src_grid = LatitudeLongitudeGrid(CPU();
+        size = (Nlon, Nlat, 1),
+        longitude = lon_edges,
+        latitude  = lat_edges,
+        z = (0, 1))
+
+    src = Field{Center, Center, Nothing}(src_grid)
+    dst = Field{Center, Center, Nothing}(grid)
+    Nx, Ny = size(grid, 1), size(grid, 2)
+    out = Array{Float64, 3}(undef, Nx, Ny, Nm)
+    for m in 1:Nm
+        # `interpolate!` doesn't propagate NaNs usefully across land, so replace
+        # missing/sentinel cells with 0 before interpolation. Downstream we mask
+        # land anyway.
+        clean = replace(mld_raw[:, :, m], NaN => 0.0)
+        interior(src) .= reshape(clean, Nlon, Nlat, 1)
+        interpolate!(dst, src)
+        out[:, :, m] = Array(interior(dst))[:, :, 1]
+    end
+    return out
+end
+
 # ══════════════════════════════════════════════════════════════
 # Load surface diagnostics
 # ══════════════════════════════════════════════════════════════
@@ -131,14 +272,14 @@ function load_surface_case(run_dir, prefix; start_time = 0, stop_time = Inf)
     surface_file = find_first_file(run_dir, prefix, "surface")
     @info "  surface: $surface_file"
 
-    tos     = FieldTimeSeries(surface_file, "tos";    backend = OnDisk())
-    sos     = FieldTimeSeries(surface_file, "sos";    backend = OnDisk())
-    zos     = FieldTimeSeries(surface_file, "zos";    backend = OnDisk())
-    mld_fts = FieldTimeSeries(surface_file, "mlotst"; backend = OnDisk())
-    hfds    = FieldTimeSeries(surface_file, "hfds";   backend = OnDisk())
-    wfo     = FieldTimeSeries(surface_file, "wfo";    backend = OnDisk())
-    sic     = FieldTimeSeries(surface_file, "siconc"; backend = OnDisk())
-    zossq   = FieldTimeSeries(surface_file, "zossq";  backend = OnDisk())
+    tos     = FieldTimeSeries(surface_file, "tos";    backend = InMemory(10))
+    sos     = FieldTimeSeries(surface_file, "sos";    backend = InMemory(10))
+    zos     = FieldTimeSeries(surface_file, "zos";    backend = InMemory(10))
+    mld_fts = FieldTimeSeries(surface_file, "mlotst"; backend = InMemory(10))
+    hfds    = FieldTimeSeries(surface_file, "hfds";   backend = InMemory(10))
+    wfo     = FieldTimeSeries(surface_file, "wfo";    backend = InMemory(10))
+    sic     = FieldTimeSeries(surface_file, "siconc"; backend = InMemory(10))
+    zossq   = FieldTimeSeries(surface_file, "zossq";  backend = InMemory(10))
 
     grid = tos.grid
     Nx, Ny, Nz = size(grid)
@@ -156,16 +297,18 @@ function load_surface_case(run_dir, prefix; start_time = 0, stop_time = Inf)
     SSH_sq  = dropdims(compute_time_mean(zossq; start_time, stop_time); dims=3)
     SSH_var = SSH_sq .- SSH .^ 2
 
-    MLD_monthly = [compute_monthly_mean(mld_fts, [m]; start_time, stop_time) for m in 1:12]
-    avail = findall(!isnothing, MLD_monthly)
-    MLD_stack = cat([dropdims(MLD_monthly[m]; dims=3) for m in avail]...; dims=3)
-    MLD_min = dropdims(minimum(MLD_stack; dims=3); dims=3)
-    MLD_max = dropdims(maximum(MLD_stack; dims=3); dims=3)
+    # One disk pass binned over all 12 months — prior version scanned the FTS
+    # 12× and again twice for March/September SIC.
+    mld_monthly = compute_monthly_means(mld_fts; start_time, stop_time)
+    sic_monthly = compute_monthly_means(sic;     start_time, stop_time)
 
-    SIC_mar = compute_monthly_mean(sic, [3]; start_time, stop_time)
-    SIC_sep = compute_monthly_mean(sic, [9]; start_time, stop_time)
-    SIC_mar = isnothing(SIC_mar) ? nothing : dropdims(SIC_mar; dims=3)
-    SIC_sep = isnothing(SIC_sep) ? nothing : dropdims(SIC_sep; dims=3)
+    mld_available = findall(!isnothing, mld_monthly)
+    MLD_stack = cat([dropdims(mld_monthly[m]; dims=3) for m in mld_available]...; dims=3)
+    MLD_min   = dropdims(minimum(MLD_stack; dims=3); dims=3)
+    MLD_max   = dropdims(maximum(MLD_stack; dims=3); dims=3)
+
+    SIC_mar = isnothing(sic_monthly[3]) ? nothing : dropdims(sic_monthly[3]; dims=3)
+    SIC_sep = isnothing(sic_monthly[9]) ? nothing : dropdims(sic_monthly[9]; dims=3)
 
     T_woa = Field(Metadatum(:temperature; dataset = WOAAnnual()), CPU())
     S_woa = Field(Metadatum(:salinity;    dataset = WOAAnnual()), CPU())
@@ -176,16 +319,33 @@ function load_surface_case(run_dir, prefix; start_time = 0, stop_time = Inf)
     δSST = SST .- T_woa_on_grid[:, :, Nz]
     δSSS = SSS .- S_woa_on_grid[:, :, Nz]
 
-    for f in (SST, SSS, SSH, HF, FW, SIC_mean, SSH_var, MLD_min, MLD_max, δSST, δSSS)
+    # ECCO4 free-surface climatology (1992–2012) regridded onto case grid.
+    # Simulated and ECCO SSH have different mean offsets (each model defines
+    # its own reference); subtract global means before differencing.
+    SSH_ecco = ecco_ssh_on_grid(grid)
+    δSSH_ecco = (SSH .- mean(filter(isfinite, SSH))) .-
+                (SSH_ecco .- mean(filter(isfinite, SSH_ecco)))
+
+    # de Boyer Montégut monthly MLD climatology (optional — set DBM_MLD_FILE).
+    dbm_mld = dbm_mld_climatology_on_grid(grid)
+    MLD_min_dbm = isnothing(dbm_mld) ? nothing : dropdims(minimum(dbm_mld; dims=3); dims=3)
+    MLD_max_dbm = isnothing(dbm_mld) ? nothing : dropdims(maximum(dbm_mld; dims=3); dims=3)
+
+    for f in (SST, SSS, SSH, HF, FW, SIC_mean, SSH_var, MLD_min, MLD_max,
+              δSST, δSSS, SSH_ecco, δSSH_ecco)
         mask_land!(f, land)
     end
-    !isnothing(SIC_mar) && mask_land!(SIC_mar, land)
-    !isnothing(SIC_sep) && mask_land!(SIC_sep, land)
+    !isnothing(SIC_mar)     && mask_land!(SIC_mar, land)
+    !isnothing(SIC_sep)     && mask_land!(SIC_sep, land)
+    !isnothing(MLD_min_dbm) && mask_land!(MLD_min_dbm, land)
+    !isnothing(MLD_max_dbm) && mask_land!(MLD_max_dbm, land)
 
     return (; grid, Nx, Ny, Nz, land, surface_file,
               SST, SSS, SSH, HF, FW, SIC_mean, SSH_var,
               MLD_min, MLD_max, SIC_mar, SIC_sep,
-              δSST, δSSS, T_woa_on_grid, S_woa_on_grid)
+              δSST, δSSS, SSH_ecco, δSSH_ecco,
+              MLD_min_dbm, MLD_max_dbm,
+              T_woa_on_grid, S_woa_on_grid)
 end
 
 D = Dict{String, Any}()
@@ -199,45 +359,63 @@ end
 # Figures 1-7: Surface diagnostics
 # ══════════════════════════════════════════════════════════════
 
+# Grid of per-case maps of a scalar field accessed by `getfield(D[lab], key)`.
+function plot_field_grid(key::Symbol;
+                         title_suffix::String, colormap, colorrange, label::String,
+                         figsize = (800 * length(labels), 500))
+    fig = Figure(size = figsize, fontsize = 14)
+    for (i, lab) in enumerate(labels)
+        panel!(fig, [1, 2i-1], getfield(D[lab], key);
+               title = "$lab: $title_suffix", colormap, colorrange, label)
+    end
+    return fig
+end
+
 # Figure 1: SST bias
 @info "Figure 1: SST bias"
-fig = Figure(size = (800 * length(labels), 500), fontsize = 14)
-for (i, lab) in enumerate(labels)
-    panel!(fig, [1, 2i-1], D[lab].δSST;
-           title = "$lab: SST - WOA", colormap = :balance,
-           colorrange = (-5, 5), label = "deg C")
-end
-savefig(fig, "fig01_sst_bias.png")
+savefig(plot_field_grid(:δSST;  title_suffix = "SST - WOA", colormap = :balance,
+                        colorrange = (-5, 5), label = "deg C"),
+        "fig01_sst_bias.png")
 
 # Figure 2: SSS bias
 @info "Figure 2: SSS bias"
-fig = Figure(size = (800 * length(labels), 500), fontsize = 14)
-for (i, lab) in enumerate(labels)
-    panel!(fig, [1, 2i-1], D[lab].δSSS;
-           title = "$lab: SSS - WOA", colormap = :balance,
-           colorrange = (-3, 3), label = "PSU")
-end
-savefig(fig, "fig02_sss_bias.png")
+savefig(plot_field_grid(:δSSS;  title_suffix = "SSS - WOA", colormap = :balance,
+                        colorrange = (-3, 3), label = "PSU"),
+        "fig02_sss_bias.png")
 
-# Figure 3: SSH
-@info "Figure 3: SSH"
-fig = Figure(size = (800 * length(labels), 500), fontsize = 14)
+# Figure 3: SSH + SSH - ECCO(1992–2012) bias
+@info "Figure 3: SSH and SSH - ECCO bias"
+fig = Figure(size = (800 * length(labels), 900), fontsize = 14)
 for (i, lab) in enumerate(labels)
     panel!(fig, [1, 2i-1], D[lab].SSH;
            title = "$lab: Time-mean SSH", colormap = :balance,
            colorrange = (-2, 2), label = "m")
+    panel!(fig, [2, 2i-1], D[lab].δSSH_ecco;
+           title = "$lab: SSH - ECCO (1992–2012), demeaned", colormap = :balance,
+           colorrange = (-0.5, 0.5), label = "m")
 end
 savefig(fig, "fig03_ssh.png")
 
-# Figure 4: MLD min/max
+# Figure 4: MLD min/max with optional dBM reference row
 @info "Figure 4: MLD"
-fig = Figure(size = (800 * length(labels), 900), fontsize = 14)
+lab_with_dbm = findfirst(lab -> !isnothing(D[lab].MLD_min_dbm), labels)
+nrows = isnothing(lab_with_dbm) ? 2 : 3
+fig = Figure(size = (800 * length(labels), 450 * nrows), fontsize = 14)
 for (i, lab) in enumerate(labels)
     panel!(fig, [1, 2i-1], D[lab].MLD_min;
            title = "$lab: Min MLD (summer)",
            colormap = Reverse(:deep), colorrange = (0, 150), label = "m")
     panel!(fig, [2, 2i-1], D[lab].MLD_max;
            title = "$lab: Max MLD (winter)",
+           colormap = Reverse(:deep), colorrange = (10, 3000), label = "m")
+end
+if !isnothing(lab_with_dbm)
+    ref_lab = labels[lab_with_dbm]
+    panel!(fig, [3, 1], D[ref_lab].MLD_min_dbm;
+           title = "dBM climatology: Min MLD",
+           colormap = Reverse(:deep), colorrange = (0, 150), label = "m")
+    panel!(fig, [3, 3], D[ref_lab].MLD_max_dbm;
+           title = "dBM climatology: Max MLD",
            colormap = Reverse(:deep), colorrange = (10, 3000), label = "m")
 end
 savefig(fig, "fig04_mld.png")
@@ -271,13 +449,9 @@ savefig(fig, "fig06_surface_fluxes.png")
 
 # Figure 7: SSH variance
 @info "Figure 7: SSH variance"
-fig = Figure(size = (800 * length(labels), 500), fontsize = 14)
-for (i, lab) in enumerate(labels)
-    panel!(fig, [1, 2i-1], D[lab].SSH_var;
-           title = "$lab: SSH variance", colormap = :magma,
-           colorrange = (0, 0.05), label = "m²")
-end
-savefig(fig, "fig07_ssh_variance.png")
+savefig(plot_field_grid(:SSH_var; title_suffix = "SSH variance", colormap = :magma,
+                        colorrange = (0, 0.05), label = "m²"),
+        "fig07_ssh_variance.png")
 
 # ══════════════════════════════════════════════════════════════
 # Sea-ice diagnostics
@@ -291,8 +465,8 @@ function compute_ice_diagnostics(run_dir, prefix, grid;
                                  reference_date = DateTime(1958, 1, 1),
                                  extent_threshold = 0.15)
     surface_file      = find_first_file(run_dir, prefix, "surface")
-    thickness_fts     = FieldTimeSeries(surface_file, "sithick"; backend = OnDisk())
-    concentration_fts = FieldTimeSeries(surface_file, "siconc";  backend = OnDisk())
+    thickness_fts     = FieldTimeSeries(surface_file, "sithick"; backend = InMemory(10))
+    concentration_fts = FieldTimeSeries(surface_file, "siconc";  backend = InMemory(10))
 
     Nt = length(thickness_fts.times)
     arctic_volume      = zeros(Nt)
@@ -303,31 +477,39 @@ function compute_ice_diagnostics(run_dir, prefix, grid;
     antarctic_area     = zeros(Nt)
     snapshot_dates     = [reference_date + Second(round(Int, t)) for t in thickness_fts.times]
 
-    extent_mask = Field{Center, Center, Nothing}(grid)
-    arctic_extent_integral    = Field(Integral(extent_mask; condition = arctic_condition))
-    antarctic_extent_integral = Field(Integral(extent_mask; condition = antarctic_condition))
+    # Reusable operand buffers. Integrals below reference these by identity, so
+    # mutating their data in place and calling `compute!` re-evaluates against
+    # the new values — no per-iteration Field/Integral allocation.
+    thickness     = Field{Center, Center, Nothing}(grid)
+    concentration = Field{Center, Center, Nothing}(grid)
+    ice_volume    = Field{Center, Center, Nothing}(grid)
+    extent_mask   = Field{Center, Center, Nothing}(grid)
+
+    arctic_vol_int    = Field(Integral(ice_volume;    condition = arctic_condition))
+    antarctic_vol_int = Field(Integral(ice_volume;    condition = antarctic_condition))
+    arctic_area_int   = Field(Integral(concentration; condition = arctic_condition))
+    antarctic_area_int = Field(Integral(concentration; condition = antarctic_condition))
+    arctic_ext_int    = Field(Integral(extent_mask;   condition = arctic_condition))
+    antarctic_ext_int = Field(Integral(extent_mask;   condition = antarctic_condition))
 
     for n in 1:Nt
-        concentration_field = concentration_fts[n]
+        set!(thickness,     thickness_fts[n])
+        set!(concentration, concentration_fts[n])
+        interior(ice_volume) .= interior(thickness) .* interior(concentration)
 
-        ice_volume_field   = thickness_fts[n] * concentration_field
-        arctic_vol_int     = Field(Integral(ice_volume_field; condition = arctic_condition))
-        antarctic_vol_int  = Field(Integral(ice_volume_field; condition = antarctic_condition))
         compute!(arctic_vol_int);  compute!(antarctic_vol_int)
         arctic_volume[n]    = arctic_vol_int[1, 1, 1]
         antarctic_volume[n] = antarctic_vol_int[1, 1, 1]
 
-        arctic_area_int    = Field(Integral(concentration_field; condition = arctic_condition))
-        antarctic_area_int = Field(Integral(concentration_field; condition = antarctic_condition))
-        compute!(arctic_area_int);  compute!(antarctic_area_int)
+        compute!(arctic_area_int); compute!(antarctic_area_int)
         arctic_area[n]    = arctic_area_int[1, 1, 1]
         antarctic_area[n] = antarctic_area_int[1, 1, 1]
 
-        concentration_data = Array(interior(concentration_field, :, :, 1))
+        concentration_data = Array(interior(concentration, :, :, 1))
         set!(extent_mask, Float64.(concentration_data .> extent_threshold))
-        compute!(arctic_extent_integral);  compute!(antarctic_extent_integral)
-        arctic_extent[n]    = arctic_extent_integral[1, 1, 1]
-        antarctic_extent[n] = antarctic_extent_integral[1, 1, 1]
+        compute!(arctic_ext_int); compute!(antarctic_ext_int)
+        arctic_extent[n]    = arctic_ext_int[1, 1, 1]
+        antarctic_extent[n] = antarctic_ext_int[1, 1, 1]
     end
 
     idx = findall(t -> start_time <= t <= stop_time, thickness_fts.times)
@@ -354,7 +536,7 @@ end
 # ── Download observational climatologies ─────────────────────
 
 piomas_url  = "https://psc.apl.uw.edu/wordpress/wp-content/uploads/schweiger/ice_volume/PIOMAS.monthly.Current.v2.1.csv"
-piomas_raw  = readdlm(Downloads.download(piomas_url), ','; skipstart=1)
+piomas_raw  = readdlm(cached_download(piomas_url), ','; skipstart=1)
 piomas_volume = Float64.(piomas_raw[:, 2:13])
 piomas_volume[piomas_volume .== -1] .= NaN
 piomas_monthly = vec(mapslices(x -> mean(filter(!isnan, x)), piomas_volume; dims=1))
@@ -365,7 +547,7 @@ function download_nsidc(hemisphere)
     area_monthly   = zeros(12)
     for m in 1:12
         url = "https://noaadata.apps.nsidc.org/NOAA/G02135/$(hemisphere)/monthly/data/$(prefix)_$(lpad(m, 2, '0'))_extent_v4.0.csv"
-        raw = readlines(Downloads.download(url))
+        raw = readlines(cached_download(url))
         extents = Float64[]; areas = Float64[]
         for line in raw
             parts = split(line, ',')
@@ -471,30 +653,34 @@ savefig(fig, "fig12_arctic_volume_timeseries.png")
 
 function load_timeseries_case(run_dir, prefix, grid; start_time = 0, stop_time = Inf)
     averages_file = find_first_file(run_dir, prefix, "averages")
-    temperature_mean_fts = FieldTimeSeries(averages_file, "tosga"; backend = OnDisk())
-    salinity_mean_fts    = FieldTimeSeries(averages_file, "soga";  backend = OnDisk())
+    temperature_mean_fts = FieldTimeSeries(averages_file, "tosga"; backend = InMemory(10))
+    salinity_mean_fts    = FieldTimeSeries(averages_file, "soga";  backend = InMemory(10))
     temperature_mean = [Array(interior(temperature_mean_fts[n]))[1] for n in 1:length(temperature_mean_fts.times)]
     salinity_mean    = [Array(interior(salinity_mean_fts[n]))[1]  for n in 1:length(salinity_mean_fts.times)]
     time_in_years    = temperature_mean_fts.times ./ (365.25 * 24 * 3600)
 
-    temperature_profile_fts = FieldTimeSeries(averages_file, "to_h"; backend = OnDisk())
-    salinity_profile_fts    = FieldTimeSeries(averages_file, "so_h"; backend = OnDisk())
+    temperature_profile_fts = FieldTimeSeries(averages_file, "to_h"; backend = InMemory(10))
+    salinity_profile_fts    = FieldTimeSeries(averages_file, "so_h"; backend = InMemory(10))
     temperature_profile = vec(compute_time_mean(temperature_profile_fts; start_time, stop_time))
     salinity_profile    = vec(compute_time_mean(salinity_profile_fts; start_time, stop_time))
     depth = collect(znodes(grid, Center()))
 
     fields_file = find_first_file(run_dir, prefix, "fields")
-    tke_fts     = FieldTimeSeries(fields_file, "tke"; backend = OnDisk())
-    u_fts       = FieldTimeSeries(fields_file, "uo"; backend = OnDisk())
-    v_fts       = FieldTimeSeries(fields_file, "vo"; backend = OnDisk())
+    tke_fts     = FieldTimeSeries(fields_file, "tke"; backend = InMemory(10))
+    u_fts       = FieldTimeSeries(fields_file, "uo"; backend = InMemory(10))
+    v_fts       = FieldTimeSeries(fields_file, "vo"; backend = InMemory(10))
 
     ocean_mask  = build_ocean_mask_3d(grid)
     ocean_cells = sum(ocean_mask)
     tke_mean = [sum(Array(interior(tke_fts[n])) .* ocean_mask) / ocean_cells
                 for n in 1:length(tke_fts.times)]
 
-    ke(n) = @at((Center, Center, Center), u^2 + v^2)
-    ke_mean = [sum(ke(n)) ./ ocean_cells ./ 2 for n in 1:length(u_fts.times)]
+    ke_mean = map(1:length(u_fts.times)) do n
+        ke_field = Field(@at((Center, Center, Center),
+                             u_fts[n] * u_fts[n] + v_fts[n] * v_fts[n]))
+        compute!(ke_field)
+        sum(Array(interior(ke_field)) .* ocean_mask) / (2 * ocean_cells)
+    end
     tke_time_in_years = tke_fts.times ./ (365.25 * 24 * 3600)
 
     return (; temperature_mean, salinity_mean, time_in_years,
@@ -602,10 +788,10 @@ for c in cases
 
     @info "Loading 3-D fields for $lab..."
     fields_file = TS[lab].fields_file
-    to_fts = FieldTimeSeries(fields_file, "to";  backend = OnDisk())
-    so_fts = FieldTimeSeries(fields_file, "so";  backend = OnDisk())
-    bo_fts = FieldTimeSeries(fields_file, "bo";  backend = OnDisk())
-    eo_fts = FieldTimeSeries(fields_file, "tke"; backend = OnDisk())
+    to_fts = FieldTimeSeries(fields_file, "to";  backend = InMemory(10))
+    so_fts = FieldTimeSeries(fields_file, "so";  backend = InMemory(10))
+    bo_fts = FieldTimeSeries(fields_file, "bo";  backend = InMemory(10))
+    eo_fts = FieldTimeSeries(fields_file, "tke"; backend = InMemory(10))
 
     temperature_mean     = compute_time_mean(to_fts; start_time, stop_time)
     salinity_mean        = compute_time_mean(so_fts; start_time, stop_time)
