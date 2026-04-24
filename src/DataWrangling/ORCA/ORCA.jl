@@ -7,7 +7,7 @@ using Oceananigans
 using Oceananigans.DistributedComputations: @root
 using Scratch
 
-using ..DataWrangling: download_progress, Metadatum, metadata_path
+using ..DataWrangling: AbstractDataset, download_progress, Metadatum, metadata_path
 
 import NumericalEarth.DataWrangling:
     metadata_filename,
@@ -26,7 +26,7 @@ download_ORCA_cache::String = ""
 function __init__()
     global download_ORCA_cache = @get_scratch!("ORCA")
 end
-abstract type ORCADataset end
+abstract type ORCADataset <: AbstractDataset end
 
 struct ORCA1 <: ORCADataset end
 struct ORCA12 <: ORCADataset end

@@ -97,8 +97,8 @@ function default_download_directory(::ECCO2DarwinMonthly)
     return mkpath(path)
 end
 
-metadata_url(m::Metadata{<:ECCO4DarwinMonthly}) = ECCO4Darwin_url * "monthly/" * dataset_variable_name(m) * "/" * m.filename
-metadata_url(m::Metadata{<:ECCO2DarwinMonthly}) = ECCO2Darwin_url * "monthly/" * dataset_variable_name(m) * "/" * m.filename
+dataset_url(m::Metadata{<:ECCO4DarwinMonthly}) = ECCO4Darwin_url * "monthly/" * dataset_variable_name(m) * "/" * m.filename
+dataset_url(m::Metadata{<:ECCO2DarwinMonthly}) = ECCO2Darwin_url * "monthly/" * dataset_variable_name(m) * "/" * m.filename
 
 # Functions for reading the ECCO binary files using MeshArrays
 binary_data_grid(::ECCO4DarwinMonthly) = GridSpec(ID=:LLC90)

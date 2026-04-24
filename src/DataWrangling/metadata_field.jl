@@ -19,9 +19,15 @@ end
 """
     native_grid(metadata::Metadata, arch=CPU(); halo = (3, 3, 3))
 
-Return a `LatitudeLongitudeGrid` on `arch` corresponding to the native grid of `metadata` with `halo` size.
+Return a grid on `arch` corresponding to the native layout of `metadata`. Dispatch
+happens on the `spatial_layout` trait: the default `GriddedLatLon` returns a
+`LatitudeLongitudeGrid`; `StationColumn` returns a single-column
+`RectilinearGrid(Flat, Flat, Bounded)` anchored at the dataset's (longitude,
+latitude) point.
 """
-function native_grid(metadata::Metadata, arch=CPU(); halo = (3, 3, 3))
+native_grid(metadata::Metadata, arch=CPU(); halo = (3, 3, 3)) = native_grid(spatial_layout(metadata.dataset), metadata, arch; halo)
+
+function native_grid(::GriddedLatLon, metadata::Metadata, arch=CPU(); halo = (3, 3, 3))
     Nx, Ny, Nz, _ = size(metadata)
     z = z_interfaces(metadata)
 
@@ -42,6 +48,28 @@ function native_grid(metadata::Metadata, arch=CPU(); halo = (3, 3, 3))
                                  halo, longitude, latitude, z)
 
     return grid
+end
+
+# StationColumn: single-point (longitude, latitude) with a Bounded z-axis when
+# the variable is three-dimensional, otherwise a fully Flat grid for scalars.
+function native_grid(::StationColumn, metadata::Metadata, arch=CPU(); halo = (3, 3, 3))
+    lon_interfaces = longitude_interfaces(metadata)
+    lat_interfaces = latitude_interfaces(metadata)
+    longitude = first(lon_interfaces)
+    latitude  = first(lat_interfaces)
+
+    if is_three_dimensional(metadata)
+        Nz = size(metadata.dataset, metadata.name)[3]
+        z  = z_interfaces(metadata)
+        hz = length(halo) >= 3 ? halo[3] : 3
+        return RectilinearGrid(arch; size = Nz,
+                               x = longitude, y = latitude, z = z,
+                               topology = (Flat, Flat, Bounded),
+                               halo = (hz,))
+    else
+        return RectilinearGrid(arch; size = (),
+                               topology = (Flat, Flat, Flat))
+    end
 end
 
 """
@@ -121,8 +149,9 @@ function Field(metadata::Metadatum, arch=CPU();
         end
     end
 
-    # Retrieve data from file according to metadata type
-    data = retrieve_data(metadata)
+    # Retrieve data from file according to metadata type, then apply dataset-specific
+    # preprocessing (QC filtering, threshold masking, etc.). Default is identity.
+    data = preprocess_data(retrieve_data(metadata), metadata)
 
     set_metadata_field!(field, data, metadata)
     fill_halo_regions!(field)
@@ -164,7 +193,18 @@ function Field(metadata::Metadatum, arch=CPU();
     return field
 end
 
-function set!(target_field::Field, metadata::Metadatum; kw...)
+"""
+    set!(target_field::Field, metadata::Metadatum; kw...)
+
+Populate `target_field` from `metadata`. Dispatches on the `spatial_layout` trait:
+`GriddedLatLon` uses full 3-D interpolation via Oceananigans' `interpolate!`;
+`StationColumn` uses a vertical-only, NaN-skipping interpolation suited to
+single-column moored-station data.
+"""
+set!(target_field::Field, metadata::Metadatum; kw...) =
+    set!(spatial_layout(metadata.dataset), target_field, metadata; kw...)
+
+function set!(::GriddedLatLon, target_field::Field, metadata::Metadatum; kw...)
     grid = target_field.grid
     arch = child_architecture(grid)
     meta_field = Field(metadata, arch; kw...)
@@ -181,15 +221,83 @@ function set!(target_field::Field, metadata::Metadatum; kw...)
     return target_field
 end
 
-# manglings
-struct ShiftSouth end
-struct AverageNorthSouth end
+# StationColumn: vertical-only interpolation that skips NaN sentinels, with
+# nearest-value extrapolation outside the source depth range. This exists
+# because Oceananigans' `interpolate!` does not skip NaNs and currently has a
+# bug for single-column fields (Oceananigans.jl issue #5511).
+function set!(::StationColumn, target_field::Field, metadata::Metadatum; kw...)
+    grid = target_field.grid
+    arch = child_architecture(grid)
+    meta_field = Field(metadata, arch; kw...)
 
-@inline mangle(i, j, data, ::Nothing) = @inbounds data[i, j]
+    # Scalar (non-profile) variables: no vertical interpolation, just copy.
+    if !is_three_dimensional(metadata)
+        parent(target_field) .= parent(meta_field)
+        return target_field
+    end
+
+    Lzt = grid.Lz
+    Lzm = meta_field.grid.Lz
+    if Lzt > Lzm
+        throw("The vertical range of the $(metadata.dataset) dataset ($(Lzm) m) is smaller than " *
+              "the target grid ($(Lzt) m). Some vertical levels cannot be filled with data.")
+    end
+
+    z_src = collect(znodes(meta_field.grid, Center()))
+    z_dst = collect(znodes(grid, Center()))
+    data_profile = Array(interior(meta_field, 1, 1, :))
+
+    interpolated = vertical_interpolate_skip_nan(z_src, data_profile, z_dst)
+
+    interior(target_field, 1, 1, :) .= on_architecture(arch, interpolated)
+    return target_field
+end
+
+"""
+    vertical_interpolate_skip_nan(z_src, data_src, z_dst)
+
+Linearly interpolate a 1-D profile from `z_src` cell centers onto `z_dst`
+levels, skipping any `NaN` entries in `data_src`. Targets outside the valid
+source range are extrapolated from the nearest valid value (i.e. held
+constant). Used by the `StationColumn` implementation of `set!`.
+"""
+function vertical_interpolate_skip_nan(z_src, data_src, z_dst)
+    result = similar(z_dst, Float64)
+
+    valid = .!isnan.(data_src)
+    zv = z_src[valid]
+    dv = data_src[valid]
+
+    if isempty(zv)
+        result .= NaN
+        return result
+    end
+
+    perm = sortperm(zv)
+    zv = zv[perm]
+    dv = dv[perm]
+
+    for (i, zt) in enumerate(z_dst)
+        if zt <= zv[1]
+            result[i] = dv[1]
+        elseif zt >= zv[end]
+            result[i] = dv[end]
+        else
+            j = searchsortedlast(zv, zt)
+            α = (zt - zv[j]) / (zv[j+1] - zv[j])
+            result[i] = dv[j] + α * (dv[j+1] - dv[j])
+        end
+    end
+
+    return result
+end
+
+# Shipped mangle methods. The tag struct definitions and the `mangle` generic
+# function live in Datasets (Datasets.jl). Tags here cover off-by-one grid
+# staggering and averaging between adjacent rows.
 @inline mangle(i, j, data, ::ShiftSouth) = @inbounds data[i, j-1]
 @inline mangle(i, j, data, ::AverageNorthSouth) = @inbounds (data[i, j+1] + data[i, j]) / 2
 
-@inline mangle(i, j, k, data, ::Nothing) = @inbounds data[i, j, k]
 @inline mangle(i, j, k, data, ::ShiftSouth) = @inbounds data[i, j-1, k]
 @inline mangle(i, j, k, data, ::AverageNorthSouth) = @inbounds (data[i, j+1, k] + data[i, j, k]) / 2
 
@@ -271,8 +379,8 @@ end
 @inline nan_convert_missing(FT, ::Missing) = convert(FT, NaN)
 @inline nan_convert_missing(FT, d::Number) = convert(FT, d)
 
-# No units conversion
-@inline convert_units(T, units) = T
+# Shipped unit-conversion methods. The tag struct definitions, the generic
+# `convert_units` function, and its identity default live in Datasets.
 
 # Just switch sign!
 @inline convert_units(T::FT, ::InverseSign) where FT = - T

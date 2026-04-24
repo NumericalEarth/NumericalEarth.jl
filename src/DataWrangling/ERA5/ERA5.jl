@@ -7,7 +7,7 @@ using Printf
 using Scratch
 
 using Oceananigans.Fields: Center
-using NumericalEarth.DataWrangling: Metadata, Metadatum, metadata_path
+using NumericalEarth.DataWrangling: AbstractDataset, Metadata, Metadatum, metadata_path
 using Dates
 using Dates: DateTime, Day, Month, Hour
 
@@ -38,7 +38,7 @@ end
 ##### ERA5 Datasets
 #####
 
-abstract type ERA5Dataset end
+abstract type ERA5Dataset <: AbstractDataset end
 
 default_download_directory(::ERA5Dataset) = download_ERA5_cache
 

@@ -10,11 +10,30 @@ export metadata_time_step, metadata_epoch
 export LinearlyTaperedPolarMask
 export DatasetRestoring, SurfaceFluxRestoring
 export ERA5Hourly, ERA5Monthly
+export AbstractDataset, SpatialLayout, GriddedLatLon, StationColumn, spatial_layout
+export dataset_url, authenticate, download_file!, download_dataset
+export preprocess_data
+export conversion_units, convert_units, mangle
+export Celsius, Kelvin, Millibar, InverseSign, MillimetersPerHour, CentimetersPerSecond
+export GramPerKilogramMinus35, MilliliterPerLiter
+export MolePerKilogram, MolePerLiter, MillimolePerKilogram, MillimolePerLiter
+export MicromolePerKilogram, MicromolePerLiter, NanomolePerKilogram, NanomolePerLiter
+export ShiftSouth, AverageNorthSouth
+export test_dataset_contract, ContractReport, ContractCheck, is_conforming
 
 using Oceananigans
 using Downloads
 using Printf
 using Downloads
+
+include("Datasets.jl")
+using .Datasets
+# Explicit `import` so methods defined later in DataWrangling (on `convert_units`,
+# `mangle`, etc.) extend the generic functions declared in Datasets rather than
+# shadowing them.
+import .Datasets: convert_units, mangle, conversion_units, preprocess_data,
+                  dataset_url, authenticate, download_file!, download_dataset,
+                  spatial_layout
 
 using Oceananigans.Architectures: architecture, on_architecture
 using Oceananigans.Grids: node
@@ -138,45 +157,6 @@ function save_field_time_series!(fts; path, name, overwrite_existing=false)
     return nothing
 end
 
-"""
-    download_dataset(metadata; url = urls(metadata))
-
-Download the dataset specified by the `metadata::ECCOMetadata`. If `metadata.dates` is a single date,
-the dataset is downloaded directly. If `metadata.dates` is a vector of dates, each date
-is downloaded individually.
-
-Note: if called by multiple processes via MPI, `download_dataset` should only run on the root process.
-
-Arguments
-=========
-- `metadata`: The metadata specifying the dataset to be downloaded. Available options are metadata for
-              ETOPO, ECCO4, ECCO2, EN4, and JRA55 datasets.
-
-!!! info "Credential setup requirements for ECCO datasets"
-
-    For ECCO datasets, the data download requires "WebDAV/Programmatic API" credentials from
-    NASA's Earthdrive. The WebDAV/Programmatic API username and password need to be provided in
-    the `ECCO_USERNAME` and `ECCO_WEBDAV_PASSWORD` environment variables respectively. This can be
-    done by exporting the environment variables in the shell before running the script, or by
-    launching julia with
-
-    ```
-    ECCO_USERNAME=myusername ECCO_WEBDAV_PASSWORD=mypassword julia
-    ```
-
-    or by invoking
-
-    ```julia
-    julia> ENV["ECCO_USERNAME"] = "myusername"
-
-    julia> ENV["ECCO_WEBDAV_PASSWORD"] = "mypassword"
-    ```
-
-    within julia. More detailed instructions for obtaining WebDAV credentials are at:
-
-        https://github.com/CliMA/NumericalEarth.jl/blob/main/src/DataWrangling/ECCO/README.md
-"""
-function download_dataset end # methods specific to datasets are added within each dataset module
 function inpainted_metadata_path end
 
 """
@@ -201,6 +181,38 @@ include("metadata_field.jl")
 include("metadata_field_time_series.jl")
 include("inpainting.jl")
 include("restoring.jl")
+include("contract.jl")
+
+#####
+##### Default download implementation (requires Metadata, metadata_path)
+#####
+
+# Default transport: plain HTTP download via the standard library.
+download_file!(path, url, ::AbstractDataset) =
+    Downloads.download(url, path; progress=download_progress)
+
+# Default orchestrator: for each date in the metadata, authenticate, resolve the URL,
+# and call download_file!. Works for single-date (Metadatum) and multi-date cases.
+# Dataset-specific methods (ECCO asyncmap, EN4 bulk zip, GLORYS SDK) override this.
+function download_dataset(metadata::Metadata{<:AbstractDataset})
+    @root for metadatum in metadata
+        path = metadata_path(metadatum)
+        isfile(path) && continue
+
+        url = dataset_url(metadatum)
+        if isnothing(url)
+            error("No URL for dataset $(metadatum.dataset). Define ",
+                  "`dataset_url(::Metadatum{<:$(typeof(metadatum.dataset))})`, ",
+                  "override `download_dataset`, or place files manually at $path.")
+        end
+
+        authenticate(metadatum.dataset)
+        mkpath(dirname(path))
+        @info "Downloading $(metadatum.name) for $(typeof(metadatum.dataset)) to $(metadatum.dir)..."
+        download_file!(path, url, metadatum.dataset)
+    end
+    return nothing
+end
 
 function metadata_time_step end
 function metadata_epoch end
@@ -227,7 +239,6 @@ include("EN4/EN4.jl")
 include("ORCA/ORCA.jl")
 include("WOA/WOA.jl")
 include("JRA55/JRA55.jl")
-include("OSPapa/OSPapa.jl")
 
 using .ETOPO
 using .ECCO
@@ -237,6 +248,5 @@ using .EN4
 using .ORCA
 using .WOA
 using .JRA55
-using .OSPapa
 
 end # module

@@ -6,7 +6,7 @@ using NCDatasets
 using Printf
 
 using Oceananigans.Fields: Center
-using NumericalEarth.DataWrangling: Metadata, Metadatum, metadata_path
+using NumericalEarth.DataWrangling: AbstractDataset, Metadata, Metadatum, metadata_path
 using Dates: DateTime, Day, Month
 
 import Oceananigans.Fields:
@@ -33,7 +33,7 @@ function __init__()
 end
 
 # Datasets
-abstract type GLORYSDataset end
+abstract type GLORYSDataset <: AbstractDataset end
 
 default_download_directory(::GLORYSDataset) = download_GLORYS_cache
 

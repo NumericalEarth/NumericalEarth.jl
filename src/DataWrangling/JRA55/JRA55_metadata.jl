@@ -5,17 +5,17 @@ using Downloads
 using Oceananigans.DistributedComputations
 
 using NumericalEarth.DataWrangling
-using NumericalEarth.DataWrangling: Metadata, metadata_path, download_progress, AnyDateTime
+using NumericalEarth.DataWrangling: AbstractDataset, Metadata, metadata_path, download_progress, AnyDateTime
 
 import Dates: year, month, day
 import Oceananigans.Fields: set!
 import Base
 
 import Oceananigans.Fields: set!, location
-import NumericalEarth.DataWrangling: all_dates, metadata_filename, build_filename, download_dataset, default_download_directory, available_variables
+import NumericalEarth.DataWrangling: all_dates, metadata_filename, build_filename, dataset_url, default_download_directory, available_variables
 
-struct MultiYearJRA55 end
-struct RepeatYearJRA55 end
+struct MultiYearJRA55 <: AbstractDataset end
+struct RepeatYearJRA55 <: AbstractDataset end
 
 const JRA55Metadata{D} = Metadata{<:Union{<:MultiYearJRA55, <:RepeatYearJRA55}, D}
 const JRA55Metadatum   = Metadatum{<:Union{<:MultiYearJRA55, <:RepeatYearJRA55}}
@@ -186,24 +186,9 @@ JRA55_repeat_year_urls = Dict(
                            "RYF.vas.1990_1991.nc?rlkey=f9y3e57kx8xrb40gbstarf0x6&dl=0",
 )
 
-metadata_url(metadata::Metadata{<:RepeatYearJRA55}) = JRA55_repeat_year_urls[metadata.name]
+dataset_url(metadata::Metadata{<:RepeatYearJRA55}) = JRA55_repeat_year_urls[metadata.name]
 
-function metadata_url(m::Metadata{<:MultiYearJRA55})
+function dataset_url(m::Metadata{<:MultiYearJRA55})
     prefix = JRA55_multiple_year_prefix[m.name]
     return JRA55_multiple_year_url * prefix * "/" * dataset_variable_name(m) * "/gr/v20200916/" * m.filename
-end
-
-function download_dataset(metadata::JRA55Metadata)
-
-    @root for metadatum in metadata
-
-        fileurl  = metadata_url(metadatum)
-        filepath = metadata_path(metadatum)
-
-        if !isfile(filepath)
-            Downloads.download(fileurl, filepath; progress=download_progress)
-        end
-    end
-
-    return nothing
 end

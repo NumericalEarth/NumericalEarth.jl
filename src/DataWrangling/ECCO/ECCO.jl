@@ -18,6 +18,7 @@ using Downloads
 using Oceananigans.DistributedComputations: @root
 
 using NumericalEarth.DataWrangling:
+    AbstractDataset,
     netrc_downloader,
     NearestNeighborInpainting,
     BoundingBox,
@@ -40,6 +41,8 @@ import NumericalEarth.DataWrangling:
     all_dates,
     metadata_filename,
     download_dataset,
+    dataset_url,
+    authenticate,
     conversion_units,
     dataset_variable_name,
     metaprefix,
@@ -63,7 +66,7 @@ function __init__()
 end
 
 # Datasets
-abstract type ECCODataset end
+abstract type ECCODataset <: AbstractDataset end
 struct ECCO2Monthly <:ECCODataset end
 struct ECCO2Daily   <:ECCODataset end
 struct ECCO4Monthly <:ECCODataset end
@@ -287,45 +290,49 @@ is_three_dimensional(data::ECCOMetadata) =
     data.name == :v_velocity
 
 # URLs for the ECCO datasets specific to each dataset
-metadata_url(m::Metadata{<:ECCO2Monthly}) = ECCO2_url * "monthly/" * dataset_variable_name(m) * "/" * m.filename
-metadata_url(m::Metadata{<:ECCO2Daily})   = ECCO2_url * "daily/"   * dataset_variable_name(m) * "/" * m.filename
+dataset_url(m::Metadata{<:ECCO2Monthly}) = ECCO2_url * "monthly/" * dataset_variable_name(m) * "/" * m.filename
+dataset_url(m::Metadata{<:ECCO2Daily})   = ECCO2_url * "daily/"   * dataset_variable_name(m) * "/" * m.filename
 
-function metadata_url(m::Metadata{<:ECCO4Monthly})
+function dataset_url(m::Metadata{<:ECCO4Monthly})
     year = string(Dates.year(m.dates))
     return ECCO4_url * dataset_variable_name(m) * "/" * year * "/" * m.filename
 end
 
+# ECCO requires WebDAV credentials via environment variables.
+function authenticate(::ECCODataset)
+    instructions_msg = "\n See NumericalEarth.jl/src/DataWrangling/ECCO/README.md for instructions."
+    if isnothing(get(ENV, "ECCO_USERNAME", nothing))
+        throw(ArgumentError("Could not find the ECCO_USERNAME environment variable. " *
+                            "See NumericalEarth.jl/src/DataWrangling/ECCO/README.md for instructions on obtaining " *
+                            "and setting your ECCO_USERNAME and ECCO_WEBDAV_PASSWORD." * instructions_msg))
+    end
+    if isnothing(get(ENV, "ECCO_WEBDAV_PASSWORD", nothing))
+        throw(ArgumentError("Could not find the ECCO_WEBDAV_PASSWORD environment variable. " *
+                            "See NumericalEarth.jl/src/DataWrangling/ECCO/README.md for instructions on obtaining " *
+                            "and setting your ECCO_USERNAME and ECCO_WEBDAV_PASSWORD." * instructions_msg))
+    end
+    return nothing
+end
+
+# ECCO overrides the orchestrator for two reasons:
+#  1. WebDAV credentials require a netrc file that lives in a temporary directory
+#     for the lifetime of the whole multi-date download, not per-file.
+#  2. Downloads are parallelised via asyncmap across dates.
 function download_dataset(metadata::ECCOMetadata)
+    authenticate(metadata.dataset)
     username = get(ENV, "ECCO_USERNAME", nothing)
     password = get(ENV, "ECCO_WEBDAV_PASSWORD", nothing)
     dir = metadata.dir
 
-    # Create a temporary directory to store the .netrc file
-    # The directory will be deleted after the download is complete
     @root mktempdir(dir) do tmp
-
-        # Write down the username and password in a .netrc file
         downloader = netrc_downloader(username, password, "ecco.jpl.nasa.gov", tmp)
         ntasks = Threads.nthreads()
 
-        asyncmap(metadata; ntasks) do metadatum # Distribute the download among tasks
-
-            fileurl  = metadata_url(metadatum)
+        asyncmap(metadata; ntasks) do metadatum
+            fileurl  = dataset_url(metadatum)
             filepath = metadata_path(metadatum)
 
             if !isfile(filepath)
-                instructions_msg = "\n See NumericalEarth.jl/src/DataWrangling/ECCO/README.md for instructions."
-                if isnothing(username)
-                    msg = "Could not find the ECCO_USERNAME environment variable. \
-                            See NumericalEarth.jl/src/DataWrangling/ECCO/README.md for instructions on obtaining \
-                            and setting your ECCO_USERNAME and ECCO_WEBDAV_PASSWORD." * instructions_msg
-                    throw(ArgumentError(msg))
-                elseif isnothing(password)
-                    msg = "Could not find the ECCO_WEBDAV_PASSWORD environment variable. \
-                            See NumericalEarth.jl/src/DataWrangling/ECCO/README.md for instructions on obtaining \
-                            and setting your ECCO_USERNAME and ECCO_WEBDAV_PASSWORD." * instructions_msg
-                    throw(ArgumentError(msg))
-                end
                 @info "Downloading ECCO data: $(metadatum.name) in $(metadatum.dir)..."
                 Downloads.download(fileurl, filepath; downloader, progress=download_progress)
             end

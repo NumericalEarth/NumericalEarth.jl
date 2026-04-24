@@ -26,12 +26,13 @@ export
     BulkTemperature,
     PrescribedAtmosphere,
     JRA55PrescribedAtmosphere,
-    OSPapaPrescribedAtmosphere,
-    os_papa_prescribed_fluxes,
-    os_papa_prescribed_flux_boundary_conditions,
-    OSPapaHourly,
     JRA55NetCDFBackend,
     regrid_bathymetry,
+    AbstractDataset,
+    SpatialLayout,
+    GriddedLatLon,
+    StationColumn,
+    spatial_layout,
     Metadata,
     Metadatum,
     ECCOMetadatum,
@@ -110,7 +111,9 @@ include("Bathymetry/Bathymetry.jl")
 include("Diagnostics/Diagnostics.jl")
 
 using .DataWrangling
-using .DataWrangling: ETOPO, ECCO, GLORYS, EN4, WOA, JRA55, OSPapa
+using .DataWrangling: ETOPO, ECCO, GLORYS, EN4, WOA, JRA55
+
+const Datasets = DataWrangling.Datasets
 using .Bathymetry
 using .InitialConditions
 using .EarthSystemModels
@@ -129,7 +132,6 @@ using NumericalEarth.DataWrangling.ORCA
 using NumericalEarth.DataWrangling.WOA
 using NumericalEarth.DataWrangling.JRA55
 using NumericalEarth.DataWrangling.JRA55: JRA55NetCDFBackend
-using NumericalEarth.DataWrangling.OSPapa
 
 using PrecompileTools: @setup_workload, @compile_workload
 

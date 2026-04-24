@@ -12,6 +12,7 @@ using Adapt
 using Scratch
 
 using ..DataWrangling:
+    AbstractDataset,
     Metadata,
     Metadatum,
     BoundingBox,
@@ -62,7 +63,7 @@ EN4_dataset_variable_names = Dict(
     :salinity    => "salinity"
 )
 
-struct EN4Monthly end
+struct EN4Monthly <: AbstractDataset end
 
 default_download_directory(::EN4Monthly) = download_EN4_cache
 Base.size(::EN4Monthly, variable) = (360, 173, 42)

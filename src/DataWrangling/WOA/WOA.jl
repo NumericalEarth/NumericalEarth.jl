@@ -11,6 +11,7 @@ using Adapt
 using Dates
 
 using ..DataWrangling:
+    AbstractDataset,
     Metadata,
     Metadatum,
     BoundingBox,
@@ -56,7 +57,7 @@ WOA_variable_names = Dict(
 )
 
 # Dataset types
-abstract type WOAClimatology end
+abstract type WOAClimatology <: AbstractDataset end
 
 struct WOAAnnual <: WOAClimatology
     product_year :: Int

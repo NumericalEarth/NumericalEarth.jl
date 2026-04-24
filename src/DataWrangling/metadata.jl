@@ -339,34 +339,17 @@ build_filename(dataset, name, dates::AbstractArray, bounding_box) =
     DatewiseFilename([metadata_filename(dataset, name, d, bounding_box) for d in dates])
 
 """
-    available_variables(metadata)
+    available_variables(metadata_or_dataset)
 
-Return the available variables in the dataset.
+Return the available variables in the dataset. Called on `Metadata` it
+forwards to the underlying dataset; extension datasets define the
+method on their dataset type.
 """
-available_variables(metadata) = available_variables(metadata.dataset)
+available_variables(metadata::Metadata) = available_variables(metadata.dataset)
 
-struct Celsius end
-struct Kelvin end
-
-struct MolePerKilogram end
-struct MolePerLiter end
-struct MillimolePerKilogram end
-struct MillimolePerLiter end
-struct MicromolePerKilogram end
-struct MicromolePerLiter end
-struct NanomolePerKilogram end
-struct NanomolePerLiter end
-
-struct InverseSign end
-
-struct GramPerKilogramMinus35 end # Salinity anomaly
-struct MilliliterPerLiter end # Sometimes for disssolved_oxygen
-struct CentimetersPerSecond end
-struct Millibar end               # pressure in mbar (hPa) → Pa
-struct MillimetersPerHour end     # liquid precipitation rate in mm/hr → kg/m²/s
-
-# Fallback
-conversion_units(metadatum) = nothing
+# Unit conversion tags and the `conversion_units` generic function have moved
+# to NumericalEarth.DataWrangling.Datasets. They remain re-exported from
+# DataWrangling for backward compatibility.
 
 #####
 ##### Utilities

@@ -41,6 +41,7 @@ examples = [
 # Developer examples from docs/src/developers/ directory
 developer_examples = [
     Example("EarthSystemModel interface", "slab_ocean", false),
+    Example("Implementing a station dataset (Ocean Station Papa)", "ocean_station_papa", true),
 ]
 
 # Filter out long-running examples unless NUMERICAL_EARTH_BUILD_ALL_EXAMPLES is set
