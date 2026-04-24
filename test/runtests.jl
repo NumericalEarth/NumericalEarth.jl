@@ -16,7 +16,6 @@ args = parse_args(ARGS)
 # download_utils and runtests_setup are not tests!
 delete!(testsuite, "runtests_setup")
 delete!(testsuite, "download_utils")
-delete!(testsuite, "test_distributed_utils")
 
 gpu_test = parse(Bool, get(ENV, "GPU_TEST", "false"))
 
@@ -110,7 +109,5 @@ end
 
 # Initialize and download required datasets
 __init__()
-
 runtests(NumericalEarth, args; testsuite)
-
 delete_inpainted_files(@get_scratch!("."))
