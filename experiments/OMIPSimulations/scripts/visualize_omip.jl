@@ -10,10 +10,16 @@
 # Configuration
 # ══════════════════════════════════════════════════════════════
 
+# Each case is identified by its `prefix` (used to build the run directory
+# as `$(prefix)_run` and to match output filenames) and a human-readable
+# `label`. Any number of cases is supported — per-case heatmap figures lay
+# out one column per case.
 cases = [
-    (run_dir = "halfdegree_run", prefix = "halfdegree", label = "Half-degree"),
-    (run_dir = "orca_run",       prefix = "orca",       label = "ORCA"),
+    (prefix = "halfdegree", label = "Half-degree"),
+    (prefix = "orca",       label = "ORCA"),
 ]
+
+run_dir_for(prefix) = "$(prefix)_run"
 
 start_time = 0
 stop_time  = Inf
@@ -266,7 +272,13 @@ function panel!(fig, pos, data;
     return ax
 end
 
-case_colors = [:firebrick, :royalblue, :seagreen, :darkorange]
+# Per-case line colors for 1-D overlay plots. The palette cycles if there
+# are more cases than base colors, so `case_colors[i]` is always valid.
+const _BASE_CASE_COLORS = [:firebrick, :royalblue, :seagreen, :darkorange,
+                           :purple, :teal, :goldenrod, :saddlebrown,
+                           :magenta, :olive]
+case_colors = [_BASE_CASE_COLORS[mod1(i, length(_BASE_CASE_COLORS))]
+               for i in 1:length(cases)]
 
 savefig(fig, name) = save(joinpath(output_dir, name), fig)
 
@@ -469,7 +481,7 @@ D = Dict{String, Any}()
 labels = [c.label for c in cases]
 for c in cases
     @info "Loading surface: $(c.label)..."
-    D[c.label] = load_surface_case(c.run_dir, c.prefix; start_time, stop_time)
+    D[c.label] = load_surface_case(run_dir_for(c.prefix), c.prefix; start_time, stop_time)
 end
 
 # ══════════════════════════════════════════════════════════════
@@ -516,8 +528,17 @@ savefig(fig, "fig03_ssh.png")
 # Figure 4: MLD min/max with optional dBM reference row
 @info "Figure 4: MLD"
 lab_with_dbm = findfirst(lab -> !isnothing(D[lab].MLD_min_dbm), labels)
-nrows = isnothing(lab_with_dbm) ? 2 : 3
-fig = Figure(size = (800 * length(labels), 450 * nrows), fontsize = 14)
+ncases = length(labels)
+# With ≥ 2 cases, fit dBM Min and Max side-by-side in one row; with a single
+# case, stack them as two separate rows.
+nrows = if isnothing(lab_with_dbm)
+    2
+elseif ncases >= 2
+    3
+else
+    4
+end
+fig = Figure(size = (800 * ncases, 450 * nrows), fontsize = 14)
 for (i, lab) in enumerate(labels)
     panel!(fig, [1, 2i-1], D[lab].MLD_min;
            title = "$lab: Min MLD (summer)",
@@ -528,10 +549,12 @@ for (i, lab) in enumerate(labels)
 end
 if !isnothing(lab_with_dbm)
     ref_lab = labels[lab_with_dbm]
-    panel!(fig, [3, 1], D[ref_lab].MLD_min_dbm;
+    min_pos = [3, 1]
+    max_pos = ncases >= 2 ? [3, 3] : [4, 1]
+    panel!(fig, min_pos, D[ref_lab].MLD_min_dbm;
            title = "dBM climatology: Min MLD",
            colormap = Reverse(:deep), colorrange = (0, 70), label = "m")
-    panel!(fig, [3, 3], D[ref_lab].MLD_max_dbm;
+    panel!(fig, max_pos, D[ref_lab].MLD_max_dbm;
            title = "dBM climatology: Max MLD",
            colormap = Reverse(:deep), colorrange = (0, 500), label = "m")
 end
@@ -646,7 +669,7 @@ end
 
 ICE = Dict{String, Any}()
 let ice_futures = [(c.label,
-                    Threads.@spawn compute_ice_diagnostics(c.run_dir, c.prefix, D[c.label].grid;
+                    Threads.@spawn compute_ice_diagnostics(run_dir_for(c.prefix), c.prefix, D[c.label].grid;
                                                             start_time, stop_time))
                    for c in cases]
     for (lab, fut) in ice_futures
@@ -827,7 +850,7 @@ end
 
 TS = Dict{String, Any}()
 let ts_futures = [(c.label,
-                   Threads.@spawn load_timeseries_case(c.run_dir, c.prefix, D[c.label].grid;
+                   Threads.@spawn load_timeseries_case(run_dir_for(c.prefix), c.prefix, D[c.label].grid;
                                                        start_time, stop_time))
                   for c in cases]
     for (lab, fut) in ts_futures
