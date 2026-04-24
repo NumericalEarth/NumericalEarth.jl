@@ -22,7 +22,8 @@ import NumericalEarth.DataWrangling:
     metadata_filename,
     inpainted_metadata_path,
     reversed_vertical_axis,
-    available_variables
+    available_variables,
+    is_three_dimensional
 
 using Scratch
 
@@ -127,11 +128,18 @@ end
 
 inpainted_metadata_path(metadata::GLORYSMetadatum) = joinpath(metadata.dir, inpainted_metadata_filename(metadata))
 
-location(::GLORYSMetadata) = (Center, Center, Center)
+function location(metadata::GLORYSMetadata)
+    metadata.name == :free_surface && return (Center, Center, Nothing)
+    return (Center, Center, Center)
+end
+
+is_three_dimensional(metadata::GLORYSMetadata) = metadata.name != :free_surface
+
 longitude_interfaces(::GLORYSMetadata) = (-180, 180)
 latitude_interfaces(::GLORYSMetadata) = (-80, 90)
 
 function z_interfaces(metadata::GLORYSMetadata)
+    metadata.name == :free_surface && return (-1.0, 0.0)
     path = metadata_path(metadata)
     ds = Dataset(path)
     zc = - reverse(ds["depth"][:])
