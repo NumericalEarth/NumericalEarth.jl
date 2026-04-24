@@ -309,7 +309,8 @@ function test_inpainting_algorithm(arch, dataset, start_date, inpainting;
         partially_inpainted_interior = on_architecture(CPU(), interior(partially_inpainted_field))
 
         @test all(fully_inpainted_interior .!= 0)
-        @test any(partially_inpainted_interior .== 0)
+        # Partially inpainted data should have no NaN (remaining NaN is filled with the field mean)
+        @test !any(isnan.(partially_inpainted_interior))
     end
     return nothing
 end

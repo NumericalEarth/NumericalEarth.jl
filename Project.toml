@@ -13,6 +13,8 @@ DataDeps = "124859b0-ceae-595e-8997-d05f6a7a8dfe"
 Dates = "ade2ca70-3891-5945-98fb-dc099432e06a"
 Distances = "b4f34e82-e78d-54a5-968a-f98e89d6e8f7"
 DocStringExtensions = "ffbed154-4ef7-542d-bbb7-c09d3a79fcae"
+Documenter = "e30172f5-a6a5-5a46-863b-614d45cd2de4"
+DocumenterCitations = "daee34ce-89f3-4625-b898-19384cb65244"
 Downloads = "f43a241f-c20a-4ad4-852c-f6b1247861c6"
 GPUArraysCore = "46192b85-c4d5-4398-a991-12ede77f4527"
 Glob = "c27321d9-0574-5035-807b-f59d2c89b15c"
@@ -43,6 +45,9 @@ SpeedyWeather = "9e226e20-d153-4fed-8a5b-493def4f21a9"
 WorldOceanAtlasTools = "04f20302-f1b9-11e8-29d9-7d841cb0a64a"
 XESMF = "2e0b0046-e7a1-486f-88de-807ee8ffabe5"
 
+[sources]
+ClimaSeaIce = {rev = "ss/refactor-thermodynamics", url = "https://github.com/CliMA/ClimaSeaIce.jl.git"}
+
 [extensions]
 NumericalEarthBreezeExt = "Breeze"
 NumericalEarthCDSAPIExt = "CDSAPI"
@@ -57,14 +62,20 @@ Adapt = "4"
 Breeze = "0.4"
 CDSAPI = "2.2.1"
 CFTime = "0.1, 0.2"
+<<<<<<< ss/omip-prototype
+ClimaSeaIce = "0.4, 0.5"
+=======
 ClimaSeaIce = "0.4.4, 0.5"
 CubedSphere = "0.3.4"
+>>>>>>> main
 CondaPkg = "0.2.33"
 CopernicusMarine = "0.1.1"
 DataDeps = "0.7"
 Dates = "<0.0.1, 1"
 Distances = "0.10"
 DocStringExtensions = "0.9"
+Documenter = "1.17.0"
+DocumenterCitations = "1.4.1"
 Downloads = "<0.0.1, 1"
 GPUArraysCore = "0.2.0"
 Glob = "1"

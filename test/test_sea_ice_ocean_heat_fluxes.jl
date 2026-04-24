@@ -30,7 +30,7 @@ using ClimaSeaIce.SeaIceThermodynamics: LinearLiquidus, melting_temperature
 
     @testset "ThreeEquationHeatFlux construction" begin
         flux = ThreeEquationHeatFlux()
-        @test flux.heat_transfer_coefficient == 0.0095  # Default from Hieronymus et al. (2021)
+        @test flux.heat_transfer_coefficient == 0.0095  # Default from Shi et al. (2021)
         @test flux.salt_transfer_coefficient ≈ 0.0095 / 35  # R = 35
 
         flux2 = ThreeEquationHeatFlux(heat_transfer_coefficient = 0.01,
@@ -199,8 +199,7 @@ end
         ocean = ocean_simulation(grid, momentum_advection=nothing, closure=nothing, tracer_advection=nothing)
         sea_ice = sea_ice_simulation(grid, ocean)
 
-        backend = JRA55NetCDFBackend(4)
-        atmosphere = JRA55PrescribedAtmosphere(arch; backend)
+        atmosphere = JRA55PrescribedAtmosphere(arch; time_indices_in_memory=4)
         radiation = Radiation(arch)
 
         for sea_ice_ocean_heat_flux in [IceBathHeatFlux(), ThreeEquationHeatFlux()]
@@ -257,8 +256,7 @@ end
         ocean = ocean_simulation(grid, momentum_advection=nothing, closure=nothing, tracer_advection=nothing)
         sea_ice = sea_ice_simulation(grid, ocean)
 
-        backend = JRA55NetCDFBackend(4)
-        atmosphere = JRA55PrescribedAtmosphere(arch; backend)
+        atmosphere = JRA55PrescribedAtmosphere(arch; time_indices_in_memory=4)
         radiation = Radiation(arch)
 
         for sea_ice_ocean_heat_flux in [IceBathHeatFlux(), ThreeEquationHeatFlux()]
@@ -401,8 +399,7 @@ end
         ocean = ocean_simulation(grid, momentum_advection=nothing, closure=nothing, tracer_advection=nothing)
         sea_ice = sea_ice_simulation(grid, ocean)
 
-        backend = JRA55NetCDFBackend(4)
-        atmosphere = JRA55PrescribedAtmosphere(arch; backend)
+        atmosphere = JRA55PrescribedAtmosphere(arch; time_indices_in_memory=4)
         radiation = Radiation(arch)
 
         for sea_ice_ocean_heat_flux in [IceBathHeatFlux(), ThreeEquationHeatFlux()]
@@ -452,8 +449,7 @@ end
         ocean = ocean_simulation(grid, momentum_advection=nothing, closure=nothing, tracer_advection=nothing)
         sea_ice = sea_ice_simulation(grid, ocean)
 
-        backend = JRA55NetCDFBackend(4)
-        atmosphere = JRA55PrescribedAtmosphere(arch; backend)
+        atmosphere = JRA55PrescribedAtmosphere(arch; time_indices_in_memory=4)
         radiation = Radiation(arch)
 
         # Test with ThreeEquationHeatFlux (default)
