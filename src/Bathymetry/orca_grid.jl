@@ -305,33 +305,35 @@ function shift_face_x(data, overlap)
     return data[vcat(No, 1:Nx-1), :]
 end
 
-# Reindex y-face fields from NEMO to Oceananigans.
-# NEMO V/F are indexed as faces north of T-row j, while Oceananigans Face-y[j]
-# is treated as the south face of Center-row j. This is a -1 row shift:
-#   out[:, j] <- in[:, j-1] for j >= 2.
-# Row 1 has no southern source row in the input, so we keep in[:, 1] and let
-# halo filling / boundary-condition handling manage the exterior face.
+# NEMO V/F (Ny rows, north face of T[j]) → Oceananigans Face-y (Ny+1 rows,
+# south face of Center[k]): out[:, k] = in[:, k-1] for k=2..Ny+1. Row 1 is a
+# placeholder overwritten by continue_south!.
 function shift_face_y(data)
     Nx, Ny = size(data)
-    shifted = similar(data)
+    shifted = similar(data, Nx, Ny + 1)
     shifted[:, 1] .= data[:, 1]
-    if Ny > 1
-        shifted[:, 2:Ny] .= data[:, 1:Ny-1]
-    end
+    shifted[:, 2:Ny+1] .= data[:, 1:Ny]
     return shifted
 end
 
-# Copy NEMO data into a Field on `helper_grid`, fill halos, return as OffsetArray.
-#
-# Data is expected to already be in Oceananigans indexing when this is called.
+# Copy data into a Field on `helper_grid`, fill halos, return as OffsetArray.
+# Accepts either matching row count, or Nj-1 rows for Face-y (NEMO-style: row 1
+# then gets filled by continue_south!).
 function halo_filled_data(data, helper_grid, bcs, LX, LY)
     TX, TY, _ = topology(helper_grid)
     Nx, Ny, _ = size(helper_grid)
     Ni = Base.length(LX(), TX(), Nx)
-    Nj = size(data, 2)
+    Nj = Base.length(LY(), TY(), Ny)
+    Nj_data = size(data, 2)
 
     field = Field{LX, LY, Center}(helper_grid; boundary_conditions = bcs)
-    field.data[1:Ni, 1:Nj, 1] .= data[1:Ni, 1:Nj]
+    if Nj_data == Nj
+        field.data[1:Ni, 1:Nj, 1] .= data[1:Ni, 1:Nj]
+    elseif LY === Face && Nj_data == Nj - 1
+        field.data[1:Ni, 2:Nj, 1] .= data[1:Ni, 1:Nj-1]
+    else
+        throw(DimensionMismatch("data has $Nj_data rows but $LY field expects $Nj rows"))
+    end
     fill_halo_regions!(field)
 
     return deepcopy(dropdims(field.data, dims = 3))

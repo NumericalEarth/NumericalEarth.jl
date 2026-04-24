@@ -62,12 +62,8 @@ Adapt = "4"
 Breeze = "0.4"
 CDSAPI = "2.2.1"
 CFTime = "0.1, 0.2"
-<<<<<<< ss/omip-prototype
-ClimaSeaIce = "0.4, 0.5"
-=======
 ClimaSeaIce = "0.4.4, 0.5"
 CubedSphere = "0.3.4"
->>>>>>> main
 CondaPkg = "0.2.33"
 CopernicusMarine = "0.1.1"
 DataDeps = "0.7"
