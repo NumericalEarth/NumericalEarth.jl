@@ -42,7 +42,7 @@ export
     EN4Monthly,
     WOAClimatology, WOAAnnual, WOAMonthly,
     GLORYSDaily, GLORYSMonthly, GLORYSStatic,
-    ORCA1, ORCA2,
+    ORCA1, ORCA2, ORCA12,
     RepeatYearJRA55, MultiYearJRA55,
     first_date,
     last_date,
