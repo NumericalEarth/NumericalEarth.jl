@@ -103,7 +103,7 @@ atmosphere = JRA55PrescribedAtmosphere(arch; backend=JRA55NetCDFBackend(),
 # Now we are ready to build the coupled ocean--sea ice model and bring everything
 # together into a `simulation`.
 
-# With Runge-Kutta 3rd order time-stepping we can safely use a timestep of 20 minutes.
+# With Runge-Kutta 3rd order time-stepping we can safely use a timestep of 90 minutes.
 
 coupled_model = OceanSeaIceModel(ocean, sea_ice; atmosphere, radiation)
 simulation = Simulation(coupled_model; Δt=90minutes, stop_time=5*365days)
@@ -180,6 +180,8 @@ sea_ice.output_writers[:surface] = JLD2Writer(sea_ice.model, sea_ice_outputs;
 
 # We are ready to press the big red button and run the simulation.
 run!(simulation)
+
+# ### Load and plot results
 
 using CairoMakie
 
@@ -272,7 +274,6 @@ scatter!(ax4, π/180 .* [λ...], [φ...] .+ 90, color=ice_plt, colormap=:greys; 
 
 Colorbar(fig[1:2, 0], sco, label = "Ocean Surface Speed (m/s)")
 Colorbar(fig[1:2, 7], sci, label = "Sea Ice Effective Thickness (m)")
-
 
 lo, hi = -50, 0
 center = -1
