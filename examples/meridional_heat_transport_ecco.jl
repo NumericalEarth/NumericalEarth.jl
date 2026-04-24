@@ -15,7 +15,7 @@ Nz = 50
 depth = 5000meters
 z = ExponentialDiscretization(Nz, -depth, 0; scale = depth/4)
 
-underlying_grid = TripolarGrid(arch; size = (Nx, Ny, Nz), halo = (5, 5, 4), z)
+# underlying_grid = TripolarGrid(arch; size = (Nx, Ny, Nz), halo = (5, 5, 4), z)
 underlying_grid = LatitudeLongitudeGrid(arch; size = (Nx, Ny, Nz), halo = (5, 5, 4), z, longitude = (0, 360), latitude = (-80, 80))
 bottom_height = regrid_bathymetry(underlying_grid;
                                   minimum_depth = 10,
@@ -77,9 +77,10 @@ end
 # And add it as a callback to the simulation.
 add_callback!(simulation, progress, IterationInterval(200))
 
-mht = Field(meridional_heat_transport(esm))
+mht_vT = Field(meridional_heat_transport(esm, MeridionalFluxMethod()))
+mht_OHC = Field(meridional_heat_transport(esm, TendencyMethod()))
 
-ocean.output_writers[:mth] = JLD2Writer(ocean.model, (; mht);
+ocean.output_writers[:mth] = JLD2Writer(ocean.model, (; mht_vT, mht_OHC);
                                         schedule = TimeInterval(3hours),
                                         filename = "ocean_one_degree_mht",
                                         overwrite_existing = true)
@@ -90,22 +91,26 @@ run!(simulation)
 
 using Oceananigans
 
-mht  = FieldTimeSeries("ocean_one_degree_mht.jld2", "mht"; backend = OnDisk())
+mht_vT  = FieldTimeSeries("ocean_one_degree_mht.jld2", "mht_vT"; backend = OnDisk())
+mht_OHC = FieldTimeSeries("ocean_one_degree_mht.jld2", "mht_OHC"; backend = OnDisk())
 
-times = mht.times
+times = mht_vT.times
 Nt = length(times)
 
-grid = mht.grid
-Ny = size(mht.grid, 2)
+grid = mht_vT.grid
+Ny = size(mht_vT.grid, 2)
 
-mht_mean  = deepcopy(mht[1][1, :, 1])
+mht_vT_mean  = deepcopy(mht_vT[1][1, :, 1])
+mht_OHC_mean = deepcopy(mht_OHC[1][1, :, 1])
 
 for iter in 1:Nt
     @info "iteration $iter out of $Nt"
-    mht_mean  +=  mht[iter][1, :, 1]
+    mht_vT_mean  +=  mht_vT[iter][1, :, 1]
+    mht_OHC_mean += mht_OHC[iter][1, :, 1]
 end
 
-@. mht_mean = mht_mean / Nt
+@. mht_OHC_mean = mht_OHC_mean / Nt
+@. mht_vT_mean = mht_vT_mean / Nt
 
 using CairoMakie
 
@@ -114,6 +119,9 @@ ax = Axis(fig[1, 1], xlabel="latitude (deg)", ylabel="MHT (PW)")
 
 φ = φnodes(grid, Face())
 
-lines!(ax, φ, mht_mean[1:Ny+1]  / 1e15, linewidth=4)
+lines!(ax, φ, mht_vT_mean[1:Ny+1]  / 1e15, linewidth=4, label="via vT")
+lines!(ax, φ, mht_OHC_mean[1:Ny+1] / 1e15, linewidth=4, label="via OHC")
+Legend(fig[2, :], ax, orientation=:horizontal)
+Label(fig[0, :], "Meridional heat transport", fontsize=16, tellwidth=false)
 
 save("mht.png", fig)
