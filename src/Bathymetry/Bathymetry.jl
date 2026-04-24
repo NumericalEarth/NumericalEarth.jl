@@ -1,6 +1,6 @@
 module Bathymetry
 
-export regrid_bathymetry, ORCAGrid
+export regrid_bathymetry, ORCATripolarGrid
 
 using Downloads
 using ImageMorphology
@@ -23,6 +23,6 @@ using ..DataWrangling: Metadatum, native_grid, metadata_path, download_dataset
 using ..DataWrangling.ETOPO: ETOPO2022
 
 include("regrid_bathymetry.jl")
-include("orca_grid.jl")
+include("orca_tripolar_grid.jl")
 
 end # module
