@@ -15,9 +15,7 @@ using Oceananigans.Fields: location
         metadatum = Metadatum(variable; dataset, region)
         filepath = NumericalEarth.DataWrangling.metadata_path(metadatum)
         isfile(filepath) && rm(filepath; force=true)
-        download_dataset_with_fallback(filepath; dataset_name="GLORYSDaily $variable") do
-            NumericalEarth.DataWrangling.download_dataset(metadatum)
-        end
+        NumericalEarth.DataWrangling.download_dataset(metadatum)
         @test isfile(filepath)
     end
 end
