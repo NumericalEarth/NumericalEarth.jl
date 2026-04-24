@@ -182,6 +182,28 @@ jobs:
             arch: aarch64
             version: "1.12.5"
     steps:
+      - name: Show available storage before cleanup
+        run: |
+          echo " --> df -h /"
+          df -h /
+          echo " --> df -a /"
+          df -a /
+      - name: Free Disk Space
+        if: ${{ runner.os != 'macOS' }}
+        uses: jlumbroso/free-disk-space@54081f138730dfa15788a46383842cd2f914a1be # v1.3.1
+        with:
+          tool-cache: true
+          large-packages: false
+      - name: Cleanup /opt
+        if: ${{ runner.os != 'macOS' }}
+        run: |
+          sudo rm -rf /opt/*
+      - name: Show available storage after cleanup
+        run: |
+          echo " --> df -h /"
+          df -h /
+          echo " --> df -a /"
+          df -a /
       - uses: actions/checkout@v6
       - uses: julia-actions/setup-julia@v2
         with:
@@ -218,6 +240,26 @@ jobs:
         arch:
           - default
     steps:
+      - name: Show available storage before cleanup
+        run: |
+          echo " --> df -h /"
+          df -h /
+          echo " --> df -a /"
+          df -a /
+      - name: Free Disk Space
+        uses: jlumbroso/free-disk-space@54081f138730dfa15788a46383842cd2f914a1be # v1.3.1
+        with:
+          tool-cache: true
+          large-packages: false
+      - name: Cleanup /opt
+        run: |
+          sudo rm -rf /opt/*
+      - name: Show available storage after cleanup
+        run: |
+          echo " --> df -h /"
+          df -h /
+          echo " --> df -a /"
+          df -a /
       - uses: actions/checkout@v6
       - uses: julia-actions/setup-julia@v2
         with:
