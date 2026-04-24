@@ -41,6 +41,98 @@ using NumericalEarth.DataWrangling: Metadatum
 using NumericalEarth.DataWrangling.WOA: WOAAnnual
 using NumericalEarth: ECCO4Monthly
 
+# ══════════════════════════════════════════════════════════════
+# Monkey-patch: InMemory FieldTimeSeries split-file support
+# ══════════════════════════════════════════════════════════════
+# Oceananigans 0.107.3 bug (field_time_series.jl:914-918): the
+# inner FieldTimeSeries constructor only builds a SplitFilePath
+# when `backend isa OnDisk`. With an InMemory backend on split
+# output (..._part1.jld2, ..._part2.jld2, ...), fts.path collapses
+# to a single part file. The construction-time load iterates over
+# every part file, so the initial window is correct — but later,
+# when update_field_time_series! slides the in-memory window
+# (set!(fts) -> set!(fts, fts.path)), reads come from that one
+# stored file only, silently leaving stale/zero data in every
+# slot whose time is not in that part. That's the cause of the
+# sawtooth KE, flat MLD extrema, and wrong SST bias in figures6.
+#
+# Upstream fix (for PR):
+#   1. field_time_series.jl:914 — drop `&& backend isa OnDisk`.
+#   2. set_field_time_series.jl — add a set! method for
+#      (InMemoryFTS, SplitFilePath) that dispatches per part file.
+#
+# This block monkey-patches both until the PR lands.
+import Oceananigans.Fields: set!
+using Oceananigans.OutputReaders: SplitFilePath, InMemoryFTS,
+                                  InMemory, time_indices,
+                                  file_and_local_index
+
+function set!(fts::InMemoryFTS, sfp::SplitFilePath, name::String = fts.name;
+              warn_missing_data = false, kwargs...)
+    idxs = time_indices(fts)
+    Ntot = last(sfp.cumulative_length)
+    needed = String[]
+    for n in idxs
+        (n < 1 || n > Ntot) && continue
+        file_path, _ = file_and_local_index(sfp, n)
+        file_path ∉ needed && push!(needed, file_path)
+    end
+    for p in needed
+        set!(fts, p, name; warn_missing_data, kwargs...)
+    end
+    return nothing
+end
+
+function _detect_split_file_path(path::AbstractString, reader_kw)
+    isfile(path) && return nothing
+    base = endswith(path, ".jld2") ? path[1:end-5] : path
+    dir  = isempty(dirname(base)) ? "." : dirname(base)
+    pat  = Regex("^" * Base.escape_string(basename(base)) * "_part(\\d+)\\.jld2\$")
+    files = filter(f -> occursin(pat, f), readdir(dir))
+    isempty(files) && return nothing
+    sort!(files, by = f -> parse(Int, match(pat, f).captures[1]))
+    part_paths = [joinpath(dir, f) for f in files]
+    nper = Int[]
+    for p in part_paths
+        jf = JLD2.jldopen(p; reader_kw...)
+        push!(nper, length(keys(jf["timeseries/t"])))
+        close(jf)
+    end
+    return SplitFilePath(part_paths, cumsum(nper))
+end
+
+_location_types(::Oceananigans.OutputReaders.FieldTimeSeries{LX, LY, LZ}) where {LX, LY, LZ} = (LX, LY, LZ)
+
+function _rebuild_fts_with_path(fts, new_path)
+    LX, LY, LZ = _location_types(fts)
+    return Oceananigans.OutputReaders.FieldTimeSeries{LX, LY, LZ}(
+        fts.data,
+        fts.grid,
+        fts.backend,
+        fts.boundary_conditions,
+        fts.indices,
+        fts.times,
+        new_path,
+        fts.name,
+        fts.time_indexing,
+        fts.reader_kw,
+    )
+end
+
+function Oceananigans.OutputReaders.FieldTimeSeries(path::String, name::String;
+                                                    backend = InMemory(),
+                                                    reader_kw = NamedTuple(),
+                                                    kwargs...)
+    fts = invoke(Oceananigans.OutputReaders.FieldTimeSeries,
+                 Tuple{String, Vararg{Any}},
+                 path, name; backend, reader_kw, kwargs...)
+    if backend isa InMemory && !(fts.path isa SplitFilePath)
+        sfp = _detect_split_file_path(path, reader_kw)
+        sfp === nothing || (fts = _rebuild_fts_with_path(fts, sfp))
+    end
+    return fts
+end
+
 mkpath(output_dir)
 @info "Figures will be saved to: $output_dir"
 
@@ -69,9 +161,10 @@ end
 function compute_time_mean(fts; start_time = 0, stop_time = Inf)
     idx = in_window(fts; start_time, stop_time)
     isempty(idx) && error("No snapshots in [$start_time, $stop_time]")
-    avg = zeros(size(Array(interior(fts[first(idx)]))))
+    sz  = size(interior(fts[first(idx)]))
+    avg = zeros(sz)
     for n in idx
-        avg .+= Array(interior(fts[n]))
+        avg .+= interior(fts[n])
     end
     return avg ./ length(idx)
 end
@@ -84,28 +177,51 @@ function compute_monthly_mean(fts, target_months;
                          start_time <= fts.times[i] <= stop_time,
                     eachindex(dates))
     isempty(idx) && return nothing
-    avg = zeros(size(Array(interior(fts[first(idx)]))))
+    sz  = size(interior(fts[first(idx)]))
+    avg = zeros(sz)
     for n in idx
-        avg .+= Array(interior(fts[n]))
+        avg .+= interior(fts[n])
     end
     return avg ./ length(idx)
 end
 
 # Single-pass variant: return 12 monthly means (slot m = nothing if empty).
-# OnDisk reads are the bottleneck, so we pay them once and bin on the fly.
+# Reads the FTS once and bins each snapshot into its calendar month.
 function compute_monthly_means(fts; start_time = 0, stop_time = Inf,
                                 reference_date = DateTime(1958, 1, 1))
     idx = in_window(fts; start_time, stop_time)
     isempty(idx) && error("No snapshots in [$start_time, $stop_time]")
-    sz     = size(Array(interior(fts[first(idx)])))
+    sz     = size(interior(fts[first(idx)]))
     sums   = [zeros(sz) for _ in 1:12]
     counts = zeros(Int, 12)
     for n in idx
         m = month(reference_date + Second(round(Int, fts.times[n])))
-        sums[m]   .+= Array(interior(fts[n]))
+        sums[m]  .+= interior(fts[n])
         counts[m] += 1
     end
     return [counts[m] > 0 ? sums[m] ./ counts[m] : nothing for m in 1:12]
+end
+
+# Fused pass: global time mean + 12 monthly means, one sweep through the FTS.
+# Use this when the same field feeds both a climatological mean and a
+# seasonal stratification (e.g. SIC for both time-mean map and March/September).
+function compute_mean_and_monthly(fts; start_time = 0, stop_time = Inf,
+                                   reference_date = DateTime(1958, 1, 1))
+    idx = in_window(fts; start_time, stop_time)
+    isempty(idx) && error("No snapshots in [$start_time, $stop_time]")
+    sz      = size(interior(fts[first(idx)]))
+    total   = zeros(sz)
+    monthly = [zeros(sz) for _ in 1:12]
+    counts  = zeros(Int, 12)
+    for n in idx
+        total .+= interior(fts[n])
+        m = month(reference_date + Second(round(Int, fts.times[n])))
+        monthly[m] .+= interior(fts[n])
+        counts[m]   += 1
+    end
+    mean_out    = total ./ length(idx)
+    monthly_out = [counts[m] > 0 ? monthly[m] ./ counts[m] : nothing for m in 1:12]
+    return mean_out, monthly_out
 end
 
 function cached_download(url; cache_dir = obs_cache_dir)
@@ -292,15 +408,16 @@ function load_surface_case(run_dir, prefix; start_time = 0, stop_time = Inf)
     SSH = dropdims(compute_time_mean(zos;  start_time, stop_time);  dims=3)
     HF  = dropdims(compute_time_mean(hfds; start_time, stop_time);  dims=3)
     FW  = dropdims(compute_time_mean(wfo;  start_time, stop_time);  dims=3)
-    SIC_mean = dropdims(compute_time_mean(sic; start_time, stop_time); dims=3)
 
     SSH_sq  = dropdims(compute_time_mean(zossq; start_time, stop_time); dims=3)
     SSH_var = SSH_sq .- SSH .^ 2
 
-    # One disk pass binned over all 12 months — prior version scanned the FTS
-    # 12× and again twice for March/September SIC.
+    # SIC mean + monthly bins in one FTS pass (halves reads for `sic`).
+    SIC_mean_raw, sic_monthly = compute_mean_and_monthly(sic; start_time, stop_time)
+    SIC_mean = dropdims(SIC_mean_raw; dims=3)
+
+    # MLD only needs monthly bins (min/max across months).
     mld_monthly = compute_monthly_means(mld_fts; start_time, stop_time)
-    sic_monthly = compute_monthly_means(sic;     start_time, stop_time)
 
     mld_available = findall(!isnothing, mld_monthly)
     MLD_stack = cat([dropdims(mld_monthly[m]; dims=3) for m in mld_available]...; dims=3)
@@ -404,19 +521,19 @@ fig = Figure(size = (800 * length(labels), 450 * nrows), fontsize = 14)
 for (i, lab) in enumerate(labels)
     panel!(fig, [1, 2i-1], D[lab].MLD_min;
            title = "$lab: Min MLD (summer)",
-           colormap = Reverse(:deep), colorrange = (0, 150), label = "m")
+           colormap = Reverse(:deep), colorrange = (0, 70), label = "m")
     panel!(fig, [2, 2i-1], D[lab].MLD_max;
            title = "$lab: Max MLD (winter)",
-           colormap = Reverse(:deep), colorrange = (10, 3000), label = "m")
+           colormap = Reverse(:deep), colorrange = (0, 500), label = "m")
 end
 if !isnothing(lab_with_dbm)
     ref_lab = labels[lab_with_dbm]
     panel!(fig, [3, 1], D[ref_lab].MLD_min_dbm;
            title = "dBM climatology: Min MLD",
-           colormap = Reverse(:deep), colorrange = (0, 150), label = "m")
+           colormap = Reverse(:deep), colorrange = (0, 70), label = "m")
     panel!(fig, [3, 3], D[ref_lab].MLD_max_dbm;
            title = "dBM climatology: Max MLD",
-           colormap = Reverse(:deep), colorrange = (10, 3000), label = "m")
+           colormap = Reverse(:deep), colorrange = (0, 500), label = "m")
 end
 savefig(fig, "fig04_mld.png")
 
@@ -528,9 +645,14 @@ function compute_ice_diagnostics(run_dir, prefix, grid;
 end
 
 ICE = Dict{String, Any}()
-for c in cases
-    @info "Computing sea-ice diagnostics for $(c.label)..."
-    ICE[c.label] = compute_ice_diagnostics(c.run_dir, c.prefix, D[c.label].grid; start_time, stop_time)
+let ice_futures = [(c.label,
+                    Threads.@spawn compute_ice_diagnostics(c.run_dir, c.prefix, D[c.label].grid;
+                                                            start_time, stop_time))
+                   for c in cases]
+    for (lab, fut) in ice_futures
+        @info "Computing sea-ice diagnostics for $lab..."
+        ICE[lab] = fetch(fut)
+    end
 end
 
 # ── Download observational climatologies ─────────────────────
@@ -672,14 +794,29 @@ function load_timeseries_case(run_dir, prefix, grid; start_time = 0, stop_time =
 
     ocean_mask  = build_ocean_mask_3d(grid)
     ocean_cells = sum(ocean_mask)
-    tke_mean = [sum(Array(interior(tke_fts[n])) .* ocean_mask) / ocean_cells
-                for n in 1:length(tke_fts.times)]
 
-    ke_mean = map(1:length(u_fts.times)) do n
-        ke_field = Field(@at((Center, Center, Center),
-                             u_fts[n] * u_fts[n] + v_fts[n] * v_fts[n]))
+    Nt_tke = length(tke_fts.times)
+    tke_mean = zeros(Nt_tke)
+    for n in 1:Nt_tke
+        tke_mean[n] = sum(interior(tke_fts[n]) .* ocean_mask) / ocean_cells
+    end
+
+    # Build the KE operation once; reuse the scratch output Field every step.
+    # Earlier version allocated a fresh `Field(@at(...))` per snapshot, which
+    # compiled a new lazy op and new output buffer each iteration.
+    u_scratch = Field{Face, Center, Center}(grid)
+    v_scratch = Field{Center, Face, Center}(grid)
+    ke_op     = @at((Center, Center, Center),
+                    u_scratch * u_scratch + v_scratch * v_scratch)
+    ke_field  = Field(ke_op)
+
+    Nt_ke = length(u_fts.times)
+    ke_mean = zeros(Nt_ke)
+    for n in 1:Nt_ke
+        set!(u_scratch, u_fts[n])
+        set!(v_scratch, v_fts[n])
         compute!(ke_field)
-        sum(Array(interior(ke_field)) .* ocean_mask) / (2 * ocean_cells)
+        ke_mean[n] = sum(interior(ke_field) .* ocean_mask) / (2 * ocean_cells)
     end
     tke_time_in_years = tke_fts.times ./ (365.25 * 24 * 3600)
 
@@ -689,9 +826,14 @@ function load_timeseries_case(run_dir, prefix, grid; start_time = 0, stop_time =
 end
 
 TS = Dict{String, Any}()
-for c in cases
-    @info "Loading time series: $(c.label)..."
-    TS[c.label] = load_timeseries_case(c.run_dir, c.prefix, D[c.label].grid; start_time, stop_time)
+let ts_futures = [(c.label,
+                   Threads.@spawn load_timeseries_case(c.run_dir, c.prefix, D[c.label].grid;
+                                                       start_time, stop_time))
+                  for c in cases]
+    for (lab, fut) in ts_futures
+        @info "Loading time series: $lab..."
+        TS[lab] = fetch(fut)
+    end
 end
 
 # ══════════════════════════════════════════════════════════════
