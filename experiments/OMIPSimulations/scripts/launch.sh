@@ -32,6 +32,7 @@ Environment variables (physics):
   SNOW          Set to "true" to enable snow thermodynamics
   KSKEW         Isopycnal skew diffusivity κ_skew (default: per-config; 0 = off)
   KSYMM         Isopycnal symmetric diffusivity κ_symmetric (default: per-config; 0 = off)
+  BIHARMONIC    Biharmonic viscosity timescale (default: per-config; "nothing" = off)
   CB            CATKE buoyancy mixing length parameter Cᵇ (default: 0.28)
 
 Environment variables (I/O & runtime):
@@ -55,6 +56,8 @@ Examples:
   CB=0.1 NCAR=true ./launch.sh orca
   KSKEW=1000 KSYMM=500 ./launch.sh orca
   KSKEW=0 ./launch.sh orca                    # disable eddy closure
+  BIHARMONIC=5days ./launch.sh orca           # custom biharmonic timescale
+  BIHARMONIC=nothing ./launch.sh orca         # disable biharmonic viscosity
   FORCING_DIR=/other/path/forcing_data STAGING_DIR=/scratch/staged ./launch.sh orca
   PROFILE=true ./launch.sh orca
 USAGE
@@ -88,21 +91,21 @@ esac
 case "$CONFIG" in
     halfdegree)
         DEFAULT_KSKEW=250;  DEFAULT_KSYMM=100; NZ=70;  DT="25minutes"
-        BIHARMONIC="40days"; ARCH="GPU()"; GPUS_PER_NODE=1
+        DEFAULT_BIHARMONIC="40days"; ARCH="GPU()"; GPUS_PER_NODE=1
         EXTRA_USING=""; FILE_SPLIT=""
         RUN_CMD="sim.stop_time = 300 * 365days
 run!(sim, pickup=:latest)"
         ;;
     orca)
         DEFAULT_KSKEW=500;  DEFAULT_KSYMM=250; NZ=70;  DT="30minutes"
-        BIHARMONIC="10days"; ARCH="GPU()"; GPUS_PER_NODE=1
+        DEFAULT_BIHARMONIC="10days"; ARCH="GPU()"; GPUS_PER_NODE=1
         EXTRA_USING=""; FILE_SPLIT=""
         RUN_CMD="sim.stop_time = 300 * 365days
 run!(sim; pickup = :latest)"
         ;;
     tenthdegree)
         DEFAULT_KSKEW=0;    DEFAULT_KSYMM=0;   NZ=100; DT="8minutes"
-        BIHARMONIC="nothing"; ARCH="Distributed(GPU(), partition=Partition(1, 4))"; GPUS_PER_NODE=4
+        DEFAULT_BIHARMONIC="nothing"; ARCH="Distributed(GPU(), partition=Partition(1, 4))"; GPUS_PER_NODE=4
         EXTRA_USING="using Oceananigans.DistributedComputations"
         FILE_SPLIT="file_splitting_interval = 180days,"
         RUN_CMD="sim.stop_time = 91days
@@ -117,10 +120,11 @@ esac
 # 0 means "no eddy closure" (maps to Julia `nothing`)
 export KSKEW="${KSKEW:-$DEFAULT_KSKEW}"
 export KSYMM="${KSYMM:-$DEFAULT_KSYMM}"
+export BIHARMONIC="${BIHARMONIC:-$DEFAULT_BIHARMONIC}"
 KSKEW_JULIA="$KSKEW"; [[ "$KSKEW" == "0" ]] && KSKEW_JULIA="nothing"
 KSYMM_JULIA="$KSYMM"; [[ "$KSYMM" == "0" ]] && KSYMM_JULIA="nothing"
 export KSKEW_JULIA KSYMM_JULIA
-export NZ DT BIHARMONIC ARCH EXTRA_USING FILE_SPLIT RUN_CMD
+export NZ DT ARCH EXTRA_USING FILE_SPLIT RUN_CMD
 
 # ── Build run name from config + options ──────────────────────────────
 RUN_NAME="$CONFIG"
@@ -130,6 +134,7 @@ RUN_NAME="$CONFIG"
 [[ -n "${CB:-}" ]]                     && RUN_NAME="${RUN_NAME}_cb${CB}"
 [[ "$KSKEW" != "$DEFAULT_KSKEW" ]]    && RUN_NAME="${RUN_NAME}_kskew${KSKEW}"
 [[ "$KSYMM" != "$DEFAULT_KSYMM" ]]    && RUN_NAME="${RUN_NAME}_ksymm${KSYMM}"
+[[ "$BIHARMONIC" != "$DEFAULT_BIHARMONIC" ]] && RUN_NAME="${RUN_NAME}_bih${BIHARMONIC}"
 
 REPORT_NAME="${REPORT_NAME:-${RUN_NAME}_report}"
 JOB_NAME="${JOB_NAME:-$RUN_NAME}"
