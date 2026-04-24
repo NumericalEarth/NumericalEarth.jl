@@ -83,7 +83,7 @@ function AtmosphereOceanFluxes(grid)
                                  F(grid), F(grid))
 end
 
-AtmosphereOceanFluxes(::Nothing) = AtmosphereOceanFluxes{ZeroField}(ntuple(_ -> ZeroField(), 11)...)
+AtmosphereOceanFluxes(::Nothing) = AtmosphereOceanFluxes(ntuple(_ -> ZeroField(), 11)...)
 
 Adapt.adapt_structure(to, fluxes::AtmosphereOceanFluxes) = 
     AtmosphereOceanFluxes(Adapt.adapt(to, fluxes.latent_heat),
@@ -124,7 +124,7 @@ function AtmosphereSeaIceFluxes(grid)
     return AtmosphereSeaIceFluxes(F(grid), F(grid), F(grid), F(grid), F(grid))
 end
 
-AtmosphereSeaIceFluxes(::Nothing) = AtmosphereSeaIceFluxes{ZeroField}(ntuple(_ -> ZeroField(), 5)...)
+AtmosphereSeaIceFluxes(::Nothing) = AtmosphereSeaIceFluxes(ntuple(_ -> ZeroField(), 5)...)
 
 Adapt.adapt_structure(to, fluxes::AtmosphereSeaIceFluxes) = 
     AtmosphereSeaIceFluxes(Adapt.adapt(to, fluxes.latent_heat),
@@ -155,7 +155,7 @@ function SeaIceOceanFluxes(grid)
                              Field{Center, Face, Nothing}(grid))
 end
 
-SeaIceOceanFluxes(::Nothing) = SeaIceOceanFluxes{ZeroField, ZeroField, ZeroField}(ntuple(_ -> ZeroField(), 5)...)
+SeaIceOceanFluxes(::Nothing) = SeaIceOceanFluxes(ntuple(_ -> ZeroField(), 5)...)
 
 Adapt.adapt_structure(to, fluxes::SeaIceOceanFluxes) = 
     SeaIceOceanFluxes(Adapt.adapt(to, fluxes.interface_heat),
@@ -192,7 +192,7 @@ struct ZeroFluxes{Z}
     salt                  :: Z
 end
 
-ZeroFluxes() = ZeroFluxes{ZeroField}(ntuple(_ -> ZeroField(), 14)...)
+ZeroFluxes() = ZeroFluxes(ntuple(_ -> ZeroField(), 14)...)
 
 @inline computed_fluxes(::Nothing) = ZeroFluxes()
 
