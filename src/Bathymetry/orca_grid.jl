@@ -247,18 +247,18 @@ function read_orca_staggered_mesh(ds; radius = Oceananigans.defaults.planet_radi
 
     orcaread(data, name) = orient_xy(read_2d_nemo_variable(data, name), Nx, Ny; name)
     shift_x(data) = shift_face_x(data, overlap)
-    shift_y(data) = shift_face_y(data)
-    shift_xy(data) = shift_y(shift_x(data))
 
+    # Face-y data is NOT pre-shifted here; halo_filled_data does the +1 y-shift
+    # after chop (matching the pre-refactor path so row 1 stays at zero).
     if has_all_variables(ds, metrics)
-        λCC, λFC, λCF, λFF = orcaread(ds, "glamt"), shift_x(orcaread(ds, "glamu")), shift_y(orcaread(ds, "glamv")), shift_xy(orcaread(ds, "glamf"))
-        φCC, φFC, φCF, φFF = orcaread(ds, "gphit"), shift_x(orcaread(ds, "gphiu")), shift_y(orcaread(ds, "gphiv")), shift_xy(orcaread(ds, "gphif"))
-        e1t, e1u, e1v, e1f = orcaread(ds, "e1t"),   shift_x(orcaread(ds, "e1u")),   shift_y(orcaread(ds, "e1v")),   shift_xy(orcaread(ds, "e1f"))
-        e2t, e2u, e2v, e2f = orcaread(ds, "e2t"),   shift_x(orcaread(ds, "e2u")),   shift_y(orcaread(ds, "e2v")),   shift_xy(orcaread(ds, "e2f"))
+        λCC, λFC, λCF, λFF = orcaread(ds, "glamt"), shift_x(orcaread(ds, "glamu")), orcaread(ds, "glamv"), shift_x(orcaread(ds, "glamf"))
+        φCC, φFC, φCF, φFF = orcaread(ds, "gphit"), shift_x(orcaread(ds, "gphiu")), orcaread(ds, "gphiv"), shift_x(orcaread(ds, "gphif"))
+        e1t, e1u, e1v, e1f = orcaread(ds, "e1t"),   shift_x(orcaread(ds, "e1u")),   orcaread(ds, "e1v"),   shift_x(orcaread(ds, "e1f"))
+        e2t, e2u, e2v, e2f = orcaread(ds, "e2t"),   shift_x(orcaread(ds, "e2u")),   orcaread(ds, "e2v"),   shift_x(orcaread(ds, "e2f"))
 
         if "e1e2t" in keys(ds)
             AzCC, AzFC = orcaread(ds, "e1e2t"), shift_x(orcaread(ds, "e1e2u"))
-            AzCF, AzFF = shift_y(orcaread(ds, "e1e2v")), shift_xy(orcaread(ds, "e1e2f"))
+            AzCF, AzFF = orcaread(ds, "e1e2v"), shift_x(orcaread(ds, "e1e2f"))
         else
             AzCC, AzFC, AzCF, AzFF = e1t .* e2t, e1u .* e2u, e1v .* e2v, e1f .* e2f
         end
@@ -306,12 +306,13 @@ function shift_face_x(data, overlap)
 end
 
 # NEMO V/F (Ny rows, north face of T[j]) → Oceananigans Face-y (Ny+1 rows,
-# south face of Center[k]): out[:, k] = in[:, k-1] for k=2..Ny+1. Row 1 is a
-# placeholder overwritten by continue_south!.
+# south face of Center[k]): out[:, k] = in[:, k-1] for k=2..Ny+1. Row 1 is left
+# at zero (matches pre-refactor); metrics get overwritten by continue_south!,
+# coordinates stay zero (continue_south! is not called for λ/φ).
 function shift_face_y(data)
     Nx, Ny = size(data)
     shifted = similar(data, Nx, Ny + 1)
-    shifted[:, 1] .= data[:, 1]
+    shifted[:, 1] .= zero(eltype(data))
     shifted[:, 2:Ny+1] .= data[:, 1:Ny]
     return shifted
 end
