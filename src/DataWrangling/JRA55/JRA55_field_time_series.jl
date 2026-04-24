@@ -4,6 +4,8 @@ using Oceananigans.Grids: AbstractGrid
 using Oceananigans.OutputReaders: PartlyInMemory
 using Adapt
 
+import NumericalEarth.DataWrangling: retrieve_data
+
 compute_bounding_nodes(::Nothing, ::Nothing, LH, hnodes) = nothing
 compute_bounding_nodes(bounds, ::Nothing, LH, hnodes) = bounds
 
@@ -70,31 +72,94 @@ function compute_bounding_indices(longitude, latitude, grid, LX, LY, λc, φc)
     return i₁, i₂, j₁, j₂, TX
 end
 
-struct JRA55NetCDFBackend{M} <: AbstractInMemoryBackend{Int}
-    start :: Int
-    length :: Int
-    metadata :: M
+# Migration shim — `JRA55FieldTimeSeries` was removed in favor of the
+# generic `FieldTimeSeries(::Metadata)` path. The shim throws a clear
+# error pointing at the new API; can be deleted once downstream callers
+# (ClimaOcean.jl, user scripts) have migrated.
+function JRA55FieldTimeSeries(args...; kwargs...)
+    error("""
+          `JRA55FieldTimeSeries` was removed; JRA55 now uses the generic
+          dataset API. Migrate as:
+
+              FieldTimeSeries(Metadata(:variable_name; dataset=RepeatYearJRA55(),
+                                                       start_date, end_date, dir),
+                              architecture;
+                              time_indices_in_memory = N)
+
+          The `InMemory()` backend is no longer supported for JRA55; pass
+          `time_indices_in_memory = length(metadata)` to keep the whole
+          series in memory.
+          """)
 end
 
-Adapt.adapt_structure(to, b::JRA55NetCDFBackend) = JRA55NetCDFBackend(b.start, b.length, nothing)
+const JRA55NetCDFFTS              = FlavorOfFTS{<:Any, <:Any, <:Any, <:Any, <:DatasetBackend{<:Any, <:Any, <:Any, <:JRA55Metadata}}
+const JRA55NetCDFFTSRepeatYear    = FlavorOfFTS{<:Any, <:Any, <:Any, <:Any, <:DatasetBackend{<:Any, <:Any, <:Any, <:Metadata{<:RepeatYearJRA55}}}
+const JRA55NetCDFFTSMultipleYears = FlavorOfFTS{<:Any, <:Any, <:Any, <:Any, <:DatasetBackend{<:Any, <:Any, <:Any, <:Metadata{<:MultiYearJRA55}}}
 
 """
-    JRA55NetCDFBackend(length)
+    retrieve_data(metadatum::JRA55Metadatum)
 
-Represents a JRA55 FieldTimeSeries backed by JRA55 native netCDF files.
+Read the 2D slice from the JRA55 NetCDF file corresponding to `metadatum`'s
+single date. JRA55 files chunk the series by calendar year and use a
+`DateTimeNoLeap` (365-day) calendar internally, so the file-local index
+must be resolved against either the file's own time axis (the safe path
+for `MultiYearJRA55`, which spans real leap years) or the position within
+the year's `all_dates` (which is unambiguous for `RepeatYearJRA55`,
+because the repeat year — 1990 — is itself non-leap and the file holds
+exactly 2920 entries that align 1:1 with `all_dates`).
 """
-JRA55NetCDFBackend(length, metadata::Metadata) = JRA55NetCDFBackend(1, length, metadata)
-JRA55NetCDFBackend(start::Integer, length::Integer) = JRA55NetCDFBackend(start, length, nothing)
+function retrieve_data(metadatum::RepeatYearJRA55Metadatum)
+    path = metadata_path(metadatum)
+    name = dataset_variable_name(metadatum)
 
-# Metadata - agnostic constructor
-JRA55NetCDFBackend(length) = JRA55NetCDFBackend(1, length, nothing)
+    dates = all_dates(metadatum.dataset, metadatum.name)
+    file_idx = findfirst(==(metadatum.dates), dates)
 
-Base.length(backend::JRA55NetCDFBackend) = backend.length
-Base.summary(backend::JRA55NetCDFBackend) = string("JRA55NetCDFBackend(", backend.start, ", ", backend.length, ")")
+    if isnothing(file_idx)
+        throw(ArgumentError("Date $(metadatum.dates) not found in $(metadatum.dataset) :$(metadatum.name) all_dates."))
+    end
 
-const JRA55NetCDFFTS              = FlavorOfFTS{<:Any, <:Any, <:Any, <:Any, <:JRA55NetCDFBackend}
-const JRA55NetCDFFTSRepeatYear    = FlavorOfFTS{<:Any, <:Any, <:Any, <:Any, <:JRA55NetCDFBackend{<:Metadata{<:RepeatYearJRA55}}}
-const JRA55NetCDFFTSMultipleYears = FlavorOfFTS{<:Any, <:Any, <:Any, <:Any, <:JRA55NetCDFBackend{<:Metadata{<:MultiYearJRA55}}}
+    ds = Dataset(path)
+    data = ds[name][:, :, file_idx]
+    close(ds)
+    return data
+end
+
+function retrieve_data(metadatum::MultiYearJRA55Metadatum)
+    path = metadata_path(metadatum)
+    name = dataset_variable_name(metadatum)
+
+    ds = Dataset(path)
+    file_dates = ds["time"][:]
+    file_idx = jra55_no_leap_file_index(file_dates, metadatum.dates)
+
+    if isnothing(file_idx)
+        close(ds)
+        throw(ArgumentError(string("Date ", metadatum.dates,
+                                   " not found in JRA55 multi-year file ", path,
+                                   " (note: JRA55 multi-year files use a no-leap calendar; ",
+                                   "Feb 29 of leap years has no corresponding file entry).")))
+    end
+
+    data = ds[name][:, :, file_idx]
+    close(ds)
+    return data
+end
+
+# Find the file-time index whose calendar components (Y/M/D/H/min) match
+# the target date. Calendar-component matching avoids the
+# `DateTimeNoLeap` ↔ `DateTime` epoch / leap-day mismatch that would
+# otherwise break naive arithmetic-based lookup.
+function jra55_no_leap_file_index(file_dates, target)
+    return findfirst(file_dates) do d
+        !ismissing(d) &&
+        Dates.year(d)   == Dates.year(target)   &&
+        Dates.month(d)  == Dates.month(target)  &&
+        Dates.day(d)    == Dates.day(target)    &&
+        Dates.hour(d)   == Dates.hour(target)   &&
+        Dates.minute(d) == Dates.minute(target)
+    end
+end
 
 # Note that each file should have the variables
 #   - ds["time"]:     time coordinate
@@ -114,7 +179,6 @@ function set!(fts::JRA55NetCDFFTSRepeatYear, backend=fts.backend)
     ds = Dataset(path)
 
     # Nodes at the variable location
-
     λc = ds["lon"][:]
     φc = ds["lat"][:]
     LX, LY, LZ = location(fts)
@@ -148,320 +212,74 @@ function set!(fts::JRA55NetCDFFTSRepeatYear, backend=fts.backend)
     return nothing
 end
 
-# Tricky case: multiple files per variable -- one file per year --
-# we need to infer the file name from the metadata and split the data loading
+# Multi-year case: one file per calendar year. Match each in-memory slot's
+# date to the file's time axis by (Y, M, D, H, min) components rather than
+# by seconds-since-start. JRA55 files use `DateTimeNoLeap` (365-day)
+# internally; doing seconds arithmetic against a Gregorian
+# `metadata.dates` would diverge by a multiple of 86400 after every leap
+# day passed and silently drop the affected slots. Component matching
+# sidesteps this entirely. Feb 29 of leap years has no entry in the file
+# and is skipped here too.
 function set!(fts::JRA55NetCDFFTSMultipleYears, backend=fts.backend)
 
     metadata = backend.metadata
+    name     = dataset_variable_name(metadata)
 
-    filename   = metadata.filename
-    filename   = unique(filename)
-    name       = dataset_variable_name(metadata)
-    start_date = first_date(metadata.dataset, metadata.name)
+    ftsn       = collect(time_indices(fts))
+    slot_dates = metadata.dates[ftsn]
 
-    for file in filename
+    needed_files = unique(getfilename(metadata.filename, n) for n in ftsn)
+
+    for file in needed_files
 
         path = joinpath(metadata.dir, file)
-        ds = Dataset(path)
+        ds   = Dataset(path)
 
-        # This can be simplified once we start supporting a
-        # datetime `Clock` in Oceananigans
         file_dates = ds["time"][:]
-        file_indices = 1:length(file_dates)
-        file_times = zeros(length(file_dates))
-        for (t, date) in enumerate(file_dates)
-            delta = date - start_date
-            delta = Second(delta).value
-            file_times[t] = delta
+
+        nn       = Int[]
+        ftsn_loc = Int[]
+        for (loc, slot_date) in enumerate(slot_dates)
+            file_idx = jra55_no_leap_file_index(file_dates, slot_date)
+            if !isnothing(file_idx)
+                push!(nn, file_idx)
+                push!(ftsn_loc, loc)
+            end
         end
 
-        ftsn = time_indices(fts)
-        ftsn = collect(ftsn)
-
-        # Intersect the time indices with the file times
-        nn   = findall(n -> file_times[n] ∈ fts.times[ftsn], file_indices)
-        ftsn = findall(n -> fts.times[n] ∈ file_times[nn], ftsn)
-
         if !isempty(nn)
-            # Nodes at the variable location
             λc = ds["lon"][:]
             φc = ds["lat"][:]
             LX, LY, LZ = location(fts)
             i₁, i₂, j₁, j₂, TX = compute_bounding_indices(nothing, nothing, fts.grid, LX, LY, λc, φc)
 
-
             if issorted(nn)
                 data = ds[name][i₁:i₂, j₁:j₂, nn]
             else
-                # The time indices may be cycling past 1; eg ti = [6, 7, 8, 1].
-                # However, DiskArrays does not seem to support loading data with unsorted
-                # indices. So to handle this, we load the data in chunks, where each chunk's
-                # indices are sorted, and then glue the data together.
-                m = findfirst(n -> n == 1, nn)
+                # Defensive: per-file `nn` is normally sorted because we
+                # iterate `slot_dates` in `ftsn` order and a single file
+                # holds a single contiguous year, but DiskArrays requires
+                # sorted indices so we split at the wrap if it occurs.
+                m  = findfirst(n -> n == 1, nn)
                 n1 = nn[1:m-1]
                 n2 = nn[m:end]
 
                 data1 = ds[name][i₁:i₂, j₁:j₂, n1]
                 data2 = ds[name][i₁:i₂, j₁:j₂, n2]
-                data = cat(data1, data2, dims=3)
+                data  = cat(data1, data2, dims=3)
             end
 
             close(ds)
 
-            # We need to set the time index for each file
-            # Find start index corresponding to the underlying data
             for n in 1:length(nn)
-                copyto!(interior(fts, :, :, 1, ftsn[n]), data[:, :, n])
+                copyto!(interior(fts, :, :, 1, ftsn_loc[n]), data[:, :, n])
             end
+        else
+            close(ds)
         end
     end
 
     fill_halo_regions!(fts)
 
     return nothing
-end
-
-new_backend(b::JRA55NetCDFBackend, start, length) = JRA55NetCDFBackend(start, length, b.metadata)
-
-"""
-    JRA55FieldTimeSeries(variable_name, architecture=CPU(), FT=Float32;
-                         dataset = RepeatYearJRA55(),
-                         dates = all_JRA55_dates(version),
-                         latitude = nothing,
-                         longitude = nothing,
-                         dir = download_JRA55_cache,
-                         backend = InMemory(),
-                         time_indexing = Cyclical())
-
-Return a `FieldTimeSeries` containing atmospheric reanalysis data for `variable_name`,
-which describes one of the variables from the Japanese 55-year atmospheric reanalysis
-for driving ocean-sea ice models (JRA55-do). The JRA55-do dataset is described by [tsujino2018jra](@citet).
-
-The `variable_name`s (and their `shortname`s used in the netCDF files) available from the JRA55-do are:
-- `:river_freshwater_flux`              ("friver")
-- `:rain_freshwater_flux`               ("prra")
-- `:snow_freshwater_flux`               ("prsn")
-- `:iceberg_freshwater_flux`            ("licalvf")
-- `:specific_humidity`                  ("huss")
-- `:sea_level_pressure`                 ("psl")
-- `:relative_humidity`                  ("rhuss")
-- `:downwelling_longwave_radiation`     ("rlds")
-- `:downwelling_shortwave_radiation`    ("rsds")
-- `:temperature`                        ("ras")
-- `:eastward_velocity`                  ("uas")
-- `:northward_velocity`                 ("vas")
-
-Keyword arguments
-=================
-
-- `architecture`: Architecture for the `FieldTimeSeries`. Default: CPU()
-
-- `dataset`: The data dataset; supported datasets are: `RepeatYearJRA55()` and `MultiYearJRA55()`.
-             `MultiYearJRA55()` refers to the full length of the JRA55-do dataset; `RepeatYearJRA55()`
-             refers to the "repeat-year forcing" dataset derived from JRA55-do. Default: `RepeatYearJRA55()`.
-
-  !!! info "Repeat-year forcing"
-
-      For more information about the derivation of the repeat-year forcing dataset, see [stewart2020jra55](@citet).
-
-  The repeat year in `RepeatYearJRA55()` corresponds to May 1st, 1990 - April 30th, 1991. However, the
-  returned dataset has dates that range from January 1st to December 31st. This implies
-  that the first 4 months of the `JRA55RepeatYear()` dataset correspond to year 1991 from the JRA55
-  reanalysis and the rest 8 months from 1990.
-
-- `start_date`: The starting date to use for the dataset. Default: `first_date(dataset, variable_name)`.
-
-- `end_date`: The ending date to use for the dataset. Default: `end_date(dataset, variable_name)`.
-
-- `dir`: The directory of the data file. Default: `NumericalEarth.JRA55.download_JRA55_cache`.
-
-- `time_indexing`: The time indexing scheme for the field time series. Default: `Cyclical()`.
-
-- `latitude`: Guiding latitude bounds for the resulting grid.
-              Used to slice the data when loading into memory.
-              Default: nothing, which retains the latitude range of the native grid.
-
-- `longitude`: Guiding longitude bounds for the resulting grid.
-               Used to slice the data when loading into memory.
-               Default: nothing, which retains the longitude range of the native grid.
-
-- `backend`: Backend for the `FieldTimeSeries`. The two options are:
-  * `InMemory()`: the whole time series is loaded into memory.
-  * `JRA55NetCDFBackend(total_time_instances_in_memory)`: only a subset of the time series
-                                                          is loaded into memory. Default: `InMemory()`.
-
-References
-==========
-
-- Tsujino et al. (2018). JRA-55 based surface dataset for driving ocean-sea-ice models (JRA55-do), _Ocean Modelling_, **130(1)**, 79-139.
-
-- Stewart et al. (2020). JRA55-do-based repeat year forcing datasets for driving ocean–sea-ice models, _Ocean Modelling_, **147**, 101557.
-"""
-function JRA55FieldTimeSeries(variable_name::Symbol, architecture=CPU(), FT=Float32;
-                              dataset = RepeatYearJRA55(),
-                              start_date = first_date(dataset, variable_name),
-                              end_date = last_date(dataset, variable_name),
-                              dir = download_JRA55_cache,
-                              kw...)
-
-    native_dates = all_dates(dataset, variable_name)
-    dates = compute_native_date_range(native_dates, start_date, end_date)
-    metadata = Metadata(variable_name; dataset, dates, dir)
-
-    return JRA55FieldTimeSeries(metadata, architecture, FT; kw...)
-end
-
-function JRA55FieldTimeSeries(metadata::JRA55Metadata, architecture=CPU(), FT=Float32;
-                              latitude = nothing,
-                              longitude = nothing,
-                              backend = InMemory(),
-                              time_indexing = Cyclical())
-
-    # Cannot use `TotallyInMemory` backend with MultiYearJRA55 dataset
-    if metadata.dataset isa MultiYearJRA55 && backend isa TotallyInMemory
-        msg = string("The `InMemory` backend is not supported for the MultiYearJRA55 dataset.")
-        throw(ArgumentError(msg))
-    end
-
-    # First thing: we download the dataset!
-    download_dataset(metadata)
-
-    # Regularize the backend in case of `JRA55NetCDFBackend`
-    if backend isa JRA55NetCDFBackend
-        if backend.metadata isa Nothing
-            backend = JRA55NetCDFBackend(backend.length, metadata)
-        end
-
-        if backend.length > length(metadata)
-            backend = JRA55NetCDFBackend(backend.start, length(metadata), metadata)
-        end
-    end
-
-    # Unpack metadata details
-    dataset = metadata.dataset
-    name    = metadata.name
-    time_indices = JRA55_time_indices(dataset, metadata.dates, name)
-
-    # Change the metadata to reflect the actual time indices
-    dates    = all_dates(dataset, name)[time_indices]
-    metadata = Metadata(metadata.name; dataset=metadata.dataset, dates, dir=metadata.dir)
-
-    shortname = dataset_variable_name(metadata)
-    variable_name = metadata.name
-
-    filepath = metadata_path(metadata) # Might be multiple paths!!!
-    filepath = filepath isa AbstractArray ? first(filepath) : filepath
-
-    # OnDisk backends do not support time interpolation!
-    # Disallow OnDisk for JRA55 dataset loading
-    if ((backend isa InMemory) && !isnothing(backend.length)) || backend isa OnDisk
-        msg = string("We cannot load the JRA55 dataset with a $(backend) backend. Use `InMemory()` or `JRA55NetCDFBackend(N)` instead.")
-        throw(ArgumentError(msg))
-    end
-
-    if !(variable_name ∈ JRA55_variable_names)
-        variable_strs = Tuple("  - :$name \n" for name in JRA55_variable_names)
-        variables_msg = prod(variable_strs)
-
-        msg = string("The variable :$variable_name is not provided by the JRA55-do dataset!", '\n',
-                     "The variables provided by the JRA55-do dataset are:", '\n',
-                     variables_msg)
-
-        throw(ArgumentError(msg))
-    end
-
-    # Record some important user decisions
-    totally_in_memory = backend isa TotallyInMemory
-
-    # Determine default time indices
-    if totally_in_memory
-        # In this case, the whole time series is in memory.
-        # Either the time series is short, or we are doing a limited-area
-        # simulation, like in a single column. So, we conservatively
-        # set a default `time_indices = 1:2`.
-        time_indices_in_memory  = time_indices
-        native_fts_architecture = architecture
-    else
-        # In this case, part or all of the time series will be stored in a file.
-        # Note: if the user has provided a grid, we will have to preprocess the
-        # .nc JRA55 data into a .jld2 file. In this case, `time_indices` refers
-        # to the time_indices that we will preprocess;
-        # by default we choose all of them. The architecture is only the
-        # architecture used for preprocessing, which typically will be CPU()
-        # even if we would like the final FieldTimeSeries on the GPU.
-        time_indices_in_memory = 1:length(backend)
-        native_fts_architecture = architecture
-    end
-
-    ds = Dataset(filepath)
-
-    # Note that each file should have the variables
-    #   - ds["time"]:     time coordinate
-    #   - ds["lon"]:      longitude at the location of the variable
-    #   - ds["lat"]:      latitude at the location of the variable
-    #   - ds["lon_bnds"]: bounding longitudes between which variables are averaged
-    #   - ds["lat_bnds"]: bounding latitudes between which variables are averaged
-    #   - ds[shortname]: the variable data
-
-    # Nodes at the variable location
-    λc = ds["lon"][:]
-    φc = ds["lat"][:]
-
-    # Interfaces for the "native" JRA55 grid
-    λn = Array(ds["lon_bnds"][1, :])
-    φn = Array(ds["lat_bnds"][1, :])
-
-    # The netCDF coordinates lon_bnds and lat_bnds do not include
-    # the last interfaces, so we push them here.
-    push!(φn, 90)
-    push!(λn, λn[1] + 360)
-
-    i₁, i₂, j₁, j₂, TX = compute_bounding_indices(longitude, latitude, nothing, Center, Center, λc, φc)
-
-    λr = λn[i₁:i₂+1]
-    φr = φn[j₁:j₂+1]
-    Nrx = length(λr) - 1
-    Nry = length(φr) - 1
-    close(ds)
-
-    N = (Nrx, Nry)
-    H = min.(N, (3, 3))
-
-    JRA55_native_grid = LatitudeLongitudeGrid(native_fts_architecture, FT;
-                                              halo = H,
-                                              size = N,
-                                              longitude = λr,
-                                              latitude = φr,
-                                              topology = (TX, Bounded, Flat))
-
-    boundary_conditions = FieldBoundaryConditions(JRA55_native_grid, (Center(), Center(), nothing))
-    start_time = first_date(metadata.dataset, metadata.name)
-    times = native_times(metadata; start_time)
-
-    if backend isa JRA55NetCDFBackend
-        fts = FieldTimeSeries{Center, Center, Nothing}(JRA55_native_grid, times;
-                                                       backend,
-                                                       time_indexing,
-                                                       boundary_conditions,
-                                                       path = filepath,
-                                                       name = shortname)
-
-        set!(fts)
-        return fts
-    else
-        fts = FieldTimeSeries{Center, Center, Nothing}(JRA55_native_grid, times;
-                                                       time_indexing,
-                                                       backend,
-                                                       boundary_conditions)
-
-        # Fill the data in a GPU-friendly manner
-        ds = Dataset(filepath)
-        data = ds[shortname][i₁:i₂, j₁:j₂, time_indices_in_memory]
-        close(ds)
-
-        copyto!(interior(fts, :, :, 1, :), data)
-        fill_halo_regions!(fts)
-
-        return fts
-    end
 end

@@ -27,8 +27,7 @@ using Oceananigans.OutputWriters: Checkpointer
             set!(sea_ice.model, h=hi, ℵ=hi)
 
             # Create atmosphere and radiation
-            backend = JRA55NetCDFBackend(4)
-            atmosphere = JRA55PrescribedAtmosphere(arch; backend)
+            atmosphere = JRA55PrescribedAtmosphere(arch; time_indices_in_memory=4)
 
             return OceanSeaIceModel(ocean, sea_ice; atmosphere)
         end
