@@ -91,11 +91,22 @@ end
         Tₛ = convert_to_kelvin(sea_ice_properties.temperature_units, Tₛ)
     end
 
+    # Evaluate state-dependent radiation properties at this grid point.
+    # The albedo may be a struct (e.g., CCSM3SeaIceAlbedo) that reads model fields;
+    # we evaluate it here so the iteration uses a scalar.
+    time = Time(clock.time)
+    σ = interface_properties.radiation.σ
+    α = stateindex(interface_properties.radiation.α, i, j, kᴺ, grid, time, CCC)
+    ϵ = stateindex(interface_properties.radiation.ϵ, i, j, kᴺ, grid, time, CCC)
+    local_radiation = (; σ, α, ϵ)
+    local_interface_properties = InterfaceProperties(local_radiation,
+                                                     interface_properties.specific_humidity_formulation,
+                                                     interface_properties.temperature_formulation,
+                                                     interface_properties.velocity_formulation)
+
     # Build thermodynamic and dynamic states in the atmosphere and interface.
-    # Notation:
-    #   ⋅ 𝒰 ≡ "dynamic" state vector (thermodynamics + reference height + velocity)
     ℂᵃᵗ = atmosphere_properties.thermodynamics_parameters
-    zᵃᵗ = atmosphere_properties.surface_layer_height # elevation of atmos variables relative to interface
+    zᵃᵗ = atmosphere_properties.surface_layer_height
 
     local_atmosphere_state = (z = zᵃᵗ,
                               u = uᵃᵗ,
@@ -132,7 +143,7 @@ end
                                                   local_atmosphere_state,
                                                   local_interior_state,
                                                   downwelling_radiation,
-                                                  interface_properties,
+                                                  local_interface_properties,
                                                   atmosphere_properties,
                                                   sea_ice_properties)
     end
