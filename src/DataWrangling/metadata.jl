@@ -293,6 +293,16 @@ Return the name used for the variable `metadata.name` in its raw dataset file.
 """
 function dataset_variable_name end
 
+"""
+    validate_dataset_coverage(grid, metadata)
+
+Check that `grid` lies within the spatial coverage of `metadata`'s dataset.
+Throws an error if the grid extends outside the dataset's domain.
+The default implementation does nothing (all grids are accepted).
+Dataset-specific methods can override this to enforce coverage constraints.
+"""
+validate_dataset_coverage(grid, metadata) = nothing
+
 # Note: all_dates needs to be extended for any new dataset.
 """
     all_dates(metadata)

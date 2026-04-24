@@ -5,6 +5,7 @@ restoring, or validation.
 module DataWrangling
 
 export Metadata, Metadatum, DatewiseFilename, ECCOMetadatum, EN4Metadatum, all_dates, first_date, last_date
+export validate_dataset_coverage, metadata_filename
 export WOAClimatology, WOAAnnual, WOAMonthly
 export metadata_time_step, metadata_epoch
 export LinearlyTaperedPolarMask
@@ -228,6 +229,9 @@ include("ORCA/ORCA.jl")
 include("WOA/WOA.jl")
 include("JRA55/JRA55.jl")
 include("OSPapa/OSPapa.jl")
+include("IBCSO/IBCSO.jl")
+include("GEBCO/GEBCO.jl")
+include("IBCAO/IBCAO.jl")
 
 using .ETOPO
 using .ECCO
@@ -238,5 +242,8 @@ using .ORCA
 using .WOA
 using .JRA55
 using .OSPapa
+using .IBCSO
+using .GEBCO
+using .IBCAO
 
 end # module
