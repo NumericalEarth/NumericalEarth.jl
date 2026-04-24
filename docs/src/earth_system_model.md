@@ -120,7 +120,7 @@ To change the defaults, construct `ComponentInterfaces` yourself and pass it in.
 For example, to use constant transfer coefficients instead of similarity theory:
 
 ```jldoctest esm
-atmosphere_ocean_fluxes = CoefficientBasedFluxes(drag_coefficient=2e-3)
+atmosphere_ocean_fluxes = CoefficientBasedFluxes(transfer_coefficients = (2e-3, 2e-3, 2e-3))
 interfaces = NumericalEarth.EarthSystemModels.ComponentInterfaces(nothing, ocean;
                                                                   atmosphere_ocean_fluxes)
 model = OceanOnlyModel(ocean; interfaces)
