@@ -90,21 +90,21 @@ esac
 #                     KSKEW  KSYMM  NZ   DT          BIHARMONIC  ARCH                                             GPUS  EXTRA_USING                              FILE_SPLIT  RUN_CMD
 case "$CONFIG" in
     halfdegree)
-        DEFAULT_KSKEW=250;  DEFAULT_KSYMM=100; NZ=70;  DT="25minutes"
+        DEFAULT_KSKEW=250;  DEFAULT_KSYMM=100; NZ=70;  DEFAULT_DT="25minutes"
         DEFAULT_BIHARMONIC="40days"; ARCH="GPU()"; GPUS_PER_NODE=1
         EXTRA_USING=""; FILE_SPLIT=""
         RUN_CMD="sim.stop_time = 300 * 365days
 run!(sim, pickup=:latest)"
         ;;
     orca)
-        DEFAULT_KSKEW=500;  DEFAULT_KSYMM=250; NZ=70;  DT="30minutes"
+        DEFAULT_KSKEW=500;  DEFAULT_KSYMM=250; NZ=70;  DEFAULT_DT="30minutes"
         DEFAULT_BIHARMONIC="10days"; ARCH="GPU()"; GPUS_PER_NODE=1
         EXTRA_USING=""; FILE_SPLIT=""
         RUN_CMD="sim.stop_time = 300 * 365days
 run!(sim; pickup = :latest)"
         ;;
     tenthdegree)
-        DEFAULT_KSKEW=0;    DEFAULT_KSYMM=0;   NZ=100; DT="8minutes"
+        DEFAULT_KSKEW=0;    DEFAULT_KSYMM=0;   NZ=100; DEFAULT_DT="8minutes"
         DEFAULT_BIHARMONIC="nothing"; ARCH="Distributed(GPU(), partition=Partition(1, 4))"; GPUS_PER_NODE=4
         EXTRA_USING="using Oceananigans.DistributedComputations"
         FILE_SPLIT="file_splitting_interval = 180days,"
@@ -120,6 +120,7 @@ esac
 # 0 means "no eddy closure" (maps to Julia `nothing`)
 export KSKEW="${KSKEW:-$DEFAULT_KSKEW}"
 export KSYMM="${KSYMM:-$DEFAULT_KSYMM}"
+export DT="${DT:-$DEFAULT_DT}"
 export BIHARMONIC="${BIHARMONIC:-$DEFAULT_BIHARMONIC}"
 KSKEW_JULIA="$KSKEW"; [[ "$KSKEW" == "0" ]] && KSKEW_JULIA="nothing"
 KSYMM_JULIA="$KSYMM"; [[ "$KSYMM" == "0" ]] && KSYMM_JULIA="nothing"
