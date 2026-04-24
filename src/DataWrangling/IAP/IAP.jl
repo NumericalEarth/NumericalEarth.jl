@@ -42,13 +42,26 @@ end
 """
     IAPOceanHeatContent{depth}
 
-IAP ocean heat content estimate (Cheng et al. 2017) integrated from the
-surface down to `depth`. Currently `depth = :top300m` is supported.
-Data source: <http://www.ocean.iap.ac.cn/>. Units: 10²² J (column
-integrated).
+IAP ocean heat content estimate (Cheng et al. 2017, IAPv4.2) integrated
+from the surface down to `depth`. Supported values of `depth`: `:top100m`,
+`:top300m`, `:top700m`, `:top1500m`, `:top2000m`, `:top3000m`, `:top4000m`,
+`:top5000m`, `:top6000m`. Data source:
+<http://www.ocean.iap.ac.cn/ftp/cheng/IAPv4.2_Ocean_heat_content_0_6000m/>.
+Each monthly file contains OHC integrated to each of the depths above,
+as 2-D fields in J/m².
 """
 struct IAPOceanHeatContent{depth} end
 IAPOceanHeatContent(; depth::Symbol = :top300m) = IAPOceanHeatContent{depth}()
+
+_iap_depth_suffix(::IAPOceanHeatContent{:top100m})  = "100"
+_iap_depth_suffix(::IAPOceanHeatContent{:top300m})  = "300"
+_iap_depth_suffix(::IAPOceanHeatContent{:top700m})  = "700"
+_iap_depth_suffix(::IAPOceanHeatContent{:top1500m}) = "1500"
+_iap_depth_suffix(::IAPOceanHeatContent{:top2000m}) = "2000"
+_iap_depth_suffix(::IAPOceanHeatContent{:top3000m}) = "3000"
+_iap_depth_suffix(::IAPOceanHeatContent{:top4000m}) = "4000"
+_iap_depth_suffix(::IAPOceanHeatContent{:top5000m}) = "5000"
+_iap_depth_suffix(::IAPOceanHeatContent{:top6000m}) = "6000"
 
 default_download_directory(::IAPOceanHeatContent) = download_IAP_cache
 longitude_interfaces(::IAPOceanHeatContent) = (-180, 180)
@@ -71,28 +84,38 @@ const IAPMetadatum     = Metadatum{<:IAPOceanHeatContent}
 metaprefix(::IAPMetadata)  = "IAPMetadata"
 metaprefix(::IAPMetadatum) = "IAPMetadatum"
 
-const IAP_VARS = Dict(:ocean_heat_content => "OHC")
-dataset_variable_name(m::IAPMetadata) = IAP_VARS[m.name]
+const IAP_VARS = Dict(:ocean_heat_content => "OHC300")
+dataset_variable_name(m::IAPMetadata) =
+    "OHC" * _iap_depth_suffix(m.dataset)
 available_variables(::IAPOceanHeatContent) = IAP_VARS
 
-metadata_filename(::IAPOceanHeatContent{:top300m}, args...) =
-    "IAP_OHC_Monthly_0-300m.nc"
+function metadata_filename(::IAPOceanHeatContent, name, date, args...)
+    y  = Dates.year(date)
+    mm = lpad(Dates.month(date), 2, '0')
+    return "OHC_IAP_0_6000m_year_$(y)_month_$(mm).nc"
+end
 
-metadata_url(::IAPOceanHeatContent{:top300m}) =
-    "http://www.ocean.iap.ac.cn/ftp/cheng/IAP_OHC_Monthly_0-300m.nc"
+function metadata_url(m::IAPMetadatum)
+    y  = Dates.year(m.dates)
+    mm = lpad(Dates.month(m.dates), 2, '0')
+    return "http://www.ocean.iap.ac.cn/ftp/cheng/" *
+           "IAPv4.2_Ocean_heat_content_0_6000m/" *
+           "OHC_IAP_0_6000m_year_$(y)_month_$(mm).nc"
+end
 
 z_interfaces(::IAPMetadatum) = (0, 1)
 
 function download_dataset(m::IAPMetadatum)
     path = metadata_path(m)
     @root if !isfile(path)
-        url = metadata_url(m.dataset)
+        url = metadata_url(m)
         @info "Downloading IAP OHC from $url"
         try
             Downloads.download(url, path; progress = download_progress)
         catch err
             error("IAP download failed. IAP occasionally reorganizes its " *
-                  "files — manually place the NetCDF at $(path). " *
+                  "files. Manually place the NetCDF at $(path), or update " *
+                  "`metadata_url` in NumericalEarth.DataWrangling.IAP. " *
                   "Original error: $err")
         end
     end
@@ -103,22 +126,27 @@ download_dataset(m::IAPMetadata) = [download_dataset(md) for md in m]
 location(::IAPMetadata) = (Center, Center, Center)
 is_three_dimensional(::IAPMetadata) = false
 
+# IAPv4.2 sentinel fill value: unmasked cells carry values around 1e30
+# because the _FillValue attribute is not correctly typed in the NC file.
+# Anything above 1e20 is treated as a fill.
+const _IAP_FILL_THRESHOLD = 1.0f20
+
 function retrieve_data(m::IAPMetadatum)
     ds = Dataset(metadata_path(m))
-    raw   = ds["OHC"][:, :, :]
-    times = ds["time"][:]
+    varname = dataset_variable_name(m)
+    raw = ds[varname][:, :]   # (lon, lat) in Julia column-major
     close(ds)
 
-    target = DateTime(Dates.year(m.dates), Dates.month(m.dates), 1)
-    k = findfirst(t -> DateTime(Dates.year(t), Dates.month(t), 1) == target, times)
-    isnothing(k) && error("IAP has no record for $target")
-
-    slice = raw[:, :, k]
-    arr = Array{Float32}(undef, size(slice))
-    @inbounds for i in eachindex(slice)
-        arr[i] = ismissing(slice[i]) ? NaN32 : Float32(slice[i])
+    arr = Array{Float32}(undef, size(raw))
+    @inbounds for i in eachindex(raw)
+        v = raw[i]
+        arr[i] = (ismissing(v) || abs(Float32(v)) > _IAP_FILL_THRESHOLD) ?
+                 NaN32 : Float32(v)
     end
-    return reshape(arr, size(arr)..., 1)
+
+    # Shift 1..360 longitude to -180..180 (same pattern as ERSST)
+    shifted = vcat(arr[181:360, :], arr[1:180, :])
+    return reshape(shifted, size(shifted)..., 1)
 end
 
 end # module

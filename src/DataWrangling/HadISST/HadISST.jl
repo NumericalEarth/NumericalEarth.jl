@@ -130,18 +130,23 @@ is_three_dimensional(::HadISSTMetadata) = false
 function retrieve_data(m::HadISSTMetadatum)
     ds = Dataset(metadata_path(m))
     varname = dataset_variable_name(Metadata(m.name; dataset = m.dataset))
-    raw = ds[varname][:, :, :]   # (lon, lat, time)
     times = ds["time"][:]
-    close(ds)
 
     target = DateTime(Dates.year(m.dates), Dates.month(m.dates), 1)
     k = findfirst(t -> DateTime(Dates.year(t), Dates.month(t), 1) == target, times)
-    isnothing(k) && error("HadISST has no record for $target")
+    isnothing(k) && (close(ds); error("HadISST has no record for $target"))
 
-    slice = raw[:, :, k]
+    # Partial read of a single time index, not the full 485 MB variable
+    slice = ds[varname][:, :, k]
+    close(ds)
+
+    # HadISST ice/no-data sentinel: -1000 is used in addition to the declared
+    # _FillValue of -1e30 (which NCDatasets already surfaces as `missing`).
+    # Both need to become NaN so reductions ignore them.
     arr = Array{Float32}(undef, size(slice))
     @inbounds for i in eachindex(slice)
-        arr[i] = ismissing(slice[i]) ? NaN32 : Float32(slice[i])
+        v = slice[i]
+        arr[i] = (ismissing(v) || Float32(v) <= -999.0f0) ? NaN32 : Float32(v)
     end
 
     # HadISST latitude is stored N→S; flip so our grid (which expects

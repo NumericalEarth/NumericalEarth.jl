@@ -6,7 +6,7 @@ using NumericalEarth
 using NumericalEarth.DataWrangling: Metadatum, EN4Monthly
 
 """
-    build_en4_proxy_timeseries(; dataset = EN4Monthly(),
+    build_en4_proxy_timeseries(; grid, dataset = EN4Monthly(),
                                  start_date, end_date,
                                  ρ₀ = 1025.0, cₚ = 3991.0,
                                  output_path)
@@ -21,6 +21,9 @@ The resulting file is readable by `plot_figure1`.
 Arguments
 =========
 
+- `grid`: target ocean grid with bathymetry (typically an
+  `ImmersedBoundaryGrid`). EN4 monthly T and S are regridded onto it via
+  `set!`, so global reductions exclude land and below-bathymetry cells.
 - `start_date::Date`, `end_date::Date`: inclusive month range (1st of the
   month is used).
 - `dataset`: an `EN4Monthly()` (default).
@@ -29,6 +32,7 @@ Arguments
 - `output_path`: JLD2 file to write.
 """
 function build_en4_proxy_timeseries(;
+        grid,
         dataset = EN4Monthly(),
         start_date::Date,
         end_date::Date,
@@ -50,6 +54,10 @@ function build_en4_proxy_timeseries(;
     series = Dict{Symbol, Vector{Float64}}(k => Float64[] for k in keys)
     times  = DateTime[]
 
+    # Reuse the same target Fields across months to avoid reallocating
+    T = CenterField(grid)
+    S = CenterField(grid)
+
     _only(op) = begin
         f = Field(op); compute!(f); only(f)
     end
@@ -58,8 +66,8 @@ function build_en4_proxy_timeseries(;
         T_meta = Metadatum(:temperature; dataset = dataset, date = date)
         S_meta = Metadatum(:salinity;    dataset = dataset, date = date)
 
-        T = Field(T_meta)
-        S = Field(S_meta)
+        set!(T, T_meta)
+        set!(S, S_meta)
 
         push!(series[:tosga],     _only(global_volume_T(T)))
         push!(series[:tosga_nh],  _only(global_volume_T(T; hemisphere = northern_hemisphere)))

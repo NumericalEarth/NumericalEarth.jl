@@ -65,27 +65,21 @@ function assemble_figure1_bundle(;
         "sossga"   => sossga_a,
     )
 
+    obs_status = String[]
     if include_obs
-        try
-            (hy, hv) = annual_obs_sst_series(HadISSTSST(), start_year, end_year)
-            bundle["hadisst_yr"]  = hy
-            bundle["hadisst_sst"] = hv
-        catch err
-            @warn "Skipping HadISST overlay" exception = err
-        end
-        try
-            (ey, ev) = annual_obs_sst_series(ERSSTv5(), start_year, end_year)
-            bundle["ersst_yr"]  = ey
-            bundle["ersst_sst"] = ev
-        catch err
-            @warn "Skipping ERSST overlay" exception = err
-        end
-        try
-            (iy, iv) = annual_obs_iap_series(start_year, end_year)
-            bundle["iap_yr"]  = iy
-            bundle["iap_ohc"] = iv
-        catch err
-            @warn "Skipping IAP OHC overlay" exception = err
+        for (label, key, loader) in (
+                ("HadISST", "hadisst", () -> annual_obs_sst_series(HadISSTSST(), start_year, end_year)),
+                ("ERSST",   "ersst",   () -> annual_obs_sst_series(ERSSTv5(),    start_year, end_year)),
+                ("IAP OHC", "iap",     () -> annual_obs_iap_series(start_year, end_year)),
+            )
+            try
+                (yr, val) = loader()
+                bundle[key * "_yr"] = yr
+                bundle[key * (label == "IAP OHC" ? "_ohc" : "_sst")] = val
+                push!(obs_status, "  $label: OK")
+            catch err
+                push!(obs_status, "  $label: FAILED ($(sprint(showerror, err)))")
+            end
         end
     end
 
@@ -95,7 +89,14 @@ function assemble_figure1_bundle(;
         end
     end
 
-    @info "Wrote Figure 1 data bundle" output_path keys=collect(keys(bundle))
+    println("=" ^ 60)
+    println("Figure 1 bundle written to $output_path")
+    println("Bundle keys: ", join(sort(collect(keys(bundle))), ", "))
+    if include_obs
+        println("Observational sources:")
+        foreach(println, obs_status)
+    end
+    println("=" ^ 60)
     return output_path
 end
 

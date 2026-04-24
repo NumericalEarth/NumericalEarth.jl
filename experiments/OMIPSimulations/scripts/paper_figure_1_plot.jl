@@ -68,9 +68,11 @@ function plot_figure1_bundle(;
     lines!(ax3, years, ohc300 ./ 1e24;
            color = :orange, linewidth = 2, label = "model")
     if !isnothing(iap)
+        # IAPv4.2 ships OHC as J/m² (column-integrated). Multiply by the
+        # global ocean surface area to obtain total joules, then divide by
+        # 1e24 to match the model panel.
         earth_ocean_area = 4π * 6.371e6^2 * 0.71  # ≈ 3.6e14 m²
-        # IAP native units: 10²² J/m². Convert to 10²⁴ J using global ocean area.
-        lines!(ax3, iap.years, iap.ohc .* (earth_ocean_area / 1e2);
+        lines!(ax3, iap.years, iap.ohc .* earth_ocean_area ./ 1e24;
                color = :gray, linewidth = 1.5, label = "IAP OHC")
     end
     axislegend(ax3; position = :rt)
