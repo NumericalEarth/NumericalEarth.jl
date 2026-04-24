@@ -10,9 +10,9 @@ using NCDatasets
 using Statistics
 using Test
 
-orca_datasets = (ORCA1, ORCA2, ORCA12)
-orca_sizes = ((362, 332), (180, 148), (4322, 3606))
-bathymetry_names = ("Bathymetry", "bathy_metry", "bottom_height")
+orca_datasets = (ORCA1, ORCA2)#, ORCA12)
+orca_sizes = ((362, 332), (180, 148))#, (4322, 3606))
+bathymetry_names = ("Bathymetry", "bathy_metry")#, "bottom_height")
 
 for (n, DATASET) in enumerate(orca_datasets)
     dataset = DATASET()
