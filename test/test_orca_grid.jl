@@ -34,6 +34,7 @@ end
     @test occursin("eORCA12", metadata_path(mesh_meta))
     @test occursin("eORCA12", metadata_path(bathy_meta))
 end
+
 @testset "ORCAGrid with ORCA1 dataset on $(arch)" for arch in test_architectures
     south_rows_to_remove = 43
     grid = ORCAGrid(arch; dataset=ORCA1(), Nz=5, z=(-5000, 0), halo=(4, 4, 4), south_rows_to_remove)
