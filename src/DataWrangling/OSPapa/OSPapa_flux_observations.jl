@@ -89,9 +89,9 @@ end
 flux_uniform_filename(start_date, end_date) =
     "ocs_papa_flux_uniform_$(Dates.format(start_date, "yyyymmddTHHMMSS"))_$(Dates.format(end_date, "yyyymmddTHHMMSS")).nc"
 
-metadata_filename(::OSPapaFluxHourly, name, date, bounding_box) = flux_uniform_filename(date, date)
+metadata_filename(::OSPapaFluxHourly, name, date, region) = flux_uniform_filename(date, date)
 
-build_filename(::OSPapaFluxHourly, name, dates::AbstractArray, bounding_box) =
+build_filename(::OSPapaFluxHourly, name, dates::AbstractArray, region) =
     flux_uniform_filename(first(dates), last(dates))
 
 function download_dataset(md::OSPapaFluxMetadata)

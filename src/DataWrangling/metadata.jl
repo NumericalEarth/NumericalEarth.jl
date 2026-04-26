@@ -25,6 +25,42 @@ Create a bounding box with `latitude`, `longitude`, and `z` bounds on the sphere
 BoundingBox(; longitude=nothing, latitude=nothing, z=nothing) =
     BoundingBox(longitude, latitude, z)
 
+#####
+##### Column region and interpolation types
+#####
+
+struct Linear end
+struct Nearest end
+
+"""
+    Column(longitude, latitude; z=nothing, interpolation=Linear())
+
+Create a column region at a single horizontal point `(longitude, latitude)`.
+When used as a `Metadata` region, `native_grid` returns a single-column
+`RectilinearGrid` and `location` reduces horizontal dimensions to `Nothing`.
+
+Keyword Arguments
+=================
+
+- `z`: depth range tuple `(z_bottom, z_top)` for restricting downloads
+  (used by CopernicusMarine/GLORYS). Default: `nothing` (full depth).
+- `interpolation`: method for extracting data from the surrounding grid
+  cells. `Linear()` (default) bilinearly interpolates to the exact point;
+  `Nearest()` selects the closest grid cell.
+"""
+struct Column{X, Y, Z, I}
+    longitude :: X
+    latitude :: Y
+    z :: Z
+    interpolation :: I
+end
+
+Column(longitude, latitude; z=nothing, interpolation=Linear()) =
+    Column(longitude, latitude, z, interpolation)
+
+Base.summary(col::Column) = string("Column(longitude=", prettysummary(col.longitude),
+                                   ", latitude=", prettysummary(col.latitude), ")")
+
 struct DatewiseFilename{A}
     filenames :: A
 end
@@ -37,16 +73,16 @@ getfilename(f::DatewiseFilename, i) = f.filenames[i]
 getfilename(f::String, i) = f
 getfilename(::Nothing, i) = nothing
 
-struct Metadata{V, D, B, S, F}
+struct Metadata{V, D, R, S, F}
     name :: S
     dataset :: V
     dates :: D
-    bounding_box :: B
+    region :: R
     dir :: String
     filename :: F
 end
 
-Metadata(name, dataset, dates, bbox, dir) = Metadata(name, dataset, dates, bbox, dir, nothing)
+Metadata(name, dataset, dates, region, dir) = Metadata(name, dataset, dates, region, dir, nothing)
 
 is_three_dimensional(::Metadata) = true
 z_interfaces(md::Metadata) = z_interfaces(md.dataset)
@@ -58,7 +94,7 @@ latitude_interfaces(md::Metadata) = latitude_interfaces(md.dataset)
              dataset,
              dates = all_dates(dataset, variable_name),
              dir = default_download_directory(dataset),
-             bounding_box = nothing,
+             region = nothing,
              filename = nothing,
              start_date = nothing,
              end_date = nothing)
@@ -88,7 +124,9 @@ Keyword Arguments
               (`Dates.AbstractDateTime` or `CFTime.AbstractCFDateTime`). If outside the
                 date range of the dataset, the last allowable date is chosen. Default: nothing.
 
-- `bounding_box`: Specifies the bounds of the dataset. See [`BoundingBox`](@ref).
+- `region`: Specifies the spatial region of the dataset. Can be a [`BoundingBox`](@ref)
+            for a rectangular region, a [`Column`](@ref) for a single horizontal location,
+            or `nothing` for the full domain.
 
 - `filename`: The filename(s) for the dataset. If `nothing`, the filename is computed from
               the dataset type. Can be a `String` (single file for all dates) or a
@@ -100,7 +138,7 @@ function Metadata(variable_name;
                   dataset,
                   dates = all_dates(dataset, variable_name),
                   dir = default_download_directory(dataset),
-                  bounding_box = nothing,
+                  region = nothing,
                   filename = nothing,
                   start_date = nothing,
                   end_date = nothing)
@@ -117,10 +155,10 @@ function Metadata(variable_name;
     end
 
     if isnothing(filename)
-        filename = build_filename(dataset, variable_name, dates, bounding_box)
+        filename = build_filename(dataset, variable_name, dates, region)
     end
 
-    return Metadata(variable_name, dataset, dates, bounding_box, dir, filename)
+    return Metadata(variable_name, dataset, dates, region, dir, filename)
 end
 
 const AnyDateTime  = Union{AbstractCFDateTime, Dates.AbstractDateTime}
@@ -140,7 +178,7 @@ end
 """
     Metadatum(variable_name;
               dataset,
-              bounding_box = nothing,
+              region = nothing,
               date = first_date(dataset, variable_name),
               filename = nothing,
               dir = default_download_directory(dataset))
@@ -149,7 +187,7 @@ A specialized constructor for a [`Metadata`](@ref) object with a single date, re
 """
 function Metadatum(variable_name;
                    dataset,
-                   bounding_box = nothing,
+                   region = nothing,
                    date = first_date(dataset, variable_name),
                    filename = nothing,
                    dir = default_download_directory(dataset))
@@ -164,10 +202,10 @@ function Metadatum(variable_name;
     end
 
     if isnothing(filename)
-        filename = metadata_filename(dataset, variable_name, date, bounding_box)
+        filename = metadata_filename(dataset, variable_name, date, region)
     end
 
-    return Metadata(variable_name, dataset, date, bounding_box, dir, filename)
+    return Metadata(variable_name, dataset, date, region, dir, filename)
 end
 
 datestr(md::Metadata) = string(first(md.dates), "--", last(md.dates))
@@ -192,9 +230,9 @@ function Base.show(io::IO, metadata::Metadata)
     "├── dataset: ", prettysummary(metadata.dataset), '\n',
     "├── dates: ", prettysummary(metadata.dates), '\n')
 
-    bbox = metadata.bounding_box
-    if !isnothing(bbox)
-        print(io, "├── bounding_box: ", summary(bbox), '\n')
+    rgn = metadata.region
+    if !isnothing(rgn)
+        print(io, "├── region: ", summary(rgn), '\n')
     end
 
     print(io, "├── filename: $(metadata.filename)", '\n')
@@ -213,17 +251,17 @@ Base.summary(md::Metadata) = string(metaprefix(md),
 Base.length(metadata::Metadatum) = 1
 
 @propagate_inbounds Base.getindex(m::Metadata, i::Int) =
-    Metadata(m.name, m.dataset, m.dates[i], m.bounding_box, m.dir, getfilename(m.filename, i))
+    Metadata(m.name, m.dataset, m.dates[i], m.region, m.dir, getfilename(m.filename, i))
 
 @propagate_inbounds Base.first(m::Metadata) =
-    Metadata(m.name, m.dataset, m.dates[1], m.bounding_box, m.dir, getfilename(m.filename, 1))
+    Metadata(m.name, m.dataset, m.dates[1], m.region, m.dir, getfilename(m.filename, 1))
 
 @propagate_inbounds Base.last(m::Metadata) =
-    Metadata(m.name, m.dataset, m.dates[end], m.bounding_box, m.dir, getfilename(m.filename, lastindex(m.dates)))
+    Metadata(m.name, m.dataset, m.dates[end], m.region, m.dir, getfilename(m.filename, lastindex(m.dates)))
 
 @inline function Base.iterate(m::Metadata, i=1)
    if (i % UInt) - 1 < length(m)
-        return Metadata(m.name, m.dataset, m.dates[i], m.bounding_box, m.dir, getfilename(m.filename, i)), i + 1
+        return Metadata(m.name, m.dataset, m.dates[i], m.region, m.dir, getfilename(m.filename, i)), i + 1
     else
         return nothing
     end
@@ -293,6 +331,15 @@ Return the name used for the variable `metadata.name` in its raw dataset file.
 """
 function dataset_variable_name end
 
+"""
+    dataset_location(dataset, variable_name)
+
+Return the native field location `(LX, LY, LZ)` for `variable_name` in
+`dataset`. Defaults to `(Center, Center, Center)`. Only datasets with
+staggered variables (e.g., ECCO velocity fields) need to extend this.
+"""
+dataset_location(dataset, variable_name) = (Center, Center, Center)
+
 # Note: all_dates needs to be extended for any new dataset.
 """
     all_dates(metadata)
@@ -323,7 +370,7 @@ Return the stored filename(s) of `metadata`.
 metadata_filename(metadata::Metadata) = metadata.filename
 
 """
-    metadata_filename(dataset, name, date, bounding_box)
+    metadata_filename(dataset, name, date, region)
 
 Compute the filename for a single date. Extended by each dataset module.
 """
@@ -331,12 +378,12 @@ function metadata_filename end
 
 # Internal: build filename for construction.
 # Single date: delegate to metadata_filename
-build_filename(dataset, name, date, bounding_box) =
-    metadata_filename(dataset, name, date, bounding_box)
+build_filename(dataset, name, date, region) =
+    metadata_filename(dataset, name, date, region)
 
 # Multi-date: one filename per date, wrapped in DatewiseFilename
-build_filename(dataset, name, dates::AbstractArray, bounding_box) =
-    DatewiseFilename([metadata_filename(dataset, name, d, bounding_box) for d in dates])
+build_filename(dataset, name, dates::AbstractArray, region) =
+    DatewiseFilename([metadata_filename(dataset, name, d, region) for d in dates])
 
 """
     available_variables(metadata)
