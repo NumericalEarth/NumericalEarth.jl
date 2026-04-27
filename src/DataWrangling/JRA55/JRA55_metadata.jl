@@ -126,7 +126,7 @@ end
 metadata_filename(::RepeatYearJRA55, name, date, bounding_box) = "RYF." * JRA55_dataset_variable_names[name] * ".1990_1991.nc"
 build_filename(::RepeatYearJRA55, name, dates::AbstractArray, bounding_box) = "RYF." * JRA55_dataset_variable_names[name] * ".1990_1991.nc"
 
-function metadata_filename(::MultiYearJRA55, name, date, bounding_box)
+function metadata_filename(::MultiYearJRA55, name, date, region)
     shortname = JRA55_dataset_variable_names[name]
     year      = Dates.year(date)
     suffix    = "_input4MIPs_atmosphericState_OMIP_MRI-JRA55-do-1-5-0_gr_"
