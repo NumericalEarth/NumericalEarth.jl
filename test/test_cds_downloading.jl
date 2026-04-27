@@ -1,4 +1,5 @@
 include("runtests_setup.jl")
+include("download_utils.jl")
 
 using CDSAPI
 using Dates
@@ -17,18 +18,20 @@ start_date = DateTime(2005, 2, 16, 12)
     dataset = ERA5Hourly()
 
     # Use a small bounding box to reduce download time
-    bounding_box = NumericalEarth.DataWrangling.BoundingBox(longitude=(0, 5), latitude=(40, 45))
+    region = NumericalEarth.DataWrangling.BoundingBox(longitude=(0, 5), latitude=(40, 45))
 
     @testset "Download ERA5 temperature data" begin
         variable = :temperature
-        metadatum = Metadatum(variable; dataset, bounding_box, date=start_date)
+        metadatum = Metadatum(variable; dataset, region, date=start_date)
 
         # Clean up any existing file
         filepath = metadata_path(metadatum)
         isfile(filepath) && rm(filepath; force=true)
 
-        # Download the data
-        download_dataset(metadatum)
+        # Download the data (falls back to NumericalEarthArtifacts if CDS is unreachable)
+        download_dataset_with_fallback(filepath; dataset_name="ERA5Hourly $variable") do
+            download_dataset(metadatum)
+        end
         @test isfile(filepath)
 
         # Verify the NetCDF file structure
@@ -81,13 +84,13 @@ start_date = DateTime(2005, 2, 16, 12)
 
     @testset "ERA5 metadata properties" begin
         variable = :temperature
-        metadatum = Metadatum(variable; dataset, bounding_box, date=start_date)
+        metadatum = Metadatum(variable; dataset, region, date=start_date)
 
         # Test metadata properties
         @test metadatum.name == :temperature
         @test metadatum.dataset isa ERA5Hourly
         @test metadatum.dates == start_date
-        @test metadatum.bounding_box == bounding_box
+        @test metadatum.region == region
 
         # Test size (should be global ERA5 size with 1 time step)
         Nx, Ny, Nz, Nt = size(metadatum)
@@ -138,11 +141,13 @@ start_date = DateTime(2005, 2, 16, 12)
 
         @testset "Field creation from ERA5 on $A" begin
             variable = :temperature
-            metadatum = Metadatum(variable; dataset, bounding_box, date=start_date)
+            metadatum = Metadatum(variable; dataset, region, date=start_date)
 
-            # Download if not present
+            # Download if not present (falls back to NumericalEarthArtifacts if CDS is unreachable)
             filepath = metadata_path(metadatum)
-            isfile(filepath) || download_dataset(metadatum)
+            isfile(filepath) || download_dataset_with_fallback(filepath; dataset_name="ERA5Hourly $variable") do
+                download_dataset(metadatum)
+            end
 
             # Create a Field from the downloaded data
             ψ = Field(metadatum, arch)
@@ -165,11 +170,13 @@ start_date = DateTime(2005, 2, 16, 12)
 
         @testset "Setting a field from ERA5 metadata on $A" begin
             variable = :temperature
-            metadatum = Metadatum(variable; dataset, bounding_box, date=start_date)
+            metadatum = Metadatum(variable; dataset, region, date=start_date)
 
-            # Download if not present
+            # Download if not present (falls back to NumericalEarthArtifacts if CDS is unreachable)
             filepath = metadata_path(metadatum)
-            isfile(filepath) || download_dataset(metadatum)
+            isfile(filepath) || download_dataset_with_fallback(filepath; dataset_name="ERA5Hourly $variable") do
+                download_dataset(metadatum)
+            end
 
             # Create a target grid matching the bounding box region
             grid = LatitudeLongitudeGrid(arch;

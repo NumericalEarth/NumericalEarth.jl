@@ -28,6 +28,7 @@ WorldOceanAtlasTools = "04f20302-f1b9-11e8-29d9-7d841cb0a64a"
 
 [sources]
 NumericalEarth = {path = ".."}
+Breeze = {url = "https://github.com/NumericalEarth/Breeze.jl/", rev = "main"}
 
 [compat]
 Breeze = "0.4"
@@ -44,7 +45,7 @@ JLD2 = "0.4, 0.5, 0.6"
 KernelAbstractions = "0.9"
 MPI = "0.20"
 NCDatasets = "0.12, 0.13, 0.14"
-Oceananigans = "0.106"
+Oceananigans = "0.107, 0.108"
 PythonCall = "0.9.28"
 Reactant = "0.2.235"
 Scratch = "1"
