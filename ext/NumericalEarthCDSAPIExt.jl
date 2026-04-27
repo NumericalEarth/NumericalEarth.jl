@@ -77,7 +77,7 @@ function download_dataset(meta::ERA5Metadatum; skip_existing=true)
     )
 
     # Add area constraint from bounding box
-    area = build_era5_area(meta.bounding_box)
+    area = build_era5_area(meta.region)
     if !isnothing(area)
         request["area"] = area
     end
