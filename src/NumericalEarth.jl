@@ -35,6 +35,8 @@ export
     spatial_layout,
     Metadata,
     Metadatum,
+    BoundingBox,
+    Column, Linear, Nearest,
     ECCOMetadatum,
     EN4Metadatum,
     ETOPO2022,
@@ -61,9 +63,12 @@ export
     frazil_heat_flux, net_ocean_heat_flux, sea_ice_ocean_heat_flux, atmosphere_ocean_heat_flux,
     net_ocean_salinity_flux, sea_ice_ocean_salinity_flux, atmosphere_ocean_salinity_flux,
     net_ocean_freshwater_flux, sea_ice_ocean_freshwater_flux, atmosphere_ocean_freshwater_flux,
-    meridional_heat_transport
+    meridional_heat_transport,
+    location,
+    native_grid
 
 using Oceananigans
+import Oceananigans: location
 using Oceananigans.Operators: ℑxyᶠᶜᵃ, ℑxyᶜᶠᵃ
 using DataDeps
 

@@ -5,6 +5,7 @@ restoring, or validation.
 module DataWrangling
 
 export Metadata, Metadatum, DatewiseFilename, ECCOMetadatum, EN4Metadatum, all_dates, first_date, last_date
+export BoundingBox, Column, Linear, Nearest
 export WOAClimatology, WOAAnnual, WOAMonthly
 export metadata_time_step, metadata_epoch
 export LinearlyTaperedPolarMask
@@ -20,6 +21,7 @@ export MolePerKilogram, MolePerLiter, MillimolePerKilogram, MillimolePerLiter
 export MicromolePerKilogram, MicromolePerLiter, NanomolePerKilogram, NanomolePerLiter
 export ShiftSouth, AverageNorthSouth
 export test_dataset_contract, ContractReport, ContractCheck, is_conforming
+export native_grid
 
 using Oceananigans
 using Downloads
@@ -169,6 +171,7 @@ function z_interfaces end
 function longitude_interfaces end
 function latitude_interfaces end
 function reversed_vertical_axis end
+reversed_latitude_axis(dataset) = false
 function native_grid end
 function binary_data_grid end
 function binary_data_size end
