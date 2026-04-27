@@ -13,6 +13,14 @@
 
 const years = 365 * 24 * 3600
 
+# Ocean reference density and heat capacity used by `ocean_simulation`
+# (TEOS-10 defaults). The diagnostics `hfds`, `tauuo`, `tauvo` are stored
+# in kinematic units (m·K/s for heat, m²/s² for stress) because the
+# net-flux kernel divides by ρ and ρ·cp before writing the tracer/momentum
+# tendency. Multiply on read to recover CMIP-style W/m² and N/m².
+const ρ_ocean  = 1026.0
+const cp_ocean = 3991.86795711963
+
 # Each case is identified by its `prefix` (used to build the run directory
 # as `$(prefix)_run` and to match output filenames), a human-readable
 # `label`, and a per-case averaging window in seconds (`start_time`,
@@ -395,6 +403,61 @@ function dbm_mld_climatology_on_grid(grid;
     return out
 end
 
+# ── SCOW (Risien & Chelton 2008) wind-stress climatology ─────
+# QuikSCAT-based monthly climatology averaged over 1999-2009 (Risien &
+# Chelton, JPO 2008). Set SCOW_FILE to point at a local netCDF, or set
+# SCOW_URL to a direct download. Variable names default to "u_stress"
+# and "v_stress" (Risien & Chelton naming), overridable via SCOW_TAUX_VAR
+# and SCOW_TAUY_VAR. Scatterometer retrievals fail under sea ice, so the
+# climatology is missing above ~65° latitude.
+const SCOW_URL = get(ENV, "SCOW_URL", "https://numbat.coas.oregonstate.edu/scow/data/scow_monthly_clim.nc")
+
+function scow_wind_stress_on_grid(grid;
+                                  file     = get(ENV, "SCOW_FILE",       joinpath(obs_cache_dir, basename(SCOW_URL))),
+                                  taux_var = get(ENV, "SCOW_TAUX_VAR",   "u_stress"),
+                                  tauy_var = get(ENV, "SCOW_TAUY_VAR",   "v_stress"))
+    if !isfile(file)
+        try
+            @info "  Downloading SCOW wind-stress climatology from $SCOW_URL"
+            file = cached_download(SCOW_URL)
+        catch e
+            @warn "SCOW auto-download failed — skipping wind-stress reference. Provide a netCDF via SCOW_FILE." error=sprint(showerror, e)
+            return nothing, nothing
+        end
+    end
+    ds = NCDatasets.NCDataset(file)
+    taux_raw = Array(ds[taux_var][:, :, :])
+    tauy_raw = Array(ds[tauy_var][:, :, :])
+    lon_vec  = Float64.(Array(ds["lon"][:]))
+    lat_vec  = Float64.(Array(ds["lat"][:]))
+    close(ds)
+
+    # Collapse a month dimension to an annual mean if present.
+    annual_mean(f) = ndims(f) == 3 ? dropdims(mean(f, dims=3), dims=3) : f
+    τx_2d = annual_mean(Float64.(coalesce.(taux_raw, NaN)))
+    τy_2d = annual_mean(Float64.(coalesce.(tauy_raw, NaN)))
+
+    lon_edges = centers_to_edges(lon_vec)
+    lat_edges = centers_to_edges(lat_vec; clamp_to = (-90, 90))
+    Nlon, Nlat = length(lon_vec), length(lat_vec)
+
+    src_grid = LatitudeLongitudeGrid(CPU();
+        size = (Nlon, Nlat, 1),
+        longitude = lon_edges,
+        latitude  = lat_edges,
+        z = (0, 1))
+
+    src = Field{Center, Center, Nothing}(src_grid)
+    dst = Field{Center, Center, Nothing}(grid)
+    function regrid(data_2d)
+        clean = replace(data_2d, NaN => 0.0)
+        interior(src) .= reshape(clean, Nlon, Nlat, 1)
+        interpolate!(dst, src)
+        return dropdims(Array(interior(dst)); dims=3)
+    end
+    return regrid(τx_2d), regrid(τy_2d)
+end
+
 # ══════════════════════════════════════════════════════════════
 # Load surface diagnostics
 # ══════════════════════════════════════════════════════════════
@@ -423,10 +486,12 @@ function load_surface_case(run_dir, prefix; start_time = 0, stop_time = Inf)
     SST = dropdims(compute_time_mean(tos;  start_time, stop_time);  dims=3)
     SSS = dropdims(compute_time_mean(sos;  start_time, stop_time);  dims=3)
     SSH = dropdims(compute_time_mean(zos;  start_time, stop_time);  dims=3)
-    HF  = dropdims(compute_time_mean(hfds; start_time, stop_time);  dims=3)
-    FW  = dropdims(compute_time_mean(wfo;  start_time, stop_time);  dims=3)
-    τx  = dropdims(compute_time_mean(tauuo; start_time, stop_time); dims=3)
-    τy  = dropdims(compute_time_mean(tauvo; start_time, stop_time); dims=3)
+    # `hfds` stores a kinematic temperature flux (m·K/s); scale by ρ·cp to W/m².
+    # `tauuo`/`tauvo` store kinematic stresses (m²/s²); scale by ρ to N/m².
+    HF  = dropdims(compute_time_mean(hfds;  start_time, stop_time); dims=3) .* (ρ_ocean * cp_ocean)
+    FW  = dropdims(compute_time_mean(wfo;   start_time, stop_time); dims=3)
+    τx  = dropdims(compute_time_mean(tauuo; start_time, stop_time); dims=3) .* ρ_ocean
+    τy  = dropdims(compute_time_mean(tauvo; start_time, stop_time); dims=3) .* ρ_ocean
 
     SSH_sq  = dropdims(compute_time_mean(zossq; start_time, stop_time); dims=3)
     SSH_var = SSH_sq .- SSH .^ 2
@@ -467,6 +532,11 @@ function load_surface_case(run_dir, prefix; start_time = 0, stop_time = Inf)
     MLD_min_dbm = isnothing(dbm_mld) ? nothing : dropdims(minimum(dbm_mld; dims=3); dims=3)
     MLD_max_dbm = isnothing(dbm_mld) ? nothing : dropdims(maximum(dbm_mld; dims=3); dims=3)
 
+    # SCOW QuikSCAT wind-stress climatology (optional — set SCOW_FILE).
+    τx_scow, τy_scow = scow_wind_stress_on_grid(grid)
+    δτx_scow = isnothing(τx_scow) ? nothing : τx .- τx_scow
+    δτy_scow = isnothing(τy_scow) ? nothing : τy .- τy_scow
+
     for f in (SST, SSS, SSH, HF, FW, SIC_mean, SSH_var, MLD_min, MLD_max,
               δSST, δSSS, SSH_ecco, δSSH_ecco, τx, τy)
         mask_land!(f, land)
@@ -475,13 +545,17 @@ function load_surface_case(run_dir, prefix; start_time = 0, stop_time = Inf)
     !isnothing(SIC_sep)     && mask_land!(SIC_sep, land)
     !isnothing(MLD_min_dbm) && mask_land!(MLD_min_dbm, land)
     !isnothing(MLD_max_dbm) && mask_land!(MLD_max_dbm, land)
+    !isnothing(τx_scow)     && mask_land!(τx_scow,  land)
+    !isnothing(τy_scow)     && mask_land!(τy_scow,  land)
+    !isnothing(δτx_scow)    && mask_land!(δτx_scow, land)
+    !isnothing(δτy_scow)    && mask_land!(δτy_scow, land)
 
     return (; grid, Nx, Ny, Nz, land, surface_file,
               SST, SSS, SSH, HF, FW, SIC_mean, SSH_var,
               MLD_min, MLD_max, SIC_mar, SIC_sep,
               δSST, δSSS, SSH_ecco, δSSH_ecco,
               MLD_min_dbm, MLD_max_dbm,
-              τx, τy,
+              τx, τy, τx_scow, τy_scow, δτx_scow, δτy_scow,
               T_woa_on_grid, S_woa_on_grid)
 end
 
@@ -494,7 +568,7 @@ for c in cases
 end
 
 # ══════════════════════════════════════════════════════════════
-# Figures 1-7: Surface diagnostics
+# Figures 1-8: Surface diagnostics
 # ══════════════════════════════════════════════════════════════
 
 # Grid of per-case maps of a scalar field accessed by `getfield(D[lab], key)`.
@@ -596,11 +670,35 @@ for (i, lab) in enumerate(labels)
 end
 savefig(fig, "fig06_surface_fluxes.png")
 
-# Figure 7: SSH variance
-@info "Figure 7: SSH variance"
+# Figure 7: Wind stress and SCOW bias
+@info "Figure 7: Wind stress and SCOW bias"
+has_scow = any(lab -> !isnothing(D[lab].δτx_scow), labels)
+nrows = has_scow ? 4 : 2
+fig = Figure(size = (800 * length(labels), 450 * nrows), fontsize = 14)
+for (i, lab) in enumerate(labels)
+    d = D[lab]
+    panel!(fig, [1, 2i-1], d.τx;
+           title = "$lab: Zonal wind stress", colormap = :balance,
+           colorrange = (-0.3, 0.3), label = "N/m²")
+    panel!(fig, [2, 2i-1], d.τy;
+           title = "$lab: Meridional wind stress", colormap = :balance,
+           colorrange = (-0.3, 0.3), label = "N/m²")
+    if has_scow
+        !isnothing(d.δτx_scow) && panel!(fig, [3, 2i-1], d.δτx_scow;
+            title = "$lab: τx - SCOW", colormap = :balance,
+            colorrange = (-0.15, 0.15), label = "N/m²")
+        !isnothing(d.δτy_scow) && panel!(fig, [4, 2i-1], d.δτy_scow;
+            title = "$lab: τy - SCOW", colormap = :balance,
+            colorrange = (-0.15, 0.15), label = "N/m²")
+    end
+end
+savefig(fig, "fig07_wind_stress.png")
+
+# Figure 8: SSH variance
+@info "Figure 8: SSH variance"
 savefig(plot_field_grid(:SSH_var; title_suffix = "SSH variance", colormap = :magma,
                         colorrange = (0, 0.05), label = "m²"),
-        "fig07_ssh_variance.png")
+        "fig08_ssh_variance.png")
 
 # ══════════════════════════════════════════════════════════════
 # Sea-ice diagnostics
@@ -729,8 +827,8 @@ month_names  = ["J","F","M","A","M","J","J","A","S","O","N","D"]
 m2_to_Mkm2   = 1e-12
 m3_to_1e3km3 = 1e-12
 
-# Figure 8: SIE
-@info "Figure 8: SIE"
+# Figure 9: SIE
+@info "Figure 9: SIE"
 fig = Figure(size = (1200, 500), fontsize = 14)
 ax = Axis(fig[1, 1]; xlabel="Month", ylabel="SIE (Million km²)", title="Arctic SIE Climatology", xticks=(1:12, month_names))
 lines!(ax, 1:12, nsidc_arctic.extent_monthly; color=:black, linewidth=2, label="NSIDC")
@@ -744,10 +842,10 @@ for (i, lab) in enumerate(labels)
     lines!(ax, 1:12, ICE[lab].antarctic_extent_monthly .* m2_to_Mkm2; color=case_colors[i], label=lab)
 end
 axislegend(ax; position=:rt)
-savefig(fig, "fig08_sie.png")
+savefig(fig, "fig09_sie.png")
 
-# Figure 9: SIA
-@info "Figure 9: SIA"
+# Figure 10: SIA
+@info "Figure 10: SIA"
 fig = Figure(size = (1200, 500), fontsize = 14)
 ax = Axis(fig[1, 1]; xlabel="Month", ylabel="SIA (Million km²)", title="Arctic SIA Climatology", xticks=(1:12, month_names))
 lines!(ax, 1:12, nsidc_arctic.area_monthly; color=:black, linewidth=2, label="NSIDC")
@@ -761,10 +859,10 @@ for (i, lab) in enumerate(labels)
     lines!(ax, 1:12, ICE[lab].antarctic_area_monthly .* m2_to_Mkm2; color=case_colors[i], label=lab)
 end
 axislegend(ax; position=:rt)
-savefig(fig, "fig09_sia.png")
+savefig(fig, "fig10_sia.png")
 
-# Figure 10: Arctic volume
-@info "Figure 10: Arctic volume"
+# Figure 11: Arctic volume
+@info "Figure 11: Arctic volume"
 fig = Figure(size = (600, 500), fontsize = 14)
 ax = Axis(fig[1, 1]; xlabel="Month", ylabel="Ice volume (10³ km³)", title="Arctic sea-ice volume", xticks=(1:12, month_names))
 lines!(ax, 1:12, piomas_monthly; color=:black, linewidth=2, label="PIOMAS")
@@ -772,10 +870,10 @@ for (i, lab) in enumerate(labels)
     lines!(ax, 1:12, ICE[lab].arctic_volume_monthly .* m3_to_1e3km3; color=case_colors[i], label=lab)
 end
 axislegend(ax; position=:rt)
-savefig(fig, "fig10_arctic_volume.png")
+savefig(fig, "fig11_arctic_volume.png")
 
-# Figure 11: SIA time series
-@info "Figure 11: SIA time series"
+# Figure 12: SIA time series
+@info "Figure 12: SIA time series"
 fig = Figure(size = (1200, 500), fontsize = 14)
 ax = Axis(fig[1, 1]; xlabel="Time (years)", ylabel="SIA (Million km²)", title="Arctic sea-ice area")
 for (i, lab) in enumerate(labels)
@@ -789,10 +887,10 @@ for (i, lab) in enumerate(labels)
     lines!(ax, time_years, ICE[lab].antarctic_area .* m2_to_Mkm2; color=case_colors[i], label=lab)
 end
 axislegend(ax; position=:rt)
-savefig(fig, "fig11_sia_timeseries.png")
+savefig(fig, "fig12_sia_timeseries.png")
 
-# Figure 12: Arctic volume time series
-@info "Figure 12: Arctic volume time series"
+# Figure 13: Arctic volume time series
+@info "Figure 13: Arctic volume time series"
 fig = Figure(size = (600, 500), fontsize = 14)
 ax = Axis(fig[1, 1]; xlabel="Time (years)", ylabel="Ice volume (10³ km³)", title="Arctic sea-ice volume")
 for (i, lab) in enumerate(labels)
@@ -800,7 +898,7 @@ for (i, lab) in enumerate(labels)
     lines!(ax, time_years, ICE[lab].arctic_volume .* m3_to_1e3km3; color=case_colors[i], label=lab)
 end
 axislegend(ax; position=:rt)
-savefig(fig, "fig12_arctic_volume_timeseries.png")
+savefig(fig, "fig13_arctic_volume_timeseries.png")
 
 # ══════════════════════════════════════════════════════════════
 # Load time series and 3-D fields
@@ -871,11 +969,11 @@ let ts_futures = [(c.label,
 end
 
 # ══════════════════════════════════════════════════════════════
-# Figures 13-15: Time series and profiles
+# Figures 14-16: Time series and profiles
 # ══════════════════════════════════════════════════════════════
 
-# Figure 13: TKE
-@info "Figure 13: TKE and KE"
+# Figure 14: TKE
+@info "Figure 14: TKE and KE"
 fig = Figure(size = (900, 600), fontsize = 14)
 ax = Axis(fig[1, 1]; xlabel="Time (years)", ylabel="TKE (m²/s²)", title="Global-mean turbulent kinetic energy")
 for (i, lab) in enumerate(labels)
@@ -887,10 +985,10 @@ for (i, lab) in enumerate(labels)
     lines!(ax, TS[lab].tke_time_in_years, TS[lab].ke_mean; color=case_colors[i], label=lab)
 end
 axislegend(ax; position=:rb)
-savefig(fig, "fig13_tke.png")
+savefig(fig, "fig14_tke.png")
 
-# Figure 14: T and S drift
-@info "Figure 14: T and S drift"
+# Figure 15: T and S drift
+@info "Figure 15: T and S drift"
 fig = Figure(size = (1200, 450), fontsize = 14)
 ax = Axis(fig[1, 1]; xlabel="Time (years)", ylabel="ΔT (deg C)", title="Global-mean temperature drift")
 for (i, lab) in enumerate(labels)
@@ -904,10 +1002,10 @@ for (i, lab) in enumerate(labels)
     lines!(ax, d.time_in_years, d.salinity_mean .- d.salinity_mean[1]; color=case_colors[i], label=lab)
 end
 axislegend(ax; position=:lb)
-savefig(fig, "fig14_drift.png")
+savefig(fig, "fig15_drift.png")
 
-# Figure 15: Profiles
-@info "Figure 15: Profiles"
+# Figure 16: Profiles
+@info "Figure 16: Profiles"
 fig = Figure(size = (1000, 600), fontsize = 14)
 ax = Axis(fig[1, 1]; xlabel="Temperature (deg C)", ylabel="Depth (m)", title="Horizontal-mean temperature")
 for (i, lab) in enumerate(labels)
@@ -919,7 +1017,7 @@ for (i, lab) in enumerate(labels)
     lines!(ax, TS[lab].salinity_profile, TS[lab].depth; color=case_colors[i], label=lab)
 end
 ylims!(ax, (-5500, 0)); axislegend(ax; position=:rb)
-savefig(fig, "fig15_profiles.png")
+savefig(fig, "fig16_profiles.png")
 
 # ══════════════════════════════════════════════════════════════
 # Zonal-mean sections
@@ -999,15 +1097,15 @@ end
 latitude = collect(φnodes(latlon_grid, Center()))
 
 # ══════════════════════════════════════════════════════════════
-# Figures 16-17: Zonal means
+# Figures 17-18: Zonal means
 # ══════════════════════════════════════════════════════════════
 
 temperature_levels = -2:2:30
 salinity_levels    = 33:0.25:37
 buoyancy_levels    = range(-0.04, 0.02, length=13)
 
-# Figure 16: Zonal-mean T, S, b
-@info "Figure 16: Zonal means"
+# Figure 17: Zonal-mean T, S, b
+@info "Figure 17: Zonal means"
 fig = Figure(size = (600 * length(labels), 1200), fontsize = 14)
 for (i, lab) in enumerate(labels)
     zm = ZM[lab]
@@ -1033,10 +1131,10 @@ for (i, lab) in enumerate(labels)
     hm = heatmap!(ax, latitude, zm.depth, zm.kinetic_energy_zonal; colormap=:solar, nan_color=:lightgray)
     Colorbar(fig[4, 2i], hm; label="m/s²"); ylims!(ax, (-5500, 0))
 end
-savefig(fig, "fig16_zonal_mean.png")
+savefig(fig, "fig17_zonal_mean.png")
 
-# Figure 17: Zonal-mean drift
-@info "Figure 17: Zonal-mean drift"
+# Figure 18: Zonal-mean drift
+@info "Figure 18: Zonal-mean drift"
 fig = Figure(size = (600 * length(labels), 900), fontsize = 14)
 for (i, lab) in enumerate(labels)
     zm = ZM[lab]
@@ -1052,19 +1150,6 @@ for (i, lab) in enumerate(labels)
     hm = heatmap!(ax, latitude, zm.depth, zm.δbuoyancy_zonal; colormap=:balance, nan_color=:lightgray)
     Colorbar(fig[3, 2i], hm; label="m/s²"); ylims!(ax, (-5500, 0))
 end
-savefig(fig, "fig17_zonal_drift.png")
-
-# Figure 18: Wind stress
-@info "Figure 18: Wind stress"
-fig = Figure(size = (800 * length(labels), 900), fontsize = 14)
-for (i, lab) in enumerate(labels)
-    panel!(fig, [1, 2i-1], D[lab].τx;
-           title = "$lab: Zonal wind stress", colormap = :balance,
-           colorrange = (-0.3, 0.3), label = "N/m²")
-    panel!(fig, [2, 2i-1], D[lab].τy;
-           title = "$lab: Meridional wind stress", colormap = :balance,
-           colorrange = (-0.3, 0.3), label = "N/m²")
-end
-savefig(fig, "fig18_wind_stress.png")
+savefig(fig, "fig18_zonal_drift.png")
 
 @info "All 18 figures saved to $output_dir"
