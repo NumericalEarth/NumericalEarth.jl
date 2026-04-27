@@ -85,7 +85,7 @@ function metadata_url(metadatum::ORCA12Metadatum)
     end
 end
 
-function metadata_filename(::ORCA1, name, date, bounding_box)
+function metadata_filename(::ORCA1, name, date, region)
     if name == :mesh_mask
         return "eORCA1.2_mesh_mask.nc"
     elseif name == :bottom_height
@@ -95,7 +95,7 @@ function metadata_filename(::ORCA1, name, date, bounding_box)
     end
 end
 
-function metadata_filename(::ORCA12, name, date, bounding_box)
+function metadata_filename(::ORCA12, name, date, region)
     if name == :mesh_mask
         return "grid_mask_eORCA12-GO6.nc"
     elseif name == :bottom_height

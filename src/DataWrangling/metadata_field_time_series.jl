@@ -59,7 +59,8 @@ function FieldTimeSeries(metadata::Metadata, grid::AbstractGrid;
     end
 
     inpainting isa Int && (inpainting = NearestNeighborInpainting(inpainting))
-    backend = DatasetBackend(time_indices_in_memory, metadata; on_native_grid, inpainting, cache_inpainted_data)
+    is_native = grid == native_grid(metadata)
+    backend = DatasetBackend(time_indices_in_memory, metadata; on_native_grid=is_native, inpainting, cache_inpainted_data)
 
     loc = LX, LY, LZ = location(metadata)
     boundary_conditions = FieldBoundaryConditions(grid, instantiate.(loc))
@@ -74,11 +75,11 @@ function FieldTimeSeries(variable_name::Symbol;
                          dataset, dir,
                          architecture = CPU(),
                          start_date = first_date(dataset, variable_name),
-                         end_date = first_date(dataset, variable_name),
+                         end_date = last_date(dataset, variable_name),
                          kw...)
 
     native_dates = all_dates(dataset, variable_name)
     dates = compute_native_date_range(native_dates, start_date, end_date)
-    metadata = Metadata(variable_name, dataset, dates, dir)
+    metadata = Metadata(variable_name; dataset, dates, dir)
     return FieldTimeSeries(metadata, architecture; kw...)
 end

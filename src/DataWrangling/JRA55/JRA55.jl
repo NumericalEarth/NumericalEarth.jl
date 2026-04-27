@@ -25,6 +25,7 @@ using JLD2
 using Dates
 using Scratch
 
+using Oceananigans: location
 import Oceananigans.Fields: set!
 import Oceananigans.OutputReaders: new_backend, update_field_time_series!
 using Downloads: download
