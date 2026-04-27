@@ -403,39 +403,62 @@ function dbm_mld_climatology_on_grid(grid;
     return out
 end
 
-# ── SCOW (Risien & Chelton 2008) wind-stress climatology ─────
-# QuikSCAT-based monthly climatology averaged over 1999-2009 (Risien &
-# Chelton, JPO 2008). Set SCOW_FILE to point at a local netCDF, or set
-# SCOW_URL to a direct download. Variable names default to "u_stress"
-# and "v_stress" (Risien & Chelton naming), overridable via SCOW_TAUX_VAR
-# and SCOW_TAUY_VAR. Scatterometer retrievals fail under sea ice, so the
-# climatology is missing above ~65° latitude.
-const SCOW_URL = get(ENV, "SCOW_URL", "https://numbat.coas.oregonstate.edu/scow/data/scow_monthly_clim.nc")
+# ── NCEP/NCAR Reanalysis 1 wind-stress climatology ───────────
+# Long-term monthly mean (1991-2020) of surface momentum flux from the
+# NCEP/NCAR Reanalysis 1, hosted at NOAA PSL on the T62 Gaussian grid.
+# Variables `uflx`/`vflx` are upward momentum fluxes (positive away from
+# the surface), so the atmosphere-to-ocean stress is the negative of the
+# stored value. Override the URLs or local file paths via the env vars
+# below; latitudes are reordered ascending if the file stores them N→S.
+const NCEP_TAUU_URL = get(ENV, "NCEP_TAUU_URL", "https://downloads.psl.noaa.gov/Datasets/ncep.reanalysis.derived/surface_gauss/uflx.sfc.mon.ltm.1991-2020.nc")
+const NCEP_TAUV_URL = get(ENV, "NCEP_TAUV_URL", "https://downloads.psl.noaa.gov/Datasets/ncep.reanalysis.derived/surface_gauss/vflx.sfc.mon.ltm.1991-2020.nc")
 
-function scow_wind_stress_on_grid(grid;
-                                  file     = get(ENV, "SCOW_FILE",       joinpath(obs_cache_dir, basename(SCOW_URL))),
-                                  taux_var = get(ENV, "SCOW_TAUX_VAR",   "u_stress"),
-                                  tauy_var = get(ENV, "SCOW_TAUY_VAR",   "v_stress"))
-    if !isfile(file)
-        try
-            @info "  Downloading SCOW wind-stress climatology from $SCOW_URL"
-            file = cached_download(SCOW_URL)
-        catch e
-            @warn "SCOW auto-download failed — skipping wind-stress reference. Provide a netCDF via SCOW_FILE." error=sprint(showerror, e)
-            return nothing, nothing
-        end
+function ncep_wind_stress_on_grid(grid;
+                                  tauu_file = get(ENV, "NCEP_TAUU_FILE", joinpath(obs_cache_dir, basename(NCEP_TAUU_URL))),
+                                  tauv_file = get(ENV, "NCEP_TAUV_FILE", joinpath(obs_cache_dir, basename(NCEP_TAUV_URL))),
+                                  tauu_var  = get(ENV, "NCEP_TAUU_VAR",  "uflx"),
+                                  tauv_var  = get(ENV, "NCEP_TAUV_VAR",  "vflx"))
+    function ensure(file, url)
+        isfile(file) && return file
+        @info "  Downloading NCEP wind-stress climatology from $url"
+        return cached_download(url)
     end
-    ds = NCDatasets.NCDataset(file)
-    taux_raw = Array(ds[taux_var][:, :, :])
-    tauy_raw = Array(ds[tauy_var][:, :, :])
-    lon_vec  = Float64.(Array(ds["lon"][:]))
-    lat_vec  = Float64.(Array(ds["lat"][:]))
-    close(ds)
+    try
+        tauu_file = ensure(tauu_file, NCEP_TAUU_URL)
+        tauv_file = ensure(tauv_file, NCEP_TAUV_URL)
+    catch e
+        @warn "NCEP auto-download failed — skipping wind-stress reference. Provide netCDFs via NCEP_TAUU_FILE / NCEP_TAUV_FILE." error=sprint(showerror, e)
+        return nothing, nothing
+    end
 
-    # Collapse a month dimension to an annual mean if present.
+    function read_stress(file, var)
+        ds = NCDatasets.NCDataset(file)
+        raw = Array(ds[var])
+        lon_vec = Float64.(Array(ds["lon"][:]))
+        lat_vec = Float64.(Array(ds["lat"][:]))
+        close(ds)
+        # Drop singleton dims (some NCEP files include a length-1 level axis).
+        for d in reverse(findall(==(1), size(raw)))
+            raw = dropdims(raw; dims=d)
+        end
+        return Float64.(coalesce.(raw, NaN)), lon_vec, lat_vec
+    end
+
+    τu_raw, lon_vec, lat_vec = read_stress(tauu_file, tauu_var)
+    τv_raw, _, _             = read_stress(tauv_file, tauv_var)
+
+    # NCEP convention: positive upward (atmosphere gains momentum), so
+    # τ_atm→ocean is the negative of the stored flux.
     annual_mean(f) = ndims(f) == 3 ? dropdims(mean(f, dims=3), dims=3) : f
-    τx_2d = annual_mean(Float64.(coalesce.(taux_raw, NaN)))
-    τy_2d = annual_mean(Float64.(coalesce.(tauy_raw, NaN)))
+    τx_2d = -annual_mean(τu_raw)
+    τy_2d = -annual_mean(τv_raw)
+
+    # Gaussian latitudes are usually stored descending; flip to ascending.
+    if lat_vec[1] > lat_vec[end]
+        lat_vec = reverse(lat_vec)
+        τx_2d   = reverse(τx_2d; dims=2)
+        τy_2d   = reverse(τy_2d; dims=2)
+    end
 
     lon_edges = centers_to_edges(lon_vec)
     lat_edges = centers_to_edges(lat_vec; clamp_to = (-90, 90))
@@ -532,10 +555,10 @@ function load_surface_case(run_dir, prefix; start_time = 0, stop_time = Inf)
     MLD_min_dbm = isnothing(dbm_mld) ? nothing : dropdims(minimum(dbm_mld; dims=3); dims=3)
     MLD_max_dbm = isnothing(dbm_mld) ? nothing : dropdims(maximum(dbm_mld; dims=3); dims=3)
 
-    # SCOW QuikSCAT wind-stress climatology (optional — set SCOW_FILE).
-    τx_scow, τy_scow = scow_wind_stress_on_grid(grid)
-    δτx_scow = isnothing(τx_scow) ? nothing : τx .- τx_scow
-    δτy_scow = isnothing(τy_scow) ? nothing : τy .- τy_scow
+    # NCEP/NCAR Reanalysis wind-stress climatology (optional — override URLs/files via NCEP_* env vars).
+    τx_ncep, τy_ncep = ncep_wind_stress_on_grid(grid)
+    δτx_ncep = isnothing(τx_ncep) ? nothing : τx .- τx_ncep
+    δτy_ncep = isnothing(τy_ncep) ? nothing : τy .- τy_ncep
 
     for f in (SST, SSS, SSH, HF, FW, SIC_mean, SSH_var, MLD_min, MLD_max,
               δSST, δSSS, SSH_ecco, δSSH_ecco, τx, τy)
@@ -545,17 +568,17 @@ function load_surface_case(run_dir, prefix; start_time = 0, stop_time = Inf)
     !isnothing(SIC_sep)     && mask_land!(SIC_sep, land)
     !isnothing(MLD_min_dbm) && mask_land!(MLD_min_dbm, land)
     !isnothing(MLD_max_dbm) && mask_land!(MLD_max_dbm, land)
-    !isnothing(τx_scow)     && mask_land!(τx_scow,  land)
-    !isnothing(τy_scow)     && mask_land!(τy_scow,  land)
-    !isnothing(δτx_scow)    && mask_land!(δτx_scow, land)
-    !isnothing(δτy_scow)    && mask_land!(δτy_scow, land)
+    !isnothing(τx_ncep)     && mask_land!(τx_ncep,  land)
+    !isnothing(τy_ncep)     && mask_land!(τy_ncep,  land)
+    !isnothing(δτx_ncep)    && mask_land!(δτx_ncep, land)
+    !isnothing(δτy_ncep)    && mask_land!(δτy_ncep, land)
 
     return (; grid, Nx, Ny, Nz, land, surface_file,
               SST, SSS, SSH, HF, FW, SIC_mean, SSH_var,
               MLD_min, MLD_max, SIC_mar, SIC_sep,
               δSST, δSSS, SSH_ecco, δSSH_ecco,
               MLD_min_dbm, MLD_max_dbm,
-              τx, τy, τx_scow, τy_scow, δτx_scow, δτy_scow,
+              τx, τy, τx_ncep, τy_ncep, δτx_ncep, δτy_ncep,
               T_woa_on_grid, S_woa_on_grid)
 end
 
@@ -670,10 +693,10 @@ for (i, lab) in enumerate(labels)
 end
 savefig(fig, "fig06_surface_fluxes.png")
 
-# Figure 7: Wind stress and SCOW bias
-@info "Figure 7: Wind stress and SCOW bias"
-has_scow = any(lab -> !isnothing(D[lab].δτx_scow), labels)
-nrows = has_scow ? 4 : 2
+# Figure 7: Wind stress and NCEP bias
+@info "Figure 7: Wind stress and NCEP bias"
+has_ncep = any(lab -> !isnothing(D[lab].δτx_ncep), labels)
+nrows = has_ncep ? 4 : 2
 fig = Figure(size = (800 * length(labels), 450 * nrows), fontsize = 14)
 for (i, lab) in enumerate(labels)
     d = D[lab]
@@ -683,12 +706,12 @@ for (i, lab) in enumerate(labels)
     panel!(fig, [2, 2i-1], d.τy;
            title = "$lab: Meridional wind stress", colormap = :balance,
            colorrange = (-0.3, 0.3), label = "N/m²")
-    if has_scow
-        !isnothing(d.δτx_scow) && panel!(fig, [3, 2i-1], d.δτx_scow;
-            title = "$lab: τx - SCOW", colormap = :balance,
+    if has_ncep
+        !isnothing(d.δτx_ncep) && panel!(fig, [3, 2i-1], d.δτx_ncep;
+            title = "$lab: τx - NCEP", colormap = :balance,
             colorrange = (-0.15, 0.15), label = "N/m²")
-        !isnothing(d.δτy_scow) && panel!(fig, [4, 2i-1], d.δτy_scow;
-            title = "$lab: τy - SCOW", colormap = :balance,
+        !isnothing(d.δτy_ncep) && panel!(fig, [4, 2i-1], d.δτy_ncep;
+            title = "$lab: τy - NCEP", colormap = :balance,
             colorrange = (-0.15, 0.15), label = "N/m²")
     end
 end

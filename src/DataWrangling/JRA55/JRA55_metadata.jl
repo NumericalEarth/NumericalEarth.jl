@@ -59,8 +59,8 @@ function native_grid(metadata::JRA55Metadata, arch=CPU(); halo = (3, 3))
 
     longitude, latitude = jra55_native_interfaces(metadata_path(first(metadata)))
 
-    region = region.region
-    if !isnothing(bbox)
+    region = metadata.region
+    if !isnothing(region)
         longitude, Nx = restrict(region.longitude, longitude, Nx)
         latitude, Ny = restrict(region.latitude, latitude, Ny)
     end
