@@ -249,7 +249,15 @@ function test_dataset_contract(dataset::AbstractDataset;
     # --- Grid interfaces: need one path of (three *_interfaces) or a native_grid override ---
     push!(checks, _invoke(:longitude_interfaces, longitude_interfaces, (dataset,); required=true))
     push!(checks, _invoke(:latitude_interfaces, latitude_interfaces, (dataset,); required=true))
-    push!(checks, _invoke(:z_interfaces, z_interfaces, (dataset,); required=true))
+    # `z_interfaces` is the one *_interfaces method that legitimately varies per
+    # variable (e.g., station datasets where temperature and salinity sit on
+    # different depth grids). Probe it on the sample metadatum, which is the
+    # signature the runtime pipeline actually uses.
+    if !isnothing(sample_md)
+        push!(checks, _invoke(:z_interfaces, z_interfaces, (sample_md,); required=true, variable=sample_variable))
+    else
+        push!(checks, ContractCheck(:z_interfaces, :missing, "no sample metadatum available"; required=true))
+    end
 
     # --- Download contract ---
     if !isnothing(sample_md)
