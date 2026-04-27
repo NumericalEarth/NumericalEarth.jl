@@ -21,19 +21,24 @@ using NumericalEarth.DataWrangling:
     netrc_downloader,
     NearestNeighborInpainting,
     BoundingBox,
+    Column,
     metadata_path,
     GramPerKilogramMinus35,
     MicromolePerLiter,
     Metadata,
     Metadatum,
     download_progress,
-    InverseSign
+    InverseSign,
+    native_grid,
+    location,
+    compute_mask,
+    inpaint_mask!,
+    set_metadata_field!,
+    extract_column!
 
 using KernelAbstractions: @kernel, @index
 
 using Dates: year, month, day
-
-import Oceananigans: location
 
 import NumericalEarth.DataWrangling:
     default_download_directory,
@@ -42,6 +47,7 @@ import NumericalEarth.DataWrangling:
     download_dataset,
     conversion_units,
     dataset_variable_name,
+    dataset_location,
     metaprefix,
     longitude_interfaces,
     latitude_interfaces,
@@ -247,7 +253,7 @@ end
 metaprefix(::ECCOMetadata) = "ECCOMetadata"
 
 # File name generation specific to each dataset
-function metadata_filename(::ECCO4Monthly, name, date, bounding_box)
+function metadata_filename(::ECCO4Monthly, name, date, region)
     shortname = ECCO4_dataset_variable_names[name]
     yearstr   = string(Dates.year(date))
     monthstr  = string(Dates.month(date), pad=2)
@@ -260,7 +266,7 @@ ecco2_is_three_dimensional(name) =
     name == :u_velocity ||
     name == :v_velocity
 
-function metadata_filename(dataset::Union{ECCO2Daily, ECCO2Monthly}, name, date, bounding_box)
+function metadata_filename(dataset::Union{ECCO2Daily, ECCO2Monthly}, name, date, region)
     shortname = ECCO2_dataset_variable_names[name]
     yearstr   = string(Dates.year(date))
     monthstr  = string(Dates.month(date), pad=2)
@@ -278,7 +284,7 @@ end
 dataset_variable_name(data::Metadata{<:ECCO2Daily})   = ECCO2_dataset_variable_names[data.name]
 dataset_variable_name(data::Metadata{<:ECCO2Monthly}) = ECCO2_dataset_variable_names[data.name]
 dataset_variable_name(data::Metadata{<:ECCO4Monthly}) = ECCO4_dataset_variable_names[data.name]
-location(data::ECCOMetadata) = ECCO_location[data.name]
+dataset_location(::ECCODataset, name) = ECCO_location[name]
 
 is_three_dimensional(data::ECCOMetadata) =
     data.name == :temperature ||
@@ -364,5 +370,38 @@ end
 inpainted_metadata_path(metadata::ECCOMetadatum) = joinpath(metadata.dir, inpainted_metadata_filename(metadata))
 
 include("ECCO_atmosphere.jl")
+
+#####
+##### Column Field for ECCO datasets (which always download globally)
+#####
+
+using Oceananigans.BoundaryConditions: fill_halo_regions!
+
+const ECCOColumnMetadatum = Metadatum{<:ECCODataset, <:Any, <:Column}
+
+function Oceananigans.Fields.Field(metadata::ECCOColumnMetadatum, arch=CPU();
+                                   inpainting = default_inpainting(metadata),
+                                   mask = nothing,
+                                   halo = (3, 3, 3),
+                                   cache_inpainted_data = true)
+
+    download_dataset(metadata)
+    column_grid = native_grid(metadata, arch; halo)
+
+    # Build a full-grid Field without a region to load the global data
+    global_metadatum = Metadatum(metadata.name;
+                                 dataset = metadata.dataset,
+                                 date = metadata.dates)
+
+    intermediate_field = Field(global_metadatum, arch; inpainting, mask, halo, cache_inpainted_data)
+    fill_halo_regions!(intermediate_field)
+
+    # Extract the column
+    _, _, LZ = location(metadata)
+    column_field = Field{Nothing, Nothing, LZ}(column_grid)
+    extract_column!(column_field, intermediate_field, metadata.region)
+
+    return column_field
+end
 
 end # Module
