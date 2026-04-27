@@ -31,20 +31,14 @@ Base.size(::ContractFixtureFull, ::Symbol) = (2, 2, 2)
         @test r isa ContractReport
 
         # Every required method should be :missing
-        required_names = (:dataset_variable_name, :all_dates, :retrieve_data,
-                          :longitude_interfaces, :latitude_interfaces, :z_interfaces)
+        required_names = (:dataset_variable_name, :all_dates, :retrieve_data, :longitude_interfaces, :latitude_interfaces, :z_interfaces)
         for name in required_names
             c = only(filter(c -> c.name === name, r.checks))
             @test c.status === :missing
             @test c.required
         end
 
-        # spatial_layout should default to GriddedLatLon()
-        sl = only(filter(c -> c.name === :spatial_layout, r.checks))
-        @test sl.status === :default
-        @test occursin("GriddedLatLon", sl.detail)
-
-        # dataset_url, authenticate, download_file! should be :default
+        # authenticate and download_file! ship with defaults from DataWrangling
         for name in (:authenticate, :download_file!)
             c = only(filter(c -> c.name === name, r.checks))
             @test c.status === :default
@@ -62,12 +56,8 @@ Base.size(::ContractFixtureFull, ::Symbol) = (2, 2, 2)
         @test is_conforming(r)
     end
 
-    @testset "ECCO4Monthly reports as CONFORMING with defaults for layout" begin
+    @testset "ECCO4Monthly reports as CONFORMING" begin
         r = test_dataset_contract(ECCO4Monthly(); verbose=false)
-
-        sl = only(filter(c -> c.name === :spatial_layout, r.checks))
-        @test sl.status === :default
-        @test occursin("GriddedLatLon", sl.detail)
 
         required = filter(c -> c.required, r.checks)
         @test all(c -> c.status !== :missing, required)
