@@ -30,7 +30,7 @@ using NumericalEarth.DataWrangling:
     retrieve_data,
     metadata_filename, default_download_directory, metadata_path,
     available_variables, dataset_url,
-    centers_to_interfaces, default_inpainting, fill_gaps!,
+    centers_to_interfaces, default_inpainting,
     test_dataset_contract
 
 import NumericalEarth.DataWrangling:
@@ -111,10 +111,17 @@ is_three_dimensional(md::OSPMetadata)   = md.name in keys(OSP_PROFILE_VARIABLES)
 # ## Time axis (hardcoded)
 #
 # The OSP archive in this file runs from 2007-06-07 23:00 UTC to 2023-06-07 00:00 UTC at one-hour resolution.
-# Hardcoding the date range makes the dataset usable without first downloading the file just to read its time
-# axis.
+# A handful of hours are flagged as bad for at least one variable (most often the wind sensors went offline);
+# rather than keep those entries and patch them downstream, we list them in `OSP_OUTAGES` and remove them
+# from the date axis returned by `all_dates`. The list below covers the Oct 2012 demo window only — extend it
+# with the bad hours for any other window you simulate.
 
-all_dates(::OceanStationPapa, name) = DateTime(2007, 6, 7, 23) : Hour(1) : DateTime(2023, 6, 7, 0)
+const OSP_FULL_DATES = DateTime(2007, 6, 7, 23) : Hour(1) : DateTime(2023, 6, 7, 0)
+
+const OSP_OUTAGES = (DateTime(2012, 10, 10, 23),
+                     DateTime(2012, 10, 11, 0))
+
+all_dates(::OceanStationPapa, name) = [t for t in OSP_FULL_DATES if !(t in OSP_OUTAGES)]
 
 # ## Depth axes (hardcoded)
 #
@@ -280,9 +287,8 @@ fig
 #
 # The tutorial ends with a helper that assembles a full `PrescribedAtmosphere` from the buoy surface
 # variables. The implementation loads each surface variable as a `FieldTimeSeries` on a 1-cell column grid at
-# the mooring point and fills short observational gaps by linear interpolation in time via `fill_gaps!`. The
-# unit conversions registered through `conversion_units` above turn `Ta` into Kelvin, `Pa` into Pascal, and
-# `rain` into kg/m²/s automatically as the fields are populated.
+# the mooring point. The unit conversions registered through `conversion_units` above turn `Ta` into Kelvin,
+# `Pa` into Pascal, and `rain` into kg/m²/s automatically as the fields are populated.
 #
 # Specific humidity is the one tracer not directly reported by the buoy: it is derived from relative
 # humidity, pressure, and temperature via `Thermodynamics.q_vap_from_RH`. Everything is then handed to
@@ -292,8 +298,7 @@ fig
 function OceanStationPapaPrescribedAtmosphere(architecture = CPU(), FT = Float32;
                                               start_date = DateTime(2012, 10, 1),
                                               end_date   = DateTime(2012, 10, 15),
-                                              surface_layer_height = 2.5,
-                                              max_gap_hours = 72)
+                                              surface_layer_height = 2.5)
 
     dataset = OceanStationPapa()
     region  = Column(OSP_LONGITUDE, OSP_LATITUDE)
@@ -306,10 +311,8 @@ function OceanStationPapaPrescribedAtmosphere(architecture = CPU(), FT = Float32
                                    halo = (3,))
 
     function surface_fts(name)
-        md  = Metadata(name; dataset, region, start_date, end_date)
-        fts = FieldTimeSeries(md, surface_grid; time_indices_in_memory = length(md))
-        fill_gaps!(fts; max_gap = max_gap_hours)
-        return fts
+        md = Metadata(name; dataset, region, start_date, end_date)
+        return FieldTimeSeries(md, surface_grid; time_indices_in_memory = length(md))
     end
 
     ua   = surface_fts(:eastward_wind)
