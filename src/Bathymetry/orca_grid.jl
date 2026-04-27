@@ -191,9 +191,7 @@ function reconstruct_orca_mesh_from_CC_FF_points(λCC, φCC, λFF, φFF; radius)
     φCF  = similar(φCC, AFT)
     dev  = Oceananigans.Architectures.device(architecture(λFC))
 
-    launch_xy = KernelParameters(1:Nx, 1:Ny)
-
-    _reconstruct_λFC_φFC_λCF_φCF!(dev, (Nx, Ny), (16, 16))(λFC, φFC, λCF, φCF, λCC, φCC, λFFₒ, φFFₒ, Nx, Ny)
+    _reconstruct_λFC_φFC_λCF_φCF!(dev, (16, 16), (Nx, Ny))(λFC, φFC, λCF, φCF, λCC, φCC, λFFₒ, φFFₒ, Nx, Ny)
 
     e1u = similar(λCC, AFT)
     e2u = similar(λCC, AFT)
@@ -204,7 +202,7 @@ function reconstruct_orca_mesh_from_CC_FF_points(λCC, φCC, λFF, φFF; radius)
     e1t = similar(λCC, AFT)
     e2t = similar(λCC, AFT)
 
-    _reconstruct_e1_e2_metrics!(dev, (Nx, Ny), (16, 16))(e1u, e1v, e1f, e1t, e2u, e2v, e2f, e2t, λCC, φCC, λFFₒ, φFFₒ, λFC, φFC, λCF, φCF, radius, Nx, Ny)
+    _reconstruct_e1_e2_metrics!(dev, (16, 16), (Nx, Ny))(e1u, e1v, e1f, e1t, e2u, e2v, e2f, e2t, λCC, φCC, λFFₒ, φFFₒ, λFC, φFC, λCF, φCF, radius, Nx, Ny)
 
     AzCC = similar(λCC, AFT)
     AzFC = e1u .* e2u
@@ -212,8 +210,8 @@ function reconstruct_orca_mesh_from_CC_FF_points(λCC, φCC, λFF, φFF; radius)
     AzFF = similar(λCC, AFT)
 
     if Ny > 1
-        _reconstruct_Az_interior!(dev, (Nx, Ny), (16, 16))(AzCC, AzFF, λCC, φCC, λFFₒ, φFFₒ, radius, Nx, Ny)
-        _fill_AzCC_boundaries!(dev, Nx, 16)(AzCC, AzFF, Ny)
+        _reconstruct_Az_interior!(dev, (16, 16), (Nx, Ny))(AzCC, AzFF, λCC, φCC, λFFₒ, φFFₒ, radius, Nx, Ny)
+        _fill_AzCC_boundaries!(dev, 16, Nx)(AzCC, AzFF, Ny)
     else
         AzCC .= e1t .* e2t
         AzFF .= AzCC
@@ -248,8 +246,7 @@ function read_orca_staggered_mesh(ds; radius = Oceananigans.defaults.planet_radi
     orcaread(data, name) = orient_xy(read_2d_nemo_variable(data, name), Nx, Ny; name)
     shift_x(data) = shift_face_x(data, overlap)
 
-    # Face-y data is NOT pre-shifted here; halo_filled_data does the +1 y-shift
-    # after chop (matching the pre-refactor path so row 1 stays at zero).
+    # Face-y: no pre-shift here; halo_filled_data does the +1 y-shift after chop.
     if has_all_variables(ds, metrics)
         λCC, λFC, λCF, λFF = orcaread(ds, "glamt"), shift_x(orcaread(ds, "glamu")), orcaread(ds, "glamv"), shift_x(orcaread(ds, "glamf"))
         φCC, φFC, φCF, φFF = orcaread(ds, "gphit"), shift_x(orcaread(ds, "gphiu")), orcaread(ds, "gphiv"), shift_x(orcaread(ds, "gphif"))
@@ -305,10 +302,9 @@ function shift_face_x(data, overlap)
     return data[vcat(No, 1:Nx-1), :]
 end
 
-# NEMO V/F (Ny rows, north face of T[j]) → Oceananigans Face-y (Ny+1 rows,
-# south face of Center[k]): out[:, k] = in[:, k-1] for k=2..Ny+1. Row 1 is left
-# at zero (matches pre-refactor); metrics get overwritten by continue_south!,
-# coordinates stay zero (continue_south! is not called for λ/φ).
+# NEMO V/F (Ny rows) → Oceananigans Face-y (Ny+1 rows). Row 1 is zero so that
+# continue_south! fills metrics there while coordinates stay at zero, matching
+# the pre-refactor behavior exactly.
 function shift_face_y(data)
     Nx, Ny = size(data)
     shifted = similar(data, Nx, Ny + 1)
