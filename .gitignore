@@ -64,3 +64,6 @@ docs/src/literated/
 .CondaPkg
 CondaPkg.toml
 !docs/CondaPkg.toml
+
+# claude
+.claude
