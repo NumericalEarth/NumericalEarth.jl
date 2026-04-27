@@ -199,6 +199,29 @@ function binary_data_size end
 
 default_mask_value(dataset) = NaN
 
+"""
+    AbstractStaticDataset
+
+Supertype for datasets without a time dimension. Provides default no-op implementations for the date-related interface 
+(`all_dates`, `first_date`, `last_date`).
+"""
+abstract type AbstractStaticDataset end
+
+all_dates(::AbstractStaticDataset,  args...) = nothing
+first_date(::AbstractStaticDataset, args...) = nothing
+last_date(::AbstractStaticDataset,  args...) = nothing
+
+"""
+    AbstractStaticBathymetry <: AbstractStaticDataset
+
+Supertype for static, two-dimensional bathymetry datasets (e.g. ETOPO, GEBCO, IBCSO, IBCAO). 
+Adds defaults for the degenerate vertical axis and a variable-agnostic `Base.size`.
+"""
+abstract type AbstractStaticBathymetry <: AbstractStaticDataset end
+
+z_interfaces(::AbstractStaticBathymetry) = (0, 1)
+Base.size(dataset::AbstractStaticBathymetry, variable) = size(dataset)
+
 # Fundamentals
 include("metadata.jl")
 include("metadata_field.jl")

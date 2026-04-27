@@ -8,19 +8,15 @@ using Oceananigans.DistributedComputations: @root
 using Scratch
 using NCDatasets
 
-using ..DataWrangling: download_progress, Metadatum, metadata_path
+using ..DataWrangling: download_progress, Metadatum, metadata_path, AbstractStaticBathymetry
 
 import NumericalEarth.DataWrangling:
     metadata_filename,
     default_download_directory,
-    all_dates,
-    first_date,
-    last_date,
     dataset_variable_name,
     download_dataset,
     longitude_interfaces,
     latitude_interfaces,
-    z_interfaces,
     reversed_vertical_axis,
     validate_dataset_coverage
 
@@ -46,7 +42,7 @@ resolution on first use.
 Reference: Jakobsson et al. (2024), https://doi.org/10.1038/s41597-024-04278-w
 Data source: https://www.gebco.net/data-products/gridded-bathymetry-data/arctic-ocean/
 """
-struct IBCAOv5 end
+struct IBCAOv5 <: AbstractStaticBathymetry end
 
 default_download_directory(::IBCAOv5) = download_IBCAO_cache
 reversed_vertical_axis(::IBCAOv5) = false
@@ -57,14 +53,6 @@ latitude_interfaces(::IBCAOv5) = (64, 90)
 
 # 0.01° resolution: 36000 × 2600
 Base.size(::IBCAOv5) = (36000, 2600, 1)
-Base.size(dataset::IBCAOv5, variable) = size(dataset)
-
-all_dates(::IBCAOv5, args...) = nothing
-first_date(::IBCAOv5, args...) = nothing
-last_date(::IBCAOv5, args...) = nothing
-
-# Bathymetry is 2D; z_interfaces is a placeholder
-z_interfaces(::IBCAOv5) = (0, 1)
 
 const IBCAOMetadatum = Metadatum{<:IBCAOv5}
 

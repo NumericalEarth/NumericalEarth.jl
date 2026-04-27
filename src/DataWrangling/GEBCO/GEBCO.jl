@@ -8,19 +8,15 @@ using Oceananigans
 using Oceananigans.DistributedComputations: @root
 using Scratch
 
-using ..DataWrangling: download_progress, Metadatum, metadata_path
+using ..DataWrangling: download_progress, Metadatum, metadata_path, AbstractStaticBathymetry
 
 import NumericalEarth.DataWrangling:
     metadata_filename,
     default_download_directory,
-    all_dates,
-    first_date,
-    last_date,
     dataset_variable_name,
     download_dataset,
     longitude_interfaces,
     latitude_interfaces,
-    z_interfaces,
     reversed_vertical_axis
 
 download_GEBCO_cache::String = ""
@@ -44,7 +40,7 @@ providing elevation data on a 15 arc-second interval grid.
 Reference: GEBCO Compilation Group (2024) GEBCO 2024 Grid
 Data source: https://www.gebco.net/data_and_products/gridded_bathymetry_data/
 """
-struct GEBCO2024 end
+struct GEBCO2024 <: AbstractStaticBathymetry end
 
 default_download_directory(::GEBCO2024) = download_GEBCO_cache
 reversed_vertical_axis(::GEBCO2024) = false
@@ -57,14 +53,6 @@ latitude_interfaces(::GEBCO2024) = (-90, 90)
 # 360° / (15/3600)° = 86400 points in longitude
 # 180° / (15/3600)° = 43200 points in latitude
 Base.size(::GEBCO2024) = (86400, 43200, 1)
-Base.size(dataset::GEBCO2024, variable) = size(dataset)
-
-all_dates(::GEBCO2024, args...) = nothing
-first_date(::GEBCO2024, args...) = nothing
-last_date(::GEBCO2024, args...) = nothing
-
-# Bathymetry is 2D, so z_interfaces is just a placeholder
-z_interfaces(::GEBCO2024) = (0, 1)
 
 const GEBCOMetadatum = Metadatum{<:GEBCO2024}
 
