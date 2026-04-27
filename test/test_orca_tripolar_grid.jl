@@ -1,4 +1,5 @@
 include("runtests_setup.jl")
+include("download_utils.jl")
 
 using NumericalEarth
 using NumericalEarth.DataWrangling: download_dataset, metadata_path
