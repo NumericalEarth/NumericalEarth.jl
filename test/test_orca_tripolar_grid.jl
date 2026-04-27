@@ -14,6 +14,17 @@ orca_datasets = (ORCA1, ORCA2)#, ORCA12)
 orca_sizes = ((362, 332), (180, 148))#, (4322, 3606))
 bathymetry_names = ("Bathymetry", "bathy_metry")#, "bottom_height")
 
+# Pre-download ORCA mesh_mask and bathymetry through the artifacts fallback so
+# subsequent ORCAGrid(...) calls find the files locally even when Zenodo is down.
+for dataset in orca_datasets
+    for name in (:mesh_mask, :bottom_height)
+        md = Metadatum(name; dataset=dataset())
+        download_dataset_with_fallback(metadata_path(md); dataset_name="$dataset $name") do
+            download_dataset(md)
+        end
+    end
+end
+
 for (n, DATASET) in enumerate(orca_datasets)
     dataset = DATASET()
     Nx0, Ny0 = orca_sizes[n]
