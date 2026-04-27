@@ -76,7 +76,7 @@ function update_net_ocean_fluxes!(coupled_model, ocean_model, grid)
 end
 
 @inline get_land_freshwater_flux(i, j, ::Nothing) = 0
-@inline get_land_freshwater_flux(i, j, flux) = @inbounds flux[i, j, 1]
+Base.@propagate_inbounds get_land_freshwater_flux(i, j, flux) = flux[i, j, 1]
 
 @kernel function _assemble_net_ocean_fluxes!(net_ocean_fluxes,
                                              penetrating_radiation,

@@ -1,3 +1,8 @@
+# Currently `freshwater_flux` is the only state held here because river runoff
+# and iceberg calving are the only land→ocean couplings we use. Atmosphere--land
+# coupling would require additional fields (e.g. albedo, skin temperature); see
+# https://github.com/NumericalEarth/NumericalEarth.jl/issues/30 for the related
+# discussion of moving surface albedo to a radiation component.
 mutable struct PrescribedLand{G, T, F, TI}
     grid :: G
     clock :: Clock{T}
@@ -20,15 +25,22 @@ function Base.show(io::IO, pl::PrescribedLand)
 end
 
 """
-    PrescribedLand(freshwater_flux; clock=Clock{Float64}(time=0))
+    PrescribedLand(freshwater_flux; clock=nothing)
 
 Return a `PrescribedLand` component from a `NamedTuple` of `FieldTimeSeries`
 representing freshwater fluxes (e.g. rivers, icebergs).
+
+If `clock` is not provided, defaults to a `Clock` whose time type matches the
+element type of `freshwater_flux`.
 """
-function PrescribedLand(freshwater_flux; clock=Clock{Float64}(time=0))
+function PrescribedLand(freshwater_flux; clock=nothing)
     first_flux = first(freshwater_flux)
     grid = first_flux.grid
     times = first_flux.times
+
+    if isnothing(clock)
+        clock = Clock{eltype(first_flux)}(time=0)
+    end
 
     land = PrescribedLand(grid, clock, freshwater_flux, times)
     update_state!(land)

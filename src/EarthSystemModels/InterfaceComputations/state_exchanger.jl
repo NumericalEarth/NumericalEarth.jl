@@ -1,8 +1,22 @@
+"""
+    ComponentExchanger(component, exchange_grid)
+
+Holds a regridder and a buffer of `state` fields used to bring data from a
+component (atmosphere, land, ocean, sea ice) onto a shared `exchange_grid`,
+where atmosphere--ocean and atmosphere--sea-ice fluxes are computed.
+For atmosphere--land coupling the regridder is typically trivial.
+"""
 struct ComponentExchanger{S, EX}
     state :: S
     regridder :: EX
 end
 
+"""
+    StateExchanger(grid, atmosphere, land, ocean, sea_ice)
+
+Container for one `ComponentExchanger` per component. The `grid` is the shared
+exchange grid onto which each component's state is regridded each time step.
+"""
 struct StateExchanger{G, A, L, O, S}
     grid :: G
     atmosphere :: A
