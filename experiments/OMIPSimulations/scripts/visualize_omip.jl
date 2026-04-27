@@ -4,29 +4,28 @@
 # Usage:
 #     julia --project=.. visualize_omip.jl [output_dir]
 #
-# Edit the `cases`, `start_time`, `stop_time` below before running.
+# Edit the `cases` below before running. Each case carries its own
+# averaging window via `start_time` and `stop_time`.
 
 # ══════════════════════════════════════════════════════════════
 # Configuration
 # ══════════════════════════════════════════════════════════════
 
+const years = 365 * 24 * 3600
+
 # Each case is identified by its `prefix` (used to build the run directory
-# as `$(prefix)_run` and to match output filenames) and a human-readable
-# `label`. Any number of cases is supported — per-case heatmap figures lay
-# out one column per case.
+# as `$(prefix)_run` and to match output filenames), a human-readable
+# `label`, and a per-case averaging window in seconds (`start_time`,
+# `stop_time`). Any number of cases is supported, with per-case heatmap
+# figures laying out one column per case.
 cases = [
-    (prefix = "orca_corrected_snow_cb0.12_ksymm500",            label = "ORCA GM500"),
-    (prefix = "halfdegree_corrected_snow_cb0.01_kskew0_ksymm0", label = "Half Degree"), 
-    (prefix = "orca_corrected_snow_cb0.06_kskew0_ksymm0",       label = "ORCA NOGM"),    
-    (prefix = "orca_corrected_snow_cb0.06_kskew1000_ksymm1000", label = "ORCA GM1000") 
+    (prefix = "orca_corrected_snow_cb0.12_ksymm500",            label = "ORCA GM500",  start_time = 15 * years, stop_time = Inf),
+    (prefix = "halfdegree_corrected_snow_cb0.01_kskew0_ksymm0", label = "Half Degree", start_time = 15 * years, stop_time = Inf),
+    (prefix = "orca_corrected_snow_cb0.06_kskew0_ksymm0",       label = "ORCA NOGM",   start_time = 15 * years, stop_time = Inf),
+    (prefix = "orca_corrected_snow_cb0.06_kskew1000_ksymm1000", label = "ORCA GM1000", start_time = 15 * years, stop_time = Inf),
 ]
 
 run_dir_for(prefix) = "$(prefix)_run"
-
-const years = 365 * 24 * 3600
-
-start_time = 15 * years
-stop_time  = Inf
 
 output_dir = length(ARGS) >= 1 ? ARGS[1] : "figures"
 
@@ -485,7 +484,8 @@ D = Dict{String, Any}()
 labels = [c.label for c in cases]
 for c in cases
     @info "Loading surface: $(c.label)..."
-    D[c.label] = load_surface_case(run_dir_for(c.prefix), c.prefix; start_time, stop_time)
+    D[c.label] = load_surface_case(run_dir_for(c.prefix), c.prefix;
+                                    start_time = c.start_time, stop_time = c.stop_time)
 end
 
 # ══════════════════════════════════════════════════════════════
@@ -674,7 +674,8 @@ end
 ICE = Dict{String, Any}()
 let ice_futures = [(c.label,
                     Threads.@spawn compute_ice_diagnostics(run_dir_for(c.prefix), c.prefix, D[c.label].grid;
-                                                            start_time, stop_time))
+                                                            start_time = c.start_time,
+                                                            stop_time  = c.stop_time))
                    for c in cases]
     for (lab, fut) in ice_futures
         @info "Computing sea-ice diagnostics for $lab..."
@@ -855,7 +856,8 @@ end
 TS = Dict{String, Any}()
 let ts_futures = [(c.label,
                    Threads.@spawn load_timeseries_case(run_dir_for(c.prefix), c.prefix, D[c.label].grid;
-                                                       start_time, stop_time))
+                                                       start_time = c.start_time,
+                                                       stop_time  = c.stop_time))
                   for c in cases]
     for (lab, fut) in ts_futures
         @info "Loading time series: $lab..."
@@ -962,6 +964,8 @@ for c in cases
     bo_fts = FieldTimeSeries(fields_file, "bo";  backend = InMemory(10))
     eo_fts = FieldTimeSeries(fields_file, "tke"; backend = InMemory(10))
 
+    start_time = c.start_time
+    stop_time  = c.stop_time
     temperature_mean     = compute_time_mean(to_fts; start_time, stop_time)
     salinity_mean        = compute_time_mean(so_fts; start_time, stop_time)
     buoyancy_mean        = compute_time_mean(bo_fts; start_time, stop_time)
