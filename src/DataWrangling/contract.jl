@@ -212,9 +212,6 @@ function test_dataset_contract(dataset::AbstractDataset;
 
     checks = ContractCheck[]
 
-    # --- Trait ---
-    push!(checks, _invoke(:spatial_layout, spatial_layout, (dataset,); classify_default=true))
-
     # --- Metadatum-construction prerequisites ---
     push!(checks, _check_method(:default_download_directory, default_download_directory, (typeof(dataset),); required=true))
     if !isnothing(sample_variable) && !isnothing(sample_date)

@@ -11,7 +11,7 @@ export metadata_time_step, metadata_epoch
 export LinearlyTaperedPolarMask
 export DatasetRestoring, SurfaceFluxRestoring
 export ERA5Hourly, ERA5Monthly
-export AbstractDataset, SpatialLayout, GriddedLatLon, StationColumn, spatial_layout
+export AbstractDataset
 export dataset_url, authenticate, download_file!, download_dataset
 export preprocess_data
 export conversion_units, convert_units, mangle
@@ -29,7 +29,7 @@ using Printf
 using Downloads
 
 #####
-##### AbstractDataset and the SpatialLayout trait
+##### AbstractDataset
 #####
 
 """
@@ -40,44 +40,11 @@ machinery. Third-party packages define concrete dataset types by subtyping
 `AbstractDataset` and implementing the methods listed in the developer
 guide. A minimum-viable dataset implements `dataset_variable_name`,
 `all_dates`, `retrieve_data`, and either a native-grid constructor or the
-three `*_interfaces` functions.
+three `*_interfaces` functions. Single-column ("station") datasets
+additionally override `native_grid` and `set!` directly on
+`::Metadata{<:DatasetType}`; see the Ocean Station Papa worked example.
 """
 abstract type AbstractDataset end
-
-"""
-    SpatialLayout
-
-Supertype for the spatial-layout trait that describes how a dataset lives
-in space. Concrete subtypes (`GriddedLatLon`, `StationColumn`) drive
-pipeline dispatch for grid construction and field population.
-"""
-abstract type SpatialLayout end
-
-"""
-    GriddedLatLon()
-
-Spatial-layout trait for datasets defined on a latitude-longitude grid
-(global or regional with a bounding box). This is the default for
-`AbstractDataset`.
-"""
-struct GriddedLatLon <: SpatialLayout end
-
-"""
-    StationColumn()
-
-Spatial-layout trait for single-column station datasets (e.g. moorings,
-towers). Datasets with this layout have a `RectilinearGrid{Flat, Flat,
-Bounded}` native grid at one fixed `(longitude, latitude)` point.
-"""
-struct StationColumn <: SpatialLayout end
-
-"""
-    spatial_layout(dataset)
-
-Return the [`SpatialLayout`](@ref) of `dataset`. Defaults to `GriddedLatLon()`
-for any [`AbstractDataset`](@ref). Override this for station / column datasets.
-"""
-spatial_layout(::AbstractDataset) = GriddedLatLon()
 
 #####
 ##### Download contract: generic functions + identity defaults

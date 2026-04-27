@@ -1,9 +1,10 @@
 include("runtests_setup.jl")
 
-# Exercises the OceanStationPapa worked example in docs/src/developers/, which
-# demonstrates the StationColumn extension API from first principles.
-# Including the example script here guarantees it stays runnable as the API
-# evolves; any breakage surfaces in CI rather than at doc-build time.
+# Exercises the OceanStationPapa worked example in docs/src/developers/,
+# which shows how to plug a station dataset into the Metadata machinery via
+# `native_grid` + `set!` overrides. Including the example script here
+# guarantees it stays runnable as the API evolves; any breakage surfaces in
+# CI rather than at doc-build time.
 
 const OSP_EXAMPLE_PATH = joinpath(@__DIR__, "..", "docs", "src", "developers", "ocean_station_papa.jl")
 
@@ -21,11 +22,6 @@ using NumericalEarth.DataWrangling: test_dataset_contract, is_conforming, Metada
     @testset "conformance" begin
         report = test_dataset_contract(OceanStationPapa(); verbose=false)
         @test is_conforming(report)
-
-        # StationColumn should be declared (not default)
-        sl = only(filter(c -> c.name === :spatial_layout, report.checks))
-        @test sl.status === :ok
-        @test occursin("StationColumn", sl.detail)
 
         # dataset_url should be defined
         u = only(filter(c -> c.name === :dataset_url, report.checks))

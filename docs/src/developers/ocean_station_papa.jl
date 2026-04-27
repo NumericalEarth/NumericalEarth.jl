@@ -4,16 +4,20 @@
 # plugs into NumericalEarth's Metadata machinery through the public extension API.
 # Ocean Station Papa (OSP) is a moored buoy at (−144.9°E, 50.1°N) in the North-East
 # Pacific that has been producing long time-series of ocean and surface atmospheric
-# observations since 2007. It is a *station* dataset, that is, a single water column
-# and not a global grid, and for this reason it is the natural case study for the
-# `StationColumn` spatial-layout trait.
+# observations since 2007. The OSP file is a single water column rather than a
+# global grid, and for this reason it is the natural case study for the `Column`
+# region: the user wraps the metadata in `region = Column(longitude, latitude)`
+# and the generic field pipeline does the rest.
 #
 # The goal of the tutorial consists in showing that a station dataset can be
-# implemented from outside the package, by subtyping `AbstractDataset`, declaring
-# a `StationColumn` spatial layout, and implementing a small, documented set of
-# methods. The generic field-construction pipeline, including vertical-only
-# interpolation and NaN-skipping, is then inherited automatically; no custom
-# `set!` or `native_grid` method is needed.
+# implemented from outside the package, by subtyping `AbstractDataset` and
+# providing a small, documented set of dataset interface methods. No
+# `native_grid` or `set!` override is needed: when the user wraps the
+# metadata with `region = Column(longitude, latitude)`, the generic
+# `Field(::Metadatum)` path reads the (1, 1, Nz) file into a degenerate
+# intermediate lat-lon grid and extracts the column. NaN sentinels (from QC
+# masking) are filled vertically inside `retrieve_data` so the data leaves
+# the dataset clean.
 #
 # The tutorial is organised as follows. In the first part we implement the
 # `OceanStationPapa` dataset and verify that it satisfies the contract via
@@ -31,18 +35,19 @@
 # axis (`all_dates`), the disk I/O (`retrieve_data`), the native grid interfaces
 # (`longitude_interfaces`, `latitude_interfaces`, `z_interfaces`), and the
 # Metadata-construction prerequisites (`default_download_directory`,
-# `metadata_filename`, `Base.size(::Dataset, ::Symbol)`). Overriding
-# `spatial_layout` to `StationColumn()` is what switches the pipeline to the
-# single-column path; `dataset_url` enables the default download orchestrator;
-# `conversion_units` and `preprocess_data` handle per-variable cleanup.
+# `metadata_filename`, `Base.size(::Dataset, ::Symbol)`). `dataset_url`
+# enables the default download orchestrator; `conversion_units` and
+# `preprocess_data` handle per-variable cleanup; `dataset_location` reports
+# where each variable lives on the `(Center, Face)` lattice.
 
 using NumericalEarth
 using NumericalEarth.DataWrangling:
-    AbstractDataset, StationColumn, spatial_layout,
-    Metadata, Metadatum,
+    AbstractDataset,
+    Metadata, Metadatum, Column,
     dataset_variable_name, all_dates,
     longitude_interfaces, latitude_interfaces, z_interfaces,
-    is_three_dimensional, reversed_vertical_axis, location,
+    is_three_dimensional, reversed_vertical_axis,
+    dataset_location,
     conversion_units, Celsius, Millibar, MillimetersPerHour,
     preprocess_data, retrieve_data,
     metadata_filename, default_download_directory, metadata_path,
@@ -52,11 +57,12 @@ using NumericalEarth.DataWrangling:
 import NumericalEarth.DataWrangling:
     dataset_variable_name, all_dates,
     longitude_interfaces, latitude_interfaces, z_interfaces,
-    is_three_dimensional, reversed_vertical_axis, location,
+    is_three_dimensional, reversed_vertical_axis,
+    dataset_location,
     conversion_units,
     preprocess_data, retrieve_data,
     metadata_filename, default_download_directory,
-    available_variables, dataset_url, spatial_layout,
+    available_variables, dataset_url,
     default_inpainting
 
 using NumericalEarth.Atmospheres:
@@ -80,13 +86,6 @@ using Thermodynamics: q_vap_from_RH, Liquid
 
 struct OceanStationPapa <: AbstractDataset end
 
-# The mooring is at a single point, and for this reason we declare a
-# `StationColumn` spatial layout. This single line instructs the generic
-# pipeline to build a `RectilinearGrid(Flat, Flat, Bounded)` native grid and
-# to regrid with vertical-only, NaN-skipping interpolation.
-
-spatial_layout(::OceanStationPapa) = StationColumn()
-
 # ## The file store
 #
 # The archive is a single netCDF file hosted on AWS. We cache it with
@@ -109,7 +108,7 @@ end
 
 default_download_directory(::OceanStationPapa) = _download_cache
 
-metadata_filename(::OceanStationPapa, name, date, bounding_box) = OSP_FILENAME
+metadata_filename(::OceanStationPapa, name, date, region) = OSP_FILENAME
 
 dataset_url(::Metadatum{<:OceanStationPapa}) = OSP_URL
 
@@ -151,24 +150,27 @@ const OSPMetadatum   = Metadatum{<:OceanStationPapa}
 
 dataset_variable_name(md::OSPMetadata) = OSP_VARIABLE_NAMES[md.name]
 
-location(::OSPMetadata) = (Center, Center, Center)
+# Both profile variables and surface scalars live at cell centers in z.
+# Surface scalars are conventionally 0-D, but the OSP file stores them as
+# (1, 1, 1, t); we treat that single cell as a 1-cell column at z ∈ (-1, 0).
+# `Center` for the horizontal locations is then reduced to `Nothing` by
+# `restrict_location` once the user wraps the metadata in `region =
+# Column(...)` (see below).
+
+dataset_location(::OceanStationPapa, name) = (Center, Center, Center)
 
 is_three_dimensional(md::OSPMetadata) = md.name in keys(OSP_PROFILE_VARIABLES)
 
-# The netCDF archive stores depths shallow-first, whereas the grid z-axis is
-# bottom-to-top; `reversed_vertical_axis = true` tells the generic pipeline to
-# flip the vertical dimension of the retrieved array, so the user does not
-# need to think about it in `retrieve_data`.
+# The netCDF archive stores depths shallow-first, whereas the grid z-axis is bottom-to-top; `reversed_vertical_axis = true` tells 
+# the generic pipeline to flip the vertical dimension of the retrieved array, so the user does not  need to think about it in `retrieve_data`.
 
 reversed_vertical_axis(::OceanStationPapa) = true
 
 # ## Unit conversions
 #
-# OSP reports air temperature in °C, sea-level pressure in mbar, and rain rate
-# in mm/hr, while NumericalEarth expects SI internally. Scalar conversions are
-# registered by returning the relevant unit tag from `conversion_units`; the
-# generic field-population kernel then calls `convert_units(value, tag)` for
-# every grid point. No conversion is needed for ocean temperature (°C) since
+# OSP reports air temperature in °C, sea-level pressure in mbar, and rain rate in mm/hr, while NumericalEarth expects SI internally. 
+# Scalar conversions are registered by returning the relevant unit tag from `conversion_units`; the generic field-population kernel 
+# then calls `convert_units(value, tag)` for every grid point. No conversion is needed for ocean temperature (°C) since
 # NumericalEarth's ocean component works in °C.
 
 function conversion_units(md::OSPMetadatum)
@@ -178,22 +180,18 @@ function conversion_units(md::OSPMetadatum)
     return nothing
 end
 
-# Inpainting is a post-processing step that fills land-masked cells in a
-# global gridded field with neighbouring ocean values. The default for ocean
-# tracers turns it on, because that is the right behaviour for ECCO, EN4 and
-# similar products. On the other hand, a station dataset sees only a single
-# water column with no land boundary, and for this reason inpainting is
+# Inpainting is a post-processing step that fills land-masked cells in a  global gridded field with neighbouring ocean values. 
+# The default for ocean tracers turns it on, because that is the right behaviour for ECCO, EN4 and similar products. 
+# On the other hand, a station dataset sees only a single water column with no land boundary, and for this reason inpainting is
 # switched off entirely.
 
 default_inpainting(::OSPMetadata) = nothing
 
 # ## Time axis and depth arrays
 #
-# The first read of the netCDF file populates two caches: the full hourly
-# time vector, shared by all variables, and the per-variable depth array for
-# profile variables. The file is downloaded by the default orchestrator when
-# `Field(metadatum)` is first called, but the helpers below trigger an
-# explicit download if a caller needs the time or depth axes before
+# The first read of the netCDF file populates two caches: the full hourly time vector, shared by all variables, and the 
+# per-variable depth array for profile variables. The file is downloaded by the default orchestrator when `Field(metadatum)` 
+# is first called, but the helpers below trigger an explicit download if a caller needs the time or depth axes before
 # constructing a `Metadatum`.
 
 function _download_file()
@@ -262,11 +260,13 @@ end
 # ## Reading one snapshot
 #
 # `retrieve_data` extracts a single time index and returns a CPU array of
-# shape `(1, 1, Nz)` for profile variables or `(1, 1, 1)` for scalars. The
-# OS-Papa QC flags follow the Argo convention (`1` = good, `2` = probably
-# good, higher values are suspect). Suspect or missing entries are replaced
-# with `NaN`, and the `StationColumn` vertical-interpolation routine skips
-# them automatically downstream.
+# shape `(1, 1, Nz)` for profile variables or `(1, 1, 1)` for scalars.
+# The OS-Papa QC flags follow the Argo convention (`1` = good, `2` =
+# probably good, higher values are suspect). Suspect or missing entries are
+# masked to `NaN`, and any masked levels in a profile are then filled with
+# the value of the nearest valid level so the data leaves `retrieve_data`
+# clean. Time-direction gaps (whole-profile drop-outs) are deferred to
+# `fill_gaps!` later in the pipeline.
 
 function retrieve_data(md::OSPMetadatum)
     filepath = metadata_path(md)
@@ -281,7 +281,8 @@ function retrieve_data(md::OSPMetadatum)
         raw = ds[varname][1, 1, :, t]
         qc  = haskey(ds, varname * "_QC") ? ds[varname * "_QC"][1, 1, :, t] : nothing
         close(ds)
-        return reshape(Float64.(_mask_qc(raw, qc)), 1, 1, :)
+        cleaned = _fill_nan_along_z(_mask_qc(raw, qc))
+        return reshape(Float64.(cleaned), 1, 1, :)
     else
         raw = ds[varname][1, 1, 1, t]
         qc  = haskey(ds, varname * "_QC") ? ds[varname * "_QC"][1, 1, 1, t] : nothing
@@ -297,6 +298,22 @@ function _mask_qc(values, qc)
         for i in eachindex(out)
             q = ismissing(qc[i]) ? Int8(9) : Int8(qc[i])
             q > 2 && (out[i] = NaN)
+        end
+    end
+    return out
+end
+
+# Fill each NaN cell with the value of the nearest valid index along the
+# vertical axis. If the entire profile is NaN, returns the all-NaN profile
+# unchanged (the time-direction gap-filler `fill_gaps!` recovers later).
+function _fill_nan_along_z(values)
+    out = collect(Float64.(values))
+    valid = findall(!isnan, out)
+    isempty(valid) && return out
+    for i in eachindex(out)
+        if isnan(out[i])
+            j★ = valid[argmin(abs.(valid .- i))]
+            out[i] = out[j★]
         end
     end
     return out
@@ -322,17 +339,24 @@ report = test_dataset_contract(OceanStationPapa(); verbose=true)
 # ## A time series of temperature profiles
 #
 # With the dataset type implemented, a multi-week temperature time series is
-# a one-liner: a `Metadata` with a date range, combined with a target grid,
-# builds a `FieldTimeSeries` whose backend lazily loads and regrids each
-# hourly snapshot onto the user's column grid. It is possible to notice that
+# a one-liner: a `Metadata` with a date range and a `region = Column(...)`,
+# combined with a target column grid, builds a `FieldTimeSeries` whose
+# backend lazily loads and regrids each hourly snapshot onto the user's
+# column. The `Column` region is what tells the generic `Field` pipeline to
+# extract a single water column from the file rather than build a
+# global lat-lon grid; for a dataset that is already (1, 1, Nz) the
+# extraction simplifies to an identity copy. It is possible to notice that
 # nothing in the code below is station-specific: the exact same call pattern
-# works for any `AbstractDataset`.
+# works for any `AbstractDataset` whose `region` is a `Column`.
 
 start_date = DateTime(2012, 10, 1)
 end_date   = DateTime(2012, 10, 15)
 
+osp_column = Column(OSP_LONGITUDE, OSP_LATITUDE)
+
 md_series = Metadata(:temperature;
                      dataset = OceanStationPapa(),
+                     region  = osp_column,
                      start_date, end_date)
 
 target_grid = RectilinearGrid(size = 40,
@@ -390,11 +414,20 @@ function OceanStationPapaPrescribedAtmosphere(architecture = CPU(), FT = Float32
                                               max_gap_hours = 72)
 
     dataset = OceanStationPapa()
+    region  = Column(OSP_LONGITUDE, OSP_LATITUDE)
+
+    # Surface scalars land on a one-cell column at the mooring point: the
+    # generic `column_field_from_file` path expects a `Bounded` z-target,
+    # and a single-cell column matches a 0-D field for downstream uses.
     surface_grid = RectilinearGrid(architecture, FT;
-                                   size = (), topology = (Flat, Flat, Flat))
+                                   size = 1,
+                                   x = OSP_LONGITUDE, y = OSP_LATITUDE,
+                                   z = (-1, 0),
+                                   topology = (Flat, Flat, Bounded),
+                                   halo = (3,))
 
     function surface_fts(name)
-        md = Metadata(name; dataset, start_date, end_date)
+        md = Metadata(name; dataset, region, start_date, end_date)
         fts = FieldTimeSeries(md, surface_grid;
                               time_indices_in_memory = length(md))
         fill_gaps!(fts; max_gap = max_gap_hours)

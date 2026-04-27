@@ -2,9 +2,8 @@ using NCDatasets
 using JLD2
 using NumericalEarth.InitialConditions: interpolate!
 using Statistics: median
-using Oceananigans.Grids: λnodes, φnodes, znodes, Center
 using Oceananigans.Architectures: on_architecture
-using Oceananigans.Fields: fractional_x_index, fractional_y_index, interior
+using Oceananigans.Fields: fractional_x_index, fractional_y_index
 
 import Oceananigans.Fields: set!, Field, location
 
@@ -91,14 +90,7 @@ restrict_location(loc, ::BoundingBox) = loc
 restrict_location((LX, LY, LZ), ::Column) = (Nothing, Nothing, LZ)
 
 #####
-##### Native grid construction
-#####
-##### Two coexisting dispatch paths during Phase 1:
-#####  - The `spatial_layout` trait short-circuits station datasets to a
-#####    column grid built from the dataset's own (lon, lat, z).
-#####  - The default `GriddedLatLon` trait dispatches on `metadata.region`
-#####    via `construct_native_grid` (main's #142 design).
-##### Phase 2 collapses these into the region path alone.
+##### Native grid construction — dispatches on metadata.region
 #####
 
 restrict(::Nothing, interfaces, N) = interfaces, N
@@ -116,16 +108,14 @@ end
     native_grid(metadata::Metadata, arch=CPU(); halo = (3, 3, 3))
 
 Return the native grid corresponding to `metadata` with `halo` size.
-Datasets with `spatial_layout(dataset) === StationColumn()` build a single
-column. Otherwise, dispatch on `metadata.region`: `nothing` and
-`BoundingBox` give a `LatitudeLongitudeGrid`; `Column` gives a column
-`RectilinearGrid`.
+Dispatches on `metadata.region`: `nothing` and `BoundingBox` give a
+`LatitudeLongitudeGrid`; `Column` gives a column `RectilinearGrid`.
+
+Single-column ("station") datasets that do not fit a global lat-lon
+layout (e.g. moorings) override `native_grid` directly on
+`::Metadata{<:DatasetType}`.
 """
 native_grid(metadata::Metadata, arch=CPU(); halo=(3, 3, 3)) =
-    native_grid(spatial_layout(metadata.dataset), metadata, arch; halo)
-
-# Default trait path: dispatch on metadata.region.
-native_grid(::GriddedLatLon, metadata::Metadata, arch; halo) =
     construct_native_grid(metadata, metadata.region, arch; halo)
 
 # Full global grid (no region restriction)
@@ -175,29 +165,6 @@ function construct_native_grid(metadata, col::Column, arch; halo)
                            halo = halo[3],
                            topology = (Flat, Flat, Bounded))
     return grid
-end
-
-# StationColumn trait path (Phase 2 deletes this): build a column grid directly
-# from the dataset's native (longitude, latitude, z), independent of
-# metadata.region.
-function native_grid(::StationColumn, metadata::Metadata, arch=CPU(); halo=(3, 3, 3))
-    lon_interfaces = longitude_interfaces(metadata)
-    lat_interfaces = latitude_interfaces(metadata)
-    longitude = first(lon_interfaces)
-    latitude  = first(lat_interfaces)
-
-    if is_three_dimensional(metadata)
-        Nz = size(metadata.dataset, metadata.name)[3]
-        z  = z_interfaces(metadata)
-        hz = length(halo) >= 3 ? halo[3] : 3
-        return RectilinearGrid(arch; size = Nz,
-                               x = longitude, y = latitude, z = z,
-                               topology = (Flat, Flat, Bounded),
-                               halo = (hz,))
-    else
-        return RectilinearGrid(arch; size = (),
-                               topology = (Flat, Flat, Flat))
-    end
 end
 
 """
@@ -340,14 +307,11 @@ end
 """
     set!(target_field::Field, metadata::Metadatum; kw...)
 
-Populate `target_field` from `metadata`. Trait-dispatched: `GriddedLatLon`
-does full 3-D interpolation via Oceananigans' `interpolate!`; `StationColumn`
-does vertical-only NaN-skipping interpolation.
+Populate `target_field` from `metadata` via 3-D interpolation
+(`Oceananigans.Fields.interpolate!`). Single-column ("station") datasets
+override this directly on `::Metadatum{<:DatasetType}`.
 """
-set!(target_field::Field, metadata::Metadatum; kw...) =
-    set!(spatial_layout(metadata.dataset), target_field, metadata; kw...)
-
-function set!(::GriddedLatLon, target_field::Field, metadata::Metadatum; kw...)
+function set!(target_field::Field, metadata::Metadatum; kw...)
     grid = target_field.grid
     arch = child_architecture(grid)
     meta_field = Field(metadata, arch; kw...)
@@ -363,77 +327,6 @@ function set!(::GriddedLatLon, target_field::Field, metadata::Metadatum; kw...)
     interpolate!(target_field, meta_field)
 
     return target_field
-end
-
-# StationColumn: vertical-only interpolation that skips NaN sentinels, with
-# nearest-value extrapolation outside the source depth range. This exists
-# because Oceananigans' `interpolate!` (pre-#5522) had a bug for single-column
-# fields (Oceananigans.jl issue #5511). Phase 4 deletes this path.
-function set!(::StationColumn, target_field::Field, metadata::Metadatum; kw...)
-    grid = target_field.grid
-    arch = child_architecture(grid)
-    meta_field = Field(metadata, arch; kw...)
-
-    # Scalar (non-profile) variables: no vertical interpolation, just copy.
-    if !is_three_dimensional(metadata)
-        parent(target_field) .= parent(meta_field)
-        return target_field
-    end
-
-    Lzt = grid.Lz
-    Lzm = meta_field.grid.Lz
-    if Lzt > Lzm
-        throw("The vertical range of the $(metadata.dataset) dataset ($(Lzm) m) is smaller than " *
-              "the target grid ($(Lzt) m). Some vertical levels cannot be filled with data.")
-    end
-
-    z_src = collect(znodes(meta_field.grid, Center()))
-    z_dst = collect(znodes(grid, Center()))
-    data_profile = Array(interior(meta_field, 1, 1, :))
-
-    interpolated = vertical_interpolate_skip_nan(z_src, data_profile, z_dst)
-
-    interior(target_field, 1, 1, :) .= on_architecture(arch, interpolated)
-    return target_field
-end
-
-"""
-    vertical_interpolate_skip_nan(z_src, data_src, z_dst)
-
-Linearly interpolate a 1-D profile from `z_src` cell centers onto `z_dst`
-levels, skipping any `NaN` entries in `data_src`. Targets outside the valid
-source range are extrapolated from the nearest valid value (i.e. held
-constant). Used by the `StationColumn` implementation of `set!`.
-"""
-function vertical_interpolate_skip_nan(z_src, data_src, z_dst)
-    result = similar(z_dst, Float64)
-
-    valid = .!isnan.(data_src)
-    zv = z_src[valid]
-    dv = data_src[valid]
-
-    if isempty(zv)
-        result .= NaN
-        return result
-    end
-
-    perm = sortperm(zv)
-    zv = zv[perm]
-    dv = dv[perm]
-
-    for (i, zt) in enumerate(z_dst)
-        if zt <= zv[1]
-            result[i] = dv[1]
-        elseif zt >= zv[end]
-            result[i] = dv[end]
-        else
-            j = searchsortedlast(zv, zt)
-            α = (zt - zv[j]) / (zv[j+1] - zv[j])
-            result[i] = dv[j] + α * (dv[j+1] - dv[j])
-        end
-    end
-
-    return result
 end
 
 #####
