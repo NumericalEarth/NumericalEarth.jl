@@ -61,7 +61,7 @@ vertical_mixing = CATKEVerticalDiffusivity(VerticallyImplicitTimeDiscretization(
                                            maximum_tke_diffusivity = 1,
                                            maximum_viscosity = 1)
 
-free_surface       = SplitExplicitFreeSurface(grid; substeps=20*3)
+free_surface       = SplitExplicitFreeSurface(grid; substeps=60)
 momentum_advection = WENOVectorInvariant(order=5)
 tracer_advection   = WENO(order=5)
 
@@ -106,7 +106,7 @@ atmosphere = JRA55PrescribedAtmosphere(arch; backend=JRA55NetCDFBackend(),
 # With Runge-Kutta 3rd order time-stepping we can safely use a timestep of 90 minutes.
 
 coupled_model = OceanSeaIceModel(ocean, sea_ice; atmosphere, radiation)
-simulation = Simulation(coupled_model; Δt=90minutes, stop_time=5*365days)
+simulation = Simulation(coupled_model; Δt=90minutes, stop_time=2.5*365days)
 
 # ### A progress messenger
 #
