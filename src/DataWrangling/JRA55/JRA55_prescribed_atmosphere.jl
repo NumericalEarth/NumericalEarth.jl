@@ -29,12 +29,13 @@ function JRA55PrescribedAtmosphere(architecture = CPU();
                                    time_indexing = Cyclical(),
                                    surface_layer_height = 10,  # meters
                                    include_rivers_and_icebergs = false,
+                                   region = nothing,
                                    other_kw...)
 
     kw = (; time_indexing, time_indices_in_memory)
     kw = merge(kw, other_kw)
 
-    jra55_fts(name) = FieldTimeSeries(Metadata(name; dataset, start_date, end_date, dir), architecture; kw...)
+    jra55_fts(name) = FieldTimeSeries(Metadata(name; dataset, start_date, end_date, dir, region), architecture; kw...)
 
     ua   = jra55_fts(:eastward_velocity)
     va   = jra55_fts(:northward_velocity)
