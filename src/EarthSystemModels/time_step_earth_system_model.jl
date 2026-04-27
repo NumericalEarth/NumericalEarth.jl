@@ -15,13 +15,8 @@ function time_step!(coupled_model::EarthSystemModel, Δt; callbacks=[])
     atmosphere = coupled_model.atmosphere
 
     # Eventually, split out into OceanOnlyModel
-    !isnothing(sea_ice) && time_step!(sea_ice, Δt)
-    
-    # TODO after ice time-step:
-    #  - Adjust ocean heat flux if the ice completely melts?
-    !isnothing(ocean) && time_step!(ocean, Δt)
-
-    # Time step the atmosphere
+    !isnothing(sea_ice)    && time_step!(sea_ice, Δt)
+    !isnothing(ocean)      && time_step!(ocean, Δt)    
     !isnothing(atmosphere) && time_step!(atmosphere, Δt)
 
     # TODO:
