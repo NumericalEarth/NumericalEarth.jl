@@ -15,13 +15,17 @@
 # `label`. Any number of cases is supported — per-case heatmap figures lay
 # out one column per case.
 cases = [
-    (prefix = "halfdegree", label = "Half-degree"),
-    (prefix = "orca",       label = "ORCA"),
+    (prefix = "orca_corrected_snow_cb0.12_ksymm500",            label = "ORCA GM500"),
+    (prefix = "halfdegree_corrected_snow_cb0.01_kskew0_ksymm0", label = "Half Degree"), 
+    (prefix = "orca_corrected_snow_cb0.06_kskew0_ksymm0",       label = "ORCA NOGM"),    
+    (prefix = "orca_corrected_snow_cb0.06_kskew1000_ksymm1000", label = "ORCA GM1000") 
 ]
 
 run_dir_for(prefix) = "$(prefix)_run"
 
-start_time = 0
+const years = 365 * 24 * 3600
+
+start_time = 15 * years
 stop_time  = Inf
 
 output_dir = length(ARGS) >= 1 ? ARGS[1] : "figures"
