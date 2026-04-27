@@ -28,14 +28,111 @@ using Downloads
 using Printf
 using Downloads
 
-include("Datasets.jl")
-using .Datasets
-# Explicit `import` so methods defined later in DataWrangling (on `convert_units`,
-# `mangle`, etc.) extend the generic functions declared in Datasets rather than
-# shadowing them.
-import .Datasets: convert_units, mangle, conversion_units, preprocess_data,
-                  dataset_url, authenticate, download_file!, download_dataset,
-                  spatial_layout
+#####
+##### AbstractDataset and the SpatialLayout trait
+#####
+
+"""
+    AbstractDataset
+
+Supertype for every dataset type recognised by NumericalEarth's Metadata
+machinery. Third-party packages define concrete dataset types by subtyping
+`AbstractDataset` and implementing the methods listed in the developer
+guide. A minimum-viable dataset implements `dataset_variable_name`,
+`all_dates`, `retrieve_data`, and either a native-grid constructor or the
+three `*_interfaces` functions.
+"""
+abstract type AbstractDataset end
+
+"""
+    SpatialLayout
+
+Supertype for the spatial-layout trait that describes how a dataset lives
+in space. Concrete subtypes (`GriddedLatLon`, `StationColumn`) drive
+pipeline dispatch for grid construction and field population.
+"""
+abstract type SpatialLayout end
+
+"""
+    GriddedLatLon()
+
+Spatial-layout trait for datasets defined on a latitude-longitude grid
+(global or regional with a bounding box). This is the default for
+`AbstractDataset`.
+"""
+struct GriddedLatLon <: SpatialLayout end
+
+"""
+    StationColumn()
+
+Spatial-layout trait for single-column station datasets (e.g. moorings,
+towers). Datasets with this layout have a `RectilinearGrid{Flat, Flat,
+Bounded}` native grid at one fixed `(longitude, latitude)` point.
+"""
+struct StationColumn <: SpatialLayout end
+
+"""
+    spatial_layout(dataset)
+
+Return the [`SpatialLayout`](@ref) of `dataset`. Defaults to `GriddedLatLon()`
+for any [`AbstractDataset`](@ref). Override this for station / column datasets.
+"""
+spatial_layout(::AbstractDataset) = GriddedLatLon()
+
+#####
+##### Download contract: generic functions + identity defaults
+#####
+
+"""
+    dataset_url(metadatum) -> Union{String, Nothing}
+
+Return the URL (as `String`) from which the file for `metadatum` should be
+downloaded, or `nothing` if the dataset does not expose a public URL.
+Called by the default [`download_dataset`](@ref) orchestrator. Override
+this for any dataset that has a one-file-per-(variable, date) public
+download.
+"""
+dataset_url(metadatum) = nothing
+
+"""
+    authenticate(dataset)
+
+Hook invoked once before [`download_file!`](@ref). The default is a no-op.
+Override for datasets that require credentials (e.g. ECCO netrc, CDS API
+tokens) to stage them in the environment before the transport layer runs.
+"""
+authenticate(dataset) = nothing
+
+"""
+    download_file!(path, url, dataset)
+
+Transport layer: download the file at `url` to `path` for `dataset`. The
+default (defined further below in this module) calls
+`Downloads.download(url, path)`. Override for custom transports such as
+WebDAV, S3 SDKs, or the Copernicus Marine SDK.
+"""
+function download_file! end
+
+"""
+    download_dataset(metadatum) -> path
+
+Orchestrator for the download step. The default composes
+[`authenticate`](@ref), [`dataset_url`](@ref), and [`download_file!`](@ref)
+into a single per-file download, and iterates over all dates for a
+multi-date `Metadata`. Override only when the orchestration is unusual
+(bulk archives, parallel transports, SDK-driven flows).
+"""
+function download_dataset end
+
+"""
+    preprocess_data(data, metadatum)
+
+Transform the raw CPU array returned by `retrieve_data` before it enters
+the native-field population step. Default is identity. Override for
+lightweight cleanup such as QC-flag filtering or threshold masking that is
+not representable as a scalar `conversion_units`.
+"""
+preprocess_data(data, metadatum) = data
 
 using Oceananigans.Architectures: architecture, on_architecture
 using Oceananigans.Grids: node

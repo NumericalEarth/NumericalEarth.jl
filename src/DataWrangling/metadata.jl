@@ -394,10 +394,6 @@ method on their dataset type.
 """
 available_variables(metadata::Metadata) = available_variables(metadata.dataset)
 
-# Unit conversion tags and the `conversion_units` generic function have moved
-# to NumericalEarth.DataWrangling.Datasets. They remain re-exported from
-# DataWrangling for backward compatibility.
-
 #####
 ##### Utilities
 #####

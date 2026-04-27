@@ -9,6 +9,78 @@ using Oceananigans.Fields: fractional_x_index, fractional_y_index, interior
 import Oceananigans.Fields: set!, Field, location
 
 #####
+##### Unit-conversion contract
+#####
+
+# Unit tags advertise that a variable in a particular dataset is stored in a
+# non-canonical unit system; `convert_units(x, tag)` performs the conversion
+# to the canonical value. Both the tag set and the conversion function are
+# open to extension: third-party datasets can add new tag types and register
+# a `convert_units` method without touching core.
+
+struct Celsius end
+struct Kelvin end
+
+struct MolePerKilogram end
+struct MolePerLiter end
+struct MillimolePerKilogram end
+struct MillimolePerLiter end
+struct MicromolePerKilogram end
+struct MicromolePerLiter end
+struct NanomolePerKilogram end
+struct NanomolePerLiter end
+
+struct InverseSign end
+
+struct GramPerKilogramMinus35 end    # Salinity anomaly
+struct MilliliterPerLiter end        # Sometimes for dissolved oxygen
+struct CentimetersPerSecond end
+struct Millibar end                  # pressure in mbar (hPa) → Pa
+struct MillimetersPerHour end        # liquid precipitation rate in mm/hr → kg/m²/s
+
+"""
+    conversion_units(metadatum) -> tag_or_nothing
+
+Return the unit tag for `metadatum`, or `nothing` when no conversion is
+needed. The returned tag is dispatched on by [`convert_units`](@ref) inside
+the field population kernel. Default: `nothing`.
+"""
+conversion_units(metadatum) = nothing
+
+"""
+    convert_units(value, tag) -> converted_value
+
+Apply the unit conversion identified by `tag` to a single scalar `value`.
+Default: identity for unrecognised tags. Extension datasets define new
+tags and add `convert_units` methods to register conversions.
+"""
+@inline convert_units(value, tag) = value
+
+#####
+##### Data-mangling contract
+#####
+
+# `mangle` performs index-space transforms of raw data arrays inside the
+# field population kernel. The `Nothing` tag is the default (no mangling).
+# Shipped transforms cover off-by-one grid staggering (`ShiftSouth`) and
+# averaging between adjacent rows (`AverageNorthSouth`); extension datasets
+# can register new tags.
+
+struct ShiftSouth end
+struct AverageNorthSouth end
+
+"""
+    mangle(i, j, data, tag)
+    mangle(i, j, k, data, tag)
+
+Return the raw-array value at index `(i, j[, k])` transformed by `tag`. The
+`Nothing` tag returns the value unchanged. Extension datasets add methods on
+`mangle` to register new tag types.
+"""
+@inline mangle(i, j,    data, ::Nothing) = @inbounds data[i, j]
+@inline mangle(i, j, k, data, ::Nothing) = @inbounds data[i, j, k]
+
+#####
 ##### Location with automatic restriction based on region
 #####
 
@@ -491,9 +563,8 @@ end
     @inbounds column_field[1, 1, k] = source_field[i★, j★, k]
 end
 
-# Shipped mangle methods. The `ShiftSouth` and `AverageNorthSouth` tag structs
-# and the `mangle(_, ::Nothing)` identity defaults live in Datasets.jl. The
-# methods below are the shipped non-identity transforms.
+# Shipped mangle methods (non-identity transforms). The tag structs and the
+# `mangle(_, ::Nothing)` identity defaults live above.
 @inline mangle(i, j, data, ::ShiftSouth) = @inbounds data[i, j-1]
 @inline mangle(i, j, data, ::AverageNorthSouth) = @inbounds (data[i, j+1] + data[i, j]) / 2
 
@@ -578,8 +649,8 @@ end
 @inline nan_convert_missing(FT, ::Missing) = convert(FT, NaN)
 @inline nan_convert_missing(FT, d::Number) = convert(FT, d)
 
-# Shipped unit-conversion methods. The tag struct definitions, the generic
-# `convert_units` function, and its identity default live in Datasets.
+# Shipped unit-conversion methods (non-identity). The tag struct definitions,
+# the generic `convert_units` function, and its identity default live above.
 
 # Just switch sign!
 @inline convert_units(T::FT, ::InverseSign) where FT = - T

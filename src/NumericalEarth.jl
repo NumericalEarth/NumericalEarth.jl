@@ -118,7 +118,6 @@ include("Diagnostics/Diagnostics.jl")
 using .DataWrangling
 using .DataWrangling: ETOPO, ECCO, GLORYS, EN4, WOA, JRA55
 
-const Datasets = DataWrangling.Datasets
 using .Bathymetry
 using .InitialConditions
 using .EarthSystemModels

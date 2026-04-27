@@ -9,7 +9,7 @@
 ##### companion package's test suite.
 #####
 
-const DATASETS_MODULE = Datasets
+const CONTRACT_MODULE = DataWrangling
 
 """
     ContractCheck(name, status, detail; required=false, variable=nothing)
@@ -98,21 +98,17 @@ end
 _detail(::Nothing) = "nothing"
 
 # Classify the result of calling a defaulted method: :default if the method
-# that dispatched was defined inside the Datasets module, :ok if it was
-# defined elsewhere (meaning the user overrode it).
+# that dispatched was defined inside DataWrangling (which hosts the trait
+# declarations, identity fallbacks, and download orchestrator). Methods
+# defined in any dataset submodule (ECCO, EN4, …) or in a third-party package
+# count as overrides.
 function _classify_overridden(f, argtypes)
     m = try
         which(f, argtypes)
     catch
         return :missing
     end
-    # "Default" means the method is defined in the Datasets submodule (which
-    # holds the trait declarations and identity fallbacks) or in DataWrangling
-    # itself (which hosts defaults needing extra dependencies like Downloads).
-    # Methods defined in any dataset submodule (ECCO, EN4, …) or in a
-    # third-party package count as overrides.
-    mod = m.module
-    if mod === DATASETS_MODULE || mod === parentmodule(DATASETS_MODULE)
+    if m.module === CONTRACT_MODULE
         return :default
     else
         return :ok
