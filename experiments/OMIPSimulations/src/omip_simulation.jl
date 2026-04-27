@@ -430,8 +430,8 @@ function build_ocean(config, grid;
                              closure)
 
     set!(ocean.model,
-         T = Metadatum(:temperature; dir=restoring_dir, dataset=EN4Monthly(), date=start_date),
-         S = Metadatum(:salinity;    dir=restoring_dir, dataset=EN4Monthly(), date=start_date))
+         T = Metadatum(:temperature; dir=restoring_dir, dataset=WOAAnnual()),
+         S = Metadatum(:salinity;    dir=restoring_dir, dataset=WOAAnnual()))
 
     return ocean
 end
