@@ -10,8 +10,6 @@ using NumericalEarth.DataWrangling: Metadata, metadata_path, download_progress, 
 import Dates: year, month, day
 import Oceananigans.Fields: set!
 import Base
-
-import Oceananigans.Fields: set!, location
 import NumericalEarth.DataWrangling: all_dates, metadata_filename, build_filename, download_dataset, default_download_directory, available_variables
 
 struct MultiYearJRA55 end
@@ -59,13 +57,13 @@ end
 # File name generation specific to each Dataset dataset
 # Note that `RepeatYearJRA55` has only one file associated, so the filename
 # is independent of the date. Override the multi-date fallback to return a plain String.
-metadata_filename(::RepeatYearJRA55, name, date, bounding_box) =
+metadata_filename(::RepeatYearJRA55, name, date, region) =
     "RYF." * JRA55_dataset_variable_names[name] * ".1990_1991.nc"
 
-build_filename(::RepeatYearJRA55, name, dates::AbstractArray, bounding_box) =
+build_filename(::RepeatYearJRA55, name, dates::AbstractArray, region) =
     "RYF." * JRA55_dataset_variable_names[name] * ".1990_1991.nc"
 
-function metadata_filename(::MultiYearJRA55, name, date, bounding_box)
+function metadata_filename(::MultiYearJRA55, name, date, region)
     shortname = JRA55_dataset_variable_names[name]
     year      = Dates.year(date)
     suffix    = "_input4MIPs_atmosphericState_OMIP_MRI-JRA55-do-1-5-0_gr_"
@@ -86,8 +84,6 @@ end
 
 # Convenience functions
 dataset_variable_name(data::JRA55Metadata) = JRA55_dataset_variable_names[data.name]
-location(::JRA55Metadata) = (Center, Center, Center)
-
 available_variables(::MultiYearJRA55)  = JRA55_variable_names
 available_variables(::RepeatYearJRA55) = JRA55_variable_names
 

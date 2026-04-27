@@ -1,4 +1,5 @@
 include("runtests_setup.jl")
+include("download_utils.jl")
 
 using NumericalEarth
 using NumericalEarth.DataWrangling: download_dataset, metadata_path
@@ -10,6 +11,15 @@ using NCDatasets
 using Statistics
 using Test
 
+# Pre-download ORCA1 mesh_mask and bathymetry through the artifacts fallback so
+# subsequent ORCAGrid(...) calls find the files locally even when Zenodo is down.
+for name in (:mesh_mask, :bottom_height)
+    md = Metadatum(name; dataset=ORCA1())
+    download_dataset_with_fallback(metadata_path(md); dataset_name="ORCA1 $name") do
+        download_dataset(md)
+    end
+end
+
 @testset "ORCA1 Metadatum construction" begin
     bathy_meta = Metadatum(:bottom_height; dataset=ORCA1())
     @test bathy_meta.name == :bottom_height
@@ -20,6 +30,20 @@ using Test
     @test mesh_meta.dataset isa ORCA1
 end
 
+
+@testset "ORCA12 Metadatum construction" begin
+    bathy_meta = Metadatum(:bottom_height; dataset=ORCA12())
+    @test bathy_meta.name == :bottom_height
+    @test bathy_meta.dataset isa ORCA12
+
+    mesh_meta = Metadatum(:mesh_mask; dataset=ORCA12())
+    @test mesh_meta.name == :mesh_mask
+    @test mesh_meta.dataset isa ORCA12
+
+    @test default_south_rows_to_remove(ORCA12()) == 0
+    @test occursin("eORCA12", metadata_path(mesh_meta))
+    @test occursin("eORCA12", metadata_path(bathy_meta))
+end
 @testset "ORCAGrid with ORCA1 dataset on $(arch)" for arch in test_architectures
     south_rows_to_remove = 43
     grid = ORCAGrid(arch; dataset=ORCA1(), Nz=5, z=(-5000, 0), halo=(4, 4, 4), south_rows_to_remove)
