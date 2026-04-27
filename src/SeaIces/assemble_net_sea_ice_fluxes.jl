@@ -1,8 +1,4 @@
 using NumericalEarth.EarthSystemModels.InterfaceComputations: computed_fluxes,
-<<<<<<< HEAD
-                                                          get_possibly_zero_flux,
-=======
->>>>>>> origin/ss/patch-orca
                                                           interface_kernel_parameters,
                                                           convert_to_kelvin,
                                                           emitted_longwave_radiation,
