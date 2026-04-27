@@ -64,21 +64,16 @@ const OSPMetadatum    = Metadatum{<:OceanStationPapa}
 
 # ## File store and URL
 #
-# The OSP archive is a single netCDF file hosted on AWS. We cache it via `Scratch.jl` and expose the URL
+# The OSP archive is a single netCDF file hosted on AWS. We cache it on the local directory and expose the URL
 # through `dataset_url`; the default `download_dataset` orchestrator then handles the rest.
 
-const OSP_FILENAME  = "OS_PAPA_200706_M_TSVMBP_50N145W_hr.nc"
-const OSP_URL       = "https://noaa-oar-keo-papa-pds.s3.amazonaws.com/PAPA/" * OSP_FILENAME
-const OSP_LONGITUDE = -144.9
-const OSP_LATITUDE  =  50.1
-
 default_download_directory(::OceanStationPapa) = "./"
-dataset_url(::Metadatum{<:OceanStationPapa}) = OSP_URL
+dataset_url(::Metadatum{<:OceanStationPapa}) = "https://noaa-oar-keo-papa-pds.s3.amazonaws.com/PAPA/OS_PAPA_200706_M_TSVMBP_50N145W_hr.nc"
 
 # A single file holds every variable for every date, so `metadata_filename` returns the same string regardless
 # of `name`, `date`, or `region`.
 
-metadata_filename(::OceanStationPapa, name, date, region) = OSP_FILENAME
+metadata_filename(::OceanStationPapa, name, date, region) = "OS_PAPA_200706_M_TSVMBP_50N145W_hr.nc"
 
 # ## Variables
 #
@@ -117,9 +112,7 @@ is_three_dimensional(md::OSPMetadata)   = md.name in keys(OSP_PROFILE_VARIABLES)
 # with the bad hours for any other window you simulate.
 
 const OSP_FULL_DATES = DateTime(2007, 6, 7, 23) : Hour(1) : DateTime(2023, 6, 7, 0)
-
-const OSP_OUTAGES = (DateTime(2012, 10, 10, 23),
-                     DateTime(2012, 10, 11, 0))
+const OSP_OUTAGES = (DateTime(2012, 10, 10, 23), DateTime(2012, 10, 11, 0))
 
 all_dates(::OceanStationPapa, name) = [t for t in OSP_FULL_DATES if !(t in OSP_OUTAGES)]
 
@@ -141,8 +134,8 @@ osp_depths(::Val{:salinity})    = Float64[1, 5, 8, 10, 14, 20, 25, 30, 35, 36, 3
 # tells the generic pipeline to flip the vertical dimension so the user does not need to think about it in
 # `retrieve_data`.
 
-longitude_interfaces(::OceanStationPapa) = (OSP_LONGITUDE, OSP_LONGITUDE)
-latitude_interfaces(::OceanStationPapa)  = (OSP_LATITUDE, OSP_LATITUDE)
+longitude_interfaces(::OceanStationPapa) = (-144.9, -144.9)
+latitude_interfaces(::OceanStationPapa)  = (50.1, 50.1)
 
 reversed_vertical_axis(::OceanStationPapa) = true
 
@@ -244,20 +237,16 @@ report = test_dataset_contract(OceanStationPapa(); verbose=true)
 
 start_date = DateTime(2012, 10, 1)
 end_date   = DateTime(2012, 10, 15)
-
-osp_column = Column(OSP_LONGITUDE, OSP_LATITUDE)
-
-md_series = Metadata(:temperature; dataset = OceanStationPapa(),
-                     region = osp_column, start_date, end_date)
+osp_column = Column(-144.9, 50.1) 
+md_series  = Metadata(:temperature; dataset = OceanStationPapa(), region = osp_column, start_date, end_date)
 
 target_grid = RectilinearGrid(size = 40,
-                              x = OSP_LONGITUDE, y = OSP_LATITUDE,
-                              z = (-200, 0),
-                              topology = (Flat, Flat, Bounded),
-                              halo = (3,))
+                              x = -144.9, 
+                              y = 50.1,
+                              z = (-300, 0),
+                              topology = (Flat, Flat, Bounded))
 
-Tts = FieldTimeSeries(md_series, target_grid;
-                      time_indices_in_memory = length(md_series))
+Tts = FieldTimeSeries(md_series, target_grid; time_indices_in_memory = length(md_series))
 nothing #hide
 
 # A Hovmöller diagram with time on the x-axis and depth on the y-axis makes the evolution of the mixed layer
@@ -279,8 +268,8 @@ Colorbar(fig[1, 2], hm; label = "Temperature (°C)")
 save(joinpath(@__DIR__, "ocean_station_papa_temperature.png"), fig)
 fig
 
-# It is possible to notice in the Hovmöller diagram a mixed layer of roughly 30 to 40 meters at the start of
-# October 2012, a gradual cooling at the surface over the two-week window, and the thermocline located
+# In the Hovmöller diagram a mixed layer of roughly 30 to 40 meters at the start of October 2012, 
+# a gradual cooling at the surface over the two-week window, and the thermocline located
 # between 50 and 100 meters, all consistent with the observed evolution at the mooring.
 #
 # ## Bonus: a `PrescribedAtmosphere` from buoy observations
@@ -301,14 +290,14 @@ function OceanStationPapaPrescribedAtmosphere(architecture = CPU(), FT = Float32
                                               surface_layer_height = 2.5)
 
     dataset = OceanStationPapa()
-    region  = Column(OSP_LONGITUDE, OSP_LATITUDE)
+    region  = Column(-144.9, 50.1)
 
     surface_grid = RectilinearGrid(architecture, FT;
                                    size = 1,
-                                   x = OSP_LONGITUDE, y = OSP_LATITUDE,
+                                   x = -144.9, 
+                                   y = 50.1,
                                    z = (-1, 0),
-                                   topology = (Flat, Flat, Bounded),
-                                   halo = (3,))
+                                   topology = (Flat, Flat, Bounded))
 
     function surface_fts(name)
         md = Metadata(name; dataset, region, start_date, end_date)
@@ -327,17 +316,14 @@ function OceanStationPapaPrescribedAtmosphere(architecture = CPU(), FT = Float32
     thermo_params = AtmosphereThermodynamicsParameters(FT)
     LX, LY, LZ    = location(Ta)
     qa            = FieldTimeSeries{LX, LY, LZ}(Ta.grid, Ta.times)
-    parent(qa)   .= q_vap_from_RH.(Ref(thermo_params),
-                                   parent(Pa), parent(Ta),
-                                   parent(RHa) ./ 100, Ref(Liquid()))
+    parent(qa)   .= q_vap_from_RH.(Ref(thermo_params), parent(Pa), parent(Ta), parent(RHa) ./ 100, Ref(Liquid()))
 
     return PrescribedAtmosphere(ua.grid, ua.times;
                                 velocities = (u = ua, v = va),
                                 tracers = (T = Ta, q = qa),
                                 pressure = Pa,
                                 freshwater_flux = (; rain),
-                                downwelling_radiation = TwoBandDownwellingRadiation(shortwave = swa,
-                                                                                    longwave  = lwa),
+                                downwelling_radiation = TwoBandDownwellingRadiation(shortwave = swa, longwave  = lwa),
                                 thermodynamics_parameters = thermo_params,
                                 surface_layer_height = convert(FT, surface_layer_height))
 end
