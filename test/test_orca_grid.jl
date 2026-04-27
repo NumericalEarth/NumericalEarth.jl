@@ -1,4 +1,5 @@
 include("runtests_setup.jl")
+include("download_utils.jl")
 
 using NumericalEarth
 using NumericalEarth.DataWrangling: download_dataset, metadata_path
@@ -9,6 +10,15 @@ using Oceananigans.ImmersedBoundaries: ImmersedBoundaryGrid
 using NCDatasets
 using Statistics
 using Test
+
+# Pre-download ORCA1 mesh_mask and bathymetry through the artifacts fallback so
+# subsequent ORCAGrid(...) calls find the files locally even when Zenodo is down.
+for name in (:mesh_mask, :bottom_height)
+    md = Metadatum(name; dataset=ORCA1())
+    download_dataset_with_fallback(metadata_path(md); dataset_name="ORCA1 $name") do
+        download_dataset(md)
+    end
+end
 
 @testset "ORCA1 Metadatum construction" begin
     bathy_meta = Metadatum(:bottom_height; dataset=ORCA1())
