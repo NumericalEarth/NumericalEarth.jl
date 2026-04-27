@@ -76,7 +76,7 @@ Oceananigans.set!(sea_ice.model, h=Metadatum(:sea_ice_thickness, dataset=ECCO4Mo
 # The `atmosphere_simulation` function takes care of building an atmosphere model with appropriate
 # hooks so that NumericalEarth can compute inter-component fluxes.
 nlayers = 4
-spectral_grid = SpeedyWeather.SpectralGrid(; trunc=63, nlayers)
+spectral_grid = SpeedyWeather.SpectralGrid(; trunc=63, nlayers, Grid=FullClenshawGrid)
 atmosphere = atmosphere_simulation(spectral_grid, output=true)
 
 # The atmosphere model already includes some initial conditions as described above:
