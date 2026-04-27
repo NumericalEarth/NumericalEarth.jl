@@ -22,8 +22,9 @@ gpu_test = parse(Bool, get(ENV, "GPU_TEST", "false"))
 
 if filter_tests!(testsuite, args)
     # Always remove tests that are treated separately
-    delete!(testsuite, "test_downloading")
+    delete!(testsuite, "test_jra55_ecco_en4_etopo_downloading")
     delete!(testsuite, "test_cds_downloading")
+    delete!(testsuite, "test_glorys_downloading")
     delete!(testsuite, "test_distributed_utils")
     delete!(testsuite, "test_reactant")
 
