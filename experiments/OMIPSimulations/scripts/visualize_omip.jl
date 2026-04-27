@@ -411,6 +411,8 @@ function load_surface_case(run_dir, prefix; start_time = 0, stop_time = Inf)
     wfo     = FieldTimeSeries(surface_file, "wfo";    backend = InMemory(10))
     sic     = FieldTimeSeries(surface_file, "siconc"; backend = InMemory(10))
     zossq   = FieldTimeSeries(surface_file, "zossq";  backend = InMemory(10))
+    tauuo   = FieldTimeSeries(surface_file, "tauuo";  backend = InMemory(10))
+    tauvo   = FieldTimeSeries(surface_file, "tauvo";  backend = InMemory(10))
 
     grid = tos.grid
     Nx, Ny, Nz = size(grid)
@@ -423,6 +425,8 @@ function load_surface_case(run_dir, prefix; start_time = 0, stop_time = Inf)
     SSH = dropdims(compute_time_mean(zos;  start_time, stop_time);  dims=3)
     HF  = dropdims(compute_time_mean(hfds; start_time, stop_time);  dims=3)
     FW  = dropdims(compute_time_mean(wfo;  start_time, stop_time);  dims=3)
+    τx  = dropdims(compute_time_mean(tauuo; start_time, stop_time); dims=3)
+    τy  = dropdims(compute_time_mean(tauvo; start_time, stop_time); dims=3)
 
     SSH_sq  = dropdims(compute_time_mean(zossq; start_time, stop_time); dims=3)
     SSH_var = SSH_sq .- SSH .^ 2
@@ -464,7 +468,7 @@ function load_surface_case(run_dir, prefix; start_time = 0, stop_time = Inf)
     MLD_max_dbm = isnothing(dbm_mld) ? nothing : dropdims(maximum(dbm_mld; dims=3); dims=3)
 
     for f in (SST, SSS, SSH, HF, FW, SIC_mean, SSH_var, MLD_min, MLD_max,
-              δSST, δSSS, SSH_ecco, δSSH_ecco)
+              δSST, δSSS, SSH_ecco, δSSH_ecco, τx, τy)
         mask_land!(f, land)
     end
     !isnothing(SIC_mar)     && mask_land!(SIC_mar, land)
@@ -477,6 +481,7 @@ function load_surface_case(run_dir, prefix; start_time = 0, stop_time = Inf)
               MLD_min, MLD_max, SIC_mar, SIC_sep,
               δSST, δSSS, SSH_ecco, δSSH_ecco,
               MLD_min_dbm, MLD_max_dbm,
+              τx, τy,
               T_woa_on_grid, S_woa_on_grid)
 end
 
@@ -1049,4 +1054,17 @@ for (i, lab) in enumerate(labels)
 end
 savefig(fig, "fig17_zonal_drift.png")
 
-@info "All 17 figures saved to $output_dir"
+# Figure 18: Wind stress
+@info "Figure 18: Wind stress"
+fig = Figure(size = (800 * length(labels), 900), fontsize = 14)
+for (i, lab) in enumerate(labels)
+    panel!(fig, [1, 2i-1], D[lab].τx;
+           title = "$lab: Zonal wind stress", colormap = :balance,
+           colorrange = (-0.3, 0.3), label = "N/m²")
+    panel!(fig, [2, 2i-1], D[lab].τy;
+           title = "$lab: Meridional wind stress", colormap = :balance,
+           colorrange = (-0.3, 0.3), label = "N/m²")
+end
+savefig(fig, "fig18_wind_stress.png")
+
+@info "All 18 figures saved to $output_dir"
