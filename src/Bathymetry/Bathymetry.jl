@@ -13,7 +13,7 @@ using Oceananigans.DistributedComputations
 using Oceananigans.DistributedComputations: DistributedGrid, reconstruct_global_grid, all_reduce, @root
 using Oceananigans.Fields: interpolate!
 using Oceananigans.Grids: x_domain, y_domain, topology
-using Oceananigans.Utils: launch!
+using Oceananigans.Utils: launch!, KernelParameters
 using OffsetArrays
 using NCDatasets
 using Printf
