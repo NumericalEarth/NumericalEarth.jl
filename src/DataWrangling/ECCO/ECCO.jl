@@ -50,6 +50,8 @@ import NumericalEarth.DataWrangling:
     metaprefix,
     longitude_interfaces,
     latitude_interfaces,
+    longitude_name,
+    latitude_name,
     z_interfaces,
     is_three_dimensional,
     inpainted_metadata_path,
@@ -111,6 +113,13 @@ all_dates(dataset::ECCO2Daily,   variable) = metadata_epoch(dataset) : Day(1)   
 longitude_interfaces(::ECCODataset) = (0, 360)
 longitude_interfaces(::ECCO4Monthly) = (-180, 180)
 latitude_interfaces(::ECCODataset) = (-90, 90)
+
+longitude_name(::Metadata{<:ECCODataset})        = "LONGITUDE_T"
+latitude_name(::Metadata{<:ECCODataset})         = "LATITUDE_T"
+longitude_name(::Metadata{<:ECCO4Monthly})       = "longitude"
+latitude_name(::Metadata{<:ECCO4Monthly})        = "latitude"
+longitude_name(::Metadata{<:ECCO4DarwinMonthly}) = "longitude"
+latitude_name(::Metadata{<:ECCO4DarwinMonthly})  = "latitude"
 
 z_interfaces(::ECCODataset) = [
     -6128.75,
