@@ -183,10 +183,8 @@ end
     @test sliced == stretched
     @test rN == length(stretched) - 1
 
-    # 2-tuple endpoints (the convention used by `longitude_interfaces` /
-    # `latitude_interfaces` for uniform native grids like JRA55/ECCO).
-    sliced, rN = restrict((120, 240), (0, 360), 360)
-    @test minimum(sliced) ≤ 120
-    @test maximum(sliced) ≥ 240
-    @test rN == length(sliced) - 1
+    # 2-tuple endpoints: uniform native grids return the bbox endpoints
+    # verbatim (no snap) with a proportional cell count. 
+    @test sliced == (120, 240)
+    @test rN == 120
 end

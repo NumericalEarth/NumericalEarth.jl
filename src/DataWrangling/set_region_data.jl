@@ -73,10 +73,27 @@ end
 region_info(::Nothing, target, λc, φc) = nothing
 
 function region_info(::BoundingBox, target, λc, φc)
-    LX, LY, _ = Oceananigans.Fields.location(target)
-    i₁, _ = compute_bounding_indices(compute_bounding_nodes(target.grid, LX, λnodes), λc)
-    j₁, _ = compute_bounding_indices(compute_bounding_nodes(target.grid, LY, φnodes), φc)
-    return BBoxOffset(i₁ - 1, j₁ - 1)
+    LX, LY, _  = Oceananigans.Fields.location(target)
+    λmin, λmax = compute_bounding_nodes(target.grid, LX, λnodes)
+    φmin, φmax = compute_bounding_nodes(target.grid, LY, φnodes)
+    λmin, λmax = shift_into_range(λmin, λmax, λc)
+
+    i₁, _ = compute_bounding_indices((λmin, λmax), λc)
+    j₁, _ = compute_bounding_indices((φmin, φmax), φc)
+
+    Nx, Ny, _ = size(target)
+    di = clamp(i₁ - 1, 0, max(length(λc) - Nx, 0))
+    dj = clamp(j₁ - 1, 0, max(length(φc) - Ny, 0))
+    return BBoxOffset(di, dj)
+end
+
+# Shift `(a, b)` by ±360° so it falls inside `λc`'s range.
+function shift_into_range(a, b, λc)
+    isempty(λc) && return a, b
+    lo, hi = λc[1], λc[end]
+    a > hi && b - 360 ≥ lo && return a - 360, b - 360
+    b < lo && a + 360 ≤ hi && return a + 360, b + 360
+    return a, b
 end
 
 function region_info(col::Column, target, λc, φc)
