@@ -36,10 +36,10 @@ struct StateExchanger{G, A, L, O, S}
         S = typeof(sea_ice_exchanger)
 
         return new{G, A, L, O, S}(grid,
-                                   atmosphere_exchanger,
-                                   land_exchanger,
-                                   ocean_exchanger,
-                                   sea_ice_exchanger)
+                                  atmosphere_exchanger,
+                                  land_exchanger,
+                                  ocean_exchanger,
+                                  sea_ice_exchanger)
     end
 end
 
