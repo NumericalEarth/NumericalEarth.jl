@@ -1,7 +1,3 @@
-using Oceananigans.Architectures: AbstractArchitecture, architecture
-using Oceananigans.Grids: AbstractGrid
-using Oceananigans.Fields: interpolate!
-
 import Oceananigans.OutputReaders: update_field_time_series!, FieldTimeSeries
 
 """
@@ -49,8 +45,6 @@ function FieldTimeSeries(metadata::Metadata, grid::AbstractGrid;
 
     download_dataset(metadata)
 
-    # Detect "the user's grid IS the native grid" structurally
-    on_native_grid = grid == native_grid(metadata, architecture(grid))
     times = native_times(metadata)
 
     # Make sure we do not use more indices then the ones available!
@@ -59,8 +53,8 @@ function FieldTimeSeries(metadata::Metadata, grid::AbstractGrid;
     end
 
     inpainting isa Int && (inpainting = NearestNeighborInpainting(inpainting))
-    is_native = grid == native_grid(metadata)
-    backend = DatasetBackend(time_indices_in_memory, metadata; on_native_grid=is_native, inpainting, cache_inpainted_data)
+    on_native_grid = grid == native_grid(metadata, architecture(grid))
+    backend = DatasetBackend(time_indices_in_memory, metadata; on_native_grid, inpainting, cache_inpainted_data)
 
     loc = LX, LY, LZ = location(metadata)
     boundary_conditions = FieldBoundaryConditions(grid, instantiate.(loc))

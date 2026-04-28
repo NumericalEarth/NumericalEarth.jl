@@ -34,16 +34,16 @@ function ECCOPrescribedAtmosphere(architecture = CPU(), FT = Float32;
     kw = (; time_indexing, time_indices_in_memory)
     kw = merge(kw, other_kw)
 
-    ecco_fts(name) = FieldTimeSeries(Metadata(name; dataset, start_date, end_date, dir), architecture; kw...)
+    ECCOFieldTimeSeries(name) = FieldTimeSeries(Metadata(name; dataset, start_date, end_date, dir), architecture; kw...)
 
-    ua   = ecco_fts(:eastward_wind)
-    va   = ecco_fts(:northward_wind)
-    Ta   = ecco_fts(:air_temperature)
-    qa   = ecco_fts(:air_specific_humidity)
-    pa   = ecco_fts(:sea_level_pressure)
-    ℐꜜˡʷ = ecco_fts(:downwelling_longwave)
-    ℐꜜˢʷ = ecco_fts(:downwelling_shortwave)
-    Fr   = ecco_fts(:rain_freshwater_flux)
+    ua   = ECCOFieldTimeSeries(:eastward_wind)
+    va   = ECCOFieldTimeSeries(:northward_wind)
+    Ta   = ECCOFieldTimeSeries(:air_temperature)
+    qa   = ECCOFieldTimeSeries(:air_specific_humidity)
+    pa   = ECCOFieldTimeSeries(:sea_level_pressure)
+    ℐꜜˡʷ = ECCOFieldTimeSeries(:downwelling_longwave)
+    ℐꜜˢʷ = ECCOFieldTimeSeries(:downwelling_shortwave)
+    Fr   = ECCOFieldTimeSeries(:rain_freshwater_flux)
     
     auxiliary_freshwater_flux = nothing
     freshwater_flux = (; rain = Fr)

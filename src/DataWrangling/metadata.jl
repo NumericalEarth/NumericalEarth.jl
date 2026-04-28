@@ -86,6 +86,11 @@ Metadata(name, dataset, dates, region, dir) = Metadata(name, dataset, dates, reg
 
 is_three_dimensional(::Metadata) = true
 z_interfaces(md::Metadata) = z_interfaces(md.dataset)
+
+# NetCDF coordinate-variable names. Default follows CF standard; datasets
+# whose files use different names (e.g. JRA55 uses `lon`/`lat`) override.
+longitude_name(::Metadata) = "longitude"
+latitude_name(::Metadata)  = "latitude"
 longitude_interfaces(md::Metadata) = longitude_interfaces(md.dataset)
 latitude_interfaces(md::Metadata) = latitude_interfaces(md.dataset)
 

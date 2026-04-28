@@ -3,7 +3,6 @@ using Dates
 using Downloads
 
 using Oceananigans.DistributedComputations
-using Oceananigans.Grids: pop_flat_elements
 
 using NumericalEarth.DataWrangling
 using NumericalEarth.DataWrangling: Metadata, metadata_path, download_progress, AnyDateTime, DatasetBackend
@@ -13,19 +12,20 @@ import Oceananigans.Fields: set!
 import Base
 
 import Oceananigans.Fields: set!, location
-import NumericalEarth.DataWrangling: all_dates, 
-                                     metadata_filename, 
-                                     build_filename, 
-                                     download_dataset, 
-                                     default_download_directory, 
+import NumericalEarth.DataWrangling: all_dates,
+                                     metadata_filename,
+                                     build_filename,
+                                     download_dataset,
+                                     default_download_directory,
                                      dataset_variable_name,
-                                     available_variables, 
+                                     available_variables,
                                      default_inpainting,
                                      getfilename,
-                                     z_interfaces,
-                                     native_grid,
-                                     longitude_interfaces, 
-                                     latitude_interfaces
+                                     longitude_interfaces,
+                                     latitude_interfaces,
+                                     longitude_name,
+                                     latitude_name,
+                                     is_three_dimensional
 
 abstract type JRA55Dataset end
 
@@ -48,30 +48,13 @@ function Base.size(::JRA55Dataset, variable)
     end
 end
 
-longitude_interfaces(::JRA55Metadata) = (0, 360)
-latitude_interfaces(::JRA55Metadata) = (-90, 90)
+longitude_interfaces(md::JRA55Metadata) = first(jra55_native_interfaces(metadata_path(first(md))))
+latitude_interfaces(md::JRA55Metadata)  = last(jra55_native_interfaces(metadata_path(first(md))))
 
-function native_grid(metadata::JRA55Metadata, arch=CPU(); halo = (3, 3))
-    Nx, Ny, Nz, _ = size(metadata)
+longitude_name(::JRA55Metadata) = "lon"
+latitude_name(::JRA55Metadata)  = "lat"
 
-    FT = eltype(metadata)
-    halo = pop_flat_elements(halo, (Periodic, Bounded, Flat))
-
-    longitude, latitude = jra55_native_interfaces(metadata_path(first(metadata)))
-
-    region = metadata.region
-    if !isnothing(region)
-        longitude, Nx = restrict(region.longitude, longitude, Nx)
-        latitude,  Ny = restrict(region.latitude,  latitude,  Ny)
-    end
-
-    grid = LatitudeLongitudeGrid(arch, FT; size = (Nx, Ny),
-                                 halo, longitude, latitude,
-                                 topology = (Periodic, Bounded, Flat))
-
-    return grid
-end
-
+# `lon_bnds`/`lat_bnds` hold only the left/lower interface; append the trailing one.
 function jra55_native_interfaces(path)
     ds = Dataset(path)
     λn = Array{Float64}(ds["lon_bnds"][1, :])
@@ -82,14 +65,11 @@ function jra55_native_interfaces(path)
     # so we need to append the trailing interface.
     push!(λn, λn[1] + 360)
     push!(φn, 90)
-
     return λn, φn
 end
 
-# JRA55 is a spatially 2D dataset
 is_three_dimensional(data::JRA55Metadata) = false
 
-# Never inpaint JRA55
 default_inpainting(::JRA55Metadata) = nothing
 
 # The whole range of dates in the different dataset datasets

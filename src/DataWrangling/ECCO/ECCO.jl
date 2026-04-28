@@ -33,8 +33,7 @@ using NumericalEarth.DataWrangling:
     location,
     compute_mask,
     inpaint_mask!,
-    set_metadata_field!,
-    extract_column!
+    set_metadata_field!
 
 using KernelAbstractions: @kernel, @index
 
@@ -370,38 +369,5 @@ end
 inpainted_metadata_path(metadata::ECCOMetadatum) = joinpath(metadata.dir, inpainted_metadata_filename(metadata))
 
 include("ECCO_atmosphere.jl")
-
-#####
-##### Column Field for ECCO datasets (which always download globally)
-#####
-
-using Oceananigans.BoundaryConditions: fill_halo_regions!
-
-const ECCOColumnMetadatum = Metadatum{<:ECCODataset, <:Any, <:Column}
-
-function Oceananigans.Fields.Field(metadata::ECCOColumnMetadatum, arch=CPU();
-                                   inpainting = default_inpainting(metadata),
-                                   mask = nothing,
-                                   halo = (3, 3, 3),
-                                   cache_inpainted_data = true)
-
-    download_dataset(metadata)
-    column_grid = native_grid(metadata, arch; halo)
-
-    # Build a full-grid Field without a region to load the global data
-    global_metadatum = Metadatum(metadata.name;
-                                 dataset = metadata.dataset,
-                                 date = metadata.dates)
-
-    intermediate_field = Field(global_metadatum, arch; inpainting, mask, halo, cache_inpainted_data)
-    fill_halo_regions!(intermediate_field)
-
-    # Extract the column
-    _, _, LZ = location(metadata)
-    column_field = Field{Nothing, Nothing, LZ}(column_grid)
-    extract_column!(column_field, intermediate_field, metadata.region)
-
-    return column_field
-end
 
 end # Module

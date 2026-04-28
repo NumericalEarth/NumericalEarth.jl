@@ -3,8 +3,8 @@ include("runtests_setup.jl")
 using NumericalEarth.DataWrangling: Column, Linear, Nearest,
                                     BoundingBox, native_grid,
                                     restrict_location, dataset_location
-
-using NumericalEarth.DataWrangling: extract_column!
+using NumericalEarth.DataWrangling: bracket_with_weight, infer_lon_period,
+                                    region_info, blend, ColumnInfo
 
 using Oceananigans
 using Oceananigans.BoundaryConditions: fill_halo_regions!
@@ -15,121 +15,96 @@ using Oceananigans.Grids: λnodes, φnodes, topology, Flat, Bounded, Periodic
 const test_longitude = 12.0
 const test_latitude = -50.0
 
-@testset "extract_column! with Nearest interpolation" begin
-    for arch in test_architectures
-        A = typeof(arch)
-        @testset "Nearest extraction on $A" begin
-            # Create a LatitudeLongitudeGrid with spatially varying data
-            intermediate_grid = LatitudeLongitudeGrid(arch;
-                size = (4, 4, 2),
-                longitude = (0, 4),
-                latitude = (0, 4),
-                z = (-20, 0))
+@testset "bracket_with_weight (non-cyclic)" begin
+    coords = [0.5, 1.5, 2.5, 3.5]
 
-            intermediate_field = CenterField(intermediate_grid)
+    # Interior point, exact midpoint between cells.
+    i⁻, i⁺, w = bracket_with_weight(coords, 2.0)
+    @test (i⁻, i⁺) == (2, 3)
+    @test w ≈ 0.5
 
-            # Set distinct values at each horizontal point
-            for i in 1:4, j in 1:4, k in 1:2
-                @allowscalar intermediate_field[i, j, k] = 10 * i + j + 0.1 * k
-            end
-            fill_halo_regions!(intermediate_field)
+    # Off-grid below: clamps to first interval.
+    i⁻, i⁺, w = bracket_with_weight(coords, -1.0)
+    @test (i⁻, i⁺) == (1, 2)
+    @test w == 0.0
 
-            # Column near grid point (3, 2) → lon≈2.5, lat≈1.5
-            col = Column(2.5, 1.5; interpolation=Nearest())
-            column_grid = RectilinearGrid(arch;
-                size = 2,
-                x = 2.5,
-                y = 1.5,
-                z = (-20, 0),
-                halo = 3,
-                topology = (Flat, Flat, Bounded))
+    # Off-grid above: clamps to last interval.
+    i⁻, i⁺, w = bracket_with_weight(coords, 5.0)
+    @test (i⁻, i⁺) == (3, 4)
+    @test w == 1.0
 
-            column_field = Field{Nothing, Nothing, Center}(column_grid)
-
-            extract_column!(column_field, intermediate_field, col, Nearest())
-
-            # Find expected nearest indices
-            λnodes_arr = λnodes(intermediate_grid, Center(); with_halos=false)
-            φnodes_arr = φnodes(intermediate_grid, Center(); with_halos=false)
-            i★ = argmin(abs.(λnodes_arr .- 2.5))
-            j★ = argmin(abs.(φnodes_arr .- 1.5))
-
-            @allowscalar begin
-                for k in 1:2
-                    @test column_field[1, 1, k] == intermediate_field[i★, j★, k]
-                end
-            end
-        end
-
-        @testset "Nearest extraction preserves vertical profile on $A" begin
-            intermediate_grid = LatitudeLongitudeGrid(arch;
-                size = (3, 3, 5),
-                longitude = (10, 13),
-                latitude = (40, 43),
-                z = (-50, 0))
-
-            intermediate_field = CenterField(intermediate_grid)
-
-            # Set a vertical profile: value = depth level
-            for k in 1:5
-                interior(intermediate_field)[:, :, k] .= Float64(k)
-            end
-            fill_halo_regions!(intermediate_field)
-
-            col = Column(11.5, 41.5; interpolation=Nearest())
-            column_grid = RectilinearGrid(arch;
-                size = 5,
-                x = 11.5,
-                y = 41.5,
-                z = (-50, 0),
-                halo = 3,
-                topology = (Flat, Flat, Bounded))
-
-            column_field = Field{Nothing, Nothing, Center}(column_grid)
-            extract_column!(column_field, intermediate_field, col, Nearest())
-
-            @allowscalar begin
-                for k in 1:5
-                    @test column_field[1, 1, k] == k
-                end
-            end
-        end
-    end
+    # On the right-most centre: weight = 1.
+    i⁻, i⁺, w = bracket_with_weight(coords, 3.5)
+    @test (i⁻, i⁺) == (3, 4)
+    @test w ≈ 1.0
 end
 
-@testset "extract_column! dispatch routes on interpolation type" begin
-    for arch in test_architectures
-        A = typeof(arch)
-        @testset "Dispatch on $A" begin
-            intermediate_grid = LatitudeLongitudeGrid(arch;
-                size = (4, 4, 2),
-                longitude = (0, 4),
-                latitude = (0, 4),
-                z = (-20, 0))
+@testset "bracket_with_weight (cyclic wrap)" begin
+    coords = collect(0.5:1.0:359.5)  # global 1° centres
+    n = length(coords)
 
-            intermediate_field = CenterField(intermediate_grid)
-            interior(intermediate_field) .= 42.0
-            fill_halo_regions!(intermediate_field)
+    # Interior point — period is a no-op there.
+    i⁻, i⁺, w = bracket_with_weight(coords, 180.0; period = 360)
+    @test (i⁻, i⁺) == (180, 181)
+    @test w ≈ 0.5
 
-            column_grid = RectilinearGrid(arch;
-                size = 2,
-                x = 2.0,
-                y = 2.0,
-                z = (-20, 0),
-                halo = 3,
-                topology = (Flat, Flat, Bounded))
+    # Wrap cell: x just below the period boundary.
+    i⁻, i⁺, w = bracket_with_weight(coords, 359.99; period = 360)
+    @test (i⁻, i⁺) == (n, 1)
+    @test 0 < w < 1
 
-            # Column dispatch routes to the correct method
-            col_nearest = Column(2.0, 2.0; interpolation=Nearest())
-            cf = Field{Nothing, Nothing, Center}(column_grid)
-            extract_column!(cf, intermediate_field, col_nearest)
+    # x past the period: mod wraps it back into the regular range.
+    i⁻, i⁺, w = bracket_with_weight(coords, 360.5; period = 360)
+    @test i⁻ == 1
+    @test i⁺ == 2 || (i⁻ == n && i⁺ == 1)  # right at coords[1] boundary
+end
 
-            @allowscalar begin
-                @test cf[1, 1, 1] == 42.0
-                @test cf[1, 1, 2] == 42.0
-            end
-        end
-    end
+@testset "infer_lon_period" begin
+    @test infer_lon_period(collect(0.5:1.0:359.5)) == 360
+    @test infer_lon_period(collect(-179.75:0.5:179.75)) == 360
+    @test infer_lon_period([10.0, 11.0, 12.0]) === nothing
+    @test infer_lon_period([100.0]) === nothing
+end
+
+@testset "NaN-aware blend" begin
+    # 2x2x1 synthetic data; column at the centre point with equal weights.
+    c = ColumnInfo(1, 2, 1, 2, 0.5f0, 0.5f0, Linear())
+    FT = Float32
+
+    # All-valid: result is the simple average.
+    data_full = reshape(Float32[1 2; 3 4], 2, 2, 1)
+    @test blend(data_full, c, 1, nothing, c.ℑ, FT) ≈ 2.5f0
+
+    # All-NaN: result is NaN.
+    data_nan = fill(NaN32, 2, 2, 1)
+    @test isnan(blend(data_nan, c, 1, nothing, c.ℑ, FT))
+
+    # Partial: bottom-right corner is NaN, weights renormalise over the rest.
+    # Weights become (0.25, 0.25, 0.25, 0); Σw = 0.75; sum = 1+2+3 = 6;
+    # result = 6 / 0.75 = 2.0 in 1/2/3 → renormalised mean.
+    data_part = reshape(Float32[1 2; 3 NaN32], 2, 2, 1)
+    @test blend(data_part, c, 1, nothing, c.ℑ, FT) ≈ 2.0f0
+
+    # Missing values from NetCDF-style arrays are treated as NaN.
+    data_missing = reshape(Union{Missing, Float32}[1.0 2.0; 3.0 missing], 2, 2, 1)
+    @test blend(data_missing, c, 1, nothing, c.ℑ, FT) ≈ 2.0f0
+end
+
+@testset "blend dispatches Linear vs Nearest" begin
+    data = reshape(Float32[1 2; 3 4], 2, 2, 1)
+    FT = Float32
+
+    # wx = wy = 0.5 → average for Linear; arbitrary corner for Nearest.
+    c_lin = ColumnInfo(1, 2, 1, 2, 0.5f0, 0.5f0, Linear())
+    @test blend(data, c_lin, 1, nothing, c_lin.ℑ, FT) ≈ 2.5f0
+
+    # wx = 0.7, wy = 0.7 → both above 0.5 → picks i⁺, j⁺ = data[2,2,1] = 4.
+    c_near = ColumnInfo(1, 2, 1, 2, 0.7f0, 0.7f0, Nearest())
+    @test blend(data, c_near, 1, nothing, c_near.ℑ, FT) ≈ 4.0f0
+
+    # wx = 0.3, wy = 0.3 → both below 0.5 → picks i⁻, j⁻ = data[1,1,1] = 1.
+    c_near2 = ColumnInfo(1, 2, 1, 2, 0.3f0, 0.3f0, Nearest())
+    @test blend(data, c_near2, 1, nothing, c_near2.ℑ, FT) ≈ 1.0f0
 end
 
 @testset "End-to-end Column Field construction" begin
