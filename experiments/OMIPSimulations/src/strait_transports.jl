@@ -53,14 +53,14 @@ Returns `(; bering, drake, itf, time)` where each transport is a
 `Vector{Float64}` in Sverdrups.
 """
 function strait_transports(config::Symbol, fields_file::AbstractString;
-                           backend = InMemory(10),
+                           backend = InMemory(10; prefetch = true),
                            start_time = 0,
                            stop_time = Inf)
 
     sections = strait_sections(config)
 
-    u_fts = FieldTimeSeries(fields_file, "uo"; backend)
-    v_fts = FieldTimeSeries(fields_file, "vo"; backend)
+    u_fts = FieldTimeSeries(fields_file, "uo"; backend = deepcopy(backend))
+    v_fts = FieldTimeSeries(fields_file, "vo"; backend = deepcopy(backend))
     grid  = u_fts.grid
 
     times = collect(u_fts.times)

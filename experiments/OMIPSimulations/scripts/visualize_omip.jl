@@ -158,6 +158,10 @@ mkpath(output_dir)
 obs_cache_dir = joinpath(output_dir, "obs_cache")
 mkpath(obs_cache_dir)
 
+# Shared backend template — `deepcopy(FTS_BACKEND)` for every
+# FieldTimeSeries so each one gets its own independent buffer state.
+const FTS_BACKEND = InMemory(10; prefetch = true)
+
 # ══════════════════════════════════════════════════════════════
 # Helpers
 # ══════════════════════════════════════════════════════════════
@@ -490,16 +494,16 @@ function load_surface_case(run_dir, prefix; start_time = 0, stop_time = Inf)
     surface_file = find_first_file(run_dir, prefix, "surface")
     @info "  surface: $surface_file"
 
-    tos     = FieldTimeSeries(surface_file, "tos";    backend = InMemory(10))
-    sos     = FieldTimeSeries(surface_file, "sos";    backend = InMemory(10))
-    zos     = FieldTimeSeries(surface_file, "zos";    backend = InMemory(10))
-    mld_fts = FieldTimeSeries(surface_file, "mlotst"; backend = InMemory(10))
-    hfds    = FieldTimeSeries(surface_file, "hfds";   backend = InMemory(10))
-    wfo     = FieldTimeSeries(surface_file, "wfo";    backend = InMemory(10))
-    sic     = FieldTimeSeries(surface_file, "siconc"; backend = InMemory(10))
-    zossq   = FieldTimeSeries(surface_file, "zossq";  backend = InMemory(10))
-    tauuo   = FieldTimeSeries(surface_file, "tauuo";  backend = InMemory(10))
-    tauvo   = FieldTimeSeries(surface_file, "tauvo";  backend = InMemory(10))
+    tos     = FieldTimeSeries(surface_file, "tos";    backend = deepcopy(FTS_BACKEND))
+    sos     = FieldTimeSeries(surface_file, "sos";    backend = deepcopy(FTS_BACKEND))
+    zos     = FieldTimeSeries(surface_file, "zos";    backend = deepcopy(FTS_BACKEND))
+    mld_fts = FieldTimeSeries(surface_file, "mlotst"; backend = deepcopy(FTS_BACKEND))
+    hfds    = FieldTimeSeries(surface_file, "hfds";   backend = deepcopy(FTS_BACKEND))
+    wfo     = FieldTimeSeries(surface_file, "wfo";    backend = deepcopy(FTS_BACKEND))
+    sic     = FieldTimeSeries(surface_file, "siconc"; backend = deepcopy(FTS_BACKEND))
+    zossq   = FieldTimeSeries(surface_file, "zossq";  backend = deepcopy(FTS_BACKEND))
+    tauuo   = FieldTimeSeries(surface_file, "tauuo";  backend = deepcopy(FTS_BACKEND))
+    tauvo   = FieldTimeSeries(surface_file, "tauvo";  backend = deepcopy(FTS_BACKEND))
 
     grid = tos.grid
     Nx, Ny, Nz = size(grid)
@@ -736,8 +740,8 @@ function compute_ice_diagnostics(run_dir, prefix, grid;
                                  reference_date = DateTime(1958, 1, 1),
                                  extent_threshold = 0.15)
     surface_file      = find_first_file(run_dir, prefix, "surface")
-    thickness_fts     = FieldTimeSeries(surface_file, "sithick"; backend = InMemory(10))
-    concentration_fts = FieldTimeSeries(surface_file, "siconc";  backend = InMemory(10))
+    thickness_fts     = FieldTimeSeries(surface_file, "sithick"; backend = deepcopy(FTS_BACKEND))
+    concentration_fts = FieldTimeSeries(surface_file, "siconc";  backend = deepcopy(FTS_BACKEND))
 
     Nt = length(thickness_fts.times)
     arctic_volume      = zeros(Nt)
@@ -930,14 +934,14 @@ savefig(fig, "fig13_arctic_volume_timeseries.png")
 
 function load_timeseries_case(run_dir, prefix, grid; start_time = 0, stop_time = Inf)
     averages_file = find_first_file(run_dir, prefix, "averages")
-    temperature_mean_fts = FieldTimeSeries(averages_file, "tosga"; backend = InMemory(10))
-    salinity_mean_fts    = FieldTimeSeries(averages_file, "soga";  backend = InMemory(10))
+    temperature_mean_fts = FieldTimeSeries(averages_file, "tosga"; backend = deepcopy(FTS_BACKEND))
+    salinity_mean_fts    = FieldTimeSeries(averages_file, "soga";  backend = deepcopy(FTS_BACKEND))
     temperature_mean = [Array(interior(temperature_mean_fts[n]))[1] for n in 1:length(temperature_mean_fts.times)]
     salinity_mean    = [Array(interior(salinity_mean_fts[n]))[1]  for n in 1:length(salinity_mean_fts.times)]
     time_in_years    = temperature_mean_fts.times ./ (365.25 * 24 * 3600)
 
-    temperature_profile_fts = FieldTimeSeries(averages_file, "to_h"; backend = InMemory(10))
-    salinity_profile_fts    = FieldTimeSeries(averages_file, "so_h"; backend = InMemory(10))
+    temperature_profile_fts = FieldTimeSeries(averages_file, "to_h"; backend = deepcopy(FTS_BACKEND))
+    salinity_profile_fts    = FieldTimeSeries(averages_file, "so_h"; backend = deepcopy(FTS_BACKEND))
     temperature_profile = vec(compute_time_mean(temperature_profile_fts; start_time, stop_time))
     salinity_profile    = vec(compute_time_mean(salinity_profile_fts; start_time, stop_time))
     depth = collect(znodes(grid, Center()))
@@ -955,9 +959,9 @@ function load_timeseries_case(run_dir, prefix, grid; start_time = 0, stop_time =
     drift_time_in_years = temperature_profile_fts.times ./ (365.25 * 24 * 3600)
 
     fields_file = find_first_file(run_dir, prefix, "fields")
-    tke_fts     = FieldTimeSeries(fields_file, "tke"; backend = InMemory(10))
-    u_fts       = FieldTimeSeries(fields_file, "uo"; backend = InMemory(10))
-    v_fts       = FieldTimeSeries(fields_file, "vo"; backend = InMemory(10))
+    tke_fts     = FieldTimeSeries(fields_file, "tke"; backend = deepcopy(FTS_BACKEND))
+    u_fts       = FieldTimeSeries(fields_file, "uo"; backend = deepcopy(FTS_BACKEND))
+    v_fts       = FieldTimeSeries(fields_file, "vo"; backend = deepcopy(FTS_BACKEND))
 
     ocean_mask  = build_ocean_mask_3d(grid)
     ocean_cells = sum(ocean_mask)
@@ -1099,10 +1103,10 @@ for c in cases
 
     @info "Loading 3-D fields for $lab..."
     fields_file = TS[lab].fields_file
-    to_fts = FieldTimeSeries(fields_file, "to";  backend = InMemory(10))
-    so_fts = FieldTimeSeries(fields_file, "so";  backend = InMemory(10))
-    bo_fts = FieldTimeSeries(fields_file, "bo";  backend = InMemory(10))
-    eo_fts = FieldTimeSeries(fields_file, "tke"; backend = InMemory(10))
+    to_fts = FieldTimeSeries(fields_file, "to";  backend = deepcopy(FTS_BACKEND))
+    so_fts = FieldTimeSeries(fields_file, "so";  backend = deepcopy(FTS_BACKEND))
+    bo_fts = FieldTimeSeries(fields_file, "bo";  backend = deepcopy(FTS_BACKEND))
+    eo_fts = FieldTimeSeries(fields_file, "tke"; backend = deepcopy(FTS_BACKEND))
 
     start_time = c.start_time
     stop_time  = c.stop_time
