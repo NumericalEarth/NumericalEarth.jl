@@ -53,7 +53,7 @@ Returns `(; bering, drake, itf, time)` where each transport is a
 `Vector{Float64}` in Sverdrups.
 """
 function strait_transports(config::Symbol, fields_file::AbstractString;
-                           backend = InMemory(10; prefetch = true),
+                           backend = InMemory(10; prefetch = false),
                            start_time = 0,
                            stop_time = Inf)
 
