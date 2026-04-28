@@ -33,6 +33,9 @@ Environment variables (physics):
   KSKEW         Isopycnal skew diffusivity κ_skew (default: per-config; 0 = off)
   KSYMM         Isopycnal symmetric diffusivity κ_symmetric (default: per-config; 0 = off)
   BIHARMONIC    Biharmonic viscosity timescale (default: per-config; "nothing" = off)
+  BIHVISC       Constant biharmonic viscosity ν in m^4/s (default: unset).
+                When set, overrides BIHARMONIC and uses ν directly instead of
+                the grid-area-scaled νhb = Az^2 / λ form.
   CB            CATKE buoyancy mixing length parameter Cᵇ (default: 0.28)
 
 Environment variables (I/O & runtime):
@@ -58,6 +61,7 @@ Examples:
   KSKEW=0 ./launch.sh orca                    # disable eddy closure
   BIHARMONIC=5days ./launch.sh orca           # custom biharmonic timescale
   BIHARMONIC=nothing ./launch.sh orca         # disable biharmonic viscosity
+  BIHVISC=1e12 ./launch.sh orca               # constant biharmonic viscosity ν=1e12 m^4/s
   FORCING_DIR=/other/path/forcing_data STAGING_DIR=/scratch/staged ./launch.sh orca
   PROFILE=true ./launch.sh orca
 USAGE
@@ -136,6 +140,7 @@ RUN_NAME="$CONFIG"
 [[ "$KSKEW" != "$DEFAULT_KSKEW" ]]    && RUN_NAME="${RUN_NAME}_kskew${KSKEW}"
 [[ "$KSYMM" != "$DEFAULT_KSYMM" ]]    && RUN_NAME="${RUN_NAME}_ksymm${KSYMM}"
 [[ "$BIHARMONIC" != "$DEFAULT_BIHARMONIC" ]] && RUN_NAME="${RUN_NAME}_bih${BIHARMONIC}"
+[[ -n "${BIHVISC:-}" ]]                && RUN_NAME="${RUN_NAME}_bihvisc${BIHVISC}"
 
 REPORT_NAME="${REPORT_NAME:-${RUN_NAME}_report}"
 JOB_NAME="${JOB_NAME:-$RUN_NAME}"
@@ -179,6 +184,7 @@ JULIA="${JULIA:-$HOME/julia-1.12.5/bin/julia}"
 FORCING_DIR="${FORCING_DIR:-${DATA}forcing_data}"
 STAGING_DIR="${STAGING_DIR:-./staged_data}"
 CB="${CB:-}"
+BIHVISC="${BIHVISC:-}"
 BACKEND_SIZE="${BACKEND_SIZE:-}"
 NCAR="${NCAR:-false}"
 CORRECTED="${CORRECTED:-false}"
@@ -195,6 +201,9 @@ fi
 
 CB_KWARG=""
 [[ -n "$CB" ]] && CB_KWARG="Cᵇ = ${CB},"
+
+BIHVISC_KWARG=""
+[[ -n "$BIHVISC" ]] && BIHVISC_KWARG="biharmonic_viscosity = ${BIHVISC},"
 
 BACKEND_KWARG=""
 [[ -n "$BACKEND_SIZE" ]] && BACKEND_KWARG="backend_size = ${BACKEND_SIZE},"
@@ -220,6 +229,7 @@ sim = omip_simulation(:${CONFIG};
                       κ_skew = ${KSKEW_JULIA},
                       κ_symmetric = ${KSYMM_JULIA},
                       biharmonic_timescale = ${BIHARMONIC},
+                      ${BIHVISC_KWARG}
                       ${CB_KWARG}
                       ${FLUX_KWARG}
                       ${SNOW_KWARG}
