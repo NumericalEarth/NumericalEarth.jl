@@ -2,6 +2,7 @@ using Oceananigans.Utils: launch!
 using Oceananigans.Architectures: AbstractArchitecture, architecture
 using Oceananigans.Grids: AbstractGrid, Periodic, Bounded, λnodes, φnodes
 using Oceananigans.Fields: Field, interior, interpolate!
+using Oceananigans.Fields: convert_to_λ₀_λ₀_plus360
 using GPUArraysCore: @allowscalar
 
 #####
@@ -76,7 +77,12 @@ function region_info(::BoundingBox, target, λc, φc)
     LX, LY, _  = Oceananigans.Fields.location(target)
     λmin, λmax = compute_bounding_nodes(target.grid, LX, λnodes)
     φmin, φmax = compute_bounding_nodes(target.grid, LY, φnodes)
-    λmin, λmax = shift_into_range(λmin, λmax, λc)
+
+    # Shift the target's longitude into the file's `[λc[1], λc[1]+360)` 
+    if !isempty(λc)
+        λmin = convert_to_λ₀_λ₀_plus360(λmin, λc[1])
+        λmax = convert_to_λ₀_λ₀_plus360(λmax, λc[1])
+    end
 
     i₁, _ = compute_bounding_indices((λmin, λmax), λc)
     j₁, _ = compute_bounding_indices((φmin, φmax), φc)
@@ -85,15 +91,6 @@ function region_info(::BoundingBox, target, λc, φc)
     di = clamp(i₁ - 1, 0, max(length(λc) - Nx, 0))
     dj = clamp(j₁ - 1, 0, max(length(φc) - Ny, 0))
     return BBoxOffset(di, dj)
-end
-
-# Shift `(a, b)` by ±360° so it falls inside `λc`'s range.
-function shift_into_range(a, b, λc)
-    isempty(λc) && return a, b
-    lo, hi = λc[1], λc[end]
-    a > hi && b - 360 ≥ lo && return a - 360, b - 360
-    b < lo && a + 360 ≤ hi && return a + 360, b + 360
-    return a, b
 end
 
 function region_info(col::Column, target, λc, φc)

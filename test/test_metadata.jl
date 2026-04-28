@@ -184,7 +184,10 @@ end
     @test rN == length(stretched) - 1
 
     # 2-tuple endpoints: uniform native grids return the bbox endpoints
-    # verbatim (no snap) with a proportional cell count. 
+    # verbatim (no snap) with a proportional cell count. Stays correct across
+    # longitude conventions for pre-subsetted files (e.g. GLORYS via Copernicus);
+    # the centre alignment is handled at read time by `region_info`.
+    sliced, rN = restrict((120, 240), (0, 360), 360)
     @test sliced == (120, 240)
     @test rN == 120
 end
