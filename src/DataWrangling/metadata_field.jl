@@ -25,10 +25,12 @@ restrict(::Nothing, interfaces, N) = interfaces, N
 restrict(::Nothing, interfaces::NTuple{2,Any}, N) = interfaces, N
 restrict(::Nothing, interfaces::AbstractVector, N) = interfaces, N
 
-# Uniform native grid: 2-tuple endpoints expand to a uniform interface range.
+# Uniform native grid: keep the bbox endpoints verbatim with a proportional cell count. 
 function restrict(bbox_interfaces, interfaces::NTuple{2,Any}, N)
-    full = range(interfaces[1], interfaces[2]; length = N + 1)
-    return restrict(bbox_interfaces, full, N)
+    extent = interfaces[2] - interfaces[1]
+    rΔ = bbox_interfaces[2] - bbox_interfaces[1]
+    rN = max(round(Int, rΔ / extent * N), 1)
+    return bbox_interfaces, rN
 end
 
 # Stretched native grid: snap outward to the nearest native cell interfaces.
