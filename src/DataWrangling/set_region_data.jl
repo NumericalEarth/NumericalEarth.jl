@@ -40,9 +40,8 @@ end
 struct ShiftSouth end
 struct AverageNorthSouth end
 
-# `mangle(i, j, k, data, mangling)` reads file `data` at metadata-grid index
-# `(i, j, k)`, accounting for staggered lat-axis offsets. Used inside the
-# region-aware kernel.
+# `mangle(i, j, k, data, mangling)` reads file `data` at metadata-grid index `(i, j, k)`, accounting 
+# for staggered lat-axis offsets. Used inside the region-aware kernel.
 @inline mangle(i, j, k, data, ::Nothing) = @inbounds data[i, j, k]
 @inline mangle(i, j, k, data, ::ShiftSouth) = @inbounds data[i, max(j - 1, 1), k]
 @inline mangle(i, j, k, data, ::AverageNorthSouth) = @inbounds (data[i, j, k] + data[i, j + 1, k]) / 2
@@ -95,12 +94,14 @@ function infer_longitudinal_period(λc)
     return span ≈ 360 ? 360 : nothing
 end
 
-# Cyclic-aware bracketing. With `period`, the cell between `coords[end]` and
-# `coords[1] + period` is the wrap cell: returns `(n, 1, w)` so the blend
-# reads `data[n, …]` and `data[1, …]`.
+# Cyclic-aware bracketing. With `period`, the cell between `coords[end]` and `coords[1] + period` is the wrap cell: 
+# returns `(n, 1, w)` so the blend reads `data[n, …]` and `data[1, …]`.
 function bracket_with_weight(coords, x; period = nothing)
     n = length(coords)
-    
+
+    # Single-cell axis: nothing to bracket — point both corners at the only cell.
+    n ≤ 1 && return 1, 1, zero(x)
+
     if !isnothing(period)
         x = coords[1] + mod(x - coords[1], period)
         if x > coords[end]
@@ -127,15 +128,13 @@ function mangling_for(metadata, data_lat_count)
 end
 
 # `read_data(data, i, j, k, region, mangling, FT)` returns the file value at
-# the grid's (i, j, k) as `FT`, with `Missing` already converted to NaN.
+# the grid's (i, j, k) as `FT`, with `Missing` converted to NaN.
 @inline read_data(data, i, j, k, ::Nothing,     mangling, FT) = nan_convert_missing(FT, mangle(i, j, k, data, mangling))
 @inline read_data(data, i, j, k, b::BBoxOffset, mangling, FT) = nan_convert_missing(FT, mangle(i + b.di, j + b.dj, k, data, mangling))
 @inline read_data(data, _, _, k, c::ColumnInfo, mangling, FT) = blend(data, c, k, mangling, c.ℑ, FT)
 
-# NaN-aware bilinear blend: drop NaN corners and renormalise weights. Each
-# corner is `nan_convert_missing`-coerced to `FT` before mixing, so `Missing`
-# values from NetCDF arrays don't poison the arithmetic. Returns NaN only
-# when all four corners are land.
+# NaN-aware bilinear blend: drop NaN corners and renormalise weights. 
+# Returns NaN only when all four corners are land.
 @inline function blend(data, c, k, mangling, ::Linear, FT)
     d00 = nan_convert_missing(FT, mangle(c.i⁻, c.j⁻, k, data, mangling))
     d10 = nan_convert_missing(FT, mangle(c.i⁺, c.j⁻, k, data, mangling))
@@ -147,11 +146,10 @@ end
     w11 =      c.wx  *      c.wy  * !isnan(d11)
     Σw  = w00 + w10 + w01 + w11
     Σw == 0 && return convert(FT, NaN)
-    z   = zero(FT)
-    return (w00 * ifelse(isnan(d00), z, d00) +
-            w10 * ifelse(isnan(d10), z, d10) +
-            w01 * ifelse(isnan(d01), z, d01) +
-            w11 * ifelse(isnan(d11), z, d11)) / Σw
+    return (w00 * ifelse(isnan(d00), zero(FT), d00) +
+            w10 * ifelse(isnan(d10), zero(FT), d10) +
+            w01 * ifelse(isnan(d01), zero(FT), d01) +
+            w11 * ifelse(isnan(d11), zero(FT), d11)) / Σw
 end
 
 @inline function blend(data, c, k, mangling, ::Nearest, FT)

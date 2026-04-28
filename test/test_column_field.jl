@@ -3,7 +3,7 @@ include("runtests_setup.jl")
 using NumericalEarth.DataWrangling: Column, Linear, Nearest,
                                     BoundingBox, native_grid,
                                     restrict_location, dataset_location
-using NumericalEarth.DataWrangling: bracket_with_weight, infer_lon_period,
+using NumericalEarth.DataWrangling: bracket_with_weight, infer_longitudinal_period,
                                     region_info, blend, ColumnInfo
 
 using Oceananigans
@@ -37,6 +37,13 @@ const test_latitude = -50.0
     i⁻, i⁺, w = bracket_with_weight(coords, 3.5)
     @test (i⁻, i⁺) == (3, 4)
     @test w ≈ 1.0
+
+    # Single-cell axis: nothing to bracket; both corners point at the only cell.
+    # GLORYS via CopernicusMarine returns 1-cell-wide chunked files for Column queries.
+    i⁻, i⁺, w = bracket_with_weight([7.5], 7.5)
+    @test (i⁻, i⁺, w) == (1, 1, 0.0)
+    i⁻, i⁺, w = bracket_with_weight([7.5], 99.0)
+    @test (i⁻, i⁺, w) == (1, 1, 0.0)
 end
 
 @testset "bracket_with_weight (cyclic wrap)" begin
@@ -59,11 +66,11 @@ end
     @test i⁺ == 2 || (i⁻ == n && i⁺ == 1)  # right at coords[1] boundary
 end
 
-@testset "infer_lon_period" begin
-    @test infer_lon_period(collect(0.5:1.0:359.5)) == 360
-    @test infer_lon_period(collect(-179.75:0.5:179.75)) == 360
-    @test infer_lon_period([10.0, 11.0, 12.0]) === nothing
-    @test infer_lon_period([100.0]) === nothing
+@testset "infer_longitudinal_period" begin
+    @test infer_longitudinal_period(collect(0.5:1.0:359.5)) == 360
+    @test infer_longitudinal_period(collect(-179.75:0.5:179.75)) == 360
+    @test infer_longitudinal_period([10.0, 11.0, 12.0]) === nothing
+    @test infer_longitudinal_period([100.0]) === nothing
 end
 
 @testset "NaN-aware blend" begin
