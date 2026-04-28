@@ -38,10 +38,10 @@ function Base.show(io::IO, cm::ESM)
         ocean_summary = summary(cm.ocean)
     end
 
-    print(io, "├── ocean: ", ocean_summary, "\n")
     print(io, "├── atmosphere: ", summary(cm.atmosphere), "\n")
     print(io, "├── land: ", summary(cm.land), "\n")
     print(io, "├── sea_ice: ", sea_ice_summary, "\n")
+    print(io, "├── ocean: ", ocean_summary, "\n")
     print(io, "└── interfaces: ", summary(cm.interfaces))
     return nothing
 end
@@ -147,10 +147,10 @@ model = OceanOnlyModel(ocean; interfaces)
 
 # output
 EarthSystemModel{CPU}(time = 0 seconds, iteration = 0)
-├── ocean: HydrostaticFreeSurfaceModel{CPU, RectilinearGrid}(time = 0 seconds, iteration = 0)
 ├── atmosphere: Nothing
 ├── land: Nothing
 ├── sea_ice: FreezingLimitedOceanTemperature{ClimaSeaIce.SeaIceThermodynamics.LinearLiquidus{Float64}}
+├── ocean: HydrostaticFreeSurfaceModel{CPU, RectilinearGrid}(time = 0 seconds, iteration = 0)
 └── interfaces: ComponentInterfaces
 ```
 
@@ -240,10 +240,10 @@ model = OceanOnlyModel(ocean)
 
 # output
 EarthSystemModel{CPU}(time = 0 seconds, iteration = 0)
-├── ocean: HydrostaticFreeSurfaceModel{CPU, RectilinearGrid}(time = 0 seconds, iteration = 0)
 ├── atmosphere: Nothing
 ├── land: Nothing
 ├── sea_ice: FreezingLimitedOceanTemperature{ClimaSeaIce.SeaIceThermodynamics.LinearLiquidus{Float64}}
+├── ocean: HydrostaticFreeSurfaceModel{CPU, RectilinearGrid}(time = 0 seconds, iteration = 0)
 └── interfaces: ComponentInterfaces
 ```
 """
@@ -272,10 +272,10 @@ model = OceanSeaIceModel(ocean, sea_ice)
 
 # output
 EarthSystemModel{CPU}(time = 0 seconds, iteration = 0)
-├── ocean: HydrostaticFreeSurfaceModel{CPU, RectilinearGrid}(time = 0 seconds, iteration = 0)
 ├── atmosphere: Nothing
 ├── land: Nothing
 ├── sea_ice: FreezingLimitedOceanTemperature{ClimaSeaIce.SeaIceThermodynamics.LinearLiquidus{Float64}}
+├── ocean: HydrostaticFreeSurfaceModel{CPU, RectilinearGrid}(time = 0 seconds, iteration = 0)
 └── interfaces: ComponentInterfaces
 ```
 """
