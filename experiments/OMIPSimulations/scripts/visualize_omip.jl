@@ -603,6 +603,19 @@ function load_surface_case(run_dir, prefix; start_time = 0, stop_time = Inf)
     τx  = dropdims(compute_time_mean(tauuo; start_time, stop_time); dims=3) .* ρ_ocean
     τy  = dropdims(compute_time_mean(tauvo; start_time, stop_time); dims=3) .* ρ_ocean
 
+    # `tauuo`/`tauvo` are written at their native staggered locations
+    # (Face-x for τx, Face-y for τy). On a tripolar/ORCA grid, x is
+    # right-connected so the x-Face has Nx entries (no extra), but y is
+    # bounded so the y-Face has Ny+1. Average adjacent rows to bring τy
+    # to y-Center so it shares a shape with SST/SSS/SSH/MLD/etc.
+    if size(τy, 2) == size(τx, 2) + 1
+        τy = (τy[:, 1:end-1] .+ τy[:, 2:end]) ./ 2
+    end
+    # Same idea on the rare grid where x is bounded (Nx+1 rows of τx).
+    if size(τx, 1) == size(τy, 1) + 1
+        τx = (τx[1:end-1, :] .+ τx[2:end, :]) ./ 2
+    end
+
     SSH_sq  = dropdims(compute_time_mean(zossq; start_time, stop_time); dims=3)
     SSH_var = SSH_sq .- SSH .^ 2
 
