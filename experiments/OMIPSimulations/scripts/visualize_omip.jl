@@ -600,8 +600,16 @@ function load_surface_case(run_dir, prefix; start_time = 0, stop_time = Inf)
     # `tauuo`/`tauvo` store kinematic stresses (m²/s²); scale by ρ to N/m².
     HF  = dropdims(compute_time_mean(hfds;  start_time, stop_time); dims=3) .* (ρ_ocean * cp_ocean)
     FW  = dropdims(compute_time_mean(wfo;   start_time, stop_time); dims=3)
-    τx  = dropdims(compute_time_mean(tauuo; start_time, stop_time); dims=3) .* ρ_ocean
-    τy  = dropdims(compute_time_mean(tauvo; start_time, stop_time); dims=3) .* ρ_ocean
+    # `tauuo`/`tauvo` are stored kinematic stresses (m²/s²) following
+    # the Oceananigans top-flux convention: positive = flux out of the
+    # ocean (upward). An eastward atmospheric drag, which accelerates
+    # ocean u eastward, is therefore negative in the stored field. The
+    # NCEP/NCAR reference and CMIP-style δτ plots use the opposite
+    # convention (positive = atmosphere-to-ocean, downward), so we flip
+    # the sign here on the model side. Multiplying by ρ converts m²/s²
+    # to N/m².
+    τx  = -dropdims(compute_time_mean(tauuo; start_time, stop_time); dims=3) .* ρ_ocean
+    τy  = -dropdims(compute_time_mean(tauvo; start_time, stop_time); dims=3) .* ρ_ocean
 
     # `tauuo`/`tauvo` are written at their native staggered locations
     # (Face-x for τx, Face-y for τy). On a tripolar/ORCA grid, x is
