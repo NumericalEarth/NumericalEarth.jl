@@ -27,10 +27,11 @@ const cp_ocean = 3991.86795711963
 # `stop_time`). Any number of cases is supported, with per-case heatmap
 # figures laying out one column per case.
 cases = [
-    (prefix = "orca_corrected_snow_cb0.12_ksymm500",            label = "ORCA GM500",  start_time = 15 * years, stop_time = Inf),
-    (prefix = "halfdegree_corrected_snow_cb0.01_kskew0_ksymm0", label = "Half Degree", start_time = 15 * years, stop_time = Inf),
-    (prefix = "orca_corrected_snow_cb0.06_kskew0_ksymm0",       label = "ORCA NOGM",   start_time = 15 * years, stop_time = Inf),
-    (prefix = "orca_corrected_snow_cb0.06_kskew1000_ksymm1000", label = "ORCA GM1000", start_time = 15 * years, stop_time = Inf),
+    (prefix = "orca_corrected_snow_cb0.12_ksymm500",            label = "ORCA GM500",         start_time = 15 * years, stop_time = Inf),
+    (prefix = "orca_corrected_snow_cb0.15_bih50days",           label = "ORCA GM500 LowDiss", start_time =  5 * years, stop_time = Inf),
+    (prefix = "halfdegree_corrected_snow_cb0.01_kskew0_ksymm0", label = "Half Degree",        start_time = 10 * years, stop_time = Inf),
+    (prefix = "orca_corrected_snow_cb0.06_kskew0_ksymm0",       label = "ORCA NOGM",          start_time = 40 * years, stop_time = Inf),
+    (prefix = "orca_corrected_snow_cb0.06_kskew1000_ksymm1000", label = "ORCA GM1000",        start_time = 40 * years, stop_time = Inf),
 ]
 
 run_dir_for(prefix) = "$(prefix)_run"
