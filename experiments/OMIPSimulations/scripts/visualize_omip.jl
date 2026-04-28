@@ -57,6 +57,7 @@ using NumericalEarth
 using NumericalEarth.DataWrangling: Metadatum
 using NumericalEarth.DataWrangling.WOA: WOAAnnual
 using NumericalEarth: ECCO4Monthly
+using OMIPSimulations: strait_transports
 
 # ══════════════════════════════════════════════════════════════
 # Monkey-patch: InMemory FieldTimeSeries split-file support
@@ -941,6 +942,18 @@ function load_timeseries_case(run_dir, prefix, grid; start_time = 0, stop_time =
     salinity_profile    = vec(compute_time_mean(salinity_profile_fts; start_time, stop_time))
     depth = collect(znodes(grid, Center()))
 
+    Nt_profile = length(temperature_profile_fts.times)
+    Nz_profile = size(temperature_profile_fts[1], 3)
+    temperature_drift = zeros(Nt_profile, Nz_profile)
+    salinity_drift    = zeros(Nt_profile, Nz_profile)
+    for n in 1:Nt_profile
+        temperature_drift[n, :] .= vec(interior(temperature_profile_fts[n]))
+        salinity_drift[n, :]    .= vec(interior(salinity_profile_fts[n]))
+    end
+    temperature_drift .-= reshape(temperature_drift[1, :], 1, :)
+    salinity_drift    .-= reshape(salinity_drift[1, :],    1, :)
+    drift_time_in_years = temperature_profile_fts.times ./ (365.25 * 24 * 3600)
+
     fields_file = find_first_file(run_dir, prefix, "fields")
     tke_fts     = FieldTimeSeries(fields_file, "tke"; backend = InMemory(10))
     u_fts       = FieldTimeSeries(fields_file, "uo"; backend = InMemory(10))
@@ -976,6 +989,7 @@ function load_timeseries_case(run_dir, prefix, grid; start_time = 0, stop_time =
 
     return (; temperature_mean, salinity_mean, time_in_years,
               temperature_profile, salinity_profile, depth,
+              temperature_drift, salinity_drift, drift_time_in_years,
               tke_mean, ke_mean, tke_time_in_years, ocean_mask, fields_file)
 end
 
@@ -1109,11 +1123,30 @@ for c in cases
 
     depth = collect(znodes(grid, Center()))
 
+    @info "Computing zonal-mean MLD for $lab..."
+    surface_ocean_mask = reshape(ocean_mask[:, :, end], size(ocean_mask, 1), size(ocean_mask, 2), 1)
+    nan_to_zero(a) = ifelse.(isnan.(a), zero(eltype(a)), a)
+    mld_min_3d = reshape(nan_to_zero(D[lab].MLD_min), size(D[lab].MLD_min)..., 1)
+    mld_max_3d = reshape(nan_to_zero(D[lab].MLD_max), size(D[lab].MLD_max)..., 1)
+    mld_min_zonal = vec(compute_zonal_mean(mld_min_3d, surface_ocean_mask, regridder, Nlon, Nlat))
+    mld_max_zonal = vec(compute_zonal_mean(mld_max_3d, surface_ocean_mask, regridder, Nlon, Nlat))
+
+    mld_min_dbm_zonal = nothing
+    mld_max_dbm_zonal = nothing
+    if !isnothing(D[lab].MLD_min_dbm)
+        mld_min_dbm_3d = reshape(nan_to_zero(D[lab].MLD_min_dbm), size(D[lab].MLD_min_dbm)..., 1)
+        mld_max_dbm_3d = reshape(nan_to_zero(D[lab].MLD_max_dbm), size(D[lab].MLD_max_dbm)..., 1)
+        mld_min_dbm_zonal = vec(compute_zonal_mean(mld_min_dbm_3d, surface_ocean_mask, regridder, Nlon, Nlat))
+        mld_max_dbm_zonal = vec(compute_zonal_mean(mld_max_dbm_3d, surface_ocean_mask, regridder, Nlon, Nlat))
+    end
+
     ZM[lab] = (; temperature_zonal, salinity_zonal, buoyancy_zonal, kinetic_energy_zonal,
                 temperature_woa_zonal, salinity_woa_zonal, buoyancy_init_zonal,
                 δtemperature_zonal = temperature_zonal .- temperature_woa_zonal,
                 δsalinity_zonal    = salinity_zonal    .- salinity_woa_zonal,
                 δbuoyancy_zonal    = buoyancy_zonal    .- buoyancy_init_zonal,
+                mld_min_zonal, mld_max_zonal,
+                mld_min_dbm_zonal, mld_max_dbm_zonal,
                 depth)
 end
 
@@ -1175,4 +1208,123 @@ for (i, lab) in enumerate(labels)
 end
 savefig(fig, "fig18_zonal_drift.png")
 
-@info "All 18 figures saved to $output_dir"
+# Figure 19: Zonal-mean MLD min/max
+@info "Figure 19: Zonal-mean MLD min/max"
+fig = Figure(size = (1300, 550), fontsize = 14)
+ax_min = Axis(fig[1, 1]; xlabel = "Latitude", ylabel = "MLD (m)",
+              title = "Zonal-mean MLD (summer minimum)", yreversed = true)
+ax_max = Axis(fig[1, 2]; xlabel = "Latitude", ylabel = "MLD (m)",
+              title = "Zonal-mean MLD (winter maximum)", yreversed = true)
+for (i, lab) in enumerate(labels)
+    zm = ZM[lab]
+    lines!(ax_min, latitude, zm.mld_min_zonal; color = case_colors[i], label = lab, linewidth = 2)
+    lines!(ax_max, latitude, zm.mld_max_zonal; color = case_colors[i], label = lab, linewidth = 2)
+end
+ref_idx = findfirst(lab -> !isnothing(ZM[lab].mld_min_dbm_zonal), labels)
+if !isnothing(ref_idx)
+    ref_zm = ZM[labels[ref_idx]]
+    lines!(ax_min, latitude, ref_zm.mld_min_dbm_zonal;
+           color = :black, linewidth = 2, linestyle = :dash, label = "dBM")
+    lines!(ax_max, latitude, ref_zm.mld_max_dbm_zonal;
+           color = :black, linewidth = 2, linestyle = :dash, label = "dBM")
+end
+axislegend(ax_min; position = :rt)
+axislegend(ax_max; position = :rt)
+savefig(fig, "fig19_mld_zonal_mean.png")
+
+# Figure 20: Horizontal-mean T and S drift, time × depth, with z split into
+# 0-1000 m (top half) and 1000-5500 m (bottom half) panels — continuous look,
+# shared time axis. The split halves the figure vertically so the upper
+# 1000 m gets the same display height as the rest of the column.
+@info "Figure 20: T and S drift (time × depth, split z)"
+ncases = length(labels)
+fig = Figure(size = (700 * ncases, 1000), fontsize = 14)
+
+for (i, lab) in enumerate(labels)
+    ts  = TS[lab]
+    z   = ts.depth
+    t   = ts.drift_time_in_years
+    δT  = ts.temperature_drift
+    δS  = ts.salinity_drift
+    col_T = 4i - 3
+    col_S = 4i - 1
+
+    ax_T_top = Axis(fig[1, col_T]; ylabel = "Depth (m)", title = "$lab: ΔT (deg C)",
+                    xticklabelsvisible = false, xticksvisible = false,
+                    bottomspinevisible = false)
+    ax_T_bot = Axis(fig[2, col_T]; xlabel = "Time (years)", ylabel = "Depth (m)",
+                    topspinevisible = false)
+    linkxaxes!(ax_T_top, ax_T_bot)
+
+    hm_T = heatmap!(ax_T_top, t, z, δT; colormap = :balance, colorrange = (-2, 2), nan_color = :lightgray)
+    heatmap!(ax_T_bot, t, z, δT;        colormap = :balance, colorrange = (-2, 2), nan_color = :lightgray)
+    ylims!(ax_T_top, (-1000, 0))
+    ylims!(ax_T_bot, (-5500, -1000))
+    Colorbar(fig[1:2, col_T + 1], hm_T; label = "deg C")
+
+    ax_S_top = Axis(fig[1, col_S]; ylabel = "Depth (m)", title = "$lab: ΔS (PSU)",
+                    xticklabelsvisible = false, xticksvisible = false,
+                    bottomspinevisible = false)
+    ax_S_bot = Axis(fig[2, col_S]; xlabel = "Time (years)", ylabel = "Depth (m)",
+                    topspinevisible = false)
+    linkxaxes!(ax_S_top, ax_S_bot)
+
+    hm_S = heatmap!(ax_S_top, t, z, δS; colormap = :balance, colorrange = (-0.5, 0.5), nan_color = :lightgray)
+    heatmap!(ax_S_bot, t, z, δS;        colormap = :balance, colorrange = (-0.5, 0.5), nan_color = :lightgray)
+    ylims!(ax_S_top, (-1000, 0))
+    ylims!(ax_S_bot, (-5500, -1000))
+    Colorbar(fig[1:2, col_S + 1], hm_S; label = "PSU")
+end
+
+rowsize!(fig.layout, 1, Relative(0.5))
+rowsize!(fig.layout, 2, Relative(0.5))
+rowgap!(fig.layout, 1, 0)
+savefig(fig, "fig20_TS_drift_heatmap.png")
+
+# Figure 21: Strait transports (offline, dispatched on per-case grid configuration).
+# Each case maps to a `:halfdegree` or `:orca` config either via an explicit
+# `config` field on the case namedtuple, or by substring match on the prefix.
+@info "Figure 21: Strait transports"
+
+function strait_config_for(c)
+    if haskey(c, :config)
+        return c.config
+    end
+    p = lowercase(c.prefix)
+    occursin("orca", p)       && return :orca
+    occursin("halfdegree", p) && return :halfdegree
+    occursin("tenthdegree", p) && return :tenthdegree
+    return nothing
+end
+
+strait_data = Dict{String, Any}()
+for c in cases
+    cfg = strait_config_for(c)
+    if isnothing(cfg)
+        @warn "Cannot infer config for case '$(c.label)' — skipping strait transports."
+        continue
+    end
+    @info "  $(c.label): computing strait transports ($cfg)..."
+    strait_data[c.label] = strait_transports(cfg, TS[c.label].fields_file;
+                                             start_time = c.start_time,
+                                             stop_time  = c.stop_time)
+end
+
+if !isempty(strait_data)
+    fig = Figure(size = (1500, 500), fontsize = 14)
+    ax_b = Axis(fig[1, 1]; xlabel = "Time (years)", ylabel = "Transport (Sv)", title = "Bering Strait")
+    ax_d = Axis(fig[1, 2]; xlabel = "Time (years)", ylabel = "Transport (Sv)", title = "Drake Passage")
+    ax_i = Axis(fig[1, 3]; xlabel = "Time (years)", ylabel = "Transport (Sv)", title = "Indonesian Throughflow")
+    for (i, lab) in enumerate(labels)
+        haskey(strait_data, lab) || continue
+        st = strait_data[lab]
+        t  = st.time ./ (365.25 * 24 * 3600)
+        lines!(ax_b, t, st.bering; color = case_colors[i], label = lab, linewidth = 2)
+        lines!(ax_d, t, st.drake;  color = case_colors[i], label = lab, linewidth = 2)
+        lines!(ax_i, t, st.itf;    color = case_colors[i], label = lab, linewidth = 2)
+    end
+    axislegend(ax_b; position = :rt)
+    savefig(fig, "fig21_strait_transports.png")
+end
+
+@info "All figures saved to $output_dir"

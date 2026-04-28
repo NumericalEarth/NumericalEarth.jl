@@ -46,12 +46,16 @@ using NumericalEarth.Diagnostics: MixedLayerDepthField
 export omip_simulation,
        add_omip_diagnostics!,
        compute_report_fields,
-       compute_woa_bias
+       compute_woa_bias,
+       strait_transports,
+       strait_sections,
+       StraitSection
 
 include("atmosphere.jl")
 include("jra55_data_staging.jl")
 include("omip_simulation.jl")
 include("omip_diagnostics.jl")
 include("report_fields.jl")
+include("strait_transports.jl")
 
 end # module
