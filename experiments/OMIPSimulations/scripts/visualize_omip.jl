@@ -62,28 +62,39 @@ using OMIPSimulations: strait_transports
 # ══════════════════════════════════════════════════════════════
 # Monkey-patch: InMemory FieldTimeSeries split-file support
 # ══════════════════════════════════════════════════════════════
-# Oceananigans 0.107.3 bug (field_time_series.jl:914-918): the
-# inner FieldTimeSeries constructor only builds a SplitFilePath
+# Oceananigans 0.107.x bug (field_time_series.jl, ~line 924-930):
+# the inner FieldTimeSeries constructor only builds a SplitFilePath
 # when `backend isa OnDisk`. With an InMemory backend on split
-# output (..._part1.jld2, ..._part2.jld2, ...), fts.path collapses
+# output (..._part1.jld2, ..._part2.jld2, ...), `fts.path` collapses
 # to a single part file. The construction-time load iterates over
 # every part file, so the initial window is correct — but later,
-# when update_field_time_series! slides the in-memory window
+# when `update_field_time_series!` slides the in-memory window
 # (set!(fts) -> set!(fts, fts.path)), reads come from that one
-# stored file only, silently leaving stale/zero data in every
-# slot whose time is not in that part. That's the cause of the
-# sawtooth KE, flat MLD extrema, and wrong SST bias in figures6.
+# stored file only and produce "No data found for time ..." warnings
+# (and stale/zero data) for every snapshot the new window wants
+# but that part doesn't contain.
+#
+# With `InMemory(N; prefetch=true)` the runtime backend wraps the
+# user-visible backend in `Prefetched`, which holds an internal
+# `buffer_fts`. The buffer's `path` is set at construction time and
+# is independent of the outer fts's `path` — so even if we rebuild
+# `fts.path` to a SplitFilePath, the prefetch worker still calls
+# `set!(buffer_fts)` against the original single path. We therefore
+# rebuild both the outer fts AND (when applicable) the buffer_fts.
 #
 # Upstream fix (for PR):
-#   1. field_time_series.jl:914 — drop `&& backend isa OnDisk`.
+#   1. field_time_series.jl — always build a SplitFilePath when
+#      Nparts != nothing, regardless of backend type.
 #   2. set_field_time_series.jl — add a set! method for
 #      (InMemoryFTS, SplitFilePath) that dispatches per part file.
+#   3. prefetched_field_time_series.jl — propagate the SplitFilePath
+#      into `buffer_fts` at construction time.
 #
-# This block monkey-patches both until the PR lands.
+# This block monkey-patches all three until the PR lands.
 import Oceananigans.Fields: set!
 using Oceananigans.OutputReaders: SplitFilePath, InMemoryFTS,
                                   InMemory, time_indices,
-                                  file_and_local_index
+                                  file_and_local_index, Prefetched
 
 function set!(fts::InMemoryFTS, sfp::SplitFilePath, name::String = fts.name;
               warn_missing_data = false, kwargs...)
@@ -121,12 +132,41 @@ end
 
 _location_types(::Oceananigans.OutputReaders.FieldTimeSeries{LX, LY, LZ}) where {LX, LY, LZ} = (LX, LY, LZ)
 
+# Backends that don't store an inner FTS need no rewrite.
+_rebuild_backend_with_path(backend, new_path) = backend
+
+# Prefetched stores a `buffer_fts` whose `path` was set at construction time
+# (to the first part file). Once we rebuild the outer FTS to point at a
+# `SplitFilePath`, the buffer_fts must be rebuilt too — otherwise
+# `update_field_time_series!(::PrefetchingFTS, ...)` calls `set!(buffer_fts)`,
+# which dispatches via `set!(fts, fts.path)` to the single-string path and
+# warns "No data found for time ..." for every snapshot the buffer's window
+# wants but that part doesn't contain.
+function _rebuild_backend_with_path(backend::Prefetched, new_path)
+    old_buf = getfield(backend, :buffer_fts)
+    BLX, BLY, BLZ = _location_types(old_buf)
+    new_buf = Oceananigans.OutputReaders.FieldTimeSeries{BLX, BLY, BLZ}(
+        old_buf.data,
+        old_buf.grid,
+        old_buf.backend,
+        old_buf.boundary_conditions,
+        old_buf.indices,
+        old_buf.times,
+        new_path,
+        old_buf.name,
+        old_buf.time_indexing,
+        old_buf.reader_kw,
+    )
+    return Prefetched(backend.base_backend, backend.pending, new_buf, backend.next_start)
+end
+
 function _rebuild_fts_with_path(fts, new_path)
     LX, LY, LZ = _location_types(fts)
+    new_backend = _rebuild_backend_with_path(fts.backend, new_path)
     return Oceananigans.OutputReaders.FieldTimeSeries{LX, LY, LZ}(
         fts.data,
         fts.grid,
-        fts.backend,
+        new_backend,
         fts.boundary_conditions,
         fts.indices,
         fts.times,
