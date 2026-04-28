@@ -157,7 +157,7 @@ function metadata_prefix(md::ERA5Metadata)
     dataset = dataset_name(md.dataset)
     start_date = start_date_str(md.dates)
     end_date = end_date_str(md.dates)
-    bbox = md.bounding_box
+    bbox = md.region
 
     if !isnothing(bbox)
         w, e = bbox_strs(bbox.longitude)

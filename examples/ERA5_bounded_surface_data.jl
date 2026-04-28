@@ -32,7 +32,7 @@ dataset = ERA5HourlySingleLevel()
 dates = DateTime(2004, 12, 16):Hour(1):DateTime(2004, 12, 23)  # shorter time range for demo
 
 # Rauber et al 2007, Fig 1: precip map
-bounding_box = BoundingBox(latitude=(-25, 35), longitude=(-110, 30))
+region = BoundingBox(latitude=(-25, 35), longitude=(-110, 30))
 
 # OPTIONAL: download all variables at once (fewer CDS API requests)
 # variables = [:total_precipitation,
@@ -40,11 +40,11 @@ bounding_box = BoundingBox(latitude=(-25, 35), longitude=(-110, 30))
 #              :temperature, # at 2 m
 #              :dewpoint_temperature, # at 2 m
 #              :surface_pressure]
-# download_dataset(variables, dataset, dates; bounding_box)
+# download_dataset(variables, dataset, dates; region)
 
 # ## Create time series
 
-precip_meta = Metadata(:total_precipitation; dataset, dates, bounding_box)
+precip_meta = Metadata(:total_precipitation; dataset, dates, region)
 precip_series = FieldTimeSeries(precip_meta)
 
 # ## Plotting

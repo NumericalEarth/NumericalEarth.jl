@@ -50,7 +50,6 @@ import NumericalEarth.DataWrangling:
     inpainted_metadata_path,
     available_variables
 
-import Oceananigans.Fields: location
 
 download_EN4_cache::String = ""
 function __init__()
@@ -160,7 +159,7 @@ metaprefix(::EN4Metadatum) = "EN4Metadatum"
 
 # Note, EN4 files contain all variables, so the filenames do not
 # depend on name.
-function metadata_filename(::EN4Monthly, name, date, bounding_box)
+function metadata_filename(::EN4Monthly, name, date, region)
     yearstr  = string(Dates.year(date))
     monthstr = string(Dates.month(date), pad=2)
     return "EN.4.2.2.f.analysis.g10." * yearstr * lpad(string(monthstr), 2, '0') * ".nc"
@@ -168,7 +167,6 @@ end
 
 # Convenience functions
 dataset_variable_name(data::EN4Metadata) = EN4_dataset_variable_names[data.name]
-location(::EN4Metadata) = (Center, Center, Center)
 is_three_dimensional(::EN4Metadata) = true
 
 ## This function is explicitly for the downloader to check if the zip file/extracted file exists,

@@ -86,6 +86,22 @@ end
 ##### Single-date download
 #####
 
+"""
+    download_dataset(meta::ERA5Metadatum; skip_existing=true)
+
+Download ERA5 data for a single date/time using the CDSAPI package.
+
+# Keyword Arguments
+- `skip_existing`: Skip download if the file already exists (default: `true`).
+
+# Environment Setup
+Before downloading, you must:
+1. Create an account at https://cds.climate.copernicus.eu/
+2. Accept the Terms of Use for the ERA5 dataset on the dataset page
+3. Set up your API credentials in `~/.cdsapirc`
+
+See https://cds.climate.copernicus.eu/how-to-api for details.
+"""
 function download_dataset(meta::ERA5Metadatum; skip_existing=true)
     output_path = NumericalEarth.DataWrangling.metadata_path(meta)
 
@@ -107,7 +123,7 @@ function download_dataset(meta::ERA5Metadatum; skip_existing=true)
     )
 
     extra_request_keys!(request, meta.dataset)
-    area = build_era5_area(meta.bounding_box)
+    area = build_era5_area(meta.region)
     isnothing(area) || (request["area"] = area)
 
     @root CDSAPI.retrieve(cds_product(meta.dataset), request, output_path)
@@ -126,19 +142,19 @@ function download_dataset(metadata::ERA5Metadata; skip_existing=true, cleanup=tr
 
     for day in sort(collect(keys(grouped)))
         download_era5_day(metadata.name, metadata.dataset, grouped[day];
-                           bounding_box = metadata.bounding_box,
+                           region = metadata.region,
                            dir = metadata.dir,
                            skip_existing, cleanup)
     end
 end
 
 function download_era5_day(name, dataset, day_dates;
-                            bounding_box, dir, skip_existing, cleanup)
+                            region, dir, skip_existing, cleanup)
 
     MDatum    = NumericalEarth.DataWrangling.Metadatum
     meta_path = NumericalEarth.DataWrangling.metadata_path
 
-    all_pairs = [(dt, meta_path(MDatum(name; dataset, date=dt, bounding_box, dir)))
+    all_pairs = [(dt, meta_path(MDatum(name; dataset, date=dt, region, dir)))
                  for dt in day_dates]
 
     pending = skip_existing ? filter(((_, p),) -> !isfile(p), all_pairs) : all_pairs
@@ -165,7 +181,7 @@ function download_era5_day(name, dataset, day_dates;
     )
 
     extra_request_keys!(request, dataset)
-    area = build_era5_area(bounding_box)
+    area = build_era5_area(region)
     isnothing(area) || (request["area"] = area)
 
     mkpath(dir)
@@ -213,7 +229,7 @@ function download_dataset(names::Vector{Symbol}, meta::ERA5PressureMetadatum; sk
     for name in names
         metadatum = NumericalEarth.DataWrangling.Metadatum(name;
                                                            dataset      = meta.dataset,
-                                                           bounding_box = meta.bounding_box,
+                                                           region = meta.region,
                                                            date         = meta.dates,
                                                            dir          = meta.dir)
         path = NumericalEarth.DataWrangling.metadata_path(metadatum)
@@ -248,7 +264,7 @@ function download_dataset(names::Vector{Symbol}, meta::ERA5PressureMetadatum; sk
     )
 
     extra_request_keys!(request, meta.dataset)
-    area = build_era5_area(meta.bounding_box)
+    area = build_era5_area(meta.region)
     isnothing(area) || (request["area"] = area)
 
     mkpath(meta.dir)
@@ -273,16 +289,16 @@ end
 Download one or more ERA5 variables at a single datetime.
 """
 function download_dataset(names::Vector{Symbol}, dataset::ERA5Dataset, datetime;
-                          bounding_box = nothing,
+                          region = nothing,
                           dir = NumericalEarth.DataWrangling.default_download_directory(dataset))
-    meta = NumericalEarth.DataWrangling.Metadatum(first(names); dataset, date=datetime, bounding_box, dir)
+    meta = NumericalEarth.DataWrangling.Metadatum(first(names); dataset, date=datetime, region, dir)
     return download_dataset(names, meta)
 end
 
 function download_dataset(name::Symbol, dataset::ERA5Dataset, datetime;
-                          bounding_box = nothing,
+                          region = nothing,
                           dir = NumericalEarth.DataWrangling.default_download_directory(dataset))
-    return download_dataset([name], dataset, datetime; bounding_box, dir)
+    return download_dataset([name], dataset, datetime; region, dir)
 end
 
 """
@@ -293,7 +309,7 @@ Download one or more ERA5 variables for multiple datetimes, batching by calendar
 function download_dataset(names::Vector{Symbol},
                           dataset::ERA5Dataset,
                           datetimes::AbstractVector;
-                          bounding_box = nothing,
+                          region = nothing,
                           dir = NumericalEarth.DataWrangling.default_download_directory(dataset),
                           skip_existing = true,
                           cleanup = true)
@@ -302,7 +318,7 @@ function download_dataset(names::Vector{Symbol},
                    for d in unique(Dates.Date.(datetimes)))
 
     for day in sort(collect(keys(grouped)))
-        download_era5_multivar_day(names, dataset, grouped[day]; bounding_box, dir, skip_existing, cleanup)
+        download_era5_multivar_day(names, dataset, grouped[day]; region, dir, skip_existing, cleanup)
     end
 
     return nothing
@@ -311,20 +327,20 @@ end
 function download_dataset(name::Symbol,
                           dataset::ERA5Dataset,
                           datetimes::AbstractVector;
-                          bounding_box = nothing,
+                          region = nothing,
                           dir = NumericalEarth.DataWrangling.default_download_directory(dataset),
                           skip_existing = true,
                           cleanup = true)
-    return download_dataset([name], dataset, datetimes; bounding_box, dir, skip_existing, cleanup)
+    return download_dataset([name], dataset, datetimes; region, dir, skip_existing, cleanup)
 end
 
 function download_era5_multivar_day(names, dataset, day_dates;
-                                     bounding_box, dir, skip_existing, cleanup)
+                                     region, dir, skip_existing, cleanup)
 
     MDatum    = NumericalEarth.DataWrangling.Metadatum
     meta_path = NumericalEarth.DataWrangling.metadata_path
 
-    all_triples = [(name, dt, meta_path(MDatum(name; dataset, date=dt, bounding_box, dir)))
+    all_triples = [(name, dt, meta_path(MDatum(name; dataset, date=dt, region, dir)))
                    for name in names for dt in day_dates]
 
     pending = skip_existing ? filter(((_, _, p),) -> !isfile(p), all_triples) : all_triples
@@ -352,7 +368,7 @@ function download_era5_multivar_day(names, dataset, day_dates;
     )
 
     extra_request_keys!(request, dataset)
-    area = build_era5_area(bounding_box)
+    area = build_era5_area(region)
     isnothing(area) || (request["area"] = area)
 
     mkpath(dir)

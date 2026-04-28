@@ -1,4 +1,6 @@
-# Pin Python to < 3.14 to avoid the free-threaded build (cp314t)
-# which is ABI-incompatible with PythonCall.
+
+[deps.copernicusmarine]
+channel = "conda-forge"
+
 [deps.python]
 version = ">=3.10,<3.14"

@@ -128,7 +128,7 @@ function metadata_prefix(md::ERA5PressureMetadata)
     dataset = dataset_name(md.dataset)
     start_date = start_date_str(md.dates)
     end_date = end_date_str(md.dates)
-    bbox = md.bounding_box
+    bbox = md.region
 
     if !isnothing(bbox)
         w, e = bbox_strs(bbox.longitude)
@@ -197,7 +197,7 @@ function z_interfaces(metadata::ERA5PressureMetadata)
     # If mean_geopotential_height is enabled, try to download and compute
     if metadata.dataset.mean_geopotential_height
         ϕ_metadata = Metadata(:geopotential; dataset=metadata.dataset,
-                                dates=metadata.dates, bounding_box=metadata.bounding_box,
+                                dates=metadata.dates, region=metadata.region,
                                 dir=metadata.dir)
         try
             download_dataset(ϕ_metadata)
@@ -227,7 +227,7 @@ height per pressure level in bottom-to-top order (k=1 is highest pressure).
 """
 function mean_geopotential_heights(metadata::ERA5PressureMetadata)
     ϕ_metadata = Metadata(:geopotential; dataset=metadata.dataset,
-                          dates=metadata.dates, bounding_box=metadata.bounding_box,
+                          dates=metadata.dates, region=metadata.region,
                           dir=metadata.dir)
     heights = zeros(length(metadata.dataset.pressure_levels))
     # average over time

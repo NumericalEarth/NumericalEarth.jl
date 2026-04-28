@@ -30,7 +30,7 @@ dates = DateTime(2004, 12, 16):Hour(1):DateTime(2005, 01, 09)  # van Zanten et a
 #dates = DateTime(2004, 12, 16):Hour(1):DateTime(2004, 12, 23)  # shorter time range for demo
 
 # Rauber et al 2007, Fig 1: focus region
-bounding_box = BoundingBox(latitude=(17, 18.5), longitude=(-62.5, -61))
+region = BoundingBox(latitude=(17, 18.5), longitude=(-62.5, -61))
 
 # OPTIONAL: download all variables at once (fewer CDS API requests)
 variables = [:geopotential, # for calculating zlevels as the mean geopotential height
@@ -38,14 +38,14 @@ variables = [:geopotential, # for calculating zlevels as the mean geopotential h
              :northward_velocity,
              :temperature,
              :specific_humidity]
-download_dataset(variables, dataset, dates; bounding_box)
+download_dataset(variables, dataset, dates; region)
 
 # ## Create time series
 
-T_meta = Metadata(:temperature;        dataset, dates, bounding_box)
-q_meta = Metadata(:specific_humidity;  dataset, dates, bounding_box)
-u_meta = Metadata(:eastward_velocity;  dataset, dates, bounding_box)
-v_meta = Metadata(:northward_velocity; dataset, dates, bounding_box)
+T_meta = Metadata(:temperature;        dataset, dates, region)
+q_meta = Metadata(:specific_humidity;  dataset, dates, region)
+u_meta = Metadata(:eastward_velocity;  dataset, dates, region)
+v_meta = Metadata(:northward_velocity; dataset, dates, region)
 
 T_series = FieldTimeSeries(T_meta; time_indices_in_memory=2)
 q_series = FieldTimeSeries(q_meta; time_indices_in_memory=2)
