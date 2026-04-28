@@ -200,7 +200,15 @@ mkpath(obs_cache_dir)
 
 # Shared backend template — `deepcopy(FTS_BACKEND)` for every
 # FieldTimeSeries so each one gets its own independent buffer state.
-const FTS_BACKEND = InMemory(10; prefetch = true)
+#
+# `prefetch = true` is unsafe with the access pattern in this script:
+# nearly every section opens multiple FTS on the same JLD2 file
+# (e.g. `tos`/`sos`/`zos`/... on `_surface.jld2`, `uo`/`vo` on
+# `_fields.jld2`), and `compute_ice_diagnostics` runs in `Threads.@spawn`.
+# Per `prefetched_field_time_series.jl:12-15`, `Prefetched` assumes
+# the underlying backend is the only reader of its data source, and
+# JLD2 segfaults when this is violated.
+const FTS_BACKEND = InMemory(10; prefetch = false)
 
 # ══════════════════════════════════════════════════════════════
 # Helpers
@@ -286,11 +294,44 @@ function compute_mean_and_monthly(fts; start_time = 0, stop_time = Inf,
     return mean_out, monthly_out
 end
 
-function cached_download(url; cache_dir = obs_cache_dir)
+function cached_download(url; cache_dir = obs_cache_dir,
+                              retries = 3,
+                              timeout = Inf)
     mkpath(cache_dir)
     path = joinpath(cache_dir, basename(url))
-    isfile(path) || Downloads.download(url, path)
-    return path
+    isfile(path) && return path
+
+    # NOAA PSL and similar servers frequently stall mid-transfer. By
+    # default libcurl aborts when no data is received for 20 s, which is
+    # the source of the "Less than 1 bytes/sec" RequestError. Disable
+    # that low-speed abort and rely on `timeout` (default Inf) plus a
+    # few retries instead.
+    downloader = Downloads.Downloader()
+    downloader.easy_hook = (easy, info) ->
+        Downloads.Curl.setopt(easy, Downloads.Curl.CURLOPT_LOW_SPEED_TIME, 0)
+
+    # Write to a `.part` file and atomically move on success, so a
+    # half-written cache entry is never left behind.
+    tmp = path * ".part"
+    isfile(tmp) && rm(tmp; force = true)
+
+    last_err = nothing
+    for attempt in 1:retries
+        try
+            Downloads.download(url, tmp; timeout, downloader)
+            mv(tmp, path; force = true)
+            return path
+        catch e
+            last_err = e
+            isfile(tmp) && rm(tmp; force = true)
+            if attempt < retries
+                delay = 2.0 ^ (attempt - 1)
+                @warn "Download failed (attempt $attempt/$retries) — retrying in $(delay)s" url=url error=sprint(showerror, e)
+                sleep(delay)
+            end
+        end
+    end
+    throw(last_err)
 end
 
 function build_land_mask(grid)
@@ -455,8 +496,8 @@ end
 # the surface), so the atmosphere-to-ocean stress is the negative of the
 # stored value. Override the URLs or local file paths via the env vars
 # below; latitudes are reordered ascending if the file stores them N→S.
-const NCEP_TAUU_URL = get(ENV, "NCEP_TAUU_URL", "https://downloads.psl.noaa.gov/Datasets/ncep.reanalysis.derived/surface_gauss/uflx.sfc.mon.ltm.1991-2020.nc")
-const NCEP_TAUV_URL = get(ENV, "NCEP_TAUV_URL", "https://downloads.psl.noaa.gov/Datasets/ncep.reanalysis.derived/surface_gauss/vflx.sfc.mon.ltm.1991-2020.nc")
+const NCEP_TAUU_URL = get(ENV, "NCEP_TAUU_URL", "https://psl.noaa.gov/thredds/fileServer/Datasets/ncep.reanalysis.derived/surface_gauss/uflx.sfc.mon.ltm.nc")
+const NCEP_TAUV_URL = get(ENV, "NCEP_TAUV_URL", "https://psl.noaa.gov/thredds/fileServer/Datasets/ncep.reanalysis.derived/surface_gauss/vflx.sfc.mon.ltm.nc")
 
 function ncep_wind_stress_on_grid(grid;
                                   tauu_file = get(ENV, "NCEP_TAUU_FILE", joinpath(obs_cache_dir, basename(NCEP_TAUU_URL))),
