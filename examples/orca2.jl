@@ -65,11 +65,11 @@ free_surface       = SplitExplicitFreeSurface(grid; substeps=60)
 momentum_advection = WENOVectorInvariant(order=5)
 tracer_advection   = WENO(order=5)
 
+@inline restoring_mask(x, y, z, t) = z>-50
+rate = 1/50days
 dates = DateTime(1993, 1, 1) : Month(1) : DateTime(1993, 11, 1)
-mask = LinearlyTaperedPolarMask(southern=(-80, -70), northern=(70, 90), z=(-100, 0))
-salinity = Metadata(:salinity;  dates, dataset=ECCO4DarwinMonthly())
-rate = 1/6days
-FS = DatasetRestoring(salinity, grid; mask, rate)
+salinity = Metadata(:salinity;  dates, dataset=ECCO4DarwinMonthly(), dir = data_path)
+FS = DatasetRestoring(salinity, grid; mask = restoring_mask, rate)
 
 ocean = ocean_simulation(grid; momentum_advection, tracer_advection, free_surface,
                          closure=(eddy_closure, vertical_mixing, horizontal_viscosity, vertical_diffusivity),
