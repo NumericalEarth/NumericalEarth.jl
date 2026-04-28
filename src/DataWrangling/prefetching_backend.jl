@@ -16,7 +16,7 @@ using Oceananigans.Fields: location
 import Oceananigans.OutputReaders: new_backend
 import Oceananigans.Fields: set!
 
-mutable struct PrefetchingBackend{B<:DatasetBackend, F<:FieldTimeSeries} <: AbstractInMemoryBackend{Int}
+mutable struct PrefetchingBackend{B<:DatasetBackend, F<:FieldTimeSeries} <: AbstractInMemoryBackend{Int, false}
     inner_backend :: B
     pending :: Union{Task, Nothing}
     buffer_fts :: F
