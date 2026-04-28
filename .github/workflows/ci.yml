@@ -108,8 +108,6 @@ jobs:
     env:
       GPU_TEST: "true"
       OPENBLAS_NUM_THREADS: 1
-      # Keep workers alive past ParallelTestRunner's default 3800 MB recycle threshold 
-      JULIA_TEST_MAXRSS_MB: "7000"
       # Redirect temp to the workspace volume (bind-mounted from the
       # host's EBS disk) to avoid filling the container's overlay filesystem with
       # large data downloads and compiled artifacts.
@@ -138,7 +136,7 @@ jobs:
         run: |
           # Run tests in verbose mode
           TEST_ARGS=(--verbose)
-          TEST_ARGS+=(--jobs=$(($(nproc) - 2)))
+          TEST_ARGS+=(--jobs=$(($(nproc) - 1)))
           echo "runtest_test_args=${TEST_ARGS[@]}" | tee -a "${GITHUB_ENV}"
       - name: Update registry
         shell: julia --color=yes {0}
@@ -149,7 +147,7 @@ jobs:
           Pkg.Registry.update()
       - name: Run tests
         run: |
-          earlyoom -m 3 -s 100 -r 300 &
+          earlyoom -m 3 -s 100 -r 300 --prefer 'julia' &
           julia --project --color=yes --check-bounds=yes -e '
               using Pkg;
               Pkg.test(; coverage=true,
