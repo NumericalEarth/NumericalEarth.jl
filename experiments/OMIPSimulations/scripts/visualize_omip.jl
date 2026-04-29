@@ -60,7 +60,7 @@ using NumericalEarth
 using NumericalEarth.DataWrangling: Metadatum
 using NumericalEarth.DataWrangling.WOA: WOAAnnual
 using NumericalEarth: ECCO4Monthly
-using OMIPSimulations: strait_transports
+using OMIPSimulations: strait_transports, woa_to_teos10!
 
 # ══════════════════════════════════════════════════════════════
 # Monkey-patch: InMemory FieldTimeSeries split-file support
@@ -648,6 +648,10 @@ function load_surface_case(run_dir, prefix; start_time = 0, stop_time = Inf)
     S_woa = Field(Metadatum(:salinity;    dataset = WOAAnnual()), CPU())
     T_interp = CenterField(grid); interpolate!(T_interp, T_woa)
     S_interp = CenterField(grid); interpolate!(S_interp, S_woa)
+    # Convert WOA in-situ T and Practical S to TEOS-10 Conservative T and
+    # Absolute Salinity so the bias is computed between like-typed fields
+    # (the model's `tos`, `sos` are Conservative T and Absolute S).
+    woa_to_teos10!(T_interp, S_interp)
     T_woa_on_grid = Array(interior(T_interp))
     S_woa_on_grid = Array(interior(S_interp))
     δSST = SST .- T_woa_on_grid[:, :, Nz]

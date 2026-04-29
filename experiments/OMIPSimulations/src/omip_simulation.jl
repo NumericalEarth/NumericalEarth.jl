@@ -380,7 +380,7 @@ function woa_salinity_fts_to_teos10!(fts)
             λ = λnode(i, j, k, cpu_grid, Center(), Center(), Center())
             φ = φnode(i, j, k, cpu_grid, Center(), Center(), Center())
             z = znode(i, j, k, cpu_grid, Center(), Center(), Center())
-            p = _approx_pressure_dbar(z)
+            p = approx_pressure_dbar(z)
             S_h[i, j, k] = gsw_sa_from_sp(SP, p, λ, φ)
         end
         copyto!(S_int, S_h)
