@@ -1,6 +1,6 @@
 module JRA55
 
-export JRA55FieldTimeSeries, JRA55PrescribedAtmosphere, RepeatYearJRA55, MultiYearJRA55
+export JRA55FieldTimeSeries, JRA55PrescribedAtmosphere, JRA55PrescribedLand, RepeatYearJRA55, MultiYearJRA55
 
 using Oceananigans
 using Oceananigans.Units
@@ -39,5 +39,6 @@ end
 include("JRA55_metadata.jl")
 include("JRA55_field_time_series.jl")
 include("JRA55_prescribed_atmosphere.jl")
+include("JRA55_prescribed_land.jl")
 
 end # module

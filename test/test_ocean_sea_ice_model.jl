@@ -68,6 +68,22 @@ using ClimaSeaIce.Rheologies
                 time_step!(coupled_model, 1)
                 true
             end
+
+            # Test with land component
+            @info "Testing OceanSeaIceModel with land on $A..."
+            land = JRA55PrescribedLand(arch; backend)
+
+            @test begin
+                ocean_with_land = ocean_simulation(grid; free_surface)
+                set!(ocean_with_land.model, T=temperature_metadata[1], S=salinity_metadata[1])
+                sea_ice_with_land = sea_ice_simulation(grid, ocean_with_land; advection=WENO(order=7))
+                above_freezing_ocean_temperature!(ocean_with_land, grid, sea_ice_with_land)
+
+                coupled_model = OceanSeaIceModel(ocean_with_land, sea_ice_with_land; atmosphere, land, radiation)
+                @test !isnothing(coupled_model.interfaces.exchanger.land)
+                time_step!(coupled_model, 1)
+                true
+            end
         end
     end
 end

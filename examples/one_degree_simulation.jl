@@ -96,8 +96,9 @@ set!(sea_ice.model, h=ecco_sea_ice_thickness, ℵ=ecco_sea_ice_concentration)
 
 # We force the simulation with a JRA55-do atmospheric reanalysis.
 radiation  = Radiation(arch)
-atmosphere = JRA55PrescribedAtmosphere(arch; backend=JRA55NetCDFBackend(80),
-                                       include_rivers_and_icebergs = false)
+jra55_backend = JRA55NetCDFBackend(80)
+atmosphere = JRA55PrescribedAtmosphere(arch; backend=jra55_backend)
+land       = JRA55PrescribedLand(arch; backend=jra55_backend)
 
 # ### Coupled simulation
 
@@ -106,7 +107,7 @@ atmosphere = JRA55PrescribedAtmosphere(arch; backend=JRA55NetCDFBackend(80),
 
 # With Runge-Kutta 3rd order time-stepping we can safely use a timestep of 20 minutes.
 
-coupled_model = OceanSeaIceModel(ocean, sea_ice; atmosphere, radiation)
+coupled_model = OceanSeaIceModel(ocean, sea_ice; atmosphere, land, radiation)
 simulation = Simulation(coupled_model; Δt=20minutes, stop_time=365days)
 
 # ### A progress messenger
