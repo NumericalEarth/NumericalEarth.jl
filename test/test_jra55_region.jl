@@ -11,7 +11,6 @@ using Oceananigans.Grids: topology, Bounded
         bbox = BoundingBox(longitude=(120, 240), latitude=(-30, 30))
         atm = JRA55PrescribedAtmosphere(arch;
                                         time_indices_in_memory=2,
-                                        include_rivers_and_icebergs=false,
                                         region=bbox)
         Ta = atm.tracers.T
         # Coordinates of the field grid should fall inside the requested bbox.
@@ -31,7 +30,6 @@ using Oceananigans.Grids: topology, Bounded
         col = Column(150.0, 0.0)  # equator, central Pacific
         atm = JRA55PrescribedAtmosphere(arch;
                                         time_indices_in_memory=2,
-                                        include_rivers_and_icebergs=false,
                                         region=col)
         Ta = atm.tracers.T
         @test size(Ta.grid, 1) == 1
@@ -44,10 +42,8 @@ using Oceananigans.Grids: topology, Bounded
         # The Column dispatch should produce the same value as bilinearly
         # interpolating a bbox-extracted FTS at the column's (lon, lat).
         col_atm  = JRA55PrescribedAtmosphere(arch; time_indices_in_memory=2,
-                                             include_rivers_and_icebergs=false,
                                              region=Column(150.0, 0.0))
         bbox_atm = JRA55PrescribedAtmosphere(arch; time_indices_in_memory=2,
-                                             include_rivers_and_icebergs=false,
                                              region=BoundingBox(longitude=(148, 152),
                                                                 latitude=(-2, 2)))
 

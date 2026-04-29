@@ -45,7 +45,6 @@ function ECCOPrescribedAtmosphere(architecture = CPU(), FT = Float32;
     ℐꜜˢʷ = ECCOFieldTimeSeries(:downwelling_shortwave)
     Fr   = ECCOFieldTimeSeries(:rain_freshwater_flux)
     
-    auxiliary_freshwater_flux = nothing
     freshwater_flux = (; rain = Fr)
 
     times = ua.times
@@ -63,7 +62,6 @@ function ECCOPrescribedAtmosphere(architecture = CPU(), FT = Float32;
     atmosphere = PrescribedAtmosphere(grid, times;
                                       velocities,
                                       freshwater_flux,
-                                      auxiliary_freshwater_flux,
                                       tracers,
                                       downwelling_radiation,
                                       surface_layer_height,

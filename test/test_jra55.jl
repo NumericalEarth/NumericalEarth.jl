@@ -137,16 +137,16 @@ using NumericalEarth.DataWrangling: compute_native_date_range
         ##### JRA55 prescribed atmosphere
         #####
 
-        atmosphere = JRA55PrescribedAtmosphere(arch; time_indices_in_memory=2, include_rivers_and_icebergs=false)
+        atmosphere = JRA55PrescribedAtmosphere(arch; time_indices_in_memory=2)
         @test atmosphere isa PrescribedAtmosphere
-        @test isnothing(atmosphere.auxiliary_freshwater_flux)
 
-        # Test that rivers and icebergs are included in the JRA55 data with the correct frequency
-        atmosphere = JRA55PrescribedAtmosphere(arch; time_indices_in_memory=2, include_rivers_and_icebergs=true)
-        @test haskey(atmosphere.auxiliary_freshwater_flux, :rivers)
-        @test haskey(atmosphere.auxiliary_freshwater_flux, :icebergs)
+        # Test JRA55PrescribedLand loads river and iceberg data with correct frequency
+        land = JRA55PrescribedLand(arch; time_indices_in_memory=2)
+        @test land isa NumericalEarth.Lands.PrescribedLand
+        @test haskey(land.freshwater_flux, :rivers)
+        @test haskey(land.freshwater_flux, :icebergs)
 
-        rivers_times = atmosphere.auxiliary_freshwater_flux.rivers.times
+        rivers_times = land.freshwater_flux.rivers.times
         pressure_times = atmosphere.pressure.times
         @test rivers_times != pressure_times
         @test length(rivers_times) != length(pressure_times)

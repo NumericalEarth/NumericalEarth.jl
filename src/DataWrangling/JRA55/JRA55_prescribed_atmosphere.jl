@@ -12,7 +12,6 @@ JRA55PrescribedAtmosphere(arch::Distributed; kw...) =
                               time_indices_in_memory = 10,
                               time_indexing = Cyclical(),
                               surface_layer_height = 10,  # meters
-                              include_rivers_and_icebergs = false,
                               region = nothing,
                               other_kw...)
 
@@ -29,7 +28,6 @@ function JRA55PrescribedAtmosphere(architecture = CPU();
                                    time_indices_in_memory = 10,
                                    time_indexing = Cyclical(),
                                    surface_layer_height = 10,  # meters
-                                   include_rivers_and_icebergs = false,
                                    region = nothing,
                                    other_kw...)
 
@@ -51,17 +49,6 @@ function JRA55PrescribedAtmosphere(architecture = CPU();
     freshwater_flux = (rain = Fra,
                        snow = Fsn)
 
-    # Rivers and icebergs are on a different grid and have a different
-    # frequency than the rest of the JRA55 data. We use the
-    # PrescribedAtmosphere `auxiliary_freshwater_flux` feature for them.
-    if include_rivers_and_icebergs
-        Fri = JRA55FieldTimeSeries(:river_freshwater_flux)
-        Fic = JRA55FieldTimeSeries(:iceberg_freshwater_flux)
-        auxiliary_freshwater_flux = (rivers = Fri, icebergs = Fic)
-    else
-        auxiliary_freshwater_flux = nothing
-    end
-
     times = ua.times
     grid  = ua.grid
 
@@ -81,7 +68,6 @@ function JRA55PrescribedAtmosphere(architecture = CPU();
     atmosphere = PrescribedAtmosphere(grid, times;
                                       velocities,
                                       freshwater_flux,
-                                      auxiliary_freshwater_flux,
                                       tracers,
                                       downwelling_radiation,
                                       surface_layer_height,

@@ -104,15 +104,15 @@ radiation = Radiation(arch)
 # The number of snapshots that are loaded into memory is determined by
 # `time_indices_in_memory`. Here, we load 41 snapshots at a time into memory.
 
-atmosphere = JRA55PrescribedAtmosphere(arch; time_indices_in_memory = 41,
-                                       include_rivers_and_icebergs = false)
+atmosphere = JRA55PrescribedAtmosphere(arch; time_indices_in_memory = 41)
+land       = JRA55PrescribedLand(arch; time_indices_in_memory = 41)
 
 # ## The coupled simulation
 
 # Next we assemble the ocean, atmosphere, and radiation
 # into a coupled model,
 
-coupled_model = OceanOnlyModel(ocean; atmosphere, radiation)
+coupled_model = OceanOnlyModel(ocean; atmosphere, land, radiation)
 
 # We then create a coupled simulation.
 
