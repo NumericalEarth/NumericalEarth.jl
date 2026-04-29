@@ -212,7 +212,7 @@ end
 
     @testset "ERA5 Column grid" begin
         col = Column(200.0, 35.0)
-        md = Metadatum(:temperature; dataset=ERA5Hourly(),
+        md = Metadatum(:temperature; dataset=ERA5HourlySingleLevel(),
                        date=DateTime(2020, 1, 1), region=col)
         grid = native_grid(md)
 
