@@ -58,31 +58,19 @@ ImpureSaturationSpecificHumidity(phase) = ImpureSaturationSpecificHumidity(phase
 @inline compute_water_mole_fraction(::Nothing, salinity) = 1
 @inline compute_water_mole_fraction(x_H₂O::Number, salinity) = x_H₂O
 
-@inline function surface_specific_humidity(formulation::ImpureSaturationSpecificHumidity,
-                                            ℂᵃᵗ, Tᵃᵗ, pᵃᵗ, qᵃᵗ,
-                                            Tₛ, Sₛ=zero(Tₛ))
-    # Extrapolate air density to the surface temperature
-    # following an adiabatic ideal gas transformation
-    cvₘ = Thermodynamics.cv_m(ℂᵃᵗ, qᵃᵗ)
-    Rᵃᵗ = Thermodynamics.gas_constant_air(ℂᵃᵗ, qᵃᵗ)
-    κᵃᵗ = cvₘ / Rᵃᵗ # 1 / (γ - 1)
-    ρᵃᵗ = Thermodynamics.air_density(ℂᵃᵗ, Tᵃᵗ, pᵃᵗ, qᵃᵗ)
-    ρₛ = ρᵃᵗ * (Tₛ / Tᵃᵗ)^κᵃᵗ
-    return surface_specific_humidity(formulation, ℂᵃᵗ, ρₛ, Tₛ, Sₛ)
-end
-
-@inline function surface_specific_humidity(formulation::ImpureSaturationSpecificHumidity, ℂᵃᵗ, ρₛ::Number, Tₛ, Sₛ=zero(Tₛ))
+# COARE 3.6 / Edson (2013) pressure-based saturation specific humidity:
+#  qₛ = ε eₛ / (p - (1 - ε) eₛ),   ε = Rᵈ / Rᵛ
+@inline function surface_specific_humidity(formulation::ImpureSaturationSpecificHumidity, ℂᵃᵗ, Tᵃᵗ, pᵃᵗ, qᵃᵗ, Tₛ, Sₛ=zero(Tₛ))
     FT = eltype(Tₛ)
     CT = eltype(ℂᵃᵗ)
-    Tₛ = convert(CT, Tₛ)
-    ρₛ = convert(CT, ρₛ)
-    phase = formulation.phase
-    p★ = Thermodynamics.saturation_vapor_pressure(ℂᵃᵗ, Tₛ, phase)
-    q★ = Thermodynamics.q_vap_from_p_vap(ℂᵃᵗ, Tₛ, ρₛ, p★)
+    T  = convert(CT, Tₛ)
+    p  = convert(CT, pᵃᵗ)
+    p★ = AtmosphericThermodynamics.saturation_vapor_pressure(ℂᵃᵗ, T, formulation.phase)
 
-    # Compute saturation specific humidity according to Raoult's law
     χ_H₂O = compute_water_mole_fraction(formulation.water_mole_fraction, Sₛ)
-    qₛ = χ_H₂O * q★
+    eₛ = χ_H₂O * p★
+    ε  = 1 / AtmosphericThermodynamics.Parameters.Rv_over_Rd(ℂᵃᵗ)
+    qₛ = ε * eₛ / (p - (1 - ε) * eₛ)
 
     return convert(FT, qₛ)
 end
