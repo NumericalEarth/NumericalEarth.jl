@@ -59,7 +59,7 @@ using ClimaSeaIce.Rheologies
 
             backend = JRA55NetCDFBackend(4)
             atmosphere = JRA55PrescribedAtmosphere(arch; backend)
-            radiation = Radiation(arch)
+            radiation = JRA55PrescribedRadiation(arch; backend)
             
             # Fluxes are computed when the model is constructed, so we just test that this works.
             # And that we can time step with sea ice

@@ -30,8 +30,9 @@ using Oceananigans.OutputWriters: Checkpointer
             backend = JRA55NetCDFBackend(4)
             atmosphere = JRA55PrescribedAtmosphere(arch; backend)
             land = JRA55PrescribedLand(arch; backend)
+            radiation = JRA55PrescribedRadiation(arch; backend)
 
-            return OceanSeaIceModel(ocean, sea_ice; atmosphere, land)
+            return OceanSeaIceModel(ocean, sea_ice; atmosphere, land, radiation)
         end
 
         # Reference run: 3 iterations, then continue to 6

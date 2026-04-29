@@ -19,7 +19,7 @@ using Oceananigans.OrthogonalSphericalShellGrids
         add_callback!(ocean, pushdata)
         backend = JRA55NetCDFBackend(4)
         atmosphere = JRA55PrescribedAtmosphere(arch; backend)
-        radiation = Radiation(arch)
+        radiation = JRA55PrescribedRadiation(arch; backend)
         coupled_model = OceanOnlyModel(ocean; atmosphere, radiation)
         Δt = 60
         for n = 1:3
@@ -50,7 +50,7 @@ using Oceananigans.OrthogonalSphericalShellGrids
 
         backend = JRA55NetCDFBackend(4)
         atmosphere = JRA55PrescribedAtmosphere(arch; backend)
-        radiation = Radiation(arch)
+        radiation = JRA55PrescribedRadiation(arch; backend)
 
         # Fluxes are computed when the model is constructed, so we just test that this works.
         @test begin

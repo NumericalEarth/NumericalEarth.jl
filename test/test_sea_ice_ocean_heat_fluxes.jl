@@ -201,7 +201,7 @@ end
 
         backend = JRA55NetCDFBackend(4)
         atmosphere = JRA55PrescribedAtmosphere(arch; backend)
-        radiation = Radiation(arch)
+        radiation = JRA55PrescribedRadiation(arch; backend)
 
         for sea_ice_ocean_heat_flux in [IceBathHeatFlux(), ThreeEquationHeatFlux()]
             @testset "Salt flux with $(nameof(typeof(sea_ice_ocean_heat_flux)))" begin
@@ -259,7 +259,7 @@ end
 
         backend = JRA55NetCDFBackend(4)
         atmosphere = JRA55PrescribedAtmosphere(arch; backend)
-        radiation = Radiation(arch)
+        radiation = JRA55PrescribedRadiation(arch; backend)
 
         for sea_ice_ocean_heat_flux in [IceBathHeatFlux(), ThreeEquationHeatFlux()]
             @testset "Flux magnitude with $(nameof(typeof(sea_ice_ocean_heat_flux)))" begin
@@ -403,7 +403,7 @@ end
 
         backend = JRA55NetCDFBackend(4)
         atmosphere = JRA55PrescribedAtmosphere(arch; backend)
-        radiation = Radiation(arch)
+        radiation = JRA55PrescribedRadiation(arch; backend)
 
         for sea_ice_ocean_heat_flux in [IceBathHeatFlux(), ThreeEquationHeatFlux()]
             @testset "Frazil with $(nameof(typeof(sea_ice_ocean_heat_flux)))" begin
@@ -454,7 +454,7 @@ end
 
         backend = JRA55NetCDFBackend(4)
         atmosphere = JRA55PrescribedAtmosphere(arch; backend)
-        radiation = Radiation(arch)
+        radiation = JRA55PrescribedRadiation(arch; backend)
 
         # Test with ThreeEquationHeatFlux (default)
         @test begin
