@@ -196,7 +196,7 @@ end
 
         set!(ocean_with_land.model, T = 15, S = 30)
         land_dates = all_dates(RepeatYearJRA55(), :river_freshwater_flux)
-        land = JRA55PrescribedLand(arch; end_date=land_dates[2], backend = InMemory())
+        land = JRA55PrescribedLand(arch; end_date=land_dates[2])
         model_with_land = OceanOnlyModel(ocean_with_land; atmosphere, land)
 
         # Verify land exchanger is wired up
