@@ -12,6 +12,10 @@ using NumericalEarth.DataWrangling.ERA5: ERA5HourlyPressureLevels, ERA5MonthlyPr
                                          pressure_field
 using NumericalEarth.DataWrangling: metadata_path, download_dataset
 
+# TODO: drop once test files are uploaded to NumericalEarthArtifacts and these
+# subtests use download_dataset_with_fallback (matching the surface-level tests).
+has_cds_credentials() = haskey(ENV, "CDSAPI_KEY") || isfile(joinpath(homedir(), ".cdsapirc"))
+
 # Test date: Kyoto Protocol ratification date, February 16, 2005
 start_date = DateTime(2005, 2, 16, 12)
 
@@ -34,7 +38,7 @@ start_date = DateTime(2005, 2, 16, 12)
         # Download the data (falls back to NumericalEarthArtifacts if CDS is unreachable)
         download_dataset_with_fallback(filepath; dataset_name="ERA5Hourly $variable") do
             download_dataset(metadatum)
-        end
+        end || return
         @test isfile(filepath)
 
         # Verify the NetCDF file structure
@@ -190,7 +194,7 @@ start_date = DateTime(2005, 2, 16, 12)
             filepath = metadata_path(metadatum)
             isfile(filepath) || download_dataset_with_fallback(filepath; dataset_name="ERA5Hourly $variable") do
                 download_dataset(metadatum)
-            end
+            end || return
 
             # Create a Field from the downloaded data
             ψ = Field(metadatum, arch)
@@ -219,7 +223,7 @@ start_date = DateTime(2005, 2, 16, 12)
             filepath = metadata_path(metadatum)
             isfile(filepath) || download_dataset_with_fallback(filepath; dataset_name="ERA5Hourly $variable") do
                 download_dataset(metadatum)
-            end
+            end || return
 
             # Create a target grid matching the bounding box region
             grid = LatitudeLongitudeGrid(arch;
@@ -250,6 +254,11 @@ start_date = DateTime(2005, 2, 16, 12)
         ds_pl = ERA5HourlyPressureLevels(pressure_levels=[850, 500]hPa)
 
         @testset "Download and 3D Field" begin
+            if !has_cds_credentials()
+                @info "Skipping pressure-level download test: no CDS credentials"
+                return
+            end
+
             meta = Metadatum(:temperature; dataset=ds_pl, region, date=start_date)
             filepath = metadata_path(meta)
             isfile(filepath) && rm(filepath; force=true)
@@ -280,6 +289,11 @@ start_date = DateTime(2005, 2, 16, 12)
         end
 
         @testset "Geopotential height conversion" begin
+            if !has_cds_credentials()
+                @info "Skipping geopotential height test: no CDS credentials"
+                return
+            end
+
             meta_z = Metadatum(:geopotential_height; dataset=ds_pl, region, date=start_date)
             filepath = metadata_path(meta_z)
             isfile(filepath) && rm(filepath; force=true)
