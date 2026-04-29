@@ -27,11 +27,13 @@ const cp_ocean = 3991.86795711963
 # `stop_time`). Any number of cases is supported, with per-case heatmap
 # figures laying out one column per case.
 cases = [
-    (prefix = "orca_corrected_snow_cb0.12_ksymm500",            label = "ORCA GM500",         start_time = 15 * years, stop_time = Inf),
-    (prefix = "orca_corrected_snow_cb0.15_bih50days",           label = "ORCA GM500 LowDiss", start_time =  5 * years, stop_time = Inf),
-    (prefix = "halfdegree_corrected_snow_cb0.01_kskew0_ksymm0", label = "Half Degree",        start_time = 10 * years, stop_time = Inf),
-    (prefix = "orca_corrected_snow_cb0.06_kskew0_ksymm0",       label = "ORCA NOGM",          start_time = 40 * years, stop_time = Inf),
-    (prefix = "orca_corrected_snow_cb0.06_kskew1000_ksymm1000", label = "ORCA GM1000",        start_time = 40 * years, stop_time = Inf),
+    (prefix = "orca_corrected_snow_cb0.12_ksymm500",            label = "ORCA GM500",           start_time = 40 * years, stop_time = Inf),
+    (prefix = "orca_corrected_snow_cb0.15_bih50days",           label = "ORCA GM500 LowDiss",   start_time = 20 * years, stop_time = Inf),
+    (prefix = "orca_corrected_snow_cb0.15_bihvisc3e10_run",     label = "ORCA GM500 LowerDiss", start_time = 15 * years, stop_time = Inf),
+    (prefix = "orca_ncar_snow_cb0.15_bih50days_run",            label = "ORCA NCAR",            start_time =  3 * years, stop_time = Inf),
+    (prefix = "halfdegree_corrected_snow_cb0.01_kskew0_ksymm0", label = "Half Degree",          start_time = 20 * years, stop_time = Inf),
+    (prefix = "orca_corrected_snow_cb0.06_kskew0_ksymm0",       label = "ORCA NOGM",            start_time = 40 * years, stop_time = Inf),
+    (prefix = "orca_corrected_snow_cb0.06_kskew1000_ksymm1000", label = "ORCA GM1000",          start_time = 40 * years, stop_time = Inf),
 ]
 
 run_dir_for(prefix) = "$(prefix)_run"
@@ -717,7 +719,7 @@ end
 # Figure 1: SST bias
 @info "Figure 1: SST bias"
 savefig(plot_field_grid(:δSST;  title_suffix = "SST - WOA", colormap = :balance,
-                        colorrange = (-5, 5), label = "deg C"),
+                        colorrange = (-2.75, 2.75), label = "deg C"),
         "fig01_sst_bias.png")
 
 # Figure 2: SSS bias
@@ -797,7 +799,7 @@ for (i, lab) in enumerate(labels)
            colorrange = (-200, 200), label = "W/m^2")
     panel!(fig, [2, 2i-1], D[lab].FW;
            title = "$lab: Net freshwater flux", colormap = :balance,
-           colorrange = (-1e-4, 1e-4), label = "kg/m^2/s")
+           colorrange = (-1e-5, 1e-5), label = "kg/m^2/s")
 end
 savefig(fig, "fig06_surface_fluxes.png")
 
@@ -960,75 +962,72 @@ m3_to_1e3km3 = 1e-12
 
 # Figure 9: SIE
 @info "Figure 9: SIE"
-fig = Figure(size = (1200, 500), fontsize = 14)
-ax = Axis(fig[1, 1]; xlabel="Month", ylabel="SIE (Million km²)", title="Arctic SIE Climatology", xticks=(1:12, month_names))
-lines!(ax, 1:12, nsidc_arctic.extent_monthly; color=:black, linewidth=2, label="NSIDC")
+fig = Figure(size = (600 + 200 * length(labels), 500), fontsize = 14)
+ax_a = Axis(fig[1, 1]; xlabel="Month", ylabel="SIE (Million km²)", title="Arctic SIE Climatology", xticks=(1:12, month_names))
+lines!(ax_a, 1:12, nsidc_arctic.extent_monthly; color=:black, linewidth=2, label="NSIDC")
 for (i, lab) in enumerate(labels)
-    lines!(ax, 1:12, ICE[lab].arctic_extent_monthly .* m2_to_Mkm2; color=case_colors[i], label=lab)
+    lines!(ax_a, 1:12, ICE[lab].arctic_extent_monthly .* m2_to_Mkm2; color=case_colors[i], label=lab)
 end
-axislegend(ax; position=:lb)
-ax = Axis(fig[1, 2]; xlabel="Month", ylabel="SIE (Million km²)", title="Antarctic SIE Climatology", xticks=(1:12, month_names))
-lines!(ax, 1:12, nsidc_antarctic.extent_monthly; color=:black, linewidth=2, label="NSIDC")
+ax_b = Axis(fig[1, 2]; xlabel="Month", ylabel="SIE (Million km²)", title="Antarctic SIE Climatology", xticks=(1:12, month_names))
+lines!(ax_b, 1:12, nsidc_antarctic.extent_monthly; color=:black, linewidth=2, label="NSIDC")
 for (i, lab) in enumerate(labels)
-    lines!(ax, 1:12, ICE[lab].antarctic_extent_monthly .* m2_to_Mkm2; color=case_colors[i], label=lab)
+    lines!(ax_b, 1:12, ICE[lab].antarctic_extent_monthly .* m2_to_Mkm2; color=case_colors[i], label=lab)
 end
-axislegend(ax; position=:rt)
+Legend(fig[1, 3], ax_a)
 savefig(fig, "fig09_sie.png")
 
 # Figure 10: SIA
 @info "Figure 10: SIA"
-fig = Figure(size = (1200, 500), fontsize = 14)
-ax = Axis(fig[1, 1]; xlabel="Month", ylabel="SIA (Million km²)", title="Arctic SIA Climatology", xticks=(1:12, month_names))
-lines!(ax, 1:12, nsidc_arctic.area_monthly; color=:black, linewidth=2, label="NSIDC")
+fig = Figure(size = (600 + 200 * length(labels), 500), fontsize = 14)
+ax_a = Axis(fig[1, 1]; xlabel="Month", ylabel="SIA (Million km²)", title="Arctic SIA Climatology", xticks=(1:12, month_names))
+lines!(ax_a, 1:12, nsidc_arctic.area_monthly; color=:black, linewidth=2, label="NSIDC")
 for (i, lab) in enumerate(labels)
-    lines!(ax, 1:12, ICE[lab].arctic_area_monthly .* m2_to_Mkm2; color=case_colors[i], label=lab)
+    lines!(ax_a, 1:12, ICE[lab].arctic_area_monthly .* m2_to_Mkm2; color=case_colors[i], label=lab)
 end
-axislegend(ax; position=:lb)
-ax = Axis(fig[1, 2]; xlabel="Month", ylabel="SIA (Million km²)", title="Antarctic SIA Climatology", xticks=(1:12, month_names))
-lines!(ax, 1:12, nsidc_antarctic.area_monthly; color=:black, linewidth=2, label="NSIDC")
+ax_b = Axis(fig[1, 2]; xlabel="Month", ylabel="SIA (Million km²)", title="Antarctic SIA Climatology", xticks=(1:12, month_names))
+lines!(ax_b, 1:12, nsidc_antarctic.area_monthly; color=:black, linewidth=2, label="NSIDC")
 for (i, lab) in enumerate(labels)
-    lines!(ax, 1:12, ICE[lab].antarctic_area_monthly .* m2_to_Mkm2; color=case_colors[i], label=lab)
+    lines!(ax_b, 1:12, ICE[lab].antarctic_area_monthly .* m2_to_Mkm2; color=case_colors[i], label=lab)
 end
-axislegend(ax; position=:rt)
+Legend(fig[1, 3], ax_a)
 savefig(fig, "fig10_sia.png")
 
 # Figure 11: Arctic volume
 @info "Figure 11: Arctic volume"
-fig = Figure(size = (600, 500), fontsize = 14)
+fig = Figure(size = (400 + 200 * length(labels), 500), fontsize = 14)
 ax = Axis(fig[1, 1]; xlabel="Month", ylabel="Ice volume (10³ km³)", title="Arctic sea-ice volume", xticks=(1:12, month_names))
 lines!(ax, 1:12, piomas_monthly; color=:black, linewidth=2, label="PIOMAS")
 for (i, lab) in enumerate(labels)
     lines!(ax, 1:12, ICE[lab].arctic_volume_monthly .* m3_to_1e3km3; color=case_colors[i], label=lab)
 end
-axislegend(ax; position=:rt)
+Legend(fig[1, 2], ax)
 savefig(fig, "fig11_arctic_volume.png")
 
 # Figure 12: SIA time series
 @info "Figure 12: SIA time series"
-fig = Figure(size = (1200, 500), fontsize = 14)
-ax = Axis(fig[1, 1]; xlabel="Time (years)", ylabel="SIA (Million km²)", title="Arctic sea-ice area")
+fig = Figure(size = (600 + 200 * length(labels), 500), fontsize = 14)
+ax_a = Axis(fig[1, 1]; xlabel="Time (years)", ylabel="SIA (Million km²)", title="Arctic sea-ice area")
 for (i, lab) in enumerate(labels)
     time_years = [Dates.value(d - ICE[lab].snapshot_dates[1]) / (365.25 * 86400 * 1000) for d in ICE[lab].snapshot_dates]
-    lines!(ax, time_years, ICE[lab].arctic_area .* m2_to_Mkm2; color=case_colors[i], label=lab)
+    lines!(ax_a, time_years, ICE[lab].arctic_area .* m2_to_Mkm2; color=case_colors[i], label=lab)
 end
-axislegend(ax; position=:rt)
-ax = Axis(fig[1, 2]; xlabel="Time (years)", ylabel="SIA (Million km²)", title="Antarctic sea-ice area")
+ax_b = Axis(fig[1, 2]; xlabel="Time (years)", ylabel="SIA (Million km²)", title="Antarctic sea-ice area")
 for (i, lab) in enumerate(labels)
     time_years = [Dates.value(d - ICE[lab].snapshot_dates[1]) / (365.25 * 86400 * 1000) for d in ICE[lab].snapshot_dates]
-    lines!(ax, time_years, ICE[lab].antarctic_area .* m2_to_Mkm2; color=case_colors[i], label=lab)
+    lines!(ax_b, time_years, ICE[lab].antarctic_area .* m2_to_Mkm2; color=case_colors[i], label=lab)
 end
-axislegend(ax; position=:rt)
+Legend(fig[1, 3], ax_a)
 savefig(fig, "fig12_sia_timeseries.png")
 
 # Figure 13: Arctic volume time series
 @info "Figure 13: Arctic volume time series"
-fig = Figure(size = (600, 500), fontsize = 14)
+fig = Figure(size = (400 + 200 * length(labels), 500), fontsize = 14)
 ax = Axis(fig[1, 1]; xlabel="Time (years)", ylabel="Ice volume (10³ km³)", title="Arctic sea-ice volume")
 for (i, lab) in enumerate(labels)
     time_years = [Dates.value(d - ICE[lab].snapshot_dates[1]) / (365.25 * 86400 * 1000) for d in ICE[lab].snapshot_dates]
     lines!(ax, time_years, ICE[lab].arctic_volume .* m3_to_1e3km3; color=case_colors[i], label=lab)
 end
-axislegend(ax; position=:rt)
+Legend(fig[1, 2], ax)
 savefig(fig, "fig13_arctic_volume_timeseries.png")
 
 # ══════════════════════════════════════════════════════════════
@@ -1118,49 +1117,49 @@ end
 
 # Figure 14: TKE
 @info "Figure 14: TKE and KE"
-fig = Figure(size = (900, 600), fontsize = 14)
-ax = Axis(fig[1, 1]; xlabel="Time (years)", ylabel="TKE (m²/s²)", title="Global-mean turbulent kinetic energy")
+fig = Figure(size = (600 + 150 * length(labels), 600), fontsize = 14)
+ax_tke = Axis(fig[1, 1]; xlabel="Time (years)", ylabel="TKE (m²/s²)", title="Global-mean turbulent kinetic energy")
 for (i, lab) in enumerate(labels)
-    lines!(ax, TS[lab].tke_time_in_years, TS[lab].tke_mean; color=case_colors[i], label=lab)
+    lines!(ax_tke, TS[lab].tke_time_in_years, TS[lab].tke_mean; color=case_colors[i], label=lab)
 end
-axislegend(ax; position=:rb)
-ax = Axis(fig[2, 1]; xlabel="Time (years)", ylabel="TKE (m²/s²)", title="Global-mean kinetic energy")
+ax_ke = Axis(fig[2, 1]; xlabel="Time (years)", ylabel="KE (m²/s²)", title="Global-mean kinetic energy")
 for (i, lab) in enumerate(labels)
-    lines!(ax, TS[lab].tke_time_in_years, TS[lab].ke_mean; color=case_colors[i], label=lab)
+    lines!(ax_ke, TS[lab].tke_time_in_years, TS[lab].ke_mean; color=case_colors[i], label=lab)
 end
-axislegend(ax; position=:rb)
+Legend(fig[1, 2], ax_tke)
+Legend(fig[2, 2], ax_ke)
 savefig(fig, "fig14_tke.png")
 
 # Figure 15: T and S drift
 @info "Figure 15: T and S drift"
-fig = Figure(size = (1200, 450), fontsize = 14)
-ax = Axis(fig[1, 1]; xlabel="Time (years)", ylabel="ΔT (deg C)", title="Global-mean temperature drift")
+fig = Figure(size = (600 + 200 * length(labels), 450), fontsize = 14)
+ax_T = Axis(fig[1, 1]; xlabel="Time (years)", ylabel="ΔT (deg C)", title="Global-mean temperature drift")
 for (i, lab) in enumerate(labels)
     d = TS[lab]
-    lines!(ax, d.time_in_years, d.temperature_mean .- d.temperature_mean[1]; color=case_colors[i], label=lab)
+    lines!(ax_T, d.time_in_years, d.temperature_mean .- d.temperature_mean[1]; color=case_colors[i], label=lab)
 end
-axislegend(ax; position=:lb)
-ax = Axis(fig[1, 2]; xlabel="Time (years)", ylabel="ΔS (PSU)", title="Global-mean salinity drift")
+ax_S = Axis(fig[1, 2]; xlabel="Time (years)", ylabel="ΔS (PSU)", title="Global-mean salinity drift")
 for (i, lab) in enumerate(labels)
     d = TS[lab]
-    lines!(ax, d.time_in_years, d.salinity_mean .- d.salinity_mean[1]; color=case_colors[i], label=lab)
+    lines!(ax_S, d.time_in_years, d.salinity_mean .- d.salinity_mean[1]; color=case_colors[i], label=lab)
 end
-axislegend(ax; position=:lb)
+Legend(fig[1, 3], ax_T)
 savefig(fig, "fig15_drift.png")
 
 # Figure 16: Profiles
 @info "Figure 16: Profiles"
-fig = Figure(size = (1000, 600), fontsize = 14)
-ax = Axis(fig[1, 1]; xlabel="Temperature (deg C)", ylabel="Depth (m)", title="Horizontal-mean temperature")
+fig = Figure(size = (600 + 200 * length(labels), 600), fontsize = 14)
+ax_T = Axis(fig[1, 1]; xlabel="Temperature (deg C)", ylabel="Depth (m)", title="Horizontal-mean temperature")
 for (i, lab) in enumerate(labels)
-    lines!(ax, TS[lab].temperature_profile, TS[lab].depth; color=case_colors[i], label=lab)
+    lines!(ax_T, TS[lab].temperature_profile, TS[lab].depth; color=case_colors[i], label=lab)
 end
-ylims!(ax, (-5500, 0)); axislegend(ax; position=:rb)
-ax = Axis(fig[1, 2]; xlabel="Salinity (PSU)", ylabel="Depth (m)", title="Horizontal-mean salinity")
+ylims!(ax_T, (-5500, 0))
+ax_S = Axis(fig[1, 2]; xlabel="Salinity (PSU)", ylabel="Depth (m)", title="Horizontal-mean salinity")
 for (i, lab) in enumerate(labels)
-    lines!(ax, TS[lab].salinity_profile, TS[lab].depth; color=case_colors[i], label=lab)
+    lines!(ax_S, TS[lab].salinity_profile, TS[lab].depth; color=case_colors[i], label=lab)
 end
-ylims!(ax, (-5500, 0)); axislegend(ax; position=:rb)
+ylims!(ax_S, (-5500, 0))
+Legend(fig[1, 3], ax_T)
 savefig(fig, "fig16_profiles.png")
 
 # ══════════════════════════════════════════════════════════════
@@ -1296,56 +1295,70 @@ for (i, lab) in enumerate(labels)
 end
 savefig(fig, "fig17_zonal_mean.png")
 
-# Figure 18: Zonal-mean drift
+# Figure 18: Zonal-mean drift (filled contours)
 @info "Figure 18: Zonal-mean drift"
+δT_levels = range(-3, 3; length = 13)
+δS_levels = range(-0.75, 0.75; length = 13)
+# Buoyancy drift levels: symmetric around 0, magnitude set from data so the
+# colormap actually resolves the field across cases.
+δb_max = maximum(lab -> begin
+                       v = filter(isfinite, vec(ZM[lab].δbuoyancy_zonal))
+                       isempty(v) ? 0.0 : maximum(abs, v)
+                   end, labels)
+δb_max = δb_max == 0 ? 1e-3 : δb_max
+δb_levels = range(-δb_max, δb_max; length = 13)
+
 fig = Figure(size = (600 * length(labels), 900), fontsize = 14)
 for (i, lab) in enumerate(labels)
     zm = ZM[lab]
+
     ax = Axis(fig[1, 2i-1]; xlabel="Latitude", ylabel="Depth (m)", title="$lab: Zonal T - WOA")
-    hm = heatmap!(ax, latitude, zm.depth, zm.δtemperature_zonal; colormap=:balance, colorrange=(-5,5), nan_color=:lightgray)
+    hm = contourf!(ax, latitude, zm.depth, zm.δtemperature_zonal;
+                   levels = δT_levels, colormap = :balance, extendlow = :auto, extendhigh = :auto)
     Colorbar(fig[1, 2i], hm; label="deg C"); ylims!(ax, (-5500, 0))
 
     ax = Axis(fig[2, 2i-1]; xlabel="Latitude", ylabel="Depth (m)", title="$lab: Zonal S - WOA")
-    hm = heatmap!(ax, latitude, zm.depth, zm.δsalinity_zonal; colormap=:balance, colorrange=(-1,1), nan_color=:lightgray)
+    hm = contourf!(ax, latitude, zm.depth, zm.δsalinity_zonal;
+                   levels = δS_levels, colormap = :balance, extendlow = :auto, extendhigh = :auto)
     Colorbar(fig[2, 2i], hm; label="PSU"); ylims!(ax, (-5500, 0))
 
     ax = Axis(fig[3, 2i-1]; xlabel="Latitude", ylabel="Depth (m)", title="$lab: Zonal b - b(t=0)")
-    hm = heatmap!(ax, latitude, zm.depth, zm.δbuoyancy_zonal; colormap=:balance, nan_color=:lightgray)
+    hm = contourf!(ax, latitude, zm.depth, zm.δbuoyancy_zonal;
+                   levels = δb_levels, colormap = :balance, extendlow = :auto, extendhigh = :auto)
     Colorbar(fig[3, 2i], hm; label="m/s²"); ylims!(ax, (-5500, 0))
 end
 savefig(fig, "fig18_zonal_drift.png")
 
 # Figure 19: Zonal-mean MLD min/max
 @info "Figure 19: Zonal-mean MLD min/max"
-fig = Figure(size = (1300, 550), fontsize = 14)
+fig = Figure(size = (1100 + 200 * length(labels), 550), fontsize = 14)
 ax_min = Axis(fig[1, 1]; xlabel = "Latitude", ylabel = "MLD (m)",
-              title = "Zonal-mean MLD (summer minimum)", yreversed = true)
+              title = "Zonal-mean MLD (summer minimum)")
 ax_max = Axis(fig[1, 2]; xlabel = "Latitude", ylabel = "MLD (m)",
-              title = "Zonal-mean MLD (winter maximum)", yreversed = true)
+              title = "Zonal-mean MLD (winter maximum)")
 for (i, lab) in enumerate(labels)
     zm = ZM[lab]
-    lines!(ax_min, latitude, zm.mld_min_zonal; color = case_colors[i], label = lab, linewidth = 2)
-    lines!(ax_max, latitude, zm.mld_max_zonal; color = case_colors[i], label = lab, linewidth = 2)
+    lines!(ax_min, latitude, abs.(zm.mld_min_zonal); color = case_colors[i], label = lab, linewidth = 2)
+    lines!(ax_max, latitude, abs.(zm.mld_max_zonal); color = case_colors[i], label = lab, linewidth = 2)
 end
 ref_idx = findfirst(lab -> !isnothing(ZM[lab].mld_min_dbm_zonal), labels)
 if !isnothing(ref_idx)
     ref_zm = ZM[labels[ref_idx]]
-    lines!(ax_min, latitude, ref_zm.mld_min_dbm_zonal;
+    lines!(ax_min, latitude, abs.(ref_zm.mld_min_dbm_zonal);
            color = :black, linewidth = 2, linestyle = :dash, label = "dBM")
-    lines!(ax_max, latitude, ref_zm.mld_max_dbm_zonal;
+    lines!(ax_max, latitude, abs.(ref_zm.mld_max_dbm_zonal);
            color = :black, linewidth = 2, linestyle = :dash, label = "dBM")
 end
-axislegend(ax_min; position = :rt)
-axislegend(ax_max; position = :rt)
+Legend(fig[1, 3], ax_min)
 savefig(fig, "fig19_mld_zonal_mean.png")
 
-# Figure 20: Horizontal-mean T and S drift, time × depth, with z split into
-# 0-1000 m (top half) and 1000-5500 m (bottom half) panels — continuous look,
-# shared time axis. The split halves the figure vertically so the upper
-# 1000 m gets the same display height as the rest of the column.
-@info "Figure 20: T and S drift (time × depth, split z)"
+# Figure 20: Horizontal-mean T (row 1) and S (row 2) drift as filled contours,
+# one panel per case. Full depth range, no z-split.
+@info "Figure 20: T and S drift (time × depth, contours)"
 ncases = length(labels)
-fig = Figure(size = (700 * ncases, 1000), fontsize = 14)
+δT_drift_levels = range(-1.6, 1.6; length = 17)
+δS_drift_levels = range(-0.1, 0.1; length = 21)
+fig = Figure(size = (900 * ncases, 1200), fontsize = 14)
 
 for (i, lab) in enumerate(labels)
     ts  = TS[lab]
@@ -1353,39 +1366,22 @@ for (i, lab) in enumerate(labels)
     t   = ts.drift_time_in_years
     δT  = ts.temperature_drift
     δS  = ts.salinity_drift
-    col_T = 4i - 3
-    col_S = 4i - 1
 
-    ax_T_top = Axis(fig[1, col_T]; ylabel = "Depth (m)", title = "$lab: ΔT (deg C)",
-                    xticklabelsvisible = false, xticksvisible = false,
-                    bottomspinevisible = false)
-    ax_T_bot = Axis(fig[2, col_T]; xlabel = "Time (years)", ylabel = "Depth (m)",
-                    topspinevisible = false)
-    linkxaxes!(ax_T_top, ax_T_bot)
+    ax_T = Axis(fig[1, 2i-1]; xlabel = "Time (years)", ylabel = "Depth (m)",
+                title = "$lab: ΔT (deg C)")
+    cf_T = contourf!(ax_T, t, z, δT; levels = δT_drift_levels,
+                     colormap = :balance, extendlow = :auto, extendhigh = :auto)
+    ylims!(ax_T, (-5500, 0))
+    Colorbar(fig[1, 2i], cf_T; label = "deg C")
 
-    hm_T = heatmap!(ax_T_top, t, z, δT; colormap = :balance, colorrange = (-2, 2), nan_color = :lightgray)
-    heatmap!(ax_T_bot, t, z, δT;        colormap = :balance, colorrange = (-2, 2), nan_color = :lightgray)
-    ylims!(ax_T_top, (-1000, 0))
-    ylims!(ax_T_bot, (-5500, -1000))
-    Colorbar(fig[1:2, col_T + 1], hm_T; label = "deg C")
-
-    ax_S_top = Axis(fig[1, col_S]; ylabel = "Depth (m)", title = "$lab: ΔS (PSU)",
-                    xticklabelsvisible = false, xticksvisible = false,
-                    bottomspinevisible = false)
-    ax_S_bot = Axis(fig[2, col_S]; xlabel = "Time (years)", ylabel = "Depth (m)",
-                    topspinevisible = false)
-    linkxaxes!(ax_S_top, ax_S_bot)
-
-    hm_S = heatmap!(ax_S_top, t, z, δS; colormap = :balance, colorrange = (-0.5, 0.5), nan_color = :lightgray)
-    heatmap!(ax_S_bot, t, z, δS;        colormap = :balance, colorrange = (-0.5, 0.5), nan_color = :lightgray)
-    ylims!(ax_S_top, (-1000, 0))
-    ylims!(ax_S_bot, (-5500, -1000))
-    Colorbar(fig[1:2, col_S + 1], hm_S; label = "PSU")
+    ax_S = Axis(fig[2, 2i-1]; xlabel = "Time (years)", ylabel = "Depth (m)",
+                title = "$lab: ΔS (PSU)")
+    cf_S = contourf!(ax_S, t, z, δS; levels = δS_drift_levels,
+                     colormap = :balance, extendlow = :auto, extendhigh = :auto)
+    ylims!(ax_S, (-5500, 0))
+    Colorbar(fig[2, 2i], cf_S; label = "PSU")
 end
 
-rowsize!(fig.layout, 1, Relative(0.5))
-rowsize!(fig.layout, 2, Relative(0.5))
-rowgap!(fig.layout, 1, 0)
 savefig(fig, "fig20_TS_drift_heatmap.png")
 
 # Figure 21: Strait transports (offline, dispatched on per-case grid configuration).
@@ -1404,6 +1400,23 @@ function strait_config_for(c)
     return nothing
 end
 
+# Bin a time series sampled at `t_seconds` into yearly means starting at year 0.
+function annual_means(t_seconds, values)
+    years_full = floor.(Int, t_seconds ./ (365.25 * 86400))
+    unique_years = sort(unique(years_full))
+    centers = Float64[]
+    means   = Float64[]
+    for y in unique_years
+        mask = years_full .== y
+        any(mask) || continue
+        push!(centers, y + 0.5)
+        push!(means,   mean(values[mask]))
+    end
+    return centers, means
+end
+
+# Compute strait transports over the FULL integration so every case starts at
+# year 0 (independent of the case's averaging window).
 strait_data = Dict{String, Any}()
 for c in cases
     cfg = strait_config_for(c)
@@ -1413,24 +1426,26 @@ for c in cases
     end
     @info "  $(c.label): computing strait transports ($cfg)..."
     strait_data[c.label] = strait_transports(cfg, TS[c.label].fields_file;
-                                             start_time = c.start_time,
-                                             stop_time  = c.stop_time)
+                                             start_time = 0,
+                                             stop_time  = Inf)
 end
 
 if !isempty(strait_data)
-    fig = Figure(size = (1500, 500), fontsize = 14)
+    fig = Figure(size = (1000 + 200 * length(labels), 500), fontsize = 14)
     ax_b = Axis(fig[1, 1]; xlabel = "Time (years)", ylabel = "Transport (Sv)", title = "Bering Strait")
     ax_d = Axis(fig[1, 2]; xlabel = "Time (years)", ylabel = "Transport (Sv)", title = "Drake Passage")
     ax_i = Axis(fig[1, 3]; xlabel = "Time (years)", ylabel = "Transport (Sv)", title = "Indonesian Throughflow")
     for (i, lab) in enumerate(labels)
         haskey(strait_data, lab) || continue
         st = strait_data[lab]
-        t  = st.time ./ (365.25 * 24 * 3600)
-        lines!(ax_b, t, st.bering; color = case_colors[i], label = lab, linewidth = 2)
-        lines!(ax_d, t, st.drake;  color = case_colors[i], label = lab, linewidth = 2)
-        lines!(ax_i, t, st.itf;    color = case_colors[i], label = lab, linewidth = 2)
+        tb, yb = annual_means(st.time, st.bering)
+        td, yd = annual_means(st.time, st.drake)
+        ti, yi = annual_means(st.time, st.itf)
+        lines!(ax_b, tb, yb; color = case_colors[i], label = lab, linewidth = 2)
+        lines!(ax_d, td, yd; color = case_colors[i], label = lab, linewidth = 2)
+        lines!(ax_i, ti, yi; color = case_colors[i], label = lab, linewidth = 2)
     end
-    axislegend(ax_b; position = :rt)
+    Legend(fig[1, 4], ax_b)
     savefig(fig, "fig21_strait_transports.png")
 end
 
