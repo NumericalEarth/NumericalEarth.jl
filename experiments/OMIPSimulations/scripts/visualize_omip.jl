@@ -1079,8 +1079,7 @@ function load_timeseries_case(run_dir, prefix, grid; start_time = 0, stop_time =
     # compiled a new lazy op and new output buffer each iteration.
     u_scratch = Field{Face, Center, Center}(grid)
     v_scratch = Field{Center, Face, Center}(grid)
-    ke_op     = @at((Center, Center, Center),
-                    u_scratch * u_scratch + v_scratch * v_scratch)
+    ke_op     = @at((Center, Center, Center), (u_scratch * u_scratch + v_scratch * v_scratch) / 2)
     ke_field  = Field(ke_op)
 
     Nt_ke = length(u_fts.times)

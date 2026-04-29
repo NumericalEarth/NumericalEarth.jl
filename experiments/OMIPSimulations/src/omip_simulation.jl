@@ -1,6 +1,7 @@
 using Printf
 using Oceananigans.Operators: Δzᶜᶜᶜ
-using Oceananigans.TurbulenceClosures: IsopycnalSkewSymmetricDiffusivity
+using Oceananigans.TurbulenceClosures: IsopycnalSkewSymmetricDiffusivity,
+                                       ConvectiveAdjustmentVerticalDiffusivity
 using NumericalEarth.EarthSystemModels.InterfaceComputations: COARELogarithmicSimilarityProfile,
                                                               WindDependentWaveFormulation,
                                                               MomentumRoughnessLength,
@@ -203,6 +204,11 @@ plumbing is needed because `NumericalEarth.EarthSystemModels` provides
    * `:default` — current defaults (Edson/COARE with constant Charnock 0.02)
    * `:corrected` — COARE 3.6 with wind-dependent Charnock, fixed ice roughness, momentum-based u*
    * `:ncar` — OMIP-2 standard Large & Yeager (2004) bulk formulae
+- `vertical_closure::Symbol`: ocean vertical-mixing closure. Options:
+   * `:catke` — CATKE TKE-based scheme (default).
+   * `:simple` — `ConvectiveAdjustmentVerticalDiffusivity(convective_κz=1)` plus a
+     depth-step background `VerticalScalarDiffusivity` (κ=10⁻², ν=10⁻² in upper
+     100 m; κ=10⁻⁵, ν=10⁻⁴ below). For diagnostic A/B tests vs CATKE.
 - `diagnostics::Bool`: whether to attach OMIP diagnostics. Default: `true`.
 - `surface_averaging_interval`, `field_averaging_interval`: averaging windows.
 - `checkpoint_interval`: interval between checkpoint writes.
@@ -227,6 +233,7 @@ function omip_simulation(config::Symbol = :halfdegree;
                          Δt = 30minutes,
                          stop_time = Inf,
                          flux_configuration = :default,
+                         vertical_closure = :catke,
                          with_snow = false,
                          diagnostics = true,
                          field_mean_interval = 5days,
@@ -245,6 +252,7 @@ function omip_simulation(config::Symbol = :halfdegree;
                         κ_skew, κ_symmetric, Cᵇ,
                         biharmonic_timescale,
                         biharmonic_viscosity,
+                        vertical_closure,
                         restoring_dir, piston_velocity,
                         start_date, end_date)
 
@@ -341,6 +349,37 @@ function omip_closure(; κ_skew, κ_symmetric, Cᵇ = 0.28,
     return filter(!isnothing, (catke, eddy, horizontal_viscosity, vertical_diffusivity))
 end
 
+# Step-function background diffusivity for the simple-closure case.
+# Strong mixing in the upper 100 m, weak interior diffusivity below.
+@inline κ_step_simple(x, y, z, t) = ifelse(z >= -100, 1e-2, 1e-5)
+@inline ν_step_simple(x, y, z, t) = ifelse(z >= -100, 1e-2, 1e-4)
+
+function omip_simple_closure(; κ_skew, κ_symmetric,
+                                biharmonic_timescale,
+                                biharmonic_viscosity = nothing)
+    convective = ConvectiveAdjustmentVerticalDiffusivity(VerticallyImplicitTimeDiscretization(); convective_κz = 1.0)
+
+    eddy  = if isnothing(κ_skew) | isnothing(κ_symmetric)
+        nothing
+    else
+        IsopycnalSkewSymmetricDiffusivity(; κ_skew, κ_symmetric)
+    end
+
+    horizontal_viscosity = if !isnothing(biharmonic_viscosity)
+        HorizontalScalarBiharmonicDiffusivity(ν=biharmonic_viscosity)
+    elseif !isnothing(biharmonic_timescale)
+        HorizontalScalarBiharmonicDiffusivity(ν=νhb,
+                                              discrete_form=true,
+                                              parameters=biharmonic_timescale)
+    else
+        nothing
+    end
+
+    vertical_diffusivity = VerticalScalarDiffusivity(κ=κ_step_simple, ν=ν_step_simple)
+
+    return filter(!isnothing, (convective, eddy, horizontal_viscosity, vertical_diffusivity))
+end
+
 #####
 ##### Salinity restoring (shared by both configurations)
 #####
@@ -419,10 +458,17 @@ function build_ocean(config, grid;
                      restoring_dir, piston_velocity,
                      biharmonic_timescale,
                      biharmonic_viscosity = nothing,
+                     vertical_closure = :catke,
                      start_date, end_date)
 
     salt_restoring = salinity_surface_restoring(grid, WOAMonthly(); restoring_dir, piston_velocity)
-    closure = omip_closure(; κ_skew, κ_symmetric, Cᵇ, biharmonic_timescale, biharmonic_viscosity)
+    closure = if vertical_closure == :catke
+        omip_closure(; κ_skew, κ_symmetric, Cᵇ, biharmonic_timescale, biharmonic_viscosity)
+    elseif vertical_closure == :simple
+        omip_simple_closure(; κ_skew, κ_symmetric, biharmonic_timescale, biharmonic_viscosity)
+    else
+        error("Unknown vertical_closure: $vertical_closure. Options: :catke, :simple")
+    end
     coriolis = HydrostaticSphericalCoriolis(scheme = Oceananigans.Coriolis.EnstrophyConserving())
     momentum_advection = config_momentum_advection(config)
 
