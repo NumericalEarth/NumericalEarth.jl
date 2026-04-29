@@ -37,6 +37,9 @@ Environment variables (physics):
                 When set, overrides BIHARMONIC and uses ν directly instead of
                 the grid-area-scaled νhb = Az^2 / λ form.
   CB            CATKE buoyancy mixing length parameter Cᵇ (default: 0.28)
+  CLOSURE       Ocean vertical closure: "catke" (default) or "simple"
+                ("simple" = ConvectiveAdjustment + depth-stepped background κ/ν;
+                 ignores CB)
 
 Environment variables (I/O & runtime):
   BACKEND_SIZE  Number of JRA55 time indices kept in memory (default: 240,
@@ -136,6 +139,7 @@ RUN_NAME="$CONFIG"
 [[ "${CORRECTED:-false}" == "true" ]]  && RUN_NAME="${RUN_NAME}_corrected"
 [[ "${NCAR:-false}" == "true" ]]       && RUN_NAME="${RUN_NAME}_ncar"
 [[ "${SNOW:-false}" == "true" ]]       && RUN_NAME="${RUN_NAME}_snow"
+[[ "${CLOSURE:-catke}" == "simple" ]]  && RUN_NAME="${RUN_NAME}_simple"
 [[ -n "${CB:-}" ]]                     && RUN_NAME="${RUN_NAME}_cb${CB}"
 [[ "$KSKEW" != "$DEFAULT_KSKEW" ]]    && RUN_NAME="${RUN_NAME}_kskew${KSKEW}"
 [[ "$KSYMM" != "$DEFAULT_KSYMM" ]]    && RUN_NAME="${RUN_NAME}_ksymm${KSYMM}"
@@ -212,6 +216,9 @@ FLUX_KWARG=""
 [[ "$NCAR" == "true" ]]      && FLUX_KWARG="flux_configuration = :ncar,"
 [[ "$CORRECTED" == "true" ]] && FLUX_KWARG="flux_configuration = :corrected,"
 
+CLOSURE_KWARG=""
+[[ "${CLOSURE:-catke}" == "simple" ]] && CLOSURE_KWARG="vertical_closure = :simple,"
+
 SNOW_KWARG=""
 [[ "$SNOW" == "true" ]] && SNOW_KWARG="with_snow = true,"
 
@@ -232,6 +239,7 @@ sim = omip_simulation(:${CONFIG};
                       ${BIHVISC_KWARG}
                       ${CB_KWARG}
                       ${FLUX_KWARG}
+                      ${CLOSURE_KWARG}
                       ${SNOW_KWARG}
                       Δt = ${DT},
                       forcing_dir = \"${FORCING_DIR}\",
