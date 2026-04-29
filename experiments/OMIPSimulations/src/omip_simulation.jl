@@ -1,5 +1,9 @@
 using Printf
 using Oceananigans.Operators: Δzᶜᶜᶜ
+using Oceananigans.Grids: λnode, φnode, znode, Center
+using Oceananigans.Architectures: on_architecture, architecture
+using Oceananigans.Fields: CenterField, interior
+using GibbsSeaWater: gsw_sa_from_sp, gsw_ct_from_t
 using Oceananigans.TurbulenceClosures: IsopycnalSkewSymmetricDiffusivity,
                                        ConvectiveAdjustmentVerticalDiffusivity
 using NumericalEarth.EarthSystemModels.InterfaceComputations: COARELogarithmicSimilarityProfile,
@@ -312,6 +316,79 @@ function omip_simulation(config::Symbol = :halfdegree;
 end
 
 #####
+##### WOA → TEOS-10 conversion utilities
+#####
+##### WOA's `t_an` is sea_water_temperature (in-situ, °C) and `s_an` is
+##### sea_water_practical_salinity (PSS-78). Oceananigans' default
+##### `TEOS10EquationOfState` expects Conservative Temperature (Θ) and
+##### Absolute Salinity (S_A). The functions below convert WOA fields to the
+##### TEOS-10 conventions in place, using GibbsSeaWater (CPU only).
+#####
+
+# Approximate hydrostatic pressure in dbar from depth z [m] (cell-center, negative for ocean).
+@inline approx_pressure_dbar(z) = max(zero(z), -z)
+
+"""
+    woa_to_teos10!(T_field, S_field)
+
+Convert WOA in-situ temperature `t [°C]` and Practical Salinity `S_P` to TEOS-10 Conservative Temperature `Θ` 
+and Absolute Salinity `S_A`, in place. Both fields must live on the same grid. The conversion runs on the host
+(GibbsSeaWater is C-bound); data is copied to/from the device automatically.
+"""
+function woa_to_teos10!(T_field, S_field)
+    grid = T_field.grid
+    cpu_grid = on_architecture(CPU(), grid)
+    Nx, Ny, Nz = size(grid)
+    T_h = Array(interior(T_field))
+    S_h = Array(interior(S_field))
+    for k in 1:Nz, j in 1:Ny, i in 1:Nx
+        t  = T_h[i, j, k]
+        SP = S_h[i, j, k]
+        (isnan(t) || isnan(SP)) && continue
+        λ = λnode(i, j, k, cpu_grid, Center(), Center(), Center())
+        φ = φnode(i, j, k, cpu_grid, Center(), Center(), Center())
+        z = znode(i, j, k, cpu_grid, Center(), Center(), Center())
+        p = approx_pressure_dbar(z)
+        SA = gsw_sa_from_sp(SP, p, λ, φ)
+        Θ  = gsw_ct_from_t(SA, t, p)
+        T_h[i, j, k] = Θ
+        S_h[i, j, k] = SA
+    end
+    copyto!(interior(T_field), T_h)
+    copyto!(interior(S_field), S_h)
+    return T_field, S_field
+end
+
+"""
+    woa_salinity_fts_to_teos10!(fts)
+
+Convert each time slice of a WOA Practical Salinity `FieldTimeSeries` to TEOS-10
+Absolute Salinity, in place. Requires that all time indices be in memory
+(use `time_indices_in_memory = length(metadata)`).
+"""
+function woa_salinity_fts_to_teos10!(fts)
+    grid = fts.grid
+    cpu_grid = on_architecture(CPU(), grid)
+    Nx, Ny, Nz = size(grid)
+    Nt = length(fts.times)
+    for t_idx in 1:Nt
+        S_int = interior(fts[t_idx])
+        S_h   = Array(S_int)
+        for k in 1:Nz, j in 1:Ny, i in 1:Nx
+            SP = S_h[i, j, k]
+            isnan(SP) && continue
+            λ = λnode(i, j, k, cpu_grid, Center(), Center(), Center())
+            φ = φnode(i, j, k, cpu_grid, Center(), Center(), Center())
+            z = znode(i, j, k, cpu_grid, Center(), Center(), Center())
+            p = _approx_pressure_dbar(z)
+            S_h[i, j, k] = gsw_sa_from_sp(SP, p, λ, φ)
+        end
+        copyto!(S_int, S_h)
+    end
+    return fts
+end
+
+#####
 ##### Shared closure utilities
 #####
 
@@ -387,6 +464,8 @@ end
 # Surface-only restoring, applied uniformly in space (no ice mask).
 # Wrapped as a `SurfaceFluxRestoring` so it rides on the ocean's top-flux BC
 # via the `additional_surface_fluxes` kwarg of `ocean_simulation`.
+# WOA Practical Salinity is converted to TEOS-10 Absolute Salinity at setup so
+# the restoring target matches the ocean prognostic-S convention.
 function salinity_surface_restoring(grid, dataset;
                                     restoring_dir,
                                     piston_velocity)
@@ -400,7 +479,9 @@ function salinity_surface_restoring(grid, dataset;
 
     restoring = DatasetRestoring(Smetadata, Oceananigans.Architectures.architecture(grid);
                                  rate,
-                                 time_indices_in_memory = 12)
+                                 time_indices_in_memory = length(Smetadata))
+
+    woa_salinity_fts_to_teos10!(restoring.field_time_series)
 
     return SurfaceFluxRestoring(restoring)
 end
@@ -482,9 +563,15 @@ function build_ocean(config, grid;
                              additional_surface_fluxes = (; S = salt_restoring),
                              closure)
 
-    set!(ocean.model,
-         T = Metadatum(:temperature; dir=restoring_dir, dataset=WOAAnnual()),
-         S = Metadatum(:salinity;    dir=restoring_dir, dataset=WOAAnnual()))
+    # Load WOA Annual T (in-situ, °C) and S (Practical) onto the model grid,
+    # convert to TEOS-10 Conservative T and Absolute Salinity in place, then
+    # initialize the prognostic ocean state from the converted fields.
+    T_init = CenterField(grid)
+    S_init = CenterField(grid)
+    set!(T_init, Metadatum(:temperature; dir=restoring_dir, dataset=WOAAnnual()))
+    set!(S_init, Metadatum(:salinity;    dir=restoring_dir, dataset=WOAAnnual()))
+    woa_to_teos10!(T_init, S_init)
+    set!(ocean.model, T=T_init, S=S_init)
 
     return ocean
 end
