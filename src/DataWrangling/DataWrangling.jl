@@ -201,6 +201,8 @@ default_mask_value(dataset) = NaN
 # Fundamentals
 include("metadata.jl")
 include("metadata_field.jl")
+include("dataset_backend.jl")
+include("prefetching_backend.jl")
 include("metadata_field_time_series.jl")
 include("inpainting.jl")
 include("restoring.jl")

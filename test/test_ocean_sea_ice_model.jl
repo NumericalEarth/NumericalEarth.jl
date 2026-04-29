@@ -44,7 +44,7 @@ using ClimaSeaIce.Rheologies
             ocean = ocean_simulation(grid; free_surface)
 
             sea_ice  = sea_ice_simulation(grid, ocean; advection=WENO(order=7))
-            liquidus = sea_ice.model.ice_thermodynamics.phase_transitions.liquidus
+            liquidus = sea_ice.model.phase_transitions.liquidus
 
             # Set the ocean temperature and salinity
             set!(ocean.model, T=temperature_metadata[1], S=salinity_metadata[1])
@@ -57,8 +57,7 @@ using ClimaSeaIce.Rheologies
             Tm = KernelFunctionOperation{Center, Center, Center}(kernel_melting_temperature, grid, liquidus, S)
             @test all(T .≥ Tm)
 
-            backend = JRA55NetCDFBackend(4)
-            atmosphere = JRA55PrescribedAtmosphere(arch; backend)
+            atmosphere = JRA55PrescribedAtmosphere(arch; time_indices_in_memory=4)
             radiation = Radiation(arch)
             
             # Fluxes are computed when the model is constructed, so we just test that this works.

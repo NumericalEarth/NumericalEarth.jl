@@ -9,14 +9,20 @@ export
     Radiation,
     ComponentInterfaces,
     LatitudeDependentAlbedo,
+    SeaIceAlbedo,
     SimilarityTheoryFluxes,
     MomentumRoughnessLength,
     ScalarRoughnessLength,
     CoefficientBasedFluxes,
+    SimilarityScales,
+    PolynomialNeutralDragCoefficient,
+    LargeYeagerTransferCoefficients,
+    LinearStableStabilityFunction,
     SkinTemperature,
     BulkTemperature,
     atmosphere_ocean_stability_functions,
     atmosphere_sea_ice_stability_functions,
+    large_yeager_stability_functions,
     compute_atmosphere_ocean_fluxes!,
     compute_atmosphere_sea_ice_fluxes!,
     compute_sea_ice_ocean_fluxes!,
@@ -67,6 +73,7 @@ end
 include("radiation.jl")
 include("latitude_dependent_albedo.jl")
 include("tabulated_albedo.jl")
+include("sea_ice_albedo.jl")
 
 # Turbulent fluxes
 include("roughness_lengths.jl")

@@ -4,8 +4,11 @@ using Oceananigans
 using Oceananigans.Units
 using Printf
 
-Qswt = NumericalEarth.JRA55.JRA55FieldTimeSeries(:downwelling_shortwave_radiation)
-rht  = NumericalEarth.JRA55.JRA55FieldTimeSeries(:relative_humidity)
+using NumericalEarth.DataWrangling: Metadata
+using NumericalEarth.JRA55: RepeatYearJRA55
+
+Qswt = FieldTimeSeries(Metadata(:downwelling_shortwave_radiation; dataset=RepeatYearJRA55()); time_indices_in_memory=8)
+rht  = FieldTimeSeries(Metadata(:specific_humidity;               dataset=RepeatYearJRA55()); time_indices_in_memory=8)
 
 function lonlat2xyz(lons::AbstractVector, lats::AbstractVector)
     x = [cosd(lat) * cosd(lon) for lon in lons, lat in lats]
