@@ -62,7 +62,8 @@ using Oceananigans.OrthogonalSphericalShellGrids
         #####
 
         @info "Testing OceanOnlyModel with JRA55PrescribedLand on $A..."
-        land = JRA55PrescribedLand(arch; backend)
+        land_dates = all_dates(RepeatYearJRA55(), :river_freshwater_flux)
+        land = JRA55PrescribedLand(arch; end_date=land_dates[2])
 
         @test begin
             ocean_with_land = ocean_simulation(grid; free_surface)

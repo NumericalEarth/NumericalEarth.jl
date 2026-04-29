@@ -180,24 +180,23 @@ function Field(metadata::Metadatum, arch=CPU();
     if !isnothing(inpainting)
         inpainted_path = inpainted_metadata_path(metadata)
         if isfile(inpainted_path)
-            file = jldopen(inpainted_path, "r")
-            maxiter = file["inpainting_maxiter"]
-
-            # read data if generated with the same inpainting
-            if maxiter == inpainting.maxiter
-                data = file["data"]
-                close(file)
-                try
-                    copyto!(parent(field), data)
-                    return field
-                catch
-                    @warn "Could not load existing inpainted data at $inpainted_path.\n" *
-                          "Re-inpainting and saving data..."
-                    rm(inpainted_path, force=true)
+            # apply a load guard for corrupted files
+            loaded = false
+            try
+                jldopen(inpainted_path, "r") do file
+                    if haskey(file, "inpainting_maxiter") &&
+                       file["inpainting_maxiter"] == inpainting.maxiter
+                        copyto!(parent(field), file["data"])
+                        loaded = true
+                    end
                 end
+            catch err
+                @warn "Could not load existing inpainted data at $inpainted_path; " *
+                      "re-inpainting and saving data..." exception=err
+                rm(inpainted_path, force=true)
+                loaded = false
             end
-
-            close(file)
+            loaded && return field
         end
     end
 
