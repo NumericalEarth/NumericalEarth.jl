@@ -25,7 +25,9 @@ export
     SkinTemperature,
     BulkTemperature,
     PrescribedAtmosphere,
+    PrescribedLand,
     JRA55PrescribedAtmosphere,
+    JRA55PrescribedLand,
     OSPapaPrescribedAtmosphere,
     os_papa_prescribed_fluxes,
     os_papa_prescribed_flux_boundary_conditions,
@@ -108,6 +110,7 @@ end
 include("EarthSystemModels/EarthSystemModels.jl")
 include("Oceans/Oceans.jl")
 include("Atmospheres/Atmospheres.jl")
+include("Lands/Lands.jl")
 include("SeaIces/SeaIces.jl")
 include("InitialConditions/InitialConditions.jl")
 include("DataWrangling/DataWrangling.jl")
@@ -120,6 +123,7 @@ using .Bathymetry
 using .InitialConditions
 using .EarthSystemModels
 using .Atmospheres
+using .Lands
 using .Oceans
 using .SeaIces
 using .Diagnostics
