@@ -170,8 +170,6 @@ end
 # Build z-interfaces (Nz+1 values) from pressure levels.
 # Levels may be in any order; output is sorted so k=1 is highest pressure (lowest altitude).
 function standard_atmosphere_z_interfaces(levels)
-    @info "Calculating z-interfaces based on the International Standard Atmosphere... \
-    For greater accuracy, set ERA5PressureLevelsDataset(; mean_geopotential_height=true)"
     sorted_levels = sort(levels, rev=true)   # highest pressure first → k=1 is bottom
     heights = standard_atmosphere_geopotential_height.(Float64.(sorted_levels))
     Nz = length(heights)

@@ -147,7 +147,7 @@ start_date = DateTime(2005, 2, 16, 12)
         @test Base.size(ds_full, :temperature) == (1440, 720, 37)
 
         # Subset constructor
-        ds_sub = ERA5HourlyPressureLevels(pressure_levels=[850, 500] .* hPa)
+        ds_sub = ERA5HourlyPressureLevels(pressure_levels=[850, 500]hPa)
         @test Base.size(ds_sub, :temperature) == (1440, 720, 2)
 
         # Monthly variant
@@ -166,7 +166,7 @@ start_date = DateTime(2005, 2, 16, 12)
     end
 
     @testset "ERA5 pressure-level z_interfaces (standard atmosphere)" begin
-        levels_2 = [850, 500] .* hPa
+        levels_2 = [850, 500]hPa
         z = standard_atmosphere_z_interfaces(levels_2)
         @test length(z) == 3                    # Nz+1 interfaces
         @test issorted(z)                        # monotonically increasing with altitude
@@ -174,7 +174,7 @@ start_date = DateTime(2005, 2, 16, 12)
         @test z[1] < 1457.0 < z[2] < 5575.0 < z[3]
 
         # Single level
-        z1 = standard_atmosphere_z_interfaces([500] .* hPa)
+        z1 = standard_atmosphere_z_interfaces([500]hPa)
         @test length(z1) == 2
         @test z1[1] < z1[2]
     end
@@ -247,7 +247,7 @@ start_date = DateTime(2005, 2, 16, 12)
 
     @testset "ERA5 pressure-level download and Field on CPU" begin
         arch = CPU()
-        ds_pl = ERA5HourlyPressureLevels(pressure_levels=[850, 500] .* hPa)
+        ds_pl = ERA5HourlyPressureLevels(pressure_levels=[850, 500]hPa)
 
         @testset "Download and 3D Field" begin
             meta = Metadatum(:temperature; dataset=ds_pl, region, date=start_date)
@@ -307,9 +307,9 @@ start_date = DateTime(2005, 2, 16, 12)
 
             @allowscalar begin
                 # k=1 should be 850 hPa = 85000 Pa (highest pressure, lowest altitude)
-                @test interior(pf)[1, 1, 1] ≈ Float32(850 * hPa)
+                @test interior(pf)[1, 1, 1] ≈ Float32(850hPa)
                 # k=2 should be 500 hPa = 50000 Pa
-                @test interior(pf)[1, 1, 2] ≈ Float32(500 * hPa)
+                @test interior(pf)[1, 1, 2] ≈ Float32(500hPa)
             end
         end
     end
