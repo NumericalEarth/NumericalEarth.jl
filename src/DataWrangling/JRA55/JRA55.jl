@@ -1,6 +1,6 @@
 module JRA55
 
-export JRA55FieldTimeSeries, JRA55PrescribedAtmosphere, RepeatYearJRA55, MultiYearJRA55
+export JRA55PrescribedAtmosphere, RepeatYearJRA55, MultiYearJRA55, JRA55NetCDFBackend, JRA55FieldTimeSeries
 
 using Oceananigans
 using Oceananigans.Units
@@ -18,13 +18,14 @@ using NumericalEarth.Atmospheres:
     PrescribedAtmosphere,
     TwoBandDownwellingRadiation
 
-using CUDA: @allowscalar
+using GPUArraysCore: @allowscalar
 
 using NCDatasets
 using JLD2
 using Dates
 using Scratch
 
+using Oceananigans: location
 import Oceananigans.Fields: set!
 import Oceananigans.OutputReaders: new_backend, update_field_time_series!
 using Downloads: download

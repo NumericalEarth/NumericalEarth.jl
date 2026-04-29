@@ -1,3 +1,5 @@
+include("runtests_setup.jl")
+
 using NumericalEarth
 using NumericalEarth.DataWrangling: download_dataset, metadata_path
 using NumericalEarth.DataWrangling.ORCA: default_south_rows_to_remove
@@ -18,12 +20,27 @@ using Test
     @test mesh_meta.dataset isa ORCA1
 end
 
-@testset "ORCAGrid with ORCA1 dataset" begin
-    south_rows_to_remove = 43
-    grid = ORCAGrid(CPU(); dataset=ORCA1(), Nz=5, z=(-5000, 0), halo=(4, 4, 4), south_rows_to_remove)
-    @test grid.underlying_grid.Ny == 333 - south_rows_to_remove
 
-    grid = ORCAGrid(CPU(); dataset=ORCA1(), Nz=5, z=(-5000, 0), halo=(4, 4, 4), south_rows_to_remove=0)
+@testset "ORCA12 Metadatum construction" begin
+    bathy_meta = Metadatum(:bottom_height; dataset=ORCA12())
+    @test bathy_meta.name == :bottom_height
+    @test bathy_meta.dataset isa ORCA12
+
+    mesh_meta = Metadatum(:mesh_mask; dataset=ORCA12())
+    @test mesh_meta.name == :mesh_mask
+    @test mesh_meta.dataset isa ORCA12
+
+    @test default_south_rows_to_remove(ORCA12()) == 0
+    @test occursin("eORCA12", metadata_path(mesh_meta))
+    @test occursin("eORCA12", metadata_path(bathy_meta))
+end
+
+@testset "ORCAGrid with ORCA1 dataset on $(arch)" for arch in test_architectures
+    south_rows_to_remove = 43
+    grid = ORCAGrid(arch; dataset=ORCA1(), Nz=5, z=(-5000, 0), halo=(4, 4, 4), south_rows_to_remove)
+    @test grid.underlying_grid.Ny == 332 - south_rows_to_remove
+
+    grid = ORCAGrid(arch; dataset=ORCA1(), Nz=5, z=(-5000, 0), halo=(4, 4, 4), south_rows_to_remove=0)
 
     # Default returns ImmersedBoundaryGrid with bathymetry
     @test grid isa ImmersedBoundaryGrid
@@ -31,37 +48,37 @@ end
     @test underlying isa Oceananigans.Grids.OrthogonalSphericalShellGrid
     @test underlying isa TripolarGrid
     @test underlying.Nx == 362
-    @test underlying.Ny == 333
+    @test underlying.Ny == 332
     @test underlying.Nz == 5
 
     # Coordinates span near-global domain
-    @test minimum(underlying.λᶜᶜᵃ) < -179
-    @test maximum(underlying.λᶜᶜᵃ) > 179
-    @test minimum(underlying.φᶜᶜᵃ) < -80
-    @test maximum(underlying.φᶜᶜᵃ) > 80
+    @test minimum(underlying.λᶜᶜᵃ.parent) < -179
+    @test maximum(underlying.λᶜᶜᵃ.parent) > 179
+    @test minimum(underlying.φᶜᶜᵃ.parent) < -80
+    @test maximum(underlying.φᶜᶜᵃ.parent) > 80
 end
 
-@testset "ORCAGrid without bathymetry" begin
-    grid = ORCAGrid(CPU(); dataset=ORCA1(), Nz=5, z=(-5000, 0), halo=(4, 4, 4),
+@testset "ORCAGrid without bathymetry on $(arch)" for arch in test_architectures
+    grid = ORCAGrid(arch; dataset=ORCA1(), Nz=5, z=(-5000, 0), halo=(4, 4, 4),
                     with_bathymetry=false)
 
     @test grid isa Oceananigans.Grids.OrthogonalSphericalShellGrid
     @test grid isa TripolarGrid
     @test !(grid isa ImmersedBoundaryGrid)
     @test grid.Nx == 362
-    @test grid.Ny == 333 - default_south_rows_to_remove(ORCA1())
+    @test grid.Ny == 332 - default_south_rows_to_remove(ORCA1())
     @test grid.Nz == 5
 end
 
-@testset "ORCAGrid with south_rows_to_remove" begin
+@testset "ORCAGrid with south_rows_to_remove on $(arch)" for arch in test_architectures
     Nremove = 40
-    grid = ORCAGrid(CPU(); dataset=ORCA1(), Nz=5, z=(-5000, 0), halo=(4, 4, 4),
+    grid = ORCAGrid(arch; dataset=ORCA1(), Nz=5, z=(-5000, 0), halo=(4, 4, 4),
                     south_rows_to_remove=Nremove)
 
     @test grid isa ImmersedBoundaryGrid
     underlying = grid.underlying_grid
     @test underlying.Nx == 362
-    @test underlying.Ny == 333 - Nremove
+    @test underlying.Ny == 332 - Nremove
     @test underlying.Nz == 5
 end
 
@@ -78,17 +95,24 @@ end
                  :Δyᶜᶜᵃ, :Δyᶠᶜᵃ, :Δyᶜᶠᵃ, :Δyᶠᶠᵃ,
                  :Azᶜᶜᵃ, :Azᶠᶜᵃ, :Azᶜᶠᵃ, :Azᶠᶠᵃ)
         data = getproperty(grid, name)
-        @test all(isfinite, data) == true
+        @test all(isfinite, Oceananigans.on_architecture(CPU(), data)) == true
     end
 
-    # All interior metrics (Δx, Δy, Az) are strictly positive
-    # Check only interior points to avoid halo issues
-    for name in (:Δxᶜᶜᵃ, :Δxᶠᶜᵃ, :Δxᶜᶠᵃ, :Δxᶠᶠᵃ,
-                 :Δyᶜᶜᵃ, :Δyᶠᶜᵃ, :Δyᶜᶠᵃ, :Δyᶠᶠᵃ,
-                 :Azᶜᶜᵃ, :Azᶠᶜᵃ, :Azᶜᶠᵃ, :Azᶠᶠᵃ)
+    # Metrics strictly positive over the full interior. Face-y fields on
+    # RightFaceFolded have Ny+1 interior rows; the fold row Ny+1 must be checked.
+    LYs = Dict(:Δxᶜᶜᵃ => Center, :Δxᶠᶜᵃ => Center, :Δxᶜᶠᵃ => Face, :Δxᶠᶠᵃ => Face,
+               :Δyᶜᶜᵃ => Center, :Δyᶠᶜᵃ => Center, :Δyᶜᶠᵃ => Face, :Δyᶠᶠᵃ => Face,
+               :Azᶜᶜᵃ => Center, :Azᶠᶜᵃ => Center, :Azᶜᶠᵃ => Face, :Azᶠᶠᵃ => Face)
+    for (name, LY) in LYs
         data = getproperty(grid, name)
-        interior = data[1:Nx, 1:Ny]
+        Njf = Base.length(LY(), Oceananigans.Grids.RightFaceFolded(), Ny)
+        interior = Oceananigans.on_architecture(CPU(), data)[1:Nx, 1:Njf]
         @test all(x -> x > 0, interior) == true
+    end
+
+    for name in (:Δxᶜᶠᵃ, :Δxᶠᶠᵃ, :Δyᶜᶠᵃ, :Δyᶠᶠᵃ, :Azᶜᶠᵃ, :Azᶠᶠᵃ)
+        data = Oceananigans.on_architecture(CPU(), getproperty(grid, name))
+        @test all(x -> x > 0, data[1:Nx, Ny+1])
     end
 
     # Face-x longitude is west of Center-x longitude (stagger check)
@@ -113,8 +137,8 @@ end
     # At interior points, Face[j] should be < Center[j] in latitude.
     imid = Nx ÷ 2
     φF   = grid.φᶜᶠᵃ[imid, 1:Ny]
-    φC   = grid.φᶜᶜᵃ[imid, 1:Ny-1]  # Center has Ny-1 interior points
-    nsouth = count(j -> φF[j] < φC[j], 1:length(φC))
+    φC   = grid.φᶜᶜᵃ[imid, 1:Ny]
+    nsouth = count(j -> φF[j] < φC[j], 1:Ny)
     @test nsouth / length(φC) > 0.95
 
     # Periodic overlap: first and last unique columns should be consistent

@@ -27,8 +27,7 @@ using Oceananigans.OutputWriters: Checkpointer
             set!(sea_ice.model, h=hi, ℵ=hi)
 
             # Create atmosphere and radiation
-            backend = JRA55NetCDFBackend(4)
-            atmosphere = JRA55PrescribedAtmosphere(arch; backend)
+            atmosphere = JRA55PrescribedAtmosphere(arch; time_indices_in_memory=4)
 
             return OceanSeaIceModel(ocean, sea_ice; atmosphere)
         end
@@ -110,5 +109,63 @@ using Oceananigans.OutputWriters: Checkpointer
 
         # Cleanup
         rm.(glob("$(prefix)_iteration*.jld2"), force=true)
+
+        # ---- Same workflow but with prefetch=true on the JRA55 atmosphere.
+        # Verifies that (1) the JLD2 checkpointer doesn't choke on the
+        # PrefetchingBackend's mutable state and (2) the restored model
+        # produces the same data as the reference (i.e. the cold-path
+        # fallback on restart correctly re-prefetches). With nthreads()=1
+        # the prefetch becomes a no-op, which still exercises the
+        # serialisation and cold-fallback logic.
+        @info "Testing EarthSystemModel checkpointing with prefetch=true on $A"
+
+        function make_coupled_model_prefetch(grid)
+            @inline hi(λ, φ) = φ > 70 || φ < -70
+
+            ocean = ocean_simulation(grid, closure=nothing)
+            set!(ocean.model, T=20, S=35, u=0.01, v=-0.005)
+            sea_ice = sea_ice_simulation(grid, ocean)
+            set!(sea_ice.model, h=hi, ℵ=hi)
+
+            atmosphere = JRA55PrescribedAtmosphere(arch; time_indices_in_memory=4, prefetch=true)
+
+            return OceanSeaIceModel(ocean, sea_ice; atmosphere)
+        end
+
+        # Reference run with prefetch
+        model = make_coupled_model_prefetch(grid)
+        run!(Simulation(model, Δt=60, stop_iteration=3))
+        run!(Simulation(model, Δt=60, stop_iteration=6))
+
+        ref_T  = Array(interior(model.ocean.model.tracers.T))
+        ref_h  = Array(interior(model.sea_ice.model.ice_thickness))
+        ref_time = model.clock.time
+
+        # Checkpointed run with prefetch
+        model = make_coupled_model_prefetch(grid)
+        simulation = Simulation(model, Δt=60, stop_iteration=3)
+        prefix_pf = "osm_checkpointer_prefetch_test_$(typeof(arch))"
+        simulation.output_writers[:checkpointer] = Checkpointer(simulation.model;
+                                                                schedule = IterationInterval(3),
+                                                                prefix = prefix_pf)
+        run!(simulation)
+        @test isfile("$(prefix_pf)_iteration3.jld2")  # JLD2 didn't choke on prefetch state
+
+        model = make_coupled_model_prefetch(grid)
+        simulation = Simulation(model, Δt=60, stop_iteration=6)
+        simulation.output_writers[:checkpointer] = Checkpointer(model;
+                                                                schedule = IterationInterval(3),
+                                                                prefix = prefix_pf)
+        set!(simulation; checkpoint=:latest)
+        set!(simulation; iteration=3)
+        run!(simulation)
+
+        T = Array(interior(model.ocean.model.tracers.T))
+        h = Array(interior(model.sea_ice.model.ice_thickness))
+        @test T ≈ ref_T rtol=1e-13
+        @test h ≈ ref_h rtol=1e-13
+        @test model.clock.time == ref_time
+
+        rm.(glob("$(prefix_pf)_iteration*.jld2"), force=true)
     end
 end

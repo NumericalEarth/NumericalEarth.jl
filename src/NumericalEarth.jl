@@ -19,6 +19,7 @@ export
     LatitudeDependentAlbedo,
     SimilarityTheoryFluxes,
     CoefficientBasedFluxes,
+    SimilarityScales,
     MomentumRoughnessLength,
     ScalarRoughnessLength,
     ComponentInterfaces,
@@ -26,11 +27,17 @@ export
     BulkTemperature,
     PrescribedAtmosphere,
     JRA55PrescribedAtmosphere,
+    OSPapaPrescribedAtmosphere,
+    os_papa_prescribed_fluxes,
+    os_papa_prescribed_flux_boundary_conditions,
+    OSPapaHourly,
     JRA55NetCDFBackend,
     regrid_bathymetry,
     modify_bathymetry_depth!,
     Metadata,
     Metadatum,
+    BoundingBox,
+    Column, Linear, Nearest,
     ECCOMetadatum,
     EN4Metadatum,
     ETOPO2022,
@@ -39,7 +46,7 @@ export
     EN4Monthly,
     WOAClimatology, WOAAnnual, WOAMonthly,
     GLORYSDaily, GLORYSMonthly, GLORYSStatic,
-    ORCA1,
+    ORCA1, ORCA12,
     RepeatYearJRA55, MultiYearJRA55,
     first_date,
     last_date,
@@ -56,9 +63,13 @@ export
     frazil_temperature_flux, net_ocean_temperature_flux, sea_ice_ocean_temperature_flux, atmosphere_ocean_temperature_flux,
     frazil_heat_flux, net_ocean_heat_flux, sea_ice_ocean_heat_flux, atmosphere_ocean_heat_flux,
     net_ocean_salinity_flux, sea_ice_ocean_salinity_flux, atmosphere_ocean_salinity_flux,
-    net_ocean_freshwater_flux, sea_ice_ocean_freshwater_flux, atmosphere_ocean_freshwater_flux
+    net_ocean_freshwater_flux, sea_ice_ocean_freshwater_flux, atmosphere_ocean_freshwater_flux,
+    meridional_heat_transport,
+    location,
+    native_grid
 
 using Oceananigans
+import Oceananigans: location
 using Oceananigans.Operators: ℑxyᶠᶜᵃ, ℑxyᶜᶠᵃ
 using DataDeps
 
@@ -106,7 +117,7 @@ include("Bathymetry/Bathymetry.jl")
 include("Diagnostics/Diagnostics.jl")
 
 using .DataWrangling
-using .DataWrangling: ETOPO, ECCO, GLORYS, EN4, WOA, JRA55
+using .DataWrangling: ETOPO, ECCO, GLORYS, EN4, WOA, JRA55, OSPapa
 using .Bathymetry
 using .InitialConditions
 using .EarthSystemModels
@@ -125,6 +136,7 @@ using NumericalEarth.DataWrangling.ORCA
 using NumericalEarth.DataWrangling.WOA
 using NumericalEarth.DataWrangling.JRA55
 using NumericalEarth.DataWrangling.JRA55: JRA55NetCDFBackend
+using NumericalEarth.DataWrangling.OSPapa
 
 using PrecompileTools: @setup_workload, @compile_workload
 
