@@ -158,7 +158,7 @@ function progress(sim)
     atmos = sim.model.atmosphere
     ocean = sim.model.ocean
 
-    ua, va     = atmos.diagnostic_variables.dynamics.u_mean_grid, atmos.diagnostic_variables.dynamics.v_mean_grid
+    ua, va     = atmos.variables.dynamics.u_mean_grid, atmos.variables.dynamics.v_mean_grid
     uo, vo, wo = ocean.model.velocities
 
     uamax = (maximum(abs, ua), maximum(abs, va))
