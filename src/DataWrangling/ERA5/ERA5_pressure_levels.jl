@@ -38,9 +38,12 @@ all_dates(::ERA5MonthlyPressureLevels, var) = range(DateTime("1940-01-01"), stop
 # ERA5 pressure-level data is a spatially 3-D dataset
 is_three_dimensional(::ERA5PressureMetadata) = true
 
+# TODO: drop once Oceananigans.Units exports `hPa` in a tagged release
+const hPa = 100
+
 const ERA5_all_pressure_levels = [1, 2, 3, 5, 7, 10, 20, 30, 50, 70, 100, 125, 150,
     175, 200, 225, 250, 300, 350, 400, 450, 500, 550, 600, 650, 700, 750, 775, 800,
-    825, 850, 875, 900, 925, 950, 975, 1000] * 100 # hPa -> Pa
+    825, 850, 875, 900, 925, 950, 975, 1000]hPa
 
 # ERA5 stores pressure levels bottom-to-top
 reversed_vertical_axis(::ERA5PressureLevelsDataset) = false
