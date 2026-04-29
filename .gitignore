@@ -70,3 +70,6 @@ experiments/omips/half_degree_omip/*
 experiments/omips/orca_omip/*
 !experiments/omips/half_degree_omip/half_degree_omip.jl
 !experiments/omips/orca_omip/orca_omip.jl
+
+# claude
+.claude

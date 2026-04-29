@@ -34,6 +34,10 @@ Environment variables (physics):
   RYF           Set to "true" to use RepeatYearJRA55 forcing
   KSKEW         Isopycnal skew diffusivity κ_skew (default: per-config; 0 = off)
   KSYMM         Isopycnal symmetric diffusivity κ_symmetric (default: per-config; 0 = off)
+  BIHARMONIC    Biharmonic viscosity timescale (default: per-config; "nothing" = off)
+  BIHVISC       Constant biharmonic viscosity ν in m^4/s (default: unset).
+                When set, overrides BIHARMONIC and uses ν directly instead of
+                the grid-area-scaled νhb = Az^2 / λ form.
   CB            CATKE buoyancy mixing length parameter Cᵇ (default: 0.28)
 
 Environment variables (I/O & runtime):
@@ -58,7 +62,13 @@ Examples:
   CB=0.1 NCAR=true ./launch.sh orca
   KSKEW=1000 KSYMM=500 ./launch.sh orca
   KSKEW=0 ./launch.sh orca                    # disable eddy closure
+<<<<<<< HEAD
   RYF=true ./launch.sh sxthdegree             # sxthdegree with repeat-year forcing
+=======
+  BIHARMONIC=5days ./launch.sh orca           # custom biharmonic timescale
+  BIHARMONIC=nothing ./launch.sh orca         # disable biharmonic viscosity
+  BIHVISC=1e12 ./launch.sh orca               # constant biharmonic viscosity ν=1e12 m^4/s
+>>>>>>> ss/omip-prototype
   FORCING_DIR=/other/path/forcing_data STAGING_DIR=/scratch/staged ./launch.sh orca
   PROFILE=true ./launch.sh orca
 USAGE
@@ -94,15 +104,15 @@ esac
 #                     KSKEW  KSYMM  NZ   DT          BIHARMONIC  ARCH                                             GPUS  EXTRA_USING                              FILE_SPLIT  RUN_CMD
 case "$CONFIG" in
     halfdegree)
-        DEFAULT_KSKEW=250;  DEFAULT_KSYMM=100; NZ=70;  DT="25minutes"
-        BIHARMONIC="40days"; ARCH="GPU()"; GPUS_PER_NODE=1
+        DEFAULT_KSKEW=250;  DEFAULT_KSYMM=100; NZ=70;  DEFAULT_DT="25minutes"
+        DEFAULT_BIHARMONIC="40days"; ARCH="GPU()"; GPUS_PER_NODE=1
         EXTRA_USING=""; FILE_SPLIT=""
         RUN_CMD="sim.stop_time = 300 * 365days
 run!(sim, pickup=:latest)"
         ;;
     orca)
-        DEFAULT_KSKEW=500;  DEFAULT_KSYMM=250; NZ=70;  DT="30minutes"
-        BIHARMONIC="10days"; ARCH="GPU()"; GPUS_PER_NODE=1
+        DEFAULT_KSKEW=500;  DEFAULT_KSYMM=250; NZ=70;  DEFAULT_DT="30minutes"
+        DEFAULT_BIHARMONIC="10days"; ARCH="GPU()"; GPUS_PER_NODE=1
         EXTRA_USING=""; FILE_SPLIT=""
         RUN_CMD="sim.stop_time = 300 * 365days
 run!(sim; pickup = :latest)"
@@ -118,8 +128,8 @@ sim.stop_time = run_count * segment_months * (365/12)days
 run!(sim; pickup = :latest, checkpoint_at_end = true)"
         ;;
     tenthdegree)
-        DEFAULT_KSKEW=0;    DEFAULT_KSYMM=0;   NZ=100; DT="8minutes"
-        BIHARMONIC="nothing"; ARCH="Distributed(GPU(), partition=Partition(1, 4))"; GPUS_PER_NODE=4
+        DEFAULT_KSKEW=0;    DEFAULT_KSYMM=0;   NZ=100; DEFAULT_DT="8minutes"
+        DEFAULT_BIHARMONIC="nothing"; ARCH="Distributed(GPU(), partition=Partition(1, 4))"; GPUS_PER_NODE=4
         EXTRA_USING="using Oceananigans.DistributedComputations"
         FILE_SPLIT="file_splitting_interval = 180days,"
         RUN_CMD="sim.stop_time = 91days
@@ -134,10 +144,12 @@ esac
 # 0 means "no eddy closure" (maps to Julia `nothing`)
 export KSKEW="${KSKEW:-$DEFAULT_KSKEW}"
 export KSYMM="${KSYMM:-$DEFAULT_KSYMM}"
+export DT="${DT:-$DEFAULT_DT}"
+export BIHARMONIC="${BIHARMONIC:-$DEFAULT_BIHARMONIC}"
 KSKEW_JULIA="$KSKEW"; [[ "$KSKEW" == "0" ]] && KSKEW_JULIA="nothing"
 KSYMM_JULIA="$KSYMM"; [[ "$KSYMM" == "0" ]] && KSYMM_JULIA="nothing"
 export KSKEW_JULIA KSYMM_JULIA
-export NZ DT BIHARMONIC ARCH EXTRA_USING FILE_SPLIT RUN_CMD
+export NZ DT ARCH EXTRA_USING FILE_SPLIT RUN_CMD
 
 # ── Build run name from config + options ──────────────────────────────
 RUN_NAME="$CONFIG"
@@ -148,6 +160,8 @@ RUN_NAME="$CONFIG"
 [[ -n "${CB:-}" ]]                     && RUN_NAME="${RUN_NAME}_cb${CB}"
 [[ "$KSKEW" != "$DEFAULT_KSKEW" ]]    && RUN_NAME="${RUN_NAME}_kskew${KSKEW}"
 [[ "$KSYMM" != "$DEFAULT_KSYMM" ]]    && RUN_NAME="${RUN_NAME}_ksymm${KSYMM}"
+[[ "$BIHARMONIC" != "$DEFAULT_BIHARMONIC" ]] && RUN_NAME="${RUN_NAME}_bih${BIHARMONIC}"
+[[ -n "${BIHVISC:-}" ]]                && RUN_NAME="${RUN_NAME}_bihvisc${BIHVISC}"
 
 REPORT_NAME="${REPORT_NAME:-${RUN_NAME}_report}"
 JOB_NAME="${JOB_NAME:-$RUN_NAME}"
@@ -191,6 +205,7 @@ JULIA="${JULIA:-$HOME/julia-1.12.5/bin/julia}"
 FORCING_DIR="${FORCING_DIR:-${DATA:-}forcing_data}"
 STAGING_DIR="${STAGING_DIR:-./staged_data}"
 CB="${CB:-}"
+BIHVISC="${BIHVISC:-}"
 BACKEND_SIZE="${BACKEND_SIZE:-}"
 NCAR="${NCAR:-false}"
 CORRECTED="${CORRECTED:-false}"
@@ -208,6 +223,9 @@ fi
 
 CB_KWARG=""
 [[ -n "$CB" ]] && CB_KWARG="Cᵇ = ${CB},"
+
+BIHVISC_KWARG=""
+[[ -n "$BIHVISC" ]] && BIHVISC_KWARG="biharmonic_viscosity = ${BIHVISC},"
 
 BACKEND_KWARG=""
 [[ -n "$BACKEND_SIZE" ]] && BACKEND_KWARG="backend_size = ${BACKEND_SIZE},"
@@ -236,6 +254,7 @@ sim = omip_simulation(:${CONFIG};
                       κ_skew = ${KSKEW_JULIA},
                       κ_symmetric = ${KSYMM_JULIA},
                       biharmonic_timescale = ${BIHARMONIC},
+                      ${BIHVISC_KWARG}
                       ${CB_KWARG}
                       ${FLUX_KWARG}
                       ${SNOW_KWARG}

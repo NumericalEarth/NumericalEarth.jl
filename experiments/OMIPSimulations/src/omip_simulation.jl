@@ -218,6 +218,7 @@ function omip_simulation(config::Symbol = :halfdegree;
                          κ_symmetric = 100,
                          Cᵇ = 0.28,
                          biharmonic_timescale = 40days,
+                         biharmonic_viscosity = nothing,
                          forcing_dir = joinpath(get(ENV, "DATA", ""), "forcing_data"),
                          staging_dir = nothing,
                          repeat_year_forcing = false,
@@ -246,6 +247,7 @@ function omip_simulation(config::Symbol = :halfdegree;
     ocean = build_ocean(cfg, grid;
                         κ_skew, κ_symmetric, Cᵇ,
                         biharmonic_timescale,
+                        biharmonic_viscosity,
                         restoring_dir, piston_velocity,
                         start_date, end_date)
 
@@ -321,7 +323,9 @@ end
 # Background tracer diffusivity following Henyey et al. (1986).
 @inline henyey_diffusivity(x, y, z, t) = max(1e-6, 5e-6 * abs(sind(y)))
 
-function omip_closure(; κ_skew, κ_symmetric, Cᵇ = 0.28, biharmonic_timescale)
+function omip_closure(; κ_skew, κ_symmetric, Cᵇ = 0.28,
+                        biharmonic_timescale,
+                        biharmonic_viscosity = nothing)
     mixing_length = CATKEMixingLength(; Cᵇ)
     catke = CATKEVerticalDiffusivity(VerticallyImplicitTimeDiscretization();
                                      mixing_length,
@@ -333,12 +337,14 @@ function omip_closure(; κ_skew, κ_symmetric, Cᵇ = 0.28, biharmonic_timescale
         IsopycnalSkewSymmetricDiffusivity(; κ_skew, κ_symmetric)
     end
 
-    horizontal_viscosity = if isnothing(biharmonic_timescale)
-        nothing
-    else
+    horizontal_viscosity = if !isnothing(biharmonic_viscosity)
+        HorizontalScalarBiharmonicDiffusivity(ν=biharmonic_viscosity)
+    elseif !isnothing(biharmonic_timescale)
         HorizontalScalarBiharmonicDiffusivity(ν=νhb,
                                               discrete_form=true,
                                               parameters=biharmonic_timescale)
+    else
+        nothing
     end
 
     vertical_diffusivity = VerticalScalarDiffusivity(κ=henyey_diffusivity, ν=3e-5)
@@ -427,10 +433,11 @@ function build_ocean(config, grid;
                      κ_skew, κ_symmetric, Cᵇ = 0.28,
                      restoring_dir, piston_velocity,
                      biharmonic_timescale,
+                     biharmonic_viscosity = nothing,
                      start_date, end_date)
 
     salt_restoring = salinity_surface_restoring(grid, WOAMonthly(); restoring_dir, piston_velocity)
-    closure = omip_closure(; κ_skew, κ_symmetric, Cᵇ, biharmonic_timescale)
+    closure = omip_closure(; κ_skew, κ_symmetric, Cᵇ, biharmonic_timescale, biharmonic_viscosity)
     coriolis = HydrostaticSphericalCoriolis(scheme = Oceananigans.Coriolis.EnstrophyConserving())
     momentum_advection = config_momentum_advection(config)
 
@@ -445,8 +452,8 @@ function build_ocean(config, grid;
                              closure)
 
     set!(ocean.model,
-         T = Metadatum(:temperature; dir=restoring_dir, dataset=EN4Monthly(), date=start_date),
-         S = Metadatum(:salinity;    dir=restoring_dir, dataset=EN4Monthly(), date=start_date))
+         T = Metadatum(:temperature; dir=restoring_dir, dataset=WOAAnnual()),
+         S = Metadatum(:salinity;    dir=restoring_dir, dataset=WOAAnnual()))
 
     return ocean
 end

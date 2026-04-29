@@ -284,9 +284,9 @@ hm = heatmap!(axeo, eoₙ, colorrange = (0, 1e-3), colormap = :solar, nan_color=
 Colorbar(fig[2, 4], hm, label = "Turbulent Kinetic Energy (m² s⁻²)")
 
 hm = heatmap!(axsi, siₙ, colorrange = (0, 0.5), colormap = :greys, nan_color=:lightgray)
-Colorbar(fig[1, 4], hm, label = "Sea ice speed (m s⁻¹)")
+Colorbar(fig[3, 2], hm, label = "Sea ice speed (m s⁻¹)")
 hm = heatmap!(axhi, heₙ, colorrange =  (0, 4),  colormap = :blues, nan_color=:lightgray)
-Colorbar(fig[2, 4], hm, label = "Effective ice thickness (m)")
+Colorbar(fig[3, 4], hm, label = "Effective ice thickness (m)")
 
 
 for ax in (axso, axsi, axTo, axhi, axeo)

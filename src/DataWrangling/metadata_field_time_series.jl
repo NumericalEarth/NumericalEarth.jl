@@ -85,11 +85,11 @@ function FieldTimeSeries(variable_name::Symbol;
                          dataset, dir,
                          architecture = CPU(),
                          start_date = first_date(dataset, variable_name),
-                         end_date = first_date(dataset, variable_name),
+                         end_date = last_date(dataset, variable_name),
                          kw...)
 
     native_dates = all_dates(dataset, variable_name)
     dates = compute_native_date_range(native_dates, start_date, end_date)
-    metadata = Metadata(variable_name, dataset, dates, dir)
+    metadata = Metadata(variable_name; dataset, dates, dir)
     return FieldTimeSeries(metadata, architecture; kw...)
 end

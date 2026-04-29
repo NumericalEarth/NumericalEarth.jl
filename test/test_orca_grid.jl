@@ -20,6 +20,21 @@ using Test
     @test mesh_meta.dataset isa ORCA1
 end
 
+
+@testset "ORCA12 Metadatum construction" begin
+    bathy_meta = Metadatum(:bottom_height; dataset=ORCA12())
+    @test bathy_meta.name == :bottom_height
+    @test bathy_meta.dataset isa ORCA12
+
+    mesh_meta = Metadatum(:mesh_mask; dataset=ORCA12())
+    @test mesh_meta.name == :mesh_mask
+    @test mesh_meta.dataset isa ORCA12
+
+    @test default_south_rows_to_remove(ORCA12()) == 0
+    @test occursin("eORCA12", metadata_path(mesh_meta))
+    @test occursin("eORCA12", metadata_path(bathy_meta))
+end
+
 @testset "ORCAGrid with ORCA1 dataset on $(arch)" for arch in test_architectures
     south_rows_to_remove = 43
     grid = ORCAGrid(arch; dataset=ORCA1(), Nz=5, z=(-5000, 0), halo=(4, 4, 4), south_rows_to_remove)
@@ -83,14 +98,21 @@ end
         @test all(isfinite, Oceananigans.on_architecture(CPU(), data)) == true
     end
 
-    # All interior metrics (Δx, Δy, Az) are strictly positive
-    # Check only interior points to avoid halo issues
-    for name in (:Δxᶜᶜᵃ, :Δxᶠᶜᵃ, :Δxᶜᶠᵃ, :Δxᶠᶠᵃ,
-                 :Δyᶜᶜᵃ, :Δyᶠᶜᵃ, :Δyᶜᶠᵃ, :Δyᶠᶠᵃ,
-                 :Azᶜᶜᵃ, :Azᶠᶜᵃ, :Azᶜᶠᵃ, :Azᶠᶠᵃ)
+    # Metrics strictly positive over the full interior. Face-y fields on
+    # RightFaceFolded have Ny+1 interior rows; the fold row Ny+1 must be checked.
+    LYs = Dict(:Δxᶜᶜᵃ => Center, :Δxᶠᶜᵃ => Center, :Δxᶜᶠᵃ => Face, :Δxᶠᶠᵃ => Face,
+               :Δyᶜᶜᵃ => Center, :Δyᶠᶜᵃ => Center, :Δyᶜᶠᵃ => Face, :Δyᶠᶠᵃ => Face,
+               :Azᶜᶜᵃ => Center, :Azᶠᶜᵃ => Center, :Azᶜᶠᵃ => Face, :Azᶠᶠᵃ => Face)
+    for (name, LY) in LYs
         data = getproperty(grid, name)
-        interior = Oceananigans.on_architecture(CPU(), data)[1:Nx, 1:Ny]
+        Njf = Base.length(LY(), Oceananigans.Grids.RightFaceFolded(), Ny)
+        interior = Oceananigans.on_architecture(CPU(), data)[1:Nx, 1:Njf]
         @test all(x -> x > 0, interior) == true
+    end
+
+    for name in (:Δxᶜᶠᵃ, :Δxᶠᶠᵃ, :Δyᶜᶠᵃ, :Δyᶠᶠᵃ, :Azᶜᶠᵃ, :Azᶠᶠᵃ)
+        data = Oceananigans.on_architecture(CPU(), getproperty(grid, name))
+        @test all(x -> x > 0, data[1:Nx, Ny+1])
     end
 
     # Face-x longitude is west of Center-x longitude (stagger check)
