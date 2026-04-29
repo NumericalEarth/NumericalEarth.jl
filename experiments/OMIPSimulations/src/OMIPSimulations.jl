@@ -45,6 +45,7 @@ using NumericalEarth.Diagnostics: MixedLayerDepthField
 
 export omip_simulation,
        add_omip_diagnostics!,
+       add_ryf_sxthdegree_diagnostics!,
        compute_report_fields,
        compute_woa_bias
 

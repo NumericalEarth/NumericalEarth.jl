@@ -171,6 +171,7 @@ Create a fully coupled ocean--sea-ice--atmosphere OMIP simulation.
 The single positional argument selects the grid configuration:
 
 - `:halfdegree`  -- 720x360   `TripolarGrid`
+- `:sxthdegree`  -- 2160x1080 `TripolarGrid`
 - `:tenthdegree` -- 3600x1800 `TripolarGrid`
 - `:orca`        -- NEMO eORCA mesh
 
@@ -193,6 +194,7 @@ plumbing is needed because `NumericalEarth.EarthSystemModels` provides
 - `depth`: maximum ocean depth in metres. Default: `5500`.
 - `κ_skew`, `κ_symmetric`: GM/Redi diffusivities. Defaults: `500`, `100`.
 - `forcing_dir`: directory for JRA55 forcing data. Default: `"forcing_data"`.
+- `repeat_year_forcing`: if `true`, uses `RepeatYearJRA55()` forcing. Default: `false`.
 - `restoring_dir`: directory for restoring/IC climatology. Default: `"climatology"`.
 - `piston_velocity`: surface salinity restoring piston velocity in m/day. Default: `1/6`.
   Restoring is automatically masked by sea ice concentration (no restoring under ice).
@@ -210,7 +212,7 @@ plumbing is needed because `NumericalEarth.EarthSystemModels` provides
 """
 function omip_simulation(config::Symbol = :halfdegree;
                          arch = CPU(),
-                         Nz = 100,
+                         Nz = config == :sxthdegree ? 75 : 100,
                          depth = 5500,
                          κ_skew = 250,
                          κ_symmetric = 100,
@@ -218,6 +220,7 @@ function omip_simulation(config::Symbol = :halfdegree;
                          biharmonic_timescale = 40days,
                          forcing_dir = joinpath(get(ENV, "DATA", ""), "forcing_data"),
                          staging_dir = nothing,
+                         repeat_year_forcing = false,
                          backend_size = 50,
                          restoring_dir = "climatology",
                          piston_velocity = 1 / 6, # m / day
@@ -262,6 +265,7 @@ function omip_simulation(config::Symbol = :halfdegree;
                                             forcing_dir = atmosphere_dir,
                                             start_date,
                                             end_date,
+                                            repeat_year_forcing,
                                             backend_size)
 
     coupled = build_coupled_model(ocean, sea_ice, atmosphere, radiation, flux_configuration)
@@ -288,14 +292,21 @@ function omip_simulation(config::Symbol = :halfdegree;
     add_callback!(simulation, omip_progress_callback(wall_time), IterationInterval(10))
 
     if diagnostics
-        add_omip_diagnostics!(simulation;
-                              surface_averaging_interval,
-                              field_averaging_interval,
-                              field_mean_interval,
-                              checkpoint_interval,
-                              output_dir,
-                              filename_prefix,
-                              file_splitting_interval)
+        if config == :sxthdegree
+            add_ryf_sxthdegree_diagnostics!(simulation;
+                                            output_dir = output_dir,
+                                            filename_prefix = filename_prefix,
+                                            checkpoint_interval = 365days / 12)
+        else
+            add_omip_diagnostics!(simulation;
+                                  surface_averaging_interval,
+                                  field_averaging_interval,
+                                  field_mean_interval,
+                                  checkpoint_interval,
+                                  output_dir,
+                                  filename_prefix,
+                                  file_splitting_interval)
+        end
     end
 
     return simulation
@@ -367,6 +378,7 @@ end
 function build_grid(config, arch, Nz, depth)
     
     Nx = config == Val(:halfdegree)  ? 720 :
+         config == Val(:sxthdegree)  ? 2160 :
          config == Val(:tenthdegree) ? 3600 :
          throw("Configuration $(config) does not exist") 
 
@@ -379,9 +391,11 @@ function build_grid(config, arch, Nz, depth)
                              z = z_faces,
                              halo = (7, 7, 7))
 
+    minimum_depth = config == Val(:sxthdegree) ? 15 : 20
+    major_basins = config == Val(:sxthdegree) ? 4 : 1
     bottom_height = regrid_bathymetry(base_grid;
-                                    minimum_depth = 20,
-                                    major_basins = 1,
+                                    minimum_depth,
+                                    major_basins,
                                     interpolation_passes = 25)
 
     return ImmersedBoundaryGrid(base_grid, GridFittedBottom(bottom_height); active_cells_map = true)
@@ -406,6 +420,7 @@ end
 
 config_momentum_advection(::Val{:orca})        = WENOVectorInvariant(order=5) 
 config_momentum_advection(::Val{:halfdegree})  = WENOVectorInvariant(order=5)
+config_momentum_advection(::Val{:sxthdegree})  = WENOVectorInvariant()
 config_momentum_advection(::Val{:tenthdegree}) = WENOVectorInvariant()
 
 function build_ocean(config, grid;

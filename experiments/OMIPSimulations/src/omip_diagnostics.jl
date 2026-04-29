@@ -1,5 +1,6 @@
 
 using JLD2 
+using Oceananigans.Operators: Vᶜᶜᶜ, Vᶠᶜᶜ, Vᶜᶠᶜ
 
 """
     add_omip_diagnostics!(simulation; kwargs...)
@@ -187,6 +188,111 @@ function add_omip_diagnostics!(simulation;
           " 3-D ($(length(field_outputs)) fields, every $(prettytime(field_averaging_interval)))," *
           " averages ($(length(average_outputs)) fields, every $(prettytime(field_averaging_interval)))," *
           " checkpointer (every $(prettytime(checkpoint_interval)))"
+
+    return nothing
+end
+
+"""
+    add_ryf_sxthdegree_diagnostics!(simulation; kwargs...)
+
+Attach the RYF-style diagnostics suite used by the 1/6-degree workflow.
+This is intended for `:sxthdegree` runs and writes:
+
+1. Five depth-slice writers (monthly averages)
+2. SSH writer (monthly averages)
+3. Surface heat/freshwater flux writer (365/48-day averages)
+4. Global/vertical integral writer (365/48-day averages)
+5. Rank-aware checkpoint writer (monthly)
+"""
+function add_ryf_sxthdegree_diagnostics!(simulation;
+                                         output_dir = ".",
+                                         filename_prefix = "sxthdegree",
+                                         slice_depths = (0, -100, -500, -1000, -2000),
+                                         slice_averaging_interval = 365days / 12,
+                                         flux_averaging_interval = 365days / 48,
+                                         checkpoint_interval = 365days / 12)
+
+    model = simulation.model
+    ocean = model.ocean
+    grid = ocean.model.grid
+    Nz = size(grid, 3)
+
+    arch = Oceananigans.Architectures.architecture(grid)
+    local_rank = hasproperty(arch, :local_rank) ? Int(arch.local_rank) : 0
+
+    tracers = ocean.model.tracers
+    velocities = ocean.model.velocities
+    outputs = merge(tracers, velocities)
+
+    for depth in slice_depths
+        _, slice_level = findmin(abs.(grid.z.cᵃᵃᶜ[1:Nz] .- depth))
+        writer_key = Symbol("plane", slice_level)
+        filename = "$(filename_prefix)_plane$(slice_level)_fields"
+
+        ocean.output_writers[writer_key] = JLD2Writer(ocean.model, outputs;
+                                                      dir = output_dir,
+                                                      schedule = AveragedTimeInterval(slice_averaging_interval),
+                                                      filename,
+                                                      indices = (:, :, slice_level),
+                                                      with_halos = false,
+                                                      including = [:buoyancy, :closure],
+                                                      overwrite_existing = true,
+                                                      array_type = Array{Float32})
+    end
+
+    surface_height = (; surface_height = ocean.model.free_surface.displacement)
+    ocean.output_writers[:SSH] = JLD2Writer(ocean.model, surface_height;
+                                            dir = output_dir,
+                                            schedule = AveragedTimeInterval(slice_averaging_interval),
+                                            filename = "$(filename_prefix)_ssh_fields",
+                                            including = [:buoyancy, :closure],
+                                            with_halos = false,
+                                            overwrite_existing = true,
+                                            array_type = Array{Float32})
+
+    surface_forcing = (; heat_flux = net_ocean_heat_flux(model),
+                         fw_flux = net_ocean_freshwater_flux(model))
+    simulation.output_writers[:surface_fluxes] = JLD2Writer(model, surface_forcing;
+                                                            dir = output_dir,
+                                                            schedule = AveragedTimeInterval(flux_averaging_interval),
+                                                            filename = "$(filename_prefix)_surface_fluxes",
+                                                            with_halos = false,
+                                                            overwrite_existing = true,
+                                                            array_type = Array{Float32})
+
+    global_outputs = Dict{Symbol, Any}()
+
+    for (name, field) in pairs(outputs)
+        global_outputs[Symbol(name, "_totintegral")] = Field(Integral(field, dims = (1, 2, 3)))
+        global_outputs[Symbol(name, "_vertintegral")] = Field(Integral(field, dims = (1, 2)))
+    end
+
+    volume_c = KernelFunctionOperation{Center, Center, Center}(Vᶜᶜᶜ, grid)
+    volume_x = KernelFunctionOperation{Face, Center, Center}(Vᶠᶜᶜ, grid)
+    volume_y = KernelFunctionOperation{Center, Face, Center}(Vᶜᶠᶜ, grid)
+
+    global_outputs[:total_volume_c] = sum(volume_c, dims = (1, 2, 3))
+    global_outputs[:total_volume_x] = sum(volume_x, dims = (1, 2, 3))
+    global_outputs[:total_volume_y] = sum(volume_y, dims = (1, 2, 3))
+    global_outputs[:vert_volume_c] = sum(volume_c, dims = (1, 2))
+    global_outputs[:vert_volume_x] = sum(volume_x, dims = (1, 2))
+    global_outputs[:vert_volume_y] = sum(volume_y, dims = (1, 2))
+
+    ocean.output_writers[:integral] = JLD2Writer(ocean.model, global_outputs;
+                                                 dir = output_dir,
+                                                 schedule = AveragedTimeInterval(flux_averaging_interval),
+                                                 filename = "$(filename_prefix)_tot_integrals",
+                                                 overwrite_existing = true)
+
+    checkpointer_prefix = joinpath(output_dir, "$(filename_prefix)_checkpoint_rank$(local_rank)")
+    simulation.output_writers[:checkpointer] = Checkpointer(model;
+                                                            schedule = TimeInterval(checkpoint_interval),
+                                                            prefix = checkpointer_prefix,
+                                                            cleanup = false,
+                                                            verbose = true)
+
+    @info "RYF sxthdegree diagnostics attached: " *
+          "$(length(slice_depths)) depth slices, SSH, surface fluxes, integrals, checkpointer"
 
     return nothing
 end

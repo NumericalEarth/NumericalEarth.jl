@@ -24,12 +24,14 @@ Usage: ./launch.sh <config> [extra sbatch args...]
 Configurations:
   halfdegree      Half-degree TripolarGrid
   orca            ORCA grid
+  sxthdegree      1/6-degree TripolarGrid (4 GPUs)
   tenthdegree     1/10-degree TripolarGrid (4 GPUs)
 
 Environment variables (physics):
   NCAR          Set to "true" for OMIP-2/NCAR bulk formulae
   CORRECTED     Set to "true" for corrected COARE 3.6 fluxes
   SNOW          Set to "true" to enable snow thermodynamics
+  RYF           Set to "true" to use RepeatYearJRA55 forcing
   KSKEW         Isopycnal skew diffusivity κ_skew (default: per-config; 0 = off)
   KSYMM         Isopycnal symmetric diffusivity κ_symmetric (default: per-config; 0 = off)
   CB            CATKE buoyancy mixing length parameter Cᵇ (default: 0.28)
@@ -46,6 +48,7 @@ Environment variables (I/O & runtime):
   NODE          Pin job to a specific node (default: 2904)
   THREADS       Number of Julia threads / CPUs per task (default: 4)
   PROFILE       Set to "true" for nsys profiling
+  SEGMENT_MONTHS Segment length for sxthdegree runs (default: 12)
 
 Examples:
   ./launch.sh orca
@@ -55,6 +58,7 @@ Examples:
   CB=0.1 NCAR=true ./launch.sh orca
   KSKEW=1000 KSYMM=500 ./launch.sh orca
   KSKEW=0 ./launch.sh orca                    # disable eddy closure
+  RYF=true ./launch.sh sxthdegree             # sxthdegree with repeat-year forcing
   FORCING_DIR=/other/path/forcing_data STAGING_DIR=/scratch/staged ./launch.sh orca
   PROFILE=true ./launch.sh orca
 USAGE
@@ -72,6 +76,9 @@ case "$CONFIG" in
         CONFIG="halfdegree"
         ;;
     orca|tenthdegree) ;;
+    sxthdegree|sxtdegree|sixthdegree)
+        CONFIG="sxthdegree"
+        ;;
     -h|--help)
         usage
         exit 0
@@ -100,6 +107,16 @@ run!(sim, pickup=:latest)"
         RUN_CMD="sim.stop_time = 300 * 365days
 run!(sim; pickup = :latest)"
         ;;
+    sxthdegree)
+        DEFAULT_KSKEW=0;    DEFAULT_KSYMM=0;   NZ=75;  DT="10minutes"
+        BIHARMONIC="nothing"; ARCH="Distributed(GPU(), partition=Partition(1, 4))"; GPUS_PER_NODE=4
+        EXTRA_USING="using Oceananigans.DistributedComputations"
+        FILE_SPLIT=""
+        RUN_CMD="segment_months = parse(Int, get(ENV, \"SEGMENT_MONTHS\", \"12\"))
+run_count = parse(Int, get(ENV, \"count\", \"1\"))
+sim.stop_time = run_count * segment_months * (365/12)days
+run!(sim; pickup = :latest, checkpoint_at_end = true)"
+        ;;
     tenthdegree)
         DEFAULT_KSKEW=0;    DEFAULT_KSYMM=0;   NZ=100; DT="8minutes"
         BIHARMONIC="nothing"; ARCH="Distributed(GPU(), partition=Partition(1, 4))"; GPUS_PER_NODE=4
@@ -124,6 +141,7 @@ export NZ DT BIHARMONIC ARCH EXTRA_USING FILE_SPLIT RUN_CMD
 
 # ── Build run name from config + options ──────────────────────────────
 RUN_NAME="$CONFIG"
+[[ "${RYF:-false}" == "true" ]]        && RUN_NAME="${RUN_NAME}_ryf"
 [[ "${CORRECTED:-false}" == "true" ]]  && RUN_NAME="${RUN_NAME}_corrected"
 [[ "${NCAR:-false}" == "true" ]]       && RUN_NAME="${RUN_NAME}_ncar"
 [[ "${SNOW:-false}" == "true" ]]       && RUN_NAME="${RUN_NAME}_snow"
@@ -170,13 +188,14 @@ module load nvhpc
 JULIA="${JULIA:-$HOME/julia-1.12.5/bin/julia}"
 
 # ── Shared environment ────────────────────────────────────────────────
-FORCING_DIR="${FORCING_DIR:-${DATA}forcing_data}"
+FORCING_DIR="${FORCING_DIR:-${DATA:-}forcing_data}"
 STAGING_DIR="${STAGING_DIR:-./staged_data}"
 CB="${CB:-}"
 BACKEND_SIZE="${BACKEND_SIZE:-}"
 NCAR="${NCAR:-false}"
 CORRECTED="${CORRECTED:-false}"
 SNOW="${SNOW:-false}"
+RYF="${RYF:-false}"
 
 # ── Build optional kwargs strings ─────────────────────────────────────
 
@@ -200,6 +219,9 @@ FLUX_KWARG=""
 SNOW_KWARG=""
 [[ "$SNOW" == "true" ]] && SNOW_KWARG="with_snow = true,"
 
+RYF_KWARG=""
+[[ "$RYF" == "true" ]] && RYF_KWARG="repeat_year_forcing = true,"
+
 # ── Build and run Julia expression ────────────────────────────────────
 JULIA_EXPR="using OMIPSimulations
 using Oceananigans
@@ -217,6 +239,7 @@ sim = omip_simulation(:${CONFIG};
                       ${CB_KWARG}
                       ${FLUX_KWARG}
                       ${SNOW_KWARG}
+                      ${RYF_KWARG}
                       Δt = ${DT},
                       forcing_dir = \"${FORCING_DIR}\",
                       ${STAGING_KWARG}

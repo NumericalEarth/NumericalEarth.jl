@@ -1,5 +1,5 @@
 """
-    omip_atmosphere(arch; forcing_dir, start_date, end_date, backend_size=30)
+    omip_atmosphere(arch; forcing_dir, start_date, end_date, repeat_year_forcing=false, backend_size=30)
 
 Set up a JRA55 prescribed atmosphere with river and iceberg forcing,
 together with a default `Radiation` model. Returns the tuple
