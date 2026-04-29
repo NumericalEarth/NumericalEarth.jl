@@ -4,14 +4,12 @@ restoring, or validation.
 """
 module DataWrangling
 
-export Metadata, Metadatum, DatewiseFilename, ECCOMetadatum, EN4Metadatum, all_dates, first_date, last_date
-export BoundingBox, Column, Linear, Nearest
+export Metadata, Metadatum, ECCOMetadatum, EN4Metadatum, all_dates, first_date, last_date
 export WOAClimatology, WOAAnnual, WOAMonthly
 export metadata_time_step, metadata_epoch
 export LinearlyTaperedPolarMask
-export DatasetRestoring, SurfaceFluxRestoring
+export DatasetRestoring
 export ERA5Hourly, ERA5Monthly
-export native_grid
 
 using Oceananigans
 using Downloads
@@ -191,7 +189,6 @@ function z_interfaces end
 function longitude_interfaces end
 function latitude_interfaces end
 function reversed_vertical_axis end
-reversed_latitude_axis(dataset) = false
 function native_grid end
 function binary_data_grid end
 function binary_data_size end
@@ -201,8 +198,6 @@ default_mask_value(dataset) = NaN
 # Fundamentals
 include("metadata.jl")
 include("metadata_field.jl")
-include("dataset_backend.jl")
-include("prefetching_backend.jl")
 include("metadata_field_time_series.jl")
 include("inpainting.jl")
 include("restoring.jl")
@@ -232,7 +227,6 @@ include("EN4/EN4.jl")
 include("ORCA/ORCA.jl")
 include("WOA/WOA.jl")
 include("JRA55/JRA55.jl")
-include("OSPapa/OSPapa.jl")
 
 using .ETOPO
 using .ECCO
@@ -242,6 +236,5 @@ using .EN4
 using .ORCA
 using .WOA
 using .JRA55
-using .OSPapa
 
 end # module

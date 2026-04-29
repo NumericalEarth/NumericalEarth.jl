@@ -15,9 +15,9 @@ Adapt.adapt_structure(to, r :: Radiation) =  Radiation(Adapt.adapt(to, r.emissio
 
 """
     Radiation([arch = CPU(), FT=Float64];
-              ocean_emissivity = 1.0,
+              ocean_emissivity = 0.97,
               sea_ice_emissivity = 1.0,
-              ocean_albedo = 0.06,
+              ocean_albedo = 0.05,
               sea_ice_albedo = 0.7,
               stefan_boltzmann_constant = 5.67e-8)
 
@@ -32,16 +32,16 @@ Arguments
 Keyword Arguments
 =================
 
-- `ocean_emissivity`: The emissivity of the ocean surface. Default: `1.0`.
+- `ocean_emissivity`: The emissivity of the ocean surface. Default: `0.97`.
 - `sea_ice_emissivity`: The emissivity of the sea ice surface. Default: `1.0`.
-- `ocean_albedo`: The albedo of the ocean surface. Default: `0.06`.
+- `ocean_albedo`: The albedo of the ocean surface. Default: `0.05`.
 - `sea_ice_albedo`: The albedo of the sea ice surface. Default: `0.7`.
 - `stefan_boltzmann_constant`: The Stefan-Boltzmann constant. Default: `5.67e-8`.
 """
 function Radiation(arch = CPU(), FT=Oceananigans.defaults.FloatType;
-                   ocean_emissivity = 1.0,
+                   ocean_emissivity = 0.97,
                    sea_ice_emissivity = 1.0,
-                   ocean_albedo = 0.06,
+                   ocean_albedo = 0.05,
                    sea_ice_albedo = 0.7,
                    stefan_boltzmann_constant = 5.67e-8)
 

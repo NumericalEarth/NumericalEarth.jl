@@ -36,7 +36,7 @@ function compute_sea_ice_ocean_fluxes!(interface, ocean, sea_ice, ocean_properti
     hˢⁱ = sea_ice.model.ice_thickness
     hc = sea_ice.model.ice_consolidation_thickness
 
-    phase_transitions = sea_ice.model.phase_transitions
+    phase_transitions = sea_ice.model.ice_thermodynamics.phase_transitions
     liquidus = phase_transitions.liquidus
     L = phase_transitions.reference_latent_heat
 
@@ -202,8 +202,9 @@ end
                                                      liquidus, ocean_properties, ℰ, u★)
 
     # Store interface values and heat flux
+    @inbounds T★[i, j, 1] = Tᵦ
+    @inbounds S★[i, j, 1] = Sᵦ
     @inbounds 𝒬ⁱⁿᵗ[i, j, 1] = 𝒬ⁱᵒ
-    store_interface_state!(flux_formulation, T★, S★, i, j, Tᵦ, Sᵦ)
 
     # =============================================
     # Part 4: Salt flux

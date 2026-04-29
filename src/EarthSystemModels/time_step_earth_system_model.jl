@@ -2,14 +2,11 @@ using .InterfaceComputations:
     compute_atmosphere_ocean_fluxes!,
     compute_sea_ice_ocean_fluxes!
 
-using Oceananigans.TimeSteppers: maybe_prepare_first_time_step!
 using ClimaSeaIce: SeaIceModel, SeaIceThermodynamics
 using Oceananigans.Grids: φnode
 using Printf
 
 function time_step!(coupled_model::EarthSystemModel, Δt; callbacks=[])
-    maybe_prepare_first_time_step!(coupled_model, callbacks)
-    
     ocean = coupled_model.ocean
     sea_ice = coupled_model.sea_ice
     atmosphere = coupled_model.atmosphere
@@ -33,7 +30,7 @@ function time_step!(coupled_model::EarthSystemModel, Δt; callbacks=[])
     return nothing
 end
 
-function update_state!(coupled_model::EarthSystemModel, callbacks=[])
+function update_state!(coupled_model::EarthSystemModel)
 
     # The three components
     ocean      = coupled_model.ocean

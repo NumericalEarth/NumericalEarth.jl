@@ -8,11 +8,11 @@ include("download_utils.jl")
         datum = Metadatum(name; dataset=JRA55.RepeatYearJRA55())
         filepath = metadata_path(datum)
 
-        download_dataset_with_fallback(filepath; dataset_name="JRA55 $name") do
-            FieldTimeSeries(Metadata(name; dataset=NumericalEarth.JRA55.RepeatYearJRA55()); time_indices_in_memory=2)
+        fts = download_dataset_with_fallback(filepath; dataset_name="JRA55 $name") do
+            NumericalEarth.JRA55.JRA55FieldTimeSeries(name; backend=NumericalEarth.JRA55.JRA55NetCDFBackend(2))
         end
-        @test isfile(filepath)
-        rm(filepath; force=true)
+        @test isfile(fts.path)
+        rm(fts.path; force=true)
     end
 end
 

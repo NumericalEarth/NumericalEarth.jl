@@ -1,5 +1,3 @@
-include("runtests_setup.jl")
-
 using Breeze
 using NumericalEarth
 using Oceananigans

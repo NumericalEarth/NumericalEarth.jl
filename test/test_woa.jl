@@ -1,5 +1,4 @@
 include("runtests_setup.jl")
-include("download_utils.jl")
 
 ENV["DATADEPS_ALWAYS_ACCEPT"] = "true"
 
@@ -11,16 +10,6 @@ using WorldOceanAtlasTools
 
 inpainting = NearestNeighborInpainting(10)
 
-# Ensure a WOA Metadatum file is on disk, trying NOAA first 
-# and falling back to the NumericalEarthArtifacts mirror.
-function ensure_woa_file(metadatum; label)
-    filepath = metadata_path(metadatum)
-    download_dataset_with_fallback(filepath; dataset_name=label) do
-        download_dataset(metadatum)
-    end
-    return filepath
-end
-
 for arch in test_architectures
     A = typeof(arch)
 
@@ -30,8 +19,8 @@ for arch in test_architectures
         @testset "WOA Annual download and Field creation" begin
             for name in (:temperature, :salinity)
                 metadata = Metadatum(name; dataset=WOAAnnual())
-                filepath = ensure_woa_file(metadata; label="WOA Annual $name")
-                @test isfile(filepath)
+                download_dataset(metadata)
+                @test isfile(metadata_path(metadata))
 
                 field = Field(metadata, arch; inpainting=NearestNeighborInpainting(2))
                 @test field isa Field
@@ -51,10 +40,8 @@ for arch in test_architectures
             field = CenterField(grid)
 
             for name in (:temperature, :salinity)
-                metadatum = Metadatum(name; dataset=WOAAnnual())
-                ensure_woa_file(metadatum; label="WOA Annual $name")
                 @test begin
-                    set!(field, metadatum; inpainting)
+                    set!(field, Metadatum(name; dataset=WOAAnnual()); inpainting)
                     true
                 end
             end
@@ -63,7 +50,6 @@ for arch in test_architectures
         @testset "WOA Annual inpainting" begin
             for name in (:temperature, :salinity)
                 metadatum = Metadatum(name; dataset=WOAAnnual())
-                ensure_woa_file(metadatum; label="WOA Annual $name")
 
                 grid = LatitudeLongitudeGrid(arch,
                                              size = (20, 20, 10),
@@ -93,8 +79,8 @@ for arch in test_architectures
         @testset "WOA Monthly download and Field creation" begin
             for name in (:temperature, :salinity)
                 metadata = Metadatum(name; dataset=WOAMonthly())
-                filepath = ensure_woa_file(metadata; label="WOA Monthly $name")
-                @test isfile(filepath)
+                download_dataset(metadata)
+                @test isfile(metadata_path(metadata))
 
                 field = Field(metadata, arch; inpainting=NearestNeighborInpainting(2))
                 @test field isa Field
@@ -110,10 +96,8 @@ for arch in test_architectures
             field = CenterField(grid)
 
             for name in (:temperature, :salinity)
-                metadatum = Metadatum(name; dataset=WOAMonthly())
-                ensure_woa_file(metadatum; label="WOA Monthly $name")
                 @test begin
-                    set!(field, metadatum; inpainting)
+                    set!(field, Metadatum(name; dataset=WOAMonthly()); inpainting)
                     true
                 end
             end

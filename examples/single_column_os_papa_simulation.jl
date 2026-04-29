@@ -14,7 +14,6 @@
 # pkg"add Oceananigans, NumericalEarth, CairoMakie"
 # ```
 
-using CopernicusMarine
 using NumericalEarth
 using Oceananigans
 using Oceananigans: prognostic_fields
@@ -30,7 +29,7 @@ using Printf
 
 # Ocean station papa location
 location_name = "ocean_station_papa"
-λ★, φ★ = -144.9, 50.1
+λ★, φ★ = 35.1, 50.1
 
 grid = RectilinearGrid(size = 200,
                        x = λ★,
@@ -49,14 +48,10 @@ ocean = ocean_simulation(grid; Δt=10minutes, coriolis=FPlane(latitude = φ★))
 
 ocean.model
 
-# We set initial conditions from GLORYS, using a `Column` region so that
-# only the single water column at `(λ★, φ★)` is downloaded from the
-# Copernicus Marine Service.
+# We set initial conditions from ECCO4:
 
-col = Column(λ★, φ★; interpolation=Nearest())
-
-set!(ocean.model, T=Metadatum(:temperature, dataset=GLORYSMonthly(), region=col),
-                  S=Metadatum(:salinity,    dataset=GLORYSMonthly(), region=col))
+set!(ocean.model, T=Metadatum(:temperature, dataset=ECCO4Monthly()),
+                  S=Metadatum(:salinity, dataset=ECCO4Monthly()))
 
 # # A prescribed atmosphere based on JRA55 re-analysis
 #

@@ -79,7 +79,7 @@ salinity    = ECCOMetadata(:salinity;    dir="./")
 ice_thickness     = ECCOMetadata(:sea_ice_thickness; dir="./")
 ice_concentration = ECCOMetadata(:sea_ice_concentration; dir="./")
 
-atmosphere  = JRA55PrescribedAtmosphere(arch, time_indices_in_memory=20)
+atmosphere  = JRA55PrescribedAtmosphere(arch, backend=JRA55NetCDFBackend(20))
 radiation   = Radiation(ocean_albedo = LatitudeDependentAlbedo(), sea_ice_albedo=0.6)
 
 set!(ocean.model, T=temperature, S=salinity)

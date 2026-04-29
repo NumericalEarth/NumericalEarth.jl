@@ -43,7 +43,7 @@ See https://cds.climate.copernicus.eu/how-to-api for details.
 function download_dataset(meta::ERA5Metadatum; skip_existing=true)
 
     output_directory = meta.dir
-    output_filename = meta.filename
+    output_filename = NumericalEarth.DataWrangling.metadata_filename(meta)
     output_path = joinpath(output_directory, output_filename)
 
     # Skip if file already exists
@@ -77,7 +77,7 @@ function download_dataset(meta::ERA5Metadatum; skip_existing=true)
     )
 
     # Add area constraint from bounding box
-    area = build_era5_area(meta.region)
+    area = build_era5_area(meta.bounding_box)
     if !isnothing(area)
         request["area"] = area
     end

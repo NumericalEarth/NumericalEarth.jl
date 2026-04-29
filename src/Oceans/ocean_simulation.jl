@@ -29,10 +29,6 @@ using Statistics: mean
 @inline u_immersed_bottom_drag(i, j, k, grid, clock, Φ, μ) = @inbounds - μ * Φ.u[i, j, k] * spᶠᶜᶜ(i, j, k, grid, Φ)
 @inline v_immersed_bottom_drag(i, j, k, grid, clock, Φ, μ) = @inbounds - μ * Φ.v[i, j, k] * spᶜᶠᶜ(i, j, k, grid, Φ)
 
-# With or without additional fluxes
-@inline build_top_bc(flux_field, ::Nothing) = FluxBoundaryCondition(flux_field)
-@inline build_top_bc(flux_field, additional) = FluxBoundaryCondition(MultipleFluxes(flux_field, additional); discrete_form=true)
-
 #####
 ##### Defaults
 #####
@@ -88,16 +84,14 @@ function default_ocean_closure(FT=Oceananigans.defaults.FloatType)
     return CATKEVerticalDiffusivity(VerticallyImplicitTimeDiscretization(), FT; mixing_length, turbulent_kinetic_energy_equation)
 end
 
-# Two-band shortwave penetration in the Paulson & Simpson (1977) form,
-# Defaults are Jerlov Type I (clearest open-ocean water)
 function default_radiative_forcing(grid)
-    surface_fraction = 0.58  # Paulson & Simpson 1977, Table 2, Type I
-    surface_scale    = 0.35  # [m]
-    deep_scale       = 23    # [m]
+    ϵʳ = 0.6 # red fraction
+    λʳ = 1  # red decay scale
+    λᵇ = 16 # blue decay scale
     forcing = TwoColorRadiation(grid;
-                                first_color_fraction          = surface_fraction,
-                                first_absorption_coefficient  = 1 / surface_scale,
-                                second_absorption_coefficient = 1 / deep_scale)
+                                first_color_fraction = ϵʳ,
+                                first_absorption_coefficient = 1/λᵇ,
+                                second_absorption_coefficient = 1/λʳ)
     return forcing
 end
 
@@ -109,12 +103,11 @@ end
                      closure = default_ocean_closure(),
                      tracers = (:T, :S),
                      free_surface = default_free_surface(grid),
-                     reference_density = 1026,
+                     reference_density = 1020,
                      rotation_rate = default_planet_rotation_rate,
                      gravitational_acceleration = default_gravitational_acceleration,
                      bottom_drag_coefficient = Default(0.003),
                      forcing = NamedTuple(),
-                     additional_surface_fluxes = NamedTuple(),
                      biogeochemistry = nothing,
                      timestepper = :SplitRungeKutta3,
                      coriolis = Default(HydrostaticSphericalCoriolis(; rotation_rate)),
@@ -176,7 +169,6 @@ defaults on a per-field basis.
 - `gravitational_acceleration`: Gravitational acceleration, passed to buoyancy.
 - `bottom_drag_coefficient`: Bottom drag coefficient. May be a `Default` wrapper.
 - `forcing`: Named tuple of additional forcing(s) for individual fields.
-- `additional_surface_fluxes`: Named tuple of additional top boundary flux conditions (e.g. `(; S=SurfaceFluxRestoring(...))`) for any field (`u`, `v`, `T`, `S`).
 - `biogeochemistry`: A biogeochemical model or `nothing`.
 - `timestepper`: Time-stepping scheme; options are `:SplitRungeKutta3` (default), or `:QuasiAdamsBashforth2`.
 - `coriolis`: Coriolis object or `Default(...)` wrapper.
@@ -193,12 +185,11 @@ function ocean_simulation(grid;
                           closure = default_ocean_closure(),
                           tracers = (:T, :S),
                           free_surface = default_free_surface(grid),
-                          reference_density = 1026,
+                          reference_density = 1020,
                           rotation_rate = default_planet_rotation_rate,
                           gravitational_acceleration = default_gravitational_acceleration,
                           bottom_drag_coefficient = Default(0.003),
                           forcing = NamedTuple(),
-                          additional_surface_fluxes = NamedTuple(),
                           biogeochemistry = nothing,
                           timestepper = :SplitRungeKutta3,
                           coriolis = Default(HydrostaticSphericalCoriolis(; rotation_rate)),
@@ -207,7 +198,6 @@ function ocean_simulation(grid;
                           equation_of_state = TEOS10EquationOfState(; reference_density),
                           boundary_conditions::NamedTuple = NamedTuple(),
                           radiative_forcing = default_radiative_forcing(grid),
-                          materialize_buoyancy_gradients = true,
                           warn = true,
                           verbose = false)
 
@@ -280,15 +270,11 @@ function ocean_simulation(grid;
     top_ocean_heat_flux          = Jᵀ = Field{Center, Center, Nothing}(grid)
     top_salt_flux                = Jˢ = Field{Center, Center, Nothing}(grid)
 
-    # Merge user-supplied additional fluxes with defaults
-    default_additional_fluxes = (u=nothing, v=nothing, T=nothing, S=nothing)
-    additional = merge(default_additional_fluxes, additional_surface_fluxes)
-
     # Construct ocean boundary conditions including surface forcing and bottom drag
-    u_top_bc = build_top_bc(τˣ, additional.u)
-    v_top_bc = build_top_bc(τʸ, additional.v)
-    T_top_bc = build_top_bc(Jᵀ, additional.T)
-    S_top_bc = build_top_bc(Jˢ, additional.S)
+    u_top_bc = FluxBoundaryCondition(τˣ)
+    v_top_bc = FluxBoundaryCondition(τʸ)
+    T_top_bc = FluxBoundaryCondition(Jᵀ)
+    S_top_bc = FluxBoundaryCondition(Jˢ)
 
     u_bot_bc = FluxBoundaryCondition(u_quadratic_bottom_drag, discrete_form=true, parameters=bottom_drag_coefficient)
     v_bot_bc = FluxBoundaryCondition(v_quadratic_bottom_drag, discrete_form=true, parameters=bottom_drag_coefficient)
@@ -303,8 +289,7 @@ function ocean_simulation(grid;
     # conditions even when a user-bc is supplied).
     boundary_conditions = merge(default_boundary_conditions, boundary_conditions)
     buoyancy = SeawaterBuoyancy(; gravitational_acceleration, equation_of_state)
-    buoyancy = Oceananigans.BuoyancyFormulations.BuoyancyForce(grid, buoyancy; materialize_gradients = materialize_buoyancy_gradients)
-   
+
     if tracer_advection isa NamedTuple
         tracer_advection = with_tracers(tracers, tracer_advection, default_tracer_advection())
     else

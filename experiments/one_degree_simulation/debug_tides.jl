@@ -8,8 +8,9 @@ using Statistics
 
 import SPICE
 
+backend = JRA55NetCDFBackend(41)
 ρᵒᶜ = 1020
-pa = JRA55_field_time_series(:sea_level_pressure; time_indices_in_memory=41)
+pa = JRA55_field_time_series(:sea_level_pressure; backend)
 grid = pa.grid
 
 # dt = 30 * 60 # minutes

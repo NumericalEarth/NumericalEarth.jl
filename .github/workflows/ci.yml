@@ -3,16 +3,16 @@ name: CI
 on:
   pull_request:
     paths: &paths
-      - ".github/workflows/ci.yml"
-      - "ext/**"
-      - "src/**"
-      - "test/**"
-      - "Project.toml"
+      - '.github/workflows/ci.yml'
+      - 'ext/**'
+      - 'src/**'
+      - 'test/**'
+      - 'Project.toml'
   push:
     paths: *paths
     branches:
       - main
-    tags: "*"
+    tags: '*'
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
@@ -26,12 +26,11 @@ permissions:
 env:
   ECCO_USERNAME: ${{ secrets.ECCO_USERNAME }}
   ECCO_WEBDAV_PASSWORD: ${{ secrets.ECCO_WEBDAV_PASSWORD }}
-  COPERNICUS_USERNAME: ${{ secrets.COPERNICUSMARINE_SERVICE_USERNAME }}
-  COPERNICUS_PASSWORD: ${{ secrets.COPERNICUSMARINE_SERVICE_PASSWORD }}
+  COPERNICUS_USERNAME: ${{ secrets.COPERNICUS_SERVICE_USERNAME }}
+  COPERNICUS_PASSWORD: ${{ secrets.COPERNICUS_USERNAME_PASSWORD }}
   CDSAPI_URL: "https://cds.climate.copernicus.eu/api"
   CDSAPI_KEY: ${{ secrets.CDSAPI_KEY }}
   DATADEPS_ALWAYS_ACCEPT: true
-  JULIA_PKG_SERVER_REGISTRY_PREFERENCE: 'eager'
 
 #####
 ##### CPU tests (GitHub-hosted runners)
@@ -39,18 +38,32 @@ env:
 
 jobs:
   cpu_tests:
-    name: (CPU) - Julia ${{ matrix.version }}
+    name: ${{ matrix.test_group }} (CPU) - Julia ${{ matrix.version }}
     runs-on: ${{ matrix.os }}
     timeout-minutes: 120
     strategy:
       fail-fast: false
       matrix:
         version:
-          - "1.12.5"
+          - '1.12.5'
         os:
           - ubuntu-latest
         arch:
-          - "default"
+          - 'default'
+        test_group:
+          - JRA55
+          - ecco2_monthly
+          - ecco2_daily
+          - ecco4_en4
+          - ecco_atmosphere
+          - fluxes
+          - bathymetry_orca1
+          - checkpointing
+          - speedy_weather
+          - breeze
+          - downloading
+          - veros
+          - woa
     steps:
       - name: Show available storage before cleanup
         run: |
@@ -77,107 +90,102 @@ jobs:
         with:
           version: ${{ matrix.version }}
           arch: ${{ matrix.arch }}
-      - uses: julia-actions/cache@v3
-        with:
-          cache-scratchspaces: false
+      - uses: julia-actions/cache@v2
       - uses: julia-actions/julia-runtest@v1
-        with:
-          test_args: '--verbose'
+        env:
+          TEST_GROUP: ${{ matrix.test_group }}
       - uses: julia-actions/julia-processcoverage@v1
       - uses: codecov/codecov-action@v5
         with:
           files: lcov.info
+          flags: ${{ matrix.test_group }}
           token: ${{ secrets.CODECOV_TOKEN }}
 
   #####
-  ##### GPU tests (AWS self-hosted runners with Docker)
+  ##### GPU tests (self-hosted runner on Tartarus)
   #####
 
+  gpu_init:
+    name: Initialize GPU environment
+    runs-on: [self-hosted, tartarus, gpu]
+    timeout-minutes: 120
+    env:
+      OPENBLAS_NUM_THREADS: 1
+      JULIA_NUM_PRECOMPILE_TASKS: 8
+    steps:
+      - uses: actions/checkout@v6
+      - uses: julia-actions/setup-julia@v2
+        with:
+          version: '1.12.5'
+      - name: Instantiate and precompile
+        shell: julia --project --color=yes {0}
+        run: |
+          using Pkg
+          Pkg.instantiate(verbose=true)
+          Pkg.precompile(strict=true)
+          Pkg.status()
+      - name: Precompile CUDA runtime
+        shell: julia --project --color=yes {0}
+        run: |
+          using Pkg
+          using CUDA
+          CUDA.precompile_runtime()
+          Pkg.instantiate(verbose=true)
+      - name: Download test data
+        env:
+          JULIA_DEPOT_PATH: "/storage5/github-action-runners/julia-depot"
+          TEST_GROUP: init
+          GPU_TEST: "true"
+        run: julia --project --color=yes -e 'using Pkg; Pkg.test()'
+
   gpu_tests:
-    name: (GPU)
-    runs-on: aws-linux-nvidia-gpu-l4
-    container:
-      image: ghcr.io/numericalearth/numerical-earth-docker-images:test-julia_1.12.5
-      options: --gpus=all
-      volumes:
-        # Mount host `/usr/local` so that we can delete some stuff afterwards
-        - /usr/local:/host-usr-local
+    name: ${{ matrix.test_group }} (GPU)
+    needs: gpu_init
+    runs-on: [self-hosted, tartarus, gpu-2]
     timeout-minutes: 120
     strategy:
       fail-fast: false
+      matrix:
+        test_group:
+          - ecco2_monthly
+          - ecco2_daily
+          - ecco4_en4
+          - ecco_atmosphere
+          - fluxes
+          - bathymetry_orca1
+          - checkpointing
+          - earth_system_model
+          - breeze
+          - JRA55
+          - woa
     env:
-      GPU_TEST: "true"
       OPENBLAS_NUM_THREADS: 1
-      # Redirect temp to the workspace volume (bind-mounted from the
-      # host's EBS disk) to avoid filling the container's overlay filesystem with
-      # large data downloads and compiled artifacts.
-      TMPDIR: /__w/_temp
-      JULIA_DEPOT_PATH: '/__w/_temp/depot:/usr/local/share/julia:'
+      JULIA_NUM_PRECOMPILE_TASKS: 8
     steps:
-      - name: Show available storage
-        run: |
-          df -h /
-          du -sh /usr/local/share/julia/* 2>/dev/null || true
-          du -sh /__w/_temp/* 2>/dev/null || true
       - uses: actions/checkout@v6
-      - name: Create workspace temp directories
-        run: mkdir -p "${TMPDIR}"
-      - name: Configure git safe directory
-        run: git config --global --add safe.directory ${PWD}
-      - name: Copy LocalPreferences
-        run: cp -v /usr/local/share/julia/environments/numericalearth/LocalPreferences.toml test/.
-      - name: df before cleanup
-        run: |
-          df -hT
-      - name: Clean up old CUDA toolkits
-        # Save storage by deleting old CUDA toolkits, we'll use v13
-        run: |
-          rm -rf /host-usr-local/cuda-12.*
-      - name: df after cleanup
-        run: |
-          df -hT
-      - name: "Set test arguments"
-        shell: bash
-        run: |
-          # Run tests in verbose mode
-          TEST_ARGS=(--verbose)
-          TEST_ARGS+=(--jobs=$(($(nproc) - 1)))
-          echo "runtest_test_args=${TEST_ARGS[@]}" | tee -a "${GITHUB_ENV}"
-      - name: Update registry
-        shell: julia --color=yes {0}
-        run: |
-          using Pkg
-          Pkg.Registry.rm("General")
-          Pkg.Registry.add("General")
-          Pkg.Registry.update()
-      - name: Run tests
-        run: |
-          earlyoom -m 3 -s 100 -r 300 --prefer 'julia' &
-          julia --project --color=yes --check-bounds=yes -e '
-              using Pkg;
-              Pkg.test(; coverage=true,
-                       julia_args=["--check-bounds=yes", "--compiled-modules=yes", "-O0"],
-                       test_args=`${{ env.runtest_test_args }}`)
-          '
-      - uses: julia-actions/julia-processcoverage@v1
-      - uses: codecov/codecov-action@v5
+      - uses: julia-actions/setup-julia@v2
         with:
-          files: lcov.info
-          token: ${{ secrets.CODECOV_TOKEN }}
+          version: '1.12.5'
+      - name: Run ${{ matrix.test_group }} tests
+        env:
+          JULIA_DEPOT_PATH: "/storage5/github-action-runners/julia-depot"
+          TEST_GROUP: ${{ matrix.test_group }}
+          GPU_TEST: "true"
+        run: julia --project --color=yes -e 'using Pkg; Pkg.test()'
 
   #####
   ##### Specialized tests (GitHub-hosted runners)
   #####
 
   cds_downloading:
-    name: Data Downloading - Julia ${{ matrix.version }} - ${{ matrix.os }} - ${{ matrix.arch }} - ${{ github.event_name }}
+    name: CDS Downloading - Julia ${{ matrix.version }} - ${{ matrix.os }} - ${{ matrix.arch }} - ${{ github.event_name }}
     runs-on: ${{ matrix.os }}
     timeout-minutes: 60
     strategy:
       fail-fast: false
       matrix:
         version:
-          - "1.12.5"
+          - '1.12.5'
         os:
           - ubuntu-latest
         arch:
@@ -185,52 +193,24 @@ jobs:
         include:
           - os: macOS-latest
             arch: aarch64
-            version: "1.12.5"
+            version: '1.12.5'
     steps:
-      - name: Show available storage before cleanup
-        run: |
-          echo " --> df -h /"
-          df -h /
-          echo " --> df -a /"
-          df -a /
-      - name: Free Disk Space
-        if: ${{ runner.os != 'macOS' }}
-        uses: jlumbroso/free-disk-space@54081f138730dfa15788a46383842cd2f914a1be # v1.3.1
-        with:
-          tool-cache: true
-          large-packages: false
-      - name: Cleanup /opt
-        if: ${{ runner.os != 'macOS' }}
-        run: |
-          sudo rm -rf /opt/*
-      - name: Show available storage after cleanup
-        run: |
-          echo " --> df -h /"
-          df -h /
-          echo " --> df -a /"
-          df -a /
       - uses: actions/checkout@v6
-      - uses: julia-actions/setup-julia@v2
+      - uses: julia-actions/setup-julia@latest
         with:
           version: ${{ matrix.version }}
           arch: ${{ matrix.arch }}
-      - uses: julia-actions/cache@v3
-        with:
-          cache-scratchspaces: false
-      - name: Run tests
-        run: |
-          julia --project --color=yes --check-bounds=yes -e '
-              using Pkg;
-              Pkg.test(; coverage=true,
-                        julia_args=["--check-bounds=yes", "--compiled-modules=yes", "-O0"],
-                        test_args=["--verbose", "test_cds_downloading", "test_jra55_ecco_en4_etopo_downloading", "test_glorys_downloading"])
-          '
+      - uses: julia-actions/cache@v2
+      - uses: julia-actions/julia-buildpkg@v1
+      - uses: julia-actions/julia-runtest@v1
+        env:
+          TEST_GROUP: "cds_downloading"
       - uses: julia-actions/julia-processcoverage@v1
       - uses: codecov/codecov-action@v5
         with:
           files: lcov.info
           token: ${{ secrets.CODECOV_TOKEN }}
-  
+
   reactant:
     name: Reactant extension - Julia ${{ matrix.version }} - ${{ matrix.os }} - ${{ matrix.arch }} - ${{ github.event_name }}
     runs-on: ${{ matrix.os }}
@@ -239,54 +219,29 @@ jobs:
       fail-fast: false
       matrix:
         version:
-          - "1.11.9"
+          - '1.11.9'
         os:
           - ubuntu-latest
         arch:
           - default
     steps:
-      - name: Show available storage before cleanup
-        run: |
-          echo " --> df -h /"
-          df -h /
-          echo " --> df -a /"
-          df -a /
-      - name: Free Disk Space
-        uses: jlumbroso/free-disk-space@54081f138730dfa15788a46383842cd2f914a1be # v1.3.1
-        with:
-          tool-cache: true
-          large-packages: false
-      - name: Cleanup /opt
-        run: |
-          sudo rm -rf /opt/*
-      - name: Show available storage after cleanup
-        run: |
-          echo " --> df -h /"
-          df -h /
-          echo " --> df -a /"
-          df -a /
       - uses: actions/checkout@v6
-      - uses: julia-actions/setup-julia@v2
+      - uses: julia-actions/setup-julia@latest
         with:
           version: ${{ matrix.version }}
           arch: ${{ matrix.arch }}
-      - uses: julia-actions/cache@v3
-        with:
-          cache-scratchspaces: false
-      - name: Run tests
-        run: |
-          julia --project --color=yes --check-bounds=yes -e '
-              using Pkg;
-              Pkg.test(; coverage=true,
-                        julia_args=["--check-bounds=yes", "--compiled-modules=yes", "-O0"],
-                        test_args=["--verbose", "test_reactant"])
-          '
+      - uses: julia-actions/cache@v2
+      - uses: julia-actions/julia-buildpkg@v1
+      - uses: julia-actions/julia-runtest@v1
+        env:
+          TEST_GROUP: "reactant"
+          GPU_TEST: "false"
       - uses: julia-actions/julia-processcoverage@v1
       - uses: codecov/codecov-action@v5
         with:
           files: lcov.info
           token: ${{ secrets.CODECOV_TOKEN }}
-  
+
   #####
   ##### Distributed MPI tests (GitHub-hosted runners)
   #####
@@ -324,6 +279,7 @@ jobs:
     name: CI
     needs:
       - cpu_tests
+      - gpu_init
       - gpu_tests
       - cds_downloading
       - reactant
