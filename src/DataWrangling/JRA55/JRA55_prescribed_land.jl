@@ -17,11 +17,7 @@ JRA55PrescribedLand(arch::Distributed; kw...) =
                         other_kw...)
 
 Return a [`PrescribedLand`](@ref) representing JRA55 reanalysis land surface data
-(river runoff and iceberg calving freshwater fluxes). Each freshwater field is
-constructed via `FieldTimeSeries(::JRA55Metadata)`, which uses a `DatasetBackend`
-parameterised by JRA55 metadata so that the JRA55-specific `set!` (chunked-yearly
-NetCDF) is dispatched. The `region` keyword restricts the land fields to a sub-domain
-of the global JRA55 grid.
+(river runoff and iceberg calving freshwater fluxes). 
 """
 function JRA55PrescribedLand(architecture = CPU();
                              dataset = RepeatYearJRA55(),
