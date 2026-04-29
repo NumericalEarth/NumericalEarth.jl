@@ -15,7 +15,9 @@ using NumericalEarth.EarthSystemModels.InterfaceComputations: COARELogarithmicSi
                                                               MomentumBasedFrictionVelocity,
                                                               LargeYeagerTransferCoefficients,
                                                               FixedIterations,
-                                                              large_yeager_stability_functions
+                                                              large_yeager_stability_functions,
+                                                              RelativeVelocity,
+                                                              WindVelocity
 
 #####
 ##### Flux configurations
@@ -132,12 +134,14 @@ function corrected_radiation(sea_ice)
 end
 
 """
-    build_coupled_model(ocean, sea_ice, atmosphere, radiation, flux_configuration)
+    build_coupled_model(ocean, sea_ice, atmosphere, radiation, flux_configuration;
+                        velocity_formulation = :relative)
 
 Build the `OceanSeaIceModel` with the specified flux configuration.
-Options: `:default`, `:corrected`, `:ncar`.
+Options for `flux_configuration`: `:default`, `:corrected`, `:ncar`.
+Options for `velocity_formulation`:  `:relative`, `:wind`
 """
-function build_coupled_model(ocean, sea_ice, atmosphere, radiation, flux_configuration)
+function build_coupled_model(ocean, sea_ice, atmosphere, radiation, flux_configuration; velocity_formulation::Symbol = :relative)
     if flux_configuration == :default
         return OceanSeaIceModel(ocean, sea_ice; atmosphere, radiation)
     end
@@ -145,18 +149,26 @@ function build_coupled_model(ocean, sea_ice, atmosphere, radiation, flux_configu
     FT = eltype(ocean.model.grid)
     radiation = corrected_radiation(sea_ice)
 
+    velocity_difference_obj = velocity_formulation == :relative ? RelativeVelocity() :
+                              velocity_formulation == :wind     ? WindVelocity()     :
+                              error("Unknown velocity_formulation: $velocity_formulation. Options: :relative, :wind")
+
     if flux_configuration == :corrected
         interfaces = ComponentInterfaces(atmosphere, ocean, sea_ice;
                                          radiation,
                                          atmosphere_ocean_fluxes   = corrected_atmosphere_ocean_fluxes(FT),
                                          atmosphere_sea_ice_fluxes = corrected_atmosphere_sea_ice_fluxes(FT),
-                                         sea_ice_ocean_heat_flux   = corrected_ice_ocean_heat_flux())
+                                         sea_ice_ocean_heat_flux   = corrected_ice_ocean_heat_flux(),
+                                         atmosphere_ocean_velocity_difference   = velocity_difference_obj,
+                                         atmosphere_sea_ice_velocity_difference = velocity_difference_obj)
     elseif flux_configuration == :ncar
         interfaces = ComponentInterfaces(atmosphere, ocean, sea_ice;
                                          radiation,
                                          atmosphere_ocean_fluxes   = ncar_atmosphere_ocean_fluxes(FT),
                                          atmosphere_sea_ice_fluxes = ncar_atmosphere_sea_ice_fluxes(FT),
-                                         sea_ice_ocean_heat_flux   = corrected_ice_ocean_heat_flux())
+                                         sea_ice_ocean_heat_flux   = corrected_ice_ocean_heat_flux(),
+                                         atmosphere_ocean_velocity_difference   = velocity_difference_obj,
+                                         atmosphere_sea_ice_velocity_difference = velocity_difference_obj)
     else
         error("Unknown flux_configuration: $flux_configuration. Options: :default, :corrected, :ncar")
     end
@@ -213,6 +225,10 @@ plumbing is needed because `NumericalEarth.EarthSystemModels` provides
    * `:simple` — `ConvectiveAdjustmentVerticalDiffusivity(convective_κz=1)` plus a
      depth-step background `VerticalScalarDiffusivity` (κ=10⁻², ν=10⁻² in upper
      100 m; κ=10⁻⁵, ν=10⁻⁴ below). For diagnostic A/B tests vs CATKE.
+- `velocity_formulation::Symbol`: Δu used by the bulk formula. Options:
+   * `:relative` — `Δu = u_atm − u_ocean` (OMIP-2 α=1, default).
+   * `:wind` — `Δu = u_atm` (ignores ocean current). For isolating bulk-formula
+     response from current feedback (e.g. when an over-strong ACC self-reinforces).
 - `diagnostics::Bool`: whether to attach OMIP diagnostics. Default: `true`.
 - `surface_averaging_interval`, `field_averaging_interval`: averaging windows.
 - `checkpoint_interval`: interval between checkpoint writes.
@@ -238,6 +254,7 @@ function omip_simulation(config::Symbol = :halfdegree;
                          stop_time = Inf,
                          flux_configuration = :default,
                          vertical_closure = :catke,
+                         velocity_formulation = :relative,
                          with_snow = false,
                          diagnostics = true,
                          field_mean_interval = 5days,
@@ -278,7 +295,7 @@ function omip_simulation(config::Symbol = :halfdegree;
                                             end_date,
                                             backend_size)
 
-    coupled = build_coupled_model(ocean, sea_ice, atmosphere, radiation, flux_configuration)
+    coupled = build_coupled_model(ocean, sea_ice, atmosphere, radiation, flux_configuration; velocity_formulation)
 
     simulation = Simulation(coupled; Δt, stop_time)
 
@@ -434,7 +451,7 @@ end
 function omip_simple_closure(; κ_skew, κ_symmetric,
                                 biharmonic_timescale,
                                 biharmonic_viscosity = nothing)
-    convective = ConvectiveAdjustmentVerticalDiffusivity(VerticallyImplicitTimeDiscretization(); convective_κz = 1.0)
+    convective = ConvectiveAdjustmentVerticalDiffusivity(VerticallyImplicitTimeDiscretization(); onvective_κz = 1.0)
 
     eddy  = if isnothing(κ_skew) | isnothing(κ_symmetric)
         nothing
@@ -451,8 +468,8 @@ function omip_simple_closure(; κ_skew, κ_symmetric,
     else
         nothing
     end
-
-    vertical_diffusivity = VerticalScalarDiffusivity(κ=κ_step_simple, ν=ν_step_simple)
+    
+    vertical_diffusivity = VerticalScalarDiffusivity(VerticallyImplicitTimeDiscretization(); κ=κ_step_simple, ν=ν_step_simple)
 
     return filter(!isnothing, (convective, eddy, horizontal_viscosity, vertical_diffusivity))
 end

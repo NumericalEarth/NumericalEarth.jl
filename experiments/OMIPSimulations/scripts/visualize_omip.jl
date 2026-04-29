@@ -1092,7 +1092,7 @@ function load_timeseries_case(run_dir, prefix, grid; start_time = 0, stop_time =
         set!(u_scratch, u_fts[n])
         set!(v_scratch, v_fts[n])
         compute!(ke_field)
-        ke_mean[n] = sum(interior(ke_field) .* ocean_mask) / (2 * ocean_cells)
+        ke_mean[n] = sum(interior(ke_field) .* ocean_mask) / ocean_cells
     end
     tke_time_in_years = tke_fts.times ./ (365.25 * 24 * 3600)
 

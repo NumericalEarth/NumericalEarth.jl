@@ -40,6 +40,9 @@ Environment variables (physics):
   CLOSURE       Ocean vertical closure: "catke" (default) or "simple"
                 ("simple" = ConvectiveAdjustment + depth-stepped background κ/ν;
                  ignores CB)
+  WIND_VELOCITY Set to "true" to use absolute wind (Δu = u_atm) in the bulk
+                formula instead of the OMIP-2 default relative wind
+                (Δu = u_atm − u_ocean). For isolating ACC-current feedback.
 
 Environment variables (I/O & runtime):
   BACKEND_SIZE  Number of JRA55 time indices kept in memory (default: 240,
@@ -140,6 +143,7 @@ RUN_NAME="$CONFIG"
 [[ "${NCAR:-false}" == "true" ]]       && RUN_NAME="${RUN_NAME}_ncar"
 [[ "${SNOW:-false}" == "true" ]]       && RUN_NAME="${RUN_NAME}_snow"
 [[ "${CLOSURE:-catke}" == "simple" ]]  && RUN_NAME="${RUN_NAME}_simple"
+[[ "${WIND_VELOCITY:-false}" == "true" ]] && RUN_NAME="${RUN_NAME}_wind"
 [[ -n "${CB:-}" ]]                     && RUN_NAME="${RUN_NAME}_cb${CB}"
 [[ "$KSKEW" != "$DEFAULT_KSKEW" ]]    && RUN_NAME="${RUN_NAME}_kskew${KSKEW}"
 [[ "$KSYMM" != "$DEFAULT_KSYMM" ]]    && RUN_NAME="${RUN_NAME}_ksymm${KSYMM}"
@@ -219,6 +223,9 @@ FLUX_KWARG=""
 CLOSURE_KWARG=""
 [[ "${CLOSURE:-catke}" == "simple" ]] && CLOSURE_KWARG="vertical_closure = :simple,"
 
+VELOCITY_KWARG=""
+[[ "${WIND_VELOCITY:-false}" == "true" ]] && VELOCITY_KWARG="velocity_formulation = :wind,"
+
 SNOW_KWARG=""
 [[ "$SNOW" == "true" ]] && SNOW_KWARG="with_snow = true,"
 
@@ -240,6 +247,7 @@ sim = omip_simulation(:${CONFIG};
                       ${CB_KWARG}
                       ${FLUX_KWARG}
                       ${CLOSURE_KWARG}
+                      ${VELOCITY_KWARG}
                       ${SNOW_KWARG}
                       Δt = ${DT},
                       forcing_dir = \"${FORCING_DIR}\",
