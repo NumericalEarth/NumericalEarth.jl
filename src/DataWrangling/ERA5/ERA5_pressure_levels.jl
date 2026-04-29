@@ -263,17 +263,16 @@ end
 """
     pressure_field(metadata::ERA5PressureMetadatum, arch=CPU(); halo=(3,3,3))
 
-Return a `CenterField` on the native grid of `metadata` filled with the pressure
-value (Pa) at each vertical level. Levels are ordered bottom-to-top (k=1 is the
-highest pressure level).
+Return a `Field{Nothing, Nothing, Center}` on the native grid of `metadata`
+holding the pressure value (Pa) at each vertical level. Levels are ordered
+bottom-to-top (k=1 is the highest pressure level). The `Nothing` horizontal
+locations make this field broadcast against full 3-D fields without copying.
 """
 function pressure_field(metadata::ERA5PressureMetadatum, arch=CPU(); halo=(3,3,3))
     grid = native_grid(metadata, arch; halo)
-    field = CenterField(grid)
+    field = Field{Nothing, Nothing, Center}(grid)
     reversed_levels = sort(metadata.dataset.pressure_levels, rev=true)   # highest pressure → k=1
-    for (k, p) in enumerate(reversed_levels)
-        interior(field, :, :, k) .= Float32(p)
-    end
+    set!(field, reversed_levels)
     fill_halo_regions!(field)
     return field
 end
