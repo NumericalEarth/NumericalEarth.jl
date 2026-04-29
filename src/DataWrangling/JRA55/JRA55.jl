@@ -1,6 +1,11 @@
 module JRA55
 
-export JRA55FieldTimeSeries, JRA55PrescribedAtmosphere, JRA55PrescribedLand, RepeatYearJRA55, MultiYearJRA55
+export JRA55FieldTimeSeries,
+       JRA55PrescribedAtmosphere,
+       JRA55PrescribedLand,
+       JRA55PrescribedRadiation,
+       RepeatYearJRA55,
+       MultiYearJRA55
 
 using Oceananigans
 using Oceananigans.Units
@@ -14,9 +19,8 @@ using Oceananigans.OutputReaders: Cyclical, TotallyInMemory, AbstractInMemoryBac
 
 using NumericalEarth
 
-using NumericalEarth.Atmospheres:
-    PrescribedAtmosphere,
-    TwoBandDownwellingRadiation
+using NumericalEarth.Atmospheres: PrescribedAtmosphere
+using NumericalEarth.Radiations: PrescribedRadiation, SurfaceRadiationProperties
 
 using GPUArraysCore: @allowscalar
 
@@ -40,5 +44,6 @@ include("JRA55_metadata.jl")
 include("JRA55_field_time_series.jl")
 include("JRA55_prescribed_atmosphere.jl")
 include("JRA55_prescribed_land.jl")
+include("JRA55_prescribed_radiation.jl")
 
 end # module
