@@ -24,7 +24,6 @@
 
 using Oceananigans
 using Oceananigans.Units
-using Oceananigans.Fields: interior
 using Oceananigans.Operators: Azᶜᶜᶜ
 
 using ClimaSeaIce
@@ -41,9 +40,9 @@ using Printf
 
 # ## Constant latent heat for diagnostic closure
 #
-# `ClimaSeaIce`'s slab mass balance uses a temperature-dependent latent heat, `ℒ(T) = ℒ₀ + (ρℓ cℓ / ρi − cᵢ)(T − T₀)`, 
-# with `ℰu = ρi · ℒ(T_u)` at the top interface and `ℰb = ρi · ℒ(T_b)` at the bottom. A single state-based 
-# `Eis = − ℵ · ρi · ℒ · h · Az` cannot simultaneously match freeze at `T_b` and top-melt at 0 ᵒC: the 4.7 kJ/kg gap accounts 
+# `ClimaSeaIce`'s slab mass balance uses a temperature-dependent latent heat, `ℒ(T) = ℒ₀ + (ρℓ * cℓ / ρi − cᵢ)(T − T₀)`, 
+# with `ℰu = ρi * ℒ(T_u)` at the top interface and `ℰb = ρi * ℒ(T_b)` at the bottom. A single state-based 
+# `Eis = − ℵ * ρi * ℒ * h * Az` cannot simultaneously match freeze at `T_b` and top-melt at 0 ᵒC: the 4.7 kJ/kg gap accounts 
 # for a ~1% residual scaling with top-melt mass. To isolate coupler-side bookkeeping from this intrinsic `ℒ(T)` mismatch we 
 # locally override `latent_heat` to the constant `pt.reference_latent_heat`. This is a diagnostic choice for the present
 # example and does not modify upstream.
@@ -141,7 +140,7 @@ function column_state(coupled_model)
 end
 
 # `net_top_heat_flux` returns the atmospheric energy input to the coupled (ice + ocean) system in Watts: 
-# `Q_atm = − (ΣQt + ΣQao) · Az`, where `ΣQt` is the sea-ice top heat flux per cell and `ΣQao` is the per-cell
+# `Q_atm = − (ΣQt + ΣQao) * Az`, where `ΣQt` is the sea-ice top heat flux per cell and `ΣQao` is the per-cell
 # atmosphere-to-ocean flux over the open-water fraction. The ocean-side piece comes from `atmosphere_ocean_heat_flux`, 
 # which subtracts the frazil and interface contributions internally so it never picks up a spurious ocean / ice exchange term.
 
@@ -281,7 +280,7 @@ end
 # The frazil mass gain is deposited by `compute_sea_ice_ocean_fluxes!` at the end of step `n` 
 # (mutating ocean `T` and writing `𝒬ᶠʳᶻ`) but the corresponding ice mass gain is consumed only during 
 # step `n + 1`. At a diagnostic snapshot the ocean shows the warming while the ice has not yet grown. 
-# We anticipate this one-step pending quantity by adding `𝒬ᶠʳᶻ(n) · Δt⁺ · Az` to `Eis(n)` so the energy 
+# We anticipate this one-step pending quantity by adding `𝒬ᶠʳᶻ(n) * Δt⁺ * Az` to `Eis(n)` so the energy 
 # budget closure is not polluted by bookkeeping lag.
 
 Δt⁺ = similar(t)
