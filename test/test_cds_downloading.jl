@@ -244,6 +244,55 @@ start_date = DateTime(2005, 2, 16, 12)
         @test z1[1] < z1[2]
     end
 
+    @testset "ERA5 pressure-level constructors sort levels descending" begin
+        # Pass ASCENDING input so the test fails if the inner constructor's
+        # `sort(...; rev=true)` regresses to a no-op or different order.
+        ds_h = ERA5HourlyPressureLevels([500, 850]hPa)
+        @test ds_h.pressure_levels == [850 * hPa, 500 * hPa]    # stored highest-pressure-first
+        @test ds_h.z === nothing
+        @test ds_h.mean_geopotential_height == true             # default kwarg
+
+        ds_m = ERA5MonthlyPressureLevels([500, 850]hPa)
+        @test ds_m.pressure_levels == [850 * hPa, 500 * hPa]
+        @test ds_m.z === nothing
+        @test ds_m.mean_geopotential_height == true
+
+        # Already-descending input is preserved (sort is a no-op here)
+        ds_h2 = ERA5HourlyPressureLevels([850, 500]hPa)
+        @test ds_h2.pressure_levels == [850 * hPa, 500 * hPa]
+
+        # Three-level shuffled input
+        ds_h3 = ERA5HourlyPressureLevels([500, 850, 700]hPa)
+        @test ds_h3.pressure_levels == [850 * hPa, 700 * hPa, 500 * hPa]
+    end
+
+    @testset "ERA5 pressure-level stagger" begin
+        stagger = NumericalEarth.DataWrangling.ERA5.stagger
+
+        # Two-element input (evenly spaced): bottom and top faces are
+        # extrapolated symmetrically; result is Nz+1 monotonic.
+        zf = stagger([0.0, 1.0])
+        @test length(zf) == 3
+        @test issorted(zf)
+        @test zf ≈ [-0.5, 0.5, 1.5]
+
+        # Three-element evenly-spaced: every interior interface is the
+        # midpoint of the adjacent centers; bottom/top are extrapolated.
+        zf = stagger([1.0, 3.0, 5.0])
+        @test length(zf) == 4
+        @test zf ≈ [0.0, 2.0, 4.0, 6.0]
+
+        # Three-element irregularly-spaced: interior midpoints honor the
+        # actual spacing (not assumed-uniform).
+        zf = stagger([1.0, 3.0, 7.0])
+        @test length(zf) == 4
+        @test zf[2] ≈ 2.0   # midpoint(1, 3)
+        @test zf[3] ≈ 5.0   # midpoint(3, 7)
+        # Boundaries extrapolated at half the adjacent interior spacing
+        @test zf[1] ≈ 1.0 - (zf[2] - 1.0)
+        @test zf[4] ≈ 7.0 + (7.0 - zf[3])
+    end
+
     for arch in test_architectures
         A = typeof(arch)
 
@@ -721,6 +770,63 @@ end
                     end
                 end
             end
+        end
+    end
+end
+
+@testset "ERA5 CDSAPIExt is_zip and foreach_nc" begin
+    @testset "is_zip" begin
+        mktempdir() do tmp
+            # File starting with the ZIP magic header
+            zip_path = joinpath(tmp, "fake.zip")
+            open(zip_path, "w") do io
+                write(io, UInt8[0x50, 0x4b, 0x03, 0x04, 0x00, 0x00])
+            end
+            @test CDSExt.is_zip(zip_path) == true
+
+            # File with arbitrary non-magic bytes (NetCDF-3 starts with "CDF\x01")
+            nc_path = joinpath(tmp, "fake.nc")
+            open(nc_path, "w") do io
+                write(io, UInt8[0x43, 0x44, 0x46, 0x01])
+            end
+            @test CDSExt.is_zip(nc_path) == false
+
+            # Short file (<4 bytes) — length check guards against false positives
+            short_path = joinpath(tmp, "short.bin")
+            open(short_path, "w") do io
+                write(io, UInt8[0x50, 0x4b])   # only 2 of the 4 magic bytes
+            end
+            @test CDSExt.is_zip(short_path) == false
+        end
+    end
+
+    @testset "foreach_nc — non-zip path calls f exactly once" begin
+        mktempdir() do tmp
+            nc_path = joinpath(tmp, "data.nc")
+            touch(nc_path)
+
+            received = String[]
+            CDSExt.foreach_nc(p -> push!(received, p), nc_path, tmp)
+
+            @test received == [nc_path]
+        end
+    end
+
+    @testset "foreach_nc — zip path extracts and visits each .nc" begin
+        mktempdir() do tmp
+            # Build a ZIP fixture containing two .nc files (and a non-.nc file
+            # that should be ignored).
+            nc1 = joinpath(tmp, "a.nc"); touch(nc1)
+            nc2 = joinpath(tmp, "b.nc"); touch(nc2)
+            other = joinpath(tmp, "readme.txt"); touch(other)
+
+            zip_path = joinpath(tmp, "bundle.zip")
+            run(`zip -j -q $zip_path $nc1 $nc2 $other`)
+
+            received = String[]
+            CDSExt.foreach_nc(p -> push!(received, basename(p)), zip_path, tmp)
+
+            @test sort(received) == ["a.nc", "b.nc"]   # readme.txt filtered out
         end
     end
 end
