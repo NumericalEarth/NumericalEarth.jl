@@ -6,11 +6,16 @@ using Dates
 using NCDatasets
 
 using NumericalEarth.DataWrangling.ERA5
-using NumericalEarth.DataWrangling.ERA5: ERA5HourlySingleLevel, ERA5MonthlySingleLevel, ERA5_dataset_variable_names
+using NumericalEarth.DataWrangling.ERA5: ERA5HourlySingleLevel, ERA5MonthlySingleLevel,
+                                         ERA5_dataset_variable_names, ERA5_netcdf_variable_names
 using NumericalEarth.DataWrangling.ERA5: ERA5HourlyPressureLevels, ERA5MonthlyPressureLevels,
                                          ERA5_all_pressure_levels, ERA5PL_dataset_variable_names,
-                                         pressure_field
-using NumericalEarth.DataWrangling: metadata_path, download_dataset
+                                         ERA5PL_netcdf_variable_names, pressure_field
+using NumericalEarth.DataWrangling: metadata_path, download_dataset, BoundingBox, Column, Linear, Nearest
+
+# Internal extension module — exposes dispatch helpers and NetCDF utilities
+# that are not part of the public API but worth pinning behavior for.
+const CDSExt = Base.get_extension(NumericalEarth, :NumericalEarthCDSAPIExt)
 
 # Test date: Kyoto Protocol ratification date, February 16, 2005
 start_date = DateTime(2005, 2, 16, 12)
@@ -306,6 +311,257 @@ start_date = DateTime(2005, 2, 16, 12)
                 @test interior(pf)[1, 1, 1] ≈ Float32(850hPa)
                 # k=2 should be 500 hPa = 50000 Pa
                 @test interior(pf)[1, 1, 2] ≈ Float32(500hPa)
+            end
+        end
+    end
+end
+
+@testset "ERA5 CDSAPIExt dispatch helpers and area construction" begin
+    sl = ERA5HourlySingleLevel()
+    pl = ERA5HourlyPressureLevels(pressure_levels=[500hPa, 850hPa])
+
+    @testset "cds_product / cds_varnames / nc_varnames" begin
+        @test CDSExt.cds_product(sl) == "reanalysis-era5-single-levels"
+        @test CDSExt.cds_product(pl) == "reanalysis-era5-pressure-levels"
+
+        @test CDSExt.cds_varnames(sl) === ERA5_dataset_variable_names
+        @test CDSExt.cds_varnames(pl) === ERA5PL_dataset_variable_names
+
+        @test CDSExt.nc_varnames(sl) === ERA5_netcdf_variable_names
+        @test CDSExt.nc_varnames(pl) === ERA5PL_netcdf_variable_names
+    end
+
+    @testset "coord_vars" begin
+        sl_coords = CDSExt.coord_vars(sl)
+        pl_coords = CDSExt.coord_vars(pl)
+
+        @test sl_coords isa Set
+        @test "longitude" in sl_coords
+        @test "latitude" in sl_coords
+        @test "valid_time" in sl_coords
+        @test !("pressure_level" in sl_coords)
+
+        @test "longitude" in pl_coords
+        @test "pressure_level" in pl_coords
+        @test "level" in pl_coords
+    end
+
+    @testset "extra_request_keys!" begin
+        # ERA5Dataset (single level): no-op
+        request = Dict{String, Any}("variable" => ["2m_temperature"])
+        CDSExt.extra_request_keys!(request, sl)
+        @test !haskey(request, "pressure_level")
+
+        # ERA5PressureLevelsDataset: populates `pressure_level` (in hPa, as strings)
+        CDSExt.extra_request_keys!(request, pl)
+        @test haskey(request, "pressure_level")
+        @test Set(request["pressure_level"]) == Set(["500", "850"])
+    end
+
+    @testset "build_era5_area" begin
+        # Nothing → nothing
+        @test CDSExt.build_era5_area(nothing) === nothing
+
+        # BoundingBox with both axes → [N, W, S, E]
+        bbox = BoundingBox(longitude=(-10.0, 5.0), latitude=(40.0, 50.0))
+        @test CDSExt.build_era5_area(bbox) == [50.0, -10.0, 40.0, 5.0]
+
+        # BoundingBox with one axis missing → nothing (CDS gets the global slab)
+        bbox_no_lat = BoundingBox(longitude=(-10.0, 5.0))
+        @test CDSExt.build_era5_area(bbox_no_lat) === nothing
+        bbox_no_lon = BoundingBox(latitude=(40.0, 50.0))
+        @test CDSExt.build_era5_area(bbox_no_lon) === nothing
+
+        # Column with Nearest interpolation → tight ε=1e-3 box around the point
+        col_nr = Column(-61.5, 18.0; interpolation=Nearest())
+        area_nr = CDSExt.build_era5_area(col_nr)
+        @test length(area_nr) == 4
+        # [N, W, S, E]
+        @test area_nr[1] ≈ 18.0 + 1e-3      # north
+        @test area_nr[2] ≈ -61.5 - 1e-3     # west
+        @test area_nr[3] ≈ 18.0 - 1e-3      # south
+        @test area_nr[4] ≈ -61.5 + 1e-3     # east
+
+        # Column with Linear interpolation → ε=0.3 padding for 2x2 stencil
+        col_lin = Column(-61.5, 18.0; interpolation=Linear())
+        area_lin = CDSExt.build_era5_area(col_lin)
+        @test area_lin[1] ≈ 18.0 + 0.3
+        @test area_lin[2] ≈ -61.5 - 0.3
+        @test area_lin[3] ≈ 18.0 - 0.3
+        @test area_lin[4] ≈ -61.5 + 0.3
+        # Linear box must enclose more than one ERA5 grid cell (0.25°)
+        @test (area_lin[1] - area_lin[3]) > 0.25
+        @test (area_lin[4] - area_lin[2]) > 0.25
+    end
+end
+
+@testset "ERA5 CDSAPIExt NetCDF copy and split helpers" begin
+    # Helper: write a synthetic ERA5-like NetCDF with `Nt` timesteps and two
+    # variables (`u`, `v`) on dims (longitude, latitude, valid_time).
+    function write_synthetic_era5_nc(path; Nx=2, Ny=2, Nt=3)
+        NCDatasets.Dataset(path, "c") do ds
+            NCDatasets.defDim(ds, "longitude", Nx)
+            NCDatasets.defDim(ds, "latitude",  Ny)
+            NCDatasets.defDim(ds, "valid_time", Nt)
+            ds.attrib["title"] = "synthetic_era5_test"
+
+            lon = NCDatasets.defVar(ds, "longitude", Float64, ("longitude",))
+            lat = NCDatasets.defVar(ds, "latitude",  Float64, ("latitude",))
+            t   = NCDatasets.defVar(ds, "valid_time", Int64,  ("valid_time",))
+            lon[:] = collect(range(-1.0, 1.0; length=Nx))
+            lat[:] = collect(range(40.0, 41.0; length=Ny))
+            t[:]   = collect(1:Nt)
+
+            # u: includes _FillValue and a custom attribute
+            u = NCDatasets.defVar(ds, "u", Float32,
+                                  ("longitude", "latitude", "valid_time");
+                                  fillvalue=Float32(-9999.0))
+            u.attrib["units"] = "m s**-1"
+            u.attrib["long_name"] = "u_component_of_wind"
+            for k in 1:Nt, j in 1:Ny, i in 1:Nx
+                u[i, j, k] = Float32(100k + 10j + i)
+            end
+
+            # v: no fill value, no extra attributes
+            v = NCDatasets.defVar(ds, "v", Float32,
+                                  ("longitude", "latitude", "valid_time"))
+            for k in 1:Nt, j in 1:Ny, i in 1:Nx
+                v[i, j, k] = Float32(-(100k + 10j + i))
+            end
+        end
+    end
+
+    coord_vars = CDSExt.ERA5_COORD_VARS
+
+    @testset "ncvar_copy! preserves data, attributes, fill value" begin
+        mktempdir() do dir
+            src_path = joinpath(dir, "src.nc")
+            dst_path = joinpath(dir, "dst.nc")
+            write_synthetic_era5_nc(src_path; Nx=3, Ny=2, Nt=1)
+
+            NCDatasets.Dataset(src_path, "r") do src
+                NCDatasets.Dataset(dst_path, "c") do dst
+                    for (dname, dlen) in src.dim
+                        NCDatasets.defDim(dst, dname, dlen)
+                    end
+                    CDSExt.ncvar_copy!(dst, src["u"], "u")
+                end
+            end
+
+            NCDatasets.Dataset(dst_path, "r") do dst
+                @test haskey(dst, "u")
+                @test eltype(dst["u"].var) == Float32
+                @test dst["u"].attrib["units"] == "m s**-1"
+                @test dst["u"].attrib["long_name"] == "u_component_of_wind"
+                @test dst["u"].attrib["_FillValue"] == Float32(-9999.0)
+
+                NCDatasets.Dataset(src_path, "r") do src
+                    @test dst["u"].var[:] == src["u"].var[:]
+                end
+            end
+        end
+    end
+
+    @testset "ncvar_copy_tslice! extracts a single timestep" begin
+        mktempdir() do dir
+            src_path = joinpath(dir, "src.nc")
+            dst_path = joinpath(dir, "dst.nc")
+            write_synthetic_era5_nc(src_path; Nx=2, Ny=2, Nt=3)
+
+            tidx = 2
+            time_dimnames = Set(["valid_time"])
+
+            NCDatasets.Dataset(src_path, "r") do src
+                NCDatasets.Dataset(dst_path, "c") do dst
+                    for (dname, dlen) in src.dim
+                        out_len = dname in time_dimnames ? 1 : dlen
+                        NCDatasets.defDim(dst, dname, out_len)
+                    end
+                    CDSExt.ncvar_copy_tslice!(dst, src["u"], "u", tidx, time_dimnames)
+                    # `valid_time` is a coord variable in the file — copy that too,
+                    # using the same tslice path. Exercises the has_time branch.
+                    CDSExt.ncvar_copy_tslice!(dst, src["valid_time"], "valid_time", tidx, time_dimnames)
+                    # `longitude` has no time dim — exercises the !has_time branch.
+                    CDSExt.ncvar_copy_tslice!(dst, src["longitude"], "longitude", tidx, time_dimnames)
+                end
+            end
+
+            NCDatasets.Dataset(dst_path, "r") do dst
+                @test dst.dim["valid_time"] == 1
+                @test size(dst["u"]) == (2, 2, 1)
+                @test dst["valid_time"][:] == [tidx]
+
+                NCDatasets.Dataset(src_path, "r") do src
+                    @test dst["u"].var[:, :, 1] == src["u"].var[:, :, tidx]
+                    @test dst["longitude"][:] == src["longitude"][:]
+                end
+            end
+        end
+    end
+
+    @testset "split_era5_nc produces per-variable files" begin
+        mktempdir() do dir
+            src_path = joinpath(dir, "src.nc")
+            write_synthetic_era5_nc(src_path; Nx=2, Ny=2, Nt=1)
+
+            pairs = [
+                ("u", joinpath(dir, "u_only.nc")),
+                ("v", joinpath(dir, "v_only.nc")),
+                ("missing_var", joinpath(dir, "should_not_exist.nc")),
+            ]
+
+            CDSExt.split_era5_nc(src_path, pairs, coord_vars)
+
+            @test !isfile(joinpath(dir, "should_not_exist.nc"))
+
+            for (vname, dst_path) in pairs[1:2]
+                @test isfile(dst_path)
+                NCDatasets.Dataset(dst_path, "r") do dst
+                    @test haskey(dst, vname)
+                    other = vname == "u" ? "v" : "u"
+                    @test !haskey(dst, other)
+                    NCDatasets.Dataset(src_path, "r") do src
+                        @test dst[vname].var[:] == src[vname].var[:]
+                    end
+                end
+            end
+        end
+    end
+
+    @testset "split_era5_nc_multistep produces per-(var,timestep) files" begin
+        mktempdir() do dir
+            src_path = joinpath(dir, "src.nc")
+            write_synthetic_era5_nc(src_path; Nx=2, Ny=2, Nt=3)
+
+            triples = [
+                ("u", 1, joinpath(dir, "u_t1.nc")),
+                ("u", 3, joinpath(dir, "u_t3.nc")),
+                ("v", 2, joinpath(dir, "v_t2.nc")),
+                # Variable not present in source — silently skipped, no file.
+                ("missing_var", 1, joinpath(dir, "should_not_exist.nc")),
+            ]
+            time_dimnames = Set(["valid_time"])
+
+            CDSExt.split_era5_nc_multistep(src_path, triples, coord_vars, time_dimnames)
+
+            # The skipped variable produces no output.
+            @test !isfile(joinpath(dir, "should_not_exist.nc"))
+
+            for (vname, tidx, dst_path) in triples[1:3]
+                @test isfile(dst_path)
+                NCDatasets.Dataset(dst_path, "r") do dst
+                    @test haskey(dst, vname)
+                    @test dst.dim["valid_time"] == 1
+                    @test haskey(dst, "longitude")
+                    @test haskey(dst, "latitude")
+                    # The other ERA5 variable should not have leaked in.
+                    other = vname == "u" ? "v" : "u"
+                    @test !haskey(dst, other)
+
+                    NCDatasets.Dataset(src_path, "r") do src
+                        @test dst[vname].var[:, :, 1] == src[vname].var[:, :, tidx]
+                    end
+                end
             end
         end
     end
