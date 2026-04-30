@@ -451,7 +451,7 @@ end
 function omip_simple_closure(; κ_skew, κ_symmetric,
                                 biharmonic_timescale,
                                 biharmonic_viscosity = nothing)
-    convective = ConvectiveAdjustmentVerticalDiffusivity(VerticallyImplicitTimeDiscretization(); onvective_κz = 1.0)
+    convective = ConvectiveAdjustmentVerticalDiffusivity(VerticallyImplicitTimeDiscretization(); convective_κz = 1.0)
 
     eddy  = if isnothing(κ_skew) | isnothing(κ_symmetric)
         nothing
