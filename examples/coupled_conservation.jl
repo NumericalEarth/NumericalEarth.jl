@@ -48,10 +48,8 @@ using Printf
 # locally override `latent_heat` to the constant `pt.reference_latent_heat`. This is a diagnostic choice for the present
 # example and does not modify upstream.
 
-@inline function ClimaSeaIce.SeaIceThermodynamics.latent_heat(
-        pt::ClimaSeaIce.SeaIceThermodynamics.PhaseTransitions, T)
-    return pt.reference_latent_heat
-end
+@inline ClimaSeaIce.SeaIceThermodynamics.latent_heat(pt::ClimaSeaIce.SeaIceThermodynamics.PhaseTransitions, T) = 
+    pt.reference_latent_heat
 
 # ## Grid, ocean, sea ice, and atmosphere
 #
