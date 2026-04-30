@@ -192,6 +192,32 @@ function EarthSystemModel(radiation, atmosphere, land, sea_ice, ocean;
     return earth_system_model
 end
 
+"""
+    EarthSystemModel(; radiation = nothing,
+                       atmosphere = nothing,
+                       land = nothing,
+                       sea_ice = nothing,
+                       ocean = nothing,
+                       kw...)
+
+Keyword-only constructor for `EarthSystemModel`. Equivalent to the positional
+form, but lets you pass only the components you actually have:
+
+```julia
+EarthSystemModel(; atmosphere, ocean)                       # ocean + atmosphere
+EarthSystemModel(; atmosphere, sea_ice, ocean, radiation)   # full coupled
+```
+
+All keyword arguments accepted by the positional constructor are forwarded.
+"""
+EarthSystemModel(; radiation = nothing,
+                   atmosphere = nothing,
+                   land = nothing,
+                   sea_ice = nothing,
+                   ocean = nothing,
+                   kw...) =
+    EarthSystemModel(radiation, atmosphere, land, sea_ice, ocean; kw...)
+
 # Determine which surfaces are present in the model — used to allocate
 # per-surface diagnostic radiation flux buffers.
 function present_surfaces(ocean, sea_ice)

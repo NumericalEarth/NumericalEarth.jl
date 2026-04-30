@@ -103,7 +103,7 @@ nothing #hide
 # Top-level radiation, however, is not yet wired up against SpeedyWeather's
 # upwelling-LW path, so we leave `radiation = nothing` for now.
 
-earth_model = EarthSystemModel(nothing, atmosphere, nothing, sea_ice, ocean)
+earth_model = EarthSystemModel(; atmosphere, sea_ice, ocean)
 
 # ## Building and running the simulation
 #
