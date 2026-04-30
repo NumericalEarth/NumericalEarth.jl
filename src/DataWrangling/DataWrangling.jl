@@ -244,15 +244,7 @@ using .OSPapa
 
 # Fallback: if no download extension is loaded, check that all files already exist
 function download_dataset(metadata::Metadata)
-    paths = metadata_path(metadata)
-    paths isa AbstractString && (paths = [paths])
-    missing_files = filter(!isfile, paths)
-    if !isempty(missing_files)
-        n = length(missing_files)
-        error("No download method is available (is the backend package loaded?) " *
-              "and $n data file(s) are missing. First missing: $(first(missing_files))")
-    end
-    return paths
+    error("No download method for $metadata is available (is the backend package loaded?)")
 end
 
 end # module
