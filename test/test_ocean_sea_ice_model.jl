@@ -79,7 +79,7 @@ using ClimaSeaIce.Rheologies
                 sea_ice_with_land = sea_ice_simulation(grid, ocean_with_land; advection=WENO(order=7))
                 above_freezing_ocean_temperature!(ocean_with_land, grid, sea_ice_with_land)
 
-                coupled_model = OceanSeaIceModel(ocean_with_land, sea_ice_with_land; atmosphere, land, radiation)
+                coupled_model = OceanSeaIceModel(sea_ice_with_land, ocean_with_land; atmosphere, land, radiation)
                 @test !isnothing(coupled_model.interfaces.exchanger.land)
                 time_step!(coupled_model, 1)
                 true
