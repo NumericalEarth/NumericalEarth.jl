@@ -225,6 +225,9 @@ plumbing is needed because `NumericalEarth.EarthSystemModels` provides
    * `:simple` — `ConvectiveAdjustmentVerticalDiffusivity(convective_κz=1)` plus a
      depth-step background `VerticalScalarDiffusivity` (κ=10⁻², ν=10⁻² in upper
      100 m; κ=10⁻⁵, ν=10⁻⁴ below). For diagnostic A/B tests vs CATKE.
+   * `:nori` — NORi base Richardson-number closure
+     (xkykai/NORiOceanParameterization.jl, vendored as
+     `nori_base_closure.jl`). Calibrated defaults; no `Cᵇ` parameter.
 - `velocity_formulation::Symbol`: Δu used by the bulk formula. Options:
    * `:relative` — `Δu = u_atm − u_ocean` (OMIP-2 α=1, default).
    * `:wind` — `Δu = u_atm` (ignores ocean current). For isolating bulk-formula
@@ -468,10 +471,38 @@ function omip_simple_closure(; κ_skew, κ_symmetric,
     else
         nothing
     end
-    
+
     vertical_diffusivity = VerticalScalarDiffusivity(VerticallyImplicitTimeDiscretization(); κ=κ_step_simple, ν=ν_step_simple)
 
     return filter(!isnothing, (convective, eddy, horizontal_viscosity, vertical_diffusivity))
+end
+
+# NORi base closure (Richardson-number-based) bundled with the same GM /
+# biharmonic options the other closures expose. Calibrated NORi
+# parameters come from the constructor defaults — see
+# `nori_base_closure.jl`.
+function omip_nori_closure(; κ_skew, κ_symmetric,
+                              biharmonic_timescale,
+                              biharmonic_viscosity = nothing)
+    nori = NORiBaseVerticalDiffusivity()
+
+    eddy  = if isnothing(κ_skew) | isnothing(κ_symmetric)
+        nothing
+    else
+        IsopycnalSkewSymmetricDiffusivity(; κ_skew, κ_symmetric)
+    end
+
+    horizontal_viscosity = if !isnothing(biharmonic_viscosity)
+        HorizontalScalarBiharmonicDiffusivity(ν=biharmonic_viscosity)
+    elseif !isnothing(biharmonic_timescale)
+        HorizontalScalarBiharmonicDiffusivity(ν=νhb,
+                                              discrete_form=true,
+                                              parameters=biharmonic_timescale)
+    else
+        nothing
+    end
+
+    return filter(!isnothing, (nori, eddy, horizontal_viscosity))
 end
 
 #####
@@ -564,8 +595,10 @@ function build_ocean(config, grid;
         omip_closure(; κ_skew, κ_symmetric, Cᵇ, biharmonic_timescale, biharmonic_viscosity)
     elseif vertical_closure == :simple
         omip_simple_closure(; κ_skew, κ_symmetric, biharmonic_timescale, biharmonic_viscosity)
+    elseif vertical_closure == :nori
+        omip_nori_closure(; κ_skew, κ_symmetric, biharmonic_timescale, biharmonic_viscosity)
     else
-        error("Unknown vertical_closure: $vertical_closure. Options: :catke, :simple")
+        error("Unknown vertical_closure: $vertical_closure. Options: :catke, :simple, :nori")
     end
     coriolis = HydrostaticSphericalCoriolis(scheme = Oceananigans.Coriolis.EnstrophyConserving())
     momentum_advection = config_momentum_advection(config)
