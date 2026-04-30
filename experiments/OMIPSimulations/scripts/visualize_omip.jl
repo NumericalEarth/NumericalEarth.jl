@@ -53,7 +53,7 @@ using JLD2
 using NCDatasets
 using WorldOceanAtlasTools
 using Oceananigans
-using Oceananigans.Grids: znodes, φnodes, φnode
+using Oceananigans.Grids: znodes, φnodes, φnode, Face
 using Oceananigans.Fields: interpolate!
 using ConservativeRegridding
 using NumericalEarth
@@ -226,6 +226,26 @@ function find_first_file(run_dir, prefix, group)
     basename_no_part = replace(filename, r"_part\d+" => "")
     return joinpath(run_dir, basename_no_part)
 end
+
+# Latest mtime among all part files for a (prefix, group) pair. Used to
+# decide whether a derived-quantity cache is still fresh.
+function latest_part_mtime(run_dir, prefix, group)
+    tag = "$(prefix)_$(group)"
+    files = filter(f -> startswith(f, tag) && endswith(f, ".jld2") &&
+                        !contains(f, "checkpoint"), readdir(run_dir))
+    isempty(files) && return 0.0
+    return maximum(stat(joinpath(run_dir, f)).mtime for f in files)
+end
+
+# Path of the per-case derived-diagnostic cache. Keyed by the field-file
+# mtime: any update to the underlying fields output invalidates the cache.
+diag_cache_path(run_dir, prefix) = joinpath(run_dir, prefix * "_diag_cache.jld2")
+
+# Setting OMIP_SKIP_KE=1 short-circuits the most expensive part of
+# `load_timeseries_case` (the per-snapshot 3-D KE/TKE reductions) and
+# returns empty time series for those quantities. Useful when iterating
+# on figures that don't depend on `fig14_tke.png`.
+const SKIP_KE = get(ENV, "OMIP_SKIP_KE", "0") == "1"
 
 function in_window(fts; start_time = 0, stop_time = Inf)
     return findall(t -> start_time <= t <= stop_time, fts.times)
@@ -1078,36 +1098,117 @@ function load_timeseries_case(run_dir, prefix, grid; start_time = 0, stop_time =
     drift_time_in_years = temperature_profile_fts.times ./ (365.25 * 24 * 3600)
 
     fields_file = find_first_file(run_dir, prefix, "fields")
-    tke_fts     = FieldTimeSeries(fields_file, "tke"; backend = deepcopy(FTS_BACKEND))
-    u_fts       = FieldTimeSeries(fields_file, "uo"; backend = deepcopy(FTS_BACKEND))
-    v_fts       = FieldTimeSeries(fields_file, "vo"; backend = deepcopy(FTS_BACKEND))
-
     ocean_mask  = build_ocean_mask_3d(grid)
     ocean_cells = sum(ocean_mask)
 
-    Nt_tke = length(tke_fts.times)
-    tke_mean = zeros(Nt_tke)
-    for n in 1:Nt_tke
-        tke_mean[n] = sum(interior(tke_fts[n]) .* ocean_mask) / ocean_cells
+    # KE/TKE acquisition strategy, in order of preference:
+    #   1. New runs write `:kega` / `:tkega` as scalar averages directly
+    #      to `<prefix>_averages.jld2` — read instantly.
+    #   2. Existing runs without those scalars: read from the per-case
+    #      `<prefix>_diag_cache.jld2`, keyed by fields-file mtime.
+    #   3. Cold path: re-derive from per-snapshot 3-D reads of `tke/uo/vo`
+    #      and write the cache for next time.
+    #
+    # The cold path is by far the slowest step in this function: each
+    # snapshot read of `tke`/`uo`/`vo` on an ORCA grid is ~440 MB, and with
+    # O(10³) snapshots × N cases on the same filesystem under
+    # `Threads.@spawn` the disk thrashes for hours.
+    cache_file   = diag_cache_path(run_dir, prefix)
+    fields_mtime = latest_part_mtime(run_dir, prefix, "fields")
+    cache_valid  = isfile(cache_file) &&
+                   stat(cache_file).mtime >= fields_mtime &&
+                   fields_mtime > 0
+
+    # Source 1: scalar `kega`/`tkega` straight from the averages file.
+    function _try_scalar_averages()
+        try
+            ke_fts  = FieldTimeSeries(averages_file, "kega"; backend = deepcopy(FTS_BACKEND))
+            ke_v    = [Array(interior(ke_fts[n]))[1] for n in 1:length(ke_fts.times)]
+            tke_v   = try
+                tke_fts_avg = FieldTimeSeries(averages_file, "tkega"; backend = deepcopy(FTS_BACKEND))
+                [Array(interior(tke_fts_avg[n]))[1] for n in 1:length(tke_fts_avg.times)]
+            catch
+                zeros(length(ke_v))
+            end
+            years_v = ke_fts.times ./ (365.25 * 24 * 3600)
+            return tke_v, ke_v, years_v
+        catch
+            return nothing
+        end
     end
 
-    # Build the KE operation once; reuse the scratch output Field every step.
-    # Earlier version allocated a fresh `Field(@at(...))` per snapshot, which
-    # compiled a new lazy op and new output buffer each iteration.
-    u_scratch = Field{Face, Center, Center}(grid)
-    v_scratch = Field{Center, Face, Center}(grid)
-    ke_op     = @at((Center, Center, Center), (u_scratch * u_scratch + v_scratch * v_scratch) / 2)
-    ke_field  = Field(ke_op)
+    function _compute_ke_tke()
+        @info "  Computing KE/TKE means from fields file for $prefix (one-time, slow)..."
+        tke_fts = FieldTimeSeries(fields_file, "tke"; backend = deepcopy(FTS_BACKEND))
+        u_fts   = FieldTimeSeries(fields_file, "uo";  backend = deepcopy(FTS_BACKEND))
+        v_fts   = FieldTimeSeries(fields_file, "vo";  backend = deepcopy(FTS_BACKEND))
 
-    Nt_ke = length(u_fts.times)
-    ke_mean = zeros(Nt_ke)
-    for n in 1:Nt_ke
-        set!(u_scratch, u_fts[n])
-        set!(v_scratch, v_fts[n])
-        compute!(ke_field)
-        ke_mean[n] = sum(interior(ke_field) .* ocean_mask) / ocean_cells
+        Nt_tke = length(tke_fts.times)
+        tke_mean_v = zeros(Nt_tke)
+        for n in 1:Nt_tke
+            tke_mean_v[n] = sum(interior(tke_fts[n]) .* ocean_mask) / ocean_cells
+        end
+
+        # Approximate global-mean KE from staggered velocities directly
+        # (without interpolating to centers). For a *global* mean the
+        # staggered-vs-centered mask shift is < 0.1 % and consistent
+        # across cases, while skipping the per-snapshot `set!`/`compute!`
+        # kernel saves a kernel launch and an extra 3-D field allocation
+        # per timestep.
+        Nt_ke = length(u_fts.times)
+        ke_mean_v = zeros(Nt_ke)
+        for n in 1:Nt_ke
+            uᵢ = interior(u_fts[n])
+            vᵢ = interior(v_fts[n])
+            ke_mean_v[n] = (sum(abs2, uᵢ) + sum(abs2, vᵢ)) / (2 * ocean_cells)
+        end
+
+        years_v = tke_fts.times ./ (365.25 * 24 * 3600)
+        return tke_mean_v, ke_mean_v, years_v
     end
-    tke_time_in_years = tke_fts.times ./ (365.25 * 24 * 3600)
+
+    scalar_avg = SKIP_KE ? nothing : _try_scalar_averages()
+
+    tke_mean, ke_mean, tke_time_in_years = if SKIP_KE
+        @info "  OMIP_SKIP_KE=1, skipping KE/TKE for $prefix"
+        Float64[], Float64[], Float64[]
+    elseif !isnothing(scalar_avg)
+        @info "  Using scalar `kega`/`tkega` from averages file for $prefix"
+        scalar_avg
+    elseif cache_valid
+        @info "  Loading KE/TKE cache for $prefix from $(basename(cache_file))"
+        try
+            jldopen(cache_file, "r") do f
+                f["tke_mean"], f["ke_mean"], f["tke_time_in_years"]
+            end
+        catch err
+            @warn "  Cache read failed ($err); recomputing." prefix
+            tup = _compute_ke_tke()
+            try
+                jldopen(cache_file, "w") do f
+                    f["tke_mean"]            = tup[1]
+                    f["ke_mean"]             = tup[2]
+                    f["tke_time_in_years"]   = tup[3]
+                end
+            catch e2
+                @warn "  Cache write failed ($e2); continuing without cache." prefix
+            end
+            tup
+        end
+    else
+        tup = _compute_ke_tke()
+        try
+            jldopen(cache_file, "w") do f
+                f["tke_mean"]          = tup[1]
+                f["ke_mean"]           = tup[2]
+                f["tke_time_in_years"] = tup[3]
+            end
+            @info "  Saved KE/TKE cache for $prefix to $(basename(cache_file))"
+        catch e
+            @warn "  Cache write failed ($e); continuing without cache." prefix
+        end
+        tup
+    end
 
     return (; temperature_mean, salinity_mean, ssh_mean, time_in_years,
               temperature_profile, salinity_profile, depth,
@@ -1131,20 +1232,27 @@ end
 # Figures 14-16: Time series and profiles
 # ══════════════════════════════════════════════════════════════
 
-# Figure 14: TKE
-@info "Figure 14: TKE and KE"
-fig = Figure(size = (600 + 150 * length(labels), 600), fontsize = 14)
-ax_tke = Axis(fig[1, 1]; xlabel="Time (years)", ylabel="TKE (m²/s²)", title="Global-mean turbulent kinetic energy")
-for (i, lab) in enumerate(labels)
-    lines!(ax_tke, TS[lab].tke_time_in_years, TS[lab].tke_mean; color=case_colors[i], label=lab)
+# Figure 14: TKE / KE. Skipped when OMIP_SKIP_KE=1 (no per-snapshot
+# 3-D field reads were performed in `load_timeseries_case`).
+if SKIP_KE
+    @info "Figure 14: skipped (OMIP_SKIP_KE=1)"
+else
+    @info "Figure 14: TKE and KE"
+    fig = Figure(size = (600 + 150 * length(labels), 600), fontsize = 14)
+    ax_tke = Axis(fig[1, 1]; xlabel="Time (years)", ylabel="TKE (m²/s²)", title="Global-mean turbulent kinetic energy")
+    for (i, lab) in enumerate(labels)
+        isempty(TS[lab].tke_mean) && continue
+        lines!(ax_tke, TS[lab].tke_time_in_years, TS[lab].tke_mean; color=case_colors[i], label=lab)
+    end
+    ax_ke = Axis(fig[2, 1]; xlabel="Time (years)", ylabel="KE (m²/s²)", title="Global-mean kinetic energy")
+    for (i, lab) in enumerate(labels)
+        isempty(TS[lab].ke_mean) && continue
+        lines!(ax_ke, TS[lab].tke_time_in_years, TS[lab].ke_mean; color=case_colors[i], label=lab)
+    end
+    Legend(fig[1, 2], ax_tke)
+    Legend(fig[2, 2], ax_ke)
+    savefig(fig, "fig14_tke.png")
 end
-ax_ke = Axis(fig[2, 1]; xlabel="Time (years)", ylabel="KE (m²/s²)", title="Global-mean kinetic energy")
-for (i, lab) in enumerate(labels)
-    lines!(ax_ke, TS[lab].tke_time_in_years, TS[lab].ke_mean; color=case_colors[i], label=lab)
-end
-Legend(fig[1, 2], ax_tke)
-Legend(fig[2, 2], ax_ke)
-savefig(fig, "fig14_tke.png")
 
 # Figure 15: T, S and SSH drift.
 #
@@ -1283,6 +1391,39 @@ for c in cases
         mld_max_dbm_zonal = vec(compute_zonal_mean(mld_max_dbm_3d, surface_ocean_mask, regridder, Nlon, Nlat))
     end
 
+    # Steric / dynamic SSH decomposition (test 4 in 2026-04-30 SSH analysis).
+    #
+    # In Boussinesq the global thermosteric expansion is missing, but the
+    # *local* steric anomaly relative to the column mean is captured in the
+    # column integral of buoyancy:
+    #
+    #     η_s(x,y) = (1/g) ∫_{-H}^{0} b(x,y,z) dz,    b = -g(ρ-ρ₀)/ρ₀
+    #
+    # The dynamic (mass-loading + barotropic-adjustment) component is then
+    # η_d = η - η_s. Both are reported with their ocean global means
+    # subtracted, matching the demeaning convention used for the
+    # SSH-vs-ECCO bias panel.
+    @info "Computing steric / dynamic SSH split for $lab..."
+    g_acc = 9.80665
+    zface = collect(znodes(grid, Face()))             # length Nz+1
+    Δz_vec = zface[2:end] .- zface[1:end-1]           # length Nz
+    b3d = Array(buoyancy_mean)
+    b3d .*= ocean_mask                                # zero out below-bathymetry cells
+    η_steric_xy = dropdims(sum(b3d .* reshape(Δz_vec, 1, 1, :); dims=3); dims=3) ./ g_acc
+    surface_ocean_mask_2d = ocean_mask[:, :, end]
+    SSH_total  = copy(D[lab].SSH)
+    for I in eachindex(η_steric_xy)
+        if surface_ocean_mask_2d[I] == 0
+            η_steric_xy[I] = NaN
+        end
+    end
+    SSH_demean      = SSH_total      .- mean(filter(isfinite, SSH_total))
+    η_steric_demean = η_steric_xy    .- mean(filter(isfinite, η_steric_xy))
+    η_dynamic       = SSH_demean    .- η_steric_demean
+    # Bias of dynamic SSH against ECCO (already demeaned in load_surface_case).
+    η_dynamic_minus_ecco = isnothing(D[lab].SSH_ecco) ? nothing :
+        η_dynamic .- (D[lab].SSH_ecco .- mean(filter(isfinite, D[lab].SSH_ecco)))
+
     ZM[lab] = (; temperature_zonal, salinity_zonal, buoyancy_zonal, kinetic_energy_zonal,
                 temperature_woa_zonal, salinity_woa_zonal, buoyancy_init_zonal,
                 δtemperature_zonal = temperature_zonal .- temperature_woa_zonal,
@@ -1290,6 +1431,7 @@ for c in cases
                 δbuoyancy_zonal    = buoyancy_zonal    .- buoyancy_init_zonal,
                 mld_min_zonal, mld_max_zonal,
                 mld_min_dbm_zonal, mld_max_dbm_zonal,
+                η_steric_demean, η_dynamic, η_dynamic_minus_ecco,
                 depth)
 end
 
@@ -1485,5 +1627,37 @@ if !isempty(strait_data)
     Legend(fig[1, 4], ax_b)
     savefig(fig, "fig21_strait_transports.png")
 end
+
+# Figure 22: Steric / dynamic SSH decomposition.
+#
+# Row 1: total η (model, demeaned).
+# Row 2: steric η_s = (1/g) ∫ b dz, demeaned.
+# Row 3: dynamic η_d = η - η_s, demeaned.
+# Row 4: dynamic η_d - ECCO (also demeaned). If most of the SSH-vs-ECCO
+# bias appears here and not in row 2, the bias is wind/circulation-driven
+# (likely an over-strong ACC), not steric.
+@info "Figure 22: Steric / dynamic SSH split"
+has_steric_ecco = any(lab -> !isnothing(ZM[lab].η_dynamic_minus_ecco), labels)
+nrows22 = has_steric_ecco ? 4 : 3
+fig = Figure(size = (800 * length(labels), 450 * nrows22), fontsize = 14)
+for (i, lab) in enumerate(labels)
+    zm = ZM[lab]
+    ssh_dem = D[lab].SSH .- mean(filter(isfinite, D[lab].SSH))
+    panel!(fig, [1, 2i-1], ssh_dem;
+           title = "$lab: η total (demeaned)", colormap = :balance,
+           colorrange = (-1.5, 1.5), label = "m")
+    panel!(fig, [2, 2i-1], zm.η_steric_demean;
+           title = "$lab: η steric = (1/g) ∫ b dz", colormap = :balance,
+           colorrange = (-1.5, 1.5), label = "m")
+    panel!(fig, [3, 2i-1], zm.η_dynamic;
+           title = "$lab: η dynamic = η - η_s", colormap = :balance,
+           colorrange = (-1.0, 1.0), label = "m")
+    if has_steric_ecco && !isnothing(zm.η_dynamic_minus_ecco)
+        panel!(fig, [4, 2i-1], zm.η_dynamic_minus_ecco;
+               title = "$lab: η dynamic - ECCO", colormap = :balance,
+               colorrange = (-0.5, 0.5), label = "m")
+    end
+end
+savefig(fig, "fig22_ssh_steric_dynamic.png")
 
 @info "All figures saved to $output_dir"
