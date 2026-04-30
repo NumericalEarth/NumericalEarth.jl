@@ -4,10 +4,11 @@ using Oceananigans: SeawaterBuoyancy
 using ClimaSeaIce.SeaIceThermodynamics: melting_temperature
 using KernelAbstractions: @kernel, @index
 
-mutable struct EarthSystemModel{I, A, O, F, C, Arch} <: AbstractModel{Nothing, Arch}
+mutable struct EarthSystemModel{I, A, L, O, F, C, Arch} <: AbstractModel{Nothing, Arch}
     architecture :: Arch
     clock :: C
     atmosphere :: A
+    land :: L
     sea_ice :: I
     ocean :: O
     interfaces :: F
@@ -37,9 +38,10 @@ function Base.show(io::IO, cm::ESM)
         ocean_summary = summary(cm.ocean)
     end
 
-    print(io, "├── ocean: ", ocean_summary, "\n")
     print(io, "├── atmosphere: ", summary(cm.atmosphere), "\n")
+    print(io, "├── land: ", summary(cm.land), "\n")
     print(io, "├── sea_ice: ", sea_ice_summary, "\n")
+    print(io, "├── ocean: ", ocean_summary, "\n")
     print(io, "└── interfaces: ", summary(cm.interfaces))
     return nothing
 end
@@ -145,9 +147,10 @@ model = OceanOnlyModel(ocean; interfaces)
 
 # output
 EarthSystemModel{CPU}(time = 0 seconds, iteration = 0)
-├── ocean: HydrostaticFreeSurfaceModel{CPU, RectilinearGrid}(time = 0 seconds, iteration = 0)
 ├── atmosphere: Nothing
+├── land: Nothing
 ├── sea_ice: FreezingLimitedOceanTemperature{ClimaSeaIce.SeaIceThermodynamics.LinearLiquidus{Float64}}
+├── ocean: HydrostaticFreeSurfaceModel{CPU, RectilinearGrid}(time = 0 seconds, iteration = 0)
 └── interfaces: ComponentInterfaces
 ```
 
@@ -159,6 +162,7 @@ The available stability function options include:
   (the flux Richardson number), `ζ`.
 """
 function EarthSystemModel(atmosphere, ocean, sea_ice;
+                          land = nothing,
                           radiation = Radiation(),
                           clock = Clock{Float64}(time=0),
                           ocean_reference_density = reference_density(ocean),
@@ -189,6 +193,7 @@ function EarthSystemModel(atmosphere, ocean, sea_ice;
     # Contains information about flux contributions: bulk formula, prescribed fluxes, etc.
     if isnothing(interfaces) && !(isnothing(atmosphere) && isnothing(sea_ice))
         interfaces = ComponentInterfaces(atmosphere, ocean, sea_ice;
+                                         land,
                                          ocean_reference_density,
                                          ocean_heat_capacity,
                                          sea_ice_reference_density,
@@ -201,6 +206,7 @@ function EarthSystemModel(atmosphere, ocean, sea_ice;
     earth_system_model = EarthSystemModel(arch,
                                            clock,
                                            atmosphere,
+                                           land,
                                            sea_ice,
                                            ocean,
                                            interfaces)
@@ -234,13 +240,15 @@ model = OceanOnlyModel(ocean)
 
 # output
 EarthSystemModel{CPU}(time = 0 seconds, iteration = 0)
-├── ocean: HydrostaticFreeSurfaceModel{CPU, RectilinearGrid}(time = 0 seconds, iteration = 0)
 ├── atmosphere: Nothing
+├── land: Nothing
 ├── sea_ice: FreezingLimitedOceanTemperature{ClimaSeaIce.SeaIceThermodynamics.LinearLiquidus{Float64}}
+├── ocean: HydrostaticFreeSurfaceModel{CPU, RectilinearGrid}(time = 0 seconds, iteration = 0)
 └── interfaces: ComponentInterfaces
 ```
 """
-OceanOnlyModel(ocean; atmosphere = nothing, kw...) = EarthSystemModel(atmosphere, ocean, default_sea_ice(); kw...)
+OceanOnlyModel(ocean; atmosphere=nothing, land=nothing, kw...) =
+    EarthSystemModel(atmosphere, ocean, default_sea_ice(); land, kw...)
 
 """
     OceanSeaIceModel(ocean, sea_ice; atmosphere=nothing, radiation=Radiation(), kw...)
@@ -264,13 +272,15 @@ model = OceanSeaIceModel(ocean, sea_ice)
 
 # output
 EarthSystemModel{CPU}(time = 0 seconds, iteration = 0)
-├── ocean: HydrostaticFreeSurfaceModel{CPU, RectilinearGrid}(time = 0 seconds, iteration = 0)
 ├── atmosphere: Nothing
+├── land: Nothing
 ├── sea_ice: FreezingLimitedOceanTemperature{ClimaSeaIce.SeaIceThermodynamics.LinearLiquidus{Float64}}
+├── ocean: HydrostaticFreeSurfaceModel{CPU, RectilinearGrid}(time = 0 seconds, iteration = 0)
 └── interfaces: ComponentInterfaces
 ```
 """
-OceanSeaIceModel(ocean, sea_ice; atmosphere = nothing, kw...) = EarthSystemModel(atmosphere, ocean, sea_ice; kw...)
+OceanSeaIceModel(ocean, sea_ice; atmosphere=nothing, land=nothing, kw...) =
+    EarthSystemModel(atmosphere, ocean, sea_ice; land, kw...)
 
 """
     AtmosphereOceanModel(atmosphere, ocean; kw...)
@@ -279,7 +289,8 @@ Construct a coupled atmosphere--ocean model.
 Convenience constructor for [`EarthSystemModel`](@ref) with an atmosphere and ocean
 but no sea ice. All keyword arguments are forwarded to `EarthSystemModel`.
 """
-AtmosphereOceanModel(atmosphere, ocean; kw...) = EarthSystemModel(atmosphere, ocean, nothing; kw...)
+AtmosphereOceanModel(atmosphere, ocean; land=nothing, kw...) =
+    EarthSystemModel(atmosphere, ocean, nothing; land, kw...)
 
 time(coupled_model::EarthSystemModel) = coupled_model.clock.time
 
@@ -325,6 +336,7 @@ function prognostic_state(osm::EarthSystemModel)
     return (clock = prognostic_state(osm.clock),
             ocean = prognostic_state(osm.ocean),
             atmosphere = prognostic_state(osm.atmosphere),
+            land = prognostic_state(osm.land),
             sea_ice = prognostic_state(osm.sea_ice),
             interfaces = prognostic_state(osm.interfaces))
 end
@@ -333,12 +345,9 @@ function restore_prognostic_state!(osm::EarthSystemModel, state)
     restore_prognostic_state!(osm.clock, state.clock)
     restore_prognostic_state!(osm.ocean, state.ocean)
     restore_prognostic_state!(osm.atmosphere, state.atmosphere)
+    restore_prognostic_state!(osm.land, state.land)
     restore_prognostic_state!(osm.sea_ice, state.sea_ice)
     restore_prognostic_state!(osm.interfaces, state.interfaces)
-    # Note: we do NOT call update_state! here because:
-    # 1. The checkpoint was saved AFTER update_state! was called at the end of that time step
-    # 2. Calling update_state! would recompute interface fluxes and overwrite restored state
-    #    (e.g., top_surface_temperature is overwritten by compute_atmosphere_sea_ice_fluxes!)
     return osm
 end
 
