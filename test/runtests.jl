@@ -72,6 +72,7 @@ function __init__()
 
     try
         atmosphere = JRA55PrescribedAtmosphere(backend=JRA55NetCDFBackend(2))
+        land       = JRA55PrescribedLand(backend=JRA55NetCDFBackend(2))
     catch e
         @warn "Original JRA55 download failed, trying NumericalEarthArtifacts fallback..." exception=(e, catch_backtrace())
         emit_ci_warning("Broken JRA55 download", "Original source failed during init")
@@ -79,7 +80,6 @@ function __init__()
             datum = Metadatum(name; dataset=JRA55.RepeatYearJRA55())
             download_from_artifacts(metadata_path(datum))
         end
-        atmosphere = JRA55PrescribedAtmosphere(backend=JRA55NetCDFBackend(2))
     end
 
     #####
