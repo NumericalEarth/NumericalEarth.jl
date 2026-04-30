@@ -194,10 +194,13 @@ end
     return ifelse(N² == 0, zero(grid), Ri)
 end
 
+using Oceananigans.Grids: peripheral_node
+
 @kernel function compute_ri_number!(diffusivities, grid, closure::FlavorOfNBVD,
                                     velocities, tracers, buoyancy, tracer_bcs, clock)
-    i, j, k = @index(Global, NTuple)
-    @inbounds diffusivities.Ri[i, j, k] = Riᶜᶜᶠ(i, j, k, grid, velocities, buoyancy, tracers)
+    i, j, k  = @index(Global, NTuple)
+    inactive = peripheral_node(i, j, k, grid, Center(), Center(), Face())
+    @inbounds diffusivities.Ri[i, j, k] = ifelse(inactive, zero(grid), Riᶜᶜᶠ(i, j, k, grid, velocities, buoyancy, tracers))
 end
 
 #####
@@ -211,7 +214,7 @@ end
                                  velocities, tracers, buoyancy, tracer_bcs, clock)
 end
 
-@inline not_peripheral_node(args...) = !Oceananigans.Grids.peripheral_node(args...)
+@inline not_peripheral_node(args...) = !peripheral_node(args...)
 
 @inline function active_weighted_ℑxyᶠᶠᶠ(i, j, k, grid, q, args...)
     active_nodes = ℑxyᶠᶠᵃ(i, j, k, grid, not_peripheral_node, Center(), Center(), Face())
