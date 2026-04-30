@@ -23,6 +23,7 @@ model = OceanOnlyModel(ocean)
 
 # output
 EarthSystemModel{CPU}(time = 0 seconds, iteration = 0)
+├── radiation: Nothing
 ├── atmosphere: Nothing
 ├── land: Nothing
 ├── sea_ice: FreezingLimitedOceanTemperature{ClimaSeaIce.SeaIceThermodynamics.LinearLiquidus{Float64}}
@@ -91,6 +92,7 @@ model = OceanSeaIceModel(ocean, sea_ice)
 
 # output
 EarthSystemModel{CPU}(time = 0 seconds, iteration = 0)
+├── radiation: Nothing
 ├── atmosphere: Nothing
 ├── land: Nothing
 ├── sea_ice: FreezingLimitedOceanTemperature{ClimaSeaIce.SeaIceThermodynamics.LinearLiquidus{Float64}}
@@ -130,6 +132,7 @@ model = OceanOnlyModel(ocean; interfaces)
 
 # output
 EarthSystemModel{CPU}(time = 0 seconds, iteration = 0)
+├── radiation: Nothing
 ├── atmosphere: Nothing
 ├── land: Nothing
 ├── sea_ice: FreezingLimitedOceanTemperature{ClimaSeaIce.SeaIceThermodynamics.LinearLiquidus{Float64}}
@@ -148,6 +151,7 @@ model = OceanOnlyModel(ocean; interfaces)
 
 # output
 EarthSystemModel{CPU}(time = 0 seconds, iteration = 0)
+├── radiation: Nothing
 ├── atmosphere: Nothing
 ├── land: Nothing
 ├── sea_ice: FreezingLimitedOceanTemperature{ClimaSeaIce.SeaIceThermodynamics.LinearLiquidus{Float64}}

@@ -42,9 +42,9 @@ ecco_sea_ice_concentration = Metadatum(:sea_ice_concentration; date, dataset)
 set!(ocean.model, T=ecco_temperature, S=ecco_salinity)
 set!(sea_ice.model, h=ecco_sea_ice_thickness, ℵ=ecco_sea_ice_concentration)
 
-radiation  = Radiation(arch)
-atmosphere = JRA55PrescribedAtmosphere(arch; backend=JRA55NetCDFBackend(80),
-                                       include_rivers_and_icebergs = false)
+jra55_backend = JRA55NetCDFBackend(80)
+atmosphere = JRA55PrescribedAtmosphere(arch; backend=jra55_backend)
+radiation  = JRA55PrescribedRadiation(arch; backend=jra55_backend)
 esm = OceanSeaIceModel(ocean, sea_ice; atmosphere, radiation)
 
 simulation = Simulation(esm; Δt=20minutes, stop_time=5*365days)

@@ -98,10 +98,11 @@ nothing #hide
 nothing #hide
 
 # We build the complete coupled `earth_model` and the coupled simulation.
-# Since radiation is idealized in this example, we set the emissivities to zero.
+# SpeedyWeather drives the air-sea fluxes here, so we leave the top-level
+# `radiation` component as `nothing` (radiatively decoupled) to avoid
+# double-counting.
 
-radiation = Radiation(ocean_emissivity=0.0, sea_ice_emissivity=0.0)
-earth_model = EarthSystemModel(atmosphere, ocean, sea_ice; radiation)
+earth_model = EarthSystemModel(atmosphere, ocean, sea_ice)
 
 # ## Building and running the simulation
 #

@@ -68,6 +68,11 @@ atmosphere = JRA55PrescribedAtmosphere(longitude = λ★,
                                        end_date = DateTime(1990, 1, 31), # Last day of the simulation
                                        backend  = InMemory())
 
+radiation = JRA55PrescribedRadiation(longitude = λ★,
+                                     latitude = φ★,
+                                     end_date = DateTime(1990, 1, 31),
+                                     backend  = InMemory())
+
 # This builds a representation of the atmosphere on the small grid
 
 atmosphere.grid
@@ -101,7 +106,6 @@ lines!(axq, t_days, qa)
 current_figure()
 
 # We continue constructing a simulation.
-radiation = Radiation()
 coupled_model = OceanOnlyModel(ocean; atmosphere, radiation)
 simulation = Simulation(coupled_model, Δt=ocean.Δt, stop_time=30days)
 
@@ -205,8 +209,8 @@ ua  = atmosphere.velocities.u
 va  = atmosphere.velocities.v
 Ta  = atmosphere.tracers.T
 qa  = atmosphere.tracers.q
-ℐꜜˡʷ = atmosphere.downwelling_radiation.longwave
-ℐꜜˢʷ = atmosphere.downwelling_radiation.shortwave
+ℐꜜˡʷ = radiation.downwelling_longwave
+ℐꜜˢʷ = radiation.downwelling_shortwave
 Pr  = atmosphere.freshwater_flux.rain
 Ps  = atmosphere.freshwater_flux.snow
 

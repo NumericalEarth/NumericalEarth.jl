@@ -24,7 +24,7 @@ The melting temperature is a function of salinity and is controlled by the `liqu
 FreezingLimitedOceanTemperature(FT::DataType=Oceananigans.defaults.FloatType; liquidus=LinearLiquidus(FT)) =
     FreezingLimitedOceanTemperature(liquidus)
 
-const FreezingLimitedEarthSystemModel = EarthSystemModel{<:FreezingLimitedOceanTemperature, A, L, O, <:NoSeaIceInterface} where {A, L, O}
+const FreezingLimitedEarthSystemModel = EarthSystemModel{R, A, L, <:FreezingLimitedOceanTemperature, O, <:NoSeaIceInterface} where {R, A, L, O}
 
 # Extend interface methods to work with a `FreezingLimitedOceanTemperature`
 sea_ice_concentration(::FreezingLimitedOceanTemperature) = ZeroField()
@@ -50,8 +50,8 @@ InterfaceComputations.sea_ice_ocean_interface(grid, ::FreezingLimitedOceanTemper
 
 InterfaceComputations.net_fluxes(::FreezingLimitedOceanTemperature) = nothing
 
-const OnlyOceanwithFreezingLimited      = EarthSystemModel{<:FreezingLimitedOceanTemperature, <:Nothing, <:Any, <:Any}
-const OnlyAtmospherewithFreezingLimited = EarthSystemModel{<:FreezingLimitedOceanTemperature, <:Any,     <:Any, <:Nothing}
+const OnlyOceanwithFreezingLimited      = EarthSystemModel{<:Any, <:Nothing, <:Any, <:FreezingLimitedOceanTemperature, <:Any}
+const OnlyAtmospherewithFreezingLimited = EarthSystemModel{<:Any, <:Any,     <:Any, <:FreezingLimitedOceanTemperature, <:Nothing}
 const SingleComponentPlusFreezingLimited = Union{OnlyAtmospherewithFreezingLimited, OnlyOceanwithFreezingLimited}
 
 # Also for the ocean nothing really happens here

@@ -18,15 +18,19 @@ qᵃᵗ = 0.01 # specific humidity
 ℐꜜˢʷ = 400 # shortwave radiation (W m⁻², positive means heating right now)
 
 # Build the atmosphere
-radiation = Radiation(ocean_albedo=0.1)
 atmosphere_grid = RectilinearGrid(size=(), topology=(Flat, Flat, Flat))
 atmosphere_times = range(0, 1days, length=3)
 atmosphere = PrescribedAtmosphere(atmosphere_grid, atmosphere_times)
 
+# Build the radiation component (lives on the same grid + times as the atmosphere
+# in this single-column setup) and prescribe a constant shortwave forcing.
+radiation = PrescribedRadiation(atmosphere_grid, atmosphere_times;
+                                ocean_surface = SurfaceRadiationProperties(0.1, 0.97))
+
 parent(atmosphere.tracers.T) .= Tᵃᵗ     # K
 parent(atmosphere.velocities.u) .= u₁₀ # m/s
 parent(atmosphere.tracers.q) .= qᵃᵗ     # mass ratio
-parent(atmosphere.downwelling_radiation.shortwave) .= ℐꜜˢʷ # W
+parent(radiation.downwelling_shortwave) .= ℐꜜˢʷ # W
 
 # Build ocean model at rest with initial temperature stratification
 grid = RectilinearGrid(size=20, z=(-100, 0), topology=(Flat, Flat, Bounded))
@@ -40,8 +44,8 @@ Tᵢ(z) = T₀ + dTdz * z
 set!(ocean.model, T=Tᵢ, S=S₀)
 
 atmosphere_ocean_fluxes = SimilarityTheoryFluxes(stability_functions=nothing)
-interfaces = NumericalEarth.EarthSystemModels.ComponentInterfaces(atmosphere, ocean; atmosphere_ocean_fluxes)
-model = OceanOnlyModel(ocean; atmosphere, interfaces)
+interfaces = NumericalEarth.EarthSystemModels.ComponentInterfaces(atmosphere, ocean; atmosphere_ocean_fluxes, radiation)
+model = OceanOnlyModel(ocean; atmosphere, radiation, interfaces)
 
 𝒬ᵛ  = model.interfaces.atmosphere_ocean_interface.fluxes.latent_heat
 𝒬ᵀ  = model.interfaces.atmosphere_ocean_interface.fluxes.sensible_heat
