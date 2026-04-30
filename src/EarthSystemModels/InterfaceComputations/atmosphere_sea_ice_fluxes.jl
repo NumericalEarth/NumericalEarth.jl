@@ -104,7 +104,7 @@ end
 
     # Build thermodynamic and dynamic states in the atmosphere and interface.
     ℂᵃᵗ = atmosphere_properties.thermodynamics_parameters
-    zᵃᵗ = atmosphere_properties.surface_layer_height
+    zᵃᵗ = atmosphere_properties.surface_layer_height # elevation of atmos variables relative to interface
 
     local_atmosphere_state = (z = zᵃᵗ,
                               u = uᵃᵗ,
