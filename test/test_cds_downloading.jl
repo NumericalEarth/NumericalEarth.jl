@@ -456,6 +456,103 @@ end
     end
 end
 
+@testset "ERA5 CDSAPIExt _group_by_calendar_day" begin
+    # Single calendar day with multiple hours
+    same_day = [DateTime(2005, 2, 16, 0),
+                DateTime(2005, 2, 16, 6),
+                DateTime(2005, 2, 16, 23)]
+    g = CDSExt._group_by_calendar_day(same_day)
+    @test length(g) == 1
+    @test Date(2005, 2, 16) in keys(g)
+    @test length(g[Date(2005, 2, 16)]) == 3
+
+    # Boundary: 00:00 belongs to its OWN day (not the previous one)
+    midnight_pair = [DateTime(2005, 2, 16, 23),
+                     DateTime(2005, 2, 17, 0)]
+    g = CDSExt._group_by_calendar_day(midnight_pair)
+    @test length(g) == 2
+    @test g[Date(2005, 2, 16)] == [DateTime(2005, 2, 16, 23)]
+    @test g[Date(2005, 2, 17)] == [DateTime(2005, 2, 17, 0)]
+
+    # Multiple days, interleaved order — grouping must be order-independent
+    mixed = [DateTime(2005, 2, 17, 6),
+             DateTime(2005, 2, 16, 6),
+             DateTime(2005, 2, 17, 12),
+             DateTime(2005, 2, 16, 18)]
+    g = CDSExt._group_by_calendar_day(mixed)
+    @test length(g) == 2
+    @test Set(g[Date(2005, 2, 16)]) == Set([DateTime(2005, 2, 16, 6), DateTime(2005, 2, 16, 18)])
+    @test Set(g[Date(2005, 2, 17)]) == Set([DateTime(2005, 2, 17, 6), DateTime(2005, 2, 17, 12)])
+
+    # Duplicate datetimes are preserved (CDS will dedupe; we don't)
+    dups = [DateTime(2005, 2, 16, 12), DateTime(2005, 2, 16, 12)]
+    g = CDSExt._group_by_calendar_day(dups)
+    @test length(g) == 1
+    @test length(g[Date(2005, 2, 16)]) == 2
+
+    # Single-element input
+    g = CDSExt._group_by_calendar_day([DateTime(2005, 2, 16, 12)])
+    @test length(g) == 1
+    @test g[Date(2005, 2, 16)] == [DateTime(2005, 2, 16, 12)]
+end
+
+@testset "ERA5 CDSAPIExt skip_existing short-circuit" begin
+    # Build a temporary directory and pre-create the expected output files so
+    # `download_dataset(...; skip_existing=true)` returns without contacting CDS.
+    # If the short-circuit ever regresses, these tests will throw a credentials
+    # error (or 4xx from the CDS API) and fail loudly.
+    region = NumericalEarth.DataWrangling.BoundingBox(longitude=(0, 5), latitude=(40, 45))
+    mktempdir() do tmp
+        ds_pl  = ERA5HourlyPressureLevels(pressure_levels=[850, 500]hPa)
+        date1  = DateTime(2005, 2, 16, 12)
+        date2  = DateTime(2005, 2, 16, 18)
+        names  = [:temperature, :eastward_velocity]
+
+        # Helper: pre-create the file that `download_dataset` would write
+        function touch_expected(name, dataset, date)
+            md = Metadatum(name; dataset, region, date, dir=tmp)
+            path = metadata_path(md)
+            mkpath(dirname(path))
+            touch(path)
+            return path
+        end
+
+        @testset "multi-variable pressure-level (single date)" begin
+            paths = [touch_expected(name, ds_pl, date1) for name in names]
+            meta = Metadatum(:temperature; dataset=ds_pl, region, date=date1, dir=tmp)
+
+            result = download_dataset(names, meta; skip_existing=true)
+            @test result isa Vector{String}
+            @test length(result) == length(names)
+            @test Set(result) == Set(paths)
+        end
+
+        @testset "single-variable multi-date (download_era5_day)" begin
+            # All hours of date1, date2 already on disk
+            ds_sl = ERA5HourlySingleLevel()
+            for dt in (date1, date2)
+                touch_expected(:temperature, ds_sl, dt)
+            end
+
+            # Returns nothing without raising — the early-return guard fires
+            @test CDSExt.download_era5_day(:temperature, ds_sl, [date1, date2];
+                                            region, dir=tmp,
+                                            skip_existing=true, cleanup=true) === nothing
+        end
+
+        @testset "multi-variable multi-date (download_era5_multivar_day)" begin
+            ds_sl = ERA5HourlySingleLevel()
+            for name in names, dt in (date1, date2)
+                touch_expected(name, ds_sl, dt)
+            end
+
+            @test CDSExt.download_era5_multivar_day(names, ds_sl, [date1, date2];
+                                                     region, dir=tmp,
+                                                     skip_existing=true, cleanup=true) === nothing
+        end
+    end
+end
+
 @testset "ERA5 CDSAPIExt NetCDF copy and split helpers" begin
     # Helper: write a synthetic ERA5-like NetCDF with `Nt` timesteps and two
     # variables (`u`, `v`) on dims (longitude, latitude, valid_time).

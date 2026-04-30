@@ -137,8 +137,7 @@ end
 
 function download_dataset(metadata::ERA5Metadata; skip_existing=true, cleanup=true)
     dates = metadata.dates isa AbstractVector ? metadata.dates : [metadata.dates]
-    grouped = Dict(d => filter(dt -> Dates.Date(dt) == d, dates)
-                   for d in unique(Dates.Date.(dates)))
+    grouped = _group_by_calendar_day(dates)
 
     for day in sort(collect(keys(grouped)))
         download_era5_day(metadata.name, metadata.dataset, grouped[day];
@@ -146,6 +145,18 @@ function download_dataset(metadata::ERA5Metadata; skip_existing=true, cleanup=tr
                            dir = metadata.dir,
                            skip_existing, cleanup)
     end
+end
+
+"""
+    _group_by_calendar_day(datetimes)
+
+Group an iterable of `DateTime`s by calendar day. Returns a `Dict{Date, Vector}`
+where each value is the subset of `datetimes` whose calendar day equals the key.
+The `00:00` instant of a day belongs to that day (not the previous one).
+"""
+function _group_by_calendar_day(datetimes)
+    return Dict(d => filter(dt -> Dates.Date(dt) == d, datetimes)
+                for d in unique(Dates.Date.(datetimes)))
 end
 
 function download_era5_day(name, dataset, day_dates;
@@ -314,8 +325,7 @@ function download_dataset(names::Vector{Symbol},
                           skip_existing = true,
                           cleanup = true)
 
-    grouped = Dict(d => filter(dt -> Dates.Date(dt) == d, datetimes)
-                   for d in unique(Dates.Date.(datetimes)))
+    grouped = _group_by_calendar_day(datetimes)
 
     for day in sort(collect(keys(grouped)))
         download_era5_multivar_day(names, dataset, grouped[day]; region, dir, skip_existing, cleanup)
