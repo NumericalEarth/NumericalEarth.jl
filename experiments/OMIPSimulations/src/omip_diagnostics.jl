@@ -158,11 +158,12 @@ function add_omip_diagnostics!(simulation;
                                                     overwrite_existing = true,
                                                     jld2_kw = Dict(:compress => ZstdFilter()))
 
-    # Global means and horizontal-mean depth profiles for T, S, b
-    average_outputs = Dict{Symbol, Any}(
+    # Global means and horizontal-mean depth profiles for T, S, b.
+    # `:zosga` (global-mean free-surface displacement) is a Boussinesq mass-conservation check
         :tosga => Average(T),
         :soga  => Average(S),
         :bga   => Average(bop),
+        :zosga => Average(η),
         :to_h  => Average(T,   dims=(1, 2)),
         :so_h  => Average(S,   dims=(1, 2)),
         :bo_h  => Average(bop, dims=(1, 2)),

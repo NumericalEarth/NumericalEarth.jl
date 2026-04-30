@@ -1046,6 +1046,19 @@ function load_timeseries_case(run_dir, prefix, grid; start_time = 0, stop_time =
     salinity_mean    = [Array(interior(salinity_mean_fts[n]))[1]  for n in 1:length(salinity_mean_fts.times)]
     time_in_years    = temperature_mean_fts.times ./ (365.25 * 24 * 3600)
 
+    # Global-mean SSH (`zosga`). In a Boussinesq free-surface ocean with
+    # the OMIP-2 virtual-salt-flux convention (no surface mass flux is
+    # applied to η; freshwater changes salinity only via Jˢ = -S Σ𝓕ₐₒ),
+    # the global-mean displacement must be conserved to round-off.
+    # A non-zero drift indicates a leak in the surface boundary condition.
+    # Older runs may not have this diagnostic written, so degrade gracefully.
+    ssh_mean = try
+        ssh_mean_fts = FieldTimeSeries(averages_file, "zosga"; backend = deepcopy(FTS_BACKEND))
+        [Array(interior(ssh_mean_fts[n]))[1] for n in 1:length(ssh_mean_fts.times)]
+    catch
+        Float64[]
+    end
+
     temperature_profile_fts = FieldTimeSeries(averages_file, "to_h"; backend = deepcopy(FTS_BACKEND))
     salinity_profile_fts    = FieldTimeSeries(averages_file, "so_h"; backend = deepcopy(FTS_BACKEND))
     temperature_profile = vec(compute_time_mean(temperature_profile_fts; start_time, stop_time))
@@ -1096,7 +1109,7 @@ function load_timeseries_case(run_dir, prefix, grid; start_time = 0, stop_time =
     end
     tke_time_in_years = tke_fts.times ./ (365.25 * 24 * 3600)
 
-    return (; temperature_mean, salinity_mean, time_in_years,
+    return (; temperature_mean, salinity_mean, ssh_mean, time_in_years,
               temperature_profile, salinity_profile, depth,
               temperature_drift, salinity_drift, drift_time_in_years,
               tke_mean, ke_mean, tke_time_in_years, ocean_mask, fields_file)
@@ -1133,9 +1146,18 @@ Legend(fig[1, 2], ax_tke)
 Legend(fig[2, 2], ax_ke)
 savefig(fig, "fig14_tke.png")
 
-# Figure 15: T and S drift
-@info "Figure 15: T and S drift"
-fig = Figure(size = (600 + 200 * length(labels), 450), fontsize = 14)
+# Figure 15: T, S and SSH drift.
+#
+# The Δ⟨η⟩ panel is a Boussinesq mass-conservation check: with the
+# OMIP-2 virtual-salt-flux convention the model applies P-E-R only as a
+# salinity tendency, not as a volume flux on η, so the global-mean
+# free-surface displacement should remain at its initial value to
+# barotropic-solver round-off (typically |Δ⟨η⟩| < 1e-6 m). Any visible
+# trend or step indicates a non-conserving surface boundary condition.
+@info "Figure 15: T, S, SSH drift"
+has_ssh = any(lab -> !isempty(TS[lab].ssh_mean), labels)
+ncols_drift = has_ssh ? 4 : 3
+fig = Figure(size = (600 + 200 * length(labels) * ncols_drift / 3, 450), fontsize = 14)
 ax_T = Axis(fig[1, 1]; xlabel="Time (years)", ylabel="ΔT (deg C)", title="Global-mean temperature drift")
 for (i, lab) in enumerate(labels)
     d = TS[lab]
@@ -1146,7 +1168,19 @@ for (i, lab) in enumerate(labels)
     d = TS[lab]
     lines!(ax_S, d.time_in_years, d.salinity_mean .- d.salinity_mean[1]; color=case_colors[i], label=lab)
 end
-Legend(fig[1, 3], ax_T)
+if has_ssh
+    ax_η = Axis(fig[1, 3]; xlabel="Time (years)", ylabel="Δ⟨η⟩ (m)",
+                title="Global-mean SSH drift  (should be ≈ 0)")
+    hlines!(ax_η, [0.0]; color = :gray, linestyle = :dash)
+    for (i, lab) in enumerate(labels)
+        d = TS[lab]
+        isempty(d.ssh_mean) && continue
+        # Use the temperature-mean time vector (same averaging schedule).
+        t = d.time_in_years[1:length(d.ssh_mean)]
+        lines!(ax_η, t, d.ssh_mean .- d.ssh_mean[1]; color=case_colors[i], label=lab)
+    end
+end
+Legend(fig[1, ncols_drift], ax_T)
 savefig(fig, "fig15_drift.png")
 
 # Figure 16: Profiles
