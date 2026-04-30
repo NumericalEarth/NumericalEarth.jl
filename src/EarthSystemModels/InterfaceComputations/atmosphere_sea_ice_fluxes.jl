@@ -92,8 +92,6 @@ end
     end
 
     # Evaluate state-dependent radiation properties at this grid point.
-    # The albedo may be a struct (e.g., CCSM3SeaIceAlbedo) that reads model fields;
-    # we evaluate it here so the iteration uses a scalar.
     time = Time(clock.time)
     σ = interface_properties.radiation.σ
     α = stateindex(interface_properties.radiation.α, i, j, kᴺ, grid, time, CCC)
