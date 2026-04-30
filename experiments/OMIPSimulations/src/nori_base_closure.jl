@@ -21,7 +21,7 @@ using Oceananigans
 using Oceananigans.Architectures: architecture
 using Oceananigans.BoundaryConditions: fill_halo_regions!
 using Oceananigans.BuoyancyFormulations: ∂x_b, ∂y_b, ∂z_b
-using Oceananigans.Grids: inactive_node, total_size
+using Oceananigans.Grids: inactive_node, total_size, Face, Center
 using Oceananigans.Operators
 using Oceananigans.Operators: ℑxyᶠᶠᵃ, ℑxyᶜᶜᵃ, ℑxᶜᵃᵃ, ℑyᵃᶜᵃ, ∂zᶠᶜᶠ, ∂zᶜᶠᶠ
 using Oceananigans.TurbulenceClosures
@@ -211,6 +211,20 @@ end
                                  velocities, tracers, buoyancy, tracer_bcs, clock)
 end
 
+@inline not_peripheral_node(args...) = !Oceananigans.Grids.peripheral_node(args...)
+
+@inline function active_weighted_ℑxyᶠᶠᶠ(i, j, k, grid, q, args...)
+    active_nodes = ℑxyᶠᶠᵃ(i, j, k, grid, not_peripheral_node, Center(), Center(), Face())
+    mask = active_nodes == 0
+    return ifelse(mask, zero(grid), ℑxyᶠᶠᵃ(i, j, k, grid, q, args...) / active_nodes)
+end
+
+@inline function active_weighted_ℑxyᶜᶜᶠ(i, j, k, grid, q, args...)
+    active_nodes = ℑxyᶜᶜᵃ(i, j, k, grid, not_peripheral_node, Face(), Face(), Face())
+    mask = active_nodes == 0
+    return ifelse(mask, zero(grid), ℑxyᶜᶜᵃ(i, j, k, grid, q, args...) / active_nodes)
+end
+
 @inline function _compute_NORi_diffusivities!(i, j, k, diffusivities, grid, closure,
                                               velocities, tracers, buoyancy, tracer_bcs, clock)
     closure_ij = getclosure(i, j, closure)
@@ -228,7 +242,7 @@ end
     κᶜⁿ = νᶜⁿ / Pr_convₜ
 
     # 9-point horizontal filter on Ri.
-    Ri = ℑxyᶜᶜᵃ(i, j, k, grid, ℑxyᶠᶠᵃ, diffusivities.Ri)
+    Ri = active_weighted_ℑxyᶜᶜᶠ(i, j, k, grid, active_weighted_ℑxyᶠᶠᶠ, diffusivities.Ri)
 
     convecting = Ri < 0
 
