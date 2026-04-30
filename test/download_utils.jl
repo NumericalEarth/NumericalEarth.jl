@@ -30,26 +30,34 @@ end
 Try `download_fn()`. If it throws, download the required files from
 NumericalEarthArtifacts and retry. Emits a CI warning when the fallback is used.
 
-Returns `true` when the data is available (either path succeeded), `false` when
-neither path could obtain it (CDS unavailable AND artifact 404). Callers should
-treat `false` as a signal to skip the rest of the testset.
+Returns the result of `download_fn()`.
 """
 function download_dataset_with_fallback(download_fn, filepaths; dataset_name="dataset")
     try
-        download_fn()
-        return true
+        return download_fn()
     catch e
         @warn "Original download failed for $dataset_name, trying NumericalEarthArtifacts fallback..." exception=(e, catch_backtrace())
         emit_ci_warning("Broken $dataset_name download", "Original source failed: $(sprint(showerror, e))")
-    end
-
-    try
         download_from_artifacts(filepaths)
-        download_fn()
+        return download_fn()
+    end
+end
+
+"""
+    try_download_or_skip(download_fn, filepaths; dataset_name="dataset")
+
+Like `download_dataset_with_fallback`, but if both the original source and the
+artifact fallback fail, emit an `@info` and return `false` instead of throwing.
+Returns `true` on success. Use as `try_download_or_skip(...) do ... end || return`
+at testset scope to skip cleanly when test data is unobtainable.
+"""
+function try_download_or_skip(download_fn, filepaths; dataset_name="dataset")
+    try
+        download_dataset_with_fallback(download_fn, filepaths; dataset_name)
         return true
     catch e
-        @info "Artifact fallback also failed for $dataset_name; skipping test" exception=e
-        emit_ci_warning("Missing $dataset_name artifact", "Both CDS and artifact fallback failed")
+        @info "Skipping $dataset_name test: both CDS and artifact fallback failed" exception=e
+        emit_ci_warning("Missing $dataset_name", "Both CDS and artifact fallback failed")
         return false
     end
 end

@@ -35,8 +35,9 @@ start_date = DateTime(2005, 2, 16, 12)
         filepath = metadata_path(metadatum)
         isfile(filepath) && rm(filepath; force=true)
 
-        # Download the data (falls back to NumericalEarthArtifacts if CDS is unreachable)
-        download_dataset_with_fallback(filepath; dataset_name="ERA5Hourly $variable") do
+        # Download the data (falls back to NumericalEarthArtifacts if CDS is unreachable;
+        # skips the testset cleanly if both fail).
+        try_download_or_skip(filepath; dataset_name="ERA5Hourly $variable") do
             download_dataset(metadatum)
         end || return
         @test isfile(filepath)
@@ -189,9 +190,10 @@ start_date = DateTime(2005, 2, 16, 12)
             variable = :temperature
             metadatum = Metadatum(variable; dataset, region, date=start_date)
 
-            # Download if not present (falls back to NumericalEarthArtifacts if CDS is unreachable)
+            # Download if not present (falls back to NumericalEarthArtifacts if CDS is unreachable;
+            # skips the testset cleanly if both fail).
             filepath = metadata_path(metadatum)
-            isfile(filepath) || download_dataset_with_fallback(filepath; dataset_name="ERA5Hourly $variable") do
+            isfile(filepath) || try_download_or_skip(filepath; dataset_name="ERA5Hourly $variable") do
                 download_dataset(metadatum)
             end || return
 
@@ -215,9 +217,10 @@ start_date = DateTime(2005, 2, 16, 12)
             variable = :temperature
             metadatum = Metadatum(variable; dataset, region, date=start_date)
 
-            # Download if not present (falls back to NumericalEarthArtifacts if CDS is unreachable)
+            # Download if not present (falls back to NumericalEarthArtifacts if CDS is unreachable;
+            # skips the testset cleanly if both fail).
             filepath = metadata_path(metadatum)
-            isfile(filepath) || download_dataset_with_fallback(filepath; dataset_name="ERA5Hourly $variable") do
+            isfile(filepath) || try_download_or_skip(filepath; dataset_name="ERA5Hourly $variable") do
                 download_dataset(metadatum)
             end || return
 
