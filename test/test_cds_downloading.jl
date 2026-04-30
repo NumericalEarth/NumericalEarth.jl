@@ -143,6 +143,67 @@ start_date = DateTime(2005, 2, 16, 12)
         @test step(dates) == Month(1)
     end
 
+    @testset "ERA5 single-level all_dates (Hourly)" begin
+        hourly_dataset = ERA5HourlySingleLevel()
+        dates = NumericalEarth.DataWrangling.all_dates(hourly_dataset, :temperature)
+        @test first(dates) == DateTime("1940-01-01")
+        @test step(dates) == Hour(1)
+    end
+
+    @testset "ERA5 single-level dispatch helpers" begin
+        ds = ERA5HourlySingleLevel()
+        md = Metadatum(:temperature; dataset=ds, region, date=start_date)
+
+        # API-name and netcdf-name dicts cover the same variable set —
+        # catches forgetting to add a new variable to one of the two
+        @test keys(ERA5_dataset_variable_names) == keys(ERA5_netcdf_variable_names)
+
+        # available_variables returns the API-name dict (used to build CDS requests),
+        # not the netcdf short-name dict — guards against the easy swap-mistake
+        @test NumericalEarth.DataWrangling.available_variables(ds) === ERA5_dataset_variable_names
+
+        # dataset_variable_name returns the netcdf short name (read from file),
+        # not the API catalog name — same swap risk
+        @test NumericalEarth.DataWrangling.dataset_variable_name(md) == "t2m"
+
+        # default_inpainting is nothing for ERA5 (vs NearestNeighborInpainting for ECCO);
+        # accidentally enabling it would massively slow Field construction
+        @test NumericalEarth.DataWrangling.default_inpainting(md) === nothing
+    end
+
+    @testset "ERA5 single-level metadata_prefix" begin
+        ds = ERA5HourlySingleLevel()
+
+        # Single-date metadatum, with region: prefix should not duplicate the date
+        md_single = Metadatum(:temperature; dataset=ds, region, date=start_date)
+        prefix_single = NumericalEarth.DataWrangling.ERA5.metadata_prefix(md_single)
+        @test occursin("2m_temperature", prefix_single)
+        @test occursin("ERA5HourlySingleLevel", prefix_single)
+        @test occursin("2005-02-16", prefix_single)
+        @test count("2005-02-16", prefix_single) == 1   # date appears once for single-date
+        @test occursin("0.0", prefix_single)            # west bound
+        @test occursin("5.0", prefix_single)            # east bound
+        @test occursin("40.0", prefix_single)           # south bound
+        @test occursin("45.0", prefix_single)           # north bound
+        # Filename safety
+        @test !occursin(":", prefix_single)             # colons replaced by dashes
+        @test !occursin(" ", prefix_single)             # spaces replaced by underscores
+
+        # Single-date metadatum, no region: suffix should be empty
+        md_no_region = Metadatum(:temperature; dataset=ds, date=start_date)
+        prefix_no_region = NumericalEarth.DataWrangling.ERA5.metadata_prefix(md_no_region)
+        @test !occursin("0.0", prefix_no_region)
+        @test !occursin("nothing", prefix_no_region)
+
+        # Multi-date metadata: prefix should include both start and end dates
+        end_date = start_date + Hour(2)
+        md_multi = Metadata(:temperature; dataset=ds, region,
+                            dates=start_date:Hour(1):end_date)
+        prefix_multi = NumericalEarth.DataWrangling.ERA5.metadata_prefix(md_multi)
+        @test occursin("2005-02-16T12", prefix_multi)
+        @test occursin("2005-02-16T14", prefix_multi)
+    end
+
     @testset "ERA5HourlyPressureLevels construction and metadata" begin
         # Default constructor uses all 37 standard levels
         ds_full = ERA5HourlyPressureLevels()
