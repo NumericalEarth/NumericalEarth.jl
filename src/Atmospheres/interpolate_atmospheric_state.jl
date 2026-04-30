@@ -77,33 +77,6 @@ function interpolate_state!(exchanger, grid, atmosphere::PrescribedAtmosphere, c
             atmosphere_backend,
             atmosphere_time_indexing)
 
-    # Separately interpolate the auxiliary freshwater fluxes, which may
-    # live on a different grid than the primary fluxes and atmospheric state.
-    auxiliary_freshwater_flux = atmosphere.auxiliary_freshwater_flux
-    interpolated_prescribed_freshwater_flux = atmosphere_data.Jᶜ
-
-    if !isnothing(auxiliary_freshwater_flux)
-        # TODO: do not assume that `auxiliary_freshater_flux` is a tuple
-        auxiliary_data = map(ϕ -> ϕ.data, auxiliary_freshwater_flux)
-
-        first_auxiliary_flux    = first(auxiliary_freshwater_flux)
-        auxiliary_grid          = first_auxiliary_flux.grid
-        auxiliary_times         = first_auxiliary_flux.times
-        auxiliary_backend       = first_auxiliary_flux.backend
-        auxiliary_time_indexing = first_auxiliary_flux.time_indexing
-
-        launch!(arch, grid, kernel_parameters,
-                _interpolate_auxiliary_freshwater_flux!,
-                interpolated_prescribed_freshwater_flux,
-                grid,
-                clock,
-                auxiliary_data,
-                auxiliary_grid,
-                auxiliary_times,
-                auxiliary_backend,
-                auxiliary_time_indexing)
-    end
-
     # Set ocean barotropic pressure forcing
     #
     # TODO: find a better design for this that doesn't have redundant
@@ -168,31 +141,6 @@ end
         surface_atmos_state.ℐꜜˢʷ[i, j, 1] = ℐꜜˢʷ
         surface_atmos_state.ℐꜜˡʷ[i, j, 1] = ℐꜜˡʷ
         surface_atmos_state.Jᶜ[i, j, 1] = Mh
-    end
-end
-
-@kernel function _interpolate_auxiliary_freshwater_flux!(freshwater_flux,
-                                                         interface_grid,
-                                                         clock,
-                                                         auxiliary_freshwater_flux,
-                                                         auxiliary_grid,
-                                                         auxiliary_times,
-                                                         auxiliary_backend,
-                                                         auxiliary_time_indexing)
-
-    i, j = @index(Global, NTuple)
-    kᴺ = size(interface_grid, 3) # index of the top ocean cell
-
-    @inbounds begin
-        X = _node(i, j, kᴺ + 1, interface_grid, Center(), Center(), Face())
-        time = Time(clock.time)
-        Mr = interp_atmos_time_series(auxiliary_freshwater_flux, X, time,
-                                      auxiliary_grid,
-                                      auxiliary_times,
-                                      auxiliary_backend,
-                                      auxiliary_time_indexing)
-
-        freshwater_flux[i, j, 1] += Mr
     end
 end
 
