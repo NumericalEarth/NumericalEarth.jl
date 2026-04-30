@@ -89,7 +89,7 @@ end
 
     # Built once and re-used every step via `compute!`; the operations keep
     # a reference to the live `T`/`S` fields so the reduction tracks them.
-    ∫T   = Field(Integral(ocean.model.tracers.T))
+    ∫T = Field(Integral(ocean.model.tracers.T))
     mean_S = Field(Average(ocean.model.tracers.S))
 
     function column_state(coupled_model)
@@ -115,7 +115,7 @@ end
 
     # Short phases so the test stays under a few seconds of wall time.
     Δt = 10minutes
-    Δτ = 2days          # phase duration
+    Δτ = 2days      # phase duration
     Nsteps = Int(Δτ ÷ Δt)
 
     freeze_phase = (T_air     = 253.15,
@@ -136,12 +136,17 @@ end
                     rain_flux = 5.0e-6,
                     snow_flux = 0.0)
 
-    history = (t    = Float64[],
+    history = (t = Float64[],
                phase = Int[],
-               h    = Float64[], ℵ    = Float64[], hs   = Float64[],
-               Mᵢₛ = Float64[], Eᵢₛ = Float64[],
-               Hₒ  = Float64[], Sₒ  = Float64[],
-               Ṁ    = Float64[], Q    = Float64[],
+               h = Float64[],
+               ℵ = Float64[],
+               hs = Float64[],
+               Mᵢₛ = Float64[],
+               Eᵢₛ = Float64[],
+               Hₒ = Float64[],
+               Sₒ = Float64[],
+               Ṁ = Float64[],
+               Q = Float64[],
                𝒬ᶠʳᶻ = Float64[])
 
     function record!(history, coupled_model, phase_id, Ṁ, Q)
@@ -184,8 +189,8 @@ end
         ΣQb  = coupled_model.interfaces.net_fluxes.sea_ice.bottom.heat
         𝒬⁻   = first(interior(𝒬ᶠʳᶻ))                                         # pending frazil
         update_state!(coupled_model)
-        𝒬ᶠʳᶻ[1, 1, 1]  = 𝒬⁻
-        ΣQb[1, 1, 1]  += 𝒬⁻
+        𝒬ᶠʳᶻ[1, 1, 1] = 𝒬⁻
+        ΣQb[1, 1, 1] += 𝒬⁻
 
         history.Q[end] = net_top_heat_flux(coupled_model) + Qᵖ
         history.Ṁ[end] = Ṁ
@@ -236,16 +241,16 @@ end
     end
 
     Sᵣ = history.Sₒ[1]
-    Mᶠʷ   = @. ocean_virtual_freshwater(history.Sₒ, Sᵣ)
-    ΔM    = (history.Mᵢₛ .+ Mᶠʷ) .- (history.Mᵢₛ[1] + Mᶠʷ[1])
-    Rₘ   = ΔM .- ∫Ṁ
-    εₘ   = abs(Rₘ[end]) / max(maximum(abs.(ΔM)), 1)  # not tested (broken)
+    Mᶠʷ = @. ocean_virtual_freshwater(history.Sₒ, Sᵣ)
+    ΔM = (history.Mᵢₛ .+ Mᶠʷ) .- (history.Mᵢₛ[1] + Mᶠʷ[1])
+    Rₘ = ΔM .- ∫Ṁ
+    εₘ = abs(Rₘ[end]) / max(maximum(abs.(ΔM)), 1)  # not tested (broken)
 
     # --- Sanity checks on the physics ---
 
     nᶠ = findlast(p -> p == 1, history.phase)
 
-    @test history.h[nᶠ] > history.h[1]        # ice grew during freeze
-    @test history.h[end]      < history.h[nᶠ] # ice shrank during melt
-    @test history.ℵ[nᶠ] ≈ 1.0                 # stays fully ice-covered through freeze
+    @test history.h[nᶠ] > history.h[1]   # ice grew during freeze
+    @test history.h[end] < history.h[nᶠ] # ice shrank during melt
+    @test history.ℵ[nᶠ] ≈ 1.0            # stays fully ice-covered through freeze
 end
