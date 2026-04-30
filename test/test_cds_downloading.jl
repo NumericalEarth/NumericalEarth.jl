@@ -70,8 +70,7 @@ start_date = DateTime(2005, 2, 16, 12)
 
         close(ds)
 
-        # Clean up
-        rm(filepath; force=true)
+        # Note: leave `filepath` in place; downstream surface-level testsets reuse it.
     end
 
     @testset "Availability of ERA5 variables" begin
@@ -209,10 +208,7 @@ start_date = DateTime(2005, 2, 16, 12)
                 @test !all(iszero, interior(ψ))
             end
 
-            # Clean up
-            rm(filepath; force=true)
-            inpainted_path = NumericalEarth.DataWrangling.inpainted_metadata_path(metadatum)
-            isfile(inpainted_path) && rm(inpainted_path; force=true)
+            # Note: cleanup happens in the last surface-level testset below.
         end
 
         @testset "Setting a field from ERA5 metadata on $A" begin
@@ -296,9 +292,9 @@ start_date = DateTime(2005, 2, 16, 12)
 
             meta_z = Metadatum(:geopotential_height; dataset=ds_pl, region, date=start_date)
             filepath = metadata_path(meta_z)
-            isfile(filepath) && rm(filepath; force=true)
 
-            download_dataset(meta_z)
+            # Field() downloads if needed; the file may already be on disk from
+            # the previous testset's z_interfaces side-effect.
             fz = Field(meta_z, arch)
 
             @allowscalar begin
