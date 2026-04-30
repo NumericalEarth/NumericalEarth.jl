@@ -18,9 +18,7 @@ WorldOceanAtlasTools = "04f20302-f1b9-11e8-29d9-7d841cb0a64a"
 
 [sources]
 NumericalEarth = {path = "../.."}
-ClimaSeaIce = {rev = "ss/refactor-thermodynamics", url = "https://github.com/CliMA/ClimaSeaIce.jl.git"}
 
 [compat]
 ConservativeRegridding = "0.2.0"
-Oceananigans = "0.106.5, 0.107, 0.189"
 julia = "1.10"

@@ -25,7 +25,7 @@ Type parameters `N` (on-native-grid) and `C` (cache-inpainted-data) are
 flags hoisted into the type so that dispatch and `Adapt.adapt_structure`
 can act on them without allocating.
 """
-struct DatasetBackend{N, C, I, M} <: AbstractInMemoryBackend{Int, false}
+struct DatasetBackend{N, C, I, M} <: AbstractInMemoryBackend{Int}
     start :: Int
     length :: Int
     inpainting :: I

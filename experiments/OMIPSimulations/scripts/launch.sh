@@ -62,13 +62,10 @@ Examples:
   CB=0.1 NCAR=true ./launch.sh orca
   KSKEW=1000 KSYMM=500 ./launch.sh orca
   KSKEW=0 ./launch.sh orca                    # disable eddy closure
-<<<<<<< HEAD
   RYF=true ./launch.sh sxthdegree             # sxthdegree with repeat-year forcing
-=======
   BIHARMONIC=5days ./launch.sh orca           # custom biharmonic timescale
   BIHARMONIC=nothing ./launch.sh orca         # disable biharmonic viscosity
   BIHVISC=1e12 ./launch.sh orca               # constant biharmonic viscosity ν=1e12 m^4/s
->>>>>>> ss/omip-prototype
   FORCING_DIR=/other/path/forcing_data STAGING_DIR=/scratch/staged ./launch.sh orca
   PROFILE=true ./launch.sh orca
 USAGE

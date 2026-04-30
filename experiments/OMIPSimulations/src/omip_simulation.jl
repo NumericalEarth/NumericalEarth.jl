@@ -242,7 +242,7 @@ function omip_simulation(config::Symbol = :halfdegree;
 
     cfg = Val(config)
 
-    grid = build_grid(cfg, arch, Nz, depth)
+    grid = build_grid(cfg, arch, Nz, depth, forcing_dir)
 
     ocean = build_ocean(cfg, grid;
                         κ_skew, κ_symmetric, Cᵇ,
@@ -381,7 +381,7 @@ end
 ##### Grid builder
 #####
 
-function build_grid(config, arch, Nz, depth)
+function build_grid(config, arch, Nz, depth, forcing_dir)
     
     Nx = config == Val(:halfdegree)  ? 720 :
          config == Val(:sxthdegree)  ? 2160 :
@@ -399,20 +399,25 @@ function build_grid(config, arch, Nz, depth)
 
     minimum_depth = config == Val(:sxthdegree) ? 15 : 20
     major_basins = config == Val(:sxthdegree) ? 4 : 1
-    bottom_height = regrid_bathymetry(base_grid;
-                                    minimum_depth,
-                                    major_basins,
-                                    interpolation_passes = 25)
+    bathymetry_metadata = Metadatum(:bottom_height;
+                                    dataset = NumericalEarth.DataWrangling.ETOPO2022(),
+                                    dir = forcing_dir)
+
+    bottom_height = regrid_bathymetry(base_grid, bathymetry_metadata;
+                                      minimum_depth,
+                                      major_basins,
+                                      interpolation_passes = 25)
 
     return ImmersedBoundaryGrid(base_grid, GridFittedBottom(bottom_height); active_cells_map = true)
 end
 
-function build_grid(::Val{:orca}, arch, Nz, depth)
+function build_grid(::Val{:orca}, arch, Nz, depth, forcing_dir)
 
     z_faces = ExponentialDiscretization(Nz, -depth, 0; scale=1300, mutable=true)
 
     return ORCAGrid(arch;
                     dataset = ORCA1(),
+                    dir = forcing_dir,
                     Nz,
                     z = z_faces,
                     halo = (7, 7, 7),
