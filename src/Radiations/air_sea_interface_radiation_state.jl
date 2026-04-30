@@ -5,8 +5,7 @@
     (σ = r.stefan_boltzmann_constant,
      surface_properties = r.surface_properties)
 
-@inline function air_sea_interface_radiation_state(rk, exchanger_state,
-                                                   i, j, k, grid, time)
+@inline function air_sea_interface_radiation_state(rk, exchanger_state, i, j, k, grid, time)
     σ = rk.σ
     @inbounds ℐꜜˢʷ = exchanger_state.ℐꜜˢʷ[i, j, 1]
     @inbounds ℐꜜˡʷ = exchanger_state.ℐꜜˡʷ[i, j, 1]
