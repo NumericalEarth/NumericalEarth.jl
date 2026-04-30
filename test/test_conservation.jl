@@ -209,7 +209,8 @@ end
 
     # --- Energy budget ---
 
-    ∫Q = similar(t); ∫Q[1] = 0.0
+    ∫Q = similar(t)
+    ∫Q[1] = 0.0
     for n in 2:length(t)
         ∫Q[n] = ∫Q[n-1] + history.Q[n-1] * (t[n] - t[n-1])
     end
@@ -222,8 +223,8 @@ end
     δE = history.𝒬ᶠʳᶻ .* Δt⁺ .* Az
 
     Ẽᵢₛ = history.Eᵢₛ .+ δE
-    ΔE   = (Ẽᵢₛ .+ history.Hₒ) .- (Ẽᵢₛ[1] + history.Hₒ[1])
-    Rₑ  = ΔE .- ∫Q
+    ΔE = (Ẽᵢₛ .+ history.Hₒ) .- (Ẽᵢₛ[1] + history.Hₒ[1])
+    Rₑ = ΔE .- ∫Q
 
     εₑ = abs(Rₑ[end]) / max(maximum(abs.(ΔE)), 1)
     @test εₑ < 1e-10
@@ -235,7 +236,8 @@ end
     # do not assert on them; fix the underlying bookkeeping first, then
     # add `@test εₘ < 1e-10`.
 
-    ∫Ṁ = similar(t); ∫Ṁ[1] = 0.0
+    ∫Ṁ = similar(t)
+    ∫Ṁ[1] = 0.0
     for n in 2:length(t)
         ∫Ṁ[n] = ∫Ṁ[n-1] + history.Ṁ[n-1] * (t[n] - t[n-1])
     end
