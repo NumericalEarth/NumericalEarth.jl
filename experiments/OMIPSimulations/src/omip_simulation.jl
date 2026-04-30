@@ -448,13 +448,16 @@ end
 
 # Step-function background diffusivity for the simple-closure case.
 # Strong mixing in the upper 100 m, weak interior diffusivity below.
-@inline κ_step_simple(x, y, z, t) = ifelse(z >= -100, 1e-2, 1e-5)
 @inline ν_step_simple(x, y, z, t) = ifelse(z >= -100, 1e-2, 1e-4)
+@inline κ_step_simple(x, y, z, t) =
+      z >= -10  ? 5e-2 :       # mimic BL mixing
+      z >= -100 ? 1e-2 :
+                  1e-5
 
 function omip_simple_closure(; κ_skew, κ_symmetric,
                                 biharmonic_timescale,
                                 biharmonic_viscosity = nothing)
-    convective = ConvectiveAdjustmentVerticalDiffusivity(VerticallyImplicitTimeDiscretization(); convective_κz = 1.0)
+    convective = ConvectiveAdjustmentVerticalDiffusivity(VerticallyImplicitTimeDiscretization(); convective_κz = 1.0, convective_νz = 1.0)
 
     eddy  = if isnothing(κ_skew) | isnothing(κ_symmetric)
         nothing
