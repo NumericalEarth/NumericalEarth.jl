@@ -11,11 +11,10 @@ using NumericalEarth.DataWrangling: Metadata, Metadatum, metadata_path
 using Dates
 using Dates: DateTime, Day, Month, Hour
 
-import Oceananigans.Fields: location
-
 import NumericalEarth.DataWrangling:
     all_dates,
     dataset_variable_name,
+    dataset_location,
     default_download_directory,
     longitude_interfaces,
     latitude_interfaces,
@@ -24,7 +23,8 @@ import NumericalEarth.DataWrangling:
     inpainted_metadata_path,
     available_variables,
     retrieve_data,
-    metadata_path
+    metadata_path,
+    reversed_latitude_axis
 
 import Base: eltype
 
@@ -47,6 +47,8 @@ struct ERA5Monthly <: ERA5Dataset end
 
 dataset_name(::ERA5Hourly) = "ERA5Hourly"
 dataset_name(::ERA5Monthly) = "ERA5Monthly"
+
+reversed_latitude_axis(::ERA5Dataset) = true
 
 # Wave variables are on a 0.5° grid (720×361), atmospheric variables on 0.25° (1440×721)
 const ERA5_wave_variables = Set([
@@ -165,7 +167,9 @@ end
 function date_str(date::DateTime)
     y = Dates.year(date)
     m = lpad(Dates.month(date), 2, '0')
-    return "$(y)-$(m)"
+    d = lpad(Dates.day(date), 2, '0')
+    h = lpad(Dates.hour(date), 2, '0')
+    return "$(y)-$(m)-$(d)T$(h)"
 end
 
 start_date_str(date::DateTime) = date_str(date)
@@ -180,34 +184,39 @@ function bbox_strs(::Nothing)
     return "_nothing", "_nothing"
 end
 
+bbox_strs(c::Number) = @sprintf("_%.1f", c), @sprintf("_%.1f", c)
+
 function bbox_strs(c)
     first = @sprintf("_%.1f", c[1])
     second = @sprintf("_%.1f", c[2])
     return first, second
 end
 
-function metadata_prefix(dataset::ERA5Dataset, name, date, bounding_box)
+function region_suffix(::Nothing)
+    return ""
+end
+
+function region_suffix(region)
+    w, e = bbox_strs(region.longitude)
+    s, n = bbox_strs(region.latitude)
+    return string(w, e, s, n)
+end
+
+function metadata_prefix(dataset::ERA5Dataset, name, date, region)
     var = ERA5_dataset_variable_names[name]
     ds = dataset_name(dataset)
     start_date = start_date_str(date)
     end_date = end_date_str(date)
 
-    if !isnothing(bounding_box)
-        w, e = bbox_strs(bounding_box.longitude)
-        s, n = bbox_strs(bounding_box.latitude)
-        suffix = string(w, e, s, n)
-    else
-        suffix = ""
-    end
-
+    suffix = region_suffix(region)
     prefix = string(var, "_", ds, "_", start_date, "_", end_date, suffix)
     prefix = colon2dash(prefix)
     prefix = underscore_spaces(prefix)
     return prefix
 end
 
-function metadata_filename(dataset::ERA5Dataset, name, date, bounding_box)
-    prefix = metadata_prefix(dataset, name, date, bounding_box)
+function metadata_filename(dataset::ERA5Dataset, name, date, region)
+    prefix = metadata_prefix(dataset, name, date, region)
     return string(prefix, ".nc")
 end
 
@@ -222,7 +231,8 @@ inpainted_metadata_path(metadata::ERA5Metadatum) = joinpath(metadata.dir, inpain
 ##### Grid interfaces
 #####
 
-location(::ERA5Metadata) = (Center, Center, Center)
+# ERA5 is a 2D surface dataset — vertical location is Nothing
+dataset_location(::ERA5Dataset, name) = (Center, Center, Nothing)
 
 # ERA5 global coverage: 0-360 longitude, -90 to 90 latitude at 0.25 degree resolution
 longitude_interfaces(::ERA5Metadata) = (0, 360)
