@@ -31,7 +31,16 @@ using Oceananigans.TurbulenceClosures:
     VerticallyImplicitTimeDiscretization,
     getclosure
 
-import Oceananigans.TurbulenceClosures: viscosity, diffusivity, compute_closure_fields!, build_closure_fields
+# `viscosity_location`, `diffusivity_location`, and `with_tracers` are
+# **not exported** from `Oceananigans.TurbulenceClosures` (verified for
+# v0.107.4). `using` therefore does not bring them into scope, so the
+# upstream NORi file's bare-name definitions silently create *local*
+# functions and never reach Oceananigans's dispatcher. We import them
+# explicitly so our methods extend the Oceananigans ones.
+import Oceananigans.TurbulenceClosures: viscosity, diffusivity,
+                                        compute_closure_fields!, build_closure_fields,
+                                        viscosity_location, diffusivity_location,
+                                        with_tracers
 using Oceananigans.Utils: KernelParameters, launch!, prettysummary, time_difference_seconds
 
 using Adapt
