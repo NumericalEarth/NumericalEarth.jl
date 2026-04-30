@@ -509,6 +509,9 @@ end
 build_era5_area(::Nothing) = nothing
 
 const BBOX = NumericalEarth.DataWrangling.BoundingBox
+const COL  = NumericalEarth.DataWrangling.Column
+const LIN  = NumericalEarth.DataWrangling.Linear
+const NR   = NumericalEarth.DataWrangling.Nearest
 
 function build_era5_area(bbox::BBOX)
     lon = bbox.longitude
@@ -524,6 +527,21 @@ function build_era5_area(bbox::BBOX)
     north = lat[2]
 
     return [north, west, south, east]
+end
+
+# Column with Nearest interpolation: tight box; CDS returns the nearest cell.
+function build_era5_area(col::COL{<:Any, <:Any, <:Any, <:NR})
+    lon, lat = col.longitude, col.latitude
+    ε = 1e-3
+    return [lat + ε, lon - ε, lat - ε, lon + ε]  # [N, W, S, E]
+end
+
+# Column with Linear interpolation: pad by slightly more than ERA5's native
+# 0.25° spacing so the file contains the 2x2 stencil bilinear interp needs.
+function build_era5_area(col::COL{<:Any, <:Any, <:Any, <:LIN})
+    lon, lat = col.longitude, col.latitude
+    ε = 0.3
+    return [lat + ε, lon - ε, lat - ε, lon + ε]
 end
 
 end # module NumericalEarthCDSAPIExt

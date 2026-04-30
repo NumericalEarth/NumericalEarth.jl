@@ -282,6 +282,16 @@ function column_field_from_file(metadata, arch; halo=(3, 3, 3), kw...)
     end
 
     _, _, Nz, _ = size(metadata)
+
+    # Validate that the cached file's vertical extent matches the dataset
+    # configuration. A common cause of mismatch is a stale cache from a previous
+    # run with a different vertical configuration (e.g. ERA5 `pressure_levels`).
+    if is_three_dimensional(metadata) && length(data_size) >= 3 && data_size[3] != Nz
+        error("Cached file $(path) has $(data_size[3]) vertical levels, but the " *
+              "dataset configuration expects $Nz. This is most likely a stale " *
+              "cache from a previous run with a different vertical configuration. " *
+              "Delete the file and re-run.")
+    end
     z = z_interfaces(metadata)
     FT = eltype(metadata)
 

@@ -98,8 +98,12 @@ ERA5PL_netcdf_variable_names = Dict(
 
 # Variables available for download
 available_variables(::ERA5PressureLevelsDataset) = ERA5PL_dataset_variable_names
-dataset_variable_name(md::ERA5PressureMetadata) = ERA5PL_dataset_variable_names[md.name]
-netcdf_variable_name(md::ERA5PressureMetadata)  = ERA5PL_netcdf_variable_names[md.name]
+
+# `dataset_variable_name` returns the short name as stored in the NetCDF file
+# (e.g. "u"). The CDS API catalog name (e.g. "u_component_of_wind") used in
+# download requests is accessed via the `ERA5PL_dataset_variable_names` dict
+# directly in `NumericalEarthCDSAPIExt`.
+dataset_variable_name(md::ERA5PressureMetadata) = ERA5PL_netcdf_variable_names[md.name]
 
 conversion_units(md::ERA5PressureMetadata) =
     md.name == :geopotential_height ? InverseGravity() : nothing
@@ -115,7 +119,7 @@ Returns a 3D array (lon, lat, level) with levels ordered bottom-to-top
 """
 function retrieve_data(metadata::ERA5PressureMetadatum)
     path = metadata_path(metadata)
-    name = netcdf_variable_name(metadata)
+    name = dataset_variable_name(metadata)
     ds   = NCDatasets.Dataset(path)
     data = ds[name][:, :, :, 1]   # (lon, lat, pressure_level, time=1)
     close(ds)
@@ -204,7 +208,7 @@ function z_interfaces(metadata::ERA5PressureMetadata)
             download_dataset(ϕ_metadata)
             return mean_geopotential_z_interfaces(metadata)
         catch e
-            @warn "Failed to download geopotential data; falling back to standard atmosphere" exception=e
+            @warn "Failed to derive geopotential heights; falling back to standard atmosphere" exception=(e, catch_backtrace())
         end
     end
 
@@ -230,10 +234,17 @@ function mean_geopotential_heights(metadata::ERA5PressureMetadata)
     ϕ_metadata = Metadata(:geopotential; dataset=metadata.dataset,
                           dates=metadata.dates, region=metadata.region,
                           dir=metadata.dir)
-    heights = zeros(length(metadata.dataset.pressure_levels))
+    Nz = length(metadata.dataset.pressure_levels)
+    heights = zeros(Nz)
     # average over time
     for ϕ_datum in ϕ_metadata
         data = retrieve_data(ϕ_datum) ./ Float32(ERA5_gravitational_acceleration)   # Φ → Z (m)
+        if size(data, 3) != Nz
+            error("Cached geopotential file at $(metadata_path(ϕ_datum)) has " *
+                  "$(size(data, 3)) pressure levels, but the dataset configuration " *
+                  "expects $Nz. This is most likely a stale cache from a previous " *
+                  "run with different `pressure_levels`. Delete the file and re-run.")
+        end
         # average over horizontal dims
         data_mean = mean(data; dims=(1, 2))
         heights .+= dropdims(data_mean; dims=(1, 2))

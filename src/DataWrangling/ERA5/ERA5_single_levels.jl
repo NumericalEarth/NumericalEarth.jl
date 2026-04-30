@@ -108,8 +108,12 @@ ERA5_netcdf_variable_names = Dict(
 
 # Variables available for download
 available_variables(::ERA5Dataset) = ERA5_dataset_variable_names
-dataset_variable_name(md::ERA5Metadata) = ERA5_dataset_variable_names[md.name]
-netcdf_variable_name(md::ERA5Metadata) = ERA5_netcdf_variable_names[md.name]
+
+# `dataset_variable_name` returns the short name as stored in the NetCDF file
+# (e.g. "t2m"). The CDS API catalog name (e.g. "2m_temperature") used in
+# download requests is accessed via the `ERA5_dataset_variable_names` dict
+# directly in `NumericalEarthCDSAPIExt`.
+dataset_variable_name(md::ERA5Metadata) = ERA5_netcdf_variable_names[md.name]
 
 default_inpainting(md::ERA5Metadata) = nothing
 
@@ -121,7 +125,7 @@ ERA5 is 2D surface data, so we return a 2D array with an added singleton z-dimen
 """
 function retrieve_data(metadata::ERA5Metadatum)
     path = metadata_path(metadata)
-    name = netcdf_variable_name(metadata)
+    name = dataset_variable_name(metadata)
 
     ds = NCDatasets.Dataset(path)
 
