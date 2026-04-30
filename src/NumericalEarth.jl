@@ -34,6 +34,7 @@ export
     OSPapaHourly,
     JRA55NetCDFBackend,
     regrid_bathymetry,
+    modify_bathymetry_depth!,
     Metadata,
     Metadatum,
     BoundingBox,
