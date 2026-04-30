@@ -27,7 +27,6 @@ selected_levels = filter(≥(250hPa), ERA5_all_pressure_levels) # select all lev
 dataset = ERA5HourlyPressureLevels(selected_levels)
 
 dates = DateTime(2004, 12, 16):Hour(1):DateTime(2005, 01, 09)  # van Zanten et al 2011 study period
-#dates = DateTime(2004, 12, 16):Hour(1):DateTime(2004, 12, 23)  # shorter time range for demo
 
 # Rauber et al 2007, Fig 1: focus region
 region = BoundingBox(latitude=(17, 18.5), longitude=(-62.5, -61))
@@ -55,19 +54,19 @@ v_series = FieldTimeSeries(v_meta; time_indices_in_memory=2)
 # ## Vertical profiles (mean ± spread)
 
 # Height coordinate (m) from the grid
-_, _, z = nodes(T_series[1])
+z = znodes(T_series[1])
 Nz = length(z)
 Nt = length(T_series.times)
 
-# Pressure at each level (hPa), ordered bottom-to-top (k=1 = highest pressure)
-p_levels = sort(selected_levels, rev=true) ./ hPa  # in hPa
+# Pressure at each level (hPa), ordered bottom-to-top (k=1 ⇒ highest pressure)
+p_levels = sort(selected_levels, rev=true) ./ hPa  # Pa → hPa
 
 # Horizontal-mean profile for each snapshot → (Nz, Nt) arrays
 function horizontal_mean_profiles(series)
     profiles = zeros(Nz, Nt)
     for n in 1:Nt
         data = interior(series[n], :, :, :)
-        profiles[:, n] = dropdims(mean(data, dims=(1, 2)), dims=(1, 2))
+        profiles[:, n] = mean(data, dims=(1, 2))
     end
     return profiles
 end

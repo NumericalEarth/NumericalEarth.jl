@@ -46,7 +46,6 @@ grid = LatitudeLongitudeGrid(size = (1440, 720, 1),
                              longitude = (0, 360),
                              latitude = (-90, 90),
                              z = (0, 1))
-@show grid
 
 u_stokes = CenterField(grid)
 v_stokes = CenterField(grid)

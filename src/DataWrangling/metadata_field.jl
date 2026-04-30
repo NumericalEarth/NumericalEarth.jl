@@ -411,10 +411,10 @@ function set_metadata_field!(field, data, metadatum)
     Nx, Ny, Nz = size(metadatum)
 
     mangling = if size(data, 2) == Ny-1
-        @info "Shifting field southward"
+        @debug "Shifting field southward"
         ShiftSouth()
     elseif size(data, 2) == Ny+1
-        @info "Averaging field in north-south dir"
+        @debug "Averaging field in north-south dir"
         AverageNorthSouth()
     else
         nothing
