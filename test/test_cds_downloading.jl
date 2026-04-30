@@ -173,10 +173,10 @@ start_date = DateTime(2005, 2, 16, 12)
 
     @testset "ERA5 single-level metadata_prefix" begin
         ds = ERA5HourlySingleLevel()
+        mp = NumericalEarth.DataWrangling.ERA5.metadata_prefix
 
-        # Single-date metadatum, with region: prefix should not duplicate the date
-        md_single = Metadatum(:temperature; dataset=ds, region, date=start_date)
-        prefix_single = NumericalEarth.DataWrangling.ERA5.metadata_prefix(md_single)
+        # Single-date with region: prefix should not duplicate the date
+        prefix_single = mp(ds, :temperature, start_date, region)
         @test occursin("2m_temperature", prefix_single)
         @test occursin("ERA5HourlySingleLevel", prefix_single)
         @test occursin("2005-02-16", prefix_single)
@@ -189,17 +189,14 @@ start_date = DateTime(2005, 2, 16, 12)
         @test !occursin(":", prefix_single)             # colons replaced by dashes
         @test !occursin(" ", prefix_single)             # spaces replaced by underscores
 
-        # Single-date metadatum, no region: suffix should be empty
-        md_no_region = Metadatum(:temperature; dataset=ds, date=start_date)
-        prefix_no_region = NumericalEarth.DataWrangling.ERA5.metadata_prefix(md_no_region)
+        # Single-date, no region: suffix should be empty
+        prefix_no_region = mp(ds, :temperature, start_date, nothing)
         @test !occursin("0.0", prefix_no_region)
         @test !occursin("nothing", prefix_no_region)
 
-        # Multi-date metadata: prefix should include both start and end dates
+        # Multi-date: prefix should include both start and end dates
         end_date = start_date + Hour(2)
-        md_multi = Metadata(:temperature; dataset=ds, region,
-                            dates=start_date:Hour(1):end_date)
-        prefix_multi = NumericalEarth.DataWrangling.ERA5.metadata_prefix(md_multi)
+        prefix_multi = mp(ds, :temperature, start_date:Hour(1):end_date, region)
         @test occursin("2005-02-16T12", prefix_multi)
         @test occursin("2005-02-16T14", prefix_multi)
     end
