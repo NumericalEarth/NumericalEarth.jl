@@ -17,7 +17,7 @@ using NumericalEarth.SeaIces: sea_ice_simulation
 
 # Diagnostic-side override: ClimaSeaIce's slab mass balance uses a
 # T-dependent latent heat. A single state-based
-# `Eᵢₛ = −ℵ · ρᵢ · ℒ · h · Az` cannot match both freeze at the ice-base
+# `Eᵢₛ = −ℵ * ρᵢ * ℒ * h * Az` cannot match both freeze at the ice-base
 # temperature and top-melt at 0 ᵒC under `ℒ(T)`. Overriding `latent_heat`
 # to the constant `pt.reference_latent_heat` isolates coupler-side
 # bookkeeping errors from this intrinsic mismatch. The override is local to
