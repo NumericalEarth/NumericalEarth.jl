@@ -160,15 +160,22 @@ function add_omip_diagnostics!(simulation;
 
     # Global means and horizontal-mean depth profiles for T, S, b.
     # `:zosga` (global-mean free-surface displacement) is a Boussinesq mass-conservation check.
+    # `:kega` and (when CATKE is in use) `:tkega` are written as scalars
+    ke_op = Oceananigans.AbstractOperations.@at((Center, Center, Center), (u * u + v * v) / 2)
     average_outputs = Dict{Symbol, Any}(
         :tosga => Average(T),
         :soga  => Average(S),
         :bga   => Average(bop),
         :zosga => Average(η),
+        :kega  => Average(ke_op),
         :to_h  => Average(T,   dims=(1, 2)),
         :so_h  => Average(S,   dims=(1, 2)),
         :bo_h  => Average(bop, dims=(1, 2)),
     )
+
+    if haskey(ocean.model.tracers, :e)
+        average_outputs[:tkega] = Average(ocean.model.tracers.e)
+    end
 
     simulation.output_writers[:averages] = JLD2Writer(ocean.model, average_outputs;
                                                       schedule = AveragedTimeInterval(field_mean_interval),
