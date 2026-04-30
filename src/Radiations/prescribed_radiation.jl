@@ -54,7 +54,7 @@ end
                         sea_ice_surface = SurfaceRadiationProperties(0.7, 1.0),
                         snow_surface = nothing,
                         land_surface = nothing,
-                        stefan_boltzmann_constant = 5.67e-8)
+                        stefan_boltzmann_constant = default_stefan_boltzmann_constant)
 
 Construct a `PrescribedRadiation` component from `FieldTimeSeries` of
 downwelling shortwave and longwave radiation. Grid + times are inferred from
@@ -69,7 +69,7 @@ function PrescribedRadiation(downwelling_shortwave::FieldTimeSeries,
                              sea_ice_surface = SurfaceRadiationProperties(0.7, 1.0),
                              snow_surface = nothing,
                              land_surface = nothing,
-                             stefan_boltzmann_constant = 5.67e-8)
+                             stefan_boltzmann_constant = default_stefan_boltzmann_constant)
 
     grid  = downwelling_shortwave.grid
     times = downwelling_shortwave.times

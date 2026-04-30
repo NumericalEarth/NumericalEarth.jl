@@ -21,7 +21,7 @@ using NumericalEarth.Radiations: PrescribedRadiation,
         @test rad.surface_properties.ocean.emissivity == 0.97
         @test rad.surface_properties.sea_ice.albedo == 0.7
         @test rad.surface_properties.sea_ice.emissivity == 1.0
-        @test rad.stefan_boltzmann_constant ≈ 5.67e-8
+        @test rad.stefan_boltzmann_constant ≈ 5.67e-8 atol=1e-10
         @test isnothing(rad.interface_fluxes)
 
         # Surfaces can be omitted

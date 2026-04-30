@@ -98,11 +98,12 @@ nothing #hide
 nothing #hide
 
 # We build the complete coupled `earth_model` and the coupled simulation.
-# SpeedyWeather drives the air-sea fluxes here, so we leave the top-level
-# `radiation` component as `nothing` (radiatively decoupled) to avoid
-# double-counting.
+# NumericalEarth still computes turbulent (sensible heat, water vapor) fluxes
+# here using its own bulk-formula machinery and writes them back to Speedy.
+# Top-level radiation, however, is not yet wired up against SpeedyWeather's
+# upwelling-LW path, so we leave `radiation = nothing` for now.
 
-earth_model = EarthSystemModel(atmosphere, ocean, sea_ice)
+earth_model = EarthSystemModel(nothing, atmosphere, nothing, sea_ice, ocean)
 
 # ## Building and running the simulation
 #

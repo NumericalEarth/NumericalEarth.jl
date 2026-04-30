@@ -4,7 +4,11 @@ export PrescribedRadiation,
        SurfaceRadiationProperties,
        InterfaceRadiationFlux,
        LatitudeDependentAlbedo,
-       TabulatedAlbedo
+       TabulatedAlbedo,
+       default_stefan_boltzmann_constant
+
+# CODATA 2018 value of the Stefan–Boltzmann constant, in W m⁻² K⁻⁴.
+const default_stefan_boltzmann_constant = 5.670374419e-8
 
 using Oceananigans
 using Oceananigans.Architectures: architecture

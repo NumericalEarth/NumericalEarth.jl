@@ -64,7 +64,7 @@ using ClimaSeaIce.Rheologies
             # Fluxes are computed when the model is constructed, so we just test that this works.
             # And that we can time step with sea ice
             @test begin
-                coupled_model = OceanSeaIceModel(ocean, sea_ice; atmosphere, radiation)
+                coupled_model = OceanSeaIceModel(sea_ice, ocean; atmosphere, radiation)
                 time_step!(coupled_model, 1)
                 true
             end

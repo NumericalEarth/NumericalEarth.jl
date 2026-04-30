@@ -61,7 +61,7 @@ sea_ice = sea_ice_simulation(grid, ocean)
 
 atmosphere = PrescribedAtmosphere(grid, [0.0])
 
-esm = OceanSeaIceModel(ocean, sea_ice; atmosphere, radiation = Radiation())
+esm = OceanSeaIceModel(sea_ice, ocean; atmosphere)
 
 mht = meridional_heat_transport(esm)
 

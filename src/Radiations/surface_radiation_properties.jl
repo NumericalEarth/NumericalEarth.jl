@@ -14,7 +14,7 @@ and longwave emissivity (`emissivity`).
 any other object for which `stateindex` is defined. `emissivity` may be a `Number`
 or any other `stateindex`-able object.
 """
-SurfaceRadiationProperties(; albedo, emissivity) = SurfaceRadiationProperties(albedo, emissivity)
+SurfaceRadiationProperties(; albedo, emissivity = 0.97) = SurfaceRadiationProperties(albedo, emissivity)
 
 Adapt.adapt_structure(to, s::SurfaceRadiationProperties) =
     SurfaceRadiationProperties(Adapt.adapt(to, s.albedo),

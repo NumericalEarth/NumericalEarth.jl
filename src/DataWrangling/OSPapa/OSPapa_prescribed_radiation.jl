@@ -1,14 +1,14 @@
-using NumericalEarth.Radiations: PrescribedRadiation, SurfaceRadiationProperties
+using NumericalEarth.Radiations: PrescribedRadiation, SurfaceRadiationProperties, default_stefan_boltzmann_constant
 
 """
     OSPapaPrescribedRadiation(architecture = CPU(), FT = Float32;
-                               start_date = first_date(OSPapaHourly(), :shortwave_radiation),
-                               end_date   = last_date(OSPapaHourly(), :shortwave_radiation),
-                               dir = download_OSPapa_cache,
-                               max_gap_hours = 72,
-                               ocean_surface = SurfaceRadiationProperties(0.05, 0.97),
-                               sea_ice_surface = nothing,
-                               stefan_boltzmann_constant = 5.67e-8)
+                              start_date = first_date(OSPapaHourly(), :shortwave_radiation),
+                              end_date   = last_date(OSPapaHourly(), :shortwave_radiation),
+                              dir = download_OSPapa_cache,
+                              max_gap_hours = 72,
+                              ocean_surface = SurfaceRadiationProperties(0.05, 0.97),
+                              sea_ice_surface = nothing,
+                              stefan_boltzmann_constant = default_stefan_boltzmann_constant)
 
 Construct a `PrescribedRadiation` from Ocean Station Papa buoy SW/LW
 observations on a single-column grid.
@@ -20,7 +20,7 @@ function OSPapaPrescribedRadiation(architecture = CPU(), FT = Float32;
                                    max_gap_hours = 72,
                                    ocean_surface = SurfaceRadiationProperties(0.05, 0.97),
                                    sea_ice_surface = nothing,
-                                   stefan_boltzmann_constant = 5.67e-8)
+                                   stefan_boltzmann_constant = default_stefan_boltzmann_constant)
 
     mdkw = (; dataset = OSPapaHourly(), start_date, end_date, dir)
     surface_grid = RectilinearGrid(architecture, FT; size=(), topology=(Flat, Flat, Flat))

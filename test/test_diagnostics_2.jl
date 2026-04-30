@@ -23,7 +23,7 @@ for arch in test_architectures
 
         sea_ice = sea_ice_simulation(grid, ocean)
         atmosphere = PrescribedAtmosphere(grid, [0.0])
-        esm = OceanSeaIceModel(ocean, sea_ice; atmosphere)
+        esm = OceanSeaIceModel(sea_ice, ocean; atmosphere)
 
         T_flux = ocean.model.tracers.T.boundary_conditions.top.condition
         S_flux = ocean.model.tracers.S.boundary_conditions.top.condition

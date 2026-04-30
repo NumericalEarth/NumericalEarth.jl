@@ -20,7 +20,7 @@ using Oceananigans.OutputReaders: Cyclical, TotallyInMemory, AbstractInMemoryBac
 using NumericalEarth
 
 using NumericalEarth.Atmospheres: PrescribedAtmosphere
-using NumericalEarth.Radiations: PrescribedRadiation, SurfaceRadiationProperties
+using NumericalEarth.Radiations: PrescribedRadiation, SurfaceRadiationProperties, default_stefan_boltzmann_constant
 
 using GPUArraysCore: @allowscalar
 

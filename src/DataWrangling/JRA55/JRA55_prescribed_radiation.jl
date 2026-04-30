@@ -3,15 +3,15 @@ JRA55PrescribedRadiation(arch::Distributed, FT = Float32; kw...) =
 
 """
     JRA55PrescribedRadiation([architecture = CPU(), FT = Float32];
-                              dataset = RepeatYearJRA55(),
-                              start_date = first_date(dataset, :downwelling_shortwave_radiation),
-                              end_date = last_date(dataset, :downwelling_shortwave_radiation),
-                              backend = JRA55NetCDFBackend(10),
-                              time_indexing = Cyclical(),
-                              ocean_surface = SurfaceRadiationProperties(0.05, 0.97),
-                              sea_ice_surface = SurfaceRadiationProperties(0.7, 1.0),
-                              stefan_boltzmann_constant = 5.67e-8,
-                              other_kw...)
+                             dataset = RepeatYearJRA55(),
+                             start_date = first_date(dataset, :downwelling_shortwave_radiation),
+                             end_date = last_date(dataset, :downwelling_shortwave_radiation),
+                             backend = JRA55NetCDFBackend(10),
+                             time_indexing = Cyclical(),
+                             ocean_surface = SurfaceRadiationProperties(0.05, 0.97),
+                             sea_ice_surface = SurfaceRadiationProperties(0.7, 1.0),
+                             stefan_boltzmann_constant = default_stefan_boltzmann_constant,
+                             other_kw...)
 
 Return a [`PrescribedRadiation`](@ref) backed by JRA55 downwelling shortwave
 and longwave `JRA55FieldTimeSeries`. Surface radiative properties (albedo,
@@ -26,7 +26,7 @@ function JRA55PrescribedRadiation(architecture = CPU(), FT = Float32;
                                   time_indexing = Cyclical(),
                                   ocean_surface = SurfaceRadiationProperties(0.05, 0.97),
                                   sea_ice_surface = SurfaceRadiationProperties(0.7, 1.0),
-                                  stefan_boltzmann_constant = 5.67e-8,
+                                  stefan_boltzmann_constant = default_stefan_boltzmann_constant,
                                   other_kw...)
 
     kw = (; time_indexing, backend, start_date, end_date, dataset)

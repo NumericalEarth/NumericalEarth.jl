@@ -73,7 +73,7 @@ radiation = JRA55PrescribedRadiation(; backend = JRA55NetCDFBackend(10))
 
 # The coupled ocean--atmosphere model. We do not couple an ice model for simplicity.
 
-coupled_model = OceanSeaIceModel(ocean, nothing; atmosphere=atmos, radiation)
+coupled_model = OceanSeaIceModel(nothing, ocean; atmosphere=atmos, radiation)
 simulation = Simulation(coupled_model; Δt = 1800, stop_time = 60days)
 
 # We set up a progress callback that will print the current time, iteration, and maximum velocities

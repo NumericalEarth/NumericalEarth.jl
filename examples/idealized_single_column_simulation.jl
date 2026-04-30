@@ -24,8 +24,9 @@ atmosphere = PrescribedAtmosphere(atmosphere_grid, atmosphere_times)
 
 # Build the radiation component (lives on the same grid + times as the atmosphere
 # in this single-column setup) and prescribe a constant shortwave forcing.
+# Override the default ocean albedo (0.05) but keep the default emissivity (0.97).
 radiation = PrescribedRadiation(atmosphere_grid, atmosphere_times;
-                                ocean_surface = SurfaceRadiationProperties(0.1, 0.97))
+                                ocean_surface = SurfaceRadiationProperties(albedo=0.1))
 
 parent(atmosphere.tracers.T) .= Tᵃᵗ     # K
 parent(atmosphere.velocities.u) .= u₁₀ # m/s

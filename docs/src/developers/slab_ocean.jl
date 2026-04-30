@@ -140,7 +140,7 @@ set!(sea_ice.model, h=Metadatum(:sea_ice_thickness,     dataset=ECCO4Monthly()),
                     ℵ=Metadatum(:sea_ice_concentration, dataset=ECCO4Monthly()))
 
 interfaces = ComponentInterfaces(atmosphere, slab_ocean, sea_ice; exchange_grid=grid)
-coupled_model = NumericalEarth.EarthSystemModel(atmosphere, slab_ocean, sea_ice; interfaces)
+coupled_model = NumericalEarth.EarthSystemModel(nothing, atmosphere, nothing, sea_ice, slab_ocean; interfaces)
 
 simulation = Simulation(coupled_model, Δt=60minutes, stop_time=120days)
 run!(simulation)

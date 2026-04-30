@@ -89,9 +89,7 @@ allocate_interface_fluxes!(::Any, exchange_grid, surfaces) = nothing
 allocate_interface_fluxes!(::Nothing, exchange_grid, surfaces) = nothing
 
 """
-    EarthSystemModel(atmosphere, ocean, sea_ice;
-                     radiation = nothing,
-                     land = nothing,
+    EarthSystemModel(radiation, atmosphere, land, sea_ice, ocean;
                      clock = Clock{Float64}(time=0),
                      ocean_reference_density = reference_density(ocean),
                      ocean_heat_capacity = heat_capacity(ocean),
@@ -99,29 +97,32 @@ allocate_interface_fluxes!(::Nothing, exchange_grid, surfaces) = nothing
                      sea_ice_heat_capacity = heat_capacity(sea_ice),
                      interfaces = nothing)
 
-Construct a coupled earth system model with an atmosphere, ocean, and sea ice component.
-For simpler configurations, see [`OceanOnlyModel`](@ref) and [`OceanSeaIceModel`](@ref).
+Construct a coupled earth system model. Components are passed in struct order
+(top to bottom): radiation, atmosphere, land, sea_ice, ocean. Pass `nothing`
+for components that are absent. For simpler configurations, see
+[`OceanOnlyModel`](@ref), [`OceanSeaIceModel`](@ref), and
+[`AtmosphereOceanModel`](@ref).
 
 Arguments
 ==========
 
-- `atmosphere`: A representation of a possibly time-dependent atmospheric state.
+- `radiation`: Radiation component, or `nothing` for a radiatively decoupled surface.
+               Pass a `PrescribedRadiation` (e.g. `JRA55PrescribedRadiation(...)`) to
+               enable radiative forcing.
+- `atmosphere`: A representation of a possibly time-dependent atmospheric state, or `nothing`.
                 For a prognostic atmosphere, use `atmosphere_simulation`. For prescribed
                 atmospheric forcing, use `JRA55PrescribedAtmosphere` or `PrescribedAtmosphere`.
-- `ocean`: A representation of a possibly time-dependent ocean state. Currently, only `Oceananigans.Simulation`s
-           of `Oceananigans.HydrostaticFreeSurfaceModel` are tested.
-- `sea_ice`: A representation of a possibly time-dependent sea ice state.
+- `land`: Land component, or `nothing`.
+- `sea_ice`: A representation of a possibly time-dependent sea ice state, or `nothing`.
              For example, the minimalist `FreezingLimitedOceanTemperature` represents
              oceanic latent heating during freezing only, but does not evolve sea ice variables.
              For prognostic sea ice use an `Oceananigans.Simulation` of `ClimaSeaIce.SeaIceModel`.
+- `ocean`: A representation of a possibly time-dependent ocean state. Currently, only `Oceananigans.Simulation`s
+           of `Oceananigans.HydrostaticFreeSurfaceModel` are tested.
 
 Keyword Arguments
 ==================
 
-- `radiation`: Radiation component. Defaults to `nothing` (radiatively decoupled surface).
-  Pass a `PrescribedRadiation` (e.g. `JRA55PrescribedRadiation(...)`) to enable radiative
-  forcing.
-- `land`: Land component. Defaults to `nothing`.
 - `clock`: Keeps track of time.
 - `ocean_reference_density`: Reference density for the ocean. Defaults to value from ocean model.
 - `ocean_heat_capacity`: Heat capacity for the ocean. Defaults to value from ocean model.
@@ -130,9 +131,7 @@ Keyword Arguments
 - `interfaces`: Component interfaces for coupling. Defaults to `nothing` and will be constructed automatically.
   To customize the sea ice-ocean heat flux formulation, create interfaces manually using `ComponentInterfaces`.
 """
-function EarthSystemModel(atmosphere, ocean, sea_ice;
-                          radiation = nothing,
-                          land = nothing,
+function EarthSystemModel(radiation, atmosphere, land, sea_ice, ocean;
                           clock = Clock{Float64}(time=0),
                           ocean_reference_density = reference_density(ocean),
                           ocean_heat_capacity = heat_capacity(ocean),
@@ -203,7 +202,7 @@ function present_surfaces(ocean, sea_ice)
 end
 
 """
-    OceanOnlyModel(ocean; atmosphere=nothing, radiation=nothing, kw...)
+    OceanOnlyModel(ocean; atmosphere=nothing, radiation=nothing, land=nothing, kw...)
 
 Construct an ocean-only model without a sea ice component.
 This is a convenience constructor for [`EarthSystemModel`](@ref) that sets `sea_ice`
@@ -214,17 +213,18 @@ The `atmosphere` keyword can be used to specify a prescribed atmospheric forcing
 to `EarthSystemModel`.
 """
 OceanOnlyModel(ocean; atmosphere=nothing, land=nothing, radiation=nothing, kw...) =
-    EarthSystemModel(atmosphere, ocean, default_sea_ice(); radiation, land, kw...)
+    EarthSystemModel(radiation, atmosphere, land, default_sea_ice(), ocean; kw...)
 
 """
-    OceanSeaIceModel(ocean, sea_ice; atmosphere=nothing, radiation=nothing, kw...)
+    OceanSeaIceModel(sea_ice, ocean; atmosphere=nothing, radiation=nothing, land=nothing, kw...)
 
 Construct a coupled ocean--sea ice model.
 This is a convenience constructor for [`EarthSystemModel`](@ref) with an explicit sea ice component
-and an optional prescribed atmosphere.
+and an optional prescribed atmosphere. Positional arguments follow the
+struct convention (top→bottom): `sea_ice` then `ocean`.
 """
-OceanSeaIceModel(ocean, sea_ice; atmosphere=nothing, land=nothing, radiation=nothing, kw...) =
-    EarthSystemModel(atmosphere, ocean, sea_ice; radiation, land, kw...)
+OceanSeaIceModel(sea_ice, ocean; atmosphere=nothing, land=nothing, radiation=nothing, kw...) =
+    EarthSystemModel(radiation, atmosphere, land, sea_ice, ocean; kw...)
 
 """
     AtmosphereOceanModel(atmosphere, ocean; kw...)
@@ -234,7 +234,7 @@ Convenience constructor for [`EarthSystemModel`](@ref) with an atmosphere and oc
 but no sea ice. All keyword arguments are forwarded to `EarthSystemModel`.
 """
 AtmosphereOceanModel(atmosphere, ocean; land=nothing, radiation=nothing, kw...) =
-    EarthSystemModel(atmosphere, ocean, nothing; radiation, land, kw...)
+    EarthSystemModel(radiation, atmosphere, land, nothing, ocean; kw...)
 
 time(coupled_model::EarthSystemModel) = coupled_model.clock.time
 
