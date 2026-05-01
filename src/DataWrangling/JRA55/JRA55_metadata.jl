@@ -201,5 +201,5 @@ function download_dataset(metadata::JRA55Metadata)
         end
     end
 
-    return nothing
+    return metadata_path(metadata)
 end
