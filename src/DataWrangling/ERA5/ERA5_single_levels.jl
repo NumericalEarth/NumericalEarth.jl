@@ -10,22 +10,6 @@ const ERA5_wave_variables = Set([
     :significant_wave_height, :mean_wave_period, :mean_wave_direction,
 ])
 
-# Mean rate / accumulated variables (CDS "step type" = accum).
-# All other single-level variables are instantaneous.
-# See ECMWF ERA5 documentation, Tables 3 and 4:
-# https://confluence.ecmwf.int/display/CKB/ERA5%3A+data+documentation#ERA5:datadocumentation-Meanrates/fluxesandaccumulations
-const ERA5_single_level_accumulated_variables = Set([
-    :total_precipitation,
-    :mean_surface_sensible_heat_flux,
-    :mean_surface_latent_heat_flux,
-    :mean_surface_momentum_flux_x,
-    :mean_surface_momentum_flux_y,
-    :downwelling_shortwave_radiation,
-    :downwelling_longwave_radiation,
-    :evaporation,
-    :mean_evaporation_rate,
-])
-
 #####
 ##### ERA5 single-level data availability
 #####
@@ -152,31 +136,3 @@ function retrieve_data(metadata::ERA5Metadatum)
     return reshape(data_2d, size(data_2d, 1), size(data_2d, 2), 1)
 end
 
-#####
-##### Metadata filename construction
-#####
-
-function metadata_prefix(md::ERA5Metadata)
-    var = ERA5_dataset_variable_names[md.name]
-    dataset = dataset_name(md.dataset)
-    start_date = start_date_str(md.dates)
-    end_date = end_date_str(md.dates)
-    bbox = md.region
-
-    if !isnothing(bbox)
-        w, e = bbox_strs(bbox.longitude)
-        s, n = bbox_strs(bbox.latitude)
-        suffix = string(w, e, s, n)
-    else
-        suffix = ""
-    end
-
-    if start_date == end_date
-        prefix = string(var, "_", dataset, "_", start_date, suffix)
-    else
-        prefix = string(var, "_", dataset, "_", start_date, "_", end_date, suffix)
-    end
-    prefix = colon2dash(prefix)
-    prefix = underscore_spaces(prefix)
-    return prefix
-end

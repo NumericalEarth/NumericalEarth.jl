@@ -139,12 +139,15 @@ function download_dataset(metadata::ERA5Metadata; skip_existing=true, cleanup=tr
     dates = metadata.dates isa AbstractVector ? metadata.dates : [metadata.dates]
     grouped = _group_by_calendar_day(dates)
 
+    paths = String[]
     for day in sort(collect(keys(grouped)))
-        download_era5_day(metadata.name, metadata.dataset, grouped[day];
-                           region = metadata.region,
-                           dir = metadata.dir,
-                           skip_existing, cleanup)
+        append!(paths, download_era5_day(metadata.name, metadata.dataset, grouped[day];
+                                         region = metadata.region,
+                                         dir = metadata.dir,
+                                         skip_existing, cleanup))
     end
+
+    return paths
 end
 
 """
@@ -160,16 +163,15 @@ function _group_by_calendar_day(datetimes)
 end
 
 function download_era5_day(name, dataset, day_dates;
-                            region, dir, skip_existing, cleanup)
+                           region, dir, skip_existing, cleanup)
 
-    MDatum    = NumericalEarth.DataWrangling.Metadatum
-    meta_path = NumericalEarth.DataWrangling.metadata_path
+    meta_filename = NumericalEarth.DataWrangling.metadata_filename
 
-    all_pairs = [(dt, meta_path(MDatum(name; dataset, date=dt, region, dir)))
+    all_pairs = [(dt, joinpath(dir, meta_filename(dataset, name, dt, region)))
                  for dt in day_dates]
 
     pending = skip_existing ? filter(((_, p),) -> !isfile(p), all_pairs) : all_pairs
-    isempty(pending) && return nothing
+    isempty(pending) && return [p for (_, p) in all_pairs]
 
     sorted_dts = sort(unique([dt for (dt, _) in pending]))
     hours_str  = [lpad(string(Dates.hour(dt)), 2, '0') * ":00" for dt in sorted_dts]
@@ -210,7 +212,7 @@ function download_era5_day(name, dataset, day_dates;
         cleanup && rm(tmp_path; force=true)
     end
 
-    return nothing
+    return [p for (_, p) in all_pairs]
 end
 
 #####
@@ -223,10 +225,11 @@ end
 Download multiple ERA5 pressure-level variables for each date in `metadata`.
 """
 function download_dataset(names::Vector{Symbol}, metadata::ERA5PressureMetadata; kwargs...)
+    paths = String[]
     for metadatum in metadata
-        download_dataset(names, metadatum; kwargs...)
+        append!(paths, download_dataset(names, metadatum; kwargs...))
     end
-    return nothing
+    return paths
 end
 
 """
@@ -327,11 +330,13 @@ function download_dataset(names::Vector{Symbol},
 
     grouped = _group_by_calendar_day(datetimes)
 
+    paths = String[]
     for day in sort(collect(keys(grouped)))
-        download_era5_multivar_day(names, dataset, grouped[day]; region, dir, skip_existing, cleanup)
+        append!(paths, download_era5_multivar_day(names, dataset, grouped[day];
+                                                  region, dir, skip_existing, cleanup))
     end
 
-    return nothing
+    return paths
 end
 
 function download_dataset(name::Symbol,
@@ -345,16 +350,15 @@ function download_dataset(name::Symbol,
 end
 
 function download_era5_multivar_day(names, dataset, day_dates;
-                                     region, dir, skip_existing, cleanup)
+                                    region, dir, skip_existing, cleanup)
 
-    MDatum    = NumericalEarth.DataWrangling.Metadatum
-    meta_path = NumericalEarth.DataWrangling.metadata_path
+    meta_filename = NumericalEarth.DataWrangling.metadata_filename
 
-    all_triples = [(name, dt, meta_path(MDatum(name; dataset, date=dt, region, dir)))
+    all_triples = [(name, dt, joinpath(dir, meta_filename(dataset, name, dt, region)))
                    for name in names for dt in day_dates]
 
     pending = skip_existing ? filter(((_, _, p),) -> !isfile(p), all_triples) : all_triples
-    isempty(pending) && return nothing
+    isempty(pending) && return [p for (_, _, p) in all_triples]
 
     cds_vars   = unique([cds_varnames(dataset)[name] for (name, _, _) in pending])
     sorted_dts = sort(unique([dt for (_, dt, _) in pending]))
@@ -396,7 +400,7 @@ function download_era5_multivar_day(names, dataset, day_dates;
         cleanup && rm(tmp_path; force=true)
     end
 
-    return nothing
+    return [p for (_, _, p) in all_triples]
 end
 
 #####

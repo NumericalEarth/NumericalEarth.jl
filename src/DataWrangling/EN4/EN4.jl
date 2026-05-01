@@ -229,7 +229,7 @@ function download_dataset(metadata::Metadata{<:EN4Monthly})
         end
     end
 
-    return nothing
+    return metadata_path(metadata)
 end
 
 end # Module
