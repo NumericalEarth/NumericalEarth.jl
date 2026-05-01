@@ -198,8 +198,7 @@ function DatasetRestoring(metadata::Metadata,
                           time_indexing = Cyclical(),
                           inpainting = NearestNeighborInpainting(Inf),
                           cache_inpainted_data = true,
-						  variable_name = metadata.name,
-						  field_name = oceananigans_fieldnames[variable_name])
+						  field_name = oceananigans_fieldnames[metadata.name])
 
     download_dataset(metadata)
 
