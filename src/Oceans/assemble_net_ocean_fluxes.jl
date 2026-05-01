@@ -6,13 +6,11 @@ using NumericalEarth.EarthSystemModels: EarthSystemModel, NoOceanInterfaceModel,
 
 using NumericalEarth.EarthSystemModels.InterfaceComputations: interface_kernel_parameters,
                                                               computed_fluxes,
-                                                              get_possibly_zero_flux,
                                                               sea_ice_concentration,
                                                               convert_to_kelvin,
                                                               emitted_longwave_radiation,
                                                               absorbed_longwave_radiation,
                                                               transmitted_shortwave_radiation
-
 
 @inline τᶜᶜᶜ(i, j, k, grid, ρᵒᶜ⁻¹, ℵ, ρτᶜᶜᶜ) = @inbounds ρᵒᶜ⁻¹ * (1 - ℵ[i, j, k]) * ρτᶜᶜᶜ[i, j, k]
 
@@ -46,6 +44,10 @@ function update_net_ocean_fluxes!(coupled_model, ocean_model, grid)
     freshwater_flux = atmosphere_fields.Jᶜ.data
     snowfall_flux   = atmosphere_fields.Jˢⁿ.data
 
+    # Extract land freshwater flux if land component is present
+    land_exchanger = coupled_model.interfaces.exchanger.land
+    land_freshwater_flux = isnothing(land_exchanger) ? nothing : land_exchanger.state.freshwater_flux.data
+
     ice_concentration = sea_ice_concentration(sea_ice)
     ocean_surface_salinity = EarthSystemModels.ocean_surface_salinity(ocean_model)
     atmos_ocean_properties = coupled_model.interfaces.atmosphere_ocean_interface.properties
@@ -68,11 +70,15 @@ function update_net_ocean_fluxes!(coupled_model, ocean_model, grid)
             downwelling_radiation,
             freshwater_flux,
             snowfall_flux,
+            land_freshwater_flux,
             atmos_ocean_properties,
             ocean_properties)
 
     return nothing
 end
+
+@inline get_land_freshwater_flux(i, j, ::Nothing) = 0
+Base.@propagate_inbounds get_land_freshwater_flux(i, j, flux) = flux[i, j, 1]
 
 @kernel function _assemble_net_ocean_fluxes!(net_ocean_fluxes,
                                              penetrating_radiation,
@@ -86,16 +92,17 @@ end
                                              downwelling_radiation,
                                              freshwater_flux,
                                              snowfall_flux,
+                                             land_freshwater_flux,
                                              atmos_ocean_properties,
                                              ocean_properties)
 
     i, j = @index(Global, NTuple)
     kᴺ = size(grid, 3)
     time = Time(clock.time)
-    ρτˣᵃᵒ = get_possibly_zero_flux(atmos_ocean_fluxes,   :x_momentum) # atmosphere - ocean zonal momentum flux
-    ρτʸᵃᵒ = get_possibly_zero_flux(atmos_ocean_fluxes,   :y_momentum) # atmosphere - ocean meridional momentum flux
-    ρτˣⁱᵒ = get_possibly_zero_flux(sea_ice_ocean_fluxes, :x_momentum) # sea_ice - ocean zonal momentum flux
-    ρτʸⁱᵒ = get_possibly_zero_flux(sea_ice_ocean_fluxes, :y_momentum) # sea_ice - ocean meridional momentum flux
+    ρτˣᵃᵒ = atmos_ocean_fluxes.x_momentum   # atmosphere - ocean zonal momentum flux
+    ρτʸᵃᵒ = atmos_ocean_fluxes.y_momentum   # atmosphere - ocean meridional momentum flux
+    ρτˣⁱᵒ = sea_ice_ocean_fluxes.x_momentum # sea_ice - ocean zonal momentum flux
+    ρτʸⁱᵒ = sea_ice_ocean_fluxes.y_momentum # sea_ice - ocean meridional momentum flux
 
     @inbounds begin
         ℵᵢ = sea_ice_concentration[i, j, 1]
@@ -103,13 +110,13 @@ end
         Tₛ = ocean_surface_temperature[i, j, 1]
         Tₛ = convert_to_kelvin(ocean_properties.temperature_units, Tₛ)
 
-        Jᶜ   = freshwater_flux[i, j, 1] # Total precipitation (rain + snow, positive down)
         Jˢⁿ  = snowfall_flux[i, j, 1]   # Snow only (positive down)
+        Jᶜ   = freshwater_flux[i, j, 1] + get_land_freshwater_flux(i, j, land_freshwater_flux) # Prescribed freshwater flux (atmos + land)
         ℐꜜˢʷ = downwelling_radiation.ℐꜜˢʷ[i, j, 1] # Downwelling shortwave radiation
         ℐꜜˡʷ = downwelling_radiation.ℐꜜˡʷ[i, j, 1] # Downwelling longwave radiation
-        𝒬ᵀ   = get_possibly_zero_flux(atmos_ocean_fluxes, :sensible_heat)[i, j, 1] # sensible or "conductive" heat flux
-        𝒬ᵛ   = get_possibly_zero_flux(atmos_ocean_fluxes, :latent_heat)[i, j, 1] # latent heat flux
-        Jᵛ   = get_possibly_zero_flux(atmos_ocean_fluxes, :water_vapor)[i, j, 1] # mass flux of water vapor
+        𝒬ᵀ   = atmos_ocean_fluxes.sensible_heat[i, j, 1] # sensible or "conductive" heat flux
+        𝒬ᵛ   = atmos_ocean_fluxes.latent_heat[i, j, 1] # latent heat flux
+        Jᵛ   = atmos_ocean_fluxes.water_vapor[i, j, 1] # mass flux of water vapor
     end
 
     # Compute radiation fluxes (radiation is multiplied by the fraction of ocean, 1 - sea ice concentration)
@@ -156,8 +163,8 @@ end
     inactive = inactive_node(i, j, kᴺ, grid, Center(), Center(), Center())
 
     @inbounds begin
-        𝒬ⁱⁿᵗ = get_possibly_zero_flux(sea_ice_ocean_fluxes, :interface_heat)[i, j, 1]
-        Jˢio = get_possibly_zero_flux(sea_ice_ocean_fluxes, :salt)[i, j, 1]
+        𝒬ⁱⁿᵗ = sea_ice_ocean_fluxes.interface_heat[i, j, 1]
+        Jˢio = sea_ice_ocean_fluxes.salt[i, j, 1]
         Jᵀao = ΣQao * ρᵒᶜ⁻¹ * cᵒᶜ⁻¹
         Jᵀio = 𝒬ⁱⁿᵗ * ρᵒᶜ⁻¹ * cᵒᶜ⁻¹
 

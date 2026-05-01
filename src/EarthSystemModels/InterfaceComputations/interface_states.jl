@@ -268,11 +268,15 @@ end
 end
 
 # Solve the surface flux balance equation:
-#   Qa + Ωc (Tᵃᵗ - Tₛ) + (Tₛ - Tᵦ) / R = 0
+#   Qa(Tₛ) + Ωc (Tᵃᵗ - Tₛ) + (Tₛ - Tᵦ) / R = 0
 # where R is the total thermal resistance (h/k for bare ice, hₛ/kₛ + hᵢ/kᵢ with snow),
-# Ωc is the linearized sensible heat coefficient, and Qa is the non-sensible atmospheric flux.
-# Solution: Tₛ = (Tᵦ - (Qa + Ωc Tᵃᵗ) R) / (1 - Ωc R)
-@inline function conductive_flux_balance_temperature(st, R, hᵢ, Ψₛ, 𝒬ᵀ, 𝒬ᵛ, ℐꜛˡʷ, Qd, Ψᵢ, ℙᵢ, Ψₐ, ℙₐ)
+# Ωc = 𝒬ᵀ/(Tᵃᵗ-Tₛ) is the linearized sensible heat coefficient, and Qa = 𝒬ᵛ + ℐꜛˡʷ + Qd.
+# The upward longwave ℐꜛˡʷ = σ ε Tₛ⁴ is strongly nonlinear in Tₛ; a pure Picard
+# iteration (treating Qa constant) is unstable when 4σεTₛ³ ≳ 1/R (radiation
+# dominated). We linearize: Qa(Tₛ) ≈ Qa(Tₛ⁻) + β (Tₛ − Tₛ⁻) with β = 4σεTₛ⁻³,
+# yielding the Newton-like semi-implicit update:
+#   Tₛ = [Tᵦ + β R Tₛ⁻ - Ωc R Tᵃᵗ - Qa R] / [1 + β R - Ωc R]
+@inline function conductive_flux_balance_temperature(st, R, hᵢ, Ψₛ, ℙₛ, 𝒬ᵀ, 𝒬ᵛ, ℐꜛˡʷ, Qd, Ψᵢ, ℙᵢ, Ψₐ, ℙₐ)
     hc = Ψᵢ.hc
 
     # Bottom temperature at the melting point
@@ -280,18 +284,21 @@ end
     Tᵦ = convert_to_kelvin(ℙᵢ.temperature_units, Tᵦ)
     Tₛ⁻ = Ψₛ.T
 
-    # Linearized sensible heat transfer coefficient: Ωc = 𝒬ᵀ / (Tᵃᵗ - Tₛ)
-    # Rewrite to avoid Inf when ΔT → 0:
-    #   T★ = (Tᵦ - (Qa + Ωc Tᵃᵗ) R) / (1 - Ωc R)
-    # Multiply numerator and denominator by ΔT:
-    #   T★ = (Tᵦ ΔT - (Qa ΔT + 𝒬ᵀ Tᵃᵗ) R) / (ΔT - 𝒬ᵀ R)
     Tᵃᵗ = surface_atmosphere_temperature(Ψₐ, ℙₐ)
     ΔT = Tᵃᵗ - Tₛ⁻
     Qa = 𝒬ᵛ + ℐꜛˡʷ + Qd
 
-    # Flux balance solution (multiplied through by ΔT to avoid Inf)
-    D  = ΔT - 𝒬ᵀ * R
-    T★ = (Tᵦ * ΔT - (Qa * ΔT + 𝒬ᵀ * Tᵃᵗ) * R) / D
+    # Sensible transfer coefficient Ωc = 𝒬ᵀ/ΔT, safely handling ΔT → 0.
+    Ωc = ifelse(ΔT == zero(ΔT), zero(Tₛ⁻), 𝒬ᵀ / ΔT)
+
+    # Newton linearization of upwelling longwave: ℐꜛˡʷ(Tₛ) ≈ ℐꜛˡʷ(Tₛ⁻) + β (Tₛ − Tₛ⁻).
+    σ = ℙₛ.radiation.σ
+    ϵ = ℙₛ.radiation.ϵ
+    β = 4 * σ * ϵ * Tₛ⁻^3
+
+    # Flux balance solution with T⁴ linearization (stable even at ΔT = 0):
+    D  = 1 + β * R - Ωc * R
+    T★ = (Tᵦ + β * R * Tₛ⁻ - Ωc * R * Tᵃᵗ - Qa * R) / D
     T★ = ifelse(D == 0, Tₛ⁻, T★)
 
     # Cap the temperature step for iteration stability
@@ -316,7 +323,7 @@ end
     k  = st.internal_flux.conductivity
     hᵢ = Ψᵢ.hi
     R  = hᵢ / k
-    return conductive_flux_balance_temperature(st, R, hᵢ, Ψₛ, 𝒬ᵀ, 𝒬ᵛ, ℐꜛˡʷ, Qd, Ψᵢ, ℙᵢ, Ψₐ, ℙₐ)
+    return conductive_flux_balance_temperature(st, R, hᵢ, Ψₛ, ℙₛ, 𝒬ᵀ, 𝒬ᵛ, ℐꜛˡʷ, Qd, Ψᵢ, ℙᵢ, Ψₐ, ℙₐ)
 end
 
 # Snow + ice: R = hₛ / kₛ + hᵢ / kᵢ
@@ -326,7 +333,7 @@ end
     hᵢ = Ψᵢ.hi
     hₛ = Ψᵢ.hs
     R  = hₛ / F.snow_conductivity + hᵢ / F.ice_conductivity
-    return conductive_flux_balance_temperature(st, R, hᵢ, Ψₛ, 𝒬ᵀ, 𝒬ᵛ, ℐꜛˡʷ, Qd, Ψᵢ, ℙᵢ, Ψₐ, ℙₐ)
+    return conductive_flux_balance_temperature(st, R, hᵢ, Ψₛ, ℙₛ, 𝒬ᵀ, 𝒬ᵛ, ℐꜛˡʷ, Qd, Ψᵢ, ℙᵢ, Ψₐ, ℙₐ)
 end
 
 @inline function compute_interface_temperature(st::SkinTemperature,

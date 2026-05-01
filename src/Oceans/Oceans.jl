@@ -7,7 +7,7 @@ using Oceananigans.Units
 using Oceananigans.Utils
 using Oceananigans.Utils: with_tracers
 using Oceananigans.Advection: FluxFormAdvection
-using Oceananigans.BoundaryConditions: DefaultBoundaryCondition
+using Oceananigans.BoundaryConditions: DefaultBoundaryCondition, DiscreteBoundaryFunction
 using Oceananigans.ImmersedBoundaries: immersed_peripheral_node, inactive_node, MutableGridOfSomeKind
 using Oceananigans.OrthogonalSphericalShellGrids
 using Oceananigans.Operators
@@ -62,6 +62,7 @@ default_or_override(override, alternative_default=nothing) = override
 include("slab_ocean.jl")
 include("barotropic_potential_forcing.jl")
 include("radiative_forcing.jl")
+include("multiple_surface_fluxes.jl")
 include("ocean_simulation.jl")
 include("assemble_net_ocean_fluxes.jl")
 
@@ -109,14 +110,18 @@ function ComponentExchanger(ocean::Simulation{<:HydrostaticFreeSurfaceModel}, gr
     return ComponentExchanger((; u, v, T, S), nothing)
 end
 
+@inline net_flux(condition) = condition
+@inline net_flux(bc::MultipleFluxes) = bc.flux_field
+@inline net_flux(bc::DiscreteBoundaryFunction) = net_flux(bc.func)
+
 function net_fluxes(ocean::Simulation{<:HydrostaticFreeSurfaceModel})
     # TODO: Generalize this to work with any ocean model
-    τˣ = ocean.model.velocities.u.boundary_conditions.top.condition
-    τʸ = ocean.model.velocities.v.boundary_conditions.top.condition
+    τˣ = net_flux(ocean.model.velocities.u.boundary_conditions.top.condition)
+    τʸ = net_flux(ocean.model.velocities.v.boundary_conditions.top.condition)
     net_ocean_surface_fluxes = (; u=τˣ, v=τʸ)
 
     tracers = ocean.model.tracers
-    ocean_surface_tracer_fluxes = NamedTuple(name => tracers[name].boundary_conditions.top.condition for name in keys(tracers))
+    ocean_surface_tracer_fluxes = NamedTuple(name => net_flux(tracers[name].boundary_conditions.top.condition) for name in keys(tracers))
     return merge(ocean_surface_tracer_fluxes, net_ocean_surface_fluxes)
 end
 

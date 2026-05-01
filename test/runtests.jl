@@ -17,13 +17,15 @@ args = parse_args(ARGS)
 delete!(testsuite, "runtests_setup")
 delete!(testsuite, "download_utils")
 delete!(testsuite, "test_distributed_utils")
+delete!(testsuite, "test_ospapa")
 
 gpu_test = parse(Bool, get(ENV, "GPU_TEST", "false"))
 
 if filter_tests!(testsuite, args)
     # Always remove tests that are treated separately
-    delete!(testsuite, "test_downloading")
+    delete!(testsuite, "test_jra55_ecco_en4_etopo_downloading")
     delete!(testsuite, "test_cds_downloading")
+    delete!(testsuite, "test_glorys_downloading")
     delete!(testsuite, "test_distributed_utils")
     delete!(testsuite, "test_reactant")
 
@@ -70,6 +72,7 @@ function __init__()
 
     try
         atmosphere = JRA55PrescribedAtmosphere(backend=JRA55NetCDFBackend(2))
+        land       = JRA55PrescribedLand(backend=JRA55NetCDFBackend(2))
     catch e
         @warn "Original JRA55 download failed, trying NumericalEarthArtifacts fallback..." exception=(e, catch_backtrace())
         emit_ci_warning("Broken JRA55 download", "Original source failed during init")
@@ -77,7 +80,6 @@ function __init__()
             datum = Metadatum(name; dataset=JRA55.RepeatYearJRA55())
             download_from_artifacts(metadata_path(datum))
         end
-        atmosphere = JRA55PrescribedAtmosphere(backend=JRA55NetCDFBackend(2))
     end
 
     #####

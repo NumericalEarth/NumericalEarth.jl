@@ -53,7 +53,7 @@ const ETOPO_url = "https://www.dropbox.com/scl/fi/6pwalcuuzgtpanysn4h6f/" *
 
 z_interfaces(::ETOPOMetadatum) = (0, 1)
 metadata_url(::ETOPOMetadatum) = ETOPO_url
-metadata_filename(::ETOPO2022, name, date, bounding_box) = "ETOPO_2022_v1_60s_N90W180_surface.nc"
+metadata_filename(::ETOPO2022, name, date, region) = "ETOPO_2022_v1_60s_N90W180_surface.nc"
 
 function download_dataset(metadatum::ETOPOMetadatum)
     fileurl  = metadata_url(metadatum)
