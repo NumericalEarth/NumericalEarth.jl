@@ -35,7 +35,8 @@ examples = [
     Example("Global climate simulation", "global_climate_simulation", false),
     Example("Veros ocean simulation", "veros_ocean_forced_simulation", false),
     Example("Breeze over two oceans", "breeze_over_two_oceans", false),
-    Example("ERA5 winds and Stokes drift", "ERA5_winds_and_stokes_drift", true),
+    Example("ERA5 surface winds and Stokes drift", "ERA5_winds_and_stokes_drift", true),
+    Example("ERA5 atmosphere", "ERA5_atmosphere", false),
 ]
 
 # Developer examples from docs/src/developers/ directory
