@@ -3,6 +3,7 @@ include("runtests_setup.jl")
 using NumericalEarth.DataWrangling: Column, Linear, Nearest,
                                     BoundingBox, dataset_location,
                                     restrict_location, native_grid
+using NumericalEarth.DataWrangling: restrict
 
 using Oceananigans: RectilinearGrid, LatitudeLongitudeGrid, location
 using Oceananigans.Grids: topology, Flat, Bounded, Periodic
@@ -111,6 +112,19 @@ end
     Nx, Ny, Nz = size(grid)
     @test Nx < Nx_full
     @test Ny < Ny_full
+
+    # Sub-360° bbox must be Bounded in x (not Periodic) so halos don't wrap.
+    @test topology(grid)[1] == Bounded
+
+    # 360°-spanning bbox keeps Periodic in x.
+    bbox_full = BoundingBox(longitude=(-180, 180), latitude=(-30, 30))
+    md_full = Metadatum(:temperature; dataset=ECCO4Monthly(), region=bbox_full)
+    @test topology(native_grid(md_full))[1] == Periodic
+
+    # Latitude-only restriction: longitude is unrestricted, x stays Periodic.
+    bbox_lat = BoundingBox(latitude=(-30, 30))
+    md_lat = Metadatum(:temperature; dataset=ECCO4Monthly(), region=bbox_lat)
+    @test topology(native_grid(md_lat))[1] == Periodic
 end
 
 @testset "Metadata region keyword" begin
@@ -140,4 +154,40 @@ end
     @test first(md).region === col
     @test last(md).region === col
     @test md[1].region === col
+end
+
+@testset "restrict() snaps to native interfaces" begin
+    # Uniform interfaces: snapping coincides with the user's bbox if it
+    # already lies on cell boundaries.
+    interfaces = collect(0.0:1.0:10.0)
+    sliced, rN = restrict((2.0, 6.0), interfaces, 10)
+    @test sliced == [2.0, 3.0, 4.0, 5.0, 6.0]
+    @test rN == 4
+
+    # Uniform interfaces, off-grid bbox: snap outward to the surrounding
+    # native cells so the result is a superset of the request.
+    sliced, rN = restrict((2.5, 6.5), interfaces, 10)
+    @test sliced[1]   ≤ 2.5
+    @test sliced[end] ≥ 6.5
+    @test rN == length(sliced) - 1
+
+    # Stretched interfaces (cells get wider): snapping must return the
+    # actual native interfaces, not a 2-tuple of the user's bbox.
+    stretched = [0.0, 0.5, 1.5, 3.0, 5.5, 9.5, 15.0]
+    sliced, rN = restrict((1.0, 6.0), stretched, length(stretched) - 1)
+    @test sliced == [0.5, 1.5, 3.0, 5.5, 9.5]
+    @test rN == 4
+
+    # Out-of-range bbox is clamped, not crashed.
+    sliced, rN = restrict((-100.0, 100.0), stretched, length(stretched) - 1)
+    @test sliced == stretched
+    @test rN == length(stretched) - 1
+
+    # 2-tuple endpoints: uniform native grids return the bbox endpoints
+    # verbatim (no snap) with a proportional cell count. Stays correct across
+    # longitude conventions for pre-subsetted files (e.g. GLORYS via Copernicus);
+    # the centre alignment is handled at read time by `region_info`.
+    sliced, rN = restrict((120, 240), (0, 360), 360)
+    @test sliced == (120, 240)
+    @test rN == 120
 end

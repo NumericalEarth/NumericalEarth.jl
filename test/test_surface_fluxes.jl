@@ -32,7 +32,7 @@ end
 
 @testset "Test surface fluxes" begin
     for arch in test_architectures
-        grid = LatitudeLongitudeGrid(arch;
+        grid = LatitudeLongitudeGrid(arch, Float32;
                                      size = 1,
                                      latitude = 10,
                                      longitude = 10,
@@ -46,14 +46,14 @@ end
                                  bottom_drag_coefficient = 0)
 
         dates = all_dates(RepeatYearJRA55(), :temperature)
-        atmosphere = JRA55PrescribedAtmosphere(arch, Float64; end_date=dates[2], backend = InMemory())
+        atmosphere = JRA55PrescribedAtmosphere(arch; end_date=dates[2])
 
         CUDA.@allowscalar begin
             h  = atmosphere.surface_layer_height
             pᵃᵗ = atmosphere.pressure[1][1, 1, 1]
 
             Tᵃᵗ = 15 + celsius_to_kelvin
-            qᵃᵗ = 0.003
+            qᵃᵗ = Float32(0.003)
 
             uᵃᵗ = atmosphere.velocities.u[1][1, 1, 1]
             vᵃᵗ = atmosphere.velocities.v[1][1, 1, 1]
@@ -196,7 +196,7 @@ end
 
         set!(ocean_with_land.model, T = 15, S = 30)
         land_dates = all_dates(RepeatYearJRA55(), :river_freshwater_flux)
-        land = JRA55PrescribedLand(arch; end_date=land_dates[2], backend = InMemory())
+        land = JRA55PrescribedLand(arch; end_date=land_dates[2])
         model_with_land = OceanOnlyModel(ocean_with_land; atmosphere, land)
 
         # Verify land exchanger is wired up
@@ -232,7 +232,7 @@ end
                                   bottom_drag_coefficient = 0.0)
 
         dates = all_dates(RepeatYearJRA55(), :temperature)
-        atmosphere = JRA55PrescribedAtmosphere(arch; end_date=dates[2], backend = InMemory())
+        atmosphere = JRA55PrescribedAtmosphere(arch; end_date=dates[2])
 
         fill!(ocean.model.tracers.T, -2.0)
 

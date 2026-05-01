@@ -31,26 +31,19 @@ function ECCOPrescribedAtmosphere(architecture = CPU(), FT = Float32;
                                   surface_layer_height = 2,  # meters
                                   other_kw...)
 
-    ua_meta = Metadata(:eastward_wind;         dataset, start_date, end_date, dir)
-    va_meta = Metadata(:northward_wind;        dataset, start_date, end_date, dir)
-    Ta_meta = Metadata(:air_temperature;       dataset, start_date, end_date, dir)
-    qa_meta = Metadata(:air_specific_humidity; dataset, start_date, end_date, dir)
-    pa_meta = Metadata(:sea_level_pressure;    dataset, start_date, end_date, dir)
-    ℐꜜˡʷ_meta = Metadata(:downwelling_longwave;  dataset, start_date, end_date, dir)
-    ℐꜜˢʷ_meta = Metadata(:downwelling_shortwave; dataset, start_date, end_date, dir)
-    Fr_meta = Metadata(:rain_freshwater_flux;  dataset, start_date, end_date, dir)
-
-    kw = (; time_indices_in_memory, time_indexing)
+    kw = (; time_indexing, time_indices_in_memory)
     kw = merge(kw, other_kw)
 
-    ua = FieldTimeSeries(ua_meta, architecture; kw...)
-    va = FieldTimeSeries(va_meta, architecture; kw...)
-    Ta = FieldTimeSeries(Ta_meta, architecture; kw...)
-    qa = FieldTimeSeries(qa_meta, architecture; kw...)
-    pa = FieldTimeSeries(pa_meta, architecture; kw...)
-    ℐꜜˡʷ = FieldTimeSeries(ℐꜜˡʷ_meta, architecture; kw...)
-    ℐꜜˢʷ = FieldTimeSeries(ℐꜜˢʷ_meta, architecture; kw...)
-    Fr = FieldTimeSeries(Fr_meta, architecture; kw...)
+    ECCOFieldTimeSeries(name) = FieldTimeSeries(Metadata(name; dataset, start_date, end_date, dir), architecture; kw...)
+
+    ua   = ECCOFieldTimeSeries(:eastward_wind)
+    va   = ECCOFieldTimeSeries(:northward_wind)
+    Ta   = ECCOFieldTimeSeries(:air_temperature)
+    qa   = ECCOFieldTimeSeries(:air_specific_humidity)
+    pa   = ECCOFieldTimeSeries(:sea_level_pressure)
+    ℐꜜˡʷ = ECCOFieldTimeSeries(:downwelling_longwave)
+    ℐꜜˢʷ = ECCOFieldTimeSeries(:downwelling_shortwave)
+    Fr   = ECCOFieldTimeSeries(:rain_freshwater_flux)
     
     freshwater_flux = (; rain = Fr)
 

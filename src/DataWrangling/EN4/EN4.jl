@@ -45,6 +45,8 @@ import NumericalEarth.DataWrangling:
     z_interfaces,
     longitude_interfaces,
     latitude_interfaces,
+    longitude_name,
+    latitude_name,
     is_three_dimensional,
     reversed_vertical_axis,
     inpainted_metadata_path,
@@ -70,6 +72,8 @@ reversed_vertical_axis(::EN4Monthly) = true
 
 longitude_interfaces(::EN4Monthly) = (0.5, 360.5)
 latitude_interfaces(::EN4Monthly) = (-83.5, 89.5)
+longitude_name(::Metadata{<:EN4Monthly}) = "lon"
+latitude_name(::Metadata{<:EN4Monthly})  = "lat"
 available_variables(::EN4Monthly) = EN4_dataset_variable_names
 
 z_interfaces(::EN4Monthly) = [

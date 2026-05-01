@@ -102,11 +102,10 @@ radiation = Radiation(arch)
 # The JRA55 dataset provides atmospheric data such as temperature, humidity, and winds
 # to calculate turbulent fluxes using bulk formulae, see [`InterfaceComputations`](@ref NumericalEarth.EarthSystemModels.InterfaceComputations).
 # The number of snapshots that are loaded into memory is determined by
-# the `backend`. Here, we load 41 snapshots at a time into memory.
+# `time_indices_in_memory`. Here, we load 41 snapshots at a time into memory.
 
-jra55_backend = JRA55NetCDFBackend(41)
-atmosphere = JRA55PrescribedAtmosphere(arch; backend=jra55_backend)
-land       = JRA55PrescribedLand(arch; backend=jra55_backend)
+atmosphere = JRA55PrescribedAtmosphere(arch; time_indices_in_memory = 41)
+land       = JRA55PrescribedLand(arch; time_indices_in_memory = 41)
 
 # ## The coupled simulation
 
