@@ -46,6 +46,14 @@ function restrict(bbox_interfaces, interfaces::AbstractVector, N)
     return interfaces[i⁻:i⁺], rN
 end
 
+native_convention_longitude(::Nothing, native) = nothing
+
+# Map a bbox longitude into the native longitude convention
+function native_convention_longitude(bbox_longitude, native)
+    λ⁻ = convert_to_λ₀_λ₀_plus360(bbox_longitude[1], native[1])
+    return (λ⁻, λ⁻ + (bbox_longitude[2] - bbox_longitude[1]))
+end
+
 """
     native_grid(metadata::Metadata, arch=CPU(); halo = (3, 3, 3))
 
@@ -79,13 +87,12 @@ function construct_native_grid(metadata, bbox::BoundingBox, arch; halo)
     native_longitude = longitude_interfaces(metadata)
     native_latitude  = latitude_interfaces(metadata)
 
-    # Map the bbox into the native longitude convention
-    bbox_λ⁻ = convert_to_λ₀_λ₀_plus360(bbox.longitude[1], native_longitude[1])
-    bbox_λ⁺ = bbox_λ⁻ + (bbox.longitude[2] - bbox.longitude[1])
+    # Map the bbox into the native longitude convention. 
+    bbox_lon = native_convention_longitude(bbox.longitude, native_longitude)
 
     Nx, Ny, Nz = size(metadata)
-    longitude, Nx = restrict((bbox_λ⁻, bbox_λ⁺), native_longitude, Nx)
-    latitude,  Ny = restrict(bbox.latitude,      native_latitude,  Ny)
+    longitude, Nx = restrict(bbox_lon,       native_longitude, Nx)
+    latitude,  Ny = restrict(bbox.latitude,  native_latitude,  Ny)
 
     TX = infer_longitudinal_topology(native_longitude, longitude)
 
