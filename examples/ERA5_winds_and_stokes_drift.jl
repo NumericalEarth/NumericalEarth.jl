@@ -1,4 +1,4 @@
-# # ERA5 winds and Stokes drift
+# # ERA5 surface winds and Stokes drift
 #
 # In this example, we download ERA5 10-meter wind and Stokes drift data
 # from the Copernicus Climate Data Store, and plot global maps of the
