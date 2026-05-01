@@ -5,8 +5,6 @@ using Oceananigans.Utils: launch!
 using Oceananigans.Operators: intrinsic_vector
 
 using ConservativeRegridding: Regridder
-using LinearAlgebra: transpose
-
 import ConservativeRegridding: regrid!
 
 using NumericalEarth.EarthSystemModels: sea_ice_concentration
@@ -31,7 +29,7 @@ function ComponentExchanger(atmosphere::SpeedySimulation, exchange_grid)
     # radius mismatch between Oceananigans and SpeedyWeather.
     manifold = GOCore.best_manifold(exchange_grid)
     from_atmosphere = Regridder(manifold, exchange_grid, spectral_grid)
-    to_atmosphere   = transpose(from_atmosphere)
+    to_atmosphere   = Regridder(manifold, spectral_grid, exchange_grid)
     regridder = (; to_atmosphere, from_atmosphere)
 
     state = (; u  = Field{Center, Center, Nothing}(exchange_grid),
