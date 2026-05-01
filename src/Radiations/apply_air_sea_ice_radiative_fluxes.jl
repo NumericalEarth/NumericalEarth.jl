@@ -22,6 +22,7 @@ function _apply_air_sea_ice_radiative_fluxes_dispatch!(coupled_model::EarthSyste
                                                        sea_ice::Simulation{<:SeaIceModel})
     radiation = coupled_model.radiation
     interface_fluxes = radiation.interface_fluxes
+    isnothing(interface_fluxes) && return nothing
     haskey(interface_fluxes, :sea_ice) || return nothing
 
     grid = sea_ice.model.grid
