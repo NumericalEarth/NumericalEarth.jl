@@ -199,8 +199,9 @@ end
         grid = native_grid(md)
 
         @test grid isa RectilinearGrid
-        @test topology(grid) == (Flat, Flat, Bounded)
-        # ERA5 has z = (0, 1), single level
+        # ERA5HourlySingleLevel is a 2D surface dataset — Column grids collapse
+        # the (absent) vertical axis to Flat as well.
+        @test topology(grid) == (Flat, Flat, Flat)
         @test size(grid) == (1, 1, 1)
     end
 
@@ -217,32 +218,57 @@ end
 @testset "restrict (BoundingBox grid construction helper)" begin
     restrict = NumericalEarth.DataWrangling.restrict
 
-    # Identity case: bbox covers the full domain. Grid pads by Δ/2 on each side
-    # so that face midpoints land on data centers. The padded extent is N+1
-    # cells of width Δ exactly, but Float64 rounding can push the ceil one cell
-    # past that — so allow [N+1, N+2].
+    # Uniform native grid (interfaces given as a 2-tuple of endpoints):
+    # `restrict` keeps the bbox endpoints verbatim and assigns a cell count
+    # proportional to the bbox extent.
+
+    # Identity case: bbox covers the full domain → endpoints unchanged, all cells kept.
     grid_interfaces, rN = restrict((0.0, 360.0), (0.0, 360.0), 1440)
-    @test grid_interfaces[1] ≈ -0.125
-    @test grid_interfaces[2] ≈ 360.125
-    @test 1441 <= rN <= 1442
+    @test grid_interfaces == (0.0, 360.0)
+    @test rN == 1440
 
-    # Half-domain bbox: rN should be just over half of N.
-    _, rN = restrict((0.0, 180.0), (0.0, 360.0), 1440)
-    @test 720 < rN <= 722       # ceil(0.5 * 1440 + small) = 721
+    # Half-domain bbox: round(0.5 * 1440) = 720.
+    grid_interfaces, rN = restrict((0.0, 180.0), (0.0, 360.0), 1440)
+    @test grid_interfaces == (0.0, 180.0)
+    @test rN == 720
 
-    # Small bbox (5° wide on a 1440-cell grid): rN should be ceil(20 + small) = 21.
+    # Small bbox (5° wide on a 1440-cell, 360°-tall grid): round(5/360 * 1440) = 20.
     grid_interfaces, rN = restrict((0.0, 5.0), (0.0, 360.0), 1440)
-    @test grid_interfaces[1] ≈ -0.125
-    @test grid_interfaces[2] ≈ 5.125
-    @test rN == 21
+    @test grid_interfaces == (0.0, 5.0)
+    @test rN == 20
 
     # Off-origin bbox preserves width: 5° wide on a 720-cell, 180°-tall grid →
-    # rΔ = 5° + Δ = 5.25°, rN = ceil((5.25/180) * 720) = 21.
-    _, rN_off = restrict((40.0, 45.0), (-90.0, 90.0), 720)
-    @test rN_off == 21
+    # round(5/180 * 720) = 20.
+    grid_interfaces, rN_off = restrict((40.0, 45.0), (-90.0, 90.0), 720)
+    @test grid_interfaces == (40.0, 45.0)
+    @test rN_off == 20
+
+    # Sub-cell bbox: cell count is clamped to a minimum of 1 (never 0).
+    _, rN_tiny = restrict((0.0, 0.01), (0.0, 360.0), 1440)
+    @test rN_tiny == 1
+
+    # Stretched native grid (interfaces given as a Vector): `restrict` snaps
+    # outward to the nearest native cell interfaces and returns the slice.
+    interfaces = collect(0.0:1.0:10.0)   # 10 cells, faces at 0, 1, …, 10
+
+    # Bbox aligned with native faces — slice exact.
+    grid_interfaces, rN = restrict((2.0, 5.0), interfaces, 10)
+    @test grid_interfaces == [2.0, 3.0, 4.0, 5.0]
+    @test rN == 3
+
+    # Bbox between native faces — snaps outward (encloses the bbox).
+    grid_interfaces, rN = restrict((2.3, 4.7), interfaces, 10)
+    @test grid_interfaces == [2.0, 3.0, 4.0, 5.0]
+    @test rN == 3
+
+    # Bbox at the very start — does not underflow past index 1.
+    grid_interfaces, rN = restrict((-1.0, 1.5), interfaces, 10)
+    @test first(grid_interfaces) == 0.0
+    @test rN >= 1
 
     # Pass-through for `nothing` (the no-restriction case).
     @test restrict(nothing, (0.0, 360.0), 1440) == ((0.0, 360.0), 1440)
+    @test restrict(nothing, interfaces, 10) == (interfaces, 10)
 end
 
 @testset "restrict_location dispatch" begin
