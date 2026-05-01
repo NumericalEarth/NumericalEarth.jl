@@ -25,12 +25,17 @@ restrict(::Nothing, interfaces, N) = interfaces, N
 restrict(::Nothing, interfaces::NTuple{2,Any}, N) = interfaces, N
 restrict(::Nothing, interfaces::AbstractVector, N) = interfaces, N
 
-# Uniform native grid: keep the bbox endpoints verbatim with a proportional cell count. 
+# Snap bbox outward to native cell faces so restricted centers land on native centers
 function restrict(bbox_interfaces, interfaces::NTuple{2,Any}, N)
-    extent = interfaces[2] - interfaces[1]
-    rΔ = bbox_interfaces[2] - bbox_interfaces[1]
-    rN = max(round(Int, rΔ / extent * N), 1)
-    return bbox_interfaces, rN
+    left, right = interfaces
+    Δ = (right - left) / N
+    i⁻ = max(floor(Int, (bbox_interfaces[1] - left) / Δ), 0)
+    i⁺ = min(ceil( Int, (bbox_interfaces[2] - left) / Δ), N)
+    if i⁺ <= i⁻
+        i⁺ = min(i⁻ + 1, N)
+        i⁻ = max(i⁺ - 1, 0)
+    end
+    return (left + i⁻ * Δ, left + i⁺ * Δ), i⁺ - i⁻
 end
 
 # Stretched native grid: snap outward to the nearest native cell interfaces.
