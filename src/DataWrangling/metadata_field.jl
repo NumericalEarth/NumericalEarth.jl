@@ -79,9 +79,13 @@ function construct_native_grid(metadata, bbox::BoundingBox, arch; halo)
     native_longitude = longitude_interfaces(metadata)
     native_latitude  = latitude_interfaces(metadata)
 
+    # Map the bbox into the native longitude convention
+    bbox_λ⁻ = convert_to_λ₀_λ₀_plus360(bbox.longitude[1], native_longitude[1])
+    bbox_λ⁺ = bbox_λ⁻ + (bbox.longitude[2] - bbox.longitude[1])
+
     Nx, Ny, Nz = size(metadata)
-    longitude, Nx = restrict(bbox.longitude, native_longitude, Nx)
-    latitude,  Ny = restrict(bbox.latitude,  native_latitude,  Ny)
+    longitude, Nx = restrict((bbox_λ⁻, bbox_λ⁺), native_longitude, Nx)
+    latitude,  Ny = restrict(bbox.latitude,      native_latitude,  Ny)
 
     TX = infer_longitudinal_topology(native_longitude, longitude)
 
