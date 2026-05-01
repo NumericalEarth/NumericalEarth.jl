@@ -83,9 +83,9 @@ atmosphere = atmosphere_simulation(spectral_grid, output=true)
 
 atmosphere.model.initial_conditions
 
-# We use a three hour time-step:
+# We use a three hour time-step (10800 seconds):
 
-atmosphere.model.output.output_dt = Hour(3)
+atmosphere.model.output.output_dt = Second(10800)
 nothing #hide
 
 # ## The coupled model
@@ -158,7 +158,7 @@ function progress(sim)
     atmos = sim.model.atmosphere
     ocean = sim.model.ocean
 
-    ua, va     = atmos.diagnostic_variables.dynamics.u_mean_grid, atmos.diagnostic_variables.dynamics.v_mean_grid
+    ua, va     = atmos.variables.dynamics.u_mean_grid, atmos.variables.dynamics.v_mean_grid
     uo, vo, wo = ocean.model.velocities
 
     uamax = (maximum(abs, ua), maximum(abs, va))
