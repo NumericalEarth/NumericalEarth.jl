@@ -336,6 +336,7 @@ Keyword Arguments
   - `ThreeEquationHeatFlux()`: coupled heat/salt/freezing point system (default)
 
 - `radiation`: radiation component. Default: `Radiation()`.
++ `radiation`: radiation component. Default: `nothing`.
 - `freshwater_density`: reference density of freshwater. Default: `default_freshwater_density`.
 - `atmosphere_ocean_fluxes`: flux formulation for atmosphere-ocean interface. Default: `SimilarityTheoryFluxes()`.
 - `atmosphere_sea_ice_fluxes`: flux formulation for atmosphere-sea ice interface. Default: `SimilarityTheoryFluxes()`.
