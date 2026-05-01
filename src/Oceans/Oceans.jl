@@ -5,9 +5,10 @@ export ocean_simulation, SlabOcean
 using Oceananigans
 using Oceananigans.Units
 using Oceananigans.Utils
-using Oceananigans.Utils: with_tracers
+using Oceananigans.Utils: with_tracers, launch!
 using Oceananigans.Advection: FluxFormAdvection
 using Oceananigans.BoundaryConditions: DefaultBoundaryCondition, DiscreteBoundaryFunction
+using Oceananigans.Grids: architecture
 using Oceananigans.ImmersedBoundaries: immersed_peripheral_node, inactive_node, MutableGridOfSomeKind
 using Oceananigans.OrthogonalSphericalShellGrids
 using Oceananigans.Operators
@@ -18,7 +19,7 @@ using Oceananigans.TurbulenceClosures.TKEBasedVerticalDiffusivities:
     CATKEEquation
 
 using SeawaterPolynomials
-using SeawaterPolynomials.TEOS10: TEOS10EquationOfState
+using SeawaterPolynomials.TEOS10: TEOS10EquationOfState, θᴾ_from_Θ
 using KernelAbstractions: @kernel, @index
 
 using NumericalEarth.EarthSystemModels
@@ -88,24 +89,36 @@ function ocean_surface_velocities(ocean::Simulation{<:HydrostaticFreeSurfaceMode
     return view(ocean.model.velocities.u, :, :, kᴺ), view(ocean.model.velocities.v, :, :, kᴺ)
 end
 
-# When using an Oceananigans simulation, we assume that the exchange grid is the ocean grid
-# We need, however, to interpolate the surface pressure to the ocean grid
-interpolate_state!(exchanger, grid, ::Simulation{<:HydrostaticFreeSurfaceModel}, coupled_model) = nothing
+@kernel function _ocean_state_to_potential_temperature!(Tᵉˣ, Tᵒᶜ, Sᵒᶜ, kᴺ)
+    i, j = @index(Global, NTuple)
+    @inbounds Tᵉˣ[i, j, 1] = θᴾ_from_Θ(Sᵒᶜ[i, j, kᴺ], Tᵒᶜ[i, j, kᴺ])
+end
 
-function ComponentExchanger(ocean::Simulation{<:HydrostaticFreeSurfaceModel}, grid) 
+function interpolate_state!(exchanger, grid, ocean::Simulation{<:HydrostaticFreeSurfaceModel}, coupled_model)
+    Tᵉˣ = exchanger.state.T      # Potential Temperature θᴾ
+    Tᵒᶜ = ocean.model.tracers.T  # Conservative Temperature Θ
+    Sᵒᶜ = ocean.model.tracers.S  # Absolute Salinity Sᴬ
+    kᴺ = size(ocean.model.grid, 3)
+    arch = architecture(ocean.model.grid)
+    launch!(arch, grid, :xy, _ocean_state_to_potential_temperature!, Tᵉˣ, Tᵒᶜ, Sᵒᶜ, kᴺ)
+    return nothing
+end
+
+function ComponentExchanger(ocean::Simulation{<:HydrostaticFreeSurfaceModel}, grid)
     ocean_grid = ocean.model.grid
-    
+
     if ocean_grid == grid
-        u = ocean.model.velocities.u 
-        v = ocean.model.velocities.v 
-        T = ocean.model.tracers.T      
-        S = ocean.model.tracers.S      
+        u = ocean.model.velocities.u
+        v = ocean.model.velocities.v
+        S = ocean.model.tracers.S
     else
         u = Field{Center, Center, Nothing}(grid)
         v = Field{Center, Center, Nothing}(grid)
-        T = Field{Center, Center, Nothing}(grid)
         S = Field{Center, Center, Nothing}(grid)
     end
+
+    # T is in potential temperature, model T in conservative temperature
+    T = Field{Center, Center, Nothing}(grid)
 
     return ComponentExchanger((; u, v, T, S), nothing)
 end

@@ -3,7 +3,7 @@ using Oceananigans.Operators: Δzᶜᶜᶜ
 using Oceananigans.Grids: λnode, φnode, znode, Center
 using Oceananigans.Architectures: on_architecture, architecture
 using Oceananigans.Fields: CenterField, interior
-using GibbsSeaWater: gsw_sa_from_sp, gsw_ct_from_t
+using SeawaterPolynomials.TEOS10: Sᴬ_from_Sᴾ, Θ_from_T
 using Oceananigans.TurbulenceClosures: IsopycnalSkewSymmetricDiffusivity,
                                        ConvectiveAdjustmentVerticalDiffusivity
 using NumericalEarth.EarthSystemModels.InterfaceComputations: COARELogarithmicSimilarityProfile,
@@ -342,7 +342,8 @@ end
 ##### sea_water_practical_salinity (PSS-78). Oceananigans' default
 ##### `TEOS10EquationOfState` expects Conservative Temperature (Θ) and
 ##### Absolute Salinity (S_A). The functions below convert WOA fields to the
-##### TEOS-10 conventions in place, using GibbsSeaWater (CPU only).
+##### TEOS-10 conventions in place, using SeawaterPolynomials (CPU only —
+##### the SAAR atlas read is host-resident and the loop body is scalar).
 #####
 
 # Approximate hydrostatic pressure in dbar from depth z [m] (cell-center, negative for ocean).
@@ -351,9 +352,9 @@ end
 """
     woa_to_teos10!(T_field, S_field)
 
-Convert WOA in-situ temperature `t [°C]` and Practical Salinity `S_P` to TEOS-10 Conservative Temperature `Θ` 
-and Absolute Salinity `S_A`, in place. Both fields must live on the same grid. The conversion runs on the host
-(GibbsSeaWater is C-bound); data is copied to/from the device automatically.
+Convert WOA in-situ temperature `t [°C]` and Practical Salinity `S_P` to TEOS-10 Conservative Temperature `Θ`
+and Absolute Salinity `S_A`, in place. Both fields must live on the same grid. The conversion runs on the host;
+data is copied to/from the device automatically.
 """
 function woa_to_teos10!(T_field, S_field)
     grid = T_field.grid
@@ -369,8 +370,8 @@ function woa_to_teos10!(T_field, S_field)
         φ = φnode(i, j, k, cpu_grid, Center(), Center(), Center())
         z = znode(i, j, k, cpu_grid, Center(), Center(), Center())
         p = approx_pressure_dbar(z)
-        SA = gsw_sa_from_sp(SP, p, λ, φ)
-        Θ  = gsw_ct_from_t(SA, t, p)
+        SA = Sᴬ_from_Sᴾ(SP, p, λ, φ)
+        Θ  = Θ_from_T(SA, t, p)
         T_h[i, j, k] = Θ
         S_h[i, j, k] = SA
     end
@@ -401,7 +402,7 @@ function woa_salinity_fts_to_teos10!(fts)
             φ = φnode(i, j, k, cpu_grid, Center(), Center(), Center())
             z = znode(i, j, k, cpu_grid, Center(), Center(), Center())
             p = approx_pressure_dbar(z)
-            S_h[i, j, k] = gsw_sa_from_sp(SP, p, λ, φ)
+            S_h[i, j, k] = Sᴬ_from_Sᴾ(SP, p, λ, φ)
         end
         copyto!(S_int, S_h)
     end
