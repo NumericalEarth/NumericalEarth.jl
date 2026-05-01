@@ -17,9 +17,9 @@
 # `SpeedyWeather.PrimitiveWetModel` (the atmosphere). All these are coupled and orchestrated by the `NumericalEarth.EarthSystemModel`
 # (the coupled system).
 #
-# The XESMF.jl package is used to regrid fields between the atmosphere and ocean--sea ice components.
+# The ConservativeRegridding.jl package is used to regrid fields between the atmosphere and ocean--sea ice components.
 
-using Oceananigans, SpeedyWeather, XESMF, NumericalEarth
+using Oceananigans, SpeedyWeather, NumericalEarth
 using NCDatasets, CairoMakie
 using Oceananigans.Units
 using Printf, Statistics, Dates

@@ -1,4 +1,4 @@
-using SpeedyWeather, XESMF
+using SpeedyWeather
 using NumericalEarth
 using Oceananigans
 using Dates
