@@ -251,7 +251,12 @@ function set!(target_field::Field, metadata::Metadatum; kw...)
     Lzt = grid.Lz
     Lzm = meta_field.grid.Lz
 
-    if Lzt > Lzm && is_three_dimensional(metadata)
+    # Allow up to 1% vertical mismatch for pressure-level datasets with time-varying
+    # geopotential heights — the per-timestep vertical extent can be slightly smaller
+    # than the temporal-mean extent used for the target grid (e.g. when the atmosphere
+    # is compressed). Oceananigans' interpolate! does not extrapolate, so target points
+    # just outside the source domain will use the nearest interior values.
+    if is_three_dimensional(metadata) && Lzt > Lzm * (1 + 1e-2)
         throw("The vertical range of the $(metadata.dataset) dataset ($(Lzm) m) is smaller than " *
               "the target grid ($(Lzt) m). Some vertical levels cannot be filled with data.")
     end
@@ -332,6 +337,7 @@ end
 @inline convert_units(C::FT, ::Union{NanomolePerLiter, NanomolePerKilogram})   where FT = C * convert(FT, 1e-6)
 @inline convert_units(C::FT, ::MilliliterPerLiter)                             where FT = C / convert(FT, 22.3916)
 @inline convert_units(C::FT, ::GramPerKilogramMinus35)                         where FT = C + convert(FT, 35)
+@inline convert_units(Φ::FT, ::InverseGravity)                                where FT = Φ / convert(FT, 9.80665)
 @inline convert_units(V::FT, ::CentimetersPerSecond)                           where FT = V / convert(FT, 100)
 
 

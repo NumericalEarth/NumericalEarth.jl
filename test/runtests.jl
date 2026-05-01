@@ -29,11 +29,18 @@ if filter_tests!(testsuite, args)
     delete!(testsuite, "test_distributed_utils")
     delete!(testsuite, "test_reactant")
 
-    # Remove CPU-only tests when
-    # testing on GPUs
     if gpu_test
+        # Remove CPU-only tests when testing on GPUs
         delete!(testsuite, "test_veros")
         delete!(testsuite, "test_speedy_coupling")
+    else
+        # Remove the slowest tests from CPU CI to keep total runtime
+        # manageable; GPU CI still runs them. See issue #193.
+        delete!(testsuite, "test_ocean_only_model")
+        delete!(testsuite, "test_ocean_sea_ice_model")
+        delete!(testsuite, "test_diagnostics_1")
+        delete!(testsuite, "test_ecco2_daily")
+        delete!(testsuite, "test_orca_grid")
     end
 end
 
