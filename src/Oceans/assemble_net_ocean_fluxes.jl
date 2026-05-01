@@ -42,6 +42,7 @@ function update_net_ocean_fluxes!(coupled_model, ocean_model, grid)
                              ℐꜜˡʷ = atmosphere_fields.ℐꜜˡʷ.data)
 
     freshwater_flux = atmosphere_fields.Jᶜ.data
+    snowfall_flux   = atmosphere_fields.Jˢⁿ.data
 
     # Extract land freshwater flux if land component is present
     land_exchanger = coupled_model.interfaces.exchanger.land
@@ -68,6 +69,7 @@ function update_net_ocean_fluxes!(coupled_model, ocean_model, grid)
             ice_concentration,
             downwelling_radiation,
             freshwater_flux,
+            snowfall_flux,
             land_freshwater_flux,
             atmos_ocean_properties,
             ocean_properties)
@@ -89,6 +91,7 @@ Base.@propagate_inbounds get_land_freshwater_flux(i, j, flux) = flux[i, j, 1]
                                              sea_ice_concentration,
                                              downwelling_radiation,
                                              freshwater_flux,
+                                             snowfall_flux,
                                              land_freshwater_flux,
                                              atmos_ocean_properties,
                                              ocean_properties)
@@ -107,6 +110,7 @@ Base.@propagate_inbounds get_land_freshwater_flux(i, j, flux) = flux[i, j, 1]
         Tₛ = ocean_surface_temperature[i, j, 1]
         Tₛ = convert_to_kelvin(ocean_properties.temperature_units, Tₛ)
 
+        Jˢⁿ  = snowfall_flux[i, j, 1]   # Snow only (positive down)
         Jᶜ   = freshwater_flux[i, j, 1] + get_land_freshwater_flux(i, j, land_freshwater_flux) # Prescribed freshwater flux (atmos + land)
         ℐꜜˢʷ = downwelling_radiation.ℐꜜˢʷ[i, j, 1] # Downwelling shortwave radiation
         ℐꜜˡʷ = downwelling_radiation.ℐꜜˡʷ[i, j, 1] # Downwelling longwave radiation
@@ -140,16 +144,14 @@ Base.@propagate_inbounds get_land_freshwater_flux(i, j, flux) = flux[i, j, 1]
         atmos_ocean_fluxes.downwelling_shortwave[i, j, 1] = - ℐₜˢʷ
     end
 
-    # Convert from a mass flux to a volume flux (aka velocity)
-    # by dividing with the ocean reference density.
-    # Also switch the sign, for some reason we are given freshwater flux as positive down.
+    # Freshwater flux to the ocean per unit cell area (volume flux, positive up = leaving ocean).
+    # - Rain and rivers, reach the ocean everywhere (runs through cracks in ice or below ice)
+    # - Snow only reaches the ocean through the open-water fraction (1 - ℵ);
+    #   snow on ice is routed to the sea ice model as snowfall
+    # - Evaporation is from the open-water fraction (1 - ℵ)
     ρᵒᶜ⁻¹ = 1 / ocean_properties.reference_density
-    ΣFao = - Jᶜ * ρᵒᶜ⁻¹
-
-    # Add the contribution from the turbulent water vapor flux, which has
-    # a different sign convention as the prescribed water mass fluxes (positive upwards)
-    Jᵛᵒᶜ = Jᵛ * ρᵒᶜ⁻¹
-    ΣFao += Jᵛᵒᶜ
+    Jʳⁿ = Jᶜ - Jˢⁿ   # remove snow since snow is multiplied by concentration (positive down)
+    ΣFao = - (Jʳⁿ + (1 - ℵᵢ) * Jˢⁿ) * ρᵒᶜ⁻¹ + (1 - ℵᵢ) * Jᵛ * ρᵒᶜ⁻¹
 
     # Compute fluxes for u, v, T, and S from momentum, heat, and freshwater fluxes
     τˣ = net_ocean_fluxes.u
@@ -180,6 +182,6 @@ Base.@propagate_inbounds get_land_freshwater_flux(i, j, flux) = flux[i, j, 1]
 
         # Tracer fluxes
         Jᵀ[i, j, 1] = ifelse(inactive, zero(grid), Jᵀao + Jᵀio) # Jᵀao is already multiplied by the sea ice concentration
-        Jˢ[i, j, 1] = ifelse(inactive, zero(grid), (1 - ℵᵢ) * Jˢao + Jˢio)
+        Jˢ[i, j, 1] = ifelse(inactive, zero(grid), Jˢao + Jˢio)
     end
 end
