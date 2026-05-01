@@ -576,25 +576,25 @@ end
         @testset "single-variable multi-date (download_era5_day)" begin
             # All hours of date1, date2 already on disk
             ds_sl = ERA5HourlySingleLevel()
-            for dt in (date1, date2)
-                touch_expected(:temperature, ds_sl, dt)
-            end
+            expected = [touch_expected(:temperature, ds_sl, dt) for dt in (date1, date2)]
 
-            # Returns nothing without raising — the early-return guard fires
-            @test CDSExt.download_era5_day(:temperature, ds_sl, [date1, date2];
-                                            region, dir=tmp,
-                                            skip_existing=true, cleanup=true) === nothing
+            # Returns the existing paths without raising — the early-return guard fires
+            result = CDSExt.download_era5_day(:temperature, ds_sl, [date1, date2];
+                                              region, dir=tmp,
+                                              skip_existing=true, cleanup=true)
+            @test result isa Vector{String}
+            @test Set(result) == Set(expected)
         end
 
         @testset "multi-variable multi-date (download_era5_multivar_day)" begin
             ds_sl = ERA5HourlySingleLevel()
-            for name in names, dt in (date1, date2)
-                touch_expected(name, ds_sl, dt)
-            end
+            expected = [touch_expected(name, ds_sl, dt) for name in names for dt in (date1, date2)]
 
-            @test CDSExt.download_era5_multivar_day(names, ds_sl, [date1, date2];
-                                                     region, dir=tmp,
-                                                     skip_existing=true, cleanup=true) === nothing
+            result = CDSExt.download_era5_multivar_day(names, ds_sl, [date1, date2];
+                                                       region, dir=tmp,
+                                                       skip_existing=true, cleanup=true)
+            @test result isa Vector{String}
+            @test Set(result) == Set(expected)
         end
     end
 end
