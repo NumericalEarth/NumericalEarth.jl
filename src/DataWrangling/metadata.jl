@@ -405,6 +405,7 @@ struct NanomolePerKilogram end
 struct NanomolePerLiter end
 
 struct InverseSign end
+struct InverseGravity end
 
 struct GramPerKilogramMinus35 end # Salinity anomaly
 struct MilliliterPerLiter end # Sometimes for disssolved_oxygen

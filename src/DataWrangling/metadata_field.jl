@@ -26,11 +26,16 @@ restrict(::Nothing, interfaces, N) = interfaces, N
 
 # TODO support stretched native grids
 function restrict(bbox_interfaces, interfaces, N)
-    extent = interfaces[end] - interfaces[1]
-    rΔ = bbox_interfaces[2] - bbox_interfaces[1]
-    rN = round(Int, rΔ / extent * N)
-    rN = max(rN, 1)  # at least one cell
-    return bbox_interfaces, rN
+    LΔ = interfaces[2] - interfaces[1]
+    Δ = LΔ / N
+    grid_interfaces = (bbox_interfaces[1] - Δ/2,
+                       bbox_interfaces[2] + Δ/2)
+
+    rΔ = grid_interfaces[2] - grid_interfaces[1]
+    ϵ = rΔ / LΔ
+    rN = ceil(Int, ϵ * N)  # Round up to ensure bounding box is covered
+
+    return grid_interfaces, rN
 end
 
 """
@@ -235,7 +240,12 @@ function set!(target_field::Field, metadata::Metadatum; kw...)
     Lzt = grid.Lz
     Lzm = meta_field.grid.Lz
 
-    if Lzt > Lzm && is_three_dimensional(metadata)
+    # Allow up to 1% vertical mismatch for pressure-level datasets with time-varying
+    # geopotential heights — the per-timestep vertical extent can be slightly smaller
+    # than the temporal-mean extent used for the target grid (e.g. when the atmosphere
+    # is compressed). Oceananigans' interpolate! does not extrapolate, so target points
+    # just outside the source domain will use the nearest interior values.
+    if is_three_dimensional(metadata) && Lzt > Lzm * (1 + 1e-2)
         throw("The vertical range of the $(metadata.dataset) dataset ($(Lzm) m) is smaller than " *
               "the target grid ($(Lzt) m). Some vertical levels cannot be filled with data.")
     end
@@ -272,6 +282,16 @@ function column_field_from_file(metadata, arch; halo=(3, 3, 3), kw...)
     end
 
     _, _, Nz, _ = size(metadata)
+
+    # Validate that the cached file's vertical extent matches the dataset
+    # configuration. A common cause of mismatch is a stale cache from a previous
+    # run with a different vertical configuration (e.g. ERA5 `pressure_levels`).
+    if is_three_dimensional(metadata) && length(data_size) >= 3 && data_size[3] != Nz
+        error("Cached file $(path) has $(data_size[3]) vertical levels, but the " *
+              "dataset configuration expects $Nz. This is most likely a stale " *
+              "cache from a previous run with a different vertical configuration. " *
+              "Delete the file and re-run.")
+    end
     z = z_interfaces(metadata)
     FT = eltype(metadata)
 
@@ -389,9 +409,12 @@ function set_metadata_field!(field, data, metadatum)
     arch = architecture(grid)
 
     Nx, Ny, Nz = size(metadatum)
+
     mangling = if size(data, 2) == Ny-1
+        @debug "Shifting field southward"
         ShiftSouth()
     elseif size(data, 2) == Ny+1
+        @debug "Averaging field in north-south dir"
         AverageNorthSouth()
     else
         nothing
@@ -485,6 +508,7 @@ end
 @inline convert_units(C::FT, ::Union{NanomolePerLiter, NanomolePerKilogram})   where FT = C * convert(FT, 1e-6)
 @inline convert_units(C::FT, ::MilliliterPerLiter)                             where FT = C / convert(FT, 22.3916)
 @inline convert_units(C::FT, ::GramPerKilogramMinus35)                         where FT = C + convert(FT, 35)
+@inline convert_units(Φ::FT, ::InverseGravity)                                where FT = Φ / convert(FT, 9.80665)
 @inline convert_units(V::FT, ::CentimetersPerSecond)                           where FT = V / convert(FT, 100)
 
 
