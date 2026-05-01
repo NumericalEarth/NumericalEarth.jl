@@ -16,7 +16,7 @@
 
 using NumericalEarth
 using NumericalEarth.DataWrangling: Metadatum
-using NumericalEarth.DataWrangling.ERA5: ERA5Hourly
+using NumericalEarth.DataWrangling.ERA5: ERA5HourlySingleLevel
 using CDSAPI
 
 using Oceananigans
@@ -29,7 +29,7 @@ using Dates
 # while ocean wave variables (Stokes drift) live on a 0.5° grid (720×361).
 # We define metadata for each variable at a single date.
 
-dataset = ERA5Hourly()
+dataset = ERA5HourlySingleLevel()
 date = DateTime(2020, 1, 15, 12) # January 15, 2020 at 12:00 UTC
 
 u_stokes_meta = Metadatum(:eastward_stokes_drift;  dataset, date)
@@ -42,7 +42,7 @@ v_wind_meta   = Metadatum(:northward_velocity;     dataset, date)
 # We build a single `LatitudeLongitudeGrid` and use `set!` to download
 # and interpolate all four variables onto it.
 
-grid = LatitudeLongitudeGrid(size = (1440, 721, 1),
+grid = LatitudeLongitudeGrid(size = (1440, 720, 1),
                              longitude = (0, 360),
                              latitude = (-90, 90),
                              z = (0, 1))
