@@ -43,6 +43,10 @@ function update_net_ocean_fluxes!(coupled_model, ocean_model, grid)
 
     freshwater_flux = atmosphere_fields.Jᶜ.data
 
+    # Extract land freshwater flux if land component is present
+    land_exchanger = coupled_model.interfaces.exchanger.land
+    land_freshwater_flux = isnothing(land_exchanger) ? nothing : land_exchanger.state.freshwater_flux.data
+
     ice_concentration = sea_ice_concentration(sea_ice)
     ocean_surface_salinity = EarthSystemModels.ocean_surface_salinity(ocean_model)
     atmos_ocean_properties = coupled_model.interfaces.atmosphere_ocean_interface.properties
@@ -64,11 +68,15 @@ function update_net_ocean_fluxes!(coupled_model, ocean_model, grid)
             ice_concentration,
             downwelling_radiation,
             freshwater_flux,
+            land_freshwater_flux,
             atmos_ocean_properties,
             ocean_properties)
 
     return nothing
 end
+
+@inline get_land_freshwater_flux(i, j, ::Nothing) = 0
+Base.@propagate_inbounds get_land_freshwater_flux(i, j, flux) = flux[i, j, 1]
 
 @kernel function _assemble_net_ocean_fluxes!(net_ocean_fluxes,
                                              penetrating_radiation,
@@ -81,6 +89,7 @@ end
                                              sea_ice_concentration,
                                              downwelling_radiation,
                                              freshwater_flux,
+                                             land_freshwater_flux,
                                              atmos_ocean_properties,
                                              ocean_properties)
 
@@ -98,7 +107,7 @@ end
         Tₛ = ocean_surface_temperature[i, j, 1]
         Tₛ = convert_to_kelvin(ocean_properties.temperature_units, Tₛ)
 
-        Jᶜ   = freshwater_flux[i, j, 1] # Prescribed freshwater (condensate) flux
+        Jᶜ   = freshwater_flux[i, j, 1] + get_land_freshwater_flux(i, j, land_freshwater_flux) # Prescribed freshwater flux (atmos + land)
         ℐꜜˢʷ = downwelling_radiation.ℐꜜˢʷ[i, j, 1] # Downwelling shortwave radiation
         ℐꜜˡʷ = downwelling_radiation.ℐꜜˡʷ[i, j, 1] # Downwelling longwave radiation
         𝒬ᵀ   = atmos_ocean_fluxes.sensible_heat[i, j, 1] # sensible or "conductive" heat flux

@@ -311,7 +311,9 @@ scatterlines!(axκz, κn)
 
 axislegend(axuz)
 
-ulim = max(maximum(abs, u), maximum(abs, v))
+# Guard against ulim=0, which makes Makie's symmetric xlims collapse to (0, 0)
+# and triggers an "invalid colorrange" error.
+ulim = max(maximum(abs, u), maximum(abs, v), 1e-10)
 xlims!(axuz, -ulim, ulim)
 
 Tmin, Tmax = extrema(T)

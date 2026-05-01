@@ -11,7 +11,7 @@ export WOAClimatology, WOAAnnual, WOAMonthly
 export metadata_time_step, metadata_epoch
 export LinearlyTaperedPolarMask
 export DatasetRestoring, SurfaceFluxRestoring
-export ERA5Hourly, ERA5Monthly
+export ERA5HourlySingleLevel, ERA5MonthlySingleLevel, ERA5HourlyPressureLevels, ERA5MonthlyPressureLevels
 export native_grid
 
 using Oceananigans
@@ -271,5 +271,10 @@ using .OSPapa
 using .IBCSO
 using .GEBCO
 using .IBCAO
+
+# Fallback: if no download extension is loaded, check that all files already exist
+function download_dataset(metadata::Metadata)
+    error("No download method for $metadata is available (is the backend package loaded?)")
+end
 
 end # module
