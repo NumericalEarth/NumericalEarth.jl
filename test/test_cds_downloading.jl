@@ -596,6 +596,41 @@ end
             @test result isa Vector{String}
             @test Set(result) == Set(expected)
         end
+
+        # Dates spanning two calendar days — exercises the parents'
+        # path-collection across multiple `_group_by_calendar_day` groups.
+        # Catches regressions that drop or overwrite paths from one group.
+        date_day1 = DateTime(2005, 2, 16, 12)
+        date_day2 = DateTime(2005, 2, 17,  6)
+
+        @testset "ERA5Metadata parent (multi-day)" begin
+            ds_sl = ERA5HourlySingleLevel()
+            expected = [touch_expected(:temperature, ds_sl, dt) for dt in (date_day1, date_day2)]
+            meta = Metadata(:temperature; dataset=ds_sl, dates=[date_day1, date_day2], region, dir=tmp)
+
+            result = download_dataset(meta; skip_existing=true)
+            @test result isa Vector{String}
+            @test Set(result) == Set(expected)
+        end
+
+        @testset "ERA5PressureMetadata parent (multi-day, multi-name)" begin
+            expected = [touch_expected(name, ds_pl, dt) for name in names for dt in (date_day1, date_day2)]
+            meta = Metadata(:temperature; dataset=ds_pl, dates=[date_day1, date_day2], region, dir=tmp)
+
+            result = download_dataset(names, meta; skip_existing=true)
+            @test result isa Vector{String}
+            @test Set(result) == Set(expected)
+        end
+
+        @testset "names + dataset + datetimes convenience overload (multi-day)" begin
+            ds_sl = ERA5HourlySingleLevel()
+            expected = [touch_expected(name, ds_sl, dt) for name in names for dt in (date_day1, date_day2)]
+
+            result = download_dataset(names, ds_sl, [date_day1, date_day2];
+                                       region, dir=tmp, skip_existing=true, cleanup=true)
+            @test result isa Vector{String}
+            @test Set(result) == Set(expected)
+        end
     end
 end
 
