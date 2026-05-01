@@ -13,9 +13,9 @@ const OceananigansReactantExt = Base.get_extension(
      Oceananigans, :OceananigansReactantExt
 )
 
-const ReactantOSIM{I, A, L, O, F, C} = Union{
-    EarthSystemModel{I, A, L, O, F, C, <:ReactantState},
-    EarthSystemModel{I, A, L, O, F, C, <:Distributed{ReactantState}},
+const ReactantOSIM{R, A, L, I, O, F, C} = Union{
+    EarthSystemModel{R, A, L, I, O, F, C, <:ReactantState},
+    EarthSystemModel{R, A, L, I, O, F, C, <:Distributed{ReactantState}},
 }
 
 reconcile_state!(model::ReactantOSIM) = nothing

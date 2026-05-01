@@ -67,3 +67,4 @@ CondaPkg.toml
 
 # claude
 .claude
+test/Manifest.toml

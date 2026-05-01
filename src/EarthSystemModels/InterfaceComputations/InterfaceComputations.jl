@@ -6,9 +6,7 @@ using Oceananigans.Utils: KernelParameters
 using Adapt
 
 export
-    Radiation,
     ComponentInterfaces,
-    LatitudeDependentAlbedo,
     SimilarityTheoryFluxes,
     MomentumRoughnessLength,
     ScalarRoughnessLength,
@@ -42,6 +40,26 @@ import Oceananigans.Simulations: initialize!
 net_fluxes(::Nothing) = nothing
 
 #####
+##### Radiation hooks: declared here so the turbulent flux kernels can
+##### resolve them at parse time. The `Radiations` module extends them
+##### with concrete methods for `PrescribedRadiation`.
+#####
+
+# `nothing` fallback (radiation is off). Concrete methods for
+# `PrescribedRadiation` (and future radiation types) are added in `Radiations`.
+@inline kernel_radiation_properties(::Nothing) = nothing
+
+@inline function air_sea_interface_radiation_state(::Nothing, ::Nothing, i, j, k, grid, time)
+    z = zero(eltype(grid))
+    return (σ = z, α = z, ϵ = z, ℐꜜˢʷ = z, ℐꜜˡʷ = z)
+end
+
+@inline function air_sea_ice_interface_radiation_state(::Nothing, ::Nothing, i, j, k, grid, time)
+    z = zero(eltype(grid))
+    return (σ = z, α = z, ϵ = z, ℐꜜˢʷ = z, ℐꜜˡʷ = z)
+end
+
+#####
 ##### Utilities
 #####
 
@@ -62,11 +80,6 @@ function interface_kernel_parameters(grid)
 
     return kernel_parameters
 end
-
-# Radiation
-include("radiation.jl")
-include("latitude_dependent_albedo.jl")
-include("tabulated_albedo.jl")
 
 # Turbulent fluxes
 include("roughness_lengths.jl")

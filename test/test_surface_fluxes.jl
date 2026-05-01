@@ -75,15 +75,12 @@ end
             ρᵃᵗ = Thermodynamics.air_density(ℂᵃᵗ, Tᵃᵗ, pᵃᵗ, qᵃᵗ)
             ℰv = Thermodynamics.latent_heat_vapor(ℂᵃᵗ, Tᵃᵗ)
 
-            # No radiation equivalent
-            radiation = Radiation(ocean_emissivity=0, ocean_albedo=1)
-
-            # turbulent fluxes that force a specific humidity at the ocean's surface
+            # No radiation: pass `radiation = nothing` to disable radiative
+            # contributions wholesale.
             for atmosphere_ocean_interface_temperature in (BulkTemperature(), SkinTemperature(DiffusiveFlux(1, 1e-2)))
                 @info " Testing zero fluxes with $(atmosphere_ocean_interface_temperature)..."
 
                 interfaces = ComponentInterfaces(atmosphere, ocean;
-                                                 radiation,
                                                  atmosphere_ocean_interface_specific_humidity,
                                                  atmosphere_ocean_interface_temperature)
 
@@ -246,7 +243,7 @@ end
             # Always cooling!
             fill!(atmosphere.tracers.T, 273.15 - 20)
 
-            coupled_model = OceanSeaIceModel(ocean, sea_ice; atmosphere, radiation)
+            coupled_model = OceanSeaIceModel(sea_ice, ocean; atmosphere)
 
             # Test that the temperature has snapped up to freezing
             @test minimum(ocean.model.tracers.T) == 0
@@ -286,7 +283,7 @@ end
         fill!(ocean.model.tracers.T,   -2.0)
 
         # Test that we populate the sea-ice ocean stress
-        earth = OceanSeaIceModel(ocean, sea_ice; atmosphere, radiation=Radiation())
+        earth = OceanSeaIceModel(sea_ice, ocean; atmosphere)
 
         τˣ = earth.interfaces.sea_ice_ocean_interface.fluxes.x_momentum
         τʸ = earth.interfaces.sea_ice_ocean_interface.fluxes.y_momentum
@@ -330,7 +327,7 @@ end
 #         radiation  = Radiation(ocean_albedo=0.1, ocean_emissivity=1.0)
 #         sea_ice    = nothing
 
-#         coupled_model = OceanSeaIceModel(ocean, sea_ice; atmosphere, radiation)
+#         coupled_model = OceanSeaIceModel(sea_ice, ocean; atmosphere, radiation)
 #         times = 0:1hours:1days
 #         Ntimes = length(times)
 

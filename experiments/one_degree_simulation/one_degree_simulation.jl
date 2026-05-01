@@ -45,8 +45,9 @@ ocean = ocean_simulation(grid; momentum_advection, tracer_advection, free_surfac
 set!(ocean.model, T=ECCOMetadata(:temperature; dates=first(dates)),
                   S=ECCOMetadata(:salinity;    dates=first(dates)))
 
-radiation  = Radiation(arch)
-atmosphere = JRA55PrescribedAtmosphere(arch; backend=JRA55NetCDFBackend(41))
+jra55_backend = JRA55NetCDFBackend(41)
+atmosphere = JRA55PrescribedAtmosphere(arch; backend=jra55_backend)
+radiation  = JRA55PrescribedRadiation(arch; backend=jra55_backend)
 coupled_model = OceanOnlyModel(ocean; atmosphere, radiation)
 
 simulation = Simulation(coupled_model; Δt=10minutes, stop_iteration=100)
