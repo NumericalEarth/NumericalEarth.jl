@@ -4,14 +4,13 @@
 # Copernicus Climate Data Store (CDS), with the Rain in Shallow Cumulus Over
 # the Ocean (RICO) trade-wind cumulus campaign (Rauber et al. 2007) as a
 # unifying case study. We consider both single-level (2-D) and pressure-level
-# (3-D) fields with two subsetting approaches (bounding box and column).
+# (3-D) fields with two subsetting approaches (bounding box and column) that
+# restrict the amount of data requested through the CDS API.
 #
 # Our focus is on a week within van Zanten et al.'s *undisturbed period*
-# (Dec 27 2004 – Jan 2 2005), during which a mean precipitation of 21 W m⁻²
-# (∼1 mm d⁻¹) was observed. Note that the day-to-day variability measured by
-# RICO instrumentation was not necessarily captured by numerical weather
-# prediction models. Here, we briefly analyze and present the ERA5 data,
-# referring to published material where appropriate.
+# (Dec 27 2004 – Jan 2 2005), during which a mean precipitation was observed.
+# Here, we briefly analyze and present the ERA5 data, referring to published
+# material where appropriate.
 #
 # Two scales are demonstrated:
 #
@@ -108,7 +107,7 @@ fig1
 # - `Column` replaces `BoundingBox` as the region restriction. This issues
 #   a smaller CDS request that downloads only the cells needed to linearly
 #   interpolate (by default) to the requested (longitude, latitude) coordinate.
-#   The `Column(...; interpolation = Nearest())` option is also available.
+#   A `Column(...; interpolation = Nearest())` option is also available.
 # - We explicitly load all fields in the timeseries into memory through
 #   `FieldTimeSeries...; time_indices_in_memory = Nt)` whereas the default is
 #   to load only two snapshots at a time. Having the full timeseries in memory
@@ -122,9 +121,11 @@ precip_col_meta   = Metadata(:total_precipitation; dataset, dates, region = rico
 precip_col_series = FieldTimeSeries(precip_col_meta; time_indices_in_memory = Nt)
 nothing #hide
 
-# ERA5 `total_precipitation` is in m/hr (liquid-water-equivalent depth);
-# we convert to a latent-heat-equivalent flux in W/m² to compare with
-# van Zanten et al.'s reported 21 W m⁻² mean.
+# ERA5 `total_precipitation` is in m (liquid-water-equivalent depth). Note
+# that this is an *accumulated* rather than instantaneous quantity (more
+# discussion [here](https://confluence.ecmwf.int/display/CKB/ERA5%3A+data+documentation#ERA5:datadocumentation-Meanrates/fluxesandaccumulations))
+# with an accumulation period of 1 hour. We convert to a latent-heat-equivalent
+# flux in W/m² to compare with van Zanten et al.'s reported 21 W m⁻² mean.
 
 ρᴸ = 1000   # kg/m³
 Lᵛ = 2.5e6  # J/kg, latent heat of vaporization
@@ -153,6 +154,12 @@ hlines!(ax2, [21.0]; color=:black, linestyle=:dash, label="van Zanten mean (21 W
 axislegend(ax2; position=:rt)
 
 fig2
+
+# In comparison with observations (van Zanten et al.'s Fig. 1), we see different
+# day-to-day variability in the reanalysis, with a wider range of values and greater
+# mean precipitation.
+
+mean(precip_W_m2)
 
 # ### Time-height of cloud liquid and rain water content at the RICO location
 #
@@ -211,7 +218,7 @@ qᶜ_data .*= 1000   # kg/kg → g/kg
 qʳ_data .*= 1000   # kg/kg → g/kg
 nothing #hide
 
-# Render as a heatmap, sharing the day-boundary x-ticks with `fig2`.
+# Render the Hovmöller diagram using `heatmap`, with the same x-ticks as `fig2`.
 
 fig3 = Figure(size=(900, 600))
 ax_qc = Axis(fig3[1, 1],
@@ -232,6 +239,8 @@ ylims!(ax_qc, 0, 4000)
 hidexdecorations!(ax_qc, grid=false)
 
 fig3
+
+# This figure tells the same story as `fig2` in a different way.
 
 # ### Profiles at the RICO location
 #
