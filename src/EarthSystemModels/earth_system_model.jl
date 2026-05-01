@@ -138,6 +138,22 @@ function EarthSystemModel(radiation, atmosphere, land, sea_ice, ocean;
                           sea_ice_reference_density = reference_density(sea_ice),
                           sea_ice_heat_capacity = heat_capacity(sea_ice),
                           interfaces = nothing)
+    if isnothing(radiation) && atmosphere isa PrescribedAtmosphere
+        @warn """
+            `EarthSystemModel` was constructed with a `PrescribedAtmosphere` but \
+            `radiation = nothing`. This means no upwelling longwave (ϵσT⁴), no \
+            absorbed downwelling longwave, and no shortwave absorption — \
+            results will be physically inconsistent.
+
+            If you previously relied on `Radiation()` defaults: pass \
+            `radiation = JRA55PrescribedRadiation(arch; backend, ...)` (or \
+            `ECCOPrescribedRadiation` / `OSPapaPrescribedRadiation`) to restore \
+            radiative forcing. Pass `radiation = PrescribedRadiation(grid)` for \
+            emission-only mode. To suppress this warning, build the model \
+            without a `PrescribedAtmosphere` (radiatively decoupled is the \
+            intended `nothing` semantics).
+        """ maxlog=1
+    end
 
     if ocean isa Simulation
         if !isnothing(ocean.callbacks)
