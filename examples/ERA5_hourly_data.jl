@@ -12,11 +12,12 @@
 # Here, we briefly analyze and present the ERA5 data, referring to published
 # material where appropriate.
 #
-# Two scales are demonstrated:
+# Three scales are demonstrated:
 #
-# 1. **Synoptic context** — surface precipitation over an Atlantic-centered
+# 1. **Global scale** - surface winds and Stokes drift over the entire globe
+# 2. **Synoptic scale** — surface precipitation over an Atlantic-centered
 #    region covering the tropics
-# 2. **Microscale** — single- and pressure-level u, v, T, qᵛ over the
+# 3. **Microscale** — single- and pressure-level u, v, T, qᵛ over the
 #    RICO study box; pressure-level qᶜˡ, qʳ in a single column.
 #
 # ## Install dependencies
@@ -62,19 +63,91 @@ nothing #hide
 rico_column = Column(-61.5, 18) # longitude, latitude
 nothing #hide
 
-# ## §1 Synoptic context: regional precipitation
+# ## §1 Global conditions
 #
 # This part of the analysis is based on [ERA5 hourly data on single levels](https://cds.climate.copernicus.eu/datasets/reanalysis-era5-single-levels),
-# available from 1940 to present.
+# available from 1940 to present. In this section, we evaluate ocean
+# surface conditions based on the near-surface wind velocity at 10-m ASL
+# and Stokes drift.
+
 dataset = ERA5HourlySingleLevel()
 nothing #hide
 
-# We use `Metadata` (multi-date) + `BoundingBox` (region restriction) + the
-# `FieldTimeSeries(metadata)` constructor as the basic building blocks
-# for constructing an ERA5 time series. Field data are downloaded on the fly
-# by `FieldTimeSeries`.
+# Note that ERA5 atmospheric variables (wind) live on a **0.25°** grid (1440×721),
+# whereas ocean wave variables (Stokes drift) live on a **0.5°** grid (720×361).
 
-precip_meta   = Metadata(:total_precipitation; dataset, dates, region=synoptic_region)
+# ### Metadata definition
+#
+# We first define metadata for each variable at a single date.
+# *Note: `Metadatum` is used for single dates while `Metadata` handles
+# multiple dates.* No `region` kwarg is specified because we want to
+# download global fields.
+
+date = first(dates)
+u_stokes_meta = Metadatum(:eastward_stokes_drift;  dataset, date)
+v_stokes_meta = Metadatum(:northward_stokes_drift; dataset, date)
+u_wind_meta   = Metadatum(:eastward_velocity;      dataset, date)
+v_wind_meta   = Metadatum(:northward_velocity;     dataset, date)
+
+# ### Build a grid and create fields
+#
+# We build a single `LatitudeLongitudeGrid` and use `set!` to download
+# and interpolate all four variables onto it.
+
+grid = LatitudeLongitudeGrid(size = (1440, 720, 1),
+                             longitude = (0, 360),
+                             latitude = (-90, 90),
+                             z = (0, 1))
+
+u_stokes = CenterField(grid)
+v_stokes = CenterField(grid)
+u_wind   = CenterField(grid)
+v_wind   = CenterField(grid)
+
+set!(u_stokes, u_stokes_meta)
+set!(v_stokes, v_stokes_meta)
+set!(u_wind,   u_wind_meta)
+set!(v_wind,   v_wind_meta)
+
+# ### Compute speeds and plot
+#
+# We use Oceananigans abstract operations to compute the speed fields,
+# then plot them directly as heatmaps on latitude–longitude axes.
+
+stokes_speed = sqrt(u_stokes^2 + v_stokes^2)
+wind_speed   = sqrt(u_wind^2   + v_wind^2)
+
+lon, lat, _ = nodes(u_stokes)
+
+fig = Figure(size=(1200, 600))
+
+ax1 = Axis(fig[1, 1]; title="Stokes drift speed (m/s)",
+           xlabel="Longitude", ylabel="Latitude")
+ax2 = Axis(fig[1, 2]; title="10-m wind speed (m/s)",
+           xlabel="Longitude", ylabel="Latitude")
+
+hm1 = heatmap!(ax1, lon, lat, stokes_speed; colormap=:speed, colorrange=(0, 0.3))
+hm2 = heatmap!(ax2, lon, lat, wind_speed;   colormap=:speed, colorrange=(0, 20))
+
+Colorbar(fig[2, 1], hm1; vertical=false, width=Relative(0.8), label="m/s")
+Colorbar(fig[2, 2], hm2; vertical=false, width=Relative(0.8), label="m/s")
+
+Label(fig[0, :],
+      "ERA5 Stokes Drift and Surface Wind — $(Dates.format(date, "yyyy-mm-dd HH:MM")) UTC";
+      fontsize=20)
+
+fig
+
+# ## §2 Synoptic conditions
+#
+# New in this section:
+#
+# - A `BoundingBox` defined by latitude and longitude ranges is introduced for
+#   region restriction.
+# - We work with a `FieldTimeSeries`, constructed from metadata, to construct
+#   an ERA5 time series. Field data are downloaded on the fly.
+
+precip_meta   = Metadata(:total_precipitation; dataset, dates, region = synoptic_region)
 precip_series = FieldTimeSeries(precip_meta)
 nothing #hide
 
@@ -89,16 +162,19 @@ to_mm_day = 1000 * 24
 precip_avg = mean(interior(precip_series[n], :, :, 1) for n in 1:Nt) * to_mm_day
 
 fig1 = Figure(size=(900, 400))
+
 ax1 = Axis(fig1[1, 1],
            title = "Mean precipitation, $(first(dates)) to $(last(dates))",
            xlabel = "Longitude (°)", ylabel = "Latitude (°)",
            xticks = -90:30:30)
+
 hm = heatmap!(ax1, λ, φ, precip_avg; colormap=:rain, colorrange=(0, 12))
+
 Colorbar(fig1[1, 2], hm, label="Precipitation (mm/day)")
 
 fig1
 
-# ## §2 Microscale conditions
+# ## §3 Microscale conditions
 #
 # ### Time history of precipitation at the RICO location
 #
@@ -149,8 +225,10 @@ ax2 = Axis(fig2[1, 1],
            title  = "Precipitation at $(rico_column.longitude)°E, $(rico_column.latitude)°N",
            ylabel = "Precipitation [W m⁻²]",
            xticks = (day_ticks, day_labels))
+
 lines!(ax2, precip_col_series.times, precip_W_m2; color=:steelblue, label="ERA5 hourly data")
 hlines!(ax2, [21.0]; color=:black, linestyle=:dash, label="van Zanten mean (21 W m⁻²)")
+
 axislegend(ax2; position=:rt)
 
 fig2
@@ -221,6 +299,7 @@ nothing #hide
 # Render the Hovmöller diagram using `heatmap`, with the same x-ticks as `fig2`.
 
 fig3 = Figure(size=(900, 600))
+
 ax_qc = Axis(fig3[1, 1],
              title  = "Specific cloud liquid water content at $(rico_column.longitude)°E, $(rico_column.latitude)°N",
              ylabel = "Height [m]",
@@ -229,8 +308,10 @@ ax_qr = Axis(fig3[2, 1],
              title  = "Specific rain water content at $(rico_column.longitude)°E, $(rico_column.latitude)°N",
              ylabel = "Height [m]",
              xticks = (day_ticks, day_labels))
+
 hm_qc = heatmap!(ax_qc, qᶜ_col_series.times, z_col, qᶜ_data; colormap=:Blues)
 hm_qr = heatmap!(ax_qr, qʳ_col_series.times, z_col, qʳ_data; colormap=:Blues)
+
 Colorbar(fig3[1, 2], hm_qc, label="qᶜˡ [g kg⁻¹]")
 Colorbar(fig3[2, 2], hm_qr, label="qʳ [g kg⁻¹]")
 
@@ -301,6 +382,7 @@ fig4_title = string("Mean ± IQR vertical profiles over the RICO box, ",
                     Dates.format(last(dates),  dateformat"u d yyyy"))
 Label(fig4[0, 1:4], fig4_title;
       fontsize=14, font=:bold, halign=:center, tellwidth=false)
+
 ax_θ = Axis(fig4[1, 1], xlabel="θ [K]",       ylabel="Height [m]")
 ax_q = Axis(fig4[1, 2], xlabel="qᵛ [g kg⁻¹]", ylabel="Height [m]")
 ax_u = Axis(fig4[1, 3], xlabel="u [m s⁻¹]",   ylabel="Height [m]", xticks=-10:2:2)
