@@ -111,7 +111,24 @@ for (n, DATASET) in enumerate(orca_datasets)
                     :Azᶜᶜᵃ, :Azᶠᶜᵃ, :Azᶜᶠᵃ, :Azᶠᶠᵃ)
             data = getproperty(grid, name)
             interior = Oceananigans.on_architecture(CPU(), data)[1:Nx, 1:Ny]
+            @test all(isfinite, Oceananigans.on_architecture(CPU(), data))
+        end
+
+        # Metrics strictly positive over the full interior. Face-y fields on
+        # RightFaceFolded have Ny+1 interior rows; the fold row Ny+1 must be checked.
+        LYs = Dict(:Δxᶜᶜᵃ => Center, :Δxᶠᶜᵃ => Center, :Δxᶜᶠᵃ => Face, :Δxᶠᶠᵃ => Face,
+                   :Δyᶜᶜᵃ => Center, :Δyᶠᶜᵃ => Center, :Δyᶜᶠᵃ => Face, :Δyᶠᶠᵃ => Face,
+                   :Azᶜᶜᵃ => Center, :Azᶠᶜᵃ => Center, :Azᶜᶠᵃ => Face, :Azᶠᶠᵃ => Face)
+        for (name, LY) in LYs
+            data = getproperty(grid, name)
+            Njf = Base.length(LY(), Oceananigans.Grids.RightFaceFolded(), Ny)
+            interior = Oceananigans.on_architecture(CPU(), data)[1:Nx, 1:Njf]
             @test all(x -> x > 0, interior) == true
+        end
+
+        for name in (:Δxᶜᶠᵃ, :Δxᶠᶠᵃ, :Δyᶜᶠᵃ, :Δyᶠᶠᵃ, :Azᶜᶠᵃ, :Azᶠᶠᵃ)
+            data = Oceananigans.on_architecture(CPU(), getproperty(grid, name))
+            @test all(x -> x > 0, data[1:Nx, Ny+1])
         end
 
         # Face-x longitude is west of Center-x longitude (stagger check)
