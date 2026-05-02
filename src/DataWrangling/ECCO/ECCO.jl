@@ -284,7 +284,7 @@ end
 dataset_variable_name(data::Metadata{<:ECCO2Daily})   = ECCO2_dataset_variable_names[data.name]
 dataset_variable_name(data::Metadata{<:ECCO2Monthly}) = ECCO2_dataset_variable_names[data.name]
 dataset_variable_name(data::Metadata{<:ECCO4Monthly}) = ECCO4_dataset_variable_names[data.name]
-dataset_location(::ECCODataset, name) = ECCO_location[name]
+dataset_location(::ECCODataset, name) = name in keys(ECCO_location) ? ECCO_location[name] : (Center, Center, Center)
 
 is_three_dimensional(data::ECCOMetadata) =
     data.name == :temperature ||
