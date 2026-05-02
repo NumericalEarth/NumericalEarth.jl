@@ -1,8 +1,10 @@
 module ORCA
 
-export ORCA1, ORCA12
+export ORCA1, ORCA2, ORCA12
 
 using Downloads
+using Tar
+using CodecZlib
 using Oceananigans
 using Oceananigans.DistributedComputations: @root
 using Scratch
@@ -123,5 +125,52 @@ end
 default_south_rows_to_remove(::ORCA1) = 35
 # Conservative default: keep all rows unless user requests trimming.
 default_south_rows_to_remove(::ORCA12) = 0
+
+# ORCA2
+struct ORCA2 <:ORCADataset end
+
+const ORCA2Metadatum = Metadatum{<:ORCA2}
+
+ORCA2_variable_names = Dict( 
+    :bottom_height => "bathy_metry",
+    :mesh_mask     => "glamt",
+)
+
+dataset_variable_name(data::ORCA2Metadatum) = ORCA2_variable_names[data.name]
+
+# Zenodo record 15705144
+const ORCA2_url = "https://zenodo.org/records/15705144/files/ORCA2L75_domaincfg_forcings.tar.gz"
+
+metadata_url(::ORCA2Metadatum) = ORCA2_url
+
+function metadata_filename(::ORCA2, name, date, bounding_box)
+    if name == :mesh_mask
+        return "ORCA2L75/ORCA2L75/domain_cfg_orca2l75_nemo5.nc"
+    elseif name == :bottom_height
+        return "ORCA2L75/ORCA2L75/domain_cfg_orca2l75_nemo5.nc"
+    else
+        error("Unknown ORCA2 variable: $name")
+    end
+end
+
+z_interfaces(::ORCA2Metadatum) = nothing
+
+function download_dataset(metadatum::ORCA2Metadatum)
+    fileurl  = metadata_url(metadatum)
+    filepath = metadata_path(metadatum)
+    fileroute = metadatum.dir
+
+    @root if !isfile(filepath)
+        @info "Downloading ORCA2 data: $(metadatum.name) to $(metadatum.dir)..."
+        Downloads.download(fileurl, fileroute*"ORCA2L75.tar.gz"; progress=download_progress)
+        open(GzipDecompressorStream, fileroute*"ORCA2L75.tar.gz") do io
+            Tar.extract(io, fileroute*"/ORCA2L75")
+        end
+    end
+
+    return filepath
+end
+
+default_south_rows_to_remove(::ORCA2) = 0
 
 end # module

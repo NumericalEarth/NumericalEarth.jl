@@ -32,6 +32,7 @@ examples = [
     Example("Single-column ocean simulation", "single_column_os_papa_simulation", true),
     Example("One-degree ocean--sea ice simulation", "one_degree_simulation", false),
     Example("Near-global ocean simulation", "near_global_ocean_simulation", false),
+    Example("Two-degree ocean--sea ice simulation", "orca2", false),
     Example("Global climate simulation", "global_climate_simulation", false),
     Example("Veros ocean simulation", "veros_ocean_forced_simulation", false),
     Example("Breeze over two oceans", "breeze_over_two_oceans", false),
