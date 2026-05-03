@@ -281,7 +281,14 @@ function atmosphere_sea_ice_interface(grid,
                                      temperature_formulation,
                                      velocity_formulation)
 
-    interface_temperature = sea_ice.model.ice_thermodynamics.top_surface_temperature
+    # When snow is present, the atmosphere interacts with the snow surface;
+    # otherwise with the ice top surface.
+    snow_thermo = sea_ice.model.snow_thermodynamics
+    interface_temperature = if isnothing(snow_thermo)
+        sea_ice.model.ice_thermodynamics.top_surface_temperature
+    else
+        snow_thermo.top_surface_temperature
+    end
 
     return AtmosphereInterface(fluxes, ai_flux_formulation, interface_temperature, properties)
 end
@@ -419,7 +426,7 @@ function ComponentInterfaces(atmosphere, ocean, sea_ice=nothing;
         sea_ice_properties = (reference_density  = sea_ice_reference_density,
                               heat_capacity      = sea_ice_heat_capacity,
                               freshwater_density = freshwater_density,
-                              liquidus           = sea_ice.model.ice_thermodynamics.phase_transitions.liquidus,
+                              liquidus           = sea_ice.model.phase_transitions.liquidus,
                               temperature_units  = sea_ice_temperature_units)
     else
         sea_ice_properties = nothing

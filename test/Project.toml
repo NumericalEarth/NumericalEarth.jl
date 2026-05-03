@@ -28,8 +28,8 @@ WorldOceanAtlasTools = "04f20302-f1b9-11e8-29d9-7d841cb0a64a"
 XESMF = "2e0b0046-e7a1-486f-88de-807ee8ffabe5"
 
 [sources]
+ClimaSeaIce = {url = "https://github.com/CliMA/ClimaSeaIce.jl", rev = "ss/refactor-thermodynamics"}
 NumericalEarth = {path = ".."}
-Breeze = {url = "https://github.com/NumericalEarth/Breeze.jl/", rev = "main"}
 
 [compat]
 Breeze = "0.4"

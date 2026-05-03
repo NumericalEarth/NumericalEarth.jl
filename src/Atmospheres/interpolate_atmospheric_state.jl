@@ -31,6 +31,7 @@ function interpolate_state!(exchanger, grid, atmosphere::PrescribedAtmosphere, c
     ℐꜜˡʷ = atmosphere.downwelling_radiation.longwave
     downwelling_radiation = (shortwave=ℐꜜˢʷ.data, longwave=ℐꜜˡʷ.data)
     freshwater_flux = map(ϕ -> ϕ.data, atmosphere.freshwater_flux)
+    snowfall_flux = haskey(atmosphere.freshwater_flux, :snow) ? atmosphere.freshwater_flux.snow.data : nothing
     atmosphere_pressure = atmosphere.pressure.data
 
     # Extract info for time-interpolation
@@ -51,7 +52,8 @@ function interpolate_state!(exchanger, grid, atmosphere::PrescribedAtmosphere, c
                        q    = atmosphere_fields.q.data,
                        ℐꜜˢʷ = atmosphere_fields.ℐꜜˢʷ.data,
                        ℐꜜˡʷ = atmosphere_fields.ℐꜜˡʷ.data,
-                       Jᶜ   = atmosphere_fields.Jᶜ.data)
+                       Jᶜ   = atmosphere_fields.Jᶜ.data,
+                       Jˢⁿ  = atmosphere_fields.Jˢⁿ.data)
 
     kernel_parameters = interface_kernel_parameters(grid)
 
@@ -74,6 +76,7 @@ function interpolate_state!(exchanger, grid, atmosphere::PrescribedAtmosphere, c
             atmosphere_pressure,
             downwelling_radiation,
             freshwater_flux,
+            snowfall_flux,
             atmosphere_backend,
             atmosphere_time_indexing)
 
@@ -101,6 +104,7 @@ end
                                                          atmos_pressure,
                                                          downwelling_radiation,
                                                          prescribed_freshwater_flux,
+                                                         snowfall_flux,
                                                          atmos_backend,
                                                          atmos_time_indexing)
 
@@ -124,8 +128,11 @@ end
     ℐꜜˢʷ = interp_atmos_time_series(downwelling_radiation.shortwave, atmos_args...)
     ℐꜜˡʷ = interp_atmos_time_series(downwelling_radiation.longwave,  atmos_args...)
 
-    # Usually precipitation
+    # Total precipitation (rain + snow)
     Mh = interp_atmos_time_series(prescribed_freshwater_flux, atmos_args...)
+
+    # Snowfall only (for sea ice snow accumulation)
+    Ms = interp_atmos_time_series(snowfall_flux, atmos_args...)
 
     # Convert atmosphere velocities (usually defined on a latitude-longitude grid) to
     # the frame of reference of the native grid
@@ -141,6 +148,7 @@ end
         surface_atmos_state.ℐꜜˢʷ[i, j, 1] = ℐꜜˢʷ
         surface_atmos_state.ℐꜜˡʷ[i, j, 1] = ℐꜜˡʷ
         surface_atmos_state.Jᶜ[i, j, 1] = Mh
+        surface_atmos_state.Jˢⁿ[i, j, 1] = Ms
     end
 end
 
@@ -148,9 +156,11 @@ end
 ##### Utility for interpolating tuples of fields
 #####
 
+@inline interp_atmos_time_series(::Nothing, X, time, grid, args...) = 0
+
 # Note: assumes loc = (c, c, nothing) (and the third location should not matter.)
-@inline interp_atmos_time_series(J::AbstractArray, x_itp::FractionalIndices, t_itp, args...) =
-    interpolate(x_itp, t_itp, J, args...)
+@inline interp_atmos_time_series(J::AbstractArray, X::FractionalIndices, time, args...) =
+    interpolate(X, time, J, args...)
 
 @inline interp_atmos_time_series(J::AbstractArray, X, time, grid, args...) =
     interpolate(X, time, J, (Center(), Center(), nothing), grid, args...)
