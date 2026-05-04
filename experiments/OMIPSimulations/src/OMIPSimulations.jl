@@ -50,8 +50,11 @@ export omip_simulation,
        compute_woa_bias,
        strait_transports,
        strait_sections,
-       StraitSection
+       StraitSection,
+       woa_to_teos10!,
+       woa_salinity_fts_to_teos10!
 
+include("nori_base_closure.jl")
 include("atmosphere.jl")
 include("jra55_data_staging.jl")
 include("omip_simulation.jl")

@@ -27,11 +27,13 @@ const cp_ocean = 3991.86795711963
 # `stop_time`). Any number of cases is supported, with per-case heatmap
 # figures laying out one column per case.
 cases = [
-    (prefix = "orca_corrected_snow_cb0.12_ksymm500",            label = "ORCA GM500",         start_time = 15 * years, stop_time = Inf),
-    (prefix = "orca_corrected_snow_cb0.15_bih50days",           label = "ORCA GM500 LowDiss", start_time =  5 * years, stop_time = Inf),
-    (prefix = "halfdegree_corrected_snow_cb0.01_kskew0_ksymm0", label = "Half Degree",        start_time = 10 * years, stop_time = Inf),
-    (prefix = "orca_corrected_snow_cb0.06_kskew0_ksymm0",       label = "ORCA NOGM",          start_time = 40 * years, stop_time = Inf),
-    (prefix = "orca_corrected_snow_cb0.06_kskew1000_ksymm1000", label = "ORCA GM1000",        start_time = 40 * years, stop_time = Inf),
+    (prefix = "orca_corrected_snow_cb0.12_ksymm500",            label = "ORCA GM500",           start_time = 40 * years, stop_time = Inf),
+    (prefix = "orca_corrected_snow_cb0.15_bih50days",           label = "ORCA GM500 LowDiss",   start_time = 20 * years, stop_time = Inf),
+    (prefix = "orca_corrected_snow_cb0.15_bihvisc3e10",         label = "ORCA GM500 LowerDiss", start_time = 15 * years, stop_time = Inf),
+    (prefix = "orca_ncar_snow_cb0.15_bih50days",                label = "ORCA NCAR",            start_time =  3 * years, stop_time = Inf),
+    (prefix = "halfdegree_corrected_snow_cb0.01_kskew0_ksymm0", label = "Half Degree",          start_time = 20 * years, stop_time = Inf),
+    (prefix = "orca_corrected_snow_cb0.06_kskew0_ksymm0",       label = "ORCA NOGM",            start_time = 40 * years, stop_time = Inf),
+    (prefix = "orca_corrected_snow_cb0.06_kskew1000_ksymm1000", label = "ORCA GM1000",          start_time = 40 * years, stop_time = Inf),
 ]
 
 run_dir_for(prefix) = "$(prefix)_run"
@@ -51,14 +53,14 @@ using JLD2
 using NCDatasets
 using WorldOceanAtlasTools
 using Oceananigans
-using Oceananigans.Grids: znodes, φnodes, φnode
+using Oceananigans.Grids: znodes, φnodes, φnode, Face
 using Oceananigans.Fields: interpolate!
 using ConservativeRegridding
 using NumericalEarth
 using NumericalEarth.DataWrangling: Metadatum
 using NumericalEarth.DataWrangling.WOA: WOAAnnual
 using NumericalEarth: ECCO4Monthly
-using OMIPSimulations: strait_transports
+using OMIPSimulations: strait_transports, woa_to_teos10!
 
 # ══════════════════════════════════════════════════════════════
 # Monkey-patch: InMemory FieldTimeSeries split-file support
@@ -224,6 +226,26 @@ function find_first_file(run_dir, prefix, group)
     basename_no_part = replace(filename, r"_part\d+" => "")
     return joinpath(run_dir, basename_no_part)
 end
+
+# Latest mtime among all part files for a (prefix, group) pair. Used to
+# decide whether a derived-quantity cache is still fresh.
+function latest_part_mtime(run_dir, prefix, group)
+    tag = "$(prefix)_$(group)"
+    files = filter(f -> startswith(f, tag) && endswith(f, ".jld2") &&
+                        !contains(f, "checkpoint"), readdir(run_dir))
+    isempty(files) && return 0.0
+    return maximum(stat(joinpath(run_dir, f)).mtime for f in files)
+end
+
+# Path of the per-case derived-diagnostic cache. Keyed by the field-file
+# mtime: any update to the underlying fields output invalidates the cache.
+diag_cache_path(run_dir, prefix) = joinpath(run_dir, prefix * "_diag_cache.jld2")
+
+# Setting OMIP_SKIP_KE=1 short-circuits the most expensive part of
+# `load_timeseries_case` (the per-snapshot 3-D KE/TKE reductions) and
+# returns empty time series for those quantities. Useful when iterating
+# on figures that don't depend on `fig14_tke.png`.
+const SKIP_KE = get(ENV, "OMIP_SKIP_KE", "0") == "1"
 
 function in_window(fts; start_time = 0, stop_time = Inf)
     return findall(t -> start_time <= t <= stop_time, fts.times)
@@ -646,6 +668,10 @@ function load_surface_case(run_dir, prefix; start_time = 0, stop_time = Inf)
     S_woa = Field(Metadatum(:salinity;    dataset = WOAAnnual()), CPU())
     T_interp = CenterField(grid); interpolate!(T_interp, T_woa)
     S_interp = CenterField(grid); interpolate!(S_interp, S_woa)
+    # Convert WOA in-situ T and Practical S to TEOS-10 Conservative T and
+    # Absolute Salinity so the bias is computed between like-typed fields
+    # (the model's `tos`, `sos` are Conservative T and Absolute S).
+    woa_to_teos10!(T_interp, S_interp)
     T_woa_on_grid = Array(interior(T_interp))
     S_woa_on_grid = Array(interior(S_interp))
     δSST = SST .- T_woa_on_grid[:, :, Nz]
@@ -717,7 +743,7 @@ end
 # Figure 1: SST bias
 @info "Figure 1: SST bias"
 savefig(plot_field_grid(:δSST;  title_suffix = "SST - WOA", colormap = :balance,
-                        colorrange = (-5, 5), label = "deg C"),
+                        colorrange = (-2.75, 2.75), label = "deg C"),
         "fig01_sst_bias.png")
 
 # Figure 2: SSS bias
@@ -797,7 +823,7 @@ for (i, lab) in enumerate(labels)
            colorrange = (-200, 200), label = "W/m^2")
     panel!(fig, [2, 2i-1], D[lab].FW;
            title = "$lab: Net freshwater flux", colormap = :balance,
-           colorrange = (-1e-4, 1e-4), label = "kg/m^2/s")
+           colorrange = (-1e-5, 1e-5), label = "kg/m^2/s")
 end
 savefig(fig, "fig06_surface_fluxes.png")
 
@@ -960,75 +986,72 @@ m3_to_1e3km3 = 1e-12
 
 # Figure 9: SIE
 @info "Figure 9: SIE"
-fig = Figure(size = (1200, 500), fontsize = 14)
-ax = Axis(fig[1, 1]; xlabel="Month", ylabel="SIE (Million km²)", title="Arctic SIE Climatology", xticks=(1:12, month_names))
-lines!(ax, 1:12, nsidc_arctic.extent_monthly; color=:black, linewidth=2, label="NSIDC")
+fig = Figure(size = (600 + 200 * length(labels), 500), fontsize = 14)
+ax_a = Axis(fig[1, 1]; xlabel="Month", ylabel="SIE (Million km²)", title="Arctic SIE Climatology", xticks=(1:12, month_names))
+lines!(ax_a, 1:12, nsidc_arctic.extent_monthly; color=:black, linewidth=2, label="NSIDC")
 for (i, lab) in enumerate(labels)
-    lines!(ax, 1:12, ICE[lab].arctic_extent_monthly .* m2_to_Mkm2; color=case_colors[i], label=lab)
+    lines!(ax_a, 1:12, ICE[lab].arctic_extent_monthly .* m2_to_Mkm2; color=case_colors[i], label=lab)
 end
-axislegend(ax; position=:lb)
-ax = Axis(fig[1, 2]; xlabel="Month", ylabel="SIE (Million km²)", title="Antarctic SIE Climatology", xticks=(1:12, month_names))
-lines!(ax, 1:12, nsidc_antarctic.extent_monthly; color=:black, linewidth=2, label="NSIDC")
+ax_b = Axis(fig[1, 2]; xlabel="Month", ylabel="SIE (Million km²)", title="Antarctic SIE Climatology", xticks=(1:12, month_names))
+lines!(ax_b, 1:12, nsidc_antarctic.extent_monthly; color=:black, linewidth=2, label="NSIDC")
 for (i, lab) in enumerate(labels)
-    lines!(ax, 1:12, ICE[lab].antarctic_extent_monthly .* m2_to_Mkm2; color=case_colors[i], label=lab)
+    lines!(ax_b, 1:12, ICE[lab].antarctic_extent_monthly .* m2_to_Mkm2; color=case_colors[i], label=lab)
 end
-axislegend(ax; position=:rt)
+Legend(fig[1, 3], ax_a)
 savefig(fig, "fig09_sie.png")
 
 # Figure 10: SIA
 @info "Figure 10: SIA"
-fig = Figure(size = (1200, 500), fontsize = 14)
-ax = Axis(fig[1, 1]; xlabel="Month", ylabel="SIA (Million km²)", title="Arctic SIA Climatology", xticks=(1:12, month_names))
-lines!(ax, 1:12, nsidc_arctic.area_monthly; color=:black, linewidth=2, label="NSIDC")
+fig = Figure(size = (600 + 200 * length(labels), 500), fontsize = 14)
+ax_a = Axis(fig[1, 1]; xlabel="Month", ylabel="SIA (Million km²)", title="Arctic SIA Climatology", xticks=(1:12, month_names))
+lines!(ax_a, 1:12, nsidc_arctic.area_monthly; color=:black, linewidth=2, label="NSIDC")
 for (i, lab) in enumerate(labels)
-    lines!(ax, 1:12, ICE[lab].arctic_area_monthly .* m2_to_Mkm2; color=case_colors[i], label=lab)
+    lines!(ax_a, 1:12, ICE[lab].arctic_area_monthly .* m2_to_Mkm2; color=case_colors[i], label=lab)
 end
-axislegend(ax; position=:lb)
-ax = Axis(fig[1, 2]; xlabel="Month", ylabel="SIA (Million km²)", title="Antarctic SIA Climatology", xticks=(1:12, month_names))
-lines!(ax, 1:12, nsidc_antarctic.area_monthly; color=:black, linewidth=2, label="NSIDC")
+ax_b = Axis(fig[1, 2]; xlabel="Month", ylabel="SIA (Million km²)", title="Antarctic SIA Climatology", xticks=(1:12, month_names))
+lines!(ax_b, 1:12, nsidc_antarctic.area_monthly; color=:black, linewidth=2, label="NSIDC")
 for (i, lab) in enumerate(labels)
-    lines!(ax, 1:12, ICE[lab].antarctic_area_monthly .* m2_to_Mkm2; color=case_colors[i], label=lab)
+    lines!(ax_b, 1:12, ICE[lab].antarctic_area_monthly .* m2_to_Mkm2; color=case_colors[i], label=lab)
 end
-axislegend(ax; position=:rt)
+Legend(fig[1, 3], ax_a)
 savefig(fig, "fig10_sia.png")
 
 # Figure 11: Arctic volume
 @info "Figure 11: Arctic volume"
-fig = Figure(size = (600, 500), fontsize = 14)
+fig = Figure(size = (400 + 200 * length(labels), 500), fontsize = 14)
 ax = Axis(fig[1, 1]; xlabel="Month", ylabel="Ice volume (10³ km³)", title="Arctic sea-ice volume", xticks=(1:12, month_names))
 lines!(ax, 1:12, piomas_monthly; color=:black, linewidth=2, label="PIOMAS")
 for (i, lab) in enumerate(labels)
     lines!(ax, 1:12, ICE[lab].arctic_volume_monthly .* m3_to_1e3km3; color=case_colors[i], label=lab)
 end
-axislegend(ax; position=:rt)
+Legend(fig[1, 2], ax)
 savefig(fig, "fig11_arctic_volume.png")
 
 # Figure 12: SIA time series
 @info "Figure 12: SIA time series"
-fig = Figure(size = (1200, 500), fontsize = 14)
-ax = Axis(fig[1, 1]; xlabel="Time (years)", ylabel="SIA (Million km²)", title="Arctic sea-ice area")
+fig = Figure(size = (600 + 200 * length(labels), 500), fontsize = 14)
+ax_a = Axis(fig[1, 1]; xlabel="Time (years)", ylabel="SIA (Million km²)", title="Arctic sea-ice area")
 for (i, lab) in enumerate(labels)
     time_years = [Dates.value(d - ICE[lab].snapshot_dates[1]) / (365.25 * 86400 * 1000) for d in ICE[lab].snapshot_dates]
-    lines!(ax, time_years, ICE[lab].arctic_area .* m2_to_Mkm2; color=case_colors[i], label=lab)
+    lines!(ax_a, time_years, ICE[lab].arctic_area .* m2_to_Mkm2; color=case_colors[i], label=lab)
 end
-axislegend(ax; position=:rt)
-ax = Axis(fig[1, 2]; xlabel="Time (years)", ylabel="SIA (Million km²)", title="Antarctic sea-ice area")
+ax_b = Axis(fig[1, 2]; xlabel="Time (years)", ylabel="SIA (Million km²)", title="Antarctic sea-ice area")
 for (i, lab) in enumerate(labels)
     time_years = [Dates.value(d - ICE[lab].snapshot_dates[1]) / (365.25 * 86400 * 1000) for d in ICE[lab].snapshot_dates]
-    lines!(ax, time_years, ICE[lab].antarctic_area .* m2_to_Mkm2; color=case_colors[i], label=lab)
+    lines!(ax_b, time_years, ICE[lab].antarctic_area .* m2_to_Mkm2; color=case_colors[i], label=lab)
 end
-axislegend(ax; position=:rt)
+Legend(fig[1, 3], ax_a)
 savefig(fig, "fig12_sia_timeseries.png")
 
 # Figure 13: Arctic volume time series
 @info "Figure 13: Arctic volume time series"
-fig = Figure(size = (600, 500), fontsize = 14)
+fig = Figure(size = (400 + 200 * length(labels), 500), fontsize = 14)
 ax = Axis(fig[1, 1]; xlabel="Time (years)", ylabel="Ice volume (10³ km³)", title="Arctic sea-ice volume")
 for (i, lab) in enumerate(labels)
     time_years = [Dates.value(d - ICE[lab].snapshot_dates[1]) / (365.25 * 86400 * 1000) for d in ICE[lab].snapshot_dates]
     lines!(ax, time_years, ICE[lab].arctic_volume .* m3_to_1e3km3; color=case_colors[i], label=lab)
 end
-axislegend(ax; position=:rt)
+Legend(fig[1, 2], ax)
 savefig(fig, "fig13_arctic_volume_timeseries.png")
 
 # ══════════════════════════════════════════════════════════════
@@ -1042,6 +1065,19 @@ function load_timeseries_case(run_dir, prefix, grid; start_time = 0, stop_time =
     temperature_mean = [Array(interior(temperature_mean_fts[n]))[1] for n in 1:length(temperature_mean_fts.times)]
     salinity_mean    = [Array(interior(salinity_mean_fts[n]))[1]  for n in 1:length(salinity_mean_fts.times)]
     time_in_years    = temperature_mean_fts.times ./ (365.25 * 24 * 3600)
+
+    # Global-mean SSH (`zosga`). In a Boussinesq free-surface ocean with
+    # the OMIP-2 virtual-salt-flux convention (no surface mass flux is
+    # applied to η; freshwater changes salinity only via Jˢ = -S Σ𝓕ₐₒ),
+    # the global-mean displacement must be conserved to round-off.
+    # A non-zero drift indicates a leak in the surface boundary condition.
+    # Older runs may not have this diagnostic written, so degrade gracefully.
+    ssh_mean = try
+        ssh_mean_fts = FieldTimeSeries(averages_file, "zosga"; backend = deepcopy(FTS_BACKEND))
+        [Array(interior(ssh_mean_fts[n]))[1] for n in 1:length(ssh_mean_fts.times)]
+    catch
+        Float64[]
+    end
 
     temperature_profile_fts = FieldTimeSeries(averages_file, "to_h"; backend = deepcopy(FTS_BACKEND))
     salinity_profile_fts    = FieldTimeSeries(averages_file, "so_h"; backend = deepcopy(FTS_BACKEND))
@@ -1062,39 +1098,119 @@ function load_timeseries_case(run_dir, prefix, grid; start_time = 0, stop_time =
     drift_time_in_years = temperature_profile_fts.times ./ (365.25 * 24 * 3600)
 
     fields_file = find_first_file(run_dir, prefix, "fields")
-    tke_fts     = FieldTimeSeries(fields_file, "tke"; backend = deepcopy(FTS_BACKEND))
-    u_fts       = FieldTimeSeries(fields_file, "uo"; backend = deepcopy(FTS_BACKEND))
-    v_fts       = FieldTimeSeries(fields_file, "vo"; backend = deepcopy(FTS_BACKEND))
-
     ocean_mask  = build_ocean_mask_3d(grid)
     ocean_cells = sum(ocean_mask)
 
-    Nt_tke = length(tke_fts.times)
-    tke_mean = zeros(Nt_tke)
-    for n in 1:Nt_tke
-        tke_mean[n] = sum(interior(tke_fts[n]) .* ocean_mask) / ocean_cells
+    # KE/TKE acquisition strategy, in order of preference:
+    #   1. New runs write `:kega` / `:tkega` as scalar averages directly
+    #      to `<prefix>_averages.jld2` — read instantly.
+    #   2. Existing runs without those scalars: read from the per-case
+    #      `<prefix>_diag_cache.jld2`, keyed by fields-file mtime.
+    #   3. Cold path: re-derive from per-snapshot 3-D reads of `tke/uo/vo`
+    #      and write the cache for next time.
+    #
+    # The cold path is by far the slowest step in this function: each
+    # snapshot read of `tke`/`uo`/`vo` on an ORCA grid is ~440 MB, and with
+    # O(10³) snapshots × N cases on the same filesystem under
+    # `Threads.@spawn` the disk thrashes for hours.
+    cache_file   = diag_cache_path(run_dir, prefix)
+    fields_mtime = latest_part_mtime(run_dir, prefix, "fields")
+    cache_valid  = isfile(cache_file) &&
+                   stat(cache_file).mtime >= fields_mtime &&
+                   fields_mtime > 0
+
+    # Source 1: scalar `kega`/`tkega` straight from the averages file.
+    function _try_scalar_averages()
+        try
+            ke_fts  = FieldTimeSeries(averages_file, "kega"; backend = deepcopy(FTS_BACKEND))
+            ke_v    = [Array(interior(ke_fts[n]))[1] for n in 1:length(ke_fts.times)]
+            tke_v   = try
+                tke_fts_avg = FieldTimeSeries(averages_file, "tkega"; backend = deepcopy(FTS_BACKEND))
+                [Array(interior(tke_fts_avg[n]))[1] for n in 1:length(tke_fts_avg.times)]
+            catch
+                zeros(length(ke_v))
+            end
+            years_v = ke_fts.times ./ (365.25 * 24 * 3600)
+            return tke_v, ke_v, years_v
+        catch
+            return nothing
+        end
     end
 
-    # Build the KE operation once; reuse the scratch output Field every step.
-    # Earlier version allocated a fresh `Field(@at(...))` per snapshot, which
-    # compiled a new lazy op and new output buffer each iteration.
-    u_scratch = Field{Face, Center, Center}(grid)
-    v_scratch = Field{Center, Face, Center}(grid)
-    ke_op     = @at((Center, Center, Center),
-                    u_scratch * u_scratch + v_scratch * v_scratch)
-    ke_field  = Field(ke_op)
+    function _compute_ke_tke()
+        @info "  Computing KE/TKE means from fields file for $prefix (one-time, slow)..."
+        tke_fts = FieldTimeSeries(fields_file, "tke"; backend = deepcopy(FTS_BACKEND))
+        u_fts   = FieldTimeSeries(fields_file, "uo";  backend = deepcopy(FTS_BACKEND))
+        v_fts   = FieldTimeSeries(fields_file, "vo";  backend = deepcopy(FTS_BACKEND))
 
-    Nt_ke = length(u_fts.times)
-    ke_mean = zeros(Nt_ke)
-    for n in 1:Nt_ke
-        set!(u_scratch, u_fts[n])
-        set!(v_scratch, v_fts[n])
-        compute!(ke_field)
-        ke_mean[n] = sum(interior(ke_field) .* ocean_mask) / (2 * ocean_cells)
+        Nt_tke = length(tke_fts.times)
+        tke_mean_v = zeros(Nt_tke)
+        for n in 1:Nt_tke
+            tke_mean_v[n] = sum(interior(tke_fts[n]) .* ocean_mask) / ocean_cells
+        end
+
+        # Approximate global-mean KE from staggered velocities directly
+        # (without interpolating to centers). For a *global* mean the
+        # staggered-vs-centered mask shift is < 0.1 % and consistent
+        # across cases, while skipping the per-snapshot `set!`/`compute!`
+        # kernel saves a kernel launch and an extra 3-D field allocation
+        # per timestep.
+        Nt_ke = length(u_fts.times)
+        ke_mean_v = zeros(Nt_ke)
+        for n in 1:Nt_ke
+            uᵢ = interior(u_fts[n])
+            vᵢ = interior(v_fts[n])
+            ke_mean_v[n] = (sum(abs2, uᵢ) + sum(abs2, vᵢ)) / (2 * ocean_cells)
+        end
+
+        years_v = tke_fts.times ./ (365.25 * 24 * 3600)
+        return tke_mean_v, ke_mean_v, years_v
     end
-    tke_time_in_years = tke_fts.times ./ (365.25 * 24 * 3600)
 
-    return (; temperature_mean, salinity_mean, time_in_years,
+    scalar_avg = SKIP_KE ? nothing : _try_scalar_averages()
+
+    tke_mean, ke_mean, tke_time_in_years = if SKIP_KE
+        @info "  OMIP_SKIP_KE=1, skipping KE/TKE for $prefix"
+        Float64[], Float64[], Float64[]
+    elseif !isnothing(scalar_avg)
+        @info "  Using scalar `kega`/`tkega` from averages file for $prefix"
+        scalar_avg
+    elseif cache_valid
+        @info "  Loading KE/TKE cache for $prefix from $(basename(cache_file))"
+        try
+            jldopen(cache_file, "r") do f
+                f["tke_mean"], f["ke_mean"], f["tke_time_in_years"]
+            end
+        catch err
+            @warn "  Cache read failed ($err); recomputing." prefix
+            tup = _compute_ke_tke()
+            try
+                jldopen(cache_file, "w") do f
+                    f["tke_mean"]            = tup[1]
+                    f["ke_mean"]             = tup[2]
+                    f["tke_time_in_years"]   = tup[3]
+                end
+            catch e2
+                @warn "  Cache write failed ($e2); continuing without cache." prefix
+            end
+            tup
+        end
+    else
+        tup = _compute_ke_tke()
+        try
+            jldopen(cache_file, "w") do f
+                f["tke_mean"]          = tup[1]
+                f["ke_mean"]           = tup[2]
+                f["tke_time_in_years"] = tup[3]
+            end
+            @info "  Saved KE/TKE cache for $prefix to $(basename(cache_file))"
+        catch e
+            @warn "  Cache write failed ($e); continuing without cache." prefix
+        end
+        tup
+    end
+
+    return (; temperature_mean, salinity_mean, ssh_mean, time_in_years,
               temperature_profile, salinity_profile, depth,
               temperature_drift, salinity_drift, drift_time_in_years,
               tke_mean, ke_mean, tke_time_in_years, ocean_mask, fields_file)
@@ -1116,51 +1232,79 @@ end
 # Figures 14-16: Time series and profiles
 # ══════════════════════════════════════════════════════════════
 
-# Figure 14: TKE
-@info "Figure 14: TKE and KE"
-fig = Figure(size = (900, 600), fontsize = 14)
-ax = Axis(fig[1, 1]; xlabel="Time (years)", ylabel="TKE (m²/s²)", title="Global-mean turbulent kinetic energy")
-for (i, lab) in enumerate(labels)
-    lines!(ax, TS[lab].tke_time_in_years, TS[lab].tke_mean; color=case_colors[i], label=lab)
+# Figure 14: TKE / KE. Skipped when OMIP_SKIP_KE=1 (no per-snapshot
+# 3-D field reads were performed in `load_timeseries_case`).
+if SKIP_KE
+    @info "Figure 14: skipped (OMIP_SKIP_KE=1)"
+else
+    @info "Figure 14: TKE and KE"
+    fig = Figure(size = (600 + 150 * length(labels), 600), fontsize = 14)
+    ax_tke = Axis(fig[1, 1]; xlabel="Time (years)", ylabel="TKE (m²/s²)", title="Global-mean turbulent kinetic energy")
+    for (i, lab) in enumerate(labels)
+        isempty(TS[lab].tke_mean) && continue
+        lines!(ax_tke, TS[lab].tke_time_in_years, TS[lab].tke_mean; color=case_colors[i], label=lab)
+    end
+    ax_ke = Axis(fig[2, 1]; xlabel="Time (years)", ylabel="KE (m²/s²)", title="Global-mean kinetic energy")
+    for (i, lab) in enumerate(labels)
+        isempty(TS[lab].ke_mean) && continue
+        lines!(ax_ke, TS[lab].tke_time_in_years, TS[lab].ke_mean; color=case_colors[i], label=lab)
+    end
+    Legend(fig[1, 2], ax_tke)
+    Legend(fig[2, 2], ax_ke)
+    savefig(fig, "fig14_tke.png")
 end
-axislegend(ax; position=:rb)
-ax = Axis(fig[2, 1]; xlabel="Time (years)", ylabel="TKE (m²/s²)", title="Global-mean kinetic energy")
-for (i, lab) in enumerate(labels)
-    lines!(ax, TS[lab].tke_time_in_years, TS[lab].ke_mean; color=case_colors[i], label=lab)
-end
-axislegend(ax; position=:rb)
-savefig(fig, "fig14_tke.png")
 
-# Figure 15: T and S drift
-@info "Figure 15: T and S drift"
-fig = Figure(size = (1200, 450), fontsize = 14)
-ax = Axis(fig[1, 1]; xlabel="Time (years)", ylabel="ΔT (deg C)", title="Global-mean temperature drift")
+# Figure 15: T, S and SSH drift.
+#
+# The Δ⟨η⟩ panel is a Boussinesq mass-conservation check: with the
+# OMIP-2 virtual-salt-flux convention the model applies P-E-R only as a
+# salinity tendency, not as a volume flux on η, so the global-mean
+# free-surface displacement should remain at its initial value to
+# barotropic-solver round-off (typically |Δ⟨η⟩| < 1e-6 m). Any visible
+# trend or step indicates a non-conserving surface boundary condition.
+@info "Figure 15: T, S, SSH drift"
+has_ssh = any(lab -> !isempty(TS[lab].ssh_mean), labels)
+ncols_drift = has_ssh ? 4 : 3
+fig = Figure(size = (600 + 200 * length(labels) * ncols_drift / 3, 450), fontsize = 14)
+ax_T = Axis(fig[1, 1]; xlabel="Time (years)", ylabel="ΔT (deg C)", title="Global-mean temperature drift")
 for (i, lab) in enumerate(labels)
     d = TS[lab]
-    lines!(ax, d.time_in_years, d.temperature_mean .- d.temperature_mean[1]; color=case_colors[i], label=lab)
+    lines!(ax_T, d.time_in_years, d.temperature_mean .- d.temperature_mean[1]; color=case_colors[i], label=lab)
 end
-axislegend(ax; position=:lb)
-ax = Axis(fig[1, 2]; xlabel="Time (years)", ylabel="ΔS (PSU)", title="Global-mean salinity drift")
+ax_S = Axis(fig[1, 2]; xlabel="Time (years)", ylabel="ΔS (PSU)", title="Global-mean salinity drift")
 for (i, lab) in enumerate(labels)
     d = TS[lab]
-    lines!(ax, d.time_in_years, d.salinity_mean .- d.salinity_mean[1]; color=case_colors[i], label=lab)
+    lines!(ax_S, d.time_in_years, d.salinity_mean .- d.salinity_mean[1]; color=case_colors[i], label=lab)
 end
-axislegend(ax; position=:lb)
+if has_ssh
+    ax_η = Axis(fig[1, 3]; xlabel="Time (years)", ylabel="Δ⟨η⟩ (m)",
+                title="Global-mean SSH drift  (should be ≈ 0)")
+    hlines!(ax_η, [0.0]; color = :gray, linestyle = :dash)
+    for (i, lab) in enumerate(labels)
+        d = TS[lab]
+        isempty(d.ssh_mean) && continue
+        # Use the temperature-mean time vector (same averaging schedule).
+        t = d.time_in_years[1:length(d.ssh_mean)]
+        lines!(ax_η, t, d.ssh_mean .- d.ssh_mean[1]; color=case_colors[i], label=lab)
+    end
+end
+Legend(fig[1, ncols_drift], ax_T)
 savefig(fig, "fig15_drift.png")
 
 # Figure 16: Profiles
 @info "Figure 16: Profiles"
-fig = Figure(size = (1000, 600), fontsize = 14)
-ax = Axis(fig[1, 1]; xlabel="Temperature (deg C)", ylabel="Depth (m)", title="Horizontal-mean temperature")
+fig = Figure(size = (600 + 200 * length(labels), 600), fontsize = 14)
+ax_T = Axis(fig[1, 1]; xlabel="Temperature (deg C)", ylabel="Depth (m)", title="Horizontal-mean temperature")
 for (i, lab) in enumerate(labels)
-    lines!(ax, TS[lab].temperature_profile, TS[lab].depth; color=case_colors[i], label=lab)
+    lines!(ax_T, TS[lab].temperature_profile, TS[lab].depth; color=case_colors[i], label=lab)
 end
-ylims!(ax, (-5500, 0)); axislegend(ax; position=:rb)
-ax = Axis(fig[1, 2]; xlabel="Salinity (PSU)", ylabel="Depth (m)", title="Horizontal-mean salinity")
+ylims!(ax_T, (-5500, 0))
+ax_S = Axis(fig[1, 2]; xlabel="Salinity (PSU)", ylabel="Depth (m)", title="Horizontal-mean salinity")
 for (i, lab) in enumerate(labels)
-    lines!(ax, TS[lab].salinity_profile, TS[lab].depth; color=case_colors[i], label=lab)
+    lines!(ax_S, TS[lab].salinity_profile, TS[lab].depth; color=case_colors[i], label=lab)
 end
-ylims!(ax, (-5500, 0)); axislegend(ax; position=:rb)
+ylims!(ax_S, (-5500, 0))
+Legend(fig[1, 3], ax_T)
 savefig(fig, "fig16_profiles.png")
 
 # ══════════════════════════════════════════════════════════════
@@ -1247,6 +1391,39 @@ for c in cases
         mld_max_dbm_zonal = vec(compute_zonal_mean(mld_max_dbm_3d, surface_ocean_mask, regridder, Nlon, Nlat))
     end
 
+    # Steric / dynamic SSH decomposition (test 4 in 2026-04-30 SSH analysis).
+    #
+    # In Boussinesq the global thermosteric expansion is missing, but the
+    # *local* steric anomaly relative to the column mean is captured in the
+    # column integral of buoyancy:
+    #
+    #     η_s(x,y) = (1/g) ∫_{-H}^{0} b(x,y,z) dz,    b = -g(ρ-ρ₀)/ρ₀
+    #
+    # The dynamic (mass-loading + barotropic-adjustment) component is then
+    # η_d = η - η_s. Both are reported with their ocean global means
+    # subtracted, matching the demeaning convention used for the
+    # SSH-vs-ECCO bias panel.
+    @info "Computing steric / dynamic SSH split for $lab..."
+    g_acc = 9.80665
+    zface = collect(znodes(grid, Face()))             # length Nz+1
+    Δz_vec = zface[2:end] .- zface[1:end-1]           # length Nz
+    b3d = Array(buoyancy_mean)
+    b3d .*= ocean_mask                                # zero out below-bathymetry cells
+    η_steric_xy = dropdims(sum(b3d .* reshape(Δz_vec, 1, 1, :); dims=3); dims=3) ./ g_acc
+    surface_ocean_mask_2d = ocean_mask[:, :, end]
+    SSH_total  = copy(D[lab].SSH)
+    for I in eachindex(η_steric_xy)
+        if surface_ocean_mask_2d[I] == 0
+            η_steric_xy[I] = NaN
+        end
+    end
+    SSH_demean      = SSH_total      .- mean(filter(isfinite, SSH_total))
+    η_steric_demean = η_steric_xy    .- mean(filter(isfinite, η_steric_xy))
+    η_dynamic       = SSH_demean    .- η_steric_demean
+    # Bias of dynamic SSH against ECCO (already demeaned in load_surface_case).
+    η_dynamic_minus_ecco = isnothing(D[lab].SSH_ecco) ? nothing :
+        η_dynamic .- (D[lab].SSH_ecco .- mean(filter(isfinite, D[lab].SSH_ecco)))
+
     ZM[lab] = (; temperature_zonal, salinity_zonal, buoyancy_zonal, kinetic_energy_zonal,
                 temperature_woa_zonal, salinity_woa_zonal, buoyancy_init_zonal,
                 δtemperature_zonal = temperature_zonal .- temperature_woa_zonal,
@@ -1254,6 +1431,7 @@ for c in cases
                 δbuoyancy_zonal    = buoyancy_zonal    .- buoyancy_init_zonal,
                 mld_min_zonal, mld_max_zonal,
                 mld_min_dbm_zonal, mld_max_dbm_zonal,
+                η_steric_demean, η_dynamic, η_dynamic_minus_ecco,
                 depth)
 end
 
@@ -1296,56 +1474,70 @@ for (i, lab) in enumerate(labels)
 end
 savefig(fig, "fig17_zonal_mean.png")
 
-# Figure 18: Zonal-mean drift
+# Figure 18: Zonal-mean drift (filled contours)
 @info "Figure 18: Zonal-mean drift"
+δT_levels = range(-3, 3; length = 13)
+δS_levels = range(-0.75, 0.75; length = 13)
+# Buoyancy drift levels: symmetric around 0, magnitude set from data so the
+# colormap actually resolves the field across cases.
+δb_max = maximum(lab -> begin
+                       v = filter(isfinite, vec(ZM[lab].δbuoyancy_zonal))
+                       isempty(v) ? 0.0 : maximum(abs, v)
+                   end, labels)
+δb_max = δb_max == 0 ? 1e-3 : δb_max
+δb_levels = range(-δb_max, δb_max; length = 13)
+
 fig = Figure(size = (600 * length(labels), 900), fontsize = 14)
 for (i, lab) in enumerate(labels)
     zm = ZM[lab]
+
     ax = Axis(fig[1, 2i-1]; xlabel="Latitude", ylabel="Depth (m)", title="$lab: Zonal T - WOA")
-    hm = heatmap!(ax, latitude, zm.depth, zm.δtemperature_zonal; colormap=:balance, colorrange=(-5,5), nan_color=:lightgray)
+    hm = contourf!(ax, latitude, zm.depth, zm.δtemperature_zonal;
+                   levels = δT_levels, colormap = :balance, extendlow = :auto, extendhigh = :auto)
     Colorbar(fig[1, 2i], hm; label="deg C"); ylims!(ax, (-5500, 0))
 
     ax = Axis(fig[2, 2i-1]; xlabel="Latitude", ylabel="Depth (m)", title="$lab: Zonal S - WOA")
-    hm = heatmap!(ax, latitude, zm.depth, zm.δsalinity_zonal; colormap=:balance, colorrange=(-1,1), nan_color=:lightgray)
+    hm = contourf!(ax, latitude, zm.depth, zm.δsalinity_zonal;
+                   levels = δS_levels, colormap = :balance, extendlow = :auto, extendhigh = :auto)
     Colorbar(fig[2, 2i], hm; label="PSU"); ylims!(ax, (-5500, 0))
 
     ax = Axis(fig[3, 2i-1]; xlabel="Latitude", ylabel="Depth (m)", title="$lab: Zonal b - b(t=0)")
-    hm = heatmap!(ax, latitude, zm.depth, zm.δbuoyancy_zonal; colormap=:balance, nan_color=:lightgray)
+    hm = contourf!(ax, latitude, zm.depth, zm.δbuoyancy_zonal;
+                   levels = δb_levels, colormap = :balance, extendlow = :auto, extendhigh = :auto)
     Colorbar(fig[3, 2i], hm; label="m/s²"); ylims!(ax, (-5500, 0))
 end
 savefig(fig, "fig18_zonal_drift.png")
 
 # Figure 19: Zonal-mean MLD min/max
 @info "Figure 19: Zonal-mean MLD min/max"
-fig = Figure(size = (1300, 550), fontsize = 14)
+fig = Figure(size = (1100 + 200 * length(labels), 550), fontsize = 14)
 ax_min = Axis(fig[1, 1]; xlabel = "Latitude", ylabel = "MLD (m)",
-              title = "Zonal-mean MLD (summer minimum)", yreversed = true)
+              title = "Zonal-mean MLD (summer minimum)")
 ax_max = Axis(fig[1, 2]; xlabel = "Latitude", ylabel = "MLD (m)",
-              title = "Zonal-mean MLD (winter maximum)", yreversed = true)
+              title = "Zonal-mean MLD (winter maximum)")
 for (i, lab) in enumerate(labels)
     zm = ZM[lab]
-    lines!(ax_min, latitude, zm.mld_min_zonal; color = case_colors[i], label = lab, linewidth = 2)
-    lines!(ax_max, latitude, zm.mld_max_zonal; color = case_colors[i], label = lab, linewidth = 2)
+    lines!(ax_min, latitude, abs.(zm.mld_min_zonal); color = case_colors[i], label = lab, linewidth = 2)
+    lines!(ax_max, latitude, abs.(zm.mld_max_zonal); color = case_colors[i], label = lab, linewidth = 2)
 end
 ref_idx = findfirst(lab -> !isnothing(ZM[lab].mld_min_dbm_zonal), labels)
 if !isnothing(ref_idx)
     ref_zm = ZM[labels[ref_idx]]
-    lines!(ax_min, latitude, ref_zm.mld_min_dbm_zonal;
+    lines!(ax_min, latitude, abs.(ref_zm.mld_min_dbm_zonal);
            color = :black, linewidth = 2, linestyle = :dash, label = "dBM")
-    lines!(ax_max, latitude, ref_zm.mld_max_dbm_zonal;
+    lines!(ax_max, latitude, abs.(ref_zm.mld_max_dbm_zonal);
            color = :black, linewidth = 2, linestyle = :dash, label = "dBM")
 end
-axislegend(ax_min; position = :rt)
-axislegend(ax_max; position = :rt)
+Legend(fig[1, 3], ax_min)
 savefig(fig, "fig19_mld_zonal_mean.png")
 
-# Figure 20: Horizontal-mean T and S drift, time × depth, with z split into
-# 0-1000 m (top half) and 1000-5500 m (bottom half) panels — continuous look,
-# shared time axis. The split halves the figure vertically so the upper
-# 1000 m gets the same display height as the rest of the column.
-@info "Figure 20: T and S drift (time × depth, split z)"
+# Figure 20: Horizontal-mean T (row 1) and S (row 2) drift as filled contours,
+# one panel per case. Full depth range, no z-split.
+@info "Figure 20: T and S drift (time × depth, contours)"
 ncases = length(labels)
-fig = Figure(size = (700 * ncases, 1000), fontsize = 14)
+δT_drift_levels = range(-1.6, 1.6; length = 17)
+δS_drift_levels = range(-0.1, 0.1; length = 21)
+fig = Figure(size = (900 * ncases, 1200), fontsize = 14)
 
 for (i, lab) in enumerate(labels)
     ts  = TS[lab]
@@ -1353,39 +1545,22 @@ for (i, lab) in enumerate(labels)
     t   = ts.drift_time_in_years
     δT  = ts.temperature_drift
     δS  = ts.salinity_drift
-    col_T = 4i - 3
-    col_S = 4i - 1
 
-    ax_T_top = Axis(fig[1, col_T]; ylabel = "Depth (m)", title = "$lab: ΔT (deg C)",
-                    xticklabelsvisible = false, xticksvisible = false,
-                    bottomspinevisible = false)
-    ax_T_bot = Axis(fig[2, col_T]; xlabel = "Time (years)", ylabel = "Depth (m)",
-                    topspinevisible = false)
-    linkxaxes!(ax_T_top, ax_T_bot)
+    ax_T = Axis(fig[1, 2i-1]; xlabel = "Time (years)", ylabel = "Depth (m)",
+                title = "$lab: ΔT (deg C)")
+    cf_T = contourf!(ax_T, t, z, δT; levels = δT_drift_levels,
+                     colormap = :balance, extendlow = :auto, extendhigh = :auto)
+    ylims!(ax_T, (-5500, 0))
+    Colorbar(fig[1, 2i], cf_T; label = "deg C")
 
-    hm_T = heatmap!(ax_T_top, t, z, δT; colormap = :balance, colorrange = (-2, 2), nan_color = :lightgray)
-    heatmap!(ax_T_bot, t, z, δT;        colormap = :balance, colorrange = (-2, 2), nan_color = :lightgray)
-    ylims!(ax_T_top, (-1000, 0))
-    ylims!(ax_T_bot, (-5500, -1000))
-    Colorbar(fig[1:2, col_T + 1], hm_T; label = "deg C")
-
-    ax_S_top = Axis(fig[1, col_S]; ylabel = "Depth (m)", title = "$lab: ΔS (PSU)",
-                    xticklabelsvisible = false, xticksvisible = false,
-                    bottomspinevisible = false)
-    ax_S_bot = Axis(fig[2, col_S]; xlabel = "Time (years)", ylabel = "Depth (m)",
-                    topspinevisible = false)
-    linkxaxes!(ax_S_top, ax_S_bot)
-
-    hm_S = heatmap!(ax_S_top, t, z, δS; colormap = :balance, colorrange = (-0.5, 0.5), nan_color = :lightgray)
-    heatmap!(ax_S_bot, t, z, δS;        colormap = :balance, colorrange = (-0.5, 0.5), nan_color = :lightgray)
-    ylims!(ax_S_top, (-1000, 0))
-    ylims!(ax_S_bot, (-5500, -1000))
-    Colorbar(fig[1:2, col_S + 1], hm_S; label = "PSU")
+    ax_S = Axis(fig[2, 2i-1]; xlabel = "Time (years)", ylabel = "Depth (m)",
+                title = "$lab: ΔS (PSU)")
+    cf_S = contourf!(ax_S, t, z, δS; levels = δS_drift_levels,
+                     colormap = :balance, extendlow = :auto, extendhigh = :auto)
+    ylims!(ax_S, (-5500, 0))
+    Colorbar(fig[2, 2i], cf_S; label = "PSU")
 end
 
-rowsize!(fig.layout, 1, Relative(0.5))
-rowsize!(fig.layout, 2, Relative(0.5))
-rowgap!(fig.layout, 1, 0)
 savefig(fig, "fig20_TS_drift_heatmap.png")
 
 # Figure 21: Strait transports (offline, dispatched on per-case grid configuration).
@@ -1404,6 +1579,23 @@ function strait_config_for(c)
     return nothing
 end
 
+# Bin a time series sampled at `t_seconds` into yearly means starting at year 0.
+function annual_means(t_seconds, values)
+    years_full = floor.(Int, t_seconds ./ (365.25 * 86400))
+    unique_years = sort(unique(years_full))
+    centers = Float64[]
+    means   = Float64[]
+    for y in unique_years
+        mask = years_full .== y
+        any(mask) || continue
+        push!(centers, y + 0.5)
+        push!(means,   mean(values[mask]))
+    end
+    return centers, means
+end
+
+# Compute strait transports over the FULL integration so every case starts at
+# year 0 (independent of the case's averaging window).
 strait_data = Dict{String, Any}()
 for c in cases
     cfg = strait_config_for(c)
@@ -1413,25 +1605,59 @@ for c in cases
     end
     @info "  $(c.label): computing strait transports ($cfg)..."
     strait_data[c.label] = strait_transports(cfg, TS[c.label].fields_file;
-                                             start_time = c.start_time,
-                                             stop_time  = c.stop_time)
+                                             start_time = 0,
+                                             stop_time  = Inf)
 end
 
 if !isempty(strait_data)
-    fig = Figure(size = (1500, 500), fontsize = 14)
+    fig = Figure(size = (1000 + 200 * length(labels), 500), fontsize = 14)
     ax_b = Axis(fig[1, 1]; xlabel = "Time (years)", ylabel = "Transport (Sv)", title = "Bering Strait")
     ax_d = Axis(fig[1, 2]; xlabel = "Time (years)", ylabel = "Transport (Sv)", title = "Drake Passage")
     ax_i = Axis(fig[1, 3]; xlabel = "Time (years)", ylabel = "Transport (Sv)", title = "Indonesian Throughflow")
     for (i, lab) in enumerate(labels)
         haskey(strait_data, lab) || continue
         st = strait_data[lab]
-        t  = st.time ./ (365.25 * 24 * 3600)
-        lines!(ax_b, t, st.bering; color = case_colors[i], label = lab, linewidth = 2)
-        lines!(ax_d, t, st.drake;  color = case_colors[i], label = lab, linewidth = 2)
-        lines!(ax_i, t, st.itf;    color = case_colors[i], label = lab, linewidth = 2)
+        tb, yb = annual_means(st.time, st.bering)
+        td, yd = annual_means(st.time, st.drake)
+        ti, yi = annual_means(st.time, st.itf)
+        lines!(ax_b, tb, yb; color = case_colors[i], label = lab, linewidth = 2)
+        lines!(ax_d, td, yd; color = case_colors[i], label = lab, linewidth = 2)
+        lines!(ax_i, ti, yi; color = case_colors[i], label = lab, linewidth = 2)
     end
-    axislegend(ax_b; position = :rt)
+    Legend(fig[1, 4], ax_b)
     savefig(fig, "fig21_strait_transports.png")
 end
+
+# Figure 22: Steric / dynamic SSH decomposition.
+#
+# Row 1: total η (model, demeaned).
+# Row 2: steric η_s = (1/g) ∫ b dz, demeaned.
+# Row 3: dynamic η_d = η - η_s, demeaned.
+# Row 4: dynamic η_d - ECCO (also demeaned). If most of the SSH-vs-ECCO
+# bias appears here and not in row 2, the bias is wind/circulation-driven
+# (likely an over-strong ACC), not steric.
+@info "Figure 22: Steric / dynamic SSH split"
+has_steric_ecco = any(lab -> !isnothing(ZM[lab].η_dynamic_minus_ecco), labels)
+nrows22 = has_steric_ecco ? 4 : 3
+fig = Figure(size = (800 * length(labels), 450 * nrows22), fontsize = 14)
+for (i, lab) in enumerate(labels)
+    zm = ZM[lab]
+    ssh_dem = D[lab].SSH .- mean(filter(isfinite, D[lab].SSH))
+    panel!(fig, [1, 2i-1], ssh_dem;
+           title = "$lab: η total (demeaned)", colormap = :balance,
+           colorrange = (-1.5, 1.5), label = "m")
+    panel!(fig, [2, 2i-1], zm.η_steric_demean;
+           title = "$lab: η steric = (1/g) ∫ b dz", colormap = :balance,
+           colorrange = (-1.5, 1.5), label = "m")
+    panel!(fig, [3, 2i-1], zm.η_dynamic;
+           title = "$lab: η dynamic = η - η_s", colormap = :balance,
+           colorrange = (-1.0, 1.0), label = "m")
+    if has_steric_ecco && !isnothing(zm.η_dynamic_minus_ecco)
+        panel!(fig, [4, 2i-1], zm.η_dynamic_minus_ecco;
+               title = "$lab: η dynamic - ECCO", colormap = :balance,
+               colorrange = (-0.5, 0.5), label = "m")
+    end
+end
+savefig(fig, "fig22_ssh_steric_dynamic.png")
 
 @info "All figures saved to $output_dir"

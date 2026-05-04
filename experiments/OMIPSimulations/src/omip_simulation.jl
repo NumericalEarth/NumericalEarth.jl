@@ -1,6 +1,11 @@
 using Printf
 using Oceananigans.Operators: Δzᶜᶜᶜ
-using Oceananigans.TurbulenceClosures: IsopycnalSkewSymmetricDiffusivity
+using Oceananigans.Grids: λnode, φnode, znode, Center
+using Oceananigans.Architectures: on_architecture, architecture
+using Oceananigans.Fields: CenterField, interior
+using SeawaterPolynomials.TEOS10: Sᴬ_from_Sᴾ, Θ_from_T
+using Oceananigans.TurbulenceClosures: IsopycnalSkewSymmetricDiffusivity,
+                                       ConvectiveAdjustmentVerticalDiffusivity
 using NumericalEarth.EarthSystemModels.InterfaceComputations: COARELogarithmicSimilarityProfile,
                                                               WindDependentWaveFormulation,
                                                               MomentumRoughnessLength,
@@ -10,7 +15,9 @@ using NumericalEarth.EarthSystemModels.InterfaceComputations: COARELogarithmicSi
                                                               MomentumBasedFrictionVelocity,
                                                               LargeYeagerTransferCoefficients,
                                                               FixedIterations,
-                                                              large_yeager_stability_functions
+                                                              large_yeager_stability_functions,
+                                                              RelativeVelocity,
+                                                              WindVelocity
 
 #####
 ##### Flux configurations
@@ -121,18 +128,20 @@ function corrected_radiation(sea_ice)
 
     sea_ice_albedo = SeaIceAlbedo(hi, hs, Ts)
 
-    return Radiation(; ocean_emissivity  = 0.97,
+    return Radiation(; ocean_emissivity  = 1.00,
                        ocean_albedo      = 0.06,
                        sea_ice_albedo)
 end
 
 """
-    build_coupled_model(ocean, sea_ice, atmosphere, radiation, flux_configuration)
+    build_coupled_model(ocean, sea_ice, atmosphere, radiation, flux_configuration;
+                        velocity_formulation = :relative)
 
 Build the `OceanSeaIceModel` with the specified flux configuration.
-Options: `:default`, `:corrected`, `:ncar`.
+Options for `flux_configuration`: `:default`, `:corrected`, `:ncar`.
+Options for `velocity_formulation`:  `:relative`, `:wind`
 """
-function build_coupled_model(ocean, sea_ice, atmosphere, radiation, flux_configuration)
+function build_coupled_model(ocean, sea_ice, atmosphere, radiation, flux_configuration; velocity_formulation::Symbol = :relative)
     if flux_configuration == :default
         return OceanSeaIceModel(ocean, sea_ice; atmosphere, radiation)
     end
@@ -140,18 +149,26 @@ function build_coupled_model(ocean, sea_ice, atmosphere, radiation, flux_configu
     FT = eltype(ocean.model.grid)
     radiation = corrected_radiation(sea_ice)
 
+    velocity_difference_obj = velocity_formulation == :relative ? RelativeVelocity() :
+                              velocity_formulation == :wind     ? WindVelocity()     :
+                              error("Unknown velocity_formulation: $velocity_formulation. Options: :relative, :wind")
+
     if flux_configuration == :corrected
         interfaces = ComponentInterfaces(atmosphere, ocean, sea_ice;
                                          radiation,
                                          atmosphere_ocean_fluxes   = corrected_atmosphere_ocean_fluxes(FT),
                                          atmosphere_sea_ice_fluxes = corrected_atmosphere_sea_ice_fluxes(FT),
-                                         sea_ice_ocean_heat_flux   = corrected_ice_ocean_heat_flux())
+                                         sea_ice_ocean_heat_flux   = corrected_ice_ocean_heat_flux(),
+                                         atmosphere_ocean_velocity_difference   = velocity_difference_obj,
+                                         atmosphere_sea_ice_velocity_difference = velocity_difference_obj)
     elseif flux_configuration == :ncar
         interfaces = ComponentInterfaces(atmosphere, ocean, sea_ice;
                                          radiation,
                                          atmosphere_ocean_fluxes   = ncar_atmosphere_ocean_fluxes(FT),
                                          atmosphere_sea_ice_fluxes = ncar_atmosphere_sea_ice_fluxes(FT),
-                                         sea_ice_ocean_heat_flux   = corrected_ice_ocean_heat_flux())
+                                         sea_ice_ocean_heat_flux   = corrected_ice_ocean_heat_flux(),
+                                         atmosphere_ocean_velocity_difference   = velocity_difference_obj,
+                                         atmosphere_sea_ice_velocity_difference = velocity_difference_obj)
     else
         error("Unknown flux_configuration: $flux_configuration. Options: :default, :corrected, :ncar")
     end
@@ -205,6 +222,18 @@ plumbing is needed because `NumericalEarth.EarthSystemModels` provides
    * `:default` — current defaults (Edson/COARE with constant Charnock 0.02)
    * `:corrected` — COARE 3.6 with wind-dependent Charnock, fixed ice roughness, momentum-based u*
    * `:ncar` — OMIP-2 standard Large & Yeager (2004) bulk formulae
+- `vertical_closure::Symbol`: ocean vertical-mixing closure. Options:
+   * `:catke` — CATKE TKE-based scheme (default).
+   * `:simple` — `ConvectiveAdjustmentVerticalDiffusivity(convective_κz=1)` plus a
+     depth-step background `VerticalScalarDiffusivity` (κ=10⁻², ν=10⁻² in upper
+     100 m; κ=10⁻⁵, ν=10⁻⁴ below). For diagnostic A/B tests vs CATKE.
+   * `:nori` — NORi base Richardson-number closure
+     (xkykai/NORiOceanParameterization.jl, vendored as
+     `nori_base_closure.jl`). Calibrated defaults; no `Cᵇ` parameter.
+- `velocity_formulation::Symbol`: Δu used by the bulk formula. Options:
+   * `:relative` — `Δu = u_atm − u_ocean` (OMIP-2 α=1, default).
+   * `:wind` — `Δu = u_atm` (ignores ocean current). For isolating bulk-formula
+     response from current feedback (e.g. when an over-strong ACC self-reinforces).
 - `diagnostics::Bool`: whether to attach OMIP diagnostics. Default: `true`.
 - `surface_averaging_interval`, `field_averaging_interval`: averaging windows.
 - `checkpoint_interval`: interval between checkpoint writes.
@@ -230,6 +259,8 @@ function omip_simulation(config::Symbol = :halfdegree;
                          Δt = 30minutes,
                          stop_time = Inf,
                          flux_configuration = :default,
+                         vertical_closure = :catke,
+                         velocity_formulation = :relative,
                          with_snow = false,
                          diagnostics = true,
                          field_mean_interval = 5days,
@@ -248,6 +279,7 @@ function omip_simulation(config::Symbol = :halfdegree;
                         κ_skew, κ_symmetric, Cᵇ,
                         biharmonic_timescale,
                         biharmonic_viscosity,
+                        vertical_closure,
                         restoring_dir, piston_velocity,
                         start_date, end_date)
 
@@ -270,7 +302,7 @@ function omip_simulation(config::Symbol = :halfdegree;
                                             repeat_year_forcing,
                                             backend_size)
 
-    coupled = build_coupled_model(ocean, sea_ice, atmosphere, radiation, flux_configuration)
+    coupled = build_coupled_model(ocean, sea_ice, atmosphere, radiation, flux_configuration; velocity_formulation)
 
     simulation = Simulation(coupled; Δt, stop_time)
 
@@ -315,6 +347,80 @@ function omip_simulation(config::Symbol = :halfdegree;
 end
 
 #####
+##### WOA → TEOS-10 conversion utilities
+#####
+##### WOA's `t_an` is sea_water_temperature (in-situ, °C) and `s_an` is
+##### sea_water_practical_salinity (PSS-78). Oceananigans' default
+##### `TEOS10EquationOfState` expects Conservative Temperature (Θ) and
+##### Absolute Salinity (S_A). The functions below convert WOA fields to the
+##### TEOS-10 conventions in place, using SeawaterPolynomials (CPU only —
+##### the SAAR atlas read is host-resident and the loop body is scalar).
+#####
+
+# Approximate hydrostatic pressure in dbar from depth z [m] (cell-center, negative for ocean).
+@inline approx_pressure_dbar(z) = max(zero(z), -z)
+
+"""
+    woa_to_teos10!(T_field, S_field)
+
+Convert WOA in-situ temperature `t [°C]` and Practical Salinity `S_P` to TEOS-10 Conservative Temperature `Θ`
+and Absolute Salinity `S_A`, in place. Both fields must live on the same grid. The conversion runs on the host;
+data is copied to/from the device automatically.
+"""
+function woa_to_teos10!(T_field, S_field)
+    grid = T_field.grid
+    cpu_grid = on_architecture(CPU(), grid)
+    Nx, Ny, Nz = size(grid)
+    T_h = Array(interior(T_field))
+    S_h = Array(interior(S_field))
+    for k in 1:Nz, j in 1:Ny, i in 1:Nx
+        t  = T_h[i, j, k]
+        SP = S_h[i, j, k]
+        (isnan(t) || isnan(SP)) && continue
+        λ = λnode(i, j, k, cpu_grid, Center(), Center(), Center())
+        φ = φnode(i, j, k, cpu_grid, Center(), Center(), Center())
+        z = znode(i, j, k, cpu_grid, Center(), Center(), Center())
+        p = approx_pressure_dbar(z)
+        SA = Sᴬ_from_Sᴾ(SP, p, λ, φ)
+        Θ  = Θ_from_T(SA, t, p)
+        T_h[i, j, k] = Θ
+        S_h[i, j, k] = SA
+    end
+    copyto!(interior(T_field), T_h)
+    copyto!(interior(S_field), S_h)
+    return T_field, S_field
+end
+
+"""
+    woa_salinity_fts_to_teos10!(fts)
+
+Convert each time slice of a WOA Practical Salinity `FieldTimeSeries` to TEOS-10
+Absolute Salinity, in place. Requires that all time indices be in memory
+(use `time_indices_in_memory = length(metadata)`).
+"""
+function woa_salinity_fts_to_teos10!(fts)
+    grid = fts.grid
+    cpu_grid = on_architecture(CPU(), grid)
+    Nx, Ny, Nz = size(grid)
+    Nt = length(fts.times)
+    for t_idx in 1:Nt
+        S_int = interior(fts[t_idx])
+        S_h   = Array(S_int)
+        for k in 1:Nz, j in 1:Ny, i in 1:Nx
+            SP = S_h[i, j, k]
+            isnan(SP) && continue
+            λ = λnode(i, j, k, cpu_grid, Center(), Center(), Center())
+            φ = φnode(i, j, k, cpu_grid, Center(), Center(), Center())
+            z = znode(i, j, k, cpu_grid, Center(), Center(), Center())
+            p = approx_pressure_dbar(z)
+            S_h[i, j, k] = Sᴬ_from_Sᴾ(SP, p, λ, φ)
+        end
+        copyto!(S_int, S_h)
+    end
+    return fts
+end
+
+#####
 ##### Shared closure utilities
 #####
 
@@ -352,6 +458,68 @@ function omip_closure(; κ_skew, κ_symmetric, Cᵇ = 0.28,
     return filter(!isnothing, (catke, eddy, horizontal_viscosity, vertical_diffusivity))
 end
 
+# Step-function background diffusivity for the simple-closure case.
+# Strong mixing in the upper 100 m, weak interior diffusivity below.
+@inline ν_step_simple(x, y, z, t) = ifelse(z >= -100, 1e-2, 1e-4)
+@inline κ_step_simple(x, y, z, t) =
+      z >= -10  ? 5e-2 :       # mimic BL mixing
+      z >= -100 ? 1e-2 :
+                  1e-5
+
+function omip_simple_closure(; κ_skew, κ_symmetric,
+                                biharmonic_timescale,
+                                biharmonic_viscosity = nothing)
+    convective = ConvectiveAdjustmentVerticalDiffusivity(VerticallyImplicitTimeDiscretization(); convective_κz = 1.0, convective_νz = 1.0)
+
+    eddy  = if isnothing(κ_skew) | isnothing(κ_symmetric)
+        nothing
+    else
+        IsopycnalSkewSymmetricDiffusivity(; κ_skew, κ_symmetric)
+    end
+
+    horizontal_viscosity = if !isnothing(biharmonic_viscosity)
+        HorizontalScalarBiharmonicDiffusivity(ν=biharmonic_viscosity)
+    elseif !isnothing(biharmonic_timescale)
+        HorizontalScalarBiharmonicDiffusivity(ν=νhb,
+                                              discrete_form=true,
+                                              parameters=biharmonic_timescale)
+    else
+        nothing
+    end
+
+    vertical_diffusivity = VerticalScalarDiffusivity(VerticallyImplicitTimeDiscretization(); κ=κ_step_simple, ν=ν_step_simple)
+
+    return filter(!isnothing, (convective, eddy, horizontal_viscosity, vertical_diffusivity))
+end
+
+# NORi base closure (Richardson-number-based) bundled with the same GM /
+# biharmonic options the other closures expose. Calibrated NORi
+# parameters come from the constructor defaults — see
+# `nori_base_closure.jl`.
+function omip_nori_closure(; κ_skew, κ_symmetric,
+                              biharmonic_timescale,
+                              biharmonic_viscosity = nothing)
+    nori = NORiBaseVerticalDiffusivity()
+
+    eddy  = if isnothing(κ_skew) | isnothing(κ_symmetric)
+        nothing
+    else
+        IsopycnalSkewSymmetricDiffusivity(; κ_skew, κ_symmetric)
+    end
+
+    horizontal_viscosity = if !isnothing(biharmonic_viscosity)
+        HorizontalScalarBiharmonicDiffusivity(ν=biharmonic_viscosity)
+    elseif !isnothing(biharmonic_timescale)
+        HorizontalScalarBiharmonicDiffusivity(ν=νhb,
+                                              discrete_form=true,
+                                              parameters=biharmonic_timescale)
+    else
+        nothing
+    end
+
+    return filter(!isnothing, (nori, eddy, horizontal_viscosity))
+end
+
 #####
 ##### Salinity restoring (shared by both configurations)
 #####
@@ -359,6 +527,8 @@ end
 # Surface-only restoring, applied uniformly in space (no ice mask).
 # Wrapped as a `SurfaceFluxRestoring` so it rides on the ocean's top-flux BC
 # via the `additional_surface_fluxes` kwarg of `ocean_simulation`.
+# WOA Practical Salinity is converted to TEOS-10 Absolute Salinity at setup so
+# the restoring target matches the ocean prognostic-S convention.
 function salinity_surface_restoring(grid, dataset;
                                     restoring_dir,
                                     piston_velocity)
@@ -372,7 +542,9 @@ function salinity_surface_restoring(grid, dataset;
 
     restoring = DatasetRestoring(Smetadata, Oceananigans.Architectures.architecture(grid);
                                  rate,
-                                 time_indices_in_memory = 12)
+                                 time_indices_in_memory = length(Smetadata))
+
+    woa_salinity_fts_to_teos10!(restoring.field_time_series)
 
     return SurfaceFluxRestoring(restoring)
 end
@@ -439,10 +611,19 @@ function build_ocean(config, grid;
                      restoring_dir, piston_velocity,
                      biharmonic_timescale,
                      biharmonic_viscosity = nothing,
+                     vertical_closure = :catke,
                      start_date, end_date)
 
     salt_restoring = salinity_surface_restoring(grid, WOAMonthly(); restoring_dir, piston_velocity)
-    closure = omip_closure(; κ_skew, κ_symmetric, Cᵇ, biharmonic_timescale, biharmonic_viscosity)
+    closure = if vertical_closure == :catke
+        omip_closure(; κ_skew, κ_symmetric, Cᵇ, biharmonic_timescale, biharmonic_viscosity)
+    elseif vertical_closure == :simple
+        omip_simple_closure(; κ_skew, κ_symmetric, biharmonic_timescale, biharmonic_viscosity)
+    elseif vertical_closure == :nori
+        omip_nori_closure(; κ_skew, κ_symmetric, biharmonic_timescale, biharmonic_viscosity)
+    else
+        error("Unknown vertical_closure: $vertical_closure. Options: :catke, :simple, :nori")
+    end
     coriolis = HydrostaticSphericalCoriolis(scheme = Oceananigans.Coriolis.EnstrophyConserving())
     momentum_advection = config_momentum_advection(config)
 
@@ -456,9 +637,15 @@ function build_ocean(config, grid;
                              additional_surface_fluxes = (; S = salt_restoring),
                              closure)
 
-    set!(ocean.model,
-         T = Metadatum(:temperature; dir=restoring_dir, dataset=WOAAnnual()),
-         S = Metadatum(:salinity;    dir=restoring_dir, dataset=WOAAnnual()))
+    # Load WOA Annual T (in-situ, °C) and S (Practical) onto the model grid,
+    # convert to TEOS-10 Conservative T and Absolute Salinity in place, then
+    # initialize the prognostic ocean state from the converted fields.
+    T_init = CenterField(grid)
+    S_init = CenterField(grid)
+    set!(T_init, Metadatum(:temperature; dir=restoring_dir, dataset=WOAAnnual()))
+    set!(S_init, Metadatum(:salinity;    dir=restoring_dir, dataset=WOAAnnual()))
+    woa_to_teos10!(T_init, S_init)
+    set!(ocean.model, T=T_init, S=S_init)
 
     return ocean
 end

@@ -350,6 +350,6 @@ heat_capacity(ocean::Simulation{<:HydrostaticFreeSurfaceModel}) = heat_capacity(
 heat_capacity(buoyancy_formulation::SeawaterBuoyancy) = heat_capacity(buoyancy_formulation.equation_of_state)
 
 function heat_capacity(::TEOS10EquationOfState{FT}) where FT
-    cₚ⁰ = SeawaterPolynomials.TEOS10.teos10_reference_heat_capacity
+    cₚ⁰ = SeawaterPolynomials.TEOS10.cₚ⁰
     return convert(FT, cₚ⁰)
 end

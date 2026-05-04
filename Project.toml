@@ -47,6 +47,8 @@ XESMF = "2e0b0046-e7a1-486f-88de-807ee8ffabe5"
 
 [sources]
 ClimaSeaIce = {rev = "ss/refactor-thermodynamics", url = "https://github.com/CliMA/ClimaSeaIce.jl.git"}
+Oceananigans = {rev = "ss/for-omip", url = "https://github.com/CliMA/Oceananigans.jl.git"}
+SeawaterPolynomials = {rev = "ss/conversion-functions", url = "https://github.com/CliMA/SeawaterPolynomials.jl.git"}
 
 [extensions]
 NumericalEarthBreezeExt = "Breeze"
@@ -86,7 +88,7 @@ PrecompileTools = "1"
 PythonCall = "0.9.28"
 Reactant = "0.2.235"
 Scratch = "1"
-SeawaterPolynomials = "0.3.5"
+SeawaterPolynomials = "0.3.5, 0.4"
 SpeedyWeather = "0.17.4"
 StaticArrays = "1"
 Statistics = "<0.0.1, 1"
