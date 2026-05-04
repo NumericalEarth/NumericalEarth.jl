@@ -13,11 +13,73 @@ import Thermodynamics.Parameters: Rv_over_Rd
 ##### Bulk turbulent fluxes based on similarity theory
 #####
 
-struct SimilarityTheoryFluxes{FT, UF, R, B, S}
+#####
+##### Gustiness specification
+#####
+##### A single `gustiness` field on `SimilarityTheoryFluxes` selects the form:
+#####   - `ConstantGustiness(min_gust, β)`      → Uᴳ  = max(Uᴳ₀, β·(Jᵇ·h_bℓ)^(1/3))    (NCAR/Beljaars)
+#####   - `ShearAwareGustiness(c, min_gust, β)` → Uᴳ² = (β·…)² + (c·|Δu|)² + Uᴳ₀²      (Mahrt-Sun/Edson)
+#####
+
+"""
+    ConstantGustiness(minimum_gustiness = 0.01, gustiness_parameter = 1.2)
+
+Original behaviour: Uᴳ = max(Uᴳ₀, β · (max(0, Jᵇ) · h_bℓ)^(1/3)). In stable conditions the convective branch is zero 
+and the constant floor `Uᴳ₀ = minimum_gustiness` takes over (NCAR CORE-II / Beljaars 1995 convention).
+"""
+struct ConstantGustiness{FT}
+    minimum_gustiness   :: FT
+    gustiness_parameter :: FT
+end
+
+ConstantGustiness(FT::DataType = Float64; minimum_gustiness = 0.01, gustiness_parameter = 1.2) =
+    ConstantGustiness{FT}(convert(FT, minimum_gustiness), convert(FT, gustiness_parameter))
+
+Adapt.adapt_structure(to, g::ConstantGustiness) =
+    ConstantGustiness(adapt(to, g.minimum_gustiness), adapt(to, g.gustiness_parameter))
+
+"""
+    ShearAwareGustiness(shear_wind_scale = 0.04, minimum_gustiness = 0.5, gustiness_parameter = 1.2)
+
+Mahrt–Sun (1995) / Edson et al. (2013) form combining convective and shear contributions in quadrature,
+with a constant floor:
+
+    Uᴳ² = (β · (max(0, Jᵇ) · h_bℓ)^{1/3})² + (c · |Δu|)² + Uᴳ₀²
+
+where `c = shear_wind_scale`. In stable / low-wind conditions Uᴳ -> Uᴳ₀; at moderate winds the c·|Δu| shear
+gustiness dominates; in deep convection the cube-root term dominates. The two fluxes blend smoothly across
+the Jᵇ = 0 transition (no `max` discontinuity). The default `shear_wind_scale = 0.04` follows Mahrt 1998
+and is consistent with Edson et al. 2013 / Brunke et al. 2003 estimates for the high-wind regime.
+"""
+struct ShearAwareGustiness{FT}
+    shear_wind_scale    :: FT
+    minimum_gustiness   :: FT
+    gustiness_parameter :: FT
+end
+
+ShearAwareGustiness(FT::DataType = Float64;
+                    shear_wind_scale    = 0.04,
+                    minimum_gustiness   = 0.5,
+                    gustiness_parameter = 1.2) =
+    ShearAwareGustiness{FT}(convert(FT, shear_wind_scale),
+                            convert(FT, minimum_gustiness),
+                            convert(FT, gustiness_parameter))
+
+Adapt.adapt_structure(to, g::ShearAwareGustiness) =
+    ShearAwareGustiness(adapt(to, g.shear_wind_scale), adapt(to, g.minimum_gustiness), adapt(to, g.gustiness_parameter))
+
+@inline compute_gustiness(g::ConstantGustiness, Jᵇ, h_bℓ, Δu, Δv) = max(g.minimum_gustiness, g.gustiness_parameter * cbrt(max(zero(Jᵇ), Jᵇ) * h_bℓ))
+
+@inline function compute_gustiness(g::ShearAwareGustiness, Jᵇ, h_bℓ, Δu, Δv)
+    Wᴳ² = (g.gustiness_parameter * cbrt(max(zero(Jᵇ), Jᵇ) * h_bℓ))^2
+    Uᴳ² = g.shear_wind_scale^2 * (Δu^2 + Δv^2)
+    return sqrt(Wᴳ² + Uᴳ² + g.minimum_gustiness^2)
+end
+
+struct SimilarityTheoryFluxes{FT, G, UF, R, B, S}
     von_karman_constant :: FT        # parameter
     turbulent_prandtl_number :: FT   # parameter
-    gustiness_parameter :: FT        # bulk velocity parameter
-    minimum_gustiness :: FT          # minimum gustiness velocity [m/s]
+    gustiness :: G                   # ConstantGustiness or ShearAwareGustiness
     stability_functions :: UF        # functions for turbulent fluxes
     roughness_lengths :: R           # parameterization for turbulent fluxes
     similarity_form :: B             # similarity profile relating atmosphere to interface state
@@ -27,8 +89,7 @@ end
 Adapt.adapt_structure(to, fluxes::SimilarityTheoryFluxes) =
     SimilarityTheoryFluxes(adapt(to, fluxes.von_karman_constant),
                            adapt(to, fluxes.turbulent_prandtl_number),
-                           adapt(to, fluxes.gustiness_parameter),
-                           adapt(to, fluxes.minimum_gustiness),
+                           adapt(to, fluxes.gustiness),
                            adapt(to, fluxes.stability_functions),
                            adapt(to, fluxes.roughness_lengths),
                            adapt(to, fluxes.similarity_form),
@@ -41,8 +102,7 @@ function Base.show(io::IO, fluxes::SimilarityTheoryFluxes)
     print(io, summary(fluxes), '\n',
           "├── von_karman_constant: ",        prettysummary(fluxes.von_karman_constant), '\n',
           "├── turbulent_prandtl_number: ",   prettysummary(fluxes.turbulent_prandtl_number), '\n',
-          "├── gustiness_parameter: ",        prettysummary(fluxes.gustiness_parameter), '\n',
-          "├── minimum_gustiness: ",          prettysummary(fluxes.minimum_gustiness), '\n',
+          "├── gustiness: ",                  fluxes.gustiness, '\n',
           "├── stability_functions: ",        summary(fluxes.stability_functions), '\n',
           "├── roughness_lengths: ",          summary(fluxes.roughness_lengths), '\n',
           "├── similarity_form: ",            summary(fluxes.similarity_form), '\n',
@@ -72,8 +132,14 @@ Keyword Arguments
 - `von_karman_constant`: The von Karman constant. Default: 0.4.
 - `turbulent_prandtl_number`: The turbulent Prandtl number. Default: 1.
 - `gustiness_parameter`: Scaling factor for convective gustiness velocity. Default: 1.2.
-- `minimum_gustiness`: Minimum gustiness velocity [m/s], used as a floor in stable conditions
-                       where convective gustiness is zero. Default: 0.01.
+- `gustiness`: A typed gustiness specification — either `ConstantGustiness(min_gust, β)` (NCAR /
+               Beljaars: `Uᴳ = max(Uᴳ₀, β·(Jᵇ·h_bℓ)^(1/3))`) or `ShearAwareGustiness(c, min_gust, β)`
+               (Mahrt-Sun 1995 / Edson 2013: `Uᴳ² = (β·…)² + (c·|Δu|)² + Uᴳ₀²`). If unset, a
+               `ConstantGustiness` is built from the legacy `minimum_gustiness` and
+               `gustiness_parameter` kwargs.
+- `minimum_gustiness`: Floor on the gustiness velocity in m/s (used in stable conditions where
+                       convective gustiness is zero). Only consulted when `gustiness` is unset.
+                       Default: 0.01.
 - `stability_functions`: The stability functions. Default: `default_stability_functions(FT)` that follow the
                          formulation of [edson2013exchange](@citet).
 - `roughness_lengths`: The roughness lengths used to calculate the characteristic scales for momentum, temperature and
@@ -86,6 +152,7 @@ Keyword Arguments
 function SimilarityTheoryFluxes(FT::DataType = Oceananigans.defaults.FloatType;
                                 von_karman_constant = 0.4,
                                 turbulent_prandtl_number = 1,
+                                gustiness = nothing,
                                 gustiness_parameter = 1.2,
                                 minimum_gustiness = 0.01,
                                 stability_functions = atmosphere_ocean_stability_functions(FT),
@@ -111,10 +178,15 @@ function SimilarityTheoryFluxes(FT::DataType = Oceananigans.defaults.FloatType;
         stability_functions = SimilarityScales(returns_zero, returns_zero, returns_zero)
     end
 
+    # If the caller didn't pass a typed gustiness object, build a `ConstantGustiness`
+    # from the legacy `minimum_gustiness` / `gustiness_parameter` kwargs.
+    if isnothing(gustiness)
+        gustiness = ConstantGustiness(FT; minimum_gustiness, gustiness_parameter)
+    end
+
     return SimilarityTheoryFluxes(convert(FT, von_karman_constant),
                                   convert(FT, turbulent_prandtl_number),
-                                  convert(FT, gustiness_parameter),
-                                  convert(FT, minimum_gustiness),
+                                  gustiness,
                                   stability_functions,
                                   roughness_lengths,
                                   similarity_form,
@@ -189,23 +261,21 @@ function iterate_interface_fluxes(flux_formulation::SimilarityTheoryFluxes,
     ℓu = flux_formulation.roughness_lengths.momentum
     ℓθ = flux_formulation.roughness_lengths.temperature
     ℓq = flux_formulation.roughness_lengths.water_vapor
-    β  = flux_formulation.gustiness_parameter
 
     # Compute Monin--Obukhov length scale depending on a `buoyancy flux`
     b★ = buoyancy_scale(θ★, q★, ℂᵃᵗ, Tₛ, qₛ, g)
 
-    # Buoyancy flux characteristic scale for gustiness.
-    # In unstable conditions (Jᵇ > 0), gustiness = β * (Jᵇ * h_bℓ)^(1/3).
-    # In stable conditions, a baseline gustiness is used (default 0.2 m/s).
-    h_bℓ = atmosphere_state.h_bℓ
-    Jᵇ = - u★ * b★
-    Uᴳ₀ = flux_formulation.minimum_gustiness
-    Uᴳ = max(Uᴳ₀, β * cbrt(max(zero(Jᵇ), Jᵇ) * h_bℓ))
-
-    # Velocity difference accounting for gustiness
+    # Velocity difference (needed first because shear-aware gustiness depends on |Δu|)
     Δu, Δv = velocity_difference(interface_properties.velocity_formulation,
                                  atmosphere_state,
                                  approximate_interface_state)
+
+    # Gustiness velocity Uᴳ. Dispatched on the type of `flux_formulation.gustiness`:
+    #   - ConstantGustiness   → Uᴳ = max(Uᴳ₀, β·(Jᵇ·h_bℓ)^(1/3))
+    #   - ShearAwareGustiness → Uᴳ² = (β·(Jᵇ·h_bℓ)^(1/3))² + (c·|Δu|)² + Uᴳ₀²
+    h_bℓ = atmosphere_state.h_bℓ
+    Jᵇ = - u★ * b★
+    Uᴳ = compute_gustiness(flux_formulation.gustiness, Jᵇ, h_bℓ, Δu, Δv)
 
     U = sqrt(Δu^2 + Δv^2 + Uᴳ^2)
 
