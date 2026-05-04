@@ -154,6 +154,27 @@ function write_disk_cache(path, value, key)
 end
 
 """
+    explain_key_mismatch(stored, current)
+
+Return a short string describing what changed between `stored` and
+`current` validation keys. Used to log *why* a disk cache entry is
+being invalidated.
+"""
+function explain_key_mismatch(stored::DiskCacheKey{N}, current::DiskCacheKey{N}) where N
+    diffs = String[]
+    stored.snapshot_counts == current.snapshot_counts ||
+        push!(diffs, "snapshots $(stored.snapshot_counts) → $(current.snapshot_counts)")
+    stored.start_time == current.start_time ||
+        push!(diffs, "start_time $(stored.start_time) → $(current.start_time)")
+    stored.stop_time == current.stop_time ||
+        push!(diffs, "stop_time $(stored.stop_time) → $(current.stop_time)")
+    return join(diffs, ", ")
+end
+
+# Different N → keys aren't even comparable; report it explicitly.
+explain_key_mismatch(::DiskCacheKey, ::DiskCacheKey) = "source-FTS arity changed"
+
+"""
     disk_cached(loader, sym; source_fts_syms = ())
 
 Wrap `loader(case_cache)` so its result is persisted under the
@@ -167,19 +188,23 @@ Use `()` for fields that depend only on the grid or climatologies.
 function disk_cached(loader::Function, sym::Symbol;
                      source_fts_syms::Union{Symbol, Tuple{Vararg{Symbol}}} = ())
     sources = source_fts_syms isa Symbol ? (source_fts_syms,) : source_fts_syms
-    function cached_loader(case_cache::CaseCache)
-        path        = diag_cache_path(case_cache, sym)
+    function cached_loader(c::CaseCache)
+        path        = diag_cache_path(c, sym)
         cached      = read_disk_cache(path)
-        current_key = current_disk_cache_key(case_cache, sources)
+        current_key = current_disk_cache_key(c, sources)
         if cached !== nothing
             value, stored_key = cached
             if stored_key isa DiskCacheKey && stored_key == current_key
-                @info "  $(case_cache.label): :$sym ← disk cache"
+                @info "  $(c.label): :$sym ← disk cache"
                 return value
+            elseif stored_key isa DiskCacheKey
+                @info "  $(c.label): :$sym ← invalidated ($(explain_key_mismatch(stored_key, current_key)))"
+            else
+                @info "  $(c.label): :$sym ← invalidated (corrupt or unrecognized key)"
             end
         end
-        @info "  $(case_cache.label): :$sym ← computing"
-        value = loader(case_cache)
+        @info "  $(c.label): :$sym ← computing"
+        value = loader(c)
         return write_disk_cache(path, value, current_key)
     end
     return cached_loader

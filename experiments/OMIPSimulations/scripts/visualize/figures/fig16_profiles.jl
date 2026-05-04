@@ -7,7 +7,7 @@ function fig16(caches, labels, cases)
         lines!(ax_temperature,
                get_field(caches[lab], :horizontal_mean_temperature_profile),
                get_field(caches[lab], :depth);
-               color = case_colors[i], label = lab)
+               color = case_colors[i], linewidth = CASE_LINEWIDTH, label = lab)
     end
     ylims!(ax_temperature, (-5500, 0))
     ax_salinity = Axis(fig[1, 2]; xlabel = "Salinity (PSU)", ylabel = "Depth (m)",
@@ -16,7 +16,7 @@ function fig16(caches, labels, cases)
         lines!(ax_salinity,
                get_field(caches[lab], :horizontal_mean_salinity_profile),
                get_field(caches[lab], :depth);
-               color = case_colors[i], label = lab)
+               color = case_colors[i], linewidth = CASE_LINEWIDTH, label = lab)
     end
     ylims!(ax_salinity, (-5500, 0))
     Legend(fig[1, 3], ax_temperature)

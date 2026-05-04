@@ -143,12 +143,21 @@ const FTS_BACKEND = InMemory(10; prefetch = false)
 
 savefig(fig, name) = save(joinpath(output_dir, name), fig)
 
-# Per-case line colors, cycling if more cases than base palette entries.
-const _BASE_CASE_COLORS = [:firebrick, :royalblue, :seagreen, :darkorange,
-                           :purple, :teal, :goldenrod, :saddlebrown,
-                           :magenta, :olive]
+# Per-case line colors. Plain primary/secondary names so cases stay
+# easy to distinguish on white backgrounds and in printouts. Cycles
+# if there are more cases than entries in the palette.
+const _BASE_CASE_COLORS = [:red, :blue, :green, :orange, :purple,
+                           :brown, :magenta, :cyan, :black, :gold]
 case_colors = [_BASE_CASE_COLORS[mod1(i, length(_BASE_CASE_COLORS))]
                for i in 1:length(cases)]
+
+# Standard line styling. Observations are always rendered in light
+# grey + dashed + thicker, so the reference is unambiguous against
+# any case color but doesn't compete with the model lines for ink.
+const CASE_LINEWIDTH = 1.5
+const OBS_COLOR      = RGBf(0.55, 0.55, 0.55)
+const OBS_LINEWIDTH  = 2.5
+const OBS_LINESTYLE  = :dash
 
 run_dir_for(prefix) = "$(prefix)_run"
 

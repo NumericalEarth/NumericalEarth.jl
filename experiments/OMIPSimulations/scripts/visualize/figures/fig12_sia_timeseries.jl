@@ -9,7 +9,7 @@ function fig12(caches, labels, cases)
         time_in_years = [Dates.value(d - ice.snapshot_dates[1]) / (365.25 * 86400 * 1000)
                          for d in ice.snapshot_dates]
         lines!(ax_arctic, time_in_years, ice.arctic_area .* m2_to_million_km2;
-               color = case_colors[i], label = lab)
+               color = case_colors[i], linewidth = CASE_LINEWIDTH, label = lab)
     end
     ax_antarctic = Axis(fig[1, 2]; xlabel = "Time (years)", ylabel = "SIA (Million km²)",
                         title = "Antarctic sea-ice area")
@@ -18,7 +18,7 @@ function fig12(caches, labels, cases)
         time_in_years = [Dates.value(d - ice.snapshot_dates[1]) / (365.25 * 86400 * 1000)
                          for d in ice.snapshot_dates]
         lines!(ax_antarctic, time_in_years, ice.antarctic_area .* m2_to_million_km2;
-               color = case_colors[i], label = lab)
+               color = case_colors[i], linewidth = CASE_LINEWIDTH, label = lab)
     end
     Legend(fig[1, 3], ax_arctic)
     savefig(fig, "fig12_sia_timeseries.png")

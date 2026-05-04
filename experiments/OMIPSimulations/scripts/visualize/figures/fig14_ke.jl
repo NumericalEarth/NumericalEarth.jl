@@ -7,7 +7,8 @@ function fig14(caches, labels, cases)
         kinetic_energy = get_field(caches[lab], :kinetic_energy)
         isempty(kinetic_energy) && continue
         time_in_years  = get_field(caches[lab], :kinetic_energy_time_in_years)
-        lines!(ax, time_in_years, kinetic_energy; color = case_colors[i], label = lab)
+        lines!(ax, time_in_years, kinetic_energy;
+               color = case_colors[i], linewidth = CASE_LINEWIDTH, label = lab)
     end
     Legend(fig[1, 2], ax)
     savefig(fig, "fig14_ke.png")

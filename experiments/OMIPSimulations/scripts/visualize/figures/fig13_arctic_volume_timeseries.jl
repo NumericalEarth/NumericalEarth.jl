@@ -9,7 +9,7 @@ function fig13(caches, labels, cases)
         time_in_years = [Dates.value(d - ice.snapshot_dates[1]) / (365.25 * 86400 * 1000)
                          for d in ice.snapshot_dates]
         lines!(ax, time_in_years, ice.arctic_volume .* m3_to_thousand_km3;
-               color = case_colors[i], label = lab)
+               color = case_colors[i], linewidth = CASE_LINEWIDTH, label = lab)
     end
     Legend(fig[1, 2], ax)
     savefig(fig, "fig13_arctic_volume_timeseries.png")
