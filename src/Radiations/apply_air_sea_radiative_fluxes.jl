@@ -81,9 +81,9 @@ end
 
     rs = air_sea_interface_radiation_state(rk, radiation_state, i, j, kᴺ, grid, time)
 
-    ℐꜛˡʷ = rs.σ * rs.ϵ * Tₛ^4
-    ℐₐˡʷ = - rs.ϵ * rs.ℐꜜˡʷ
-    ℐₜˢʷ = - (1 - rs.α) * rs.ℐꜜˢʷ
+    ℐꜛˡʷ = emitted_longwave_radiation(Tₛ, rs.σ, rs.ϵ)
+    ℐₐˡʷ = absorbed_longwave_radiation(rs.ϵ, rs.ℐꜜˡʷ)
+    ℐₜˢʷ = transmitted_shortwave_radiation(rs.α, rs.ℐꜜˢʷ)
 
     # Multiply by ocean fraction (only the parts not blocked by ice)
     ℐₐˡʷ *= (1 - ℵᵢ)

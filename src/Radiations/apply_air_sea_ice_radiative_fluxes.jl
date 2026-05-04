@@ -74,9 +74,9 @@ end
 
     rs = air_sea_ice_interface_radiation_state(rk, radiation_state, i, j, kᴺ, grid, time)
 
-    ℐꜛˡʷ = rs.σ * rs.ϵ * Ts^4
-    ℐₐˡʷ = - rs.ϵ * rs.ℐꜜˡʷ
-    ℐₜˢʷ = - (1 - rs.α) * rs.ℐꜜˢʷ
+    ℐꜛˡʷ = emitted_longwave_radiation(Ts, rs.σ, rs.ϵ)
+    ℐₐˡʷ = absorbed_longwave_radiation(rs.ϵ, rs.ℐꜜˡʷ)
+    ℐₜˢʷ = transmitted_shortwave_radiation(rs.α, rs.ℐꜜˢʷ)
 
     # Sea-ice radiation contributes only where ice exists.
     ice_present = ℵᵢ > 0
