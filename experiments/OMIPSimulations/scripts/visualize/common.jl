@@ -70,21 +70,60 @@ function set!(fts::InMemoryFTS, sfp::SplitFilePath, name::String = fts.name;
     return nothing
 end
 
-function _detect_split_file_path(path::AbstractString, reader_kw)
-    isfile(path) && return nothing
-    base = endswith(path, ".jld2") ? path[1:end-5] : path
+"""
+    jld2_output_part_paths(path)
+
+Resolve `path` (Oceananigans-style JLD2 stem, with or without `.jld2`) to
+the list of on-disk part files that hold its time series: either a
+single-element vector `[abspath(path)]` if that file exists, or sorted
+`…_partN.jld2` paths in `dirname(path)`. Returns an empty vector if nothing
+matches (same convention as split detection for `FieldTimeSeries`).
+"""
+function jld2_output_part_paths(path::AbstractString)
+    ap = abspath(path)
+    isfile(ap) && return String[ap]
+    base = endswith(ap, ".jld2") ? ap[1:end-5] : ap
     dir  = isempty(dirname(base)) ? "." : dirname(base)
     pat  = Regex("^" * Base.escape_string(basename(base)) * "_part(\\d+)\\.jld2\$")
     files = filter(f -> occursin(pat, f), readdir(dir))
-    isempty(files) && return nothing
+    isempty(files) && return String[]
     sort!(files, by = f -> parse(Int, match(pat, f).captures[1]))
-    part_paths = [joinpath(dir, f) for f in files]
-    nper = Int[]
-    for p in part_paths
-        jf = JLD2.jldopen(p; reader_kw...)
-        push!(nper, length(keys(jf["timeseries/t"])))
-        close(jf)
+    return String[joinpath(dir, f) for f in files]
+end
+
+# Session-local memo: counting `timeseries/t` keys only touches metadata.
+const _JLD2_TIMESERIES_T_KEY_COUNT_CACHE = Dict{String, Int}()
+
+"""
+    total_jld2_timeseries_snapshot_count(path; reader_kw = NamedTuple())
+
+Total number of time indices for an Oceananigans JLD2 output stem `path`
+(single file or split `_partN.jld2` parts), from `length(keys(f[\"timeseries/t\"]))`
+per part, summed across parts. Results are memoized per absolute part path
+for the Julia session.
+"""
+function total_jld2_timeseries_snapshot_count(path::AbstractString; reader_kw = NamedTuple())
+    parts = jld2_output_part_paths(path)
+    isempty(parts) && error("No JLD2 output at path '$path' (neither single file nor split parts).")
+    n = 0
+    for p in parts
+        n += get!(_JLD2_TIMESERIES_T_KEY_COUNT_CACHE, p) do
+            jf = JLD2.jldopen(p; reader_kw...)
+            try
+                return length(keys(jf["timeseries/t"]))
+            finally
+                close(jf)
+            end
+        end
     end
+    return n
+end
+
+function _detect_split_file_path(path::AbstractString, reader_kw)
+    isfile(path) && return nothing
+    part_paths = jld2_output_part_paths(path)
+    isempty(part_paths) && return nothing
+    nper = Int[total_jld2_timeseries_snapshot_count(p; reader_kw) for p in part_paths]
     return SplitFilePath(part_paths, cumsum(nper))
 end
 

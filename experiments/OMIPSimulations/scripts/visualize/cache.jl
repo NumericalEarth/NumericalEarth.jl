@@ -59,8 +59,7 @@ function get_field(case_cache::CaseCache, sym::Symbol)
     return val
 end
 
-get_fields(case_cache::CaseCache, syms::Symbol...) =
-    ntuple(i -> get_field(case_cache, syms[i]), length(syms))
+get_fields(case_cache::CaseCache, syms::Symbol...) = ntuple(i -> get_field(case_cache, syms[i]), length(syms))
 
 #####
 ##### Disk-side caching
@@ -99,26 +98,42 @@ stays read-only.
 """
 diag_cache_dir(case_cache::CaseCache) = joinpath(output_dir, "diag_cache", case_cache.prefix)
 
-diag_cache_path(case_cache::CaseCache, sym::Symbol) =
-    joinpath(diag_cache_dir(case_cache), string(sym) * ".jld2")
+diag_cache_path(case_cache::CaseCache, sym::Symbol) = joinpath(diag_cache_dir(case_cache), string(sym) * ".jld2")
+
+# Filled alongside each raw-FTS `LOADERS[...]` registration below.
+const _FTS_DISK_PATH_SYM = Dict{Symbol, Symbol}()
+
+"""
+    fts_snapshot_count_for_disk_key(case_cache, fts_sym)
+
+Number of time indices for the JLD2 output backing `fts_sym`, from JLD2
+metadata (`timeseries/t` key count per part, summed across split parts).
+Does not open a `FieldTimeSeries`. Per-part counts are memoized for the session
+(see `total_jld2_timeseries_snapshot_count`).
+"""
+function fts_snapshot_count_for_disk_key(case_cache::CaseCache, fts_sym::Symbol)
+    file_sym = get(_FTS_DISK_PATH_SYM, fts_sym, nothing)
+    file_sym === nothing &&
+        error("No JLD2 stem registered for FTS :$fts_sym — extend `_FTS_DISK_PATH_SYM` with the loader loops.")
+    path = get_field(case_cache, file_sym)
+    return total_jld2_timeseries_snapshot_count(path)
+end
 
 """
     current_disk_cache_key(case_cache, source_fts_syms)
 
 Build the `DiskCacheKey` reflecting the current state of every source
-FTS named in `source_fts_syms`. Reads only `length(fts.times)`, so no
-snapshot data is fetched. Pass `()` for fields whose validity does not
-depend on any model output (pure climatologies).
+FTS named in `source_fts_syms`. Uses JLD2 metadata only (no `FieldTimeSeries`
+construction). Pass `()` for fields whose validity does not depend on any
+model output (pure climatologies).
 """
-function current_disk_cache_key(case_cache::CaseCache,
-                                source_fts_syms::Tuple{Vararg{Symbol}})
+function current_disk_cache_key(case_cache::CaseCache, source_fts_syms::Tuple{Vararg{Symbol}})
     N = length(source_fts_syms)
-    snapshot_counts = ntuple(i -> length(get_field(case_cache, source_fts_syms[i]).times), N)
+    snapshot_counts = ntuple(i -> fts_snapshot_count_for_disk_key(case_cache, source_fts_syms[i]), N)
     return DiskCacheKey(snapshot_counts, case_cache.start_time, case_cache.stop_time)
 end
 
-current_disk_cache_key(case_cache::CaseCache, source_fts_sym::Symbol) =
-    current_disk_cache_key(case_cache, (source_fts_sym,))
+current_disk_cache_key(case_cache::CaseCache, source_fts_sym::Symbol) = current_disk_cache_key(case_cache, (source_fts_sym,))
 
 """
     read_disk_cache(path)
@@ -185,8 +200,7 @@ the loader is rerun and the cache is overwritten.
 `source_fts_syms` is either a single FTS symbol or a tuple of them.
 Use `()` for fields that depend only on the grid or climatologies.
 """
-function disk_cached(loader::Function, sym::Symbol;
-                     source_fts_syms::Union{Symbol, Tuple{Vararg{Symbol}}} = ())
+function disk_cached(loader::Function, sym::Symbol; source_fts_syms::Union{Symbol, Tuple{Vararg{Symbol}}} = ())
     sources = source_fts_syms isa Symbol ? (source_fts_syms,) : source_fts_syms
     function cached_loader(c::CaseCache)
         path        = diag_cache_path(c, sym)
@@ -239,6 +253,7 @@ for (sym, name) in ((:tos_fts, "tos"), (:sos_fts, "sos"), (:zos_fts, "zos"),
                     (:sic_fts, "siconc"), (:zossq_fts, "zossq"),
                     (:tauuo_fts, "tauuo"), (:tauvo_fts, "tauvo"),
                     (:sithick_fts, "sithick"))
+    _FTS_DISK_PATH_SYM[sym] = :surface_file
     LOADERS[sym] = let n = name
         c -> FieldTimeSeries(get_field(c, :surface_file), n; backend = deepcopy(FTS_BACKEND))
     end
@@ -247,6 +262,7 @@ end
 # Fields file (3-D)
 for (sym, name) in ((:to_fts, "to"), (:so_fts, "so"), (:bo_fts, "bo"),
                     (:uo_fts, "uo"), (:vo_fts, "vo"))
+    _FTS_DISK_PATH_SYM[sym] = :fields_file
     LOADERS[sym] = let n = name
         c -> FieldTimeSeries(get_field(c, :fields_file), n; backend = deepcopy(FTS_BACKEND))
     end
@@ -255,6 +271,7 @@ end
 # Averages file
 for (sym, name) in ((:tosga_fts, "tosga"), (:soga_fts, "soga"),
                     (:to_h_fts, "to_h"), (:so_h_fts, "so_h"))
+    _FTS_DISK_PATH_SYM[sym] = :averages_file
     LOADERS[sym] = let n = name
         c -> FieldTimeSeries(get_field(c, :averages_file), n; backend = deepcopy(FTS_BACKEND))
     end
@@ -278,8 +295,7 @@ LOADERS[:depth]         = c -> collect(znodes(get_field(c, :grid), Center()))
 
 function time_mean_drop(c, fts_sym)
     fts = get_field(c, fts_sym)
-    return dropdims(compute_time_mean(fts; start_time = c.start_time, stop_time = c.stop_time);
-                     dims = 3)
+    return dropdims(compute_time_mean(fts; start_time = c.start_time, stop_time = c.stop_time); dims = 3)
 end
 
 # Apply land mask in place after computing `value`. A `nothing` value
@@ -337,8 +353,7 @@ LOADERS[:meridional_wind_stress] = c -> get_field(c, :wind_stress_pair)[2]
 #####
 
 LOADERS[:sic_mean_and_monthly] = disk_cached(:sic_mean_and_monthly; source_fts_syms = :sic_fts) do c
-    compute_mean_and_monthly(get_field(c, :sic_fts);
-                              start_time = c.start_time, stop_time = c.stop_time)
+    compute_mean_and_monthly(get_field(c, :sic_fts); start_time = c.start_time, stop_time = c.stop_time)
 end
 
 LOADERS[:sic_mean] = c -> masked!(c, begin
@@ -363,8 +378,7 @@ end
 #####
 
 LOADERS[:mld_monthly] = disk_cached(:mld_monthly; source_fts_syms = :mld_fts) do c
-    compute_monthly_means(get_field(c, :mld_fts);
-                           start_time = c.start_time, stop_time = c.stop_time)
+    compute_monthly_means(get_field(c, :mld_fts); start_time = c.start_time, stop_time = c.stop_time)
 end
 
 function stack_monthly(c, sym)
