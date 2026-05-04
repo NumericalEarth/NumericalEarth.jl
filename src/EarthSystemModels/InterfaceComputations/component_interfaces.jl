@@ -378,6 +378,8 @@ Keyword Arguments
 - `ocean_reference_density`: reference density for the ocean. Default: `reference_density(ocean)`.
 - `ocean_heat_capacity`: heat capacity for the ocean. Default: `heat_capacity(ocean)`.
 - `ocean_temperature_units`: temperature units for the ocean. Default: `DegreesCelsius()`.
+- `ocean_minimum_salinity`: floor (psu) below which the freshening (salt-extracting) component of the air-sea freshwater flux is suppressed. 
+   Salt-concentrating fluxes are always applied. Default: `1`.
 - `sea_ice_temperature_units`: temperature units for sea ice. Default: `DegreesCelsius()`.
 - `sea_ice_reference_density`: reference density for sea ice. Default: `reference_density(sea_ice)`.
 - `sea_ice_heat_capacity`: heat capacity for sea ice. Default: `heat_capacity(sea_ice)`.
@@ -398,6 +400,7 @@ function ComponentInterfaces(atmosphere, ocean, sea_ice=nothing;
                              ocean_reference_density = reference_density(ocean),
                              ocean_heat_capacity = heat_capacity(ocean),
                              ocean_temperature_units = temperature_units(ocean),
+                             ocean_minimum_salinity = 1,
                              sea_ice_temperature_units = DegreesCelsius(),
                              sea_ice_reference_density = reference_density(sea_ice),
                              sea_ice_heat_capacity = heat_capacity(sea_ice),
@@ -407,6 +410,7 @@ function ComponentInterfaces(atmosphere, ocean, sea_ice=nothing;
 
     ocean_reference_density    = convert(FT, ocean_reference_density)
     ocean_heat_capacity        = convert(FT, ocean_heat_capacity)
+    ocean_minimum_salinity     = convert(FT, ocean_minimum_salinity)
     sea_ice_reference_density  = convert(FT, sea_ice_reference_density)
     sea_ice_heat_capacity      = convert(FT, sea_ice_heat_capacity)
     freshwater_density         = convert(FT, freshwater_density)
@@ -418,7 +422,8 @@ function ComponentInterfaces(atmosphere, ocean, sea_ice=nothing;
     ocean_properties = (reference_density  = ocean_reference_density,
                         heat_capacity      = ocean_heat_capacity,
                         freshwater_density = freshwater_density,
-                        temperature_units  = ocean_temperature_units)
+                        temperature_units  = ocean_temperature_units,
+                        minimum_salinity   = ocean_minimum_salinity)
 
     # Only build sea_ice_properties if sea_ice is an actual Simulation with a model
     if sea_ice isa Simulation

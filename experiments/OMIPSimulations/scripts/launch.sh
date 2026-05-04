@@ -61,6 +61,11 @@ Equatorial-MLD tuning knobs (closure parameters; configuration switches):
                 Useful when the equatorial mixed layer is too shallow because
                 of weak convective gustiness — adds shear-driven gust at all
                 wind speeds.
+  MIN_SALINITY  Floor (psu) below which the freshening (salt-extracting)
+                component of the air-sea freshwater flux is suppressed.
+                Salt-concentrating fluxes (E > P + R) are always applied.
+                Prevents NaN blow-ups in pathologically thin top cells
+                under strong precip + runoff plumes. Default: 1.
   CATKE_CWUSTAR `Cᵂu★` of CATKEEquation: surface shear-driven TKE flux
                 coefficient. Higher → more wind-injected TKE → deeper
                 equatorial ML. Default (Oceananigans): 3.179.
@@ -178,6 +183,7 @@ RUN_NAME="$CONFIG"
 [[ -n "${DZ_TOP:-}" ]]                 && RUN_NAME="${RUN_NAME}_dz${DZ_TOP}"
 [[ "${SHEAR_GUST:-false}" == "true" ]] && RUN_NAME="${RUN_NAME}_sgust"
 [[ -n "${CATKE_CWUSTAR:-}" ]]          && RUN_NAME="${RUN_NAME}_cwu${CATKE_CWUSTAR}"
+[[ -n "${MIN_SALINITY:-}" ]]           && RUN_NAME="${RUN_NAME}_smin${MIN_SALINITY}"
 
 REPORT_NAME="${REPORT_NAME:-${RUN_NAME}_report}"
 JOB_NAME="${JOB_NAME:-$RUN_NAME}"
@@ -225,6 +231,7 @@ BIHVISC="${BIHVISC:-}"
 DZ_TOP="${DZ_TOP:-}"
 SHEAR_GUST="${SHEAR_GUST:-false}"
 CATKE_CWUSTAR="${CATKE_CWUSTAR:-}"
+MIN_SALINITY="${MIN_SALINITY:-}"
 BACKEND_SIZE="${BACKEND_SIZE:-}"
 NCAR="${NCAR:-false}"
 CORRECTED="${CORRECTED:-false}"
@@ -250,6 +257,9 @@ DZ_TOP_KWARG=""
 
 CATKE_CWUSTAR_KWARG=""
 [[ -n "$CATKE_CWUSTAR" ]] && CATKE_CWUSTAR_KWARG="Cᵂu★ = ${CATKE_CWUSTAR},"
+
+MIN_SALINITY_KWARG=""
+[[ -n "$MIN_SALINITY" ]] && MIN_SALINITY_KWARG="ocean_minimum_salinity = ${MIN_SALINITY},"
 
 BACKEND_KWARG=""
 [[ -n "$BACKEND_SIZE" ]] && BACKEND_KWARG="backend_size = ${BACKEND_SIZE},"
@@ -292,6 +302,7 @@ sim = omip_simulation(:${CONFIG};
                       ${VELOCITY_KWARG}
                       ${SNOW_KWARG}
                       ${CATKE_CWUSTAR_KWARG}
+                      ${MIN_SALINITY_KWARG}
                       Δt = ${DT},
                       forcing_dir = \"${FORCING_DIR}\",
                       ${STAGING_KWARG}

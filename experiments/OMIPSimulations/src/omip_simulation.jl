@@ -147,12 +147,16 @@ Options for `flux_configuration`: `:default`, `:corrected`, `:shear_aware`, `:nc
 Options for `velocity_formulation`:  `:relative`, `:wind`
 """
 function build_coupled_model(ocean, sea_ice, atmosphere, radiation, flux_configuration;
-                             velocity_formulation::Symbol = :relative)
+                             velocity_formulation::Symbol = :relative,
+                             ocean_minimum_salinity = 1)
+    FT = eltype(ocean.model.grid)
     if flux_configuration == :default
-        return OceanSeaIceModel(ocean, sea_ice; atmosphere, radiation)
+        interfaces = ComponentInterfaces(atmosphere, ocean, sea_ice;
+                                         radiation,
+                                         ocean_minimum_salinity = convert(FT, ocean_minimum_salinity))
+        return OceanSeaIceModel(ocean, sea_ice; atmosphere, interfaces)
     end
 
-    FT = eltype(ocean.model.grid)
     radiation = corrected_radiation(sea_ice)
 
     velocity_difference_obj = velocity_formulation == :relative ? RelativeVelocity() :
@@ -169,7 +173,8 @@ function build_coupled_model(ocean, sea_ice, atmosphere, radiation, flux_configu
                                          atmosphere_sea_ice_fluxes = corrected_atmosphere_sea_ice_fluxes(FT),
                                          sea_ice_ocean_heat_flux   = corrected_ice_ocean_heat_flux(),
                                          atmosphere_ocean_velocity_difference   = velocity_difference_obj,
-                                         atmosphere_sea_ice_velocity_difference = velocity_difference_obj)
+                                         atmosphere_sea_ice_velocity_difference = velocity_difference_obj,
+                                         ocean_minimum_salinity = convert(FT, ocean_minimum_salinity))
     elseif flux_configuration == :ncar
         interfaces = ComponentInterfaces(atmosphere, ocean, sea_ice;
                                          radiation,
@@ -177,7 +182,8 @@ function build_coupled_model(ocean, sea_ice, atmosphere, radiation, flux_configu
                                          atmosphere_sea_ice_fluxes = ncar_atmosphere_sea_ice_fluxes(FT),
                                          sea_ice_ocean_heat_flux   = corrected_ice_ocean_heat_flux(),
                                          atmosphere_ocean_velocity_difference   = velocity_difference_obj,
-                                         atmosphere_sea_ice_velocity_difference = velocity_difference_obj)
+                                         atmosphere_sea_ice_velocity_difference = velocity_difference_obj,
+                                         ocean_minimum_salinity = convert(FT, ocean_minimum_salinity))
     else
         error("Unknown flux_configuration: $flux_configuration. Options: :default, :corrected, :shear_aware, :ncar")
     end
@@ -276,6 +282,7 @@ function omip_simulation(config::Symbol = :halfdegree;
                          flux_configuration = :default,
                          vertical_closure = :catke,
                          velocity_formulation = :relative,
+                         ocean_minimum_salinity = 1,
                          Cᵂu★ = nothing,
                          with_snow = false,
                          diagnostics = true,
@@ -319,7 +326,8 @@ function omip_simulation(config::Symbol = :halfdegree;
                                             backend_size)
 
     coupled = build_coupled_model(ocean, sea_ice, atmosphere, radiation, flux_configuration;
-                                  velocity_formulation)
+                                  velocity_formulation,
+                                  ocean_minimum_salinity)
 
     simulation = Simulation(coupled; Δt, stop_time)
 

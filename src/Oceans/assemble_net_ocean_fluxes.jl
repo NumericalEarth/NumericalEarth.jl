@@ -171,8 +171,15 @@ end
         τˣ[i, j, 1] = ifelse(inactive, zero(grid), τˣᵃᵒ + τˣⁱᵒ)
         τʸ[i, j, 1] = ifelse(inactive, zero(grid), τʸᵃᵒ + τʸⁱᵒ)
 
+        # When surface salinity is below `minimum_salinity`, suppress the freshening
+        # (salt-extracting) component of the freshwater flux.
+        Jˢo  = Jˢao + Jˢio
+        Smin = ocean_properties.minimum_salinity
+        clip = (Sᵒᶜ < Smin) & (Jˢo > zero(Jˢo))
+        Jˢo  = ifelse(clip, zero(Jˢo), Jˢo)
+
         # Tracer fluxes
         Jᵀ[i, j, 1] = ifelse(inactive, zero(grid), Jᵀao + Jᵀio) # Jᵀao is already multiplied by the sea ice concentration
-        Jˢ[i, j, 1] = ifelse(inactive, zero(grid), Jˢao + Jˢio)
+        Jˢ[i, j, 1] = ifelse(inactive, zero(grid), Jˢo)
     end
 end
