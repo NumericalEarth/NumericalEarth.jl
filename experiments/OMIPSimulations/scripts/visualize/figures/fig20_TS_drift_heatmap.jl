@@ -1,32 +1,54 @@
-# Figure 20: T (row 1) and S (row 2) horizontal-mean drift as time × depth contours.
+# Figure 20: T (rows 1-2) and S (rows 3-4) horizontal-mean drift as
+# time × depth contours, split into upper-ocean (0 → 1000 m) and
+# deep-ocean (1000 m → bottom) bands so the surface signal is not
+# compressed by the deep-ocean depth range.
 function fig20(caches, labels, cases)
     ncases = length(labels)
     temperature_drift_levels = range(-1.6, 1.6; length = 17)
     salinity_drift_levels    = range(-0.1, 0.1; length = 21)
-    fig = Figure(size = (900 * ncases, 1200), fontsize = 14)
+    fig = Figure(size = (900 * ncases, 2200), fontsize = 14)
+
+    upper = (-1000, 0)
+    deep  = (-5500, -1000)
 
     for (i, lab) in enumerate(labels)
-        c                   = caches[lab]
-        depth               = get_field(c, :depth)
-        time_in_years       = get_field(c, :drift_time_in_years)
-        temperature_drift   = get_field(c, :temperature_drift)
-        salinity_drift      = get_field(c, :salinity_drift)
+        c     = caches[lab]
+        z     = get_field(c, :depth)
+        t     = get_field(c, :drift_time_in_years)
+        ΔT    = get_field(c, :temperature_drift)
+        ΔS    = get_field(c, :salinity_drift)
 
-        ax_temperature = Axis(fig[1, 2i-1]; xlabel = "Time (years)", ylabel = "Depth (m)",
-                              title = "$lab: ΔT (deg C)")
-        hm_temperature = contourf!(ax_temperature, time_in_years, depth, temperature_drift;
-                                    levels = temperature_drift_levels,
-                                    colormap = :balance, extendlow = :auto, extendhigh = :auto)
-        ylims!(ax_temperature, (-5500, 0))
-        Colorbar(fig[1, 2i], hm_temperature; label = "deg C")
+        # Temperature drift, upper 1000 m
+        ax = Axis(fig[1, 2i-1]; xlabel = "Time (years)", ylabel = "Depth (m)",
+                  title = "$lab: ΔT (0 → 1000 m, deg C)")
+        hm = contourf!(ax, t, z, ΔT; levels = temperature_drift_levels,
+                       colormap = :balance, extendlow = :auto, extendhigh = :auto)
+        ylims!(ax, upper)
+        Colorbar(fig[1, 2i], hm; label = "deg C")
 
-        ax_salinity = Axis(fig[2, 2i-1]; xlabel = "Time (years)", ylabel = "Depth (m)",
-                           title = "$lab: ΔS (PSU)")
-        hm_salinity = contourf!(ax_salinity, time_in_years, depth, salinity_drift;
-                                 levels = salinity_drift_levels,
-                                 colormap = :balance, extendlow = :auto, extendhigh = :auto)
-        ylims!(ax_salinity, (-5500, 0))
-        Colorbar(fig[2, 2i], hm_salinity; label = "PSU")
+        # Temperature drift, 1000 m → bottom
+        ax = Axis(fig[2, 2i-1]; xlabel = "Time (years)", ylabel = "Depth (m)",
+                  title = "$lab: ΔT (1000 m → bottom, deg C)")
+        hm = contourf!(ax, t, z, ΔT; levels = temperature_drift_levels,
+                       colormap = :balance, extendlow = :auto, extendhigh = :auto)
+        ylims!(ax, deep)
+        Colorbar(fig[2, 2i], hm; label = "deg C")
+
+        # Salinity drift, upper 1000 m
+        ax = Axis(fig[3, 2i-1]; xlabel = "Time (years)", ylabel = "Depth (m)",
+                  title = "$lab: ΔS (0 → 1000 m, PSU)")
+        hm = contourf!(ax, t, z, ΔS; levels = salinity_drift_levels,
+                       colormap = :balance, extendlow = :auto, extendhigh = :auto)
+        ylims!(ax, upper)
+        Colorbar(fig[3, 2i], hm; label = "PSU")
+
+        # Salinity drift, 1000 m → bottom
+        ax = Axis(fig[4, 2i-1]; xlabel = "Time (years)", ylabel = "Depth (m)",
+                  title = "$lab: ΔS (1000 m → bottom, PSU)")
+        hm = contourf!(ax, t, z, ΔS; levels = salinity_drift_levels,
+                       colormap = :balance, extendlow = :auto, extendhigh = :auto)
+        ylims!(ax, deep)
+        Colorbar(fig[4, 2i], hm; label = "PSU")
     end
 
     savefig(fig, "fig20_TS_drift_heatmap.png")
