@@ -136,12 +136,6 @@ function build_closure_fields(grid, clock, tracer_names, bcs, closure::FlavorOfN
     return (; κᶜ, κᵘ, Ri, previous_compute_time)
 end
 
-function update_previous_compute_time!(closure_fields, model)
-    Δt = time_difference_seconds(model.clock.time, closure_fields.previous_compute_time[])
-    closure_fields.previous_compute_time[] = model.clock.time
-    return Δt
-end
-
 #####
 ##### Compute diffusivities
 #####
@@ -154,9 +148,6 @@ function compute_closure_fields!(diffusivities, closure::FlavorOfNBVD, model; pa
     buoyancy = model.buoyancy
     velocities = model.velocities
     top_tracer_bcs = NamedTuple(c => tracers[c].boundary_conditions.top for c in propertynames(tracers))
-
-    Δt = update_previous_compute_time!(diffusivities, model)
-    Δt == 0 && return nothing
 
     # Step 1: Compute Richardson number on the interior only — halo cells of T/S
     # may not be filled with physical values (e.g. under flux BCs), and
