@@ -91,40 +91,94 @@ function jld2_output_part_paths(path::AbstractString)
     return String[joinpath(dir, f) for f in files]
 end
 
-# Session-local memo: counting `timeseries/t` keys only touches metadata.
-const _JLD2_TIMESERIES_T_KEY_COUNT_CACHE = Dict{String, Int}()
+# Open `path` with JLD2, run `fn(file)`, guarantee close.
+function with_jld2(fn, path::AbstractString; reader_kw = NamedTuple())
+    jf = JLD2.jldopen(path; reader_kw...)
+    try
+        return fn(jf)
+    finally
+        close(jf)
+    end
+end
+
+# Resolve `path` to its on-disk part files (single or split), erroring
+# if nothing matches. Used by every metadata reader below.
+function jld2_parts(path::AbstractString)
+    parts = jld2_output_part_paths(path)
+    isempty(parts) && error("No JLD2 output at path '$path' (single file or split parts).")
+    return parts
+end
+
+# Per-part memo: `fn(file)` runs at most once per absolute part path,
+# its return value cached in `memo`. Each derived diagnostic that
+# validates a disk cache hits these memos and is therefore O(1) after
+# the first read.
+const _JLD2_NT_PER_PART    = Dict{String, Int}()
+const _JLD2_TIMES_PER_PART = Dict{String, Vector{Float64}}()
+
+memoize_jld2_part(fn, memo, path::AbstractString; reader_kw = NamedTuple()) =
+    get!(memo, path) do
+        with_jld2(fn, path; reader_kw)
+    end
 
 """
     total_jld2_timeseries_snapshot_count(path; reader_kw = NamedTuple())
 
-Total number of time indices for an Oceananigans JLD2 output stem `path`
-(single file or split `_partN.jld2` parts), from `length(keys(f[\"timeseries/t\"]))`
-per part, summed across parts. Results are memoized per absolute part path
-for the Julia session.
+Total number of time indices for an Oceananigans JLD2 output stem
+`path` (single file or split `_partN.jld2` parts), summed across
+parts. Reads JLD2 metadata only — no `FieldTimeSeries` is built.
+Per-part counts are memoized for the session.
 """
 function total_jld2_timeseries_snapshot_count(path::AbstractString; reader_kw = NamedTuple())
-    parts = jld2_output_part_paths(path)
-    isempty(parts) && error("No JLD2 output at path '$path' (neither single file nor split parts).")
     n = 0
-    for p in parts
-        n += get!(_JLD2_TIMESERIES_T_KEY_COUNT_CACHE, p) do
-            jf = JLD2.jldopen(p; reader_kw...)
-            try
-                return length(keys(jf["timeseries/t"]))
-            finally
-                close(jf)
-            end
+    for p in jld2_parts(path)
+        n += memoize_jld2_part(_JLD2_NT_PER_PART, p; reader_kw) do jf
+            length(keys(jf["timeseries/t"]))
         end
     end
     return n
 end
 
+"""
+    total_jld2_timeseries_times(path; reader_kw = NamedTuple())
+
+Concatenated time-coordinate vector for an Oceananigans JLD2 output
+stem `path`. Reads `timeseries/t/<iter>` per part, sorted by iteration,
+and concatenates across parts. No `FieldTimeSeries` construction.
+Per-part time vectors are memoized for the session.
+"""
+function total_jld2_timeseries_times(path::AbstractString; reader_kw = NamedTuple())
+    times = Float64[]
+    for p in jld2_parts(path)
+        ts = memoize_jld2_part(_JLD2_TIMES_PER_PART, p; reader_kw) do jf
+            iterations = sort!(parse.(Int, collect(keys(jf["timeseries/t"]))))
+            return Float64[jf["timeseries/t/$it"] for it in iterations]
+        end
+        append!(times, ts)
+    end
+    return times
+end
+
+"""
+    total_jld2_serialized_grid(path, name; reader_kw = NamedTuple())
+
+Read the grid serialized inside an Oceananigans JLD2 output stem
+`path` for variable `name`, without instantiating a `FieldTimeSeries`.
+Defers to `Oceananigans.OutputReaders.load_serialized_grid`, which
+handles single-grid (`serialized/grid`) and multi-grid output. The
+grid is invariant across split parts, so only the first part is opened.
+"""
+total_jld2_serialized_grid(path::AbstractString, name::AbstractString; reader_kw = NamedTuple()) =
+    with_jld2(first(jld2_parts(path)); reader_kw) do jf
+        Oceananigans.OutputReaders.load_serialized_grid(jf, name)
+    end
+
 function _detect_split_file_path(path::AbstractString, reader_kw)
     isfile(path) && return nothing
-    part_paths = jld2_output_part_paths(path)
-    isempty(part_paths) && return nothing
-    nper = Int[total_jld2_timeseries_snapshot_count(p; reader_kw) for p in part_paths]
-    return SplitFilePath(part_paths, cumsum(nper))
+    parts = jld2_output_part_paths(path)
+    isempty(parts) && return nothing
+    nper = Int[total_jld2_timeseries_snapshot_count(p; reader_kw) for p in parts]
+    return SplitFilePath(parts, cumsum(nper))
 end
 
 _location_types(::Oceananigans.OutputReaders.FieldTimeSeries{LX, LY, LZ}) where {LX, LY, LZ} = (LX, LY, LZ)
