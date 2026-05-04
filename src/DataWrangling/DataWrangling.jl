@@ -4,12 +4,15 @@ restoring, or validation.
 """
 module DataWrangling
 
-export Metadata, Metadatum, ECCOMetadatum, EN4Metadatum, all_dates, first_date, last_date
+export Metadata, Metadatum, DatewiseFilename, ECCOMetadatum, EN4Metadatum, all_dates, first_date, last_date
+export validate_dataset_coverage, metadata_filename
+export BoundingBox, Column, Linear, Nearest
 export WOAClimatology, WOAAnnual, WOAMonthly
 export metadata_time_step, metadata_epoch
 export LinearlyTaperedPolarMask
-export DatasetRestoring
-export ERA5Hourly, ERA5Monthly
+export DatasetRestoring, SurfaceFluxRestoring
+export ERA5HourlySingleLevel, ERA5MonthlySingleLevel, ERA5HourlyPressureLevels, ERA5MonthlyPressureLevels
+export native_grid
 
 using Oceananigans
 using Downloads
@@ -189,11 +192,35 @@ function z_interfaces end
 function longitude_interfaces end
 function latitude_interfaces end
 function reversed_vertical_axis end
+reversed_latitude_axis(dataset) = false
 function native_grid end
 function binary_data_grid end
 function binary_data_size end
 
 default_mask_value(dataset) = NaN
+
+"""
+    AbstractStaticDataset
+
+Supertype for datasets without a time dimension. Provides default no-op implementations for the date-related interface 
+(`all_dates`, `first_date`, `last_date`).
+"""
+abstract type AbstractStaticDataset end
+
+all_dates(::AbstractStaticDataset,  args...) = nothing
+first_date(::AbstractStaticDataset, args...) = nothing
+last_date(::AbstractStaticDataset,  args...) = nothing
+
+"""
+    AbstractStaticBathymetry <: AbstractStaticDataset
+
+Supertype for static, two-dimensional bathymetry datasets (e.g. ETOPO, GEBCO, IBCSO, IBCAO). 
+Adds defaults for the degenerate vertical axis and a variable-agnostic `Base.size`.
+"""
+abstract type AbstractStaticBathymetry <: AbstractStaticDataset end
+
+z_interfaces(::AbstractStaticBathymetry) = (0, 1)
+Base.size(dataset::AbstractStaticBathymetry, variable) = size(dataset)
 
 # Fundamentals
 include("metadata.jl")
@@ -227,6 +254,10 @@ include("EN4/EN4.jl")
 include("ORCA/ORCA.jl")
 include("WOA/WOA.jl")
 include("JRA55/JRA55.jl")
+include("OSPapa/OSPapa.jl")
+include("IBCSO/IBCSO.jl")
+include("GEBCO/GEBCO.jl")
+include("IBCAO/IBCAO.jl")
 
 using .ETOPO
 using .ECCO
@@ -236,5 +267,14 @@ using .EN4
 using .ORCA
 using .WOA
 using .JRA55
+using .OSPapa
+using .IBCSO
+using .GEBCO
+using .IBCAO
+
+# Fallback: if no download extension is loaded, check that all files already exist
+function download_dataset(metadata::Metadata)
+    error("No download method for $metadata is available (is the backend package loaded?)")
+end
 
 end # module

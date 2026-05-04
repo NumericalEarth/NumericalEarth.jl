@@ -202,9 +202,8 @@ end
                                                      liquidus, ocean_properties, ℰ, u★)
 
     # Store interface values and heat flux
-    @inbounds T★[i, j, 1] = Tᵦ
-    @inbounds S★[i, j, 1] = Sᵦ
     @inbounds 𝒬ⁱⁿᵗ[i, j, 1] = 𝒬ⁱᵒ
+    store_interface_state!(flux_formulation, T★, S★, i, j, Tᵦ, Sᵦ)
 
     # =============================================
     # Part 4: Salt flux

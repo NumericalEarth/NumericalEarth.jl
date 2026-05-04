@@ -52,14 +52,14 @@ function interpolate_state!(exchanger, exchange_grid, atmos::SpeedySimulation, c
     exchange_state = exchanger.state
     surface_layer  = atmos.model.spectral_grid.nlayers
 
-    ua  = RingGrids.field_view(atmos.diagnostic_variables.grid.u_grid,     :, surface_layer).data
-    va  = RingGrids.field_view(atmos.diagnostic_variables.grid.v_grid,     :, surface_layer).data
-    Ta  = RingGrids.field_view(atmos.diagnostic_variables.grid.temp_grid,  :, surface_layer).data
-    qa  = RingGrids.field_view(atmos.diagnostic_variables.grid.humid_grid, :, surface_layer).data
-    pa  = exp.(atmos.diagnostic_variables.grid.pres_grid.data)
-    ℐꜜˢʷ = atmos.diagnostic_variables.physics.surface_shortwave_down.data
-    ℐꜜˡʷ = atmos.diagnostic_variables.physics.surface_longwave_down.data
-    Jᶜ  = atmos.diagnostic_variables.physics.total_precipitation_rate.data
+    ua  = RingGrids.field_view(atmos.variables.grid.u, :, surface_layer).data
+    va  = RingGrids.field_view(atmos.variables.grid.v, :, surface_layer).data
+    Ta  = RingGrids.field_view(atmos.variables.grid.temperature, :, surface_layer).data
+    qa  = RingGrids.field_view(atmos.variables.grid.humidity, :, surface_layer).data
+    pa  = exp.(atmos.variables.grid.pressure.data)
+    ℐꜜˢʷ = atmos.variables.parameterizations.surface_shortwave_down.data
+    ℐꜜˡʷ = atmos.variables.parameterizations.surface_longwave_down.data
+    Jᶜ  = atmos.variables.parameterizations.rain_rate.data .+ atmos.variables.parameterizations.snow_rate.data
 
     regrid!(exchange_state.u,    ua)
     regrid!(exchange_state.v,    va)
@@ -111,9 +111,9 @@ function update_net_fluxes!(coupled_model, atmos::SpeedySimulation)
     ℵ    = interior(sea_ice_concentration(coupled_model.sea_ice))
 
     # All the location of these fluxes will change
-    𝒬ᵀ_speedy = atmos.prognostic_variables.ocean.sensible_heat_flux.data
-    Jᵛ_speedy = atmos.prognostic_variables.ocean.surface_humidity_flux.data
-    sst = atmos.prognostic_variables.ocean.sea_surface_temperature.data
+    𝒬ᵀ_speedy = atmos.variables.parameterizations.ocean.sensible_heat_flux.data
+    Jᵛ_speedy = atmos.variables.parameterizations.ocean.surface_humidity_flux.data
+    sst = atmos.variables.prognostic.ocean.sea_surface_temperature.data
     To  = coupled_model.interfaces.atmosphere_ocean_interface.temperature
     Ti  = coupled_model.interfaces.atmosphere_sea_ice_interface.temperature
 
@@ -135,9 +135,9 @@ function update_net_fluxes!(coupled_model::SpeedyNoSeaIceEarthSystemModel, atmos
     Jᵛᵃᵒ = ao_fluxes.water_vapor
 
     # All the location of these fluxes will change
-    𝒬ᵀ_speedy = atmos.prognostic_variables.ocean.sensible_heat_flux.data
-    Jᵛ_speedy = atmos.prognostic_variables.ocean.surface_humidity_flux.data
-    sst = atmos.prognostic_variables.ocean.sea_surface_temperature.data
+    𝒬ᵀ_speedy = atmos.variables.parameterizations.ocean.sensible_heat_flux.data
+    Jᵛ_speedy = atmos.variables.parameterizations.ocean.surface_humidity_flux.data
+    sst = atmos.variables.prognostic.ocean.sea_surface_temperature.data
     To  = coupled_model.interfaces.atmosphere_ocean_interface.temperature
 
     # TODO: Figure out how we are going to deal with upwelling radiation

@@ -2,14 +2,13 @@
 ##### Prescribed atmosphere (as opposed to dynamically evolving / prognostic)
 #####
 
-mutable struct PrescribedAtmosphere{FT, G, T, U, P, C, F, I, R, TP, TI}
+mutable struct PrescribedAtmosphere{FT, G, T, U, P, C, F, R, TP, TI}
     grid :: G
     clock :: Clock{T}
     velocities :: U
     pressure :: P
     tracers :: C
     freshwater_flux :: F
-    auxiliary_freshwater_flux :: I
     downwelling_radiation :: R
     thermodynamics_parameters :: TP
     times :: TI
@@ -96,7 +95,6 @@ update_net_fluxes!(coupled_model, ::PrescribedAtmosphere) = nothing
                          surface_layer_height = 10, # meters
                          boundary_layer_height = 512 # meters,
                          thermodynamics_parameters = AtmosphereThermodynamicsParameters(eltype(grid)),
-                         auxiliary_freshwater_flux = nothing,
                          velocities            = default_atmosphere_velocities(grid, times),
                          tracers               = default_atmosphere_tracers(grid, times),
                          pressure              = default_atmosphere_pressure(grid, times),
@@ -111,7 +109,6 @@ function PrescribedAtmosphere(grid, times=[zero(grid)];
                               surface_layer_height = 10,
                               boundary_layer_height = 512,
                               thermodynamics_parameters = AtmosphereThermodynamicsParameters(eltype(grid)),
-                              auxiliary_freshwater_flux = nothing,
                               velocities            = default_atmosphere_velocities(grid, times),
                               tracers               = default_atmosphere_tracers(grid, times),
                               pressure              = default_atmosphere_pressure(grid, times),
@@ -129,7 +126,6 @@ function PrescribedAtmosphere(grid, times=[zero(grid)];
                                       pressure,
                                       tracers,
                                       freshwater_flux,
-                                      auxiliary_freshwater_flux,
                                       downwelling_radiation,
                                       thermodynamics_parameters,
                                       times,

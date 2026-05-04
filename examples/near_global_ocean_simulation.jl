@@ -104,15 +104,16 @@ radiation = Radiation(arch)
 # The number of snapshots that are loaded into memory is determined by
 # the `backend`. Here, we load 41 snapshots at a time into memory.
 
-atmosphere = JRA55PrescribedAtmosphere(arch; backend = JRA55NetCDFBackend(41),
-                                       include_rivers_and_icebergs = false)
+jra55_backend = JRA55NetCDFBackend(41)
+atmosphere = JRA55PrescribedAtmosphere(arch; backend=jra55_backend)
+land       = JRA55PrescribedLand(arch; backend=jra55_backend)
 
 # ## The coupled simulation
 
 # Next we assemble the ocean, atmosphere, and radiation
 # into a coupled model,
 
-coupled_model = OceanOnlyModel(ocean; atmosphere, radiation)
+coupled_model = OceanOnlyModel(ocean; atmosphere, land, radiation)
 
 # We then create a coupled simulation.
 

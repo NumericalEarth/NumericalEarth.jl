@@ -21,19 +21,24 @@ using NumericalEarth.DataWrangling:
     netrc_downloader,
     NearestNeighborInpainting,
     BoundingBox,
+    Column,
     metadata_path,
     GramPerKilogramMinus35,
     MicromolePerLiter,
     Metadata,
     Metadatum,
     download_progress,
-    InverseSign
+    InverseSign,
+    native_grid,
+    location,
+    compute_mask,
+    inpaint_mask!,
+    set_metadata_field!,
+    extract_column!
 
 using KernelAbstractions: @kernel, @index
 
 using Dates: year, month, day
-
-import Oceananigans: location
 
 import NumericalEarth.DataWrangling:
     default_download_directory,
@@ -42,6 +47,7 @@ import NumericalEarth.DataWrangling:
     download_dataset,
     conversion_units,
     dataset_variable_name,
+    dataset_location,
     metaprefix,
     longitude_interfaces,
     latitude_interfaces,
@@ -247,23 +253,29 @@ end
 metaprefix(::ECCOMetadata) = "ECCOMetadata"
 
 # File name generation specific to each dataset
-function metadata_filename(metadata::Metadatum{<:ECCO4Monthly})
-    shortname = dataset_variable_name(metadata)
-    yearstr   = string(Dates.year(metadata.dates))
-    monthstr  = string(Dates.month(metadata.dates), pad=2)
+function metadata_filename(::ECCO4Monthly, name, date, region)
+    shortname = ECCO4_dataset_variable_names[name]
+    yearstr   = string(Dates.year(date))
+    monthstr  = string(Dates.month(date), pad=2)
     return shortname * "_" * yearstr * "_" * monthstr * ".nc"
 end
 
-function metadata_filename(metadata::Metadatum{<:Union{ECCO2Daily, ECCO2Monthly}})
-    shortname = dataset_variable_name(metadata)
-    yearstr   = string(Dates.year(metadata.dates))
-    monthstr  = string(Dates.month(metadata.dates), pad=2)
-    postfix   = is_three_dimensional(metadata) ? ".1440x720x50." : ".1440x720."
+ecco2_is_three_dimensional(name) =
+    name == :temperature ||
+    name == :salinity ||
+    name == :u_velocity ||
+    name == :v_velocity
 
-    if metadata.dataset isa ECCO2Monthly
+function metadata_filename(dataset::Union{ECCO2Daily, ECCO2Monthly}, name, date, region)
+    shortname = ECCO2_dataset_variable_names[name]
+    yearstr   = string(Dates.year(date))
+    monthstr  = string(Dates.month(date), pad=2)
+    postfix   = ecco2_is_three_dimensional(name) ? ".1440x720x50." : ".1440x720."
+
+    if dataset isa ECCO2Monthly
         return shortname * postfix * yearstr * monthstr * ".nc"
-    elseif metadata.dataset isa ECCO2Daily
-        daystr = is_three_dimensional(metadata) ? string(Dates.day(metadata.dates), pad=2) : ""
+    elseif dataset isa ECCO2Daily
+        daystr = ecco2_is_three_dimensional(name) ? string(Dates.day(date), pad=2) : ""
         return shortname * postfix * yearstr * monthstr * daystr * ".nc"
     end
 end
@@ -272,7 +284,7 @@ end
 dataset_variable_name(data::Metadata{<:ECCO2Daily})   = ECCO2_dataset_variable_names[data.name]
 dataset_variable_name(data::Metadata{<:ECCO2Monthly}) = ECCO2_dataset_variable_names[data.name]
 dataset_variable_name(data::Metadata{<:ECCO4Monthly}) = ECCO4_dataset_variable_names[data.name]
-location(data::ECCOMetadata) = ECCO_location[data.name]
+dataset_location(::ECCODataset, name) = ECCO_location[name]
 
 is_three_dimensional(data::ECCOMetadata) =
     data.name == :temperature ||
@@ -281,12 +293,12 @@ is_three_dimensional(data::ECCOMetadata) =
     data.name == :v_velocity
 
 # URLs for the ECCO datasets specific to each dataset
-metadata_url(m::Metadata{<:ECCO2Monthly}) = ECCO2_url * "monthly/" * dataset_variable_name(m) * "/" * metadata_filename(m)
-metadata_url(m::Metadata{<:ECCO2Daily})   = ECCO2_url * "daily/"   * dataset_variable_name(m) * "/" * metadata_filename(m)
+metadata_url(m::Metadata{<:ECCO2Monthly}) = ECCO2_url * "monthly/" * dataset_variable_name(m) * "/" * m.filename
+metadata_url(m::Metadata{<:ECCO2Daily})   = ECCO2_url * "daily/"   * dataset_variable_name(m) * "/" * m.filename
 
 function metadata_url(m::Metadata{<:ECCO4Monthly})
     year = string(Dates.year(m.dates))
-    return ECCO4_url * dataset_variable_name(m) * "/" * year * "/" * metadata_filename(m)
+    return ECCO4_url * dataset_variable_name(m) * "/" * year * "/" * m.filename
 end
 
 function download_dataset(metadata::ECCOMetadata)
@@ -329,9 +341,8 @@ function download_dataset(metadata::ECCOMetadata)
     return nothing
 end
 
-function inpainted_metadata_filename(metadata::ECCOMetadata)
-    original_filename = metadata_filename(metadata)
-    without_extension = original_filename[1:end-3]
+function inpainted_metadata_filename(metadata::ECCOMetadatum)
+    without_extension = metadata.filename[1:end-3]
     return without_extension * "_inpainted.jld2"
 end
 
@@ -356,8 +367,41 @@ function default_inpainting(metadata::ECCOMetadata)
     end
 end
 
-inpainted_metadata_path(metadata::ECCOMetadata) = joinpath(metadata.dir, inpainted_metadata_filename(metadata))
+inpainted_metadata_path(metadata::ECCOMetadatum) = joinpath(metadata.dir, inpainted_metadata_filename(metadata))
 
 include("ECCO_atmosphere.jl")
+
+#####
+##### Column Field for ECCO datasets (which always download globally)
+#####
+
+using Oceananigans.BoundaryConditions: fill_halo_regions!
+
+const ECCOColumnMetadatum = Metadatum{<:ECCODataset, <:Any, <:Column}
+
+function Oceananigans.Fields.Field(metadata::ECCOColumnMetadatum, arch=CPU();
+                                   inpainting = default_inpainting(metadata),
+                                   mask = nothing,
+                                   halo = (3, 3, 3),
+                                   cache_inpainted_data = true)
+
+    download_dataset(metadata)
+    column_grid = native_grid(metadata, arch; halo)
+
+    # Build a full-grid Field without a region to load the global data
+    global_metadatum = Metadatum(metadata.name;
+                                 dataset = metadata.dataset,
+                                 date = metadata.dates)
+
+    intermediate_field = Field(global_metadatum, arch; inpainting, mask, halo, cache_inpainted_data)
+    fill_halo_regions!(intermediate_field)
+
+    # Extract the column
+    _, _, LZ = location(metadata)
+    column_field = Field{Nothing, Nothing, LZ}(column_grid)
+    extract_column!(column_field, intermediate_field, metadata.region)
+
+    return column_field
+end
 
 end # Module

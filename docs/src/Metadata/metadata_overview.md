@@ -64,9 +64,11 @@ The key ingredients stored in a [`Metadata`](@ref) or [`Metadatum`](@ref) object
 - the variable name (for example `:temperature` or `:u_velocity`);
 - the dataset (such as `EN4Monthly`, `ECCO2Daily`, or `GLORYSMonthly`);
 - the temporal coverage: either a single timestamp (`Metadatum`) or a range/vector of dates (`Metadata`);
-- an optional [`BoundingBox`](@ref NumericalEarth.DataWrangling.BoundingBox) describing regional subsets in
-  longitude, latitude, or depth;
-- the on-disk `dir`ectory where the dataset are be cached.
+- an optional `region` describing the spatial extent — either a
+  [`BoundingBox`](@ref NumericalEarth.DataWrangling.BoundingBox) for a rectangular sub-domain,
+  a [`Column`](@ref NumericalEarth.DataWrangling.Column) for a single horizontal location, or
+  `nothing` for the full global domain (see [Regions, locations, and FieldTimeSeries](@ref));
+- the on-disk `dir`ectory where the dataset files are cached.
 
 This bookkeeping lets downstream utilities (for example `set!` or `FieldTimeSeries`) request exactly the
 slices of data they need, and it keeps track of where those slices live so we do not redownload
@@ -78,12 +80,18 @@ NumericalEarth currently ships connectors for the following data products:
 
 | Dataset            | Supported Variables                                      | Documentation Link                                                                                 |
 |--------------------|-----------------------------------------------------------|-----------------------------------------------------------------------------------------------------|
+| **Bathymetry**     |                                                           |                                                                                                     |
 | `ETOPO2022`        | [Supported variables](@ref dataset-etopo2022-vars)        | [NOAA ETOPO 2022 overview](https://www.ncei.noaa.gov/products/etopo-global-relief-model)           |
+| `GEBCO2024`        | [Supported variables](@ref dataset-gebco2024-vars)        | [GEBCO 2024 overview](https://www.gebco.net/data_and_products/gridded_bathymetry_data/)             |
+| `IBCSOv2`          | [Supported variables](@ref dataset-ibcsov2-vars)          | [IBCSO overview](https://ibcso.org/ibcso-2024-annual-release/)                                      |
+| `IBCAOv5`          | [Supported variables](@ref dataset-ibcaov5-vars)          | [IBCAO overview](https://www.gebco.net/data_and_products/gridded_bathymetry_data/arctic_ocean/)     |
+| **Ocean reanalysis** |                                                         |                                                                                                     |
 | `ECCO2Monthly`     | [Supported variables](@ref dataset-ecco2monthly-vars)     | [ECCO2 documentation](https://ecco.jpl.nasa.gov/products/all/)                                     |
 | `ECCO2Daily`       | [Supported variables](@ref dataset-ecco2daily-vars)       | [ECCO2 documentation](https://ecco.jpl.nasa.gov/products/all/)                                     |
 | `ECCO4Monthly`     | [Supported variables](@ref dataset-ecco4monthly-vars)     | [ECCO V4r4 product guide](https://ecco-group.org/products-ECCO-V4r4.htm)                           |
 | `EN4Monthly`       | [Supported variables](@ref dataset-en4monthly-vars)       | [Met Office EN4 overview](https://www.metoffice.gov.uk/hadobs/en4/)                                |
 | `GLORYSDaily`      | [Supported variables](@ref dataset-glorysdaily-vars)      | [Copernicus GLORYS product page](https://data.marine.copernicus.eu/product/GLOBAL_MULTIYEAR_PHY_001_030/description) |
 | `GLORYSMonthly`    | [Supported variables](@ref dataset-glorysmonthly-vars)    | [Copernicus GLORYS product page](https://data.marine.copernicus.eu/product/GLOBAL_MULTIYEAR_PHY_001_030/description) |
+| **Atmospheric forcing** |                                                      |                                                                                                     |
 | `RepeatYearJRA55`  | [Supported variables](@ref dataset-repeatyearjra55-vars)  | [JRA-55 Reanalysis](https://www.data.jma.go.jp/jra/html/JRA-55/index_en.html)                                 |
 | `MultiYearJRA55`   | [Supported variables](@ref dataset-multiyearjra55-vars)   | [JRA-55 Reanalysis](https://www.data.jma.go.jp/jra/html/JRA-55/index_en.html)                                 |

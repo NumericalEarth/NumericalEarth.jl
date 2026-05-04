@@ -29,6 +29,7 @@ Returns a NamedTuple containing package information if successful.
 Also patches Veros's signal handling to work with PythonCall.
 """
 function install_veros()
+    CondaPkg.add("hdf5"; version="<2", channel="conda-forge") # Veros uses hdf5 version < 2. Therefore we pin it to prevent dependency issues
     CondaPkg.add_pip("veros", version="@ https://github.com/team-ocean/veros/archive/refs/heads/main.zip")
     cli = CondaPkg.which("veros")
     

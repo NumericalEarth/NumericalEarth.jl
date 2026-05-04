@@ -207,6 +207,14 @@ const ConductiveFluxTEF{FT} = ThreeEquationHeatFlux{<:ConductiveFlux, <:Abstract
 @inline extract_internal_temperature(::IceBathHeatFlux{FT},   i, j) where FT = zero(FT)
 @inline extract_internal_temperature(flux::ConductiveFluxTEF, i, j) = @inbounds flux.internal_temperature[i, j, 1]
 
+# For IceBathHeatFlux, T★ and S★ are views into ocean surface fields so we skip writing.
+# For ThreeEquationHeatFlux, T★ and S★ are dedicated interface fields.
+@inline store_interface_state!(::IceBathHeatFlux, T★, S★, i, j, Tᵦ, Sᵦ) = nothing
+@inline function store_interface_state!(::ThreeEquationHeatFlux, T★, S★, i, j, Tᵦ, Sᵦ)
+    @inbounds T★[i, j, 1] = Tᵦ
+    @inbounds S★[i, j, 1] = Sᵦ
+end
+
 """
     compute_interface_heat_flux(flux::ThreeEquationHeatFlux, ocean_state, ice_state, liquidus, ocean_properties, ℰ, u★)
 

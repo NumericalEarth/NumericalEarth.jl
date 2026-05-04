@@ -23,9 +23,10 @@ model = OceanOnlyModel(ocean)
 
 # output
 EarthSystemModel{CPU}(time = 0 seconds, iteration = 0)
-├── ocean: HydrostaticFreeSurfaceModel{CPU, RectilinearGrid}(time = 0 seconds, iteration = 0)
 ├── atmosphere: Nothing
+├── land: Nothing
 ├── sea_ice: FreezingLimitedOceanTemperature{ClimaSeaIce.SeaIceThermodynamics.LinearLiquidus{Float64}}
+├── ocean: HydrostaticFreeSurfaceModel{CPU, RectilinearGrid}(time = 0 seconds, iteration = 0)
 └── interfaces: ComponentInterfaces
 ```
 
@@ -50,9 +51,10 @@ model
 
 # output
 EarthSystemModel{CPU}(time = 1 hour, iteration = 3)
-├── ocean: HydrostaticFreeSurfaceModel{CPU, RectilinearGrid}(time = 1 hour, iteration = 3)
 ├── atmosphere: Nothing
+├── land: Nothing
 ├── sea_ice: FreezingLimitedOceanTemperature{ClimaSeaIce.SeaIceThermodynamics.LinearLiquidus{Float64}}
+├── ocean: HydrostaticFreeSurfaceModel{CPU, RectilinearGrid}(time = 1 hour, iteration = 3)
 └── interfaces: ComponentInterfaces
 ```
 
@@ -89,9 +91,10 @@ model = OceanSeaIceModel(ocean, sea_ice)
 
 # output
 EarthSystemModel{CPU}(time = 0 seconds, iteration = 0)
-├── ocean: HydrostaticFreeSurfaceModel{CPU, RectilinearGrid}(time = 0 seconds, iteration = 0)
 ├── atmosphere: Nothing
+├── land: Nothing
 ├── sea_ice: FreezingLimitedOceanTemperature{ClimaSeaIce.SeaIceThermodynamics.LinearLiquidus{Float64}}
+├── ocean: HydrostaticFreeSurfaceModel{CPU, RectilinearGrid}(time = 0 seconds, iteration = 0)
 └── interfaces: ComponentInterfaces
 ```
 
@@ -127,9 +130,10 @@ model = OceanOnlyModel(ocean; interfaces)
 
 # output
 EarthSystemModel{CPU}(time = 0 seconds, iteration = 0)
-├── ocean: HydrostaticFreeSurfaceModel{CPU, RectilinearGrid}(time = 0 seconds, iteration = 0)
 ├── atmosphere: Nothing
+├── land: Nothing
 ├── sea_ice: FreezingLimitedOceanTemperature{ClimaSeaIce.SeaIceThermodynamics.LinearLiquidus{Float64}}
+├── ocean: HydrostaticFreeSurfaceModel{CPU, RectilinearGrid}(time = 0 seconds, iteration = 0)
 └── interfaces: ComponentInterfaces
 ```
 
@@ -144,9 +148,10 @@ model = OceanOnlyModel(ocean; interfaces)
 
 # output
 EarthSystemModel{CPU}(time = 0 seconds, iteration = 0)
-├── ocean: HydrostaticFreeSurfaceModel{CPU, RectilinearGrid}(time = 0 seconds, iteration = 0)
 ├── atmosphere: Nothing
+├── land: Nothing
 ├── sea_ice: FreezingLimitedOceanTemperature{ClimaSeaIce.SeaIceThermodynamics.LinearLiquidus{Float64}}
+├── ocean: HydrostaticFreeSurfaceModel{CPU, RectilinearGrid}(time = 0 seconds, iteration = 0)
 └── interfaces: ComponentInterfaces
 ```
 

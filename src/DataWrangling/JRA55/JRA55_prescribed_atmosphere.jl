@@ -12,7 +12,6 @@ JRA55PrescribedAtmosphere(arch::Distributed, FT = Float32; kw...) =
                               backend = JRA55NetCDFBackend(10),
                               time_indexing = Cyclical(),
                               surface_layer_height = 10,  # meters
-                              include_rivers_and_icebergs = false,
                               other_kw...)
 
 Return a [`PrescribedAtmosphere`](@ref) representing JRA55 reanalysis data.
@@ -26,7 +25,6 @@ function JRA55PrescribedAtmosphere(architecture = CPU(), FT = Float32;
                                    backend = JRA55NetCDFBackend(10),
                                    time_indexing = Cyclical(),
                                    surface_layer_height = 10,  # meters
-                                   include_rivers_and_icebergs = false,
                                    other_kw...)
 
     kw = (; time_indexing, backend, start_date, end_date, dataset)
@@ -44,17 +42,6 @@ function JRA55PrescribedAtmosphere(architecture = CPU(), FT = Float32;
 
     freshwater_flux = (rain = Fra,
                        snow = Fsn)
-
-    # Remember that rivers and icebergs are on a different grid and have
-    # a different frequency than the rest of the JRA55 data. We use `PrescribedAtmospheres`
-    # "auxiliary_freshwater_flux" feature to represent them.
-    if include_rivers_and_icebergs
-        Fri = JRA55FieldTimeSeries(:river_freshwater_flux, architecture;   kw...)
-        Fic = JRA55FieldTimeSeries(:iceberg_freshwater_flux, architecture; kw...)
-        auxiliary_freshwater_flux = (rivers = Fri, icebergs = Fic)
-    else
-        auxiliary_freshwater_flux = nothing
-    end
 
     times = ua.times
     grid  = ua.grid
@@ -75,7 +62,6 @@ function JRA55PrescribedAtmosphere(architecture = CPU(), FT = Float32;
     atmosphere = PrescribedAtmosphere(grid, times;
                                       velocities,
                                       freshwater_flux,
-                                      auxiliary_freshwater_flux,
                                       tracers,
                                       downwelling_radiation,
                                       surface_layer_height,

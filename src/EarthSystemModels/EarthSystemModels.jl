@@ -47,10 +47,10 @@ import Thermodynamics as AtmosphericThermodynamics
 import Oceananigans: fields, prognostic_fields, prognostic_state, restore_prognostic_state!
 import Oceananigans.Architectures: architecture
 import Oceananigans.Fields: set!
-import Oceananigans.Models: NaNChecker, default_nan_checker, initialization_update_state!
+import Oceananigans.Models: NaNChecker, default_nan_checker
 import Oceananigans.OutputWriters: default_included_properties
 import Oceananigans.Simulations: timestepper, reset!, initialize!, iteration
-import Oceananigans.TimeSteppers: time_step!, update_state!, time
+import Oceananigans.TimeSteppers: time_step!, update_state!, time, reconcile_state!
 import Oceananigans.Utils: prettytime
 
 include("components.jl")
@@ -80,10 +80,10 @@ const NoOceanInterface  = ComponentInterfaces{<:Nothing, <:AtmosphereInterface, 
 const NoAtmosInterface  = ComponentInterfaces{<:Nothing, <:Nothing, <:SeaIceOceanInterface}
 const NoInterface       = ComponentInterfaces{<:Nothing, <:Nothing, <:Nothing}
 
-const NoSeaIceInterfaceModel = EarthSystemModel{I, A, O, <:NoSeaIceInterface} where {I, A, O}
-const NoAtmosInterfaceModel  = EarthSystemModel{I, A, O, <:NoAtmosInterface} where {I, A, O}
-const NoOceanInterfaceModel  = EarthSystemModel{I, A, O, <:NoOceanInterface} where {I, A, O}
-const NoInterfaceModel       = EarthSystemModel{I, A, O, <:NoInterface} where {I, A, O}
+const NoSeaIceInterfaceModel = EarthSystemModel{I, A, L, O, <:NoSeaIceInterface} where {I, A, L, O}
+const NoAtmosInterfaceModel  = EarthSystemModel{I, A, L, O, <:NoAtmosInterface} where {I, A, L, O}
+const NoOceanInterfaceModel  = EarthSystemModel{I, A, L, O, <:NoOceanInterface} where {I, A, L, O}
+const NoInterfaceModel       = EarthSystemModel{I, A, L, O, <:NoInterface} where {I, A, L, O}
 
 InterfaceComputations.compute_atmosphere_sea_ice_fluxes!(::NoSeaIceInterfaceModel) = nothing
 InterfaceComputations.compute_sea_ice_ocean_fluxes!(::NoSeaIceInterfaceModel) = nothing

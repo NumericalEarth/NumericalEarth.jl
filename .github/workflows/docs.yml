@@ -25,6 +25,10 @@ env:
   NUMERICAL_EARTH_LABEL_BUILD_ALL_EXAMPLES: 'build all examples'
   CDSAPI_URL: "https://cds.climate.copernicus.eu/api"
   CDSAPI_KEY: ${{ secrets.CDSAPI_KEY }}
+  COPERNICUS_USERNAME: ${{ secrets.COPERNICUSMARINE_SERVICE_USERNAME }}
+  COPERNICUS_PASSWORD: ${{ secrets.COPERNICUSMARINE_SERVICE_PASSWORD }}
+  ECCO_USERNAME: ${{ secrets.ECCO_USERNAME }}
+  ECCO_WEBDAV_PASSWORD: ${{ secrets.ECCO_WEBDAV_PASSWORD }}
 
 jobs:
   build-docs:
@@ -63,10 +67,6 @@ jobs:
         run: julia --project=docs --color=yes -e 'using Pkg; Pkg.instantiate(verbose=true)'
       - name: Build documentation
         env:
-          ECCO_USERNAME: ${{ secrets.ECCO_USERNAME }}
-          ECCO_WEBDAV_PASSWORD: ${{ secrets.ECCO_WEBDAV_PASSWORD }}
-          COPERNICUS_USERNAME: ${{ secrets.COPERNICUS_SERVICE_USERNAME }}
-          COPERNICUS_PASSWORD: ${{ secrets.COPERNICUS_USERNAME_PASSWORD }}
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           JULIA_DEBUG: Documenter
           JULIA_SSL_NO_VERIFY: "**"

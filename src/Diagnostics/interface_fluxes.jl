@@ -1,4 +1,8 @@
 
+@inline flux_field(condition) = condition
+@inline flux_field(bc::MultipleFluxes) = bc.flux_field
+@inline flux_field(bc::DiscreteBoundaryFunction) = flux_field(bc.func)
+
 ###########################
 ### Temperature fluxes
 ###########################
@@ -21,7 +25,7 @@ end
 Return the net temperature flux (K m s⁻¹) at the ocean's surface in a coupled `esm`.
 """
 function net_ocean_temperature_flux(esm::EarthSystemModel)
-    Jᵀ = esm.ocean.model.tracers.T.boundary_conditions.top.condition
+    Jᵀ = flux_field(esm.ocean.model.tracers.T.boundary_conditions.top.condition)
     net_ocean_temperature_flux = Jᵀ + frazil_temperature_flux(esm)
     return Field(net_ocean_temperature_flux)
 end
@@ -116,7 +120,7 @@ end
 Return the net salinity flux (g/kg m s⁻¹) at the ocean's surface in a coupled `esm`.
 """
 function net_ocean_salinity_flux(esm::EarthSystemModel)
-    Jˢ = esm.ocean.model.tracers.S.boundary_conditions.top.condition
+    Jˢ = flux_field(esm.ocean.model.tracers.S.boundary_conditions.top.condition)
     return Jˢ
 end
 
