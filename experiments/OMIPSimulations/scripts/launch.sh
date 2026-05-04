@@ -37,11 +37,14 @@ Environment variables (physics):
                 When set, overrides BIHARMONIC and uses ν directly instead of
                 the grid-area-scaled νhb = Az^2 / λ form.
   CB            CATKE buoyancy mixing length parameter Cᵇ (default: 0.28)
-  CLOSURE       Ocean vertical closure: "catke" (default), "simple", or "nori"
+  CLOSURE       Ocean vertical closure: "catke" (default), "simple", "nori", or "rbvd"
                 ("simple" = ConvectiveAdjustment + depth-stepped background κ/ν;
                  "nori"   = NORi Richardson-number closure
                             (xkykai/NORiOceanParameterization.jl, vendored);
-                 both ignore CB)
+                 "rbvd"   = Oceananigans' built-in RiBasedVerticalDiffusivity
+                            (Richardson-number-based, with built-in κ-clip and
+                             time-averaging smoothing);
+                 all ignore CB)
   WIND_VELOCITY Set to "true" to use absolute wind (Δu = u_atm) in the bulk
                 formula instead of the OMIP-2 default relative wind
                 (Δu = u_atm − u_ocean). For isolating ACC-current feedback.
@@ -146,6 +149,7 @@ RUN_NAME="$CONFIG"
 [[ "${SNOW:-false}" == "true" ]]       && RUN_NAME="${RUN_NAME}_snow"
 [[ "${CLOSURE:-catke}" == "simple" ]]  && RUN_NAME="${RUN_NAME}_simple"
 [[ "${CLOSURE:-catke}" == "nori"   ]]  && RUN_NAME="${RUN_NAME}_nori"
+[[ "${CLOSURE:-catke}" == "rbvd"   ]]  && RUN_NAME="${RUN_NAME}_rbvd"
 [[ "${WIND_VELOCITY:-false}" == "true" ]] && RUN_NAME="${RUN_NAME}_wind"
 [[ -n "${CB:-}" ]]                     && RUN_NAME="${RUN_NAME}_cb${CB}"
 [[ "$KSKEW" != "$DEFAULT_KSKEW" ]]    && RUN_NAME="${RUN_NAME}_kskew${KSKEW}"
@@ -226,6 +230,7 @@ FLUX_KWARG=""
 CLOSURE_KWARG=""
 [[ "${CLOSURE:-catke}" == "simple" ]] && CLOSURE_KWARG="vertical_closure = :simple,"
 [[ "${CLOSURE:-catke}" == "nori"   ]] && CLOSURE_KWARG="vertical_closure = :nori,"
+[[ "${CLOSURE:-catke}" == "rbvd"   ]] && CLOSURE_KWARG="vertical_closure = :rbvd,"
 
 VELOCITY_KWARG=""
 [[ "${WIND_VELOCITY:-false}" == "true" ]] && VELOCITY_KWARG="velocity_formulation = :wind,"
