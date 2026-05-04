@@ -244,6 +244,7 @@ function omip_simulation(config::Symbol = :halfdegree;
                          arch = CPU(),
                          Nz = 100,
                          depth = 5500,
+                         Δz_top = nothing,
                          κ_skew = 250,
                          κ_symmetric = 100,
                          Cᵇ = 0.28,
@@ -273,7 +274,7 @@ function omip_simulation(config::Symbol = :halfdegree;
 
     cfg = Val(config)
 
-    grid = build_grid(cfg, arch, Nz, depth)
+    grid = build_grid(cfg, arch, Nz, depth; Δz_top)
 
     ocean = build_ocean(cfg, grid;
                         κ_skew, κ_symmetric, Cᵇ,
@@ -507,15 +508,38 @@ end
 ##### Grid builder
 #####
 
-function build_grid(config, arch, Nz, depth)
-    
+function find_exponential_scale(Nz, depth, Δzᵀ; tolerance = 1e-7, maxiter = 200)
+    Δzᵁ = depth / Nz
+    Δzᵀ < Δzᵁ || throw(ArgumentError("Δzᵀ = $Δzᵀ must be < depth/Nz = $Δzᵁ"))
+    Δzᵀ > 0   || throw(ArgumentError("Δzᵀ = $Δzᵀ must be positive"))
+
+    Δz_at_scale(h) = depth * expm1(Δzᵁ / h) / expm1(depth / h)
+
+    h⁻ = Δzᵁ / 1000
+    h⁺ = 1000 * depth
+
+    for _ in 1:maxiter
+        h = (h⁻ + h⁺) / 2
+        Δz = Δz_at_scale(h)
+        abs(Δz - Δzᵀ) <= tolerance * Δzᵀ && return h
+        Δz < Δzᵀ ? (h⁻ = h) : (h⁺ = h)
+    end
+    error("Could not converge to scale matching Δz_top = $Δz_top within relative tolerance $tolerance")
+end
+
+exponential_scale(Nz, depth, ::Nothing) = 1300
+exponential_scale(Nz, depth, Δz_top)    = find_exponential_scale(Nz, depth, Δz_top)
+
+function build_grid(config, arch, Nz, depth; Δz_top = nothing)
+
     Nx = config == Val(:halfdegree)  ? 720 :
          config == Val(:tenthdegree) ? 3600 :
-         throw("Configuration $(config) does not exist") 
+         throw("Configuration $(config) does not exist")
 
     Ny = Nx ÷ 2
 
-    z_faces = ExponentialDiscretization(Nz, -depth, 0; scale=1300, mutable=true)
+    scale = exponential_scale(Nz, depth, Δz_top)
+    z_faces = ExponentialDiscretization(Nz, -depth, 0; scale, mutable=true)
 
     base_grid = TripolarGrid(arch;
                              size = (Nx, Ny, Nz),
@@ -530,9 +554,10 @@ function build_grid(config, arch, Nz, depth)
     return ImmersedBoundaryGrid(base_grid, GridFittedBottom(bottom_height); active_cells_map = true)
 end
 
-function build_grid(::Val{:orca}, arch, Nz, depth)
+function build_grid(::Val{:orca}, arch, Nz, depth; Δz_top = nothing)
 
-    z_faces = ExponentialDiscretization(Nz, -depth, 0; scale=1300, mutable=true)
+    scale = exponential_scale(Nz, depth, Δz_top)
+    z_faces = ExponentialDiscretization(Nz, -depth, 0; scale, mutable=true)
 
     return ORCAGrid(arch;
                     dataset = ORCA1(),

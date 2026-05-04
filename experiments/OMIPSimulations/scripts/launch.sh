@@ -48,6 +48,10 @@ Environment variables (physics):
   WIND_VELOCITY Set to "true" to use absolute wind (Δu = u_atm) in the bulk
                 formula instead of the OMIP-2 default relative wind
                 (Δu = u_atm − u_ocean). For isolating ACC-current feedback.
+  DZ_TOP        Target thickness of the top (surface) cell in meters. If set,
+                the ExponentialDiscretization scale is found by bisection so
+                that Δz of the surface level matches DZ_TOP within ~0.1%.
+                Must satisfy 0 < DZ_TOP < depth/Nz. Default: unset (scale=1300).
 
 Environment variables (I/O & runtime):
   BACKEND_SIZE  Number of JRA55 time indices kept in memory (default: 240,
@@ -73,6 +77,7 @@ Examples:
   BIHARMONIC=5days ./launch.sh orca           # custom biharmonic timescale
   BIHARMONIC=nothing ./launch.sh orca         # disable biharmonic viscosity
   BIHVISC=1e12 ./launch.sh orca               # constant biharmonic viscosity ν=1e12 m^4/s
+  DZ_TOP=2 ./launch.sh orca                   # 2 m top cell (scale chosen by bisection)
   FORCING_DIR=/other/path/forcing_data STAGING_DIR=/scratch/staged ./launch.sh orca
   PROFILE=true ./launch.sh orca
 USAGE
@@ -156,6 +161,7 @@ RUN_NAME="$CONFIG"
 [[ "$KSYMM" != "$DEFAULT_KSYMM" ]]    && RUN_NAME="${RUN_NAME}_ksymm${KSYMM}"
 [[ "$BIHARMONIC" != "$DEFAULT_BIHARMONIC" ]] && RUN_NAME="${RUN_NAME}_bih${BIHARMONIC}"
 [[ -n "${BIHVISC:-}" ]]                && RUN_NAME="${RUN_NAME}_bihvisc${BIHVISC}"
+[[ -n "${DZ_TOP:-}" ]]                 && RUN_NAME="${RUN_NAME}_dz${DZ_TOP}"
 
 REPORT_NAME="${REPORT_NAME:-${RUN_NAME}_report}"
 JOB_NAME="${JOB_NAME:-$RUN_NAME}"
@@ -200,6 +206,7 @@ FORCING_DIR="${FORCING_DIR:-${DATA}forcing_data}"
 STAGING_DIR="${STAGING_DIR:-./staged_data}"
 CB="${CB:-}"
 BIHVISC="${BIHVISC:-}"
+DZ_TOP="${DZ_TOP:-}"
 BACKEND_SIZE="${BACKEND_SIZE:-}"
 NCAR="${NCAR:-false}"
 CORRECTED="${CORRECTED:-false}"
@@ -219,6 +226,9 @@ CB_KWARG=""
 
 BIHVISC_KWARG=""
 [[ -n "$BIHVISC" ]] && BIHVISC_KWARG="biharmonic_viscosity = ${BIHVISC},"
+
+DZ_TOP_KWARG=""
+[[ -n "$DZ_TOP" ]] && DZ_TOP_KWARG="Δz_top = ${DZ_TOP},"
 
 BACKEND_KWARG=""
 [[ -n "$BACKEND_SIZE" ]] && BACKEND_KWARG="backend_size = ${BACKEND_SIZE},"
@@ -249,6 +259,7 @@ sim = omip_simulation(:${CONFIG};
                       arch = ${ARCH},
                       Nz = ${NZ},
                       depth = 5500,
+                      ${DZ_TOP_KWARG}
                       κ_skew = ${KSKEW_JULIA},
                       κ_symmetric = ${KSYMM_JULIA},
                       biharmonic_timescale = ${BIHARMONIC},
