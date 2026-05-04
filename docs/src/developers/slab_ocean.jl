@@ -120,6 +120,7 @@ end
 # We use the JRA55 reanalysis for the atmosphere and the ECCO4Monthly dataset to initialize our slab ocean.
 # We also initialize the sea ice with climatological data and see how the sea ice evolves.
 
+using CUDA
 using NumericalEarth
 using Oceananigans
 using Oceananigans.Units
