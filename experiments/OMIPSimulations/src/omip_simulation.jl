@@ -450,7 +450,7 @@ function omip_closure(vertical_closure::Symbol;
     elseif vertical_closure == :nori
         NORiBaseVerticalDiffusivity(), nothing
     elseif vertical_closure == :rbvd
-        RiBasedVerticalDiffusivity(), nothing
+        RiBasedVerticalDiffusivity(; horizontal_Ri_filter = Oceananigans.TurbulenceClosures.FivePointHorizontalFilter()), nothing
     else
         error("Unknown vertical_closure: $vertical_closure. Options: :catke, :simple, :nori, :rbvd")
     end
