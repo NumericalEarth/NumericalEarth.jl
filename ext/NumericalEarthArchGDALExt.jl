@@ -19,7 +19,7 @@ function reproject_ibcao_to_netcdf(tiff_path, nc_path)
 
             # ArchGDAL returns data as (Nx, Ny) with y from north to south (GDAL convention)
             data = Float32.(ArchGDAL.read(warped, 1))
-            data = data[:, end:-1:1]  # flip y: j=1 → 64°N (south), j=Ny → 90°N (north)
+            data = reverse(data, dims=2)
 
             Nx, Ny = size(data)  # expected: (36000, 2600)
 
