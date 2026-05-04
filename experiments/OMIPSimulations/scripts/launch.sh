@@ -53,6 +53,18 @@ Environment variables (physics):
                 that Δz of the surface level matches DZ_TOP within ~0.1%.
                 Must satisfy 0 < DZ_TOP < depth/Nz. Default: unset (scale=1300).
 
+Equatorial-MLD tuning knobs (closure parameters; configuration switches):
+  SHEAR_GUST    Use the shear-aware Mahrt–Sun (1995) / Edson (2013) gustiness
+                form (Uᴳ² = (β·w★)² + (c·|Δu|)² + Uᴳ₀², c=0.04 by default).
+                Activates the :shear_aware flux configuration. Implies the
+                :corrected fluxes (constant Charnock disabled, etc.).
+                Useful when the equatorial mixed layer is too shallow because
+                of weak convective gustiness — adds shear-driven gust at all
+                wind speeds.
+  CATKE_CWUSTAR `Cᵂu★` of CATKEEquation: surface shear-driven TKE flux
+                coefficient. Higher → more wind-injected TKE → deeper
+                equatorial ML. Default (Oceananigans): 3.179.
+
 Environment variables (I/O & runtime):
   BACKEND_SIZE  Number of JRA55 time indices kept in memory (default: 240,
                 i.e. 30 days of 3-hourly data ≈ 2 GB RAM for 11 variables)
@@ -78,6 +90,8 @@ Examples:
   BIHARMONIC=nothing ./launch.sh orca         # disable biharmonic viscosity
   BIHVISC=1e12 ./launch.sh orca               # constant biharmonic viscosity ν=1e12 m^4/s
   DZ_TOP=2 ./launch.sh orca                   # 2 m top cell (scale chosen by bisection)
+  SHEAR_GUST=true ./launch.sh orca            # Mahrt-Sun shear-aware gustiness
+  CATKE_CWUSTAR=5.0 ./launch.sh orca          # stronger surface TKE injection in CATKE
   FORCING_DIR=/other/path/forcing_data STAGING_DIR=/scratch/staged ./launch.sh orca
   PROFILE=true ./launch.sh orca
 USAGE
@@ -162,6 +176,8 @@ RUN_NAME="$CONFIG"
 [[ "$BIHARMONIC" != "$DEFAULT_BIHARMONIC" ]] && RUN_NAME="${RUN_NAME}_bih${BIHARMONIC}"
 [[ -n "${BIHVISC:-}" ]]                && RUN_NAME="${RUN_NAME}_bihvisc${BIHVISC}"
 [[ -n "${DZ_TOP:-}" ]]                 && RUN_NAME="${RUN_NAME}_dz${DZ_TOP}"
+[[ "${SHEAR_GUST:-false}" == "true" ]] && RUN_NAME="${RUN_NAME}_sgust"
+[[ -n "${CATKE_CWUSTAR:-}" ]]          && RUN_NAME="${RUN_NAME}_cwu${CATKE_CWUSTAR}"
 
 REPORT_NAME="${REPORT_NAME:-${RUN_NAME}_report}"
 JOB_NAME="${JOB_NAME:-$RUN_NAME}"
@@ -207,6 +223,8 @@ STAGING_DIR="${STAGING_DIR:-./staged_data}"
 CB="${CB:-}"
 BIHVISC="${BIHVISC:-}"
 DZ_TOP="${DZ_TOP:-}"
+SHEAR_GUST="${SHEAR_GUST:-false}"
+CATKE_CWUSTAR="${CATKE_CWUSTAR:-}"
 BACKEND_SIZE="${BACKEND_SIZE:-}"
 NCAR="${NCAR:-false}"
 CORRECTED="${CORRECTED:-false}"
@@ -230,12 +248,16 @@ BIHVISC_KWARG=""
 DZ_TOP_KWARG=""
 [[ -n "$DZ_TOP" ]] && DZ_TOP_KWARG="Δz_top = ${DZ_TOP},"
 
+CATKE_CWUSTAR_KWARG=""
+[[ -n "$CATKE_CWUSTAR" ]] && CATKE_CWUSTAR_KWARG="Cᵂu★ = ${CATKE_CWUSTAR},"
+
 BACKEND_KWARG=""
 [[ -n "$BACKEND_SIZE" ]] && BACKEND_KWARG="backend_size = ${BACKEND_SIZE},"
 
 FLUX_KWARG=""
-[[ "$NCAR" == "true" ]]      && FLUX_KWARG="flux_configuration = :ncar,"
-[[ "$CORRECTED" == "true" ]] && FLUX_KWARG="flux_configuration = :corrected,"
+[[ "$NCAR" == "true" ]]        && FLUX_KWARG="flux_configuration = :ncar,"
+[[ "$CORRECTED" == "true" ]]   && FLUX_KWARG="flux_configuration = :corrected,"
+[[ "$SHEAR_GUST" == "true" ]]  && FLUX_KWARG="flux_configuration = :shear_aware,"
 
 CLOSURE_KWARG=""
 [[ "${CLOSURE:-catke}" == "simple" ]] && CLOSURE_KWARG="vertical_closure = :simple,"
@@ -269,6 +291,7 @@ sim = omip_simulation(:${CONFIG};
                       ${CLOSURE_KWARG}
                       ${VELOCITY_KWARG}
                       ${SNOW_KWARG}
+                      ${CATKE_CWUSTAR_KWARG}
                       Δt = ${DT},
                       forcing_dir = \"${FORCING_DIR}\",
                       ${STAGING_KWARG}

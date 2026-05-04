@@ -11,6 +11,8 @@ export
     LatitudeDependentAlbedo,
     SeaIceAlbedo,
     SimilarityTheoryFluxes,
+    ConstantGustiness,
+    ShearAwareGustiness,
     MomentumRoughnessLength,
     ScalarRoughnessLength,
     CoefficientBasedFluxes,

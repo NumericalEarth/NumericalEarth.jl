@@ -17,7 +17,9 @@ using NumericalEarth.EarthSystemModels.InterfaceComputations: COARELogarithmicSi
                                                               FixedIterations,
                                                               large_yeager_stability_functions,
                                                               RelativeVelocity,
-                                                              WindVelocity
+                                                              WindVelocity,
+                                                              ConstantGustiness,
+                                                              ShearAwareGustiness
 
 #####
 ##### Flux configurations
@@ -29,14 +31,17 @@ using NumericalEarth.EarthSystemModels.InterfaceComputations: COARELogarithmicSi
 COARE 3.6-consistent atmosphere-ocean flux formulation with:
 - Wind-dependent Charnock parameter (Edson et al. 2013, eq. 13)
 - COARE logarithmic similarity profile (no ψ(ℓ/L) term)
-- Minimum gustiness = 0.2 m/s (Fairall et al. 2003)
+- Minimum gustiness = 0.5 m/s (CICE / NCAR CORE-II convention)
+- `gustiness` kwarg accepts either a `ConstantGustiness(min_gust, β)` (default; constant floor)
+  or a `ShearAwareGustiness(c, min_gust, β)` (Mahrt-Sun 1995 / Edson 2013 form)
 - Temperature-dependent air viscosity
 """
-function corrected_atmosphere_ocean_fluxes(FT = Float64) 
+function corrected_atmosphere_ocean_fluxes(FT = Float64;
+                                           gustiness = ConstantGustiness(FT; minimum_gustiness = 0.5))
     air_kinematic_viscosity = TemperatureDependentAirViscosity(FT)
     return SimilarityTheoryFluxes(FT;
                                   similarity_form              = COARELogarithmicSimilarityProfile(),
-                                  minimum_gustiness            = FT(0.2),
+                                  gustiness                    = gustiness,
                                   momentum_roughness_length    = MomentumRoughnessLength(FT;
                                   wave_formulation             = WindDependentWaveFormulation(FT),
                                   air_kinematic_viscosity      = TemperatureDependentAirViscosity(FT)),
@@ -138,10 +143,11 @@ end
                         velocity_formulation = :relative)
 
 Build the `OceanSeaIceModel` with the specified flux configuration.
-Options for `flux_configuration`: `:default`, `:corrected`, `:ncar`.
+Options for `flux_configuration`: `:default`, `:corrected`, `:shear_aware`, `:ncar`.
 Options for `velocity_formulation`:  `:relative`, `:wind`
 """
-function build_coupled_model(ocean, sea_ice, atmosphere, radiation, flux_configuration; velocity_formulation::Symbol = :relative)
+function build_coupled_model(ocean, sea_ice, atmosphere, radiation, flux_configuration;
+                             velocity_formulation::Symbol = :relative)
     if flux_configuration == :default
         return OceanSeaIceModel(ocean, sea_ice; atmosphere, radiation)
     end
@@ -153,10 +159,13 @@ function build_coupled_model(ocean, sea_ice, atmosphere, radiation, flux_configu
                               velocity_formulation == :wind     ? WindVelocity()     :
                               error("Unknown velocity_formulation: $velocity_formulation. Options: :relative, :wind")
 
-    if flux_configuration == :corrected
+    if flux_configuration == :corrected || flux_configuration == :shear_aware
+        gustiness = flux_configuration == :shear_aware ?
+                    ShearAwareGustiness(FT; shear_wind_scale = 0.04, minimum_gustiness = 0.5) :
+                    ConstantGustiness(FT;   minimum_gustiness = 0.5)
         interfaces = ComponentInterfaces(atmosphere, ocean, sea_ice;
                                          radiation,
-                                         atmosphere_ocean_fluxes   = corrected_atmosphere_ocean_fluxes(FT),
+                                         atmosphere_ocean_fluxes   = corrected_atmosphere_ocean_fluxes(FT; gustiness),
                                          atmosphere_sea_ice_fluxes = corrected_atmosphere_sea_ice_fluxes(FT),
                                          sea_ice_ocean_heat_flux   = corrected_ice_ocean_heat_flux(),
                                          atmosphere_ocean_velocity_difference   = velocity_difference_obj,
@@ -170,7 +179,7 @@ function build_coupled_model(ocean, sea_ice, atmosphere, radiation, flux_configu
                                          atmosphere_ocean_velocity_difference   = velocity_difference_obj,
                                          atmosphere_sea_ice_velocity_difference = velocity_difference_obj)
     else
-        error("Unknown flux_configuration: $flux_configuration. Options: :default, :corrected, :ncar")
+        error("Unknown flux_configuration: $flux_configuration. Options: :default, :corrected, :shear_aware, :ncar")
     end
 
     return OceanSeaIceModel(ocean, sea_ice; atmosphere, interfaces)
@@ -219,6 +228,11 @@ plumbing is needed because `NumericalEarth.EarthSystemModels` provides
 - `flux_configuration`: surface flux formulation. Options:
    * `:default` — current defaults (Edson/COARE with constant Charnock 0.02)
    * `:corrected` — COARE 3.6 with wind-dependent Charnock, fixed ice roughness, momentum-based u*
+   * `:shear_aware` — `:corrected` plus the Mahrt–Sun (1995) / Edson (2013)
+                      shear-aware gustiness form (`ShearAwareGustiness`),
+                      Uᴳ² = (β·w★)² + (c·|Δu|)² + Uᴳ₀². Designed to inject
+                      additional gustiness at moderate winds where convective
+                      gustiness is weak (e.g., the equator).
    * `:ncar` — OMIP-2 standard Large & Yeager (2004) bulk formulae
 - `vertical_closure::Symbol`: ocean vertical-mixing closure. Options:
    * `:catke` — CATKE TKE-based scheme (default).
@@ -262,6 +276,7 @@ function omip_simulation(config::Symbol = :halfdegree;
                          flux_configuration = :default,
                          vertical_closure = :catke,
                          velocity_formulation = :relative,
+                         Cᵂu★ = nothing,
                          with_snow = false,
                          diagnostics = true,
                          field_mean_interval = 5days,
@@ -281,6 +296,7 @@ function omip_simulation(config::Symbol = :halfdegree;
                         biharmonic_timescale,
                         biharmonic_viscosity,
                         vertical_closure,
+                        Cᵂu★,
                         restoring_dir, piston_velocity,
                         start_date, end_date)
 
@@ -302,7 +318,8 @@ function omip_simulation(config::Symbol = :halfdegree;
                                             end_date,
                                             backend_size)
 
-    coupled = build_coupled_model(ocean, sea_ice, atmosphere, radiation, flux_configuration; velocity_formulation)
+    coupled = build_coupled_model(ocean, sea_ice, atmosphere, radiation, flux_configuration;
+                                  velocity_formulation)
 
     simulation = Simulation(coupled; Δt, stop_time)
 
@@ -436,11 +453,15 @@ end
 function omip_closure(vertical_closure::Symbol;
                       κ_skew, κ_symmetric, Cᵇ = 0.28,
                       biharmonic_timescale,
-                      biharmonic_viscosity = nothing)
+                      biharmonic_viscosity = nothing,
+                      Cᵂu★ = nothing)
 
     primary, background = if vertical_closure == :catke
         mixing_length = CATKEMixingLength(; Cᵇ)
-        catke = CATKEVerticalDiffusivity(VerticallyImplicitTimeDiscretization(); mixing_length)
+        tke_eq = isnothing(Cᵂu★) ? CATKEEquation() : CATKEEquation(; Cᵂu★)
+        catke = CATKEVerticalDiffusivity(VerticallyImplicitTimeDiscretization();
+                                         mixing_length,
+                                         turbulent_kinetic_energy_equation = tke_eq)
         catke, VerticalScalarDiffusivity(κ=henyey_diffusivity, ν=3e-5)
     elseif vertical_closure == :simple
         convective = ConvectiveAdjustmentVerticalDiffusivity(VerticallyImplicitTimeDiscretization();
@@ -582,12 +603,14 @@ function build_ocean(config, grid;
                      biharmonic_timescale,
                      biharmonic_viscosity = nothing,
                      vertical_closure = :catke,
+                     Cᵂu★ = nothing,
                      start_date, end_date)
 
     salt_restoring = salinity_surface_restoring(grid, WOAMonthly(); restoring_dir, piston_velocity)
     closure = omip_closure(vertical_closure;
                            κ_skew, κ_symmetric, Cᵇ,
-                           biharmonic_timescale, biharmonic_viscosity)
+                           biharmonic_timescale, biharmonic_viscosity,
+                           Cᵂu★)
     coriolis = HydrostaticSphericalCoriolis(scheme = Oceananigans.Coriolis.EnstrophyConserving())
     momentum_advection = config_momentum_advection(config)
 
