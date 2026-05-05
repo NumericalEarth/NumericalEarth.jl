@@ -3,7 +3,6 @@ using Oceananigans.TimeSteppers: Clock
 using Oceananigans: SeawaterBuoyancy
 using ClimaSeaIce.SeaIceThermodynamics: melting_temperature
 using KernelAbstractions: @kernel, @index
-using NumericalEarth.Atmospheres: PrescribedAtmosphere
 
 mutable struct EarthSystemModel{R, A, L, I, O, F, C, Arch} <: AbstractModel{Nothing, Arch}
     architecture :: Arch
@@ -139,7 +138,7 @@ function EarthSystemModel(radiation, atmosphere, land, sea_ice, ocean;
                           sea_ice_reference_density = reference_density(sea_ice),
                           sea_ice_heat_capacity = heat_capacity(sea_ice),
                           interfaces = nothing)
-    if isnothing(radiation) && atmosphere isa PrescribedAtmosphere
+    if isnothing(radiation) && is_prescribed_atmosphere(atmosphere)
         @warn """
             `EarthSystemModel` was constructed with a `PrescribedAtmosphere` but \
             `radiation = nothing`. This means no upwelling longwave (ϵσT⁴), no \
