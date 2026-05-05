@@ -220,7 +220,12 @@ function plan_era5_day(name, dataset, day_dates; region, dir, skip_existing)
     dt_path_pairs = [(dt, joinpath(dir, meta_filename(dataset, name, dt, region)))
                      for dt in day_dates]
 
-    pending = skip_existing ? filter(((_, path),) -> !isfile(path), dt_path_pairs) : dt_path_pairs
+    pending = if skip_existing
+        filter(dt_path -> !isfile(dt_path[2]), dt_path_pairs)
+    else
+        dt_path_pairs
+    end
+
     if isempty(pending)
         return (; dt_path_pairs, pending,
                   request=nothing, tmp_path=nothing, nc_triples=nothing)
@@ -247,7 +252,7 @@ function download_era5_day(name, dataset, day_dates;
                            region, dir, skip_existing, cleanup)
 
     plan = plan_era5_day(name, dataset, day_dates; region, dir, skip_existing)
-    isempty(plan.pending) && return [path for (_, path) in plan.dt_path_pairs]
+    isempty(plan.pending) && return map(dt_path -> dt_path[2], plan.dt_path_pairs)
 
     mkpath(dir)
     time_dimnames = Set(["time", "valid_time"])
@@ -260,7 +265,7 @@ function download_era5_day(name, dataset, day_dates;
         cleanup && rm(plan.tmp_path; force=true)
     end
 
-    return [path for (_, path) in plan.dt_path_pairs]
+    return map(dt_path -> dt_path[2], plan.dt_path_pairs)
 end
 
 #####
@@ -299,12 +304,12 @@ function download_dataset(names::Vector{Symbol}, meta::ERA5PressureMetadatum; sk
     end
 
     pending = if skip_existing
-        [(n, p) for (n, p) in name_path_pairs if !isfile(p)]
+        filter(name_path -> !isfile(name_path[2]), name_path_pairs)
     else
         name_path_pairs
     end
 
-    isempty(pending) && return [path for (_, path) in name_path_pairs]
+    isempty(pending) && return map(name_path -> name_path[2], name_path_pairs)
 
     pending_names = [name for (name, _) in pending]
     request = build_era5_request(pending_names, meta.dataset, meta.dates; region=meta.region)
@@ -328,7 +333,7 @@ function download_dataset(names::Vector{Symbol}, meta::ERA5PressureMetadatum; sk
         rm(tmp_path; force=true)
     end
 
-    return [path for (_, path) in name_path_pairs]
+    return map(name_path -> name_path[2], name_path_pairs)
 end
 
 """
@@ -404,14 +409,19 @@ function plan_era5_multivar_day(names, dataset, day_dates; region, dir, skip_exi
     name_dt_paths = [(name, dt, joinpath(dir, meta_filename(dataset, name, dt, region)))
                      for name in names for dt in day_dates]
 
-    pending = skip_existing ? filter(((_, _, path),) -> !isfile(path), name_dt_paths) : name_dt_paths
+    pending = if skip_existing
+        filter(name_dt_path -> !isfile(name_dt_path[3]), name_dt_paths)
+    else
+        name_dt_paths
+    end
+
     if isempty(pending)
         return (; name_dt_paths, pending,
                   request=nothing, tmp_path=nothing, nc_triples=nothing)
     end
 
-    pending_names = unique([name for (name, _, _) in pending])
-    sorted_dts    = sort(unique([dt for (_, dt, _) in pending]))
+    pending_names = unique(map(name_dt_path -> name_dt_path[1], pending))
+    sorted_dts    = sort(unique(map(name_dt_path -> name_dt_path[2], pending)))
     dt_to_tidx    = Dict(dt => i for (i, dt) in enumerate(sorted_dts))
 
     request = build_era5_request(pending_names, dataset, sorted_dts; region)
@@ -432,7 +442,7 @@ function download_era5_multivar_day(names, dataset, day_dates;
                                     region, dir, skip_existing, cleanup)
 
     plan = plan_era5_multivar_day(names, dataset, day_dates; region, dir, skip_existing)
-    isempty(plan.pending) && return [path for (_, _, path) in plan.name_dt_paths]
+    isempty(plan.pending) && return map(name_dt_path -> name_dt_path[3], plan.name_dt_paths)
 
     mkpath(dir)
     time_dimnames = Set(["time", "valid_time"])
@@ -445,7 +455,7 @@ function download_era5_multivar_day(names, dataset, day_dates;
         cleanup && rm(plan.tmp_path; force=true)
     end
 
-    return [path for (_, _, path) in plan.name_dt_paths]
+    return map(name_dt_path -> name_dt_path[3], plan.name_dt_paths)
 end
 
 #####
