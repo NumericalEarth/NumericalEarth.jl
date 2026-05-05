@@ -96,7 +96,7 @@ build_filename(::OSPapaFluxHourly, name, dates::AbstractArray, region) =
 
 function download_dataset(md::OSPapaFluxMetadata)
     uniform_path = joinpath(md.dir, metadata_filename(md))
-    isfile(uniform_path) && return nothing
+    isfile(uniform_path) && return uniform_path
 
     if !(md.dates isa AbstractArray)
         error("OSPapaFluxHourly uniform cache $(uniform_path) is missing; " *
@@ -107,7 +107,7 @@ function download_dataset(md::OSPapaFluxMetadata)
     end_date   = last(md.dates)
     raw_path = download_ospapa_flux(; start_date, end_date, dir=md.dir)
     _write_uniform_flux_file(raw_path, uniform_path, start_date, end_date)
-    return nothing
+    return uniform_path
 end
 
 function _write_uniform_flux_file(raw_path, uniform_path, start_date, end_date)
