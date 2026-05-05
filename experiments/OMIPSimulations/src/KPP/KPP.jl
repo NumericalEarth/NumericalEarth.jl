@@ -1,10 +1,5 @@
-# KPP (K-Profile Parameterization) vertical mixing closure.
-#
-# Implementation of Large, McWilliams, & Doney (1994) following
-# MITgcm/pkg/kpp. Vendored as a leaf submodule of OMIPSimulations
-# alongside `nori_base_closure.jl`. Submodule scoping isolates KPP's
-# helper names (e.g. `shear_squaredᶜᶜᶠ`, `interior_viscosityᶜᶜᶠ`) from
-# NORi's same-named helpers at the OMIPSimulations level.
+# KPP (K-Profile Parameterization) vertical mixing closure (Large, McWilliams,
+# & Doney 1994), following MITgcm/pkg/kpp. Vendored as a submodule.
 
 module KPP
 
@@ -15,7 +10,7 @@ using KernelAbstractions: @index, @kernel
 
 using Oceananigans
 using Oceananigans.Architectures: architecture
-using Oceananigans.BoundaryConditions: getbc, fill_halo_regions!, FieldBoundaryConditions
+using Oceananigans.BoundaryConditions: getbc, FieldBoundaryConditions
 using Oceananigans.BuoyancyFormulations: ∂z_b, top_buoyancy_flux,
                                           thermal_expansionᶜᶜᶜ, haline_contractionᶜᶜᶜ,
                                           buoyancy_perturbationᶜᶜᶜ
@@ -23,16 +18,15 @@ using Oceananigans.Coriolis: fᶠᶠᵃ
 using Oceananigans.Fields: Field
 using Oceananigans.Grids: Center, Face, znode, peripheral_node, inactive_node, static_column_depthᶜᶜᵃ
 using Oceananigans.Operators
-using Oceananigans.Operators: ℑxᶜᵃᵃ, ℑyᵃᶜᵃ, ℑxyᶜᶜᵃ, ∂zᶠᶜᶠ, ∂zᶜᶠᶠ, Δzᶜᶜᶜ
+using Oceananigans.Operators: ℑxᶜᵃᵃ, ℑyᵃᶜᵃ, ℑzᵃᵃᶜ, ℑxyᶜᶜᵃ, ∂zᶠᶜᶠ, ∂zᶜᶠᶠ, Δzᶜᶜᶜ
 using Oceananigans.TurbulenceClosures
 using Oceananigans.TurbulenceClosures: AbstractScalarDiffusivity, VerticalFormulation,
                                        VerticallyImplicitTimeDiscretization,
                                        ExplicitTimeDiscretization, VerticallyBoundedGrid,
                                        getclosure
-
-const VITD = VerticallyImplicitTimeDiscretization
 using Oceananigans.Utils: launch!, prettysummary
 
+import Oceananigans.BoundaryConditions: fill_halo_regions!
 import Oceananigans.TurbulenceClosures: viscosity, diffusivity,
                                         viscosity_location, diffusivity_location,
                                         with_tracers, time_discretization,
@@ -40,6 +34,8 @@ import Oceananigans.TurbulenceClosures: viscosity, diffusivity,
                                         diffusive_flux_z
 
 using NumericalEarth.Oceans: get_radiative_forcing
+
+const VITD = VerticallyImplicitTimeDiscretization
 
 include("kpp_parameters.jl")
 include("kpp_vertical_diffusivity.jl")

@@ -1,8 +1,5 @@
-# Turbulent velocity scales wm (momentum) and ws (scalars).
-# Stable: linear φ (Cˢᵗ·ζ). Unstable: analytical Monin-Obukhov, with two
-# sub-branches each joined at ζᵐ / ζˢ. Roots are taken positively and
-# multiplied by κᵥ·u★ (no division by φ), so u★ = 0 gives wm = ws = 0
-# without any Inf / NaN.
+# Monin-Obukhov velocity scales wm (momentum) and ws (scalars). Stable: linear
+# in ζ. Unstable: positive-root form `κᵥ·u★·(...)^(±)`, robust at u★ → 0.
 
 @inline function velocity_scales(σ, hbl, u★, Bf, params)
     FT  = typeof(σ)

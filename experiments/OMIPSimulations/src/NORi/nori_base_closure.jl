@@ -123,17 +123,17 @@ const _nori_f = Face()
 @inline viscosity_location(::FlavorOfNBVD)   = (_nori_c, _nori_c, _nori_f)
 @inline diffusivity_location(::FlavorOfNBVD) = (_nori_c, _nori_c, _nori_f)
 
-@inline viscosity(::FlavorOfNBVD, diffusivities) = diffusivities.κᵘ
-@inline diffusivity(::FlavorOfNBVD, diffusivities, id) = diffusivities.κᶜ
+@inline viscosity(::FlavorOfNBVD, diffusivities) = diffusivities.κu
+@inline diffusivity(::FlavorOfNBVD, diffusivities, id) = diffusivities.κc
 
 with_tracers(tracers, closure::FlavorOfNBVD) = closure
 
 function build_closure_fields(grid, clock, tracer_names, bcs, closure::FlavorOfNBVD)
-    κᶜ = Field((Center(), Center(), Face()), grid)
-    κᵘ = Field((Center(), Center(), Face()), grid)
+    κc = Field((Center(), Center(), Face()), grid)
+    κu = Field((Center(), Center(), Face()), grid)
     Ri = Field((Center(), Center(), Face()), grid)
     previous_compute_time = Ref(clock.time)
-    return (; κᶜ, κᵘ, Ri, previous_compute_time)
+    return (; κc, κu, Ri, previous_compute_time)
 end
 
 #####
@@ -250,8 +250,8 @@ end
 
     is_interior = k > 1 && k < grid.Nz + 1
 
-    @inbounds diffusivities.κᵘ[i, j, k] = ifelse(is_interior, ν_local, 0)
-    @inbounds diffusivities.κᶜ[i, j, k] = ifelse(is_interior, κ_local, 0)
+    @inbounds diffusivities.κu[i, j, k] = ifelse(is_interior, ν_local, 0)
+    @inbounds diffusivities.κc[i, j, k] = ifelse(is_interior, κ_local, 0)
 
     return nothing
 end

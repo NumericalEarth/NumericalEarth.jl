@@ -52,7 +52,8 @@ export omip_simulation,
        StraitSection,
        woa_to_teos10!,
        woa_salinity_fts_to_teos10!,
-       KPPVerticalDiffusivity, KPPParameters
+       KPPVerticalDiffusivity, KPPParameters,
+       NORiBaseVerticalDiffusivity
 
 include("NORi/NORi.jl")
 

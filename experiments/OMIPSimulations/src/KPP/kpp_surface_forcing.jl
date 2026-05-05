@@ -1,17 +1,8 @@
-# Surface-forcing primitives for KPP: friction velocity, non-solar buoyancy
-# flux Bo, two-band SW penetration, and the helper that integrates the total
-# buoyancy forcing absorbed above a depth d.
-#
-# Sign convention (KPP / Large 1994): positive Bo = stabilizing. Oceananigans'
-# `top_buoyancy_flux` uses positive = destabilizing, so we negate it here.
+# Surface-forcing primitives: u★, non-solar buoyancy flux Bo, two-band SW
+# penetration, and the depth-integrated buoyancy forcing Bf(d). KPP sign
+# convention: positive Bo = stabilizing (negation of Oceananigans' top flux).
 
-"""
-    KPPTopBoundaryConditions{V, T}
-
-Carrier for the velocity and tracer surface BCs that the KPP closure needs
-at compute time. Built CPU-side once per `compute_closure_fields!` call,
-then passed to the kernel.
-"""
+# Carrier for surface BCs passed kernel-side; built CPU-side per compute call.
 struct KPPTopBoundaryConditions{V, T}
     velocities :: V
     tracers    :: T
@@ -31,15 +22,14 @@ Adapt.adapt_structure(to, b::KPPTopBoundaryConditions) =
 end
 
 #####
-##### Non-solar surface buoyancy flux Bo (KPP-sign: stabilizing positive)
+##### Non-solar surface buoyancy flux Bo (KPP sign: stabilizing positive)
 #####
 
 @inline non_solar_buoyancy(i, j, grid, clock, fields, buoyancy, top_tracer_bcs) =
-    - top_buoyancy_flux(i, j, grid, buoyancy, top_tracer_bcs, clock, fields)
+    - top_buoyancy_flux(i, j, grid, buoyancy.formulation, top_tracer_bcs, clock, fields)
 
 #####
-##### Two-band SW penetration: fraction remaining at depth d, and absorbed
-##### buoyancy gain integrated from surface to d.
+##### Two-band SW penetration: fraction remaining at d, integrated buoyancy gain.
 #####
 
 @inline shortwave_fraction(d, ::Nothing) = zero(d)
@@ -60,7 +50,6 @@ end
     return - g * α * J₀ * (one(FT) - shortwave_fraction(d, radiation))
 end
 
-# Total KPP buoyancy forcing absorbed above depth d.
 @inline buoyancy_forcing_above(i, j, d, Bo, radiation, α, g) =
     Bo + solar_buoyancy_above(i, j, d, radiation, α, g)
 
@@ -68,8 +57,16 @@ end
 ##### Surface-cell EOS coefficients
 #####
 
-@inline αᶜᶜᶜ(i, j, grid, buoyancy, tracers) =
-    thermal_expansionᶜᶜᶜ(i, j, grid.Nz, grid, buoyancy.equation_of_state, tracers.T, tracers.S)
+@inline function αᶜᶜᶜ(i, j, grid, buoyancy, tracers)
+    FT  = eltype(grid)
+    eos = buoyancy.formulation.equation_of_state
+    α   = thermal_expansionᶜᶜᶜ(i, j, grid.Nz, grid, eos, tracers.T, tracers.S)
+    return ifelse(inactive_node(i, j, grid.Nz, grid, Center(), Center(), Center()), zero(FT), α)
+end
 
-@inline βᶜᶜᶜ(i, j, grid, buoyancy, tracers) =
-    haline_contractionᶜᶜᶜ(i, j, grid.Nz, grid, buoyancy.equation_of_state, tracers.T, tracers.S)
+@inline function βᶜᶜᶜ(i, j, grid, buoyancy, tracers)
+    FT  = eltype(grid)
+    eos = buoyancy.formulation.equation_of_state
+    β   = haline_contractionᶜᶜᶜ(i, j, grid.Nz, grid, eos, tracers.T, tracers.S)
+    return ifelse(inactive_node(i, j, grid.Nz, grid, Center(), Center(), Center()), zero(FT), β)
+end
