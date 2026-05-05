@@ -338,7 +338,7 @@ function download_dataset(metadata::ECCOMetadata)
         end
     end
 
-    return nothing
+    return metadata_path(metadata)
 end
 
 function inpainted_metadata_filename(metadata::ECCOMetadatum)
