@@ -76,21 +76,29 @@ with_tracers(tracers, closure::FlavorOfKPP) = closure
 #####
 
 function build_closure_fields(grid, clock, tracer_names, bcs, closure::FlavorOfKPP)
+    # Output diffusivities + nonlocal-transport coefficient.
     κu = Field((Center(), Center(), Face()), grid)
     κc = Field((Center(), Center(), Face()), grid)
     γ  = Field((Center(), Center(), Face()), grid)
 
-    hbl = Field{Center, Center, Nothing}(grid)
-    u★  = Field{Center, Center, Nothing}(grid)
-    Bo  = Field{Center, Center, Nothing}(grid)
-    νh  = Field{Center, Center, Nothing}(grid)
-    κh  = Field{Center, Center, Nothing}(grid)
-    dνh = Field{Center, Center, Nothing}(grid)
-    dκh = Field{Center, Center, Nothing}(grid)
+    # Cached interior K (ν, κ) at every face — filled once per step, reused by
+    # the column sweep and by the per-interface kernel.
+    νᵢ = Field((Center(), Center(), Face()), grid)
+    κᵢ = Field((Center(), Center(), Face()), grid)
+
+    # Column-level scalars (one value per (i, j) column).
+    hbl  = Field{Center, Center, Nothing}(grid)
+    u★   = Field{Center, Center, Nothing}(grid)
+    Bo   = Field{Center, Center, Nothing}(grid)
+    α    = Field{Center, Center, Nothing}(grid)
+    G1u  = Field{Center, Center, Nothing}(grid)
+    dG1u = Field{Center, Center, Nothing}(grid)
+    G1s  = Field{Center, Center, Nothing}(grid)
+    dG1s = Field{Center, Center, Nothing}(grid)
 
     top_tracer_bcs = KPPTracerBCs(NamedTuple(name => bcs[name].top for name in tracer_names))
 
-    return (; κu, κc, γ, hbl, u★, Bo, νh, κh, dνh, dκh, top_tracer_bcs)
+    return (; κu, κc, γ, νᵢ, κᵢ, hbl, u★, Bo, α, G1u, dG1u, G1s, dG1s, top_tracer_bcs)
 end
 
 #####

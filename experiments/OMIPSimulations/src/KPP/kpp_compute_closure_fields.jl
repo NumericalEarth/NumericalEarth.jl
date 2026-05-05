@@ -1,6 +1,7 @@
-# Driver: per-step computation of `κu`, `κc`, `γ`, `hbl`, `u★`. Two kernels:
-# Kernel 1 (`:xy`) writes column-level scalars; Kernel 2 reads them and writes
-# κu, κc, γ at every interface.
+# Three-phase driver:
+#   (1) cache interior (ν, κ) at every face,
+#   (2) per-column scalars: hbl, u★, Bo, α, and matching coefs G1{u,s} / dG1{u,s},
+#   (3) per-interface κu, κc, γ — pure lookup + per-face physics.
 
 function compute_closure_fields!(diffusivities, closure::FlavorOfKPP, model; parameters = :xyz)
     arch  = model.architecture
@@ -20,13 +21,13 @@ function compute_closure_fields!(diffusivities, closure::FlavorOfKPP, model; par
 
     launch!(arch, grid, parameters, compute_kpp_diffusivities!,
             diffusivities, grid, closure,
-            model.velocities, model.tracers, model.buoyancy, radiation)
+            model.buoyancy, radiation)
 
     return nothing
 end
 
 #####
-##### Kernel 1: column-level scalars (u★, Bo, hbl, K and dK/dz at BL base)
+##### Phase 2: column-level scalars (hbl, u★, Bo, α, matching coefficients)
 #####
 
 @kernel function compute_kpp_column_fields!(K, grid, closure, velocities, tracers, buoyancy,
@@ -47,8 +48,8 @@ end
                                        velocities, tracers, buoyancy,
                                        u★, Bo, α, g, radiation, coriolis)
 
-    # Column sweep: track interior K at the deepest face below hbl (subscript ₋)
-    # and the first face above (subscript ₊) for the FD derivative dK/dz at hbl.
+    # Capture cached (ν, κ) at the deepest face below hbl (subscript ₋) and the
+    # first face above (subscript ₊) for the FD derivative dK/dz at hbl.
     z₀ = znode(i, j, Nz, grid, Center(), Center(), Center())
     ν₋ = zero(FT); ν₊ = zero(FT)
     κ₋ = zero(FT); κ₊ = zero(FT)
@@ -58,8 +59,9 @@ end
     for k in 1:(Nz + 1)
         zf = znode(i, j, k, grid, Center(), Center(), Face())
         d  = z₀ - zf
-        νₖ = interior_viscosityᶜᶜᶠ(i, j, k, grid, closure, velocities, tracers, buoyancy)
-        κₖ = interior_diffusivityᶜᶜᶠ(i, j, k, grid, closure, velocities, tracers, buoyancy)
+        νₖ, κₖ = interior_diffusivitiesᶜᶜᶠ(i, j, k, grid, closure, velocities, tracers, buoyancy)
+        @inbounds K.νᵢ[i, j, k] = νₖ
+        @inbounds K.κᵢ[i, j, k] = κₖ
 
         below   = d > hbl
         capture = !below & !crossed
@@ -83,56 +85,56 @@ end
     dνh = ifelse(have_below, (ν₊ - ν₋) / Δz, zero(FT))
     dκh = ifelse(have_below, (κ₊ - κ₋) / Δz, zero(FT))
 
+    # Matching at σ = 1: column-level, so computed here once and reused per face.
+    σ₁        = ifelse(Bo ≥ zero(FT), one(FT), p.ε)
+    wm₁, ws₁  = velocity_scales(σ₁, hbl, u★, Bo, p)
+    G1u, dG1u = matching_coefficients(hbl, νh, dνh, wm₁, Bo, u★, p)
+    G1s, dG1s = matching_coefficients(hbl, κh, dκh, ws₁, Bo, u★, p)
+
     # Branchless land-column mask: zero everywhere on fully-land columns.
     wet = static_column_depthᶜᶜᵃ(i, j, grid) > zero(FT)
-    @inbounds K.hbl[i, j, 1] = ifelse(wet, hbl, zero(FT))
-    @inbounds K.u★[i, j, 1]  = ifelse(wet, u★,  zero(FT))
-    @inbounds K.Bo[i, j, 1]  = ifelse(wet, Bo,  zero(FT))
-    @inbounds K.νh[i, j, 1]  = ifelse(wet, νh,  zero(FT))
-    @inbounds K.κh[i, j, 1]  = ifelse(wet, κh,  zero(FT))
-    @inbounds K.dνh[i, j, 1] = ifelse(wet, dνh, zero(FT))
-    @inbounds K.dκh[i, j, 1] = ifelse(wet, dκh, zero(FT))
+    @inbounds K.hbl[i, j, 1]  = ifelse(wet, hbl,  zero(FT))
+    @inbounds K.u★[i, j, 1]   = ifelse(wet, u★,   zero(FT))
+    @inbounds K.Bo[i, j, 1]   = ifelse(wet, Bo,   zero(FT))
+    @inbounds K.α[i, j, 1]    = ifelse(wet, α,    zero(FT))
+    @inbounds K.G1u[i, j, 1]  = ifelse(wet, G1u,  zero(FT))
+    @inbounds K.dG1u[i, j, 1] = ifelse(wet, dG1u, zero(FT))
+    @inbounds K.G1s[i, j, 1]  = ifelse(wet, G1s,  zero(FT))
+    @inbounds K.dG1s[i, j, 1] = ifelse(wet, dG1s, zero(FT))
 end
 
 #####
-##### Kernel 2: per-interface κu, κc, γ
+##### Phase 3: per-interface κu, κc, γ
 #####
 
-@kernel function compute_kpp_diffusivities!(K, grid, closure, velocities, tracers, buoyancy, radiation)
+@kernel function compute_kpp_diffusivities!(K, grid, closure, buoyancy, radiation)
     i, j, k = @index(Global, NTuple)
-    _kpp_interface!(i, j, k, K, grid, closure, velocities, tracers, buoyancy, radiation)
+    _kpp_interface!(i, j, k, K, grid, closure, buoyancy, radiation)
 end
 
-@inline function _kpp_interface!(i, j, k, K, grid, closure, velocities, tracers, buoyancy, radiation)
+@inline function _kpp_interface!(i, j, k, K, grid, closure, buoyancy, radiation)
     FT  = eltype(grid)
     Nz  = grid.Nz
     p   = getclosure(i, j, closure).parameters
     clo = getclosure(i, j, closure)
 
-    @inbounds hbl = K.hbl[i, j, 1]
-    @inbounds u★  = K.u★[i, j, 1]
-    @inbounds Bo  = K.Bo[i, j, 1]
-    @inbounds νh  = K.νh[i, j, 1]
-    @inbounds κh  = K.κh[i, j, 1]
-    @inbounds dνh = K.dνh[i, j, 1]
-    @inbounds dκh = K.dκh[i, j, 1]
+    @inbounds hbl  = K.hbl[i, j, 1]
+    @inbounds u★   = K.u★[i, j, 1]
+    @inbounds Bo   = K.Bo[i, j, 1]
+    @inbounds α    = K.α[i, j, 1]
+    @inbounds G1u  = K.G1u[i, j, 1]
+    @inbounds dG1u = K.dG1u[i, j, 1]
+    @inbounds G1s  = K.G1s[i, j, 1]
+    @inbounds dG1s = K.dG1s[i, j, 1]
 
-    α = αᶜᶜᶜ(i, j, grid, buoyancy, tracers)
-    g = buoyancy.formulation.gravitational_acceleration
+    @inbounds νᵢ = K.νᵢ[i, j, k]
+    @inbounds κᵢ = K.κᵢ[i, j, k]
 
+    g     = buoyancy.formulation.gravitational_acceleration
     z₀    = znode(i, j, Nz, grid, Center(), Center(), Center())
     d     = z₀ - znode(i, j, k, grid, Center(), Center(), Face())
     σ     = d / max(hbl, FT(1e-10))
     in_BL = (σ < one(FT)) & (σ ≥ zero(FT))
-
-    νᵢ = interior_viscosityᶜᶜᶠ(i, j, k, grid, closure, velocities, tracers, buoyancy)
-    κᵢ = interior_diffusivityᶜᶜᶠ(i, j, k, grid, closure, velocities, tracers, buoyancy)
-
-    # Matching coefficients at σ = 1 (column-level; recomputed per interface).
-    σ₁        = ifelse(Bo ≥ zero(FT), one(FT), p.ε)
-    wm₁, ws₁  = velocity_scales(σ₁, hbl, u★, Bo, p)
-    G1u, dG1u = matching_coefficients(hbl, νh, dνh, wm₁, Bo, u★, p)
-    G1s, dG1s = matching_coefficients(hbl, κh, dκh, ws₁, Bo, u★, p)
 
     # Local turbulent scales at this interface (SW-aware Bf).
     Bf     = buoyancy_forcing_above(i, j, d, Bo, radiation, α, g)

@@ -26,28 +26,21 @@ end
 end
 
 # IW background + shear + convective; matches MITgcm `kpp_routines.F:1197`.
-@inline function interior_viscosityᶜᶜᶠ(i, j, k, grid, closure, velocities, tracers, buoyancy)
+# Returns (ν, κ) jointly so S², N², Ri and the smooth factors are computed once.
+@inline function interior_diffusivitiesᶜᶜᶠ(i, j, k, grid, closure, velocities, tracers, buoyancy)
     FT = eltype(grid)
     p  = getclosure(i, j, closure).parameters
+
     S² = shear_squaredᶜᶜᶠ(i, j, k, grid, velocities)
     N² = ∂z_b(i, j, k, grid, buoyancy, tracers)
     Ri = N² / max(S², FT(1e-10))
 
-    ν = p.νⁱʷ + shear_factor(Ri, p.Ri∞, FT)     * p.ν₀ˢʰ +
-                convective_factor(N², p.N²ᶜᵒⁿ, FT) * p.νᶜᵒⁿ
+    fSh = shear_factor(Ri, p.Ri∞, FT)
+    fCv = convective_factor(N², p.N²ᶜᵒⁿ, FT)
 
-    return ifelse(peripheral_node(i, j, k, grid, Center(), Center(), Face()), zero(FT), ν)
-end
+    ν = p.νⁱʷ + fSh * p.ν₀ˢʰ + fCv * p.νᶜᵒⁿ
+    κ = p.κⁱʷ + fSh * p.κ₀ˢʰ + fCv * p.κᶜᵒⁿ
 
-@inline function interior_diffusivityᶜᶜᶠ(i, j, k, grid, closure, velocities, tracers, buoyancy)
-    FT = eltype(grid)
-    p  = getclosure(i, j, closure).parameters
-    S² = shear_squaredᶜᶜᶠ(i, j, k, grid, velocities)
-    N² = ∂z_b(i, j, k, grid, buoyancy, tracers)
-    Ri = N² / max(S², FT(1e-10))
-
-    κ = p.κⁱʷ + shear_factor(Ri, p.Ri∞, FT)     * p.κ₀ˢʰ +
-                convective_factor(N², p.N²ᶜᵒⁿ, FT) * p.κᶜᵒⁿ
-
-    return ifelse(peripheral_node(i, j, k, grid, Center(), Center(), Face()), zero(FT), κ)
+    masked = peripheral_node(i, j, k, grid, Center(), Center(), Face())
+    return ifelse(masked, zero(FT), ν), ifelse(masked, zero(FT), κ)
 end
