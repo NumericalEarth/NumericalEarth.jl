@@ -38,6 +38,7 @@ using Dates
 using Oceananigans
 using Statistics
 using CairoMakie
+using Suppressor
 
 # ## Study definition
 #
@@ -147,8 +148,8 @@ fig
 # - We work with a `FieldTimeSeries`, constructed from metadata, to construct
 #   an ERA5 time series. Field data are downloaded on the fly.
 
-precip_meta   = Metadata(:total_precipitation; dataset, dates, region = synoptic_region)
-precip_series = FieldTimeSeries(precip_meta)
+precip_meta = Metadata(:total_precipitation; dataset, dates, region = synoptic_region)
+precip_series = @suppress_out FieldTimeSeries(precip_meta)
 nothing #hide
 
 # For brevity, we plot the time-averaged (rather than instantaneous) precipitation over
@@ -193,8 +194,8 @@ fig1
 # *Note: We could have sliced the `precip_series` from above, but we 
 # illustrate here a seperate data retrieval path.*
 
-precip_col_meta   = Metadata(:total_precipitation; dataset, dates, region = rico_column)
-precip_col_series = FieldTimeSeries(precip_col_meta; time_indices_in_memory = Nt)
+precip_col_meta = Metadata(:total_precipitation; dataset, dates, region = rico_column)
+precip_col_series = @suppress_out FieldTimeSeries(precip_col_meta; time_indices_in_memory = Nt)
 nothing #hide
 
 # ERA5 `total_precipitation` is in m (liquid-water-equivalent depth). Note
@@ -237,7 +238,7 @@ fig2
 # day-to-day variability in the reanalysis, with a wider range of values and greater
 # mean precipitation.
 
-mean(precip_W_m2)
+@show mean(precip_W_m2)
 
 # ### Time-height of cloud liquid and rain water content at the RICO location
 #
@@ -272,7 +273,7 @@ ds_pl.pressure_levels' / hPa
 variables = [:specific_cloud_liquid_water_content,
              :specific_rain_water_content,
              :geopotential]
-download_dataset(variables, ds_pl, dates; region = rico_column)
+@suppress_out download_dataset(variables, ds_pl, dates; region = rico_column)
 nothing #hide
 
 # Load the downloaded data and stack the column profile from each time into
@@ -339,10 +340,10 @@ q_meta = Metadata(:specific_humidity;  dataset=ds_pl, dates, region=rico_region)
 u_meta = Metadata(:eastward_velocity;  dataset=ds_pl, dates, region=rico_region)
 v_meta = Metadata(:northward_velocity; dataset=ds_pl, dates, region=rico_region)
 
-T_series = FieldTimeSeries(T_meta)
-q_series = FieldTimeSeries(q_meta)
-u_series = FieldTimeSeries(u_meta)
-v_series = FieldTimeSeries(v_meta)
+T_series = @suppress_out FieldTimeSeries(T_meta)
+q_series = @suppress_out FieldTimeSeries(q_meta)
+u_series = @suppress_out FieldTimeSeries(u_meta)
+v_series = @suppress_out FieldTimeSeries(v_meta)
 nothing #hide
 
 # Calculate mean profiles and quantities of interest.
