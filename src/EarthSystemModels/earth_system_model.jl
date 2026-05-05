@@ -57,8 +57,43 @@ prognostic_fields(cm::ESM)         = nothing
 fields(::ESM)                      = NamedTuple()
 default_clock(TT)                   = Oceananigans.TimeSteppers.Clock{TT}(0, 0, 1)
 
+reset_component_clock!(::Nothing) = nothing
+
+function reset_component_clock!(component::Simulation)
+    reset_clock!(component.model)
+    return nothing
+end
+
+function reset_component_clock!(component)
+    if hasproperty(component, :clock)
+        reset!(getproperty(component, :clock))
+    end
+
+    return nothing
+end
+
+function reset_clock!(model::ESM)
+    reset!(model.clock)
+
+    reset_component_clock!(model.ocean)
+    reset_component_clock!(model.sea_ice)
+    reset_component_clock!(model.atmosphere)
+    reset_component_clock!(model.land)
+
+    # Keep prescribed-component cached state synchronized with the rewound clock.
+    if applicable(update_state!, model.atmosphere)
+        update_state!(model.atmosphere)
+    end
+
+    if applicable(update_state!, model.land)
+        update_state!(model.land)
+    end
+
+    return nothing
+end
+
 function reset!(model::ESM)
-    reset!(model.ocean)
+    reset_clock!(model)
     return nothing
 end
 

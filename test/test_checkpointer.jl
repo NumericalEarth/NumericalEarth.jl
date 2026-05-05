@@ -113,3 +113,58 @@ using Oceananigans.OutputWriters: Checkpointer
         rm.(glob("$(prefix)_iteration*.jld2"), force=true)
     end
 end
+
+@testset "EarthSystemModel reset! then run! regression" begin
+    for arch in test_architectures
+        A = typeof(arch)
+        @info "Testing EarthSystemModel reset! regression on $A"
+
+        grid = LatitudeLongitudeGrid(arch;
+                                     size = (20, 20, 4),
+                                     z = (-100, 0),
+                                     latitude = (-80, 80),
+                                     longitude = (0, 360),
+                                     halo = (6, 6, 6))
+
+        @inline hi(λ, φ) = φ > 70 || φ < -70
+
+        ocean = ocean_simulation(grid, closure=nothing)
+        set!(ocean.model, T=20, S=35, u=0.01, v=-0.005)
+        sea_ice = sea_ice_simulation(grid, ocean)
+        set!(sea_ice.model, h=hi, ℵ=hi)
+
+        backend = JRA55NetCDFBackend(4)
+        atmosphere = JRA55PrescribedAtmosphere(arch; backend)
+        land = JRA55PrescribedLand(arch; backend)
+        model = OceanSeaIceModel(ocean, sea_ice; atmosphere, land)
+
+        simulation = Simulation(model, Δt=60, stop_iteration=3)
+        run!(simulation)
+
+        @test simulation.model.clock.iteration == 3
+        @test simulation.model.ocean.model.clock.iteration == 3
+        @test simulation.model.sea_ice.model.clock.iteration == 3
+        @test simulation.model.atmosphere.clock.iteration == 3
+
+        reset!(simulation)
+
+        # Regression guard: reset!(simulation) must rewind component clocks too.
+        @test simulation.model.clock.iteration == 0
+        @test simulation.model.clock.time == 0
+        @test simulation.model.ocean.model.clock.iteration == 0
+        @test simulation.model.ocean.model.clock.time == 0
+        @test simulation.model.sea_ice.model.clock.iteration == 0
+        @test simulation.model.sea_ice.model.clock.time == 0
+        @test simulation.model.atmosphere.clock.iteration == 0
+        @test simulation.model.atmosphere.clock.time == 0
+
+        # Exercise the run! path that used to crash after reset.
+        simulation.stop_iteration = 1
+        @test_nowarn run!(simulation)
+
+        @test simulation.model.clock.iteration == 1
+        @test simulation.model.ocean.model.clock.iteration == 1
+        @test simulation.model.sea_ice.model.clock.iteration == 1
+        @test simulation.model.atmosphere.clock.iteration == 1
+    end
+end

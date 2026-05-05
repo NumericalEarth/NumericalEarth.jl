@@ -49,7 +49,7 @@ import Oceananigans.Architectures: architecture
 import Oceananigans.Fields: set!
 import Oceananigans.Models: NaNChecker, default_nan_checker
 import Oceananigans.OutputWriters: default_included_properties
-import Oceananigans.Simulations: timestepper, reset!, initialize!, iteration
+import Oceananigans.Simulations: timestepper, reset!, reset_clock!, initialize!, iteration
 import Oceananigans.TimeSteppers: time_step!, update_state!, time, reconcile_state!
 import Oceananigans.Utils: prettytime
 
