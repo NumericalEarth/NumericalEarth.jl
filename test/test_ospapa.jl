@@ -2,6 +2,7 @@ include("runtests_setup.jl")
 
 using NumericalEarth.OSPapa
 using NumericalEarth.Atmospheres: PrescribedAtmosphere
+using NumericalEarth.Radiations: PrescribedRadiation
 using Oceananigans.BoundaryConditions: BoundaryCondition, Flux, getbc
 using Oceananigans.Units: minutes
 using CUDA: @allowscalar
@@ -18,7 +19,12 @@ const OSPAPA_TEST_END   = DateTime(2012, 10, 3)
                                                 start_date = OSPAPA_TEST_START,
                                                 end_date   = OSPAPA_TEST_END)
 
+        radiation = OSPapaPrescribedRadiation(arch;
+                                              start_date = OSPAPA_TEST_START,
+                                              end_date   = OSPAPA_TEST_END)
+
         @test atmosphere isa PrescribedAtmosphere
+        @test radiation isa PrescribedRadiation
 
         # All expected fields are present
         @test haskey(atmosphere.velocities, :u)
@@ -26,12 +32,11 @@ const OSPAPA_TEST_END   = DateTime(2012, 10, 3)
         @test haskey(atmosphere.tracers, :T)
         @test haskey(atmosphere.tracers, :q)
         @test !isnothing(atmosphere.pressure)
-        @test !isnothing(atmosphere.downwelling_radiation)
         @test haskey(atmosphere.freshwater_flux, :rain)
 
         # Radiation sanity checks
-        ℐꜜˢʷ = atmosphere.downwelling_radiation.shortwave
-        ℐꜜˡʷ = atmosphere.downwelling_radiation.longwave
+        ℐꜜˢʷ = radiation.downwelling_shortwave
+        ℐꜜˡʷ = radiation.downwelling_longwave
 
         @allowscalar begin
             sw_data = interior(ℐꜜˢʷ)
@@ -216,8 +221,11 @@ end
         atmosphere = OSPapaPrescribedAtmosphere(arch;
                                                 start_date = OSPAPA_TEST_START,
                                                 end_date   = OSPAPA_TEST_END)
+        radiation = OSPapaPrescribedRadiation(arch;
+                                              start_date = OSPAPA_TEST_START,
+                                              end_date   = OSPAPA_TEST_END)
 
-        coupled_model = OceanOnlyModel(ocean; atmosphere, radiation=Radiation(arch))
+        coupled_model = OceanOnlyModel(ocean; atmosphere, radiation)
         simulation = Simulation(coupled_model; Δt=ocean.Δt, stop_iteration=2)
 
         @test begin

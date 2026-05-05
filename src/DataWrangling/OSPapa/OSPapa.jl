@@ -1,6 +1,7 @@
 module OSPapa
 
 export OSPapaPrescribedAtmosphere
+export OSPapaPrescribedRadiation
 export os_papa_prescribed_fluxes
 export os_papa_prescribed_flux_boundary_conditions
 export OSPapaHourly
@@ -14,7 +15,7 @@ using Downloads
 using Thermodynamics: q_vap_from_RH, Liquid
 
 using NumericalEarth.DataWrangling: download_progress
-using NumericalEarth.Atmospheres: PrescribedAtmosphere, TwoBandDownwellingRadiation, AtmosphereThermodynamicsParameters
+using NumericalEarth.Atmospheres: PrescribedAtmosphere, AtmosphereThermodynamicsParameters
 using NumericalEarth.Oceans: reference_density, heat_capacity
 
 using NumericalEarth.DataWrangling:
@@ -80,6 +81,7 @@ end
 include("OSPapa_ocean_observations.jl")
 include("OSPapa_flux_observations.jl")
 include("OSPapa_prescribed_atmosphere.jl")
+include("OSPapa_prescribed_radiation.jl")
 include("OSPapa_prescribed_fluxes.jl")
 
 end # module
