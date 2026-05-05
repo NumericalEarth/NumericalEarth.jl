@@ -199,16 +199,32 @@ function _group_by_calendar_day(datetimes)
                 for d in unique(Dates.Date.(datetimes)))
 end
 
-function download_era5_day(name, dataset, day_dates;
-                           region, dir, skip_existing, cleanup)
+"""
+    plan_era5_day(name, dataset, day_dates; region, dir, skip_existing) -> NamedTuple
 
+Pure planner for a single-variable, single-day ERA5 download. Computes the per-datetime
+output paths, filters to the subset that needs downloading, and (when there is work to
+do) builds the CDS request, the temporary download path, and the NetCDF splitting
+triples. No I/O beyond `isfile` checks; no network.
+
+Returned NamedTuple fields:
+- `dt_path_pairs`: every `(datetime, path)` pair the caller should report.
+- `pending`: subset of `dt_path_pairs` that still need a download.
+- `request`, `tmp_path`, `nc_triples`: `nothing` when `pending` is empty; otherwise the
+  CDS request dict, the temporary multi-step NetCDF path, and the per-datetime split
+  triples consumed by `split_era5_nc_multistep`.
+"""
+function plan_era5_day(name, dataset, day_dates; region, dir, skip_existing)
     meta_filename = NumericalEarth.DataWrangling.metadata_filename
 
     dt_path_pairs = [(dt, joinpath(dir, meta_filename(dataset, name, dt, region)))
                      for dt in day_dates]
 
     pending = skip_existing ? filter(((_, path),) -> !isfile(path), dt_path_pairs) : dt_path_pairs
-    isempty(pending) && return [path for (_, path) in dt_path_pairs]
+    if isempty(pending)
+        return (; dt_path_pairs, pending,
+                  request=nothing, tmp_path=nothing, nc_triples=nothing)
+    end
 
     sorted_dts = sort(unique([dt for (dt, _) in pending]))
     dt_to_tidx = Dict(dt => i for (i, dt) in enumerate(sorted_dts))
@@ -220,22 +236,31 @@ function download_era5_day(name, dataset, day_dates;
     month = lpad(string(Dates.month(dt0)), 2, '0')
     day   = lpad(string(Dates.day(dt0)),   2, '0')
 
-    mkpath(dir)
     tmp_path   = joinpath(dir, "_tmp_$(year)$(month)$(day).nc")
     nc_varname = nc_varnames(dataset)[name]
     nc_triples = [(nc_varname, dt_to_tidx[dt], path) for (dt, path) in pending]
 
+    return (; dt_path_pairs, pending, request, tmp_path, nc_triples)
+end
+
+function download_era5_day(name, dataset, day_dates;
+                           region, dir, skip_existing, cleanup)
+
+    plan = plan_era5_day(name, dataset, day_dates; region, dir, skip_existing)
+    isempty(plan.pending) && return [path for (_, path) in plan.dt_path_pairs]
+
+    mkpath(dir)
     time_dimnames = Set(["time", "valid_time"])
 
     @root begin
-        CDSAPI.retrieve(cds_product(dataset), request, tmp_path)
-        foreach_nc(tmp_path, dir) do nc_path
-            split_era5_nc_multistep(nc_path, nc_triples, coord_vars(dataset), time_dimnames)
+        CDSAPI.retrieve(cds_product(dataset), plan.request, plan.tmp_path)
+        foreach_nc(plan.tmp_path, dir) do nc_path
+            split_era5_nc_multistep(nc_path, plan.nc_triples, coord_vars(dataset), time_dimnames)
         end
-        cleanup && rm(tmp_path; force=true)
+        cleanup && rm(plan.tmp_path; force=true)
     end
 
-    return [path for (_, path) in dt_path_pairs]
+    return [path for (_, path) in plan.dt_path_pairs]
 end
 
 #####
@@ -359,16 +384,31 @@ function download_dataset(name::Symbol,
     return download_dataset([name], dataset, datetimes; region, dir, skip_existing, cleanup)
 end
 
-function download_era5_multivar_day(names, dataset, day_dates;
-                                    region, dir, skip_existing, cleanup)
+"""
+    plan_era5_multivar_day(names, dataset, day_dates; region, dir, skip_existing) -> NamedTuple
 
+Pure planner for a multi-variable, single-day ERA5 download. Same shape as
+[`plan_era5_day`](@ref), but indexed by `(name, datetime, path)` triples so each split
+file is identified by both the variable name and the timestep.
+
+Returned NamedTuple fields:
+- `name_dt_paths`: every `(name, datetime, path)` triple the caller should report.
+- `pending`: subset that still needs a download.
+- `request`, `tmp_path`, `nc_triples`: `nothing` when `pending` is empty; otherwise the
+  CDS request dict, the temporary multi-step NetCDF path, and the per-(name, time) split
+  triples consumed by `split_era5_nc_multistep`.
+"""
+function plan_era5_multivar_day(names, dataset, day_dates; region, dir, skip_existing)
     meta_filename = NumericalEarth.DataWrangling.metadata_filename
 
     name_dt_paths = [(name, dt, joinpath(dir, meta_filename(dataset, name, dt, region)))
                      for name in names for dt in day_dates]
 
     pending = skip_existing ? filter(((_, _, path),) -> !isfile(path), name_dt_paths) : name_dt_paths
-    isempty(pending) && return [path for (_, _, path) in name_dt_paths]
+    if isempty(pending)
+        return (; name_dt_paths, pending,
+                  request=nothing, tmp_path=nothing, nc_triples=nothing)
+    end
 
     pending_names = unique([name for (name, _, _) in pending])
     sorted_dts    = sort(unique([dt for (_, dt, _) in pending]))
@@ -381,22 +421,31 @@ function download_era5_multivar_day(names, dataset, day_dates;
     month = lpad(string(Dates.month(dt0)), 2, '0')
     day   = lpad(string(Dates.day(dt0)),   2, '0')
 
-    mkpath(dir)
     tmp_path   = joinpath(dir, "_tmp_multi_$(year)$(month)$(day).nc")
     nc_triples = [(nc_varnames(dataset)[name], dt_to_tidx[dt], path)
                   for (name, dt, path) in pending]
 
+    return (; name_dt_paths, pending, request, tmp_path, nc_triples)
+end
+
+function download_era5_multivar_day(names, dataset, day_dates;
+                                    region, dir, skip_existing, cleanup)
+
+    plan = plan_era5_multivar_day(names, dataset, day_dates; region, dir, skip_existing)
+    isempty(plan.pending) && return [path for (_, _, path) in plan.name_dt_paths]
+
+    mkpath(dir)
     time_dimnames = Set(["time", "valid_time"])
 
     @root begin
-        CDSAPI.retrieve(cds_product(dataset), request, tmp_path)
-        foreach_nc(tmp_path, dir) do nc_path
-            split_era5_nc_multistep(nc_path, nc_triples, coord_vars(dataset), time_dimnames)
+        CDSAPI.retrieve(cds_product(dataset), plan.request, plan.tmp_path)
+        foreach_nc(plan.tmp_path, dir) do nc_path
+            split_era5_nc_multistep(nc_path, plan.nc_triples, coord_vars(dataset), time_dimnames)
         end
-        cleanup && rm(tmp_path; force=true)
+        cleanup && rm(plan.tmp_path; force=true)
     end
 
-    return [path for (_, _, path) in name_dt_paths]
+    return [path for (_, _, path) in plan.name_dt_paths]
 end
 
 #####
