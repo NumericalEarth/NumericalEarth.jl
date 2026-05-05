@@ -21,7 +21,8 @@ import NumericalEarth.EarthSystemModels: interpolate_state!,
                                          update_net_fluxes!,
                                          thermodynamics_parameters,
                                          surface_layer_height,
-                                         boundary_layer_height
+                                         boundary_layer_height,
+                                         is_prescribed_atmosphere
 
 import NumericalEarth.EarthSystemModels.InterfaceComputations: ComponentExchanger, initialize!, net_fluxes
 
@@ -34,5 +35,6 @@ include("prescribed_atmosphere_regridder.jl")
 include("interpolate_atmospheric_state.jl")
 
 net_fluxes(::PrescribedAtmosphere) = nothing
+is_prescribed_atmosphere(::PrescribedAtmosphere) = true
 
 end # module Atmospheres

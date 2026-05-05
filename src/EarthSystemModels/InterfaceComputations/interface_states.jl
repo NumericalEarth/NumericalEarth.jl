@@ -9,8 +9,7 @@ using Thermodynamics: Liquid, Ice
 ##### Interface properties
 #####
 
-struct InterfaceProperties{R, Q, T, V}
-    radiation :: R
+struct InterfaceProperties{Q, T, V}
     specific_humidity_formulation :: Q
     temperature_formulation :: T
     velocity_formulation :: V
@@ -313,7 +312,7 @@ end
                                                interface_state,
                                                atmosphere_state,
                                                interior_state,
-                                               downwelling_radiation,
+                                               radiation_state,
                                                interface_properties,
                                                atmosphere_properties,
                                                interior_properties)
@@ -329,16 +328,18 @@ end
     #ℰv = 0 #AtmosphericThermodynamics.latent_heat_vapor(ℂᵃᵗ, Tᵃᵗ)
     ℒⁱ = AtmosphericThermodynamics.latent_heat_sublim(ℂᵃᵗ, Tᵃᵗ)
 
-    # upwelling radiation is calculated explicitly
+    # upwelling radiation is calculated explicitly. radiation_state is
+    # produced by `air_sea_interface_radiation_state` (or its sea-ice
+    # variant) and contains zero-valued σ/α/ϵ/SW/LW when radiation is off.
     Tₛ⁻ = interface_state.T # approximate interface temperature from previous iteration
-    σ = interface_properties.radiation.σ
-    ϵ = interface_properties.radiation.ϵ
-    α = interface_properties.radiation.α
+    σ = radiation_state.σ
+    ϵ = radiation_state.ϵ
+    α = radiation_state.α
 
-    ℐꜜˢʷ = downwelling_radiation.ℐꜜˢʷ
-    ℐꜜˡʷ = downwelling_radiation.ℐꜜˡʷ
-    ℐꜛˡʷ = emitted_longwave_radiation(Tₛ⁻, σ, ϵ)
-    Qd = net_absorbed_interface_radiation(ℐꜜˢʷ, ℐꜜˡʷ, α, ϵ)
+    ℐꜜˢʷ = radiation_state.ℐꜜˢʷ
+    ℐꜜˡʷ = radiation_state.ℐꜜˡʷ
+    ℐꜛˡʷ = σ * ϵ * Tₛ⁻^4
+    Qd = - (1 - α) * ℐꜜˢʷ - ϵ * ℐꜜˡʷ
 
     u★ = interface_state.u★
     θ★ = interface_state.θ★

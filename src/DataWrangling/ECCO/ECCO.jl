@@ -2,7 +2,7 @@ module ECCO
 
 export ECCOMetadatum, ECCO_immersed_grid, adjusted_ECCO_tracers, initialize!
 export ECCO2Monthly, ECCO4Monthly, ECCO2Daily
-export ECCOPrescribedAtmosphere
+export ECCOPrescribedAtmosphere, ECCOPrescribedRadiation
 
 export ECCO2DarwinMonthly, ECCO4DarwinMonthly
 export retrieve_data
@@ -370,6 +370,7 @@ end
 inpainted_metadata_path(metadata::ECCOMetadatum) = joinpath(metadata.dir, inpainted_metadata_filename(metadata))
 
 include("ECCO_atmosphere.jl")
+include("ECCO_radiation.jl")
 
 #####
 ##### Column Field for ECCO datasets (which always download globally)

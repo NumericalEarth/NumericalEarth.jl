@@ -8,8 +8,6 @@ export
     SimilarityTheoryFluxes,
     CoefficientBasedFluxes,
     FreezingLimitedOceanTemperature,
-    Radiation,
-    LatitudeDependentAlbedo,
     SkinTemperature,
     BulkTemperature,
     compute_atmosphere_ocean_fluxes!,
@@ -80,10 +78,10 @@ const NoOceanInterface  = ComponentInterfaces{<:Nothing, <:AtmosphereInterface, 
 const NoAtmosInterface  = ComponentInterfaces{<:Nothing, <:Nothing, <:SeaIceOceanInterface}
 const NoInterface       = ComponentInterfaces{<:Nothing, <:Nothing, <:Nothing}
 
-const NoSeaIceInterfaceModel = EarthSystemModel{I, A, L, O, <:NoSeaIceInterface} where {I, A, L, O}
-const NoAtmosInterfaceModel  = EarthSystemModel{I, A, L, O, <:NoAtmosInterface} where {I, A, L, O}
-const NoOceanInterfaceModel  = EarthSystemModel{I, A, L, O, <:NoOceanInterface} where {I, A, L, O}
-const NoInterfaceModel       = EarthSystemModel{I, A, L, O, <:NoInterface} where {I, A, L, O}
+const NoSeaIceInterfaceModel = EarthSystemModel{R, A, L, I, O, <:NoSeaIceInterface} where {R, A, L, I, O}
+const NoAtmosInterfaceModel  = EarthSystemModel{R, A, L, I, O, <:NoAtmosInterface}  where {R, A, L, I, O}
+const NoOceanInterfaceModel  = EarthSystemModel{R, A, L, I, O, <:NoOceanInterface}  where {R, A, L, I, O}
+const NoInterfaceModel       = EarthSystemModel{R, A, L, I, O, <:NoInterface}       where {R, A, L, I, O}
 
 InterfaceComputations.compute_atmosphere_sea_ice_fluxes!(::NoSeaIceInterfaceModel) = nothing
 InterfaceComputations.compute_sea_ice_ocean_fluxes!(::NoSeaIceInterfaceModel) = nothing
