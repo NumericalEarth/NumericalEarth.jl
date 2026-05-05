@@ -42,7 +42,7 @@ end
 # Sentinel used to memoize loaders that legitimately return `nothing`
 # (e.g. dBM climatology when the file is missing). Without this a
 # successful "no result" would re-trigger the loader on every access.
-const _CACHE_MISS = :__cache_miss__
+const CACHE_MISS = :__cache_miss__
 
 """
     get_field(case_cache, sym)
@@ -51,15 +51,13 @@ Return the value cached under `sym` for `case_cache`, computing it via
 `LOADERS[sym]` on first access.
 """
 function get_field(case_cache::CaseCache, sym::Symbol)
-    val = get(case_cache.fields, sym, _CACHE_MISS)
-    val === _CACHE_MISS || return val
+    val = get(case_cache.fields, sym, CACHE_MISS)
+    val === CACHE_MISS || return val
     haskey(LOADERS, sym) || error("No loader registered for :$sym")
     val = LOADERS[sym](case_cache)
     case_cache.fields[sym] = val
     return val
 end
-
-get_fields(case_cache::CaseCache, syms::Symbol...) = ntuple(i -> get_field(case_cache, syms[i]), length(syms))
 
 #####
 ##### Disk-side caching
@@ -87,6 +85,12 @@ Base.:(==)(a::DiskCacheKey{N}, b::DiskCacheKey{N}) where N =
     a.start_time      == b.start_time      &&
     a.stop_time       == b.stop_time
 
+# Cross-arity fallback. Required: keys whose `N` differs are not
+# comparable via the parametric same-N method above (Julia would fall
+# back to `===`, returning false only by accident). Without this method
+# a `disk_cached` loader whose `source_fts_syms` arity changed across
+# sessions would compare unequal *for the right reason* but with no
+# helpful diagnostic — `explain_key_mismatch` also dispatches here.
 Base.:(==)(::DiskCacheKey, ::DiskCacheKey) = false
 
 """
@@ -100,40 +104,31 @@ diag_cache_dir(case_cache::CaseCache) = joinpath(output_dir, "diag_cache", case_
 
 diag_cache_path(case_cache::CaseCache, sym::Symbol) = joinpath(diag_cache_dir(case_cache), string(sym) * ".jld2")
 
-# Filled alongside each raw-FTS `LOADERS[...]` registration below.
-const _FTS_DISK_PATH_SYM = Dict{Symbol, Symbol}()
+# Maps every raw-FTS symbol (e.g. `:to_h_fts`) to the file symbol it
+# lives in (`:averages_file`). Filled alongside each FTS loader
+# registration below; consulted to validate disk caches via JLD2
+# metadata only, never via a full `FieldTimeSeries` build.
+const FTS_DISK_PATH_SYM = Dict{Symbol, Symbol}()
 
 """
-    fts_snapshot_count_for_disk_key(case_cache, fts_sym)
+    current_disk_cache_key(case_cache, fts_syms)
 
-Number of time indices for the JLD2 output backing `fts_sym`, from JLD2
-metadata (`timeseries/t` key count per part, summed across split parts).
-Does not open a `FieldTimeSeries`. Per-part counts are memoized for the session
-(see `total_jld2_timeseries_snapshot_count`).
+Validation key for a disk-cached derived field whose value depends on
+the FTS named by each symbol in `fts_syms`. Reads `Nt` per source via
+`total_jld2_timeseries_snapshot_count`, so no `FieldTimeSeries` is
+constructed. Pass `()` for fields independent of model output.
 """
-function fts_snapshot_count_for_disk_key(case_cache::CaseCache, fts_sym::Symbol)
-    file_sym = get(_FTS_DISK_PATH_SYM, fts_sym, nothing)
-    file_sym === nothing &&
-        error("No JLD2 stem registered for FTS :$fts_sym — extend `_FTS_DISK_PATH_SYM` with the loader loops.")
-    path = get_field(case_cache, file_sym)
-    return total_jld2_timeseries_snapshot_count(path)
+function current_disk_cache_key(c::CaseCache, fts_syms::Tuple{Vararg{Symbol}})
+    Nts = ntuple(length(fts_syms)) do i
+        fts_sym  = fts_syms[i]
+        file_sym = get(FTS_DISK_PATH_SYM, fts_sym, nothing)
+        isnothing(file_sym) && error("No JLD2 stem registered for FTS :$fts_sym")
+        return total_jld2_timeseries_snapshot_count(get_field(c, file_sym))
+    end
+    return DiskCacheKey(Nts, c.start_time, c.stop_time)
 end
 
-"""
-    current_disk_cache_key(case_cache, source_fts_syms)
-
-Build the `DiskCacheKey` reflecting the current state of every source
-FTS named in `source_fts_syms`. Uses JLD2 metadata only (no `FieldTimeSeries`
-construction). Pass `()` for fields whose validity does not depend on any
-model output (pure climatologies).
-"""
-function current_disk_cache_key(case_cache::CaseCache, source_fts_syms::Tuple{Vararg{Symbol}})
-    N = length(source_fts_syms)
-    snapshot_counts = ntuple(i -> fts_snapshot_count_for_disk_key(case_cache, source_fts_syms[i]), N)
-    return DiskCacheKey(snapshot_counts, case_cache.start_time, case_cache.stop_time)
-end
-
-current_disk_cache_key(case_cache::CaseCache, source_fts_sym::Symbol) = current_disk_cache_key(case_cache, (source_fts_sym,))
+current_disk_cache_key(c::CaseCache, fts_sym::Symbol) = current_disk_cache_key(c, (fts_sym,))
 
 """
     read_disk_cache(path)
@@ -200,28 +195,27 @@ the loader is rerun and the cache is overwritten.
 `source_fts_syms` is either a single FTS symbol or a tuple of them.
 Use `()` for fields that depend only on the grid or climatologies.
 """
-function disk_cached(loader::Function, sym::Symbol; source_fts_syms::Union{Symbol, Tuple{Vararg{Symbol}}} = ())
+function disk_cached(loader::Function, sym::Symbol;
+                     source_fts_syms::Union{Symbol, Tuple{Vararg{Symbol}}} = ())
     sources = source_fts_syms isa Symbol ? (source_fts_syms,) : source_fts_syms
-    function cached_loader(c::CaseCache)
-        path        = diag_cache_path(c, sym)
-        cached      = read_disk_cache(path)
-        current_key = current_disk_cache_key(c, sources)
-        if cached !== nothing
+    return function (c::CaseCache)
+        path    = diag_cache_path(c, sym)
+        new_key = current_disk_cache_key(c, sources)
+        cached  = read_disk_cache(path)
+        if !isnothing(cached)
             value, stored_key = cached
-            if stored_key isa DiskCacheKey && stored_key == current_key
+            if stored_key == new_key
                 @info "  $(c.label): :$sym ← disk cache"
                 return value
-            elseif stored_key isa DiskCacheKey
-                @info "  $(c.label): :$sym ← invalidated ($(explain_key_mismatch(stored_key, current_key)))"
-            else
-                @info "  $(c.label): :$sym ← invalidated (corrupt or unrecognized key)"
             end
+            reason = stored_key isa DiskCacheKey ?
+                     explain_key_mismatch(stored_key, new_key) :
+                     "corrupt or unrecognized key"
+            @info "  $(c.label): :$sym ← invalidated ($reason)"
         end
         @info "  $(c.label): :$sym ← computing"
-        value = loader(c)
-        return write_disk_cache(path, value, current_key)
+        return write_disk_cache(path, loader(c), new_key)
     end
-    return cached_loader
 end
 
 #####
@@ -247,33 +241,26 @@ LOADERS[:averages_file] = c -> find_first_file(c.run_dir, c.prefix, "averages")
 ##### Raw FieldTimeSeries
 #####
 
-# Surface file
-for (sym, name) in ((:tos_fts, "tos"), (:sos_fts, "sos"), (:zos_fts, "zos"),
-                    (:mld_fts, "mlotst"), (:hfds_fts, "hfds"), (:wfo_fts, "wfo"),
-                    (:sic_fts, "siconc"), (:zossq_fts, "zossq"),
-                    (:tauuo_fts, "tauuo"), (:tauvo_fts, "tauvo"),
-                    (:sithick_fts, "sithick"))
-    _FTS_DISK_PATH_SYM[sym] = :surface_file
-    LOADERS[sym] = let n = name
-        c -> FieldTimeSeries(get_field(c, :surface_file), n; backend = deepcopy(FTS_BACKEND))
-    end
-end
+# Every raw `:..._fts` symbol → (file symbol, JLD2 variable name).
+# One source of truth; consulted to register both the loader and the
+# disk-cache file lookup.
+const FTS_VARS = (
+    surface_file  = ((:tos_fts,    "tos"),    (:sos_fts,   "sos"),
+                     (:zos_fts,    "zos"),    (:mld_fts,   "mlotst"),
+                     (:hfds_fts,   "hfds"),   (:wfo_fts,   "wfo"),
+                     (:sic_fts,    "siconc"), (:zossq_fts, "zossq"),
+                     (:tauuo_fts,  "tauuo"),  (:tauvo_fts, "tauvo"),
+                     (:sithick_fts, "sithick")),
+    fields_file   = ((:to_fts, "to"), (:so_fts, "so"), (:bo_fts, "bo"),
+                     (:uo_fts, "uo"), (:vo_fts, "vo")),
+    averages_file = ((:tosga_fts, "tosga"), (:soga_fts, "soga"),
+                     (:to_h_fts,  "to_h"),  (:so_h_fts,  "so_h")),
+)
 
-# Fields file (3-D)
-for (sym, name) in ((:to_fts, "to"), (:so_fts, "so"), (:bo_fts, "bo"),
-                    (:uo_fts, "uo"), (:vo_fts, "vo"))
-    _FTS_DISK_PATH_SYM[sym] = :fields_file
-    LOADERS[sym] = let n = name
-        c -> FieldTimeSeries(get_field(c, :fields_file), n; backend = deepcopy(FTS_BACKEND))
-    end
-end
-
-# Averages file
-for (sym, name) in ((:tosga_fts, "tosga"), (:soga_fts, "soga"),
-                    (:to_h_fts, "to_h"), (:so_h_fts, "so_h"))
-    _FTS_DISK_PATH_SYM[sym] = :averages_file
-    LOADERS[sym] = let n = name
-        c -> FieldTimeSeries(get_field(c, :averages_file), n; backend = deepcopy(FTS_BACKEND))
+for (file_sym, mappings) in pairs(FTS_VARS), (sym, var) in mappings
+    FTS_DISK_PATH_SYM[sym] = file_sym
+    LOADERS[sym] = let v = var, f = file_sym
+        c -> FieldTimeSeries(get_field(c, f), v; backend = deepcopy(FTS_BACKEND))
     end
 end
 
@@ -281,7 +268,7 @@ end
 ##### Grid + masks
 #####
 
-LOADERS[:grid]          = c -> get_field(c, :tos_fts).grid
+LOADERS[:grid]          = c -> total_jld2_serialized_grid(get_field(c, :surface_file), "tos")
 LOADERS[:Nx]            = c -> size(get_field(c, :grid), 1)
 LOADERS[:Ny]            = c -> size(get_field(c, :grid), 2)
 LOADERS[:Nz]            = c -> size(get_field(c, :grid), 3)
@@ -298,12 +285,15 @@ function time_mean_drop(c, fts_sym)
     return dropdims(compute_time_mean(fts; start_time = c.start_time, stop_time = c.stop_time); dims = 3)
 end
 
-# Apply land mask in place after computing `value`. A `nothing` value
-# is passed through unchanged (used by optional climatology fields).
-function masked!(c, value)
-    isnothing(value) && return value
-    mask_land!(value, get_field(c, :land))
-    return value
+# Apply land mask in place; `nothing` is passed through (for optional
+# climatology fields). The `maybe_*` helpers compose this with a few
+# common wrap-or-skip patterns to remove `isnothing(...) ? nothing : …`
+# boilerplate from the loader registry below.
+masked!(c, ::Nothing) = nothing
+masked!(c, value)     = (mask_land!(value, get_field(c, :land)); value)
+
+maybe_diff!(c, a_sym, b_sym) = let b = get_field(c, b_sym)
+    isnothing(b) ? nothing : masked!(c, get_field(c, a_sym) .- b)
 end
 
 LOADERS[:sst] = disk_cached(:sst; source_fts_syms = :tos_fts) do c
@@ -356,22 +346,14 @@ LOADERS[:sic_mean_and_monthly] = disk_cached(:sic_mean_and_monthly; source_fts_s
     compute_mean_and_monthly(get_field(c, :sic_fts); start_time = c.start_time, stop_time = c.stop_time)
 end
 
-LOADERS[:sic_mean] = c -> masked!(c, begin
-    mean_raw, _ = get_field(c, :sic_mean_and_monthly)
-    dropdims(mean_raw; dims = 3)
-end)
-
-LOADERS[:sic_march] = c -> begin
+function sic_month(c, m)
     _, monthly = get_field(c, :sic_mean_and_monthly)
-    isnothing(monthly[3]) && return nothing
-    masked!(c, dropdims(monthly[3]; dims = 3))
+    isnothing(monthly[m]) ? nothing : masked!(c, dropdims(monthly[m]; dims = 3))
 end
 
-LOADERS[:sic_september] = c -> begin
-    _, monthly = get_field(c, :sic_mean_and_monthly)
-    isnothing(monthly[9]) && return nothing
-    masked!(c, dropdims(monthly[9]; dims = 3))
-end
+LOADERS[:sic_mean]      = c -> masked!(c, dropdims(get_field(c, :sic_mean_and_monthly)[1]; dims = 3))
+LOADERS[:sic_march]     = c -> sic_month(c, 3)
+LOADERS[:sic_september] = c -> sic_month(c, 9)
 
 #####
 ##### Mixed-layer depth (kernel diagnostic, monthly min/max)
@@ -381,14 +363,23 @@ LOADERS[:mld_monthly] = disk_cached(:mld_monthly; source_fts_syms = :mld_fts) do
     compute_monthly_means(get_field(c, :mld_fts); start_time = c.start_time, stop_time = c.stop_time)
 end
 
-function stack_monthly(c, sym)
+# Stream a per-cell reduction across all available monthly bins of
+# `sym`, avoiding the ~Nx·Ny·12 temp cube `cat(...; dims = 3)` would
+# allocate. Initializes from the first available month, then folds the
+# rest in place via `reduce.(acc, monthly[m])`.
+function reduce_monthly(c, sym, reduce)
     monthly = get_field(c, sym)
     avail   = findall(!isnothing, monthly)
-    return cat([dropdims(monthly[m]; dims = 3) for m in avail]...; dims = 3)
+    isempty(avail) && error("$sym has no available monthly bins")
+    acc = copy(dropdims(monthly[first(avail)]; dims = 3))
+    for m in @view avail[2:end]
+        acc .= reduce.(acc, dropdims(monthly[m]; dims = 3))
+    end
+    return acc
 end
 
-LOADERS[:mld_min] = c -> masked!(c, dropdims(minimum(stack_monthly(c, :mld_monthly); dims = 3); dims = 3))
-LOADERS[:mld_max] = c -> masked!(c, dropdims(maximum(stack_monthly(c, :mld_monthly); dims = 3); dims = 3))
+LOADERS[:mld_min] = c -> masked!(c, reduce_monthly(c, :mld_monthly, min))
+LOADERS[:mld_max] = c -> masked!(c, reduce_monthly(c, :mld_monthly, max))
 
 #####
 ##### WOA temperature & salinity on case grid
@@ -425,40 +416,22 @@ end)
 
 LOADERS[:dbm_mld_monthly] = c -> dbm_mld_climatology_on_grid(get_field(c, :grid))
 
-function dbm_mld_extreme(c, reduction)
-    monthly = get_field(c, :dbm_mld_monthly)
-    isnothing(monthly) && return nothing
-    return masked!(c, dropdims(reduction(monthly; dims = 3); dims = 3))
-end
+dbm_extreme(c, reduce) = masked!(c, let m = get_field(c, :dbm_mld_monthly)
+    isnothing(m) ? nothing : dropdims(reduce(m; dims = 3); dims = 3)
+end)
 
-LOADERS[:mld_min_dbm] = c -> dbm_mld_extreme(c, minimum)
-LOADERS[:mld_max_dbm] = c -> dbm_mld_extreme(c, maximum)
+LOADERS[:mld_min_dbm] = c -> dbm_extreme(c, minimum)
+LOADERS[:mld_max_dbm] = c -> dbm_extreme(c, maximum)
 
 #####
 ##### NCEP wind-stress climatology
 #####
 
-LOADERS[:ncep_wind_stress_pair] = c -> ncep_wind_stress_on_grid(get_field(c, :grid))
-
-LOADERS[:ncep_zonal_wind_stress] = c -> begin
-    τ, _ = get_field(c, :ncep_wind_stress_pair)
-    isnothing(τ) ? nothing : masked!(c, τ)
-end
-
-LOADERS[:ncep_meridional_wind_stress] = c -> begin
-    _, τ = get_field(c, :ncep_wind_stress_pair)
-    isnothing(τ) ? nothing : masked!(c, τ)
-end
-
-LOADERS[:zonal_wind_stress_bias_ncep] = c -> begin
-    τ_ref = get_field(c, :ncep_zonal_wind_stress)
-    isnothing(τ_ref) ? nothing : masked!(c, get_field(c, :zonal_wind_stress) .- τ_ref)
-end
-
-LOADERS[:meridional_wind_stress_bias_ncep] = c -> begin
-    τ_ref = get_field(c, :ncep_meridional_wind_stress)
-    isnothing(τ_ref) ? nothing : masked!(c, get_field(c, :meridional_wind_stress) .- τ_ref)
-end
+LOADERS[:ncep_wind_stress_pair]            = c -> ncep_wind_stress_on_grid(get_field(c, :grid))
+LOADERS[:ncep_zonal_wind_stress]           = c -> masked!(c, get_field(c, :ncep_wind_stress_pair)[1])
+LOADERS[:ncep_meridional_wind_stress]      = c -> masked!(c, get_field(c, :ncep_wind_stress_pair)[2])
+LOADERS[:zonal_wind_stress_bias_ncep]      = c -> maybe_diff!(c, :zonal_wind_stress,      :ncep_zonal_wind_stress)
+LOADERS[:meridional_wind_stress_bias_ncep] = c -> maybe_diff!(c, :meridional_wind_stress, :ncep_meridional_wind_stress)
 
 #####
 ##### Sea-ice integrals (heavy: per-snapshot loop over sithick + sic)
@@ -474,20 +447,17 @@ end
 ##### Time-series scalars + horizontal-mean profiles
 #####
 
-scalar_timeseries(c, fts_sym) = let fts = get_field(c, fts_sym)
-    [Array(interior(fts[n]))[1] for n in 1:length(fts.times)]
-end
-
 LOADERS[:global_mean_temperature_timeseries] =
     disk_cached(:global_mean_temperature_timeseries; source_fts_syms = :tosga_fts) do c
-    scalar_timeseries(c, :tosga_fts)
+    total_jld2_scalar_timeseries(get_field(c, :averages_file), "tosga")
 end
 LOADERS[:global_mean_salinity_timeseries] =
     disk_cached(:global_mean_salinity_timeseries; source_fts_syms = :soga_fts) do c
-    scalar_timeseries(c, :soga_fts)
+    total_jld2_scalar_timeseries(get_field(c, :averages_file), "soga")
 end
 
-LOADERS[:time_in_years] = c -> get_field(c, :tosga_fts).times ./ (365.25 * 24 * 3600)
+LOADERS[:time_in_years] = c ->
+    total_jld2_timeseries_times(get_field(c, :averages_file)) ./ (365.25 * 24 * 3600)
 
 LOADERS[:horizontal_mean_temperature_profile] = c ->
     vec(compute_time_mean(get_field(c, :to_h_fts);
@@ -500,6 +470,9 @@ LOADERS[:horizontal_mean_salinity_profile] = c ->
                            stop_time  = c.stop_time))
 
 # Per-snapshot horizontal-mean drift relative to the first snapshot.
+# Intentionally ignores `c.start_time`/`c.stop_time` — drift is always
+# referenced to t = 0 of the run, not to the case averaging window
+# (figures 15 and 20 plot the full record so the spinup is visible).
 function profile_drift(c, fts_sym)
     fts = get_field(c, fts_sym)
     Nt  = length(fts.times)
@@ -519,7 +492,8 @@ LOADERS[:salinity_drift] = disk_cached(:salinity_drift; source_fts_syms = :so_h_
     profile_drift(c, :so_h_fts)
 end
 
-LOADERS[:drift_time_in_years] = c -> get_field(c, :to_h_fts).times ./ (365.25 * 24 * 3600)
+LOADERS[:drift_time_in_years] = c ->
+    total_jld2_timeseries_times(get_field(c, :averages_file)) ./ (365.25 * 24 * 3600)
 
 #####
 ##### Global-mean kinetic energy from u, v snapshots
@@ -559,36 +533,19 @@ LOADERS[:kinetic_energy_time_in_years] = c -> get_field(c, :kinetic_energy_pair)
 const ZONAL_NLON = 360
 const ZONAL_NLAT = 180
 
-const _LATLON_GRID_REF = Ref{Any}(nothing)
-const _LATLON_DST_REF  = Ref{Any}(nothing)
+# Target grid + destination field are tiny and shared across cases, so
+# bind them eagerly at module load. Type-stable; consumers (the zonal
+# regridder loader) are themselves lazy via the LOADERS registry.
+const ZONAL_LATLON_GRID = LatitudeLongitudeGrid(CPU();
+    size      = (ZONAL_NLON, ZONAL_NLAT, 1),
+    longitude = (0, 360), latitude = (-90, 90), z = (0, 1))
 
-function zonal_latlon_grid()
-    isnothing(_LATLON_GRID_REF[]) || return _LATLON_GRID_REF[]
-    grid = LatitudeLongitudeGrid(CPU();
-                                  size      = (ZONAL_NLON, ZONAL_NLAT, 1),
-                                  longitude = (0, 360),
-                                  latitude  = (-90, 90),
-                                  z         = (0, 1))
-    _LATLON_GRID_REF[] = grid
-    return grid
-end
+const ZONAL_LATLON_DST_FIELD = Field{Center, Center, Nothing}(ZONAL_LATLON_GRID)
 
-function zonal_latlon_destination_field()
-    isnothing(_LATLON_DST_REF[]) || return _LATLON_DST_REF[]
-    field = Field{Center, Center, Nothing}(zonal_latlon_grid())
-    _LATLON_DST_REF[] = field
-    return field
-end
+zonal_latitude_centers() = collect(φnodes(ZONAL_LATLON_GRID, Center()))
 
-zonal_latitude_centers() = collect(φnodes(zonal_latlon_grid(), Center()))
-
-"""
-    compute_zonal_mean(data_3d, ocean_mask_3d, regridder, Nlon, Nlat)
-
-Conservatively regrid each level of `data_3d` (weighted by
-`ocean_mask_3d`) onto the lat-lon target grid, then average each
-latitude row.
-"""
+# Conservatively regrid each level of `data_3d` (weighted by
+# `ocean_mask_3d`) onto the lat-lon target grid, then average per latitude row.
 function compute_zonal_mean(data_3d, ocean_mask_3d, regridder, Nlon, Nlat)
     Nz    = size(data_3d, 3)
     zonal = fill(NaN, Nlat, Nz)
@@ -611,50 +568,38 @@ end
 LOADERS[:zonal_regridder] = c -> begin
     src = Field{Center, Center, Nothing}(get_field(c, :grid))
     @info "  Building zonal regridder for $(c.label) (may take a few minutes)..."
-    ConservativeRegridding.Regridder(zonal_latlon_destination_field(), src; progress = true)
+    ConservativeRegridding.Regridder(ZONAL_LATLON_DST_FIELD, src; progress = true)
 end
 
 # 3-D time-means (loaded on demand for zonal-section figures). Not
 # disk-cached because each is several hundred megabytes per ORCA case;
 # the smaller `:zonal_*` derivatives below are.
-LOADERS[:time_mean_temperature_3d] = c -> compute_time_mean(get_field(c, :to_fts);
-                                                              start_time = c.start_time,
-                                                              stop_time  = c.stop_time)
-LOADERS[:time_mean_salinity_3d] = c -> compute_time_mean(get_field(c, :so_fts);
-                                                          start_time = c.start_time,
-                                                          stop_time  = c.stop_time)
-LOADERS[:time_mean_buoyancy_3d] = c -> compute_time_mean(get_field(c, :bo_fts);
-                                                          start_time = c.start_time,
-                                                          stop_time  = c.stop_time)
-LOADERS[:initial_buoyancy_3d]   = c -> Array(interior(get_field(c, :bo_fts)[1]))
+for (sym, fts) in ((:time_mean_temperature_3d, :to_fts),
+                   (:time_mean_salinity_3d,    :so_fts),
+                   (:time_mean_buoyancy_3d,    :bo_fts))
+    LOADERS[sym] = let f = fts
+        c -> compute_time_mean(get_field(c, f); start_time = c.start_time, stop_time = c.stop_time)
+    end
+end
+LOADERS[:initial_buoyancy_3d] = c -> Array(interior(get_field(c, :bo_fts)[1]))
 
-# Convenience: zonal mean of any 3-D field already in the cache.
-zonal_of(c, sym) = compute_zonal_mean(get_field(c, sym),
-                                        get_field(c, :ocean_mask_3d),
-                                        get_field(c, :zonal_regridder),
-                                        ZONAL_NLON, ZONAL_NLAT)
+# Zonal mean of any 3-D field already in the cache.
+zonal_of(c, sym) = compute_zonal_mean(get_field(c, sym), get_field(c, :ocean_mask_3d),
+                                       get_field(c, :zonal_regridder), ZONAL_NLON, ZONAL_NLAT)
 
-LOADERS[:zonal_temperature] = disk_cached(:zonal_temperature; source_fts_syms = :to_fts) do c
-    zonal_of(c, :time_mean_temperature_3d)
-end
-LOADERS[:zonal_salinity] = disk_cached(:zonal_salinity; source_fts_syms = :so_fts) do c
-    zonal_of(c, :time_mean_salinity_3d)
-end
-LOADERS[:zonal_buoyancy] = disk_cached(:zonal_buoyancy; source_fts_syms = :bo_fts) do c
-    zonal_of(c, :time_mean_buoyancy_3d)
-end
-LOADERS[:zonal_initial_buoyancy] = disk_cached(:zonal_initial_buoyancy; source_fts_syms = :bo_fts) do c
-    zonal_of(c, :initial_buoyancy_3d)
-end
-
-# WOA / dBM zonal sections do not depend on model output, so the cache
-# key carries no source-FTS counts: once written, the entry is always
-# reused for the same case grid.
-LOADERS[:zonal_woa_temperature] = disk_cached(:zonal_woa_temperature) do c
-    zonal_of(c, :woa_temperature)
-end
-LOADERS[:zonal_woa_salinity] = disk_cached(:zonal_woa_salinity) do c
-    zonal_of(c, :woa_salinity)
+# Each zonal section: (sym, source-3D, source-FTS for invalidation).
+# WOA entries pass `nothing` since they don't depend on model output.
+for (sym, src, fts) in ((:zonal_temperature,       :time_mean_temperature_3d, :to_fts),
+                        (:zonal_salinity,          :time_mean_salinity_3d,    :so_fts),
+                        (:zonal_buoyancy,          :time_mean_buoyancy_3d,    :bo_fts),
+                        (:zonal_initial_buoyancy,  :initial_buoyancy_3d,      :bo_fts),
+                        (:zonal_woa_temperature,   :woa_temperature,          nothing),
+                        (:zonal_woa_salinity,      :woa_salinity,             nothing))
+    LOADERS[sym] = let s = src
+        wrapped = c -> zonal_of(c, s)
+        isnothing(fts) ? disk_cached(wrapped, sym) :
+                         disk_cached(wrapped, sym; source_fts_syms = fts)
+    end
 end
 
 LOADERS[:zonal_temperature_bias] = c -> get_field(c, :zonal_temperature) .-
@@ -664,16 +609,14 @@ LOADERS[:zonal_salinity_bias]    = c -> get_field(c, :zonal_salinity) .-
 LOADERS[:zonal_buoyancy_drift]   = c -> get_field(c, :zonal_buoyancy) .-
                                           get_field(c, :zonal_initial_buoyancy)
 
-# Zonal MLD: regrid the 2-D surface MLD diagnostic, weighted by the
-# surface ocean mask (same convention as before).
+# Zonal MLD: regrid the 2-D surface MLD field, weighted by the surface
+# ocean mask. NaNs (land) become 0 so they don't poison the regrid.
 function zonal_mld(c, sym)
     raw = get_field(c, sym)
     isnothing(raw) && return nothing
-    cleaned = ifelse.(isnan.(raw), zero(eltype(raw)), raw)
-    raw_3d  = reshape(cleaned, size(raw)..., 1)
-    mask    = get_field(c, :ocean_mask_3d)
-    surf    = reshape(mask[:, :, end], size(mask, 1), size(mask, 2), 1)
-    return vec(compute_zonal_mean(raw_3d, surf, get_field(c, :zonal_regridder),
+    raw_3d  = reshape(replace(raw, NaN => zero(eltype(raw))), size(raw)..., 1)
+    surface = get_field(c, :ocean_mask_3d)[:, :, end:end]
+    return vec(compute_zonal_mean(raw_3d, surface, get_field(c, :zonal_regridder),
                                    ZONAL_NLON, ZONAL_NLAT))
 end
 
@@ -687,13 +630,11 @@ LOADERS[:zonal_mld_max_dbm] = c -> zonal_mld(c, :mld_max_dbm)
 #####
 
 function strait_config_for(case)
-    if haskey(case, :config)
-        return case.config
-    end
+    haskey(case, :config) && return case.config
     p = lowercase(case.prefix)
-    occursin("orca", p)        && return :orca
-    occursin("halfdegree", p)  && return :halfdegree
-    occursin("tenthdegree", p) && return :tenthdegree
+    for cfg in (:tenthdegree, :halfdegree, :orca)
+        occursin(string(cfg), p) && return cfg
+    end
     return nothing
 end
 

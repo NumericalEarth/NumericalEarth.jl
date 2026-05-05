@@ -91,49 +91,126 @@ function jld2_output_part_paths(path::AbstractString)
     return String[joinpath(dir, f) for f in files]
 end
 
-# Session-local memo: counting `timeseries/t` keys only touches metadata.
-const _JLD2_TIMESERIES_T_KEY_COUNT_CACHE = Dict{String, Int}()
+# Open `path` with JLD2, run `fn(file)`, guarantee close.
+function with_jld2(fn, path::AbstractString; reader_kw = NamedTuple())
+    jf = JLD2.jldopen(path; reader_kw...)
+    try
+        return fn(jf)
+    finally
+        close(jf)
+    end
+end
+
+# Resolve `path` to its on-disk part files (single or split), erroring
+# if nothing matches. Used by every metadata reader below.
+function jld2_parts(path::AbstractString)
+    parts = jld2_output_part_paths(path)
+    isempty(parts) && error("No JLD2 output at path '$path' (single file or split parts).")
+    return parts
+end
+
+# Per-part memo: `fn(file)` runs at most once per absolute part path,
+# its return value cached in `memo`. Each derived diagnostic that
+# validates a disk cache hits these memos and is therefore O(1) after
+# the first read.
+const JLD2_NT_PER_PART    = Dict{String, Int}()
+const JLD2_TIMES_PER_PART = Dict{String, Vector{Float64}}()
+
+memoize_jld2_part(fn, memo, path::AbstractString; reader_kw = NamedTuple()) =
+    get!(memo, path) do
+        with_jld2(fn, path; reader_kw)
+    end
 
 """
     total_jld2_timeseries_snapshot_count(path; reader_kw = NamedTuple())
 
-Total number of time indices for an Oceananigans JLD2 output stem `path`
-(single file or split `_partN.jld2` parts), from `length(keys(f[\"timeseries/t\"]))`
-per part, summed across parts. Results are memoized per absolute part path
-for the Julia session.
+Total number of time indices for an Oceananigans JLD2 output stem
+`path` (single file or split `_partN.jld2` parts), summed across
+parts. Reads JLD2 metadata only — no `FieldTimeSeries` is built.
+Per-part counts are memoized for the session.
 """
 function total_jld2_timeseries_snapshot_count(path::AbstractString; reader_kw = NamedTuple())
-    parts = jld2_output_part_paths(path)
-    isempty(parts) && error("No JLD2 output at path '$path' (neither single file nor split parts).")
     n = 0
-    for p in parts
-        n += get!(_JLD2_TIMESERIES_T_KEY_COUNT_CACHE, p) do
-            jf = JLD2.jldopen(p; reader_kw...)
-            try
-                return length(keys(jf["timeseries/t"]))
-            finally
-                close(jf)
-            end
+    for p in jld2_parts(path)
+        n += memoize_jld2_part(JLD2_NT_PER_PART, p; reader_kw) do jf
+            length(keys(jf["timeseries/t"]))
         end
     end
     return n
 end
 
-function _detect_split_file_path(path::AbstractString, reader_kw)
-    isfile(path) && return nothing
-    part_paths = jld2_output_part_paths(path)
-    isempty(part_paths) && return nothing
-    nper = Int[total_jld2_timeseries_snapshot_count(p; reader_kw) for p in part_paths]
-    return SplitFilePath(part_paths, cumsum(nper))
+"""
+    total_jld2_timeseries_times(path; reader_kw = NamedTuple())
+
+Concatenated time-coordinate vector for an Oceananigans JLD2 output
+stem `path`. Reads `timeseries/t/<iter>` per part, sorted by iteration,
+and concatenates across parts. No `FieldTimeSeries` construction.
+Per-part time vectors are memoized for the session.
+"""
+function total_jld2_timeseries_times(path::AbstractString; reader_kw = NamedTuple())
+    times = Float64[]
+    for p in jld2_parts(path)
+        ts = memoize_jld2_part(JLD2_TIMES_PER_PART, p; reader_kw) do jf
+            iterations = sort!(parse.(Int, collect(keys(jf["timeseries/t"]))))
+            return Float64[jf["timeseries/t/$it"] for it in iterations]
+        end
+        append!(times, ts)
+    end
+    return times
 end
 
-_location_types(::Oceananigans.OutputReaders.FieldTimeSeries{LX, LY, LZ}) where {LX, LY, LZ} = (LX, LY, LZ)
+"""
+    total_jld2_serialized_grid(path, name; reader_kw = NamedTuple())
 
-_rebuild_backend_with_path(backend, new_path) = backend
+Read the grid serialized inside an Oceananigans JLD2 output stem
+`path` for variable `name`, without instantiating a `FieldTimeSeries`.
+Defers to `Oceananigans.OutputReaders.load_serialized_grid`, which
+handles single-grid (`serialized/grid`) and multi-grid output. The
+grid is invariant across split parts, so only the first part is opened.
+"""
+total_jld2_serialized_grid(path::AbstractString, name::AbstractString; reader_kw = NamedTuple()) =
+    with_jld2(first(jld2_parts(path)); reader_kw) do jf
+        Oceananigans.OutputReaders.load_serialized_grid(jf, name)
+    end
 
-function _rebuild_backend_with_path(backend::Prefetched, new_path)
+"""
+    total_jld2_scalar_timeseries(path, name; reader_kw = NamedTuple())
+
+Read a scalar (1×1×1) variable's full time series for the JLD2 output
+stem `path` directly from `timeseries/<name>/<iter>` metadata, sorted
+by iteration and concatenated across split parts. Avoids building a
+`FieldTimeSeries` and the per-snapshot buffer slides that imposes —
+~100× faster than `[interior(fts[n])[1] for n in ...]` for long time
+series of `tosga`/`soga`-style global means.
+"""
+function total_jld2_scalar_timeseries(path::AbstractString, name::AbstractString;
+                                       reader_kw = NamedTuple())
+    values = Float64[]
+    for p in jld2_parts(path)
+        chunk = with_jld2(p; reader_kw) do jf
+            iterations = sort!(parse.(Int, collect(keys(jf["timeseries/$name"]))))
+            return Float64[jf["timeseries/$name/$it"][1] for it in iterations]
+        end
+        append!(values, chunk)
+    end
+    return values
+end
+
+function detect_split_file_path(path::AbstractString, reader_kw)
+    isfile(path) && return nothing
+    parts = jld2_output_part_paths(path)
+    isempty(parts) && return nothing
+    nper = Int[total_jld2_timeseries_snapshot_count(p; reader_kw) for p in parts]
+    return SplitFilePath(parts, cumsum(nper))
+end
+
+location_types(::Oceananigans.OutputReaders.FieldTimeSeries{LX, LY, LZ}) where {LX, LY, LZ} = (LX, LY, LZ)
+
+rebuild_backend_with_path(backend, new_path) = backend
+
+function rebuild_backend_with_path(backend::Prefetched, new_path)
     old_buf = getfield(backend, :buffer_fts)
-    BLX, BLY, BLZ = _location_types(old_buf)
+    BLX, BLY, BLZ = location_types(old_buf)
     new_buf = Oceananigans.OutputReaders.FieldTimeSeries{BLX, BLY, BLZ}(
         old_buf.data, old_buf.grid, old_buf.backend, old_buf.boundary_conditions,
         old_buf.indices, old_buf.times, new_path, old_buf.name,
@@ -141,9 +218,9 @@ function _rebuild_backend_with_path(backend::Prefetched, new_path)
     return Prefetched(backend.base_backend, backend.pending, new_buf, backend.next_start)
 end
 
-function _rebuild_fts_with_path(fts, new_path)
-    LX, LY, LZ = _location_types(fts)
-    new_backend = _rebuild_backend_with_path(fts.backend, new_path)
+function rebuild_fts_with_path(fts, new_path)
+    LX, LY, LZ = location_types(fts)
+    new_backend = rebuild_backend_with_path(fts.backend, new_path)
     return Oceananigans.OutputReaders.FieldTimeSeries{LX, LY, LZ}(
         fts.data, fts.grid, new_backend, fts.boundary_conditions,
         fts.indices, fts.times, new_path, fts.name,
@@ -158,8 +235,8 @@ function Oceananigans.OutputReaders.FieldTimeSeries(path::String, name::String;
                  Tuple{String, Vararg{Any}},
                  path, name; backend, reader_kw, kwargs...)
     if backend isa InMemory && !(fts.path isa SplitFilePath)
-        sfp = _detect_split_file_path(path, reader_kw)
-        sfp === nothing || (fts = _rebuild_fts_with_path(fts, sfp))
+        sfp = detect_split_file_path(path, reader_kw)
+        sfp === nothing || (fts = rebuild_fts_with_path(fts, sfp))
     end
     return fts
 end
@@ -185,9 +262,9 @@ savefig(fig, name) = save(joinpath(output_dir, name), fig)
 # Per-case line colors. Plain primary/secondary names so cases stay
 # easy to distinguish on white backgrounds and in printouts. Cycles
 # if there are more cases than entries in the palette.
-const _BASE_CASE_COLORS = [:red, :blue, :green, :orange, :purple,
+const BASE_CASE_COLORS = [:red, :blue, :green, :orange, :purple,
                            :brown, :magenta, :cyan, :black, :gold]
-case_colors = [_BASE_CASE_COLORS[mod1(i, length(_BASE_CASE_COLORS))]
+case_colors = [BASE_CASE_COLORS[mod1(i, length(BASE_CASE_COLORS))]
                for i in 1:length(cases)]
 
 # Standard line styling. Observations are always rendered in light
@@ -221,22 +298,6 @@ end
 function compute_time_mean(fts; start_time = 0, stop_time = Inf)
     idx = in_window(fts; start_time, stop_time)
     isempty(idx) && error("No snapshots in [$start_time, $stop_time]")
-    sz  = size(interior(fts[first(idx)]))
-    avg = zeros(sz)
-    for n in idx
-        avg .+= interior(fts[n])
-    end
-    return avg ./ length(idx)
-end
-
-function compute_monthly_mean(fts, target_months;
-                              start_time = 0, stop_time = Inf,
-                              reference_date = DateTime(1958, 1, 1))
-    dates = [reference_date + Second(round(Int, t)) for t in fts.times]
-    idx   = findall(i -> month(dates[i]) in target_months &&
-                         start_time <= fts.times[i] <= stop_time,
-                    eachindex(dates))
-    isempty(idx) && return nothing
     sz  = size(interior(fts[first(idx)]))
     avg = zeros(sz)
     for n in idx
@@ -536,6 +597,7 @@ end
 
 """
     mld_with_reference_depth(buoyancy, grid;
+                             ocean_mask = nothing,
                              reference_depth = 10.0,
                              Δb★ = 2.87e-4)
 
@@ -545,10 +607,17 @@ column until the buoyancy drop relative to that reference exceeds
 `Δb★` (de Boyer Montégut DR003 default at ρ₀ = 1025 kg/m³). Returns a
 2-D array of MLD in meters; NaN where the column is land.
 
+`ocean_mask` is a 3-D `(Nx, Ny, Nz)` array with `1` for ocean and `0`
+for land cells (e.g. as returned by `build_ocean_mask_3d(grid)`). When
+omitted the routine falls back to NaN-only land detection, which can
+mistake a legitimately zero buoyancy in the open ocean for land — pass
+the mask whenever it is available.
+
 Pure column-wise computation — no horizontal interpolation needed
 because the z-coordinate is the same at every (i, j).
 """
 function mld_with_reference_depth(buoyancy::AbstractArray{<:Any, 3}, grid;
+                                  ocean_mask = nothing,
                                   reference_depth = 10.0,
                                   Δb★ = 2.87e-4)
     Nx, Ny, Nz = size(buoyancy)
@@ -556,9 +625,12 @@ function mld_with_reference_depth(buoyancy::AbstractArray{<:Any, 3}, grid;
     zʳ  = -reference_depth
     mld = fill(NaN, Nx, Ny)
 
+    is_land(i, j, k) = isnothing(ocean_mask) ? false : ocean_mask[i, j, k] == 0
+
     @inbounds for j in 1:Ny, i in 1:Nx
+        is_land(i, j, Nz) && continue
         bN = buoyancy[i, j, Nz]
-        (isnan(bN) || bN == 0) && continue
+        isnan(bN) && continue
 
         # Bracket zʳ between cell centers k⁻ (deeper) and k⁺ (shallower).
         k⁺ = Nz
@@ -579,8 +651,9 @@ function mld_with_reference_depth(buoyancy::AbstractArray{<:Any, 3}, grid;
         z★  = NaN
         for k in (Nz - 1):-1:1
             z[k] >= zʳ && continue
+            is_land(i, j, k) && break
             bk = buoyancy[i, j, k]
-            (isnan(bk) || bk == 0) && break
+            isnan(bk) && break
             Δb = bʳ - bk
             if Δb >= Δb★
                 z★ = zₚ + (Δb★ - Δbₚ) / (Δb - Δbₚ) * (z[k] - zₚ)
@@ -610,14 +683,21 @@ function compute_ice_diagnostics(run_dir, prefix, grid;
     thickness_fts     = FieldTimeSeries(surface_file, "sithick"; backend = deepcopy(FTS_BACKEND))
     concentration_fts = FieldTimeSeries(surface_file, "siconc";  backend = deepcopy(FTS_BACKEND))
 
-    Nt = length(thickness_fts.times)
-    arctic_volume      = zeros(Nt)
-    antarctic_volume   = zeros(Nt)
-    arctic_extent      = zeros(Nt)
-    antarctic_extent   = zeros(Nt)
-    arctic_area        = zeros(Nt)
-    antarctic_area     = zeros(Nt)
-    snapshot_dates     = [reference_date + Second(round(Int, t)) for t in thickness_fts.times]
+    # Restrict the per-snapshot integration loop to the case averaging
+    # window — pre-window snapshots can't enter any monthly bin so
+    # there's no reason to integrate them.
+    idx = findall(t -> start_time <= t <= stop_time, thickness_fts.times)
+    isempty(idx) && error("compute_ice_diagnostics: no snapshots in [$start_time, $stop_time]")
+    Nidx = length(idx)
+    @info "  $prefix: integrating sea-ice over $Nidx snapshots..."
+
+    snapshot_dates   = [reference_date + Second(round(Int, thickness_fts.times[n])) for n in idx]
+    arctic_volume    = zeros(Nidx)
+    antarctic_volume = zeros(Nidx)
+    arctic_extent    = zeros(Nidx)
+    antarctic_extent = zeros(Nidx)
+    arctic_area      = zeros(Nidx)
+    antarctic_area   = zeros(Nidx)
 
     thickness     = Field{Center, Center, Nothing}(grid)
     concentration = Field{Center, Center, Nothing}(grid)
@@ -631,29 +711,29 @@ function compute_ice_diagnostics(run_dir, prefix, grid;
     arctic_ext_int     = Field(Integral(extent_mask;   condition = arctic_condition))
     antarctic_ext_int  = Field(Integral(extent_mask;   condition = antarctic_condition))
 
-    for n in 1:Nt
+    for (k, n) in enumerate(idx)
         set!(thickness,     thickness_fts[n])
         set!(concentration, concentration_fts[n])
         interior(ice_volume) .= interior(thickness) .* interior(concentration)
 
         compute!(arctic_vol_int);  compute!(antarctic_vol_int)
-        arctic_volume[n]    = arctic_vol_int[1, 1, 1]
-        antarctic_volume[n] = antarctic_vol_int[1, 1, 1]
+        arctic_volume[k]    = arctic_vol_int[1, 1, 1]
+        antarctic_volume[k] = antarctic_vol_int[1, 1, 1]
 
         compute!(arctic_area_int); compute!(antarctic_area_int)
-        arctic_area[n]    = arctic_area_int[1, 1, 1]
-        antarctic_area[n] = antarctic_area_int[1, 1, 1]
+        arctic_area[k]    = arctic_area_int[1, 1, 1]
+        antarctic_area[k] = antarctic_area_int[1, 1, 1]
 
-        concentration_data = Array(interior(concentration, :, :, 1))
-        set!(extent_mask, Float64.(concentration_data .> extent_threshold))
+        # Build the > threshold extent mask in place — no per-snapshot
+        # temporary array.
+        interior(extent_mask) .= interior(concentration) .> extent_threshold
         compute!(arctic_ext_int); compute!(antarctic_ext_int)
-        arctic_extent[n]    = arctic_ext_int[1, 1, 1]
-        antarctic_extent[n] = antarctic_ext_int[1, 1, 1]
+        arctic_extent[k]    = arctic_ext_int[1, 1, 1]
+        antarctic_extent[k] = antarctic_ext_int[1, 1, 1]
     end
 
-    idx = findall(t -> start_time <= t <= stop_time, thickness_fts.times)
-    months_used = month.(snapshot_dates[idx])
-    monthly(field) = [mean(field[idx[months_used .== m]]) for m in 1:12]
+    months_used = month.(snapshot_dates)
+    monthly(field) = [mean(field[months_used .== m]) for m in 1:12]
 
     return (; arctic_volume, antarctic_volume,
               arctic_extent, antarctic_extent,
@@ -701,11 +781,28 @@ function load_nsidc(hemisphere)
     return (; extent_monthly, area_monthly)
 end
 
-# Global per-process cache for observational climatologies.
-const _NSIDC_NORTH_REF = Ref{Any}(nothing)
-const _NSIDC_SOUTH_REF = Ref{Any}(nothing)
-const _PIOMAS_REF      = Ref{Any}(nothing)
+# Global per-process cache for observational climatologies. Each
+# accessor returns `nothing` if the download fails (mirrors the dBM /
+# NCEP convention) so figures degrade gracefully to a model-only plot.
+# Sentinel `:download_failed` distinguishes "download failed once,
+# don't retry this session" from "not yet attempted".
+const NSIDC_NORTH_REF = Ref{Any}(nothing)
+const NSIDC_SOUTH_REF = Ref{Any}(nothing)
+const PIOMAS_REF      = Ref{Any}(nothing)
 
-nsidc_arctic()    = (isnothing(_NSIDC_NORTH_REF[]) && (_NSIDC_NORTH_REF[] = load_nsidc("north"));    _NSIDC_NORTH_REF[])
-nsidc_antarctic() = (isnothing(_NSIDC_SOUTH_REF[]) && (_NSIDC_SOUTH_REF[] = load_nsidc("south"));    _NSIDC_SOUTH_REF[])
-piomas_monthly()  = (isnothing(_PIOMAS_REF[])      && (_PIOMAS_REF[]      = load_piomas_monthly()); _PIOMAS_REF[])
+function try_load(ref, label, builder)
+    ref[] === :download_failed && return nothing
+    isnothing(ref[]) || return ref[]
+    try
+        ref[] = builder()
+    catch err
+        @warn "$label download failed — skipping reference line." error = sprint(showerror, err)
+        ref[] = :download_failed
+        return nothing
+    end
+    return ref[]
+end
+
+nsidc_arctic()    = try_load(NSIDC_NORTH_REF, "NSIDC (north)", () -> load_nsidc("north"))
+nsidc_antarctic() = try_load(NSIDC_SOUTH_REF, "NSIDC (south)", () -> load_nsidc("south"))
+piomas_monthly()  = try_load(PIOMAS_REF,      "PIOMAS",        load_piomas_monthly)

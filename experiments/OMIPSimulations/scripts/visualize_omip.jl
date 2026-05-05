@@ -134,10 +134,12 @@ end
 # Convenience: render a single figure (or a list) by number from the REPL.
 #     julia> render_figures(4)
 #     julia> render_figures([1, 4, 7])
-function render_figures(selection)
-    nums = collect(selection isa Number ? (selection,) : selection)
+render_figures(n::Integer)                          = render_figures((n,))
+render_figures(ns::AbstractVector{<:Integer})       = render_figures(Tuple(ns))
+render_figures(ns::AbstractRange{<:Integer})        = render_figures(Tuple(ns))
+function render_figures(ns::Tuple{Vararg{Integer}})
     for entry in FIG_REGISTRY
-        entry.n in nums || continue
+        entry.n in ns || continue
         @info "Figure $(entry.n): $(entry.file)"
         getfield(@__MODULE__, entry.fn)(caches, labels, cases)
     end
