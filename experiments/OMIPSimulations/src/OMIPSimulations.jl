@@ -51,9 +51,17 @@ export omip_simulation,
        strait_sections,
        StraitSection,
        woa_to_teos10!,
-       woa_salinity_fts_to_teos10!
+       woa_salinity_fts_to_teos10!,
+       KPPVerticalDiffusivity, KPPParameters
 
-include("nori_base_closure.jl")
+include("NORi/NORi.jl")
+
+using .NORi: NORiBaseVerticalDiffusivity
+
+include("KPP/KPP.jl")
+
+using .KPP: KPPVerticalDiffusivity, KPPParameters
+
 include("atmosphere.jl")
 include("jra55_data_staging.jl")
 include("omip_simulation.jl")

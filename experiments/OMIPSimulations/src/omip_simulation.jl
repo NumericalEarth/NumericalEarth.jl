@@ -251,6 +251,8 @@ plumbing is needed because `NumericalEarth.EarthSystemModels` provides
    * `:rbvd` — Oceananigans' built-in `RiBasedVerticalDiffusivity`
      (Richardson-number-based, with κ-clip and time-averaged smoothing).
      A battle-tested comparison point for `:nori`; no `Cᵇ` parameter.
+   * `:kpp` — KPP boundary-layer scheme (Large 1994 / MITgcm), vendored
+     in `KPP/`. Includes nonlocal tracer flux + SW-aware Bf. No `Cᵇ`.
 - `velocity_formulation::Symbol`: Δu used by the bulk formula. Options:
    * `:relative` — `Δu = u_atm − u_ocean` (OMIP-2 α=1, default).
    * `:wind` — `Δu = u_atm` (ignores ocean current). For isolating bulk-formula
@@ -481,8 +483,10 @@ function omip_closure(vertical_closure::Symbol;
         NORiBaseVerticalDiffusivity(), nothing
     elseif vertical_closure == :rbvd
         RiBasedVerticalDiffusivity(; horizontal_Ri_filter = Oceananigans.TurbulenceClosures.FivePointHorizontalFilter()), nothing
+    elseif vertical_closure == :kpp
+        KPPVerticalDiffusivity(), nothing
     else
-        error("Unknown vertical_closure: $vertical_closure. Options: :catke, :simple, :nori, :rbvd")
+        error("Unknown vertical_closure: $vertical_closure. Options: :catke, :simple, :nori, :rbvd, :kpp")
     end
 
     eddy  = if isnothing(κ_skew) | isnothing(κ_symmetric)
