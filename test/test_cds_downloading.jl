@@ -502,6 +502,102 @@ end
     end
 end
 
+@testset "ERA5 CDSAPIExt build_era5_request" begin
+    sl = ERA5HourlySingleLevel()
+    pl = ERA5HourlyPressureLevels(pressure_levels=[500hPa, 850hPa])
+    bbox = BoundingBox(longitude=(-10.0, 5.0), latitude=(40.0, 50.0))
+    col_nr  = Column(-61.5, 18.0; interpolation=Nearest())
+    col_lin = Column(-61.5, 18.0; interpolation=Linear())
+    dt = DateTime(2005, 2, 16, 12)
+
+    @testset "Single-level dataset: no pressure_level key" begin
+        req = CDSExt.build_era5_request(:temperature, sl, dt; region=nothing)
+        @test !haskey(req, "pressure_level")
+    end
+
+    @testset "Pressure-level dataset: pressure_level is sorted hPa strings" begin
+        # Constructor sorts levels descending (highest-pressure-first); request preserves that order
+        req = CDSExt.build_era5_request(:temperature, pl, dt; region=nothing)
+        @test haskey(req, "pressure_level")
+        @test req["pressure_level"] == ["850", "500"]
+        @test all(s -> s isa String, req["pressure_level"])
+    end
+
+    @testset "BoundingBox region produces area in [N, W, S, E] order" begin
+        req = CDSExt.build_era5_request(:temperature, sl, dt; region=bbox)
+        @test haskey(req, "area")
+        @test req["area"] == [50.0, -10.0, 40.0, 5.0]
+    end
+
+    @testset "Column with Nearest interpolation: tight ε=1e-3 box" begin
+        req = CDSExt.build_era5_request(:temperature, sl, dt; region=col_nr)
+        @test haskey(req, "area")
+        area = req["area"]
+        @test area[1] ≈ 18.0 + 1e-3      # north
+        @test area[2] ≈ -61.5 - 1e-3     # west
+        @test area[3] ≈ 18.0 - 1e-3      # south
+        @test area[4] ≈ -61.5 + 1e-3     # east
+    end
+
+    @testset "Column with Linear interpolation: ε=0.3 padding" begin
+        req = CDSExt.build_era5_request(:temperature, sl, dt; region=col_lin)
+        @test haskey(req, "area")
+        area = req["area"]
+        @test area[1] ≈ 18.0 + 0.3
+        @test area[2] ≈ -61.5 - 0.3
+        @test area[3] ≈ 18.0 - 0.3
+        @test area[4] ≈ -61.5 + 0.3
+    end
+
+    @testset "region=nothing omits area key" begin
+        req = CDSExt.build_era5_request(:temperature, sl, dt; region=nothing)
+        @test !haskey(req, "area")
+    end
+
+    @testset "Multiple datetimes on same day: time is an array, not a single string" begin
+        dts = [DateTime(2005, 2, 16, 0), DateTime(2005, 2, 16, 6), DateTime(2005, 2, 16, 18)]
+        req = CDSExt.build_era5_request(:temperature, sl, dts; region=nothing)
+        @test req["time"]  == ["00:00", "06:00", "18:00"]
+        # year/month/day are scalars-in-an-array, taken from the first datetime
+        @test req["year"]  == ["2005"]
+        @test req["month"] == ["02"]
+        @test req["day"]   == ["16"]
+    end
+
+    @testset "Single datetime still produces a one-element time array" begin
+        req = CDSExt.build_era5_request(:temperature, sl, dt; region=nothing)
+        @test req["time"] isa AbstractVector
+        @test req["time"] == ["12:00"]
+    end
+
+    @testset "Zero-padded month/day/hour" begin
+        # Month=2, day=3, hour=4 — must come out "02", "03", "04:00"
+        req = CDSExt.build_era5_request(:temperature, sl, DateTime(2005, 2, 3, 4); region=nothing)
+        @test req["year"]  == ["2005"]
+        @test req["month"] == ["02"]
+        @test req["day"]   == ["03"]
+        @test req["time"]  == ["04:00"]
+    end
+
+    @testset "Single Symbol and Vector{Symbol} inputs are equivalent" begin
+        req_sym = CDSExt.build_era5_request(:temperature, sl, dt; region=nothing)
+        req_vec = CDSExt.build_era5_request([:temperature], sl, dt; region=nothing)
+        @test req_sym["variable"] == req_vec["variable"] == ["2m_temperature"]
+    end
+
+    @testset "Multi-variable request unique-ifies variable list" begin
+        req = CDSExt.build_era5_request([:temperature, :temperature], sl, dt; region=nothing)
+        @test req["variable"] == ["2m_temperature"]
+    end
+
+    @testset "Constant keys present on every request" begin
+        req = CDSExt.build_era5_request(:temperature, sl, dt; region=nothing)
+        @test req["product_type"]    == ["reanalysis"]
+        @test req["data_format"]     == "netcdf"
+        @test req["download_format"] == "unarchived"
+    end
+end
+
 @testset "ERA5 CDSAPIExt _group_by_calendar_day" begin
     # Single calendar day with multiple hours
     same_day = [DateTime(2005, 2, 16, 0),
