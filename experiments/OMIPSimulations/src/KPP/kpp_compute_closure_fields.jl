@@ -78,20 +78,20 @@ end
     # When hbl extends to the bottom, the FD pair is degenerate → dKdz = 0
     # so the matching reduces to a smooth G(σ) without spurious gradient terms.
     Δz  = max(z₊ - z₋, FT(1e-10))
-    νₕ  = ν₋
-    κₕ  = κ₋
-    dνₕ = ifelse(have_below, (ν₊ - ν₋) / Δz, zero(FT))
-    dκₕ = ifelse(have_below, (κ₊ - κ₋) / Δz, zero(FT))
+    νh  = ν₋
+    κh  = κ₋
+    dνh = ifelse(have_below, (ν₊ - ν₋) / Δz, zero(FT))
+    dκh = ifelse(have_below, (κ₊ - κ₋) / Δz, zero(FT))
 
     # Branchless land-column mask: zero everywhere on fully-land columns.
     wet = static_column_depthᶜᶜᵃ(i, j, grid) > zero(FT)
     @inbounds K.hbl[i, j, 1] = ifelse(wet, hbl, zero(FT))
     @inbounds K.u★[i, j, 1]  = ifelse(wet, u★,  zero(FT))
     @inbounds K.Bo[i, j, 1]  = ifelse(wet, Bo,  zero(FT))
-    @inbounds K.νₕ[i, j, 1]  = ifelse(wet, νₕ,  zero(FT))
-    @inbounds K.κₕ[i, j, 1]  = ifelse(wet, κₕ,  zero(FT))
-    @inbounds K.dνₕ[i, j, 1] = ifelse(wet, dνₕ, zero(FT))
-    @inbounds K.dκₕ[i, j, 1] = ifelse(wet, dκₕ, zero(FT))
+    @inbounds K.νh[i, j, 1]  = ifelse(wet, νh,  zero(FT))
+    @inbounds K.κh[i, j, 1]  = ifelse(wet, κh,  zero(FT))
+    @inbounds K.dνh[i, j, 1] = ifelse(wet, dνh, zero(FT))
+    @inbounds K.dκh[i, j, 1] = ifelse(wet, dκh, zero(FT))
 end
 
 #####
@@ -112,10 +112,10 @@ end
     @inbounds hbl = K.hbl[i, j, 1]
     @inbounds u★  = K.u★[i, j, 1]
     @inbounds Bo  = K.Bo[i, j, 1]
-    @inbounds νₕ  = K.νₕ[i, j, 1]
-    @inbounds κₕ  = K.κₕ[i, j, 1]
-    @inbounds dνₕ = K.dνₕ[i, j, 1]
-    @inbounds dκₕ = K.dκₕ[i, j, 1]
+    @inbounds νh  = K.νh[i, j, 1]
+    @inbounds κh  = K.κh[i, j, 1]
+    @inbounds dνh = K.dνh[i, j, 1]
+    @inbounds dκh = K.dκh[i, j, 1]
 
     α = αᶜᶜᶜ(i, j, grid, buoyancy, tracers)
     g = buoyancy.formulation.gravitational_acceleration
@@ -131,8 +131,8 @@ end
     # Matching coefficients at σ = 1 (column-level; recomputed per interface).
     σ₁        = ifelse(Bo ≥ zero(FT), one(FT), p.ε)
     wm₁, ws₁  = velocity_scales(σ₁, hbl, u★, Bo, p)
-    G1u, dG1u = matching_coefficients(hbl, νₕ, dνₕ, wm₁, Bo, u★, p)
-    G1s, dG1s = matching_coefficients(hbl, κₕ, dκₕ, ws₁, Bo, u★, p)
+    G1u, dG1u = matching_coefficients(hbl, νh, dνh, wm₁, Bo, u★, p)
+    G1s, dG1s = matching_coefficients(hbl, κh, dκh, ws₁, Bo, u★, p)
 
     # Local turbulent scales at this interface (SW-aware Bf).
     Bf     = buoyancy_forcing_above(i, j, d, Bo, radiation, α, g)

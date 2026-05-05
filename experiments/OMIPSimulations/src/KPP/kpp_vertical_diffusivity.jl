@@ -46,8 +46,7 @@ function KPPVerticalDiffusivity(time_discretization = VerticallyImplicitTimeDisc
                                              convert(FT, maximum_diffusivity))
 end
 
-KPPVerticalDiffusivity(FT::DataType; kw...) =
-    KPPVerticalDiffusivity(VerticallyImplicitTimeDiscretization(), FT; kw...)
+KPPVerticalDiffusivity(FT::DataType; kw...) = KPPVerticalDiffusivity(VerticallyImplicitTimeDiscretization(), FT; kw...)
 
 Adapt.adapt_structure(to, clo::KPPVerticalDiffusivity{TD, P, FT}) where {TD, P, FT} =
     KPPVerticalDiffusivity{TD, P, FT}(adapt(to, clo.parameters),
@@ -84,14 +83,14 @@ function build_closure_fields(grid, clock, tracer_names, bcs, closure::FlavorOfK
     hbl = Field{Center, Center, Nothing}(grid)
     u★  = Field{Center, Center, Nothing}(grid)
     Bo  = Field{Center, Center, Nothing}(grid)
-    νₕ  = Field{Center, Center, Nothing}(grid)
-    κₕ  = Field{Center, Center, Nothing}(grid)
-    dνₕ = Field{Center, Center, Nothing}(grid)
-    dκₕ = Field{Center, Center, Nothing}(grid)
+    νh  = Field{Center, Center, Nothing}(grid)
+    κh  = Field{Center, Center, Nothing}(grid)
+    dνh = Field{Center, Center, Nothing}(grid)
+    dκh = Field{Center, Center, Nothing}(grid)
 
     top_tracer_bcs = KPPTracerBCs(NamedTuple(name => bcs[name].top for name in tracer_names))
 
-    return (; κu, κc, γ, hbl, u★, Bo, νₕ, κₕ, dνₕ, dκₕ, top_tracer_bcs)
+    return (; κu, κc, γ, hbl, u★, Bo, νh, κh, dνh, dκh, top_tracer_bcs)
 end
 
 #####
