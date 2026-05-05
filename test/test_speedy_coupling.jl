@@ -15,8 +15,7 @@ Oceananigans.set!(ocean.model, T=EN4Metadatum(:temperature), S=EN4Metadatum(:sal
 
 atmos = NumericalEarth.atmosphere_simulation(spectral_grid)
 
-radiation   = Radiation(ocean_emissivity=0.0, sea_ice_emissivity=0.0)
-earth_model = EarthSystemModel(atmos, ocean, default_sea_ice(); radiation)
+earth_model = EarthSystemModel(; atmosphere=atmos, sea_ice=default_sea_ice(), ocean)
 
 Qca = atmos.variables.parameterizations.ocean.sensible_heat_flux.data
 Mva = atmos.variables.parameterizations.ocean.surface_humidity_flux.data

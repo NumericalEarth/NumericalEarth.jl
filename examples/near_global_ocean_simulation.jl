@@ -88,24 +88,14 @@ set!(ocean.model, T=Metadatum(:temperature, dataset=ECCO4Monthly()),
 
 # ### Prescribed atmosphere and radiation
 #
-# Next we build a prescribed atmosphere state and radiation model,
-# which will drive the ocean simulation. We use the default `Radiation` model,
-
-# The radiation model specifies an ocean albedo emissivity to compute the net radiative
-# fluxes. The default ocean albedo is based on Payne (1982) and depends on cloud cover
-# (calculated from the ratio of maximum possible incident solar radiation to actual
-# incident solar radiation) and latitude. The ocean emissivity is set to 0.97.
-
-radiation = Radiation(arch)
-
-# The atmospheric data is prescribed using the JRA55 dataset.
-# The JRA55 dataset provides atmospheric data such as temperature, humidity, and winds
-# to calculate turbulent fluxes using bulk formulae, see [`InterfaceComputations`](@ref NumericalEarth.EarthSystemModels.InterfaceComputations).
-# The number of snapshots that are loaded into memory is determined by
-# the `backend`. Here, we load 41 snapshots at a time into memory.
+# Next we build a prescribed atmosphere state and radiation component,
+# which together drive the ocean simulation. The atmospheric data and
+# downwelling shortwave / longwave radiation are both prescribed using JRA55.
+# The number of snapshots loaded into memory is set by the backend.
 
 jra55_backend = JRA55NetCDFBackend(41)
 atmosphere = JRA55PrescribedAtmosphere(arch; backend=jra55_backend)
+radiation  = JRA55PrescribedRadiation(arch; backend=jra55_backend)
 land       = JRA55PrescribedLand(arch; backend=jra55_backend)
 
 # ## The coupled simulation
