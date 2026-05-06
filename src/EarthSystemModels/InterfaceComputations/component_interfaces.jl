@@ -184,10 +184,11 @@ ZeroFluxes() = ZeroFluxes(ntuple(_ -> ZeroField(), 11)...)
 
 @inline computed_fluxes(::Nothing) = ZeroFluxes()
 
-mutable struct ComponentInterfaces{AO, ASI, SIO, C, AP, OP, SIP, EX, P}
+mutable struct ComponentInterfaces{AO, ASI, SIO, AL, C, AP, OP, SIP, EX, P}
     atmosphere_ocean_interface :: AO
     atmosphere_sea_ice_interface :: ASI
     sea_ice_ocean_interface :: SIO
+    atmosphere_land_interface :: AL
     atmosphere_properties :: AP
     ocean_properties :: OP
     sea_ice_properties :: SIP
@@ -354,16 +355,20 @@ Keyword Arguments
 function ComponentInterfaces(atmosphere, ocean, sea_ice=nothing;
                              radiation = nothing,
                              land = nothing,
-                             exchange_grid = exchange_grid(atmosphere, ocean, sea_ice),
+                             exchange_grid = exchange_grid(atmosphere, ocean, sea_ice, land),
                              freshwater_density = default_freshwater_density,
                              atmosphere_ocean_fluxes = SimilarityTheoryFluxes(eltype(exchange_grid)),
                              atmosphere_sea_ice_fluxes = atmosphere_sea_ice_similarity_theory(eltype(exchange_grid)),
+                             atmosphere_land_fluxes = default_atmosphere_land_fluxes(land, eltype(exchange_grid)),
                              sea_ice_ocean_heat_flux = ThreeEquationHeatFlux(sea_ice),
                              atmosphere_ocean_interface_temperature = BulkTemperature(),
                              atmosphere_ocean_velocity_difference = RelativeVelocity(),
                              atmosphere_ocean_interface_specific_humidity = default_ao_specific_humidity(ocean),
                              atmosphere_sea_ice_interface_temperature = default_ai_temperature(sea_ice),
                              atmosphere_sea_ice_velocity_difference = RelativeVelocity(),
+                             atmosphere_land_interface_temperature = BulkTemperature(),
+                             atmosphere_land_velocity_difference = RelativeVelocity(),
+                             atmosphere_land_interface_specific_humidity = default_al_specific_humidity(land),
                              ocean_reference_density = reference_density(ocean),
                              ocean_heat_capacity = heat_capacity(ocean),
                              ocean_temperature_units = temperature_units(ocean),
@@ -417,6 +422,14 @@ function ComponentInterfaces(atmosphere, ocean, sea_ice=nothing;
                                                 atmosphere_sea_ice_fluxes,
                                                 atmosphere_sea_ice_interface_temperature,
                                                 atmosphere_sea_ice_velocity_difference)
+
+    al_interface = atmosphere_land_interface(exchange_grid,
+                                             atmosphere,
+                                             land,
+                                             atmosphere_land_fluxes,
+                                             atmosphere_land_interface_temperature,
+                                             atmosphere_land_velocity_difference,
+                                             atmosphere_land_interface_specific_humidity)
     # Total interface fluxes
     total_fluxes = (ocean      = net_fluxes(ocean),
                     sea_ice    = net_fluxes(sea_ice),
@@ -429,12 +442,37 @@ function ComponentInterfaces(atmosphere, ocean, sea_ice=nothing;
     return ComponentInterfaces(ao_interface,
                                ai_interface,
                                io_interface,
+                               al_interface,
                                atmosphere_properties,
                                ocean_properties,
                                sea_ice_properties,
                                exchanger,
                                total_fluxes,
                                properties)
+end
+
+# Default land surface humidity formulation: β-reduced saturation. The
+# β value is read from `mavail` per cell by the flux kernel and threaded
+# through the iteration's `S` slot.
+default_al_specific_humidity(::Nothing) = nothing
+default_al_specific_humidity(land) =
+    BetaSurfaceSpecificHumidity(AtmosphericThermodynamics.Liquid())
+
+# Default atmosphere--land flux formulation. Uses scalar (non-Charnock)
+# roughness lengths appropriate for a vegetated land surface. The
+# defaults correspond to short grass (z₀_m ≈ 0.1 m) with thermal/moisture
+# roughness 10× smaller (Garratt 1992). To override, pass
+# `atmosphere_land_fluxes = SimilarityTheoryFluxes(...)` to
+# `ComponentInterfaces` / `AtmosphereLandModel`.
+default_atmosphere_land_fluxes(::Nothing, FT) = SimilarityTheoryFluxes(FT)
+
+function default_atmosphere_land_fluxes(land, FT)
+    z₀_m = convert(FT, 0.1)
+    z₀_h = z₀_m / convert(FT, 10)
+    return SimilarityTheoryFluxes(FT;
+                                  momentum_roughness_length    = z₀_m,
+                                  temperature_roughness_length = z₀_h,
+                                  water_vapor_roughness_length = z₀_h)
 end
 
 #####

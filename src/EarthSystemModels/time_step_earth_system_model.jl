@@ -1,5 +1,6 @@
 using .InterfaceComputations:
     compute_atmosphere_ocean_fluxes!,
+    compute_atmosphere_land_fluxes!,
     compute_sea_ice_ocean_fluxes!
 
 using Oceananigans.TimeSteppers: maybe_prepare_first_time_step!
@@ -58,6 +59,7 @@ function update_state!(coupled_model::EarthSystemModel, callbacks=[])
     # Phase 2: compute interface turbulent fluxes
     compute_atmosphere_ocean_fluxes!(coupled_model)
     compute_atmosphere_sea_ice_fluxes!(coupled_model)
+    compute_atmosphere_land_fluxes!(coupled_model)
     compute_sea_ice_ocean_fluxes!(coupled_model)
 
     # Phase 3: assemble net component fluxes (turbulent only)

@@ -16,7 +16,10 @@ const celsius_to_kelvin = 273.15
 ##### generic defaults
 #####
 
-exchange_grid(atmosphere, ocean, sea_ice) = ocean.model.grid
+# Default: build the exchange grid from the ocean. When the model has no
+# ocean / sea ice, fall back to the land grid (used by AtmosphereLandModel).
+exchange_grid(atmosphere, ocean, sea_ice, land=nothing) = ocean.model.grid
+exchange_grid(atmosphere, ::Nothing, ::Nothing, land) = land.grid
 
 # Trait function overloaded by Atmospheres module
 is_prescribed_atmosphere(::Any) = false

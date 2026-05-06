@@ -2,6 +2,8 @@ using Oceananigans.Operators: intrinsic_vector
 using Oceananigans.Grids: inactive_node
 
 function compute_atmosphere_ocean_fluxes!(coupled_model)
+    isnothing(coupled_model.interfaces.atmosphere_ocean_interface) && return nothing
+
     exchanger = coupled_model.interfaces.exchanger
     grid = exchanger.grid
     arch = architecture(grid)

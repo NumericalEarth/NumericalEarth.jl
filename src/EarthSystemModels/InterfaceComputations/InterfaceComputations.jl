@@ -17,7 +17,9 @@ export
     atmosphere_sea_ice_stability_functions,
     compute_atmosphere_ocean_fluxes!,
     compute_atmosphere_sea_ice_fluxes!,
+    compute_atmosphere_land_fluxes!,
     compute_sea_ice_ocean_fluxes!,
+    BetaSurfaceSpecificHumidity,
     # Sea ice-ocean heat flux formulations
     IceBathHeatFlux,
     ThreeEquationHeatFlux,
@@ -98,6 +100,7 @@ include("sea_ice_ocean_heat_flux_formulations.jl")
 include("component_interfaces.jl")
 include("atmosphere_ocean_fluxes.jl")
 include("atmosphere_sea_ice_fluxes.jl")
+include("atmosphere_land_fluxes.jl")
 include("sea_ice_ocean_fluxes.jl")
 
 end # module

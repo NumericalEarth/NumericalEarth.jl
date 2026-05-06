@@ -80,6 +80,42 @@ end
     return convert(FT, qₛ)
 end
 
+# A β-reduced saturation specific humidity for land surfaces:
+# qₛ = β · q_sat(Tₛ), where β ∈ [0, 1] is the moisture availability
+# (`mavail` in RUC). The β is threaded through the existing iteration
+# pipeline by hijacking the `Sₛ` slot of `InterfaceState`, so no plumbing
+# changes are needed downstream of the fixed-point solver.
+struct BetaSurfaceSpecificHumidity{Φ}
+    phase :: Φ
+end
+
+Base.summary(::BetaSurfaceSpecificHumidity{Φ}) where Φ =
+    string("BetaSurfaceSpecificHumidity{",
+           Φ === AtmosphericThermodynamics.Liquid ? "Liquid" : "Ice", "}")
+Base.show(io::IO, q::BetaSurfaceSpecificHumidity) = print(io, summary(q))
+
+@inline function surface_specific_humidity(formulation::BetaSurfaceSpecificHumidity,
+                                           ℂᵃᵗ, Tᵃᵗ, pᵃᵗ, qᵃᵗ,
+                                           Tₛ, β=one(Tₛ))
+    cvₘ = Thermodynamics.cv_m(ℂᵃᵗ, qᵃᵗ)
+    Rᵃᵗ = Thermodynamics.gas_constant_air(ℂᵃᵗ, qᵃᵗ)
+    κᵃᵗ = cvₘ / Rᵃᵗ
+    ρᵃᵗ = Thermodynamics.air_density(ℂᵃᵗ, Tᵃᵗ, pᵃᵗ, qᵃᵗ)
+    ρₛ = ρᵃᵗ * (Tₛ / Tᵃᵗ)^κᵃᵗ
+    return surface_specific_humidity(formulation, ℂᵃᵗ, ρₛ, Tₛ, β)
+end
+
+@inline function surface_specific_humidity(formulation::BetaSurfaceSpecificHumidity,
+                                           ℂᵃᵗ, ρₛ::Number, Tₛ, β=one(Tₛ))
+    FT = eltype(Tₛ)
+    CT = eltype(ℂᵃᵗ)
+    Tₛ = convert(CT, Tₛ)
+    ρₛ = convert(CT, ρₛ)
+    p★ = Thermodynamics.saturation_vapor_pressure(ℂᵃᵗ, Tₛ, formulation.phase)
+    q★ = Thermodynamics.q_vap_from_p_vap(ℂᵃᵗ, Tₛ, ρₛ, p★)
+    return convert(FT, β * q★)
+end
+
 struct SalinityConstituent{FT}
     molar_mass :: FT
     mass_fraction :: FT

@@ -128,14 +128,32 @@ function update_net_fluxes!(coupled_model, atmosphere::BreezeAtmosphere)
     net = coupled_model.interfaces.net_fluxes.atmosphere
     isnothing(net) && return nothing
 
-    ao_fluxes = computed_fluxes(coupled_model.interfaces.atmosphere_ocean_interface)
-    isnothing(ao_fluxes) && return nothing
-
     grid = atmosphere.grid
     arch = architecture(grid)
     params = interface_kernel_parameters(grid)
 
-    launch!(arch, grid, params, _assemble_net_atmosphere_fluxes!, net, ao_fluxes)
+    # Atmosphere-ocean fluxes (when an ocean interface is present).
+    ao_interface = coupled_model.interfaces.atmosphere_ocean_interface
+    if !isnothing(ao_interface)
+        ao_fluxes = computed_fluxes(ao_interface)
+        if !isnothing(ao_fluxes)
+            launch!(arch, grid, params, _assemble_net_atmosphere_fluxes!, net, ao_fluxes)
+        end
+    end
+
+    # Atmosphere-land fluxes (when a land interface is present).
+    # We assume at most one surface type per cell, so the kernel writes
+    # absolute values rather than accumulating; for full coverage with
+    # both ocean and land present, a tile-fraction weighted assembly
+    # would be needed.
+    al_interface = coupled_model.interfaces.atmosphere_land_interface
+    if !isnothing(al_interface)
+        al_fluxes = computed_fluxes(al_interface)
+        if !isnothing(al_fluxes)
+            launch!(arch, grid, params, _assemble_net_atmosphere_fluxes!, net, al_fluxes)
+        end
+    end
+
     return nothing
 end
 

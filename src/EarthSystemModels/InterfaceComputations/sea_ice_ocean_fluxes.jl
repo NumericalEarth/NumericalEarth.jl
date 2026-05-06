@@ -17,9 +17,11 @@ This function computes:
 The interface heat flux formulation is determined by `coupled_model.interfaces.sea_ice_ocean_interface.flux_formulation`.
 """
 function compute_sea_ice_ocean_fluxes!(coupled_model)
+    interface = coupled_model.interfaces.sea_ice_ocean_interface
+    isnothing(interface) && return nothing
+
     ocean = coupled_model.ocean
     sea_ice = coupled_model.sea_ice
-    interface = coupled_model.interfaces.sea_ice_ocean_interface
     ocean_properties = coupled_model.interfaces.ocean_properties
 
     compute_sea_ice_ocean_fluxes!(interface, ocean, sea_ice, ocean_properties)

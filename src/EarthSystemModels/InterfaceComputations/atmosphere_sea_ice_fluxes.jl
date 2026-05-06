@@ -3,6 +3,8 @@ using Oceananigans.Grids: inactive_node
 using Oceananigans.Fields: ZeroField
 
 function compute_atmosphere_sea_ice_fluxes!(coupled_model)
+    isnothing(coupled_model.interfaces.atmosphere_sea_ice_interface) && return nothing
+
     exchanger = coupled_model.interfaces.exchanger
     grid = exchanger.grid
     arch = architecture(grid)

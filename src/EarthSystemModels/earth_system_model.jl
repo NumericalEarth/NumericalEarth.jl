@@ -278,13 +278,37 @@ but no sea ice. All keyword arguments are forwarded to `EarthSystemModel`.
 AtmosphereOceanModel(atmosphere, ocean; land=nothing, radiation=nothing, kw...) =
     EarthSystemModel(radiation, atmosphere, land, nothing, ocean; kw...)
 
+"""
+    AtmosphereLandModel(atmosphere, land; radiation=nothing, kw...)
+
+Construct a coupled atmosphere--land model.
+Convenience constructor for [`EarthSystemModel`](@ref) with an atmosphere and
+land but no ocean or sea ice. All keyword arguments are forwarded to
+`EarthSystemModel`.
+
+The atmosphere--land turbulent fluxes are computed via
+`SimilarityTheoryFluxes` using land-side roughness and a β-reduced surface
+specific humidity (`mavail · q_sat(T_g)`).
+"""
+AtmosphereLandModel(atmosphere, land; radiation=nothing, kw...) =
+    EarthSystemModel(radiation, atmosphere, land, nothing, nothing; kw...)
+
 time(coupled_model::EarthSystemModel) = coupled_model.clock.time
 
 # Check for NaNs in the first prognostic field (generalizes to prescribed velocities).
 function default_nan_checker(model::EarthSystemModel)
+    if isnothing(model.ocean)
+        # Fall back to the land surface temperature when there is no ocean.
+        # If neither ocean nor land is present, return no NaN checker.
+        if isnothing(model.land)
+            return nothing
+        end
+        T_land = model.land.temperature
+        return NaNChecker((; T_land))
+    end
+
     T_ocean = ocean_temperature(model.ocean)
-    nan_checker = NaNChecker((; T_ocean))
-    return nan_checker
+    return NaNChecker((; T_ocean))
 end
 
 @kernel function _above_freezing_ocean_temperature!(T, grid, S, ℵ, liquidus)

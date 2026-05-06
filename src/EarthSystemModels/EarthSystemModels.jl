@@ -5,6 +5,8 @@ export
     OceanOnlyModel,
     OceanSeaIceModel,
     AtmosphereOceanModel,
+    AtmosphereLandModel,
+    BetaSurfaceSpecificHumidity,
     SimilarityTheoryFluxes,
     CoefficientBasedFluxes,
     FreezingLimitedOceanTemperature,
@@ -76,11 +78,13 @@ using .InterfaceComputations: ComponentInterfaces, AtmosphereInterface, SeaIceOc
 const NoSeaIceInterface = ComponentInterfaces{<:AtmosphereInterface,  <:Nothing, <:Nothing}
 const NoOceanInterface  = ComponentInterfaces{<:Nothing, <:AtmosphereInterface,  <:Nothing}
 const NoAtmosInterface  = ComponentInterfaces{<:Nothing, <:Nothing, <:SeaIceOceanInterface}
-const NoInterface       = ComponentInterfaces{<:Nothing, <:Nothing, <:Nothing}
+const NoLandInterface   = ComponentInterfaces{<:Any, <:Any, <:Any, <:Nothing}
+const NoInterface       = ComponentInterfaces{<:Nothing, <:Nothing, <:Nothing, <:Nothing}
 
 const NoSeaIceInterfaceModel = EarthSystemModel{R, A, L, I, O, <:NoSeaIceInterface} where {R, A, L, I, O}
 const NoAtmosInterfaceModel  = EarthSystemModel{R, A, L, I, O, <:NoAtmosInterface}  where {R, A, L, I, O}
 const NoOceanInterfaceModel  = EarthSystemModel{R, A, L, I, O, <:NoOceanInterface}  where {R, A, L, I, O}
+const NoLandInterfaceModel   = EarthSystemModel{R, A, L, I, O, <:NoLandInterface}   where {R, A, L, I, O}
 const NoInterfaceModel       = EarthSystemModel{R, A, L, I, O, <:NoInterface}       where {R, A, L, I, O}
 
 InterfaceComputations.compute_atmosphere_sea_ice_fluxes!(::NoSeaIceInterfaceModel) = nothing
@@ -88,12 +92,16 @@ InterfaceComputations.compute_sea_ice_ocean_fluxes!(::NoSeaIceInterfaceModel) = 
 
 InterfaceComputations.compute_atmosphere_ocean_fluxes!(::NoAtmosInterfaceModel) = nothing
 InterfaceComputations.compute_atmosphere_sea_ice_fluxes!(::NoAtmosInterfaceModel) = nothing
+InterfaceComputations.compute_atmosphere_land_fluxes!(::NoAtmosInterfaceModel)   = nothing
 
 InterfaceComputations.compute_atmosphere_ocean_fluxes!(::NoOceanInterfaceModel) = nothing
 InterfaceComputations.compute_sea_ice_ocean_fluxes!(::NoOceanInterfaceModel) = nothing
 
+InterfaceComputations.compute_atmosphere_land_fluxes!(::NoLandInterfaceModel) = nothing
+
 InterfaceComputations.compute_atmosphere_ocean_fluxes!(::NoInterfaceModel) = nothing
 InterfaceComputations.compute_atmosphere_sea_ice_fluxes!(::NoInterfaceModel) = nothing
+InterfaceComputations.compute_atmosphere_land_fluxes!(::NoInterfaceModel)   = nothing
 InterfaceComputations.compute_sea_ice_ocean_fluxes!(::NoInterfaceModel) = nothing
 
 end # module

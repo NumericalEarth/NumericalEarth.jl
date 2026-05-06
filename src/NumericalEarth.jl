@@ -12,6 +12,8 @@ export
     OceanOnlyModel,
     OceanSeaIceModel,
     AtmosphereOceanModel,
+    AtmosphereLandModel,
+    BetaSurfaceSpecificHumidity,
     SlabOcean,
     default_sea_ice,
     FreezingLimitedOceanTemperature,
