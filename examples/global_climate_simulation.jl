@@ -85,7 +85,7 @@ atmosphere.model.initial_conditions
 
 # We use a three hour time-step (10800 seconds):
 
-atmosphere.model.output.output_dt = Second(10800)
+set!(atmosphere.model.output, atmosphere.model, output_dt = Second(10800))
 nothing #hide
 
 # ## The coupled model
