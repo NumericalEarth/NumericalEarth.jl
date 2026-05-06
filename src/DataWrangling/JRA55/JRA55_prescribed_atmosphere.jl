@@ -15,10 +15,14 @@ JRA55PrescribedAtmosphere(arch::Distributed; kw...) =
                               region = nothing,
                               other_kw...)
 
-Return a [`PrescribedAtmosphere`](@ref) representing JRA55 reanalysis data. Each atmospheric field is constructed via 
-`FieldTimeSeries(::JRA55Metadata)`, which uses a `DatasetBackend` parameterised by JRA55 metadata so that the JRA55-specific 
+Return a [`PrescribedAtmosphere`](@ref) representing JRA55 reanalysis data. Each atmospheric field is constructed via
+`FieldTimeSeries(::JRA55Metadata)`, which uses a `DatasetBackend` parameterised by JRA55 metadata so that the JRA55-specific
 `set!` (chunked-yearly NetCDF) is dispatched.
 The `region` keyword restricts the atmosphere to a sub-domain of the global JRA55 grid.
+
+Note: downwelling shortwave / longwave radiation is now part of the
+top-level `radiation` component. Use [`JRA55PrescribedRadiation`](@ref) to
+load JRA55 SW/LW into a `PrescribedRadiation`.
 """
 function JRA55PrescribedAtmosphere(architecture = CPU();
                                    dataset = RepeatYearJRA55(),
@@ -36,15 +40,13 @@ function JRA55PrescribedAtmosphere(architecture = CPU();
 
     JRA55FieldTimeSeries(name) = FieldTimeSeries(Metadata(name; dataset, start_date, end_date, dir, region), architecture; kw...)
 
-    ua   = JRA55FieldTimeSeries(:eastward_velocity)
-    va   = JRA55FieldTimeSeries(:northward_velocity)
-    Ta   = JRA55FieldTimeSeries(:temperature)
-    qa   = JRA55FieldTimeSeries(:specific_humidity)
-    pa   = JRA55FieldTimeSeries(:sea_level_pressure)
-    Fra  = JRA55FieldTimeSeries(:rain_freshwater_flux)
-    Fsn  = JRA55FieldTimeSeries(:snow_freshwater_flux)
-    ℐꜜˡʷ = JRA55FieldTimeSeries(:downwelling_longwave_radiation)
-    ℐꜜˢʷ = JRA55FieldTimeSeries(:downwelling_shortwave_radiation)
+    ua  = JRA55FieldTimeSeries(:eastward_velocity)
+    va  = JRA55FieldTimeSeries(:northward_velocity)
+    Ta  = JRA55FieldTimeSeries(:temperature)
+    qa  = JRA55FieldTimeSeries(:specific_humidity)
+    pa  = JRA55FieldTimeSeries(:sea_level_pressure)
+    Fra = JRA55FieldTimeSeries(:rain_freshwater_flux)
+    Fsn = JRA55FieldTimeSeries(:snow_freshwater_flux)
 
     freshwater_flux = (rain = Fra,
                        snow = Fsn)
@@ -60,8 +62,6 @@ function JRA55PrescribedAtmosphere(architecture = CPU();
 
     pressure = pa
 
-    downwelling_radiation = TwoBandDownwellingRadiation(shortwave=ℐꜜˢʷ, longwave=ℐꜜˡʷ)
-
     FT = eltype(ua)
     surface_layer_height = convert(FT, surface_layer_height)
 
@@ -69,7 +69,6 @@ function JRA55PrescribedAtmosphere(architecture = CPU();
                                       velocities,
                                       freshwater_flux,
                                       tracers,
-                                      downwelling_radiation,
                                       surface_layer_height,
                                       pressure)
 

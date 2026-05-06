@@ -95,9 +95,13 @@ set!(sea_ice.model, h=ecco_sea_ice_thickness, ℵ=ecco_sea_ice_concentration)
 # ### Atmospheric forcing
 
 # We force the simulation with a JRA55-do atmospheric reanalysis.
-radiation  = Radiation(arch)
-atmosphere = JRA55PrescribedAtmosphere(arch; time_indices_in_memory = 80)
-land       = JRA55PrescribedLand(arch; time_indices_in_memory = 80)
+atmosphere = JRA55PrescribedAtmosphere(arch)
+# Use a latitude-dependent ocean albedo (Large & Yeager 2009); keep the
+# default ocean emissivity (0.97) and sea-ice surface (albedo 0.7,
+# emissivity 1.0).
+radiation  = JRA55PrescribedRadiation(arch;
+                                      ocean_surface = SurfaceRadiationProperties(albedo = LatitudeDependentAlbedo()))
+land       = JRA55PrescribedLand(arch)
 
 # ### Coupled simulation
 
@@ -106,7 +110,7 @@ land       = JRA55PrescribedLand(arch; time_indices_in_memory = 80)
 
 # With Runge-Kutta 3rd order time-stepping we can safely use a timestep of 20 minutes.
 
-coupled_model = OceanSeaIceModel(ocean, sea_ice; atmosphere, land, radiation)
+coupled_model = OceanSeaIceModel(sea_ice, ocean; atmosphere, land, radiation)
 simulation = Simulation(coupled_model; Δt=20minutes, stop_time=365days)
 
 # ### A progress messenger

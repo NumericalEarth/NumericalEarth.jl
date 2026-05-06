@@ -1,6 +1,6 @@
 using NumericalEarth.DataWrangling: DatasetBackend
 using Oceananigans.OutputReaders
-using NumericalEarth.Atmospheres: PrescribedAtmosphere, TwoBandDownwellingRadiation
+using NumericalEarth.Atmospheres: PrescribedAtmosphere
 
 """
     ECCOPrescribedAtmosphere([architecture = CPU(), FT = Float32];
@@ -19,7 +19,10 @@ The atmospheric data will be held in `FieldTimeSeries` objects containing
 - air temperature and humidity: T, q
 - surface pressure: p
 - freshwater flux: rain
-- downwelling radiation: ℐꜜˢʷ, ℐꜜˡʷ
+
+Note: downwelling shortwave / longwave radiation is now part of the
+top-level `radiation` component. Use [`ECCOPrescribedRadiation`](@ref) to
+load ECCO SW/LW into a `PrescribedRadiation`.
 """
 function ECCOPrescribedAtmosphere(architecture = CPU(), FT = Float32;
                                   dataset = ECCO4Monthly(),
@@ -36,15 +39,13 @@ function ECCOPrescribedAtmosphere(architecture = CPU(), FT = Float32;
 
     ECCOFieldTimeSeries(name) = FieldTimeSeries(Metadata(name; dataset, start_date, end_date, dir), architecture; kw...)
 
-    ua   = ECCOFieldTimeSeries(:eastward_wind)
-    va   = ECCOFieldTimeSeries(:northward_wind)
-    Ta   = ECCOFieldTimeSeries(:air_temperature)
-    qa   = ECCOFieldTimeSeries(:air_specific_humidity)
-    pa   = ECCOFieldTimeSeries(:sea_level_pressure)
-    ℐꜜˡʷ = ECCOFieldTimeSeries(:downwelling_longwave)
-    ℐꜜˢʷ = ECCOFieldTimeSeries(:downwelling_shortwave)
-    Fr   = ECCOFieldTimeSeries(:rain_freshwater_flux)
-    
+    ua = ECCOFieldTimeSeries(:eastward_wind)
+    va = ECCOFieldTimeSeries(:northward_wind)
+    Ta = ECCOFieldTimeSeries(:air_temperature)
+    qa = ECCOFieldTimeSeries(:air_specific_humidity)
+    pa = ECCOFieldTimeSeries(:sea_level_pressure)
+    Fr = ECCOFieldTimeSeries(:rain_freshwater_flux)
+
     freshwater_flux = (; rain = Fr)
 
     times = ua.times
@@ -54,8 +55,6 @@ function ECCOPrescribedAtmosphere(architecture = CPU(), FT = Float32;
     tracers = (T = Ta, q = qa)
     pressure = pa
 
-    downwelling_radiation = TwoBandDownwellingRadiation(shortwave=ℐꜜˢʷ, longwave=ℐꜜˡʷ)
-
     FT = eltype(ua)
     surface_layer_height = convert(FT, surface_layer_height)
 
@@ -63,7 +62,6 @@ function ECCOPrescribedAtmosphere(architecture = CPU(), FT = Float32;
                                       velocities,
                                       freshwater_flux,
                                       tracers,
-                                      downwelling_radiation,
                                       surface_layer_height,
                                       pressure)
 

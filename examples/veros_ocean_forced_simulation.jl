@@ -68,13 +68,12 @@ ocean.set_forcing = set_forcing_tke_only
 # This includes 2-meter wind velocity, temperature, humidity, downwelling longwave and shortwave
 # radiation, as well as freshwater fluxes.
 
-atmos = JRA55PrescribedAtmosphere(; time_indices_in_memory = 10)
+atmos = JRA55PrescribedAtmosphere()
+radiation = JRA55PrescribedRadiation()
 
-# The coupled ocean--atmosphere model.
-# We use the default radiation model and we do not couple an ice model for simplicity.
+# The coupled ocean--atmosphere model. We do not couple an ice model for simplicity.
 
-radiation = Radiation()
-coupled_model = OceanSeaIceModel(ocean, nothing; atmosphere=atmos, radiation)
+coupled_model = OceanSeaIceModel(nothing, ocean; atmosphere=atmos, radiation)
 simulation = Simulation(coupled_model; Δt = 1800, stop_time = 60days)
 
 # We set up a progress callback that will print the current time, iteration, and maximum velocities

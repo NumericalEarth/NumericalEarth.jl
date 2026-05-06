@@ -2,14 +2,13 @@
 ##### Prescribed atmosphere (as opposed to dynamically evolving / prognostic)
 #####
 
-mutable struct PrescribedAtmosphere{FT, G, T, U, P, C, F, R, TP, TI}
+mutable struct PrescribedAtmosphere{FT, G, T, U, P, C, F, TP, TI}
     grid :: G
     clock :: Clock{T}
     velocities :: U
     pressure :: P
     tracers :: C
     freshwater_flux :: F
-    downwelling_radiation :: R
     thermodynamics_parameters :: TP
     times :: TI
     surface_layer_height :: FT
@@ -41,12 +40,6 @@ function default_atmosphere_tracers(grid, times)
     qa = FieldTimeSeries{Center, Center, Nothing}(grid, times)
     parent(Ta) .= 273.15 + 20
     return (T=Ta, q=qa)
-end
-
-function default_downwelling_radiation(grid, times)
-    ℐꜜˡʷ = FieldTimeSeries{Center, Center, Nothing}(grid, times)
-    ℐꜜˢʷ = FieldTimeSeries{Center, Center, Nothing}(grid, times)
-    return TwoBandDownwellingRadiation(shortwave=ℐꜜˢʷ, longwave=ℐꜜˡʷ)
 end
 
 function default_freshwater_flux(grid, times)
@@ -93,27 +86,29 @@ update_net_fluxes!(coupled_model, ::PrescribedAtmosphere) = nothing
     PrescribedAtmosphere(grid, times=[zero(grid)];
                          clock = Clock{Float64}(time = 0),
                          surface_layer_height = 10, # meters
-                         boundary_layer_height = 512 # meters,
+                         boundary_layer_height = 512, # meters
                          thermodynamics_parameters = AtmosphereThermodynamicsParameters(eltype(grid)),
-                         velocities            = default_atmosphere_velocities(grid, times),
-                         tracers               = default_atmosphere_tracers(grid, times),
-                         pressure              = default_atmosphere_pressure(grid, times),
-                         freshwater_flux       = default_freshwater_flux(grid, times),
-                         downwelling_radiation = default_downwelling_radiation(grid, times))
+                         velocities      = default_atmosphere_velocities(grid, times),
+                         tracers         = default_atmosphere_tracers(grid, times),
+                         pressure        = default_atmosphere_pressure(grid, times),
+                         freshwater_flux = default_freshwater_flux(grid, times))
 
 Return a representation of a prescribed time-evolving atmospheric
 state with data given at `times`.
+
+Note: downwelling shortwave / longwave radiation is now part of the
+top-level `radiation` component (see `PrescribedRadiation`,
+`JRA55PrescribedRadiation`).
 """
 function PrescribedAtmosphere(grid, times=[zero(grid)];
                               clock = Clock{Float64}(time = 0),
                               surface_layer_height = 10,
                               boundary_layer_height = 512,
                               thermodynamics_parameters = AtmosphereThermodynamicsParameters(eltype(grid)),
-                              velocities            = default_atmosphere_velocities(grid, times),
-                              tracers               = default_atmosphere_tracers(grid, times),
-                              pressure              = default_atmosphere_pressure(grid, times),
-                              freshwater_flux       = default_freshwater_flux(grid, times),
-                              downwelling_radiation = default_downwelling_radiation(grid, times))
+                              velocities      = default_atmosphere_velocities(grid, times),
+                              tracers         = default_atmosphere_tracers(grid, times),
+                              pressure        = default_atmosphere_pressure(grid, times),
+                              freshwater_flux = default_freshwater_flux(grid, times))
 
     FT = eltype(grid)
     if isnothing(thermodynamics_parameters)
@@ -126,7 +121,6 @@ function PrescribedAtmosphere(grid, times=[zero(grid)];
                                       pressure,
                                       tracers,
                                       freshwater_flux,
-                                      downwelling_radiation,
                                       thermodynamics_parameters,
                                       times,
                                       convert(FT, surface_layer_height),
@@ -136,36 +130,17 @@ function PrescribedAtmosphere(grid, times=[zero(grid)];
     return atmosphere
 end
 
-struct TwoBandDownwellingRadiation{SW, LW}
-    shortwave :: SW
-    longwave :: LW
-end
-
-"""
-    TwoBandDownwellingRadiation(shortwave=nothing, longwave=nothing)
-
-Return a two-band model for downwelling radiation (split into a shortwave band
-and a longwave band) that passes through the atmosphere and arrives at the surface of ocean
-or sea ice.
-"""
-TwoBandDownwellingRadiation(; shortwave=nothing, longwave=nothing) =
-    TwoBandDownwellingRadiation(shortwave, longwave)
-
-Adapt.adapt_structure(to, tsdr::TwoBandDownwellingRadiation) =
-    TwoBandDownwellingRadiation(adapt(to, tsdr.shortwave),
-                                adapt(to, tsdr.longwave))
-
 #####
 ##### Chekpointing
 #####
 
 import Oceananigans: prognostic_state, restore_prognostic_state!
 
-function prognostic_state(atmos::PrescribedAtmosphere) 
+function prognostic_state(atmos::PrescribedAtmosphere)
     return (; clock = prognostic_state(atmos.clock))
 end
 
-function restore_prognostic_state!(atmos::PrescribedAtmosphere, state) 
+function restore_prognostic_state!(atmos::PrescribedAtmosphere, state)
     restore_prognostic_state!(atmos.clock, state.clock)
     update_state!(atmos)
     return atmos

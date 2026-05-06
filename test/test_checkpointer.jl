@@ -29,8 +29,9 @@ using Oceananigans.OutputWriters: Checkpointer
             # Create atmosphere, land, and radiation
             atmosphere = JRA55PrescribedAtmosphere(arch; time_indices_in_memory=4)
             land = JRA55PrescribedLand(arch; time_indices_in_memory=4)
+            radiation = JRA55PrescribedRadiation(arch; time_indices_in_memory=4)
 
-            return OceanSeaIceModel(ocean, sea_ice; atmosphere, land)
+            return OceanSeaIceModel(sea_ice, ocean; atmosphere, land, radiation)
         end
 
         # Reference run: 3 iterations, then continue to 6

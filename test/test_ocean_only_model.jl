@@ -18,7 +18,7 @@ using Oceananigans.OrthogonalSphericalShellGrids
         pushdata(sim) = push!(data, iteration(sim))
         add_callback!(ocean, pushdata)
         atmosphere = JRA55PrescribedAtmosphere(arch; time_indices_in_memory=4)
-        radiation = Radiation(arch)
+        radiation = JRA55PrescribedRadiation(arch; time_indices_in_memory=4)
         coupled_model = OceanOnlyModel(ocean; atmosphere, radiation)
         Δt = 60
         for n = 1:3
@@ -48,7 +48,7 @@ using Oceananigans.OrthogonalSphericalShellGrids
         ocean = ocean_simulation(grid; free_surface)
 
         atmosphere = JRA55PrescribedAtmosphere(arch; time_indices_in_memory=4)
-        radiation = Radiation(arch)
+        radiation = JRA55PrescribedRadiation(arch; time_indices_in_memory=4)
 
         # Fluxes are computed when the model is constructed, so we just test that this works.
         @test begin
