@@ -3,7 +3,7 @@ using Oceananigans.OutputReaders
 using NumericalEarth.Atmospheres: PrescribedAtmosphere
 
 """
-    ECCOPrescribedAtmosphere([architecture = CPU(), FT = Float32];
+    ECCOPrescribedAtmosphere([architecture = CPU()];
                               dataset = ECCO4Monthly(),
                               start_date = first_date(dataset, :air_temperature),
                               end_date = last_date(dataset, :air_temperature),
@@ -24,7 +24,7 @@ Note: downwelling shortwave / longwave radiation is now part of the
 top-level `radiation` component. Use [`ECCOPrescribedRadiation`](@ref) to
 load ECCO SW/LW into a `PrescribedRadiation`.
 """
-function ECCOPrescribedAtmosphere(architecture = CPU(), FT = Float32;
+function ECCOPrescribedAtmosphere(architecture = CPU();
                                   dataset = ECCO4Monthly(),
                                   start_date = first_date(dataset, :air_temperature),
                                   end_date = last_date(dataset, :air_temperature),
@@ -37,14 +37,19 @@ function ECCOPrescribedAtmosphere(architecture = CPU(), FT = Float32;
     kw = (; time_indexing, time_indices_in_memory)
     kw = merge(kw, other_kw)
 
-    ECCOFieldTimeSeries(name) = FieldTimeSeries(Metadata(name; dataset, start_date, end_date, dir), architecture; kw...)
+    ua_meta = Metadata(:eastward_wind;         dataset, start_date, end_date, dir)
+    va_meta = Metadata(:northward_wind;        dataset, start_date, end_date, dir)
+    Ta_meta = Metadata(:air_temperature;       dataset, start_date, end_date, dir)
+    qa_meta = Metadata(:air_specific_humidity; dataset, start_date, end_date, dir)
+    pa_meta = Metadata(:sea_level_pressure;    dataset, start_date, end_date, dir)
+    Fr_meta = Metadata(:rain_freshwater_flux;  dataset, start_date, end_date, dir)
 
-    ua = ECCOFieldTimeSeries(:eastward_wind)
-    va = ECCOFieldTimeSeries(:northward_wind)
-    Ta = ECCOFieldTimeSeries(:air_temperature)
-    qa = ECCOFieldTimeSeries(:air_specific_humidity)
-    pa = ECCOFieldTimeSeries(:sea_level_pressure)
-    Fr = ECCOFieldTimeSeries(:rain_freshwater_flux)
+    ua = FieldTimeSeries(ua_meta, architecture; kw...)
+    va = FieldTimeSeries(va_meta, architecture; kw...)
+    Ta = FieldTimeSeries(Ta_meta, architecture; kw...)
+    qa = FieldTimeSeries(qa_meta, architecture; kw...)
+    pa = FieldTimeSeries(pa_meta, architecture; kw...)
+    Fr = FieldTimeSeries(Fr_meta, architecture; kw...)
 
     freshwater_flux = (; rain = Fr)
 

@@ -36,10 +36,11 @@ function JRA55PrescribedRadiation(architecture = CPU();
     kw = (; time_indexing, time_indices_in_memory)
     kw = merge(kw, other_kw)
 
-    JRA55FieldTimeSeries(name) = FieldTimeSeries(Metadata(name; dataset, start_date, end_date, dir, region), architecture; kw...)
+    ℐꜜˢʷ_meta = Metadata(:downwelling_shortwave_radiation; dataset, start_date, end_date, dir, region)
+    ℐꜜˡʷ_meta = Metadata(:downwelling_longwave_radiation;  dataset, start_date, end_date, dir, region)
 
-    ℐꜜˢʷ = JRA55FieldTimeSeries(:downwelling_shortwave_radiation)
-    ℐꜜˡʷ = JRA55FieldTimeSeries(:downwelling_longwave_radiation)
+    ℐꜜˢʷ = FieldTimeSeries(ℐꜜˢʷ_meta, architecture; kw...)
+    ℐꜜˡʷ = FieldTimeSeries(ℐꜜˡʷ_meta, architecture; kw...)
 
     return PrescribedRadiation(ℐꜜˢʷ, ℐꜜˡʷ;
                                ocean_surface,
