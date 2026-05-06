@@ -67,10 +67,9 @@ atmosphere = JRA55PrescribedAtmosphere(region   = Column(λ★, φ★),
                                        end_date = DateTime(1990, 1, 31), # Last day of the simulation
                                        time_indices_in_memory = 1000)
 
-radiation = JRA55PrescribedRadiation(longitude = λ★,
-                                     latitude = φ★,
+radiation = JRA55PrescribedRadiation(region   = Column(λ★, φ★),
                                      end_date = DateTime(1990, 1, 31),
-                                     backend  = InMemory())
+                                     time_indices_in_memory = 1000)
 
 # This builds a representation of the atmosphere on the small grid
 

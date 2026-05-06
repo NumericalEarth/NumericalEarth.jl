@@ -30,14 +30,13 @@ XESMF = "2e0b0046-e7a1-486f-88de-807ee8ffabe5"
 
 [sources]
 NumericalEarth = {path = ".."}
-Breeze = {url = "https://github.com/NumericalEarth/Breeze.jl/", rev = "main"}
 
 [compat]
 ArchGDAL = "0.10"
 Breeze = "0.4"
 CDSAPI = "2.2.2"
 CFTime = "0.1, 0.2"
-CUDA = "5.9.5"
+CUDA = "5.9, ~6.0"
 ClimaSeaIce = "0.4.4, 0.5"
 CondaPkg = "0.2.33"
 CopernicusMarine = "0.1.1"
@@ -50,7 +49,7 @@ MPI = "0.20"
 NCDatasets = "0.12, 0.13, 0.14"
 Oceananigans = "0.107, 0.108"
 PythonCall = "0.9.28"
-Reactant = "0.2.235"
+Reactant = "0.2.235 - 0.2.255"
 Scratch = "1"
 SeawaterPolynomials = "0.3.5"
 SpeedyWeather = "0.19"

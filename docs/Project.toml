@@ -22,7 +22,6 @@ Suppressor = "fd094767-a336-5f1f-9728-57cf17d0bbfb"
 XESMF = "2e0b0046-e7a1-486f-88de-807ee8ffabe5"
 
 [sources]
-Breeze = {rev = "main", url = "https://github.com/NumericalEarth/Breeze.jl/"}
 NumericalEarth = {path = ".."}
 
 [compat]
