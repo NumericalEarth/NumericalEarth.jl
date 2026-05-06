@@ -26,7 +26,8 @@
 #####   - prognostic frozen soil moisture `θ_ice` with phase-change at 273.15 K
 #####     (latent heat of fusion absorbed/released into the slab heat budget)
 ##### Resistances:
-#####   - bare-soil moisture-availability factor β (Mahfouf-Noilhan 1991)
+#####   - RUC top-layer moisture availability `mavail`
+#####   - RUC bare-soil evaporation limiter `soilres`
 #####   - bare-soil resistance r_g (Sellers et al. 1992 form)
 #####   - Jarvis-Stewart canopy resistance r_s (Jarvis 1976; Stewart 1988)
 ##### Surface energy balance solver:
@@ -86,18 +87,21 @@ const L_fusion_const = 3.337e5 # J kg⁻¹, latent heat of fusion of water
 """
     RucSlabLandParameters(FT = Float64; kwargs...)
 
-Tunable scalar parameters of `RucSlabLand`. Defaults reproduce the RUC LSM
-configuration of Smirnova et al. (1997, 2016) for the snow surface and the
-ISBA / Noilhan-Planton (1989) configuration for the vegetation/soil bucket.
+Tunable scalar parameters of `RucSlabLand`. Defaults reproduce the
+slab-compatible RUC LSM configuration of Smirnova et al. (1997, 2016) for
+snow, canopy interception, and top-layer moisture availability, while retaining
+the existing single-bucket soil-moisture state.
 
 # Heat reservoir (ground)
 - `depth = 0.10`           : ground slab thickness `H_g` [m]
 - `density = 1500`         : soil bulk density `ρ_g` [kg m⁻³]
 - `heat_capacity = 1480`   : soil specific heat `c_g` [J kg⁻¹ K⁻¹]
 
-# Canopy heat reservoir (Deardorff 1978)
+# Canopy reservoir
 - `canopy_heat_capacity = 1.0e4`   : effective canopy areal heat capacity
    `(ρ c H)_c` [J m⁻² K⁻¹]
+- `canopy_water_capacity = 5.0e-4` : RUC fixed maximum intercepted canopy
+   water `sat` [m]
 
 # Soil-moisture bucket (Manabe 1969 / ISBA Noilhan-Planton 1989)
 - `soil_depth = 1.0`             : root-zone bucket depth `H_s` [m]
@@ -136,9 +140,14 @@ ISBA / Noilhan-Planton (1989) configuration for the vegetation/soil bucket.
    [s] (≈ 30 days; Robinson-Kukla 1985 magnitude)
 - `snow_aging_tau_warm = 8.6e4`   : aging timescale at warm T [s] (≈ 1 day)
 
-# Snow liquid water retention
-- `snow_liquid_capacity_frac = 0.04` : max liquid/SWE ratio in the pack
-   (RUC default)
+# Snow melt and liquid water retention
+- `snow_liquid_capacity_frac = 0.04` : cap used when draining carried-over
+   slab liquid water `swl` before new melt is applied
+- `meltfactor = 2.0` : RUC open-area Egglston melt limiter multiplier
+- `snow_retention_min_frac = 0.08` : RUC lower bound for retained melt fraction
+- `snow_retention_max_frac = 0.18` : RUC upper bound for retained melt fraction
+- `snow_retention_depth_scale = 0.10` : RUC depth scale for retained melt [m]
+- `snow_retention_depth_factor = 0.13` : RUC Koren retained-melt factor
 
 # Phase change
 - `latent_heat_fusion = 3.337e5`  : J kg⁻¹
@@ -159,6 +168,7 @@ struct RucSlabLandParameters{FT}
     heat_capacity :: FT
     # Canopy slab
     canopy_heat_capacity :: FT
+    canopy_water_capacity :: FT
     # Soil-moisture bucket
     soil_depth :: FT
     theta_sat :: FT
@@ -190,6 +200,11 @@ struct RucSlabLandParameters{FT}
     snow_aging_tau_cold :: FT
     snow_aging_tau_warm :: FT
     snow_liquid_capacity_frac :: FT
+    meltfactor :: FT
+    snow_retention_min_frac :: FT
+    snow_retention_max_frac :: FT
+    snow_retention_depth_scale :: FT
+    snow_retention_depth_factor :: FT
     latent_heat_fusion :: FT
     # Resistances
     r_smin :: FT
@@ -206,6 +221,7 @@ function RucSlabLandParameters(FT::Type = Float64;
                             density = 1500,
                             heat_capacity = 1480,
                             canopy_heat_capacity = 1.0e4,
+                            canopy_water_capacity = 5.0e-4,
                             soil_depth = 1.0,
                             theta_sat = 0.45,
                             theta_fc = 0.30,
@@ -232,6 +248,11 @@ function RucSlabLandParameters(FT::Type = Float64;
                             snow_aging_tau_cold = 2.5e6,
                             snow_aging_tau_warm = 8.6e4,
                             snow_liquid_capacity_frac = 0.04,
+                            meltfactor = 2.0,
+                            snow_retention_min_frac = 0.08,
+                            snow_retention_max_frac = 0.18,
+                            snow_retention_depth_scale = 0.10,
+                            snow_retention_depth_factor = 0.13,
                             latent_heat_fusion = 3.337e5,
                             r_smin = 100.0,
                             r_smax = 5000.0,
@@ -246,6 +267,7 @@ function RucSlabLandParameters(FT::Type = Float64;
         convert(FT, density),
         convert(FT, heat_capacity),
         convert(FT, canopy_heat_capacity),
+        convert(FT, canopy_water_capacity),
         convert(FT, soil_depth),
         convert(FT, theta_sat),
         convert(FT, theta_fc),
@@ -272,6 +294,11 @@ function RucSlabLandParameters(FT::Type = Float64;
         convert(FT, snow_aging_tau_cold),
         convert(FT, snow_aging_tau_warm),
         convert(FT, snow_liquid_capacity_frac),
+        convert(FT, meltfactor),
+        convert(FT, snow_retention_min_frac),
+        convert(FT, snow_retention_max_frac),
+        convert(FT, snow_retention_depth_scale),
+        convert(FT, snow_retention_depth_factor),
         convert(FT, latent_heat_fusion),
         convert(FT, r_smin),
         convert(FT, r_smax),
@@ -390,6 +417,7 @@ function RucSlabLand(grid;
                   lai             = CenterField(grid),
                   canopy_capacity = CenterField(grid),
                   mavail          = CenterField(grid),
+                  soilres         = CenterField(grid),
                   r_s             = CenterField(grid),
                   r_g             = CenterField(grid),
                   albedo_veg      = CenterField(grid),
@@ -398,6 +426,7 @@ function RucSlabLand(grid;
                   r_smin          = CenterField(grid))
     fill!(vegetation.r_s,            parameters.r_smin)
     fill!(vegetation.r_g,            parameters.r_gmin)
+    fill!(vegetation.soilres,        1)
     fill!(vegetation.albedo_veg,     parameters.alb_veg)
     fill!(vegetation.emissivity_veg, parameters.emiss_veg)
     fill!(vegetation.z0_veg,         parameters.z0_veg)
@@ -553,33 +582,67 @@ end
     end
 end
 
-# Snow melt when `T_g > 273.15 K`. The slab heat surplus
-# `(ρcH)_g · (T_g − 273.15)` is converted to melt mass at L_f, capped by
-# available SWE; melted mass is moved to the liquid retention `swl`. The
-# slab cools by exactly the latent heat consumed, so the energy balance
-# is closed locally (no double-debit against `temperature_flux`).
-@kernel function _melt_snow!(snwe, snhei, swl, T,
-                             rhosn, ρcH_ground, L_f, ρ_w, ρ_min)
+# Snow melt when `T_g > 273.15 K`. The slab heat surplus is converted to
+# potential melt, limited by the RUC Egglston cap for low-density/cold packs,
+# then split into retained liquid `swl` and overflow following the RUC
+# Koren-style retained-melt fraction. The slab cools by exactly the latent
+# heat consumed, so the energy balance is closed locally.
+@kernel function _melt_snow!(snwe, snhei, swl, swl_overflow, T,
+                             rhosn, newsn, rhonewsn,
+                             ρcH_ground, L_f, ρ_w, ρ_min, ρ_max,
+                             Δt, meltfactor,
+                             rsm_min_frac, rsm_max_frac,
+                             rsm_depth_scale, rsm_depth_factor)
     i, j = @index(Global, NTuple)
     @inbounds begin
         FT = eltype(snwe)
         if snwe[i, j, 1] > zero(FT) && T[i, j, 1] > FT(273.15)
+            snwepr = snwe[i, j, 1]
+            ρ_sn = max(rhosn[i, j, 1], ρ_min)
             Δenergy = ρcH_ground * (T[i, j, 1] - FT(273.15))   # J m⁻²
             Δmass_max = Δenergy / L_f                          # kg m⁻²
             Δswe_max  = Δmass_max / ρ_w                        # m LWE
-            Δswe = min(Δswe_max, snwe[i, j, 1])
-            snwe[i, j, 1]  -= Δswe
-            swl[i, j, 1]   += Δswe
+
+            smelt = Δswe_max / FT(Δt)
+            if (ρ_sn < FT(350) ||
+                (newsn[i, j, 1] > zero(FT) && rhonewsn[i, j, 1] < FT(450))) &&
+               T[i, j, 1] < FT(283)
+                smelt_cap = FT(Δt) / FT(60) * FT(5.6e-8) *
+                            meltfactor * max(one(FT), T[i, j, 1] - FT(273.15))
+                smelt = min(smelt, smelt_cap)
+            end
+
+            Δswe = min(smelt * FT(Δt), snwepr)
+            rsmfrac = zero(FT)
+            if snhei[i, j, 1] > FT(0.01) && ρ_sn < FT(350)
+                rsmfrac = min(rsm_max_frac,
+                              max(rsm_min_frac,
+                                  snwepr / rsm_depth_scale * rsm_depth_factor))
+            end
+
+            retained = rsmfrac * Δswe
+            overflow = Δswe - retained
+
+            snwe[i, j, 1] = max(zero(FT), snwepr - Δswe)
+            swl[i, j, 1] += retained
+            swl_overflow[i, j, 1] += overflow
             T[i, j, 1]     -= Δswe * ρ_w * L_f / ρcH_ground
-            snhei[i, j, 1]  = snwe[i, j, 1] * FT(1000) /
-                              max(rhosn[i, j, 1], ρ_min)
+
+            if retained > zero(FT) && snwe[i, j, 1] + retained > zero(FT)
+                xsn = (ρ_sn * snwe[i, j, 1] + ρ_w * retained) /
+                      (snwe[i, j, 1] + retained)
+                rhosn[i, j, 1] = clamp(xsn, ρ_min, ρ_max)
+            end
+
+            snhei[i, j, 1] = (snwe[i, j, 1] + swl[i, j, 1]) * ρ_w /
+                             max(rhosn[i, j, 1], ρ_min)
         end
     end
 end
 
-# Drain liquid water in the pack to the soil bucket once it exceeds the
-# retention capacity (RUC default 4% of SWE). The overflow is stored in
-# `swl_overflow` (scratch) for `_step_soil_moisture!` to consume.
+# Drain carried-over liquid water in the slab pack to the soil bucket once it
+# exceeds the configured capacity. Current-step RUC melt retention/overflow is
+# computed in `_melt_snow!`; this pass only handles liquid already in `swl`.
 @kernel function _drain_swl!(swl, snwe, swl_overflow, retention_frac)
     i, j = @index(Global, NTuple)
     @inbounds begin
@@ -688,22 +751,21 @@ end
 ##### Canopy water balance — RUC subset D, lines 105–127.
 #####
 
-# Canopy water-storage capacity: 0.2 mm per unit LAI per unit
-# vegetation cover (Sellers et al. 1986; Rutter et al. 1971 magnitudes).
-# Returned in metres of liquid-water equivalent.
-@inline canopy_capacity(lai, vegfrac) = typeof(lai)(2e-4) * lai * vegfrac
+# RUC LSM passes a fixed canopy-water saturation `sat = 5.e-4 m` into
+# the interception routine.
+@inline canopy_capacity(::FT, ::FT, capacity::FT) where FT = capacity
 
 @kernel function _intercept_precip!(cst, drip, interw, intersn,
                                     infwater, intwratio,
                                     canopy_cap, vegfrac, lai,
                                     rainfall_rate, snowfall_rate,
-                                    swe_inflow, Δt)
+                                    swe_inflow, Δt, canopy_water_capacity)
     i, j = @index(Global, NTuple)
     @inbounds begin
         FT = eltype(cst)
         vf = vegfrac[i, j, 1]
         L  = lai[i, j, 1]
-        sat = canopy_capacity(L, vf)
+        sat = canopy_capacity(L, vf, FT(canopy_water_capacity))
         canopy_cap[i, j, 1] = sat
 
         Δrain = max(zero(FT), rainfall_rate[i, j, 1] * FT(Δt))
@@ -824,20 +886,25 @@ end
 end
 
 #####
-##### Soil moisture, freeze/thaw, β-factor, Jarvis r_s, bare-soil r_g
+##### Soil moisture, freeze/thaw, RUC `mavail`/`soilres`, Jarvis r_s, bare-soil r_g
 #####
 
-# Mahfouf and Noilhan (1991): cosine-squared moisture-availability factor.
-@inline function bare_soil_beta(θ, θ_wilt, θ_fc)
+@inline function ruc_mavail(θ, snowfrac, θ_air_dry, θ_fc)
     FT = typeof(θ)
-    if θ ≥ θ_fc
+    ref = max(θ_fc - θ_air_dry, eps(FT))
+    residual = max(zero(FT), θ - θ_air_dry)
+    return clamp(residual / ref * (one(FT) - snowfrac) + snowfrac,
+                 FT(1e-5), one(FT))
+end
+
+@inline function ruc_soilres(θ, qa, qg, θ_air_dry, θ_fc)
+    FT = typeof(θ)
+    fc = max(θ_air_dry, FT(0.5) * θ_fc)
+    if θ > fc || qa > qg
         return one(FT)
-    elseif θ ≤ θ_wilt
-        return zero(FT)
     else
-        x = (θ - θ_wilt) / (θ_fc - θ_wilt)
-        c = FT(0.25) * (one(FT) - cos(FT(π) * x))
-        return c * c
+        fex_fc = clamp(θ / fc, FT(0.01), one(FT))
+        return FT(0.25) * (one(FT) - cos(FT(π) * fex_fc))^2
     end
 end
 
@@ -893,21 +960,27 @@ end
     return clamp(rg, r_gmin, r_gmax)
 end
 
-@kernel function _update_mavail_rs_rg!(mavail, r_s, r_g,
-                                       soil_moisture, vegfrac, lai,
+@kernel function _update_mavail_rs_rg!(mavail, soilres, r_s, r_g,
+                                       soil_moisture, snowfrac,
+                                       T, p_surf, vegfrac, lai,
                                        rg_irr, qa, Ta,
                                        r_smin_field,
-                                       θ_wilt, θ_fc, θ_sat,
+                                       θ_wilt, θ_fc, θ_air_dry, θ_sat,
                                        r_smax, r_gmin, r_gmax,
                                        rg_lim, vpd_lim, T_opt)
     i, j = @index(Global, NTuple)
     @inbounds begin
         FT = eltype(mavail)
         θ  = soil_moisture[i, j, 1]
-        β  = bare_soil_beta(θ, θ_wilt, θ_fc)
+        f_sn = snowfrac[i, j, 1]
+        m  = ruc_mavail(θ, f_sn, θ_air_dry, θ_fc)
+        ps = p_surf[i, j, 1] > one(FT) ? p_surf[i, j, 1] : FT(1013.25)
+        qg = qsat_buck(T[i, j, 1], ps) * m
+        sr = ruc_soilres(θ, qa[i, j, 1], qg, θ_air_dry, θ_fc)
         vf = vegfrac[i, j, 1]
         L  = lai[i, j, 1]
-        mavail[i, j, 1] = (one(FT) - vf) * β + vf
+        mavail[i, j, 1]  = m
+        soilres[i, j, 1] = sr
         r_s[i, j, 1]    = jarvis_resistance(rg_irr[i, j, 1],
                                             qa[i, j, 1],
                                             Ta[i, j, 1],
@@ -924,7 +997,7 @@ end
 # is m of LWE released by snow retention overflow.
 @kernel function _step_soil_moisture!(soil_moisture, infwater, swl_overflow,
                                       F_v_total, transpiration,
-                                      vegfrac, mavail, snowfrac,
+                                      vegfrac, soilres, snowfrac,
                                       Δt, ρ_w, soil_depth,
                                       θ_sat, θ_air_dry)
     i, j = @index(Global, NTuple)
@@ -935,7 +1008,7 @@ end
 
         Δθ_in = (infwater[i, j, 1] + swl_overflow[i, j, 1]) / soil_depth
 
-        bare_share = snow_free * (one(FT) - vf) * mavail[i, j, 1]
+        bare_share = snow_free * (one(FT) - vf) * soilres[i, j, 1]
         E_g  = max(zero(FT), F_v_total[i, j, 1]) * bare_share
         E_t  = max(zero(FT), transpiration[i, j, 1])
         Δθ_out = (E_g + E_t) * FT(Δt) / (ρ_w * soil_depth)
@@ -1066,9 +1139,9 @@ end
 """
     update_state!(land::RucSlabLand)
 
-Refresh diagnostic fields (snow fraction, effective α/ε/z₀, β-factor,
-canopy resistance, bare-soil resistance) from the current prognostic
-state and forcings.
+Refresh diagnostic fields (snow fraction, effective α/ε/z₀, RUC `mavail`,
+RUC `soilres`, canopy resistance, bare-soil resistance) from the current
+prognostic state and forcings.
 """
 function Oceananigans.TimeSteppers.update_state!(land::RucSlabLand)
     grid  = land.grid
@@ -1095,11 +1168,13 @@ function Oceananigans.TimeSteppers.update_state!(land::RucSlabLand)
             p.z0_snow, p.z0_bare)
 
     launch!(arch, grid, :xy, _update_mavail_rs_rg!,
-            veg.mavail, veg.r_s, veg.r_g,
-            land.soil_moisture, veg.vegfrac, veg.lai,
+            veg.mavail, veg.soilres, veg.r_s, veg.r_g,
+            land.soil_moisture, snow.snowfrac,
+            land.temperature, forc.surface_pressure,
+            veg.vegfrac, veg.lai,
             forc.solar_irradiance, forc.air_humidity, forc.air_temperature,
             veg.r_smin,
-            p.theta_wilt, p.theta_fc, p.theta_sat,
+            p.theta_wilt, p.theta_fc, p.theta_air_dry, p.theta_sat,
             p.r_smax, p.r_gmin, p.r_gmax,
             p.rg_lim, p.vpd_lim, p.T_opt)
 
@@ -1115,10 +1190,10 @@ for the implicit alternative). Order:
   1. Ground-slab temperature: `T_g -= Jᵀ_g Δt / H_g`.
   2. Canopy-slab temperature: `T_c -= Jᵀ_c Δt / (ρcH)_c`.
   3. Sublimation drain on SWE (cold pack, `T_g ≤ 273.15 K`).
-  4. Snow melt (warm pack, `T_g > 273.15 K`) → liquid retention `swl`,
-     `T_g` cools by exactly the latent heat consumed.
-  5. Snow-liquid retention overflow → `swl_overflow` for soil
-     infiltration.
+  4. Drain carried-over liquid water above the slab `swl` capacity.
+  5. Snow melt (warm pack, `T_g > 273.15 K`) with the RUC melt cap and
+     retained-melt split → `swl` plus `swl_overflow`; `T_g` cools by exactly
+     the latent heat consumed.
   6. Compaction of the existing pack.
   7. Canopy interception → throughfall to soil (`infwater`) and
      snowpack (`swe_inflow`).
@@ -1128,10 +1203,11 @@ for the implicit alternative). Order:
  10. Continuous snow-albedo aging (decay toward `alb_snow_aged` with
      `T_g`-dependent timescale).
  11. Single-bucket soil-moisture update (gains: `infwater + swl_overflow`;
-     losses: bare-soil evap × `(1-snowfrac)` + transpiration).
+     losses: bare-soil evap × `(1-snowfrac)` × RUC `soilres` + transpiration).
  12. Soil freeze/thaw: split between `θ_liq` and `θ_ice` with phase-change
      latent heat absorbed/released by the ground slab.
- 13. Refresh diagnostics (`snowfrac`, `α/ε/z₀`, `mavail`, `r_s`, `r_g`).
+ 13. Refresh diagnostics (`snowfrac`, `α/ε/z₀`, `mavail`, `soilres`,
+     `r_s`, `r_g`).
 """
 function Oceananigans.TimeSteppers.time_step!(land::RucSlabLand, Δt)
     tick!(land.clock, Δt)
@@ -1163,15 +1239,21 @@ function Oceananigans.TimeSteppers.time_step!(land::RucSlabLand, Δt)
             snow.snwe, snow.snhei, forc.moisture_flux,
             snow.snowfrac, snow.rhosn, T, Δt, ρ_w, p.rhosn_min)
 
-    # 4 — Melt (warm pack)
-    launch!(arch, grid, :xy, _melt_snow!,
-            snow.snwe, snow.snhei, snow.swl, T,
-            snow.rhosn, ρcH_g, L_f, ρ_w, p.rhosn_min)
-
-    # 5 — Retention overflow → infiltration
+    # 4 — Drain retained liquid from previous steps above capacity.
     launch!(arch, grid, :xy, _drain_swl!,
             snow.swl, snow.snwe, snow.swl_overflow,
             p.snow_liquid_capacity_frac)
+
+    # 5 — Melt (warm pack), with RUC melt cap and retained-water split.
+    launch!(arch, grid, :xy, _melt_snow!,
+            snow.snwe, snow.snhei, snow.swl, snow.swl_overflow, T,
+            snow.rhosn, snow.newsn, snow.rhonewsn,
+            ρcH_g, L_f, ρ_w, p.rhosn_min, p.rhosn_max,
+            Δt, p.meltfactor,
+            p.snow_retention_min_frac,
+            p.snow_retention_max_frac,
+            p.snow_retention_depth_scale,
+            p.snow_retention_depth_factor)
 
     # 6 — Compaction
     launch!(arch, grid, :xy, _compact_snow!,
@@ -1185,7 +1267,7 @@ function Oceananigans.TimeSteppers.time_step!(land::RucSlabLand, Δt)
             canopy.infwater, canopy.intwratio,
             veg.canopy_capacity, veg.vegfrac, veg.lai,
             forc.rainfall_rate, forc.snowfall_rate,
-            snow.swe_inflow, Δt)
+            snow.swe_inflow, Δt, p.canopy_water_capacity)
 
     # 8 — Wet-canopy direct evaporation
     launch!(arch, grid, :xy, _evaporate_canopy!,
@@ -1211,7 +1293,7 @@ function Oceananigans.TimeSteppers.time_step!(land::RucSlabLand, Δt)
     launch!(arch, grid, :xy, _step_soil_moisture!,
             θ, canopy.infwater, snow.swl_overflow,
             forc.moisture_flux, forc.transpiration,
-            veg.vegfrac, veg.mavail, snow.snowfrac,
+            veg.vegfrac, veg.soilres, snow.snowfrac,
             Δt, ρ_w, p.soil_depth,
             p.theta_sat, p.theta_air_dry)
 
@@ -1297,6 +1379,7 @@ function ComponentExchanger(land::RucSlabLand, grid)
              emiss  = land.properties.emiss,
              znt    = land.properties.znt,
              mavail = land.vegetation.mavail,
+             soilres = land.vegetation.soilres,
              r_s    = land.vegetation.r_s,
              r_g    = land.vegetation.r_g)
     return ComponentExchanger(state, nothing)
