@@ -39,14 +39,40 @@ Environment variables (physics):
                 When set, overrides BIHARMONIC and uses ν directly instead of
                 the grid-area-scaled νhb = Az^2 / λ form.
   CB            CATKE buoyancy mixing length parameter Cᵇ (default: 0.28)
-  CLOSURE       Ocean vertical closure: "catke" (default), "simple", or "nori"
+  CLOSURE       Ocean vertical closure: "catke" (default), "simple", "nori", "rbvd", or "kpp"
                 ("simple" = ConvectiveAdjustment + depth-stepped background κ/ν;
                  "nori"   = NORi Richardson-number closure
                             (xkykai/NORiOceanParameterization.jl, vendored);
-                 both ignore CB)
+                 "rbvd"   = Oceananigans' built-in RiBasedVerticalDiffusivity
+                            (Richardson-number-based, with built-in κ-clip and
+                             time-averaging smoothing);
+                 "kpp"    = K-Profile Parameterization (Large 1994 / MITgcm,
+                            vendored in `KPP/`);
+                 all ignore CB)
   WIND_VELOCITY Set to "true" to use absolute wind (Δu = u_atm) in the bulk
                 formula instead of the OMIP-2 default relative wind
                 (Δu = u_atm − u_ocean). For isolating ACC-current feedback.
+  DZ_TOP        Target thickness of the top (surface) cell in meters. If set,
+                the ExponentialDiscretization scale is found by bisection so
+                that Δz of the surface level matches DZ_TOP within ~0.1%.
+                Must satisfy 0 < DZ_TOP < depth/Nz. Default: unset (scale=1300).
+
+Equatorial-MLD tuning knobs (closure parameters; configuration switches):
+  SHEAR_GUST    Use the shear-aware Mahrt–Sun (1995) / Edson (2013) gustiness
+                form (Uᴳ² = (β·w★)² + (c·|Δu|)² + Uᴳ₀², c=0.04 by default).
+                Activates the :shear_aware flux configuration. Implies the
+                :corrected fluxes (constant Charnock disabled, etc.).
+                Useful when the equatorial mixed layer is too shallow because
+                of weak convective gustiness — adds shear-driven gust at all
+                wind speeds.
+  MIN_SALINITY  Floor (psu) below which the freshening (salt-extracting)
+                component of the air-sea freshwater flux is suppressed.
+                Salt-concentrating fluxes (E > P + R) are always applied.
+                Prevents NaN blow-ups in pathologically thin top cells
+                under strong precip + runoff plumes. Default: 1.
+  CATKE_CWUSTAR `Cᵂu★` of CATKEEquation: surface shear-driven TKE flux
+                coefficient. Higher → more wind-injected TKE → deeper
+                equatorial ML. Default (Oceananigans): 3.179.
 
 Environment variables (I/O & runtime):
   BACKEND_SIZE  Number of JRA55 time indices kept in memory (default: 240,
@@ -74,6 +100,9 @@ Examples:
   BIHARMONIC=5days ./launch.sh orca           # custom biharmonic timescale
   BIHARMONIC=nothing ./launch.sh orca         # disable biharmonic viscosity
   BIHVISC=1e12 ./launch.sh orca               # constant biharmonic viscosity ν=1e12 m^4/s
+  DZ_TOP=2 ./launch.sh orca                   # 2 m top cell (scale chosen by bisection)
+  SHEAR_GUST=true ./launch.sh orca            # Mahrt-Sun shear-aware gustiness
+  CATKE_CWUSTAR=5.0 ./launch.sh orca          # stronger surface TKE injection in CATKE
   FORCING_DIR=/other/path/forcing_data STAGING_DIR=/scratch/staged ./launch.sh orca
   PROFILE=true ./launch.sh orca
 USAGE
@@ -164,12 +193,18 @@ RUN_NAME="$CONFIG"
 [[ "${SNOW:-false}" == "true" ]]       && RUN_NAME="${RUN_NAME}_snow"
 [[ "${CLOSURE:-catke}" == "simple" ]]  && RUN_NAME="${RUN_NAME}_simple"
 [[ "${CLOSURE:-catke}" == "nori"   ]]  && RUN_NAME="${RUN_NAME}_nori"
+[[ "${CLOSURE:-catke}" == "rbvd"   ]]  && RUN_NAME="${RUN_NAME}_rbvd"
+[[ "${CLOSURE:-catke}" == "kpp"    ]]  && RUN_NAME="${RUN_NAME}_kpp"
 [[ "${WIND_VELOCITY:-false}" == "true" ]] && RUN_NAME="${RUN_NAME}_wind"
 [[ -n "${CB:-}" ]]                     && RUN_NAME="${RUN_NAME}_cb${CB}"
 [[ "$KSKEW" != "$DEFAULT_KSKEW" ]]    && RUN_NAME="${RUN_NAME}_kskew${KSKEW}"
 [[ "$KSYMM" != "$DEFAULT_KSYMM" ]]    && RUN_NAME="${RUN_NAME}_ksymm${KSYMM}"
 [[ "$BIHARMONIC" != "$DEFAULT_BIHARMONIC" ]] && RUN_NAME="${RUN_NAME}_bih${BIHARMONIC}"
 [[ -n "${BIHVISC:-}" ]]                && RUN_NAME="${RUN_NAME}_bihvisc${BIHVISC}"
+[[ -n "${DZ_TOP:-}" ]]                 && RUN_NAME="${RUN_NAME}_dz${DZ_TOP}"
+[[ "${SHEAR_GUST:-false}" == "true" ]] && RUN_NAME="${RUN_NAME}_sgust"
+[[ -n "${CATKE_CWUSTAR:-}" ]]          && RUN_NAME="${RUN_NAME}_cwu${CATKE_CWUSTAR}"
+[[ -n "${MIN_SALINITY:-}" ]]           && RUN_NAME="${RUN_NAME}_smin${MIN_SALINITY}"
 
 REPORT_NAME="${REPORT_NAME:-${RUN_NAME}_report}"
 JOB_NAME="${JOB_NAME:-$RUN_NAME}"
@@ -214,6 +249,10 @@ FORCING_DIR="${FORCING_DIR:-${DATA:-}forcing_data}"
 STAGING_DIR="${STAGING_DIR:-./staged_data}"
 CB="${CB:-}"
 BIHVISC="${BIHVISC:-}"
+DZ_TOP="${DZ_TOP:-}"
+SHEAR_GUST="${SHEAR_GUST:-false}"
+CATKE_CWUSTAR="${CATKE_CWUSTAR:-}"
+MIN_SALINITY="${MIN_SALINITY:-}"
 BACKEND_SIZE="${BACKEND_SIZE:-}"
 NCAR="${NCAR:-false}"
 CORRECTED="${CORRECTED:-false}"
@@ -235,16 +274,28 @@ CB_KWARG=""
 BIHVISC_KWARG=""
 [[ -n "$BIHVISC" ]] && BIHVISC_KWARG="biharmonic_viscosity = ${BIHVISC},"
 
+DZ_TOP_KWARG=""
+[[ -n "$DZ_TOP" ]] && DZ_TOP_KWARG="Δz_top = ${DZ_TOP},"
+
+CATKE_CWUSTAR_KWARG=""
+[[ -n "$CATKE_CWUSTAR" ]] && CATKE_CWUSTAR_KWARG="Cᵂu★ = ${CATKE_CWUSTAR},"
+
+MIN_SALINITY_KWARG=""
+[[ -n "$MIN_SALINITY" ]] && MIN_SALINITY_KWARG="ocean_minimum_salinity = ${MIN_SALINITY},"
+
 BACKEND_KWARG=""
 [[ -n "$BACKEND_SIZE" ]] && BACKEND_KWARG="backend_size = ${BACKEND_SIZE},"
 
 FLUX_KWARG=""
-[[ "$NCAR" == "true" ]]      && FLUX_KWARG="flux_configuration = :ncar,"
-[[ "$CORRECTED" == "true" ]] && FLUX_KWARG="flux_configuration = :corrected,"
+[[ "$NCAR" == "true" ]]        && FLUX_KWARG="flux_configuration = :ncar,"
+[[ "$CORRECTED" == "true" ]]   && FLUX_KWARG="flux_configuration = :corrected,"
+[[ "$SHEAR_GUST" == "true" ]]  && FLUX_KWARG="flux_configuration = :shear_aware,"
 
 CLOSURE_KWARG=""
 [[ "${CLOSURE:-catke}" == "simple" ]] && CLOSURE_KWARG="vertical_closure = :simple,"
 [[ "${CLOSURE:-catke}" == "nori"   ]] && CLOSURE_KWARG="vertical_closure = :nori,"
+[[ "${CLOSURE:-catke}" == "rbvd"   ]] && CLOSURE_KWARG="vertical_closure = :rbvd,"
+[[ "${CLOSURE:-catke}" == "kpp"    ]] && CLOSURE_KWARG="vertical_closure = :kpp,"
 
 VELOCITY_KWARG=""
 [[ "${WIND_VELOCITY:-false}" == "true" ]] && VELOCITY_KWARG="velocity_formulation = :wind,"
@@ -266,6 +317,7 @@ sim = omip_simulation(:${CONFIG};
                       arch = ${ARCH},
                       Nz = ${NZ},
                       depth = 5500,
+                      ${DZ_TOP_KWARG}
                       κ_skew = ${KSKEW_JULIA},
                       κ_symmetric = ${KSYMM_JULIA},
                       biharmonic_timescale = ${BIHARMONIC},
@@ -275,7 +327,12 @@ sim = omip_simulation(:${CONFIG};
                       ${CLOSURE_KWARG}
                       ${VELOCITY_KWARG}
                       ${SNOW_KWARG}
+<<<<<<< HEAD
                       ${RYF_KWARG}
+=======
+                      ${CATKE_CWUSTAR_KWARG}
+                      ${MIN_SALINITY_KWARG}
+>>>>>>> ss/omip-prototype
                       Δt = ${DT},
                       forcing_dir = \"${FORCING_DIR}\",
                       ${STAGING_KWARG}

@@ -17,7 +17,9 @@ using NumericalEarth.EarthSystemModels.InterfaceComputations: COARELogarithmicSi
                                                               FixedIterations,
                                                               large_yeager_stability_functions,
                                                               RelativeVelocity,
-                                                              WindVelocity
+                                                              WindVelocity,
+                                                              ConstantGustiness,
+                                                              ShearAwareGustiness
 
 #####
 ##### Flux configurations
@@ -29,14 +31,17 @@ using NumericalEarth.EarthSystemModels.InterfaceComputations: COARELogarithmicSi
 COARE 3.6-consistent atmosphere-ocean flux formulation with:
 - Wind-dependent Charnock parameter (Edson et al. 2013, eq. 13)
 - COARE logarithmic similarity profile (no ψ(ℓ/L) term)
-- Minimum gustiness = 0.2 m/s (Fairall et al. 2003)
+- Minimum gustiness = 0.5 m/s (CICE / NCAR CORE-II convention)
+- `gustiness` kwarg accepts either a `ConstantGustiness(min_gust, β)` (default; constant floor)
+  or a `ShearAwareGustiness(c, min_gust, β)` (Mahrt-Sun 1995 / Edson 2013 form)
 - Temperature-dependent air viscosity
 """
-function corrected_atmosphere_ocean_fluxes(FT = Float64) 
+function corrected_atmosphere_ocean_fluxes(FT = Float64;
+                                           gustiness = ConstantGustiness(FT; minimum_gustiness = 0.5))
     air_kinematic_viscosity = TemperatureDependentAirViscosity(FT)
     return SimilarityTheoryFluxes(FT;
                                   similarity_form              = COARELogarithmicSimilarityProfile(),
-                                  minimum_gustiness            = FT(0.2),
+                                  gustiness                    = gustiness,
                                   momentum_roughness_length    = MomentumRoughnessLength(FT;
                                   wave_formulation             = WindDependentWaveFormulation(FT),
                                   air_kinematic_viscosity      = TemperatureDependentAirViscosity(FT)),
@@ -138,29 +143,38 @@ end
                         velocity_formulation = :relative)
 
 Build the `OceanSeaIceModel` with the specified flux configuration.
-Options for `flux_configuration`: `:default`, `:corrected`, `:ncar`.
+Options for `flux_configuration`: `:default`, `:corrected`, `:shear_aware`, `:ncar`.
 Options for `velocity_formulation`:  `:relative`, `:wind`
 """
-function build_coupled_model(ocean, sea_ice, atmosphere, radiation, flux_configuration; velocity_formulation::Symbol = :relative)
+function build_coupled_model(ocean, sea_ice, atmosphere, radiation, flux_configuration;
+                             velocity_formulation::Symbol = :relative,
+                             ocean_minimum_salinity = 1)
+    FT = eltype(ocean.model.grid)
     if flux_configuration == :default
-        return OceanSeaIceModel(ocean, sea_ice; atmosphere, radiation)
+        interfaces = ComponentInterfaces(atmosphere, ocean, sea_ice;
+                                         radiation,
+                                         ocean_minimum_salinity = convert(FT, ocean_minimum_salinity))
+        return OceanSeaIceModel(ocean, sea_ice; atmosphere, interfaces)
     end
 
-    FT = eltype(ocean.model.grid)
     radiation = corrected_radiation(sea_ice)
 
     velocity_difference_obj = velocity_formulation == :relative ? RelativeVelocity() :
                               velocity_formulation == :wind     ? WindVelocity()     :
                               error("Unknown velocity_formulation: $velocity_formulation. Options: :relative, :wind")
 
-    if flux_configuration == :corrected
+    if flux_configuration == :corrected || flux_configuration == :shear_aware
+        gustiness = flux_configuration == :shear_aware ?
+                    ShearAwareGustiness(FT; shear_wind_scale = 0.04, minimum_gustiness = 0.5) :
+                    ConstantGustiness(FT;   minimum_gustiness = 0.5)
         interfaces = ComponentInterfaces(atmosphere, ocean, sea_ice;
                                          radiation,
-                                         atmosphere_ocean_fluxes   = corrected_atmosphere_ocean_fluxes(FT),
+                                         atmosphere_ocean_fluxes   = corrected_atmosphere_ocean_fluxes(FT; gustiness),
                                          atmosphere_sea_ice_fluxes = corrected_atmosphere_sea_ice_fluxes(FT),
                                          sea_ice_ocean_heat_flux   = corrected_ice_ocean_heat_flux(),
                                          atmosphere_ocean_velocity_difference   = velocity_difference_obj,
-                                         atmosphere_sea_ice_velocity_difference = velocity_difference_obj)
+                                         atmosphere_sea_ice_velocity_difference = velocity_difference_obj,
+                                         ocean_minimum_salinity = convert(FT, ocean_minimum_salinity))
     elseif flux_configuration == :ncar
         interfaces = ComponentInterfaces(atmosphere, ocean, sea_ice;
                                          radiation,
@@ -168,9 +182,10 @@ function build_coupled_model(ocean, sea_ice, atmosphere, radiation, flux_configu
                                          atmosphere_sea_ice_fluxes = ncar_atmosphere_sea_ice_fluxes(FT),
                                          sea_ice_ocean_heat_flux   = corrected_ice_ocean_heat_flux(),
                                          atmosphere_ocean_velocity_difference   = velocity_difference_obj,
-                                         atmosphere_sea_ice_velocity_difference = velocity_difference_obj)
+                                         atmosphere_sea_ice_velocity_difference = velocity_difference_obj,
+                                         ocean_minimum_salinity = convert(FT, ocean_minimum_salinity))
     else
-        error("Unknown flux_configuration: $flux_configuration. Options: :default, :corrected, :ncar")
+        error("Unknown flux_configuration: $flux_configuration. Options: :default, :corrected, :shear_aware, :ncar")
     end
 
     return OceanSeaIceModel(ocean, sea_ice; atmosphere, interfaces)
@@ -221,6 +236,11 @@ plumbing is needed because `NumericalEarth.EarthSystemModels` provides
 - `flux_configuration`: surface flux formulation. Options:
    * `:default` — current defaults (Edson/COARE with constant Charnock 0.02)
    * `:corrected` — COARE 3.6 with wind-dependent Charnock, fixed ice roughness, momentum-based u*
+   * `:shear_aware` — `:corrected` plus the Mahrt–Sun (1995) / Edson (2013)
+                      shear-aware gustiness form (`ShearAwareGustiness`),
+                      Uᴳ² = (β·w★)² + (c·|Δu|)² + Uᴳ₀². Designed to inject
+                      additional gustiness at moderate winds where convective
+                      gustiness is weak (e.g., the equator).
    * `:ncar` — OMIP-2 standard Large & Yeager (2004) bulk formulae
 - `vertical_closure::Symbol`: ocean vertical-mixing closure. Options:
    * `:catke` — CATKE TKE-based scheme (default).
@@ -230,6 +250,11 @@ plumbing is needed because `NumericalEarth.EarthSystemModels` provides
    * `:nori` — NORi base Richardson-number closure
      (xkykai/NORiOceanParameterization.jl, vendored as
      `nori_base_closure.jl`). Calibrated defaults; no `Cᵇ` parameter.
+   * `:rbvd` — Oceananigans' built-in `RiBasedVerticalDiffusivity`
+     (Richardson-number-based, with κ-clip and time-averaged smoothing).
+     A battle-tested comparison point for `:nori`; no `Cᵇ` parameter.
+   * `:kpp` — KPP boundary-layer scheme (Large 1994 / MITgcm), vendored
+     in `KPP/`. Includes nonlocal tracer flux + SW-aware Bf. No `Cᵇ`.
 - `velocity_formulation::Symbol`: Δu used by the bulk formula. Options:
    * `:relative` — `Δu = u_atm − u_ocean` (OMIP-2 α=1, default).
    * `:wind` — `Δu = u_atm` (ignores ocean current). For isolating bulk-formula
@@ -243,6 +268,7 @@ function omip_simulation(config::Symbol = :halfdegree;
                          arch = CPU(),
                          Nz = config == :sxthdegree ? 75 : 100,
                          depth = 5500,
+                         Δz_top = nothing,
                          κ_skew = 250,
                          κ_symmetric = 100,
                          Cᵇ = 0.28,
@@ -261,6 +287,8 @@ function omip_simulation(config::Symbol = :halfdegree;
                          flux_configuration = :default,
                          vertical_closure = :catke,
                          velocity_formulation = :relative,
+                         ocean_minimum_salinity = 4,
+                         Cᵂu★ = nothing,
                          with_snow = false,
                          diagnostics = true,
                          field_mean_interval = 5days,
@@ -273,13 +301,14 @@ function omip_simulation(config::Symbol = :halfdegree;
 
     cfg = Val(config)
 
-    grid = build_grid(cfg, arch, Nz, depth, forcing_dir)
+    grid = build_grid(cfg, arch, Nz, depth; Δz_top)
 
     ocean = build_ocean(cfg, grid;
                         κ_skew, κ_symmetric, Cᵇ,
                         biharmonic_timescale,
                         biharmonic_viscosity,
                         vertical_closure,
+                        Cᵂu★,
                         restoring_dir, piston_velocity,
                         start_date, end_date)
 
@@ -302,7 +331,9 @@ function omip_simulation(config::Symbol = :halfdegree;
                                             repeat_year_forcing,
                                             backend_size)
 
-    coupled = build_coupled_model(ocean, sea_ice, atmosphere, radiation, flux_configuration; velocity_formulation)
+    coupled = build_coupled_model(ocean, sea_ice, atmosphere, radiation, flux_configuration;
+                                  velocity_formulation,
+                                  ocean_minimum_salinity)
 
     simulation = Simulation(coupled; Δt, stop_time)
 
@@ -429,36 +460,7 @@ end
 # Background tracer diffusivity following Henyey et al. (1986).
 @inline henyey_diffusivity(x, y, z, t) = max(1e-6, 5e-6 * abs(sind(y)))
 
-function omip_closure(; κ_skew, κ_symmetric, Cᵇ = 0.28,
-                        biharmonic_timescale,
-                        biharmonic_viscosity = nothing)
-    mixing_length = CATKEMixingLength(; Cᵇ)
-    catke = CATKEVerticalDiffusivity(VerticallyImplicitTimeDiscretization();
-                                     mixing_length,
-                                     turbulent_kinetic_energy_equation = CATKEEquation(Cᵂϵ=1.0))
-
-    eddy  = if isnothing(κ_skew) | isnothing(κ_symmetric)
-        nothing
-    else
-        IsopycnalSkewSymmetricDiffusivity(; κ_skew, κ_symmetric)
-    end
-
-    horizontal_viscosity = if !isnothing(biharmonic_viscosity)
-        HorizontalScalarBiharmonicDiffusivity(ν=biharmonic_viscosity)
-    elseif !isnothing(biharmonic_timescale)
-        HorizontalScalarBiharmonicDiffusivity(ν=νhb,
-                                              discrete_form=true,
-                                              parameters=biharmonic_timescale)
-    else
-        nothing
-    end
-
-    vertical_diffusivity = VerticalScalarDiffusivity(κ=henyey_diffusivity, ν=3e-5)
-
-    return filter(!isnothing, (catke, eddy, horizontal_viscosity, vertical_diffusivity))
-end
-
-# Step-function background diffusivity for the simple-closure case.
+# Step-function background diffusivity for the :simple closure.
 # Strong mixing in the upper 100 m, weak interior diffusivity below.
 @inline ν_step_simple(x, y, z, t) = ifelse(z >= -100, 1e-2, 1e-4)
 @inline κ_step_simple(x, y, z, t) =
@@ -466,10 +468,37 @@ end
       z >= -100 ? 1e-2 :
                   1e-5
 
-function omip_simple_closure(; κ_skew, κ_symmetric,
-                                biharmonic_timescale,
-                                biharmonic_viscosity = nothing)
-    convective = ConvectiveAdjustmentVerticalDiffusivity(VerticallyImplicitTimeDiscretization(); convective_κz = 1.0, convective_νz = 1.0)
+# Build a vertical-mixing closure tuple. The eddy and horizontal
+# components are common to every option; the primary vertical closure
+# and any background κ/ν are selected by `vertical_closure`.
+function omip_closure(vertical_closure::Symbol;
+                      κ_skew, κ_symmetric, Cᵇ = 0.28,
+                      biharmonic_timescale,
+                      biharmonic_viscosity = nothing,
+                      Cᵂu★ = nothing)
+
+    primary, background = if vertical_closure == :catke
+        mixing_length = CATKEMixingLength(; Cᵇ)
+        tke_eq = isnothing(Cᵂu★) ? CATKEEquation() : CATKEEquation(; Cᵂu★)
+        catke = CATKEVerticalDiffusivity(VerticallyImplicitTimeDiscretization();
+                                         mixing_length,
+                                         turbulent_kinetic_energy_equation = tke_eq)
+        catke, VerticalScalarDiffusivity(κ=henyey_diffusivity, ν=3e-5)
+    elseif vertical_closure == :simple
+        convective = ConvectiveAdjustmentVerticalDiffusivity(VerticallyImplicitTimeDiscretization();
+                                                             convective_κz = 1.0,
+                                                             convective_νz = 1.0)
+        background = VerticalScalarDiffusivity(VerticallyImplicitTimeDiscretization(); κ=κ_step_simple, ν=ν_step_simple)
+        convective, background
+    elseif vertical_closure == :nori
+        NORiBaseVerticalDiffusivity(), nothing
+    elseif vertical_closure == :rbvd
+        RiBasedVerticalDiffusivity(; horizontal_Ri_filter = Oceananigans.TurbulenceClosures.FivePointHorizontalFilter()), nothing
+    elseif vertical_closure == :kpp
+        KPPVerticalDiffusivity(), nothing
+    else
+        error("Unknown vertical_closure: $vertical_closure. Options: :catke, :simple, :nori, :rbvd, :kpp")
+    end
 
     eddy  = if isnothing(κ_skew) | isnothing(κ_symmetric)
         nothing
@@ -487,37 +516,7 @@ function omip_simple_closure(; κ_skew, κ_symmetric,
         nothing
     end
 
-    vertical_diffusivity = VerticalScalarDiffusivity(VerticallyImplicitTimeDiscretization(); κ=κ_step_simple, ν=ν_step_simple)
-
-    return filter(!isnothing, (convective, eddy, horizontal_viscosity, vertical_diffusivity))
-end
-
-# NORi base closure (Richardson-number-based) bundled with the same GM /
-# biharmonic options the other closures expose. Calibrated NORi
-# parameters come from the constructor defaults — see
-# `nori_base_closure.jl`.
-function omip_nori_closure(; κ_skew, κ_symmetric,
-                              biharmonic_timescale,
-                              biharmonic_viscosity = nothing)
-    nori = NORiBaseVerticalDiffusivity()
-
-    eddy  = if isnothing(κ_skew) | isnothing(κ_symmetric)
-        nothing
-    else
-        IsopycnalSkewSymmetricDiffusivity(; κ_skew, κ_symmetric)
-    end
-
-    horizontal_viscosity = if !isnothing(biharmonic_viscosity)
-        HorizontalScalarBiharmonicDiffusivity(ν=biharmonic_viscosity)
-    elseif !isnothing(biharmonic_timescale)
-        HorizontalScalarBiharmonicDiffusivity(ν=νhb,
-                                              discrete_form=true,
-                                              parameters=biharmonic_timescale)
-    else
-        nothing
-    end
-
-    return filter(!isnothing, (nori, eddy, horizontal_viscosity))
+    return filter(!isnothing, (primary, eddy, horizontal_viscosity, background))
 end
 
 #####
@@ -553,16 +552,39 @@ end
 ##### Grid builder
 #####
 
-function build_grid(config, arch, Nz, depth, forcing_dir)
-    
+function find_exponential_scale(Nz, depth, Δzᵀ; tolerance = 1e-7, maxiter = 200)
+    Δzᵁ = depth / Nz
+    Δzᵀ < Δzᵁ || throw(ArgumentError("Δzᵀ = $Δzᵀ must be < depth/Nz = $Δzᵁ"))
+    Δzᵀ > 0   || throw(ArgumentError("Δzᵀ = $Δzᵀ must be positive"))
+
+    Δz_at_scale(h) = depth * expm1(Δzᵁ / h) / expm1(depth / h)
+
+    h⁻ = Δzᵁ / 1000
+    h⁺ = 1000 * depth
+
+    for _ in 1:maxiter
+        h = (h⁻ + h⁺) / 2
+        Δz = Δz_at_scale(h)
+        abs(Δz - Δzᵀ) <= tolerance * Δzᵀ && return h
+        Δz < Δzᵀ ? (h⁻ = h) : (h⁺ = h)
+    end
+    error("Could not converge to scale matching Δz_top = $Δz_top within relative tolerance $tolerance")
+end
+
+exponential_scale(Nz, depth, ::Nothing) = 1300
+exponential_scale(Nz, depth, Δz_top)    = find_exponential_scale(Nz, depth, Δz_top)
+
+function build_grid(config, arch, Nz, depth; Δz_top = nothing)
+
     Nx = config == Val(:halfdegree)  ? 720 :
          config == Val(:sxthdegree)  ? 2160 :
          config == Val(:tenthdegree) ? 3600 :
-         throw("Configuration $(config) does not exist") 
+         throw("Configuration $(config) does not exist")
 
     Ny = Nx ÷ 2
 
-    z_faces = ExponentialDiscretization(Nz, -depth, 0; scale=1300, mutable=true)
+    scale = exponential_scale(Nz, depth, Δz_top)
+    z_faces = ExponentialDiscretization(Nz, -depth, 0; scale, mutable=true)
 
     base_grid = TripolarGrid(arch;
                              size = (Nx, Ny, Nz),
@@ -583,9 +605,10 @@ function build_grid(config, arch, Nz, depth, forcing_dir)
     return ImmersedBoundaryGrid(base_grid, GridFittedBottom(bottom_height); active_cells_map = true)
 end
 
-function build_grid(::Val{:orca}, arch, Nz, depth, forcing_dir)
+function build_grid(::Val{:orca}, arch, Nz, depth; Δz_top = nothing)
 
-    z_faces = ExponentialDiscretization(Nz, -depth, 0; scale=1300, mutable=true)
+    scale = exponential_scale(Nz, depth, Δz_top)
+    z_faces = ExponentialDiscretization(Nz, -depth, 0; scale, mutable=true)
 
     return ORCAGrid(arch;
                     dataset = ORCA1(),
@@ -612,18 +635,14 @@ function build_ocean(config, grid;
                      biharmonic_timescale,
                      biharmonic_viscosity = nothing,
                      vertical_closure = :catke,
+                     Cᵂu★ = nothing,
                      start_date, end_date)
 
     salt_restoring = salinity_surface_restoring(grid, WOAMonthly(); restoring_dir, piston_velocity)
-    closure = if vertical_closure == :catke
-        omip_closure(; κ_skew, κ_symmetric, Cᵇ, biharmonic_timescale, biharmonic_viscosity)
-    elseif vertical_closure == :simple
-        omip_simple_closure(; κ_skew, κ_symmetric, biharmonic_timescale, biharmonic_viscosity)
-    elseif vertical_closure == :nori
-        omip_nori_closure(; κ_skew, κ_symmetric, biharmonic_timescale, biharmonic_viscosity)
-    else
-        error("Unknown vertical_closure: $vertical_closure. Options: :catke, :simple, :nori")
-    end
+    closure = omip_closure(vertical_closure;
+                           κ_skew, κ_symmetric, Cᵇ,
+                           biharmonic_timescale, biharmonic_viscosity,
+                           Cᵂu★)
     coriolis = HydrostaticSphericalCoriolis(scheme = Oceananigans.Coriolis.EnstrophyConserving())
     momentum_advection = config_momentum_advection(config)
 

@@ -123,23 +123,17 @@ const _nori_f = Face()
 @inline viscosity_location(::FlavorOfNBVD)   = (_nori_c, _nori_c, _nori_f)
 @inline diffusivity_location(::FlavorOfNBVD) = (_nori_c, _nori_c, _nori_f)
 
-@inline viscosity(::FlavorOfNBVD, diffusivities) = diffusivities.κᵘ
-@inline diffusivity(::FlavorOfNBVD, diffusivities, id) = diffusivities.κᶜ
+@inline viscosity(::FlavorOfNBVD, diffusivities) = diffusivities.κu
+@inline diffusivity(::FlavorOfNBVD, diffusivities, id) = diffusivities.κc
 
 with_tracers(tracers, closure::FlavorOfNBVD) = closure
 
 function build_closure_fields(grid, clock, tracer_names, bcs, closure::FlavorOfNBVD)
-    κᶜ = Field((Center(), Center(), Face()), grid)
-    κᵘ = Field((Center(), Center(), Face()), grid)
+    κc = Field((Center(), Center(), Face()), grid)
+    κu = Field((Center(), Center(), Face()), grid)
     Ri = Field((Center(), Center(), Face()), grid)
     previous_compute_time = Ref(clock.time)
-    return (; κᶜ, κᵘ, Ri, previous_compute_time)
-end
-
-function update_previous_compute_time!(closure_fields, model)
-    Δt = time_difference_seconds(model.clock.time, closure_fields.previous_compute_time[])
-    closure_fields.previous_compute_time[] = model.clock.time
-    return Δt
+    return (; κc, κu, Ri, previous_compute_time)
 end
 
 #####
@@ -154,9 +148,6 @@ function compute_closure_fields!(diffusivities, closure::FlavorOfNBVD, model; pa
     buoyancy = model.buoyancy
     velocities = model.velocities
     top_tracer_bcs = NamedTuple(c => tracers[c].boundary_conditions.top for c in propertynames(tracers))
-
-    Δt = update_previous_compute_time!(diffusivities, model)
-    Δt == 0 && return nothing
 
     # Step 1: Compute Richardson number on the interior only — halo cells of T/S
     # may not be filled with physical values (e.g. under flux BCs), and
@@ -259,8 +250,8 @@ end
 
     is_interior = k > 1 && k < grid.Nz + 1
 
-    @inbounds diffusivities.κᵘ[i, j, k] = ifelse(is_interior, ν_local, 0)
-    @inbounds diffusivities.κᶜ[i, j, k] = ifelse(is_interior, κ_local, 0)
+    @inbounds diffusivities.κu[i, j, k] = ifelse(is_interior, ν_local, 0)
+    @inbounds diffusivities.κc[i, j, k] = ifelse(is_interior, κ_local, 0)
 
     return nothing
 end

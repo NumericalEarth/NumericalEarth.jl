@@ -1,8 +1,10 @@
 #!/bin/bash
-# Move completed OMIP outputs from a live run folder to
-# $DATA/OMIP-data/<RUN_NAME>_run while a launch.sh job is still running.
+# Move completed OMIP outputs from one or more live run folders to
+# $DATA/OMIP-data/<RUN_NAME>_run while the launch.sh jobs are still
+# running. Multiple run names can be passed; the same sbatch job cycles
+# through all of them once per hour.
 #
-# Logic:
+# Logic (per run):
 #   - Part files (*_part<N>.jld2): the highest N per filename group is
 #     still being written by the running sim, so it is left in place;
 #     all older parts are moved.
@@ -10,17 +12,20 @@
 #     iteration is kept locally so `run!(sim; pickup=true)` still works;
 #     older checkpoints are moved.
 #   - Anything else in the run folder is left untouched.
+#   - If a run directory disappears mid-cycle (sim crashed, folder
+#     deleted), it is skipped with a warning rather than killing the job.
 #
 # Must be run from the same directory as launch.sh (i.e. this scripts
 # folder) so that <RUN_NAME>_run resolves the same way it does for the
-# running simulation.
+# running simulations.
 #
 # Usage:
 #   ./store.sh orca
 #   ./store.sh orca_ncar
 #   ./store.sh orca_corrected_snow_cb0.1
+#   ./store.sh orca_nori orca_rbvd orca_catke
 #
-# The argument is the RUN_NAME (same as the job name from launch.sh).
+# The arguments are RUN_NAMEs (same as the job names from launch.sh).
 # DATA must be set in the calling shell (it is propagated to the
 # sbatch job via --export=ALL).
 
@@ -28,55 +33,65 @@ set -euo pipefail
 
 usage() {
     cat <<'USAGE'
-Usage: ./store.sh <run_name> [extra sbatch args...]
+Usage: ./store.sh <run_name> [<run_name> ...]
 
-The <run_name> matches the RUN_NAME built by launch.sh, e.g.:
+The <run_name>s match the RUN_NAME built by launch.sh, e.g.:
   orca, orca_ncar, orca_corrected_snow, orca_ncar_cb0.1, halfdegree, ...
 
 Examples:
   ./store.sh orca
   ./store.sh orca_ncar
   ./store.sh orca_corrected_snow_cb0.1
+  ./store.sh orca_nori orca_rbvd orca_catke
 USAGE
 }
 
-RUN_NAME="${1:-}"
-if [[ -z "$RUN_NAME" ]]; then
+if [[ $# -lt 1 ]]; then
     usage
     exit 1
 fi
-shift || true
 
-case "$RUN_NAME" in
+case "${1:-}" in
     -h|--help)
         usage
         exit 0
         ;;
 esac
 
+RUN_NAMES=("$@")
+
 if [[ -z "${DATA:-}" ]]; then
     echo "Error: DATA environment variable is not set" >&2
     exit 1
 fi
 
-RUN_DIR="${RUN_NAME}_run"
-DEST_DIR="${DATA}/OMIP-data/${RUN_DIR}"
+# Validate all run directories exist up-front so submission fails fast.
+for RUN_NAME in "${RUN_NAMES[@]}"; do
+    RUN_DIR="${RUN_NAME}_run"
+    if [[ ! -d "$RUN_DIR" ]]; then
+        echo "Error: run directory '$RUN_DIR' not found in $(pwd)" >&2
+        echo "       (store.sh must be run from the same directory as launch.sh)" >&2
+        exit 1
+    fi
+done
 
-if [[ ! -d "$RUN_DIR" ]]; then
-    echo "Error: run directory '$RUN_DIR' not found in $(pwd)" >&2
-    echo "       (store.sh must be run from the same directory as launch.sh)" >&2
-    exit 1
+# Tag for output files / job name: single run keeps the old naming,
+# multi-run collapses to a count-tagged identifier.
+if [[ ${#RUN_NAMES[@]} -eq 1 ]]; then
+    TAG="${RUN_NAMES[0]}"
+else
+    TAG="multi${#RUN_NAMES[@]}"
 fi
 
-JOB_NAME="${JOB_NAME:-store_${RUN_NAME}}"
+JOB_NAME="${JOB_NAME:-store_${TAG}}"
 
 SBATCH_ARGS=()
-SBATCH_ARGS+=(-o "store_${RUN_NAME}.out")
-SBATCH_ARGS+=(-e "store_${RUN_NAME}.err")
+SBATCH_ARGS+=(-o "store_${TAG}.out")
+SBATCH_ARGS+=(-e "store_${TAG}.err")
 SBATCH_ARGS+=(-J "$JOB_NAME")
-SBATCH_ARGS+=(--export="ALL,RUN_NAME=${RUN_NAME},RUN_DIR=${RUN_DIR},DEST_DIR=${DEST_DIR}")
+SBATCH_ARGS+=(--export="ALL,RUN_NAMES_STR=${RUN_NAMES[*]}")
 
-sbatch "${SBATCH_ARGS[@]}" "$@" <<'EOF'
+sbatch "${SBATCH_ARGS[@]}" <<'EOF'
 #!/bin/bash
 #SBATCH -N 1
 #SBATCH --ntasks-per-node=1
@@ -84,106 +99,115 @@ sbatch "${SBATCH_ARGS[@]}" "$@" <<'EOF'
 #SBATCH --time=24:00:00
 #SBATCH --mem=4GB
 
-set -euo pipefail
+set -uo pipefail
 
-echo "Storing ${RUN_NAME} outputs"
-echo "  source: $(pwd)/${RUN_DIR}"
-echo "  dest:   ${DEST_DIR}"
+read -ra RUN_NAMES <<< "$RUN_NAMES_STR"
 
-if [[ ! -d "$RUN_DIR" ]]; then
-    echo "Error: run directory '$RUN_DIR' does not exist in $(pwd)" >&2
-    exit 1
-fi
-
-mkdir -p "$DEST_DIR"
+echo "Storing outputs for ${#RUN_NAMES[@]} run(s): ${RUN_NAMES[*]}"
 
 shopt -s nullglob
 
-# Infinite loop
-while true
-do
+archive_run() {
+    local RUN_NAME="$1"
+    local RUN_DIR="${RUN_NAME}_run"
+    local DEST_DIR="${DATA}/OMIP-data/${RUN_DIR}"
 
-# ------------------------------------------------------------------
-# Part files: *_part<N>.jld2
-# The highest N per filename group is still being written, so it is
-# left in place; everything older is moved.
-# ------------------------------------------------------------------
-declare -A max_part
-for f in "$RUN_DIR"/*_part[0-9]*.jld2; do
-    base=$(basename "$f")
-    tail="${base##*_part}"
-    n="${tail%.jld2}"
-    [[ "$n" =~ ^[0-9]+$ ]] || continue
-    group="${base%_part${n}.jld2}"
-    current="${max_part[$group]:-0}"
-    if (( n > current )); then
-        max_part[$group]=$n
+    echo ""
+    echo "=== ${RUN_NAME} ==="
+    echo "  source: $(pwd)/${RUN_DIR}"
+    echo "  dest:   ${DEST_DIR}"
+
+    if [[ ! -d "$RUN_DIR" ]]; then
+        echo "  warning: run directory '$RUN_DIR' missing — skipping this cycle" >&2
+        return 0
     fi
-done
 
-moved_parts=0
-kept_parts=0
+    mkdir -p "$DEST_DIR"
 
-for f in "$RUN_DIR"/*_part[0-9]*.jld2; do
-    base=$(basename "$f")
-    tail="${base##*_part}"
-    n="${tail%.jld2}"
-    [[ "$n" =~ ^[0-9]+$ ]] || continue
-    group="${base%_part${n}.jld2}"
-    max="${max_part[$group]:-0}"
-    if (( n == max )); then
-        echo "skip (active):  ${base}"
-        kept_parts=$((kept_parts + 1))
-        continue
-    fi
-    echo "move:           ${base}"
-    mv -- "$f" "$DEST_DIR/"
-    moved_parts=$((moved_parts + 1))
-done
+    # ------------------------------------------------------------------
+    # Part files: *_part<N>.jld2
+    # The highest N per filename group is still being written, so it is
+    # left in place; everything older is moved.
+    # ------------------------------------------------------------------
+    local -A max_part
+    local f base tail n group current max
+    for f in "$RUN_DIR"/*_part[0-9]*.jld2; do
+        base=$(basename "$f")
+        tail="${base##*_part}"
+        n="${tail%.jld2}"
+        [[ "$n" =~ ^[0-9]+$ ]] || continue
+        group="${base%_part${n}.jld2}"
+        current="${max_part[$group]:-0}"
+        if (( n > current )); then
+            max_part[$group]=$n
+        fi
+    done
 
-# ------------------------------------------------------------------
-# Checkpoint files: *_iteration<N>.jld2
-# The latest iteration per group is required for run!(sim; pickup=true)
-# so it is kept locally; earlier checkpoints are moved.
-# ------------------------------------------------------------------
-declare -A max_ckpt
-for f in "$RUN_DIR"/*_iteration[0-9]*.jld2; do
-    base=$(basename "$f")
-    tail="${base##*_iteration}"
-    n="${tail%.jld2}"
-    [[ "$n" =~ ^[0-9]+$ ]] || continue
-    group="${base%_iteration${n}.jld2}"
-    current="${max_ckpt[$group]:-0}"
-    if (( n > current )); then
-        max_ckpt[$group]=$n
-    fi
-done
+    local moved_parts=0 kept_parts=0
+    for f in "$RUN_DIR"/*_part[0-9]*.jld2; do
+        base=$(basename "$f")
+        tail="${base##*_part}"
+        n="${tail%.jld2}"
+        [[ "$n" =~ ^[0-9]+$ ]] || continue
+        group="${base%_part${n}.jld2}"
+        max="${max_part[$group]:-0}"
+        if (( n == max )); then
+            echo "  skip (active):  ${base}"
+            kept_parts=$((kept_parts + 1))
+            continue
+        fi
+        echo "  move:           ${base}"
+        mv -- "$f" "$DEST_DIR/"
+        moved_parts=$((moved_parts + 1))
+    done
 
-moved_ckpts=0
-kept_ckpts=0
-for f in "$RUN_DIR"/*_iteration[0-9]*.jld2; do
-    base=$(basename "$f")
-    tail="${base##*_iteration}"
-    n="${tail%.jld2}"
-    [[ "$n" =~ ^[0-9]+$ ]] || continue
-    group="${base%_iteration${n}.jld2}"
-    max="${max_ckpt[$group]:-0}"
-    if (( n == max )); then
-        echo "skip (latest):  ${base}"
-        kept_ckpts=$((kept_ckpts + 1))
-        continue
-    fi
-    echo "move:           ${base}"
-    mv -- "$f" "$DEST_DIR/"
-    moved_ckpts=$((moved_ckpts + 1))
-done
+    # ------------------------------------------------------------------
+    # Checkpoint files: *_iteration<N>.jld2
+    # The latest iteration per group is required for run!(sim; pickup=true)
+    # so it is kept locally; earlier checkpoints are moved.
+    # ------------------------------------------------------------------
+    local -A max_ckpt
+    for f in "$RUN_DIR"/*_iteration[0-9]*.jld2; do
+        base=$(basename "$f")
+        tail="${base##*_iteration}"
+        n="${tail%.jld2}"
+        [[ "$n" =~ ^[0-9]+$ ]] || continue
+        group="${base%_iteration${n}.jld2}"
+        current="${max_ckpt[$group]:-0}"
+        if (( n > current )); then
+            max_ckpt[$group]=$n
+        fi
+    done
 
-echo "Done. Moved ${moved_parts} part file(s) (kept ${kept_parts})," \
-     "moved ${moved_ckpts} checkpoint file(s) (kept ${kept_ckpts})."
+    local moved_ckpts=0 kept_ckpts=0
+    for f in "$RUN_DIR"/*_iteration[0-9]*.jld2; do
+        base=$(basename "$f")
+        tail="${base##*_iteration}"
+        n="${tail%.jld2}"
+        [[ "$n" =~ ^[0-9]+$ ]] || continue
+        group="${base%_iteration${n}.jld2}"
+        max="${max_ckpt[$group]:-0}"
+        if (( n == max )); then
+            echo "  skip (latest):  ${base}"
+            kept_ckpts=$((kept_ckpts + 1))
+            continue
+        fi
+        echo "  move:           ${base}"
+        mv -- "$f" "$DEST_DIR/"
+        moved_ckpts=$((moved_ckpts + 1))
+    done
 
-sleep 3600 # sleep for 1 hour
+    echo "  done: moved ${moved_parts} part file(s) (kept ${kept_parts})," \
+         "moved ${moved_ckpts} checkpoint file(s) (kept ${kept_ckpts})."
+}
 
-echo "Sleeping for 1 hour"
+while true; do
+    for RUN_NAME in "${RUN_NAMES[@]}"; do
+        archive_run "$RUN_NAME"
+    done
 
+    echo ""
+    echo "Sleeping for 1 hour"
+    sleep 3600
 done
 EOF
