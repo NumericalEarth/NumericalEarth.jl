@@ -1,15 +1,15 @@
 name: CI
 
+# Path-based gating is implemented *inside* this workflow (via the `changes`
+# job and per-job `if:` conditions) rather than via a trigger-level `paths:`
+# filter. With a trigger-level filter, the entire workflow — including the
+# `test-summary` aggregator — would not run on out-of-path PRs, leaving any
+# required status checks pending forever and blocking the merge button for
+# non-admins. By dropping `paths:` here, the workflow always starts and
+# `test-summary` always reports a status to branch protection.
 on:
   pull_request:
-    paths: &paths
-      - ".github/workflows/ci.yml"
-      - "ext/**"
-      - "src/**"
-      - "test/**"
-      - "Project.toml"
   push:
-    paths: *paths
     branches:
       - main
     tags: "*"
@@ -38,8 +38,31 @@ env:
 #####
 
 jobs:
+  # Detect whether any CI-relevant paths changed on this PR / push. Each
+  # downstream job gates itself on the `ci` output (with an exception for
+  # `push` events, which always run regardless).
+  changes:
+    name: Detect path changes
+    runs-on: ubuntu-latest
+    outputs:
+      ci: ${{ steps.filter.outputs.ci }}
+    steps:
+      - uses: actions/checkout@v6
+      - uses: dorny/paths-filter@v3
+        id: filter
+        with:
+          filters: |
+            ci:
+              - '.github/workflows/ci.yml'
+              - 'ext/**'
+              - 'src/**'
+              - 'test/**'
+              - 'Project.toml'
+
   cpu_tests:
     name: (CPU) - Julia ${{ matrix.version }}
+    needs: changes
+    if: ${{ github.event_name != 'pull_request' || needs.changes.outputs.ci == 'true' }}
     runs-on: ${{ matrix.os }}
     timeout-minutes: 120
     strategy:
@@ -95,6 +118,8 @@ jobs:
 
   gpu_tests:
     name: (GPU)
+    needs: changes
+    if: ${{ github.event_name != 'pull_request' || needs.changes.outputs.ci == 'true' }}
     runs-on: aws-linux-nvidia-gpu-l4
     container:
       image: ghcr.io/numericalearth/numerical-earth-docker-images:test-julia_1.12.5
@@ -166,6 +191,8 @@ jobs:
 
   cds_downloading:
     name: Data Downloading - Julia ${{ matrix.version }} - ${{ matrix.os }} - ${{ matrix.arch }} - ${{ github.event_name }}
+    needs: changes
+    if: ${{ github.event_name != 'pull_request' || needs.changes.outputs.ci == 'true' }}
     runs-on: ${{ matrix.os }}
     timeout-minutes: 60
     strategy:
@@ -228,6 +255,8 @@ jobs:
   
   reactant:
     name: Reactant extension - Julia ${{ matrix.version }} - ${{ matrix.os }} - ${{ matrix.arch }} - ${{ github.event_name }}
+    needs: changes
+    if: ${{ github.event_name != 'pull_request' || needs.changes.outputs.ci == 'true' }}
     runs-on: ${{ matrix.os }}
     timeout-minutes: 80
     strategy:
@@ -312,17 +341,26 @@ jobs:
   #       run: ./mpiexecjl -np 4 julia --project --color=yes -e 'using Pkg; Pkg.test()'
 
   #####
-  ##### The final test (a final check)
+  ##### Aggregator: single required check for branch protection
   #####
+  ##### `test-summary` is intended to be the *only* CI status check listed as
+  ##### required in branch protection / rulesets. It runs unconditionally
+  ##### (`if: always()`) and passes iff every needed job is `success` or
+  ##### `skipped` — so PRs that legitimately skip jobs (e.g. out-of-path
+  ##### changes) can still merge, while real failures still block.
 
-  ci:
-    name: CI
+  test-summary:
+    name: test-summary
+    if: always()
     needs:
+      - changes
       - cpu_tests
       - gpu_tests
       - cds_downloading
       - reactant
     runs-on: ubuntu-latest
-    if: ${{ success() }}
     steps:
-      - run: echo "All CI jobs passed successfully."
+      - name: Check that all needed jobs passed or were skipped
+        run: |
+          echo '${{ toJSON(needs) }}'
+          jq -e 'to_entries | all(.value.result == "success" or .value.result == "skipped")' <<< '${{ toJSON(needs) }}'
