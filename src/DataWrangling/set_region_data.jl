@@ -55,11 +55,22 @@ struct AverageNorthSouth end
 ##### go through one kernel that handles NaN + unit conversion in the same pass.
 #####
 
-struct BBoxOffset
+struct BoundingBoxOffset
     di :: Int
     dj :: Int
 end
 
+"""
+    ColumnInfo{F, I}
+
+Resolved location of a `Column` extraction inside the file grid. Built once per `set_region_data!` call by 
+`region_info(::Column, …)` and captured into `_set_region_kernel!` as a stack-friendly struct.
+
+- `i⁻`, `i⁺`: bracketing longitude indices (`i⁺` wraps to `1` across the periodic seam).
+- `j⁻`, `j⁺`: bracketing latitude indices.
+- `wx`, `wy`: bilinear blend weights in `[0, 1]` (`0` → at `i⁻`/`j⁻`, `1` → at `i⁺`/`j⁺`).
+- `ℑ`: interpolation kind, `Linear()` or `Nearest()`.
+"""
 struct ColumnInfo{F, I}
     i⁻ :: Int
     i⁺ :: Int
@@ -90,7 +101,7 @@ function region_info(::BoundingBox, target, λc, φc)
     Nx, Ny, _ = size(target)
     di = clamp(i₁ - 1, 0, max(length(λc) - Nx, 0))
     dj = clamp(j₁ - 1, 0, max(length(φc) - Ny, 0))
-    return BBoxOffset(di, dj)
+    return BoundingBoxOffset(di, dj)
 end
 
 function region_info(col::Column, target, λc, φc)
@@ -144,12 +155,15 @@ end
 # `read_data(data, i, j, k, region, mangling, FT)` returns the file value at
 # the grid's (i, j, k) as `FT`, with `Missing` converted to NaN.
 @inline read_data(data, i, j, k, ::Nothing,     mangling, FT) = nan_convert_missing(FT, mangle(i, j, k, data, mangling))
-@inline read_data(data, i, j, k, b::BBoxOffset, mangling, FT) = nan_convert_missing(FT, mangle(i + b.di, j + b.dj, k, data, mangling))
-@inline read_data(data, _, _, k, c::ColumnInfo, mangling, FT) = blend(data, c, k, mangling, c.ℑ, FT)
+@inline read_data(data, i, j, k, b::BoundingBoxOffset, mangling, FT) = nan_convert_missing(FT, mangle(i + b.di, j + b.dj, k, data, mangling))
+@inline read_data(data, _, _, k, c::ColumnInfo, mangling, FT) = blend(c.ℑ, data, c, k, mangling, FT)
 
-# NaN-aware bilinear blend: drop NaN corners and renormalise weights. 
-# Returns NaN only when all four corners are land.
-@inline function blend(data, c, k, mangling, ::Linear, FT)
+# Land cells arrive as NaN through `nan_convert_missing`.
+# A naive bilinear average of four corners would propagate that NaN into the
+# interior, biasing every column whose stencil touches a coast. Instead we drop
+# any NaN corner and renormalise the weights over the surviving wet corners,
+# returning NaN only when all four are land.
+@inline function blend(::Linear, data, c, k, mangling, FT)
     d00 = nan_convert_missing(FT, mangle(c.i⁻, c.j⁻, k, data, mangling))
     d10 = nan_convert_missing(FT, mangle(c.i⁺, c.j⁻, k, data, mangling))
     d01 = nan_convert_missing(FT, mangle(c.i⁻, c.j⁺, k, data, mangling))
@@ -166,12 +180,12 @@ end
             w11 * ifelse(isnan(d11), zero(FT), d11)) / Σw
 end
 
-@inline function blend(data, c, k, mangling, ::Nearest, FT)
+@inline function blend(::Nearest, data, c, k, mangling, FT)
     i = c.wx ≥ 0.5 ? c.i⁺ : c.i⁻
     j = c.wy ≥ 0.5 ? c.j⁺ : c.j⁻
     near = nan_convert_missing(FT, mangle(i, j, k, data, mangling))
     # If the closest corner is land, fall back to the NaN-aware Linear blend.
-    return isnan(near) ? blend(data, c, k, mangling, Linear(), FT) : near
+    return isnan(near) ? blend(Linear(), data, c, k, mangling, FT) : near
 end
 
 @kernel function _set_region_kernel!(dst, data, region, mangling, conversion, FT)

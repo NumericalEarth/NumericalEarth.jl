@@ -8,7 +8,7 @@ using NumericalEarth.DataWrangling: Metadata
 using NumericalEarth.JRA55: RepeatYearJRA55
 
 Qswt = FieldTimeSeries(Metadata(:downwelling_shortwave_radiation; dataset=RepeatYearJRA55()); time_indices_in_memory=8)
-rht  = FieldTimeSeries(Metadata(:specific_humidity;               dataset=RepeatYearJRA55()); time_indices_in_memory=8)
+qat  = FieldTimeSeries(Metadata(:specific_humidity;               dataset=RepeatYearJRA55()); time_indices_in_memory=8)
 
 function lonlat2xyz(lons::AbstractVector, lats::AbstractVector)
     x = [cosd(lat) * cosd(lon) for lon in lons, lat in lats]
@@ -32,12 +32,12 @@ Nt = length(times)
 n = Observable(1)
 
 Qswn = @lift interior(Qswt[$n], :, :, 1)
-rhn = @lift interior(rht[$n], :, :, 1)
+qan  = @lift interior(qat[$n], :, :, 1)
 
 fig = Figure(size=(1400, 700))
 
 axsw = Axis3(fig[1, 1], aspect=(1, 1, 1))
-axrh = Axis3(fig[1, 2], aspect=(1, 1, 1))
+axqa = Axis3(fig[1, 2], aspect=(1, 1, 1))
 
 label = @lift string("Repeat-year JRA55 forcing on year-day ",
                      @sprintf("%.1f", times[$n] / days))
@@ -52,18 +52,18 @@ Colorbar(fig[2, 1], sf,
          flipaxis = false,
          label = "Downwelling shortwave radiation (W m⁻²)")
 
-sf = surface!(axrh, x, y, z, color=rhn, colormap=:grays, colorrange=(0, 100))
+sf = surface!(axqa, x, y, z, color=qan, colormap=:grays, colorrange=(0, 0.025))
 Colorbar(fig[2, 2], sf,
          vertical = false,
          width = Relative(0.5),
          flipaxis = false,
-         label = "Relative humidity (%)")
+         label = "Specific humidity (kg kg⁻¹)")
 
 colgap!(fig.layout, 1, Relative(-0.15))
 rowgap!(fig.layout, 1, Relative(-0.2))
 rowgap!(fig.layout, 2, Relative(-0.2))
 
-for ax in (axsw, axrh)
+for ax in (axsw, axqa)
     hidedecorations!(ax)
     hidespines!(ax)
     ax.viewmode = :fit # so that the sphere does not zoom in and out while rotating
@@ -80,7 +80,7 @@ CairoMakie.record(fig, "JRA55_data.mp4", 1:Nt, framerate=16) do nn
 
     n[] = nn
 
-    for ax in (axsw, axrh)
+    for ax in (axsw, axqa)
         ax.azimuth = nn * snapshot_interval * rotation_rate
     end
 end
