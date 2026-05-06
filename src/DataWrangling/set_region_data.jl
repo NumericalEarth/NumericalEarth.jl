@@ -21,7 +21,7 @@ end
 function compute_bounding_indices(bounds::Tuple, hc)
     h₁, h₂ = bounds
     Nh = length(hc)
-    ε  = eps(Float32) * max(one(eltype(hc)), abs(h₁), abs(h₂))
+    ε  = eps(Float32) * max(one(hc), abs(h₁), abs(h₂))
     i₁ = max(searchsortedfirst(hc, h₁ - ε), 1)
     i₂ = min( searchsortedlast(hc, h₂ + ε), Nh)
     return i₁, i₂
