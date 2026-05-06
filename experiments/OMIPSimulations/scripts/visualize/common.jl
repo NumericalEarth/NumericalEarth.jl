@@ -188,7 +188,8 @@ function total_jld2_scalar_timeseries(path::AbstractString, name::AbstractString
     values = Float64[]
     for p in jld2_parts(path)
         chunk = with_jld2(p; reader_kw) do jf
-            iterations = sort!(parse.(Int, collect(keys(jf["timeseries/$name"]))))
+            ks = collect(keys(jf["timeseries/$name"]))
+            iterations = sort!([parse(Int, k) for k in ks if !isnothing(tryparse(Int, k))])
             return Float64[jf["timeseries/$name/$it"][1] for it in iterations]
         end
         append!(values, chunk)
