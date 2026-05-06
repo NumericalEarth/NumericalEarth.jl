@@ -492,14 +492,6 @@ LOADERS[:salinity_drift] = disk_cached(:salinity_drift; source_fts_syms = :so_h_
     profile_drift(c, :so_h_fts)
 end
 
-# Sourced from `:to_h_fts.times` (not the file metadata) so the length
-# always matches `:temperature_drift` / `:salinity_drift`, which are
-# sized by `length(fts.times)`. Reading file `t` keys via
-# `total_jld2_timeseries_times` can disagree with the FTS view when
-# split-file detection picks a different set of parts.
-LOADERS[:drift_time_in_years] = c ->
-    get_field(c, :to_h_fts).times ./ (365.25 * 24 * 3600)
-
 #####
 ##### Global-mean kinetic energy from u, v snapshots
 #####

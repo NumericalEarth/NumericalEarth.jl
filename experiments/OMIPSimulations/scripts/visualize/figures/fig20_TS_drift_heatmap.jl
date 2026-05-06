@@ -33,15 +33,19 @@ function fig20(caches, labels, cases)
     for (i, lab) in enumerate(labels)
         c  = caches[lab]
         z  = get_field(c, :depth)
-        t  = get_field(c, :drift_time_in_years)
         ΔT = get_field(c, :temperature_drift)
         ΔS = get_field(c, :salinity_drift)
+        # Derive per-variable time axes so a panel never desynchronizes
+        # from its data when `to_h` and `so_h` were written for different
+        # iteration sets in the JLD2 averages file.
+        tT = get_field(c, :to_h_fts).times ./ (365.25 * 24 * 3600)
+        tS = get_field(c, :so_h_fts).times ./ (365.25 * 24 * 3600)
 
-        hm_T = split_panel!(fig, 1, 2i-1, t, z, ΔT,
+        hm_T = split_panel!(fig, 1, 2i-1, tT, z, ΔT,
                              temperature_drift_levels, "$lab: ΔT (deg C)")
         Colorbar(fig[1, 2i], hm_T; label = "deg C")
 
-        hm_S = split_panel!(fig, 2, 2i-1, t, z, ΔS,
+        hm_S = split_panel!(fig, 2, 2i-1, tS, z, ΔS,
                              salinity_drift_levels, "$lab: ΔS (PSU)")
         Colorbar(fig[2, 2i], hm_S; label = "PSU")
     end
