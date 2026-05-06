@@ -49,6 +49,56 @@ function extra_request_keys!(request, ds::ERA5PressureLevelsDataset)
 end
 
 #####
+##### CDS request construction — pure, network-free
+#####
+
+"""
+    build_era5_request(name_or_names, dataset, datetimes; region) -> Dict{String, Any}
+
+Construct the CDS API request dictionary for a single calendar day's worth of ERA5 data.
+
+`name_or_names` is a `Symbol` or `Vector{Symbol}` of internal variable names. `datetimes`
+is a single `DateTime` or a vector of `DateTime`s; all entries must share the same
+calendar day (year/month/day are taken from the first entry, and one `time` string is
+emitted per entry in input order). `region` is `nothing`, a `BoundingBox`, or a `Column`.
+
+The returned dictionary always uses zero-padded month/day/hour strings, sets the `area`
+key only when `region` produces one, and adds dataset-specific extras (e.g.
+`pressure_level` for pressure-level datasets).
+"""
+function build_era5_request(name_or_names, dataset, datetimes; region)
+    names = name_or_names isa Symbol ? [name_or_names] : name_or_names
+    cds_vars = unique([cds_varnames(dataset)[n] for n in names])
+
+    dts = datetimes isa AbstractVector ? datetimes : [datetimes]
+
+    dt0   = first(dts)
+    year  = string(Dates.year(dt0))
+    month = lpad(string(Dates.month(dt0)), 2, '0')
+    day   = lpad(string(Dates.day(dt0)),   2, '0')
+
+    hours_str = [lpad(string(Dates.hour(dt)), 2, '0') * ":00" for dt in dts]
+
+    request = Dict{String, Any}(
+        "product_type"    => ["reanalysis"],
+        "variable"        => cds_vars,
+        "year"            => [year],
+        "month"           => [month],
+        "day"             => [day],
+        "time"            => hours_str,
+        "data_format"     => "netcdf",
+        "download_format" => "unarchived",
+    )
+
+    extra_request_keys!(request, dataset)
+
+    area = build_era5_area(region)
+    isnothing(area) || (request["area"] = area)
+
+    return request
+end
+
+#####
 ##### ZIP detection — CDS returns a ZIP when mixing step types (inst/accum/avg)
 #####
 
@@ -110,21 +160,7 @@ function download_dataset(meta::ERA5Metadatum; skip_existing=true)
 
     mkpath(dirname(output_path))
 
-    date = meta.dates
-    request = Dict(
-        "product_type"    => ["reanalysis"],
-        "variable"        => [cds_varnames(meta.dataset)[meta.name]],
-        "year"            => [string(Dates.year(date))],
-        "month"           => [lpad(string(Dates.month(date)), 2, '0')],
-        "day"             => [lpad(string(Dates.day(date)), 2, '0')],
-        "time"            => [lpad(string(Dates.hour(date)), 2, '0') * ":00"],
-        "data_format"     => "netcdf",
-        "download_format" => "unarchived",
-    )
-
-    extra_request_keys!(request, meta.dataset)
-    area = build_era5_area(meta.region)
-    isnothing(area) || (request["area"] = area)
+    request = build_era5_request(meta.name, meta.dataset, meta.dates; region=meta.region)
 
     @root CDSAPI.retrieve(cds_product(meta.dataset), request, output_path)
 
@@ -163,57 +199,73 @@ function _group_by_calendar_day(datetimes)
                 for d in unique(Dates.Date.(datetimes)))
 end
 
-function download_era5_day(name, dataset, day_dates;
-                           region, dir, skip_existing, cleanup)
+"""
+    plan_era5_day(name, dataset, day_dates; region, dir, skip_existing) -> NamedTuple
 
+Pure planner for a single-variable, single-day ERA5 download. Computes the per-datetime
+output paths, filters to the subset that needs downloading, and (when there is work to
+do) builds the CDS request, the temporary download path, and the NetCDF splitting
+triples. No I/O beyond `isfile` checks; no network.
+
+Returned NamedTuple fields:
+- `dt_path_pairs`: every `(datetime, path)` pair the caller should report.
+- `pending`: subset of `dt_path_pairs` that still need a download.
+- `request`, `tmp_path`, `nc_triples`: `nothing` when `pending` is empty; otherwise the
+  CDS request dict, the temporary multi-step NetCDF path, and the per-datetime split
+  triples consumed by `split_era5_nc_multistep`.
+"""
+function plan_era5_day(name, dataset, day_dates; region, dir, skip_existing)
     meta_filename = NumericalEarth.DataWrangling.metadata_filename
 
     dt_path_pairs = [(dt, joinpath(dir, meta_filename(dataset, name, dt, region)))
                      for dt in day_dates]
 
-    pending = skip_existing ? filter(((_, path),) -> !isfile(path), dt_path_pairs) : dt_path_pairs
-    isempty(pending) && return [path for (_, path) in dt_path_pairs]
+    pending = if skip_existing
+        filter(dt_path -> !isfile(dt_path[2]), dt_path_pairs)
+    else
+        dt_path_pairs
+    end
+
+    if isempty(pending)
+        return (; dt_path_pairs, pending,
+                  request=nothing, tmp_path=nothing, nc_triples=nothing)
+    end
 
     sorted_dts = sort(unique([dt for (dt, _) in pending]))
-    hours_str  = [lpad(string(Dates.hour(dt)), 2, '0') * ":00" for dt in sorted_dts]
     dt_to_tidx = Dict(dt => i for (i, dt) in enumerate(sorted_dts))
 
-    dt    = first(sorted_dts)
-    year  = string(Dates.year(dt))
-    month = lpad(string(Dates.month(dt)), 2, '0')
-    day   = lpad(string(Dates.day(dt)),   2, '0')
+    request = build_era5_request(name, dataset, sorted_dts; region)
 
-    request = Dict(
-        "product_type"    => ["reanalysis"],
-        "variable"        => [cds_varnames(dataset)[name]],
-        "year"            => [year],
-        "month"           => [month],
-        "day"             => [day],
-        "time"            => hours_str,
-        "data_format"     => "netcdf",
-        "download_format" => "unarchived",
-    )
+    dt0   = first(sorted_dts)
+    year  = string(Dates.year(dt0))
+    month = lpad(string(Dates.month(dt0)), 2, '0')
+    day   = lpad(string(Dates.day(dt0)),   2, '0')
 
-    extra_request_keys!(request, dataset)
-    area = build_era5_area(region)
-    isnothing(area) || (request["area"] = area)
-
-    mkpath(dir)
     tmp_path   = joinpath(dir, "_tmp_$(year)$(month)$(day).nc")
     nc_varname = nc_varnames(dataset)[name]
     nc_triples = [(nc_varname, dt_to_tidx[dt], path) for (dt, path) in pending]
 
+    return (; dt_path_pairs, pending, request, tmp_path, nc_triples)
+end
+
+function download_era5_day(name, dataset, day_dates;
+                           region, dir, skip_existing, cleanup)
+
+    plan = plan_era5_day(name, dataset, day_dates; region, dir, skip_existing)
+    isempty(plan.pending) && return map(dt_path -> dt_path[2], plan.dt_path_pairs)
+
+    mkpath(dir)
     time_dimnames = Set(["time", "valid_time"])
 
     @root begin
-        CDSAPI.retrieve(cds_product(dataset), request, tmp_path)
-        foreach_nc(tmp_path, dir) do nc_path
-            split_era5_nc_multistep(nc_path, nc_triples, coord_vars(dataset), time_dimnames)
+        CDSAPI.retrieve(cds_product(dataset), plan.request, plan.tmp_path)
+        foreach_nc(plan.tmp_path, dir) do nc_path
+            split_era5_nc_multistep(nc_path, plan.nc_triples, coord_vars(dataset), time_dimnames)
         end
-        cleanup && rm(tmp_path; force=true)
+        cleanup && rm(plan.tmp_path; force=true)
     end
 
-    return [path for (_, path) in dt_path_pairs]
+    return map(dt_path -> dt_path[2], plan.dt_path_pairs)
 end
 
 #####
@@ -252,35 +304,21 @@ function download_dataset(names::Vector{Symbol}, meta::ERA5PressureMetadatum; sk
     end
 
     pending = if skip_existing
-        [(n, p) for (n, p) in name_path_pairs if !isfile(p)]
+        filter(name_path -> !isfile(name_path[2]), name_path_pairs)
     else
         name_path_pairs
     end
 
-    isempty(pending) && return [path for (_, path) in name_path_pairs]
+    isempty(pending) && return map(name_path -> name_path[2], name_path_pairs)
 
-    cds_vars = unique([cds_varnames(meta.dataset)[name] for (name, _) in pending])
+    pending_names = [name for (name, _) in pending]
+    request = build_era5_request(pending_names, meta.dataset, meta.dates; region=meta.region)
 
     date  = meta.dates
     year  = string(Dates.year(date))
     month = lpad(string(Dates.month(date)), 2, '0')
     day   = lpad(string(Dates.day(date)),   2, '0')
     hour  = lpad(string(Dates.hour(date)),  2, '0') * ":00"
-
-    request = Dict(
-        "product_type"    => ["reanalysis"],
-        "variable"        => cds_vars,
-        "year"            => [year],
-        "month"           => [month],
-        "day"             => [day],
-        "time"            => [hour],
-        "data_format"     => "netcdf",
-        "download_format" => "unarchived",
-    )
-
-    extra_request_keys!(request, meta.dataset)
-    area = build_era5_area(meta.region)
-    isnothing(area) || (request["area"] = area)
 
     mkpath(meta.dir)
     tmp_path = joinpath(meta.dir, "_tmp_multi_$(year)$(month)$(day)T$(hour[1:2]).nc")
@@ -295,7 +333,7 @@ function download_dataset(names::Vector{Symbol}, meta::ERA5PressureMetadatum; sk
         rm(tmp_path; force=true)
     end
 
-    return [path for (_, path) in name_path_pairs]
+    return map(name_path -> name_path[2], name_path_pairs)
 end
 
 """
@@ -351,58 +389,73 @@ function download_dataset(name::Symbol,
     return download_dataset([name], dataset, datetimes; region, dir, skip_existing, cleanup)
 end
 
-function download_era5_multivar_day(names, dataset, day_dates;
-                                    region, dir, skip_existing, cleanup)
+"""
+    plan_era5_multivar_day(names, dataset, day_dates; region, dir, skip_existing) -> NamedTuple
 
+Pure planner for a multi-variable, single-day ERA5 download. Same shape as
+[`plan_era5_day`](@ref), but indexed by `(name, datetime, path)` triples so each split
+file is identified by both the variable name and the timestep.
+
+Returned NamedTuple fields:
+- `name_dt_paths`: every `(name, datetime, path)` triple the caller should report.
+- `pending`: subset that still needs a download.
+- `request`, `tmp_path`, `nc_triples`: `nothing` when `pending` is empty; otherwise the
+  CDS request dict, the temporary multi-step NetCDF path, and the per-(name, time) split
+  triples consumed by `split_era5_nc_multistep`.
+"""
+function plan_era5_multivar_day(names, dataset, day_dates; region, dir, skip_existing)
     meta_filename = NumericalEarth.DataWrangling.metadata_filename
 
     name_dt_paths = [(name, dt, joinpath(dir, meta_filename(dataset, name, dt, region)))
                      for name in names for dt in day_dates]
 
-    pending = skip_existing ? filter(((_, _, path),) -> !isfile(path), name_dt_paths) : name_dt_paths
-    isempty(pending) && return [path for (_, _, path) in name_dt_paths]
+    pending = if skip_existing
+        filter(name_dt_path -> !isfile(name_dt_path[3]), name_dt_paths)
+    else
+        name_dt_paths
+    end
 
-    cds_vars   = unique([cds_varnames(dataset)[name] for (name, _, _) in pending])
-    sorted_dts = sort(unique([dt for (_, dt, _) in pending]))
-    hours_str  = [lpad(string(Dates.hour(dt)), 2, '0') * ":00" for dt in sorted_dts]
-    dt_to_tidx = Dict(dt => i for (i, dt) in enumerate(sorted_dts))
+    if isempty(pending)
+        return (; name_dt_paths, pending,
+                  request=nothing, tmp_path=nothing, nc_triples=nothing)
+    end
 
-    dt    = first(sorted_dts)
-    year  = string(Dates.year(dt))
-    month = lpad(string(Dates.month(dt)), 2, '0')
-    day   = lpad(string(Dates.day(dt)),   2, '0')
+    pending_names = unique(map(name_dt_path -> name_dt_path[1], pending))
+    sorted_dts    = sort(unique(map(name_dt_path -> name_dt_path[2], pending)))
+    dt_to_tidx    = Dict(dt => i for (i, dt) in enumerate(sorted_dts))
 
-    request = Dict(
-        "product_type"    => ["reanalysis"],
-        "variable"        => cds_vars,
-        "year"            => [year],
-        "month"           => [month],
-        "day"             => [day],
-        "time"            => hours_str,
-        "data_format"     => "netcdf",
-        "download_format" => "unarchived",
-    )
+    request = build_era5_request(pending_names, dataset, sorted_dts; region)
 
-    extra_request_keys!(request, dataset)
-    area = build_era5_area(region)
-    isnothing(area) || (request["area"] = area)
+    dt0   = first(sorted_dts)
+    year  = string(Dates.year(dt0))
+    month = lpad(string(Dates.month(dt0)), 2, '0')
+    day   = lpad(string(Dates.day(dt0)),   2, '0')
 
-    mkpath(dir)
     tmp_path   = joinpath(dir, "_tmp_multi_$(year)$(month)$(day).nc")
     nc_triples = [(nc_varnames(dataset)[name], dt_to_tidx[dt], path)
                   for (name, dt, path) in pending]
 
+    return (; name_dt_paths, pending, request, tmp_path, nc_triples)
+end
+
+function download_era5_multivar_day(names, dataset, day_dates;
+                                    region, dir, skip_existing, cleanup)
+
+    plan = plan_era5_multivar_day(names, dataset, day_dates; region, dir, skip_existing)
+    isempty(plan.pending) && return map(name_dt_path -> name_dt_path[3], plan.name_dt_paths)
+
+    mkpath(dir)
     time_dimnames = Set(["time", "valid_time"])
 
     @root begin
-        CDSAPI.retrieve(cds_product(dataset), request, tmp_path)
-        foreach_nc(tmp_path, dir) do nc_path
-            split_era5_nc_multistep(nc_path, nc_triples, coord_vars(dataset), time_dimnames)
+        CDSAPI.retrieve(cds_product(dataset), plan.request, plan.tmp_path)
+        foreach_nc(plan.tmp_path, dir) do nc_path
+            split_era5_nc_multistep(nc_path, plan.nc_triples, coord_vars(dataset), time_dimnames)
         end
-        cleanup && rm(tmp_path; force=true)
+        cleanup && rm(plan.tmp_path; force=true)
     end
 
-    return [path for (_, _, path) in name_dt_paths]
+    return map(name_dt_path -> name_dt_path[3], plan.name_dt_paths)
 end
 
 #####
