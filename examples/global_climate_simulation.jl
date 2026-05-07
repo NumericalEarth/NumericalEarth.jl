@@ -98,10 +98,12 @@ nothing #hide
 nothing #hide
 
 # We build the complete coupled `earth_model` and the coupled simulation.
-# Since radiation is idealized in this example, we set the emissivities to zero.
+# NumericalEarth still computes turbulent (sensible heat, water vapor) fluxes
+# here using its own bulk-formula machinery and writes them back to Speedy.
+# Top-level radiation, however, is not yet wired up against SpeedyWeather's
+# upwelling-LW path, so we leave `radiation = nothing` for now.
 
-radiation = Radiation(ocean_emissivity=0.0, sea_ice_emissivity=0.0)
-earth_model = EarthSystemModel(atmosphere, ocean, sea_ice; radiation)
+earth_model = EarthSystemModel(; atmosphere, sea_ice, ocean)
 
 # ## Building and running the simulation
 #

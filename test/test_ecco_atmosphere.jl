@@ -2,8 +2,9 @@ include("runtests_setup.jl")
 include("download_utils.jl")
 
 using Statistics: median
-using NumericalEarth.Atmospheres: PrescribedAtmosphere, TwoBandDownwellingRadiation
-using NumericalEarth.ECCO: ECCOPrescribedAtmosphere, ECCO4Monthly
+using NumericalEarth.Atmospheres: PrescribedAtmosphere
+using NumericalEarth.Radiations: PrescribedRadiation
+using NumericalEarth.ECCO: ECCOPrescribedAtmosphere, ECCOPrescribedRadiation, ECCO4Monthly
 using NumericalEarth.DataWrangling: download_dataset, metadata_path, higher_bound
 
 # Pre-download ECCO4Monthly atmospheric forcing variables through the artifacts
@@ -34,7 +35,14 @@ end
                                               end_date,
                                               time_indices_in_memory = 2)
 
+        radiation = ECCOPrescribedRadiation(arch;
+                                            dataset,
+                                            start_date,
+                                            end_date,
+                                            time_indices_in_memory = 2)
+
         @test atmosphere isa PrescribedAtmosphere
+        @test radiation isa PrescribedRadiation
 
         # Test that all expected fields are present
         @test haskey(atmosphere.velocities, :u)
@@ -42,12 +50,11 @@ end
         @test haskey(atmosphere.tracers, :T)
         @test haskey(atmosphere.tracers, :q)
         @test !isnothing(atmosphere.pressure)
-        @test !isnothing(atmosphere.downwelling_radiation)
         @test haskey(atmosphere.freshwater_flux, :rain)
 
         # Test downwelling radiation components
-        ℐꜜˢʷ = atmosphere.downwelling_radiation.shortwave
-        ℐꜜˡʷ = atmosphere.downwelling_radiation.longwave
+        ℐꜜˢʷ = radiation.downwelling_shortwave
+        ℐꜜˡʷ = radiation.downwelling_longwave
 
         @test ℐꜜˢʷ isa FieldTimeSeries
         @test ℐꜜˡʷ isa FieldTimeSeries
