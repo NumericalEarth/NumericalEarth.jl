@@ -39,7 +39,7 @@ function ComponentExchanger(atmosphere::BreezeAtmosphere, exchange_grid)
                ℐꜜˢʷ = Oceananigans.CenterField(exchange_grid),
                ℐꜜˡʷ = Oceananigans.CenterField(exchange_grid),
                Jʳⁿ  = Oceananigans.CenterField(exchange_grid),
-               Jˢⁿ  = Oceananigans.CenterField(exchange_grid),
+               Jˢⁿ  = Oceananigans.CenterField(exchange_grid))
 
     return ComponentExchanger(state, nothing)
 end
