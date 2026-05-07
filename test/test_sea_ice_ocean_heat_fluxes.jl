@@ -201,14 +201,14 @@ end
 
         backend = JRA55NetCDFBackend(4)
         atmosphere = JRA55PrescribedAtmosphere(arch; backend)
-        radiation = Radiation(arch)
+        radiation = JRA55PrescribedRadiation(arch; backend)
 
         for sea_ice_ocean_heat_flux in [IceBathHeatFlux(), ThreeEquationHeatFlux()]
             @testset "Salt flux with $(nameof(typeof(sea_ice_ocean_heat_flux)))" begin
                 interfaces = ComponentInterfaces(atmosphere, ocean, sea_ice;
                                                  radiation,
                                                  sea_ice_ocean_heat_flux)
-                coupled_model = OceanSeaIceModel(ocean, sea_ice; atmosphere, radiation, interfaces)
+                coupled_model = OceanSeaIceModel(sea_ice, ocean; atmosphere, radiation, interfaces)
 
                 # Test melting conditions: warm ocean above freezing
                 # Freezing point at S=35 is about -1.9°C
@@ -259,14 +259,14 @@ end
 
         backend = JRA55NetCDFBackend(4)
         atmosphere = JRA55PrescribedAtmosphere(arch; backend)
-        radiation = Radiation(arch)
+        radiation = JRA55PrescribedRadiation(arch; backend)
 
         for sea_ice_ocean_heat_flux in [IceBathHeatFlux(), ThreeEquationHeatFlux()]
             @testset "Flux magnitude with $(nameof(typeof(sea_ice_ocean_heat_flux)))" begin
                 interfaces = ComponentInterfaces(atmosphere, ocean, sea_ice;
                                                  radiation,
                                                  sea_ice_ocean_heat_flux)
-                coupled_model = OceanSeaIceModel(ocean, sea_ice; atmosphere, radiation, interfaces)
+                coupled_model = OceanSeaIceModel(sea_ice, ocean; atmosphere, radiation, interfaces)
 
                 # Set up melting conditions
                 set!(ocean.model, T=2.0, S=35.0)  # Warm ocean
@@ -403,14 +403,14 @@ end
 
         backend = JRA55NetCDFBackend(4)
         atmosphere = JRA55PrescribedAtmosphere(arch; backend)
-        radiation = Radiation(arch)
+        radiation = JRA55PrescribedRadiation(arch; backend)
 
         for sea_ice_ocean_heat_flux in [IceBathHeatFlux(), ThreeEquationHeatFlux()]
             @testset "Frazil with $(nameof(typeof(sea_ice_ocean_heat_flux)))" begin
                 interfaces = ComponentInterfaces(atmosphere, ocean, sea_ice;
                                                  radiation,
                                                  sea_ice_ocean_heat_flux)
-                coupled_model = OceanSeaIceModel(ocean, sea_ice; atmosphere, radiation, interfaces)
+                coupled_model = OceanSeaIceModel(sea_ice, ocean; atmosphere, radiation, interfaces)
 
                 # Set up conditions where frazil might form:
                 # Cold ocean near freezing with ice present
@@ -454,11 +454,11 @@ end
 
         backend = JRA55NetCDFBackend(4)
         atmosphere = JRA55PrescribedAtmosphere(arch; backend)
-        radiation = Radiation(arch)
+        radiation = JRA55PrescribedRadiation(arch; backend)
 
         # Test with ThreeEquationHeatFlux (default)
         @test begin
-            coupled_model = OceanSeaIceModel(ocean, sea_ice; atmosphere, radiation)
+            coupled_model = OceanSeaIceModel(sea_ice, ocean; atmosphere, radiation)
             flux_form = coupled_model.interfaces.sea_ice_ocean_interface.flux_formulation
             flux_form isa ThreeEquationHeatFlux
         end
@@ -469,7 +469,7 @@ end
             interfaces = ComponentInterfaces(atmosphere, ocean, sea_ice;
                                               radiation,
                                               sea_ice_ocean_heat_flux = flux)
-            coupled_model = OceanSeaIceModel(ocean, sea_ice; atmosphere, radiation, interfaces)
+            coupled_model = OceanSeaIceModel(sea_ice, ocean; atmosphere, radiation, interfaces)
             flux_form = coupled_model.interfaces.sea_ice_ocean_interface.flux_formulation
             flux_form isa IceBathHeatFlux
         end
@@ -482,7 +482,7 @@ end
                 interfaces = ComponentInterfaces(atmosphere, ocean, sea_ice;
                                                  radiation,
                                                  sea_ice_ocean_heat_flux)
-                coupled_model = OceanSeaIceModel(ocean, sea_ice; atmosphere, radiation, interfaces)
+                coupled_model = OceanSeaIceModel(sea_ice, ocean; atmosphere, radiation, interfaces)
                 @test begin
                     time_step!(coupled_model, 60)
                     true

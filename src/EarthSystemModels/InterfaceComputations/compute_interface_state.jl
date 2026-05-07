@@ -32,7 +32,7 @@ end
                                          initial_interface_state,
                                          atmosphere_state,
                                          interior_state,
-                                         downwelling_radiation,
+                                         radiation_state,
                                          interface_properties,
                                          atmosphere_properties,
                                          interior_properties)
@@ -47,7 +47,7 @@ end
         Ψₛ⁻ = Ψₛⁿ
         Ψₛⁿ = iterate_interface_state(flux_formulation,
                                       Ψₛ⁻, Ψₐ, Ψᵢ,
-                                      downwelling_radiation,
+                                      radiation_state,
                                       interface_properties,
                                       atmosphere_properties,
                                       interior_properties)
@@ -70,7 +70,7 @@ and interior properties `ℙₛ`, `ℙₐ`, and `ℙᵢ`.
                                          approximate_interface_state,
                                          atmosphere_state,
                                          interior_state,
-                                         downwelling_radiation,
+                                         radiation_state,
                                          interface_properties,
                                          atmosphere_properties,
                                          interior_properties)
@@ -79,7 +79,7 @@ and interior properties `ℙₛ`, `ℙₐ`, and `ℙᵢ`.
                                        approximate_interface_state,
                                        atmosphere_state,
                                        interior_state,
-                                       downwelling_radiation,
+                                       radiation_state,
                                        interface_properties,
                                        atmosphere_properties,
                                        interior_properties)
