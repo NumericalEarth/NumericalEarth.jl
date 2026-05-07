@@ -27,8 +27,8 @@ function interpolate_state!(exchanger, grid, atmosphere::PrescribedAtmosphere, c
     atmosphere_tracers = (T = atmosphere.tracers.T.data,
                           q = atmosphere.tracers.q.data)
 
-    freshwater_flux = map(ϕ -> ϕ.data, atmosphere.freshwater_flux)
-    snowfall_flux = haskey(atmosphere.freshwater_flux, :snow) ? atmosphere.freshwater_flux.snow.data : nothing
+    rainfall_flux = surface_rainfall_flux(atmosphere)
+    snowfall_flux = surface_snowfall_flux(atmosphere)
     atmosphere_pressure = atmosphere.pressure.data
 
     # Extract info for time-interpolation
@@ -47,7 +47,7 @@ function interpolate_state!(exchanger, grid, atmosphere::PrescribedAtmosphere, c
                        T   = atmosphere_fields.T.data,
                        p   = atmosphere_fields.p.data,
                        q   = atmosphere_fields.q.data,
-                       Jᶜ  = atmosphere_fields.Jᶜ.data,
+                       Jʳⁿ = atmosphere_fields.Jʳⁿ.data,
                        Jˢⁿ = atmosphere_fields.Jˢⁿ.data)
 
     kernel_parameters = interface_kernel_parameters(grid)
@@ -69,7 +69,7 @@ function interpolate_state!(exchanger, grid, atmosphere::PrescribedAtmosphere, c
             atmosphere_velocities,
             atmosphere_tracers,
             atmosphere_pressure,
-            freshwater_flux,
+            rainfall_flux,
             snowfall_flux,
             atmosphere_backend,
             atmosphere_time_indexing)
@@ -96,7 +96,7 @@ end
                                                          atmos_velocities,
                                                          atmos_tracers,
                                                          atmos_pressure,
-                                                         prescribed_freshwater_flux,
+                                                         rainfall_flux,
                                                          snowfall_flux,
                                                          atmos_backend,
                                                          atmos_time_indexing)
@@ -118,10 +118,9 @@ end
     qᵃᵗ = interp_atmos_time_series(atmos_tracers.q,    atmos_args...)
     pᵃᵗ = interp_atmos_time_series(atmos_pressure,     atmos_args...)
 
-    # Total precipitation (rain + snow)
-    Mh = interp_atmos_time_series(prescribed_freshwater_flux, atmos_args...)
-
-    # Snowfall only (for sea ice snow accumulation)
+    # Rainfall and snowfall are kept separate downstream: Jʳⁿ holds the rain
+    # and Jˢⁿ holds the snow (used by the sea-ice snow accumulation).
+    Mr = interp_atmos_time_series(rainfall_flux, atmos_args...)
     Ms = interp_atmos_time_series(snowfall_flux, atmos_args...)
 
     # Convert atmosphere velocities (usually defined on a latitude-longitude grid) to
@@ -135,7 +134,7 @@ end
         surface_atmos_state.T[i, j, 1] = Tᵃᵗ
         surface_atmos_state.p[i, j, 1] = pᵃᵗ
         surface_atmos_state.q[i, j, 1] = qᵃᵗ
-        surface_atmos_state.Jᶜ[i, j, 1] = Mh
+        surface_atmos_state.Jʳⁿ[i, j, 1] = Mr
         surface_atmos_state.Jˢⁿ[i, j, 1] = Ms
     end
 end

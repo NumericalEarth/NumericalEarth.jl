@@ -42,11 +42,47 @@ function default_atmosphere_tracers(grid, times)
     return (T=Ta, q=qa)
 end
 
+"""
+    PrescribedPrecipitationFlux(; rain=nothing, snow=nothing)
+    PrescribedPrecipitationFlux(rain, snow)
+
+Container for prescribed precipitation fluxes. Either component may be `nothing`
+to indicate that the corresponding precipitation type is not represented by the
+atmosphere (e.g. rain-only datasets). Used as the `freshwater_flux` of a
+`PrescribedAtmosphere`; downstream callers query the snow component via
+[`surface_snowfall_flux`](@ref) so that prognostic atmospheres with or without
+snow can dispatch on this type as well.
+"""
+struct PrescribedPrecipitationFlux{R, S}
+    rain :: R
+    snow :: S
+end
+
+PrescribedPrecipitationFlux(; rain=nothing, snow=nothing) =
+    PrescribedPrecipitationFlux(rain, snow)
+
+Adapt.adapt_structure(to, ff::PrescribedPrecipitationFlux) =
+    PrescribedPrecipitationFlux(adapt(to, ff.rain), adapt(to, ff.snow))
+
 function default_freshwater_flux(grid, times)
     rain = FieldTimeSeries{Center, Center, Nothing}(grid, times)
     snow = FieldTimeSeries{Center, Center, Nothing}(grid, times)
-    return (; rain, snow)
+    return PrescribedPrecipitationFlux(rain, snow)
 end
+
+# `nothing` is returned when the atmosphere has no snow component, so that
+# callers (e.g. sea-ice snow accumulation) can branch via dispatch rather than
+# `haskey`.
+@inline field_data(::Nothing) = nothing
+@inline field_data(field) = field.data
+
+@inline surface_snowfall_flux(::Nothing) = nothing
+@inline surface_snowfall_flux(atmos::PrescribedAtmosphere) = surface_snowfall_flux(atmos.freshwater_flux)
+@inline surface_snowfall_flux(ff::PrescribedPrecipitationFlux) = field_data(ff.snow)
+
+@inline surface_rainfall_flux(::Nothing) = nothing
+@inline surface_rainfall_flux(atmos::PrescribedAtmosphere) = surface_rainfall_flux(atmos.freshwater_flux)
+@inline surface_rainfall_flux(ff::PrescribedPrecipitationFlux) = field_data(ff.rain)
 
 """ The standard unit of atmospheric pressure; 1 standard atmosphere (atm) = 101,325 Pascals (Pa)
 in SI units. This is approximately equal to the mean sea-level atmospheric pressure on Earth. """

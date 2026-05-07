@@ -16,8 +16,7 @@ function update_net_fluxes!(coupled_model, sea_ice::Simulation{<:SeaIceModel})
     atmosphere_sea_ice_fluxes = computed_fluxes(coupled_model.interfaces.atmosphere_sea_ice_interface)
 
     atmosphere_fields = coupled_model.interfaces.exchanger.atmosphere.state
-    freshwater_flux = atmosphere_fields.Jᶜ.data
-    snowfall_flux   = atmosphere_fields.Jˢⁿ.data
+    snowfall_flux = atmosphere_fields.Jˢⁿ.data
 
     sea_ice_properties = coupled_model.interfaces.sea_ice_properties
     ice_concentration = sea_ice_concentration(sea_ice)
@@ -30,7 +29,6 @@ function update_net_fluxes!(coupled_model, sea_ice::Simulation{<:SeaIceModel})
             clock,
             atmosphere_sea_ice_fluxes,
             sea_ice_ocean_fluxes,
-            freshwater_flux,
             snowfall_flux,
             ice_concentration,
             sea_ice_properties)
@@ -44,7 +42,6 @@ end
                                                clock,
                                                atmosphere_sea_ice_fluxes,
                                                sea_ice_ocean_fluxes,
-                                               freshwater_flux,
                                                snowfall_flux,
                                                ice_concentration,
                                                sea_ice_properties)
