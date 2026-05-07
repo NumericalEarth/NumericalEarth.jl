@@ -1,9 +1,12 @@
 using Printf
+using KernelAbstractions: @index, @kernel
 using Oceananigans.Operators: Δzᶜᶜᶜ
 using Oceananigans.Grids: λnode, φnode, znode, Center
 using Oceananigans.Architectures: on_architecture, architecture
-using Oceananigans.BoundaryConditions: DiscreteBoundaryCondition
+using Oceananigans.BoundaryConditions: DiscreteBoundaryFunction, getbc
 using Oceananigans.Fields: CenterField, interior
+using Oceananigans.Utils: launch!
+using NumericalEarth.Oceans: MultipleFluxes
 using SeawaterPolynomials.TEOS10: Sᴬ_from_Sᴾ, Θ_from_T
 using Oceananigans.TurbulenceClosures: IsopycnalSkewSymmetricDiffusivity,
                                        ConvectiveAdjustmentVerticalDiffusivity
@@ -192,23 +195,59 @@ function build_coupled_model(ocean, sea_ice, atmosphere, radiation, flux_configu
     return OceanSeaIceModel(ocean, sea_ice; atmosphere, interfaces)
 end
 
-function normalize_salinity_flux!(f::Field, Sm)
-    compute!(Sm)
-    parent(f) .-= Sm
+#####
+##### Salinity flux normalization
+#####
+#
+# At each callback, subtract the global mean of the *combined* surface salinity
+# flux from the bulk-flux Field so the global salt budget integrates to zero.
+# The combined flux includes any `additional_fluxes` attached via the
+# `MultipleFluxes` interface (e.g. a `SurfaceFluxRestoring` toward WOA).
+#
+# Three dispatch paths from the salinity top BC:
+#   1. `DiscreteBoundaryFunction` wrapping a `MultipleFluxes` (OMIP path with
+#      `additional_surface_fluxes = (; S = SurfaceFluxRestoring(...))`).
+#   2. `DiscreteBoundaryFunction` wrapping a bulk-flux callable without
+#      additional fluxes.
+#   3. A bare 2D `Field` (no `MultipleFluxes`, no `additional_fluxes`).
+
+@kernel function _materialize_top_flux!(buffer, additional, grid, clock, fields)
+    i, j = @index(Global, NTuple)
+    @inbounds buffer[i, j, 1] = getbc(additional, i, j, grid, clock, fields)
 end
 
-normalize_salinity_flux!(bc::DiscreteBoundaryCondition, Sm) = normalize_salinity_flux!(bc.func.flux_field, Sm)
-
-struct NormalizeSalinity{M}
-    Sm :: M
+struct NormalizeSalinity{F, A, B, M}
+    flux_field        :: F   # bulk flux field (gets corrected each call)
+    additional_fluxes :: A   # callable for additional flux (or `nothing`)
+    additional_buffer :: B   # 2D scratch field for materialized additional flux
+    mean_total        :: M   # Field(Average(flux_field [+ buffer], dims=(1,2)))
 end
 
-salinity_normalizer(bc::DiscreteBoundaryCondition) = normalize_salinity(bc.func.flux_field)
-salinity_normalizer(f::Field) = NormalizeSalinity(Field(Average(f, dims=(1, 2))))
+salinity_normalizer(bc::DiscreteBoundaryFunction) = salinity_normalizer(bc.func)
+
+function salinity_normalizer(mf::MultipleFluxes)
+    flux_field        = mf.flux_field
+    additional        = mf.additional_fluxes
+    additional_buffer = similar(flux_field)
+    fill!(parent(additional_buffer), 0)
+    combined          = flux_field + additional_buffer
+    mean_total        = Field(Average(combined, dims=(1, 2)))
+    return NormalizeSalinity(flux_field, additional, additional_buffer, mean_total)
+end
+
+salinity_normalizer(f::Field) = NormalizeSalinity(f, nothing, nothing, Field(Average(f, dims=(1, 2))))
 
 function (n::NormalizeSalinity)(sim)
     model = sim.model.ocean.model
-    normalize_salinity_flux!(model.tracers.S.boundary_conditions.top.condition, n.Sm)
+    if !isnothing(n.additional_fluxes)
+        grid   = model.grid
+        arch   = architecture(grid)
+        fields = merge(model.velocities, model.tracers)
+        launch!(arch, grid, :xy, _materialize_top_flux!,
+                n.additional_buffer, n.additional_fluxes, grid, model.clock, fields)
+    end
+    compute!(n.mean_total)
+    parent(n.flux_field) .-= n.mean_total
     return nothing
 end
 
