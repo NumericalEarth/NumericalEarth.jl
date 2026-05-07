@@ -2,6 +2,7 @@ using Printf
 using Oceananigans.Operators: Δzᶜᶜᶜ
 using Oceananigans.Grids: λnode, φnode, znode, Center
 using Oceananigans.Architectures: on_architecture, architecture
+using Oceananigans.BoundaryConditions: DiscreteBoundaryCondition
 using Oceananigans.Fields: CenterField, interior
 using SeawaterPolynomials.TEOS10: Sᴬ_from_Sᴾ, Θ_from_T
 using Oceananigans.TurbulenceClosures: IsopycnalSkewSymmetricDiffusivity,
