@@ -53,6 +53,7 @@ export omip_simulation,
        woa_to_teos10!,
        woa_salinity_fts_to_teos10!,
        KPPVerticalDiffusivity, KPPParameters,
+       NEMOTKEVerticalDiffusivity, NEMOTKEParameters,
        NORiBaseVerticalDiffusivity
 
 include("NORi/NORi.jl")
@@ -62,6 +63,10 @@ using .NORi: NORiBaseVerticalDiffusivity
 include("KPP/KPP.jl")
 
 using .KPP: KPPVerticalDiffusivity, KPPParameters
+
+include("NEMOTKE/NEMOTKE.jl")
+
+using .NEMOTKE: NEMOTKEVerticalDiffusivity, NEMOTKEParameters
 
 include("atmosphere.jl")
 include("jra55_data_staging.jl")

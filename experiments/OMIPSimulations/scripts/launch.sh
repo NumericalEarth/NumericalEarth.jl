@@ -68,6 +68,8 @@ Equatorial-MLD tuning knobs (closure parameters; configuration switches):
                 Salt-concentrating fluxes (E > P + R) are always applied.
                 Prevents NaN blow-ups in pathologically thin top cells
                 under strong precip + runoff plumes. Default: 1.
+  NORMALIZE_SALINITY Set to "true" to normalize the salinity flux to the
+                surface salinity. Default: false.
   CATKE_CWUSTAR `Cᵂu★` of CATKEEquation: surface shear-driven TKE flux
                 coefficient. Higher → more wind-injected TKE → deeper
                 equatorial ML. Default (Oceananigans): 3.179.
@@ -170,23 +172,24 @@ export NZ DT ARCH EXTRA_USING FILE_SPLIT RUN_CMD
 
 # ── Build run name from config + options ──────────────────────────────
 RUN_NAME="$CONFIG"
-[[ "${CORRECTED:-false}" == "true" ]]  && RUN_NAME="${RUN_NAME}_corrected"
-[[ "${NCAR:-false}" == "true" ]]       && RUN_NAME="${RUN_NAME}_ncar"
-[[ "${SNOW:-false}" == "true" ]]       && RUN_NAME="${RUN_NAME}_snow"
-[[ "${CLOSURE:-catke}" == "simple" ]]  && RUN_NAME="${RUN_NAME}_simple"
-[[ "${CLOSURE:-catke}" == "nori"   ]]  && RUN_NAME="${RUN_NAME}_nori"
-[[ "${CLOSURE:-catke}" == "rbvd"   ]]  && RUN_NAME="${RUN_NAME}_rbvd"
-[[ "${CLOSURE:-catke}" == "kpp"    ]]  && RUN_NAME="${RUN_NAME}_kpp"
-[[ "${WIND_VELOCITY:-false}" == "true" ]] && RUN_NAME="${RUN_NAME}_wind"
-[[ -n "${CB:-}" ]]                     && RUN_NAME="${RUN_NAME}_cb${CB}"
-[[ "$KSKEW" != "$DEFAULT_KSKEW" ]]    && RUN_NAME="${RUN_NAME}_kskew${KSKEW}"
-[[ "$KSYMM" != "$DEFAULT_KSYMM" ]]    && RUN_NAME="${RUN_NAME}_ksymm${KSYMM}"
-[[ "$BIHARMONIC" != "$DEFAULT_BIHARMONIC" ]] && RUN_NAME="${RUN_NAME}_bih${BIHARMONIC}"
-[[ -n "${BIHVISC:-}" ]]                && RUN_NAME="${RUN_NAME}_bihvisc${BIHVISC}"
-[[ -n "${DZ_TOP:-}" ]]                 && RUN_NAME="${RUN_NAME}_dz${DZ_TOP}"
-[[ "${SHEAR_GUST:-false}" == "true" ]] && RUN_NAME="${RUN_NAME}_sgust"
-[[ -n "${CATKE_CWUSTAR:-}" ]]          && RUN_NAME="${RUN_NAME}_cwu${CATKE_CWUSTAR}"
-[[ -n "${MIN_SALINITY:-}" ]]           && RUN_NAME="${RUN_NAME}_smin${MIN_SALINITY}"
+[[ "${CORRECTED:-false}" == "true" ]]          && RUN_NAME="${RUN_NAME}_corrected"
+[[ "${NCAR:-false}" == "true" ]]               && RUN_NAME="${RUN_NAME}_ncar"
+[[ "${SNOW:-false}" == "true" ]]               && RUN_NAME="${RUN_NAME}_snow"
+[[ "${CLOSURE:-catke}" == "simple" ]]          && RUN_NAME="${RUN_NAME}_simple"
+[[ "${CLOSURE:-catke}" == "nori"   ]]          && RUN_NAME="${RUN_NAME}_nori"
+[[ "${CLOSURE:-catke}" == "rbvd"   ]]          && RUN_NAME="${RUN_NAME}_rbvd"
+[[ "${CLOSURE:-catke}" == "kpp"    ]]          && RUN_NAME="${RUN_NAME}_kpp"
+[[ "${WIND_VELOCITY:-false}" == "true" ]]      && RUN_NAME="${RUN_NAME}_wind"
+[[ "${NORMALIZE_SALINITY:-false}" == "true" ]] && RUN_NAME="${RUN_NAME}_normsalt"
+[[ -n "${CB:-}" ]]                             && RUN_NAME="${RUN_NAME}_cb${CB}"
+[[ "$KSKEW" != "$DEFAULT_KSKEW" ]]             && RUN_NAME="${RUN_NAME}_kskew${KSKEW}"
+[[ "$KSYMM" != "$DEFAULT_KSYMM" ]]             && RUN_NAME="${RUN_NAME}_ksymm${KSYMM}"
+[[ "$BIHARMONIC" != "$DEFAULT_BIHARMONIC" ]]   && RUN_NAME="${RUN_NAME}_bih${BIHARMONIC}"
+[[ -n "${BIHVISC:-}" ]]                        && RUN_NAME="${RUN_NAME}_bihvisc${BIHVISC}"
+[[ -n "${DZ_TOP:-}" ]]                         && RUN_NAME="${RUN_NAME}_dz${DZ_TOP}"
+[[ "${SHEAR_GUST:-false}" == "true" ]]         && RUN_NAME="${RUN_NAME}_sgust"
+[[ -n "${CATKE_CWUSTAR:-}" ]]                  && RUN_NAME="${RUN_NAME}_cwu${CATKE_CWUSTAR}"
+[[ -n "${MIN_SALINITY:-}" ]]                   && RUN_NAME="${RUN_NAME}_smin${MIN_SALINITY}"
 
 REPORT_NAME="${REPORT_NAME:-${RUN_NAME}_report}"
 JOB_NAME="${JOB_NAME:-$RUN_NAME}"
@@ -264,6 +267,9 @@ CATKE_CWUSTAR_KWARG=""
 MIN_SALINITY_KWARG=""
 [[ -n "$MIN_SALINITY" ]] && MIN_SALINITY_KWARG="ocean_minimum_salinity = ${MIN_SALINITY},"
 
+NORMALIZE_SALINITY_KWARG=""
+[[ "$NORMALIZE_SALINITY" == "true" ]] && NORMALIZE_SALINITY_KWARG="normalize_salinity = true,"
+
 BACKEND_KWARG=""
 [[ -n "$BACKEND_SIZE" ]] && BACKEND_KWARG="backend_size = ${BACKEND_SIZE},"
 
@@ -307,6 +313,7 @@ sim = omip_simulation(:${CONFIG};
                       ${SNOW_KWARG}
                       ${CATKE_CWUSTAR_KWARG}
                       ${MIN_SALINITY_KWARG}
+                      ${NORMALIZE_SALINITY_KWARG}
                       Δt = ${DT},
                       forcing_dir = \"${FORCING_DIR}\",
                       ${STAGING_KWARG}

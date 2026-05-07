@@ -191,6 +191,26 @@ function build_coupled_model(ocean, sea_ice, atmosphere, radiation, flux_configu
     return OceanSeaIceModel(ocean, sea_ice; atmosphere, interfaces)
 end
 
+function normalize_salinity_flux!(f::Field, Sm)
+    compute!(Sm)
+    parent(f) .-= Sm
+end
+
+normalize_salinity_flux!(bc::DiscreteBoundaryCondition, Sm) = normalize_salinity_flux!(bc.func.flux_field, Sm)
+
+struct NormalizeSalinity{M}
+    Sm :: M
+end
+
+salinity_normalizer(bc::DiscreteBoundaryCondition) = normalize_salinity(bc.func.flux_field)
+salinity_normalizer(f::Field) = NormalizeSalinity(Field(Average(f, dims=(1, 2))))
+
+function (n::NormalizeSalinity)(sim)
+    model = sim.model.ocean.model
+    normalize_salinity_flux!(model.tracers.S.boundary_conditions.top.condition, n.Sm)
+    return nothing
+end
+
 #####
 ##### Main simulation builder
 #####
@@ -253,6 +273,10 @@ plumbing is needed because `NumericalEarth.EarthSystemModels` provides
      A battle-tested comparison point for `:nori`; no `Cᵇ` parameter.
    * `:kpp` — KPP boundary-layer scheme (Large 1994 / MITgcm), vendored
      in `KPP/`. Includes nonlocal tracer flux + SW-aware Bf. No `Cᵇ`.
+   * `:nemo_tke` — NEMO 3.6 TKE scheme (Blanke & Delecluse 1993; Gaspar et al.
+     1990; Madec et al. 2017), vendored in `NEMOTKE/`. OMIP-2 ORCA1 preset:
+     prognostic e, gradient-limited length scale, Langmuir + Mellor-Blumberg
+     wave penetration + EVD on static instability. No `Cᵇ`.
 - `velocity_formulation::Symbol`: Δu used by the bulk formula. Options:
    * `:relative` — `Δu = u_atm − u_ocean` (OMIP-2 α=1, default).
    * `:wind` — `Δu = u_atm` (ignores ocean current). For isolating bulk-formula
@@ -287,6 +311,7 @@ function omip_simulation(config::Symbol = :halfdegree;
                          ocean_minimum_salinity = 4,
                          Cᵂu★ = nothing,
                          with_snow = false,
+                         normalize_salinity = false,
                          diagnostics = true,
                          field_mean_interval = 5days,
                          surface_averaging_interval = 5days,
@@ -348,6 +373,12 @@ function omip_simulation(config::Symbol = :halfdegree;
         # The callback only copies files at year transitions; otherwise it returns immediately.
         add_callback!(simulation, staging_callback, IterationInterval(1440))
     end
+
+    if normalize_salinity
+        NS = salinity_normalizer(ocean.model.tracers.S.boundary_conditions.top.condition)
+        add_callback!(simulation, NS, IterationInterval(1))
+    end
+
 
     wall_time = Ref(time_ns())
     add_callback!(simulation, omip_progress_callback(wall_time), IterationInterval(10))
@@ -485,8 +516,10 @@ function omip_closure(vertical_closure::Symbol;
         RiBasedVerticalDiffusivity(; horizontal_Ri_filter = Oceananigans.TurbulenceClosures.FivePointHorizontalFilter()), nothing
     elseif vertical_closure == :kpp
         KPPVerticalDiffusivity(), nothing
+    elseif vertical_closure == :nemo_tke
+        NEMOTKEVerticalDiffusivity(), nothing
     else
-        error("Unknown vertical_closure: $vertical_closure. Options: :catke, :simple, :nori, :rbvd, :kpp")
+        error("Unknown vertical_closure: $vertical_closure. Options: :catke, :simple, :nori, :rbvd, :kpp, :nemo_tke")
     end
 
     eddy  = if isnothing(κ_skew) | isnothing(κ_symmetric)
