@@ -3,6 +3,9 @@ using NumericalEarth
 using Oceananigans
 using Oceananigans.Fields: interior
 using Oceananigans.TimeSteppers: time_step!, update_state!
+using NumericalEarth.EarthSystemModels.InterfaceComputations: SimilarityScales
+
+const InterfaceComputations = NumericalEarth.EarthSystemModels.InterfaceComputations
 
 scalar(field) = Array(interior(field))[1]
 
@@ -203,5 +206,60 @@ end
         expected = expected_jarvis_resistance(300.0, 0.005, 300.0, 0.30, 3.0,
                                               p.r_smin, 700.0, p)
         @test scalar(land.vegetation.r_s) ≈ expected
+    end
+
+    @testset "land roughness enters atmosphere-land MOST fluxes" begin
+        grid = RectilinearGrid(CPU();
+                               size = (2, 1),
+                               halo = (1, 1),
+                               x = (0, 2),
+                               y = (0, 1),
+                               topology = (Bounded, Bounded, Flat))
+
+        land = RucSlabLand(grid)
+        set!(land; T = 293.15, Tc = 293.15, θ = 0.30, vegfrac = 1.0, lai = 1.0)
+        interior(land.vegetation.z0_veg, :, :, 1) .= reshape([0.02, 0.80], 2, 1)
+        update_state!(land)
+
+        atmosphere = PrescribedAtmosphere(grid, [0.0])
+        fill!(parent(atmosphere.velocities.u), 5.0)
+        fill!(parent(atmosphere.velocities.v), 0.0)
+        fill!(parent(atmosphere.tracers.T), 293.15)
+        fill!(parent(atmosphere.tracers.q), 0.005)
+        fill!(parent(atmosphere.pressure), 101325.0)
+        update_state!(atmosphere)
+
+        default_interfaces = InterfaceComputations.ComponentInterfaces(atmosphere, nothing, nothing; land)
+        default_flux_formulation = default_interfaces.atmosphere_land_interface.flux_formulation
+        @test default_flux_formulation.roughness_lengths.momentum isa LandRoughnessLength
+        @test default_flux_formulation.roughness_lengths.temperature.multiplier ≈ 0.1
+        @test default_flux_formulation.roughness_lengths.water_vapor.multiplier ≈ 0.1
+
+        @inline zero_stability_function(ζ) = zero(ζ)
+        stability_functions = SimilarityScales(zero_stability_function,
+                                               zero_stability_function,
+                                               zero_stability_function)
+
+        flux_formulation = SimilarityTheoryFluxes(; momentum_roughness_length = LandRoughnessLength(Float64),
+                                                     temperature_roughness_length = LandRoughnessLength(Float64; multiplier = 0.1),
+                                                     water_vapor_roughness_length = LandRoughnessLength(Float64; multiplier = 0.1),
+                                                     gustiness_parameter = 0,
+                                                     minimum_gustiness = 0,
+                                                     stability_functions,
+                                                     solver_stop_criteria = InterfaceComputations.FixedIterations(1))
+
+        interfaces = InterfaceComputations.ComponentInterfaces(atmosphere, nothing, nothing;
+                                                              land,
+                                                              atmosphere_land_fluxes = flux_formulation)
+        model = AtmosphereLandModel(atmosphere, land; interfaces)
+
+        κ = flux_formulation.von_karman_constant
+        h = atmosphere.surface_layer_height
+        U = 5.0
+        u★ = model.interfaces.atmosphere_land_interface.fluxes.friction_velocity
+
+        @test u★[1, 1, 1] ≈ κ * U / log(h / 0.02)
+        @test u★[2, 1, 1] ≈ κ * U / log(h / 0.80)
+        @test u★[1, 1, 1] < u★[2, 1, 1]
     end
 end

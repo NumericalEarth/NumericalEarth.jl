@@ -8,6 +8,7 @@ export
     AtmosphereLandModel,
     BetaSurfaceSpecificHumidity,
     SimilarityTheoryFluxes,
+    LandRoughnessLength,
     CoefficientBasedFluxes,
     FreezingLimitedOceanTemperature,
     SkinTemperature,

@@ -107,7 +107,8 @@ and interior properties `ℙₛ`, `ℙₐ`, and `ℙᵢ`.
                                           approximate_interface_state,
                                           atmosphere_state,
                                           interface_properties,
-                                          atmosphere_properties)
+                                          atmosphere_properties,
+                                          interior_properties)
 
     u = approximate_interface_state.u
     v = approximate_interface_state.v

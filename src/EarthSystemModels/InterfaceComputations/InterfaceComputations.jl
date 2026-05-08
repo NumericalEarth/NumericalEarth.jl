@@ -10,6 +10,7 @@ export
     SimilarityTheoryFluxes,
     MomentumRoughnessLength,
     ScalarRoughnessLength,
+    LandRoughnessLength,
     CoefficientBasedFluxes,
     SkinTemperature,
     BulkTemperature,

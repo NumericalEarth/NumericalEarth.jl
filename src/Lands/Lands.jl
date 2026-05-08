@@ -20,7 +20,9 @@ import Oceananigans.TimeSteppers: time_step!, update_state!
 import NumericalEarth.EarthSystemModels: interpolate_state!,
                                          update_net_fluxes!
 
-import NumericalEarth.EarthSystemModels.InterfaceComputations: ComponentExchanger, initialize!
+import NumericalEarth.EarthSystemModels.InterfaceComputations: ComponentExchanger,
+                                                              atmosphere_land_interface,
+                                                              initialize!
 
 include("prescribed_land.jl")
 include("prescribed_land_regridder.jl")

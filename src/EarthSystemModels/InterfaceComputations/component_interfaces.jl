@@ -458,21 +458,20 @@ default_al_specific_humidity(::Nothing) = nothing
 default_al_specific_humidity(land) =
     BetaSurfaceSpecificHumidity(AtmosphericThermodynamics.Liquid())
 
-# Default atmosphere--land flux formulation. Uses scalar (non-Charnock)
-# roughness lengths appropriate for a vegetated land surface. The
-# defaults correspond to short grass (z₀_m ≈ 0.1 m) with thermal/moisture
-# roughness 10× smaller (Garratt 1992). To override, pass
-# `atmosphere_land_fluxes = SimilarityTheoryFluxes(...)` to
-# `ComponentInterfaces` / `AtmosphereLandModel`.
+# Default atmosphere--land flux formulation. The momentum roughness length
+# is read from the land-side `znt` field, with thermal/moisture roughness
+# 10× smaller (Garratt 1992). To override this behavior, pass
+# `atmosphere_land_fluxes = SimilarityTheoryFluxes(...)` with explicit
+# roughness lengths to `ComponentInterfaces` / `AtmosphereLandModel`.
 default_atmosphere_land_fluxes(::Nothing, FT) = SimilarityTheoryFluxes(FT)
 
 function default_atmosphere_land_fluxes(land, FT)
-    z₀_m = convert(FT, 0.1)
-    z₀_h = z₀_m / convert(FT, 10)
+    z₀_m = LandRoughnessLength(FT)
+    z₀_h = LandRoughnessLength(FT; multiplier = 0.1)
     return SimilarityTheoryFluxes(FT;
-                                  momentum_roughness_length    = z₀_m,
-                                  temperature_roughness_length = z₀_h,
-                                  water_vapor_roughness_length = z₀_h)
+                                   momentum_roughness_length    = z₀_m,
+                                   temperature_roughness_length = z₀_h,
+                                   water_vapor_roughness_length = z₀_h)
 end
 
 #####

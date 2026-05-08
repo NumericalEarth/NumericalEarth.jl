@@ -26,6 +26,7 @@ export
     ECCOPrescribedRadiation,
     OSPapaPrescribedRadiation,
     SimilarityTheoryFluxes,
+    LandRoughnessLength,
     CoefficientBasedFluxes,
     MomentumRoughnessLength,
     ScalarRoughnessLength,

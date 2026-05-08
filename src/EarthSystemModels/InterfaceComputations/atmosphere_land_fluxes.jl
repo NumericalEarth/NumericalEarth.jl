@@ -105,10 +105,7 @@ function compute_atmosphere_land_fluxes!(coupled_model)
     Tₛ = land_state.T
     βₛ = land_state.mavail
 
-    # Per-cell land properties not yet plumbed (cf. open issue: spatially-
-    # varying roughness needs a kernel-internal lookup; for now the
-    # flux_formulation carries scalar roughness lengths set at construction).
-    land_properties = (;)
+    land_properties = atmosphere_land_surface_properties(land_state)
 
     kernel_parameters = interface_kernel_parameters(grid)
 
@@ -127,6 +124,21 @@ function compute_atmosphere_land_fluxes!(coupled_model)
             land_properties)
 
     return nothing
+end
+
+function atmosphere_land_surface_properties(land_state::NamedTuple{names}) where names
+    if :znt in names
+        return (; znt = land_state.znt)
+    else
+        return (;)
+    end
+end
+
+@inline local_atmosphere_land_surface_properties(land_properties, i, j) = (;)
+
+@inline function local_atmosphere_land_surface_properties(land_properties::NamedTuple{(:znt,), T}, i, j) where T
+    znt = @inbounds land_properties.znt[i, j, 1]
+    return (; znt)
 end
 
 @kernel function _compute_atmosphere_land_interface_state!(interface_fluxes,
@@ -173,6 +185,7 @@ end
     vₛ = zero(FT)
 
     local_interior_state = (u = uₛ, v = vₛ, T = Tₛ, S = βₛ)
+    local_land_properties = local_atmosphere_land_surface_properties(land_properties, i, j)
 
     radiation_state = air_sea_interface_radiation_state(nothing, nothing, i, j, 1, grid, Time(clock.time))
 
@@ -190,7 +203,7 @@ end
                                               radiation_state,
                                               interface_properties,
                                               atmosphere_properties,
-                                              land_properties)
+                                              local_land_properties)
 
     u★ = interface_state.u★
     θ★ = interface_state.θ★

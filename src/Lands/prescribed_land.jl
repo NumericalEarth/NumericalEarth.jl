@@ -66,6 +66,11 @@ end
 # No net fluxes to update for prescribed land
 update_net_fluxes!(coupled_model, ::PrescribedLand) = nothing
 
+# `PrescribedLand` carries runoff / iceberg freshwater fields only. It does
+# not provide the surface temperature, moisture availability, or roughness
+# state required by the atmosphere-land turbulent-flux interface.
+atmosphere_land_interface(grid, atmosphere, land::PrescribedLand, args...) = nothing
+
 #####
 ##### Checkpointing
 #####

@@ -9,16 +9,15 @@
 #
 # The domain is partitioned into three strips of contrasting USGS classes
 # — evergreen broadleaf forest, grassland, and barren / sparsely vegetated.
-# The present atmosphere-land turbulent-flux path uses scalar roughness
-# lengths and β-reduced surface humidity, so the surface-flux contrast is
-# driven primarily by the strip-dependent soil moisture below. The land-class
-# albedo, emissivity, LAI, and roughness fields are still populated here so the
-# example is ready for spatially varying roughness, radiation, and
-# transpiration plumbing. The strips are oriented along the x axis (parallel
-# to the geostrophic flow) so air parcels remain over a single land-cover
-# class rather than fetching across boundaries. The animation pairs the
-# horizontal 2D ground-temperature field with bottom-level wind vectors, and
-# reports strip-conditional vertical profiles of θ and u.
+# The atmosphere-land turbulent-flux path uses the land-class `znt` field in
+# MOST and β-reduced surface humidity, so the surface-flux contrast reflects
+# both roughness and strip-dependent soil moisture. Albedo, emissivity, and
+# LAI are also populated for future radiation and transpiration plumbing. The
+# strips are oriented along the x axis (parallel to the geostrophic flow) so
+# air parcels remain over a single land-cover class rather than fetching
+# across boundaries. The animation pairs the horizontal 2D ground-temperature
+# field with bottom-level wind vectors, and reports strip-conditional vertical
+# profiles of θ and u.
 
 using NumericalEarth
 using Breeze
@@ -126,9 +125,9 @@ slab_land.forcings.solar_irradiance .= 600.0    # W m⁻², bright midday
 # ## Coupled model
 #
 # `AtmosphereLandModel` wires the atmosphere to the slab through
-# similarity theory. The default flux formulation uses scalar roughness
-# lengths representative of short grass; spatially-varying `znt` is a
-# follow-up.
+# similarity theory. The default land flux formulation reads the slab's
+# spatially varying `znt` field for momentum roughness and uses `znt / 10`
+# for heat and moisture roughness.
 
 model = AtmosphereLandModel(atmos, slab_land)
 

@@ -101,7 +101,8 @@ end
                                           approximate_interface_state,
                                           atmosphere_state,
                                           interface_properties,
-                                          atmosphere_properties)
+                                          atmosphere_properties,
+                                          interior_properties = nothing)
 
     Ψₐ = atmosphere_state
     Ψ̃ᵢ = approximate_interface_state

@@ -160,12 +160,28 @@ end
     return log(h / ℓ) - ψh
 end
 
+@inline local_roughness_length(ℓ, interior_properties) = ℓ
+
+@inline function local_roughness_length(ℓ::LandRoughnessLength,
+                                        interior_properties::NamedTuple{(:znt,), T}) where T
+    znt = max(interior_properties.znt, ℓ.minimum_roughness_length)
+    return max(ℓ.multiplier * znt, ℓ.minimum_roughness_length)
+end
+
+@inline function local_roughness_lengths(roughness_lengths, interior_properties)
+    momentum    = local_roughness_length(roughness_lengths.momentum, interior_properties)
+    temperature = local_roughness_length(roughness_lengths.temperature, interior_properties)
+    water_vapor = local_roughness_length(roughness_lengths.water_vapor, interior_properties)
+    return SimilarityScales(momentum, temperature, water_vapor)
+end
+
 function iterate_interface_fluxes(flux_formulation::SimilarityTheoryFluxes,
                                   Tₛ, qₛ, Δθ, Δq, Δh,
                                   approximate_interface_state,
                                   atmosphere_state,
                                   interface_properties,
-                                  atmosphere_properties)
+                                  atmosphere_properties,
+                                  interior_properties = nothing)
 
     ℂᵃᵗ = atmosphere_properties.thermodynamics_parameters
     g  = atmosphere_properties.gravitational_acceleration
@@ -181,10 +197,13 @@ function iterate_interface_fluxes(flux_formulation::SimilarityTheoryFluxes,
     ψθ = flux_formulation.stability_functions.temperature
     ψq = flux_formulation.stability_functions.water_vapor
 
-    # Extract roughness lengths
-    ℓu = flux_formulation.roughness_lengths.momentum
-    ℓθ = flux_formulation.roughness_lengths.temperature
-    ℓq = flux_formulation.roughness_lengths.water_vapor
+    # Extract roughness lengths, resolving field-aware land formulations from
+    # local per-cell interior properties.
+    roughness_lengths = local_roughness_lengths(flux_formulation.roughness_lengths,
+                                                interior_properties)
+    ℓu = roughness_lengths.momentum
+    ℓθ = roughness_lengths.temperature
+    ℓq = roughness_lengths.water_vapor
     β  = flux_formulation.gustiness_parameter
 
     # Compute Monin--Obukhov length scale depending on a `buoyancy flux`
