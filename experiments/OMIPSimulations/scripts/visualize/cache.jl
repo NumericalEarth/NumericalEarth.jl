@@ -252,7 +252,8 @@ const FTS_VARS = (
                      (:tauuo_fts,  "tauuo"),  (:tauvo_fts, "tauvo"),
                      (:sithick_fts, "sithick")),
     fields_file   = ((:to_fts, "to"), (:so_fts, "so"), (:bo_fts, "bo"),
-                     (:uo_fts, "uo"), (:vo_fts, "vo")),
+                     (:uo_fts, "uo"), (:vo_fts, "vo"),
+                     (:uvol_fts, "uvol"), (:vvol_fts, "vvol")),
     averages_file = ((:tosga_fts, "tosga"), (:soga_fts, "soga"),
                      (:to_h_fts,  "to_h"),  (:so_h_fts,  "so_h")),
 )
@@ -637,6 +638,54 @@ LOADERS[:zonal_mld_min]     = c -> zonal_mld(c, :mld_min)
 LOADERS[:zonal_mld_max]     = c -> zonal_mld(c, :mld_max)
 LOADERS[:zonal_mld_min_dbm] = c -> zonal_mld(c, :mld_min_dbm)
 LOADERS[:zonal_mld_max_dbm] = c -> zonal_mld(c, :mld_max_dbm)
+
+#####
+##### AMOC streamfunction (Atlantic basin, no regridding)
+#####
+#
+# ORCA / tripolar grids are essentially lat-lon below ~60°N, so the AMOC
+# streamfunction is computed per j-row directly on the model grid:
+#
+#     ψ_atl(j, k) = ∑_{k' ≤ k}  ∑_{i ∈ Atlantic}  vvol(i, j, k')
+#
+# `vvol = v · Aʸ` is saved by the model on (Center, Face, Center), so the
+# zonal sum already carries the proper Δx and the cumulative-z sum carries
+# Δz — no extra grid metrics needed offline. The Atlantic basin mask is
+# from `Bathymetry.atlantic_ocean_basin`, computed via flood-fill with
+# Cape Agulhas and Drake Passage barriers and a 65°N northern cap.
+
+LOADERS[:atlantic_mask_2d] = disk_cached(:atlantic_mask_2d) do c
+    basin = atlantic_ocean_basin(get_field(c, :grid))
+    return Bool.(dropdims(Array(interior(basin.mask)); dims = 3))
+end
+
+# Latitude per j-row at the v-face, averaged across i so the curve is
+# scalar in j even on tripolar/ORCA. Below ~60°N this is essentially a
+# constant latitude row; the average is just a robust projection above.
+LOADERS[:amoc_latitudes] = c -> begin
+    grid = get_field(c, :grid)
+    Nx, Ny, _ = size(grid)
+    return [mean(φnode(i, j, 1, grid, Center(), Face(), Center()) for i in 1:Nx)
+            for j in 1:Ny]
+end
+
+LOADERS[:amoc] = disk_cached(:amoc; source_fts_syms = :vvol_fts) do c
+    vvol_mean = compute_time_mean(get_field(c, :vvol_fts);
+                                   start_time = c.start_time,
+                                   stop_time  = c.stop_time)
+    atl = get_field(c, :atlantic_mask_2d)
+    Nx, Ny, Nz = size(vvol_mean)
+    transport_per_layer = zeros(Ny, Nz)
+    for k in 1:Nz, j in 1:Ny, i in 1:Nx
+        atl[i, j] || continue
+        transport_per_layer[j, k] += vvol_mean[i, j, k]
+    end
+    # ψ(j, z) = -∫_{-H}^{z} ∑_atl v dx dz'.
+    # Oceananigans has k=1 at the bottom, so a cumulative sum along k
+    # integrates from -H upward; the leading minus flips the sign so a
+    # positive value renders the NADW cell as red on a balance colormap.
+    return -cumsum(transport_per_layer; dims = 2) ./ 1e6   # Sv
+end
 
 #####
 ##### Strait transports (offline; depends on per-case grid configuration)

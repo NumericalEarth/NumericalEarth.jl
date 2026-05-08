@@ -89,6 +89,7 @@ const FIG_REGISTRY = [
     (n = 19, file = "fig19_mld_zonal_mean.jl",            fn = :fig19),
     (n = 20, file = "fig20_TS_drift_heatmap.jl",          fn = :fig20),
     (n = 21, file = "fig21_strait_transports.jl",         fn = :fig21),
+    (n = 22, file = "fig22_amoc.jl",                      fn = :fig22),
 ]
 
 # ══════════════════════════════════════════════════════════════
