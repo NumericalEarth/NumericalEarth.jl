@@ -230,7 +230,6 @@ fi
 sbatch "${SBATCH_ARGS[@]}" "$@" <<'EOF'
 #!/bin/bash
 #SBATCH -N 1
-#SBATCH --ntasks-per-node=${GPUS_PER_NODE}
 #SBATCH -p pi_raffaele
 #SBATCH --time=72:00:00
 #SBATCH --mem=150GB
