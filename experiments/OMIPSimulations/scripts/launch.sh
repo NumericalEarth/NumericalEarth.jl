@@ -37,7 +37,8 @@ Environment variables (physics):
                 When set, overrides BIHARMONIC and uses ν directly instead of
                 the grid-area-scaled νhb = Az^2 / λ form.
   CB            CATKE buoyancy mixing length parameter Cᵇ (default: 0.28)
-  CLOSURE       Ocean vertical closure: "catke" (default), "simple", "nori", "rbvd", or "kpp"
+  CLOSURE       Ocean vertical closure: "catke" (default), "simple", "nori", "rbvd",
+                "kpp", or "nemo_tke"
                 ("simple" = ConvectiveAdjustment + depth-stepped background κ/ν;
                  "nori"   = NORi Richardson-number closure
                             (xkykai/NORiOceanParameterization.jl, vendored);
@@ -46,6 +47,11 @@ Environment variables (physics):
                              time-averaging smoothing);
                  "kpp"    = K-Profile Parameterization (Large 1994 / MITgcm,
                             vendored in `KPP/`);
+                 "nemo_tke" = NEMO 3.6 TKE scheme (Blanke & Delecluse 1993,
+                            Madec 2017), OMIP-2 ORCA1 preset: prognostic e,
+                            gradient-limited length scale, Langmuir +
+                            Mellor-Blumberg wave penetration + EVD.
+                            Vendored in `NEMOTKE/`;
                  all ignore CB)
   WIND_VELOCITY Set to "true" to use absolute wind (Δu = u_atm) in the bulk
                 formula instead of the OMIP-2 default relative wind
@@ -175,10 +181,11 @@ RUN_NAME="$CONFIG"
 [[ "${CORRECTED:-false}" == "true" ]]          && RUN_NAME="${RUN_NAME}_corrected"
 [[ "${NCAR:-false}" == "true" ]]               && RUN_NAME="${RUN_NAME}_ncar"
 [[ "${SNOW:-false}" == "true" ]]               && RUN_NAME="${RUN_NAME}_snow"
-[[ "${CLOSURE:-catke}" == "simple" ]]          && RUN_NAME="${RUN_NAME}_simple"
-[[ "${CLOSURE:-catke}" == "nori"   ]]          && RUN_NAME="${RUN_NAME}_nori"
-[[ "${CLOSURE:-catke}" == "rbvd"   ]]          && RUN_NAME="${RUN_NAME}_rbvd"
-[[ "${CLOSURE:-catke}" == "kpp"    ]]          && RUN_NAME="${RUN_NAME}_kpp"
+[[ "${CLOSURE:-catke}" == "simple"   ]]        && RUN_NAME="${RUN_NAME}_simple"
+[[ "${CLOSURE:-catke}" == "nori"     ]]        && RUN_NAME="${RUN_NAME}_nori"
+[[ "${CLOSURE:-catke}" == "rbvd"     ]]        && RUN_NAME="${RUN_NAME}_rbvd"
+[[ "${CLOSURE:-catke}" == "kpp"      ]]        && RUN_NAME="${RUN_NAME}_kpp"
+[[ "${CLOSURE:-catke}" == "nemo_tke" ]]        && RUN_NAME="${RUN_NAME}_nemotke"
 [[ "${WIND_VELOCITY:-false}" == "true" ]]      && RUN_NAME="${RUN_NAME}_wind"
 [[ "${NORMALIZE_SALINITY:-false}" == "true" ]] && RUN_NAME="${RUN_NAME}_normsalt"
 [[ -n "${CB:-}" ]]                             && RUN_NAME="${RUN_NAME}_cb${CB}"
@@ -279,10 +286,11 @@ FLUX_KWARG=""
 [[ "$SHEAR_GUST" == "true" ]]  && FLUX_KWARG="flux_configuration = :shear_aware,"
 
 CLOSURE_KWARG=""
-[[ "${CLOSURE:-catke}" == "simple" ]] && CLOSURE_KWARG="vertical_closure = :simple,"
-[[ "${CLOSURE:-catke}" == "nori"   ]] && CLOSURE_KWARG="vertical_closure = :nori,"
-[[ "${CLOSURE:-catke}" == "rbvd"   ]] && CLOSURE_KWARG="vertical_closure = :rbvd,"
-[[ "${CLOSURE:-catke}" == "kpp"    ]] && CLOSURE_KWARG="vertical_closure = :kpp,"
+[[ "${CLOSURE:-catke}" == "simple"   ]] && CLOSURE_KWARG="vertical_closure = :simple,"
+[[ "${CLOSURE:-catke}" == "nori"     ]] && CLOSURE_KWARG="vertical_closure = :nori,"
+[[ "${CLOSURE:-catke}" == "rbvd"     ]] && CLOSURE_KWARG="vertical_closure = :rbvd,"
+[[ "${CLOSURE:-catke}" == "kpp"      ]] && CLOSURE_KWARG="vertical_closure = :kpp,"
+[[ "${CLOSURE:-catke}" == "nemo_tke" ]] && CLOSURE_KWARG="vertical_closure = :nemo_tke,"
 
 VELOCITY_KWARG=""
 [[ "${WIND_VELOCITY:-false}" == "true" ]] && VELOCITY_KWARG="velocity_formulation = :wind,"
