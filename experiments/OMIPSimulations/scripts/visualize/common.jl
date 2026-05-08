@@ -417,6 +417,17 @@ function panel!(fig, pos, data;
     return ax
 end
 
+function cpanel!(fig, pos, data;
+                 title="", colormap=:thermal,
+                 levels=nothing, label="",
+                 nan_color=:lightgray)
+    ax = Axis(fig[pos...]; title)
+    kw = isnothing(levels) ? (;) : (; levels)
+    hm = contourf!(ax, data; colormap, nan_color, kw...)
+    Colorbar(fig[pos[1], pos[2]+1], hm; label)
+    return ax
+end
+
 # ══════════════════════════════════════════════════════════════
 # ECCO4 free-surface climatology
 # ══════════════════════════════════════════════════════════════
