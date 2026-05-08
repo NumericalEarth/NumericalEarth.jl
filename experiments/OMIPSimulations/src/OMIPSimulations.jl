@@ -45,6 +45,7 @@ using NumericalEarth.Diagnostics: MixedLayerDepthField
 
 export omip_simulation,
        add_omip_diagnostics!,
+       add_ke_spectrum_diagnostic!,
        compute_report_fields,
        compute_woa_bias,
        strait_transports,
@@ -70,8 +71,9 @@ using .NEMOTKE: NEMOTKEVerticalDiffusivity, NEMOTKEParameters
 
 include("atmosphere.jl")
 include("jra55_data_staging.jl")
-include("omip_simulation.jl")
 include("omip_diagnostics.jl")
+include("ke_spectrum_diagnostic.jl")
+include("omip_simulation.jl")
 include("report_fields.jl")
 include("strait_transports.jl")
 

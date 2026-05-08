@@ -149,6 +149,9 @@ function add_omip_diagnostics!(simulation;
     uvol = KernelFunctionOperation{Face,   Center, Center}(zonal_volume_flux,      grid, u)
     vvol = KernelFunctionOperation{Center, Face,   Center}(meridional_volume_flux, grid, v)
 
+    uosq = Oceananigans.AbstractOperations.@at((Center, Center, Center), u * u)
+    vosq = Oceananigans.AbstractOperations.@at((Center, Center, Center), v * v)
+
     field_outputs = Dict{Symbol, Any}(
         :to   => T,
         :so   => S,
@@ -156,6 +159,8 @@ function add_omip_diagnostics!(simulation;
         :vo   => v,
         :wo   => w,
         :bo   => bop,
+        :uosq => uosq,
+        :vosq => vosq,
         :uvol => uvol,
         :vvol => vvol,
     )
