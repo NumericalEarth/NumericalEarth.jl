@@ -112,8 +112,19 @@ end
         fill!(land.forcings.air_temperature, 280.0)
         fill!(land.forcings.snowfall_rate, 3e-4)
 
+        # Step 1 — first snowfall on a clean slate. `snowfallac` is zero
+        # going in, so per Fortran:1641 `snowfracnewsn` is evaluated from
+        # the **pre-increment** `snowfallac` (= 0) and the fresh-snow
+        # albedo lock cannot latch yet.
         time_step!(land, 1.0)
+        @test scalar(land.snow.keep_snow_albedo) == 0
+        @test scalar(land.snow.rhonewsn) ≈ 125.0
 
+        # Steps 2-3 — continued snowfall accumulates `snowfallac` until the
+        # pre-increment value exceeds `snhei_crit_newsn = 0.0005·ρ_w/ρ_sn ≈
+        # 4 mm`, at which point the fresh-snow-albedo lock activates.
+        time_step!(land, 1.0)
+        time_step!(land, 1.0)
         @test scalar(land.snow.keep_snow_albedo) == 1
         @test scalar(land.snow.rhonewsn) ≈ 125.0
 
