@@ -4,7 +4,8 @@ using Oceananigans.Grids: architecture
 using Oceananigans.Utils: launch!
 using Oceananigans.Operators: intrinsic_vector
 
-using ConservativeRegridding: Regridder, best_manifold
+using ConservativeRegridding: Regridder
+using GeometryOpsCore: best_manifold
 import ConservativeRegridding: regrid!
 
 using NumericalEarth.EarthSystemModels: sea_ice_concentration

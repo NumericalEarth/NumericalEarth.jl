@@ -19,7 +19,7 @@
 #
 # The ConservativeRegridding.jl package is used to regrid fields between the atmosphere and ocean--sea ice components.
 
-using Oceananigans, SpeedyWeather, NumericalEarth
+using Oceananigans, SpeedyWeather, NumericalEarth, ConservativeRegridding
 using NCDatasets, CairoMakie
 using Oceananigans.Units
 using Printf, Statistics, Dates
