@@ -208,6 +208,9 @@ if [[ -n "${NODE}" ]]; then
     SBATCH_ARGS+=(-w "node${NODE}")
 fi
 SBATCH_ARGS+=(--gres="gpu:${GPUS_PER_NODE}")
+# Override the heredoc default `--ntasks-per-node=1` so distributed configs
+# (tenthdegree: 1×4 partition) actually launch GPUS_PER_NODE MPI ranks.
+SBATCH_ARGS+=(--ntasks-per-node="${GPUS_PER_NODE}")
 
 export THREADS="${THREADS:-8}"
 SBATCH_ARGS+=(--cpus-per-task="${THREADS}")
@@ -335,13 +338,15 @@ ${RUN_CMD}"
 
 THREADS="${THREADS:-8}"
 
+# `srun` launches one Julia process per MPI rank. With --ntasks-per-node set above,
+# tenthdegree gets 4 ranks (matching Partition(1, 4)); halfdegree/orca get 1 rank.
 if [[ "${PROFILE:-false}" == "true" ]]; then
     echo "Profiling ${RUN_NAME} -> ${REPORT_NAME}"
-    nsys profile --trace=cuda \
-                 --output="$REPORT_NAME" \
-                 --force-overwrite true \
-                 "$JULIA" --project=.. --check-bounds=no -t "${THREADS}" -e "$JULIA_EXPR"
+    srun nsys profile --trace=cuda \
+                      --output="$REPORT_NAME" \
+                      --force-overwrite true \
+                      "$JULIA" --project=.. --check-bounds=no -t "${THREADS}" -e "$JULIA_EXPR"
 else
-    "$JULIA" --project=.. --check-bounds=no -t "${THREADS}" -e "$JULIA_EXPR"
+    srun "$JULIA" --project=.. --check-bounds=no -t "${THREADS}" -e "$JULIA_EXPR"
 fi
 EOF
