@@ -1,7 +1,7 @@
 name = "NumericalEarth"
 uuid = "904d977b-046a-4731-8b86-9235c0d1ef02"
 license = "MIT"
-version = "0.3.0"
+version = "0.4.0"
 authors = ["NumericalEarth contributors"]
 
 [deps]
@@ -34,6 +34,7 @@ Thermodynamics = "b60c26fb-14c3-4610-9d3e-2d17fe7ff00c"
 ZipFile = "a5390f91-8eb1-5f08-bee0-b1d1ffed6cea"
 
 [weakdeps]
+ArchGDAL = "c9ce4bd3-c3d5-55b8-8973-c0e20141b8c3"
 Breeze = "660aa2fb-d4c8-4359-a52c-9c057bc511da"
 CDSAPI = "8a7b9de3-9c00-473e-88b4-7eccd7ef2fea"
 CondaPkg = "992eb4ea-22a4-4c89-a5bb-47a3300528ab"
@@ -44,6 +45,7 @@ SpeedyWeather = "9e226e20-d153-4fed-8a5b-493def4f21a9"
 WorldOceanAtlasTools = "04f20302-f1b9-11e8-29d9-7d841cb0a64a"
 
 [extensions]
+NumericalEarthArchGDALExt = "ArchGDAL"
 NumericalEarthBreezeExt = "Breeze"
 NumericalEarthCDSAPIExt = "CDSAPI"
 NumericalEarthCopernicusMarineExt = "CopernicusMarine"
@@ -57,6 +59,8 @@ ConservativeRegridding = {url = "https://github.com/JuliaGeo/ConservativeRegridd
 
 [compat]
 Adapt = "4"
+ArchGDAL = "0.10"
+
 Breeze = "0.4"
 CDSAPI = "2.2.1"
 CFTime = "0.1, 0.2"

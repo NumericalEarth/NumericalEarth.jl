@@ -16,7 +16,7 @@ using Oceananigans.Fields: Center, set!
 using Oceananigans: Field, fill_halo_regions!, CPU
 using NumericalEarth.DataWrangling: Metadata, Metadatum, metadata_path, native_grid, InverseGravity, download_dataset
 using Dates
-using Dates: DateTime, Day, Month, Hour
+using Dates: DateTime, Month, Hour
 
 import NumericalEarth.DataWrangling:
     all_dates,
@@ -31,7 +31,6 @@ import NumericalEarth.DataWrangling:
     inpainted_metadata_path,
     available_variables,
     retrieve_data,
-    metadata_path,
     is_three_dimensional,
     reversed_vertical_axis,
     reversed_latitude_axis,
