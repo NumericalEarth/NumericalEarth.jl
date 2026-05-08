@@ -7,18 +7,18 @@
 # `AtmosphereLandModel`, with surface humidity reduced by the slab's
 # `mavail` (β-factor).
 #
-# To showcase how land cover modulates the surface energy balance, the
-# domain is partitioned into three strips of contrasting USGS classes
-# — evergreen broadleaf forest (low albedo, high roughness, high LAI),
-# grassland (moderate values), and barren / sparsely vegetated (high
-# albedo, very low roughness, no transpiration). The strips are
-# oriented along the x axis (parallel to the geostrophic flow) so air
-# parcels remain over a single land-cover class rather than fetching
-# across boundaries — keeping the local atmosphere–surface coupling
-# clean. The animation pairs the horizontal 2D ground-temperature
-# field with bottom-level wind vectors, and reports strip-conditional
-# vertical profiles of θ and u so the differential boundary-layer
-# response is directly visible.
+# The domain is partitioned into three strips of contrasting USGS classes
+# — evergreen broadleaf forest, grassland, and barren / sparsely vegetated.
+# The present atmosphere-land turbulent-flux path uses scalar roughness
+# lengths and β-reduced surface humidity, so the surface-flux contrast is
+# driven primarily by the strip-dependent soil moisture below. The land-class
+# albedo, emissivity, LAI, and roughness fields are still populated here so the
+# example is ready for spatially varying roughness, radiation, and
+# transpiration plumbing. The strips are oriented along the x axis (parallel
+# to the geostrophic flow) so air parcels remain over a single land-cover
+# class rather than fetching across boundaries. The animation pairs the
+# horizontal 2D ground-temperature field with bottom-level wind vectors, and
+# reports strip-conditional vertical profiles of θ and u.
 
 using NumericalEarth
 using Breeze
@@ -65,17 +65,16 @@ set!(atmos, θ=θᵢ, u=U₀)
 # Heterogeneous USGS land use. Strips are elongated along x and stack
 # in y, so each strip is parallel to the geostrophic flow:
 #   y ∈ [-10, -10/3) km : class 13 (evergreen broadleaf forest)
-#                         z₀=0.50 m, α=0.12, vegfrac=0.95, LAI=5.0
+#                         z₀=0.80 m, α=0.12, vegfrac=0.95, LAI=6.48
 #   y ∈ [-10/3, 10/3) km: class 7  (grassland)
-#                         z₀=0.10 m, α=0.19, vegfrac=0.80, LAI=2.0
+#                         z₀=0.075 m, α=0.19, vegfrac=0.80, LAI=2.90
 #   y ∈ [ 10/3, 10] km  : class 19 (barren / sparsely vegetated)
-#                         z₀=0.01 m, α=0.25, vegfrac=0.01, LAI=0.5
+#                         z₀=0.05 m, α=0.25, vegfrac=0.01, LAI=0.75
 # `apply_land_classifications!` populates `vegfrac`, `lai`,
 # `albedo_veg`, `emissivity_veg`, `z0_veg`, `r_smin` from this
 # categorical map. Initial soil moisture is also strip-dependent
 # (wet under forest, dry under barren) so the partitioning of net
-# radiation between sensible and latent heat differs strongly across
-# strips.
+# turbulent exchange between sensible and latent heat differs across strips.
 
 land_grid = RectilinearGrid(grid.architecture,
                             size = (grid.Nx, grid.Ny),

@@ -6,6 +6,22 @@ using Oceananigans.TimeSteppers: time_step!, update_state!
 
 scalar(field) = Array(interior(field))[1]
 
+function expected_jarvis_resistance(rg, qa, Ta, θ, lai, r_smin, p_hPa, p)
+    e = Ta > 273.15 ?
+        6.1121 * exp(17.502 * (Ta - 273.15) / (Ta - 32.18)) :
+        6.1115 * exp(22.452 * (Ta - 273.15) / (Ta - 0.61))
+    qsat_air = 0.622 * e / (p_hPa - (1 - 0.622) * e)
+
+    F1 = max((rg / p.rg_lim) / (1 + rg / p.rg_lim), 1e-3)
+    F2 = clamp(1 / (1 + max(0, qsat_air - qa) / p.vpd_lim), 1e-3, 1)
+    F3 = θ ≥ p.theta_fc ? 1.0 :
+         θ ≤ p.theta_wilt ? 1e-3 :
+         clamp((θ - p.theta_wilt) / (p.theta_fc - p.theta_wilt), 1e-3, 1)
+    F4 = clamp(1 - 0.0016 * (p.T_opt - Ta)^2, 1e-3, 1)
+
+    return clamp(r_smin / (lai * F1 * F2 * F3 * F4), r_smin, p.r_smax)
+end
+
 function ruc_test_grid()
     return RectilinearGrid(CPU();
                            size = (1, 1),
@@ -146,5 +162,46 @@ end
         @test registry[2].emissivity ≈ 0.92
         @test registry[24].z0 ≈ 0.011
         @test registry[24].emissivity ≈ 0.98
+    end
+
+    @testset "land classification applies valid ids and preserves invalid ids" begin
+        land = ruc_test_land()
+        registry = usgs_land_classifications(Float64)
+        grassland = registry[7]
+
+        apply_land_classifications!(land, fill(grassland.id, 1, 1), registry)
+
+        @test scalar(land.vegetation.vegfrac) ≈ grassland.vegfrac
+        @test scalar(land.vegetation.lai) ≈ grassland.lai
+        @test scalar(land.vegetation.albedo_veg) ≈ grassland.albedo
+        @test scalar(land.vegetation.emissivity_veg) ≈ grassland.emissivity
+        @test scalar(land.vegetation.z0_veg) ≈ grassland.z0
+        @test scalar(land.vegetation.r_smin) ≈ grassland.r_smin
+        @test scalar(land.vegetation.is_urban) ≈ 0
+
+        apply_land_classifications!(land, fill(999, 1, 1), registry)
+
+        @test scalar(land.vegetation.vegfrac) ≈ grassland.vegfrac
+        @test scalar(land.vegetation.lai) ≈ grassland.lai
+        @test scalar(land.vegetation.albedo_veg) ≈ grassland.albedo
+        @test scalar(land.vegetation.emissivity_veg) ≈ grassland.emissivity
+        @test scalar(land.vegetation.z0_veg) ≈ grassland.z0
+        @test scalar(land.vegetation.r_smin) ≈ grassland.r_smin
+        @test scalar(land.vegetation.is_urban) ≈ 0
+    end
+
+    @testset "Jarvis resistance uses local surface pressure" begin
+        land = ruc_test_land(T = 298.0, θ = 0.30, vegfrac = 0.8, lai = 3.0)
+        fill!(land.forcings.air_temperature, 300.0)
+        fill!(land.forcings.air_humidity, 0.005)
+        fill!(land.forcings.solar_irradiance, 300.0)
+        fill!(land.forcings.surface_pressure, 700.0)
+
+        update_state!(land)
+
+        p = land.parameters
+        expected = expected_jarvis_resistance(300.0, 0.005, 300.0, 0.30, 3.0,
+                                              p.r_smin, 700.0, p)
+        @test scalar(land.vegetation.r_s) ≈ expected
     end
 end

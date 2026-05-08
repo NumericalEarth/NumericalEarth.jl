@@ -1,5 +1,5 @@
 #####
-##### A 2D slab land-surface component for `EarthSystemModel`.
+##### A 2D land-surface component for `EarthSystemModel`.
 #####
 ##### Implements the slab-compatible subset of the RUC LSM
 ##### (Smirnova et al. 1997, 2016) plus complementary parameterizations
@@ -81,7 +81,7 @@ const ρ_water_const = 1000.0   # kg m⁻³, RUC LSM `rhowater` parameter
     RucSlabLandParameters(FT = Float64; kwargs...)
 
 Tunable scalar parameters of `RucSlabLand`. Defaults reproduce the
-slab-compatible RUC LSM configuration of Smirnova et al. (1997, 2016) for
+RUC LSM configuration of Smirnova et al. (1997, 2016) for
 snow, canopy interception, and top-layer moisture availability, while retaining
 the existing single-bucket soil-moisture state.
 
@@ -318,7 +318,7 @@ Coupler-supplied forcings (kept as `Field`s on the grid):
 - `forcings.solar_irradiance`  [W m⁻²]   for Jarvis `f1`
 - `forcings.air_temperature`   [K]       for Jarvis `f4`
 - `forcings.air_humidity`      [kg kg⁻¹] for Jarvis `f2`
-- `forcings.surface_pressure`  [hPa]     for q_sat(T_s) in Jarvis `f2`
+- `forcings.surface_pressure`  [hPa]     for q_sat(T_air) in Jarvis `f2`
 
 Initialise with `set!(land; T=..., θ=..., snwe=..., …)` after construction.
 """
@@ -938,7 +938,7 @@ end
 end
 
 # Jarvis-Stewart canopy resistance (Jarvis 1976; Stewart 1988).
-@inline function jarvis_resistance(rg, qa, Ta, θ, lai,
+@inline function jarvis_resistance(rg, qa, Ta, p_hPa, θ, lai,
                                    r_smin, r_smax, rg_lim, vpd_lim, T_opt,
                                    θ_wilt, θ_fc)
     FT = typeof(rg)
@@ -946,7 +946,7 @@ end
         return r_smax
     end
     F1 = (rg / rg_lim) / (one(FT) + rg / rg_lim);  F1 = max(F1, FT(1e-3))
-    qsat_air = qsat_buck(Ta, FT(1013.25))
+    qsat_air = qsat_buck(Ta, p_hPa)
     F2 = one(FT) / (one(FT) + max(zero(FT), (qsat_air - qa)) / vpd_lim)
     F2 = clamp(F2, FT(1e-3), one(FT))
     if θ ≥ θ_fc
@@ -981,7 +981,7 @@ end
         soilres[i, j, 1] = sr
         r_s[i, j, 1]    = jarvis_resistance(rg_irr[i, j, 1],
                                             qa[i, j, 1],
-                                            Ta[i, j, 1],
+                                            Ta[i, j, 1], ps,
                                             θ, L,
                                             r_smin_field[i, j, 1], r_smax,
                                             rg_lim, vpd_lim,

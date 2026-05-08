@@ -126,16 +126,22 @@ function apply_land_classifications!(land::RucSlabLand,
                                       vegtype::AbstractArray,
                                       registry::AbstractVector{<:LandClassification})
 
+    field_xy(field) = dropdims(Array(interior(field)); dims = 3)
+
     FT = eltype(land)
+    veg = land.vegetation
     Nx, Ny = size(vegtype)
 
-    vegfrac    = zeros(FT, Nx, Ny)
-    lai        = zeros(FT, Nx, Ny)
-    albedo_veg = zeros(FT, Nx, Ny)
-    emiss_veg  = zeros(FT, Nx, Ny)
-    z0_veg     = zeros(FT, Nx, Ny)
-    r_smin     = zeros(FT, Nx, Ny)
-    is_urban   = zeros(FT, Nx, Ny)
+    vegfrac    = field_xy(veg.vegfrac)
+    lai        = field_xy(veg.lai)
+    albedo_veg = field_xy(veg.albedo_veg)
+    emiss_veg  = field_xy(veg.emissivity_veg)
+    z0_veg     = field_xy(veg.z0_veg)
+    r_smin     = field_xy(veg.r_smin)
+    is_urban   = field_xy(veg.is_urban)
+
+    size(vegfrac) == (Nx, Ny) ||
+        throw(DimensionMismatch("vegtype has size $(size(vegtype)); expected $(size(vegfrac))"))
 
     for j in 1:Ny, i in 1:Nx
         idx = Int(vegtype[i, j])
@@ -151,13 +157,13 @@ function apply_land_classifications!(land::RucSlabLand,
         end
     end
 
-    set!(land.vegetation.vegfrac,        vegfrac)
-    set!(land.vegetation.lai,            lai)
-    set!(land.vegetation.albedo_veg,     albedo_veg)
-    set!(land.vegetation.emissivity_veg, emiss_veg)
-    set!(land.vegetation.z0_veg,         z0_veg)
-    set!(land.vegetation.r_smin,         r_smin)
-    set!(land.vegetation.is_urban,       is_urban)
+    set!(veg.vegfrac,        vegfrac)
+    set!(veg.lai,            lai)
+    set!(veg.albedo_veg,     albedo_veg)
+    set!(veg.emissivity_veg, emiss_veg)
+    set!(veg.z0_veg,         z0_veg)
+    set!(veg.r_smin,         r_smin)
+    set!(veg.is_urban,       is_urban)
 
     return nothing
 end
