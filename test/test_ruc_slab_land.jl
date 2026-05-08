@@ -74,5 +74,66 @@ end
         @test scalar(land.snow.swl) ≈ retained
         @test scalar(land.snow.swl_overflow) ≈ overflow
         @test scalar(land.soil_moisture) ≈ 0.20 + overflow / land.parameters.soil_depth
+
+        solid_swe = 0.10 - melt_swe
+        total_pack_swe = solid_swe + retained
+        expected_rhosn = (250.0 * solid_swe + 1000.0 * retained) / total_pack_swe
+        @test scalar(land.snow.snhei) ≈ total_pack_swe * 1000.0 / expected_rhosn
+    end
+
+    @testset "fresh snow density follows WRF air-temperature formula" begin
+        land = ruc_test_land(T = 260.0, θ = 0.30)
+        fill!(land.forcings.air_temperature, 280.0)
+        fill!(land.forcings.snowfall_rate, 1e-6)
+
+        time_step!(land, 1.0)
+
+        expected_ρ_new = min(125.0, 1000.0 / max(8.0, 17.0 * tanh((276.65 - 280.0) * 0.15)))
+        @test scalar(land.snow.rhonewsn) ≈ expected_ρ_new
+        @test scalar(land.snow.rhosn) ≈ expected_ρ_new
+    end
+
+    @testset "current-step fresh snow activates RUC melt limiter" begin
+        land = ruc_test_land(T = 274.15, θ = 0.20)
+        set!(land; snwe = 0.10, snhei = 0.25, rhosn = 400.0, swl = 0.0)
+        fill!(land.forcings.air_temperature, 263.15)
+        fill!(land.forcings.snowfall_rate, 1e-6)
+        update_state!(land)
+
+        time_step!(land, 60.0)
+
+        new_swe = 1e-6 * 60.0
+        capped_melt = 60.0 * 5.6e-8 * 2.0 * 1.0
+        @test scalar(land.snow.snwe) ≈ 0.10 + new_swe - capped_melt
+    end
+
+    @testset "fresh-snow albedo diagnostics reset without current snowfall" begin
+        land = ruc_test_land(T = 260.0, θ = 0.30)
+        fill!(land.forcings.air_temperature, 280.0)
+        fill!(land.forcings.snowfall_rate, 3e-4)
+
+        time_step!(land, 1.0)
+
+        @test scalar(land.snow.keep_snow_albedo) == 1
+        @test scalar(land.snow.rhonewsn) ≈ 125.0
+
+        fill!(land.forcings.snowfall_rate, 0)
+        time_step!(land, 1.0)
+
+        @test scalar(land.snow.keep_snow_albedo) == 0
+        @test scalar(land.snow.snowfracnewsn) == 0
+        @test scalar(land.snow.rhonewsn) ≈ 100.0
+    end
+
+    @testset "WRF RUC snow emissivity and USGS table defaults" begin
+        parameters = RucSlabLandParameters(Float64)
+        @test parameters.emiss_snow ≈ 0.98
+
+        registry = usgs_land_classifications(Float64)
+        @test registry[2].z0 ≈ 0.20
+        @test registry[2].lai ≈ 5.68
+        @test registry[2].emissivity ≈ 0.92
+        @test registry[24].z0 ≈ 0.011
+        @test registry[24].emissivity ≈ 0.98
     end
 end
