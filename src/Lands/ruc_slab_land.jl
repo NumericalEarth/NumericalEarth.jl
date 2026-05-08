@@ -30,10 +30,6 @@
 #####   - RUC top-layer moisture availability `mavail`
 #####   - RUC bare-soil evaporation limiter `soilres`
 #####   - Jarvis-Stewart canopy resistance r_s (Jarvis 1976; Stewart 1988)
-##### Surface energy balance solver:
-#####   - implicit `vilka` Newton iteration for the skin temperature
-#####     `T_s + d₁·q_sat(T_s) − d₂ = 0` (Smirnova 1997 §3),
-#####     using a Magnus closed-form q_sat in place of the f90's lookup table
 #####
 ##### Journal references:
 #####
@@ -76,12 +72,10 @@
 #####   available in the WRF model. Mon. Wea. Rev., 144, 1851–1865,
 #####   doi:10.1175/MWR-D-15-0198.1.
 
-using Oceananigans.Fields: ConstantField, ZeroField
 using Oceananigans.BoundaryConditions: fill_halo_regions!
 using Oceananigans.Utils: prettytime, prettysummary
 
 const ρ_water_const = 1000.0   # kg m⁻³, RUC LSM `rhowater` parameter
-const L_fusion_const = 3.337e5 # J kg⁻¹, latent heat of fusion of water
 
 """
     RucSlabLandParameters(FT = Float64; kwargs...)
@@ -324,11 +318,7 @@ Coupler-supplied forcings (kept as `Field`s on the grid):
 - `forcings.solar_irradiance`  [W m⁻²]   for Jarvis `f1`
 - `forcings.air_temperature`   [K]       for Jarvis `f4`
 - `forcings.air_humidity`      [kg kg⁻¹] for Jarvis `f2`
-
-Optional implicit-skin-T inputs (used only by `surface_balance_vilka!`):
-
-- `forcings.vilka_d1, vilka_d2` [K, K] linearised energy-balance coefficients
-- `forcings.surface_pressure`  [hPa]   for q_sat(T_s)
+- `forcings.surface_pressure`  [hPa]     for q_sat(T_s) in Jarvis `f2`
 
 Initialise with `set!(land; T=..., θ=..., snwe=..., …)` after construction.
 """
@@ -376,7 +366,6 @@ function RucSlabLand(grid;
     snhei            = CenterField(grid)
     rhosn            = CenterField(grid); fill!(rhosn,    250)
     rhonewsn         = CenterField(grid); fill!(rhonewsn, 100)
-    rhosnfall        = CenterField(grid); fill!(rhosnfall, 100)
     rhosn_step_start = CenterField(grid); fill!(rhosn_step_start, 250)
     snowfrac         = CenterField(grid)
     newsn            = CenterField(grid)
@@ -387,7 +376,7 @@ function RucSlabLand(grid;
     swe_inflow       = CenterField(grid)              # scratch: post-canopy throughfall to pack
     swl_overflow     = CenterField(grid)              # scratch: retention overflow → infiltration
 
-    snow = (; snwe, snhei, rhosn, rhonewsn, rhosnfall, rhosn_step_start,
+    snow = (; snwe, snhei, rhosn, rhonewsn, rhosn_step_start,
               snowfrac, newsn, snowfallac, snowfracnewsn, keep_snow_albedo,
               swl, swe_inflow, swl_overflow)
 
@@ -435,8 +424,6 @@ function RucSlabLand(grid;
                 solar_irradiance   = CenterField(grid),
                 air_temperature    = CenterField(grid),
                 air_humidity       = CenterField(grid),
-                vilka_d1           = CenterField(grid),
-                vilka_d2           = CenterField(grid),
                 surface_pressure   = CenterField(grid))
 
     return RucSlabLand{FT}(grid, clock,
@@ -674,7 +661,7 @@ end
 # Fresh-snow density follows the Smirnova et al. (1997, 2016) `tanh`
 # formulation, using air temperature `T_air`. Bulk density is the
 # mass-weighted mean of old and fresh snow.
-@kernel function _accumulate_new_snow!(snwe, snhei, rhosn, swl, rhonewsn, rhosnfall,
+@kernel function _accumulate_new_snow!(snwe, snhei, rhosn, swl, rhonewsn,
                                        newsn, snowfracnewsn, keep_snow_albedo,
                                        snowfallac,
                                        swe_inflow, T_air, rhosn_step_start,
@@ -690,7 +677,6 @@ end
                            max(FT(8), FT(17) * tanh((FT(276.65) - T_K) * FT(0.15))),
                            ρ_min, FT(125))
             rhonewsn[i, j, 1]  = ρ_new
-            rhosnfall[i, j, 1] = ρ_new
 
             old_swe = snwe[i, j, 1] + swl[i, j, 1]
             old_ρ   = max(rhosn[i, j, 1], ρ_min)
@@ -1140,74 +1126,6 @@ end
 end
 
 #####
-##### Implicit skin-T solver (`vilka`) — Smirnova et al. (1997) §3,
-##### f90 lines 366–398. Newton iteration on
-#####
-#####     f(T_s) = T_s + d₁ · q_sat(T_s) − d₂ = 0
-#####
-##### with `d₁` and `d₂` linearised energy-balance coefficients supplied by
-##### the coupler. Uses the closed-form Buck (1981) `q_sat(T, p)` rather
-##### than the f90's 5001-entry lookup table.
-#####
-
-@inline function _vilka_iteration(tn::FT, d1::FT, d2::FT, p_hPa::FT;
-                                  max_iter = 20, tol = FT(1e-3)) where FT
-    ts = tn
-    for _ in 1:max_iter
-        qs  = qsat_buck(ts, p_hPa)
-        f   = ts + d1 * qs - d2
-        # df/dts ≈ 1 + d1 · dqsat/dts (centred difference)
-        h   = FT(0.05)
-        dqs = (qsat_buck(ts + h, p_hPa) - qsat_buck(ts - h, p_hPa)) /
-              (FT(2) * h)
-        df  = one(FT) + d1 * dqs
-        Δ   = f / df
-        ts -= Δ
-        if abs(Δ) < tol
-            break
-        end
-    end
-    return ts, qsat_buck(ts, p_hPa)
-end
-
-@kernel function _solve_vilka!(T, q_s, d1, d2, p_surf)
-    i, j = @index(Global, NTuple)
-    @inbounds begin
-        FT = eltype(T)
-        ts, qs = _vilka_iteration(T[i, j, 1],
-                                  d1[i, j, 1], d2[i, j, 1],
-                                  max(p_surf[i, j, 1], FT(1)))
-        T[i, j, 1]   = ts
-        q_s[i, j, 1] = qs
-    end
-end
-
-"""
-    surface_balance_vilka!(land::RucSlabLand, q_s)
-
-Update `land.temperature` (skin temperature) by Newton iteration on the
-linearised surface energy balance, using the coupler-supplied
-`forcings.{vilka_d1, vilka_d2, surface_pressure}` fields. Writes the
-saturation specific humidity at the new skin temperature into the user-
-supplied `q_s` field.
-
-This is an alternative to driving `land.temperature` via
-`land.temperature_flux` and is intended for couplers that prefer to feed
-linearised energy-balance coefficients (Smirnova et al. 1997 §3) instead
-of an explicit temperature flux.
-"""
-function surface_balance_vilka!(land::RucSlabLand, q_s)
-    grid = land.grid
-    arch = architecture(grid)
-    forc = land.forcings
-    launch!(arch, grid, :xy, _solve_vilka!,
-            land.temperature, q_s,
-            forc.vilka_d1, forc.vilka_d2, forc.surface_pressure)
-    fill_halo_regions!(land.temperature)
-    return nothing
-end
-
-#####
 ##### Time stepping and state update
 #####
 
@@ -1258,8 +1176,7 @@ end
 """
     time_step!(land::RucSlabLand, Δt)
 
-Advance the slab by `Δt` in flux-driven mode (use `surface_balance_vilka!`
-for the implicit alternative). Order:
+Advance the slab by `Δt`. Order:
 
   1. Ground-slab temperature: `T_g -= Jᵀ_g Δt / H_g`.
   2. Canopy-slab temperature: `T_c -= Jᵀ_c Δt / (ρcH)_c`.
@@ -1344,8 +1261,7 @@ function Oceananigans.TimeSteppers.time_step!(land::RucSlabLand, Δt)
     fill!(snow.keep_snow_albedo, 0)
     fill!(snow.rhonewsn, 100)
     launch!(arch, grid, :xy, _accumulate_new_snow!,
-            snow.snwe, snow.snhei, snow.rhosn, snow.swl,
-            snow.rhonewsn, snow.rhosnfall,
+            snow.snwe, snow.snhei, snow.rhosn, snow.swl, snow.rhonewsn,
             snow.newsn, snow.snowfracnewsn, snow.keep_snow_albedo,
             snow.snowfallac,
             snow.swe_inflow, forc.air_temperature, snow.rhosn_step_start,
