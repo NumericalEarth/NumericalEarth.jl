@@ -186,6 +186,8 @@ function regrid_bathymetry(target_grid, metadata;
                            major_basins = 1,
                            cache = true)
 
+    validate_dataset_coverage(target_grid, metadata)
+
     config = BathymetryRegridding(target_grid, metadata;
                                   height_above_water, minimum_depth,
                                   interpolation_passes, major_basins)
@@ -240,7 +242,7 @@ function _regrid_bathymetry(target_grid, metadata;
     filepath = metadata_path(metadata)
     dataset = Dataset(filepath, "r")
 
-    z_data = convert(Array{FT}, dataset["z"][:, :])
+    z_data = convert(Array{FT}, dataset[dataset_variable_name(metadata)][:, :])
     close(dataset)
 
     if !isnothing(height_above_water)
