@@ -382,18 +382,34 @@ LOADERS[:mld_min] = c -> masked!(c, reduce_monthly(c, :mld_monthly, min))
 LOADERS[:mld_max] = c -> masked!(c, reduce_monthly(c, :mld_monthly, max))
 
 #####
-##### WOA temperature & salinity on case grid
+##### WOA temperature & salinity on case grid (TEOS-10)
 #####
+#
+# WOA `t_an` is in-situ temperature (°C) and `s_an` is Practical Salinity
+# (PSS-78), but the OMIP ocean prognostic state is TEOS-10 Conservative
+# Temperature (Θ) and Absolute Salinity (S_A). Comparing the model
+# directly against the raw WOA fields produces a near-constant
+# +0.165 g/kg salinity bias (the S_A − S_P offset) and a smaller
+# salinity-dependent temperature bias. The pair loader interpolates
+# both fields onto the case grid and runs `woa_to_teos10!` once so
+# every downstream loader (`:sst_bias`, `:sss_bias`, `:zonal_woa_*`,
+# `:zonal_*_bias`) compares apples to apples.
 
-function woa_on_grid(c, var)
-    woa = Field(Metadatum(var; dataset = WOAAnnual()), CPU())
-    out = CenterField(get_field(c, :grid))
-    interpolate!(out, woa)
-    return Array(interior(out))
+function woa_teos10_pair(c)
+    grid = get_field(c, :grid)
+    woaT = Field(Metadatum(:temperature; dataset = WOAAnnual()), CPU())
+    woaS = Field(Metadatum(:salinity;    dataset = WOAAnnual()), CPU())
+    T = CenterField(grid)
+    S = CenterField(grid)
+    interpolate!(T, woaT)
+    interpolate!(S, woaS)
+    woa_to_teos10!(T, S)
+    return (Array(interior(T)), Array(interior(S)))
 end
 
-LOADERS[:woa_temperature] = c -> woa_on_grid(c, :temperature)
-LOADERS[:woa_salinity]    = c -> woa_on_grid(c, :salinity)
+LOADERS[:woa_pair]        = woa_teos10_pair
+LOADERS[:woa_temperature] = c -> get_field(c, :woa_pair)[1]
+LOADERS[:woa_salinity]    = c -> get_field(c, :woa_pair)[2]
 
 LOADERS[:sst_bias] = c -> masked!(c, get_field(c, :sst) .- get_field(c, :woa_temperature)[:, :, end])
 LOADERS[:sss_bias] = c -> masked!(c, get_field(c, :sss) .- get_field(c, :woa_salinity)[:, :, end])
