@@ -1,5 +1,14 @@
 
-using JLD2 
+using JLD2
+using Oceananigans.AbstractOperations: KernelFunctionOperation
+using Oceananigans.Operators: Axᶠᶜᶜ, Ayᶜᶠᶜ
+
+# Volumetric face fluxes [m³/s] for offline transport diagnostics
+# (e.g. AMOC streamfunction). Saved as 3-D fields on the velocity faces
+# so a downstream zonal sum + cumulative-z gives the streamfunction
+# directly without re-deriving Δx/Δz on the visualizer side.
+@inline zonal_volume_flux(i, j, k, grid, u)      = @inbounds u[i, j, k] * Axᶠᶜᶜ(i, j, k, grid)
+@inline meridional_volume_flux(i, j, k, grid, v) = @inbounds v[i, j, k] * Ayᶜᶠᶜ(i, j, k, grid)
 
 """
     add_omip_diagnostics!(simulation; kwargs...)
@@ -137,13 +146,23 @@ function add_omip_diagnostics!(simulation;
     # 3-D fields (including buoyancy)
     bop = Oceananigans.Models.buoyancy_operation(ocean.model)
 
+    uvol = KernelFunctionOperation{Face,   Center, Center}(zonal_volume_flux,      grid, u)
+    vvol = KernelFunctionOperation{Center, Face,   Center}(meridional_volume_flux, grid, v)
+
+    uosq = Oceananigans.AbstractOperations.@at((Center, Center, Center), u * u)
+    vosq = Oceananigans.AbstractOperations.@at((Center, Center, Center), v * v)
+
     field_outputs = Dict{Symbol, Any}(
-        :to => T,
-        :so => S,
-        :uo => u,
-        :vo => v,
-        :wo => w,
-        :bo => bop,
+        :to   => T,
+        :so   => S,
+        :uo   => u,
+        :vo   => v,
+        :wo   => w,
+        :bo   => bop,
+        :uosq => uosq,
+        :vosq => vosq,
+        :uvol => uvol,
+        :vvol => vvol,
     )
 
     if haskey(ocean.model.tracers, :e)
