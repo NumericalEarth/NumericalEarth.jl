@@ -18,16 +18,25 @@ sync_atmosphere_land_auxiliary_forcings!(::Nothing, ::Any) = nothing
 sync_atmosphere_land_auxiliary_forcings!(::Any, ::Nothing) = nothing
 
 function sync_atmosphere_land_auxiliary_forcings!(land, atmosphere_exchanger)
-    hasproperty(land, :forcings) || return nothing
+    # `SlabLand` exposes coupler-supplied fluxes at `land.fluxes`; the legacy
+    # `RucSlabLand` (now a SlabLand-with-RUC-closures alias) carries
+    # `air_temperature` and `air_humidity` under that NamedTuple. Older
+    # land types may have used the now-deprecated `:forcings` slot.
+    auxiliary = if hasproperty(land, :fluxes)
+        land.fluxes
+    elseif hasproperty(land, :forcings)
+        land.forcings
+    else
+        return nothing
+    end
 
-    forcings = land.forcings
-    hasproperty(forcings, :air_temperature) || return nothing
-    hasproperty(forcings, :air_humidity) || return nothing
+    hasproperty(auxiliary, :air_temperature) || return nothing
+    hasproperty(auxiliary, :air_humidity) || return nothing
 
     atmosphere_state = atmosphere_exchanger.state
 
-    parent(forcings.air_temperature) .= parent(atmosphere_state.T)
-    parent(forcings.air_humidity) .= parent(atmosphere_state.q)
+    parent(auxiliary.air_temperature) .= parent(atmosphere_state.T)
+    parent(auxiliary.air_humidity) .= parent(atmosphere_state.q)
 
     return nothing
 end

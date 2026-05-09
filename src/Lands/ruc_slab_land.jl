@@ -1,442 +1,84 @@
 #####
-##### A 2D land-surface component for `EarthSystemModel`.
+##### `RucSlabLand` — convenience constructor + RUC-specific glue.
+#####
+##### Builds a `SlabLand` with the RUC trio of closures
+##### (`RucEnergy`, `RucHydrology`, `RucSurfaceProperties`) using a
+##### single `RucSlabLandParameters` bag. The result is a `SlabLand`,
+##### so the `time_step!` / `update_state!` / accessor machinery
+##### defined on the container applies unchanged. The handful of
+##### RUC-specific glue routines (`set!`, `ComponentExchanger`,
+##### `update_net_fluxes!`, `prognostic_state` /
+##### `restore_prognostic_state!`) dispatch on the concrete closure
+##### types so they don't pollute the generic `SlabLand` path.
 #####
 ##### Implements the slab-compatible subset of the RUC LSM
 ##### (Smirnova et al. 1997, 2016) plus complementary parameterizations
-##### from ISBA, Noilhan-Planton (1989), and Mahfouf-Noilhan (1991):
+##### from ISBA, Noilhan-Planton (1989), and Mahfouf-Noilhan (1991). See
+##### the closure files for the kernels and references.
 #####
-##### Snow:
-#####   - density compaction (Anderson 1976; Smirnova 1997)
-#####   - new-snow accumulation + density (Smirnova 1997, 2016)
-#####   - snow-cover fraction (Koren 1999; Niu-Yang 2007)
-#####   - albedo / emissivity / roughness blends (Robinson-Kukla 1985)
-#####   - sublimation sink on SWE
-#####   - snow melt with `T_g > 273.15 K` energy partition
-#####   - liquid water retention in the pack (overflow → soil infiltration)
-##### Canopy:
-#####   - canopy water store with Beer-Lambert rain/snow interception
-#####   - throughfall partition (drip, intersn) into soil/snowpack
-#####   - wet-canopy direct evaporation
-#####   - two-source canopy temperature `T_c` (Deardorff 1978)
-##### Vegetation/optics:
-#####   - vegetation-modified end-members for `α, ε, z₀`
-##### Soil:
-#####   - single-bucket liquid soil moisture `θ_liq` (Manabe 1969)
-#####   - prognostic frozen soil moisture `θ_ice` equilibrated against the
-#####     Clapp-Hornberger / Clausius-Clapeyron unfrozen-water curve at
-#####     sub-zero `T_g`; latent heat of fusion absorbed/released into the
-#####     slab heat budget
-##### Resistances:
-#####   - RUC top-layer moisture availability `mavail`
-#####   - RUC bare-soil evaporation limiter `soilres`
-#####   - Jarvis-Stewart canopy resistance r_s (Jarvis 1976; Stewart 1988)
+
 #####
-##### Journal references:
+##### Convenience constructor
 #####
-##### Anderson, E. A., 1976: A point energy and mass balance model of a snow
-#####   cover. NOAA Tech. Rep. NWS 19.
-##### Manabe, S., 1969: Climate and the ocean circulation: I. The atmospheric
-#####   circulation and the hydrology of the Earth's surface. Mon. Wea. Rev.,
-#####   97, 739–774.
-##### Jarvis, P. G., 1976: The interpretation of the variations in leaf water
-#####   potential and stomatal conductance found in canopies in the field.
-#####   Phil. Trans. R. Soc. London B, 273, 593–610.
-##### Clapp, R. B., and G. M. Hornberger, 1978: Empirical equations for some
-#####   soil hydraulic properties. Water Resour. Res., 14, 601–604.
-##### Deardorff, J. W., 1978: Efficient prediction of ground surface
-#####   temperature and moisture, with inclusion of a layer of vegetation.
-#####   J. Geophys. Res., 83, 1889–1903.
-##### Buck, A. L., 1981: New equations for computing vapor pressure and
-#####   enhancement factor. J. Appl. Meteor., 20, 1527–1532.
-##### Robinson, D. A., and G. Kukla, 1985: Maximum surface albedo of seasonally
-#####   snow-covered lands in the Northern Hemisphere. J. Climate Appl. Meteor.,
-#####   24, 402–411.
-##### Stewart, J. B., 1988: Modelling surface conductance of pine forest.
-#####   Agric. For. Meteor., 43, 19–35.
-##### Noilhan, J., and S. Planton, 1989: A simple parameterization of land
-#####   surface processes for meteorological models. Mon. Wea. Rev., 117, 536–549.
-##### Mahfouf, J.-F., and J. Noilhan, 1991: Comparative study of various
-#####   formulations of evaporation from bare soil using in situ data.
-#####   J. Appl. Meteor., 30, 1354–1365.
-##### Smirnova, T. G., J. M. Brown, and S. G. Benjamin, 1997: Performance of
-#####   different soil model configurations in simulating ground surface
-#####   temperature and surface fluxes. Mon. Wea. Rev., 125, 1870–1884.
-##### Koren, V., J. Schaake, K. Mitchell, Q.-Y. Duan, F. Chen, and J. M. Baker,
-#####   1999: A parameterization of snowpack and frozen ground intended for
-#####   NCEP weather and climate models. J. Geophys. Res., 104, 19569–19585.
-##### Niu, G.-Y., and Z.-L. Yang, 2007: An observation-based formulation of
-#####   snow cover fraction and its evaluation over large North American river
-#####   basins. J. Geophys. Res., 112, D21101, doi:10.1029/2007JD008674.
-##### Smirnova, T. G., J. M. Brown, S. G. Benjamin, and J. S. Kenyon, 2016:
-#####   Modifications to the Rapid Update Cycle Land Surface Model (RUC LSM)
-#####   available in the WRF model. Mon. Wea. Rev., 144, 1851–1865,
-#####   doi:10.1175/MWR-D-15-0198.1.
-
-using Oceananigans.BoundaryConditions: fill_halo_regions!
-using Oceananigans.Utils: prettytime, prettysummary
-
-const ρ_water_const = 1000.0   # kg m⁻³, RUC LSM `rhowater` parameter
 
 """
-    RucSlabLandParameters(FT = Float64; kwargs...)
+    RucSlabLand(grid;
+                FT         = eltype(grid),
+                parameters = RucSlabLandParameters(FT),
+                clock      = Clock{FT}(time = 0))
 
-Tunable scalar parameters of `RucSlabLand`. Defaults reproduce the
-RUC LSM configuration of Smirnova et al. (1997, 2016) for
-snow, canopy interception, and top-layer moisture availability, while retaining
-the existing single-bucket soil-moisture state.
+Build a `SlabLand` composed of `RucEnergy`, `RucHydrology`, and
+`RucSurfaceProperties` — the slab-compatible subset of the RUC LSM.
+The atmosphere reads `state.T` (skin temperature), `state.mavail` (β),
+and `surface.{alb, emiss, znt}` through the
+`ComponentExchanger`-aliased fields in `EarthSystemModels`.
 
-# Heat reservoir (ground)
-- `depth = 0.10`           : ground slab thickness `H_g` [m]
-- `density = 1500`         : soil bulk density `ρ_g` [kg m⁻³]
-- `heat_capacity = 1480`   : soil specific heat `c_g` [J kg⁻¹ K⁻¹]
+Coupler-supplied flux fields (each a `Field`):
 
-# Canopy reservoir
-- `canopy_heat_capacity = 1.0e4`   : effective canopy areal heat capacity
-   `(ρ c H)_c` [J m⁻² K⁻¹]
-- `canopy_water_capacity = 5.0e-4` : RUC fixed maximum intercepted canopy
-   water `sat` [m]
+- `fluxes.temperature_flux`         ≡ `Jᵀ_g` [K m s⁻¹]
+- `fluxes.canopy_temperature_flux`  ≡ `Jᵀ_c` [W m⁻²]
+- `fluxes.snowfall_rate`            [m s⁻¹] LWE
+- `fluxes.rainfall_rate`            [m s⁻¹]
+- `fluxes.moisture_flux`            [kg m⁻² s⁻¹], positive up
+- `fluxes.canopy_evaporation`       [kg m⁻² s⁻¹]
+- `fluxes.transpiration`            [kg m⁻² s⁻¹]
+- `fluxes.solar_irradiance`         [W m⁻²]
+- `fluxes.air_temperature`          [K]
+- `fluxes.air_humidity`             [kg kg⁻¹]
+- `fluxes.surface_pressure`         [hPa]
 
-# Soil-moisture bucket (Manabe 1969 / ISBA Noilhan-Planton 1989)
-- `soil_depth = 1.0`             : root-zone bucket depth `H_s` [m]
-- `theta_sat = 0.45`             : saturated vol. water content [m³ m⁻³]
-- `theta_fc = 0.30`              : field capacity [m³ m⁻³]
-- `theta_wilt = 0.10`            : wilting point [m³ m⁻³]
-- `theta_air_dry = 0.05`         : air-dry / residual water content [m³ m⁻³]
-
-# Soil hydraulics (Clapp-Hornberger; used by sub-zero unfrozen-water curve)
-- `psi_sat = 0.355`              : magnitude of matric head at saturation [m]
-   (positive). Loam reference value from WRF SOILPARM.TBL.
-- `bclh = 5.25`                  : Clapp-Hornberger pore-size index `b`
-   (loam reference value from WRF SOILPARM.TBL).
-
-# Surface optical / aerodynamic constants — end-members blended by `vegfrac`
-# and then by `snowfrac`.
-- `alb_snow = 0.85`         : snow shortwave albedo end-member (mirrors
-   Fortran `alb_snow`; the warm-T attenuation in
-   `_update_surface_properties!` provides the only albedo decay)
-- `alb_bare = 0.25`         : bare-soil albedo
-- `alb_veg = 0.18`          : dense-canopy albedo
-- `emiss_snow = 0.98`       : snow emissivity
-- `emiss_bare = 0.95`       : bare-soil emissivity
-- `emiss_veg = 0.98`        : canopy emissivity
-- `z0_snow = 0.011`         : snow roughness length [m]
-- `z0_bare = 0.05`          : bare-soil roughness length [m]
-- `z0_veg = 0.20`           : vegetated roughness length [m]
-
-# Snow-cover fraction (Koren 1999; Niu-Yang 2007)
-- `sncovfac = 0.04`           : Niu-Yang scale factor [m]
-- `snowcovr_opt = 2`          : 1 = linear; 2 = blend; 3 = Niu-Yang `tanh`
-
-The Koren critical depths `snhei_crit = 0.01601·ρ_w/ρ_sn` and
-`snhei_crit_newsn = 0.0005·ρ_w/ρ_sn`
-are computed dynamically from the local snow density inside the kernels.
-
-# Snow density compaction (Anderson 1976; Smirnova 1997)
-- `c1_compaction = 0.026`     : compaction parameter `c1sn`
-- `c2_compaction = 21.0`      : compaction parameter `c2sn`
-- `rhosn_min = 58.8`          : minimum bulk density [kg m⁻³]
-- `rhosn_max = 500.0`         : maximum bulk density [kg m⁻³]
-
-# Snow melt and liquid water retention
-- `snow_liquid_capacity_frac = 0.04` : cap used when draining carried-over
-   slab liquid water `swl` before new melt is applied
-- `meltfactor = 2.0` : RUC open-area Egglston melt limiter multiplier
-- `snow_retention_min_frac = 0.08` : RUC lower bound for retained melt fraction
-- `snow_retention_max_frac = 0.18` : RUC upper bound for retained melt fraction
-- `snow_retention_depth_scale = 0.10` : RUC depth scale for retained melt [m]
-- `snow_retention_depth_factor = 0.13` : RUC Koren retained-melt factor
-
-# Phase change
-- `latent_heat_fusion = 3.337e5`  : J kg⁻¹
-
-# Stomatal resistance (Jarvis-Stewart)
-- `r_smin = 100.0`            : minimum (well-watered, optimal-light) `r_s` [s m⁻¹]
-- `r_smax = 5000.0`           : maximum (closed) `r_s` [s m⁻¹]
-- `rg_lim = 100.0`            : SW radiation scaling for `f1` [W m⁻²]
-- `vpd_lim = 4.0e-3`          : VPD scaling for `f2` [kg kg⁻¹]
-- `T_opt = 298.0`             : optimal stomatal temperature [K]
+Initialise with `set!(land; T=..., θ=..., snwe=..., …)` after
+construction.
 """
-struct RucSlabLandParameters{FT}
-    # Ground slab
-    depth :: FT
-    density :: FT
-    heat_capacity :: FT
-    # Canopy slab
-    canopy_heat_capacity :: FT
-    canopy_water_capacity :: FT
-    # Soil-moisture bucket
-    soil_depth :: FT
-    theta_sat :: FT
-    theta_fc :: FT
-    theta_wilt :: FT
-    theta_air_dry :: FT
-    # Soil hydraulics for sub-zero unfrozen-water curve (Clapp-Hornberger)
-    psi_sat :: FT
-    bclh :: FT
-    # Optics / roughness end-members
-    alb_snow :: FT
-    alb_bare :: FT
-    alb_veg :: FT
-    emiss_snow :: FT
-    emiss_bare :: FT
-    emiss_veg :: FT
-    z0_snow :: FT
-    z0_bare :: FT
-    z0_veg :: FT
-    # Snow-cover fraction
-    sncovfac :: FT
-    snowcovr_opt :: Int
-    # Snow density compaction
-    c1_compaction :: FT
-    c2_compaction :: FT
-    rhosn_min :: FT
-    rhosn_max :: FT
-    # Snow liquid retention + phase change
-    snow_liquid_capacity_frac :: FT
-    meltfactor :: FT
-    snow_retention_min_frac :: FT
-    snow_retention_max_frac :: FT
-    snow_retention_depth_scale :: FT
-    snow_retention_depth_factor :: FT
-    latent_heat_fusion :: FT
-    # Resistances
-    r_smin :: FT
-    r_smax :: FT
-    rg_lim :: FT
-    vpd_lim :: FT
-    T_opt :: FT
-end
-
-function RucSlabLandParameters(FT::Type = Float64;
-                            depth = 0.10,
-                            density = 1500,
-                            heat_capacity = 1480,
-                            canopy_heat_capacity = 1.0e4,
-                            canopy_water_capacity = 5.0e-4,
-                            soil_depth = 1.0,
-                            theta_sat = 0.45,
-                            theta_fc = 0.30,
-                            theta_wilt = 0.10,
-                            theta_air_dry = 0.05,
-                            psi_sat = 0.355,
-                            bclh = 5.25,
-                            alb_snow = 0.85,
-                            alb_bare = 0.25,
-                            alb_veg = 0.18,
-                            emiss_snow = 0.98,
-                            emiss_bare = 0.95,
-                            emiss_veg = 0.98,
-                            z0_snow = 0.011,
-                            z0_bare = 0.05,
-                            z0_veg = 0.20,
-                            sncovfac = 0.04,
-                            snowcovr_opt = 2,
-                            c1_compaction = 0.026,
-                            c2_compaction = 21.0,
-                            rhosn_min = 58.8,
-                            rhosn_max = 500.0,
-                            snow_liquid_capacity_frac = 0.04,
-                            meltfactor = 2.0,
-                            snow_retention_min_frac = 0.08,
-                            snow_retention_max_frac = 0.18,
-                            snow_retention_depth_scale = 0.10,
-                            snow_retention_depth_factor = 0.13,
-                            latent_heat_fusion = 3.337e5,
-                            r_smin = 100.0,
-                            r_smax = 5000.0,
-                            rg_lim = 100.0,
-                            vpd_lim = 4.0e-3,
-                            T_opt = 298.0)
-
-    return RucSlabLandParameters{FT}(
-        convert(FT, depth),
-        convert(FT, density),
-        convert(FT, heat_capacity),
-        convert(FT, canopy_heat_capacity),
-        convert(FT, canopy_water_capacity),
-        convert(FT, soil_depth),
-        convert(FT, theta_sat),
-        convert(FT, theta_fc),
-        convert(FT, theta_wilt),
-        convert(FT, theta_air_dry),
-        convert(FT, psi_sat),
-        convert(FT, bclh),
-        convert(FT, alb_snow),
-        convert(FT, alb_bare),
-        convert(FT, alb_veg),
-        convert(FT, emiss_snow),
-        convert(FT, emiss_bare),
-        convert(FT, emiss_veg),
-        convert(FT, z0_snow),
-        convert(FT, z0_bare),
-        convert(FT, z0_veg),
-        convert(FT, sncovfac),
-        Int(snowcovr_opt),
-        convert(FT, c1_compaction),
-        convert(FT, c2_compaction),
-        convert(FT, rhosn_min),
-        convert(FT, rhosn_max),
-        convert(FT, snow_liquid_capacity_frac),
-        convert(FT, meltfactor),
-        convert(FT, snow_retention_min_frac),
-        convert(FT, snow_retention_max_frac),
-        convert(FT, snow_retention_depth_scale),
-        convert(FT, snow_retention_depth_factor),
-        convert(FT, latent_heat_fusion),
-        convert(FT, r_smin),
-        convert(FT, r_smax),
-        convert(FT, rg_lim),
-        convert(FT, vpd_lim),
-        convert(FT, T_opt),
-    )
-end
-
-"""
-    RucSlabLand(grid; FT = eltype(grid),
-                   parameters = RucSlabLandParameters(FT),
-                   clock = Clock{FT}(time = 0))
-
-A slab land-surface component for `EarthSystemModel`. See the file header
-for the parameterizations and references included.
-
-Coupler-supplied forcings (kept as `Field`s on the grid):
-
-- `temperature_flux`           ≡ `Jᵀ_g` [K m s⁻¹] kinematic flux into the
-  ground slab; `T_g -= Jᵀ_g · Δt / depth`.
-- `canopy_temperature_flux`    ≡ `Jᵀ_c` [W m⁻²] heat flux into the canopy
-  reservoir; `T_c -= Jᵀ_c · Δt / canopy_heat_capacity`. Different
-  convention from `Jᵀ_g` because the canopy is parameterised by an areal
-  heat capacity `(ρcH)_c` rather than a depth.
-- `forcings.snowfall_rate`     [m s⁻¹] solid precipitation, liquid-water equivalent
-- `forcings.rainfall_rate`     [m s⁻¹] liquid precipitation
-- `forcings.moisture_flux`     [kg m⁻² s⁻¹] vapor mass flux, F_v (positive up).
-  Routed to snow sublimation on the snow-covered fraction and to bare-soil
-  evaporation (β-weighted) on the snow-free fraction.
-- `forcings.canopy_evaporation` [kg m⁻² s⁻¹] direct evaporation drain on
-  the canopy water store `cst`.
-- `forcings.transpiration`     [kg m⁻² s⁻¹] canopy transpiration (positive up)
-- `forcings.solar_irradiance`  [W m⁻²]   for Jarvis `f1`
-- `forcings.air_temperature`   [K]       for Jarvis `f4`
-- `forcings.air_humidity`      [kg kg⁻¹] for Jarvis `f2`
-- `forcings.surface_pressure`  [hPa]     for q_sat(T_air) in Jarvis `f2`
-
-Initialise with `set!(land; T=..., θ=..., snwe=..., …)` after construction.
-"""
-struct RucSlabLand{FT, G, Clk, T, S, C, V, P, F, PAR}
-    grid :: G
-    clock :: Clk
-    temperature :: T
-    temperature_flux :: T
-    canopy_temperature :: T
-    canopy_temperature_flux :: T
-    soil_moisture :: T          # liquid θ_liq
-    soil_moisture_ice :: T      # frozen θ_ice
-    snow :: S
-    canopy :: C
-    vegetation :: V
-    properties :: P
-    forcings :: F
-    parameters :: PAR
-end
-
-# Inner constructor capturing FT
-RucSlabLand{FT}(grid, clock, T, Jᵀ, Tc, JᵀT, θ, θi, snow, canopy, veg, props, forc, par) where FT =
-    RucSlabLand{FT, typeof(grid), typeof(clock), typeof(T),
-             typeof(snow), typeof(canopy), typeof(veg),
-             typeof(props), typeof(forc), typeof(par)}(
-        grid, clock, T, Jᵀ, Tc, JᵀT, θ, θi, snow, canopy, veg, props, forc, par)
-
 function RucSlabLand(grid;
-                  FT = eltype(grid),
-                  parameters = RucSlabLandParameters(FT),
-                  clock = Clock{FT}(time = 0))
+                     FT = eltype(grid),
+                     parameters = RucSlabLandParameters(FT),
+                     clock = Clock{FT}(time = 0))
 
-    # Prognostic temperatures
-    temperature              = CenterField(grid)
-    temperature_flux         = CenterField(grid)
-    canopy_temperature       = CenterField(grid)
-    canopy_temperature_flux  = CenterField(grid)
+    energy    = RucEnergy(parameters)
+    hydrology = RucHydrology(parameters)
+    surface   = RucSurfaceProperties(grid, parameters)
 
-    # Liquid and frozen soil moisture
-    soil_moisture     = CenterField(grid); fill!(soil_moisture, parameters.theta_fc)
-    soil_moisture_ice = CenterField(grid)   # default 0
-
-    # Snow column
-    snwe             = CenterField(grid)
-    snhei            = CenterField(grid)
-    rhosn            = CenterField(grid); fill!(rhosn,    250)
-    rhonewsn         = CenterField(grid); fill!(rhonewsn, 100)
-    rhosn_step_start = CenterField(grid); fill!(rhosn_step_start, 250)
-    snowfrac         = CenterField(grid)
-    newsn            = CenterField(grid)
-    snowfallac       = CenterField(grid)
-    snowfracnewsn    = CenterField(grid)
-    keep_snow_albedo = CenterField(grid)
-    swl              = CenterField(grid)              # snow liquid water [m LWE]
-    swe_inflow       = CenterField(grid)              # scratch: post-canopy throughfall to pack
-    swl_overflow     = CenterField(grid)              # scratch: retention overflow → infiltration
-
-    snow = (; snwe, snhei, rhosn, rhonewsn, rhosn_step_start,
-              snowfrac, newsn, snowfallac, snowfracnewsn, keep_snow_albedo,
-              swl, swe_inflow, swl_overflow)
-
-    # Canopy water store
-    canopy = (cst       = CenterField(grid),
-              drip      = CenterField(grid),
-              interw    = CenterField(grid),
-              intersn   = CenterField(grid),
-              infwater  = CenterField(grid),
-              intwratio = CenterField(grid))
-
-    # Vegetation inputs and derived diagnostics. Per-cell `albedo_veg`,
-    # `emissivity_veg`, `z0_veg`, `r_smin` are filled from the scalar
-    # parameters by default and can be overwritten by
-    # `apply_land_classifications!` to install a USGS / MODIS lookup table.
-    vegetation = (vegfrac         = CenterField(grid),
-                  lai             = CenterField(grid),
-                  canopy_capacity = CenterField(grid),
-                  mavail          = CenterField(grid),
-                  soilres         = CenterField(grid),
-                  r_s             = CenterField(grid),
-                  albedo_veg      = CenterField(grid),
-                  emissivity_veg  = CenterField(grid),
-                  z0_veg          = CenterField(grid),
-                  r_smin          = CenterField(grid),
-                  is_urban        = CenterField(grid))
-    fill!(vegetation.r_s,            parameters.r_smin)
-    fill!(vegetation.soilres,        1)
-    fill!(vegetation.albedo_veg,     parameters.alb_veg)
-    fill!(vegetation.emissivity_veg, parameters.emiss_veg)
-    fill!(vegetation.z0_veg,         parameters.z0_veg)
-    fill!(vegetation.r_smin,         parameters.r_smin)
-
-    # Effective surface properties (initialised to bare-soil values)
-    alb   = CenterField(grid); fill!(alb,   parameters.alb_bare)
-    emiss = CenterField(grid); fill!(emiss, parameters.emiss_bare)
-    znt   = CenterField(grid); fill!(znt,   parameters.z0_bare)
-    properties = (; alb, emiss, znt)
-
-    forcings = (snowfall_rate      = CenterField(grid),
-                rainfall_rate      = CenterField(grid),
-                moisture_flux      = CenterField(grid),
-                canopy_evaporation = CenterField(grid),
-                transpiration      = CenterField(grid),
-                solar_irradiance   = CenterField(grid),
-                air_temperature    = CenterField(grid),
-                air_humidity       = CenterField(grid),
-                surface_pressure   = CenterField(grid))
-
-    return RucSlabLand{FT}(grid, clock,
-                        temperature, temperature_flux,
-                        canopy_temperature, canopy_temperature_flux,
-                        soil_moisture, soil_moisture_ice,
-                        snow, canopy, vegetation, properties, forcings,
-                        parameters)
+    return SlabLand(grid; energy, hydrology, surface, parameters, clock)
 end
 
-Base.eltype(::RucSlabLand{FT}) where FT = FT
+#####
+##### `set!` for the RUC composition (and any SlabLand that exposes
+##### those state / surface keys).
+#####
 
-function Oceananigans.set!(land::RucSlabLand;
+"""
+    set!(land::SlabLand; T=…, Tc=…, θ=…, θ_ice=…, snwe=…, snhei=…, rhosn=…, swl=…, vegfrac=…, lai=…)
+
+Initialise prognostic state and per-cell vegetation-class fields. State
+keys map to `land.state.<name>`; `vegfrac` and `lai` map to
+`land.surface.<name>` because they are owned by the surface-property
+closure.
+
+`Tc` defaults to `T` when only `T` is supplied — preserves the legacy
+`RucSlabLand` ergonomics.
+"""
+function Oceananigans.set!(land::SlabLand;
                            T = nothing,
                            Tc = nothing,
                            θ = nothing,
@@ -447,908 +89,71 @@ function Oceananigans.set!(land::RucSlabLand;
                            swl = nothing,
                            vegfrac = nothing,
                            lai = nothing)
-    !isnothing(T)              && set!(land.temperature, T)
-    !isnothing(Tc)             && set!(land.canopy_temperature, Tc)
-    isnothing(Tc) && !isnothing(T) && set!(land.canopy_temperature, T)
-    !isnothing(θ)              && set!(land.soil_moisture, θ)
-    !isnothing(θ_ice)          && set!(land.soil_moisture_ice, θ_ice)
-    !isnothing(snwe)           && set!(land.snow.snwe,           snwe)
-    !isnothing(snhei)          && set!(land.snow.snhei,          snhei)
-    !isnothing(rhosn)          && set!(land.snow.rhosn,          rhosn)
-    !isnothing(swl)            && set!(land.snow.swl,            swl)
-    !isnothing(vegfrac)        && set!(land.vegetation.vegfrac,  vegfrac)
-    !isnothing(lai)            && set!(land.vegetation.lai,      lai)
-    return nothing
-end
+    state   = land.state
+    surface = land.surface
 
-function Base.summary(land::RucSlabLand{FT}) where FT
-    A = nameof(typeof(architecture(land.grid)))
-    G = nameof(typeof(land.grid))
-    return string("RucSlabLand{$FT, $A, $G}",
-                  "(time = ", prettytime(land.clock.time),
-                  ", iteration = ", land.clock.iteration, ")")
-end
-
-function Base.show(io::IO, land::RucSlabLand)
-    p = land.parameters
-    print(io, summary(land), '\n',
-              "├── grid: ",                summary(land.grid), '\n',
-              "├── ground depth: ",        prettysummary(p.depth), " m, ρcH = ",
-                  prettysummary(p.density * p.heat_capacity * p.depth), " J m⁻² K⁻¹\n",
-              "├── canopy heat cap: ",     prettysummary(p.canopy_heat_capacity), " J m⁻² K⁻¹\n",
-              "├── soil bucket depth: ",   prettysummary(p.soil_depth), " m, θ ∈ [",
-                  prettysummary(p.theta_wilt), ", ", prettysummary(p.theta_sat), "]\n",
-              "├── snow albedo: ",
-                  prettysummary(p.alb_snow), '\n',
-              "├── albedo end-members: ",
-                  prettysummary(p.alb_bare), " / ",
-                  prettysummary(p.alb_veg), " (bare / veg)\n",
-              "├── roughness end-members: ",
-                  prettysummary(p.z0_snow), " / ",
-                  prettysummary(p.z0_bare), " / ",
-                  prettysummary(p.z0_veg), " m\n",
-              "├── snowcovr_opt: ",        p.snowcovr_opt, '\n',
-              "├── snow: ",                keys(land.snow), '\n',
-              "├── canopy: ",              keys(land.canopy), '\n',
-              "└── vegetation: ",          keys(land.vegetation))
-end
-
-#####
-##### Snow physics — kernels and inline utilities
-#####
-
-# Snow-cover fraction (Koren et al. 1999, Niu and Yang 2007). Mirrors
-# `compute_snow_fraction` (lines 400–420 of module_sf_ruclsm_surface.f90).
-@inline function compute_snow_fraction(opt::Int, snhei, snhei_crit, znt,
-                                       rhosn, rhonewsn, sncovfac)
-    FT = typeof(snhei)
-    if opt == 1
-        return min(one(FT), snhei / (FT(2) * snhei_crit))
-    elseif opt == 2
-        f1 = min(one(FT), snhei / (FT(2) * snhei_crit))
-        z₀ = min(FT(0.2), znt)
-        f2 = tanh(snhei / (FT(2.5) * z₀ * (rhosn / rhonewsn)))
-        return FT(0.5) * (f1 + f2)
-    else
-        return tanh(snhei / (FT(10) * sncovfac * (rhosn / rhonewsn)))
+    !isnothing(T)              && haskey(state, :T)   && set!(state.T,   T)
+    !isnothing(Tc)             && haskey(state, :Tc)  && set!(state.Tc,  Tc)
+    isnothing(Tc) && !isnothing(T) && haskey(state, :Tc) && set!(state.Tc, T)
+    !isnothing(θ)              && haskey(state, :θ)     && set!(state.θ,     θ)
+    !isnothing(θ_ice)          && haskey(state, :θ_ice) && set!(state.θ_ice, θ_ice)
+    !isnothing(snwe)           && haskey(state, :snwe)  && set!(state.snwe,  snwe)
+    !isnothing(snhei)          && haskey(state, :snhei) && set!(state.snhei, snhei)
+    !isnothing(rhosn)          && haskey(state, :rhosn) && set!(state.rhosn, rhosn)
+    !isnothing(swl)            && haskey(state, :swl)   && set!(state.swl,   swl)
+    if !isnothing(vegfrac) && hasproperty(surface, :vegfrac)
+        set!(surface.vegfrac, vegfrac)
     end
-end
-
-# Per-cell snapshot used to mirror Fortran:1419, where `snhei_crit_newsn`
-# is evaluated at the start-of-step `rhosn` (before compaction or the
-# new-snow density blend mutate it).
-@kernel function _snapshot_rhosn!(dst, src)
-    i, j = @index(Global, NTuple)
-    @inbounds dst[i, j, 1] = src[i, j, 1]
-end
-
-# Snow density compaction following Anderson (1976).
-# RUC's `snwe` includes liquid retained in
-# the pack, so the Julia split representation uses `snwe + swl` here.
-@kernel function _compact_snow!(rhosn, snwe, snhei, swl, T,
-                                Δt, c1, c2, ρ_min, ρ_max)
-    i, j = @index(Global, NTuple)
-    @inbounds begin
-        FT = eltype(rhosn)
-        ρ  = max(rhosn[i, j, 1], ρ_min)
-        h  = snhei[i, j, 1]
-        total_swe = snwe[i, j, 1] + swl[i, j, 1]
-        if h > FT(0.0081) * FT(1000) / ρ
-            T_C = min(zero(FT), T[i, j, 1] - FT(273.15))
-            bsn = (FT(Δt) / FT(3600)) * c1 *
-                  exp(FT(0.08) * T_C - c2 * ρ * FT(1e-3))
-            arg = bsn * total_swe * FT(100)
-            if arg ≥ FT(1e-4)
-                xsn = ρ * (exp(arg) - one(FT)) / arg
-                rhosn[i, j, 1] = clamp(xsn, ρ_min, ρ_max)
-            end
-        end
-        snhei[i, j, 1] = total_swe > zero(FT) ?
-                         total_swe * FT(1000) / max(rhosn[i, j, 1], ρ_min) :
-                         zero(FT)
+    if !isnothing(lai) && hasproperty(surface, :lai)
+        set!(surface.lai, lai)
     end
-end
-
-# Atmosphere-supplied vapor flux applied to the snow-covered fraction of the
-# pack, regardless of pack temperature. Mirrors the Fortran snow-mass closure
-# (`module_sf_ruclsm.F:5550-5566` warm pack and `:5559-5564` cold pack), where
-# `(snwe -= β·epot·ras·Δt)` always runs in addition to any melt sink. The
-# associated latent-heat exchange is already folded into `temperature_flux`
-# upstream, so this kernel only updates mass; melt then consumes the residual
-# slab heat above 273.15 K.
-@kernel function _apply_sublimation!(snwe, snhei, swl, F_v, snowfrac, rhosn,
-                                     Δt, ρ_w, ρ_min)
-    i, j = @index(Global, NTuple)
-    @inbounds begin
-        FT = eltype(snwe)
-        if snwe[i, j, 1] > zero(FT) && snowfrac[i, j, 1] > zero(FT)
-            Δswe = F_v[i, j, 1] * snowfrac[i, j, 1] * FT(Δt) / ρ_w
-            snwe[i, j, 1]  = max(zero(FT), snwe[i, j, 1] - Δswe)
-            snhei[i, j, 1] = (snwe[i, j, 1] + swl[i, j, 1]) * FT(1000) /
-                             max(rhosn[i, j, 1], ρ_min)
-        end
-    end
-end
-
-# Snow melt when `T_g > 273.15 K`. The slab heat surplus is converted to
-# potential melt, limited by the RUC Egglston cap for low-density/cold packs,
-# then split into retained liquid `swl` and overflow following the RUC
-# Koren-style retained-melt fraction. The slab cools by exactly the latent
-# heat consumed, so the energy balance is closed locally.
-@kernel function _melt_snow!(snwe, snhei, swl, swl_overflow, T,
-                             rhosn, newsn, rhonewsn,
-                             ρcH_ground, L_f, ρ_w, ρ_min, ρ_max,
-                             Δt, meltfactor,
-                             rsm_min_frac, rsm_max_frac,
-                             rsm_depth_scale, rsm_depth_factor)
-    i, j = @index(Global, NTuple)
-    @inbounds begin
-        FT = eltype(snwe)
-        if snwe[i, j, 1] > zero(FT) && T[i, j, 1] > FT(273.15)
-            snwepr = snwe[i, j, 1]
-            snwepr_total = snwepr + swl[i, j, 1]
-            ρ_sn = max(rhosn[i, j, 1], ρ_min)
-            Δenergy = ρcH_ground * (T[i, j, 1] - FT(273.15))   # J m⁻²
-            Δmass_max = Δenergy / L_f                          # kg m⁻²
-            Δswe_max  = Δmass_max / ρ_w                        # m LWE
-
-            smelt = Δswe_max / FT(Δt)
-            if (ρ_sn < FT(350) ||
-                (newsn[i, j, 1] > zero(FT) && rhonewsn[i, j, 1] < FT(450))) &&
-               T[i, j, 1] < FT(283)
-                smelt_cap = FT(Δt) / FT(60) * FT(5.6e-8) *
-                            meltfactor * max(one(FT), T[i, j, 1] - FT(273.15))
-                smelt = min(smelt, smelt_cap)
-            end
-
-            Δswe = min(smelt * FT(Δt), snwepr)
-            rsmfrac = zero(FT)
-            if snhei[i, j, 1] > FT(0.01) && ρ_sn < FT(350)
-                rsmfrac = min(rsm_max_frac,
-                              max(rsm_min_frac,
-                                   snwepr_total / rsm_depth_scale * rsm_depth_factor))
-            end
-
-            retained = rsmfrac * Δswe
-            overflow = Δswe - retained
-
-            snwe[i, j, 1] = max(zero(FT), snwepr - Δswe)
-            swl[i, j, 1] += retained
-            swl_overflow[i, j, 1] += overflow
-            T[i, j, 1]     -= Δswe * ρ_w * L_f / ρcH_ground
-
-            # RUC folds retained liquid into `snwe`; the split Julia state
-            # must still mass-average the full pack and use that total for
-            # snow height. Only the freshly retained liquid from this step
-            # (`retained`) blends in at `ρ_w`; previously retained `swl` is
-            # already folded into the bulk `ρ_sn`. This mirrors Fortran:5583
-            #     `xsn = (rhosn*(snwe-rsm) + 1.e3*rsm) / snwe`
-            # under the split SWE/SWL representation.
-            total_pack_swe = snwe[i, j, 1] + swl[i, j, 1]
-            if total_pack_swe > zero(FT)
-                solid_plus_old_liq = max(zero(FT),
-                                         total_pack_swe - retained)
-                xsn = (ρ_sn * solid_plus_old_liq + ρ_w * retained) /
-                      total_pack_swe
-                rhosn[i, j, 1] = clamp(xsn, ρ_min, ρ_max)
-            end
-
-            # A single-T slab has no separate sub-snow soil temperature.
-            snhei[i, j, 1] = total_pack_swe * FT(1000) /
-                             max(rhosn[i, j, 1], ρ_min)
-        end
-    end
-end
-
-# Drain carried-over liquid water in the slab pack to the soil bucket once it
-# exceeds the configured capacity. Current-step RUC melt retention/overflow is
-# computed in `_melt_snow!`; this pass only handles liquid already in `swl`.
-@kernel function _drain_swl!(swl, snwe, swl_overflow, retention_frac)
-    i, j = @index(Global, NTuple)
-    @inbounds begin
-        FT = eltype(swl)
-        cap = retention_frac * snwe[i, j, 1]
-        if swl[i, j, 1] > cap
-            swl_overflow[i, j, 1] = swl[i, j, 1] - cap
-            swl[i, j, 1]          = cap
-        else
-            swl_overflow[i, j, 1] = zero(FT)
-        end
-    end
-end
-
-# Add new snowfall (post-canopy throughfall in `swe_inflow`) to the pack.
-# Fresh-snow density follows the Smirnova et al. (1997, 2016) `tanh`
-# formulation, using air temperature `T_air`. Bulk density is the
-# mass-weighted mean of old and fresh snow.
-@kernel function _accumulate_new_snow!(snwe, snhei, rhosn, swl, rhonewsn,
-                                       newsn, snowfracnewsn, keep_snow_albedo,
-                                       snowfallac,
-                                       swe_inflow, T_air, rhosn_step_start,
-                                       ρ_min, ρ_max)
-    i, j = @index(Global, NTuple)
-    @inbounds begin
-        FT = eltype(snwe)
-        Δswe = max(zero(FT), swe_inflow[i, j, 1])      # already × Δt
-
-        if Δswe > zero(FT)
-            T_K = T_air[i, j, 1]
-            ρ_new = clamp(FT(1000) /
-                           max(FT(8), FT(17) * tanh((FT(276.65) - T_K) * FT(0.15))),
-                           ρ_min, FT(125))
-            rhonewsn[i, j, 1]  = ρ_new
-
-            old_swe = snwe[i, j, 1] + swl[i, j, 1]
-            old_ρ   = max(rhosn[i, j, 1], ρ_min)
-            total   = old_swe + Δswe
-
-            # SWE-weighted bulk-density blend uses the post-canopy `Δswe`,
-            # consistent with the actual mass added to `snwe`. (Fortran:1536
-            # uses the raw pre-canopy `newsn` for this blend, which over-
-            # counts mass relative to its own subsequent `snwe += newsn -
-            # intersn` update; the Julia formulation is internally mass-
-            # balanced.)
-            xsn = (old_ρ * old_swe + ρ_new * Δswe) / total
-            rhosn[i, j, 1] = clamp(xsn, ρ_min, ρ_max)
-
-            snwe[i, j, 1] += Δswe
-            snhei[i, j, 1] = (snwe[i, j, 1] + swl[i, j, 1]) * FT(1000) /
-                             max(rhosn[i, j, 1], ρ_min)
-
-            new_depth = Δswe * FT(1000) / ρ_new
-            newsn[i, j, 1] = new_depth
-
-            # `snhei_crit_newsn` follows Fortran:1419,
-            # `snhei_crit_newsn = 0.0005·ρ_w/ρ_sn`, evaluated at the
-            # **pre-compaction, pre-blend** `ρ_sn` snapshot taken at the
-            # start of the time step (Fortran captures it once at the top
-            # of `sfctmp` before any in-step modifications).
-            ρ_pre = max(rhosn_step_start[i, j, 1], ρ_min)
-            snhei_crit_newsn_dyn = FT(0.0005) * FT(1000) / ρ_pre
-
-            # Fortran:1641 evaluates `snowfracnewsn` from the **pre-increment**
-            # `snowfallac`; the increment `snowfallac += newsn` happens later
-            # at Fortran:2115. This ordering keeps `keep_snow_albedo` from
-            # latching one step too early when `snowfallac` first crosses the
-            # `snhei_crit_newsn` threshold.
-            snowfracnewsn[i, j, 1] = min(one(FT),
-                                         snowfallac[i, j, 1] / snhei_crit_newsn_dyn)
-            snowfallac[i, j, 1]   += new_depth
-
-            keep_snow_albedo[i, j, 1] = (snowfracnewsn[i, j, 1] > FT(0.99) &&
-                                         ρ_new < FT(450)) ? one(FT) : zero(FT)
-        end
-    end
-end
-
-# Recompute snow fraction. Mirrors lines 167 / 259–267 of the f90.
-# `snhei_crit` is computed dynamically from `ρ_sn` per cell, following
-# `module_sf_ruclsm.F:1418`: `snhei_crit = 0.01601·ρ_w/ρ_sn`. The urban
-# clamp `snowfrac ≤ 0.75` mirrors `module_sf_ruclsm.F:1645`.
-@kernel function _finalize_snow_cover!(snowfrac, snhei, znt, rhosn, rhonewsn,
-                                       is_urban, sncovfac, snowcovr_opt)
-    i, j = @index(Global, NTuple)
-    @inbounds begin
-        FT = eltype(snowfrac)
-        if snhei[i, j, 1] == zero(FT)
-            snowfrac[i, j, 1] = zero(FT)
-        else
-            ρ_sn  = max(rhosn[i, j, 1],    FT(58.8))
-            ρ_new = max(rhonewsn[i, j, 1], FT(58.8))
-            snhei_crit_dyn = FT(0.01601) * FT(1000) / ρ_sn
-            f = compute_snow_fraction(snowcovr_opt,
-                                      snhei[i, j, 1], snhei_crit_dyn,
-                                      znt[i, j, 1],
-                                      ρ_sn, ρ_new, sncovfac)
-            if is_urban[i, j, 1] > FT(0.5)
-                f = min(f, FT(0.75))
-            end
-            snowfrac[i, j, 1] = f
-        end
-    end
-end
-
-#####
-##### Canopy water balance — RUC subset D, lines 105–127.
-#####
-
-# RUC LSM passes a fixed canopy-water saturation `sat = 5.e-4 m` into
-# the interception routine.
-@inline canopy_capacity(::FT, ::FT, capacity::FT) where FT = capacity
-
-@kernel function _intercept_precip!(cst, drip, interw, intersn,
-                                    infwater, intwratio,
-                                    canopy_cap, vegfrac, lai, snowfrac,
-                                    rainfall_rate, snowfall_rate,
-                                    swe_inflow, Δt, canopy_water_capacity)
-    i, j = @index(Global, NTuple)
-    @inbounds begin
-        FT = eltype(cst)
-        vf = vegfrac[i, j, 1]
-        L  = lai[i, j, 1]
-        sat = canopy_capacity(L, vf, FT(canopy_water_capacity))
-        canopy_cap[i, j, 1] = sat
-
-        Δrain = max(zero(FT), rainfall_rate[i, j, 1] * FT(Δt))
-        Δsnow = max(zero(FT), snowfall_rate[i, j, 1] * FT(Δt))
-
-        if vf > FT(0.01)
-            transmission = one(FT) - exp(-FT(0.5) * L)
-            iw = FT(0.25) * Δrain * transmission * vf
-            is = FT(0.25) * Δsnow * transmission * vf
-            interw[i, j, 1]  = iw
-            intersn[i, j, 1] = is
-
-            ratio = (iw + is) > zero(FT) ? iw / (iw + is) : zero(FT)
-            intwratio[i, j, 1] = ratio
-
-            cst_new = cst[i, j, 1] + iw + is
-            if cst_new > sat
-                drip[i, j, 1] = cst_new - sat
-                cst[i, j, 1]  = sat
-            else
-                drip[i, j, 1] = zero(FT)
-                cst[i, j, 1]  = cst_new
-            end
-
-            d = drip[i, j, 1]
-            # Drip routing branches on snow coverage (Fortran:1584-1594):
-            #   `snow_mosaic == 1` (snowfrac < 0.75) splits drip by intwratio
-            #   between liquid throughfall and snow pack inflow;
-            #   `snow_mosaic == 0` (snowfrac ≥ 0.75) sends ALL drip to the
-            #   snow pack since the surface is essentially uniform snow.
-            if snowfrac[i, j, 1] < FT(0.75)
-                infwater[i, j, 1]   = max(zero(FT), Δrain - iw) + d * ratio
-                swe_inflow[i, j, 1] = max(zero(FT), Δsnow - is) +
-                                      d * (one(FT) - ratio)
-            else
-                infwater[i, j, 1]   = max(zero(FT), Δrain - iw)
-                swe_inflow[i, j, 1] = max(zero(FT), Δsnow - is) + d
-            end
-        else
-            cst[i, j, 1]        = zero(FT)
-            drip[i, j, 1]       = zero(FT)
-            interw[i, j, 1]     = zero(FT)
-            intersn[i, j, 1]    = zero(FT)
-            intwratio[i, j, 1]  = zero(FT)
-            infwater[i, j, 1]   = Δrain
-            swe_inflow[i, j, 1] = Δsnow
-        end
-    end
-end
-
-@kernel function _evaporate_canopy!(cst, F_v_canopy, Δt, ρ_w)
-    i, j = @index(Global, NTuple)
-    @inbounds begin
-        FT = eltype(cst)
-        if cst[i, j, 1] > zero(FT)
-            Δ = max(zero(FT), F_v_canopy[i, j, 1] * FT(Δt) / ρ_w)
-            cst[i, j, 1] = max(zero(FT), cst[i, j, 1] - Δ)
-        end
-    end
-end
-
-#####
-##### Surface optical / aerodynamic properties
-#####
-
-@kernel function _update_surface_properties!(alb, emiss, znt,
-                                             snowfrac, keep_snow_albedo,
-                                             T, newsn, snhei,
-                                             vegfrac,
-                                             albedo_veg, emissivity_veg, z0_veg_field,
-                                             alb_snow, alb_bare,
-                                             emiss_snow, emiss_bare,
-                                             z0_snow, z0_bare)
-    i, j = @index(Global, NTuple)
-    @inbounds begin
-        FT   = eltype(alb)
-        f_sn = snowfrac[i, j, 1]
-        keep = keep_snow_albedo[i, j, 1]
-        h    = snhei[i, j, 1]
-        vf   = vegfrac[i, j, 1]
-        α_sn = FT(alb_snow)
-
-        # Composite snow-free end-members weighted by vegfrac.
-        # The `_veg` end-members are per-cell Fields populated either
-        # from scalar parameters or from a vegetation lookup table.
-        α_veg_ij  = albedo_veg[i, j, 1]
-        ε_veg_ij  = emissivity_veg[i, j, 1]
-        z₀_veg_ij = z0_veg_field[i, j, 1]
-        α_free  = (one(FT) - vf) * alb_bare   + vf * α_veg_ij
-        ε_free  = (one(FT) - vf) * emiss_bare + vf * ε_veg_ij
-        z₀_free = (one(FT) - vf) * z0_bare    + vf * z₀_veg_ij
-
-        # Roughness: default to the snow-free composite. The RUC f90
-        # snow-blending branch (lines 186–194) only applies when the
-        # surface is short (z₀_free ≤ 0.2 m, i.e. grass / shrub /
-        # cropland) and there is no fresh snow this step; tall canopies
-        # (forests with z₀_free > 0.2 m) keep the canopy roughness.
-        znt_new = z₀_free
-        if h > zero(FT) && newsn[i, j, 1] == zero(FT) && z₀_free ≤ FT(0.2)
-            if h ≤ FT(2) * z₀_free
-                znt_new = FT(0.55) * z₀_free + FT(0.45) * z0_snow
-            elseif h ≤ FT(4) * z₀_free
-                znt_new = FT(0.2) * z₀_free + FT(0.8) * z0_snow
-            else
-                znt_new = z0_snow
-            end
-        end
-        znt[i, j, 1] = znt_new
-
-        # Shortwave-albedo blend (Robinson and Kukla 1985), with the
-        # warm-T attenuation branch below 0.4 disabled when fresh snow has
-        # latched `keep_snow_albedo = 1`.
-        α_blend = max(keep * α_sn,
-                      min(α_free + (α_sn - α_free) * f_sn, α_sn))
-        if α_blend < FT(0.4) || keep == one(FT)
-            alb[i, j, 1] = α_blend
-        else
-            T_C = T[i, j, 1] - FT(273.15)
-            alb[i, j, 1] = min(α_blend,
-                               max(α_blend - FT(0.1) * (T_C + FT(10)) /
-                                             FT(10) * α_blend,
-                                   α_blend - FT(0.05)))
-        end
-
-        emiss[i, j, 1] = max(keep * emiss_snow,
-                             min(ε_free + (emiss_snow - ε_free) * f_sn,
-                                 emiss_snow))
-    end
-end
-
-#####
-##### Soil moisture, freeze/thaw, RUC `mavail`/`soilres`, Jarvis r_s
-#####
-
-@inline function ruc_mavail(θ, snowfrac, θ_air_dry, θ_fc)
-    FT = typeof(θ)
-    ref = max(θ_fc - θ_air_dry, eps(FT))
-    residual = max(zero(FT), θ - θ_air_dry)
-    return clamp(residual / ref * (one(FT) - snowfrac) + snowfrac,
-                 FT(1e-5), one(FT))
-end
-
-@inline function ruc_soilres(θ, qa, qg, θ_air_dry, θ_fc)
-    FT = typeof(θ)
-    fc = max(θ_air_dry, FT(0.5) * θ_fc)
-    if θ > fc || qa > qg
-        return one(FT)
-    else
-        fex_fc = clamp(θ / fc, FT(0.01), one(FT))
-        return FT(0.25) * (one(FT) - cos(FT(π) * fex_fc))^2
-    end
-end
-
-# Saturation specific humidity from Magnus / Buck (1981) over water/ice.
-@inline function esat_buck(T)
-    FT = typeof(T)
-    if T > FT(273.15)
-        return FT(6.1121) * exp(FT(17.502) * (T - FT(273.15)) / (T - FT(32.18)))
-    else
-        return FT(6.1115) * exp(FT(22.452) * (T - FT(273.15)) / (T - FT(0.61)))
-    end
-end
-
-@inline function qsat_buck(T, p_hPa)
-    FT = typeof(T)
-    e = esat_buck(T)
-    ε = FT(0.622)
-    return ε * e / (p_hPa - (one(FT) - ε) * e)
-end
-
-# Jarvis-Stewart canopy resistance (Jarvis 1976; Stewart 1988).
-@inline function jarvis_resistance(rg, qa, Ta, p_hPa, θ, lai,
-                                   r_smin, r_smax, rg_lim, vpd_lim, T_opt,
-                                   θ_wilt, θ_fc)
-    FT = typeof(rg)
-    if lai ≤ zero(FT)
-        return r_smax
-    end
-    F1 = (rg / rg_lim) / (one(FT) + rg / rg_lim);  F1 = max(F1, FT(1e-3))
-    qsat_air = qsat_buck(Ta, p_hPa)
-    F2 = one(FT) / (one(FT) + max(zero(FT), (qsat_air - qa)) / vpd_lim)
-    F2 = clamp(F2, FT(1e-3), one(FT))
-    if θ ≥ θ_fc
-        F3 = one(FT)
-    elseif θ ≤ θ_wilt
-        F3 = FT(1e-3)
-    else
-        F3 = clamp((θ - θ_wilt) / (θ_fc - θ_wilt), FT(1e-3), one(FT))
-    end
-    F4 = one(FT) - FT(0.0016) * (T_opt - Ta)^2;  F4 = clamp(F4, FT(1e-3), one(FT))
-    return clamp(r_smin / (lai * F1 * F2 * F3 * F4), r_smin, r_smax)
-end
-
-@kernel function _update_mavail_rs!(mavail, soilres, r_s,
-                                    soil_moisture, snowfrac,
-                                    T, p_surf, vegfrac, lai,
-                                    rg_irr, qa, Ta,
-                                    r_smin_field,
-                                    θ_wilt, θ_fc, θ_air_dry,
-                                    r_smax, rg_lim, vpd_lim, T_opt)
-    i, j = @index(Global, NTuple)
-    @inbounds begin
-        FT = eltype(mavail)
-        θ  = soil_moisture[i, j, 1]
-        f_sn = snowfrac[i, j, 1]
-        m  = ruc_mavail(θ, f_sn, θ_air_dry, θ_fc)
-        ps = p_surf[i, j, 1] > one(FT) ? p_surf[i, j, 1] : FT(1013.25)
-        qg = qsat_buck(T[i, j, 1], ps) * m
-        sr = ruc_soilres(θ, qa[i, j, 1], qg, θ_air_dry, θ_fc)
-        L  = lai[i, j, 1]
-        mavail[i, j, 1]  = m
-        soilres[i, j, 1] = sr
-        r_s[i, j, 1]    = jarvis_resistance(rg_irr[i, j, 1],
-                                            qa[i, j, 1],
-                                            Ta[i, j, 1], ps,
-                                            θ, L,
-                                            r_smin_field[i, j, 1], r_smax,
-                                            rg_lim, vpd_lim,
-                                            T_opt, θ_wilt, θ_fc)
-    end
-end
-
-# Single-bucket soil moisture update with snow-overflow infiltration.
-# `infwater` is m of LWE applied this step (already × Δt). `swl_overflow`
-# is m of LWE released by snow retention overflow.
-@kernel function _step_soil_moisture!(soil_moisture, infwater, swl_overflow,
-                                      F_v_total, transpiration,
-                                      vegfrac, soilres, snowfrac,
-                                      Δt, ρ_w, soil_depth,
-                                      θ_sat, θ_air_dry)
-    i, j = @index(Global, NTuple)
-    @inbounds begin
-        FT = eltype(soil_moisture)
-        vf = vegfrac[i, j, 1]
-        snow_free = one(FT) - snowfrac[i, j, 1]
-
-        Δθ_in = (infwater[i, j, 1] + swl_overflow[i, j, 1]) / soil_depth
-
-        bare_share = snow_free * (one(FT) - vf) * soilres[i, j, 1]
-        E_g  = max(zero(FT), F_v_total[i, j, 1]) * bare_share
-        E_t  = max(zero(FT), transpiration[i, j, 1])
-        Δθ_out = (E_g + E_t) * FT(Δt) / (ρ_w * soil_depth)
-
-        θ_new = soil_moisture[i, j, 1] + Δθ_in - Δθ_out
-        soil_moisture[i, j, 1] = clamp(θ_new, θ_air_dry, θ_sat)
-    end
-end
-
-# Equilibrium unfrozen water content `θ_liq*` at a sub-zero soil temperature,
-# from Clapp-Hornberger soil-water retention combined with the Clausius-
-# Clapeyron freezing-point depression of soil water:
-#
-#     |ψ(θ_liq)| = |ψ_sat| · (θ_liq / θ_sat)^(-b)        [Clapp-Hornberger]
-#     |ψ_freeze| = L_f · (T_f − T) / (T · g)             [Clausius-Clapeyron]
-#
-# Equating the two and solving for `θ_liq`:
-#
-#     θ_liq* = θ_sat · ( L_f · (T_f − T) / (T · g · |ψ_sat|) )^(−1/b) − qmin
-#
-# (Fortran `module_sf_ruclsm.F:2476-2494, 2697-2706`, with `dqm + qmin` =
-# `θ_sat` and `qmin` mapped to `θ_air_dry`). `psi_sat` is supplied as a
-# positive magnitude (m of water-equivalent suction at saturation). The
-# argument is dimensionless: J/kg ÷ (K·(K)·m/s²·m) = (m²/s²)/(m²/s²) ✓.
-@inline function unfrozen_liquid_eq(T, θ_sat, θ_air_dry,
-                                    L_f, ψ_sat, bclh)
-    FT = typeof(T)
-    if T ≥ FT(273.15)
-        return θ_sat
-    end
-    g = FT(9.81)
-    arg = L_f * (FT(273.15) - T) / (T * g * ψ_sat)
-    base = θ_sat * arg^(-one(FT) / bclh) - θ_air_dry
-    return clamp(base, zero(FT), θ_sat)
-end
-
-# Soil freeze/thaw equilibration. Replaces the binary phase-change with the
-# Clapp-Hornberger unfrozen-water curve so that a fraction of liquid
-# coexists with ice at sub-zero soil temperatures, mirroring Fortran
-# `module_sf_ruclsm.F:2476-2494`.
-#
-# Method:
-#   1. Compute the equilibrium `θ_liq*` at the current `T_g` from the curve.
-#   2. Determine the freeze/thaw increment toward equilibrium, capped by
-#      available liquid/ice and by the slab heat budget so the exchange
-#      cannot push `T_g` past `T_f = 273.15 K` (the latent-heat sign would
-#      reverse and the explicit step would oscillate).
-#   3. Update `θ_liq`, `θ_ice` (conserving `θ_liq + θ_ice`), and shift
-#      `T_g` by the corresponding latent-heat exchange.
-#
-# Sign convention: `Δθ_freeze > 0` means liquid → ice (heat released into
-# the slab, `T_g` rises); `Δθ_freeze < 0` means ice → liquid (heat absorbed
-# from the slab, `T_g` falls).
-@kernel function _freeze_thaw_soil!(θ_liq, θ_ice, T,
-                                    ρcH_ground, L_f, ρ_w, soil_depth,
-                                    θ_sat, θ_air_dry, ψ_sat, bclh)
-    i, j = @index(Global, NTuple)
-    @inbounds begin
-        FT = eltype(θ_liq)
-        Tg  = T[i, j, 1]
-        θ_l = θ_liq[i, j, 1]
-        θ_i = θ_ice[i, j, 1]
-        θ_total = θ_l + θ_i
-
-        # Equilibrium liquid-water target, clamped by total available water.
-        θ_liq_eq = min(unfrozen_liquid_eq(Tg, θ_sat, θ_air_dry,
-                                          L_f, ψ_sat, bclh),
-                       θ_total)
-
-        # Δθ_freeze > 0 ⇒ freeze; < 0 ⇒ thaw.
-        Δθ_freeze = θ_l - θ_liq_eq
-
-        # Cap by available water reservoir.
-        Δθ_freeze = clamp(Δθ_freeze, -θ_i, θ_l)
-
-        # Cap by slab heat budget so the exchange relaxes `T_g` toward
-        # `T_f = 273.15 K` and never overshoots. Energy released by the
-        # phase change: `ΔE = Δθ_freeze · L_f · ρ_w · H_s [J m⁻²]`; slab
-        # temperature response: `ΔT = ΔE / ρcH_g`. The admissible range
-        # is therefore `|Δθ_freeze| ≤ Δθ_cap`, with sign restricted to the
-        # direction that drives `T_g` toward `T_f`:
-        #   `T_g < T_f` ⇒ only freeze (Δθ ≥ 0);
-        #   `T_g > T_f` ⇒ only thaw (Δθ ≤ 0);
-        #   `T_g = T_f` ⇒ no exchange.
-        # The opposite direction (e.g. spontaneous thaw at sub-zero) is an
-        # implicit transient that the Fortran simultaneous T-θ solve
-        # handles, but for an explicit split step it is suppressed for
-        # numerical stability.
-        ΔT_avail = abs(FT(273.15) - Tg)
-        Δθ_cap   = ρcH_ground * ΔT_avail / (L_f * ρ_w * soil_depth)
-
-        if Tg < FT(273.15)
-            Δθ_freeze = clamp(Δθ_freeze, zero(FT),  Δθ_cap)
-        elseif Tg > FT(273.15)
-            Δθ_freeze = clamp(Δθ_freeze, -Δθ_cap, zero(FT))
-        else
-            Δθ_freeze = zero(FT)
-        end
-
-        θ_liq[i, j, 1] = θ_l - Δθ_freeze
-        θ_ice[i, j, 1] = θ_i + Δθ_freeze
-        T[i, j, 1]     = Tg + Δθ_freeze * L_f * ρ_w * soil_depth / ρcH_ground
-    end
-end
-
-#####
-##### Slab and canopy temperature integrators (flux-driven mode)
-#####
-
-@kernel function _step_temperature!(T, Jᵀ, Δt, H)
-    i, j = @index(Global, NTuple)
-    @inbounds T[i, j, 1] -= Jᵀ[i, j, 1] * Δt / H
-end
-
-@kernel function _step_canopy_temperature!(Tc, Jᵀ_c, Δt, H_canopy_eff)
-    i, j = @index(Global, NTuple)
-    @inbounds Tc[i, j, 1] -= Jᵀ_c[i, j, 1] * Δt / H_canopy_eff
-end
-
-#####
-##### Time stepping and state update
-#####
-
-"""
-    update_state!(land::RucSlabLand)
-
-Refresh diagnostic fields (snow fraction, effective α/ε/z₀, RUC `mavail`,
-RUC `soilres`, Jarvis canopy resistance `r_s`) from the current prognostic
-state and forcings.
-"""
-function Oceananigans.TimeSteppers.update_state!(land::RucSlabLand)
-    grid  = land.grid
-    arch  = architecture(grid)
-    p     = land.parameters
-    snow  = land.snow
-    veg   = land.vegetation
-    props = land.properties
-    forc  = land.forcings
-
-    launch!(arch, grid, :xy, _finalize_snow_cover!,
-            snow.snowfrac, snow.snhei, props.znt,
-            snow.rhosn, snow.rhonewsn,
-            veg.is_urban, p.sncovfac, p.snowcovr_opt)
-
-    launch!(arch, grid, :xy, _update_surface_properties!,
-            props.alb, props.emiss, props.znt,
-            snow.snowfrac, snow.keep_snow_albedo,
-            land.temperature, snow.newsn, snow.snhei,
-            veg.vegfrac,
-            veg.albedo_veg, veg.emissivity_veg, veg.z0_veg,
-            p.alb_snow, p.alb_bare,
-            p.emiss_snow, p.emiss_bare,
-            p.z0_snow, p.z0_bare)
-
-    launch!(arch, grid, :xy, _update_mavail_rs!,
-            veg.mavail, veg.soilres, veg.r_s,
-            land.soil_moisture, snow.snowfrac,
-            land.temperature, forc.surface_pressure,
-            veg.vegfrac, veg.lai,
-            forc.solar_irradiance, forc.air_humidity, forc.air_temperature,
-            veg.r_smin,
-            p.theta_wilt, p.theta_fc, p.theta_air_dry,
-            p.r_smax, p.rg_lim, p.vpd_lim, p.T_opt)
-
-    return nothing
-end
-
-"""
-    time_step!(land::RucSlabLand, Δt)
-
-Advance the slab by `Δt`. Order:
-
-  1. Ground-slab temperature: `T_g -= Jᵀ_g Δt / H_g`.
-  2. Canopy-slab temperature: `T_c -= Jᵀ_c Δt / (ρcH)_c`.
-  3. Drain carried-over liquid water above the slab `swl` capacity.
-  4. Compaction of the existing pack.
-  5. Canopy interception → throughfall to soil (`infwater`) and
-     snowpack (`swe_inflow`).
-  6. Wet-canopy direct evaporation drains `cst`.
-  7. New-snow accumulation.
-  8. Atmospheric vapor flux applied to the snow-covered fraction of the
-     pack (sublimation when `F_v > 0`, deposition when `F_v < 0`); the
-     associated latent-heat exchange is already folded into `Jᵀ_g`.
-  9. Snow melt (warm pack, `T_g > 273.15 K`) with the RUC melt cap and
-     retained-melt split → `swl` plus `swl_overflow`; `T_g` cools by exactly
-     the latent heat consumed.
- 10. Single-bucket soil-moisture update (gains: `infwater + swl_overflow`;
-     losses: bare-soil evap × `(1-snowfrac)` × RUC `soilres` + transpiration).
- 11. Soil freeze/thaw equilibration against the Clapp-Hornberger /
-     Clausius-Clapeyron unfrozen-water curve; latent heat absorbed/released
-     by the ground slab.
- 12. Refresh diagnostics (`snowfrac`, `α/ε/z₀`, `mavail`, `soilres`,
-     `r_s`).
-"""
-function Oceananigans.TimeSteppers.time_step!(land::RucSlabLand, Δt)
-    tick!(land.clock, Δt)
-    grid   = land.grid
-    arch   = architecture(grid)
-    p      = land.parameters
-    snow   = land.snow
-    canopy = land.canopy
-    veg    = land.vegetation
-    forc   = land.forcings
-    T      = land.temperature
-    Jᵀ     = land.temperature_flux
-    Tc     = land.canopy_temperature
-    Jᵀc    = land.canopy_temperature_flux
-    θ      = land.soil_moisture
-    θ_ice  = land.soil_moisture_ice
-    FT     = eltype(grid)
-    ρ_w    = convert(FT, ρ_water_const)
-    L_f    = convert(FT, p.latent_heat_fusion)
-    ρcH_g  = p.density * p.heat_capacity * p.depth   # J m⁻² K⁻¹
-
-    # 1, 2 — Slab temperatures
-    launch!(arch, grid, :xy, _step_temperature!, T, Jᵀ, Δt, p.depth)
-    launch!(arch, grid, :xy, _step_canopy_temperature!,
-            Tc, Jᵀc, Δt, p.canopy_heat_capacity)
-
-    # 3 — Drain retained liquid from previous steps above capacity.
-    launch!(arch, grid, :xy, _drain_swl!,
-            snow.swl, snow.snwe, snow.swl_overflow,
-            p.snow_liquid_capacity_frac)
-
-    # Snapshot start-of-step `rhosn` used by `_accumulate_new_snow!` to
-    # evaluate `snhei_crit_newsn` (Fortran:1419 captures rhosn before
-    # compaction or new-snow blend).
-    launch!(arch, grid, :xy, _snapshot_rhosn!,
-            snow.rhosn_step_start, snow.rhosn)
-
-    # 4 — Compaction of the existing pack, before current snowfall is added.
-    launch!(arch, grid, :xy, _compact_snow!,
-            snow.rhosn, snow.snwe, snow.snhei, snow.swl, T, Δt,
-            p.c1_compaction, p.c2_compaction, p.rhosn_min, p.rhosn_max)
-
-    # 5 — Canopy interception (drip routing depends on the previous
-    #     time-step's `snowfrac`, set by `update_state!`).
-    launch!(arch, grid, :xy, _intercept_precip!,
-            canopy.cst, canopy.drip,
-            canopy.interw, canopy.intersn,
-            canopy.infwater, canopy.intwratio,
-            veg.canopy_capacity, veg.vegfrac, veg.lai, snow.snowfrac,
-            forc.rainfall_rate, forc.snowfall_rate,
-            snow.swe_inflow, Δt, p.canopy_water_capacity)
-
-    # 6 — Wet-canopy direct evaporation
-    launch!(arch, grid, :xy, _evaporate_canopy!,
-            canopy.cst, forc.canopy_evaporation, Δt, ρ_w)
-
-    # 7 — New-snow accumulation
-    fill!(snow.newsn, 0)
-    fill!(snow.snowfracnewsn, 0)
-    fill!(snow.keep_snow_albedo, 0)
-    fill!(snow.rhonewsn, 100)
-    launch!(arch, grid, :xy, _accumulate_new_snow!,
-            snow.snwe, snow.snhei, snow.rhosn, snow.swl, snow.rhonewsn,
-            snow.newsn, snow.snowfracnewsn, snow.keep_snow_albedo,
-            snow.snowfallac,
-            snow.swe_inflow, forc.air_temperature, snow.rhosn_step_start,
-            p.rhosn_min, p.rhosn_max)
-
-    # 8 — Sublimation / deposition vapor flux applied to the pack at all
-    # temperatures. Mass balance is enforced here; latent heat already enters
-    # the slab heat budget via `temperature_flux`.
-    launch!(arch, grid, :xy, _apply_sublimation!,
-            snow.snwe, snow.snhei, snow.swl, forc.moisture_flux,
-            snow.snowfrac, snow.rhosn, Δt, ρ_w, p.rhosn_min)
-
-    # 9 — Melt (warm pack), with RUC melt cap and retained-water split.
-    launch!(arch, grid, :xy, _melt_snow!,
-            snow.snwe, snow.snhei, snow.swl, snow.swl_overflow, T,
-            snow.rhosn, snow.newsn, snow.rhonewsn,
-            ρcH_g, L_f, ρ_w, p.rhosn_min, p.rhosn_max,
-            Δt, p.meltfactor,
-            p.snow_retention_min_frac,
-            p.snow_retention_max_frac,
-            p.snow_retention_depth_scale,
-            p.snow_retention_depth_factor)
-
-    # 10 — Soil moisture
-    launch!(arch, grid, :xy, _step_soil_moisture!,
-            θ, canopy.infwater, snow.swl_overflow,
-            forc.moisture_flux, forc.transpiration,
-            veg.vegfrac, veg.soilres, snow.snowfrac,
-            Δt, ρ_w, p.soil_depth,
-            p.theta_sat, p.theta_air_dry)
-
-    # 11 — Soil freeze/thaw equilibration via Clapp-Hornberger /
-    #      Clausius-Clapeyron unfrozen-water curve.
-    launch!(arch, grid, :xy, _freeze_thaw_soil!,
-            θ, θ_ice, T, ρcH_g, L_f, ρ_w, p.soil_depth,
-            p.theta_sat, p.theta_air_dry, p.psi_sat, p.bclh)
-
-    # 12 — Refresh diagnostics
-    update_state!(land)
-
-    fill_halo_regions!(T)
-    fill_halo_regions!(Tc)
-    fill_halo_regions!(θ)
-    fill_halo_regions!(θ_ice)
     return nothing
 end
 
 #####
-##### EarthSystemModel interface
+##### EarthSystemModel interface — RUC-composition specialisations.
+#####
+##### These dispatch on the concrete closure types so they don't pollute
+##### the generic SlabLand path.
 #####
 
 """
-    update_net_fluxes!(coupled_model, land::RucSlabLand)
+    update_net_fluxes!(coupled_model, land::SlabLand{...,<:RucEnergy,...})
 
-Consume the atmosphere--land turbulent fluxes computed by
-`compute_atmosphere_land_fluxes!` and write them into the slab's
-forcing fields. The slab's own `time_step!` then advances the
-prognostic state from these forcings.
+Consume atmosphere-land turbulent fluxes from
+`compute_atmosphere_land_fluxes!` and write them into the slab's flux
+fields.
 
-The interface fluxes follow the atmosphere-side sign convention used
-elsewhere in `EarthSystemModels`:
+Sign convention for `interface_fluxes`:
 
   𝒬ᵀ, 𝒬ᵛ : atmospheric net energy gain (W m⁻²); negative when the
-            surface heats the atmosphere is cooled-by-surface, positive
-            when atmosphere loses energy to surface.
+            atmosphere is cooled-by-surface, positive when atmosphere
+            loses energy to surface.
   Jᵛ      : atmospheric vapor flux; negative when vapor flows from
             atmosphere to surface (condensation).
 
-The slab uses surface-positive-upward conventions, so we sign-flip:
+Slab-side (surface positive upward):
 
-  Q_net (into ground) = -(𝒬ᵀ + 𝒬ᵛ)
-  Jᵀ (slab boundary)   = -Q_net / (ρ · c)
-  F_v (slab evap, upward) = -Jᵛ
+  Q_net (into ground)     = -(𝒬ᵀ + 𝒬ᵛ)
+  Jᵀ (slab boundary)       = -Q_net / (ρ · c)
+  F_v (slab evap, upward)  = -Jᵛ
 """
-function update_net_fluxes!(coupled_model, land::RucSlabLand)
+function update_net_fluxes!(coupled_model,
+                            land::SlabLand{FT, G, Clk, S, F,
+                                           <:RucEnergy, <:RucHydrology,
+                                           <:RucSurfaceProperties, P}) where {FT, G, Clk, S, F, P}
     al_interface = coupled_model.interfaces.atmosphere_land_interface
     isnothing(al_interface) && return nothing
 
     fluxes = al_interface.fluxes
     grid   = land.grid
     arch   = architecture(grid)
-    p      = land.parameters
-    ρcₛ    = p.density * p.heat_capacity
+    e      = land.energy
+    ρcₛ    = e.density * e.heat_capacity   # J m⁻³ K⁻¹
 
     launch!(arch, grid, :xy, _assemble_slab_land_fluxes!,
-            land.temperature_flux,
-            land.forcings.moisture_flux,
+            land.fluxes.temperature_flux,
+            land.fluxes.moisture_flux,
             fluxes, ρcₛ)
     return nothing
 end
@@ -1366,66 +171,81 @@ end
     end
 end
 
-interpolate_state!(exchanger, grid, ::RucSlabLand, coupled_model) = nothing
+"""
+    ComponentExchanger(land::SlabLand{...,<:RucEnergy,...,<:RucSurfaceProperties}, grid)
 
-function ComponentExchanger(land::RucSlabLand, grid)
-    state = (T      = land.temperature,
-             Tc     = land.canopy_temperature,
-             θ      = land.soil_moisture,
-             θ_ice  = land.soil_moisture_ice,
-             alb    = land.properties.alb,
-             emiss  = land.properties.emiss,
-             znt    = land.properties.znt,
-             mavail = land.vegetation.mavail,
-             soilres = land.vegetation.soilres,
-             r_s    = land.vegetation.r_s)
+Expose RUC slab-side state as a `NamedTuple` with the fixed key set
+`(T, Tc, θ, θ_ice, alb, emiss, znt, mavail, soilres, r_s)`. These keys
+are what `compute_atmosphere_land_fluxes!` reads to drive Monin-Obukhov
+similarity (`T`, `mavail`, `znt`).
+"""
+function ComponentExchanger(land::SlabLand{FT, G, Clk, S, F,
+                                           <:RucEnergy, <:RucHydrology,
+                                           <:RucSurfaceProperties, P}, grid) where {FT, G, Clk, S, F, P}
+    state = (T       = land.state.T,
+             Tc      = land.state.Tc,
+             θ       = land.state.θ,
+             θ_ice   = land.state.θ_ice,
+             alb     = land.surface.alb,
+             emiss   = land.surface.emiss,
+             znt     = land.surface.znt,
+             mavail  = land.state.mavail,
+             soilres = land.state.soilres,
+             r_s     = land.state.r_s)
     return ComponentExchanger(state, nothing)
 end
 
-initialize!(::ComponentExchanger, grid, ::RucSlabLand) = nothing
-
 #####
-##### Checkpointing
+##### Checkpointing — generic over state NamedTuple keys.
 #####
 
 import Oceananigans: prognostic_state, restore_prognostic_state!
 
-function prognostic_state(land::RucSlabLand)
-    snow_state   = map(f -> Array(interior(f)), land.snow)
-    canopy_state = map(f -> Array(interior(f)), land.canopy)
-    veg_state    = map(f -> Array(interior(f)), land.vegetation)
-    props_state  = map(f -> Array(interior(f)), land.properties)
-    return (; clock      = prognostic_state(land.clock),
-              T          = Array(interior(land.temperature)),
-              Tc         = Array(interior(land.canopy_temperature)),
-              θ          = Array(interior(land.soil_moisture)),
-              θ_ice      = Array(interior(land.soil_moisture_ice)),
-              snow       = snow_state,
-              canopy     = canopy_state,
-              vegetation = veg_state,
-              properties = props_state)
+function prognostic_state(land::SlabLand)
+    state_arrays   = map(f -> Array(interior(f)), land.state)
+    surface_arrays = _surface_state_arrays(land.surface)
+    return (; clock   = prognostic_state(land.clock),
+              state   = state_arrays,
+              surface = surface_arrays)
 end
 
-function restore_prognostic_state!(land::RucSlabLand, state)
+function _surface_state_arrays(s::RucSurfaceProperties)
+    return (; vegfrac        = Array(interior(s.vegfrac)),
+              lai            = Array(interior(s.lai)),
+              albedo_veg     = Array(interior(s.albedo_veg)),
+              emissivity_veg = Array(interior(s.emissivity_veg)),
+              z0_veg         = Array(interior(s.z0_veg)),
+              r_smin         = Array(interior(s.r_smin)),
+              is_urban       = Array(interior(s.is_urban)),
+              alb            = Array(interior(s.alb)),
+              emiss          = Array(interior(s.emiss)),
+              znt            = Array(interior(s.znt)))
+end
+
+_surface_state_arrays(::AbstractSurfaceProperties) = (;)
+
+function restore_prognostic_state!(land::SlabLand, state)
     restore_prognostic_state!(land.clock, state.clock)
-    interior(land.temperature)         .= state.T
-    interior(land.canopy_temperature)  .= state.Tc
-    interior(land.soil_moisture)       .= state.θ
-    interior(land.soil_moisture_ice)   .= state.θ_ice
-    for k in keys(land.snow)
-        interior(getproperty(land.snow, k)) .= getproperty(state.snow, k)
+    for k in keys(land.state)
+        if hasproperty(state.state, k)
+            interior(getproperty(land.state, k)) .= getproperty(state.state, k)
+        end
     end
-    for k in keys(land.canopy)
-        interior(getproperty(land.canopy, k)) .= getproperty(state.canopy, k)
-    end
-    for k in keys(land.vegetation)
-        interior(getproperty(land.vegetation, k)) .= getproperty(state.vegetation, k)
-    end
-    for k in keys(land.properties)
-        interior(getproperty(land.properties, k)) .= getproperty(state.properties, k)
-    end
-    update_state!(land)
+    _restore_surface!(land.surface, state.surface)
+    Oceananigans.TimeSteppers.update_state!(land)
     return land
 end
 
-restore_prognostic_state!(land::RucSlabLand, ::Nothing) = land
+function _restore_surface!(s::RucSurfaceProperties, surface_state)
+    for k in (:vegfrac, :lai, :albedo_veg, :emissivity_veg, :z0_veg, :r_smin,
+              :is_urban, :alb, :emiss, :znt)
+        if hasproperty(surface_state, k)
+            interior(getproperty(s, k)) .= getproperty(surface_state, k)
+        end
+    end
+    return nothing
+end
+
+_restore_surface!(::AbstractSurfaceProperties, ::Any) = nothing
+
+restore_prognostic_state!(land::SlabLand, ::Nothing) = land

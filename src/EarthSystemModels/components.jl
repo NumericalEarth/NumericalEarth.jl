@@ -63,3 +63,13 @@ function update_net_fluxes! end
 # Fallbacks for a  generic component model
 update_net_fluxes!(coupled_model, component) = nothing
 interpolate_state!(exchanger, grid, component, coupled_model) = nothing
+
+#####
+##### Functions extended by land models
+#####
+
+# Surface skin temperature exposed by a land component. Default is `nothing`
+# so consumers (e.g. the default NaN checker) can fall back when the land
+# component doesn't track a skin temperature.
+function surface_temperature end
+surface_temperature(::Any) = nothing

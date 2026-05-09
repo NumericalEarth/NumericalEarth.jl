@@ -39,10 +39,10 @@ function ruc_test_land(; T = 273.15, θ = 0.30, vegfrac = 0.0, lai = 0.0,
     land = RucSlabLand(ruc_test_grid(); parameters)
     set!(land; T, Tc = T, θ, vegfrac, lai)
 
-    fill!(land.forcings.air_temperature, T)
-    fill!(land.forcings.air_humidity, 0)
-    fill!(land.forcings.solar_irradiance, 100)
-    fill!(land.forcings.surface_pressure, 1013.25)
+    fill!(land.fluxes.air_temperature, T)
+    fill!(land.fluxes.air_humidity, 0)
+    fill!(land.fluxes.solar_irradiance, 100)
+    fill!(land.fluxes.surface_pressure, 1013.25)
 
     return land
 end
@@ -51,11 +51,11 @@ end
     @testset "canopy interception uses RUC fixed saturation" begin
         land = ruc_test_land(T = 280, θ = 0.30, vegfrac = 0.8, lai = 5.0)
 
-        fill!(land.forcings.rainfall_rate, 0.01)
+        fill!(land.fluxes.rainfall_rate, 0.01)
         time_step!(land, 1.0)
 
-        @test scalar(land.vegetation.canopy_capacity) ≈ 5e-4
-        @test scalar(land.canopy.cst) ≈ 5e-4
+        @test scalar(land.state.canopy_capacity) ≈ 5e-4
+        @test scalar(land.state.cst) ≈ 5e-4
     end
 
     @testset "mavail and bare-soil evaporation use RUC soilres" begin
@@ -68,14 +68,14 @@ end
         fex_fc = max(0.01, min(1.0, 0.10 / fc))
         expected_soilres = 0.25 * (1 - cos(pi * fex_fc))^2
 
-        @test scalar(land.vegetation.mavail) ≈ expected_mavail
+        @test scalar(land.state.mavail) ≈ expected_mavail
 
-        fill!(land.forcings.moisture_flux, 0.1)
+        fill!(land.fluxes.moisture_flux, 0.1)
         time_step!(land, 10.0)
 
         expected_θ = 0.10 - 0.1 * (1 - 0.5) * expected_soilres * 10.0 /
                            (1000 * p.soil_depth)
-        @test scalar(land.soil_moisture) ≈ expected_θ
+        @test scalar(land.state.θ) ≈ expected_θ
     end
 
     @testset "snow melt is capped and retained following RUC" begin
@@ -90,69 +90,69 @@ end
         retained = retained_fraction * melt_swe
         overflow = melt_swe - retained
 
-        @test scalar(land.snow.swl) ≈ retained
-        @test scalar(land.snow.swl_overflow) ≈ overflow
-        @test scalar(land.soil_moisture) ≈ 0.20 + overflow / land.parameters.soil_depth
+        @test scalar(land.state.swl) ≈ retained
+        @test scalar(land.state.swl_overflow) ≈ overflow
+        @test scalar(land.state.θ) ≈ 0.20 + overflow / land.parameters.soil_depth
 
         solid_swe = 0.10 - melt_swe
         total_pack_swe = solid_swe + retained
         expected_rhosn = (250.0 * solid_swe + 1000.0 * retained) / total_pack_swe
-        @test scalar(land.snow.snhei) ≈ total_pack_swe * 1000.0 / expected_rhosn
+        @test scalar(land.state.snhei) ≈ total_pack_swe * 1000.0 / expected_rhosn
     end
 
     @testset "fresh snow density follows WRF air-temperature formula" begin
         land = ruc_test_land(T = 260.0, θ = 0.30)
-        fill!(land.forcings.air_temperature, 280.0)
-        fill!(land.forcings.snowfall_rate, 1e-6)
+        fill!(land.fluxes.air_temperature, 280.0)
+        fill!(land.fluxes.snowfall_rate, 1e-6)
 
         time_step!(land, 1.0)
 
         expected_ρ_new = min(125.0, 1000.0 / max(8.0, 17.0 * tanh((276.65 - 280.0) * 0.15)))
-        @test scalar(land.snow.rhonewsn) ≈ expected_ρ_new
-        @test scalar(land.snow.rhosn) ≈ expected_ρ_new
+        @test scalar(land.state.rhonewsn) ≈ expected_ρ_new
+        @test scalar(land.state.rhosn) ≈ expected_ρ_new
     end
 
     @testset "current-step fresh snow activates RUC melt limiter" begin
         land = ruc_test_land(T = 274.15, θ = 0.20)
         set!(land; snwe = 0.10, snhei = 0.25, rhosn = 400.0, swl = 0.0)
-        fill!(land.forcings.air_temperature, 263.15)
-        fill!(land.forcings.snowfall_rate, 1e-6)
+        fill!(land.fluxes.air_temperature, 263.15)
+        fill!(land.fluxes.snowfall_rate, 1e-6)
         update_state!(land)
 
         time_step!(land, 60.0)
 
         new_swe = 1e-6 * 60.0
         capped_melt = 60.0 * 5.6e-8 * 2.0 * 1.0
-        @test scalar(land.snow.snwe) ≈ 0.10 + new_swe - capped_melt
+        @test scalar(land.state.snwe) ≈ 0.10 + new_swe - capped_melt
     end
 
     @testset "fresh-snow albedo diagnostics reset without current snowfall" begin
         land = ruc_test_land(T = 260.0, θ = 0.30)
-        fill!(land.forcings.air_temperature, 280.0)
-        fill!(land.forcings.snowfall_rate, 3e-4)
+        fill!(land.fluxes.air_temperature, 280.0)
+        fill!(land.fluxes.snowfall_rate, 3e-4)
 
         # Step 1 — first snowfall on a clean slate. `snowfallac` is zero
-        # going in, so per Fortran:1641 `snowfracnewsn` is evaluated from
-        # the **pre-increment** `snowfallac` (= 0) and the fresh-snow
-        # albedo lock cannot latch yet.
+        # going in, so `snowfracnewsn` is evaluated from the
+        # **pre-increment** `snowfallac` (= 0) and the fresh-snow albedo
+        # lock cannot latch yet.
         time_step!(land, 1.0)
-        @test scalar(land.snow.keep_snow_albedo) == 0
-        @test scalar(land.snow.rhonewsn) ≈ 125.0
+        @test scalar(land.state.keep_snow_albedo) == 0
+        @test scalar(land.state.rhonewsn) ≈ 125.0
 
         # Steps 2-3 — continued snowfall accumulates `snowfallac` until the
         # pre-increment value exceeds `snhei_crit_newsn = 0.0005·ρ_w/ρ_sn ≈
         # 4 mm`, at which point the fresh-snow-albedo lock activates.
         time_step!(land, 1.0)
         time_step!(land, 1.0)
-        @test scalar(land.snow.keep_snow_albedo) == 1
-        @test scalar(land.snow.rhonewsn) ≈ 125.0
+        @test scalar(land.state.keep_snow_albedo) == 1
+        @test scalar(land.state.rhonewsn) ≈ 125.0
 
-        fill!(land.forcings.snowfall_rate, 0)
+        fill!(land.fluxes.snowfall_rate, 0)
         time_step!(land, 1.0)
 
-        @test scalar(land.snow.keep_snow_albedo) == 0
-        @test scalar(land.snow.snowfracnewsn) == 0
-        @test scalar(land.snow.rhonewsn) ≈ 100.0
+        @test scalar(land.state.keep_snow_albedo) == 0
+        @test scalar(land.state.snowfracnewsn) == 0
+        @test scalar(land.state.rhonewsn) ≈ 100.0
     end
 
     @testset "WRF RUC snow emissivity and USGS table defaults" begin
@@ -174,38 +174,38 @@ end
 
         apply_land_classifications!(land, fill(grassland.id, 1, 1), registry)
 
-        @test scalar(land.vegetation.vegfrac) ≈ grassland.vegfrac
-        @test scalar(land.vegetation.lai) ≈ grassland.lai
-        @test scalar(land.vegetation.albedo_veg) ≈ grassland.albedo
-        @test scalar(land.vegetation.emissivity_veg) ≈ grassland.emissivity
-        @test scalar(land.vegetation.z0_veg) ≈ grassland.z0
-        @test scalar(land.vegetation.r_smin) ≈ grassland.r_smin
-        @test scalar(land.vegetation.is_urban) ≈ 0
+        @test scalar(land.surface.vegfrac) ≈ grassland.vegfrac
+        @test scalar(land.surface.lai) ≈ grassland.lai
+        @test scalar(land.surface.albedo_veg) ≈ grassland.albedo
+        @test scalar(land.surface.emissivity_veg) ≈ grassland.emissivity
+        @test scalar(land.surface.z0_veg) ≈ grassland.z0
+        @test scalar(land.surface.r_smin) ≈ grassland.r_smin
+        @test scalar(land.surface.is_urban) ≈ 0
 
         apply_land_classifications!(land, fill(999, 1, 1), registry)
 
-        @test scalar(land.vegetation.vegfrac) ≈ grassland.vegfrac
-        @test scalar(land.vegetation.lai) ≈ grassland.lai
-        @test scalar(land.vegetation.albedo_veg) ≈ grassland.albedo
-        @test scalar(land.vegetation.emissivity_veg) ≈ grassland.emissivity
-        @test scalar(land.vegetation.z0_veg) ≈ grassland.z0
-        @test scalar(land.vegetation.r_smin) ≈ grassland.r_smin
-        @test scalar(land.vegetation.is_urban) ≈ 0
+        @test scalar(land.surface.vegfrac) ≈ grassland.vegfrac
+        @test scalar(land.surface.lai) ≈ grassland.lai
+        @test scalar(land.surface.albedo_veg) ≈ grassland.albedo
+        @test scalar(land.surface.emissivity_veg) ≈ grassland.emissivity
+        @test scalar(land.surface.z0_veg) ≈ grassland.z0
+        @test scalar(land.surface.r_smin) ≈ grassland.r_smin
+        @test scalar(land.surface.is_urban) ≈ 0
     end
 
     @testset "Jarvis resistance uses local surface pressure" begin
         land = ruc_test_land(T = 298.0, θ = 0.30, vegfrac = 0.8, lai = 3.0)
-        fill!(land.forcings.air_temperature, 300.0)
-        fill!(land.forcings.air_humidity, 0.005)
-        fill!(land.forcings.solar_irradiance, 300.0)
-        fill!(land.forcings.surface_pressure, 700.0)
+        fill!(land.fluxes.air_temperature, 300.0)
+        fill!(land.fluxes.air_humidity, 0.005)
+        fill!(land.fluxes.solar_irradiance, 300.0)
+        fill!(land.fluxes.surface_pressure, 700.0)
 
         update_state!(land)
 
         p = land.parameters
         expected = expected_jarvis_resistance(300.0, 0.005, 300.0, 0.30, 3.0,
                                               p.r_smin, 700.0, p)
-        @test scalar(land.vegetation.r_s) ≈ expected
+        @test scalar(land.state.r_s) ≈ expected
     end
 
     @testset "land roughness enters atmosphere-land MOST fluxes" begin
@@ -218,7 +218,7 @@ end
 
         land = RucSlabLand(grid)
         set!(land; T = 293.15, Tc = 293.15, θ = 0.30, vegfrac = 1.0, lai = 1.0)
-        interior(land.vegetation.z0_veg, :, :, 1) .= reshape([0.02, 0.80], 2, 1)
+        interior(land.surface.z0_veg, :, :, 1) .= reshape([0.02, 0.80], 2, 1)
         update_state!(land)
 
         atmosphere = PrescribedAtmosphere(grid, [0.0])
@@ -261,5 +261,51 @@ end
         @test u★[1, 1, 1] ≈ κ * U / log(h / 0.02)
         @test u★[2, 1, 1] ≈ κ * U / log(h / 0.80)
         @test u★[1, 1, 1] < u★[2, 1, 1]
+    end
+
+    @testset "public SlabLand couples through generic accessors" begin
+        grid = RectilinearGrid(CPU();
+                               size = (1, 1),
+                               halo = (1, 1),
+                               x = (0, 1),
+                               y = (0, 1),
+                               topology = (Bounded, Bounded, Flat))
+
+        land = SlabLand(grid)
+        set!(land; T = 293.15)
+        atmosphere = PrescribedAtmosphere(grid, [0.0])
+
+        model = AtmosphereLandModel(atmosphere, land)
+        land_state = model.interfaces.exchanger.land.state
+
+        @test land_state.T === land.state.T
+        @test land_state.mavail === land.state.β
+        @test land_state.znt isa Oceananigans.Fields.ConstantField
+
+        interface_fluxes = model.interfaces.atmosphere_land_interface.fluxes
+        fill!(interface_fluxes.sensible_heat, -10.0)
+        fill!(interface_fluxes.latent_heat, -5.0)
+        fill!(interface_fluxes.water_vapor, -2e-4)
+
+        NumericalEarth.EarthSystemModels.update_net_fluxes!(model, land)
+
+        @test scalar(land.fluxes.net_energy_flux) ≈ 15.0
+        @test scalar(land.fluxes.evaporation) ≈ 2e-4
+        @test scalar(land.fluxes.precipitation) ≈ 0.0
+    end
+
+    @testset "RucEnergy builds from RucSlabLandParameters" begin
+        parameters = RucSlabLandParameters(Float64;
+                                           depth = 0.2,
+                                           density = 1200,
+                                           heat_capacity = 1000,
+                                           canopy_heat_capacity = 2.0e4)
+
+        energy = RucEnergy(parameters)
+
+        @test energy.depth === parameters.depth
+        @test energy.density === parameters.density
+        @test energy.heat_capacity === parameters.heat_capacity
+        @test energy.canopy_heat_capacity === parameters.canopy_heat_capacity
     end
 end

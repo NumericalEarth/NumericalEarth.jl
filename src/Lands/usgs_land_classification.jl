@@ -10,8 +10,9 @@
 ##### (Smirnova et al. 1997, 2016).
 #####
 ##### `apply_land_classifications!(land, vegtype, registry)` populates the
-##### per-cell vegetation Fields on a `RucSlabLand` from an integer-valued
-##### `vegtype` map (Nx × Ny) and a category registry.
+##### per-cell vegetation Fields on a `SlabLand` whose surface closure is
+##### `RucSurfaceProperties`, from an integer-valued `vegtype` map
+##### (Nx × Ny) and a category registry.
 #####
 ##### Reference table (peak summer LAI / shdfac, RUC defaults):
 #####
@@ -110,35 +111,44 @@ function usgs_land_classifications(FT::Type = Float64)
 end
 
 """
-    apply_land_classifications!(land::RucSlabLand, vegtype, registry)
+    apply_land_classifications!(land::SlabLand, vegtype, registry)
 
-Populate `land`'s per-cell vegetation Fields (`vegfrac`, `lai`,
-`albedo_veg`, `emissivity_veg`, `z0_veg`, `r_smin`) from a 2D `vegtype`
-map of integer category ids and a `registry` returned by e.g.
-`usgs_land_classifications(FT)`.
+Populate the per-cell vegetation Fields on the surface-property
+closure (`vegfrac`, `lai`, `albedo_veg`, `emissivity_veg`, `z0_veg`,
+`r_smin`, `is_urban`) from a 2D `vegtype` map of integer category ids
+and a `registry` returned by e.g. `usgs_land_classifications(FT)`.
 
 `vegtype` may be any 2D `AbstractArray{<:Real}` (typically Int) of size
 `Nx × Ny`. Cells with out-of-range ids are left untouched. The lookup
 runs on the host; if `land` lives on a GPU, the populated host arrays
 are uploaded with `set!`. Call once at simulation setup.
+
+Requires `land.surface :: RucSurfaceProperties`. A future
+`PrescribedSurfaceProperties` or learned variant would provide its own
+specialisation of this function.
 """
-function apply_land_classifications!(land::RucSlabLand,
-                                      vegtype::AbstractArray,
-                                      registry::AbstractVector{<:LandClassification})
+function apply_land_classifications!(land::SlabLand,
+                                     vegtype::AbstractArray,
+                                     registry::AbstractVector{<:LandClassification})
+    return apply_land_classifications!(land.surface, eltype(land), vegtype, registry)
+end
+
+function apply_land_classifications!(s::RucSurfaceProperties,
+                                     FT::Type,
+                                     vegtype::AbstractArray,
+                                     registry::AbstractVector{<:LandClassification})
 
     field_xy(field) = dropdims(Array(interior(field)); dims = 3)
 
-    FT = eltype(land)
-    veg = land.vegetation
     Nx, Ny = size(vegtype)
 
-    vegfrac    = field_xy(veg.vegfrac)
-    lai        = field_xy(veg.lai)
-    albedo_veg = field_xy(veg.albedo_veg)
-    emiss_veg  = field_xy(veg.emissivity_veg)
-    z0_veg     = field_xy(veg.z0_veg)
-    r_smin     = field_xy(veg.r_smin)
-    is_urban   = field_xy(veg.is_urban)
+    vegfrac    = field_xy(s.vegfrac)
+    lai        = field_xy(s.lai)
+    albedo_veg = field_xy(s.albedo_veg)
+    emiss_veg  = field_xy(s.emissivity_veg)
+    z0_veg     = field_xy(s.z0_veg)
+    r_smin     = field_xy(s.r_smin)
+    is_urban   = field_xy(s.is_urban)
 
     size(vegfrac) == (Nx, Ny) ||
         throw(DimensionMismatch("vegtype has size $(size(vegtype)); expected $(size(vegfrac))"))
@@ -157,13 +167,13 @@ function apply_land_classifications!(land::RucSlabLand,
         end
     end
 
-    set!(veg.vegfrac,        vegfrac)
-    set!(veg.lai,            lai)
-    set!(veg.albedo_veg,     albedo_veg)
-    set!(veg.emissivity_veg, emiss_veg)
-    set!(veg.z0_veg,         z0_veg)
-    set!(veg.r_smin,         r_smin)
-    set!(veg.is_urban,       is_urban)
+    set!(s.vegfrac,        vegfrac)
+    set!(s.lai,            lai)
+    set!(s.albedo_veg,     albedo_veg)
+    set!(s.emissivity_veg, emiss_veg)
+    set!(s.z0_veg,         z0_veg)
+    set!(s.r_smin,         r_smin)
+    set!(s.is_urban,       is_urban)
 
     return nothing
 end

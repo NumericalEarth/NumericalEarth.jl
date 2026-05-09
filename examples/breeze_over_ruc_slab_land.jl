@@ -117,7 +117,7 @@ end
 
 set!(slab_land, T = Tᵍ₀, Tc = Tᵍ₀, θ = θ_init)
 
-slab_land.forcings.solar_irradiance .= 600.0    # W m⁻², bright midday
+slab_land.fluxes.solar_irradiance .= 600.0      # W m⁻², bright midday
 
 # `air_temperature` and `air_humidity` are refreshed from the coupled
 # atmosphere state by `AtmosphereLandModel`.
@@ -142,7 +142,7 @@ function progress(sim)
     u, v, w = a.velocities
     umax = maximum(abs, u)
     wmax = maximum(abs, w)
-    Tg   = sim.model.land.temperature
+    Tg   = sim.model.land.state.T
     msg = @sprintf("Iter: %d, t = %s, max|u|: %.2e, max|w|: %.2e, T_g: (%.3f, %.3f)",
                    iteration(sim), prettytime(sim), umax, wmax,
                    minimum(Tg), maximum(Tg))
@@ -163,7 +163,7 @@ simulation.output_writers[:atmos] = JLD2Writer(model, (; θ, u, v, s);
                                                schedule = TimeInterval(1minute),
                                                overwrite_existing = true)
 
-simulation.output_writers[:land] = JLD2Writer(model, (; Tg=slab_land.temperature);
+simulation.output_writers[:land] = JLD2Writer(model, (; Tg=slab_land.state.T);
                                               filename = "breeze_ruc_slab_land_surface",
                                               schedule = TimeInterval(1minute),
                                               overwrite_existing = true)

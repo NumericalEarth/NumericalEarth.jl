@@ -303,7 +303,7 @@ function default_nan_checker(model::EarthSystemModel)
         if isnothing(model.land)
             return nothing
         end
-        T_land = model.land.temperature
+        T_land = surface_temperature(model.land)
         return NaNChecker((; T_land))
     end
 
