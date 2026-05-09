@@ -471,7 +471,8 @@ data is copied to/from the device automatically.
 """
 function woa_to_teos10!(T_field, S_field)
     grid = T_field.grid
-    cpu_grid = on_architecture(CPU(), grid)
+    cpu_arch = Oceananigans.DistributedComputations.cpu_architecture(architecture(grid))
+    cpu_grid = on_architecture(cpu_arch, grid)
     Nx, Ny, Nz = size(grid)
     T_h = Array(interior(T_field))
     S_h = Array(interior(S_field))
