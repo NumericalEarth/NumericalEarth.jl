@@ -1,4 +1,5 @@
 using Dates
+using Oceananigans.DistributedComputations: @root
 
 # JRA55 shortnames used in filenames (subset actually loaded by OMIP)
 const JRA55_SHORTNAMES = ["tas", "huss", "psl", "uas", "vas", "rlds", "rsds", "prra", "prsn", "friver", "licalvf"]
@@ -18,22 +19,26 @@ Also:
     would skip it (it only replaces symlinks).
 """
 function setup_staging_directory(source_dir, staging_dir)
-    mkpath(staging_dir)
-    for leftover in filter(f -> endswith(f, ".nc.tmp"), readdir(staging_dir; join=true))
-        rm(leftover; force=true)
-    end
-    for src in filter(f -> endswith(f, ".nc"), readdir(source_dir; join=true))
-        dst = joinpath(staging_dir, basename(src))
-        if islink(dst)
-            continue                                         # healthy symlink, leave alone
-        elseif isfile(dst)                                    # real file — validate size
-            if filesize(dst) != filesize(src)
-                @warn "setup_staging_directory: size mismatch at $dst ($(filesize(dst)) vs source $(filesize(src))); replacing with symlink"
-                rm(dst; force=true)
+    # Filesystem mutations only on rank 0; other ranks barrier at the end of
+    # @root, so by the time they return all symlinks/heals are visible.
+    @root begin
+        mkpath(staging_dir)
+        for leftover in filter(f -> endswith(f, ".nc.tmp"), readdir(staging_dir; join=true))
+            rm(leftover; force=true)
+        end
+        for src in filter(f -> endswith(f, ".nc"), readdir(source_dir; join=true))
+            dst = joinpath(staging_dir, basename(src))
+            if islink(dst)
+                continue                                         # healthy symlink, leave alone
+            elseif isfile(dst)                                    # real file — validate size
+                if filesize(dst) != filesize(src)
+                    @warn "setup_staging_directory: size mismatch at $dst ($(filesize(dst)) vs source $(filesize(src))); replacing with symlink"
+                    rm(dst; force=true)
+                    symlink(src, dst)
+                end
+            elseif !ispath(dst)                                   # nothing there (incl. broken symlink handled by islink above)
                 symlink(src, dst)
             end
-        elseif !ispath(dst)                                   # nothing there (incl. broken symlink handled by islink above)
-            symlink(src, dst)
         end
     end
     return staging_dir
@@ -61,16 +66,19 @@ is atomic — a partial copy is never visible at `dst`, so concurrent
 `PrefetchingBackend` readers on background threads cannot race with the `cp`.
 """
 function stage_jra55_year!(source_dir, staging_dir, year)
-    year_str = string(year)
-    for name in JRA55_SHORTNAMES
-        for dst in filter(f -> contains(f, name) && contains(f, year_str) && endswith(f, ".nc"), readdir(staging_dir; join=true))
-            if islink(dst)
-                src = joinpath(source_dir, basename(dst))
-                atomic_replace!(dst, tmp -> cp(src, tmp))
-                @debug "Staged $(basename(dst)) to scratch"
+    @root begin
+        year_str = string(year)
+        for name in JRA55_SHORTNAMES
+            for dst in filter(f -> contains(f, name) && contains(f, year_str) && endswith(f, ".nc"), readdir(staging_dir; join=true))
+                if islink(dst)
+                    src = joinpath(source_dir, basename(dst))
+                    atomic_replace!(dst, tmp -> cp(src, tmp))
+                    @debug "Staged $(basename(dst)) to scratch"
+                end
             end
         end
     end
+    return nothing
 end
 
 """
@@ -81,16 +89,19 @@ to `source_dir`. Uses the same atomic swap as staging so a concurrent
 reader never sees a missing file at the swap point.
 """
 function unstage_jra55_year!(source_dir, staging_dir, year)
-    year_str = string(year)
-    for name in JRA55_SHORTNAMES
-        for dst in filter(f -> contains(f, name) && contains(f, year_str) && endswith(f, ".nc"), readdir(staging_dir; join=true))
-            if isfile(dst) && !islink(dst)
-                src = joinpath(source_dir, basename(dst))
-                atomic_replace!(dst, tmp -> symlink(src, tmp))
-                @debug "Unstaged $(basename(dst)) from scratch"
+    @root begin
+        year_str = string(year)
+        for name in JRA55_SHORTNAMES
+            for dst in filter(f -> contains(f, name) && contains(f, year_str) && endswith(f, ".nc"), readdir(staging_dir; join=true))
+                if isfile(dst) && !islink(dst)
+                    src = joinpath(source_dir, basename(dst))
+                    atomic_replace!(dst, tmp -> symlink(src, tmp))
+                    @debug "Unstaged $(basename(dst)) from scratch"
+                end
             end
         end
     end
+    return nothing
 end
 
 """
@@ -116,7 +127,7 @@ function JRA55DataStagingCallback(; source_dir, staging_dir, start_date)
         # Stage upcoming years
         for y in needed_years
             if y ∉ staged_years
-                @info "Staging JRA55 data for year $y to $staging_dir"
+                @root @info "Staging JRA55 data for year $y to $staging_dir"
                 stage_jra55_year!(source_dir, staging_dir, y)
                 push!(staged_years, y)
             end
@@ -125,7 +136,7 @@ function JRA55DataStagingCallback(; source_dir, staging_dir, start_date)
         # Unstage old years
         for y in collect(staged_years)
             if y < current_year - 1
-                @info "Unstaging JRA55 data for year $y from $staging_dir"
+                @root @info "Unstaging JRA55 data for year $y from $staging_dir"
                 unstage_jra55_year!(source_dir, staging_dir, y)
                 delete!(staged_years, y)
             end

@@ -3,6 +3,7 @@ using KernelAbstractions: @index, @kernel
 using Oceananigans.Operators: Δzᶜᶜᶜ
 using Oceananigans.Grids: λnode, φnode, znode, Center
 using Oceananigans.Architectures: on_architecture, architecture
+using Oceananigans.DistributedComputations: @root
 using Oceananigans.BoundaryConditions: DiscreteBoundaryFunction, getbc
 using Oceananigans.Fields: CenterField, interior
 using Oceananigans.Utils: launch!
@@ -398,7 +399,10 @@ function omip_simulation(config::Symbol = :halfdegree;
 
     simulation = Simulation(coupled; Δt, stop_time)
 
-    for dir in [forcing_dir, restoring_dir, output_dir]
+    # Only rank 0 creates dirs; others barrier inside @root and proceed once
+    # the dirs exist. mkpath is idempotent so a race-free retry would also
+    # work, but @root keeps the pattern symmetric with the staging code.
+    @root for dir in [forcing_dir, restoring_dir, output_dir]
         if !isdir(dir)
             mkdir(dir)
         end
