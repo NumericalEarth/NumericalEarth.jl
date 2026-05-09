@@ -55,13 +55,29 @@ filter!(x -> x.build_always || build_all, developer_examples)
 for example in examples
     script_path = joinpath(EXAMPLES_DIR, example.basename * ".jl")
     run(`$(Base.julia_cmd()) --color=yes --project=$(dirname(Base.active_project())) $(joinpath(@__DIR__, "literate.jl")) $(script_path) $(OUTPUT_DIR)`)
-    CUDA.functional() && CUDA.reclaim()
+    # Reclaim GPU memory between subprocesses, but tolerate a non-
+    # functional / unsupported GPU on the runner (e.g. CUDA 13+ with a
+    # TITAN V): `CUDA.functional()` itself may throw on an unsupported
+    # compute capability.
+    try
+        CUDA.functional() && CUDA.reclaim()
+    catch err
+        @debug "Skipping CUDA.reclaim()" exception=err
+    end
 end
 
 for example in developer_examples
     script_path = joinpath(DEVELOPERS_DIR, example.basename * ".jl")
     run(`$(Base.julia_cmd()) --color=yes --project=$(dirname(Base.active_project())) $(joinpath(@__DIR__, "literate.jl")) $(script_path) $(OUTPUT_DIR)`)
-    CUDA.functional() && CUDA.reclaim()
+    # Reclaim GPU memory between subprocesses, but tolerate a non-
+    # functional / unsupported GPU on the runner (e.g. CUDA 13+ with a
+    # TITAN V): `CUDA.functional()` itself may throw on an unsupported
+    # compute capability.
+    try
+        CUDA.functional() && CUDA.reclaim()
+    catch err
+        @debug "Skipping CUDA.reclaim()" exception=err
+    end
 end
 
 #####
