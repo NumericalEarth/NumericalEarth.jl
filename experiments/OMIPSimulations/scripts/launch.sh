@@ -357,13 +357,20 @@ THREADS="${THREADS:-8}"
 
 # `srun` launches one Julia process per MPI rank. With --ntasks-per-node set above,
 # tenthdegree gets 4 ranks (matching Partition(1, 4)); halfdegree/orca get 1 rank.
+#
+# --mpi=pmi2: SLURM 25.05 on this cluster was built without PMIx, and HPC-X's
+# OpenMPI 4.1.9a1 ships only the pmix3x client (no native pmi2). Telling srun
+# to speak PMI-2 lets pmix3x's PMI-2 fallback bridge the handshake. Without
+# this srun launches successfully but MPI_Init aborts with
+# "OMPI was not built with SLURM's PMI support".
 if [[ "${PROFILE:-false}" == "true" ]]; then
     echo "Profiling ${RUN_NAME} -> ${REPORT_NAME}"
-    srun nsys profile --trace=cuda \
+    srun --mpi=pmi2 \
+                      nsys profile --trace=cuda \
                       --output="$REPORT_NAME" \
                       --force-overwrite true \
                       "$JULIA" --project=.. --check-bounds=no -t "${THREADS}" -e "$JULIA_EXPR"
 else
-    srun "$JULIA" --project=.. --check-bounds=no -t "${THREADS}" -e "$JULIA_EXPR"
+    srun --mpi=pmi2 "$JULIA" --project=.. --check-bounds=no -t "${THREADS}" -e "$JULIA_EXPR"
 fi
 EOF
