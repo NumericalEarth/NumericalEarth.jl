@@ -241,7 +241,10 @@ module load nvhpc
 # so libmpi.so's dlopen of its UCX/PMIx/UCC neighbours fails. Export them
 # explicitly. Must match the libmpi path baked into MPIPreferences.
 HPCX_DIR="/orcd/software/core/001/pkg/nvhpc/26.1/Linux_x86_64/26.1/comm_libs/13.1/hpcx/hpcx-2.25.1"
-export LD_LIBRARY_PATH="$HPCX_DIR/ompi/lib:$HPCX_DIR/ucx/lib:$HPCX_DIR/ucc/lib:${LD_LIBRARY_PATH:-}"
+# UCX ships under ucx/lib (regular) and ucx/prof/lib (profiling); include both
+# so dlopen of libucp/libucs from libmpi.so resolves regardless of which build
+# OpenMPI was linked against.
+export LD_LIBRARY_PATH="$HPCX_DIR/ompi/lib:$HPCX_DIR/ucx/lib:$HPCX_DIR/ucx/prof/lib:$HPCX_DIR/ucc/lib:${LD_LIBRARY_PATH:-}"
 
 export OMPI_MCA_opal_cuda_support=1
 export UCX_TLS=cuda_copy,cuda_ipc,gdr_copy,rc,sm,self     # tune to your fabric
