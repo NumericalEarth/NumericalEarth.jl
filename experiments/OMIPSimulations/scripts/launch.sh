@@ -237,6 +237,10 @@ sbatch "${SBATCH_ARGS[@]}" "$@" <<'EOF'
 source /etc/profile.d/modules.sh
 module load nvhpc
 
+export OMPI_MCA_opal_cuda_support=1
+export UCX_TLS=cuda_copy,cuda_ipc,gdr_copy,rc,sm,self     # tune to your fabric
+export UCX_MEMTYPE_CACHE=n                                # avoids known UCX+CUDA bug
+
 JULIA="${JULIA:-$HOME/julia-1.12.5/bin/julia}"
 
 # ── Shared environment ────────────────────────────────────────────────
