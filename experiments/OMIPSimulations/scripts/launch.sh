@@ -237,23 +237,22 @@ sbatch "${SBATCH_ARGS[@]}" "$@" <<'EOF'
 source /etc/profile.d/modules.sh
 module load nvhpc
 
-# nvhpc puts the HPC-X (OpenMPI 4.1.9a1) libs on neither PATH nor LD_LIBRARY_PATH,
-# so libmpi.so's dlopen of its UCX/PMIx/UCC neighbours fails. Export them
-# explicitly. Must match the libmpi path baked into MPIPreferences.
+# nvhpc only puts CUDA/NCCL/NVSHMEM on LD_LIBRARY_PATH — not HPC-X's OpenMPI
+# tree. Export it ourselves so libmpi.so's dlopen of its UCX/PMIx/UCC
+# neighbours resolves. Must match the libmpi path baked into MPIPreferences.
+# (UCX ships under both ucx/lib and ucx/prof/lib; include both.)
 HPCX_DIR="/orcd/software/core/001/pkg/nvhpc/26.1/Linux_x86_64/26.1/comm_libs/13.1/hpcx/hpcx-2.25.1"
-# UCX ships under ucx/lib (regular) and ucx/prof/lib (profiling); include both
-# so dlopen of libucp/libucs from libmpi.so resolves regardless of which build
-# OpenMPI was linked against.
 export LD_LIBRARY_PATH="$HPCX_DIR/ompi/lib:$HPCX_DIR/ucx/lib:$HPCX_DIR/ucx/prof/lib:$HPCX_DIR/ucc/lib:${LD_LIBRARY_PATH:-}"
 
-export OMPI_MCA_opal_cuda_support=1
-export UCX_TLS=cuda_copy,cuda_ipc,gdr_copy,rc,sm,self     # tune to your fabric
-export UCX_MEMTYPE_CACHE=n                                # avoids known UCX+CUDA bug
+# Activate HPC-X so mpirun and friends are on PATH (hpcx_load only adjusts
+# PATH on this build — relocation is handled by mpirun for its children).
+source "$HPCX_DIR/hpcx-init-ompi.sh"
+hpcx_load
 
-# SLURM 22.05+ stopped propagating --cpus-per-task into srun. Without this,
-# srun asks for a CPU mask wider than the allocation and the launch fails
-# with "CPU binding outside of job step allocation".
-export SRUN_CPUS_PER_TASK="$SLURM_CPUS_PER_TASK"
+# CUDA-aware MPI knobs (HPC-X / UCX).
+export OMPI_MCA_opal_cuda_support=1
+export UCX_TLS=cuda_copy,cuda_ipc,gdr_copy,rc,sm,self
+export UCX_MEMTYPE_CACHE=n          # avoids known UCX+CUDA bug
 
 JULIA="${JULIA:-$HOME/julia-1.12.5/bin/julia}"
 
@@ -355,22 +354,22 @@ ${RUN_CMD}"
 
 THREADS="${THREADS:-8}"
 
-# `srun` launches one Julia process per MPI rank. With --ntasks-per-node set above,
-# tenthdegree gets 4 ranks (matching Partition(1, 4)); halfdegree/orca get 1 rank.
-#
-# --mpi=pmi2: SLURM 25.05 on this cluster was built without PMIx, and HPC-X's
-# OpenMPI 4.1.9a1 ships only the pmix3x client (no native pmi2). Telling srun
-# to speak PMI-2 lets pmix3x's PMI-2 fallback bridge the handshake. Without
-# this srun launches successfully but MPI_Init aborts with
-# "OMPI was not built with SLURM's PMI support".
+# Launch via HPC-X's mpirun, NOT srun. SLURM 25.05 on this cluster has only
+# pmi2/cray_shasta MPI plugins (no PMIx), and HPC-X's OpenMPI 4.1.9a1 ships
+# only the pmix3x client (no native PMI-1/PMI-2 wire support). srun and HPC-X
+# therefore cannot handshake. mpirun runs its own PMIx-3 server, queries SLURM
+# only for the allocation (hostlist + nranks), and spawns ranks itself.
+# --bind-to none avoids fighting SLURM's cgroup over CPU affinity.
+NRANKS=$((SLURM_NNODES * SLURM_NTASKS_PER_NODE))
 if [[ "${PROFILE:-false}" == "true" ]]; then
     echo "Profiling ${RUN_NAME} -> ${REPORT_NAME}"
-    srun --mpi=pmi2 \
+    mpirun -np "$NRANKS" --bind-to none \
                       nsys profile --trace=cuda \
                       --output="$REPORT_NAME" \
                       --force-overwrite true \
                       "$JULIA" --project=.. --check-bounds=no -t "${THREADS}" -e "$JULIA_EXPR"
 else
-    srun --mpi=pmi2 "$JULIA" --project=.. --check-bounds=no -t "${THREADS}" -e "$JULIA_EXPR"
+    mpirun -np "$NRANKS" --bind-to none \
+        "$JULIA" --project=.. --check-bounds=no -t "${THREADS}" -e "$JULIA_EXPR"
 fi
 EOF
