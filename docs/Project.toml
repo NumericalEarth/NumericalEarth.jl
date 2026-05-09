@@ -28,3 +28,4 @@ NumericalEarth = {path = ".."}
 Documenter = "1"
 DocumenterCitations = "1.3"
 Literate = "2.2"
+ClimaSeaIce = "0.4.10"
