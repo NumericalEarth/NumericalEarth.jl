@@ -46,7 +46,6 @@ function Base.show(io::IO, cm::ESM)
     return nothing
 end
 
-# Assumption: We have an ocean!
 architecture(model::ESM)           = model.architecture
 Base.eltype(model::ESM)            = Base.eltype(model.interfaces.exchanger.grid)
 prettytime(model::ESM)             = prettytime(model.clock.time)
@@ -55,7 +54,7 @@ timestepper(::ESM)                 = nothing
 default_included_properties(::ESM) = tuple()
 prognostic_fields(cm::ESM)         = nothing
 fields(::ESM)                      = NamedTuple()
-default_clock(TT)                   = Oceananigans.TimeSteppers.Clock{TT}(0, 0, 1)
+default_clock(TT)                  = Oceananigans.TimeSteppers.Clock{TT}(0, 0, 1)
 
 reset_component_clock!(::Nothing) = nothing
 
