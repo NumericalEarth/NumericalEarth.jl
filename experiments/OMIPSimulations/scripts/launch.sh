@@ -241,6 +241,11 @@ export OMPI_MCA_opal_cuda_support=1
 export UCX_TLS=cuda_copy,cuda_ipc,gdr_copy,rc,sm,self     # tune to your fabric
 export UCX_MEMTYPE_CACHE=n                                # avoids known UCX+CUDA bug
 
+# SLURM 22.05+ stopped propagating --cpus-per-task into srun. Without this,
+# srun asks for a CPU mask wider than the allocation and the launch fails
+# with "CPU binding outside of job step allocation".
+export SRUN_CPUS_PER_TASK="$SLURM_CPUS_PER_TASK"
+
 JULIA="${JULIA:-$HOME/julia-1.12.5/bin/julia}"
 
 # ── Shared environment ────────────────────────────────────────────────
