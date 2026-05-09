@@ -187,8 +187,9 @@ Keyword Arguments
 """
 function label_ocean_basins(grid::ImmersedBoundaryGrid; barriers=nothing)
 
-    # The labelling algorithm works only on CPUs
-    cpu_grid = on_architecture(CPU(), grid)
+    # The labelling algorithm works only on CPUs.
+    cpu_arch = Oceananigans.DistributedComputations.cpu_architecture(Oceananigans.architecture(grid))
+    cpu_grid = on_architecture(cpu_arch, grid)
 
     TX = topology(cpu_grid, 1)
     zb = cpu_grid.immersed_boundary.bottom_height

@@ -427,7 +427,8 @@ function remove_minor_basins!(zb::Field, keep_major_basins)
         throw(ArgumentError("keep_major_basins must be larger than 0."))
     end
 
-    zb_cpu    = on_architecture(CPU(), zb)
+    cpu_arch  = Oceananigans.DistributedComputations.cpu_architecture(architecture(zb))
+    zb_cpu    = on_architecture(cpu_arch, zb)
     TX, TY, _ = topology(zb_cpu.grid)
 
     Nx = Base.length(Center(), TX(), zb_cpu.grid.Nx)

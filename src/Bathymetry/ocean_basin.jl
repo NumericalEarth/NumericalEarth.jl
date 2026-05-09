@@ -235,8 +235,9 @@ function Basin(grid;
 
     # The computations are 2D and require serial algorithms, so
     # we perform the computation on the CPU then move the output
-    # to the GPU if the initial grid was a GPU grid
-    cpu_grid = Oceananigans.on_architecture(CPU(), grid)
+    # to the GPU if the initial grid was a GPU grid. 
+    cpu_arch = Oceananigans.DistributedComputations.cpu_architecture(Oceananigans.architecture(grid))
+    cpu_grid = Oceananigans.on_architecture(cpu_arch, grid)
 
     # Enforce north and south boundaries
     if !isnothing(south_boundary)

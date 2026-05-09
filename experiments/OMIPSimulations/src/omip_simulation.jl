@@ -503,7 +503,8 @@ Absolute Salinity, in place. Requires that all time indices be in memory
 """
 function woa_salinity_fts_to_teos10!(fts)
     grid = fts.grid
-    cpu_grid = on_architecture(CPU(), grid)
+    cpu_arch = Oceananigans.DistributedComputations.cpu_architecture(architecture(grid))
+    cpu_grid = on_architecture(cpu_arch, grid)
     Nx, Ny, Nz = size(grid)
     Nt = length(fts.times)
     for t_idx in 1:Nt
