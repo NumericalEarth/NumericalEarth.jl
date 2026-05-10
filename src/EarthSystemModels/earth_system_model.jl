@@ -58,10 +58,7 @@ default_clock(TT)                  = Oceananigans.TimeSteppers.Clock{TT}(0, 0, 1
 
 reset_clock!(::Nothing) = nothing
 
-function reset_clock!(component::Simulation)
-    reset_clock!(component.model)
-    return nothing
-end
+reset_clock!(component::Simulation) = reset_clock!(component.model)
 
 function reset_clock!(component)
     if hasproperty(component, :clock)
