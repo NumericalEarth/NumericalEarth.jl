@@ -718,6 +718,7 @@ function build_ocean(config, grid;
                              tracer_advection = WENO(order=7; minimum_buffer_upwind_order=3),
                              coriolis,
                              timestepper = :SplitRungeKutta3,
+                             materialize_buoyancy_gradients = !(config == Val(:tenthdegree)),
                              free_surface = SplitExplicitFreeSurface(grid; substeps=70),
                              additional_surface_fluxes = (; S = salt_restoring),
                              closure)
