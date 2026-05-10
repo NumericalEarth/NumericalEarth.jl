@@ -2,7 +2,7 @@ include("runtests_setup.jl")
 
 using Glob
 using Oceananigans.OutputWriters: Checkpointer
-using Oceananigans.Simulations: reset!
+using Oceananigans.TimeSteppers: reset!
 
 @testset "EarthSystemModel checkpointing" begin
     for arch in test_architectures
