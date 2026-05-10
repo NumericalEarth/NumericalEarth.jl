@@ -8,6 +8,7 @@ using Oceananigans.Grids: λnode, φnode, znode, Center
 using Oceananigans.Fields: interior
 using Oceananigans.Utils: prettytime, TimeInterval
 using Oceananigans.Simulations: add_callback!
+using Oceananigans.ImmersedBoundaries: ImmersedBoundaryGrid
 using Oceananigans.DistributedComputations: Distributed, concatenate_local_sizes,
                                               reconstruct_global_grid
 import MPI
@@ -296,7 +297,18 @@ function add_ke_spectrum_diagnostic!(simulation, ::Val{:tenthdegree};
 
     # Patch indices live in the *global* index space. `reconstruct_global_grid` is a
     # no-op for non-distributed grids, so this works for all configs.
-    global_grid     = reconstruct_global_grid(grid)
+    #
+    # We unwrap to the underlying (non-immersed) grid first because Oceananigans'
+    # `reconstruct_global_grid(::ImmersedBoundaryGrid)` has a bug at
+    # `distributed_immersed_boundaries.jl:28`: it passes `size(grid)` (i.e.
+    # `(Nx, Ny, Nz)`) to `construct_global_array` for the bottom_height gather,
+    # which makes the global bottom_height a 3D `(Nx, Ny, Nz)` array. Then
+    # `materialize_immersed_boundary` aborts with a BoundsError trying to assign
+    # that 3D array into the 2D `Field{Center, Center, Nothing}` bottom_height.
+    # `build_patch` only reads coordinates, never the immersed boundary, so we
+    # don't need the IBG layer here at all.
+    underlying = grid isa ImmersedBoundaryGrid ? grid.underlying_grid : grid
+    global_grid     = reconstruct_global_grid(underlying)
     global_cpu_grid = on_architecture(CPU(), global_grid)
 
     patch_specs = (
