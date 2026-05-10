@@ -18,6 +18,9 @@ const celsius_to_kelvin = 273.15
 
 exchange_grid(atmosphere, ocean, sea_ice) = ocean.model.grid
 
+# Trait function overloaded by Atmospheres module
+is_prescribed_atmosphere(::Any) = false
+
 #####
 ##### Functions extended by sea-ice and ocean models
 #####

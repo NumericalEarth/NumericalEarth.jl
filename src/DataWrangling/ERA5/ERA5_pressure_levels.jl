@@ -127,35 +127,6 @@ function retrieve_data(metadata::ERA5PressureMetadatum)
 end
 
 #####
-##### Metadata filename construction
-#####
-
-function metadata_prefix(md::ERA5PressureMetadata)
-    var = ERA5PL_dataset_variable_names[md.name]
-    dataset = dataset_name(md.dataset)
-    start_date = start_date_str(md.dates)
-    end_date = end_date_str(md.dates)
-    bbox = md.region
-
-    if !isnothing(bbox)
-        w, e = bbox_strs(bbox.longitude)
-        s, n = bbox_strs(bbox.latitude)
-        suffix = string(w, e, s, n)
-    else
-        suffix = ""
-    end
-
-    if start_date == end_date
-        prefix = string(var, "_", dataset, "_", start_date, suffix)
-    else
-        prefix = string(var, "_", dataset, "_", start_date, "_", end_date, suffix)
-    end
-    prefix = colon2dash(prefix)
-    prefix = underscore_spaces(prefix)
-    return prefix
-end
-
-#####
 ##### Pressure-level vertical coordinate
 #####
 
