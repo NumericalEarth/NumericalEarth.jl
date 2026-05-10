@@ -88,10 +88,7 @@ function reset_clock!(model::ESM)
     return nothing
 end
 
-function reset!(model::ESM)
-    reset_clock!(model)
-    return nothing
-end
+reset!(model::ESM) = reset_clock!(model)
 
 # Make sure to initialize the exchanger here
 function initialize!(model::ESM)
@@ -113,6 +110,7 @@ heat_capacity(unsupported) =
 
 """
     EarthSystemModel(atmosphere, ocean, sea_ice;
+                     land = nothing,
                      radiation = Radiation(),
                      clock = Clock{Float64}(time=0),
                      ocean_reference_density = reference_density(ocean),
@@ -120,6 +118,7 @@ heat_capacity(unsupported) =
                      sea_ice_reference_density = reference_density(sea_ice),
                      sea_ice_heat_capacity = heat_capacity(sea_ice),
                      interfaces = nothing)
+
 
 Construct a coupled earth system model with an atmosphere, ocean, and sea ice component.
 For simpler configurations, see [`OceanOnlyModel`](@ref) and [`OceanSeaIceModel`](@ref).
@@ -140,6 +139,7 @@ Arguments
 Keyword Arguments
 ==================
 
+- `land`: A land model.
 - `radiation`: Radiation component used to compute surface fluxes at the bottom of the atmosphere.
 - `clock`: Keeps track of time.
 - `ocean_reference_density`: Reference density for the ocean. Defaults to value from ocean model.
