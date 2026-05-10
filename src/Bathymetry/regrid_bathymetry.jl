@@ -302,35 +302,40 @@ function regrid_bathymetry(target_grid::DistributedGrid, metadata;
     # download_dataset uses @root internally; all ranks must call it
     download_dataset(metadata)
 
-    # Only rank 0 performs cache lookup and computation to avoid OOM
-    bottom_height = if arch.local_rank == 0
-        cached_data = cache ? load_bathymetry_cache(config) : nothing
-        if !isnothing(cached_data)
-            cached_data
-        else
+    if cache
+        if arch.local_rank == 0 && isnothing(load_bathymetry_cache(config))
             bottom_field = _regrid_bathymetry(global_grid, metadata;
                                               height_above_water, minimum_depth,
                                               interpolation_passes, major_basins)
-            bh = Array(bottom_field.data[1:Nx, 1:Ny, 1])
-            if cache
-                save_bathymetry_cache(config, bh)
-            end
-            bh
+            bottom_height = Array(bottom_field.data[1:Nx, 1:Ny, 1])
+            save_bathymetry_cache(config, bottom_height)
         end
+
+        Oceananigans.DistributedComputations.barrier(arch.communicator)
+
+        bottom_height = load_bathymetry_cache(config)
+        isnothing(bottom_height) && error("Bathymetry cache was not available after rank 0 regridding.")
     else
-        zeros(Nx, Ny)
+        # Only rank 0 performs computation to avoid OOM.
+        bottom_height = if arch.local_rank == 0
+            bottom_field = _regrid_bathymetry(global_grid, metadata;
+                                              height_above_water, minimum_depth,
+                                              interpolation_passes, major_basins)
+            Array(bottom_field.data[1:Nx, 1:Ny, 1])
+        else
+            zeros(Nx, Ny)
+        end
+
+        Oceananigans.DistributedComputations.barrier(arch.communicator)
+
+        # Share the result (can we share SubArrays?)
+        bottom_height = all_reduce(+, bottom_height, arch)
     end
-
-    # Synchronize
-    Oceananigans.DistributedComputations.barrier(arch.communicator)
-
-    # Share the result (can we share SubArrays?)
-    bottom_height = all_reduce(+, bottom_height, arch)
 
     # Partition the result
     local_bottom_height = Field{Center, Center, Nothing}(target_grid)
     set!(local_bottom_height, bottom_height)
-    fill_halo_regions!(local_bottom_height)
+    fill_halo_regions!(local_bottom_height; only_local_halos = true)
 
     return local_bottom_height
 end
@@ -384,7 +389,13 @@ function interpolate_bathymetry_in_passes(native_z, target_grid;
                                          topology = (TX, TY, Bounded),
                                          halo = (Hx, Hy, Hz))
 
-        new_z = Field{Center, Center, Nothing}(new_grid)
+        new_z = if TY <: Oceananigans.Grids.FoldedTopology
+            loc = (Center(), Center(), nothing)
+            bcs = FieldBoundaryConditions(new_grid, loc; north = nothing)
+            Field(loc, new_grid; boundary_conditions = bcs)
+        else
+            Field{Center, Center, Nothing}(new_grid)
+        end
 
         interpolate!(new_z, old_z)
         old_z = new_z
