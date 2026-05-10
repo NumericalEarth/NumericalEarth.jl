@@ -130,9 +130,9 @@ function gather_patch_to_host!(host_buf::AbstractMatrix, field, patch::KEPatch, 
     return host_buf
 end
 
-mutable struct KESpectrumDiagnostic{F, P, R, C, B, W}
-    u_field        :: F
-    v_field        :: F
+mutable struct KESpectrumDiagnostic{Fu, Fv, P, R, C, B, W}
+    u_field        :: Fu
+    v_field        :: Fv
     patches        :: Vector{KEPatch}
     Nx_patch       :: Int
     Ny_patch       :: Int
