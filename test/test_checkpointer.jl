@@ -1,6 +1,7 @@
 include("runtests_setup.jl")
 
 using Glob
+using Logging
 using Oceananigans.OutputWriters: Checkpointer
 using Oceananigans.TimeSteppers: reset!
 
@@ -161,7 +162,7 @@ end
 
         # Exercise the run! path that used to crash after reset.
         simulation.stop_iteration = 1
-        @test_nowarn run!(simulation)
+        @test_logs min_level=Logging.Warn run!(simulation)
 
         @test simulation.model.clock.iteration == 1
         @test simulation.model.ocean.model.clock.iteration == 1
