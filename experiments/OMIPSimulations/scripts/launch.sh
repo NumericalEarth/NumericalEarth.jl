@@ -206,8 +206,10 @@ REPORT_NAME="${REPORT_NAME:-${RUN_NAME}_report}"
 JOB_NAME="${JOB_NAME:-$RUN_NAME}"
 
 SBATCH_ARGS=()
+PARTITION="${PARTITION:-pi_raffaele}"
+
 NODE="${NODE:-2904}"
-if [[ -n "${NODE}" ]]; then
+if [[ "${PARTITION}" != "default" && -n "${NODE}" ]]; then
     SBATCH_ARGS+=(-w "node${NODE}")
 fi
 SBATCH_ARGS+=(--gres="gpu:${GPUS_PER_NODE}")
@@ -218,7 +220,6 @@ SBATCH_ARGS+=(--ntasks-per-node="${GPUS_PER_NODE}")
 export THREADS="${THREADS:-8}"
 SBATCH_ARGS+=(--cpus-per-task="${THREADS}")
 
-PARTITION="${PARTITION:-pi_raffaele}"
 if [[ "${PARTITION}" != "default" ]]; then
     SBATCH_ARGS+=(--partition="${PARTITION}")
 fi
