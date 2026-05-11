@@ -97,6 +97,8 @@ const FIG_REGISTRY = [
     (n = 20, file = "fig20_TS_drift_heatmap.jl",          fn = :fig20),
     (n = 21, file = "fig21_strait_transports.jl",         fn = :fig21),
     (n = 22, file = "fig22_amoc.jl",                      fn = :fig22),
+    (n = 23, file = "fig23_near_surface_currents.jl",     fn = :fig23),
+    (n = 24, file = "fig24_equatorial_undercurrent.jl",   fn = :fig24),
 ]
 
 # ══════════════════════════════════════════════════════════════

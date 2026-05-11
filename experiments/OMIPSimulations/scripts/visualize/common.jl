@@ -31,7 +31,7 @@ using JLD2
 using NCDatasets
 using WorldOceanAtlasTools
 using Oceananigans
-using Oceananigans.Grids: znodes, λnodes, φnodes, φnode
+using Oceananigans.Grids: znodes, λnodes, φnodes, λnode, φnode
 using Oceananigans.Fields: interpolate!
 using ConservativeRegridding
 using NumericalEarth

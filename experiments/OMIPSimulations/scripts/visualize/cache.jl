@@ -389,6 +389,248 @@ LOADERS[:zonal_wind_stress]      = c -> get_field(c, :wind_stress_pair)[1]
 LOADERS[:meridional_wind_stress] = c -> get_field(c, :wind_stress_pair)[2]
 
 #####
+##### Near-surface currents (top model cell, rotated to geographic E/N)
+#####
+#
+# The (u, v) components stored by the model are aligned with the grid axes,
+# which on ORCA / tripolar grids do NOT coincide with geographic east/north
+# above ~60°N. Regridding the grid-aligned components directly to lat-lon
+# would mix vectors that point in different physical directions, so we
+# rotate to (uE, vN) on the model grid first and then let the existing
+# conservative regridder produce the lat-lon maps.
+
+# Rotation between the grid-i direction and geographic east at cell
+# centers. Computed from the longitude/latitude of the two F-C-C nodes
+# bracketing each cell; `λnode`/`φnode` already handle periodic-x halos,
+# so `i = Nx → Nx+1` wraps correctly.
+function compute_grid_rotation_centers(grid)
+    Nx, Ny, _ = size(grid)
+    F, C = Face(), Center()
+    cosθ = Array{Float64}(undef, Nx, Ny)
+    sinθ = Array{Float64}(undef, Nx, Ny)
+    @inbounds for j in 1:Ny, i in 1:Nx
+        λw = λnode(i,   j, 1, grid, F, C, C)
+        λe = λnode(i+1, j, 1, grid, F, C, C)
+        φw = φnode(i,   j, 1, grid, F, C, C)
+        φe = φnode(i+1, j, 1, grid, F, C, C)
+        φ  = φnode(i,   j, 1, grid, C, C, C)
+        Δλ = mod(λe - λw + 180, 360) - 180
+        Δφ = φe - φw
+        dE = cosd(φ) * Δλ
+        dN = Δφ
+        r  = hypot(dE, dN)
+        cosθ[i, j] = r > 0 ? dE / r : 1.0
+        sinθ[i, j] = r > 0 ? dN / r : 0.0
+    end
+    return (cosθ, sinθ)
+end
+
+LOADERS[:grid_rotation_pair] = c -> compute_grid_rotation_centers(get_field(c, :grid))
+
+# Time-mean u, v at the top model cell (k = Nz), interpolated from their
+# native (F, C, C) / (C, F, C) locations to cell centers via `@at` so the
+# tripolar fold is handled correctly, then rotated from grid-aligned
+# (u, v) to geographic (uE, vN). Cached together so the two FTS reads
+# happen once even if both components are requested.
+LOADERS[:near_surface_velocity_pair] = disk_cached(:near_surface_velocity_pair; source_fts_syms = :uo_fts) do c
+    grid = get_field(c, :grid)
+    Nx, Ny, Nz = size(grid)
+    u_fts = get_field(c, :uo_fts)
+    v_fts = get_field(c, :vo_fts)
+
+    u = Field{Face,   Center, Center}(grid)
+    v = Field{Center, Face,   Center}(grid)
+    u_cc = Field(@at((Center, Center, Center), u))
+    v_cc = Field(@at((Center, Center, Center), v))
+
+    idx = in_window(u_fts; start_time = c.start_time, stop_time = c.stop_time)
+    isempty(idx) && error("No snapshots in [$(c.start_time), $(c.stop_time)]")
+
+    u_sum = zeros(Nx, Ny)
+    v_sum = zeros(Nx, Ny)
+    for n in idx
+        set!(u, u_fts[n])
+        set!(v, v_fts[n])
+        compute!(u_cc)
+        compute!(v_cc)
+        u_sum .+= Array(view(interior(u_cc), :, :, Nz))
+        v_sum .+= Array(view(interior(v_cc), :, :, Nz))
+    end
+    ū = u_sum ./ length(idx)
+    v̄ = v_sum ./ length(idx)
+
+    cosθ, sinθ = get_field(c, :grid_rotation_pair)
+    uE = ū .* cosθ .- v̄ .* sinθ
+    vN = ū .* sinθ .+ v̄ .* cosθ
+    return (masked!(c, uE), masked!(c, vN))
+end
+
+LOADERS[:near_surface_zonal_velocity]      = c -> get_field(c, :near_surface_velocity_pair)[1]
+LOADERS[:near_surface_meridional_velocity] = c -> get_field(c, :near_surface_velocity_pair)[2]
+
+#####
+##### Equatorial-undercurrent (EUC) sections
+#####
+#
+# Two section diagnostics modeled on Fig. 5 of Ringler et al. (2013):
+#   * Meridional section of zonal velocity at 140°W, lat ∈ [-8°, 10°]
+#   * Zonal section along the equator from 143°E to 95°W
+# Both are extracted directly on the model grid (ORCA / tripolar grids are
+# essentially lat-lon south of ~60°N, so no horizontal regridding is
+# needed in the tropical Pacific). Velocities are rotated to geographic
+# east per cell — a no-op in the un-rotated part of the grid, but kept
+# for consistency with the surface-current pipeline.
+#
+# Observations (Johnson et al. 2002) are stubbed for now; the loaders
+# `:euc_obs_meridional` / `:euc_obs_equatorial` return `nothing` so the
+# figure can render model-only.
+
+# Smallest signed angular distance |λ₁ − λ₂| on the periodic-360 circle.
+@inline lon_distance(λ₁, λ₂) = abs(mod(λ₁ - λ₂ + 180, 360) - 180)
+
+function nearest_i(grid, j, target_lon)
+    Nx = size(grid, 1)
+    best_i, best_d = 1, Inf
+    for i in 1:Nx
+        λ = mod(λnode(i, j, 1, grid, Center(), Center(), Center()), 360)
+        d = lon_distance(λ, mod(target_lon, 360))
+        d < best_d && (best_d = d; best_i = i)
+    end
+    return best_i
+end
+
+function nearest_j(grid, i, target_lat)
+    Ny = size(grid, 2)
+    best_j, best_d = 1, Inf
+    for j in 1:Ny
+        φ = φnode(i, j, 1, grid, Center(), Center(), Center())
+        d = abs(φ - target_lat)
+        d < best_d && (best_d = d; best_j = j)
+    end
+    return best_j
+end
+
+# Returns (is, js, lats): for each j in the latitude window, the i index
+# closest to `target_lon` and the corresponding cell-center latitude.
+function meridional_section_path(grid, target_lon; lat_range = (-8.0, 10.0))
+    Ny = size(grid, 2)
+    is   = Int[]
+    js   = Int[]
+    lats = Float64[]
+    for j in 1:Ny
+        i = nearest_i(grid, j, target_lon)
+        φ = φnode(i, j, 1, grid, Center(), Center(), Center())
+        if lat_range[1] <= φ <= lat_range[2]
+            push!(is, i); push!(js, j); push!(lats, φ)
+        end
+    end
+    return is, js, lats
+end
+
+# Returns (is, j_eq, lons): a single equatorial j and the i indices whose
+# cell-center longitude (in 0..360) falls in `lon_range`.
+function equatorial_section_path(grid; lon_range = (143.0, 265.0))
+    Nx = size(grid, 1)
+    j_eq = nearest_j(grid, nearest_i(grid, size(grid, 2) ÷ 2, 180.0), 0.0)
+    is   = Int[]
+    lons = Float64[]
+    for i in 1:Nx
+        λ = mod(λnode(i, j_eq, 1, grid, Center(), Center(), Center()), 360)
+        if lon_range[1] <= λ <= lon_range[2]
+            push!(is, i); push!(lons, λ)
+        end
+    end
+    return is, j_eq, lons
+end
+
+# Streaming extraction: per snapshot, interpolate u (F,C,C) and v (C,F,C)
+# to cell centers via `@at`, then accumulate only along the two section
+# paths. Avoids materializing a 3-D time-mean (which would be many GB on
+# tenth-degree grids). After averaging, rotate to geographic east using
+# the 2-D `(cosθ, sinθ)` at each cell. Disk-cached; sections themselves
+# are tiny so the cache stays small even at high resolution.
+LOADERS[:euc_sections] = disk_cached(:euc_sections; source_fts_syms = :uo_fts) do c
+    grid = get_field(c, :grid)
+    Nx, Ny, Nz = size(grid)
+    cosθ, sinθ = get_field(c, :grid_rotation_pair)
+    u_fts = get_field(c, :uo_fts)
+    v_fts = get_field(c, :vo_fts)
+
+    is_m,  js_m,  lats_m   = meridional_section_path(grid, -140.0; lat_range = (-8.0, 10.0))
+    is_eq, j_eq,  lons_eq  = equatorial_section_path(grid; lon_range = (143.0, 265.0))
+
+    u    = Field{Face,   Center, Center}(grid)
+    v    = Field{Center, Face,   Center}(grid)
+    u_cc = Field(@at((Center, Center, Center), u))
+    v_cc = Field(@at((Center, Center, Center), v))
+
+    Nm  = length(js_m)
+    Neq = length(is_eq)
+    u_m_sum  = zeros(Nm,  Nz)
+    v_m_sum  = zeros(Nm,  Nz)
+    u_eq_sum = zeros(Neq, Nz)
+    v_eq_sum = zeros(Neq, Nz)
+
+    idx = in_window(u_fts; start_time = c.start_time, stop_time = c.stop_time)
+    isempty(idx) && error("No snapshots in [$(c.start_time), $(c.stop_time)]")
+    for n in idx
+        set!(u, u_fts[n]); compute!(u_cc)
+        set!(v, v_fts[n]); compute!(v_cc)
+        ui = interior(u_cc)
+        vi = interior(v_cc)
+        @inbounds for jdx in 1:Nm
+            i, j = is_m[jdx], js_m[jdx]
+            for k in 1:Nz
+                u_m_sum[jdx, k] += ui[i, j, k]
+                v_m_sum[jdx, k] += vi[i, j, k]
+            end
+        end
+        @inbounds for ieq in 1:Neq
+            i = is_eq[ieq]
+            for k in 1:Nz
+                u_eq_sum[ieq, k] += ui[i, j_eq, k]
+                v_eq_sum[ieq, k] += vi[i, j_eq, k]
+            end
+        end
+    end
+
+    Nt = length(idx)
+    uE_m  = similar(u_m_sum)
+    uE_eq = similar(u_eq_sum)
+    @inbounds for jdx in 1:Nm
+        i, j = is_m[jdx], js_m[jdx]
+        cθ = cosθ[i, j]; sθ = sinθ[i, j]
+        for k in 1:Nz
+            uE_m[jdx, k] = (u_m_sum[jdx, k] * cθ - v_m_sum[jdx, k] * sθ) / Nt
+        end
+    end
+    @inbounds for ieq in 1:Neq
+        i = is_eq[ieq]
+        cθ = cosθ[i, j_eq]; sθ = sinθ[i, j_eq]
+        for k in 1:Nz
+            uE_eq[ieq, k] = (u_eq_sum[ieq, k] * cθ - v_eq_sum[ieq, k] * sθ) / Nt
+        end
+    end
+
+    depth = collect(znodes(grid, Center()))
+    return (uE_meridional = uE_m,    lats_meridional = lats_m,
+            uE_equatorial = uE_eq,   lons_equatorial = lons_eq,
+            depth = depth)
+end
+
+LOADERS[:euc_meridional_section] = c -> get_field(c, :euc_sections).uE_meridional
+LOADERS[:euc_meridional_lats]    = c -> get_field(c, :euc_sections).lats_meridional
+LOADERS[:euc_equatorial_section] = c -> get_field(c, :euc_sections).uE_equatorial
+LOADERS[:euc_equatorial_lons]    = c -> get_field(c, :euc_sections).lons_equatorial
+LOADERS[:euc_depth]              = c -> get_field(c, :euc_sections).depth
+
+# Johnson et al. (2002) observational climatology — stub. Returns `nothing`
+# so the figure can render model-only; replace with a real loader when
+# the obs file is available locally or via a verified download URL.
+LOADERS[:euc_obs_meridional] = c -> nothing
+LOADERS[:euc_obs_equatorial] = c -> nothing
+
+#####
 ##### Sea-ice concentration (mean + monthly bins)
 #####
 
@@ -695,6 +937,7 @@ const SURFACE_LATLON_FIELDS = (
     :ssh_rms,
     :zonal_wind_stress, :meridional_wind_stress,
     :zonal_wind_stress_bias_ncep, :meridional_wind_stress_bias_ncep,
+    :near_surface_zonal_velocity, :near_surface_meridional_velocity,
     :sic_mean, :sic_march, :sic_september,
     :mld_min, :mld_max, :mld_min_dbm, :mld_max_dbm,
 )
@@ -704,6 +947,15 @@ for sym in SURFACE_LATLON_FIELDS
         LOADERS[Symbol(s, :_latlon)] = c -> regrid_surface_to_latlon(c, get_field(c, s))
     end
 end
+
+# Near-surface current speed on the lat-lon grid: take the magnitude of
+# the regridded geographic components rather than regridding |u| from the
+# model grid. This gives the speed of the (area-mean) Eulerian current
+# instead of the area-mean of the speed, which is the conventional
+# "mean current" quantity (and consistent with the model fields it's
+# compared to).
+LOADERS[:near_surface_speed_latlon] = c -> hypot.(get_field(c, :near_surface_zonal_velocity_latlon),
+                                                  get_field(c, :near_surface_meridional_velocity_latlon))
 
 """
     surface_panel!(fig, pos, data; projection = "+proj=robin", kwargs...)
