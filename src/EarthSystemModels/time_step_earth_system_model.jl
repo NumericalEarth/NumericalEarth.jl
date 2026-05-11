@@ -18,10 +18,11 @@ sync_atmosphere_land_auxiliary_forcings!(::Nothing, ::Any) = nothing
 sync_atmosphere_land_auxiliary_forcings!(::Any, ::Nothing) = nothing
 
 function sync_atmosphere_land_auxiliary_forcings!(land, atmosphere_exchanger)
-    # `SlabLand` exposes coupler-supplied fluxes at `land.fluxes`; the legacy
-    # `RucSlabLand` (now a SlabLand-with-RUC-closures alias) carries
-    # `air_temperature` and `air_humidity` under that NamedTuple. Older
-    # land types may have used the now-deprecated `:forcings` slot.
+    # `SlabLand` exposes coupler-supplied fluxes at `land.fluxes`. A
+    # SlabLand whose hydrology closure declares `:air_temperature` and
+    # `:air_humidity` (e.g. `BucketWithSnow` for the Jarvis stress
+    # functions) gets them populated from the atmosphere exchanger here.
+    # Older land types may have used the now-deprecated `:forcings` slot.
     auxiliary = if hasproperty(land, :fluxes)
         land.fluxes
     elseif hasproperty(land, :forcings)

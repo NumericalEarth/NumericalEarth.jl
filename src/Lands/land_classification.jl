@@ -1,17 +1,17 @@
 #####
-##### Vegetation lookup tables for `RucSlabLand`.
+##### Vegetation lookup tables for `SlabLand` with a
+##### `PrescribedSurfaceProperties` surface closure.
 #####
-##### `LandClassification{FT}` is a per-vegetation-type parameter set; it is
-##### the slab-equivalent of an entry in WRF's `VEGPARM.TBL` (RUC LSM). A
+##### `LandClassification{FT}` is a per-vegetation-type parameter set, with
+##### values consistent with the USGS entries of WRF's `VEGPARM.TBL`. A
 ##### `Vector{LandClassification}` plays the role of the table itself.
 #####
-##### `usgs_land_classifications(FT)` returns the 24-class USGS registry
-##### with values consistent with the RUC entries of WRF's VEGPARM.TBL
-##### (Smirnova et al. 1997, 2016).
+##### `usgs_land_classifications(FT)` returns the 24-class USGS registry.
 #####
 ##### `apply_land_classifications!(land, vegtype, registry)` populates the
-##### per-cell vegetation Fields on a `SlabLand` whose surface closure is
-##### `RucSurfaceProperties`, from an integer-valued `vegtype` map
+##### per-cell Fields on a `SlabLand` whose surface closure is
+##### `PrescribedSurfaceProperties` (optionally wrapped by
+##### `SnowModifiedSurface`), from an integer-valued `vegtype` map
 ##### (Nx × Ny) and a category registry.
 #####
 ##### Reference table (peak summer LAI / shdfac, RUC defaults):
@@ -47,7 +47,7 @@
     LandClassification{FT}
 
 A single entry in a vegetation lookup table. Mirrors the per-type
-columns of WRF's `VEGPARM.TBL` (RUC LSM):
+columns of WRF's `VEGPARM.TBL`:
 
 - `id`             : 1-based integer index in the table.
 - `name`           : Symbol (e.g., `:grassland`).
@@ -77,9 +77,8 @@ end
     usgs_land_classifications(FT::Type = Float64) -> Vector{LandClassification{FT}}
 
 Default USGS 24-class vegetation registry, with values consistent with
-the RUC entries of WRF's `VEGPARM.TBL` (Smirnova et al. 1997, 2016).
-The categories are returned in id order so `registry[id]` looks up the
-entry directly.
+the corresponding entries of WRF's `VEGPARM.TBL`. The categories are
+returned in id order so `registry[id]` looks up the entry directly.
 """
 function usgs_land_classifications(FT::Type = Float64)
     return LandClassification{FT}[
@@ -113,10 +112,9 @@ end
 """
     apply_land_classifications!(land::SlabLand, vegtype, registry)
 
-Populate the per-cell vegetation Fields on the surface-property
-closure (`vegfrac`, `lai`, `albedo_vegetation`, `emissivity_vegetation`,
-`roughness_length_vegetation`, `stomatal_resistance_min`, `is_urban`) from a 2D
-`vegtype` map of integer category ids
+Populate the per-cell Fields on the surface-property closure
+(`albedo`, `emissivity`, `roughness_length`, `vegfrac`, `lai`,
+`r_smin`, `is_urban`) from a 2D `vegtype` map of integer category ids
 and a `registry` returned by e.g. `usgs_land_classifications(FT)`.
 
 `vegtype` may be any 2D `AbstractArray{<:Real}` (typically Int) of size
@@ -124,9 +122,9 @@ and a `registry` returned by e.g. `usgs_land_classifications(FT)`.
 runs on the host; if `land` lives on a GPU, the populated host arrays
 are uploaded with `set!`. Call once at simulation setup.
 
-Requires `land.surface :: RucSurfaceProperties`. A future
-`PrescribedSurfaceProperties` or learned variant would provide its own
-specialisation of this function.
+Requires `land.surface :: PrescribedSurfaceProperties` (or a
+`SnowModifiedSurface` wrapping one). Dispatches recursively through
+the decorator when present.
 """
 function apply_land_classifications!(land::SlabLand,
                                      vegtype::AbstractArray,
@@ -134,7 +132,13 @@ function apply_land_classifications!(land::SlabLand,
     return apply_land_classifications!(land.surface, eltype(land), vegtype, registry)
 end
 
-function apply_land_classifications!(s::RucSurfaceProperties,
+apply_land_classifications!(s::SnowModifiedSurface,
+                            FT::Type,
+                            vegtype::AbstractArray,
+                            registry::AbstractVector{<:LandClassification}) =
+    apply_land_classifications!(s.base, FT, vegtype, registry)
+
+function apply_land_classifications!(s::PrescribedSurfaceProperties,
                                      FT::Type,
                                      vegtype::AbstractArray,
                                      registry::AbstractVector{<:LandClassification})
@@ -143,13 +147,13 @@ function apply_land_classifications!(s::RucSurfaceProperties,
 
     Nx, Ny = size(vegtype)
 
-    vegfrac                     = field_xy(s.vegfrac)
-    lai                         = field_xy(s.lai)
-    albedo_vegetation           = field_xy(s.albedo_vegetation)
-    emissivity_vegetation       = field_xy(s.emissivity_vegetation)
-    roughness_length_vegetation = field_xy(s.roughness_length_vegetation)
-    stomatal_resistance_min     = field_xy(s.stomatal_resistance_min)
-    is_urban                    = field_xy(s.is_urban)
+    vegfrac  = field_xy(s.vegfrac)
+    lai      = field_xy(s.lai)
+    α        = field_xy(s.albedo)
+    ε        = field_xy(s.emissivity)
+    z₀       = field_xy(s.roughness_length)
+    r_smin   = field_xy(s.r_smin)
+    is_urban = field_xy(s.is_urban)
 
     size(vegfrac) == (Nx, Ny) ||
         throw(DimensionMismatch("vegtype has size $(size(vegtype)); expected $(size(vegfrac))"))
@@ -158,23 +162,23 @@ function apply_land_classifications!(s::RucSurfaceProperties,
         idx = Int(vegtype[i, j])
         if 1 ≤ idx ≤ length(registry)
             c = registry[idx]
-            vegfrac[i, j]                     = c.vegfrac
-            lai[i, j]                         = c.lai
-            albedo_vegetation[i, j]           = c.albedo
-            emissivity_vegetation[i, j]       = c.emissivity
-            roughness_length_vegetation[i, j] = c.z0
-            stomatal_resistance_min[i, j]     = c.r_smin
-            is_urban[i, j]                    = c.name === :urban ? one(FT) : zero(FT)
+            vegfrac[i, j]  = c.vegfrac
+            lai[i, j]      = c.lai
+            α[i, j]        = c.albedo
+            ε[i, j]        = c.emissivity
+            z₀[i, j]       = c.z0
+            r_smin[i, j]   = c.r_smin
+            is_urban[i, j] = c.name === :urban ? one(FT) : zero(FT)
         end
     end
 
-    set!(s.vegfrac,                     vegfrac)
-    set!(s.lai,                         lai)
-    set!(s.albedo_vegetation,           albedo_vegetation)
-    set!(s.emissivity_vegetation,       emissivity_vegetation)
-    set!(s.roughness_length_vegetation, roughness_length_vegetation)
-    set!(s.stomatal_resistance_min,     stomatal_resistance_min)
-    set!(s.is_urban,                    is_urban)
+    set!(s.vegfrac,          vegfrac)
+    set!(s.lai,              lai)
+    set!(s.albedo,           α)
+    set!(s.emissivity,       ε)
+    set!(s.roughness_length, z₀)
+    set!(s.r_smin,           r_smin)
+    set!(s.is_urban,         is_urban)
 
     return nothing
 end

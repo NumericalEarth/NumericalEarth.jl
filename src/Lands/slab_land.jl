@@ -142,10 +142,16 @@ function SlabLand(grid;
 
     state  = build_state(grid, energy, hydrology, surface)
     fluxes = build_flux_accumulators(grid, energy, hydrology, surface)
+    _assert_surface_state_compatible(surface, state)
     FT     = eltype(grid)
     return SlabLand{FT}(grid, clock, state, fluxes,
                         energy, hydrology, surface, parameters)
 end
+
+# Surface closures that read cross-axis state Fields must assert their
+# requirements are present in the assembled state. Default is a no-op;
+# `SnowModifiedSurface` specialises this in its own file.
+_assert_surface_state_compatible(::AbstractSurfaceProperties, ::Any) = nothing
 
 Base.eltype(::SlabLand{FT}) where FT = FT
 
@@ -241,20 +247,60 @@ function update_net_fluxes!(coupled_model, land::SlabLand)
     fluxes = land.fluxes
     grid = land.grid
     arch = architecture(grid)
+    atmos_state = coupled_model.interfaces.exchanger.atmosphere.state
 
     if hasproperty(fluxes, :net_energy_flux)
         launch!(arch, grid, :xy, _assemble_slab_land_net_energy_flux!,
                 fluxes.net_energy_flux, interface_fluxes)
     end
 
-    if hasproperty(fluxes, :evaporation)
+    # Legacy single-bucket precipitation accumulator (positive water_vapor → down).
+    if hasproperty(fluxes, :precipitation)
+        launch!(arch, grid, :xy, _assemble_slab_land_precipitation!,
+                fluxes.precipitation, interface_fluxes)
+    end
+
+    # Legacy single bare-soil evaporation, only when the BucketWithSnow
+    # three-way split is not in play.
+    if hasproperty(fluxes, :evaporation) && !hasproperty(fluxes, :sublimation)
         launch!(arch, grid, :xy, _assemble_slab_land_evaporation!,
                 fluxes.evaporation, interface_fluxes)
     end
 
-    if hasproperty(fluxes, :precipitation)
-        launch!(arch, grid, :xy, _assemble_slab_land_precipitation!,
-                fluxes.precipitation, interface_fluxes)
+    # BucketWithSnow path: split precipitation by air-temperature threshold.
+    if hasproperty(fluxes, :rainfall_rate) && hasproperty(fluxes, :snowfall_rate) &&
+       hasproperty(atmos_state, :T)
+        launch!(arch, grid, :xy, _split_precip_by_temperature!,
+                fluxes.rainfall_rate, fluxes.snowfall_rate,
+                interface_fluxes.water_vapor, atmos_state.T)
+    end
+
+    # BucketWithSnow path: split vapor flux into evaporation + sublimation
+    # + transpiration using snow_fraction and surface.vegfrac.
+    if hasproperty(fluxes, :sublimation) && hasproperty(fluxes, :transpiration) &&
+       hasproperty(fluxes, :evaporation)
+        launch!(arch, grid, :xy, _split_vapor_flux!,
+                fluxes.evaporation, fluxes.sublimation, fluxes.transpiration,
+                interface_fluxes.water_vapor,
+                land.state.snow_fraction, land.surface.vegfrac)
+    end
+
+    # Atmospheric forcing copies for the Jarvis stress functions.
+    if hasproperty(fluxes, :air_temperature) && hasproperty(atmos_state, :T)
+        launch!(arch, grid, :xy, _copy_atmos_field!,
+                fluxes.air_temperature, atmos_state.T)
+    end
+    if hasproperty(fluxes, :air_humidity) && hasproperty(atmos_state, :q)
+        launch!(arch, grid, :xy, _copy_atmos_field!,
+                fluxes.air_humidity, atmos_state.q)
+    end
+    if hasproperty(fluxes, :surface_pressure) && hasproperty(atmos_state, :p)
+        launch!(arch, grid, :xy, _copy_atmos_field!,
+                fluxes.surface_pressure, atmos_state.p)
+    end
+    if hasproperty(fluxes, :solar_irradiance) && hasproperty(atmos_state, :ℐꜜˢʷ)
+        launch!(arch, grid, :xy, _copy_atmos_field!,
+                fluxes.solar_irradiance, atmos_state.ℐꜜˢʷ)
     end
 
     return nothing
@@ -285,6 +331,40 @@ end
         Jᵛ = interface_fluxes.water_vapor[i, j, 1]
         P[i, j, 1] = max(zero(FT), Jᵛ)
     end
+end
+
+@kernel function _split_vapor_flux!(E, Sub, Tt, water_vapor, snow_fraction, vegfrac)
+    i, j = @index(Global, NTuple)
+    @inbounds begin
+        FT = eltype(E)
+        E_total = max(zero(FT), -water_vapor[i, j, 1])    # upward positive
+        f_sn = snow_fraction[i, j, 1]
+        vf   = vegfrac[i, j, 1]
+        Sub[i, j, 1] = E_total * f_sn
+        E[i, j, 1]   = E_total * (one(FT) - f_sn) * (one(FT) - vf)
+        Tt[i, j, 1]  = E_total * (one(FT) - f_sn) * vf
+    end
+end
+
+@kernel function _split_precip_by_temperature!(P_rain, P_snow, water_vapor, T_air)
+    i, j = @index(Global, NTuple)
+    @inbounds begin
+        FT = eltype(P_rain)
+        # Atmosphere convention: positive `water_vapor` is downward (precipitation).
+        P = max(zero(FT), water_vapor[i, j, 1])
+        if T_air[i, j, 1] ≤ FT(273.15)
+            P_snow[i, j, 1] = P
+            P_rain[i, j, 1] = zero(FT)
+        else
+            P_snow[i, j, 1] = zero(FT)
+            P_rain[i, j, 1] = P
+        end
+    end
+end
+
+@kernel function _copy_atmos_field!(dst, src)
+    i, j = @index(Global, NTuple)
+    @inbounds dst[i, j, 1] = src[i, j, 1]
 end
 
 interpolate_state!(exchanger, grid, ::SlabLand, coupled_model) = nothing

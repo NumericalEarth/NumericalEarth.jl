@@ -7,11 +7,10 @@ export PrescribedLand,
        SlabEnergy,
        # Hydrology closures
        ManabeBucket, DryLand, SaturatedSurface,
+       BucketWithSnow,
        # Surface-property closures
        ConstantSurfaceProperties,
-       # RUC composite
-       RucSlabLand, RucSlabLandParameters,
-       RucEnergy, RucHydrology, RucSurfaceProperties,
+       PrescribedSurfaceProperties, SnowModifiedSurface,
        # Atmosphere-facing accessors
        surface_temperature, surface_wetness,
        # Land-class registry
@@ -20,7 +19,7 @@ export PrescribedLand,
 
 using Oceananigans
 using Oceananigans.Utils: launch!, prettytime
-using Oceananigans.Fields: Center, Face, CenterField, ConstantField, ZeroField, interior
+using Oceananigans.Fields: Center, Face, CenterField, ConstantField, ZeroField, interior, AbstractField
 using Oceananigans.Grids: grid_name, architecture, prettysummary
 using Oceananigans.OutputReaders: FieldTimeSeries, update_field_time_series!, extract_field_time_series
 using Oceananigans.TimeSteppers: Clock, tick!
@@ -55,24 +54,15 @@ include("energy_balance/slab_energy.jl")
 include("hydrology/manabe_bucket.jl")
 include("hydrology/dry_land.jl")
 include("hydrology/saturated_surface.jl")
+include("hydrology/bucket_with_snow.jl")
 include("surface_properties/constant_surface_properties.jl")
-
-# RUC concrete closures. The parameter bag is loaded first because the
-# RUC hydrology and surface-property closures dispatch on it. The
-# user-facing `RucSlabLand(grid; …)` constructor and the RUC-composition
-# specialisations of `update_net_fluxes!` / `ComponentExchanger` /
-# checkpointing are loaded last, after the closure types they reference
-# in their method signatures.
-include("ruc_slab_land_parameters.jl")
-include("energy_balance/ruc_energy.jl")
-include("hydrology/ruc_hydrology.jl")
-include("surface_properties/ruc_surface_properties.jl")
-include("ruc_slab_land.jl")
+include("surface_properties/prescribed_surface_properties.jl")
+include("surface_properties/snow_modified_surface.jl")
 
 # Legacy components and class registry
 include("prescribed_land.jl")
 include("prescribed_land_regridder.jl")
 include("interpolate_land_state.jl")
-include("usgs_land_classification.jl")
+include("land_classification.jl")
 
 end # module Lands

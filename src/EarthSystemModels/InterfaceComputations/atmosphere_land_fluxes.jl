@@ -101,8 +101,7 @@ function compute_atmosphere_land_fluxes!(coupled_model, atmosphere_land_interfac
                              gravitational_acceleration = coupled_model.interfaces.properties.gravitational_acceleration)
 
     # Land surface state from the exchanger (T_g [K], β = moisture_availability).
-    # The RucSlabLand `ComponentExchanger` aliases these to the slab fields,
-    # so no copy is needed.
+    # The generic SlabLand `ComponentExchanger` exposes these directly.
     land_state = exchanger.land.state
     Tₛ = land_state.T
     βₛ = land_state.moisture_availability

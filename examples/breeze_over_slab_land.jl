@@ -1,23 +1,28 @@
-# # Atmospheric convection over heterogeneous land use (3D)
+# # Atmospheric convection over heterogeneous slab land (3D)
 #
-# Couples a Breeze simulation (LES) to a `RucSlabLand` through
-# NumericalEarth's `EarthSystemModel` framework in a doubly-periodic 3D
-# domain. Turbulent surface fluxes (sensible heat, latent heat,
-# momentum) are computed with Monin--Obukhov similarity theory through
+# Couples a Breeze atmospheric large eddy simulation (LES) to a `SlabLand`
+# composed of:
+#   energy    = SlabEnergy(heat_capacity = ρcH_g)
+#   hydrology = BucketWithSnow(...)
+#   surface   = SnowModifiedSurface(PrescribedSurfaceProperties(...))
+# through NumericalEarth's `EarthSystemModel` framework in a doubly-
+# periodic 3D domain. Turbulent surface fluxes (sensible, latent,
+# momentum) are computed with Monin–Obukhov similarity theory through
 # `AtmosphereLandModel`, with surface humidity reduced by the slab's
 # `moisture_availability` (β-factor).
 #
-# The domain is partitioned into three strips of contrasting USGS classes
-# — evergreen broadleaf forest, grassland, and barren / sparsely vegetated.
-# The atmosphere-land turbulent-flux path uses the land-class `roughness_length` field in
-# MOST and β-reduced surface humidity, so the surface-flux contrast reflects
-# both roughness and strip-dependent soil moisture. Albedo, emissivity, and
-# LAI are also populated for future radiation and transpiration plumbing. The
-# strips are oriented along the x axis (parallel to the geostrophic flow) so
-# air parcels remain over a single land-cover class rather than fetching
-# across boundaries. The animation pairs the horizontal 2D ground-temperature
-# field with bottom-level wind vectors, and reports strip-conditional vertical
-# profiles of θ and u.
+# The domain is partitioned into three y-strips of contrasting USGS
+# classes — evergreen broadleaf forest, grassland, and barren /
+# sparsely vegetated. The atmosphere-land turbulent-flux path uses the
+# land-class `roughness_length` field in MOST and β-reduced surface
+# humidity, so the surface-flux contrast reflects both roughness and
+# strip-dependent soil moisture. Albedo, emissivity, and LAI are also
+# painted by `apply_land_classifications!`. The strips are oriented
+# along the x axis (parallel to the geostrophic flow) so air parcels
+# remain over a single land-cover class rather than fetching across
+# boundaries. The animation pairs the horizontal 2D ground-temperature
+# field with bottom-level wind vectors, and reports strip-conditional
+# vertical profiles of θ and u.
 
 using NumericalEarth
 using Breeze
@@ -69,12 +74,12 @@ set!(atmos, θ=θᵢ, u=U₀)
 #                         z₀=0.075 m, α=0.19, vegfrac=0.80, LAI=2.90
 #   y ∈ [ 10/3, 10] km  : class 19 (barren / sparsely vegetated)
 #                         z₀=0.05 m, α=0.25, vegfrac=0.01, LAI=0.75
-# `apply_land_classifications!` populates `vegfrac`, `lai`,
-# `albedo_vegetation`, `emissivity_vegetation`,
-# `roughness_length_vegetation`, `stomatal_resistance_min` from this
-# categorical map. Initial soil moisture is also strip-dependent
-# (wet under forest, dry under barren) so the partitioning of net
-# turbulent exchange between sensible and latent heat differs across strips.
+#
+# `apply_land_classifications!` populates `vegfrac`, `lai`, `albedo`,
+# `emissivity`, `roughness_length`, `r_smin`, `is_urban` from this
+# categorical map. Initial soil moisture is strip-dependent (wet under
+# forest, dry under barren) so the partitioning of net turbulent
+# exchange between sensible and latent heat differs across strips.
 
 land_grid = RectilinearGrid(grid.architecture,
                             size = (grid.Nx, grid.Ny),
@@ -83,12 +88,27 @@ land_grid = RectilinearGrid(grid.architecture,
                             y = (-10kilometers, 10kilometers),
                             topology = (Periodic, Periodic, Flat))
 
-slab_land = RucSlabLand(land_grid;
-                        parameters = RucSlabLandParameters(eltype(land_grid);
-                                                           depth = 0.10,
-                                                           density = 1500,
-                                                           heat_capacity = 1480,
-                                                           soil_depth = 1.0))
+# Match the previous example's 10 cm soil thermal slab on a 1 m bucket.
+ρcH_g = 1500.0 * 1480.0 * 0.10      # J m⁻² K⁻¹
+W_max = 1000.0 * 1.0                # ρ_w · H_bucket [kg m⁻²]; saturates the 1 m bucket
+
+energy    = SlabEnergy(eltype(land_grid); heat_capacity = ρcH_g)
+hydrology = BucketWithSnow(eltype(land_grid);
+                            W_max = W_max,
+                            W_crit_frac = 0.30,    # crit at 30% saturation (θ_fc ≈ 0.30)
+                            W_wilt_frac = 0.10,
+                            SWE_crit = 0.05,
+                            ground_heat_capacity = ρcH_g)
+base_sfc  = PrescribedSurfaceProperties(land_grid;
+                                        albedo = 0.20,
+                                        emissivity = 0.97,
+                                        roughness_length = 0.1)
+surface   = SnowModifiedSurface(base_sfc;
+                                snow_albedo = 0.85,
+                                snow_emissivity = 0.98,
+                                snow_roughness_length = 0.011)
+
+slab_land = SlabLand(land_grid; energy, hydrology, surface)
 
 strip_south = -10kilometers / 3   # forest | grass boundary
 strip_north =  10kilometers / 3   # grass  | barren boundary
@@ -106,29 +126,33 @@ end
 registry = usgs_land_classifications(eltype(land_grid))
 apply_land_classifications!(slab_land, vegtype, registry)
 
-function θ_init(x, y)
-    if y < strip_south
-        return 0.40       # wet forest soil
-    elseif y >= strip_north
-        return 0.10       # dry barren soil
-    else
-        return 0.30       # moderate grassland soil
-    end
+# Initial state. Soil moisture is set as a fraction of saturation and
+# converted to column mass via `W = θ · ρ_w · H_bucket`.
+ρ_w_init = 1000.0
+H_bucket = 1.0
+function W_init(x, y)
+    θ = y < strip_south ? 0.40 :
+        y >= strip_north ? 0.10 : 0.30
+    return θ * ρ_w_init * H_bucket
 end
 
-set!(slab_land, T = Tᵍ₀, Tc = Tᵍ₀, θ = θ_init)
+set!(slab_land.state.T,   Tᵍ₀)
+set!(slab_land.state.W,   W_init)
+set!(slab_land.state.SWE, 0.0)
+Oceananigans.TimeSteppers.update_state!(slab_land)
 
 slab_land.fluxes.solar_irradiance .= 600.0      # W m⁻², bright midday
 
-# `air_temperature` and `air_humidity` are refreshed from the coupled
-# atmosphere state by `AtmosphereLandModel`.
+# `air_temperature`, `air_humidity`, `surface_pressure` are refreshed
+# from the coupled atmosphere state by `AtmosphereLandModel`'s
+# `update_net_fluxes!`.
 
 # ## Coupled model
 #
 # `AtmosphereLandModel` wires the atmosphere to the slab through
 # similarity theory. The default land flux formulation reads the slab's
-# spatially varying `roughness_length` field for momentum roughness and uses `roughness_length / 10`
-# for heat and moisture roughness.
+# spatially varying `roughness_length` field for momentum roughness
+# and uses `roughness_length / 10` for heat and moisture roughness.
 
 model = AtmosphereLandModel(atmos, slab_land)
 
@@ -160,12 +184,12 @@ s = @at (Center, Center, Center) √(u^2 + v^2 + w^2)
 θ = liquid_ice_potential_temperature(atmos)
 
 simulation.output_writers[:atmos] = JLD2Writer(model, (; θ, u, v, s);
-                                               filename = "breeze_ruc_slab_land_atmos",
+                                               filename = "breeze_slab_land_atmos",
                                                schedule = TimeInterval(1minute),
                                                overwrite_existing = true)
 
 simulation.output_writers[:land] = JLD2Writer(model, (; Tg=slab_land.state.T);
-                                              filename = "breeze_ruc_slab_land_surface",
+                                              filename = "breeze_slab_land_surface",
                                               schedule = TimeInterval(1minute),
                                               overwrite_existing = true)
 
@@ -181,19 +205,19 @@ run!(simulation)
 # bottom-level wind speed alongside strip-conditional vertical profiles
 # of θ; bottom row shows the strip-mean T_g time series, the ground
 # temperature T_g with surface wind vectors overlaid as quivers, and
-# strip-conditional vertical profiles of u. Dashed strip-boundary
-# lines on every horizontal panel mark the underlying land cover; a
-# moving black tick on the time-series panel tracks the current
-# animation frame.
+# strip-conditional vertical profiles of u. Dashed strip-boundary lines
+# on every horizontal panel mark the underlying land cover; a moving
+# black tick on the time-series panel tracks the current animation
+# frame.
 
 using CairoMakie
 using Statistics
 
-θ_ts  = FieldTimeSeries("breeze_ruc_slab_land_atmos.jld2",   "θ"; architecture=CPU())
-u_ts  = FieldTimeSeries("breeze_ruc_slab_land_atmos.jld2",   "u"; architecture=CPU())
-v_ts  = FieldTimeSeries("breeze_ruc_slab_land_atmos.jld2",   "v"; architecture=CPU())
-s_ts  = FieldTimeSeries("breeze_ruc_slab_land_atmos.jld2",   "s"; architecture=CPU())
-Tg_ts = FieldTimeSeries("breeze_ruc_slab_land_surface.jld2", "Tg"; architecture=CPU())
+θ_ts  = FieldTimeSeries("breeze_slab_land_atmos.jld2",   "θ"; architecture=CPU())
+u_ts  = FieldTimeSeries("breeze_slab_land_atmos.jld2",   "u"; architecture=CPU())
+v_ts  = FieldTimeSeries("breeze_slab_land_atmos.jld2",   "v"; architecture=CPU())
+s_ts  = FieldTimeSeries("breeze_slab_land_atmos.jld2",   "s"; architecture=CPU())
+Tg_ts = FieldTimeSeries("breeze_slab_land_surface.jld2", "Tg"; architecture=CPU())
 
 times = θ_ts.times
 Nt = length(times)
@@ -292,17 +316,17 @@ lines!(ax_up, u_grass,  z_atmos; linewidth=1.5, color=:olive,     label="Grass")
 lines!(ax_up, u_barren, z_atmos; linewidth=1.5, color=:peru,      label="Barren")
 xlims!(ax_up, -3, 8)
 
-title = @lift "Breeze LES over heterogeneous RUC slab land (3D), t = " * prettytime(times[$n])
+title = @lift "Breeze LES over heterogeneous slab land (3D), t = " * prettytime(times[$n])
 Label(fig[0, 1:3], title, fontsize=16)
 
 # ## Record
 
 @info "Rendering animation..."
-CairoMakie.record(fig, "breeze_over_ruc_slab_land.mp4", 1:Nt; framerate=12) do nn
+CairoMakie.record(fig, "breeze_over_slab_land.mp4", 1:Nt; framerate=12) do nn
     n[] = nn
 end
 
 @info "Animation saved."
 nothing #hide
 
-# ![](breeze_over_ruc_slab_land.mp4)
+# ![](breeze_over_slab_land.mp4)
