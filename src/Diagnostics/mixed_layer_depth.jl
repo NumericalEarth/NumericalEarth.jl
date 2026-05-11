@@ -79,13 +79,12 @@ const f = Face()
     Nz = size(grid, 3)
     FT = eltype(grid)
 
-    # Bracket cells (k⁺ above, k⁻ below) of `zʳ`
+    # Bracket cells (k⁺ above, k⁻ below) of `zʳ`).
     zn = znodes(grid, Center())
-    k⁺ = searchsortedfirst(zn, zʳ)
-    k⁺ = ifelse(isnothing(k⁺), Nz, k⁺)
+    k⁺ = min(searchsortedfirst(zn, zʳ), Nz)
     k⁻ = max(k⁺ - 1, 1)
-    z⁺ = @inbounds zcs[k⁺]
-    z⁻ = @inbounds zcs[k⁻]
+    z⁺ = @inbounds zn[k⁺]
+    z⁻ = @inbounds zn[k⁻]
 
     # Reference buoyancy bN at z = zʳ
     b⁺ = @inbounds b[i, j, k⁺]
