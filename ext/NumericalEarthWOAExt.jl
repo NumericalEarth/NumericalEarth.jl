@@ -54,7 +54,7 @@ function download_dataset(metadata::Metadata{<:WOAClimatology}; skip_existing=tr
         cp(source, linkpath)
     end
 
-    return nothing
+    return metadata_path(metadata)
 end
 
 end # module

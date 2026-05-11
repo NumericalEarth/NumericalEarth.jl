@@ -26,11 +26,13 @@ using Oceananigans.OutputWriters: Checkpointer
             sea_ice = sea_ice_simulation(grid, ocean)
             set!(sea_ice.model, h=hi, ℵ=hi)
 
-            # Create atmosphere and radiation
+            # Create atmosphere, land, and radiation
             backend = JRA55NetCDFBackend(4)
             atmosphere = JRA55PrescribedAtmosphere(arch; backend)
+            land = JRA55PrescribedLand(arch; backend)
+            radiation = JRA55PrescribedRadiation(arch; backend)
 
-            return OceanSeaIceModel(ocean, sea_ice; atmosphere)
+            return OceanSeaIceModel(sea_ice, ocean; atmosphere, land, radiation)
         end
 
         # Reference run: 3 iterations, then continue to 6

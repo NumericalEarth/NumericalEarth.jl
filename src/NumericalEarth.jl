@@ -15,8 +15,14 @@ export
     SlabOcean,
     default_sea_ice,
     FreezingLimitedOceanTemperature,
-    Radiation,
+    PrescribedRadiation,
+    SurfaceRadiationProperties,
+    InterfaceRadiationFlux,
     LatitudeDependentAlbedo,
+    TabulatedAlbedo,
+    JRA55PrescribedRadiation,
+    ECCOPrescribedRadiation,
+    OSPapaPrescribedRadiation,
     SimilarityTheoryFluxes,
     CoefficientBasedFluxes,
     MomentumRoughnessLength,
@@ -25,7 +31,9 @@ export
     SkinTemperature,
     BulkTemperature,
     PrescribedAtmosphere,
+    PrescribedLand,
     JRA55PrescribedAtmosphere,
+    JRA55PrescribedLand,
     OSPapaPrescribedAtmosphere,
     os_papa_prescribed_fluxes,
     os_papa_prescribed_flux_boundary_conditions,
@@ -34,6 +42,8 @@ export
     regrid_bathymetry,
     Metadata,
     Metadatum,
+    BoundingBox,
+    Column, Linear, Nearest,
     ECCOMetadatum,
     EN4Metadatum,
     ETOPO2022,
@@ -60,9 +70,12 @@ export
     frazil_heat_flux, net_ocean_heat_flux, sea_ice_ocean_heat_flux, atmosphere_ocean_heat_flux,
     net_ocean_salinity_flux, sea_ice_ocean_salinity_flux, atmosphere_ocean_salinity_flux,
     net_ocean_freshwater_flux, sea_ice_ocean_freshwater_flux, atmosphere_ocean_freshwater_flux,
-    meridional_heat_transport
+    meridional_heat_transport,
+    location,
+    native_grid
 
 using Oceananigans
+import Oceananigans: location
 using Oceananigans.Operators: ℑxyᶠᶜᵃ, ℑxyᶜᶠᵃ
 using DataDeps
 
@@ -103,6 +116,8 @@ end
 include("EarthSystemModels/EarthSystemModels.jl")
 include("Oceans/Oceans.jl")
 include("Atmospheres/Atmospheres.jl")
+include("Lands/Lands.jl")
+include("Radiations/Radiations.jl")
 include("SeaIces/SeaIces.jl")
 include("InitialConditions/InitialConditions.jl")
 include("DataWrangling/DataWrangling.jl")
@@ -115,6 +130,8 @@ using .Bathymetry
 using .InitialConditions
 using .EarthSystemModels
 using .Atmospheres
+using .Lands
+using .Radiations
 using .Oceans
 using .SeaIces
 using .Diagnostics

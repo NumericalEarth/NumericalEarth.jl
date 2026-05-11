@@ -191,9 +191,7 @@ function reconstruct_orca_mesh_from_CC_FF_points(λCC, φCC, λFF, φFF; radius)
     φCF  = similar(φCC, AFT)
     dev  = Oceananigans.Architectures.device(architecture(λFC))
 
-    launch_xy = KernelParameters(1:Nx, 1:Ny)
-
-    _reconstruct_λFC_φFC_λCF_φCF!(dev, (Nx, Ny), (16, 16))(λFC, φFC, λCF, φCF, λCC, φCC, λFFₒ, φFFₒ, Nx, Ny)
+    _reconstruct_λFC_φFC_λCF_φCF!(dev, (16, 16), (Nx, Ny))(λFC, φFC, λCF, φCF, λCC, φCC, λFFₒ, φFFₒ, Nx, Ny)
 
     e1u = similar(λCC, AFT)
     e2u = similar(λCC, AFT)
@@ -204,7 +202,7 @@ function reconstruct_orca_mesh_from_CC_FF_points(λCC, φCC, λFF, φFF; radius)
     e1t = similar(λCC, AFT)
     e2t = similar(λCC, AFT)
 
-    _reconstruct_e1_e2_metrics!(dev, (Nx, Ny), (16, 16))(e1u, e1v, e1f, e1t, e2u, e2v, e2f, e2t, λCC, φCC, λFFₒ, φFFₒ, λFC, φFC, λCF, φCF, radius, Nx, Ny)
+    _reconstruct_e1_e2_metrics!(dev, (16, 16), (Nx, Ny))(e1u, e1v, e1f, e1t, e2u, e2v, e2f, e2t, λCC, φCC, λFFₒ, φFFₒ, λFC, φFC, λCF, φCF, radius, Nx, Ny)
 
     AzCC = similar(λCC, AFT)
     AzFC = e1u .* e2u
@@ -212,8 +210,8 @@ function reconstruct_orca_mesh_from_CC_FF_points(λCC, φCC, λFF, φFF; radius)
     AzFF = similar(λCC, AFT)
 
     if Ny > 1
-        _reconstruct_Az_interior!(dev, (Nx, Ny), (16, 16))(AzCC, AzFF, λCC, φCC, λFFₒ, φFFₒ, radius, Nx, Ny)
-        _fill_AzCC_boundaries!(dev, Nx, 16)(AzCC, AzFF, Ny)
+        _reconstruct_Az_interior!(dev, (16, 16), (Nx, Ny))(AzCC, AzFF, λCC, φCC, λFFₒ, φFFₒ, radius, Nx, Ny)
+        _fill_AzCC_boundaries!(dev, 16, Nx)(AzCC, AzFF, Ny)
     else
         AzCC .= e1t .* e2t
         AzFF .= AzCC
@@ -247,18 +245,17 @@ function read_orca_staggered_mesh(ds; radius = Oceananigans.defaults.planet_radi
 
     orcaread(data, name) = orient_xy(read_2d_nemo_variable(data, name), Nx, Ny; name)
     shift_x(data) = shift_face_x(data, overlap)
-    shift_y(data) = shift_face_y(data)
-    shift_xy(data) = shift_y(shift_x(data))
 
+    # Face-y: no pre-shift here; halo_filled_data does the +1 y-shift after chop.
     if has_all_variables(ds, metrics)
-        λCC, λFC, λCF, λFF = orcaread(ds, "glamt"), shift_x(orcaread(ds, "glamu")), shift_y(orcaread(ds, "glamv")), shift_xy(orcaread(ds, "glamf"))
-        φCC, φFC, φCF, φFF = orcaread(ds, "gphit"), shift_x(orcaread(ds, "gphiu")), shift_y(orcaread(ds, "gphiv")), shift_xy(orcaread(ds, "gphif"))
-        e1t, e1u, e1v, e1f = orcaread(ds, "e1t"),   shift_x(orcaread(ds, "e1u")),   shift_y(orcaread(ds, "e1v")),   shift_xy(orcaread(ds, "e1f"))
-        e2t, e2u, e2v, e2f = orcaread(ds, "e2t"),   shift_x(orcaread(ds, "e2u")),   shift_y(orcaread(ds, "e2v")),   shift_xy(orcaread(ds, "e2f"))
+        λCC, λFC, λCF, λFF = orcaread(ds, "glamt"), shift_x(orcaread(ds, "glamu")), orcaread(ds, "glamv"), shift_x(orcaread(ds, "glamf"))
+        φCC, φFC, φCF, φFF = orcaread(ds, "gphit"), shift_x(orcaread(ds, "gphiu")), orcaread(ds, "gphiv"), shift_x(orcaread(ds, "gphif"))
+        e1t, e1u, e1v, e1f = orcaread(ds, "e1t"),   shift_x(orcaread(ds, "e1u")),   orcaread(ds, "e1v"),   shift_x(orcaread(ds, "e1f"))
+        e2t, e2u, e2v, e2f = orcaread(ds, "e2t"),   shift_x(orcaread(ds, "e2u")),   orcaread(ds, "e2v"),   shift_x(orcaread(ds, "e2f"))
 
         if "e1e2t" in keys(ds)
             AzCC, AzFC = orcaread(ds, "e1e2t"), shift_x(orcaread(ds, "e1e2u"))
-            AzCF, AzFF = shift_y(orcaread(ds, "e1e2v")), shift_xy(orcaread(ds, "e1e2f"))
+            AzCF, AzFF = orcaread(ds, "e1e2v"), shift_x(orcaread(ds, "e1e2f"))
         else
             AzCC, AzFC, AzCF, AzFF = e1t .* e2t, e1u .* e2u, e1v .* e2v, e1f .* e2f
         end
@@ -305,33 +302,35 @@ function shift_face_x(data, overlap)
     return data[vcat(No, 1:Nx-1), :]
 end
 
-# Reindex y-face fields from NEMO to Oceananigans.
-# NEMO V/F are indexed as faces north of T-row j, while Oceananigans Face-y[j]
-# is treated as the south face of Center-row j. This is a -1 row shift:
-#   out[:, j] <- in[:, j-1] for j >= 2.
-# Row 1 has no southern source row in the input, so we keep in[:, 1] and let
-# halo filling / boundary-condition handling manage the exterior face.
+# NEMO V/F (Ny rows) → Oceananigans Face-y (Ny+1 rows). Row 1 is zero so that
+# continue_south! fills metrics there while coordinates stay at zero, matching
+# the pre-refactor behavior exactly.
 function shift_face_y(data)
     Nx, Ny = size(data)
-    shifted = similar(data)
-    shifted[:, 1] .= data[:, 1]
-    if Ny > 1
-        shifted[:, 2:Ny] .= data[:, 1:Ny-1]
-    end
+    shifted = similar(data, Nx, Ny + 1)
+    shifted[:, 1] .= zero(eltype(data))
+    shifted[:, 2:Ny+1] .= data[:, 1:Ny]
     return shifted
 end
 
-# Copy NEMO data into a Field on `helper_grid`, fill halos, return as OffsetArray.
-#
-# Data is expected to already be in Oceananigans indexing when this is called.
+# Copy data into a Field on `helper_grid`, fill halos, return as OffsetArray.
+# Accepts either matching row count, or Nj-1 rows for Face-y (NEMO-style: row 1
+# then gets filled by continue_south!).
 function halo_filled_data(data, helper_grid, bcs, LX, LY)
     TX, TY, _ = topology(helper_grid)
     Nx, Ny, _ = size(helper_grid)
     Ni = Base.length(LX(), TX(), Nx)
-    Nj = size(data, 2)
+    Nj = Base.length(LY(), TY(), Ny)
+    Nj_data = size(data, 2)
 
     field = Field{LX, LY, Center}(helper_grid; boundary_conditions = bcs)
-    field.data[1:Ni, 1:Nj, 1] .= data[1:Ni, 1:Nj]
+    if Nj_data == Nj
+        field.data[1:Ni, 1:Nj, 1] .= data[1:Ni, 1:Nj]
+    elseif LY === Face && Nj_data == Nj - 1
+        field.data[1:Ni, 2:Nj, 1] .= data[1:Ni, 1:Nj-1]
+    else
+        throw(DimensionMismatch("data has $Nj_data rows but $LY field expects $Nj rows"))
+    end
     fill_halo_regions!(field)
 
     return deepcopy(dropdims(field.data, dims = 3))

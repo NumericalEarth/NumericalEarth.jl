@@ -89,14 +89,14 @@ end
 flux_uniform_filename(start_date, end_date) =
     "ocs_papa_flux_uniform_$(Dates.format(start_date, "yyyymmddTHHMMSS"))_$(Dates.format(end_date, "yyyymmddTHHMMSS")).nc"
 
-metadata_filename(::OSPapaFluxHourly, name, date, bounding_box) = flux_uniform_filename(date, date)
+metadata_filename(::OSPapaFluxHourly, name, date, region) = flux_uniform_filename(date, date)
 
-build_filename(::OSPapaFluxHourly, name, dates::AbstractArray, bounding_box) =
+build_filename(::OSPapaFluxHourly, name, dates::AbstractArray, region) =
     flux_uniform_filename(first(dates), last(dates))
 
 function download_dataset(md::OSPapaFluxMetadata)
     uniform_path = joinpath(md.dir, metadata_filename(md))
-    isfile(uniform_path) && return nothing
+    isfile(uniform_path) && return uniform_path
 
     if !(md.dates isa AbstractArray)
         error("OSPapaFluxHourly uniform cache $(uniform_path) is missing; " *
@@ -107,7 +107,7 @@ function download_dataset(md::OSPapaFluxMetadata)
     end_date   = last(md.dates)
     raw_path = download_ospapa_flux(; start_date, end_date, dir=md.dir)
     _write_uniform_flux_file(raw_path, uniform_path, start_date, end_date)
-    return nothing
+    return uniform_path
 end
 
 function _write_uniform_flux_file(raw_path, uniform_path, start_date, end_date)

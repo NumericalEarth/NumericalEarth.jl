@@ -2,45 +2,98 @@ using NCDatasets
 using JLD2
 using NumericalEarth.InitialConditions: interpolate!
 using Statistics: median
+using Oceananigans.Grids: λnodes, φnodes
+using Oceananigans.Architectures: on_architecture
+using Oceananigans.Fields: fractional_x_index, fractional_y_index
 
-import Oceananigans.Fields: set!, Field
+import Oceananigans.Fields: set!, Field, location
+
+#####
+##### Location with automatic restriction based on region
+#####
+
+location(metadata::Metadata) = restrict_location(dataset_location(metadata.dataset, metadata.name), metadata.region)
+
+restrict_location(loc, ::Nothing) = loc
+restrict_location(loc, ::BoundingBox) = loc
+restrict_location((LX, LY, LZ), ::Column) = (Nothing, Nothing, LZ)
+
+#####
+##### Native grid construction — dispatches on region type
+#####
 
 restrict(::Nothing, interfaces, N) = interfaces, N
 
 # TODO support stretched native grids
 function restrict(bbox_interfaces, interfaces, N)
-    Δ = interfaces[2] - interfaces[1]
-    rΔ = bbox_interfaces[2] - bbox_interfaces[1]
-    ϵ = rΔ / Δ
+    LΔ = interfaces[2] - interfaces[1]
+    Δ = LΔ / N
+    grid_interfaces = (bbox_interfaces[1] - Δ/2,
+                       bbox_interfaces[2] + Δ/2)
+
+    rΔ = grid_interfaces[2] - grid_interfaces[1]
+    ϵ = rΔ / LΔ
     rN = ceil(Int, ϵ * N)  # Round up to ensure bounding box is covered
-    return bbox_interfaces, rN
+
+    return grid_interfaces, rN
 end
 
 """
     native_grid(metadata::Metadata, arch=CPU(); halo = (3, 3, 3))
 
-Return a `LatitudeLongitudeGrid` on `arch` corresponding to the native grid of `metadata` with `halo` size.
+Return the native grid corresponding to `metadata` with `halo` size.
+Returns a `LatitudeLongitudeGrid` for global or `BoundingBox` regions,
+and a column `RectilinearGrid` for `Column` regions.
 """
-function native_grid(metadata::Metadata, arch=CPU(); halo = (3, 3, 3))
+native_grid(metadata::Metadata, arch=CPU(); halo=(3, 3, 3)) =
+    construct_native_grid(metadata, metadata.region, arch; halo)
+
+# Full global grid (no region restriction)
+function construct_native_grid(metadata, ::Nothing, arch; halo)
     Nx, Ny, Nz, _ = size(metadata)
     z = z_interfaces(metadata)
-
     FT = eltype(metadata)
-
     longitude = longitude_interfaces(metadata)
     latitude = latitude_interfaces(metadata)
 
-    # Restrict with BoundingBox
+    grid = LatitudeLongitudeGrid(arch, FT; size = (Nx, Ny, Nz),
+                                 halo, longitude, latitude, z)
+    return grid
+end
+
+# BoundingBox-restricted LatitudeLongitudeGrid
+function construct_native_grid(metadata, bbox::BoundingBox, arch; halo)
+    Nx, Ny, Nz, _ = size(metadata)
+    z = z_interfaces(metadata)
+    FT = eltype(metadata)
+    longitude = longitude_interfaces(metadata)
+    latitude = latitude_interfaces(metadata)
+
     # TODO: can we restrict in `z` as well?
-    bbox = metadata.bounding_box
-    if !isnothing(bbox)
-        longitude, Nx = restrict(bbox.longitude, longitude, Nx)
-        latitude, Ny = restrict(bbox.latitude, latitude, Ny)
-    end
+    longitude, Nx = restrict(bbox.longitude, longitude, Nx)
+    latitude, Ny = restrict(bbox.latitude, latitude, Ny)
+
+    # Clamp halo so it does not exceed grid size in any dimension
+    halo = min.(halo, (Nx, Ny, Nz))
 
     grid = LatitudeLongitudeGrid(arch, FT; size = (Nx, Ny, Nz),
                                  halo, longitude, latitude, z)
+    return grid
+end
 
+# Column RectilinearGrid
+function construct_native_grid(metadata, col::Column, arch; halo)
+    _, _, Nz, _ = size(metadata)
+    z = z_interfaces(metadata)
+    FT = eltype(metadata)
+
+    grid = RectilinearGrid(arch, FT;
+                           size = Nz,
+                           x = FT(col.longitude),
+                           y = FT(col.latitude),
+                           z,
+                           halo = halo[3],
+                           topology = (Flat, Flat, Bounded))
     return grid
 end
 
@@ -68,6 +121,13 @@ function retrieve_data(metadata::Metadatum)
     end
 
     close(ds)
+
+    # ERA5 (and some other datasets) store latitude north-to-south;
+    # flip to south-to-north to match the grid.
+    if reversed_latitude_axis(metadata.dataset)
+        data = reverse(data, dims=2)
+    end
+
     return data
 end
 
@@ -92,6 +152,14 @@ function Field(metadata::Metadatum, arch=CPU();
                cache_inpainted_data = true)
 
     download_dataset(metadata)
+
+    # Column regions need special handling: the downloaded file may contain
+    # more data than a single column (e.g. CopernicusMarine returns a small
+    # grid around the point). Load onto an intermediate grid from the file's
+    # actual dimensions, then extract the column.
+    if metadata.region isa Column
+        return column_field_from_file(metadata, arch; inpainting, mask, halo, cache_inpainted_data)
+    end
 
     grid = native_grid(metadata, arch; halo)
     LX, LY, LZ = location(metadata)
@@ -172,13 +240,156 @@ function set!(target_field::Field, metadata::Metadatum; kw...)
     Lzt = grid.Lz
     Lzm = meta_field.grid.Lz
 
-    if Lzt > Lzm && is_three_dimensional(metadata)
+    # Allow up to 1% vertical mismatch for pressure-level datasets with time-varying
+    # geopotential heights — the per-timestep vertical extent can be slightly smaller
+    # than the temporal-mean extent used for the target grid (e.g. when the atmosphere
+    # is compressed). Oceananigans' interpolate! does not extrapolate, so target points
+    # just outside the source domain will use the nearest interior values.
+    if is_three_dimensional(metadata) && Lzt > Lzm * (1 + 1e-2)
         throw("The vertical range of the $(metadata.dataset) dataset ($(Lzm) m) is smaller than " *
               "the target grid ($(Lzt) m). Some vertical levels cannot be filled with data.")
     end
 
     interpolate!(target_field, meta_field)
+
     return target_field
+end
+
+#####
+##### Column field construction
+#####
+
+function column_field_from_file(metadata, arch; halo=(3, 3, 3), kw...)
+    column_grid = native_grid(metadata, arch; halo)
+
+    # Read the file's actual dimensions to build a matching intermediate grid
+    path = metadata_path(metadata)
+    ds = Dataset(path)
+    varname = dataset_variable_name(metadata)
+    var = ds[varname]
+    data_size = size(var)
+    Nx_file, Ny_file = data_size[1], data_size[2]
+
+    # Read coordinate arrays
+    lon_dimname = NCDatasets.dimnames(var)[1]
+    lat_dimname = NCDatasets.dimnames(var)[2]
+    λ = haskey(ds, lon_dimname) ? ds[lon_dimname][:] : ds["longitude"][:]
+    φ = haskey(ds, lat_dimname) ? ds[lat_dimname][:] : ds["latitude"][:]
+    close(ds)
+
+    if reversed_latitude_axis(metadata.dataset)
+        reverse!(φ)
+    end
+
+    _, _, Nz, _ = size(metadata)
+
+    # Validate that the cached file's vertical extent matches the dataset
+    # configuration. A common cause of mismatch is a stale cache from a previous
+    # run with a different vertical configuration (e.g. ERA5 `pressure_levels`).
+    if is_three_dimensional(metadata) && length(data_size) >= 3 && data_size[3] != Nz
+        error("Cached file $(path) has $(data_size[3]) vertical levels, but the " *
+              "dataset configuration expects $Nz. This is most likely a stale " *
+              "cache from a previous run with a different vertical configuration. " *
+              "Delete the file and re-run.")
+    end
+    z = z_interfaces(metadata)
+    FT = eltype(metadata)
+
+    # Build cell interfaces from centers
+    Δλ = Nx_file > 1 ? λ[2] - λ[1] : FT(1)
+    λf = range(λ[1] - Δλ/2, stop = λ[end] + Δλ/2, length = Nx_file + 1)
+
+    Δφ = Ny_file > 1 ? φ[2] - φ[1] : FT(1)
+    φf = range(φ[1] - Δφ/2, stop = φ[end] + Δφ/2, length = Ny_file + 1)
+
+    halo = min.(halo, (Nx_file, Ny_file, Nz))
+
+    intermediate_grid = LatitudeLongitudeGrid(arch, FT;
+                                              size = (Nx_file, Ny_file, Nz),
+                                              halo, longitude = λf, latitude = φf, z)
+
+    # Load data onto intermediate grid (no inpainting — columns have no horizontal neighbors)
+    LX, LY, LZ = dataset_location(metadata.dataset, metadata.name)
+    intermediate_field = Field{LX, LY, LZ}(intermediate_grid)
+
+    data = retrieve_data(metadata)
+    set_metadata_field!(intermediate_field, data, metadata)
+    fill_halo_regions!(intermediate_field)
+
+    # Extract column
+    _, _, LZ_col = location(metadata)
+    col_field = Field{Nothing, Nothing, LZ_col}(column_grid)
+    extract_column!(col_field, intermediate_field, metadata.region)
+
+    return col_field
+end
+
+#####
+##### Column extraction utilities
+#####
+
+# Dispatch extraction on interpolation method
+function extract_column!(column_field, intermediate_field, col::Column)
+    extract_column!(column_field, intermediate_field, col, col.interpolation)
+end
+
+function extract_column!(column_field, intermediate_field, col, ::Linear)
+    grid = intermediate_field.grid
+    arch = architecture(grid)
+    LX, LY, LZ = Oceananigans.Fields.location(intermediate_field)
+    locs = (LX(), LY(), LZ())
+
+    # Fractional indices (1-based, continuous)
+    fi = fractional_x_index(col.longitude, locs, grid)
+    fj = fractional_y_index(col.latitude,  locs, grid)
+
+    # Lower-left index and weights
+    i₁ = clamp(floor(Int, fi), 1, size(grid, 1))
+    j₁ = clamp(floor(Int, fj), 1, size(grid, 2))
+    i₂ = clamp(i₁ + 1, 1, size(grid, 1))
+    j₂ = clamp(j₁ + 1, 1, size(grid, 2))
+
+    wx = clamp(fi - floor(fi), 0, 1)
+    wy = clamp(fj - floor(fj), 0, 1)
+
+    launch!(arch, column_field.grid, :z, _bilinear_interpolate_column!,
+            column_field, intermediate_field, i₁, j₁, i₂, j₂, wx, wy)
+
+    return nothing
+end
+
+@kernel function _bilinear_interpolate_column!(column_field, source, i₁, j₁, i₂, j₂, wx, wy)
+    k = @index(Global, Linear)
+    @inbounds begin
+        v00 = source[i₁, j₁, k]
+        v10 = source[i₂, j₁, k]
+        v01 = source[i₁, j₂, k]
+        v11 = source[i₂, j₂, k]
+        column_field[1, 1, k] = (1 - wx) * (1 - wy) * v00 +
+                                     wx  * (1 - wy) * v10 +
+                                (1 - wx) *      wy  * v01 +
+                                     wx  *      wy  * v11
+    end
+end
+
+function extract_column!(column_field, intermediate_field, col, ::Nearest)
+    grid = intermediate_field.grid
+    arch = architecture(grid)
+    LX, LY, LZ = Oceananigans.Fields.location(intermediate_field)
+    locs = (LX(), LY(), LZ())  # fractional index functions expect instances, not types
+
+    # Use Oceananigans' fractional index machinery (handles cyclic longitude etc.)
+    i★ = round(Int, fractional_x_index(col.longitude, locs, grid))
+    j★ = round(Int, fractional_y_index(col.latitude,  locs, grid))
+
+    launch!(arch, column_field.grid, :z, copy_column!, column_field, intermediate_field, i★, j★)
+
+    return nothing
+end
+
+@kernel function copy_column!(column_field, source_field, i★, j★)
+    k = @index(Global, Linear)
+    @inbounds column_field[1, 1, k] = source_field[i★, j★, k]
 end
 
 # manglings
@@ -198,9 +409,12 @@ function set_metadata_field!(field, data, metadatum)
     arch = architecture(grid)
 
     Nx, Ny, Nz = size(metadatum)
+
     mangling = if size(data, 2) == Ny-1
+        @debug "Shifting field southward"
         ShiftSouth()
     elseif size(data, 2) == Ny+1
+        @debug "Averaging field in north-south dir"
         AverageNorthSouth()
     else
         nothing
@@ -294,6 +508,7 @@ end
 @inline convert_units(C::FT, ::Union{NanomolePerLiter, NanomolePerKilogram})   where FT = C * convert(FT, 1e-6)
 @inline convert_units(C::FT, ::MilliliterPerLiter)                             where FT = C / convert(FT, 22.3916)
 @inline convert_units(C::FT, ::GramPerKilogramMinus35)                         where FT = C + convert(FT, 35)
+@inline convert_units(Φ::FT, ::InverseGravity)                                where FT = Φ / convert(FT, 9.80665)
 @inline convert_units(V::FT, ::CentimetersPerSecond)                           where FT = V / convert(FT, 100)
 
 

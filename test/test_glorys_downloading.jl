@@ -9,24 +9,22 @@ using Oceananigans.Fields: location
 
 @testset "Downloading GLORYS data" begin
     variables = (:temperature, :salinity, :u_velocity, :v_velocity, :free_surface)
-    bounding_box = BoundingBox(longitude=(200, 202), latitude=(35, 37))
+    region = BoundingBox(longitude=(200, 202), latitude=(35, 37))
     dataset = GLORYSDaily()
     for variable in variables
-        metadatum = Metadatum(variable; dataset, bounding_box)
+        metadatum = Metadatum(variable; dataset, region)
         filepath = NumericalEarth.DataWrangling.metadata_path(metadatum)
         isfile(filepath) && rm(filepath; force=true)
-        download_dataset_with_fallback(filepath; dataset_name="GLORYSDaily $variable") do
-            NumericalEarth.DataWrangling.download_dataset(metadatum)
-        end
+        NumericalEarth.DataWrangling.download_dataset(metadatum)
         @test isfile(filepath)
     end
 end
 
 @testset "Download and set GLORYS free_surface" begin
     for arch in test_architectures
-        bounding_box = BoundingBox(longitude=(200, 202), latitude=(35, 37))
+        region = BoundingBox(longitude=(200, 202), latitude=(35, 37))
         dataset = GLORYSDaily()
-        md = Metadatum(:free_surface; dataset, bounding_box)
+        md = Metadatum(:free_surface; dataset, region)
 
         @test !is_three_dimensional(md)
         @test location(md) === (Center, Center, Nothing)

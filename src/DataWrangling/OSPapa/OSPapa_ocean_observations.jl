@@ -44,10 +44,10 @@ const OSPapa_depth_variable_names = Dict(
 )
 
 dataset_variable_name(data::OSPapaMetadata) = OSPapa_dataset_variable_names[data.name]
-
 location(::OSPapaMetadata) = (Center, Center, Center)
 is_three_dimensional(md::OSPapaMetadata) = md.name in (:temperature, :salinity, :eastward_velocity, :northward_velocity)
 reversed_vertical_axis(::OSPapaHourly) = true
+
 function conversion_units(metadatum::OSPapaMetadatum)
     name = metadatum.name
     name == :air_temperature    && return Celsius()
@@ -56,6 +56,7 @@ function conversion_units(metadatum::OSPapaMetadatum)
     name in (:eastward_velocity, :northward_velocity) && return CentimetersPerSecond()
     return nothing
 end
+
 default_inpainting(::OSPapaMetadata) = nothing
 
 #####
@@ -63,12 +64,9 @@ default_inpainting(::OSPapaMetadata) = nothing
 #####
 
 metadata_filename(::OSPapaMetadatum) = OSPAPA_FILENAME
-metadata_filename(::OSPapaHourly, name, date, bounding_box) = OSPAPA_FILENAME
+metadata_filename(::OSPapaHourly, name, date, region) = OSPAPA_FILENAME
 
-function download_dataset(metadata::OSPapaMetadata)
-    download_ospapa_file(metadata.dir)
-    return nothing
-end
+download_dataset(metadata::OSPapaMetadata) = download_ospapa_file(metadata.dir)
 
 function inpainted_metadata_path(metadata::OSPapaMetadata)
     filename = metadata_filename(first(metadata))

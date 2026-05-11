@@ -26,14 +26,14 @@ all_dates(dataset::ECCO2DarwinMonthly, name) = metadata_epoch(dataset) : Month(1
 
 # File name generation specific to each Dataset dataset
 """
-    metadata_filename(dataset, name, date, bounding_box)
+    metadata_filename(dataset, name, date, region)
 
 Generate the filename for a given ECCO Darwin dataset and date.
 
 The filename is constructed using the dataset variable name, and the iteration number is calculated
 from the date and epoch.
 """
-function metadata_filename(dataset::Union{ECCO2DarwinMonthly, ECCO4DarwinMonthly}, name, date, bounding_box)
+function metadata_filename(dataset::Union{ECCO2DarwinMonthly, ECCO4DarwinMonthly}, name, date, region)
     shortname = ECCO_darwin_dataset_variable_names[name]
 
     reference_date = metadata_epoch(dataset)
@@ -51,8 +51,6 @@ default_mask_value(::ECCO4DarwinMonthly) = 0
 default_mask_value(::ECCO2DarwinMonthly) = 0
 
 dataset_variable_name(data::Metadata{<:Union{ECCO2DarwinMonthly,ECCO4DarwinMonthly}}) = ECCO_darwin_dataset_variable_names[data.name]
-
-location(::Metadata{<:Union{ECCO2DarwinMonthly, ECCO4DarwinMonthly}}) = (Center, Center, Center)
 
 variable_is_three_dimensional(::Metadata{<:Union{ECCO2DarwinMonthly, ECCO4DarwinMonthly}}) = true
 

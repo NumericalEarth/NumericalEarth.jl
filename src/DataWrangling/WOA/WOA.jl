@@ -39,7 +39,6 @@ import NumericalEarth.DataWrangling:
     available_variables,
     retrieve_data
 
-import Oceananigans.Fields: location
 
 download_WOA_cache::String = ""
 function __init__()
@@ -148,12 +147,12 @@ metaprefix(::WOAMetadatum) = "WOAMetadatum"
 woa_period(::WOAAnnual, date) = 0
 woa_period(::WOAMonthly, date) = Dates.month(date)
 
-function metadata_filename(::WOAAnnual, name, date, bounding_box)
+function metadata_filename(::WOAAnnual, name, date, region)
     varname = WOA_variable_names[name]
     return "woa_$(varname)_annual.nc"
 end
 
-function metadata_filename(::WOAMonthly, name, date, bounding_box)
+function metadata_filename(::WOAMonthly, name, date, region)
     varname = WOA_variable_names[name]
     m = lpad(Dates.month(date), 2, '0')
     return "woa_$(varname)_monthly_$(m).nc"
@@ -162,7 +161,6 @@ end
 # WOA NetCDF variables are named "{tracer}_an" for the objectively analyzed field
 dataset_variable_name(data::WOAMetadata) = WOA_variable_names[data.name] * "_an"
 
-location(::WOAMetadata) = (Center, Center, Center)
 is_three_dimensional(::WOAMetadata) = true
 
 function inpainted_metadata_filename(metadata::WOAMetadatum)

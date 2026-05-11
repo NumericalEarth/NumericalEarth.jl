@@ -4,7 +4,7 @@ using CUDA
 using Test
 
 using NumericalEarth.DataWrangling
-using NumericalEarth.DataWrangling: metadata_path
+using NumericalEarth.DataWrangling: metadata_path, download_dataset
 using NumericalEarth.EN4
 using NumericalEarth.ECCO
 using NumericalEarth.ETOPO
@@ -122,6 +122,10 @@ function test_ocean_metadata_utilities(arch, dataset, dates, inpainting;
                                       )
     for name in varnames
         metadata = Metadata(name; dates, dataset)
+        filepaths = [metadata_path(datum) for datum in metadata]
+        download_dataset_with_fallback(filepaths; dataset_name="$(typeof(dataset)) $name") do
+            download_dataset(metadata)
+        end
         restoring = DatasetRestoring(metadata, arch; rate=1/1000, inpainting)
 
         for datum in metadata
@@ -176,6 +180,10 @@ function test_dataset_restoring(arch, dataset, dates, inpainting;
 
     for name in varnames
         metadata = Metadata(name; dates, dataset)
+        filepaths = [metadata_path(datum) for datum in metadata]
+        download_dataset_with_fallback(filepaths; dataset_name="$(typeof(dataset)) $name") do
+            download_dataset(metadata)
+        end
         var_restoring = DatasetRestoring(metadata, arch; mask, inpainting, rate=1/1000)
 
         fill!(var_restoring.field_time_series[1], 1.0)
@@ -210,9 +218,13 @@ function test_timestepping_with_dataset_restoring(arch, dataset, dates, inpainti
                                  z = (-200, 0),
                                  halo = (6, 6, 6))
 
-    # Force only the last tracer. 
+    # Force only the last tracer.
     # Forcing more than one variable leads to parameter space errors
     metadata = Metadata(varnames[end]; dates, dataset)
+    filepaths = [metadata_path(datum) for datum in metadata]
+    download_dataset_with_fallback(filepaths; dataset_name="$(typeof(dataset)) $(varnames[end])") do
+        download_dataset(metadata)
+    end
     restoring = DatasetRestoring(metadata, arch; inpainting, rate=1/1000)
     forcing = NamedTuple{tuple(fldnames[end])}(tuple(restoring))
     ocean = ocean_simulation(grid; tracers=fldnames, forcing, verbose=false)
