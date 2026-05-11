@@ -15,7 +15,7 @@ function fig17(caches, labels, cases)
         hm = heatmap!(ax, latitude, depth, get_field(c, :zonal_temperature);
                       colormap = :thermal, colorrange = (-2, 30), nan_color = :lightgray)
         contour!(ax, latitude, depth, get_field(c, :zonal_woa_temperature);
-                 levels = temperature_levels, color = :grey, linestyle = :dash, linewidth = 0.8)
+                 levels = temperature_levels, color = :white, linestyle = :dash, linewidth = 1.2)
         contour!(ax, latitude, depth, get_field(c, :zonal_temperature);
                  levels = temperature_levels, color = :black, linewidth = 0.8)
         Colorbar(fig[1, 2i], hm; label = "deg C"); ylims!(ax, (-5500, 0))
@@ -25,7 +25,7 @@ function fig17(caches, labels, cases)
         hm = heatmap!(ax, latitude, depth, get_field(c, :zonal_salinity);
                       colormap = :haline, colorrange = (33, 37), nan_color = :lightgray)
         contour!(ax, latitude, depth, get_field(c, :zonal_woa_salinity);
-                 levels = salinity_levels, color = :grey, linestyle = :dash, linewidth = 0.8)
+                 levels = salinity_levels, color = :white, linestyle = :dash, linewidth = 1.2)
         contour!(ax, latitude, depth, get_field(c, :zonal_salinity);
                  levels = salinity_levels, color = :black, linewidth = 0.8)
         Colorbar(fig[2, 2i], hm; label = "PSU"); ylims!(ax, (-5500, 0))
@@ -35,7 +35,7 @@ function fig17(caches, labels, cases)
         hm = heatmap!(ax, latitude, depth, get_field(c, :zonal_buoyancy);
                       colormap = :balance, nan_color = :lightgray)
         contour!(ax, latitude, depth, get_field(c, :zonal_initial_buoyancy);
-                 levels = buoyancy_levels, color = :grey, linestyle = :dash, linewidth = 0.8)
+                 levels = buoyancy_levels, color = :white, linestyle = :dash, linewidth = 1.2)
         contour!(ax, latitude, depth, get_field(c, :zonal_buoyancy);
                  levels = buoyancy_levels, color = :black, linewidth = 0.8)
         Colorbar(fig[3, 2i], hm; label = "m/s²"); ylims!(ax, (-5500, 0))
