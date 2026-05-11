@@ -76,10 +76,12 @@ end
 ##### Flux compute driver
 #####
 
-function compute_atmosphere_land_fluxes!(coupled_model)
-    al_interface = coupled_model.interfaces.atmosphere_land_interface
-    isnothing(al_interface) && return nothing
+compute_atmosphere_land_fluxes!(coupled_model) =
+    compute_atmosphere_land_fluxes!(coupled_model, coupled_model.interfaces.atmosphere_land_interface)
 
+compute_atmosphere_land_fluxes!(coupled_model, ::Nothing) = nothing
+
+function compute_atmosphere_land_fluxes!(coupled_model, atmosphere_land_interface)
     exchanger = coupled_model.interfaces.exchanger
     grid = exchanger.grid
     arch = architecture(grid)
@@ -90,10 +92,10 @@ function compute_atmosphere_land_fluxes!(coupled_model)
     atmosphere_data = merge(atmosphere_fields,
                             (; h_bℓ = boundary_layer_height(coupled_model.atmosphere)))
 
-    flux_formulation = al_interface.flux_formulation
-    interface_fluxes = al_interface.fluxes
-    interface_temperature = al_interface.temperature
-    interface_properties = al_interface.properties
+    flux_formulation = atmosphere_land_interface.flux_formulation
+    interface_fluxes = atmosphere_land_interface.fluxes
+    interface_temperature = atmosphere_land_interface.temperature
+    interface_properties = atmosphere_land_interface.properties
     atmosphere_properties = (thermodynamics_parameters = thermodynamics_parameters(coupled_model.atmosphere),
                              surface_layer_height = surface_layer_height(coupled_model.atmosphere),
                              gravitational_acceleration = coupled_model.interfaces.properties.gravitational_acceleration)

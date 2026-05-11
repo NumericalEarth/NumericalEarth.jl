@@ -1,9 +1,12 @@
 using Oceananigans.Operators: intrinsic_vector
 using Oceananigans.Grids: inactive_node
 
-function compute_atmosphere_ocean_fluxes!(coupled_model)
-    isnothing(coupled_model.interfaces.atmosphere_ocean_interface) && return nothing
+compute_atmosphere_ocean_fluxes!(coupled_model) =
+    compute_atmosphere_ocean_fluxes!(coupled_model, coupled_model.interfaces.atmosphere_ocean_interface)
 
+compute_atmosphere_ocean_fluxes!(coupled_model, ::Nothing) = nothing
+
+function compute_atmosphere_ocean_fluxes!(coupled_model, atmosphere_ocean_interface)
     exchanger = coupled_model.interfaces.exchanger
     grid = exchanger.grid
     arch = architecture(grid)
@@ -16,10 +19,10 @@ function compute_atmosphere_ocean_fluxes!(coupled_model)
     atmosphere_data = merge(atmosphere_fields,
                             (; h_bℓ = boundary_layer_height(coupled_model.atmosphere)))
 
-    flux_formulation = coupled_model.interfaces.atmosphere_ocean_interface.flux_formulation
-    interface_fluxes = coupled_model.interfaces.atmosphere_ocean_interface.fluxes
-    interface_temperature = coupled_model.interfaces.atmosphere_ocean_interface.temperature
-    interface_properties = coupled_model.interfaces.atmosphere_ocean_interface.properties
+    flux_formulation = atmosphere_ocean_interface.flux_formulation
+    interface_fluxes = atmosphere_ocean_interface.fluxes
+    interface_temperature = atmosphere_ocean_interface.temperature
+    interface_properties = atmosphere_ocean_interface.properties
     ocean_properties = coupled_model.interfaces.ocean_properties
     atmosphere_properties = (thermodynamics_parameters = thermodynamics_parameters(coupled_model.atmosphere),
                              surface_layer_height = surface_layer_height(coupled_model.atmosphere),
