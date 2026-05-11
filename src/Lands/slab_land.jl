@@ -293,13 +293,12 @@ interpolate_state!(exchanger, grid, ::SlabLand, coupled_model) = nothing
     ComponentExchanger(land::SlabLand, grid)
 
 Expose the generic atmosphere-facing SlabLand state through accessors:
-skin temperature `T`, moisture availability `mavail`, and local
-roughness `znt`.
+skin temperature `T`, `moisture_availability`, and `roughness_length`.
 """
 function ComponentExchanger(land::SlabLand, grid)
-    state = (T      = surface_temperature(land),
-             mavail = surface_wetness(land),
-             znt    = momentum_roughness_length(land))
+    state = (T                     = surface_temperature(land),
+             moisture_availability = surface_wetness(land),
+             roughness_length      = momentum_roughness_length(land))
     return ComponentExchanger(state, nothing)
 end
 

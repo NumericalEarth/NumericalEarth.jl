@@ -163,9 +163,9 @@ end
 @inline local_roughness_length(ℓ, interior_properties) = ℓ
 
 @inline function local_roughness_length(ℓ::LandRoughnessLength,
-                                        interior_properties::NamedTuple{(:znt,), T}) where T
-    znt = max(interior_properties.znt, ℓ.minimum_roughness_length)
-    return max(ℓ.multiplier * znt, ℓ.minimum_roughness_length)
+                                        interior_properties::NamedTuple{(:roughness_length,), T}) where T
+    z₀ = max(interior_properties.roughness_length, ℓ.minimum_roughness_length)
+    return max(ℓ.multiplier * z₀, ℓ.minimum_roughness_length)
 end
 
 @inline function local_roughness_lengths(roughness_lengths, interior_properties)

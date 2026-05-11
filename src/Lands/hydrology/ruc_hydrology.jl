@@ -72,26 +72,26 @@ budget without a direct reference to `RucEnergy`.
 struct RucHydrology{FT} <: AbstractHydrology
     # Soil bucket
     soil_depth     :: FT
-    theta_sat      :: FT
-    theta_fc       :: FT
-    theta_wilt     :: FT
+    theta_saturation      :: FT
+    theta_field_capacity       :: FT
+    theta_wilting_point     :: FT
     theta_air_dry  :: FT
     # Soil hydraulics (Clapp-Hornberger)
-    psi_sat        :: FT
-    bclh           :: FT
+    psi_saturation        :: FT
+    clapp_hornberger_exponent           :: FT
     # Snow-cover fraction
-    sncovfac       :: FT
-    snowcovr_opt   :: Int
+    snow_cover_scale_factor       :: FT
+    snow_cover_option   :: Int
     # Snow density compaction
     c1_compaction  :: FT
     c2_compaction  :: FT
-    rhosn_min      :: FT
-    rhosn_max      :: FT
+    snow_density_min      :: FT
+    snow_density_max      :: FT
     # Snow liquid retention + phase change
-    snow_liquid_capacity_frac :: FT
-    meltfactor               :: FT
-    snow_retention_min_frac  :: FT
-    snow_retention_max_frac  :: FT
+    snow_liquid_capacity_fraction :: FT
+    melt_factor               :: FT
+    snow_retention_min_fraction  :: FT
+    snow_retention_max_fraction  :: FT
     snow_retention_depth_scale  :: FT
     snow_retention_depth_factor :: FT
     # Phase-change and water properties
@@ -100,11 +100,11 @@ struct RucHydrology{FT} <: AbstractHydrology
     # Canopy
     canopy_water_capacity :: FT
     # Jarvis-Stewart resistances
-    r_smin   :: FT
-    r_smax   :: FT
-    rg_lim   :: FT
-    vpd_lim  :: FT
-    T_opt    :: FT
+    stomatal_resistance_min   :: FT
+    stomatal_resistance_max   :: FT
+    solar_radiation_limit   :: FT
+    vapor_pressure_deficit_limit  :: FT
+    temperature_optimum    :: FT
     # Ground areal heat capacity (duplicated from RucEnergy so the
     # snow-melt / freeze-thaw kernels can close the latent-heat budget).
     ground_heat_capacity :: FT
@@ -112,18 +112,18 @@ end
 
 function RucHydrology(p::RucSlabLandParameters{FT}) where FT
     ρcH_g = p.density * p.heat_capacity * p.depth
-    return RucHydrology{FT}(p.soil_depth, p.theta_sat, p.theta_fc,
-                            p.theta_wilt, p.theta_air_dry,
-                            p.psi_sat, p.bclh,
-                            p.sncovfac, p.snowcovr_opt,
+    return RucHydrology{FT}(p.soil_depth, p.theta_saturation, p.theta_field_capacity,
+                            p.theta_wilting_point, p.theta_air_dry,
+                            p.psi_saturation, p.clapp_hornberger_exponent,
+                            p.snow_cover_scale_factor, p.snow_cover_option,
                             p.c1_compaction, p.c2_compaction,
-                            p.rhosn_min, p.rhosn_max,
-                            p.snow_liquid_capacity_frac, p.meltfactor,
-                            p.snow_retention_min_frac, p.snow_retention_max_frac,
+                            p.snow_density_min, p.snow_density_max,
+                            p.snow_liquid_capacity_fraction, p.melt_factor,
+                            p.snow_retention_min_fraction, p.snow_retention_max_fraction,
                             p.snow_retention_depth_scale, p.snow_retention_depth_factor,
                             p.latent_heat_fusion, FT(1000),
                             p.canopy_water_capacity,
-                            p.r_smin, p.r_smax, p.rg_lim, p.vpd_lim, p.T_opt,
+                            p.stomatal_resistance_min, p.stomatal_resistance_max, p.solar_radiation_limit, p.vapor_pressure_deficit_limit, p.temperature_optimum,
                             ρcH_g)
 end
 
@@ -141,7 +141,7 @@ const _RUC_HYDROLOGY_STATE_KEYS = (
     # Canopy
     :cst, :drip, :interw, :intersn, :infwater, :intwratio, :canopy_capacity,
     # Resistance / wetness diagnostics
-    :mavail, :soilres, :r_s,
+    :moisture_availability, :soil_resistance, :stomatal_resistance,
 )
 
 const _RUC_HYDROLOGY_FLUX_KEYS = (
@@ -156,15 +156,15 @@ flux_variables(::RucHydrology)       = _RUC_HYDROLOGY_FLUX_KEYS
 function initial_state(h::RucHydrology, name::Symbol, grid)
     f = CenterField(grid)
     if name === :θ
-        fill!(f, h.theta_fc)
+        fill!(f, h.theta_field_capacity)
     elseif name === :rhosn || name === :rhosn_step_start
         fill!(f, 250)
     elseif name === :rhonewsn
         fill!(f, 100)
-    elseif name === :soilres
+    elseif name === :soil_resistance
         fill!(f, 1)
-    elseif name === :r_s
-        fill!(f, h.r_smin)
+    elseif name === :stomatal_resistance
+        fill!(f, h.stomatal_resistance_min)
     end
     return f
 end
@@ -175,18 +175,18 @@ end
 
 # Snow-cover fraction (Koren et al. 1999, Niu and Yang 2007). Mirrors
 # RUC LSM `compute_snow_fraction`.
-@inline function compute_snow_fraction(opt::Int, snhei, snhei_crit, znt,
-                                       rhosn, rhonewsn, sncovfac)
+@inline function compute_snow_fraction(opt::Int, snhei, snhei_crit, roughness_length,
+                                       rhosn, rhonewsn, snow_cover_scale_factor)
     FT = typeof(snhei)
     if opt == 1
         return min(one(FT), snhei / (FT(2) * snhei_crit))
     elseif opt == 2
         f1 = min(one(FT), snhei / (FT(2) * snhei_crit))
-        z₀ = min(FT(0.2), znt)
+        z₀ = min(FT(0.2), roughness_length)
         f2 = tanh(snhei / (FT(2.5) * z₀ * (rhosn / rhonewsn)))
         return FT(0.5) * (f1 + f2)
     else
-        return tanh(snhei / (FT(10) * sncovfac * (rhosn / rhonewsn)))
+        return tanh(snhei / (FT(10) * snow_cover_scale_factor * (rhosn / rhonewsn)))
     end
 end
 
@@ -249,7 +249,7 @@ end
 @kernel function _melt_snow!(snwe, snhei, swl, swl_overflow, T,
                              rhosn, newsn, rhonewsn,
                              ρcH_ground, L_f, ρ_w, ρ_min, ρ_max,
-                             Δt, meltfactor,
+                             Δt, melt_factor,
                              rsm_min_frac, rsm_max_frac,
                              rsm_depth_scale, rsm_depth_factor)
     i, j = @index(Global, NTuple)
@@ -268,7 +268,7 @@ end
                 (newsn[i, j, 1] > zero(FT) && rhonewsn[i, j, 1] < FT(450))) &&
                T[i, j, 1] < FT(283)
                 smelt_cap = FT(Δt) / FT(60) * FT(5.6e-8) *
-                            meltfactor * max(one(FT), T[i, j, 1] - FT(273.15))
+                            melt_factor * max(one(FT), T[i, j, 1] - FT(273.15))
                 smelt = min(smelt, smelt_cap)
             end
 
@@ -388,8 +388,8 @@ end
 end
 
 # Recompute snow fraction from the post-step pack state.
-@kernel function _finalize_snow_cover!(snowfrac, snhei, znt, rhosn, rhonewsn,
-                                       is_urban, sncovfac, snowcovr_opt)
+@kernel function _finalize_snow_cover!(snowfrac, snhei, roughness_length, rhosn, rhonewsn,
+                                       is_urban, snow_cover_scale_factor, snow_cover_option)
     i, j = @index(Global, NTuple)
     @inbounds begin
         FT = eltype(snowfrac)
@@ -399,10 +399,10 @@ end
             ρ_sn  = max(rhosn[i, j, 1],    FT(58.8))
             ρ_new = max(rhonewsn[i, j, 1], FT(58.8))
             snhei_crit_dyn = FT(0.01601) * FT(1000) / ρ_sn
-            f = compute_snow_fraction(snowcovr_opt,
+            f = compute_snow_fraction(snow_cover_option,
                                       snhei[i, j, 1], snhei_crit_dyn,
-                                      znt[i, j, 1],
-                                      ρ_sn, ρ_new, sncovfac)
+                                      roughness_length[i, j, 1],
+                                      ρ_sn, ρ_new, snow_cover_scale_factor)
             if is_urban[i, j, 1] > FT(0.5)
                 f = min(f, FT(0.75))
             end
@@ -490,10 +490,10 @@ end
 end
 
 #####
-##### Soil moisture, freeze/thaw, RUC `mavail`/`soilres`, Jarvis r_s
+##### Soil moisture, freeze/thaw, RUC `moisture_availability`/`soil_resistance`, Jarvis stomatal_resistance
 #####
 
-@inline function ruc_mavail(θ, snowfrac, θ_air_dry, θ_fc)
+@inline function ruc_moisture_availability(θ, snowfrac, θ_air_dry, θ_fc)
     FT = typeof(θ)
     ref = max(θ_fc - θ_air_dry, eps(FT))
     residual = max(zero(FT), θ - θ_air_dry)
@@ -501,7 +501,7 @@ end
                  FT(1e-5), one(FT))
 end
 
-@inline function ruc_soilres(θ, qa, qg, θ_air_dry, θ_fc)
+@inline function ruc_soil_resistance(θ, qa, qg, θ_air_dry, θ_fc)
     FT = typeof(θ)
     fc = max(θ_air_dry, FT(0.5) * θ_fc)
     if θ > fc || qa > qg
@@ -530,15 +530,15 @@ end
 end
 
 @inline function jarvis_resistance(rg, qa, Ta, p_hPa, θ, lai,
-                                   r_smin, r_smax, rg_lim, vpd_lim, T_opt,
+                                   stomatal_resistance_min, stomatal_resistance_max, solar_radiation_limit, vapor_pressure_deficit_limit, temperature_optimum,
                                    θ_wilt, θ_fc)
     FT = typeof(rg)
     if lai ≤ zero(FT)
-        return r_smax
+        return stomatal_resistance_max
     end
-    F1 = (rg / rg_lim) / (one(FT) + rg / rg_lim);  F1 = max(F1, FT(1e-3))
+    F1 = (rg / solar_radiation_limit) / (one(FT) + rg / solar_radiation_limit);  F1 = max(F1, FT(1e-3))
     qsat_air = qsat_buck(Ta, p_hPa)
-    F2 = one(FT) / (one(FT) + max(zero(FT), (qsat_air - qa)) / vpd_lim)
+    F2 = one(FT) / (one(FT) + max(zero(FT), (qsat_air - qa)) / vapor_pressure_deficit_limit)
     F2 = clamp(F2, FT(1e-3), one(FT))
     if θ ≥ θ_fc
         F3 = one(FT)
@@ -547,42 +547,42 @@ end
     else
         F3 = clamp((θ - θ_wilt) / (θ_fc - θ_wilt), FT(1e-3), one(FT))
     end
-    F4 = one(FT) - FT(0.0016) * (T_opt - Ta)^2;  F4 = clamp(F4, FT(1e-3), one(FT))
-    return clamp(r_smin / (lai * F1 * F2 * F3 * F4), r_smin, r_smax)
+    F4 = one(FT) - FT(0.0016) * (temperature_optimum - Ta)^2;  F4 = clamp(F4, FT(1e-3), one(FT))
+    return clamp(stomatal_resistance_min / (lai * F1 * F2 * F3 * F4), stomatal_resistance_min, stomatal_resistance_max)
 end
 
-@kernel function _update_mavail_rs!(mavail, soilres, r_s,
+@kernel function _update_moisture_availability_rs!(moisture_availability, soil_resistance, stomatal_resistance,
                                     soil_moisture, snowfrac,
                                     T, p_surf, vegfrac, lai,
                                     rg_irr, qa, Ta,
-                                    r_smin_field,
+                                    stomatal_resistance_min_field,
                                     θ_wilt, θ_fc, θ_air_dry,
-                                    r_smax, rg_lim, vpd_lim, T_opt)
+                                    stomatal_resistance_max, solar_radiation_limit, vapor_pressure_deficit_limit, temperature_optimum)
     i, j = @index(Global, NTuple)
     @inbounds begin
-        FT = eltype(mavail)
+        FT = eltype(moisture_availability)
         θ  = soil_moisture[i, j, 1]
         f_sn = snowfrac[i, j, 1]
-        m  = ruc_mavail(θ, f_sn, θ_air_dry, θ_fc)
+        m  = ruc_moisture_availability(θ, f_sn, θ_air_dry, θ_fc)
         ps = p_surf[i, j, 1] > one(FT) ? p_surf[i, j, 1] : FT(1013.25)
         qg = qsat_buck(T[i, j, 1], ps) * m
-        sr = ruc_soilres(θ, qa[i, j, 1], qg, θ_air_dry, θ_fc)
+        sr = ruc_soil_resistance(θ, qa[i, j, 1], qg, θ_air_dry, θ_fc)
         L  = lai[i, j, 1]
-        mavail[i, j, 1]  = m
-        soilres[i, j, 1] = sr
-        r_s[i, j, 1]    = jarvis_resistance(rg_irr[i, j, 1],
+        moisture_availability[i, j, 1]  = m
+        soil_resistance[i, j, 1] = sr
+        stomatal_resistance[i, j, 1]    = jarvis_resistance(rg_irr[i, j, 1],
                                             qa[i, j, 1],
                                             Ta[i, j, 1], ps,
                                             θ, L,
-                                            r_smin_field[i, j, 1], r_smax,
-                                            rg_lim, vpd_lim,
-                                            T_opt, θ_wilt, θ_fc)
+                                            stomatal_resistance_min_field[i, j, 1], stomatal_resistance_max,
+                                            solar_radiation_limit, vapor_pressure_deficit_limit,
+                                            temperature_optimum, θ_wilt, θ_fc)
     end
 end
 
 @kernel function _step_soil_moisture!(soil_moisture, infwater, swl_overflow,
                                       F_v_total, transpiration,
-                                      vegfrac, soilres, snowfrac,
+                                      vegfrac, soil_resistance, snowfrac,
                                       Δt, ρ_w, soil_depth,
                                       θ_sat, θ_air_dry)
     i, j = @index(Global, NTuple)
@@ -593,7 +593,7 @@ end
 
         Δθ_in = (infwater[i, j, 1] + swl_overflow[i, j, 1]) / soil_depth
 
-        bare_share = snow_free * (one(FT) - vf) * soilres[i, j, 1]
+        bare_share = snow_free * (one(FT) - vf) * soil_resistance[i, j, 1]
         E_g  = max(zero(FT), F_v_total[i, j, 1]) * bare_share
         E_t  = max(zero(FT), transpiration[i, j, 1])
         Δθ_out = (E_g + E_t) * FT(Δt) / (ρ_w * soil_depth)
@@ -607,20 +607,20 @@ end
 # temperature, from Clapp-Hornberger soil-water retention combined with
 # Clausius-Clapeyron freezing-point depression.
 @inline function unfrozen_liquid_eq(T, θ_sat, θ_air_dry,
-                                    L_f, ψ_sat, bclh)
+                                    L_f, ψ_sat, clapp_hornberger_exponent)
     FT = typeof(T)
     if T ≥ FT(273.15)
         return θ_sat
     end
     g = FT(9.81)
     arg = L_f * (FT(273.15) - T) / (T * g * ψ_sat)
-    base = θ_sat * arg^(-one(FT) / bclh) - θ_air_dry
+    base = θ_sat * arg^(-one(FT) / clapp_hornberger_exponent) - θ_air_dry
     return clamp(base, zero(FT), θ_sat)
 end
 
 @kernel function _freeze_thaw_soil!(θ_liq, θ_ice, T,
                                     ρcH_ground, L_f, ρ_w, soil_depth,
-                                    θ_sat, θ_air_dry, ψ_sat, bclh)
+                                    θ_sat, θ_air_dry, ψ_sat, clapp_hornberger_exponent)
     i, j = @index(Global, NTuple)
     @inbounds begin
         FT = eltype(θ_liq)
@@ -631,7 +631,7 @@ end
 
         # Equilibrium liquid-water target, clamped by total available water.
         θ_liq_eq = min(unfrozen_liquid_eq(Tg, θ_sat, θ_air_dry,
-                                          L_f, ψ_sat, bclh),
+                                          L_f, ψ_sat, clapp_hornberger_exponent),
                        θ_total)
 
         # Δθ_freeze > 0 ⇒ freeze; < 0 ⇒ thaw.
@@ -684,7 +684,7 @@ function step!(h::RucHydrology, state, fluxes, surface, parameters, grid, Δt)
     # 1 — Drain retained liquid from previous steps above capacity.
     launch!(arch, grid, :xy, _drain_swl!,
             state.swl, state.snwe, state.swl_overflow,
-            h.snow_liquid_capacity_frac)
+            h.snow_liquid_capacity_fraction)
 
     # Snapshot start-of-step `rhosn` for `snhei_crit_newsn`.
     launch!(arch, grid, :xy, _snapshot_rhosn!,
@@ -693,7 +693,7 @@ function step!(h::RucHydrology, state, fluxes, surface, parameters, grid, Δt)
     # 2 — Compaction of the existing pack, before current snowfall is added.
     launch!(arch, grid, :xy, _compact_snow!,
             state.rhosn, state.snwe, state.snhei, state.swl, state.T, Δt,
-            h.c1_compaction, h.c2_compaction, h.rhosn_min, h.rhosn_max)
+            h.c1_compaction, h.c2_compaction, h.snow_density_min, h.snow_density_max)
 
     # 3 — Canopy interception (drip routing depends on prior snowfrac).
     launch!(arch, grid, :xy, _intercept_precip!,
@@ -718,22 +718,22 @@ function step!(h::RucHydrology, state, fluxes, surface, parameters, grid, Δt)
             state.newsn, state.snowfracnewsn, state.keep_snow_albedo,
             state.snowfallac,
             state.swe_inflow, fluxes.air_temperature, state.rhosn_step_start,
-            h.rhosn_min, h.rhosn_max)
+            h.snow_density_min, h.snow_density_max)
 
     # 6 — Sublimation / deposition over snow-covered fraction. Latent heat
     # already enters the slab heat budget through `temperature_flux`.
     launch!(arch, grid, :xy, _apply_sublimation!,
             state.snwe, state.snhei, state.swl, fluxes.moisture_flux,
-            state.snowfrac, state.rhosn, Δt, ρ_w, h.rhosn_min)
+            state.snowfrac, state.rhosn, Δt, ρ_w, h.snow_density_min)
 
     # 7 — Melt (warm pack), with RUC melt cap and retained-water split.
     launch!(arch, grid, :xy, _melt_snow!,
             state.snwe, state.snhei, state.swl, state.swl_overflow, state.T,
             state.rhosn, state.newsn, state.rhonewsn,
-            ρcH_g, L_f, ρ_w, h.rhosn_min, h.rhosn_max,
-            Δt, h.meltfactor,
-            h.snow_retention_min_frac,
-            h.snow_retention_max_frac,
+            ρcH_g, L_f, ρ_w, h.snow_density_min, h.snow_density_max,
+            Δt, h.melt_factor,
+            h.snow_retention_min_fraction,
+            h.snow_retention_max_fraction,
             h.snow_retention_depth_scale,
             h.snow_retention_depth_factor)
 
@@ -741,47 +741,47 @@ function step!(h::RucHydrology, state, fluxes, surface, parameters, grid, Δt)
     launch!(arch, grid, :xy, _step_soil_moisture!,
             state.θ, state.infwater, state.swl_overflow,
             fluxes.moisture_flux, fluxes.transpiration,
-            surface.vegfrac, state.soilres, state.snowfrac,
+            surface.vegfrac, state.soil_resistance, state.snowfrac,
             Δt, ρ_w, h.soil_depth,
-            h.theta_sat, h.theta_air_dry)
+            h.theta_saturation, h.theta_air_dry)
 
     # 9 — Soil freeze/thaw equilibration.
     launch!(arch, grid, :xy, _freeze_thaw_soil!,
             state.θ, state.θ_ice, state.T,
             ρcH_g, L_f, ρ_w, h.soil_depth,
-            h.theta_sat, h.theta_air_dry, h.psi_sat, h.bclh)
+            h.theta_saturation, h.theta_air_dry, h.psi_saturation, h.clapp_hornberger_exponent)
 
     return nothing
 end
 
 #####
-##### `update_diagnostics!` — snow-cover fraction + Jarvis r_s, mavail, soilres
+##### `update_diagnostics!` — snow-cover fraction + Jarvis stomatal_resistance, moisture_availability, soil_resistance
 #####
 
 function update_diagnostics!(h::RucHydrology, state, fluxes, surface, parameters, grid)
     arch = architecture(grid)
 
     launch!(arch, grid, :xy, _finalize_snow_cover!,
-            state.snowfrac, state.snhei, surface.znt,
+            state.snowfrac, state.snhei, surface.roughness_length,
             state.rhosn, state.rhonewsn,
-            surface.is_urban, h.sncovfac, h.snowcovr_opt)
+            surface.is_urban, h.snow_cover_scale_factor, h.snow_cover_option)
 
-    launch!(arch, grid, :xy, _update_mavail_rs!,
-            state.mavail, state.soilres, state.r_s,
+    launch!(arch, grid, :xy, _update_moisture_availability_rs!,
+            state.moisture_availability, state.soil_resistance, state.stomatal_resistance,
             state.θ, state.snowfrac,
             state.T, fluxes.surface_pressure,
             surface.vegfrac, surface.lai,
             fluxes.solar_irradiance, fluxes.air_humidity, fluxes.air_temperature,
-            surface.r_smin,
-            h.theta_wilt, h.theta_fc, h.theta_air_dry,
-            h.r_smax, h.rg_lim, h.vpd_lim, h.T_opt)
+            surface.stomatal_resistance_min,
+            h.theta_wilting_point, h.theta_field_capacity, h.theta_air_dry,
+            h.stomatal_resistance_max, h.solar_radiation_limit, h.vapor_pressure_deficit_limit, h.temperature_optimum)
 
     return nothing
 end
 
 # Atmosphere-facing wetness factor.
-wetness(::RucHydrology, state, parameters) = state.mavail
+wetness(::RucHydrology, state, parameters) = state.moisture_availability
 
 Base.summary(h::RucHydrology{FT}) where FT =
     string("RucHydrology{$FT}(soil_depth=", h.soil_depth,
-           " m, θ ∈ [", h.theta_wilt, ", ", h.theta_sat, "])")
+           " m, θ ∈ [", h.theta_wilting_point, ", ", h.theta_saturation, "])")

@@ -98,12 +98,12 @@ function compute_atmosphere_land_fluxes!(coupled_model)
                              surface_layer_height = surface_layer_height(coupled_model.atmosphere),
                              gravitational_acceleration = coupled_model.interfaces.properties.gravitational_acceleration)
 
-    # Land surface state from the exchanger (T_g [K], β = mavail). The
-    # RucSlabLand `ComponentExchanger` aliases these to the slab fields, so
-    # no copy is needed.
+    # Land surface state from the exchanger (T_g [K], β = moisture_availability).
+    # The RucSlabLand `ComponentExchanger` aliases these to the slab fields,
+    # so no copy is needed.
     land_state = exchanger.land.state
     Tₛ = land_state.T
-    βₛ = land_state.mavail
+    βₛ = land_state.moisture_availability
 
     land_properties = atmosphere_land_surface_properties(land_state)
 
@@ -127,8 +127,8 @@ function compute_atmosphere_land_fluxes!(coupled_model)
 end
 
 function atmosphere_land_surface_properties(land_state::NamedTuple{names}) where names
-    if :znt in names
-        return (; znt = land_state.znt)
+    if :roughness_length in names
+        return (; roughness_length = land_state.roughness_length)
     else
         return (;)
     end
@@ -136,9 +136,9 @@ end
 
 @inline local_atmosphere_land_surface_properties(land_properties, i, j) = (;)
 
-@inline function local_atmosphere_land_surface_properties(land_properties::NamedTuple{(:znt,), T}, i, j) where T
-    znt = @inbounds land_properties.znt[i, j, 1]
-    return (; znt)
+@inline function local_atmosphere_land_surface_properties(land_properties::NamedTuple{(:roughness_length,), T}, i, j) where T
+    roughness_length = @inbounds land_properties.roughness_length[i, j, 1]
+    return (; roughness_length)
 end
 
 @kernel function _compute_atmosphere_land_interface_state!(interface_fluxes,

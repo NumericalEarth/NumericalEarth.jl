@@ -9,20 +9,21 @@ const InterfaceComputations = NumericalEarth.EarthSystemModels.InterfaceComputat
 
 scalar(field) = Array(interior(field))[1]
 
-function expected_jarvis_resistance(rg, qa, Ta, θ, lai, r_smin, p_hPa, p)
+function expected_jarvis_resistance(rg, qa, Ta, θ, lai, stomatal_resistance_min, p_hPa, p)
     e = Ta > 273.15 ?
         6.1121 * exp(17.502 * (Ta - 273.15) / (Ta - 32.18)) :
         6.1115 * exp(22.452 * (Ta - 273.15) / (Ta - 0.61))
     qsat_air = 0.622 * e / (p_hPa - (1 - 0.622) * e)
 
-    F1 = max((rg / p.rg_lim) / (1 + rg / p.rg_lim), 1e-3)
-    F2 = clamp(1 / (1 + max(0, qsat_air - qa) / p.vpd_lim), 1e-3, 1)
-    F3 = θ ≥ p.theta_fc ? 1.0 :
-         θ ≤ p.theta_wilt ? 1e-3 :
-         clamp((θ - p.theta_wilt) / (p.theta_fc - p.theta_wilt), 1e-3, 1)
-    F4 = clamp(1 - 0.0016 * (p.T_opt - Ta)^2, 1e-3, 1)
+    F1 = max((rg / p.solar_radiation_limit) / (1 + rg / p.solar_radiation_limit), 1e-3)
+    F2 = clamp(1 / (1 + max(0, qsat_air - qa) / p.vapor_pressure_deficit_limit), 1e-3, 1)
+    F3 = θ ≥ p.theta_field_capacity ? 1.0 :
+         θ ≤ p.theta_wilting_point ? 1e-3 :
+         clamp((θ - p.theta_wilting_point) / (p.theta_field_capacity - p.theta_wilting_point), 1e-3, 1)
+    F4 = clamp(1 - 0.0016 * (p.temperature_optimum - Ta)^2, 1e-3, 1)
 
-    return clamp(r_smin / (lai * F1 * F2 * F3 * F4), r_smin, p.r_smax)
+    return clamp(stomatal_resistance_min / (lai * F1 * F2 * F3 * F4),
+                 stomatal_resistance_min, p.stomatal_resistance_max)
 end
 
 function ruc_test_grid()
@@ -58,17 +59,17 @@ end
         @test scalar(land.state.cst) ≈ 5e-4
     end
 
-    @testset "mavail and bare-soil evaporation use RUC soilres" begin
+    @testset "moisture_availability and bare-soil evaporation use RUC soil_resistance" begin
         land = ruc_test_land(T = 298, θ = 0.10, vegfrac = 0.5, lai = 2.0)
         update_state!(land)
 
         p = land.parameters
-        expected_mavail = (0.10 - p.theta_air_dry) / (p.theta_fc - p.theta_air_dry)
-        fc = max(p.theta_air_dry, 0.5 * p.theta_fc)
+        expected_mavail = (0.10 - p.theta_air_dry) / (p.theta_field_capacity - p.theta_air_dry)
+        fc = max(p.theta_air_dry, 0.5 * p.theta_field_capacity)
         fex_fc = max(0.01, min(1.0, 0.10 / fc))
         expected_soilres = 0.25 * (1 - cos(pi * fex_fc))^2
 
-        @test scalar(land.state.mavail) ≈ expected_mavail
+        @test scalar(land.state.moisture_availability) ≈ expected_mavail
 
         fill!(land.fluxes.moisture_flux, 0.1)
         time_step!(land, 10.0)
@@ -157,7 +158,7 @@ end
 
     @testset "WRF RUC snow emissivity and USGS table defaults" begin
         parameters = RucSlabLandParameters(Float64)
-        @test parameters.emiss_snow ≈ 0.98
+        @test parameters.emissivity_snow ≈ 0.98
 
         registry = usgs_land_classifications(Float64)
         @test registry[2].z0 ≈ 0.20
@@ -176,20 +177,20 @@ end
 
         @test scalar(land.surface.vegfrac) ≈ grassland.vegfrac
         @test scalar(land.surface.lai) ≈ grassland.lai
-        @test scalar(land.surface.albedo_veg) ≈ grassland.albedo
-        @test scalar(land.surface.emissivity_veg) ≈ grassland.emissivity
-        @test scalar(land.surface.z0_veg) ≈ grassland.z0
-        @test scalar(land.surface.r_smin) ≈ grassland.r_smin
+        @test scalar(land.surface.albedo_vegetation) ≈ grassland.albedo
+        @test scalar(land.surface.emissivity_vegetation) ≈ grassland.emissivity
+        @test scalar(land.surface.roughness_length_vegetation) ≈ grassland.z0
+        @test scalar(land.surface.stomatal_resistance_min) ≈ grassland.r_smin
         @test scalar(land.surface.is_urban) ≈ 0
 
         apply_land_classifications!(land, fill(999, 1, 1), registry)
 
         @test scalar(land.surface.vegfrac) ≈ grassland.vegfrac
         @test scalar(land.surface.lai) ≈ grassland.lai
-        @test scalar(land.surface.albedo_veg) ≈ grassland.albedo
-        @test scalar(land.surface.emissivity_veg) ≈ grassland.emissivity
-        @test scalar(land.surface.z0_veg) ≈ grassland.z0
-        @test scalar(land.surface.r_smin) ≈ grassland.r_smin
+        @test scalar(land.surface.albedo_vegetation) ≈ grassland.albedo
+        @test scalar(land.surface.emissivity_vegetation) ≈ grassland.emissivity
+        @test scalar(land.surface.roughness_length_vegetation) ≈ grassland.z0
+        @test scalar(land.surface.stomatal_resistance_min) ≈ grassland.r_smin
         @test scalar(land.surface.is_urban) ≈ 0
     end
 
@@ -204,8 +205,8 @@ end
 
         p = land.parameters
         expected = expected_jarvis_resistance(300.0, 0.005, 300.0, 0.30, 3.0,
-                                              p.r_smin, 700.0, p)
-        @test scalar(land.state.r_s) ≈ expected
+                                              p.stomatal_resistance_min, 700.0, p)
+        @test scalar(land.state.stomatal_resistance) ≈ expected
     end
 
     @testset "land roughness enters atmosphere-land MOST fluxes" begin
@@ -218,7 +219,7 @@ end
 
         land = RucSlabLand(grid)
         set!(land; T = 293.15, Tc = 293.15, θ = 0.30, vegfrac = 1.0, lai = 1.0)
-        interior(land.surface.z0_veg, :, :, 1) .= reshape([0.02, 0.80], 2, 1)
+        interior(land.surface.roughness_length_vegetation, :, :, 1) .= reshape([0.02, 0.80], 2, 1)
         update_state!(land)
 
         atmosphere = PrescribedAtmosphere(grid, [0.0])
@@ -279,8 +280,8 @@ end
         land_state = model.interfaces.exchanger.land.state
 
         @test land_state.T === land.state.T
-        @test land_state.mavail === land.state.β
-        @test land_state.znt isa Oceananigans.Fields.ConstantField
+        @test land_state.moisture_availability === land.state.β
+        @test land_state.roughness_length isa Oceananigans.Fields.ConstantField
 
         interface_fluxes = model.interfaces.atmosphere_land_interface.fluxes
         fill!(interface_fluxes.sensible_heat, -10.0)

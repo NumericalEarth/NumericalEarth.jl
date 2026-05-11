@@ -29,8 +29,9 @@
 
 Build a `SlabLand` composed of `RucEnergy`, `RucHydrology`, and
 `RucSurfaceProperties` — the slab-compatible subset of the RUC LSM.
-The atmosphere reads `state.T` (skin temperature), `state.mavail` (β),
-and `surface.{alb, emiss, znt}` through the
+The atmosphere reads `state.T` (skin temperature),
+`state.moisture_availability` (β), and
+`surface.{albedo, emissivity, roughness_length}` through the
 `ComponentExchanger`-aliased fields in `EarthSystemModels`.
 
 Coupler-supplied flux fields (each a `Field`):
@@ -175,23 +176,23 @@ end
     ComponentExchanger(land::SlabLand{...,<:RucEnergy,...,<:RucSurfaceProperties}, grid)
 
 Expose RUC slab-side state as a `NamedTuple` with the fixed key set
-`(T, Tc, θ, θ_ice, alb, emiss, znt, mavail, soilres, r_s)`. These keys
-are what `compute_atmosphere_land_fluxes!` reads to drive Monin-Obukhov
-similarity (`T`, `mavail`, `znt`).
+`(T, Tc, θ, θ_ice, albedo, emissivity, roughness_length,
+moisture_availability, stomatal_resistance)`. These keys are what
+`compute_atmosphere_land_fluxes!` reads to drive Monin-Obukhov
+similarity (`T`, `moisture_availability`, `roughness_length`).
 """
 function ComponentExchanger(land::SlabLand{FT, G, Clk, S, F,
                                            <:RucEnergy, <:RucHydrology,
                                            <:RucSurfaceProperties, P}, grid) where {FT, G, Clk, S, F, P}
-    state = (T       = land.state.T,
-             Tc      = land.state.Tc,
-             θ       = land.state.θ,
-             θ_ice   = land.state.θ_ice,
-             alb     = land.surface.alb,
-             emiss   = land.surface.emiss,
-             znt     = land.surface.znt,
-             mavail  = land.state.mavail,
-             soilres = land.state.soilres,
-             r_s     = land.state.r_s)
+    state = (T                     = land.state.T,
+             Tc                    = land.state.Tc,
+             θ                     = land.state.θ,
+             θ_ice                 = land.state.θ_ice,
+             albedo                = land.surface.albedo,
+             emissivity            = land.surface.emissivity,
+             roughness_length      = land.surface.roughness_length,
+             moisture_availability = land.state.moisture_availability,
+             stomatal_resistance   = land.state.stomatal_resistance)
     return ComponentExchanger(state, nothing)
 end
 
@@ -210,16 +211,16 @@ function prognostic_state(land::SlabLand)
 end
 
 function _surface_state_arrays(s::RucSurfaceProperties)
-    return (; vegfrac        = Array(interior(s.vegfrac)),
-              lai            = Array(interior(s.lai)),
-              albedo_veg     = Array(interior(s.albedo_veg)),
-              emissivity_veg = Array(interior(s.emissivity_veg)),
-              z0_veg         = Array(interior(s.z0_veg)),
-              r_smin         = Array(interior(s.r_smin)),
-              is_urban       = Array(interior(s.is_urban)),
-              alb            = Array(interior(s.alb)),
-              emiss          = Array(interior(s.emiss)),
-              znt            = Array(interior(s.znt)))
+    return (; vegfrac                     = Array(interior(s.vegfrac)),
+              lai                         = Array(interior(s.lai)),
+              albedo_vegetation           = Array(interior(s.albedo_vegetation)),
+              emissivity_vegetation       = Array(interior(s.emissivity_vegetation)),
+              roughness_length_vegetation = Array(interior(s.roughness_length_vegetation)),
+              stomatal_resistance_min     = Array(interior(s.stomatal_resistance_min)),
+              is_urban                    = Array(interior(s.is_urban)),
+              albedo                      = Array(interior(s.albedo)),
+              emissivity                  = Array(interior(s.emissivity)),
+              roughness_length            = Array(interior(s.roughness_length)))
 end
 
 _surface_state_arrays(::AbstractSurfaceProperties) = (;)
@@ -237,8 +238,10 @@ function restore_prognostic_state!(land::SlabLand, state)
 end
 
 function _restore_surface!(s::RucSurfaceProperties, surface_state)
-    for k in (:vegfrac, :lai, :albedo_veg, :emissivity_veg, :z0_veg, :r_smin,
-              :is_urban, :alb, :emiss, :znt)
+    for k in (:vegfrac, :lai,
+              :albedo_vegetation, :emissivity_vegetation, :roughness_length_vegetation,
+              :stomatal_resistance_min, :is_urban,
+              :albedo, :emissivity, :roughness_length)
         if hasproperty(surface_state, k)
             interior(getproperty(s, k)) .= getproperty(surface_state, k)
         end

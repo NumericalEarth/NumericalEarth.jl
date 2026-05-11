@@ -82,7 +82,7 @@ end
 
 # A β-reduced saturation specific humidity for land surfaces:
 # qₛ = β · q_sat(Tₛ), where β ∈ [0, 1] is the moisture availability
-# (`mavail` in RUC). The β is threaded through the existing iteration
+# (`moisture_availability` in RUC). The β is threaded through the existing iteration
 # pipeline by hijacking the `Sₛ` slot of `InterfaceState`, so no plumbing
 # changes are needed downstream of the fixed-point solver.
 struct BetaSurfaceSpecificHumidity{Φ}

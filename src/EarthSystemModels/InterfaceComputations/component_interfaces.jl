@@ -452,14 +452,14 @@ function ComponentInterfaces(atmosphere, ocean, sea_ice=nothing;
 end
 
 # Default land surface humidity formulation: β-reduced saturation. The
-# β value is read from `mavail` per cell by the flux kernel and threaded
-# through the iteration's `S` slot.
+# β value is read from `moisture_availability` per cell by the flux
+# kernel and threaded through the iteration's `S` slot.
 default_al_specific_humidity(::Nothing) = nothing
 default_al_specific_humidity(land) =
     BetaSurfaceSpecificHumidity(AtmosphericThermodynamics.Liquid())
 
 # Default atmosphere--land flux formulation. The momentum roughness length
-# is read from the land-side `znt` field, with thermal/moisture roughness
+# is read from the land-side `roughness_length` field, with thermal/moisture roughness
 # 10× smaller (Garratt 1992). To override this behavior, pass
 # `atmosphere_land_fluxes = SimilarityTheoryFluxes(...)` with explicit
 # roughness lengths to `ComponentInterfaces` / `AtmosphereLandModel`.

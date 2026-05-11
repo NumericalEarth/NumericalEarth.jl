@@ -114,8 +114,9 @@ end
     apply_land_classifications!(land::SlabLand, vegtype, registry)
 
 Populate the per-cell vegetation Fields on the surface-property
-closure (`vegfrac`, `lai`, `albedo_veg`, `emissivity_veg`, `z0_veg`,
-`r_smin`, `is_urban`) from a 2D `vegtype` map of integer category ids
+closure (`vegfrac`, `lai`, `albedo_vegetation`, `emissivity_vegetation`,
+`roughness_length_vegetation`, `stomatal_resistance_min`, `is_urban`) from a 2D
+`vegtype` map of integer category ids
 and a `registry` returned by e.g. `usgs_land_classifications(FT)`.
 
 `vegtype` may be any 2D `AbstractArray{<:Real}` (typically Int) of size
@@ -142,13 +143,13 @@ function apply_land_classifications!(s::RucSurfaceProperties,
 
     Nx, Ny = size(vegtype)
 
-    vegfrac    = field_xy(s.vegfrac)
-    lai        = field_xy(s.lai)
-    albedo_veg = field_xy(s.albedo_veg)
-    emiss_veg  = field_xy(s.emissivity_veg)
-    z0_veg     = field_xy(s.z0_veg)
-    r_smin     = field_xy(s.r_smin)
-    is_urban   = field_xy(s.is_urban)
+    vegfrac                     = field_xy(s.vegfrac)
+    lai                         = field_xy(s.lai)
+    albedo_vegetation           = field_xy(s.albedo_vegetation)
+    emissivity_vegetation       = field_xy(s.emissivity_vegetation)
+    roughness_length_vegetation = field_xy(s.roughness_length_vegetation)
+    stomatal_resistance_min     = field_xy(s.stomatal_resistance_min)
+    is_urban                    = field_xy(s.is_urban)
 
     size(vegfrac) == (Nx, Ny) ||
         throw(DimensionMismatch("vegtype has size $(size(vegtype)); expected $(size(vegfrac))"))
@@ -157,23 +158,23 @@ function apply_land_classifications!(s::RucSurfaceProperties,
         idx = Int(vegtype[i, j])
         if 1 ≤ idx ≤ length(registry)
             c = registry[idx]
-            vegfrac[i, j]    = c.vegfrac
-            lai[i, j]        = c.lai
-            albedo_veg[i, j] = c.albedo
-            emiss_veg[i, j]  = c.emissivity
-            z0_veg[i, j]     = c.z0
-            r_smin[i, j]     = c.r_smin
-            is_urban[i, j]   = c.name === :urban ? one(FT) : zero(FT)
+            vegfrac[i, j]                     = c.vegfrac
+            lai[i, j]                         = c.lai
+            albedo_vegetation[i, j]           = c.albedo
+            emissivity_vegetation[i, j]       = c.emissivity
+            roughness_length_vegetation[i, j] = c.z0
+            stomatal_resistance_min[i, j]     = c.r_smin
+            is_urban[i, j]                    = c.name === :urban ? one(FT) : zero(FT)
         end
     end
 
-    set!(s.vegfrac,        vegfrac)
-    set!(s.lai,            lai)
-    set!(s.albedo_veg,     albedo_veg)
-    set!(s.emissivity_veg, emiss_veg)
-    set!(s.z0_veg,         z0_veg)
-    set!(s.r_smin,         r_smin)
-    set!(s.is_urban,       is_urban)
+    set!(s.vegfrac,                     vegfrac)
+    set!(s.lai,                         lai)
+    set!(s.albedo_vegetation,           albedo_vegetation)
+    set!(s.emissivity_vegetation,       emissivity_vegetation)
+    set!(s.roughness_length_vegetation, roughness_length_vegetation)
+    set!(s.stomatal_resistance_min,     stomatal_resistance_min)
+    set!(s.is_urban,                    is_urban)
 
     return nothing
 end

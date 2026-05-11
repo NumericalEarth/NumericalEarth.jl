@@ -26,9 +26,10 @@ end
 """
     LandRoughnessLength(FT = Float64; multiplier = 1, minimum_roughness_length = eps(FT))
 
-Use the local land aerodynamic roughness field `znt` as a MOST roughness
-length. `multiplier` scales `znt`, for example `0.1` for scalar roughness
-lengths when heat and moisture roughness are taken as `znt / 10`.
+Use the local land aerodynamic roughness field `roughness_length` as a
+MOST roughness length. `multiplier` scales it, for example `0.1` for
+scalar roughness lengths when heat and moisture roughness are taken as
+`roughness_length / 10`.
 """
 function LandRoughnessLength(FT=Oceananigans.defaults.FloatType;
                              multiplier = 1,

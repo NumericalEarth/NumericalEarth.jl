@@ -5,11 +5,11 @@
 # domain. Turbulent surface fluxes (sensible heat, latent heat,
 # momentum) are computed with Monin--Obukhov similarity theory through
 # `AtmosphereLandModel`, with surface humidity reduced by the slab's
-# `mavail` (β-factor).
+# `moisture_availability` (β-factor).
 #
 # The domain is partitioned into three strips of contrasting USGS classes
 # — evergreen broadleaf forest, grassland, and barren / sparsely vegetated.
-# The atmosphere-land turbulent-flux path uses the land-class `znt` field in
+# The atmosphere-land turbulent-flux path uses the land-class `roughness_length` field in
 # MOST and β-reduced surface humidity, so the surface-flux contrast reflects
 # both roughness and strip-dependent soil moisture. Albedo, emissivity, and
 # LAI are also populated for future radiation and transpiration plumbing. The
@@ -70,7 +70,8 @@ set!(atmos, θ=θᵢ, u=U₀)
 #   y ∈ [ 10/3, 10] km  : class 19 (barren / sparsely vegetated)
 #                         z₀=0.05 m, α=0.25, vegfrac=0.01, LAI=0.75
 # `apply_land_classifications!` populates `vegfrac`, `lai`,
-# `albedo_veg`, `emissivity_veg`, `z0_veg`, `r_smin` from this
+# `albedo_vegetation`, `emissivity_vegetation`,
+# `roughness_length_vegetation`, `stomatal_resistance_min` from this
 # categorical map. Initial soil moisture is also strip-dependent
 # (wet under forest, dry under barren) so the partitioning of net
 # turbulent exchange between sensible and latent heat differs across strips.
@@ -126,7 +127,7 @@ slab_land.fluxes.solar_irradiance .= 600.0      # W m⁻², bright midday
 #
 # `AtmosphereLandModel` wires the atmosphere to the slab through
 # similarity theory. The default land flux formulation reads the slab's
-# spatially varying `znt` field for momentum roughness and uses `znt / 10`
+# spatially varying `roughness_length` field for momentum roughness and uses `roughness_length / 10`
 # for heat and moisture roughness.
 
 model = AtmosphereLandModel(atmos, slab_land)
