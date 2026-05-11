@@ -23,7 +23,6 @@ const cp_ocean = 3991.86795711963
 
 using CairoMakie
 using GeoMakie
-using GeoMakie.Proj
 using Statistics
 using Dates
 using Downloads
@@ -496,11 +495,14 @@ function geo_panel!(fig, pos, data;
                     coastlines = true,
                     coast_color = :black, coast_linewidth = 0.4,
                     land_color = :lightgray,
-                    limits = nothing)
+                    lonlims = nothing, latlims = nothing)
     x, data = to_minus180_180(x, data)
-    axis_kw = isnothing(limits) ? (; dest = projection, title) :
-                                   (; dest = projection, title, limits)
-    ga = GeoAxis(fig[pos...]; axis_kw...)
+    ga = GeoAxis(fig[pos...]; dest = projection, title)
+    # GeoMakie's xlims!/ylims! take longitude/latitude in degrees, NOT
+    # projected coordinates. Used to clip polar caps so the data fills
+    # the panel instead of being squashed into a whole-globe view.
+    isnothing(lonlims) || xlims!(ga, lonlims...)
+    isnothing(latlims) || ylims!(ga, latlims...)
     lv = if !isnothing(levels)
         levels
     elseif !isnothing(colorrange)
