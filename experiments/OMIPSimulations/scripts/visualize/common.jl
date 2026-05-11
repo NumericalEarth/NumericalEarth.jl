@@ -503,6 +503,13 @@ function geo_panel!(fig, pos, data;
     # the panel instead of being squashed into a whole-globe view.
     isnothing(lonlims) || xlims!(ga, lonlims...)
     isnothing(latlims) || ylims!(ga, latlims...)
+    # Land polygon is drawn UNDER the contourf so NaN cells (regridded
+    # land) show the polygon. Data is drawn on top — it should be
+    # NaN-masked at land cells; if it isn't, the bleed is a regridder
+    # bug, not a rendering one.
+    if !isnothing(land_color)
+        poly!(ga, GeoMakie.land(); color = land_color, strokewidth = 0)
+    end
     lv = if !isnothing(levels)
         levels
     elseif !isnothing(colorrange)
@@ -514,13 +521,6 @@ function geo_panel!(fig, pos, data;
     hm = contourf!(ga, x, y, data;
                    colormap,
                    extendlow = :auto, extendhigh = :auto, kw...)
-    # Land mask is drawn ON TOP of the contourf to hide any bands that
-    # bleed across continents (model/Natural-Earth coastline mismatch,
-    # contourf interpolating across NaN cells, etc.). Coastlines go on
-    # top of the land so the boundary is sharp.
-    if !isnothing(land_color)
-        poly!(ga, GeoMakie.land(); color = land_color, strokewidth = 0)
-    end
     if coastlines
         lines!(ga, GeoMakie.coastlines(); color = coast_color,
                linewidth = coast_linewidth)
