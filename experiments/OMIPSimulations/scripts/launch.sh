@@ -155,7 +155,7 @@ run!(sim, pickup=:latest)"
 run!(sim; pickup = :latest)"
         ;;
     tenthdegree)
-        DEFAULT_KSKEW=0;    DEFAULT_KSYMM=0;   NZ=100; DEFAULT_DT="5minutes";  DEFAULT_DZ_TOP="2.5"
+        DEFAULT_KSKEW=0;    DEFAULT_KSYMM=0;   NZ=100; DEFAULT_DT="1minutes";  DEFAULT_DZ_TOP="2.5"
         DEFAULT_BIHARMONIC="nothing"; ARCH="Distributed(GPU(), partition=Partition(1, 4))"; GPUS_PER_NODE=4
         EXTRA_USING="using Oceananigans.DistributedComputations"
         FILE_SPLIT="file_splitting_interval = 180days,"
