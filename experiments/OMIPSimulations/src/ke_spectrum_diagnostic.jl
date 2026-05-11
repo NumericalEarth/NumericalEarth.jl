@@ -282,7 +282,7 @@ function flush_spectrum!(D::KESpectrumDiagnostic, sim_time::Float64)
 end
 
 # Default no-op for non-tenthdegree configurations.
-add_ke_spectrum_diagnostic!(simulation, ::Val) = nothing
+add_ke_spectrum_diagnostic!(simulation, ::Val; kwargs...) = nothing
 
 function add_ke_spectrum_diagnostic!(simulation, ::Val{:tenthdegree};
                                       output_dir = ".",

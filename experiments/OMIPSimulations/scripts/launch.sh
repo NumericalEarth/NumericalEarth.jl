@@ -30,6 +30,8 @@ Environment variables (physics):
   NCAR          Set to "true" for OMIP-2/NCAR bulk formulae
   CORRECTED     Set to "true" for corrected COARE 3.6 fluxes
   SNOW          Set to "true" to enable snow thermodynamics
+  ICE_DYNAMICS  Set to "false" to disable sea-ice dynamics (thermo-only ice).
+                Default: true.
   KSKEW         Isopycnal skew diffusivity κ_skew (default: per-config; 0 = off)
   KSYMM         Isopycnal symmetric diffusivity κ_symmetric (default: per-config; 0 = off)
   BIHARMONIC    Biharmonic viscosity timescale (default: per-config; "nothing" = off)
@@ -182,6 +184,7 @@ RUN_NAME="$CONFIG"
 [[ "${CORRECTED:-false}" == "true" ]]          && RUN_NAME="${RUN_NAME}_corrected"
 [[ "${NCAR:-false}" == "true" ]]               && RUN_NAME="${RUN_NAME}_ncar"
 [[ "${SNOW:-false}" == "true" ]]               && RUN_NAME="${RUN_NAME}_snow"
+[[ "${ICE_DYNAMICS:-true}" == "false" ]]       && RUN_NAME="${RUN_NAME}_noicedyn"
 [[ "${CLOSURE:-catke}" == "simple"   ]]        && RUN_NAME="${RUN_NAME}_simple"
 [[ "${CLOSURE:-catke}" == "nori"     ]]        && RUN_NAME="${RUN_NAME}_nori"
 [[ "${CLOSURE:-catke}" == "rbvd"     ]]        && RUN_NAME="${RUN_NAME}_rbvd"
@@ -269,6 +272,7 @@ BACKEND_SIZE="${BACKEND_SIZE:-}"
 NCAR="${NCAR:-false}"
 CORRECTED="${CORRECTED:-false}"
 SNOW="${SNOW:-false}"
+ICE_DYNAMICS="${ICE_DYNAMICS:-true}"
 
 # ── Build optional kwargs strings ─────────────────────────────────────
 
@@ -318,6 +322,9 @@ VELOCITY_KWARG=""
 SNOW_KWARG=""
 [[ "$SNOW" == "true" ]] && SNOW_KWARG="with_snow = true,"
 
+ICE_DYNAMICS_KWARG=""
+[[ "$ICE_DYNAMICS" == "false" ]] && ICE_DYNAMICS_KWARG="with_ice_dynamics = false,"
+
 # ── Build and run Julia expression ────────────────────────────────────
 JULIA_EXPR="using OMIPSimulations
 using Oceananigans
@@ -339,6 +346,7 @@ sim = omip_simulation(:${CONFIG};
                       ${CLOSURE_KWARG}
                       ${VELOCITY_KWARG}
                       ${SNOW_KWARG}
+                      ${ICE_DYNAMICS_KWARG}
                       ${CATKE_CWUSTAR_KWARG}
                       ${MIN_SALINITY_KWARG}
                       ${NORMALIZE_SALINITY_KWARG}
