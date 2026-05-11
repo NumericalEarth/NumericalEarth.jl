@@ -1,15 +1,24 @@
-# Figure 5: March (row 1) and September (row 2) sea-ice concentration per case.
+# Figure 5: Sea-ice concentration, split into NH (polar stereographic, 45°N–90°N)
+# and SH (polar stereographic, 45°S–90°S) for both March and September.
+# Rows: NH March, SH March, NH September, SH September. Columns: cases.
 function fig05(caches, labels, cases)
-    fig = Figure(size = (800 * length(labels), 900), fontsize = 14)
+    ncases = length(labels)
+    fig = Figure(size = (500 * ncases, 500 * 4), fontsize = 14)
+
+    function maybe_plot(row_idx, lab_idx, lab, sym, hemisphere, season)
+        data = get_field(caches[lab], sym)
+        isnothing(data) && return
+        polar_panel!(fig, [row_idx, 2*lab_idx - 1], data;
+                     hemisphere,
+                     title = "$lab: $season ($(hemisphere == :north ? "NH" : "SH"))",
+                     colormap = :ice, colorrange = (0, 1), label = "fraction")
+    end
+
     for (i, lab) in enumerate(labels)
-        sic_march     = get_field(caches[lab], :sic_march)
-        sic_september = get_field(caches[lab], :sic_september)
-        !isnothing(sic_march) && panel!(fig, [1, 2i-1], sic_march;
-            title = "$lab: Sea-ice conc. March",
-            colormap = :ice, colorrange = (0, 1), label = "fraction")
-        !isnothing(sic_september) && panel!(fig, [2, 2i-1], sic_september;
-            title = "$lab: Sea-ice conc. September",
-            colormap = :ice, colorrange = (0, 1), label = "fraction")
+        maybe_plot(1, i, lab, :sic_march_latlon,     :north, "March")
+        maybe_plot(2, i, lab, :sic_march_latlon,     :south, "March")
+        maybe_plot(3, i, lab, :sic_september_latlon, :north, "September")
+        maybe_plot(4, i, lab, :sic_september_latlon, :south, "September")
     end
     savefig(fig, "fig05_seaice_conc.png")
 end

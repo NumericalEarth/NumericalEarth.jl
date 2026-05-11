@@ -1,10 +1,10 @@
-# Figure 8: SSH variance (m²), one panel per case.
+# Figure 8: SSH RMS (m), one panel per case (Robinson, 1° lat-lon regrid).
 function fig08(caches, labels, cases)
     fig = Figure(size = (800 * length(labels), 500), fontsize = 14)
     for (i, lab) in enumerate(labels)
-        panel!(fig, [1, 2i-1], get_field(caches[lab], :ssh_variance);
-               title = "$lab: SSH variance", colormap = :magma,
-               colorrange = (0, 0.05), label = "m²")
+        surface_panel!(fig, [1, 2i-1], get_field(caches[lab], :ssh_rms_latlon);
+               title = "$lab: SSH RMS", colormap = :magma,
+               colorrange = (0, 0.25), label = "m")
     end
-    savefig(fig, "fig08_ssh_variance.png")
+    savefig(fig, "fig08_ssh_rms.png")
 end

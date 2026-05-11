@@ -22,6 +22,7 @@ const cp_ocean = 3991.86795711963
 # ══════════════════════════════════════════════════════════════
 
 using CairoMakie
+using GeoMakie
 using Statistics
 using Dates
 using Downloads
@@ -30,7 +31,7 @@ using JLD2
 using NCDatasets
 using WorldOceanAtlasTools
 using Oceananigans
-using Oceananigans.Grids: znodes, φnodes, φnode
+using Oceananigans.Grids: znodes, λnodes, φnodes, φnode
 using Oceananigans.Fields: interpolate!
 using ConservativeRegridding
 using NumericalEarth
@@ -418,14 +419,75 @@ function panel!(fig, pos, data;
 end
 
 function cpanel!(fig, pos, data;
+                 x = nothing, y = nothing,
                  title="", colormap=:thermal,
-                 levels=nothing, label="",
-                 nan_color=:lightgray)
-    ax = Axis(fig[pos...]; title)
-    kw = isnothing(levels) ? (;) : (; levels)
-    hm = contourf!(ax, data; colormap, nan_color, kw...)
+                 colorrange=nothing, levels=nothing, label="",
+                 nan_color=:lightgray, nlevels=21,
+                 xlabel="", ylabel="", aspect=nothing)
+    axis_kw = isnothing(aspect) ? (; title, xlabel, ylabel) : (; title, xlabel, ylabel, aspect)
+    ax = Axis(fig[pos...]; axis_kw...)
+    lv = if !isnothing(levels)
+        levels
+    elseif !isnothing(colorrange)
+        range(colorrange[1], colorrange[2]; length=nlevels)
+    else
+        nothing
+    end
+    kw = isnothing(lv) ? (;) : (; levels=lv)
+    xs = isnothing(x) ? (1:size(data, 1)) : x
+    ys = isnothing(y) ? (1:size(data, 2)) : y
+    hm = contourf!(ax, xs, ys, data;
+                   colormap, nan_color,
+                   extendlow=:auto, extendhigh=:auto, kw...)
     Colorbar(fig[pos[1], pos[2]+1], hm; label)
     return ax
+end
+
+# ── GeoMakie contour-filled panel ─────────────────────────────────────
+#
+# `geo_panel!` is the geographic-projection counterpart to `cpanel!`.
+# It builds a `GeoAxis` with the requested PROJ string, overlays
+# Natural-Earth coastlines + land, and renders the data as filled
+# contours with `extendlow/high = :auto` so values outside the level
+# range still get the end-of-colormap color (no white margins at the
+# extremes).
+#
+# `x` and `y` are physical longitudes / latitudes (degrees). `data` is
+# `(Nx, Ny)`. NaN cells render transparent so the underlying land /
+# coastline shows through naturally — no `nan_color` machinery needed.
+
+function geo_panel!(fig, pos, data;
+                    x, y,
+                    projection = "+proj=robin",
+                    title = "", colormap = :thermal,
+                    colorrange = nothing, levels = nothing, label = "",
+                    nlevels = 21,
+                    coastlines = true,
+                    coast_color = :black, coast_linewidth = 0.4,
+                    land_color = :lightgray)
+    ga = GeoAxis(fig[pos...]; dest = projection, title)
+    # Land fill goes under the data so NaN cells (land in the regridded
+    # field) show the Natural-Earth land polygon, not transparent.
+    if !isnothing(land_color)
+        poly!(ga, GeoMakie.land(); color = land_color, strokewidth = 0)
+    end
+    lv = if !isnothing(levels)
+        levels
+    elseif !isnothing(colorrange)
+        range(colorrange[1], colorrange[2]; length = nlevels)
+    else
+        nothing
+    end
+    kw = isnothing(lv) ? (;) : (; levels = lv)
+    hm = contourf!(ga, x, y, data;
+                   colormap,
+                   extendlow = :auto, extendhigh = :auto, kw...)
+    if coastlines
+        lines!(ga, GeoMakie.coastlines(); color = coast_color,
+               linewidth = coast_linewidth)
+    end
+    Colorbar(fig[pos[1], pos[2] + 1], hm; label)
+    return ga
 end
 
 # ══════════════════════════════════════════════════════════════

@@ -556,6 +556,12 @@ const ZONAL_LATLON_GRID = LatitudeLongitudeGrid(CPU();
 
 const ZONAL_LATLON_DST_FIELD = Field{Center, Center, Nothing}(ZONAL_LATLON_GRID)
 
+# Cell centers on the shared lat-lon grid. Used as axis coordinates by
+# `surface_panel!` so every regridded map renders with physical lon/lat
+# axes regardless of the underlying model grid (ORCA, tripolar, …).
+const LATLON_LON_CENTERS = collect(λnodes(ZONAL_LATLON_GRID, Center()))
+const LATLON_LAT_CENTERS = collect(φnodes(ZONAL_LATLON_GRID, Center()))
+
 zonal_latitude_centers() = collect(φnodes(ZONAL_LATLON_GRID, Center()))
 
 # Conservatively regrid each level of `data_3d` (weighted by
@@ -583,6 +589,119 @@ LOADERS[:zonal_regridder] = c -> begin
     src = Field{Center, Center, Nothing}(get_field(c, :grid))
     @info "  Building zonal regridder for $(c.label) (may take a few minutes)..."
     ConservativeRegridding.Regridder(ZONAL_LATLON_DST_FIELD, src; progress = true)
+end
+
+# Surface regridder is the *same* (model 2-D grid → 1° lat-lon) regridder
+# used for zonal means. Alias rather than rebuild so each case pays the
+# regridder-construction cost exactly once.
+LOADERS[:surface_regridder] = c -> get_field(c, :zonal_regridder)
+
+"""
+    regrid_surface_to_latlon(c, data_2d)
+
+Conservatively regrid a 2-D surface field `data_2d` (defined on the case's
+native ocean grid) onto the shared 1° lat-lon grid. Returns a
+`(NLON, NLAT)` array, NaN-masked where the destination cell has zero
+ocean coverage. `nothing` in → `nothing` out so it composes through
+optional climatology fields.
+"""
+function regrid_surface_to_latlon(c::CaseCache, data_2d)
+    isnothing(data_2d) && return nothing
+    regridder    = get_field(c, :surface_regridder)
+    surface_mask = Float64.(get_field(c, :ocean_mask_3d)[:, :, end])
+
+    fdata = zeros(ZONAL_NLON * ZONAL_NLAT)
+    fcov  = zeros(ZONAL_NLON * ZONAL_NLAT)
+    clean = replace(data_2d, NaN => zero(eltype(data_2d)))
+
+    ConservativeRegridding.regrid!(fdata, regridder, vec(clean .* surface_mask))
+    ConservativeRegridding.regrid!(fcov,  regridder, vec(surface_mask))
+
+    raw = reshape(fdata, ZONAL_NLON, ZONAL_NLAT)
+    cov = reshape(fcov,  ZONAL_NLON, ZONAL_NLAT)
+    out = fill(NaN, ZONAL_NLON, ZONAL_NLAT)
+    @inbounds for i in eachindex(cov)
+        cov[i] > 0 && (out[i] = raw[i] / cov[i])
+    end
+    return out
+end
+
+# ssh_variance is η² mean minus η_mean²; SSH RMS = √(variance), clipped
+# at zero to guard against tiny negative values from finite-sample noise.
+LOADERS[:ssh_rms] = c -> begin
+    v = get_field(c, :ssh_variance)
+    isnothing(v) && return nothing
+    return sqrt.(max.(v, zero(eltype(v))))
+end
+
+# Build a `:foo_latlon` loader for every surface field used by figures.
+# Each is a lazy lat-lon regrid of the existing case-grid loader, cached
+# in-memory only (no disk persistence — the case-grid version already has
+# disk caching where appropriate, and regridding is fast compared to
+# rebuilding the regridder).
+const SURFACE_LATLON_FIELDS = (
+    :sst, :sss, :ssh,
+    :sst_bias, :sss_bias, :ssh_bias_ecco,
+    :heat_flux, :freshwater_flux,
+    :ssh_rms,
+    :zonal_wind_stress, :meridional_wind_stress,
+    :zonal_wind_stress_bias_ncep, :meridional_wind_stress_bias_ncep,
+    :sic_mean, :sic_march, :sic_september,
+    :mld_min, :mld_max, :mld_min_dbm, :mld_max_dbm,
+)
+
+for sym in SURFACE_LATLON_FIELDS
+    let s = sym
+        LOADERS[Symbol(s, :_latlon)] = c -> regrid_surface_to_latlon(c, get_field(c, s))
+    end
+end
+
+"""
+    surface_panel!(fig, pos, data; projection = "+proj=robin", kwargs...)
+
+Plot a regridded surface field as a filled-contour map in `projection`
+(Robinson by default). Coastlines and land polygons (Natural Earth)
+are drawn automatically.
+
+`data` must be `(NLON, NLAT)` on the shared 1° lat-lon grid — i.e.
+produced by the matching `:foo_latlon` loader or
+`regrid_surface_to_latlon`. All `geo_panel!` kwargs are forwarded.
+"""
+function surface_panel!(fig, pos, data; projection = "+proj=robin", kwargs...)
+    return geo_panel!(fig, pos, data;
+                      x = LATLON_LON_CENTERS,
+                      y = LATLON_LAT_CENTERS,
+                      projection,
+                      kwargs...)
+end
+
+"""
+    polar_panel!(fig, pos, data; hemisphere = :north, lat_cutoff = 45.0, kwargs...)
+
+Plot a regridded surface field with a polar stereographic projection,
+clipped to the requested hemisphere (`:north` or `:south`) and to
+latitudes poleward of `lat_cutoff` (degrees). Used by the sea-ice
+concentration figure to show NH and SH separately.
+
+`data` must be `(NLON, NLAT)` on the shared 1° lat-lon grid; the
+function extracts only the latitude band of interest before plotting,
+so the polar disk autoframes correctly.
+"""
+function polar_panel!(fig, pos, data;
+                      hemisphere = :north, lat_cutoff = 45.0, kwargs...)
+    proj = hemisphere == :north ?
+        "+proj=stere +lat_0=90 +lat_ts=70" :
+        "+proj=stere +lat_0=-90 +lat_ts=-70"
+    j_keep = hemisphere == :north ?
+        findall(lat -> lat >= lat_cutoff,  LATLON_LAT_CENTERS) :
+        findall(lat -> lat <= -lat_cutoff, LATLON_LAT_CENTERS)
+    lat_sub  = LATLON_LAT_CENTERS[j_keep]
+    data_sub = data[:, j_keep]
+    return geo_panel!(fig, pos, data_sub;
+                      x = LATLON_LON_CENTERS,
+                      y = lat_sub,
+                      projection = proj,
+                      kwargs...)
 end
 
 # 3-D time-means (loaded on demand for zonal-section figures). Not
