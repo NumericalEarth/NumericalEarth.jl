@@ -352,6 +352,7 @@ function omip_simulation(config::Symbol = :halfdegree;
                          ocean_minimum_salinity = 4,
                          Cᵂu★ = nothing,
                          with_snow = false,
+                         with_ice_dynamics = true,
                          normalize_salinity = false,
                          diagnostics = true,
                          field_mean_interval = 5days,
@@ -376,7 +377,7 @@ function omip_simulation(config::Symbol = :halfdegree;
                         start_date, end_date)
 
     snow_thermodynamics = with_snow ? NumericalEarth.SeaIces.default_snow_thermodynamics(grid) : nothing
-    sea_ice = build_sea_ice(cfg, grid, ocean; restoring_dir, snow_thermodynamics)
+    sea_ice = build_sea_ice(cfg, grid, ocean; restoring_dir, snow_thermodynamics, with_ice_dynamics)
 
     # When staging_dir is provided, JRA55 data is read from fast scratch
     # with symlink fallback to the slow source directory.
@@ -740,9 +741,12 @@ end
 ##### Sea Ice builder
 #####
 
-function build_sea_ice(config, grid, ocean; restoring_dir, snow_thermodynamics = nothing)
+function build_sea_ice(config, grid, ocean; restoring_dir, snow_thermodynamics = nothing,
+                       with_ice_dynamics = true)
+    dynamics = with_ice_dynamics ? NumericalEarth.SeaIces.sea_ice_dynamics(grid, ocean) : nothing
     sea_ice = sea_ice_simulation(grid, ocean;
                                  advection = WENO(order=7, minimum_buffer_upwind_order=1),
+                                 dynamics,
                                  snow_thermodynamics)
 
     set!(sea_ice.model,

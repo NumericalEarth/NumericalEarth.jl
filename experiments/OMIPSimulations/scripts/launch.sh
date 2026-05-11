@@ -30,6 +30,8 @@ Environment variables (physics):
   NCAR          Set to "true" for OMIP-2/NCAR bulk formulae
   CORRECTED     Set to "true" for corrected COARE 3.6 fluxes
   SNOW          Set to "true" to enable snow thermodynamics
+  ICE_DYNAMICS  Set to "false" to disable sea-ice dynamics (thermo-only ice).
+                Default: true.
   KSKEW         Isopycnal skew diffusivity κ_skew (default: per-config; 0 = off)
   KSYMM         Isopycnal symmetric diffusivity κ_symmetric (default: per-config; 0 = off)
   BIHARMONIC    Biharmonic viscosity timescale (default: per-config; "nothing" = off)
@@ -182,6 +184,7 @@ RUN_NAME="$CONFIG"
 [[ "${CORRECTED:-false}" == "true" ]]          && RUN_NAME="${RUN_NAME}_corrected"
 [[ "${NCAR:-false}" == "true" ]]               && RUN_NAME="${RUN_NAME}_ncar"
 [[ "${SNOW:-false}" == "true" ]]               && RUN_NAME="${RUN_NAME}_snow"
+[[ "${ICE_DYNAMICS:-true}" == "false" ]]       && RUN_NAME="${RUN_NAME}_noicedyn"
 [[ "${CLOSURE:-catke}" == "simple"   ]]        && RUN_NAME="${RUN_NAME}_simple"
 [[ "${CLOSURE:-catke}" == "nori"     ]]        && RUN_NAME="${RUN_NAME}_nori"
 [[ "${CLOSURE:-catke}" == "rbvd"     ]]        && RUN_NAME="${RUN_NAME}_rbvd"
