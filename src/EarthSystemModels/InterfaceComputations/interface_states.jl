@@ -291,9 +291,8 @@ end
     Ωc = ifelse(ΔT == zero(ΔT), zero(Tₛ⁻), 𝒬ᵀ / ΔT)
 
     # Newton linearization of upwelling longwave: ℐꜛˡʷ(Tₛ) ≈ ℐꜛˡʷ(Tₛ⁻) + β (Tₛ − Tₛ⁻).
-    σ = ℙₛ.radiation.σ
-    ϵ = ℙₛ.radiation.ϵ
-    β = 4 * σ * ϵ * Tₛ⁻^3
+    # Since ℐꜛˡʷ = σ ϵ Tₛ⁻⁴, we have β = 4 σ ϵ Tₛ⁻³ = 4 ℐꜛˡʷ / Tₛ⁻.
+    β = 4 * ℐꜛˡʷ / Tₛ⁻
 
     # Flux balance solution with T⁴ linearization (stable even at ΔT = 0):
     D  = 1 + β * R - Ωc * R

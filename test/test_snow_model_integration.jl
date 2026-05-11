@@ -118,8 +118,7 @@ using Oceananigans.Units: hours, days
 
                 atmosphere = PrescribedAtmosphere(ocean_grid, [0.0])
                 parent(atmosphere.velocities.u) .= 2.0
-                radiation = Radiation(ocean_emissivity = 0, sea_ice_emissivity = 0)
-                return OceanSeaIceModel(ocean, sea_ice; atmosphere, radiation)
+                return OceanSeaIceModel(ocean, sea_ice; atmosphere, radiation=nothing)
             end
 
             bare  = build_coupled(with_snow = false)
@@ -163,7 +162,7 @@ end
                                          dynamics = nothing)
 
             atmosphere = PrescribedAtmosphere(grid, [0.0])
-            radiation = Radiation()
+            radiation = nothing
 
             @test begin
                 coupled = OceanSeaIceModel(ocean, sea_ice; atmosphere, radiation)
@@ -184,7 +183,7 @@ end
                                          snow_thermodynamics = nothing)
 
             atmosphere = PrescribedAtmosphere(grid, [0.0])
-            radiation = Radiation()
+            radiation = nothing
 
             coupled = OceanSeaIceModel(ocean, sea_ice; atmosphere, radiation)
 
