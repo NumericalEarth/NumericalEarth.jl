@@ -83,9 +83,9 @@ atmosphere = atmosphere_simulation(spectral_grid, output=true)
 
 atmosphere.model.initial_conditions
 
-# We use a three hour time-step (10800 seconds):
+# We use a three hour time-step:
 
-atmosphere.model.output.output_dt = Second(10800)
+set!(atmosphere.model.output, atmosphere.model, interval = Hour(3))
 nothing #hide
 
 # ## The coupled model
