@@ -218,6 +218,15 @@ SBATCH_ARGS+=(--ntasks-per-node="${GPUS_PER_NODE}")
 export THREADS="${THREADS:-8}"
 SBATCH_ARGS+=(--cpus-per-task="${THREADS}")
 
+PARTITION="${PARTITION:-pi_raffaele}"
+SBATCH_ARGS+=(--partition="${PARTITION}")
+
+TIME="${TIME:-72:00:00}"
+SBATCH_ARGS+=(--time="${TIME}")
+
+MEM="${MEM:-150GB}"
+SBATCH_ARGS+=(--mem="${MEM}")
+
 if [[ "${PROFILE:-false}" == "true" ]]; then
     SBATCH_ARGS+=(-o "${RUN_NAME}_profile.out")
     SBATCH_ARGS+=(-e "${RUN_NAME}_profile.err")
@@ -233,9 +242,6 @@ fi
 sbatch "${SBATCH_ARGS[@]}" "$@" <<'EOF'
 #!/bin/bash
 #SBATCH -N 1
-#SBATCH -p pi_raffaele
-#SBATCH --time=72:00:00
-#SBATCH --mem=150GB
 
 source /etc/profile.d/modules.sh
 module load nvhpc
