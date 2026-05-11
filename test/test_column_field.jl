@@ -80,21 +80,21 @@ end
 
     # All-valid: result is the simple average.
     data_full = reshape(Float32[1 2; 3 4], 2, 2, 1)
-    @test blend(data_full, c, 1, nothing, c.ℑ, FT) ≈ 2.5f0
+    @test blend(c.ℑ, data_full, c, 1, nothing, FT) ≈ 2.5f0
 
     # All-NaN: result is NaN.
     data_nan = fill(NaN32, 2, 2, 1)
-    @test isnan(blend(data_nan, c, 1, nothing, c.ℑ, FT))
+    @test isnan(blend(c.ℑ, data_nan, c, 1, nothing, FT))
 
     # Partial: bottom-right corner is NaN, weights renormalise over the rest.
     # Weights become (0.25, 0.25, 0.25, 0); Σw = 0.75; sum = 1+2+3 = 6;
     # result = 6 / 0.75 = 2.0 in 1/2/3 → renormalised mean.
     data_part = reshape(Float32[1 2; 3 NaN32], 2, 2, 1)
-    @test blend(data_part, c, 1, nothing, c.ℑ, FT) ≈ 2.0f0
+    @test blend(c.ℑ, data_part, c, 1, nothing, FT) ≈ 2.0f0
 
     # Missing values from NetCDF-style arrays are treated as NaN.
     data_missing = reshape(Union{Missing, Float32}[1.0 2.0; 3.0 missing], 2, 2, 1)
-    @test blend(data_missing, c, 1, nothing, c.ℑ, FT) ≈ 2.0f0
+    @test blend(c.ℑ, data_missing, c, 1, nothing, FT) ≈ 2.0f0
 end
 
 @testset "blend dispatches Linear vs Nearest" begin
@@ -103,15 +103,15 @@ end
 
     # wx = wy = 0.5 → average for Linear; arbitrary corner for Nearest.
     c_lin = ColumnInfo(1, 2, 1, 2, 0.5f0, 0.5f0, Linear())
-    @test blend(data, c_lin, 1, nothing, c_lin.ℑ, FT) ≈ 2.5f0
+    @test blend(c_lin.ℑ, data, c_lin, 1, nothing, FT) ≈ 2.5f0
 
     # wx = 0.7, wy = 0.7 → both above 0.5 → picks i⁺, j⁺ = data[2,2,1] = 4.
     c_near = ColumnInfo(1, 2, 1, 2, 0.7f0, 0.7f0, Nearest())
-    @test blend(data, c_near, 1, nothing, c_near.ℑ, FT) ≈ 4.0f0
+    @test blend(c_near.ℑ, data, c_near, 1, nothing, FT) ≈ 4.0f0
 
     # wx = 0.3, wy = 0.3 → both below 0.5 → picks i⁻, j⁻ = data[1,1,1] = 1.
     c_near2 = ColumnInfo(1, 2, 1, 2, 0.3f0, 0.3f0, Nearest())
-    @test blend(data, c_near2, 1, nothing, c_near2.ℑ, FT) ≈ 1.0f0
+    @test blend(c_near2.ℑ, data, c_near2, 1, nothing, FT) ≈ 1.0f0
 end
 
 @testset "End-to-end Column Field construction" begin
