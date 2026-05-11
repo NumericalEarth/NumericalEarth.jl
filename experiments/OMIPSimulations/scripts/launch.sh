@@ -272,6 +272,7 @@ BACKEND_SIZE="${BACKEND_SIZE:-}"
 NCAR="${NCAR:-false}"
 CORRECTED="${CORRECTED:-false}"
 SNOW="${SNOW:-false}"
+ICE_DYNAMICS="${ICE_DYNAMICS:-true}"
 
 # ── Build optional kwargs strings ─────────────────────────────────────
 
@@ -321,6 +322,9 @@ VELOCITY_KWARG=""
 SNOW_KWARG=""
 [[ "$SNOW" == "true" ]] && SNOW_KWARG="with_snow = true,"
 
+ICE_DYNAMICS_KWARG=""
+[[ "$ICE_DYNAMICS" == "false" ]] && ICE_DYNAMICS_KWARG="with_ice_dynamics = false,"
+
 # ── Build and run Julia expression ────────────────────────────────────
 JULIA_EXPR="using OMIPSimulations
 using Oceananigans
@@ -342,6 +346,7 @@ sim = omip_simulation(:${CONFIG};
                       ${CLOSURE_KWARG}
                       ${VELOCITY_KWARG}
                       ${SNOW_KWARG}
+                      ${ICE_DYNAMICS_KWARG}
                       ${CATKE_CWUSTAR_KWARG}
                       ${MIN_SALINITY_KWARG}
                       ${NORMALIZE_SALINITY_KWARG}
