@@ -733,8 +733,9 @@ latitudes poleward of `lat_cutoff` (degrees). Used by the sea-ice
 concentration figure to show NH and SH separately.
 
 `data` must be `(NLON, NLAT)` on the shared 1° lat-lon grid; the
-function extracts only the latitude band of interest before plotting,
-so the polar disk autoframes correctly.
+function extracts only the latitude band of interest and computes
+projected limits (via Proj) so the polar cap fills the panel instead
+of being squashed into the centre of a full-globe stereographic view.
 """
 function polar_panel!(fig, pos, data;
                       hemisphere = :north, lat_cutoff = 45.0, kwargs...)
@@ -746,11 +747,23 @@ function polar_panel!(fig, pos, data;
         findall(lat -> lat <= -lat_cutoff, LATLON_LAT_CENTERS)
     lat_sub  = LATLON_LAT_CENTERS[j_keep]
     data_sub = data[:, j_keep]
+    edge_lat = hemisphere == :north ? lat_cutoff : -lat_cutoff
+    r = polar_cap_radius(proj, edge_lat)
     return geo_panel!(fig, pos, data_sub;
                       x = LATLON_LON_CENTERS,
                       y = lat_sub,
                       projection = proj,
+                      limits = ((-r, r), (-r, r)),
                       kwargs...)
+end
+
+# Projected (x,y) radius of the latitude circle at `edge_lat` under the
+# given polar-stereographic CRS. Used by `polar_panel!` to clip GeoAxis
+# to the polar cap.
+function polar_cap_radius(projection::AbstractString, edge_lat::Real)
+    tr = Proj.Transformation("+proj=longlat +datum=WGS84", projection)
+    x_edge, y_edge = tr(0.0, Float64(edge_lat))
+    return hypot(x_edge, y_edge)
 end
 
 # 3-D time-means (loaded on demand for zonal-section figures). Not

@@ -23,6 +23,7 @@ const cp_ocean = 3991.86795711963
 
 using CairoMakie
 using GeoMakie
+using GeoMakie.Proj
 using Statistics
 using Dates
 using Downloads
@@ -474,6 +475,18 @@ end
 # `(Nx, Ny)`. NaN cells render transparent so the underlying land /
 # coastline shows through naturally — no `nan_color` machinery needed.
 
+# Shift a 0..360-longitude axis + data to -180..180 (sorted ascending).
+# GeoMakie's projections (e.g. Robinson) clip / silently drop data points
+# with longitudes outside [-180, 180]. Our regridded fields use the
+# Oceananigans 0..360 convention, so we wrap before passing to contourf.
+function to_minus180_180(lon, data)
+    any(lon .> 180) || return lon, data
+    split = findfirst(>(180), lon)
+    new_lon  = vcat(lon[split:end] .- 360, lon[1:split-1])
+    new_data = vcat(data[split:end, :],   data[1:split-1, :])
+    return new_lon, new_data
+end
+
 function geo_panel!(fig, pos, data;
                     x, y,
                     projection = "+proj=robin",
@@ -482,13 +495,12 @@ function geo_panel!(fig, pos, data;
                     nlevels = 21,
                     coastlines = true,
                     coast_color = :black, coast_linewidth = 0.4,
-                    land_color = :lightgray)
-    ga = GeoAxis(fig[pos...]; dest = projection, title)
-    # Land fill goes under the data so NaN cells (land in the regridded
-    # field) show the Natural-Earth land polygon, not transparent.
-    if !isnothing(land_color)
-        poly!(ga, GeoMakie.land(); color = land_color, strokewidth = 0)
-    end
+                    land_color = :lightgray,
+                    limits = nothing)
+    x, data = to_minus180_180(x, data)
+    axis_kw = isnothing(limits) ? (; dest = projection, title) :
+                                   (; dest = projection, title, limits)
+    ga = GeoAxis(fig[pos...]; axis_kw...)
     lv = if !isnothing(levels)
         levels
     elseif !isnothing(colorrange)
@@ -500,6 +512,13 @@ function geo_panel!(fig, pos, data;
     hm = contourf!(ga, x, y, data;
                    colormap,
                    extendlow = :auto, extendhigh = :auto, kw...)
+    # Land mask is drawn ON TOP of the contourf to hide any bands that
+    # bleed across continents (model/Natural-Earth coastline mismatch,
+    # contourf interpolating across NaN cells, etc.). Coastlines go on
+    # top of the land so the boundary is sharp.
+    if !isnothing(land_color)
+        poly!(ga, GeoMakie.land(); color = land_color, strokewidth = 0)
+    end
     if coastlines
         lines!(ga, GeoMakie.coastlines(); color = coast_color,
                linewidth = coast_linewidth)
