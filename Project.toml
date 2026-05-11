@@ -46,7 +46,6 @@ WorldOceanAtlasTools = "04f20302-f1b9-11e8-29d9-7d841cb0a64a"
 XESMF = "2e0b0046-e7a1-486f-88de-807ee8ffabe5"
 
 [sources]
-ClimaSeaIce = {rev = "ss/refactor-thermodynamics", url = "https://github.com/CliMA/ClimaSeaIce.jl.git"}
 Oceananigans = {rev = "ss/for-omip", url = "https://github.com/CliMA/Oceananigans.jl.git"}
 SeawaterPolynomials = {rev = "ss/conversion-functions", url = "https://github.com/CliMA/SeawaterPolynomials.jl.git"}
 
@@ -64,7 +63,7 @@ Adapt = "4"
 Breeze = "0.4"
 CDSAPI = "2.2.1"
 CFTime = "0.1, 0.2"
-ClimaSeaIce = "0.4.4, 0.5"
+ClimaSeaIce = "0.5"
 CubedSphere = "0.3.4"
 CondaPkg = "0.2.33"
 CopernicusMarine = "0.1.1"
