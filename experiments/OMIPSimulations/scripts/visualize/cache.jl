@@ -34,9 +34,56 @@ mutable struct CaseCache
 end
 
 function CaseCache(case::NamedTuple)
-    return CaseCache(case.label, case.prefix, run_dir_for(case.prefix),
-                     Float64(case.start_time), Float64(case.stop_time),
+    prefix  = case.prefix
+    run_dir = run_dir_for(prefix)
+    start_time, stop_time = resolve_case_window(case, run_dir, prefix)
+    return CaseCache(case.label, prefix, run_dir,
+                     start_time, stop_time,
                      case, Dict{Symbol, Any}())
+end
+
+"""
+    resolve_case_window(case, run_dir, prefix) -> (start_time, stop_time)
+
+Translate the case's averaging-window declaration into absolute
+`(start_time, stop_time)` in seconds.
+
+Two modes, mutually exclusive:
+
+- **absolute**: any of `start_time` / `stop_time` are present. Missing
+  fields default to `0.0` / `Inf`.
+- **relative**: only `years_from_end` is present. The function reads
+  the last snapshot time from the case's surface JLD2 stem and returns
+  `(end_time - years_from_end * year, end_time + 1)`. The disk cache
+  key uses these absolute values, so extending the run invalidates the
+  cache automatically.
+
+Raises if both modes are mixed or neither is given.
+"""
+function resolve_case_window(case::NamedTuple, run_dir::AbstractString, prefix::AbstractString)
+    has_abs = haskey(case, :start_time) || haskey(case, :stop_time)
+    has_rel = haskey(case, :years_from_end)
+
+    if has_abs && has_rel
+        error("Case '$(get(case, :label, prefix))': specify either `start_time`/`stop_time` or `years_from_end`, not both.")
+    end
+
+    if has_abs
+        st = haskey(case, :start_time) ? Float64(case.start_time) : 0.0
+        sp = haskey(case, :stop_time)  ? Float64(case.stop_time)  : Inf
+        return st, sp
+    end
+
+    if has_rel
+        surface_file = find_first_file(run_dir, prefix, "surface")
+        times = total_jld2_timeseries_times(surface_file)
+        isempty(times) && error("Case '$(get(case, :label, prefix))': no snapshots in surface file — cannot derive window from `years_from_end`.")
+        end_time = last(times)
+        window   = Float64(case.years_from_end) * years
+        return end_time - window, end_time + 1.0
+    end
+
+    error("Case '$(get(case, :label, prefix))': must specify either `start_time`/`stop_time` or `years_from_end`.")
 end
 
 # Sentinel used to memoize loaders that legitimately return `nothing`

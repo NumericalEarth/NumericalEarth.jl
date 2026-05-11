@@ -36,21 +36,28 @@
 # "minimum-time, isolation" property the refactor was designed for.
 #
 # Edit the `cases` list below before the first include.
+#
+# Each case specifies its averaging window in one of two mutually
+# exclusive ways:
+#   - absolute: `start_time` and/or `stop_time` in seconds (omit either
+#     to default to 0 / Inf).
+#   - relative: `years_from_end = N` → average the last N years of the
+#     run, computed from the latest snapshot in the surface JLD2 file.
 
 # ══════════════════════════════════════════════════════════════
 # Configuration
 # ══════════════════════════════════════════════════════════════
 
 cases = [
-    (prefix = "orca_corrected_snow_rbvd_bih50days",             label = "ORCA RBVD",           start_time =  0 * (365 * 24 * 3600), stop_time = Inf),
-    (prefix = "orca_ncar_snow",                                 label = "ORCA New NCAR",       start_time = 35 * (365 * 24 * 3600), stop_time = Inf),
-    (prefix = "orca_corrected_snow_simple",                     label = "ORCA CADV",           start_time = 15 * (365 * 24 * 3600), stop_time = Inf),
-    (prefix = "orca_corrected_snow_cb0.12_ksymm500",            label = "ORCA Redi500",        start_time = 40 * (365 * 24 * 3600), stop_time = Inf),
-    (prefix = "orca_corrected_snow_cb0.15_bih50days",           label = "ORCA LowDiss",        start_time = 20 * (365 * 24 * 3600), stop_time = Inf),
-    (prefix = "orca_ncar_snow_cb0.15_bih50days",                label = "ORCA NCAR LowDiss",   start_time = 15 * (365 * 24 * 3600), stop_time = Inf),
-    (prefix = "halfdegree_corrected_snow_cb0.01_kskew0_ksymm0", label = "Half Degree",         start_time = 40 * (365 * 24 * 3600), stop_time = Inf),
-    (prefix = "orca_corrected_snow_cb0.06_kskew0_ksymm0",       label = "ORCA NOGM",           start_time = 40 * (365 * 24 * 3600), stop_time = Inf),
-    (prefix = "orca_corrected_snow_cb0.06_kskew1000_ksymm1000", label = "ORCA GM1000",         start_time = 40 * (365 * 24 * 3600), stop_time = Inf),
+    (prefix = "orca_corrected_snow_rbvd_bih50days",             label = "ORCA RBVD",           years_from_end = 5),
+    # (prefix = "orca_ncar_snow",                                 label = "ORCA New NCAR",       years_from_end = 5),
+    # (prefix = "orca_corrected_snow_simple",                     label = "ORCA CADV",           years_from_end = 5),
+    # (prefix = "orca_corrected_snow_cb0.12_ksymm500",            label = "ORCA Redi500",        years_from_end = 5),
+    (prefix = "orca_corrected_snow_cb0.15_bih50days",           label = "ORCA CATKE",          years_from_end = 5),
+    # (prefix = "orca_ncar_snow_cb0.15_bih50days",                label = "ORCA NCAR LowDiss",   years_from_end = 5),
+    (prefix = "halfdegree_corrected_snow_cb0.01_kskew0_ksymm0", label = "Half Degree CATKE",   years_from_end = 5),
+    # (prefix = "orca_corrected_snow_cb0.06_kskew0_ksymm0",       label = "ORCA NOGM",           years_from_end = 5),
+    # (prefix = "orca_corrected_snow_cb0.06_kskew1000_ksymm1000", label = "ORCA GM1000",         years_from_end = 5),
 ]
 
 output_dir = length(ARGS) >= 1 ? ARGS[1] : "figures"
