@@ -161,6 +161,24 @@ function total_jld2_timeseries_times(path::AbstractString; reader_kw = NamedTupl
 end
 
 """
+    last_jld2_timeseries_time(path; reader_kw = NamedTuple())
+
+Latest snapshot time for an Oceananigans JLD2 output stem `path`. Opens
+only the last part file and reads only the highest-iteration entry of
+`timeseries/t`. Avoids the per-iteration JLD2 lookup loop in
+`total_jld2_timeseries_times`, which is O(N) and slow on long runs over
+network filesystems.
+"""
+function last_jld2_timeseries_time(path::AbstractString; reader_kw = NamedTuple())
+    last_part = last(jld2_parts(path))
+    return with_jld2(last_part; reader_kw) do jf
+        ks = keys(jf["timeseries/t"])
+        max_iter = maximum(parse(Int, k) for k in ks if !isnothing(tryparse(Int, k)))
+        return Float64(jf["timeseries/t/$max_iter"])
+    end
+end
+
+"""
     total_jld2_serialized_grid(path, name; reader_kw = NamedTuple())
 
 Read the grid serialized inside an Oceananigans JLD2 output stem

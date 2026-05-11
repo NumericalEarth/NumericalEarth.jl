@@ -76,10 +76,12 @@ function resolve_case_window(case::NamedTuple, run_dir::AbstractString, prefix::
 
     if has_rel
         surface_file = find_first_file(run_dir, prefix, "surface")
-        times = total_jld2_timeseries_times(surface_file)
-        isempty(times) && error("Case '$(get(case, :label, prefix))': no snapshots in surface file — cannot derive window from `years_from_end`.")
-        end_time = last(times)
-        window   = Float64(case.years_from_end) * years
+        end_time = try
+            last_jld2_timeseries_time(surface_file)
+        catch err
+            error("Case '$(get(case, :label, prefix))': could not read last snapshot time from surface file — cannot derive window from `years_from_end`. ($(sprint(showerror, err)))")
+        end
+        window = Float64(case.years_from_end) * years
         return end_time - window, end_time + 1.0
     end
 
