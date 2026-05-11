@@ -219,7 +219,9 @@ export THREADS="${THREADS:-8}"
 SBATCH_ARGS+=(--cpus-per-task="${THREADS}")
 
 PARTITION="${PARTITION:-pi_raffaele}"
-SBATCH_ARGS+=(--partition="${PARTITION}")
+if [[ "${PARTITION}" != "default" ]]; then
+    SBATCH_ARGS+=(--partition="${PARTITION}")
+fi
 
 TIME="${TIME:-72:00:00}"
 SBATCH_ARGS+=(--time="${TIME}")
