@@ -118,7 +118,7 @@ using Oceananigans.Units: hours, days
 
                 atmosphere = PrescribedAtmosphere(ocean_grid, [0.0])
                 parent(atmosphere.velocities.u) .= 2.0
-                return OceanSeaIceModel(ocean, sea_ice; atmosphere, radiation=nothing)
+                return OceanSeaIceModel(sea_ice, ocean; atmosphere, radiation=nothing)
             end
 
             bare  = build_coupled(with_snow = false)
@@ -165,7 +165,7 @@ end
             radiation = nothing
 
             @test begin
-                coupled = OceanSeaIceModel(ocean, sea_ice; atmosphere, radiation)
+                coupled = OceanSeaIceModel(sea_ice, ocean; atmosphere, radiation)
                 time_step!(coupled, 1)
                 true
             end
@@ -185,7 +185,7 @@ end
             atmosphere = PrescribedAtmosphere(grid, [0.0])
             radiation = nothing
 
-            coupled = OceanSeaIceModel(ocean, sea_ice; atmosphere, radiation)
+            coupled = OceanSeaIceModel(sea_ice, ocean; atmosphere, radiation)
 
             # The snowfall field should exist in the exchanger
             exchanger = coupled.interfaces.exchanger
