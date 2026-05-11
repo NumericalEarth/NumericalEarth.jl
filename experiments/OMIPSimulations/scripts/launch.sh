@@ -223,7 +223,11 @@ if [[ "${PARTITION}" != "default" ]]; then
     SBATCH_ARGS+=(--partition="${PARTITION}")
 fi
 
-TIME="${TIME:-72:00:00}"
+if [[ "${PARTITION}" == "default" ]]; then
+    TIME="${TIME:-08:00:00}"
+else
+    TIME="${TIME:-72:00:00}"
+fi
 SBATCH_ARGS+=(--time="${TIME}")
 
 MEM="${MEM:-150GB}"
