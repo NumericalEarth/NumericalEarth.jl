@@ -962,7 +962,10 @@ function gunzip_to_sibling(path_gz::AbstractString)
     out = path_gz[1:end-3]
     isfile(out) && return out
     @info "  Gunzipping $(basename(path_gz))"
-    run(pipeline(`gunzip -k $path_gz`))
+    # `gunzip -k` keeps the .gz file but isn't supported by older gzip
+    # builds (e.g. some cluster login nodes). Use `gunzip -c` (write to
+    # stdout) with a Julia pipeline redirect — works on every gzip.
+    run(pipeline(`gunzip -c $path_gz`, stdout = out))
     return out
 end
 
