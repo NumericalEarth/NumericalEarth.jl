@@ -4,7 +4,7 @@ function fig08(caches, labels, cases)
     for (i, lab) in enumerate(labels)
         surface_panel!(fig, [1, 2i-1], get_field(caches[lab], :ssh_rms_latlon);
                title = "$lab: SSH RMS", colormap = :magma,
-               colorrange = (0, 0.25), label = "m")
+               colorrange = (0, 0.2), label = "m")
     end
     savefig(fig, "fig08_ssh_rms.png")
 end
