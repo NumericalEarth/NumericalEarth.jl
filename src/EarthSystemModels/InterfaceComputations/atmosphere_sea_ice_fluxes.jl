@@ -89,15 +89,17 @@ end
         # Sea ice properties
         uˢⁱ = zero(FT) # ℑxᶜᵃᵃ(i, j, 1, grid, interior_state.u)
         vˢⁱ = zero(FT) # ℑyᵃᶜᵃ(i, j, 1, grid, interior_state.v)
-        hˢⁱ = interior_state.h[i, j, 1]
+        hˢⁱ = interior_state.hi[i, j, 1]
+        hˢⁿ = interior_state.hs[i, j, 1]
         hc = interior_state.hc[i, j, 1]
         ℵᵢ = interior_state.ℵ[i, j, 1]
         Tₛ = interface_temperature[i, j, 1]
         Tₛ = convert_to_kelvin(sea_ice_properties.temperature_units, Tₛ)
     end
 
+    # Build thermodynamic and dynamic states in the atmosphere and interface.
     ℂᵃᵗ = atmosphere_properties.thermodynamics_parameters
-    zᵃᵗ = atmosphere_properties.surface_layer_height # elevation of atmos variables relative to interface
+    zᵃᵗ = atmosphere_properties.surface_layer_height
 
     local_atmosphere_state = (z = zᵃᵗ,
                               u = uᵃᵗ,
@@ -107,7 +109,7 @@ end
                               q = qᵃᵗ,
                               h_bℓ = atmosphere_state.h_bℓ)
 
-    local_interior_state = (u=uˢⁱ, v=vˢⁱ, T=Tᵒᶜ, S=Sᵒᶜ, h=hˢⁱ, hc=hc)
+    local_interior_state = (u=uˢⁱ, v=vˢⁱ, T=Tᵒᶜ, S=Sᵒᶜ, hi=hˢⁱ, hs=hˢⁿ, hc=hc)
 
     # Local radiative state at this cell. Returns zero-valued state when
     # radiation is off.

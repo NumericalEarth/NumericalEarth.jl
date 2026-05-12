@@ -31,7 +31,6 @@ XESMF = "2e0b0046-e7a1-486f-88de-807ee8ffabe5"
 
 [sources]
 NumericalEarth = {path = ".."}
-Breeze = {url = "https://github.com/NumericalEarth/Breeze.jl/", rev = "main"}
 
 [compat]
 ArchGDAL = "0.10"
@@ -39,7 +38,7 @@ Breeze = "0.4"
 CDSAPI = "2.2.2"
 CFTime = "0.1, 0.2"
 CUDA = "5.9.5"
-ClimaSeaIce = "0.4.10"
+ClimaSeaIce = "0.5"
 CondaPkg = "0.2.33"
 CopernicusMarine = "0.1.1"
 Dates = "<0.0.1, 1"

@@ -1,6 +1,6 @@
 module Atmospheres
 
-export atmosphere_simulation, PrescribedAtmosphere
+export atmosphere_simulation, PrescribedAtmosphere, PrescribedPrecipitationFlux
 
 using Oceananigans
 using Oceananigans.Fields: Center
