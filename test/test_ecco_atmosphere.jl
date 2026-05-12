@@ -2,7 +2,7 @@ include("runtests_setup.jl")
 include("download_utils.jl")
 
 using Statistics: median
-using NumericalEarth.Atmospheres: PrescribedAtmosphere
+using NumericalEarth.Atmospheres: PrescribedAtmosphere, PrescribedPrecipitationFlux
 using NumericalEarth.Radiations: PrescribedRadiation
 using NumericalEarth.ECCO: ECCOPrescribedAtmosphere, ECCOPrescribedRadiation, ECCO4Monthly
 using NumericalEarth.DataWrangling: download_dataset, metadata_path, higher_bound
@@ -50,7 +50,9 @@ end
         @test haskey(atmosphere.tracers, :T)
         @test haskey(atmosphere.tracers, :q)
         @test !isnothing(atmosphere.pressure)
-        @test haskey(atmosphere.freshwater_flux, :rain)
+        @test atmosphere.freshwater_flux isa PrescribedPrecipitationFlux
+        @test atmosphere.freshwater_flux.rain isa FieldTimeSeries
+        @test isnothing(atmosphere.freshwater_flux.snow)
 
         # Test downwelling radiation components
         ℐꜜˢʷ = radiation.downwelling_shortwave

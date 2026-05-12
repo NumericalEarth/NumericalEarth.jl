@@ -16,7 +16,7 @@ function update_net_fluxes!(coupled_model, sea_ice::Simulation{<:SeaIceModel})
     atmosphere_sea_ice_fluxes = computed_fluxes(coupled_model.interfaces.atmosphere_sea_ice_interface)
 
     atmosphere_fields = coupled_model.interfaces.exchanger.atmosphere.state
-    freshwater_flux = atmosphere_fields.Jᶜ.data
+    snowfall_flux = atmosphere_fields.Jˢⁿ.data
 
     sea_ice_properties = coupled_model.interfaces.sea_ice_properties
     ice_concentration = sea_ice_concentration(sea_ice)
@@ -29,7 +29,7 @@ function update_net_fluxes!(coupled_model, sea_ice::Simulation{<:SeaIceModel})
             clock,
             atmosphere_sea_ice_fluxes,
             sea_ice_ocean_fluxes,
-            freshwater_flux,
+            snowfall_flux,
             ice_concentration,
             sea_ice_properties)
 
@@ -42,7 +42,7 @@ end
                                                clock,
                                                atmosphere_sea_ice_fluxes,
                                                sea_ice_ocean_fluxes,
-                                               freshwater_flux, # Where do we add this one?
+                                               snowfall_flux,
                                                ice_concentration,
                                                sea_ice_properties)
 
@@ -55,6 +55,7 @@ end
         𝒬ᵛ   = atmosphere_sea_ice_fluxes.latent_heat[i, j, 1]   # latent heat flux
         𝒬ᶠʳᶻ = sea_ice_ocean_fluxes.frazil_heat[i, j, 1]          # frazil heat flux
         𝒬ⁱⁿᵗ = sea_ice_ocean_fluxes.interface_heat[i, j, 1]       # interfacial heat flux
+        Jˢⁿ  = snowfall_flux[i, j, 1]
     end
 
     ρτˣ = atmosphere_sea_ice_fluxes.x_momentum # zonal momentum flux
@@ -67,8 +68,9 @@ end
     # Mask fluxes over land for convenience
     inactive = inactive_node(i, j, kᴺ, grid, Center(), Center(), Center())
 
-    @inbounds top_fluxes.heat[i, j, 1]  = ifelse(inactive, zero(grid), ΣQt)
-    @inbounds top_fluxes.u[i, j, 1]     = ifelse(inactive, zero(grid), ℑxᶠᵃᵃ(i, j, 1, grid, ρτˣ))
-    @inbounds top_fluxes.v[i, j, 1]     = ifelse(inactive, zero(grid), ℑyᵃᶠᵃ(i, j, 1, grid, ρτʸ))
-    @inbounds bottom_heat_flux[i, j, 1] = ifelse(inactive, zero(grid), ΣQb)
+    @inbounds top_fluxes.heat[i, j, 1]     = ifelse(inactive, zero(grid), ΣQt)
+    @inbounds top_fluxes.snowfall[i, j, 1] = ifelse(inactive, zero(grid), Jˢⁿ)
+    @inbounds top_fluxes.u[i, j, 1]        = ifelse(inactive, zero(grid), ℑxᶠᵃᵃ(i, j, 1, grid, ρτˣ))
+    @inbounds top_fluxes.v[i, j, 1]        = ifelse(inactive, zero(grid), ℑyᵃᶠᵃ(i, j, 1, grid, ρτʸ))
+    @inbounds bottom_heat_flux[i, j, 1]    = ifelse(inactive, zero(grid), ΣQb)
 end

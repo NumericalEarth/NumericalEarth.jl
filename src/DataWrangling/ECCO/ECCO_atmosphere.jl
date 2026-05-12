@@ -1,6 +1,6 @@
 using NumericalEarth.DataWrangling: DatasetBackend
 using Oceananigans.OutputReaders
-using NumericalEarth.Atmospheres: PrescribedAtmosphere
+using NumericalEarth.Atmospheres: PrescribedAtmosphere, PrescribedPrecipitationFlux
 
 """
     ECCOPrescribedAtmosphere([architecture = CPU()];
@@ -51,7 +51,7 @@ function ECCOPrescribedAtmosphere(architecture = CPU();
     pa = FieldTimeSeries(pa_meta, architecture; kw...)
     Fr = FieldTimeSeries(Fr_meta, architecture; kw...)
 
-    freshwater_flux = (; rain = Fr)
+    freshwater_flux = PrescribedPrecipitationFlux(rain = Fr)
 
     times = ua.times
     grid  = ua.grid

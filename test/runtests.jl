@@ -79,6 +79,7 @@ function __init__()
 
     try
         atmosphere = JRA55PrescribedAtmosphere(time_indices_in_memory=2)
+        land       = JRA55PrescribedLand(time_indices_in_memory=2)
         # Touch the radiation variables (rlds/rsds) too, so a corrupted cached
         # download is caught by the same fallback path.
         radiation = JRA55PrescribedRadiation(time_indices_in_memory=2)
@@ -90,7 +91,8 @@ function __init__()
             download_from_artifacts(metadata_path(datum))
         end
         atmosphere = JRA55PrescribedAtmosphere(time_indices_in_memory=2)
-        radiation = JRA55PrescribedRadiation(time_indices_in_memory=2)
+        land       = JRA55PrescribedLand(time_indices_in_memory=2)
+        radiation  = JRA55PrescribedRadiation(time_indices_in_memory=2)
     end
 
     #####
