@@ -4,18 +4,15 @@ using Glob
 using Oceananigans.OutputWriters: Checkpointer
 using Oceananigans.TimeSteppers: reset!
 
-# Helper function to create fresh simulations
-function make_coupled_model(grid)
-    # Initial conditions for sea ice thickness and concentration
+function make_coupled_model(grid, arch)
     @inline hi(λ, φ) = φ > 70 || φ < -70
 
-    # Create ocean and sea ice
     ocean = ocean_simulation(grid, closure=nothing)
     set!(ocean.model, T=20, S=35, u=0.01, v=-0.005)
+
     sea_ice = sea_ice_simulation(grid, ocean)
     set!(sea_ice.model, h=hi, ℵ=hi)
 
-    # Create atmosphere, land, and radiation
     backend = JRA55NetCDFBackend(4)
     atmosphere = JRA55PrescribedAtmosphere(arch; backend)
     land = JRA55PrescribedLand(arch; backend)
@@ -40,7 +37,7 @@ end
         # Reference run: 3 iterations, then continue to 6
         # (This matches the checkpointed workflow where we create a new Simulation
         # after iteration 3, which is what happens during checkpoint restore)
-        model = make_coupled_model(grid)
+        model = make_coupled_model(grid, arch)
         simulation = Simulation(model, Δt=60, stop_iteration=3)
         run!(simulation)
 
@@ -60,7 +57,7 @@ end
         ref_iteration = model.clock.iteration
 
         # Checkpointed run: 3 iterations, then checkpoint
-        model = make_coupled_model(grid)
+        model = make_coupled_model(grid, arch)
         simulation = Simulation(model, Δt=60, stop_iteration=3)
 
         prefix = "osm_checkpointer_test_$(typeof(arch))"
@@ -73,7 +70,7 @@ end
         @test isfile("$(prefix)_iteration3.jld2")
 
         # Create new model and restore from checkpoint
-        model = make_coupled_model(grid)
+        model = make_coupled_model(grid, arch)
         simulation = Simulation(model, Δt=60, stop_iteration=6)
 
         simulation.output_writers[:checkpointer] = Checkpointer(model;
@@ -129,7 +126,7 @@ end
                                      longitude = (0, 360),
                                      halo = (6, 6, 6))
 
-        model = make_coupled_model(grid)
+        model = make_coupled_model(grid, arch)
         simulation = Simulation(model, Δt=60, stop_iteration=3, verbose=false)
         run!(simulation)
 
