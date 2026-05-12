@@ -33,6 +33,8 @@ using WorldOceanAtlasTools
 using Oceananigans
 using Oceananigans.Grids: znodes, λnodes, φnodes, λnode, φnode
 using Oceananigans.Fields: interpolate!
+using Oceananigans.AbstractOperations: KernelFunctionOperation
+using Oceananigans.Operators: ℑxᶜᵃᵃ, ℑyᵃᶜᵃ, Vᶜᶜᶜ
 using ConservativeRegridding
 using NumericalEarth
 using NumericalEarth.DataWrangling: Metadatum

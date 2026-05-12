@@ -11,11 +11,14 @@ function fig06(caches, labels, cases)
     function maybe_plot(row_idx, lab_idx, lab, bias_sym, obs_sym, hemisphere, season)
         bias = get_field(caches[lab], bias_sym)
         obs  = get_field(caches[lab], obs_sym)
-        isnothing(bias) && return
+        if isnothing(bias) || isnothing(obs)
+            @warn "fig06: skipping $lab $season ($hemisphere) — bias or obs is nothing. Did the HadISST download succeed?"
+            return
+        end
         polar_panel!(fig, [row_idx, 2*lab_idx - 1], bias;
                      hemisphere,
                      title = "$lab: $season SIC bias ($(hemisphere == :north ? "NH" : "SH"))",
-                     colormap = Reverse(:RdBu), colorrange = (-1, 1),
+                     colormap = Reverse(:RdBu), colorrange = (-0.5, 0.5),
                      label = "model − HadISST",
                      obs_contour = obs,
                      obs_levels = [0.15], obs_color = :black, obs_linewidth = 2.5)
