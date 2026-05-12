@@ -7,7 +7,7 @@
 #####
 #####   - `energy    :: AbstractEnergyBalance`     -- skin temperature
 #####   - `hydrology :: AbstractHydrology`         -- water + wetness factor β
-#####   - `surface   :: AbstractSurfaceProperties` -- albedo / emissivity / z₀
+#####   - `surface   :: AbstractSurfaceProperties` -- roughness length
 #####
 ##### State and flux fields are not allocated by the container: each
 ##### closure declares `prognostic_variables` / `flux_variables`, and the
@@ -206,8 +206,6 @@ end
 
 surface_temperature(land::SlabLand)       = surface_temperature(land.energy, land.state)
 surface_wetness(land::SlabLand)           = wetness(land.hydrology, land.state)
-albedo(land::SlabLand)                    = albedo(land.surface, land.state)
-emissivity(land::SlabLand)                = emissivity(land.surface, land.state)
 momentum_roughness_length(land::SlabLand) = momentum_roughness_length(land.surface, land.state)
 scalar_roughness_length(land::SlabLand)   = scalar_roughness_length(land.surface, land.state)
 
