@@ -13,7 +13,7 @@
 ##### closure declares `prognostic_variables` / `flux_variables`, and the
 ##### constructor allocates exactly the union, keyed by `Symbol`. A pure
 ##### thermal slab with no hydrology has `state = (T = ...,)` only; a
-##### Manabe-bucket slab adds `(:W, :β)`.
+##### Manabe-bucket slab adds `(:W, :moisture_availability)`.
 #####
 
 #####
@@ -85,7 +85,7 @@ end
     SlabLand{FT, G, Clk, S, F, E, H, Sfc, P}
 
 A composable slab land-surface component. The default configuration —
-`SlabEnergy + ManabeBucket + ConstantSurfaceProperties` — is the
+`SlabEnergy + BucketHydrology + ConstantSurfaceProperties` — is the
 classic Manabe-bucket slab. Replace any axis to swap in a different
 energy, hydrology, or surface-property closure.
 
@@ -121,7 +121,7 @@ SlabLand{FT}(grid, clock, state, fluxes, energy, hydrology, surface, parameters)
 """
     SlabLand(grid;
              energy     = SlabEnergy(eltype(grid)),
-             hydrology  = ManabeBucket(eltype(grid)),
+             hydrology  = BucketHydrology(eltype(grid)),
              surface    = ConstantSurfaceProperties(eltype(grid)),
              parameters = SlabLandParameters(eltype(grid)),
              clock      = Clock{eltype(grid)}(time = 0))
@@ -132,7 +132,7 @@ initial state is applied through `initial_state(closure, name, grid)`.
 """
 function SlabLand(grid;
                   energy     = SlabEnergy(eltype(grid)),
-                  hydrology  = ManabeBucket(eltype(grid)),
+                  hydrology  = BucketHydrology(eltype(grid)),
                   surface    = ConstantSurfaceProperties(eltype(grid)),
                   parameters = SlabLandParameters(eltype(grid)),
                   clock      = Clock{eltype(grid)}(time = 0))

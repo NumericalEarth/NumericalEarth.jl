@@ -6,7 +6,7 @@ export PrescribedLand,
        # Energy-balance closures
        SlabEnergy,
        # Hydrology closures
-       ManabeBucket, DryLand, SaturatedSurface,
+       BucketHydrology, DryLand, SaturatedSurface,
        # Surface-property closures
        ConstantSurfaceProperties,
        # Atmosphere-facing accessors
@@ -43,10 +43,10 @@ include("surface_properties/surface_properties.jl")
 include("slab_land_parameters.jl")
 include("slab_land.jl")
 
-# Default closures (sized so `SlabEnergy + ManabeBucket + ConstantSurfaceProperties`
+# Default closures (sized so `SlabEnergy + BucketHydrology + ConstantSurfaceProperties`
 # is the canonical Manabe-bucket slab).
 include("energy_balance/slab_energy.jl")
-include("hydrology/manabe_bucket.jl")
+include("hydrology/bucket_hydrology.jl")
 include("hydrology/dry_land.jl")
 include("hydrology/saturated_surface.jl")
 include("surface_properties/constant_surface_properties.jl")

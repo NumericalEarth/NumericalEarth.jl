@@ -3,7 +3,7 @@
 # Couples a Breeze atmospheric large eddy simulation (LES) to a
 # `SlabLand` composed of:
 #   energy    = SlabEnergy(heat_capacity = ρcH_g)
-#   hydrology = ManabeBucket(...)
+#   hydrology = BucketHydrology(...)
 #   surface   = ConstantSurfaceProperties(...)
 # through NumericalEarth's `EarthSystemModel` framework in a doubly-
 # periodic 3D domain. Turbulent surface fluxes (sensible, latent,
@@ -58,7 +58,7 @@ set!(atmos, θ=θᵢ, u=U₀)
 
 # ## Slab land
 #
-# Single homogeneous patch — `SlabEnergy + ManabeBucket +
+# Single homogeneous patch — `SlabEnergy + BucketHydrology +
 # ConstantSurfaceProperties`. The bucket is 15 cm deep (Manabe's
 # original `W_max = 150 kg m⁻²`); the soil thermal slab carries the
 # same areal heat capacity as the previous example for comparability.
@@ -73,7 +73,7 @@ land_grid = RectilinearGrid(grid.architecture,
 ρcH_g = 1500.0 * 1480.0 * 0.10      # J m⁻² K⁻¹
 
 energy    = SlabEnergy(eltype(land_grid); heat_capacity = ρcH_g)
-hydrology = ManabeBucket(eltype(land_grid);
+hydrology = BucketHydrology(eltype(land_grid);
                          field_capacity   = 150.0,
                          critical_wetness = 0.75)
 surface   = ConstantSurfaceProperties(eltype(land_grid);

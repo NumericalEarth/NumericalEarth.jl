@@ -38,7 +38,7 @@ export
     SlabLand,
     SlabLandParameters,
     SlabEnergy,
-    ManabeBucket,
+    BucketHydrology,
     DryLand,
     SaturatedSurface,
     ConstantSurfaceProperties,
