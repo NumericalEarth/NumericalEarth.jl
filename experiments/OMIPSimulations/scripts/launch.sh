@@ -225,7 +225,7 @@ if [[ "${PARTITION}" != "default" ]]; then
 fi
 
 if [[ "${PARTITION}" == "default" ]]; then
-    TIME="${TIME:-08:00:00}"
+    TIME="${TIME:-05:00:00}"
 else
     TIME="${TIME:-72:00:00}"
 fi
