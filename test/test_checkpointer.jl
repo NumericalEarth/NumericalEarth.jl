@@ -5,6 +5,25 @@ using Logging
 using Oceananigans.OutputWriters: Checkpointer
 using Oceananigans.TimeSteppers: reset!
 
+# Helper function to create fresh simulations
+function make_coupled_model(grid)
+    @inline hi(λ, φ) = φ > 70 || φ < -70
+
+    # Create ocean and Sea ice
+    ocean = ocean_simulation(grid, closure=nothing)
+    set!(ocean.model, T=20, S=35, u=0.01, v=-0.005)
+    sea_ice = sea_ice_simulation(grid, ocean)
+    set!(sea_ice.model, h=hi, ℵ=hi)
+
+    # Create atmosphere, land, and radiation
+    backend = JRA55NetCDFBackend(4)
+    atmosphere = JRA55PrescribedAtmosphere(arch; backend)
+    land = JRA55PrescribedLand(arch; backend)
+    radiation = JRA55PrescribedRadiation(arch; backend)
+
+    return OceanSeaIceModel(sea_ice, ocean; atmosphere, land, radiation)
+end
+
 @testset "EarthSystemModel checkpointing" begin
     for arch in test_architectures
         A = typeof(arch)
@@ -17,25 +36,6 @@ using Oceananigans.TimeSteppers: reset!
                                      latitude = (-80, 80),
                                      longitude = (0, 360),
                                      halo = (6, 6, 6))
-
-        # Helper function to create fresh simulations
-        function make_coupled_model(grid)
-            @inline hi(λ, φ) = φ > 70 || φ < -70
-
-            # Create ocean and Sea ice
-            ocean = ocean_simulation(grid, closure=nothing)
-            set!(ocean.model, T=20, S=35, u=0.01, v=-0.005)
-            sea_ice = sea_ice_simulation(grid, ocean)
-            set!(sea_ice.model, h=hi, ℵ=hi)
-
-            # Create atmosphere, land, and radiation
-            backend = JRA55NetCDFBackend(4)
-            atmosphere = JRA55PrescribedAtmosphere(arch; backend)
-            land = JRA55PrescribedLand(arch; backend)
-            radiation = JRA55PrescribedRadiation(arch; backend)
-
-            return OceanSeaIceModel(sea_ice, ocean; atmosphere, land, radiation)
-        end
 
         # Reference run: 3 iterations, then continue to 6
         # (This matches the checkpointed workflow where we create a new Simulation
@@ -129,17 +129,7 @@ end
                                      longitude = (0, 360),
                                      halo = (6, 6, 6))
 
-        @inline hi(λ, φ) = φ > 70 || φ < -70
-
-        ocean = ocean_simulation(grid, closure=nothing)
-        set!(ocean.model, T=20, S=35, u=0.01, v=-0.005)
-        sea_ice = sea_ice_simulation(grid, ocean)
-        set!(sea_ice.model, h=hi, ℵ=hi)
-
-        backend = JRA55NetCDFBackend(4)
-        atmosphere = JRA55PrescribedAtmosphere(arch; backend)
-        land = JRA55PrescribedLand(arch; backend)
-        model = OceanSeaIceModel(ocean, sea_ice; atmosphere, land)
+        model = make_coupled_model(grid)
 
         simulation = Simulation(model, Δt=60, stop_iteration=3)
         run!(simulation)
