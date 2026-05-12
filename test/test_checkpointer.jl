@@ -7,9 +7,10 @@ using Oceananigans.TimeSteppers: reset!
 
 # Helper function to create fresh simulations
 function make_coupled_model(grid)
+    # Initial conditions for sea ice thickness and concentration
     @inline hi(λ, φ) = φ > 70 || φ < -70
 
-    # Create ocean and Sea ice
+    # Create ocean and sea ice
     ocean = ocean_simulation(grid, closure=nothing)
     set!(ocean.model, T=20, S=35, u=0.01, v=-0.005)
     sea_ice = sea_ice_simulation(grid, ocean)
@@ -130,7 +131,6 @@ end
                                      halo = (6, 6, 6))
 
         model = make_coupled_model(grid)
-
         simulation = Simulation(model, Δt=60, stop_iteration=3)
         run!(simulation)
 

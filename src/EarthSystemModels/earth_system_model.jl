@@ -54,7 +54,7 @@ prettytime(model::ESM)             = prettytime(model.clock.time)
 iteration(model::ESM)              = model.clock.iteration
 timestepper(::ESM)                 = nothing
 default_included_properties(::ESM) = tuple()
-prognostic_fields(cm::ESM)         = nothing
+prognostic_fields(::ESM)           = nothing
 fields(::ESM)                      = NamedTuple()
 default_clock(TT)                  = Oceananigans.TimeSteppers.Clock{TT}(0, 0, 1)
 
@@ -73,10 +73,9 @@ end
 function reset_clock!(model::ESM)
     reset!(model.clock)
 
-    reset_clock!(model.ocean)
-    reset_clock!(model.sea_ice)
-    reset_clock!(model.atmosphere)
-    reset_clock!(model.land)
+    for component in components(model)
+        reset_clock!(component)
+    end
 
     # Keep prescribed-component cached state synchronized with the rewound clock.
     if applicable(update_state!, model.atmosphere)
@@ -261,6 +260,12 @@ EarthSystemModel(; radiation = nothing,
                    ocean = nothing,
                    kw...) =
     EarthSystemModel(radiation, atmosphere, land, sea_ice, ocean; kw...)
+
+components(model::ESM) = filter(!isnothing, (model.atmosphere,
+                                             model.radiation,
+                                             model.ocean,
+                                             model.land,
+                                             model.sea_ice,))
 
 # Determine which surfaces are present in the model — used to allocate
 # per-surface diagnostic radiation flux buffers.
