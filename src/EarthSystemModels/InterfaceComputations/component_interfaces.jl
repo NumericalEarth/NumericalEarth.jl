@@ -255,8 +255,6 @@ function atmosphere_sea_ice_interface(grid,
                                      temperature_formulation,
                                      velocity_formulation)
 
-    # When snow is present, the atmosphere interacts with the snow surface;
-    # otherwise with the ice top surface.
     snow_thermo = sea_ice.model.snow_thermodynamics
     interface_temperature = if isnothing(snow_thermo)
         sea_ice.model.ice_thermodynamics.top_surface_temperature
