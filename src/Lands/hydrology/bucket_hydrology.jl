@@ -15,16 +15,14 @@ Manabe (1969) bucket. `field_capacity` is `W_max` in `kg m⁻²` (≈ 15 cm
 of liquid water). `critical_wetness` is `W_crit / W_max` — the
 fractional wetness above which `moisture_availability` saturates to one.
 """
-struct BucketHydrology{FT, M} <: AbstractHydrology
+struct BucketHydrology{FT} <: AbstractHydrology
     field_capacity   :: FT
     critical_wetness :: FT
-    moisture_availability :: M   # cached wetness Field; allocated by initial_state
 end
 
 function BucketHydrology(FT::Type = Float64; field_capacity = 150.0, critical_wetness = 0.75)
-    return BucketHydrology{FT, Nothing}(convert(FT, field_capacity),
-                                        convert(FT, critical_wetness),
-                                        nothing)
+    return BucketHydrology{FT}(convert(FT, field_capacity),
+                               convert(FT, critical_wetness))
 end
 
 prognostic_variables(::BucketHydrology) = (:W, :moisture_availability)

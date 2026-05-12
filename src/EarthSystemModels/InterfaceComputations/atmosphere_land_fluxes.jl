@@ -155,6 +155,7 @@ end
                                                            land_properties)
 
     i, j = @index(Global, NTuple)
+    time = Time(clock.time)
 
     @inbounds begin
         uᵃᵗ = atmosphere_state.u[i, j, 1]
@@ -188,7 +189,7 @@ end
     local_interior_state = (u = uₛ, v = vₛ, T = Tₛ, S = βₛ)
     local_land_properties = local_atmosphere_land_surface_properties(land_properties, i, j)
 
-    radiation_state = air_sea_interface_radiation_state(nothing, nothing, i, j, 1, grid, Time(clock.time))
+    radiation_state = air_sea_interface_radiation_state(nothing, nothing, i, j, 1, grid, time)
 
     # Estimate initial interface state.
     u★ = convert(FT, 1e-4)

@@ -78,18 +78,9 @@ using .InterfaceComputations: ComponentInterfaces, AtmosphereInterface, SeaIceOc
 
 const NoSeaIceInterface = ComponentInterfaces{<:AtmosphereInterface,  <:Nothing, <:Nothing}
 const NoOceanInterface  = ComponentInterfaces{<:Nothing, <:AtmosphereInterface,  <:Nothing}
-const NoAtmosInterface  = ComponentInterfaces{<:Nothing, <:Nothing, <:SeaIceOceanInterface}
-const NoLandInterface   = ComponentInterfaces{<:Any, <:Any, <:Any, <:Nothing}
 const NoInterface       = ComponentInterfaces{<:Nothing, <:Nothing, <:Nothing, <:Nothing}
 
-const NoSeaIceInterfaceModel = EarthSystemModel{R, A, L, I, O, <:NoSeaIceInterface} where {R, A, L, I, O}
-const NoAtmosInterfaceModel  = EarthSystemModel{R, A, L, I, O, <:NoAtmosInterface}  where {R, A, L, I, O}
-const NoOceanInterfaceModel  = EarthSystemModel{R, A, L, I, O, <:NoOceanInterface}  where {R, A, L, I, O}
-const NoLandInterfaceModel   = EarthSystemModel{R, A, L, I, O, <:NoLandInterface}   where {R, A, L, I, O}
-const NoInterfaceModel       = EarthSystemModel{R, A, L, I, O, <:NoInterface}       where {R, A, L, I, O}
-
-# `compute_atmosphere_*_fluxes!` / `compute_sea_ice_ocean_fluxes!` guard a
-# `::Nothing` interface internally, so no per-NoXInterfaceModel overloads
-# are needed here.
+const NoOceanInterfaceModel = EarthSystemModel{R, A, L, I, O, <:NoOceanInterface} where {R, A, L, I, O}
+const NoInterfaceModel      = EarthSystemModel{R, A, L, I, O, <:NoInterface}      where {R, A, L, I, O}
 
 end # module

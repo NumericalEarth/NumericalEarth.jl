@@ -230,49 +230,29 @@ function update_net_fluxes!(coupled_model, land::SlabLand)
     grid = land.grid
     arch = architecture(grid)
 
-    if hasproperty(fluxes, :net_energy_flux)
-        launch!(arch, grid, :xy, _assemble_slab_land_net_energy_flux!,
-                fluxes.net_energy_flux, interface_fluxes)
-    end
+    Q = hasproperty(fluxes, :net_energy_flux) ? fluxes.net_energy_flux : nothing
+    P = hasproperty(fluxes, :precipitation)   ? fluxes.precipitation   : nothing
+    E = hasproperty(fluxes, :evaporation)     ? fluxes.evaporation     : nothing
 
-    if hasproperty(fluxes, :precipitation)
-        launch!(arch, grid, :xy, _assemble_slab_land_precipitation!,
-                fluxes.precipitation, interface_fluxes)
-    end
+    (isnothing(Q) && isnothing(P) && isnothing(E)) && return nothing
 
-    if hasproperty(fluxes, :evaporation)
-        launch!(arch, grid, :xy, _assemble_slab_land_evaporation!,
-                fluxes.evaporation, interface_fluxes)
-    end
-
+    launch!(arch, grid, :xy, _assemble_slab_land_fluxes!, Q, P, E, interface_fluxes)
     return nothing
 end
 
-@kernel function _assemble_slab_land_net_energy_flux!(Q, interface_fluxes)
+@inline _maybe_write!(::Nothing, i, j, value) = nothing
+@inline _maybe_write!(field, i, j, value) = @inbounds field[i, j, 1] = value
+
+@kernel function _assemble_slab_land_fluxes!(Q, P, E, interface_fluxes)
     i, j = @index(Global, NTuple)
     @inbounds begin
         𝒬ᵀ = interface_fluxes.sensible_heat[i, j, 1]
         𝒬ᵛ = interface_fluxes.latent_heat[i, j, 1]
-        Q[i, j, 1] = -(𝒬ᵀ + 𝒬ᵛ)
-    end
-end
-
-@kernel function _assemble_slab_land_evaporation!(E, interface_fluxes)
-    i, j = @index(Global, NTuple)
-    @inbounds begin
-        FT = eltype(E)
         Jᵛ = interface_fluxes.water_vapor[i, j, 1]
-        E[i, j, 1] = max(zero(FT), -Jᵛ)
     end
-end
-
-@kernel function _assemble_slab_land_precipitation!(P, interface_fluxes)
-    i, j = @index(Global, NTuple)
-    @inbounds begin
-        FT = eltype(P)
-        Jᵛ = interface_fluxes.water_vapor[i, j, 1]
-        P[i, j, 1] = max(zero(FT), Jᵛ)
-    end
+    _maybe_write!(Q, i, j, -(𝒬ᵀ + 𝒬ᵛ))
+    _maybe_write!(P, i, j, max(zero(Jᵛ),  Jᵛ))
+    _maybe_write!(E, i, j, max(zero(Jᵛ), -Jᵛ))
 end
 
 interpolate_state!(exchanger, grid, ::SlabLand, coupled_model) = nothing

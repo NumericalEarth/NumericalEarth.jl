@@ -341,8 +341,7 @@ Keyword Arguments
   - `IceBathHeatFlux()`: bulk heat flux with interface at freezing point
   - `ThreeEquationHeatFlux()`: coupled heat/salt/freezing point system (default)
 
-- `radiation`: radiation component. Default: `Radiation()`.
-+ `radiation`: radiation component. Default: `nothing`.
+- `radiation`: radiation component. Default: `nothing`.
 - `freshwater_density`: reference density of freshwater. Default: `default_freshwater_density`.
 - `atmosphere_ocean_fluxes`: flux formulation for atmosphere-ocean interface. Default: `SimilarityTheoryFluxes()`.
 - `atmosphere_sea_ice_fluxes`: flux formulation for atmosphere-sea ice interface. Default: `SimilarityTheoryFluxes()`.
@@ -468,7 +467,7 @@ default_al_specific_humidity(land) =
 # 10× smaller (Garratt 1992). To override this behavior, pass
 # `atmosphere_land_fluxes = SimilarityTheoryFluxes(...)` with explicit
 # roughness lengths to `ComponentInterfaces` / `AtmosphereLandModel`.
-default_atmosphere_land_fluxes(::Nothing, FT) = SimilarityTheoryFluxes(FT)
+default_atmosphere_land_fluxes(::Nothing, FT) = nothing
 
 function default_atmosphere_land_fluxes(land, FT)
     z₀_m = LandRoughnessLength(FT)
