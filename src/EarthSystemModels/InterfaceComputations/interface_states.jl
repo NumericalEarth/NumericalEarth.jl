@@ -275,7 +275,8 @@ end
 # dominated). We linearize: Qa(Tₛ) ≈ Qa(Tₛ⁻) + β (Tₛ − Tₛ⁻) with β = 4σεTₛ⁻³,
 # yielding the Newton-like semi-implicit update:
 #   Tₛ = [Tᵦ + β R Tₛ⁻ - Ωc R Tᵃᵗ - Qa R] / [1 + β R - Ωc R]
-@inline function conductive_flux_balance_temperature(st, R, hᵢ, Ψₛ, ℙₛ, 𝒬ᵀ, 𝒬ᵛ, ℐꜛˡʷ, Qd, Ψᵢ, ℙᵢ, Ψₐ, ℙₐ)
+@inline function conductive_flux_balance_temperature(st, R, Ψₛ, ℙₛ, 𝒬ᵀ, 𝒬ᵛ, ℐꜛˡʷ, Qd, Ψᵢ, ℙᵢ, Ψₐ, ℙₐ)
+    hᵢ = Ψᵢ.hi
     hc = Ψᵢ.hc
 
     # Bottom temperature at the melting point
@@ -298,6 +299,7 @@ end
     D  = 1 + β * R - Ωc * R
     T★ = (Tᵦ + β * R * Tₛ⁻ - Ωc * R * Tᵃᵗ - Qa * R) / D
     T★ = ifelse(D == 0, Tₛ⁻, T★)
+    T★ = ifelse(isnan(T★), Tₛ⁻, T★)
 
     # Cap the temperature step for iteration stability
     ΔT★ = T★ - Tₛ⁻
@@ -319,19 +321,16 @@ end
 @inline function flux_balance_temperature(st::SkinTemperature{<:ClimaSeaIce.ConductiveFlux},
                                           Ψₛ, ℙₛ, 𝒬ᵀ, 𝒬ᵛ, ℐꜛˡʷ, Qd, Ψᵢ, ℙᵢ, Ψₐ, ℙₐ)
     k  = st.internal_flux.conductivity
-    hᵢ = Ψᵢ.hi
-    R  = hᵢ / k
-    return conductive_flux_balance_temperature(st, R, hᵢ, Ψₛ, ℙₛ, 𝒬ᵀ, 𝒬ᵛ, ℐꜛˡʷ, Qd, Ψᵢ, ℙᵢ, Ψₐ, ℙₐ)
+    R  = Ψᵢ.hi / k
+    return conductive_flux_balance_temperature(st, R, Ψₛ, ℙₛ, 𝒬ᵀ, 𝒬ᵛ, ℐꜛˡʷ, Qd, Ψᵢ, ℙᵢ, Ψₐ, ℙₐ)
 end
 
 # Snow + ice: R = hₛ / kₛ + hᵢ / kᵢ
 @inline function flux_balance_temperature(st::SkinTemperature{<:ClimaSeaIce.SeaIceThermodynamics.IceSnowConductiveFlux},
                                           Ψₛ, ℙₛ, 𝒬ᵀ, 𝒬ᵛ, ℐꜛˡʷ, Qd, Ψᵢ, ℙᵢ, Ψₐ, ℙₐ)
     F  = st.internal_flux
-    hᵢ = Ψᵢ.hi
-    hₛ = Ψᵢ.hs
-    R  = hₛ / F.snow_conductivity + hᵢ / F.ice_conductivity
-    return conductive_flux_balance_temperature(st, R, hᵢ, Ψₛ, ℙₛ, 𝒬ᵀ, 𝒬ᵛ, ℐꜛˡʷ, Qd, Ψᵢ, ℙᵢ, Ψₐ, ℙₐ)
+    R  = Ψᵢ.hs / F.snow_conductivity + Ψᵢ.hi / F.ice_conductivity
+    return conductive_flux_balance_temperature(st, R, Ψₛ, ℙₛ, 𝒬ᵀ, 𝒬ᵛ, ℐꜛˡʷ, Qd, Ψᵢ, ℙᵢ, Ψₐ, ℙₐ)
 end
 
 @inline function compute_interface_temperature(st::SkinTemperature,
