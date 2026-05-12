@@ -70,9 +70,6 @@ function default_freshwater_flux(grid, times)
     return PrescribedPrecipitationFlux(rain, snow)
 end
 
-# `nothing` is returned when the atmosphere has no snow component, so that
-# callers (e.g. sea-ice snow accumulation) can branch via dispatch rather than
-# `haskey`.
 @inline field_data(::Nothing) = nothing
 @inline field_data(field) = field.data
 
