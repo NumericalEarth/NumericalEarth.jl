@@ -31,10 +31,18 @@ const MixedLayerDepthField = Field{<:Any, <:Any, <:Any, <:MixedLayerDepthOperand
                          difference_criterion = 2.87e-4,
                          reference_depth = 10.0)
 
-Mixed-layer-depth diagnostic using the de Boyer Montégut et al. (2004) DR003 buoyancy-difference criterion. 
-The default `difference_criterion = 2.87e-4` m s⁻² corresponds to `Δσ = 0.03 kg m⁻³` at `ρ₀ = 1025 kg m⁻³`. The default
-`reference_depth = 10` m is the standard dBM reference; buoyancy at that depth is obtained by linear interpolation 
-between adjacent cell centers, so the diagnostic is insensitive to the vertical resolution near the surface.
+Mixed-layer-depth diagnostic using the [de Boyer Montégut et al. (2004)](@cite de_boyer_montegut2004mixed)
+DR003 buoyancy-difference criterion.  The default `difference_criterion = 2.87e-4` m s⁻² corresponds
+to `Δσ = 0.03 kg m⁻³` at `ρ₀ = 1025 kg m⁻³`. The default `reference_depth = 10` m is the
+standard dBM reference; buoyancy at that depth is obtained by linear interpolation  between adjacent
+cell centers, so the diagnostic is insensitive to the vertical resolution near the surface.
+
+References
+==========
+
+* de Boyer Montégut, C., G.Madec, A. S.Fischer, A.Lazar, and D.Iudicone (2004), Mixed layer depth over
+    the global ocean: An examination of profile data and a profile-based climatology, J. Geophys. Res.,
+    109, C12003, doi:10.1029/2004JC002378.
 """
 function MixedLayerDepthField(bm, grid, tracers;
                               difference_criterion = DR003_BUOYANCY_CRITERION,
