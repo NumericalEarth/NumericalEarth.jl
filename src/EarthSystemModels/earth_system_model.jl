@@ -253,11 +253,20 @@ EarthSystemModel(; radiation = nothing,
                    kw...) =
     EarthSystemModel(radiation, atmosphere, land, sea_ice, ocean; kw...)
 
-components(model::ESM) = filter(!isnothing, (model.atmosphere,
-                                             model.radiation,
-                                             model.ocean,
-                                             model.land,
-                                             model.sea_ice,))
+"""
+    components(model::ESM)
+
+Return a named tuple of the non-`nothing` components of the model.
+"""
+function components(model::ESM)
+    all_components = (atmosphere = model.atmosphere,
+                      radiation  = model.radiation,
+                      ocean      = model.ocean,
+                      land       = model.land,
+                      sea_ice    = model.sea_ice,)
+
+    return (; filter(p -> !isnothing(last(p)), pairs(components))...)
+end
 
 # Determine which surfaces are present in the model — used to allocate
 # per-surface diagnostic radiation flux buffers.
