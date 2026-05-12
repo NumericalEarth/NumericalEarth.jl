@@ -265,7 +265,7 @@ function components(model::ESM)
                       land       = model.land,
                       sea_ice    = model.sea_ice,)
 
-    return (; filter(p -> !isnothing(last(p)), pairs(components))...)
+    return (; filter(p -> !isnothing(last(p)), pairs(all_components))...)
 end
 
 # Determine which surfaces are present in the model — used to allocate

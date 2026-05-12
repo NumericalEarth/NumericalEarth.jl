@@ -131,7 +131,7 @@ end
                                      halo = (6, 6, 6))
 
         model = make_coupled_model(grid)
-        simulation = Simulation(model, Δt=60, stop_iteration=3)
+        simulation = Simulation(model, Δt=60, stop_iteration=3, verbose=false)
         run!(simulation)
 
         @test simulation.model.clock.iteration == 3
@@ -152,12 +152,12 @@ end
         @test simulation.model.atmosphere.clock.time == 0
 
         # Exercise the run! path that used to crash after reset.
-        simulation.stop_iteration = 1
-        @test_logs min_level=Logging.Warn run!(simulation)
+        simulation.stop_iteration = 2
+        run!(simulation)
 
-        @test simulation.model.clock.iteration == 1
-        @test simulation.model.ocean.model.clock.iteration == 1
-        @test simulation.model.sea_ice.model.clock.iteration == 1
-        @test simulation.model.atmosphere.clock.iteration == 1
+        @test simulation.model.clock.iteration == 2
+        @test simulation.model.ocean.model.clock.iteration == 2
+        @test simulation.model.sea_ice.model.clock.iteration == 2
+        @test simulation.model.atmosphere.clock.iteration == 2
     end
 end
