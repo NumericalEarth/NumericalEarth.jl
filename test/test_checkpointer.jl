@@ -131,6 +131,11 @@ end
         simulation = Simulation(model, Δt=60, stop_iteration=3, verbose=false)
 
         # check that clock stops when intended
+        @test model.atmosphere isa PrescribedModelComponent
+        @test model.land isa PrescribedModelComponent
+        @test model.radiation isa PrescribedModelComponent
+
+        # check that clock stops when intended
         run!(simulation)
 
         @test simulation.model.clock.iteration == 3
