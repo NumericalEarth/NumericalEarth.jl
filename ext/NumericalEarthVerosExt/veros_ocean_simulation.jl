@@ -1,6 +1,7 @@
 using CondaPkg
 
 using Oceananigans.Grids: topology
+using Oceananigans.Simulations
 using OffsetArrays: OffsetArray
 
 import Oceananigans.Fields: set!
@@ -302,4 +303,10 @@ function set!(ocean::VerosOceanSimulation, v, x; path = :variables)
     else
         error("path must be either :variable or :settings.")
     end
+end
+
+function Simulations.reset_clock!(ocean::VerosOceanSimulation)
+    set!(ocean, "time", 0)
+    set!(ocean, "itt",  Int32(0))
+    return ocean
 end
