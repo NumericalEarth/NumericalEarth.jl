@@ -31,14 +31,15 @@ function ComponentExchanger(atmosphere::SpeedySimulation, exchange_grid)
     to_atmosphere   = XESMF.Regridder(exchange_grid, spectral_grid)
     regridder = (; to_atmosphere, from_atmosphere)
     
-    state = (; u  = Field{Center, Center, Nothing}(exchange_grid),
-               v  = Field{Center, Center, Nothing}(exchange_grid),
-               T  = Field{Center, Center, Nothing}(exchange_grid),
-               p  = Field{Center, Center, Nothing}(exchange_grid),
-               q  = Field{Center, Center, Nothing}(exchange_grid),
+    state = (; u    = Field{Center, Center, Nothing}(exchange_grid),
+               v    = Field{Center, Center, Nothing}(exchange_grid),
+               T    = Field{Center, Center, Nothing}(exchange_grid),
+               p    = Field{Center, Center, Nothing}(exchange_grid),
+               q    = Field{Center, Center, Nothing}(exchange_grid),
                ℐꜜˢʷ = Field{Center, Center, Nothing}(exchange_grid),
                ℐꜜˡʷ = Field{Center, Center, Nothing}(exchange_grid),
-               Jᶜ = Field{Center, Center, Nothing}(exchange_grid))
+               Jʳⁿ  = Field{Center, Center, Nothing}(exchange_grid),
+               Jˢⁿ  = Field{Center, Center, Nothing}(exchange_grid))
     
     return ComponentExchanger(state, regridder)
 end
@@ -52,14 +53,19 @@ function interpolate_state!(exchanger, exchange_grid, atmos::SpeedySimulation, c
     exchange_state = exchanger.state
     surface_layer  = atmos.model.spectral_grid.nlayers
 
-    ua  = RingGrids.field_view(atmos.variables.grid.u, :, surface_layer).data
-    va  = RingGrids.field_view(atmos.variables.grid.v, :, surface_layer).data
-    Ta  = RingGrids.field_view(atmos.variables.grid.temperature, :, surface_layer).data
-    qa  = RingGrids.field_view(atmos.variables.grid.humidity, :, surface_layer).data
-    pa  = exp.(atmos.variables.grid.pressure.data)
+    ua   = RingGrids.field_view(atmos.variables.grid.u, :, surface_layer).data
+    va   = RingGrids.field_view(atmos.variables.grid.v, :, surface_layer).data
+    Ta   = RingGrids.field_view(atmos.variables.grid.temperature, :, surface_layer).data
+    qa   = RingGrids.field_view(atmos.variables.grid.humidity, :, surface_layer).data
+    pa   = exp.(atmos.variables.grid.pressure.data)
     ℐꜜˢʷ = atmos.variables.parameterizations.surface_shortwave_down.data
     ℐꜜˡʷ = atmos.variables.parameterizations.surface_longwave_down.data
-    Jᶜ  = atmos.variables.parameterizations.rain_rate.data .+ atmos.variables.parameterizations.snow_rate.data
+    Jʳⁿ  = atmos.variables.parameterizations.rain_rate.data
+
+    # `snow_rate` is only registered when SpeedyWeather's large-scale 
+    # condensation parameterization is part of the model
+    Jˢⁿ = haskey(atmos.variables.parameterizations, :snow_rate) ?
+          atmos.variables.parameterizations.snow_rate.data : nothing
 
     regrid!(exchange_state.u,    ua)
     regrid!(exchange_state.v,    va)
@@ -68,7 +74,8 @@ function interpolate_state!(exchanger, exchange_grid, atmos::SpeedySimulation, c
     regrid!(exchange_state.p,    pa)
     regrid!(exchange_state.ℐꜜˢʷ, ℐꜜˢʷ)
     regrid!(exchange_state.ℐꜜˡʷ, ℐꜜˡʷ)
-    regrid!(exchange_state.Jᶜ,   Jᶜ)
+    regrid!(exchange_state.Jʳⁿ,  Jʳⁿ)
+    isnothing(Jˢⁿ) || regrid!(exchange_state.Jˢⁿ, Jˢⁿ)
 
     arch = architecture(exchange_grid)
 
@@ -83,7 +90,8 @@ function interpolate_state!(exchanger, exchange_grid, atmos::SpeedySimulation, c
     fill_halo_regions!(exchange_state.p)
     fill_halo_regions!(exchange_state.ℐꜜˢʷ)
     fill_halo_regions!(exchange_state.ℐꜜˡʷ)
-    fill_halo_regions!(exchange_state.Jᶜ)
+    fill_halo_regions!(exchange_state.Jʳⁿ)
+    isnothing(Jˢⁿ) || fill_halo_regions!(exchange_state.Jˢⁿ)
 
     return nothing
 end

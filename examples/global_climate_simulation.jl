@@ -85,7 +85,7 @@ atmosphere.model.initial_conditions
 
 # We use a three hour time-step:
 
-set!(atmosphere.model.output, atmosphere.model, interval = Hour(3))
+SpeedyWeather.set!(atmosphere.model.output, atmosphere.model, interval = Hour(3))
 nothing #hide
 
 # ## The coupled model
