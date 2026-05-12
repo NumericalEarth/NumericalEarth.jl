@@ -63,9 +63,9 @@ ImpureSaturationSpecificHumidity(phase) = ImpureSaturationSpecificHumidity(phase
     
     # Raoult's law on the saturation vapor pressure.
     χ_H₂O = compute_water_mole_fraction(formulation.water_mole_fraction, Sₛ)
-    ps    = χ_H₂O * AtmosphericThermodynamics.saturation_vapor_pressure(ℂᵃᵗ, T, formulation.phase)
+    pᵛ⁺   = χ_H₂O * AtmosphericThermodynamics.saturation_vapor_pressure(ℂᵃᵗ, T, formulation.phase)
     ε⁻¹   = 1 / AtmosphericThermodynamics.Parameters.Rv_over_Rd(ℂᵃᵗ)
-    qₛ    = ε⁻¹ * ps / (p - (1 - ε⁻¹) * ps)
+    qₛ    = ε⁻¹ * pᵛ⁺ / (p - (1 - ε⁻¹) * pᵛ⁺)
 
     return convert(FT, qₛ)
 end
