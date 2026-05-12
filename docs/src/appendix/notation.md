@@ -156,7 +156,6 @@ denote the _component_ or _location_.
 | ``\zeta`` | `ζ` | stability parameter | ``z / L_\star`` (–) |
 | ``\ell`` | `ℓ` | roughness length | Aerodynamic roughness length (m) |
 | ``\varkappa`` | `ϰ` | von Kármán constant | ``\approx 0.4`` (–) |
-| ``
 
 ## Radiative fluxes
 
