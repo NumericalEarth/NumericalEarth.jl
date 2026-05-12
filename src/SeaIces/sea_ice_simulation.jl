@@ -145,8 +145,6 @@ sea_ice_thickness(sea_ice::Simulation{<:SeaIceModel}) = sea_ice.model.ice_thickn
 sea_ice_concentration(sea_ice::Simulation{<:SeaIceModel}) = sea_ice.model.ice_concentration
 
 heat_capacity(sea_ice::Simulation{<:SeaIceModel}) = sea_ice.model.phase_transitions.heat_capacity
-# `sea_ice.model.sea_ice_density` is wrapped as a `ConstantField` by `SeaIceModel`;
-# the scalar value lives on `phase_transitions.density`.
 reference_density(sea_ice::Simulation{<:SeaIceModel}) = sea_ice.model.phase_transitions.density
 
 function net_fluxes(sea_ice::Simulation{<:SeaIceModel})
