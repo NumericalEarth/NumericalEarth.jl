@@ -4,7 +4,7 @@ using Glob
 using Oceananigans.OutputWriters: Checkpointer
 using Oceananigans.TimeSteppers: reset!
 
-function make_coupled_model(grid, arch)
+function make_coupled_model(grid)
     @inline hi(λ, φ) = φ > 70 || φ < -70
 
     ocean = ocean_simulation(grid, closure=nothing)
@@ -13,6 +13,7 @@ function make_coupled_model(grid, arch)
     sea_ice = sea_ice_simulation(grid, ocean)
     set!(sea_ice.model, h=hi, ℵ=hi)
 
+    arch = architecture(grid)
     backend = JRA55NetCDFBackend(4)
     atmosphere = JRA55PrescribedAtmosphere(arch; backend)
     land = JRA55PrescribedLand(arch; backend)
@@ -37,7 +38,7 @@ end
         # Reference run: 3 iterations, then continue to 6
         # (This matches the checkpointed workflow where we create a new Simulation
         # after iteration 3, which is what happens during checkpoint restore)
-        model = make_coupled_model(grid, arch)
+        model = make_coupled_model(grid)
         simulation = Simulation(model, Δt=60, stop_iteration=3)
         run!(simulation)
 
@@ -57,7 +58,7 @@ end
         ref_iteration = model.clock.iteration
 
         # Checkpointed run: 3 iterations, then checkpoint
-        model = make_coupled_model(grid, arch)
+        model = make_coupled_model(grid)
         simulation = Simulation(model, Δt=60, stop_iteration=3)
 
         prefix = "osm_checkpointer_test_$(typeof(arch))"
@@ -70,7 +71,7 @@ end
         @test isfile("$(prefix)_iteration3.jld2")
 
         # Create new model and restore from checkpoint
-        model = make_coupled_model(grid, arch)
+        model = make_coupled_model(grid)
         simulation = Simulation(model, Δt=60, stop_iteration=6)
 
         simulation.output_writers[:checkpointer] = Checkpointer(model;
@@ -126,7 +127,7 @@ end
                                      longitude = (0, 360),
                                      halo = (6, 6, 6))
 
-        model = make_coupled_model(grid, arch)
+        model = make_coupled_model(grid)
         simulation = Simulation(model, Δt=60, stop_iteration=3, verbose=false)
         run!(simulation)
 
