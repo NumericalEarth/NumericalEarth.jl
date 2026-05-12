@@ -1,7 +1,10 @@
 module EarthSystemModels
 
+abstract type PrescribedModelComponent end
+
 export
     EarthSystemModel,
+    PrescribedModelComponent,
     OceanOnlyModel,
     OceanSeaIceModel,
     AtmosphereOceanModel,
@@ -21,15 +24,14 @@ export
 
 using Oceananigans
 using Oceananigans.Operators
-using Oceananigans.Utils: launch!, KernelParameters
-using Oceananigans.Units: Time
 using Oceananigans.Architectures: architecture
 using Oceananigans.BoundaryConditions: fill_halo_regions!, BoundaryCondition
-using Oceananigans.Grids: architecture
 using Oceananigans.Fields: ZeroField
-using Oceananigans.TimeSteppers: tick!
 using Oceananigans.Models: AbstractModel
 using Oceananigans.OutputReaders: FieldTimeSeries, GPUAdaptedFieldTimeSeries
+using Oceananigans.TimeSteppers: tick!
+using Oceananigans.Units: Time
+using Oceananigans.Utils: launch!, KernelParameters
 
 using ClimaSeaIce: SeaIceModel
 using ClimaSeaIce.SeaIceThermodynamics: melting_temperature

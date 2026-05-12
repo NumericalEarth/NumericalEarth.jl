@@ -14,6 +14,7 @@ export
     AtmosphereOceanModel,
     SlabOcean,
     default_sea_ice,
+    PrescribedModelComponent,
     FreezingLimitedOceanTemperature,
     PrescribedRadiation,
     SurfaceRadiationProperties,
@@ -74,13 +75,14 @@ export
     location,
     native_grid
 
-using Oceananigans
-import Oceananigans: location
-using Oceananigans.Operators: ℑxyᶠᶜᵃ, ℑxyᶜᶠᵃ
 using DataDeps
 
-using Oceananigans.OutputReaders: GPUAdaptedFieldTimeSeries, FieldTimeSeries
+using Oceananigans
 using Oceananigans.Grids: node
+using Oceananigans.Operators: ℑxyᶠᶜᵃ, ℑxyᶜᶠᵃ
+using Oceananigans.OutputReaders: GPUAdaptedFieldTimeSeries, FieldTimeSeries
+
+import Oceananigans: location
 
 const SomeKindOfFieldTimeSeries = Union{FieldTimeSeries,
                                         GPUAdaptedFieldTimeSeries}
