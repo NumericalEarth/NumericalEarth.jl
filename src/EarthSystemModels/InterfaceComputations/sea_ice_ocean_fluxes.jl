@@ -36,7 +36,7 @@ function compute_sea_ice_ocean_fluxes!(interface, ocean, sea_ice, ocean_properti
     hˢⁱ = sea_ice.model.ice_thickness
     hc = sea_ice.model.ice_consolidation_thickness
 
-    phase_transitions = sea_ice.model.ice_thermodynamics.phase_transitions
+    phase_transitions = sea_ice.model.phase_transitions
     liquidus = phase_transitions.liquidus
     L = phase_transitions.reference_latent_heat
 

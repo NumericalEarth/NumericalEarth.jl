@@ -16,13 +16,18 @@ function sea_ice_simulation(grid, ocean=nothing;
                             tracers = (),
                             ice_heat_capacity = 2100, # J kg⁻¹ K⁻¹
                             ice_consolidation_thickness = 0.05, # m
-                            ice_density = 900, # kg m⁻³
+                            sea_ice_density = 900, # kg m⁻³
+                            ice_density = nothing, # deprecated name for sea_ice_density
                             dynamics = sea_ice_dynamics(grid, ocean),
                             bottom_heat_boundary_condition = nothing,
                             top_heat_boundary_condition = nothing,
-                            phase_transitions = PhaseTransitions(; heat_capacity = ice_heat_capacity, density = ice_density),
+                            phase_transitions = PhaseTransitions(; heat_capacity = ice_heat_capacity),
                             conductivity = 2, # kg m s⁻³ K⁻¹
                             internal_heat_flux = ConductiveFlux(; conductivity))
+
+    if !isnothing(ice_density)
+        sea_ice_density = ice_density
+    end
 
     # Build consistent boundary conditions for the ice model:
     # - bottom -> flux boundary condition
@@ -45,7 +50,6 @@ function sea_ice_simulation(grid, ocean=nothing;
 
     ice_thermodynamics = SlabThermodynamics(grid;
                                                   internal_heat_flux,
-                                                  phase_transitions,
                                                   top_heat_boundary_condition,
                                                   bottom_heat_boundary_condition)
 
@@ -58,6 +62,8 @@ function sea_ice_simulation(grid, ocean=nothing;
                                 advection,
                                 tracers,
                                 ice_consolidation_thickness,
+                                sea_ice_density,
+                                phase_transitions,
                                 ice_thermodynamics,
                                 dynamics,
                                 bottom_heat_flux,
@@ -105,8 +111,8 @@ end
 sea_ice_thickness(sea_ice::Simulation{<:SeaIceModel}) = sea_ice.model.ice_thickness
 sea_ice_concentration(sea_ice::Simulation{<:SeaIceModel}) = sea_ice.model.ice_concentration
 
-heat_capacity(sea_ice::Simulation{<:SeaIceModel}) = sea_ice.model.ice_thermodynamics.phase_transitions.heat_capacity
-reference_density(sea_ice::Simulation{<:SeaIceModel}) = sea_ice.model.ice_thermodynamics.phase_transitions.density
+heat_capacity(sea_ice::Simulation{<:SeaIceModel}) = sea_ice.model.phase_transitions.heat_capacity
+reference_density(sea_ice::Simulation{<:SeaIceModel}) = sea_ice.model.phase_transitions.density
 
 function net_fluxes(sea_ice::Simulation{<:SeaIceModel})
     net_momentum_fluxes = if isnothing(sea_ice.model.dynamics)
@@ -126,9 +132,15 @@ function net_fluxes(sea_ice::Simulation{<:SeaIceModel})
 end
 
 function default_ai_temperature(sea_ice::Simulation{<:SeaIceModel})
-    conductive_flux = sea_ice.model.ice_thermodynamics.internal_heat_flux.parameters.flux
+    conductive_flux = internal_heat_flux_coefficient(sea_ice)
     return SkinTemperature(conductive_flux)
 end
+
+internal_heat_flux_coefficient(sea_ice::Simulation{<:SeaIceModel}) =
+    internal_heat_flux_coefficient(sea_ice.model.ice_thermodynamics.internal_heat_flux)
+
+internal_heat_flux_coefficient(flux) = flux
+internal_heat_flux_coefficient(flux::FluxFunction) = flux.parameters.flux
 
 # Constructor that accepts the sea-ice model
 function ThreeEquationHeatFlux(sea_ice::Simulation{<:SeaIceModel}, FT::DataType = Oceananigans.defaults.FloatType;
@@ -136,7 +148,7 @@ function ThreeEquationHeatFlux(sea_ice::Simulation{<:SeaIceModel}, FT::DataType 
                                salt_transfer_coefficient = heat_transfer_coefficient / 35,
                                friction_velocity = convert(FT, 0.002))
 
-    conductive_flux = sea_ice.model.ice_thermodynamics.internal_heat_flux.parameters.flux
+    conductive_flux = internal_heat_flux_coefficient(sea_ice)
     ice_temperature = sea_ice.model.ice_thermodynamics.top_surface_temperature
 
     return ThreeEquationHeatFlux(conductive_flux,
