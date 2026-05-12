@@ -265,7 +265,7 @@ This is a convenience constructor for [`EarthSystemModel`](@ref) with an explici
 and an optional prescribed atmosphere. Positional arguments follow the
 struct convention (top→bottom): `sea_ice` then `ocean`.
 """
-OceanSeaIceModel(sea_ice, ocean; atmosphere=nothing, land=nothing, radiation=nothing, kw...) =
+OceanSeaIceModel(ocean, sea_ice; atmosphere=nothing, land=nothing, radiation=nothing, kw...) =
     EarthSystemModel(radiation, atmosphere, land, sea_ice, ocean; kw...)
 
 """
