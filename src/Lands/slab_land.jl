@@ -20,18 +20,18 @@
 ##### Helpers — assemble state and flux NamedTuples from closure declarations
 #####
 
-@inline _merge_unique(a::NTuple, b::NTuple) = (a..., (s for s in b if !(s in a))...)
+@inline merge_unique(a::NTuple, b::NTuple) = (a..., (s for s in b if !(s in a))...)
 
-function _all_prognostic_keys(energy, hydrology, surface)
-    return _merge_unique(_merge_unique(prognostic_variables(energy),
-                                       prognostic_variables(hydrology)),
-                         prognostic_variables(surface))
+function all_prognostic_keys(energy, hydrology, surface)
+    return merge_unique(merge_unique(prognostic_variables(energy),
+                                     prognostic_variables(hydrology)),
+                        prognostic_variables(surface))
 end
 
-function _all_flux_keys(energy, hydrology, surface)
-    return _merge_unique(_merge_unique(flux_variables(energy),
-                                       flux_variables(hydrology)),
-                         flux_variables(surface))
+function all_flux_keys(energy, hydrology, surface)
+    return merge_unique(merge_unique(flux_variables(energy),
+                                     flux_variables(hydrology)),
+                        flux_variables(surface))
 end
 
 """
@@ -43,7 +43,7 @@ The per-symbol `Field` is built by `initial_state(closure, name, grid)`,
 giving each closure a hook to install non-zero defaults.
 """
 function build_state(grid, energy, hydrology, surface)
-    keys = _all_prognostic_keys(energy, hydrology, surface)
+    keys = all_prognostic_keys(energy, hydrology, surface)
     fields = map(keys) do name
         if name in prognostic_variables(energy)
             return initial_state(energy, name, grid)
@@ -64,7 +64,7 @@ Same shape as `build_state`. The coupler writes into these every step;
 closures only read.
 """
 function build_flux_accumulators(grid, energy, hydrology, surface)
-    keys = _all_flux_keys(energy, hydrology, surface)
+    keys = all_flux_keys(energy, hydrology, surface)
     fields = map(keys) do name
         if name in flux_variables(energy)
             return initial_flux(energy, name, grid)
