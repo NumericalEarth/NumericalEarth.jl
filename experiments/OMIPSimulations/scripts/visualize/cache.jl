@@ -664,28 +664,22 @@ LOADERS[:sic_september_obs_latlon] = c -> hadisst_month_latlon(c, 9)
 
 # Model minus obs SIC bias on the shared 1° lat-lon grid. `nothing` in
 # from either side → `nothing` out so fig06 degrades gracefully if the
-# HadISST download fails or the case lacks the corresponding monthly
-# bin.
+# HadISST download fails or the case lacks the corresponding monthly bin.
 #
-# NaN cells on either side are filled with 0 so the resulting bias is
-# defined everywhere. This avoids the rectangular NaN-cell holes that
-# `contourf!` would otherwise leave at the coarse 1° lat-lon resolution
-# (visible especially in the NH polar panels around Greenland / Eurasia
-# / Canadian Archipelago, where each scattered land mass would project
-# as its own pixelated hole). The land polygon overlay in `geo_panel!`,
-# drawn after the contourf, masks land cleanly with Natural-Earth
-# shapes instead.
+# NaN propagates: if either model or obs is NaN at a cell, the bias is
+# NaN there. This is intentional — at 1° regridded resolution the
+# model's land mask and HadISST's land mask disagree on a thin strip of
+# coastal cells, and forcing those cells to 0 would produce spurious
+# `model − 0 = model` or `0 − obs = −obs` values that contaminate the
+# bias panels with large near-coastal artefacts. Letting them be NaN
+# renders them as no-data (the Natural-Earth land polygon underneath
+# the contourf hides them where it can; the residual coastal-strip
+# pixels stay grey, correctly signalling "no comparison possible").
 function sic_bias_latlon(c, model_sym, obs_sym)
     model = get_field(c, model_sym)
     obs   = get_field(c, obs_sym)
     (isnothing(model) || isnothing(obs)) && return nothing
-    bias = similar(obs, Float64)
-    @inbounds for i in eachindex(obs)
-        m = isnan(model[i]) ? 0.0 : model[i]
-        o = isnan(obs[i])   ? 0.0 : obs[i]
-        bias[i] = m - o
-    end
-    return bias
+    return model .- obs
 end
 
 LOADERS[:sic_march_bias_latlon]     = c -> sic_bias_latlon(c, :sic_march_latlon,     :sic_march_obs_latlon)
