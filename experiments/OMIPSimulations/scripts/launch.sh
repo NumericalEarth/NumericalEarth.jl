@@ -93,10 +93,13 @@ Environment variables (I/O & runtime):
                 Keeps ~50 GB per run (current + next year).
   NODE          Pin job to a specific node (default: 2904)
   THREADS       Number of Julia threads / CPUs per task (default: 4)
-  PROFILE       Set to "true" for nsys profiling. Also disables the OMIP
-                diagnostic output writers (Average / JLD2 dumps / checkpoint
-                / KE spectrum) — they add per-iteration I/O and compute!
-                overhead that contaminates the trace.
+  PROFILE       Set to "true" for nsys profiling. Also:
+                  - disables the OMIP diagnostic output writers
+                    (Average / JLD2 dumps / checkpoint / KE spectrum)
+                    — they add per-iteration I/O and compute! overhead
+                    that contaminates the trace;
+                  - drops `pickup` from `run!` so the simulation always
+                    starts from scratch.
 
 Examples:
   ./launch.sh orca
@@ -170,6 +173,31 @@ sim.stop_time = 300 * 365days
 run!(sim; pickup = true)"
         ;;
 esac
+
+# Profile mode: drop the `pickup=...` from `run!` so the simulation
+# always starts from scratch. Resuming a checkpoint would skip the
+# initialization phase the profiler needs to see, and the choice of
+# checkpoint is irrelevant for kernel-cost measurements.
+if [[ "${PROFILE:-false}" == "true" ]]; then
+    case "$CONFIG" in
+        halfdegree)
+            RUN_CMD="sim.stop_time = 300 * 365days
+run!(sim)"
+            ;;
+        orca)
+            RUN_CMD="sim.stop_time = 300 * 365days
+run!(sim)"
+            ;;
+        tenthdegree)
+            RUN_CMD="sim.stop_time = 91days
+run!(sim)
+
+sim.Δt = 10minutes
+sim.stop_time = 300 * 365days
+run!(sim)"
+            ;;
+    esac
+fi
 
 # 0 means "no eddy closure" (maps to Julia `nothing`)
 export KSKEW="${KSKEW:-$DEFAULT_KSKEW}"

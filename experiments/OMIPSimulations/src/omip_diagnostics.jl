@@ -1,7 +1,7 @@
 
 using JLD2
 using Oceananigans.AbstractOperations: KernelFunctionOperation
-using Oceananigans.Operators: Axᶠᶜᶜ, Ayᶜᶠᶜ
+using Oceananigans.Operators: Axᶠᶜᶜ, Ayᶜᶠᶜ, ℑxᶜᵃᵃ, ℑyᵃᶜᵃ
 
 # Volumetric face fluxes [m³/s] for offline transport diagnostics
 # (e.g. AMOC streamfunction). Saved as 3-D fields on the velocity faces
@@ -9,6 +9,22 @@ using Oceananigans.Operators: Axᶠᶜᶜ, Ayᶜᶠᶜ
 # directly without re-deriving Δx/Δz on the visualizer side.
 @inline zonal_volume_flux(i, j, k, grid, u)      = @inbounds u[i, j, k] * Axᶠᶜᶜ(i, j, k, grid)
 @inline meridional_volume_flux(i, j, k, grid, v) = @inbounds v[i, j, k] * Ayᶜᶠᶜ(i, j, k, grid)
+
+# Square-then-interpolate helpers for the centred velocity-squared
+# diagnostics (`uosq`, `vosq`, `kega`). Same pattern as `ϕ²` /
+# `τᶜᶜᶜ` in `friction_velocity.jl` and the KE loader in
+# `scripts/visualize/cache.jl` — written as `KernelFunctionOperation`s
+# so the surrounding `Average(...)` reduction (which `compute!`s the
+# operand at every averaging timestep) runs a single fused kernel
+# rather than the multi-kernel AbstractOperation tree the previous
+# `@at((Center, Center, Center), u*u)` form built.
+@inline ψ²(i, j, k, grid, ψ) = @inbounds ψ[i, j, k]^2
+
+@inline uu_at_ccc(i, j, k, grid, u) = ℑxᶜᵃᵃ(i, j, k, grid, ψ², u)
+@inline vv_at_ccc(i, j, k, grid, v) = ℑyᵃᶜᵃ(i, j, k, grid, ψ², v)
+
+@inline ke_at_ccc(i, j, k, grid, u, v) =
+    (ℑxᶜᵃᵃ(i, j, k, grid, ψ², u) + ℑyᵃᶜᵃ(i, j, k, grid, ψ², v)) / 2
 
 """
     add_omip_diagnostics!(simulation; kwargs...)
@@ -149,8 +165,8 @@ function add_omip_diagnostics!(simulation;
     uvol = KernelFunctionOperation{Face,   Center, Center}(zonal_volume_flux,      grid, u)
     vvol = KernelFunctionOperation{Center, Face,   Center}(meridional_volume_flux, grid, v)
 
-    uosq = Oceananigans.AbstractOperations.@at((Center, Center, Center), u * u)
-    vosq = Oceananigans.AbstractOperations.@at((Center, Center, Center), v * v)
+    uosq = KernelFunctionOperation{Center, Center, Center}(uu_at_ccc, grid, u)
+    vosq = KernelFunctionOperation{Center, Center, Center}(vv_at_ccc, grid, v)
 
     field_outputs = Dict{Symbol, Any}(
         :to   => T,
@@ -180,7 +196,7 @@ function add_omip_diagnostics!(simulation;
     # Global means and horizontal-mean depth profiles for T, S, b.
     # `:zosga` (global-mean free-surface displacement) is a Boussinesq mass-conservation check.
     # `:kega` and (when CATKE is in use) `:tkega` are written as scalars
-    ke_op = Oceananigans.AbstractOperations.@at((Center, Center, Center), (u * u + v * v) / 2)
+    ke_op = KernelFunctionOperation{Center, Center, Center}(ke_at_ccc, grid, u, v)
     average_outputs = Dict{Symbol, Any}(
         :tosga => Average(T),
         :soga  => Average(S),

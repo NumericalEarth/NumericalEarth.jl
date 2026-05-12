@@ -943,10 +943,43 @@ function compute_zonal_mean(data_3d, ocean_mask_3d, regridder, Nlon, Nlat)
     return zonal
 end
 
+# Session-level cache of `ConservativeRegridding.Regridder` keyed by a
+# content fingerprint of the source grid. Two cases that share the same
+# physical grid (typical: many cases run against the same config, e.g.
+# ORCA1) build the regridder exactly once and then share it. The
+# `Regridder` constructor takes minutes per case at 1/10° because it
+# allocates sparse weight matrices over O(N²) candidate cell pairs, so
+# this cache saves wall-clock proportional to the case count.
+const REGRIDDER_CACHE = Dict{Any, Any}()
+
+# Fingerprint identifying "the same grid for regridding purposes":
+# type + size + bottom-topography hash. Bottom topography captures the
+# entire land mask (which is what `ConservativeRegridding` actually
+# depends on beyond the lat/lon axes), and for a fixed config grid the
+# axes are uniquely determined by type+size. If two grids agree on all
+# three they produce bit-identical regridders.
+function regridder_cache_key(grid)
+    key = Any[string(nameof(typeof(grid))), size(grid)]
+    if grid isa ImmersedBoundaryGrid
+        bh = Array(interior(grid.immersed_boundary.bottom_height, :, :, 1))
+        push!(key, hash(bh))
+    end
+    return Tuple(key)
+end
+
 LOADERS[:zonal_regridder] = c -> begin
-    src = Field{Center, Center, Nothing}(get_field(c, :grid))
+    grid = get_field(c, :grid)
+    key  = regridder_cache_key(grid)
+    cached = get(REGRIDDER_CACHE, key, nothing)
+    if !isnothing(cached)
+        @info "  Reusing zonal regridder for $(c.label) (cache hit on grid fingerprint)"
+        return cached
+    end
+    src = Field{Center, Center, Nothing}(grid)
     @info "  Building zonal regridder for $(c.label) (may take a few minutes)..."
-    ConservativeRegridding.Regridder(ZONAL_LATLON_DST_FIELD, src; progress = true)
+    rg = ConservativeRegridding.Regridder(ZONAL_LATLON_DST_FIELD, src; progress = true)
+    REGRIDDER_CACHE[key] = rg
+    return rg
 end
 
 # Surface regridder is the *same* (model 2-D grid → 1° lat-lon) regridder
