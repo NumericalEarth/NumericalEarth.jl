@@ -75,15 +75,7 @@ function reset_clock!(model::ESM)
 
     for component in components(model)
         reset_clock!(component)
-    end
-
-    # Keep prescribed-component cached state synchronized with the rewound clock.
-    if applicable(update_state!, model.atmosphere)
         update_state!(model.atmosphere)
-    end
-
-    if applicable(update_state!, model.land)
-        update_state!(model.land)
     end
 
     return nothing
