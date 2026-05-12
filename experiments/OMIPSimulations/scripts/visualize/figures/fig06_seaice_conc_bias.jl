@@ -18,8 +18,9 @@ function fig06(caches, labels, cases)
         polar_panel!(fig, [row_idx, 2*lab_idx - 1], bias;
                      hemisphere,
                      title = "$lab: $season SIC bias ($(hemisphere == :north ? "NH" : "SH"))",
-                     colormap = Reverse(:RdBu), colorrange = (-0.5, 0.5),
+                     colormap = Reverse(:RdBu), colorrange = (-1, 1),
                      label = "model − HadISST",
+                     land_color = nothing,
                      obs_contour = obs,
                      obs_levels = [0.15], obs_color = :black, obs_linewidth = 2.5)
     end
