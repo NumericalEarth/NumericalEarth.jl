@@ -14,34 +14,6 @@ using Printf
 apply_air_sea_radiative_fluxes!(::Any) = nothing
 apply_air_sea_ice_radiative_fluxes!(::Any) = nothing
 
-sync_atmosphere_land_auxiliary_forcings!(::Nothing, ::Any) = nothing
-sync_atmosphere_land_auxiliary_forcings!(::Any, ::Nothing) = nothing
-
-function sync_atmosphere_land_auxiliary_forcings!(land, atmosphere_exchanger)
-    # `SlabLand` exposes coupler-supplied fluxes at `land.fluxes`. A
-    # SlabLand whose hydrology closure declares `:air_temperature` and
-    # `:air_humidity` (e.g. `BucketWithSnow` for the Jarvis stress
-    # functions) gets them populated from the atmosphere exchanger here.
-    # Older land types may have used the now-deprecated `:forcings` slot.
-    auxiliary = if hasproperty(land, :fluxes)
-        land.fluxes
-    elseif hasproperty(land, :forcings)
-        land.forcings
-    else
-        return nothing
-    end
-
-    hasproperty(auxiliary, :air_temperature) || return nothing
-    hasproperty(auxiliary, :air_humidity) || return nothing
-
-    atmosphere_state = atmosphere_exchanger.state
-
-    parent(auxiliary.air_temperature) .= parent(atmosphere_state.T)
-    parent(auxiliary.air_humidity) .= parent(atmosphere_state.q)
-
-    return nothing
-end
-
 function time_step!(coupled_model::EarthSystemModel, Δt; callbacks=[])
     maybe_prepare_first_time_step!(coupled_model, callbacks)
 
@@ -80,7 +52,6 @@ function update_state!(coupled_model::EarthSystemModel, callbacks=[])
     # Phase 1: bring all component states onto the exchange grid
     interpolate_state!(exchanger.radiation,  grid, radiation,  coupled_model)
     interpolate_state!(exchanger.atmosphere, grid, atmosphere, coupled_model)
-    sync_atmosphere_land_auxiliary_forcings!(land, exchanger.atmosphere)
     interpolate_state!(exchanger.land,       grid, land,       coupled_model)
     interpolate_state!(exchanger.sea_ice,    grid, sea_ice,    coupled_model)
     interpolate_state!(exchanger.ocean,      grid, ocean,      coupled_model)

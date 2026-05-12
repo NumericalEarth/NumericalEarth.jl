@@ -1,28 +1,20 @@
-# # Atmospheric convection over heterogeneous slab land (3D)
+# # Atmospheric convection over a homogeneous slab land (3D)
 #
-# Couples a Breeze atmospheric large eddy simulation (LES) to a `SlabLand`
-# composed of:
+# Couples a Breeze atmospheric large eddy simulation (LES) to a
+# `SlabLand` composed of:
 #   energy    = SlabEnergy(heat_capacity = ρcH_g)
-#   hydrology = BucketWithSnow(...)
-#   surface   = SnowModifiedSurface(PrescribedSurfaceProperties(...))
+#   hydrology = ManabeBucket(...)
+#   surface   = ConstantSurfaceProperties(...)
 # through NumericalEarth's `EarthSystemModel` framework in a doubly-
 # periodic 3D domain. Turbulent surface fluxes (sensible, latent,
 # momentum) are computed with Monin–Obukhov similarity theory through
 # `AtmosphereLandModel`, with surface humidity reduced by the slab's
 # `moisture_availability` (β-factor).
 #
-# The domain is partitioned into three y-strips of contrasting USGS
-# classes — evergreen broadleaf forest, grassland, and barren /
-# sparsely vegetated. The atmosphere-land turbulent-flux path uses the
-# land-class `roughness_length` field in MOST and β-reduced surface
-# humidity, so the surface-flux contrast reflects both roughness and
-# strip-dependent soil moisture. Albedo, emissivity, and LAI are also
-# painted by `apply_land_classifications!`. The strips are oriented
-# along the x axis (parallel to the geostrophic flow) so air parcels
-# remain over a single land-cover class rather than fetching across
-# boundaries. The animation pairs the horizontal 2D ground-temperature
-# field with bottom-level wind vectors, and reports strip-conditional
-# vertical profiles of θ and u.
+# The land is spatially uniform: a single albedo, emissivity, and
+# roughness length apply everywhere. The animation pairs the
+# horizontal 2D ground-temperature field with bottom-level wind
+# vectors, and shows the domain-mean vertical profiles of θ and u.
 
 using NumericalEarth
 using Breeze
@@ -66,20 +58,10 @@ set!(atmos, θ=θᵢ, u=U₀)
 
 # ## Slab land
 #
-# Heterogeneous USGS land use. Strips are elongated along x and stack
-# in y, so each strip is parallel to the geostrophic flow:
-#   y ∈ [-10, -10/3) km : class 13 (evergreen broadleaf forest)
-#                         z₀=0.80 m, α=0.12, vegfrac=0.95, LAI=6.48
-#   y ∈ [-10/3, 10/3) km: class 7  (grassland)
-#                         z₀=0.075 m, α=0.19, vegfrac=0.80, LAI=2.90
-#   y ∈ [ 10/3, 10] km  : class 19 (barren / sparsely vegetated)
-#                         z₀=0.05 m, α=0.25, vegfrac=0.01, LAI=0.75
-#
-# `apply_land_classifications!` populates `vegfrac`, `lai`, `albedo`,
-# `emissivity`, `roughness_length`, `r_smin`, `is_urban` from this
-# categorical map. Initial soil moisture is strip-dependent (wet under
-# forest, dry under barren) so the partitioning of net turbulent
-# exchange between sensible and latent heat differs across strips.
+# Single homogeneous patch — `SlabEnergy + ManabeBucket +
+# ConstantSurfaceProperties`. The bucket is 15 cm deep (Manabe's
+# original `W_max = 150 kg m⁻²`); the soil thermal slab carries the
+# same areal heat capacity as the previous example for comparability.
 
 land_grid = RectilinearGrid(grid.architecture,
                             size = (grid.Nx, grid.Ny),
@@ -88,71 +70,28 @@ land_grid = RectilinearGrid(grid.architecture,
                             y = (-10kilometers, 10kilometers),
                             topology = (Periodic, Periodic, Flat))
 
-# Match the previous example's 10 cm soil thermal slab on a 1 m bucket.
 ρcH_g = 1500.0 * 1480.0 * 0.10      # J m⁻² K⁻¹
-W_max = 1000.0 * 1.0                # ρ_w · H_bucket [kg m⁻²]; saturates the 1 m bucket
 
 energy    = SlabEnergy(eltype(land_grid); heat_capacity = ρcH_g)
-hydrology = BucketWithSnow(eltype(land_grid);
-                            W_max = W_max,
-                            W_crit_frac = 0.30,    # crit at 30% saturation (θ_fc ≈ 0.30)
-                            W_wilt_frac = 0.10,
-                            SWE_crit = 0.05,
-                            ground_heat_capacity = ρcH_g)
-base_sfc  = PrescribedSurfaceProperties(land_grid;
-                                        albedo = 0.20,
-                                        emissivity = 0.97,
-                                        roughness_length = 0.1)
-surface   = SnowModifiedSurface(base_sfc;
-                                snow_albedo = 0.85,
-                                snow_emissivity = 0.98,
-                                snow_roughness_length = 0.011)
+hydrology = ManabeBucket(eltype(land_grid);
+                         field_capacity   = 150.0,
+                         critical_wetness = 0.75)
+surface   = ConstantSurfaceProperties(eltype(land_grid);
+                                       albedo = 0.20,
+                                       emissivity = 0.97,
+                                       z0_m = 0.1,
+                                       z0_h = 0.01)
 
 slab_land = SlabLand(land_grid; energy, hydrology, surface)
 
-strip_south = -10kilometers / 3   # forest | grass boundary
-strip_north =  10kilometers / 3   # grass  | barren boundary
-
-y_land_centers = Array(ynodes(land_grid, Center()))
-vegtype = fill(7, grid.Nx, grid.Ny)
-for j in 1:grid.Ny
-    if y_land_centers[j] < strip_south
-        vegtype[:, j] .= 13       # evergreen broadleaf forest
-    elseif y_land_centers[j] >= strip_north
-        vegtype[:, j] .= 19       # barren / sparsely vegetated
-    end
-end
-
-registry = usgs_land_classifications(eltype(land_grid))
-apply_land_classifications!(slab_land, vegtype, registry)
-
-# Initial state. Soil moisture is set as a fraction of saturation and
-# converted to column mass via `W = θ · ρ_w · H_bucket`.
-ρ_w_init = 1000.0
-H_bucket = 1.0
-function W_init(x, y)
-    θ = y < strip_south ? 0.40 :
-        y >= strip_north ? 0.10 : 0.30
-    return θ * ρ_w_init * H_bucket
-end
-
-set!(slab_land.state.T,   Tᵍ₀)
-set!(slab_land.state.W,   W_init)
-set!(slab_land.state.SWE, 0.0)
+set!(slab_land.state.T, Tᵍ₀)
+set!(slab_land.state.W, 0.5 * hydrology.field_capacity)   # 50% saturation
 Oceananigans.TimeSteppers.update_state!(slab_land)
-
-slab_land.fluxes.solar_irradiance .= 600.0      # W m⁻², bright midday
-
-# `air_temperature`, `air_humidity`, `surface_pressure` are refreshed
-# from the coupled atmosphere state by `AtmosphereLandModel`'s
-# `update_net_fluxes!`.
 
 # ## Coupled model
 #
 # `AtmosphereLandModel` wires the atmosphere to the slab through
-# similarity theory. The default land flux formulation reads the slab's
-# spatially varying `roughness_length` field for momentum roughness
-# and uses `roughness_length / 10` for heat and moisture roughness.
+# similarity theory. Roughness lengths come from the surface closure.
 
 model = AtmosphereLandModel(atmos, slab_land)
 
@@ -202,13 +141,10 @@ run!(simulation)
 # ## Animation
 #
 # Layout: top row shows horizontal (x–y) maps of bottom-level θₗᵢ and
-# bottom-level wind speed alongside strip-conditional vertical profiles
-# of θ; bottom row shows the strip-mean T_g time series, the ground
+# bottom-level wind speed alongside domain-mean vertical profiles of θ;
+# bottom row shows the domain-mean T_g time series, the ground
 # temperature T_g with surface wind vectors overlaid as quivers, and
-# strip-conditional vertical profiles of u. Dashed strip-boundary lines
-# on every horizontal panel mark the underlying land cover; a moving
-# black tick on the time-series panel tracks the current animation
-# frame.
+# the domain-mean vertical profile of u.
 
 using CairoMakie
 using Statistics
@@ -222,15 +158,12 @@ Tg_ts = FieldTimeSeries("breeze_slab_land_surface.jld2", "Tg"; architecture=CPU(
 times = θ_ts.times
 Nt = length(times)
 
-# Coordinate arrays.
-
 x_atmos = xnodes(grid, Center())
 y_atmos = ynodes(grid, Center())
 z_atmos = znodes(grid, Center())
 x_land  = xnodes(land_grid, Center())
 y_land  = ynodes(land_grid, Center())
 
-# Subsampled grid for quiver arrows.
 qstep = max(grid.Nx ÷ 16, 1)
 i_quiver = 1:qstep:grid.Nx
 j_quiver = 1:qstep:grid.Ny
@@ -245,14 +178,12 @@ ax_s  = Axis(fig[1, 2], title="√(u² + v² + w²) (m/s), bottom level", xlabel
              aspect=DataAspect())
 ax_θp = Axis(fig[1, 3], title="⟨θ⟩(z)",                              xlabel="θ (K)", ylabel="z (m)")
 
-ax_tg = Axis(fig[2, 1], title="Strip-mean T_g(t)",      xlabel="t (h)",   ylabel="T_g (K)")
+ax_tg = Axis(fig[2, 1], title="Domain-mean T_g(t)",     xlabel="t (h)",   ylabel="T_g (K)")
 ax_hs = Axis(fig[2, 2], title="T_g (K) + surface wind", xlabel="x (m)",   ylabel="y (m)",
              aspect=DataAspect())
 ax_up = Axis(fig[2, 3], title="⟨u⟩(z)",                 xlabel="u (m/s)", ylabel="z (m)")
 
 colsize!(fig.layout, 3, Relative(0.2))
-
-# Observables.
 
 n = Observable(1)
 
@@ -262,61 +193,28 @@ Tg2d   = @lift view(interior(Tg_ts[$n]), :, :, 1)
 u_bot  = @lift view(interior(u_ts[$n]), i_quiver, j_quiver, 1)
 v_bot  = @lift view(interior(v_ts[$n]), i_quiver, j_quiver, 1)
 
-# Strip-conditional vertical profiles (one curve per land-use strip).
-j1 = count(y -> y < strip_south, y_atmos)
-j2 = count(y -> y < strip_north, y_atmos)
-j_forest = 1:j1
-j_grass  = (j1 + 1):j2
-j_barren = (j2 + 1):grid.Ny
-
-θ_forest = @lift vec(mean(view(interior(θ_ts[$n]), :, j_forest, :); dims=(1, 2)))
-θ_grass  = @lift vec(mean(view(interior(θ_ts[$n]), :, j_grass,  :); dims=(1, 2)))
-θ_barren = @lift vec(mean(view(interior(θ_ts[$n]), :, j_barren, :); dims=(1, 2)))
-
-u_forest = @lift vec(mean(view(interior(u_ts[$n]), :, j_forest, :); dims=(1, 2)))
-u_grass  = @lift vec(mean(view(interior(u_ts[$n]), :, j_grass,  :); dims=(1, 2)))
-u_barren = @lift vec(mean(view(interior(u_ts[$n]), :, j_barren, :); dims=(1, 2)))
+θ_mean = @lift vec(mean(interior(θ_ts[$n]); dims=(1, 2)))
+u_mean = @lift vec(mean(interior(u_ts[$n]); dims=(1, 2)))
 
 heatmap!(ax_θ,  x_atmos, y_atmos, θn_bot; colormap=:thermal, colorrange=(θᵃᵗ - 0.5, θᵃᵗ + 8))
 heatmap!(ax_s,  x_atmos, y_atmos, sn_bot; colormap=:speed,   colorrange=(0, 5))
 heatmap!(ax_hs, x_land,  y_land,  Tg2d;   colormap=:thermal, colorrange=(Tᵍ₀ - 10, Tᵍ₀ + 15))
 arrows2d!(ax_hs, x_quiver, y_quiver, u_bot, v_bot; lengthscale=200, color=:white)
 
-# Strip-mean T_g time series. Pre-computed once over the full series
-# (cheap), then animated only by sliding a vertical tick.
-times_hours    = collect(times) ./ 3600
-T_g_forest_ts  = [mean(view(interior(Tg_ts[k]), :, j_forest, 1)) for k in 1:Nt]
-T_g_grass_ts   = [mean(view(interior(Tg_ts[k]), :, j_grass,  1)) for k in 1:Nt]
-T_g_barren_ts  = [mean(view(interior(Tg_ts[k]), :, j_barren, 1)) for k in 1:Nt]
+times_hours = collect(times) ./ 3600
+Tg_mean_ts  = [mean(interior(Tg_ts[k])) for k in 1:Nt]
 
-lines!(ax_tg, times_hours, T_g_forest_ts; linewidth=1.5, color=:darkgreen, label="Forest")
-lines!(ax_tg, times_hours, T_g_grass_ts;  linewidth=1.5, color=:olive,     label="Grass")
-lines!(ax_tg, times_hours, T_g_barren_ts; linewidth=1.5, color=:peru,      label="Barren")
+lines!(ax_tg, times_hours, Tg_mean_ts; linewidth=1.5, color=:black)
 t_now = @lift [times_hours[$n]]
-vlines!(ax_tg, t_now; color=:black, linewidth=1.0)
-axislegend(ax_tg; position=:rb, framevisible=false)
+vlines!(ax_tg, t_now; color=:black, linewidth=1.0, linestyle=:dash)
 
-for ax in (ax_θ, ax_s, ax_hs)
-    hlines!(ax, [strip_south, strip_north]; color=:black, linestyle=:dash, linewidth=1.5)
-end
-
-x_label = minimum(x_land) + 1kilometers
-text!(ax_hs, x_label, (minimum(y_land) + strip_south) / 2; text="Forest", color=:white, fontsize=13, align=(:left, :center))
-text!(ax_hs, x_label, 0;                                   text="Grass",  color=:white, fontsize=13, align=(:left, :center))
-text!(ax_hs, x_label, (strip_north + maximum(y_land)) / 2; text="Barren", color=:white, fontsize=13, align=(:left, :center))
-
-lines!(ax_θp, θ_forest, z_atmos; linewidth=1.5, color=:darkgreen, label="Forest")
-lines!(ax_θp, θ_grass,  z_atmos; linewidth=1.5, color=:olive,     label="Grass")
-lines!(ax_θp, θ_barren, z_atmos; linewidth=1.5, color=:peru,      label="Barren")
+lines!(ax_θp, θ_mean, z_atmos; linewidth=1.5, color=:black)
 xlims!(ax_θp, θᵃᵗ - 1, θᵃᵗ + 8)
-axislegend(ax_θp; position=:rb, framevisible=false)
 
-lines!(ax_up, u_forest, z_atmos; linewidth=1.5, color=:darkgreen, label="Forest")
-lines!(ax_up, u_grass,  z_atmos; linewidth=1.5, color=:olive,     label="Grass")
-lines!(ax_up, u_barren, z_atmos; linewidth=1.5, color=:peru,      label="Barren")
+lines!(ax_up, u_mean, z_atmos; linewidth=1.5, color=:black)
 xlims!(ax_up, -3, 8)
 
-title = @lift "Breeze LES over heterogeneous slab land (3D), t = " * prettytime(times[$n])
+title = @lift "Breeze LES over homogeneous slab land (3D), t = " * prettytime(times[$n])
 Label(fig[0, 1:3], title, fontsize=16)
 
 # ## Record

@@ -7,19 +7,14 @@ export PrescribedLand,
        SlabEnergy,
        # Hydrology closures
        ManabeBucket, DryLand, SaturatedSurface,
-       BucketWithSnow,
        # Surface-property closures
        ConstantSurfaceProperties,
-       PrescribedSurfaceProperties, SnowModifiedSurface,
        # Atmosphere-facing accessors
-       surface_temperature, surface_wetness,
-       # Land-class registry
-       LandClassification, usgs_land_classifications,
-       apply_land_classifications!
+       surface_temperature, surface_wetness
 
 using Oceananigans
 using Oceananigans.Utils: launch!, prettytime
-using Oceananigans.Fields: Center, Face, CenterField, ConstantField, ZeroField, interior, AbstractField
+using Oceananigans.Fields: Center, Face, CenterField, ConstantField, ZeroField, interior
 using Oceananigans.Grids: grid_name, architecture, prettysummary
 using Oceananigans.OutputReaders: FieldTimeSeries, update_field_time_series!, extract_field_time_series
 using Oceananigans.TimeSteppers: Clock, tick!
@@ -54,15 +49,11 @@ include("energy_balance/slab_energy.jl")
 include("hydrology/manabe_bucket.jl")
 include("hydrology/dry_land.jl")
 include("hydrology/saturated_surface.jl")
-include("hydrology/bucket_with_snow.jl")
 include("surface_properties/constant_surface_properties.jl")
-include("surface_properties/prescribed_surface_properties.jl")
-include("surface_properties/snow_modified_surface.jl")
 
-# Legacy components and class registry
+# Legacy PrescribedLand component (river / iceberg freshwater forcing).
 include("prescribed_land.jl")
 include("prescribed_land_regridder.jl")
 include("interpolate_land_state.jl")
-include("land_classification.jl")
 
 end # module Lands
