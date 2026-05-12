@@ -1,7 +1,6 @@
 include("runtests_setup.jl")
 
 using Glob
-using Logging
 using Oceananigans.OutputWriters: Checkpointer
 using Oceananigans.TimeSteppers: reset!
 
