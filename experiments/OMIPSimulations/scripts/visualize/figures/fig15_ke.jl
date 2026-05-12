@@ -1,5 +1,5 @@
 # Figure 14: Global-mean kinetic energy time series.
-function fig14(caches, labels, cases)
+function fig15(caches, labels, cases)
     fig = Figure(size = (600 + 150 * length(labels), 450), fontsize = 14)
     ax = Axis(fig[1, 1]; xlabel = "Time (years)", ylabel = "KE (m²/s²)",
               title = "Global-mean kinetic energy")
@@ -11,5 +11,5 @@ function fig14(caches, labels, cases)
                color = case_colors[i], linewidth = CASE_LINEWIDTH, label = lab)
     end
     Legend(fig[1, 2], ax)
-    savefig(fig, "fig14_ke.png")
+    savefig(fig, "fig15_ke.png")
 end

@@ -1,5 +1,5 @@
 # Figure 19: Zonal-mean MLD (summer min and winter max) per case + dBM reference.
-function fig19(caches, labels, cases)
+function fig20(caches, labels, cases)
     latitude = zonal_latitude_centers()
 
     fig = Figure(size = (1100 + 200 * length(labels), 550), fontsize = 14)
@@ -23,5 +23,5 @@ function fig19(caches, labels, cases)
                color = OBS_COLOR, linewidth = OBS_LINEWIDTH, linestyle = OBS_LINESTYLE, label = "dBM")
     end
     Legend(fig[1, 3], ax_min)
-    savefig(fig, "fig19_mld_zonal_mean.png")
+    savefig(fig, "fig20_mld_zonal_mean.png")
 end

@@ -1,5 +1,5 @@
 # Figure 17: Zonal-mean T, S, b sections per case (with WOA / initial overlays).
-function fig17(caches, labels, cases)
+function fig18(caches, labels, cases)
     latitude = zonal_latitude_centers()
     temperature_levels = -2:2:30
     salinity_levels    = 33:0.25:37
@@ -40,5 +40,5 @@ function fig17(caches, labels, cases)
                  levels = buoyancy_levels, color = :black, linewidth = 0.8)
         Colorbar(fig[3, 2i], hm; label = "m/s²"); ylims!(ax, (-5500, 0))
     end
-    savefig(fig, "fig17_zonal_mean.png")
+    savefig(fig, "fig18_zonal_mean.png")
 end

@@ -1,5 +1,5 @@
 # Figure 21: Strait transports (Bering, Drake, ITF) annual means per case.
-function fig21(caches, labels, cases)
+function fig22(caches, labels, cases)
     # Bin a time series sampled at `t_seconds` into yearly means starting at year 0.
     function annual_means(t_seconds, values)
         years_full = floor.(Int, t_seconds ./ (365.25 * 86400))
@@ -37,5 +37,5 @@ function fig21(caches, labels, cases)
         lines!(ax_i, ti, yi; color = case_colors[i], label = lab, linewidth = CASE_LINEWIDTH)
     end
     Legend(fig[1, 4], ax_b)
-    savefig(fig, "fig21_strait_transports.png")
+    savefig(fig, "fig22_strait_transports.png")
 end

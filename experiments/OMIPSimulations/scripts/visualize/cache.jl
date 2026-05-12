@@ -647,6 +647,50 @@ LOADERS[:sic_mean]      = c -> masked!(c, dropdims(get_field(c, :sic_mean_and_mo
 LOADERS[:sic_march]     = c -> sic_month(c, 3)
 LOADERS[:sic_september] = c -> sic_month(c, 9)
 
+# Observed monthly SIC climatology (HadISST1, 1979–2007) lives on the
+# shared 1° lat-lon grid by construction (see `hadisst_sic_climatology`
+# in common.jl). It is case-independent, but exposed through each
+# per-case cache so the same `get_field(c, :sic_*_bias_latlon)` pattern
+# composes uniformly with the other lat-lon loaders.
+LOADERS[:hadisst_sic_monthly] = c -> hadisst_sic_climatology()
+
+function hadisst_month_latlon(c, m)
+    monthly = get_field(c, :hadisst_sic_monthly)
+    return isnothing(monthly) ? nothing : monthly[m]
+end
+
+LOADERS[:sic_march_obs_latlon]     = c -> hadisst_month_latlon(c, 3)
+LOADERS[:sic_september_obs_latlon] = c -> hadisst_month_latlon(c, 9)
+
+# Model minus obs SIC bias on the shared 1° lat-lon grid. `nothing` in
+# from either side → `nothing` out so fig06 degrades gracefully if the
+# HadISST download fails or the case lacks the corresponding monthly
+# bin.
+#
+# NaN cells on either side are filled with 0 so the resulting bias is
+# defined everywhere. This avoids the rectangular NaN-cell holes that
+# `contourf!` would otherwise leave at the coarse 1° lat-lon resolution
+# (visible especially in the NH polar panels around Greenland / Eurasia
+# / Canadian Archipelago, where each scattered land mass would project
+# as its own pixelated hole). The land polygon overlay in `geo_panel!`,
+# drawn after the contourf, masks land cleanly with Natural-Earth
+# shapes instead.
+function sic_bias_latlon(c, model_sym, obs_sym)
+    model = get_field(c, model_sym)
+    obs   = get_field(c, obs_sym)
+    (isnothing(model) || isnothing(obs)) && return nothing
+    bias = similar(obs, Float64)
+    @inbounds for i in eachindex(obs)
+        m = isnan(model[i]) ? 0.0 : model[i]
+        o = isnan(obs[i])   ? 0.0 : obs[i]
+        bias[i] = m - o
+    end
+    return bias
+end
+
+LOADERS[:sic_march_bias_latlon]     = c -> sic_bias_latlon(c, :sic_march_latlon,     :sic_march_obs_latlon)
+LOADERS[:sic_september_bias_latlon] = c -> sic_bias_latlon(c, :sic_september_latlon, :sic_september_obs_latlon)
+
 #####
 ##### Mixed-layer depth (kernel diagnostic, monthly min/max)
 #####
@@ -990,22 +1034,25 @@ projected limits (via Proj) so the polar cap fills the panel instead
 of being squashed into the centre of a full-globe stereographic view.
 """
 function polar_panel!(fig, pos, data;
-                      hemisphere = :north, lat_cutoff = 45.0, kwargs...)
+                      hemisphere = :north, lat_cutoff = 45.0,
+                      obs_contour = nothing, kwargs...)
     proj = hemisphere == :north ?
         "+proj=stere +lat_0=90 +lat_ts=70" :
         "+proj=stere +lat_0=-90 +lat_ts=-70"
     j_keep = hemisphere == :north ?
         findall(lat -> lat >= lat_cutoff,  LATLON_LAT_CENTERS) :
         findall(lat -> lat <= -lat_cutoff, LATLON_LAT_CENTERS)
-    lat_sub  = LATLON_LAT_CENTERS[j_keep]
-    data_sub = data[:, j_keep]
-    latlims  = hemisphere == :north ? (lat_cutoff, 90.0) : (-90.0, -lat_cutoff)
+    lat_sub     = LATLON_LAT_CENTERS[j_keep]
+    data_sub    = data[:, j_keep]
+    obs_sub     = isnothing(obs_contour) ? nothing : obs_contour[:, j_keep]
+    latlims     = hemisphere == :north ? (lat_cutoff, 90.0) : (-90.0, -lat_cutoff)
     return geo_panel!(fig, pos, data_sub;
                       x = LATLON_LON_CENTERS,
                       y = lat_sub,
                       projection = proj,
                       latlims = latlims,
                       lonlims = (-180.0, 180.0),
+                      obs_contour = obs_sub,
                       kwargs...)
 end
 

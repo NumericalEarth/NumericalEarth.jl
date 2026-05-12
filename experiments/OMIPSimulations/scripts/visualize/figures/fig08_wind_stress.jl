@@ -1,5 +1,5 @@
 # Figure 7: Wind stress (zonal, meridional) and (optional) NCEP biases (1° lat-lon regrid).
-function fig07(caches, labels, cases)
+function fig08(caches, labels, cases)
     has_ncep = any(lab -> !isnothing(get_field(caches[lab], :zonal_wind_stress_bias_ncep)), labels)
     nrows = has_ncep ? 4 : 2
     fig = Figure(size = (800 * length(labels), 450 * nrows), fontsize = 14)
@@ -22,5 +22,5 @@ function fig07(caches, labels, cases)
                 colorrange = (-0.15, 0.15), label = "N/m²")
         end
     end
-    savefig(fig, "fig07_wind_stress.png")
+    savefig(fig, "fig08_wind_stress.png")
 end

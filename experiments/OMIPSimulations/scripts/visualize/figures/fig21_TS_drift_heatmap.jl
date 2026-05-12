@@ -3,7 +3,7 @@
 # 0 → 1000 m (upper-ocean detail), bottom half spans 1000 m → bottom. The
 # two sub-axes share the time axis and sit flush with no gap, so visually
 # they read as a single panel with a piecewise-linear depth coordinate.
-function fig20(caches, labels, cases)
+function fig21(caches, labels, cases)
     ncases = length(labels)
     temperature_drift_levels = range(-1.6, 1.6; length = 17)
     salinity_drift_levels    = range(-0.1, 0.1; length = 21)
@@ -50,5 +50,5 @@ function fig20(caches, labels, cases)
         Colorbar(fig[2, 2i], hm_S; label = "PSU")
     end
 
-    savefig(fig, "fig20_TS_drift_heatmap.png")
+    savefig(fig, "fig21_TS_drift_heatmap.png")
 end

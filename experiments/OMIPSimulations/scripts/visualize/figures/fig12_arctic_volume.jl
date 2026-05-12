@@ -1,5 +1,5 @@
 # Figure 11: Arctic sea-ice volume climatology (model + PIOMAS).
-function fig11(caches, labels, cases)
+function fig12(caches, labels, cases)
     month_names = ["J","F","M","A","M","J","J","A","S","O","N","D"]
     m3_to_thousand_km3 = 1e-12
     obs = piomas_monthly()
@@ -15,5 +15,5 @@ function fig11(caches, labels, cases)
                color = case_colors[i], linewidth = CASE_LINEWIDTH, label = lab)
     end
     Legend(fig[1, 2], ax)
-    savefig(fig, "fig11_arctic_volume.png")
+    savefig(fig, "fig12_arctic_volume.png")
 end

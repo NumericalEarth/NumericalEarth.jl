@@ -2,7 +2,7 @@
 # ψ_atl(j, z) computed per j-row on the model grid (no regridding) from
 # the saved `vvol = v·Aʸ` field, summed zonally over the Atlantic basin
 # mask and cumulatively integrated from the bottom up. Sv = 1e6 m³/s.
-function fig22(caches, labels, cases)
+function fig23(caches, labels, cases)
     levels = -30:5:30
     fig = Figure(size = (600 * length(labels), 500), fontsize = 14)
     for (i, lab) in enumerate(labels)
@@ -21,5 +21,5 @@ function fig22(caches, labels, cases)
         ylims!(ax, (-5500, 0))
         xlims!(ax, (-35, 65))
     end
-    savefig(fig, "fig22_amoc.png")
+    savefig(fig, "fig23_amoc.png")
 end

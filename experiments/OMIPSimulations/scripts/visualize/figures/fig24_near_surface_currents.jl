@@ -1,5 +1,5 @@
 # Figure 23: Near-surface mean currents (top model cell, geographic E/N, 1° lat-lon regrid).
-function fig23(caches, labels, cases)
+function fig24(caches, labels, cases)
     fig = Figure(size = (800 * length(labels), 1300), fontsize = 14)
     for (i, lab) in enumerate(labels)
         c = caches[lab]
@@ -13,5 +13,5 @@ function fig23(caches, labels, cases)
                title = "$lab: Meridional current (vN)",
                colormap = :balance, colorrange = (-0.3, 0.3), label = "m/s")
     end
-    savefig(fig, "fig23_near_surface_currents.png")
+    savefig(fig, "fig24_near_surface_currents.png")
 end

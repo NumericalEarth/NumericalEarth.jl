@@ -1,5 +1,5 @@
 # Figure 13: Arctic sea-ice volume time series per case.
-function fig13(caches, labels, cases)
+function fig14(caches, labels, cases)
     m3_to_thousand_km3 = 1e-12
     fig = Figure(size = (400 + 200 * length(labels), 500), fontsize = 14)
     ax = Axis(fig[1, 1]; xlabel = "Time (years)", ylabel = "Ice volume (10³ km³)",
@@ -12,5 +12,5 @@ function fig13(caches, labels, cases)
                color = case_colors[i], linewidth = CASE_LINEWIDTH, label = lab)
     end
     Legend(fig[1, 2], ax)
-    savefig(fig, "fig13_arctic_volume_timeseries.png")
+    savefig(fig, "fig14_arctic_volume_timeseries.png")
 end

@@ -495,9 +495,17 @@ function geo_panel!(fig, pos, data;
                     coastlines = true,
                     coast_color = :black, coast_linewidth = 0.4,
                     land_color = :lightgray,
-                    lonlims = nothing, latlims = nothing)
+                    lonlims = nothing, latlims = nothing,
+                    obs_contour = nothing,
+                    obs_levels = [0.15],
+                    obs_color = :black,
+                    obs_linewidth = 1.5)
+    x_in = x
     x, data = to_minus180_180(x, data)
-    ga = GeoAxis(fig[pos...]; dest = projection, title)
+    # `titlegap` clears the graticule labels at the disk edge — without
+    # it the title text in polar-stereographic panels can overlap the
+    # longitude labels (e.g. "30°") at the top.
+    ga = GeoAxis(fig[pos...]; dest = projection, title, titlegap = 24)
     # GeoMakie's xlims!/ylims! take longitude/latitude in degrees, NOT
     # projected coordinates. Used to clip polar caps so the data fills
     # the panel instead of being squashed into a whole-globe view.
@@ -506,7 +514,9 @@ function geo_panel!(fig, pos, data;
     # Land polygon is drawn UNDER the contourf so NaN cells (regridded
     # land) show the polygon. Data is drawn on top — it should be
     # NaN-masked at land cells; if it isn't, the bleed is a regridder
-    # bug, not a rendering one.
+    # bug, not a rendering one. (Drawing the polygon on top doesn't
+    # work in polar-stereographic projections — the Natural-Earth
+    # polygon edges wrap incorrectly and fill the whole disk.)
     if !isnothing(land_color)
         poly!(ga, GeoMakie.land(); color = land_color, strokewidth = 0)
     end
@@ -524,6 +534,13 @@ function geo_panel!(fig, pos, data;
     if coastlines
         lines!(ga, GeoMakie.coastlines(); color = coast_color,
                linewidth = coast_linewidth)
+    end
+    # Obs reference contour (e.g. 15% SIC edge) drawn last so it sits
+    # on top of the filled data and the coastlines.
+    if !isnothing(obs_contour)
+        _, obs_shifted = to_minus180_180(x_in, obs_contour)
+        contour!(ga, x, y, obs_shifted;
+                 levels = obs_levels, color = obs_color, linewidth = obs_linewidth)
     end
     Colorbar(fig[pos[1], pos[2] + 1], hm; label)
     return ga
@@ -919,3 +936,111 @@ end
 nsidc_arctic()    = try_load(NSIDC_NORTH_REF, "NSIDC (north)", () -> load_nsidc("north"))
 nsidc_antarctic() = try_load(NSIDC_SOUTH_REF, "NSIDC (south)", () -> load_nsidc("south"))
 piomas_monthly()  = try_load(PIOMAS_REF,      "PIOMAS",        load_piomas_monthly)
+
+# ══════════════════════════════════════════════════════════════
+# HadISST1 sea-ice concentration climatology (Met Office Hadley Centre)
+# ══════════════════════════════════════════════════════════════
+#
+# HadISST1 (Rayner et al. 2003) blends satellite passive-microwave SIC
+# with earlier sources back to 1870 on a global 1°×1° lat-lon grid.
+# Distributed as a single gzipped NetCDF (`HadISST_ice.nc.gz`, ~30 MB);
+# we gunzip on first download into the obs cache and compute the
+# monthly climatology over a fixed window (1979–2007 to match the
+# Adcroft 2019 OM4 reference window).
+#
+# Native HadISST conventions: longitude −179.5..179.5 (ascending),
+# latitude 89.5..−89.5 (descending), `sic` as 0..1 fraction with land /
+# missing flagged at −1 / −1e30. Because the resolution matches the
+# shared `LATLON_*_CENTERS` 1° grid exactly, we line them up by axis
+# remap (longitude roll + latitude flip) — no interpolation.
+
+const HADISST_SIC_URL = get(ENV, "HADISST_SIC_URL",
+    "https://www.metoffice.gov.uk/hadobs/hadisst/data/HadISST_ice.nc.gz")
+
+function gunzip_to_sibling(path_gz::AbstractString)
+    endswith(path_gz, ".gz") || return path_gz
+    out = path_gz[1:end-3]
+    isfile(out) && return out
+    @info "  Gunzipping $(basename(path_gz))"
+    run(pipeline(`gunzip -k $path_gz`))
+    return out
+end
+
+function load_hadisst_sic_climatology(; start_year = 1979, end_year = 2007,
+                                       cache_dir = obs_cache_dir)
+    cache_file = joinpath(cache_dir, "sic_hadisst_$(start_year)_$(end_year).jld2")
+    if isfile(cache_file)
+        return JLD2.load(cache_file, "monthly")
+    end
+
+    file = gunzip_to_sibling(cached_download(HADISST_SIC_URL))
+    @info "  Reading HadISST monthly SIC and building $(start_year)–$(end_year) climatology..."
+
+    ds       = NCDatasets.NCDataset(file)
+    lon_vec  = Float64.(Array(ds["longitude"][:]))
+    lat_vec  = Float64.(Array(ds["latitude"][:]))
+    time_vec = Array(ds["time"][:])
+    Nlon     = length(lon_vec)
+    Nlat     = length(lat_vec)
+    sic_var  = ds["sic"]
+    yrs      = Dates.year.(time_vec)
+    mns      = Dates.month.(time_vec)
+    keep     = findall(y -> start_year <= y <= end_year, yrs)
+    isempty(keep) && (close(ds); error("HadISST: no months in [$start_year, $end_year]"))
+
+    sums      = [zeros(Nlon, Nlat) for _ in 1:12]
+    good_cnt  = [zeros(Int, Nlon, Nlat) for _ in 1:12]
+    auto_scale_pending = true   # decide 0..1 vs 0..100 on first finite slab
+
+    for n in keep
+        slab = Float64.(coalesce.(Array(sic_var[:, :, n]), NaN))
+        # Land / fill values
+        @inbounds for j in 1:Nlat, i in 1:Nlon
+            v = slab[i, j]
+            (v < -0.5 || v > 200.0) && (slab[i, j] = NaN)
+        end
+        if auto_scale_pending
+            finite_max = maximum(Iterators.filter(isfinite, slab); init = 0.0)
+            if finite_max > 1.5
+                slab ./= 100
+            end
+            auto_scale_pending = false
+        end
+        m = mns[n]
+        @inbounds for j in 1:Nlat, i in 1:Nlon
+            v = slab[i, j]
+            if isfinite(v)
+                sums[m][i, j]     += v
+                good_cnt[m][i, j] += 1
+            end
+        end
+    end
+    close(ds)
+
+    # Native-grid monthly mean (NaN where every contributing month was NaN).
+    monthly_native = Vector{Matrix{Float64}}(undef, 12)
+    for m in 1:12
+        out = fill(NaN, Nlon, Nlat)
+        @inbounds for j in 1:Nlat, i in 1:Nlon
+            good_cnt[m][i, j] > 0 && (out[i, j] = sums[m][i, j] / good_cnt[m][i, j])
+        end
+        monthly_native[m] = out
+    end
+
+    # Remap HadISST axes (-180..180, lat descending) to the shared 1° lat-lon
+    # convention (0..360, lat ascending). HadISST native grid is exactly 1°×1°
+    # — same as `LATLON_*_CENTERS` — so this is a pure sort, no interpolation.
+    @assert Nlon == length(LATLON_LON_CENTERS) "HadISST longitude grid mismatch: $Nlon vs $(length(LATLON_LON_CENTERS))"
+    @assert Nlat == length(LATLON_LAT_CENTERS) "HadISST latitude grid mismatch: $Nlat vs $(length(LATLON_LAT_CENTERS))"
+    i_perm = sortperm(mod.(lon_vec, 360))
+    j_perm = sortperm(lat_vec)
+
+    monthly = [monthly_native[m][i_perm, j_perm] for m in 1:12]
+    JLD2.jldsave(cache_file; monthly)
+    return monthly
+end
+
+const HADISST_SIC_REF = Ref{Any}(nothing)
+
+hadisst_sic_climatology() =
+    try_load(HADISST_SIC_REF, "HadISST SIC climatology", load_hadisst_sic_climatology)

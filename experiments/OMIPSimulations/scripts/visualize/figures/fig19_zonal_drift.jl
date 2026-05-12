@@ -1,5 +1,5 @@
 # Figure 18: Zonal-mean drift (T - WOA, S - WOA, b - b₀) as filled contours.
-function fig18(caches, labels, cases)
+function fig19(caches, labels, cases)
     latitude = zonal_latitude_centers()
     temperature_bias_levels = range(-3, 3; length = 13)
     salinity_bias_levels    = range(-0.75, 0.75; length = 13)
@@ -39,5 +39,5 @@ function fig18(caches, labels, cases)
                        extendlow = :auto, extendhigh = :auto)
         Colorbar(fig[3, 2i], hm; label = "m/s²"); ylims!(ax, (-5500, 0))
     end
-    savefig(fig, "fig18_zonal_drift.png")
+    savefig(fig, "fig19_zonal_drift.png")
 end

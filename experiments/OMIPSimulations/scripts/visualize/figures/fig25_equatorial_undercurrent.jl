@@ -3,7 +3,7 @@
 #   * Zonal section of zonal velocity along the equator (lon ∈ [143°E, 95°W])
 # Observations (Johnson et al. 2002) are stubbed until the file is wired up.
 
-function fig24(caches, labels, cases)
+function fig25(caches, labels, cases)
     ncases  = length(labels)
     levels  = collect(-100:10:100)
     heavy   = collect(-100:50:100)
@@ -68,5 +68,5 @@ function fig24(caches, labels, cases)
         draw_equatorial!(model_row_eq, i, "$lab: u(equator) model", lons_eq, depth, uE_eq_model)
     end
 
-    savefig(fig, "fig24_equatorial_undercurrent.png")
+    savefig(fig, "fig25_equatorial_undercurrent.png")
 end

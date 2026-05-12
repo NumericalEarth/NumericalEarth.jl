@@ -1,5 +1,5 @@
 # Figure 12: Sea-ice area time series (Arctic + Antarctic) per case.
-function fig12(caches, labels, cases)
+function fig13(caches, labels, cases)
     m2_to_million_km2 = 1e-12
     fig = Figure(size = (600 + 200 * length(labels), 500), fontsize = 14)
     ax_arctic = Axis(fig[1, 1]; xlabel = "Time (years)", ylabel = "SIA (Million km²)",
@@ -21,5 +21,5 @@ function fig12(caches, labels, cases)
                color = case_colors[i], linewidth = CASE_LINEWIDTH, label = lab)
     end
     Legend(fig[1, 3], ax_arctic)
-    savefig(fig, "fig12_sia_timeseries.png")
+    savefig(fig, "fig13_sia_timeseries.png")
 end

@@ -1,5 +1,5 @@
 # Figure 15: Global-mean T and S drift time series.
-function fig15(caches, labels, cases)
+function fig16(caches, labels, cases)
     fig = Figure(size = (600 + 200 * length(labels), 450), fontsize = 14)
     ax_temperature = Axis(fig[1, 1]; xlabel = "Time (years)", ylabel = "ΔT (deg C)",
                           title = "Global-mean temperature drift")
@@ -18,5 +18,5 @@ function fig15(caches, labels, cases)
                color = case_colors[i], linewidth = CASE_LINEWIDTH, label = lab)
     end
     Legend(fig[1, 3], ax_temperature)
-    savefig(fig, "fig15_drift.png")
+    savefig(fig, "fig16_drift.png")
 end

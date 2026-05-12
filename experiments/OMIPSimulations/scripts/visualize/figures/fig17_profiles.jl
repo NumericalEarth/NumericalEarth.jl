@@ -1,5 +1,5 @@
 # Figure 16: Time-mean horizontal-mean T and S profiles.
-function fig16(caches, labels, cases)
+function fig17(caches, labels, cases)
     fig = Figure(size = (600 + 200 * length(labels), 600), fontsize = 14)
     ax_temperature = Axis(fig[1, 1]; xlabel = "Temperature (deg C)", ylabel = "Depth (m)",
                           title = "Horizontal-mean temperature")
@@ -20,5 +20,5 @@ function fig16(caches, labels, cases)
     end
     ylims!(ax_salinity, (-5500, 0))
     Legend(fig[1, 3], ax_temperature)
-    savefig(fig, "fig16_profiles.png")
+    savefig(fig, "fig17_profiles.png")
 end
