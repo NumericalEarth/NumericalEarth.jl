@@ -6,7 +6,7 @@
 ##### three closures along independent axes:
 #####
 #####   - `energy    :: AbstractEnergyBalance`     -- skin temperature
-#####   - `hydrology :: AbstractHydrology`         -- water + wetness factor β
+#####   - `hydrology :: AbstractHydrology`         -- water + moisture availability β ∈ [0, 1]
 #####   - `surface   :: AbstractSurfaceProperties` -- roughness length
 #####
 ##### State and flux fields are not allocated by the container: each

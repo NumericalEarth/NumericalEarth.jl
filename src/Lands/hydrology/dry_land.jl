@@ -1,5 +1,5 @@
 #####
-##### `DryLand` — β ≡ 0. Latent heat collapses to zero.
+##### `DryLand` — moisture availability β ≡ 0. Latent heat collapses to zero.
 #####
 ##### Useful for desert idealisations and unit-test isolation of the
 ##### energy path.
@@ -12,4 +12,4 @@ flux_variables(::DryLand)       = ()
 
 wetness(::DryLand, state) = ZeroField()
 
-Base.summary(::DryLand) = "DryLand (β ≡ 0)"
+Base.summary(::DryLand) = "DryLand (moisture availability β ≡ 0)"
