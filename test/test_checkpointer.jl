@@ -23,6 +23,20 @@ function make_coupled_model(grid)
     return OceanSeaIceModel(sea_ice, ocean; atmosphere, land, radiation)
 end
 
+function test_clock_time_and_iteration(simulation, expected_iteration)
+    @test simulation.model.clock.iteration == expected_iteration
+    @test simulation.model.clock.time == expected_iteration * Δt
+    for component in components(simulation.model)
+        if component isa PrescribedModelComponent
+            @test component.clock.iteration == expected_iteration
+            @test component.clock.time == expected_iteration * Δt
+        else
+            @test component.model.clock.iteration == expected_iteration
+            @test component.model.clock.time == expected_iteration * Δt
+        end
+    end
+end
+
 @testset "EarthSystemModel checkpointing" begin
     for arch in test_architectures
         A = typeof(arch)
@@ -129,8 +143,7 @@ end
                                      halo = (6, 6, 6))
 
         model = make_coupled_model(grid)
-        Δt=60
-        simulation = Simulation(model; Δt, stop_iteration=3, verbose=false)
+        simulation = Simulation(model; Δt=60, stop_iteration=3, verbose=false)
 
         # check that clock stops when intended
         @test model.atmosphere isa PrescribedModelComponent
@@ -140,45 +153,17 @@ end
         # check that clock stops when intended
         run!(simulation)
 
-        @test simulation.model.clock.iteration == 3
-        @test simulation.model.clock.time == 3Δt
-        for component in components(simulation.model)
-            if component isa PrescribedModelComponent
-                @test component.clock.iteration == 3
-                @test component.clock.time == 3Δt
-            else
-                @test component.model.clock.iteration == 3
-                @test component.model.clock.time == 3Δt
-            end
-        end
+       test_clock_time_and_iteration(simulation, 3)
 
         # check that reset!(simulation) rewinds model clock and its components
         reset!(simulation)
 
-        @test simulation.model.clock.iteration == 0
-        @test simulation.model.clock.time == 0
-        for component in components(simulation.model)
-            if component isa PrescribedModelComponent
-                @test component.clock.iteration == 0
-                @test component.clock.time == 0
-            else
-                @test component.model.clock.iteration == 0
-                @test component.model.clock.time == 0
-            end
-        end
+        test_clock_time_and_iteration(simulation, 0)
 
         # check we can restart the simulation
         simulation.stop_iteration = 2
         run!(simulation)
 
-        for component in components(simulation.model)
-            if component isa PrescribedModelComponent
-                @test component.clock.iteration == 2
-                @test component.clock.time == 2Δt
-            else
-                @test component.model.clock.iteration == 2
-                @test component.model.clock.time == 2Δt
-            end
-        end
+        test_clock_time_and_iteration(simulation, 2)
     end
 end
