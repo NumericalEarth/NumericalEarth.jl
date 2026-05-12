@@ -79,8 +79,8 @@ hydrology = ManabeBucket(eltype(land_grid);
 surface   = ConstantSurfaceProperties(eltype(land_grid);
                                        albedo = 0.20,
                                        emissivity = 0.97,
-                                       z0_m = 0.1,
-                                       z0_h = 0.01)
+                                       momentum_roughness_length = 0.1,
+                                       scalar_roughness_length = 0.01)
 
 slab_land = SlabLand(land_grid; energy, hydrology, surface)
 
