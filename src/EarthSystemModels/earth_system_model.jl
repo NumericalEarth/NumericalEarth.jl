@@ -249,7 +249,7 @@ EarthSystemModel(; radiation = nothing,
 """
     components(model::ESM)
 
-Return a named tuple of the non-`nothing` components of the model.
+Return a named tuple of the non-`nothing` components of an Earth System `model`.
 """
 function components(model::ESM)
     all_components = (atmosphere = model.atmosphere,
