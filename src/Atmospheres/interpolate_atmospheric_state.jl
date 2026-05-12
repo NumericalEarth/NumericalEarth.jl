@@ -118,8 +118,6 @@ end
     qᵃᵗ = interp_atmos_time_series(atmos_tracers.q,    atmos_args...)
     pᵃᵗ = interp_atmos_time_series(atmos_pressure,     atmos_args...)
 
-    # Rainfall and snowfall are kept separate downstream: Jʳⁿ holds the rain
-    # and Jˢⁿ holds the snow (used by the sea-ice snow accumulation).
     Mr = interp_atmos_time_series(rainfall_flux, atmos_args...)
     Ms = interp_atmos_time_series(snowfall_flux, atmos_args...)
 
