@@ -1,19 +1,16 @@
 #####
-##### `AbstractSurfaceProperties` — slab-land radiative/aerodynamic
-##### property closure interface.
+##### `AbstractSurfaceProperties` — slab-land aerodynamic property
+##### closure interface.
 #####
-##### Provides the radiative and aerodynamic properties the atmosphere
-##### needs to close shortwave / longwave / momentum / scalar fluxes:
+##### Provides the aerodynamic properties the atmosphere needs to close
+##### momentum and scalar fluxes:
 #####
-#####   - `albedo(surface, state)`
-#####   - `emissivity(surface, state)`
 #####   - `momentum_roughness_length(surface, state)`
 #####   - `scalar_roughness_length(surface, state)`
 #####
-##### Pulling these into a typed sub-component (rather than holding them
-##### as bare Fields on `SlabLand`) lets behaviors like "snow modifies
-##### albedo" be implemented as decorators or as concrete closures
-##### without bolting conditionals into every reader.
+##### Radiative properties (albedo, emissivity) live on the top-level
+##### `radiation` component as `radiation.surface_properties.land`,
+##### mirroring how ocean and sea-ice radiative properties are handled.
 #####
 
 abstract type AbstractSurfaceProperties end
@@ -35,7 +32,5 @@ update_diagnostics!(::AbstractSurfaceProperties, state, fluxes, surface, grid) =
 ##### Atmosphere-facing accessors
 #####
 
-function albedo end
-function emissivity end
 function momentum_roughness_length end
 function scalar_roughness_length end

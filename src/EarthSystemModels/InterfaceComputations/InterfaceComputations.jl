@@ -62,6 +62,11 @@ end
     return (σ = z, α = z, ϵ = z, ℐꜜˢʷ = z, ℐꜜˡʷ = z)
 end
 
+@inline function air_land_interface_radiation_state(::Nothing, ::Nothing, i, j, k, grid, time)
+    z = zero(eltype(grid))
+    return (σ = z, α = z, ϵ = z, ℐꜜˢʷ = z, ℐꜜˡʷ = z)
+end
+
 #####
 ##### Utilities
 #####

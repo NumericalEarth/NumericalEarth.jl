@@ -38,7 +38,8 @@ import NumericalEarth.EarthSystemModels.InterfaceComputations: ComponentExchange
                                                                 initialize!,
                                                                 kernel_radiation_properties,
                                                                 air_sea_interface_radiation_state,
-                                                                air_sea_ice_interface_radiation_state
+                                                                air_sea_ice_interface_radiation_state,
+                                                                air_land_interface_radiation_state
 
 include("surface_radiation_properties.jl")
 include("interface_radiation_flux.jl")

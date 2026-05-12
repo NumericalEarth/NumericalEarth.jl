@@ -168,7 +168,7 @@ end
 
 Advance the slab by `Δt`. Each closure runs its own `step!`, then
 `update_state!` refreshes any cached diagnostics (e.g. snow-cover
-fraction, surface albedo, Jarvis resistance). State halos are filled at
+fraction, Jarvis resistance). State halos are filled at
 the end so atmosphere kernels reading `state.T` see consistent values.
 
 Order of closure invocations is fixed: `energy → hydrology`. Hydrology

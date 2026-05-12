@@ -188,7 +188,7 @@ function EarthSystemModel(radiation, atmosphere, land, sea_ice, ocean;
     arch = architecture(interfaces.exchanger.grid)
 
     # Allocate per-surface InterfaceRadiationFlux on the exchange grid.
-    surfaces = present_surfaces(ocean, sea_ice)
+    surfaces = present_surfaces(ocean, sea_ice, land)
     allocate_interface_fluxes!(radiation, interfaces.exchanger.grid, surfaces)
 
     earth_system_model = EarthSystemModel(arch,
@@ -236,10 +236,11 @@ EarthSystemModel(; radiation = nothing,
 
 # Determine which surfaces are present in the model — used to allocate
 # per-surface diagnostic radiation flux buffers.
-function present_surfaces(ocean, sea_ice)
+function present_surfaces(ocean, sea_ice, land)
     surfaces = Symbol[]
     isnothing(ocean)   || push!(surfaces, :ocean)
     isnothing(sea_ice) || push!(surfaces, :sea_ice)
+    isnothing(land)    || push!(surfaces, :land)
     return Tuple(surfaces)
 end
 

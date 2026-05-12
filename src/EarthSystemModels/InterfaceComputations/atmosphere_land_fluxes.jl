@@ -108,6 +108,11 @@ function compute_atmosphere_land_fluxes!(coupled_model, atmosphere_land_interfac
 
     land_properties = atmosphere_land_surface_properties(land_state)
 
+    radiation = coupled_model.radiation
+    radiation_kernel_props = kernel_radiation_properties(radiation)
+    radiation_exchanger    = exchanger.radiation
+    radiation_state        = isnothing(radiation_exchanger) ? nothing : radiation_exchanger.state
+
     kernel_parameters = interface_kernel_parameters(grid)
 
     launch!(arch, grid, kernel_parameters,
@@ -122,7 +127,9 @@ function compute_atmosphere_land_fluxes!(coupled_model, atmosphere_land_interfac
             atmosphere_data,
             interface_properties,
             atmosphere_properties,
-            land_properties)
+            land_properties,
+            radiation_kernel_props,
+            radiation_state)
 
     return nothing
 end
@@ -152,7 +159,9 @@ end
                                                            atmosphere_state,
                                                            interface_properties,
                                                            atmosphere_properties,
-                                                           land_properties)
+                                                           land_properties,
+                                                           radiation_kernel_props,
+                                                           radiation_exchanger_state)
 
     i, j = @index(Global, NTuple)
     time = Time(clock.time)
@@ -189,7 +198,9 @@ end
     local_interior_state = (u = uₛ, v = vₛ, T = Tₛ, S = βₛ)
     local_land_properties = local_atmosphere_land_surface_properties(land_properties, i, j)
 
-    radiation_state = air_sea_interface_radiation_state(nothing, nothing, i, j, 1, grid, time)
+    radiation_state = air_land_interface_radiation_state(radiation_kernel_props,
+                                                         radiation_exchanger_state,
+                                                         i, j, 1, grid, time)
 
     # Estimate initial interface state.
     u★ = convert(FT, 1e-4)

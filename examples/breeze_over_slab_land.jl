@@ -11,10 +11,12 @@
 # `AtmosphereLandModel`, with surface humidity reduced by the slab's
 # `moisture_availability` (β-factor).
 #
-# The land is spatially uniform: a single albedo, emissivity, and
-# roughness length apply everywhere. The animation pairs the
-# horizontal 2D ground-temperature field with bottom-level wind
-# vectors, and shows the domain-mean vertical profiles of θ and u.
+# The land is spatially uniform: a single roughness length applies
+# everywhere. (Radiative properties — albedo, emissivity — live on the
+# top-level `radiation` component when one is attached; this example
+# runs without radiation.) The animation pairs the horizontal 2D
+# ground-temperature field with bottom-level wind vectors, and shows
+# the domain-mean vertical profiles of θ and u.
 
 using NumericalEarth
 using Breeze
@@ -77,8 +79,6 @@ hydrology = BucketHydrology(eltype(land_grid);
                          field_capacity   = 150.0,
                          critical_wetness = 0.75)
 surface   = ConstantSurfaceProperties(eltype(land_grid);
-                                       albedo = 0.20,
-                                       emissivity = 0.97,
                                        momentum_roughness_length = 0.1,
                                        scalar_roughness_length = 0.01)
 
