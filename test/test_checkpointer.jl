@@ -115,10 +115,10 @@ end
     end
 end
 
-@testset "EarthSystemModel reset! then run! regression" begin
+@testset "EarthSystemModel reset! and re-run!" begin
     for arch in test_architectures
         A = typeof(arch)
-        @info "Testing EarthSystemModel reset! regression on $A"
+        @info "Testing EarthSystemModel reset! and re-run! on $A"
 
         grid = LatitudeLongitudeGrid(arch;
                                      size = (20, 20, 4),
@@ -137,8 +137,8 @@ end
         @test simulation.model.ocean.model.clock.iteration == 3
         @test simulation.model.sea_ice.model.clock.iteration == 3
         @test simulation.model.atmosphere.clock.iteration == 3
-        @test simulation.model.land.clock.iteration == 2
-        @test simulation.model.radiation.clock.iteration == 2
+        @test simulation.model.land.clock.iteration == 3
+        @test simulation.model.radiation.clock.iteration == 3
 
         # check that reset!(simulation) rewinds model clock and its components
         reset!(simulation)
