@@ -140,7 +140,7 @@ end
 
         reset!(simulation)
 
-        # Regression guard: reset!(simulation) must rewind component clocks too.
+        # check that reset!(simulation) rewinds component clocks too
         @test simulation.model.clock.iteration == 0
         @test simulation.model.clock.time == 0
         @test simulation.model.ocean.model.clock.iteration == 0
@@ -149,8 +149,11 @@ end
         @test simulation.model.sea_ice.model.clock.time == 0
         @test simulation.model.atmosphere.clock.iteration == 0
         @test simulation.model.atmosphere.clock.time == 0
+        @test simulation.model.radiation.clock.iteration == 0
+        @test simulation.model.radiation.clock.time == 0
+        @test simulation.model.land.clock.iteration == 0
+        @test simulation.model.land.clock.time == 0
 
-        # Exercise the run! path that used to crash after reset.
         simulation.stop_iteration = 2
         run!(simulation)
 
