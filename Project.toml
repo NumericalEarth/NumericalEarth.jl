@@ -1,7 +1,7 @@
 name = "NumericalEarth"
 uuid = "904d977b-046a-4731-8b86-9235c0d1ef02"
 license = "MIT"
-version = "0.4.0"
+version = "0.4.1"
 authors = ["NumericalEarth contributors"]
 
 [deps]
@@ -62,9 +62,7 @@ ArchGDAL = "0.10"
 Breeze = "0.4"
 CDSAPI = "2.2.1"
 CFTime = "0.1, 0.2"
-CUDA = "5.9.5, 6"
-CairoMakie = "0.15.10"
-ClimaSeaIce = "0.4.4, 0.5"
+ClimaSeaIce = "0.5"
 CondaPkg = "0.2.33"
 CopernicusMarine = "0.1.1"
 CubedSphere = "0.3.4"

@@ -291,58 +291,83 @@ end
     Jᵀ = Qa * λ
 
     # Calculating the atmospheric temperature
-    # We use to compute the sensible heat flux
     Tᵃᵗ = surface_atmosphere_temperature(Ψₐ, ℙₐ)
     ΔT = Tᵃᵗ - Ψₛ.T
-    Ωc = ifelse(ΔT == 0, zero(ΔT), 𝒬ᵀ / ΔT * λ) # Sensible heat transfer coefficient (W/m²K)
 
-    # Computing the flux balance temperature
-    return (Ψᵢ.T * F.κ - (Jᵀ + Ωc * Tᵃᵗ) * F.δ) / (F.κ - Ωc * F.δ)
+    # Flux balance: T★ = (Tᵢ κ - (Jᵀ + Ωc Tᵃᵗ) δ) / (κ - Ωc δ)
+    # where Ωc = 𝒬ᵀ λ / ΔT. Multiply through by ΔT to avoid Inf when ΔT → 0.
+    Ωᵀ = 𝒬ᵀ * λ  # unnormalized sensible heat coefficient (= Ωc * ΔT)
+    D  = F.κ * ΔT - Ωᵀ * F.δ
+    T★ = (Ψᵢ.T * F.κ * ΔT - (Jᵀ * ΔT + Ωᵀ * Tᵃᵗ) * F.δ) / D
+    
+    return ifelse(D == 0, Ψₛ.T, T★)
 end
 
-# 𝒬ᵛ + ℐꜛˡʷ + Qd + Ωc * (Tᵃᵗ - Tˢ) + k / h * (Tˢ - Tˢⁱ) = 0
-# where Ωc (the sensible heat transfer coefficient) is given by Ωc = 𝒬ᵀ / (Tᵃᵗ - Tˢ)
-# ⟹  Tₛ = (Tˢⁱ * k - (𝒬ᵛ + ℐꜛˡʷ + Qd + Ωc * Tᵃᵗ) * h / (k - Ωc * h)
-@inline function flux_balance_temperature(st::SkinTemperature{<:ClimaSeaIce.ConductiveFlux}, Ψₛ, ℙₛ, 𝒬ᵀ, 𝒬ᵛ, ℐꜛˡʷ, Qd, Ψᵢ, ℙᵢ, Ψₐ, ℙₐ)
-    F  = st.internal_flux
-    k  = F.conductivity
-    h  = Ψᵢ.h
-    hc = Ψᵢ.hc # Critical thickness for ice consolidation
+# Solve the surface flux balance equation:
+#   Qa(Tₛ) + Ωc (Tᵃᵗ - Tₛ) + (Tₛ - Tᵦ) / R = 0
+# where R is the total thermal resistance (h/k for bare ice, hₛ/kₛ + hᵢ/kᵢ with snow),
+# Ωc = 𝒬ᵀ/(Tᵃᵗ-Tₛ) is the linearized sensible heat coefficient, and Qa = 𝒬ᵛ + ℐꜛˡʷ + Qd.
+# The upward longwave ℐꜛˡʷ = σ ε Tₛ⁴ is strongly nonlinear in Tₛ; a pure Picard
+# iteration (treating Qa constant) is unstable when 4σεTₛ³ ≳ 1/R (radiation
+# dominated). We linearize: Qa(Tₛ) ≈ Qa(Tₛ⁻) + β (Tₛ − Tₛ⁻) with β = 4σεTₛ⁻³,
+# yielding the Newton-like semi-implicit update:
+#   Tₛ = [Tᵦ + β R Tₛ⁻ - Ωc R Tᵃᵗ - Qa R] / [1 + β R - Ωc R]
+@inline function conductive_flux_balance_temperature(st, R, Ψₛ, ℙₛ, 𝒬ᵀ, 𝒬ᵛ, ℐꜛˡʷ, Qd, Ψᵢ, ℙᵢ, Ψₐ, ℙₐ)
+    hᵢ = Ψᵢ.hi
+    hc = Ψᵢ.hc
 
-    # Bottom temperature at the melting temperature
-    Tˢⁱ = ClimaSeaIce.SeaIceThermodynamics.melting_temperature(ℙᵢ.liquidus, Ψᵢ.S)
-    Tˢⁱ = convert_to_kelvin(ℙᵢ.temperature_units, Tˢⁱ)
+    # Bottom temperature at the melting point
+    Tᵦ = ClimaSeaIce.SeaIceThermodynamics.melting_temperature(ℙᵢ.liquidus, Ψᵢ.S)
+    Tᵦ = convert_to_kelvin(ℙᵢ.temperature_units, Tᵦ)
     Tₛ⁻ = Ψₛ.T
 
-    # Calculating the atmospheric temperature
-    # We use to compute the sensible heat flux
     Tᵃᵗ = surface_atmosphere_temperature(Ψₐ, ℙₐ)
     ΔT = Tᵃᵗ - Tₛ⁻
-    Ωc = ifelse(ΔT == 0, zero(h), 𝒬ᵀ / ΔT) # Sensible heat transfer coefficient (W/m²K)
-    Qa = (𝒬ᵛ + ℐꜛˡʷ + Qd) # Net flux excluding sensible heat (positive out of the ocean)
+    Qa = 𝒬ᵛ + ℐꜛˡʷ + Qd
 
-    # Computing the flux balance temperature
-    T★ = (Tˢⁱ * k - (Qa + Ωc * Tᵃᵗ) * h) / (k - Ωc * h)
+    # Sensible transfer coefficient Ωc = 𝒬ᵀ/ΔT, safely handling ΔT → 0.
+    Ωc = ifelse(ΔT == zero(ΔT), zero(Tₛ⁻), 𝒬ᵀ / ΔT)
 
-    # Fix a NaN
+    # Newton linearization of upwelling longwave: ℐꜛˡʷ(Tₛ) ≈ ℐꜛˡʷ(Tₛ⁻) + β (Tₛ − Tₛ⁻).
+    # Since ℐꜛˡʷ = σ ϵ Tₛ⁻⁴, we have β = 4 σ ϵ Tₛ⁻³ = 4 ℐꜛˡʷ / Tₛ⁻.
+    β = 4 * ℐꜛˡʷ / Tₛ⁻
+
+    # Flux balance solution with T⁴ linearization (stable even at ΔT = 0):
+    D  = 1 + β * R - Ωc * R
+    T★ = (Tᵦ + β * R * Tₛ⁻ - Ωc * R * Tᵃᵗ - Qa * R) / D
+    T★ = ifelse(D == 0, Tₛ⁻, T★)
     T★ = ifelse(isnan(T★), Tₛ⁻, T★)
 
-    # To prevent instabilities in the fixed point iteration
-    # solver we cap the maximum temperature difference with `max_ΔT`
+    # Cap the temperature step for iteration stability
     ΔT★ = T★ - Tₛ⁻
     max_ΔT = convert(typeof(T★), st.max_ΔT)
-    abs_ΔT = min(max_ΔT, abs(ΔT★))
-    Tₛ⁺ = Tₛ⁻ + abs_ΔT * sign(ΔT★)
+    Tₛ⁺ = Tₛ⁻ + clamp(ΔT★, -max_ΔT, max_ΔT)
 
-    # Under heating fluxes, cap surface temperature by melting temperature
+    # Cap at melting temperature
     Tₘ = ℙᵢ.liquidus.freshwater_melting_temperature
     Tₘ = convert_to_kelvin(ℙᵢ.temperature_units, Tₘ)
     Tₛ⁺ = min(Tₛ⁺, Tₘ)
 
-    # If the ice is not consolidated, use the bottom temperature
-    Tₛ⁺ = ifelse(h ≥ hc, Tₛ⁺, Tˢⁱ)
-    
+    # If ice is not consolidated, use the bottom temperature
+    Tₛ⁺ = ifelse(hᵢ ≥ hc, Tₛ⁺, Tᵦ)
+
     return Tₛ⁺
+end
+
+# Bare ice: R = hᵢ / kᵢ
+@inline function flux_balance_temperature(st::SkinTemperature{<:ClimaSeaIce.ConductiveFlux},
+                                          Ψₛ, ℙₛ, 𝒬ᵀ, 𝒬ᵛ, ℐꜛˡʷ, Qd, Ψᵢ, ℙᵢ, Ψₐ, ℙₐ)
+    k  = st.internal_flux.conductivity
+    R  = Ψᵢ.hi / k
+    return conductive_flux_balance_temperature(st, R, Ψₛ, ℙₛ, 𝒬ᵀ, 𝒬ᵛ, ℐꜛˡʷ, Qd, Ψᵢ, ℙᵢ, Ψₐ, ℙₐ)
+end
+
+# Snow + ice: R = hₛ / kₛ + hᵢ / kᵢ
+@inline function flux_balance_temperature(st::SkinTemperature{<:ClimaSeaIce.SeaIceThermodynamics.IceSnowConductiveFlux},
+                                          Ψₛ, ℙₛ, 𝒬ᵀ, 𝒬ᵛ, ℐꜛˡʷ, Qd, Ψᵢ, ℙᵢ, Ψₐ, ℙₐ)
+    F  = st.internal_flux
+    R  = Ψᵢ.hs / F.snow_conductivity + Ψᵢ.hi / F.ice_conductivity
+    return conductive_flux_balance_temperature(st, R, Ψₛ, ℙₛ, 𝒬ᵀ, 𝒬ᵛ, ℐꜛˡʷ, Qd, Ψᵢ, ℙᵢ, Ψₐ, ℙₐ)
 end
 
 @inline function compute_interface_temperature(st::SkinTemperature,
