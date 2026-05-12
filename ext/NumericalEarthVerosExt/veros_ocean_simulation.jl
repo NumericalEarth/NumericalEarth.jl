@@ -302,7 +302,7 @@ function set!(ocean::VerosOceanSimulation, v, x; path = :variables)
     end
 end
 
-function Simualtions.reset_clock!(ocean::VerosOceanSimulation)
+function Simulations.reset_clock!(ocean::VerosOceanSimulation)
     set!(ocean, "time", 0)
     set!(ocean, "itt",  Int32(0))
     return ocean
