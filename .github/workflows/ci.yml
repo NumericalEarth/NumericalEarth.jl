@@ -32,7 +32,6 @@ env:
   CDSAPI_KEY: ${{ secrets.CDSAPI_KEY }}
   DATADEPS_ALWAYS_ACCEPT: true
   JULIA_PKG_SERVER_REGISTRY_PREFERENCE: 'eager'
-  JULIA_CUDA_USE_COMPAT: false
 
 #####
 ##### CPU tests (GitHub-hosted runners)
