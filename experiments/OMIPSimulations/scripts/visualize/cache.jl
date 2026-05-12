@@ -848,32 +848,37 @@ end
 ##### Global-mean kinetic energy from u, v snapshots
 #####
 
-# Per-cell  u² + v²  at cell centers, written as a `KernelFunctionOperation`
-# so `compute!` runs as a single fused kernel — much faster than the
-# previous `Field(@at((Center, Center, Center), u*u + v*v))` AbstractOperation
+# Per-cell volume-weighted kinetic energy at cell centers, written as a
+# `KernelFunctionOperation` so `compute!` runs as a single fused kernel
+# — much faster than the previous
+# `Field(@at((Center, Center, Center), u*u + v*v))` AbstractOperation
 # tree, which built intermediate buffers for `u*u`, `v*v`, and the
 # interpolations to centers.
 #
 # `ψ²` squares its argument before the surrounding `ℑxᶜᵃᵃ` / `ℑyᵃᶜᵃ`
 # average to centers, matching the original "square then interpolate"
 # semantics of the `@at` expression. (Same pattern as `ϕ²` /
-# `τᶜᶜᶜ` in `friction_velocity.jl`.)
+# `τᶜᶜᶜ` in `friction_velocity.jl`.) Multiplying by `Vᶜᶜᶜ` here gives
+# the cell's KE contribution, so `sum(field) / sum(V) ` is the
+# volume-averaged KE — and on an `ImmersedBoundaryGrid` both sums
+# automatically skip immersed cells, replacing the old hand-rolled
+# `ocean_mask_3d` book-keeping.
 @inline ψ²(i, j, k, grid, ψ) = @inbounds ψ[i, j, k]^2
 
-@inline uu_plus_vv_ccc(i, j, k, grid, u, v) = Vᶜᶜᶜ(i, j, k, grid) * (ℑxᶜᵃᵃ(i, j, k, grid, ψ², u) + ℑyᵃᶜᵃ(i, j, k, grid, ψ², v)) / 2
+@inline uu_plus_vv_ccc(i, j, k, grid, u, v) =
+    Vᶜᶜᶜ(i, j, k, grid) *
+    (ℑxᶜᵃᵃ(i, j, k, grid, ψ², u) + ℑyᵃᶜᵃ(i, j, k, grid, ψ², v)) / 2
 
 
 LOADERS[:kinetic_energy_pair] = disk_cached(:kinetic_energy_pair; source_fts_syms = :uo_fts) do c
     grid   = get_field(c, :grid)
-    mask   = get_field(c, :ocean_mask_3d)
-    Ncells = sum(mask)
     u_fts  = get_field(c, :uo_fts)
     v_fts  = get_field(c, :vo_fts)
 
     u  = Field{Face,   Center, Center}(grid)
     v  = Field{Center, Face,   Center}(grid)
     e_op = KernelFunctionOperation{Center, Center, Center}(uu_plus_vv_ccc, grid, u, v)
-    V_op = KernelFunctionOperation{Center, Center, Center}(Vᶜᶜᶜ, grid, u, v)
+    V_op = KernelFunctionOperation{Center, Center, Center}(Vᶜᶜᶜ, grid)
     e    = Field(e_op)
     V    = sum(V_op)
 
