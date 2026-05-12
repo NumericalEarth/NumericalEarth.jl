@@ -27,7 +27,7 @@ function apply_air_sea_radiative_fluxes!(coupled_model::EarthSystemModel)
     isnothing(interface_fluxes) && return nothing
     haskey(interface_fluxes, :ocean) || return nothing
 
-    grid = ocean.model.grid
+    grid = coupled_model.interfaces.exchanger.grid
     arch = architecture(grid)
     clock = coupled_model.clock
 
@@ -40,7 +40,7 @@ function apply_air_sea_radiative_fluxes!(coupled_model::EarthSystemModel)
 
     interface_temperature = ao_interface.temperature
     ocean_properties = coupled_model.interfaces.ocean_properties
-    penetrating_radiation = get_radiative_forcing(ocean.model)
+    penetrating_radiation = get_radiative_forcing(ocean)
 
     launch!(arch, grid, :xy,
             _apply_air_sea_radiative_fluxes!,
