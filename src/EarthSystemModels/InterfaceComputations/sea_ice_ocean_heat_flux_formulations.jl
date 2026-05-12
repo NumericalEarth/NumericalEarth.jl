@@ -113,8 +113,8 @@ References
 
 - [holland1999modeling](@citet): Holland, D. M., & Jenkins, A. (1999). Modeling thermodynamic ice–ocean interactions
   at the base of an ice shelf. *Journal of Physical Oceanography*, 29(8), 1787-1800.
-- [hieronymus2021comparison](@citet): Hieronymus, M., et al. (2021). A comparison of ocean-ice flux parametrizations.
-  *Geosci. Model Dev.*, 14, 4891-4908.
+- [shi2021sensitivity](@citet): Shi, X., Notz, D., Liu, J., Yang, H., & Lohmann, G. (2021). Sensitivity of Northern
+  Hemisphere climate to ice-ocean interface heat flux parameterizations. *Geosci. Model Dev.*, 14, 4891-4908.
 """
 struct ThreeEquationHeatFlux{F, T, FT, U}
     conductive_flux :: F
@@ -139,7 +139,7 @@ Adapt.adapt_structure(to, f::ThreeEquationHeatFlux) =
 
 Construct a `ThreeEquationHeatFlux` with the specified parameters.
 
-Default values follow [hieronymus2021comparison](@citet) with ``R = \\alpha_h / \\alpha_s = 35``.
+Default values follow [shi2021sensitivity](@citet) with ``R = \\alpha_h / \\alpha_s = 35``.
 
 Keyword Arguments
 =================

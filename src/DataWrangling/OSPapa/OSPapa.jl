@@ -15,7 +15,7 @@ using Downloads
 using Thermodynamics: q_vap_from_RH, Liquid
 
 using NumericalEarth.DataWrangling: download_progress
-using NumericalEarth.Atmospheres: PrescribedAtmosphere, AtmosphereThermodynamicsParameters
+using NumericalEarth.Atmospheres: PrescribedAtmosphere, PrescribedPrecipitationFlux, AtmosphereThermodynamicsParameters
 using NumericalEarth.Oceans: reference_density, heat_capacity
 
 using NumericalEarth.DataWrangling:
