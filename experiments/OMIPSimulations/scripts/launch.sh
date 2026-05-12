@@ -93,7 +93,10 @@ Environment variables (I/O & runtime):
                 Keeps ~50 GB per run (current + next year).
   NODE          Pin job to a specific node (default: 2904)
   THREADS       Number of Julia threads / CPUs per task (default: 4)
-  PROFILE       Set to "true" for nsys profiling
+  PROFILE       Set to "true" for nsys profiling. Also disables the OMIP
+                diagnostic output writers (Average / JLD2 dumps / checkpoint
+                / KE spectrum) — they add per-iteration I/O and compute!
+                overhead that contaminates the trace.
 
 Examples:
   ./launch.sh orca
@@ -338,6 +341,13 @@ SNOW_KWARG=""
 ICE_DYNAMICS_KWARG=""
 [[ "$ICE_DYNAMICS" == "false" ]] && ICE_DYNAMICS_KWARG="with_ice_dynamics = false,"
 
+# Profile runs disable the OMIP diagnostic output writers (Average,
+# JLD2 dumps, checkpoint, KE spectrum). They add per-iteration I/O and
+# `compute!` overhead that pollutes nsys traces. The simulation core
+# is unchanged, so kernel timings reflect pure stepping cost.
+DIAGNOSTICS_KWARG=""
+[[ "${PROFILE:-false}" == "true" ]] && DIAGNOSTICS_KWARG="diagnostics = false,"
+
 # ── Build and run Julia expression ────────────────────────────────────
 JULIA_EXPR="using OMIPSimulations
 using Oceananigans
@@ -360,6 +370,7 @@ sim = omip_simulation(:${CONFIG};
                       ${VELOCITY_KWARG}
                       ${SNOW_KWARG}
                       ${ICE_DYNAMICS_KWARG}
+                      ${DIAGNOSTICS_KWARG}
                       ${CATKE_CWUSTAR_KWARG}
                       ${MIN_SALINITY_KWARG}
                       ${NORMALIZE_SALINITY_KWARG}
