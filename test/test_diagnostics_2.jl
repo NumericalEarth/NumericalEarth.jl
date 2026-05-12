@@ -92,5 +92,71 @@ for arch in test_architectures
             @test atmosphere_ocean_freshwater[1, 1, 1] ≈ - ρᵒᶜ / S₀ * (S_flux_value - sea_ice_ocean_salt_flux_value)
             @test net_ocean_freshwater[1, 1, 1] ≈ atmosphere_ocean_freshwater[1, 1, 1] + sea_ice_ocean_freshwater[1, 1, 1]
         end
+
+        ocean_only_ocean = ocean_simulation(grid;
+                                            momentum_advection = nothing,
+                                            tracer_advection = nothing,
+                                            closure = nothing,
+                                            coriolis = nothing)
+
+        ocean_only_atmosphere = PrescribedAtmosphere(grid, [0.0])
+        ocean_only_esm = OceanOnlyModel(ocean_only_ocean; atmosphere = ocean_only_atmosphere)
+
+        ocean_only_T_flux = ocean_only_ocean.model.tracers.T.boundary_conditions.top.condition
+        ocean_only_S_flux = ocean_only_ocean.model.tracers.S.boundary_conditions.top.condition
+
+        fill!(ocean_only_T_flux, T_flux_value)
+        fill!(ocean_only_S_flux, S_flux_value)
+
+        ρᵒᶜ = ocean_only_esm.interfaces.ocean_properties.reference_density
+        cᵒᶜ = ocean_only_esm.interfaces.ocean_properties.heat_capacity
+
+        ocean_only_frazil_temperature = frazil_temperature_flux(ocean_only_esm)
+        ocean_only_net_ocean_temperature = net_ocean_temperature_flux(ocean_only_esm)
+        ocean_only_sea_ice_ocean_temperature = sea_ice_ocean_temperature_flux(ocean_only_esm)
+        ocean_only_atmosphere_ocean_temperature = atmosphere_ocean_temperature_flux(ocean_only_esm)
+        ocean_only_frazil_heat = frazil_heat_flux(ocean_only_esm)
+        ocean_only_net_ocean_heat = net_ocean_heat_flux(ocean_only_esm)
+        ocean_only_sea_ice_ocean_heat = sea_ice_ocean_heat_flux(ocean_only_esm)
+        ocean_only_atmosphere_ocean_heat = atmosphere_ocean_heat_flux(ocean_only_esm)
+        ocean_only_net_ocean_salinity = net_ocean_salinity_flux(ocean_only_esm)
+        ocean_only_sea_ice_ocean_salinity = sea_ice_ocean_salinity_flux(ocean_only_esm)
+        ocean_only_atmosphere_ocean_salinity = atmosphere_ocean_salinity_flux(ocean_only_esm)
+        ocean_only_net_ocean_freshwater = net_ocean_freshwater_flux(ocean_only_esm; reference_salinity = 35)
+        ocean_only_sea_ice_ocean_freshwater = sea_ice_ocean_freshwater_flux(ocean_only_esm; reference_salinity = 35)
+        ocean_only_atmosphere_ocean_freshwater = atmosphere_ocean_freshwater_flux(ocean_only_esm; reference_salinity = 35)
+
+        for f in (ocean_only_frazil_temperature, ocean_only_net_ocean_temperature,
+                  ocean_only_sea_ice_ocean_temperature, ocean_only_atmosphere_ocean_temperature,
+                  ocean_only_frazil_heat, ocean_only_net_ocean_heat, ocean_only_sea_ice_ocean_heat,
+                  ocean_only_atmosphere_ocean_heat, ocean_only_net_ocean_salinity,
+                  ocean_only_sea_ice_ocean_salinity, ocean_only_atmosphere_ocean_salinity,
+                  ocean_only_net_ocean_freshwater, ocean_only_sea_ice_ocean_freshwater,
+                  ocean_only_atmosphere_ocean_freshwater)
+
+            @test f isa Field
+            @test location(f) == (Center, Center, Nothing)
+            compute!(f)
+        end
+
+        @allowscalar begin
+            @test ocean_only_frazil_heat[1, 1, 1] ≈ 0
+            @test ocean_only_sea_ice_ocean_heat[1, 1, 1] ≈ 0
+            @test ocean_only_net_ocean_heat[1, 1, 1] ≈ ρᵒᶜ * cᵒᶜ * T_flux_value
+            @test ocean_only_atmosphere_ocean_heat[1, 1, 1] ≈ ocean_only_net_ocean_heat[1, 1, 1]
+
+            @test ocean_only_frazil_temperature[1, 1, 1] ≈ 0
+            @test ocean_only_sea_ice_ocean_temperature[1, 1, 1] ≈ 0
+            @test ocean_only_net_ocean_temperature[1, 1, 1] ≈ T_flux_value
+            @test ocean_only_atmosphere_ocean_temperature[1, 1, 1] ≈ ocean_only_net_ocean_temperature[1, 1, 1]
+
+            @test ocean_only_sea_ice_ocean_salinity[1, 1, 1] ≈ 0
+            @test ocean_only_net_ocean_salinity[1, 1, 1] ≈ S_flux_value
+            @test ocean_only_atmosphere_ocean_salinity[1, 1, 1] ≈ ocean_only_net_ocean_salinity[1, 1, 1]
+
+            @test ocean_only_sea_ice_ocean_freshwater[1, 1, 1] ≈ 0
+            @test ocean_only_net_ocean_freshwater[1, 1, 1] ≈ - ρᵒᶜ / S₀ * S_flux_value
+            @test ocean_only_atmosphere_ocean_freshwater[1, 1, 1] ≈ ocean_only_net_ocean_freshwater[1, 1, 1]
+        end
     end
 end
