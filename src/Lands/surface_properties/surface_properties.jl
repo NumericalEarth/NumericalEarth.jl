@@ -5,10 +5,10 @@
 ##### Provides the radiative and aerodynamic properties the atmosphere
 ##### needs to close shortwave / longwave / momentum / scalar fluxes:
 #####
-#####   - `albedo(surface, state, parameters)`
-#####   - `emissivity(surface, state, parameters)`
-#####   - `momentum_roughness_length(surface, state, parameters)`
-#####   - `scalar_roughness_length(surface, state, parameters)`
+#####   - `albedo(surface, state)`
+#####   - `emissivity(surface, state)`
+#####   - `momentum_roughness_length(surface, state)`
+#####   - `scalar_roughness_length(surface, state)`
 #####
 ##### Pulling these into a typed sub-component (rather than holding them
 ##### as bare Fields on `SlabLand`) lets behaviors like "snow modifies
@@ -28,8 +28,8 @@ flux_variables(::AbstractSurfaceProperties) = ()
 initial_state(::AbstractSurfaceProperties, ::Symbol, grid) = CenterField(grid)
 initial_flux(::AbstractSurfaceProperties, ::Symbol, grid) = CenterField(grid)
 
-step!(::AbstractSurfaceProperties, state, fluxes, surface, parameters, grid, Δt) = nothing
-update_diagnostics!(::AbstractSurfaceProperties, state, fluxes, surface, parameters, grid) = nothing
+step!(::AbstractSurfaceProperties, state, fluxes, surface, grid, Δt) = nothing
+update_diagnostics!(::AbstractSurfaceProperties, state, fluxes, surface, grid) = nothing
 
 #####
 ##### Atmosphere-facing accessors

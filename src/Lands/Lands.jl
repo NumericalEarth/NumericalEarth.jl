@@ -2,7 +2,7 @@ module Lands
 
 export PrescribedLand,
        # Composable container
-       SlabLand, SlabLandParameters,
+       SlabLand,
        # Energy-balance closures
        SlabEnergy,
        # Hydrology closures
@@ -39,8 +39,7 @@ include("energy_balance/energy_balance.jl")
 include("hydrology/hydrology.jl")
 include("surface_properties/surface_properties.jl")
 
-# Container parameters and the SlabLand struct.
-include("slab_land_parameters.jl")
+# Container.
 include("slab_land.jl")
 
 # Default closures (sized so `SlabEnergy + BucketHydrology + ConstantSurfaceProperties`

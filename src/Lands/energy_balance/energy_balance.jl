@@ -54,7 +54,7 @@ zeroed `CenterField`.
 initial_flux(::AbstractEnergyBalance, ::Symbol, grid) = CenterField(grid)
 
 """
-    step!(energy, state, fluxes, surface, parameters, grid, Δt)
+    step!(energy, state, fluxes, surface, grid, Δt)
 
 Advance the energy-balance state by `Δt`. The closure may read other
 closures' state through the `state` `NamedTuple` and shared surface
@@ -62,15 +62,15 @@ properties through `surface`, but it does not call other closures
 directly. The default is a no-op (used by closures with no prognostic
 state, e.g. prescribed surface temperature).
 """
-step!(::AbstractEnergyBalance, state, fluxes, surface, parameters, grid, Δt) = nothing
+step!(::AbstractEnergyBalance, state, fluxes, surface, grid, Δt) = nothing
 
 """
-    update_diagnostics!(energy, state, fluxes, surface, parameters, grid)
+    update_diagnostics!(energy, state, fluxes, surface, grid)
 
 Refresh any cached diagnostics owned by the energy closure. Called by the
 container's `update_state!` at the end of each step. Default is no-op.
 """
-update_diagnostics!(::AbstractEnergyBalance, state, fluxes, surface, parameters, grid) = nothing
+update_diagnostics!(::AbstractEnergyBalance, state, fluxes, surface, grid) = nothing
 
 #####
 ##### Atmosphere-facing accessor

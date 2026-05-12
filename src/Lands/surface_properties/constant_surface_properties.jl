@@ -33,10 +33,10 @@ function ConstantSurfaceProperties(FT::Type = Float64;
                                           convert(FT, scalar_roughness_length))
 end
 
-albedo(s::ConstantSurfaceProperties, state, parameters)                    = ConstantField(s.albedo)
-emissivity(s::ConstantSurfaceProperties, state, parameters)                = ConstantField(s.emissivity)
-momentum_roughness_length(s::ConstantSurfaceProperties, state, parameters) = ConstantField(s.momentum_roughness_length)
-scalar_roughness_length(s::ConstantSurfaceProperties, state, parameters)   = ConstantField(s.scalar_roughness_length)
+albedo(s::ConstantSurfaceProperties, state)                    = ConstantField(s.albedo)
+emissivity(s::ConstantSurfaceProperties, state)                = ConstantField(s.emissivity)
+momentum_roughness_length(s::ConstantSurfaceProperties, state) = ConstantField(s.momentum_roughness_length)
+scalar_roughness_length(s::ConstantSurfaceProperties, state)   = ConstantField(s.scalar_roughness_length)
 
 Base.summary(s::ConstantSurfaceProperties{FT}) where FT =
     string("ConstantSurfaceProperties{$FT}(α=", s.albedo,

@@ -44,7 +44,7 @@ initial_state(::BucketHydrology{FT}, ::Symbol, grid) where FT = CenterField(grid
     end
 end
 
-function step!(b::BucketHydrology, state, fluxes, surface, parameters, grid, Δt)
+function step!(b::BucketHydrology, state, fluxes, surface, grid, Δt)
     arch = architecture(grid)
     launch!(arch, grid, :xy, _bucket_hydrology_step!,
             state.W, state.moisture_availability,
@@ -53,7 +53,7 @@ function step!(b::BucketHydrology, state, fluxes, surface, parameters, grid, Δt
     return nothing
 end
 
-wetness(::BucketHydrology, state, parameters) = state.moisture_availability
+wetness(::BucketHydrology, state) = state.moisture_availability
 
 Base.summary(b::BucketHydrology{FT}) where FT =
     string("BucketHydrology{$FT}(W_max=", b.field_capacity, ", W_crit/W_max=", b.critical_wetness, ")")

@@ -29,7 +29,7 @@ flux_variables(::SlabEnergy)       = (:net_energy_flux,)
     @inbounds T[i, j, 1] += Q[i, j, 1] * Δt / C
 end
 
-function step!(energy::SlabEnergy, state, fluxes, surface, parameters, grid, Δt)
+function step!(energy::SlabEnergy, state, fluxes, surface, grid, Δt)
     arch = architecture(grid)
     launch!(arch, grid, :xy, _slab_energy_step!,
             state.T, fluxes.net_energy_flux, Δt, energy.heat_capacity)

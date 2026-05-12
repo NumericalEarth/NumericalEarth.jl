@@ -28,15 +28,15 @@ flux_variables(::AbstractHydrology) = ()
 initial_state(::AbstractHydrology, ::Symbol, grid) = CenterField(grid)
 initial_flux(::AbstractHydrology, ::Symbol, grid) = CenterField(grid)
 
-step!(::AbstractHydrology, state, fluxes, surface, parameters, grid, Δt) = nothing
-update_diagnostics!(::AbstractHydrology, state, fluxes, surface, parameters, grid) = nothing
+step!(::AbstractHydrology, state, fluxes, surface, grid, Δt) = nothing
+update_diagnostics!(::AbstractHydrology, state, fluxes, surface, grid) = nothing
 
 #####
 ##### Atmosphere-facing accessor
 #####
 
 """
-    wetness(hydrology::AbstractHydrology, state, parameters) -> AbstractField
+    wetness(hydrology::AbstractHydrology, state) -> AbstractField
 
 Return the moisture-availability factor `β ∈ [0, 1]` the atmosphere's
 latent-heat BC reads. May be a `Field`, `ConstantField`, `ZeroField`,

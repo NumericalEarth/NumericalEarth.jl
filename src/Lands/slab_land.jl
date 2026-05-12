@@ -82,7 +82,7 @@ end
 #####
 
 """
-    SlabLand{FT, G, Clk, S, F, E, H, Sfc, P}
+    SlabLand{FT, G, Clk, S, F, E, H, Sfc}
 
 A composable slab land-surface component. The default configuration —
 `SlabEnergy + BucketHydrology + ConstantSurfaceProperties` — is the
@@ -90,58 +90,53 @@ classic Manabe-bucket slab. Replace any axis to swap in a different
 energy, hydrology, or surface-property closure.
 
 # Fields
-- `grid`       : Oceananigans grid (typically `(Nx, Ny, Flat)`).
-- `clock`      : `Oceananigans.TimeSteppers.Clock`.
-- `state`      : `NamedTuple` of prognostic `Field`s (keys per closure).
-- `fluxes`     : `NamedTuple` of flux/forcing `Field`s the coupler writes.
-- `energy`     : an `AbstractEnergyBalance`.
-- `hydrology`  : an `AbstractHydrology`.
-- `surface`    : an `AbstractSurfaceProperties`.
-- `parameters` : container-level scalar physical constants.
+- `grid`      : Oceananigans grid (typically `(Nx, Ny, Flat)`).
+- `clock`     : `Oceananigans.TimeSteppers.Clock`.
+- `state`     : `NamedTuple` of prognostic `Field`s (keys per closure).
+- `fluxes`    : `NamedTuple` of flux/forcing `Field`s the coupler writes.
+- `energy`    : an `AbstractEnergyBalance`.
+- `hydrology` : an `AbstractHydrology`.
+- `surface`   : an `AbstractSurfaceProperties`.
 """
-struct SlabLand{FT, G, Clk, S, F, E, H, Sfc, P}
-    grid       :: G
-    clock      :: Clk
-    state      :: S
-    fluxes     :: F
-    energy     :: E
-    hydrology  :: H
-    surface    :: Sfc
-    parameters :: P
+struct SlabLand{FT, G, Clk, S, F, E, H, Sfc}
+    grid      :: G
+    clock     :: Clk
+    state     :: S
+    fluxes    :: F
+    energy    :: E
+    hydrology :: H
+    surface   :: Sfc
 end
 
 # Inner-style typed constructor capturing FT.
-SlabLand{FT}(grid, clock, state, fluxes, energy, hydrology, surface, parameters) where FT =
+SlabLand{FT}(grid, clock, state, fluxes, energy, hydrology, surface) where FT =
     SlabLand{FT, typeof(grid), typeof(clock),
              typeof(state), typeof(fluxes),
-             typeof(energy), typeof(hydrology), typeof(surface),
-             typeof(parameters)}(grid, clock, state, fluxes,
-                                 energy, hydrology, surface, parameters)
+             typeof(energy), typeof(hydrology), typeof(surface)}(grid, clock, state, fluxes,
+                                                                 energy, hydrology, surface)
 
 """
     SlabLand(grid;
-             energy     = SlabEnergy(eltype(grid)),
-             hydrology  = BucketHydrology(eltype(grid)),
-             surface    = ConstantSurfaceProperties(eltype(grid)),
-             parameters = SlabLandParameters(eltype(grid)),
-             clock      = Clock{eltype(grid)}(time = 0))
+             energy    = SlabEnergy(eltype(grid)),
+             hydrology = BucketHydrology(eltype(grid)),
+             surface   = ConstantSurfaceProperties(eltype(grid)),
+             clock     = Clock{eltype(grid)}(time = 0))
 
 Construct a `SlabLand` with the chosen closures. State and flux fields
 are sized from each closure's declarations, then any closure-specific
 initial state is applied through `initial_state(closure, name, grid)`.
 """
 function SlabLand(grid;
-                  energy     = SlabEnergy(eltype(grid)),
-                  hydrology  = BucketHydrology(eltype(grid)),
-                  surface    = ConstantSurfaceProperties(eltype(grid)),
-                  parameters = SlabLandParameters(eltype(grid)),
-                  clock      = Clock{eltype(grid)}(time = 0))
+                  energy    = SlabEnergy(eltype(grid)),
+                  hydrology = BucketHydrology(eltype(grid)),
+                  surface   = ConstantSurfaceProperties(eltype(grid)),
+                  clock     = Clock{eltype(grid)}(time = 0))
 
     state  = build_state(grid, energy, hydrology, surface)
     fluxes = build_flux_accumulators(grid, energy, hydrology, surface)
     FT     = eltype(grid)
     return SlabLand{FT}(grid, clock, state, fluxes,
-                        energy, hydrology, surface, parameters)
+                        energy, hydrology, surface)
 end
 
 Base.eltype(::SlabLand{FT}) where FT = FT
@@ -183,8 +178,8 @@ phase change (snow melt, soil freeze/thaw) see the freshly updated `T`.
 function Oceananigans.TimeSteppers.time_step!(land::SlabLand, Δt)
     tick!(land.clock, Δt)
 
-    step!(land.energy,    land.state, land.fluxes, land.surface, land.parameters, land.grid, Δt)
-    step!(land.hydrology, land.state, land.fluxes, land.surface, land.parameters, land.grid, Δt)
+    step!(land.energy,    land.state, land.fluxes, land.surface, land.grid, Δt)
+    step!(land.hydrology, land.state, land.fluxes, land.surface, land.grid, Δt)
 
     Oceananigans.TimeSteppers.update_state!(land)
 
@@ -199,9 +194,9 @@ Refresh closure-owned diagnostics, in the order
 `hydrology → surface → energy`.
 """
 function Oceananigans.TimeSteppers.update_state!(land::SlabLand)
-    update_diagnostics!(land.hydrology, land.state, land.fluxes, land.surface, land.parameters, land.grid)
-    update_diagnostics!(land.surface,   land.state, land.fluxes, land.surface, land.parameters, land.grid)
-    update_diagnostics!(land.energy,    land.state, land.fluxes, land.surface, land.parameters, land.grid)
+    update_diagnostics!(land.hydrology, land.state, land.fluxes, land.surface, land.grid)
+    update_diagnostics!(land.surface,   land.state, land.fluxes, land.surface, land.grid)
+    update_diagnostics!(land.energy,    land.state, land.fluxes, land.surface, land.grid)
     return nothing
 end
 
@@ -210,11 +205,11 @@ end
 #####
 
 surface_temperature(land::SlabLand)       = surface_temperature(land.energy, land.state)
-surface_wetness(land::SlabLand)           = wetness(land.hydrology, land.state, land.parameters)
-albedo(land::SlabLand)                    = albedo(land.surface, land.state, land.parameters)
-emissivity(land::SlabLand)                = emissivity(land.surface, land.state, land.parameters)
-momentum_roughness_length(land::SlabLand) = momentum_roughness_length(land.surface, land.state, land.parameters)
-scalar_roughness_length(land::SlabLand)   = scalar_roughness_length(land.surface, land.state, land.parameters)
+surface_wetness(land::SlabLand)           = wetness(land.hydrology, land.state)
+albedo(land::SlabLand)                    = albedo(land.surface, land.state)
+emissivity(land::SlabLand)                = emissivity(land.surface, land.state)
+momentum_roughness_length(land::SlabLand) = momentum_roughness_length(land.surface, land.state)
+scalar_roughness_length(land::SlabLand)   = scalar_roughness_length(land.surface, land.state)
 
 #####
 ##### EarthSystemModel interface — generic SlabLand coupling.

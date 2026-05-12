@@ -10,6 +10,6 @@ struct SaturatedSurface <: AbstractHydrology end
 prognostic_variables(::SaturatedSurface) = ()
 flux_variables(::SaturatedSurface)       = ()
 
-wetness(::SaturatedSurface, state, parameters) = ConstantField(1)
+wetness(::SaturatedSurface, state) = ConstantField(1)
 
 Base.summary(::SaturatedSurface) = "SaturatedSurface (β ≡ 1)"

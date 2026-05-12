@@ -88,21 +88,8 @@ const NoOceanInterfaceModel  = EarthSystemModel{R, A, L, I, O, <:NoOceanInterfac
 const NoLandInterfaceModel   = EarthSystemModel{R, A, L, I, O, <:NoLandInterface}   where {R, A, L, I, O}
 const NoInterfaceModel       = EarthSystemModel{R, A, L, I, O, <:NoInterface}       where {R, A, L, I, O}
 
-InterfaceComputations.compute_atmosphere_sea_ice_fluxes!(::NoSeaIceInterfaceModel) = nothing
-InterfaceComputations.compute_sea_ice_ocean_fluxes!(::NoSeaIceInterfaceModel) = nothing
-
-InterfaceComputations.compute_atmosphere_ocean_fluxes!(::NoAtmosInterfaceModel) = nothing
-InterfaceComputations.compute_atmosphere_sea_ice_fluxes!(::NoAtmosInterfaceModel) = nothing
-InterfaceComputations.compute_atmosphere_land_fluxes!(::NoAtmosInterfaceModel)   = nothing
-
-InterfaceComputations.compute_atmosphere_ocean_fluxes!(::NoOceanInterfaceModel) = nothing
-InterfaceComputations.compute_sea_ice_ocean_fluxes!(::NoOceanInterfaceModel) = nothing
-
-InterfaceComputations.compute_atmosphere_land_fluxes!(::NoLandInterfaceModel) = nothing
-
-InterfaceComputations.compute_atmosphere_ocean_fluxes!(::NoInterfaceModel) = nothing
-InterfaceComputations.compute_atmosphere_sea_ice_fluxes!(::NoInterfaceModel) = nothing
-InterfaceComputations.compute_atmosphere_land_fluxes!(::NoInterfaceModel)   = nothing
-InterfaceComputations.compute_sea_ice_ocean_fluxes!(::NoInterfaceModel) = nothing
+# `compute_atmosphere_*_fluxes!` / `compute_sea_ice_ocean_fluxes!` guard a
+# `::Nothing` interface internally, so no per-NoXInterfaceModel overloads
+# are needed here.
 
 end # module

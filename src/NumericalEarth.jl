@@ -36,7 +36,6 @@ export
     PrescribedAtmosphere,
     PrescribedLand,
     SlabLand,
-    SlabLandParameters,
     SlabEnergy,
     BucketHydrology,
     DryLand,
