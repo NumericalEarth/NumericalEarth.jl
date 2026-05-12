@@ -18,8 +18,6 @@ ocean_reference_density(::Nothing, FT) = convert(FT, 1026.0)
 function default_snow_thermodynamics(grid)
     FT = eltype(grid)
     snow_conductivity = FT(0.31)
-    # Use PrescribedTemperature so ClimaSeaIce does NOT run its own surface solve;
-    # the coupled flux solver in NumericalEarth handles the snow surface temperature.
     snow_surface_temperature = Field{Center, Center, Nothing}(grid)
     top_heat_boundary_condition = PrescribedTemperature(snow_surface_temperature.data)
     return snow_slab_thermodynamics(grid; conductivity = snow_conductivity, top_heat_boundary_condition)
