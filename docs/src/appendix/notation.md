@@ -61,7 +61,8 @@ denote the _component_ or _location_.
 |:-----:|:----:|:--------|:--------|
 | ``v`` | `ᵛ` | water vapor | ``\mathcal{Q}^v`` (latent heat flux) |
 | ``T`` | `ᵀ` | temperature / sensible | ``\mathcal{Q}^T`` (sensible heat flux) |
-| ``c`` | `ᶜ` | condensate | ``J^c`` (precipitation mass flux) |
+| ``\mathrm{rn}`` | `ʳⁿ` | rain | ``J^{\mathrm{rn}}`` (rainfall) |
+| ``\mathrm{sn}`` | `ˢⁿ` | snow | ``J^{\mathrm{sn}}`` (snowfall) |
 | ``S`` | `ˢ` | salinity | ``J^S`` (salinity flux) |
 | ``i`` | `ⁱ` | ice | ``\mathcal{L}^i`` (latent heat of sublimation) |
 | ``\ell`` | `ˡ` | liquid | ``\mathcal{L}^\ell`` (latent heat of vaporization) |
@@ -154,6 +155,7 @@ denote the _component_ or _location_.
 | ``\zeta`` | `ζ` | stability parameter | ``z / L_\star`` (–) |
 | ``\ell`` | `ℓ` | roughness length | Aerodynamic roughness length (m) |
 | ``\varkappa`` | `ϰ` | von Kármán constant | ``\approx 0.4`` (–) |
+| ``
 
 ## Radiative fluxes
 
@@ -201,6 +203,7 @@ with a superscript band.
 | ``c^{pm}`` | `cᵖᵐ` | moist air heat capacity | Moist isobaric specific heat (J kg⁻¹ K⁻¹) |
 | ``c^{pd}`` | `cᵖᵈ` | dry air heat capacity | Dry-air isobaric specific heat (J kg⁻¹ K⁻¹) |
 | ``\rho^{\mathrm{at}}`` | `ρᵃᵗ` | air density | Atmospheric air density (kg m⁻³) |
+| ``\varepsilon`` | ``ε`` | specific gas constant ratio (``Rd / Rv`` ) | Ratio of dry air and vapor gas constants (-) |
 
 ## CF standard name mapping
 

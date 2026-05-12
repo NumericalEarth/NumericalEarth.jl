@@ -55,18 +55,17 @@ ImpureSaturationSpecificHumidity(phase) = ImpureSaturationSpecificHumidity(phase
 #   qₛ = ε eₛ / (p − (1 − ε) eₛ),   ε = Rᵈ / Rᵥ
 # Direct evaluation at the atmospheric pressure p.
 @inline function surface_specific_humidity(formulation::ImpureSaturationSpecificHumidity,
-                                           ℂᵃᵗ, Tᵃᵗ, pᵃᵗ, qᵃᵗ, Tₛ, Sₛ=zero(Tₛ))
+                                           ℂᵃᵗ, pᵃᵗ, Tₛ, Sₛ=zero(Tₛ))
     FT = eltype(Tₛ)
     CT = eltype(ℂᵃᵗ)
     T  = convert(CT, Tₛ)
     p  = convert(CT, pᵃᵗ)
-    p★ = AtmosphericThermodynamics.saturation_vapor_pressure(ℂᵃᵗ, T, formulation.phase)
-
+    
     # Raoult's law on the saturation vapor pressure.
     χ_H₂O = compute_water_mole_fraction(formulation.water_mole_fraction, Sₛ)
-    eₛ    = χ_H₂O * p★
-    ε     = 1 / AtmosphericThermodynamics.Parameters.Rv_over_Rd(ℂᵃᵗ)
-    qₛ    = ε * eₛ / (p - (1 - ε) * eₛ)
+    ps    = χ_H₂O * AtmosphericThermodynamics.saturation_vapor_pressure(ℂᵃᵗ, T, formulation.phase)
+    ε⁻¹   = 1 / AtmosphericThermodynamics.Parameters.Rv_over_Rd(ℂᵃᵗ)
+    qₛ    = ε⁻¹ * ps / (p - (1 - ε⁻¹) * ps)
 
     return convert(FT, qₛ)
 end
