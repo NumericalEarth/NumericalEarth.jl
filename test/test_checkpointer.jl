@@ -129,16 +129,20 @@ end
 
         model = make_coupled_model(grid)
         simulation = Simulation(model, Δt=60, stop_iteration=3, verbose=false)
+
+        # check that clock stops when intended
         run!(simulation)
 
         @test simulation.model.clock.iteration == 3
         @test simulation.model.ocean.model.clock.iteration == 3
         @test simulation.model.sea_ice.model.clock.iteration == 3
         @test simulation.model.atmosphere.clock.iteration == 3
+        @test simulation.model.land.clock.iteration == 2
+        @test simulation.model.radiation.clock.iteration == 2
 
+        # check that reset!(simulation) rewinds model clock and its components
         reset!(simulation)
 
-        # check that reset!(simulation) rewinds component clocks too
         @test simulation.model.clock.iteration == 0
         @test simulation.model.clock.time == 0
         @test simulation.model.ocean.model.clock.iteration == 0
@@ -152,6 +156,7 @@ end
         @test simulation.model.land.clock.iteration == 0
         @test simulation.model.land.clock.time == 0
 
+        # check we can restart the simulation
         simulation.stop_iteration = 2
         run!(simulation)
 
@@ -159,5 +164,7 @@ end
         @test simulation.model.ocean.model.clock.iteration == 2
         @test simulation.model.sea_ice.model.clock.iteration == 2
         @test simulation.model.atmosphere.clock.iteration == 2
+        @test simulation.model.land.clock.iteration == 2
+        @test simulation.model.radiation.clock.iteration == 2
     end
 end
