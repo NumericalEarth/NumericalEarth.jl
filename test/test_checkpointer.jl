@@ -3,6 +3,7 @@ include("runtests_setup.jl")
 using Glob
 using Oceananigans.OutputWriters: Checkpointer
 using Oceananigans.TimeSteppers: reset!
+using NumericalEarth.EarthSystemModels: components
 
 function make_coupled_model(grid)
     @inline hi(λ, φ) = φ > 70 || φ < -70
@@ -128,7 +129,8 @@ end
                                      halo = (6, 6, 6))
 
         model = make_coupled_model(grid)
-        simulation = Simulation(model, Δt=60, stop_iteration=3, verbose=false)
+        Δt=60
+        simulation = Simulation(model; Δt, stop_iteration=3, verbose=false)
 
         # check that clock stops when intended
         @test model.atmosphere isa PrescribedModelComponent
@@ -139,37 +141,44 @@ end
         run!(simulation)
 
         @test simulation.model.clock.iteration == 3
-        @test simulation.model.ocean.model.clock.iteration == 3
-        @test simulation.model.sea_ice.model.clock.iteration == 3
-        @test simulation.model.atmosphere.clock.iteration == 3
-        @test simulation.model.land.clock.iteration == 3
-        @test simulation.model.radiation.clock.iteration == 3
+        @test simulation.model.clock.time == 3Δt
+        for component in components(simulation.model)
+            if component isa PrescribedModelComponent
+                @test component.clock.iteration == 3
+                @test component.clock.time == 3Δt
+            else
+                @test component.model.clock.iteration == 3
+                @test component.model.clock.time == 3Δt
+            end
+        end
 
         # check that reset!(simulation) rewinds model clock and its components
         reset!(simulation)
 
         @test simulation.model.clock.iteration == 0
         @test simulation.model.clock.time == 0
-        @test simulation.model.ocean.model.clock.iteration == 0
-        @test simulation.model.ocean.model.clock.time == 0
-        @test simulation.model.sea_ice.model.clock.iteration == 0
-        @test simulation.model.sea_ice.model.clock.time == 0
-        @test simulation.model.atmosphere.clock.iteration == 0
-        @test simulation.model.atmosphere.clock.time == 0
-        @test simulation.model.radiation.clock.iteration == 0
-        @test simulation.model.radiation.clock.time == 0
-        @test simulation.model.land.clock.iteration == 0
-        @test simulation.model.land.clock.time == 0
+        for component in components(simulation.model)
+            if component isa PrescribedModelComponent
+                @test component.clock.iteration == 0
+                @test component.clock.time == 0
+            else
+                @test component.model.clock.iteration == 0
+                @test component.model.clock.time == 0
+            end
+        end
 
         # check we can restart the simulation
         simulation.stop_iteration = 2
         run!(simulation)
 
-        @test simulation.model.clock.iteration == 2
-        @test simulation.model.ocean.model.clock.iteration == 2
-        @test simulation.model.sea_ice.model.clock.iteration == 2
-        @test simulation.model.atmosphere.clock.iteration == 2
-        @test simulation.model.land.clock.iteration == 2
-        @test simulation.model.radiation.clock.iteration == 2
+        for component in components(simulation.model)
+            if component isa PrescribedModelComponent
+                @test component.clock.iteration == 2
+                @test component.clock.time == 2Δt
+            else
+                @test component.model.clock.iteration == 2
+                @test component.model.clock.time == 2Δt
+            end
+        end
     end
 end
