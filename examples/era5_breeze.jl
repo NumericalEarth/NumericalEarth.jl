@@ -34,7 +34,7 @@ using Printf
 # site in Lamont, OK. Angular grid steps are chosen so that the physical cells
 # are roughly square (~3 km) at the center latitude, using R = 6,371 km:
 #   Δx = R·cos(φ₀)·Δλ ≈ 3.03 km
-#   Δy = R·Δφ        ≈ 3.00 km.
+#   Δy = R·Δφ         ≈ 3.00 km
 
 φ₀, λ₀ = 36.605, -97.485    # center latitude, longitude (deg)
 
@@ -185,14 +185,14 @@ surface_grid = LatitudeLongitudeGrid(longitude = (λ_west,  λ_east),
 p₀ = CenterField(surface_grid)
 set!(p₀, Metadatum(:surface_pressure; dataset=ds_sl, date=start_date, meta_common...))
 
-# ## Report and save
+# ## Report
 
 @info "Interior field ranges:"
 @info @sprintf("  u  ∈ [%+.2f, %+.2f] m/s", minimum(interior(u)),  maximum(interior(u)))
 @info @sprintf("  v  ∈ [%+.2f, %+.2f] m/s", minimum(interior(v)),  maximum(interior(v)))
 @info @sprintf("  T  ∈ [%+.2f, %+.2f] K",   minimum(interior(T)),  maximum(interior(T)))
 @info @sprintf("  Tᵛ ∈ [%+.2f, %+.2f] K",   minimum(interior(Tᵛ)), maximum(interior(Tᵛ)))
-@info @sprintf("  qᵛ ∈ [%.2e, %.2e] kg/kg", minimum(interior(qᵛ)), maximum(interior(qᵛ)))
-@info @sprintf("  qᶜ ∈ [%.2e, %.2e] kg/kg", minimum(interior(qᶜ)), maximum(interior(qᶜ)))
-@info @sprintf("  qⁱ ∈ [%.2e, %.2e] kg/kg", minimum(interior(qⁱ)), maximum(interior(qⁱ)))
+@info @sprintf("  qᵛ ∈ [%.2e, %.2e] g/kg",  1000*minimum(interior(qᵛ)), 1000*maximum(interior(qᵛ)))
+@info @sprintf("  qᶜ ∈ [%.2e, %.2e] g/kg",  1000*minimum(interior(qᶜ)), 1000*maximum(interior(qᶜ)))
+@info @sprintf("  qⁱ ∈ [%.2e, %.2e] g/kg",  1000*minimum(interior(qⁱ)), 1000*maximum(interior(qⁱ)))
 @info @sprintf("  p₀ ∈ [%.1f, %.1f] Pa",    minimum(interior(p₀)), maximum(interior(p₀)))
