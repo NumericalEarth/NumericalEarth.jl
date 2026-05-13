@@ -1183,11 +1183,14 @@ end
 # Latitude per j-row at the v-face, averaged across i so the curve is
 # scalar in j even on tripolar/ORCA. Below ~60°N this is essentially a
 # constant latitude row; the average is just a robust projection above.
+# `vvol` is at Face-y, which on `RightFaceFolded` tripolar/ORCA has Ny+1
+# interior face cells (the topmost face being the fold line), so we
+# produce Ny+1 latitudes to match.
 LOADERS[:amoc_latitudes] = c -> begin
     grid = get_field(c, :grid)
     Nx, Ny, _ = size(grid)
     return [mean(φnode(i, j, 1, grid, Center(), Face(), Center()) for i in 1:Nx)
-            for j in 1:Ny]
+            for j in 1:Ny+1]
 end
 
 LOADERS[:amoc] = disk_cached(:amoc; source_fts_syms = :vvol_fts) do c
