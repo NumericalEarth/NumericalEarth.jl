@@ -9,7 +9,8 @@
 # center latitude.
 #
 # In progress:
-# - [ ] Breeze model construction
+# - [x] Breeze model construction
+# - [ ] initial state setting (set! the model from ingested fields)
 # - [ ] acoustic substepping
 # - [ ] dynamical initialization
 # - [ ] open boundary conditions
@@ -24,6 +25,7 @@ using Oceananigans
 using Oceananigans.Fields: CenterField, XFaceField, YFaceField
 using Breeze
 using Breeze.Thermodynamics
+using Statistics: mean
 using Dates
 using Printf
 
@@ -184,6 +186,22 @@ surface_grid = LatitudeLongitudeGrid(longitude = (λ_west,  λ_east),
 
 p₀ = CenterField(surface_grid)
 set!(p₀, Metadatum(:surface_pressure; dataset=ds_sl, date=start_date, meta_common...))
+
+# ## Build the Breeze model
+#
+# Piggyback on the `atmosphere_simulation` helper from
+# `ext/NumericalEarthBreezeExt/`, which also pre-wires bottom flux fields
+# (ρτˣ, ρτʸ, Jᵉ, Jᵛ) ready for the forthcoming SlabLand / SlabOcean coupling.
+# We override the helper's default `AnelasticDynamics` (which dispatches on
+# `RectilinearGrid` only) with `CompressibleDynamics`, whose prognostic-density
+# / diagnostic-pressure formulation needs no FFT-based Poisson solve and works
+# directly on the LAM `LatitudeLongitudeGrid`.
+
+p̄₀ = mean(interior(p₀))
+
+atmos = atmosphere_simulation(grid;
+                              thermodynamic_constants = constants,
+                              dynamics = CompressibleDynamics(; surface_pressure = p̄₀))
 
 # ## Report
 
