@@ -96,11 +96,11 @@ end
 
         set!(simulation; checkpoint=:latest)
 
-        @test simulation.model.clock.iteration == 3
+        test_clock_time_and_iteration(simulation, 3)
 
         set!(simulation; iteration=3)
 
-        @test simulation.model.clock.iteration == 3
+        test_clock_time_and_iteration(simulation, 3)
 
         run!(simulation)
 
