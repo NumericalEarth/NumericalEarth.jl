@@ -24,6 +24,7 @@ function make_coupled_model(grid)
 end
 
 function test_clock_time_and_iteration(simulation, expected_iteration)
+    Δt = simulation.Δt
     @test simulation.model.clock.iteration == expected_iteration
     @test simulation.model.clock.time == expected_iteration * Δt
     for component in components(simulation.model)
