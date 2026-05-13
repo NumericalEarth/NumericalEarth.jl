@@ -3,6 +3,7 @@ using Oceananigans.TimeSteppers: Clock
 using Oceananigans: SeawaterBuoyancy
 using ClimaSeaIce.SeaIceThermodynamics: melting_temperature
 using KernelAbstractions: @kernel, @index
+using ClimaSeaIce: SeaIceModel
 
 mutable struct EarthSystemModel{R, A, L, I, O, F, C, Arch} <: AbstractModel{Nothing, Arch}
     architecture :: Arch
@@ -16,6 +17,8 @@ mutable struct EarthSystemModel{R, A, L, I, O, F, C, Arch} <: AbstractModel{Noth
 end
 
 const ESM = EarthSystemModel
+const OceanSim = Oceananigans.Simulation{<:Oceananigans.HydrostaticFreeSurfaceModel}
+const SeaIceSim = Oceananigans.Simulation{<:SeaIceModel}
 
 function Base.summary(model::ESM)
     A = nameof(typeof(architecture(model)))
@@ -281,7 +284,7 @@ The `atmosphere` keyword can be used to specify a prescribed atmospheric forcing
 (e.g., `JRA55PrescribedAtmosphere`). All other keyword arguments are forwarded
 to `EarthSystemModel`.
 """
-OceanOnlyModel(ocean; atmosphere=nothing, land=nothing, radiation=nothing, kw...) =
+OceanOnlyModel(ocean::OceanSim; atmosphere=nothing, land=nothing, radiation=nothing, kw...) =
     EarthSystemModel(radiation, atmosphere, land, default_sea_ice(), ocean; kw...)
 
 """
@@ -292,7 +295,7 @@ This is a convenience constructor for [`EarthSystemModel`](@ref) with an explici
 and an optional prescribed atmosphere. Positional arguments follow the
 struct convention (top→bottom): `sea_ice` then `ocean`.
 """
-OceanSeaIceModel(sea_ice, ocean; atmosphere=nothing, land=nothing, radiation=nothing, kw...) =
+OceanSeaIceModel(sea_ice::SeaIceSim, ocean::OceanSim; atmosphere=nothing, land=nothing, radiation=nothing, kw...) =
     EarthSystemModel(radiation, atmosphere, land, sea_ice, ocean; kw...)
 
 """
@@ -302,7 +305,7 @@ Construct a coupled atmosphere--ocean model.
 Convenience constructor for [`EarthSystemModel`](@ref) with an atmosphere and ocean
 but no sea ice. All keyword arguments are forwarded to `EarthSystemModel`.
 """
-AtmosphereOceanModel(atmosphere, ocean; land=nothing, radiation=nothing, kw...) =
+AtmosphereOceanModel(atmosphere, ocean::OceanSim; land=nothing, radiation=nothing, kw...) =
     EarthSystemModel(radiation, atmosphere, land, nothing, ocean; kw...)
 
 time(coupled_model::EarthSystemModel) = coupled_model.clock.time
