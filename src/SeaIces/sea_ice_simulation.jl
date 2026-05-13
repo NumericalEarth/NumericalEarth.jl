@@ -41,10 +41,6 @@ function sea_ice_simulation(grid, ocean=nothing;
                             internal_heat_flux = ConductiveFlux(; conductivity),
                             snow_thermodynamics = default_snow_thermodynamics(grid))
 
-    if !isnothing(ice_density)
-        sea_ice_density = ice_density
-    end
-
     # Build consistent boundary conditions for the ice model:
     # - bottom -> flux boundary condition
     # - top -> prescribed temperature boundary condition (calculated in the flux computation)
