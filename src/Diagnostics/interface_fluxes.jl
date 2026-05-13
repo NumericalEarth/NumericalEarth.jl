@@ -191,8 +191,7 @@ function sea_ice_ocean_freshwater_flux(esm::EarthSystemModel; reference_salinity
     return Field(sea_ice_ocean_freshwater_flux)
 end
 
-sea_ice_ocean_freshwater_flux(esm::NoSeaIceOceanInterfaceModel;
-                              reference_salinity = 35) = ZeroField()
+sea_ice_ocean_freshwater_flux(esm::NoSeaIceOceanInterfaceModel; kwargs...) = ZeroField()
 
 """
     atmosphere_ocean_freshwater_flux(esm::EarthSystemModel)
