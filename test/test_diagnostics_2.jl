@@ -93,17 +93,11 @@ for arch in test_architectures
             @test net_ocean_freshwater[1, 1, 1] ≈ atmosphere_ocean_freshwater[1, 1, 1] + sea_ice_ocean_freshwater[1, 1, 1]
         end
 
-        ocean_only_ocean = ocean_simulation(grid;
-                                            momentum_advection = nothing,
-                                            tracer_advection = nothing,
-                                            closure = nothing,
-                                            coriolis = nothing)
-
         ocean_only_atmosphere = PrescribedAtmosphere(grid, [0.0])
-        ocean_only_esm = OceanOnlyModel(ocean_only_ocean; atmosphere = ocean_only_atmosphere)
+        ocean_only_esm = OceanOnlyModel(ocean; atmosphere = ocean_only_atmosphere)
 
-        ocean_only_T_flux = ocean_only_ocean.model.tracers.T.boundary_conditions.top.condition
-        ocean_only_S_flux = ocean_only_ocean.model.tracers.S.boundary_conditions.top.condition
+        ocean_only_T_flux = ocean.model.tracers.T.boundary_conditions.top.condition
+        ocean_only_S_flux = ocean.model.tracers.S.boundary_conditions.top.condition
 
         fill!(ocean_only_T_flux, T_flux_value)
         fill!(ocean_only_S_flux, S_flux_value)
