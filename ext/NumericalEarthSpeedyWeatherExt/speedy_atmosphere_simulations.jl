@@ -1,3 +1,5 @@
+using Oceananigans.Simulations
+
 import NumericalEarth.Atmospheres: atmosphere_simulation
 
 # Make sure the atmospheric parameters from SpeedyWeather can be used in the compute fluxes function
@@ -91,3 +93,5 @@ function atmosphere_simulation(spectral_grid::SpeedyWeather.SpectralGrid; output
 
     return atmosphere
 end
+
+Simulations.reset_clock!(atmos::SpeedyWeather.Simulation) = SpeedyWeather.initialize!(atmos.prognostic_variables.clock)

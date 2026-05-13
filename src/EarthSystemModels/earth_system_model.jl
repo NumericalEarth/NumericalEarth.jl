@@ -48,21 +48,33 @@ function Base.show(io::IO, cm::ESM)
     return nothing
 end
 
-# Assumption: We have an ocean!
 architecture(model::ESM)           = model.architecture
 Base.eltype(model::ESM)            = Base.eltype(model.interfaces.exchanger.grid)
 prettytime(model::ESM)             = prettytime(model.clock.time)
 iteration(model::ESM)              = model.clock.iteration
 timestepper(::ESM)                 = nothing
 default_included_properties(::ESM) = tuple()
-prognostic_fields(cm::ESM)         = nothing
+prognostic_fields(::ESM)           = nothing
 fields(::ESM)                      = NamedTuple()
-default_clock(TT)                   = Oceananigans.TimeSteppers.Clock{TT}(0, 0, 1)
+default_clock(TT)                  = Oceananigans.TimeSteppers.Clock{TT}(0, 0, 1)
 
-function reset!(model::ESM)
-    reset!(model.ocean)
+reset_clock!(::Nothing) = nothing
+
+reset_clock!(component::Simulation) = reset_clock!(component.model)
+reset_clock!(component) = reset!(getproperty(component, :clock))
+
+function reset_clock!(model::ESM)
+    reset!(model.clock)
+
+    for component in components(model)
+        reset_clock!(component)
+        update_state!(model.atmosphere)
+    end
+
     return nothing
 end
+
+reset!(model::ESM) = reset_clock!(model)
 
 # Make sure to initialize the exchanger here
 function initialize!(model::ESM)
@@ -233,6 +245,21 @@ EarthSystemModel(; radiation = nothing,
                    ocean = nothing,
                    kw...) =
     EarthSystemModel(radiation, atmosphere, land, sea_ice, ocean; kw...)
+
+"""
+    components(model::ESM)
+
+Return a named tuple of the non-`nothing` components of an Earth System `model`.
+"""
+function components(model::ESM)
+    all_components = (atmosphere = model.atmosphere,
+                      radiation  = model.radiation,
+                      ocean      = model.ocean,
+                      land       = model.land,
+                      sea_ice    = model.sea_ice,)
+
+    return (; filter(p -> !isnothing(last(p)), pairs(all_components))...)
+end
 
 # Determine which surfaces are present in the model — used to allocate
 # per-surface diagnostic radiation flux buffers.
