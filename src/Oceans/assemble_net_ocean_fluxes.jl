@@ -31,7 +31,8 @@ function update_net_ocean_fluxes!(coupled_model, ocean_model, grid)
     sea_ice_ocean_fluxes = computed_fluxes(coupled_model.interfaces.sea_ice_ocean_interface)
 
     atmosphere_fields = coupled_model.interfaces.exchanger.atmosphere.state
-    freshwater_flux = atmosphere_fields.Jᶜ.data
+    rainfall_flux = atmosphere_fields.Jʳⁿ.data
+    snowfall_flux = atmosphere_fields.Jˢⁿ.data
 
     # Extract land freshwater flux if land component is present
     land_exchanger = coupled_model.interfaces.exchanger.land
@@ -50,7 +51,8 @@ function update_net_ocean_fluxes!(coupled_model, ocean_model, grid)
             sea_ice_ocean_fluxes,
             ocean_surface_salinity,
             ice_concentration,
-            freshwater_flux,
+            rainfall_flux,
+            snowfall_flux,
             land_freshwater_flux,
             ocean_properties)
 
@@ -67,7 +69,8 @@ Base.@propagate_inbounds get_land_freshwater_flux(i, j, flux) = flux[i, j, 1]
                                              sea_ice_ocean_fluxes,
                                              ocean_surface_salinity,
                                              sea_ice_concentration,
-                                             freshwater_flux,
+                                             rainfall_flux,
+                                             snowfall_flux,
                                              land_freshwater_flux,
                                              ocean_properties)
 
@@ -82,7 +85,9 @@ Base.@propagate_inbounds get_land_freshwater_flux(i, j, flux) = flux[i, j, 1]
         ℵᵢ = sea_ice_concentration[i, j, 1]
         Sᵒᶜ = ocean_surface_salinity[i, j, 1]
 
-        Jᶜ = freshwater_flux[i, j, 1] + get_land_freshwater_flux(i, j, land_freshwater_flux)
+        Jʳⁿ = rainfall_flux[i, j, 1]
+        Jˢⁿ = snowfall_flux[i, j, 1]
+        Jˡⁿ = get_land_freshwater_flux(i, j, land_freshwater_flux)
         𝒬ᵀ = atmos_ocean_fluxes.sensible_heat[i, j, 1]
         𝒬ᵛ = atmos_ocean_fluxes.latent_heat[i, j, 1]
         Jᵛ = atmos_ocean_fluxes.water_vapor[i, j, 1]
@@ -91,13 +96,13 @@ Base.@propagate_inbounds get_land_freshwater_flux(i, j, flux) = flux[i, j, 1]
     # Turbulent contributions to surface heat flux (radiation added later)
     ΣQao = (𝒬ᵀ + 𝒬ᵛ) * (1 - ℵᵢ)
 
-    # Convert mass flux to volume flux; sign-flip (prescribed flux is positive down)
+    # Freshwater flux to the ocean per unit cell area (volume flux, positive up = leaving ocean):
+    # - rain and land runoff reach the ocean everywhere (rain runs through cracks in ice)
+    # - snow only reaches the ocean through the open-water fraction (1 - ℵᵢ);
+    # - evaporation acts only over the open-water fraction (1 - ℵᵢ)
+    # The atmospheric mass-flux convention is positive down; Jᵛ is positive up.
     ρᵒᶜ⁻¹ = 1 / ocean_properties.reference_density
-    ΣFao = - Jᶜ * ρᵒᶜ⁻¹
-
-    # Add turbulent water vapor flux (positive upward sign convention)
-    Jᵛᵒᶜ = Jᵛ * ρᵒᶜ⁻¹
-    ΣFao += Jᵛᵒᶜ
+    ΣFao = - (Jʳⁿ + Jˡⁿ + (1 - ℵᵢ) * Jˢⁿ) * ρᵒᶜ⁻¹ + (1 - ℵᵢ) * Jᵛ * ρᵒᶜ⁻¹
 
     τˣ = net_ocean_fluxes.u
     τʸ = net_ocean_fluxes.v
@@ -126,6 +131,6 @@ Base.@propagate_inbounds get_land_freshwater_flux(i, j, flux) = flux[i, j, 1]
 
         # Tracer fluxes — radiative contributions added later by apply_air_sea_radiative_fluxes!
         Jᵀ[i, j, 1] = ifelse(inactive, zero(grid), Jᵀao + Jᵀio)
-        Jˢ[i, j, 1] = ifelse(inactive, zero(grid), (1 - ℵᵢ) * Jˢao + Jˢio)
+        Jˢ[i, j, 1] = ifelse(inactive, zero(grid), Jˢao + Jˢio)
     end
 end
