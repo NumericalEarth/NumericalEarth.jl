@@ -9,13 +9,13 @@ export frazil_temperature_flux, net_ocean_temperature_flux, sea_ice_ocean_temper
 
 using Oceananigans
 using Oceananigans.Architectures: architecture
-using Oceananigans.Models: buoyancy_operation
-using Oceananigans.Grids: new_data, inactive_cell, znode
-using Oceananigans.BoundaryConditions: FieldBoundaryConditions, fill_halo_regions!
+using Oceananigans.BoundaryConditions: DiscreteBoundaryFunction, FieldBoundaryConditions, fill_halo_regions!
 using Oceananigans.Fields: FieldStatus, ZeroField
+using Oceananigans.Grids: new_data, inactive_cell, znode
+using Oceananigans.Models: buoyancy_operation
 using Oceananigans.Utils: launch!
+
 using KernelAbstractions: @index, @kernel
-using Oceananigans.BoundaryConditions: DiscreteBoundaryFunction
 using NumericalEarth.EarthSystemModels: EarthSystemModel,
                                         NoSeaIceInterfaceModel,
                                         NoOceanInterfaceModel,
