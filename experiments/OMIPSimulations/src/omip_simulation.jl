@@ -532,7 +532,7 @@ end
 @inline νhb(i, j, k, grid, ℓx, ℓy, ℓz, clock, fields, λ) = Oceananigans.Operators.Az(i, j, k, grid, ℓx, ℓy, ℓz)^2 / λ
 
 # Background tracer diffusivity following Henyey et al. (1986).
-@inline henyey_diffusivity(x, y, z, t) = max(1e-6, 5e-6 * abs(sind(y)))
+@inline henyey_diffusivity(x, y, z, t) = max(2e-6, 1e-5 * abs(sind(y)))
 
 # Step-function background diffusivity for the :simple closure.
 # Strong mixing in the upper 100 m, weak interior diffusivity below.
@@ -567,7 +567,9 @@ function omip_closure(vertical_closure::Symbol;
     elseif vertical_closure == :nori
         NORiBaseVerticalDiffusivity(), nothing
     elseif vertical_closure == :rbvd
-        RiBasedVerticalDiffusivity(; horizontal_Ri_filter = Oceananigans.TurbulenceClosures.FivePointHorizontalFilter()), nothing
+        convective = RiBasedVerticalDiffusivity(; horizontal_Ri_filter = Oceananigans.TurbulenceClosures.FivePointHorizontalFilter())
+        background = VerticalScalarDiffusivity(κ=henyey_diffusivity, ν=1e-4)
+        convective, background
     elseif vertical_closure == :kpp
         KPPVerticalDiffusivity(), nothing
     elseif vertical_closure == :nemo_tke

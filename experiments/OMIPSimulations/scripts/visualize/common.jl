@@ -23,6 +23,7 @@ const cp_ocean = 3991.86795711963
 
 using CairoMakie
 using GeoMakie
+import GeoMakie.GeometryBasics
 using Statistics
 using Dates
 using Downloads
@@ -488,6 +489,64 @@ function to_minus180_180(lon, data)
     return new_lon, new_data
 end
 
+# Sutherland-Hodgman polygon clipping against a horizontal lat line.
+# `keep_above = true`  → drop points with lat < lat_threshold;
+# `keep_above = false` → drop points with lat > lat_threshold.
+function sh_clip_one_side(pts, lat_threshold, keep_above::Bool)
+    isempty(pts) && return pts
+    is_inside(p) = keep_above ? (p[2] >= lat_threshold) : (p[2] <= lat_threshold)
+    out = similar(pts, 0)
+    n = length(pts)
+    for i in 1:n
+        cur = pts[i]
+        prev = pts[mod1(i-1, n)]
+        cur_in  = is_inside(cur)
+        prev_in = is_inside(prev)
+        if cur_in
+            if !prev_in
+                t = (lat_threshold - prev[2]) / (cur[2] - prev[2])
+                push!(out, typeof(cur)(prev[1] + t*(cur[1]-prev[1]), lat_threshold))
+            end
+            push!(out, cur)
+        elseif prev_in
+            t = (lat_threshold - prev[2]) / (cur[2] - prev[2])
+            push!(out, typeof(cur)(prev[1] + t*(cur[1]-prev[1]), lat_threshold))
+        end
+    end
+    return out
+end
+
+# Clip a GeometryBasics polygon to [lat_min, lat_max]. Returns
+# `nothing` if the result degenerates to fewer than 3 vertices.
+function clip_polygon_to_lat_band(polygon, lat_min, lat_max)
+    pts = collect(GeometryBasics.coordinates(polygon))
+    pts = sh_clip_one_side(pts, lat_max, false)   # drop lat > lat_max
+    pts = sh_clip_one_side(pts, lat_min, true)    # drop lat < lat_min
+    length(pts) < 3 && return nothing
+    return GeometryBasics.Polygon(pts)
+end
+
+# Cached lat-band-clipped Natural-Earth land. Keyed by (lat_min, lat_max).
+# Polar panels otherwise fill their rectangular-axis corners with the
+# (projected) low-latitude portion of the polygon — Europe/N.America in
+# NH, sparse in SH — producing a NH-vs-SH grey/white asymmetry. Clipping
+# the polygon to the panel's lat band eliminates that contribution while
+# preserving the in-disk land fill.
+const CLIPPED_LAND_CACHE = Dict{Tuple{Float64, Float64}, Any}()
+
+function clipped_land(lat_min, lat_max)
+    key = (Float64(lat_min), Float64(lat_max))
+    return get!(CLIPPED_LAND_CACHE, key) do
+        polys = GeoMakie.land()
+        out = eltype(polys)[]
+        for p in polys
+            cp = clip_polygon_to_lat_band(p, lat_min, lat_max)
+            cp === nothing || push!(out, cp)
+        end
+        out
+    end
+end
+
 function geo_panel!(fig, pos, data;
                     x, y,
                     projection = "+proj=robin",
@@ -519,8 +578,13 @@ function geo_panel!(fig, pos, data;
     # bug, not a rendering one. (Drawing the polygon on top doesn't
     # work in polar-stereographic projections — the Natural-Earth
     # polygon edges wrap incorrectly and fill the whole disk.)
+    #
+    # When `latlims` is set (polar panels), pre-clip the polygon to
+    # the latitude band so the low-latitude land (Europe / N. America)
+    # doesn't fill the rectangular axis corners outside the disk.
     if !isnothing(land_color)
-        poly!(ga, GeoMakie.land(); color = land_color, strokewidth = 0)
+        land_polys = isnothing(latlims) ? GeoMakie.land() : clipped_land(latlims...)
+        poly!(ga, land_polys; color = land_color, strokewidth = 0)
     end
     lv = if !isnothing(levels)
         levels
