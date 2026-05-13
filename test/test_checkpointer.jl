@@ -153,7 +153,7 @@ end
         # check that clock stops when intended
         run!(simulation)
 
-       test_clock_time_and_iteration(simulation, 3)
+        test_clock_time_and_iteration(simulation, 3)
 
         # check that reset!(simulation) rewinds model clock and its components
         reset!(simulation)
