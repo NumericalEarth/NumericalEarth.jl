@@ -270,6 +270,11 @@ function present_surfaces(ocean, sea_ice)
     return Tuple(surfaces)
 end
 
+# Helper predicates for conditional logic in `EarthSystemModel` construction and diagnostics.
+_is_prescribed_atmosphere(::PrescribedAtmosphere) = true
+_is_prescribed_atmosphere(::Nothing) = false
+_is_prescribed_atmosphere(::Simulation) = false
+
 _is_sea_ice_component(::SeaIceModel) = true
 _is_sea_ice_component(::Simulation{<:SeaIceModel}) = true
 _is_sea_ice_component(component) = false
