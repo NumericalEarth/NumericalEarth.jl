@@ -270,6 +270,13 @@ function present_surfaces(ocean, sea_ice)
     return Tuple(surfaces)
 end
 
+_is_sea_ice_component(::SeaIceModel) = true
+_is_sea_ice_component(::Simulation{<:SeaIceModel}) = true
+_is_sea_ice_component(component) = false
+
+_is_ocean_component(::Simulation{<:HydrostaticFreeSurfaceModel}) = true
+_is_ocean_component(component) = false
+
 """
     OceanOnlyModel(ocean; atmosphere=nothing, radiation=nothing, land=nothing, kw...)
 
@@ -292,8 +299,15 @@ This is a convenience constructor for [`EarthSystemModel`](@ref) with an explici
 and an optional prescribed atmosphere. Positional arguments follow the
 struct convention (top→bottom): `sea_ice` then `ocean`.
 """
-OceanSeaIceModel(sea_ice, ocean; atmosphere=nothing, land=nothing, radiation=nothing, kw...) =
+function OceanSeaIceModel(sea_ice, ocean; atmosphere=nothing, land=nothing, radiation=nothing, kw...)
+    if _is_ocean_component(sea_ice) && _is_sea_ice_component(ocean)
+        throw(ArgumentError("OceanSeaIceModel expects positional arguments in the order " *
+                            "`OceanSeaIceModel(sea_ice, ocean; ...)`, but received " *
+                            "an ocean first and sea ice second. Swap the first two arguments."))
+    end
+
     EarthSystemModel(radiation, atmosphere, land, sea_ice, ocean; kw...)
+end
 
 """
     AtmosphereOceanModel(atmosphere, ocean; kw...)
