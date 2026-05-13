@@ -18,7 +18,7 @@
 # - [ ] terrain
 
 using NumericalEarth
-using NumericalEarth.DataWrangling: BoundingBox, Metadatum, download_dataset
+using NumericalEarth.DataWrangling
 using NumericalEarth.DataWrangling.ERA5
 using CDSAPI  # activates NumericalEarthCDSAPIExt for download_dataset
 using Oceananigans
