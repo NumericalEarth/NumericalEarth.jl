@@ -126,13 +126,11 @@ update_net_fluxes!(coupled_model, ::PrescribedAtmosphere) = nothing
                          pressure        = default_atmosphere_pressure(grid, times),
                          freshwater_flux = default_freshwater_flux(grid, times))
 
-Return a representation of a prescribed time-evolving atmospheric
-state with data given at `times`.
+Return a prescribed, time-evolving atmospheric state with data on `grid` and at given `times`.
 
 !!! compat Radiation component
-    The downwelling shortwave / longwave radiation part of the
-    top-level `radiation` component (see [`PrescribedRadiation`](@ref),
-    [`JRA55PrescribedRadiation`](@ref)).
+    The downwelling shortwave / longwave radiation part of the top-level `radiation`
+    component (see [`PrescribedRadiation`](@ref), [`JRA55PrescribedRadiation`](@ref)).
 """
 function PrescribedAtmosphere(grid, times=[zero(grid)];
                               clock = Clock{Float64}(time = 0),
