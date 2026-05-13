@@ -290,8 +290,13 @@ The `atmosphere` keyword can be used to specify a prescribed atmospheric forcing
 (e.g., `JRA55PrescribedAtmosphere`). All other keyword arguments are forwarded
 to `EarthSystemModel`.
 """
-OceanOnlyModel(ocean; atmosphere=nothing, land=nothing, radiation=nothing, kw...) =
+
+function OceanOnlyModel(ocean; atmosphere=nothing, land=nothing, radiation=nothing, kw...)
+    if !(is_ocean_component(ocean))
+        throw(ArgumentError("OceanOnlyModel expects an ocean simulation as its first positional argument"))
+    end
     EarthSystemModel(radiation, atmosphere, land, default_sea_ice(), ocean; kw...)
+end
 
 """
     OceanSeaIceModel(sea_ice, ocean; atmosphere=nothing, radiation=nothing, land=nothing, kw...)
@@ -302,12 +307,13 @@ and an optional prescribed atmosphere. Positional arguments follow the
 struct convention (top→bottom): `sea_ice` then `ocean`.
 """
 function OceanSeaIceModel(sea_ice, ocean; atmosphere=nothing, land=nothing, radiation=nothing, kw...)
-    if _is_ocean_component(sea_ice) && _is_sea_ice_component(ocean)
-        throw(ArgumentError("OceanSeaIceModel expects positional arguments in the order " *
-                            "`OceanSeaIceModel(sea_ice, ocean; ...)`, but received " *
-                            "an ocean first and sea ice second. Swap the first two arguments."))
+    if !(is_sea_ice_component(sea_ice))
+        throw(ArgumentError("OceanSeaIceModel expects a sea ice simulation as its first positional argument"))
     end
 
+    if !(is_ocean_component(ocean))
+        throw(ArgumentError("OceanSeaIceModel expects an ocean simulation as its second positional argument"))
+    end
     EarthSystemModel(radiation, atmosphere, land, sea_ice, ocean; kw...)
 end
 
@@ -318,9 +324,12 @@ Construct a coupled atmosphere--ocean model.
 Convenience constructor for [`EarthSystemModel`](@ref) with an atmosphere and ocean
 but no sea ice. All keyword arguments are forwarded to `EarthSystemModel`.
 """
-AtmosphereOceanModel(atmosphere, ocean; land=nothing, radiation=nothing, kw...) =
+function AtmosphereOceanModel(atmosphere, ocean; land=nothing, radiation=nothing, kw...)
+    if !(is_ocean_component(ocean))
+        throw(ArgumentError("AtmosphereOceanModel expects an ocean simulation as its second positional argument"))
+    end
     EarthSystemModel(radiation, atmosphere, land, nothing, ocean; kw...)
-
+end
 time(coupled_model::EarthSystemModel) = coupled_model.clock.time
 
 # Check for NaNs in the first prognostic field (generalizes to prescribed velocities).
