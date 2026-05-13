@@ -203,7 +203,7 @@ with a superscript band.
 | ``c^{pm}`` | `cᵖᵐ` | moist air heat capacity | Moist isobaric specific heat (J kg⁻¹ K⁻¹) |
 | ``c^{pd}`` | `cᵖᵈ` | dry air heat capacity | Dry-air isobaric specific heat (J kg⁻¹ K⁻¹) |
 | ``\rho^{\mathrm{at}}`` | `ρᵃᵗ` | air density | Atmospheric air density (kg m⁻³) |
-| ``\varepsilon`` | ``ε`` | specific gas constant ratio (``Rd / Rv`` ) | Ratio of dry air and vapor gas constants (-) |
+| ``\varepsilon^{\mathrm{dv}}`` | ``εᵈᵛ`` | specific gas constant ratio (``Rd / Rv`` ) | Ratio of dry air and vapor gas constants (-) |
 
 ## CF standard name mapping
 
