@@ -48,27 +48,22 @@ Nx, Ny = 256, 256
 φ_south = φ₀ - Ny * Δφ / 2
 φ_north = φ₀ + Ny * Δφ / 2
 
-# Vertical grid: 40 cells geometrically stretched 1.08× from Δz_surf = 50 m
-# (Δz ≈ 1 km at the top of the stretched zone), then 24 cells of 1 km aloft.
-# Lz ≈ 37 km — well within the ERA5 1 hPa top.
+# Vertical grid: Oceananigans' `ReferenceToStretchedDiscretization` gives one
+# constant 50 m cell at the surface, then a linear 1.08× stretching per cell
+# until Δz hits the 1 km cap, then uniform 1 km cells out to Lz ≈ 37 km —
+# comfortably below the ERA5 1 hPa top. `Nz` is determined by the stretching
+# law (≈ 64 with these parameters).
 
-Nz_strch = 40
-Nz_const = 24
-Nz       = Nz_strch + Nz_const
-Δz_surf  = 50.0
-Δz_top   = 1000.0
-r_z      = 1.08
+z_discretization = ReferenceToStretchedDiscretization(
+    extent                  = 36000.0,
+    bias                    = :left,
+    bias_edge               = 0.0,
+    constant_spacing        = 50.0,
+    constant_spacing_extent = 50.0,
+    maximum_spacing         = 1000.0,
+    stretching              = LinearStretching(0.08))
 
-function build_z_faces()
-    zᶠ = zeros(Nz + 1)
-    for k in 1:Nz_strch
-        zᶠ[k+1] = zᶠ[k] + Δz_surf * r_z^(k-1)
-    end
-    for k in (Nz_strch+1):Nz
-        zᶠ[k+1] = zᶠ[k] + Δz_top
-    end
-    return zᶠ
-end
+Nz = length(z_discretization)
 
 # Initial conditions
 #
@@ -133,11 +128,9 @@ download_dataset(:surface_pressure, ds_sl, dates; meta_common...)
 # metadata supplies a domain-mean z(p) profile via the time-mean spatial-mean
 # geopotential height (the dataset's default `mean_geopotential_height=true`).
 
-zᶠ = build_z_faces()
-
 grid = LatitudeLongitudeGrid(longitude = (λ_west,  λ_east),
                              latitude  = (φ_south, φ_north),
-                             z         = zᶠ,
+                             z         = z_discretization,
                              size      = (Nx, Ny, Nz),
                              halo      = (5, 5, 5),
                              topology  = (Bounded, Bounded, Bounded))
