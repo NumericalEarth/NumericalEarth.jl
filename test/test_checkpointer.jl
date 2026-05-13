@@ -54,11 +54,11 @@ end
         # (This matches the checkpointed workflow where we create a new Simulation
         # after iteration 3, which is what happens during checkpoint restore)
         model = make_coupled_model(grid)
-        simulation = Simulation(model, Δt=60, stop_iteration=3)
+        simulation = Simulation(model, Δt=60, stop_iteration=3, verbose=false)
         run!(simulation)
 
         # Continue on the same model (simulates what happens after checkpoint restore)
-        simulation = Simulation(model, Δt=60, stop_iteration=6)
+        simulation = Simulation(model, Δt=60, stop_iteration=6, verbose=false)
         run!(simulation)
 
         # Store reference states at iteration 6
@@ -74,7 +74,7 @@ end
 
         # Checkpointed run: 3 iterations, then checkpoint
         model = make_coupled_model(grid)
-        simulation = Simulation(model, Δt=60, stop_iteration=3)
+        simulation = Simulation(model, Δt=60, stop_iteration=3, verbose=false)
 
         prefix = "osm_checkpointer_test_$(typeof(arch))"
         simulation.output_writers[:checkpointer] = Checkpointer(simulation.model;
@@ -87,7 +87,7 @@ end
 
         # Create new model and restore from checkpoint
         model = make_coupled_model(grid)
-        simulation = Simulation(model, Δt=60, stop_iteration=6)
+        simulation = Simulation(model, Δt=60, stop_iteration=6, verbose=false)
 
         simulation.output_writers[:checkpointer] = Checkpointer(model;
                                                                 schedule = IterationInterval(3),
