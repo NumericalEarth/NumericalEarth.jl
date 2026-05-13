@@ -54,8 +54,7 @@ ImpureSaturationSpecificHumidity(phase) = ImpureSaturationSpecificHumidity(phase
 # COARE 3.6 / Edson (2013) pressure-based saturation specific humidity:
 #   qₛ = ε eₛ / (p − (1 − ε) eₛ),   ε = Rᵈ / Rᵥ
 # Direct evaluation at the atmospheric pressure p.
-@inline function surface_specific_humidity(formulation::ImpureSaturationSpecificHumidity,
-                                           ℂᵃᵗ, pᵃᵗ, Tₛ, Sₛ=zero(Tₛ))
+@inline function surface_specific_humidity(formulation::ImpureSaturationSpecificHumidity, ℂᵃᵗ, pᵃᵗ, Tₛ, Sₛ=zero(Tₛ))
     FT = eltype(Tₛ)
     CT = eltype(ℂᵃᵗ)
     T  = convert(CT, Tₛ)

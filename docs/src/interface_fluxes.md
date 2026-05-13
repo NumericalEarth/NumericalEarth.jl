@@ -652,13 +652,13 @@ that enters into the air-surface specific humidity difference ``Δ q`` also chan
 ```@example interface_fluxes
 using NumericalEarth.EarthSystemModels.InterfaceComputations: surface_specific_humidity
 
-ρᵃᵗ = 1.2 # guess
+pᵃᵗ = 101325 # guess (Pa)
 Tᵒᶜ = 273.15 + 20 # in Kelvin
 Sᵒᶜ = 35
 interfaces = default_model.interfaces
 ℂᵃᵗ = interfaces.atmosphere_properties
 q_formulation = interfaces.atmosphere_ocean_interface.properties.specific_humidity_formulation
-qₛ = surface_specific_humidity(q_formulation, ℂᵃᵗ, ρᵃᵗ, Tᵒᶜ, Sᵒᶜ)
+qₛ = surface_specific_humidity(q_formulation, ℂᵃᵗ, pᵃᵗ, Tᵒᶜ, Sᵒᶜ)
 @show qₛ
 ```
 
