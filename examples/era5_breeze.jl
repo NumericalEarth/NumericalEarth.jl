@@ -1,7 +1,7 @@
 # # Regional hindcast with ERA5
 #
-# This is a regional modeling example that couples the Breeze compressible
-# solver to forthcoming SlabLand and SlabOcean components.
+# This is a limited-area model (LAM) example that couples the Breeze
+# compressible solver to forthcoming SlabLand and SlabOcean components.
 #
 # At the moment, this script does just the data ingest: download ERA5
 # reanalysis restricted to a bounding box and interpolate it onto a
@@ -18,9 +18,9 @@
 # - [ ] terrain
 
 using NumericalEarth
-using NumericalEarth.DataWrangling: BoundingBox, Metadatum, download_dataset
+using NumericalEarth.DataWrangling
 using NumericalEarth.DataWrangling.ERA5
-using CDSAPI  # activates NumericalEarthCDSAPIExt for download_dataset
+using CDSAPI  # activates NumericalEarthCDSAPIExt
 using Oceananigans
 using Oceananigans.Fields: CenterField, XFaceField, YFaceField
 using Breeze
@@ -30,6 +30,8 @@ using Dates
 using Printf
 
 # ## Configuration
+
+# ### Domain
 #
 # Domain centered on the U.S. Department of Energy's Atmospheric Radiation
 # Measurement (ARM) Climate Research Facility's Southern Great Plains (SGP)
@@ -42,6 +44,8 @@ using Printf
 
 Δλ, Δφ = 0.034, 0.027       # grid spacings (deg)
 Nx, Ny = 256, 256
+
+# From these inputs, we determine the `BoundingBox` corners.
 
 λ_west  = λ₀ - Nx * Δλ / 2
 λ_east  = λ₀ + Nx * Δλ / 2
@@ -65,16 +69,20 @@ z_discretization = ReferenceToStretchedDiscretization(
 
 Nz = length(z_discretization)
 
-# Initial conditions
+# ### Initial conditions
 #
-# Case day from the Holistic Interactions of Shallow Clouds, Aerosols and Land
-# Ecosystems (HI-SCALE) campaign at the ARM SGP site. Features clear skies with
-# periods of cirrus.
+# We've selected a case day from the Holistic Interactions of Shallow Clouds,
+# Aerosols and Land Ecosystems (HI-SCALE) campaign at the ARM SGP site.
+# This period features clear skies with periods of cirrus.
 
 start_date = DateTime(2016, 09, 10, 12) # 7 am LT
 end_date   = DateTime(2016, 09, 10, 18) # 1 pm LT
 
 dates = start_date:Hour(1):end_date
+
+# ### ERA5 reanalysis
+
+era5_datadir = "era5"   # Where data will be saved locally
 
 # ERA5 bounding box: cover the LAM domain plus 1° padding, snapped outward
 # to ERA5's native 0.25° grid.
@@ -97,13 +105,7 @@ era5_region = era5_bbox()
                era5_region.longitude[1], era5_region.longitude[2],
                era5_region.latitude[1],  era5_region.latitude[2])
 
-# ## Download ERA5
-#
-# `download_dataset` bundles a multi-variable CDS request into one round
-# trip per calendar day. Files already on disk are skipped on re-run.
-
-# Where data will be saved locally
-era5_datadir = "era5"
+# We use hourly dataset on both single levels and pressure levels.
 
 ds_pl = ERA5HourlyPressureLevels()
 ds_sl = ERA5HourlySingleLevel()
@@ -115,13 +117,7 @@ pl_vars = [:eastward_velocity, :northward_velocity, :temperature,
 
 meta_common = (region = era5_region, dir = era5_datadir)
 
-@info "Downloading ERA5 pressure-level data..."
-download_dataset(pl_vars, ds_pl, dates; meta_common...)
-
-@info "Downloading ERA5 surface pressure..."
-download_dataset(:surface_pressure, ds_sl, dates; meta_common...)
-
-# ## LAM grid
+# ## Setup LAM grid
 #
 # `LatitudeLongitudeGrid` with `Bounded` horizontal topologies (LAM-style).
 # The vertical coordinate is height in meters; the ERA5 pressure-level
