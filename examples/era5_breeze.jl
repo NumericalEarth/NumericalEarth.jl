@@ -10,7 +10,8 @@
 #
 # In progress:
 # - [x] Breeze model construction
-# - [ ] initial state setting (set! the model from ingested fields)
+# - [x] initial state setting (set! the model from ingested fields)
+# - [ ] test with GPU
 # - [ ] acoustic substepping
 # - [ ] dynamical initialization
 # - [ ] open boundary conditions
@@ -22,9 +23,10 @@ using NumericalEarth.DataWrangling
 using NumericalEarth.DataWrangling.ERA5
 using CDSAPI  # activates NumericalEarthCDSAPIExt
 using Oceananigans
-using Oceananigans.Fields: CenterField, XFaceField, YFaceField
+using Oceananigans.Fields: interpolate!
+using Oceananigans.BoundaryConditions: fill_halo_regions!
 using Breeze
-using Breeze.Thermodynamics
+using Breeze.Thermodynamics # TODO: https://github.com/NumericalEarth/Breeze.jl/pull/699
 using Statistics: mean
 using Dates
 using Printf
@@ -81,6 +83,9 @@ end_date   = DateTime(2016, 09, 10, 18) # 1 pm LT
 dates = start_date:Hour(1):end_date
 
 # ### ERA5 reanalysis
+#
+# TODO: define a `MetadataSet` as per
+# https://github.com/NumericalEarth/NumericalEarth.jl/issues/235
 
 era5_datadir = "era5"   # Where data will be saved locally
 
@@ -129,33 +134,160 @@ grid = LatitudeLongitudeGrid(longitude = (λ_west,  λ_east),
                              halo      = (5, 5, 5),
                              topology  = (Bounded, Bounded, Bounded))
 
+# ## Thermodynamic constants
+#
+# All thermodynamic parameters used downstream (per-column z conversion,
+# moist gas law, liquid-ice potential temperature, virtual temperature)
+# come from Breeze's `ThermodynamicConstants`.
+
+constants = ThermodynamicConstants()
+
+g   = ERA5.ERA5_gravitational_acceleration
+Rᵈ  = dry_air_gas_constant(constants)
+Rᵛ  = vapor_gas_constant(constants)
+cₚᵈ = constants.dry_air.heat_capacity
+κ   = Rᵈ / cₚᵈ
+pˢᵗ = 1e5  # Pa
+Lᵥ  = constants.liquid.reference_latent_heat
+Lₛ  = constants.ice.reference_latent_heat
+
 # ## Interpolate ERA5 onto the LAM grid
 #
-# `set!(field, metadatum)` builds the ERA5 metadata Field on its native
-# (λ, φ, z=⟨Φ/g⟩) grid, then `Oceananigans.interpolate!` pushes it onto
-# the target LAM grid. Both grids live in (lon-deg, lat-deg, z-m), so the
-# cross-grid interpolation is well-defined in a single coordinate system.
+# We bypass `set!(field, metadatum)` for two reasons:
+#  (a) use ERA5's instantaneous, spatially-varying Φ(λ, φ, p)/g as the
+#      z-mapping for each column rather than a single spatial-mean profile;
+#  (b) mask levels with p > p_surface(λ, φ).
+#
+# See NumericalEarth/NumericalEarth.jl#236 for context.
+#
+# The interpolation is split into two stages:
+#  1. Per-column linear-in-z interpolation from the ERA5 native pressure
+#     levels onto the LAM z-coordinate, producing a Field on an intermediate
+#     grid that shares the ERA5 native (λ, φ) but the LAM's z.
+#  2. Horizontal-only `Oceananigans.interpolate!` from intermediate onto the
+#     target LAM field — since the two grids share z, only the horizontal
+#     bilinear remains.
+#
+# Terrain workaround (TEMPORARY): we don't yet have terrain in the LAM, so we
+# map ERA5's (Φ − Φ₀)/g (height above local surface) → LAM z. This treats the
+# LAM z=0 as "at the surface" everywhere, equivalent to a sigma-z coordinate.
+# Φ₀ comes from ERA5's `:geopotential_height` on single levels.
+#
+# TODO: When terrain support lands, swap back to Φ/g.
 
+# Per-column linear interpolation in z, skipping sub-surface levels.
+function interp_z_masked(z, z_col, var_col, p_levels, p₀_local)
+    k_lo, k_hi = 0, 0
+    @inbounds for k in eachindex(p_levels)
+        p_levels[k] > p₀_local && continue
+        if z_col[k] <= z
+            k_lo = k
+        else
+            k_hi = k
+            break
+        end
+    end
+    k_lo == 0 && return var_col[k_hi]                  # below lowest valid level
+    k_hi == 0 && return var_col[k_lo]                  # above highest valid level
+    α = (z - z_col[k_lo]) / (z_col[k_hi] - z_col[k_lo])
+    return (1 - α) * var_col[k_lo] + α * var_col[k_hi]
+end
+
+# Stage 1: column-wise z interpolation onto the intermediate grid.
+# The intermediate field shares the ERA5 native (λ, φ) but has the LAM z;
+# we simply loop over (i, j) of the native grid and linearly interpolate
+# each column to the LAM z-centers, applying the sub-surface mask.
+function column_interp_z!(inter_field, era5_data;
+                          z_above_sfc, p_era5_lev, p₀_arr)
+    out   = interior(inter_field)
+    z_lam = collect(znodes(inter_field.grid, Center(), Center(), Center()))
+    Nλ_e, Nφ_e, _ = size(era5_data)
+
+    for k in eachindex(z_lam), j in 1:Nφ_e, i in 1:Nλ_e
+        out[i, j, k] = interp_z_masked(z_lam[k],
+                                       @view(z_above_sfc[i, j, :]),
+                                       @view(era5_data[i, j, :]),
+                                       p_era5_lev,
+                                       p₀_arr[i, j])
+    end
+
+    fill_halo_regions!(inter_field)
+    return inter_field
+end
+
+# Two-stage interpolation: column-z onto intermediate, then horizontal
+# `interpolate!` onto the target LAM field.
+function interp_era5_to_lam!(target, era5_data, intermediate_grid;
+                             z_above_sfc, p_era5_lev, p₀_arr)
+    inter = CenterField(intermediate_grid)
+    column_interp_z!(inter, era5_data; z_above_sfc, p_era5_lev, p₀_arr)
+    interpolate!(target, inter)
+    return target
+end
+
+# --- ERA5 raw arrays and per-column metadata ---
+meta_common = (date = start_date, region = era5_region, dir = era5_datadir)
+ϕ_field     = Field(Metadatum(:geopotential;        dataset=ds_pl, meta_common...))
+Φ₀_field    = Field(Metadatum(:geopotential_height; dataset=ds_sl, meta_common...))
+p₀_field    = Field(Metadatum(:surface_pressure;    dataset=ds_sl, meta_common...))
+
+# Native ERA5 array shapes: 3-D (Nλ_e, Nφ_e, Np_e); 2-D fields stored as
+# (Nλ_e, Nφ_e, 1) — slice them down to plain 2-D.
+Φ₀_arr = Array(interior(Φ₀_field))[:, :, 1]  # m²/s² (raw geopotential — `:geopotential_height`
+                                              #       is a misnomer; ERA5 stores it without /g)
+p₀_arr = Array(interior(p₀_field))[:, :, 1]  # Pa
+
+# Height above local surface for each ERA5 (i, j, k); see "Terrain workaround"
+# above. Both Φ and Φ₀ are in m²/s²; broadcast Φ₀ over the vertical axis with
+# `reshape` + `..., 1`, then divide once by g at the end.
+z_above_sfc = (Array(interior(ϕ_field)) .-
+               reshape(Φ₀_arr, size(Φ₀_arr, 1), size(Φ₀_arr, 2), 1)) ./ g
+
+p_era5_lev = sort(ds_pl.pressure_levels, rev=true)
+
+read3d(name) = Array(interior(Field(Metadatum(name; dataset=ds_pl, meta_common...))))
+u_era5  = read3d(:eastward_velocity)
+v_era5  = read3d(:northward_velocity)
+T_era5  = read3d(:temperature)
+qᵛ_era5 = read3d(:specific_humidity)
+qᶜ_era5 = read3d(:specific_cloud_liquid_water_content)
+qⁱ_era5 = read3d(:specific_cloud_ice_water_content)
+
+# Pressure as a 3-D array (constant in λ, φ; pressure-level values broadcast)
+p_era5_3d = repeat(reshape(p_era5_lev, 1, 1, :), size(z_above_sfc, 1), size(z_above_sfc, 2), 1)
+
+# --- Intermediate grid: ERA5 native (λ, φ), LAM z ---
+Nλ_e, Nφ_e = size(z_above_sfc, 1), size(z_above_sfc, 2)
+intermediate_grid = LatitudeLongitudeGrid(longitude = era5_region.longitude,
+                                          latitude  = era5_region.latitude,
+                                          z         = z_discretization,
+                                          size      = (Nλ_e, Nφ_e, Nz),
+                                          halo      = (5, 5, 5),
+                                          topology  = (Bounded, Bounded, Bounded))
+
+# --- LAM fields populated by stage-1 + stage-2 ---
 u  = XFaceField(grid)
 v  = YFaceField(grid)
 T  = CenterField(grid)
 qᵛ = CenterField(grid)
 qᶜ = CenterField(grid)
 qⁱ = CenterField(grid)
+p  = CenterField(grid)
 
-meta_common = (date = start_date, region = era5_region, dir = era5_datadir)
-set!(u,  Metadatum(:eastward_velocity;                   dataset=ds_pl, meta_common...))
-set!(v,  Metadatum(:northward_velocity;                  dataset=ds_pl, meta_common...))
-set!(T,  Metadatum(:temperature;                         dataset=ds_pl, meta_common...))
-set!(qᵛ, Metadatum(:specific_humidity;                   dataset=ds_pl, meta_common...))
-set!(qᶜ, Metadatum(:specific_cloud_liquid_water_content; dataset=ds_pl, meta_common...))
-set!(qⁱ, Metadatum(:specific_cloud_ice_water_content;    dataset=ds_pl, meta_common...))
+era5_kw = (; z_above_sfc, p_era5_lev, p₀_arr)
+
+interp_era5_to_lam!(u,  u_era5,    intermediate_grid; era5_kw...)
+interp_era5_to_lam!(v,  v_era5,    intermediate_grid; era5_kw...)
+interp_era5_to_lam!(T,  T_era5,    intermediate_grid; era5_kw...)
+interp_era5_to_lam!(qᵛ, qᵛ_era5,   intermediate_grid; era5_kw...)
+interp_era5_to_lam!(qᶜ, qᶜ_era5,   intermediate_grid; era5_kw...)
+interp_era5_to_lam!(qⁱ, qⁱ_era5,   intermediate_grid; era5_kw...)
+interp_era5_to_lam!(p,  p_era5_3d, intermediate_grid; era5_kw...)
 
 # Calculate virtual temperature: Tᵛ = T·(1 + (1 − ε)/ε·qᵛ), ε = Rᵈ/Rᵛ.
 # Vapor only by convention — the qᶜ, qⁱ terms belong to the density temperature Tρ.
 
-constants = ThermodynamicConstants()
-εfac = vapor_gas_constant(constants) / dry_air_gas_constant(constants) - 1
+εfac = Rᵛ / Rᵈ - 1
 
 Tᵛ = Field(T * (1 + εfac * qᵛ))
 compute!(Tᵛ)
@@ -173,7 +305,7 @@ surface_grid = LatitudeLongitudeGrid(longitude = (λ_west,  λ_east),
                                      topology  = (Bounded, Bounded, Bounded))
 
 p₀ = CenterField(surface_grid)
-set!(p₀, Metadatum(:surface_pressure; dataset=ds_sl, date=start_date, meta_common...))
+set!(p₀, Metadatum(:surface_pressure; dataset=ds_sl, meta_common...))
 
 # ## Build the Breeze model
 #
@@ -187,9 +319,32 @@ set!(p₀, Metadatum(:surface_pressure; dataset=ds_sl, date=start_date, meta_com
 
 p̄₀ = mean(interior(p₀))
 
-atmos = atmosphere_simulation(grid;
+model = atmosphere_simulation(grid;
                               thermodynamic_constants = constants,
                               dynamics = CompressibleDynamics(; surface_pressure = p̄₀))
+
+# ## Set initial state from ERA5
+#
+# Derive the prognostic variables Breeze's `CompressibleDynamics` needs from
+# the per-column-interpolated ERA5 fields:
+#
+#   ρ   = p / (Rᵈ · Tᵛ)                                  (moist ideal gas law)
+#   θˡⁱ = θ · (1 − (Lᵥ qᶜ + Lₛ qⁱ) / (cₚᵈ T))            (Breeze's diagnostic form,
+#         with θ = T · (pˢᵗ/p)^κ                          using cₚᵈ ≈ cᵖᵐ)
+#   qᵗ  = qᵛ + qᶜ + qⁱ                                   (saturation adjustment
+#                                                         partitions on first
+#                                                         update_state!)
+
+ρ   = Field(p / (Rᵈ * Tᵛ))
+θ   = T * (pˢᵗ / p)^κ
+θˡⁱ = Field(θ * (1 - (Lᵥ * qᶜ + Lₛ * qⁱ) / (cₚᵈ * T)))
+qᵗ  = Field(qᵛ + qᶜ + qⁱ)
+
+compute!(ρ)
+compute!(θˡⁱ)
+compute!(qᵗ)
+
+set!(model; ρ = ρ, u = u, v = v, qᵗ = qᵗ, θˡⁱ = θˡⁱ)
 
 # ## Report
 
