@@ -7,26 +7,17 @@ import NumericalEarth
 import Oceananigans
 using NCDatasets: NCDatasets
 using JLD2: JLD2
-using Downloads: Downloads, download
+using Downloads: Download
 using Adapt: Adapt
 using Scratch: Scratch, @get_scratch!
 
 using ..DataWrangling:
     Metadata,
     Metadatum,
-    BoundingBox,
-    inpaint_mask!,
-    NearestNeighborInpainting,
     download_progress,
-    compute_native_date_range,
-    Kelvin,
-    Celsius
+    Kelvin
 
-using KernelAbstractions: @kernel, @index
-
-using Oceananigans.Architectures: architecture
-
-using Dates: Dates, DateTime, Month, year, month, day
+using Dates: Dates, DateTime, Month
 using Oceananigans.DistributedComputations: @root
 
 import ZipFile

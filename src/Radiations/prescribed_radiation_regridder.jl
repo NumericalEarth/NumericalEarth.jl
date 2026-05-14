@@ -1,11 +1,11 @@
-function ComponentExchanger(radiation::PrescribedRadiation, grid)
+function EarthSystemModels.InterfaceComputations.ComponentExchanger(radiation::PrescribedRadiation, grid)
 
     regridder = radiation_regridder(radiation, grid)
 
     state = (; ℐꜜˢʷ = Field{Center, Center, Nothing}(grid),
                ℐꜜˡʷ = Field{Center, Center, Nothing}(grid))
 
-    return ComponentExchanger(state, regridder)
+    return EarthSystemModels.InterfaceComputations.ComponentExchanger(state, regridder)
 end
 
 function radiation_regridder(radiation::PrescribedRadiation, exchange_grid)
@@ -19,7 +19,7 @@ function radiation_regridder(radiation::PrescribedRadiation, exchange_grid)
     return (i = fi, j = fj)
 end
 
-function initialize!(exchanger::ComponentExchanger, grid, radiation::PrescribedRadiation)
+function Oceananigans.Simulations.initialize!(exchanger::ComponentExchanger, grid, radiation::PrescribedRadiation)
     frac_indices = exchanger.regridder
     # Skip horizontal regridding when both fractional-index buffers are
     # absent (purely Flat horizontal exchange grid).

@@ -1,6 +1,5 @@
-using Oceananigans.Architectures: architecture, on_architecture
+using Oceananigans.Architectures: on_architecture
 using Oceananigans.DistributedComputations: child_architecture
-using Oceananigans.Fields: CenterField, interpolate!
 using Oceananigans.Grids: znodes
 
 #####

@@ -92,7 +92,7 @@ function PrescribedRadiation(downwelling_shortwave::FieldTimeSeries,
                                     convert(FT, stefan_boltzmann_constant),
                                     nothing, # interface_fluxes — populated at ESM construction
                                     times)
-    update_state!(radiation)
+    Oceananigans.TimeSteppers.update_state!(radiation)
     return radiation
 end
 
@@ -100,9 +100,9 @@ end
     PrescribedRadiation(grid, times = [zero(grid)]; kwargs...)
 
 Construct a `PrescribedRadiation` with zero downwelling shortwave and longwave
-fields on `grid`. Useful for emission-only mode (the surface radiates ϵσT⁴ but
+fields on `grid`. Useful for emission-only mode (the surface radiates ``ϵ σ T⁴`` but
 no incoming radiation is absorbed). All other keyword arguments are forwarded
-to the FTS-form constructor.
+to the `FieldTimeSeries`-form constructor.
 """
 function PrescribedRadiation(grid, times = [zero(eltype(grid))]; kwargs...)
     sw = FieldTimeSeries{Center, Center, Nothing}(grid, times)
@@ -110,7 +110,7 @@ function PrescribedRadiation(grid, times = [zero(eltype(grid))]; kwargs...)
     return PrescribedRadiation(sw, lw; kwargs...)
 end
 
-@inline function update_state!(radiation::PrescribedRadiation)
+@inline function Oceananigans.TimeSteppers.update_state!(radiation::PrescribedRadiation)
     time = Time(radiation.clock.time)
     ftses = extract_field_time_series(radiation)
 
@@ -120,14 +120,14 @@ end
     return nothing
 end
 
-@inline function time_step!(radiation::PrescribedRadiation, Δt)
+@inline function Oceananigans.TimeSteppers.time_step!(radiation::PrescribedRadiation, Δt)
     tick!(radiation.clock, Δt)
-    update_state!(radiation)
+    Oceananigans.TimeSteppers.update_state!(radiation)
     return nothing
 end
 
 # Prescribed radiation has no internal state to update from net fluxes.
-update_net_fluxes!(coupled_model, ::PrescribedRadiation) = nothing
+EarthSystemModels.update_net_fluxes!(coupled_model, ::PrescribedRadiation) = nothing
 
 """
     allocate_interface_fluxes!(radiation, exchange_grid, surfaces)
@@ -135,7 +135,7 @@ update_net_fluxes!(coupled_model, ::PrescribedRadiation) = nothing
 Populate `radiation.interface_fluxes` with one `InterfaceRadiationFlux`
 per surface present in the model.
 """
-function allocate_interface_fluxes!(radiation::PrescribedRadiation, exchange_grid, surfaces)
+function EarthSystemModels.allocate_interface_fluxes!(radiation::PrescribedRadiation, exchange_grid, surfaces)
     pairs = (surface => InterfaceRadiationFlux(exchange_grid) for surface in surfaces)
     radiation.interface_fluxes = NamedTuple(pairs)
     return nothing
@@ -151,7 +151,7 @@ end
 
 function Oceananigans.restore_prognostic_state!(radiation::PrescribedRadiation, state)
     Oceananigans.restore_prognostic_state!(radiation.clock, state.clock)
-    update_state!(radiation)
+    Oceananigans.TimeSteppers.update_state!(radiation)
     return radiation
 end
 

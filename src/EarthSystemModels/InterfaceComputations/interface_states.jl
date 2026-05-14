@@ -1,9 +1,7 @@
-using GPUArraysCore: @allowscalar
 using Printf
 
 import ClimaSeaIce
 import Thermodynamics as AtmosphericThermodynamics
-using Thermodynamics: Liquid, Ice
 
 #####
 ##### Interface properties
@@ -36,7 +34,7 @@ function Base.summary(q★::ImpureSaturationSpecificHumidity)
 
 
     return string("ImpureSaturationSpecificHumidity{$phase_str}(water_mole_fraction=",
-                  prettysummary(q★.water_mole_fraction), ")") 
+                  prettysummary(q★.water_mole_fraction), ")")
 end
 
 Base.show(io::IO, q★::ImpureSaturationSpecificHumidity) = print(io, summary(q★))
@@ -262,7 +260,7 @@ end
     Ωᵀ = 𝒬ᵀ * λ  # unnormalized sensible heat coefficient (= Ωc * ΔT)
     D  = F.κ * ΔT - Ωᵀ * F.δ
     T★ = (Ψᵢ.T * F.κ * ΔT - (Jᵀ * ΔT + Ωᵀ * Tᵃᵗ) * F.δ) / D
-    
+
     return ifelse(D == 0, Ψₛ.T, T★)
 end
 

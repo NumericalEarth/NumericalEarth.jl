@@ -5,9 +5,8 @@ using Downloads
 using Oceananigans.DistributedComputations
 
 using NumericalEarth.DataWrangling
-using NumericalEarth.DataWrangling: Metadata, metadata_path, download_progress, AnyDateTime
+using NumericalEarth.DataWrangling: Metadata, metadata_path, download_progress
 
-import Dates: year, month, day
 import Oceananigans.Fields: set!
 import Base
 import NumericalEarth.DataWrangling: all_dates, metadata_filename, build_filename, download_dataset, default_download_directory, available_variables

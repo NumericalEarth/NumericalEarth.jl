@@ -32,5 +32,6 @@ using ExplicitImports: ExplicitImports
 
     @testset "Explicit Imports [$(mod)]" for mod in modules
         @test ExplicitImports.check_no_implicit_imports(mod) === nothing
+        @test ExplicitImports.check_no_stale_explicit_imports(mod) === nothing
     end
 end

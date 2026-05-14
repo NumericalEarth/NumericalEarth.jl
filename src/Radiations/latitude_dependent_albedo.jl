@@ -1,5 +1,4 @@
 using Oceananigans.Grids: ηnode
-using Oceananigans.Fields: instantiate
 
 struct LatitudeDependentAlbedo{FT}
     direct :: FT

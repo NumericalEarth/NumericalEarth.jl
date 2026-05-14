@@ -4,18 +4,17 @@ export ocean_simulation, SlabOcean
 
 import Oceananigans
 
-using Oceananigans.Advection: FluxFormAdvection, WENO, WENOVectorInvariant
-using Oceananigans.BuoyancyFormulations: SeawaterBuoyancy
+using Oceananigans.Advection: WENO, WENOVectorInvariant
 using Oceananigans.BoundaryConditions: DefaultBoundaryCondition, DiscreteBoundaryFunction,
                                        FieldBoundaryConditions, FluxBoundaryCondition
+using Oceananigans.BuoyancyFormulations: SeawaterBuoyancy
 using Oceananigans.Coriolis: HydrostaticSphericalCoriolis
-using Oceananigans.ImmersedBoundaries: ImmersedBoundaryGrid, ImmersedBoundaryCondition,
-                                       immersed_peripheral_node, inactive_node, MutableGridOfSomeKind
-using Oceananigans.OrthogonalSphericalShellGrids: OrthogonalSphericalShellGrids, TripolarGrid
 using Oceananigans.Fields: Field, CenterField, interior, set!
 using Oceananigans.Grids: Center, Face, RectilinearGrid, xspacings, yspacings
+using Oceananigans.ImmersedBoundaries: ImmersedBoundaryGrid, ImmersedBoundaryCondition, inactive_node
 using Oceananigans.Models.HydrostaticFreeSurfaceModels: HydrostaticFreeSurfaceModel
 using Oceananigans.Models.HydrostaticFreeSurfaceModels.SplitExplicitFreeSurfaces: SplitExplicitFreeSurface
+using Oceananigans.OrthogonalSphericalShellGrids: OrthogonalSphericalShellGrids, TripolarGrid
 using Oceananigans.Operators: Operators, ℑxyᶜᶠᵃ, ℑxyᶠᶜᵃ
 using Oceananigans.Simulations: Simulation
 using Oceananigans.TurbulenceClosures.TKEBasedVerticalDiffusivities: CATKEVerticalDiffusivity,

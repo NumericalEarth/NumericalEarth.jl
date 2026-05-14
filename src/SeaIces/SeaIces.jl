@@ -3,17 +3,16 @@ module SeaIces
 export sea_ice_simulation, FreezingLimitedOceanTemperature
 
 import Oceananigans
-using Oceananigans.Units: Units, minutes
-using Oceananigans.Utils: Utils, launch!, with_tracers
-using Oceananigans.Grids: architecture, Center, Face
 using Oceananigans.Fields: ZeroField, Field
-using Oceananigans.BoundaryConditions: DefaultBoundaryCondition
-using Oceananigans.ImmersedBoundaries: immersed_peripheral_node, inactive_node
+using Oceananigans.Grids: architecture, Center, Face
+using Oceananigans.ImmersedBoundaries: inactive_node
 using Oceananigans.OrthogonalSphericalShellGrids: OrthogonalSphericalShellGrids
 using Oceananigans.Operators: Operators, ℑxᶠᵃᵃ, ℑyᵃᶠᵃ
 using Oceananigans.Simulations: Simulation
 using Oceananigans.Coriolis: HydrostaticSphericalCoriolis
 using Oceananigans.Models.HydrostaticFreeSurfaceModels: HydrostaticFreeSurfaceModel
+using Oceananigans.Units: Units, minutes
+using Oceananigans.Utils: Utils, launch!
 using KernelAbstractions: @kernel, @index
 using ClimaSeaIce: ClimaSeaIce, SeaIceModel
 using ClimaSeaIce.SeaIceThermodynamics.HeatBoundaryConditions: PrescribedTemperature
@@ -29,11 +28,9 @@ import NumericalEarth.EarthSystemModels: interpolate_state!,
                                      default_sea_ice
 
 import NumericalEarth.EarthSystemModels.InterfaceComputations: ComponentExchanger,
-                                                           compute_atmosphere_sea_ice_fluxes!,
-                                                           compute_sea_ice_ocean_fluxes!,
-                                                           net_fluxes,
-                                                           ThreeEquationHeatFlux,
-                                                           default_ai_temperature
+                                                               net_fluxes,
+                                                               ThreeEquationHeatFlux,
+                                                               default_ai_temperature
 
 import Oceananigans.TimeSteppers: time_step!
 

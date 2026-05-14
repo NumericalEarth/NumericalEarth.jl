@@ -8,14 +8,13 @@ export JRA55FieldTimeSeries,
        MultiYearJRA55
 
 import Oceananigans
-using Oceananigans.Units: Units
-
-using Oceananigans.DistributedComputations: DistributedComputations, Distributed, child_architecture, @root
-using Oceananigans.BoundaryConditions: fill_halo_regions!, FieldBoundaryConditions
-using Oceananigans.Grids: λnodes, φnodes, on_architecture, Bounded, Center, Flat, LatitudeLongitudeGrid, Periodic
 using Oceananigans.Architectures: CPU
-using Oceananigans.Fields: interpolate!, interior
+using Oceananigans.BoundaryConditions: fill_halo_regions!, FieldBoundaryConditions
+using Oceananigans.DistributedComputations: DistributedComputations, Distributed, child_architecture, @root
+using Oceananigans.Fields: interior
+using Oceananigans.Grids: λnodes, φnodes, Bounded, Center, Flat, LatitudeLongitudeGrid, Periodic
 using Oceananigans.OutputReaders: Cyclical, TotallyInMemory, AbstractInMemoryBackend, FlavorOfFTS, time_indices, FieldTimeSeries, InMemory, OnDisk
+using Oceananigans.Units: Units
 
 import NumericalEarth
 
@@ -33,8 +32,8 @@ using Scratch: Scratch, @get_scratch!
 
 using Oceananigans: location
 import Oceananigans.Fields: set!
-import Oceananigans.OutputReaders: new_backend, update_field_time_series!
-using Downloads: Downloads, download
+import Oceananigans.OutputReaders: new_backend
+using Downloads: Downloads
 using NumericalEarth.DataWrangling: Metadatum, first_date, last_date, DataWrangling
 
 download_JRA55_cache::String = ""

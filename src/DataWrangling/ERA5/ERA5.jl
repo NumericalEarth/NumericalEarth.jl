@@ -7,7 +7,7 @@ export ERA5HourlySingleLevel, ERA5MonthlySingleLevel
 export ERA5HourlyPressureLevels, ERA5MonthlyPressureLevels, ERA5_all_pressure_levels, pressure_field, hPa
 export standard_atmosphere_z_interfaces, mean_geopotential_z_interfaces
 
-using NCDatasets: NCDatasets, Dataset
+using NCDatasets: NCDatasets
 using Printf: Printf, @sprintf
 using Scratch: Scratch, @get_scratch!
 using Statistics: Statistics, mean
@@ -20,7 +20,6 @@ using Dates: Dates, DateTime, Month, Hour
 import NumericalEarth.DataWrangling:
     all_dates,
     dataset_variable_name,
-    dataset_location,
     default_download_directory,
     default_inpainting,
     longitude_interfaces,

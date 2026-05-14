@@ -20,37 +20,28 @@ export
     MomentumBasedFrictionVelocity
 
 import Oceananigans
-using Oceananigans.Operators: Operators
-using Oceananigans.Utils: launch!, KernelParameters
-using Oceananigans.Units: Time
-using Oceananigans.Architectures: architecture
-using Oceananigans.BoundaryConditions: fill_halo_regions!, BoundaryCondition
-using Oceananigans.Grids: architecture
-using Oceananigans.Fields: ZeroField
-using Oceananigans.TimeSteppers: tick!
-using Oceananigans.Models: AbstractModel
-using Oceananigans.OutputReaders: FieldTimeSeries, GPUAdaptedFieldTimeSeries
-using Oceananigans.Simulations: Simulation
-using Printf: Printf
 
-using ClimaSeaIce: SeaIceModel
 using ClimaSeaIce.SeaIceThermodynamics: melting_temperature
-
-using NumericalEarth: stateindex
-
 using KernelAbstractions: @kernel, @index
-using KernelAbstractions.Extras.LoopInfo: @unroll
+using Oceananigans.Architectures: architecture
+using Oceananigans.Fields: ZeroField
+using Oceananigans.Grids: architecture
+using Oceananigans.Models: AbstractModel
+using Oceananigans.Operators: Operators
+using Oceananigans.Simulations: Simulation
+using Oceananigans.TimeSteppers: tick!
+using Oceananigans.Utils: launch!
+using Printf: Printf
 
 import Thermodynamics as AtmosphericThermodynamics
 
 # Simulations interface
 import Oceananigans: fields, prognostic_fields, prognostic_state, restore_prognostic_state!
 import Oceananigans.Architectures: architecture
-import Oceananigans.Fields: set!
 import Oceananigans.Models: NaNChecker, default_nan_checker
 import Oceananigans.OutputWriters: default_included_properties
 import Oceananigans.Simulations: timestepper, reset_clock!, initialize!, iteration
-import Oceananigans.TimeSteppers: time_step!, reset!, update_state!, time, reconcile_state!
+import Oceananigans.TimeSteppers: time_step!, reset!, update_state!, reconcile_state!
 import Oceananigans.Utils: prettytime
 
 include("components.jl")

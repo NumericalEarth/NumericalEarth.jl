@@ -3,12 +3,12 @@ using ClimaSeaIce: SeaIceModel, PhaseTransitions, ConductiveFlux,
                    sea_ice_slab_thermodynamics, snow_slab_thermodynamics
 using ClimaSeaIce.SeaIceThermodynamics: IceWaterThermalEquilibrium, IceSnowConductiveFlux
 using ClimaSeaIce.SeaIceDynamics: SplitExplicitSolver, SemiImplicitStress, SeaIceMomentumEquation, StressBalanceFreeDrift
-using ClimaSeaIce.Rheologies: IceStrength, ElastoViscoPlasticRheology
+using ClimaSeaIce.Rheologies: ElastoViscoPlasticRheology
 
 using Oceananigans.TimeSteppers: SplitRungeKuttaTimeStepper
 
 using NumericalEarth.EarthSystemModels: ocean_surface_salinity, ocean_surface_velocities
-using NumericalEarth.Oceans: Default, reference_density
+using NumericalEarth.Oceans: reference_density
 
 default_rotation_rate = Oceananigans.defaults.planet_rotation_rate
 
@@ -97,8 +97,8 @@ default_coriolis(ocean::Nothing) = HydrostaticSphericalCoriolis(; rotation_rate=
 default_solver(grid, ocean) = SplitExplicitSolver(grid; substeps=120)
 
 # We assume RK3 has a larger timestep
-function default_solver(grid, ocean::Simulation) 
-    substeps = if ocean.model.timestepper isa SplitRungeKuttaTimeStepper 
+function default_solver(grid, ocean::Simulation)
+    substeps = if ocean.model.timestepper isa SplitRungeKuttaTimeStepper
         240
     else
         120

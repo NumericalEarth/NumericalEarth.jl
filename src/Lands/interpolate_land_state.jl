@@ -1,7 +1,4 @@
 using Oceananigans.Grids: _node
-using Oceananigans.Fields: FractionalIndices, interpolate
-using Oceananigans.OutputReaders: TimeInterpolator
-using Oceananigans.OutputReaders: cpu_interpolating_time_indices
 
 using NumericalEarth.Atmospheres: interp_atmos_time_series
 

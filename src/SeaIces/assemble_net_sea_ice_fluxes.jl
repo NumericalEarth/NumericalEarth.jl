@@ -1,6 +1,4 @@
-using NumericalEarth.EarthSystemModels.InterfaceComputations: computed_fluxes,
-                                                          interface_kernel_parameters,
-                                                          convert_to_kelvin
+using NumericalEarth.EarthSystemModels.InterfaceComputations: computed_fluxes
 
 update_net_fluxes!(coupled_model, ::FreezingLimitedOceanTemperature) = nothing
 

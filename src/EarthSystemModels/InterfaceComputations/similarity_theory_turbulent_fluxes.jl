@@ -1,13 +1,9 @@
-using Oceananigans.Grids: AbstractGrid, prettysummary
+using Oceananigans.Grids: prettysummary
 
 using Adapt
 using Printf
-using Thermodynamics: Liquid
-using KernelAbstractions.Extras.LoopInfo: @unroll
-using Statistics: norm
 
 import Thermodynamics as AtmosphericThermodynamics
-import Thermodynamics.Parameters: Rv_over_Rd
 
 #####
 ##### Bulk turbulent fluxes based on similarity theory

@@ -21,7 +21,6 @@ using Oceananigans.OutputReaders: FieldTimeSeries
 using Oceananigans.Units: Units
 
 using NumericalEarth.Atmospheres: PrescribedAtmosphere, PrescribedPrecipitationFlux, AtmosphereThermodynamicsParameters
-using NumericalEarth.Oceans: reference_density, heat_capacity
 
 using NumericalEarth.DataWrangling:
     download_progress,
@@ -30,10 +29,6 @@ using NumericalEarth.DataWrangling:
     metadata_path,
     first_date,
     last_date,
-    NearestNeighborInpainting,
-    DatasetRestoring,
-    Temperature,
-    Salinity,
     centers_to_interfaces,
     fill_gaps!,
     CentimetersPerSecond,

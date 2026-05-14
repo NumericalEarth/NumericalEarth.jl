@@ -2,18 +2,18 @@ module Bathymetry
 
 export regrid_bathymetry, ORCAGrid
 
+import Oceananigans
 import Downloads
+
 using ImageMorphology: ImageMorphology
 using JLD2: JLD2, jldopen
 using KernelAbstractions: @kernel, @index
-import Oceananigans
 using Oceananigans.Architectures: architecture, on_architecture, CPU
 using Oceananigans.BoundaryConditions: BoundaryConditions
-using Oceananigans.DistributedComputations: DistributedComputations, DistributedGrid, reconstruct_global_grid, all_reduce, @root
+using Oceananigans.DistributedComputations: DistributedComputations, DistributedGrid, reconstruct_global_grid, all_reduce
 using Oceananigans.Fields: interpolate!, Field, interior
 using Oceananigans.Grids: x_domain, y_domain, topology, Bounded, Center, Face, Flat, LatitudeLongitudeGrid, OrthogonalSphericalShellGrid, Periodic, RectilinearGrid
-using Oceananigans.Utils: launch!, KernelParameters
-
+using Oceananigans.Utils: launch!
 using OffsetArrays: OffsetArrays, OffsetArray
 using NCDatasets: NCDatasets, Dataset
 using Printf: Printf

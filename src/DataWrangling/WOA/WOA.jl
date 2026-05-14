@@ -12,20 +12,13 @@ using Dates: Dates, DateTime
 
 using ..DataWrangling:
     Metadata,
-    Metadatum,
-    BoundingBox,
-    inpaint_mask!,
-    NearestNeighborInpainting,
-    download_progress
-
-using Oceananigans.DistributedComputations: @root
+    Metadatum
 
 import NumericalEarth.DataWrangling:
     all_dates,
     first_date,
     last_date,
     metadata_filename,
-    download_dataset,
     default_download_directory,
     metadata_path,
     dataset_variable_name,

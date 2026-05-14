@@ -28,7 +28,7 @@ Adapt.adapt_structure(to, fluxes::InterfaceRadiationFlux) =
                            Adapt.adapt(to, fluxes.downwelling_longwave),
                            Adapt.adapt(to, fluxes.downwelling_shortwave))
 
-on_architecture(arch, fluxes::InterfaceRadiationFlux) =
-    InterfaceRadiationFlux(on_architecture(arch, fluxes.upwelling_longwave),
-                           on_architecture(arch, fluxes.downwelling_longwave),
-                           on_architecture(arch, fluxes.downwelling_shortwave))
+Oceananigans.Architectures.on_architecture(arch, fluxes::InterfaceRadiationFlux) =
+    InterfaceRadiationFlux(Oceananigans.Architectures.on_architecture(arch, fluxes.upwelling_longwave),
+                           Oceananigans.Architectures.on_architecture(arch, fluxes.downwelling_longwave),
+                           Oceananigans.Architectures.on_architecture(arch, fluxes.downwelling_shortwave))

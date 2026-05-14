@@ -1,6 +1,5 @@
 using Oceananigans
 using Oceananigans.TimeSteppers: Clock
-using Oceananigans: SeawaterBuoyancy
 using ClimaSeaIce.SeaIceThermodynamics: melting_temperature
 using KernelAbstractions: @kernel, @index
 

@@ -12,7 +12,7 @@ const default_stefan_boltzmann_constant = 5.670374419e-8
 
 import Oceananigans
 using Oceananigans.Architectures: CPU, architecture
-using Oceananigans.Fields: Center, Face, Field, ZeroField, FractionalIndices, instantiate, interpolator
+using Oceananigans.Fields: Center, Face, Field, ZeroField, FractionalIndices, interpolator
 using Oceananigans.Grids: grid_name, prettysummary, ηnode, _node, topology, Flat, on_architecture
 using Oceananigans.OutputReaders: FieldTimeSeries, update_field_time_series!, extract_field_time_series, cpu_interpolating_time_indices
 using Oceananigans.Simulations: Simulation
@@ -24,22 +24,20 @@ using Adapt: Adapt
 using KernelAbstractions: @kernel, @index
 
 import NumericalEarth: stateindex
+using ..EarthSystemModels
+using NumericalEarth.EarthSystemModels: EarthSystemModels
 using NumericalEarth.EarthSystemModels.InterfaceComputations: interface_kernel_parameters
 
-import Oceananigans.TimeSteppers: time_step!, update_state!
 import Oceananigans.Architectures: on_architecture
 
 import NumericalEarth.EarthSystemModels: interpolate_state!,
-                                         update_net_fluxes!,
                                          apply_air_sea_radiative_fluxes!,
-                                         apply_air_sea_ice_radiative_fluxes!,
-                                         allocate_interface_fluxes!
+                                         apply_air_sea_ice_radiative_fluxes!
 
 import NumericalEarth.EarthSystemModels.InterfaceComputations: ComponentExchanger,
-                                                                initialize!,
-                                                                kernel_radiation_properties,
-                                                                air_sea_interface_radiation_state,
-                                                                air_sea_ice_interface_radiation_state
+                                                               kernel_radiation_properties,
+                                                               air_sea_interface_radiation_state,
+                                                               air_sea_ice_interface_radiation_state
 
 include("surface_radiation_properties.jl")
 include("interface_radiation_flux.jl")

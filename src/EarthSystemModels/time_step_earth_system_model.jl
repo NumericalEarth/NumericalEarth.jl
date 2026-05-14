@@ -3,8 +3,7 @@ using .InterfaceComputations:
     compute_sea_ice_ocean_fluxes!
 
 using Oceananigans.TimeSteppers: maybe_prepare_first_time_step!
-using ClimaSeaIce: SeaIceModel, SeaIceThermodynamics
-using Oceananigans.Grids: φnode
+using ClimaSeaIce: SeaIceThermodynamics
 using Printf
 
 # Hooks called from `update_state!` to apply radiative contributions on top of

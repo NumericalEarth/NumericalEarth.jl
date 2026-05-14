@@ -10,7 +10,7 @@ export retrieve_data
 import Oceananigans
 import NumericalEarth
 using NCDatasets: NCDatasets
-using Dates: Dates, DateTime, Day, Month, year, month, day
+using Dates: Dates, DateTime, Day, Month
 using Adapt: Adapt
 using Scratch: Scratch, @get_scratch!
 import Downloads
@@ -20,7 +20,6 @@ using Oceananigans.DistributedComputations: @root
 using NumericalEarth.DataWrangling:
     netrc_downloader,
     NearestNeighborInpainting,
-    BoundingBox,
     Column,
     metadata_path,
     GramPerKilogramMinus35,
@@ -28,15 +27,9 @@ using NumericalEarth.DataWrangling:
     Metadata,
     Metadatum,
     download_progress,
-    InverseSign,
     native_grid,
     location,
-    compute_mask,
-    inpaint_mask!,
-    set_metadata_field!,
     extract_column!
-
-using KernelAbstractions: @kernel, @index
 
 import NumericalEarth.DataWrangling:
     default_download_directory,
@@ -214,7 +207,7 @@ ECCO2_dataset_variable_names = Dict(
     :net_heat_flux         => "oceQnet",
 )
 
-ECCO_location = Dict( 
+ECCO_location = Dict(
     :temperature            => (Center, Center, Center),
     :salinity               => (Center, Center, Center),
     :u_velocity             => (Face,   Center, Center),

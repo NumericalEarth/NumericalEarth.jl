@@ -37,7 +37,6 @@ using ..EarthSystemModels: default_gravitational_acceleration,
                            surface_layer_height,
                            boundary_layer_height
 
-import NumericalEarth: stateindex
 import Oceananigans.Simulations: initialize!
 
 #####

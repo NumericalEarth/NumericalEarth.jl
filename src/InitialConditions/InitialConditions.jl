@@ -4,21 +4,20 @@ export initialize!
 
 import Oceananigans
 using Oceananigans: location
+using Oceananigans.Architectures: architecture, child_architecture
 using Oceananigans.BoundaryConditions: BoundaryConditions
-using Oceananigans.Fields: OneField, instantiated_location, interior, CenterField, Field, set!, regrid!, interpolate!
-using Oceananigans.Grids: peripheral_node, cpu_face_constructor_x,
+using Oceananigans.Fields: CenterField, Field, set!, regrid!
+using Oceananigans.Grids: cpu_face_constructor_x,
                           cpu_face_constructor_y,
                           cpu_face_constructor_z,
                           topology, RectilinearGrid, LatitudeLongitudeGrid
-using Oceananigans.Utils: launch!, IterationInterval
-using Oceananigans.Architectures: architecture, device, GPU, child_architecture
 using Oceananigans.ImmersedBoundaries: ImmersedBoundaryGrid
-using Oceananigans.Simulations: Simulation, Callback, run!
 using Oceananigans.Models.HydrostaticFreeSurfaceModels: HydrostaticFreeSurfaceModel, PrescribedVelocityFields
+using Oceananigans.Simulations: Simulation, Callback, run!
 using Oceananigans.TurbulenceClosures: HorizontalScalarDiffusivity, VerticalScalarDiffusivity, VerticallyImplicitTimeDiscretization
+using Oceananigans.Utils: launch!, IterationInterval
 
 using KernelAbstractions: @kernel, @index
-using KernelAbstractions.Extras.LoopInfo: @unroll
 using JLD2: JLD2
 
 # Implementation of 3-dimensional regridding
