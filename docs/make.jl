@@ -1,6 +1,4 @@
 using NumericalEarth
-using CairoMakie
-using CopernicusMarine
 using CUDA
 using Documenter
 using DocumenterCitations
