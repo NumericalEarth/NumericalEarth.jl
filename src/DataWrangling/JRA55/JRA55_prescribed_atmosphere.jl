@@ -41,8 +41,7 @@ function JRA55PrescribedAtmosphere(architecture = CPU(), FT = Float32;
     Fra = JRA55FieldTimeSeries(:rain_freshwater_flux, architecture, FT; kw...)
     Fsn = JRA55FieldTimeSeries(:snow_freshwater_flux, architecture, FT; kw...)
 
-    freshwater_flux = (rain = Fra,
-                       snow = Fsn)
+    freshwater_flux = PrescribedPrecipitationFlux(rain = Fra, snow = Fsn)
 
     times = ua.times
     grid  = ua.grid

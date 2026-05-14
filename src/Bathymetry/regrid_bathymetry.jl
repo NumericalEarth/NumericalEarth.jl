@@ -369,7 +369,8 @@ function interpolate_bathymetry_in_passes(native_z, target_grid;
     Nφ = Int[Nφ..., Nφt]
 
     old_z  = native_z
-    TX, TY = topology(target_grid)
+    TXt, _, _ = topology(target_grid)
+    _, TYn, _ = topology(native_z.grid)
 
     Hx, Hy, Hz = Oceananigans.halo_size(native_z.grid)
 
@@ -383,7 +384,7 @@ function interpolate_bathymetry_in_passes(native_z, target_grid;
                                          latitude = (latitude[1],  latitude[2]),
                                          longitude = (longitude[1], longitude[2]),
                                          z = (0, 1),
-                                         topology = (TX, TY, Bounded),
+                                         topology = (TXt, TYn, Bounded),
                                          halo = (Hx, Hy, Hz))
 
         new_z = Field{Center, Center, Nothing}(new_grid)

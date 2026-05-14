@@ -1,7 +1,7 @@
 include("runtests_setup.jl")
 
 using NumericalEarth.OSPapa
-using NumericalEarth.Atmospheres: PrescribedAtmosphere
+using NumericalEarth.Atmospheres: PrescribedAtmosphere, PrescribedPrecipitationFlux
 using NumericalEarth.Radiations: PrescribedRadiation
 using Oceananigans.BoundaryConditions: BoundaryCondition, Flux, getbc
 using Oceananigans.Units: minutes
@@ -32,7 +32,9 @@ const OSPAPA_TEST_END   = DateTime(2012, 10, 3)
         @test haskey(atmosphere.tracers, :T)
         @test haskey(atmosphere.tracers, :q)
         @test !isnothing(atmosphere.pressure)
-        @test haskey(atmosphere.freshwater_flux, :rain)
+        @test atmosphere.freshwater_flux isa PrescribedPrecipitationFlux
+        @test atmosphere.freshwater_flux.rain isa FieldTimeSeries
+        @test isnothing(atmosphere.freshwater_flux.snow)
 
         # Radiation sanity checks
         ℐꜜˢʷ = radiation.downwelling_shortwave
