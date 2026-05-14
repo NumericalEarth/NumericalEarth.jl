@@ -257,9 +257,20 @@ qⁱ_era5 = read3d(:specific_cloud_ice_water_content)
 p_era5_3d = repeat(reshape(p_era5_lev, 1, 1, :), size(z_above_sfc, 1), size(z_above_sfc, 2), 1)
 
 # --- Intermediate grid: ERA5 native (λ, φ), LAM z ---
+# Mirror NumericalEarth's `native_grid`/`restrict` behavior: it pads the
+# requested bbox outward by Δ/2 on each side so cell *centers* land on the
+# ERA5 native grid. Without that adjustment, `intermediate_grid`'s cell
+# centers would be offset from the actual ERA5 data positions (up to ~0.12°
+# at the bbox edges), which biases stage-2's `interpolate!` onto the LAM.
 Nλ_e, Nφ_e = size(z_above_sfc, 1), size(z_above_sfc, 2)
-intermediate_grid = LatitudeLongitudeGrid(longitude = era5_region.longitude,
-                                          latitude  = era5_region.latitude,
+λ_centers_era5 = collect(λnodes(ϕ_field.grid, Center(), Center(), Center()))
+φ_centers_era5 = collect(φnodes(ϕ_field.grid, Center(), Center(), Center()))
+Δλ_e = (λ_centers_era5[end] - λ_centers_era5[1]) / (Nλ_e - 1)
+Δφ_e = (φ_centers_era5[end] - φ_centers_era5[1]) / (Nφ_e - 1)
+intermediate_grid = LatitudeLongitudeGrid(longitude = (λ_centers_era5[1]   - Δλ_e/2,
+                                                       λ_centers_era5[end] + Δλ_e/2),
+                                          latitude  = (φ_centers_era5[1]   - Δφ_e/2,
+                                                       φ_centers_era5[end] + Δφ_e/2),
                                           z         = z_discretization,
                                           size      = (Nλ_e, Nφ_e, Nz),
                                           halo      = (5, 5, 5),
