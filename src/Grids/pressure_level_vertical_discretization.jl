@@ -1,14 +1,17 @@
 using Adapt
-using Oceananigans.Grids: AbstractVerticalCoordinate, AbstractUnderlyingGrid,
-                          Center, Face, topology
-using Oceananigans.Fields: Field, interior
+using KernelAbstractions: @kernel, @index
+using Oceananigans.AbstractOperations: KernelFunctionOperation
+using Oceananigans.Architectures: architecture
 using Oceananigans.BoundaryConditions: fill_halo_regions!
+using Oceananigans.Fields: Field, interior
+using Oceananigans.Grids: AbstractVerticalCoordinate, AbstractUnderlyingGrid, Center, Face
 using Oceananigans.OutputReaders: TimeSeriesInterpolation
+using Oceananigans.Utils: launch!
 
 import Oceananigans.Architectures: on_architecture
 import Oceananigans.Grids: rnode, rnodes, generate_coordinate, validate_dimension_specification
 import Oceananigans.Fields: _fractional_indices, fractional_x_index,
-                            fractional_y_index, FractionalIndices
+                            fractional_y_index, FractionalIndices, index_binary_search
 
 """
     PressureLevelVerticalDiscretization{G, Geo}
@@ -64,17 +67,19 @@ function generate_coordinate(FT, topo, sz, halo,
     dim == 3              || throw(ArgumentError("PressureLevelVerticalDiscretization requires dim=3"))
     coordinate_name == :z || throw(ArgumentError("PressureLevelVerticalDiscretization requires coordinate_name=:z"))
 
-    Φi   = _geopotential_data_for_extrema(coord.geopotential)
-    g    = coord.gravitational_acceleration
+    g = coord.gravitational_acceleration
+    Φi = _geopotential_data_for_extrema(coord.geopotential)
     z_lo, z_hi = FT.(extrema(Φi) ./ g)
-    Lz   = z_hi - z_lo
+    Lz = z_hi - z_lo
 
     moved = PressureLevelVerticalDiscretization(g, on_architecture(arch, coord.geopotential))
     return Lz, moved
 end
 
-_geopotential_data_for_extrema(Φ::Field)                    = interior(Φ)
-_geopotential_data_for_extrema(Φ::TimeSeriesInterpolation)  = parent(Φ.time_series)
+_geopotential_data_for_extrema(Φ::Field) = interior(Φ)
+# NOTE: For a TSI this reads every time slice. Fine while the FTS path isn't
+# exercised; switch to a per-time-slice extent if we ever advance the clock here.
+_geopotential_data_for_extrema(Φ::TimeSeriesInterpolation) = parent(Φ.time_series)
 
 Adapt.adapt_structure(to, c::PressureLevelVerticalDiscretization) =
     PressureLevelVerticalDiscretization(c.gravitational_acceleration,
@@ -106,22 +111,39 @@ const PressureLevelGrid =
 @inline rnode(i, j, k, grid::PressureLevelGrid, ℓx, ℓy, ℓz) =
     @inbounds grid.z.geopotential[i, j, k] / grid.z.gravitational_acceleration
 
-# The 1-D `rnodes(grid, ℓz)` (and `znodes` via `rnodes`) has no sensible answer
-# on a grid whose z varies per (i, j); throw an explicit `ArgumentError` if
-# anything asks for it. The per-cell entry point is `znode(i, j, k, grid, ...)`.
-# Each override below matches one of Oceananigans' existing `rnodes(::AUG, ...)`
-# methods with the strictly-more-specific `PressureLevelGrid` grid type, so the
-# dispatcher resolves to ours without ambiguity.
+# For the 3-location form `rnodes(grid, ℓx, ℓy, ℓz)` we have a genuine 3-D
+# answer: wrap `rnode(i, j, k, grid, locs...)` in a `KernelFunctionOperation`
+# so the caller gets a lazy field of per-cell heights. The 1-location
+# `rnodes(grid, ℓz)` (and the equivalent `znodes` call) has no sensible
+# answer on a grid whose z varies per (i, j); throw explicitly.
+
 const _PL_NO_1D_Z_MSG = "PressureLevelGrid has a 3-D z-coordinate; " *
-                       "use znode(i, j, k, grid, locs...) per cell instead of znodes/rnodes."
+                        "use `rnodes(grid, ℓx, ℓy, ℓz)` for the 3-D form, or " *
+                        "`znode(i, j, k, grid, locs...)` per cell."
+
+@inline _znode_op(i, j, k, grid, ℓx, ℓy, ℓz) = rnode(i, j, k, grid, ℓx, ℓy, ℓz)
 
 @inline rnodes(::PressureLevelGrid, ::Face;   kwargs...) = throw(ArgumentError(_PL_NO_1D_Z_MSG))
 @inline rnodes(::PressureLevelGrid, ::Center; kwargs...) = throw(ArgumentError(_PL_NO_1D_Z_MSG))
-@inline rnodes(::PressureLevelGrid, ℓx, ℓy, ℓz; kwargs...) = throw(ArgumentError(_PL_NO_1D_Z_MSG))
+
+@inline rnodes(grid::PressureLevelGrid, ℓx, ℓy, ℓz; kwargs...) =
+    KernelFunctionOperation{typeof(ℓx), typeof(ℓy), typeof(ℓz)}(_znode_op, grid, ℓx, ℓy, ℓz)
 
 #####
 ##### interpolate! hook: column-aware fractional z index
 #####
+
+# A 1-D `getindex`-only view of column `(i, j)` of a `PressureLevelGrid`'s z,
+# used to feed Oceananigans' `index_binary_search` without materializing the
+# column. Stack-allocated; bitstype-clean for GPU kernels when `grid` is.
+struct _ColumnView{G}
+    grid :: G
+    i    :: Int
+    j    :: Int
+end
+
+@inline Base.getindex(c::_ColumnView, k::Int) =
+    rnode(c.i, c.j, k, c.grid, Center(), Center(), Center())
 
 @inline function _fractional_indices((x, y, z), grid::PressureLevelGrid, ℓx, ℓy, ℓz)
     ii = fractional_x_index(x, (ℓx, ℓy, ℓz), grid)
@@ -133,9 +155,10 @@ end
 @inline function column_fractional_z_index(z, ii, jj, locs, grid)
     i = clamp(Base.unsafe_trunc(Int, ii), 1, grid.Nx)
     j = clamp(Base.unsafe_trunc(Int, jj), 1, grid.Ny)
-    low, high = column_index_binary_search(z, i, j, grid, grid.Nz)
-    z_lo = rnode(i, j, low,  grid, locs...)
-    z_hi = rnode(i, j, high, grid, locs...)
+    column = _ColumnView(grid, i, j)
+    low, high = index_binary_search(column, z, grid.Nz)
+    z_lo = @inbounds column[low]
+    z_hi = @inbounds column[high]
     # Degenerate column-shelf case (clipped sub-surface levels with z_lo == z_hi):
     # snap to the integer index rather than divide by zero.
     kk = ifelse(z_hi == z_lo, oftype(z, low),
@@ -144,50 +167,39 @@ end
     return convert(FT, kk)
 end
 
-@inline function column_index_binary_search(z, i, j, grid, Nz)
-    low, high = 0, Nz - 1
-    while low + 1 < high
-        mid = (low + high) >> 1
-        zm = @inbounds rnode(i, j, mid + 1, grid, Center(), Center(), Center())
-        if zm == z
-            return (mid + 1, mid + 1)
-        elseif zm < z
-            low = mid
-        else
-            high = mid
-        end
-    end
-    return (low + 1, high + 1)
-end
-
 #####
 ##### Sub-surface clip helper (operates on raw geopotential, units m²/s²).
 #####
+
+@kernel function _clip_subsurface_kernel!(Φ, Φ_sfc)
+    i, j, k = @index(Global, NTuple)
+    @inbounds Φ[i, j, k] = max(Φ[i, j, k], Φ_sfc[i, j, 1])
+end
 
 """
     clip_subsurface!(geopotential, surface_geopotential)
 
 Clip each column of `geopotential` so that values below the local surface
 geopotential are replaced by the surface value. Required to keep columns
-monotonically increasing in z for `column_index_binary_search`.
+monotonically increasing in z for the column bisection in
+[`_fractional_indices`](@ref).
 
 Works for either a `Field` (3-D geopotential at a single time) or a
 `TimeSeriesInterpolation` wrapping a `FieldTimeSeries` of geopotential.
 """
-function clip_subsurface!(geopotential::Field, surface_geopotential)
-    Nx, Ny, Nz = size(geopotential)
-    Φi = interior(geopotential)
-    Φs = interior(surface_geopotential)
-    @inbounds for k in 1:Nz, j in 1:Ny, i in 1:Nx
-        Φi[i, j, k] = max(Φi[i, j, k], Φs[i, j, 1])
-    end
+function clip_subsurface!(Φ::Field, Φ_sfc)
+    grid = Φ.grid
+    arch = architecture(Φ)
+    launch!(arch, grid, :xyz, _clip_subsurface_kernel!, Φ, Φ_sfc)
     # `Field(metadatum)` ran `fill_halo_regions!` before clipping, so halo cells
     # still hold the pre-clip (possibly sub-surface) values. Refill so any halo
     # read sees the clipped data.
-    fill_halo_regions!(geopotential)
-    return geopotential
+    fill_halo_regions!(Φ)
+    return Φ
 end
 
+# TSI path is CPU-only for now (no FTS-backed discretization is exercised in
+# the current pipeline). When that lands, swap the loop for a 4-D launch.
 function clip_subsurface!(geopotential::TimeSeriesInterpolation, surface_geopotential)
     fts_parent = parent(geopotential.time_series)
     Φs = interior(surface_geopotential)
