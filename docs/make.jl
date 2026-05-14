@@ -6,7 +6,7 @@ using Documenter
 using DocumenterCitations
 using Literate
 
-CUDA.versioninfo()
+@show CUDA.versioninfo()
 
 ENV["DATADEPS_ALWAYS_ACCEPT"] = "true"
 
