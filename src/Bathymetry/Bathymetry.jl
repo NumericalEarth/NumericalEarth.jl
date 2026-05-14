@@ -10,9 +10,12 @@ using JLD2: JLD2, jldopen
 using KernelAbstractions: @kernel, @index
 using Oceananigans.Architectures: architecture, on_architecture, CPU
 using Oceananigans.BoundaryConditions: BoundaryConditions
-using Oceananigans.DistributedComputations: DistributedComputations, DistributedGrid, reconstruct_global_grid, all_reduce
+using Oceananigans.DistributedComputations: DistributedComputations, DistributedGrid,
+                                            reconstruct_global_grid, all_reduce
 using Oceananigans.Fields: interpolate!, Field, interior
-using Oceananigans.Grids: x_domain, y_domain, topology, Bounded, Center, Face, Flat, LatitudeLongitudeGrid, OrthogonalSphericalShellGrid, Periodic, RectilinearGrid
+using Oceananigans.Grids: x_domain, y_domain,
+                          topology, Bounded, Flat, Periodic, Center, Face,Periodic,
+                          RectilinearGrid, LatitudeLongitudeGrid, OrthogonalSphericalShellGrid,
 using Oceananigans.Utils: launch!
 using OffsetArrays: OffsetArrays, OffsetArray
 using NCDatasets: NCDatasets, Dataset
