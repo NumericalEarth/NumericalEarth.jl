@@ -1,10 +1,9 @@
 module NumericalEarthWOAExt
 
-using WorldOceanAtlasTools
-
+using WorldOceanAtlasTools: WorldOceanAtlasTools
 using Oceananigans.DistributedComputations: @root
 using NumericalEarth: NumericalEarth
-using NumericalEarth.DataWrangling: Metadata, Metadatum
+using NumericalEarth.DataWrangling: Metadata
 using NumericalEarth.WOA: WOAClimatology, WOA_variable_names, woa_period
 
 # NOAA servers have inconsistent availability across product years.
