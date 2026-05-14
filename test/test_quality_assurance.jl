@@ -34,5 +34,6 @@ using ExplicitImports: ExplicitImports
         @test ExplicitImports.check_no_implicit_imports(mod) === nothing
         @test ExplicitImports.check_no_stale_explicit_imports(mod) === nothing
         @test ExplicitImports.check_no_self_qualified_accesses(mod) === nothing
+        @test ExplicitImports.check_all_explicit_imports_via_owners(mod) === nothing
     end
 end

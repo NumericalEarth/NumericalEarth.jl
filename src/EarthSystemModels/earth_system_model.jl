@@ -307,7 +307,7 @@ AtmosphereOceanModel(atmosphere, ocean; land=nothing, radiation=nothing, kw...) 
 time(coupled_model::EarthSystemModel) = coupled_model.clock.time
 
 # Check for NaNs in the first prognostic field (generalizes to prescribed velocities).
-function default_nan_checker(model::EarthSystemModel)
+function Oceananigans.Diagnostics.default_nan_checker(model::EarthSystemModel)
     T_ocean = ocean_temperature(model.ocean)
     nan_checker = NaNChecker((; T_ocean))
     return nan_checker

@@ -10,8 +10,8 @@ using Oceananigans.BoundaryConditions: DefaultBoundaryCondition, DiscreteBoundar
 using Oceananigans.BuoyancyFormulations: SeawaterBuoyancy
 using Oceananigans.Coriolis: HydrostaticSphericalCoriolis
 using Oceananigans.Fields: Field, CenterField, interior, set!
-using Oceananigans.Grids: Center, Face, RectilinearGrid, xspacings, yspacings
-using Oceananigans.ImmersedBoundaries: ImmersedBoundaryGrid, ImmersedBoundaryCondition, inactive_node
+using Oceananigans.Grids: Center, Face, RectilinearGrid, xspacings, yspacings, inactive_node
+using Oceananigans.ImmersedBoundaries: ImmersedBoundaryGrid, ImmersedBoundaryCondition
 using Oceananigans.Models.HydrostaticFreeSurfaceModels: HydrostaticFreeSurfaceModel
 using Oceananigans.Models.HydrostaticFreeSurfaceModels.SplitExplicitFreeSurfaces: SplitExplicitFreeSurface
 using Oceananigans.OrthogonalSphericalShellGrids: OrthogonalSphericalShellGrids, TripolarGrid

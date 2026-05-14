@@ -8,7 +8,7 @@ using ..EarthSystemModels: reference_density,
                            ocean_surface_temperature,
                            ocean_surface_salinity
 
-using Oceananigans: architecture
+using Oceananigans: architecture, initialize!
 using Oceananigans.Units: Time
 using Oceananigans.Grids: inactive_node, topology
 using Oceananigans.Utils: launch!, KernelParameters
@@ -17,7 +17,6 @@ using Oceananigans.Units: Time
 
 using KernelAbstractions: @kernel, @index
 
-import Oceananigans.Simulations: initialize!
 import Oceananigans.Architectures: on_architecture
 
 #####

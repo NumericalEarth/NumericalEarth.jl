@@ -2,8 +2,9 @@ module Atmospheres
 
 export atmosphere_simulation, PrescribedAtmosphere, PrescribedPrecipitationFlux
 
+using Oceananigans.Architectures: architecture
 using Oceananigans.Fields: Center, Face, Field
-using Oceananigans.Grids: grid_name, architecture, topology, Flat, prettysummary
+using Oceananigans.Grids: grid_name, topology, Flat
 using Oceananigans.OutputReaders: FieldTimeSeries, update_field_time_series!, extract_field_time_series
 using Oceananigans.TimeSteppers: Clock, tick!
 using Oceananigans.Units: Time

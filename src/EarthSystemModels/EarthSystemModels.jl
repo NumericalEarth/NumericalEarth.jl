@@ -23,10 +23,9 @@ import Oceananigans
 
 using ClimaSeaIce.SeaIceThermodynamics: melting_temperature
 using KernelAbstractions: @kernel, @index
+using Oceananigans: AbstractModel
 using Oceananigans.Architectures: architecture
 using Oceananigans.Fields: ZeroField
-using Oceananigans.Grids: architecture
-using Oceananigans.Models: AbstractModel
 using Oceananigans.Operators: Operators
 using Oceananigans.Simulations: Simulation
 using Oceananigans.TimeSteppers: tick!
@@ -36,11 +35,11 @@ using Printf: Printf
 import Thermodynamics as AtmosphericThermodynamics
 
 # Simulations interface
-import Oceananigans: fields, prognostic_fields, prognostic_state, restore_prognostic_state!
+import Oceananigans: fields, initialize!, prognostic_fields, prognostic_state, restore_prognostic_state!
 import Oceananigans.Architectures: architecture
-import Oceananigans.Models: NaNChecker, default_nan_checker
+import Oceananigans.Diagnostics: NaNChecker
 import Oceananigans.OutputWriters: default_included_properties
-import Oceananigans.Simulations: timestepper, reset_clock!, initialize!, iteration
+import Oceananigans.Simulations: timestepper, reset_clock!, iteration
 import Oceananigans.TimeSteppers: time_step!, reset!, update_state!, reconcile_state!
 import Oceananigans.Utils: prettytime
 

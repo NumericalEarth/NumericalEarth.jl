@@ -4,11 +4,13 @@ export PrescribedLand
 
 import Oceananigans
 
+using Oceananigans.Architectures: architecture
 using Oceananigans.Fields: Center, Face, Field
-using Oceananigans.Grids: grid_name, architecture, prettysummary
+using Oceananigans.Grids: grid_name
 using Oceananigans.OutputReaders: update_field_time_series!, extract_field_time_series
 using Oceananigans.TimeSteppers: Clock, tick!
 using Oceananigans.Units: Time
+using Oceananigans.Utils: prettysummary
 
 using KernelAbstractions: @kernel, @index
 using NumericalEarth.EarthSystemModels.InterfaceComputations: interface_kernel_parameters

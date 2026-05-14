@@ -1,7 +1,7 @@
-using Oceananigans.Fields: interpolator
+using Base
 using Oceananigans.Grids: on_architecture
 using Oceananigans.Units: Time
-using Base
+using Oceananigans.Utils: interpolator
 
 # Bilinear interpolation of the albedo α in α_table based on a
 # transmissivity value (𝓉_values) and latitude (φ_values)

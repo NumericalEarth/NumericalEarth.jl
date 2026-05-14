@@ -1,6 +1,7 @@
 module InterfaceComputations
 
 import Oceananigans
+using Oceananigans: initialize!
 using Oceananigans.Fields: AbstractField, Field
 using Oceananigans.Utils: KernelParameters
 using Oceananigans.Grids: Center, Face, Flat
@@ -36,8 +37,6 @@ using ..EarthSystemModels: default_gravitational_acceleration,
                            thermodynamics_parameters,
                            surface_layer_height,
                            boundary_layer_height
-
-import Oceananigans.Simulations: initialize!
 
 #####
 ##### Functions extended by component models

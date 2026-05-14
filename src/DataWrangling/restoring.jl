@@ -1,8 +1,8 @@
-using Oceananigans: location
+using Oceananigans: location, instantiated_location
 using Oceananigans.Grids: node
 using Oceananigans.Operators: Δzᶜᶜᶜ
 using Oceananigans.BoundaryConditions: BoundaryConditions
-using Oceananigans.Fields: interpolate, instantiated_location
+using Oceananigans.Fields: interpolate
 using Oceananigans.OutputReaders: Cyclical
 using Oceananigans.Units: Time
 using Oceananigans.Architectures: AbstractArchitecture, on_architecture, architecture
@@ -39,7 +39,7 @@ const oceananigans_fieldnames = Dict(
     :dissolved_inorganic_carbon     => DissolvedInorganicCarbon(),
     :alkalinity                     => Alkalinity(),
 	:phosphate                      => Phosphate(),
-    :nitrate                        => Nitrate(),                                     
+    :nitrate                        => Nitrate(),
     :dissolved_organic_phosphorus   => DissolvedOrganicPhosphorus(),
     :particulate_organic_phosphorus => ParticulateOrganicPhosphorus(),
     :dissolved_iron                 => DissolvedIron(),

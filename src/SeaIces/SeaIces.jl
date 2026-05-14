@@ -3,19 +3,19 @@ module SeaIces
 export sea_ice_simulation, FreezingLimitedOceanTemperature
 
 import Oceananigans
+using ClimaSeaIce: ClimaSeaIce, SeaIceModel
+using ClimaSeaIce.SeaIceThermodynamics.HeatBoundaryConditions: PrescribedTemperature
+using KernelAbstractions: @kernel, @index
+using Oceananigans.Architectures: architecture
+using Oceananigans.Coriolis: HydrostaticSphericalCoriolis
 using Oceananigans.Fields: ZeroField, Field
-using Oceananigans.Grids: architecture, Center, Face
-using Oceananigans.ImmersedBoundaries: inactive_node
+using Oceananigans.Grids: Center, Face, inactive_node
+using Oceananigans.Models.HydrostaticFreeSurfaceModels: HydrostaticFreeSurfaceModel
 using Oceananigans.OrthogonalSphericalShellGrids: OrthogonalSphericalShellGrids
 using Oceananigans.Operators: Operators, ℑxᶠᵃᵃ, ℑyᵃᶠᵃ
 using Oceananigans.Simulations: Simulation
-using Oceananigans.Coriolis: HydrostaticSphericalCoriolis
-using Oceananigans.Models.HydrostaticFreeSurfaceModels: HydrostaticFreeSurfaceModel
 using Oceananigans.Units: Units, minutes
 using Oceananigans.Utils: Utils, launch!
-using KernelAbstractions: @kernel, @index
-using ClimaSeaIce: ClimaSeaIce, SeaIceModel
-using ClimaSeaIce.SeaIceThermodynamics.HeatBoundaryConditions: PrescribedTemperature
 using NumericalEarth.EarthSystemModels: EarthSystemModels, EarthSystemModel
 using NumericalEarth.EarthSystemModels.InterfaceComputations: InterfaceComputations, SkinTemperature
 
