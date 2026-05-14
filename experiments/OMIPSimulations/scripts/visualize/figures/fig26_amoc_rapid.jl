@@ -32,11 +32,11 @@ function fig26(caches, labels, cases)
         ψ̄       = rapid_profile.psi_mean
         σ       = rapid_profile.psi_std
         good    = findall(isfinite, ψ̄)
-        lines!(ax_profile, ψ̄[good] .- σ[good], z_rapid[good];
-               color = OBS_COLOR, linewidth = 1.0)
-        lines!(ax_profile, ψ̄[good] .+ σ[good], z_rapid[good];
-               color = OBS_COLOR, linewidth = 1.0)
-        lines!(ax_profile, ψ̄[good], z_rapid[good];
+        zg      = z_rapid[good]
+        lo      = Point2f.(ψ̄[good] .- σ[good], zg)
+        hi      = Point2f.(ψ̄[good] .+ σ[good], zg)
+        band!(ax_profile, lo, hi; color = (OBS_COLOR, 0.25))
+        lines!(ax_profile, ψ̄[good], zg;
                color = OBS_COLOR, linestyle = OBS_LINESTYLE,
                linewidth = OBS_LINEWIDTH, label = "RAPID (mean ± 1σ)")
     end
@@ -52,6 +52,10 @@ function fig26(caches, labels, cases)
         title  = "AMOC index at $(round(lat; digits = 1))°N")
 
     if !isnothing(rapid_index)
+        band!(ax_index, rapid_index.year,
+              rapid_index.psi_max .- rapid_index.psi_max_std,
+              rapid_index.psi_max .+ rapid_index.psi_max_std;
+              color = (OBS_COLOR, 0.25))
         lines!(ax_index, rapid_index.year, rapid_index.psi_max;
                color = OBS_COLOR, linestyle = OBS_LINESTYLE,
                linewidth = OBS_LINEWIDTH, label = "RAPID")

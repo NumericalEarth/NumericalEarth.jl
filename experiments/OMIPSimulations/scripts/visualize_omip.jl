@@ -19,6 +19,7 @@
 #     FIG=1,4,7 julia visualize_omip.jl          # comma list
 #     FIG=14-19 julia visualize_omip.jl          # range
 #     FIG=1,3,9-12,21 julia visualize_omip.jl    # mix
+#     THEME=dark julia visualize_omip.jl         # transparent bg, white axes
 #     julia visualize_omip.jl my_output_dir      # custom output dir
 #
 # How sharing works
@@ -146,14 +147,17 @@ end
 # Convenience: render a single figure (or a list) by number from the REPL.
 #     julia> render_figures(4)
 #     julia> render_figures([1, 4, 7])
-render_figures(n::Integer)                          = render_figures((n,))
-render_figures(ns::AbstractVector{<:Integer})       = render_figures(Tuple(ns))
-render_figures(ns::AbstractRange{<:Integer})        = render_figures(Tuple(ns))
-function render_figures(ns::Tuple{Vararg{Integer}})
-    for entry in FIG_REGISTRY
-        entry.n in ns || continue
-        @info "Figure $(entry.n): $(entry.file)"
-        getfield(@__MODULE__, entry.fn)(caches, labels, cases)
+#     julia> render_figures([1, 4, 7]; theme = :dark)   # transparent bg, white axes
+render_figures(n::Integer; kw...)                          = render_figures((n,); kw...)
+render_figures(ns::AbstractVector{<:Integer}; kw...)       = render_figures(Tuple(ns); kw...)
+render_figures(ns::AbstractRange{<:Integer}; kw...)        = render_figures(Tuple(ns); kw...)
+function render_figures(ns::Tuple{Vararg{Integer}}; theme::Symbol = :light)
+    with_theme(presentation_theme(theme)) do
+        for entry in FIG_REGISTRY
+            entry.n in ns || continue
+            @info "Figure $(entry.n): $(entry.file)"
+            getfield(@__MODULE__, entry.fn)(caches, labels, cases)
+        end
     end
 end
 
@@ -163,8 +167,9 @@ end
 
 if !isinteractive()
     selection = parse_fig_selection(get(ENV, "FIG", ""), [r.n for r in FIG_REGISTRY])
-    @info "Rendering figures: $selection"
-    render_figures(selection)
+    theme = Symbol(lowercase(get(ENV, "THEME", "light")))
+    @info "Rendering figures: $selection (theme = :$theme)"
+    render_figures(selection; theme)
     @info "All requested figures saved to $output_dir"
 else
     @info """
