@@ -426,7 +426,7 @@ function omip_simulation(config::Symbol = :halfdegree;
 
 
     wall_time = Ref(time_ns())
-    add_callback!(simulation, omip_progress_callback(wall_time), IterationInterval(10))
+    add_callback!(simulation, omip_progress_callback(wall_time), IterationInterval(1))
 
     if diagnostics
         add_omip_diagnostics!(simulation;
