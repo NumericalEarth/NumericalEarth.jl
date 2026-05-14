@@ -415,3 +415,42 @@ hideydecorations!(ax_u, grid=false)
 hideydecorations!(ax_v, grid=false)
 
 fig4
+
+# ## §4 Per-column vertical interpolation and downscaling
+#
+# `ERA5HourlyPressureLevels` builds its native vertical coordinate from the
+# instantaneous geopotential Φ(λ,φ,p)/g, with sub-surface levels clipped at the
+# surface (see issue #236) — `Oceananigans.interpolate!` bisects each column's
+# actual heights inside the kernel. We use this to drop ERA5 specific humidity
+# onto a 4×-downscaled LAM grid at a fixed altitude (RICO cloud base ≈ 800 m)
+# and animate the result.
+
+target_grid = LatitudeLongitudeGrid(CPU();
+                                    size = (24, 24, 1),
+                                    longitude = rico_region.longitude,
+                                    latitude  = rico_region.latitude,
+                                    z = (800.0, 801.0),
+                                    halo = (2, 2, 1),
+                                    topology = (Bounded, Bounded, Bounded))
+
+q2d   = CenterField(target_grid)
+q_obs = Observable(interior(q2d)[:, :, 1])
+
+fig5 = Figure(size = (700, 600))
+ax5  = Axis(fig5[1, 1]; xlabel = "Longitude [°]", ylabel = "Latitude [°]",
+            aspect = DataAspect(), title = "ERA5 qᵛ at z = 800 m")
+hm = heatmap!(ax5, λnodes(target_grid, Center(), Center(), Center()),
+                   φnodes(target_grid, Center(), Center(), Center()),
+                   q_obs; colormap = :viridis)
+Colorbar(fig5[1, 2], hm; label = "qᵛ [kg kg⁻¹]")
+
+## Each frame: load qᵛ on its per-column-z grid (one CDS file per hour, cached
+## after the first run), interpolate down onto the 2-D target at z = 800 m.
+record(fig5, "rico_qv_animation.mp4", dates; framerate = 12) do date
+    set!(q2d, Metadatum(:specific_humidity; dataset = ds_pl, date, region = rico_region))
+    q_obs[] = interior(q2d)[:, :, 1]
+    ax5.title = "ERA5 qᵛ at 800 m — " * Dates.format(date, dateformat"u d HH:MM") * " UTC"
+end
+
+@info "Wrote rico_qv_animation.mp4"
+fig5

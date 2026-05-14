@@ -72,7 +72,9 @@ export
     net_ocean_freshwater_flux, sea_ice_ocean_freshwater_flux, atmosphere_ocean_freshwater_flux,
     meridional_heat_transport,
     location,
-    native_grid
+    native_grid,
+    PressureLevelVerticalDiscretization,
+    PressureLevelGrid
 
 using Oceananigans
 import Oceananigans: location
@@ -113,6 +115,7 @@ end
 ##### Source code
 #####
 
+include("Grids/Grids.jl")
 include("EarthSystemModels/EarthSystemModels.jl")
 include("Oceans/Oceans.jl")
 include("Atmospheres/Atmospheres.jl")
@@ -124,6 +127,7 @@ include("DataWrangling/DataWrangling.jl")
 include("Bathymetry/Bathymetry.jl")
 include("Diagnostics/Diagnostics.jl")
 
+using .Grids
 using .DataWrangling
 using .DataWrangling: ETOPO, ECCO, GLORYS, EN4, WOA, JRA55, OSPapa
 using .Bathymetry

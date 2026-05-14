@@ -5,24 +5,73 @@ const ERA5PressureMetadata{D} = Metadata{<:ERA5PressureLevelsDataset, D}
 const ERA5PressureMetadatum   = Metadatum{<:ERA5PressureLevelsDataset}
 
 struct ERA5HourlyPressureLevels <: ERA5PressureLevelsDataset
-    pressure_levels        :: Vector{Float64}
-    z                      :: Union{Nothing, Vector{Float64}}
-    mean_geopotential_height :: Bool
-    ERA5HourlyPressureLevels(pressure_levels, z=nothing; mean_geopotential_height=true) =
-        new(sort(pressure_levels, rev=true), z, mean_geopotential_height)
+    pressure_levels :: Vector{Float64}
+    z               :: Any        # `nothing`, a 1-D vector, or a vertical discretization
+    z_mode          :: Symbol     # :mean | :per_column | :standard_atmosphere
+    ERA5HourlyPressureLevels(pressure_levels, z, z_mode::Symbol) =
+        new(sort(pressure_levels, rev=true), z, z_mode)
 end
-ERA5HourlyPressureLevels(; pressure_levels=ERA5_all_pressure_levels, z=nothing, mean_geopotential_height=true) =
-    ERA5HourlyPressureLevels(pressure_levels, z; mean_geopotential_height)
 
 struct ERA5MonthlyPressureLevels <: ERA5PressureLevelsDataset
-    pressure_levels        :: Vector{Float64}
-    z                      :: Union{Nothing, Vector{Float64}}
-    mean_geopotential_height :: Bool
-    ERA5MonthlyPressureLevels(pressure_levels, z=nothing; mean_geopotential_height=true) =
-        new(sort(pressure_levels, rev=true), z, mean_geopotential_height)
+    pressure_levels :: Vector{Float64}
+    z               :: Any
+    z_mode          :: Symbol
+    ERA5MonthlyPressureLevels(pressure_levels, z, z_mode::Symbol) =
+        new(sort(pressure_levels, rev=true), z, z_mode)
 end
-ERA5MonthlyPressureLevels(; pressure_levels=ERA5_all_pressure_levels, z=nothing, mean_geopotential_height=true) =
-    ERA5MonthlyPressureLevels(pressure_levels, z; mean_geopotential_height)
+
+"""
+    ERA5HourlyPressureLevels(; pressure_levels = ERA5_all_pressure_levels,
+                              z = nothing,
+                              z_mode = :per_column)
+
+Construct hourly ERA5 pressure-levels dataset metadata. `z_mode` selects how the
+vertical coordinate is derived for the native grid:
+
+  - `:per_column` (default): a 3-D [`PressureLevelVerticalDiscretization`](@ref)
+    backed by the instantaneous Φ(λ,φ,p)/g (sub-surface levels clipped at the
+    surface). Honest over real terrain and synoptic Φ-displacement (issue #236).
+  - `:mean`: a single 1-D profile of ⟨Φ⟩/g averaged over the requested
+    region/dates. Cheaper to build but inaccurate over terrain.
+  - `:standard_atmosphere`: a 1-D profile from the U.S. Standard Atmosphere
+    using `pressure_levels` only — no Φ download required.
+
+If `z` is supplied directly it is used unchanged and `z_mode` is ignored.
+"""
+function ERA5HourlyPressureLevels(; pressure_levels = ERA5_all_pressure_levels,
+                                   z = nothing,
+                                   z_mode = :per_column,
+                                   mean_geopotential_height = nothing)
+    z_mode = _resolve_z_mode(z_mode, mean_geopotential_height)
+    return ERA5HourlyPressureLevels(pressure_levels, z, z_mode)
+end
+
+ERA5HourlyPressureLevels(pressure_levels; kwargs...) =
+    ERA5HourlyPressureLevels(; pressure_levels, kwargs...)
+
+function ERA5MonthlyPressureLevels(; pressure_levels = ERA5_all_pressure_levels,
+                                    z = nothing,
+                                    z_mode = :per_column,
+                                    mean_geopotential_height = nothing)
+    z_mode = _resolve_z_mode(z_mode, mean_geopotential_height)
+    return ERA5MonthlyPressureLevels(pressure_levels, z, z_mode)
+end
+
+ERA5MonthlyPressureLevels(pressure_levels; kwargs...) =
+    ERA5MonthlyPressureLevels(; pressure_levels, kwargs...)
+
+# Map the deprecated `mean_geopotential_height` boolean onto the new `z_mode`.
+function _resolve_z_mode(z_mode::Symbol, mean_geopotential_height)
+    if !isnothing(mean_geopotential_height)
+        Base.depwarn("`mean_geopotential_height` is deprecated; use `z_mode = :mean` " *
+                     "or `z_mode = :standard_atmosphere` instead.",
+                     :ERA5HourlyPressureLevels)
+        z_mode = mean_geopotential_height ? :mean : :standard_atmosphere
+    end
+    z_mode in (:mean, :per_column, :standard_atmosphere) ||
+        throw(ArgumentError("z_mode = $(z_mode) is not one of :mean, :per_column, :standard_atmosphere"))
+    return z_mode
+end
 
 dataset_name(::ERA5HourlyPressureLevels)  = "ERA5HourlyPressureLevels"
 dataset_name(::ERA5MonthlyPressureLevels) = "ERA5MonthlyPressureLevels"
@@ -167,24 +216,31 @@ end
 
 # ERA5 pressure-levels (3-D) data product
 function z_interfaces(metadata::ERA5PressureMetadata)
-    # Return cached z if already set
+    # Return cached z if already set (caller pre-built the discretization)
     !isnothing(metadata.dataset.z) && return metadata.dataset.z
 
-    # If mean_geopotential_height is enabled, try to download and compute
-    if metadata.dataset.mean_geopotential_height
+    mode = metadata.dataset.z_mode
+    mode === :standard_atmosphere &&
+        return standard_atmosphere_z_interfaces(metadata.dataset.pressure_levels)
+
+    if mode === :mean
         ϕ_metadata = Metadata(:geopotential; dataset=metadata.dataset,
-                                dates=metadata.dates, region=metadata.region,
-                                dir=metadata.dir)
+                              dates=metadata.dates, region=metadata.region,
+                              dir=metadata.dir)
         try
             download_dataset(ϕ_metadata)
             return mean_geopotential_z_interfaces(metadata)
         catch e
             @warn "Failed to derive geopotential heights; falling back to standard atmosphere" exception=(e, catch_backtrace())
+            return standard_atmosphere_z_interfaces(metadata.dataset.pressure_levels)
         end
     end
 
-    # Fallback
-    return standard_atmosphere_z_interfaces(metadata.dataset.pressure_levels)
+    if mode === :per_column
+        return per_column_geopotential_discretization(metadata)
+    end
+
+    throw(ArgumentError("z_mode = $(mode) is not one of :mean, :per_column, :standard_atmosphere"))
 end
 
 #####
@@ -238,6 +294,53 @@ function stagger(zc::AbstractVector)
     push!(zf, zc[end] + (zc[end] - zf[end])) # top interface
     return zf
 end
+
+#####
+##### per_column_geopotential_discretization — 3-D z-coordinate from instantaneous Φ
+#####
+
+"""
+    per_column_geopotential_discretization(metadata::ERA5PressureMetadata)
+
+Build a [`PressureLevelVerticalDiscretization`](@ref) from the ERA5 instantaneous
+geopotential at the first date in `metadata`. The discretization stores raw Φ
+(m²/s²) and divides by `g` at read time. Sub-surface levels are clipped to the
+local surface geopotential so that columns are monotonic. The single-level
+surface geopotential is downloaded from `ERA5HourlySingleLevel`.
+
+The auxiliary dataset used to fetch Φ is constructed with
+`z_mode = :standard_atmosphere` so that the recursive call into `z_interfaces`
+for that download terminates without needing Φ.
+"""
+function per_column_geopotential_discretization(metadata::ERA5PressureMetadata)
+    plain_ds = _with_z_mode(metadata.dataset, :standard_atmosphere)
+    sl_ds    = _matching_single_level_dataset(metadata.dataset)
+    ϕ_meta = Metadata(:geopotential; dataset=plain_ds,
+                      dates=metadata.dates, region=metadata.region, dir=metadata.dir)
+    ϕ_sl_meta = Metadata(:geopotential_height; dataset=sl_ds,
+                         dates=metadata.dates, region=metadata.region, dir=metadata.dir)
+
+    download_dataset(ϕ_meta)
+    download_dataset(ϕ_sl_meta)
+
+    Φ     = Field(first(ϕ_meta))      # 3-D, m²/s²
+    Φ_sfc = Field(first(ϕ_sl_meta))   # 2-D, m²/s²
+
+    return PressureLevelVerticalDiscretization(Φ;
+                                                gravitational_acceleration = ERA5_gravitational_acceleration,
+                                                surface_geopotential = Φ_sfc)
+end
+
+_with_z_mode(ds::ERA5HourlyPressureLevels,  mode::Symbol) =
+    ERA5HourlyPressureLevels(ds.pressure_levels, nothing, mode)
+_with_z_mode(ds::ERA5MonthlyPressureLevels, mode::Symbol) =
+    ERA5MonthlyPressureLevels(ds.pressure_levels, nothing, mode)
+
+# Match each pressure-level dataset to the single-level dataset at the same
+# temporal cadence so the surface geopotential clip-source matches the data
+# we're clipping.
+_matching_single_level_dataset(::ERA5HourlyPressureLevels)  = ERA5HourlySingleLevel()
+_matching_single_level_dataset(::ERA5MonthlyPressureLevels) = ERA5MonthlySingleLevel()
 
 #####
 ##### pressure_field — synthetic pressure coordinate field
