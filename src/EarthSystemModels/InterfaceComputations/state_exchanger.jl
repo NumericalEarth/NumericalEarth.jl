@@ -51,7 +51,7 @@ end
 # For ``nothing'' components, we don't need an exchanger
 ComponentExchanger(::Nothing, grid) = nothing
 
-function initialize!(exchanger::StateExchanger, model)
+function Oceananigans.initialize!(exchanger::StateExchanger, model)
     initialize!(exchanger.radiation,  exchanger.grid, model.radiation)
     initialize!(exchanger.atmosphere, exchanger.grid, model.atmosphere)
     initialize!(exchanger.land,       exchanger.grid, model.land)
@@ -61,5 +61,5 @@ function initialize!(exchanger::StateExchanger, model)
 end
 
 # fallback
-initialize!(::Nothing, grid, component) = nothing
-initialize!(exchanger::ComponentExchanger, grid, component) = nothing
+Oceananigans.initialize!(::Nothing, grid, component) = nothing
+Oceananigans.initialize!(exchanger::ComponentExchanger, grid, component) = nothing

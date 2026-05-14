@@ -1,7 +1,7 @@
 module InterfaceComputations
 
 import Oceananigans
-using Oceananigans: initialize!
+using Oceananigans: Oceananigans, initialize!
 using Oceananigans.Fields: AbstractField, Field
 using Oceananigans.Utils: KernelParameters
 using Oceananigans.Grids: Center, Face, Flat
