@@ -35,7 +35,7 @@ function woa_filepath(woa_tracer, product_year, period)
           "(tried product years: $product_year, $(join(fallback_product_years, ", ")))")
 end
 
-function download_dataset(metadata::Metadata{<:WOAClimatology}; skip_existing=true)
+function NumericalEarth.DataWrangling.download_dataset(metadata::Metadata{<:WOAClimatology}; skip_existing=true)
     @root for metadatum in metadata
         linkpath = metadata_path(metadatum)
 

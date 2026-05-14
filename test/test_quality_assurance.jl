@@ -1,6 +1,6 @@
 using Test
 using NumericalEarth
-using Breeze, SpeedyWeather, XESMF
+using Breeze, SpeedyWeather, XESMF, PythonCall, CondaPkg
 using ExplicitImports: ExplicitImports
 
 @testset "ExplicitImports" begin
