@@ -2,13 +2,13 @@ module WOA
 
 export WOAClimatology, WOAAnnual, WOAMonthly
 
-using NumericalEarth
-using Oceananigans
-using NCDatasets
-using JLD2
-using Scratch
-using Adapt
-using Dates
+import NumericalEarth
+import Oceananigans
+using NCDatasets: NCDatasets, Dataset
+using JLD2: JLD2
+using Scratch: Scratch, @get_scratch!
+using Adapt: Adapt
+using Dates: Dates, DateTime
 
 using ..DataWrangling:
     Metadata,

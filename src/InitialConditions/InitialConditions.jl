@@ -2,18 +2,23 @@ module InitialConditions
 
 export initialize!
 
-using Oceananigans
+import Oceananigans
 using Oceananigans: location
-using Oceananigans.BoundaryConditions
+using Oceananigans.BoundaryConditions: BoundaryConditions
 using Oceananigans.Fields: OneField
 using Oceananigans.Grids: peripheral_node
-using Oceananigans.Utils: launch!
-using Oceananigans.Fields: instantiated_location, interior, CenterField
+using Oceananigans.Utils: launch!, IterationInterval
+using Oceananigans.Fields: instantiated_location, interior, CenterField, Field, set!
 using Oceananigans.Architectures: architecture, device, GPU, child_architecture
+using Oceananigans.Grids: RectilinearGrid, LatitudeLongitudeGrid
+using Oceananigans.ImmersedBoundaries: ImmersedBoundaryGrid
+using Oceananigans.Simulations: Simulation, Callback, run!
+using Oceananigans.Models.HydrostaticFreeSurfaceModels: HydrostaticFreeSurfaceModel, PrescribedVelocityFields
+using Oceananigans.TurbulenceClosures: HorizontalScalarDiffusivity, VerticalScalarDiffusivity, VerticallyImplicitTimeDiscretization
 
 using KernelAbstractions: @kernel, @index
 using KernelAbstractions.Extras.LoopInfo: @unroll
-using JLD2
+using JLD2: JLD2
 
 # Implementation of 3-dimensional regridding
 # TODO: move all the following to Oceananigans!

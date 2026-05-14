@@ -3,13 +3,13 @@ module EN4
 export EN4Metadatum, EN4_immersed_grid, adjusted_EN4_tracers, initialize!
 export EN4Monthly
 
-using NumericalEarth
-using Oceananigans
-using NCDatasets
-using JLD2
-using Downloads: download
-using Adapt
-using Scratch
+import NumericalEarth
+import Oceananigans
+using NCDatasets: NCDatasets
+using JLD2: JLD2
+using Downloads: Downloads, download
+using Adapt: Adapt
+using Scratch: Scratch, @get_scratch!
 
 using ..DataWrangling:
     Metadata,
@@ -26,11 +26,9 @@ using KernelAbstractions: @kernel, @index
 
 using Oceananigans.Architectures: architecture
 
-using Dates: year, month, day
+using Dates: Dates, DateTime, Month, year, month, day
 using Oceananigans.DistributedComputations: @root
 
-using Dates
-using Downloads
 import ZipFile
 
 import NumericalEarth.DataWrangling:
@@ -48,7 +46,8 @@ import NumericalEarth.DataWrangling:
     is_three_dimensional,
     reversed_vertical_axis,
     inpainted_metadata_path,
-    available_variables
+    available_variables,
+    first_date
 
 
 download_EN4_cache::String = ""

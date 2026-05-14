@@ -7,15 +7,15 @@ export ERA5HourlySingleLevel, ERA5MonthlySingleLevel
 export ERA5HourlyPressureLevels, ERA5MonthlyPressureLevels, ERA5_all_pressure_levels, pressure_field, hPa
 export standard_atmosphere_z_interfaces, mean_geopotential_z_interfaces
 
-using NCDatasets
-using Printf
-using Scratch
-using Statistics
+using NCDatasets: NCDatasets, Dataset
+using Printf: Printf, @sprintf
+using Scratch: Scratch, @get_scratch!
+using Statistics: Statistics, mean
 
 using Oceananigans.Fields: Center, set!
 using Oceananigans: Field, fill_halo_regions!, CPU
 using NumericalEarth.DataWrangling: Metadata, Metadatum, metadata_path, native_grid, InverseGravity, download_dataset
-using Dates
+using Dates: Dates
 using Dates: DateTime, Month, Hour
 
 import NumericalEarth.DataWrangling:

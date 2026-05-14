@@ -2,11 +2,11 @@ module GEBCO
 
 export GEBCO2024
 
-using Downloads
-using ZipFile
-using Oceananigans
+import Downloads
+using ZipFile: ZipFile
+import Oceananigans
 using Oceananigans.DistributedComputations: @root
-using Scratch
+using Scratch: Scratch, @get_scratch!
 
 using ..DataWrangling: download_progress, Metadatum, metadata_path, AbstractStaticBathymetry
 

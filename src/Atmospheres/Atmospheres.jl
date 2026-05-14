@@ -2,21 +2,20 @@ module Atmospheres
 
 export atmosphere_simulation, PrescribedAtmosphere, PrescribedPrecipitationFlux
 
-using Oceananigans
-using Oceananigans.Fields: Center
+using Oceananigans.Fields: Center, Face, Field
 using Oceananigans.Grids: grid_name, architecture, topology, Flat, prettysummary
 using Oceananigans.OutputReaders: FieldTimeSeries, update_field_time_series!, extract_field_time_series
 using Oceananigans.TimeSteppers: Clock, tick!
 using Oceananigans.Units: Time
-using Oceananigans.Utils
+using Oceananigans.Utils: Utils, launch!
 
-using Adapt
+using Adapt: Adapt, adapt
 using Thermodynamics.Parameters: AbstractThermodynamicsParameters
 using KernelAbstractions: @kernel, @index
 using NumericalEarth.EarthSystemModels.InterfaceComputations: interface_kernel_parameters
 
+import Oceananigans
 import Oceananigans.TimeSteppers: time_step!, update_state!
-
 import NumericalEarth.EarthSystemModels: interpolate_state!,
                                          update_net_fluxes!,
                                          thermodynamics_parameters,

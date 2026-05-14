@@ -2,10 +2,10 @@ module ETOPO
 
 export ETOPO2022
 
-using Downloads
-using Oceananigans
+import Downloads
+import Oceananigans
 using Oceananigans.DistributedComputations: @root
-using Scratch
+using Scratch: Scratch, @get_scratch!
 
 using ..DataWrangling: download_progress, Metadatum, metadata_path, AbstractStaticBathymetry
 

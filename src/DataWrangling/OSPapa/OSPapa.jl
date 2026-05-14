@@ -7,12 +7,18 @@ export os_papa_prescribed_flux_boundary_conditions
 export OSPapaHourly
 export OSPapaFluxHourly
 
-using Oceananigans
-using NCDatasets
-using Dates
-using Scratch
-using Downloads
+import Oceananigans
+using NCDatasets: NCDatasets, NCDataset, defDim, defVar
+using Dates: Dates, DateTime, Hour
+using Scratch: Scratch, @get_scratch!
+import Downloads
 using Thermodynamics: q_vap_from_RH, Liquid
+using Oceananigans.Architectures: CPU
+using Oceananigans.Grids: Bounded, Center, Flat, RectilinearGrid
+using Oceananigans.Fields: Field, interior
+using Oceananigans.BoundaryConditions: FieldBoundaryConditions, FluxBoundaryCondition
+using Oceananigans.OutputReaders: FieldTimeSeries
+using Oceananigans.Units: Units
 
 using NumericalEarth.DataWrangling: download_progress
 using NumericalEarth.Atmospheres: PrescribedAtmosphere, PrescribedPrecipitationFlux, AtmosphereThermodynamicsParameters

@@ -19,8 +19,8 @@ export
     # Friction velocity formulations
     MomentumBasedFrictionVelocity
 
-using Oceananigans
-using Oceananigans.Operators
+import Oceananigans
+using Oceananigans.Operators: Operators
 using Oceananigans.Utils: launch!, KernelParameters
 using Oceananigans.Units: Time
 using Oceananigans.Architectures: architecture
@@ -30,6 +30,8 @@ using Oceananigans.Fields: ZeroField
 using Oceananigans.TimeSteppers: tick!
 using Oceananigans.Models: AbstractModel
 using Oceananigans.OutputReaders: FieldTimeSeries, GPUAdaptedFieldTimeSeries
+using Oceananigans.Simulations: Simulation
+using Printf: Printf
 
 using ClimaSeaIce: SeaIceModel
 using ClimaSeaIce.SeaIceThermodynamics: melting_temperature

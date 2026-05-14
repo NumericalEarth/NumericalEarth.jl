@@ -7,12 +7,14 @@ export frazil_temperature_flux, net_ocean_temperature_flux, sea_ice_ocean_temper
        net_ocean_salinity_flux, sea_ice_ocean_salinity_flux, atmosphere_ocean_salinity_flux,
        net_ocean_freshwater_flux, sea_ice_ocean_freshwater_flux, atmosphere_ocean_freshwater_flux
 
-using Oceananigans
+import Oceananigans
 using Oceananigans.Architectures: architecture
+using Oceananigans.AbstractOperations: Integral
 using Oceananigans.Models: buoyancy_operation
-using Oceananigans.Grids: new_data, inactive_cell, znode
+using Oceananigans.Grids: new_data, inactive_cell, znode, Center, Face, OrthogonalSphericalShellGrid
 using Oceananigans.BoundaryConditions: FieldBoundaryConditions, fill_halo_regions!
-using Oceananigans.Fields: FieldStatus
+using Oceananigans.Fields: FieldStatus, Field
+using Oceananigans.ImmersedBoundaries: ImmersedBoundaryGrid
 using Oceananigans.Utils: launch!
 using KernelAbstractions: @index, @kernel
 using Oceananigans.BoundaryConditions: DiscreteBoundaryFunction

@@ -2,39 +2,50 @@ module Oceans
 
 export ocean_simulation, SlabOcean
 
-using Oceananigans
-using Oceananigans.Units
-using Oceananigans.Utils
-using Oceananigans.Utils: with_tracers
-using Oceananigans.Advection: FluxFormAdvection
-using Oceananigans.BoundaryConditions: DefaultBoundaryCondition, DiscreteBoundaryFunction
-using Oceananigans.ImmersedBoundaries: immersed_peripheral_node, inactive_node, MutableGridOfSomeKind
-using Oceananigans.OrthogonalSphericalShellGrids
-using Oceananigans.Operators
+import Oceananigans
 
-using Oceananigans.TurbulenceClosures.TKEBasedVerticalDiffusivities:
-    CATKEVerticalDiffusivity,
-    CATKEMixingLength,
-    CATKEEquation
+using Oceananigans.Advection: FluxFormAdvection, WENO, WENOVectorInvariant
+using Oceananigans.BuoyancyFormulations: SeawaterBuoyancy
+using Oceananigans.BoundaryConditions: DefaultBoundaryCondition, DiscreteBoundaryFunction,
+                                       FieldBoundaryConditions, FluxBoundaryCondition
+using Oceananigans.Coriolis: HydrostaticSphericalCoriolis
+using Oceananigans.ImmersedBoundaries: ImmersedBoundaryGrid, ImmersedBoundaryCondition,
+                                       immersed_peripheral_node, inactive_node, MutableGridOfSomeKind
+using Oceananigans.OrthogonalSphericalShellGrids: OrthogonalSphericalShellGrids, TripolarGrid
+using Oceananigans.Fields: Field, CenterField, interior, set!
+using Oceananigans.Grids: Center, Face, RectilinearGrid, xspacings, yspacings
+using Oceananigans.Models.HydrostaticFreeSurfaceModels: HydrostaticFreeSurfaceModel
+using Oceananigans.Models.HydrostaticFreeSurfaceModels.SplitExplicitFreeSurfaces: SplitExplicitFreeSurface
+using Oceananigans.Operators: Operators
+using Oceananigans.Operators: ℑxyᶜᶠᵃ, ℑxyᶠᶜᵃ
+using Oceananigans.Simulations: Simulation
+using Oceananigans.TurbulenceClosures.TKEBasedVerticalDiffusivities: CATKEVerticalDiffusivity,
+                                                                     CATKEMixingLength,
+                                                                     CATKEEquation
+using Oceananigans.Units: Units, hours, minutes
+using Oceananigans.Utils: Utils, launch!, with_tracers
 
-using SeawaterPolynomials
+using Adapt: Adapt, adapt
+using Printf: Printf
+using SeawaterPolynomials: SeawaterPolynomials
 using SeawaterPolynomials.TEOS10: TEOS10EquationOfState
 using KernelAbstractions: @kernel, @index
 
 using NumericalEarth.EarthSystemModels
+using NumericalEarth.EarthSystemModels: EarthSystemModels
 
 import NumericalEarth.EarthSystemModels: interpolate_state!,
-                                     update_net_fluxes!,
-                                     reference_density,
-                                     heat_capacity,
-                                     exchange_grid,
-                                     temperature_units,
-                                     DegreesKelvin,
-                                     ocean_temperature,
-                                     ocean_salinity,
-                                     ocean_surface_temperature,
-                                     ocean_surface_salinity,
-                                     ocean_surface_velocities
+                                         update_net_fluxes!,
+                                         reference_density,
+                                         heat_capacity,
+                                         exchange_grid,
+                                         temperature_units,
+                                         DegreesKelvin,
+                                         ocean_temperature,
+                                         ocean_salinity,
+                                         ocean_surface_temperature,
+                                         ocean_surface_salinity,
+                                         ocean_surface_velocities
 
 import NumericalEarth.EarthSystemModels.InterfaceComputations: ComponentExchanger, net_fluxes
 
@@ -92,14 +103,14 @@ end
 # We need, however, to interpolate the surface pressure to the ocean grid
 interpolate_state!(exchanger, grid, ::Simulation{<:HydrostaticFreeSurfaceModel}, coupled_model) = nothing
 
-function ComponentExchanger(ocean::Simulation{<:HydrostaticFreeSurfaceModel}, grid) 
+function ComponentExchanger(ocean::Simulation{<:HydrostaticFreeSurfaceModel}, grid)
     ocean_grid = ocean.model.grid
-    
+
     if ocean_grid == grid
-        u = ocean.model.velocities.u 
-        v = ocean.model.velocities.v 
-        T = ocean.model.tracers.T      
-        S = ocean.model.tracers.S      
+        u = ocean.model.velocities.u
+        v = ocean.model.velocities.v
+        T = ocean.model.tracers.T
+        S = ocean.model.tracers.S
     else
         u = Field{Center, Center, Nothing}(grid)
         v = Field{Center, Center, Nothing}(grid)

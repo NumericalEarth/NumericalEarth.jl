@@ -2,10 +2,10 @@ module ORCA
 
 export ORCA1, ORCA12
 
-using Downloads
-using Oceananigans
+import Oceananigans
+import Downloads
 using Oceananigans.DistributedComputations: @root
-using Scratch
+using Scratch: Scratch, @get_scratch!
 
 using ..DataWrangling: download_progress, Metadatum, metadata_path
 

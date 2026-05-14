@@ -1,9 +1,17 @@
 module InterfaceComputations
 
-using Oceananigans
+import Oceananigans
 using Oceananigans.Fields: AbstractField
 using Oceananigans.Utils: KernelParameters
-using Adapt
+using Oceananigans.Grids: Center, Face, Flat
+using Oceananigans.Fields: Field
+using Oceananigans.Simulations: Simulation
+using Adapt: Adapt, adapt
+using DocStringExtensions: DocStringExtensions, TYPEDFIELDS
+using OffsetArrays: OffsetArrays
+using Printf: Printf
+using StaticArrays: StaticArrays
+using Thermodynamics: Thermodynamics
 
 export
     ComponentInterfaces,

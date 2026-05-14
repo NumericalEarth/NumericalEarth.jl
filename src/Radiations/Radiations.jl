@@ -10,16 +10,17 @@ export PrescribedRadiation,
 # CODATA 2018 value of the Stefan–Boltzmann constant, in W m⁻² K⁻⁴.
 const default_stefan_boltzmann_constant = 5.670374419e-8
 
-using Oceananigans
-using Oceananigans.Architectures: architecture
+import Oceananigans
+using Oceananigans.Architectures: CPU, architecture
 using Oceananigans.Fields: Center, Face, Field, ZeroField, FractionalIndices, instantiate, interpolator
 using Oceananigans.Grids: grid_name, prettysummary, ηnode, _node, topology, Flat, on_architecture
 using Oceananigans.OutputReaders: FieldTimeSeries, update_field_time_series!, extract_field_time_series, cpu_interpolating_time_indices
+using Oceananigans.Simulations: Simulation
 using Oceananigans.TimeSteppers: Clock, tick!
 using Oceananigans.Units: Time
 using Oceananigans.Utils: launch!
 
-using Adapt
+using Adapt: Adapt
 using KernelAbstractions: @kernel, @index
 
 import NumericalEarth: stateindex

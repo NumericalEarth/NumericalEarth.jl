@@ -2,8 +2,8 @@ module GLORYS
 
 export GLORYSStatic, GLORYSDaily, GLORYSMonthly
 
-using NCDatasets
-using Printf
+using NCDatasets: NCDatasets, Dataset
+using Printf: Printf, @sprintf
 
 using Oceananigans.Fields: Center
 using NumericalEarth.DataWrangling: Metadata, Metadatum, metadata_path
@@ -23,7 +23,7 @@ import NumericalEarth.DataWrangling:
     available_variables,
     is_three_dimensional
 
-using Scratch
+using Scratch: Scratch, @get_scratch!
 
 download_GLORYS_cache::String = ""
 function __init__()
@@ -156,4 +156,3 @@ function z_interfaces(metadata::GLORYSMetadata)
 end
 
 end # module GLORYS
-
