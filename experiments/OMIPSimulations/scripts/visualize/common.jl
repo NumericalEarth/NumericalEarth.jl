@@ -1128,14 +1128,16 @@ hadisst_sic_climatology() =
 #                           the upper-cell maximum, used as the AMOC
 #                           index time series.
 #
-# URLs are versioned by release on rapid.ac.uk; the defaults below
-# point at the 2018-onwards file names. Override with `RAPID_*_URL`
-# env vars if a newer release moves them.
+# The versionless `rapid_data/` path is the canonical home for the
+# current release (v2024.1a as of 2026-01); rapid.ac.uk has previously
+# served the same files from snapshot-dated `YYYY-MM/` folders that
+# disappear when a new release is cut. Override with `RAPID_*_URL`
+# env vars if the path ever moves again.
 
 const RAPID_VERTICAL_URL = get(ENV, "RAPID_VERTICAL_URL",
-    "https://rapid.ac.uk/sites/default/files/2024-09/moc_vertical.nc")
+    "https://rapid.ac.uk/sites/default/files/rapid_data/moc_vertical.nc")
 const RAPID_TRANSPORTS_URL = get(ENV, "RAPID_TRANSPORTS_URL",
-    "https://rapid.ac.uk/sites/default/files/2024-09/moc_transports.nc")
+    "https://rapid.ac.uk/sites/default/files/rapid_data/moc_transports.nc")
 
 function nanmean(v)
     finite = filter(isfinite, v)
