@@ -10,7 +10,6 @@ using Oceananigans.Architectures: architecture
 using Oceananigans.BoundaryConditions: FluxBoundaryCondition, FieldBoundaryConditions
 using Oceananigans.Utils: launch!
 
-import NumericalEarth.Atmospheres: atmosphere_simulation
 import NumericalEarth.EarthSystemModels: thermodynamics_parameters,
                                           surface_layer_height,
                                           boundary_layer_height,
