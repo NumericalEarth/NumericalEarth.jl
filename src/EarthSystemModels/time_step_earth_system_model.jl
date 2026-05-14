@@ -1,8 +1,6 @@
-using .InterfaceComputations:
-    compute_atmosphere_ocean_fluxes!,
-    compute_sea_ice_ocean_fluxes!
+using .InterfaceComputations: compute_atmosphere_ocean_fluxes!, compute_sea_ice_ocean_fluxes!
 
-using Oceananigans.TimeSteppers: maybe_prepare_first_time_step!
+using Oceananigans.TimeSteppers: time_step!, maybe_prepare_first_time_step!
 using ClimaSeaIce: SeaIceThermodynamics
 using Printf
 
@@ -12,7 +10,7 @@ using Printf
 apply_air_sea_radiative_fluxes!(::Any) = nothing
 apply_air_sea_ice_radiative_fluxes!(::Any) = nothing
 
-function time_step!(coupled_model::EarthSystemModel, Δt; callbacks=[])
+function Oceananigans.TimeSteppers.time_step!(coupled_model::EarthSystemModel, Δt; callbacks=[])
     maybe_prepare_first_time_step!(coupled_model, callbacks)
 
     radiation  = coupled_model.radiation

@@ -34,15 +34,6 @@ using Printf: Printf
 
 import Thermodynamics as AtmosphericThermodynamics
 
-# Simulations interface
-import Oceananigans: fields, initialize!, prognostic_fields, prognostic_state, restore_prognostic_state!
-import Oceananigans.Architectures: architecture
-import Oceananigans.Diagnostics: NaNChecker
-import Oceananigans.OutputWriters: default_included_properties
-import Oceananigans.Simulations: timestepper, reset_clock!, iteration
-import Oceananigans.TimeSteppers: time_step!, reset!, update_state!, reconcile_state!
-import Oceananigans.Utils: prettytime
-
 include("components.jl")
 
 #####

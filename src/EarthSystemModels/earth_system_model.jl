@@ -1,5 +1,6 @@
 using Oceananigans
 using Oceananigans.TimeSteppers: Clock
+using Oceananigans.Utils: prettytime
 using ClimaSeaIce.SeaIceThermodynamics: melting_temperature
 using KernelAbstractions: @kernel, @index
 
@@ -47,22 +48,22 @@ function Base.show(io::IO, cm::ESM)
     return nothing
 end
 
-architecture(model::ESM)           = model.architecture
-Base.eltype(model::ESM)            = Base.eltype(model.interfaces.exchanger.grid)
-prettytime(model::ESM)             = prettytime(model.clock.time)
-iteration(model::ESM)              = model.clock.iteration
-timestepper(::ESM)                 = nothing
-default_included_properties(::ESM) = tuple()
-prognostic_fields(::ESM)           = nothing
-fields(::ESM)                      = NamedTuple()
-default_clock(TT)                  = Oceananigans.TimeSteppers.Clock{TT}(0, 0, 1)
+Oceananigans.Architectures.architecture(model::ESM) = model.architecture
+Base.eltype(model::ESM) = Base.eltype(model.interfaces.exchanger.grid)
+Oceananigans.Utils.prettytime(model::ESM) = Oceananigans.Utils.prettytime(model.clock.time)
+Oceananigans.Simulations.iteration(model::ESM) = model.clock.iteration
+Oceananigans.Simulations.timestepper(::ESM) = nothing
+Oceananigans.OutputWriters.default_included_properties(::ESM) = tuple()
+Oceananigans.prognostic_fields(::ESM) = nothing
+Oceananigans.fields(::ESM) = NamedTuple()
+default_clock(TT) = Oceananigans.TimeSteppers.Clock{TT}(0, 0, 1)
 
 reset_clock!(::Nothing) = nothing
 
 reset_clock!(component::Simulation) = reset_clock!(component.model)
 reset_clock!(component) = reset!(getproperty(component, :clock))
 
-function reset_clock!(model::ESM)
+function Oceananigans.Simulations.reset_clock!(model::ESM)
     reset!(model.clock)
 
     for component in components(model)
@@ -73,15 +74,15 @@ function reset_clock!(model::ESM)
     return nothing
 end
 
-reset!(model::ESM) = reset_clock!(model)
+Oceananigans.TimeSteppers.reset!(model::ESM) = reset_clock!(model)
 
 # Make sure to initialize the exchanger here
-function initialize!(model::ESM)
+function Oceananigans.initialize!(model::ESM)
     initialize!(model.interfaces.exchanger, model)
     return nothing
 end
 
-function reconcile_state!(model::ESM)
+function Oceananigans.TimeSteppers.reconcile_state!(model::ESM)
     initialize!(model.interfaces.exchanger, model)
     update_state!(model)
     return nothing
@@ -344,7 +345,7 @@ above_freezing_ocean_temperature!(ocean, grid, ::Nothing) = nothing
 ##### Checkpointing
 #####
 
-function prognostic_state(osm::EarthSystemModel)
+function Oceananigans.prognostic_state(osm::EarthSystemModel)
     return (clock = prognostic_state(osm.clock),
             radiation = prognostic_state(osm.radiation),
             ocean = prognostic_state(osm.ocean),
@@ -354,7 +355,7 @@ function prognostic_state(osm::EarthSystemModel)
             interfaces = prognostic_state(osm.interfaces))
 end
 
-function restore_prognostic_state!(osm::EarthSystemModel, state)
+function Oceananigans.restore_prognostic_state!(osm::EarthSystemModel, state)
     restore_prognostic_state!(osm.clock, state.clock)
     # Backwards-compatible: older checkpoints may not have a `radiation` entry
     if hasproperty(state, :radiation)
@@ -368,4 +369,4 @@ function restore_prognostic_state!(osm::EarthSystemModel, state)
     return osm
 end
 
-restore_prognostic_state!(osm::EarthSystemModel, ::Nothing) = osm
+Oceananigans.restore_prognostic_state!(osm::EarthSystemModel, ::Nothing) = osm
