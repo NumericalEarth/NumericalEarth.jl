@@ -2,7 +2,6 @@ using JLD2
 using Oceananigans.Architectures: on_architecture
 using Oceananigans.Fields: fractional_x_index, fractional_y_index, Field, location
 using NCDatasets
-using NumericalEarth.InitialConditions: interpolate!
 
 #####
 ##### Location with automatic restriction based on region
