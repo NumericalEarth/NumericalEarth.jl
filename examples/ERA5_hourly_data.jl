@@ -191,8 +191,9 @@ fig1
 #   facilitates any operations we want to perform on the data — in this case,
 #   a units conversion.
 #
-# *Note: We could have sliced the `precip_series` from above, but we
-# illustrate here a seperate data retrieval path.*
+# !!! note "Slicing"
+#     We could have sliced the `precip_series` from above, but we illustrate here
+#     a seperate data retrieval path.*
 
 precip_col_meta = Metadata(:total_precipitation; dataset, dates, region = rico_column)
 precip_col_series = @suppress_out FieldTimeSeries(precip_col_meta; time_indices_in_memory = Nt)
