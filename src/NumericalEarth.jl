@@ -75,14 +75,14 @@ export
     native_grid
 
 import DataDeps
-import Oceananigans
-import Oceananigans: location
 
-using Oceananigans.Operators: ℑxyᶠᶜᵃ, ℑxyᶜᶠᵃ
+using Oceananigans: Oceananigans
 using Oceananigans.Architectures: CPU
+using Oceananigans.Fields: location
 using Oceananigans.Grids: node
 using Oceananigans.ImmersedBoundaries: ImmersedBoundaryGrid, GridFittedBottom
 using Oceananigans.OutputReaders: GPUAdaptedFieldTimeSeries, FieldTimeSeries
+using Oceananigans.Operators: ℑxyᶠᶜᵃ, ℑxyᶜᶠᵃ
 
 const SomeKindOfFieldTimeSeries = Union{FieldTimeSeries,
                                         GPUAdaptedFieldTimeSeries}

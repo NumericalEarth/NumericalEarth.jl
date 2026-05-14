@@ -145,16 +145,14 @@ end
 ##### Checkpointing
 #####
 
-import Oceananigans: prognostic_state, restore_prognostic_state!
-
-function prognostic_state(radiation::PrescribedRadiation)
-    return (; clock = prognostic_state(radiation.clock))
+function Oceananigans.prognostic_state(radiation::PrescribedRadiation)
+    return (; clock = Oceananigans.prognostic_state(radiation.clock))
 end
 
-function restore_prognostic_state!(radiation::PrescribedRadiation, state)
-    restore_prognostic_state!(radiation.clock, state.clock)
+function Oceananigans.restore_prognostic_state!(radiation::PrescribedRadiation, state)
+    Oceananigans.restore_prognostic_state!(radiation.clock, state.clock)
     update_state!(radiation)
     return radiation
 end
 
-restore_prognostic_state!(radiation::PrescribedRadiation, ::Nothing) = radiation
+Oceananigans.restore_prognostic_state!(radiation::PrescribedRadiation, ::Nothing) = radiation

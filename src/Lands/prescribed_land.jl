@@ -70,16 +70,14 @@ update_net_fluxes!(coupled_model, ::PrescribedLand) = nothing
 ##### Checkpointing
 #####
 
-import Oceananigans: prognostic_state, restore_prognostic_state!
-
-function prognostic_state(land::PrescribedLand)
-    return (; clock = prognostic_state(land.clock))
+function Oceananigans.prognostic_state(land::PrescribedLand)
+    return (; clock = Oceananigans.prognostic_state(land.clock))
 end
 
-function restore_prognostic_state!(land::PrescribedLand, state)
-    restore_prognostic_state!(land.clock, state.clock)
+function Oceananigans.restore_prognostic_state!(land::PrescribedLand, state)
+    Oceananigans.restore_prognostic_state!(land.clock, state.clock)
     update_state!(land)
     return land
 end
 
-restore_prognostic_state!(land::PrescribedLand, ::Nothing) = land
+Oceananigans.restore_prognostic_state!(land::PrescribedLand, ::Nothing) = land

@@ -1,18 +1,17 @@
-using NCDatasets
 using JLD2
+using Oceananigans.Architectures: on_architecture
+using Oceananigans.Fields: fractional_x_index, fractional_y_index, Field, location
+using Oceananigans.Grids: λnodes, φnodes
+using NCDatasets
 using NumericalEarth.InitialConditions: interpolate!
 using Statistics: median
-using Oceananigans.Grids: λnodes, φnodes
-using Oceananigans.Architectures: on_architecture
-using Oceananigans.Fields: fractional_x_index, fractional_y_index
-
-import Oceananigans.Fields: set!, Field, location
 
 #####
 ##### Location with automatic restriction based on region
 #####
 
-location(metadata::Metadata) = restrict_location(dataset_location(metadata.dataset, metadata.name), metadata.region)
+Oceananigans.Fields.location(metadata::Metadata) =
+    restrict_location(dataset_location(metadata.dataset, metadata.name), metadata.region)
 
 restrict_location(loc, ::Nothing) = loc
 restrict_location(loc, ::BoundingBox) = loc
@@ -145,11 +144,11 @@ within the specified `mask`. `mask` is set to `compute_mask` for non-nothing
 `inpainting`. Keyword argument `cache_inpainted_data` dictates whether the inpainted
 data is cached to avoid recomputing it; default: `true`.
 """
-function Field(metadata::Metadatum, arch=CPU();
-               inpainting = default_inpainting(metadata),
-               mask = nothing,
-               halo = (3, 3, 3),
-               cache_inpainted_data = true)
+function Oceananigans.Fields.Field(metadata::Metadatum, arch=CPU();
+                                   inpainting = default_inpainting(metadata),
+                                   mask = nothing,
+                                   halo = (3, 3, 3),
+                                   cache_inpainted_data = true)
 
     download_dataset(metadata)
 
@@ -232,7 +231,7 @@ function Field(metadata::Metadatum, arch=CPU();
     return field
 end
 
-function set!(target_field::Field, metadata::Metadatum; kw...)
+function Oceananigans.Fields.set!(target_field::Field, metadata::Metadatum; kw...)
     grid = target_field.grid
     arch = child_architecture(grid)
     meta_field = Field(metadata, arch; kw...)

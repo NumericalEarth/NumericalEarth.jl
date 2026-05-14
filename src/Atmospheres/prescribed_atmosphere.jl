@@ -167,16 +167,13 @@ end
 ##### Chekpointing
 #####
 
-import Oceananigans: prognostic_state, restore_prognostic_state!
+Oceananigans.prognostic_state(atmos::PrescribedAtmosphere) =
+    (; clock = Oceananigans.prognostic_state(atmos.clock))
 
-function prognostic_state(atmos::PrescribedAtmosphere)
-    return (; clock = prognostic_state(atmos.clock))
-end
-
-function restore_prognostic_state!(atmos::PrescribedAtmosphere, state)
-    restore_prognostic_state!(atmos.clock, state.clock)
+function Oceananigans.restore_prognostic_state!(atmos::PrescribedAtmosphere, state)
+    Oceananigans.restore_prognostic_state!(atmos.clock, state.clock)
     update_state!(atmos)
     return atmos
 end
 
-restore_prognostic_state!(atmos::PrescribedAtmosphere, ::Nothing) = atmos
+Oceananigans.restore_prognostic_state!(atmos::PrescribedAtmosphere, ::Nothing) = atmos

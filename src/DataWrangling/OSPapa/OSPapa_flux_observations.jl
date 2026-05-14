@@ -1,6 +1,3 @@
-import Oceananigans: location
-import Oceananigans.Fields: set!
-
 using Oceananigans.Architectures: on_architecture
 using Oceananigans.DistributedComputations: child_architecture
 
@@ -35,7 +32,7 @@ const OSPapa_flux_variable_names = Dict(
 
 dataset_variable_name(md::OSPapaFluxMetadata) = OSPapa_flux_variable_names[md.name]
 
-location(::OSPapaFluxMetadata) = (Center, Center, Center)
+Oceananigans.location(::OSPapaFluxMetadata) = (Center, Center, Center)
 is_three_dimensional(::OSPapaFluxMetadata) = false
 conversion_units(::OSPapaFluxMetadatum) = nothing
 default_inpainting(::OSPapaFluxMetadata) = nothing
@@ -173,7 +170,7 @@ function retrieve_data(metadata::OSPapaFluxMetadatum)
     return reshape([data], 1, 1, 1)
 end
 
-function set!(target_field::Field, metadata::OSPapaFluxMetadatum; kw...)
+function Oceananigans.Fields.set!(target_field::Field, metadata::OSPapaFluxMetadatum; kw...)
     grid = target_field.grid
     arch = child_architecture(grid)
     meta_field = Field(metadata, arch; kw...)

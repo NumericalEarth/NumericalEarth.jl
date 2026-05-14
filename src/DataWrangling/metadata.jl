@@ -1,7 +1,6 @@
+using Base: @propagate_inbounds
 using CFTime
 using Dates
-using Base: @propagate_inbounds
-import Oceananigans.Utils: prettysummary
 
 struct BoundingBox{X, Y, Z}
     longitude :: X
@@ -213,7 +212,7 @@ datestr(md::Metadatum) = string(md.dates)
 datasetstr(md::Metadata) = string(md.dataset)
 metaprefix(md::Metadata) = string("Metadata{", md.dataset, "}")
 
-prettysummary(dt::DateTime) = Dates.format(dt, "yyyy-mm-dd HH:MM:SS")
+Oceananigans.Utils.prettysummary(dt::DateTime) = Dates.format(dt, "yyyy-mm-dd HH:MM:SS")
 
 function Base.show(io::IO, metadata::Metadata)
     V = typeof(metadata.dataset)
@@ -418,7 +417,7 @@ struct InverseSign end
 struct InverseGravity end
 
 struct GramPerKilogramMinus35 end # Salinity anomaly
-struct MilliliterPerLiter end # Sometimes for disssolved_oxygen
+struct MilliliterPerLiter end     # Sometimes for disssolved_oxygen
 struct CentimetersPerSecond end
 struct Millibar end               # pressure in mbar (hPa) → Pa
 struct MillimetersPerHour end     # liquid precipitation rate in mm/hr → kg/m²/s
