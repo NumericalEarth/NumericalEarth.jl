@@ -1,11 +1,10 @@
-using Oceananigans.Grids: AbstractGrid
 using Oceananigans
-
-import XESMF: Regridder, xesmf_coordinates
+using Oceananigans.Grids: AbstractGrid
+using XESMF: Regridder, xesmf_coordinates
 
 const Grids = Union{SpeedyWeather.SpectralGrid, AbstractGrid}
 
-function Regridder(src::Grids, dst::Grids; method::String="bilinear", periodic=true)
+function XESMF.Regridder(src::Grids, dst::Grids; method::String="bilinear", periodic=true)
     src_coords = xesmf_coordinates(src, Center(), Center(), Center())
     dst_coords = xesmf_coordinates(dst, Center(), Center(), Center())
 
@@ -14,7 +13,7 @@ end
 
 two_dimensionalize(lat::Matrix, lon::Matrix) = lat, lon
 
-function two_dimensionalize(lat::AbstractVector, lon::AbstractVector) 
+function two_dimensionalize(lat::AbstractVector, lon::AbstractVector)
     Nx  = length(lon)
     Ny  = length(lat)
     lat = repeat(lat', Nx)
@@ -22,11 +21,11 @@ function two_dimensionalize(lat::AbstractVector, lon::AbstractVector)
     return lat, lon
 end
 
-xesmf_coordinates(grid::SpeedyWeather.SpectralGrid, args...) = xesmf_coordinates(grid.grid, args...)
-xesmf_coordinates(grid::SpeedyWeather.RingGrids.AbstractGrid, args...) = 
+XESMF.xesmf_coordinates(grid::SpeedyWeather.SpectralGrid, args...) = xesmf_coordinates(grid.grid, args...)
+XESMF.xesmf_coordinates(grid::SpeedyWeather.RingGrids.AbstractGrid, args...) =
     throw(ArgumentError("xesmf_coordinates not implemented for grid type $(typeof(grid)), maybe you meant to pass a FullGrid?"))
 
-function xesmf_coordinates(grid::SpeedyWeather.RingGrids.AbstractFullGrid, args...)
+function XESMF.xesmf_coordinates(grid::SpeedyWeather.RingGrids.AbstractFullGrid, args...)
     lon  = RingGrids.get_lond(grid)
     lat  = RingGrids.get_latd(grid)
     dlon = lon[2] - lon[1]
