@@ -2,6 +2,25 @@ include("runtests_setup.jl")
 
 using Glob
 using Oceananigans.OutputWriters: Checkpointer
+using Oceananigans.TimeSteppers: reset!
+
+function make_coupled_model(grid)
+    @inline hi(λ, φ) = φ > 70 || φ < -70
+
+    ocean = ocean_simulation(grid, closure=nothing)
+    set!(ocean.model, T=20, S=35, u=0.01, v=-0.005)
+
+    sea_ice = sea_ice_simulation(grid, ocean)
+    set!(sea_ice.model, h=hi, ℵ=hi)
+
+    arch = architecture(grid)
+    backend = JRA55NetCDFBackend(4)
+    atmosphere = JRA55PrescribedAtmosphere(arch; backend)
+    land = JRA55PrescribedLand(arch; backend)
+    radiation = JRA55PrescribedRadiation(arch; backend)
+
+    return OceanSeaIceModel(sea_ice, ocean; atmosphere, land, radiation)
+end
 
 @testset "EarthSystemModel checkpointing" begin
     for arch in test_architectures
@@ -15,23 +34,6 @@ using Oceananigans.OutputWriters: Checkpointer
                                      latitude = (-80, 80),
                                      longitude = (0, 360),
                                      halo = (6, 6, 6))
-
-        # Helper function to create fresh simulations
-        function make_coupled_model(grid)
-            @inline hi(λ, φ) = φ > 70 || φ < -70
-
-            # Create ocean and Sea ice
-            ocean = ocean_simulation(grid, closure=nothing)
-            set!(ocean.model, T=20, S=35, u=0.01, v=-0.005)
-            sea_ice = sea_ice_simulation(grid, ocean)
-            set!(sea_ice.model, h=hi, ℵ=hi)
-
-            # Create atmosphere and radiation
-            backend = JRA55NetCDFBackend(4)
-            atmosphere = JRA55PrescribedAtmosphere(arch; backend)
-
-            return OceanSeaIceModel(ocean, sea_ice; atmosphere)
-        end
 
         # Reference run: 3 iterations, then continue to 6
         # (This matches the checkpointed workflow where we create a new Simulation
@@ -110,5 +112,59 @@ using Oceananigans.OutputWriters: Checkpointer
 
         # Cleanup
         rm.(glob("$(prefix)_iteration*.jld2"), force=true)
+    end
+end
+
+@testset "EarthSystemModel reset! and re-run!" begin
+    for arch in test_architectures
+        A = typeof(arch)
+        @info "Testing EarthSystemModel reset! and re-run! on $A"
+
+        grid = LatitudeLongitudeGrid(arch;
+                                     size = (20, 20, 4),
+                                     z = (-100, 0),
+                                     latitude = (-80, 80),
+                                     longitude = (0, 360),
+                                     halo = (6, 6, 6))
+
+        model = make_coupled_model(grid)
+        simulation = Simulation(model, Δt=60, stop_iteration=3, verbose=false)
+
+        # check that clock stops when intended
+        run!(simulation)
+
+        @test simulation.model.clock.iteration == 3
+        @test simulation.model.ocean.model.clock.iteration == 3
+        @test simulation.model.sea_ice.model.clock.iteration == 3
+        @test simulation.model.atmosphere.clock.iteration == 3
+        @test simulation.model.land.clock.iteration == 3
+        @test simulation.model.radiation.clock.iteration == 3
+
+        # check that reset!(simulation) rewinds model clock and its components
+        reset!(simulation)
+
+        @test simulation.model.clock.iteration == 0
+        @test simulation.model.clock.time == 0
+        @test simulation.model.ocean.model.clock.iteration == 0
+        @test simulation.model.ocean.model.clock.time == 0
+        @test simulation.model.sea_ice.model.clock.iteration == 0
+        @test simulation.model.sea_ice.model.clock.time == 0
+        @test simulation.model.atmosphere.clock.iteration == 0
+        @test simulation.model.atmosphere.clock.time == 0
+        @test simulation.model.radiation.clock.iteration == 0
+        @test simulation.model.radiation.clock.time == 0
+        @test simulation.model.land.clock.iteration == 0
+        @test simulation.model.land.clock.time == 0
+
+        # check we can restart the simulation
+        simulation.stop_iteration = 2
+        run!(simulation)
+
+        @test simulation.model.clock.iteration == 2
+        @test simulation.model.ocean.model.clock.iteration == 2
+        @test simulation.model.sea_ice.model.clock.iteration == 2
+        @test simulation.model.atmosphere.clock.iteration == 2
+        @test simulation.model.land.clock.iteration == 2
+        @test simulation.model.radiation.clock.iteration == 2
     end
 end

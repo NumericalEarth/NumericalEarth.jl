@@ -85,7 +85,7 @@ atmosphere.model.initial_conditions
 
 # We use a three hour time-step:
 
-atmosphere.model.output.output_dt = Hour(3)
+SpeedyWeather.set!(atmosphere.model.output, atmosphere.model, interval = Hour(3))
 nothing #hide
 
 # ## The coupled model
@@ -98,10 +98,12 @@ nothing #hide
 nothing #hide
 
 # We build the complete coupled `earth_model` and the coupled simulation.
-# Since radiation is idealized in this example, we set the emissivities to zero.
+# NumericalEarth still computes turbulent (sensible heat, water vapor) fluxes
+# here using its own bulk-formula machinery and writes them back to Speedy.
+# Top-level radiation, however, is not yet wired up against SpeedyWeather's
+# upwelling-LW path, so we leave `radiation = nothing` for now.
 
-radiation = Radiation(ocean_emissivity=0.0, sea_ice_emissivity=0.0)
-earth_model = EarthSystemModel(atmosphere, ocean, sea_ice; radiation)
+earth_model = EarthSystemModel(; atmosphere, sea_ice, ocean)
 
 # ## Building and running the simulation
 #
@@ -158,7 +160,7 @@ function progress(sim)
     atmos = sim.model.atmosphere
     ocean = sim.model.ocean
 
-    ua, va     = atmos.diagnostic_variables.dynamics.u_mean_grid, atmos.diagnostic_variables.dynamics.v_mean_grid
+    ua, va     = atmos.variables.dynamics.u_mean_grid, atmos.variables.dynamics.v_mean_grid
     uo, vo, wo = ocean.model.velocities
 
     uamax = (maximum(abs, ua), maximum(abs, va))

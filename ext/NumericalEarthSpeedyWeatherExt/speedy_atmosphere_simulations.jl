@@ -1,3 +1,5 @@
+using Oceananigans.Simulations
+
 import NumericalEarth.Atmospheres: atmosphere_simulation
 
 # Make sure the atmospheric parameters from SpeedyWeather can be used in the compute fluxes function
@@ -28,7 +30,7 @@ end
 
 # The height of near-surface variables used in the turbulent flux solver
 function surface_layer_height(s::SpeedySimulation)
-    T = s.model.atmosphere.temp_ref
+    T = s.model.atmosphere.reference_temperature
     g = s.model.planet.gravity
     Φ = s.model.geopotential.Δp_geopot_full
     return Φ[end] * T / g
@@ -43,14 +45,14 @@ thermodynamics_parameters(atmos::SpeedySimulation) =
     NumericalEarth.Atmospheres.AtmosphereThermodynamicsParameters(Float32)
 
 function initialize_atmospheric_state!(simulation::SpeedyWeather.Simulation)
-    progn, diagn, model  = SpeedyWeather.unpack(simulation)
-    (; time) = progn.clock  # current time
+    vars, model = SpeedyWeather.unpack(simulation)
+    (; time) = vars.prognostic.clock  # current time
 
     # set the tendencies back to zero for accumulation
-    fill!(diagn.tendencies, 0, typeof(model))
+    SpeedyWeather.reset_tendencies!(vars)
 
-    if model.physics
-        SpeedyWeather.parameterization_tendencies!(diagn, progn, time, model)
+    if !model.dynamics_only
+        SpeedyWeather.parameterization_tendencies!(vars, model)
     end
 
     return nothing
@@ -72,11 +74,13 @@ function atmosphere_simulation(spectral_grid::SpeedyWeather.SpectralGrid; output
     surface_heat_flux = SpeedyWeather.SurfaceHeatFlux(ocean=ocean_heat_flux, land=land_heat_flux)
 
     # The atmospheric model
-    atmosphere_model = SpeedyWeather.PrimitiveWetModel(spectral_grid;
-                                                       surface_heat_flux,
-                                                       surface_humidity_flux,
-                                                       ocean = nothing,
-                                                       sea_ice = nothing) # This is provided by ClimaSeaIce
+    atmosphere_model = SpeedyWeather.PrimitiveWetModel(
+        spectral_grid;
+        surface_heat_flux,
+        surface_humidity_flux,
+        ocean = SpeedyWeather.PrescribedOcean(),
+        sea_ice = nothing # provided by ClimaSeaIce
+    )
 
     # Construct the simulation
     atmosphere = SpeedyWeather.initialize!(atmosphere_model)
@@ -89,3 +93,5 @@ function atmosphere_simulation(spectral_grid::SpeedyWeather.SpectralGrid; output
 
     return atmosphere
 end
+
+Simulations.reset_clock!(atmos::SpeedyWeather.Simulation) = SpeedyWeather.initialize!(atmos.prognostic_variables.clock)
