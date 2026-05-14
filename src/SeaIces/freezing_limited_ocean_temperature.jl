@@ -32,7 +32,7 @@ sea_ice_thickness(::FreezingLimitedOceanTemperature) = ZeroField()
 # does not matter
 reference_density(::FreezingLimitedOceanTemperature) = 0
 heat_capacity(::FreezingLimitedOceanTemperature) = 0
-time_step!(::FreezingLimitedOceanTemperature, Δt) = nothing
+Oceananigans.TimeSteppers.time_step!(::FreezingLimitedOceanTemperature, Δt) = nothing
 
 # FreezingLimitedOceanTemperature handles temperature limiting in compute_sea_ice_ocean_fluxes!
 EarthSystemModels.above_freezing_ocean_temperature!(ocean, grid, ::FreezingLimitedOceanTemperature) = nothing

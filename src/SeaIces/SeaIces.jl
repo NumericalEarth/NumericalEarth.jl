@@ -16,23 +16,22 @@ using Oceananigans.Operators: Operators, ℑxᶠᵃᵃ, ℑyᵃᶠᵃ
 using Oceananigans.Simulations: Simulation
 using Oceananigans.Units: Units, minutes
 using Oceananigans.Utils: Utils, launch!
-using NumericalEarth.EarthSystemModels: EarthSystemModels, EarthSystemModel
-using NumericalEarth.EarthSystemModels.InterfaceComputations: InterfaceComputations, SkinTemperature
+
+using ..EarthSystemModels: EarthSystemModels, EarthSystemModel
+using ..EarthSystemModels.InterfaceComputations: InterfaceComputations, SkinTemperature
 
 import NumericalEarth.EarthSystemModels: interpolate_state!,
-                                     sea_ice_concentration,
-                                     sea_ice_thickness,
-                                     reference_density,
-                                     heat_capacity,
-                                     update_net_fluxes!,
-                                     default_sea_ice
+                                         sea_ice_concentration,
+                                         sea_ice_thickness,
+                                         reference_density,
+                                         heat_capacity,
+                                         update_net_fluxes!,
+                                         default_sea_ice
 
 import NumericalEarth.EarthSystemModels.InterfaceComputations: ComponentExchanger,
                                                                net_fluxes,
                                                                ThreeEquationHeatFlux,
                                                                default_ai_temperature
-
-import Oceananigans.TimeSteppers: time_step!
 
 include("freezing_limited_ocean_temperature.jl")
 include("sea_ice_simulation.jl")
