@@ -80,7 +80,8 @@ const NoSeaIceInterface = ComponentInterfaces{<:AtmosphereInterface,  <:Nothing,
 const NoOceanInterface  = ComponentInterfaces{<:Nothing, <:AtmosphereInterface,  <:Nothing}
 const NoInterface       = ComponentInterfaces{<:Nothing, <:Nothing, <:Nothing, <:Nothing}
 
-const NoOceanInterfaceModel = EarthSystemModel{R, A, L, I, O, <:NoOceanInterface} where {R, A, L, I, O}
-const NoInterfaceModel      = EarthSystemModel{R, A, L, I, O, <:NoInterface}      where {R, A, L, I, O}
+const NoSeaIceInterfaceModel = EarthSystemModel{R, A, L, I, O, <:NoSeaIceInterface} where {R, A, L, I, O}
+const NoOceanInterfaceModel  = EarthSystemModel{R, A, L, I, O, <:NoOceanInterface}  where {R, A, L, I, O}
+const NoInterfaceModel       = EarthSystemModel{R, A, L, I, O, <:NoInterface}       where {R, A, L, I, O}
 
 end # module
