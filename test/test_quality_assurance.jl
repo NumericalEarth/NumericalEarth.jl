@@ -1,9 +1,10 @@
 using Test
 using NumericalEarth
+using Breeze, SpeedyWeather, XESMF
 using ExplicitImports: ExplicitImports
 
 @testset "ExplicitImports" begin
-    modules = (
+    modules = Module[
         NumericalEarth,
         NumericalEarth.Atmospheres,
         NumericalEarth.Bathymetry,
@@ -28,7 +29,23 @@ using ExplicitImports: ExplicitImports
         NumericalEarth.Oceans,
         NumericalEarth.Radiations,
         NumericalEarth.SeaIces,
+    ]
+
+    function maybe_extension(parent, name::Symbol)
+        if isdefined(Base, :get_extension)
+            return Base.get_extension(parent, name)
+        else
+            return isdefined(parent, name) ? getproperty(parent, name) : nothing
+        end
+    end
+
+    for ext in (
+        maybe_extension(NumericalEarth, :NumericalEarthSpeedyWeatherExt),
+        maybe_extension(NumericalEarth, :NumericalEarthVerosExt),
+        maybe_extension(NumericalEarth, :NumericalEarthBreezeExt),
     )
+        isnothing(ext) || push!(modules, ext)
+    end
 
     @testset "Explicit Imports [$(mod)]" for mod in modules
         @test ExplicitImports.check_no_implicit_imports(mod) === nothing

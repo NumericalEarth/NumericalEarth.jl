@@ -143,5 +143,5 @@ end
 ##### CFL wizard support
 #####
 
-cell_advection_timescale(model::NumericalEarth.EarthSystemModel{<:Any, <:BreezeAtmosphere}) =
+Oceananigans.Advection.cell_advection_timescale(model::NumericalEarth.EarthSystemModel{<:Any, <:BreezeAtmosphere}) =
     cell_advection_timescale(model.atmosphere)

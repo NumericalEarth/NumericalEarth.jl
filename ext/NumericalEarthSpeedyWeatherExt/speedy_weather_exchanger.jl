@@ -1,6 +1,6 @@
 using Oceananigans
+using Oceananigans.Architectures: architecture
 using Oceananigans.BoundaryConditions
-using Oceananigans.Grids: architecture
 using Oceananigans.Utils: launch!
 using Oceananigans.Operators: intrinsic_vector
 using XESMF
@@ -11,7 +11,6 @@ using NumericalEarth.EarthSystemModels: sea_ice_concentration
 # using ConservativeRegridding
 # using GeoInterface: Polygon, LinearRing
 import NumericalEarth.EarthSystemModels: update_net_fluxes!, interpolate_state!
-import NumericalEarth.Atmospheres: atmosphere_regridder
 import NumericalEarth.EarthSystemModels.InterfaceComputations: net_fluxes, ComponentExchanger
 
 # We do not need this...
@@ -23,14 +22,14 @@ net_fluxes(::SpeedySimulation) = nothing
 # If this work we can
 # 1. Copy speedyweather gridarrays to the GPU
 # 2. Perform the regridding on the GPU
-function ComponentExchanger(atmosphere::SpeedySimulation, exchange_grid) 
+function ComponentExchanger(atmosphere::SpeedySimulation, exchange_grid)
 
     spectral_grid = atmosphere.model.spectral_grid
     # TODO: Implement a conservative regridder when ready
     from_atmosphere = XESMF.Regridder(spectral_grid, exchange_grid)
     to_atmosphere   = XESMF.Regridder(exchange_grid, spectral_grid)
     regridder = (; to_atmosphere, from_atmosphere)
-    
+
     state = (; u    = Field{Center, Center, Nothing}(exchange_grid),
                v    = Field{Center, Center, Nothing}(exchange_grid),
                T    = Field{Center, Center, Nothing}(exchange_grid),
@@ -40,7 +39,7 @@ function ComponentExchanger(atmosphere::SpeedySimulation, exchange_grid)
                ℐꜜˡʷ = Field{Center, Center, Nothing}(exchange_grid),
                Jʳⁿ  = Field{Center, Center, Nothing}(exchange_grid),
                Jˢⁿ  = Field{Center, Center, Nothing}(exchange_grid))
-    
+
     return ComponentExchanger(state, regridder)
 end
 
@@ -62,7 +61,7 @@ function interpolate_state!(exchanger, exchange_grid, atmos::SpeedySimulation, c
     ℐꜜˡʷ = atmos.variables.parameterizations.surface_longwave_down.data
     Jʳⁿ  = atmos.variables.parameterizations.rain_rate.data
 
-    # `snow_rate` is only registered when SpeedyWeather's large-scale 
+    # `snow_rate` is only registered when SpeedyWeather's large-scale
     # condensation parameterization is part of the model
     Jˢⁿ = haskey(atmos.variables.parameterizations, :snow_rate) ?
           atmos.variables.parameterizations.snow_rate.data : nothing
@@ -98,13 +97,13 @@ end
 
 @kernel function _rotate_winds!(u, v, grid)
     i, j = @index(Global, NTuple)
-    kᴺ = size(grid, 3) 
+    kᴺ = size(grid, 3)
     uₑ, vₑ = intrinsic_vector(i, j, kᴺ, grid, u, v)
     @inbounds u[i, j, kᴺ] = uₑ
     @inbounds v[i, j, kᴺ] = vₑ
 end
 
-# TODO: Fix the coupling with the sea ice model and make sure that 
+# TODO: Fix the coupling with the sea ice model and make sure that
 # the this function works also for sea_ice=nothing and on GPUs without
 # needing to allocate memory.
 function update_net_fluxes!(coupled_model, atmos::SpeedySimulation)

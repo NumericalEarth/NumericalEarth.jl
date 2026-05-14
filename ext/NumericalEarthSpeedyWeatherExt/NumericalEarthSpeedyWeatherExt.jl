@@ -1,12 +1,17 @@
 module NumericalEarthSpeedyWeatherExt
 
-using OffsetArrays
-using KernelAbstractions
-using Statistics
+using OffsetArrays: OffsetArrays
+using KernelAbstractions: KernelAbstractions, @index, @kernel
+using Oceananigans.BoundaryConditions: BoundaryConditions, fill_halo_regions!
+using Oceananigans.Grids: Center
+using Oceananigans.Fields: Field, interior, regrid!
+using Oceananigans.Simulations: Simulations
+using Statistics: Statistics
+using XESMF: XESMF
 
-import SpeedyWeather 
-import NumericalEarth 
-import Oceananigans 
+import SpeedyWeather
+import NumericalEarth
+import Oceananigans
 import SpeedyWeather.RingGrids
 
 include("speedy_atmosphere_simulations.jl")

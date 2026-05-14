@@ -1,12 +1,8 @@
 using NumericalEarth.Oceans
 
-import NumericalEarth.EarthSystemModels.InterfaceComputations: 
+import NumericalEarth.EarthSystemModels.InterfaceComputations:
     net_fluxes,
-    sea_ice_ocean_interface, 
-    atmosphere_ocean_interface, 
-    initialize!,
-    ComponentExchanger,
-    exchange_grid
+    ComponentExchanger
 
 import NumericalEarth.EarthSystemModels:
     interpolate_state!,
@@ -14,7 +10,7 @@ import NumericalEarth.EarthSystemModels:
 
 import NumericalEarth.Oceans: get_radiative_forcing
 
-function ComponentExchanger(ocean::VerosOceanSimulation, grid) 
+function ComponentExchanger(ocean::VerosOceanSimulation, grid)
     state = (; u = Field{Face, Center, Nothing}(grid),
                v = Field{Center, Face, Nothing}(grid),
                T = Field{Center, Center, Nothing}(grid),
@@ -23,7 +19,7 @@ function ComponentExchanger(ocean::VerosOceanSimulation, grid)
     return ComponentExchanger(state, nothing)
 end
 
-exchange_grid(atmosphere, ocean::VerosOceanSimulation, sea_ice) = surface_grid(ocean)
+NumericalEarth.EarthSystemModels.exchange_grid(atmosphere, ocean::VerosOceanSimulation, sea_ice) = surface_grid(ocean)
 
 @inline function net_fluxes(ocean::VerosOceanSimulation)
     grid = surface_grid(ocean)
@@ -58,7 +54,7 @@ function update_net_fluxes!(coupled_model, ocean::VerosOceanSimulation)
     # Update the flux containers
     Oceans.update_net_ocean_fluxes!(coupled_model, ocean, coupled_model.interfaces.exchanger.grid)
     net_ocean_fluxes = coupled_model.interfaces.net_fluxes.ocean
-   
+
     # Pass the flux values to the python ocean
     nx = pyconvert(Int, ocean.setup.state.settings.nx) + 4
     ny = pyconvert(Int, ocean.setup.state.settings.ny) + 4
