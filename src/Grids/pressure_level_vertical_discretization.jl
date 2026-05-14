@@ -107,12 +107,17 @@ const PressureLevelGrid =
     @inbounds grid.z.geopotential[i, j, k] / grid.z.gravitational_acceleration
 
 # The 1-D `rnodes(grid, ℓz)` (and `znodes` via `rnodes`) has no sensible answer
-# on a grid whose z varies per (i, j); throw an explicit error if anything asks
-# for it. `rnode(i, j, k, grid, ...)` is the per-cell entry point.
-function rnodes(grid::PressureLevelGrid, args...; kwargs...)
-    throw(ArgumentError("PressureLevelGrid has a 3-D z-coordinate; " *
-                        "use znode(i, j, k, grid, locs...) per cell instead of znodes/rnodes."))
-end
+# on a grid whose z varies per (i, j); throw an explicit `ArgumentError` if
+# anything asks for it. The per-cell entry point is `znode(i, j, k, grid, ...)`.
+# Each override below matches one of Oceananigans' existing `rnodes(::AUG, ...)`
+# methods with the strictly-more-specific `PressureLevelGrid` grid type, so the
+# dispatcher resolves to ours without ambiguity.
+const _PL_NO_1D_Z_MSG = "PressureLevelGrid has a 3-D z-coordinate; " *
+                       "use znode(i, j, k, grid, locs...) per cell instead of znodes/rnodes."
+
+@inline rnodes(::PressureLevelGrid, ::Face;   kwargs...) = throw(ArgumentError(_PL_NO_1D_Z_MSG))
+@inline rnodes(::PressureLevelGrid, ::Center; kwargs...) = throw(ArgumentError(_PL_NO_1D_Z_MSG))
+@inline rnodes(::PressureLevelGrid, ℓx, ℓy, ℓz; kwargs...) = throw(ArgumentError(_PL_NO_1D_Z_MSG))
 
 #####
 ##### interpolate! hook: column-aware fractional z index
