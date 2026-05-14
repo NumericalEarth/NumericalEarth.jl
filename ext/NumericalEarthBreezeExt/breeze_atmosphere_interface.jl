@@ -88,7 +88,7 @@ end
 ##### Net fluxes: extract coupling flux fields from Breeze boundary conditions
 #####
 
-function NumericalEarth.EarthSystemModels.InterfaceComputationsnet_fluxes(atmosphere::BreezeAtmosphere)
+function NumericalEarth.EarthSystemModels.InterfaceComputations.net_fluxes(atmosphere::BreezeAtmosphere)
     # Momentum flux fields (direct FluxBoundaryCondition on ρu, ρv)
     ρu = atmosphere.momentum.ρu.boundary_conditions.bottom.condition
     ρv = atmosphere.momentum.ρv.boundary_conditions.bottom.condition
