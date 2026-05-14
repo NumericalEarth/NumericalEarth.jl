@@ -5,11 +5,8 @@ using CopernicusMarine
 
 using Oceananigans
 using Oceananigans.DistributedComputations: @root
-
 using Dates: DateTime
 using NumericalEarth.DataWrangling.GLORYS: GLORYSMetadata, GLORYSMetadatum
-
-import NumericalEarth.DataWrangling: download_dataset
 
 # Download each date individually, instead of downloading the entire dataset at once.
 # This is useful for a possible extension of the temporal horizon of the dataset.
@@ -21,11 +18,11 @@ function download_dataset(metadata::GLORYSMetadata; kwargs...)
     return paths
 end
 
-function download_dataset(meta::GLORYSMetadatum;
-                          skip_existing=true,
-                          username=get(ENV, "COPERNICUS_USERNAME", nothing),
-                          password=get(ENV, "COPERNICUS_PASSWORD", nothing),
-                          additional_kw...)
+function NumericalEarth.DataWrangling.download_dataset(meta::GLORYSMetadatum;
+                                                       skip_existing=true,
+                                                       username=get(ENV, "COPERNICUS_USERNAME", nothing),
+                                                       password=get(ENV, "COPERNICUS_PASSWORD", nothing),
+                                                       additional_kw...)
 
     output_directory = meta.dir
     output_filename = meta.filename

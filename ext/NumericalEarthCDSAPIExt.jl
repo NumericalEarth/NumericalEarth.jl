@@ -3,18 +3,15 @@ module NumericalEarthCDSAPIExt
 using NumericalEarth
 using CDSAPI
 using NCDatasets
-
 using Oceananigans
 using Oceananigans.DistributedComputations: @root
 
 using Dates
 using NumericalEarth.DataWrangling.ERA5: ERA5Dataset, ERA5Metadata, ERA5Metadatum,
-                                         ERA5_dataset_variable_names, ERA5_netcdf_variable_names
-using NumericalEarth.DataWrangling.ERA5: ERA5PressureLevelsDataset,
+                                         ERA5_dataset_variable_names, ERA5_netcdf_variable_names,
+                                         ERA5PressureLevelsDataset,
                                          ERA5PressureMetadata, ERA5PressureMetadatum,
                                          ERA5PL_dataset_variable_names, ERA5PL_netcdf_variable_names
-
-import NumericalEarth.DataWrangling: download_dataset
 
 #####
 ##### Dispatch helpers — encapsulate single-level vs pressure-level differences
@@ -152,7 +149,7 @@ Before downloading, you must:
 
 See https://cds.climate.copernicus.eu/how-to-api for details.
 """
-function download_dataset(meta::ERA5Metadatum; skip_existing=true)
+function NumericalEarth.DataWrangling.download_dataset(meta::ERA5Metadatum; skip_existing=true)
     output_path = NumericalEarth.DataWrangling.metadata_path(meta)
 
     # Skip download if file already exists
