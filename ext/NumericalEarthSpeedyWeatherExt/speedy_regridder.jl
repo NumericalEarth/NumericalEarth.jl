@@ -1,6 +1,6 @@
 using Oceananigans
 using Oceananigans.Grids: AbstractGrid
-using XESMF: Regridder, xesmf_coordinates
+using XESMF: xesmf_coordinates
 
 const Grids = Union{SpeedyWeather.SpectralGrid, AbstractGrid}
 
