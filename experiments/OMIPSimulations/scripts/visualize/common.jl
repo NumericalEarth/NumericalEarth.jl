@@ -1113,3 +1113,88 @@ const HADISST_SIC_REF = Ref{Any}(nothing)
 
 hadisst_sic_climatology() =
     try_load(HADISST_SIC_REF, "HadISST SIC climatology", load_hadisst_sic_climatology)
+
+# ══════════════════════════════════════════════════════════════
+# RAPID-MOCHA 26.5°N AMOC climatology + time series
+# ══════════════════════════════════════════════════════════════
+#
+# The RAPID-MOCHA array (McCarthy et al. 2015; Moat et al. 2023) has
+# monitored the AMOC at 26.5°N continuously since April 2004. We use
+# two NetCDFs from the project:
+#
+#   * `moc_vertical.nc`  — daily vertical streamfunction ψ(z, t) (Sv)
+#                          on a fixed depth axis (positive m).
+#   * `moc_transports.nc` — daily AMOC components; `moc_mar_hc10` is
+#                           the upper-cell maximum, used as the AMOC
+#                           index time series.
+#
+# URLs are versioned by release on rapid.ac.uk; the defaults below
+# point at the 2018-onwards file names. Override with `RAPID_*_URL`
+# env vars if a newer release moves them.
+
+const RAPID_VERTICAL_URL = get(ENV, "RAPID_VERTICAL_URL",
+    "https://rapid.ac.uk/sites/default/files/2024-09/moc_vertical.nc")
+const RAPID_TRANSPORTS_URL = get(ENV, "RAPID_TRANSPORTS_URL",
+    "https://rapid.ac.uk/sites/default/files/2024-09/moc_transports.nc")
+
+function nanmean(v)
+    finite = filter(isfinite, v)
+    return isempty(finite) ? NaN : mean(finite)
+end
+function nanstd(v)
+    finite = filter(isfinite, v)
+    return length(finite) < 2 ? NaN : std(finite)
+end
+
+# Climatological ψ(z) at 26.5°N: time-mean and standard deviation of
+# the daily RAPID streamfunction profile. NaN at depths/times where
+# the array did not measure.
+function load_rapid_amoc_profile(; cache_dir = obs_cache_dir)
+    file = cached_download(RAPID_VERTICAL_URL; cache_dir)
+    @info "  Reading RAPID vertical streamfunction at 26.5°N..."
+    ds = NCDatasets.NCDataset(file)
+    depth_var = haskey(ds, "depth") ? ds["depth"] : ds["z"]
+    psi_var   = haskey(ds, "stream_function_mar") ? ds["stream_function_mar"] :
+                haskey(ds, "stream_function") ? ds["stream_function"] :
+                error("RAPID moc_vertical.nc: cannot find streamfunction variable")
+    depth = Float64.(Array(depth_var[:]))
+    psi   = Float64.(coalesce.(Array(psi_var[:, :]), NaN))   # (depth, time) in Sv
+    close(ds)
+    mean_psi = [nanmean(@view psi[k, :]) for k in 1:length(depth)]
+    std_psi  = [nanstd(@view psi[k, :])  for k in 1:length(depth)]
+    return (depth = depth, psi_mean = mean_psi, psi_std = std_psi)
+end
+
+# Monthly-binned AMOC max time series from `moc_mar_hc10`. Returned
+# coordinate is decimal calendar year so it can be plotted alongside a
+# model time series that has been converted to year-since-1958.
+function load_rapid_amoc_timeseries(; cache_dir = obs_cache_dir)
+    file = cached_download(RAPID_TRANSPORTS_URL; cache_dir)
+    @info "  Reading RAPID AMOC index time series..."
+    ds = NCDatasets.NCDataset(file)
+    time_var = Array(ds["time"][:])
+    moc_name = haskey(ds, "moc_mar_hc10") ? "moc_mar_hc10" :
+               haskey(ds, "moc_mar_hc")   ? "moc_mar_hc"   :
+               error("RAPID moc_transports.nc: cannot find AMOC index variable")
+    psi_max  = Float64.(coalesce.(Array(ds[moc_name][:]), NaN))
+    close(ds)
+    yrs = Dates.year.(time_var)
+    mns = Dates.month.(time_var)
+    keys_ym = sort!(unique(collect(zip(yrs, mns))))
+    centers = Float64[]
+    means   = Float64[]
+    for (y, m) in keys_ym
+        idx = findall(i -> yrs[i] == y && mns[i] == m, eachindex(time_var))
+        vals = filter(isfinite, view(psi_max, idx))
+        isempty(vals) && continue
+        push!(centers, y + (m - 0.5) / 12)
+        push!(means, mean(vals))
+    end
+    return (year = centers, psi_max = means)
+end
+
+const RAPID_PROFILE_REF    = Ref{Any}(nothing)
+const RAPID_TIMESERIES_REF = Ref{Any}(nothing)
+
+rapid_amoc_profile()    = try_load(RAPID_PROFILE_REF,    "RAPID ψ(z) at 26.5°N", load_rapid_amoc_profile)
+rapid_amoc_timeseries() = try_load(RAPID_TIMESERIES_REF, "RAPID AMOC index",     load_rapid_amoc_timeseries)

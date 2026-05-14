@@ -1212,6 +1212,57 @@ LOADERS[:amoc] = disk_cached(:amoc; source_fts_syms = :vvol_fts) do c
 end
 
 #####
+##### AMOC at 26.5°N (RAPID-MOCHA latitude)
+#####
+#
+# `:amoc_latitudes` are at v-faces (length Ny+1); the (Ny, Nz) `:amoc`
+# array is indexed by cell centers, so we average adjacent face
+# latitudes to find the j closest to 26.5°N.
+
+const RAPID_LATITUDE = 26.5
+
+LOADERS[:amoc_26n_j] = c -> begin
+    lats = get_field(c, :amoc_latitudes)
+    centers = @views (lats[1:end-1] .+ lats[2:end]) ./ 2
+    return argmin(abs.(centers .- RAPID_LATITUDE))
+end
+
+LOADERS[:amoc_26n_profile] = c -> begin
+    ψ = get_field(c, :amoc)               # (Ny, Nz) Sv
+    j = get_field(c, :amoc_26n_j)
+    return Vector(ψ[j, :])
+end
+
+# Per-snapshot ψ_max at 26.5°N: loop vvol over time, sum across the
+# Atlantic at the single j-row, cumulatively integrate in z, take max.
+# Cheap per snapshot (O(Nx·Nz)) so this covers the full record even on
+# tenth-degree grids. Disk-cached on vvol_fts so reruns are instant.
+LOADERS[:amoc_max_timeseries] = disk_cached(:amoc_max_timeseries; source_fts_syms = :vvol_fts) do c
+    vvol_fts = get_field(c, :vvol_fts)
+    atl      = get_field(c, :atlantic_mask_2d)
+    j        = get_field(c, :amoc_26n_j)
+    Nx, Ny, Nz = size(get_field(c, :grid))
+    Nt = length(vvol_fts.times)
+    ψ_max = zeros(Nt)
+    for n in 1:Nt
+        slice = Array(interior(vvol_fts[n]))
+        col = zeros(Nz)
+        @inbounds for k in 1:Nz, i in 1:Nx
+            atl[i, j] || continue
+            col[k] += slice[i, j, k]
+        end
+        ψ_z = -cumsum(col) ./ 1e6   # Sv, sign matches :amoc
+        ψ_max[n] = maximum(ψ_z)
+    end
+    # Convert to decimal calendar year using the JRA55-do epoch the rest
+    # of the visualize pipeline assumes (`compute_monthly_means` uses
+    # `DateTime(1958, 1, 1)` as the reference).
+    year_start = 1958.0
+    times_year = year_start .+ vvol_fts.times ./ years
+    return (year = times_year, psi_max = ψ_max)
+end
+
+#####
 ##### Strait transports (offline; depends on per-case grid configuration)
 #####
 
