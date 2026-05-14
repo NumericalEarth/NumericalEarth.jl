@@ -2,13 +2,13 @@
 #
 # This walkthrough covers downloading ERA5 reanalysis fields from the
 # Copernicus Climate Data Store (CDS), with the Rain in Shallow Cumulus Over
-# the Ocean (RICO) trade-wind cumulus campaign (Rauber et al. 2007) as a
+# the Ocean (RICO) trade-wind cumulus campaign [rauber2007rain](@citep) as a
 # unifying case study. We consider both single-level (2-D) and pressure-level
 # (3-D) fields with two subsetting approaches (bounding box and column) that
 # restrict the amount of data requested through the CDS API.
 #
-# Our focus is on a week within van Zanten et al.'s *undisturbed period*
-# (Dec 27 2004 – Jan 2 2005), during which a mean precipitation was observed.
+# Our focus is on a week within the  *undisturbed period* (Dec 27 2004 – Jan 2 2005)
+# by [vanZanten2011](@citet), during which a mean precipitation was observed.
 # Here, we briefly analyze and present the ERA5 data, referring to published
 # material where appropriate.
 #
@@ -17,8 +17,8 @@
 # 1. **Global scale** - surface winds and Stokes drift over the entire globe
 # 2. **Synoptic scale** — surface precipitation over an Atlantic-centered
 #    region covering the tropics
-# 3. **Microscale** — single- and pressure-level u, v, T, qᵛ over the
-#    RICO study box; pressure-level qᶜˡ, qʳ in a single column.
+# 3. **Microscale** — single- and pressure-level ``u``, ``v``, ``T``, ``qᵛ`` over the
+#    RICO study box; pressure-level ``qᶜˡ``, ``qʳ`` in a single column.
 #
 # ## Install dependencies
 #
@@ -42,8 +42,8 @@ using Suppressor
 
 # ## Study definition
 #
-# For demonstration purposes, we select one week within van Zanten et al.
-# (2011)'s undisturbed period, giving us 168 hourly snapshots. This is used
+# For demonstration purposes, we select one week within [vanZanten2011](@citet)'s
+# undisturbed period, giving us 168 hourly snapshots. This is used
 # by both sections below.
 
 dates = DateTime(2004, 12, 27):Hour(1):DateTime(2005, 1, 2, 23)
@@ -52,7 +52,7 @@ nothing #hide
 # To subset the ERA5 data, we define two types of `region`s.
 # We introduce two `BoundingBox`es:
 
-## Synoptic-scale region, cf. Fig. 1 in Rauber et al. 2007
+## Synoptic-scale region, cf. Fig. 1 by [rauber2007rain](@citet)
 synoptic_region = BoundingBox(latitude=(-25, 35), longitude=(-110, 30))
 
 ## RICO study area near Antigua and Barbuda
@@ -80,9 +80,12 @@ nothing #hide
 # ### Metadata definition
 #
 # We first define metadata for each variable at a single date.
-# *Note: `Metadatum` is used for single dates while `Metadata` handles
-# multiple dates.* No `region` kwarg is specified because we want to
-# download global fields.
+#
+# !!! note "Metadatum vs Metadata"
+#     `Metadatum` is used for single dates while `Metadata` handles
+#      multiple dates.
+#
+# No `region` kwarg is specified because we want to download global fields.
 
 date = first(dates)
 u_stokes_meta = Metadatum(:eastward_stokes_drift;  dataset, date)
@@ -191,8 +194,9 @@ fig1
 #   facilitates any operations we want to perform on the data — in this case,
 #   a units conversion.
 #
-# *Note: We could have sliced the `precip_series` from above, but we 
-# illustrate here a seperate data retrieval path.*
+# !!! note "Slicing"
+#     We could have sliced the `precip_series` from above, but we illustrate here
+#     a seperate data retrieval path.
 
 precip_col_meta = Metadata(:total_precipitation; dataset, dates, region = rico_column)
 precip_col_series = @suppress_out FieldTimeSeries(precip_col_meta; time_indices_in_memory = Nt)
@@ -202,7 +206,7 @@ nothing #hide
 # that this is an *accumulated* rather than instantaneous quantity (more
 # discussion [here](https://confluence.ecmwf.int/display/CKB/ERA5%3A+data+documentation#ERA5:datadocumentation-Meanrates/fluxesandaccumulations))
 # with an accumulation period of 1 hour. We convert to a latent-heat-equivalent
-# flux in W/m² to compare with van Zanten et al.'s reported 21 W m⁻² mean.
+# flux in W/m² to compare with [vanZanten2011](@citet)'s reported 21 W m⁻² mean.
 
 ρᴸ = 1000   # kg/m³
 Lᵛ = 2.5e6  # J/kg, latent heat of vaporization
@@ -234,7 +238,7 @@ axislegend(ax2; position=:rt)
 
 fig2
 
-# In comparison with observations (van Zanten et al.'s Fig. 1), we see different
+# In comparison with observations ([vanZanten2011](@citet)'s Fig. 1), we see different
 # day-to-day variability in the reanalysis, with a wider range of values and greater
 # mean precipitation.
 
@@ -265,10 +269,12 @@ ds_pl.pressure_levels' / hPa
 #
 # The download list also includes`:geopotential` because a pressure-level
 # `FieldTimeSeries` grid derives its `z`-coordinate from the time-mean
-# geopotential height. `FieldTimeSeries` would also have auomatically
+# geopotential height. `FieldTimeSeries` would also have automatically
 # downloaded this field on demand, but pre-downloading saves API calls.
-# _Note: If the geopotential field isn't available, the fallback is to
-# estimate geopotential heights from the international standard atmosphere._
+#
+# !!! note "Geopotential"
+#     If the geopotential field isn't available, the fallback is to
+#     estimate geopotential heights from the international standard atmosphere.
 
 variables = [:specific_cloud_liquid_water_content,
              :specific_rain_water_content,
@@ -374,7 +380,7 @@ pˢᵗ = 1000
 q_profiles .*= 1000
 nothing #hide
 
-# Lastly, plot the profiles (cf. van Zanten et al. 2011, Fig. 2).
+# Lastly, plot the profiles (cf. [vanZanten2011](@citet), Fig. 2).
 
 fig4 = Figure(size=(900, 540), fontsize=12)
 
