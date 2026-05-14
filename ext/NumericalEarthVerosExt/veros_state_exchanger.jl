@@ -1,16 +1,6 @@
 using NumericalEarth.Oceans
 
-import NumericalEarth.EarthSystemModels.InterfaceComputations:
-    net_fluxes,
-    ComponentExchanger
-
-import NumericalEarth.EarthSystemModels:
-    interpolate_state!,
-    update_net_fluxes!
-
-import NumericalEarth.Oceans: get_radiative_forcing
-
-function ComponentExchanger(ocean::VerosOceanSimulation, grid)
+function NumericalEarth.EarthSystemModels.InterfaceComputations.ComponentExchanger(ocean::VerosOceanSimulation, grid)
     state = (; u = Field{Face, Center, Nothing}(grid),
                v = Field{Center, Face, Nothing}(grid),
                T = Field{Center, Center, Nothing}(grid),
@@ -21,7 +11,7 @@ end
 
 NumericalEarth.EarthSystemModels.exchange_grid(atmosphere, ocean::VerosOceanSimulation, sea_ice) = surface_grid(ocean)
 
-@inline function net_fluxes(ocean::VerosOceanSimulation)
+@inline function NumericalEarth.EarthSystemModels.InterfaceComputations.net_fluxes(ocean::VerosOceanSimulation)
     grid = surface_grid(ocean)
     u = Field{Face,   Center, Nothing}(grid)
     v = Field{Center, Face,   Nothing}(grid)
@@ -31,7 +21,7 @@ NumericalEarth.EarthSystemModels.exchange_grid(atmosphere, ocean::VerosOceanSimu
     return (; u, v, T, S)
 end
 
-function interpolate_state!(exchanger, exchange_grid, ocean::VerosOceanSimulation, coupled_model)
+function NumericalEarth.EarthSystemModels.interpolate_state!(exchanger, exchange_grid, ocean::VerosOceanSimulation, coupled_model)
     u = exchanger.state.u
     v = exchanger.state.v
     T = exchanger.state.T
@@ -45,11 +35,11 @@ function interpolate_state!(exchanger, exchange_grid, ocean::VerosOceanSimulatio
     return nothing
 end
 
-initialize!(exchanger::ComponentExchanger, grid, ::VerosOceanSimulation) = nothing
+Oceananigans.initialize!(exchanger::ComponentExchanger, grid, ::VerosOceanSimulation) = nothing
 
-get_radiative_forcing(ocean::VerosOceanSimulation) = nothing
+NumericalEarth.Oceans.get_radiative_forcing(ocean::VerosOceanSimulation) = nothing
 
-function update_net_fluxes!(coupled_model, ocean::VerosOceanSimulation)
+function NumericalEarth.EarthSystemModels.update_net_fluxes!(coupled_model, ocean::VerosOceanSimulation)
 
     # Update the flux containers
     Oceans.update_net_ocean_fluxes!(coupled_model, ocean, coupled_model.interfaces.exchanger.grid)
