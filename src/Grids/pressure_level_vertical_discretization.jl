@@ -6,27 +6,27 @@ using Oceananigans.BoundaryConditions: fill_halo_regions!
 using Oceananigans.OutputReaders: TimeSeriesInterpolation
 
 import Oceananigans.Architectures: on_architecture
-import Oceananigans.Grids: rnode, generate_coordinate, validate_dimension_specification
+import Oceananigans.Grids: rnode, rnodes, generate_coordinate, validate_dimension_specification
 import Oceananigans.Fields: _fractional_indices, fractional_x_index,
                             fractional_y_index, FractionalIndices
 
 """
-    PressureLevelVerticalDiscretization{C, D, E, F, G, Geo}
+    PressureLevelVerticalDiscretization{G, Geo}
 
-A vertical discretization for pressure-level reanalysis data on a `LatitudeLongitudeGrid`.
-The 1-D fields `cᵃᵃᶠ`, `cᵃᵃᶜ`, `Δᵃᵃᶠ`, `Δᵃᵃᶜ` are *sentinels* used only to satisfy the
-grid constructor's expectations of an `AbstractVerticalCoordinate`; the actual vertical
-position of cell `(i, j, k)` is `geopotential[i, j, k] / gravitational_acceleration`.
+A vertical discretization for pressure-level reanalysis data on a
+`LatitudeLongitudeGrid`. There is no 1-D z-axis: every cell `(i, j, k)` has its
+own height `geopotential[i, j, k] / gravitational_acceleration`. `znode`/`rnode`
+read that directly; `znodes`/`rnodes` (the plural, 1-D forms) error explicitly
+because they have no meaningful answer on this grid.
 
-`geopotential` (units m²/s²) is a 3-D `Field` or a `TimeSeriesInterpolation` over a
-`FieldTimeSeries`. The former gives a static z-coordinate; the latter gives a
-time-evolving coordinate driven by an attached `Clock`.
+`geopotential` (units m²/s²) is a 3-D `Field` or a `TimeSeriesInterpolation`
+over a `FieldTimeSeries`. The former gives a static z-coordinate; the latter
+gives a time-evolving one driven by an attached `Clock`.
+
+The `LatitudeLongitudeGrid` constructor still needs a value for `Lz`; we
+compute it as `extrema(geopotential) / g` inside `generate_coordinate`.
 """
-struct PressureLevelVerticalDiscretization{C, D, E, F, G, Geo} <: AbstractVerticalCoordinate
-    cᵃᵃᶠ                       :: C
-    cᵃᵃᶜ                       :: D
-    Δᵃᵃᶠ                       :: E
-    Δᵃᵃᶜ                       :: F
+struct PressureLevelVerticalDiscretization{G, Geo} <: AbstractVerticalCoordinate
     gravitational_acceleration :: G
     geopotential               :: Geo
 end
@@ -36,67 +36,52 @@ end
                                         gravitational_acceleration,
                                         surface_geopotential = nothing)
 
-Build a discretization backed by per-column `geopotential` (m²/s²). `znode`/`rnode`
-divide by `gravitational_acceleration` at read time.
+Build a discretization backed by per-column `geopotential` (m²/s²). `znode`
+divides by `gravitational_acceleration` at read time.
 
-If `surface_geopotential` is provided (a 2-D `Field`, m²/s²), columns are clipped
-so that `geopotential[i,j,k] ≥ surface_geopotential[i,j]`. This is required when
-the source is ERA5 pressure-level data, because sub-surface levels are filled with
-non-physical extrapolations that would break the column-monotonicity assumed by
-`_fractional_indices`.
+If `surface_geopotential` is provided (a 2-D `Field`, m²/s²), columns are
+clipped so that `geopotential[i,j,k] ≥ surface_geopotential[i,j]`. Required
+when the source is ERA5 pressure-level data, because sub-surface levels are
+filled with non-physical extrapolations that would break the column-monotonicity
+assumed by `_fractional_indices`.
 """
 function PressureLevelVerticalDiscretization(geopotential;
                                               gravitational_acceleration,
                                               surface_geopotential = nothing)
-    Nz = size(geopotential, 3)
-    # Sentinel `r_faces` shared in both fields (cf. MutableVerticalDiscretization's
-    # ctor); `generate_coordinate` then rebuilds proper centers + spacings.
-    r_faces = collect(0.0:Nz)
     isnothing(surface_geopotential) || clip_subsurface!(geopotential, surface_geopotential)
-    return PressureLevelVerticalDiscretization(r_faces, r_faces, 1.0, 1.0,
-                                                gravitational_acceleration, geopotential)
+    return PressureLevelVerticalDiscretization(gravitational_acceleration, geopotential)
 end
 
-# LatitudeLongitudeGrid's input validator calls validate_dimension_specification
-# on the user-supplied `z`; mirror MutableVerticalDiscretization's pattern.
-function validate_dimension_specification(T, ξ::PressureLevelVerticalDiscretization, dir, N, FT)
-    cᶠ = validate_dimension_specification(T, ξ.cᵃᵃᶠ, dir, N, FT)
-    cᶜ = validate_dimension_specification(T, ξ.cᵃᵃᶜ, dir, N, FT)
-    return PressureLevelVerticalDiscretization(cᶠ, cᶜ, ξ.Δᵃᵃᶠ, ξ.Δᵃᵃᶜ,
-                                                ξ.gravitational_acceleration, ξ.geopotential)
-end
+# Skip the generic validator (which would `length`-check the missing 1-D fields).
+validate_dimension_specification(T, ξ::PressureLevelVerticalDiscretization, dir, N, FT) = ξ
 
-# Grid constructor entry point. We delegate the sentinel handling to the generic
-# vector-based generate_coordinate (which returns the 5-tuple form when the
-# coordinate name is not :z), then wrap with our discretization.
+# Compute `Lz` from the actual geopotential data instead of a placeholder vector.
+# The returned discretization carries the geopotential (moved to `arch`) but
+# nothing else — `znodes` will error and `rnode` reads `geopotential` directly.
 function generate_coordinate(FT, topo, sz, halo,
                              coord::PressureLevelVerticalDiscretization,
                              coordinate_name, dim::Int, arch)
-    dim == 3            || throw(ArgumentError("PressureLevelVerticalDiscretization requires dim=3"))
+    dim == 3              || throw(ArgumentError("PressureLevelVerticalDiscretization requires dim=3"))
     coordinate_name == :z || throw(ArgumentError("PressureLevelVerticalDiscretization requires coordinate_name=:z"))
 
-    Lz, cᶠ, cᶜ, Δᶠ, Δᶜ = generate_coordinate(FT, topo[3](), sz[3], halo[3],
-                                              coord.cᵃᵃᶠ, :r, arch)
+    Φi   = _geopotential_data_for_extrema(coord.geopotential)
+    g    = coord.gravitational_acceleration
+    z_lo, z_hi = FT.(extrema(Φi) ./ g)
+    Lz   = z_hi - z_lo
 
-    return Lz, PressureLevelVerticalDiscretization(cᶠ, cᶜ, Δᶠ, Δᶜ,
-                                                    coord.gravitational_acceleration,
-                                                    on_architecture(arch, coord.geopotential))
+    moved = PressureLevelVerticalDiscretization(g, on_architecture(arch, coord.geopotential))
+    return Lz, moved
 end
 
+_geopotential_data_for_extrema(Φ::Field)                    = interior(Φ)
+_geopotential_data_for_extrema(Φ::TimeSeriesInterpolation)  = parent(Φ.time_series)
+
 Adapt.adapt_structure(to, c::PressureLevelVerticalDiscretization) =
-    PressureLevelVerticalDiscretization(Adapt.adapt(to, c.cᵃᵃᶠ),
-                                        Adapt.adapt(to, c.cᵃᵃᶜ),
-                                        Adapt.adapt(to, c.Δᵃᵃᶠ),
-                                        Adapt.adapt(to, c.Δᵃᵃᶜ),
-                                        c.gravitational_acceleration,
+    PressureLevelVerticalDiscretization(c.gravitational_acceleration,
                                         Adapt.adapt(to, c.geopotential))
 
 on_architecture(arch, c::PressureLevelVerticalDiscretization) =
-    PressureLevelVerticalDiscretization(on_architecture(arch, c.cᵃᵃᶠ),
-                                        on_architecture(arch, c.cᵃᵃᶜ),
-                                        on_architecture(arch, c.Δᵃᵃᶠ),
-                                        on_architecture(arch, c.Δᵃᵃᶜ),
-                                        c.gravitational_acceleration,
+    PressureLevelVerticalDiscretization(c.gravitational_acceleration,
                                         on_architecture(arch, c.geopotential))
 
 function Base.show(io::IO, z::PressureLevelVerticalDiscretization)
@@ -114,12 +99,20 @@ const PressureLevelGrid =
     AbstractUnderlyingGrid{<:Any, <:Any, <:Any, <:Any, <:PressureLevelVerticalDiscretization}
 
 #####
-##### znode / rnode override
+##### Node accessors: per-cell znode works; 1-D znodes / rnodes error.
 #####
 
-# znode falls through to rnode; we only need to override rnode for this grid type.
+# znode falls through to rnode in Oceananigans; only rnode needs overriding.
 @inline rnode(i, j, k, grid::PressureLevelGrid, ℓx, ℓy, ℓz) =
     @inbounds grid.z.geopotential[i, j, k] / grid.z.gravitational_acceleration
+
+# The 1-D `rnodes(grid, ℓz)` (and `znodes` via `rnodes`) has no sensible answer
+# on a grid whose z varies per (i, j); throw an explicit error if anything asks
+# for it. `rnode(i, j, k, grid, ...)` is the per-cell entry point.
+function rnodes(grid::PressureLevelGrid, args...; kwargs...)
+    throw(ArgumentError("PressureLevelGrid has a 3-D z-coordinate; " *
+                        "use znode(i, j, k, grid, locs...) per cell instead of znodes/rnodes."))
+end
 
 #####
 ##### interpolate! hook: column-aware fractional z index
@@ -184,8 +177,8 @@ function clip_subsurface!(geopotential::Field, surface_geopotential)
         Φi[i, j, k] = max(Φi[i, j, k], Φs[i, j, 1])
     end
     # `Field(metadatum)` ran `fill_halo_regions!` before clipping, so halo cells
-    # still hold the pre-clip (possibly sub-surface) values. Refill so that any
-    # halo read sees the clipped data.
+    # still hold the pre-clip (possibly sub-surface) values. Refill so any halo
+    # read sees the clipped data.
     fill_halo_regions!(geopotential)
     return geopotential
 end
