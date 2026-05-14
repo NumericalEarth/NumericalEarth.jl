@@ -368,3 +368,115 @@ set!(model; ρ = ρ, u = u, v = v, qᵗ = qᵗ, θˡⁱ = θˡⁱ)
 @info @sprintf("  qᶜ ∈ [%.2e, %.2e] g/kg",  1000*minimum(interior(qᶜ)), 1000*maximum(interior(qᶜ)))
 @info @sprintf("  qⁱ ∈ [%.2e, %.2e] g/kg",  1000*minimum(interior(qⁱ)), 1000*maximum(interior(qⁱ)))
 @info @sprintf("  p₀ ∈ [%.1f, %.1f] Pa",    minimum(interior(p₀)), maximum(interior(p₀)))
+
+# ## Profile plots
+#
+# Plot ρ, u, v, θ, qᵗ at three locations spanning the domain's terrain range.
+# At each site we overlay the four surrounding ERA5 native-grid columns (the
+# bilinear stencil) in light gray. The vertical coordinate is height above
+# the local surface (Φ − Φ₀)/g — i.e., we strip the terrain offset out of
+# both the LAM (which has none) and the ERA5 columns.
+
+using CairoMakie
+
+sites = [("East TX",     -93.5,   34.0),
+         ("SGP",         -97.485, 36.605),
+         ("High Plains", -101.5,  35.0)]
+
+# Materialize θ (currently an abstract op) and derive ERA5-native counterparts.
+θ_lam   = compute!(Field(T * (pˢᵗ / p)^κ))
+Tᵛ_era5 = T_era5 .* (1 .+ εfac .* qᵛ_era5)
+ρ_era5  = p_era5_3d ./ (Rᵈ .* Tᵛ_era5)
+θ_era5  = T_era5 .* (pˢᵗ ./ p_era5_3d) .^ κ
+qᵗ_era5 = qᵛ_era5 .+ qᶜ_era5 .+ qⁱ_era5
+
+ρ_arr   = Array(interior(ρ))
+u_arr   = Array(interior(u))
+v_arr   = Array(interior(v))
+θ_arr   = Array(interior(θ_lam))
+qᵗ_arr  = Array(interior(qᵗ))
+
+λ_e = collect(λnodes(ϕ_field.grid, Center(), Center(), Center()))
+φ_e = collect(φnodes(ϕ_field.grid, Center(), Center(), Center()))
+λ_c = collect(λnodes(grid, Center(), Center(), Center()))
+φ_c = collect(φnodes(grid, Center(), Center(), Center()))
+λ_f = collect(λnodes(grid, Face(),   Center(), Center()))
+φ_f = collect(φnodes(grid, Center(), Face(),   Center()))
+z_c = collect(znodes(grid, Center(), Center(), Center()))
+
+vars = [(:ρ,  ρ_arr,  ρ_era5,  "ρ (kg/m³)",  :center),
+        (:u,  u_arr,  u_era5,  "u (m/s)",    :xface),
+        (:v,  v_arr,  v_era5,  "v (m/s)",    :yface),
+        (:θ,  θ_arr,  θ_era5,  "θ (K)",      :center),
+        (:qᵗ, qᵗ_arr, qᵗ_era5, "qᵗ (kg/kg)", :center)]
+
+fig = Figure(size=(1600, 1000), fontsize=12)
+
+Nrows = length(sites)
+Ncols = length(vars)
+axs   = Matrix{Axis}(undef, Nrows, Ncols)
+
+for (row, (label, λ_site, φ_site)) in enumerate(sites)
+    # Site header spanning all 5 columns; elevation read from Φ₀ at the
+    # ERA5 cell containing the site.
+    i_site = clamp(floor(Int, (λ_site - λ_e[1]) / Δλ_e + 1), 1, length(λ_e) - 1)
+    j_site = clamp(floor(Int, (φ_site - φ_e[1]) / Δφ_e + 1), 1, length(φ_e) - 1)
+    elev_m = round(Int, Φ₀_arr[i_site, j_site] / g)
+    Label(fig[2*row - 1, 1:Ncols], "$label (elevation: $elev_m m)";
+          fontsize=15, font=:bold, halign=:center, tellwidth=false)
+
+    for (col, (vname, lam_arr, era5_arr, xlab, stagger)) in enumerate(vars)
+        # Pick the LAM cell closest to the site for this variable's stagger,
+        # then center the ERA5 bilinear stencil around the LAM cell's actual
+        # position so the blue line is exactly the bilinear mix of the
+        # plotted gray columns.
+        i_lam = stagger == :xface ? argmin(abs.(λ_f .- λ_site)) :
+                                    argmin(abs.(λ_c .- λ_site))
+        j_lam = stagger == :yface ? argmin(abs.(φ_f .- φ_site)) :
+                                    argmin(abs.(φ_c .- φ_site))
+        λ_lam = stagger == :xface ? λ_f[i_lam] : λ_c[i_lam]
+        φ_lam = stagger == :yface ? φ_f[j_lam] : φ_c[j_lam]
+
+        fi = (λ_lam - λ_e[1]) / Δλ_e + 1
+        fj = (φ_lam - φ_e[1]) / Δφ_e + 1
+        i₀ = clamp(floor(Int, fi), 1, length(λ_e) - 1)
+        j₀ = clamp(floor(Int, fj), 1, length(φ_e) - 1)
+        cells = ((i₀, j₀), (i₀+1, j₀), (i₀, j₀+1), (i₀+1, j₀+1))
+
+        ax = Axis(fig[2*row, col]; xlabel=xlab,
+                  ylabel       = col == 1 ? "z above surface (km)" : "",
+                  xlabelsize   = 14,
+                  ylabelsize   = 14)
+        axs[row, col] = ax
+
+        # ERA5 columns (light gray) — the LAM cell's actual bilinear stencil
+        for (i, j) in cells
+            valid = p_era5_lev .<= p₀_arr[i, j]
+            lines!(ax, era5_arr[i, j, valid], z_above_sfc[i, j, valid] ./ 1000;
+                   color=:gray70, linewidth=1)
+        end
+
+        # LAM profile at the chosen point — markers at cell centers so the
+        # discretization is explicit (no implied between-cell behavior).
+        scatter!(ax, lam_arr[i_lam, j_lam, :], z_c ./ 1000;
+                 color=:steelblue, markersize=6)
+
+        ylims!(ax, 0, 15)
+        vname === :θ && xlims!(ax, 280, 400)
+    end
+end
+
+# Share y-axis behavior across each site's row; only the leftmost column
+# shows ticks and label.
+for r in 1:Nrows
+    linkyaxes!(axs[r, :]...)
+    for c in 2:Ncols
+        hideydecorations!(axs[r, c]; grid=false)
+    end
+end
+
+Label(fig[0, 1:Ncols], "ERA5 → LAM profiles  (LAM: blue;  ERA5 stencil: gray)";
+      fontsize=20, font=:bold, tellwidth=false)
+
+save("era5_breeze_profiles.png", fig)
+@info "Wrote era5_breeze_profiles.png"
