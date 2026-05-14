@@ -11,6 +11,7 @@ using NumericalEarth.Oceans: MultipleFluxes
 using SeawaterPolynomials.TEOS10: Sᴬ_from_Sᴾ, Θ_from_T
 using Oceananigans.TurbulenceClosures: IsopycnalSkewSymmetricDiffusivity,
                                        ConvectiveAdjustmentVerticalDiffusivity
+using Oceananigans.Utils: NormalDivision
 using NumericalEarth.EarthSystemModels.InterfaceComputations: COARELogarithmicSimilarityProfile,
                                                               WindDependentWaveFormulation,
                                                               MomentumRoughnessLength,
@@ -694,9 +695,9 @@ end
 ##### ORCA builder
 #####
 
-config_momentum_advection(::Val{:orca})        = WENOVectorInvariant(order=5) 
-config_momentum_advection(::Val{:halfdegree})  = WENOVectorInvariant(order=5)
-config_momentum_advection(::Val{:tenthdegree}) = WENOVectorInvariant()
+config_momentum_advection(::Val{:orca})        = WENOVectorInvariant(order=5, weight_computation=NormalDivision)
+config_momentum_advection(::Val{:halfdegree})  = WENOVectorInvariant(order=5, weight_computation=NormalDivision)
+config_momentum_advection(::Val{:tenthdegree}) = WENOVectorInvariant(weight_computation=NormalDivision)
 
 function build_ocean(config, grid;
                      κ_skew, κ_symmetric, Cᵇ = 0.28,
@@ -718,7 +719,7 @@ function build_ocean(config, grid;
     ocean = ocean_simulation(grid;
                              Δt = 1minutes,
                              momentum_advection,
-                             tracer_advection = WENO(order=7; minimum_buffer_upwind_order=3),
+                             tracer_advection = WENO(order=7; minimum_buffer_upwind_order=3, weight_computation=NormalDivision),
                              coriolis,
                              timestepper = :SplitRungeKutta3,
                              materialize_buoyancy_gradients = !(config == Val(:tenthdegree)),
@@ -747,7 +748,7 @@ function build_sea_ice(config, grid, ocean; restoring_dir, snow_thermodynamics =
                        with_ice_dynamics = true)
     dynamics = with_ice_dynamics ? NumericalEarth.SeaIces.sea_ice_dynamics(grid, ocean) : nothing
     sea_ice = sea_ice_simulation(grid, ocean;
-                                 advection = WENO(order=7, minimum_buffer_upwind_order=1),
+                                 advection = WENO(order=7, minimum_buffer_upwind_order=1, weight_computation=NormalDivision),
                                  dynamics,
                                  snow_thermodynamics)
 
@@ -788,6 +789,20 @@ function omip_progress_callback(wall_time)
         msg5 = @sprintf("wall time: %s", prettytime(step_time))
 
         @info msg1 * msg2 * msg3 * msg4 * msg5
+
+        # Determinism probe: hash the prognostic state at a few iterations.
+        # Compare these hashes between two pickup-from-same-checkpoint runs:
+        # the first iteration whose hashes differ pinpoints when divergence
+        # is introduced. Cheap (~ms; one host copy of each field).
+        iter = iteration(sim)
+        if iter in (1, 5, 100, 1000)
+            T  = Array(parent(interior(ocean.model.tracers.T)))
+            S  = Array(parent(interior(ocean.model.tracers.S)))
+            u  = Array(parent(interior(ocean.model.velocities.u)))
+            h  = Array(parent(interior(sea_ice.model.ice_thickness)))
+            @info @sprintf("STATE_HASH iter=%d  T=%016x  S=%016x  u=%016x  h=%016x",
+                           iter, hash(T), hash(S), hash(u), hash(h))
+        end
 
         wall_time[] = time_ns()
 

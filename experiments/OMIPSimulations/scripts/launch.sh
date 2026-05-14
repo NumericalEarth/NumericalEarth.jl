@@ -301,6 +301,14 @@ export OMPI_MCA_opal_cuda_support=1
 export UCX_TLS=cuda_copy,cuda_ipc,gdr_copy,rc,sm,self
 export UCX_MEMTYPE_CACHE=n          # avoids known UCX+CUDA bug
 
+# Disable CUDA's stream-ordered memory pool. With the pool, allocations come
+# from a per-stream cache whose layout depends on prior call order, so two
+# runs from the same checkpoint can land kernels on differently-aligned
+# memory and pick different FMA paths → last-bit drift that compounds in
+# unstable regions. `none` falls back to plain cudaMalloc/Free, which gives
+# bit-reproducible kernel inputs at the cost of allocator overhead.
+export JULIA_CUDA_MEMORY_POOL=none
+
 JULIA="${JULIA:-$HOME/julia-1.12.5/bin/julia}"
 
 # ── Shared environment ────────────────────────────────────────────────
