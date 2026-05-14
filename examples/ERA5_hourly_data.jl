@@ -80,9 +80,12 @@ nothing #hide
 # ### Metadata definition
 #
 # We first define metadata for each variable at a single date.
-# *Note: `Metadatum` is used for single dates while `Metadata` handles
-# multiple dates.* No `region` kwarg is specified because we want to
-# download global fields.
+#
+# !!! note "Metadatum vs Metadata"
+#     `Metadatum` is used for single dates while `Metadata` handles
+#      multiple dates.
+#
+# No `region` kwarg is specified because we want to download global fields.
 
 date = first(dates)
 u_stokes_meta = Metadatum(:eastward_stokes_drift;  dataset, date)
@@ -193,7 +196,7 @@ fig1
 #
 # !!! note "Slicing"
 #     We could have sliced the `precip_series` from above, but we illustrate here
-#     a seperate data retrieval path.*
+#     a seperate data retrieval path.
 
 precip_col_meta = Metadata(:total_precipitation; dataset, dates, region = rico_column)
 precip_col_series = @suppress_out FieldTimeSeries(precip_col_meta; time_indices_in_memory = Nt)
@@ -266,10 +269,12 @@ ds_pl.pressure_levels' / hPa
 #
 # The download list also includes`:geopotential` because a pressure-level
 # `FieldTimeSeries` grid derives its `z`-coordinate from the time-mean
-# geopotential height. `FieldTimeSeries` would also have auomatically
+# geopotential height. `FieldTimeSeries` would also have automatically
 # downloaded this field on demand, but pre-downloading saves API calls.
-# _Note: If the geopotential field isn't available, the fallback is to
-# estimate geopotential heights from the international standard atmosphere._
+#
+# !!! note "Geopotential"
+#     If the geopotential field isn't available, the fallback is to
+#     estimate geopotential heights from the international standard atmosphere.
 
 variables = [:specific_cloud_liquid_water_content,
              :specific_rain_water_content,
