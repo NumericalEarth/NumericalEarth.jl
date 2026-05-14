@@ -31,7 +31,7 @@
 # See <https://cds.climate.copernicus.eu/how-to-api> for setup instructions.
 
 using NumericalEarth
-using NumericalEarth.DataWrangling
+using NumericalEarth.DataWrangling: download_dataset
 using NumericalEarth.DataWrangling.ERA5
 using CDSAPI
 using Dates

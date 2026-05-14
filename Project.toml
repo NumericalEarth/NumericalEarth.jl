@@ -6,8 +6,6 @@ authors = ["NumericalEarth contributors"]
 
 [deps]
 Adapt = "79e6a3ab-5dfb-504d-930d-738a2a938a0e"
-Breeze = "660aa2fb-d4c8-4359-a52c-9c057bc511da"
-CDSAPI = "8a7b9de3-9c00-473e-88b4-7eccd7ef2fea"
 CFTime = "179af706-886a-5703-950a-314cd64e0468"
 ClimaSeaIce = "6ba0ff68-24e6-4315-936c-2e99227c95a4"
 CubedSphere = "7445602f-e544-4518-8976-18f8e8ae6cdb"
@@ -36,6 +34,8 @@ ZipFile = "a5390f91-8eb1-5f08-bee0-b1d1ffed6cea"
 
 [weakdeps]
 ArchGDAL = "c9ce4bd3-c3d5-55b8-8973-c0e20141b8c3"
+Breeze = "660aa2fb-d4c8-4359-a52c-9c057bc511da"
+CDSAPI = "8a7b9de3-9c00-473e-88b4-7eccd7ef2fea"
 CondaPkg = "992eb4ea-22a4-4c89-a5bb-47a3300528ab"
 CopernicusMarine = "cd43e856-93a3-40c8-bc9e-6146cdce14fa"
 PythonCall = "6099a3de-0909-46bc-b1f4-468b9a2dfc0d"
