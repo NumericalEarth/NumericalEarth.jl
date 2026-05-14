@@ -115,8 +115,6 @@ pl_vars = [:eastward_velocity, :northward_velocity, :temperature,
            :specific_cloud_liquid_water_content,
            :specific_cloud_ice_water_content]
 
-meta_common = (region = era5_region, dir = era5_datadir)
-
 # ## Setup LAM grid
 #
 # `LatitudeLongitudeGrid` with `Bounded` horizontal topologies (LAM-style).
@@ -145,20 +143,21 @@ qᵛ = CenterField(grid)
 qᶜ = CenterField(grid)
 qⁱ = CenterField(grid)
 
-set!(u,  Metadatum(:eastward_velocity;                   dataset=ds_pl, date=start_date, meta_common...))
-set!(v,  Metadatum(:northward_velocity;                  dataset=ds_pl, date=start_date, meta_common...))
-set!(T,  Metadatum(:temperature;                         dataset=ds_pl, date=start_date, meta_common...))
-set!(qᵛ, Metadatum(:specific_humidity;                   dataset=ds_pl, date=start_date, meta_common...))
-set!(qᶜ, Metadatum(:specific_cloud_liquid_water_content; dataset=ds_pl, date=start_date, meta_common...))
-set!(qⁱ, Metadatum(:specific_cloud_ice_water_content;    dataset=ds_pl, date=start_date, meta_common...))
+meta_common = (date = start_date, region = era5_region, dir = era5_datadir)
+set!(u,  Metadatum(:eastward_velocity;                   dataset=ds_pl, meta_common...))
+set!(v,  Metadatum(:northward_velocity;                  dataset=ds_pl, meta_common...))
+set!(T,  Metadatum(:temperature;                         dataset=ds_pl, meta_common...))
+set!(qᵛ, Metadatum(:specific_humidity;                   dataset=ds_pl, meta_common...))
+set!(qᶜ, Metadatum(:specific_cloud_liquid_water_content; dataset=ds_pl, meta_common...))
+set!(qⁱ, Metadatum(:specific_cloud_ice_water_content;    dataset=ds_pl, meta_common...))
 
-# Virtual temperature: Tᵛ = T·(1 + ε·qᵛ), ε = Rᵛ/Rᵈ − 1. Vapor only by
-# convention — the qᶜ, qⁱ terms belong to the density temperature Tρ.
+# Calculate virtual temperature: Tᵛ = T·(1 + (1 − ε)/ε·qᵛ), ε = Rᵈ/Rᵛ.
+# Vapor only by convention — the qᶜ, qⁱ terms belong to the density temperature Tρ.
 
 constants = ThermodynamicConstants()
-ε = vapor_gas_constant(constants) / dry_air_gas_constant(constants) - 1
+εfac = vapor_gas_constant(constants) / dry_air_gas_constant(constants) - 1
 
-Tᵛ = Field(T * (1 + ε * qᵛ))
+Tᵛ = Field(T * (1 + εfac * qᵛ))
 compute!(Tᵛ)
 
 # Surface pressure: horizontal field on a 3-D grid with Nz=1. (A `Flat` z
