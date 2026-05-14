@@ -8,8 +8,14 @@ function fig11(caches, labels, cases)
     fig = Figure(size = (600 + 200 * length(labels), 500), fontsize = 14)
     ax_arctic = Axis(fig[1, 1]; xlabel = "Month", ylabel = "SIA (Million km²)",
                      title = "Arctic SIA Climatology", xticks = (1:12, month_names))
-    isnothing(arctic_obs) || lines!(ax_arctic, 1:12, arctic_obs.area_monthly;
-        color = OBS_COLOR, linewidth = OBS_LINEWIDTH, linestyle = OBS_LINESTYLE, label = "NSIDC")
+    if !isnothing(arctic_obs)
+        band!(ax_arctic, 1:12,
+              arctic_obs.area_monthly .- arctic_obs.area_monthly_std,
+              arctic_obs.area_monthly .+ arctic_obs.area_monthly_std;
+              color = (OBS_COLOR, 0.25))
+        lines!(ax_arctic, 1:12, arctic_obs.area_monthly;
+            color = OBS_COLOR, linewidth = OBS_LINEWIDTH, linestyle = OBS_LINESTYLE, label = "NSIDC")
+    end
     for (i, lab) in enumerate(labels)
         lines!(ax_arctic, 1:12,
                get_field(caches[lab], :sea_ice_diagnostics).arctic_area_monthly .* m2_to_million_km2;
@@ -17,8 +23,14 @@ function fig11(caches, labels, cases)
     end
     ax_antarctic = Axis(fig[1, 2]; xlabel = "Month", ylabel = "SIA (Million km²)",
                         title = "Antarctic SIA Climatology", xticks = (1:12, month_names))
-    isnothing(antarctic_obs) || lines!(ax_antarctic, 1:12, antarctic_obs.area_monthly;
-        color = OBS_COLOR, linewidth = OBS_LINEWIDTH, linestyle = OBS_LINESTYLE, label = "NSIDC")
+    if !isnothing(antarctic_obs)
+        band!(ax_antarctic, 1:12,
+              antarctic_obs.area_monthly .- antarctic_obs.area_monthly_std,
+              antarctic_obs.area_monthly .+ antarctic_obs.area_monthly_std;
+              color = (OBS_COLOR, 0.25))
+        lines!(ax_antarctic, 1:12, antarctic_obs.area_monthly;
+            color = OBS_COLOR, linewidth = OBS_LINEWIDTH, linestyle = OBS_LINESTYLE, label = "NSIDC")
+    end
     for (i, lab) in enumerate(labels)
         lines!(ax_antarctic, 1:12,
                get_field(caches[lab], :sea_ice_diagnostics).antarctic_area_monthly .* m2_to_million_km2;

@@ -282,6 +282,53 @@ const FTS_BACKEND = InMemory(10; prefetch = false)
 
 savefig(fig, name) = save(joinpath(output_dir, name), fig)
 
+# ── Presentation themes ──────────────────────────────────────────────
+#
+# `:light` is Makie's default (white background, black axis chrome).
+# `:dark` returns a transparent figure background with white axis chrome,
+# colorbar/legend, and titles — intended for layering the saved PNGs onto
+# a dark slide. Apply with
+#
+#     with_theme(presentation_theme(:dark)) do
+#         fig04(caches, labels, cases)
+#     end
+#
+# which is what `render_figures(...; theme = :dark)` does for every
+# figure in a single sweep.
+#
+# Note: `geo_panel!` hard-codes `coast_color = :black` / `land_color =
+# :lightgray`; those are plot content, not axis chrome, and are not
+# touched by the theme. Override at the call site if a given map needs
+# them flipped.
+
+function presentation_theme(name::Symbol)
+    name === :light && return Theme()
+    name === :dark  || error("presentation_theme: unknown theme :$name (use :light or :dark)")
+    return Theme(
+        backgroundcolor = :transparent,
+        textcolor = :white,
+        Axis = (
+            backgroundcolor = :transparent,
+            xtickcolor       = :white,  ytickcolor       = :white,
+            xticklabelcolor  = :white,  yticklabelcolor  = :white,
+            xlabelcolor      = :white,  ylabelcolor      = :white,
+            titlecolor       = :white,
+            bottomspinecolor = :white,  topspinecolor    = :white,
+            leftspinecolor   = :white,  rightspinecolor  = :white,
+            xgridcolor = (:white, 0.15), ygridcolor = (:white, 0.15),
+        ),
+        Colorbar = (
+            tickcolor   = :white, ticklabelcolor = :white,
+            labelcolor  = :white, spinecolor     = :white,
+        ),
+        Legend = (
+            backgroundcolor = :transparent,
+            labelcolor = :white, titlecolor = :white,
+            framecolor = (:white, 0.4),
+        ),
+    )
+end
+
 # Per-case line colors. Plain primary/secondary names so cases stay
 # easy to distinguish on white backgrounds and in printouts. Cycles
 # if there are more cases than entries in the palette.
@@ -951,13 +998,20 @@ function load_piomas_monthly()
     raw   = readdlm(cached_download(url), ','; skipstart=1)
     vol   = Float64.(raw[:, 2:13])
     vol[vol .== -1] .= NaN
-    return vec(mapslices(x -> mean(filter(!isnan, x)), vol; dims=1))
+    volume_monthly     = vec(mapslices(x -> mean(filter(!isnan, x)), vol; dims=1))
+    volume_monthly_std = vec(mapslices(vol; dims=1) do x
+        y = filter(!isnan, x)
+        length(y) > 1 ? std(y) : 0.0
+    end)
+    return (; volume_monthly, volume_monthly_std)
 end
 
 function load_nsidc(hemisphere)
     prefix = hemisphere == "north" ? "N" : "S"
-    extent_monthly = zeros(12)
-    area_monthly   = zeros(12)
+    extent_monthly     = zeros(12)
+    extent_monthly_std = zeros(12)
+    area_monthly       = zeros(12)
+    area_monthly_std   = zeros(12)
     for m in 1:12
         url = "https://noaadata.apps.nsidc.org/NOAA/G02135/$(hemisphere)/monthly/data/$(prefix)_$(lpad(m, 2, '0'))_extent_v4.0.csv"
         raw = readlines(cached_download(url))
@@ -971,10 +1025,12 @@ function load_nsidc(hemisphere)
             (isnothing(ar)  || ar  == -9999) && continue
             push!(extents, ext); push!(areas, ar)
         end
-        extent_monthly[m] = mean(extents)
-        area_monthly[m]   = mean(areas)
+        extent_monthly[m]     = mean(extents)
+        extent_monthly_std[m] = length(extents) > 1 ? std(extents) : 0.0
+        area_monthly[m]       = mean(areas)
+        area_monthly_std[m]   = length(areas) > 1 ? std(areas) : 0.0
     end
-    return (; extent_monthly, area_monthly)
+    return (; extent_monthly, extent_monthly_std, area_monthly, area_monthly_std)
 end
 
 # Global per-process cache for observational climatologies. Each
@@ -1160,7 +1216,12 @@ function load_rapid_amoc_profile(; cache_dir = obs_cache_dir)
                 haskey(ds, "stream_function") ? ds["stream_function"] :
                 error("RAPID moc_vertical.nc: cannot find streamfunction variable")
     depth = Float64.(Array(depth_var[:]))
-    psi   = Float64.(coalesce.(Array(psi_var[:, :]), NaN))   # (depth, time) in Sv
+    raw   = Float64.(coalesce.(Array(psi_var[:, :]), NaN))   # in Sv
+    # The v2024.1a release declares `stream_function_mar(time, depth)`,
+    # which NCDatasets returns as a Julia array sized (Ntime, Ndepth);
+    # older releases sometimes flip the order. Orient on the depth axis
+    # so `psi[k, :]` is unambiguously the time series at depth k.
+    psi = size(raw, 1) == length(depth) ? raw : permutedims(raw, (2, 1))
     close(ds)
     mean_psi = [nanmean(@view psi[k, :]) for k in 1:length(depth)]
     std_psi  = [nanstd(@view psi[k, :])  for k in 1:length(depth)]
@@ -1185,14 +1246,16 @@ function load_rapid_amoc_timeseries(; cache_dir = obs_cache_dir)
     keys_ym = sort!(unique(collect(zip(yrs, mns))))
     centers = Float64[]
     means   = Float64[]
+    stds    = Float64[]
     for (y, m) in keys_ym
         idx = findall(i -> yrs[i] == y && mns[i] == m, eachindex(time_var))
         vals = filter(isfinite, view(psi_max, idx))
         isempty(vals) && continue
         push!(centers, y + (m - 0.5) / 12)
         push!(means, mean(vals))
+        push!(stds, length(vals) > 1 ? std(vals) : 0.0)
     end
-    return (year = centers, psi_max = means)
+    return (year = centers, psi_max = means, psi_max_std = stds)
 end
 
 const RAPID_PROFILE_REF    = Ref{Any}(nothing)
