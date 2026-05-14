@@ -179,24 +179,7 @@ esac
 # initialization phase the profiler needs to see, and the choice of
 # checkpoint is irrelevant for kernel-cost measurements.
 if [[ "${PROFILE:-false}" == "true" ]]; then
-    case "$CONFIG" in
-        halfdegree)
-            RUN_CMD="sim.stop_time = 300 * 365days
-run!(sim)"
-            ;;
-        orca)
-            RUN_CMD="sim.stop_time = 300 * 365days
-run!(sim)"
-            ;;
-        tenthdegree)
-            RUN_CMD="sim.stop_time = 91days
-run!(sim)
-
-sim.Δt = 10minutes
-sim.stop_time = 300 * 365days
-run!(sim)"
-            ;;
-    esac
+  RUN_CMD="sim.stop_iteration = 200; run!(sim)"
 fi
 
 # 0 means "no eddy closure" (maps to Julia `nothing`)
