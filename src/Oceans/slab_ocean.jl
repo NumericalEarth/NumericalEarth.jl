@@ -125,8 +125,7 @@ end
 interpolate_state!(exchanger, grid, ::SlabOcean, coupled_model) = nothing
 
 # Assemble net ocean fluxes from interface computations
-update_net_fluxes!(coupled_model, ocean::SlabOcean) =
-    Oceans.update_net_ocean_fluxes!(coupled_model, ocean, ocean.grid)
+update_net_fluxes!(coupled_model, ocean::SlabOcean) = update_net_ocean_fluxes!(coupled_model, ocean, ocean.grid)
 
 #####
 ##### Time stepping
