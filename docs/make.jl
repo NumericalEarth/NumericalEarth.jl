@@ -35,7 +35,8 @@ examples = [
     Example("Global climate simulation", "global_climate_simulation", false),
     Example("Veros ocean simulation", "veros_ocean_forced_simulation", false),
     Example("Breeze over two oceans", "breeze_over_two_oceans", false),
-    Example("ERA5 hourly data", "ERA5_hourly_data", true),
+    Example("ERA5 hourly data retrieval", "ERA5_hourly_data", true),
+    Example("ERA5 hindcast simulation", "era5_breeze", true),
 ]
 
 # Developer examples from docs/src/developers/ directory
