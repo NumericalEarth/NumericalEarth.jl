@@ -12,12 +12,11 @@ using Oceananigans.Architectures: architecture
 using Oceananigans.AbstractOperations: Integral
 using Oceananigans.Models: buoyancy_operation
 using Oceananigans.Grids: new_data, inactive_cell, znode, Center, Face, OrthogonalSphericalShellGrid
-using Oceananigans.BoundaryConditions: FieldBoundaryConditions, fill_halo_regions!
+using Oceananigans.BoundaryConditions: FieldBoundaryConditions, fill_halo_regions!, DiscreteBoundaryFunction
 using Oceananigans.Fields: FieldStatus, Field
 using Oceananigans.ImmersedBoundaries: ImmersedBoundaryGrid
 using Oceananigans.Utils: launch!
 using KernelAbstractions: @index, @kernel
-using Oceananigans.BoundaryConditions: DiscreteBoundaryFunction
 using NumericalEarth.EarthSystemModels: EarthSystemModel
 using NumericalEarth.Oceans: MultipleFluxes
 

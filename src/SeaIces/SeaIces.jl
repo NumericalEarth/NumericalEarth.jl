@@ -4,8 +4,7 @@ export sea_ice_simulation, FreezingLimitedOceanTemperature
 
 import Oceananigans
 using Oceananigans.Units: Units, minutes
-using Oceananigans.Utils: Utils, launch!
-using Oceananigans.Utils: with_tracers
+using Oceananigans.Utils: Utils, launch!, with_tracers
 using Oceananigans.Grids: architecture, Center, Face
 using Oceananigans.Fields: ZeroField, Field
 using Oceananigans.BoundaryConditions: DefaultBoundaryCondition

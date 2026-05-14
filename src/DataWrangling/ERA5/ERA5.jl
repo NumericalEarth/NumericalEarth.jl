@@ -15,8 +15,7 @@ using Statistics: Statistics, mean
 using Oceananigans.Fields: Center, set!
 using Oceananigans: Field, fill_halo_regions!, CPU
 using NumericalEarth.DataWrangling: Metadata, Metadatum, metadata_path, native_grid, InverseGravity, download_dataset
-using Dates: Dates
-using Dates: DateTime, Month, Hour
+using Dates: Dates, DateTime, Month, Hour
 
 import NumericalEarth.DataWrangling:
     all_dates,

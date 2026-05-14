@@ -16,8 +16,7 @@ using Oceananigans.Fields: Field, CenterField, interior, set!
 using Oceananigans.Grids: Center, Face, RectilinearGrid, xspacings, yspacings
 using Oceananigans.Models.HydrostaticFreeSurfaceModels: HydrostaticFreeSurfaceModel
 using Oceananigans.Models.HydrostaticFreeSurfaceModels.SplitExplicitFreeSurfaces: SplitExplicitFreeSurface
-using Oceananigans.Operators: Operators
-using Oceananigans.Operators: ℑxyᶜᶠᵃ, ℑxyᶠᶜᵃ
+using Oceananigans.Operators: Operators, ℑxyᶜᶠᵃ, ℑxyᶠᶜᵃ
 using Oceananigans.Simulations: Simulation
 using Oceananigans.TurbulenceClosures.TKEBasedVerticalDiffusivities: CATKEVerticalDiffusivity,
                                                                      CATKEMixingLength,

@@ -20,11 +20,11 @@ using Oceananigans.BoundaryConditions: FieldBoundaryConditions, FluxBoundaryCond
 using Oceananigans.OutputReaders: FieldTimeSeries
 using Oceananigans.Units: Units
 
-using NumericalEarth.DataWrangling: download_progress
 using NumericalEarth.Atmospheres: PrescribedAtmosphere, PrescribedPrecipitationFlux, AtmosphereThermodynamicsParameters
 using NumericalEarth.Oceans: reference_density, heat_capacity
 
 using NumericalEarth.DataWrangling:
+    download_progress,
     Metadata,
     Metadatum,
     metadata_path,

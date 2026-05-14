@@ -10,13 +10,11 @@ export JRA55FieldTimeSeries,
 import Oceananigans
 using Oceananigans.Units: Units
 
-using Oceananigans.DistributedComputations: DistributedComputations, Distributed
-using Oceananigans.DistributedComputations: child_architecture, @root
-using Oceananigans.BoundaryConditions: fill_halo_regions!
+using Oceananigans.DistributedComputations: DistributedComputations, Distributed, child_architecture, @root
+using Oceananigans.BoundaryConditions: fill_halo_regions!, FieldBoundaryConditions
 using Oceananigans.Grids: λnodes, φnodes, on_architecture, Bounded, Center, Flat, LatitudeLongitudeGrid, Periodic
 using Oceananigans.Architectures: CPU
 using Oceananigans.Fields: interpolate!, interior
-using Oceananigans.BoundaryConditions: FieldBoundaryConditions
 using Oceananigans.OutputReaders: Cyclical, TotallyInMemory, AbstractInMemoryBackend, FlavorOfFTS, time_indices, FieldTimeSeries, InMemory, OnDisk
 
 import NumericalEarth

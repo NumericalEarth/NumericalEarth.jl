@@ -1,10 +1,9 @@
 module InterfaceComputations
 
 import Oceananigans
-using Oceananigans.Fields: AbstractField
+using Oceananigans.Fields: AbstractField, Field
 using Oceananigans.Utils: KernelParameters
 using Oceananigans.Grids: Center, Face, Flat
-using Oceananigans.Fields: Field
 using Oceananigans.Simulations: Simulation
 using Adapt: Adapt, adapt
 using DocStringExtensions: DocStringExtensions, TYPEDFIELDS

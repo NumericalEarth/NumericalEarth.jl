@@ -5,12 +5,13 @@ export initialize!
 import Oceananigans
 using Oceananigans: location
 using Oceananigans.BoundaryConditions: BoundaryConditions
-using Oceananigans.Fields: OneField
-using Oceananigans.Grids: peripheral_node
+using Oceananigans.Fields: OneField, instantiated_location, interior, CenterField, Field, set!, regrid!, interpolate!
+using Oceananigans.Grids: peripheral_node, cpu_face_constructor_x,
+                          cpu_face_constructor_y,
+                          cpu_face_constructor_z,
+                          topology, RectilinearGrid, LatitudeLongitudeGrid
 using Oceananigans.Utils: launch!, IterationInterval
-using Oceananigans.Fields: instantiated_location, interior, CenterField, Field, set!
 using Oceananigans.Architectures: architecture, device, GPU, child_architecture
-using Oceananigans.Grids: RectilinearGrid, LatitudeLongitudeGrid
 using Oceananigans.ImmersedBoundaries: ImmersedBoundaryGrid
 using Oceananigans.Simulations: Simulation, Callback, run!
 using Oceananigans.Models.HydrostaticFreeSurfaceModels: HydrostaticFreeSurfaceModel, PrescribedVelocityFields
@@ -22,11 +23,6 @@ using JLD2: JLD2
 
 # Implementation of 3-dimensional regridding
 # TODO: move all the following to Oceananigans!
-using Oceananigans.Fields: regrid!, interpolate!
-using Oceananigans.Grids: cpu_face_constructor_x,
-                          cpu_face_constructor_y,
-                          cpu_face_constructor_z,
-                          topology
 
 # Should we move this to grids??
 construct_grid(::Type{<:RectilinearGrid}, arch, size, extent, topology) =
