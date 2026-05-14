@@ -666,7 +666,7 @@ function build_grid(config, arch, Nz, depth; Δz_top = nothing)
     base_grid = TripolarGrid(arch;
                              size = (Nx, Ny, Nz),
                              z = z_faces,
-                             halo = (7, 7, 7))
+                             halo = (8, 8, 8))
 
     bottom_height = regrid_bathymetry(base_grid;
                                     minimum_depth = 20,
@@ -685,7 +685,7 @@ function build_grid(::Val{:orca}, arch, Nz, depth; Δz_top = nothing)
                     dataset = ORCA1(),
                     Nz,
                     z = z_faces,
-                    halo = (7, 7, 7),
+                    halo = (8, 8, 8),
                     with_bathymetry = true,
                     active_cells_map = true)
 end
