@@ -53,11 +53,11 @@ cases = [
     # (prefix = "orca_ncar_snow",                                 label = "ORCA New NCAR",       years_from_end = 5),
     # (prefix = "orca_corrected_snow_simple",                     label = "ORCA CADV",           years_from_end = 5),
     # (prefix = "orca_corrected_snow_cb0.12_ksymm500",            label = "ORCA Redi500",        years_from_end = 5),
-    (prefix = "orca_corrected_snow_cb0.15_bih50days",           label = "ORCA CATKE",          years_from_end = 5),
+    (prefix = "orca_corrected_snow_bih50days",           label = "ORCA CATKE",          years_from_end = 5),
     # (prefix = "orca_ncar_snow_cb0.15_bih50days",                label = "ORCA NCAR LowDiss",   years_from_end = 5),
-    (prefix = "halfdegree_corrected_snow_cb0.01_kskew0_ksymm0", label = "Half Degree CATKE",   years_from_end = 5),
+    # (prefix = "halfdegree_corrected_snow_cb0.01_kskew0_ksymm0", label = "Half Degree CATKE",   years_from_end = 5),
     # (prefix = "orca_corrected_snow_cb0.06_kskew0_ksymm0",       label = "ORCA NOGM",           years_from_end = 5),
-    # (prefix = "orca_corrected_snow_cb0.06_kskew1000_ksymm1000", label = "ORCA GM1000",         years_from_end = 5),
+    (prefix = "orca_corrected_snow_kskew1000_ksymm1000_bih50days", label = "ORCA GM1000",         years_from_end = 5),
 ]
 
 output_dir = length(ARGS) >= 1 ? ARGS[1] : "figures"
