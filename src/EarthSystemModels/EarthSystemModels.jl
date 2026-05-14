@@ -1,10 +1,10 @@
 module EarthSystemModels
 
-abstract type PrescribedModelComponent end
+abstract type AbstractPrescribedComponent end
 
 export
     EarthSystemModel,
-    PrescribedModelComponent,
+    AbstractPrescribedComponent,
     OceanOnlyModel,
     OceanSeaIceModel,
     AtmosphereOceanModel,

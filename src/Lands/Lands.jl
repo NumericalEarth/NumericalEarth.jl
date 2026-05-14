@@ -11,7 +11,7 @@ using Oceananigans.Units: Time
 using Oceananigans.Utils: launch!
 
 using KernelAbstractions: @kernel, @index
-using NumericalEarth.EarthSystemModels: PrescribedModelComponent
+using NumericalEarth.EarthSystemModels: AbstractPrescribedComponent
 using NumericalEarth.EarthSystemModels.InterfaceComputations: interface_kernel_parameters
 
 import Oceananigans.TimeSteppers: time_step!, update_state!

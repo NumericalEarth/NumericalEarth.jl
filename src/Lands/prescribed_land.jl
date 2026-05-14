@@ -3,7 +3,7 @@
 # coupling would require additional fields (e.g. albedo, skin temperature); see
 # https://github.com/NumericalEarth/NumericalEarth.jl/issues/30 for the related
 # discussion of moving surface albedo to a radiation component.
-mutable struct PrescribedLand{G, T, F, TI} <: PrescribedModelComponent
+mutable struct PrescribedLand{G, T, F, TI} <: AbstractPrescribedComponent
     grid :: G
     clock :: Clock{T}
     freshwater_flux :: F   # NamedTuple, e.g. (rivers=FTS, icebergs=FTS)

@@ -22,7 +22,7 @@ using Oceananigans.Utils: launch!
 using Adapt
 using KernelAbstractions: @kernel, @index
 
-using NumericalEarth.EarthSystemModels: PrescribedModelComponent
+using NumericalEarth.EarthSystemModels: AbstractPrescribedComponent
 using NumericalEarth.EarthSystemModels.InterfaceComputations: interface_kernel_parameters
 
 import Oceananigans.Architectures: on_architecture

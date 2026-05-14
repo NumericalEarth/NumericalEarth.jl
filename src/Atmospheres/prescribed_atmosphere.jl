@@ -2,7 +2,7 @@
 ##### Prescribed atmosphere (as opposed to dynamically evolving / prognostic)
 #####
 
-mutable struct PrescribedAtmosphere{FT, G, T, U, P, C, F, TP, TI} <: PrescribedModelComponent
+mutable struct PrescribedAtmosphere{FT, G, T, U, P, C, F, TP, TI} <: AbstractPrescribedComponent
     grid :: G
     clock :: Clock{T}
     velocities :: U

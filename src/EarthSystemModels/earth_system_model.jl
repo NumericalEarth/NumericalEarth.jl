@@ -150,7 +150,7 @@ function EarthSystemModel(radiation, atmosphere, land, sea_ice, ocean;
                           sea_ice_reference_density = reference_density(sea_ice),
                           sea_ice_heat_capacity = heat_capacity(sea_ice),
                           interfaces = nothing)
-    if isnothing(radiation) && atmosphere isa PrescribedModelComponent
+    if isnothing(radiation) && atmosphere isa AbstractPrescribedComponent
         @warn """
             `EarthSystemModel` was constructed with a `PrescribedAtmosphere` but \
             `radiation = nothing`. This means no upwelling longwave (ϵσT⁴), no \

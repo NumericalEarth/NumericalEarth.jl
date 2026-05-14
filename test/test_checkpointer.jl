@@ -28,7 +28,7 @@ function test_clock_time_and_iteration(simulation, expected_iteration)
     @test simulation.model.clock.iteration == expected_iteration
     @test simulation.model.clock.time == expected_iteration * Δt
     for component in components(simulation.model)
-        if component isa PrescribedModelComponent
+        if component isa AbstractPrescribedComponent
             @test component.clock.iteration == expected_iteration
             @test component.clock.time == expected_iteration * Δt
         else
@@ -147,9 +147,9 @@ end
         simulation = Simulation(model; Δt=60, stop_iteration=3, verbose=false)
 
         # check that clock stops when intended
-        @test model.atmosphere isa PrescribedModelComponent
-        @test model.land isa PrescribedModelComponent
-        @test model.radiation isa PrescribedModelComponent
+        @test model.atmosphere isa AbstractPrescribedComponent
+        @test model.land isa AbstractPrescribedComponent
+        @test model.radiation isa AbstractPrescribedComponent
 
         # check that clock stops when intended
         run!(simulation)
