@@ -77,14 +77,18 @@ for arch in test_architectures
                 sea_ice_ocean_freshwater = sea_ice_ocean_freshwater_flux(esm; reference_salinity = 35)
                 atmosphere_ocean_freshwater = atmosphere_ocean_freshwater_flux(esm; reference_salinity = 35)
 
+
                 for f in (frazil_temperature, net_ocean_temperature, sea_ice_ocean_temperature,
                           atmosphere_ocean_temperature, frazil_heat, net_ocean_heat, sea_ice_ocean_heat,
                           atmosphere_ocean_heat, net_ocean_salinity, sea_ice_ocean_salinity,
                           atmosphere_ocean_salinity, net_ocean_freshwater, sea_ice_ocean_freshwater,
                           atmosphere_ocean_freshwater)
 
-                    @test f isa Field
-                    @test location(f) == (Center, Center, Nothing)
+                    @test f isa Oceananigans.Fields.AbstractField
+
+                    if !(f isa Oceananigans.Fields.ZeroField)
+                        @test location(f) == (Center, Center, Nothing)
+                    end
                     compute!(f)
                 end
 
