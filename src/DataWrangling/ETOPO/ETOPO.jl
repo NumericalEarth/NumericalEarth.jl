@@ -7,7 +7,7 @@ using Oceananigans
 using Oceananigans.DistributedComputations: @root
 using Scratch
 
-using ..DataWrangling: download_progress, Metadatum, metadata_path, AbstractStaticBathymetry
+using ..DataWrangling: DownloadProgress, Metadatum, metadata_path, AbstractStaticBathymetry
 
 import NumericalEarth.DataWrangling:
     metadata_filename,
@@ -51,7 +51,7 @@ function download_dataset(metadatum::ETOPOMetadatum)
 
     @root if !isfile(filepath)
         @info "Downloading ETOPO data: $(metadatum.name) in $(metadatum.dir)..."
-        Downloads.download(fileurl, filepath; progress=download_progress)
+        Downloads.download(fileurl, filepath; progress=DownloadProgress())
     end
     return filepath
 end

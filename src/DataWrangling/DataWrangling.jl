@@ -36,36 +36,40 @@ import Oceananigans.Fields: set!
 ##### Downloading utilities
 #####
 
-next_fraction = Ref(0.0)
-download_start_time = Ref(time_ns())
+mutable struct DownloadProgress <: Function
+    next_fraction :: Float64
+    download_start_time :: UInt64
+end
+
+DownloadProgress() = DownloadProgress(0.0, time_ns())
 
 """
-    download_progress(total, now; filename="")
+    DownloadProgress(total, now; filename="")
 """
-function download_progress(total, now; filename="")
+function (d::DownloadProgress)(total, now; filename="")
     messages = 10
 
     if total > 0
         fraction = now / total
 
-        if fraction < 1 / messages && next_fraction[] == 0
+        if fraction < 1 / messages && d.next_fraction == 0
             @info @sprintf("Downloading %s (size: %s)...", filename, pretty_filesize(total))
-            next_fraction[] = 1 / messages
-            download_start_time[] = time_ns()
+            d.next_fraction = 1 / messages
+            d.download_start_time = time_ns()
         end
 
-        if fraction > next_fraction[]
-            elapsed = 1e-9 * (time_ns() - download_start_time[])
+        if fraction > d.next_fraction
+            elapsed = 1e-9 * (time_ns() - d.download_start_time)
             msg = @sprintf(" ... downloaded %s (%d%% complete, %s)", pretty_filesize(now),
                            100fraction, prettytime(elapsed))
             @info msg
-            next_fraction[] = next_fraction[] + 1 / messages
+            d.next_fraction = d.next_fraction + 1 / messages
         end
     else
-        if now > 0 && next_fraction[] == 0
+        if now > 0 && d.next_fraction == 0
             @info "Downloading $filename..."
-            next_fraction[] = 1 / messages
-            download_start_time[] = time_ns()
+            d.next_fraction = 1 / messages
+            d.download_start_time = time_ns()
         end
     end
 

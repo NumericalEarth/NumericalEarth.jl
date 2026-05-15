@@ -27,7 +27,7 @@ using NumericalEarth.DataWrangling:
     MicromolePerLiter,
     Metadata,
     Metadatum,
-    download_progress,
+    DownloadProgress,
     InverseSign,
     native_grid,
     location,
@@ -345,7 +345,7 @@ function download_dataset(metadata::ECCOMetadata)
                     throw(ArgumentError(msg))
                 end
                 @info "Downloading ECCO data: $(metadatum.name) in $(metadatum.dir)..."
-                Downloads.download(fileurl, filepath; downloader, progress=download_progress)
+                Downloads.download(fileurl, filepath; downloader, progress=DownloadProgress())
             end
         end
     end
