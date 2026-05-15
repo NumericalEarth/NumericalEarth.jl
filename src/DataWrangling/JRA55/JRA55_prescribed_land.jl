@@ -1,7 +1,3 @@
-using NumericalEarth.Lands: PrescribedLand
-
-export JRA55PrescribedLand
-
 JRA55PrescribedLand(arch::Distributed, FT=Float32; kw...) =
     JRA55PrescribedLand(child_architecture(arch), FT; kw...)
 

@@ -1,6 +1,3 @@
-using NumericalEarth.DataWrangling: download_dataset, all_dates, native_times, compute_native_date_range
-using Adapt
-
 compute_bounding_nodes(::Nothing, ::Nothing, LH, hnodes) = nothing
 compute_bounding_nodes(bounds, ::Nothing, LH, hnodes) = bounds
 
