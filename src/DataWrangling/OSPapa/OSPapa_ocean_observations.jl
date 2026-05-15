@@ -11,11 +11,11 @@ struct OSPapaHourly end
 const OSPapaMetadata{D} = Metadata{<:OSPapaHourly, D}
 const OSPapaMetadatum = Metadatum{<:OSPapaHourly}
 
-metaprefix(::OSPapaMetadata) = "OSPapaMetadata"
+NumericalEarth.DataWrangling.metaprefix(::OSPapaMetadata) = "OSPapaMetadata"
 
-default_download_directory(::OSPapaHourly) = mkpath(download_OSPapa_cache)
+NumericalEarth.DataWrangling.default_download_directory(::OSPapaHourly) = mkpath(download_OSPapa_cache)
 
-available_variables(::OSPapaHourly) = OSPapa_dataset_variable_names
+NumericalEarth.DataWrangling.available_variables(::OSPapaHourly) = OSPapa_dataset_variable_names
 
 const OSPapa_dataset_variable_names = Dict(
     :temperature        => "TEMP",
@@ -39,12 +39,12 @@ const OSPapa_depth_variable_names = Dict(
     :northward_velocity => "DEPCUR",
 )
 
-dataset_variable_name(data::OSPapaMetadata) = OSPapa_dataset_variable_names[data.name]
+NumericalEarth.DataWrangling.dataset_variable_name(data::OSPapaMetadata) = OSPapa_dataset_variable_names[data.name]
 Oceananigans.location(::OSPapaMetadata) = (Center, Center, Center)
-is_three_dimensional(md::OSPapaMetadata) = md.name in (:temperature, :salinity, :eastward_velocity, :northward_velocity)
-reversed_vertical_axis(::OSPapaHourly) = true
+NumericalEarth.DataWrangling.is_three_dimensional(md::OSPapaMetadata) = md.name in (:temperature, :salinity, :eastward_velocity, :northward_velocity)
+NumericalEarth.DataWrangling.reversed_vertical_axis(::OSPapaHourly) = true
 
-function conversion_units(metadatum::OSPapaMetadatum)
+function NumericalEarth.DataWrangling.conversion_units(metadatum::OSPapaMetadatum)
     name = metadatum.name
     name == :air_temperature    && return Celsius()
     name == :sea_level_pressure && return Millibar()
@@ -53,18 +53,18 @@ function conversion_units(metadatum::OSPapaMetadatum)
     return nothing
 end
 
-default_inpainting(::OSPapaMetadata) = nothing
+NumericalEarth.DataWrangling.default_inpainting(::OSPapaMetadata) = nothing
 
 #####
 ##### Single-file metadata: filename and download
 #####
 
-metadata_filename(::OSPapaMetadatum) = OSPAPA_FILENAME
-metadata_filename(::OSPapaHourly, name, date, region) = OSPAPA_FILENAME
+NumericalEarth.DataWrangling.metadata_filename(::OSPapaMetadatum) = OSPAPA_FILENAME
+NumericalEarth.DataWrangling.metadata_filename(::OSPapaHourly, name, date, region) = OSPAPA_FILENAME
 
-download_dataset(metadata::OSPapaMetadata) = download_ospapa_file(metadata.dir)
+NumericalEarth.DataWrangling.download_dataset(metadata::OSPapaMetadata) = download_ospapa_file(metadata.dir)
 
-function inpainted_metadata_path(metadata::OSPapaMetadata)
+function NumericalEarth.DataWrangling.inpainted_metadata_path(metadata::OSPapaMetadata)
     filename = metadata_filename(first(metadata))
     without_ext = filename[1:end-3]
     varname = string(metadata.name)
@@ -75,8 +75,8 @@ end
 ##### Epoch, time step, dates, and sizes
 #####
 
-metadata_epoch(::OSPapaHourly) = DateTime(2007, 6, 7, 23, 0, 0)
-metadata_time_step(::OSPapaHourly) = 3600 # seconds (hourly data)
+NumericalEarth.DataWrangling.metadata_epoch(::OSPapaHourly) = DateTime(2007, 6, 7, 23, 0, 0)
+NumericalEarth.DataWrangling.metadata_time_step(::OSPapaHourly) = 3600 # seconds (hourly data)
 
 # Cache the time vector to avoid re-reading the file for every call
 const _ospapa_times_cache = Ref{Vector{DateTime}}()
@@ -93,7 +93,7 @@ function ospapa_all_times(dir=download_OSPapa_cache)
     return _ospapa_times_cache[]
 end
 
-all_dates(::OSPapaHourly, variable) = ospapa_all_times()
+NumericalEarth.DataWranglingall_dates(::OSPapaHourly, variable) = ospapa_all_times()
 
 # Cache depth arrays per variable
 const _ospapa_depths_cache = Dict{Symbol, Vector{Float64}}()
@@ -123,18 +123,18 @@ end
 ##### Grid construction
 #####
 
-function z_interfaces(dataset::OSPapaHourly; variable=:temperature)
+function NumericalEarth.DataWrangling.z_interfaces(dataset::OSPapaHourly; variable=:temperature)
     depths = _ospapa_depths(variable)
     z_centers = sort(-depths)  # convert to negative, deepest first
     return centers_to_interfaces(z_centers)
 end
 
-z_interfaces(md::OSPapaMetadata) = z_interfaces(md.dataset; variable=md.name)
+NumericalEarth.DataWrangling.z_interfaces(md::OSPapaMetadata) = z_interfaces(md.dataset; variable=md.name)
 
-longitude_interfaces(::OSPapaHourly) = (OSPAPA_LONGITUDE, OSPAPA_LONGITUDE)
-latitude_interfaces(::OSPapaHourly)  = (OSPAPA_LATITUDE, OSPAPA_LATITUDE)
+NumericalEarth.DataWrangling.longitude_interfaces(::OSPapaHourly) = (OSPAPA_LONGITUDE, OSPAPA_LONGITUDE)
+NumericalEarth.DataWrangling.latitude_interfaces(::OSPapaHourly)  = (OSPAPA_LATITUDE, OSPAPA_LATITUDE)
 
-function native_grid(metadata::OSPapaMetadata, arch=CPU(); halo=(3, 3, 3))
+function NumericalEarth.DataWrangling.native_grid(metadata::OSPapaMetadata, arch=CPU(); halo=(3, 3, 3))
     if is_three_dimensional(metadata)
         Nz = size(metadata.dataset, metadata.name)[3]
         z = z_interfaces(metadata)
@@ -151,7 +151,7 @@ end
 ##### Data retrieval
 #####
 
-function retrieve_data(metadata::OSPapaMetadatum)
+function NumericalEarth.DataWrangling.retrieve_data(metadata::OSPapaMetadatum)
     filepath = metadata_path(metadata)
     ds = NCDataset(filepath)
     varname = dataset_variable_name(metadata)

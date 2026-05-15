@@ -10,11 +10,11 @@ struct OSPapaFluxHourly end
 const OSPapaFluxMetadata{D} = Metadata{<:OSPapaFluxHourly, D}
 const OSPapaFluxMetadatum   = Metadatum{<:OSPapaFluxHourly}
 
-metaprefix(::OSPapaFluxMetadata) = "OSPapaFluxMetadata"
+NumericalEarth.DataWrangling.metaprefix(::OSPapaFluxMetadata) = "OSPapaFluxMetadata"
 
-default_download_directory(::OSPapaFluxHourly) = mkpath(download_OSPapa_cache)
+NumericalEarth.DataWrangling.default_download_directory(::OSPapaFluxHourly) = mkpath(download_OSPapa_cache)
 
-available_variables(::OSPapaFluxHourly) = OSPapa_flux_variable_names
+NumericalEarth.DataWrangling.available_variables(::OSPapaFluxHourly) = OSPapa_flux_variable_names
 
 const OSPapa_flux_variable_names = Dict(
     :net_heat_flux                   => "QNET",
@@ -30,36 +30,36 @@ const OSPapa_flux_variable_names = Dict(
     :skin_temperature                => "TSK",
 )
 
-dataset_variable_name(md::OSPapaFluxMetadata) = OSPapa_flux_variable_names[md.name]
+NumericalEarth.DataWrangling.dataset_variable_name(md::OSPapaFluxMetadata) = OSPapa_flux_variable_names[md.name]
 
 Oceananigans.location(::OSPapaFluxMetadata) = (Center, Center, Center)
-is_three_dimensional(::OSPapaFluxMetadata) = false
-conversion_units(::OSPapaFluxMetadatum) = nothing
-default_inpainting(::OSPapaFluxMetadata) = nothing
+NumericalEarth.DataWrangling.is_three_dimensional(::OSPapaFluxMetadata) = false
+NumericalEarth.DataWrangling.conversion_units(::OSPapaFluxMetadatum) = nothing
+NumericalEarth.DataWrangling.default_inpainting(::OSPapaFluxMetadata) = nothing
 
 Base.size(::OSPapaFluxHourly, variable) = (1, 1, 1)
 
 # The uniform hourly cache file is regenerated from the raw ERDDAP file by
 # download_dataset; metadata_epoch and metadata_time_step describe the
 # intended uniform axis.
-metadata_epoch(::OSPapaFluxHourly)     = DateTime(2007, 6, 8)
-metadata_time_step(::OSPapaFluxHourly) = 3600
+NumericalEarth.DataWrangling.metadata_epoch(::OSPapaFluxHourly)     = DateTime(2007, 6, 8)
+NumericalEarth.DataWrangling.metadata_time_step(::OSPapaFluxHourly) = 3600
 
 # Full advertised ERDDAP coverage for the ocs_papa_flux dataset. Used only
 # for `first_date`/`last_date` default-argument evaluation; users can pass
 # narrower windows via start_date/end_date.
 const OSPAPA_FLUX_ALL_DATES = DateTime(2007, 6, 8):Hour(1):DateTime(2022, 2, 24)
 
-all_dates(::OSPapaFluxHourly, variable) = OSPAPA_FLUX_ALL_DATES
+NumericalEarth.DataWrangling.all_dates(::OSPapaFluxHourly, variable) = OSPAPA_FLUX_ALL_DATES
 
 #####
 ##### Grid construction
 #####
 
-longitude_interfaces(::OSPapaFluxHourly) = (OSPAPA_LONGITUDE, OSPAPA_LONGITUDE)
-latitude_interfaces(::OSPapaFluxHourly)  = (OSPAPA_LATITUDE, OSPAPA_LATITUDE)
+NumericalEarth.DataWrangling.longitude_interfaces(::OSPapaFluxHourly) = (OSPAPA_LONGITUDE, OSPAPA_LONGITUDE)
+NumericalEarth.DataWrangling.latitude_interfaces(::OSPapaFluxHourly)  = (OSPAPA_LATITUDE, OSPAPA_LATITUDE)
 
-function native_grid(::OSPapaFluxMetadata, arch=CPU(); halo=(3, 3, 3))
+function NumericalEarth.DataWrangling.native_grid(::OSPapaFluxMetadata, arch=CPU(); halo=(3, 3, 3))
     return RectilinearGrid(arch; size=(), topology=(Flat, Flat, Flat))
 end
 
@@ -86,12 +86,12 @@ end
 flux_uniform_filename(start_date, end_date) =
     "ocs_papa_flux_uniform_$(Dates.format(start_date, "yyyymmddTHHMMSS"))_$(Dates.format(end_date, "yyyymmddTHHMMSS")).nc"
 
-metadata_filename(::OSPapaFluxHourly, name, date, region) = flux_uniform_filename(date, date)
+NumericalEarth.DataWrangling.metadata_filename(::OSPapaFluxHourly, name, date, region) = flux_uniform_filename(date, date)
 
-build_filename(::OSPapaFluxHourly, name, dates::AbstractArray, region) =
+NumericalEarth.DataWrangling.build_filename(::OSPapaFluxHourly, name, dates::AbstractArray, region) =
     flux_uniform_filename(first(dates), last(dates))
 
-function download_dataset(md::OSPapaFluxMetadata)
+function NumericalEarth.DataWrangling.download_dataset(md::OSPapaFluxMetadata)
     uniform_path = joinpath(md.dir, metadata_filename(md))
     isfile(uniform_path) && return uniform_path
 
@@ -150,7 +150,7 @@ end
 ##### Data retrieval
 #####
 
-function retrieve_data(metadata::OSPapaFluxMetadatum)
+function NumericalEarth.DataWrangling.retrieve_data(metadata::OSPapaFluxMetadatum)
     filepath = metadata_path(metadata)
     ds = NCDataset(filepath)
     varname = dataset_variable_name(metadata)
