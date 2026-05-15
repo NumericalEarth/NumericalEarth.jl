@@ -11,6 +11,7 @@
 using JLD2
 using Oceananigans
 using Oceananigans.Solvers
+using Oceananigans.Solvers: ZDirection
 using Oceananigans.Utils: worksize
 using Oceananigans.Architectures: architecture
 using Oceananigans.OutputReaders: SplitFilePath, InMemoryFTS, InMemory, Prefetched,
