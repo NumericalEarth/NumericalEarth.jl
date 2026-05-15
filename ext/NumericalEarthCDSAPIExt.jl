@@ -6,7 +6,7 @@ using Dates: Dates
 using NCDatasets: NCDatasets
 using Oceananigans: Oceananigans
 using Oceananigans.DistributedComputations: @root
-using NumericalEarth.DataWrangling: download_dataset
+using NumericalEarth.DataWrangling: download_dataset, metadata_path
 using NumericalEarth.DataWrangling.ERA5: ERA5Dataset, ERA5Metadata, ERA5Metadatum,
                                          ERA5_dataset_variable_names, ERA5_netcdf_variable_names,
                                          ERA5PressureLevelsDataset,
@@ -150,7 +150,7 @@ Before downloading, you must:
 See https://cds.climate.copernicus.eu/how-to-api for details.
 """
 function NumericalEarth.DataWrangling.download_dataset(meta::ERA5Metadatum; skip_existing=true)
-    output_path = NumericalEarth.DataWrangling.metadata_path(meta)
+    output_path = metadata_path(meta)
 
     # Skip download if file already exists
     skip_existing && isfile(output_path) && return output_path
@@ -296,7 +296,7 @@ function NumericalEarth.DataWrangling.download_dataset(names::Vector{Symbol}, me
                                                            region = meta.region,
                                                            date         = meta.dates,
                                                            dir          = meta.dir)
-        path = NumericalEarth.DataWrangling.metadata_path(metadatum)
+        path = metadata_path(metadatum)
         push!(name_path_pairs, (name, path))
     end
 

@@ -5,8 +5,6 @@ using Oceananigans.Architectures: ReactantState
 using Oceananigans.DistributedComputations: Distributed
 using NumericalEarth: EarthSystemModel
 
-import Oceananigans
-
 const OceananigansReactantExt = Base.get_extension(
      Oceananigans, :OceananigansReactantExt
 )

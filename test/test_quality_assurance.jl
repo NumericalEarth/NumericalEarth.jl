@@ -1,10 +1,11 @@
 using Test
 using NumericalEarth
+using ArchGDAL
 using Breeze
-using SpeedyWeather, XESMF
-using PythonCall, CondaPkg
-using WorldOceanAtlasTools
 using CDSAPI
+using PythonCall, CondaPkg
+using SpeedyWeather, XESMF
+using WorldOceanAtlasTools
 using ExplicitImports: ExplicitImports
 
 @testset "ExplicitImports" begin
@@ -49,6 +50,7 @@ using ExplicitImports: ExplicitImports
         maybe_extension(NumericalEarth, :NumericalEarthBreezeExt),
         maybe_extension(NumericalEarth, :NumericalEarthWOAExt),
         maybe_extension(NumericalEarth, :NumericalEarthCDSAPIExt),
+        maybe_extension(NumericalEarth, :NumericalEarthArchGDALExt),
     )
         isnothing(ext) || push!(modules, ext)
     end
