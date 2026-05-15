@@ -16,6 +16,7 @@ export native_grid
 
 import Oceananigans
 import Downloads
+using Downloads: Downloads
 using Printf: Printf, @sprintf
 
 using Oceananigans.Architectures: architecture, on_architecture, CPU, child_architecture
@@ -206,7 +207,7 @@ default_mask_value(dataset) = NaN
 """
     AbstractStaticDataset
 
-Supertype for datasets without a time dimension. Provides default no-op implementations for the date-related interface 
+Supertype for datasets without a time dimension. Provides default no-op implementations for the date-related interface
 (`all_dates`, `first_date`, `last_date`).
 """
 abstract type AbstractStaticDataset end
@@ -218,7 +219,7 @@ last_date(::AbstractStaticDataset,  args...) = nothing
 """
     AbstractStaticBathymetry <: AbstractStaticDataset
 
-Supertype for static, two-dimensional bathymetry datasets (e.g. ETOPO, GEBCO, IBCSO, IBCAO). 
+Supertype for static, two-dimensional bathymetry datasets (e.g. ETOPO, GEBCO, IBCSO, IBCAO).
 Adds defaults for the degenerate vertical axis and a variable-agnostic `Base.size`.
 """
 abstract type AbstractStaticBathymetry <: AbstractStaticDataset end
