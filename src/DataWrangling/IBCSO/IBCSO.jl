@@ -7,7 +7,7 @@ using Oceananigans
 using Oceananigans.DistributedComputations: @root
 using Scratch
 
-using ..DataWrangling: download_progress, Metadatum, metadata_path, AbstractStaticBathymetry
+using ..DataWrangling: DownloadProgress, Metadatum, metadata_path, AbstractStaticBathymetry
 
 import NumericalEarth.DataWrangling:
     metadata_filename,
@@ -78,7 +78,7 @@ function download_dataset(metadatum::IBCSOMetadatum)
 
     @root if !isfile(filepath)
         @info "Downloading IBCSO data: $(metadatum.name) to $download_dir..."
-        Downloads.download(IBCSO_pangaea_url, filepath; progress=download_progress)
+        Downloads.download(IBCSO_pangaea_url, filepath; progress=DownloadProgress())
     end
 
     return filepath
