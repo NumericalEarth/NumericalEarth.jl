@@ -246,13 +246,11 @@ start_date = DateTime(2005, 2, 16, 12)
         # `sort(...; rev=true)` regresses to a no-op or different order.
         ds_h = ERA5HourlyPressureLevels([500, 850]hPa)
         @test ds_h.pressure_levels == [850 * hPa, 500 * hPa]    # stored highest-pressure-first
-        @test ds_h.z === nothing
-        @test ds_h.mean_geopotential_height == true             # default kwarg
+        @test ds_h.z === nothing                                # default: per-column from Φ
 
         ds_m = ERA5MonthlyPressureLevels([500, 850]hPa)
         @test ds_m.pressure_levels == [850 * hPa, 500 * hPa]
         @test ds_m.z === nothing
-        @test ds_m.mean_geopotential_height == true
 
         # Already-descending input is preserved (sort is a no-op here)
         ds_h2 = ERA5HourlyPressureLevels([850, 500]hPa)
