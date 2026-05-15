@@ -8,7 +8,7 @@ using Oceananigans
 using Oceananigans.DistributedComputations: @root
 using Scratch
 
-using ..DataWrangling: download_progress, Metadatum, metadata_path, AbstractStaticBathymetry
+using ..DataWrangling: DownloadProgress, Metadatum, metadata_path, AbstractStaticBathymetry
 
 import NumericalEarth.DataWrangling:
     metadata_filename,
@@ -79,7 +79,7 @@ function download_dataset(metadatum::GEBCOMetadatum)
 
         try
             @info "Downloading from BODC..."
-            Downloads.download(GEBCO_zip_url, zip_path; progress=download_progress)
+            Downloads.download(GEBCO_zip_url, zip_path; progress=DownloadProgress())
 
             # Extract the NetCDF file from the ZIP using ZipFile.jl
             @info "Extracting NetCDF from ZIP archive..."
