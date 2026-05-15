@@ -1,5 +1,8 @@
 using Dates
-using Oceananigans.DistributedComputations: @root
+using Oceananigans.DistributedComputations: @root,
+                                            mpi_initialized,
+                                            mpi_rank,
+                                            global_communicator
 
 # JRA55 shortnames used in filenames (subset actually loaded by OMIP)
 const JRA55_SHORTNAMES = ["tas", "huss", "psl", "uas", "vas", "rlds", "rsds", "prra", "prsn", "friver", "licalvf"]
@@ -57,6 +60,38 @@ function atomic_replace!(dst, make_new!)
     return dst
 end
 
+# Pure file-system work. No MPI calls — safe to run from a background thread
+# launched on rank 0. Concurrency with the main task is mediated by `atomic_replace!`
+# (rename(2) is atomic on the same filesystem), so readers see either the old
+# symlink or the new real copy, never a half-written file.
+function _stage_jra55_year_files!(source_dir, staging_dir, year)
+    year_str = string(year)
+    for name in JRA55_SHORTNAMES
+        for dst in filter(f -> contains(f, name) && contains(f, year_str) && endswith(f, ".nc"), readdir(staging_dir; join=true))
+            if islink(dst)
+                src = joinpath(source_dir, basename(dst))
+                atomic_replace!(dst, tmp -> cp(src, tmp))
+                @debug "Staged $(basename(dst)) to scratch"
+            end
+        end
+    end
+    return nothing
+end
+
+function _unstage_jra55_year_files!(source_dir, staging_dir, year)
+    year_str = string(year)
+    for name in JRA55_SHORTNAMES
+        for dst in filter(f -> contains(f, name) && contains(f, year_str) && endswith(f, ".nc"), readdir(staging_dir; join=true))
+            if isfile(dst) && !islink(dst)
+                src = joinpath(source_dir, basename(dst))
+                atomic_replace!(dst, tmp -> symlink(src, tmp))
+                @debug "Unstaged $(basename(dst)) from scratch"
+            end
+        end
+    end
+    return nothing
+end
+
 """
     stage_jra55_year!(source_dir, staging_dir, year)
 
@@ -66,18 +101,7 @@ is atomic — a partial copy is never visible at `dst`, so concurrent
 `PrefetchingBackend` readers on background threads cannot race with the `cp`.
 """
 function stage_jra55_year!(source_dir, staging_dir, year)
-    @root begin
-        year_str = string(year)
-        for name in JRA55_SHORTNAMES
-            for dst in filter(f -> contains(f, name) && contains(f, year_str) && endswith(f, ".nc"), readdir(staging_dir; join=true))
-                if islink(dst)
-                    src = joinpath(source_dir, basename(dst))
-                    atomic_replace!(dst, tmp -> cp(src, tmp))
-                    @debug "Staged $(basename(dst)) to scratch"
-                end
-            end
-        end
-    end
+    @root _stage_jra55_year_files!(source_dir, staging_dir, year)
     return nothing
 end
 
@@ -89,56 +113,132 @@ to `source_dir`. Uses the same atomic swap as staging so a concurrent
 reader never sees a missing file at the swap point.
 """
 function unstage_jra55_year!(source_dir, staging_dir, year)
-    @root begin
-        year_str = string(year)
-        for name in JRA55_SHORTNAMES
-            for dst in filter(f -> contains(f, name) && contains(f, year_str) && endswith(f, ".nc"), readdir(staging_dir; join=true))
-                if isfile(dst) && !islink(dst)
-                    src = joinpath(source_dir, basename(dst))
-                    atomic_replace!(dst, tmp -> symlink(src, tmp))
-                    @debug "Unstaged $(basename(dst)) from scratch"
-                end
-            end
-        end
-    end
+    @root _unstage_jra55_year_files!(source_dir, staging_dir, year)
     return nothing
 end
 
 """
-    JRA55DataStagingCallback(; source_dir, staging_dir, start_date)
+    JRA55DataStagingCallback(; source_dir, staging_dir, start_date, async = true)
 
 Return a simulation callback that dynamically stages JRA55 yearly files
 from `source_dir` (slow disk) to `staging_dir` (fast scratch).
 
 At each invocation the callback:
-  1. Copies the current and next year's files to scratch (if not already there)
-  2. Removes files from two or more years ago to free space
+  1. Reaps any background staging tasks that have finished
+  2. If the *current* year's data isn't ready yet, blocks until it is
+     (safety fallback — should be rare if the callback fires often enough)
+  3. Spawns background copies for the current and next year's files
+     (if they aren't already on scratch or in flight)
+  4. Removes files from two or more years ago to free space
 
 Each year of JRA55 data is ~15–25 GB, so scratch holds at most ~50 GB at any time.
-"""
-function JRA55DataStagingCallback(; source_dir, staging_dir, start_date)
 
-    staged_years = Set{Int}()
+# Async vs sync
+
+With `async = true` (default), the actual `cp` is launched on a Julia
+background thread via `Threads.@spawn` while the main task returns
+immediately. With Δt = 30 min, ~58 min of compute fits between year
+transitions, so a 20-min copy overlaps fully with compute. **Start Julia
+with `JULIA_NUM_THREADS ≥ 2`** for this to actually parallelise — with one
+thread, `@spawn` just runs the copy synchronously.
+
+The atomic `mv(tmp, dst)` inside `atomic_replace!` is the only point where
+concurrent readers can observe the file change. They see either the old
+symlink (slow read) or the new real copy (fast read), never a partial
+file. On MPI runs, the cp itself runs only on rank 0 in a background
+thread; cross-rank consistency comes from filesystem atomicity rather than
+an explicit barrier, so no MPI calls happen on the background thread.
+
+Set `async = false` to fall back to the original blocking behaviour.
+"""
+function JRA55DataStagingCallback(; source_dir, staging_dir, start_date, async = true)
+
+    # "We've already issued a stage request for this year" — kept identical
+    # across ranks so every `@root` / `@root @info` below fires symmetrically
+    # (the macro contains an `MPI.Barrier`, so asymmetric entry deadlocks).
+    requested_years = Set{Int}()
+
+    # In-flight per-year background tasks. Only rank 0 ever has entries.
+    staging_tasks   = Dict{Int, Task}()
+
+    # Reap background tasks that have finished. No MPI calls, no `@root`:
+    # other ranks see an empty dict and silently no-op.
+    function reap_completed_tasks!()
+        for (y, task) in collect(staging_tasks)
+            if istaskdone(task)
+                if istaskfailed(task)
+                    err = try
+                        Base.task_result(task)
+                    catch
+                        nothing
+                    end
+                    @warn "Async staging for year $y failed; reads will fall back to the source symlink." exception = err
+                end
+                delete!(staging_tasks, y)
+            end
+        end
+    end
+
+    # If a task for `y` is still running and the simulation needs the file
+    # now, block on it. Only rank 0 ever has tasks, so this branch is
+    # rank-0-only; we deliberately use plain `@info` (not `@root @info`) so
+    # no barrier fires. Other ranks continue and will re-synchronise with
+    # rank 0 at the next halo-exchange MPI call.
+    function ensure_year_ready!(y)
+        if haskey(staging_tasks, y)
+            @info "Background staging of year $y not done yet; rank 0 is blocking on the copy."
+            try
+                wait(staging_tasks[y])
+            catch e
+                @warn "Async staging of year $y errored mid-wait" exception = e
+            end
+            delete!(staging_tasks, y)
+        end
+    end
+
+    # On rank 0, kick off the cp on a background thread; on every other
+    # rank, do nothing — the shared filesystem (with `atomic_replace!`)
+    # makes the new file visible without an explicit MPI sync.
+    function spawn_stage_year!(y)
+        if !async
+            stage_jra55_year!(source_dir, staging_dir, y)
+            return
+        end
+        if !mpi_initialized() || mpi_rank(global_communicator()) == 0
+            staging_tasks[y] = Threads.@spawn _stage_jra55_year_files!(source_dir, staging_dir, y)
+        end
+    end
 
     function stage_forcing_data!(sim)
         current_year = year(start_date + Second(round(Int, sim.model.clock.time)))
-        needed_years = Set([current_year, current_year + 1])
+        needed_years = (current_year, current_year + 1)
 
-        # Stage upcoming years
+        reap_completed_tasks!()
+
+        # Safety fallback: if the current simulated year hasn't finished
+        # copying yet, rank 0 blocks until it has. (Should be rare — the
+        # 20 min copy fits inside ~58 min of compute per simulated year.)
+        ensure_year_ready!(current_year)
+
+        # Schedule staging for the years we need. `requested_years` is
+        # updated *before* the spawn on every rank, so the `@root @info`
+        # below fires identically on rank 0 and on every other rank.
         for y in needed_years
-            if y ∉ staged_years
-                @root @info "Staging JRA55 data for year $y to $staging_dir"
-                stage_jra55_year!(source_dir, staging_dir, y)
-                push!(staged_years, y)
+            if y ∉ requested_years
+                push!(requested_years, y)
+                @root @info "$(async ? "Spawning async" : "Staging") JRA55 data for year $y → $staging_dir"
+                spawn_stage_year!(y)
             end
         end
 
-        # Unstage old years
-        for y in collect(staged_years)
+        # Unstage years we no longer need. `requested_years` is consistent
+        # across ranks, so the `@root` inside `unstage_jra55_year!` fires
+        # on the same set of years on every rank.
+        for y in collect(requested_years)
             if y < current_year - 1
                 @root @info "Unstaging JRA55 data for year $y from $staging_dir"
                 unstage_jra55_year!(source_dir, staging_dir, y)
-                delete!(staged_years, y)
+                delete!(requested_years, y)
             end
         end
     end
