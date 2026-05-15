@@ -2,9 +2,8 @@ using Printf
 using Oceananigans.Grids: inactive_node
 using Oceananigans.Operators: ℑxᶠᵃᵃ, ℑyᵃᶠᵃ
 using Oceananigans.Forcings: MultipleForcings
-using NumericalEarth.EarthSystemModels: NoOceanInterfaceModel, NoInterfaceModel
-
-using NumericalEarth.EarthSystemModels.InterfaceComputations: computed_fluxes, sea_ice_concentration
+using NumericalEarth.EarthSystemModels: NoOceanInterfaceModel, NoInterfaceModel, sea_ice_concentration
+using NumericalEarth.EarthSystemModels.InterfaceComputations: computed_fluxes
 
 @inline τᶜᶜᶜ(i, j, k, grid, ρᵒᶜ⁻¹, ℵ, ρτᶜᶜᶜ) = @inbounds ρᵒᶜ⁻¹ * (1 - ℵ[i, j, k]) * ρτᶜᶜᶜ[i, j, k]
 

@@ -1,6 +1,6 @@
 using Oceananigans.Grids: inactive_node
-using NumericalEarth.EarthSystemModels: EarthSystemModel
-using NumericalEarth.EarthSystemModels.InterfaceComputations: convert_to_kelvin, sea_ice_concentration
+using NumericalEarth.EarthSystemModels: EarthSystemModel, sea_ice_concentration
+using NumericalEarth.EarthSystemModels.InterfaceComputations: convert_to_kelvin
 using NumericalEarth.Oceans: shortwave_radiative_forcing, get_radiative_forcing
 
 """

@@ -14,13 +14,12 @@ using NumericalEarth: NumericalEarth
 using Scratch: Scratch, @get_scratch!
 using ZipFile: ZipFile
 
-using ..DataWrangling:
-    Metadata,
-    Metadatum,
-    download_progress,
-    metadata_path,
-    first_date,
-    Kelvin
+using ..DataWrangling: Metadata,
+                       Metadatum,
+                       download_progress,
+                       metadata_path,
+                       first_date,
+                       Kelvin
 
 download_EN4_cache::String = ""
 function __init__()
