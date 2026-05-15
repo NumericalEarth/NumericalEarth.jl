@@ -121,9 +121,6 @@ end
     Mr = interp_atmos_time_series(rainfall_flux, atmos_args...)
     Ms = interp_atmos_time_series(snowfall_flux, atmos_args...)
 
-    # Snowfall only (for sea ice snow accumulation)
-    Ms = interp_atmos_time_series(snowfall_flux, atmos_args...)
-
     # Convert atmosphere velocities (usually defined on a latitude-longitude grid) to
     # the frame of reference of the native grid
     kᴺ = size(exchange_grid, 3) # index of the top ocean cell
