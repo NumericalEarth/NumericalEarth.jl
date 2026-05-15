@@ -1,4 +1,3 @@
-using CondaPkg
 using Oceananigans.Grids: topology
 using Oceananigans.Simulations
 using NumericalEarth.EarthSystemModels: EarthSystemModel
@@ -87,8 +86,8 @@ struct VerosOceanSimulation{S}
     setup :: S
 end
 
-Oceananigans.Diagnostics.default_nan_checker(model::EarthSystemModel{<:Any, <:Any, <:VerosOceanSimulation}) = nothing
 Oceananigans.initialize!(::VerosOceanSimulation{Py}) = nothing
+Oceananigans.Diagnostics.default_nan_checker(model::EarthSystemModel{<:Any, <:Any, <:VerosOceanSimulation}) = nothing
 
 function Oceananigans.TimeSteppers.time_step!(ocean::VerosOceanSimulation, Δt)
     # Align the timesteps
@@ -163,7 +162,7 @@ function Oceananigans.Fields.set!(field::CCField2D, pyarray::Py, k=pyconvert(Int
     return field
 end
 
-function set!(field::FCField2D, pyarray::Py, k=pyconvert(Int, pyarray.shape[2]))
+function Oceananigans.Fields.set!(field::FCField2D, pyarray::Py, k=pyconvert(Int, pyarray.shape[2]))
     array = PyArray(pyarray)
     Nx, Ny, Nz = size(array)
     TX, TY, _  = topology(field.grid)
@@ -172,7 +171,7 @@ function set!(field::FCField2D, pyarray::Py, k=pyconvert(Int, pyarray.shape[2]))
     return field
 end
 
-function set!(field::CFField2D, pyarray::Py, k=pyconvert(Int, pyarray.shape[2]))
+function Oceananigans.Fields.set!(field::CFField2D, pyarray::Py, k=pyconvert(Int, pyarray.shape[2]))
     array = PyArray(pyarray)
     Nx, Ny, Nz = size(array)
     set!(field, view(array, 3:Nx-2, 2:Ny-2, k, 1))
@@ -196,6 +195,7 @@ function VerosOceanSimulation(setup::String, setup_name::Symbol)
     patch_veros_signal_handling()
 
     setups = pyimport("veros.setups." * setup)
+    @show setups
     ocean  = @eval $setups.$setup_name()
 
     # Patch again before setup() in case Veros imports more modules
@@ -269,7 +269,7 @@ Set the `v` variable in the `ocean` model to the value of `x`.
 the path corresponds to the path inside the class where to locate the
 variable `v` to set. It can be either `:variables` or `:settings`.
 """
-function set!(ocean::VerosOceanSimulation, v, x; path = :variables)
+function Oceananigans.Fields.set!(ocean::VerosOceanSimulation, v, x; path = :variables)
     setup = ocean.setup
     if path == :variables
         pyexec("""
@@ -286,7 +286,7 @@ function set!(ocean::VerosOceanSimulation, v, x; path = :variables)
     end
 end
 
-function Simulations.reset_clock!(ocean::VerosOceanSimulation)
+function Oceananigans.Simulations.reset_clock!(ocean::VerosOceanSimulation)
     set!(ocean, "time", 0)
     set!(ocean, "itt",  Int32(0))
     return ocean

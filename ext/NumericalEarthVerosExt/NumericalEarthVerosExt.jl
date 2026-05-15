@@ -6,7 +6,7 @@ using PythonCall: PythonCall, pyimport, pyexec, pyconvert, Py, PyArray
 using Oceananigans: Oceananigans
 using Oceananigans.Architectures: CPU
 using Oceananigans.Grids: Bounded, Center, Face, Periodic, LatitudeLongitudeGrid, Flat
-using Oceananigans.Fields: Field
+using Oceananigans.Fields: Field, set!
 using Oceananigans.Simulations: Simulations
 using NumericalEarth: NumericalEarth
 using NumericalEarth.Oceans: Oceans

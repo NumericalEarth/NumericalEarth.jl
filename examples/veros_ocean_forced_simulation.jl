@@ -1,4 +1,4 @@
-# # An Ocean Simulation at 4ᵒ Resolution Forced by JRA55 Reanalysis 
+# # An Ocean Simulation at 4ᵒ Resolution Forced by JRA55 Reanalysis
 #
 # This example showcases the use of NumericalEarth's PythonCall extension to run a
 # near-global ocean simulation at 4-degree resolution using the Veros ocean model.
@@ -8,7 +8,7 @@
 # CairoMakie to visualize the simulation.
 
 using NumericalEarth
-using PythonCall
+using PythonCall, CondaPkg
 using Oceananigans, Oceananigans.Units
 using CairoMakie
 using Printf
@@ -31,8 +31,8 @@ ocean = VerosModule.VerosOceanSimulation("global_4deg", :GlobalFourDegreeSetup)
 
 # The loaded Veros setup contains a `set_forcing` method which computes the fluxes as restoring from climatology.
 # We replace it with a custom function that only computes the TKE forcing (which depends on the wind stresses
-# that we set in NumericalEarth). This way our u, v, T, S forcings are not overwritten. 
-# The `set_forcing_tke_only` method defined below is modified from the `set_forcing` method defined in 
+# that we set in NumericalEarth). This way our u, v, T, S forcings are not overwritten.
+# The `set_forcing_tke_only` method defined below is modified from the `set_forcing` method defined in
 # https://github.com/team-ocean/veros/blob/main/veros/setups/global_4deg/global_4deg.py
 
 pyexec("""
@@ -42,7 +42,7 @@ def set_forcing_tke_only(state):
 
     vs = state.variables
     settings = state.settings
-    
+
     if settings.enable_tke:
         vs.forc_tke_surface = update(
             vs.forc_tke_surface,
