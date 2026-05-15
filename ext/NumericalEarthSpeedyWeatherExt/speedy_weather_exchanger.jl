@@ -32,16 +32,17 @@ function ComponentExchanger(atmosphere::SpeedySimulation, exchange_grid)
     from_atmosphere = Regridder(manifold, exchange_grid, spectral_grid)
     to_atmosphere   = Regridder(manifold, spectral_grid, exchange_grid)
     regridder = (; to_atmosphere, from_atmosphere)
-
-    state = (; u  = Field{Center, Center, Nothing}(exchange_grid),
-               v  = Field{Center, Center, Nothing}(exchange_grid),
-               T  = Field{Center, Center, Nothing}(exchange_grid),
-               p  = Field{Center, Center, Nothing}(exchange_grid),
-               q  = Field{Center, Center, Nothing}(exchange_grid),
+    
+    state = (; u    = Field{Center, Center, Nothing}(exchange_grid),
+               v    = Field{Center, Center, Nothing}(exchange_grid),
+               T    = Field{Center, Center, Nothing}(exchange_grid),
+               p    = Field{Center, Center, Nothing}(exchange_grid),
+               q    = Field{Center, Center, Nothing}(exchange_grid),
                ℐꜜˢʷ = Field{Center, Center, Nothing}(exchange_grid),
                ℐꜜˡʷ = Field{Center, Center, Nothing}(exchange_grid),
-               Jᶜ = Field{Center, Center, Nothing}(exchange_grid))
-
+               Jʳⁿ  = Field{Center, Center, Nothing}(exchange_grid),
+               Jˢⁿ  = Field{Center, Center, Nothing}(exchange_grid))
+    
     return ComponentExchanger(state, regridder)
 end
 
@@ -59,23 +60,29 @@ function interpolate_state!(exchanger, exchange_grid, atmos::SpeedySimulation, c
     exchange_state  = exchanger.state
     surface_layer   = atmos.model.spectral_grid.nlayers
 
-    ua  = RingGrids.field_view(atmos.variables.grid.u, :, surface_layer).data
-    va  = RingGrids.field_view(atmos.variables.grid.v, :, surface_layer).data
-    Ta  = RingGrids.field_view(atmos.variables.grid.temperature, :, surface_layer).data
-    qa  = RingGrids.field_view(atmos.variables.grid.humidity, :, surface_layer).data
-    pa  = exp.(atmos.variables.grid.pressure.data)
+    ua   = RingGrids.field_view(atmos.variables.grid.u, :, surface_layer).data
+    va   = RingGrids.field_view(atmos.variables.grid.v, :, surface_layer).data
+    Ta   = RingGrids.field_view(atmos.variables.grid.temperature, :, surface_layer).data
+    qa   = RingGrids.field_view(atmos.variables.grid.humidity, :, surface_layer).data
+    pa   = exp.(atmos.variables.grid.pressure.data)
     ℐꜜˢʷ = atmos.variables.parameterizations.surface_shortwave_down.data
     ℐꜜˡʷ = atmos.variables.parameterizations.surface_longwave_down.data
-    Jᶜ  = atmos.variables.parameterizations.rain_rate.data .+ atmos.variables.parameterizations.snow_rate.data
+    Jʳⁿ  = atmos.variables.parameterizations.rain_rate.data
 
-    regrid!(exchange_state.u,    from_atmosphere, ua)
-    regrid!(exchange_state.v,    from_atmosphere, va)
-    regrid!(exchange_state.T,    from_atmosphere, Ta)
-    regrid!(exchange_state.q,    from_atmosphere, qa)
-    regrid!(exchange_state.p,    from_atmosphere, pa)
-    regrid!(exchange_state.ℐꜜˢʷ, from_atmosphere, ℐꜜˢʷ)
-    regrid!(exchange_state.ℐꜜˡʷ, from_atmosphere, ℐꜜˡʷ)
-    regrid!(exchange_state.Jᶜ,   from_atmosphere, Jᶜ)
+    # `snow_rate` is only registered when SpeedyWeather's large-scale 
+    # condensation parameterization is part of the model
+    Jˢⁿ = haskey(atmos.variables.parameterizations, :snow_rate) ?
+          atmos.variables.parameterizations.snow_rate.data : nothing
+
+    regrid!(exchange_state.u,     from_atmosphere, ua)
+    regrid!(exchange_state.v,     from_atmosphere, va)
+    regrid!(exchange_state.T,     from_atmosphere, Ta)
+    regrid!(exchange_state.q,     from_atmosphere, qa)
+    regrid!(exchange_state.p,     from_atmosphere, pa)
+    regrid!(exchange_state.ℐꜜˢʷ,  from_atmosphere, ℐꜜˢʷ)
+    regrid!(exchange_state.ℐꜜˡʷ,  from_atmosphere, ℐꜜˡʷ)
+    regrid!(exchange_state.Jʳⁿ,   from_atmosphere, Jʳⁿ)
+    isnothing(Jˢⁿ) || regrid!(exchange_state.Jˢⁿ, from_atmosphere, Jˢⁿ)
 
     arch = architecture(exchange_grid)
 
@@ -90,7 +97,8 @@ function interpolate_state!(exchanger, exchange_grid, atmos::SpeedySimulation, c
     fill_halo_regions!(exchange_state.p)
     fill_halo_regions!(exchange_state.ℐꜜˢʷ)
     fill_halo_regions!(exchange_state.ℐꜜˡʷ)
-    fill_halo_regions!(exchange_state.Jᶜ)
+    fill_halo_regions!(exchange_state.Jʳⁿ)
+    isnothing(Jˢⁿ) || fill_halo_regions!(exchange_state.Jˢⁿ)
 
     return nothing
 end
