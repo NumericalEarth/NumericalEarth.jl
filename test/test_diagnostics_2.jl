@@ -52,7 +52,7 @@ for arch in test_architectures
 
             ρᵒᶜ = esm.interfaces.ocean_properties.reference_density
             cᵒᶜ = esm.interfaces.ocean_properties.heat_capacity
-            S₀ = 35.0
+            Sᵒᶜ = 35.0
 
             frazil_temperature = frazil_temperature_flux(esm)
             net_ocean_temperature = net_ocean_temperature_flux(esm)
@@ -65,9 +65,9 @@ for arch in test_architectures
             net_ocean_salinity = net_ocean_salinity_flux(esm)
             sea_ice_ocean_salinity = sea_ice_ocean_salinity_flux(esm)
             atmosphere_ocean_salinity = atmosphere_ocean_salinity_flux(esm)
-            net_ocean_freshwater = net_ocean_freshwater_flux(esm; reference_salinity = S₀)
-            sea_ice_ocean_freshwater = sea_ice_ocean_freshwater_flux(esm; reference_salinity = S₀)
-            atmosphere_ocean_freshwater = atmosphere_ocean_freshwater_flux(esm; reference_salinity = S₀)
+            net_ocean_freshwater = net_ocean_freshwater_flux(esm; reference_salinity = Sᵒᶜ)
+            sea_ice_ocean_freshwater = sea_ice_ocean_freshwater_flux(esm; reference_salinity = Sᵒᶜ)
+            atmosphere_ocean_freshwater = atmosphere_ocean_freshwater_flux(esm; reference_salinity = Sᵒᶜ)
 
             for f in (frazil_temperature, net_ocean_temperature, sea_ice_ocean_temperature,
                       atmosphere_ocean_temperature, frazil_heat, net_ocean_heat, sea_ice_ocean_heat,
@@ -101,9 +101,9 @@ for arch in test_architectures
                 @test atmosphere_ocean_salinity[1, 1, 1] ≈ S_flux_value - expected_sea_ice_ocean_salt
                 @test net_ocean_salinity[1, 1, 1] ≈ atmosphere_ocean_salinity[1, 1, 1] + sea_ice_ocean_salinity[1, 1, 1]
 
-                @test net_ocean_freshwater[1, 1, 1] ≈ - ρᵒᶜ / S₀ * S_flux_value
-                @test sea_ice_ocean_freshwater[1, 1, 1] ≈ - ρᵒᶜ / S₀ * expected_sea_ice_ocean_salt
-                @test atmosphere_ocean_freshwater[1, 1, 1] ≈ - ρᵒᶜ / S₀ * (S_flux_value - expected_sea_ice_ocean_salt)
+                @test net_ocean_freshwater[1, 1, 1] ≈ - ρᵒᶜ / Sᵒᶜ * S_flux_value
+                @test sea_ice_ocean_freshwater[1, 1, 1] ≈ - ρᵒᶜ / Sᵒᶜ * expected_sea_ice_ocean_salt
+                @test atmosphere_ocean_freshwater[1, 1, 1] ≈ - ρᵒᶜ / Sᵒᶜ * (S_flux_value - expected_sea_ice_ocean_salt)
                 @test net_ocean_freshwater[1, 1, 1] ≈ atmosphere_ocean_freshwater[1, 1, 1] + sea_ice_ocean_freshwater[1, 1, 1]
             end
         end
