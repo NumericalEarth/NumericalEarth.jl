@@ -31,6 +31,7 @@ WorldOceanAtlasTools = "04f20302-f1b9-11e8-29d9-7d841cb0a64a"
 
 [sources]
 NumericalEarth = {path = ".."}
+ConservativeRegridding = {url = "https://github.com/JuliaGeo/ConservativeRegridding.jl", rev = "main"}
 
 [compat]
 ArchGDAL = "0.10"

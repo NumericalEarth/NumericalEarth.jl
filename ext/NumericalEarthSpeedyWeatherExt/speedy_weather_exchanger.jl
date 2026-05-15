@@ -4,6 +4,7 @@ using Oceananigans.Grids: architecture
 using Oceananigans.Utils: launch!
 using Oceananigans.Operators: intrinsic_vector
 
+using ConservativeRegridding
 using ConservativeRegridding: Regridder
 import ConservativeRegridding: regrid!
 

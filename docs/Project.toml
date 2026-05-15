@@ -23,6 +23,7 @@ Suppressor = "fd094767-a336-5f1f-9728-57cf17d0bbfb"
 
 [sources]
 NumericalEarth = {path = ".."}
+ConservativeRegridding = {url = "https://github.com/JuliaGeo/ConservativeRegridding.jl", rev = "main"}
 
 [compat]
 CairoMakie = "0.15"
