@@ -145,11 +145,20 @@ end
 @inline Base.getindex(c::_ColumnView, k::Int) =
     rnode(c.i, c.j, k, c.grid, Center(), Center(), Center())
 
-@inline function _fractional_indices((x, y, z), grid::PressureLevelGrid, ℓx, ℓy, ℓz)
+@inline function _fractional_indices((x, y, z)::NTuple{3, Any},
+                                      grid::PressureLevelGrid, ℓx, ℓy, ℓz)
     ii = fractional_x_index(x, (ℓx, ℓy, ℓz), grid)
     jj = fractional_y_index(y, (ℓx, ℓy, ℓz), grid)
     kk = column_fractional_z_index(z, ii, jj, (ℓx, ℓy, ℓz), grid)
     return FractionalIndices(ii, jj, kk)
+end
+
+# Column-region source (Flat-Flat-Bounded): there's only one (i,j)=(1,1), so
+# bisect that single column directly. Mirrors the 3-D form's column logic.
+@inline function _fractional_indices((z,)::NTuple{1, Any},
+                                      grid::PressureLevelGrid, ::Nothing, ::Nothing, ℓz)
+    kk = column_fractional_z_index(z, 1, 1, (nothing, nothing, ℓz), grid)
+    return FractionalIndices(nothing, nothing, kk)
 end
 
 @inline function column_fractional_z_index(z, ii, jj, locs, grid)
