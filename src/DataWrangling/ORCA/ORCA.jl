@@ -2,7 +2,7 @@ module ORCA
 
 export ORCA1, ORCA12
 
-import NumericalEarth
+using NumericalEarth: NumericalEarth
 import Oceananigans
 import Downloads
 using Oceananigans.DistributedComputations: @root

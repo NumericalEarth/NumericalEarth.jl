@@ -2,7 +2,7 @@ module GEBCO
 
 export GEBCO2024
 
-import NumericalEarth
+using NumericalEarth: NumericalEarth
 import Downloads
 using ZipFile: ZipFile
 import Oceananigans

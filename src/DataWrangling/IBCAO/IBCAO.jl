@@ -2,7 +2,7 @@ module IBCAO
 
 export IBCAOv5
 
-import NumericalEarth
+using NumericalEarth: NumericalEarth
 import Oceananigans
 import Downloads
 using Oceananigans.DistributedComputations: @root

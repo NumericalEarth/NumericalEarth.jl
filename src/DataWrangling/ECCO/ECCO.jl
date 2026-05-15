@@ -8,7 +8,7 @@ export ECCO2DarwinMonthly, ECCO4DarwinMonthly
 export retrieve_data
 
 import Oceananigans
-import NumericalEarth
+using NumericalEarth: NumericalEarth
 using NCDatasets: NCDatasets
 using Dates: Dates, DateTime, Day, Month
 using Adapt: Adapt

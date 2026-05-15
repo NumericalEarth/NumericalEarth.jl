@@ -2,7 +2,7 @@ module GLORYS
 
 export GLORYSStatic, GLORYSDaily, GLORYSMonthly
 
-import NumericalEarth
+using NumericalEarth: NumericalEarth
 using NCDatasets: NCDatasets, Dataset
 using Printf: Printf, @sprintf
 

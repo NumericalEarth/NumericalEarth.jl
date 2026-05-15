@@ -1,7 +1,7 @@
 module NumericalEarthBreezeExt
 
 import Breeze
-import NumericalEarth
+using NumericalEarth: NumericalEarth
 import Oceananigans
 
 using KernelAbstractions: @kernel, @index

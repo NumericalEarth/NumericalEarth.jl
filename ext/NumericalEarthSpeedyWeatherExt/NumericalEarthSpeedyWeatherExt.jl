@@ -10,7 +10,7 @@ using Statistics: Statistics
 using XESMF: XESMF
 
 import SpeedyWeather
-import NumericalEarth
+using NumericalEarth: NumericalEarth
 import Oceananigans
 import SpeedyWeather.RingGrids
 

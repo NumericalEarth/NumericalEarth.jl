@@ -2,7 +2,7 @@ module IBCSO
 
 export IBCSOv2
 
-import NumericalEarth
+using NumericalEarth: NumericalEarth
 import Oceananigans
 import Downloads
 using Oceananigans.DistributedComputations: @root

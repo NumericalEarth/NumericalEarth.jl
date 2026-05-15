@@ -2,7 +2,7 @@ module WOA
 
 export WOAClimatology, WOAAnnual, WOAMonthly
 
-import NumericalEarth
+using NumericalEarth: NumericalEarth
 import Oceananigans
 using NCDatasets: NCDatasets, Dataset
 using JLD2: JLD2

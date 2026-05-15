@@ -2,7 +2,7 @@ module ETOPO
 
 export ETOPO2022
 
-import NumericalEarth
+using NumericalEarth: NumericalEarth
 import Downloads
 import Oceananigans
 using Oceananigans.DistributedComputations: @root

@@ -12,7 +12,7 @@ using Printf: Printf, @sprintf
 using Scratch: Scratch, @get_scratch!
 using Statistics: Statistics, mean
 
-import NumericalEarth
+using NumericalEarth: NumericalEarth
 using Oceananigans.Fields: Center, set!
 using Oceananigans: Field, fill_halo_regions!, CPU
 using NumericalEarth.DataWrangling: Metadata, Metadatum, metadata_path, native_grid, InverseGravity, download_dataset
