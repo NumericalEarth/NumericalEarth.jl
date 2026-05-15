@@ -20,6 +20,7 @@ using NCDatasets: NCDatasets, NCDataset, defDim, defVar
 using Scratch: Scratch, @get_scratch!
 using Thermodynamics: q_vap_from_RH, Liquid
 
+using NumericalEarth: NumericalEarth
 using NumericalEarth.Atmospheres: PrescribedAtmosphere, PrescribedPrecipitationFlux, AtmosphereThermodynamicsParameters
 using NumericalEarth.DataWrangling: download_progress,
                                     download_dataset,

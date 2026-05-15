@@ -93,7 +93,7 @@ function ospapa_all_times(dir=download_OSPapa_cache)
     return _ospapa_times_cache[]
 end
 
-NumericalEarth.DataWranglingall_dates(::OSPapaHourly, variable) = ospapa_all_times()
+NumericalEarth.DataWrangling.all_dates(::OSPapaHourly, variable) = ospapa_all_times()
 
 # Cache depth arrays per variable
 const _ospapa_depths_cache = Dict{Symbol, Vector{Float64}}()
