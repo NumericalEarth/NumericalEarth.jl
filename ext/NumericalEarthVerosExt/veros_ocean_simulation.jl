@@ -34,8 +34,6 @@ function install_veros()
     # are necessary to allow loading compatible hdf5 and h5py.
     CondaPkg.add("hdf5"; version="<2", channel="conda-forge")
     CondaPkg.add("h5py"; version=">=3.0,<3.13", channel="conda-forge")
-    # Veros pins requests <= 2.34.0; pre-pin so pixi doesn't pick 2.34.1.
-    CondaPkg.add_pip("requests", version="<=2.34.0")
     CondaPkg.add_pip("veros", version="@ https://github.com/team-ocean/veros/archive/refs/heads/main.zip")
     cli = CondaPkg.which("veros")
     
