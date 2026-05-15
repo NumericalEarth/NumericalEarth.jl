@@ -36,7 +36,7 @@ import Oceananigans.Fields: set!
 ##### Downloading utilities
 #####
 
-mutable struct DownloadProgress
+mutable struct DownloadProgress <: Function
     next_fraction :: Float64
     download_start_time :: UInt64
 end
