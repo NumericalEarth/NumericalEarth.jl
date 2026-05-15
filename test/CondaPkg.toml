@@ -1,7 +1,0 @@
-[deps.h5py]
-channel = "conda-forge"
-version = ">=3.0,<3.13"
-
-[deps.hdf5]
-channel = "conda-forge"
-version = "<2"
