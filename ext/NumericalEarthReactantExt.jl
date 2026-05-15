@@ -1,6 +1,7 @@
 module NumericalEarthReactantExt
 
 using Reactant
+using Oceananigans: Oceananigans
 using Oceananigans.Architectures: ReactantState
 using Oceananigans.DistributedComputations: Distributed
 using NumericalEarth: EarthSystemModel
