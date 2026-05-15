@@ -25,7 +25,7 @@ net_fluxes(::SpeedySimulation) = nothing
 # 2. Perform the regridding on the GPU
 function ComponentExchanger(atmosphere::SpeedySimulation, exchange_grid)
 
-    spectral_grid = atmosphere.model.spectral_grid
+    spectral_grid = atmosphere.model.spectral_grid.grid
     # Use the exchange_grid's manifold for both grids to avoid
     # radius mismatch between Oceananigans and SpeedyWeather.
     manifold = ConservativeRegridding.GOCore.best_manifold(exchange_grid)
