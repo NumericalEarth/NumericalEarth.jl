@@ -16,7 +16,7 @@ using ..DataWrangling:
     BoundingBox,
     inpaint_mask!,
     NearestNeighborInpainting,
-    download_progress
+    DownloadProgress
 
 using Oceananigans.DistributedComputations: @root
 

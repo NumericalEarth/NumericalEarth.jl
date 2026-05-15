@@ -17,7 +17,7 @@ using ..DataWrangling:
     BoundingBox,
     inpaint_mask!,
     NearestNeighborInpainting,
-    download_progress,
+    DownloadProgress,
     compute_native_date_range,
     Kelvin,
     Celsius
@@ -218,7 +218,7 @@ function download_dataset(metadata::Metadata{<:EN4Monthly})
             if !isfile(extracted_file) & !isfile(zippath)
                 push!(missingzips, zippath)
                 @info "Downloading EN4 data: $(metadatum.name) in $(metadatum.dir)..."
-                Downloads.download(fileurl, zippath; progress=download_progress)
+                Downloads.download(fileurl, zippath; progress=DownloadProgress())
             elseif !isfile(extracted_file) & isfile(zippath)
                 push!(missingzips, zippath)
             end
@@ -229,7 +229,7 @@ function download_dataset(metadata::Metadata{<:EN4Monthly})
         end
     end
 
-    return nothing
+    return metadata_path(metadata)
 end
 
 end # Module

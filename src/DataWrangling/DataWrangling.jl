@@ -5,12 +5,13 @@ restoring, or validation.
 module DataWrangling
 
 export Metadata, Metadatum, DatewiseFilename, ECCOMetadatum, EN4Metadatum, all_dates, first_date, last_date
+export validate_dataset_coverage, metadata_filename
 export BoundingBox, Column, Linear, Nearest
 export WOAClimatology, WOAAnnual, WOAMonthly
 export metadata_time_step, metadata_epoch
 export LinearlyTaperedPolarMask
 export DatasetRestoring, SurfaceFluxRestoring
-export ERA5Hourly, ERA5Monthly
+export ERA5HourlySingleLevel, ERA5MonthlySingleLevel, ERA5HourlyPressureLevels, ERA5MonthlyPressureLevels
 export native_grid
 
 using Oceananigans
@@ -35,36 +36,40 @@ import Oceananigans.Fields: set!
 ##### Downloading utilities
 #####
 
-next_fraction = Ref(0.0)
-download_start_time = Ref(time_ns())
+mutable struct DownloadProgress <: Function
+    next_fraction :: Float64
+    download_start_time :: UInt64
+end
+
+DownloadProgress() = DownloadProgress(0.0, time_ns())
 
 """
-    download_progress(total, now; filename="")
+    DownloadProgress(total, now; filename="")
 """
-function download_progress(total, now; filename="")
+function (d::DownloadProgress)(total, now; filename="")
     messages = 10
 
     if total > 0
         fraction = now / total
 
-        if fraction < 1 / messages && next_fraction[] == 0
+        if fraction < 1 / messages && d.next_fraction == 0
             @info @sprintf("Downloading %s (size: %s)...", filename, pretty_filesize(total))
-            next_fraction[] = 1 / messages
-            download_start_time[] = time_ns()
+            d.next_fraction = 1 / messages
+            d.download_start_time = time_ns()
         end
 
-        if fraction > next_fraction[]
-            elapsed = 1e-9 * (time_ns() - download_start_time[])
+        if fraction > d.next_fraction
+            elapsed = 1e-9 * (time_ns() - d.download_start_time)
             msg = @sprintf(" ... downloaded %s (%d%% complete, %s)", pretty_filesize(now),
                            100fraction, prettytime(elapsed))
             @info msg
-            next_fraction[] = next_fraction[] + 1 / messages
+            d.next_fraction = d.next_fraction + 1 / messages
         end
     else
-        if now > 0 && next_fraction[] == 0
+        if now > 0 && d.next_fraction == 0
             @info "Downloading $filename..."
-            next_fraction[] = 1 / messages
-            download_start_time[] = time_ns()
+            d.next_fraction = 1 / messages
+            d.download_start_time = time_ns()
         end
     end
 
@@ -198,6 +203,29 @@ function binary_data_size end
 
 default_mask_value(dataset) = NaN
 
+"""
+    AbstractStaticDataset
+
+Supertype for datasets without a time dimension. Provides default no-op implementations for the date-related interface 
+(`all_dates`, `first_date`, `last_date`).
+"""
+abstract type AbstractStaticDataset end
+
+all_dates(::AbstractStaticDataset,  args...) = nothing
+first_date(::AbstractStaticDataset, args...) = nothing
+last_date(::AbstractStaticDataset,  args...) = nothing
+
+"""
+    AbstractStaticBathymetry <: AbstractStaticDataset
+
+Supertype for static, two-dimensional bathymetry datasets (e.g. ETOPO, GEBCO, IBCSO, IBCAO). 
+Adds defaults for the degenerate vertical axis and a variable-agnostic `Base.size`.
+"""
+abstract type AbstractStaticBathymetry <: AbstractStaticDataset end
+
+z_interfaces(::AbstractStaticBathymetry) = (0, 1)
+Base.size(dataset::AbstractStaticBathymetry, variable) = size(dataset)
+
 # Fundamentals
 include("metadata.jl")
 include("metadata_field.jl")
@@ -231,6 +259,9 @@ include("ORCA/ORCA.jl")
 include("WOA/WOA.jl")
 include("JRA55/JRA55.jl")
 include("OSPapa/OSPapa.jl")
+include("IBCSO/IBCSO.jl")
+include("GEBCO/GEBCO.jl")
+include("IBCAO/IBCAO.jl")
 
 using .ETOPO
 using .ECCO
@@ -241,5 +272,13 @@ using .ORCA
 using .WOA
 using .JRA55
 using .OSPapa
+using .IBCSO
+using .GEBCO
+using .IBCAO
+
+# Fallback: if no download extension is loaded, check that all files already exist
+function download_dataset(metadata::Metadata)
+    error("No download method for $metadata is available (is the backend package loaded?)")
+end
 
 end # module

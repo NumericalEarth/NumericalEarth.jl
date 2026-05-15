@@ -5,7 +5,7 @@ using Downloads
 using Oceananigans.DistributedComputations
 
 using NumericalEarth.DataWrangling
-using NumericalEarth.DataWrangling: Metadata, metadata_path, download_progress, AnyDateTime
+using NumericalEarth.DataWrangling: Metadata, metadata_path, DownloadProgress, AnyDateTime
 
 import Dates: year, month, day
 import Oceananigans.Fields: set!
@@ -197,9 +197,9 @@ function download_dataset(metadata::JRA55Metadata)
         filepath = metadata_path(metadatum)
 
         if !isfile(filepath)
-            Downloads.download(fileurl, filepath; progress=download_progress)
+            Downloads.download(fileurl, filepath; progress=DownloadProgress())
         end
     end
 
-    return nothing
+    return metadata_path(metadata)
 end
