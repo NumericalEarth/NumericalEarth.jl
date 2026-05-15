@@ -9,7 +9,7 @@ using Oceananigans.Grids: grid_name, topology, Flat
 using Oceananigans.OutputReaders: FieldTimeSeries, update_field_time_series!, extract_field_time_series
 using Oceananigans.TimeSteppers: Clock, tick!
 using Oceananigans.Units: Time
-using Oceananigans.Utils: Utils, launch!
+using Oceananigans.Utils: Utils, launch!, prettysummary
 
 using Adapt: Adapt, adapt
 using Thermodynamics.Parameters: AbstractThermodynamicsParameters

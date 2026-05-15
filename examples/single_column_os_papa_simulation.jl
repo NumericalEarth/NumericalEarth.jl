@@ -60,7 +60,7 @@ set!(ocean.model, T=Metadatum(:temperature, dataset=GLORYSMonthly(), region=col)
 
 # # A prescribed atmosphere based on JRA55 re-analysis
 #
-# We build a `JRA55PrescribedAtmosphere` at the same location as the single-colunm grid
+# We build a `JRA55PrescribedAtmosphere` at the same location as the single-column grid
 # which is based on the JRA55 reanalysis.
 
 atmosphere = JRA55PrescribedAtmosphere(longitude = λ★,

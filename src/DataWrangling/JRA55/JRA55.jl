@@ -26,9 +26,10 @@ using Oceananigans.OutputReaders: Cyclical, TotallyInMemory, AbstractInMemoryBac
 using Oceananigans.Units: Units
 
 using NumericalEarth: NumericalEarth
-using NumericalEarth.DataWrangling: DataWrangling, Metadata, Metadatum, first_date, last_date,
+using NumericalEarth.DataWrangling: DataWrangling, Metadata, Metadatum,
                                     metadata_path, download_progress, download_dataset,
-                                    all_dates, native_times, compute_native_date_range
+                                    dataset_variable_name, native_times, compute_native_date_range,
+                                    first_date, last_date, all_dates
 using NumericalEarth.Atmospheres: PrescribedAtmosphere, PrescribedPrecipitationFlux
 using NumericalEarth.Radiations: PrescribedRadiation, SurfaceRadiationProperties, default_stefan_boltzmann_constant
 using NumericalEarth.Lands: PrescribedLand
