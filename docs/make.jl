@@ -82,6 +82,8 @@ pages = [
 
     "Examples" => examples_pages,
 
+    "Offline bathymetry conditioning" => "bathymetry_conditioning.md",
+
     "Developers" => developer_pages,
 
     "Vertical grids" => "vertical_grids.md",

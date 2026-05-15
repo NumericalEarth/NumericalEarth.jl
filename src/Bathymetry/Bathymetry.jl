@@ -1,6 +1,10 @@
 module Bathymetry
 
-export regrid_bathymetry, ORCAGrid
+export regrid_bathymetry, ORCAGrid,
+       BathymetryPatchRecord, BathymetryPatchLog, BathymetryPatchSummary,
+       compute_bathymetry_roughness, flag_unstable_columns, dilate_mask,
+       smooth_flagged_bathymetry, summarize_bathymetry_patch,
+       condition_bathymetry
 
 using Downloads
 using ImageMorphology
@@ -24,6 +28,7 @@ using ..DataWrangling: Metadatum, native_grid, metadata_path, download_dataset,
 using ..DataWrangling.ETOPO: ETOPO2022
 
 include("regrid_bathymetry.jl")
+include("condition_bathymetry.jl")
 include("orca_grid.jl")
 
 end # module
