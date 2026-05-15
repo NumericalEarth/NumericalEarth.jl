@@ -9,7 +9,6 @@ using NumericalEarth.DataWrangling: Metadata, metadata_path, download_progress
 
 import Oceananigans.Fields: set!
 import Base
-import NumericalEarth.DataWrangling: all_dates, metadata_filename, build_filename, download_dataset, default_download_directory, available_variables
 
 struct MultiYearJRA55 end
 struct RepeatYearJRA55 end
@@ -17,17 +16,17 @@ struct RepeatYearJRA55 end
 const JRA55Metadata{D} = Metadata{<:Union{<:MultiYearJRA55, <:RepeatYearJRA55}, D}
 const JRA55Metadatum   = Metadatum{<:Union{<:MultiYearJRA55, <:RepeatYearJRA55}}
 
-default_download_directory(::Union{<:MultiYearJRA55, <:RepeatYearJRA55}) = download_JRA55_cache
+NumericalEarth.DataWrangling.default_download_directory(::Union{<:MultiYearJRA55, <:RepeatYearJRA55}) = download_JRA55_cache
 
 Base.size(data::JRA55Metadata) = (640, 320, length(data.dates))
 Base.size(::JRA55Metadatum)    = (640, 320, 1)
 
 # JRA55 is a spatially 2D dataset
-is_three_dimensional(data::JRA55Metadata) = false
+NumericalEarth.DataWrangling.is_three_dimensional(data::JRA55Metadata) = false
 
 # The whole range of dates in the different dataset datasets
 # NOTE! rivers and icebergs have a different frequency! (typical JRA55 data is three-hourly while rivers and icebergs are daily)
-function all_dates(::RepeatYearJRA55, name)
+function NumericalEarth.DataWrangling.all_dates(::RepeatYearJRA55, name)
     if name == :river_freshwater_flux || name == :iceberg_freshwater_flux
         return DateTime(1990, 1, 1) : Day(1) : DateTime(1990, 12, 31)
     else
@@ -35,14 +34,15 @@ function all_dates(::RepeatYearJRA55, name)
     end
 end
 
-all_dates(::MultiYearJRA55, name) = JRA55_multiple_year_dates[name]
+NumericalEarth.DataWrangling.all_dates(::MultiYearJRA55, name) = JRA55_multiple_year_dates[name]
 
 # Fallback, if we not provide the name, take the highest frequency
-all_dates(dataset::Union{<:MultiYearJRA55, <:RepeatYearJRA55}) = all_dates(dataset, :temperature)
+NumericalEarth.DataWrangling.all_dates(dataset::Union{<:MultiYearJRA55, <:RepeatYearJRA55}) =
+    NumericalEarth.DataWrangling.all_dates(dataset, :temperature)
 
 # Valid for all JRA55 datasets
 function JRA55_time_indices(dataset, dates, name)
-    all_JRA55_dates = all_dates(dataset, name)
+    all_JRA55_dates = NumericalEarth.DataWrangling.all_dates(dataset, name)
     indices = Int[]
 
     for date in dates
@@ -56,13 +56,13 @@ end
 # File name generation specific to each Dataset dataset
 # Note that `RepeatYearJRA55` has only one file associated, so the filename
 # is independent of the date. Override the multi-date fallback to return a plain String.
-metadata_filename(::RepeatYearJRA55, name, date, region) =
+NumericalEarth.DataWrangling.metadata_filename(::RepeatYearJRA55, name, date, region) =
     "RYF." * JRA55_dataset_variable_names[name] * ".1990_1991.nc"
 
-build_filename(::RepeatYearJRA55, name, dates::AbstractArray, region) =
+NumericalEarth.DataWrangling.build_filename(::RepeatYearJRA55, name, dates::AbstractArray, region) =
     "RYF." * JRA55_dataset_variable_names[name] * ".1990_1991.nc"
 
-function metadata_filename(::MultiYearJRA55, name, date, region)
+function NumericalEarth.DataWrangling.metadata_filename(::MultiYearJRA55, name, date, region)
     shortname = JRA55_dataset_variable_names[name]
     year      = Dates.year(date)
     suffix    = "_input4MIPs_atmosphericState_OMIP_MRI-JRA55-do-1-5-0_gr_"
@@ -82,9 +82,9 @@ function metadata_filename(::MultiYearJRA55, name, date, region)
 end
 
 # Convenience functions
-dataset_variable_name(data::JRA55Metadata) = JRA55_dataset_variable_names[data.name]
-available_variables(::MultiYearJRA55)  = JRA55_variable_names
-available_variables(::RepeatYearJRA55) = JRA55_variable_names
+NumericalEarth.DataWrangling.dataset_variable_name(data::JRA55Metadata) = JRA55_dataset_variable_names[data.name]
+NumericalEarth.DataWrangling.available_variables(::MultiYearJRA55)  = JRA55_variable_names
+NumericalEarth.DataWrangling.available_variables(::RepeatYearJRA55) = JRA55_variable_names
 
 # A list of all variables provided in the JRA55 dataset:
 JRA55_variable_names = (:river_freshwater_flux,
@@ -185,10 +185,10 @@ metadata_url(metadata::Metadata{<:RepeatYearJRA55}) = JRA55_repeat_year_urls[met
 
 function metadata_url(m::Metadata{<:MultiYearJRA55})
     prefix = JRA55_multiple_year_prefix[m.name]
-    return JRA55_multiple_year_url * prefix * "/" * dataset_variable_name(m) * "/gr/v20200916/" * m.filename
+    return JRA55_multiple_year_url * prefix * "/" * NumericalEarth.DataWrangling.dataset_variable_name(m) * "/gr/v20200916/" * m.filename
 end
 
-function download_dataset(metadata::JRA55Metadata)
+function NumericalEarth.DataWrangling.download_dataset(metadata::JRA55Metadata)
 
     @root for metadatum in metadata
 

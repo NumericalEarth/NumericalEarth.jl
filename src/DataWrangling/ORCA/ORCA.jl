@@ -2,25 +2,13 @@ module ORCA
 
 export ORCA1, ORCA12
 
+import NumericalEarth
 import Oceananigans
 import Downloads
 using Oceananigans.DistributedComputations: @root
 using Scratch: Scratch, @get_scratch!
 
 using ..DataWrangling: download_progress, Metadatum, metadata_path
-
-import NumericalEarth.DataWrangling:
-    metadata_filename,
-    default_download_directory,
-    all_dates,
-    first_date,
-    last_date,
-    dataset_variable_name,
-    download_dataset,
-    longitude_interfaces,
-    latitude_interfaces,
-    z_interfaces,
-    reversed_vertical_axis
 
 download_ORCA_cache::String = ""
 function __init__()
@@ -31,13 +19,13 @@ abstract type ORCADataset end
 struct ORCA1 <: ORCADataset end
 struct ORCA12 <: ORCADataset end
 
-default_download_directory(::ORCADataset) = download_ORCA_cache
-reversed_vertical_axis(::ORCADataset) = false
-longitude_interfaces(::ORCADataset) = (-180, 180)
-latitude_interfaces(::ORCADataset) = (-80, 90)
-all_dates(::ORCADataset, args...) = nothing
-first_date(::ORCADataset, args...) = nothing
-last_date(::ORCADataset, args...) = nothing
+NumericalEarth.DataWrangling.default_download_directory(::ORCADataset) = download_ORCA_cache
+NumericalEarth.DataWrangling.reversed_vertical_axis(::ORCADataset) = false
+NumericalEarth.DataWrangling.longitude_interfaces(::ORCADataset) = (-180, 180)
+NumericalEarth.DataWrangling.latitude_interfaces(::ORCADataset) = (-80, 90)
+NumericalEarth.DataWrangling.all_dates(::ORCADataset, args...) = nothing
+NumericalEarth.DataWrangling.first_date(::ORCADataset, args...) = nothing
+NumericalEarth.DataWrangling.last_date(::ORCADataset, args...) = nothing
 
 const ORCA1Metadatum = Metadatum{<:ORCA1}
 const ORCA1Metadatum = Metadatum{<:ORCA1}
@@ -54,8 +42,8 @@ ORCA12_variable_names = Dict(
     :mesh_mask     => "e1t",
 )
 
-dataset_variable_name(data::ORCA1Metadatum) = ORCA1_variable_names[data.name]
-dataset_variable_name(data::ORCA12Metadatum) = ORCA12_variable_names[data.name]
+NumericalEarth.DataWrangling.dataset_variable_name(data::ORCA1Metadatum) = ORCA1_variable_names[data.name]
+NumericalEarth.DataWrangling.dataset_variable_name(data::ORCA12Metadatum) = ORCA12_variable_names[data.name]
 
 # Zenodo record 4436658: eORCA1 mesh_mask and bathymetry
 const ORCA1_mesh_mask_url  = "https://zenodo.org/records/4436658/files/eORCA1.2_mesh_mask.nc"
@@ -85,7 +73,7 @@ function metadata_url(metadatum::ORCA12Metadatum)
     end
 end
 
-function metadata_filename(::ORCA1, name, date, region)
+function NumericalEarth.DataWrangling.metadata_filename(::ORCA1, name, date, region)
     if name == :mesh_mask
         return "eORCA1.2_mesh_mask.nc"
     elseif name == :bottom_height
@@ -95,7 +83,7 @@ function metadata_filename(::ORCA1, name, date, region)
     end
 end
 
-function metadata_filename(::ORCA12, name, date, region)
+function NumericalEarth.DataWrangling.metadata_filename(::ORCA12, name, date, region)
     if name == :mesh_mask
         return "grid_mask_eORCA12-GO6.nc"
     elseif name == :bottom_height
@@ -105,9 +93,9 @@ function metadata_filename(::ORCA12, name, date, region)
     end
 end
 
-z_interfaces(::ORCAMetadatum) = nothing
+NumericalEarth.DataWrangling.z_interfaces(::ORCAMetadatum) = nothing
 
-function download_dataset(metadatum::ORCAMetadatum)
+function NumericalEarth.DataWrangling.download_dataset(metadatum::ORCAMetadatum)
     fileurl  = metadata_url(metadatum)
     filepath = metadata_path(metadatum)
 

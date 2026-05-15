@@ -2,6 +2,7 @@ module IBCAO
 
 export IBCAOv5
 
+import NumericalEarth
 import Oceananigans
 import Downloads
 using Oceananigans.DistributedComputations: @root
@@ -9,17 +10,6 @@ using Scratch: Scratch, @get_scratch!
 using NCDatasets: NCDatasets
 
 using ..DataWrangling: download_progress, Metadatum, metadata_path, AbstractStaticBathymetry
-
-import NumericalEarth.DataWrangling:
-    metadata_filename,
-    default_download_directory,
-    dataset_variable_name,
-    download_dataset,
-    longitude_interfaces,
-    latitude_interfaces,
-    reversed_vertical_axis,
-    validate_dataset_coverage
-
 
 download_IBCAO_cache::String = ""
 function __init__()
@@ -44,19 +34,19 @@ Data source: https://www.gebco.net/data-products/gridded-bathymetry-data/arctic-
 """
 struct IBCAOv5 <: AbstractStaticBathymetry end
 
-default_download_directory(::IBCAOv5) = download_IBCAO_cache
-reversed_vertical_axis(::IBCAOv5) = false
+NumericalEarth.DataWrangling.default_download_directory(::IBCAOv5) = download_IBCAO_cache
+NumericalEarth.DataWrangling.reversed_vertical_axis(::IBCAOv5) = false
 
 # Geographic bounds after reprojection to WGS84
-longitude_interfaces(::IBCAOv5) = (-180, 180)
-latitude_interfaces(::IBCAOv5) = (64, 90)
+NumericalEarth.DataWrangling.longitude_interfaces(::IBCAOv5) = (-180, 180)
+NumericalEarth.DataWrangling.latitude_interfaces(::IBCAOv5) = (64, 90)
 
 # 0.01° resolution: 36000 × 2600
 Base.size(::IBCAOv5) = (36000, 2600, 1)
 
 const IBCAOMetadatum = Metadatum{<:IBCAOv5}
 
-dataset_variable_name(data::IBCAOMetadatum) = IBCAO_bathymetry_variable_names[data.name]
+NumericalEarth.DataWrangling.dataset_variable_name(data::IBCAOMetadatum) = IBCAO_bathymetry_variable_names[data.name]
 
 # CEDA BODC direct download — 100m, with Greenland ice sheet elevation (~25 GB)
 const IBCAO_tiff_url = "https://dap.ceda.ac.uk/bodc/gebco/ibcao/ibcao_v5.1/" *
@@ -66,7 +56,7 @@ const IBCAO_tiff_url = "https://dap.ceda.ac.uk/bodc/gebco/ibcao/ibcao_v5.1/" *
 const IBCAO_tiff_filename = "ibcao_5_1_2025_ice_100m.tiff"
 const IBCAO_nc_filename   = "ibcao_v5_wgs84_0p01deg.nc"
 
-metadata_filename(::IBCAOv5, name, date, bounding_box) = IBCAO_nc_filename
+NumericalEarth.DataWrangling.metadata_filename(::IBCAOv5, name, date, bounding_box) = IBCAO_nc_filename
 
 function validate_dataset_coverage(grid, ::IBCAOMetadatum)
     φ_south, _ = Oceananigans.Grids.y_domain(grid)
@@ -77,7 +67,7 @@ function validate_dataset_coverage(grid, ::IBCAOMetadatum)
     end
 end
 
-function download_dataset(metadatum::IBCAOMetadatum)
+function NumericalEarth.DataWrangling.download_dataset(metadatum::IBCAOMetadatum)
     nc_path   = metadata_path(metadatum)
     tiff_path = joinpath(metadatum.dir, IBCAO_tiff_filename)
 

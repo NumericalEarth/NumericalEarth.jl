@@ -12,27 +12,11 @@ using Printf: Printf, @sprintf
 using Scratch: Scratch, @get_scratch!
 using Statistics: Statistics, mean
 
+import NumericalEarth
 using Oceananigans.Fields: Center, set!
 using Oceananigans: Field, fill_halo_regions!, CPU
 using NumericalEarth.DataWrangling: Metadata, Metadatum, metadata_path, native_grid, InverseGravity, download_dataset
 using Dates: Dates, DateTime, Month, Hour
-
-import NumericalEarth.DataWrangling:
-    all_dates,
-    dataset_variable_name,
-    default_download_directory,
-    default_inpainting,
-    longitude_interfaces,
-    latitude_interfaces,
-    z_interfaces,
-    metadata_filename,
-    inpainted_metadata_path,
-    available_variables,
-    retrieve_data,
-    is_three_dimensional,
-    reversed_vertical_axis,
-    reversed_latitude_axis,
-    conversion_units
 
 import Base: eltype
 
@@ -48,10 +32,10 @@ end
 
 abstract type ERA5Dataset end
 
-default_download_directory(::ERA5Dataset) = download_ERA5_cache
+NumericalEarth.DataWrangling.default_download_directory(::ERA5Dataset) = download_ERA5_cache
 
 # ERA5 stores latitude north-to-south (90 → -90); flip on read
-reversed_latitude_axis(::ERA5Dataset) = true
+NumericalEarth.DataWrangling.reversed_latitude_axis(::ERA5Dataset) = true
 
 const ERA5Metadata{D} = Metadata{<:ERA5Dataset, D}
 const ERA5Metadatum = Metadatum{<:ERA5Dataset}
@@ -61,11 +45,11 @@ const ERA5Metadatum = Metadatum{<:ERA5Dataset}
 #####
 
 # ERA5 global coverage: 0-359.75 longitude, -90 to 90 latitude at 0.25 degree resolution
-longitude_interfaces(::ERA5Metadata) = (-0.125, 359.875)
-latitude_interfaces(::ERA5Metadata) = (-90, 90)
+NumericalEarth.DataWrangling.longitude_interfaces(::ERA5Metadata) = (-0.125, 359.875)
+NumericalEarth.DataWrangling.latitude_interfaces(::ERA5Metadata) = (-90, 90)
 
 # ERA5 single-levels (2-D) data product
-z_interfaces(::ERA5Metadata) = (0, 1)
+NumericalEarth.DataWrangling.z_interfaces(::ERA5Metadata) = (0, 1)
 
 # ERA5 data is stored as Float32
 eltype(::ERA5Metadata) = Float32
@@ -111,7 +95,7 @@ function region_suffix(region)
 end
 
 function metadata_prefix(dataset::ERA5Dataset, name, date, region)
-    var = available_variables(dataset)[name]
+    var = NumericalEarth.DataWrangling.available_variables(dataset)[name]
     ds = dataset_name(dataset)
     start_date = start_date_str(date)
     end_date = end_date_str(date)
@@ -128,7 +112,7 @@ function metadata_prefix(dataset::ERA5Dataset, name, date, region)
     return prefix
 end
 
-function metadata_filename(dataset::ERA5Dataset, name, date, region)
+function NumericalEarth.DataWrangling.metadata_filename(dataset::ERA5Dataset, name, date, region)
     prefix = metadata_prefix(dataset, name, date, region)
     return string(prefix, ".nc")
 end
@@ -138,7 +122,7 @@ function inpainted_metadata_filename(metadata::ERA5Metadatum)
     return without_extension * "_inpainted.jld2"
 end
 
-inpainted_metadata_path(metadata::ERA5Metadatum) = joinpath(metadata.dir, inpainted_metadata_filename(metadata))
+NumericalEarth.DataWrangling.inpainted_metadata_path(metadata::ERA5Metadatum) = joinpath(metadata.dir, inpainted_metadata_filename(metadata))
 
 #####
 ##### Single-level and pressure-level specifics

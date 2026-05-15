@@ -2,23 +2,13 @@ module IBCSO
 
 export IBCSOv2
 
+import NumericalEarth
 import Oceananigans
 import Downloads
 using Oceananigans.DistributedComputations: @root
 using Scratch: Scratch, @get_scratch!
 
 using ..DataWrangling: download_progress, Metadatum, metadata_path, AbstractStaticBathymetry
-
-import NumericalEarth.DataWrangling:
-    metadata_filename,
-    default_download_directory,
-    dataset_variable_name,
-    download_dataset,
-    longitude_interfaces,
-    latitude_interfaces,
-    reversed_vertical_axis,
-    validate_dataset_coverage
-
 
 download_IBCSO_cache::String = ""
 function __init__()
@@ -40,12 +30,12 @@ Data source: https://ibcso.org/ibcso-2024-annual-release/
 """
 struct IBCSOv2 <: AbstractStaticBathymetry end
 
-default_download_directory(::IBCSOv2) = download_IBCSO_cache
-reversed_vertical_axis(::IBCSOv2) = false
+NumericalEarth.DataWrangling.default_download_directory(::IBCSOv2) = download_IBCSO_cache
+NumericalEarth.DataWrangling.reversed_vertical_axis(::IBCSOv2) = false
 
 # WGS84 version covers -180 to 180 longitude, -90 to -50 latitude
-longitude_interfaces(::IBCSOv2) = (-180, 180)
-latitude_interfaces(::IBCSOv2) = (-90, -50)
+NumericalEarth.DataWrangling.longitude_interfaces(::IBCSOv2) = (-180, 180)
+NumericalEarth.DataWrangling.latitude_interfaces(::IBCSOv2) = (-90, -50)
 
 # Grid size for WGS84 version (500m resolution)
 # lon: 33812, lat: 3757 (from -180 to 180, -90 to -50)
@@ -53,7 +43,7 @@ Base.size(::IBCSOv2) = (33812, 3757, 1)
 
 const IBCSOMetadatum = Metadatum{<:IBCSOv2}
 
-dataset_variable_name(data::IBCSOMetadatum) = IBCSO_bathymetry_variable_names[data.name]
+NumericalEarth.DataWrangling.dataset_variable_name(data::IBCSOMetadatum) = IBCSO_bathymetry_variable_names[data.name]
 
 const IBCSO_pangaea_url = "https://download.pangaea.de/dataset/937574/files/IBCSO_v2_bed_WGS84.nc"
 
@@ -61,7 +51,7 @@ metadata_url(::IBCSOMetadatum) = IBCSO_pangaea_url
 
 # The expected NetCDF filename inside the ZIP or from PANGAEA
 const IBCSO_nc_filename = "IBCSO_v2_bed_WGS84.nc"
-metadata_filename(::IBCSOv2, name, date, bounding_box) = IBCSO_nc_filename
+NumericalEarth.DataWrangling.metadata_filename(::IBCSOv2, name, date, bounding_box) = IBCSO_nc_filename
 
 function validate_dataset_coverage(grid, ::IBCSOMetadatum)
     _, φ_north = Oceananigans.Grids.y_domain(grid)
@@ -72,7 +62,7 @@ function validate_dataset_coverage(grid, ::IBCSOMetadatum)
     end
 end
 
-function download_dataset(metadatum::IBCSOMetadatum)
+function NumericalEarth.DataWrangling.download_dataset(metadatum::IBCSOMetadatum)
     filepath = metadata_path(metadatum)
     download_dir = metadatum.dir
 

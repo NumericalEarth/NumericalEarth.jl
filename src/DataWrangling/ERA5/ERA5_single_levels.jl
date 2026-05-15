@@ -15,11 +15,11 @@ const ERA5_wave_variables = Set([
 #####
 
 # ERA5 reanalysis data available from 1940 to present (we use a practical range here)
-all_dates(::ERA5HourlySingleLevel,  var) = range(DateTime("1940-01-01"), stop=DateTime("2024-12-31"), step=Hour(1))
-all_dates(::ERA5MonthlySingleLevel, var) = range(DateTime("1940-01-01"), stop=DateTime("2024-12-01"), step=Month(1))
+NumericalEarth.DataWrangling.all_dates(::ERA5HourlySingleLevel,  var) = range(DateTime("1940-01-01"), stop=DateTime("2024-12-31"), step=Hour(1))
+NumericalEarth.DataWrangling.all_dates(::ERA5MonthlySingleLevel, var) = range(DateTime("1940-01-01"), stop=DateTime("2024-12-01"), step=Month(1))
 
 # ERA5 single-level data is a spatially 2-D dataset
-is_three_dimensional(::ERA5Metadata) = false
+NumericalEarth.DataWrangling.is_three_dimensional(::ERA5Metadata) = false
 
 function Base.size(::ERA5Dataset, variable)
     if variable in ERA5_wave_variables
@@ -93,15 +93,15 @@ ERA5_netcdf_variable_names = Dict(
 )
 
 # Variables available for download
-available_variables(::ERA5Dataset) = ERA5_dataset_variable_names
+NumericalEarth.DataWrangling.available_variables(::ERA5Dataset) = ERA5_dataset_variable_names
 
 # `dataset_variable_name` returns the short name as stored in the NetCDF file
 # (e.g. "t2m"). The CDS API catalog name (e.g. "2m_temperature") used in
 # download requests is accessed via the `ERA5_dataset_variable_names` dict
 # directly in `NumericalEarthCDSAPIExt`.
-dataset_variable_name(md::ERA5Metadata) = ERA5_netcdf_variable_names[md.name]
+NumericalEarth.DataWrangling.dataset_variable_name(md::ERA5Metadata) = ERA5_netcdf_variable_names[md.name]
 
-default_inpainting(md::ERA5Metadata) = nothing
+NumericalEarth.DataWrangling.default_inpainting(md::ERA5Metadata) = nothing
 
 """
     retrieve_data(metadata::ERA5Metadatum)
@@ -109,9 +109,9 @@ default_inpainting(md::ERA5Metadata) = nothing
 Retrieve ERA5 data from NetCDF file according to `metadata`.
 ERA5 is 2D surface data, so we return a 2D array with an added singleton z-dimension.
 """
-function retrieve_data(metadata::ERA5Metadatum)
+function NumericalEarth.DataWrangling.retrieve_data(metadata::ERA5Metadatum)
     path = metadata_path(metadata)
-    name = dataset_variable_name(metadata)
+    name = NumericalEarth.DataWrangling.dataset_variable_name(metadata)
 
     ds = NCDatasets.Dataset(path)
 
@@ -137,4 +137,3 @@ function retrieve_data(metadata::ERA5Metadatum)
     # Return as (Nx, Ny, 1)
     return reshape(data_2d, size(data_2d, 1), size(data_2d, 2), 1)
 end
-

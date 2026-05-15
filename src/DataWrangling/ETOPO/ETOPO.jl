@@ -2,21 +2,13 @@ module ETOPO
 
 export ETOPO2022
 
+import NumericalEarth
 import Downloads
 import Oceananigans
 using Oceananigans.DistributedComputations: @root
 using Scratch: Scratch, @get_scratch!
 
 using ..DataWrangling: download_progress, Metadatum, metadata_path, AbstractStaticBathymetry
-
-import NumericalEarth.DataWrangling:
-    metadata_filename,
-    default_download_directory,
-    dataset_variable_name,
-    download_dataset,
-    longitude_interfaces,
-    latitude_interfaces,
-    reversed_vertical_axis
 
 download_ETOPO_cache::String = ""
 function __init__()
@@ -29,23 +21,23 @@ ETOPO_bathymetry_variable_names = Dict(
 
 struct ETOPO2022 <: AbstractStaticBathymetry end
 
-default_download_directory(::ETOPO2022) = download_ETOPO_cache
-reversed_vertical_axis(::ETOPO2022) = true
-longitude_interfaces(::ETOPO2022) = (-180, 180)
-latitude_interfaces(::ETOPO2022) = (-90, 90)
+NumericalEarth.DataWrangling.default_download_directory(::ETOPO2022) = download_ETOPO_cache
+NumericalEarth.DataWrangling.reversed_vertical_axis(::ETOPO2022) = true
+NumericalEarth.DataWrangling.longitude_interfaces(::ETOPO2022) = (-180, 180)
+NumericalEarth.DataWrangling.latitude_interfaces(::ETOPO2022) = (-90, 90)
 Base.size(::ETOPO2022) = (21600, 10800, 1)
 
 const ETOPOMetadatum = Metadatum{<:ETOPO2022}
 
-dataset_variable_name(data::ETOPOMetadatum) = ETOPO_bathymetry_variable_names[data.name]
+NumericalEarth.DataWrangling.dataset_variable_name(data::ETOPOMetadatum) = ETOPO_bathymetry_variable_names[data.name]
 
 const ETOPO_url = "https://www.dropbox.com/scl/fi/6pwalcuuzgtpanysn4h6f/" *
     "ETOPO_2022_v1_60s_N90W180_surface.nc?rlkey=2t7890ruyk4nd5t5eov5768lt&st=yfxsy1lu&dl=0"
 
 metadata_url(::ETOPOMetadatum) = ETOPO_url
-metadata_filename(::ETOPO2022, name, date, region) = "ETOPO_2022_v1_60s_N90W180_surface.nc"
+NumericalEarth.DataWrangling.metadata_filename(::ETOPO2022, name, date, region) = "ETOPO_2022_v1_60s_N90W180_surface.nc"
 
-function download_dataset(metadatum::ETOPOMetadatum)
+function NumericalEarth.DataWrangling.download_dataset(metadatum::ETOPOMetadatum)
     fileurl  = metadata_url(metadatum)
     filepath = metadata_path(metadatum)
 
