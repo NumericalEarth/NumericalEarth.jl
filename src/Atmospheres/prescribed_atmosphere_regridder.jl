@@ -35,7 +35,7 @@ function atmosphere_regridder(atmosphere::PrescribedAtmosphere, exchange_grid)
     return frac_indices
 end
 
-function initialize!(exchanger::ComponentExchanger, grid, atmosphere::PrescribedAtmosphere)
+function NumericalEarth.EarthSystemModels.InterfaceComputations.initialize!(exchanger::ComponentExchanger, grid, atmosphere::PrescribedAtmosphere)
 
     frac_indices = exchanger.regridder
     atmos_grid = atmosphere.grid
