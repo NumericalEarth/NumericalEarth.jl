@@ -44,9 +44,6 @@ Reactant = "3c362404-f566-11ee-1572-e11a4b42c853"
 SpeedyWeather = "9e226e20-d153-4fed-8a5b-493def4f21a9"
 WorldOceanAtlasTools = "04f20302-f1b9-11e8-29d9-7d841cb0a64a"
 
-[sources]
-ClimaSeaIce = {rev = "ss/refactor-thermodynamics", url = "https://github.com/CliMA/ClimaSeaIce.jl.git"}
-
 [extensions]
 NumericalEarthArchGDALExt = "ArchGDAL"
 NumericalEarthBreezeExt = "Breeze"
