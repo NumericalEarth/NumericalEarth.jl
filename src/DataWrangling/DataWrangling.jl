@@ -14,28 +14,23 @@ export DatasetRestoring, SurfaceFluxRestoring
 export ERA5HourlySingleLevel, ERA5MonthlySingleLevel, ERA5HourlyPressureLevels, ERA5MonthlyPressureLevels
 export native_grid
 
-import Oceananigans
-import Downloads
-using Downloads: Downloads
-using Printf: Printf, @sprintf
-
-using Oceananigans.Architectures: architecture, on_architecture, CPU, child_architecture
-using Oceananigans.Grids: node, Bounded, Center, Flat, LatitudeLongitudeGrid, RectilinearGrid
-using Oceananigans.BoundaryConditions: fill_halo_regions!, FieldBoundaryConditions
-using Oceananigans.Fields: interpolate, interior
-using Oceananigans: pretty_filesize, location
-using Oceananigans.Utils: launch!, prettytime
-using Oceananigans.OutputReaders: OnDisk
-using KernelAbstractions: @kernel, @index
-
-using Oceananigans.DistributedComputations: DistributedComputations, @root
 using Adapt: Adapt
-using Dates: Dates, Date, DateTime
 using CFTime: CFTime, AbstractCFDateTime
+using Dates: Dates, Date, DateTime
+using Downloads: Downloads
 using JLD2: JLD2, jldopen
 using NCDatasets: NCDatasets, Dataset
+using Printf: Printf, @sprintf
 
-import Oceananigans.Fields: set!
+using Oceananigans: Oceananigans, pretty_filesize, location
+using Oceananigans.Architectures: architecture, on_architecture, CPU, child_architecture
+using Oceananigans.BoundaryConditions: fill_halo_regions!, FieldBoundaryConditions
+using Oceananigans.DistributedComputations: DistributedComputations, @root
+using Oceananigans.Fields: interpolate, interior, set!
+using Oceananigans.Grids: node, Bounded, Center, Flat, LatitudeLongitudeGrid, RectilinearGrid
+using Oceananigans.OutputReaders: OnDisk
+using Oceananigans.Utils: launch!, prettytime
+using KernelAbstractions: @kernel, @index
 
 #####
 ##### Downloading utilities

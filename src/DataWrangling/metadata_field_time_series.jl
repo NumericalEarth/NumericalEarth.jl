@@ -51,7 +51,7 @@ cache_inpainted_data(::DatasetBackend{native, cache_data}) where {native, cache_
 
 const DatasetFieldTimeSeries{N} = FlavorOfFTS{<:Any, <:Any, <:Any, <:Any, <:DatasetBackend{N}} where N
 
-function set!(fts::DatasetFieldTimeSeries)
+function Oceananigans.Fields.set!(fts::DatasetFieldTimeSeries)
     backend = fts.backend
     inpainting = backend.inpainting
     cache_data = cache_inpainted_data(backend)

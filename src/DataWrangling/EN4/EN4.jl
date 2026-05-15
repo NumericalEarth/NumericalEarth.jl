@@ -3,43 +3,24 @@ module EN4
 export EN4Metadatum, EN4_immersed_grid, adjusted_EN4_tracers, initialize!
 export EN4Monthly
 
-import NumericalEarth
-import Oceananigans
-using NCDatasets: NCDatasets
-using JLD2: JLD2
-using Downloads: Download
 using Adapt: Adapt
+using JLD2: JLD2
+using Dates: Dates, DateTime, Month
+using Downloads: Downloads
+using Oceananigans: Oceananigans
+using Oceananigans.DistributedComputations: @root
+using NCDatasets: NCDatasets
+using NumericalEarth: NumericalEarth
 using Scratch: Scratch, @get_scratch!
+using ZipFile: ZipFile
 
 using ..DataWrangling:
     Metadata,
     Metadatum,
     download_progress,
-    Kelvin
-
-using Dates: Dates, DateTime, Month
-using Oceananigans.DistributedComputations: @root
-
-import ZipFile
-
-import NumericalEarth.DataWrangling:
-    all_dates,
-    metadata_filename,
-    download_dataset,
-    default_download_directory,
     metadata_path,
-    conversion_units,
-    dataset_variable_name,
-    metaprefix,
-    z_interfaces,
-    longitude_interfaces,
-    latitude_interfaces,
-    is_three_dimensional,
-    reversed_vertical_axis,
-    inpainted_metadata_path,
-    available_variables,
-    first_date
-
+    first_date,
+    Kelvin
 
 download_EN4_cache::String = ""
 function __init__()
@@ -53,16 +34,16 @@ EN4_dataset_variable_names = Dict(
 
 struct EN4Monthly end
 
-default_download_directory(::EN4Monthly) = download_EN4_cache
+NumericalEarth.DataWrangling.default_download_directory(::EN4Monthly) = download_EN4_cache
 Base.size(::EN4Monthly, variable) = (360, 173, 42)
-all_dates(::EN4Monthly, variable) = DateTime(1900, 1, 1) : Month(1) : DateTime(2024, 12, 1)
-reversed_vertical_axis(::EN4Monthly) = true
+NumericalEarth.DataWrangling.all_dates(::EN4Monthly, variable) = DateTime(1900, 1, 1) : Month(1) : DateTime(2024, 12, 1)
+NumericalEarth.DataWrangling.reversed_vertical_axis(::EN4Monthly) = true
 
-longitude_interfaces(::EN4Monthly) = (0.5, 360.5)
-latitude_interfaces(::EN4Monthly) = (-83.5, 89.5)
-available_variables(::EN4Monthly) = EN4_dataset_variable_names
+NumericalEarth.DataWrangling.longitude_interfaces(::EN4Monthly) = (0.5, 360.5)
+NumericalEarth.DataWrangling.latitude_interfaces(::EN4Monthly) = (-83.5, 89.5)
+NumericalEarth.DataWrangling.available_variables(::EN4Monthly) = EN4_dataset_variable_names
 
-z_interfaces(::EN4Monthly) = [
+NumericalEarth.DataWrangling.z_interfaces(::EN4Monthly) = [
     -5500.0,
     -5200.5986,
     -4901.459,
@@ -111,7 +92,7 @@ z_interfaces(::EN4Monthly) = [
 const EN4Metadata{D} = Metadata{<:EN4Monthly, D}
 const EN4Metadatum   = Metadatum{<:EN4Monthly}
 
-function conversion_units(metadatum::EN4Metadatum)
+function NumericalEarth.DataWrangling.conversion_units(metadatum::EN4Metadatum)
     if metadatum.name == :temperature
         return Kelvin()
     else
@@ -128,7 +109,7 @@ function inpainted_metadata_filename(metadata::EN4Metadatum)
     return without_extension * "_" * var *"_inpainted.jld2"
 end
 
-inpainted_metadata_path(metadata::EN4Metadatum) = joinpath(metadata.dir, inpainted_metadata_filename(metadata))
+NumericalEarth.DataWrangling.inpainted_metadata_path(metadata::EN4Metadatum) = joinpath(metadata.dir, inpainted_metadata_filename(metadata))
 
 """
     EN4Metadatum(name;
@@ -144,20 +125,20 @@ function EN4Metadatum(name;
     return Metadatum(name; date, dir, dataset=EN4Monthly())
 end
 
-metaprefix(::EN4Metadata) = "EN4Metadata"
-metaprefix(::EN4Metadatum) = "EN4Metadatum"
+NumericalEarth.DataWrangling.metaprefix(::EN4Metadata) = "EN4Metadata"
+NumericalEarth.DataWrangling.metaprefix(::EN4Metadatum) = "EN4Metadatum"
 
 # Note, EN4 files contain all variables, so the filenames do not
 # depend on name.
-function metadata_filename(::EN4Monthly, name, date, region)
+function NumericalEarth.DataWrangling.metadata_filename(::EN4Monthly, name, date, region)
     yearstr  = string(Dates.year(date))
     monthstr = string(Dates.month(date), pad=2)
     return "EN.4.2.2.f.analysis.g10." * yearstr * lpad(string(monthstr), 2, '0') * ".nc"
 end
 
 # Convenience functions
-dataset_variable_name(data::EN4Metadata) = EN4_dataset_variable_names[data.name]
-is_three_dimensional(::EN4Metadata) = true
+NumericalEarth.DataWrangling.dataset_variable_name(data::EN4Metadata) = EN4_dataset_variable_names[data.name]
+NumericalEarth.DataWrangling.is_three_dimensional(::EN4Metadata) = true
 
 ## This function is explicitly for the downloader to check if the zip file/extracted file exists,
 ## then to download the relevant URL (from above)
@@ -194,7 +175,7 @@ function metadata_url(m::EN4Metadata)
     end
 end
 
-function download_dataset(metadata::Metadata{<:EN4Monthly})
+function NumericalEarth.DataWrangling.download_dataset(metadata::Metadata{<:EN4Monthly})
     dir = metadata.dir
     missingzips = []
 

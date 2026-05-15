@@ -219,7 +219,7 @@ function Oceananigans.Fields.set!(fts::JRA55NetCDFFTSMultipleYears, backend=fts.
     return nothing
 end
 
-new_backend(b::JRA55NetCDFBackend, start, length) = JRA55NetCDFBackend(start, length, b.metadata)
+Oceananigans.OutputReaders.new_backend(b::JRA55NetCDFBackend, start, length) = JRA55NetCDFBackend(start, length, b.metadata)
 
 """
     JRA55FieldTimeSeries(variable_name, architecture=CPU(), FT=Float32;
