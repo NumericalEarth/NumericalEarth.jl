@@ -3,7 +3,6 @@ module Oceans
 export ocean_simulation, SlabOcean
 
 import Oceananigans
-
 using Oceananigans.Advection: WENO, WENOVectorInvariant
 using Oceananigans.BoundaryConditions: DefaultBoundaryCondition, DiscreteBoundaryFunction,
                                        FieldBoundaryConditions, FluxBoundaryCondition
@@ -29,23 +28,10 @@ using SeawaterPolynomials: SeawaterPolynomials
 using SeawaterPolynomials.TEOS10: TEOS10EquationOfState
 using KernelAbstractions: @kernel, @index
 
+using NumericalEarth: NumericalEarth
 using NumericalEarth.EarthSystemModels
-using NumericalEarth.EarthSystemModels: EarthSystemModels
-
-import NumericalEarth.EarthSystemModels: interpolate_state!,
-                                         update_net_fluxes!,
-                                         reference_density,
-                                         heat_capacity,
-                                         exchange_grid,
-                                         temperature_units,
-                                         DegreesKelvin,
-                                         ocean_temperature,
-                                         ocean_salinity,
-                                         ocean_surface_temperature,
-                                         ocean_surface_salinity,
-                                         ocean_surface_velocities
-
-import NumericalEarth.EarthSystemModels.InterfaceComputations: ComponentExchanger, net_fluxes
+using NumericalEarth.EarthSystemModels: EarthSystemModels, DegreesKelvin
+using NumericalEarth.EarthSystemModels.InterfaceComputations: ComponentExchanger
 
 default_gravitational_acceleration = Oceananigans.defaults.gravitational_acceleration
 default_planet_rotation_rate = Oceananigans.defaults.planet_rotation_rate
@@ -99,9 +85,9 @@ end
 
 # When using an Oceananigans simulation, we assume that the exchange grid is the ocean grid
 # We need, however, to interpolate the surface pressure to the ocean grid
-interpolate_state!(exchanger, grid, ::Simulation{<:HydrostaticFreeSurfaceModel}, coupled_model) = nothing
+NumericalEarth.EarthSystemModels.interpolate_state!(exchanger, grid, ::Simulation{<:HydrostaticFreeSurfaceModel}, coupled_model) = nothing
 
-function ComponentExchanger(ocean::Simulation{<:HydrostaticFreeSurfaceModel}, grid)
+function NumericalEarth.EarthSystemModels.InterfaceComputations.ComponentExchanger(ocean::Simulation{<:HydrostaticFreeSurfaceModel}, grid)
     ocean_grid = ocean.model.grid
 
     if ocean_grid == grid
@@ -123,7 +109,7 @@ end
 @inline net_flux(bc::MultipleFluxes) = bc.flux_field
 @inline net_flux(bc::DiscreteBoundaryFunction) = net_flux(bc.func)
 
-function net_fluxes(ocean::Simulation{<:HydrostaticFreeSurfaceModel})
+function NumericalEarth.EarthSystemModels.InterfaceComputations.net_fluxes(ocean::Simulation{<:HydrostaticFreeSurfaceModel})
     # TODO: Generalize this to work with any ocean model
     τˣ = net_flux(ocean.model.velocities.u.boundary_conditions.top.condition)
     τʸ = net_flux(ocean.model.velocities.v.boundary_conditions.top.condition)

@@ -92,21 +92,21 @@ Base.eltype(::SlabOcean{FT}) where FT = FT
 ##### EarthSystemModels interface
 #####
 
-reference_density(ocean::SlabOcean) = ocean.density
-heat_capacity(ocean::SlabOcean) = ocean.heat_capacity
-exchange_grid(atmosphere, ocean::SlabOcean, sea_ice) = ocean.grid
-temperature_units(::SlabOcean) = DegreesKelvin()
-ocean_temperature(ocean::SlabOcean) = ocean.temperature
-ocean_salinity(ocean::SlabOcean{FT}) where FT = ConstantField(convert(FT, 35))
-ocean_surface_temperature(ocean::SlabOcean) = ocean.temperature
-ocean_surface_salinity(ocean::SlabOcean{FT}) where FT = ConstantField(convert(FT, 35))
-ocean_surface_velocities(::SlabOcean{FT}) where FT = ZeroField(FT), ZeroField(FT)
+NumericalEarth.EarthSystemModels.reference_density(ocean::SlabOcean) = ocean.density
+NumericalEarth.EarthSystemModels.heat_capacity(ocean::SlabOcean) = ocean.heat_capacity
+NumericalEarth.EarthSystemModels.exchange_grid(atmosphere, ocean::SlabOcean, sea_ice) = ocean.grid
+NumericalEarth.EarthSystemModels.temperature_units(::SlabOcean) = DegreesKelvin()
+NumericalEarth.EarthSystemModels.ocean_temperature(ocean::SlabOcean) = ocean.temperature
+NumericalEarth.EarthSystemModels.ocean_salinity(ocean::SlabOcean{FT}) where FT = ConstantField(convert(FT, 35))
+NumericalEarth.EarthSystemModels.ocean_surface_temperature(ocean::SlabOcean) = ocean.temperature
+NumericalEarth.EarthSystemModels.ocean_surface_salinity(ocean::SlabOcean{FT}) where FT = ConstantField(convert(FT, 35))
+NumericalEarth.EarthSystemModels.ocean_surface_velocities(::SlabOcean{FT}) where FT = ZeroField(FT), ZeroField(FT)
 
 #####
 ##### InterfaceComputations interface
 #####
 
-function ComponentExchanger(ocean::SlabOcean, exchange_grid)
+function NumericalEarth.EarthSystemModels.InterfaceComputations.ComponentExchanger(ocean::SlabOcean, exchange_grid)
     T = ocean.temperature
     S = ocean_surface_salinity(ocean)
     u, v = ocean_surface_velocities(ocean)
@@ -122,10 +122,11 @@ function net_fluxes(ocean::SlabOcean)
 end
 
 # No interpolation needed: the slab ocean IS on the exchange grid
-interpolate_state!(exchanger, grid, ::SlabOcean, coupled_model) = nothing
+NumericalEarth.EarthSystemModels.interpolate_state!(exchanger, grid, ::SlabOcean, coupled_model) = nothing
 
 # Assemble net ocean fluxes from interface computations
-update_net_fluxes!(coupled_model, ocean::SlabOcean) = update_net_ocean_fluxes!(coupled_model, ocean, ocean.grid)
+NumericalEarth.EarthSystemModels.update_net_fluxes!(coupled_model, ocean::SlabOcean) =
+    NumericalEarth.EarthSystemModels.update_net_ocean_fluxes!(coupled_model, ocean, ocean.grid)
 
 #####
 ##### Time stepping

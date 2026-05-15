@@ -3,13 +3,10 @@ include("runtests_setup.jl")
 using ClimaSeaIce: SeaIceModel, ConductiveFlux
 using ClimaSeaIce.SeaIceThermodynamics: IceSnowConductiveFlux
 using NumericalEarth.SeaIces: default_snow_thermodynamics
-using NumericalEarth.EarthSystemModels.InterfaceComputations:
-    ComponentInterfaces,
-    SkinTemperature,
-    InterfaceProperties,
-    conductive_flux_balance_temperature
-
-using Oceananigans.Fields: ZeroField
+using NumericalEarth.EarthSystemModels.InterfaceComputations: ComponentInterfaces,
+                                                              SkinTemperature,
+                                                              InterfaceProperties,
+                                                              conductive_flux_balance_temperature
 using Oceananigans.Units: hours, days
 
 #####
@@ -50,12 +47,12 @@ using Oceananigans.Units: hours, days
         @testset "ComponentExchanger includes hs [$A]" begin
             using NumericalEarth.EarthSystemModels.InterfaceComputations: ComponentExchanger
 
-            # Without snow: hs should be ZeroField
+            # Without snow: hs should be a ZeroField
             sea_ice = sea_ice_simulation(grid; dynamics=nothing, snow_thermodynamics=nothing)
             exchanger = ComponentExchanger(sea_ice, grid)
             @test haskey(exchanger.state, :hs)
             @test haskey(exchanger.state, :hi)
-            @test exchanger.state.hs isa ZeroField
+            @test exchanger.state.hs isa Oceananigans.Fields.ZeroField
 
             # With snow: hs should be a Field
             sea_ice_snow = sea_ice_simulation(grid; dynamics=nothing)

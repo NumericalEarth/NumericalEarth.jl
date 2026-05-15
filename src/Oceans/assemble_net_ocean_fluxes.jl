@@ -14,9 +14,9 @@ using NumericalEarth.EarthSystemModels.InterfaceComputations: computed_fluxes, s
 #####
 
 # Fallback for an ocean-only model (it has no interfaces!)
-update_net_fluxes!(coupled_model::Union{NoOceanInterfaceModel, NoInterfaceModel}, ocean::Simulation{<:HydrostaticFreeSurfaceModel}) = nothing
+NumericalEarth.EarthSystemModels.update_net_fluxes!(coupled_model::Union{NoOceanInterfaceModel, NoInterfaceModel}, ocean::Simulation{<:HydrostaticFreeSurfaceModel}) = nothing
 
-update_net_fluxes!(coupled_model, ocean::Simulation{<:HydrostaticFreeSurfaceModel}) =
+NumericalEarth.EarthSystemModels.update_net_fluxes!(coupled_model, ocean::Simulation{<:HydrostaticFreeSurfaceModel}) =
     update_net_ocean_fluxes!(coupled_model, ocean, ocean.model.grid)
 
 function update_net_ocean_fluxes!(coupled_model, ocean_model, grid)

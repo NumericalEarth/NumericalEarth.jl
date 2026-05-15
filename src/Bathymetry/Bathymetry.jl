@@ -15,7 +15,7 @@ using Oceananigans.DistributedComputations: DistributedComputations, Distributed
 using Oceananigans.Fields: interpolate!, Field, interior
 using Oceananigans.Grids: x_domain, y_domain,
                           topology, Bounded, Flat, Periodic, Center, Face,Periodic,
-                          RectilinearGrid, LatitudeLongitudeGrid, OrthogonalSphericalShellGrid,
+                          RectilinearGrid, LatitudeLongitudeGrid, OrthogonalSphericalShellGrid
 using Oceananigans.Utils: launch!
 using OffsetArrays: OffsetArrays, OffsetArray
 using NCDatasets: NCDatasets, Dataset

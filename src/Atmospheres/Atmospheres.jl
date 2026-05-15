@@ -2,6 +2,7 @@ module Atmospheres
 
 export atmosphere_simulation, PrescribedAtmosphere, PrescribedPrecipitationFlux
 
+import Oceananigans
 using Oceananigans.Architectures: architecture
 using Oceananigans.Fields: Center, Face, Field
 using Oceananigans.Grids: grid_name, topology, Flat
@@ -13,7 +14,8 @@ using Oceananigans.Utils: Utils, launch!
 using Adapt: Adapt, adapt
 using Thermodynamics.Parameters: AbstractThermodynamicsParameters
 using KernelAbstractions: @kernel, @index
-using NumericalEarth.EarthSystemModels.InterfaceComputations: interface_kernel_parameters
+using NumericalEarth: NumericalEarth
+using NumericalEarth.EarthSystemModels.InterfaceComputations: interface_kernel_parameters, ComponentExchanger
 
 import Oceananigans
 import Oceananigans.TimeSteppers: time_step!, update_state!
@@ -34,7 +36,7 @@ include("prescribed_atmosphere.jl")
 include("prescribed_atmosphere_regridder.jl")
 include("interpolate_atmospheric_state.jl")
 
-net_fluxes(::PrescribedAtmosphere) = nothing
-is_prescribed_atmosphere(::PrescribedAtmosphere) = true
+NumericalEarth.EarthSystemModels.is_prescribed_atmosphere(::PrescribedAtmosphere) = true
+NumericalEarth.EarthSystemModels.InterfaceComputations.net_fluxes(::PrescribedAtmosphere) = nothing
 
 end # module Atmospheres

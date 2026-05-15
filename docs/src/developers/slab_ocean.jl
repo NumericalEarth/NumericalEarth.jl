@@ -70,7 +70,7 @@ end
 # For a slab ocean, we need to return the container for the temperature flux stored in the `slab_ocean` as well as
 # dummy salinity flux and dummy stress fields which will be unused since the slab ocean has no dynamics and a constant salinity.
 
-function InterfaceComputations.net_fluxes(slab_ocean::SlabOcean)
+function NumericalEarth.EarthSystemModels.InterfaceComputations.net_fluxes(slab_ocean::SlabOcean)
     grid = slab_ocean.grid
     Jˢ = Field{Center, Center, Nothing}(grid)
     τˣ = Field{Center, Center, Nothing}(grid)

@@ -1,4 +1,4 @@
-function ComponentExchanger(atmosphere::PrescribedAtmosphere, grid) 
+function NumericalEarth.EarthSystemModels.InterfaceComputations.ComponentExchanger(atmosphere::PrescribedAtmosphere, grid)
 
     regridder = atmosphere_regridder(atmosphere, grid)
 

@@ -6,7 +6,7 @@ using Oceananigans.OutputReaders: cpu_interpolating_time_indices
 using NumericalEarth.Oceans: forcing_barotropic_potential
 
 """Interpolate the atmospheric state onto the ocean / sea-ice grid."""
-function interpolate_state!(exchanger, grid, atmosphere::PrescribedAtmosphere, coupled_model)
+function NumericalEarth.EarthSystemModels.interpolate_state!(exchanger, grid, atmosphere::PrescribedAtmosphere, coupled_model)
     atmosphere_grid = atmosphere.grid
 
     # Basic model properties
