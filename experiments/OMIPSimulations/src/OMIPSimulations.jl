@@ -57,6 +57,9 @@ export omip_simulation,
        NEMOTKEVerticalDiffusivity, NEMOTKEParameters,
        NORiBaseVerticalDiffusivity
 
+# Patches to Oceananigans
+include("oceananigans_patches.jl")
+
 include("NORi/NORi.jl")
 
 using .NORi: NORiBaseVerticalDiffusivity
