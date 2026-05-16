@@ -22,12 +22,13 @@ using Oceananigans.Utils: launch!
 using Adapt
 using KernelAbstractions: @kernel, @index
 
-import NumericalEarth: stateindex
+using NumericalEarth.EarthSystemModels: AbstractPrescribedComponent
 using NumericalEarth.EarthSystemModels.InterfaceComputations: interface_kernel_parameters
 
-import Oceananigans.TimeSteppers: time_step!, update_state!
 import Oceananigans.Architectures: on_architecture
+import Oceananigans.TimeSteppers: time_step!, update_state!
 
+import NumericalEarth: stateindex
 import NumericalEarth.EarthSystemModels: interpolate_state!,
                                          update_net_fluxes!,
                                          apply_air_sea_radiative_fluxes!,

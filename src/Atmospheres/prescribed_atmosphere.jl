@@ -2,7 +2,7 @@
 ##### Prescribed atmosphere (as opposed to dynamically evolving / prognostic)
 #####
 
-mutable struct PrescribedAtmosphere{FT, G, T, U, P, C, F, TP, TI}
+mutable struct PrescribedAtmosphere{FT, G, T, U, P, C, F, TP, TI} <: AbstractPrescribedComponent
     grid :: G
     clock :: Clock{T}
     velocities :: U
@@ -126,12 +126,11 @@ update_net_fluxes!(coupled_model, ::PrescribedAtmosphere) = nothing
                          pressure        = default_atmosphere_pressure(grid, times),
                          freshwater_flux = default_freshwater_flux(grid, times))
 
-Return a representation of a prescribed time-evolving atmospheric
-state with data given at `times`.
+Return a prescribed, time-evolving atmospheric state with data on `grid` and at given `times`.
 
-Note: downwelling shortwave / longwave radiation is now part of the
-top-level `radiation` component (see `PrescribedRadiation`,
-`JRA55PrescribedRadiation`).
+!!! compat Radiation component
+    The downwelling shortwave / longwave radiation part of the top-level `radiation`
+    component (see [`PrescribedRadiation`](@ref), [`JRA55PrescribedRadiation`](@ref)).
 """
 function PrescribedAtmosphere(grid, times=[zero(grid)];
                               clock = Clock{Float64}(time = 0),
