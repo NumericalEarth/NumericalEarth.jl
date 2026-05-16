@@ -3,7 +3,7 @@ module Lands
 export PrescribedLand
 
 using KernelAbstractions: @kernel, @index
-using Oceananigans: Oceananigans
+using Oceananigans: Oceananigans, prognostic_state
 using Oceananigans.Architectures: architecture
 using Oceananigans.Fields: Field, Center, Face
 using Oceananigans.Grids: grid_name
