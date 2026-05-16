@@ -1,4 +1,4 @@
-]module NumericalEarth
+module NumericalEarth
 
 # Use the README as the module docs
 @doc let
