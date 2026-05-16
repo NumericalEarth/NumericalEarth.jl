@@ -33,7 +33,7 @@ using ExplicitImports: ExplicitImports
         # NumericalEarth.Lands,
         # NumericalEarth.Oceans,
         # NumericalEarth.Radiations,
-        # NumericalEarth.SeaIces,
+        NumericalEarth.SeaIces,
     ]
 
     function maybe_extension(parent, name::Symbol)
