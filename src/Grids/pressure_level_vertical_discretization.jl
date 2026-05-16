@@ -126,6 +126,13 @@ const _PL_NO_1D_Z_MSG = "PressureLevelGrid has a 3-D z-coordinate; " *
 @inline rnodes(::PressureLevelGrid, ::Face;   kwargs...) = throw(ArgumentError(_PL_NO_1D_Z_MSG))
 @inline rnodes(::PressureLevelGrid, ::Center; kwargs...) = throw(ArgumentError(_PL_NO_1D_Z_MSG))
 
+# Column-region grids (Flat-Flat-Bounded) have exactly one (i, j) = (1, 1)
+# column; return that column's heights as a plain 1-D vector so plot recipes
+# and other 1-D consumers work.
+@inline rnodes(grid::PressureLevelGrid, ::Nothing, ::Nothing, ℓz; kwargs...) =
+    [rnode(1, 1, k, grid, Center(), Center(), ℓz) for k in 1:grid.Nz]
+
+# Full 3-D source: return a lazy per-cell field of heights.
 @inline rnodes(grid::PressureLevelGrid, ℓx, ℓy, ℓz; kwargs...) =
     KernelFunctionOperation{typeof(ℓx), typeof(ℓy), typeof(ℓz)}(_znode_op, grid, ℓx, ℓy, ℓz)
 
