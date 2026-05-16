@@ -204,7 +204,7 @@ end
             sea_ice = sea_ice_simulation(grid, ocean;
                                          dynamics = nothing)
 
-            ai_temp = NumericalEarth.EarthSystemModels.InterfaceComputations.default_ai_temperature(sea_ice)
+            ai_temp = default_ai_temperature(sea_ice)
             @test ai_temp.internal_flux isa IceSnowConductiveFlux
             @test ai_temp.internal_flux.ice_conductivity == 2.0
             @test ai_temp.internal_flux.snow_conductivity == 0.31
