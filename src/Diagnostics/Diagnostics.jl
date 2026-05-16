@@ -19,11 +19,9 @@ using Oceananigans.ImmersedBoundaries: ImmersedBoundaryGrid
 using Oceananigans.Models: buoyancy_operation
 using Oceananigans.Utils: launch!
 
-using NumericalEarth.EarthSystemModels: EarthSystemModel,
-                                        NoSeaIceInterfaceModel,
-                                        NoOceanInterfaceModel,
-                                        NoInterfaceModel
-using NumericalEarth.Oceans: MultipleFluxes
+using ..EarthSystemModels: EarthSystemModel, NoSeaIceInterfaceModel,
+                           NoOceanInterfaceModel, NoInterfaceModel
+using ..Oceans: MultipleFluxes
 
 include("mixed_layer_depth.jl")
 include("meridional_heat_transport.jl")
