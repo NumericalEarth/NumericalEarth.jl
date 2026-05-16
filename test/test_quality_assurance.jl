@@ -12,7 +12,7 @@ using ExplicitImports: ExplicitImports
     modules = Module[
         # NumericalEarth,
         # NumericalEarth.Atmospheres,
-        # NumericalEarth.Bathymetry,
+        NumericalEarth.Bathymetry,
         # NumericalEarth.DataWrangling,
         # NumericalEarth.DataWrangling.ECCO,
         # NumericalEarth.DataWrangling.EN4,
