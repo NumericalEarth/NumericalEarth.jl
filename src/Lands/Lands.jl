@@ -11,14 +11,14 @@ using Oceananigans.Units: Time
 using Oceananigans.Utils: launch!
 
 using KernelAbstractions: @kernel, @index
-using NumericalEarth.EarthSystemModels: AbstractPrescribedComponent
-using NumericalEarth.EarthSystemModels.InterfaceComputations: interface_kernel_parameters
+
+using ..EarthSystemModels: AbstractPrescribedComponent
+using ..EarthSystemModels.InterfaceComputations: interface_kernel_parameters
 
 import Oceananigans.TimeSteppers: time_step!, update_state!
 
-import NumericalEarth.EarthSystemModels: interpolate_state!, update_net_fluxes!
-
-import NumericalEarth.EarthSystemModels.InterfaceComputations: ComponentExchanger, initialize!
+import ..EarthSystemModels: interpolate_state!, update_net_fluxes!
+import ..EarthSystemModels.InterfaceComputations: ComponentExchanger, initialize!
 
 include("prescribed_land.jl")
 include("prescribed_land_regridder.jl")

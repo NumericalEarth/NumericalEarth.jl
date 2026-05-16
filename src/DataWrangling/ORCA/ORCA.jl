@@ -9,7 +9,7 @@ using Scratch
 
 using ..DataWrangling: DownloadProgress, Metadatum, metadata_path
 
-import NumericalEarth.DataWrangling:
+import ..DataWrangling:
     metadata_filename,
     default_download_directory,
     all_dates,

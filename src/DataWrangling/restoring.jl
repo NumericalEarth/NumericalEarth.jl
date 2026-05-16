@@ -9,10 +9,9 @@ using Oceananigans.Architectures: AbstractArchitecture, on_architecture, archite
 
 using JLD2
 using NCDatasets
-
 using Dates: Second
 
-import NumericalEarth: stateindex
+import ..NumericalEarth: stateindex
 import Oceananigans.Forcings: materialize_forcing
 
 # Variable names for restorable data
@@ -39,7 +38,7 @@ const oceananigans_fieldnames = Dict(
     :dissolved_inorganic_carbon     => DissolvedInorganicCarbon(),
     :alkalinity                     => Alkalinity(),
 	:phosphate                      => Phosphate(),
-    :nitrate                        => Nitrate(),                                     
+    :nitrate                        => Nitrate(),
     :dissolved_organic_phosphorus   => DissolvedOrganicPhosphorus(),
     :particulate_organic_phosphorus => ParticulateOrganicPhosphorus(),
     :dissolved_iron                 => DissolvedIron(),
@@ -256,7 +255,7 @@ Example
 =======
 
 ```julia
-using NumericalEarth
+using ..NumericalEarth
 
 restoring = DatasetRestoring(metadata, grid; rate = 1 / 30days)
 ocean = ocean_simulation(grid;

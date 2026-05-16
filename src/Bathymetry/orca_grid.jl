@@ -1,15 +1,15 @@
+using CubedSphere.SphericalGeometry: lat_lon_to_cartesian, cartesian_to_lat_lon,
+                                     spherical_area_quadrilateral
+using Distances: haversine
 using Oceananigans.BoundaryConditions: fill_halo_regions!, FPivotZipperBoundaryCondition,
-    NoFluxBoundaryCondition, FieldBoundaryConditions
+                                       NoFluxBoundaryCondition, FieldBoundaryConditions
 using Oceananigans.Fields: set!, convert_to_0_360
 using Oceananigans.Grids: RightFaceFolded, generate_coordinate
 using Oceananigans.ImmersedBoundaries: ImmersedBoundaryGrid, GridFittedBottom
 using Oceananigans.OrthogonalSphericalShellGrids: Tripolar, continue_south!
-using CubedSphere.SphericalGeometry: lat_lon_to_cartesian, cartesian_to_lat_lon,
-    spherical_area_quadrilateral
-using Distances: haversine
 
 using ..DataWrangling: dataset_variable_name, default_download_directory
-using ..DataWrangling.ORCA: ORCA1, ORCA12, default_south_rows_to_remove
+using ..DataWrangling.ORCA: ORCA1, default_south_rows_to_remove
 
 """
     read_2d_nemo_variable(ds, name)
