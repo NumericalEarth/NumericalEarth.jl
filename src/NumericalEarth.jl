@@ -138,18 +138,16 @@ using .Radiations
 using .Oceans
 using .SeaIces
 using .Diagnostics
-
-using NumericalEarth.EarthSystemModels: ComponentInterfaces, MomentumRoughnessLength, ScalarRoughnessLength, default_sea_ice
-
-using NumericalEarth.DataWrangling.ECCO
-using NumericalEarth.DataWrangling.ETOPO
-using NumericalEarth.DataWrangling.EN4
-using NumericalEarth.DataWrangling.GLORYS
-using NumericalEarth.DataWrangling.JRA55
-using NumericalEarth.DataWrangling.JRA55: JRA55NetCDFBackend
-using NumericalEarth.DataWrangling.ORCA
-using NumericalEarth.DataWrangling.OSPapa
-using NumericalEarth.DataWrangling.WOA
+using .EarthSystemModels: ComponentInterfaces, MomentumRoughnessLength, ScalarRoughnessLength, default_sea_ice
+using .DataWrangling.ETOPO
+using .DataWrangling.ECCO
+using .DataWrangling.GLORYS
+using .DataWrangling.EN4
+using .DataWrangling.ORCA
+using .DataWrangling.WOA
+using .DataWrangling.JRA55
+using .DataWrangling.JRA55: JRA55NetCDFBackend
+using .DataWrangling.OSPapa
 
 using PrecompileTools: @setup_workload, @compile_workload
 

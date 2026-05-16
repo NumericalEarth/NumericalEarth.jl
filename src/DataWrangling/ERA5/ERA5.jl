@@ -14,12 +14,14 @@ using Statistics
 
 using Oceananigans.Fields: Center, set!
 using Oceananigans: Field, fill_halo_regions!, CPU
-using NumericalEarth.Grids: PressureLevelVerticalDiscretization
-using NumericalEarth.DataWrangling: Metadata, Metadatum, metadata_path, native_grid, InverseGravity, download_dataset
 using Dates
 using Dates: DateTime, Month, Hour
 
-import NumericalEarth.DataWrangling:
+using ..DataWrangling: Metadata, Metadatum, metadata_path, native_grid,
+                       InverseGravity, download_dataset
+using NumericalEarth.Grids: PressureLevelVerticalDiscretization
+
+import ..DataWrangling:
     all_dates,
     dataset_variable_name,
     dataset_location,

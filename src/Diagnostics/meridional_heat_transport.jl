@@ -45,7 +45,7 @@ Example
 =======
 
 ```jldoctest
-using NumericalEarth
+using ..NumericalEarth
 using Oceananigans
 
 grid = RectilinearGrid(size = (4, 5, 2), extent = (1, 1, 1),

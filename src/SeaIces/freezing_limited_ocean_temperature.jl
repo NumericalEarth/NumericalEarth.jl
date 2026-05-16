@@ -1,8 +1,7 @@
-using ClimaSeaIce.SeaIceThermodynamics: melting_temperature
-using ClimaSeaIce.SeaIceThermodynamics: LinearLiquidus
-using NumericalEarth.EarthSystemModels
-using NumericalEarth.EarthSystemModels: NoSeaIceInterface
-using NumericalEarth.EarthSystemModels.InterfaceComputations
+using ClimaSeaIce.SeaIceThermodynamics: melting_temperature, LinearLiquidus
+
+using ..EarthSystemModels: EarthSystemModels, EarthSystemModel, NoSeaIceInterface
+using ..EarthSystemModels.InterfaceComputations: InterfaceComputations
 
 #####
 ##### A workaround when you don't have a sea ice model
@@ -27,13 +26,13 @@ FreezingLimitedOceanTemperature(FT::DataType=Oceananigans.defaults.FloatType; li
 const FreezingLimitedEarthSystemModel = EarthSystemModel{R, A, L, <:FreezingLimitedOceanTemperature, O, <:NoSeaIceInterface} where {R, A, L, O}
 
 # Extend interface methods to work with a `FreezingLimitedOceanTemperature`
-sea_ice_concentration(::FreezingLimitedOceanTemperature) = ZeroField()
-sea_ice_thickness(::FreezingLimitedOceanTemperature) = ZeroField()
+EarthSystemModels.sea_ice_concentration(::FreezingLimitedOceanTemperature) = ZeroField()
+EarthSystemModels.sea_ice_thickness(::FreezingLimitedOceanTemperature) = ZeroField()
 
 # does not matter
-reference_density(::FreezingLimitedOceanTemperature) = 0
-heat_capacity(::FreezingLimitedOceanTemperature) = 0
-time_step!(::FreezingLimitedOceanTemperature, Δt) = nothing
+EarthSystemModels.reference_density(::FreezingLimitedOceanTemperature) = 0
+EarthSystemModels.heat_capacity(::FreezingLimitedOceanTemperature) = 0
+Oceananigans.TimeSteppers.time_step!(::FreezingLimitedOceanTemperature, Δt) = nothing
 
 # FreezingLimitedOceanTemperature handles temperature limiting in compute_sea_ice_ocean_fluxes!
 EarthSystemModels.above_freezing_ocean_temperature!(ocean, grid, ::FreezingLimitedOceanTemperature) = nothing
