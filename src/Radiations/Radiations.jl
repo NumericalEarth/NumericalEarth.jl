@@ -22,9 +22,13 @@ using Oceananigans.TimeSteppers: Clock, tick!, update_state!
 using Oceananigans.Units: Time
 using Oceananigans.Utils: launch!, prettysummary, interpolator
 
-using ...NumericalEarth: NumericalEarth
+using ..NumericalEarth: NumericalEarth, stateindex
 using ..EarthSystemModels: EarthSystemModels, AbstractPrescribedComponent
-using ..EarthSystemModels.InterfaceComputations: interface_kernel_parameters, ComponentExchanger
+using ..EarthSystemModels.InterfaceComputations: interface_kernel_parameters,
+                                                 ComponentExchanger,
+                                                 kernel_radiation_properties,
+                                                 air_sea_interface_radiation_state,
+                                                 air_sea_ice_interface_radiation_state
 
 include("surface_radiation_properties.jl")
 include("interface_radiation_flux.jl")
