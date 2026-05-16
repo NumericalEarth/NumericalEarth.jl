@@ -288,9 +288,9 @@ qʳ_col_meta   = Metadata(:specific_rain_water_content;         dataset = ds_pl,
 qᶜ_col_series = FieldTimeSeries(qᶜ_col_meta)
 qʳ_col_series = FieldTimeSeries(qʳ_col_meta)
 
-# Pass `nothing` for the horizontal locations to ask for the
-# horizontally-averaged z axis directly (column-mean geopotential / g).
-z_col  = znodes(qᶜ_col_series[1].grid, nothing, nothing, Center())
+# The column FieldTimeSeries lives on a Flat-Flat-Bounded grid, so it has
+# no horizontal extent — `znodes` on it returns the 1-D column-mean axis.
+z_col  = znodes(qᶜ_col_series[1])
 Nz_col = length(z_col)
 
 qᶜ_data = zeros(Nt, Nz_col)

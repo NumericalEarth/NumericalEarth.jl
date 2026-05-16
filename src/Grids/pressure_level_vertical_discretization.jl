@@ -5,7 +5,7 @@ using Oceananigans.AbstractOperations: KernelFunctionOperation
 using Oceananigans.Architectures: architecture
 using Oceananigans.BoundaryConditions: fill_halo_regions!
 using Oceananigans.Fields: Field, compute!, interior, instantiated_location
-using Oceananigans.Grids: AbstractVerticalCoordinate, AbstractUnderlyingGrid, Center, Face
+using Oceananigans.Grids: AbstractVerticalCoordinate, AbstractUnderlyingGrid, Center, Face, Flat, topology
 using Oceananigans.OutputReaders: TimeSeriesInterpolation
 using Oceananigans.Utils: launch!
 
@@ -27,9 +27,10 @@ Two `znodes` paths:
 - `znodes(grid, ℓ...)` returns the **column-mean** z profile as a 1-D
   `Vector{Float64}` of length `Nz` — the representative axis that plot
   recipes, `Lz`, and length consumers expect when only the grid is in hand.
-- `znodes(field)` returns a 3-D `Field` of per-cell heights, matching the
-  field's location. Collapse to a 1-D axis with
-  `vec(mean(znodes(field), dims=(1, 2)))`.
+- `znodes(field)` returns the column-mean `Vector{Float64}` when the
+  field has no horizontal extent (`Flat` topology or `Nothing` horizontal
+  locations, e.g. after `mean(...; dims=(1, 2))`); otherwise it returns
+  a 3-D `Field` of per-cell heights at the field's own location.
 
 `geopotential` (units m²/s²) is a 3-D `Field` or a `TimeSeriesInterpolation`
 over a `FieldTimeSeries`. The former gives a static z-coordinate; the latter
@@ -138,12 +139,13 @@ function _mean_height_profile(grid::PressureLevelGrid)
     return [mean(selectdim(Φi, 3, k)) / g for k in 1:Nz]
 end
 
-# Per-cell z as a 3-D `Field` on a `PressureLevelGrid`. We bypass the
-# Oceananigans default (`znodes(f) = znodes(f.grid, locs...; indices)`)
-# because per-cell heights vary with (i, j) — there's no single 1-D answer
-# at the Field level. Callers wanting a column-mean axis can collapse with
-# `vec(mean(znodes(f), dims=(1, 2)))`, or for column (1, 1, Nz) sources just
-# `vec(znodes(f))`.
+# `znodes(::Field)` on a `PressureLevelGrid`:
+# - When the field has no horizontal extent (`Flat` topology or `Nothing`
+#   horizontal locations from a `mean(...; dims=(1, 2))`-style reduction),
+#   return the column-mean 1-D `Vector{Float64}` — same as the grid-level
+#   `rnodes(grid, ℓz)` 1-arg form.
+# - Otherwise, build a 3-D per-cell `Field` via a `KernelFunctionOperation`
+#   over `rnode`.
 @inline _znode_op(i, j, k, grid) =
     @inbounds grid.z.geopotential[i, j, k] / grid.z.gravitational_acceleration
 
@@ -151,8 +153,17 @@ const PressureLevelField =
     Field{<:Any, <:Any, <:Any, <:Any, <:PressureLevelGrid}
 
 function znodes(f::PressureLevelField; kwargs...)
-    LX, LY, LZ = map(typeof, instantiated_location(f))
-    op = KernelFunctionOperation{LX, LY, LZ}(_znode_op, f.grid)
+    grid = f.grid
+    TX, TY, _ = topology(grid)
+    locs = instantiated_location(f)
+
+    if (TX === Flat || locs[1] isa Nothing) &&
+       (TY === Flat || locs[2] isa Nothing)
+        return rnodes(grid, locs[3]; kwargs...)
+    end
+
+    LX, LY, LZ = map(typeof, locs)
+    op = KernelFunctionOperation{LX, LY, LZ}(_znode_op, grid)
     return compute!(Field(op))
 end
 
