@@ -26,7 +26,7 @@ using ExplicitImports: ExplicitImports
         # NumericalEarth.DataWrangling.ORCA,
         # NumericalEarth.DataWrangling.OSPapa,
         # NumericalEarth.DataWrangling.WOA,
-        # NumericalEarth.Diagnostics,
+        NumericalEarth.Diagnostics,
         # NumericalEarth.EarthSystemModels,
         # NumericalEarth.EarthSystemModels.InterfaceComputations,
         NumericalEarth.InitialConditions,
