@@ -1,7 +1,24 @@
 include("runtests_setup.jl")
+include("download_utils.jl")
 
-using NumericalEarth.Atmospheres: PrescribedAtmosphere, TwoBandDownwellingRadiation
-using NumericalEarth.ECCO: ECCOPrescribedAtmosphere, ECCO4Monthly
+using Statistics: median
+using NumericalEarth.Atmospheres: PrescribedAtmosphere, PrescribedPrecipitationFlux
+using NumericalEarth.Radiations: PrescribedRadiation
+using NumericalEarth.ECCO: ECCOPrescribedAtmosphere, ECCOPrescribedRadiation, ECCO4Monthly
+using NumericalEarth.DataWrangling: download_dataset, metadata_path, higher_bound
+
+# Pre-download ECCO4Monthly atmospheric forcing variables through the artifacts
+# fallback so ECCOPrescribedAtmosphere(...) finds the files locally even when
+# the ECCO drive is down. The variable list mirrors the metadata constructed
+# inside ECCOPrescribedAtmosphere, and the dates match the testset window.
+let dates = DateTime(1992, 1, 1):Month(1):DateTime(1992, 3, 1)
+    for name in NumericalEarth.ECCO.ECCO_atmosphere_variables
+        md = Metadata(name; dataset=ECCO4Monthly(), dates)
+        download_dataset_with_fallback(metadata_path(md); dataset_name="ECCO4Monthly $name") do
+            download_dataset(md)
+        end
+    end
+end
 
 @testset "ECCO Prescribed Atmosphere" begin
     for arch in test_architectures
@@ -18,7 +35,14 @@ using NumericalEarth.ECCO: ECCOPrescribedAtmosphere, ECCO4Monthly
                                               end_date,
                                               time_indices_in_memory = 2)
 
+        radiation = ECCOPrescribedRadiation(arch;
+                                            dataset,
+                                            start_date,
+                                            end_date,
+                                            time_indices_in_memory = 2)
+
         @test atmosphere isa PrescribedAtmosphere
+        @test radiation isa PrescribedRadiation
 
         # Test that all expected fields are present
         @test haskey(atmosphere.velocities, :u)
@@ -26,12 +50,13 @@ using NumericalEarth.ECCO: ECCOPrescribedAtmosphere, ECCO4Monthly
         @test haskey(atmosphere.tracers, :T)
         @test haskey(atmosphere.tracers, :q)
         @test !isnothing(atmosphere.pressure)
-        @test !isnothing(atmosphere.downwelling_radiation)
-        @test haskey(atmosphere.freshwater_flux, :rain)
+        @test atmosphere.freshwater_flux isa PrescribedPrecipitationFlux
+        @test atmosphere.freshwater_flux.rain isa FieldTimeSeries
+        @test isnothing(atmosphere.freshwater_flux.snow)
 
         # Test downwelling radiation components
-        ℐꜜˢʷ = atmosphere.downwelling_radiation.shortwave
-        ℐꜜˡʷ = atmosphere.downwelling_radiation.longwave
+        ℐꜜˢʷ = radiation.downwelling_shortwave
+        ℐꜜˡʷ = radiation.downwelling_longwave
 
         @test ℐꜜˢʷ isa FieldTimeSeries
         @test ℐꜜˡʷ isa FieldTimeSeries
@@ -55,6 +80,22 @@ using NumericalEarth.ECCO: ECCOPrescribedAtmosphere, ECCO4Monthly
             @test maximum(ℐꜜˢʷ_data) < 1500  # W/m²
             @test maximum(ℐꜜˡʷ_data) < 600   # W/m²
             @test maximum(ℐꜜˡʷ_data) > 50    # W/m² - should have some reasonable values
+        end
+
+        # Test that higher_bound for sea_level_pressure is large enough
+        # to avoid masking valid pressure data (~101325 Pa).
+        pa_metadata = Metadata(:sea_level_pressure; dataset, start_date, end_date)
+        other_metadata = Metadata(:temperature; dataset, start_date, end_date)
+        @test higher_bound(pa_metadata, Val(:sea_level_pressure)) == 1f10
+        @test higher_bound(other_metadata, Val(:temperature)) == 1f5  # default
+
+        # Verify pressure field contains physically reasonable values
+        CUDA.@allowscalar begin
+            pa_data = interior(atmosphere.pressure)
+            valid = pa_data[pa_data .!= 0]
+            @test length(valid) > 0
+            @test median(valid) > 9.9f4 # typical sea level pressure exceeds 9e4 Pa
+            @test median(valid) < 1.1f5 # typical sea level pressure is lower than 1.1e5 Pa
         end
 
         # Test grid consistency

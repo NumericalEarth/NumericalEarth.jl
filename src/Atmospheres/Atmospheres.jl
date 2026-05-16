@@ -1,6 +1,6 @@
 module Atmospheres
 
-export atmosphere_simulation, PrescribedAtmosphere
+export atmosphere_simulation, PrescribedAtmosphere, PrescribedPrecipitationFlux
 
 using Oceananigans
 using Oceananigans.Fields: Center
@@ -13,17 +13,18 @@ using Oceananigans.Utils
 using Adapt
 using Thermodynamics.Parameters: AbstractThermodynamicsParameters
 using KernelAbstractions: @kernel, @index
-using NumericalEarth.EarthSystemModels.InterfaceComputations: interface_kernel_parameters
+using ..EarthSystemModels: AbstractPrescribedComponent
+using ..EarthSystemModels.InterfaceComputations: interface_kernel_parameters
 
 import Oceananigans.TimeSteppers: time_step!, update_state!
 
-import NumericalEarth.EarthSystemModels: interpolate_state!,
-                                         update_net_fluxes!,
-                                         thermodynamics_parameters,
-                                         surface_layer_height,
-                                         boundary_layer_height
+import ..EarthSystemModels: interpolate_state!,
+                            update_net_fluxes!,
+                            thermodynamics_parameters,
+                            surface_layer_height,
+                            boundary_layer_height
 
-import NumericalEarth.EarthSystemModels.InterfaceComputations: ComponentExchanger, initialize!, net_fluxes
+import ..EarthSystemModels.InterfaceComputations: ComponentExchanger, initialize!, net_fluxes
 
 # Can be extended by atmosphere models
 function atmosphere_simulation end

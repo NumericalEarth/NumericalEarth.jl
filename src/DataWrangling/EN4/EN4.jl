@@ -3,7 +3,7 @@ module EN4
 export EN4Metadatum, EN4_immersed_grid, adjusted_EN4_tracers, initialize!
 export EN4Monthly
 
-using NumericalEarth
+using ...NumericalEarth
 using Oceananigans
 using NCDatasets
 using JLD2
@@ -17,23 +17,22 @@ using ..DataWrangling:
     BoundingBox,
     inpaint_mask!,
     NearestNeighborInpainting,
-    download_progress,
+    DownloadProgress,
     compute_native_date_range,
     Kelvin,
     Celsius
 
 using KernelAbstractions: @kernel, @index
 
-using Oceananigans.Architectures: architecture
-
 using Dates: year, month, day
+using Oceananigans.Architectures: architecture
 using Oceananigans.DistributedComputations: @root
 
 using Dates
 using Downloads
 import ZipFile
 
-import NumericalEarth.DataWrangling:
+import ..DataWrangling:
     all_dates,
     metadata_filename,
     download_dataset,
@@ -50,7 +49,6 @@ import NumericalEarth.DataWrangling:
     inpainted_metadata_path,
     available_variables
 
-import Oceananigans.Fields: location
 
 download_EN4_cache::String = ""
 function __init__()
@@ -133,14 +131,13 @@ end
 const EN4_url_pre2021  = "http://www.metoffice.gov.uk/hadobs/en4/data/en4-2-1/EN.4.2.2/EN.4.2.2.analyses.g10."
 const EN4_url_post2021 = "http://www.metoffice.gov.uk/hadobs/en4/data/en4-2-1/EN.4.2.2.analyses.g10."
 
-function inpainted_metadata_filename(metadata::EN4Metadata)
-    original_filename = metadata_filename(metadata)
-    without_extension = original_filename[1:end-3]
+function inpainted_metadata_filename(metadata::EN4Metadatum)
+    without_extension = metadata.filename[1:end-3]
     var = string(metadata.name)
     return without_extension * "_" * var *"_inpainted.jld2"
 end
 
-inpainted_metadata_path(metadata::EN4Metadata) = joinpath(metadata.dir, inpainted_metadata_filename(metadata))
+inpainted_metadata_path(metadata::EN4Metadatum) = joinpath(metadata.dir, inpainted_metadata_filename(metadata))
 
 """
     EN4Metadatum(name;
@@ -160,16 +157,15 @@ metaprefix(::EN4Metadata) = "EN4Metadata"
 metaprefix(::EN4Metadatum) = "EN4Metadatum"
 
 # Note, EN4 files contain all variables, so the filenames do not
-# depend on metadata.name.
-function metadata_filename(metadata::Metadatum{<:EN4Monthly})
-    yearstr  = string(Dates.year(metadata.dates))
-    monthstr = string(Dates.month(metadata.dates), pad=2)
+# depend on name.
+function metadata_filename(::EN4Monthly, name, date, region)
+    yearstr  = string(Dates.year(date))
+    monthstr = string(Dates.month(date), pad=2)
     return "EN.4.2.2.f.analysis.g10." * yearstr * lpad(string(monthstr), 2, '0') * ".nc"
 end
 
 # Convenience functions
 dataset_variable_name(data::EN4Metadata) = EN4_dataset_variable_names[data.name]
-location(::EN4Metadata) = (Center, Center, Center)
 is_three_dimensional(::EN4Metadata) = true
 
 ## This function is explicitly for the downloader to check if the zip file/extracted file exists,
@@ -221,7 +217,7 @@ function download_dataset(metadata::Metadata{<:EN4Monthly})
             if !isfile(extracted_file) & !isfile(zippath)
                 push!(missingzips, zippath)
                 @info "Downloading EN4 data: $(metadatum.name) in $(metadatum.dir)..."
-                Downloads.download(fileurl, zippath; progress=download_progress)
+                Downloads.download(fileurl, zippath; progress=DownloadProgress())
             elseif !isfile(extracted_file) & isfile(zippath)
                 push!(missingzips, zippath)
             end
@@ -232,7 +228,7 @@ function download_dataset(metadata::Metadata{<:EN4Monthly})
         end
     end
 
-    return nothing
+    return metadata_path(metadata)
 end
 
 end # Module

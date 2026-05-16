@@ -1,5 +1,5 @@
-using NumericalEarth.DataWrangling: all_dates, native_times
-using NumericalEarth.DataWrangling: compute_native_date_range
+using ..DataWrangling: all_dates, native_times
+using ..DataWrangling: compute_native_date_range
 using Oceananigans.Grids: AbstractGrid
 using Oceananigans.OutputReaders: PartlyInMemory
 using Adapt
@@ -109,7 +109,7 @@ function set!(fts::JRA55NetCDFFTSRepeatYear, backend=fts.backend)
 
     metadata = backend.metadata
 
-    filename = metadata_filename(metadata)
+    filename = metadata.filename
     path = joinpath(metadata.dir, filename)
     ds = Dataset(path)
 
@@ -154,7 +154,7 @@ function set!(fts::JRA55NetCDFFTSMultipleYears, backend=fts.backend)
 
     metadata = backend.metadata
 
-    filename   = metadata_filename(metadata)
+    filename   = metadata.filename
     filename   = unique(filename)
     name       = dataset_variable_name(metadata)
     start_date = first_date(metadata.dataset, metadata.name)

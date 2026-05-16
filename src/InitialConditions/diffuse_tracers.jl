@@ -1,4 +1,3 @@
-
 scale_to_diffusivity(vertical_scale) = vertical_scale^2
 scale_to_diffusivity(vertical_scale::Function) = (x, y, z, t) -> vertical_scale(x, y, z, t)^2
 

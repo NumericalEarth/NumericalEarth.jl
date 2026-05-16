@@ -1,4 +1,5 @@
 include("runtests_setup.jl")
+include("download_utils.jl")
 
 using JLD2
 using NumericalEarth.Bathymetry: remove_minor_basins!,
@@ -13,10 +14,13 @@ using Statistics
     @info "Testing Bathymetry construction and smoothing..."
     for arch in test_architectures
         ETOPOmetadata = Metadatum(:bottom_height, dataset=ETOPO2022())
+        filepath = metadata_path(ETOPOmetadata)
 
         # Testing downloading
-        NumericalEarth.DataWrangling.download_dataset(ETOPOmetadata)
-        @test isfile(metadata_path(ETOPOmetadata))
+        download_dataset_with_fallback(filepath; dataset_name="ETOPO2022") do
+            NumericalEarth.DataWrangling.download_dataset(ETOPOmetadata)
+        end
+        @test isfile(filepath)
 
         grid = LatitudeLongitudeGrid(arch;
                                      size = (100, 100, 10),

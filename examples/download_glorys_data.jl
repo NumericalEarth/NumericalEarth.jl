@@ -17,20 +17,20 @@ grid = LatitudeLongitudeGrid(arch;
                              latitude  = (35, 55),
                              longitude = (200, 220))
 
-bounding_box = NumericalEarth.DataWrangling.BoundingBox(longitude=(200, 220), latitude=(35, 55))
+region = NumericalEarth.DataWrangling.BoundingBox(longitude=(200, 220), latitude=(35, 55))
 
 # dataset = NumericalEarth.DataWrangling.Copernicus.GLORYSStatic()
-# static_meta = NumericalEarth.DataWrangling.Metadatum(:depth; dataset, bounding_box)
+# static_meta = NumericalEarth.DataWrangling.Metadatum(:depth; dataset, region)
 # coords_path = NumericalEarth.DataWrangling.download_dataset(static_meta)
 # @info "Downloaded coordinates data to $coords_path"
 
-# T_ecco = NumericalEarth.DataWrangling.ECCOMetadatum(:temperature; dataset, bounding_box)
+# T_ecco = NumericalEarth.DataWrangling.ECCOMetadatum(:temperature; dataset, region)
 # T_en4_meta = NumericalEarth.DataWrangling.EN4Metadatum(:temperature)
 # T_en4_path = NumericalEarth.DataWrangling.download_dataset(T_en4_meta)
 # T_en4 = Field(T_en4_meta)
 
 dataset = NumericalEarth.DataWrangling.Copernicus.GLORYSDaily()
-T_meta = NumericalEarth.DataWrangling.Metadatum(:temperature; dataset, bounding_box)
+T_meta = NumericalEarth.DataWrangling.Metadatum(:temperature; dataset, region)
 T_path = NumericalEarth.DataWrangling.download_dataset(T_meta)
 @info "Downloaded temperature data to $T_path"
 T = Field(T_meta, inpainting=nothing)

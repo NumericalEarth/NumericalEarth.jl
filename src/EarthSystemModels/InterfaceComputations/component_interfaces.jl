@@ -24,6 +24,7 @@ using Oceananigans.Units: Time
 using KernelAbstractions: @kernel, @index
 
 import Oceananigans.Simulations: initialize!
+import Oceananigans.Architectures: on_architecture
 
 #####
 ##### Container for organizing information related to fluxes
@@ -44,7 +45,7 @@ Container for sea ice-ocean interface data including fluxes, formulation, and in
 Fields
 ======
 
-- `fluxes::J`: named tuple of flux fields (interface_heat, frazil_heat, salt, x_momentum, y_momentum)
+- `fluxes::J`: `SeaIceOceanFluxes` containing interface_heat, frazil_heat, salt, x_momentum, y_momentum
 - `flux_formulation::F`: heat flux formulation (`IceBathHeatFlux` or `ThreeEquationHeatFlux`)
 - `temperature::T`: interface temperature field (ocean surface view or computed field)
 - `salinity::S`: interface salinity field (ocean surface view or computed field)
@@ -59,10 +60,129 @@ end
 # Utilities to get the computed fluxes
 @inline computed_fluxes(interface::AtmosphereInterface)  = interface.fluxes
 @inline computed_fluxes(interface::SeaIceOceanInterface) = interface.fluxes
-@inline computed_fluxes(::Nothing) = nothing
 
-@inline get_possibly_zero_flux(fluxes, name)    = getfield(fluxes, name)
-@inline get_possibly_zero_flux(::Nothing, name) = ZeroField()
+struct AtmosphereOceanFluxes{F}
+    latent_heat           :: F
+    sensible_heat         :: F
+    water_vapor           :: F
+    x_momentum            :: F
+    y_momentum            :: F
+    friction_velocity     :: F
+    temperature_scale     :: F
+    water_vapor_scale     :: F
+end
+
+function AtmosphereOceanFluxes(grid)
+    F = Field{Center, Center, Nothing}
+    return AtmosphereOceanFluxes(F(grid), F(grid), F(grid),
+                                 F(grid), F(grid), F(grid),
+                                 F(grid), F(grid))
+end
+
+AtmosphereOceanFluxes(::Nothing) = AtmosphereOceanFluxes(ntuple(_ -> ZeroField(), 8)...)
+
+Adapt.adapt_structure(to, fluxes::AtmosphereOceanFluxes) =
+    AtmosphereOceanFluxes(Adapt.adapt(to, fluxes.latent_heat),
+                          Adapt.adapt(to, fluxes.sensible_heat),
+                          Adapt.adapt(to, fluxes.water_vapor),
+                          Adapt.adapt(to, fluxes.x_momentum),
+                          Adapt.adapt(to, fluxes.y_momentum),
+                          Adapt.adapt(to, fluxes.friction_velocity),
+                          Adapt.adapt(to, fluxes.temperature_scale),
+                          Adapt.adapt(to, fluxes.water_vapor_scale))
+
+on_architecture(arch, fluxes::AtmosphereOceanFluxes) =
+    AtmosphereOceanFluxes(on_architecture(arch, fluxes.latent_heat),
+                          on_architecture(arch, fluxes.sensible_heat),
+                          on_architecture(arch, fluxes.water_vapor),
+                          on_architecture(arch, fluxes.x_momentum),
+                          on_architecture(arch, fluxes.y_momentum),
+                          on_architecture(arch, fluxes.friction_velocity),
+                          on_architecture(arch, fluxes.temperature_scale),
+                          on_architecture(arch, fluxes.water_vapor_scale))
+
+struct AtmosphereSeaIceFluxes{F}
+    latent_heat   :: F
+    sensible_heat :: F
+    water_vapor   :: F
+    x_momentum    :: F
+    y_momentum    :: F
+end
+
+function AtmosphereSeaIceFluxes(grid)
+    F = Field{Center, Center, Nothing}
+    return AtmosphereSeaIceFluxes(F(grid), F(grid), F(grid), F(grid), F(grid))
+end
+
+AtmosphereSeaIceFluxes(::Nothing) = AtmosphereSeaIceFluxes(ntuple(_ -> ZeroField(), 5)...)
+
+Adapt.adapt_structure(to, fluxes::AtmosphereSeaIceFluxes) = 
+    AtmosphereSeaIceFluxes(Adapt.adapt(to, fluxes.latent_heat),
+                           Adapt.adapt(to, fluxes.sensible_heat),
+                           Adapt.adapt(to, fluxes.water_vapor),
+                           Adapt.adapt(to, fluxes.x_momentum),
+                           Adapt.adapt(to, fluxes.y_momentum))
+
+on_architecture(arch, fluxes::AtmosphereSeaIceFluxes) = 
+    AtmosphereSeaIceFluxes(on_architecture(arch, fluxes.latent_heat),
+                           on_architecture(arch, fluxes.sensible_heat),
+                           on_architecture(arch, fluxes.water_vapor),
+                           on_architecture(arch, fluxes.x_momentum),
+                           on_architecture(arch, fluxes.y_momentum))
+
+struct SeaIceOceanFluxes{C, FX, FY}
+    interface_heat :: C
+    frazil_heat    :: C
+    salt           :: C
+    x_momentum     :: FX
+    y_momentum     :: FY
+end
+
+function SeaIceOceanFluxes(grid)
+    C  = Field{Center, Center, Nothing}
+    return SeaIceOceanFluxes(C(grid), C(grid), C(grid),
+                             Field{Face, Center, Nothing}(grid),
+                             Field{Center, Face, Nothing}(grid))
+end
+
+SeaIceOceanFluxes(::Nothing) = SeaIceOceanFluxes(ntuple(_ -> ZeroField(), 5)...)
+
+Adapt.adapt_structure(to, fluxes::SeaIceOceanFluxes) = 
+    SeaIceOceanFluxes(Adapt.adapt(to, fluxes.interface_heat),
+                      Adapt.adapt(to, fluxes.frazil_heat),
+                      Adapt.adapt(to, fluxes.salt),
+                      Adapt.adapt(to, fluxes.x_momentum),
+                      Adapt.adapt(to, fluxes.y_momentum))
+
+on_architecture(arch, fluxes::SeaIceOceanFluxes) = 
+    SeaIceOceanFluxes(on_architecture(arch, fluxes.interface_heat),
+                      on_architecture(arch, fluxes.frazil_heat),
+                      on_architecture(arch, fluxes.salt),
+                      on_architecture(arch, fluxes.x_momentum),
+                      on_architecture(arch, fluxes.y_momentum))
+
+# ZeroFluxes is returned by computed_fluxes(::Nothing) for absent interfaces.
+# It contains the union of all flux field names across interface types.
+struct ZeroFluxes{Z}
+    # Atmosphere-ocean and atmosphere-sea-ice flux fields (turbulent only;
+    # radiative diagnostic fields live on the radiation component)
+    latent_heat           :: Z
+    sensible_heat         :: Z
+    water_vapor           :: Z
+    x_momentum            :: Z
+    y_momentum            :: Z
+    friction_velocity     :: Z
+    temperature_scale     :: Z
+    water_vapor_scale     :: Z
+    # Sea ice-ocean flux fields
+    interface_heat        :: Z
+    frazil_heat           :: Z
+    salt                  :: Z
+end
+
+ZeroFluxes() = ZeroFluxes(ntuple(_ -> ZeroField(), 11)...)
+
+@inline computed_fluxes(::Nothing) = ZeroFluxes()
 
 mutable struct ComponentInterfaces{AO, ASI, SIO, C, AP, OP, SIP, EX, P}
     atmosphere_ocean_interface :: AO
@@ -92,46 +212,17 @@ atmosphere_ocean_interface(grid, ::Nothing,   ocean,    args...) = nothing
 atmosphere_ocean_interface(grid, ::Nothing,  ::Nothing, args...) = nothing
 atmosphere_ocean_interface(grid, atmosphere, ::Nothing, args...) = nothing
 
-function atmosphere_ocean_interface(grid, 
+function atmosphere_ocean_interface(grid,
                                     atmosphere,
                                     ocean,
-                                    radiation,
                                     ao_flux_formulation,
                                     temperature_formulation,
                                     velocity_formulation,
                                     specific_humidity_formulation)
 
-    water_vapor           = Field{Center, Center, Nothing}(grid)
-    latent_heat           = Field{Center, Center, Nothing}(grid)
-    sensible_heat         = Field{Center, Center, Nothing}(grid)
-    x_momentum            = Field{Center, Center, Nothing}(grid)
-    y_momentum            = Field{Center, Center, Nothing}(grid)
-    friction_velocity     = Field{Center, Center, Nothing}(grid)
-    temperature_scale     = Field{Center, Center, Nothing}(grid)
-    water_vapor_scale     = Field{Center, Center, Nothing}(grid)
-    upwelling_longwave    = Field{Center, Center, Nothing}(grid)
-    downwelling_longwave  = Field{Center, Center, Nothing}(grid)
-    downwelling_shortwave = Field{Center, Center, Nothing}(grid)
+    ao_fluxes = AtmosphereOceanFluxes(grid)
 
-    ao_fluxes = (; latent_heat,
-                   sensible_heat,
-                   water_vapor,
-                   x_momentum,
-                   y_momentum,
-                   friction_velocity,
-                   temperature_scale,
-                   water_vapor_scale,
-                   upwelling_longwave,
-                   downwelling_longwave,
-                   downwelling_shortwave)
-
-    σ = radiation.stefan_boltzmann_constant
-    αₐₒ = radiation.reflection.ocean
-    ϵₐₒ = radiation.emission.ocean
-    radiation = (σ=σ, α=αₐₒ, ϵ=ϵₐₒ)
-
-    ao_properties = InterfaceProperties(radiation,
-                                        specific_humidity_formulation,
+    ao_properties = InterfaceProperties(specific_humidity_formulation,
                                         temperature_formulation,
                                         velocity_formulation)
 
@@ -148,35 +239,28 @@ atmosphere_sea_ice_interface(grid, atmos, ::Nothing,     args...) = nothing
 atmosphere_sea_ice_interface(grid, ::Nothing, sea_ice,   args...) = nothing
 atmosphere_sea_ice_interface(grid, ::Nothing, ::Nothing, args...) = nothing
 
-function atmosphere_sea_ice_interface(grid, 
+function atmosphere_sea_ice_interface(grid,
                                       atmosphere,
                                       sea_ice,
-                                      radiation,
                                       ai_flux_formulation,
                                       temperature_formulation,
                                       velocity_formulation)
 
-    water_vapor   = Field{Center, Center, Nothing}(grid)
-    latent_heat   = Field{Center, Center, Nothing}(grid)
-    sensible_heat = Field{Center, Center, Nothing}(grid)
-    x_momentum    = Field{Center, Center, Nothing}(grid)
-    y_momentum    = Field{Center, Center, Nothing}(grid)
-    fluxes = (; latent_heat, sensible_heat, water_vapor, x_momentum, y_momentum)
-
-    σ   = radiation.stefan_boltzmann_constant
-    αₐᵢ = radiation.reflection.sea_ice
-    ϵₐᵢ = radiation.emission.sea_ice
-    radiation = (σ=σ, α=αₐᵢ, ϵ=ϵₐᵢ)
+    fluxes = AtmosphereSeaIceFluxes(grid)
 
     phase = AtmosphericThermodynamics.Ice()
     specific_humidity_formulation = ImpureSaturationSpecificHumidity(phase)
 
-    properties = InterfaceProperties(radiation,
-                                     specific_humidity_formulation,
+    properties = InterfaceProperties(specific_humidity_formulation,
                                      temperature_formulation,
                                      velocity_formulation)
 
-    interface_temperature = sea_ice.model.ice_thermodynamics.top_surface_temperature
+    snow_thermo = sea_ice.model.snow_thermodynamics
+    interface_temperature = if isnothing(snow_thermo)
+        sea_ice.model.ice_thermodynamics.top_surface_temperature
+    else
+        snow_thermo.top_surface_temperature
+    end
 
     return AtmosphereInterface(fluxes, ai_flux_formulation, interface_temperature, properties)
 end
@@ -212,18 +296,7 @@ Arguments
 - `flux_formulation`: heat flux formulation (`IceBathHeatFlux` or `ThreeEquationHeatFlux`)
 """
 function sea_ice_ocean_interface(grid, sea_ice, ocean, flux_formulation)
-
-    io_bottom_heat_flux = Field{Center, Center, Nothing}(grid)
-    io_frazil_heat_flux = Field{Center, Center, Nothing}(grid)
-    io_salt_flux = Field{Center, Center, Nothing}(grid)
-    x_momentum = Field{Face, Center, Nothing}(grid)
-    y_momentum = Field{Center, Face, Nothing}(grid)
-
-    io_fluxes = (interface_heat = io_bottom_heat_flux,
-                 frazil_heat = io_frazil_heat_flux,
-                 salt = io_salt_flux,
-                 x_momentum = x_momentum,
-                 y_momentum = y_momentum)
+    io_fluxes = SeaIceOceanFluxes(grid)
 
     # For default flux formulations, interface temperature and salinity point to ocean surface
     Tⁱⁿᵗ = ocean_surface_temperature(ocean)
@@ -233,18 +306,7 @@ function sea_ice_ocean_interface(grid, sea_ice, ocean, flux_formulation)
 end
 
 function sea_ice_ocean_interface(grid, sea_ice, ocean, flux_formulation::ThreeEquationHeatFlux)
-
-    io_bottom_heat_flux = Field{Center, Center, Nothing}(grid)
-    io_frazil_heat_flux = Field{Center, Center, Nothing}(grid)
-    io_salt_flux = Field{Center, Center, Nothing}(grid)
-    x_momentum = Field{Face, Center, Nothing}(grid)
-    y_momentum = Field{Center, Face, Nothing}(grid)
-
-    io_fluxes = (interface_heat = io_bottom_heat_flux,
-                 frazil_heat = io_frazil_heat_flux,
-                 salt = io_salt_flux,
-                 x_momentum = x_momentum,
-                 y_momentum = y_momentum)
+    io_fluxes = SeaIceOceanFluxes(grid)
 
     # Interface temperature and salinity are computed fields
     Tⁱⁿᵗ = Field{Center, Center, Nothing}(grid)
@@ -279,6 +341,7 @@ Keyword Arguments
   - `ThreeEquationHeatFlux()`: coupled heat/salt/freezing point system (default)
 
 - `radiation`: radiation component. Default: `Radiation()`.
++ `radiation`: radiation component. Default: `nothing`.
 - `freshwater_density`: reference density of freshwater. Default: `default_freshwater_density`.
 - `atmosphere_ocean_fluxes`: flux formulation for atmosphere-ocean interface. Default: `SimilarityTheoryFluxes()`.
 - `atmosphere_sea_ice_fluxes`: flux formulation for atmosphere-sea ice interface. Default: `SimilarityTheoryFluxes()`.
@@ -294,8 +357,9 @@ Keyword Arguments
 - `gravitational_acceleration`: gravitational acceleration. Default: `default_gravitational_acceleration`.
 """
 function ComponentInterfaces(atmosphere, ocean, sea_ice=nothing;
+                             radiation = nothing,
+                             land = nothing,
                              exchange_grid = exchange_grid(atmosphere, ocean, sea_ice),
-                             radiation = Radiation(),
                              freshwater_density = default_freshwater_density,
                              atmosphere_ocean_fluxes = SimilarityTheoryFluxes(eltype(exchange_grid)),
                              atmosphere_sea_ice_fluxes = atmosphere_sea_ice_similarity_theory(eltype(exchange_grid)),
@@ -335,7 +399,7 @@ function ComponentInterfaces(atmosphere, ocean, sea_ice=nothing;
         sea_ice_properties = (reference_density  = sea_ice_reference_density,
                               heat_capacity      = sea_ice_heat_capacity,
                               freshwater_density = freshwater_density,
-                              liquidus           = sea_ice.model.ice_thermodynamics.phase_transitions.liquidus,
+                              liquidus           = sea_ice.model.phase_transitions.liquidus,
                               temperature_units  = sea_ice_temperature_units)
     else
         sea_ice_properties = nothing
@@ -345,7 +409,6 @@ function ComponentInterfaces(atmosphere, ocean, sea_ice=nothing;
     ao_interface = atmosphere_ocean_interface(exchange_grid,
                                               atmosphere,
                                               ocean,
-                                              radiation,
                                               atmosphere_ocean_fluxes,
                                               atmosphere_ocean_interface_temperature,
                                               atmosphere_ocean_velocity_difference,
@@ -353,10 +416,9 @@ function ComponentInterfaces(atmosphere, ocean, sea_ice=nothing;
 
     io_interface = sea_ice_ocean_interface(exchange_grid, sea_ice, ocean, sea_ice_ocean_heat_flux)
 
-    ai_interface = atmosphere_sea_ice_interface(exchange_grid, 
+    ai_interface = atmosphere_sea_ice_interface(exchange_grid,
                                                 atmosphere,
                                                 sea_ice,
-                                                radiation,
                                                 atmosphere_sea_ice_fluxes,
                                                 atmosphere_sea_ice_interface_temperature,
                                                 atmosphere_sea_ice_velocity_difference)
@@ -365,7 +427,7 @@ function ComponentInterfaces(atmosphere, ocean, sea_ice=nothing;
                     sea_ice    = net_fluxes(sea_ice),
                     atmosphere = net_fluxes(atmosphere))
 
-    exchanger = StateExchanger(exchange_grid, atmosphere, ocean, sea_ice)
+    exchanger = StateExchanger(exchange_grid, radiation, atmosphere, land, ocean, sea_ice)
 
     properties = (; gravitational_acceleration)
 

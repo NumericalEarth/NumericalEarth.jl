@@ -164,3 +164,67 @@ end
         @inbounds field[i, j, k] = ifelse(mask[i, j, k], field[i, j, k+1], field[i, j, k])
     end
 end
+
+"""
+    fill_gaps!(fts::FieldTimeSeries; max_gap=6)
+    fill_gaps!(data::AbstractArray; max_gap=6)
+    fill_gaps!(data::AbstractVector; max_gap=6)
+
+Fill NaN gaps along the time dimension using linear interpolation. For an
+`AbstractArray`, the last dimension is assumed to be time, and each spatial
+column is filled independently. For a `FieldTimeSeries`, `interior(fts)` is
+copied to the CPU, filled in place, and copied back.
+
+Gaps longer than `max_gap` points are left as NaN with a warning.
+"""
+function fill_gaps!(fts::FieldTimeSeries; max_gap=6)
+    data_cpu = Array(interior(fts))
+    fill_gaps!(data_cpu; max_gap)
+    copyto!(interior(fts), data_cpu)
+    return fts
+end
+
+function fill_gaps!(data::AbstractArray; max_gap=6)
+    spatial_inds = CartesianIndices(size(data)[1:end-1])
+    for I in spatial_inds
+        fill_gaps!(view(data, I, :); max_gap)
+    end
+    return data
+end
+
+function fill_gaps!(data::AbstractVector; max_gap=6)
+    N = length(data)
+    i = 1
+    while i <= N
+        if isnan(data[i])
+            gap_start = i
+            while i <= N && isnan(data[i])
+                i += 1
+            end
+            gap_end = i - 1
+            gap_length = gap_end - gap_start + 1
+
+            if gap_start == 1 || gap_end == N
+                # Edge gap: fill with nearest valid value
+                if gap_start == 1 && gap_end < N
+                    data[gap_start:gap_end] .= data[gap_end + 1]
+                elseif gap_end == N && gap_start > 1
+                    data[gap_start:gap_end] .= data[gap_start - 1]
+                end
+            elseif gap_length > max_gap
+                @warn "Large gap of $gap_length hours at indices $gap_start:$gap_end left unfilled"
+            else
+                # Linear interpolation
+                v0 = data[gap_start - 1]
+                v1 = data[gap_end + 1]
+                for j in gap_start:gap_end
+                    α = (j - gap_start + 1) / (gap_length + 1)
+                    data[j] = v0 + α * (v1 - v0)
+                end
+            end
+        else
+            i += 1
+        end
+    end
+    return data
+end
