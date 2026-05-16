@@ -4,7 +4,7 @@ using Statistics: mean
 using Oceananigans.AbstractOperations: KernelFunctionOperation
 using Oceananigans.Architectures: architecture
 using Oceananigans.BoundaryConditions: fill_halo_regions!
-using Oceananigans.Fields: Field, compute!, interior, instantiated_location
+using Oceananigans.Fields: AbstractField, Field, compute!, interior, instantiated_location
 using Oceananigans.Grids: AbstractVerticalCoordinate, AbstractUnderlyingGrid, Center, Face, Flat, topology
 using Oceananigans.OutputReaders: TimeSeriesInterpolation
 using Oceananigans.Utils: launch!
@@ -149,10 +149,10 @@ end
 @inline _znode_op(i, j, k, grid) =
     @inbounds grid.z.geopotential[i, j, k] / grid.z.gravitational_acceleration
 
-const PressureLevelField =
-    Field{<:Any, <:Any, <:Any, <:Any, <:PressureLevelGrid}
+const PressureLevelAbstractField =
+    AbstractField{<:Any, <:Any, <:Any, <:PressureLevelGrid}
 
-function znodes(f::PressureLevelField; kwargs...)
+function znodes(f::PressureLevelAbstractField; kwargs...)
     grid = f.grid
     TX, TY, _ = topology(grid)
     locs = instantiated_location(f)
