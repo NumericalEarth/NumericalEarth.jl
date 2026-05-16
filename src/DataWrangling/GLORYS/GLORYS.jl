@@ -5,11 +5,12 @@ export GLORYSStatic, GLORYSDaily, GLORYSMonthly
 using NCDatasets
 using Printf
 
-using Oceananigans.Fields: Center
-using NumericalEarth.DataWrangling: Metadata, Metadatum, metadata_path
 using Dates: DateTime, Day, Month
+using Oceananigans.Fields: Center
 
-import NumericalEarth.DataWrangling:
+using ..DataWrangling: Metadata, Metadatum, metadata_path
+
+import ..DataWrangling:
     all_dates,
     dataset_variable_name,
     dataset_location,

@@ -10,8 +10,9 @@ ConservativeRegridding = "8e50ac2c-eb48-49bc-a402-07c87b949343"
 CopernicusMarine = "cd43e856-93a3-40c8-bc9e-6146cdce14fa"
 Dates = "ade2ca70-3891-5945-98fb-dc099432e06a"
 Downloads = "f43a241f-c20a-4ad4-852c-f6b1247861c6"
-Glob = "c27321d9-0574-5035-807b-f59d2c89b15c"
+ExplicitImports = "7d51a73a-1435-4ff3-83d9-f097790105c7"
 GPUCompiler = "61eb1bfa-7361-4325-ad38-22787b887f55"
+Glob = "c27321d9-0574-5035-807b-f59d2c89b15c"
 JLD2 = "033835bb-8acc-5ee8-8aae-3f567f8a3819"
 KernelAbstractions = "63c18a36-062a-441e-b654-da1e3ab1ce7c"
 MPI = "da04e1cc-30fd-572f-bb4f-1f8673147195"
@@ -30,8 +31,8 @@ Thermodynamics = "b60c26fb-14c3-4610-9d3e-2d17fe7ff00c"
 WorldOceanAtlasTools = "04f20302-f1b9-11e8-29d9-7d841cb0a64a"
 
 [sources]
+ConservativeRegridding = {rev = "main", url = "https://github.com/JuliaGeo/ConservativeRegridding.jl"}
 NumericalEarth = {path = ".."}
-ConservativeRegridding = {url = "https://github.com/JuliaGeo/ConservativeRegridding.jl", rev = "main"}
 
 [compat]
 ArchGDAL = "0.10"
@@ -44,8 +45,9 @@ CondaPkg = "0.2.33"
 CopernicusMarine = "0.1.1"
 Dates = "<0.0.1, 1"
 Downloads = "<0.0.1, 1"
-Glob = "1"
+ExplicitImports = "1.15"
 GPUCompiler = "~1.9"
+Glob = "1"
 JLD2 = "0.4, 0.5, 0.6"
 KernelAbstractions = "0.9"
 MPI = "0.20"

@@ -3,7 +3,7 @@ module EN4
 export EN4Metadatum, EN4_immersed_grid, adjusted_EN4_tracers, initialize!
 export EN4Monthly
 
-using NumericalEarth
+using ...NumericalEarth
 using Oceananigans
 using NCDatasets
 using JLD2
@@ -24,16 +24,15 @@ using ..DataWrangling:
 
 using KernelAbstractions: @kernel, @index
 
-using Oceananigans.Architectures: architecture
-
 using Dates: year, month, day
+using Oceananigans.Architectures: architecture
 using Oceananigans.DistributedComputations: @root
 
 using Dates
 using Downloads
 import ZipFile
 
-import NumericalEarth.DataWrangling:
+import ..DataWrangling:
     all_dates,
     metadata_filename,
     download_dataset,

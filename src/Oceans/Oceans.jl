@@ -21,22 +21,22 @@ using SeawaterPolynomials
 using SeawaterPolynomials.TEOS10: TEOS10EquationOfState
 using KernelAbstractions: @kernel, @index
 
-using NumericalEarth.EarthSystemModels
+using ..EarthSystemModels
 
-import NumericalEarth.EarthSystemModels: interpolate_state!,
-                                     update_net_fluxes!,
-                                     reference_density,
-                                     heat_capacity,
-                                     exchange_grid,
-                                     temperature_units,
-                                     DegreesKelvin,
-                                     ocean_temperature,
-                                     ocean_salinity,
-                                     ocean_surface_temperature,
-                                     ocean_surface_salinity,
-                                     ocean_surface_velocities
+import ..EarthSystemModels: interpolate_state!,
+                            update_net_fluxes!,
+                            reference_density,
+                            heat_capacity,
+                            exchange_grid,
+                            temperature_units,
+                            DegreesKelvin,
+                            ocean_temperature,
+                            ocean_salinity,
+                            ocean_surface_temperature,
+                            ocean_surface_salinity,
+                            ocean_surface_velocities
 
-import NumericalEarth.EarthSystemModels.InterfaceComputations: ComponentExchanger, net_fluxes
+import ..EarthSystemModels.InterfaceComputations: ComponentExchanger, net_fluxes
 
 default_gravitational_acceleration = Oceananigans.defaults.gravitational_acceleration
 default_planet_rotation_rate = Oceananigans.defaults.planet_rotation_rate
@@ -92,14 +92,14 @@ end
 # We need, however, to interpolate the surface pressure to the ocean grid
 interpolate_state!(exchanger, grid, ::Simulation{<:HydrostaticFreeSurfaceModel}, coupled_model) = nothing
 
-function ComponentExchanger(ocean::Simulation{<:HydrostaticFreeSurfaceModel}, grid) 
+function ComponentExchanger(ocean::Simulation{<:HydrostaticFreeSurfaceModel}, grid)
     ocean_grid = ocean.model.grid
-    
+
     if ocean_grid == grid
-        u = ocean.model.velocities.u 
-        v = ocean.model.velocities.v 
-        T = ocean.model.tracers.T      
-        S = ocean.model.tracers.S      
+        u = ocean.model.velocities.u
+        v = ocean.model.velocities.v
+        T = ocean.model.tracers.T
+        S = ocean.model.tracers.S
     else
         u = Field{Center, Center, Nothing}(grid)
         v = Field{Center, Center, Nothing}(grid)
