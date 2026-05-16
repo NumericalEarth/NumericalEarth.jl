@@ -60,9 +60,9 @@ end
     ly = LargeYeagerTransferCoefficients()
     @test ly isa LargeYeagerTransferCoefficients{Float64}
     @test ly.reference_height ≈ 10.0
-    @test ly.stanton_stable ≈ 18.0
-    @test ly.stanton_unstable ≈ 32.7
-    @test ly.dalton ≈ 34.6
+    @test ly.stable_heat_transfer_coefficient ≈ 18.0
+    @test ly.unstable_heat_transfer_coefficient ≈ 32.7
+    @test ly.moisture_transfer_coefficient ≈ 34.6
     @test ly.neutral_drag_coefficient isa PolynomialNeutralDragCoefficient{Float64}
 
     ly32 = LargeYeagerTransferCoefficients(Float32)

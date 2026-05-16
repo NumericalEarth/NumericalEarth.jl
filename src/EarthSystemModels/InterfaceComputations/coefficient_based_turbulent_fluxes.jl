@@ -63,11 +63,12 @@ Base.summary(::PolynomialNeutralDragCoefficient{FT}) where FT =
 """
     LargeYeagerTransferCoefficients{FT, D, SF}
 
-Wind-dependent bulk transfer coefficients following the NCAR/Large & Yeager (2004, 2009)
+Wind-dependent bulk transfer coefficients following the NCAR/Large & Yeager (2004)
 algorithm as used in OMIP-2 simulations.
 
-Computes all three transfer coefficients (drag, Stanton, Dalton) from a neutral drag
-polynomial with stability corrections via Monin-Obukhov similarity functions.
+Computes all three transfer coefficients (drag, heat, moisture) from a neutral drag
+polynomial with stability corrections via Monin-Obukhov similarity functions. The empirical
+heat and moisture coefficients correspond to the Stanton and Dalton numbers of L&Y eq. 6c-6d.
 
 Pass as `transfer_coefficients` to `CoefficientBasedFluxes`:
 
@@ -77,16 +78,15 @@ Pass as `transfer_coefficients` to `CoefficientBasedFluxes`:
 
 References:
 - Large, W.G. & Yeager, S.G. (2004): NCAR/TN-460+STR
-- Large, W.G. & Yeager, S.G. (2009): Climate Dynamics, 33, 341-364
 """
 struct LargeYeagerTransferCoefficients{FT, D, SF}
     von_karman_constant :: FT
     neutral_drag_coefficient :: D
     stability_functions :: SF
     reference_height :: FT
-    stanton_stable :: FT
-    stanton_unstable :: FT
-    dalton :: FT
+    stable_heat_transfer_coefficient :: FT
+    unstable_heat_transfer_coefficient :: FT
+    moisture_transfer_coefficient :: FT
 end
 
 function LargeYeagerTransferCoefficients(FT = Oceananigans.defaults.FloatType;
@@ -94,17 +94,17 @@ function LargeYeagerTransferCoefficients(FT = Oceananigans.defaults.FloatType;
                                          neutral_drag_coefficient = PolynomialNeutralDragCoefficient(FT),
                                          stability_functions = large_yeager_stability_functions(FT),
                                          reference_height = 10,
-                                         stanton_stable = 18,
-                                         stanton_unstable = 32.7,
-                                         dalton = 34.6)
+                                         stable_heat_transfer_coefficient = 18,
+                                         unstable_heat_transfer_coefficient = 32.7,
+                                         moisture_transfer_coefficient = 34.6)
 
     return LargeYeagerTransferCoefficients(convert(FT, von_karman_constant),
                                                    neutral_drag_coefficient,
                                                    stability_functions,
                                                    convert(FT, reference_height),
-                                                   convert(FT, stanton_stable),
-                                                   convert(FT, stanton_unstable),
-                                                   convert(FT, dalton))
+                                                   convert(FT, stable_heat_transfer_coefficient),
+                                                   convert(FT, unstable_heat_transfer_coefficient),
+                                                   convert(FT, moisture_transfer_coefficient))
 end
 
 Adapt.adapt_structure(to, n::LargeYeagerTransferCoefficients) =
@@ -112,9 +112,9 @@ Adapt.adapt_structure(to, n::LargeYeagerTransferCoefficients) =
                                     Adapt.adapt(to, n.neutral_drag_coefficient),
                                     Adapt.adapt(to, n.stability_functions),
                                     Adapt.adapt(to, n.reference_height),
-                                    Adapt.adapt(to, n.stanton_stable),
-                                    Adapt.adapt(to, n.stanton_unstable),
-                                    Adapt.adapt(to, n.dalton))
+                                    Adapt.adapt(to, n.stable_heat_transfer_coefficient),
+                                    Adapt.adapt(to, n.unstable_heat_transfer_coefficient),
+                                    Adapt.adapt(to, n.moisture_transfer_coefficient))
 
 Base.summary(::LargeYeagerTransferCoefficients{FT}) where FT = "LargeYeagerTransferCoefficients{$FT}"
 
@@ -124,8 +124,8 @@ function Base.show(io::IO, n::LargeYeagerTransferCoefficients{FT}) where FT
     print(io, "├── neutral_drag_coefficient: ", summary(n.neutral_drag_coefficient), '\n')
     print(io, "├── stability_functions: ", summary(n.stability_functions), '\n')
     print(io, "├── reference_height: ", n.reference_height, '\n')
-    print(io, "├── stanton (stable/unstable): ", n.stanton_stable, " / ", n.stanton_unstable, '\n')
-    print(io, "└── dalton: ", n.dalton)
+    print(io, "├── heat transfer coefficient (stable/unstable): ", n.stable_heat_transfer_coefficient, " / ", n.unstable_heat_transfer_coefficient, '\n')
+    print(io, "└── moisture transfer coefficient: ", n.moisture_transfer_coefficient)
 end
 
 #####
@@ -321,10 +321,10 @@ end
     # Neutral transfer coefficients
     CdN = neutral_drag(UN10)
 
-    # Stability-dependent neutral Stanton/Dalton numbers (L&Y eq. 6c-6d)
+    # Stability-dependent neutral heat (Stanton) and moisture (Dalton) numbers (L&Y eq. 6c-6d)
     stable = ζ > 0
-    ChN = sqrt(CdN) / 1000 * ifelse(stable, ly.stanton_stable, ly.stanton_unstable)
-    CqN = sqrt(CdN) / 1000 * ly.dalton
+    ChN = sqrt(CdN) / 1000 * ifelse(stable, ly.stable_heat_transfer_coefficient, ly.unstable_heat_transfer_coefficient)
+    CqN = sqrt(CdN) / 1000 * ly.moisture_transfer_coefficient
 
     # Stability corrections (L&Y eq. 10a-10c)
     ξₘ = sqrt(CdN) / κ * (log(Δh / h₀) - ψₘ)
