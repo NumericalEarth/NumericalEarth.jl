@@ -15,7 +15,7 @@ using Oceananigans.DistributedComputations: child_architecture
 using Oceananigans.BoundaryConditions: fill_halo_regions!
 using Oceananigans.Grids: λnodes, φnodes, on_architecture
 using Oceananigans.Fields: interpolate!
-using Oceananigans.OutputReaders: Cyclical, TotallyInMemory, time_indices
+using Oceananigans.OutputReaders: Cyclical, TotallyInMemory, time_indices,
                                   AbstractInMemoryBackend, FlavorOfFTS
 
 using ...NumericalEarth
