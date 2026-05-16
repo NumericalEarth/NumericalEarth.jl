@@ -77,16 +77,11 @@ Oceananigans.set!(sea_ice.model, h=Metadatum(:sea_ice_thickness, dataset=ECCO4Mo
 # hooks so that NumericalEarth can compute inter-component fluxes.
 nlayers = 4
 spectral_grid = SpeedyWeather.SpectralGrid(; trunc=63, nlayers, Grid=FullClenshawGrid)
-atmosphere = atmosphere_simulation(spectral_grid, output=true)
+atmosphere = atmosphere_simulation(spectral_grid; output_interval=Hour(3))
 
 # The atmosphere model already includes some initial conditions as described above:
 
 atmosphere.model.initial_conditions
-
-# We use a three hour time-step:
-
-SpeedyWeather.set!(atmosphere.model.output, atmosphere.model, interval = Hour(3))
-nothing #hide
 
 # ## The coupled model
 # We are now ready to blend everything together.
@@ -118,20 +113,17 @@ sea_ice_fields = merge(sea_ice.model.velocities, sea_ice.model.dynamics.auxiliar
 ocean.output_writers[:free_surf] = JLD2Writer(ocean.model, (; η=ocean.model.free_surface.displacement);
                                               overwrite_existing=true,
                                               schedule=TimeInterval(3hours),
-                                              including = [:grid],
                                               filename="ocean_free_surface.jld2")
 
 ocean.output_writers[:surface] = JLD2Writer(ocean.model, outputs;
                                             overwrite_existing=true,
                                             schedule=TimeInterval(3hours),
-                                            including = [:grid],
                                             filename="ocean_surface_fields.jld2",
                                             indices=(:, :, grid.Nz))
 
 sea_ice.output_writers[:fields] = JLD2Writer(sea_ice.model, sea_ice_fields;
                                              overwrite_existing=true,
                                              schedule=TimeInterval(3hours),
-                                             including = [:grid],
                                              filename="sea_ice_fields.jld2")
 
 𝒬ᵀᵃᵒ = earth.model.interfaces.atmosphere_ocean_interface.fluxes.sensible_heat
@@ -149,7 +141,6 @@ fluxes = (; 𝒬ᵀᵃᵒ, 𝒬ᵛᵃᵒ, τˣᵃᵒ, τʸᵃᵒ, 𝒬ᵀᵃⁱ,
 ocean.output_writers[:fluxes] = JLD2Writer(earth.model.ocean.model, fluxes;
                                            overwrite_existing=true,
                                            schedule=TimeInterval(3hours),
-                                           including = [:grid],
                                            filename="intercomponent_fluxes.jld2")
 
 # We also add a callback function that prints out a helpful progress message while the simulation runs.
