@@ -1,4 +1,4 @@
-using NumericalEarth.Lands: PrescribedLand
+using ...Lands: PrescribedLand
 
 export JRA55PrescribedLand
 

@@ -34,7 +34,7 @@ using Oceananigans.OutputReaders: FieldTimeSeries, GPUAdaptedFieldTimeSeries
 using ClimaSeaIce: SeaIceModel
 using ClimaSeaIce.SeaIceThermodynamics: melting_temperature
 
-using NumericalEarth: stateindex
+using ..NumericalEarth: stateindex
 
 using KernelAbstractions: @kernel, @index
 using KernelAbstractions.Extras.LoopInfo: @unroll

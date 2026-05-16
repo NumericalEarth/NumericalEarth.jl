@@ -1,4 +1,4 @@
-using NumericalEarth.Atmospheres: interp_atmos_time_series
+using ..Atmospheres: interp_atmos_time_series
 
 """Interpolate the prescribed downwelling radiation onto the exchange grid."""
 function interpolate_state!(exchanger, grid, radiation::PrescribedRadiation, coupled_model)

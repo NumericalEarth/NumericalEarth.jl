@@ -21,9 +21,9 @@ using SeawaterPolynomials
 using SeawaterPolynomials.TEOS10: TEOS10EquationOfState
 using KernelAbstractions: @kernel, @index
 
-using NumericalEarth.EarthSystemModels
+using ..EarthSystemModels
 
-import NumericalEarth.EarthSystemModels: interpolate_state!,
+import ..EarthSystemModels: interpolate_state!,
                                      update_net_fluxes!,
                                      reference_density,
                                      heat_capacity,
@@ -36,7 +36,7 @@ import NumericalEarth.EarthSystemModels: interpolate_state!,
                                      ocean_surface_salinity,
                                      ocean_surface_velocities
 
-import NumericalEarth.EarthSystemModels.InterfaceComputations: ComponentExchanger, net_fluxes
+import ..EarthSystemModels.InterfaceComputations: ComponentExchanger, net_fluxes
 
 default_gravitational_acceleration = Oceananigans.defaults.gravitational_acceleration
 default_planet_rotation_rate = Oceananigans.defaults.planet_rotation_rate

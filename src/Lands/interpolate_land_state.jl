@@ -3,7 +3,7 @@ using Oceananigans.Fields: FractionalIndices, interpolate
 using Oceananigans.OutputReaders: TimeInterpolator
 using Oceananigans.OutputReaders: cpu_interpolating_time_indices
 
-using NumericalEarth.Atmospheres: interp_atmos_time_series
+using ..Atmospheres: interp_atmos_time_series
 
 """Interpolate the land state (freshwater fluxes) onto the exchange grid."""
 function interpolate_state!(exchanger, grid, land::PrescribedLand, coupled_model)
