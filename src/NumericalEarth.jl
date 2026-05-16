@@ -1,10 +1,37 @@
 module NumericalEarth
 
+function readme_for_module_docs(path::AbstractString)
+    readme = read(path, String)
+
+    # Julia docstrings use Base.Markdown, which escapes raw HTML.
+    # Translate the HTML-heavy README sections to plain Markdown on the fly.
+    readme = replace(readme, r"<!--.*?-->"s => "")
+    readme = replace(readme,
+                     r"<a\s+href=\"([^\"]+)\"[^>]*>\s*<img\s+src=\"([^\"]+)\"[^>]*?(?:alt=\"([^\"]*)\")?[^>]*>\s*</a>"s =>
+                     s"[![\3](\2)](\1)")
+    readme = replace(readme,
+                     r"<a\s+href=\"([^\"]+)\"[^>]*>([^<]+)</a>"s =>
+                     s"[\2](\1)")
+    readme = replace(readme, r"<h1[^>]*>\s*([^<]+?)\s*</h1>"s => s"# \1\n")
+    readme = replace(readme, r"<pre>\s*<code>"s => "```bibtex\n")
+    readme = replace(readme, r"</code>\s*</pre>"s => "\n```")
+    readme = replace(readme, r"<code>\s*(.*?)\s*</code>"s => s"```\n\1\n```")
+    readme = replace(readme, r"</?p\b[^>]*>" => "")
+    readme = replace(readme, r"</?strong\b[^>]*>" => "")
+    readme = replace(readme,
+                     r"<details>\s*<summary>\s*([^<]+?)\s*</summary>"s =>
+                     s"### \1\n")
+    readme = replace(readme, "</details>" => "")
+    readme = replace(readme, r"\n{3,}" => "\n\n")
+
+    return strip(readme)
+end
+
 # Use the README as the module docs
 @doc let
     path = joinpath(dirname(@__DIR__), "README.md")
     include_dependency(path)
-    read(path, String)
+    readme_for_module_docs(path)
 end NumericalEarth
 
 export
