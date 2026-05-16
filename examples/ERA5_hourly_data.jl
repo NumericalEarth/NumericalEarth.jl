@@ -354,7 +354,7 @@ nothing #hide
 
 # Calculate mean profiles and quantities of interest.
 
-z  = znodes(T_series[1].grid, nothing, nothing, Center())
+z  = znodes(T_series.grid, nothing, nothing, Center())
 Nz = length(z)
 p_levs  = sort(selected_levels, rev=true) ./ hPa   # Pa → hPa, from bottom-to-top
 
