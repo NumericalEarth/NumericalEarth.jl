@@ -59,11 +59,12 @@ function initialize_atmospheric_state!(simulation::SpeedyWeather.Simulation)
 end
 
 """
-    atmosphere_simulation(spectral_grid::SpeedyWeather.SpectralGrid; output=false)
+    atmosphere_simulation(spectral_grid::SpeedyWeather.SpectralGrid; output_interval=nothing)
 
 Return an atmosphere simulation using `SpeedyWeather.PrimitiveWetModel` on `spectral_grid`.
+Output is written when `output_interval` is provided.
 """
-function atmosphere_simulation(spectral_grid::SpeedyWeather.SpectralGrid; output=false)
+function atmosphere_simulation(spectral_grid::SpeedyWeather.SpectralGrid; output_interval=nothing)
     # Surface fluxes
     humidity_flux_ocean = SpeedyWeather.PrescribedOceanHumidityFlux(spectral_grid)
     humidity_flux_land = SpeedyWeather.SurfaceLandHumidityFlux(spectral_grid)
@@ -81,6 +82,9 @@ function atmosphere_simulation(spectral_grid::SpeedyWeather.SpectralGrid; output
         ocean = SpeedyWeather.PrescribedOcean(),
         sea_ice = nothing # provided by ClimaSeaIce
     )
+
+    output = !isnothing(output_interval)
+    output && (atmosphere_model.output.interval = output_interval)
 
     # Construct the simulation
     atmosphere = SpeedyWeather.initialize!(atmosphere_model)
