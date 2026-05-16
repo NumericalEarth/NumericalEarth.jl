@@ -14,11 +14,11 @@ using Scratch
 using Downloads
 using Thermodynamics: q_vap_from_RH, Liquid
 
-using NumericalEarth.DataWrangling: download_progress
-using NumericalEarth.Atmospheres: PrescribedAtmosphere, PrescribedPrecipitationFlux, AtmosphereThermodynamicsParameters
-using NumericalEarth.Oceans: reference_density, heat_capacity
+using ..DataWrangling: DownloadProgress
+using ...Atmospheres: PrescribedAtmosphere, PrescribedPrecipitationFlux, AtmosphereThermodynamicsParameters
+using ...Oceans: reference_density, heat_capacity
 
-using NumericalEarth.DataWrangling:
+using ..DataWrangling:
     Metadata,
     Metadatum,
     metadata_path,
@@ -35,7 +35,7 @@ using NumericalEarth.DataWrangling:
     Millibar,
     MillimetersPerHour
 
-import NumericalEarth.DataWrangling:
+import ..DataWrangling:
     default_download_directory,
     all_dates,
     metadata_epoch,
@@ -73,7 +73,7 @@ function download_ospapa_file(dir=download_OSPapa_cache)
     if !isfile(filepath)
         url = OSPAPA_S3_URL * OSPAPA_FILENAME
         @info "Downloading Ocean Station Papa data from AWS S3..."
-        Downloads.download(url, filepath; progress=download_progress)
+        Downloads.download(url, filepath; progress=DownloadProgress())
     end
     return filepath
 end

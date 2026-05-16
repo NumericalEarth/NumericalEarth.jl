@@ -9,7 +9,7 @@ fluxes (one `InterfaceRadiationFlux` per surface) are populated by the
 is `nothing` until the radiation is paired with an `EarthSystemModel` (which
 allocates the per-surface buffers on the exchange grid).
 """
-mutable struct PrescribedRadiation{G, T, FT, SW, LW, S, TI}
+mutable struct PrescribedRadiation{G, T, FT, SW, LW, S, TI} <: AbstractPrescribedComponent
     grid :: G
     clock :: Clock{T}
     downwelling_shortwave :: SW

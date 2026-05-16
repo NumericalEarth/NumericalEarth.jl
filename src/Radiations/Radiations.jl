@@ -22,23 +22,24 @@ using Oceananigans.Utils: launch!
 using Adapt
 using KernelAbstractions: @kernel, @index
 
-import NumericalEarth: stateindex
-using NumericalEarth.EarthSystemModels.InterfaceComputations: interface_kernel_parameters
+using ..EarthSystemModels: AbstractPrescribedComponent
+using ..EarthSystemModels.InterfaceComputations: interface_kernel_parameters
 
-import Oceananigans.TimeSteppers: time_step!, update_state!
 import Oceananigans.Architectures: on_architecture
+import Oceananigans.TimeSteppers: time_step!, update_state!
 
-import NumericalEarth.EarthSystemModels: interpolate_state!,
-                                         update_net_fluxes!,
-                                         apply_air_sea_radiative_fluxes!,
-                                         apply_air_sea_ice_radiative_fluxes!,
-                                         allocate_interface_fluxes!
+import ..NumericalEarth: stateindex
+import ..EarthSystemModels: interpolate_state!,
+                            update_net_fluxes!,
+                            apply_air_sea_radiative_fluxes!,
+                            apply_air_sea_ice_radiative_fluxes!,
+                            allocate_interface_fluxes!
 
-import NumericalEarth.EarthSystemModels.InterfaceComputations: ComponentExchanger,
-                                                                initialize!,
-                                                                kernel_radiation_properties,
-                                                                air_sea_interface_radiation_state,
-                                                                air_sea_ice_interface_radiation_state
+import ..EarthSystemModels.InterfaceComputations: ComponentExchanger,
+                                                  initialize!,
+                                                  kernel_radiation_properties,
+                                                  air_sea_interface_radiation_state,
+                                                  air_sea_ice_interface_radiation_state
 
 include("surface_radiation_properties.jl")
 include("interface_radiation_flux.jl")

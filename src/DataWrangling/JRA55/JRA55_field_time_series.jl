@@ -1,5 +1,5 @@
-using NumericalEarth.DataWrangling: all_dates, native_times
-using NumericalEarth.DataWrangling: compute_native_date_range
+using ..DataWrangling: all_dates, native_times
+using ..DataWrangling: compute_native_date_range
 using Oceananigans.Grids: AbstractGrid
 using Oceananigans.OutputReaders: PartlyInMemory
 using Adapt
