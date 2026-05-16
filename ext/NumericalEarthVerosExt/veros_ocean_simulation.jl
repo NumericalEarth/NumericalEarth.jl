@@ -1,6 +1,7 @@
 using CondaPkg
 
 using Oceananigans.Grids: topology
+using Oceananigans.Simulations
 using OffsetArrays: OffsetArray
 
 import Oceananigans.Fields: set!
@@ -29,6 +30,10 @@ Returns a NamedTuple containing package information if successful.
 Also patches Veros's signal handling to work with PythonCall.
 """
 function install_veros()
+    # Veros uses hdf5 < 2. The shenanigans in the following two lines 
+    # are necessary to allow loading compatible hdf5 and h5py.
+    CondaPkg.add("hdf5"; version="<2", channel="conda-forge")
+    CondaPkg.add("h5py"; version=">=3.0,<3.13", channel="conda-forge")
     CondaPkg.add_pip("veros", version="@ https://github.com/team-ocean/veros/archive/refs/heads/main.zip")
     cli = CondaPkg.which("veros")
     
@@ -298,4 +303,10 @@ function set!(ocean::VerosOceanSimulation, v, x; path = :variables)
     else
         error("path must be either :variable or :settings.")
     end
+end
+
+function Simulations.reset_clock!(ocean::VerosOceanSimulation)
+    set!(ocean, "time", 0)
+    set!(ocean, "itt",  Int32(0))
+    return ocean
 end

@@ -37,7 +37,7 @@ WindDependentWaveFormulation(FT=Oceananigans.defaults.FloatType; Umax = 19, ℂ�
                                  convert(FT, ℂ₂))
 
 gravity_wave_parameter(α::Number, args...) = α
-gravity_wave_parameter(α::WindDependentWaveFormulation, ΔU) = α.ℂ₁ * min(ΔU, α.Umax) + α.ℂ₂
+gravity_wave_parameter(α::WindDependentWaveFormulation, ΔU) = max(zero(ΔU), α.ℂ₁ * min(ΔU, α.Umax) + α.ℂ₂)
 
 """
     ScalarRoughnessLength(FT = Float64;

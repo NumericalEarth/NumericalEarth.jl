@@ -1,15 +1,16 @@
 module EarthSystemModels
 
+abstract type AbstractPrescribedComponent end
+
 export
     EarthSystemModel,
+    AbstractPrescribedComponent,
     OceanOnlyModel,
     OceanSeaIceModel,
     AtmosphereOceanModel,
     SimilarityTheoryFluxes,
     CoefficientBasedFluxes,
     FreezingLimitedOceanTemperature,
-    Radiation,
-    LatitudeDependentAlbedo,
     SkinTemperature,
     BulkTemperature,
     compute_atmosphere_ocean_fluxes!,
@@ -23,15 +24,14 @@ export
 
 using Oceananigans
 using Oceananigans.Operators
-using Oceananigans.Utils: launch!, KernelParameters
-using Oceananigans.Units: Time
 using Oceananigans.Architectures: architecture
 using Oceananigans.BoundaryConditions: fill_halo_regions!, BoundaryCondition
-using Oceananigans.Grids: architecture
 using Oceananigans.Fields: ZeroField
-using Oceananigans.TimeSteppers: tick!
 using Oceananigans.Models: AbstractModel
 using Oceananigans.OutputReaders: FieldTimeSeries, GPUAdaptedFieldTimeSeries
+using Oceananigans.TimeSteppers: tick!
+using Oceananigans.Units: Time
+using Oceananigans.Utils: launch!, KernelParameters
 
 using ClimaSeaIce: SeaIceModel
 using ClimaSeaIce.SeaIceThermodynamics: melting_temperature
@@ -49,8 +49,8 @@ import Oceananigans.Architectures: architecture
 import Oceananigans.Fields: set!
 import Oceananigans.Models: NaNChecker, default_nan_checker
 import Oceananigans.OutputWriters: default_included_properties
-import Oceananigans.Simulations: timestepper, reset!, initialize!, iteration
-import Oceananigans.TimeSteppers: time_step!, update_state!, time, reconcile_state!
+import Oceananigans.Simulations: timestepper, reset_clock!, initialize!, iteration
+import Oceananigans.TimeSteppers: time_step!, reset!, update_state!, time, reconcile_state!
 import Oceananigans.Utils: prettytime
 
 include("components.jl")
@@ -80,10 +80,10 @@ const NoOceanInterface  = ComponentInterfaces{<:Nothing, <:AtmosphereInterface, 
 const NoAtmosInterface  = ComponentInterfaces{<:Nothing, <:Nothing, <:SeaIceOceanInterface}
 const NoInterface       = ComponentInterfaces{<:Nothing, <:Nothing, <:Nothing}
 
-const NoSeaIceInterfaceModel = EarthSystemModel{I, A, O, <:NoSeaIceInterface} where {I, A, O}
-const NoAtmosInterfaceModel  = EarthSystemModel{I, A, O, <:NoAtmosInterface} where {I, A, O}
-const NoOceanInterfaceModel  = EarthSystemModel{I, A, O, <:NoOceanInterface} where {I, A, O}
-const NoInterfaceModel       = EarthSystemModel{I, A, O, <:NoInterface} where {I, A, O}
+const NoSeaIceInterfaceModel = EarthSystemModel{R, A, L, I, O, <:NoSeaIceInterface} where {R, A, L, I, O}
+const NoAtmosInterfaceModel  = EarthSystemModel{R, A, L, I, O, <:NoAtmosInterface}  where {R, A, L, I, O}
+const NoOceanInterfaceModel  = EarthSystemModel{R, A, L, I, O, <:NoOceanInterface}  where {R, A, L, I, O}
+const NoInterfaceModel       = EarthSystemModel{R, A, L, I, O, <:NoInterface}       where {R, A, L, I, O}
 
 InterfaceComputations.compute_atmosphere_sea_ice_fluxes!(::NoSeaIceInterfaceModel) = nothing
 InterfaceComputations.compute_sea_ice_ocean_fluxes!(::NoSeaIceInterfaceModel) = nothing
