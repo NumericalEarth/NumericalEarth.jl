@@ -290,10 +290,7 @@ qʳ_col_meta   = Metadata(:specific_rain_water_content;         dataset = ds_pl,
 qᶜ_col_series = FieldTimeSeries(qᶜ_col_meta)
 qʳ_col_series = FieldTimeSeries(qʳ_col_meta)
 
-# Pressure-level grids carry a per-column vertical coordinate, so `znodes`
-# returns a lazy Oceananigans operation. Materialize it before passing heights
-# to plotting functions.
-pressure_level_heights(field) = Array(interior(compute!(Field(znodes(field)))))
+pressure_level_heights(field) = Field(znodes(field))
 
 z_col  = vec(pressure_level_heights(qᶜ_col_series[1]))
 Nz_col = length(z_col)
