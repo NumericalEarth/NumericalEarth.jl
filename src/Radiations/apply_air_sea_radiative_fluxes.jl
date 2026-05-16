@@ -13,9 +13,9 @@ into `coupled_model.radiation.interface_fluxes.ocean`.
 
 When `coupled_model.radiation === nothing`, this is a no-op.
 """
-apply_air_sea_radiative_fluxes!(::EarthSystemModel{<:Nothing}) = nothing
+EarthSystemModels.apply_air_sea_radiative_fluxes!(::EarthSystemModel{<:Nothing}) = nothing
 
-function apply_air_sea_radiative_fluxes!(coupled_model::EarthSystemModel)
+function EarthSystemModels.apply_air_sea_radiative_fluxes!(coupled_model::EarthSystemModel)
     ocean = coupled_model.ocean
     isnothing(ocean) && return nothing
 

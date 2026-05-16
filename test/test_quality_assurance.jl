@@ -32,7 +32,7 @@ using ExplicitImports: ExplicitImports
         NumericalEarth.InitialConditions,
         # NumericalEarth.Lands,
         # NumericalEarth.Oceans,
-        # NumericalEarth.Radiations,
+        NumericalEarth.Radiations,
         NumericalEarth.SeaIces,
     ]
 

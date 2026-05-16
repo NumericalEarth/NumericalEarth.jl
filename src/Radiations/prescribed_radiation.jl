@@ -110,7 +110,7 @@ function PrescribedRadiation(grid, times = [zero(eltype(grid))]; kwargs...)
     return PrescribedRadiation(sw, lw; kwargs...)
 end
 
-@inline function update_state!(radiation::PrescribedRadiation)
+@inline function Oceananigans.TimeSteppers.update_state!(radiation::PrescribedRadiation)
     time = Time(radiation.clock.time)
     ftses = extract_field_time_series(radiation)
 
@@ -120,14 +120,14 @@ end
     return nothing
 end
 
-@inline function time_step!(radiation::PrescribedRadiation, Δt)
+@inline function Oceananigans.TimeSteppers.time_step!(radiation::PrescribedRadiation, Δt)
     tick!(radiation.clock, Δt)
     update_state!(radiation)
     return nothing
 end
 
 # Prescribed radiation has no internal state to update from net fluxes.
-update_net_fluxes!(coupled_model, ::PrescribedRadiation) = nothing
+EarthSystemModels.update_net_fluxes!(coupled_model, ::PrescribedRadiation) = nothing
 
 """
     allocate_interface_fluxes!(radiation, exchange_grid, surfaces)
@@ -135,7 +135,7 @@ update_net_fluxes!(coupled_model, ::PrescribedRadiation) = nothing
 Populate `radiation.interface_fluxes` with one `InterfaceRadiationFlux`
 per surface present in the model.
 """
-function allocate_interface_fluxes!(radiation::PrescribedRadiation, exchange_grid, surfaces)
+function EarthSystemModels.allocate_interface_fluxes!(radiation::PrescribedRadiation, exchange_grid, surfaces)
     pairs = (surface => InterfaceRadiationFlux(exchange_grid) for surface in surfaces)
     radiation.interface_fluxes = NamedTuple(pairs)
     return nothing
