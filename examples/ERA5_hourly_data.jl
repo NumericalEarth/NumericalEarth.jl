@@ -121,17 +121,15 @@ set!(v_wind,   v_wind_meta)
 stokes_speed = sqrt(u_stokes^2 + v_stokes^2)
 wind_speed   = sqrt(u_wind^2   + v_wind^2)
 
-lon, lat, _ = nodes(u_stokes)
-
 fig = Figure(size=(1200, 600))
 
 ax1 = Axis(fig[1, 1]; title="Stokes drift speed (m/s)",
-           xlabel="Longitude", ylabel="Latitude")
+           xlabel="Longitude (°)", ylabel="Latitude (°)")
 ax2 = Axis(fig[1, 2]; title="10-m wind speed (m/s)",
-           xlabel="Longitude", ylabel="Latitude")
+           xlabel="Longitude (°)", ylabel="Latitude (°)")
 
-hm1 = heatmap!(ax1, lon, lat, stokes_speed; colormap=:speed, colorrange=(0, 0.3))
-hm2 = heatmap!(ax2, lon, lat, wind_speed;   colormap=:speed, colorrange=(0, 20))
+hm1 = heatmap!(ax1, stokes_speed; colormap=:speed, colorrange=(0, 0.3))
+hm2 = heatmap!(ax2, wind_speed;   colormap=:speed, colorrange=(0, 20))
 
 Colorbar(fig[2, 1], hm1; vertical=false, width=Relative(0.8), label="m/s")
 Colorbar(fig[2, 2], hm2; vertical=false, width=Relative(0.8), label="m/s")
@@ -290,9 +288,7 @@ qʳ_col_meta   = Metadata(:specific_rain_water_content;         dataset = ds_pl,
 qᶜ_col_series = FieldTimeSeries(qᶜ_col_meta)
 qʳ_col_series = FieldTimeSeries(qʳ_col_meta)
 
-pressure_level_heights(field) = Field(znodes(field))
-
-z_col  = vec(pressure_level_heights(qᶜ_col_series[1]))
+z_col  = znodes(qᶜ_col_series[1])
 Nz_col = length(z_col)
 
 qᶜ_data = zeros(Nt, Nz_col)
@@ -356,9 +352,8 @@ nothing #hide
 
 # Calculate mean profiles and quantities of interest.
 
-z_nodes = pressure_level_heights(T_series[1])
-z       = vec(mean(z_nodes, dims=(1, 2)))
-Nz      = length(z)
+z  = znodes(T_series[1])
+Nz = length(z)
 p_levs  = sort(selected_levels, rev=true) ./ hPa   # Pa → hPa, from bottom-to-top
 
 function horizontal_mean_profiles(series)
@@ -436,22 +431,20 @@ target_grid = LatitudeLongitudeGrid(CPU();
                                     halo = (2, 2, 1),
                                     topology = (Bounded, Bounded, Bounded))
 
-q2d   = CenterField(target_grid)
-q_obs = Observable(interior(q2d)[:, :, 1])
+q2d = CenterField(target_grid)
+q_obs = Observable(q2d)
 
 fig5 = Figure(size = (700, 600))
-ax5  = Axis(fig5[1, 1]; xlabel = "Longitude [°]", ylabel = "Latitude [°]",
+ax5  = Axis(fig5[1, 1]; xlabel = "Longitude (°)", ylabel = "Latitude (°)",
             aspect = DataAspect(), title = "ERA5 qᵛ at z = 800 m")
-hm = heatmap!(ax5, λnodes(target_grid, Center(), Center(), Center()),
-                   φnodes(target_grid, Center(), Center(), Center()),
-                   q_obs; colormap = :viridis)
+hm = heatmap!(ax5, q_obs; colormap = :viridis)
 Colorbar(fig5[1, 2], hm; label = "qᵛ [kg kg⁻¹]")
 
 ## Each frame: load qᵛ on its per-column-z grid (one CDS file per hour, cached
 ## after the first run), interpolate down onto the 2-D target at z = 800 m.
 record(fig5, "rico_qv_animation.mp4", dates; framerate = 12) do date
     set!(q2d, Metadatum(:specific_humidity; dataset = ds_pl, date, region = rico_region))
-    q_obs[] = interior(q2d)[:, :, 1]
+    q_obs[] = q2d
     ax5.title = "ERA5 qᵛ at 800 m — " * Dates.format(date, dateformat"u d HH:MM") * " UTC"
 end
 
