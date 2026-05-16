@@ -16,7 +16,7 @@ using Thermodynamics: q_vap_from_RH, Liquid
 
 using ..DataWrangling: DownloadProgress
 using ...Atmospheres: PrescribedAtmosphere, PrescribedPrecipitationFlux, AtmosphereThermodynamicsParameters
-using ...Oceans: reference_density, heat_capacity
+using ...EarthSystemModels: reference_density, heat_capacity
 
 using ..DataWrangling:
     Metadata,

@@ -7,9 +7,8 @@ using ClimaSeaIce.Rheologies: ElastoViscoPlasticRheology
 
 using Oceananigans.TimeSteppers: SplitRungeKuttaTimeStepper
 
-using ..EarthSystemModels: ocean_surface_salinity, ocean_surface_velocities
+using ..EarthSystemModels: ocean_surface_salinity, ocean_surface_velocities, reference_density
 using ..EarthSystemModels.InterfaceComputations: InterfaceComputations, SkinTemperature
-using ..Oceans: reference_density
 
 default_rotation_rate = Oceananigans.defaults.planet_rotation_rate
 
