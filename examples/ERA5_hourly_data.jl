@@ -290,7 +290,12 @@ qʳ_col_meta   = Metadata(:specific_rain_water_content;         dataset = ds_pl,
 qᶜ_col_series = FieldTimeSeries(qᶜ_col_meta)
 qʳ_col_series = FieldTimeSeries(qʳ_col_meta)
 
-z_col  = znodes(qᶜ_col_series[1])
+# Pressure-level grids carry a per-column vertical coordinate, so `znodes`
+# returns a lazy Oceananigans operation. Materialize it before passing heights
+# to plotting functions.
+pressure_level_heights(field) = Array(interior(compute!(Field(znodes(field)))))
+
+z_col  = vec(pressure_level_heights(qᶜ_col_series[1]))
 Nz_col = length(z_col)
 
 qᶜ_data = zeros(Nt, Nz_col)
@@ -354,7 +359,8 @@ nothing #hide
 
 # Calculate mean profiles and quantities of interest.
 
-z       = znodes(T_series[1])
+z_nodes = pressure_level_heights(T_series[1])
+z       = vec(mean(z_nodes, dims=(1, 2)))
 Nz      = length(z)
 p_levs  = sort(selected_levels, rev=true) ./ hPa   # Pa → hPa, from bottom-to-top
 
