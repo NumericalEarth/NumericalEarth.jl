@@ -84,7 +84,7 @@ function atmosphere_simulation(spectral_grid::SpeedyWeather.SpectralGrid; output
     )
 
     output = !isnothing(output_interval)
-    output && (atmosphere_model.output.interval = output_interval)
+    output && (atmosphere_model.output.interval = SpeedyWeather.Second(output_interval))
 
     # Construct the simulation
     atmosphere = SpeedyWeather.initialize!(atmosphere_model)
