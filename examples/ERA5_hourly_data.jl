@@ -288,9 +288,8 @@ qʳ_col_meta   = Metadata(:specific_rain_water_content;         dataset = ds_pl,
 qᶜ_col_series = FieldTimeSeries(qᶜ_col_meta)
 qʳ_col_series = FieldTimeSeries(qʳ_col_meta)
 
-# `znodes` on a `PressureLevelGrid`-backed `Field` is the per-cell 3-D
-# height Field. Collapse to a 1-D axis by averaging over (i, j).
-z_col  = vec(mean(znodes(qᶜ_col_series[1]), dims=(1, 2)))
+# Grid-level `znodes` gives the column-mean height profile directly.
+z_col  = znodes(qᶜ_col_series[1].grid, Center(), Center(), Center())
 Nz_col = length(z_col)
 
 qᶜ_data = zeros(Nt, Nz_col)
@@ -354,9 +353,7 @@ nothing #hide
 
 # Calculate mean profiles and quantities of interest.
 
-# Column-mean z axis: collapse the per-cell 3-D `znodes` Field over the
-# horizontal dimensions of the RICO box.
-z  = vec(mean(znodes(T_series[1]), dims=(1, 2)))
+z  = znodes(T_series[1].grid, Center(), Center(), Center())
 Nz = length(z)
 p_levs  = sort(selected_levels, rev=true) ./ hPa   # Pa → hPa, from bottom-to-top
 
