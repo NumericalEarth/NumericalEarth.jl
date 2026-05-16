@@ -13,6 +13,7 @@ using Oceananigans.Utils
 using Adapt
 using Thermodynamics.Parameters: AbstractThermodynamicsParameters
 using KernelAbstractions: @kernel, @index
+using ..EarthSystemModels: AbstractPrescribedComponent
 using ..EarthSystemModels.InterfaceComputations: interface_kernel_parameters
 
 import Oceananigans.TimeSteppers: time_step!, update_state!
