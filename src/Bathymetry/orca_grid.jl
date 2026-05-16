@@ -3,7 +3,7 @@ using Oceananigans.BoundaryConditions: fill_halo_regions!, FPivotZipperBoundaryC
 using Oceananigans.Fields: set!, convert_to_0_360
 using Oceananigans.Grids: RightFaceFolded, generate_coordinate
 using Oceananigans.ImmersedBoundaries: ImmersedBoundaryGrid, GridFittedBottom
-using Oceananigans.OrthogonalSphericalShellGrids: Tripolar, continue_south!
+using Oceananigans.OrthogonalSphericalShellGrids: Tripolar
 using CubedSphere.SphericalGeometry: lat_lon_to_cartesian, cartesian_to_lat_lon,
     spherical_area_quadrilateral
 using Distances: haversine
