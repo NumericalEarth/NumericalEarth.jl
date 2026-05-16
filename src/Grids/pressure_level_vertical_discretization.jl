@@ -5,6 +5,7 @@ using Oceananigans.AbstractOperations: KernelFunctionOperation
 using Oceananigans.Architectures: architecture
 using Oceananigans.BoundaryConditions: fill_halo_regions!
 using Oceananigans.Fields: AbstractField, Field, compute!, interior, instantiated_location
+using Oceananigans.OutputReaders: FieldTimeSeries
 using Oceananigans.Grids: AbstractVerticalCoordinate, AbstractUnderlyingGrid, Center, Face, Flat, topology
 using Oceananigans.OutputReaders: TimeSeriesInterpolation
 using Oceananigans.Utils: launch!
@@ -149,10 +150,21 @@ end
 @inline _znode_op(i, j, k, grid) =
     @inbounds grid.z.geopotential[i, j, k] / grid.z.gravitational_acceleration
 
-const PressureLevelAbstractField =
-    AbstractField{<:Any, <:Any, <:Any, <:PressureLevelGrid}
+# Grid sits at different type-parameter positions in `Field` and
+# `FieldTimeSeries`, so we list both concrete types and dispatch each through
+# the same `_znodes_for_plg` helper. `Field` is more specific than the
+# Oceananigans `znodes(::Field)` default; `FieldTimeSeries` is more specific
+# than `znodes(::AbstractField)`. Both wins on dispatch.
+const PressureLevelField =
+    Field{<:Any, <:Any, <:Any, <:Any, <:PressureLevelGrid}
 
-function znodes(f::PressureLevelAbstractField; kwargs...)
+const PressureLevelFieldTimeSeries =
+    FieldTimeSeries{<:Any, <:Any, <:Any, <:Any, <:Any, <:Any, <:Any, <:PressureLevelGrid}
+
+znodes(f::PressureLevelField; kwargs...)            = _znodes_for_plg(f; kwargs...)
+znodes(fts::PressureLevelFieldTimeSeries; kwargs...) = _znodes_for_plg(fts; kwargs...)
+
+function _znodes_for_plg(f; kwargs...)
     grid = f.grid
     TX, TY, _ = topology(grid)
     locs = instantiated_location(f)
