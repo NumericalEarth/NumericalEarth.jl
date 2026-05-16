@@ -288,9 +288,9 @@ qʳ_col_meta   = Metadata(:specific_rain_water_content;         dataset = ds_pl,
 qᶜ_col_series = FieldTimeSeries(qᶜ_col_meta)
 qʳ_col_series = FieldTimeSeries(qʳ_col_meta)
 
-# `znodes` on a `PressureLevelGrid`-backed `Field` returns a 3-D `Field` of
-# per-cell heights. For the column case (1×1×Nz) `vec` flattens to a 1-D axis.
-z_col  = vec(znodes(qᶜ_col_series[1]))
+# `znodes` on a `PressureLevelGrid`-backed `Field` is the per-cell 3-D
+# height Field. Collapse to a 1-D axis by averaging over (i, j).
+z_col  = vec(mean(znodes(qᶜ_col_series[1]), dims=(1, 2)))
 Nz_col = length(z_col)
 
 qᶜ_data = zeros(Nt, Nz_col)

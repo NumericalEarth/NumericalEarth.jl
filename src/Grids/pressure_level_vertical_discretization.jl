@@ -28,9 +28,8 @@ Two `znodes` paths:
   `Vector{Float64}` of length `Nz` — the representative axis that plot
   recipes, `Lz`, and length consumers expect when only the grid is in hand.
 - `znodes(field)` returns a 3-D `Field` of per-cell heights, matching the
-  field's location. Collapse to a 1-D axis with `vec(znodes(field))` for
-  column (1×1×Nz) fields, or `vec(mean(znodes(field), dims=(1, 2)))`
-  otherwise.
+  field's location. Collapse to a 1-D axis with
+  `vec(mean(znodes(field), dims=(1, 2)))`.
 
 `geopotential` (units m²/s²) is a 3-D `Field` or a `TimeSeriesInterpolation`
 over a `FieldTimeSeries`. The former gives a static z-coordinate; the latter
