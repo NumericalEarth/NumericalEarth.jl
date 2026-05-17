@@ -1,7 +1,6 @@
+using ClimaSeaIce.SeaIceThermodynamics: melting_temperature
 using Oceananigans
 using Oceananigans.TimeSteppers: Clock
-using Oceananigans: SeawaterBuoyancy
-using ClimaSeaIce.SeaIceThermodynamics: melting_temperature
 using KernelAbstractions: @kernel, @index
 
 mutable struct EarthSystemModel{R, A, L, I, O, F, C, Arch} <: AbstractModel{Nothing, Arch}
@@ -50,7 +49,7 @@ end
 
 architecture(model::ESM)           = model.architecture
 Base.eltype(model::ESM)            = Base.eltype(model.interfaces.exchanger.grid)
-prettytime(model::ESM)             = prettytime(model.clock.time)
+Oceananigans.Utils.prettytime(model::ESM) = prettytime(model.clock.time)
 iteration(model::ESM)              = model.clock.iteration
 timestepper(::ESM)                 = nothing
 default_included_properties(::ESM) = tuple()

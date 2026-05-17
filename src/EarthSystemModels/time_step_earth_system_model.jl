@@ -1,11 +1,8 @@
-using .InterfaceComputations:
-    compute_atmosphere_ocean_fluxes!,
-    compute_sea_ice_ocean_fluxes!
-
+using ClimaSeaIce: SeaIceThermodynamics
 using Oceananigans.TimeSteppers: maybe_prepare_first_time_step!
-using ClimaSeaIce: SeaIceModel, SeaIceThermodynamics
-using Oceananigans.Grids: φnode
-using Printf
+using Printf: Printf
+
+using .InterfaceComputations: compute_atmosphere_ocean_fluxes!, compute_sea_ice_ocean_fluxes!
 
 # Hooks called from `update_state!` to apply radiative contributions on top of
 # turbulent fluxes. Concrete radiation types overload these (no-op when
