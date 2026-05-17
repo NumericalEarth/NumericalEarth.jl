@@ -8,16 +8,15 @@ export ECCO2DarwinMonthly, ECCO4DarwinMonthly
 export retrieve_data
 
 using Oceananigans
-using NumericalEarth
+using Oceananigans.DistributedComputations: @root
 using NCDatasets
 using Dates
 using Adapt
 using Scratch
 using Downloads
 
-using Oceananigans.DistributedComputations: @root
-
-using NumericalEarth.DataWrangling:
+using ...NumericalEarth
+using ..DataWrangling:
     netrc_downloader,
     NearestNeighborInpainting,
     BoundingBox,
@@ -39,7 +38,7 @@ using KernelAbstractions: @kernel, @index
 
 using Dates: year, month, day
 
-import NumericalEarth.DataWrangling:
+import ..DataWrangling:
     default_download_directory,
     all_dates,
     metadata_filename,
@@ -214,7 +213,7 @@ ECCO2_dataset_variable_names = Dict(
     :net_heat_flux         => "oceQnet",
 )
 
-ECCO_location = Dict( 
+ECCO_location = Dict(
     :temperature            => (Center, Center, Center),
     :salinity               => (Center, Center, Center),
     :u_velocity             => (Face,   Center, Center),

@@ -28,6 +28,7 @@ if filter_tests!(testsuite, args)
     delete!(testsuite, "test_glorys_downloading")
     delete!(testsuite, "test_distributed_utils")
     delete!(testsuite, "test_reactant")
+    delete!(testsuite, "test_veros") # Veros seems to have introduce a pypi conflict issue; temporarily removing from CI
 
     if gpu_test
         # Remove CPU-only tests when testing on GPUs

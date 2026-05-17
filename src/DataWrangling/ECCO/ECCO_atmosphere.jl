@@ -1,6 +1,7 @@
-using NumericalEarth.DataWrangling: DatasetBackend
 using Oceananigans.OutputReaders
-using NumericalEarth.Atmospheres: PrescribedAtmosphere, PrescribedPrecipitationFlux
+
+using ..DataWrangling: DatasetBackend
+using ...Atmospheres: PrescribedAtmosphere, PrescribedPrecipitationFlux
 
 """
     ECCOPrescribedAtmosphere([architecture = CPU()];

@@ -1,7 +1,8 @@
 using Oceananigans.Grids: inactive_node
-using NumericalEarth.EarthSystemModels: EarthSystemModel
-using NumericalEarth.EarthSystemModels.InterfaceComputations: convert_to_kelvin, sea_ice_concentration
-using NumericalEarth.Oceans: shortwave_radiative_forcing, get_radiative_forcing
+
+using ..EarthSystemModels: EarthSystemModel
+using ..EarthSystemModels.InterfaceComputations: kernel_radiation_properties, convert_to_kelvin, sea_ice_concentration
+using ..Oceans: shortwave_radiative_forcing, get_radiative_forcing
 
 """
     apply_air_sea_radiative_fluxes!(coupled_model)
@@ -12,9 +13,9 @@ into `coupled_model.radiation.interface_fluxes.ocean`.
 
 When `coupled_model.radiation === nothing`, this is a no-op.
 """
-apply_air_sea_radiative_fluxes!(::EarthSystemModel{<:Nothing}) = nothing
+EarthSystemModels.apply_air_sea_radiative_fluxes!(::EarthSystemModel{<:Nothing}) = nothing
 
-function apply_air_sea_radiative_fluxes!(coupled_model::EarthSystemModel)
+function EarthSystemModels.apply_air_sea_radiative_fluxes!(coupled_model::EarthSystemModel)
     ocean = coupled_model.ocean
     isnothing(ocean) && return nothing
 

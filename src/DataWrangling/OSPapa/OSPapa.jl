@@ -14,11 +14,11 @@ using Scratch
 using Downloads
 using Thermodynamics: q_vap_from_RH, Liquid
 
-using NumericalEarth.DataWrangling: DownloadProgress
-using NumericalEarth.Atmospheres: PrescribedAtmosphere, PrescribedPrecipitationFlux, AtmosphereThermodynamicsParameters
-using NumericalEarth.Oceans: reference_density, heat_capacity
+using ..DataWrangling: DownloadProgress
+using ...Atmospheres: PrescribedAtmosphere, PrescribedPrecipitationFlux, AtmosphereThermodynamicsParameters
+using ...EarthSystemModels: reference_density, heat_capacity
 
-using NumericalEarth.DataWrangling:
+using ..DataWrangling:
     Metadata,
     Metadatum,
     metadata_path,
@@ -35,7 +35,7 @@ using NumericalEarth.DataWrangling:
     Millibar,
     MillimetersPerHour
 
-import NumericalEarth.DataWrangling:
+import ..DataWrangling:
     default_download_directory,
     all_dates,
     metadata_epoch,

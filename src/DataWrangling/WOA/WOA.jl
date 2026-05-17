@@ -2,7 +2,7 @@ module WOA
 
 export WOAClimatology, WOAAnnual, WOAMonthly
 
-using NumericalEarth
+using ...NumericalEarth
 using Oceananigans
 using NCDatasets
 using JLD2
@@ -20,7 +20,7 @@ using ..DataWrangling:
 
 using Oceananigans.DistributedComputations: @root
 
-import NumericalEarth.DataWrangling:
+import ..DataWrangling:
     all_dates,
     first_date,
     last_date,

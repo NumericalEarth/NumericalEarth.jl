@@ -1,9 +1,9 @@
 using NCDatasets
 using JLD2
-using NumericalEarth.InitialConditions: interpolate!
 using Statistics: median
 using Oceananigans.Grids: λnodes, φnodes, Periodic, Bounded
 using Oceananigans.Architectures: on_architecture
+using Oceananigans.Fields: fractional_x_index, fractional_y_index, interpolate!
 
 import Oceananigans.Fields: set!, Field, location
 
