@@ -28,7 +28,7 @@ using ExplicitImports: ExplicitImports
         # NumericalEarth.DataWrangling.WOA,
         NumericalEarth.Diagnostics,
         # NumericalEarth.EarthSystemModels,
-        # NumericalEarth.EarthSystemModels.InterfaceComputations,
+        NumericalEarth.EarthSystemModels.InterfaceComputations,
         NumericalEarth.InitialConditions,
         NumericalEarth.Lands,
         NumericalEarth.Oceans,

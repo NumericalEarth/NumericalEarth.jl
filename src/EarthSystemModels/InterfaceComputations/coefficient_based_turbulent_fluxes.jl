@@ -1,4 +1,4 @@
-using DocStringExtensions
+using DocStringExtensions: DocStringExtensions, TYPEDFIELDS
 
 """
     struct CoefficientBasedFluxes{CD, CH, CQ, S}

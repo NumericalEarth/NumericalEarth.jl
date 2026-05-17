@@ -1,9 +1,9 @@
 module InterfaceComputations
 
-using Oceananigans
-using Oceananigans.Fields: AbstractField
+using Adapt: Adapt, adapt
+using Oceananigans: Oceananigans
+using Oceananigans.Fields: AbstractField, Field, Face, Center
 using Oceananigans.Utils: KernelParameters
-using Adapt
 
 export
     ComponentInterfaces,
@@ -29,9 +29,6 @@ using ..EarthSystemModels: default_gravitational_acceleration,
                            thermodynamics_parameters,
                            surface_layer_height,
                            boundary_layer_height
-
-import ...NumericalEarth: stateindex
-import Oceananigans.Simulations: initialize!
 
 #####
 ##### Functions extended by component models

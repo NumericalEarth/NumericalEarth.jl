@@ -1,4 +1,3 @@
-using Oceananigans.Operators: intrinsic_vector
 using Oceananigans.Grids: inactive_node
 using Oceananigans.Fields: ZeroField
 
