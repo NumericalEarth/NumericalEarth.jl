@@ -60,6 +60,7 @@ export
     TabulatedAlbedo,
     SimilarityTheoryFluxes,
     CoefficientBasedFluxes,
+    SimilarityScales,
     MomentumRoughnessLength,
     ScalarRoughnessLength,
     ComponentInterfaces,
