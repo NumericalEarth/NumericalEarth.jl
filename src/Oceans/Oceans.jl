@@ -15,7 +15,7 @@ using Oceananigans.Grids: inactive_node, Face, Center, xspacings, yspacings, Rec
 using Oceananigans.ImmersedBoundaries: ImmersedBoundaryGrid, ImmersedBoundaryCondition
 using Oceananigans.Models.HydrostaticFreeSurfaceModels: HydrostaticFreeSurfaceModel
 using Oceananigans.Models.HydrostaticFreeSurfaceModels.SplitExplicitFreeSurfaces: SplitExplicitFreeSurface
-using Oceananigans.OrthogonalSphericalShellGrids: TripolarGrid
+using Oceananigans.OrthogonalSphericalShellGrids: OrthogonalSphericalShellGrids, TripolarGrid
 using Oceananigans.Operators: ℑxyᶠᶜᵃ, ℑxyᶜᶠᵃ
 using Oceananigans.Simulations: Simulation
 using Oceananigans.TurbulenceClosures.TKEBasedVerticalDiffusivities: CATKEVerticalDiffusivity,
