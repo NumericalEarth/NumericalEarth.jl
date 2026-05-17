@@ -1,4 +1,3 @@
-using Adapt: Adapt
 using Oceananigans.Utils: prettysummary
 using Thermodynamics: Thermodynamics as AtmosphericThermodynamics
 

@@ -1,5 +1,5 @@
-using Oceananigans.Grids: inactive_node
 using Oceananigans.Fields: ZeroField
+using Oceananigans.Grids: inactive_node
 
 function compute_atmosphere_sea_ice_fluxes!(coupled_model)
     exchanger = coupled_model.interfaces.exchanger
