@@ -2,8 +2,7 @@ using Adapt: Adapt
 using Printf: Printf
 using Oceananigans.Utils: prettysummary
 using Statistics: Statistics
-
-import Thermodynamics as AtmosphericThermodynamics
+using Thermodynamics: Thermodynamics as AtmosphericThermodynamics
 
 #####
 ##### Bulk turbulent fluxes based on similarity theory

@@ -26,21 +26,15 @@ using ClimaSeaIce.SeaIceThermodynamics: melting_temperature
 using KernelAbstractions: @kernel, @index
 using Thermodynamics: Thermodynamics as AtmosphericThermodynamics
 
-using Oceananigans: Oceananigans, AbstractModel
-using Oceananigans.Operators: Operators
+using Oceananigans: Oceananigans, AbstractModel, initialize!,
+                    prognostic_state, restore_prognostic_state!
 using Oceananigans.Architectures: architecture
+using Oceananigans.Diagnostics: NaNChecker
 using Oceananigans.Fields: ZeroField
-using Oceananigans.TimeSteppers: tick!
+using Oceananigans.Simulations: reset_clock!, Simulation
+using Oceananigans.TimeSteppers: Clock, reset!, tick!, time_step!,
+                                 update_state!, reconcile_state!
 using Oceananigans.Utils: launch!, prettytime
-
-# Simulations interface
-import Oceananigans: initialize!
-import Oceananigans: fields, prognostic_fields, prognostic_state, restore_prognostic_state!
-import Oceananigans.Architectures: architecture
-import Oceananigans.Diagnostics: NaNChecker, default_nan_checker
-import Oceananigans.OutputWriters: default_included_properties
-import Oceananigans.Simulations: Simulation, timestepper, reset_clock!, iteration
-import Oceananigans.TimeSteppers: time_step!, reset!, update_state!, reconcile_state!
 
 include("components.jl")
 

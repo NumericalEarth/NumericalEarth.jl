@@ -10,7 +10,7 @@ using .InterfaceComputations: compute_atmosphere_ocean_fluxes!, compute_sea_ice_
 apply_air_sea_radiative_fluxes!(::Any) = nothing
 apply_air_sea_ice_radiative_fluxes!(::Any) = nothing
 
-function time_step!(coupled_model::EarthSystemModel, Δt; callbacks=[])
+function Oceananigans.TimeSteppers.time_step!(coupled_model::EarthSystemModel, Δt; callbacks=[])
     maybe_prepare_first_time_step!(coupled_model, callbacks)
 
     radiation  = coupled_model.radiation
@@ -34,7 +34,7 @@ function time_step!(coupled_model::EarthSystemModel, Δt; callbacks=[])
     return nothing
 end
 
-function update_state!(coupled_model::EarthSystemModel, callbacks=[])
+function Oceananigans.TimeSteppers.update_state!(coupled_model::EarthSystemModel, callbacks=[])
 
     radiation  = coupled_model.radiation
     atmosphere = coupled_model.atmosphere
