@@ -1,6 +1,5 @@
 using ClimaSeaIce: SeaIceThermodynamics
 using Oceananigans.TimeSteppers: maybe_prepare_first_time_step!
-using Printf: Printf
 
 using .InterfaceComputations: compute_atmosphere_ocean_fluxes!, compute_sea_ice_ocean_fluxes!
 

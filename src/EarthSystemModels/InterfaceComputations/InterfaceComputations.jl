@@ -6,6 +6,7 @@ using Oceananigans.Fields: AbstractField, Field, Face, Center
 using Oceananigans.Grids: Flat
 using Oceananigans.Simulations: Simulation
 using Oceananigans.Utils: KernelParameters
+using Thermodynamics: Thermodynamics
 
 export
     ComponentInterfaces,

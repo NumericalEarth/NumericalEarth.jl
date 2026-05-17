@@ -1,8 +1,4 @@
 using KernelAbstractions: @kernel, @index
-using OffsetArrays: OffsetArrays
-using StaticArrays: StaticArrays
-using Thermodynamics: Thermodynamics
-
 using Oceananigans: initialize!
 using Oceananigans.Architectures: architecture
 using Oceananigans.Units: Time

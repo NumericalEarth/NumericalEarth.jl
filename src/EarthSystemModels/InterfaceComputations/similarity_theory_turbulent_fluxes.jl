@@ -1,7 +1,5 @@
 using Adapt: Adapt
-using Printf: Printf
 using Oceananigans.Utils: prettysummary
-using Statistics: Statistics
 using Thermodynamics: Thermodynamics as AtmosphericThermodynamics
 
 #####

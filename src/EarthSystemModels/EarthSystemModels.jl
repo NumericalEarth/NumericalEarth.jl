@@ -32,8 +32,7 @@ using Oceananigans.Architectures: architecture
 using Oceananigans.Diagnostics: NaNChecker
 using Oceananigans.Fields: ZeroField
 using Oceananigans.Simulations: reset_clock!, Simulation
-using Oceananigans.TimeSteppers: Clock, reset!, tick!, time_step!,
-                                 update_state!, reconcile_state!
+using Oceananigans.TimeSteppers: Clock, reset!, tick!, time_step!, update_state!, reconcile_state!
 using Oceananigans.Utils: launch!, prettytime
 
 include("components.jl")
