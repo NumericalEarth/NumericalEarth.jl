@@ -6,9 +6,9 @@ using Adapt: Adapt, adapt
 using KernelAbstractions: @kernel, @index
 using Oceananigans: Oceananigans
 using Oceananigans.Advection: WENO, WENOVectorInvariant
-using Oceananigans.BuoyancyFormulations: SeawaterBuoyancy
 using Oceananigans.BoundaryConditions: DefaultBoundaryCondition, DiscreteBoundaryFunction,
                                        FieldBoundaryConditions, FluxBoundaryCondition, getbc
+using Oceananigans.BuoyancyFormulations: SeawaterBuoyancy
 using Oceananigans.Coriolis: HydrostaticSphericalCoriolis
 using Oceananigans.Fields: Field, CenterField, set!, interior
 using Oceananigans.Grids: inactive_node, Face, Center, xspacings, yspacings, RectilinearGrid
