@@ -3,6 +3,8 @@ module InterfaceComputations
 using Adapt: Adapt, adapt
 using Oceananigans: Oceananigans
 using Oceananigans.Fields: AbstractField, Field, Face, Center
+using Oceananigans.Grids: Flat
+using Oceananigans.Simulations: Simulation
 using Oceananigans.Utils: KernelParameters
 
 export
