@@ -1,7 +1,7 @@
-using DocStringExtensions: DocStringExtensions, TYPEDFIELDS
+using DocStringExtensions: TYPEDFIELDS, TYPEDEF
 
 """
-    struct CoefficientBasedFluxes{CD, CH, CQ, S}
+$(TYPEDEF)
 
 A structure for computing turbulent fluxes using constant bulk transfer coefficients.
 
