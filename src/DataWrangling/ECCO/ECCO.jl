@@ -8,16 +8,15 @@ export ECCO2DarwinMonthly, ECCO4DarwinMonthly
 export retrieve_data
 
 using Oceananigans
-using NumericalEarth
+using Oceananigans.DistributedComputations: @root
 using NCDatasets
 using Dates
 using Adapt
 using Scratch
 using Downloads
 
-using Oceananigans.DistributedComputations: @root
-
-using NumericalEarth.DataWrangling:
+using ...NumericalEarth
+using ..DataWrangling:
     netrc_downloader,
     NearestNeighborInpainting,
     BoundingBox,
@@ -27,7 +26,7 @@ using NumericalEarth.DataWrangling:
     MicromolePerLiter,
     Metadata,
     Metadatum,
-    download_progress,
+    DownloadProgress,
     InverseSign,
     native_grid,
     location,
@@ -40,7 +39,7 @@ using KernelAbstractions: @kernel, @index
 
 using Dates: year, month, day
 
-import NumericalEarth.DataWrangling:
+import ..DataWrangling:
     default_download_directory,
     all_dates,
     metadata_filename,
@@ -206,7 +205,7 @@ ECCO2_dataset_variable_names = Dict(
     :net_heat_flux         => "oceQnet",
 )
 
-ECCO_location = Dict( 
+ECCO_location = Dict(
     :temperature            => (Center, Center, Center),
     :salinity               => (Center, Center, Center),
     :u_velocity             => (Face,   Center, Center),
@@ -337,7 +336,7 @@ function download_dataset(metadata::ECCOMetadata)
                     throw(ArgumentError(msg))
                 end
                 @info "Downloading ECCO data: $(metadatum.name) in $(metadatum.dir)..."
-                Downloads.download(fileurl, filepath; downloader, progress=download_progress)
+                Downloads.download(fileurl, filepath; downloader, progress=DownloadProgress())
             end
         end
     end

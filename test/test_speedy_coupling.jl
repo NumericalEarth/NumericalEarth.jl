@@ -1,5 +1,6 @@
-using SpeedyWeather, XESMF
+using SpeedyWeather
 using NumericalEarth
+using ConservativeRegridding
 using Oceananigans
 using Dates
 using Test
