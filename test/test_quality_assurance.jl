@@ -30,9 +30,9 @@ using ExplicitImports: ExplicitImports
         # NumericalEarth.EarthSystemModels,
         # NumericalEarth.EarthSystemModels.InterfaceComputations,
         NumericalEarth.InitialConditions,
-        # NumericalEarth.Lands,
-        # NumericalEarth.Oceans,
-        # NumericalEarth.Radiations,
+        NumericalEarth.Lands,
+        NumericalEarth.Oceans,
+        NumericalEarth.Radiations,
         NumericalEarth.SeaIces,
     ]
 
