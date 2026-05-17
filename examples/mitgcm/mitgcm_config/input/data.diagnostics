@@ -1,0 +1,5 @@
+# Diagnostics disabled for shared-library mode (timestep may change at runtime)
+ &DIAGNOSTICS_LIST
+ &
+ &DIAG_STATIS_PARMS
+ &
