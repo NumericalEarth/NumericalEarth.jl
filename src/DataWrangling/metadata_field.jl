@@ -229,7 +229,7 @@ function Field(metadata::Metadatum, arch=CPU();
     return field
 end
 
-function set!(target_field::Field, metadata::Metadatum; kw...)
+function Oceananigans.Fields.set!(target_field::Field, metadata::Metadatum; kw...)
     grid = target_field.grid
     arch = child_architecture(grid)
     meta_field = Field(metadata, arch; kw...)

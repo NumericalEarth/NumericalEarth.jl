@@ -22,14 +22,12 @@ using Oceananigans.Architectures: CPU, architecture, on_architecture, child_arch
 using Oceananigans.BoundaryConditions: fill_halo_regions!, FieldBoundaryConditions
 using Oceananigans.DistributedComputations: DistributedComputations, @root
 using Oceananigans.Grids: Center, Flat, Bounded, LatitudeLongitudeGrid, RectilinearGrid
-using Oceananigans.Fields: interpolate, interior
+using Oceananigans.Fields: interpolate, interior, set!
 using Oceananigans.Grids: node
 using Oceananigans.OutputReaders: OnDisk
 using Oceananigans.Utils: launch!, prettytime
 using NCDatasets: Dataset
 using Printf: Printf, @sprintf
-
-import Oceananigans.Fields: set!
 
 #####
 ##### Downloading utilities
