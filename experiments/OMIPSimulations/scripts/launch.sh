@@ -281,8 +281,13 @@ hpcx_load
 
 # CUDA-aware MPI knobs (HPC-X / UCX).
 export OMPI_MCA_opal_cuda_support=1
-export UCX_TLS=cuda_copy,cuda_ipc,gdr_copy,rc,sm,self
-export UCX_MEMTYPE_CACHE=n          # avoids known UCX+CUDA bug
+export UCX_TLS=cuda_copy,cuda_ipc,rc,sm,self
+export UCX_MEMTYPE_CACHE=n          # avoids known UCX+CUDA memtype-cache bug
+# Disable UCX's CUDA IPC handle cache. With JULIA_CUDA_MEMORY_POOL=none, CUDA
+# recycles freed virtual addresses quickly; UCX's IPC cache then serves a
+# stale handle and cuIpcOpenMemHandle() fails with "resource already mapped"
+# on the importing rank a few minutes into the run (cuda_ipc_cache.c:212).
+export UCX_CUDA_IPC_CACHE=n
 
 # Disable CUDA's stream-ordered memory pool. With the pool, allocations come
 # from a per-stream cache whose layout depends on prior call order, so two
