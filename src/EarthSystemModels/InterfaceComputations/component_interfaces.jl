@@ -264,7 +264,7 @@ with_sea_ice_ocean_salinity_flux(::Nothing, ::DefaultSeaIceOceanSalinityFlux) = 
 function with_sea_ice_ocean_salinity_flux(flux::IceBathHeatFlux, salinity_flux)
     return IceBathHeatFlux(flux.heat_transfer_coefficient,
                            flux.friction_velocity;
-                           sea_ice_thermodynamics = flux.sea_ice_thermodynamics,
+                           sea_ice_heat_flux = flux.sea_ice_heat_flux,
                            salinity_flux)
 end
 
@@ -274,7 +274,7 @@ function with_sea_ice_ocean_salinity_flux(flux::ThreeEquationHeatFlux, salinity_
                                  flux.heat_transfer_coefficient,
                                  flux.salt_transfer_coefficient,
                                  flux.friction_velocity;
-                                 sea_ice_thermodynamics = flux.sea_ice_thermodynamics,
+                                 sea_ice_heat_flux = flux.sea_ice_heat_flux,
                                  salinity_flux)
 end
 
@@ -353,7 +353,7 @@ Keyword Arguments
   - `IceBathHeatFlux()`: bulk heat flux with interface at freezing point
   - `ThreeEquationHeatFlux()`: coupled heat/salt/freezing point system (default)
   - `nothing`: omit sea ice-ocean thermodynamic exchange
-- `sea_ice_ocean_heat_flux`: deprecated alias for `sea_ice_ocean_thermodynamics`
+- `sea_ice_ocean_heat_flux`: alias for `sea_ice_ocean_thermodynamics`
 - `sea_ice_ocean_salinity_flux`: formulation for sea ice-ocean salinity flux. Set to `nothing` to omit it.
 
 - `radiation`: radiation component. Default: `nothing`.

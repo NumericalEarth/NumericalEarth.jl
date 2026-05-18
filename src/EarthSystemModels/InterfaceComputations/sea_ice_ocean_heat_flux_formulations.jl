@@ -45,13 +45,12 @@ References
 struct IceBathHeatFlux{FT, U, H, S}
     heat_transfer_coefficient :: FT
     friction_velocity :: U
-    sea_ice_thermodynamics :: H
+    sea_ice_heat_flux :: H
     salinity_flux :: S
 end
 
 IceBathHeatFlux(heat_transfer_coefficient, friction_velocity;
-                sea_ice_thermodynamics = true,
-                sea_ice_heat_flux = sea_ice_thermodynamics,
+                sea_ice_heat_flux = true,
                 salinity_flux = true) =
     IceBathHeatFlux(heat_transfer_coefficient,
                     friction_velocity,
@@ -70,13 +69,11 @@ Keyword Arguments
 
 - `heat_transfer_coefficient`: turbulent heat exchange coefficient. Default: 0.006.
 - `friction_velocity`: friction velocity value or formulation. Default: 0.02.
-- `sea_ice_thermodynamics`: set to `nothing` to omit sea ice-ocean thermodynamic exchange. Default: `true`.
 """
 function IceBathHeatFlux(FT::DataType = Oceananigans.defaults.FloatType;
                          heat_transfer_coefficient = convert(FT, 0.006),
                          friction_velocity = convert(FT, 0.02),
-                         sea_ice_thermodynamics = true,
-                         sea_ice_heat_flux = sea_ice_thermodynamics,
+                         sea_ice_heat_flux = true,
                          salinity_flux = true)
     return IceBathHeatFlux(convert(FT, heat_transfer_coefficient),
                            friction_velocity;
@@ -139,7 +136,7 @@ struct ThreeEquationHeatFlux{F, T, FT, U, H, S}
     heat_transfer_coefficient :: FT
     salt_transfer_coefficient :: FT
     friction_velocity :: U
-    sea_ice_thermodynamics :: H
+    sea_ice_heat_flux :: H
     salinity_flux :: S
 end
 
@@ -149,7 +146,7 @@ Adapt.adapt_structure(to, f::ThreeEquationHeatFlux) =
                           f.heat_transfer_coefficient,
                           f.salt_transfer_coefficient,
                           Adapt.adapt(to, f.friction_velocity),
-                          Adapt.adapt(to, f.sea_ice_thermodynamics),
+                          Adapt.adapt(to, f.sea_ice_heat_flux),
                           Adapt.adapt(to, f.salinity_flux))
 
 """
@@ -168,14 +165,12 @@ Keyword Arguments
 - `heat_transfer_coefficient`: turbulent heat exchange coefficient ``\\alpha_h``. Default: 0.0095.
 - `salt_transfer_coefficient`: turbulent salt exchange coefficient ``\\alpha_s``. Default: ``\\alpha_h / 35 \\approx 0.000271``.
 - `friction_velocity`: friction velocity value or formulation. Default: 0.002.
-- `sea_ice_thermodynamics`: set to `nothing` to omit sea ice-ocean thermodynamic exchange. Default: `true`.
 """
 function ThreeEquationHeatFlux(FT::DataType = Oceananigans.defaults.FloatType;
                                heat_transfer_coefficient = 0.0095,
                                salt_transfer_coefficient = heat_transfer_coefficient / 35,
                                friction_velocity = convert(FT, 0.002),
-                               sea_ice_thermodynamics = true,
-                               sea_ice_heat_flux = sea_ice_thermodynamics,
+                               sea_ice_heat_flux = true,
                                salinity_flux = true)
     return ThreeEquationHeatFlux(nothing,
                                  nothing,
@@ -191,8 +186,7 @@ function ThreeEquationHeatFlux(conductive_flux,
                                heat_transfer_coefficient,
                                salt_transfer_coefficient,
                                friction_velocity;
-                               sea_ice_thermodynamics = true,
-                               sea_ice_heat_flux = sea_ice_thermodynamics,
+                               sea_ice_heat_flux = true,
                                salinity_flux = true)
     return ThreeEquationHeatFlux(conductive_flux,
                                  internal_temperature,
