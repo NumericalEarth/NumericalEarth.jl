@@ -349,9 +349,11 @@ Construct component interfaces for atmosphere-ocean-sea ice coupling.
 Keyword Arguments
 =================
 
-- `sea_ice_ocean_heat_flux`: formulation for sea ice-ocean heat flux. Options are:
+- `sea_ice_ocean_thermodynamics`: formulation for sea ice-ocean thermodynamics. Options are:
   - `IceBathHeatFlux()`: bulk heat flux with interface at freezing point
   - `ThreeEquationHeatFlux()`: coupled heat/salt/freezing point system (default)
+  - `nothing`: omit sea ice-ocean thermodynamic exchange
+- `sea_ice_ocean_heat_flux`: deprecated alias for `sea_ice_ocean_thermodynamics`
 - `sea_ice_ocean_salinity_flux`: formulation for sea ice-ocean salinity flux. Set to `nothing` to omit it.
 
 - `radiation`: radiation component. Default: `nothing`.
@@ -376,7 +378,8 @@ function ComponentInterfaces(atmosphere, ocean, sea_ice=nothing;
                              freshwater_density = default_freshwater_density,
                              atmosphere_ocean_fluxes = SimilarityTheoryFluxes(eltype(exchange_grid)),
                              atmosphere_sea_ice_fluxes = atmosphere_sea_ice_similarity_theory(eltype(exchange_grid)),
-                             sea_ice_ocean_heat_flux = ThreeEquationHeatFlux(sea_ice),
+                             sea_ice_ocean_thermodynamics = ThreeEquationHeatFlux(sea_ice),
+                             sea_ice_ocean_heat_flux = sea_ice_ocean_thermodynamics,
                              sea_ice_ocean_salinity_flux = default_sea_ice_ocean_salinity_flux,
                              atmosphere_ocean_interface_temperature = BulkTemperature(),
                              atmosphere_ocean_velocity_difference = RelativeVelocity(),
