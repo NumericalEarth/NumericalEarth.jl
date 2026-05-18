@@ -24,13 +24,15 @@ using Oceananigans.BoundaryConditions: fill_halo_regions!, FieldBoundaryConditio
 using Oceananigans.DistributedComputations: DistributedComputations, @root
 using Oceananigans.Grids: AbstractGrid, Center, Flat, Bounded,
                           LatitudeLongitudeGrid, RectilinearGrid
-using Oceananigans.Fields: interpolate, interpolate!, interior, set!
+using Oceananigans.Fields: Fields, Field, interpolate, interpolate!, interior, set!
 using Oceananigans.Grids: node
 using Oceananigans.OutputReaders: OnDisk, AbstractInMemoryBackend, Cyclical,
                                   FieldTimeSeries, FlavorOfFTS, time_indices
 using Oceananigans.Utils: launch!, prettytime
 using NCDatasets: Dataset
 using Printf: Printf, @sprintf
+
+using ..NumericalEarth: NumericalEarth
 
 #####
 ##### Downloading utilities

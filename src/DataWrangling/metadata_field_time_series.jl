@@ -121,7 +121,7 @@ function Oceananigans.OutputReaders.FieldTimeSeries(metadata::Metadata, grid::Ab
     return fts
 end
 
-function Oceananigans.OutputReadersFieldTimeSeries(variable_name::Symbol;
+function Oceananigans.OutputReaders.FieldTimeSeries(variable_name::Symbol;
                          dataset, dir,
                          architecture = CPU(),
                          start_date = first_date(dataset, variable_name),
