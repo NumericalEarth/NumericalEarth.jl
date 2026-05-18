@@ -257,11 +257,11 @@ to break the recursive `Field(ϕ_meta) → native_grid → z_interfaces` chain. 
 static z values are arbitrary placeholders; only their shape matters.
 """
 function per_column_geopotential_discretization(metadata::ERA5PressureMetadata)
-    plain_z = standard_atmosphere_z_interfaces(metadata.dataset.pressure_levels)
-    plain_ds = _with_z(metadata.dataset, plain_z)
+    static_z = standard_atmosphere_z_interfaces(metadata.dataset.pressure_levels)
+    static_ds = _with_z(metadata.dataset, static_z)
     sl_ds = _matching_single_level_dataset(metadata.dataset)
 
-    ϕ_meta = Metadata(:geopotential; dataset=plain_ds,
+    ϕ_meta = Metadata(:geopotential; dataset=static_ds,
                       dates=metadata.dates, region=metadata.region, dir=metadata.dir)
     ϕ_sl_meta = Metadata(:geopotential_height; dataset=sl_ds,
                          dates=metadata.dates, region=metadata.region, dir=metadata.dir)
