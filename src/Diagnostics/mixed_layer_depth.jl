@@ -100,26 +100,29 @@ const f = Face()
     w  = clamp((zʳ - z⁻) / max(z⁺ - z⁻, eps(FT)), zero(FT), one(FT))
     bN = b⁻ + w * (b⁺ - b⁻)
 
-    # Descend from just below the bracket until Δb crosses Δb★.
+    # Descend from `k⁻` (first cell below `zʳ`) until Δb crosses Δb★.
+    # `kc` tracks the cell where Δb was last evaluated
     Δb       = zero(FT)
     mixed    = true
-    nk       = 1
-    k        = max(k⁻ - nk, 1)
+    
+    nk  = 0
+    k   = k⁻
+    kc  = k⁻
     inactive = inactive_cell(i, j, k, grid)
 
     while !inactive & mixed & (nk < k⁻)
         Δb = bN - @inbounds(b[i, j, k])
-        mixed    = Δb < Δb★
-        nk      += 1
-        k        = max(k⁻ - nk, 1)
+        kc     = k
+        mixed  = Δb < Δb★
+        nk    += 1
+        k      = max(k⁻ - nk, 1)
         inactive = inactive_cell(i, j, k, grid)
     end
 
-    # Linearly interpolate the crossing depth,
-    zk = znode(i, j, k, grid, c, c, c)
+    # Linear interpolation between (zʳ, 0) and (z_{kc}, Δb).
+    zk = znode(i, j, kc, grid, c, c, c)
     Δz = zʳ - zk
     z★ = zk - Δz/Δb * (Δb★ - Δb)
-    # Special case when domain is one grid cell deep
     z★ = ifelse(Δb == 0, zʳ, z★)
 
     # Apply various criterion
