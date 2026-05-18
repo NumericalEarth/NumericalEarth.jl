@@ -5,8 +5,8 @@ import NumericalEarth
 import Oceananigans
 
 using KernelAbstractions: @kernel, @index
-using Oceananigans.BoundaryConditions: fill_halo_regions!, FluxBoundaryCondition, FieldBoundaryConditions
-using Oceananigans.Grids: architecture
+using Oceananigans.Architectures: architecture
+using Oceananigans.BoundaryConditions: FluxBoundaryCondition, FieldBoundaryConditions
 using Oceananigans.Utils: launch!
 
 import NumericalEarth.Atmospheres: atmosphere_simulation
@@ -18,7 +18,6 @@ import NumericalEarth.EarthSystemModels: thermodynamics_parameters,
 import NumericalEarth.EarthSystemModels.InterfaceComputations: ComponentExchanger, net_fluxes, computed_fluxes
 
 import Oceananigans.Advection: cell_advection_timescale
-import Oceananigans.TimeSteppers: time_step!
 
 include("breeze_atmosphere_interface.jl")
 include("breeze_atmosphere_simulation.jl")

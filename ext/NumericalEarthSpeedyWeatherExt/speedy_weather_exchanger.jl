@@ -3,13 +3,13 @@ using Oceananigans.BoundaryConditions
 using Oceananigans.Grids: architecture
 using Oceananigans.Utils: launch!
 using Oceananigans.Operators: intrinsic_vector
-using XESMF
+
+using ConservativeRegridding
+using ConservativeRegridding: Regridder
+import ConservativeRegridding: regrid!
 
 using NumericalEarth.EarthSystemModels: sea_ice_concentration
 
-# TODO: Implement conservative regridding when ready
-# using ConservativeRegridding
-# using GeoInterface: Polygon, LinearRing
 import NumericalEarth.EarthSystemModels: update_net_fluxes!, interpolate_state!
 import NumericalEarth.Atmospheres: atmosphere_regridder
 import NumericalEarth.EarthSystemModels.InterfaceComputations: net_fluxes, ComponentExchanger
@@ -23,14 +23,16 @@ net_fluxes(::SpeedySimulation) = nothing
 # If this work we can
 # 1. Copy speedyweather gridarrays to the GPU
 # 2. Perform the regridding on the GPU
-function ComponentExchanger(atmosphere::SpeedySimulation, exchange_grid) 
+function ComponentExchanger(atmosphere::SpeedySimulation, exchange_grid)
 
-    spectral_grid = atmosphere.model.spectral_grid
-    # TODO: Implement a conservative regridder when ready
-    from_atmosphere = XESMF.Regridder(spectral_grid, exchange_grid)
-    to_atmosphere   = XESMF.Regridder(exchange_grid, spectral_grid)
+    spectral_grid = atmosphere.model.spectral_grid.grid
+    # Use the exchange_grid's manifold for both grids to avoid
+    # radius mismatch between Oceananigans and SpeedyWeather.
+    manifold = ConservativeRegridding.GOCore.best_manifold(exchange_grid)
+    from_atmosphere = Regridder(manifold, exchange_grid, spectral_grid)
+    to_atmosphere   = Regridder(manifold, spectral_grid, exchange_grid)
     regridder = (; to_atmosphere, from_atmosphere)
-    
+
     state = (; u    = Field{Center, Center, Nothing}(exchange_grid),
                v    = Field{Center, Center, Nothing}(exchange_grid),
                T    = Field{Center, Center, Nothing}(exchange_grid),
@@ -40,18 +42,23 @@ function ComponentExchanger(atmosphere::SpeedySimulation, exchange_grid)
                ℐꜜˡʷ = Field{Center, Center, Nothing}(exchange_grid),
                Jʳⁿ  = Field{Center, Center, Nothing}(exchange_grid),
                Jˢⁿ  = Field{Center, Center, Nothing}(exchange_grid))
-    
+
     return ComponentExchanger(state, regridder)
 end
 
-@inline (regrid!::XESMF.Regridder)(field::Oceananigans.Field, data::AbstractArray) = regrid!(vec(interior(field)), data)
-@inline (regrid!::XESMF.Regridder)(data::AbstractArray, field::Oceananigans.Field) = regrid!(data, vec(interior(field)))
+function regrid!(field::Oceananigans.Field, regridder::Regridder, data::AbstractArray)
+    regrid!(vec(interior(field)), regridder, vec(data))
+end
+
+function regrid!(data::AbstractArray, regridder::Regridder, field::Oceananigans.Field)
+    regrid!(vec(data), regridder, vec(interior(field)))
+end
 
 # Regrid the atmospheric state on the exchange grid
 function interpolate_state!(exchanger, exchange_grid, atmos::SpeedySimulation, coupled_model)
-    regrid!        = exchanger.regridder.from_atmosphere
-    exchange_state = exchanger.state
-    surface_layer  = atmos.model.spectral_grid.nlayers
+    from_atmosphere = exchanger.regridder.from_atmosphere
+    exchange_state  = exchanger.state
+    surface_layer   = atmos.model.spectral_grid.nlayers
 
     ua   = RingGrids.field_view(atmos.variables.grid.u, :, surface_layer).data
     va   = RingGrids.field_view(atmos.variables.grid.v, :, surface_layer).data
@@ -62,20 +69,20 @@ function interpolate_state!(exchanger, exchange_grid, atmos::SpeedySimulation, c
     ℐꜜˡʷ = atmos.variables.parameterizations.surface_longwave_down.data
     Jʳⁿ  = atmos.variables.parameterizations.rain_rate.data
 
-    # `snow_rate` is only registered when SpeedyWeather's large-scale 
+    # `snow_rate` is only registered when SpeedyWeather's large-scale
     # condensation parameterization is part of the model
     Jˢⁿ = haskey(atmos.variables.parameterizations, :snow_rate) ?
           atmos.variables.parameterizations.snow_rate.data : nothing
 
-    regrid!(exchange_state.u,    ua)
-    regrid!(exchange_state.v,    va)
-    regrid!(exchange_state.T,    Ta)
-    regrid!(exchange_state.q,    qa)
-    regrid!(exchange_state.p,    pa)
-    regrid!(exchange_state.ℐꜜˢʷ, ℐꜜˢʷ)
-    regrid!(exchange_state.ℐꜜˡʷ, ℐꜜˡʷ)
-    regrid!(exchange_state.Jʳⁿ,  Jʳⁿ)
-    isnothing(Jˢⁿ) || regrid!(exchange_state.Jˢⁿ, Jˢⁿ)
+    regrid!(exchange_state.u,     from_atmosphere, ua)
+    regrid!(exchange_state.v,     from_atmosphere, va)
+    regrid!(exchange_state.T,     from_atmosphere, Ta)
+    regrid!(exchange_state.q,     from_atmosphere, qa)
+    regrid!(exchange_state.p,     from_atmosphere, pa)
+    regrid!(exchange_state.ℐꜜˢʷ,  from_atmosphere, ℐꜜˢʷ)
+    regrid!(exchange_state.ℐꜜˡʷ,  from_atmosphere, ℐꜜˡʷ)
+    regrid!(exchange_state.Jʳⁿ,   from_atmosphere, Jʳⁿ)
+    isnothing(Jˢⁿ) || regrid!(exchange_state.Jˢⁿ, from_atmosphere, Jˢⁿ)
 
     arch = architecture(exchange_grid)
 
@@ -98,17 +105,17 @@ end
 
 @kernel function _rotate_winds!(u, v, grid)
     i, j = @index(Global, NTuple)
-    kᴺ = size(grid, 3) 
+    kᴺ = size(grid, 3)
     uₑ, vₑ = intrinsic_vector(i, j, kᴺ, grid, u, v)
     @inbounds u[i, j, kᴺ] = uₑ
     @inbounds v[i, j, kᴺ] = vₑ
 end
 
-# TODO: Fix the coupling with the sea ice model and make sure that 
+# TODO: Fix the coupling with the sea ice model and make sure that
 # the this function works also for sea_ice=nothing and on GPUs without
 # needing to allocate memory.
 function update_net_fluxes!(coupled_model, atmos::SpeedySimulation)
-    regrid!   = coupled_model.interfaces.exchanger.atmosphere.regridder.to_atmosphere
+    to_atmosphere = coupled_model.interfaces.exchanger.atmosphere.regridder.to_atmosphere
     ao_fluxes = coupled_model.interfaces.atmosphere_ocean_interface.fluxes
     ai_fluxes = coupled_model.interfaces.atmosphere_sea_ice_interface.fluxes
 
@@ -128,16 +135,16 @@ function update_net_fluxes!(coupled_model, atmos::SpeedySimulation)
     # TODO: Figure out how we are going to deal with upwelling radiation
     # TODO: regrid longwave rather than a mixed surface temperature
     # TODO: This does not work on GPUs!!
-    regrid!(𝒬ᵀ_speedy, vec(interior(𝒬ᵀᵃᵒ) .* (1 .- ℵ) .+ ℵ .* interior(𝒬ᵀᵃⁱ)))
-    regrid!(Jᵛ_speedy, vec(interior(Jᵛᵃᵒ) .* (1 .- ℵ) .+ ℵ .* interior(Jᵛᵃⁱ)))
-    regrid!(sst, vec(interior(To)  .* (1 .- ℵ) .+ ℵ .* interior(Ti) .+ 273.15))
+    regrid!(𝒬ᵀ_speedy, to_atmosphere, vec(interior(𝒬ᵀᵃᵒ) .* (1 .- ℵ) .+ ℵ .* interior(𝒬ᵀᵃⁱ)))
+    regrid!(Jᵛ_speedy, to_atmosphere, vec(interior(Jᵛᵃᵒ) .* (1 .- ℵ) .+ ℵ .* interior(Jᵛᵃⁱ)))
+    regrid!(sst, to_atmosphere, vec(interior(To)  .* (1 .- ℵ) .+ ℵ .* interior(Ti) .+ 273.15))
 
     return nothing
 end
 
 # Simple case -> there is no sea ice!
 function update_net_fluxes!(coupled_model::SpeedyNoSeaIceEarthSystemModel, atmos::SpeedySimulation)
-    regrid!   = coupled_model.interfaces.exchanger.atmosphere.regridder.to_atmosphere
+    to_atmosphere = coupled_model.interfaces.exchanger.atmosphere.regridder.to_atmosphere
     ao_fluxes = coupled_model.interfaces.atmosphere_ocean_interface.fluxes
     𝒬ᵀᵃᵒ = ao_fluxes.sensible_heat
     Jᵛᵃᵒ = ao_fluxes.water_vapor
@@ -150,9 +157,9 @@ function update_net_fluxes!(coupled_model::SpeedyNoSeaIceEarthSystemModel, atmos
 
     # TODO: Figure out how we are going to deal with upwelling radiation
     # TODO: This does not work on GPUs!!
-    regrid!(𝒬ᵀ_speedy, vec(interior(𝒬ᵀᵃᵒ)))
-    regrid!(Jᵛ_speedy, vec(interior(Jᵛᵃᵒ)))
-    regrid!(sst, vec(interior(To) .+ 273.15))
+    regrid!(𝒬ᵀ_speedy, to_atmosphere, vec(interior(𝒬ᵀᵃᵒ)))
+    regrid!(Jᵛ_speedy, to_atmosphere, vec(interior(Jᵛᵃᵒ)))
+    regrid!(sst, to_atmosphere, vec(interior(To) .+ 273.15))
 
     return nothing
 end

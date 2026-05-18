@@ -10,9 +10,9 @@ into `coupled_model.radiation.interface_fluxes.sea_ice`.
 When `coupled_model.radiation === nothing`, this is a no-op.
 Also a no-op when sea-ice is not a `Simulation{<:SeaIceModel}`.
 """
-apply_air_sea_ice_radiative_fluxes!(::EarthSystemModel{<:Nothing}) = nothing
+EarthSystemModels.apply_air_sea_ice_radiative_fluxes!(::EarthSystemModel{<:Nothing}) = nothing
 
-apply_air_sea_ice_radiative_fluxes!(coupled_model::EarthSystemModel) =
+EarthSystemModels.apply_air_sea_ice_radiative_fluxes!(coupled_model::EarthSystemModel) =
     _apply_air_sea_ice_radiative_fluxes_dispatch!(coupled_model, coupled_model.sea_ice)
 
 # No sea-ice or non-prognostic sea-ice: nothing to do.

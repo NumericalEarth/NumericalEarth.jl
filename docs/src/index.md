@@ -77,7 +77,6 @@ We can leverage `Oceananigans` features to plot the surface speed at the end of 
 ```julia
 u, v, w = ocean.model.velocities
 speed = Field(sqrt(u^2 + v^2))
-compute!(speed)
 
 using GLMakie
 heatmap(view(speed, :, :, ocean.model.grid.Nz), colorrange=(0, 0.5), colormap=:magma, nan_color=:lightgray)

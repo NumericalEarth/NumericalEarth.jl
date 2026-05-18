@@ -1,5 +1,4 @@
 using Oceananigans.BoundaryConditions: getbc
-using Oceananigans.Operators: Δzᶜᶜᶜ
 
 using Adapt
 

@@ -1,9 +1,5 @@
-using GPUArraysCore: @allowscalar
-using Printf
-
-import ClimaSeaIce
-import Thermodynamics as AtmosphericThermodynamics
-using Thermodynamics: Liquid, Ice
+using ClimaSeaIce: ClimaSeaIce
+using Thermodynamics: Thermodynamics as AtmosphericThermodynamics
 
 #####
 ##### Interface properties
@@ -36,7 +32,7 @@ function Base.summary(q★::ImpureSaturationSpecificHumidity)
 
 
     return string("ImpureSaturationSpecificHumidity{$phase_str}(water_mole_fraction=",
-                  prettysummary(q★.water_mole_fraction), ")") 
+                  prettysummary(q★.water_mole_fraction), ")")
 end
 
 Base.show(io::IO, q★::ImpureSaturationSpecificHumidity) = print(io, summary(q★))
@@ -52,7 +48,7 @@ ImpureSaturationSpecificHumidity(phase) = ImpureSaturationSpecificHumidity(phase
 @inline compute_water_mole_fraction(x_H₂O::Number, salinity) = x_H₂O
 
 # COARE 3.6 / Edson (2013) pressure-based saturation specific humidity:
-#   qₛ = ε eₛ / (p − (1 − ε) eₛ),   ε = Rᵈ / Rᵥ
+#   qₛ = εᵈᵛ⁻¹ pᵛ⁺ / (p − (1 − ε) pᵛ⁺),   εᵈᵛ⁻¹ = Rᵈ / Rᵥ
 # Direct evaluation at the atmospheric pressure p.
 @inline function surface_specific_humidity(formulation::ImpureSaturationSpecificHumidity, ℂᵃᵗ, pᵃᵗ, Tₛ, Sₛ=zero(Tₛ))
     FT = eltype(Tₛ)
@@ -251,7 +247,7 @@ end
     Ωᵀ = 𝒬ᵀ * λ  # unnormalized sensible heat coefficient (= Ωc * ΔT)
     D  = F.κ * ΔT - Ωᵀ * F.δ
     T★ = (Ψᵢ.T * F.κ * ΔT - (Jᵀ * ΔT + Ωᵀ * Tᵃᵗ) * F.δ) / D
-    
+
     return ifelse(D == 0, Ψₛ.T, T★)
 end
 
