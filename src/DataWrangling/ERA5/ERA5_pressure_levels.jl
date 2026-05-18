@@ -47,8 +47,8 @@ dataset_name(::ERA5MonthlyPressureLevels) = "ERA5MonthlyPressureLevels"
 #####
 
 # ERA5 reanalysis data available from 1940 to present (we use a practical range here)
-all_dates(::ERA5HourlyPressureLevels, var) = range(DateTime("1940-01-01"), stop=DateTime("2024-12-31"), step=Hour(1))
-all_dates(::ERA5MonthlyPressureLevels, var) = range(DateTime("1940-01-01"), stop=DateTime("2024-12-01"), step=Month(1))
+all_dates(::ERA5HourlyPressureLevels, var) = range(DateTime("1940-01-01"), stop=DateTime("2025-12-31"), step=Hour(1))
+all_dates(::ERA5MonthlyPressureLevels, var) = range(DateTime("1940-01-01"), stop=DateTime("2025-12-01"), step=Month(1))
 
 # ERA5 pressure-level data is a spatially 3-D dataset
 is_three_dimensional(::ERA5PressureMetadata) = true
