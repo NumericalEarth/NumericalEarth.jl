@@ -136,8 +136,7 @@ end
 metaprefix(::EN4Metadata) = "EN4Metadata"
 metaprefix(::EN4Metadatum) = "EN4Metadatum"
 
-# Note, EN4 files contain all variables, so the filenames do not
-# depend on name.
+# Note, EN4 files contain all variables; filenames do not depend on name.
 function metadata_filename(::EN4Monthly, name, date, region)
     yearstr  = string(Dates.year(date))
     monthstr = string(Dates.month(date), pad=2)
