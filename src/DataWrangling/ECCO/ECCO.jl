@@ -330,7 +330,7 @@ function DataWrangling.download_dataset(metadata::ECCOMetadata)
     return metadata_path(metadata)
 end
 
-function inpainted_metadata_filename(metadata::ECCOMetadatum)
+function DataWrangling.inpainted_metadata_filename(metadata::ECCOMetadatum)
     without_extension = metadata.filename[1:end-3]
     return without_extension * "_inpainted.jld2"
 end
