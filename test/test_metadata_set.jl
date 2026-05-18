@@ -1,6 +1,6 @@
 include("runtests_setup.jl")
 
-using NumericalEarth.DataWrangling: MetadataSet, MetadatumSet, Metadata, Metadatum,
+using NumericalEarth.DataWrangling: MetadataSet, Metadata, Metadatum,
                                     BoundingBox, variable_aliases, metadata_path
 
 # `MetadataSet` is a pure DataWrangling concept: no downloads, no field
@@ -13,28 +13,28 @@ snapshot_date = DateTime(1993, 1, 1)
 date_range    = DateTime(1993, 1, 1):Month(1):DateTime(1993, 4, 1)
 
 @testset "MetadataSet construction" begin
-    # Snapshot set → MetadatumSet
+    # Snapshot set: scalar dates → each element is a Metadatum
     mset = MetadataSet(:temperature, :salinity;
                        dataset = ECCO4Monthly(),
                        date    = snapshot_date)
 
     @test mset isa MetadataSet
-    @test mset isa MetadatumSet
     @test mset.names === (:temperature, :salinity)
     @test mset.dataset isa ECCO4Monthly
     @test mset.dates  == snapshot_date
     @test mset.region === nothing
     @test length(mset) == 2
+    @test mset.temperature isa Metadatum   # element-level distinction
 
-    # Time-series set → NOT a MetadatumSet
+    # Time-series set: vector dates → each element is a Metadata (not Metadatum)
     mts = MetadataSet(:temperature, :salinity;
                       dataset = ECCO4Monthly(),
                       dates   = date_range)
 
     @test mts isa MetadataSet
-    @test !(mts isa MetadatumSet)
     @test mts.dates == date_range
     @test length(mts) == 2
+    @test !(mts.temperature isa Metadatum)
 
     # `date` and `dates` are mutually exclusive
     @test_throws ArgumentError MetadataSet(:temperature;

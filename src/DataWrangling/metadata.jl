@@ -304,13 +304,11 @@ end
 struct MetadataSet{V, D, R, N, F}
     names     :: N        # NTuple{K, Symbol} — verbose dataset variable names
     dataset   :: V        # shared
-    dates     :: D        # shared; scalar (→ MetadatumSet) or AbstractVector
+    dates     :: D        # shared; scalar or AbstractVector
     region    :: R        # shared
     dir       :: String   # shared
     filenames :: F        # NamedTuple keyed by `names`, one entry per variable
 end
-
-const MetadatumSet{V} = MetadataSet{V, <:Union{AnyDateTime, Nothing}} where V
 
 """
     MetadataSet(variable_names::Symbol...;
@@ -327,9 +325,8 @@ A bundle of [`Metadata`](@ref) for many variables that share `dataset`, `dates`,
 `region`, and `dir` — differing only in variable name.
 
 Each element `mset[name]` (or equivalently `mset.name` or `mset[i]`) is itself a
-`Metadata` — or a `Metadatum` when `dates` is a single date, in which case the
-whole set is a `MetadatumSet`. Iteration walks the variable axis, yielding one
-`Metadata` per variable.
+`Metadata` — or a `Metadatum` when `dates` is a single date. Iteration walks the
+variable axis, yielding one `Metadata` per variable.
 
 Arguments
 =========
@@ -463,9 +460,8 @@ end
 function Base.show(io::IO, mset::MetadataSet)
     V = typeof(getfield(mset, :dataset))
     D = typeof(getfield(mset, :dates))
-    typename = mset isa MetadatumSet ? "MetadatumSet" : "MetadataSet"
 
-    print(io, "$typename{$V, $D}:", '\n',
+    print(io, "MetadataSet{$V, $D}:", '\n',
           "├── names: ", getfield(mset, :names), '\n',
           "├── dataset: ", prettysummary(getfield(mset, :dataset)), '\n',
           "├── dates: ", prettysummary(getfield(mset, :dates)), '\n')
@@ -479,8 +475,7 @@ function Base.show(io::IO, mset::MetadataSet)
 end
 
 Base.summary(mset::MetadataSet) =
-    string(mset isa MetadatumSet ? "MetadatumSet" : "MetadataSet",
-           "{", typeof(getfield(mset, :dataset)), "} of ",
+    string("MetadataSet{", typeof(getfield(mset, :dataset)), "} of ",
            length(mset), " variables")
 
 """
