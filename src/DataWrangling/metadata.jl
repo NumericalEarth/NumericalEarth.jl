@@ -291,6 +291,198 @@ function metadata_path(metadata::Metadata)
     end
 end
 
+#####
+##### MetadataSet — a bundle of `Metadata` sharing dataset, dates, region, and dir.
+#####
+##### A `MetadataSet` is keyed by *verbose* dataset variable names. Iteration is
+##### over variables (orthogonal to `Metadata`'s date-axis iteration); every
+##### element returned by `mset[name]` / `mset[i]` is itself a `Metadata` or
+##### `Metadatum`, so all existing per-`Metadata` machinery (`Field`, `set!`,
+##### `download_dataset`, ...) keeps working unchanged on the elements.
+#####
+
+struct MetadataSet{V, D, R, N, F}
+    names     :: N        # NTuple{K, Symbol} — verbose dataset variable names
+    dataset   :: V        # shared
+    dates     :: D        # shared; scalar (→ MetadatumSet) or AbstractVector
+    region    :: R        # shared
+    dir       :: String   # shared
+    filenames :: F        # NamedTuple keyed by `names`, one entry per variable
+end
+
+const MetadatumSet{V} = MetadataSet{V, <:Union{AnyDateTime, Nothing}} where V
+
+"""
+    MetadataSet(variable_names::Symbol...;
+                dataset,
+                dates = all_dates(dataset, first(variable_names)),
+                date = nothing,
+                dir = default_download_directory(dataset),
+                region = nothing,
+                filenames = nothing,
+                start_date = nothing,
+                end_date = nothing)
+
+A bundle of [`Metadata`](@ref) for many variables that share `dataset`, `dates`,
+`region`, and `dir` — differing only in variable name.
+
+Each element `mset[name]` (or equivalently `mset.name` or `mset[i]`) is itself a
+`Metadata` — or a `Metadatum` when `dates` is a single date, in which case the
+whole set is a `MetadatumSet`. Iteration walks the variable axis, yielding one
+`Metadata` per variable.
+
+Arguments
+=========
+- `variable_names`: one or more `Symbol`s naming the dataset variables to bundle
+  (e.g. `:temperature, :salinity`). Verbose dataset-internal names — no aliases.
+
+Keyword Arguments
+=================
+- `dataset`: the shared dataset (e.g. `ECCO4Monthly()`, `ERA5HourlyPressureLevels()`).
+- `dates`: shared date axis. Either a single `AbstractDateTime`/`AbstractCFDateTime`
+  (yielding a [`MetadatumSet`](@ref)) or an `AbstractVector` of dates.
+  Defaults to `all_dates(dataset, first(variable_names))`.
+- `date`: convenience scalar form; cannot be used together with `dates`.
+- `region`: shared spatial region — `BoundingBox`, `Column`, or `nothing`.
+- `dir`: shared download directory.
+- `filenames`: an optional `NamedTuple` keyed by `variable_names` overriding the
+  auto-computed per-variable filenames.
+- `start_date`, `end_date`: optional date cropping, matching [`Metadata`](@ref).
+
+See also [`Metadata`](@ref), [`Metadatum`](@ref).
+"""
+function MetadataSet(variable_names::Symbol...;
+                     dataset,
+                     dates = nothing,
+                     date = nothing,
+                     dir = default_download_directory(dataset),
+                     region = nothing,
+                     filenames = nothing,
+                     start_date = nothing,
+                     end_date = nothing)
+
+    isempty(variable_names) &&
+        throw(ArgumentError("MetadataSet requires at least one variable name"))
+
+    if !isnothing(date) && !isnothing(dates)
+        throw(ArgumentError("Specify either `date` (scalar) or `dates` (vector), not both"))
+    end
+
+    # Resolve the effective date axis.
+    effective_dates = if !isnothing(date)
+        date isa Date ? DateTime(date) : date
+    elseif !isnothing(dates)
+        dates
+    else
+        all_dates(dataset, first(variable_names))
+    end
+
+    if !isnothing(date) && !(effective_dates isa AnyDateTime)
+        msg = "`date` must be a `Dates.AbstractDateTime` or `CFTime.AbstractCFDateTime`, received $(typeof(date))"
+        throw(ArgumentError(msg))
+    end
+
+    # Optional date cropping (parallels Metadata).
+    if !isnothing(start_date) || !isnothing(end_date)
+        effective_dates isa AnyDateTime &&
+            throw(ArgumentError("`start_date`/`end_date` are not compatible with a scalar `date`"))
+        sd = isnothing(start_date) ? effective_dates[1]   : start_date
+        ed = isnothing(end_date)   ? effective_dates[end] : end_date
+        effective_dates = compute_native_date_range(effective_dates, sd, ed)
+    end
+
+    # Auto-build per-variable filenames if not supplied.
+    if isnothing(filenames)
+        filename_values = map(n -> build_filename(dataset, n, effective_dates, region), variable_names)
+        filenames = NamedTuple{variable_names}(filename_values)
+    else
+        filenames isa NamedTuple ||
+            throw(ArgumentError("`filenames` must be a NamedTuple keyed by variable names"))
+        keys(filenames) === variable_names ||
+            throw(ArgumentError("`filenames` keys $(keys(filenames)) must match variable names $variable_names"))
+    end
+
+    return MetadataSet(variable_names, dataset, effective_dates, region, dir, filenames)
+end
+
+# Property access: variables first via filenames lookup, struct fields second.
+function Base.getproperty(mset::MetadataSet, name::Symbol)
+    if name in fieldnames(MetadataSet)
+        return getfield(mset, name)
+    elseif name in getfield(mset, :names)
+        return getindex(mset, name)
+    else
+        throw(KeyError(name))
+    end
+end
+
+Base.propertynames(mset::MetadataSet) =
+    (getfield(mset, :names)..., fieldnames(MetadataSet)...)
+
+# Indexed access. We use `getfield` here so subsequent edits to `getproperty`
+# can't make these recursive.
+function Base.getindex(mset::MetadataSet, name::Symbol)
+    fname = getfield(mset, :filenames)[name]
+    return Metadata(name,
+                    getfield(mset, :dataset),
+                    getfield(mset, :dates),
+                    getfield(mset, :region),
+                    getfield(mset, :dir),
+                    fname)
+end
+
+@propagate_inbounds Base.getindex(mset::MetadataSet, i::Int) =
+    getindex(mset, getfield(mset, :names)[i])
+
+Base.length(mset::MetadataSet) = length(getfield(mset, :names))
+Base.keys(mset::MetadataSet)   = getfield(mset, :names)
+Base.eltype(::Type{<:MetadataSet}) = Metadata
+Base.firstindex(::MetadataSet) = 1
+Base.lastindex(mset::MetadataSet) = length(mset)
+
+@inline function Base.iterate(mset::MetadataSet, state::Int=1)
+    state > length(mset) && return nothing
+    return mset[state], state + 1
+end
+
+Base.NamedTuple(mset::MetadataSet) =
+    NamedTuple{getfield(mset, :names)}(map(n -> mset[n], getfield(mset, :names)))
+
+"""
+    metadata_path(mset::MetadataSet)
+
+Return a `NamedTuple` keyed by the set's variable names whose values are the
+file paths of each variable's `Metadata` (a `String` for single-date sets,
+a `Vector{String}` for multi-date sets — matching `metadata_path(::Metadata)`).
+"""
+function metadata_path(mset::MetadataSet)
+    names = getfield(mset, :names)
+    return NamedTuple{names}(map(n -> metadata_path(mset[n]), names))
+end
+
+function Base.show(io::IO, mset::MetadataSet)
+    V = typeof(getfield(mset, :dataset))
+    D = typeof(getfield(mset, :dates))
+    typename = mset isa MetadatumSet ? "MetadatumSet" : "MetadataSet"
+
+    print(io, "$typename{$V, $D}:", '\n',
+          "├── names: ", getfield(mset, :names), '\n',
+          "├── dataset: ", prettysummary(getfield(mset, :dataset)), '\n',
+          "├── dates: ", prettysummary(getfield(mset, :dates)), '\n')
+
+    rgn = getfield(mset, :region)
+    if !isnothing(rgn)
+        print(io, "├── region: ", summary(rgn), '\n')
+    end
+
+    print(io, "└── dir: $(getfield(mset, :dir))")
+end
+
+Base.summary(mset::MetadataSet) =
+    string(mset isa MetadatumSet ? "MetadatumSet" : "MetadataSet",
+           "{", typeof(getfield(mset, :dataset)), "} of ",
+           length(mset), " variables")
+
 """
     native_times(metadata; start_time=first(metadata).dates)
 
