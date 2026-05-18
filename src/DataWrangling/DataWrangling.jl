@@ -32,7 +32,7 @@ using Oceananigans.Utils: launch!, prettytime
 using NCDatasets: Dataset
 using Printf: Printf, @sprintf
 
-using ..NumericalEarth: NumericalEarth
+using ..NumericalEarth: NumericalEarth, stateindex
 
 #####
 ##### Downloading utilities

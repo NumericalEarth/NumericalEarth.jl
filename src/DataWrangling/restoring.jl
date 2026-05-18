@@ -1,13 +1,13 @@
 using Dates: Second
 using JLD2
 using Oceananigans: location, instantiated_location
-using Oceananigans.Grids: node
-using Oceananigans.Operators: Δzᶜᶜᶜ
+using Oceananigans.Architectures: AbstractArchitecture, on_architecture, architecture
 using Oceananigans.BoundaryConditions: BoundaryConditions
 using Oceananigans.Fields: interpolate
+using Oceananigans.Grids: node
+using Oceananigans.Operators: Δzᶜᶜᶜ
 using Oceananigans.OutputReaders: Cyclical
 using Oceananigans.Units: Time
-using Oceananigans.Architectures: AbstractArchitecture, on_architecture, architecture
 using NCDatasets
 
 # Variable names for restorable data
