@@ -4,7 +4,7 @@ using Downloads: Downloads
 using Oceananigans.DistributedComputations
 
 using ..DataWrangling: all_dates, DataWrangling, Metadata, metadata_path,
-                       DownloadProgress, DatasetBackend
+                       DownloadProgress, DatasetBackend, metadata_url
 
 import ..DataWrangling: metadata_filename, build_filename, download_dataset,
                         default_download_directory, available_variables, dataset_variable_name,
@@ -210,9 +210,9 @@ JRA55_repeat_year_urls = Dict(
                            "RYF.vas.1990_1991.nc?rlkey=f9y3e57kx8xrb40gbstarf0x6&dl=0",
 )
 
-metadata_url(metadata::Metadata{<:RepeatYearJRA55}) = JRA55_repeat_year_urls[metadata.name]
+DataWrangling.metadata_url(metadata::Metadata{<:RepeatYearJRA55}) = JRA55_repeat_year_urls[metadata.name]
 
-function metadata_url(m::Metadata{<:MultiYearJRA55})
+function DataWrangling.metadata_url(m::Metadata{<:MultiYearJRA55})
     prefix = JRA55_multiple_year_prefix[m.name]
     return JRA55_multiple_year_url * prefix * "/" * dataset_variable_name(m) * "/gr/v20200916/" * m.filename
 end

@@ -7,7 +7,8 @@ using Oceananigans: Oceananigans
 using Oceananigans.DistributedComputations: @root
 using Scratch: Scratch, @get_scratch!
 
-using ..DataWrangling: DownloadProgress, Metadatum, metadata_path, AbstractStaticBathymetry
+using ..DataWrangling: DownloadProgress, AbstractStaticBathymetry, Metadatum,
+                       metadata_path, metadata_url
 
 import ..DataWrangling:
     metadata_filename,
@@ -42,7 +43,7 @@ dataset_variable_name(data::ETOPOMetadatum) = ETOPO_bathymetry_variable_names[da
 const ETOPO_url = "https://www.dropbox.com/scl/fi/6pwalcuuzgtpanysn4h6f/" *
     "ETOPO_2022_v1_60s_N90W180_surface.nc?rlkey=2t7890ruyk4nd5t5eov5768lt&st=yfxsy1lu&dl=0"
 
-metadata_url(::ETOPOMetadatum) = ETOPO_url
+DataWrangling.metadata_url(::ETOPOMetadatum) = ETOPO_url
 metadata_filename(::ETOPO2022, name, date, region) = "ETOPO_2022_v1_60s_N90W180_surface.nc"
 
 function download_dataset(metadatum::ETOPOMetadatum)

@@ -1,6 +1,4 @@
 using MeshArrays: MeshArrays, GridSpec, GridLoad, GridLoadVar, interpolation_setup, land_mask
-# using JLD2
-# using Glob
 
 struct ECCO2DarwinMonthly <:ECCODataset end
 struct ECCO4DarwinMonthly <:ECCODataset end
