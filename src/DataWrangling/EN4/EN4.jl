@@ -13,6 +13,25 @@ using ...NumericalEarth: NumericalEarth
 using ..DataWrangling: Metadata, Metadatum, DownloadProgress, Kelvin,
                        first_date, metadata_path, inpainted_metadata_path
 
+import ..DataWrangling:
+    all_dates,
+    metadata_filename,
+    download_dataset,
+    default_download_directory,
+    metadata_path,
+    conversion_units,
+    dataset_variable_name,
+    metaprefix,
+    z_interfaces,
+    longitude_interfaces,
+    latitude_interfaces,
+    longitude_name,
+    latitude_name,
+    is_three_dimensional,
+    reversed_vertical_axis,
+    inpainted_metadata_path,
+    available_variables
+
 download_EN4_cache::String = ""
 function __init__()
     global download_EN4_cache = @get_scratch!("EN4")
@@ -32,6 +51,8 @@ DataWrangling.reversed_vertical_axis(::EN4Monthly) = true
 
 DataWrangling.longitude_interfaces(::EN4Monthly) = (0.5, 360.5)
 DataWrangling.latitude_interfaces(::EN4Monthly) = (-83.5, 89.5)
+DataWrangling.longitude_name(::Metadata{<:EN4Monthly}) = "lon"
+DataWrangling.latitude_name(::Metadata{<:EN4Monthly})  = "lat"
 DataWrangling.available_variables(::EN4Monthly) = EN4_dataset_variable_names
 
 DataWrangling.z_interfaces(::EN4Monthly) = [
@@ -94,7 +115,7 @@ end
 const EN4_url_pre2021  = "http://www.metoffice.gov.uk/hadobs/en4/data/en4-2-1/EN.4.2.2/EN.4.2.2.analyses.g10."
 const EN4_url_post2021 = "http://www.metoffice.gov.uk/hadobs/en4/data/en4-2-1/EN.4.2.2.analyses.g10."
 
-function inpainted_metadata_filename(metadata::EN4Metadatum)
+function DataWrangling.inpainted_metadata_filename(metadata::EN4Metadatum)
     without_extension = metadata.filename[1:end-3]
     var = string(metadata.name)
     return without_extension * "_" * var *"_inpainted.jld2"
@@ -119,8 +140,7 @@ end
 DataWrangling.metaprefix(::EN4Metadata) = "EN4Metadata"
 DataWrangling.metaprefix(::EN4Metadatum) = "EN4Metadatum"
 
-# Note, EN4 files contain all variables, so the filenames do not
-# depend on name.
+# EN4 files contain all variables, so the filenames do not depend on name.
 function DataWrangling.metadata_filename(::EN4Monthly, name, date, region)
     yearstr  = string(Dates.year(date))
     monthstr = string(Dates.month(date), pad=2)

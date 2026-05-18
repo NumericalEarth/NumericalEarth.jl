@@ -230,7 +230,9 @@ Base.size(dataset::AbstractStaticBathymetry, variable) = size(dataset)
 
 # Fundamentals
 include("metadata.jl")
+include("set_region_data.jl")
 include("metadata_field.jl")
+include("dataset_backend.jl")
 include("metadata_field_time_series.jl")
 include("inpainting.jl")
 include("restoring.jl")

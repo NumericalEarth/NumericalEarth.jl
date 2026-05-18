@@ -81,7 +81,6 @@ export
     RepeatYearJRA55, MultiYearJRA55,
     OSPapaHourly,
     JRA55FieldTimeSeries,
-    JRA55NetCDFBackend,
     ORCA1, ORCA12,
     ORCAGrid,
     first_date, last_date, all_dates,
@@ -171,7 +170,6 @@ using .DataWrangling.EN4
 using .DataWrangling.ORCA
 using .DataWrangling.WOA
 using .DataWrangling.JRA55
-using .DataWrangling.JRA55: JRA55NetCDFBackend
 using .DataWrangling.OSPapa
 
 using PrecompileTools: @setup_workload, @compile_workload

@@ -9,7 +9,9 @@ export retrieve_data
 
 using Adapt: Adapt
 using Dates: Dates, DateTime, Day, Month
+using Dates: year, month, day
 using Downloads: Downloads
+using KernelAbstractions: @kernel, @index
 using Oceananigans: Oceananigans
 using Oceananigans.Architectures: CPU
 using Oceananigans.DistributedComputations: @root
@@ -47,6 +49,34 @@ using ..DataWrangling:
     first_date,
     last_date,
     all_dates
+    compute_mask,
+    inpaint_mask!,
+    set_metadata_field!
+
+import ..DataWrangling:
+    default_download_directory,
+    all_dates,
+    metadata_filename,
+    download_dataset,
+    conversion_units,
+    dataset_variable_name,
+    dataset_location,
+    metaprefix,
+    longitude_interfaces,
+    latitude_interfaces,
+    longitude_name,
+    latitude_name,
+    z_interfaces,
+    is_three_dimensional,
+    inpainted_metadata_path,
+    reversed_vertical_axis,
+    default_mask_value,
+    available_variables,
+    retrieve_data,
+    binary_data_grid,
+    binary_data_size,
+    higher_bound,
+    default_inpainting
 
 download_ECCO_cache::String = ""
 function __init__()
@@ -97,6 +127,13 @@ DataWrangling.all_dates(dataset::ECCO2Daily,   variable) = metadata_epoch(datase
 DataWrangling.longitude_interfaces(::ECCODataset) = (0, 360)
 DataWrangling.longitude_interfaces(::ECCO4Monthly) = (-180, 180)
 DataWrangling.latitude_interfaces(::ECCODataset) = (-90, 90)
+
+DataWrangling.longitude_name(::Metadata{<:ECCODataset})        = "LONGITUDE_T"
+DataWrangling.latitude_name(::Metadata{<:ECCODataset})         = "LATITUDE_T"
+DataWrangling.longitude_name(::Metadata{<:ECCO4Monthly})       = "longitude"
+DataWrangling.latitude_name(::Metadata{<:ECCO4Monthly})        = "latitude"
+DataWrangling.longitude_name(::Metadata{<:ECCO4DarwinMonthly}) = "longitude"
+DataWrangling.latitude_name(::Metadata{<:ECCO4DarwinMonthly})  = "latitude"
 
 DataWrangling.z_interfaces(::ECCODataset) = [
     -6128.75,
@@ -360,38 +397,5 @@ DataWrangling.inpainted_metadata_path(metadata::ECCOMetadatum) = joinpath(metada
 
 include("ECCO_atmosphere.jl")
 include("ECCO_radiation.jl")
-
-#####
-##### Column Field for ECCO datasets (which always download globally)
-#####
-
-using Oceananigans.BoundaryConditions: fill_halo_regions!
-
-const ECCOColumnMetadatum = Metadatum{<:ECCODataset, <:Any, <:Column}
-
-function Oceananigans.Fields.Field(metadata::ECCOColumnMetadatum, arch=CPU();
-                                   inpainting = default_inpainting(metadata),
-                                   mask = nothing,
-                                   halo = (3, 3, 3),
-                                   cache_inpainted_data = true)
-
-    download_dataset(metadata)
-    column_grid = native_grid(metadata, arch; halo)
-
-    # Build a full-grid Field without a region to load the global data
-    global_metadatum = Metadatum(metadata.name;
-                                 dataset = metadata.dataset,
-                                 date = metadata.dates)
-
-    intermediate_field = Field(global_metadatum, arch; inpainting, mask, halo, cache_inpainted_data)
-    fill_halo_regions!(intermediate_field)
-
-    # Extract the column
-    _, _, LZ = location(metadata)
-    column_field = Field{Nothing, Nothing, LZ}(column_grid)
-    extract_column!(column_field, intermediate_field, metadata.region)
-
-    return column_field
-end
 
 end # Module

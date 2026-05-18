@@ -10,11 +10,13 @@ function emit_ci_warning(title, message)
 end
 
 function download_from_artifacts(filepath::AbstractString)
-    if !isfile(filepath)
-        filename = basename(filepath)
-        fallback_url = ARTIFACTS_BASE_URL * filename
-        @info "Downloading $filename from NumericalEarthArtifacts fallback..."
-        Downloads.download(fallback_url, filepath)
+    filename = basename(filepath)
+    fallback_url = ARTIFACTS_BASE_URL * filename
+    @info "Downloading $filename from NumericalEarthArtifacts fallback..."
+    mktemp(dirname(filepath)) do tmppath, tmpio
+        close(tmpio)
+        Downloads.download(fallback_url, tmppath)
+        mv(tmppath, filepath; force=true)
     end
 end
 
