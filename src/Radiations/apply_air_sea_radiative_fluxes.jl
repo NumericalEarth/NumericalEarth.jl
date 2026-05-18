@@ -1,7 +1,7 @@
 using Oceananigans.Grids: inactive_node
 
-using ..EarthSystemModels: EarthSystemModel
-using ..EarthSystemModels.InterfaceComputations: kernel_radiation_properties, convert_to_kelvin, sea_ice_concentration
+using ..EarthSystemModels: EarthSystemModel, sea_ice_concentration
+using ..EarthSystemModels.InterfaceComputations: kernel_radiation_properties, convert_to_kelvin
 using ..Oceans: shortwave_radiative_forcing, get_radiative_forcing
 
 """
