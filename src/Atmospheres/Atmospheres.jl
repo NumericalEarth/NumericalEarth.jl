@@ -4,7 +4,7 @@ export atmosphere_simulation, PrescribedAtmosphere, PrescribedPrecipitationFlux
 
 using Adapt: Adapt, adapt
 using KernelAbstractions: @kernel, @index
-using Oceananigans: Oceananigans
+using Oceananigans: Oceananigans, prognostic_state, restore_prognostic_state!
 using Oceananigans.Architectures: architecture
 using Oceananigans.Fields: Field, Face, Center
 using Oceananigans.Grids: grid_name, topology, Flat
