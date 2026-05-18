@@ -4,13 +4,13 @@ using Downloads
 
 using Oceananigans.DistributedComputations
 
-using NumericalEarth.DataWrangling
-using NumericalEarth.DataWrangling: Metadata, metadata_path, download_progress, AnyDateTime
+using ..DataWrangling
+using ..DataWrangling: Metadata, metadata_path, DownloadProgress, AnyDateTime
 
+import Base
 import Dates: year, month, day
 import Oceananigans.Fields: set!
-import Base
-import NumericalEarth.DataWrangling: all_dates, metadata_filename, build_filename, download_dataset, default_download_directory, available_variables
+import ..DataWrangling: all_dates, metadata_filename, build_filename, download_dataset, default_download_directory, available_variables
 
 struct MultiYearJRA55 end
 struct RepeatYearJRA55 end
@@ -197,7 +197,7 @@ function download_dataset(metadata::JRA55Metadata)
         filepath = metadata_path(metadatum)
 
         if !isfile(filepath)
-            Downloads.download(fileurl, filepath; progress=download_progress)
+            Downloads.download(fileurl, filepath; progress=DownloadProgress())
         end
     end
 

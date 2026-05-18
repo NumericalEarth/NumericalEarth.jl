@@ -1,6 +1,10 @@
 include("runtests_setup.jl")
 include("download_utils.jl")
 
+using CondaPkg
+CondaPkg.add("h5py"; channel="conda-forge", version=">=3.0,<3.13")
+CondaPkg.add("hdf5"; channel="conda-forge", version="<2")
+
 using CopernicusMarine
 
 using NumericalEarth.DataWrangling: BoundingBox, is_three_dimensional, z_interfaces
