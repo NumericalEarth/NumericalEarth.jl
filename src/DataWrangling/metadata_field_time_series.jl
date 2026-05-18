@@ -36,10 +36,10 @@ function Oceananigans.OutputReaders.FieldTimeSeries(metadata::Metadata, arch::Ab
 end
 
 function Oceananigans.OutputReaders.FieldTimeSeries(metadata::Metadata, grid::AbstractGrid;
-                         time_indices_in_memory = 2,
-                         time_indexing = Cyclical(),
-                         inpainting = default_inpainting(metadata),
-                         cache_inpainted_data = true)
+                                                    time_indices_in_memory = 2,
+                                                    time_indexing = Cyclical(),
+                                                    inpainting = default_inpainting(metadata),
+                                                    cache_inpainted_data = true)
 
     download_dataset(metadata)
 
