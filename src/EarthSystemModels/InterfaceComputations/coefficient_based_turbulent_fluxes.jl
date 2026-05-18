@@ -1,4 +1,4 @@
-using DocStringExtensions
+using DocStringExtensions: TYPEDFIELDS, TYPEDEF
 
 #####
 ##### Polynomial neutral drag coefficient (Large & Yeager 2004)
@@ -133,7 +133,7 @@ end
 #####
 
 """
-    struct CoefficientBasedFluxes{C, S}
+$(TYPEDEF)
 
 A structure for computing turbulent fluxes using bulk transfer coefficients.
 

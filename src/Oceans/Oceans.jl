@@ -6,9 +6,9 @@ using Adapt: Adapt, adapt
 using KernelAbstractions: @kernel, @index
 using Oceananigans: Oceananigans
 using Oceananigans.Advection: WENO, WENOVectorInvariant
-using Oceananigans.BuoyancyFormulations: SeawaterBuoyancy
 using Oceananigans.BoundaryConditions: DefaultBoundaryCondition, DiscreteBoundaryFunction,
                                        FieldBoundaryConditions, FluxBoundaryCondition, getbc
+using Oceananigans.BuoyancyFormulations: SeawaterBuoyancy
 using Oceananigans.Coriolis: HydrostaticSphericalCoriolis
 using Oceananigans.Fields: Field, CenterField, set!, interior
 using Oceananigans.Grids: inactive_node, Face, Center, xspacings, yspacings, RectilinearGrid
@@ -16,13 +16,13 @@ using Oceananigans.ImmersedBoundaries: ImmersedBoundaryGrid, ImmersedBoundaryCon
 using Oceananigans.Models.HydrostaticFreeSurfaceModels: HydrostaticFreeSurfaceModel
 using Oceananigans.Models.HydrostaticFreeSurfaceModels.SplitExplicitFreeSurfaces: SplitExplicitFreeSurface
 using Oceananigans.OrthogonalSphericalShellGrids: OrthogonalSphericalShellGrids, TripolarGrid
-using Oceananigans.Operators: Operators, ℑxyᶠᶜᵃ, ℑxyᶜᶠᵃ
+using Oceananigans.Operators: ℑxyᶠᶜᵃ, ℑxyᶜᶠᵃ
 using Oceananigans.Simulations: Simulation
 using Oceananigans.TurbulenceClosures.TKEBasedVerticalDiffusivities: CATKEVerticalDiffusivity,
                                                                      CATKEMixingLength,
                                                                      CATKEEquation
-using Oceananigans.Units: Units, minutes, hours
-using Oceananigans.Utils: Utils, with_tracers, launch!
+using Oceananigans.Units: minutes, hours
+using Oceananigans.Utils: with_tracers, launch!
 using SeawaterPolynomials: SeawaterPolynomials
 using SeawaterPolynomials.TEOS10: TEOS10EquationOfState
 

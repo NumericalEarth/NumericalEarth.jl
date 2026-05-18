@@ -1,13 +1,5 @@
-using Oceananigans.Grids: AbstractGrid, prettysummary
-
-using Adapt
-using Printf
-using Thermodynamics: Liquid
-using KernelAbstractions.Extras.LoopInfo: @unroll
-using Statistics: norm
-
-import Thermodynamics as AtmosphericThermodynamics
-import Thermodynamics.Parameters: Rv_over_Rd
+using Oceananigans.Utils: prettysummary
+using Thermodynamics: Thermodynamics as AtmosphericThermodynamics
 
 #####
 ##### Bulk turbulent fluxes based on similarity theory
@@ -267,7 +259,6 @@ L★ = u★² / ϰ b★ .
     return b★
 end
 
-import Statistics
 
 #####
 ##### Struct that represents a 3-tuple of momentum, heat, and water vapor

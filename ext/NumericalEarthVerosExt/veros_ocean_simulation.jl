@@ -10,11 +10,10 @@ import Oceananigans.TimeSteppers: time_step!, initialize!
 import Oceananigans.Architectures: architecture
 
 using NumericalEarth.EarthSystemModels: EarthSystemModel
-import NumericalEarth.EarthSystemModels: default_nan_checker
-import NumericalEarth.EarthSystemModels: reference_density, 
-                                         heat_capacity, 
-                                         ocean_temperature, 
-                                         ocean_salinity, 
+import NumericalEarth.EarthSystemModels: reference_density,
+                                         heat_capacity,
+                                         ocean_temperature,
+                                         ocean_salinity,
                                          ocean_surface_salinity,
                                          ocean_surface_velocities
 
@@ -30,7 +29,7 @@ Returns a NamedTuple containing package information if successful.
 Also patches Veros's signal handling to work with PythonCall.
 """
 function install_veros()
-    # Veros uses hdf5 < 2. The shenanigans in the following two lines 
+    # Veros uses hdf5 < 2. The shenanigans in the following two lines
     # are necessary to allow loading compatible hdf5 and h5py.
     CondaPkg.add("hdf5"; version="<2", channel="conda-forge")
     CondaPkg.add("h5py"; version=">=3.0,<3.13", channel="conda-forge")
@@ -38,11 +37,11 @@ function install_veros()
     CondaPkg.add("requests"; version="==2.34.0", channel="conda-forge")
     CondaPkg.add_pip("veros", version="@ https://github.com/team-ocean/veros/archive/refs/heads/main.zip")
     cli = CondaPkg.which("veros")
-    
+
     # Patch signal handling as early as possible
     # This ensures it's patched before any Veros modules are used
     patch_veros_signal_handling()
-    
+
     @info "... the veros CLI has been installed at $(cli)."
     return cli
 end
@@ -52,20 +51,20 @@ end
 
 Patch Veros's signal handling to work with PythonCall.
 This prevents TypeError when Veros tries to set signal handlers from within Julia/PythonCall context.
-The issue is that Veros tries to set signal handlers, but PythonCall's wrapped Python objects aren't recognized 
+The issue is that Veros tries to set signal handlers, but PythonCall's wrapped Python objects aren't recognized
 as valid callable handlers by Python's signal.signal() function. We work around this by monkey-patching
 signal.signal() to accept any handler and convert invalid ones to SIG_DFL.
 """
 function patch_veros_signal_handling()
     pyexec("""
     import signal
-    
+
     # Monkey-patch signal.signal() to handle invalid handlers gracefully
     # This is needed because PythonCall-wrapped objects aren't recognized
     # as valid callable handlers by Python's signal.signal()
     if not hasattr(signal, '_NumericalEarth_patched'):
         _original_signal = signal.signal
-        
+
         def _patched_signal(signum, handler):
             # Check if handler is valid according to Python's rules
             if handler in (signal.SIG_IGN, signal.SIG_DFL):
@@ -81,10 +80,10 @@ function patch_veros_signal_handling()
             else:
                 # Invalid handler type - use SIG_DFL instead
                 return _original_signal(signum, signal.SIG_DFL)
-        
+
         signal.signal = _patched_signal
         signal._NumericalEarth_patched = True
-    
+
     # Also patch Veros's signal wrapper to skip signal handling entirely
     try:
         import veros.signals
@@ -94,7 +93,7 @@ function patch_veros_signal_handling()
                 # Skip signal handling entirely when running from PythonCall
                 # The signal handlers aren't needed when Veros is embedded in Julia
                 pass
-            
+
             veros.signals.dnd_wrapper = _patched_dnd_wrapper
             veros.signals._NumericalEarth_patched = True
     except (ImportError, AttributeError):
@@ -108,10 +107,10 @@ struct VerosOceanSimulation{S}
     setup :: S
 end
 
-default_nan_checker(model::EarthSystemModel{<:Any, <:Any, <:VerosOceanSimulation}) = nothing
+Oceananigans.Diagnostics.default_nan_checker(model::EarthSystemModel{<:Any, <:Any, <:VerosOceanSimulation}) = nothing
 initialize!(::NumericalEarthVerosExt.VerosOceanSimulation{Py}) = nothing
 
-function time_step!(ocean::VerosOceanSimulation, Δt) 
+function time_step!(ocean::VerosOceanSimulation, Δt)
     # Align the timesteps
     set!(ocean, "dt_tracer", Δt; path=:settings)
     set!(ocean, "dt_mom",    Δt; path=:settings)
@@ -141,7 +140,7 @@ function ocean_surface_velocities(ocean::VerosOceanSimulation)
     return u_view, v_view
 end
 
-function ocean_surface_salinity(ocean::VerosOceanSimulation) 
+function ocean_surface_salinity(ocean::VerosOceanSimulation)
     S = ocean_salinity(ocean)
     Nx, Ny, Nz = size(S)
     return view(S, :, :, Nz)
@@ -150,7 +149,7 @@ end
 # Veros hardcodes 2 halos in the x and y direction,
 # and each prognostic variable is 4 dimensional, where the first three dimensions
 # are x, y, z, and the last index differentiate between variable, tendency at n and tendency at n-1
-function ocean_temperature(ocean::VerosOceanSimulation) 
+function ocean_temperature(ocean::VerosOceanSimulation)
     T = PyArray(ocean.setup.state.variables.temp)
     Nx, Ny, Nz = size(T)
     return view(T, 3:Nx-2, 3:Ny-2, 1:Nz, 1)
@@ -159,7 +158,7 @@ end
 # Veros hardcodes 2 halos in the x and y direction,
 # and each prognostic variable is 4 dimensional, where the first three dimensions
 # are x, y, z, and the last index differentiate between variable, tendency at n and tendency at n-1
-function ocean_salinity(ocean::VerosOceanSimulation) 
+function ocean_salinity(ocean::VerosOceanSimulation)
     S = PyArray(ocean.setup.state.variables.salt)
     Nx, Ny, Nz = size(S)
     return view(S, 3:Nx-2, 3:Ny-2, 1:Nz, 1)
@@ -203,7 +202,7 @@ end
 """
     VerosOceanSimulation(setup, setup_name::Symbol)
 
-Creates and initializes a preconfigured Veros ocean simulation using the 
+Creates and initializes a preconfigured Veros ocean simulation using the
 specified setup module and setup name.
 
 Arguments
@@ -215,7 +214,7 @@ function VerosOceanSimulation(setup::String, setup_name::Symbol)
     # Patch signal handling BEFORE importing any Veros modules
     # Veros may set up signal handlers during module import
     patch_veros_signal_handling()
-    
+
     setups = pyimport("veros.setups." * setup)
     ocean  = @eval $setups.$setup_name()
 
@@ -258,10 +257,10 @@ function surface_grid(ocean::VerosOceanSimulation)
 
     xf = Array(PyArray(ocean.setup.state.variables.xu))
     yf = Array(PyArray(ocean.setup.state.variables.yu))
-    
+
     xc = Array(PyArray(ocean.setup.state.variables.xt))
     yc = Array(PyArray(ocean.setup.state.variables.yt))
-    
+
     xf = xf[2:end-2]
     yf = yf[2:end-2]
 
@@ -277,8 +276,8 @@ function surface_grid(ocean::VerosOceanSimulation)
         Bounded
     end
 
-    Nx = length(xc) 
-    Ny = length(yc) 
+    Nx = length(xc)
+    Ny = length(yc)
 
     return LatitudeLongitudeGrid(size=(Nx, Ny), longitude=xf, latitude=yf, topology=(TX, Bounded, Flat), halo=(2, 2))
 end
@@ -287,7 +286,7 @@ end
     set!(ocean, v, x; path = :variable)
 
 Set the `v` variable in the `ocean` model to the value of `x`.
-the path corresponds to the path inside the class where to locate the 
+the path corresponds to the path inside the class where to locate the
 variable `v` to set. It can be either `:variables` or `:settings`.
 """
 function set!(ocean::VerosOceanSimulation, v, x; path = :variables)
