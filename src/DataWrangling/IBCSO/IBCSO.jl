@@ -2,7 +2,8 @@ module IBCSO
 
 export IBCSOv2
 
-using Oceananigans.DistributedComputations: @root
+using Oceananigans: Oceananigans
+.DistributedComputations: @root
 using Scratch: @get_scratch!
 
 using ..DataWrangling: DownloadProgress, Metadatum, metadata_path, AbstractStaticBathymetry
