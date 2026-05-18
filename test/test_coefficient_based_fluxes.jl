@@ -85,11 +85,10 @@ end
                                  bottom_drag_coefficient = 0)
 
         dates = all_dates(RepeatYearJRA55(), :temperature)
-        atmosphere = JRA55PrescribedAtmosphere(arch, Float64; end_date=dates[2], backend=InMemory())
+        atmosphere = JRA55PrescribedAtmosphere(arch; end_date=dates[2])
 
         constant_fluxes = CoefficientBasedFluxes(transfer_coefficients = SimilarityScales(2e-3, 2e-3, 2e-3))
-        interfaces = ComponentInterfaces(atmosphere, ocean;
-                                         atmosphere_ocean_fluxes=constant_fluxes)
+        interfaces = ComponentInterfaces(atmosphere, ocean; atmosphere_ocean_fluxes=constant_fluxes)
 
         set!(ocean.model, T=15, S=35)
         coupled_model = OceanOnlyModel(ocean; atmosphere, interfaces)
@@ -119,7 +118,7 @@ end
                                  bottom_drag_coefficient = 0)
 
         dates = all_dates(RepeatYearJRA55(), :temperature)
-        atmosphere = JRA55PrescribedAtmosphere(arch, Float64; end_date=dates[2], backend=InMemory())
+        atmosphere = JRA55PrescribedAtmosphere(arch; end_date=dates[2])
 
         poly_drag = PolynomialNeutralDragCoefficient()
         poly_fluxes = CoefficientBasedFluxes(transfer_coefficients = SimilarityScales(poly_drag, 1e-3, 1e-3))
@@ -156,7 +155,7 @@ end
                                  bottom_drag_coefficient = 0)
 
         dates = all_dates(RepeatYearJRA55(), :temperature)
-        atmosphere = JRA55PrescribedAtmosphere(arch, Float64; end_date=dates[2], backend=InMemory())
+        atmosphere = JRA55PrescribedAtmosphere(arch; end_date=dates[2])
 
         ly = LargeYeagerTransferCoefficients()
         ly_fluxes = CoefficientBasedFluxes(transfer_coefficients = ly,

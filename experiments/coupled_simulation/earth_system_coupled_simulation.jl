@@ -79,9 +79,8 @@ salinity    = ECCOMetadata(:salinity;    dir="./")
 ice_thickness     = ECCOMetadata(:sea_ice_thickness; dir="./")
 ice_concentration = ECCOMetadata(:sea_ice_concentration; dir="./")
 
-jra55_backend = JRA55NetCDFBackend(20)
-atmosphere = JRA55PrescribedAtmosphere(arch; backend=jra55_backend)
-radiation  = JRA55PrescribedRadiation(arch; backend=jra55_backend,
+atmosphere = JRA55PrescribedAtmosphere(arch)
+radiation  = JRA55PrescribedRadiation(arch;
                                       ocean_surface = SurfaceRadiationProperties(LatitudeDependentAlbedo(), 0.97),
                                       sea_ice_surface = SurfaceRadiationProperties(0.6, 1.0))
 

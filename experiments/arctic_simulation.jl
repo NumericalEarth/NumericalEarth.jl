@@ -89,8 +89,8 @@ set!(sea_ice.model, h=Metadatum(:sea_ice_thickness;     dataset),
 ##### A Prescribed Atmosphere model
 #####
 
-atmosphere = JRA55PrescribedAtmosphere(arch; backend=JRA55NetCDFBackend(40))
-radiation  = JRA55PrescribedRadiation(arch; backend=JRA55NetCDFBackend(40))
+atmosphere = JRA55PrescribedAtmosphere(arch)
+radiation  = JRA55PrescribedRadiation(arch)
 
 #####
 ##### Arctic coupled model
