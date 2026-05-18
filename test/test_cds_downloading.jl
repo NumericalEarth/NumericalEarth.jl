@@ -562,6 +562,21 @@ end
         @test req["day"]   == ["16"]
     end
 
+    @testset "Multiple datetimes across days in one month: day is multi-element" begin
+        # CDS computes the Cartesian product of year × month × day × time, so
+        # this single request covers Feb 16 00:00, Feb 16 12:00, Feb 17 00:00,
+        # Feb 17 12:00 (any (day, time) pair).
+        dts = [DateTime(2005, 2, 16, 0),
+               DateTime(2005, 2, 16, 12),
+               DateTime(2005, 2, 17, 0),
+               DateTime(2005, 2, 17, 12)]
+        req = CDSExt.build_era5_request(:temperature, sl, dts; region=nothing)
+        @test req["year"]  == ["2005"]
+        @test req["month"] == ["02"]
+        @test Set(req["day"])  == Set(["16", "17"])
+        @test Set(req["time"]) == Set(["00:00", "12:00"])
+    end
+
     @testset "Single datetime still produces a one-element time array" begin
         req = CDSExt.build_era5_request(:temperature, sl, dt; region=nothing)
         @test req["time"] isa AbstractVector
@@ -596,7 +611,7 @@ end
     end
 end
 
-@testset "ERA5 CDSAPIExt plan_era5_day" begin
+@testset "ERA5 CDSAPIExt plan_era5_month" begin
     region = BoundingBox(longitude=(0, 5), latitude=(40, 45))
     ds = ERA5HourlySingleLevel()
     dt1 = DateTime(2005, 2, 16, 0)
@@ -611,7 +626,7 @@ end
         p1, p2 = expected_path(dt1), expected_path(dt2)
 
         @testset "all paths missing: all pending, full plan populated" begin
-            plan = CDSExt.plan_era5_day(:temperature, ds, [dt1, dt2];
+            plan = CDSExt.plan_era5_month(:temperature, ds, [dt1, dt2];
                                         region, dir=tmp, skip_existing=true)
             @test plan.dt_path_pairs == [(dt1, p1), (dt2, p2)]
             @test length(plan.pending) == 2
@@ -627,7 +642,7 @@ end
 
         @testset "partial coverage: pending narrows to missing datetime" begin
             mkpath(dirname(p1)); touch(p1)
-            plan = CDSExt.plan_era5_day(:temperature, ds, [dt1, dt2];
+            plan = CDSExt.plan_era5_month(:temperature, ds, [dt1, dt2];
                                         region, dir=tmp, skip_existing=true)
             @test length(plan.dt_path_pairs) == 2
             @test length(plan.pending) == 1
@@ -641,7 +656,7 @@ end
             for p in (p1, p2)
                 mkpath(dirname(p)); touch(p)
             end
-            plan = CDSExt.plan_era5_day(:temperature, ds, [dt1, dt2];
+            plan = CDSExt.plan_era5_month(:temperature, ds, [dt1, dt2];
                                         region, dir=tmp, skip_existing=true)
             @test length(plan.dt_path_pairs) == 2
             @test isempty(plan.pending)
@@ -654,7 +669,7 @@ end
         @testset "skip_existing=false ignores existing files" begin
             mkpath(dirname(p1)); touch(p1)
             mkpath(dirname(p2)); touch(p2)
-            plan = CDSExt.plan_era5_day(:temperature, ds, [dt1, dt2];
+            plan = CDSExt.plan_era5_month(:temperature, ds, [dt1, dt2];
                                         region, dir=tmp, skip_existing=false)
             @test length(plan.pending) == 2
             @test plan.request !== nothing
@@ -663,7 +678,7 @@ end
     end
 end
 
-@testset "ERA5 CDSAPIExt plan_era5_multivar_day" begin
+@testset "ERA5 CDSAPIExt plan_era5_multivar_month" begin
     region = BoundingBox(longitude=(0, 5), latitude=(40, 45))
     ds_pl = ERA5HourlyPressureLevels(pressure_levels=[850, 500]hPa)
     dt1 = DateTime(2005, 2, 16, 0)
@@ -677,7 +692,7 @@ end
         end
 
         @testset "all missing: full plan with both names and times" begin
-            plan = CDSExt.plan_era5_multivar_day(names, ds_pl, [dt1, dt2];
+            plan = CDSExt.plan_era5_multivar_month(names, ds_pl, [dt1, dt2];
                                                  region, dir=tmp, skip_existing=true)
             @test length(plan.name_dt_paths) == 4   # 2 names × 2 datetimes
             @test length(plan.pending) == 4
@@ -696,7 +711,7 @@ end
                 p = expected_path(:temperature, dt)
                 mkpath(dirname(p)); touch(p)
             end
-            plan = CDSExt.plan_era5_multivar_day(names, ds_pl, [dt1, dt2];
+            plan = CDSExt.plan_era5_multivar_month(names, ds_pl, [dt1, dt2];
                                                  region, dir=tmp, skip_existing=true)
             @test length(plan.pending) == 2
             @test all(p -> p[1] == :eastward_velocity, plan.pending)
@@ -710,7 +725,7 @@ end
                 p = expected_path(name, dt)
                 mkpath(dirname(p)); touch(p)
             end
-            plan = CDSExt.plan_era5_multivar_day(names, ds_pl, [dt1, dt2];
+            plan = CDSExt.plan_era5_multivar_month(names, ds_pl, [dt1, dt2];
                                                  region, dir=tmp, skip_existing=true)
             @test length(plan.name_dt_paths) == 4
             @test isempty(plan.pending)
@@ -727,7 +742,7 @@ end
                 p = expected_path(name, dt)
                 mkpath(dirname(p)); touch(p)
             end
-            plan = CDSExt.plan_era5_multivar_day(names, ds_pl, [dt1, dt2];
+            plan = CDSExt.plan_era5_multivar_month(names, ds_pl, [dt1, dt2];
                                                  region, dir=tmp, skip_existing=false)
             @test length(plan.pending) == 4
             @test plan.request !== nothing
@@ -736,44 +751,52 @@ end
     end
 end
 
-@testset "ERA5 CDSAPIExt _group_by_calendar_day" begin
-    # Single calendar day with multiple hours
-    same_day = [DateTime(2005, 2, 16, 0),
-                DateTime(2005, 2, 16, 6),
-                DateTime(2005, 2, 16, 23)]
-    g = CDSExt._group_by_calendar_day(same_day)
+@testset "ERA5 CDSAPIExt _group_by_calendar_month" begin
+    # Multiple days in one calendar month → one group
+    same_month = [DateTime(2005, 2, 16, 0),
+                  DateTime(2005, 2, 17, 6),
+                  DateTime(2005, 2, 28, 23)]
+    g = CDSExt._group_by_calendar_month(same_month)
     @test length(g) == 1
-    @test Date(2005, 2, 16) in keys(g)
-    @test length(g[Date(2005, 2, 16)]) == 3
+    @test (2005, 2) in keys(g)
+    @test length(g[(2005, 2)]) == 3
 
-    # Boundary: 00:00 belongs to its OWN day (not the previous one)
-    midnight_pair = [DateTime(2005, 2, 16, 23),
-                     DateTime(2005, 2, 17, 0)]
-    g = CDSExt._group_by_calendar_day(midnight_pair)
+    # Month boundary: each month is its own group
+    month_boundary = [DateTime(2005, 2, 28, 23),
+                      DateTime(2005, 3, 1, 0)]
+    g = CDSExt._group_by_calendar_month(month_boundary)
     @test length(g) == 2
-    @test g[Date(2005, 2, 16)] == [DateTime(2005, 2, 16, 23)]
-    @test g[Date(2005, 2, 17)] == [DateTime(2005, 2, 17, 0)]
+    @test g[(2005, 2)] == [DateTime(2005, 2, 28, 23)]
+    @test g[(2005, 3)] == [DateTime(2005, 3, 1, 0)]
 
-    # Multiple days, interleaved order — grouping must be order-independent
-    mixed = [DateTime(2005, 2, 17, 6),
-             DateTime(2005, 2, 16, 6),
-             DateTime(2005, 2, 17, 12),
-             DateTime(2005, 2, 16, 18)]
-    g = CDSExt._group_by_calendar_day(mixed)
+    # Year boundary: crossing Dec/Jan produces two groups under different years
+    year_boundary = [DateTime(2004, 12, 31, 23),
+                     DateTime(2005, 1, 1, 0)]
+    g = CDSExt._group_by_calendar_month(year_boundary)
     @test length(g) == 2
-    @test Set(g[Date(2005, 2, 16)]) == Set([DateTime(2005, 2, 16, 6), DateTime(2005, 2, 16, 18)])
-    @test Set(g[Date(2005, 2, 17)]) == Set([DateTime(2005, 2, 17, 6), DateTime(2005, 2, 17, 12)])
+    @test g[(2004, 12)] == [DateTime(2004, 12, 31, 23)]
+    @test g[(2005, 1)]  == [DateTime(2005, 1, 1, 0)]
+
+    # Multiple months, interleaved order — grouping must be order-independent
+    mixed = [DateTime(2005, 3, 6),
+             DateTime(2005, 2, 16),
+             DateTime(2005, 3, 12),
+             DateTime(2005, 2, 28)]
+    g = CDSExt._group_by_calendar_month(mixed)
+    @test length(g) == 2
+    @test Set(g[(2005, 2)]) == Set([DateTime(2005, 2, 16), DateTime(2005, 2, 28)])
+    @test Set(g[(2005, 3)]) == Set([DateTime(2005, 3, 6),  DateTime(2005, 3, 12)])
 
     # Duplicate datetimes are preserved (CDS will dedupe; we don't)
     dups = [DateTime(2005, 2, 16, 12), DateTime(2005, 2, 16, 12)]
-    g = CDSExt._group_by_calendar_day(dups)
+    g = CDSExt._group_by_calendar_month(dups)
     @test length(g) == 1
-    @test length(g[Date(2005, 2, 16)]) == 2
+    @test length(g[(2005, 2)]) == 2
 
     # Single-element input
-    g = CDSExt._group_by_calendar_day([DateTime(2005, 2, 16, 12)])
+    g = CDSExt._group_by_calendar_month([DateTime(2005, 2, 16, 12)])
     @test length(g) == 1
-    @test g[Date(2005, 2, 16)] == [DateTime(2005, 2, 16, 12)]
+    @test g[(2005, 2)] == [DateTime(2005, 2, 16, 12)]
 end
 
 @testset "ERA5 CDSAPIExt skip_existing short-circuit" begin
@@ -807,24 +830,24 @@ end
             @test Set(result) == Set(paths)
         end
 
-        @testset "single-variable multi-date (download_era5_day)" begin
+        @testset "single-variable multi-date (download_era5_month)" begin
             # All hours of date1, date2 already on disk
             ds_sl = ERA5HourlySingleLevel()
             expected = [touch_expected(:temperature, ds_sl, dt) for dt in (date1, date2)]
 
             # Returns the existing paths without raising — the early-return guard fires
-            result = CDSExt.download_era5_day(:temperature, ds_sl, [date1, date2];
+            result = CDSExt.download_era5_month(:temperature, ds_sl, [date1, date2];
                                               region, dir=tmp,
                                               skip_existing=true, cleanup=true)
             @test result isa Vector{String}
             @test Set(result) == Set(expected)
         end
 
-        @testset "multi-variable multi-date (download_era5_multivar_day)" begin
+        @testset "multi-variable multi-date (download_era5_multivar_month)" begin
             ds_sl = ERA5HourlySingleLevel()
             expected = [touch_expected(name, ds_sl, dt) for name in names for dt in (date1, date2)]
 
-            result = CDSExt.download_era5_multivar_day(names, ds_sl, [date1, date2];
+            result = CDSExt.download_era5_multivar_month(names, ds_sl, [date1, date2];
                                                        region, dir=tmp,
                                                        skip_existing=true, cleanup=true)
             @test result isa Vector{String}
