@@ -40,6 +40,7 @@ using ..DataWrangling:
     Metadata,
     Metadatum,
     DownloadProgress,
+    metadata_url,
     native_grid,
     location,
     extract_column!,
