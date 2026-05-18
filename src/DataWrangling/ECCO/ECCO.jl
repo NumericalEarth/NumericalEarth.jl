@@ -9,13 +9,10 @@ export retrieve_data
 
 using Adapt: Adapt
 using Dates: Dates, DateTime, Day, Month
-using Dates: year, month, day
 using Downloads: Downloads
-using KernelAbstractions: @kernel, @index
 using Oceananigans: Oceananigans
 using Oceananigans.Architectures: CPU
 using Oceananigans.DistributedComputations: @root
-using Oceananigans.Fields: Field
 using Oceananigans.Grids: Face, Center
 using Oceananigans.OutputReaders: OutputReaders, Cyclical, FieldTimeSeries
 using NCDatasets: NCDatasets
@@ -29,13 +26,10 @@ using ..DataWrangling:
     default_mask_value,
     dataset_variable_name,
     default_download_directory,
-    default_inpainting,
-    download_dataset,
     longitude_interfaces,
     latitude_interfaces,
     netrc_downloader,
     NearestNeighborInpainting,
-    Column,
     metadata_path,
     GramPerKilogramMinus35,
     MicromolePerLiter,
@@ -43,40 +37,21 @@ using ..DataWrangling:
     Metadatum,
     DownloadProgress,
     metadata_url,
-    native_grid,
-    location,
     extract_column!,
     first_date,
     last_date,
     all_dates
-    compute_mask,
-    inpaint_mask!,
-    set_metadata_field!
 
 import ..DataWrangling:
     default_download_directory,
     all_dates,
-    metadata_filename,
-    download_dataset,
-    conversion_units,
     dataset_variable_name,
-    dataset_location,
-    metaprefix,
     longitude_interfaces,
     latitude_interfaces,
-    longitude_name,
-    latitude_name,
-    z_interfaces,
-    is_three_dimensional,
-    inpainted_metadata_path,
-    reversed_vertical_axis,
     default_mask_value,
-    available_variables,
     retrieve_data,
     binary_data_grid,
-    binary_data_size,
-    higher_bound,
-    default_inpainting
+    binary_data_size
 
 download_ECCO_cache::String = ""
 function __init__()
@@ -367,7 +342,7 @@ function DataWrangling.download_dataset(metadata::ECCOMetadata)
     return metadata_path(metadata)
 end
 
-function DataWrangling.inpainted_metadata_filename(metadata::ECCOMetadatum)
+function inpainted_metadata_filename(metadata::ECCOMetadatum)
     without_extension = metadata.filename[1:end-3]
     return without_extension * "_inpainted.jld2"
 end

@@ -1,14 +1,9 @@
 using CFTime: CFTime
-using Dates: Dates, DateTime, Day, Hour, Second
-using Dates: year, month, day
+using Dates: Dates, DateTime, Day, Hour
 using Downloads: Downloads
 using Oceananigans.DistributedComputations
-using Oceananigans.Fields: set!
 
-using ..DataWrangling
-using ..DataWrangling: Metadata, metadata_path, DownloadProgress, AnyDateTime, DatasetBackend
-
-import Oceananigans.Fields: set!, location
+using ..DataWrangling: DataWrangling, Metadata, metadata_path, DownloadProgress, DatasetBackend
 
 import ..DataWrangling: all_dates, metadata_filename, build_filename, download_dataset,
                         default_download_directory, available_variables, dataset_variable_name,
@@ -28,7 +23,7 @@ const MultiYearJRA55Metadatum  = Metadatum{<:MultiYearJRA55}
 
 default_download_directory(::JRA55Dataset) = download_JRA55_cache
 
-function Base.size(::JRA55Dataset, variable) 
+function Base.size(::JRA55Dataset, variable)
     if variable ∈ [:river_freshwater_flux, :iceberg_freshwater_flux]
         (1440, 720, 1)
     else
@@ -115,7 +110,7 @@ end
 
 # Convenience functions
 dataset_variable_name(data::JRA55Metadata) = JRA55_dataset_variable_names[data.name]
-location(::JRA55Metadata) = (Center, Center, Center)
+Oceananigans.Fields.location(::JRA55Metadata) = (Center, Center, Center)
 
 available_variables(::JRA55Dataset) = JRA55_variable_names
 

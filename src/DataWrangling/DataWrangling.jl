@@ -16,6 +16,7 @@ export native_grid
 
 using Adapt: Adapt
 using Downloads: Downloads
+using JLD2: JLD2, jldopen
 using KernelAbstractions: @kernel, @index
 using Oceananigans: Oceananigans, pretty_filesize, location
 using Oceananigans.Architectures: AbstractArchitecture, CPU, architecture,
@@ -29,7 +30,7 @@ using Oceananigans.Grids: node
 using Oceananigans.OutputReaders: OnDisk, AbstractInMemoryBackend, Cyclical,
                                   FieldTimeSeries, FlavorOfFTS, time_indices
 using Oceananigans.Utils: launch!, prettytime
-using NCDatasets: Dataset
+using NCDatasets: NCDatasets, Dataset
 using Printf: Printf, @sprintf
 
 using ..NumericalEarth: NumericalEarth, stateindex

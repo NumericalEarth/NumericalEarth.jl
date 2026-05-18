@@ -1,9 +1,8 @@
 using NCDatasets
 using JLD2
-using Statistics: median
 using Oceananigans.Grids: λnodes, φnodes, Periodic, Bounded
 using Oceananigans.Architectures: on_architecture
-using Oceananigans.Fields: fractional_x_index, fractional_y_index, interpolate!
+using Oceananigans.Fields: interpolate!
 
 #####
 ##### Location with automatic restriction based on region
@@ -85,7 +84,7 @@ function construct_native_grid(metadata, bbox::BoundingBox, arch; halo)
     native_longitude = longitude_interfaces(metadata)
     native_latitude  = latitude_interfaces(metadata)
 
-    # Map the bbox into the native longitude convention. 
+    # Map the bbox into the native longitude convention.
     bbox_lon = native_convention_longitude(bbox.longitude, native_longitude)
 
     Nx, Ny, Nz = size(metadata)
@@ -304,7 +303,7 @@ end
 """
     centers_to_interfaces(z_centers)
 
-Compute z-interfaces (cell faces) from cell center positions.
+Compute ``z``-interfaces (cell faces) from cell center positions.
 `z_centers` should be sorted most negative first (deepest first).
 The top face is placed at 0.0 (sea surface). Interior faces are
 midpoints between adjacent centers. The bottom face is extrapolated.
@@ -350,7 +349,7 @@ end
 @inline convert_units(C::FT, ::Union{NanomolePerLiter, NanomolePerKilogram})   where FT = C * convert(FT, 1e-6)
 @inline convert_units(C::FT, ::MilliliterPerLiter)                             where FT = C / convert(FT, 22.3916)
 @inline convert_units(C::FT, ::GramPerKilogramMinus35)                         where FT = C + convert(FT, 35)
-@inline convert_units(Φ::FT, ::InverseGravity)                                where FT = Φ / convert(FT, 9.80665)
+@inline convert_units(Φ::FT, ::InverseGravity)                                 where FT = Φ / convert(FT, 9.80665)
 @inline convert_units(V::FT, ::CentimetersPerSecond)                           where FT = V / convert(FT, 100)
 
 

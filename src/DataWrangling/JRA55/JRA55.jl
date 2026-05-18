@@ -7,17 +7,14 @@ export JRA55PrescribedAtmosphere,
        MultiYearJRA55
 
 using CFTime: CFTime
-using Dates: Dates, DateTime, Day, Hour, Second
+using Dates: Dates, DateTime, Day, Hour
 using Downloads: Downloads
-using GPUArraysCore: @allowscalar
-using Oceananigans: Oceananigans, location
+using Oceananigans: Oceananigans
 using Oceananigans.Architectures: CPU
-using Oceananigans.BoundaryConditions: FieldBoundaryConditions, fill_halo_regions!
+using Oceananigans.BoundaryConditions: fill_halo_regions!
 using Oceananigans.DistributedComputations: DistributedComputations, @root, Distributed, child_architecture
-using Oceananigans.Fields: interior, set!
-using Oceananigans.Grids: Flat, Bounded, Periodic, Center, LatitudeLongitudeGrid, λnodes, φnodes
-using Oceananigans.OutputReaders: Cyclical, TotallyInMemory, time_indices, FieldTimeSeries,
-                                  AbstractInMemoryBackend, FlavorOfFTS, OnDisk, InMemory
+using Oceananigans.Grids: Center
+using Oceananigans.OutputReaders: Cyclical, time_indices, FieldTimeSeries, FlavorOfFTS
 using Oceananigans.Units: Units
 using NCDatasets: NCDatasets, Dataset
 using Scratch: Scratch, @get_scratch!
@@ -26,7 +23,6 @@ using ..DataWrangling: DataWrangling, Metadatum, first_date, last_date
 using ...NumericalEarth: NumericalEarth
 using ...Atmospheres: PrescribedAtmosphere, PrescribedPrecipitationFlux
 using ...Radiations: PrescribedRadiation, SurfaceRadiationProperties, default_stefan_boltzmann_constant
-
 
 download_JRA55_cache::String = ""
 

@@ -10,27 +10,8 @@ using Scratch: @get_scratch!
 using ZipFile: ZipFile
 
 using ...NumericalEarth: NumericalEarth
-using ..DataWrangling: Metadata, Metadatum, DownloadProgress, Kelvin,
-                       first_date, metadata_path, inpainted_metadata_path
-
-import ..DataWrangling:
-    all_dates,
-    metadata_filename,
-    download_dataset,
-    default_download_directory,
-    metadata_path,
-    conversion_units,
-    dataset_variable_name,
-    metaprefix,
-    z_interfaces,
-    longitude_interfaces,
-    latitude_interfaces,
-    longitude_name,
-    latitude_name,
-    is_three_dimensional,
-    reversed_vertical_axis,
-    inpainted_metadata_path,
-    available_variables
+using ..DataWrangling: DataWrangling, Metadata, Metadatum, DownloadProgress, Kelvin,
+                       first_date, metadata_path
 
 download_EN4_cache::String = ""
 function __init__()
@@ -115,7 +96,7 @@ end
 const EN4_url_pre2021  = "http://www.metoffice.gov.uk/hadobs/en4/data/en4-2-1/EN.4.2.2/EN.4.2.2.analyses.g10."
 const EN4_url_post2021 = "http://www.metoffice.gov.uk/hadobs/en4/data/en4-2-1/EN.4.2.2.analyses.g10."
 
-function DataWrangling.inpainted_metadata_filename(metadata::EN4Metadatum)
+function inpainted_metadata_filename(metadata::EN4Metadatum)
     without_extension = metadata.filename[1:end-3]
     var = string(metadata.name)
     return without_extension * "_" * var *"_inpainted.jld2"
@@ -153,7 +134,7 @@ DataWrangling.is_three_dimensional(::EN4Metadata) = true
 
 ## This function is explicitly for the downloader to check if the zip file/extracted file exists,
 ## then to download the relevant URL (from above)
-function DataWrangling.metadata_zippath(m::EN4Metadata)
+function metadata_zippath(m::EN4Metadata)
     year = string(Dates.year(m.dates))
     month = string(Dates.month(m.dates))
     zippath = joinpath(m.dir, "EN4_" * year * ".zip")

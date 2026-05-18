@@ -35,8 +35,6 @@ import ..DataWrangling:
     reversed_latitude_axis,
     conversion_units
 
-import Base: eltype
-
 download_ERA5_cache::String = ""
 
 function __init__()
@@ -69,7 +67,7 @@ latitude_interfaces(::ERA5Metadata) = (-90, 90)
 z_interfaces(::ERA5Metadata) = (0, 1)
 
 # ERA5 data is stored as Float32
-eltype(::ERA5Metadata) = Float32
+Base.eltype(::ERA5Metadata) = Float32
 
 #####
 ##### Shared filename utilities
