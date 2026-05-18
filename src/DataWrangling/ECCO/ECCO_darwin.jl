@@ -21,8 +21,8 @@ metadata_time_step(::ECCO2DarwinMonthly) = 1200
 metadata_epoch(::ECCO2DarwinMonthly) = DateTime(1992, 1, 1, 0, 0, 0)
 
 # The whole range of dates in the different dataset datasets
-all_dates(dataset::ECCO4DarwinMonthly, name) = metadata_epoch(dataset) : Month(1) : DateTime(2023, 3, 1)
-all_dates(dataset::ECCO2DarwinMonthly, name) = metadata_epoch(dataset) : Month(1) : DateTime(2025, 5, 1)
+DataWrangling.all_dates(dataset::ECCO4DarwinMonthly, name) = metadata_epoch(dataset) : Month(1) : DateTime(2023, 3, 1)
+DataWrangling.all_dates(dataset::ECCO2DarwinMonthly, name) = metadata_epoch(dataset) : Month(1) : DateTime(2025, 5, 1)
 
 # File name generation specific to each Dataset dataset
 """
@@ -33,7 +33,7 @@ Generate the filename for a given ECCO Darwin dataset and date.
 The filename is constructed using the dataset variable name, and the iteration number is calculated
 from the date and epoch.
 """
-function metadata_filename(dataset::Union{ECCO2DarwinMonthly, ECCO4DarwinMonthly}, name, date, region)
+function DataWrangling.metadata_filename(dataset::Union{ECCO2DarwinMonthly, ECCO4DarwinMonthly}, name, date, region)
     shortname = ECCO_darwin_dataset_variable_names[name]
 
     reference_date = metadata_epoch(dataset)
@@ -47,10 +47,10 @@ function metadata_filename(dataset::Union{ECCO2DarwinMonthly, ECCO4DarwinMonthly
 end
 
 # Convenience functions
-default_mask_value(::ECCO4DarwinMonthly) = 0
-default_mask_value(::ECCO2DarwinMonthly) = 0
+DataWrangling.default_mask_value(::ECCO4DarwinMonthly) = 0
+DataWrangling.default_mask_value(::ECCO2DarwinMonthly) = 0
 
-dataset_variable_name(data::Metadata{<:Union{ECCO2DarwinMonthly,ECCO4DarwinMonthly}}) = ECCO_darwin_dataset_variable_names[data.name]
+DataWrangling.dataset_variable_name(data::Metadata{<:Union{ECCO2DarwinMonthly,ECCO4DarwinMonthly}}) = ECCO_darwin_dataset_variable_names[data.name]
 
 variable_is_three_dimensional(::Metadata{<:Union{ECCO2DarwinMonthly, ECCO4DarwinMonthly}}) = true
 
@@ -75,7 +75,7 @@ Set up conversion from the ECCODarwin output data to standard units
   -  salinity = SALTanom + 35
   -  biogeochemical tracer concentrations are in uL => umol/L in the output files from Darwin
 """
-function conversion_units(metadatum::Metadatum{<:Union{ECCO2DarwinMonthly, ECCO4DarwinMonthly}})
+function DataWrangling.conversion_units(metadatum::Metadatum{<:Union{ECCO2DarwinMonthly, ECCO4DarwinMonthly}})
     if dataset_variable_name(metadatum) == "SALTanom"
         return GramPerKilogramMinus35()
     elseif dataset_variable_name(metadatum) != "THETA"
@@ -85,33 +85,33 @@ function conversion_units(metadatum::Metadatum{<:Union{ECCO2DarwinMonthly, ECCO4
     end
 end
 
-function default_download_directory(::ECCO4DarwinMonthly)
+function DataWrangling.default_download_directory(::ECCO4DarwinMonthly)
     path = joinpath(download_ECCO_cache, "v4_darwin", "monthly")
     return mkpath(path)
 end
 
-function default_download_directory(::ECCO2DarwinMonthly)
+function DataWrangling.default_download_directory(::ECCO2DarwinMonthly)
     path = joinpath(download_ECCO_cache, "v2_darwin", "monthly")
     return mkpath(path)
 end
 
-metadata_url(m::Metadata{<:ECCO4DarwinMonthly}) = ECCO4Darwin_url * "monthly/" * dataset_variable_name(m) * "/" * m.filename
-metadata_url(m::Metadata{<:ECCO2DarwinMonthly}) = ECCO2Darwin_url * "monthly/" * dataset_variable_name(m) * "/" * m.filename
+DataWrangling.metadata_url(m::Metadata{<:ECCO4DarwinMonthly}) = ECCO4Darwin_url * "monthly/" * dataset_variable_name(m) * "/" * m.filename
+DataWrangling.metadata_url(m::Metadata{<:ECCO2DarwinMonthly}) = ECCO2Darwin_url * "monthly/" * dataset_variable_name(m) * "/" * m.filename
 
 # Functions for reading the ECCO binary files using MeshArrays
-binary_data_grid(::ECCO4DarwinMonthly) = GridSpec(ID=:LLC90)
-binary_data_size(::ECCO4DarwinMonthly) = (90, 1170, 50)
-binary_data_grid(::ECCO2DarwinMonthly) = GridSpec(ID=:LLC270)
-binary_data_size(::ECCO2DarwinMonthly) = (270, 3510, 50)
+DataWrangling.binary_data_grid(::ECCO4DarwinMonthly) = GridSpec(ID=:LLC90)
+DataWrangling.binary_data_size(::ECCO4DarwinMonthly) = (90, 1170, 50)
+DataWrangling.binary_data_grid(::ECCO2DarwinMonthly) = GridSpec(ID=:LLC270)
+DataWrangling.binary_data_size(::ECCO2DarwinMonthly) = (270, 3510, 50)
 
-longitude_interfaces(::ECCO4DarwinMonthly) = (-180, 180)
+DataWrangling.longitude_interfaces(::ECCO4DarwinMonthly) = (-180, 180)
 
 """
     retrieve_data(metadata::Metadatum{<:ECCO4DarwinMonthly})
 
 Read a ECCO4DarwinMonthly data file and regrid using MeshArrays on to regular lat-lon grid
 """
-function retrieve_data(metadata::Metadatum{<:Union{ECCO4DarwinMonthly, ECCO2DarwinMonthly}})
+function DataWrangling.retrieve_data(metadata::Metadatum{<:Union{ECCO4DarwinMonthly, ECCO2DarwinMonthly}})
     native_size = binary_data_size(metadata.dataset)
     native_grid = binary_data_grid(metadata.dataset)
     native_data = zeros(Float32, prod(native_size)) # Native LLC grid at precision of the input binary file

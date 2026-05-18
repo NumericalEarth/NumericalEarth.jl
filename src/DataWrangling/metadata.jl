@@ -385,6 +385,13 @@ Compute the filename for a single date. Extended by each dataset module.
 """
 function metadata_filename end
 
+"""
+    metadata_url(metadata)
+
+Return the URL for the dataset described by `metadata`. Extended by each dataset module.
+"""
+function metadata_url end
+
 # Internal: build filename for construction.
 # Single date: delegate to metadata_filename
 build_filename(dataset, name, date, region) =
