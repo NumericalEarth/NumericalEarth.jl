@@ -86,6 +86,11 @@ Metadata(name, dataset, dates, region, dir) = Metadata(name, dataset, dates, reg
 
 is_three_dimensional(::Metadata) = true
 z_interfaces(md::Metadata) = z_interfaces(md.dataset)
+
+# NetCDF coordinate-variable names. Default follows CF standard; datasets
+# whose files use different names (e.g. JRA55 uses `lon`/`lat`) override.
+longitude_name(::Metadata) = "longitude"
+latitude_name(::Metadata)  = "latitude"
 longitude_interfaces(md::Metadata) = longitude_interfaces(md.dataset)
 latitude_interfaces(md::Metadata) = latitude_interfaces(md.dataset)
 
@@ -332,6 +337,16 @@ Return the name used for the variable `metadata.name` in its raw dataset file.
 function dataset_variable_name end
 
 """
+    validate_dataset_coverage(grid, metadata)
+
+Check that `grid` lies within the spatial coverage of `metadata`'s dataset.
+Throws an error if the grid extends outside the dataset's domain.
+The default implementation does nothing (all grids are accepted).
+Dataset-specific methods can override this to enforce coverage constraints.
+"""
+validate_dataset_coverage(grid, metadata) = nothing
+
+"""
     dataset_location(dataset, variable_name)
 
 Return the native field location `(LX, LY, LZ)` for `variable_name` in
@@ -405,6 +420,7 @@ struct NanomolePerKilogram end
 struct NanomolePerLiter end
 
 struct InverseSign end
+struct InverseGravity end
 
 struct GramPerKilogramMinus35 end # Salinity anomaly
 struct MilliliterPerLiter end # Sometimes for disssolved_oxygen

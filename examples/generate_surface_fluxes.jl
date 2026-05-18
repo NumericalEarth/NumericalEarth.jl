@@ -45,9 +45,9 @@ save("ECCO_continents.png", fig)
 # - downwelling longwave radiation
 #
 # We load in memory only the first two time indices, corresponding to January 1st
-# (at 00:00 AM and 03:00 AM), by using `JRA55NetCDFBackend(2)`.
+# (at 00:00 AM and 03:00 AM), by using `time_indices_in_memory = 2`.
 
-atmosphere = JRA55PrescribedAtmosphere(; backend = JRA55NetCDFBackend(2))
+atmosphere = JRA55PrescribedAtmosphere(; time_indices_in_memory = 2)
 ocean = ocean_simulation(grid, closure=nothing)
 
 # Now that we have an atmosphere and ocean, we `set!` the ocean temperature and salinity
@@ -62,11 +62,12 @@ S_metadata = ECCOMetadatum(:salinity;    date=DateTime(1993, 1, 1))
 set!(ocean.model; T=T_metadata, S=S_metadata)
 
 # Finally, we construct a coupled model, which will compute fluxes during construction.
-# We omit `sea_ice` so the model is ocean-only, and use the default `Radiation()` that
-# uses the two-band shortwave (visible and UV) + longwave (mid and far infrared)
-# decomposition of the radiation spectrum.
+# We omit `sea_ice` so the model is ocean-only, and pair the JRA55 atmosphere with a
+# matching `JRA55PrescribedRadiation` that supplies downwelling shortwave and
+# longwave radiation as well as ocean / sea-ice surface properties.
 
-coupled_model = OceanOnlyModel(ocean; atmosphere, radiation=Radiation(eltype))
+radiation = JRA55PrescribedRadiation(; backend = JRA55NetCDFBackend(2))
+coupled_model = OceanOnlyModel(ocean; atmosphere, radiation)
 
 # Now that the surface fluxes are computed, we can extract and visualize them.
 # The turbulent fluxes are stored in `coupled_model.interfaces.atmosphere_ocean_interface.fluxes`.

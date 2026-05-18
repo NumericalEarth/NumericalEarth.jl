@@ -1,9 +1,9 @@
 module NumericalEarthWOAExt
 
-using WorldOceanAtlasTools
+using WorldOceanAtlasTools: WorldOceanAtlasTools
 
 using Oceananigans.DistributedComputations: @root
-using NumericalEarth.DataWrangling: Metadata, Metadatum
+using NumericalEarth.DataWrangling: Metadata
 using NumericalEarth.WOA: WOAClimatology, WOA_variable_names, woa_period
 
 import NumericalEarth.DataWrangling: download_dataset, metadata_path
@@ -54,7 +54,7 @@ function download_dataset(metadata::Metadata{<:WOAClimatology}; skip_existing=tr
         cp(source, linkpath)
     end
 
-    return nothing
+    return metadata_path(metadata)
 end
 
 end # module

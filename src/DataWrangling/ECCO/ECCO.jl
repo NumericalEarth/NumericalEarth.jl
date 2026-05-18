@@ -1,23 +1,22 @@
 module ECCO
 
-export ECCOMetadatum, ECCO_immersed_grid, adjusted_ECCO_tracers, initialize!
+export ECCOMetadatum, adjusted_ECCO_tracers, initialize!
 export ECCO2Monthly, ECCO4Monthly, ECCO2Daily
-export ECCOPrescribedAtmosphere
+export ECCOPrescribedAtmosphere, ECCOPrescribedRadiation
 
 export ECCO2DarwinMonthly, ECCO4DarwinMonthly
 export retrieve_data
 
 using Oceananigans
-using NumericalEarth
+using Oceananigans.DistributedComputations: @root
 using NCDatasets
 using Dates
 using Adapt
 using Scratch
 using Downloads
 
-using Oceananigans.DistributedComputations: @root
-
-using NumericalEarth.DataWrangling:
+using ...NumericalEarth
+using ..DataWrangling:
     netrc_downloader,
     NearestNeighborInpainting,
     BoundingBox,
@@ -27,20 +26,19 @@ using NumericalEarth.DataWrangling:
     MicromolePerLiter,
     Metadata,
     Metadatum,
-    download_progress,
+    DownloadProgress,
     InverseSign,
     native_grid,
     location,
     compute_mask,
     inpaint_mask!,
-    set_metadata_field!,
-    extract_column!
+    set_metadata_field!
 
 using KernelAbstractions: @kernel, @index
 
 using Dates: year, month, day
 
-import NumericalEarth.DataWrangling:
+import ..DataWrangling:
     default_download_directory,
     all_dates,
     metadata_filename,
@@ -51,6 +49,8 @@ import NumericalEarth.DataWrangling:
     metaprefix,
     longitude_interfaces,
     latitude_interfaces,
+    longitude_name,
+    latitude_name,
     z_interfaces,
     is_three_dimensional,
     inpainted_metadata_path,
@@ -113,6 +113,13 @@ longitude_interfaces(::ECCODataset) = (0, 360)
 longitude_interfaces(::ECCO4Monthly) = (-180, 180)
 latitude_interfaces(::ECCODataset) = (-90, 90)
 
+longitude_name(::Metadata{<:ECCODataset})        = "LONGITUDE_T"
+latitude_name(::Metadata{<:ECCODataset})         = "LATITUDE_T"
+longitude_name(::Metadata{<:ECCO4Monthly})       = "longitude"
+latitude_name(::Metadata{<:ECCO4Monthly})        = "latitude"
+longitude_name(::Metadata{<:ECCO4DarwinMonthly}) = "longitude"
+latitude_name(::Metadata{<:ECCO4DarwinMonthly})  = "latitude"
+
 z_interfaces(::ECCODataset) = [
     -6128.75,
     -5683.75,
@@ -172,25 +179,27 @@ available_variables(::ECCO2Daily)   = ECCO2_dataset_variable_names
 available_variables(::ECCO4Monthly) = ECCO4_dataset_variable_names
 
 ECCO4_dataset_variable_names = Dict(
-    :temperature           => "THETA",
-    :salinity              => "SALT",
-    :u_velocity            => "EVEL",
-    :v_velocity            => "NVEL",
-    :free_surface          => "SSH",
-    :sea_ice_thickness     => "SIheff",
-    :sea_ice_concentration => "SIarea",
-    :net_heat_flux         => "oceQnet",
-    :sensible_heat_flux    => "EXFhs",
-    :latent_heat_flux      => "EXFhl",
-    :net_longwave          => "EXFlwnet",
-    :downwelling_shortwave => "oceQsw",
-    :downwelling_longwave  => "EXFlwdn",
-    :air_temperature       => "EXFatemp",
-    :air_specific_humidity => "EXFaqh",
-    :sea_level_pressure    => "EXFpress",
-    :eastward_wind         => "EXFewind",
-    :northward_wind        => "EXFnwind",
-    :rain_freshwater_flux  => "EXFpreci",
+    :temperature            => "THETA",
+    :salinity               => "SALT",
+    :u_velocity             => "EVEL",
+    :v_velocity             => "NVEL",
+    :free_surface           => "SSH",
+    :sea_ice_thickness      => "SIheff",
+    :sea_ice_concentration  => "SIarea",
+    :net_heat_flux          => "oceQnet",
+    :sensible_heat_flux     => "EXFhs",
+    :latent_heat_flux       => "EXFhl",
+    :net_longwave           => "EXFlwnet",
+    :downwelling_shortwave  => "oceQsw",
+    :downwelling_longwave   => "EXFlwdn",
+    :air_temperature        => "EXFatemp",
+    :air_specific_humidity  => "EXFaqh",
+    :sea_level_pressure     => "EXFpress",
+    :eastward_wind          => "EXFewind",
+    :northward_wind         => "EXFnwind",
+    :rain_freshwater_flux   => "EXFpreci",
+    :zonal_wind_stress      => "EXFtaue",
+    :meridional_wind_stress => "EXFtaun",
 )
 
 ECCO2_dataset_variable_names = Dict(
@@ -205,25 +214,27 @@ ECCO2_dataset_variable_names = Dict(
 )
 
 ECCO_location = Dict(
-    :temperature           => (Center, Center, Center),
-    :salinity              => (Center, Center, Center),
-    :u_velocity            => (Face,   Center, Center),
-    :v_velocity            => (Center, Face,   Center),
-    :free_surface          => (Center, Center, Nothing),
-    :sea_ice_thickness     => (Center, Center, Nothing),
-    :sea_ice_concentration => (Center, Center, Nothing),
-    :net_heat_flux         => (Center, Center, Nothing),
-    :sensible_heat_flux    => (Center, Center, Nothing),
-    :latent_heat_flux      => (Center, Center, Nothing),
-    :net_longwave          => (Center, Center, Nothing),
-    :downwelling_longwave  => (Center, Center, Nothing),
-    :downwelling_shortwave => (Center, Center, Nothing),
-    :air_temperature       => (Center, Center, Nothing),
-    :air_specific_humidity => (Center, Center, Nothing),
-    :sea_level_pressure    => (Center, Center, Nothing),
-    :eastward_wind         => (Center, Center, Nothing),
-    :northward_wind        => (Center, Center, Nothing),
-    :rain_freshwater_flux  => (Center, Center, Nothing),
+    :temperature            => (Center, Center, Center),
+    :salinity               => (Center, Center, Center),
+    :u_velocity             => (Face,   Center, Center),
+    :v_velocity             => (Center, Face,   Center),
+    :free_surface           => (Center, Center, Nothing),
+    :sea_ice_thickness      => (Center, Center, Nothing),
+    :sea_ice_concentration  => (Center, Center, Nothing),
+    :net_heat_flux          => (Center, Center, Nothing),
+    :sensible_heat_flux     => (Center, Center, Nothing),
+    :latent_heat_flux       => (Center, Center, Nothing),
+    :net_longwave           => (Center, Center, Nothing),
+    :downwelling_longwave   => (Center, Center, Nothing),
+    :downwelling_shortwave  => (Center, Center, Nothing),
+    :air_temperature        => (Center, Center, Nothing),
+    :air_specific_humidity  => (Center, Center, Nothing),
+    :sea_level_pressure     => (Center, Center, Nothing),
+    :eastward_wind          => (Center, Center, Nothing),
+    :northward_wind         => (Center, Center, Nothing),
+    :rain_freshwater_flux   => (Center, Center, Nothing),
+    :zonal_wind_stress      => (Center, Center, Nothing),
+    :meridional_wind_stress => (Center, Center, Nothing),
 )
 
 const ECCOMetadata{D} = Metadata{<:ECCODataset, D}
@@ -333,12 +344,12 @@ function download_dataset(metadata::ECCOMetadata)
                     throw(ArgumentError(msg))
                 end
                 @info "Downloading ECCO data: $(metadatum.name) in $(metadatum.dir)..."
-                Downloads.download(fileurl, filepath; downloader, progress=download_progress)
+                Downloads.download(fileurl, filepath; downloader, progress=DownloadProgress())
             end
         end
     end
 
-    return nothing
+    return metadata_path(metadata)
 end
 
 function inpainted_metadata_filename(metadata::ECCOMetadatum)
@@ -370,38 +381,6 @@ end
 inpainted_metadata_path(metadata::ECCOMetadatum) = joinpath(metadata.dir, inpainted_metadata_filename(metadata))
 
 include("ECCO_atmosphere.jl")
-
-#####
-##### Column Field for ECCO datasets (which always download globally)
-#####
-
-using Oceananigans.BoundaryConditions: fill_halo_regions!
-
-const ECCOColumnMetadatum = Metadatum{<:ECCODataset, <:Any, <:Column}
-
-function Oceananigans.Fields.Field(metadata::ECCOColumnMetadatum, arch=CPU();
-                                   inpainting = default_inpainting(metadata),
-                                   mask = nothing,
-                                   halo = (3, 3, 3),
-                                   cache_inpainted_data = true)
-
-    download_dataset(metadata)
-    column_grid = native_grid(metadata, arch; halo)
-
-    # Build a full-grid Field without a region to load the global data
-    global_metadatum = Metadatum(metadata.name;
-                                 dataset = metadata.dataset,
-                                 date = metadata.dates)
-
-    intermediate_field = Field(global_metadatum, arch; inpainting, mask, halo, cache_inpainted_data)
-    fill_halo_regions!(intermediate_field)
-
-    # Extract the column
-    _, _, LZ = location(metadata)
-    column_field = Field{Nothing, Nothing, LZ}(column_grid)
-    extract_column!(column_field, intermediate_field, metadata.region)
-
-    return column_field
-end
+include("ECCO_radiation.jl")
 
 end # Module

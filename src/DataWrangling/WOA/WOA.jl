@@ -2,7 +2,7 @@ module WOA
 
 export WOAClimatology, WOAAnnual, WOAMonthly
 
-using NumericalEarth
+using ...NumericalEarth
 using Oceananigans
 using NCDatasets
 using JLD2
@@ -16,11 +16,11 @@ using ..DataWrangling:
     BoundingBox,
     inpaint_mask!,
     NearestNeighborInpainting,
-    download_progress
+    DownloadProgress
 
 using Oceananigans.DistributedComputations: @root
 
-import NumericalEarth.DataWrangling:
+import ..DataWrangling:
     all_dates,
     first_date,
     last_date,
@@ -33,6 +33,8 @@ import NumericalEarth.DataWrangling:
     z_interfaces,
     longitude_interfaces,
     latitude_interfaces,
+    longitude_name,
+    latitude_name,
     is_three_dimensional,
     reversed_vertical_axis,
     inpainted_metadata_path,
@@ -89,6 +91,8 @@ reversed_vertical_axis(::WOAClimatology) = true
 
 longitude_interfaces(::WOAClimatology) = (-180, 180)
 latitude_interfaces(::WOAClimatology) = (-90, 90)
+longitude_name(::Metadata{<:WOAClimatology}) = "lon"
+latitude_name(::Metadata{<:WOAClimatology})  = "lat"
 available_variables(::WOAClimatology) = WOA_variable_names
 
 """

@@ -103,7 +103,7 @@ Base.show(io::IO, α::SeaIceAlbedo{FT}) where FT =
     print(io, "SeaIceAlbedo{$FT}(ice=", α.ice_albedo,
               ", snow=", α.snow_albedo, ")")
 
-@inline function stateindex(α::SeaIceAlbedo, i, j, k, grid, time, loc, args...)
+@inline function NumericalEarth.stateindex(α::SeaIceAlbedo, i, j, k, grid, time, loc, args...)
     @inbounds hi = α.ice_thickness[i, j, 1]
     @inbounds Ts = α.surface_temperature[i, j, 1]
 

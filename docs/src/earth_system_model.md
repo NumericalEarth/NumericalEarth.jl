@@ -23,9 +23,11 @@ model = OceanOnlyModel(ocean)
 
 # output
 EarthSystemModel{CPU}(time = 0 seconds, iteration = 0)
-├── ocean: HydrostaticFreeSurfaceModel{CPU, RectilinearGrid}(time = 0 seconds, iteration = 0)
+├── radiation: Nothing
 ├── atmosphere: Nothing
+├── land: Nothing
 ├── sea_ice: FreezingLimitedOceanTemperature{ClimaSeaIce.SeaIceThermodynamics.LinearLiquidus{Float64}}
+├── ocean: HydrostaticFreeSurfaceModel{CPU, RectilinearGrid}(time = 0 seconds, iteration = 0)
 └── interfaces: ComponentInterfaces
 ```
 
@@ -50,9 +52,11 @@ model
 
 # output
 EarthSystemModel{CPU}(time = 1 hour, iteration = 3)
-├── ocean: HydrostaticFreeSurfaceModel{CPU, RectilinearGrid}(time = 1 hour, iteration = 3)
+├── radiation: Nothing
 ├── atmosphere: Nothing
+├── land: Nothing
 ├── sea_ice: FreezingLimitedOceanTemperature{ClimaSeaIce.SeaIceThermodynamics.LinearLiquidus{Float64}}
+├── ocean: HydrostaticFreeSurfaceModel{CPU, RectilinearGrid}(time = 1 hour, iteration = 3)
 └── interfaces: ComponentInterfaces
 ```
 
@@ -85,13 +89,15 @@ a sea ice component as positional arguments:
 ```jldoctest esm
 ocean = ocean_simulation(grid, timestepper = :QuasiAdamsBashforth2)
 sea_ice = FreezingLimitedOceanTemperature()
-model = OceanSeaIceModel(ocean, sea_ice)
+model = OceanSeaIceModel(sea_ice, ocean)
 
 # output
 EarthSystemModel{CPU}(time = 0 seconds, iteration = 0)
-├── ocean: HydrostaticFreeSurfaceModel{CPU, RectilinearGrid}(time = 0 seconds, iteration = 0)
+├── radiation: Nothing
 ├── atmosphere: Nothing
+├── land: Nothing
 ├── sea_ice: FreezingLimitedOceanTemperature{ClimaSeaIce.SeaIceThermodynamics.LinearLiquidus{Float64}}
+├── ocean: HydrostaticFreeSurfaceModel{CPU, RectilinearGrid}(time = 0 seconds, iteration = 0)
 └── interfaces: ComponentInterfaces
 ```
 
@@ -105,9 +111,12 @@ Oceananigans `Simulation`, would also work.
 EarthSystemModel
 ```
 
-The full constructor takes positional arguments `(atmosphere, ocean, sea_ice)` and
-gives access to every knob: radiation parameters, reference densities, heat capacities,
-and -- most importantly -- the `interfaces` keyword, which controls how fluxes are computed.
+The full constructor takes positional arguments
+`(radiation, atmosphere, land, sea_ice, ocean)` -- the components in struct
+order, top to bottom -- and gives access to every knob: reference densities,
+heat capacities, and -- most importantly -- the `interfaces` keyword, which
+controls how fluxes are computed. Pass `nothing` for components that are
+absent.
 
 ## Customizing flux formulations
 
@@ -120,16 +129,18 @@ To change the defaults, construct `ComponentInterfaces` yourself and pass it in.
 For example, to use constant transfer coefficients instead of similarity theory:
 
 ```jldoctest esm
-atmosphere_ocean_fluxes = CoefficientBasedFluxes(drag_coefficient=2e-3)
+atmosphere_ocean_fluxes = CoefficientBasedFluxes(transfer_coefficients = (2e-3, 2e-3, 2e-3))
 interfaces = NumericalEarth.EarthSystemModels.ComponentInterfaces(nothing, ocean;
                                                                   atmosphere_ocean_fluxes)
 model = OceanOnlyModel(ocean; interfaces)
 
 # output
 EarthSystemModel{CPU}(time = 0 seconds, iteration = 0)
-├── ocean: HydrostaticFreeSurfaceModel{CPU, RectilinearGrid}(time = 0 seconds, iteration = 0)
+├── radiation: Nothing
 ├── atmosphere: Nothing
+├── land: Nothing
 ├── sea_ice: FreezingLimitedOceanTemperature{ClimaSeaIce.SeaIceThermodynamics.LinearLiquidus{Float64}}
+├── ocean: HydrostaticFreeSurfaceModel{CPU, RectilinearGrid}(time = 0 seconds, iteration = 0)
 └── interfaces: ComponentInterfaces
 ```
 
@@ -144,9 +155,11 @@ model = OceanOnlyModel(ocean; interfaces)
 
 # output
 EarthSystemModel{CPU}(time = 0 seconds, iteration = 0)
-├── ocean: HydrostaticFreeSurfaceModel{CPU, RectilinearGrid}(time = 0 seconds, iteration = 0)
+├── radiation: Nothing
 ├── atmosphere: Nothing
+├── land: Nothing
 ├── sea_ice: FreezingLimitedOceanTemperature{ClimaSeaIce.SeaIceThermodynamics.LinearLiquidus{Float64}}
+├── ocean: HydrostaticFreeSurfaceModel{CPU, RectilinearGrid}(time = 0 seconds, iteration = 0)
 └── interfaces: ComponentInterfaces
 ```
 

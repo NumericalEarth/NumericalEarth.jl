@@ -3,7 +3,7 @@ module EN4
 export EN4Metadatum, EN4_immersed_grid, adjusted_EN4_tracers, initialize!
 export EN4Monthly
 
-using NumericalEarth
+using ...NumericalEarth
 using Oceananigans
 using NCDatasets
 using JLD2
@@ -17,23 +17,22 @@ using ..DataWrangling:
     BoundingBox,
     inpaint_mask!,
     NearestNeighborInpainting,
-    download_progress,
+    DownloadProgress,
     compute_native_date_range,
     Kelvin,
     Celsius
 
 using KernelAbstractions: @kernel, @index
 
-using Oceananigans.Architectures: architecture
-
 using Dates: year, month, day
+using Oceananigans.Architectures: architecture
 using Oceananigans.DistributedComputations: @root
 
 using Dates
 using Downloads
 import ZipFile
 
-import NumericalEarth.DataWrangling:
+import ..DataWrangling:
     all_dates,
     metadata_filename,
     download_dataset,
@@ -45,6 +44,8 @@ import NumericalEarth.DataWrangling:
     z_interfaces,
     longitude_interfaces,
     latitude_interfaces,
+    longitude_name,
+    latitude_name,
     is_three_dimensional,
     reversed_vertical_axis,
     inpainted_metadata_path,
@@ -70,6 +71,8 @@ reversed_vertical_axis(::EN4Monthly) = true
 
 longitude_interfaces(::EN4Monthly) = (0.5, 360.5)
 latitude_interfaces(::EN4Monthly) = (-83.5, 89.5)
+longitude_name(::Metadata{<:EN4Monthly}) = "lon"
+latitude_name(::Metadata{<:EN4Monthly})  = "lat"
 available_variables(::EN4Monthly) = EN4_dataset_variable_names
 
 z_interfaces(::EN4Monthly) = [
@@ -218,7 +221,7 @@ function download_dataset(metadata::Metadata{<:EN4Monthly})
             if !isfile(extracted_file) & !isfile(zippath)
                 push!(missingzips, zippath)
                 @info "Downloading EN4 data: $(metadatum.name) in $(metadatum.dir)..."
-                Downloads.download(fileurl, zippath; progress=download_progress)
+                Downloads.download(fileurl, zippath; progress=DownloadProgress())
             elseif !isfile(extracted_file) & isfile(zippath)
                 push!(missingzips, zippath)
             end
@@ -229,7 +232,7 @@ function download_dataset(metadata::Metadata{<:EN4Monthly})
         end
     end
 
-    return nothing
+    return metadata_path(metadata)
 end
 
 end # Module

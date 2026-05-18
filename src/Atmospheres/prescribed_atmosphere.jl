@@ -2,15 +2,13 @@
 ##### Prescribed atmosphere (as opposed to dynamically evolving / prognostic)
 #####
 
-mutable struct PrescribedAtmosphere{FT, G, T, U, P, C, F, I, R, TP, TI}
+mutable struct PrescribedAtmosphere{FT, G, T, U, P, C, F, TP, TI} <: AbstractPrescribedComponent
     grid :: G
     clock :: Clock{T}
     velocities :: U
     pressure :: P
     tracers :: C
     freshwater_flux :: F
-    auxiliary_freshwater_flux :: I
-    downwelling_radiation :: R
     thermodynamics_parameters :: TP
     times :: TI
     surface_layer_height :: FT
@@ -44,17 +42,44 @@ function default_atmosphere_tracers(grid, times)
     return (T=Ta, q=qa)
 end
 
-function default_downwelling_radiation(grid, times)
-    ℐꜜˡʷ = FieldTimeSeries{Center, Center, Nothing}(grid, times)
-    ℐꜜˢʷ = FieldTimeSeries{Center, Center, Nothing}(grid, times)
-    return TwoBandDownwellingRadiation(shortwave=ℐꜜˢʷ, longwave=ℐꜜˡʷ)
+"""
+    PrescribedPrecipitationFlux(; rain=nothing, snow=nothing)
+    PrescribedPrecipitationFlux(rain, snow)
+
+Container for prescribed precipitation fluxes. Either component may be `nothing`
+to indicate that the corresponding precipitation type is not represented by the
+atmosphere (e.g. rain-only datasets). Used as the `freshwater_flux` of a
+`PrescribedAtmosphere`; downstream callers query the snow component via
+[`surface_snowfall_flux`](@ref) so that prognostic atmospheres with or without
+snow can dispatch on this type as well.
+"""
+struct PrescribedPrecipitationFlux{R, S}
+    rain :: R
+    snow :: S
 end
+
+PrescribedPrecipitationFlux(; rain=nothing, snow=nothing) =
+    PrescribedPrecipitationFlux(rain, snow)
+
+Adapt.adapt_structure(to, ff::PrescribedPrecipitationFlux) =
+    PrescribedPrecipitationFlux(adapt(to, ff.rain), adapt(to, ff.snow))
 
 function default_freshwater_flux(grid, times)
     rain = FieldTimeSeries{Center, Center, Nothing}(grid, times)
     snow = FieldTimeSeries{Center, Center, Nothing}(grid, times)
-    return (; rain, snow)
+    return PrescribedPrecipitationFlux(rain, snow)
 end
+
+@inline field_data(::Nothing) = nothing
+@inline field_data(field) = field.data
+
+@inline surface_snowfall_flux(::Nothing) = nothing
+@inline surface_snowfall_flux(atmos::PrescribedAtmosphere) = surface_snowfall_flux(atmos.freshwater_flux)
+@inline surface_snowfall_flux(ff::PrescribedPrecipitationFlux) = field_data(ff.snow)
+
+@inline surface_rainfall_flux(::Nothing) = nothing
+@inline surface_rainfall_flux(atmos::PrescribedAtmosphere) = surface_rainfall_flux(atmos.freshwater_flux)
+@inline surface_rainfall_flux(ff::PrescribedPrecipitationFlux) = field_data(ff.rain)
 
 """ The standard unit of atmospheric pressure; 1 standard atmosphere (atm) = 101,325 Pascals (Pa)
 in SI units. This is approximately equal to the mean sea-level atmospheric pressure on Earth. """
@@ -94,29 +119,28 @@ update_net_fluxes!(coupled_model, ::PrescribedAtmosphere) = nothing
     PrescribedAtmosphere(grid, times=[zero(grid)];
                          clock = Clock{Float64}(time = 0),
                          surface_layer_height = 10, # meters
-                         boundary_layer_height = 512 # meters,
+                         boundary_layer_height = 512, # meters
                          thermodynamics_parameters = AtmosphereThermodynamicsParameters(eltype(grid)),
-                         auxiliary_freshwater_flux = nothing,
-                         velocities            = default_atmosphere_velocities(grid, times),
-                         tracers               = default_atmosphere_tracers(grid, times),
-                         pressure              = default_atmosphere_pressure(grid, times),
-                         freshwater_flux       = default_freshwater_flux(grid, times),
-                         downwelling_radiation = default_downwelling_radiation(grid, times))
+                         velocities      = default_atmosphere_velocities(grid, times),
+                         tracers         = default_atmosphere_tracers(grid, times),
+                         pressure        = default_atmosphere_pressure(grid, times),
+                         freshwater_flux = default_freshwater_flux(grid, times))
 
-Return a representation of a prescribed time-evolving atmospheric
-state with data given at `times`.
+Return a prescribed, time-evolving atmospheric state with data on `grid` and at given `times`.
+
+!!! compat Radiation component
+    The downwelling shortwave / longwave radiation part of the top-level `radiation`
+    component (see [`PrescribedRadiation`](@ref), [`JRA55PrescribedRadiation`](@ref)).
 """
 function PrescribedAtmosphere(grid, times=[zero(grid)];
                               clock = Clock{Float64}(time = 0),
                               surface_layer_height = 10,
                               boundary_layer_height = 512,
                               thermodynamics_parameters = AtmosphereThermodynamicsParameters(eltype(grid)),
-                              auxiliary_freshwater_flux = nothing,
-                              velocities            = default_atmosphere_velocities(grid, times),
-                              tracers               = default_atmosphere_tracers(grid, times),
-                              pressure              = default_atmosphere_pressure(grid, times),
-                              freshwater_flux       = default_freshwater_flux(grid, times),
-                              downwelling_radiation = default_downwelling_radiation(grid, times))
+                              velocities      = default_atmosphere_velocities(grid, times),
+                              tracers         = default_atmosphere_tracers(grid, times),
+                              pressure        = default_atmosphere_pressure(grid, times),
+                              freshwater_flux = default_freshwater_flux(grid, times))
 
     FT = eltype(grid)
     if isnothing(thermodynamics_parameters)
@@ -129,8 +153,6 @@ function PrescribedAtmosphere(grid, times=[zero(grid)];
                                       pressure,
                                       tracers,
                                       freshwater_flux,
-                                      auxiliary_freshwater_flux,
-                                      downwelling_radiation,
                                       thermodynamics_parameters,
                                       times,
                                       convert(FT, surface_layer_height),
@@ -140,36 +162,17 @@ function PrescribedAtmosphere(grid, times=[zero(grid)];
     return atmosphere
 end
 
-struct TwoBandDownwellingRadiation{SW, LW}
-    shortwave :: SW
-    longwave :: LW
-end
-
-"""
-    TwoBandDownwellingRadiation(shortwave=nothing, longwave=nothing)
-
-Return a two-band model for downwelling radiation (split into a shortwave band
-and a longwave band) that passes through the atmosphere and arrives at the surface of ocean
-or sea ice.
-"""
-TwoBandDownwellingRadiation(; shortwave=nothing, longwave=nothing) =
-    TwoBandDownwellingRadiation(shortwave, longwave)
-
-Adapt.adapt_structure(to, tsdr::TwoBandDownwellingRadiation) =
-    TwoBandDownwellingRadiation(adapt(to, tsdr.shortwave),
-                                adapt(to, tsdr.longwave))
-
 #####
 ##### Chekpointing
 #####
 
 import Oceananigans: prognostic_state, restore_prognostic_state!
 
-function prognostic_state(atmos::PrescribedAtmosphere) 
+function prognostic_state(atmos::PrescribedAtmosphere)
     return (; clock = prognostic_state(atmos.clock))
 end
 
-function restore_prognostic_state!(atmos::PrescribedAtmosphere, state) 
+function restore_prognostic_state!(atmos::PrescribedAtmosphere, state)
     restore_prognostic_state!(atmos.clock, state.clock)
     update_state!(atmos)
     return atmos

@@ -28,12 +28,20 @@ if filter_tests!(testsuite, args)
     delete!(testsuite, "test_glorys_downloading")
     delete!(testsuite, "test_distributed_utils")
     delete!(testsuite, "test_reactant")
+    delete!(testsuite, "test_veros") # Veros seems to have introduce a pypi conflict issue; temporarily removing from CI
 
-    # Remove CPU-only tests when
-    # testing on GPUs
     if gpu_test
+        # Remove CPU-only tests when testing on GPUs
         delete!(testsuite, "test_veros")
         delete!(testsuite, "test_speedy_coupling")
+    else
+        # Remove the slowest tests from CPU CI to keep total runtime
+        # manageable; GPU CI still runs them. See issue #193.
+        delete!(testsuite, "test_ocean_only_model")
+        delete!(testsuite, "test_ocean_sea_ice_model")
+        delete!(testsuite, "test_diagnostics_1")
+        delete!(testsuite, "test_ecco2_daily")
+        delete!(testsuite, "test_orca_grid")
     end
 end
 
@@ -71,7 +79,11 @@ function __init__()
     #####
 
     try
-        atmosphere = JRA55PrescribedAtmosphere(backend=JRA55NetCDFBackend(2))
+        atmosphere = JRA55PrescribedAtmosphere(time_indices_in_memory=2)
+        land       = JRA55PrescribedLand(time_indices_in_memory=2)
+        # Touch the radiation variables (rlds/rsds) too, so a corrupted cached
+        # download is caught by the same fallback path.
+        radiation = JRA55PrescribedRadiation(time_indices_in_memory=2)
     catch e
         @warn "Original JRA55 download failed, trying NumericalEarthArtifacts fallback..." exception=(e, catch_backtrace())
         emit_ci_warning("Broken JRA55 download", "Original source failed during init")
@@ -79,7 +91,9 @@ function __init__()
             datum = Metadatum(name; dataset=JRA55.RepeatYearJRA55())
             download_from_artifacts(metadata_path(datum))
         end
-        atmosphere = JRA55PrescribedAtmosphere(backend=JRA55NetCDFBackend(2))
+        atmosphere = JRA55PrescribedAtmosphere(time_indices_in_memory=2)
+        land       = JRA55PrescribedLand(time_indices_in_memory=2)
+        radiation  = JRA55PrescribedRadiation(time_indices_in_memory=2)
     end
 
     #####

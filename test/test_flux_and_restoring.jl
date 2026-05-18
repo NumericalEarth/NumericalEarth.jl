@@ -1,8 +1,9 @@
 include("runtests_setup.jl")
 
-using Oceananigans.BoundaryConditions: DiscreteBoundaryFunction
-using NumericalEarth.Oceans: MultipleFluxes, net_fluxes, net_flux
 using CUDA
+using Oceananigans.BoundaryConditions: DiscreteBoundaryFunction
+using NumericalEarth.Oceans: MultipleFluxes, net_flux
+using NumericalEarth.EarthSystemModels.InterfaceComputations: net_fluxes
 
 # A constant top-cell tendency `G`, mimicking the part of a `DatasetRestoring`
 # that the `MultipleFluxes` BC actually evaluates: `r * μ * (ψ_dataset - ψ)`.

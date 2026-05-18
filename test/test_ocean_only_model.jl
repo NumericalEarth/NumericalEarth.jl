@@ -17,9 +17,8 @@ using Oceananigans.OrthogonalSphericalShellGrids
         data = Int[]
         pushdata(sim) = push!(data, iteration(sim))
         add_callback!(ocean, pushdata)
-        backend = JRA55NetCDFBackend(4)
-        atmosphere = JRA55PrescribedAtmosphere(arch; backend)
-        radiation = Radiation(arch)
+        atmosphere = JRA55PrescribedAtmosphere(arch; time_indices_in_memory=4)
+        radiation = JRA55PrescribedRadiation(arch; time_indices_in_memory=4)
         coupled_model = OceanOnlyModel(ocean; atmosphere, radiation)
         Δt = 60
         for n = 1:3
@@ -48,13 +47,32 @@ using Oceananigans.OrthogonalSphericalShellGrids
         free_surface = SplitExplicitFreeSurface(grid; substeps=20)
         ocean = ocean_simulation(grid; free_surface)
 
-        backend = JRA55NetCDFBackend(4)
-        atmosphere = JRA55PrescribedAtmosphere(arch; backend)
-        radiation = Radiation(arch)
+        atmosphere = JRA55PrescribedAtmosphere(arch; time_indices_in_memory=4)
+        radiation = JRA55PrescribedRadiation(arch; time_indices_in_memory=4)
 
         # Fluxes are computed when the model is constructed, so we just test that this works.
         @test begin
             coupled_model = OceanOnlyModel(ocean; atmosphere, radiation)
+            time_step!(coupled_model, 1)
+            true
+        end
+
+        #####
+        ##### Ocean with prescribed atmosphere and land
+        #####
+
+        @info "Testing OceanOnlyModel with JRA55PrescribedLand on $A..."
+        land_dates = all_dates(RepeatYearJRA55(), :river_freshwater_flux)
+        land = JRA55PrescribedLand(arch; end_date=land_dates[2])
+
+        @test begin
+            ocean_with_land = ocean_simulation(grid; free_surface)
+            coupled_model = OceanOnlyModel(ocean_with_land; atmosphere, land, radiation)
+
+            # Verify land exchanger is present
+            @test !isnothing(coupled_model.interfaces.exchanger.land)
+            @test coupled_model.land === land
+
             time_step!(coupled_model, 1)
             true
         end
