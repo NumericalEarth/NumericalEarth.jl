@@ -7,33 +7,25 @@ export os_papa_prescribed_flux_boundary_conditions
 export OSPapaHourly
 export OSPapaFluxHourly
 
-using Oceananigans
-using NCDatasets
-using Dates
-using Scratch
-using Downloads
+using Dates: Dates, DateTime, Hour
+using Downloads: Downloads, download
+using Oceananigans: Oceananigans, location
+using Oceananigans.Architectures: CPU
+using Oceananigans.BoundaryConditions: FieldBoundaryConditions, FluxBoundaryCondition
+using Oceananigans.Fields: interior, Field
+using Oceananigans.Grids: Bounded, Flat, Center, RectilinearGrid
+using Oceananigans.OutputReaders: FieldTimeSeries
+using Oceananigans.Units: Units
+using NCDatasets: NCDatasets, NCDataset, defDim, defVar
+using Scratch: Scratch, @get_scratch!
 using Thermodynamics: q_vap_from_RH, Liquid
 
 using ..DataWrangling: DownloadProgress
 using ...Atmospheres: PrescribedAtmosphere, PrescribedPrecipitationFlux, AtmosphereThermodynamicsParameters
-using ...EarthSystemModels: reference_density, heat_capacity
 
-using ..DataWrangling:
-    Metadata,
-    Metadatum,
-    metadata_path,
-    first_date,
-    last_date,
-    NearestNeighborInpainting,
-    DatasetRestoring,
-    Temperature,
-    Salinity,
-    centers_to_interfaces,
-    fill_gaps!,
-    CentimetersPerSecond,
-    Celsius,
-    Millibar,
-    MillimetersPerHour
+using ..DataWrangling: Metadata, Metadatum, metadata_path, first_date, last_date,
+                       fill_gaps!, centers_to_interfaces, CentimetersPerSecond,
+                       Celsius, Millibar, MillimetersPerHour
 
 import ..DataWrangling:
     default_download_directory,
@@ -73,7 +65,7 @@ function download_ospapa_file(dir=download_OSPapa_cache)
     if !isfile(filepath)
         url = OSPAPA_S3_URL * OSPAPA_FILENAME
         @info "Downloading Ocean Station Papa data from AWS S3..."
-        Downloads.download(url, filepath; progress=DownloadProgress())
+        download(url, filepath; progress=DownloadProgress())
     end
     return filepath
 end

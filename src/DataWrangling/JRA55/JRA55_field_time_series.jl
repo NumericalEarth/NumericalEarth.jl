@@ -1,8 +1,7 @@
+using Adapt: Adapt
+
 using ..DataWrangling: all_dates, native_times
 using ..DataWrangling: compute_native_date_range
-using Oceananigans.Grids: AbstractGrid
-using Oceananigans.OutputReaders: PartlyInMemory
-using Adapt
 
 compute_bounding_nodes(::Nothing, ::Nothing, LH, hnodes) = nothing
 compute_bounding_nodes(bounds, ::Nothing, LH, hnodes) = bounds

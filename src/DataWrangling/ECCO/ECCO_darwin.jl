@@ -1,6 +1,6 @@
-using MeshArrays
-using JLD2
-using Glob
+using MeshArrays: MeshArrays, GridSpec, GridLoad, GridLoadVar, interpolation_setup, land_mask
+# using JLD2
+# using Glob
 
 struct ECCO2DarwinMonthly <:ECCODataset end
 struct ECCO4DarwinMonthly <:ECCODataset end
@@ -75,7 +75,7 @@ Set up conversion from the ECCODarwin output data to standard units
   -  salinity = SALTanom + 35
   -  biogeochemical tracer concentrations are in uL => umol/L in the output files from Darwin
 """
-function conversion_units(metadatum::Metadatum{<:Union{ECCO2DarwinMonthly, ECCO4DarwinMonthly}}) 
+function conversion_units(metadatum::Metadatum{<:Union{ECCO2DarwinMonthly, ECCO4DarwinMonthly}})
     if dataset_variable_name(metadatum) == "SALTanom"
         return GramPerKilogramMinus35()
     elseif dataset_variable_name(metadatum) != "THETA"
@@ -137,11 +137,11 @@ function retrieve_data(metadata::Metadatum{<:Union{ECCO4DarwinMonthly, ECCO2Darw
         # Regular lat-lon grid
         longitudes = longitude_interfaces(metadata.dataset)
         latitudes  = latitude_interfaces(metadata.dataset)
-        lon = [i for i = longitudes[1]+resolution_X/2:resolution_X:longitudes[2]-resolution_X/2, 
+        lon = [i for i = longitudes[1]+resolution_X/2:resolution_X:longitudes[2]-resolution_X/2,
                      j = latitudes[1]+resolution_Y/2:resolution_Y:latitudes[2]-resolution_Y/2]
-        lat = [j for i = longitudes[1]+resolution_X/2:resolution_X:longitudes[2]-resolution_X/2, 
+        lat = [j for i = longitudes[1]+resolution_X/2:resolution_X:longitudes[2]-resolution_X/2,
                      j = latitudes[1]+resolution_Y/2:resolution_Y:latitudes[2]-resolution_Y/2]
-        
+
         # Interpolation factors for the native grid (writes out to a file "interp_file" for later use)
         coeffs = interpolation_setup(; Γ=native_grid_coords, lat, lon, filename=interp_file)
     else
@@ -149,23 +149,23 @@ function retrieve_data(metadata::Metadatum{<:Union{ECCO4DarwinMonthly, ECCO2Darw
         coeffs = interpolation_setup(interp_file)
     end
 
-    # Read continental mask on the native model grid 
+    # Read continental mask on the native model grid
     native_grid_fac_center = GridLoadVar("hFacC", native_grid)
 
     # Interpolate each masked layer on to the native lat lon grid
     for k in 1:Nz
         i, j, c = MeshArrays.Interpolate(
-            meshed_data[:, k], 
+            meshed_data[:, k],
             coeffs,
         )
         data[:, :, k] = c
         i, j, c = MeshArrays.Interpolate(
-            land_mask(native_grid_fac_center[:, k]), 
+            land_mask(native_grid_fac_center[:, k]),
             coeffs,
         )
         mask[:, :, k] = c
     end
-    
+
     # Reverse the z-axis
     data = reverse(data, dims=3)
     mask = reverse(mask, dims=3)

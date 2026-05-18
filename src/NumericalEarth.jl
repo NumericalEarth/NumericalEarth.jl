@@ -101,11 +101,11 @@ export
     location,
     native_grid
 
-using DataDeps
-
-using Oceananigans
+using DataDeps: DataDeps
+using Oceananigans: Oceananigans
+using Oceananigans.Architectures: CPU
 using Oceananigans.Grids: node
-using Oceananigans.Operators: ℑxyᶠᶜᵃ, ℑxyᶜᶠᵃ
+using Oceananigans.ImmersedBoundaries: ImmersedBoundaryGrid, GridFittedBottom
 using Oceananigans.OutputReaders: GPUAdaptedFieldTimeSeries, FieldTimeSeries
 
 import Oceananigans: location

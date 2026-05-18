@@ -1,7 +1,5 @@
-using NCDatasets
-using JLD2
-using Statistics: median
-using Oceananigans.Grids: λnodes, φnodes
+using NCDatasets: NCDatasets
+using JLD2: JLD2, jldopen
 using Oceananigans.Architectures: on_architecture
 using Oceananigans.Fields: fractional_x_index, fractional_y_index, interpolate!
 

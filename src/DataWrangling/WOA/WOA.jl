@@ -2,30 +2,17 @@ module WOA
 
 export WOAClimatology, WOAAnnual, WOAMonthly
 
-using ...NumericalEarth
-using Oceananigans
-using NCDatasets
-using JLD2
-using Scratch
-using Adapt
-using Dates
+using Dates: month, DateTime, Dates
+using NCDatasets: NCDatasets, Dataset
+using Scratch: Scratch, @get_scratch!
 
-using ..DataWrangling:
-    Metadata,
-    Metadatum,
-    BoundingBox,
-    inpaint_mask!,
-    NearestNeighborInpainting,
-    DownloadProgress
-
-using Oceananigans.DistributedComputations: @root
+using ..DataWrangling: Metadata, Metadatum
 
 import ..DataWrangling:
     all_dates,
     first_date,
     last_date,
     metadata_filename,
-    download_dataset,
     default_download_directory,
     metadata_path,
     dataset_variable_name,
@@ -145,7 +132,7 @@ metaprefix(::WOAMetadatum) = "WOAMetadatum"
 
 # Map from date to WOA period number (used by extension for download)
 woa_period(::WOAAnnual, date) = 0
-woa_period(::WOAMonthly, date) = Dates.month(date)
+woa_period(::WOAMonthly, date) = month(date)
 
 function metadata_filename(::WOAAnnual, name, date, region)
     varname = WOA_variable_names[name]
@@ -154,7 +141,7 @@ end
 
 function metadata_filename(::WOAMonthly, name, date, region)
     varname = WOA_variable_names[name]
-    m = lpad(Dates.month(date), 2, '0')
+    m = lpad(month(date), 2, '0')
     return "woa_$(varname)_monthly_$(m).nc"
 end
 

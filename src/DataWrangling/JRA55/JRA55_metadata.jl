@@ -1,14 +1,13 @@
-using CFTime
-using Dates
-using Downloads
+using CFTime: CFTime
+using Dates: Dates, DateTime, Day, Hour, Second
+using Downloads: Downloads
 
 using Oceananigans.DistributedComputations
 
 using ..DataWrangling
-using ..DataWrangling: Metadata, metadata_path, DownloadProgress, AnyDateTime
+using ..DataWrangling: Metadata, metadata_path, DownloadProgress
 
 import Base
-import Dates: year, month, day
 import Oceananigans.Fields: set!
 import ..DataWrangling: all_dates, metadata_filename, build_filename, download_dataset, default_download_directory, available_variables
 

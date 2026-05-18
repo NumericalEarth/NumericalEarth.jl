@@ -1,6 +1,7 @@
-using CFTime
-using Dates
+using CFTime: AbstractCFDateTime, CFTime
+using Dates: Dates, Date, DateTime
 using Base: @propagate_inbounds
+
 import Oceananigans.Utils: prettysummary
 
 struct BoundingBox{X, Y, Z}

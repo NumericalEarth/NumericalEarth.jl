@@ -1,9 +1,7 @@
-import Oceananigans: location
 import Oceananigans.Fields: set!
 
 using Oceananigans.Grids: znodes
-using Oceananigans.Fields: CenterField, interpolate!
-using Oceananigans.Architectures: architecture, on_architecture
+using Oceananigans.Architectures: on_architecture
 using Oceananigans.DistributedComputations: child_architecture
 
 #####
@@ -44,7 +42,7 @@ const OSPapa_depth_variable_names = Dict(
 )
 
 dataset_variable_name(data::OSPapaMetadata) = OSPapa_dataset_variable_names[data.name]
-location(::OSPapaMetadata) = (Center, Center, Center)
+Oceananigans.location(::OSPapaMetadata) = (Center, Center, Center)
 is_three_dimensional(md::OSPapaMetadata) = md.name in (:temperature, :salinity, :eastward_velocity, :northward_velocity)
 reversed_vertical_axis(::OSPapaHourly) = true
 

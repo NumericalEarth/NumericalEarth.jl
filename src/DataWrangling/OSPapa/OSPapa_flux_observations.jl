@@ -1,4 +1,3 @@
-import Oceananigans: location
 import Oceananigans.Fields: set!
 
 using Oceananigans.Architectures: on_architecture
@@ -35,7 +34,7 @@ const OSPapa_flux_variable_names = Dict(
 
 dataset_variable_name(md::OSPapaFluxMetadata) = OSPapa_flux_variable_names[md.name]
 
-location(::OSPapaFluxMetadata) = (Center, Center, Center)
+Oceananigans.location(::OSPapaFluxMetadata) = (Center, Center, Center)
 is_three_dimensional(::OSPapaFluxMetadata) = false
 conversion_units(::OSPapaFluxMetadatum) = nothing
 default_inpainting(::OSPapaFluxMetadata) = nothing
@@ -81,7 +80,7 @@ function download_ospapa_flux(; start_date, end_date, dir=download_OSPapa_cache)
         t1 = Dates.format(end_date, "yyyy-mm-ddTHH:MM:SSZ")
         url = "$(ERDDAP_BASE)/ocs_papa_flux.nc?$(ERDDAP_FLUX_VARS)&time>=$(t0)&time<=$(t1)"
         @info "Downloading OS Papa flux data from ERDDAP..."
-        Downloads.download(url, filepath; progress=DownloadProgress())
+        download(url, filepath; progress=DownloadProgress())
     end
     return filepath
 end

@@ -3,7 +3,7 @@ using Oceananigans.Grids: AbstractGrid
 using Oceananigans.Fields: interpolate!
 using Oceananigans.OutputReaders: Cyclical, AbstractInMemoryBackend, FlavorOfFTS, time_indices
 
-import Oceananigans.OutputReaders: new_backend, update_field_time_series!, FieldTimeSeries
+import Oceananigans.OutputReaders: new_backend, FieldTimeSeries
 
 @inline instantiate(T::DataType) = T()
 @inline instantiate(T) = T

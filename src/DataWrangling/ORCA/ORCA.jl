@@ -2,10 +2,10 @@ module ORCA
 
 export ORCA1, ORCA12
 
-using Downloads
-using Oceananigans
+using Downloads: Downloads
+using Oceananigans: Oceananigans
 using Oceananigans.DistributedComputations: @root
-using Scratch
+using Scratch: Scratch, @get_scratch!
 
 using ..DataWrangling: DownloadProgress, Metadatum, metadata_path
 
@@ -23,9 +23,11 @@ import ..DataWrangling:
     reversed_vertical_axis
 
 download_ORCA_cache::String = ""
+
 function __init__()
     global download_ORCA_cache = @get_scratch!("ORCA")
 end
+
 abstract type ORCADataset end
 
 struct ORCA1 <: ORCADataset end

@@ -3,34 +3,13 @@ module EN4
 export EN4Metadatum, EN4_immersed_grid, adjusted_EN4_tracers, initialize!
 export EN4Monthly
 
-using ...NumericalEarth
-using Oceananigans
-using NCDatasets
-using JLD2
-using Downloads: download
-using Adapt
-using Scratch
-
-using ..DataWrangling:
-    Metadata,
-    Metadatum,
-    BoundingBox,
-    inpaint_mask!,
-    NearestNeighborInpainting,
-    DownloadProgress,
-    compute_native_date_range,
-    Kelvin,
-    Celsius
-
-using KernelAbstractions: @kernel, @index
-
-using Dates: year, month, day
-using Oceananigans.Architectures: architecture
+using Dates: DateTime, Month
 using Oceananigans.DistributedComputations: @root
+using Scratch: @get_scratch!
+using ZipFile: ZipFile
 
-using Dates
-using Downloads
-import ZipFile
+using ...NumericalEarth: NumericalEarth
+using ..DataWrangling: Metadata, Metadatum, DownloadProgress, Kelvin, first_date
 
 import ..DataWrangling:
     all_dates,
