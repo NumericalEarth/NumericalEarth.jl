@@ -168,21 +168,26 @@ function download_dataset(meta::ERA5Metadatum; skip_existing=true)
 end
 
 #####
-##### Multi-date download — batches by calendar month
+##### Multi-date download — batches by calendar month, capped by CDS cost
 #####
-##### One CDS request per `(year, month)` group. CDS interprets the request's
-##### `year`/`month`/`day`/`time` fields as a Cartesian product, so we can ask
-##### for many days × hours in a single call as long as `year` and `month` are
-##### singletons.
+##### CDS interprets `year`/`month`/`day`/`time` as a Cartesian product, so a
+##### single request can cover many days × hours per call as long as `year`
+##### and `month` stay singletons. The remaining constraint is the per-request
+##### cost limit: roughly `num_vars × num_pressure_levels × num_datetimes`
+##### must stay under ~7500 for pressure-level data (CDS returns HTTP 403
+##### "cost limits exceeded" otherwise). We pick a conservative cap and split
+##### each month into smaller contiguous chunks when needed.
 #####
+
+const _CDS_MAX_FIELDS_PER_REQUEST = 5000
 
 function download_dataset(metadata::ERA5Metadata; skip_existing=true, cleanup=true)
     dates = metadata.dates isa AbstractVector ? metadata.dates : [metadata.dates]
-    grouped = _group_by_calendar_month(dates)
+    batches = _batch_datetimes_for_cds(dates, metadata.dataset, 1)
 
     paths = String[]
-    for key in sort(collect(keys(grouped)))
-        path = download_era5_month(metadata.name, metadata.dataset, grouped[key];
+    for batch in batches
+        path = download_era5_month(metadata.name, metadata.dataset, batch;
                                    region = metadata.region,
                                    dir = metadata.dir,
                                    skip_existing, cleanup)
@@ -204,6 +209,44 @@ function _group_by_calendar_month(datetimes)
     keys = unique([(Dates.year(dt), Dates.month(dt)) for dt in datetimes])
     return Dict(k => filter(dt -> (Dates.year(dt), Dates.month(dt)) == k, datetimes)
                 for k in keys)
+end
+
+"""
+    _max_dts_per_cds_request(dataset, num_vars; max_fields=$(_CDS_MAX_FIELDS_PER_REQUEST))
+
+Maximum number of datetimes that can share a single CDS request before the
+per-request cost limit is hit. Pressure-level datasets multiply by the number
+of selected pressure levels; single-level datasets count as one level. Falls
+back to `1` when a single datetime already exceeds the cap (which would force
+the caller's single-datetime download path).
+"""
+function _max_dts_per_cds_request(dataset, num_vars; max_fields=_CDS_MAX_FIELDS_PER_REQUEST)
+    levels = dataset isa ERA5PressureLevelsDataset ? length(dataset.pressure_levels) : 1
+    return max(1, fld(max_fields, num_vars * levels))
+end
+
+"""
+    _batch_datetimes_for_cds(datetimes, dataset, num_vars; max_fields=$(_CDS_MAX_FIELDS_PER_REQUEST))
+
+Split `datetimes` into contiguous batches that each fit in one CDS request:
+each batch shares a `(year, month)` and contains at most
+`_max_dts_per_cds_request(dataset, num_vars; max_fields)` datetimes. Batches
+are returned sorted by their first datetime so the caller can iterate in
+chronological order.
+"""
+function _batch_datetimes_for_cds(datetimes, dataset, num_vars;
+                                  max_fields=_CDS_MAX_FIELDS_PER_REQUEST)
+    monthly = _group_by_calendar_month(datetimes)
+    max_dts = _max_dts_per_cds_request(dataset, num_vars; max_fields)
+
+    batches = Vector{DateTime}[]
+    for key in sort(collect(keys(monthly)))
+        sorted = sort(unique(monthly[key]))
+        for i in 1:max_dts:length(sorted)
+            push!(batches, sorted[i:min(i + max_dts - 1, end)])
+        end
+    end
+    return batches
 end
 
 """
@@ -375,11 +418,11 @@ function download_dataset(names::Vector{Symbol},
                           skip_existing = true,
                           cleanup = true)
 
-    grouped = _group_by_calendar_month(datetimes)
+    batches = _batch_datetimes_for_cds(datetimes, dataset, length(names))
 
     paths = String[]
-    for key in sort(collect(keys(grouped)))
-        path = download_era5_multivar_month(names, dataset, grouped[key];
+    for batch in batches
+        path = download_era5_multivar_month(names, dataset, batch;
                                             region, dir, skip_existing, cleanup)
         append!(paths, path)
     end
