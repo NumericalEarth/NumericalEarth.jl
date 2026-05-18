@@ -176,4 +176,4 @@ function Oceananigans.restore_prognostic_state!(atmos::PrescribedAtmosphere, sta
     return atmos
 end
 
-restore_prognostic_state!(atmos::PrescribedAtmosphere, ::Nothing) = atmos
+Oceananigans.restore_prognostic_state!(atmos::PrescribedAtmosphere, ::Nothing) = atmos
