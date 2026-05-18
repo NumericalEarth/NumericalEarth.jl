@@ -1,9 +1,5 @@
-using GPUArraysCore: @allowscalar
-using Printf
-
-import ClimaSeaIce
-import Thermodynamics as AtmosphericThermodynamics
-using Thermodynamics: Liquid, Ice
+using ClimaSeaIce: ClimaSeaIce
+using Thermodynamics: Thermodynamics as AtmosphericThermodynamics
 
 #####
 ##### Interface properties
@@ -36,7 +32,7 @@ function Base.summary(q★::ImpureSaturationSpecificHumidity)
 
 
     return string("ImpureSaturationSpecificHumidity{$phase_str}(water_mole_fraction=",
-                  prettysummary(q★.water_mole_fraction), ")") 
+                  prettysummary(q★.water_mole_fraction), ")")
 end
 
 Base.show(io::IO, q★::ImpureSaturationSpecificHumidity) = print(io, summary(q★))
@@ -56,10 +52,10 @@ ImpureSaturationSpecificHumidity(phase) = ImpureSaturationSpecificHumidity(phase
                                             Tₛ, Sₛ=zero(Tₛ))
     # Extrapolate air density to the surface temperature
     # following an adiabatic ideal gas transformation
-    cvₘ = Thermodynamics.cv_m(ℂᵃᵗ, qᵃᵗ)
-    Rᵃᵗ = Thermodynamics.gas_constant_air(ℂᵃᵗ, qᵃᵗ)
+    cvₘ = AtmosphericThermodynamics.cv_m(ℂᵃᵗ, qᵃᵗ)
+    Rᵃᵗ = AtmosphericThermodynamics.gas_constant_air(ℂᵃᵗ, qᵃᵗ)
     κᵃᵗ = cvₘ / Rᵃᵗ # 1 / (γ - 1)
-    ρᵃᵗ = Thermodynamics.air_density(ℂᵃᵗ, Tᵃᵗ, pᵃᵗ, qᵃᵗ)
+    ρᵃᵗ = AtmosphericThermodynamics.air_density(ℂᵃᵗ, Tᵃᵗ, pᵃᵗ, qᵃᵗ)
     ρₛ = ρᵃᵗ * (Tₛ / Tᵃᵗ)^κᵃᵗ
     return surface_specific_humidity(formulation, ℂᵃᵗ, ρₛ, Tₛ, Sₛ)
 end
@@ -70,8 +66,8 @@ end
     Tₛ = convert(CT, Tₛ)
     ρₛ = convert(CT, ρₛ)
     phase = formulation.phase
-    p★ = Thermodynamics.saturation_vapor_pressure(ℂᵃᵗ, Tₛ, phase)
-    q★ = Thermodynamics.q_vap_from_p_vap(ℂᵃᵗ, Tₛ, ρₛ, p★)
+    p★ = AtmosphericThermodynamics.saturation_vapor_pressure(ℂᵃᵗ, Tₛ, phase)
+    q★ = AtmosphericThermodynamics.q_vap_from_p_vap(ℂᵃᵗ, Tₛ, ρₛ, p★)
 
     # Compute saturation specific humidity according to Raoult's law
     χ_H₂O = compute_water_mole_fraction(formulation.water_mole_fraction, Sₛ)
@@ -262,7 +258,7 @@ end
     Ωᵀ = 𝒬ᵀ * λ  # unnormalized sensible heat coefficient (= Ωc * ΔT)
     D  = F.κ * ΔT - Ωᵀ * F.δ
     T★ = (Ψᵢ.T * F.κ * ΔT - (Jᵀ * ΔT + Ωᵀ * Tᵃᵗ) * F.δ) / D
-    
+
     return ifelse(D == 0, Ψₛ.T, T★)
 end
 

@@ -90,8 +90,6 @@ end
 ##### Chekpointing (not needed for FreezingLimitedOceanTemperature)
 #####
 
-import Oceananigans: prognostic_state, restore_prognostic_state!
-
-prognostic_state(::FreezingLimitedOceanTemperature) = nothing
-restore_prognostic_state!(flt::FreezingLimitedOceanTemperature, state) = flt
-restore_prognostic_state!(flt::FreezingLimitedOceanTemperature, ::Nothing) = flt
+Oceananigans.prognostic_state(::FreezingLimitedOceanTemperature) = nothing
+Oceananigans.restore_prognostic_state!(flt::FreezingLimitedOceanTemperature, state) = flt
+Oceananigans.restore_prognostic_state!(flt::FreezingLimitedOceanTemperature, ::Nothing) = flt

@@ -32,7 +32,7 @@ function ComponentExchanger(atmosphere::SpeedySimulation, exchange_grid)
     from_atmosphere = Regridder(manifold, exchange_grid, spectral_grid)
     to_atmosphere   = Regridder(manifold, spectral_grid, exchange_grid)
     regridder = (; to_atmosphere, from_atmosphere)
-    
+
     state = (; u    = Field{Center, Center, Nothing}(exchange_grid),
                v    = Field{Center, Center, Nothing}(exchange_grid),
                T    = Field{Center, Center, Nothing}(exchange_grid),
@@ -42,7 +42,7 @@ function ComponentExchanger(atmosphere::SpeedySimulation, exchange_grid)
                ℐꜜˡʷ = Field{Center, Center, Nothing}(exchange_grid),
                Jʳⁿ  = Field{Center, Center, Nothing}(exchange_grid),
                Jˢⁿ  = Field{Center, Center, Nothing}(exchange_grid))
-    
+
     return ComponentExchanger(state, regridder)
 end
 
@@ -69,7 +69,7 @@ function interpolate_state!(exchanger, exchange_grid, atmos::SpeedySimulation, c
     ℐꜜˡʷ = atmos.variables.parameterizations.surface_longwave_down.data
     Jʳⁿ  = atmos.variables.parameterizations.rain_rate.data
 
-    # `snow_rate` is only registered when SpeedyWeather's large-scale 
+    # `snow_rate` is only registered when SpeedyWeather's large-scale
     # condensation parameterization is part of the model
     Jˢⁿ = haskey(atmos.variables.parameterizations, :snow_rate) ?
           atmos.variables.parameterizations.snow_rate.data : nothing

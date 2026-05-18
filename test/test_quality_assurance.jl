@@ -27,12 +27,12 @@ using ExplicitImports: ExplicitImports
         # NumericalEarth.DataWrangling.OSPapa,
         # NumericalEarth.DataWrangling.WOA,
         NumericalEarth.Diagnostics,
-        # NumericalEarth.EarthSystemModels,
-        # NumericalEarth.EarthSystemModels.InterfaceComputations,
+        NumericalEarth.EarthSystemModels,
+        NumericalEarth.EarthSystemModels.InterfaceComputations,
         NumericalEarth.InitialConditions,
-        # NumericalEarth.Lands,
-        # NumericalEarth.Oceans,
-        # NumericalEarth.Radiations,
+        NumericalEarth.Lands,
+        NumericalEarth.Oceans,
+        NumericalEarth.Radiations,
         NumericalEarth.SeaIces,
     ]
 

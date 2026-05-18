@@ -2,41 +2,36 @@ module Oceans
 
 export ocean_simulation, SlabOcean
 
-using Oceananigans
-using Oceananigans.Units
-using Oceananigans.Utils
-using Oceananigans.Utils: with_tracers
-using Oceananigans.Advection: FluxFormAdvection
-using Oceananigans.BoundaryConditions: DefaultBoundaryCondition, DiscreteBoundaryFunction
-using Oceananigans.ImmersedBoundaries: immersed_peripheral_node, inactive_node, MutableGridOfSomeKind
-using Oceananigans.OrthogonalSphericalShellGrids
-using Oceananigans.Operators
-
-using Oceananigans.TurbulenceClosures.TKEBasedVerticalDiffusivities:
-    CATKEVerticalDiffusivity,
-    CATKEMixingLength,
-    CATKEEquation
-
-using SeawaterPolynomials
-using SeawaterPolynomials.TEOS10: TEOS10EquationOfState
+using Adapt: Adapt, adapt
 using KernelAbstractions: @kernel, @index
+using Oceananigans: Oceananigans
+using Oceananigans.Advection: WENO, WENOVectorInvariant
+using Oceananigans.BoundaryConditions: DefaultBoundaryCondition, DiscreteBoundaryFunction,
+                                       FieldBoundaryConditions, FluxBoundaryCondition, getbc
+using Oceananigans.BuoyancyFormulations: SeawaterBuoyancy
+using Oceananigans.Coriolis: HydrostaticSphericalCoriolis
+using Oceananigans.Fields: Field, CenterField, set!, interior
+using Oceananigans.Grids: inactive_node, Face, Center, xspacings, yspacings, RectilinearGrid
+using Oceananigans.ImmersedBoundaries: ImmersedBoundaryGrid, ImmersedBoundaryCondition
+using Oceananigans.Models.HydrostaticFreeSurfaceModels: HydrostaticFreeSurfaceModel
+using Oceananigans.Models.HydrostaticFreeSurfaceModels.SplitExplicitFreeSurfaces: SplitExplicitFreeSurface
+using Oceananigans.OrthogonalSphericalShellGrids: OrthogonalSphericalShellGrids, TripolarGrid
+using Oceananigans.Operators: ℑxyᶠᶜᵃ, ℑxyᶜᶠᵃ
+using Oceananigans.Simulations: Simulation
+using Oceananigans.TurbulenceClosures.TKEBasedVerticalDiffusivities: CATKEVerticalDiffusivity,
+                                                                     CATKEMixingLength,
+                                                                     CATKEEquation
+using Oceananigans.Units: minutes, hours
+using Oceananigans.Utils: with_tracers, launch!
+using SeawaterPolynomials: SeawaterPolynomials
+using SeawaterPolynomials.TEOS10: TEOS10EquationOfState
 
-using ..EarthSystemModels
-
-import ..EarthSystemModels: interpolate_state!,
-                            update_net_fluxes!,
-                            reference_density,
-                            heat_capacity,
-                            exchange_grid,
-                            temperature_units,
-                            DegreesKelvin,
-                            ocean_temperature,
-                            ocean_salinity,
-                            ocean_surface_temperature,
-                            ocean_surface_salinity,
-                            ocean_surface_velocities
-
-import ..EarthSystemModels.InterfaceComputations: ComponentExchanger, net_fluxes
+using ..EarthSystemModels: EarthSystemModels,
+                           ocean_surface_velocities,
+                           ocean_surface_salinity,
+                           DegreesKelvin,
+                           heat_capacity
+using ..EarthSystemModels.InterfaceComputations: ComponentExchanger
 
 default_gravitational_acceleration = Oceananigans.defaults.gravitational_acceleration
 default_planet_rotation_rate = Oceananigans.defaults.planet_rotation_rate
@@ -70,29 +65,29 @@ include("assemble_net_ocean_fluxes.jl")
 ##### Extend utility functions to grab the state of the ocean
 #####
 
-ocean_salinity(ocean::Simulation{<:HydrostaticFreeSurfaceModel})    = ocean.model.tracers.S
-ocean_temperature(ocean::Simulation{<:HydrostaticFreeSurfaceModel}) = ocean.model.tracers.T
+EarthSystemModels.ocean_salinity(ocean::Simulation{<:HydrostaticFreeSurfaceModel})    = ocean.model.tracers.S
+EarthSystemModels.ocean_temperature(ocean::Simulation{<:HydrostaticFreeSurfaceModel}) = ocean.model.tracers.T
 
-function ocean_surface_salinity(ocean::Simulation{<:HydrostaticFreeSurfaceModel})
+function EarthSystemModels.ocean_surface_salinity(ocean::Simulation{<:HydrostaticFreeSurfaceModel})
     kᴺ = size(ocean.model.grid, 3)
     return interior(ocean.model.tracers.S, :, :, kᴺ:kᴺ)
 end
 
-function ocean_surface_temperature(ocean::Simulation{<:HydrostaticFreeSurfaceModel})
+function EarthSystemModels.ocean_surface_temperature(ocean::Simulation{<:HydrostaticFreeSurfaceModel})
     kᴺ = size(ocean.model.grid, 3)
     return interior(ocean.model.tracers.T, :, :, kᴺ:kᴺ)
 end
 
-function ocean_surface_velocities(ocean::Simulation{<:HydrostaticFreeSurfaceModel})
+function EarthSystemModels.ocean_surface_velocities(ocean::Simulation{<:HydrostaticFreeSurfaceModel})
     kᴺ = size(ocean.model.grid, 3)
     return view(ocean.model.velocities.u, :, :, kᴺ), view(ocean.model.velocities.v, :, :, kᴺ)
 end
 
 # When using an Oceananigans simulation, we assume that the exchange grid is the ocean grid
 # We need, however, to interpolate the surface pressure to the ocean grid
-interpolate_state!(exchanger, grid, ::Simulation{<:HydrostaticFreeSurfaceModel}, coupled_model) = nothing
+EarthSystemModels.interpolate_state!(exchanger, grid, ::Simulation{<:HydrostaticFreeSurfaceModel}, coupled_model) = nothing
 
-function ComponentExchanger(ocean::Simulation{<:HydrostaticFreeSurfaceModel}, grid)
+function EarthSystemModels.InterfaceComputations.ComponentExchanger(ocean::Simulation{<:HydrostaticFreeSurfaceModel}, grid)
     ocean_grid = ocean.model.grid
 
     if ocean_grid == grid
@@ -114,7 +109,7 @@ end
 @inline net_flux(bc::MultipleFluxes) = bc.flux_field
 @inline net_flux(bc::DiscreteBoundaryFunction) = net_flux(bc.func)
 
-function net_fluxes(ocean::Simulation{<:HydrostaticFreeSurfaceModel})
+function EarthSystemModels.InterfaceComputations.net_fluxes(ocean::Simulation{<:HydrostaticFreeSurfaceModel})
     # TODO: Generalize this to work with any ocean model
     τˣ = net_flux(ocean.model.velocities.u.boundary_conditions.top.condition)
     τʸ = net_flux(ocean.model.velocities.v.boundary_conditions.top.condition)
