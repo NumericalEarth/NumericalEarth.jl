@@ -7,10 +7,10 @@
 # (3-D) fields with two subsetting approaches (bounding box and column) that
 # restrict the amount of data requested through the CDS API.
 #
-# Our focus is on a week within the  *undisturbed period* (Dec 27 2004 – Jan 2 2005)
-# by [vanZanten2011](@citet), during which a mean precipitation was observed.
-# Here, we briefly analyze and present the ERA5 data, referring to published
-# material where appropriate.
+# Our focus is on the first four days of the *undisturbed period*
+# (Dec 27 2004 – Jan 2 2005) by [vanZanten2011](@citet), during which a mean
+# precipitation was observed. Here, we briefly analyze and present the ERA5
+# data, referring to published material where appropriate.
 #
 # Three scales are demonstrated:
 #
@@ -36,17 +36,18 @@ using NumericalEarth.DataWrangling.ERA5
 using CDSAPI
 using Dates
 using Oceananigans
+using Oceananigans.Fields: interpolate!
 using Statistics
 using CairoMakie
 using Suppressor
 
 # ## Study definition
 #
-# For demonstration purposes, we select one week within [vanZanten2011](@citet)'s
-# undisturbed period, giving us 168 hourly snapshots. This is used
-# by both sections below.
+# For demonstration purposes, we select four days within
+# [vanZanten2011](@citet)'s undisturbed period, giving us 96 hourly snapshots.
+# This is used by both sections below.
 
-dates = DateTime(2004, 12, 27):Hour(1):DateTime(2005, 1, 2, 23)
+dates = DateTime(2004, 12, 27):Hour(1):DateTime(2004, 12, 30, 23)
 nothing #hide
 
 # To subset the ERA5 data, we define two types of `region`s.
@@ -56,7 +57,7 @@ nothing #hide
 synoptic_region = BoundingBox(latitude=(-25, 35), longitude=(-110, 30))
 
 ## RICO study area near Antigua and Barbuda
-rico_region = BoundingBox(latitude=(17, 18.5), longitude=(-62.5, -61))
+rico_region = BoundingBox(latitude=(17.5, 18.5), longitude=(-62, -61))
 nothing #hide
 
 # And a single `Column`, which has no lateral dimensionality:
@@ -442,12 +443,13 @@ ax5  = Axis(fig5[1, 1]; xlabel = "Longitude (°)", ylabel = "Latitude (°)",
 hm = heatmap!(ax5, q_obs; colormap = :viridis)
 Colorbar(fig5[1, 2], hm; label = "qᵛ [kg kg⁻¹]")
 
-## Each frame: load qᵛ on its per-column-z grid (one CDS file per hour, cached
-## after the first run), interpolate down onto the 2-D target at z = 800 m.
-record(fig5, "rico_qv_animation.mp4", dates; framerate = 12) do date
-    set!(q2d, Metadatum(:specific_humidity; dataset = ds_pl, date, region = rico_region))
+## Each frame: pull the next snapshot from the qᵛ `FieldTimeSeries` we already
+## built in §3 — its source grid is the per-column-z `PressureLevelGrid`, and
+## `interpolate!` runs the column-bisecting interpolation onto the fixed-z target.
+record(fig5, "rico_qv_animation.mp4", 1:length(dates); framerate = 12) do n
+    interpolate!(q2d, q_series[n])
     q_obs[] = q2d
-    ax5.title = "ERA5 qᵛ at 800 m — " * Dates.format(date, dateformat"u d HH:MM") * " UTC"
+    ax5.title = "ERA5 qᵛ at 800 m — " * Dates.format(dates[n], dateformat"u d HH:MM") * " UTC"
 end
 
 @info "Wrote rico_qv_animation.mp4"
