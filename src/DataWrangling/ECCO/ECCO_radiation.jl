@@ -1,7 +1,7 @@
 using ...Radiations: PrescribedRadiation, SurfaceRadiationProperties, default_stefan_boltzmann_constant
 
 """
-    ECCOPrescribedRadiation([architecture = CPU(), FT = Float32];
+    ECCOPrescribedRadiation([architecture = CPU()];
                             dataset = ECCO4Monthly(),
                             start_date = first_date(dataset, :downwelling_shortwave),
                             end_date = last_date(dataset, :downwelling_shortwave),
@@ -16,7 +16,7 @@ using ...Radiations: PrescribedRadiation, SurfaceRadiationProperties, default_st
 Return a [`PrescribedRadiation`](@ref) backed by ECCO downwelling shortwave
 and longwave fields.
 """
-function ECCOPrescribedRadiation(architecture = CPU(), FT = Float32;
+function ECCOPrescribedRadiation(architecture = CPU();
                                  dataset = ECCO4Monthly(),
                                  start_date = first_date(dataset, :downwelling_shortwave),
                                  end_date = last_date(dataset, :downwelling_shortwave),
