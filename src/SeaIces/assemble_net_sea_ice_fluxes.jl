@@ -1,10 +1,9 @@
-using NumericalEarth.EarthSystemModels.InterfaceComputations: computed_fluxes,
-                                                          interface_kernel_parameters,
-                                                          convert_to_kelvin
+using ..EarthSystemModels: sea_ice_concentration
+using ..EarthSystemModels.InterfaceComputations: computed_fluxes
 
-update_net_fluxes!(coupled_model, ::FreezingLimitedOceanTemperature) = nothing
+EarthSystemModels.update_net_fluxes!(coupled_model, ::FreezingLimitedOceanTemperature) = nothing
 
-function update_net_fluxes!(coupled_model, sea_ice::Simulation{<:SeaIceModel})
+function EarthSystemModels.update_net_fluxes!(coupled_model, sea_ice::Simulation{<:SeaIceModel})
     ocean = coupled_model.ocean
     grid  = sea_ice.model.grid
     arch  = architecture(grid)

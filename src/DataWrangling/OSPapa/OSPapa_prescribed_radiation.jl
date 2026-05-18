@@ -1,4 +1,4 @@
-using NumericalEarth.Radiations: PrescribedRadiation, SurfaceRadiationProperties, default_stefan_boltzmann_constant
+using ...Radiations: PrescribedRadiation, SurfaceRadiationProperties, default_stefan_boltzmann_constant
 
 """
     OSPapaPrescribedRadiation(architecture = CPU(), FT = Float32;
