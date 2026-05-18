@@ -2,6 +2,7 @@ module IBCSO
 
 export IBCSOv2
 
+using Downloads: Downloads
 using Oceananigans: Oceananigans
 using Oceananigans.DistributedComputations: @root
 using Scratch: @get_scratch!
