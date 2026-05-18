@@ -129,11 +129,11 @@ end
 
 # Convenience functions
 DataWrangling.dataset_variable_name(data::EN4Metadata) = EN4_dataset_variable_names[data.name]
-is_three_dimensional(::EN4Metadata) = true
+DataWrangling.is_three_dimensional(::EN4Metadata) = true
 
 ## This function is explicitly for the downloader to check if the zip file/extracted file exists,
 ## then to download the relevant URL (from above)
-function metadata_zippath(m::EN4Metadata)
+function DataWrangling.metadata_zippath(m::EN4Metadata)
     year = string(Dates.year(m.dates))
     month = string(Dates.month(m.dates))
     zippath = joinpath(m.dir, "EN4_" * year * ".zip")
@@ -157,7 +157,7 @@ function unzip(file, exdir="")
     close(zarchive)
 end
 
-function metadata_url(m::EN4Metadata)
+function DataWrangling.metadata_url(m::EN4Metadata)
     year = string(Dates.year(m.dates))
     if Dates.year(m.dates) < 2021
         return EN4_url_pre2021 * year * ".zip"
