@@ -3,9 +3,10 @@ using Dates: Dates, DateTime, Day, Hour
 using Downloads: Downloads
 using Oceananigans.DistributedComputations
 
-using ..DataWrangling: DataWrangling, Metadata, metadata_path, DownloadProgress, DatasetBackend
+using ..DataWrangling: all_dates, DataWrangling, Metadata, metadata_path,
+                       DownloadProgress, DatasetBackend
 
-import ..DataWrangling: all_dates, metadata_filename, build_filename, download_dataset,
+import ..DataWrangling: metadata_filename, build_filename, download_dataset,
                         default_download_directory, available_variables, dataset_variable_name,
                         available_variables, default_inpainting, getfilename, longitude_interfaces,
                         latitude_interfaces, longitude_name, latitude_name, is_three_dimensional
@@ -57,7 +58,7 @@ default_inpainting(::JRA55Metadata) = nothing
 
 # The whole range of dates in the different dataset datasets
 # NOTE! rivers and icebergs have a different frequency! (typical JRA55 data is three-hourly while rivers and icebergs are daily)
-function all_dates(::RepeatYearJRA55, name)
+function DataWrangling.all_dates(::RepeatYearJRA55, name)
     if name == :river_freshwater_flux || name == :iceberg_freshwater_flux
         return DateTime(1990, 1, 1) : Day(1) : DateTime(1990, 12, 31)
     else
@@ -65,10 +66,10 @@ function all_dates(::RepeatYearJRA55, name)
     end
 end
 
-all_dates(::MultiYearJRA55, name) = JRA55_multiple_year_dates[name]
+DataWrangling.all_dates(::MultiYearJRA55, name) = JRA55_multiple_year_dates[name]
 
 # Fallback, if we not provide the name, take the highest frequency
-all_dates(dataset::JRA55Dataset) = all_dates(dataset, :temperature)
+DataWrangling.all_dates(dataset::JRA55Dataset) = all_dates(dataset, :temperature)
 
 # Valid for all JRA55 datasets
 function JRA55_time_indices(dataset, dates, name)

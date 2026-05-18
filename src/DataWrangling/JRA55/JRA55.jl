@@ -6,6 +6,7 @@ export JRA55PrescribedAtmosphere,
        RepeatYearJRA55,
        MultiYearJRA55
 
+using Adapt: Adapt
 using CFTime: CFTime
 using Dates: Dates, DateTime, Day, Hour
 using Downloads: Downloads
@@ -19,10 +20,8 @@ using Oceananigans.Units: Units
 using NCDatasets: NCDatasets, Dataset
 using Scratch: Scratch, @get_scratch!
 
-using ..DataWrangling: DataWrangling, Metadatum, first_date, last_date
+using ..DataWrangling: DataWrangling, Metadatum, first_date, last_date, set_region_data!
 using ...NumericalEarth: NumericalEarth
-using ...Atmospheres: PrescribedAtmosphere, PrescribedPrecipitationFlux
-using ...Radiations: PrescribedRadiation, SurfaceRadiationProperties, default_stefan_boltzmann_constant
 
 download_JRA55_cache::String = ""
 

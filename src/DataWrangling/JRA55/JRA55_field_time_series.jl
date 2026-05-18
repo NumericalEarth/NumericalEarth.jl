@@ -2,8 +2,6 @@ using Adapt: Adapt
 using ..DataWrangling: all_dates
 using ..DataWrangling: set_region_data!
 
-import NumericalEarth.DataWrangling: retrieve_data
-
 const JRA55NetCDFFTS              = FlavorOfFTS{<:Any, <:Any, <:Any, <:Any, <:DatasetBackend{<:Any, <:Any, <:Any, <:JRA55Metadata}}
 const JRA55NetCDFFTSRepeatYear    = FlavorOfFTS{<:Any, <:Any, <:Any, <:Any, <:DatasetBackend{<:Any, <:Any, <:Any, <:Metadata{<:RepeatYearJRA55}}}
 const JRA55NetCDFFTSMultipleYears = FlavorOfFTS{<:Any, <:Any, <:Any, <:Any, <:DatasetBackend{<:Any, <:Any, <:Any, <:Metadata{<:MultiYearJRA55}}}
@@ -16,7 +14,7 @@ Read the 2D slice from the JRA55 NetCDF file corresponding to `metadatum`'s sing
 exactly 2920 entries for 1990 and aligns 1:1 with `all_dates`); `MultiYearJRA55` resolves
 the index against the file's own `time` axis (one Gregorian-calendar file per year).
 """
-function retrieve_data(metadatum::RepeatYearJRA55Metadatum)
+function DataWrangling.retrieve_data(metadatum::RepeatYearJRA55Metadatum)
     path = metadata_path(metadatum)
     name = dataset_variable_name(metadatum)
 
@@ -33,7 +31,7 @@ function retrieve_data(metadatum::RepeatYearJRA55Metadatum)
     return data
 end
 
-function retrieve_data(metadatum::MultiYearJRA55Metadatum)
+function DataWrangling.retrieve_data(metadatum::MultiYearJRA55Metadatum)
     path = metadata_path(metadatum)
     name = dataset_variable_name(metadatum)
 
