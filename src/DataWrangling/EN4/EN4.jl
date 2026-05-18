@@ -11,7 +11,7 @@ using ZipFile: ZipFile
 
 using ...NumericalEarth: NumericalEarth
 using ..DataWrangling: DataWrangling, Metadata, Metadatum, DownloadProgress, Kelvin,
-                       first_date, metadata_path
+                       first_date, metadata_path, metadata_url
 
 download_EN4_cache::String = ""
 function __init__()
