@@ -70,8 +70,8 @@ end
 validate_dimension_specification(T, ξ::PressureLevelVerticalDiscretization, dir, N, FT) = ξ
 
 # Compute `Lz` from the actual geopotential data instead of a placeholder vector.
-# The returned discretization carries the geopotential (moved to `arch`) but
-# nothing else — `znodes` will error and `rnode` reads `geopotential` directly.
+# The returned discretization carries the geopotential (transferred to `arch`)
+# but nothing else — `znodes` will error and `rnode` reads `geopotential` directly.
 function generate_coordinate(FT, topo, sz, halo,
                              coord::PressureLevelVerticalDiscretization,
                              coordinate_name, dim::Int, arch)
@@ -83,8 +83,8 @@ function generate_coordinate(FT, topo, sz, halo,
     z_lo, z_hi = FT.(extrema(Φi) ./ g)
     Lz = z_hi - z_lo
 
-    moved = PressureLevelVerticalDiscretization(g, on_architecture(arch, coord.geopotential))
-    return Lz, moved
+    arch_discretization = PressureLevelVerticalDiscretization(g, on_architecture(arch, coord.geopotential))
+    return Lz, arch_discretization
 end
 
 _geopotential_data_for_extrema(Φ::Field) = interior(Φ)
