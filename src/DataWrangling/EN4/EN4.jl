@@ -10,25 +10,8 @@ using Scratch: @get_scratch!
 using ZipFile: ZipFile
 
 using ...NumericalEarth: NumericalEarth
-using ..DataWrangling: Metadata, Metadatum, DownloadProgress, Kelvin, first_date
-
-import ..DataWrangling:
-    all_dates,
-    metadata_filename,
-    download_dataset,
-    default_download_directory,
-    metadata_path,
-    conversion_units,
-    dataset_variable_name,
-    metaprefix,
-    z_interfaces,
-    longitude_interfaces,
-    latitude_interfaces,
-    is_three_dimensional,
-    reversed_vertical_axis,
-    inpainted_metadata_path,
-    available_variables
-
+using ..DataWrangling: Metadata, Metadatum, DownloadProgress, Kelvin,
+                       first_date, metadata_path, inpainted_metadata_path
 
 download_EN4_cache::String = ""
 function __init__()
@@ -42,16 +25,16 @@ EN4_dataset_variable_names = Dict(
 
 struct EN4Monthly end
 
-default_download_directory(::EN4Monthly) = download_EN4_cache
 Base.size(::EN4Monthly, variable) = (360, 173, 42)
-all_dates(::EN4Monthly, variable) = DateTime(1900, 1, 1) : Month(1) : DateTime(2024, 12, 1)
-reversed_vertical_axis(::EN4Monthly) = true
+DataWrangling.all_dates(::EN4Monthly, variable) = DateTime(1900, 1, 1) : Month(1) : DateTime(2024, 12, 1)
+DataWrangling.default_download_directory(::EN4Monthly) = download_EN4_cache
+DataWrangling.reversed_vertical_axis(::EN4Monthly) = true
 
-longitude_interfaces(::EN4Monthly) = (0.5, 360.5)
-latitude_interfaces(::EN4Monthly) = (-83.5, 89.5)
-available_variables(::EN4Monthly) = EN4_dataset_variable_names
+DataWrangling.longitude_interfaces(::EN4Monthly) = (0.5, 360.5)
+DataWrangling.latitude_interfaces(::EN4Monthly) = (-83.5, 89.5)
+DataWrangling.available_variables(::EN4Monthly) = EN4_dataset_variable_names
 
-z_interfaces(::EN4Monthly) = [
+DataWrangling.z_interfaces(::EN4Monthly) = [
     -5500.0,
     -5200.5986,
     -4901.459,
@@ -100,7 +83,7 @@ z_interfaces(::EN4Monthly) = [
 const EN4Metadata{D} = Metadata{<:EN4Monthly, D}
 const EN4Metadatum   = Metadatum{<:EN4Monthly}
 
-function conversion_units(metadatum::EN4Metadatum)
+function DataWrangling.conversion_units(metadatum::EN4Metadatum)
     if metadatum.name == :temperature
         return Kelvin()
     else
@@ -117,7 +100,7 @@ function inpainted_metadata_filename(metadata::EN4Metadatum)
     return without_extension * "_" * var *"_inpainted.jld2"
 end
 
-inpainted_metadata_path(metadata::EN4Metadatum) = joinpath(metadata.dir, inpainted_metadata_filename(metadata))
+DataWrangling.inpainted_metadata_path(metadata::EN4Metadatum) = joinpath(metadata.dir, inpainted_metadata_filename(metadata))
 
 """
     EN4Metadatum(name;
@@ -133,18 +116,19 @@ function EN4Metadatum(name;
     return Metadatum(name; date, dir, dataset=EN4Monthly())
 end
 
-metaprefix(::EN4Metadata) = "EN4Metadata"
-metaprefix(::EN4Metadatum) = "EN4Metadatum"
+DataWrangling.metaprefix(::EN4Metadata) = "EN4Metadata"
+DataWrangling.metaprefix(::EN4Metadatum) = "EN4Metadatum"
 
-# Note, EN4 files contain all variables; filenames do not depend on name.
-function metadata_filename(::EN4Monthly, name, date, region)
+# Note, EN4 files contain all variables, so the filenames do not
+# depend on name.
+function DataWrangling.metadata_filename(::EN4Monthly, name, date, region)
     yearstr  = string(Dates.year(date))
     monthstr = string(Dates.month(date), pad=2)
     return "EN.4.2.2.f.analysis.g10." * yearstr * lpad(string(monthstr), 2, '0') * ".nc"
 end
 
 # Convenience functions
-dataset_variable_name(data::EN4Metadata) = EN4_dataset_variable_names[data.name]
+DataWrangling.dataset_variable_name(data::EN4Metadata) = EN4_dataset_variable_names[data.name]
 is_three_dimensional(::EN4Metadata) = true
 
 ## This function is explicitly for the downloader to check if the zip file/extracted file exists,
@@ -182,7 +166,7 @@ function metadata_url(m::EN4Metadata)
     end
 end
 
-function download_dataset(metadata::Metadata{<:EN4Monthly})
+function DataWrangling.download_dataset(metadata::Metadata{<:EN4Monthly})
     dir = metadata.dir
     missingzips = []
 
