@@ -11,7 +11,7 @@ using ExplicitImports: ExplicitImports
 @testset "ExplicitImports" begin
     modules = Module[
         # NumericalEarth,
-        # NumericalEarth.Atmospheres,
+        NumericalEarth.Atmospheres,
         NumericalEarth.Bathymetry,
         # NumericalEarth.DataWrangling,
         # NumericalEarth.DataWrangling.ECCO,

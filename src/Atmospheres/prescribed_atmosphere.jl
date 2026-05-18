@@ -89,7 +89,7 @@ function default_atmosphere_pressure(grid, times)
     return pa
 end
 
-@inline function update_state!(atmos::PrescribedAtmosphere)
+@inline function Oceananigans.TimeSteppers.update_state!(atmos::PrescribedAtmosphere)
     time = Time(atmos.clock.time)
     ftses = extract_field_time_series(atmos)
 
@@ -99,7 +99,7 @@ end
     return nothing
 end
 
-@inline function time_step!(atmos::PrescribedAtmosphere, Δt)
+@inline function Oceananigans.TimeSteppers.time_step!(atmos::PrescribedAtmosphere, Δt)
     tick!(atmos.clock, Δt)
 
     update_state!(atmos)
@@ -107,13 +107,13 @@ end
     return nothing
 end
 
-@inline thermodynamics_parameters(atmos::Nothing) = nothing
-@inline thermodynamics_parameters(atmos::PrescribedAtmosphere) = atmos.thermodynamics_parameters
-@inline surface_layer_height(atmos::PrescribedAtmosphere) = atmos.surface_layer_height
-@inline boundary_layer_height(atmos::PrescribedAtmosphere) = atmos.boundary_layer_height
+@inline EarthSystemModels.thermodynamics_parameters(atmos::Nothing) = nothing
+@inline EarthSystemModels.thermodynamics_parameters(atmos::PrescribedAtmosphere) = atmos.thermodynamics_parameters
+@inline EarthSystemModels.surface_layer_height(atmos::PrescribedAtmosphere) = atmos.surface_layer_height
+@inline EarthSystemModels.boundary_layer_height(atmos::PrescribedAtmosphere) = atmos.boundary_layer_height
 
 # No need to compute anything here...
-update_net_fluxes!(coupled_model, ::PrescribedAtmosphere) = nothing
+EarthSystemModels.update_net_fluxes!(coupled_model, ::PrescribedAtmosphere) = nothing
 
 """
     PrescribedAtmosphere(grid, times=[zero(grid)];
