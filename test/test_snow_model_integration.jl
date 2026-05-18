@@ -2,15 +2,17 @@ include("runtests_setup.jl")
 
 using ClimaSeaIce: SeaIceModel, ConductiveFlux
 using ClimaSeaIce.SeaIceThermodynamics: IceSnowConductiveFlux
-using NumericalEarth.SeaIces: default_snow_thermodynamics
+using Oceananigans.Fields: ZeroField
+using Oceananigans.Units: hours, days
 using NumericalEarth.EarthSystemModels.InterfaceComputations:
+    default_ai_temperature,
+    net_fluxes,
+    ComponentExchanger,
     ComponentInterfaces,
     SkinTemperature,
     InterfaceProperties,
     conductive_flux_balance_temperature
-
-using Oceananigans.Fields: ZeroField
-using Oceananigans.Units: hours, days
+using NumericalEarth.SeaIces: default_snow_thermodynamics
 
 #####
 ##### Unit tests
@@ -48,8 +50,6 @@ using Oceananigans.Units: hours, days
         end
 
         @testset "ComponentExchanger includes hs [$A]" begin
-            using NumericalEarth.EarthSystemModels.InterfaceComputations: ComponentExchanger
-
             # Without snow: hs should be ZeroField
             sea_ice = sea_ice_simulation(grid; dynamics=nothing, snow_thermodynamics=nothing)
             exchanger = ComponentExchanger(sea_ice, grid)
@@ -64,8 +64,6 @@ using Oceananigans.Units: hours, days
         end
 
         @testset "default_ai_temperature dispatches on snow [$A]" begin
-            using NumericalEarth.SeaIces: default_ai_temperature
-
             sea_ice = sea_ice_simulation(grid; dynamics=nothing, snow_thermodynamics=nothing)
             st = default_ai_temperature(sea_ice)
             @test st isa SkinTemperature
@@ -78,8 +76,6 @@ using Oceananigans.Units: hours, days
         end
 
         @testset "net_fluxes includes snowfall [$A]" begin
-            using NumericalEarth.SeaIces: net_fluxes
-
             sea_ice = sea_ice_simulation(grid; dynamics=nothing)
             fluxes = net_fluxes(sea_ice)
             @test haskey(fluxes.top, :snowfall)
@@ -208,7 +204,7 @@ end
             sea_ice = sea_ice_simulation(grid, ocean;
                                          dynamics = nothing)
 
-            ai_temp = NumericalEarth.SeaIces.default_ai_temperature(sea_ice)
+            ai_temp = default_ai_temperature(sea_ice)
             @test ai_temp.internal_flux isa IceSnowConductiveFlux
             @test ai_temp.internal_flux.ice_conductivity == 2.0
             @test ai_temp.internal_flux.snow_conductivity == 0.31
