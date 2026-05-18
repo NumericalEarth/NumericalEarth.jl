@@ -29,7 +29,7 @@ using Oceananigans.Fields: Fields, Field, interpolate, interpolate!, interior, s
 using Oceananigans.Grids: node
 using Oceananigans.OutputReaders: OnDisk, AbstractInMemoryBackend, Cyclical,
                                   FieldTimeSeries, FlavorOfFTS, time_indices
-using Oceananigans.Utils: launch!, prettytime
+using Oceananigans.Utils: launch!, prettytime, prettysummary
 using NCDatasets: NCDatasets, Dataset
 using Printf: Printf, @sprintf
 
