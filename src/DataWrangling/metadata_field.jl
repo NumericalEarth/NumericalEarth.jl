@@ -3,13 +3,11 @@ using JLD2: JLD2, jldopen
 using Oceananigans.Architectures: on_architecture
 using Oceananigans.Fields: fractional_x_index, fractional_y_index, interpolate!
 
-import Oceananigans.Fields: set!, Field, location
-
 #####
 ##### Location with automatic restriction based on region
 #####
 
-location(metadata::Metadata) = restrict_location(dataset_location(metadata.dataset, metadata.name), metadata.region)
+Oceananigans.location(metadata::Metadata) = restrict_location(dataset_location(metadata.dataset, metadata.name), metadata.region)
 
 restrict_location(loc, ::Nothing) = loc
 restrict_location(loc, ::BoundingBox) = loc
@@ -129,24 +127,23 @@ function retrieve_data(metadata::Metadatum)
 end
 
 """
-    Field(metadata::Metadatum;
-          architecture = CPU(),
+    Field(metadata::Metadatum, arch=CPU();
           inpainting = default_inpainting(metadata),
           mask = nothing,
-          halo = (7, 7, 7),
+          halo = (3, 3, 3),
           cache_inpainted_data = true)
 
-Return a `Field` on `architecture` described by `metadata` with `halo` size.
+Return a `Field` on `arch`itecture described by `metadata` with `halo` size.
 If not `nothing`, the `inpainting` method is used to fill the cells
 within the specified `mask`. `mask` is set to `compute_mask` for non-nothing
 `inpainting`. Keyword argument `cache_inpainted_data` dictates whether the inpainted
 data is cached to avoid recomputing it; default: `true`.
 """
-function Field(metadata::Metadatum, arch=CPU();
-               inpainting = default_inpainting(metadata),
-               mask = nothing,
-               halo = (3, 3, 3),
-               cache_inpainted_data = true)
+function Oceananigans.Fields.Field(metadata::Metadatum, arch=CPU();
+                                   inpainting = default_inpainting(metadata),
+                                   mask = nothing,
+                                   halo = (3, 3, 3),
+                                   cache_inpainted_data = true)
 
     download_dataset(metadata)
 

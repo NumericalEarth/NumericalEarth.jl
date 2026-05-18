@@ -18,13 +18,16 @@ using Adapt: Adapt
 using Downloads: Downloads
 using KernelAbstractions: @kernel, @index
 using Oceananigans: Oceananigans, pretty_filesize, location
-using Oceananigans.Architectures: CPU, architecture, on_architecture, child_architecture
+using Oceananigans.Architectures: AbstractArchitecture, CPU, architecture,
+                                  on_architecture, child_architecture
 using Oceananigans.BoundaryConditions: fill_halo_regions!, FieldBoundaryConditions
 using Oceananigans.DistributedComputations: DistributedComputations, @root
-using Oceananigans.Grids: Center, Flat, Bounded, LatitudeLongitudeGrid, RectilinearGrid
-using Oceananigans.Fields: interpolate, interior, set!
+using Oceananigans.Grids: AbstractGrid, Center, Flat, Bounded,
+                          LatitudeLongitudeGrid, RectilinearGrid
+using Oceananigans.Fields: interpolate, interpolate!, interior, set!
 using Oceananigans.Grids: node
-using Oceananigans.OutputReaders: OnDisk
+using Oceananigans.OutputReaders: OnDisk, AbstractInMemoryBackend, Cyclical,
+                                  FieldTimeSeries, FlavorOfFTS, time_indices
 using Oceananigans.Utils: launch!, prettytime
 using NCDatasets: Dataset
 using Printf: Printf, @sprintf

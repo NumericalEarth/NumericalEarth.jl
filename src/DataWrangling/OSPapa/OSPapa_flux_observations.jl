@@ -172,7 +172,7 @@ function retrieve_data(metadata::OSPapaFluxMetadatum)
     return reshape([data], 1, 1, 1)
 end
 
-function set!(target_field::Field, metadata::OSPapaFluxMetadatum; kw...)
+function Oceananigans.Fields.set!(target_field::Field, metadata::OSPapaFluxMetadatum; kw...)
     grid = target_field.grid
     arch = child_architecture(grid)
     meta_field = Field(metadata, arch; kw...)

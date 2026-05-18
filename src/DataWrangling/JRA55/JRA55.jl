@@ -15,7 +15,7 @@ using Oceananigans: Oceananigans, location
 using Oceananigans.Architectures: CPU
 using Oceananigans.BoundaryConditions: FieldBoundaryConditions, fill_halo_regions!
 using Oceananigans.DistributedComputations: DistributedComputations, @root, Distributed, child_architecture
-using Oceananigans.Fields: interior
+using Oceananigans.Fields: interior, set!
 using Oceananigans.Grids: Flat, Bounded, Periodic, Center, LatitudeLongitudeGrid, λnodes, φnodes
 using Oceananigans.OutputReaders: Cyclical, TotallyInMemory, time_indices, FieldTimeSeries,
                                   AbstractInMemoryBackend, FlavorOfFTS, OnDisk, InMemory
@@ -28,8 +28,6 @@ using ...NumericalEarth: NumericalEarth
 using ...Atmospheres: PrescribedAtmosphere, PrescribedPrecipitationFlux
 using ...Radiations: PrescribedRadiation, SurfaceRadiationProperties, default_stefan_boltzmann_constant
 
-import Oceananigans.Fields: set!
-import Oceananigans.OutputReaders: new_backend
 
 download_JRA55_cache::String = ""
 

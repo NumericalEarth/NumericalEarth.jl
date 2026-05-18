@@ -104,7 +104,7 @@ const JRA55NetCDFFTSMultipleYears = FlavorOfFTS{<:Any, <:Any, <:Any, <:Any, <:JR
 #   - ds[shortname]:  the variable data
 
 # Simple case, only one file per variable, no need to deal with multiple files
-function set!(fts::JRA55NetCDFFTSRepeatYear, backend=fts.backend)
+function Oceananigans.Fields.set!(fts::JRA55NetCDFFTSRepeatYear, backend=fts.backend)
 
     metadata = backend.metadata
 
@@ -149,7 +149,7 @@ end
 
 # Tricky case: multiple files per variable -- one file per year --
 # we need to infer the file name from the metadata and split the data loading
-function set!(fts::JRA55NetCDFFTSMultipleYears, backend=fts.backend)
+function Oceananigans.Fields.set!(fts::JRA55NetCDFFTSMultipleYears, backend=fts.backend)
 
     metadata = backend.metadata
 
@@ -220,7 +220,7 @@ function set!(fts::JRA55NetCDFFTSMultipleYears, backend=fts.backend)
     return nothing
 end
 
-new_backend(b::JRA55NetCDFBackend, start, length) = JRA55NetCDFBackend(start, length, b.metadata)
+Oceananigans.OutputReaders.new_backend(b::JRA55NetCDFBackend, start, length) = JRA55NetCDFBackend(start, length, b.metadata)
 
 """
     JRA55FieldTimeSeries(variable_name, architecture=CPU(), FT=Float32;

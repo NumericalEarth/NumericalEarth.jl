@@ -2,8 +2,6 @@ using CFTime: AbstractCFDateTime, CFTime
 using Dates: Dates, Date, DateTime
 using Base: @propagate_inbounds
 
-import Oceananigans.Utils: prettysummary
-
 struct BoundingBox{X, Y, Z}
     longitude :: X
     latitude :: Y
@@ -214,7 +212,7 @@ datestr(md::Metadatum) = string(md.dates)
 datasetstr(md::Metadata) = string(md.dataset)
 metaprefix(md::Metadata) = string("Metadata{", md.dataset, "}")
 
-prettysummary(dt::DateTime) = Dates.format(dt, "yyyy-mm-dd HH:MM:SS")
+Oceananigans.Utils.prettysummary(dt::DateTime) = Dates.format(dt, "yyyy-mm-dd HH:MM:SS")
 
 function Base.show(io::IO, metadata::Metadata)
     V = typeof(metadata.dataset)

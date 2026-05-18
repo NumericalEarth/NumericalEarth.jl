@@ -1,14 +1,13 @@
 using CFTime: CFTime
 using Dates: Dates, DateTime, Day, Hour, Second
 using Downloads: Downloads
-
 using Oceananigans.DistributedComputations
+using Oceananigans.Fields: set!
 
 using ..DataWrangling
 using ..DataWrangling: Metadata, metadata_path, DownloadProgress
 
 import Base
-import Oceananigans.Fields: set!
 import ..DataWrangling: all_dates, metadata_filename, build_filename, download_dataset, default_download_directory, available_variables
 
 struct MultiYearJRA55 end

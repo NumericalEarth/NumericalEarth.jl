@@ -1,5 +1,3 @@
-import Oceananigans.Fields: set!
-
 using Oceananigans.Grids: znodes
 using Oceananigans.Architectures: on_architecture
 using Oceananigans.DistributedComputations: child_architecture
@@ -262,7 +260,7 @@ end
 # we want to perform a custom vertical interpolation/extrapolation that skips NaNs
 # which is not supported by interpolate!. For surface variables there is nothing to
 # interpolate vertically, so we just copy the native-grid data into the target field.
-function set!(target_field::Field, metadata::OSPapaMetadatum; kw...)
+function Oceananigans.Fields.set!(target_field::Field, metadata::OSPapaMetadatum; kw...)
     grid = target_field.grid
     arch = child_architecture(grid)
 

@@ -1,10 +1,3 @@
-using Oceananigans.Architectures: AbstractArchitecture
-using Oceananigans.Grids: AbstractGrid
-using Oceananigans.Fields: interpolate!
-using Oceananigans.OutputReaders: Cyclical, AbstractInMemoryBackend, FlavorOfFTS, time_indices
-
-import Oceananigans.OutputReaders: new_backend, FieldTimeSeries
-
 @inline instantiate(T::DataType) = T()
 @inline instantiate(T) = T
 
@@ -45,7 +38,7 @@ end
 Base.length(backend::DatasetBackend)  = backend.length
 Base.summary(backend::DatasetBackend) = string("DatasetBackend(", backend.start, ", ", backend.length, ")")
 
-new_backend(b::DatasetBackend{native, cache_data}, start, length) where {native, cache_data} =
+Oceananigans.OutputReaders.new_backend(b::DatasetBackend{native, cache_data}, start, length) where {native, cache_data} =
     DatasetBackend{native, cache_data}(start, length, b.inpainting, b.metadata)
 
 on_native_grid(::DatasetBackend{native}) where native = native
@@ -53,7 +46,7 @@ cache_inpainted_data(::DatasetBackend{native, cache_data}) where {native, cache_
 
 const DatasetFieldTimeSeries{N} = FlavorOfFTS{<:Any, <:Any, <:Any, <:Any, <:DatasetBackend{N}} where N
 
-function set!(fts::DatasetFieldTimeSeries)
+function Oceananigans.Fields.set!(fts::DatasetFieldTimeSeries)
     backend = fts.backend
     inpainting = backend.inpainting
     cache_data = cache_inpainted_data(backend)
@@ -100,13 +93,13 @@ Keyword Arguments
 - `cache_inpainted_data`: If `true`, the data is cached to disk after inpainting for later retrieving.
                           Default: `true`.
 """
-function FieldTimeSeries(metadata::Metadata, arch::AbstractArchitecture=CPU(); kw...)
+function Oceananigans.OutputReaders.FieldTimeSeries(metadata::Metadata, arch::AbstractArchitecture=CPU(); kw...)
     download_dataset(metadata)
     grid = native_grid(metadata, arch)
     return FieldTimeSeries(metadata, grid; kw...)
 end
 
-function FieldTimeSeries(metadata::Metadata, grid::AbstractGrid;
+function Oceananigans.OutputReaders.FieldTimeSeries(metadata::Metadata, grid::AbstractGrid;
                          time_indices_in_memory = 2,
                          time_indexing = Cyclical(),
                          inpainting = default_inpainting(metadata),
@@ -128,7 +121,7 @@ function FieldTimeSeries(metadata::Metadata, grid::AbstractGrid;
     return fts
 end
 
-function FieldTimeSeries(variable_name::Symbol;
+function Oceananigans.OutputReadersFieldTimeSeries(variable_name::Symbol;
                          dataset, dir,
                          architecture = CPU(),
                          start_date = first_date(dataset, variable_name),
