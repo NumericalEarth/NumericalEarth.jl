@@ -49,7 +49,7 @@ import ..DataWrangling:
     conversion_units,
     metaprefix
 
-const OSPAPA_S3_URL  = "https://noaa-oar-keo-papa-pds.s3.amazonaws.com/PAPA/"
+const OSPAPA_S3_URL = "https://noaa-oar-keo-papa-pds.s3.amazonaws.com/PAPA/"
 const OSPAPA_FILENAME = "OS_PAPA_200706_M_TSVMBP_50N145W_hr.nc"
 const OSPAPA_LONGITUDE = -144.9
 const OSPAPA_LATITUDE  = 50.1

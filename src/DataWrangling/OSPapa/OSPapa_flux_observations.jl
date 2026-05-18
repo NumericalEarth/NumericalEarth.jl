@@ -1,5 +1,3 @@
-import Oceananigans.Fields: set!
-
 using Oceananigans.Architectures: on_architecture
 using Oceananigans.DistributedComputations: child_architecture
 

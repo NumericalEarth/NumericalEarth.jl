@@ -34,7 +34,6 @@ using ..DataWrangling:
     netrc_downloader,
     NearestNeighborInpainting,
     Column,
-    inpainted_metadata_path,
     metadata_path,
     GramPerKilogramMinus35,
     MicromolePerLiter,
