@@ -479,6 +479,52 @@ Base.summary(mset::MetadataSet) =
            length(mset), " variables")
 
 """
+    set!(fields::NamedTuple, mset::MetadataSet)
+
+Set each `fields[name]` from the corresponding `mset[name]`. The NamedTuple's
+keys must be a subset of the set's variable names; extra fields are ignored.
+
+This is the explicit form that takes verbose dataset names on both sides — no
+alias translation. For the auto-routing form (short model field-names), see
+`set!(model, ::MetadataSet)`.
+"""
+function set!(fields::NamedTuple, mset::MetadataSet)
+    for name in keys(fields)
+        in(name, getfield(mset, :names)) ||
+            throw(ArgumentError("Field $(name) is not in MetadataSet variables $(getfield(mset, :names))"))
+        set!(fields[name], mset[name])
+    end
+    return fields
+end
+
+"""
+    set!(model, mset::MetadataSet)
+
+Set fields of `model` from the variables in `mset`, auto-routing verbose
+dataset variable names to short model field-name aliases via the global
+[`variable_aliases`](@ref) registry.
+
+Variables in `mset` that have no entry in `variable_aliases` are silently
+skipped — this lets partial application across coupled-model components work
+naturally. For example, a single 4-variable set can drive both an ocean and a
+sea-ice model:
+
+```julia
+mset = MetadataSet(:temperature, :salinity,
+                   :sea_ice_thickness, :sea_ice_concentration;
+                   dataset = ECCO4Monthly(), date = start_date)
+set!(ocean.model,   mset)   # consumes :temperature, :salinity  → T, S
+set!(sea_ice.model, mset)   # consumes :sea_ice_thickness, :sea_ice_concentration → h, ℵ
+```
+"""
+function set!(model, mset::MetadataSet)
+    names = getfield(mset, :names)
+    aliased = filter(n -> haskey(variable_aliases, n), names)
+    kwargs = NamedTuple{Tuple(variable_aliases[n] for n in aliased)}(Tuple(mset[n] for n in aliased))
+    return set!(model; kwargs...)
+end
+
+"""
     native_times(metadata; start_time=first(metadata).dates)
 
 Extract the time values from the given `metadata`, calculate the time difference
