@@ -144,29 +144,25 @@ end
 
     δ𝒬ᶠʳᶻ = zero(grid)
 
-    for k = Nz:-1:1
-        @inbounds begin
-            Δz = Δzᶜᶜᶜ(i, j, k, grid)
-            Tᵏ = Tᵒᶜ[i, j, k]
-            Sᵏ = Sᵒᶜ[i, j, k]
+    if !isnothing(flux_formulation.sea_ice_heat_flux)
+        for k = Nz:-1:1
+            @inbounds begin
+                Δz = Δzᶜᶜᶜ(i, j, k, grid)
+                Tᵏ = Tᵒᶜ[i, j, k]
+                Sᵏ = Sᵒᶜ[i, j, k]
+            end
+
+            Tₘ = melting_temperature(liquidus, Sᵏ)
+            freezing = Tᵏ < Tₘ
+
+            δE = freezing * ρᵒᶜ * cᵒᶜ * (Tₘ - Tᵏ)
+
+            @inbounds Tᵒᶜ[i, j, k] = ifelse(freezing, Tₘ, Tᵏ)
+            # Compute the heat flux from ocean into ice during frazil formation.
+            # A negative value δ𝒬ᶠʳᶻ < 0 implies heat is fluxed from the ice into
+            # the ocean (frazil ice formation).
+            δ𝒬ᶠʳᶻ -= δE * Δz / Δt
         end
-
-        # Melting/freezing temperature at this depth
-        Tₘ = melting_temperature(liquidus, Sᵏ)
-        freezing = Tᵏ < Tₘ
-
-        # Compute change in ocean heat energy due to freezing.
-        # When Tᵏ < Tₘ, we heat the ocean back to melting temperature
-        # by extracting heat from the ice.
-        δE = freezing * ρᵒᶜ * cᵒᶜ * (Tₘ - Tᵏ)
-
-        # Perform temperature adjustment
-        @inbounds Tᵒᶜ[i, j, k] = ifelse(freezing, Tₘ, Tᵏ)
-
-        # Compute the heat flux from ocean into ice during frazil formation.
-        # A negative value δ𝒬ᶠʳᶻ < 0 implies heat is fluxed from the ice into
-        # the ocean (frazil ice formation).
-        δ𝒬ᶠʳᶻ -= δE * Δz / Δt
     end
 
     # Store frazil heat flux
@@ -194,23 +190,26 @@ end
     # Compute friction velocity
     u★ = get_friction_velocity(flux_formulation.friction_velocity, i, j, grid, τˣ, τʸ, ρᵒᶜ)
 
-    # =============================================
-    # Part 3: Interface heat flux (formulation-specific)
-    # =============================================
-    # Returns interfacial heat flux, melt rate qᵐ, and interface T, S
-    𝒬ⁱᵒ, qᵐ, Tᵦ, Sᵦ = compute_interface_heat_flux(flux_formulation,
-                                                   ocean_surface_state, ice_state,
-                                                   liquidus, ocean_properties, ℰ, u★)
+    if isnothing(flux_formulation.sea_ice_heat_flux)
+        qᵐ = zero(grid)
 
-    # Store interface values and heat flux
-    @inbounds 𝒬ⁱⁿᵗ[i, j, 1] = 𝒬ⁱᵒ
-    store_interface_state!(flux_formulation, T★, S★, i, j, Tᵦ, Sᵦ)
+        @inbounds begin
+            𝒬ⁱⁿᵗ[i, j, 1] = zero(grid)
+            T★[i, j, 1] = zero(grid)
+            S★[i, j, 1] = zero(grid)
+        end
+    else
+        𝒬ⁱᵒ, qᵐ, Tᵦ, Sᵦ = compute_interface_heat_flux(flux_formulation,
+                                                       ocean_surface_state, ice_state,
+                                                       liquidus, ocean_properties, ℰ, u★)
 
-    # =============================================
-    # Part 4: Salt flux
-    # =============================================
-    # Salt flux from melting/freezing:
-    # - during ice melt   (qᵐ > 0), fresh meltwater dilutes the ocean
-    # - during ice growth (qᶠ < 0), brine rejection adds salt to ocean
-    @inbounds Jˢ[i, j, 1] = (qᵐ + qᶠ) / ρᵒᶜ * (Sᴺ - Sˢⁱ)
+        @inbounds 𝒬ⁱⁿᵗ[i, j, 1] = 𝒬ⁱᵒ
+        store_interface_state!(flux_formulation, T★, S★, i, j, Tᵦ, Sᵦ)
+    end
+
+    if isnothing(flux_formulation.salinity_flux)
+        @inbounds Jˢ[i, j, 1] = zero(grid)
+    else
+        @inbounds Jˢ[i, j, 1] = (qᵐ + qᶠ) / ρᵒᶜ * (Sᴺ - Sˢⁱ)
+    end
 end
