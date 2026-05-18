@@ -37,7 +37,6 @@ using ..DataWrangling:
     Metadatum,
     DownloadProgress,
     metadata_url,
-    extract_column!,
     first_date,
     last_date,
     all_dates
