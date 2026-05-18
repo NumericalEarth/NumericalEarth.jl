@@ -6,7 +6,7 @@ using Oceananigans: Oceananigans
 using Oceananigans.DistributedComputations: @root
 using Scratch: @get_scratch!
 
-using ..DataWrangling: DownloadProgress, Metadatum, metadata_path, AbstractStaticBathymetry
+using ..DataWrangling: DataWrangling, DownloadProgress, Metadatum, metadata_path, AbstractStaticBathymetry
 
 import ..DataWrangling:
     metadata_filename,

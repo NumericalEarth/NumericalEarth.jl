@@ -7,7 +7,7 @@ using Oceananigans: Oceananigans
 using Oceananigans.DistributedComputations: @root
 using Scratch: Scratch, @get_scratch!
 
-using ..DataWrangling: DownloadProgress, Metadatum, metadata_path, metadata_url
+using ..DataWrangling: DataWrangling, DownloadProgress, Metadatum, metadata_path, metadata_url
 
 import ..DataWrangling:
     metadata_filename,
