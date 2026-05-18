@@ -254,6 +254,29 @@ end
 ##### Sea Ice-Ocean Interface
 #####
 
+struct DefaultSeaIceOceanSalinityFlux end
+const default_sea_ice_ocean_salinity_flux = DefaultSeaIceOceanSalinityFlux()
+
+with_sea_ice_ocean_salinity_flux(flux_formulation, ::DefaultSeaIceOceanSalinityFlux) = flux_formulation
+with_sea_ice_ocean_salinity_flux(::Nothing, salinity_flux) = nothing
+
+function with_sea_ice_ocean_salinity_flux(flux::IceBathHeatFlux, salinity_flux)
+    return IceBathHeatFlux(flux.heat_transfer_coefficient,
+                           flux.friction_velocity;
+                           sea_ice_heat_flux = flux.sea_ice_heat_flux,
+                           salinity_flux)
+end
+
+function with_sea_ice_ocean_salinity_flux(flux::ThreeEquationHeatFlux, salinity_flux)
+    return ThreeEquationHeatFlux(flux.conductive_flux,
+                                 flux.internal_temperature,
+                                 flux.heat_transfer_coefficient,
+                                 flux.salt_transfer_coefficient,
+                                 flux.friction_velocity;
+                                 sea_ice_heat_flux = flux.sea_ice_heat_flux,
+                                 salinity_flux)
+end
+
 sea_ice_ocean_interface(grid, ::Nothing, ocean,     flux_formulation; kwargs...) = nothing
 sea_ice_ocean_interface(grid, ::Nothing, ::Nothing, flux_formulation; kwargs...) = nothing
 sea_ice_ocean_interface(grid, sea_ice,   ::Nothing, flux_formulation; kwargs...) = nothing
@@ -280,7 +303,9 @@ Arguments
 - `ocean`: ocean simulation
 - `flux_formulation`: heat flux formulation (`IceBathHeatFlux` or `ThreeEquationHeatFlux`)
 """
-function sea_ice_ocean_interface(grid, sea_ice, ocean, flux_formulation)
+function sea_ice_ocean_interface(grid, sea_ice, ocean, flux_formulation;
+                                 sea_ice_ocean_salinity_flux = default_sea_ice_ocean_salinity_flux)
+    flux_formulation = with_sea_ice_ocean_salinity_flux(flux_formulation, sea_ice_ocean_salinity_flux)
     io_fluxes = SeaIceOceanFluxes(grid)
 
     # For default flux formulations, interface temperature and salinity point to ocean surface
@@ -290,7 +315,9 @@ function sea_ice_ocean_interface(grid, sea_ice, ocean, flux_formulation)
     return SeaIceOceanInterface(io_fluxes, flux_formulation, Tⁱⁿᵗ, Sⁱⁿᵗ)
 end
 
-function sea_ice_ocean_interface(grid, sea_ice, ocean, flux_formulation::ThreeEquationHeatFlux)
+function sea_ice_ocean_interface(grid, sea_ice, ocean, flux_formulation::ThreeEquationHeatFlux;
+                                 sea_ice_ocean_salinity_flux = default_sea_ice_ocean_salinity_flux)
+    flux_formulation = with_sea_ice_ocean_salinity_flux(flux_formulation, sea_ice_ocean_salinity_flux)
     io_fluxes = SeaIceOceanFluxes(grid)
 
     # Interface temperature and salinity are computed fields
@@ -324,9 +351,9 @@ Keyword Arguments
 - `sea_ice_ocean_heat_flux`: formulation for sea ice-ocean heat flux. Options are:
   - `IceBathHeatFlux()`: bulk heat flux with interface at freezing point
   - `ThreeEquationHeatFlux()`: coupled heat/salt/freezing point system (default)
+- `sea_ice_ocean_salinity_flux`: formulation for sea ice-ocean salinity flux. Set to `nothing` to omit it.
 
-- `radiation`: radiation component. Default: `Radiation()`.
-+ `radiation`: radiation component. Default: `nothing`.
+- `radiation`: radiation component. Default: `nothing`.
 - `freshwater_density`: reference density of freshwater. Default: `default_freshwater_density`.
 - `atmosphere_ocean_fluxes`: flux formulation for atmosphere-ocean interface. Default: `SimilarityTheoryFluxes()`.
 - `atmosphere_sea_ice_fluxes`: flux formulation for atmosphere-sea ice interface. Default: `SimilarityTheoryFluxes()`.
@@ -349,6 +376,7 @@ function ComponentInterfaces(atmosphere, ocean, sea_ice=nothing;
                              atmosphere_ocean_fluxes = SimilarityTheoryFluxes(eltype(exchange_grid)),
                              atmosphere_sea_ice_fluxes = atmosphere_sea_ice_similarity_theory(eltype(exchange_grid)),
                              sea_ice_ocean_heat_flux = ThreeEquationHeatFlux(sea_ice),
+                             sea_ice_ocean_salinity_flux = default_sea_ice_ocean_salinity_flux,
                              atmosphere_ocean_interface_temperature = BulkTemperature(),
                              atmosphere_ocean_velocity_difference = RelativeVelocity(),
                              atmosphere_ocean_interface_specific_humidity = default_ao_specific_humidity(ocean),
@@ -399,7 +427,8 @@ function ComponentInterfaces(atmosphere, ocean, sea_ice=nothing;
                                               atmosphere_ocean_velocity_difference,
                                               atmosphere_ocean_interface_specific_humidity)
 
-    io_interface = sea_ice_ocean_interface(exchange_grid, sea_ice, ocean, sea_ice_ocean_heat_flux)
+    io_interface = sea_ice_ocean_interface(exchange_grid, sea_ice, ocean, sea_ice_ocean_heat_flux;
+                                           sea_ice_ocean_salinity_flux)
 
     ai_interface = atmosphere_sea_ice_interface(exchange_grid,
                                                 atmosphere,

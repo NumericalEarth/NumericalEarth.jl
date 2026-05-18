@@ -42,10 +42,20 @@ References
 - [holland1999modeling](@citet): Holland, D. M., & Jenkins, A. (1999). Modeling thermodynamic ice–ocean interactions
   at the base of an ice shelf. *Journal of Physical Oceanography*, 29(8), 1787-1800.
 """
-struct IceBathHeatFlux{FT, U}
+struct IceBathHeatFlux{FT, U, H, S}
     heat_transfer_coefficient :: FT
     friction_velocity :: U
+    sea_ice_heat_flux :: H
+    salinity_flux :: S
 end
+
+IceBathHeatFlux(heat_transfer_coefficient, friction_velocity;
+                sea_ice_heat_flux = true,
+                salinity_flux = true) =
+    IceBathHeatFlux(heat_transfer_coefficient,
+                    friction_velocity,
+                    sea_ice_heat_flux,
+                    salinity_flux)
 
 """
     IceBathHeatFlux(FT::DataType = Oceananigans.defaults.FloatType;
@@ -62,8 +72,13 @@ Keyword Arguments
 """
 function IceBathHeatFlux(FT::DataType = Oceananigans.defaults.FloatType;
                          heat_transfer_coefficient = convert(FT, 0.006),
-                         friction_velocity = convert(FT, 0.02))
-    return IceBathHeatFlux(convert(FT, heat_transfer_coefficient), friction_velocity)
+                         friction_velocity = convert(FT, 0.02),
+                         sea_ice_heat_flux = true,
+                         salinity_flux = true)
+    return IceBathHeatFlux(convert(FT, heat_transfer_coefficient),
+                           friction_velocity;
+                           sea_ice_heat_flux,
+                           salinity_flux)
 end
 
 #####
@@ -115,12 +130,14 @@ References
 - [shi2021sensitivity](@citet): Shi, X., Notz, D., Liu, J., Yang, H., & Lohmann, G. (2021). Sensitivity of Northern
   Hemisphere climate to ice-ocean interface heat flux parameterizations. *Geosci. Model Dev.*, 14, 4891-4908.
 """
-struct ThreeEquationHeatFlux{F, T, FT, U}
+struct ThreeEquationHeatFlux{F, T, FT, U, H, S}
     conductive_flux :: F
     internal_temperature :: T
     heat_transfer_coefficient :: FT
     salt_transfer_coefficient :: FT
     friction_velocity :: U
+    sea_ice_heat_flux :: H
+    salinity_flux :: S
 end
 
 Adapt.adapt_structure(to, f::ThreeEquationHeatFlux) =
@@ -128,7 +145,9 @@ Adapt.adapt_structure(to, f::ThreeEquationHeatFlux) =
                           Adapt.adapt(to, f.internal_temperature),
                           f.heat_transfer_coefficient,
                           f.salt_transfer_coefficient,
-                          Adapt.adapt(to, f.friction_velocity))
+                          Adapt.adapt(to, f.friction_velocity),
+                          Adapt.adapt(to, f.sea_ice_heat_flux),
+                          Adapt.adapt(to, f.salinity_flux))
 
 """
     ThreeEquationHeatFlux(FT::DataType = Oceananigans.defaults.FloatType;
@@ -150,12 +169,32 @@ Keyword Arguments
 function ThreeEquationHeatFlux(FT::DataType = Oceananigans.defaults.FloatType;
                                heat_transfer_coefficient = 0.0095,
                                salt_transfer_coefficient = heat_transfer_coefficient / 35,
-                               friction_velocity = convert(FT, 0.002))
+                               friction_velocity = convert(FT, 0.002),
+                               sea_ice_heat_flux = true,
+                               salinity_flux = true)
     return ThreeEquationHeatFlux(nothing,
                                  nothing,
                                  convert(FT, heat_transfer_coefficient),
                                  convert(FT, salt_transfer_coefficient),
-                                 friction_velocity)
+                                 friction_velocity,
+                                 sea_ice_heat_flux,
+                                 salinity_flux)
+end
+
+function ThreeEquationHeatFlux(conductive_flux,
+                               internal_temperature,
+                               heat_transfer_coefficient,
+                               salt_transfer_coefficient,
+                               friction_velocity;
+                               sea_ice_heat_flux = true,
+                               salinity_flux = true)
+    return ThreeEquationHeatFlux(conductive_flux,
+                                 internal_temperature,
+                                 heat_transfer_coefficient,
+                                 salt_transfer_coefficient,
+                                 friction_velocity,
+                                 sea_ice_heat_flux,
+                                 salinity_flux)
 end
 
 # Constructor that accepts the sea-ice model
