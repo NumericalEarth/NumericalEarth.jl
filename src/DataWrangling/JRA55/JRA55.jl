@@ -20,7 +20,7 @@ using Oceananigans.Units: Units
 using NCDatasets: NCDatasets, Dataset
 using Scratch: Scratch, @get_scratch!
 
-using ..DataWrangling: DataWrangling, Metadatum, first_date, last_date, set_region_data!
+using ..DataWrangling: DataWrangling, Metadatum, first_date, last_date, all_dates, set_region_data!
 using ...NumericalEarth: NumericalEarth
 
 download_JRA55_cache::String = ""
