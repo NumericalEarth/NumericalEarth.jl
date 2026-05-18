@@ -102,7 +102,7 @@ end
 @inline compute_frazil_heat_flux!(::Nothing, i, j, grid, Tᵒᶜ, Sᵒᶜ,
                                   liquidus, ρᵒᶜ, cᵒᶜ, Δt) = zero(grid)
 
-@inline function compute_frazil_heat_flux!(sea_ice_heat_flux, i, j, grid, Tᵒᶜ, Sᵒᶜ,
+@inline function compute_frazil_heat_flux!(sea_ice_thermodynamics, i, j, grid, Tᵒᶜ, Sᵒᶜ,
                                            liquidus, ρᵒᶜ, cᵒᶜ, Δt)
 
     Nz = size(grid, 3)
@@ -143,28 +143,28 @@ end
     return δ𝒬ᶠʳᶻ
 end
 
-@inline function compute_sea_ice_heat_flux(::Nothing,
-                                           flux_formulation,
-                                           ocean_surface_state,
-                                           ice_state,
-                                           liquidus,
-                                           ocean_properties,
-                                           latent_heat,
-                                           u★,
-                                           grid)
+@inline function compute_sea_ice_thermodynamics(::Nothing,
+                                                flux_formulation,
+                                                ocean_surface_state,
+                                                ice_state,
+                                                liquidus,
+                                                ocean_properties,
+                                                latent_heat,
+                                                u★,
+                                                grid)
 
     return zero(grid), zero(grid), zero(grid), zero(grid)
 end
 
-@inline function compute_sea_ice_heat_flux(sea_ice_heat_flux,
-                                           flux_formulation,
-                                           ocean_surface_state,
-                                           ice_state,
-                                           liquidus,
-                                           ocean_properties,
-                                           latent_heat,
-                                           u★,
-                                           grid)
+@inline function compute_sea_ice_thermodynamics(sea_ice_thermodynamics,
+                                                flux_formulation,
+                                                ocean_surface_state,
+                                                ice_state,
+                                                liquidus,
+                                                ocean_properties,
+                                                latent_heat,
+                                                u★,
+                                                grid)
 
     return compute_interface_heat_flux(flux_formulation,
                                        ocean_surface_state,
@@ -231,11 +231,11 @@ end
         ρᵒᶜ = ocean_properties.reference_density
         cᵒᶜ = ocean_properties.heat_capacity
 
-        sea_ice_heat_flux = flux_formulation.sea_ice_heat_flux
+        sea_ice_thermodynamics = flux_formulation.sea_ice_thermodynamics
         salinity_flux = flux_formulation.salinity_flux
 
         # Store frazil heat flux
-        δ𝒬ᶠʳᶻ = compute_frazil_heat_flux!(sea_ice_heat_flux,
+        δ𝒬ᶠʳᶻ = compute_frazil_heat_flux!(sea_ice_thermodynamics,
                                            i, j, grid, Tᵒᶜ, Sᵒᶜ,
                                            liquidus, ρᵒᶜ, cᵒᶜ, Δt)
 
@@ -269,7 +269,7 @@ end
         # =============================================
         # Returns interfacial heat flux, melt rate qᵐ, and interface T, S
 
-        𝒬ⁱᵒ, qᵐ, Tᵦ, Sᵦ = compute_sea_ice_heat_flux(sea_ice_heat_flux,
+        𝒬ⁱᵒ, qᵐ, Tᵦ, Sᵦ = compute_sea_ice_thermodynamics(sea_ice_thermodynamics,
                                                        flux_formulation,
                                                        ocean_surface_state,
                                                        ice_state,
@@ -282,7 +282,7 @@ end
         # Store interface values and heat flux
         @inbounds 𝒬ⁱⁿᵗ[i, j, 1] = 𝒬ⁱᵒ
 
-        if isnothing(sea_ice_heat_flux)
+        if isnothing(sea_ice_thermodynamics)
             @inbounds begin
                 T★[i, j, 1] = zero(grid)
                 S★[i, j, 1] = zero(grid)

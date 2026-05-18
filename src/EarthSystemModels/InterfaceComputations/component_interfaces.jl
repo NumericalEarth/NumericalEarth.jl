@@ -264,7 +264,7 @@ with_sea_ice_ocean_salinity_flux(::Nothing, ::DefaultSeaIceOceanSalinityFlux) = 
 function with_sea_ice_ocean_salinity_flux(flux::IceBathHeatFlux, salinity_flux)
     return IceBathHeatFlux(flux.heat_transfer_coefficient,
                            flux.friction_velocity;
-                           sea_ice_heat_flux = flux.sea_ice_heat_flux,
+                           sea_ice_thermodynamics = flux.sea_ice_thermodynamics,
                            salinity_flux)
 end
 
@@ -274,7 +274,7 @@ function with_sea_ice_ocean_salinity_flux(flux::ThreeEquationHeatFlux, salinity_
                                  flux.heat_transfer_coefficient,
                                  flux.salt_transfer_coefficient,
                                  flux.friction_velocity;
-                                 sea_ice_heat_flux = flux.sea_ice_heat_flux,
+                                 sea_ice_thermodynamics = flux.sea_ice_thermodynamics,
                                  salinity_flux)
 end
 
