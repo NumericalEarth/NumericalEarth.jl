@@ -239,7 +239,7 @@ function batch_datetimes_for_cds(datetimes, dataset, num_vars;
     monthly = group_by_calendar_month(datetimes)
     max_dts = max_dts_per_cds_request(dataset, num_vars; max_fields)
 
-    batches = Vector{DateTime}[]
+    batches = Vector{Dates.DateTime}[]
     for key in sort(collect(keys(monthly)))
         sorted = sort(unique(monthly[key]))
         for i in 1:max_dts:length(sorted)
