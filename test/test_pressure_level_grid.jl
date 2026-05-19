@@ -3,6 +3,7 @@ include("runtests_setup.jl")
 using Oceananigans
 using Oceananigans.Fields: instantiated_location
 using Oceananigans.Grids: Flat, Bounded, topology
+using Oceananigans.OutputReaders: TimeSeriesInterpolation
 using Statistics
 
 using NumericalEarth.Grids: PressureLevelGrid, PressureLevelVerticalDiscretization
@@ -159,5 +160,28 @@ end
         col_grid, _, _, _ = make_plg(; topology=(Flat, Flat, Bounded), Nx=1, Ny=1)
         fts_col = FieldTimeSeries{Center, Center, Center}(col_grid, [0.0, 1.0])
         @test znodes(fts_col) isa Vector{Float64}
+    end
+
+    @testset "TimeSeriesInterpolation-backed Φ ignores halo zeros" begin
+        # Regression for PR #241 review: `parent(fts)` includes halo cells
+        # filled with zeros, so `extrema` and `mean` over it were dominated
+        # by the halos. We must read `interior(fts)` instead.
+        Nx, Ny, Nz = 4, 4, 4
+        Φ_grid = LatitudeLongitudeGrid(CPU(); size=(Nx, Ny, Nz),
+                                       longitude=(0, 1), latitude=(0, 1), z=(0, 1))
+        Φ_fts = FieldTimeSeries{Center, Center, Center}(Φ_grid, [0.0, 1.0])
+        for i in 1:Nx, j in 1:Ny, k in 1:Nz
+            Φ_fts[1][i, j, k] = 1000.0 * k * g     # heights {1, 2, 3, 4} km
+            Φ_fts[2][i, j, k] = 5000.0 * k * g     # heights {5, 10, 15, 20} km
+        end
+
+        tsi  = TimeSeriesInterpolation(Φ_fts, Φ_fts.grid; clock = Clock(time = 0.0))
+        plvd = PressureLevelVerticalDiscretization(tsi; gravitational_acceleration = g)
+        grid = LatitudeLongitudeGrid(CPU(); size=(Nx, Ny, Nz),
+                                     longitude=(0, 1), latitude=(0, 1), z=plvd)
+        # Time-mean column-mean: each k averages [k*1000, k*5000]
+        @test znodes(grid, Center()) ≈ [3000.0, 6000.0, 9000.0, 12000.0]
+        # Lz = max - min = 20*1000 - 1*1000 = 19000.
+        @test grid.Lz ≈ 19000.0
     end
 end
