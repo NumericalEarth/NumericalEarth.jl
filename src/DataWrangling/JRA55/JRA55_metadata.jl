@@ -4,7 +4,7 @@ using Downloads: Downloads
 using Oceananigans.DistributedComputations
 
 using ..DataWrangling: all_dates, DataWrangling, Metadata, metadata_path,
-                       DownloadProgress, DatasetBackend, metadata_url, build_filename,
+                       DownloadProgress, DatasetBackend, metadata_url,
                        dataset_variable_name, getfilename
 
 abstract type JRA55Dataset end
