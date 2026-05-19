@@ -59,6 +59,17 @@ end
         z_lo, z_hi = extrema(Φi) ./ g
         @test grid.Lz ≈ (z_hi - z_lo)
         @test sprint(show, plvd) == "PressureLevelVerticalDiscretization with 5 levels, g = 9.81 m/s²"
+
+        # Regression: `show(io, grid)` used to crash with FieldError because
+        # the default `LatitudeLongitudeGrid` show reaches into `grid.z.cᵃᵃᶠ`,
+        # which PLVD doesn't carry.
+        s2 = sprint(show, grid)
+        s3 = sprint(show, MIME"text/plain"(), grid)
+        for s in (s2, s3)
+            @test occursin("PressureLevelVerticalDiscretization", s)
+            @test occursin("Lz", s)
+            @test !occursin("FieldError", s)
+        end
     end
 
     @testset "generate_coordinate dim/axis guards" begin

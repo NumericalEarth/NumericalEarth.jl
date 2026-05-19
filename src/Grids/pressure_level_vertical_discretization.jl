@@ -6,7 +6,7 @@ using Oceananigans.Architectures: architecture
 using Oceananigans.BoundaryConditions: fill_halo_regions!
 using Oceananigans.Fields: AbstractField, Field, compute!, interior, instantiated_location
 using Oceananigans.OutputReaders: FieldTimeSeries
-using Oceananigans.Grids: AbstractVerticalCoordinate, AbstractUnderlyingGrid, Center, Face, Flat, topology
+using Oceananigans.Grids: AbstractVerticalCoordinate, AbstractUnderlyingGrid, Center, Face, Flat, LatitudeLongitudeGrid, topology
 using Oceananigans.OutputReaders: TimeSeriesInterpolation
 using Oceananigans.Utils: launch!
 
@@ -116,6 +116,27 @@ Type alias for any underlying grid whose vertical coordinate is a
 const PressureLevelGrid =
     AbstractUnderlyingGrid{<:Any, <:Any, <:Any, <:Any, <:PressureLevelVerticalDiscretization}
 
+# Override the LLG show, which reads `grid.z.cᵃᵃᶠ` and crashes on PLVD.
+# We print the horizontal axes and report the z coordinate via the
+# `PressureLevelVerticalDiscretization` `show` defined above. Targeting the
+# LLG{...PLVD} concrete combination is strictly more specific than either
+# `show(::IO, ::LatitudeLongitudeGrid, withsummary=true)` or
+# `show(::IO, ::PressureLevelGrid)`, so dispatch is unambiguous.
+const _LLG_PLG = LatitudeLongitudeGrid{<:Any, <:Any, <:Any, <:Any,
+                                       <:PressureLevelVerticalDiscretization}
+
+function Base.show(io::IO, grid::_LLG_PLG, withsummary::Bool=true)
+    TX, TY, _ = topology(grid)
+    if withsummary
+        print(io, summary(grid), "\n")
+    end
+    print(io, "├── topology: (", TX, ", ", TY, ", Bounded)\n",
+              "├── size: (Nx=", grid.Nx, ", Ny=", grid.Ny, ", Nz=", grid.Nz, ")\n",
+              "├── halo: (Hx=", grid.Hx, ", Hy=", grid.Hy, ", Hz=", grid.Hz, ")\n",
+              "├── Lz (column-mean span): ", grid.Lz, " m\n",
+              "└── ", grid.z)
+end
+
 #####
 ##### Node accessors: per-cell znode works; 1-D znodes / rnodes error.
 #####
@@ -201,7 +222,7 @@ end
                                       grid::PressureLevelGrid, ℓx, ℓy, ℓz)
     ii = fractional_x_index(x, (ℓx, ℓy, ℓz), grid)
     jj = fractional_y_index(y, (ℓx, ℓy, ℓz), grid)
-    kk = column_fractional_z_index(z, ii, jj, (ℓx, ℓy, ℓz), grid)
+    kk = column_fractional_z_index(z, ii, jj, grid)
     return FractionalIndices(ii, jj, kk)
 end
 
@@ -209,11 +230,11 @@ end
 # bisect that single column directly. Mirrors the 3-D form's column logic.
 @inline function _fractional_indices((z,)::NTuple{1, Any},
                                       grid::PressureLevelGrid, ::Nothing, ::Nothing, ℓz)
-    kk = column_fractional_z_index(z, 1, 1, (nothing, nothing, ℓz), grid)
+    kk = column_fractional_z_index(z, 1, 1, grid)
     return FractionalIndices(nothing, nothing, kk)
 end
 
-@inline function column_fractional_z_index(z, ii, jj, locs, grid)
+@inline function column_fractional_z_index(z, ii, jj, grid)
     i = clamp(Base.unsafe_trunc(Int, ii), 1, grid.Nx)
     j = clamp(Base.unsafe_trunc(Int, jj), 1, grid.Ny)
     column = ColumnView(grid, i, j)
