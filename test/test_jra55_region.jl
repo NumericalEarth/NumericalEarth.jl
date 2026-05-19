@@ -5,9 +5,10 @@ using Oceananigans.Fields: interpolate as oc_interpolate
 using Oceananigans.Grids: topology, Bounded
 
 @testset "JRA55 region support" begin
-    arch = CPU()
+    for arch in test_architectures
+        A = typeof(arch)
 
-    @testset "BoundingBox slices the right window" begin
+        @testset "BoundingBox slices the right window on $A" begin
         bbox = BoundingBox(longitude=(120, 240), latitude=(-30, 30))
         atm = JRA55PrescribedAtmosphere(arch;
                                         time_indices_in_memory=2,
@@ -26,7 +27,7 @@ using Oceananigans.Grids: topology, Bounded
         @test topology(Ta.grid)[1] == Bounded
     end
 
-    @testset "Column extracts a single point" begin
+        @testset "Column extracts a single point on $A" begin
         col = Column(150.0, 0.0)  # equator, central Pacific
         atm = JRA55PrescribedAtmosphere(arch;
                                         time_indices_in_memory=2,
@@ -38,7 +39,7 @@ using Oceananigans.Grids: topology, Bounded
         @test !any(isnan, interior(Ta))
     end
 
-    @testset "Column matches bbox bilinear at the column point" begin
+        @testset "Column matches bbox bilinear at the column point on $A" begin
         # The Column dispatch should produce the same value as bilinearly
         # interpolating a bbox-extracted FTS at the column's (lon, lat).
         col_atm  = JRA55PrescribedAtmosphere(arch; time_indices_in_memory=2,
@@ -54,5 +55,6 @@ using Oceananigans.Grids: topology, Bounded
         loc = (Center(), Center(), Center())
         T_bbox_t1 = oc_interpolate((150.0, 0.0, 0.0), Ta_bbox[1], loc, Ta_bbox.grid)
         @test T_col_t1 ≈ T_bbox_t1  rtol = 1e-3
+    end
     end
 end
