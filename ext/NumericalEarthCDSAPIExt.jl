@@ -9,7 +9,7 @@ using Oceananigans.DistributedComputations: @root
 using NCDatasets: NCDatasets, name, path
 
 using NumericalEarth: NumericalEarth
-using NumericalEarth.DataWrangling: Metadatum, default_download_directory, metadata_path
+using NumericalEarth.DataWrangling: Metadatum, default_download_directory, metadata_path, download_dataset
 using NumericalEarth.DataWrangling.ERA5: ERA5Dataset, ERA5Metadata, ERA5Metadatum,
                                          ERA5_dataset_variable_names, ERA5_netcdf_variable_names,
                                          ERA5PressureLevelsDataset,
