@@ -21,20 +21,19 @@ end
 ## Make sure the atmospheric parameters from SpeedyWeather can be used in the compute fluxes function
 
 # The height of near-surface variables used in the turbulent flux solver
-function NumericalEarth.EarthSystemModels.surface_layer_height(s::SpeedySimulation)
-    T = s.model.atmosphere.reference_temperature
-    g = s.model.planet.gravity
-    Φ = s.model.geopotential.Δp_geopot_full
+function NumericalEarth.EarthSystemModels.surface_layer_height(sim::SpeedySimulation)
+    T = sim.model.atmosphere.reference_temperature
+    g = sim.model.planet.gravity
+    Φ = sim.model.geopotential.Δp_geopot_full
     return Φ[end] * T / g
 end
 
 # This is a parameter that is used in the computation of the fluxes,
 # It probably should not be here but in the similarity theory type.
-NumericalEarth.EarthSystemModels.boundary_layer_height(atmos::SpeedySimulation) = 600
+NumericalEarth.EarthSystemModels.boundary_layer_height(::SpeedySimulation) = 600
 
 # This is a _hack_!! The parameters should be consistent with what is specified in SpeedyWeather
-NumericalEarth.EarthSystemModels.thermodynamics_parameters(atmos::SpeedySimulation) =
-    NumericalEarth.Atmospheres.AtmosphereThermodynamicsParameters(Float32)
+NumericalEarth.EarthSystemModels.thermodynamics_parameters(::SpeedySimulation) = AtmosphereThermodynamicsParameters(Float32)
 
 function initialize_atmospheric_state!(simulation::SpeedyWeather.Simulation)
     vars, model = SpeedyWeather.unpack(simulation)
@@ -90,4 +89,5 @@ function NumericalEarth.Atmospheres.atmosphere_simulation(spectral_grid::SpeedyW
     return atmosphere
 end
 
-Oceananigans.Simulations.reset_clock!(atmos::SpeedyWeather.Simulation) = SpeedyWeather.initialize!(atmos.prognostic_variables.clock)
+Oceananigans.Simulations.reset_clock!(atmos::SpeedyWeather.Simulation) =
+    SpeedyWeather.initialize!(atmos.prognostic_variables.clock)
