@@ -1,25 +1,10 @@
 using CondaPkg
 
 using Oceananigans.Grids: topology
-using Oceananigans.Simulations
-using OffsetArrays: OffsetArray
+using Oceananigans.Fields: set!
 
-import Oceananigans.Fields: set!
-import Oceananigans.TimeSteppers: time_step!, initialize!
-
-import Oceananigans.Architectures: architecture
-
-using NumericalEarth.EarthSystemModels: EarthSystemModel
-import NumericalEarth.EarthSystemModels: reference_density,
-                                         heat_capacity,
-                                         ocean_temperature,
-                                         ocean_salinity,
-                                         ocean_surface_salinity,
-                                         ocean_surface_velocities
-
-import NumericalEarth.Oceans: ocean_simulation
-
-import Base: eltype
+using NumericalEarth: NumericalEarth
+using NumericalEarth.EarthSystemModels: EarthSystemModel, ocean_salinity
 
 """
     install_veros()
@@ -107,10 +92,10 @@ struct VerosOceanSimulation{S}
     setup :: S
 end
 
+Oceananigans.initialize!(::VerosOceanSimulation{Py}) = nothing
 Oceananigans.Diagnostics.default_nan_checker(model::EarthSystemModel{<:Any, <:Any, <:VerosOceanSimulation}) = nothing
-initialize!(::NumericalEarthVerosExt.VerosOceanSimulation{Py}) = nothing
 
-function time_step!(ocean::VerosOceanSimulation, Δt)
+function Oceananigans.TimeSteppers.time_step!(ocean::VerosOceanSimulation, Δt)
     # Align the timesteps
     set!(ocean, "dt_tracer", Δt; path=:settings)
     set!(ocean, "dt_mom",    Δt; path=:settings)
@@ -119,13 +104,13 @@ function time_step!(ocean::VerosOceanSimulation, Δt)
     ocean.setup.step(ocean.setup.state)
 end
 
-architecture(model::EarthSystemModel{<:Any, <:Any, <:VerosOceanSimulation}) = CPU()
-eltype(model::EarthSystemModel{<:Any, <:Any, <:VerosOceanSimulation}) = Float64
+Base.eltype(model::EarthSystemModel{<:Any, <:Any, <:VerosOceanSimulation}) = Float64
+Oceananigans.Architectures.architecture(model::EarthSystemModel{<:Any, <:Any, <:VerosOceanSimulation}) = CPU()
 
-reference_density(ocean::VerosOceanSimulation) = pyconvert(eltype(ocean), ocean.setup.state.settings.rho_0)
-heat_capacity(ocean::VerosOceanSimulation) = convert(eltype(ocean), 3995)
+NumericalEarth.EarthSystemModels.reference_density(ocean::VerosOceanSimulation) = pyconvert(eltype(ocean), ocean.setup.state.settings.rho_0)
+NumericalEarth.EarthSystemModels.heat_capacity(ocean::VerosOceanSimulation) = convert(eltype(ocean), 3995)
 
-function ocean_surface_velocities(ocean::VerosOceanSimulation)
+function NumericalEarth.EarthSystemModels.ocean_surface_velocities(ocean::VerosOceanSimulation)
     u = PyArray(ocean.setup.state.variables.u)
     v = PyArray(ocean.setup.state.variables.v)
     Nxu, Nyu, Nzu = size(u)
@@ -140,7 +125,7 @@ function ocean_surface_velocities(ocean::VerosOceanSimulation)
     return u_view, v_view
 end
 
-function ocean_surface_salinity(ocean::VerosOceanSimulation)
+function NumericalEarth.EarthSystemModels.ocean_surface_salinity(ocean::VerosOceanSimulation)
     S = ocean_salinity(ocean)
     Nx, Ny, Nz = size(S)
     return view(S, :, :, Nz)
@@ -149,7 +134,7 @@ end
 # Veros hardcodes 2 halos in the x and y direction,
 # and each prognostic variable is 4 dimensional, where the first three dimensions
 # are x, y, z, and the last index differentiate between variable, tendency at n and tendency at n-1
-function ocean_temperature(ocean::VerosOceanSimulation)
+function NumericalEarth.EarthSystemModels.ocean_temperature(ocean::VerosOceanSimulation)
     T = PyArray(ocean.setup.state.variables.temp)
     Nx, Ny, Nz = size(T)
     return view(T, 3:Nx-2, 3:Ny-2, 1:Nz, 1)
@@ -158,7 +143,7 @@ end
 # Veros hardcodes 2 halos in the x and y direction,
 # and each prognostic variable is 4 dimensional, where the first three dimensions
 # are x, y, z, and the last index differentiate between variable, tendency at n and tendency at n-1
-function ocean_salinity(ocean::VerosOceanSimulation)
+function NumericalEarth.EarthSystemModels.ocean_salinity(ocean::VerosOceanSimulation)
     S = PyArray(ocean.setup.state.variables.salt)
     Nx, Ny, Nz = size(S)
     return view(S, 3:Nx-2, 3:Ny-2, 1:Nz, 1)
@@ -176,14 +161,14 @@ const CCField2D = Field{<:Center, <:Center, <:Nothing}
 const FCField2D = Field{<:Face,   <:Center, <:Nothing}
 const CFField2D = Field{<:Center, <:Face,   <:Nothing}
 
-function set!(field::CCField2D, pyarray::Py, k=pyconvert(Int, pyarray.shape[2]))
+function Oceananigans.Fields.set!(field::CCField2D, pyarray::Py, k=pyconvert(Int, pyarray.shape[2]))
     array = PyArray(pyarray)
     Nx, Ny, Nz = size(array)
     set!(field, view(array, 3:Nx-2, 3:Ny-2, k, 1))
     return field
 end
 
-function set!(field::FCField2D, pyarray::Py, k=pyconvert(Int, pyarray.shape[2]))
+function Oceananigans.Fields.set!(field::FCField2D, pyarray::Py, k=pyconvert(Int, pyarray.shape[2]))
     array = PyArray(pyarray)
     Nx, Ny, Nz = size(array)
     TX, TY, _  = topology(field.grid)
@@ -231,7 +216,7 @@ function VerosOceanSimulation(setup::String, setup_name::Symbol)
 end
 
 # We assume that if we pass a python object, this is a veros simulation
-function ocean_simulation(ocean::Py)
+function NumericalEarth.Oceans.ocean_simulation(ocean::Py)
     # Patch Veros's signal handling before initializing
     patch_veros_signal_handling()
 
@@ -289,7 +274,7 @@ Set the `v` variable in the `ocean` model to the value of `x`.
 the path corresponds to the path inside the class where to locate the
 variable `v` to set. It can be either `:variables` or `:settings`.
 """
-function set!(ocean::VerosOceanSimulation, v, x; path = :variables)
+function Oceananigans.Fields.set!(ocean::VerosOceanSimulation, v, x; path = :variables)
     setup = ocean.setup
     if path == :variables
         pyexec("""
@@ -306,7 +291,7 @@ function set!(ocean::VerosOceanSimulation, v, x; path = :variables)
     end
 end
 
-function Simulations.reset_clock!(ocean::VerosOceanSimulation)
+function Oceananigans.Simulations.reset_clock!(ocean::VerosOceanSimulation)
     set!(ocean, "time", 0)
     set!(ocean, "itt",  Int32(0))
     return ocean
