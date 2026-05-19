@@ -347,9 +347,9 @@ function NumericalEarth.DataWrangling.download_dataset(names::Vector{Symbol}, da
     return download_dataset(names, meta)
 end
 
-function download_dataset(name::Symbol, dataset::ERA5Dataset, datetime;
-                          region = nothing,
-                          dir = NumericalEarth.DataWrangling.default_download_directory(dataset))
+function NumericalEarth.DataWrangling.download_dataset(name::Symbol, dataset::ERA5Dataset, datetime;
+                                                       region = nothing,
+                                                       dir = NumericalEarth.DataWrangling.default_download_directory(dataset))
     return download_dataset([name], dataset, datetime; region, dir)
 end
 
