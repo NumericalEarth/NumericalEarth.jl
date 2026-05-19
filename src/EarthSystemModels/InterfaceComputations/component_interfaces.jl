@@ -257,9 +257,7 @@ end
 struct DefaultSeaIceOceanSalinityFlux end
 const default_sea_ice_ocean_salinity_flux = DefaultSeaIceOceanSalinityFlux()
 
-with_sea_ice_ocean_salinity_flux(flux_formulation, ::DefaultSeaIceOceanSalinityFlux) = flux_formulation
 with_sea_ice_ocean_salinity_flux(::Nothing, salinity_flux) = nothing
-with_sea_ice_ocean_salinity_flux(::Nothing, ::DefaultSeaIceOceanSalinityFlux) = nothing
 
 function with_sea_ice_ocean_salinity_flux(flux::IceBathHeatFlux, salinity_flux)
     return IceBathHeatFlux(flux.heat_transfer_coefficient,
