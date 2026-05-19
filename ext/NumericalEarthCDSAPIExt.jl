@@ -179,11 +179,11 @@ end
 ##### each month into smaller contiguous chunks when needed.
 #####
 
-const _CDS_MAX_FIELDS_PER_REQUEST = 5000
+const CDS_MAX_FIELDS_PER_REQUEST = 5000
 
 function download_dataset(metadata::ERA5Metadata; skip_existing=true, cleanup=true)
     dates = metadata.dates isa AbstractVector ? metadata.dates : [metadata.dates]
-    batches = _batch_datetimes_for_cds(dates, metadata.dataset, 1)
+    batches = batch_datetimes_for_cds(dates, metadata.dataset, 1)
 
     paths = String[]
     for batch in batches
@@ -198,21 +198,21 @@ function download_dataset(metadata::ERA5Metadata; skip_existing=true, cleanup=tr
 end
 
 """
-    _group_by_calendar_month(datetimes)
+    group_by_calendar_month(datetimes)
 
 Group an iterable of `DateTime`s by `(year, month)`. Returns a `Dict` whose
 keys are `Tuple{Int, Int}` `(year, month)` pairs and whose values are the
 datetimes that fall in that month. The `00:00` instant of a day belongs to
 that day (not the previous one).
 """
-function _group_by_calendar_month(datetimes)
+function group_by_calendar_month(datetimes)
     keys = unique([(Dates.year(dt), Dates.month(dt)) for dt in datetimes])
     return Dict(k => filter(dt -> (Dates.year(dt), Dates.month(dt)) == k, datetimes)
                 for k in keys)
 end
 
 """
-    _max_dts_per_cds_request(dataset, num_vars; max_fields=$(_CDS_MAX_FIELDS_PER_REQUEST))
+    max_dts_per_cds_request(dataset, num_vars; max_fields=$(CDS_MAX_FIELDS_PER_REQUEST))
 
 Maximum number of datetimes that can share a single CDS request before the
 per-request cost limit is hit. Pressure-level datasets multiply by the number
@@ -220,24 +220,24 @@ of selected pressure levels; single-level datasets count as one level. Falls
 back to `1` when a single datetime already exceeds the cap (which would force
 the caller's single-datetime download path).
 """
-function _max_dts_per_cds_request(dataset, num_vars; max_fields=_CDS_MAX_FIELDS_PER_REQUEST)
+function max_dts_per_cds_request(dataset, num_vars; max_fields=CDS_MAX_FIELDS_PER_REQUEST)
     levels = dataset isa ERA5PressureLevelsDataset ? length(dataset.pressure_levels) : 1
     return max(1, fld(max_fields, num_vars * levels))
 end
 
 """
-    _batch_datetimes_for_cds(datetimes, dataset, num_vars; max_fields=$(_CDS_MAX_FIELDS_PER_REQUEST))
+    batch_datetimes_for_cds(datetimes, dataset, num_vars; max_fields=$(CDS_MAX_FIELDS_PER_REQUEST))
 
 Split `datetimes` into contiguous batches that each fit in one CDS request:
 each batch shares a `(year, month)` and contains at most
-`_max_dts_per_cds_request(dataset, num_vars; max_fields)` datetimes. Batches
+`max_dts_per_cds_request(dataset, num_vars; max_fields)` datetimes. Batches
 are returned sorted by their first datetime so the caller can iterate in
 chronological order.
 """
-function _batch_datetimes_for_cds(datetimes, dataset, num_vars;
-                                  max_fields=_CDS_MAX_FIELDS_PER_REQUEST)
-    monthly = _group_by_calendar_month(datetimes)
-    max_dts = _max_dts_per_cds_request(dataset, num_vars; max_fields)
+function batch_datetimes_for_cds(datetimes, dataset, num_vars;
+                                  max_fields=CDS_MAX_FIELDS_PER_REQUEST)
+    monthly = group_by_calendar_month(datetimes)
+    max_dts = max_dts_per_cds_request(dataset, num_vars; max_fields)
 
     batches = Vector{DateTime}[]
     for key in sort(collect(keys(monthly)))
@@ -418,7 +418,7 @@ function download_dataset(names::Vector{Symbol},
                           skip_existing = true,
                           cleanup = true)
 
-    batches = _batch_datetimes_for_cds(datetimes, dataset, length(names))
+    batches = batch_datetimes_for_cds(datetimes, dataset, length(names))
 
     paths = String[]
     for batch in batches

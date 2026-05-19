@@ -752,12 +752,12 @@ end
     end
 end
 
-@testset "ERA5 CDSAPIExt _group_by_calendar_month" begin
+@testset "ERA5 CDSAPIExt group_by_calendar_month" begin
     # Multiple days in one calendar month → one group
     same_month = [DateTime(2005, 2, 16, 0),
                   DateTime(2005, 2, 17, 6),
                   DateTime(2005, 2, 28, 23)]
-    g = CDSExt._group_by_calendar_month(same_month)
+    g = CDSExt.group_by_calendar_month(same_month)
     @test length(g) == 1
     @test (2005, 2) in keys(g)
     @test length(g[(2005, 2)]) == 3
@@ -765,7 +765,7 @@ end
     # Month boundary: each month is its own group
     month_boundary = [DateTime(2005, 2, 28, 23),
                       DateTime(2005, 3, 1, 0)]
-    g = CDSExt._group_by_calendar_month(month_boundary)
+    g = CDSExt.group_by_calendar_month(month_boundary)
     @test length(g) == 2
     @test g[(2005, 2)] == [DateTime(2005, 2, 28, 23)]
     @test g[(2005, 3)] == [DateTime(2005, 3, 1, 0)]
@@ -773,7 +773,7 @@ end
     # Year boundary: crossing Dec/Jan produces two groups under different years
     year_boundary = [DateTime(2004, 12, 31, 23),
                      DateTime(2005, 1, 1, 0)]
-    g = CDSExt._group_by_calendar_month(year_boundary)
+    g = CDSExt.group_by_calendar_month(year_boundary)
     @test length(g) == 2
     @test g[(2004, 12)] == [DateTime(2004, 12, 31, 23)]
     @test g[(2005, 1)]  == [DateTime(2005, 1, 1, 0)]
@@ -783,24 +783,24 @@ end
              DateTime(2005, 2, 16),
              DateTime(2005, 3, 12),
              DateTime(2005, 2, 28)]
-    g = CDSExt._group_by_calendar_month(mixed)
+    g = CDSExt.group_by_calendar_month(mixed)
     @test length(g) == 2
     @test Set(g[(2005, 2)]) == Set([DateTime(2005, 2, 16), DateTime(2005, 2, 28)])
     @test Set(g[(2005, 3)]) == Set([DateTime(2005, 3, 6),  DateTime(2005, 3, 12)])
 
     # Duplicate datetimes are preserved (CDS will dedupe; we don't)
     dups = [DateTime(2005, 2, 16, 12), DateTime(2005, 2, 16, 12)]
-    g = CDSExt._group_by_calendar_month(dups)
+    g = CDSExt.group_by_calendar_month(dups)
     @test length(g) == 1
     @test length(g[(2005, 2)]) == 2
 
     # Single-element input
-    g = CDSExt._group_by_calendar_month([DateTime(2005, 2, 16, 12)])
+    g = CDSExt.group_by_calendar_month([DateTime(2005, 2, 16, 12)])
     @test length(g) == 1
     @test g[(2005, 2)] == [DateTime(2005, 2, 16, 12)]
 end
 
-@testset "ERA5 CDSAPIExt _batch_datetimes_for_cds" begin
+@testset "ERA5 CDSAPIExt batch_datetimes_for_cds" begin
     sl    = ERA5HourlySingleLevel()
     pl_21 = ERA5HourlyPressureLevels()  # default: all 37 levels
     pl_5  = ERA5HourlyPressureLevels(pressure_levels=[1000, 850, 700, 500, 250]hPa)
@@ -810,7 +810,7 @@ end
 
     @testset "single-level fits in one batch per month" begin
         # Each datetime costs 1 field × 1 level = 1; well under the 5000 cap.
-        batches = CDSExt._batch_datetimes_for_cds(dates, sl, 1)
+        batches = CDSExt.batch_datetimes_for_cds(dates, sl, 1)
         @test length(batches) == 2
         @test all(b -> length(unique(Dates.month.(b))) == 1, batches)
         # Dec 2004 group has 120 dts, Jan 2005 has 48
@@ -820,7 +820,7 @@ end
     @testset "pressure-level with many vars+levels splits within a month" begin
         # 5 vars × 37 levels = 185 fields per datetime → max 27 dts per request
         # at default cap of 5000.
-        batches = CDSExt._batch_datetimes_for_cds(dates, pl_21, 5)
+        batches = CDSExt.batch_datetimes_for_cds(dates, pl_21, 5)
         @test length(batches) > 2   # must split within at least one month
         @test all(b -> length(unique(Dates.month.(b))) == 1, batches)
         # Batches are sorted in time and within each month
@@ -828,20 +828,20 @@ end
         @test all_dts == sort(dates)
     end
 
-    @testset "_max_dts_per_cds_request: arithmetic" begin
+    @testset "max_dts_per_cds_request: arithmetic" begin
         # Single-level, single variable: max_dts = 5000 / (1 * 1) = 5000
-        @test CDSExt._max_dts_per_cds_request(sl, 1) == 5000
+        @test CDSExt.max_dts_per_cds_request(sl, 1) == 5000
         # Pressure-level (5 levels) × 1 var → 5000 / 5 = 1000
-        @test CDSExt._max_dts_per_cds_request(pl_5, 1) == 1000
+        @test CDSExt.max_dts_per_cds_request(pl_5, 1) == 1000
         # Pressure-level (37 levels) × 5 vars → 5000 / 185 = 27
-        @test CDSExt._max_dts_per_cds_request(pl_21, 5) == fld(5000, 5 * 37)
+        @test CDSExt.max_dts_per_cds_request(pl_21, 5) == fld(5000, 5 * 37)
         # Tiny custom limit floored at 1
-        @test CDSExt._max_dts_per_cds_request(pl_21, 5; max_fields=10) == 1
+        @test CDSExt.max_dts_per_cds_request(pl_21, 5; max_fields=10) == 1
     end
 
     @testset "ordering: batches come out chronologically" begin
         scrambled = shuffle!(collect(dates))
-        batches = CDSExt._batch_datetimes_for_cds(scrambled, sl, 1)
+        batches = CDSExt.batch_datetimes_for_cds(scrambled, sl, 1)
         flattened = reduce(vcat, batches)
         @test flattened == sort(dates)
     end

@@ -79,7 +79,7 @@ function generate_coordinate(FT, topo, sz, halo,
     coordinate_name == :z || throw(ArgumentError("PressureLevelVerticalDiscretization requires coordinate_name=:z"))
 
     g = coord.gravitational_acceleration
-    Φi = _geopotential_data_for_extrema(coord.geopotential)
+    Φi = geopotential_data_for_extrema(coord.geopotential)
     z_lo, z_hi = FT.(extrema(Φi) ./ g)
     Lz = z_hi - z_lo
 
@@ -87,10 +87,10 @@ function generate_coordinate(FT, topo, sz, halo,
     return Lz, arch_discretization
 end
 
-_geopotential_data_for_extrema(Φ::Field) = interior(Φ)
+geopotential_data_for_extrema(Φ::Field) = interior(Φ)
 # NOTE: For a TSI this reads every time slice. Fine while the FTS path isn't
 # exercised; switch to a per-time-slice extent if we ever advance the clock here.
-_geopotential_data_for_extrema(Φ::TimeSeriesInterpolation) = parent(Φ.time_series)
+geopotential_data_for_extrema(Φ::TimeSeriesInterpolation) = parent(Φ.time_series)
 
 Adapt.adapt_structure(to, c::PressureLevelVerticalDiscretization) =
     PressureLevelVerticalDiscretization(c.gravitational_acceleration,
@@ -126,14 +126,14 @@ const PressureLevelGrid =
 # `Vector{Float64}` of length `Nz`. This matches what plot recipes, `Lz`,
 # and length consumers expect when only the grid is in hand. Per-cell access
 # via a `Field` is exposed through `znodes(::Field)` below.
-@inline rnodes(grid::PressureLevelGrid, ℓz::Center;          kwargs...) = _mean_height_profile(grid)
-@inline rnodes(grid::PressureLevelGrid, ℓz::Face;            kwargs...) = _mean_height_profile(grid)
-@inline rnodes(grid::PressureLevelGrid, ℓx, ℓy, ℓz;          kwargs...) = _mean_height_profile(grid)
-@inline rnodes(grid::PressureLevelGrid, ::Nothing, ::Nothing, ℓz; kwargs...) = _mean_height_profile(grid)
+@inline rnodes(grid::PressureLevelGrid, ℓz::Center;          kwargs...) = mean_height_profile(grid)
+@inline rnodes(grid::PressureLevelGrid, ℓz::Face;            kwargs...) = mean_height_profile(grid)
+@inline rnodes(grid::PressureLevelGrid, ℓx, ℓy, ℓz;          kwargs...) = mean_height_profile(grid)
+@inline rnodes(grid::PressureLevelGrid, ::Nothing, ::Nothing, ℓz; kwargs...) = mean_height_profile(grid)
 
-function _mean_height_profile(grid::PressureLevelGrid)
+function mean_height_profile(grid::PressureLevelGrid)
     g = grid.z.gravitational_acceleration
-    Φi = _geopotential_data_for_extrema(grid.z.geopotential)
+    Φi = geopotential_data_for_extrema(grid.z.geopotential)
     Nz = grid.Nz
     # `selectdim(Φi, 3, k)` works for both 3-D (Field) and 4-D (TSI parent)
     # geopotential storage; the trailing dims are reduced away by `mean`.
@@ -147,12 +147,12 @@ end
 #   `rnodes(grid, ℓz)` 1-arg form.
 # - Otherwise, build a 3-D per-cell `Field` via a `KernelFunctionOperation`
 #   over `rnode`.
-@inline _znode_op(i, j, k, grid) =
+@inline znode_op(i, j, k, grid) =
     @inbounds grid.z.geopotential[i, j, k] / grid.z.gravitational_acceleration
 
 # Grid sits at different type-parameter positions in `Field` and
 # `FieldTimeSeries`, so we list both concrete types and dispatch each through
-# the same `_znodes_for_plg` helper. `Field` is more specific than the
+# the same `znodes_for_plg` helper. `Field` is more specific than the
 # Oceananigans `znodes(::Field)` default; `FieldTimeSeries` is more specific
 # than `znodes(::AbstractField)`. Both wins on dispatch.
 const PressureLevelField =
@@ -161,10 +161,10 @@ const PressureLevelField =
 const PressureLevelFieldTimeSeries =
     FieldTimeSeries{<:Any, <:Any, <:Any, <:Any, <:Any, <:Any, <:Any, <:PressureLevelGrid}
 
-znodes(f::PressureLevelField; kwargs...)            = _znodes_for_plg(f; kwargs...)
-znodes(fts::PressureLevelFieldTimeSeries; kwargs...) = _znodes_for_plg(fts; kwargs...)
+znodes(f::PressureLevelField; kwargs...)            = znodes_for_plg(f; kwargs...)
+znodes(fts::PressureLevelFieldTimeSeries; kwargs...) = znodes_for_plg(fts; kwargs...)
 
-function _znodes_for_plg(f; kwargs...)
+function znodes_for_plg(f; kwargs...)
     grid = f.grid
     TX, TY, _ = topology(grid)
     locs = instantiated_location(f)
@@ -175,7 +175,7 @@ function _znodes_for_plg(f; kwargs...)
     end
 
     LX, LY, LZ = map(typeof, locs)
-    op = KernelFunctionOperation{LX, LY, LZ}(_znode_op, grid)
+    op = KernelFunctionOperation{LX, LY, LZ}(znode_op, grid)
     return compute!(Field(op))
 end
 
@@ -186,13 +186,13 @@ end
 # A 1-D `getindex`-only view of column `(i, j)` of a `PressureLevelGrid`'s z,
 # used to feed Oceananigans' `index_binary_search` without materializing the
 # column. Stack-allocated; bitstype-clean for GPU kernels when `grid` is.
-struct _ColumnView{G}
+struct ColumnView{G}
     grid :: G
     i    :: Int
     j    :: Int
 end
 
-@inline Base.getindex(c::_ColumnView, k::Int) =
+@inline Base.getindex(c::ColumnView, k::Int) =
     rnode(c.i, c.j, k, c.grid, Center(), Center(), Center())
 
 @inline function _fractional_indices((x, y, z)::NTuple{3, Any},
@@ -214,7 +214,7 @@ end
 @inline function column_fractional_z_index(z, ii, jj, locs, grid)
     i = clamp(Base.unsafe_trunc(Int, ii), 1, grid.Nx)
     j = clamp(Base.unsafe_trunc(Int, jj), 1, grid.Ny)
-    column = _ColumnView(grid, i, j)
+    column = ColumnView(grid, i, j)
     low, high = index_binary_search(column, z, grid.Nz)
     z_lo = @inbounds column[low]
     z_hi = @inbounds column[high]

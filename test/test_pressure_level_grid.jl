@@ -9,7 +9,7 @@ using NumericalEarth.Grids: PressureLevelGrid, PressureLevelVerticalDiscretizati
 
 # Build a small static-Field-backed `PressureLevelVerticalDiscretization` from
 # a per-cell geopotential array. Returns the (Φ, Φ_sfc, plvd) triple.
-function _make_plvd(arch=CPU(); Nx=2, Ny=2, Nz=5,
+function make_plvd(arch=CPU(); Nx=2, Ny=2, Nz=5,
                                 heights = collect(1.0:Nz),  # one entry per level, in km
                                 g = 9.81)
     Φ_grid = LatitudeLongitudeGrid(arch; size=(Nx, Ny, Nz),
@@ -33,8 +33,8 @@ end
 
 # Build the corresponding `LatitudeLongitudeGrid`. Topology can be set to
 # (Flat, Flat, Bounded) for a column source.
-function _make_plg(arch=CPU(); Nx=2, Ny=2, Nz=5, topology=(Bounded, Bounded, Bounded), kw...)
-    Φ, Φ_sfc, plvd = _make_plvd(arch; Nx, Ny, Nz, kw...)
+function make_plg(arch=CPU(); Nx=2, Ny=2, Nz=5, topology=(Bounded, Bounded, Bounded), kw...)
+    Φ, Φ_sfc, plvd = make_plvd(arch; Nx, Ny, Nz, kw...)
     size = topology[1] === Flat && topology[2] === Flat ? Nz : (Nx, Ny, Nz)
     grid = LatitudeLongitudeGrid(arch; size, longitude=(0, 1), latitude=(0, 1),
                                  z=plvd, topology)
@@ -45,7 +45,7 @@ end
     g = 9.81
 
     @testset "constructor and grid generation" begin
-        _, _, plvd = _make_plvd()
+        _, _, plvd = make_plvd()
         @test plvd isa PressureLevelVerticalDiscretization
         @test plvd.gravitational_acceleration == g
 
@@ -61,7 +61,7 @@ end
     end
 
     @testset "generate_coordinate dim/axis guards" begin
-        _, _, plvd = _make_plvd()
+        _, _, plvd = make_plvd()
         gen = Oceananigans.Grids.generate_coordinate
         # `dim != 3` should throw.
         @test_throws ArgumentError gen(Float64, (Bounded, Bounded, Bounded),
@@ -101,7 +101,7 @@ end
     end
 
     @testset "rnodes / znodes on the grid return the column-mean Vector" begin
-        grid, _, _, _ = _make_plg()
+        grid, _, _, _ = make_plg()
         Nz = grid.Nz
 
         z_grid = znodes(grid, Center())
@@ -114,7 +114,7 @@ end
     end
 
     @testset "znodes(::Field) on a horizontally-resolved grid → 3-D Field" begin
-        grid, _, _, _ = _make_plg()
+        grid, _, _, _ = make_plg()
         f = CenterField(grid)
         z_field = znodes(f)
         @test z_field isa Field
@@ -132,14 +132,14 @@ end
 
     @testset "znodes(::Field) on horizontally-absent locations → Vector" begin
         # Case A: Flat-Flat topology (e.g. ERA5 Column region).
-        col_grid, _, _, _ = _make_plg(; topology=(Flat, Flat, Bounded), Nx=1, Ny=1)
+        col_grid, _, _, _ = make_plg(; topology=(Flat, Flat, Bounded), Nx=1, Ny=1)
         f_col = CenterField(col_grid)
         z_col = znodes(f_col)
         @test z_col isa Vector{Float64}
         @test z_col == znodes(col_grid, Center())
 
         # Case B: Reduced field with (Nothing, Nothing, Center) location.
-        grid, _, _, _ = _make_plg()
+        grid, _, _, _ = make_plg()
         f = CenterField(grid)
         interior(f) .= rand(size(f)...)
         fbar = compute!(Field(mean(f, dims=(1, 2))))
@@ -150,13 +150,13 @@ end
     end
 
     @testset "znodes(::FieldTimeSeries) follows the same dispatch" begin
-        grid, _, _, _ = _make_plg()
+        grid, _, _, _ = make_plg()
         fts = FieldTimeSeries{Center, Center, Center}(grid, [0.0, 1.0, 2.0])
         z = znodes(fts)
         @test z isa Field
         @test size(z) == (grid.Nx, grid.Ny, grid.Nz)
 
-        col_grid, _, _, _ = _make_plg(; topology=(Flat, Flat, Bounded), Nx=1, Ny=1)
+        col_grid, _, _, _ = make_plg(; topology=(Flat, Flat, Bounded), Nx=1, Ny=1)
         fts_col = FieldTimeSeries{Center, Center, Center}(col_grid, [0.0, 1.0])
         @test znodes(fts_col) isa Vector{Float64}
     end
