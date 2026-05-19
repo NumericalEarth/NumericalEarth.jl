@@ -1,12 +1,3 @@
-using ..DataWrangling: all_dates, native_times
-using ..DataWrangling: compute_native_date_range, set_region_data!
-using Oceananigans.Grids: AbstractGrid
-using Oceananigans.OutputReaders: PartlyInMemory
-using Adapt
-
-import NumericalEarth.DataWrangling: retrieve_data
-
-
 const JRA55NetCDFFTS              = FlavorOfFTS{<:Any, <:Any, <:Any, <:Any, <:DatasetBackend{<:Any, <:Any, <:Any, <:JRA55Metadata}}
 const JRA55NetCDFFTSRepeatYear    = FlavorOfFTS{<:Any, <:Any, <:Any, <:Any, <:DatasetBackend{<:Any, <:Any, <:Any, <:Metadata{<:RepeatYearJRA55}}}
 const JRA55NetCDFFTSMultipleYears = FlavorOfFTS{<:Any, <:Any, <:Any, <:Any, <:DatasetBackend{<:Any, <:Any, <:Any, <:Metadata{<:MultiYearJRA55}}}
@@ -19,7 +10,7 @@ Read the 2D slice from the JRA55 NetCDF file corresponding to `metadatum`'s sing
 exactly 2920 entries for 1990 and aligns 1:1 with `all_dates`); `MultiYearJRA55` resolves
 the index against the file's own `time` axis (one Gregorian-calendar file per year).
 """
-function retrieve_data(metadatum::RepeatYearJRA55Metadatum)
+function DataWrangling.retrieve_data(metadatum::RepeatYearJRA55Metadatum)
     path = metadata_path(metadatum)
     name = dataset_variable_name(metadatum)
 
@@ -36,7 +27,7 @@ function retrieve_data(metadatum::RepeatYearJRA55Metadatum)
     return data
 end
 
-function retrieve_data(metadatum::MultiYearJRA55Metadatum)
+function DataWrangling.retrieve_data(metadatum::MultiYearJRA55Metadatum)
     path = metadata_path(metadatum)
     name = dataset_variable_name(metadatum)
 
@@ -66,7 +57,7 @@ function jra55_read_data(ds, name, i, j, nn)
     end
 end
 
-function set!(fts::JRA55NetCDFFTSRepeatYear, backend=fts.backend)
+function Oceananigans.Fields.set!(fts::JRA55NetCDFFTSRepeatYear, backend=fts.backend)
     metadata = backend.metadata
     ds = Dataset(joinpath(metadata.dir, metadata.filename))
 
@@ -84,7 +75,7 @@ function set!(fts::JRA55NetCDFFTSRepeatYear, backend=fts.backend)
     return nothing
 end
 
-function set!(fts::JRA55NetCDFFTSMultipleYears, backend=fts.backend)
+function Oceananigans.Fields.set!(fts::JRA55NetCDFFTSMultipleYears, backend=fts.backend)
     metadata = backend.metadata
     name     = dataset_variable_name(metadata)
 
@@ -119,4 +110,3 @@ function set!(fts::JRA55NetCDFFTSMultipleYears, backend=fts.backend)
     fill_halo_regions!(fts)
     return nothing
 end
-

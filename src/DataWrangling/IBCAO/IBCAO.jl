@@ -2,11 +2,10 @@ module IBCAO
 
 export IBCAOv5
 
-using Downloads
-using Oceananigans
+using Downloads: Downloads
+using Oceananigans: Oceananigans
 using Oceananigans.DistributedComputations: @root
-using Scratch
-using NCDatasets
+using Scratch: Scratch, @get_scratch!
 
 using ..DataWrangling: DownloadProgress, Metadatum, metadata_path, AbstractStaticBathymetry
 

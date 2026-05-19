@@ -1,21 +1,13 @@
-using Oceananigans
-using Oceananigans.BoundaryConditions
-using Oceananigans.Grids: architecture
-using Oceananigans.Utils: launch!
+using ConservativeRegridding: ConservativeRegridding, Regridder, regrid!
+using Oceananigans.Architectures: architecture
+using Oceananigans.BoundaryConditions: BoundaryConditions, fill_halo_regions!
 using Oceananigans.Operators: intrinsic_vector
-
-using ConservativeRegridding
-using ConservativeRegridding: Regridder
-import ConservativeRegridding: regrid!
-
+using Oceananigans.Utils: launch!
 using NumericalEarth.EarthSystemModels: sea_ice_concentration
-
-import NumericalEarth.EarthSystemModels: update_net_fluxes!, interpolate_state!
-import NumericalEarth.Atmospheres: atmosphere_regridder
-import NumericalEarth.EarthSystemModels.InterfaceComputations: net_fluxes, ComponentExchanger
+using NumericalEarth.EarthSystemModels.InterfaceComputations: ComponentExchanger
 
 # We do not need this...
-net_fluxes(::SpeedySimulation) = nothing
+NumericalEarth.EarthSystemModels.InterfaceComputations.net_fluxes(::SpeedySimulation) = nothing
 
 # For the moment the workflow is:
 # 1. Perform the regridding on the CPU
@@ -23,7 +15,7 @@ net_fluxes(::SpeedySimulation) = nothing
 # If this work we can
 # 1. Copy speedyweather gridarrays to the GPU
 # 2. Perform the regridding on the GPU
-function ComponentExchanger(atmosphere::SpeedySimulation, exchange_grid)
+function NumericalEarth.EarthSystemModels.InterfaceComputations.ComponentExchanger(atmosphere::SpeedySimulation, exchange_grid)
 
     spectral_grid = atmosphere.model.spectral_grid.grid
     # Use the exchange_grid's manifold for both grids to avoid
@@ -46,16 +38,16 @@ function ComponentExchanger(atmosphere::SpeedySimulation, exchange_grid)
     return ComponentExchanger(state, regridder)
 end
 
-function regrid!(field::Oceananigans.Field, regridder::Regridder, data::AbstractArray)
+function ConservativeRegridding.regrid!(field::Oceananigans.Field, regridder::Regridder, data::AbstractArray)
     regrid!(vec(interior(field)), regridder, vec(data))
 end
 
-function regrid!(data::AbstractArray, regridder::Regridder, field::Oceananigans.Field)
+function ConservativeRegridding.regrid!(data::AbstractArray, regridder::Regridder, field::Oceananigans.Field)
     regrid!(vec(data), regridder, vec(interior(field)))
 end
 
 # Regrid the atmospheric state on the exchange grid
-function interpolate_state!(exchanger, exchange_grid, atmos::SpeedySimulation, coupled_model)
+function NumericalEarth.EarthSystemModels.interpolate_state!(exchanger, exchange_grid, atmos::SpeedySimulation, coupled_model)
     from_atmosphere = exchanger.regridder.from_atmosphere
     exchange_state  = exchanger.state
     surface_layer   = atmos.model.spectral_grid.nlayers
@@ -114,7 +106,7 @@ end
 # TODO: Fix the coupling with the sea ice model and make sure that
 # the this function works also for sea_ice=nothing and on GPUs without
 # needing to allocate memory.
-function update_net_fluxes!(coupled_model, atmos::SpeedySimulation)
+function NumericalEarth.EarthSystemModels.update_net_fluxes!(coupled_model, atmos::SpeedySimulation)
     to_atmosphere = coupled_model.interfaces.exchanger.atmosphere.regridder.to_atmosphere
     ao_fluxes = coupled_model.interfaces.atmosphere_ocean_interface.fluxes
     ai_fluxes = coupled_model.interfaces.atmosphere_sea_ice_interface.fluxes
@@ -143,7 +135,7 @@ function update_net_fluxes!(coupled_model, atmos::SpeedySimulation)
 end
 
 # Simple case -> there is no sea ice!
-function update_net_fluxes!(coupled_model::SpeedyNoSeaIceEarthSystemModel, atmos::SpeedySimulation)
+function NumericalEarth.EarthSystemModels.update_net_fluxes!(coupled_model::SpeedyNoSeaIceEarthSystemModel, atmos::SpeedySimulation)
     to_atmosphere = coupled_model.interfaces.exchanger.atmosphere.regridder.to_atmosphere
     ao_fluxes = coupled_model.interfaces.atmosphere_ocean_interface.fluxes
     𝒬ᵀᵃᵒ = ao_fluxes.sensible_heat

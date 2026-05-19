@@ -2,11 +2,11 @@ module GLORYS
 
 export GLORYSStatic, GLORYSDaily, GLORYSMonthly
 
-using NCDatasets
-using Printf
-
 using Dates: DateTime, Day, Month
 using Oceananigans.Fields: Center
+using NCDatasets: NCDatasets, Dataset
+using Printf: Printf, @sprintf
+using Scratch: Scratch, @get_scratch!
 
 using ..DataWrangling: Metadata, Metadatum, metadata_path
 
@@ -23,8 +23,6 @@ import ..DataWrangling:
     reversed_vertical_axis,
     available_variables,
     is_three_dimensional
-
-using Scratch
 
 download_GLORYS_cache::String = ""
 function __init__()
