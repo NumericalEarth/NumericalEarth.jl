@@ -1,4 +1,4 @@
-using Adapt
+using Adapt: Adapt
 using KernelAbstractions: @kernel, @index
 using Statistics: mean
 using Oceananigans.AbstractOperations: KernelFunctionOperation

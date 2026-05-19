@@ -37,6 +37,7 @@ using CDSAPI
 using Dates
 using Oceananigans
 using Oceananigans.Fields: interpolate!
+using Oceananigans.Grids: x_domain
 using Statistics
 using CairoMakie
 using Suppressor
@@ -149,33 +150,94 @@ fig
 #   region restriction.
 # - We work with a `FieldTimeSeries`, constructed from metadata, to construct
 #   an ERA5 time series. Field data are downloaded on the fly.
+# - We illustrate the per-column-z interpolation by dropping specific humidity
+#   from its native pressure-level grid onto a fixed altitude (~800 m, RICO
+#   cloud base).
+#
+# We download two fields over the same synoptic-scale box: surface
+# precipitation (single-level, 2-D) and specific humidity at all pressure
+# levels (pressure-level, 3-D). The pressure-level data is bound to a
+# `PressureLevelGrid` whose z-coordinate is built from the instantaneous
+# geopotential, and `Oceananigans.interpolate!` bisects each column's actual
+# heights inside the kernel — see [issue #236](https://github.com/NumericalEarth/NumericalEarth.jl/issues/236).
 
 precip_meta = Metadata(:total_precipitation; dataset, dates, region = synoptic_region)
 precip_series = @suppress_out FieldTimeSeries(precip_meta)
 nothing #hide
 
-# For brevity, we plot the time-averaged (rather than instantaneous) precipitation over
-# the region.
+# Pressure-level qᵛ over the same region. We restrict the data retrieval to
+# the lower troposphere (≥ 250 hPa, surface up to ~10 km), giving 21 vertical
+# levels rather than the 37 standard pressure levels.
+
+selected_levels = filter(≥(250hPa), ERA5_all_pressure_levels)
+ds_pl = ERA5HourlyPressureLevels(selected_levels)
+
+qv_meta = Metadata(:specific_humidity; dataset = ds_pl, dates, region = synoptic_region)
+qv_series = @suppress_out FieldTimeSeries(qv_meta)
+nothing #hide
+
+# A flat target grid at z = 800 m (RICO cloud-base altitude) that we'll
+# interpolate the pressure-level qᵛ onto each frame.
+
+qv_longitude = x_domain(qv_series.grid)
+
+qv_target_grid = LatitudeLongitudeGrid(CPU();
+                                       size = (140, 60, 1),
+                                       longitude = qv_longitude,
+                                       latitude  = synoptic_region.latitude,
+                                       z = (800.0, 801.0),
+                                       halo = (2, 2, 1),
+                                       topology = (Bounded, Bounded, Bounded))
+qv_2d = CenterField(qv_target_grid)
+
+# Build a two-panel animation: precipitation (mm/day) on top, qᵛ at z = 800 m
+# below. The precip panel reads its `(λ, φ)` axes from the source grid; the
+# qᵛ panel reads them from `qv_target_grid` via the Oceananigans Makie ext.
 
 Nt = length(dates)
 λ, φ, _ = nodes(precip_series[1])
+λ_plot = @. ifelse(λ > 180, λ - 360, λ)
 
 ## ERA5 `total_precipitation` is in m/hour; convert to mm/day.
 to_mm_day = 1000 * 24
-precip_avg = mean(interior(precip_series[n], :, :, 1) for n in 1:Nt) * to_mm_day
+to_g_per_kg = 1000
 
-fig1 = Figure(size=(900, 400))
+n = Observable(1)
 
-ax1 = Axis(fig1[1, 1],
-           title = "Mean precipitation, $(first(dates)) to $(last(dates))",
-           xlabel = "Longitude (°)", ylabel = "Latitude (°)",
-           xticks = -90:30:30)
+precip_obs = @lift interior(precip_series[$n], :, :, 1) .* to_mm_day
+qv_obs = @lift begin
+    interpolate!(qv_2d, qv_series[$n])
+    interior(qv_2d, :, :, 1) .* to_g_per_kg
+end
 
-hm = heatmap!(ax1, λ, φ, precip_avg; colormap=:rain, colorrange=(0, 12))
+λ_qv, φ_qv, _ = nodes(qv_2d)
+λ_qv_plot = @. ifelse(λ_qv > 180, λ_qv - 360, λ_qv)
 
-Colorbar(fig1[1, 2], hm, label="Precipitation (mm/day)")
+fig1 = Figure(size=(900, 700))
+title = @lift "ERA5 synoptic conditions — " * Dates.format(dates[$n], dateformat"u d HH:MM") * " UTC"
+Label(fig1[0, 1:2], title; fontsize=14, font=:bold, tellwidth=false)
 
-fig1
+ax_p = Axis(fig1[1, 1]; title="Total precipitation",
+            xlabel="Longitude (°)", ylabel="Latitude (°)",
+            xticks=-90:30:30)
+ax_q = Axis(fig1[2, 1]; title="Specific humidity at z = 800 m",
+            xlabel="Longitude (°)", ylabel="Latitude (°)",
+            xticks=-90:30:30)
+
+hm_p = heatmap!(ax_p, λ_plot, φ, precip_obs; colormap=:rain, colorrange=(0, 12))
+hm_q = heatmap!(ax_q, λ_qv_plot, φ_qv, qv_obs; colormap=:viridis, colorrange=(0, 20))
+
+Colorbar(fig1[1, 2], hm_p, label="mm/day")
+Colorbar(fig1[2, 2], hm_q, label="qᵛ [g/kg]")
+
+linkaxes!(ax_p, ax_q)
+
+record(fig1, "synoptic_animation.mp4", 1:Nt; framerate=12) do nn
+    n[] = nn
+end
+nothing #hide
+
+# ![](synoptic_animation.mp4)
 
 # ## §3 Microscale conditions
 #
@@ -248,19 +310,12 @@ fig2
 # This part of the analysis is based on [ERA5 hourly data on pressure levels](https://cds.climate.copernicus.eu/datasets/reanalysis-era5-pressure-levels),
 # also available from 1940 to present. What's new:
 #
-# - We restrict the data retrieval to the lower troposphere (≥ 250 hPa,
-#   surface up to ~10 km). This returns data with 21 vertical levels
-#   instead of all 37 standard pressure levels — the full list is given
-#   by `ERA5_all_pressure_levels`.
 # - `download_dataset(variables, dataset, dates; region)` bundles
 #   multi-variable requests into a single CDS API call — fewer round trips
 #   than calling `download_dataset` per variable, which is what
 #   `FieldTimeSeries` does automatically on demand.
 
-selected_levels = filter(≥(250hPa), ERA5_all_pressure_levels)
-ds_pl = ERA5HourlyPressureLevels(selected_levels)
-
-## Selected pressure levels [hPa]
+## Selected pressure levels [hPa] (filtered to the lower troposphere in §2).
 ds_pl.pressure_levels' / hPa
 
 # 3-D data are downloaded in a `Column` region, resulting in one 1-D field
@@ -416,41 +471,3 @@ hideydecorations!(ax_u, grid=false)
 hideydecorations!(ax_v, grid=false)
 
 fig4
-
-# ## §4 Per-column vertical interpolation and downscaling
-#
-# `ERA5HourlyPressureLevels` builds its native vertical coordinate from the
-# instantaneous geopotential Φ(λ,φ,p)/g, with sub-surface levels clipped at the
-# surface (see issue #236) — `Oceananigans.interpolate!` bisects each column's
-# actual heights inside the kernel. We use this to drop ERA5 specific humidity
-# onto a 4×-downscaled LAM grid at a fixed altitude (RICO cloud base ≈ 800 m)
-# and animate the result.
-
-target_grid = LatitudeLongitudeGrid(CPU();
-                                    size = (24, 24, 1),
-                                    longitude = rico_region.longitude,
-                                    latitude  = rico_region.latitude,
-                                    z = (800.0, 801.0),
-                                    halo = (2, 2, 1),
-                                    topology = (Bounded, Bounded, Bounded))
-
-q2d = CenterField(target_grid)
-q_obs = Observable(q2d)
-
-fig5 = Figure(size = (700, 600))
-ax5  = Axis(fig5[1, 1]; xlabel = "Longitude (°)", ylabel = "Latitude (°)",
-            aspect = DataAspect(), title = "ERA5 qᵛ at z = 800 m")
-hm = heatmap!(ax5, q_obs; colormap = :viridis)
-Colorbar(fig5[1, 2], hm; label = "qᵛ [kg kg⁻¹]")
-
-## Each frame: pull the next snapshot from the qᵛ `FieldTimeSeries` we already
-## built in §3 — its source grid is the per-column-z `PressureLevelGrid`, and
-## `interpolate!` runs the column-bisecting interpolation onto the fixed-z target.
-record(fig5, "rico_qv_animation.mp4", 1:length(dates); framerate = 12) do n
-    interpolate!(q2d, q_series[n])
-    q_obs[] = q2d
-    ax5.title = "ERA5 qᵛ at 800 m — " * Dates.format(dates[n], dateformat"u d HH:MM") * " UTC"
-end
-
-@info "Wrote rico_qv_animation.mp4"
-fig5
