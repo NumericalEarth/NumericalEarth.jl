@@ -7,15 +7,14 @@ export ERA5HourlySingleLevel, ERA5MonthlySingleLevel
 export ERA5HourlyPressureLevels, ERA5MonthlyPressureLevels, ERA5_all_pressure_levels, pressure_field, hPa
 export standard_atmosphere_z_interfaces, mean_geopotential_z_interfaces
 
-using NCDatasets
-using Printf
-using Scratch
-using Statistics
-
-using Oceananigans.Fields: Center, set!
-using Oceananigans: Field, fill_halo_regions!, CPU
-using Dates
-using Dates: DateTime, Month, Hour
+using Dates: Dates, DateTime, Month, Hour
+using Oceananigans.Architectures: CPU
+using Oceananigans.BoundaryConditions: fill_halo_regions!
+using Oceananigans.Fields: Field, Center, set!
+using NCDatasets: NCDatasets
+using Printf: Printf, @sprintf
+using Scratch: Scratch, @get_scratch!
+using Statistics: Statistics, mean
 
 using ..DataWrangling: Metadata, Metadatum, metadata_path, native_grid,
                        InverseGravity, download_dataset
@@ -24,7 +23,6 @@ using NumericalEarth.Grids: PressureLevelVerticalDiscretization
 import ..DataWrangling:
     all_dates,
     dataset_variable_name,
-    dataset_location,
     default_download_directory,
     default_inpainting,
     longitude_interfaces,
@@ -38,8 +36,6 @@ import ..DataWrangling:
     reversed_vertical_axis,
     reversed_latitude_axis,
     conversion_units
-
-import Base: eltype
 
 download_ERA5_cache::String = ""
 
@@ -73,7 +69,7 @@ latitude_interfaces(::ERA5Metadata) = (-90, 90)
 z_interfaces(::ERA5Metadata) = (0, 1)
 
 # ERA5 data is stored as Float32
-eltype(::ERA5Metadata) = Float32
+Base.eltype(::ERA5Metadata) = Float32
 
 #####
 ##### Shared filename utilities
