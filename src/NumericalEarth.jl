@@ -98,9 +98,7 @@ export
     net_ocean_freshwater_flux, sea_ice_ocean_freshwater_flux, atmosphere_ocean_freshwater_flux,
     meridional_heat_transport,
     location,
-    native_grid,
-    PressureLevelVerticalDiscretization,
-    PressureLevelGrid
+    native_grid
 
 using DataDeps: DataDeps
 using Oceananigans: Oceananigans
