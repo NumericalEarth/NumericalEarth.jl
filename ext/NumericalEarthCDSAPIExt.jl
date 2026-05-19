@@ -10,12 +10,10 @@ using NCDatasets: NCDatasets, name, path
 
 using NumericalEarth: NumericalEarth
 using NumericalEarth.DataWrangling.ERA5: ERA5Dataset, ERA5Metadata, ERA5Metadatum,
-                                         ERA5_dataset_variable_names, ERA5_netcdf_variable_names
-using NumericalEarth.DataWrangling.ERA5: ERA5PressureLevelsDataset,
+                                         ERA5_dataset_variable_names, ERA5_netcdf_variable_names,
+                                         ERA5PressureLevelsDataset,
                                          ERA5PressureMetadata, ERA5PressureMetadatum,
                                          ERA5PL_dataset_variable_names, ERA5PL_netcdf_variable_names
-
-import NumericalEarth.DataWrangling: download_dataset
 
 #####
 ##### Dispatch helpers — encapsulate single-level vs pressure-level differences

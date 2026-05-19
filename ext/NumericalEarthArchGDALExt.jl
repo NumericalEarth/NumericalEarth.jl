@@ -1,7 +1,8 @@
 module NumericalEarthArchGDALExt
 
 using ArchGDAL: ArchGDAL
-using NCDatasets: NCDatasets, NCDataset, defDim, defVar
+using NCDatasets: NCDataset, defDim, defVar
+using NumericalEarth: NumericalEarth
 
 function NumericalEarth.DataWrangling.IBCAO.reproject_ibcao_to_netcdf(tiff_path, nc_path)
     ArchGDAL.read(tiff_path) do src

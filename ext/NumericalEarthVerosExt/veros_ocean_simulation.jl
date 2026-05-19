@@ -1,8 +1,5 @@
-using CondaPkg
-
 using Oceananigans.Grids: topology
 using Oceananigans.Fields: set!
-
 using NumericalEarth: NumericalEarth
 using NumericalEarth.EarthSystemModels: EarthSystemModel, ocean_salinity
 
@@ -177,7 +174,7 @@ function Oceananigans.Fields.set!(field::FCField2D, pyarray::Py, k=pyconvert(Int
     return field
 end
 
-function set!(field::CFField2D, pyarray::Py, k=pyconvert(Int, pyarray.shape[2]))
+function Oceananigans.Fields.set!(field::CFField2D, pyarray::Py, k=pyconvert(Int, pyarray.shape[2]))
     array = PyArray(pyarray)
     Nx, Ny, Nz = size(array)
     set!(field, view(array, 3:Nx-2, 2:Ny-2, k, 1))
