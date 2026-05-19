@@ -5,8 +5,8 @@ using NumericalEarth.DataWrangling: Column, Linear, Nearest,
                                     restrict_location, native_grid
 using NumericalEarth.DataWrangling: restrict
 
-using Oceananigans: RectilinearGrid, LatitudeLongitudeGrid, location
-using Oceananigans.Grids: topology, Flat, Bounded, Periodic
+using Oceananigans: location
+using Oceananigans.Grids: topology, Flat, Bounded, Periodic, RectilinearGrid, LatitudeLongitudeGrid
 
 @testset "Column construction" begin
     col = Column(35.1, 50.1)

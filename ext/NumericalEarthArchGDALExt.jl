@@ -1,12 +1,10 @@
 module NumericalEarthArchGDALExt
 
-using NumericalEarth
-using ArchGDAL
-using NCDatasets
+using ArchGDAL: ArchGDAL
+using NCDatasets: NCDataset, defDim, defVar
+using NumericalEarth: NumericalEarth
 
-import NumericalEarth.DataWrangling.IBCAO: reproject_ibcao_to_netcdf
-
-function reproject_ibcao_to_netcdf(tiff_path, nc_path)
+function NumericalEarth.DataWrangling.IBCAO.reproject_ibcao_to_netcdf(tiff_path, nc_path)
     ArchGDAL.read(tiff_path) do src
         # Warp from EPSG:3996 (Polar Stereographic) to EPSG:4326 (WGS84)
         # at 0.01° resolution, clipping to 64–90°N
