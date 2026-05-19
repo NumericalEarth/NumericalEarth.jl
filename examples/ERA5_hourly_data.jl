@@ -285,10 +285,12 @@ nothing #hide
 # Load the downloaded data and stack the column profile from each time into
 # a (Nt × Nz) matrix.
 
-qᶜ_col_meta   = Metadata(:specific_cloud_liquid_water_content; dataset = ds_pl, dates, region = rico_column)
-qʳ_col_meta   = Metadata(:specific_rain_water_content;         dataset = ds_pl, dates, region = rico_column)
-qᶜ_col_series = FieldTimeSeries(qᶜ_col_meta)
-qʳ_col_series = FieldTimeSeries(qʳ_col_meta)
+cloud_set = MetadataSet(:specific_cloud_liquid_water_content,
+                        :specific_rain_water_content;
+                        dataset = ds_pl, dates, region = rico_column)
+cloud_series  = FieldTimeSeries(cloud_set)
+qᶜ_col_series = cloud_series.specific_cloud_liquid_water_content
+qʳ_col_series = cloud_series.specific_rain_water_content
 
 z_col  = znodes(qᶜ_col_series[1])
 Nz_col = length(z_col)
@@ -341,15 +343,15 @@ variables = [:temperature, :specific_humidity,
              :geopotential]
 download(variables, ds_pl, dates; region = rico_region)
 
-T_meta = Metadata(:temperature;        dataset=ds_pl, dates, region=rico_region)
-q_meta = Metadata(:specific_humidity;  dataset=ds_pl, dates, region=rico_region)
-u_meta = Metadata(:eastward_velocity;  dataset=ds_pl, dates, region=rico_region)
-v_meta = Metadata(:northward_velocity; dataset=ds_pl, dates, region=rico_region)
+rico_set = MetadataSet(:temperature, :specific_humidity,
+                       :eastward_velocity, :northward_velocity;
+                       dataset = ds_pl, dates, region = rico_region)
 
-T_series = @suppress_out FieldTimeSeries(T_meta)
-q_series = @suppress_out FieldTimeSeries(q_meta)
-u_series = @suppress_out FieldTimeSeries(u_meta)
-v_series = @suppress_out FieldTimeSeries(v_meta)
+rico_series = @suppress_out FieldTimeSeries(rico_set)
+T_series = rico_series.temperature
+q_series = rico_series.specific_humidity
+u_series = rico_series.eastward_velocity
+v_series = rico_series.northward_velocity
 nothing #hide
 
 # Calculate mean profiles and quantities of interest.

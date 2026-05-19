@@ -106,10 +106,9 @@ function __init__()
         end_date = start_date + 1 * time_resolution
         dates = start_date:time_resolution:end_date
 
-        temperature_metadata = Metadata(:temperature; dataset, dates)
-        salinity_metadata    = Metadata(:salinity; dataset, dates)
+        ts_set = MetadataSet(:temperature, :salinity; dataset, dates)
 
-        for md in (temperature_metadata, salinity_metadata)
+        for md in ts_set
             download_dataset_with_fallback(metadata_path(md); dataset_name="$(typeof(dataset)) $(md.name)") do
                 download(md)
             end

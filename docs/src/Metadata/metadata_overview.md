@@ -74,6 +74,71 @@ This bookkeeping lets downstream utilities (for example `set!` or `FieldTimeSeri
 slices of data they need, and it keeps track of where those slices live so we do not redownload
 them unnecessarily.
 
+## Bundling variables with `MetadataSet`
+
+Workflows often need _many_ variables from the same dataset — for example, temperature and salinity
+to initialize an ocean model, or wind, humidity, pressure, and precipitation to drive an atmosphere.
+Writing one `Metadata` (or `Metadatum`) per variable repeats the same `dataset`, `dates`, `region`, and
+`dir` over and over. A [`MetadataSet`](@ref) bundles those variables into one object whose elements
+are still individual `Metadata`/`Metadatum`:
+
+```@example metadata
+mset = MetadataSet(:temperature, :salinity;
+                   dataset = EN4Monthly(),
+                   date    = Date(2010, 1, 1))
+```
+
+The variable axis is exposed via property and indexed access; struct fields stay reachable too:
+
+```@example metadata
+mset.temperature              # → a `Metadatum`
+```
+
+```@example metadata
+mset[:salinity] === mset[2]   # property and indexed access are symmetric
+```
+
+```@example metadata
+keys(mset), mset.dataset      # the variable axis, plus shared kwargs
+```
+
+### `set!(model, mset)` — auto-routing
+
+`set!(model, mset)` translates each variable's verbose dataset name (`:temperature`, `:salinity`, ...)
+to the short model field-name the model expects (`:T`, `:S`, `:u`, `:ℵ`, ...) and forwards the result
+as keyword arguments to the model's underlying `set!`. The translation table lives in
+`NumericalEarth.DataWrangling.variable_aliases`, populated from the conventions in
+[Notation](@ref Notation) — so a coupled set can drive ocean and sea-ice components from one call:
+
+```julia
+mset = MetadataSet(:temperature, :salinity,
+                   :sea_ice_thickness, :sea_ice_concentration;
+                   dataset = ECCO4Monthly(), date = start_date)
+
+set!(ocean.model,   mset)   # picks up :temperature, :salinity → T, S
+set!(sea_ice.model, mset)   # picks up :sea_ice_thickness, :sea_ice_concentration → h, ℵ
+```
+
+Variables absent from `variable_aliases` are silently skipped (lets one set partially drive each
+component without manual filtering).
+
+### Building `Field`s and `FieldTimeSeries` in bulk
+
+`Field(mset, arch=CPU(); kw...)` and `FieldTimeSeries(mset, arch_or_grid; kw...)` build a
+`NamedTuple` keyed by the variable names, with each value materialized from the underlying
+per-variable `Metadata`:
+
+```julia
+fields = Field(mset)              # (; temperature = Field, salinity = Field)
+fts    = FieldTimeSeries(mset)    # for a multi-date `mset`
+```
+
+### Downloading
+
+`download(mset)` fetches every variable in the set. The default is a per-variable loop; backends
+that support batched multi-variable requests override this — for example, ERA5 pressure-level sets
+route through one CDS API request per calendar day instead of one per (variable, day) pair.
+
 ## Supported datasets
 
 NumericalEarth currently ships connectors for the following data products:

@@ -55,8 +55,8 @@ ocean.model
 
 col = Column(λ★, φ★; interpolation=Nearest())
 
-set!(ocean.model, T=Metadatum(:temperature, dataset=GLORYSMonthly(), region=col),
-                  S=Metadatum(:salinity,    dataset=GLORYSMonthly(), region=col))
+set!(ocean.model, MetadataSet(:temperature, :salinity;
+                              dataset = GLORYSMonthly(), region = col))
 
 # # A prescribed atmosphere based on JRA55 re-analysis
 #
