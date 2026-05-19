@@ -1,12 +1,12 @@
 module NumericalEarthWOAExt
 
-using WorldOceanAtlasTools: WorldOceanAtlasTools
-
 using Oceananigans.DistributedComputations: @root
-using NumericalEarth.DataWrangling: Metadata
-using NumericalEarth.WOA: WOAClimatology, WOA_variable_names, woa_period
 
-import NumericalEarth.DataWrangling: download_dataset, metadata_path
+using NumericalEarth: NumericalEarth
+using NumericalEarth.DataWrangling: Metadata, metadata_path
+using NumericalEarth.DataWrangling.WOA: WOAClimatology, WOA_variable_names, woa_period
+
+using WorldOceanAtlasTools: WorldOceanAtlasTools
 
 # NOAA servers have inconsistent availability across product years.
 # We try the user-specified product_year first, then fall back to others.
@@ -35,7 +35,7 @@ function woa_filepath(woa_tracer, product_year, period)
           "(tried product years: $product_year, $(join(fallback_product_years, ", ")))")
 end
 
-function download_dataset(metadata::Metadata{<:WOAClimatology}; skip_existing=true)
+function NumericalEarth.DataWrangling.download_dataset(metadata::Metadata{<:WOAClimatology}; skip_existing=true)
     @root for metadatum in metadata
         linkpath = metadata_path(metadatum)
 
