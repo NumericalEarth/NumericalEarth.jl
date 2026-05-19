@@ -66,7 +66,7 @@ default_inpainting(::OSPapaMetadata) = nothing
 metadata_filename(::OSPapaMetadatum) = OSPAPA_FILENAME
 metadata_filename(::OSPapaHourly, name, date, region) = OSPAPA_FILENAME
 
-download_dataset(metadata::OSPapaMetadata) = download_ospapa_file(metadata.dir)
+download(metadata::OSPapaMetadata) = download_ospapa_file(metadata.dir)
 
 function inpainted_metadata_path(metadata::OSPapaMetadata)
     filename = metadata_filename(first(metadata))

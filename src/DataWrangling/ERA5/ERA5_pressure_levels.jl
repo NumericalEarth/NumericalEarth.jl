@@ -176,7 +176,7 @@ function z_interfaces(metadata::ERA5PressureMetadata)
                                 dates=metadata.dates, region=metadata.region,
                                 dir=metadata.dir)
         try
-            download_dataset(ϕ_metadata)
+            download(ϕ_metadata)
             return mean_geopotential_z_interfaces(metadata)
         catch e
             @warn "Failed to derive geopotential heights; falling back to standard atmosphere" exception=(e, catch_backtrace())

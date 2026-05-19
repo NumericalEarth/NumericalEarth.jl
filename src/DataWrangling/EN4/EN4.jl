@@ -7,7 +7,6 @@ using ...NumericalEarth
 using Oceananigans
 using NCDatasets
 using JLD2
-using Downloads: download
 using Adapt
 using Scratch
 
@@ -29,13 +28,13 @@ using Oceananigans.Architectures: architecture
 using Oceananigans.DistributedComputations: @root
 
 using Dates
-using Downloads
+using Downloads: Downloads
 import ZipFile
 
 import ..DataWrangling:
     all_dates,
     metadata_filename,
-    download_dataset,
+    download,
     default_download_directory,
     metadata_path,
     conversion_units,
@@ -207,7 +206,7 @@ function metadata_url(m::EN4Metadata)
     end
 end
 
-function download_dataset(metadata::Metadata{<:EN4Monthly})
+function download(metadata::Metadata{<:EN4Monthly})
     dir = metadata.dir
     missingzips = []
 

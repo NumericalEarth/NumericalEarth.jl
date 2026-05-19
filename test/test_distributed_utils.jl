@@ -45,9 +45,9 @@ end
 
 struct TrivalBathymetry end
 
-import NumericalEarth.DataWrangling: download_dataset, z_interfaces, longitude_interfaces, latitude_interfaces, metadata_filename
+import NumericalEarth.DataWrangling: download, z_interfaces, longitude_interfaces, latitude_interfaces, metadata_filename
 
-download_dataset(::Metadatum{<:TrivalBathymetry}) = nothing
+download(::Metadatum{<:TrivalBathymetry}) = nothing
 Base.size(::TrivalBathymetry) = (Nλ, Nφ, 1)
 Base.size(::TrivalBathymetry, variable) = (Nλ, Nφ, 1)
 z_interfaces(::TrivalBathymetry) = (0, 1)
@@ -58,7 +58,7 @@ metadata_filename(::TrivalBathymetry, name, date, region) = "trivial_bathymetry.
 @testset "Distributed ECCO download" begin
     dates = DateTimeProlepticGregorian(1992, 1, 1) : Month(1) : DateTimeProlepticGregorian(1994, 4, 1)
     metadata = Metadata(:u_velocity; dataset=ECCO4Monthly(), dates)
-    download_dataset(metadata)
+    download(metadata)
 
     @root for metadatum in metadata
         @test isfile(metadata_path(metadatum))

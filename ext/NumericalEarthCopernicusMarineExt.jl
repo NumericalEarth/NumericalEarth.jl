@@ -9,19 +9,19 @@ using Oceananigans.DistributedComputations: @root
 using Dates: DateTime
 using NumericalEarth.DataWrangling.GLORYS: GLORYSMetadata, GLORYSMetadatum
 
-import NumericalEarth.DataWrangling: download_dataset
+import NumericalEarth.DataWrangling: download
 
 # Download each date individually, instead of downloading the entire dataset at once.
 # This is useful for a possible extension of the temporal horizon of the dataset.
-function download_dataset(metadata::GLORYSMetadata; kwargs...)
+function download(metadata::GLORYSMetadata; kwargs...)
     paths = Array{String}(undef, length(metadata))
     for (m, metadatum) in enumerate(metadata)
-        paths[m] = download_dataset(metadatum; kwargs...)
+        paths[m] = download(metadatum; kwargs...)
     end
     return paths
 end
 
-function download_dataset(meta::GLORYSMetadatum;
+function download(meta::GLORYSMetadatum;
                           skip_existing=true,
                           username=get(ENV, "COPERNICUS_USERNAME", nothing),
                           password=get(ENV, "COPERNICUS_PASSWORD", nothing),

@@ -5,7 +5,7 @@ using Statistics: median
 using NumericalEarth.Atmospheres: PrescribedAtmosphere, PrescribedPrecipitationFlux
 using NumericalEarth.Radiations: PrescribedRadiation
 using NumericalEarth.ECCO: ECCOPrescribedAtmosphere, ECCOPrescribedRadiation, ECCO4Monthly
-using NumericalEarth.DataWrangling: download_dataset, metadata_path, higher_bound
+using NumericalEarth.DataWrangling: download, metadata_path, higher_bound
 
 # Pre-download ECCO4Monthly atmospheric forcing variables through the artifacts
 # fallback so ECCOPrescribedAtmosphere(...) finds the files locally even when
@@ -15,7 +15,7 @@ let dates = DateTime(1992, 1, 1):Month(1):DateTime(1992, 3, 1)
     for name in NumericalEarth.ECCO.ECCO_atmosphere_variables
         md = Metadata(name; dataset=ECCO4Monthly(), dates)
         download_dataset_with_fallback(metadata_path(md); dataset_name="ECCO4Monthly $name") do
-            download_dataset(md)
+            download(md)
         end
     end
 end

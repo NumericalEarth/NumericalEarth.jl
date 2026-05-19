@@ -298,7 +298,7 @@ end
 ##### over variables (orthogonal to `Metadata`'s date-axis iteration); every
 ##### element returned by `mset[name]` / `mset[i]` is itself a `Metadata` or
 ##### `Metadatum`, so all existing per-`Metadata` machinery (`Field`, `set!`,
-##### `download_dataset`, ...) keeps working unchanged on the elements.
+##### `download`, ...) keeps working unchanged on the elements.
 #####
 
 struct MetadataSet{V, D, R, N, F}

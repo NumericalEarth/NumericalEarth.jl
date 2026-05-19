@@ -2,7 +2,7 @@ module ORCA
 
 export ORCA1, ORCA12
 
-using Downloads
+using Downloads: Downloads
 using Oceananigans
 using Oceananigans.DistributedComputations: @root
 using Scratch
@@ -16,7 +16,7 @@ import ..DataWrangling:
     first_date,
     last_date,
     dataset_variable_name,
-    download_dataset,
+    download,
     longitude_interfaces,
     latitude_interfaces,
     z_interfaces,
@@ -107,7 +107,7 @@ end
 
 z_interfaces(::ORCAMetadatum) = nothing
 
-function download_dataset(metadatum::ORCAMetadatum)
+function download(metadatum::ORCAMetadatum)
     fileurl  = metadata_url(metadatum)
     filepath = metadata_path(metadatum)
 

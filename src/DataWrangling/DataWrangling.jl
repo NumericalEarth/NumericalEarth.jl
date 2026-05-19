@@ -15,9 +15,8 @@ export ERA5HourlySingleLevel, ERA5MonthlySingleLevel, ERA5HourlyPressureLevels, 
 export native_grid
 
 using Oceananigans
-using Downloads
+using Downloads: Downloads
 using Printf
-using Downloads
 
 using Oceananigans.Architectures: architecture, on_architecture
 using Oceananigans.Grids: node
@@ -146,13 +145,13 @@ function save_field_time_series!(fts; path, name, overwrite_existing=false)
 end
 
 """
-    download_dataset(metadata; url = urls(metadata))
+    download(metadata; url = urls(metadata))
 
 Download the dataset specified by the `metadata::ECCOMetadata`. If `metadata.dates` is a single date,
 the dataset is downloaded directly. If `metadata.dates` is a vector of dates, each date
 is downloaded individually.
 
-Note: if called by multiple processes via MPI, `download_dataset` should only run on the root process.
+Note: if called by multiple processes via MPI, `download` should only run on the root process.
 
 Arguments
 =========
@@ -183,7 +182,19 @@ Arguments
 
         https://github.com/CliMA/NumericalEarth.jl/blob/main/src/DataWrangling/ECCO/README.md
 """
-function download_dataset end # methods specific to datasets are added within each dataset module
+function download end # methods specific to datasets are added within each dataset module
+
+# Deprecation alias. `download_dataset` was renamed to `download` (#235) — the
+# argument is metadata, not a dataset, so the verb-on-object form reads better
+# and gives `MetadataSet` a uniform aggregation hook. Old callers keep working
+# (with a one-time `depwarn`); planned for removal one minor release after
+# adoption settles.
+function download_dataset(args...; kwargs...)
+    Base.depwarn("`download_dataset` has been renamed to `download`. " *
+                 "Use `download(args...; kwargs...)` instead.", :download_dataset)
+    return download(args...; kwargs...)
+end
+
 function inpainted_metadata_path end
 
 """
@@ -334,7 +345,7 @@ using .GEBCO
 using .IBCAO
 
 # Fallback: if no download extension is loaded, check that all files already exist
-function download_dataset(metadata::Metadata)
+function download(metadata::Metadata)
     error("No download method for $metadata is available (is the backend package loaded?)")
 end
 

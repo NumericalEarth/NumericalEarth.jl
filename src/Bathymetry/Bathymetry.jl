@@ -21,7 +21,7 @@ using NCDatasets: NCDatasets, Dataset
 using Printf: Printf
 using Scratch: Scratch, @get_scratch!
 
-using ..DataWrangling: Metadatum, native_grid, metadata_path, download_dataset,
+using ..DataWrangling: Metadatum, native_grid, metadata_path, download,
                        dataset_variable_name, validate_dataset_coverage
 using ..DataWrangling.ETOPO: ETOPO2022
 

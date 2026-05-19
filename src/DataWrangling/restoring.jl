@@ -198,7 +198,7 @@ function DatasetRestoring(metadata::Metadata,
                           inpainting = NearestNeighborInpainting(Inf),
                           cache_inpainted_data = true)
 
-    download_dataset(metadata)
+    download(metadata)
 
     fts = FieldTimeSeries(metadata, arch_or_grid;
                           time_indices_in_memory,

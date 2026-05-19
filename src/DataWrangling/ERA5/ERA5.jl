@@ -18,7 +18,7 @@ using Dates
 using Dates: DateTime, Month, Hour
 
 using ..DataWrangling: Metadata, Metadatum, metadata_path, native_grid,
-                       InverseGravity, download_dataset
+                       InverseGravity, download
 
 import ..DataWrangling:
     all_dates,

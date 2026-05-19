@@ -25,7 +25,7 @@ import ..DataWrangling:
     first_date,
     last_date,
     metadata_filename,
-    download_dataset,
+    download,
     default_download_directory,
     metadata_path,
     dataset_variable_name,

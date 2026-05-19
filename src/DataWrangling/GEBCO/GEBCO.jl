@@ -2,7 +2,7 @@ module GEBCO
 
 export GEBCO2024
 
-using Downloads
+using Downloads: Downloads
 using ZipFile
 using Oceananigans
 using Oceananigans.DistributedComputations: @root
@@ -14,7 +14,7 @@ import ..DataWrangling:
     metadata_filename,
     default_download_directory,
     dataset_variable_name,
-    download_dataset,
+    download,
     longitude_interfaces,
     latitude_interfaces,
     reversed_vertical_axis
@@ -66,7 +66,7 @@ const GEBCO_zip_url = "https://www.bodc.ac.uk/data/open_download/gebco/gebco_202
 const GEBCO_nc_filename = "GEBCO_2024.nc"
 metadata_filename(::GEBCO2024, name, date, bounding_box) = GEBCO_nc_filename
 
-function download_dataset(metadatum::GEBCOMetadatum)
+function download(metadatum::GEBCOMetadatum)
     filepath = metadata_path(metadatum)
     download_dir = metadatum.dir
 

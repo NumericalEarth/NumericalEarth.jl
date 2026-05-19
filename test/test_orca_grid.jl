@@ -2,7 +2,7 @@ include("runtests_setup.jl")
 include("download_utils.jl")
 
 using NumericalEarth
-using NumericalEarth.DataWrangling: download_dataset, metadata_path
+using NumericalEarth.DataWrangling: download, metadata_path
 using NumericalEarth.DataWrangling.ORCA: default_south_rows_to_remove
 using Oceananigans
 using Oceananigans.OrthogonalSphericalShellGrids: TripolarGrid
@@ -16,7 +16,7 @@ using Test
 for name in (:mesh_mask, :bottom_height)
     md = Metadatum(name; dataset=ORCA1())
     download_dataset_with_fallback(metadata_path(md); dataset_name="ORCA1 $name") do
-        download_dataset(md)
+        download(md)
     end
 end
 
@@ -165,7 +165,7 @@ end
 
 @testset "ORCA1 bathymetry retrieval" begin
     bathy_md = Metadatum(:bottom_height; dataset=ORCA1())
-    download_dataset(bathy_md)
+    download(bathy_md)
     path = metadata_path(bathy_md)
     @test isfile(path)
 

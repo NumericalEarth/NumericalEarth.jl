@@ -43,7 +43,7 @@ default_inpainting(::OSPapaFluxMetadata) = nothing
 Base.size(::OSPapaFluxHourly, variable) = (1, 1, 1)
 
 # The uniform hourly cache file is regenerated from the raw ERDDAP file by
-# download_dataset; metadata_epoch and metadata_time_step describe the
+# download; metadata_epoch and metadata_time_step describe the
 # intended uniform axis.
 metadata_epoch(::OSPapaFluxHourly)     = DateTime(2007, 6, 8)
 metadata_time_step(::OSPapaFluxHourly) = 3600
@@ -94,7 +94,7 @@ metadata_filename(::OSPapaFluxHourly, name, date, region) = flux_uniform_filenam
 build_filename(::OSPapaFluxHourly, name, dates::AbstractArray, region) =
     flux_uniform_filename(first(dates), last(dates))
 
-function download_dataset(md::OSPapaFluxMetadata)
+function download(md::OSPapaFluxMetadata)
     uniform_path = joinpath(md.dir, metadata_filename(md))
     isfile(uniform_path) && return uniform_path
 

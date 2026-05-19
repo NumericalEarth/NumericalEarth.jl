@@ -31,7 +31,7 @@
 # See <https://cds.climate.copernicus.eu/how-to-api> for setup instructions.
 
 using NumericalEarth
-using NumericalEarth.DataWrangling: download_dataset
+using NumericalEarth.DataWrangling: download
 using NumericalEarth.DataWrangling.ERA5
 using CDSAPI
 using Dates
@@ -253,9 +253,9 @@ fig2
 #   surface up to ~10 km). This returns data with 21 vertical levels
 #   instead of all 37 standard pressure levels — the full list is given
 #   by `ERA5_all_pressure_levels`.
-# - `download_dataset(variables, dataset, dates; region)` bundles
+# - `download(variables, dataset, dates; region)` bundles
 #   multi-variable requests into a single CDS API call — fewer round trips
-#   than calling `download_dataset` per variable, which is what
+#   than calling `download` per variable, which is what
 #   `FieldTimeSeries` does automatically on demand.
 
 selected_levels = filter(≥(250hPa), ERA5_all_pressure_levels)
@@ -279,7 +279,7 @@ ds_pl.pressure_levels' / hPa
 variables = [:specific_cloud_liquid_water_content,
              :specific_rain_water_content,
              :geopotential]
-@suppress_out download_dataset(variables, ds_pl, dates; region = rico_column)
+@suppress_out download(variables, ds_pl, dates; region = rico_column)
 nothing #hide
 
 # Load the downloaded data and stack the column profile from each time into
@@ -339,7 +339,7 @@ fig3
 variables = [:temperature, :specific_humidity,
              :eastward_velocity, :northward_velocity,
              :geopotential]
-download_dataset(variables, ds_pl, dates; region = rico_region)
+download(variables, ds_pl, dates; region = rico_region)
 
 T_meta = Metadata(:temperature;        dataset=ds_pl, dates, region=rico_region)
 q_meta = Metadata(:specific_humidity;  dataset=ds_pl, dates, region=rico_region)

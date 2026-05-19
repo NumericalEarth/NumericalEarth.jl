@@ -27,7 +27,6 @@ using Dates
 using Scratch
 
 using GPUArraysCore: @allowscalar
-using Downloads: download
 
 import Oceananigans.Fields: set!
 import Oceananigans.OutputReaders: new_backend, update_field_time_series!

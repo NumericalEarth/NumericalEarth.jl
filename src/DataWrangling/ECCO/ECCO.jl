@@ -13,7 +13,7 @@ using NCDatasets
 using Dates
 using Adapt
 using Scratch
-using Downloads
+using Downloads: Downloads
 
 using ...NumericalEarth
 using ..DataWrangling:
@@ -42,7 +42,7 @@ import ..DataWrangling:
     default_download_directory,
     all_dates,
     metadata_filename,
-    download_dataset,
+    download,
     conversion_units,
     dataset_variable_name,
     dataset_location,
@@ -312,7 +312,7 @@ function metadata_url(m::Metadata{<:ECCO4Monthly})
     return ECCO4_url * dataset_variable_name(m) * "/" * year * "/" * m.filename
 end
 
-function download_dataset(metadata::ECCOMetadata)
+function download(metadata::ECCOMetadata)
     username = get(ENV, "ECCO_USERNAME", nothing)
     password = get(ENV, "ECCO_WEBDAV_PASSWORD", nothing)
     dir = metadata.dir

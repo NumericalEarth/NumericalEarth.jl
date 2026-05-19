@@ -5,7 +5,7 @@ ENV["DATADEPS_ALWAYS_ACCEPT"] = "true"
 
 using CUDA: @allowscalar
 using NumericalEarth.WOA
-using NumericalEarth.DataWrangling: NearestNeighborInpainting, metadata_path, download_dataset
+using NumericalEarth.DataWrangling: NearestNeighborInpainting, metadata_path, download
 using Oceananigans.Architectures: on_architecture
 using WorldOceanAtlasTools
 
@@ -16,7 +16,7 @@ inpainting = NearestNeighborInpainting(10)
 function ensure_woa_file(metadatum; label)
     filepath = metadata_path(metadatum)
     download_dataset_with_fallback(filepath; dataset_name=label) do
-        download_dataset(metadatum)
+        download(metadatum)
     end
     return filepath
 end

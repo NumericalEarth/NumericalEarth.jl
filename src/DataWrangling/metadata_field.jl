@@ -179,7 +179,7 @@ function Field(metadata::Metadatum, arch=CPU();
                halo = (3, 3, 3),
                cache_inpainted_data = true)
 
-    download_dataset(metadata)
+    download(metadata)
 
     # Inpainting on a (Flat, Flat, *) column field is meaningless and the
     # iterative algorithm doesn't terminate gracefully without horizontal

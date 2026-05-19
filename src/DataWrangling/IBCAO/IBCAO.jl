@@ -2,7 +2,7 @@ module IBCAO
 
 export IBCAOv5
 
-using Downloads
+using Downloads: Downloads
 using Oceananigans
 using Oceananigans.DistributedComputations: @root
 using Scratch
@@ -14,7 +14,7 @@ import ..DataWrangling:
     metadata_filename,
     default_download_directory,
     dataset_variable_name,
-    download_dataset,
+    download,
     longitude_interfaces,
     latitude_interfaces,
     reversed_vertical_axis,
@@ -77,7 +77,7 @@ function validate_dataset_coverage(grid, ::IBCAOMetadatum)
     end
 end
 
-function download_dataset(metadatum::IBCAOMetadatum)
+function download(metadatum::IBCAOMetadatum)
     nc_path   = metadata_path(metadatum)
     tiff_path = joinpath(metadatum.dir, IBCAO_tiff_filename)
 

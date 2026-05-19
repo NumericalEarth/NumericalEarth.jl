@@ -1,6 +1,6 @@
 using CFTime
 using Dates
-using Downloads
+using Downloads: Downloads
 
 using Oceananigans.DistributedComputations
 
@@ -13,7 +13,7 @@ import Oceananigans.Fields: set!, location
 import ..DataWrangling: all_dates,
                                      metadata_filename,
                                      build_filename,
-                                     download_dataset,
+                                     download,
                                      default_download_directory,
                                      dataset_variable_name,
                                      available_variables,
@@ -231,7 +231,7 @@ function metadata_url(m::Metadata{<:MultiYearJRA55})
     return JRA55_multiple_year_url * prefix * "/" * dataset_variable_name(m) * "/gr/v20200916/" * m.filename
 end
 
-function download_dataset(metadata::JRA55Metadata)
+function download(metadata::JRA55Metadata)
 
     @root for metadatum in metadata
 

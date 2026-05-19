@@ -11,7 +11,7 @@ using Oceananigans
 using NCDatasets
 using Dates
 using Scratch
-using Downloads
+using Downloads: Downloads
 using Thermodynamics: q_vap_from_RH, Liquid
 
 using ..DataWrangling: DownloadProgress
@@ -42,7 +42,7 @@ import ..DataWrangling:
     metadata_time_step,
     metadata_filename,
     build_filename,
-    download_dataset,
+    download,
     dataset_variable_name,
     longitude_interfaces,
     latitude_interfaces,
