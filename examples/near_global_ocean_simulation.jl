@@ -91,12 +91,10 @@ set!(ocean.model, T=Metadatum(:temperature, dataset=ECCO4Monthly()),
 # Next we build a prescribed atmosphere state and radiation component,
 # which together drive the ocean simulation. The atmospheric data and
 # downwelling shortwave / longwave radiation are both prescribed using JRA55.
-# The number of snapshots loaded into memory is set by the backend.
 
-jra55_backend = JRA55NetCDFBackend(41)
-atmosphere = JRA55PrescribedAtmosphere(arch; backend=jra55_backend)
-radiation  = JRA55PrescribedRadiation(arch; backend=jra55_backend)
-land       = JRA55PrescribedLand(arch; backend=jra55_backend)
+atmosphere = JRA55PrescribedAtmosphere(arch)
+radiation  = JRA55PrescribedRadiation(arch)
+land       = JRA55PrescribedLand(arch)
 
 # ## The coupled simulation
 

@@ -4,7 +4,7 @@ using ..DataWrangling: DatasetBackend
 using ...Atmospheres: PrescribedAtmosphere, PrescribedPrecipitationFlux
 
 """
-    ECCOPrescribedAtmosphere([architecture = CPU(), FT = Float32];
+    ECCOPrescribedAtmosphere([architecture = CPU()];
                               dataset = ECCO4Monthly(),
                               start_date = first_date(dataset, :air_temperature),
                               end_date = last_date(dataset, :air_temperature),
@@ -25,7 +25,7 @@ Note: downwelling shortwave / longwave radiation is now part of the
 top-level `radiation` component. Use [`ECCOPrescribedRadiation`](@ref) to
 load ECCO SW/LW into a `PrescribedRadiation`.
 """
-function ECCOPrescribedAtmosphere(architecture = CPU(), FT = Float32;
+function ECCOPrescribedAtmosphere(architecture = CPU();
                                   dataset = ECCO4Monthly(),
                                   start_date = first_date(dataset, :air_temperature),
                                   end_date = last_date(dataset, :air_temperature),
@@ -35,15 +35,15 @@ function ECCOPrescribedAtmosphere(architecture = CPU(), FT = Float32;
                                   surface_layer_height = 2,  # meters
                                   other_kw...)
 
+    kw = (; time_indexing, time_indices_in_memory)
+    kw = merge(kw, other_kw)
+
     ua_meta = Metadata(:eastward_wind;         dataset, start_date, end_date, dir)
     va_meta = Metadata(:northward_wind;        dataset, start_date, end_date, dir)
     Ta_meta = Metadata(:air_temperature;       dataset, start_date, end_date, dir)
     qa_meta = Metadata(:air_specific_humidity; dataset, start_date, end_date, dir)
     pa_meta = Metadata(:sea_level_pressure;    dataset, start_date, end_date, dir)
     Fr_meta = Metadata(:rain_freshwater_flux;  dataset, start_date, end_date, dir)
-
-    kw = (; time_indices_in_memory, time_indexing)
-    kw = merge(kw, other_kw)
 
     ua = FieldTimeSeries(ua_meta, architecture; kw...)
     va = FieldTimeSeries(va_meta, architecture; kw...)
