@@ -396,3 +396,21 @@ end
 end
 
 @inline is_masked(a, min_value, max_value, mask_value) = isnan(a) | (a <= min_value) | (a >= max_value) | (a == mask_value)
+
+#####
+##### Field / FieldTimeSeries for MetadataSet
+#####
+
+"""
+    Field(mset::MetadataSet, arch=CPU(); kw...)
+
+Build a `NamedTuple` of `Field`s — one per variable in `mset`, keyed by the
+verbose dataset variable name. Each value is `Field(mset[name], arch; kw...)`.
+
+Requires `mset` to hold scalar `dates` so each `mset[name]` is a `Metadatum`;
+for multi-date sets, use `FieldTimeSeries(::MetadataSet)`.
+"""
+function Field(mset::MetadataSet, arch=CPU(); kw...)
+    names = getfield(mset, :names)
+    return NamedTuple{names}(map(n -> Field(mset[n], arch; kw...), names))
+end
