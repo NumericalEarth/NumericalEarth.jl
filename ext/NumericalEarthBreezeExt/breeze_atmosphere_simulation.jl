@@ -42,17 +42,17 @@ Keyword Arguments
 
 All additional keyword arguments are forwarded to `Breeze.AtmosphereModel`.
 """
-function atmosphere_simulation(grid;
-                               surface_pressure = 101325,
-                               potential_temperature = 285,
-                               thermodynamic_constants = ThermodynamicConstants(eltype(grid)),
-                               dynamics = AnelasticDynamics(ReferenceState(grid, thermodynamic_constants;
-                                                                           surface_pressure, potential_temperature)),
-                               microphysics = SaturationAdjustment(equilibrium = WarmPhaseEquilibrium()),
-                               momentum_advection = Oceananigans.WENO(order=9),
-                               scalar_advection = Oceananigans.WENO(order=5),
-                               boundary_conditions = NamedTuple(),
-                               kw...)
+function NumericalEarth.Atmospheres.atmosphere_simulation(grid;
+                                                          surface_pressure = 101325,
+                                                          potential_temperature = 285,
+                                                          thermodynamic_constants = ThermodynamicConstants(eltype(grid)),
+                                                          dynamics = AnelasticDynamics(ReferenceState(grid, thermodynamic_constants;
+                                                                                                      surface_pressure, potential_temperature)),
+                                                          microphysics = SaturationAdjustment(equilibrium = WarmPhaseEquilibrium()),
+                                                          momentum_advection = Oceananigans.WENO(order=9),
+                                                          scalar_advection = Oceananigans.WENO(order=5),
+                                                          boundary_conditions = NamedTuple(),
+                                                          kw...)
 
     # Create 2D flux fields for ESM coupling
     ρτˣ = Field{Center, Center, Nothing}(grid)

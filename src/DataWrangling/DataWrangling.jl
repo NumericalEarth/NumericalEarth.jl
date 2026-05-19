@@ -16,6 +16,7 @@ export native_grid
 
 using Adapt: Adapt
 using Downloads: Downloads
+using LibCURL: LibCURL
 using JLD2: JLD2, jldopen
 using KernelAbstractions: @kernel, @index
 using Oceananigans: Oceananigans, pretty_filesize, location
@@ -102,9 +103,9 @@ function netrc_downloader(username, password, machine, dir)
     netrc_file = netrc_permission_file(username, password, machine, dir)
     downloader = Downloads.Downloader()
     easy_hook  = (easy, _) -> begin
-        Downloads.Curl.setopt(easy, Downloads.Curl.CURLOPT_NETRC_FILE, netrc_file)
+        Downloads.Curl.setopt(easy, LibCURL.CURLOPT_NETRC_FILE, netrc_file)
         # Bypass certificate verification because ecco.jpl.nasa.gov is using an untrusted CA certificate
-        Downloads.Curl.setopt(easy, Downloads.Curl.CURLOPT_SSL_VERIFYPEER, false)
+        Downloads.Curl.setopt(easy, LibCURL.CURLOPT_SSL_VERIFYPEER, false)
     end
     downloader.easy_hook = easy_hook
     return downloader
