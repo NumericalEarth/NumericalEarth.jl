@@ -45,7 +45,7 @@ set!(sea_ice.model, h=ecco_sea_ice_thickness, ℵ=ecco_sea_ice_concentration)
 atmosphere = JRA55PrescribedAtmosphere(arch)
 land       = JRA55PrescribedLand(arch)
 radiation  = JRA55PrescribedRadiation(arch)
-esm = OceanSeaIceModel(sea_ice, ocean; atmosphere, land, radiation)
+esm = OceanSeaIceModel(ocean, sea_ice; atmosphere, land, radiation)
 
 simulation = Simulation(esm; Δt=20minutes, stop_time=5*365days)
 
