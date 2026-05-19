@@ -3,11 +3,11 @@ module IBCSO
 export IBCSOv2
 
 using Downloads: Downloads
-using Oceananigans
+using Oceananigans: Oceananigans
 using Oceananigans.DistributedComputations: @root
-using Scratch
+using Scratch: @get_scratch!
 
-using ..DataWrangling: DownloadProgress, Metadatum, metadata_path, AbstractStaticBathymetry
+using ..DataWrangling: DataWrangling, DownloadProgress, Metadatum, metadata_path, AbstractStaticBathymetry
 
 import ..DataWrangling:
     metadata_filename,
@@ -57,7 +57,7 @@ dataset_variable_name(data::IBCSOMetadatum) = IBCSO_bathymetry_variable_names[da
 
 const IBCSO_pangaea_url = "https://download.pangaea.de/dataset/937574/files/IBCSO_v2_bed_WGS84.nc"
 
-metadata_url(::IBCSOMetadatum) = IBCSO_pangaea_url
+DataWrangling.metadata_url(::IBCSOMetadatum) = IBCSO_pangaea_url
 
 # The expected NetCDF filename inside the ZIP or from PANGAEA
 const IBCSO_nc_filename = "IBCSO_v2_bed_WGS84.nc"

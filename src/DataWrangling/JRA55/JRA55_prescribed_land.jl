@@ -1,7 +1,5 @@
 using ...Lands: PrescribedLand
 
-export JRA55PrescribedLand
-
 JRA55PrescribedLand(arch::Distributed; kw...) =
     JRA55PrescribedLand(child_architecture(arch); kw...)
 
@@ -17,7 +15,7 @@ JRA55PrescribedLand(arch::Distributed; kw...) =
                         other_kw...)
 
 Return a [`PrescribedLand`](@ref) representing JRA55 reanalysis land surface data
-(river runoff and iceberg calving freshwater fluxes). 
+(river runoff and iceberg calving freshwater fluxes).
 """
 function JRA55PrescribedLand(architecture = CPU();
                              dataset = RepeatYearJRA55(),

@@ -1,4 +1,4 @@
-const AA = Oceananigans.Architectures.AbstractArchitecture
+using ...Atmospheres: PrescribedAtmosphere, PrescribedPrecipitationFlux
 
 JRA55PrescribedAtmosphere(arch::Distributed; kw...) =
     JRA55PrescribedAtmosphere(child_architecture(arch); kw...)

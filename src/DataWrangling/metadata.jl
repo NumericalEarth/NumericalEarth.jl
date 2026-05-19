@@ -1,7 +1,6 @@
-using CFTime
-using Dates
+using CFTime: AbstractCFDateTime, CFTime
+using Dates: Dates, Date, DateTime
 using Base: @propagate_inbounds
-import Oceananigans.Utils: prettysummary
 
 struct BoundingBox{X, Y, Z}
     longitude :: X
@@ -218,7 +217,7 @@ datestr(md::Metadatum) = string(md.dates)
 datasetstr(md::Metadata) = string(md.dataset)
 metaprefix(md::Metadata) = string("Metadata{", md.dataset, "}")
 
-prettysummary(dt::DateTime) = Dates.format(dt, "yyyy-mm-dd HH:MM:SS")
+Oceananigans.Utils.prettysummary(dt::DateTime) = Dates.format(dt, "yyyy-mm-dd HH:MM:SS")
 
 function Base.show(io::IO, metadata::Metadata)
     V = typeof(metadata.dataset)
@@ -488,7 +487,7 @@ This is the explicit form that takes verbose dataset names on both sides — no
 alias translation. For the auto-routing form (short model field-names), see
 `set!(model, ::MetadataSet)`.
 """
-function set!(fields::NamedTuple, mset::MetadataSet)
+function Fields.set!(fields::NamedTuple, mset::MetadataSet)
     for name in keys(fields)
         in(name, getfield(mset, :names)) ||
             throw(ArgumentError("Field $(name) is not in MetadataSet variables $(getfield(mset, :names))"))
@@ -517,7 +516,7 @@ set!(ocean.model,   mset)   # consumes :temperature, :salinity  → T, S
 set!(sea_ice.model, mset)   # consumes :sea_ice_thickness, :sea_ice_concentration → h, ℵ
 ```
 """
-function set!(model, mset::MetadataSet)
+function Fields.set!(model, mset::MetadataSet)
     names = getfield(mset, :names)
     aliased = filter(n -> haskey(variable_aliases, n), names)
     kwargs = NamedTuple{Tuple(variable_aliases[n] for n in aliased)}(Tuple(mset[n] for n in aliased))
@@ -639,6 +638,13 @@ metadata_filename(metadata::Metadata) = metadata.filename
 Compute the filename for a single date. Extended by each dataset module.
 """
 function metadata_filename end
+
+"""
+    metadata_url(metadata)
+
+Return the URL for the dataset described by `metadata`. Extended by each dataset module.
+"""
+function metadata_url end
 
 # Internal: build filename for construction.
 # Single date: delegate to metadata_filename

@@ -1,5 +1,3 @@
-import Oceananigans.OutputReaders: update_field_time_series!, FieldTimeSeries
-
 """
     FieldTimeSeries(metadata::Metadata [, arch_or_grid=CPU() ];
                     time_indices_in_memory = 2,
@@ -31,17 +29,17 @@ Keyword Arguments
 - `cache_inpainted_data`: If `true`, the data is cached to disk after inpainting for later retrieving.
                           Default: `true`.
 """
-function FieldTimeSeries(metadata::Metadata, arch::AbstractArchitecture=CPU(); kw...)
+function Oceananigans.OutputReaders.FieldTimeSeries(metadata::Metadata, arch::AbstractArchitecture=CPU(); kw...)
     download(metadata)
     grid = native_grid(metadata, arch)
     return FieldTimeSeries(metadata, grid; kw...)
 end
 
-function FieldTimeSeries(metadata::Metadata, grid::AbstractGrid;
-                         time_indices_in_memory = 2,
-                         time_indexing = Cyclical(),
-                         inpainting = default_inpainting(metadata),
-                         cache_inpainted_data = true)
+function Oceananigans.OutputReaders.FieldTimeSeries(metadata::Metadata, grid::AbstractGrid;
+                                                    time_indices_in_memory = 2,
+                                                    time_indexing = Cyclical(),
+                                                    inpainting = default_inpainting(metadata),
+                                                    cache_inpainted_data = true)
 
     download(metadata)
 
@@ -65,7 +63,7 @@ function FieldTimeSeries(metadata::Metadata, grid::AbstractGrid;
     return fts
 end
 
-function FieldTimeSeries(variable_name::Symbol;
+function Oceananigans.OutputReaders.FieldTimeSeries(variable_name::Symbol;
                          dataset, dir,
                          architecture = CPU(),
                          start_date = first_date(dataset, variable_name),
@@ -85,12 +83,12 @@ Build a `NamedTuple` of `FieldTimeSeries` — one per variable in `mset`, keyed
 by the verbose dataset variable name. Each value is
 `FieldTimeSeries(mset[name], arch_or_grid; kw...)`.
 """
-function FieldTimeSeries(mset::MetadataSet, arch::AbstractArchitecture=CPU(); kw...)
+function Oceananigans.OutputReaders.FieldTimeSeries(mset::MetadataSet, arch::AbstractArchitecture=CPU(); kw...)
     names = getfield(mset, :names)
     return NamedTuple{names}(map(n -> FieldTimeSeries(mset[n], arch; kw...), names))
 end
 
-function FieldTimeSeries(mset::MetadataSet, grid::AbstractGrid; kw...)
+function Oceananigans.OutputReaders.FieldTimeSeries(mset::MetadataSet, grid::AbstractGrid; kw...)
     names = getfield(mset, :names)
     return NamedTuple{names}(map(n -> FieldTimeSeries(mset[n], grid; kw...), names))
 end
