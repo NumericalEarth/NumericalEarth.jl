@@ -1,5 +1,3 @@
-import Oceananigans.OutputReaders: update_field_time_series!, FieldTimeSeries
-
 """
     FieldTimeSeries(metadata::Metadata [, arch_or_grid=CPU() ];
                     time_indices_in_memory = 2,
@@ -31,17 +29,17 @@ Keyword Arguments
 - `cache_inpainted_data`: If `true`, the data is cached to disk after inpainting for later retrieving.
                           Default: `true`.
 """
-function FieldTimeSeries(metadata::Metadata, arch::AbstractArchitecture=CPU(); kw...)
+function Oceananigans.OutputReaders.FieldTimeSeries(metadata::Metadata, arch::AbstractArchitecture=CPU(); kw...)
     download_dataset(metadata)
     grid = native_grid(metadata, arch)
     return FieldTimeSeries(metadata, grid; kw...)
 end
 
-function FieldTimeSeries(metadata::Metadata, grid::AbstractGrid;
-                         time_indices_in_memory = 2,
-                         time_indexing = Cyclical(),
-                         inpainting = default_inpainting(metadata),
-                         cache_inpainted_data = true)
+function Oceananigans.OutputReaders.FieldTimeSeries(metadata::Metadata, grid::AbstractGrid;
+                                                    time_indices_in_memory = 2,
+                                                    time_indexing = Cyclical(),
+                                                    inpainting = default_inpainting(metadata),
+                                                    cache_inpainted_data = true)
 
     download_dataset(metadata)
 
@@ -65,7 +63,7 @@ function FieldTimeSeries(metadata::Metadata, grid::AbstractGrid;
     return fts
 end
 
-function FieldTimeSeries(variable_name::Symbol;
+function Oceananigans.OutputReaders.FieldTimeSeries(variable_name::Symbol;
                          dataset, dir,
                          architecture = CPU(),
                          start_date = first_date(dataset, variable_name),

@@ -1,17 +1,14 @@
 using NCDatasets
 using JLD2
-using Statistics: median
 using Oceananigans.Grids: λnodes, φnodes, Periodic, Bounded
 using Oceananigans.Architectures: on_architecture
-using Oceananigans.Fields: fractional_x_index, fractional_y_index, interpolate!
-
-import Oceananigans.Fields: set!, Field, location
+using Oceananigans.Fields: interpolate!
 
 #####
 ##### Location with automatic restriction based on region
 #####
 
-location(metadata::Metadata) = restrict_location(dataset_location(metadata.dataset, metadata.name), metadata.region)
+Oceananigans.location(metadata::Metadata) = restrict_location(dataset_location(metadata.dataset, metadata.name), metadata.region)
 
 restrict_location(loc, ::Nothing) = loc
 restrict_location(loc, ::BoundingBox) = loc
@@ -87,7 +84,7 @@ function construct_native_grid(metadata, bbox::BoundingBox, arch; halo)
     native_longitude = longitude_interfaces(metadata)
     native_latitude  = latitude_interfaces(metadata)
 
-    # Map the bbox into the native longitude convention. 
+    # Map the bbox into the native longitude convention.
     bbox_lon = native_convention_longitude(bbox.longitude, native_longitude)
 
     Nx, Ny, Nz = size(metadata)
@@ -160,24 +157,23 @@ function retrieve_data(metadata::Metadatum)
 end
 
 """
-    Field(metadata::Metadatum;
-          architecture = CPU(),
+    Field(metadata::Metadatum, arch=CPU();
           inpainting = default_inpainting(metadata),
           mask = nothing,
           halo = (3, 3, 3),
           cache_inpainted_data = true)
 
-Return a `Field` on `architecture` described by `metadata` with `halo` size.
+Return a `Field` on `arch`itecture described by `metadata` with `halo` size.
 If not `nothing`, the `inpainting` method is used to fill the cells
 within the specified `mask`. `mask` is set to `compute_mask` for non-nothing
 `inpainting`. Keyword argument `cache_inpainted_data` dictates whether the inpainted
 data is cached to avoid recomputing it; default: `true`.
 """
-function Field(metadata::Metadatum, arch=CPU();
-               inpainting = default_inpainting(metadata),
-               mask = nothing,
-               halo = (3, 3, 3),
-               cache_inpainted_data = true)
+function Oceananigans.Fields.Field(metadata::Metadatum, arch=CPU();
+                                   inpainting = default_inpainting(metadata),
+                                   mask = nothing,
+                                   halo = (3, 3, 3),
+                                   cache_inpainted_data = true)
 
     download_dataset(metadata)
 
@@ -259,7 +255,7 @@ function Field(metadata::Metadatum, arch=CPU();
     return field
 end
 
-function set!(target_field::Field, metadata::Metadatum; kw...)
+function Oceananigans.Fields.set!(target_field::Field, metadata::Metadatum; kw...)
     grid = target_field.grid
     arch = child_architecture(grid)
     meta_field = Field(metadata, arch; kw...)
@@ -307,7 +303,7 @@ end
 """
     centers_to_interfaces(z_centers)
 
-Compute z-interfaces (cell faces) from cell center positions.
+Compute ``z``-interfaces (cell faces) from cell center positions.
 `z_centers` should be sorted most negative first (deepest first).
 The top face is placed at 0.0 (sea surface). Interior faces are
 midpoints between adjacent centers. The bottom face is extrapolated.
@@ -353,7 +349,7 @@ end
 @inline convert_units(C::FT, ::Union{NanomolePerLiter, NanomolePerKilogram})   where FT = C * convert(FT, 1e-6)
 @inline convert_units(C::FT, ::MilliliterPerLiter)                             where FT = C / convert(FT, 22.3916)
 @inline convert_units(C::FT, ::GramPerKilogramMinus35)                         where FT = C + convert(FT, 35)
-@inline convert_units(Φ::FT, ::InverseGravity)                                where FT = Φ / convert(FT, 9.80665)
+@inline convert_units(Φ::FT, ::InverseGravity)                                 where FT = Φ / convert(FT, 9.80665)
 @inline convert_units(V::FT, ::CentimetersPerSecond)                           where FT = V / convert(FT, 100)
 
 

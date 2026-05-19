@@ -1,3 +1,5 @@
+using ...Radiations: PrescribedRadiation, SurfaceRadiationProperties, default_stefan_boltzmann_constant
+
 JRA55PrescribedRadiation(arch::Distributed; kw...) =
     JRA55PrescribedRadiation(child_architecture(arch); kw...)
 

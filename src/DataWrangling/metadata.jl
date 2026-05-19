@@ -1,7 +1,6 @@
-using CFTime
-using Dates
+using CFTime: AbstractCFDateTime, CFTime
+using Dates: Dates, Date, DateTime
 using Base: @propagate_inbounds
-import Oceananigans.Utils: prettysummary
 
 struct BoundingBox{X, Y, Z}
     longitude :: X
@@ -218,7 +217,7 @@ datestr(md::Metadatum) = string(md.dates)
 datasetstr(md::Metadata) = string(md.dataset)
 metaprefix(md::Metadata) = string("Metadata{", md.dataset, "}")
 
-prettysummary(dt::DateTime) = Dates.format(dt, "yyyy-mm-dd HH:MM:SS")
+Oceananigans.Utils.prettysummary(dt::DateTime) = Dates.format(dt, "yyyy-mm-dd HH:MM:SS")
 
 function Base.show(io::IO, metadata::Metadata)
     V = typeof(metadata.dataset)
@@ -390,6 +389,13 @@ metadata_filename(metadata::Metadata) = metadata.filename
 Compute the filename for a single date. Extended by each dataset module.
 """
 function metadata_filename end
+
+"""
+    metadata_url(metadata)
+
+Return the URL for the dataset described by `metadata`. Extended by each dataset module.
+"""
+function metadata_url end
 
 # Internal: build filename for construction.
 # Single date: delegate to metadata_filename

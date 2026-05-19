@@ -1,13 +1,12 @@
 using Oceananigans.Operators: intrinsic_vector
 using Oceananigans.Grids: _node
 using Oceananigans.Fields: FractionalIndices, interpolate
-using Oceananigans.OutputReaders: TimeInterpolator
 using Oceananigans.OutputReaders: cpu_interpolating_time_indices
 
 using ..Oceans: forcing_barotropic_potential
 
 """Interpolate the atmospheric state onto the ocean / sea-ice grid."""
-function interpolate_state!(exchanger, grid, atmosphere::PrescribedAtmosphere, coupled_model)
+function EarthSystemModels.interpolate_state!(exchanger, grid, atmosphere::PrescribedAtmosphere, coupled_model)
     atmosphere_grid = atmosphere.grid
 
     # Basic model properties

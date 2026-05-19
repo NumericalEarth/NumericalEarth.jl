@@ -4,28 +4,28 @@ using NumericalEarth
 # using Breeze
 # using CDSAPI
 # using PythonCall, CondaPkg
-# using SpeedyWeather, ConservativeRegridding
+using SpeedyWeather, ConservativeRegridding
 # using WorldOceanAtlasTools
 using ExplicitImports: ExplicitImports
 
 @testset "ExplicitImports" begin
     modules = Module[
-        # NumericalEarth,
-        # NumericalEarth.Atmospheres,
+        NumericalEarth,
+        NumericalEarth.Atmospheres,
         NumericalEarth.Bathymetry,
-        # NumericalEarth.DataWrangling,
-        # NumericalEarth.DataWrangling.ECCO,
-        # NumericalEarth.DataWrangling.EN4,
-        # NumericalEarth.DataWrangling.ERA5,
-        # NumericalEarth.DataWrangling.ETOPO,
-        # NumericalEarth.DataWrangling.GEBCO,
-        # NumericalEarth.DataWrangling.GLORYS,
-        # NumericalEarth.DataWrangling.IBCAO,
-        # NumericalEarth.DataWrangling.IBCSO,
-        # NumericalEarth.DataWrangling.JRA55,
-        # NumericalEarth.DataWrangling.ORCA,
-        # NumericalEarth.DataWrangling.OSPapa,
-        # NumericalEarth.DataWrangling.WOA,
+        NumericalEarth.DataWrangling,
+        NumericalEarth.DataWrangling.ECCO,
+        NumericalEarth.DataWrangling.EN4,
+        NumericalEarth.DataWrangling.ERA5,
+        NumericalEarth.DataWrangling.ETOPO,
+        NumericalEarth.DataWrangling.GEBCO,
+        NumericalEarth.DataWrangling.GLORYS,
+        NumericalEarth.DataWrangling.IBCAO,
+        NumericalEarth.DataWrangling.IBCSO,
+        NumericalEarth.DataWrangling.JRA55,
+        NumericalEarth.DataWrangling.ORCA,
+        NumericalEarth.DataWrangling.OSPapa,
+        NumericalEarth.DataWrangling.WOA,
         NumericalEarth.Diagnostics,
         NumericalEarth.EarthSystemModels,
         NumericalEarth.EarthSystemModels.InterfaceComputations,
@@ -45,7 +45,7 @@ using ExplicitImports: ExplicitImports
     end
 
     for ext in (
-        # maybe_extension(NumericalEarth, :NumericalEarthSpeedyWeatherExt),
+        maybe_extension(NumericalEarth, :NumericalEarthSpeedyWeatherExt),
         # maybe_extension(NumericalEarth, :NumericalEarthVerosExt),
         # maybe_extension(NumericalEarth, :NumericalEarthBreezeExt),
         # maybe_extension(NumericalEarth, :NumericalEarthWOAExt),
