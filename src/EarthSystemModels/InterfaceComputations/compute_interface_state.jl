@@ -90,10 +90,9 @@ and interior properties `ℙₛ`, `ℙₐ`, and `ℙᵢ`.
     # Recompute the saturation specific humidity at the interface based on the new temperature
     q_formulation = interface_properties.specific_humidity_formulation
     Sₛ = approximate_interface_state.S
-    Tᵃᵗ = atmosphere_state.T
     pᵃᵗ = atmosphere_state.p
     qᵃᵗ = atmosphere_state.q
-    qₛ = surface_specific_humidity(q_formulation, ℂᵃᵗ, Tᵃᵗ, pᵃᵗ, qᵃᵗ, Tₛ, Sₛ)
+    qₛ = surface_specific_humidity(q_formulation, ℂᵃᵗ, pᵃᵗ, Tₛ, Sₛ)
 
     # Compute the specific humidity increment
     Δq = qᵃᵗ - qₛ

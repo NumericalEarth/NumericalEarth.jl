@@ -47,31 +47,20 @@ ImpureSaturationSpecificHumidity(phase) = ImpureSaturationSpecificHumidity(phase
 @inline compute_water_mole_fraction(::Nothing, salinity) = 1
 @inline compute_water_mole_fraction(x_H₂O::Number, salinity) = x_H₂O
 
-@inline function surface_specific_humidity(formulation::ImpureSaturationSpecificHumidity,
-                                            ℂᵃᵗ, Tᵃᵗ, pᵃᵗ, qᵃᵗ,
-                                            Tₛ, Sₛ=zero(Tₛ))
-    # Extrapolate air density to the surface temperature
-    # following an adiabatic ideal gas transformation
-    cvₘ = AtmosphericThermodynamics.cv_m(ℂᵃᵗ, qᵃᵗ)
-    Rᵃᵗ = AtmosphericThermodynamics.gas_constant_air(ℂᵃᵗ, qᵃᵗ)
-    κᵃᵗ = cvₘ / Rᵃᵗ # 1 / (γ - 1)
-    ρᵃᵗ = AtmosphericThermodynamics.air_density(ℂᵃᵗ, Tᵃᵗ, pᵃᵗ, qᵃᵗ)
-    ρₛ = ρᵃᵗ * (Tₛ / Tᵃᵗ)^κᵃᵗ
-    return surface_specific_humidity(formulation, ℂᵃᵗ, ρₛ, Tₛ, Sₛ)
-end
-
-@inline function surface_specific_humidity(formulation::ImpureSaturationSpecificHumidity, ℂᵃᵗ, ρₛ::Number, Tₛ, Sₛ=zero(Tₛ))
+# COARE 3.6 / Edson (2013) pressure-based saturation specific humidity:
+#   qₛ = εᵈᵛ⁻¹ pᵛ⁺ / (p − (1 − ε) pᵛ⁺),   εᵈᵛ⁻¹ = Rᵈ / Rᵥ
+# Direct evaluation at the atmospheric pressure p.
+@inline function surface_specific_humidity(formulation::ImpureSaturationSpecificHumidity, ℂᵃᵗ, pᵃᵗ, Tₛ, Sₛ=zero(Tₛ))
     FT = eltype(Tₛ)
     CT = eltype(ℂᵃᵗ)
-    Tₛ = convert(CT, Tₛ)
-    ρₛ = convert(CT, ρₛ)
-    phase = formulation.phase
-    p★ = AtmosphericThermodynamics.saturation_vapor_pressure(ℂᵃᵗ, Tₛ, phase)
-    q★ = AtmosphericThermodynamics.q_vap_from_p_vap(ℂᵃᵗ, Tₛ, ρₛ, p★)
-
-    # Compute saturation specific humidity according to Raoult's law
+    T  = convert(CT, Tₛ)
+    p  = convert(CT, pᵃᵗ)
+    
+    # Raoult's law on the saturation vapor pressure.
     χ_H₂O = compute_water_mole_fraction(formulation.water_mole_fraction, Sₛ)
-    qₛ = χ_H₂O * q★
+    pᵛ⁺   = χ_H₂O * AtmosphericThermodynamics.saturation_vapor_pressure(ℂᵃᵗ, T, formulation.phase)
+    εᵈᵛ⁻¹ = 1 / AtmosphericThermodynamics.Parameters.Rv_over_Rd(ℂᵃᵗ)
+    qₛ    = εᵈᵛ⁻¹ * pᵛ⁺ / (p - (1 - εᵈᵛ⁻¹) * pᵛ⁺)
 
     return convert(FT, qₛ)
 end
