@@ -260,11 +260,9 @@ end
 # TSI path is CPU-only for now (no FTS-backed discretization is exercised in
 # the current pipeline). When that lands, swap the loop for a 4-D launch.
 function clip_subsurface!(geopotential::TimeSeriesInterpolation, surface_geopotential)
-    fts_parent = parent(geopotential.time_series)
-    Φs = interior(surface_geopotential)
-    Nx, Ny, Nz, Nt = size(fts_parent)
-    @inbounds for t in 1:Nt, k in 1:Nz, j in 1:Ny, i in 1:Nx
-        fts_parent[i, j, k, t] = max(fts_parent[i, j, k, t], Φs[i, j, 1])
+    fts = geopotential.time_series
+    for t in 1:length(fts.times)
+        clip_subsurface!(fts[t], surface_geopotential)
     end
     return geopotential
 end
