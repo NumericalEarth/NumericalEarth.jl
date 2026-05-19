@@ -5,6 +5,7 @@ using Oceananigans: Oceananigans
 using Oceananigans.Grids: Center
 using Oceananigans.Fields: Field, interior
 using NumericalEarth: NumericalEarth
+using NumericalEarth.Atmospheres: AtmosphereThermodynamicsParameters
 using NumericalEarth.EarthSystemModels: EarthSystemModels
 using NumericalEarth.EarthSystemModels.InterfaceComputations: InterfaceComputations
 using SpeedyWeather: SpeedyWeather
