@@ -4,7 +4,7 @@ using NumericalEarth
 # using Breeze
 # using CDSAPI
 # using PythonCall, CondaPkg
-# using SpeedyWeather, ConservativeRegridding
+using SpeedyWeather, ConservativeRegridding
 # using WorldOceanAtlasTools
 using ExplicitImports: ExplicitImports
 
@@ -45,7 +45,7 @@ using ExplicitImports: ExplicitImports
     end
 
     for ext in (
-        # maybe_extension(NumericalEarth, :NumericalEarthSpeedyWeatherExt),
+        maybe_extension(NumericalEarth, :NumericalEarthSpeedyWeatherExt),
         # maybe_extension(NumericalEarth, :NumericalEarthVerosExt),
         # maybe_extension(NumericalEarth, :NumericalEarthBreezeExt),
         # maybe_extension(NumericalEarth, :NumericalEarthWOAExt),
