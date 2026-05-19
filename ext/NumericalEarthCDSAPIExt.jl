@@ -14,6 +14,7 @@ using NumericalEarth.DataWrangling.ERA5: ERA5PressureLevelsDataset,
                                          ERA5PressureMetadata, ERA5PressureMetadatum,
                                          ERA5PL_dataset_variable_names, ERA5PL_netcdf_variable_names
 
+using NumericalEarth.DataWrangling: MetadataSet
 import NumericalEarth.DataWrangling: download
 
 #####
@@ -283,6 +284,32 @@ function download(names::Vector{Symbol}, metadata::ERA5PressureMetadata; kwargs.
         append!(paths, download(names, metadatum; kwargs...))
     end
     return paths
+end
+
+"""
+    download(mset::MetadataSet{<:ERA5PressureLevelsDataset}; kwargs...)
+
+Route a `MetadataSet` of ERA5 pressure-level variables through the existing
+multi-variable batched CDS path, instead of falling back to per-variable
+requests via the default `download(::MetadataSet)`. Each calendar day's
+variables are bundled into one CDS API request.
+"""
+function download(mset::MetadataSet{<:ERA5PressureLevelsDataset}; kwargs...)
+    names = collect(getfield(mset, :names))
+
+    # Build a representative ERA5PressureMetadata at the shared scope. The
+    # batched method only consults its `dataset`, `dates`, `region`, `dir` —
+    # the per-variable filename(s) are recomputed internally per (name, date).
+    representative = NumericalEarth.DataWrangling.Metadata(
+        first(names),
+        getfield(mset, :dataset),
+        getfield(mset, :dates),
+        getfield(mset, :region),
+        getfield(mset, :dir),
+        nothing,
+    )
+
+    return download(names, representative; kwargs...)
 end
 
 """

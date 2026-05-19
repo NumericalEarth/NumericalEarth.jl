@@ -525,6 +525,22 @@ function set!(model, mset::MetadataSet)
 end
 
 """
+    download(mset::MetadataSet; kwargs...)
+
+Download every variable in `mset`. The default is a per-variable loop calling
+`download(mset[name]; kwargs...)`; backends that support batched multi-variable
+requests (e.g. the ERA5 pressure-level CDS path) override this to route through
+a single batched call.
+
+Returns a `NamedTuple` keyed by the set's variable names, whose values are the
+results of each per-variable `download` call (typically the file path(s)).
+"""
+function download(mset::MetadataSet; kwargs...)
+    names = getfield(mset, :names)
+    return NamedTuple{names}(map(n -> download(mset[n]; kwargs...), names))
+end
+
+"""
     native_times(metadata; start_time=first(metadata).dates)
 
 Extract the time values from the given `metadata`, calculate the time difference
