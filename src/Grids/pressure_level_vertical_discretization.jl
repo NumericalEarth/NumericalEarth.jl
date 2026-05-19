@@ -4,7 +4,8 @@ using Statistics: mean
 using Oceananigans.AbstractOperations: KernelFunctionOperation
 using Oceananigans.Architectures: architecture
 using Oceananigans.BoundaryConditions: fill_halo_regions!
-using Oceananigans.Fields: AbstractField, Field, compute!, interior, instantiated_location
+using Oceananigans: instantiated_location
+using Oceananigans.Fields: Field, compute!, interior
 using Oceananigans.OutputReaders: FieldTimeSeries
 using Oceananigans.Grids: AbstractVerticalCoordinate, AbstractUnderlyingGrid, Center, Face, Flat, LatitudeLongitudeGrid, topology
 using Oceananigans.OutputReaders: TimeSeriesInterpolation
