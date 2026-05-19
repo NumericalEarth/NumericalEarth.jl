@@ -88,17 +88,19 @@ function generate_coordinate(FT, topo, sz, halo,
 end
 
 geopotential_data_for_extrema(Φ::Field) = interior(Φ)
+# Use `interior(fts)` — not `parent(fts)` — so halo zeros don't dominate the
+# extrema / column mean.
 # NOTE: For a TSI this reads every time slice. Fine while the FTS path isn't
 # exercised; switch to a per-time-slice extent if we ever advance the clock here.
-geopotential_data_for_extrema(Φ::TimeSeriesInterpolation) = parent(Φ.time_series)
+geopotential_data_for_extrema(Φ::TimeSeriesInterpolation) = interior(Φ.time_series)
 
-Adapt.adapt_structure(to, c::PressureLevelVerticalDiscretization) =
-    PressureLevelVerticalDiscretization(c.gravitational_acceleration,
-                                        Adapt.adapt(to, c.geopotential))
+Adapt.adapt_structure(to, z::PressureLevelVerticalDiscretization) =
+    PressureLevelVerticalDiscretization(z.gravitational_acceleration,
+                                        Adapt.adapt(to, z.geopotential))
 
-on_architecture(arch, c::PressureLevelVerticalDiscretization) =
-    PressureLevelVerticalDiscretization(c.gravitational_acceleration,
-                                        on_architecture(arch, c.geopotential))
+on_architecture(arch, z::PressureLevelVerticalDiscretization) =
+    PressureLevelVerticalDiscretization(z.gravitational_acceleration,
+                                        on_architecture(arch, z.geopotential))
 
 function Base.show(io::IO, z::PressureLevelVerticalDiscretization)
     print(io, "PressureLevelVerticalDiscretization with $(size(z.geopotential, 3)) levels, ",
