@@ -1,5 +1,4 @@
 using ClimaSeaIce.SeaIceThermodynamics: melting_temperature, LinearLiquidus, ConductiveFlux
-using Adapt
 
 #####
 ##### Ice Bath Heat Flux (bulk formulation)

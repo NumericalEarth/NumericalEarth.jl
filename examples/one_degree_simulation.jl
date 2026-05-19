@@ -95,14 +95,13 @@ set!(sea_ice.model, h=ecco_sea_ice_thickness, ℵ=ecco_sea_ice_concentration)
 # ### Atmospheric forcing
 
 # We force the simulation with a JRA55-do atmospheric reanalysis.
-jra55_backend = JRA55NetCDFBackend(80)
-atmosphere = JRA55PrescribedAtmosphere(arch; backend=jra55_backend)
+atmosphere = JRA55PrescribedAtmosphere(arch)
 # Use a latitude-dependent ocean albedo (Large & Yeager 2009); keep the
 # default ocean emissivity (0.97) and sea-ice surface (albedo 0.7,
 # emissivity 1.0).
-radiation  = JRA55PrescribedRadiation(arch; backend=jra55_backend,
+radiation  = JRA55PrescribedRadiation(arch;
                                       ocean_surface = SurfaceRadiationProperties(albedo = LatitudeDependentAlbedo()))
-land       = JRA55PrescribedLand(arch; backend=jra55_backend)
+land       = JRA55PrescribedLand(arch)
 
 # ### Coupled simulation
 

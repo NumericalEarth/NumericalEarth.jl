@@ -8,11 +8,11 @@ using Oceananigans.Coriolis: HydrostaticSphericalCoriolis
 using Oceananigans.Fields: Field, ZeroField
 using Oceananigans.Grids: inactive_node, Face, Center
 using Oceananigans.Models.HydrostaticFreeSurfaceModels: HydrostaticFreeSurfaceModel
-using Oceananigans.Operators: Operators, ℑxᶠᵃᵃ, ℑyᵃᶠᵃ
+using Oceananigans.Operators: ℑxᶠᵃᵃ, ℑyᵃᶠᵃ
 using Oceananigans.OrthogonalSphericalShellGrids: OrthogonalSphericalShellGrids
 using Oceananigans.Simulations: Simulation
-using Oceananigans.Units: Units, minutes
-using Oceananigans.Utils: Utils, launch!
+using Oceananigans.Units: minutes
+using Oceananigans.Utils: launch!
 using KernelAbstractions: @kernel, @index
 
 using ..EarthSystemModels: EarthSystemModels

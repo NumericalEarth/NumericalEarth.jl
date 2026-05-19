@@ -1,20 +1,20 @@
 module NumericalEarthCDSAPIExt
 
-using NumericalEarth
-using CDSAPI
-using NCDatasets
+using CDSAPI: CDSAPI
 
-using Oceananigans
+using Dates: Dates
+using Oceananigans: Oceananigans
 using Oceananigans.DistributedComputations: @root
 
-using Dates
+using NCDatasets: NCDatasets, name, path
+
+using NumericalEarth: NumericalEarth
+using NumericalEarth.DataWrangling: Metadatum, default_download_directory, metadata_path, download_dataset
 using NumericalEarth.DataWrangling.ERA5: ERA5Dataset, ERA5Metadata, ERA5Metadatum,
-                                         ERA5_dataset_variable_names, ERA5_netcdf_variable_names
-using NumericalEarth.DataWrangling.ERA5: ERA5PressureLevelsDataset,
+                                         ERA5_dataset_variable_names, ERA5_netcdf_variable_names,
+                                         ERA5PressureLevelsDataset,
                                          ERA5PressureMetadata, ERA5PressureMetadatum,
                                          ERA5PL_dataset_variable_names, ERA5PL_netcdf_variable_names
-
-import NumericalEarth.DataWrangling: download_dataset
 
 #####
 ##### Dispatch helpers — encapsulate single-level vs pressure-level differences
@@ -152,8 +152,8 @@ Before downloading, you must:
 
 See https://cds.climate.copernicus.eu/how-to-api for details.
 """
-function download_dataset(meta::ERA5Metadatum; skip_existing=true)
-    output_path = NumericalEarth.DataWrangling.metadata_path(meta)
+function NumericalEarth.DataWrangling.download_dataset(meta::ERA5Metadatum; skip_existing=true)
+    output_path = metadata_path(meta)
 
     # Skip download if file already exists
     skip_existing && isfile(output_path) && return output_path
@@ -171,7 +171,7 @@ end
 ##### Multi-date download — batches by calendar day
 #####
 
-function download_dataset(metadata::ERA5Metadata; skip_existing=true, cleanup=true)
+function NumericalEarth.DataWrangling.download_dataset(metadata::ERA5Metadata; skip_existing=true, cleanup=true)
     dates = metadata.dates isa AbstractVector ? metadata.dates : [metadata.dates]
     grouped = _group_by_calendar_day(dates)
 
@@ -277,7 +277,7 @@ end
 
 Download multiple ERA5 pressure-level variables for each date in `metadata`.
 """
-function download_dataset(names::Vector{Symbol}, metadata::ERA5PressureMetadata; kwargs...)
+function NumericalEarth.DataWrangling.download_dataset(names::Vector{Symbol}, metadata::ERA5PressureMetadata; kwargs...)
     paths = String[]
     for metadatum in metadata
         append!(paths, download_dataset(names, metadatum; kwargs...))
@@ -291,15 +291,15 @@ end
 Download multiple ERA5 pressure-level variables for a single date in one CDS API request.
 The multi-variable NetCDF is split into individual per-variable files.
 """
-function download_dataset(names::Vector{Symbol}, meta::ERA5PressureMetadatum; skip_existing=true)
+function NumericalEarth.DataWrangling.download_dataset(names::Vector{Symbol}, meta::ERA5PressureMetadatum; skip_existing=true)
     name_path_pairs = []
     for name in names
-        metadatum = NumericalEarth.DataWrangling.Metadatum(name;
-                                                           dataset      = meta.dataset,
-                                                           region = meta.region,
-                                                           date         = meta.dates,
-                                                           dir          = meta.dir)
-        path = NumericalEarth.DataWrangling.metadata_path(metadatum)
+        metadatum = Metadatum(name;
+                              dataset = meta.dataset,
+                              region = meta.region,
+                              date = meta.dates,
+                              dir = meta.dir)
+        path = metadata_path(metadatum)
         push!(name_path_pairs, (name, path))
     end
 
@@ -341,16 +341,16 @@ end
 
 Download one or more ERA5 variables at a single datetime.
 """
-function download_dataset(names::Vector{Symbol}, dataset::ERA5Dataset, datetime;
-                          region = nothing,
-                          dir = NumericalEarth.DataWrangling.default_download_directory(dataset))
-    meta = NumericalEarth.DataWrangling.Metadatum(first(names); dataset, date=datetime, region, dir)
+function NumericalEarth.DataWrangling.download_dataset(names::Vector{Symbol}, dataset::ERA5Dataset, datetime;
+                                                       region = nothing,
+                                                       dir = default_download_directory(dataset))
+    meta = Metadatum(first(names); dataset, date=datetime, region, dir)
     return download_dataset(names, meta)
 end
 
-function download_dataset(name::Symbol, dataset::ERA5Dataset, datetime;
-                          region = nothing,
-                          dir = NumericalEarth.DataWrangling.default_download_directory(dataset))
+function NumericalEarth.DataWrangling.download_dataset(name::Symbol, dataset::ERA5Dataset, datetime;
+                                                       region = nothing,
+                                                       dir = default_download_directory(dataset))
     return download_dataset([name], dataset, datetime; region, dir)
 end
 
@@ -359,13 +359,13 @@ end
 
 Download one or more ERA5 variables for multiple datetimes, batching by calendar day.
 """
-function download_dataset(names::Vector{Symbol},
-                          dataset::ERA5Dataset,
-                          datetimes::AbstractVector;
-                          region = nothing,
-                          dir = NumericalEarth.DataWrangling.default_download_directory(dataset),
-                          skip_existing = true,
-                          cleanup = true)
+function NumericalEarth.DataWrangling.download_dataset(names::Vector{Symbol},
+                                                       dataset::ERA5Dataset,
+                                                       datetimes::AbstractVector;
+                                                       region = nothing,
+                                                       dir = default_download_directory(dataset),
+                                                       skip_existing = true,
+                                                       cleanup = true)
 
     grouped = _group_by_calendar_day(datetimes)
 
@@ -379,13 +379,13 @@ function download_dataset(names::Vector{Symbol},
     return paths
 end
 
-function download_dataset(name::Symbol,
-                          dataset::ERA5Dataset,
-                          datetimes::AbstractVector;
-                          region = nothing,
-                          dir = NumericalEarth.DataWrangling.default_download_directory(dataset),
-                          skip_existing = true,
-                          cleanup = true)
+function NumericalEarth.DataWrangling.download_dataset(name::Symbol,
+                                                       dataset::ERA5Dataset,
+                                                       datetimes::AbstractVector;
+                                                       region = nothing,
+                                                       dir = default_download_directory(dataset),
+                                                       skip_existing = true,
+                                                       cleanup = true)
     return download_dataset([name], dataset, datetimes; region, dir, skip_existing, cleanup)
 end
 
