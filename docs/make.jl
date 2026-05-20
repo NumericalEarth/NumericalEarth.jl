@@ -4,6 +4,8 @@ using Documenter
 using DocumenterCitations
 using Literate
 
+CUDA.versioninfo()
+
 ENV["DATADEPS_ALWAYS_ACCEPT"] = "true"
 
 bib_filepath = joinpath(dirname(@__FILE__), "src", "NumericalEarth.bib")
