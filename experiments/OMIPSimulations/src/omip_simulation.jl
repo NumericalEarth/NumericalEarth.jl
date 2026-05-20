@@ -557,6 +557,10 @@ function omip_closure(vertical_closure::Symbol;
         tke_eq = isnothing(Cᵂu★) ? CATKEEquation() : CATKEEquation(; Cᵂu★)
         catke = CATKEVerticalDiffusivity(VerticallyImplicitTimeDiscretization();
                                          mixing_length,
+                                         maximum_viscosity=3,
+                                         maximum_tracer_diffusivity=3,
+                                         maximum_tke_diffusivity=3,
+                                         negative_tke_damping_time_scale=10, # (seconds)
                                          turbulent_kinetic_energy_equation = tke_eq)
         catke, VerticalScalarDiffusivity(κ=henyey_diffusivity, ν=3e-5)
     elseif vertical_closure == :simple
