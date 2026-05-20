@@ -1,21 +1,21 @@
 """
-    omip_atmosphere(arch, sea_ice; forcing_dir, start_date, end_date, backend_size=30)
+    omip_forcing(arch, sea_ice; forcing_dir, start_date, end_date,
+                 repeat_year_forcing=false, backend_size=30)
 
-Build a JRA55-forced prescribed atmosphere and a matching
-`JRA55PrescribedRadiation`. Ocean surface uses the OMIP-2 standard values
-(emissivity = 1.0, albedo = 0.06); sea-ice surface uses the CCSM3
-temperature / snow / thickness-dependent `SeaIceAlbedo` evaluated against
-the live sea-ice surface temperature (snow surface if present, ice top
-otherwise) with emissivity = 1.0.
+Build the prescribed forcing components for an OMIP-2 simulation:
+JRA55-do atmosphere, JRA55-do downwelling radiation (with OMIP-2 ocean
+surface properties and CCSM3 temperature/snow/thickness-dependent sea-ice
+albedo), and JRA55-do land freshwater forcing (river runoff + iceberg
+calving).
 
-Returns the tuple `(atmosphere, radiation)`.
+Returns the tuple `(atmosphere, radiation, land)`.
 """
-function omip_atmosphere(arch, sea_ice;
-                         forcing_dir,
-                         start_date,
-                         end_date,
-                         repeat_year_forcing = false,
-                         backend_size = 30)
+function omip_forcing(arch, sea_ice;
+                      forcing_dir,
+                      start_date,
+                      end_date,
+                      repeat_year_forcing = false,
+                      backend_size = 30)
 
     dataset = repeat_year_forcing ? RepeatYearJRA55() : MultiYearJRA55()
 
@@ -43,5 +43,7 @@ function omip_atmosphere(arch, sea_ice;
                                          ocean_surface   = SurfaceRadiationProperties(0.06, 1.00),
                                          sea_ice_surface = SurfaceRadiationProperties(sea_ice_albedo, 1.0))
 
-    return atmosphere, radiation
+    land = JRA55PrescribedLand(arch; kw...)
+
+    return atmosphere, radiation, land
 end

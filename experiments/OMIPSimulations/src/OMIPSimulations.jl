@@ -12,7 +12,7 @@ using NumericalEarth.Oceans: ocean_simulation, default_ocean_closure
 using Oceananigans.TurbulenceClosures.TKEBasedVerticalDiffusivities:
     CATKEVerticalDiffusivity, CATKEMixingLength, CATKEEquation
 using NumericalEarth.SeaIces: sea_ice_simulation
-using NumericalEarth.EarthSystemModels: OceanSeaIceModel, Radiation,
+using NumericalEarth.EarthSystemModels: OceanSeaIceModel,
     SimilarityTheoryFluxes,
     LinearStableStabilityFunction,
     MomentumBasedFrictionVelocity,
@@ -42,7 +42,8 @@ using NumericalEarth.DataWrangling.WOA: WOAMonthly
 using NumericalEarth.DataWrangling.ORCA: ORCA1
 using NumericalEarth.DataWrangling.JRA55: MultiYearJRA55, RepeatYearJRA55,
                                           JRA55PrescribedAtmosphere,
-                                          JRA55PrescribedRadiation
+                                          JRA55PrescribedRadiation,
+                                          JRA55PrescribedLand
 using NumericalEarth.Diagnostics: MixedLayerDepthField
 
 export omip_simulation,

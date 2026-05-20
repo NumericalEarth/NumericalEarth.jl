@@ -72,10 +72,7 @@ const obs_cache_dir = joinpath(output_dir, "obs_cache")
 mkpath(obs_cache_dir)
 
 # Shared backend template — `deepcopy(FTS_BACKEND)` for every FieldTimeSeries
-# so each one gets its own independent buffer state. `prefetch = false`
-# because multiple FTS share the same JLD2 file and `Prefetched` assumes
-# sole-reader access.
-const FTS_BACKEND = InMemory(10; prefetch = false)
+const FTS_BACKEND = InMemory(10)
 
 savefig(fig, name) = save(joinpath(output_dir, name), fig)
 
