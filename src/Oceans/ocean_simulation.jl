@@ -1,16 +1,12 @@
-using Oceananigans.DistributedComputations: DistributedGrid, all_reduce
 using Oceananigans.Architectures: architecture
 using Oceananigans.BoundaryConditions: DefaultBoundaryCondition
-using Oceananigans.ImmersedBoundaries: immersed_peripheral_node, inactive_node, MutableGridOfSomeKind
+using Oceananigans.DistributedComputations: DistributedGrid, all_reduce
+using Oceananigans.Grids: inactive_node
 using Oceananigans.OrthogonalSphericalShellGrids
-
 using Oceananigans.TurbulenceClosures: VerticallyImplicitTimeDiscretization
-
-using Oceananigans.TurbulenceClosures.TKEBasedVerticalDiffusivities:
-    CATKEVerticalDiffusivity,
-    CATKEMixingLength,
-    CATKEEquation
-
+using Oceananigans.TurbulenceClosures.TKEBasedVerticalDiffusivities: CATKEVerticalDiffusivity,
+                                                                     CATKEMixingLength,
+                                                                     CATKEEquation
 using SeawaterPolynomials.TEOS10: TEOS10EquationOfState
 using Statistics: mean
 
@@ -349,14 +345,14 @@ hasclosure(closure_tuple::Tuple, ClosureType) = any(hasclosure(c, ClosureType) f
 ##### Extending NumericalEarth interface
 #####
 
-reference_density(ocean::Simulation{<:HydrostaticFreeSurfaceModel}) = reference_density(ocean.model.buoyancy.formulation)
-reference_density(buoyancy_formulation::SeawaterBuoyancy) = reference_density(buoyancy_formulation.equation_of_state)
-reference_density(eos::TEOS10EquationOfState) = eos.reference_density
+EarthSystemModels.reference_density(ocean::Simulation{<:HydrostaticFreeSurfaceModel}) = EarthSystemModels.reference_density(ocean.model.buoyancy.formulation)
+EarthSystemModels.reference_density(buoyancy_formulation::SeawaterBuoyancy) = EarthSystemModels.reference_density(buoyancy_formulation.equation_of_state)
+EarthSystemModels.reference_density(eos::TEOS10EquationOfState) = eos.reference_density
 
-heat_capacity(ocean::Simulation{<:HydrostaticFreeSurfaceModel}) = heat_capacity(ocean.model.buoyancy.formulation)
-heat_capacity(buoyancy_formulation::SeawaterBuoyancy) = heat_capacity(buoyancy_formulation.equation_of_state)
+EarthSystemModels.heat_capacity(ocean::Simulation{<:HydrostaticFreeSurfaceModel}) = heat_capacity(ocean.model.buoyancy.formulation)
+EarthSystemModels.heat_capacity(buoyancy_formulation::SeawaterBuoyancy) = heat_capacity(buoyancy_formulation.equation_of_state)
 
-function heat_capacity(::TEOS10EquationOfState{FT}) where FT
+function EarthSystemModels.heat_capacity(::TEOS10EquationOfState{FT}) where FT
     cₚ⁰ = SeawaterPolynomials.TEOS10.teos10_reference_heat_capacity
     return convert(FT, cₚ⁰)
 end

@@ -57,9 +57,8 @@ using ClimaSeaIce.Rheologies
             Tm = KernelFunctionOperation{Center, Center, Center}(kernel_melting_temperature, grid, liquidus, S)
             @test all(T .≥ Tm)
 
-            backend = JRA55NetCDFBackend(4)
-            atmosphere = JRA55PrescribedAtmosphere(arch; backend)
-            radiation = JRA55PrescribedRadiation(arch; backend)
+            atmosphere = JRA55PrescribedAtmosphere(arch; time_indices_in_memory=4)
+            radiation = JRA55PrescribedRadiation(arch; time_indices_in_memory=4)
             
             # Fluxes are computed when the model is constructed, so we just test that this works.
             # And that we can time step with sea ice
@@ -71,7 +70,8 @@ using ClimaSeaIce.Rheologies
 
             # Test with land component
             @info "Testing OceanSeaIceModel with land on $A..."
-            land = JRA55PrescribedLand(arch; backend)
+            land_dates = all_dates(RepeatYearJRA55(), :river_freshwater_flux)
+            land = JRA55PrescribedLand(arch; end_date=land_dates[2])
 
             @test begin
                 ocean_with_land = ocean_simulation(grid; free_surface)

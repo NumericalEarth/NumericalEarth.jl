@@ -2,15 +2,15 @@ module GEBCO
 
 export GEBCO2024
 
-using Downloads
-using ZipFile
-using Oceananigans
+using Downloads: Downloads
+using Oceananigans: Oceananigans
 using Oceananigans.DistributedComputations: @root
-using Scratch
+using Scratch: Scratch, @get_scratch!
+using ZipFile: ZipFile
 
-using ..DataWrangling: download_progress, Metadatum, metadata_path, AbstractStaticBathymetry
+using ..DataWrangling: DownloadProgress, Metadatum, metadata_path, AbstractStaticBathymetry
 
-import NumericalEarth.DataWrangling:
+import ..DataWrangling:
     metadata_filename,
     default_download_directory,
     dataset_variable_name,
@@ -79,7 +79,7 @@ function download_dataset(metadatum::GEBCOMetadatum)
 
         try
             @info "Downloading from BODC..."
-            Downloads.download(GEBCO_zip_url, zip_path; progress=download_progress)
+            Downloads.download(GEBCO_zip_url, zip_path; progress=DownloadProgress())
 
             # Extract the NetCDF file from the ZIP using ZipFile.jl
             @info "Extracting NetCDF from ZIP archive..."
