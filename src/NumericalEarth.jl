@@ -58,6 +58,7 @@ export
     InterfaceRadiationFlux,
     LatitudeDependentAlbedo,
     TabulatedAlbedo,
+    SeaIceAlbedo,
     SimilarityTheoryFluxes,
     CoefficientBasedFluxes,
     SimilarityScales,
