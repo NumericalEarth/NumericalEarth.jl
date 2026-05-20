@@ -17,7 +17,7 @@ using Scratch: Scratch, @get_scratch!
 using Statistics: Statistics, mean
 
 using ..DataWrangling: Metadata, Metadatum, metadata_path, native_grid,
-                       InverseGravity, download
+                       InverseGravity
 using NumericalEarth.Grids: PressureLevelVerticalDiscretization
 
 import ..DataWrangling:

@@ -215,7 +215,7 @@ function DataWrangling.metadata_url(m::Metadata{<:MultiYearJRA55})
     return JRA55_multiple_year_url * prefix * "/" * dataset_variable_name(m) * "/gr/v20200916/" * m.filename
 end
 
-function DataWrangling.download(metadata::JRA55Metadata)
+function Base.download(metadata::JRA55Metadata)
 
     @root for metadatum in metadata
 

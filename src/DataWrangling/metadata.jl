@@ -534,9 +534,9 @@ a single batched call.
 Returns a `NamedTuple` keyed by the set's variable names, whose values are the
 results of each per-variable `download` call (typically the file path(s)).
 """
-function download(mset::MetadataSet; kwargs...)
+function Base.download(mset::MetadataSet; kwargs...)
     names = getfield(mset, :names)
-    return NamedTuple{names}(map(n -> download(mset[n]; kwargs...), names))
+    return NamedTuple{names}(map(n -> Base.download(mset[n]; kwargs...), names))
 end
 
 """

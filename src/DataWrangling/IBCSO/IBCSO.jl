@@ -13,7 +13,6 @@ import ..DataWrangling:
     metadata_filename,
     default_download_directory,
     dataset_variable_name,
-    download,
     longitude_interfaces,
     latitude_interfaces,
     reversed_vertical_axis,
@@ -72,7 +71,7 @@ function validate_dataset_coverage(grid, ::IBCSOMetadatum)
     end
 end
 
-function download(metadatum::IBCSOMetadatum)
+function Base.download(metadatum::IBCSOMetadatum)
     filepath = metadata_path(metadatum)
     download_dir = metadatum.dir
 

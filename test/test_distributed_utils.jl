@@ -45,9 +45,9 @@ end
 
 struct TrivalBathymetry end
 
-import NumericalEarth.DataWrangling: download, z_interfaces, longitude_interfaces, latitude_interfaces, metadata_filename
+import NumericalEarth.DataWrangling: z_interfaces, longitude_interfaces, latitude_interfaces, metadata_filename
 
-download(::Metadatum{<:TrivalBathymetry}) = nothing
+Base.download(::Metadatum{<:TrivalBathymetry}) = nothing
 Base.size(::TrivalBathymetry) = (Nλ, Nφ, 1)
 Base.size(::TrivalBathymetry, variable) = (Nλ, Nφ, 1)
 z_interfaces(::TrivalBathymetry) = (0, 1)

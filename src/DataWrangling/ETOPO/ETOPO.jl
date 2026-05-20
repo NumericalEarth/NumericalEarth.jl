@@ -14,7 +14,6 @@ import ..DataWrangling:
     metadata_filename,
     default_download_directory,
     dataset_variable_name,
-    download,
     longitude_interfaces,
     latitude_interfaces,
     reversed_vertical_axis
@@ -46,7 +45,7 @@ const ETOPO_url = "https://www.dropbox.com/scl/fi/6pwalcuuzgtpanysn4h6f/" *
 DataWrangling.metadata_url(::ETOPOMetadatum) = ETOPO_url
 metadata_filename(::ETOPO2022, name, date, region) = "ETOPO_2022_v1_60s_N90W180_surface.nc"
 
-function download(metadatum::ETOPOMetadatum)
+function Base.download(metadatum::ETOPOMetadatum)
     fileurl  = metadata_url(metadatum)
     filepath = metadata_path(metadatum)
 

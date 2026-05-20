@@ -5,7 +5,7 @@ using Statistics: median
 using NumericalEarth.Atmospheres: PrescribedAtmosphere, PrescribedPrecipitationFlux
 using NumericalEarth.Radiations: PrescribedRadiation
 using NumericalEarth.ECCO: ECCOPrescribedAtmosphere, ECCOPrescribedRadiation, ECCO4Monthly
-using NumericalEarth.DataWrangling: download, metadata_path, higher_bound
+using NumericalEarth.DataWrangling: metadata_path, higher_bound
 
 # Pre-download ECCO4Monthly atmospheric forcing variables through the artifacts
 # fallback so ECCOPrescribedAtmosphere(...) finds the files locally even when

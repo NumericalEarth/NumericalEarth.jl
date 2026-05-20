@@ -18,7 +18,7 @@ using Statistics
 
         # Testing downloading
         download_dataset_with_fallback(filepath; dataset_name="ETOPO2022") do
-            NumericalEarth.DataWrangling.download(ETOPOmetadata)
+            download(ETOPOmetadata)
         end
         @test isfile(filepath)
 

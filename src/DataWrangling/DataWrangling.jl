@@ -187,7 +187,8 @@ Arguments
 
         https://github.com/CliMA/NumericalEarth.jl/blob/main/src/DataWrangling/ECCO/README.md
 """
-function download end # methods specific to datasets are added within each dataset module
+# `download(::Metadata)` extends `Base.download` — methods specific to datasets are added
+# within each dataset module via `Base.download(metadata::FooMetadata) = ...`.
 
 # Deprecation alias. `download_dataset` was renamed to `download` (#235) — the
 # argument is metadata, not a dataset, so the verb-on-object form reads better
@@ -197,7 +198,7 @@ function download end # methods specific to datasets are added within each datas
 function download_dataset(args...; kwargs...)
     Base.depwarn("`download_dataset` has been renamed to `download`. " *
                  "Use `download(args...; kwargs...)` instead.", :download_dataset)
-    return download(args...; kwargs...)
+    return Base.download(args...; kwargs...)
 end
 
 function inpainted_metadata_path end
@@ -350,7 +351,7 @@ using .GEBCO
 using .IBCAO
 
 # Fallback: if no download extension is loaded, check that all files already exist
-function download(metadata::Metadata)
+function Base.download(metadata::Metadata)
     error("No download method for $metadata is available (is the backend package loaded?)")
 end
 

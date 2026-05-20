@@ -4,7 +4,6 @@ include("download_utils.jl")
 
 using CUDA
 using Scratch
-using NumericalEarth.DataWrangling: download
 using ParallelTestRunner: find_tests, parse_args, filter_tests!, runtests
 
 # Start with autodiscovered tests
@@ -71,7 +70,7 @@ function __init__()
 
     ETOPOmetadata = Metadatum(:bottom_height, dataset=NumericalEarth.ETOPO.ETOPO2022())
     download_dataset_with_fallback(metadata_path(ETOPOmetadata); dataset_name="ETOPO2022") do
-        NumericalEarth.DataWrangling.download(ETOPOmetadata)
+        download(ETOPOmetadata)
     end
 
     #####

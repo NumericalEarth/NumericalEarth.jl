@@ -2,7 +2,7 @@ include("runtests_setup.jl")
 include("download_utils.jl")
 
 using NumericalEarth
-using NumericalEarth.DataWrangling: download, metadata_path
+using NumericalEarth.DataWrangling: metadata_path
 using NumericalEarth.DataWrangling.ORCA: default_south_rows_to_remove
 using Oceananigans
 using Oceananigans.OrthogonalSphericalShellGrids: TripolarGrid

@@ -5,7 +5,7 @@ ENV["DATADEPS_ALWAYS_ACCEPT"] = "true"
 
 using CUDA: @allowscalar
 using NumericalEarth.WOA
-using NumericalEarth.DataWrangling: NearestNeighborInpainting, metadata_path, download
+using NumericalEarth.DataWrangling: NearestNeighborInpainting, metadata_path
 using Oceananigans.Architectures: on_architecture
 using WorldOceanAtlasTools
 

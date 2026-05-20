@@ -12,7 +12,7 @@ using NumericalEarth.DataWrangling.ERA5: ERA5HourlySingleLevel, ERA5MonthlySingl
 using NumericalEarth.DataWrangling.ERA5: ERA5HourlyPressureLevels, ERA5MonthlyPressureLevels,
                                          ERA5_all_pressure_levels, ERA5PL_dataset_variable_names,
                                          ERA5PL_netcdf_variable_names, pressure_field
-using NumericalEarth.DataWrangling: metadata_path, download, BoundingBox, Column, Linear, Nearest
+using NumericalEarth.DataWrangling: metadata_path, BoundingBox, Column, Linear, Nearest
 
 # Internal extension module — exposes dispatch helpers and NetCDF utilities
 # that are not part of the public API but worth pinning behavior for.

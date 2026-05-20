@@ -4,7 +4,7 @@ include("download_utils.jl")
 using NumericalEarth
 using NumericalEarth.ECCO
 using NumericalEarth.EN4
-using NumericalEarth.DataWrangling: NearestNeighborInpainting, metadata_path, native_times, download
+using NumericalEarth.DataWrangling: NearestNeighborInpainting, metadata_path, native_times
 
 using Dates
 using Oceananigans.Grids: topology

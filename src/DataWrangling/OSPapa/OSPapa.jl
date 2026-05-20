@@ -34,7 +34,6 @@ import ..DataWrangling:
     metadata_time_step,
     metadata_filename,
     build_filename,
-    download,
     dataset_variable_name,
     longitude_interfaces,
     latitude_interfaces,

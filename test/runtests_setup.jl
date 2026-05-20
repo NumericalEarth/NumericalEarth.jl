@@ -4,7 +4,7 @@ using CUDA
 using Test
 
 using NumericalEarth.DataWrangling
-using NumericalEarth.DataWrangling: metadata_path, download
+using NumericalEarth.DataWrangling: metadata_path
 using NumericalEarth.EN4
 using NumericalEarth.ECCO
 using NumericalEarth.ETOPO
