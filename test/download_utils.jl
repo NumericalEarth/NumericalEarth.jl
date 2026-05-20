@@ -1,4 +1,4 @@
-using Downloads
+using Downloads: Downloads
 using NumericalEarth.DataWrangling: metadata_path
 
 const ARTIFACTS_BASE_URL = "https://github.com/NumericalEarth/NumericalEarthArtifacts/releases/download/data-v1/"
