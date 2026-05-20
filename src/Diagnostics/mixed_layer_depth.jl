@@ -87,12 +87,16 @@ const f = Face()
     Nz = size(grid, 3)
     FT = eltype(grid)
 
-    # Bracket cells (k⁺ above, k⁻ below) of `zʳ`).
-    zn = znodes(grid, Center())
-    k⁺ = min(searchsortedfirst(zn, zʳ), Nz)
+    # Bracket cells (k⁺ above, k⁻ below) of `zʳ`. A descending sweep replaces
+    # `searchsortedfirst`, which dispatches into non-GPU-compilable methods.
+    k⁺ = Nz
+    @inbounds for k in Nz:-1:1
+        zₖ = znode(i, j, k, grid, c, c, c)
+        k⁺ = ifelse(zₖ ≥ zʳ, k, k⁺)
+    end
     k⁻ = max(k⁺ - 1, 1)
-    z⁺ = @inbounds zn[k⁺]
-    z⁻ = @inbounds zn[k⁻]
+    z⁺ = znode(i, j, k⁺, grid, c, c, c)
+    z⁻ = znode(i, j, k⁻, grid, c, c, c)
 
     # Reference buoyancy bN at z = zʳ
     b⁺ = @inbounds b[i, j, k⁺]
