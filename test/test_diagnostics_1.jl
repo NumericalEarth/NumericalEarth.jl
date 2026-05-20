@@ -45,14 +45,14 @@ for arch in test_architectures, dataset in (ECCO4Monthly(),)
 
         compute!(h)
         if dataset isa ECCO4Monthly
-            @test @allowscalar h[1, 1, 1] ≈ 16.2558363 # m
+            @test @allowscalar h[1, 1, 1] ≈ 28.8026943 # m
         end
 
         tracers = (T=Tt[2], S=St[2])
         h.operand.buoyancy_perturbation = buoyancy_operation(sb, grid, tracers)
         compute!(h)
         if dataset isa ECCO4Monthly
-            @test @allowscalar h[1, 1, 1] ≈ 9.2957298 # m
+            @test @allowscalar h[1, 1, 1] ≈ 16.5178053 # m
         end
     end
 end

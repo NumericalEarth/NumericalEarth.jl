@@ -1,9 +1,7 @@
 include("runtests_setup.jl")
 
 using NumericalEarth: stateindex
-using NumericalEarth.EarthSystemModels.InterfaceComputations: SeaIceAlbedo,
-                                                              InterfaceProperties,
-                                                              Radiation
+using NumericalEarth.Radiations: SeaIceAlbedo
 
 using Oceananigans.Units: Time
 
