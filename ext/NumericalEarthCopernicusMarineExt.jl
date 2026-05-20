@@ -1,19 +1,15 @@
 module NumericalEarthCopernicusMarineExt
 
-using NumericalEarth
-using CopernicusMarine
-
-using Oceananigans
-using Oceananigans.DistributedComputations: @root
-
+using CopernicusMarine: CopernicusMarine
 using Dates: DateTime
-using NumericalEarth.DataWrangling.GLORYS: GLORYSMetadata, GLORYSMetadatum
-
-import NumericalEarth.DataWrangling: download_dataset
+using Oceananigans.DistributedComputations: @root
+using NumericalEarth: NumericalEarth
+using NumericalEarth.DataWrangling: download_dataset
+using NumericalEarth.DataWrangling.GLORYS: GLORYS, GLORYSMetadata, GLORYSMetadatum
 
 # Download each date individually, instead of downloading the entire dataset at once.
 # This is useful for a possible extension of the temporal horizon of the dataset.
-function download_dataset(metadata::GLORYSMetadata; kwargs...)
+function NumericalEarth.DataWrangling.download_dataset(metadata::GLORYSMetadata; kwargs...)
     paths = Array{String}(undef, length(metadata))
     for (m, metadatum) in enumerate(metadata)
         paths[m] = download_dataset(metadatum; kwargs...)
@@ -21,11 +17,11 @@ function download_dataset(metadata::GLORYSMetadata; kwargs...)
     return paths
 end
 
-function download_dataset(meta::GLORYSMetadatum;
-                          skip_existing=true,
-                          username=get(ENV, "COPERNICUS_USERNAME", nothing),
-                          password=get(ENV, "COPERNICUS_PASSWORD", nothing),
-                          additional_kw...)
+function NumericalEarth.DataWrangling.download_dataset(meta::GLORYSMetadatum;
+                                                       skip_existing=true,
+                                                       username=get(ENV, "COPERNICUS_USERNAME", nothing),
+                                                       password=get(ENV, "COPERNICUS_PASSWORD", nothing),
+                                                       additional_kw...)
 
     output_directory = meta.dir
     output_filename = meta.filename
@@ -34,15 +30,15 @@ function download_dataset(meta::GLORYSMetadatum;
 
     toolbox = CopernicusMarine.copernicusmarine
 
-    variable_name = NumericalEarth.DataWrangling.GLORYS.GLORYS_dataset_variable_names[meta.name]
+    variable_name = GLORYS.GLORYS_dataset_variable_names[meta.name]
     variables = CopernicusMarine.pylist([variable_name])
 
-    dataset_id = NumericalEarth.DataWrangling.GLORYS.copernicusmarine_dataset_id(meta.dataset)
-    datetime_kw = if meta.dataset isa NumericalEarth.DataWrangling.GLORYS.GLORYSStatic
+    dataset_id = GLORYS.copernicusmarine_dataset_id(meta.dataset)
+    datetime_kw = if meta.dataset isa GLORYS.GLORYSStatic
         NamedTuple()
     else
-        start_datetime = NumericalEarth.DataWrangling.GLORYS.start_date_str(meta.dates)
-        end_datetime = NumericalEarth.DataWrangling.GLORYS.end_date_str(meta.dates)
+        start_datetime = GLORYS.start_date_str(meta.dates)
+        end_datetime = GLORYS.end_date_str(meta.dates)
         (; start_datetime, end_datetime)
     end
 
