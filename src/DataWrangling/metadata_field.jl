@@ -51,6 +51,28 @@ function native_convention_longitude(bbox_longitude, native)
     return (λ⁻, λ⁻ + (bbox_longitude[2] - bbox_longitude[1]))
 end
 
+restrict_longitude(bbox_interfaces, interfaces, N) =
+    restrict(bbox_interfaces, interfaces, N)
+
+restrict_longitude(::Nothing, interfaces::NTuple{2,Any}, N) = interfaces, N
+
+function restrict_longitude(bbox_interfaces, interfaces::NTuple{2,Any}, N)
+    left, right = interfaces
+    Δ = (right - left) / N
+    i⁻ = max(floor(Int, (bbox_interfaces[1] - left) / Δ), 0)
+    i⁺ = ceil(Int, (bbox_interfaces[2] - left) / Δ)
+
+    # Longitude bounding boxes may cross the native periodic seam after being
+    # mapped into the dataset's longitude convention, for example -110°..30°
+    # on ERA5's 0°..360° grid becomes 249.875°..389.875°. Preserve that
+    # continuous span instead of clamping to the native upper face.
+    if bbox_interfaces[1] >= left && bbox_interfaces[2] > right
+        return (left + i⁻ * Δ, left + i⁺ * Δ), i⁺ - i⁻
+    else
+        return restrict(bbox_interfaces, interfaces, N)
+    end
+end
+
 """
     native_grid(metadata::Metadata, arch=CPU(); halo = (3, 3, 3))
 
@@ -88,7 +110,7 @@ function construct_native_grid(metadata, bbox::BoundingBox, arch; halo)
     bbox_lon = native_convention_longitude(bbox.longitude, native_longitude)
 
     Nx, Ny, Nz = size(metadata)
-    longitude, Nx = restrict(bbox_lon,       native_longitude, Nx)
+    longitude, Nx = restrict_longitude(bbox_lon, native_longitude, Nx)
     latitude,  Ny = restrict(bbox.latitude,  native_latitude,  Ny)
 
     TX = infer_longitudinal_topology(native_longitude, longitude)

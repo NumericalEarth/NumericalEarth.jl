@@ -18,6 +18,7 @@ using Statistics: Statistics, mean
 
 using ..DataWrangling: Metadata, Metadatum, metadata_path, native_grid,
                        InverseGravity, download
+using NumericalEarth.Grids: PressureLevelVerticalDiscretization
 
 import ..DataWrangling:
     all_dates,
