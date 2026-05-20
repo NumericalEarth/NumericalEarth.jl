@@ -44,7 +44,7 @@ function os_papa_prescribed_fluxes(architecture = CPU(), FT = Float64;
 
     function flux_fts(name)
         md = Metadata(name; mdkw...)
-        download(md)
+        Downloads.download(md)
         fts = FieldTimeSeries(md, surface_grid;
                               time_indices_in_memory = length(md),
                               time_indexing = Cyclical())

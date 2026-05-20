@@ -27,7 +27,7 @@ function OSPapaPrescribedRadiation(architecture = CPU(), FT = Float32;
 
     function ospapa_fts(name)
         md = Metadata(name; mdkw...)
-        download(md)
+        Downloads.download(md)
         fts = FieldTimeSeries(md, surface_grid; time_indices_in_memory = length(md))
         fill_gaps!(fts; max_gap = max_gap_hours)
         return fts

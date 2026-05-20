@@ -325,24 +325,24 @@ end
 #####
 
 """
-    download(names::Vector{Symbol}, metadata::ERA5PressureMetadata; kwargs...)
+    Downloads.download(names::Vector{Symbol}, metadata::ERA5PressureMetadata; kwargs...)
 
 Download multiple ERA5 pressure-level variables for each date in `metadata`.
 """
 function Downloads.download(names::Vector{Symbol}, metadata::ERA5PressureMetadata; kwargs...)
     paths = String[]
     for metadatum in metadata
-        append!(paths, download(names, metadatum; kwargs...))
+        append!(paths, Downloads.download(names, metadatum; kwargs...))
     end
     return paths
 end
 
 """
-    download(mset::MetadataSet{<:ERA5PressureLevelsDataset}; kwargs...)
+    Downloads.download(mset::MetadataSet{<:ERA5PressureLevelsDataset}; kwargs...)
 
 Route a `MetadataSet` of ERA5 pressure-level variables through the existing
 multi-variable batched CDS path, instead of falling back to per-variable
-requests via the default `download(::MetadataSet)`. Each calendar day's
+requests via the default `Downloads.download(::MetadataSet)`. Each calendar day's
 variables are bundled into one CDS API request.
 """
 function Downloads.download(mset::MetadataSet{<:ERA5PressureLevelsDataset}; kwargs...)
@@ -360,11 +360,11 @@ function Downloads.download(mset::MetadataSet{<:ERA5PressureLevelsDataset}; kwar
         nothing,
     )
 
-    return download(names, representative; kwargs...)
+    return Downloads.download(names, representative; kwargs...)
 end
 
 """
-    download(names::Vector{Symbol}, meta::ERA5PressureMetadatum; skip_existing=true)
+    Downloads.download(names::Vector{Symbol}, meta::ERA5PressureMetadatum; skip_existing=true)
 
 Download multiple ERA5 pressure-level variables for a single date in one CDS API request.
 The multi-variable NetCDF is split into individual per-variable files.
@@ -415,7 +415,7 @@ function Downloads.download(names::Vector{Symbol}, meta::ERA5PressureMetadatum; 
 end
 
 """
-    download(names, dataset::ERA5Dataset, datetime; ...)
+    Downloads.download(names, dataset::ERA5Dataset, datetime; ...)
 
 Download one or more ERA5 variables at a single datetime.
 """
@@ -423,17 +423,17 @@ function Downloads.download(names::Vector{Symbol}, dataset::ERA5Dataset, datetim
                                                        region = nothing,
                                                        dir = default_download_directory(dataset))
     meta = Metadatum(first(names); dataset, date=datetime, region, dir)
-    return download(names, meta)
+    return Downloads.download(names, meta)
 end
 
 function Downloads.download(name::Symbol, dataset::ERA5Dataset, datetime;
                                                        region = nothing,
                                                        dir = default_download_directory(dataset))
-    return download([name], dataset, datetime; region, dir)
+    return Downloads.download([name], dataset, datetime; region, dir)
 end
 
 """
-    download(names, dataset::ERA5Dataset, datetimes::AbstractVector; ...)
+    Downloads.download(names, dataset::ERA5Dataset, datetimes::AbstractVector; ...)
 
 Download one or more ERA5 variables for multiple datetimes, batching by calendar day.
 """
@@ -464,7 +464,7 @@ function Downloads.download(name::Symbol,
                                                        dir = default_download_directory(dataset),
                                                        skip_existing = true,
                                                        cleanup = true)
-    return download([name], dataset, datetimes; region, dir, skip_existing, cleanup)
+    return Downloads.download([name], dataset, datetimes; region, dir, skip_existing, cleanup)
 end
 
 """

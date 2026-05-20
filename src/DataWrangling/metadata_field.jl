@@ -197,7 +197,7 @@ function Oceananigans.Fields.Field(metadata::Metadatum, arch=CPU();
                                    halo = (3, 3, 3),
                                    cache_inpainted_data = true)
 
-    download(metadata)
+    Downloads.download(metadata)
 
     # Inpainting on a (Flat, Flat, *) column field is meaningless and the
     # iterative algorithm doesn't terminate gracefully without horizontal
