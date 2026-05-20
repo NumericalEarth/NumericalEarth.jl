@@ -119,32 +119,6 @@ ncar_atmosphere_sea_ice_fluxes(FT = Float64) =
                            water_vapor_roughness_length = FT(5e-4))
 
 """
-    corrected_radiation(sea_ice)
-
-Radiation with OMIP-2 standard ocean parameters (emissivity = 1.0, albedo = 0.06)
-and CCSM3 temperature/snow/thickness-dependent sea ice albedo.
-"""
-function corrected_radiation(sea_ice)
-    hi = sea_ice.model.ice_thickness
-    hs = sea_ice.model.snow_thickness
-
-    # When snow is present, the snow layer owns the surface temperature;
-    # otherwise the ice top surface temperature is the atmosphere interface.
-    snow_thermo = sea_ice.model.snow_thermodynamics
-    Ts = if isnothing(snow_thermo)
-        sea_ice.model.ice_thermodynamics.top_surface_temperature
-    else
-        snow_thermo.top_surface_temperature
-    end
-
-    sea_ice_albedo = SeaIceAlbedo(hi, hs, Ts)
-
-    return Radiation(; ocean_emissivity  = 1.00,
-                       ocean_albedo      = 0.06,
-                       sea_ice_albedo)
-end
-
-"""
     build_coupled_model(ocean, sea_ice, atmosphere, radiation, flux_configuration;
                         velocity_formulation = :relative)
 
@@ -160,10 +134,8 @@ function build_coupled_model(ocean, sea_ice, atmosphere, radiation, flux_configu
         interfaces = ComponentInterfaces(atmosphere, ocean, sea_ice;
                                          radiation,
                                          ocean_minimum_salinity = convert(FT, ocean_minimum_salinity))
-        return OceanSeaIceModel(ocean, sea_ice; atmosphere, interfaces)
+        return OceanSeaIceModel(sea_ice, ocean; atmosphere, interfaces)
     end
-
-    radiation = corrected_radiation(sea_ice)
 
     velocity_difference_obj = velocity_formulation == :relative ? RelativeVelocity() :
                               velocity_formulation == :wind     ? WindVelocity()     :
@@ -194,7 +166,7 @@ function build_coupled_model(ocean, sea_ice, atmosphere, radiation, flux_configu
         error("Unknown flux_configuration: $flux_configuration. Options: :default, :corrected, :shear_aware, :ncar")
     end
 
-    return OceanSeaIceModel(ocean, sea_ice; atmosphere, interfaces)
+    return OceanSeaIceModel(sea_ice, ocean; atmosphere, interfaces)
 end
 
 #####
@@ -389,7 +361,7 @@ function omip_simulation(config::Symbol = :halfdegree;
         atmosphere_dir = forcing_dir
     end
 
-    atmosphere, radiation = omip_atmosphere(arch;
+    atmosphere, radiation = omip_atmosphere(arch, sea_ice;
                                             forcing_dir = atmosphere_dir,
                                             start_date,
                                             end_date,

@@ -28,10 +28,11 @@ using NumericalEarth.EarthSystemModels.InterfaceComputations:
     WindDependentWaveFormulation,
     TemperatureDependentAirViscosity,
     SimilarityScales,
-    SeaIceAlbedo,
     FixedIterations,
     large_yeager_stability_functions,
     atmosphere_sea_ice_stability_functions
+
+using NumericalEarth.Radiations: SeaIceAlbedo, SurfaceRadiationProperties
 
 using NumericalEarth.Bathymetry: regrid_bathymetry, ORCAGrid
 using NumericalEarth.DataWrangling: Metadatum, Metadata, DatasetRestoring,
@@ -39,8 +40,9 @@ using NumericalEarth.DataWrangling: Metadatum, Metadata, DatasetRestoring,
                                     EN4Monthly, ECCO4Monthly
 using NumericalEarth.DataWrangling.WOA: WOAMonthly
 using NumericalEarth.DataWrangling.ORCA: ORCA1
-using NumericalEarth.DataWrangling.JRA55: MultiYearJRA55, JRA55NetCDFBackend,
-                                          JRA55PrescribedAtmosphere
+using NumericalEarth.DataWrangling.JRA55: MultiYearJRA55, RepeatYearJRA55,
+                                          JRA55PrescribedAtmosphere,
+                                          JRA55PrescribedRadiation
 using NumericalEarth.Diagnostics: MixedLayerDepthField
 
 export omip_simulation,
