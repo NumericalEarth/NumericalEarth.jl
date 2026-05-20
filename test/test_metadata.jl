@@ -4,9 +4,11 @@ using NumericalEarth.DataWrangling: Column, Linear, Nearest,
                                     BoundingBox, dataset_location,
                                     restrict_location, native_grid
 using NumericalEarth.DataWrangling: restrict
+using NumericalEarth.DataWrangling.ERA5: ERA5HourlySingleLevel
 
 using Oceananigans: location
-using Oceananigans.Grids: topology, Flat, Bounded, Periodic, RectilinearGrid, LatitudeLongitudeGrid
+using Oceananigans.Grids: topology, Flat, Bounded, Periodic, RectilinearGrid,
+                          LatitudeLongitudeGrid, Center, λnodes
 
 @testset "Column construction" begin
     col = Column(35.1, 50.1)
@@ -125,6 +127,19 @@ end
     bbox_lat = BoundingBox(latitude=(-30, 30))
     md_lat = Metadatum(:temperature; dataset=ECCO4Monthly(), region=bbox_lat)
     @test topology(native_grid(md_lat))[1] == Periodic
+
+    # ERA5 uses a 0°..360° native longitude convention. A bbox specified as
+    # -110°..30° crosses that seam after conversion and must keep the full span.
+    seam_bbox = BoundingBox(longitude=(-110, 30), latitude=(-25, 35))
+    seam_md = Metadatum(:temperature; dataset=ERA5HourlySingleLevel(),
+                        date=DateTime(2004, 12, 27), region=seam_bbox)
+    seam_grid = native_grid(seam_md)
+    seam_λ = λnodes(seam_grid, Center())
+
+    @test length(seam_λ) == 561
+    @test first(seam_λ) == 250.0f0
+    @test last(seam_λ) == 390.0f0
+    @test topology(seam_grid)[1] == Bounded
 end
 
 @testset "Metadata region keyword" begin

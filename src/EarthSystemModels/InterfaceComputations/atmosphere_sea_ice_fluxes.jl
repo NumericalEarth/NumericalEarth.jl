@@ -110,8 +110,7 @@ end
 
     local_interior_state = (u=uˢⁱ, v=vˢⁱ, T=Tᵒᶜ, S=Sᵒᶜ, hi=hˢⁱ, hs=hˢⁿ, hc=hc)
 
-    # Local radiative state at this cell. Returns zero-valued state when
-    # radiation is off.
+    # Local radiative state at this cell. Returns zero-valued state when radiation is off.
     radiation_state = air_sea_ice_interface_radiation_state(radiation_kernel_props,
                                                             radiation_exchanger_state,
                                                             i, j, kᴺ, grid, time)
