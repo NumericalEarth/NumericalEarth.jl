@@ -59,6 +59,8 @@ ERA5_dataset_variable_names = Dict(
     :significant_wave_height         => "significant_height_of_combined_wind_waves_and_swell",
     :mean_wave_period                => "mean_wave_period",
     :mean_wave_direction             => "mean_wave_direction",
+    :geopotential                    => "geopotential",
+    :geopotential_height             => "geopotential",
 )
 
 # NetCDF short variable names (what's actually in the downloaded files)
@@ -90,6 +92,8 @@ ERA5_netcdf_variable_names = Dict(
     :significant_wave_height         => "swh",
     :mean_wave_period                => "mwp",
     :mean_wave_direction             => "mwd",
+    :geopotential                    => "z",
+    :geopotential_height             => "z",
 )
 
 # Variables available for download
