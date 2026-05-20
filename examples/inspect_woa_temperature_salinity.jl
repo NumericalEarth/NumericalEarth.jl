@@ -69,6 +69,7 @@ grid = LatitudeLongitudeGrid(arch;
 T_interp = CenterField(grid)
 S_interp = CenterField(grid)
 
+# set `T_interp` from `woa.temperature`, etc.
 set!((; temperature = T_interp, salinity = S_interp), woa)
 
 Nz_interp = size(grid, 3)
