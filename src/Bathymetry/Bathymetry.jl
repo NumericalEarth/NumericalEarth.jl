@@ -2,7 +2,7 @@ module Bathymetry
 
 export regrid_bathymetry, ORCAGrid
 
-using Downloads: Downloads
+using Downloads: Downloads, download
 using ImageMorphology: ImageMorphology
 using JLD2: JLD2, jldopen
 using KernelAbstractions: @kernel, @index

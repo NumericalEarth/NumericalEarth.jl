@@ -91,7 +91,7 @@ metadata_filename(::OSPapaFluxHourly, name, date, region) = flux_uniform_filenam
 build_filename(::OSPapaFluxHourly, name, dates::AbstractArray, region) =
     flux_uniform_filename(first(dates), last(dates))
 
-function Base.download(md::OSPapaFluxMetadata)
+function Downloads.download(md::OSPapaFluxMetadata)
     uniform_path = joinpath(md.dir, metadata_filename(md))
     isfile(uniform_path) && return uniform_path
 

@@ -3,6 +3,7 @@ using Oceananigans
 using CUDA
 using Test
 
+using Downloads: download
 using NumericalEarth.DataWrangling
 using NumericalEarth.DataWrangling: metadata_path
 using NumericalEarth.EN4

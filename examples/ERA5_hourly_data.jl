@@ -30,6 +30,7 @@
 # You also need CDS API credentials in `~/.cdsapirc`.
 # See <https://cds.climate.copernicus.eu/how-to-api> for setup instructions.
 
+using Downloads: download
 using NumericalEarth
 using NumericalEarth.DataWrangling.ERA5
 using CDSAPI

@@ -108,7 +108,7 @@ end
 
 z_interfaces(::ORCAMetadatum) = nothing
 
-function Base.download(metadatum::ORCAMetadatum)
+function Downloads.download(metadatum::ORCAMetadatum)
     fileurl  = metadata_url(metadatum)
     filepath = metadata_path(metadatum)
 

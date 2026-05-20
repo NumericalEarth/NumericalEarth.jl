@@ -167,7 +167,7 @@ function DataWrangling.metadata_url(m::EN4Metadata)
     end
 end
 
-function Base.download(metadata::Metadata{<:EN4Monthly})
+function Downloads.download(metadata::Metadata{<:EN4Monthly})
     dir = metadata.dir
     missingzips = []
 

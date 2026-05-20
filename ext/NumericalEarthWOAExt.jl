@@ -1,5 +1,6 @@
 module NumericalEarthWOAExt
 
+using Downloads: Downloads
 using Oceananigans.DistributedComputations: @root
 using NumericalEarth: NumericalEarth
 using NumericalEarth.DataWrangling: Metadata, metadata_path
@@ -33,7 +34,7 @@ function woa_filepath(woa_tracer, product_year, period)
           "(tried product years: $product_year, $(join(fallback_product_years, ", ")))")
 end
 
-function Base.download(metadata::Metadata{<:WOAClimatology}; skip_existing=true)
+function Downloads.download(metadata::Metadata{<:WOAClimatology}; skip_existing=true)
     @root for metadatum in metadata
         linkpath = metadata_path(metadatum)
 

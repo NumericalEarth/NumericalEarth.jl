@@ -1,6 +1,7 @@
 module NumericalEarthCDSAPIExt
 
 using CDSAPI: CDSAPI
+using Downloads: Downloads
 
 using Dates: Dates
 using Oceananigans: Oceananigans
@@ -152,7 +153,7 @@ Before downloading, you must:
 
 See https://cds.climate.copernicus.eu/how-to-api for details.
 """
-function Base.download(meta::ERA5Metadatum; skip_existing=true)
+function Downloads.download(meta::ERA5Metadatum; skip_existing=true)
     output_path = metadata_path(meta)
 
     # Skip download if file already exists
@@ -181,7 +182,7 @@ end
 
 const CDS_MAX_FIELDS_PER_REQUEST = 5000
 
-function Base.download(metadata::ERA5Metadata; skip_existing=true, cleanup=true)
+function Downloads.download(metadata::ERA5Metadata; skip_existing=true, cleanup=true)
     dates = metadata.dates isa AbstractVector ? metadata.dates : [metadata.dates]
     batches = batch_datetimes_for_cds(dates, metadata.dataset, 1)
 
@@ -328,7 +329,7 @@ end
 
 Download multiple ERA5 pressure-level variables for each date in `metadata`.
 """
-function Base.download(names::Vector{Symbol}, metadata::ERA5PressureMetadata; kwargs...)
+function Downloads.download(names::Vector{Symbol}, metadata::ERA5PressureMetadata; kwargs...)
     paths = String[]
     for metadatum in metadata
         append!(paths, download(names, metadatum; kwargs...))
@@ -344,7 +345,7 @@ multi-variable batched CDS path, instead of falling back to per-variable
 requests via the default `download(::MetadataSet)`. Each calendar day's
 variables are bundled into one CDS API request.
 """
-function Base.download(mset::MetadataSet{<:ERA5PressureLevelsDataset}; kwargs...)
+function Downloads.download(mset::MetadataSet{<:ERA5PressureLevelsDataset}; kwargs...)
     names = collect(getfield(mset, :names))
 
     # Build a representative ERA5PressureMetadata at the shared scope. The
@@ -368,7 +369,7 @@ end
 Download multiple ERA5 pressure-level variables for a single date in one CDS API request.
 The multi-variable NetCDF is split into individual per-variable files.
 """
-function Base.download(names::Vector{Symbol}, meta::ERA5PressureMetadatum; skip_existing=true)
+function Downloads.download(names::Vector{Symbol}, meta::ERA5PressureMetadatum; skip_existing=true)
     name_path_pairs = []
     for name in names
         metadatum = Metadatum(name;
@@ -418,14 +419,14 @@ end
 
 Download one or more ERA5 variables at a single datetime.
 """
-function Base.download(names::Vector{Symbol}, dataset::ERA5Dataset, datetime;
+function Downloads.download(names::Vector{Symbol}, dataset::ERA5Dataset, datetime;
                                                        region = nothing,
                                                        dir = default_download_directory(dataset))
     meta = Metadatum(first(names); dataset, date=datetime, region, dir)
     return download(names, meta)
 end
 
-function Base.download(name::Symbol, dataset::ERA5Dataset, datetime;
+function Downloads.download(name::Symbol, dataset::ERA5Dataset, datetime;
                                                        region = nothing,
                                                        dir = default_download_directory(dataset))
     return download([name], dataset, datetime; region, dir)
@@ -436,7 +437,7 @@ end
 
 Download one or more ERA5 variables for multiple datetimes, batching by calendar day.
 """
-function Base.download(names::Vector{Symbol},
+function Downloads.download(names::Vector{Symbol},
                                                        dataset::ERA5Dataset,
                                                        datetimes::AbstractVector;
                                                        region = nothing,
@@ -456,7 +457,7 @@ function Base.download(names::Vector{Symbol},
     return paths
 end
 
-function Base.download(name::Symbol,
+function Downloads.download(name::Symbol,
                                                        dataset::ERA5Dataset,
                                                        datetimes::AbstractVector;
                                                        region = nothing,

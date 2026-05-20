@@ -65,7 +65,7 @@ const GEBCO_zip_url = "https://www.bodc.ac.uk/data/open_download/gebco/gebco_202
 const GEBCO_nc_filename = "GEBCO_2024.nc"
 metadata_filename(::GEBCO2024, name, date, bounding_box) = GEBCO_nc_filename
 
-function Base.download(metadatum::GEBCOMetadatum)
+function Downloads.download(metadatum::GEBCOMetadatum)
     filepath = metadata_path(metadatum)
     download_dir = metadatum.dir
 

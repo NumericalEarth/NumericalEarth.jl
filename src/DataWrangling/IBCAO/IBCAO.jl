@@ -75,7 +75,7 @@ function validate_dataset_coverage(grid, ::IBCAOMetadatum)
     end
 end
 
-function Base.download(metadatum::IBCAOMetadatum)
+function Downloads.download(metadatum::IBCAOMetadatum)
     nc_path   = metadata_path(metadatum)
     tiff_path = joinpath(metadatum.dir, IBCAO_tiff_filename)
 

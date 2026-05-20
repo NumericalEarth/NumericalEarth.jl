@@ -301,7 +301,7 @@ function DataWrangling.metadata_url(m::Metadata{<:ECCO4Monthly})
     return ECCO4_url * dataset_variable_name(m) * "/" * year * "/" * m.filename
 end
 
-function Base.download(metadata::ECCOMetadata)
+function Downloads.download(metadata::ECCOMetadata)
     username = get(ENV, "ECCO_USERNAME", nothing)
     password = get(ENV, "ECCO_WEBDAV_PASSWORD", nothing)
     dir = metadata.dir

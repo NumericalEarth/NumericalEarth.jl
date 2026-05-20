@@ -71,7 +71,7 @@ function validate_dataset_coverage(grid, ::IBCSOMetadatum)
     end
 end
 
-function Base.download(metadatum::IBCSOMetadatum)
+function Downloads.download(metadatum::IBCSOMetadatum)
     filepath = metadata_path(metadatum)
     download_dir = metadatum.dir
 
