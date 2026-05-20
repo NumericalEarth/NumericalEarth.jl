@@ -152,11 +152,6 @@ function mangling_for(metadata, data_lat_count)
                                       nothing
 end
 
-# Preserve wrapper shape while migrating the backing storage to the target
-# architecture so kernel arguments stay GPU-compatible.
-arch_array(arch, data) = on_architecture(arch, data)
-arch_array(arch, data::Base.ReshapedArray) = reshape(on_architecture(arch, parent(data)), size(data))
-
 # `read_data(data, i, j, k, region, mangling, FT)` returns the file value at
 # the grid's (i, j, k) as `FT`, with `Missing` converted to NaN.
 @inline read_data(data, i, j, k, ::Nothing,     mangling, FT) = nan_convert_missing(FT, mangle(i, j, k, data, mangling))
@@ -214,7 +209,7 @@ function set_region_data!(target::Field, data, λc, φc, metadata;
     FT     = eltype(target)
     grid   = target.grid
     arch   = architecture(grid)
-    data   = arch_array(arch, data)
+    data   = on_architecture(arch, data)
     launch!(arch, grid, :xyz, _set_region_kernel!, interior(target), data, region, mangling, conversion, FT)
     return nothing
 end
@@ -228,7 +223,7 @@ function set_region_data!(target::FieldTimeSeries, data, λc, φc, metadata;
     grid   = target.grid
     arch   = architecture(grid)
     FT     = eltype(target)
-    data   = arch_array(arch, data)
+    data   = on_architecture(arch, data)
     for (data_time, slot_time) in zip(axes(data, 4), slot_indices)
         dest = view(interior(target), :, :, :, slot_time)
         slice = view(data, :, :, :, data_time)
