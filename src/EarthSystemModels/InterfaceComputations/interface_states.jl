@@ -1,24 +1,18 @@
-using GPUArraysCore: @allowscalar
-using Printf
-
-import ClimaSeaIce
-import Thermodynamics as AtmosphericThermodynamics
-using Thermodynamics: Liquid, Ice
+using ClimaSeaIce: ClimaSeaIce
+using Thermodynamics: Thermodynamics as AtmosphericThermodynamics
 
 #####
 ##### Interface properties
 #####
 
-struct InterfaceProperties{R, Q, T, V}
-    radiation :: R
+struct InterfaceProperties{Q, T, V}
     specific_humidity_formulation :: Q
     temperature_formulation :: T
     velocity_formulation :: V
 end
 
 Adapt.adapt_structure(to, p::InterfaceProperties) =
-    InterfaceProperties(Adapt.adapt(to, p.radiation),
-                        Adapt.adapt(to, p.specific_humidity_formulation),
+    InterfaceProperties(Adapt.adapt(to, p.specific_humidity_formulation),
                         Adapt.adapt(to, p.temperature_formulation),
                         Adapt.adapt(to, p.velocity_formulation))
 
@@ -43,7 +37,7 @@ function Base.summary(q★::ImpureSaturationSpecificHumidity)
 
 
     return string("ImpureSaturationSpecificHumidity{$phase_str}(water_mole_fraction=",
-                  prettysummary(q★.water_mole_fraction), ")") 
+                  prettysummary(q★.water_mole_fraction), ")")
 end
 
 Base.show(io::IO, q★::ImpureSaturationSpecificHumidity) = print(io, summary(q★))
@@ -59,18 +53,19 @@ ImpureSaturationSpecificHumidity(phase) = ImpureSaturationSpecificHumidity(phase
 @inline compute_water_mole_fraction(x_H₂O::Number, salinity) = x_H₂O
 
 # COARE 3.6 / Edson (2013) pressure-based saturation specific humidity:
-#  qₛ = ε eₛ / (p - (1 - ε) eₛ),   ε = Rᵈ / Rᵛ
-@inline function surface_specific_humidity(formulation::ImpureSaturationSpecificHumidity, ℂᵃᵗ, Tᵃᵗ, pᵃᵗ, qᵃᵗ, Tₛ, Sₛ=zero(Tₛ))
+#   qₛ = εᵈᵛ⁻¹ pᵛ⁺ / (p − (1 − ε) pᵛ⁺),   εᵈᵛ⁻¹ = Rᵈ / Rᵥ
+# Direct evaluation at the atmospheric pressure p.
+@inline function surface_specific_humidity(formulation::ImpureSaturationSpecificHumidity, ℂᵃᵗ, pᵃᵗ, Tₛ, Sₛ=zero(Tₛ))
     FT = eltype(Tₛ)
     CT = eltype(ℂᵃᵗ)
     T  = convert(CT, Tₛ)
     p  = convert(CT, pᵃᵗ)
-    p★ = AtmosphericThermodynamics.saturation_vapor_pressure(ℂᵃᵗ, T, formulation.phase)
 
+    # Raoult's law on the saturation vapor pressure.
     χ_H₂O = compute_water_mole_fraction(formulation.water_mole_fraction, Sₛ)
-    eₛ = χ_H₂O * p★
-    ε  = 1 / AtmosphericThermodynamics.Parameters.Rv_over_Rd(ℂᵃᵗ)
-    qₛ = ε * eₛ / (p - (1 - ε) * eₛ)
+    pᵛ⁺   = χ_H₂O * AtmosphericThermodynamics.saturation_vapor_pressure(ℂᵃᵗ, T, formulation.phase)
+    εᵈᵛ⁻¹ = 1 / AtmosphericThermodynamics.Parameters.Rv_over_Rd(ℂᵃᵗ)
+    qₛ    = εᵈᵛ⁻¹ * pᵛ⁺ / (p - (1 - εᵈᵛ⁻¹) * pᵛ⁺)
 
     return convert(FT, qₛ)
 end
@@ -257,7 +252,7 @@ end
     Ωᵀ = 𝒬ᵀ * λ  # unnormalized sensible heat coefficient (= Ωc * ΔT)
     D  = F.κ * ΔT - Ωᵀ * F.δ
     T★ = (Ψᵢ.T * F.κ * ΔT - (Jᵀ * ΔT + Ωᵀ * Tᵃᵗ) * F.δ) / D
-    
+
     return ifelse(D == 0, Ψₛ.T, T★)
 end
 
@@ -270,7 +265,8 @@ end
 # dominated). We linearize: Qa(Tₛ) ≈ Qa(Tₛ⁻) + β (Tₛ − Tₛ⁻) with β = 4σεTₛ⁻³,
 # yielding the Newton-like semi-implicit update:
 #   Tₛ = [Tᵦ + β R Tₛ⁻ - Ωc R Tᵃᵗ - Qa R] / [1 + β R - Ωc R]
-@inline function conductive_flux_balance_temperature(st, R, hᵢ, Ψₛ, ℙₛ, 𝒬ᵀ, 𝒬ᵛ, ℐꜛˡʷ, Qd, Ψᵢ, ℙᵢ, Ψₐ, ℙₐ)
+@inline function conductive_flux_balance_temperature(st, R, Ψₛ, ℙₛ, 𝒬ᵀ, 𝒬ᵛ, ℐꜛˡʷ, Qd, Ψᵢ, ℙᵢ, Ψₐ, ℙₐ)
+    hᵢ = Ψᵢ.hi
     hc = Ψᵢ.hc
 
     # Bottom temperature at the melting point
@@ -286,14 +282,15 @@ end
     Ωc = ifelse(ΔT == zero(ΔT), zero(Tₛ⁻), 𝒬ᵀ / ΔT)
 
     # Newton linearization of upwelling longwave: ℐꜛˡʷ(Tₛ) ≈ ℐꜛˡʷ(Tₛ⁻) + β (Tₛ − Tₛ⁻).
-    σ = ℙₛ.radiation.σ
-    ϵ = ℙₛ.radiation.ϵ
-    β = 4 * σ * ϵ * Tₛ⁻^3
+    # Since ℐꜛˡʷ = σ ϵ Tₛ⁻⁴, we have β = 4 σ ϵ Tₛ⁻³ = 4 ℐꜛˡʷ / Tₛ⁻.
+    β = 4 * ℐꜛˡʷ / Tₛ⁻
 
     # Flux balance solution with T⁴ linearization (stable even at ΔT = 0):
     D  = 1 + β * R - Ωc * R
     T★ = (Tᵦ + β * R * Tₛ⁻ - Ωc * R * Tᵃᵗ - Qa * R) / D
     T★ = ifelse(D == 0, Tₛ⁻, T★)
+    T★ = ifelse(isnan(T★), Tₛ⁻, T★)
+
 
     # Cap the temperature step for iteration stability
     ΔT★ = T★ - Tₛ⁻
@@ -315,26 +312,23 @@ end
 @inline function flux_balance_temperature(st::SkinTemperature{<:ClimaSeaIce.ConductiveFlux},
                                           Ψₛ, ℙₛ, 𝒬ᵀ, 𝒬ᵛ, ℐꜛˡʷ, Qd, Ψᵢ, ℙᵢ, Ψₐ, ℙₐ)
     k  = st.internal_flux.conductivity
-    hᵢ = Ψᵢ.hi
-    R  = hᵢ / k
-    return conductive_flux_balance_temperature(st, R, hᵢ, Ψₛ, ℙₛ, 𝒬ᵀ, 𝒬ᵛ, ℐꜛˡʷ, Qd, Ψᵢ, ℙᵢ, Ψₐ, ℙₐ)
+    R  = Ψᵢ.hi / k
+    return conductive_flux_balance_temperature(st, R, Ψₛ, ℙₛ, 𝒬ᵀ, 𝒬ᵛ, ℐꜛˡʷ, Qd, Ψᵢ, ℙᵢ, Ψₐ, ℙₐ)
 end
 
 # Snow + ice: R = hₛ / kₛ + hᵢ / kᵢ
 @inline function flux_balance_temperature(st::SkinTemperature{<:ClimaSeaIce.SeaIceThermodynamics.IceSnowConductiveFlux},
                                           Ψₛ, ℙₛ, 𝒬ᵀ, 𝒬ᵛ, ℐꜛˡʷ, Qd, Ψᵢ, ℙᵢ, Ψₐ, ℙₐ)
     F  = st.internal_flux
-    hᵢ = Ψᵢ.hi
-    hₛ = Ψᵢ.hs
-    R  = hₛ / F.snow_conductivity + hᵢ / F.ice_conductivity
-    return conductive_flux_balance_temperature(st, R, hᵢ, Ψₛ, ℙₛ, 𝒬ᵀ, 𝒬ᵛ, ℐꜛˡʷ, Qd, Ψᵢ, ℙᵢ, Ψₐ, ℙₐ)
+    R  = Ψᵢ.hs / F.snow_conductivity + Ψᵢ.hi / F.ice_conductivity
+    return conductive_flux_balance_temperature(st, R, Ψₛ, ℙₛ, 𝒬ᵀ, 𝒬ᵛ, ℐꜛˡʷ, Qd, Ψᵢ, ℙᵢ, Ψₐ, ℙₐ)
 end
 
 @inline function compute_interface_temperature(st::SkinTemperature,
                                                interface_state,
                                                atmosphere_state,
                                                interior_state,
-                                               downwelling_radiation,
+                                               radiation_state,
                                                interface_properties,
                                                atmosphere_properties,
                                                interior_properties)
@@ -350,16 +344,18 @@ end
     #ℰv = 0 #AtmosphericThermodynamics.latent_heat_vapor(ℂᵃᵗ, Tᵃᵗ)
     ℒⁱ = AtmosphericThermodynamics.latent_heat_sublim(ℂᵃᵗ, Tᵃᵗ)
 
-    # upwelling radiation is calculated explicitly
+    # upwelling radiation is calculated explicitly. radiation_state is
+    # produced by `air_sea_interface_radiation_state` (or its sea-ice
+    # variant) and contains zero-valued σ/α/ϵ/SW/LW when radiation is off.
     Tₛ⁻ = interface_state.T # approximate interface temperature from previous iteration
-    σ = interface_properties.radiation.σ
-    ϵ = interface_properties.radiation.ϵ
-    α = interface_properties.radiation.α
+    σ = radiation_state.σ
+    ϵ = radiation_state.ϵ
+    α = radiation_state.α
 
-    ℐꜜˢʷ = downwelling_radiation.ℐꜜˢʷ
-    ℐꜜˡʷ = downwelling_radiation.ℐꜜˡʷ
-    ℐꜛˡʷ = emitted_longwave_radiation(Tₛ⁻, σ, ϵ)
-    Qd = net_absorbed_interface_radiation(ℐꜜˢʷ, ℐꜜˡʷ, α, ϵ)
+    ℐꜜˢʷ = radiation_state.ℐꜜˢʷ
+    ℐꜜˡʷ = radiation_state.ℐꜜˡʷ
+    ℐꜛˡʷ = σ * ϵ * Tₛ⁻^4
+    Qd = - (1 - α) * ℐꜜˢʷ - ϵ * ℐꜜˡʷ
 
     u★ = interface_state.u★
     θ★ = interface_state.θ★

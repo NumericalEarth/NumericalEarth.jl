@@ -1,30 +1,17 @@
-using StaticArrays
-using Thermodynamics
-using OffsetArrays
+using KernelAbstractions: @kernel, @index
+using Oceananigans: initialize!
+using Oceananigans.Architectures: architecture
+using Oceananigans.Units: Time
+using Oceananigans.Grids: inactive_node, topology
+using Oceananigans.Utils: launch!, KernelParameters
+using Oceananigans.Operators: ℑxᶜᵃᵃ, ℑyᵃᶜᵃ
+using Oceananigans.Units: Time
 
 using ..EarthSystemModels: reference_density,
                            heat_capacity,
-                           sea_ice_concentration,
-                           sea_ice_thickness,
                            thermodynamics_parameters,
                            ocean_surface_temperature,
                            ocean_surface_salinity
-
-using ClimaSeaIce: SeaIceModel
-
-using Oceananigans: HydrostaticFreeSurfaceModel, architecture
-using Oceananigans.Units: Time
-using Oceananigans.Grids: inactive_node, node, topology
-using Oceananigans.BoundaryConditions: fill_halo_regions!
-using Oceananigans.Fields: ConstantField, interpolate, FractionalIndices
-using Oceananigans.Utils: launch!, KernelParameters
-using Oceananigans.Operators: ℑxᶜᵃᵃ, ℑyᵃᶜᵃ, ℑxᶠᵃᵃ, ℑyᵃᶠᵃ
-using Oceananigans.Units: Time
-
-using KernelAbstractions: @kernel, @index
-
-import Oceananigans.Simulations: initialize!
-import Oceananigans.Architectures: on_architecture
 
 #####
 ##### Container for organizing information related to fluxes
@@ -70,22 +57,18 @@ struct AtmosphereOceanFluxes{F}
     friction_velocity     :: F
     temperature_scale     :: F
     water_vapor_scale     :: F
-    upwelling_longwave    :: F
-    downwelling_longwave  :: F
-    downwelling_shortwave :: F
 end
 
 function AtmosphereOceanFluxes(grid)
     F = Field{Center, Center, Nothing}
     return AtmosphereOceanFluxes(F(grid), F(grid), F(grid),
                                  F(grid), F(grid), F(grid),
-                                 F(grid), F(grid), F(grid),
                                  F(grid), F(grid))
 end
 
-AtmosphereOceanFluxes(::Nothing) = AtmosphereOceanFluxes(ntuple(_ -> ZeroField(), 11)...)
+AtmosphereOceanFluxes(::Nothing) = AtmosphereOceanFluxes(ntuple(_ -> ZeroField(), 8)...)
 
-Adapt.adapt_structure(to, fluxes::AtmosphereOceanFluxes) = 
+Adapt.adapt_structure(to, fluxes::AtmosphereOceanFluxes) =
     AtmosphereOceanFluxes(Adapt.adapt(to, fluxes.latent_heat),
                           Adapt.adapt(to, fluxes.sensible_heat),
                           Adapt.adapt(to, fluxes.water_vapor),
@@ -93,12 +76,9 @@ Adapt.adapt_structure(to, fluxes::AtmosphereOceanFluxes) =
                           Adapt.adapt(to, fluxes.y_momentum),
                           Adapt.adapt(to, fluxes.friction_velocity),
                           Adapt.adapt(to, fluxes.temperature_scale),
-                          Adapt.adapt(to, fluxes.water_vapor_scale),
-                          Adapt.adapt(to, fluxes.upwelling_longwave),
-                          Adapt.adapt(to, fluxes.downwelling_longwave),
-                          Adapt.adapt(to, fluxes.downwelling_shortwave))
+                          Adapt.adapt(to, fluxes.water_vapor_scale))
 
-on_architecture(arch, fluxes::AtmosphereOceanFluxes) = 
+Oceananigans.Architectures.on_architecture(arch, fluxes::AtmosphereOceanFluxes) =
     AtmosphereOceanFluxes(on_architecture(arch, fluxes.latent_heat),
                           on_architecture(arch, fluxes.sensible_heat),
                           on_architecture(arch, fluxes.water_vapor),
@@ -106,10 +86,7 @@ on_architecture(arch, fluxes::AtmosphereOceanFluxes) =
                           on_architecture(arch, fluxes.y_momentum),
                           on_architecture(arch, fluxes.friction_velocity),
                           on_architecture(arch, fluxes.temperature_scale),
-                          on_architecture(arch, fluxes.water_vapor_scale),
-                          on_architecture(arch, fluxes.upwelling_longwave),
-                          on_architecture(arch, fluxes.downwelling_longwave),
-                          on_architecture(arch, fluxes.downwelling_shortwave))
+                          on_architecture(arch, fluxes.water_vapor_scale))
 
 struct AtmosphereSeaIceFluxes{F}
     latent_heat   :: F
@@ -126,14 +103,14 @@ end
 
 AtmosphereSeaIceFluxes(::Nothing) = AtmosphereSeaIceFluxes(ntuple(_ -> ZeroField(), 5)...)
 
-Adapt.adapt_structure(to, fluxes::AtmosphereSeaIceFluxes) = 
+Adapt.adapt_structure(to, fluxes::AtmosphereSeaIceFluxes) =
     AtmosphereSeaIceFluxes(Adapt.adapt(to, fluxes.latent_heat),
                            Adapt.adapt(to, fluxes.sensible_heat),
                            Adapt.adapt(to, fluxes.water_vapor),
                            Adapt.adapt(to, fluxes.x_momentum),
                            Adapt.adapt(to, fluxes.y_momentum))
 
-on_architecture(arch, fluxes::AtmosphereSeaIceFluxes) = 
+Oceananigans.Architectures.on_architecture(arch, fluxes::AtmosphereSeaIceFluxes) =
     AtmosphereSeaIceFluxes(on_architecture(arch, fluxes.latent_heat),
                            on_architecture(arch, fluxes.sensible_heat),
                            on_architecture(arch, fluxes.water_vapor),
@@ -157,14 +134,14 @@ end
 
 SeaIceOceanFluxes(::Nothing) = SeaIceOceanFluxes(ntuple(_ -> ZeroField(), 5)...)
 
-Adapt.adapt_structure(to, fluxes::SeaIceOceanFluxes) = 
+Adapt.adapt_structure(to, fluxes::SeaIceOceanFluxes) =
     SeaIceOceanFluxes(Adapt.adapt(to, fluxes.interface_heat),
                       Adapt.adapt(to, fluxes.frazil_heat),
                       Adapt.adapt(to, fluxes.salt),
                       Adapt.adapt(to, fluxes.x_momentum),
                       Adapt.adapt(to, fluxes.y_momentum))
 
-on_architecture(arch, fluxes::SeaIceOceanFluxes) = 
+Oceananigans.Architectures.on_architecture(arch, fluxes::SeaIceOceanFluxes) =
     SeaIceOceanFluxes(on_architecture(arch, fluxes.interface_heat),
                       on_architecture(arch, fluxes.frazil_heat),
                       on_architecture(arch, fluxes.salt),
@@ -174,7 +151,8 @@ on_architecture(arch, fluxes::SeaIceOceanFluxes) =
 # ZeroFluxes is returned by computed_fluxes(::Nothing) for absent interfaces.
 # It contains the union of all flux field names across interface types.
 struct ZeroFluxes{Z}
-    # Atmosphere-ocean and atmosphere-sea-ice flux fields
+    # Atmosphere-ocean and atmosphere-sea-ice flux fields (turbulent only;
+    # radiative diagnostic fields live on the radiation component)
     latent_heat           :: Z
     sensible_heat         :: Z
     water_vapor           :: Z
@@ -183,16 +161,13 @@ struct ZeroFluxes{Z}
     friction_velocity     :: Z
     temperature_scale     :: Z
     water_vapor_scale     :: Z
-    upwelling_longwave    :: Z
-    downwelling_longwave  :: Z
-    downwelling_shortwave :: Z
     # Sea ice-ocean flux fields
     interface_heat        :: Z
     frazil_heat           :: Z
     salt                  :: Z
 end
 
-ZeroFluxes() = ZeroFluxes(ntuple(_ -> ZeroField(), 14)...)
+ZeroFluxes() = ZeroFluxes(ntuple(_ -> ZeroField(), 11)...)
 
 @inline computed_fluxes(::Nothing) = ZeroFluxes()
 
@@ -208,10 +183,8 @@ mutable struct ComponentInterfaces{AO, ASI, SIO, C, AP, OP, SIP, EX, P}
     properties :: P
 end
 
-using ..EarthSystemModels: DegreesCelsius, DegreesKelvin,
-                           celsius_to_kelvin,
-                           convert_to_kelvin, convert_from_kelvin,
-                           exchange_grid, temperature_units
+using ..EarthSystemModels: DegreesCelsius, temperature_units, exchange_grid,
+                           celsius_to_kelvin, convert_to_kelvin, convert_from_kelvin
 
 Base.summary(crf::ComponentInterfaces) = "ComponentInterfaces"
 Base.show(io::IO, crf::ComponentInterfaces) = print(io, summary(crf))
@@ -224,10 +197,9 @@ atmosphere_ocean_interface(grid, ::Nothing,   ocean,    args...) = nothing
 atmosphere_ocean_interface(grid, ::Nothing,  ::Nothing, args...) = nothing
 atmosphere_ocean_interface(grid, atmosphere, ::Nothing, args...) = nothing
 
-function atmosphere_ocean_interface(grid, 
+function atmosphere_ocean_interface(grid,
                                     atmosphere,
                                     ocean,
-                                    radiation,
                                     ao_flux_formulation,
                                     temperature_formulation,
                                     velocity_formulation,
@@ -235,13 +207,7 @@ function atmosphere_ocean_interface(grid,
 
     ao_fluxes = AtmosphereOceanFluxes(grid)
 
-    σ = radiation.stefan_boltzmann_constant
-    αₐₒ = radiation.reflection.ocean
-    ϵₐₒ = radiation.emission.ocean
-    radiation = (σ=σ, α=αₐₒ, ϵ=ϵₐₒ)
-
-    ao_properties = InterfaceProperties(radiation,
-                                        specific_humidity_formulation,
+    ao_properties = InterfaceProperties(specific_humidity_formulation,
                                         temperature_formulation,
                                         velocity_formulation)
 
@@ -258,31 +224,22 @@ atmosphere_sea_ice_interface(grid, atmos, ::Nothing,     args...) = nothing
 atmosphere_sea_ice_interface(grid, ::Nothing, sea_ice,   args...) = nothing
 atmosphere_sea_ice_interface(grid, ::Nothing, ::Nothing, args...) = nothing
 
-function atmosphere_sea_ice_interface(grid, 
+function atmosphere_sea_ice_interface(grid,
                                       atmosphere,
                                       sea_ice,
-                                      radiation,
                                       ai_flux_formulation,
                                       temperature_formulation,
                                       velocity_formulation)
 
     fluxes = AtmosphereSeaIceFluxes(grid)
 
-    σ   = radiation.stefan_boltzmann_constant
-    αₐᵢ = radiation.reflection.sea_ice
-    ϵₐᵢ = radiation.emission.sea_ice
-    radiation = (σ=σ, α=αₐᵢ, ϵ=ϵₐᵢ)
-
     phase = AtmosphericThermodynamics.Ice()
     specific_humidity_formulation = ImpureSaturationSpecificHumidity(phase)
 
-    properties = InterfaceProperties(radiation,
-                                     specific_humidity_formulation,
+    properties = InterfaceProperties(specific_humidity_formulation,
                                      temperature_formulation,
                                      velocity_formulation)
 
-    # When snow is present, the atmosphere interacts with the snow surface;
-    # otherwise with the ice top surface.
     snow_thermo = sea_ice.model.snow_thermodynamics
     interface_temperature = if isnothing(snow_thermo)
         sea_ice.model.ice_thermodynamics.top_surface_temperature
@@ -368,7 +325,7 @@ Keyword Arguments
   - `IceBathHeatFlux()`: bulk heat flux with interface at freezing point
   - `ThreeEquationHeatFlux()`: coupled heat/salt/freezing point system (default)
 
-- `radiation`: radiation component. Default: `Radiation()`.
+- `radiation`: radiation component. Default: `nothing`.
 - `freshwater_density`: reference density of freshwater. Default: `default_freshwater_density`.
 - `atmosphere_ocean_fluxes`: flux formulation for atmosphere-ocean interface. Default: `SimilarityTheoryFluxes()`.
 - `atmosphere_sea_ice_fluxes`: flux formulation for atmosphere-sea ice interface. Default: `SimilarityTheoryFluxes()`.
@@ -386,8 +343,9 @@ Keyword Arguments
 - `gravitational_acceleration`: gravitational acceleration. Default: `default_gravitational_acceleration`.
 """
 function ComponentInterfaces(atmosphere, ocean, sea_ice=nothing;
+                             radiation = nothing,
+                             land = nothing,
                              exchange_grid = exchange_grid(atmosphere, ocean, sea_ice),
-                             radiation = Radiation(),
                              freshwater_density = default_freshwater_density,
                              atmosphere_ocean_fluxes = SimilarityTheoryFluxes(eltype(exchange_grid)),
                              atmosphere_sea_ice_fluxes = atmosphere_sea_ice_similarity_theory(eltype(exchange_grid)),
@@ -440,7 +398,6 @@ function ComponentInterfaces(atmosphere, ocean, sea_ice=nothing;
     ao_interface = atmosphere_ocean_interface(exchange_grid,
                                               atmosphere,
                                               ocean,
-                                              radiation,
                                               atmosphere_ocean_fluxes,
                                               atmosphere_ocean_interface_temperature,
                                               atmosphere_ocean_velocity_difference,
@@ -448,10 +405,9 @@ function ComponentInterfaces(atmosphere, ocean, sea_ice=nothing;
 
     io_interface = sea_ice_ocean_interface(exchange_grid, sea_ice, ocean, sea_ice_ocean_heat_flux)
 
-    ai_interface = atmosphere_sea_ice_interface(exchange_grid, 
+    ai_interface = atmosphere_sea_ice_interface(exchange_grid,
                                                 atmosphere,
                                                 sea_ice,
-                                                radiation,
                                                 atmosphere_sea_ice_fluxes,
                                                 atmosphere_sea_ice_interface_temperature,
                                                 atmosphere_sea_ice_velocity_difference)
@@ -460,7 +416,7 @@ function ComponentInterfaces(atmosphere, ocean, sea_ice=nothing;
                     sea_ice    = net_fluxes(sea_ice),
                     atmosphere = net_fluxes(atmosphere))
 
-    exchanger = StateExchanger(exchange_grid, atmosphere, ocean, sea_ice)
+    exchanger = StateExchanger(exchange_grid, radiation, atmosphere, land, ocean, sea_ice)
 
     properties = (; gravitational_acceleration)
 
@@ -479,8 +435,6 @@ end
 ##### Chekpointing (not needed for ComponentInterfaces)
 #####
 
-import Oceananigans: prognostic_state, restore_prognostic_state!
-
-prognostic_state(::ComponentInterfaces) = nothing
-restore_prognostic_state!(ci::ComponentInterfaces, state) = ci
-restore_prognostic_state!(ci::ComponentInterfaces, ::Nothing) = ci
+Oceananigans.prognostic_state(::ComponentInterfaces) = nothing
+Oceananigans.restore_prognostic_state!(ci::ComponentInterfaces, state) = ci
+Oceananigans.restore_prognostic_state!(ci::ComponentInterfaces, ::Nothing) = ci

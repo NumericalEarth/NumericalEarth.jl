@@ -2,9 +2,37 @@ module NumericalEarth
 
 # Use the README as the module docs
 @doc let
+    """Helper function to read the README.md file and convert it to plain Markdown for use as module documentation."""
+    function readme_for_module_docs(path::AbstractString)
+        readme = read(path, String)
+
+        # Julia docstrings use Base.Markdown, which escapes raw HTML.
+        # Translate the HTML-heavy README sections to plain Markdown on the fly.
+        readme = replace(readme, r"<!--.*?-->"s => "")
+        readme = replace(readme,
+                        r"<a\s+href=\"([^\"]+)\"[^>]*>\s*<img\s+src=\"([^\"]+)\"[^>]*?(?:alt=\"([^\"]*)\")?[^>]*>\s*</a>"s =>
+                        s"[![\3](\2)](\1)")
+        readme = replace(readme,
+                        r"<a\s+href=\"([^\"]+)\"[^>]*>([^<]+)</a>"s =>
+                        s"[\2](\1)")
+        readme = replace(readme, r"<h1[^>]*>\s*([^<]+?)\s*</h1>"s => s"# \1\n")
+        readme = replace(readme, r"<pre>\s*<code>"s => "```bibtex\n")
+        readme = replace(readme, r"</code>\s*</pre>"s => "\n```")
+        readme = replace(readme, r"<code>\s*(.*?)\s*</code>"s => s"```\n\1\n```")
+        readme = replace(readme, r"</?p\b[^>]*>" => "")
+        readme = replace(readme, r"</?strong\b[^>]*>" => "")
+        readme = replace(readme,
+                        r"<details>\s*<summary>\s*([^<]+?)\s*</summary>"s =>
+                        s"### \1\n")
+        readme = replace(readme, "</details>" => "")
+        readme = replace(readme, r"\n{3,}" => "\n\n")
+
+        return strip(readme)
+    end
+
     path = joinpath(dirname(@__DIR__), "README.md")
     include_dependency(path)
-    read(path, String)
+    readme_for_module_docs(path)
 end NumericalEarth
 
 export
@@ -13,10 +41,24 @@ export
     OceanSeaIceModel,
     AtmosphereOceanModel,
     SlabOcean,
-    default_sea_ice,
+    AbstractPrescribedComponent,
+    PrescribedRadiation,
+    PrescribedAtmosphere,
+    PrescribedLand,
+    ECCOPrescribedRadiation,
+    JRA55PrescribedRadiation,
+    JRA55PrescribedAtmosphere,
+    JRA55PrescribedLand,
+    OSPapaPrescribedRadiation,
+    OSPapaPrescribedAtmosphere,
+    os_papa_prescribed_fluxes,
+    os_papa_prescribed_flux_boundary_conditions,
     FreezingLimitedOceanTemperature,
-    Radiation,
+    SurfaceRadiationProperties,
+    InterfaceRadiationFlux,
     LatitudeDependentAlbedo,
+    TabulatedAlbedo,
+    SeaIceAlbedo,
     SimilarityTheoryFluxes,
     CoefficientBasedFluxes,
     SimilarityScales,
@@ -25,13 +67,6 @@ export
     ComponentInterfaces,
     SkinTemperature,
     BulkTemperature,
-    PrescribedAtmosphere,
-    JRA55PrescribedAtmosphere,
-    OSPapaPrescribedAtmosphere,
-    os_papa_prescribed_fluxes,
-    os_papa_prescribed_flux_boundary_conditions,
-    OSPapaHourly,
-    JRA55NetCDFBackend,
     regrid_bathymetry,
     label_ocean_basins,
     Basin,
@@ -41,8 +76,7 @@ export
     southern_ocean_basin,
     pacific_ocean_basin,
     arctic_ocean_basin,
-    Metadata,
-    Metadatum,
+    Metadata, Metadatum,
     BoundingBox,
     Column, Linear, Nearest,
     ECCOMetadatum,
@@ -53,18 +87,17 @@ export
     EN4Monthly,
     WOAClimatology, WOAAnnual, WOAMonthly,
     GLORYSDaily, GLORYSMonthly, GLORYSStatic,
-    ORCA1, ORCA12,
     RepeatYearJRA55, MultiYearJRA55,
-    first_date,
-    last_date,
-    all_dates,
-    JRA55FieldTimeSeries,
+    OSPapaHourly,
+    ORCA1, ORCA12,
+    ORCAGrid,
+    first_date, last_date, all_dates,
     LinearlyTaperedPolarMask,
     DatasetRestoring,
-    ocean_simulation,
-    ORCAGrid,
-    sea_ice_simulation,
     atmosphere_simulation,
+    ocean_simulation,
+    sea_ice_simulation,
+    default_sea_ice,
     sea_ice_dynamics,
     initialize!,
     frazil_temperature_flux, net_ocean_temperature_flux, sea_ice_ocean_temperature_flux, atmosphere_ocean_temperature_flux,
@@ -75,13 +108,14 @@ export
     location,
     native_grid
 
-using Oceananigans
-import Oceananigans: location
-using Oceananigans.Operators: ℑxyᶠᶜᵃ, ℑxyᶜᶠᵃ
-using DataDeps
-
-using Oceananigans.OutputReaders: GPUAdaptedFieldTimeSeries, FieldTimeSeries
+using DataDeps: DataDeps
+using Oceananigans: Oceananigans
+using Oceananigans.Architectures: CPU
 using Oceananigans.Grids: node
+using Oceananigans.ImmersedBoundaries: ImmersedBoundaryGrid, GridFittedBottom
+using Oceananigans.OutputReaders: GPUAdaptedFieldTimeSeries, FieldTimeSeries
+
+import Oceananigans: location
 
 const SomeKindOfFieldTimeSeries = Union{FieldTimeSeries,
                                         GPUAdaptedFieldTimeSeries}
@@ -117,6 +151,8 @@ end
 include("EarthSystemModels/EarthSystemModels.jl")
 include("Oceans/Oceans.jl")
 include("Atmospheres/Atmospheres.jl")
+include("Lands/Lands.jl")
+include("Radiations/Radiations.jl")
 include("SeaIces/SeaIces.jl")
 include("InitialConditions/InitialConditions.jl")
 include("DataWrangling/DataWrangling.jl")
@@ -129,21 +165,20 @@ using .Bathymetry
 using .InitialConditions
 using .EarthSystemModels
 using .Atmospheres
+using .Lands
+using .Radiations
 using .Oceans
 using .SeaIces
 using .Diagnostics
-
-using NumericalEarth.EarthSystemModels: ComponentInterfaces, MomentumRoughnessLength, ScalarRoughnessLength, default_sea_ice
-
-using NumericalEarth.DataWrangling.ETOPO
-using NumericalEarth.DataWrangling.ECCO
-using NumericalEarth.DataWrangling.GLORYS
-using NumericalEarth.DataWrangling.EN4
-using NumericalEarth.DataWrangling.ORCA
-using NumericalEarth.DataWrangling.WOA
-using NumericalEarth.DataWrangling.JRA55
-using NumericalEarth.DataWrangling.JRA55: JRA55NetCDFBackend
-using NumericalEarth.DataWrangling.OSPapa
+using .EarthSystemModels: ComponentInterfaces, MomentumRoughnessLength, ScalarRoughnessLength, default_sea_ice
+using .DataWrangling.ETOPO
+using .DataWrangling.ECCO
+using .DataWrangling.GLORYS
+using .DataWrangling.EN4
+using .DataWrangling.ORCA
+using .DataWrangling.WOA
+using .DataWrangling.JRA55
+using .DataWrangling.OSPapa
 
 using PrecompileTools: @setup_workload, @compile_workload
 

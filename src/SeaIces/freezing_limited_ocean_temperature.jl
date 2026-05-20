@@ -1,8 +1,7 @@
-using ClimaSeaIce.SeaIceThermodynamics: melting_temperature
-using ClimaSeaIce.SeaIceThermodynamics: LinearLiquidus
-using NumericalEarth.EarthSystemModels
-using NumericalEarth.EarthSystemModels: NoSeaIceInterface
-using NumericalEarth.EarthSystemModels.InterfaceComputations
+using ClimaSeaIce.SeaIceThermodynamics: melting_temperature, LinearLiquidus
+
+using ..EarthSystemModels: EarthSystemModels, EarthSystemModel, NoSeaIceInterface
+using ..EarthSystemModels.InterfaceComputations: InterfaceComputations
 
 #####
 ##### A workaround when you don't have a sea ice model
@@ -24,16 +23,16 @@ The melting temperature is a function of salinity and is controlled by the `liqu
 FreezingLimitedOceanTemperature(FT::DataType=Oceananigans.defaults.FloatType; liquidus=LinearLiquidus(FT)) =
     FreezingLimitedOceanTemperature(liquidus)
 
-const FreezingLimitedEarthSystemModel = EarthSystemModel{<:FreezingLimitedOceanTemperature, A, O, <:NoSeaIceInterface} where {A, O}
+const FreezingLimitedEarthSystemModel = EarthSystemModel{R, A, L, <:FreezingLimitedOceanTemperature, O, <:NoSeaIceInterface} where {R, A, L, O}
 
 # Extend interface methods to work with a `FreezingLimitedOceanTemperature`
-sea_ice_concentration(::FreezingLimitedOceanTemperature) = ZeroField()
-sea_ice_thickness(::FreezingLimitedOceanTemperature) = ZeroField()
+EarthSystemModels.sea_ice_concentration(::FreezingLimitedOceanTemperature) = ZeroField()
+EarthSystemModels.sea_ice_thickness(::FreezingLimitedOceanTemperature) = ZeroField()
 
 # does not matter
-reference_density(::FreezingLimitedOceanTemperature) = 0
-heat_capacity(::FreezingLimitedOceanTemperature) = 0
-time_step!(::FreezingLimitedOceanTemperature, Δt) = nothing
+EarthSystemModels.reference_density(::FreezingLimitedOceanTemperature) = 0
+EarthSystemModels.heat_capacity(::FreezingLimitedOceanTemperature) = 0
+Oceananigans.TimeSteppers.time_step!(::FreezingLimitedOceanTemperature, Δt) = nothing
 
 # FreezingLimitedOceanTemperature handles temperature limiting in compute_sea_ice_ocean_fluxes!
 EarthSystemModels.above_freezing_ocean_temperature!(ocean, grid, ::FreezingLimitedOceanTemperature) = nothing
@@ -50,8 +49,8 @@ InterfaceComputations.sea_ice_ocean_interface(grid, ::FreezingLimitedOceanTemper
 
 InterfaceComputations.net_fluxes(::FreezingLimitedOceanTemperature) = nothing
 
-const OnlyOceanwithFreezingLimited      = EarthSystemModel{<:FreezingLimitedOceanTemperature, <:Nothing, <:Any}
-const OnlyAtmospherewithFreezingLimited = EarthSystemModel{<:FreezingLimitedOceanTemperature, <:Any,     <:Nothing}
+const OnlyOceanwithFreezingLimited      = EarthSystemModel{<:Any, <:Nothing, <:Any, <:FreezingLimitedOceanTemperature, <:Any}
+const OnlyAtmospherewithFreezingLimited = EarthSystemModel{<:Any, <:Any,     <:Any, <:FreezingLimitedOceanTemperature, <:Nothing}
 const SingleComponentPlusFreezingLimited = Union{OnlyAtmospherewithFreezingLimited, OnlyOceanwithFreezingLimited}
 
 # Also for the ocean nothing really happens here
@@ -91,8 +90,6 @@ end
 ##### Chekpointing (not needed for FreezingLimitedOceanTemperature)
 #####
 
-import Oceananigans: prognostic_state, restore_prognostic_state!
-
-prognostic_state(::FreezingLimitedOceanTemperature) = nothing
-restore_prognostic_state!(flt::FreezingLimitedOceanTemperature, state) = flt
-restore_prognostic_state!(flt::FreezingLimitedOceanTemperature, ::Nothing) = flt
+Oceananigans.prognostic_state(::FreezingLimitedOceanTemperature) = nothing
+Oceananigans.restore_prognostic_state!(flt::FreezingLimitedOceanTemperature, state) = flt
+Oceananigans.restore_prognostic_state!(flt::FreezingLimitedOceanTemperature, ::Nothing) = flt

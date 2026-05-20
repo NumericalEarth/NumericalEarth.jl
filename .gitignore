@@ -74,3 +74,4 @@ experiments/omips/orca_omip/*
 
 # claude
 .claude
+test/Manifest.toml

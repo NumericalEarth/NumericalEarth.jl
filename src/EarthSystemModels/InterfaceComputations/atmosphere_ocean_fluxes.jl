@@ -1,4 +1,3 @@
-using Oceananigans.Operators: intrinsic_vector
 using Oceananigans.Grids: inactive_node
 
 function compute_atmosphere_ocean_fluxes!(coupled_model)
@@ -11,7 +10,7 @@ function compute_atmosphere_ocean_fluxes!(coupled_model)
 
     # Simplify NamedTuple to reduce parameter space consumption.
     # See https://github.com/CliMA/NumericalEarth.jl/issues/116.
-    atmosphere_data = merge(atmosphere_fields, 
+    atmosphere_data = merge(atmosphere_fields,
                             (; h_bℓ = boundary_layer_height(coupled_model.atmosphere)))
 
     flux_formulation = coupled_model.interfaces.atmosphere_ocean_interface.flux_formulation
@@ -22,6 +21,15 @@ function compute_atmosphere_ocean_fluxes!(coupled_model)
     atmosphere_properties = (thermodynamics_parameters = thermodynamics_parameters(coupled_model.atmosphere),
                              surface_layer_height = surface_layer_height(coupled_model.atmosphere),
                              gravitational_acceleration = coupled_model.interfaces.properties.gravitational_acceleration)
+
+    # Radiation state for the interface solve (used by SkinTemperature).
+    # When `radiation === nothing` these are `nothing`s and the getter
+    # returns zero-valued radiative state, so SkinTemperature degrades to
+    # a turbulent-only flux balance.
+    radiation = coupled_model.radiation
+    radiation_kernel_props = kernel_radiation_properties(radiation)
+    radiation_exchanger    = exchanger.radiation
+    radiation_state        = isnothing(radiation_exchanger) ? nothing : radiation_exchanger.state
 
     kernel_parameters = interface_kernel_parameters(grid)
 
@@ -36,12 +44,14 @@ function compute_atmosphere_ocean_fluxes!(coupled_model)
             atmosphere_data,
             interface_properties,
             atmosphere_properties,
-            ocean_properties)
+            ocean_properties,
+            radiation_kernel_props,
+            radiation_state)
 
     return nothing
 end
 
-""" Compute turbulent fluxes between an atmosphere and a interface state using similarity theory """
+""" Compute turbulent fluxes between an atmosphere and an interface state using similarity theory """
 @kernel function _compute_atmosphere_ocean_interface_state!(interface_fluxes,
                                                             interface_temperature,
                                                             grid,
@@ -51,7 +61,9 @@ end
                                                             atmosphere_state,
                                                             interface_properties,
                                                             atmosphere_properties,
-                                                            ocean_properties)
+                                                            ocean_properties,
+                                                            radiation_kernel_props,
+                                                            radiation_exchanger_state)
 
     i, j = @index(Global, NTuple)
     kᴺ   = size(grid, 3) # index of the top ocean cell
@@ -63,11 +75,8 @@ end
         Tᵃᵗ = atmosphere_state.T[i, j, 1]
         pᵃᵗ = atmosphere_state.p[i, j, 1]
         qᵃᵗ = atmosphere_state.q[i, j, 1]
-        ℐꜜˢʷ = atmosphere_state.ℐꜜˢʷ[i, j, 1]
-        ℐꜜˡʷ = atmosphere_state.ℐꜜˡʷ[i, j, 1]
 
-        # Extract state variables at cell centers
-        # Ocean state
+        # Ocean state at cell centers
         uᵒᶜ = ℑxᶜᵃᵃ(i, j, kᴺ, grid, interior_state.u)
         vᵒᶜ = ℑyᵃᶜᵃ(i, j, kᴺ, grid, interior_state.v)
         Tᵒᶜ = interior_state.T[i, j, kᴺ]
@@ -76,8 +85,6 @@ end
     end
 
     # Build thermodynamic and dynamic states in the atmosphere and interface.
-    # Notation:
-    #   ⋅ 𝒰 ≡ "dynamic" state vector (thermodynamics + reference height + velocity)
     ℂᵃᵗ = atmosphere_properties.thermodynamics_parameters
     zᵃᵗ = atmosphere_properties.surface_layer_height # elevation of atmos variables relative to interface
 
@@ -90,7 +97,12 @@ end
                               h_bℓ = atmosphere_state.h_bℓ)
 
     local_interior_state = (u=uᵒᶜ, v=vᵒᶜ, T=Tᵒᶜ, S=Sᵒᶜ)
-    downwelling_radiation = (; ℐꜜˢʷ, ℐꜜˡʷ)
+
+    # Local radiative state at this cell. Returns zero-valued state when
+    # radiation is off.
+    radiation_state = air_sea_interface_radiation_state(radiation_kernel_props,
+                                                        radiation_exchanger_state,
+                                                        i, j, kᴺ, grid, time)
 
     # Estimate initial interface state
     FT = typeof(Tᵒᶜ)
@@ -98,23 +110,13 @@ end
 
     # Estimate interface specific humidity using interior temperature
     q_formulation = interface_properties.specific_humidity_formulation
-    qₛ = surface_specific_humidity(q_formulation, ℂᵃᵗ, Tᵃᵗ, pᵃᵗ, qᵃᵗ, Tᵒᶜ, Sᵒᶜ)
+    qₛ = surface_specific_humidity(q_formulation, ℂᵃᵗ, pᵃᵗ, Tᵒᶜ, Sᵒᶜ)
     initial_interface_state = InterfaceState(u★, u★, u★, uᵒᶜ, vᵒᶜ, Tᵒᶜ, Sᵒᶜ, qₛ)
 
     # Don't use convergence criteria in an inactive cell
     stop_criteria = turbulent_flux_formulation.solver_stop_criteria
     needs_to_converge = stop_criteria isa ConvergenceStopCriteria
     not_water = inactive_node(i, j, kᴺ, grid, Center(), Center(), Center())
-
-    # Compute local radiative properties and rebuild the interface properties
-    α = stateindex(interface_properties.radiation.α, i, j, kᴺ, grid, time, (Center, Center, Center), ℐꜜˢʷ)
-    ϵ = stateindex(interface_properties.radiation.ϵ, i, j, kᴺ, grid, time, (Center, Center, Center))
-    σ = interface_properties.radiation.σ
-
-    interface_properties = InterfaceProperties((; α, ϵ, σ),
-                                               interface_properties.specific_humidity_formulation,
-                                               interface_properties.temperature_formulation,
-                                               interface_properties.velocity_formulation)
 
     if needs_to_converge && not_water
         interface_state = zero_interface_state(FT)
@@ -123,7 +125,7 @@ end
                                                   initial_interface_state,
                                                   local_atmosphere_state,
                                                   local_interior_state,
-                                                  downwelling_radiation,
+                                                  radiation_state,
                                                   interface_properties,
                                                   atmosphere_properties,
                                                   ocean_properties)

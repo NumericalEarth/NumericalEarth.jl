@@ -1,15 +1,14 @@
 module InterfaceComputations
 
-using Oceananigans
-using Oceananigans.Fields: AbstractField
+using Adapt: Adapt, adapt
+using Oceananigans: Oceananigans
+using Oceananigans.Fields: AbstractField, Field, Face, Center
+using Oceananigans.Grids: Flat
+using Oceananigans.Simulations: Simulation
 using Oceananigans.Utils: KernelParameters
-using Adapt
 
 export
-    Radiation,
     ComponentInterfaces,
-    LatitudeDependentAlbedo,
-    SeaIceAlbedo,
     SimilarityTheoryFluxes,
     ConstantGustiness,
     ShearAwareGustiness,
@@ -40,14 +39,31 @@ using ..EarthSystemModels: default_gravitational_acceleration,
                            surface_layer_height,
                            boundary_layer_height
 
-import NumericalEarth: stateindex
-import Oceananigans.Simulations: initialize!
-
 #####
 ##### Functions extended by component models
 #####
 
 net_fluxes(::Nothing) = nothing
+
+#####
+##### Radiation hooks: declared here so the turbulent flux kernels can
+##### resolve them at parse time. The `Radiations` module extends them
+##### with concrete methods for `PrescribedRadiation`.
+#####
+
+# `nothing` fallback (radiation is off). Concrete methods for
+# `PrescribedRadiation` (and future radiation types) are added in `Radiations`.
+@inline kernel_radiation_properties(::Nothing) = nothing
+
+@inline function air_sea_interface_radiation_state(::Nothing, ::Nothing, i, j, k, grid, time)
+    z = zero(eltype(grid))
+    return (σ = z, α = z, ϵ = z, ℐꜜˢʷ = z, ℐꜜˡʷ = z)
+end
+
+@inline function air_sea_ice_interface_radiation_state(::Nothing, ::Nothing, i, j, k, grid, time)
+    z = zero(eltype(grid))
+    return (σ = z, α = z, ϵ = z, ℐꜜˢʷ = z, ℐꜜˡʷ = z)
+end
 
 #####
 ##### Utilities
@@ -70,12 +86,6 @@ function interface_kernel_parameters(grid)
 
     return kernel_parameters
 end
-
-# Radiation
-include("radiation.jl")
-include("latitude_dependent_albedo.jl")
-include("tabulated_albedo.jl")
-include("sea_ice_albedo.jl")
 
 # Turbulent fluxes
 include("roughness_lengths.jl")

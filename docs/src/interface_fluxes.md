@@ -153,7 +153,7 @@ poly_fluxes = CoefficientBasedFluxes(transfer_coefficients = (poly_drag, 1e-3, 1
 
 For the full Large & Yeager (2004) bulk algorithm with stability corrections,
 use `LargeYeagerTransferCoefficients`. This computes all three transfer coefficients
-(drag, Stanton, Dalton) from the neutral drag polynomial with Monin-Obukhov
+(drag, heat, moisture) from the neutral drag polynomial with Monin-Obukhov
 stability corrections (L&Y eqs. 6c-6d, 10a-10c):
 
 ```@example interface_fluxes
@@ -407,8 +407,11 @@ extrema(Cᴰ_ly)
 ```
 
 We'll compare the computed fluxes and drag coefficients from our models with
-a polynomial expression due to [large2009global](@citet), and
-an expression reported by [edson2013exchange](@citet) that was developed at ECMWF,
+two independent reference curves: a simpler cubic-in-``u`` re-fit of the neutral
+drag coefficient given by [large2009global](@citet) (equation 10 of the CORE-II
+forcing paper, a smoother alternative to the 2004 rational polynomial used by
+`LargeYeagerTransferCoefficients` above), and an expression reported by
+[edson2013exchange](@citet) that was developed at ECMWF,
 
 ```@example interface_fluxes
 # From Large and Yeager (2009), equation 10
@@ -690,13 +693,13 @@ that enters into the air-surface specific humidity difference ``Δ q`` also chan
 ```@example interface_fluxes
 using NumericalEarth.EarthSystemModels.InterfaceComputations: surface_specific_humidity
 
-ρᵃᵗ = 1.2 # guess
+pᵃᵗ = 101325 # guess (Pa)
 Tᵒᶜ = 273.15 + 20 # in Kelvin
 Sᵒᶜ = 35
 interfaces = default_model.interfaces
 ℂᵃᵗ = interfaces.atmosphere_properties
 q_formulation = interfaces.atmosphere_ocean_interface.properties.specific_humidity_formulation
-qₛ = surface_specific_humidity(q_formulation, ℂᵃᵗ, ρᵃᵗ, Tᵒᶜ, Sᵒᶜ)
+qₛ = surface_specific_humidity(q_formulation, ℂᵃᵗ, pᵃᵗ, Tᵒᶜ, Sᵒᶜ)
 @show qₛ
 ```
 

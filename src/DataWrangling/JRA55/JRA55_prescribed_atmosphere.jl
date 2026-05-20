@@ -1,4 +1,4 @@
-const AA = Oceananigans.Architectures.AbstractArchitecture
+using ...Atmospheres: PrescribedAtmosphere, PrescribedPrecipitationFlux
 
 JRA55PrescribedAtmosphere(arch::Distributed; kw...) =
     JRA55PrescribedAtmosphere(child_architecture(arch); kw...)
@@ -13,16 +13,18 @@ JRA55PrescribedAtmosphere(arch::Distributed; kw...) =
                               time_indexing = Cyclical(),
                               prefetch = true,
                               surface_layer_height = 10,  # meters
-                              include_rivers_and_icebergs = false,
+                              region = nothing,
                               other_kw...)
 
-Return a [`PrescribedAtmosphere`](@ref) representing JRA55 reanalysis data.
-Each atmospheric field is constructed via `FieldTimeSeries(::JRA55Metadata)`,
-which uses a `DatasetBackend` parameterised by JRA55 metadata so that the
-JRA55-specific `set!` (chunked-yearly NetCDF) is dispatched. With
-`prefetch = true` each variable's next sliding window is loaded
-asynchronously on a background thread so the reload spike (~15 s on a
-240-step window across 9 variables) is hidden behind compute.
+Return a [`PrescribedAtmosphere`](@ref) representing JRA55 reanalysis data. Each atmospheric field is constructed via
+`FieldTimeSeries(::JRA55Metadata)`, which uses a `DatasetBackend` parameterised by JRA55 metadata so that the JRA55-specific
+`set!` (chunked-yearly NetCDF) is dispatched. With `prefetch = true` each variable's next sliding window is loaded
+asynchronously on a background thread so the reload spike is hidden behind compute.
+The `region` keyword restricts the atmosphere to a sub-domain of the global JRA55 grid.
+
+Note: downwelling shortwave / longwave radiation is now part of the
+top-level `radiation` component. Use [`JRA55PrescribedRadiation`](@ref) to
+load JRA55 SW/LW into a `PrescribedRadiation`.
 """
 function JRA55PrescribedAtmosphere(architecture = CPU();
                                    dataset = RepeatYearJRA55(),
@@ -33,37 +35,29 @@ function JRA55PrescribedAtmosphere(architecture = CPU();
                                    time_indexing = Cyclical(),
                                    prefetch = true,
                                    surface_layer_height = 10,  # meters
-                                   include_rivers_and_icebergs = false,
+                                   region = nothing,
                                    other_kw...)
 
     kw = (; time_indexing, time_indices_in_memory, prefetch)
     kw = merge(kw, other_kw)
 
-    jra55_fts(name) = FieldTimeSeries(Metadata(name; dataset, start_date, end_date, dir), architecture; kw...)
+    ua_meta  = Metadata(:eastward_velocity;    dataset, start_date, end_date, dir, region)
+    va_meta  = Metadata(:northward_velocity;   dataset, start_date, end_date, dir, region)
+    Ta_meta  = Metadata(:temperature;          dataset, start_date, end_date, dir, region)
+    qa_meta  = Metadata(:specific_humidity;    dataset, start_date, end_date, dir, region)
+    pa_meta  = Metadata(:sea_level_pressure;   dataset, start_date, end_date, dir, region)
+    Fra_meta = Metadata(:rain_freshwater_flux; dataset, start_date, end_date, dir, region)
+    Fsn_meta = Metadata(:snow_freshwater_flux; dataset, start_date, end_date, dir, region)
 
-    ua   = jra55_fts(:eastward_velocity)
-    va   = jra55_fts(:northward_velocity)
-    Ta   = jra55_fts(:temperature)
-    qa   = jra55_fts(:specific_humidity)
-    pa   = jra55_fts(:sea_level_pressure)
-    Fra  = jra55_fts(:rain_freshwater_flux)
-    Fsn  = jra55_fts(:snow_freshwater_flux)
-    ℐꜜˡʷ = jra55_fts(:downwelling_longwave_radiation)
-    ℐꜜˢʷ = jra55_fts(:downwelling_shortwave_radiation)
+    ua  = FieldTimeSeries(ua_meta,  architecture; kw...)
+    va  = FieldTimeSeries(va_meta,  architecture; kw...)
+    Ta  = FieldTimeSeries(Ta_meta,  architecture; kw...)
+    qa  = FieldTimeSeries(qa_meta,  architecture; kw...)
+    pa  = FieldTimeSeries(pa_meta,  architecture; kw...)
+    Fra = FieldTimeSeries(Fra_meta, architecture; kw...)
+    Fsn = FieldTimeSeries(Fsn_meta, architecture; kw...)
 
-    freshwater_flux = (rain = Fra,
-                       snow = Fsn)
-
-    # Rivers and icebergs are on a different grid and have a different
-    # frequency than the rest of the JRA55 data. We use the
-    # PrescribedAtmosphere `auxiliary_freshwater_flux` feature for them.
-    if include_rivers_and_icebergs
-        Fri = jra55_fts(:river_freshwater_flux)
-        Fic = jra55_fts(:iceberg_freshwater_flux)
-        auxiliary_freshwater_flux = (rivers = Fri, icebergs = Fic)
-    else
-        auxiliary_freshwater_flux = nothing
-    end
+    freshwater_flux = PrescribedPrecipitationFlux(rain = Fra, snow = Fsn)
 
     times = ua.times
     grid  = ua.grid
@@ -76,17 +70,13 @@ function JRA55PrescribedAtmosphere(architecture = CPU();
 
     pressure = pa
 
-    downwelling_radiation = TwoBandDownwellingRadiation(shortwave=ℐꜜˢʷ, longwave=ℐꜜˡʷ)
-
     FT = eltype(ua)
     surface_layer_height = convert(FT, surface_layer_height)
 
     atmosphere = PrescribedAtmosphere(grid, times;
                                       velocities,
                                       freshwater_flux,
-                                      auxiliary_freshwater_flux,
                                       tracers,
-                                      downwelling_radiation,
                                       surface_layer_height,
                                       pressure)
 

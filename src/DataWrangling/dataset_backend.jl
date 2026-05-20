@@ -7,7 +7,7 @@ import Oceananigans.Fields: set!
 @inline instantiate(T) = T
 
 """
-    DatasetBackend{N, C, I, M} <: AbstractInMemoryBackend{Int}
+    DatasetBackend{N, C, I, M} <: AbstractInMemoryBackend{Int, false}
 
 In-memory backend for a `FieldTimeSeries` backed by a dataset whose metadata
 maps each in-memory time index to a file (or subset of a file) on disk. The
