@@ -88,7 +88,8 @@ mset = MetadataSet(:temperature, :salinity;
                    date    = Date(2010, 1, 1))
 ```
 
-The variable axis is exposed via property and indexed access; struct fields stay reachable too:
+The variable axis is exposed via property and indexed access; struct fields stay reachable too.
+With a scalar `date`, each element is a `Metadatum`:
 
 ```@example metadata
 mset.temperature              # → a `Metadatum`
@@ -100,6 +101,16 @@ mset[:salinity] === mset[2]   # property and indexed access are symmetric
 
 ```@example metadata
 keys(mset), mset.dataset      # the variable axis, plus shared kwargs
+```
+
+Pass a `dates` range (or vector) instead of a scalar `date` to bundle a time axis;
+each element is then a `Metadata` covering that range:
+
+```@example metadata
+mset_ts = MetadataSet(:temperature, :salinity;
+                      dataset = EN4Monthly(),
+                      dates   = DateTime(2010, 1, 1):Month(1):DateTime(2010, 3, 1))
+mset_ts.temperature           # → a `Metadata` (multi-date)
 ```
 
 ### `set!(model, mset)` — auto-routing
@@ -126,11 +137,17 @@ component without manual filtering).
 
 `Field(mset, arch=CPU(); kw...)` and `FieldTimeSeries(mset, arch_or_grid; kw...)` build a
 `NamedTuple` keyed by the variable names, with each value materialized from the underlying
-per-variable `Metadata`:
+per-variable `Metadata`. `Field` requires a scalar `date` (one snapshot per variable); for
+multi-date sets, use `FieldTimeSeries`:
 
-```julia
+```@example metadata
 fields = Field(mset)              # (; temperature = Field, salinity = Field)
-fts    = FieldTimeSeries(mset)    # for a multi-date `mset`
+fields.temperature
+```
+
+```@example metadata
+fts = FieldTimeSeries(mset_ts)    # NamedTuple of FieldTimeSeries, one per variable
+fts.temperature[1]                # first temperature snapshot, as a Field
 ```
 
 ### Downloading

@@ -429,6 +429,12 @@ Requires `mset` to hold scalar `dates` so each `mset[name]` is a `Metadatum`;
 for multi-date sets, use `FieldTimeSeries(::MetadataSet)`.
 """
 function Oceananigans.Fields.Field(mset::MetadataSet, arch=CPU(); kw...)
+    dates = getfield(mset, :dates)
+    if !(dates isa AnyDateTime)
+        throw(ArgumentError(
+            "Field(::MetadataSet) requires a scalar `date`, but this `MetadataSet` carries a multi-date axis. " *
+            "Use `FieldTimeSeries(mset)` for multi-date sets."))
+    end
     names = getfield(mset, :names)
     return NamedTuple{names}(map(n -> Field(mset[n], arch; kw...), names))
 end

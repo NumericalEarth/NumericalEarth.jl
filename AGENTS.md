@@ -50,6 +50,13 @@ NumericalEarth.jl provides infrastructure for running Earth system model compone
 - **Citations**: Use inline `[Author (year)](@cite Key)` syntax woven into prose
 - Use unicode for math (`θ`, `ρ`, `Π`), not LaTeX
 
+### Documentation pages (`docs/src/**.md`)
+
+- **ALWAYS `@example <label>` blocks, NEVER plain `julia` code fences** — `@example` blocks
+  are executed by Documenter and their output is rendered into the page; plain `julia` blocks
+  are dead text (no execution, no output) and silently rot
+- Reuse the same `@example <label>` across blocks on one page to share state (imports, variables)
+
 ### Software Design
 
 - Minimize code duplication (allow only for trivial one-liners)

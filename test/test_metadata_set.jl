@@ -232,6 +232,16 @@ end
                                        not_in_set = StubField()), mset)
 end
 
+@testset "Field(::MetadataSet) rejects multi-date sets" begin
+    # Field(mset) only makes sense for a single snapshot per variable.
+    # A multi-date mset should error pointing the user at FieldTimeSeries
+    # rather than failing deep in `Field(::Metadata)` with a MethodError.
+    mts = MetadataSet(:temperature, :salinity;
+                      dataset = ECCO4Monthly(),
+                      dates   = date_range)
+    @test_throws ArgumentError Field(mts)
+end
+
 @testset "variable_aliases registry" begin
     # The verbose→short map is the single source of truth used by
     # set!(model, mset). Check that every value lines up with the
