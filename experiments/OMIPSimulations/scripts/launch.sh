@@ -161,7 +161,7 @@ run!(sim, pickup=:latest)"
 run!(sim; pickup = :latest)"
         ;;
     tenthdegree)
-        DEFAULT_KSKEW=0;    DEFAULT_KSYMM=0;   NZ=100; DEFAULT_DT="1minutes";  DEFAULT_DZ_TOP="2.5"
+        DEFAULT_KSKEW=0;    DEFAULT_KSYMM=0;   NZ=100; DEFAULT_DT="2minutes";  DEFAULT_DZ_TOP="2.5"
         DEFAULT_BIHARMONIC="nothing"; ARCH="Distributed(GPU(), partition=Partition(1, 4))"; GPUS_PER_NODE=4
         EXTRA_USING="using Oceananigans.DistributedComputations"
         FILE_SPLIT="file_splitting_interval = 180days,"
@@ -241,7 +241,7 @@ fi
 if [[ "${PARTITION}" == "default" ]]; then
     TIME="${TIME:-05:00:00}"
 else
-    TIME="${TIME:-72:00:00}"
+    TIME="${TIME:-10:00:00}"
 fi
 SBATCH_ARGS+=(--time="${TIME}")
 
