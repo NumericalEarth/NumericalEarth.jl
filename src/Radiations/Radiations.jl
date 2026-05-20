@@ -5,6 +5,7 @@ export PrescribedRadiation,
        InterfaceRadiationFlux,
        LatitudeDependentAlbedo,
        TabulatedAlbedo,
+       SeaIceAlbedo,
        default_stefan_boltzmann_constant
 
 # CODATA 2018 value of the Stefan–Boltzmann constant, in W m⁻² K⁻⁴.
@@ -36,6 +37,7 @@ include("interface_radiation_flux.jl")
 include("radiation_kernels.jl")
 include("latitude_dependent_albedo.jl")
 include("tabulated_albedo.jl")
+include("sea_ice_albedo.jl")
 include("prescribed_radiation.jl")
 include("prescribed_radiation_regridder.jl")
 include("interpolate_radiation_state.jl")
