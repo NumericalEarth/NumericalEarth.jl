@@ -63,10 +63,6 @@ export omip_simulation,
 # Patches to Oceananigans
 include("oceananigans_patches.jl")
 
-include("NORi/NORi.jl")
-
-using .NORi: NORiBaseVerticalDiffusivity
-
 include("KPP/KPP.jl")
 
 using .KPP: KPPVerticalDiffusivity, KPPParameters
