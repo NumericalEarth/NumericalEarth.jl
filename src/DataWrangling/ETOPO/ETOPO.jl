@@ -2,18 +2,18 @@ module ETOPO
 
 export ETOPO2022
 
-using Downloads
-using Oceananigans
+using Downloads: Downloads
+using Oceananigans: Oceananigans
 using Oceananigans.DistributedComputations: @root
-using Scratch
+using Scratch: Scratch, @get_scratch!
 
-using ..DataWrangling: download_progress, Metadatum, metadata_path, AbstractStaticBathymetry
+using ..DataWrangling: DataWrangling, DownloadProgress, AbstractStaticBathymetry, Metadatum,
+                       metadata_path, metadata_url
 
-import NumericalEarth.DataWrangling:
+import ..DataWrangling:
     metadata_filename,
     default_download_directory,
     dataset_variable_name,
-    download_dataset,
     longitude_interfaces,
     latitude_interfaces,
     reversed_vertical_axis
@@ -42,16 +42,16 @@ dataset_variable_name(data::ETOPOMetadatum) = ETOPO_bathymetry_variable_names[da
 const ETOPO_url = "https://www.dropbox.com/scl/fi/6pwalcuuzgtpanysn4h6f/" *
     "ETOPO_2022_v1_60s_N90W180_surface.nc?rlkey=2t7890ruyk4nd5t5eov5768lt&st=yfxsy1lu&dl=0"
 
-metadata_url(::ETOPOMetadatum) = ETOPO_url
+DataWrangling.metadata_url(::ETOPOMetadatum) = ETOPO_url
 metadata_filename(::ETOPO2022, name, date, region) = "ETOPO_2022_v1_60s_N90W180_surface.nc"
 
-function download_dataset(metadatum::ETOPOMetadatum)
+function Downloads.download(metadatum::ETOPOMetadatum)
     fileurl  = metadata_url(metadatum)
     filepath = metadata_path(metadatum)
 
     @root if !isfile(filepath)
         @info "Downloading ETOPO data: $(metadatum.name) in $(metadatum.dir)..."
-        Downloads.download(fileurl, filepath; progress=download_progress)
+        Downloads.download(fileurl, filepath; progress=DownloadProgress())
     end
     return filepath
 end

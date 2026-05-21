@@ -59,7 +59,7 @@ function OSPapaPrescribedAtmosphere(architecture = CPU(), FT = Float32;
 
     function ospapa_fts(name)
         md = Metadata(name; mdkw...)
-        download_dataset(md)
+        Downloads.download(md)
         fts = FieldTimeSeries(md, surface_grid; time_indices_in_memory = length(md))
         fill_gaps!(fts; max_gap = max_gap_hours)
         return fts
@@ -69,8 +69,6 @@ function OSPapaPrescribedAtmosphere(architecture = CPU(), FT = Float32;
     va   = ospapa_fts(:northward_wind)
     Ta   = ospapa_fts(:air_temperature)     # K  (Celsius conversion)
     Pa   = ospapa_fts(:sea_level_pressure)  # Pa (Millibar conversion)
-    swa  = ospapa_fts(:shortwave_radiation)
-    lwa  = ospapa_fts(:longwave_radiation)
     rain = ospapa_fts(:rain)                # kg/m²/s (MillimetersPerHour conversion)
 
     thermo_params = AtmosphereThermodynamicsParameters(FT)
@@ -81,8 +79,7 @@ function OSPapaPrescribedAtmosphere(architecture = CPU(), FT = Float32;
                                 velocities = (u=ua, v=va),
                                 tracers = (T=Ta, q=qa),
                                 pressure = Pa,
-                                freshwater_flux = (; rain),
-                                downwelling_radiation = TwoBandDownwellingRadiation(shortwave=swa, longwave=lwa),
+                                freshwater_flux = PrescribedPrecipitationFlux(; rain),
                                 thermodynamics_parameters = thermo_params,
                                 surface_layer_height = convert(FT, surface_layer_height))
 end

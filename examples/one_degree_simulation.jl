@@ -1,7 +1,7 @@
 # # [One-degree global ocean--sea ice simulation](@id one-degree-ocean-seaice)
 #
 # This example configures a global ocean--sea ice simulation at 1ᵒ horizontal resolution with
-# realistic bathymetry and an area-scaled biharmonic viscosity for grid-scale dissipation.
+# realistic bathymetry and a few closures including the "Gent-McWilliams" `IsopycnalSkewSymmetricDiffusivity`.
 # The simulation is forced by repeat-year JRA55 atmospheric reanalysis
 # and initialized by temperature, salinity, sea ice concentration, and sea ice thickness
 # from the ECCO state estimate.
@@ -47,14 +47,14 @@ grid = ImmersedBoundaryGrid(underlying_grid, GridFittedBottom(bottom_height);
 
 # ### Closures
 #
-# We use an area-scaled biharmonic viscosity for grid-scale dissipation,
-# an isopycnal symmetric diffusivity for lateral tracer mixing, and
-# the CATKE parameterization for vertical mixing at the upper-ocean boundary layer.
+# We include a Gent-McWilliams isopycnal diffusivity as a parameterization for the mesoscale
+# eddy fluxes, an area-scaled biharmonic viscosity for grid-scale dissipation, and the CATKE
+# parameterization for vertical mixing at the upper-ocean boundary layer.
 
-using Oceananigans.TurbulenceClosures: IsopycnalSkewSymmetricDiffusivity
+using Oceananigans.TurbulenceClosures: IsopycnalSkewSymmetricDiffusivity, AdvectiveFormulation
 
-horizontal_viscosity = area_scaled_biharmonic_viscosity(timescale=15days)
-isopycnal_diffusivity = IsopycnalSkewSymmetricDiffusivity(κ_skew=0, κ_symmetric=1e3)
+eddy_closure = IsopycnalSkewSymmetricDiffusivity(κ_skew=1e3, κ_symmetric=1e3, skew_flux_formulation=AdvectiveFormulation())
+horizontal_viscosity = area_scaled_biharmonic_viscosity()
 vertical_mixing = NumericalEarth.Oceans.default_ocean_closure()
 
 # ### Ocean simulation
@@ -66,7 +66,7 @@ momentum_advection = WENOVectorInvariant(order=5)
 tracer_advection   = WENO(order=5)
 
 ocean = ocean_simulation(grid; momentum_advection, tracer_advection, free_surface,
-                         closure=(horizontal_viscosity, isopycnal_diffusivity, vertical_mixing))
+                         closure=(eddy_closure, horizontal_viscosity, vertical_mixing))
 
 @info "We've built an ocean simulation with model:"
 @show ocean.model
@@ -84,22 +84,25 @@ sea_ice = sea_ice_simulation(grid, ocean; advection=tracer_advection)
 # We initialize the ocean and sea ice models with data from the ECCO state estimate.
 
 date = DateTime(1993, 1, 1)
-dataset = ECCO4Monthly()
-ecco_temperature           = Metadatum(:temperature; date, dataset)
-ecco_salinity              = Metadatum(:salinity; date, dataset)
-ecco_sea_ice_thickness     = Metadatum(:sea_ice_thickness; date, dataset)
-ecco_sea_ice_concentration = Metadatum(:sea_ice_concentration; date, dataset)
+ecco_set = MetadataSet(:temperature, :salinity,
+                       :sea_ice_thickness, :sea_ice_concentration;
+                       dataset = ECCO4Monthly(), date)
 
-set!(ocean.model, T=ecco_temperature, S=ecco_salinity)
-set!(sea_ice.model, h=ecco_sea_ice_thickness, ℵ=ecco_sea_ice_concentration)
+# A single MetadataSet drives both components; variables not in
+# `variable_glossary` for a given model fall through silently.
+set!(ocean.model,   ecco_set)   # picks up :temperature, :salinity → T, S
+set!(sea_ice.model, ecco_set)   # picks up :sea_ice_thickness, :sea_ice_concentration → h, ℵ
 
 # ### Atmospheric forcing
 
 # We force the simulation with a JRA55-do atmospheric reanalysis.
-radiation  = Radiation(arch)
-jra55_backend = JRA55NetCDFBackend(80)
-atmosphere = JRA55PrescribedAtmosphere(arch; backend=jra55_backend)
-land       = JRA55PrescribedLand(arch; backend=jra55_backend)
+atmosphere = JRA55PrescribedAtmosphere(arch)
+# Use a latitude-dependent ocean albedo (Large & Yeager 2009); keep the
+# default ocean emissivity (0.97) and sea-ice surface (albedo 0.7,
+# emissivity 1.0).
+radiation  = JRA55PrescribedRadiation(arch;
+                                      ocean_surface = SurfaceRadiationProperties(albedo = LatitudeDependentAlbedo()))
+land       = JRA55PrescribedLand(arch)
 
 # ### Coupled simulation
 

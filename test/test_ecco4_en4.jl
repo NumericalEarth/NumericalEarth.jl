@@ -4,7 +4,7 @@ include("download_utils.jl")
 using NumericalEarth
 using NumericalEarth.ECCO
 using NumericalEarth.EN4
-using NumericalEarth.DataWrangling: NearestNeighborInpainting, metadata_path, native_times, download_dataset
+using NumericalEarth.DataWrangling: NearestNeighborInpainting, metadata_path, native_times
 
 using Dates
 using Oceananigans.Grids: topology
@@ -39,7 +39,7 @@ for arch in test_architectures, dataset in test_ecco_en4_datasets
                 # if the primary source is unreachable
                 filepaths = [metadata_path(datum) for datum in metadata]
                 download_dataset_with_fallback(filepaths; dataset_name="$D $name") do
-                    download_dataset(metadata)
+                    download(metadata)
                 end
                 for datum in metadata
                     @test isfile(metadata_path(datum))

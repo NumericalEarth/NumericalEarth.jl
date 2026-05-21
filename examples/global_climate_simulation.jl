@@ -1,7 +1,7 @@
 # # Global climate simulation
 #
 # This example configures a global ocean--sea ice simulation at 1.5ᵒ horizontal resolution with
-# realistic bathymetry and an area-scaled biharmonic viscosity for grid-scale dissipation.
+# realistic bathymetry and a few closures including the "Gent-McWilliams" `IsopycnalSkewSymmetricDiffusivity`.
 # The atmosphere is represented by a 4-layer [SpeedyWeather](https://github.com/SpeedyWeather/SpeedyWeather.jl)
 # simulation on the T63 spectral grid (this grid has approximately 1.875ᵒ resolution).
 #
@@ -17,9 +17,9 @@
 # `SpeedyWeather.PrimitiveWetModel` (the atmosphere). All these are coupled and orchestrated by the `NumericalEarth.EarthSystemModel`
 # (the coupled system).
 #
-# The XESMF.jl package is used to regrid fields between the atmosphere and ocean--sea ice components.
+# The ConservativeRegridding.jl package is used to regrid fields between the atmosphere and ocean--sea ice components.
 
-using Oceananigans, SpeedyWeather, XESMF, NumericalEarth
+using Oceananigans, SpeedyWeather, NumericalEarth, ConservativeRegridding
 using NCDatasets, CairoMakie
 using Oceananigans.Units
 using Printf, Statistics, Dates
@@ -47,12 +47,10 @@ nothing #hide
 momentum_advection   = VectorInvariant()
 tracer_advection     = WENO(order=5)
 free_surface         = SplitExplicitFreeSurface(grid; substeps=40)
-using Oceananigans.TurbulenceClosures: IsopycnalSkewSymmetricDiffusivity
-
 catke_closure        = NumericalEarth.Oceans.default_ocean_closure()
-viscous_closure      = area_scaled_biharmonic_viscosity(timescale=15days)
-isopycnal_closure    = IsopycnalSkewSymmetricDiffusivity(κ_skew=0, κ_symmetric=1e3)
-closures             = (catke_closure, viscous_closure, isopycnal_closure)
+eddy_closure         = Oceananigans.TurbulenceClosures.IsopycnalSkewSymmetricDiffusivity(κ_skew=1e3, κ_symmetric=1e3)
+viscous_closure      = area_scaled_biharmonic_viscosity()
+closures             = (catke_closure, eddy_closure, viscous_closure)
 nothing #hide
 
 # The ocean simulation, complete with initial conditions for temperature and salinity from ECCO.
@@ -63,15 +61,16 @@ ocean = ocean_simulation(grid;
                          free_surface,
                          closure = closures)
 
-Oceananigans.set!(ocean.model, T=Metadatum(:temperature, dataset=ECCO4Monthly()),
-                               S=Metadatum(:salinity,    dataset=ECCO4Monthly()))
+ecco_set = MetadataSet(:temperature, :salinity,
+                       :sea_ice_thickness, :sea_ice_concentration;
+                       dataset = ECCO4Monthly())
+Oceananigans.set!(ocean.model, ecco_set)   # T, S
 
 # The sea-ice simulation, complete with initial conditions for sea-ice thickness and sea-ice concentration from ECCO.
 
 sea_ice = sea_ice_simulation(grid, ocean; advection=WENO(order=5))
 
-Oceananigans.set!(sea_ice.model, h=Metadatum(:sea_ice_thickness, dataset=ECCO4Monthly()),
-                                 ℵ=Metadatum(:sea_ice_concentration, dataset=ECCO4Monthly()))
+Oceananigans.set!(sea_ice.model, ecco_set)   # h, ℵ
 
 # ## Atmosphere model configuration
 # The atmosphere is provided by SpeedyWeather.jl. Here, we configure a T63L4 model with a 3-hour output interval.
@@ -79,16 +78,11 @@ Oceananigans.set!(sea_ice.model, h=Metadatum(:sea_ice_thickness, dataset=ECCO4Mo
 # hooks so that NumericalEarth can compute inter-component fluxes.
 nlayers = 4
 spectral_grid = SpeedyWeather.SpectralGrid(; trunc=63, nlayers, Grid=FullClenshawGrid)
-atmosphere = atmosphere_simulation(spectral_grid, output=true)
+atmosphere = atmosphere_simulation(spectral_grid; output_interval=Hour(3))
 
 # The atmosphere model already includes some initial conditions as described above:
 
 atmosphere.model.initial_conditions
-
-# We use a three hour time-step (10800 seconds):
-
-atmosphere.model.output.output_dt = Second(10800)
-nothing #hide
 
 # ## The coupled model
 # We are now ready to blend everything together.
@@ -100,10 +94,12 @@ nothing #hide
 nothing #hide
 
 # We build the complete coupled `earth_model` and the coupled simulation.
-# Since radiation is idealized in this example, we set the emissivities to zero.
+# NumericalEarth still computes turbulent (sensible heat, water vapor) fluxes
+# here using its own bulk-formula machinery and writes them back to Speedy.
+# Top-level radiation, however, is not yet wired up against SpeedyWeather's
+# upwelling-LW path, so we leave `radiation = nothing` for now.
 
-radiation = Radiation(ocean_emissivity=0.0, sea_ice_emissivity=0.0)
-earth_model = EarthSystemModel(atmosphere, ocean, sea_ice; radiation)
+earth_model = EarthSystemModel(; atmosphere, sea_ice, ocean)
 
 # ## Building and running the simulation
 #
@@ -118,20 +114,17 @@ sea_ice_fields = merge(sea_ice.model.velocities, sea_ice.model.dynamics.auxiliar
 ocean.output_writers[:free_surf] = JLD2Writer(ocean.model, (; η=ocean.model.free_surface.displacement);
                                               overwrite_existing=true,
                                               schedule=TimeInterval(3hours),
-                                              including = [:grid],
                                               filename="ocean_free_surface.jld2")
 
 ocean.output_writers[:surface] = JLD2Writer(ocean.model, outputs;
                                             overwrite_existing=true,
                                             schedule=TimeInterval(3hours),
-                                            including = [:grid],
                                             filename="ocean_surface_fields.jld2",
                                             indices=(:, :, grid.Nz))
 
 sea_ice.output_writers[:fields] = JLD2Writer(sea_ice.model, sea_ice_fields;
                                              overwrite_existing=true,
                                              schedule=TimeInterval(3hours),
-                                             including = [:grid],
                                              filename="sea_ice_fields.jld2")
 
 𝒬ᵀᵃᵒ = earth.model.interfaces.atmosphere_ocean_interface.fluxes.sensible_heat
@@ -149,7 +142,6 @@ fluxes = (; 𝒬ᵀᵃᵒ, 𝒬ᵛᵃᵒ, τˣᵃᵒ, τʸᵃᵒ, 𝒬ᵀᵃⁱ,
 ocean.output_writers[:fluxes] = JLD2Writer(earth.model.ocean.model, fluxes;
                                            overwrite_existing=true,
                                            schedule=TimeInterval(3hours),
-                                           including = [:grid],
                                            filename="intercomponent_fluxes.jld2")
 
 # We also add a callback function that prints out a helpful progress message while the simulation runs.

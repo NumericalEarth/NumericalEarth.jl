@@ -60,8 +60,9 @@ grid = ImmersedBoundaryGrid(grid, GridFittedBottom(bathymetry))
 ocean = NumericalEarth.ocean_simulation(grid)
 start_date = DateTime(1993, 1, 1)
 set!(ocean.model,
-     T=NumericalEarth.Metadatum(:temperature; date=start_date, dataset=NumericalEarth.ECCO2Daily()),
-     S=NumericalEarth.Metadatum(:salinity;    date=start_date, dataset=NumericalEarth.ECCO2Daily()))
+     NumericalEarth.MetadataSet(:temperature, :salinity;
+                                dataset = NumericalEarth.ECCO2Daily(),
+                                date    = start_date))
 
 # Build and run an EarthSystemModel (with no sea ice component) forced by JRA55 reanalysis
 atmosphere = NumericalEarth.JRA55PrescribedAtmosphere(arch)
@@ -77,7 +78,6 @@ We can leverage `Oceananigans` features to plot the surface speed at the end of 
 ```julia
 u, v, w = ocean.model.velocities
 speed = Field(sqrt(u^2 + v^2))
-compute!(speed)
 
 using GLMakie
 heatmap(view(speed, :, :, ocean.model.grid.Nz), colorrange=(0, 0.5), colormap=:magma, nan_color=:lightgray)

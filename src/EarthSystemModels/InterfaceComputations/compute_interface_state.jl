@@ -32,7 +32,7 @@ end
                                          initial_interface_state,
                                          atmosphere_state,
                                          interior_state,
-                                         downwelling_radiation,
+                                         radiation_state,
                                          interface_properties,
                                          atmosphere_properties,
                                          interior_properties)
@@ -47,7 +47,7 @@ end
         Ψₛ⁻ = Ψₛⁿ
         Ψₛⁿ = iterate_interface_state(flux_formulation,
                                       Ψₛ⁻, Ψₐ, Ψᵢ,
-                                      downwelling_radiation,
+                                      radiation_state,
                                       interface_properties,
                                       atmosphere_properties,
                                       interior_properties)
@@ -70,7 +70,7 @@ and interior properties `ℙₛ`, `ℙₐ`, and `ℙᵢ`.
                                          approximate_interface_state,
                                          atmosphere_state,
                                          interior_state,
-                                         downwelling_radiation,
+                                         radiation_state,
                                          interface_properties,
                                          atmosphere_properties,
                                          interior_properties)
@@ -79,7 +79,7 @@ and interior properties `ℙₛ`, `ℙₐ`, and `ℙᵢ`.
                                        approximate_interface_state,
                                        atmosphere_state,
                                        interior_state,
-                                       downwelling_radiation,
+                                       radiation_state,
                                        interface_properties,
                                        atmosphere_properties,
                                        interior_properties)
@@ -90,10 +90,9 @@ and interior properties `ℙₛ`, `ℙₐ`, and `ℙᵢ`.
     # Recompute the saturation specific humidity at the interface based on the new temperature
     q_formulation = interface_properties.specific_humidity_formulation
     Sₛ = approximate_interface_state.S
-    Tᵃᵗ = atmosphere_state.T
     pᵃᵗ = atmosphere_state.p
     qᵃᵗ = atmosphere_state.q
-    qₛ = surface_specific_humidity(q_formulation, ℂᵃᵗ, Tᵃᵗ, pᵃᵗ, qᵃᵗ, Tₛ, Sₛ)
+    qₛ = surface_specific_humidity(q_formulation, ℂᵃᵗ, pᵃᵗ, Tₛ, Sₛ)
 
     # Compute the specific humidity increment
     Δq = qᵃᵗ - qₛ
