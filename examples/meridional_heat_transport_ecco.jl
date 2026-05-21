@@ -33,14 +33,12 @@ ocean = ocean_simulation(grid; momentum_advection, tracer_advection, free_surfac
 sea_ice = sea_ice_simulation(grid, ocean; advection=tracer_advection)
 
 date = DateTime(1993, 1, 1)
-dataset = ECCO4Monthly()
-ecco_temperature           = Metadatum(:temperature; date, dataset)
-ecco_salinity              = Metadatum(:salinity; date, dataset)
-ecco_sea_ice_thickness     = Metadatum(:sea_ice_thickness; date, dataset)
-ecco_sea_ice_concentration = Metadatum(:sea_ice_concentration; date, dataset)
+ecco_set = MetadataSet(:temperature, :salinity,
+                       :sea_ice_thickness, :sea_ice_concentration;
+                       dataset = ECCO4Monthly(), date)
 
-set!(ocean.model, T=ecco_temperature, S=ecco_salinity)
-set!(sea_ice.model, h=ecco_sea_ice_thickness, ℵ=ecco_sea_ice_concentration)
+set!(ocean.model,   ecco_set)   # T, S
+set!(sea_ice.model, ecco_set)   # h, ℵ
 
 atmosphere = JRA55PrescribedAtmosphere(arch)
 land       = JRA55PrescribedLand(arch)
