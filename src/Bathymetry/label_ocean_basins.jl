@@ -1,4 +1,5 @@
 using Oceananigans.OrthogonalSphericalShellGrids: TripolarGridOfSomeKind
+using Oceananigans.Grids: AbstractGrid
 using Oceananigans.Fields: convert_to_0_360
 using ..DataWrangling: BoundingBox
 
