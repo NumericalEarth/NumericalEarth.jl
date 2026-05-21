@@ -14,8 +14,7 @@ using Oceananigans.Solvers
 using Oceananigans.Solvers: ZDirection
 using Oceananigans.Utils: worksize
 using Oceananigans.Architectures: architecture
-using Oceananigans.OutputReaders: SplitFilePath, InMemoryFTS, InMemory, Prefetched,
-                                  time_indices, file_and_local_index
+using Oceananigans.OutputReaders: SplitFilePath, InMemoryFTS, InMemory, time_indices, file_and_local_index
 import Oceananigans.Fields: set!
 
 #####
@@ -222,15 +221,15 @@ location_types(::Oceananigans.OutputReaders.FieldTimeSeries{LX, LY, LZ}) where {
 
 rebuild_backend_with_path(backend, new_path) = backend
 
-function rebuild_backend_with_path(backend::Prefetched, new_path)
-    old_buf = getfield(backend, :buffer_fts)
-    BLX, BLY, BLZ = location_types(old_buf)
-    new_buf = Oceananigans.OutputReaders.FieldTimeSeries{BLX, BLY, BLZ}(
-        old_buf.data, old_buf.grid, old_buf.backend, old_buf.boundary_conditions,
-        old_buf.indices, old_buf.times, new_path, old_buf.name,
-        old_buf.time_indexing, old_buf.reader_kw)
-    return Prefetched(backend.base_backend, backend.pending, new_buf, backend.next_start)
-end
+# function rebuild_backend_with_path(backend::Prefetched, new_path)
+#     old_buf = getfield(backend, :buffer_fts)
+#     BLX, BLY, BLZ = location_types(old_buf)
+#     new_buf = Oceananigans.OutputReaders.FieldTimeSeries{BLX, BLY, BLZ}(
+#         old_buf.data, old_buf.grid, old_buf.backend, old_buf.boundary_conditions,
+#         old_buf.indices, old_buf.times, new_path, old_buf.name,
+#         old_buf.time_indexing, old_buf.reader_kw)
+#     return Prefetched(backend.base_backend, backend.pending, new_buf, backend.next_start)
+# end
 
 function rebuild_fts_with_path(fts, new_path)
     LX, LY, LZ = location_types(fts)
