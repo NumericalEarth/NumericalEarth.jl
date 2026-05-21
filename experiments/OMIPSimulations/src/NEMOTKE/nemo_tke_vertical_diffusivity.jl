@@ -1,4 +1,4 @@
-using Oceananigans.Advection: Advection
+using Oceananigans.TimeSteppers: TimeSteppers
 
 # NEMOTKEVerticalDiffusivity closure type, dispatch interface, and closure-field allocation.
 
@@ -69,7 +69,7 @@ const FlavorOfNEMOTKE = Union{NEMOTKEVD, NEMOTKEVDArray}
 
 with_tracers(tracers, closure::FlavorOfNEMOTKE) = closure
 
-@inline Advection.time_discretization(::NEMOTKEVerticalDiffusivity{TD}) where TD = TD()
+@inline TimeSteppers.time_discretization(::NEMOTKEVerticalDiffusivity{TD}) where TD = TD()
 
 #####
 ##### Closure-field allocation

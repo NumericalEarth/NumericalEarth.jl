@@ -674,7 +674,7 @@ end
 ##### ORCA builder
 #####
 
-using Oceananigans.Advection: AdaptiveVerticallyImplicitDiscretization
+using Oceananigans.TimeSteppers: AdaptiveVerticallyImplicitDiscretization
 
 config_momentum_advection(::Val{:orca})        = WENOVectorInvariant(order=5, time_discretization=AdaptiveVerticallyImplicitDiscretization(cfl=0.6))
 config_momentum_advection(::Val{:halfdegree})  = WENOVectorInvariant(order=5, time_discretization=AdaptiveVerticallyImplicitDiscretization(cfl=0.6))

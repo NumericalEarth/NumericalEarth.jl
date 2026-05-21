@@ -29,7 +29,7 @@ using Oceananigans.Utils: launch!, prettysummary
 import Oceananigans.BoundaryConditions: fill_halo_regions!
 import Oceananigans.TurbulenceClosures: viscosity, diffusivity,
                                         viscosity_location, diffusivity_location,
-                                        with_tracers, time_discretization,
+                                        with_tracers,
                                         compute_closure_fields!, build_closure_fields,
                                         diffusive_flux_z
 
