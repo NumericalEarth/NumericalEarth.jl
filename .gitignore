@@ -68,3 +68,6 @@ CondaPkg.toml
 # claude
 .claude
 test/Manifest.toml
+
+# Throwaway scratch scripts
+scratch/

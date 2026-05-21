@@ -12,6 +12,8 @@ export
     OceanOnlyModel,
     OceanSeaIceModel,
     AtmosphereOceanModel,
+    NestedSimulation,
+    parent_boundary_conditions,
     SlabOcean,
     default_sea_ice,
     FreezingLimitedOceanTemperature,
@@ -137,6 +139,7 @@ using .SeaIces
 using .Diagnostics
 
 using NumericalEarth.EarthSystemModels: ComponentInterfaces, MomentumRoughnessLength, ScalarRoughnessLength, default_sea_ice
+using NumericalEarth.EarthSystemModels.NestedSimulations: NestedSimulation, parent_boundary_conditions
 
 using NumericalEarth.DataWrangling.ETOPO
 using NumericalEarth.DataWrangling.ECCO

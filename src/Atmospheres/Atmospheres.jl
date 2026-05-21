@@ -24,6 +24,11 @@ import NumericalEarth.EarthSystemModels: interpolate_state!,
                                          boundary_layer_height,
                                          is_prescribed_atmosphere
 
+import NumericalEarth.EarthSystemModels.NestedSimulations: parent_clock,
+                                                           parent_field,
+                                                           parent_time_step!,
+                                                           parent_update_state!
+
 import NumericalEarth.EarthSystemModels.InterfaceComputations: ComponentExchanger, initialize!, net_fluxes
 
 # Can be extended by atmosphere models

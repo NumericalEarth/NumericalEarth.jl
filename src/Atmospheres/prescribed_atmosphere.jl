@@ -29,17 +29,36 @@ function Base.show(io::IO, pa::PrescribedAtmosphere)
     print(io, "└── boundary_layer_height: ", prettysummary(pa.boundary_layer_height))
 end
 
+# A grid is treated as volumetric (3D) when it carries more than one vertical
+# cell. Single-layer grids (Nz=1) are the conventional "surface atmosphere" used
+# for coupling to oceans; multi-layer grids drive the volumetric defaults used
+# when a `PrescribedAtmosphere` plays the role of a nesting parent.
+@inline is_volumetric_atmosphere_grid(grid) = size(grid, 3) > 1
+
 function default_atmosphere_velocities(grid, times)
-    ua = FieldTimeSeries{Center, Center, Nothing}(grid, times)
-    va = FieldTimeSeries{Center, Center, Nothing}(grid, times)
-    return (u=ua, v=va)
+    if is_volumetric_atmosphere_grid(grid)
+        ua = FieldTimeSeries{Center, Center, Center}(grid, times)
+        va = FieldTimeSeries{Center, Center, Center}(grid, times)
+        wa = FieldTimeSeries{Center, Center, Center}(grid, times)
+        return (u=ua, v=va, w=wa)
+    else
+        ua = FieldTimeSeries{Center, Center, Nothing}(grid, times)
+        va = FieldTimeSeries{Center, Center, Nothing}(grid, times)
+        return (u=ua, v=va)
+    end
 end
 
 function default_atmosphere_tracers(grid, times)
-    Ta = FieldTimeSeries{Center, Center, Nothing}(grid, times)
-    qa = FieldTimeSeries{Center, Center, Nothing}(grid, times)
-    parent(Ta) .= 273.15 + 20
-    return (T=Ta, q=qa)
+    if is_volumetric_atmosphere_grid(grid)
+        Ta = FieldTimeSeries{Center, Center, Center}(grid, times)
+        qa = FieldTimeSeries{Center, Center, Center}(grid, times)
+        return (T=Ta, q=qa)
+    else
+        Ta = FieldTimeSeries{Center, Center, Nothing}(grid, times)
+        qa = FieldTimeSeries{Center, Center, Nothing}(grid, times)
+        parent(Ta) .= 273.15 + 20
+        return (T=Ta, q=qa)
+    end
 end
 
 """
@@ -64,7 +83,11 @@ PrescribedPrecipitationFlux(; rain=nothing, snow=nothing) =
 Adapt.adapt_structure(to, ff::PrescribedPrecipitationFlux) =
     PrescribedPrecipitationFlux(adapt(to, ff.rain), adapt(to, ff.snow))
 
+# Surface freshwater fluxes are meaningless for a volumetric atmosphere acting as
+# a nesting parent; default to `nothing` there. The surface_*_flux accessors and
+# `extract_field_time_series` already handle the Nothing branch.
 function default_freshwater_flux(grid, times)
+    is_volumetric_atmosphere_grid(grid) && return nothing
     rain = FieldTimeSeries{Center, Center, Nothing}(grid, times)
     snow = FieldTimeSeries{Center, Center, Nothing}(grid, times)
     return PrescribedPrecipitationFlux(rain, snow)
@@ -84,9 +107,13 @@ end
 """ The standard unit of atmospheric pressure; 1 standard atmosphere (atm) = 101,325 Pascals (Pa)
 in SI units. This is approximately equal to the mean sea-level atmospheric pressure on Earth. """
 function default_atmosphere_pressure(grid, times)
-    pa = FieldTimeSeries{Center, Center, Nothing}(grid, times)
-    parent(pa) .= 101325
-    return pa
+    if is_volumetric_atmosphere_grid(grid)
+        return FieldTimeSeries{Center, Center, Center}(grid, times)
+    else
+        pa = FieldTimeSeries{Center, Center, Nothing}(grid, times)
+        parent(pa) .= 101325
+        return pa
+    end
 end
 
 @inline function update_state!(atmos::PrescribedAtmosphere)
@@ -180,3 +207,24 @@ function restore_prognostic_state!(atmos::PrescribedAtmosphere, state)
 end
 
 restore_prognostic_state!(atmos::PrescribedAtmosphere, ::Nothing) = atmos
+
+#####
+##### Parent interface (for NestedSimulations)
+#####
+
+parent_clock(atmos::PrescribedAtmosphere) = atmos.clock
+
+function parent_field(atmos::PrescribedAtmosphere, name::Symbol)
+    if atmos.velocities !== nothing && hasproperty(atmos.velocities, name)
+        return getproperty(atmos.velocities, name)
+    elseif atmos.tracers !== nothing && hasproperty(atmos.tracers, name)
+        return getproperty(atmos.tracers, name)
+    elseif (name === :p || name === :pressure) && atmos.pressure !== nothing
+        return atmos.pressure
+    else
+        throw(ArgumentError("PrescribedAtmosphere has no field `$name`"))
+    end
+end
+
+parent_time_step!(atmos::PrescribedAtmosphere, Δt) = time_step!(atmos, Δt)
+parent_update_state!(atmos::PrescribedAtmosphere) = update_state!(atmos)
