@@ -10,7 +10,7 @@ apply_air_sea_radiative_fluxes!(::Any) = nothing
 apply_air_sea_ice_radiative_fluxes!(::Any) = nothing
 
 function Oceananigans.TimeSteppers.time_step!(coupled_model::EarthSystemModel, Δt; callbacks=[])
-    maybe_prepare_first_time_step!(coupled_model, callbacks)
+    maybe_prepare_first_time_step!(coupled_model, Δt, callbacks)
 
     radiation  = coupled_model.radiation
     atmosphere = coupled_model.atmosphere
