@@ -58,6 +58,7 @@ Oceananigans.Utils.prettytime(model::ESM) = prettytime(model.clock.time)
 default_clock(TT) = Clock{TT}(0, 0, 1)
 
 Oceananigans.Simulations.reset_clock!(::Nothing) = nothing
+Oceananigans.TimeSteppers.update_state!(::Nothing) = nothing
 Oceananigans.Simulations.reset_clock!(component::Simulation) = reset_clock!(component.model)
 Oceananigans.Simulations.reset_clock!(component) = reset!(getproperty(component, :clock))
 
@@ -66,8 +67,9 @@ function Oceananigans.Simulations.reset_clock!(model::ESM)
 
     for component in components(model)
         reset_clock!(component)
-        update_state!(model.atmosphere)
     end
+
+    update_state!(model.atmosphere)
 
     return nothing
 end

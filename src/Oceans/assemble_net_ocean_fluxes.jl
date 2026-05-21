@@ -7,14 +7,6 @@ using ..EarthSystemModels: NoAtmosInterfaceModel, NoOceanInterfaceModel, NoInter
 using Oceananigans.Fields: ZeroField
 using ..EarthSystemModels.InterfaceComputations: computed_fluxes
 
-struct NoAtmosOceanFluxes{SH, LH, WV, XM, YM}
-    sensible_heat :: SH
-    latent_heat   :: LH
-    water_vapor   :: WV
-    x_momentum    :: XM
-    y_momentum    :: YM
-end
-
 @inline τᶜᶜᶜ(i, j, k, grid, ρᵒᶜ⁻¹, ℵ, ρτᶜᶜᶜ) = @inbounds ρᵒᶜ⁻¹ * (1 - ℵ[i, j, k]) * ρτᶜᶜᶜ[i, j, k]
 
 #####
@@ -34,10 +26,9 @@ rainfall_flux(coupled_model) = coupled_model.interfaces.exchanger.atmosphere.sta
 snowfall_flux(::NoAtmosInterfaceModel) = ZeroField()
 snowfall_flux(coupled_model) = coupled_model.interfaces.exchanger.atmosphere.state.Jˢⁿ.data
 
-atmos_ocean_flux(::NoAtmosInterfaceModel) = NoAtmosOceanFluxes(ZeroField(), ZeroField(), ZeroField(), ZeroField(), ZeroField())
 atmos_ocean_flux(coupled_model) = computed_fluxes(coupled_model.interfaces.atmosphere_ocean_interface)
 
-land_freshwater_flux(::Nothing) = nothing
+land_freshwater_flux(::Nothing) = ZeroField()
 land_freshwater_flux(land_exchanger) = land_exchanger.state.freshwater_flux.data
 
 function update_net_ocean_fluxes!(coupled_model, ocean_model, grid)
@@ -76,7 +67,6 @@ function update_net_ocean_fluxes!(coupled_model, ocean_model, grid)
     return nothing
 end
 
-@inline get_land_freshwater_flux(i, j, ::Nothing) = 0
 Base.@propagate_inbounds get_land_freshwater_flux(i, j, flux) = flux[i, j, 1]
 
 @kernel function _assemble_net_ocean_fluxes!(net_ocean_fluxes,
