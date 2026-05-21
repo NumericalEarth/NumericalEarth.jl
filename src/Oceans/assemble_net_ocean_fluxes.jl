@@ -7,12 +7,12 @@ using ..EarthSystemModels: NoAtmosInterfaceModel, NoOceanInterfaceModel, NoInter
 using Oceananigans.Fields: ZeroField
 using ..EarthSystemModels.InterfaceComputations: computed_fluxes
 
-struct NoAtmosOceanFluxes
-    sensible_heat
-    latent_heat
-    water_vapor
-    x_momentum
-    y_momentum
+struct NoAtmosOceanFluxes{SH, LH, WV, XM, YM}
+    sensible_heat :: SH
+    latent_heat   :: LH
+    water_vapor   :: WV
+    x_momentum    :: XM
+    y_momentum    :: YM
 end
 
 @inline τᶜᶜᶜ(i, j, k, grid, ρᵒᶜ⁻¹, ℵ, ρτᶜᶜᶜ) = @inbounds ρᵒᶜ⁻¹ * (1 - ℵ[i, j, k]) * ρτᶜᶜᶜ[i, j, k]
