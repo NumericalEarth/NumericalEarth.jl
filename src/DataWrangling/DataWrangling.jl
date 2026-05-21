@@ -246,7 +246,7 @@ function metadata_time_step end
 function metadata_epoch end
 
 """
-    variable_aliases :: Dict{Symbol, Symbol}
+    variable_glossary :: Dict{Symbol, Symbol}
 
 Global map from *verbose* dataset variable names (the symbols a user passes to
 `Metadata` and `MetadataSet`) to the *short* model field-name symbols
@@ -264,7 +264,7 @@ Every value here is documented in `docs/src/appendix/notation.md` (or in
 [Breeze.jl's notation](https://github.com/CliMA/Breeze.jl/blob/main/docs/src/appendix/notation.md)
 for the microphysics symbols).
 """
-const variable_aliases = Dict{Symbol, Symbol}(
+const variable_glossary = Dict{Symbol, Symbol}(
     # Ocean & atmosphere state (notation.md existing rows)
     :temperature                          => :T,
     :air_temperature                      => :T,

@@ -1,11 +1,11 @@
 include("runtests_setup.jl")
 
 using NumericalEarth.DataWrangling: MetadataSet, Metadata, Metadatum,
-                                    BoundingBox, variable_aliases, metadata_path
+                                    BoundingBox, variable_glossary, metadata_path
 
 # `MetadataSet` is a pure DataWrangling concept: no downloads, no field
 # construction. These tests exercise construction, accessors, iteration,
-# and the global verbose→short alias map. Downstream `set!(model, mset)`,
+# and the global verbose→short glossary. Downstream `set!(model, mset)`,
 # `Field(::MetadataSet)`, `FieldTimeSeries(::MetadataSet)`, and the
 # `download` rename live in their own tests once those land.
 
@@ -170,7 +170,7 @@ function NumericalEarth.DataWrangling.set!(f::StubField, m::Metadata)
     return f
 end
 
-@testset "set!(model, mset) — alias routing" begin
+@testset "set!(model, mset) — glossary routing" begin
     mset = MetadataSet(:temperature, :salinity;
                        dataset = ECCO4Monthly(),
                        date    = snapshot_date)
@@ -178,7 +178,7 @@ end
     m = StubModel()
     set!(m, mset)
 
-    # variable_aliases routes :temperature → :T, :salinity → :S
+    # variable_glossary routes :temperature → :T, :salinity → :S
     received_keys = first.(m.received)
     @test :T in received_keys
     @test :S in received_keys
@@ -192,7 +192,7 @@ end
 end
 
 @testset "set!(model, mset) — silently skips unmapped vars" begin
-    # `:sea_ice_thickness` IS in the alias map; `:bottom_height` is NOT.
+    # `:sea_ice_thickness` IS in the glossary; `:bottom_height` is NOT.
     # Setting both on a single model should only deliver the mapped one.
     mset = MetadataSet(:temperature, :sea_ice_thickness;
                        dataset = ECCO4Monthly(),
@@ -207,8 +207,8 @@ end
 
     # Same set, but route :temperature only — an unmapped name doesn't fail
     # (it just doesn't appear). Simulate this by pretending we're routing to a
-    # model that ignores unknown aliases.
-    @test issubset(received_keys, values(NumericalEarth.DataWrangling.variable_aliases))
+    # model that ignores unknown variables.
+    @test issubset(received_keys, values(NumericalEarth.DataWrangling.variable_glossary))
 end
 
 @testset "set!(::NamedTuple, mset) — explicit per-variable" begin
@@ -242,41 +242,41 @@ end
     @test_throws ArgumentError Field(mts)
 end
 
-@testset "variable_aliases registry" begin
+@testset "variable_glossary registry" begin
     # The verbose→short map is the single source of truth used by
     # set!(model, mset). Check that every value lines up with the
     # notation conventions documented in docs/src/appendix/notation.md.
 
     # Ocean & atmosphere state
-    @test variable_aliases[:temperature]              === :T
-    @test variable_aliases[:salinity]                 === :S
-    @test variable_aliases[:eastward_velocity]        === :u
-    @test variable_aliases[:northward_velocity]       === :v
-    @test variable_aliases[:eastward_wind]            === :u    # synonym
-    @test variable_aliases[:u_velocity]               === :u    # synonym
-    @test variable_aliases[:sea_level_pressure]       === :p
+    @test variable_glossary[:temperature]              === :T
+    @test variable_glossary[:salinity]                 === :S
+    @test variable_glossary[:eastward_velocity]        === :u
+    @test variable_glossary[:northward_velocity]       === :v
+    @test variable_glossary[:eastward_wind]            === :u    # synonym
+    @test variable_glossary[:u_velocity]               === :u    # synonym
+    @test variable_glossary[:sea_level_pressure]       === :p
 
     # Atmosphere moisture (Breeze convention)
-    @test variable_aliases[:specific_humidity]                    === :qᵛ
-    @test variable_aliases[:air_specific_humidity]                === :qᵛ
-    @test variable_aliases[:specific_cloud_liquid_water_content]  === :qᶜˡ
-    @test variable_aliases[:specific_cloud_ice_water_content]     === :qᶜⁱ
+    @test variable_glossary[:specific_humidity]                    === :qᵛ
+    @test variable_glossary[:air_specific_humidity]                === :qᵛ
+    @test variable_glossary[:specific_cloud_liquid_water_content]  === :qᶜˡ
+    @test variable_glossary[:specific_cloud_ice_water_content]     === :qᶜⁱ
 
     # Sea ice
-    @test variable_aliases[:sea_ice_thickness]     === :h
-    @test variable_aliases[:sea_ice_concentration] === :ℵ
+    @test variable_glossary[:sea_ice_thickness]     === :h
+    @test variable_glossary[:sea_ice_concentration] === :ℵ
 
     # Freshwater fluxes (notation.md "Net surface freshwater fluxes")
-    @test variable_aliases[:rain_freshwater_flux] === :Jʳⁿ
-    @test variable_aliases[:snow_freshwater_flux] === :Jˢⁿ
+    @test variable_glossary[:rain_freshwater_flux] === :Jʳⁿ
+    @test variable_glossary[:snow_freshwater_flux] === :Jˢⁿ
 
     # Biogeochemistry (matches restoring.jl:49-61 short symbols)
-    @test variable_aliases[:dissolved_inorganic_carbon] === :DIC
-    @test variable_aliases[:phosphate]                  === :PO₄
-    @test variable_aliases[:dissolved_oxygen]           === :O₂
+    @test variable_glossary[:dissolved_inorganic_carbon] === :DIC
+    @test variable_glossary[:phosphate]                  === :PO₄
+    @test variable_glossary[:dissolved_oxygen]           === :O₂
 
     # Out-of-map variables are absent (silently fall through set!(model, mset))
-    @test !haskey(variable_aliases, :vorticity)
-    @test !haskey(variable_aliases, :mesh_mask)
-    @test !haskey(variable_aliases, :significant_wave_height)
+    @test !haskey(variable_glossary, :vorticity)
+    @test !haskey(variable_glossary, :mesh_mask)
+    @test !haskey(variable_glossary, :significant_wave_height)
 end

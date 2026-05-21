@@ -88,7 +88,7 @@ ecco_set = MetadataSet(:temperature, :salinity,
                        dataset = ECCO4Monthly(), date)
 
 # A single MetadataSet drives both components; variables not in
-# `variable_aliases` for a given model fall through silently.
+# `variable_glossary` for a given model fall through silently.
 set!(ocean.model,   ecco_set)   # picks up :temperature, :salinity → T, S
 set!(sea_ice.model, ecco_set)   # picks up :sea_ice_thickness, :sea_ice_concentration → h, ℵ
 

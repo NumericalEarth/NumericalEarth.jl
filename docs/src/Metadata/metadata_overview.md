@@ -118,7 +118,7 @@ mset_ts.temperature           # → a `Metadata` (multi-date)
 `set!(model, mset)` translates each variable's verbose dataset name (`:temperature`, `:salinity`, ...)
 to the short model field-name the model expects (`:T`, `:S`, `:u`, `:ℵ`, ...) and forwards the result
 as keyword arguments to the model's underlying `set!`. The translation table lives in
-`NumericalEarth.DataWrangling.variable_aliases`, populated from the conventions in
+`NumericalEarth.DataWrangling.variable_glossary`, populated from the conventions in
 [Notation](@ref Notation) — so a coupled set can drive ocean and sea-ice components from one call:
 
 ```julia
@@ -130,7 +130,7 @@ set!(ocean.model,   mset)   # picks up :temperature, :salinity → T, S
 set!(sea_ice.model, mset)   # picks up :sea_ice_thickness, :sea_ice_concentration → h, ℵ
 ```
 
-Variables absent from `variable_aliases` are silently skipped (lets one set partially drive each
+Variables absent from `variable_glossary` are silently skipped (lets one set partially drive each
 component without manual filtering).
 
 ### Building `Field`s and `FieldTimeSeries` in bulk

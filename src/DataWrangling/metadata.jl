@@ -484,7 +484,7 @@ Set each `fields[name]` from the corresponding `mset[name]`. The NamedTuple's
 keys must be a subset of the set's variable names; extra fields are ignored.
 
 This is the explicit form that takes verbose dataset names on both sides — no
-alias translation. For the auto-routing form (short model field-names), see
+glossary translation. For the auto-routing form (short model field-names), see
 `set!(model, ::MetadataSet)`.
 """
 function Fields.set!(fields::NamedTuple, mset::MetadataSet)
@@ -500,10 +500,10 @@ end
     set!(model, mset::MetadataSet)
 
 Set fields of `model` from the variables in `mset`, auto-routing verbose
-dataset variable names to short model field-name aliases via the global
-[`variable_aliases`](@ref) registry.
+dataset variable names to short model field-names via the global
+[`variable_glossary`](@ref) registry.
 
-Variables in `mset` that have no entry in `variable_aliases` are silently
+Variables in `mset` that have no entry in `variable_glossary` are silently
 skipped — this lets partial application across coupled-model components work
 naturally. For example, a single 4-variable set can drive both an ocean and a
 sea-ice model:
@@ -518,8 +518,8 @@ set!(sea_ice.model, mset)   # consumes :sea_ice_thickness, :sea_ice_concentratio
 """
 function Fields.set!(model, mset::MetadataSet)
     names = getfield(mset, :names)
-    aliased = filter(n -> haskey(variable_aliases, n), names)
-    kwargs = NamedTuple{Tuple(variable_aliases[n] for n in aliased)}(Tuple(mset[n] for n in aliased))
+    known = filter(n -> haskey(variable_glossary, n), names)
+    kwargs = NamedTuple{Tuple(variable_glossary[n] for n in known)}(Tuple(mset[n] for n in known))
     return set!(model; kwargs...)
 end
 
