@@ -197,7 +197,7 @@ function Oceananigans.Fields.Field(metadata::Metadatum, arch=CPU();
                                    halo = (3, 3, 3),
                                    cache_inpainted_data = true)
 
-    download_dataset(metadata)
+    Downloads.download(metadata)
 
     # Inpainting on a (Flat, Flat, *) column field is meaningless and the
     # iterative algorithm doesn't terminate gracefully without horizontal
@@ -414,3 +414,27 @@ end
 end
 
 @inline is_masked(a, min_value, max_value, mask_value) = isnan(a) | (a <= min_value) | (a >= max_value) | (a == mask_value)
+
+#####
+##### Field / FieldTimeSeries for MetadataSet
+#####
+
+"""
+    Field(mset::MetadataSet, arch=CPU(); kw...)
+
+Build a `NamedTuple` of `Field`s — one per variable in `mset`, keyed by the
+verbose dataset variable name. Each value is `Field(mset[name], arch; kw...)`.
+
+Requires `mset` to hold scalar `dates` so each `mset[name]` is a `Metadatum`;
+for multi-date sets, use `FieldTimeSeries(::MetadataSet)`.
+"""
+function Oceananigans.Fields.Field(mset::MetadataSet, arch=CPU(); kw...)
+    dates = getfield(mset, :dates)
+    if !(dates isa AnyDateTime)
+        throw(ArgumentError(
+            "Field(::MetadataSet) requires a scalar `date`, but this `MetadataSet` carries a multi-date axis. " *
+            "Use `FieldTimeSeries(mset)` for multi-date sets."))
+    end
+    names = getfield(mset, :names)
+    return NamedTuple{names}(map(n -> Field(mset[n], arch; kw...), names))
+end

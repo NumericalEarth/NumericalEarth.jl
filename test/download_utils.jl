@@ -1,4 +1,4 @@
-using Downloads
+using Downloads: Downloads
 using NumericalEarth.DataWrangling: metadata_path
 
 const ARTIFACTS_BASE_URL = "https://github.com/NumericalEarth/NumericalEarthArtifacts/releases/download/data-v1/"
@@ -9,14 +9,23 @@ function emit_ci_warning(title, message)
     end
 end
 
-function download_from_artifacts(filepath::AbstractString)
+function download_from_artifacts(filepath::AbstractString; max_retries=3)
     filename = basename(filepath)
     fallback_url = ARTIFACTS_BASE_URL * filename
     @info "Downloading $filename from NumericalEarthArtifacts fallback..."
-    mktemp(dirname(filepath)) do tmppath, tmpio
-        close(tmpio)
-        Downloads.download(fallback_url, tmppath)
-        mv(tmppath, filepath; force=true)
+    for attempt in 1:max_retries
+        try
+            mktemp(dirname(filepath)) do tmppath, tmpio
+                close(tmpio)
+                Downloads.download(fallback_url, tmppath)
+                mv(tmppath, filepath; force=true)
+            end
+            return
+        catch e
+            attempt < max_retries || rethrow(e)
+            @warn "Artifact download attempt $attempt/$max_retries failed for $filename; retrying..." exception=(e, catch_backtrace())
+            sleep(2.0 * attempt)  # linear backoff: 2s, 4s, ...
+        end
     end
 end
 

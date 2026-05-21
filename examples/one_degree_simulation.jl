@@ -83,14 +83,14 @@ sea_ice = sea_ice_simulation(grid, ocean; advection=tracer_advection)
 # We initialize the ocean and sea ice models with data from the ECCO state estimate.
 
 date = DateTime(1993, 1, 1)
-dataset = ECCO4Monthly()
-ecco_temperature           = Metadatum(:temperature; date, dataset)
-ecco_salinity              = Metadatum(:salinity; date, dataset)
-ecco_sea_ice_thickness     = Metadatum(:sea_ice_thickness; date, dataset)
-ecco_sea_ice_concentration = Metadatum(:sea_ice_concentration; date, dataset)
+ecco_set = MetadataSet(:temperature, :salinity,
+                       :sea_ice_thickness, :sea_ice_concentration;
+                       dataset = ECCO4Monthly(), date)
 
-set!(ocean.model, T=ecco_temperature, S=ecco_salinity)
-set!(sea_ice.model, h=ecco_sea_ice_thickness, ℵ=ecco_sea_ice_concentration)
+# A single MetadataSet drives both components; variables not in
+# `variable_glossary` for a given model fall through silently.
+set!(ocean.model,   ecco_set)   # picks up :temperature, :salinity → T, S
+set!(sea_ice.model, ecco_set)   # picks up :sea_ice_thickness, :sea_ice_concentration → h, ℵ
 
 # ### Atmospheric forcing
 
