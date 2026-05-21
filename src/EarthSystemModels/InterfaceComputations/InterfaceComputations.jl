@@ -3,9 +3,9 @@ module InterfaceComputations
 using Adapt: Adapt, adapt
 using Oceananigans: Oceananigans
 using Oceananigans.Fields: AbstractField, Field, Face, Center
-using Oceananigans.Grids: Flat
+using Oceananigans.Grids: Flat, topology
 using Oceananigans.Simulations: Simulation
-using Oceananigans.Utils: KernelParameters
+using Oceananigans.Utils: KernelParameters, worksize
 
 export
     ComponentInterfaces,
@@ -70,17 +70,17 @@ end
 #####
 
 function interface_kernel_parameters(grid)
-    Nx, Ny, _ = size(grid)
+    Sx, Sy, _ = worksize(grid)
     TX, TY, _ = topology(grid)
-    single_column_grid = Nx == 1 && Ny == 1
+    single_column_grid = Sx == 1 && Sy == 1
 
     if single_column_grid
         kernel_parameters = KernelParameters(1:1, 1:1)
     else
         # Compute fluxes into halo regions (0:N+1) for non-Flat dimensions.
         # Flat dimensions have no halo cells, so only iterate over the interior.
-        x_range = TX === Flat ? (1:Nx) : (0:Nx+1)
-        y_range = TY === Flat ? (1:Ny) : (0:Ny+1)
+        x_range = TX === Flat ? (1:Sx) : (0:Sx+1)
+        y_range = TY === Flat ? (1:Sy) : (0:Sy+1)
         kernel_parameters = KernelParameters(x_range, y_range)
     end
 
