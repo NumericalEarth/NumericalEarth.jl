@@ -1,5 +1,4 @@
 using Oceananigans.Operators: Δzᶜᶜᶜ
-using Oceananigans.BoundaryConditions: fill_halo_regions!
 using ClimaSeaIce.SeaIceThermodynamics: melting_temperature
 using ClimaSeaIce.SeaIceDynamics: x_momentum_stress, y_momentum_stress
 
@@ -60,12 +59,6 @@ function compute_sea_ice_ocean_fluxes!(interface, ocean, sea_ice, ocean_properti
         τₛ = dynamics.external_momentum_stresses.bottom
         launch!(arch, grid, kernel_parameters, _compute_sea_ice_ocean_stress!,
                 fluxes, grid, clock, hˢⁱ, ℵ, uˢⁱ, vˢⁱ, τₛ)
-
-        # Regularize vector/stress halo values before they are used to compute
-        # friction velocity in the scalar ice-ocean flux kernel. The field's own
-        # tripolar-appropriate zipper boundary condition determines the fold treatment.
-        fill_halo_regions!((fluxes.x_momentum,
-                            fluxes.y_momentum))
     else
         τₛ = nothing
     end
