@@ -191,17 +191,6 @@ Arguments
 # not `Base.download` which is a 1.0-era shim). Per-dataset methods are added
 # within each dataset module via `Downloads.download(metadata::FooMetadata) = ...`.
 
-# Deprecation alias. `download_dataset` was renamed to `download` (#235) — the
-# argument is metadata, not a dataset, so the verb-on-object form reads better
-# and gives `MetadataSet` a uniform aggregation hook. Old callers keep working
-# (with a one-time `depwarn`); planned for removal one minor release after
-# adoption settles.
-function download_dataset(args...; kwargs...)
-    Base.depwarn("`download_dataset` has been renamed to `download`. " *
-                 "Use `download(args...; kwargs...)` instead.", :download_dataset)
-    return Downloads.download(args...; kwargs...)
-end
-
 function inpainted_metadata_path end
 
 """
