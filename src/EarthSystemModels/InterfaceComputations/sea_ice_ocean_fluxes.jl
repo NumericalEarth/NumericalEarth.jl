@@ -70,10 +70,6 @@ function compute_sea_ice_ocean_fluxes!(interface, ocean, sea_ice, ocean_properti
         τₛ = nothing
     end
 
-    # Regularize the source ocean tracer state before the coupling kernel reads
-    # across fold-adjacent cells. Constant and zero fields are no-ops here.
-    fill_halo_regions!((Tᵒᶜ, Sᵒᶜ))
-
     launch!(arch, grid, :xy, _compute_sea_ice_ocean_fluxes!,
             flux_formulation, fluxes, Tˢⁱ, Sˢⁱ, grid, clock,
             hˢⁱ, hc, ℵ, Sⁱ, Tᵒᶜ, Sᵒᶜ, uˢⁱ, vˢⁱ, τₛ,
