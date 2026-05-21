@@ -43,7 +43,7 @@ function parent_boundary_conditions(grid;
     field_pairs = []
     for (child_name, fts) in pairs(variables)
         scheme = haskey(schemes, child_name) ? getproperty(schemes, child_name) : nothing
-        side_pairs = [side => OpenBoundaryCondition(fts; scheme) for side in sides]
+        side_pairs = [side => OpenBoundaryCondition(Interpolated(fts); scheme) for side in sides]
         push!(field_pairs, child_name => FieldBoundaryConditions(; side_pairs...))
     end
 
