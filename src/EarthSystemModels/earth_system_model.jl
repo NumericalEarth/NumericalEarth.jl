@@ -268,6 +268,18 @@ function present_surfaces(ocean, sea_ice)
     return Tuple(surfaces)
 end
 
+# Blacklist predicates for catching swapped positional arguments to the convenience
+# constructors below. The fallback returns `true` so unfamiliar component types are
+# permitted; specializations in `Oceans` and `SeaIces` set the obviously-wrong cases
+# (e.g. a sea ice simulation supplied where an ocean is expected) to `false`.
+is_sea_ice_component(component) = true
+is_ocean_component(component) = true
+
+function invalid_component(constructor, position, expected, received)
+    return ArgumentError("$constructor expects $expected as positional argument $position, " *
+                         "got a $(typeof(received)) instead")
+end
+
 """
     OceanOnlyModel(ocean; atmosphere=nothing, radiation=nothing, land=nothing, kw...)
 
@@ -279,19 +291,23 @@ The `atmosphere` keyword can be used to specify a prescribed atmospheric forcing
 (e.g., `JRA55PrescribedAtmosphere`). All other keyword arguments are forwarded
 to `EarthSystemModel`.
 """
-OceanOnlyModel(ocean; atmosphere=nothing, land=nothing, radiation=nothing, kw...) =
-    EarthSystemModel(radiation, atmosphere, land, default_sea_ice(), ocean; kw...)
+function OceanOnlyModel(ocean; atmosphere=nothing, land=nothing, radiation=nothing, kw...)
+    is_ocean_component(ocean) || throw(invalid_component(:OceanOnlyModel, 1, "an ocean simulation", ocean))
+    return EarthSystemModel(radiation, atmosphere, land, default_sea_ice(), ocean; kw...)
+end
 
 """
-    OceanSeaIceModel(sea_ice, ocean; atmosphere=nothing, radiation=nothing, land=nothing, kw...)
+    OceanSeaIceModel(ocean, sea_ice; atmosphere=nothing, radiation=nothing, land=nothing, kw...)
 
 Construct a coupled ocean--sea ice model.
 This is a convenience constructor for [`EarthSystemModel`](@ref) with an explicit sea ice component
-and an optional prescribed atmosphere. Positional arguments follow the
-struct convention (top→bottom): `sea_ice` then `ocean`.
+and an optional prescribed atmosphere. Positional arguments are `ocean` then `sea_ice`.
 """
-OceanSeaIceModel(sea_ice, ocean; atmosphere=nothing, land=nothing, radiation=nothing, kw...) =
-    EarthSystemModel(radiation, atmosphere, land, sea_ice, ocean; kw...)
+function OceanSeaIceModel(ocean, sea_ice; atmosphere=nothing, land=nothing, radiation=nothing, kw...)
+    is_ocean_component(ocean) || throw(invalid_component(:OceanSeaIceModel, 1, "an ocean simulation", ocean))
+    is_sea_ice_component(sea_ice) || throw(invalid_component(:OceanSeaIceModel, 2, "a sea ice simulation", sea_ice))
+    return EarthSystemModel(radiation, atmosphere, land, sea_ice, ocean; kw...)
+end
 
 """
     AtmosphereOceanModel(atmosphere, ocean; kw...)
@@ -300,8 +316,10 @@ Construct a coupled atmosphere--ocean model.
 Convenience constructor for [`EarthSystemModel`](@ref) with an atmosphere and ocean
 but no sea ice. All keyword arguments are forwarded to `EarthSystemModel`.
 """
-AtmosphereOceanModel(atmosphere, ocean; land=nothing, radiation=nothing, kw...) =
-    EarthSystemModel(radiation, atmosphere, land, nothing, ocean; kw...)
+function AtmosphereOceanModel(atmosphere, ocean; land=nothing, radiation=nothing, kw...)
+    is_ocean_component(ocean) || throw(invalid_component(:AtmosphereOceanModel, 2, "an ocean simulation", ocean))
+    return EarthSystemModel(radiation, atmosphere, land, nothing, ocean; kw...)
+end
 
 time(coupled_model::EarthSystemModel) = coupled_model.clock.time
 

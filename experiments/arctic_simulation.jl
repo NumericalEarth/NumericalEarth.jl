@@ -96,7 +96,7 @@ radiation  = JRA55PrescribedRadiation(arch)
 ##### Arctic coupled model
 #####
 
-arctic = OceanSeaIceModel(sea_ice, ocean; atmosphere, radiation)
+arctic = OceanSeaIceModel(ocean, sea_ice; atmosphere, radiation)
 arctic = Simulation(arctic, Δt=5minutes, stop_time=365days)
 
 # Sea-ice variables
