@@ -51,10 +51,12 @@ end
     # Parent atmosphere holds the analytic Lamb-Oseen state on a 3D PrescribedAtmosphere,
     # populated by set! at a few coarse time snapshots; interpolation handles the rest.
     # Nz > 1 so the volumetric defaults (CCC velocities/tracers/pressure) kick in.
-    parent_grid = RectilinearGrid(size     = (32, 32, 2),
-                                  x        = (-1, 1),
-                                  y        = (-1, 1),
-                                  z        = (0, 1),
+    # Domain extends strictly beyond the child so the FTS brackets every child
+    # boundary node (required by InterpolatedFTSBoundary's validation).
+    parent_grid = RectilinearGrid(size     = (16, 16, 4),
+                                  x        = (-1.5, 1.5),
+                                  y        = (-1.5, 1.5),
+                                  z        = (-0.2, 1.2),
                                   topology = (Bounded, Bounded, Bounded))
 
     times  = collect(0.0:0.1:1.0)
