@@ -674,9 +674,11 @@ end
 ##### ORCA builder
 #####
 
-config_momentum_advection(::Val{:orca})        = WENOVectorInvariant(order=5, weight_computation=NormalDivision)
-config_momentum_advection(::Val{:halfdegree})  = WENOVectorInvariant(order=5, weight_computation=NormalDivision)
-config_momentum_advection(::Val{:tenthdegree}) = WENOVectorInvariant(weight_computation=NormalDivision)
+using Oceananigans.Advection: AdaptiveVerticallyImplicitDiscretization
+
+config_momentum_advection(::Val{:orca})        = WENOVectorInvariant(order=5, time_discretization=AdaptiveVerticallyImplicitDiscretization(cfl=0.6))
+config_momentum_advection(::Val{:halfdegree})  = WENOVectorInvariant(order=5, time_discretization=AdaptiveVerticallyImplicitDiscretization(cfl=0.6))
+config_momentum_advection(::Val{:tenthdegree}) = WENOVectorInvariant(time_discretization = AdaptiveVerticallyImplicitDiscretization(cfl=0.6))
 
 function build_ocean(config, grid;
                      κ_skew, κ_symmetric, Cᵇ = 0.28,
@@ -698,7 +700,7 @@ function build_ocean(config, grid;
     ocean = ocean_simulation(grid;
                              Δt = 1minutes,
                              momentum_advection,
-                             tracer_advection = WENO(order=7; minimum_buffer_upwind_order=3, weight_computation=NormalDivision),
+                             tracer_advection = WENO(order=7; minimum_buffer_upwind_order=3, time_discretization=AdaptiveVerticallyImplicitDiscretization(cfl=0.6)),
                              coriolis,
                              timestepper = :SplitRungeKutta3,
                              materialize_buoyancy_gradients = !(config == Val(:tenthdegree)),
