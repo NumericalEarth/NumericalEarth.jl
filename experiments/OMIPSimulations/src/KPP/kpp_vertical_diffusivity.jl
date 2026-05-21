@@ -1,3 +1,5 @@
+using Oceananigans.Advection: Advection
+
 # KPPVerticalDiffusivity closure type, dispatch interface, and closure-field allocation.
 
 # Wrapper that opts the per-tracer surface-BC NamedTuple out of recursive
@@ -69,7 +71,7 @@ const FlavorOfKPP = Union{KPPVD, KPPVDArray}
 
 with_tracers(tracers, closure::FlavorOfKPP) = closure
 
-@inline time_discretization(::KPPVerticalDiffusivity{TD}) where TD = TD()
+@inline Advection.time_discretization(::KPPVerticalDiffusivity{TD}) where TD = TD()
 
 #####
 ##### Closure-field allocation
