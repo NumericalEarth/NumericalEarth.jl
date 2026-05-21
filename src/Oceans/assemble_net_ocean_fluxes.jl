@@ -3,7 +3,8 @@ using Oceananigans.Grids: inactive_node
 using Oceananigans.Operators: ℑxᶠᵃᵃ, ℑyᵃᶠᵃ
 using Oceananigans.Forcings: MultipleForcings
 
-using ..EarthSystemModels: NoOceanInterfaceModel, NoInterfaceModel, sea_ice_concentration
+using ..EarthSystemModels: NoAtmosInterfaceModel, NoOceanInterfaceModel, NoInterfaceModel, sea_ice_concentration
+using Oceananigans.Fields: ZeroField
 using ..EarthSystemModels.InterfaceComputations: computed_fluxes
 
 @inline τᶜᶜᶜ(i, j, k, grid, ρᵒᶜ⁻¹, ℵ, ρτᶜᶜᶜ) = @inbounds ρᵒᶜ⁻¹ * (1 - ℵ[i, j, k]) * ρτᶜᶜᶜ[i, j, k]
@@ -19,6 +20,15 @@ EarthSystemModels.update_net_fluxes!(coupled_model::Union{NoOceanInterfaceModel,
 EarthSystemModels.update_net_fluxes!(coupled_model, ocean::Simulation{<:HydrostaticFreeSurfaceModel}) =
     update_net_ocean_fluxes!(coupled_model, ocean, ocean.model.grid)
 
+rainfall_flux(::NoAtmosInterfaceModel) = ZeroField()
+rainfall_flux(coupled_model) = coupled_model.interfaces.exchanger.atmosphere.state.Jʳⁿ.data
+
+snowfall_flux(::NoAtmosInterfaceModel) = ZeroField()
+snowfall_flux(coupled_model) = coupled_model.interfaces.exchanger.atmosphere.state.Jˢⁿ.data
+
+land_freshwater_flux(::Nothing) = nothing
+land_freshwater_flux(land_exchanger) = land_exchanger.state.freshwater_flux.data
+
 function update_net_ocean_fluxes!(coupled_model, ocean_model, grid)
     sea_ice = coupled_model.sea_ice
     arch = architecture(grid)
@@ -28,13 +38,11 @@ function update_net_ocean_fluxes!(coupled_model, ocean_model, grid)
     atmos_ocean_fluxes = computed_fluxes(coupled_model.interfaces.atmosphere_ocean_interface)
     sea_ice_ocean_fluxes = computed_fluxes(coupled_model.interfaces.sea_ice_ocean_interface)
 
-    atmosphere_fields = coupled_model.interfaces.exchanger.atmosphere.state
-    rainfall_flux = atmosphere_fields.Jʳⁿ.data
-    snowfall_flux = atmosphere_fields.Jˢⁿ.data
+    rainfall = rainfall_flux(coupled_model)
+    snowfall = snowfall_flux(coupled_model)
 
-    # Extract land freshwater flux if land component is present
     land_exchanger = coupled_model.interfaces.exchanger.land
-    land_freshwater_flux = isnothing(land_exchanger) ? nothing : land_exchanger.state.freshwater_flux.data
+    freshwater_flux = land_freshwater_flux(land_exchanger)
 
     ice_concentration = sea_ice_concentration(sea_ice)
     ocean_surface_salinity = EarthSystemModels.ocean_surface_salinity(ocean_model)
@@ -49,9 +57,9 @@ function update_net_ocean_fluxes!(coupled_model, ocean_model, grid)
             sea_ice_ocean_fluxes,
             ocean_surface_salinity,
             ice_concentration,
-            rainfall_flux,
-            snowfall_flux,
-            land_freshwater_flux,
+            rainfall,
+            snowfall,
+            freshwater_flux,
             ocean_properties)
 
     return nothing
