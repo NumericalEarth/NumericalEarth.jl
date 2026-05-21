@@ -7,6 +7,14 @@ using ..EarthSystemModels: NoAtmosInterfaceModel, NoOceanInterfaceModel, NoInter
 using Oceananigans.Fields: ZeroField
 using ..EarthSystemModels.InterfaceComputations: computed_fluxes
 
+struct NoAtmosOceanFluxes
+    sensible_heat
+    latent_heat
+    water_vapor
+    x_momentum
+    y_momentum
+end
+
 @inline τᶜᶜᶜ(i, j, k, grid, ρᵒᶜ⁻¹, ℵ, ρτᶜᶜᶜ) = @inbounds ρᵒᶜ⁻¹ * (1 - ℵ[i, j, k]) * ρτᶜᶜᶜ[i, j, k]
 
 #####
@@ -26,6 +34,9 @@ rainfall_flux(coupled_model) = coupled_model.interfaces.exchanger.atmosphere.sta
 snowfall_flux(::NoAtmosInterfaceModel) = ZeroField()
 snowfall_flux(coupled_model) = coupled_model.interfaces.exchanger.atmosphere.state.Jˢⁿ.data
 
+atmos_ocean_flux(::NoAtmosInterfaceModel) = NoAtmosOceanFluxes(ZeroField(), ZeroField(), ZeroField(), ZeroField(), ZeroField())
+atmos_ocean_flux(coupled_model) = computed_fluxes(coupled_model.interfaces.atmosphere_ocean_interface)
+
 land_freshwater_flux(::Nothing) = nothing
 land_freshwater_flux(land_exchanger) = land_exchanger.state.freshwater_flux.data
 
@@ -35,9 +46,9 @@ function update_net_ocean_fluxes!(coupled_model, ocean_model, grid)
     clock = coupled_model.clock
 
     net_ocean_fluxes = coupled_model.interfaces.net_fluxes.ocean
-    atmos_ocean_fluxes = computed_fluxes(coupled_model.interfaces.atmosphere_ocean_interface)
     sea_ice_ocean_fluxes = computed_fluxes(coupled_model.interfaces.sea_ice_ocean_interface)
 
+    atmos_ocean_fluxes = atmos_ocean_flux(coupled_model)
     rainfall = rainfall_flux(coupled_model)
     snowfall = snowfall_flux(coupled_model)
 
