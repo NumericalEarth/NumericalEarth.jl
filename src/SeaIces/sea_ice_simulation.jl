@@ -96,24 +96,12 @@ end
 default_coriolis(ocean::Simulation) = ocean.model.coriolis
 default_coriolis(ocean::Nothing) = HydrostaticSphericalCoriolis(; rotation_rate=default_rotation_rate)
 
-default_solver(grid, ocean) = SplitExplicitSolver(grid; substeps=120)
-
-# We assume RK3 has a larger timestep
-function default_solver(grid, ocean::Simulation)
-    substeps = if ocean.model.timestepper isa SplitRungeKuttaTimeStepper
-        240
-    else
-        120
-    end
-    return SplitExplicitSolver(grid; substeps)
-end
-
 function sea_ice_dynamics(grid, ocean=nothing;
                           sea_ice_ocean_drag_coefficient = 3.24e-3,
                           rheology = ElastoViscoPlasticRheology(),
                           coriolis = default_coriolis(ocean),
                           free_drift = nothing,
-                          solver = default_solver(grid, ocean))
+                          solver = SplitExplicitSolver(grid; substeps=120))
 
     SSU, SSV = ocean_surface_velocities(ocean)
     FT = eltype(grid)
