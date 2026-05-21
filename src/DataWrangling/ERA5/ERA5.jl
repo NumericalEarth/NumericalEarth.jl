@@ -8,6 +8,7 @@ export ERA5HourlyPressureLevels, ERA5MonthlyPressureLevels, ERA5_all_pressure_le
 export standard_atmosphere_z_interfaces, mean_geopotential_z_interfaces
 
 using Dates: Dates, DateTime, Month, Hour
+using Downloads: Downloads
 using Oceananigans.Architectures: CPU
 using Oceananigans.BoundaryConditions: fill_halo_regions!
 using Oceananigans.Fields: Field, Center, set!
