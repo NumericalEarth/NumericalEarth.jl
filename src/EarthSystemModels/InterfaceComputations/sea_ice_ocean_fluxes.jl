@@ -1,4 +1,5 @@
 using Oceananigans.Operators: Δzᶜᶜᶜ
+using Oceananigans.BoundaryConditions: fill_halo_regions!
 using ClimaSeaIce.SeaIceThermodynamics: melting_temperature
 using ClimaSeaIce.SeaIceDynamics: x_momentum_stress, y_momentum_stress
 
@@ -59,14 +60,36 @@ function compute_sea_ice_ocean_fluxes!(interface, ocean, sea_ice, ocean_properti
         τₛ = dynamics.external_momentum_stresses.bottom
         launch!(arch, grid, kernel_parameters, _compute_sea_ice_ocean_stress!,
                 fluxes, grid, clock, hˢⁱ, ℵ, uˢⁱ, vˢⁱ, τₛ)
+
+        # Regularize vector/stress halo values before they are used to compute
+        # friction velocity in the scalar ice-ocean flux kernel. The field's own
+        # tripolar-appropriate zipper boundary condition determines the fold treatment.
+        fill_halo_regions!((fluxes.x_momentum,
+                            fluxes.y_momentum))
     else
         τₛ = nothing
     end
+
+    # Regularize the source ocean tracer state before the coupling kernel reads
+    # across fold-adjacent cells. Constant and zero fields are no-ops here.
+    fill_halo_regions!((Tᵒᶜ, Sᵒᶜ))
 
     launch!(arch, grid, :xy, _compute_sea_ice_ocean_fluxes!,
             flux_formulation, fluxes, Tˢⁱ, Sˢⁱ, grid, clock,
             hˢⁱ, hc, ℵ, Sⁱ, Tᵒᶜ, Sᵒᶜ, uˢⁱ, vˢⁱ, τₛ,
             liquidus, ocean_properties, L, Δt)
+
+    # Regularize scalar halo and fold values before ocean/sea-ice assemblers
+    # consume these surface fields on a tripolar grid. This relies on each field's
+    # own grid-appropriate zipper boundary condition (for example, UPivot on a
+    # RightCenterFolded grid), rather than hard-coding a pivot choice here.
+    fill_halo_regions!((fluxes.interface_heat,
+                        fluxes.frazil_heat,
+                        fluxes.salt))
+
+    if flux_formulation isa ThreeEquationHeatFlux
+        fill_halo_regions!((Tˢⁱ, Sˢⁱ))
+    end
 
     return nothing
 end

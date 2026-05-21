@@ -1,5 +1,6 @@
 using Printf: Printf
 using Oceananigans.Grids: inactive_node
+using Oceananigans.BoundaryConditions: fill_halo_regions!
 using Oceananigans.Operators: ℑxᶠᵃᵃ, ℑyᵃᶠᵃ
 using Oceananigans.Forcings: MultipleForcings
 
@@ -53,6 +54,13 @@ function update_net_ocean_fluxes!(coupled_model, ocean_model, grid)
             snowfall_flux,
             land_freshwater_flux,
             ocean_properties)
+
+    # Regularize the actual ocean boundary flux fields before the ocean consumes
+    # them as tracer and momentum flux boundary conditions.
+    fill_halo_regions!((net_ocean_fluxes.T,
+                        net_ocean_fluxes.S,
+                        net_ocean_fluxes.u,
+                        net_ocean_fluxes.v))
 
     return nothing
 end
