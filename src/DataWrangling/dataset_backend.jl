@@ -7,7 +7,7 @@ import Oceananigans.Fields: set!
 @inline instantiate(T) = T
 
 """
-    DatasetBackend{N, C, I, M} <: AbstractInMemoryBackend{Int, false}
+    DatasetBackend{N, C, I, M} <: AbstractInMemoryBackend{Int}
 
 In-memory backend for a `FieldTimeSeries` backed by a dataset whose metadata
 maps each in-memory time index to a file (or subset of a file) on disk. The
@@ -25,7 +25,7 @@ Type parameters `N` (on-native-grid) and `C` (cache-inpainted-data) are
 flags hoisted into the type so that dispatch and `Adapt.adapt_structure`
 can act on them without allocating.
 """
-struct DatasetBackend{N, C, I, M} <: AbstractInMemoryBackend{Int, false}
+struct DatasetBackend{N, C, I, M} <: AbstractInMemoryBackend{Int}
     start :: Int
     length :: Int
     inpainting :: I
@@ -38,8 +38,7 @@ struct DatasetBackend{N, C, I, M} <: AbstractInMemoryBackend{Int, false}
     end
 end
 
-Adapt.adapt_structure(to, b::DatasetBackend{N, C}) where {N, C} =
-    DatasetBackend{N, C}(b.start, b.length, nothing, nothing)
+Adapt.adapt_structure(to, b::DatasetBackend{N, C}) where {N, C} = DatasetBackend{N, C}(b.start, b.length, nothing, nothing)
 
 """
     DatasetBackend(length, metadata;
