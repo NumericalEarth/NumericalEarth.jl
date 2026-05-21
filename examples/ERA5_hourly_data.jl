@@ -30,8 +30,8 @@
 # You also need CDS API credentials in `~/.cdsapirc`.
 # See <https://cds.climate.copernicus.eu/how-to-api> for setup instructions.
 
+using Downloads: download
 using NumericalEarth
-using NumericalEarth.DataWrangling: download_dataset
 using NumericalEarth.DataWrangling.ERA5
 using CDSAPI
 using Dates
@@ -310,9 +310,13 @@ fig2
 # This part of the analysis is based on [ERA5 hourly data on pressure levels](https://cds.climate.copernicus.eu/datasets/reanalysis-era5-pressure-levels),
 # also available from 1940 to present. What's new:
 #
-# - `download_dataset(variables, dataset, dates; region)` bundles
+# - We restrict the data retrieval to the lower troposphere (≥ 250 hPa,
+#   surface up to ~10 km). This returns data with 21 vertical levels
+#   instead of all 37 standard pressure levels — the full list is given
+#   by `ERA5_all_pressure_levels`.
+# - `download(variables, dataset, dates; region)` bundles
 #   multi-variable requests into a single CDS API call — fewer round trips
-#   than calling `download_dataset` per variable, which is what
+#   than calling `download` per variable, which is what
 #   `FieldTimeSeries` does automatically on demand.
 
 ## Selected pressure levels [hPa] (filtered to the lower troposphere in §2).
@@ -333,16 +337,18 @@ ds_pl.pressure_levels' / hPa
 variables = [:specific_cloud_liquid_water_content,
              :specific_rain_water_content,
              :geopotential]
-@suppress_out download_dataset(variables, ds_pl, dates; region = rico_column)
+@suppress_out download(variables, ds_pl, dates; region = rico_column)
 nothing #hide
 
 # Load the downloaded data and stack the column profile from each time into
 # a (Nt × Nz) matrix.
 
-qᶜ_col_meta   = Metadata(:specific_cloud_liquid_water_content; dataset = ds_pl, dates, region = rico_column)
-qʳ_col_meta   = Metadata(:specific_rain_water_content;         dataset = ds_pl, dates, region = rico_column)
-qᶜ_col_series = FieldTimeSeries(qᶜ_col_meta)
-qʳ_col_series = FieldTimeSeries(qʳ_col_meta)
+cloud_set = MetadataSet(:specific_cloud_liquid_water_content,
+                        :specific_rain_water_content;
+                        dataset = ds_pl, dates, region = rico_column)
+cloud_series  = FieldTimeSeries(cloud_set)
+qᶜ_col_series = cloud_series.specific_cloud_liquid_water_content
+qʳ_col_series = cloud_series.specific_rain_water_content
 
 # The column FieldTimeSeries lives on a Flat-Flat-Bounded grid, so it has
 # no horizontal extent — `znodes` on it returns the 1-D column-mean axis.
@@ -395,17 +401,17 @@ fig3
 variables = [:temperature, :specific_humidity,
              :eastward_velocity, :northward_velocity,
              :geopotential]
-download_dataset(variables, ds_pl, dates; region = rico_region)
+download(variables, ds_pl, dates; region = rico_region)
 
-T_meta = Metadata(:temperature;        dataset=ds_pl, dates, region=rico_region)
-q_meta = Metadata(:specific_humidity;  dataset=ds_pl, dates, region=rico_region)
-u_meta = Metadata(:eastward_velocity;  dataset=ds_pl, dates, region=rico_region)
-v_meta = Metadata(:northward_velocity; dataset=ds_pl, dates, region=rico_region)
+rico_set = MetadataSet(:temperature, :specific_humidity,
+                       :eastward_velocity, :northward_velocity;
+                       dataset = ds_pl, dates, region = rico_region)
 
-T_series = @suppress_out FieldTimeSeries(T_meta)
-q_series = @suppress_out FieldTimeSeries(q_meta)
-u_series = @suppress_out FieldTimeSeries(u_meta)
-v_series = @suppress_out FieldTimeSeries(v_meta)
+rico_series = @suppress_out FieldTimeSeries(rico_set)
+T_series = rico_series.temperature
+q_series = rico_series.specific_humidity
+u_series = rico_series.eastward_velocity
+v_series = rico_series.northward_velocity
 nothing #hide
 
 # Calculate mean profiles and quantities of interest.

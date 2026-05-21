@@ -194,6 +194,13 @@ with a superscript band.
 | ``J^S`` | `Jˢ` | salinity flux | Net ocean salinity flux (g kg⁻¹ m s⁻¹) |
 | ``\mathcal{Q}^{\mathrm{frz}}`` | `𝒬ᶠʳᶻ` | frazil heat flux | Heat released by frazil ice formation (W m⁻²) |
 
+## Net surface freshwater fluxes
+
+| Math | Code | Property | Description |
+|:----:|:----:|:---------|:------------|
+| ``J^{\mathrm{rn}}`` | `Jʳⁿ` | rain freshwater flux | Rain mass flux at the surface (kg m⁻² s⁻¹) |
+| ``J^{\mathrm{sn}}`` | `Jˢⁿ` | snow freshwater flux | Snow mass flux at the surface (kg m⁻² s⁻¹) |
+
 ## Thermodynamic properties
 
 | Math | Code | Property | Description |

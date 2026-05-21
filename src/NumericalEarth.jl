@@ -72,7 +72,7 @@ export
     SkinTemperature,
     BulkTemperature,
     regrid_bathymetry,
-    Metadata, Metadatum,
+    Metadata, Metadatum, MetadataSet,
     BoundingBox,
     Column, Linear, Nearest,
     ECCOMetadatum,

@@ -8,6 +8,7 @@ export ERA5HourlyPressureLevels, ERA5MonthlyPressureLevels, ERA5_all_pressure_le
 export standard_atmosphere_z_interfaces, mean_geopotential_z_interfaces
 
 using Dates: Dates, DateTime, Month, Hour
+using Downloads: Downloads
 using Oceananigans.Architectures: CPU
 using Oceananigans.BoundaryConditions: fill_halo_regions!
 using Oceananigans.Fields: Field, Center, set!
@@ -17,7 +18,7 @@ using Scratch: Scratch, @get_scratch!
 using Statistics: Statistics, mean
 
 using ..DataWrangling: Metadata, Metadatum, metadata_path, native_grid,
-                       InverseGravity, download_dataset
+                       InverseGravity
 using NumericalEarth.Grids: PressureLevelVerticalDiscretization
 
 import ..DataWrangling:
