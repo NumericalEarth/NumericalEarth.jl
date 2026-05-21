@@ -29,6 +29,7 @@ WorldOceanAtlasTools = "04f20302-f1b9-11e8-29d9-7d841cb0a64a"
 
 [sources]
 NumericalEarth = {path = "../.."}
+ClimaSeaIce = {rev = "main", url = "https://github.com/CliMA/ClimaSeaIce.jl.git"}
 Oceananigans = {rev = "ss/for-omip", url = "https://github.com/CliMA/Oceananigans.jl.git"}
 SeawaterPolynomials = {rev = "ss/conversion-functions", url = "https://github.com/CliMA/SeawaterPolynomials.jl.git"}
 
