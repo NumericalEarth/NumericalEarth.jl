@@ -43,14 +43,11 @@ function parent_forcings(; variables,
     for (child_name, fts) in pairs(variables)
         r = rate isa NamedTuple ? getproperty(rate, child_name) : rate
         m = mask isa NamedTuple ? getproperty(mask, child_name) : mask
-        target = _parent_target(fts)
-        push!(field_pairs, child_name => Relaxation(rate = r, mask = m, target = target))
+        # `Relaxation` accepts a `FieldTimeSeries` as `target` directly;
+        # `materialize_forcing` wraps it in a `FieldTimeSeriesTarget` that
+        # handles space/time interpolation and GPU adaptation.
+        push!(field_pairs, child_name => Relaxation(rate = r, mask = m, target = fts))
     end
 
     return (; field_pairs...)
 end
-
-# Build a target callable `(x, y, z, t) -> value` that interpolates the parent
-# FTS at the child node and current time. Same interpolation path used by the
-# Open BC closures in parent_boundary_conditions.
-_parent_target(fts::FieldTimeSeries) = (x, y, z, t) -> _fts_interpolate(fts, (x, y, z), t)
