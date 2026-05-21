@@ -63,15 +63,13 @@ set!(ocean.model, T=Metadatum(:temperature, dataset=GLORYSMonthly(), region=col)
 # We build a `JRA55PrescribedAtmosphere` at the same location as the single-colunm grid
 # which is based on the JRA55 reanalysis.
 
-atmosphere = JRA55PrescribedAtmosphere(longitude = λ★,
-                                       latitude = φ★,
+atmosphere = JRA55PrescribedAtmosphere(region   = Column(λ★, φ★),
                                        end_date = DateTime(1990, 1, 31), # Last day of the simulation
-                                       backend  = InMemory())
+                                       time_indices_in_memory = 1000)
 
-radiation = JRA55PrescribedRadiation(longitude = λ★,
-                                     latitude = φ★,
+radiation = JRA55PrescribedRadiation(region   = Column(λ★, φ★),
                                      end_date = DateTime(1990, 1, 31),
-                                     backend  = InMemory())
+                                     time_indices_in_memory = 1000)
 
 # This builds a representation of the atmosphere on the small grid
 

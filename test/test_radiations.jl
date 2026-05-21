@@ -71,8 +71,7 @@ end
         A = typeof(arch)
         @info "Testing JRA55PrescribedRadiation on $A..."
 
-        backend = JRA55NetCDFBackend(2)
-        radiation = JRA55PrescribedRadiation(arch; backend)
+        radiation = JRA55PrescribedRadiation(arch; time_indices_in_memory=2)
 
         @test radiation isa PrescribedRadiation
         @test radiation.downwelling_shortwave isa FieldTimeSeries

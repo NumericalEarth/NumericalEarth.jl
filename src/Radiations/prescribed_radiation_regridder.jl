@@ -1,4 +1,4 @@
-function ComponentExchanger(radiation::PrescribedRadiation, grid)
+function EarthSystemModels.InterfaceComputations.ComponentExchanger(radiation::PrescribedRadiation, grid)
 
     regridder = radiation_regridder(radiation, grid)
 
@@ -19,7 +19,7 @@ function radiation_regridder(radiation::PrescribedRadiation, exchange_grid)
     return (i = fi, j = fj)
 end
 
-function initialize!(exchanger::ComponentExchanger, grid, radiation::PrescribedRadiation)
+function EarthSystemModels.InterfaceComputations.initialize!(exchanger::ComponentExchanger, grid, radiation::PrescribedRadiation)
     frac_indices = exchanger.regridder
     # Skip horizontal regridding when both fractional-index buffers are
     # absent (purely Flat horizontal exchange grid).

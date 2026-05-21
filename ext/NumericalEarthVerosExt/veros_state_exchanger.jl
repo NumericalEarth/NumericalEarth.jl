@@ -1,20 +1,6 @@
-using NumericalEarth.Oceans
+using NumericalEarth.EarthSystemModels.InterfaceComputations: ComponentExchanger
 
-import NumericalEarth.EarthSystemModels.InterfaceComputations: 
-    net_fluxes,
-    sea_ice_ocean_interface, 
-    atmosphere_ocean_interface, 
-    initialize!,
-    ComponentExchanger,
-    exchange_grid
-
-import NumericalEarth.EarthSystemModels:
-    interpolate_state!,
-    update_net_fluxes!
-
-import NumericalEarth.Oceans: get_radiative_forcing
-
-function ComponentExchanger(ocean::VerosOceanSimulation, grid) 
+function NumericalEarth.EarthSystemModels.InterfaceComputations.ComponentExchanger(ocean::VerosOceanSimulation, grid)
     state = (; u = Field{Face, Center, Nothing}(grid),
                v = Field{Center, Face, Nothing}(grid),
                T = Field{Center, Center, Nothing}(grid),
@@ -23,9 +9,9 @@ function ComponentExchanger(ocean::VerosOceanSimulation, grid)
     return ComponentExchanger(state, nothing)
 end
 
-exchange_grid(atmosphere, ocean::VerosOceanSimulation, sea_ice) = surface_grid(ocean)
+NumericalEarth.EarthSystemModels.exchange_grid(atmosphere, ocean::VerosOceanSimulation, sea_ice) = surface_grid(ocean)
 
-@inline function net_fluxes(ocean::VerosOceanSimulation)
+@inline function NumericalEarth.EarthSystemModels.InterfaceComputations.net_fluxes(ocean::VerosOceanSimulation)
     grid = surface_grid(ocean)
     u = Field{Face,   Center, Nothing}(grid)
     v = Field{Center, Face,   Nothing}(grid)
@@ -35,7 +21,7 @@ exchange_grid(atmosphere, ocean::VerosOceanSimulation, sea_ice) = surface_grid(o
     return (; u, v, T, S)
 end
 
-function interpolate_state!(exchanger, exchange_grid, ocean::VerosOceanSimulation, coupled_model)
+function NumericalEarth.EarthSystemModels.interpolate_state!(exchanger, exchange_grid, ocean::VerosOceanSimulation, coupled_model)
     u = exchanger.state.u
     v = exchanger.state.v
     T = exchanger.state.T
@@ -49,16 +35,16 @@ function interpolate_state!(exchanger, exchange_grid, ocean::VerosOceanSimulatio
     return nothing
 end
 
-initialize!(exchanger::ComponentExchanger, grid, ::VerosOceanSimulation) = nothing
+Oceananigans.initialize!(exchanger::ComponentExchanger, grid, ::VerosOceanSimulation) = nothing
 
-get_radiative_forcing(ocean::VerosOceanSimulation) = nothing
+NumericalEarth.Oceans.get_radiative_forcing(ocean::VerosOceanSimulation) = nothing
 
-function update_net_fluxes!(coupled_model, ocean::VerosOceanSimulation)
+function NumericalEarth.EarthSystemModels.update_net_fluxes!(coupled_model, ocean::VerosOceanSimulation)
 
     # Update the flux containers
-    Oceans.update_net_ocean_fluxes!(coupled_model, ocean, coupled_model.interfaces.exchanger.grid)
+    NumericalEarth.Oceans.update_net_ocean_fluxes!(coupled_model, ocean, coupled_model.interfaces.exchanger.grid)
     net_ocean_fluxes = coupled_model.interfaces.net_fluxes.ocean
-   
+
     # Pass the flux values to the python ocean
     nx = pyconvert(Int, ocean.setup.state.settings.nx) + 4
     ny = pyconvert(Int, ocean.setup.state.settings.ny) + 4

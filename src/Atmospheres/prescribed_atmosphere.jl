@@ -2,7 +2,7 @@
 ##### Prescribed atmosphere (as opposed to dynamically evolving / prognostic)
 #####
 
-mutable struct PrescribedAtmosphere{FT, G, T, U, P, C, F, TP, TI}
+mutable struct PrescribedAtmosphere{FT, G, T, U, P, C, F, TP, TI} <: AbstractPrescribedComponent
     grid :: G
     clock :: Clock{T}
     velocities :: U
@@ -116,7 +116,7 @@ function default_atmosphere_pressure(grid, times)
     end
 end
 
-@inline function update_state!(atmos::PrescribedAtmosphere)
+@inline function Oceananigans.TimeSteppers.update_state!(atmos::PrescribedAtmosphere)
     time = Time(atmos.clock.time)
     ftses = extract_field_time_series(atmos)
 
@@ -126,7 +126,7 @@ end
     return nothing
 end
 
-@inline function time_step!(atmos::PrescribedAtmosphere, Δt)
+@inline function Oceananigans.TimeSteppers.time_step!(atmos::PrescribedAtmosphere, Δt)
     tick!(atmos.clock, Δt)
 
     update_state!(atmos)
@@ -134,13 +134,13 @@ end
     return nothing
 end
 
-@inline thermodynamics_parameters(atmos::Nothing) = nothing
-@inline thermodynamics_parameters(atmos::PrescribedAtmosphere) = atmos.thermodynamics_parameters
-@inline surface_layer_height(atmos::PrescribedAtmosphere) = atmos.surface_layer_height
-@inline boundary_layer_height(atmos::PrescribedAtmosphere) = atmos.boundary_layer_height
+@inline EarthSystemModels.thermodynamics_parameters(atmos::Nothing) = nothing
+@inline EarthSystemModels.thermodynamics_parameters(atmos::PrescribedAtmosphere) = atmos.thermodynamics_parameters
+@inline EarthSystemModels.surface_layer_height(atmos::PrescribedAtmosphere) = atmos.surface_layer_height
+@inline EarthSystemModels.boundary_layer_height(atmos::PrescribedAtmosphere) = atmos.boundary_layer_height
 
 # No need to compute anything here...
-update_net_fluxes!(coupled_model, ::PrescribedAtmosphere) = nothing
+EarthSystemModels.update_net_fluxes!(coupled_model, ::PrescribedAtmosphere) = nothing
 
 """
     PrescribedAtmosphere(grid, times=[zero(grid)];
@@ -153,12 +153,11 @@ update_net_fluxes!(coupled_model, ::PrescribedAtmosphere) = nothing
                          pressure        = default_atmosphere_pressure(grid, times),
                          freshwater_flux = default_freshwater_flux(grid, times))
 
-Return a representation of a prescribed time-evolving atmospheric
-state with data given at `times`.
+Return a prescribed, time-evolving atmospheric state with data on `grid` and at given `times`.
 
-Note: downwelling shortwave / longwave radiation is now part of the
-top-level `radiation` component (see `PrescribedRadiation`,
-`JRA55PrescribedRadiation`).
+!!! compat Radiation component
+    The downwelling shortwave / longwave radiation part of the top-level `radiation`
+    component (see [`PrescribedRadiation`](@ref), [`JRA55PrescribedRadiation`](@ref)).
 """
 function PrescribedAtmosphere(grid, times=[zero(grid)];
                               clock = Clock{Float64}(time = 0),
@@ -194,37 +193,14 @@ end
 ##### Chekpointing
 #####
 
-import Oceananigans: prognostic_state, restore_prognostic_state!
-
-function prognostic_state(atmos::PrescribedAtmosphere)
+function Oceananigans.prognostic_state(atmos::PrescribedAtmosphere)
     return (; clock = prognostic_state(atmos.clock))
 end
 
-function restore_prognostic_state!(atmos::PrescribedAtmosphere, state)
+function Oceananigans.restore_prognostic_state!(atmos::PrescribedAtmosphere, state)
     restore_prognostic_state!(atmos.clock, state.clock)
     update_state!(atmos)
     return atmos
 end
 
-restore_prognostic_state!(atmos::PrescribedAtmosphere, ::Nothing) = atmos
-
-#####
-##### Parent interface (for NestedSimulations)
-#####
-
-parent_clock(atmos::PrescribedAtmosphere) = atmos.clock
-
-function parent_field(atmos::PrescribedAtmosphere, name::Symbol)
-    if atmos.velocities !== nothing && hasproperty(atmos.velocities, name)
-        return getproperty(atmos.velocities, name)
-    elseif atmos.tracers !== nothing && hasproperty(atmos.tracers, name)
-        return getproperty(atmos.tracers, name)
-    elseif (name === :p || name === :pressure) && atmos.pressure !== nothing
-        return atmos.pressure
-    else
-        throw(ArgumentError("PrescribedAtmosphere has no field `$name`"))
-    end
-end
-
-parent_time_step!(atmos::PrescribedAtmosphere, Δt) = time_step!(atmos, Δt)
-parent_update_state!(atmos::PrescribedAtmosphere) = update_state!(atmos)
+Oceananigans.restore_prognostic_state!(atmos::PrescribedAtmosphere, ::Nothing) = atmos

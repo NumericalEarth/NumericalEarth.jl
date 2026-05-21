@@ -1,99 +1,88 @@
 #####
-##### parent_boundary_conditions: derive child OpenBoundaryConditions from a parent
+##### parent_boundary_conditions: derive Open BCs from a parent's FieldTimeSeries
 #####
-
-# OBC's ContinuousBoundaryFunction calls `f(X..., clock.time)` at each boundary
-# node, with the boundary-normal coordinate dropped from `X`. We pre-compute the
-# child-grid edge coordinate for that normal direction and close over it; the
-# returned function then has the side-appropriate arity:
 #
-#   west, east:  f(y, z, t)
-#   south, north: f(x, z, t)
-#   bottom, top:  f(x, y, t)
+# Oceananigans' `OpenBoundaryCondition(f)` calls `f(X..., clock.time, args...)`
+# at each child boundary node, with the boundary-normal coordinate dropped from
+# `X` (so a west BC sees `(y, z, t)`, a south BC sees `(x, z, t)`, etc.). The
+# side dispatch is handled by the standard `ContinuousBoundaryFunction`
+# regularization that Oceananigans runs at model-construction time.
+#
+# We therefore just need to produce per-side closures that:
+#  - know the child-grid boundary-edge coordinate in the normal direction, and
+#  - interpolate the parent's `FieldTimeSeries` at `(x, y, z, t)`.
+#
+# No new BC types or wrappers are needed.
 
-const _LATERAL_SIDES = (:west, :east, :south, :north, :bottom, :top)
-
-struct ParentBoundaryFunction{P, V, S, E} <: Function
-    parent   :: P
-    var_name :: V
-    side     :: S
-    edge     :: E   # boundary-normal coordinate, in physical units
+@inline function _fts_interpolate(fts::FieldTimeSeries, X, t)
+    return Oceananigans.Fields.interpolate(X, Time(t), fts,
+                                           instantiated_location(fts),
+                                           fts.grid)
 end
 
-@inline (f::ParentBoundaryFunction{P, V, Val{:west}})(y, z, t)  where {P, V} =
-    parent_interpolate(parent_field(f.parent, f.var_name), (f.edge, y, z), t)
-@inline (f::ParentBoundaryFunction{P, V, Val{:east}})(y, z, t)  where {P, V} =
-    parent_interpolate(parent_field(f.parent, f.var_name), (f.edge, y, z), t)
-@inline (f::ParentBoundaryFunction{P, V, Val{:south}})(x, z, t) where {P, V} =
-    parent_interpolate(parent_field(f.parent, f.var_name), (x, f.edge, z), t)
-@inline (f::ParentBoundaryFunction{P, V, Val{:north}})(x, z, t) where {P, V} =
-    parent_interpolate(parent_field(f.parent, f.var_name), (x, f.edge, z), t)
-@inline (f::ParentBoundaryFunction{P, V, Val{:bottom}})(x, y, t) where {P, V} =
-    parent_interpolate(parent_field(f.parent, f.var_name), (x, y, f.edge), t)
-@inline (f::ParentBoundaryFunction{P, V, Val{:top}})(x, y, t) where {P, V} =
-    parent_interpolate(parent_field(f.parent, f.var_name), (x, y, f.edge), t)
-
-# Edge coordinate of the child grid on each side.
-# Uses Face() in the boundary-normal direction so the value sits exactly on the
-# domain boundary (Center cells in that direction would be a half-cell inside).
-function _edge_coordinate(grid, side::Symbol)
-    side === :west   && return xnode(1,                1, 1, grid, Face(),   Center(), Center())
-    side === :east   && return xnode(size(grid, 1) + 1, 1, 1, grid, Face(),   Center(), Center())
-    side === :south  && return ynode(1, 1,                1, grid, Center(), Face(),   Center())
-    side === :north  && return ynode(1, size(grid, 2) + 1, 1, grid, Center(), Face(),   Center())
-    side === :bottom && return znode(1, 1, 1,                grid, Center(), Center(), Face())
-    side === :top    && return znode(1, 1, size(grid, 3) + 1, grid, Center(), Center(), Face())
-    throw(ArgumentError("Unknown side $side; expected one of $(_LATERAL_SIDES)"))
+# Build the per-side closure. Returns a function with the side-appropriate arity:
+# west/east → (y, z, t), south/north → (x, z, t), bottom/top → (x, y, t).
+function _parent_boundary_function(grid, side::Symbol, fts::FieldTimeSeries)
+    if side === :west
+        x_edge = xnode(1, 1, 1, grid, Face(), Center(), Center())
+        return (y, z, t) -> _fts_interpolate(fts, (x_edge, y, z), t)
+    elseif side === :east
+        x_edge = xnode(size(grid, 1) + 1, 1, 1, grid, Face(), Center(), Center())
+        return (y, z, t) -> _fts_interpolate(fts, (x_edge, y, z), t)
+    elseif side === :south
+        y_edge = ynode(1, 1, 1, grid, Center(), Face(), Center())
+        return (x, z, t) -> _fts_interpolate(fts, (x, y_edge, z), t)
+    elseif side === :north
+        y_edge = ynode(1, size(grid, 2) + 1, 1, grid, Center(), Face(), Center())
+        return (x, z, t) -> _fts_interpolate(fts, (x, y_edge, z), t)
+    elseif side === :bottom
+        z_edge = znode(1, 1, 1, grid, Center(), Center(), Face())
+        return (x, y, t) -> _fts_interpolate(fts, (x, y, z_edge), t)
+    elseif side === :top
+        z_edge = znode(1, 1, size(grid, 3) + 1, grid, Center(), Center(), Face())
+        return (x, y, t) -> _fts_interpolate(fts, (x, y, z_edge), t)
+    else
+        throw(ArgumentError("Unknown side $side; expected one of " *
+                            "(:west, :east, :south, :north, :bottom, :top)"))
+    end
 end
 
 """
-    parent_boundary_conditions(parent;
+    parent_boundary_conditions(grid;
                                variables,
-                               sides = (:west, :east, :south, :north),
-                               grid,
+                               sides   = (:west, :east, :south, :north),
                                schemes = NamedTuple())
 
-Build a `NamedTuple` of `FieldBoundaryConditions`-shaped specs that drive the
-child's open boundaries from the `parent`.
+Build a `NamedTuple` of `FieldBoundaryConditions` driving the child's open
+boundaries directly from a parent's `FieldTimeSeries`.
 
 Arguments
 =========
 
-- `parent`: any object satisfying the parent interface (e.g. a 3D
-  `PrescribedAtmosphere`, or a prognostic `Simulation`).
+- `grid`: the **child** grid. Boundary-edge coordinates are read from it.
 
-- `variables`: a `NamedTuple` mapping child field names to parent field names,
-  e.g. `(u = :u, v = :v, T = :T)`.
+- `variables`: a `NamedTuple` mapping child field names to the parent
+  `FieldTimeSeries` that should drive them, e.g.
+  `(u = parent.velocities.u, v = parent.velocities.v)`.
 
 - `sides`: a tuple of `Symbol`s naming which boundaries to drive. Choices are
   `:west, :east, :south, :north, :bottom, :top`.
 
-- `grid`: the **child** grid. Boundary-edge coordinates are read from it.
-
-- `schemes`: optional `NamedTuple` keyed by child field name giving the OBC
-  scheme (e.g. `(u = PerturbationAdvection(...),)`). Fields not listed default
-  to a stiff Dirichlet open BC (`scheme = nothing`).
-
-Returns
-=======
-
-A `NamedTuple` keyed by child field name, each value a `FieldBoundaryConditions`
-populated with `OpenBoundaryCondition`s on the requested `sides`. Pass directly
-as the `boundary_conditions` kwarg of a model constructor.
+- `schemes`: optional `NamedTuple` keyed by child field name giving the
+  `OpenBoundaryCondition` scheme (e.g. a `PerturbationAdvection`). Fields not
+  listed default to `scheme = nothing` (stiff Dirichlet).
 """
-function parent_boundary_conditions(parent;
+function parent_boundary_conditions(grid;
                                     variables,
-                                    sides = (:west, :east, :south, :north),
-                                    grid,
+                                    sides   = (:west, :east, :south, :north),
                                     schemes = NamedTuple())
 
     field_pairs = []
-    for (child_name, parent_name) in pairs(variables)
+    for (child_name, fts) in pairs(variables)
         scheme = haskey(schemes, child_name) ? getproperty(schemes, child_name) : nothing
         side_pairs = []
         for side in sides
-            edge = _edge_coordinate(grid, side)
-            f    = ParentBoundaryFunction(parent, parent_name, Val(side), edge)
+            f = _parent_boundary_function(grid, side, fts)
             push!(side_pairs, side => OpenBoundaryCondition(f; scheme))
         end
         push!(field_pairs, child_name => FieldBoundaryConditions(; side_pairs...))

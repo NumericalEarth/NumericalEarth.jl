@@ -1,4 +1,4 @@
-# # Regional hindcast with ERA5
+# # ERA5 downscaling with Breeze and NestedSimulation
 #
 # This is a limited-area model (LAM) example that couples the Breeze
 # compressible solver to forthcoming SlabLand and SlabOcean components.

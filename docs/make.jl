@@ -4,6 +4,8 @@ using Documenter
 using DocumenterCitations
 using Literate
 
+CUDA.versioninfo()
+
 ENV["DATADEPS_ALWAYS_ACCEPT"] = "true"
 
 bib_filepath = joinpath(dirname(@__FILE__), "src", "NumericalEarth.bib")
@@ -33,10 +35,10 @@ examples = [
     Example("One-degree ocean--sea ice simulation", "one_degree_simulation", false),
     Example("Near-global ocean simulation", "near_global_ocean_simulation", false),
     Example("Global climate simulation", "global_climate_simulation", false),
-    Example("Veros ocean simulation", "veros_ocean_forced_simulation", false),
+    # Example("Veros ocean simulation", "veros_ocean_forced_simulation", false),
     Example("Breeze over two oceans", "breeze_over_two_oceans", false),
     Example("ERA5 hourly data retrieval", "ERA5_hourly_data", true),
-    Example("ERA5 hindcast simulation", "era5_breeze", true),
+    Example("ERA5 downscaling with Breeze and NestedSimulation", "era5_breeze", true),
 ]
 
 # Developer examples from docs/src/developers/ directory
@@ -53,16 +55,24 @@ filter!(x -> x.build_always || build_all, developer_examples)
 ##### Generate examples using Literate (each in a subprocess for memory isolation)
 #####
 
-for example in examples
-    script_path = joinpath(EXAMPLES_DIR, example.basename * ".jl")
-    run(`$(Base.julia_cmd()) --color=yes --project=$(dirname(Base.active_project())) $(joinpath(@__DIR__, "literate.jl")) $(script_path) $(OUTPUT_DIR)`)
-    CUDA.functional() && CUDA.reclaim()
-end
+skip_literate = get(ENV, "NUMERICAL_EARTH_SKIP_LITERATE", "false") == "true"
 
-for example in developer_examples
-    script_path = joinpath(DEVELOPERS_DIR, example.basename * ".jl")
-    run(`$(Base.julia_cmd()) --color=yes --project=$(dirname(Base.active_project())) $(joinpath(@__DIR__, "literate.jl")) $(script_path) $(OUTPUT_DIR)`)
-    CUDA.functional() && CUDA.reclaim()
+if skip_literate
+    @info "Skipping Literate generation because NUMERICAL_EARTH_SKIP_LITERATE=true."
+    filter!(ex -> isfile(joinpath(OUTPUT_DIR, ex.basename * ".md")), examples)
+    filter!(ex -> isfile(joinpath(OUTPUT_DIR, ex.basename * ".md")), developer_examples)
+else
+    for example in examples
+        script_path = joinpath(EXAMPLES_DIR, example.basename * ".jl")
+        run(`$(Base.julia_cmd()) --color=yes --project=$(dirname(Base.active_project())) $(joinpath(@__DIR__, "literate.jl")) $(script_path) $(OUTPUT_DIR)`)
+        CUDA.functional() && CUDA.reclaim()
+    end
+
+    for example in developer_examples
+        script_path = joinpath(DEVELOPERS_DIR, example.basename * ".jl")
+        run(`$(Base.julia_cmd()) --color=yes --project=$(dirname(Base.active_project())) $(joinpath(@__DIR__, "literate.jl")) $(script_path) $(OUTPUT_DIR)`)
+        CUDA.functional() && CUDA.reclaim()
+    end
 end
 
 #####

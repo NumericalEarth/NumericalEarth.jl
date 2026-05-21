@@ -1,11 +1,7 @@
-using .InterfaceComputations:
-    compute_atmosphere_ocean_fluxes!,
-    compute_sea_ice_ocean_fluxes!
-
+using ClimaSeaIce: SeaIceThermodynamics
 using Oceananigans.TimeSteppers: maybe_prepare_first_time_step!
-using ClimaSeaIce: SeaIceModel, SeaIceThermodynamics
-using Oceananigans.Grids: φnode
-using Printf
+
+using .InterfaceComputations: compute_atmosphere_ocean_fluxes!, compute_sea_ice_ocean_fluxes!
 
 # Hooks called from `update_state!` to apply radiative contributions on top of
 # turbulent fluxes. Concrete radiation types overload these (no-op when
@@ -13,7 +9,7 @@ using Printf
 apply_air_sea_radiative_fluxes!(::Any) = nothing
 apply_air_sea_ice_radiative_fluxes!(::Any) = nothing
 
-function time_step!(coupled_model::EarthSystemModel, Δt; callbacks=[])
+function Oceananigans.TimeSteppers.time_step!(coupled_model::EarthSystemModel, Δt; callbacks=[])
     maybe_prepare_first_time_step!(coupled_model, callbacks)
 
     radiation  = coupled_model.radiation
@@ -37,7 +33,7 @@ function time_step!(coupled_model::EarthSystemModel, Δt; callbacks=[])
     return nothing
 end
 
-function update_state!(coupled_model::EarthSystemModel, callbacks=[])
+function Oceananigans.TimeSteppers.update_state!(coupled_model::EarthSystemModel, callbacks=[])
 
     radiation  = coupled_model.radiation
     atmosphere = coupled_model.atmosphere

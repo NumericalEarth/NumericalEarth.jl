@@ -74,10 +74,10 @@ end
                                  z        = (0, 1),
                                  topology = (Bounded, Bounded, Bounded))
 
-    bcs = parent_boundary_conditions(parent;
-                                     variables = (u=:u, v=:v),
-                                     sides     = (:west, :east, :south, :north),
-                                     grid      = child_grid)
+    bcs = parent_boundary_conditions(child_grid;
+                                     variables = (u = parent.velocities.u,
+                                                  v = parent.velocities.v),
+                                     sides     = (:west, :east, :south, :north))
 
     model = NonhydrostaticModel(child_grid; boundary_conditions = bcs)
 

@@ -7,61 +7,50 @@ export ECCOPrescribedAtmosphere, ECCOPrescribedRadiation
 export ECCO2DarwinMonthly, ECCO4DarwinMonthly
 export retrieve_data
 
-using Oceananigans
-using NumericalEarth
-using NCDatasets
-using Dates
-using Adapt
-using Scratch
-using Downloads
-
+using Adapt: Adapt
+using Dates: Dates, DateTime, Day, Month
+using Downloads: Downloads
+using Oceananigans: Oceananigans
+using Oceananigans.Architectures: CPU
 using Oceananigans.DistributedComputations: @root
+using Oceananigans.Grids: Face, Center
+using Oceananigans.OutputReaders: OutputReaders, Cyclical, FieldTimeSeries
+using NCDatasets: NCDatasets
+using Scratch: Scratch, @get_scratch!
 
-using NumericalEarth.DataWrangling:
+using ...NumericalEarth: NumericalEarth
+using ..DataWrangling:
+    DataWrangling,
+    binary_data_grid,
+    binary_data_size,
+    default_mask_value,
+    dataset_variable_name,
+    default_download_directory,
+    longitude_interfaces,
+    latitude_interfaces,
     netrc_downloader,
     NearestNeighborInpainting,
-    BoundingBox,
-    Column,
     metadata_path,
     GramPerKilogramMinus35,
     MicromolePerLiter,
     Metadata,
     Metadatum,
-    download_progress,
-    InverseSign,
-    native_grid,
-    location,
-    compute_mask,
-    inpaint_mask!,
-    set_metadata_field!,
-    extract_column!
+    DownloadProgress,
+    metadata_url,
+    first_date,
+    last_date,
+    all_dates
 
-using KernelAbstractions: @kernel, @index
-
-using Dates: year, month, day
-
-import NumericalEarth.DataWrangling:
+import ..DataWrangling:
     default_download_directory,
     all_dates,
-    metadata_filename,
-    download_dataset,
-    conversion_units,
     dataset_variable_name,
-    dataset_location,
-    metaprefix,
     longitude_interfaces,
     latitude_interfaces,
-    z_interfaces,
-    is_three_dimensional,
-    inpainted_metadata_path,
-    reversed_vertical_axis,
     default_mask_value,
-    available_variables,
     retrieve_data,
     binary_data_grid,
-    binary_data_size,
-    higher_bound,
-    default_inpainting
+    binary_data_size
 
 download_ECCO_cache::String = ""
 function __init__()
@@ -76,17 +65,17 @@ struct ECCO4Monthly <:ECCODataset end
 
 include("ECCO_darwin.jl")
 
-function default_download_directory(::ECCO2Monthly)
+function DataWrangling.default_download_directory(::ECCO2Monthly)
     path = joinpath(download_ECCO_cache, "v2", "monthly")
     return mkpath(path)
 end
 
-function default_download_directory(::ECCO2Daily)
+function DataWrangling.default_download_directory(::ECCO2Daily)
     path = joinpath(download_ECCO_cache, "v2", "daily")
     return mkpath(path)
 end
 
-function default_download_directory(::ECCO4Monthly)
+function DataWrangling.default_download_directory(::ECCO4Monthly)
     path = joinpath(download_ECCO_cache, "v4")
     return mkpath(path)
 end
@@ -95,8 +84,8 @@ Base.size(::ECCO2Daily, variable)   = (1440, 720, 50)
 Base.size(::ECCO2Monthly, variable) = (1440, 720, 50)
 Base.size(::ECCO4Monthly, variable) = (720,  360, 50)
 
-default_mask_value(::ECCO4Monthly) = 0
-reversed_vertical_axis(::ECCODataset) = true
+DataWrangling.default_mask_value(::ECCO4Monthly) = 0
+DataWrangling.reversed_vertical_axis(::ECCODataset) = true
 
 const ECCO2_url = "https://ecco.jpl.nasa.gov/drive/files/ECCO2/cube92_latlon_quart_90S90N/"
 const ECCO4_url = "https://ecco.jpl.nasa.gov/drive/files/Version4/Release4/interp_monthly/"
@@ -104,16 +93,23 @@ const ECCO4_url = "https://ecco.jpl.nasa.gov/drive/files/Version4/Release4/inter
 # The whole range of dates in the different dataset datasets
 metadata_epoch(::ECCODataset) = DateTime(1992, 1, 1)
 
-all_dates(dataset::ECCODataset) = all_dates(dataset, nothing)
-all_dates(dataset::ECCO4Monthly, variable) = metadata_epoch(dataset) : Month(1) : DateTime(2017, 12, 1)
-all_dates(dataset::ECCO2Monthly, variable) = metadata_epoch(dataset) : Month(1) : DateTime(2024, 12, 1)
-all_dates(dataset::ECCO2Daily,   variable) = metadata_epoch(dataset) : Day(1)   : DateTime(2024, 12, 31)
+DataWrangling.all_dates(dataset::ECCODataset) = all_dates(dataset, nothing)
+DataWrangling.all_dates(dataset::ECCO4Monthly, variable) = metadata_epoch(dataset) : Month(1) : DateTime(2017, 12, 1)
+DataWrangling.all_dates(dataset::ECCO2Monthly, variable) = metadata_epoch(dataset) : Month(1) : DateTime(2024, 12, 1)
+DataWrangling.all_dates(dataset::ECCO2Daily,   variable) = metadata_epoch(dataset) : Day(1)   : DateTime(2024, 12, 31)
 
-longitude_interfaces(::ECCODataset) = (0, 360)
-longitude_interfaces(::ECCO4Monthly) = (-180, 180)
-latitude_interfaces(::ECCODataset) = (-90, 90)
+DataWrangling.longitude_interfaces(::ECCODataset) = (0, 360)
+DataWrangling.longitude_interfaces(::ECCO4Monthly) = (-180, 180)
+DataWrangling.latitude_interfaces(::ECCODataset) = (-90, 90)
 
-z_interfaces(::ECCODataset) = [
+DataWrangling.longitude_name(::Metadata{<:ECCODataset})        = "LONGITUDE_T"
+DataWrangling.latitude_name(::Metadata{<:ECCODataset})         = "LATITUDE_T"
+DataWrangling.longitude_name(::Metadata{<:ECCO4Monthly})       = "longitude"
+DataWrangling.latitude_name(::Metadata{<:ECCO4Monthly})        = "latitude"
+DataWrangling.longitude_name(::Metadata{<:ECCO4DarwinMonthly}) = "longitude"
+DataWrangling.latitude_name(::Metadata{<:ECCO4DarwinMonthly})  = "latitude"
+
+DataWrangling.z_interfaces(::ECCODataset) = [
     -6128.75,
     -5683.75,
     -5250.25,
@@ -167,9 +163,9 @@ z_interfaces(::ECCODataset) = [
       0.0,
 ]
 
-available_variables(::ECCO2Monthly) = ECCO2_dataset_variable_names
-available_variables(::ECCO2Daily)   = ECCO2_dataset_variable_names
-available_variables(::ECCO4Monthly) = ECCO4_dataset_variable_names
+DataWrangling.available_variables(::ECCO2Monthly) = ECCO2_dataset_variable_names
+DataWrangling.available_variables(::ECCO2Daily)   = ECCO2_dataset_variable_names
+DataWrangling.available_variables(::ECCO4Monthly) = ECCO4_dataset_variable_names
 
 ECCO4_dataset_variable_names = Dict(
     :temperature            => "THETA",
@@ -206,7 +202,7 @@ ECCO2_dataset_variable_names = Dict(
     :net_heat_flux         => "oceQnet",
 )
 
-ECCO_location = Dict( 
+ECCO_location = Dict(
     :temperature            => (Center, Center, Center),
     :salinity               => (Center, Center, Center),
     :u_velocity             => (Face,   Center, Center),
@@ -234,11 +230,11 @@ const ECCOMetadata{D} = Metadata{<:ECCODataset, D}
 const ECCOMetadatum   = Metadatum{<:ECCODataset}
 
 # sea surface pressure can exceed 1e5 (the default higher bound for datasets data)
-higher_bound(::ECCOMetadata, ::Val{:sea_level_pressure}) = 1f10
+DataWrangling.higher_bound(::ECCOMetadata, ::Val{:sea_level_pressure}) = 1f10
 
 # Note: ECCO downwelling radiation variables (oceQsw, EXFlwdn) are already
 # in positive-downwelling convention, so no sign conversion is needed.
-conversion_units(metadatum::ECCOMetadatum) = nothing
+DataWrangling.conversion_units(metadatum::ECCOMetadatum) = nothing
 
 """
     ECCOMetadatum(name;
@@ -254,10 +250,10 @@ function ECCOMetadatum(name;
     return Metadatum(name; date, dir, dataset=ECCO4Monthly())
 end
 
-metaprefix(::ECCOMetadata) = "ECCOMetadata"
+DataWrangling.metaprefix(::ECCOMetadata) = "ECCOMetadata"
 
 # File name generation specific to each dataset
-function metadata_filename(::ECCO4Monthly, name, date, region)
+function DataWrangling.metadata_filename(::ECCO4Monthly, name, date, region)
     shortname = ECCO4_dataset_variable_names[name]
     yearstr   = string(Dates.year(date))
     monthstr  = string(Dates.month(date), pad=2)
@@ -270,7 +266,7 @@ ecco2_is_three_dimensional(name) =
     name == :u_velocity ||
     name == :v_velocity
 
-function metadata_filename(dataset::Union{ECCO2Daily, ECCO2Monthly}, name, date, region)
+function DataWrangling.metadata_filename(dataset::Union{ECCO2Daily, ECCO2Monthly}, name, date, region)
     shortname = ECCO2_dataset_variable_names[name]
     yearstr   = string(Dates.year(date))
     monthstr  = string(Dates.month(date), pad=2)
@@ -285,27 +281,27 @@ function metadata_filename(dataset::Union{ECCO2Daily, ECCO2Monthly}, name, date,
 end
 
 # Convenience functions
-dataset_variable_name(data::Metadata{<:ECCO2Daily})   = ECCO2_dataset_variable_names[data.name]
-dataset_variable_name(data::Metadata{<:ECCO2Monthly}) = ECCO2_dataset_variable_names[data.name]
-dataset_variable_name(data::Metadata{<:ECCO4Monthly}) = ECCO4_dataset_variable_names[data.name]
-dataset_location(::ECCODataset, name) = ECCO_location[name]
+DataWrangling.dataset_variable_name(data::Metadata{<:ECCO2Daily})   = ECCO2_dataset_variable_names[data.name]
+DataWrangling.dataset_variable_name(data::Metadata{<:ECCO2Monthly}) = ECCO2_dataset_variable_names[data.name]
+DataWrangling.dataset_variable_name(data::Metadata{<:ECCO4Monthly}) = ECCO4_dataset_variable_names[data.name]
+DataWrangling.dataset_location(::ECCODataset, name) = ECCO_location[name]
 
-is_three_dimensional(data::ECCOMetadata) =
+DataWrangling.is_three_dimensional(data::ECCOMetadata) =
     data.name == :temperature ||
     data.name == :salinity ||
     data.name == :u_velocity ||
     data.name == :v_velocity
 
 # URLs for the ECCO datasets specific to each dataset
-metadata_url(m::Metadata{<:ECCO2Monthly}) = ECCO2_url * "monthly/" * dataset_variable_name(m) * "/" * m.filename
-metadata_url(m::Metadata{<:ECCO2Daily})   = ECCO2_url * "daily/"   * dataset_variable_name(m) * "/" * m.filename
+DataWrangling.metadata_url(m::Metadata{<:ECCO2Monthly}) = ECCO2_url * "monthly/" * DataWrangling.dataset_variable_name(m) * "/" * m.filename
+DataWrangling.metadata_url(m::Metadata{<:ECCO2Daily})   = ECCO2_url * "daily/"   * dataset_variable_name(m) * "/" * m.filename
 
-function metadata_url(m::Metadata{<:ECCO4Monthly})
+function DataWrangling.metadata_url(m::Metadata{<:ECCO4Monthly})
     year = string(Dates.year(m.dates))
     return ECCO4_url * dataset_variable_name(m) * "/" * year * "/" * m.filename
 end
 
-function download_dataset(metadata::ECCOMetadata)
+function DataWrangling.download_dataset(metadata::ECCOMetadata)
     username = get(ENV, "ECCO_USERNAME", nothing)
     password = get(ENV, "ECCO_WEBDAV_PASSWORD", nothing)
     dir = metadata.dir
@@ -337,7 +333,7 @@ function download_dataset(metadata::ECCOMetadata)
                     throw(ArgumentError(msg))
                 end
                 @info "Downloading ECCO data: $(metadatum.name) in $(metadatum.dir)..."
-                Downloads.download(fileurl, filepath; downloader, progress=download_progress)
+                Downloads.download(fileurl, filepath; downloader, progress=DownloadProgress())
             end
         end
     end
@@ -361,7 +357,7 @@ ECCO_atmosphere_variables = (
     :rain_freshwater_flux,
 )
 
-function default_inpainting(metadata::ECCOMetadata)
+function DataWrangling.default_inpainting(metadata::ECCOMetadata)
     if metadata.name in (:temperature, :salinity) || metadata.name in ECCO_atmosphere_variables
         return NearestNeighborInpainting(Inf)
     elseif metadata.name in (:sea_ice_thickness, :sea_ice_concentration)
@@ -371,42 +367,9 @@ function default_inpainting(metadata::ECCOMetadata)
     end
 end
 
-inpainted_metadata_path(metadata::ECCOMetadatum) = joinpath(metadata.dir, inpainted_metadata_filename(metadata))
+DataWrangling.inpainted_metadata_path(metadata::ECCOMetadatum) = joinpath(metadata.dir, inpainted_metadata_filename(metadata))
 
 include("ECCO_atmosphere.jl")
 include("ECCO_radiation.jl")
-
-#####
-##### Column Field for ECCO datasets (which always download globally)
-#####
-
-using Oceananigans.BoundaryConditions: fill_halo_regions!
-
-const ECCOColumnMetadatum = Metadatum{<:ECCODataset, <:Any, <:Column}
-
-function Oceananigans.Fields.Field(metadata::ECCOColumnMetadatum, arch=CPU();
-                                   inpainting = default_inpainting(metadata),
-                                   mask = nothing,
-                                   halo = (3, 3, 3),
-                                   cache_inpainted_data = true)
-
-    download_dataset(metadata)
-    column_grid = native_grid(metadata, arch; halo)
-
-    # Build a full-grid Field without a region to load the global data
-    global_metadatum = Metadatum(metadata.name;
-                                 dataset = metadata.dataset,
-                                 date = metadata.dates)
-
-    intermediate_field = Field(global_metadatum, arch; inpainting, mask, halo, cache_inpainted_data)
-    fill_halo_regions!(intermediate_field)
-
-    # Extract the column
-    _, _, LZ = location(metadata)
-    column_field = Field{Nothing, Nothing, LZ}(column_grid)
-    extract_column!(column_field, intermediate_field, metadata.region)
-
-    return column_field
-end
 
 end # Module

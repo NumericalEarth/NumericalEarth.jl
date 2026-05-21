@@ -137,9 +137,31 @@ A comprehensive example is given below, but we note briefly here that
 ```@example interface_fluxes
 using NumericalEarth
 
-coefficient_fluxes = CoefficientBasedFluxes(drag_coefficient=2e-3,
-                                            heat_transfer_coefficient=2e-3,
-                                            vapor_flux_coefficient=1e-3)
+coefficient_fluxes = CoefficientBasedFluxes(transfer_coefficients = (2e-3, 2e-3, 1e-3))
+```
+
+Alternatively, the drag coefficient can be specified as a wind-speed-dependent polynomial
+following Large & Yeager (2004). In this case `CoefficientBasedFluxes` evaluates the polynomial
+at each iteration rather than using a constant:
+
+```@example interface_fluxes
+using NumericalEarth.EarthSystemModels.InterfaceComputations: PolynomialNeutralDragCoefficient
+
+poly_drag = PolynomialNeutralDragCoefficient()
+poly_fluxes = CoefficientBasedFluxes(transfer_coefficients = (poly_drag, 1e-3, 1e-3))
+```
+
+For the full Large & Yeager (2004) bulk algorithm with stability corrections,
+use `LargeYeagerTransferCoefficients`. This computes all three transfer coefficients
+(drag, heat, moisture) from the neutral drag polynomial with Monin-Obukhov
+stability corrections (L&Y eqs. 6c-6d, 10a-10c):
+
+```@example interface_fluxes
+using NumericalEarth.EarthSystemModels.InterfaceComputations: FixedIterations, LargeYeagerTransferCoefficients
+
+ly = LargeYeagerTransferCoefficients()
+ly_fluxes = CoefficientBasedFluxes(transfer_coefficients = ly,
+                                   solver_stop_criteria = FixedIterations(5))
 ```
 
 ### Similarity theory for neutral boundary layers
@@ -335,13 +357,18 @@ neutral_similarity_fluxes = SimilarityTheoryFluxes(stability_functions=nothing; 
 interfaces = ComponentInterfaces(atmosphere, ocean; atmosphere_ocean_fluxes=neutral_similarity_fluxes)
 increased_roughness_model = OceanOnlyModel(ocean; atmosphere, interfaces)
 
-coefficient_fluxes = CoefficientBasedFluxes(drag_coefficient=2e-3)
+coefficient_fluxes = CoefficientBasedFluxes(transfer_coefficients = (2e-3, 2e-3, 2e-3))
 interfaces = ComponentInterfaces(atmosphere, ocean; atmosphere_ocean_fluxes=coefficient_fluxes)
 coefficient_model = OceanOnlyModel(ocean; atmosphere, interfaces)
+
+ly_fluxes = CoefficientBasedFluxes(transfer_coefficients = LargeYeagerTransferCoefficients(),
+                                   solver_stop_criteria = FixedIterations(5))
+interfaces = ComponentInterfaces(atmosphere, ocean; atmosphere_ocean_fluxes=ly_fluxes)
+ly_model = OceanOnlyModel(ocean; atmosphere, interfaces)
 ```
 
 Note that `EarthSystemModel` computes fluxes upon instantiation, so after constructing
-the two models we are ready to analyze the results.
+the models we are ready to analyze the results.
 We first verify that the similarity model friction velocity has been computed successfully,
 
 ```@example interface_fluxes
@@ -370,9 +397,21 @@ Cᴰ_coeff = @. (u★_coeff / uᵃᵗ)^2
 extrema(Cᴰ_coeff)
 ```
 
-We'll compare the computed fluxes and drag coefficients from our two models with
-a polynomial expression due to [large2009global](@citet), and
-an expression reported by [edson2013exchange](@citet) that was developed at ECMWF,
+We also extract the drag coefficient from the Large & Yeager transfer coefficient model:
+
+```@example interface_fluxes
+u★_ly = ly_model.interfaces.atmosphere_ocean_interface.fluxes.friction_velocity
+u★_ly = interior(u★_ly, :, 1, 1)
+Cᴰ_ly = @. (u★_ly / uᵃᵗ)^2
+extrema(Cᴰ_ly)
+```
+
+We'll compare the computed fluxes and drag coefficients from our models with
+two independent reference curves: a simpler cubic-in-``u`` re-fit of the neutral
+drag coefficient given by [large2009global](@citet) (equation 10 of the CORE-II
+forcing paper, a smoother alternative to the 2004 rational polynomial used by
+`LargeYeagerTransferCoefficients` above), and an expression reported by
+[edson2013exchange](@citet) that was developed at ECMWF,
 
 ```@example interface_fluxes
 # From Large and Yeager (2009), equation 10
@@ -406,16 +445,18 @@ Cᴰ_rough = @. (u★_rough / uᵃᵗ)^2
 
 fig = Figure(size=(800, 400))
 axu = Axis(fig[1:2, 1], xlabel="uᵃᵗ (m s⁻¹) at 10 m", ylabel="u★ (m s⁻¹)")
-lines!(axu, uᵃᵗ, u★, label="NumericalEarth default")
-lines!(axu, uᵃᵗ, u★_rough, label="Increased roughness model")
-lines!(axu, uᵃᵗ, u★_LY, label="Large and Yeager (2009) polynomial fit")
-lines!(axu, uᵃᵗ, u★_EC, label="ECMWF polynomial fit (Edson et al. 2013)")
+lines!(axu, uᵃᵗ, u★, label="SimilarityTheoryFluxes (default)")
+lines!(axu, uᵃᵗ, u★_rough, label="SimilarityTheoryFluxes (increased roughness)")
+lines!(axu, uᵃᵗ, u★_ly, label="LargeYeagerTransferCoefficients (L&Y 2004)")
+lines!(axu, uᵃᵗ, u★_LY, label="Large and Yeager (2009) polynomial fit", linestyle=:dash)
+lines!(axu, uᵃᵗ, u★_EC, label="ECMWF polynomial fit (Edson et al. 2013)", linestyle=:dash)
 
 axd = Axis(fig[1:2, 2], xlabel="uᵃᵗ (m s⁻¹) at 10 m", ylabel="1000 × Cᴰ")
-lines!(axd, uᵃᵗ, 1000 .* Cᴰ_default, label="NumericalEarth default")
-lines!(axd, uᵃᵗ, 1000 .* Cᴰ_rough, label="Increased roughness model")
-lines!(axd, uᵃᵗ, 1000 .* Cᴰ_LY, label="Large and Yeager (2009) polynomial fit")
-lines!(axd, uᵃᵗ, 1000 .* Cᴰ_EC, label="ECMWF polynomial fit (Edson et al. 2013)")
+lines!(axd, uᵃᵗ, 1000 .* Cᴰ_default, label="SimilarityTheoryFluxes (default)")
+lines!(axd, uᵃᵗ, 1000 .* Cᴰ_rough, label="SimilarityTheoryFluxes (increased roughness)")
+lines!(axd, uᵃᵗ, 1000 .* Cᴰ_ly, label="LargeYeagerTransferCoefficients (L&Y 2004)")
+lines!(axd, uᵃᵗ, 1000 .* Cᴰ_LY, label="Large and Yeager (2009) polynomial fit", linestyle=:dash)
+lines!(axd, uᵃᵗ, 1000 .* Cᴰ_EC, label="ECMWF polynomial fit (Edson et al. 2013)", linestyle=:dash)
 
 Legend(fig[3, 1:2], axd, nbanks = 2)
 
@@ -652,13 +693,13 @@ that enters into the air-surface specific humidity difference ``Δ q`` also chan
 ```@example interface_fluxes
 using NumericalEarth.EarthSystemModels.InterfaceComputations: surface_specific_humidity
 
-ρᵃᵗ = 1.2 # guess
+pᵃᵗ = 101325 # guess (Pa)
 Tᵒᶜ = 273.15 + 20 # in Kelvin
 Sᵒᶜ = 35
 interfaces = default_model.interfaces
 ℂᵃᵗ = interfaces.atmosphere_properties
 q_formulation = interfaces.atmosphere_ocean_interface.properties.specific_humidity_formulation
-qₛ = surface_specific_humidity(q_formulation, ℂᵃᵗ, ρᵃᵗ, Tᵒᶜ, Sᵒᶜ)
+qₛ = surface_specific_humidity(q_formulation, ℂᵃᵗ, pᵃᵗ, Tᵒᶜ, Sᵒᶜ)
 @show qₛ
 ```
 
