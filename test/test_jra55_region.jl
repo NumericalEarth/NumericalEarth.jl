@@ -56,7 +56,8 @@ using Oceananigans.Grids: topology, Bounded
 
             T_col_t1 = @allowscalar interior(Ta_col)[1, 1, 1, 1]
             loc = (Center(), Center(), Center())
-            T_bbox_t1 = oc_interpolate((150.0, 0.0, 0.0), Ta_bbox[1], loc, Ta_bbox.grid)
+            Ta_bbox1 = @allowscalar Ta_bbox[1]
+            T_bbox_t1 = oc_interpolate((150.0, 0.0, 0.0), Ta_bbox1, loc, Ta_bbox.grid)
             @test T_col_t1 ≈ T_bbox_t1  rtol = 1e-3
         end
     end
