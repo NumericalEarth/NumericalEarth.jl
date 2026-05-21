@@ -75,18 +75,6 @@ function compute_sea_ice_ocean_fluxes!(interface, ocean, sea_ice, ocean_properti
             hˢⁱ, hc, ℵ, Sⁱ, Tᵒᶜ, Sᵒᶜ, uˢⁱ, vˢⁱ, τₛ,
             liquidus, ocean_properties, L, Δt)
 
-    # Regularize scalar halo and fold values before ocean/sea-ice assemblers
-    # consume these surface fields on a tripolar grid. This relies on each field's
-    # own grid-appropriate zipper boundary condition (for example, UPivot on a
-    # RightCenterFolded grid), rather than hard-coding a pivot choice here.
-    fill_halo_regions!((fluxes.interface_heat,
-                        fluxes.frazil_heat,
-                        fluxes.salt))
-
-    if flux_formulation isa ThreeEquationHeatFlux
-        fill_halo_regions!((Tˢⁱ, Sˢⁱ))
-    end
-
     return nothing
 end
 
