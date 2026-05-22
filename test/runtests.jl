@@ -70,7 +70,7 @@ function __init__()
 
     ETOPOmetadata = Metadatum(:bottom_height, dataset=NumericalEarth.ETOPO.ETOPO2022())
     download_dataset_with_fallback(metadata_path(ETOPOmetadata); dataset_name="ETOPO2022") do
-        download(ETOPOmetadata)
+        download_dataset(ETOPOmetadata)
     end
 
     #####
@@ -109,14 +109,14 @@ function __init__()
 
         for md in ts_set
             download_dataset_with_fallback(metadata_path(md); dataset_name="$(typeof(dataset)) $(md.name)") do
-                download(md)
+                download_dataset(md)
             end
         end
 
         if dataset isa Union{ECCO2DarwinMonthly, ECCO4DarwinMonthly}
             PO₄_metadata = Metadata(:phosphate; dataset, dates)
             download_dataset_with_fallback(metadata_path(PO₄_metadata); dataset_name="$(typeof(dataset)) phosphate") do
-                download(PO₄_metadata)
+                download_dataset(PO₄_metadata)
             end
         end
     end

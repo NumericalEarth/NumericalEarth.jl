@@ -117,7 +117,7 @@ function test_ocean_metadata_utilities(arch, dataset, dates, inpainting;
         metadata = Metadata(name; dates, dataset)
         filepaths = [metadata_path(datum) for datum in metadata]
         download_dataset_with_fallback(filepaths; dataset_name="$(typeof(dataset)) $name") do
-            download(metadata)
+            download_dataset(metadata)
         end
         restoring = DatasetRestoring(metadata, arch; rate=1/1000, inpainting)
 
@@ -175,7 +175,7 @@ function test_dataset_restoring(arch, dataset, dates, inpainting;
         metadata = Metadata(name; dates, dataset)
         filepaths = [metadata_path(datum) for datum in metadata]
         download_dataset_with_fallback(filepaths; dataset_name="$(typeof(dataset)) $name") do
-            download(metadata)
+            download_dataset(metadata)
         end
         var_restoring = DatasetRestoring(metadata, arch; mask, inpainting, rate=1/1000)
 
@@ -216,7 +216,7 @@ function test_timestepping_with_dataset_restoring(arch, dataset, dates, inpainti
     metadata = Metadata(varnames[end]; dates, dataset)
     filepaths = [metadata_path(datum) for datum in metadata]
     download_dataset_with_fallback(filepaths; dataset_name="$(typeof(dataset)) $(varnames[end])") do
-        download(metadata)
+        download_dataset(metadata)
     end
     restoring = DatasetRestoring(metadata, arch; inpainting, rate=1/1000)
     forcing = NamedTuple{tuple(fldnames[end])}(tuple(restoring))

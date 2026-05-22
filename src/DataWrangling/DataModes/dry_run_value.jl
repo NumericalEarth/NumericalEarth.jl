@@ -1,7 +1,7 @@
 """
     DryRunValue()
 
-Sentinel returned when a statement under [`build_dataset_manifest`](@ref) tracing either errors or
+Sentinel returned when a statement under [`pregenerate_dataset_manifest`](@ref) tracing either errors or
 stands in for a value that real data would have produced. The per-statement `try`/`catch` wrappers
 rebind any failed assignment to a `DryRunValue`, so the script continues running and downstream
 `download_dataset` calls still register their metadata.

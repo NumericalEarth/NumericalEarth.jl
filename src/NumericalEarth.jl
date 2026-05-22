@@ -177,6 +177,33 @@ using .DataWrangling.OSPapa
 
 using PrecompileTools: @setup_workload, @compile_workload
 
+"""
+Auto-download datasets listed in `NumericalEarthDataManifest.toml` whenever a manifest sits next
+to the active project's `Project.toml` and we're running in `:auto` mode. Cached files are skipped
+by each dataset's per-dataset `Downloads.download` method, so subsequent runs are cheap.
+
+Skipped during precompilation, in `:strict` mode (the manifest is the user's promise that data is
+already on disk, not a fetch request), and in `:pregenerate` mode (we're recording, not downloading).
+"""
+function __init__()
+    ccall(:jl_generating_output, Cint, ()) == 1 && return nothing
+    DataWrangling.DataModes.DATA_MODE[] === :auto || return nothing
+
+    project = Base.active_project()
+    project === nothing && return nothing
+    project_dir = dirname(project)
+    manifest = joinpath(project_dir, DataWrangling.DataModes.MANIFEST_FILENAME)
+    isfile(manifest) || return nothing
+
+    @info "NumericalEarth: auto-downloading datasets from manifest" manifest
+    try
+        DataWrangling.DataModes.download_datasets(; dir = project_dir)
+    catch err
+        @error "NumericalEarth: auto-download failed; continuing without it" manifest exception=(err, catch_backtrace())
+    end
+    return nothing
+end
+
 @setup_workload begin
     Nx, Ny, Nz = 32, 32, 10
     @compile_workload begin

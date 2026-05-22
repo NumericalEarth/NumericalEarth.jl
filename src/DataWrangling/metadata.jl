@@ -563,7 +563,7 @@ results of each per-variable `download` call (typically the file path(s)).
 """
 function Downloads.download(mset::MetadataSet; kwargs...)
     names = getfield(mset, :names)
-    return NamedTuple{names}(map(n -> Downloads.download(mset[n]; kwargs...), names))
+    return NamedTuple{names}(map(n -> download_dataset(mset[n]), names))
 end
 
 """

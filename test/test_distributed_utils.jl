@@ -59,7 +59,7 @@ metadata_filename(::TrivalBathymetry, name, date, region) = "trivial_bathymetry.
 @testset "Distributed ECCO download" begin
     dates = DateTimeProlepticGregorian(1992, 1, 1) : Month(1) : DateTimeProlepticGregorian(1994, 4, 1)
     metadata = Metadata(:u_velocity; dataset=ECCO4Monthly(), dates)
-    download(metadata)
+    download_dataset(metadata)
 
     @root for metadatum in metadata
         @test isfile(metadata_path(metadatum))

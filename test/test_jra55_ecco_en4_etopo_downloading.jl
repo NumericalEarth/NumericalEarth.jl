@@ -35,7 +35,7 @@ end
             isfile(filepath) && rm(filepath; force=true)
 
             download_dataset_with_fallback(filepath; dataset_name="$(typeof(dataset)) $variable") do
-                download(metadata)
+                download_dataset(metadata)
             end
             @test isfile(filepath)
             rm(filepath; force=true)
@@ -50,7 +50,7 @@ end
     isfile(filepath) && rm(filepath; force=true)
 
     download_dataset_with_fallback(filepath; dataset_name="ETOPO2022") do
-        download(metadata)
+        download_dataset(metadata)
     end
     @test isfile(filepath)
 end

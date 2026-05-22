@@ -42,7 +42,7 @@ for arch in test_architectures, dataset in test_ecco_datasets
                     # if the primary source is unreachable
                     filepaths = [metadata_path(datum) for datum in metadata]
                     download_dataset_with_fallback(filepaths; dataset_name="$D $name") do
-                        download(metadata)
+                        download_dataset(metadata)
                     end
                     for datum in metadata
                         @test isfile(metadata_path(datum))

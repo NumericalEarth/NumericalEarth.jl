@@ -10,6 +10,7 @@ function emit_ci_warning(title, message)
 end
 
 function download_from_artifacts(filepath::AbstractString; max_retries=3)
+    NumericalEarth.DataWrangling.DataModes.DATA_MODE[] === :pregenerate && return nothing
     filename = basename(filepath)
     fallback_url = ARTIFACTS_BASE_URL * filename
     @info "Downloading $filename from NumericalEarthArtifacts fallback..."
@@ -41,9 +42,13 @@ end
 Try `download_fn()`. If it throws, download the required files from
 NumericalEarthArtifacts and retry. Emits a CI warning when the fallback is used.
 
+In `:pregenerate` mode the fallback is skipped — `download_fn()` runs unguarded and any error
+propagates to the script's per-statement wrapper, so the trace never reaches the network.
+
 Returns the result of `download_fn()`.
 """
 function download_dataset_with_fallback(download_fn, filepaths; dataset_name="dataset")
+    NumericalEarth.DataWrangling.DataModes.DATA_MODE[] === :pregenerate && return download_fn()
     try
         return download_fn()
     catch e

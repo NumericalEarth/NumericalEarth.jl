@@ -26,6 +26,9 @@ end
 function wrap_assignment(lhs, rhs)
     if lhs isa Symbol
         return Expr(:(=), lhs, :(try; $rhs; catch; $DryRunValue(); end))
+    elseif lhs isa Expr && lhs.head === :tuple
+        fallback = Expr(:tuple, fill(:($DryRunValue()), length(lhs.args))...)
+        return Expr(:(=), lhs, :(try; $rhs; catch; $fallback; end))
     end
     return :(try; $lhs = $rhs; catch; end)
 end

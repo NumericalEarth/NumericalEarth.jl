@@ -5,7 +5,8 @@ using NumericalEarth.DataWrangling: AbstractMetadata, Metadatum, Metadata, Metad
                                     download_dataset
 using NumericalEarth.DataWrangling.DataModes: DataModes, parse_data_mode, register_dataset!,
                                               write_manifest, read_manifest, download_datasets,
-                                              build_dataset_manifest, DryRunValue
+                                              pregenerate_dataset_manifest, DryRunValue,
+                                              MANIFEST_FILENAME, manifest_path_in
 
 using Downloads: Downloads
 using Dates: DateTime
@@ -36,11 +37,12 @@ end
 @testset "parse_data_mode" begin
     @test parse_data_mode("auto")            == (:auto, "")
     @test parse_data_mode("")                == (:auto, "")
-    @test parse_data_mode("existing")        == (:existing, "")
-    @test parse_data_mode("build:foo.toml")  == (:build, "foo.toml")
-    @test parse_data_mode("build:path/to/manifest.toml") == (:build, "path/to/manifest.toml")
+    @test parse_data_mode("strict")          == (:strict, "")
+    @test parse_data_mode("pregenerate")     == (:pregenerate, "")
+    @test parse_data_mode("pregenerate:/tmp/m")    == (:pregenerate, "/tmp/m")
+    @test parse_data_mode("pregenerate:relative/dir") == (:pregenerate, "relative/dir")
 
-    @test_throws ArgumentError parse_data_mode("build:")
+    @test_throws ArgumentError parse_data_mode("pregenerate:")
     @test_throws ArgumentError parse_data_mode("garbage")
 end
 
@@ -56,7 +58,7 @@ end
 
         dates_vec = [DateTime(2020, 1, 1), DateTime(2020, 1, 2)]
         m_multi_missing = Metadata(:t, nothing, dates_vec, nothing, dir,
-                                   NumericalEarth.DataWrangling.DatewiseFilename(["a.nc", "b.nc"]))
+                                   DatewiseFilename(["a.nc", "b.nc"]))
         err = try
             DataModes.check_files_exist(m_multi_missing)
             nothing
@@ -69,7 +71,7 @@ end
     end
 end
 
-@testset "write_manifest TOML serialization" begin
+@testset "write_manifest groups by dataset" begin
     register_dataset!(FakeDataset, "FakeDataset")
 
     md_um  = Metadata(:bathymetry, FakeDataset(), nothing, nothing, "/tmp", "b.nc")
@@ -87,41 +89,36 @@ end
     write_manifest(io, records)
     parsed = TOML.parse(String(take!(io)))
 
-    @test haskey(parsed, "metadatum")
-    @test haskey(parsed, "metadata")
-    @test haskey(parsed, "metadataset")
+    @test collect(keys(parsed)) == ["FakeDataset"]
+    entries = parsed["FakeDataset"]
+    @test length(entries) == 5
+    @test all(!haskey(e, "dataset") for e in entries)
 
-    @test any(e -> e["variable_name"] == "bathymetry" && e["dataset"] == "FakeDataset"
-                   && !haskey(e, "date") && !haskey(e, "dir") && !haskey(e, "region"),
-              parsed["metadatum"])
-    @test any(e -> e["variable_name"] == "temperature" && e["date"] == DateTime(2020, 1, 1),
-              parsed["metadatum"])
-    @test any(e -> e["variable_name"] == "eastward_velocity" && haskey(e, "region")
-                   && e["region"]["kind"] == "BoundingBox"
+    @test any(e -> get(e, "variable_name", nothing) == "bathymetry" && !haskey(e, "date") && !haskey(e, "region"), entries)
+    @test any(e -> get(e, "variable_name", nothing) == "temperature" && get(e, "date", nothing) == DateTime(2020, 1, 1), entries)
+    @test any(e -> get(e, "variable_name", nothing) == "eastward_velocity"
+                   && haskey(e, "region") && e["region"]["kind"] == "BoundingBox"
                    && e["region"]["longitude"] == [200.0, 220.0],
-              parsed["metadatum"])
+              entries)
+    @test any(e -> get(e, "variable_name", nothing) == "salinity"
+                   && get(e, "start_date", nothing) == DateTime(2020, 1, 1)
+                   && get(e, "end_date",   nothing) == DateTime(2020, 12, 31),
+              entries)
+    @test any(e -> get(e, "variable_names", nothing) == ["T", "S"]
+                   && get(e, "start_date", nothing) == DateTime(2020, 1, 1)
+                   && get(e, "end_date",   nothing) == DateTime(2020, 12, 31),
+              entries)
 
-    @test any(e -> e["variable_name"] == "salinity"
-                   && e["start_date"] == DateTime(2020, 1, 1)
-                   && e["end_date"]   == DateTime(2020, 12, 31),
-              parsed["metadata"])
-
-    @test any(e -> e["variable_names"] == ["T", "S"]
-                   && e["dataset"] == "FakeDataset"
-                   && e["start_date"] == DateTime(2020, 1, 1)
-                   && e["end_date"]   == DateTime(2020, 12, 31),
-              parsed["metadataset"])
-
-    # Region: Column
     col = Column(45.0, 30.0; z=(-400.0, 0.0), interpolation=Nearest())
     md_col = Metadata(:temperature, FakeDataset(), DateTime(2020, 1, 1), col, "/tmp", "t.nc")
     io2 = IOBuffer()
     write_manifest(io2, AbstractMetadata[md_col])
     parsed2 = TOML.parse(String(take!(io2)))
-    @test parsed2["metadatum"][1]["region"]["kind"] == "Column"
-    @test parsed2["metadatum"][1]["region"]["longitude"] == 45.0
-    @test parsed2["metadatum"][1]["region"]["latitude"]  == 30.0
-    @test parsed2["metadatum"][1]["region"]["interpolation"] == "Nearest"
+    col_entry = parsed2["FakeDataset"][1]
+    @test col_entry["region"]["kind"]          == "Column"
+    @test col_entry["region"]["longitude"]     == 45.0
+    @test col_entry["region"]["latitude"]      == 30.0
+    @test col_entry["region"]["interpolation"] == "Nearest"
 end
 
 @testset "read_manifest round-trip" begin
@@ -136,9 +133,9 @@ end
                        start_date=DateTime(2020, 3, 1), end_date=DateTime(2020, 8, 1))
 
     mktempdir() do dir
-        path = joinpath(dir, "DataManifest.toml")
+        path = manifest_path_in(dir)
         write_manifest(path, AbstractMetadata[md_one, md_range, md_region, mset])
-        records = read_manifest(path)
+        records = read_manifest(; dir)
         @test length(records) == 4
 
         rt = first(r for r in records if r isa Metadatum && r.name == :temperature && r.region === nothing)
@@ -159,7 +156,7 @@ end
     end
 end
 
-@testset "download_datasets varargs and manifest path" begin
+@testset "download_datasets varargs and manifest dir" begin
     register_dataset!(FakeDataset, "FakeDataset")
     saved = DataModes.DATA_MODE[]
     REAL_DOWNLOAD_CALLS = Ref(0)
@@ -173,10 +170,9 @@ end
         @test REAL_DOWNLOAD_CALLS[] == 2
 
         mktempdir() do dir
-            path = joinpath(dir, "DataManifest.toml")
-            write_manifest(path, AbstractMetadata[m1, m2])
+            write_manifest(manifest_path_in(dir), AbstractMetadata[m1, m2])
             REAL_DOWNLOAD_CALLS[] = 0
-            download_datasets(path)
+            download_datasets(; dir)
             @test REAL_DOWNLOAD_CALLS[] == 2
         end
     finally
@@ -188,7 +184,7 @@ end
     register_dataset!(FakeDataset, "FakeDataset")
     saved = DataModes.DATA_MODE[]
     try
-        DataModes.DATA_MODE[] = :build
+        DataModes.DATA_MODE[] = :pregenerate
         empty!(DataModes.RECORDED)
 
         library_constructor() = (Metadatum(:temperature; dataset=FakeDataset(), date=DateTime(2020, 6, 1)),
@@ -211,9 +207,9 @@ end
     @test sprint(show, v) == "DryRunValue()"
 end
 
-@testset "build_dataset_manifest append (overwrite_existing=false)" begin
+@testset "pregenerate_dataset_manifest append (overwrite_existing=false)" begin
     mktempdir() do dir
-        manifest = joinpath(dir, "DataManifest.toml")
+        manifest = manifest_path_in(dir)
 
         script_one = joinpath(dir, "one.jl")
         write(script_one, """
@@ -229,9 +225,9 @@ end
 
         download_dataset(Metadatum(:temperature; dataset=AppendDataset(), date=DateTime(2020, 1, 1)))
         """)
-        build_dataset_manifest(script_one; manifest)
+        pregenerate_dataset_manifest(script_one; dir)
         parsed_after_one = TOML.parsefile(manifest)
-        @test length(parsed_after_one["metadatum"]) == 1
+        @test length(parsed_after_one["AppendDataset"]) == 1
 
         script_two = joinpath(dir, "two.jl")
         write(script_two, """
@@ -248,23 +244,23 @@ end
         download_dataset(Metadatum(:salinity; dataset=AppendDataset(), date=DateTime(2020, 1, 1)))
         """)
 
-        build_dataset_manifest(script_two; manifest, overwrite_existing = false)
+        pregenerate_dataset_manifest(script_two; dir, overwrite_existing = false)
         parsed_after_two = TOML.parsefile(manifest)
-        @test length(parsed_after_two["metadatum"]) == 2
-        @test sort([e["variable_name"] for e in parsed_after_two["metadatum"]]) == ["salinity", "temperature"]
+        @test length(parsed_after_two["AppendDataset"]) == 2
+        @test sort([e["variable_name"] for e in parsed_after_two["AppendDataset"]]) == ["salinity", "temperature"]
 
-        build_dataset_manifest(script_two; manifest, overwrite_existing = false)
+        pregenerate_dataset_manifest(script_two; dir, overwrite_existing = false)
         parsed_after_two_repeat = TOML.parsefile(manifest)
-        @test length(parsed_after_two_repeat["metadatum"]) == 2
+        @test length(parsed_after_two_repeat["AppendDataset"]) == 2
 
-        build_dataset_manifest(script_two; manifest, overwrite_existing = true)
+        pregenerate_dataset_manifest(script_two; dir, overwrite_existing = true)
         parsed_after_overwrite = TOML.parsefile(manifest)
-        @test length(parsed_after_overwrite["metadatum"]) == 1
-        @test parsed_after_overwrite["metadatum"][1]["variable_name"] == "salinity"
+        @test length(parsed_after_overwrite["AppendDataset"]) == 1
+        @test parsed_after_overwrite["AppendDataset"][1]["variable_name"] == "salinity"
     end
 end
 
-@testset "build_dataset_manifest end-to-end" begin
+@testset "pregenerate_dataset_manifest end-to-end" begin
     mktempdir() do dir
         script = joinpath(dir, "demo.jl")
         write(script, """
@@ -289,11 +285,10 @@ end
 
         helper()
         """)
-        manifest = joinpath(dir, "DataManifest.toml")
-        build_dataset_manifest(script; manifest)
-        parsed = TOML.parsefile(manifest)
-        @test length(get(parsed, "metadatum", [])) == 2
-        @test sort([e["variable_name"] for e in parsed["metadatum"]]) == ["S", "T"]
+        pregenerate_dataset_manifest(script; dir)
+        parsed = TOML.parsefile(manifest_path_in(dir))
+        @test length(get(parsed, "DemoDataset", [])) == 2
+        @test sort([e["variable_name"] for e in parsed["DemoDataset"]]) == ["S", "T"]
     end
 end
 
@@ -306,12 +301,12 @@ end
         download_dataset(md)
         @test MOCK_DOWNLOAD_CALLS[] == 1
 
-        DataModes.DATA_MODE[] = :build
+        DataModes.DATA_MODE[] = :pregenerate
         MOCK_DOWNLOAD_CALLS[] = 0
         download_dataset(md)
         @test MOCK_DOWNLOAD_CALLS[] == 0
 
-        DataModes.DATA_MODE[] = :existing
+        DataModes.DATA_MODE[] = :strict
         @test_throws Exception download_dataset(md)
     finally
         DataModes.DATA_MODE[] = saved_mode

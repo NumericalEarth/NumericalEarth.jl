@@ -266,8 +266,8 @@ function per_column_geopotential_discretization(metadata::ERA5PressureMetadata)
     ϕ_sl_meta = Metadata(:geopotential_height; dataset=sl_ds,
                          dates=metadata.dates, region=metadata.region, dir=metadata.dir)
 
-    Downloads.download(ϕ_meta)
-    Downloads.download(ϕ_sl_meta)
+    download_dataset(ϕ_meta)
+    download_dataset(ϕ_sl_meta)
 
     Φ = Field(first(ϕ_meta))         # 3-D geopotential, m²/s²
     Φ_sfc = Field(first(ϕ_sl_meta))  # 2-D surface geopotential, m²/s²

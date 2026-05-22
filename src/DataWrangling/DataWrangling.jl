@@ -245,7 +245,7 @@ abstract type AbstractMetadata end
 """
 Hook called at the end of every `AbstractMetadata` inner constructor. The default is a no-op;
 [`NumericalEarth.DataWrangling.DataModes`](@ref) adds more-specific methods on `Metadata` and
-`MetadataSet` that record into the manifest in `:build` mode, so the trace captures Metadata
+`MetadataSet` that record into the manifest in `:pregenerate` mode, so the trace captures Metadata
 constructed inside library functions too.
 """
 observe_metadata(::AbstractMetadata) = nothing
@@ -376,8 +376,8 @@ Acquire the data referenced by `metadata` according to the current
 `NUMERICALEARTH_DATA` mode (see [`DataModes`](@ref)):
 
 - `:auto`     — call `Downloads.download(metadata)` (the per-dataset method).
-- `:existing` — verify every required file is already on disk; error otherwise.
-- `:build`    — no-op (metadata is recorded into the manifest by `observe_metadata` at construction).
+- `:strict`      — verify every required file is already on disk; error otherwise.
+- `:pregenerate` — no-op (metadata is recorded into the manifest by `observe_metadata` at construction).
 
 This is the single chokepoint through which every code path that needs dataset files must go.
 Per-dataset modules keep extending `Downloads.download` for the `:auto` branch only.
@@ -385,8 +385,8 @@ Per-dataset modules keep extending `Downloads.download` for the `:auto` branch o
 function download_dataset(metadata::AbstractMetadata)
     mode = DataModes.DATA_MODE[]
     mode === :auto     && return Downloads.download(metadata)
-    mode === :existing && return DataModes.check_files_exist(metadata)
-    mode === :build    && return nothing
+    mode === :strict      && return DataModes.check_files_exist(metadata)
+    mode === :pregenerate && return nothing
     error("Unknown NUMERICALEARTH_DATA mode: $(repr(mode))")
 end
 
