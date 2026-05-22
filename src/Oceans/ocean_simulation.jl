@@ -340,6 +340,9 @@ EarthSystemModels.reference_density(ocean::Simulation{<:HydrostaticFreeSurfaceMo
 EarthSystemModels.reference_density(buoyancy_formulation::SeawaterBuoyancy) = EarthSystemModels.reference_density(buoyancy_formulation.equation_of_state)
 EarthSystemModels.reference_density(eos::TEOS10EquationOfState) = eos.reference_density
 
+# A default value, changeable from the `EarthSystemModel(; ocean_reference_density = ...)` kwarg.
+EarthSystemModels.reference_density(ocean::LinearEquationOfState{FT}) = convert(FT, 1026)
+
 EarthSystemModels.heat_capacity(ocean::Simulation{<:HydrostaticFreeSurfaceModel}) = heat_capacity(ocean.model.buoyancy.formulation)
 EarthSystemModels.heat_capacity(buoyancy_formulation::SeawaterBuoyancy) = heat_capacity(buoyancy_formulation.equation_of_state)
 
