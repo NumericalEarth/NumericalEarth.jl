@@ -41,6 +41,7 @@ export
     OceanSeaIceModel,
     AtmosphereOceanModel,
     SlabOcean,
+    PrescribedOcean,
     AbstractPrescribedComponent,
     PrescribedRadiation,
     PrescribedAtmosphere,

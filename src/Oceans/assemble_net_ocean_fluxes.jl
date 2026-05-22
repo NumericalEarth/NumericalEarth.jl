@@ -1,8 +1,3 @@
-using Printf: Printf
-using Oceananigans.Grids: inactive_node
-using Oceananigans.Operators: ℑxᶠᵃᵃ, ℑyᵃᶠᵃ
-using Oceananigans.Forcings: MultipleForcings
-
 using ..EarthSystemModels: NoOceanInterfaceModel, NoInterfaceModel, sea_ice_concentration
 using ..EarthSystemModels.InterfaceComputations: computed_fluxes
 
@@ -14,9 +9,9 @@ using ..EarthSystemModels.InterfaceComputations: computed_fluxes
 #####
 
 # Fallback for an ocean-only model (it has no interfaces!)
-EarthSystemModels.update_net_fluxes!(coupled_model::Union{NoOceanInterfaceModel, NoInterfaceModel}, ocean::Simulation{<:HydrostaticFreeSurfaceModel}) = nothing
+EarthSystemModels.update_net_fluxes!(coupled_model::Union{NoOceanInterfaceModel, NoInterfaceModel}, ocean::OceananigansModelSimulations) = nothing
 
-EarthSystemModels.update_net_fluxes!(coupled_model, ocean::Simulation{<:HydrostaticFreeSurfaceModel}) =
+EarthSystemModels.update_net_fluxes!(coupled_model, ocean::OceananigansModelSimulations) =
     update_net_ocean_fluxes!(coupled_model, ocean, ocean.model.grid)
 
 function update_net_ocean_fluxes!(coupled_model, ocean_model, grid)

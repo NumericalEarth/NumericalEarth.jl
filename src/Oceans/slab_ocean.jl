@@ -1,7 +1,5 @@
 using Oceananigans.BoundaryConditions: fill_halo_regions!
 using Oceananigans.Fields: ConstantField, ZeroField
-using Oceananigans.TimeSteppers: Clock, tick!
-using Oceananigans.Utils: prettytime, prettysummary
 
 struct SlabOcean{FT, G, Clk, T, F, H, ρ, C}
     grid :: G
