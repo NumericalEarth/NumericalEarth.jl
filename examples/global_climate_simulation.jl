@@ -53,7 +53,7 @@ viscous_closure      = Oceananigans.TurbulenceClosures.HorizontalScalarBiharmoni
 closures             = (catke_closure, eddy_closure, viscous_closure)
 nothing #hide
 
-# The ocean simulation, complete with initial conditions for temperature and salinity from ECCO.
+# The ocean simulation, complete with initial conditions for temperature and salinity from ECCO on Jan 1st, 1992.
 
 ocean = ocean_simulation(grid;
                          momentum_advection,
@@ -63,7 +63,8 @@ ocean = ocean_simulation(grid;
 
 ecco_set = MetadataSet(:temperature, :salinity,
                        :sea_ice_thickness, :sea_ice_concentration;
-                       dataset = ECCO4Monthly())
+                       dataset = ECCO4Monthly(),
+                       date = DateTime(1992, 1, 1))
 Oceananigans.set!(ocean.model, ecco_set)   # T, S
 
 # The sea-ice simulation, complete with initial conditions for sea-ice thickness and sea-ice concentration from ECCO.
