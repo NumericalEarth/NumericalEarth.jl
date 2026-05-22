@@ -12,6 +12,6 @@ using NumericalEarth.EarthSystemModels.InterfaceComputations: ComponentExchanger
 
 include("breeze_atmosphere_interface.jl")
 include("breeze_atmosphere_simulation.jl")
-include("breeze_child_model.jl")
+include("breeze_child_simulation.jl")
 
 end # module NumericalEarthBreezeExt
