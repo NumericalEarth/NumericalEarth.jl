@@ -10,31 +10,64 @@
 #     child  = child_simulation(modeltype, grid, parent; …)
 #     nested = NestedSimulation(parent, child; Δt, stop_time, …)
 #
-# Variable mapping (which parent FTS drives which child field) dispatches on
-# `default_parent_variables(modeltype, parent)`; the underlying model
-# constructor is selected by `_build_child_model(modeltype, grid; …)` — extend
-# either via package extensions for new model types.
+# Variable mapping (which parent FTS drives which child boundary) dispatches on
+# `parent_variables(modeltype, parent)` — multi-dispatch on the (child, parent)
+# pair. Methods live wherever both types are visible (often a package
+# extension). Cross-realm pairs (e.g. ocean child × atmosphere parent) are
+# intentionally undefined; the generic fallback throws an explanatory
+# `ArgumentError` and the user must pass `variables=` explicitly to override.
+#
+# The underlying model constructor is selected by `_build_child_model(modeltype, grid; …)`
+# — also extended via package extensions for new model types.
 
 """
-    default_parent_variables(modeltype, parent) → NamedTuple
+    parent_variables(child_modeltype, parent) → NamedTuple
 
-Return a `child_variable_name => FieldTimeSeries` mapping naming the parent
-FTSs that drive each open boundary of a child model of type `modeltype`.
-Extended by dispatch — add a method per child model type.
+Return the `child_variable_name => interpolatable_source` mapping naming
+the parent fields that drive each child boundary, where the source may be
+a `FieldTimeSeries` (prescribed parents) or an `AbstractField` (prognostic
+parents).
+
+Dispatch on the **(child_modeltype, parent_type)** pair — define a method
+per pair, in whichever package can see both types. The generic fallback
+errors so cross-realm pairs (e.g. an ocean child with an atmosphere parent)
+fail loudly at construction time. Users can always sidestep by passing
+`variables=` directly to [`child_simulation`](@ref).
+
+The exact contents of the NamedTuple — what fields, whether they are
+density-weighted, etc. — are determined by what the child consumes and what
+the parent provides. For example, Breeze `AtmosphereModel` consumes
+prognostic momentum (`ρu`, `ρv`, …), so a `PrescribedAtmosphere` parent
+populated for that use case must store ρ·u in its velocity slots; the
+method body documents the convention.
 """
-function default_parent_variables end
+function parent_variables end
 
-# Oceananigans NonhydrostaticModel: velocity-form prognostic (u, v, w).
-default_parent_variables(::Type{<:NonhydrostaticModel}, parent) =
-    (u = parent.velocities.u, v = parent.velocities.v)
+# Generic fallback — errors with a message that explains the situation and
+# suggests the two ways out.
+function parent_variables(child_modeltype, parent)
+    throw(ArgumentError(string(
+        "No `parent_variables` mapping is defined for ",
+        "child=$(child_modeltype) with parent=$(typeof(parent)).\n",
+        "\n",
+        "Either:\n",
+        "  • define `parent_variables(::Type{<:$(child_modeltype)}, ",
+        "parent::$(typeof(parent)))` in the package where both types are visible, or\n",
+        "  • pass `variables = (...)` explicitly to `child_simulation`.\n",
+        "\n",
+        "Note: cross-realm nesting (e.g. an ocean child driven by an atmosphere ",
+        "parent) is intentionally unsupported as a default — the variable units ",
+        "do not match. Define a custom mapping only if you own the semantics."
+    )))
+end
 
 """
     _build_child_model(modeltype, grid; kwargs...)
 
-Construct the child model. Defaults to `modeltype(grid; kwargs...)`; the
-Breeze package extension overrides this for `AtmosphereModel` to dispatch
-through `atmosphere_simulation`, matching the established
-`ocean_simulation` / `atmosphere_simulation` convention.
+Construct the child model. Defaults to `modeltype(grid; kwargs...)`; package
+extensions override this for specific model types (e.g. the Breeze ext routes
+`AtmosphereModel` through `atmosphere_simulation` so Breeze's default
+advection / microphysics apply).
 """
 _build_child_model(modeltype, grid; kwargs...) = modeltype(grid; kwargs...)
 
@@ -42,7 +75,7 @@ _build_child_model(modeltype, grid; kwargs...) = modeltype(grid; kwargs...)
     child_simulation(modeltype, grid, parent;
                      sides = (:west, :east, :south, :north),
                      schemes = NamedTuple(),
-                     variables = default_parent_variables(modeltype, parent),
+                     variables = parent_variables(modeltype, parent),
                      relaxation_rate = nothing,
                      relaxation_mask = 1,
                      model_kwargs...)
@@ -55,17 +88,16 @@ are forwarded to the underlying constructor (see `_build_child_model`).
 
 If `relaxation_rate` is supplied, [`parent_forcings`](@ref) builds an
 Oceananigans `Relaxation` per variable that nudges the child interior toward
-the parent's `FieldTimeSeries` at rate `relaxation_rate` and weighted by
-`relaxation_mask` (default uniform). Per-variable values are supported via
-`NamedTuple`s. The resulting forcings are merged with any `forcing` already
-passed in `model_kwargs`.
+the parent at rate `relaxation_rate`, weighted by `relaxation_mask` (default
+uniform). Per-variable values are supported via `NamedTuple`s. The resulting
+forcings are merged with any `forcing` already passed in `model_kwargs`.
 
 Wrap with `NestedSimulation(parent, child; Δt, stop_time, …)` to integrate.
 """
 function child_simulation(modeltype, grid, parent;
                           sides = (:west, :east, :south, :north),
                           schemes = NamedTuple(),
-                          variables = default_parent_variables(modeltype, parent),
+                          variables = parent_variables(modeltype, parent),
                           relaxation_rate = nothing,
                           relaxation_mask = 1,
                           model_kwargs...)

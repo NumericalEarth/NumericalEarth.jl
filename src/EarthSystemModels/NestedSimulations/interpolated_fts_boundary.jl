@@ -1,16 +1,20 @@
 #####
 ##### Interpolated: a user-facing `OpenBoundaryCondition` wrapper around a
-##### `FieldTimeSeries`. Mirrors `Oceananigans.Forcings.FieldTimeSeriesTarget`
-##### (the FTS-`Relaxation` machinery) but for boundary conditions.
+##### parent state source (a `FieldTimeSeries` or an `AbstractField`).
+##### Mirrors `Oceananigans.Forcings.FieldTimeSeriesTarget` (the FTS-`Relaxation`
+##### machinery) but for boundary conditions.
 #####
 #
-# Usage: `OpenBoundaryCondition(Interpolated(fts))`.
+# Usage: `OpenBoundaryCondition(Interpolated(source))` where `source` is
+# either a `FieldTimeSeries` (prescribed parents — interpolates in space + time)
+# or an `AbstractField` (prognostic parents — interpolates in space; the
+# parent's `time_step!` advances the field state).
 #
 # The user-facing constructor leaves the dim/side/location type parameters as
 # `Nothing`; Oceananigans' standard regularization runs through this module's
 # `regularize_boundary_condition(::Interpolated{Nothing}, …)` method and
-# returns an `Interpolated{Dim, Side, LX, LY, LZ, FTS}` that carries enough
-# type info for `getbc` to compute the right boundary-face node.
+# returns a fully-tagged `Interpolated{Dim, Side, LX, LY, LZ, S}` that carries
+# enough type info for `getbc` to compute the right boundary-face node.
 #
 # This whole file collapses to a deprecation shim once an analogous native
 # path lands upstream in Oceananigans (parallel to PR #5575 for `Relaxation`).
@@ -21,32 +25,41 @@ import Oceananigans.OutputReaders: FlavorOfFTS
 using Oceananigans.Grids: node
 using Adapt: Adapt, adapt
 
-"""
-    Interpolated(fts)
+const InterpolatedSource = Union{FlavorOfFTS, Oceananigans.Fields.AbstractField}
 
-Wrap a `FieldTimeSeries` for use as the condition value in an
-`OpenBoundaryCondition`. During model construction, Oceananigans' standard
-boundary-condition regularization tags this with the boundary's
-dimension / side / field location, after which `getbc` interpolates the FTS
-at the appropriate boundary-face node and clock time.
-
-`OpenBoundaryCondition(Interpolated(fts); scheme = …)` works with any scheme
-that consults `getbc` for its exterior value (e.g. `PerturbationAdvection`).
 """
-struct Interpolated{Dim, SideType, LX, LY, LZ, FTS}
-    fts :: FTS
+    Interpolated(source)
+
+Wrap a parent state source for use as the condition value in an
+`OpenBoundaryCondition`. `source` can be:
+
+- a `FieldTimeSeries` (prescribed parent — interpolated in space + time), or
+- an `AbstractField` (prognostic parent — interpolated in space at the
+  parent's current state, which advances via `time_step!`).
+
+During model construction Oceananigans' standard boundary-condition
+regularization tags this with the boundary's dimension / side / field
+location; afterward `getbc` evaluates the source at the appropriate
+boundary-face node.
+
+`OpenBoundaryCondition(Interpolated(source); scheme = …)` works with any
+scheme that consults `getbc` for its exterior value (e.g.
+`PerturbationAdvection`).
+"""
+struct Interpolated{Dim, SideType, LX, LY, LZ, S}
+    source :: S
 end
 
 # User-facing constructor — pre-regularization, all tags are `Nothing`.
-Interpolated(fts::FTS) where FTS<:FlavorOfFTS =
-    Interpolated{Nothing, Nothing, Nothing, Nothing, Nothing, FTS}(fts)
+Interpolated(source::S) where S<:InterpolatedSource =
+    Interpolated{Nothing, Nothing, Nothing, Nothing, Nothing, S}(source)
 
 # Type-stable post-regularization constructor.
-@inline Interpolated{Dim, SideType, LX, LY, LZ}(fts::FTS) where {Dim, SideType, LX, LY, LZ, FTS} =
-    Interpolated{Dim, SideType, LX, LY, LZ, FTS}(fts)
+@inline Interpolated{Dim, SideType, LX, LY, LZ}(source::S) where {Dim, SideType, LX, LY, LZ, S} =
+    Interpolated{Dim, SideType, LX, LY, LZ, S}(source)
 
 Adapt.adapt_structure(to, w::Interpolated{D, S, LX, LY, LZ}) where {D, S, LX, LY, LZ} =
-    Interpolated{D, S, LX, LY, LZ}(adapt(to, w.fts))
+    Interpolated{D, S, LX, LY, LZ}(adapt(to, w.source))
 
 #####
 ##### Regularization: convert the location-less wrapper to the tagged form.
@@ -56,30 +69,45 @@ function regularize_boundary_condition(c::Interpolated{Nothing}, grid, loc, dim,
     LX = typeof(loc[1])
     LY = typeof(loc[2])
     LZ = typeof(loc[3])
-    _validate_fts_bracket(c.fts, grid, LX, LY, LZ)
-    return Interpolated{dim, SideType, LX, LY, LZ, typeof(c.fts)}(c.fts)
+    _validate_source_bracket(c.source, grid, LX, LY, LZ)
+    return Interpolated{dim, SideType, LX, LY, LZ, typeof(c.source)}(c.source)
 end
 
-# Match the strict "FTS must bracket every child sampling node" check that
-# Oceananigans uses for `Relaxation`-on-FTS.
-function _validate_fts_bracket(fts, grid, ::Type{LX}, ::Type{LY}, ::Type{LZ}) where {LX, LY, LZ}
-    sim_loc = (LX(), LY(), LZ())
-    fts_loc = Oceananigans.Fields.instantiated_location(fts)
+# Match the strict "source must bracket every child sampling node" check that
+# Oceananigans uses for `Relaxation`-on-FTS. Same logic for FTS and AbstractField.
+function _validate_source_bracket(source, grid, ::Type{LX}, ::Type{LY}, ::Type{LZ}) where {LX, LY, LZ}
+    sim_loc    = (LX(), LY(), LZ())
+    source_loc = Oceananigans.Fields.instantiated_location(source)
+    source_grid = source.grid
     for (label, nodes_fn) in (("x", Oceananigans.Grids.xnodes),
                               ("y", Oceananigans.Grids.ynodes),
                               ("z", Oceananigans.Grids.znodes))
         sim_lo, sim_hi = extrema(nodes_fn(grid, sim_loc...))
-        fts_lo, fts_hi = extrema(nodes_fn(fts.grid, fts_loc...))
-        (fts_lo ≤ sim_lo && sim_hi ≤ fts_hi) || throw(ArgumentError(
-            "Interpolated boundary $(label)-extent [$fts_lo, $fts_hi] does not " *
+        src_lo, src_hi = extrema(nodes_fn(source_grid, source_loc...))
+        (src_lo ≤ sim_lo && sim_hi ≤ src_hi) || throw(ArgumentError(
+            "Interpolated boundary source $(label)-extent [$src_lo, $src_hi] does not " *
             "bracket model grid $(label)-extent [$sim_lo, $sim_hi]"))
     end
     return nothing
 end
 
 #####
-##### getbc: interpolate the FTS at the boundary-face node and clock time.
+##### getbc: evaluate the source at the boundary-face node.
 #####
+#
+# Dispatches via `_query_source` so a `FieldTimeSeries` source is interpolated
+# in space + time, while an `AbstractField` source is interpolated in space at
+# the parent's current state.
+
+@inline _query_source(fts::FlavorOfFTS, X, t) =
+    Oceananigans.Fields.interpolate(X, Time(t), fts,
+                                    Oceananigans.Fields.instantiated_location(fts),
+                                    fts.grid)
+
+@inline _query_source(field::Oceananigans.Fields.AbstractField, X, t) =
+    Oceananigans.Fields.interpolate(X, field,
+                                    Oceananigans.Fields.instantiated_location(field),
+                                    field.grid)
 
 @inline _boundary_index(::Type{LeftBoundary},  N) = 1
 @inline _boundary_index(::Type{RightBoundary}, N) = N + 1
@@ -88,25 +116,19 @@ end
                        j::Integer, k::Integer, grid::AbstractGrid, clock, args...) where {S, LX, LY, LZ}
     i = _boundary_index(S, grid.Nx)
     X = node(i, j, k, grid, LX(), LY(), LZ())
-    return Oceananigans.Fields.interpolate(X, Time(clock.time), bc.fts,
-                                           Oceananigans.Fields.instantiated_location(bc.fts),
-                                           bc.fts.grid)
+    return _query_source(bc.source, X, clock.time)
 end
 
 @inline function getbc(bc::Interpolated{2, S, LX, LY, LZ},
                        i::Integer, k::Integer, grid::AbstractGrid, clock, args...) where {S, LX, LY, LZ}
     j = _boundary_index(S, grid.Ny)
     X = node(i, j, k, grid, LX(), LY(), LZ())
-    return Oceananigans.Fields.interpolate(X, Time(clock.time), bc.fts,
-                                           Oceananigans.Fields.instantiated_location(bc.fts),
-                                           bc.fts.grid)
+    return _query_source(bc.source, X, clock.time)
 end
 
 @inline function getbc(bc::Interpolated{3, S, LX, LY, LZ},
                        i::Integer, j::Integer, grid::AbstractGrid, clock, args...) where {S, LX, LY, LZ}
     k = _boundary_index(S, grid.Nz)
     X = node(i, j, k, grid, LX(), LY(), LZ())
-    return Oceananigans.Fields.interpolate(X, Time(clock.time), bc.fts,
-                                           Oceananigans.Fields.instantiated_location(bc.fts),
-                                           bc.fts.grid)
+    return _query_source(bc.source, X, clock.time)
 end

@@ -1,6 +1,15 @@
 #####
-##### NestedSimulation: convenience constructor that wraps a NestedModel in a Simulation
+##### NestedSimulation: type alias + convenience constructor
 #####
+
+"""
+    NestedSimulation
+
+Type alias for `Simulation{<:NestedModel}` — an Oceananigans `Simulation`
+whose model is a [`NestedModel`](@ref). Useful for `::NestedSimulation`
+dispatch.
+"""
+const NestedSimulation = Simulation{<:NestedModel}
 
 """
     NestedSimulation(parent, child_model::AbstractModel; simulation_kwargs...)

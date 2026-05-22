@@ -2,22 +2,30 @@
 ##### child_simulation dispatch for Breeze.AtmosphereModel
 #####
 #
-# Breeze's prognostic is density-weighted momentum (ρu, ρv, ρw). We assume the
-# parent's velocity FTS slots already hold momentum values — i.e. the user has
-# `set!`-ed `parent.velocities.u = ρ̄·u`, etc. — so the BC values land on the
-# prognostic momentum at the boundary face directly. PR #722 in Breeze
-# propagates these momentum BCs to the derived velocities.
+# Two extensions to NumericalEarth.NestedSimulations:
 #
-# We override `_build_child_model` so that `child_simulation(AtmosphereModel, …)`
-# routes through `atmosphere_simulation(grid; …)` — matching the established
-# `*_simulation` helper convention — instead of constructing the `AtmosphereModel`
-# directly. That way the call picks up Breeze's default advection / microphysics
-# settings when the user doesn't override them.
+# 1. `parent_variables(::Type{<:AtmosphereModel}, ::PrescribedAtmosphere)` —
+#    declares the (child, parent) pair mapping. Returns a NamedTuple naming
+#    the parent FTSs that drive the child's momentum BCs.
+#
+#    Density convention (important): Breeze's prognostic is density-weighted
+#    momentum (ρu, ρv, ρw). The BC value Oceananigans writes into ρu at the
+#    boundary is exactly the value of the source we hand it; so the parent's
+#    velocity FTS slots are interpreted as **momentum** values (ρ̄·u). The user
+#    populating a `PrescribedAtmosphere` for use with Breeze is expected to
+#    pre-multiply by ρ̄ when calling `set!`. See [[nested-simulations-design]]
+#    and the deferred PrescribedAtmosphere refactor (issue #266) for the
+#    slot-naming followup.
+#
+# 2. `_build_child_model(::Type{<:AtmosphereModel}, grid; …)` — routes
+#    `child_simulation(AtmosphereModel, …)` through `atmosphere_simulation`
+#    instead of constructing `AtmosphereModel` directly, so Breeze's default
+#    advection / microphysics settings apply unless the user overrides them.
 
-import NumericalEarth.EarthSystemModels.NestedSimulations: default_parent_variables,
+import NumericalEarth.EarthSystemModels.NestedSimulations: parent_variables,
                                                             _build_child_model
 
-default_parent_variables(::Type{<:Breeze.AtmosphereModel}, parent) =
+parent_variables(::Type{<:Breeze.AtmosphereModel}, parent::NumericalEarth.PrescribedAtmosphere) =
     (ρu = parent.velocities.u, ρv = parent.velocities.v)
 
 _build_child_model(::Type{<:Breeze.AtmosphereModel}, grid; kwargs...) =
