@@ -73,7 +73,7 @@ jobs:
           echo " --> df -a /"
           df -a /
       - uses: actions/checkout@v6
-      - uses: julia-actions/setup-julia@v2
+      - uses: julia-actions/setup-julia@v3
         with:
           version: ${{ matrix.version }}
           arch: ${{ matrix.arch }}
@@ -124,10 +124,10 @@ jobs:
       - name: df before cleanup
         run: |
           df -hT
-      - name: Clean up old CUDA toolkits
-        # Save storage by deleting old CUDA toolkits, we'll use v13
+      - name: Clean up CUDA toolkits
+        # Save storage by deleting CUDA toolkits
         run: |
-          rm -rf /host-usr-local/cuda-12.*
+          rm -rf /host-usr-local/cuda-*
       - name: df after cleanup
         run: |
           df -hT
