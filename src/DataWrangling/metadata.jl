@@ -401,6 +401,8 @@ function MetadataSet(variable_names::Symbol...;
     return MetadataSet(variable_names, dataset, effective_dates, region, dir, filenames)
 end
 
+MetadataSet(names::NTuple{<:Any, <:Symbol}; kw...) = MetadataSet(names...; kw...)
+
 # Property access: variables first via filenames lookup, struct fields second.
 function Base.getproperty(mset::MetadataSet, name::Symbol)
     if name in fieldnames(MetadataSet)
