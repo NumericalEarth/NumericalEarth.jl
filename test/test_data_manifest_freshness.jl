@@ -16,9 +16,6 @@ function regenerate_manifest_in(out_dir)
         try
             pregenerate_dataset_manifest(f; dir = out_dir, overwrite_existing = false)
         catch
-            # Per-file trace failures are non-fatal — same behavior as the manual pregenerate
-            # loop. Whatever records the trace captured before the failure are still in the
-            # manifest; subsequent files keep accumulating.
         end
     end
     out = manifest_path_in(out_dir)
