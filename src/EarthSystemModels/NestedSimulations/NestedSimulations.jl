@@ -1,7 +1,8 @@
 module NestedSimulations
 
-export NestedSimulation, parent_boundary_conditions, parent_forcings,
-       child_simulation, default_parent_variables
+export NestedModel, NestedSimulation,
+       parent_boundary_conditions, parent_forcings,
+       child_model, default_parent_variables
 
 using Oceananigans
 using Oceananigans.Fields: Field, Center, Face, instantiated_location
@@ -10,17 +11,15 @@ using Oceananigans.Grids: AbstractGrid, xnode, ynode, znode
 using Oceananigans.BoundaryConditions: OpenBoundaryCondition, FieldBoundaryConditions
 using Oceananigans.OutputReaders: FieldTimeSeries
 using Oceananigans.Models: NonhydrostaticModel
-using Oceananigans.Simulations: Simulation, Callback, IterationInterval
+using Oceananigans.Simulations: Simulation
 using Oceananigans.TimeSteppers: time_step!
 using Oceananigans.Units: Time
 
-import Oceananigans.Simulations: run!
-import Oceananigans.TimeSteppers: time_step!
-
+include("nested_model.jl")
 include("nested_simulation.jl")
 include("interpolated_fts_boundary.jl")
 include("parent_boundary_conditions.jl")
 include("parent_forcings.jl")
-include("child_simulation.jl")
+include("child_model.jl")
 
 end # module

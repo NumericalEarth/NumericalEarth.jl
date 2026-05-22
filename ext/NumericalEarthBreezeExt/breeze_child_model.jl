@@ -1,5 +1,5 @@
 #####
-##### child_simulation dispatch for Breeze.AtmosphereModel
+##### child_model dispatch for Breeze.AtmosphereModel
 #####
 #
 # Breeze's prognostic is density-weighted momentum (ρu, ρv, ρw). We assume the

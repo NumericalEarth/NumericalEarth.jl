@@ -40,10 +40,11 @@ export
     OceanOnlyModel,
     OceanSeaIceModel,
     AtmosphereOceanModel,
+    NestedModel,
     NestedSimulation,
     parent_boundary_conditions,
     parent_forcings,
-    child_simulation,
+    child_model,
     SlabOcean,
     AbstractPrescribedComponent,
     PrescribedRadiation,
@@ -170,7 +171,7 @@ using .Oceans
 using .SeaIces
 using .Diagnostics
 using .EarthSystemModels: ComponentInterfaces, MomentumRoughnessLength, ScalarRoughnessLength, default_sea_ice
-using .EarthSystemModels.NestedSimulations: NestedSimulation, parent_boundary_conditions, parent_forcings, child_simulation
+using .EarthSystemModels.NestedSimulations: NestedModel, NestedSimulation, parent_boundary_conditions, parent_forcings, child_model
 using .DataWrangling.ETOPO
 using .DataWrangling.ECCO
 using .DataWrangling.GLORYS

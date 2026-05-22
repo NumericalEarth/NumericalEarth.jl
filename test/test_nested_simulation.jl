@@ -87,8 +87,7 @@ end
     set!(model, u = (x, y, z) -> lamb_oseen_uv(x, y, 0.0)[1],
                 v = (x, y, z) -> lamb_oseen_uv(x, y, 0.0)[2])
 
-    sim    = Simulation(model; Δt = 0.001, stop_iteration = 5, verbose = false)
-    nested = NestedSimulation(parent, sim)
+    nested = NestedSimulation(parent, model; Δt = 0.001, stop_iteration = 5, verbose = false)
 
     run!(nested)
 
