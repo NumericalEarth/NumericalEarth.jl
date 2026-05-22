@@ -1,7 +1,7 @@
 using Oceananigans.OutputReaders: update_field_time_series!, FieldTimeSeries
-using Oceananigans.TimeSteppers: Clock, Time, tick!
+using Oceananigans.TimeSteppers: Clock, tick!
 using Oceananigans.Architectures: architecture
-using Oceananigans.Utils: prettysummary
+using Oceananigans.Utils: Time, prettysummary
 
 """
     PrescribedOcean(grid, times=[zero(grid)];
