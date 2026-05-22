@@ -136,7 +136,7 @@ jobs:
       - name: Clean up space on host device
         # Save storage by deleting CUDA toolkits and other Nvidia tools we don't need
         run: |
-          rm -rf /host-opt/nvidia/ /host-usr-local/cuda*
+          rm -rfv /host-opt/nvidia/ /host-usr-local/cuda*
       - name: df after cleanup
         run: |
           df -hT
