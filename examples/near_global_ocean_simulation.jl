@@ -83,7 +83,8 @@ ocean.model
 
 # We initialize the ocean model with ECCO4 temperature and salinity for January 1, 1992.
 
-set!(ocean.model, MetadataSet(:temperature, :salinity; dataset=ECCO4Monthly()))
+date = DateTime(1992, 1, 1)
+set!(ocean.model, MetadataSet(:temperature, :salinity; dataset=ECCO4Monthly(), date))
 
 # ### Prescribed atmosphere and radiation
 #
