@@ -108,8 +108,9 @@ jobs:
       image: ghcr.io/numericalearth/numerical-earth-docker-images:test-julia_1.12.5
       options: --gpus=all
       volumes:
-        # Mount host `/` so that we can delete some stuff afterwards
-        - /:/host-root
+        # Mount host directories so that we can delete some stuff afterwards
+        - /opt:/host-opt
+        - /usr/local:/host-usr-local
     timeout-minutes: 120
     strategy:
       fail-fast: false
@@ -135,7 +136,7 @@ jobs:
       - name: Clean up space on host device
         # Save storage by deleting CUDA toolkits and other Nvidia tools we don't need
         run: |
-          rm -rf /host-root/opt/nvidia/ /host-root/usr/local/cuda*
+          rm -rf /host-opt/nvidia/ /host-usr-local/cuda*
       - name: df after cleanup
         run: |
           df -hT
