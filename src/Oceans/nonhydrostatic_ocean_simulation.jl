@@ -23,7 +23,7 @@ timestepping is needed.
 ## Keyword Arguments
 
 - `Δt`: Timestep used by the `Simulation`. Defaults to `1` second.
-- `closure`: Turbulence closure. Defaults to `nothing` (implicit LES via WENO).
+- `closure`: Turbulence closure. Defaults to `nothing` (implicit LES via WENO advection scheme).
 - `tracers`: Tuple of tracer names. Defaults to `(:T, :S)`.
 - `coriolis`: Coriolis parameter. Defaults to `nothing`.
 - `reference_density`: Reference seawater density for the equation of state.
