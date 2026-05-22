@@ -53,7 +53,6 @@ function update_net_ocean_fluxes!(coupled_model, ocean_model, grid)
             snowfall_flux,
             land_freshwater_flux,
             ocean_properties)
-
     return nothing
 end
 
