@@ -20,7 +20,7 @@ using NCDatasets: NCDatasets, NCDataset, defDim, defVar
 using Scratch: Scratch, @get_scratch!
 using Thermodynamics: q_vap_from_RH, Liquid
 
-using ..DataWrangling: DownloadProgress
+using ..DataWrangling: DataWrangling, DownloadProgress
 using ...Atmospheres: PrescribedAtmosphere, PrescribedPrecipitationFlux, AtmosphereThermodynamicsParameters
 
 using ..DataWrangling: Metadata, Metadatum, metadata_path, first_date, last_date,
@@ -57,6 +57,8 @@ download_OSPapa_cache::String = ""
 
 function __init__()
     global download_OSPapa_cache = @get_scratch!("OSPapa")
+    DataWrangling.DataModes.register_dataset!(OSPapaFluxHourly, "OSPapaFluxHourly")
+    DataWrangling.DataModes.register_dataset!(OSPapaHourly, "OSPapaHourly")
 end
 
 function download_ospapa_file(dir=download_OSPapa_cache)

@@ -21,6 +21,7 @@ import ..DataWrangling:
 download_ETOPO_cache::String = ""
 function __init__()
     global download_ETOPO_cache = @get_scratch!("ETOPO")
+    DataWrangling.DataModes.register_dataset!(ETOPO2022, "ETOPO2022")
 end
 
 ETOPO_bathymetry_variable_names = Dict(

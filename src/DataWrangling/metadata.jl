@@ -72,15 +72,21 @@ getfilename(f::DatewiseFilename, i) = f.filenames[i]
 getfilename(f::String, i) = f
 getfilename(::Nothing, i) = nothing
 
-struct Metadata{V, D, R, S, F}
+struct Metadata{V, D, R, S, F} <: AbstractMetadata
     name :: S
     dataset :: V
     dates :: D
     region :: R
     dir :: String
     filename :: F
+    function Metadata{V, D, R, S, F}(name, dataset, dates, region, dir, filename) where {V, D, R, S, F}
+        m = new{V, D, R, S, F}(name, dataset, dates, region, dir, filename)
+        observe_metadata(m)
+        return m
+    end
 end
 
+Metadata(name::S, dataset::V, dates::D, region::R, dir::String, filename::F) where {V, D, R, S, F} = Metadata{V, D, R, S, F}(name, dataset, dates, region, dir, filename)
 Metadata(name, dataset, dates, region, dir) = Metadata(name, dataset, dates, region, dir, nothing)
 
 is_three_dimensional(::Metadata) = true
@@ -300,14 +306,22 @@ end
 ##### `download`, ...) keeps working unchanged on the elements.
 #####
 
-struct MetadataSet{V, D, R, N, F}
+struct MetadataSet{V, D, R, N, F} <: AbstractMetadata
     names     :: N        # NTuple{K, Symbol} — verbose dataset variable names
     dataset   :: V        # shared
     dates     :: D        # shared; scalar or AbstractVector
     region    :: R        # shared
     dir       :: String   # shared
     filenames :: F        # NamedTuple keyed by `names`, one entry per variable
+    function MetadataSet{V, D, R, N, F}(names, dataset, dates, region, dir, filenames) where {V, D, R, N, F}
+        m = new{V, D, R, N, F}(names, dataset, dates, region, dir, filenames)
+        observe_metadata(m)
+        return m
+    end
 end
+
+MetadataSet(names::N, dataset::V, dates::D, region::R, dir::String, filenames::F) where {V, D, R, N, F} =
+    MetadataSet{V, D, R, N, F}(names, dataset, dates, region, dir, filenames)
 
 """
     MetadataSet(variable_names::Symbol...;
@@ -320,12 +334,11 @@ end
                 start_date = nothing,
                 end_date = nothing)
 
-A bundle of [`Metadata`](@ref) for many variables that share `dataset`, `dates`,
-`region`, and `dir` — differing only in variable name.
+A bundle of [`Metadata`](@ref) for many variables that share `dataset`, `dates`, `region`, and `dir`
+— differing only in variable name.
 
-Each element `mset[name]` (or equivalently `mset.name` or `mset[i]`) is itself a
-`Metadata` — or a `Metadatum` when `dates` is a single date. Iteration walks the
-variable axis, yielding one `Metadata` per variable.
+Each element `mset[name]` (or equivalently `mset.name` or `mset[i]`) is itself a `Metadata` — or a
+`Metadatum` when `dates` is a single date. Iteration walks the variable axis, yielding one `Metadata` per variable.
 
 Arguments
 =========
@@ -357,8 +370,7 @@ function MetadataSet(variable_names::Symbol...;
                      start_date = nothing,
                      end_date = nothing)
 
-    isempty(variable_names) &&
-        throw(ArgumentError("MetadataSet requires at least one variable name"))
+    isempty(variable_names) && throw(ArgumentError("MetadataSet requires at least one variable name"))
 
     if !isnothing(date) && !isnothing(dates)
         throw(ArgumentError("Specify either `date` (scalar) or `dates` (vector), not both"))
@@ -415,8 +427,7 @@ end
 Base.propertynames(mset::MetadataSet) =
     (getfield(mset, :names)..., fieldnames(MetadataSet)...)
 
-# Indexed access. We use `getfield` here so subsequent edits to `getproperty`
-# can't make these recursive.
+# Indexed access. We use `getfield` here so subsequent edits to `getproperty` can't make these recursive.
 function Base.getindex(mset::MetadataSet, name::Symbol)
     fname = getfield(mset, :filenames)[name]
     return Metadata(name,
@@ -427,8 +438,7 @@ function Base.getindex(mset::MetadataSet, name::Symbol)
                     fname)
 end
 
-@propagate_inbounds Base.getindex(mset::MetadataSet, i::Int) =
-    getindex(mset, getfield(mset, :names)[i])
+@propagate_inbounds Base.getindex(mset::MetadataSet, i::Int) = getindex(mset, getfield(mset, :names)[i])
 
 Base.length(mset::MetadataSet) = length(getfield(mset, :names))
 Base.keys(mset::MetadataSet)   = getfield(mset, :names)
@@ -441,8 +451,7 @@ Base.lastindex(mset::MetadataSet) = length(mset)
     return mset[state], state + 1
 end
 
-Base.NamedTuple(mset::MetadataSet) =
-    NamedTuple{getfield(mset, :names)}(map(n -> mset[n], getfield(mset, :names)))
+Base.NamedTuple(mset::MetadataSet) = NamedTuple{getfield(mset, :names)}(map(n -> mset[n], getfield(mset, :names)))
 
 """
     metadata_path(mset::MetadataSet)

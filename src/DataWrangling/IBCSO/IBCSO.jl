@@ -22,6 +22,7 @@ import ..DataWrangling:
 download_IBCSO_cache::String = ""
 function __init__()
     global download_IBCSO_cache = @get_scratch!("IBCSO")
+    DataWrangling.DataModes.register_dataset!(IBCSOv2, "IBCSOv2")
 end
 
 IBCSO_bathymetry_variable_names = Dict(

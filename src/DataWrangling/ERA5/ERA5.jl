@@ -17,7 +17,7 @@ using Printf: Printf, @sprintf
 using Scratch: Scratch, @get_scratch!
 using Statistics: Statistics, mean
 
-using ..DataWrangling: Metadata, Metadatum, metadata_path, native_grid,
+using ..DataWrangling: DataWrangling, Metadata, Metadatum, metadata_path, native_grid,
                        InverseGravity
 using NumericalEarth.Grids: PressureLevelVerticalDiscretization
 
@@ -42,6 +42,10 @@ download_ERA5_cache::String = ""
 
 function __init__()
     global download_ERA5_cache = @get_scratch!("ERA5")
+    DataWrangling.DataModes.register_dataset!(ERA5HourlySingleLevel, "ERA5HourlySingleLevel")
+    DataWrangling.DataModes.register_dataset!(ERA5MonthlySingleLevel, "ERA5MonthlySingleLevel")
+    DataWrangling.DataModes.register_dataset!(ERA5HourlyPressureLevels, "ERA5HourlyPressureLevels")
+    DataWrangling.DataModes.register_dataset!(ERA5MonthlyPressureLevels, "ERA5MonthlyPressureLevels")
 end
 
 #####
