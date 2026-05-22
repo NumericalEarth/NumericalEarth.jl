@@ -17,10 +17,9 @@ using Printf: Printf, @sprintf
 using Scratch: Scratch, @get_scratch!
 using Statistics: Statistics, mean
 
-using ..DataWrangling: DataWrangling, Metadata, Metadatum, InverseGravity,
-                       metadata_path, native_grid, dataset_variable_name, inpainted_metadata_filename,
-                       available_variables, retrieve_data
-using ..Grids: PressureLevelVerticalDiscretization
+using ..DataWrangling: DataWrangling, Metadata, Metadatum, InverseGravity, metadata_path,
+                       native_grid, dataset_variable_name, available_variables, retrieve_data
+using ...Grids: PressureLevelVerticalDiscretization
 
 download_ERA5_cache::String = ""
 
@@ -119,7 +118,7 @@ function DataWrangling.metadata_filename(dataset::ERA5Dataset, name, date, regio
     return string(prefix, ".nc")
 end
 
-function DataWrangling.inpainted_metadata_filename(metadata::ERA5Metadatum)
+function inpainted_metadata_filename(metadata::ERA5Metadatum)
     without_extension = metadata.filename[1:end-3]
     return without_extension * "_inpainted.jld2"
 end
