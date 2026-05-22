@@ -17,26 +17,9 @@ using Printf: Printf, @sprintf
 using Scratch: Scratch, @get_scratch!
 using Statistics: Statistics, mean
 
-using ..DataWrangling: Metadata, Metadatum, metadata_path, native_grid,
-                       InverseGravity
-using NumericalEarth.Grids: PressureLevelVerticalDiscretization
-
-import ..DataWrangling:
-    all_dates,
-    dataset_variable_name,
-    default_download_directory,
-    default_inpainting,
-    longitude_interfaces,
-    latitude_interfaces,
-    z_interfaces,
-    metadata_filename,
-    inpainted_metadata_path,
-    available_variables,
-    retrieve_data,
-    is_three_dimensional,
-    reversed_vertical_axis,
-    reversed_latitude_axis,
-    conversion_units
+using ..DataWrangling: DataWrangling, Metadata, Metadatum, InverseGravity, metadata_path,
+                       native_grid, dataset_variable_name, available_variables, retrieve_data
+using ...Grids: PressureLevelVerticalDiscretization
 
 download_ERA5_cache::String = ""
 
@@ -50,10 +33,10 @@ end
 
 abstract type ERA5Dataset end
 
-default_download_directory(::ERA5Dataset) = download_ERA5_cache
+DataWrangling.default_download_directory(::ERA5Dataset) = download_ERA5_cache
 
 # ERA5 stores latitude north-to-south (90 → -90); flip on read
-reversed_latitude_axis(::ERA5Dataset) = true
+DataWrangling.reversed_latitude_axis(::ERA5Dataset) = true
 
 const ERA5Metadata{D} = Metadata{<:ERA5Dataset, D}
 const ERA5Metadatum = Metadatum{<:ERA5Dataset}
@@ -63,11 +46,11 @@ const ERA5Metadatum = Metadatum{<:ERA5Dataset}
 #####
 
 # ERA5 global coverage: 0-359.75 longitude, -90 to 90 latitude at 0.25 degree resolution
-longitude_interfaces(::ERA5Metadata) = (-0.125, 359.875)
-latitude_interfaces(::ERA5Metadata) = (-90, 90)
+DataWrangling.longitude_interfaces(::ERA5Metadata) = (-0.125, 359.875)
+DataWrangling.latitude_interfaces(::ERA5Metadata) = (-90, 90)
 
 # ERA5 single-levels (2-D) data product
-z_interfaces(::ERA5Metadata) = (0, 1)
+DataWrangling.z_interfaces(::ERA5Metadata) = (0, 1)
 
 # ERA5 data is stored as Float32
 Base.eltype(::ERA5Metadata) = Float32
@@ -130,7 +113,7 @@ function metadata_prefix(dataset::ERA5Dataset, name, date, region)
     return prefix
 end
 
-function metadata_filename(dataset::ERA5Dataset, name, date, region)
+function DataWrangling.metadata_filename(dataset::ERA5Dataset, name, date, region)
     prefix = metadata_prefix(dataset, name, date, region)
     return string(prefix, ".nc")
 end
@@ -140,7 +123,7 @@ function inpainted_metadata_filename(metadata::ERA5Metadatum)
     return without_extension * "_inpainted.jld2"
 end
 
-inpainted_metadata_path(metadata::ERA5Metadatum) = joinpath(metadata.dir, inpainted_metadata_filename(metadata))
+DataWrangling.inpainted_metadata_path(metadata::ERA5Metadatum) = joinpath(metadata.dir, inpainted_metadata_filename(metadata))
 
 #####
 ##### Single-level and pressure-level specifics
