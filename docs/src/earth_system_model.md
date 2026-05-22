@@ -89,7 +89,7 @@ a sea ice component as positional arguments:
 ```jldoctest esm
 ocean = ocean_simulation(grid, timestepper = :QuasiAdamsBashforth2)
 sea_ice = FreezingLimitedOceanTemperature()
-model = OceanSeaIceModel(sea_ice, ocean)
+model = OceanSeaIceModel(ocean, sea_ice)
 
 # output
 EarthSystemModel{CPU}(time = 0 seconds, iteration = 0)

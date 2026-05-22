@@ -17,11 +17,10 @@ arch = CPU()
 # We create metadata for WOA annual temperature and salinity climatology,
 # then load each as an Oceananigans `Field` on the native WOA grid.
 
-T_metadata = Metadatum(:temperature; dataset=WOAAnnual())
-S_metadata = Metadatum(:salinity;    dataset=WOAAnnual())
+woa = MetadataSet(:temperature, :salinity; dataset=WOAAnnual())
 
-T = Field(T_metadata, arch)
-S = Field(S_metadata, arch)
+fields = Field(woa, arch)            # → (; temperature = Field, salinity = Field)
+T, S = fields.temperature, fields.salinity
 
 # ## Surface fields
 #
@@ -70,8 +69,8 @@ grid = LatitudeLongitudeGrid(arch;
 T_interp = CenterField(grid)
 S_interp = CenterField(grid)
 
-set!(T_interp, T_metadata)
-set!(S_interp, S_metadata)
+# set `T_interp` from `woa.temperature`, etc.
+set!((; temperature = T_interp, salinity = S_interp), woa)
 
 Nz_interp = size(grid, 3)
 

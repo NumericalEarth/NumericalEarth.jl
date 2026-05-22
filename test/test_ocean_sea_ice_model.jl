@@ -38,8 +38,8 @@ using ClimaSeaIce.Rheologies
             end_date = DateTimeProlepticGregorian(1993, 2, 1)
             dates = start_date : time_resolution : end_date
     
-            temperature_metadata = Metadata(:temperature; dataset, dates)
-            salinity_metadata    = Metadata(:salinity; dataset, dates)
+            initial_state = MetadataSet(:temperature, :salinity;
+                                        dataset, date=start_date)
 
             ocean = ocean_simulation(grid; free_surface)
 
@@ -47,7 +47,7 @@ using ClimaSeaIce.Rheologies
             liquidus = sea_ice.model.phase_transitions.liquidus
 
             # Set the ocean temperature and salinity
-            set!(ocean.model, T=temperature_metadata[1], S=salinity_metadata[1])
+            set!(ocean.model, initial_state)
             above_freezing_ocean_temperature!(ocean, grid, sea_ice)
 
             # Test that ocean temperatures are above freezing
@@ -63,7 +63,7 @@ using ClimaSeaIce.Rheologies
             # Fluxes are computed when the model is constructed, so we just test that this works.
             # And that we can time step with sea ice
             @test begin
-                coupled_model = OceanSeaIceModel(sea_ice, ocean; atmosphere, radiation)
+                coupled_model = OceanSeaIceModel(ocean, sea_ice; atmosphere, radiation)
                 time_step!(coupled_model, 1)
                 true
             end
@@ -75,11 +75,11 @@ using ClimaSeaIce.Rheologies
 
             @test begin
                 ocean_with_land = ocean_simulation(grid; free_surface)
-                set!(ocean_with_land.model, T=temperature_metadata[1], S=salinity_metadata[1])
+                set!(ocean_with_land.model, initial_state)
                 sea_ice_with_land = sea_ice_simulation(grid, ocean_with_land; advection=WENO(order=7))
                 above_freezing_ocean_temperature!(ocean_with_land, grid, sea_ice_with_land)
 
-                coupled_model = OceanSeaIceModel(sea_ice_with_land, ocean_with_land; atmosphere, land, radiation)
+                coupled_model = OceanSeaIceModel(ocean_with_land, sea_ice_with_land; atmosphere, land, radiation)
                 @test !isnothing(coupled_model.interfaces.exchanger.land)
                 time_step!(coupled_model, 1)
                 true
