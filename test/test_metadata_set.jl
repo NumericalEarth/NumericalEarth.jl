@@ -1,7 +1,8 @@
 include("runtests_setup.jl")
 
 using NumericalEarth.DataWrangling: MetadataSet, Metadata, Metadatum,
-                                    BoundingBox, variable_glossary, metadata_path
+                                    BoundingBox, variable_glossary, metadata_path,
+                                    accepted_metadata_names
 
 # `MetadataSet` is a pure DataWrangling concept: no downloads, no field
 # construction. These tests exercise construction, accessors, iteration,
@@ -209,6 +210,73 @@ end
     # (it just doesn't appear). Simulate this by pretending we're routing to a
     # model that ignores unknown variables.
     @test issubset(received_keys, values(NumericalEarth.DataWrangling.variable_glossary))
+end
+
+#####
+##### Per-model accepted_metadata_names filter
+#####
+##### A real Oceananigans/ClimaSeaIce model throws ArgumentError on unknown
+##### kwargs, so the generic dispatch must filter glossary keys down to those
+##### the target model can consume. This stub mimics that strict behavior.
+
+mutable struct RestrictiveStubModel
+    accepts  :: Tuple{Vararg{Symbol}}        # short field names this model accepts
+    received :: Vector{Pair{Symbol, Any}}
+    RestrictiveStubModel(accepts...) = new(accepts, Pair{Symbol, Any}[])
+end
+
+function NumericalEarth.DataWrangling.set!(m::RestrictiveStubModel; kw...)
+    for (k, v) in kw
+        k in m.accepts || throw(ArgumentError("name $k not accepted by RestrictiveStubModel"))
+        push!(m.received, k => v)
+    end
+    return m
+end
+
+# Narrow the verbose-name filter so only variables routable to `m.accepts` are
+# delivered — same pattern as the HydrostaticFreeSurfaceModel/SeaIceModel
+# methods.
+function NumericalEarth.DataWrangling.accepted_metadata_names(m::RestrictiveStubModel)
+    return Tuple(n for (n, s) in variable_glossary if s in m.accepts)
+end
+
+@testset "set!(model, mset) — per-model filter (regression for issue with 4-var sets)" begin
+    mset = MetadataSet(:temperature, :salinity,
+                       :sea_ice_thickness, :sea_ice_concentration;
+                       dataset = ECCO4Monthly(),
+                       date    = snapshot_date)
+
+    # Ocean-like model: only :T, :S
+    ocean_like = RestrictiveStubModel(:T, :S)
+    set!(ocean_like, mset)
+    ocean_keys = first.(ocean_like.received)
+    @test :T in ocean_keys
+    @test :S in ocean_keys
+    @test !(:h in ocean_keys)
+    @test !(:ℵ in ocean_keys)
+    @test length(ocean_keys) == 2
+
+    # Sea-ice-like model: only :h, :ℵ
+    sea_ice_like = RestrictiveStubModel(:h, :ℵ)
+    set!(sea_ice_like, mset)
+    ice_keys = first.(sea_ice_like.received)
+    @test :h in ice_keys
+    @test :ℵ in ice_keys
+    @test !(:T in ice_keys)
+    @test !(:S in ice_keys)
+    @test length(ice_keys) == 2
+
+    # Model that accepts nothing relevant — call is a no-op, no error.
+    empty_model = RestrictiveStubModel(:foo)
+    set!(empty_model, mset)
+    @test isempty(empty_model.received)
+end
+
+@testset "accepted_metadata_names — fallback covers all glossary keys" begin
+    # The fallback (used by ad-hoc/stub models) is every glossary key, so a
+    # bare StubModel sees every routed kwarg. Real-model methods narrow this
+    # — exercised end-to-end in test_ocean_sea_ice_model.jl.
+    @test Set(accepted_metadata_names(StubModel())) == Set(keys(variable_glossary))
 end
 
 @testset "set!(::NamedTuple, mset) — explicit per-variable" begin

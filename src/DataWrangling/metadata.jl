@@ -503,7 +503,7 @@ Set fields of `model` from the variables in `mset`, auto-routing verbose
 dataset variable names to short model field-names via the global
 [`variable_glossary`](@ref) registry.
 
-Variables in `mset` that have no entry in `variable_glossary` are silently
+Variables in `mset` that the target `model` does not consume are silently
 skipped — this lets partial application across coupled-model components work
 naturally. For example, a single 4-variable set can drive both an ocean and a
 sea-ice model:
@@ -515,13 +515,44 @@ mset = MetadataSet(:temperature, :salinity,
 set!(ocean.model,   mset)   # consumes :temperature, :salinity  → T, S
 set!(sea_ice.model, mset)   # consumes :sea_ice_thickness, :sea_ice_concentration → h, ℵ
 ```
+
+The per-model filter is controlled by [`accepted_metadata_names`](@ref). The
+fallback accepts every key in `variable_glossary` (preserving prior behavior
+for stub/ad-hoc models in tests).
 """
 function Fields.set!(model, mset::MetadataSet)
-    names = getfield(mset, :names)
-    known = filter(n -> haskey(variable_glossary, n), names)
-    kwargs = NamedTuple{Tuple(variable_glossary[n] for n in known)}(Tuple(mset[n] for n in known))
+    accepted = accepted_metadata_names(model)
+    names = filter(n -> n in accepted, getfield(mset, :names))
+    isempty(names) && return model
+    kwargs = NamedTuple{Tuple(variable_glossary[n] for n in names)}(Tuple(mset[n] for n in names))
     return set!(model; kwargs...)
 end
+
+"""
+    accepted_metadata_names(model) -> Tuple{Symbol,...}
+
+Return the verbose `MetadataSet` variable names that `set!(model, mset)` is
+allowed to route to `model`. Defaults to every key in `variable_glossary`;
+model-specific methods narrow this to the subset that the underlying
+`set!(model; kwargs...)` actually accepts (otherwise an unrelated variable in
+a shared `MetadataSet` would trigger an `ArgumentError` from the unknown kwarg).
+"""
+accepted_metadata_names(model) = Tuple(keys(variable_glossary))
+
+# Ocean: route any glossary key whose short name matches a property of
+# velocities, tracers, or free_surface (the three places HydrostaticFreeSurfaceModel's
+# `set!` looks up kwargs).
+using Oceananigans.Models.HydrostaticFreeSurfaceModels: HydrostaticFreeSurfaceModel
+function accepted_metadata_names(model::HydrostaticFreeSurfaceModel)
+    short = (propertynames(model.velocities)...,
+             propertynames(model.tracers)...,
+             propertynames(model.free_surface)...)
+    return Tuple(n for (n, s) in variable_glossary if s in short)
+end
+
+# Sea ice: ClimaSeaIce's `set!(::SeaIceModel; h, ℵ)` only knows these two.
+using ClimaSeaIce: SeaIceModel
+accepted_metadata_names(::SeaIceModel) = (:sea_ice_thickness, :sea_ice_concentration)
 
 """
     download(mset::MetadataSet; kwargs...)
