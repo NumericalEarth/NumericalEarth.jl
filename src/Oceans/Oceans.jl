@@ -65,6 +65,10 @@ include("assemble_net_ocean_fluxes.jl")
 ##### Extend utility functions to grab the state of the ocean
 #####
 
+# An ocean simulation is not a sea ice model — used to catch swapped positional
+# args in the convenience constructors (e.g. `OceanSeaIceModel`).
+EarthSystemModels.is_sea_ice_component(::Simulation{<:HydrostaticFreeSurfaceModel}) = false
+
 EarthSystemModels.ocean_salinity(ocean::Simulation{<:HydrostaticFreeSurfaceModel})    = ocean.model.tracers.S
 EarthSystemModels.ocean_temperature(ocean::Simulation{<:HydrostaticFreeSurfaceModel}) = ocean.model.tracers.T
 

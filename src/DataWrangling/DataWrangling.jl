@@ -4,7 +4,7 @@ restoring, or validation.
 """
 module DataWrangling
 
-export Metadata, Metadatum, DatewiseFilename, ECCOMetadatum, EN4Metadatum, all_dates, first_date, last_date
+export Metadata, Metadatum, MetadataSet, DatewiseFilename, ECCOMetadatum, EN4Metadatum, all_dates, first_date, last_date
 export validate_dataset_coverage, metadata_filename
 export BoundingBox, Column, Linear, Nearest
 export WOAClimatology, WOAAnnual, WOAMonthly
@@ -150,13 +150,13 @@ function save_field_time_series!(fts; path, name, overwrite_existing=false)
 end
 
 """
-    download_dataset(metadata; url = urls(metadata))
+    download(metadata; url = urls(metadata))
 
 Download the dataset specified by the `metadata::ECCOMetadata`. If `metadata.dates` is a single date,
 the dataset is downloaded directly. If `metadata.dates` is a vector of dates, each date
 is downloaded individually.
 
-Note: if called by multiple processes via MPI, `download_dataset` should only run on the root process.
+Note: if called by multiple processes via MPI, `download` should only run on the root process.
 
 Arguments
 =========
@@ -187,7 +187,10 @@ Arguments
 
         https://github.com/CliMA/NumericalEarth.jl/blob/main/src/DataWrangling/ECCO/README.md
 """
-function download_dataset end # methods specific to datasets are added within each dataset module
+# `download(::Metadata)` extends `Downloads.download` (the modern stdlib function,
+# not `Base.download` which is a 1.0-era shim). Per-dataset methods are added
+# within each dataset module via `Downloads.download(metadata::FooMetadata) = ...`.
+
 function inpainted_metadata_path end
 
 """
@@ -242,6 +245,61 @@ include("restoring.jl")
 function metadata_time_step end
 function metadata_epoch end
 
+"""
+    variable_glossary :: Dict{Symbol, Symbol}
+
+Global map from *verbose* dataset variable names (the symbols a user passes to
+`Metadata` and `MetadataSet`) to the *short* model field-name symbols
+established in `docs/src/appendix/notation.md`. Used by `set!(model, mset)` to
+auto-route `mset.eastward_velocity` → `u = ...` etc.
+
+Verbose names absent from this map are silently ignored by `set!(model, mset)`
+(they remain fetchable via `download(mset)` and accessible via `mset.<name>`).
+Synonyms across dataset modules (e.g. `:u_velocity`, `:eastward_velocity`,
+`:eastward_wind` all → `:u`) are intentional: they serve as domain
+disambiguators when a single dataset (e.g. `ECCO4Monthly`) carries both ocean
+and atmosphere fields.
+
+Every value here is documented in `docs/src/appendix/notation.md` (or in
+[Breeze.jl's notation](https://github.com/CliMA/Breeze.jl/blob/main/docs/src/appendix/notation.md)
+for the microphysics symbols).
+"""
+const variable_glossary = Dict{Symbol, Symbol}(
+    # Ocean & atmosphere state (notation.md existing rows)
+    :temperature                          => :T,
+    :air_temperature                      => :T,
+    :salinity                             => :S,
+    :u_velocity                           => :u,
+    :v_velocity                           => :v,
+    :eastward_velocity                    => :u,
+    :northward_velocity                   => :v,
+    :eastward_wind                        => :u,
+    :northward_wind                       => :v,
+    :sea_level_pressure                   => :p,
+    # Atmosphere moisture / microphysics (Breeze notation.md rows)
+    :specific_humidity                    => :qᵛ,
+    :air_specific_humidity                => :qᵛ,
+    :specific_cloud_liquid_water_content  => :qᶜˡ,
+    :specific_cloud_ice_water_content     => :qᶜⁱ,
+    :specific_rain_water_content          => :qʳ,
+    # Sea ice (notation.md `ℵ` row; `:h` matches ClimaSeaIce field name)
+    :sea_ice_thickness                    => :h,
+    :sea_ice_concentration                => :ℵ,
+    # Freshwater fluxes (notation.md "Net surface freshwater fluxes" subsection)
+    :rain_freshwater_flux                 => :Jʳⁿ,
+    :snow_freshwater_flux                 => :Jˢⁿ,
+    # Biogeochemistry (matches the short symbols dispatched in restoring.jl:49-61)
+    :dissolved_inorganic_carbon           => :DIC,
+    :alkalinity                           => :ALK,
+    :nitrate                              => :NO₃,
+    :phosphate                            => :PO₄,
+    :dissolved_organic_phosphorus         => :DOP,
+    :particulate_organic_phosphorus       => :POP,
+    :dissolved_iron                       => :Fe,
+    :dissolved_silicate                   => :SiO₂,
+    :dissolved_oxygen                     => :O₂,
+)
+
 # Only temperature and salinity need a thorough inpainting because of stability,
 # other variables can do with only a couple of passes. Sea ice variables
 # cannot be inpainted because zeros in the data are physical, not missing values.
@@ -283,7 +341,7 @@ using .GEBCO
 using .IBCAO
 
 # Fallback: if no download extension is loaded, check that all files already exist
-function download_dataset(metadata::Metadata)
+function Downloads.download(metadata::Metadata)
     error("No download method for $metadata is available (is the backend package loaded?)")
 end
 
