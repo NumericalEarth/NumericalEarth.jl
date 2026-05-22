@@ -66,7 +66,7 @@ function nonhydrostatic_ocean_simulation(grid;
     boundary_conditions = merge(default_boundary_conditions, boundary_conditions)
     buoyancy = SeawaterBuoyancy(; gravitational_acceleration, equation_of_state)
 
-    ocean_model = NonhydrostaticModel(; grid,
+    ocean_model = NonhydrostaticModel(grid;
                                       buoyancy,
                                       closure,
                                       advection,

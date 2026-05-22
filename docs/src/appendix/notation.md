@@ -61,7 +61,8 @@ denote the _component_ or _location_.
 |:-----:|:----:|:--------|:--------|
 | ``v`` | `ᵛ` | water vapor | ``\mathcal{Q}^v`` (latent heat flux) |
 | ``T`` | `ᵀ` | temperature / sensible | ``\mathcal{Q}^T`` (sensible heat flux) |
-| ``c`` | `ᶜ` | condensate | ``J^c`` (precipitation mass flux) |
+| ``\mathrm{rn}`` | `ʳⁿ` | rain | ``J^{\mathrm{rn}}`` (rainfall) |
+| ``\mathrm{sn}`` | `ˢⁿ` | snow | ``J^{\mathrm{sn}}`` (snowfall) |
 | ``S`` | `ˢ` | salinity | ``J^S`` (salinity flux) |
 | ``i`` | `ⁱ` | ice | ``\mathcal{L}^i`` (latent heat of sublimation) |
 | ``\ell`` | `ˡ` | liquid | ``\mathcal{L}^\ell`` (latent heat of vaporization) |
@@ -112,6 +113,7 @@ denote the _component_ or _location_.
 | ``\mathscr{I}_\downarrow^{\mathrm{lw}}`` | `ℐꜜˡʷ` | downwelling longwave | Downwelling longwave radiation (W m⁻²) |
 | ``J^c`` | `Jᶜ` | condensate flux | Precipitation (condensate) mass flux (kg m⁻² s⁻¹) |
 | ``h_{b\ell}`` | `h_bℓ` | boundary layer height | Atmospheric boundary layer height (m) |
+| ``pᵛ⁺`` | ``pᵛ⁺`` | saturation vapor pressure | Vapor pressure at saturation (Pa) |
 
 ## Ocean state variables
 
@@ -192,6 +194,13 @@ with a superscript band.
 | ``J^S`` | `Jˢ` | salinity flux | Net ocean salinity flux (g kg⁻¹ m s⁻¹) |
 | ``\mathcal{Q}^{\mathrm{frz}}`` | `𝒬ᶠʳᶻ` | frazil heat flux | Heat released by frazil ice formation (W m⁻²) |
 
+## Net surface freshwater fluxes
+
+| Math | Code | Property | Description |
+|:----:|:----:|:---------|:------------|
+| ``J^{\mathrm{rn}}`` | `Jʳⁿ` | rain freshwater flux | Rain mass flux at the surface (kg m⁻² s⁻¹) |
+| ``J^{\mathrm{sn}}`` | `Jˢⁿ` | snow freshwater flux | Snow mass flux at the surface (kg m⁻² s⁻¹) |
+
 ## Thermodynamic properties
 
 | Math | Code | Property | Description |
@@ -201,6 +210,7 @@ with a superscript band.
 | ``c^{pm}`` | `cᵖᵐ` | moist air heat capacity | Moist isobaric specific heat (J kg⁻¹ K⁻¹) |
 | ``c^{pd}`` | `cᵖᵈ` | dry air heat capacity | Dry-air isobaric specific heat (J kg⁻¹ K⁻¹) |
 | ``\rho^{\mathrm{at}}`` | `ρᵃᵗ` | air density | Atmospheric air density (kg m⁻³) |
+| ``\varepsilon^{\mathrm{dv}}`` | ``εᵈᵛ`` | specific gas constant ratio (``Rd / Rv`` ) | Ratio of dry air and vapor gas constants (-) |
 
 ## CF standard name mapping
 

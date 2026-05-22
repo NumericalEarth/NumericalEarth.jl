@@ -1,4 +1,7 @@
 using Oceananigans.OutputReaders: update_field_time_series!, FieldTimeSeries
+using Oceananigans.TimeSteppers: Clock, Time, tick!
+using Oceananigans.Architectures: architecture
+using Oceananigans.Utils: prettysummary
 
 """
     PrescribedOcean(grid, times=[zero(grid)];
@@ -111,22 +114,24 @@ Base.eltype(::PrescribedOcean{FT}) where FT = FT
 ##### EarthSystemModels interface
 #####
 
-reference_density(ocean::PrescribedOcean) = ocean.density
-heat_capacity(ocean::PrescribedOcean) = ocean.heat_capacity
-exchange_grid(ocean::PrescribedOcean) = ocean.grid
-temperature_units(::PrescribedOcean) = DegreesKelvin()
+EarthSystemModels.is_sea_ice_component(::PrescribedOcean) = false
 
-ocean_temperature(ocean::PrescribedOcean) = ocean.sea_surface_temperature
-ocean_salinity(ocean::PrescribedOcean) = ocean.sea_surface_salinity
-ocean_surface_temperature(ocean::PrescribedOcean) = ocean.sea_surface_temperature
-ocean_surface_salinity(ocean::PrescribedOcean) = ocean.sea_surface_salinity
-ocean_surface_velocities(ocean::PrescribedOcean) = ocean.velocities.u, ocean.velocities.v
+EarthSystemModels.reference_density(ocean::PrescribedOcean) = ocean.density
+EarthSystemModels.heat_capacity(ocean::PrescribedOcean) = ocean.heat_capacity
+EarthSystemModels.exchange_grid(ocean::PrescribedOcean) = ocean.grid
+EarthSystemModels.temperature_units(::PrescribedOcean) = DegreesKelvin()
+
+EarthSystemModels.ocean_temperature(ocean::PrescribedOcean) = ocean.sea_surface_temperature
+EarthSystemModels.ocean_salinity(ocean::PrescribedOcean) = ocean.sea_surface_salinity
+EarthSystemModels.ocean_surface_temperature(ocean::PrescribedOcean) = ocean.sea_surface_temperature
+EarthSystemModels.ocean_surface_salinity(ocean::PrescribedOcean) = ocean.sea_surface_salinity
+EarthSystemModels.ocean_surface_velocities(ocean::PrescribedOcean) = ocean.velocities.u, ocean.velocities.v
 
 #####
 ##### InterfaceComputations interface
 #####
 
-function ComponentExchanger(ocean::PrescribedOcean, exchange_grid)
+function EarthSystemModels.InterfaceComputations.ComponentExchanger(ocean::PrescribedOcean, exchange_grid)
     grid = ocean.grid
     T = CenterField(grid)
     S = CenterField(grid)
@@ -142,9 +147,9 @@ function ComponentExchanger(ocean::PrescribedOcean, exchange_grid)
     return ComponentExchanger((; u, v, T, S), nothing)
 end
 
-net_fluxes(ocean::PrescribedOcean) = nothing
+EarthSystemModels.InterfaceComputations.net_fluxes(ocean::PrescribedOcean) = nothing
 
-function interpolate_state!(exchanger, grid, ocean::PrescribedOcean, coupled_model)
+function EarthSystemModels.interpolate_state!(exchanger, grid, ocean::PrescribedOcean, coupled_model)
     # Copy from FieldTimeSeries to exchanger snapshot fields.
     # For single-time data (constant), time index 1 is always correct.
     # TODO: proper temporal interpolation for multi-time prescribed data.
@@ -158,7 +163,7 @@ end
 
 # Prescribed ocean does not evolve, so net flux assembly is not needed.
 # The atmosphere still receives its fluxes from compute_atmosphere_ocean_fluxes!.
-update_net_fluxes!(coupled_model, ocean::PrescribedOcean) = nothing
+EarthSystemModels.update_net_fluxes!(coupled_model, ocean::PrescribedOcean) = nothing
 
 #####
 ##### Time stepping — update FieldTimeSeries backends, tick the clock

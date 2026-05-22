@@ -11,7 +11,7 @@ const BreezeAtmosphere = Breeze.AtmosphereModel
 
 # This is a _hack_: the parameters should ideally be derived from Breeze.ThermodynamicConstants,
 # but the ESM similarity theory expects CliMA Thermodynamics parameters.
-thermodynamics_parameters(::BreezeAtmosphere) = AtmosphereThermodynamicsParameters(Float64)
+NumericalEarth.EarthSystemModels.thermodynamics_parameters(::BreezeAtmosphere) = AtmosphereThermodynamicsParameters(Float64)
 
 #####
 ##### Surface layer and boundary layer height
@@ -19,27 +19,27 @@ thermodynamics_parameters(::BreezeAtmosphere) = AtmosphereThermodynamicsParamete
 
 # Height of the lowest atmospheric cell center (the "surface layer").
 # Note: for stretched grids on GPU, this may require allowscalar.
-function surface_layer_height(atmosphere::BreezeAtmosphere)
+function NumericalEarth.EarthSystemModels.surface_layer_height(atmosphere::BreezeAtmosphere)
     grid = atmosphere.grid
     return Oceananigans.zspacing(1, 1, 1, grid, Center(), Center(), Center()) / 2
 end
 
-boundary_layer_height(::BreezeAtmosphere) = 600
+NumericalEarth.EarthSystemModels.boundary_layer_height(::BreezeAtmosphere) = 600
 
 #####
 ##### ComponentExchanger: state fields for flux computations
 #####
 
-function ComponentExchanger(atmosphere::BreezeAtmosphere, exchange_grid)
-    state = (; u  = Oceananigans.CenterField(exchange_grid),
-               v  = Oceananigans.CenterField(exchange_grid),
-               T  = Oceananigans.CenterField(exchange_grid),
-               p  = Oceananigans.CenterField(exchange_grid),
-               q  = Oceananigans.CenterField(exchange_grid),
+function NumericalEarth.EarthSystemModels.InterfaceComputations.ComponentExchanger(atmosphere::BreezeAtmosphere, exchange_grid)
+    state = (; u    = Oceananigans.CenterField(exchange_grid),
+               v    = Oceananigans.CenterField(exchange_grid),
+               T    = Oceananigans.CenterField(exchange_grid),
+               p    = Oceananigans.CenterField(exchange_grid),
+               q    = Oceananigans.CenterField(exchange_grid),
                ℐꜜˢʷ = Oceananigans.CenterField(exchange_grid),
                ℐꜜˡʷ = Oceananigans.CenterField(exchange_grid),
-               Jᶜ = Oceananigans.CenterField(exchange_grid),
-               Mp = Oceananigans.CenterField(exchange_grid))
+               Jʳⁿ  = Oceananigans.CenterField(exchange_grid),
+               Jˢⁿ  = Oceananigans.CenterField(exchange_grid))
 
     return ComponentExchanger(state, nothing)
 end
@@ -52,19 +52,19 @@ end
     i, j = @index(Global, NTuple)
 
     @inbounds begin
-        state.u[i, j, 1]  = u[i, j, 1]
-        state.v[i, j, 1]  = v[i, j, 1]
-        state.T[i, j, 1]  = T[i, j, 1]
-        state.q[i, j, 1]  = ρqᵛᵉ[i, j, 1] / ρ₀[i, j, 1]
-        state.p[i, j, 1]  = p₀
+        state.u[i, j, 1]    = u[i, j, 1]
+        state.v[i, j, 1]    = v[i, j, 1]
+        state.T[i, j, 1]    = T[i, j, 1]
+        state.q[i, j, 1]    = ρqᵛᵉ[i, j, 1] / ρ₀[i, j, 1]
+        state.p[i, j, 1]    = p₀
         state.ℐꜜˢʷ[i, j, 1] = 0
         state.ℐꜜˡʷ[i, j, 1] = 0
-        state.Jᶜ[i, j, 1] = 0
-        state.Mp[i, j, 1] = 0
+        state.Jʳⁿ[i, j, 1]  = 0
+        state.Jˢⁿ[i, j, 1]  = 0
     end
 end
 
-function interpolate_state!(exchanger, exchange_grid, atmosphere::BreezeAtmosphere, coupled_model)
+function NumericalEarth.EarthSystemModels.interpolate_state!(exchanger, exchange_grid, atmosphere::BreezeAtmosphere, coupled_model)
     state = exchanger.state
     u, v, w = atmosphere.velocities
     T = atmosphere.temperature
@@ -88,7 +88,7 @@ end
 ##### Net fluxes: extract coupling flux fields from Breeze boundary conditions
 #####
 
-function net_fluxes(atmosphere::BreezeAtmosphere)
+function NumericalEarth.EarthSystemModels.InterfaceComputations.net_fluxes(atmosphere::BreezeAtmosphere)
     # Momentum flux fields (direct FluxBoundaryCondition on ρu, ρv)
     ρu = atmosphere.momentum.ρu.boundary_conditions.bottom.condition
     ρv = atmosphere.momentum.ρv.boundary_conditions.bottom.condition
@@ -124,7 +124,7 @@ end
     end
 end
 
-function update_net_fluxes!(coupled_model, atmosphere::BreezeAtmosphere)
+function NumericalEarth.EarthSystemModels.update_net_fluxes!(coupled_model, atmosphere::BreezeAtmosphere)
     net = coupled_model.interfaces.net_fluxes.atmosphere
     isnothing(net) && return nothing
 
@@ -143,5 +143,5 @@ end
 ##### CFL wizard support
 #####
 
-cell_advection_timescale(model::NumericalEarth.EarthSystemModel{<:Any, <:BreezeAtmosphere}) =
+Oceananigans.Advection.cell_advection_timescale(model::NumericalEarth.EarthSystemModel{<:Any, <:BreezeAtmosphere}) =
     cell_advection_timescale(model.atmosphere)

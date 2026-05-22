@@ -1,17 +1,14 @@
-using Oceananigans: location
+using Dates: Second
+using JLD2
+using Oceananigans: location, instantiated_location
+using Oceananigans.Architectures: AbstractArchitecture, on_architecture, architecture
+using Oceananigans.BoundaryConditions: BoundaryConditions
+using Oceananigans.Fields: interpolate
 using Oceananigans.Grids: node
-using Oceananigans.Fields: interpolate, instantiated_location
+using Oceananigans.Operators: Δzᶜᶜᶜ
 using Oceananigans.OutputReaders: Cyclical
 using Oceananigans.Units: Time
-using Oceananigans.Architectures: AbstractArchitecture, on_architecture, architecture
-
-using JLD2
 using NCDatasets
-
-using Dates: Second
-
-import NumericalEarth: stateindex
-import Oceananigans.Forcings: materialize_forcing
 
 # Variable names for restorable data
 struct Temperature end
@@ -37,7 +34,7 @@ const oceananigans_fieldnames = Dict(
     :dissolved_inorganic_carbon     => DissolvedInorganicCarbon(),
     :alkalinity                     => Alkalinity(),
 	:phosphate                      => Phosphate(),
-    :nitrate                        => Nitrate(),                                     
+    :nitrate                        => Nitrate(),
     :dissolved_organic_phosphorus   => DissolvedOrganicPhosphorus(),
     :particulate_organic_phosphorus => ParticulateOrganicPhosphorus(),
     :dissolved_iron                 => DissolvedIron(),
@@ -197,7 +194,7 @@ function DatasetRestoring(metadata::Metadata,
                           inpainting = NearestNeighborInpainting(Inf),
                           cache_inpainted_data = true)
 
-    download_dataset(metadata)
+    Downloads.download(metadata)
 
     fts = FieldTimeSeries(metadata, arch_or_grid;
                           time_indices_in_memory,
@@ -233,7 +230,48 @@ function Base.show(io::IO, dsr::DatasetRestoring)
               "└── native_grid: ", summary(dsr.native_grid))
 end
 
-materialize_forcing(forcing::DatasetRestoring, field, field_name, model_field_names) = forcing
+Oceananigans.Forcings.materialize_forcing(forcing::DatasetRestoring, field, field_name, model_field_names) = forcing
+
+"""
+    SurfaceFluxRestoring(dataset_restoring::DatasetRestoring)
+
+A thin wrapper around a [`DatasetRestoring`](@ref) that converts a 3D restoring
+tendency into a 2D surface flux boundary condition.
+
+When used as a boundary condition (via `getbc`), the wrapped `DatasetRestoring`
+is evaluated at the top cell (`k = Nz`) and the resulting tendency `G` is
+converted to a surface flux as `-G * Δz`, consistent with the Oceananigans
+top-flux sign convention (tendency contribution = `-J / Δz`).
+
+This is intended for use with the `additional_surface_fluxes` keyword argument of
+[`ocean_simulation`](@ref), allowing a `DatasetRestoring` to contribute an
+additional flux at the surface without overwriting the coupled exchange fluxes.
+
+Example
+=======
+
+```julia
+using ..NumericalEarth
+
+restoring = DatasetRestoring(metadata, grid; rate = 1 / 30days)
+ocean = ocean_simulation(grid;
+    additional_surface_fluxes = (; S = SurfaceFluxRestoring(restoring)))
+```
+"""
+struct SurfaceFluxRestoring <: Function
+    dataset_restoring :: DatasetRestoring
+end
+
+Adapt.adapt_structure(to, sf::SurfaceFluxRestoring) = SurfaceFluxRestoring(Adapt.adapt(to, sf.dataset_restoring))
+
+# Top BC convention: tendency contribution = -J / Δz, so to inject
+# `G` in the top cell the flux is `-G * Δz`.
+function BoundaryConditions.getbc(sf::SurfaceFluxRestoring, i, j, grid, clock, fields)
+    Nz = size(grid, 3)
+    G  = sf.dataset_restoring(i, j, Nz, grid, clock, fields)
+    Δz = Δzᶜᶜᶜ(i, j, Nz, grid)
+    return - G * Δz
+end
 
 #####
 ##### Masks for restoring
@@ -292,7 +330,7 @@ end
     return mask_value
 end
 
-@inline function stateindex(mask::LinearlyTaperedPolarMask, i, j, k, grid, time, loc)
+@inline function NumericalEarth.stateindex(mask::LinearlyTaperedPolarMask, i, j, k, grid, time, loc)
     LX, LY, LZ = loc
     λ, φ, z = node(i, j, k, grid, LX(), LY(), LZ())
     return mask(φ, z)

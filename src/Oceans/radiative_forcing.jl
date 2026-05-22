@@ -1,5 +1,5 @@
+using Adapt: Adapt
 using Oceananigans.Operators: ∂zᶜᶜᶜ
-using Adapt
 
 struct TwoColorRadiation{FT, J}
     first_color_fraction :: FT
@@ -101,4 +101,3 @@ get_radiative_forcing(model::HydrostaticFreeSurfaceModel) =
 
 get_radiative_forcing(model::NonhydrostaticModel) =
     get_radiative_forcing(model.forcing.T)
-    

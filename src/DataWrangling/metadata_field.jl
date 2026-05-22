@@ -1,47 +1,147 @@
 using NCDatasets
 using JLD2
-using NumericalEarth.InitialConditions: interpolate!
-using Statistics: median
+using Oceananigans.Grids: λnodes, φnodes, Periodic, Bounded
+using Oceananigans.Architectures: on_architecture
+using Oceananigans.Fields: interpolate!
 
-import Oceananigans.Fields: set!, Field
+#####
+##### Location with automatic restriction based on region
+#####
+
+Oceananigans.location(metadata::Metadata) = restrict_location(dataset_location(metadata.dataset, metadata.name), metadata.region)
+
+restrict_location(loc, ::Nothing) = loc
+restrict_location(loc, ::BoundingBox) = loc
+restrict_location((LX, LY, LZ), ::Column) = (Nothing, Nothing, LZ)
+
+#####
+##### Native grid construction — dispatches on region type
+#####
 
 restrict(::Nothing, interfaces, N) = interfaces, N
+restrict(::Nothing, interfaces::NTuple{2,Any}, N) = interfaces, N
+restrict(::Nothing, interfaces::AbstractVector, N) = interfaces, N
 
-# TODO support stretched native grids
-function restrict(bbox_interfaces, interfaces, N)
-    Δ = interfaces[2] - interfaces[1]
-    rΔ = bbox_interfaces[2] - bbox_interfaces[1]
-    ϵ = rΔ / Δ
-    rN = ceil(Int, ϵ * N)  # Round up to ensure bounding box is covered
-    return bbox_interfaces, rN
+# Snap bbox outward to native cell faces so restricted centers land on native centers
+function restrict(bbox_interfaces, interfaces::NTuple{2,Any}, N)
+    left, right = interfaces
+    Δ = (right - left) / N
+    i⁻ = max(floor(Int, (bbox_interfaces[1] - left) / Δ), 0)
+    i⁺ = min(ceil( Int, (bbox_interfaces[2] - left) / Δ), N)
+    if i⁺ <= i⁻
+        i⁺ = min(i⁻ + 1, N)
+        i⁻ = max(i⁺ - 1, 0)
+    end
+    return (left + i⁻ * Δ, left + i⁺ * Δ), i⁺ - i⁻
+end
+
+# Stretched native grid: snap outward to the nearest native cell interfaces.
+function restrict(bbox_interfaces, interfaces::AbstractVector, N)
+    i⁻ = max(searchsortedlast(interfaces,  bbox_interfaces[1]), 1)
+    i⁺ = min(searchsortedfirst(interfaces, bbox_interfaces[2]), length(interfaces))
+    rN = max(i⁺ - i⁻, 1)
+    return interfaces[i⁻:i⁺], rN
+end
+
+native_convention_longitude(::Nothing, native) = nothing
+
+# Map a bbox longitude into the native longitude convention
+function native_convention_longitude(bbox_longitude, native)
+    λ⁻ = convert_to_λ₀_λ₀_plus360(bbox_longitude[1], native[1])
+    return (λ⁻, λ⁻ + (bbox_longitude[2] - bbox_longitude[1]))
+end
+
+restrict_longitude(bbox_interfaces, interfaces, N) =
+    restrict(bbox_interfaces, interfaces, N)
+
+restrict_longitude(::Nothing, interfaces::NTuple{2,Any}, N) = interfaces, N
+
+function restrict_longitude(bbox_interfaces, interfaces::NTuple{2,Any}, N)
+    left, right = interfaces
+    Δ = (right - left) / N
+    i⁻ = max(floor(Int, (bbox_interfaces[1] - left) / Δ), 0)
+    i⁺ = ceil(Int, (bbox_interfaces[2] - left) / Δ)
+
+    # Longitude bounding boxes may cross the native periodic seam after being
+    # mapped into the dataset's longitude convention, for example -110°..30°
+    # on ERA5's 0°..360° grid becomes 249.875°..389.875°. Preserve that
+    # continuous span instead of clamping to the native upper face.
+    if bbox_interfaces[1] >= left && bbox_interfaces[2] > right
+        return (left + i⁻ * Δ, left + i⁺ * Δ), i⁺ - i⁻
+    else
+        return restrict(bbox_interfaces, interfaces, N)
+    end
 end
 
 """
     native_grid(metadata::Metadata, arch=CPU(); halo = (3, 3, 3))
 
-Return a `LatitudeLongitudeGrid` on `arch` corresponding to the native grid of `metadata` with `halo` size.
+Return the native grid corresponding to `metadata` with `halo` size.
+Returns a `LatitudeLongitudeGrid` for global or `BoundingBox` regions,
+and a column `RectilinearGrid` for `Column` regions.
 """
-function native_grid(metadata::Metadata, arch=CPU(); halo = (3, 3, 3))
-    Nx, Ny, Nz, _ = size(metadata)
-    z = z_interfaces(metadata)
+native_grid(metadata::Metadata, arch=CPU(); halo=(3, 3, 3)) =
+    construct_native_grid(metadata, metadata.region, arch; halo)
 
+# 2D-only datasets (surface forcing like JRA55) skip the z dimension.
+function construct_native_grid(metadata, ::Nothing, arch; halo)
     FT = eltype(metadata)
-
     longitude = longitude_interfaces(metadata)
     latitude = latitude_interfaces(metadata)
+    Nx, Ny, Nz = size(metadata)
 
-    # Restrict with BoundingBox
-    # TODO: can we restrict in `z` as well?
-    bbox = metadata.bounding_box
-    if !isnothing(bbox)
-        longitude, Nx = restrict(bbox.longitude, longitude, Nx)
-        latitude, Ny = restrict(bbox.latitude, latitude, Ny)
+    if is_three_dimensional(metadata)
+        z = z_interfaces(metadata)
+        return LatitudeLongitudeGrid(arch, FT; size = (Nx, Ny, Nz),
+                                     halo, longitude, latitude, z)
+    else
+        return LatitudeLongitudeGrid(arch, FT; size = (Nx, Ny),
+                                     halo = halo[1:2], longitude, latitude,
+                                     topology = (Periodic, Bounded, Flat))
     end
+end
 
-    grid = LatitudeLongitudeGrid(arch, FT; size = (Nx, Ny, Nz),
-                                 halo, longitude, latitude, z)
+function construct_native_grid(metadata, bbox::BoundingBox, arch; halo)
+    FT = eltype(metadata)
+    native_longitude = longitude_interfaces(metadata)
+    native_latitude  = latitude_interfaces(metadata)
 
-    return grid
+    # Map the bbox into the native longitude convention.
+    bbox_lon = native_convention_longitude(bbox.longitude, native_longitude)
+
+    Nx, Ny, Nz = size(metadata)
+    longitude, Nx = restrict_longitude(bbox_lon, native_longitude, Nx)
+    latitude,  Ny = restrict(bbox.latitude,  native_latitude,  Ny)
+
+    TX = infer_longitudinal_topology(native_longitude, longitude)
+
+    if is_three_dimensional(metadata)
+        z = z_interfaces(metadata)
+        return LatitudeLongitudeGrid(arch, FT; size = (Nx, Ny, Nz),
+                                     halo, longitude, latitude, z,
+                                     topology = (TX, Bounded, Bounded))
+    else
+        return LatitudeLongitudeGrid(arch, FT; size = (Nx, Ny),
+                                     halo = halo[1:2], longitude, latitude,
+                                     topology = (TX, Bounded, Flat))
+    end
+end
+
+# 2D-only datasets collapse to (Flat, Flat, Flat); 3D keep z Bounded.
+function construct_native_grid(metadata, col::Column, arch; halo)
+    FT = eltype(metadata)
+    x  = FT(col.longitude)
+    y  = FT(col.latitude)
+
+    if is_three_dimensional(metadata)
+        _, _, Nz, _ = size(metadata)
+        z = z_interfaces(metadata)
+        return RectilinearGrid(arch, FT; size = Nz, halo = halo[3],
+                               x, y, z, topology = (Flat, Flat, Bounded))
+    else
+        return RectilinearGrid(arch, FT; size = (), halo = (),
+                               x, y, topology = (Flat, Flat, Flat))
+    end
 end
 
 """
@@ -68,30 +168,44 @@ function retrieve_data(metadata::Metadatum)
     end
 
     close(ds)
+
+    # ERA5 (and some other datasets) store latitude north-to-south;
+    # flip to south-to-north to match the grid.
+    if reversed_latitude_axis(metadata.dataset)
+        data = reverse(data, dims=2)
+    end
+
     return data
 end
 
 """
-    Field(metadata::Metadatum;
-          architecture = CPU(),
+    Field(metadata::Metadatum, arch=CPU();
           inpainting = default_inpainting(metadata),
           mask = nothing,
-          halo = (7, 7, 7),
+          halo = (3, 3, 3),
           cache_inpainted_data = true)
 
-Return a `Field` on `architecture` described by `metadata` with `halo` size.
+Return a `Field` on `arch`itecture described by `metadata` with `halo` size.
 If not `nothing`, the `inpainting` method is used to fill the cells
 within the specified `mask`. `mask` is set to `compute_mask` for non-nothing
 `inpainting`. Keyword argument `cache_inpainted_data` dictates whether the inpainted
 data is cached to avoid recomputing it; default: `true`.
 """
-function Field(metadata::Metadatum, arch=CPU();
-               inpainting = default_inpainting(metadata),
-               mask = nothing,
-               halo = (3, 3, 3),
-               cache_inpainted_data = true)
+function Oceananigans.Fields.Field(metadata::Metadatum, arch=CPU();
+                                   inpainting = default_inpainting(metadata),
+                                   mask = nothing,
+                                   halo = (3, 3, 3),
+                                   cache_inpainted_data = true)
 
-    download_dataset(metadata)
+    Downloads.download(metadata)
+
+    # Inpainting on a (Flat, Flat, *) column field is meaningless and the
+    # iterative algorithm doesn't terminate gracefully without horizontal
+    # neighbours; the NaN-aware bracket-blend in `set_region_data!` handles
+    # land cells directly.
+    if metadata.region isa Column
+        inpainting = nothing
+    end
 
     grid = native_grid(metadata, arch; halo)
     LX, LY, LZ = location(metadata)
@@ -100,24 +214,23 @@ function Field(metadata::Metadatum, arch=CPU();
     if !isnothing(inpainting)
         inpainted_path = inpainted_metadata_path(metadata)
         if isfile(inpainted_path)
-            file = jldopen(inpainted_path, "r")
-            maxiter = file["inpainting_maxiter"]
-
-            # read data if generated with the same inpainting
-            if maxiter == inpainting.maxiter
-                data = file["data"]
-                close(file)
-                try
-                    copyto!(parent(field), data)
-                    return field
-                catch
-                    @warn "Could not load existing inpainted data at $inpainted_path.\n" *
-                          "Re-inpainting and saving data..."
-                    rm(inpainted_path, force=true)
+            # apply a load guard for corrupted files
+            loaded = false
+            try
+                jldopen(inpainted_path, "r") do file
+                    if haskey(file, "inpainting_maxiter") &&
+                       file["inpainting_maxiter"] == inpainting.maxiter
+                        copyto!(parent(field), file["data"])
+                        loaded = true
+                    end
                 end
+            catch err
+                @warn "Could not load existing inpainted data at $inpainted_path; " *
+                      "re-inpainting and saving data..." exception=err
+                rm(inpainted_path, force=true)
+                loaded = false
             end
-
-            close(file)
+            loaded && return field
         end
     end
 
@@ -164,77 +277,73 @@ function Field(metadata::Metadatum, arch=CPU();
     return field
 end
 
-function set!(target_field::Field, metadata::Metadatum; kw...)
+function Oceananigans.Fields.set!(target_field::Field, metadata::Metadatum; kw...)
     grid = target_field.grid
     arch = child_architecture(grid)
     meta_field = Field(metadata, arch; kw...)
+
+    Lzt = grid.Lz
+    Lzm = meta_field.grid.Lz
+
+    # Allow up to 1% vertical mismatch for pressure-level datasets with time-varying
+    # geopotential heights — the per-timestep vertical extent can be slightly smaller
+    # than the temporal-mean extent used for the target grid (e.g. when the atmosphere
+    # is compressed). Oceananigans' interpolate! does not extrapolate, so target points
+    # just outside the source domain will use the nearest interior values.
+    if is_three_dimensional(metadata) && Lzt > Lzm * (1 + 1e-2)
+        throw("The vertical range of the $(metadata.dataset) dataset ($(Lzm) m) is smaller than " *
+              "the target grid ($(Lzt) m). Some vertical levels cannot be filled with data.")
+    end
+
     interpolate!(target_field, meta_field)
+
     return target_field
 end
 
-# manglings
-struct ShiftSouth end
-struct AverageNorthSouth end
-
-@inline mangle(i, j, data, ::Nothing) = @inbounds data[i, j]
-@inline mangle(i, j, data, ::ShiftSouth) = @inbounds data[i, j-1]
-@inline mangle(i, j, data, ::AverageNorthSouth) = @inbounds (data[i, j+1] + data[i, j]) / 2
-
-@inline mangle(i, j, k, data, ::Nothing) = @inbounds data[i, j, k]
-@inline mangle(i, j, k, data, ::ShiftSouth) = @inbounds data[i, j-1, k]
-@inline mangle(i, j, k, data, ::AverageNorthSouth) = @inbounds (data[i, j+1, k] + data[i, j, k]) / 2
-
 function set_metadata_field!(field, data, metadatum)
-    grid = field.grid
-    arch = architecture(grid)
-
-    Nx, Ny, Nz = size(metadatum)
-    mangling = if size(data, 2) == Ny-1
-        ShiftSouth()
-    elseif size(data, 2) == Ny+1
-        AverageNorthSouth()
-    else
-        nothing
-    end
-
-    conversion = conversion_units(metadatum)
-
-    if ndims(data) == 2
-        _kernel = _set_2d_metadata_field!
-        spec = :xy
-    else
-        _kernel = _set_3d_metadata_field!
-        spec = :xyz
-    end
-
-    data = on_architecture(arch, data)
-    Oceananigans.Utils.launch!(arch, grid, spec, _kernel, field, data, mangling, conversion)
-
+    full_data = ndims(data) == 2 ? reshape(data, size(data, 1), size(data, 2), 1) : data
+    λc, φc = read_file_coords(metadatum)
+    set_region_data!(field, full_data, λc, φc, metadatum)
     return nothing
 end
 
-@kernel function _set_2d_metadata_field!(field, data, mangling, conversion)
-    i, j = @index(Global, NTuple)
-    FT = eltype(field)
-    d = mangle(i, j, data, mangling)
-    d = nan_convert_missing(FT, d)
-    d = convert_units(d, conversion)
-    @inbounds field[i, j, 1] = d
-end
-
-@kernel function _set_3d_metadata_field!(field, data, mangling, conversion)
-    i, j, k = @index(Global, NTuple)
-    FT = eltype(field)
-    d = mangle(i, j, k, data, mangling)
-    d = nan_convert_missing(FT, d)
-    d = convert_units(d, conversion)
-
-    @inbounds field[i, j, k] = d
+# Read the lon/lat cell centres from the NetCDF file using the names supplied
+# by the dataset's `longitude_name` / `latitude_name` traits.
+function read_file_coords(metadatum)
+    ds = Dataset(metadata_path(metadatum))
+    λc = ds[longitude_name(metadatum)][:]
+    φc = ds[latitude_name(metadatum)][:]
+    close(ds)
+    reversed_latitude_axis(metadatum.dataset) && reverse!(φc)
+    return λc, φc
 end
 
 #####
 ##### Helper functions
 #####
+
+"""
+    centers_to_interfaces(z_centers)
+
+Compute ``z``-interfaces (cell faces) from cell center positions.
+`z_centers` should be sorted most negative first (deepest first).
+The top face is placed at 0.0 (sea surface). Interior faces are
+midpoints between adjacent centers. The bottom face is extrapolated.
+
+Note: the grid's cell centers (midpoints of faces) will approximately
+but not exactly match the input centers when spacing is irregular.
+"""
+function centers_to_interfaces(z_centers)
+    Nz = length(z_centers)
+    z_faces = zeros(Nz + 1)
+
+    for k in 1:Nz-1
+        z_faces[k+1] = (z_centers[k] + z_centers[k+1]) / 2
+    end
+    # Extrapolate bottom face
+    z_faces[1] = z_centers[1] - (z_faces[2] - z_centers[1])
+    return z_faces
+end
 
 @inline nan_convert_missing(FT, ::Missing) = convert(FT, NaN)
 @inline nan_convert_missing(FT, d::Number) = convert(FT, d)
@@ -247,6 +356,13 @@ end
 
 # Temperature units
 @inline convert_units(T::FT, ::Kelvin) where FT = T - convert(FT, 273.15)
+@inline convert_units(T::FT, ::Celsius) where FT = T + convert(FT, 273.15)
+
+# Pressure units
+@inline convert_units(P::FT, ::Millibar) where FT = P * convert(FT, 100)
+
+# Precipitation rate (assuming ρ_water = 1000 kg/m³, so 1 mm/hr = 1 kg/m²/hr = 1/3600 kg/m²/s)
+@inline convert_units(r::FT, ::MillimetersPerHour) where FT = r / convert(FT, 3600)
 
 # Molar units
 @inline convert_units(C::FT, ::Union{MolePerLiter, MolePerKilogram})           where FT = C * convert(FT, 1e3)
@@ -255,6 +371,8 @@ end
 @inline convert_units(C::FT, ::Union{NanomolePerLiter, NanomolePerKilogram})   where FT = C * convert(FT, 1e-6)
 @inline convert_units(C::FT, ::MilliliterPerLiter)                             where FT = C / convert(FT, 22.3916)
 @inline convert_units(C::FT, ::GramPerKilogramMinus35)                         where FT = C + convert(FT, 35)
+@inline convert_units(Φ::FT, ::InverseGravity)                                 where FT = Φ / convert(FT, 9.80665)
+@inline convert_units(V::FT, ::CentimetersPerSecond)                           where FT = V / convert(FT, 100)
 
 
 #####
@@ -296,3 +414,27 @@ end
 end
 
 @inline is_masked(a, min_value, max_value, mask_value) = isnan(a) | (a <= min_value) | (a >= max_value) | (a == mask_value)
+
+#####
+##### Field / FieldTimeSeries for MetadataSet
+#####
+
+"""
+    Field(mset::MetadataSet, arch=CPU(); kw...)
+
+Build a `NamedTuple` of `Field`s — one per variable in `mset`, keyed by the
+verbose dataset variable name. Each value is `Field(mset[name], arch; kw...)`.
+
+Requires `mset` to hold scalar `dates` so each `mset[name]` is a `Metadatum`;
+for multi-date sets, use `FieldTimeSeries(::MetadataSet)`.
+"""
+function Oceananigans.Fields.Field(mset::MetadataSet, arch=CPU(); kw...)
+    dates = getfield(mset, :dates)
+    if !(dates isa AnyDateTime)
+        throw(ArgumentError(
+            "Field(::MetadataSet) requires a scalar `date`, but this `MetadataSet` carries a multi-date axis. " *
+            "Use `FieldTimeSeries(mset)` for multi-date sets."))
+    end
+    names = getfield(mset, :names)
+    return NamedTuple{names}(map(n -> Field(mset[n], arch; kw...), names))
+end
