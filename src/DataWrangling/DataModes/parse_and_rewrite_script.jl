@@ -1,4 +1,4 @@
-const PASSTHROUGH_HEADS = Set([:using, :import, :export, :module, :struct, :abstract, :primitive, :macro, :macrocall, :const])
+const PASSTHROUGH_HEADS = (:using, :import, :export, :module, :struct, :abstract, :primitive, :macro, :macrocall, :const)
 
 function is_include_call(s)
     s isa Expr && s.head === :call && !isempty(s.args) || return false

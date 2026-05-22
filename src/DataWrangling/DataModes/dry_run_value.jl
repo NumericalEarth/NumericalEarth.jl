@@ -44,7 +44,6 @@ Base.IteratorSize(::Type{DryRunValue}) = Base.HasShape{0}()
 Base.IteratorEltype(::Type{DryRunValue}) = Base.HasEltype()
 
 Base.broadcastable(::DryRunValue) = Ref(DryRunValue())
-Base.materialize(::DryRunValue) = DryRunValue()
 
 Base.getindex(::DryRunValue, args...) = DryRunValue()
 Base.setindex!(::DryRunValue, args...) = DryRunValue()

@@ -384,7 +384,7 @@ Per-dataset modules keep extending `Downloads.download` for the `:auto` branch o
 """
 function download_dataset(metadata::AbstractMetadata)
     mode = DataModes.DATA_MODE[]
-    mode === :auto     && return Downloads.download(metadata)
+    mode === :auto        && return Downloads.download(metadata)
     mode === :strict      && return DataModes.check_files_exist(metadata)
     mode === :pregenerate && return nothing
     error("Unknown NUMERICALEARTH_DATA mode: $(repr(mode))")

@@ -1,6 +1,6 @@
 include("runtests_setup.jl")
 
-using NumericalEarth.DataWrangling.DataModes: pregenerate_dataset_manifest, manifest_path_in
+using NumericalEarth.DataWrangling.DataModes: DataModes, pregenerate_dataset_manifest, manifest_path_in
 using TOML
 
 # Regenerate the test-folder `NumericalEarthDataManifest.toml` by tracing every `test_*.jl`
@@ -23,6 +23,15 @@ function regenerate_manifest_in(out_dir)
 end
 
 @testset "DataManifest freshness" begin
+    # This test self-invokes `pregenerate_dataset_manifest` on every other `test_*.jl`. If
+    # we're already running inside a pregenerate trace (i.e. some outer loop is tracing this
+    # very file), recursing here both wastes work and corrupts per-process state — most
+    # notably MPI, which gets re-initialised across nested sandbox boundaries.
+    if DataModes.DATA_MODE[] === :pregenerate
+        @info "Skipping DataManifest freshness test inside a pregenerate trace"
+        return
+    end
+
     committed_path = manifest_path_in(@__DIR__)
     @test isfile(committed_path)
 

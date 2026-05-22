@@ -59,19 +59,11 @@ function download_datasets(; dir::AbstractString = pwd(), download_dir = nothing
     return nothing
 end
 
-expected_paths(metadata::Metadatum) = String[metadata_path(metadata)]
-
-function expected_paths(metadata::Metadata)
-    p = metadata_path(metadata)
-    return p isa Vector ? collect(String, p) : String[p]
-end
-
-function expected_paths(mset::MetadataSet)
-    paths = String[]
-    for name in mset.names
-        append!(paths, expected_paths(mset[name]))
-    end
-    return paths
+function expected_paths(m::AbstractMetadata)
+    m isa MetadataSet &&
+        return reduce(vcat, expected_paths(m[n]) for n in m.names; init = String[])
+    p = metadata_path(m)
+    return p isa AbstractVector ? collect(String, p) : String[p]
 end
 
 """
@@ -89,37 +81,10 @@ function check_files_exist(metadata::AbstractMetadata)
 end
 
 function __init__()
-    # Skip everything if we're inside a precompile / sysimage build subprocess —
-    # `Base.PROGRAM_FILE` is "-" there and we'd write garbage manifests at exit.
-    ccall(:jl_generating_output, Cint, ()) == 1 && return nothing
-
     env = get(ENV, "NUMERICALEARTH_DATA", "auto")
     mode, dir_from_env = parse_data_mode(env)
     DATA_MODE[] = mode
     MANIFEST_DIR[] = isempty(dir_from_env) ? pwd() : abspath(dir_from_env)
-    mode === :pregenerate || return nothing
-
-    if !isempty(Base.PROGRAM_FILE) && isfile(Base.PROGRAM_FILE)
-        script = abspath(Base.PROGRAM_FILE)
-        atexit() do
-            try
-                manifest = pregenerate_dataset_manifest(script; dir = MANIFEST_DIR[])
-                @info "NUMERICALEARTH_DATA=pregenerate: wrote manifest via AST trace" manifest script
-            catch err
-                @error "NUMERICALEARTH_DATA=pregenerate: trace failed" dir=MANIFEST_DIR[] script exception=(err, catch_backtrace())
-            end
-        end
-    else
-        atexit() do
-            try
-                manifest = manifest_path_in(MANIFEST_DIR[])
-                write_manifest(manifest, copy(RECORDED))
-                @info "NUMERICALEARTH_DATA=pregenerate: wrote manifest" manifest entries=length(RECORDED)
-            catch err
-                @error "NUMERICALEARTH_DATA=pregenerate: failed to write manifest" dir=MANIFEST_DIR[] exception=(err, catch_backtrace())
-            end
-        end
-    end
     return nothing
 end
 

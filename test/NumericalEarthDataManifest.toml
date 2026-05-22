@@ -1,350 +1,77 @@
-[[ORCA12]]
-filename = "bathy_eORCA12_noclosea_from_GEBCO2021_FillZero_S21TT_CloseaCopy.nc"
-variable_name = "bottom_height"
-[[ORCA12]]
-filename = "grid_mask_eORCA12-GO6.nc"
-variable_name = "mesh_mask"
-
-[[GEBCO2024]]
-filename = "GEBCO_2024.nc"
-variable_name = "bottom_height"
-
-[[IBCSOv2]]
-filename = "IBCSO_v2_bed_WGS84.nc"
-variable_name = "bottom_height"
-
-[[ETOPO2022]]
-filename = "ETOPO_2022_v1_60s_N90W180_surface.nc"
-variable_name = "bottom_height"
-
-[[WOAAnnual]]
-filename = "woa_t_annual.nc"
-variable_name = "temperature"
-[[WOAAnnual]]
-filename = "woa_s_annual.nc"
-variable_name = "salinity"
-
-[[WOAMonthly]]
-filename = "woa_t_monthly_01.nc"
-date = 2018-01-01T00:00:00.000Z
-variable_name = "temperature"
-[[WOAMonthly]]
-filename = "woa_s_monthly_01.nc"
-date = 2018-01-01T00:00:00.000Z
-variable_name = "salinity"
-
-[[ERA5HourlySingleLevel]]
-filename = "2m_temperature_ERA5HourlySingleLevel_2004-12-27T00_-110.0_30.0_-25.0_35.0.nc"
-date = 2004-12-27T00:00:00.000Z
-variable_name = "temperature"
-
-    [ERA5HourlySingleLevel.region]
-    kind = "BoundingBox"
-    latitude = [-25, 35]
-    longitude = [-110, 30]
-
-[[ORCA1]]
-filename = "eORCA1.2_mesh_mask.nc"
-variable_name = "mesh_mask"
-[[ORCA1]]
-filename = "eORCA_R1_bathy_meter_v2.2.nc"
-variable_name = "bottom_height"
-
-[[IBCAOv5]]
-filename = "ibcao_v5_wgs84_0p01deg.nc"
-variable_name = "bottom_height"
-
 [[ECCO2Daily]]
-start_date = 1993-01-01T00:00:00.000Z
-end_date = 1993-01-05T00:00:00.000Z
-filename = ["SALT.1440x720x50.19930101.nc", "SALT.1440x720x50.19930102.nc", "SALT.1440x720x50.19930103.nc", "SALT.1440x720x50.19930104.nc", "SALT.1440x720x50.19930105.nc"]
-variable_name = "salinity"
-[[ECCO2Daily]]
-start_date = 1993-01-01T00:00:00.000Z
-end_date = 1993-01-05T00:00:00.000Z
-filename = ["SALT.1440x720x50.19930101.nc", "SALT.1440x720x50.19930102.nc", "SALT.1440x720x50.19930103.nc", "SALT.1440x720x50.19930104.nc", "SALT.1440x720x50.19930105.nc"]
-variable_name = "salinity"
-[[ECCO2Daily]]
-start_date = 1993-01-01T00:00:00.000Z
-end_date = 1993-01-05T00:00:00.000Z
-filename = ["THETA.1440x720x50.19930101.nc", "THETA.1440x720x50.19930102.nc", "THETA.1440x720x50.19930103.nc", "THETA.1440x720x50.19930104.nc", "THETA.1440x720x50.19930105.nc"]
-variable_name = "temperature"
-[[ECCO2Daily]]
+date = 1993-01-05T00:00:00.000Z
 filename = "SALT.1440x720x50.19930105.nc"
-date = 1993-01-05T00:00:00.000Z
 variable_name = "salinity"
 [[ECCO2Daily]]
+date = 1993-01-04T00:00:00.000Z
 filename = "SALT.1440x720x50.19930104.nc"
-date = 1993-01-04T00:00:00.000Z
 variable_name = "salinity"
 [[ECCO2Daily]]
+date = 1993-01-03T00:00:00.000Z
 filename = "SALT.1440x720x50.19930103.nc"
-date = 1993-01-03T00:00:00.000Z
 variable_name = "salinity"
 [[ECCO2Daily]]
+date = 1993-01-02T00:00:00.000Z
 filename = "SALT.1440x720x50.19930102.nc"
-date = 1993-01-02T00:00:00.000Z
 variable_name = "salinity"
 [[ECCO2Daily]]
-start_date = 1993-01-01T00:00:00.000Z
 end_date = 1993-01-05T00:00:00.000Z
 filename = ["SALT.1440x720x50.19930101.nc", "SALT.1440x720x50.19930102.nc", "SALT.1440x720x50.19930103.nc", "SALT.1440x720x50.19930104.nc", "SALT.1440x720x50.19930105.nc"]
+start_date = 1993-01-01T00:00:00.000Z
 variable_name = "salinity"
 [[ECCO2Daily]]
-start_date = 1993-01-01T00:00:00.000Z
-end_date = 1993-01-05T00:00:00.000Z
-filename = ["THETA.1440x720x50.19930101.nc", "THETA.1440x720x50.19930102.nc", "THETA.1440x720x50.19930103.nc", "THETA.1440x720x50.19930104.nc", "THETA.1440x720x50.19930105.nc"]
-variable_name = "temperature"
-[[ECCO2Daily]]
+date = 1993-01-01T00:00:00.000Z
 filename = "SALT.1440x720x50.19930101.nc"
-date = 1993-01-01T00:00:00.000Z
 variable_name = "salinity"
 [[ECCO2Daily]]
-filename = "THETA.1440x720x50.19930105.nc"
 date = 1993-01-05T00:00:00.000Z
+filename = "THETA.1440x720x50.19930105.nc"
 variable_name = "temperature"
 [[ECCO2Daily]]
-filename = "THETA.1440x720x50.19930104.nc"
 date = 1993-01-04T00:00:00.000Z
+filename = "THETA.1440x720x50.19930104.nc"
 variable_name = "temperature"
 [[ECCO2Daily]]
-filename = "THETA.1440x720x50.19930103.nc"
 date = 1993-01-03T00:00:00.000Z
+filename = "THETA.1440x720x50.19930103.nc"
 variable_name = "temperature"
 [[ECCO2Daily]]
-filename = "THETA.1440x720x50.19930102.nc"
 date = 1993-01-02T00:00:00.000Z
+filename = "THETA.1440x720x50.19930102.nc"
 variable_name = "temperature"
 [[ECCO2Daily]]
-filename = "THETA.1440x720x50.19930101.nc"
 date = 1993-01-01T00:00:00.000Z
+filename = "THETA.1440x720x50.19930101.nc"
 variable_name = "temperature"
 [[ECCO2Daily]]
-start_date = 1993-01-01T00:00:00.000Z
 end_date = 1993-01-05T00:00:00.000Z
 filename = ["THETA.1440x720x50.19930101.nc", "THETA.1440x720x50.19930102.nc", "THETA.1440x720x50.19930103.nc", "THETA.1440x720x50.19930104.nc", "THETA.1440x720x50.19930105.nc"]
-variable_name = "temperature"
-[[ECCO2Daily]]
 start_date = 1993-01-01T00:00:00.000Z
-end_date = 1993-01-05T00:00:00.000Z
-filename = ["SALT.1440x720x50.19930101.nc", "SALT.1440x720x50.19930102.nc", "SALT.1440x720x50.19930103.nc", "SALT.1440x720x50.19930104.nc", "SALT.1440x720x50.19930105.nc"]
-variable_name = "salinity"
-[[ECCO2Daily]]
-start_date = 1993-01-01T00:00:00.000Z
-end_date = 1993-01-05T00:00:00.000Z
-filename = ["SALT.1440x720x50.19930101.nc", "SALT.1440x720x50.19930102.nc", "SALT.1440x720x50.19930103.nc", "SALT.1440x720x50.19930104.nc", "SALT.1440x720x50.19930105.nc"]
-variable_name = "salinity"
-[[ECCO2Daily]]
-start_date = 1993-01-01T00:00:00.000Z
-end_date = 1993-01-05T00:00:00.000Z
-filename = ["THETA.1440x720x50.19930101.nc", "THETA.1440x720x50.19930102.nc", "THETA.1440x720x50.19930103.nc", "THETA.1440x720x50.19930104.nc", "THETA.1440x720x50.19930105.nc"]
-variable_name = "temperature"
-[[ECCO2Daily]]
-start_date = 1993-01-01T00:00:00.000Z
-end_date = 1993-01-05T00:00:00.000Z
-filename = ["SALT.1440x720x50.19930101.nc", "SALT.1440x720x50.19930102.nc", "SALT.1440x720x50.19930103.nc", "SALT.1440x720x50.19930104.nc", "SALT.1440x720x50.19930105.nc"]
-variable_name = "salinity"
-[[ECCO2Daily]]
-start_date = 1993-01-01T00:00:00.000Z
-end_date = 1993-01-05T00:00:00.000Z
-filename = ["THETA.1440x720x50.19930101.nc", "THETA.1440x720x50.19930102.nc", "THETA.1440x720x50.19930103.nc", "THETA.1440x720x50.19930104.nc", "THETA.1440x720x50.19930105.nc"]
-variable_name = "temperature"
-[[ECCO2Daily]]
-start_date = 1993-01-01T00:00:00.000Z
-end_date = 1993-01-05T00:00:00.000Z
-filename = ["THETA.1440x720x50.19930101.nc", "THETA.1440x720x50.19930102.nc", "THETA.1440x720x50.19930103.nc", "THETA.1440x720x50.19930104.nc", "THETA.1440x720x50.19930105.nc"]
 variable_name = "temperature"
 
 [[ECCO4Monthly]]
-filename = "THETA_1992_03.nc"
-date = 1992-03-01T00:00:00.000Z
-variable_name = "temperature"
-
-    [ECCO4Monthly.region]
-    kind = "Column"
-    latitude = 50.1
-    longitude = 35.1
-    interpolation = "Linear"
+date = 1993-01-01T00:00:00.000Z
+filename = "SIarea_1993_01.nc"
+variable_name = "sea_ice_concentration"
 [[ECCO4Monthly]]
-filename = "THETA_1992_02.nc"
-date = 1992-02-01T00:00:00.000Z
-variable_name = "temperature"
-
-    [ECCO4Monthly.region]
-    kind = "Column"
-    latitude = 50.1
-    longitude = 35.1
-    interpolation = "Linear"
+date = 1993-01-01T00:00:00.000Z
+variable_names = ["temperature", "salinity", "sea_ice_thickness", "sea_ice_concentration"]
 [[ECCO4Monthly]]
-start_date = 1992-01-01T00:00:00.000Z
-end_date = 1992-03-01T00:00:00.000Z
-filename = ["THETA_1992_01.nc", "THETA_1992_02.nc", "THETA_1992_03.nc"]
-variable_name = "temperature"
-
-    [ECCO4Monthly.region]
-    kind = "Column"
-    latitude = 50.1
-    longitude = 35.1
-    interpolation = "Linear"
+date = 1993-01-01T00:00:00.000Z
+filename = "SIheff_1993_01.nc"
+variable_name = "sea_ice_thickness"
 [[ECCO4Monthly]]
-filename = "THETA_1992_01.nc"
-date = 1992-01-01T00:00:00.000Z
-variable_name = "temperature"
-
-    [ECCO4Monthly.region]
-    kind = "BoundingBox"
-    latitude = [-30, 30]
+date = 1993-01-01T00:00:00.000Z
+variable_names = ["temperature", "sea_ice_thickness"]
 [[ECCO4Monthly]]
-filename = "THETA_1992_01.nc"
-date = 1992-01-01T00:00:00.000Z
-variable_name = "temperature"
-
-    [ECCO4Monthly.region]
-    kind = "BoundingBox"
-    latitude = [-30, 30]
-    longitude = [-180, 180]
-[[ECCO4Monthly]]
-filename = "THETA_1992_01.nc"
-date = 1992-01-01T00:00:00.000Z
-variable_name = "temperature"
-
-    [ECCO4Monthly.region]
-    kind = "BoundingBox"
-    latitude = [0, 10]
-    longitude = [0, 10]
-[[ECCO4Monthly]]
-filename = "THETA_1992_01.nc"
-date = 1992-01-01T00:00:00.000Z
-variable_name = "temperature"
-[[ECCO4Monthly]]
-filename = "EVEL_1992_01.nc"
-date = 1992-01-01T00:00:00.000Z
-variable_name = "u_velocity"
-
-    [ECCO4Monthly.region]
-    kind = "BoundingBox"
-    latitude = [0, 10]
-    longitude = [0, 10]
-[[ECCO4Monthly]]
-filename = "EVEL_1992_01.nc"
-date = 1992-01-01T00:00:00.000Z
-variable_name = "u_velocity"
-[[ECCO4Monthly]]
-filename = "SSH_1992_01.nc"
-date = 1992-01-01T00:00:00.000Z
-variable_name = "free_surface"
-
-    [ECCO4Monthly.region]
-    kind = "Column"
-    latitude = 50.1
-    longitude = 35.1
-    interpolation = "Linear"
-[[ECCO4Monthly]]
-filename = "EVEL_1992_01.nc"
-date = 1992-01-01T00:00:00.000Z
-variable_name = "u_velocity"
-
-    [ECCO4Monthly.region]
-    kind = "Column"
-    latitude = 50.1
-    longitude = 35.1
-    interpolation = "Linear"
-[[ECCO4Monthly]]
-filename = "THETA_1992_01.nc"
-date = 1992-01-01T00:00:00.000Z
-variable_name = "temperature"
-
-    [ECCO4Monthly.region]
-    kind = "Column"
-    latitude = 50.1
-    longitude = 35.1
-    interpolation = "Linear"
-[[ECCO4Monthly]]
-start_date = 1992-01-01T00:00:00.000Z
-end_date = 1992-03-01T00:00:00.000Z
-filename = ["THETA_1992_01.nc", "THETA_1992_02.nc", "THETA_1992_03.nc"]
-variable_name = "temperature"
-
-    [ECCO4Monthly.region]
-    kind = "Column"
-    latitude = 50.1
-    longitude = 35.1
-    interpolation = "Linear"
-[[ECCO4Monthly]]
-filename = "SALT_1993_02.nc"
-date = 1993-02-01T00:00:00.000Z
-variable_name = "salinity"
-[[ECCO4Monthly]]
-filename = "THETA_1993_02.nc"
-date = 1993-02-01T00:00:00.000Z
-variable_name = "temperature"
-[[ECCO4Monthly]]
-start_date = 1993-01-01T00:00:00.000Z
-end_date = 1993-02-01T00:00:00.000Z
-filename = ["SALT_1993_01.nc", "SALT_1993_02.nc"]
-variable_name = "salinity"
-[[ECCO4Monthly]]
-start_date = 1993-01-01T00:00:00.000Z
-end_date = 1993-02-01T00:00:00.000Z
-filename = ["THETA_1993_01.nc", "THETA_1993_02.nc"]
-variable_name = "temperature"
-[[ECCO4Monthly]]
-start_date = 1993-01-01T00:00:00.000Z
-end_date = 1993-02-01T00:00:00.000Z
-filename = ["THETA_1993_01.nc", "THETA_1993_02.nc"]
-variable_name = "temperature"
-[[ECCO4Monthly]]
-start_date = 1993-01-01T00:00:00.000Z
-end_date = 1993-02-01T00:00:00.000Z
-filename = ["SALT_1993_01.nc", "SALT_1993_02.nc"]
-variable_name = "salinity"
-[[ECCO4Monthly]]
-start_date = 1993-01-01T00:00:00.000Z
-end_date = 1993-04-01T00:00:00.000Z
-variable_names = ["temperature", "salinity"]
-[[ECCO4Monthly]]
-start_date = 1993-01-01T00:00:00.000Z
-end_date = 1993-04-01T00:00:00.000Z
-filename = ["THETA_1993_01.nc", "THETA_1993_02.nc", "THETA_1993_03.nc", "THETA_1993_04.nc"]
-variable_name = "temperature"
-[[ECCO4Monthly]]
-start_date = 1993-01-01T00:00:00.000Z
-end_date = 1993-04-01T00:00:00.000Z
-variable_names = ["temperature", "salinity"]
-[[ECCO4Monthly]]
-start_date = 1993-01-01T00:00:00.000Z
-end_date = 1993-04-01T00:00:00.000Z
-filename = ["THETA_1993_01.nc", "THETA_1993_02.nc", "THETA_1993_03.nc", "THETA_1993_04.nc"]
-variable_name = "temperature"
-[[ECCO4Monthly]]
-start_date = 1993-01-01T00:00:00.000Z
 end_date = 1993-04-01T00:00:00.000Z
 filename = ["SALT_1993_01.nc", "SALT_1993_02.nc", "SALT_1993_03.nc", "SALT_1993_04.nc"]
+start_date = 1993-01-01T00:00:00.000Z
 variable_name = "salinity"
 [[ECCO4Monthly]]
-start_date = 1993-01-01T00:00:00.000Z
-end_date = 1993-04-01T00:00:00.000Z
-variable_names = ["temperature", "salinity"]
-[[ECCO4Monthly]]
-filename = "NVEL_1993_01.nc"
 date = 1993-01-01T00:00:00.000Z
-variable_name = "v_velocity"
-[[ECCO4Monthly]]
-date = 1993-01-01T00:00:00.000Z
-variable_names = ["temperature", "salinity"]
-[[ECCO4Monthly]]
-filename = "THETA_1993_01.nc"
-date = 1993-01-01T00:00:00.000Z
-variable_name = "temperature"
-[[ECCO4Monthly]]
-start_date = 1993-01-01T00:00:00.000Z
-end_date = 1993-04-01T00:00:00.000Z
-variable_names = ["temperature", "salinity"]
-[[ECCO4Monthly]]
-start_date = 1993-01-01T00:00:00.000Z
-end_date = 1993-04-01T00:00:00.000Z
-filename = ["THETA_1993_01.nc", "THETA_1993_02.nc", "THETA_1993_03.nc", "THETA_1993_04.nc"]
-variable_name = "temperature"
+filename = "SALT_1993_01.nc"
+variable_name = "salinity"
 [[ECCO4Monthly]]
 date = 1993-01-01T00:00:00.000Z
 variable_names = ["temperature", "salinity"]
@@ -354,38 +81,200 @@ variable_names = ["temperature", "salinity"]
     latitude = [-10.0, 10.0]
     longitude = [-20.0, 20.0]
 [[ECCO4Monthly]]
-filename = "SALT_1993_01.nc"
-date = 1993-01-01T00:00:00.000Z
-variable_name = "salinity"
-[[ECCO4Monthly]]
-start_date = 1993-01-01T00:00:00.000Z
-end_date = 1993-04-01T00:00:00.000Z
-variable_names = ["temperature", "salinity"]
-[[ECCO4Monthly]]
-start_date = 1993-01-01T00:00:00.000Z
 end_date = 1993-04-01T00:00:00.000Z
 filename = ["THETA_1993_01.nc", "THETA_1993_02.nc", "THETA_1993_03.nc", "THETA_1993_04.nc"]
+start_date = 1993-01-01T00:00:00.000Z
 variable_name = "temperature"
 [[ECCO4Monthly]]
-start_date = 1993-01-01T00:00:00.000Z
 end_date = 1993-04-01T00:00:00.000Z
-filename = ["SALT_1993_01.nc", "SALT_1993_02.nc", "SALT_1993_03.nc", "SALT_1993_04.nc"]
+start_date = 1993-01-01T00:00:00.000Z
+variable_names = ["temperature", "salinity"]
+[[ECCO4Monthly]]
+date = 1993-01-01T00:00:00.000Z
+filename = "THETA_1993_01.nc"
+variable_name = "temperature"
+[[ECCO4Monthly]]
+date = 1993-01-01T00:00:00.000Z
+variable_names = ["temperature", "salinity"]
+[[ECCO4Monthly]]
+date = 1993-01-01T00:00:00.000Z
+filename = "NVEL_1993_01.nc"
+variable_name = "v_velocity"
+[[ECCO4Monthly]]
+date = 1993-02-01T00:00:00.000Z
+filename = "SALT_1993_02.nc"
 variable_name = "salinity"
 [[ECCO4Monthly]]
-date = 1993-01-01T00:00:00.000Z
-variable_names = ["temperature", "sea_ice_thickness"]
+date = 1993-02-01T00:00:00.000Z
+filename = "THETA_1993_02.nc"
+variable_name = "temperature"
 [[ECCO4Monthly]]
-filename = "SIheff_1993_01.nc"
-date = 1993-01-01T00:00:00.000Z
-variable_name = "sea_ice_thickness"
-[[ECCO4Monthly]]
-date = 1993-01-01T00:00:00.000Z
-variable_names = ["temperature", "salinity", "sea_ice_thickness", "sea_ice_concentration"]
-[[ECCO4Monthly]]
-filename = "SIarea_1993_01.nc"
-date = 1993-01-01T00:00:00.000Z
-variable_name = "sea_ice_concentration"
-[[ECCO4Monthly]]
+end_date = 1993-02-01T00:00:00.000Z
+filename = ["SALT_1993_01.nc", "SALT_1993_02.nc"]
 start_date = 1993-01-01T00:00:00.000Z
-end_date = 1993-04-01T00:00:00.000Z
-variable_names = ["temperature", "salinity"]
+variable_name = "salinity"
+[[ECCO4Monthly]]
+end_date = 1993-02-01T00:00:00.000Z
+filename = ["THETA_1993_01.nc", "THETA_1993_02.nc"]
+start_date = 1993-01-01T00:00:00.000Z
+variable_name = "temperature"
+[[ECCO4Monthly]]
+date = 1992-01-01T00:00:00.000Z
+filename = "THETA_1992_01.nc"
+variable_name = "temperature"
+
+    [ECCO4Monthly.region]
+    interpolation = "Linear"
+    kind = "Column"
+    latitude = 50.1
+    longitude = 35.1
+[[ECCO4Monthly]]
+date = 1992-01-01T00:00:00.000Z
+filename = "EVEL_1992_01.nc"
+variable_name = "u_velocity"
+
+    [ECCO4Monthly.region]
+    interpolation = "Linear"
+    kind = "Column"
+    latitude = 50.1
+    longitude = 35.1
+[[ECCO4Monthly]]
+date = 1992-01-01T00:00:00.000Z
+filename = "SSH_1992_01.nc"
+variable_name = "free_surface"
+
+    [ECCO4Monthly.region]
+    interpolation = "Linear"
+    kind = "Column"
+    latitude = 50.1
+    longitude = 35.1
+[[ECCO4Monthly]]
+date = 1992-01-01T00:00:00.000Z
+filename = "EVEL_1992_01.nc"
+variable_name = "u_velocity"
+[[ECCO4Monthly]]
+date = 1992-01-01T00:00:00.000Z
+filename = "EVEL_1992_01.nc"
+variable_name = "u_velocity"
+
+    [ECCO4Monthly.region]
+    kind = "BoundingBox"
+    latitude = [0, 10]
+    longitude = [0, 10]
+[[ECCO4Monthly]]
+date = 1992-01-01T00:00:00.000Z
+filename = "THETA_1992_01.nc"
+variable_name = "temperature"
+[[ECCO4Monthly]]
+date = 1992-01-01T00:00:00.000Z
+filename = "THETA_1992_01.nc"
+variable_name = "temperature"
+
+    [ECCO4Monthly.region]
+    kind = "BoundingBox"
+    latitude = [0, 10]
+    longitude = [0, 10]
+[[ECCO4Monthly]]
+date = 1992-01-01T00:00:00.000Z
+filename = "THETA_1992_01.nc"
+variable_name = "temperature"
+
+    [ECCO4Monthly.region]
+    kind = "BoundingBox"
+    latitude = [-30, 30]
+    longitude = [-180, 180]
+[[ECCO4Monthly]]
+date = 1992-01-01T00:00:00.000Z
+filename = "THETA_1992_01.nc"
+variable_name = "temperature"
+
+    [ECCO4Monthly.region]
+    kind = "BoundingBox"
+    latitude = [-30, 30]
+[[ECCO4Monthly]]
+end_date = 1992-03-01T00:00:00.000Z
+filename = ["THETA_1992_01.nc", "THETA_1992_02.nc", "THETA_1992_03.nc"]
+start_date = 1992-01-01T00:00:00.000Z
+variable_name = "temperature"
+
+    [ECCO4Monthly.region]
+    interpolation = "Linear"
+    kind = "Column"
+    latitude = 50.1
+    longitude = 35.1
+[[ECCO4Monthly]]
+date = 1992-02-01T00:00:00.000Z
+filename = "THETA_1992_02.nc"
+variable_name = "temperature"
+
+    [ECCO4Monthly.region]
+    interpolation = "Linear"
+    kind = "Column"
+    latitude = 50.1
+    longitude = 35.1
+[[ECCO4Monthly]]
+date = 1992-03-01T00:00:00.000Z
+filename = "THETA_1992_03.nc"
+variable_name = "temperature"
+
+    [ECCO4Monthly.region]
+    interpolation = "Linear"
+    kind = "Column"
+    latitude = 50.1
+    longitude = 35.1
+
+[[ERA5HourlySingleLevel]]
+date = 2004-12-27T00:00:00.000Z
+filename = "2m_temperature_ERA5HourlySingleLevel_2004-12-27T00_-110.0_30.0_-25.0_35.0.nc"
+variable_name = "temperature"
+
+    [ERA5HourlySingleLevel.region]
+    kind = "BoundingBox"
+    latitude = [-25, 35]
+    longitude = [-110, 30]
+
+[[ETOPO2022]]
+filename = "ETOPO_2022_v1_60s_N90W180_surface.nc"
+variable_name = "bottom_height"
+
+[[GEBCO2024]]
+filename = "GEBCO_2024.nc"
+variable_name = "bottom_height"
+
+[[IBCAOv5]]
+filename = "ibcao_v5_wgs84_0p01deg.nc"
+variable_name = "bottom_height"
+
+[[IBCSOv2]]
+filename = "IBCSO_v2_bed_WGS84.nc"
+variable_name = "bottom_height"
+
+[[ORCA1]]
+filename = "eORCA1.2_mesh_mask.nc"
+variable_name = "mesh_mask"
+[[ORCA1]]
+filename = "eORCA_R1_bathy_meter_v2.2.nc"
+variable_name = "bottom_height"
+
+[[ORCA12]]
+filename = "bathy_eORCA12_noclosea_from_GEBCO2021_FillZero_S21TT_CloseaCopy.nc"
+variable_name = "bottom_height"
+[[ORCA12]]
+filename = "grid_mask_eORCA12-GO6.nc"
+variable_name = "mesh_mask"
+
+[[WOAAnnual]]
+filename = "woa_t_annual.nc"
+variable_name = "temperature"
+[[WOAAnnual]]
+filename = "woa_s_annual.nc"
+variable_name = "salinity"
+
+[[WOAMonthly]]
+date = 2018-01-01T00:00:00.000Z
+filename = "woa_t_monthly_01.nc"
+variable_name = "temperature"
+[[WOAMonthly]]
+date = 2018-01-01T00:00:00.000Z
+filename = "woa_s_monthly_01.nc"
+variable_name = "salinity"

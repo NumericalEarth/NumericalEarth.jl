@@ -178,21 +178,39 @@ using .DataWrangling.OSPapa
 using PrecompileTools: @setup_workload, @compile_workload
 
 """
-Auto-download datasets listed in `NumericalEarthDataManifest.toml` whenever a manifest sits next
-to the active project's `Project.toml` and we're running in `:auto` mode. Cached files are skipped
-by each dataset's per-dataset `Downloads.download` method, so subsequent runs are cheap.
+Process-level entry point that fires once after every submodule's `__init__` has run.
 
-Skipped during precompilation, in `:strict` mode (the manifest is the user's promise that data is
-already on disk, not a fetch request), and in `:pregenerate` mode (we're recording, not downloading).
+- In `:auto` mode (the default), auto-downloads datasets listed in `NumericalEarthDataManifest.toml`
+  whenever a manifest sits next to the active project's `Project.toml`. Cached files are skipped by
+  each dataset's per-dataset `Downloads.download` method, so subsequent runs are cheap.
+- In `:pregenerate` mode (`NUMERICALEARTH_DATA=pregenerate` or `pregenerate:<dir>`), traces
+  `Base.PROGRAM_FILE` via `pregenerate_dataset_manifest` and `exit(0)` — the script's real
+  execution is skipped. The trace runs silently (`quiet = true`) so only the final
+  `wrote manifest` log appears.
+
+Both paths are no-ops during precompilation, in `:strict` mode, and when no real `PROGRAM_FILE`
+is set (REPL / `julia -e ...`).
 """
 function __init__()
-    # Skip during precompile / sysimage build subprocess.
     ccall(:jl_generating_output, Cint, ()) == 1 && return nothing
-    # Skip in :strict / :pregenerate — those modes have their own semantics.
-    DataWrangling.DataModes.DATA_MODE[] === :auto || return nothing
-    # Skip in REPL / `julia -e ...` — auto-download is only for script-mode runs
-    # (`julia --project my_simulation.jl`) where blocking-on-fetch matches user intent.
     (!isempty(Base.PROGRAM_FILE) && isfile(Base.PROGRAM_FILE)) || return nothing
+
+    mode = DataWrangling.DataModes.DATA_MODE[]
+    if mode === :pregenerate
+        script = abspath(Base.PROGRAM_FILE)
+        # `MANIFEST_DIR[]` is populated by `DataModes.__init__` from the env var; if that init
+        # somehow hasn't run (precompile workload edge case), fall back to the current directory.
+        dir = isempty(DataWrangling.DataModes.MANIFEST_DIR[]) ? pwd() : DataWrangling.DataModes.MANIFEST_DIR[]
+        try
+            manifest = DataWrangling.DataModes.pregenerate_dataset_manifest(script; dir)
+            @info "NUMERICALEARTH_DATA=pregenerate: wrote manifest via AST trace" manifest script
+        catch err
+            @error "NUMERICALEARTH_DATA=pregenerate: trace failed" dir script exception=(err, catch_backtrace())
+        end
+        exit(0)
+    end
+
+    mode === :auto || return nothing
 
     project = Base.active_project()
     project === nothing && return nothing

@@ -42,8 +42,10 @@ end
 """
     $(TYPEDSIGNATURES)
 
-Record `metadata` into [`RECORDED`](@ref) for later serialization to a `DataManifest.toml`. Deduplication
-is by `metadata` equality on the recorded vector. Returns `nothing`.
+Record `metadata` into [`RECORDED`](@ref) for later serialization to a
+`NumericalEarthDataManifest.toml`. Deduplication here is by `metadata` fieldwise `==` (which
+includes `dir`); [`write_manifest`](@ref) does a second, canonical dedup by serialized-dict
+equality (which doesn't). Returns `nothing`.
 """
 function record_for_manifest(metadata::AbstractMetadata)
     any(==(metadata), RECORDED) || push!(RECORDED, metadata)
@@ -90,31 +92,25 @@ filename_to_toml(::Nothing) = nothing
 filename_to_toml(s::AbstractString) = String(s)
 filename_to_toml(f::DatewiseFilename) = collect(String, f.filenames)
 
-function metadata_to_dict(m::Metadatum)
-    d = Dict{String, Any}("variable_name" => String(m.name))
-    m.dates    === nothing || (d["date"]     = m.dates)
-    m.region   === nothing || (d["region"]   = region_to_dict(m.region))
-    m.filename === nothing || (d["filename"] = filename_to_toml(m.filename))
-    return d
-end
-
-function metadata_to_dict(m::Metadata)
-    d = Dict{String, Any}("variable_name" => String(m.name),
-                          "start_date" => first(m.dates), "end_date" => last(m.dates))
-    m.region   === nothing || (d["region"]   = region_to_dict(m.region))
-    m.filename === nothing || (d["filename"] = filename_to_toml(m.filename))
-    return d
-end
-
-function metadata_to_dict(mset::MetadataSet)
-    d = Dict{String, Any}("variable_names" => [String(n) for n in mset.names])
-    if mset.dates isa AbstractVector
-        d["start_date"] = first(mset.dates)
-        d["end_date"]   = last(mset.dates)
-    elseif mset.dates !== nothing
-        d["date"] = mset.dates
+# Single source of truth for the TOML schema. Read [`from_toml`](@ref) for the inverse —
+# the two functions must stay symmetric, and keeping them adjacent + linear makes drift visible.
+function metadata_to_dict(m::AbstractMetadata)
+    d = Dict{String, Any}()
+    if m isa MetadataSet
+        d["variable_names"] = [String(n) for n in m.names]
+    else
+        d["variable_name"] = String(m.name)
     end
-    mset.region === nothing || (d["region"] = region_to_dict(mset.region))
+    if m.dates isa AbstractVector
+        d["start_date"] = first(m.dates)
+        d["end_date"]   = last(m.dates)
+    elseif m.dates !== nothing
+        d["date"] = m.dates
+    end
+    m.region === nothing || (d["region"] = region_to_dict(m.region))
+    if !(m isa MetadataSet)
+        m.filename === nothing || (d["filename"] = filename_to_toml(m.filename))
+    end
     return d
 end
 
@@ -145,9 +141,10 @@ function write_manifest(io::IO, records::AbstractVector)
     grouped = Dict{String, Vector{Dict{String, Any}}}()
     for r in records
         entries = get!(() -> Dict{String, Any}[], grouped, dataset_name(r.dataset))
-        push!(entries, metadata_to_dict(r))
+        d = metadata_to_dict(r)
+        any(==(d), entries) || push!(entries, d)
     end
-    TOML.print(io, grouped)
+    TOML.print(io, grouped; sorted = true)
     return nothing
 end
 
@@ -192,23 +189,24 @@ end
 ##### AbstractMetadata reconstruction
 #####
 
-function from_toml(dataset_name::AbstractString, entry::AbstractDict; download_dir = nothing)
-    dataset  = lookup_dataset(dataset_name)
+function from_toml(name::AbstractString, entry::AbstractDict; download_dir = nothing)
+    dataset  = lookup_dataset(name)
     region   = region_from_toml(get(entry, "region", nothing))
     filename = filename_from_toml(get(entry, "filename", nothing))
     dir      = download_dir === nothing ? default_download_directory(dataset) : String(download_dir)
     if haskey(entry, "variable_names")
-        names = Tuple(Symbol(n) for n in entry["variable_names"])
+        variable_names = Tuple(Symbol(n) for n in entry["variable_names"])
         haskey(entry, "date") &&
-            return MetadataSet(names...; dataset, region, dir, date = entry["date"])
-        return MetadataSet(names...; dataset, region, dir,
+            return MetadataSet(variable_names...; dataset, region, dir, date = entry["date"])
+        return MetadataSet(variable_names...; dataset, region, dir,
                            start_date = entry["start_date"], end_date = entry["end_date"])
     end
-    name = Symbol(entry["variable_name"])
+    variable_name = Symbol(entry["variable_name"])
     haskey(entry, "start_date") &&
-        return Metadata(name; dataset, region, filename, dir,
+        return Metadata(variable_name; dataset, region, filename, dir,
                         start_date = entry["start_date"], end_date = entry["end_date"])
-    return Metadatum(name; dataset, region, filename, dir, date = get(entry, "date", nothing))
+    return Metadatum(variable_name; dataset, region, filename, dir,
+                     date = get(entry, "date", nothing))
 end
 
 """
@@ -229,13 +227,27 @@ end
 
 read_manifest(io::IO; download_dir = nothing) = manifest_from_dict(TOML.parse(read(io, String)); download_dir)
 
+"""
+    $(TYPEDSIGNATURES)
+
+Reconstruct every entry in a parsed manifest dict. Entries whose `dataset` key isn't currently in
+[`DATASET_REGISTRY`](@ref) are skipped with a single grouped warning, so a manifest containing
+records from a dataset module the current session hasn't loaded (e.g. `JRA55` when running a
+`Bathymetry`-only script) doesn't abort the read.
+"""
 function manifest_from_dict(raw::AbstractDict; download_dir = nothing)
     records = AbstractMetadata[]
+    unknown = String[]
     for (name, entries) in raw
+        if !haskey(DATASET_REGISTRY, name)
+            push!(unknown, name)
+            continue
+        end
         for entry in entries
             push!(records, Base.invokelatest(from_toml, name, entry; download_dir))
         end
     end
+    isempty(unknown) || @warn "Skipping manifest entries for unregistered datasets; load the relevant dataset modules to include them" datasets=sort(unknown)
     return records
 end
 
@@ -254,10 +266,16 @@ then serialized via [`write_manifest`](@ref).
 When `overwrite_existing = false` and a manifest already exists at `dir`, the existing records are
 read first and merged (deduplicated) with the newly recorded ones, so this call appends rather
 than replaces. Defaults to `true` (replace).
+
+`quiet = true` (the default) swallows everything the traced script writes to stdout/stderr — most
+of which is noise (test-failure summaries, NetCDF "file not found" warnings, library `@warn`s)
+because pregenerate mode deliberately skips the downloads those tests depend on. Pass
+`quiet = false` to see all of it, e.g. when debugging an unexpected trace failure.
 """
 function pregenerate_dataset_manifest(script::AbstractString;
                                 dir::AbstractString = pwd(),
-                                overwrite_existing::Bool = true)
+                                overwrite_existing::Bool = true,
+                                quiet::Bool = true)
     script_abs = abspath(script)
     source = read(script_abs, String)
     parsed = Meta.parseall(source; filename = script_abs)
@@ -274,7 +292,15 @@ function pregenerate_dataset_manifest(script::AbstractString;
         sandbox = Module(:DataModesSandbox)
         Core.eval(sandbox, :(eval(x)    = Core.eval($sandbox, x)))
         Core.eval(sandbox, :(include(p) = Base.include($sandbox, p)))
-        Core.eval(sandbox, rewritten)
+        if quiet
+            redirect_stdout(devnull) do
+                redirect_stderr(devnull) do
+                    Core.eval(sandbox, rewritten)
+                end
+            end
+        else
+            Core.eval(sandbox, rewritten)
+        end
         new_records = copy(RECORDED)
     finally
         DATA_MODE[] = saved_mode
