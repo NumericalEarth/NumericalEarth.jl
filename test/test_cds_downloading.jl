@@ -6,13 +6,13 @@ using Dates
 using Random: shuffle!
 using NCDatasets
 
+using NumericalEarth.DataWrangling: metadata_path, BoundingBox, Column, Linear, Nearest, is_three_dimensional
 using NumericalEarth.DataWrangling.ERA5
 using NumericalEarth.DataWrangling.ERA5: ERA5HourlySingleLevel, ERA5MonthlySingleLevel,
                                          ERA5_dataset_variable_names, ERA5_netcdf_variable_names
 using NumericalEarth.DataWrangling.ERA5: ERA5HourlyPressureLevels, ERA5MonthlyPressureLevels,
                                          ERA5_all_pressure_levels, ERA5PL_dataset_variable_names,
                                          ERA5PL_netcdf_variable_names, pressure_field
-using NumericalEarth.DataWrangling: metadata_path, BoundingBox, Column, Linear, Nearest
 
 # Internal extension module — exposes dispatch helpers and NetCDF utilities
 # that are not part of the public API but worth pinning behavior for.
@@ -108,7 +108,7 @@ start_date = DateTime(2005, 2, 16, 12)
         @test Nt == 1     # Single time step
 
         # Test that ERA5 is correctly identified as 2D
-        @test NumericalEarth.DataWrangling.ERA5.is_three_dimensional(metadatum) == false
+        @test is_three_dimensional(metadatum) == false
     end
 
     @testset "ERA5 wave variable metadata sizes" begin
@@ -221,7 +221,7 @@ start_date = DateTime(2005, 2, 16, 12)
         meta = Metadatum(:temperature; dataset=ds_sub, region=region, date=start_date)
         Nx, Ny, Nz, Nt = size(meta)
         @test Nz == 2
-        @test NumericalEarth.DataWrangling.ERA5.is_three_dimensional(meta) == true
+        @test is_three_dimensional(meta) == true
 
         # Variable name lookups
         @test ERA5PL_dataset_variable_names[:temperature] == "temperature"
