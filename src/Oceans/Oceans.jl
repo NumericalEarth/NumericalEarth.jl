@@ -32,7 +32,8 @@ using ..EarthSystemModels: EarthSystemModels,
                            ocean_surface_velocities,
                            ocean_surface_salinity,
                            DegreesKelvin,
-                           heat_capacity
+                           heat_capacity,
+                           reference_density
 using ..EarthSystemModels.InterfaceComputations: ComponentExchanger
 
 default_gravitational_acceleration = Oceananigans.defaults.gravitational_acceleration
