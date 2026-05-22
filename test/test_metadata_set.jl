@@ -1,8 +1,7 @@
 include("runtests_setup.jl")
 
 using NumericalEarth.DataWrangling: MetadataSet, Metadata, Metadatum,
-                                    BoundingBox, variable_glossary, metadata_path,
-                                    accepted_metadata_names
+                                    BoundingBox, variable_glossary, metadata_path
 
 # `MetadataSet` is a pure DataWrangling concept: no downloads, no field
 # construction. These tests exercise construction, accessors, iteration,
@@ -213,11 +212,13 @@ end
 end
 
 #####
-##### Per-model accepted_metadata_names filter
+##### Per-model overrides (regression for issue with shared multi-component sets)
 #####
-##### A real Oceananigans/ClimaSeaIce model throws ArgumentError on unknown
-##### kwargs, so the generic dispatch must filter glossary keys down to those
-##### the target model can consume. This stub mimics that strict behavior.
+##### Real Oceananigans/ClimaSeaIce models throw ArgumentError on unknown
+##### kwargs, so they override `set!(model, ::MetadataSet)` to filter down to
+##### the variables they consume. This RestrictiveStubModel mimics that
+##### strictness and demonstrates the override pattern used by the real
+##### dispatches in src/DataWrangling/metadata.jl.
 
 mutable struct RestrictiveStubModel
     accepts  :: Tuple{Vararg{Symbol}}        # short field names this model accepts
@@ -233,20 +234,24 @@ function NumericalEarth.DataWrangling.set!(m::RestrictiveStubModel; kw...)
     return m
 end
 
-# Narrow the verbose-name filter so only variables routable to `m.accepts` are
-# delivered — same pattern as the HydrostaticFreeSurfaceModel/SeaIceModel
-# methods.
-function NumericalEarth.DataWrangling.accepted_metadata_names(m::RestrictiveStubModel)
-    return Tuple(n for (n, s) in variable_glossary if s in m.accepts)
+# Override the dispatch to filter to `m.accepts` — same shape as the real
+# HydrostaticFreeSurfaceModel/SeaIceModel methods.
+function Oceananigans.Fields.set!(m::RestrictiveStubModel, mset::MetadataSet)
+    names = filter(getfield(mset, :names)) do n
+        haskey(variable_glossary, n) && variable_glossary[n] in m.accepts
+    end
+    isempty(names) && return m
+    kwargs = NamedTuple{Tuple(variable_glossary[n] for n in names)}(Tuple(mset[n] for n in names))
+    return set!(m; kwargs...)
 end
 
-@testset "set!(model, mset) — per-model filter (regression for issue with 4-var sets)" begin
+@testset "set!(model, mset) — per-model overrides filter a shared MetadataSet" begin
     mset = MetadataSet(:temperature, :salinity,
                        :sea_ice_thickness, :sea_ice_concentration;
                        dataset = ECCO4Monthly(),
                        date    = snapshot_date)
 
-    # Ocean-like model: only :T, :S
+    # Ocean-like model: override filters to (:T, :S).
     ocean_like = RestrictiveStubModel(:T, :S)
     set!(ocean_like, mset)
     ocean_keys = first.(ocean_like.received)
@@ -256,7 +261,7 @@ end
     @test !(:ℵ in ocean_keys)
     @test length(ocean_keys) == 2
 
-    # Sea-ice-like model: only :h, :ℵ
+    # Sea-ice-like model: override filters to (:h, :ℵ).
     sea_ice_like = RestrictiveStubModel(:h, :ℵ)
     set!(sea_ice_like, mset)
     ice_keys = first.(sea_ice_like.received)
@@ -266,17 +271,10 @@ end
     @test !(:S in ice_keys)
     @test length(ice_keys) == 2
 
-    # Model that accepts nothing relevant — call is a no-op, no error.
+    # No matching variables → no-op, no error.
     empty_model = RestrictiveStubModel(:foo)
     set!(empty_model, mset)
     @test isempty(empty_model.received)
-end
-
-@testset "accepted_metadata_names — fallback covers all glossary keys" begin
-    # The fallback (used by ad-hoc/stub models) is every glossary key, so a
-    # bare StubModel sees every routed kwarg. Real-model methods narrow this
-    # — exercised end-to-end in test_ocean_sea_ice_model.jl.
-    @test Set(accepted_metadata_names(StubModel())) == Set(keys(variable_glossary))
 end
 
 @testset "set!(::NamedTuple, mset) — explicit per-variable" begin

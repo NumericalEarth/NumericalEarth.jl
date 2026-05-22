@@ -499,14 +499,16 @@ end
 """
     set!(model, mset::MetadataSet)
 
-Set fields of `model` from the variables in `mset`, auto-routing verbose
-dataset variable names to short model field-names via the global
-[`variable_glossary`](@ref) registry.
+Generic fallback: route every glossary-mapped variable in `mset` to
+`set!(model; kwargs...)`. Variables not in [`variable_glossary`](@ref) are
+silently skipped.
 
-Variables in `mset` that the target `model` does not consume are silently
-skipped — this lets partial application across coupled-model components work
-naturally. For example, a single 4-variable set can drive both an ocean and a
-sea-ice model:
+This fallback works for permissive models that accept arbitrary kwargs but
+will fail on models (e.g. `HydrostaticFreeSurfaceModel`, `SeaIceModel`) that
+throw `ArgumentError` on unknown kwargs. Those models override this method to
+filter the routed kwargs to those they actually consume — see the methods
+below. The overrides let a single multi-component MetadataSet drive both an
+ocean and a sea-ice model:
 
 ```julia
 mset = MetadataSet(:temperature, :salinity,
@@ -515,44 +517,41 @@ mset = MetadataSet(:temperature, :salinity,
 set!(ocean.model,   mset)   # consumes :temperature, :salinity  → T, S
 set!(sea_ice.model, mset)   # consumes :sea_ice_thickness, :sea_ice_concentration → h, ℵ
 ```
-
-The per-model filter is controlled by [`accepted_metadata_names`](@ref). The
-fallback accepts every key in `variable_glossary` (preserving prior behavior
-for stub/ad-hoc models in tests).
 """
 function Fields.set!(model, mset::MetadataSet)
-    accepted = accepted_metadata_names(model)
-    names = filter(n -> n in accepted, getfield(mset, :names))
+    names = filter(n -> haskey(variable_glossary, n), getfield(mset, :names))
+    return _set_glossary!(model, mset, names)
+end
+
+# Build kwargs from `mset` restricted to verbose `names` and forward to
+# `set!(model; kwargs...)`. Internal helper for the per-model overrides.
+function _set_glossary!(model, mset::MetadataSet, names)
     isempty(names) && return model
     kwargs = NamedTuple{Tuple(variable_glossary[n] for n in names)}(Tuple(mset[n] for n in names))
     return set!(model; kwargs...)
 end
 
-"""
-    accepted_metadata_names(model) -> Tuple{Symbol,...}
-
-Return the verbose `MetadataSet` variable names that `set!(model, mset)` is
-allowed to route to `model`. Defaults to every key in `variable_glossary`;
-model-specific methods narrow this to the subset that the underlying
-`set!(model; kwargs...)` actually accepts (otherwise an unrelated variable in
-a shared `MetadataSet` would trigger an `ArgumentError` from the unknown kwarg).
-"""
-accepted_metadata_names(model) = Tuple(keys(variable_glossary))
-
-# Ocean: route any glossary key whose short name matches a property of
-# velocities, tracers, or free_surface (the three places HydrostaticFreeSurfaceModel's
-# `set!` looks up kwargs).
+# Ocean: route only variables whose short name appears in velocities,
+# tracers, or free_surface — the three places HydrostaticFreeSurfaceModel's
+# `set!` looks up kwargs.
 using Oceananigans.Models.HydrostaticFreeSurfaceModels: HydrostaticFreeSurfaceModel
-function accepted_metadata_names(model::HydrostaticFreeSurfaceModel)
+function Fields.set!(model::HydrostaticFreeSurfaceModel, mset::MetadataSet)
     short = (propertynames(model.velocities)...,
              propertynames(model.tracers)...,
              propertynames(model.free_surface)...)
-    return Tuple(n for (n, s) in variable_glossary if s in short)
+    names = filter(getfield(mset, :names)) do n
+        haskey(variable_glossary, n) && variable_glossary[n] in short
+    end
+    return _set_glossary!(model, mset, names)
 end
 
-# Sea ice: ClimaSeaIce's `set!(::SeaIceModel; h, ℵ)` only knows these two.
+# Sea ice: ClimaSeaIce's `set!(::SeaIceModel; h, ℵ)` only accepts these two.
 using ClimaSeaIce: SeaIceModel
-accepted_metadata_names(::SeaIceModel) = (:sea_ice_thickness, :sea_ice_concentration)
+function Fields.set!(model::SeaIceModel, mset::MetadataSet)
+    sea_ice_names = (:sea_ice_thickness, :sea_ice_concentration)
+    names = filter(in(sea_ice_names), getfield(mset, :names))
+    return _set_glossary!(model, mset, names)
+end
 
 """
     download(mset::MetadataSet; kwargs...)
