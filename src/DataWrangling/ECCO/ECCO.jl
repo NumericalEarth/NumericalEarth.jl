@@ -19,27 +19,11 @@ using NCDatasets: NCDatasets
 using Scratch: Scratch, @get_scratch!
 
 using ...NumericalEarth: NumericalEarth
-using ..DataWrangling:
-    DataWrangling,
-    binary_data_grid,
-    binary_data_size,
-    default_mask_value,
-    dataset_variable_name,
-    default_download_directory,
-    longitude_interfaces,
-    latitude_interfaces,
-    netrc_downloader,
-    NearestNeighborInpainting,
-    metadata_path,
-    GramPerKilogramMinus35,
-    MicromolePerLiter,
-    Metadata,
-    Metadatum,
-    DownloadProgress,
-    metadata_url,
-    first_date,
-    last_date,
-    all_dates
+using ..DataWrangling: DataWrangling, binary_data_grid, binary_data_size, default_mask_value,
+                       dataset_variable_name, default_download_directory, longitude_interfaces,
+                       latitude_interfaces, netrc_downloader, NearestNeighborInpainting, metadata_path,
+                       GramPerKilogramMinus35, MicromolePerLiter, Metadata, Metadatum, DownloadProgress,
+                       metadata_url, first_date, last_date, all_dates
 
 download_ECCO_cache::String = ""
 function __init__()
