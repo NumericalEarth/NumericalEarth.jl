@@ -4,11 +4,11 @@ using Oceananigans.Grids: inactive_node
 atmosphere_sea_ice_fields(coupled_model) = coupled_model.interfaces.exchanger.atmosphere.state
 
 atmosphere_sea_ice_data(coupled_model) = merge(atmosphere_sea_ice_fields(coupled_model),
-                                       (; h_bℓ = boundary_layer_height(coupled_model.atmosphere)))
+                                               (; h_bℓ = boundary_layer_height(coupled_model.atmosphere)))
 
 atmosphere_sea_ice_properties(coupled_model) = (; thermodynamics_parameters = thermodynamics_parameters(coupled_model.atmosphere),
-                                          surface_layer_height = surface_layer_height(coupled_model.atmosphere),
-                                          gravitational_acceleration = coupled_model.interfaces.properties.gravitational_acceleration)
+                                                  surface_layer_height = surface_layer_height(coupled_model.atmosphere),
+                                                  gravitational_acceleration = coupled_model.interfaces.properties.gravitational_acceleration)
 
 atmosphere_sea_ice_radiation_state(coupled_model) = begin
     radiation_exchanger = coupled_model.interfaces.exchanger.radiation

@@ -1,5 +1,6 @@
-using ..EarthSystemModels: sea_ice_concentration, NoAtmosInterfaceModel
 using Oceananigans.Fields: ZeroField
+
+using ..EarthSystemModels: sea_ice_concentration, NoAtmosInterfaceModel
 using ..EarthSystemModels.InterfaceComputations: computed_fluxes
 
 EarthSystemModels.update_net_fluxes!(coupled_model, ::FreezingLimitedOceanTemperature) = nothing
