@@ -211,6 +211,69 @@ end
     @test issubset(received_keys, values(NumericalEarth.DataWrangling.variable_glossary))
 end
 
+#####
+##### Per-model overrides (regression for issue with shared multi-component sets)
+#####
+##### Real Oceananigans/ClimaSeaIce models throw ArgumentError on unknown
+##### kwargs, so they override `set!(model, ::MetadataSet)` to filter down to
+##### the variables they consume. This RestrictiveStubModel mimics that
+##### strictness and demonstrates the override pattern used by the real
+##### dispatches in src/DataWrangling/metadata.jl.
+
+mutable struct RestrictiveStubModel
+    accepts  :: Tuple{Vararg{Symbol}}        # short field names this model accepts
+    received :: Vector{Pair{Symbol, Any}}
+    RestrictiveStubModel(accepts...) = new(accepts, Pair{Symbol, Any}[])
+end
+
+function NumericalEarth.DataWrangling.set!(m::RestrictiveStubModel; kw...)
+    for (k, v) in kw
+        k in m.accepts || throw(ArgumentError("name $k not accepted by RestrictiveStubModel"))
+        push!(m.received, k => v)
+    end
+    return m
+end
+
+# Override the 2-arg dispatch to pass a narrowed `names` to the generic
+# 3-arg form — same shape as the real HydrostaticFreeSurfaceModel/SeaIceModel
+# methods.
+function Oceananigans.Fields.set!(m::RestrictiveStubModel, mset::MetadataSet)
+    names = Tuple(n for (n, s) in variable_glossary if s in m.accepts)
+    return set!(m, mset, names)
+end
+
+@testset "set!(model, mset) — per-model overrides filter a shared MetadataSet" begin
+    mset = MetadataSet(:temperature, :salinity,
+                       :sea_ice_thickness, :sea_ice_concentration;
+                       dataset = ECCO4Monthly(),
+                       date    = snapshot_date)
+
+    # Ocean-like model: override filters to (:T, :S).
+    ocean_like = RestrictiveStubModel(:T, :S)
+    set!(ocean_like, mset)
+    ocean_keys = first.(ocean_like.received)
+    @test :T in ocean_keys
+    @test :S in ocean_keys
+    @test !(:h in ocean_keys)
+    @test !(:ℵ in ocean_keys)
+    @test length(ocean_keys) == 2
+
+    # Sea-ice-like model: override filters to (:h, :ℵ).
+    sea_ice_like = RestrictiveStubModel(:h, :ℵ)
+    set!(sea_ice_like, mset)
+    ice_keys = first.(sea_ice_like.received)
+    @test :h in ice_keys
+    @test :ℵ in ice_keys
+    @test !(:T in ice_keys)
+    @test !(:S in ice_keys)
+    @test length(ice_keys) == 2
+
+    # No matching variables → no-op, no error.
+    empty_model = RestrictiveStubModel(:foo)
+    set!(empty_model, mset)
+    @test isempty(empty_model.received)
+end
+
 @testset "set!(::NamedTuple, mset) — explicit per-variable" begin
     mset = MetadataSet(:temperature, :salinity;
                        dataset = ECCO4Monthly(),
