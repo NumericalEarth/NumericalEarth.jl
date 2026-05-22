@@ -5,6 +5,7 @@ using NumericalEarth
 using NumericalEarth.DataWrangling: metadata_path
 using NumericalEarth.DataWrangling.ORCA: default_south_rows_to_remove
 using Oceananigans
+using Oceananigans.Architectures: CPU, GPU
 using Oceananigans.OrthogonalSphericalShellGrids: TripolarGrid
 using Oceananigans.ImmersedBoundaries: ImmersedBoundaryGrid
 using NCDatasets
