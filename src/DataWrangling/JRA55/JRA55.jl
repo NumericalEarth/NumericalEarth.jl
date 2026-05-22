@@ -7,7 +7,6 @@ export JRA55PrescribedAtmosphere,
        MultiYearJRA55
 
 using Adapt: Adapt
-using CFTime: CFTime
 using Dates: Dates, DateTime, Day, Hour
 using Downloads: Downloads
 using Oceananigans: Oceananigans

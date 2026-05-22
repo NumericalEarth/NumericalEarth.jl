@@ -1,4 +1,3 @@
-using CFTime: AbstractCFDateTime, CFTime
 using Dates: Dates, Date, DateTime
 using Base: @propagate_inbounds
 
@@ -122,17 +121,17 @@ Keyword Arguments
 - `dataset`: Supported datasets are `ETOPO2022()`, `ECCO2Monthly()`, `ECCO2Daily()`, `ECCO4Monthly()`, `EN4Monthly()`,
              `GLORYSDaily()`, `GLORYSMonthly()`, `RepeatYearJRA55()`, and `MultiYearJRA55()`.
 
-- `dates`: The dates of the dataset (`Dates.AbstractDateTime` or `CFTime.AbstractCFDateTime`).
+- `dates`: The dates of the dataset (`Dates.AbstractDateTime`).
            Note that `dates` can either be a range or a vector of dates, representing a time-series.
            For a single date, use [`Metadatum`](@ref).
 
 - `start_date`: If `dates = nothing`, we can prescribe the first date of metadata as a date
-                (`Dates.AbstractDateTime` or `CFTime.AbstractCFDateTime`). If outside the
-                date range of the dataset, the first allowable date is chosen. Default: nothing.
+                (`Dates.AbstractDateTime`). If outside the date range of the dataset, the first
+                allowable date is chosen. Default: nothing.
 
 - `end_date`: If `dates = nothing`, we can prescribe the last date of metadata as a date
-              (`Dates.AbstractDateTime` or `CFTime.AbstractCFDateTime`). If outside the
-                date range of the dataset, the last allowable date is chosen. Default: nothing.
+              (`Dates.AbstractDateTime`). If outside the date range of the dataset, the last
+              allowable date is chosen. Default: nothing.
 
 - `region`: Specifies the spatial region of the dataset. Can be a [`BoundingBox`](@ref)
             for a rectangular region, a [`Column`](@ref) for a single horizontal location,
@@ -171,7 +170,7 @@ function Metadata(variable_name;
     return Metadata(variable_name, dataset, dates, region, dir, filename)
 end
 
-const AnyDateTime  = Union{AbstractCFDateTime, Dates.AbstractDateTime}
+const AnyDateTime  = Dates.AbstractDateTime
 const Metadatum{V} = Metadata{V, <:Union{AnyDateTime, Nothing}} where V
 
 function Base.size(metadata::Metadata)
@@ -207,7 +206,7 @@ function Metadatum(variable_name;
     end
 
     if !isnothing(date) && !(date isa AnyDateTime)
-        msg = "`date` must be `nothing`, a `Dates.AbstractDateTime`, or `CFTime.AbstractCFDateTime`, received $(typeof(date))"
+        msg = "`date` must be `nothing` or a `Dates.AbstractDateTime`, received $(typeof(date))"
         throw(ArgumentError(msg))
     end
 
@@ -348,7 +347,7 @@ Arguments
 Keyword Arguments
 =================
 - `dataset`: the shared dataset (e.g. `ECCO4Monthly()`, `ERA5HourlyPressureLevels()`).
-- `dates`: shared date axis. Either a single `AbstractDateTime`/`AbstractCFDateTime`
+- `dates`: shared date axis. Either a single `AbstractDateTime`
   (yielding a [`MetadatumSet`](@ref)) or an `AbstractVector` of dates.
   Defaults to `all_dates(dataset, first(variable_names))`.
 - `date`: convenience scalar form; cannot be used together with `dates`.
@@ -386,7 +385,7 @@ function MetadataSet(variable_names::Symbol...;
     end
 
     if !isnothing(date) && !(effective_dates isa AnyDateTime)
-        msg = "`date` must be a `Dates.AbstractDateTime` or `CFTime.AbstractCFDateTime`, received $(typeof(date))"
+        msg = "`date` must be a `Dates.AbstractDateTime`, received $(typeof(date))"
         throw(ArgumentError(msg))
     end
 

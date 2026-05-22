@@ -186,8 +186,13 @@ Skipped during precompilation, in `:strict` mode (the manifest is the user's pro
 already on disk, not a fetch request), and in `:pregenerate` mode (we're recording, not downloading).
 """
 function __init__()
+    # Skip during precompile / sysimage build subprocess.
     ccall(:jl_generating_output, Cint, ()) == 1 && return nothing
+    # Skip in :strict / :pregenerate — those modes have their own semantics.
     DataWrangling.DataModes.DATA_MODE[] === :auto || return nothing
+    # Skip in REPL / `julia -e ...` — auto-download is only for script-mode runs
+    # (`julia --project my_simulation.jl`) where blocking-on-fetch matches user intent.
+    (!isempty(Base.PROGRAM_FILE) && isfile(Base.PROGRAM_FILE)) || return nothing
 
     project = Base.active_project()
     project === nothing && return nothing

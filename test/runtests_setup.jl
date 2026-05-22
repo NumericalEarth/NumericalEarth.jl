@@ -15,7 +15,6 @@ using NumericalEarth.WOA
 using Oceananigans.Architectures: architecture, on_architecture
 using Oceananigans.OutputReaders: interpolate!
 
-using CFTime
 using Dates
 
 using CUDA: @allowscalar
@@ -23,7 +22,7 @@ using CUDA: @allowscalar
 gpu_test = parse(Bool, get(ENV, "GPU_TEST", "false"))
 test_architectures = gpu_test ? [GPU()] : [CPU()]
 
-start_date = DateTimeProlepticGregorian(1993, 1, 1)
+start_date = DateTime(1993, 1, 1)
 
 test_datasets = (ECCO2Monthly(), 
                  ECCO2Daily(), 

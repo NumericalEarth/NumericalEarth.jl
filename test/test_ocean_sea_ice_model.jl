@@ -33,9 +33,9 @@ using ClimaSeaIce.Rheologies
         for dataset in [ECCO4Monthly(), EN4Monthly()]
             @info "Testing timestepping with $(typeof(dataset)) on $A"
 
-            start_date = DateTimeProlepticGregorian(1993, 1, 1)
+            start_date = DateTime(1993, 1, 1)
             time_resolution = dataset isa ECCO2Daily ? Day(1) : Month(1)
-            end_date = DateTimeProlepticGregorian(1993, 2, 1)
+            end_date = DateTime(1993, 2, 1)
             dates = start_date : time_resolution : end_date
     
             initial_state = MetadataSet(:temperature, :salinity;

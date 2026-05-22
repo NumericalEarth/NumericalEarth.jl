@@ -30,7 +30,7 @@ end
                     error("what am I supposed to download?")
 
         for variable in variables
-            metadata = Metadata(variable; dates=DateTimeProlepticGregorian(1993, 1, 1), dataset)
+            metadata = Metadata(variable; dates=DateTime(1993, 1, 1), dataset)
             filepath = metadata_path(metadata)
             isfile(filepath) && rm(filepath; force=true)
 
