@@ -497,18 +497,16 @@ function Fields.set!(fields::NamedTuple, mset::MetadataSet)
 end
 
 """
-    set!(model, mset::MetadataSet)
+    set!(model, mset::MetadataSet, names=keys(variable_glossary))
 
-Generic fallback: route every glossary-mapped variable in `mset` to
-`set!(model; kwargs...)`. Variables not in [`variable_glossary`](@ref) are
-silently skipped.
+Route variables from `mset` to `set!(model; kwargs...)`, translating verbose
+dataset names to short model field-names via [`variable_glossary`](@ref).
+Only the intersection of `names` and `mset.names` is forwarded.
 
-This fallback works for permissive models that accept arbitrary kwargs but
-will fail on models (e.g. `HydrostaticFreeSurfaceModel`, `SeaIceModel`) that
-throw `ArgumentError` on unknown kwargs. Those models override this method to
-filter the routed kwargs to those they actually consume — see the methods
-below. The overrides let a single multi-component MetadataSet drive both an
-ocean and a sea-ice model:
+The default `names` is every glossary key — fine for permissive models. Models
+that throw on unknown kwargs (`HydrostaticFreeSurfaceModel`, `SeaIceModel`)
+override the 2-argument form to pass a narrower `names`, letting a single
+multi-component MetadataSet drive both an ocean and a sea-ice model:
 
 ```julia
 mset = MetadataSet(:temperature, :salinity,
@@ -518,16 +516,10 @@ set!(ocean.model,   mset)   # consumes :temperature, :salinity  → T, S
 set!(sea_ice.model, mset)   # consumes :sea_ice_thickness, :sea_ice_concentration → h, ℵ
 ```
 """
-function Fields.set!(model, mset::MetadataSet)
-    names = filter(n -> haskey(variable_glossary, n), getfield(mset, :names))
-    return _set_glossary!(model, mset, names)
-end
-
-# Build kwargs from `mset` restricted to verbose `names` and forward to
-# `set!(model; kwargs...)`. Internal helper for the per-model overrides.
-function _set_glossary!(model, mset::MetadataSet, names)
-    isempty(names) && return model
-    kwargs = NamedTuple{Tuple(variable_glossary[n] for n in names)}(Tuple(mset[n] for n in names))
+function Fields.set!(model, mset::MetadataSet, names=keys(variable_glossary))
+    routed = filter(in(names), getfield(mset, :names))
+    isempty(routed) && return model
+    kwargs = NamedTuple{Tuple(variable_glossary[n] for n in routed)}(Tuple(mset[n] for n in routed))
     return set!(model; kwargs...)
 end
 
@@ -539,18 +531,14 @@ function Fields.set!(model::HydrostaticFreeSurfaceModel, mset::MetadataSet)
     short = (propertynames(model.velocities)...,
              propertynames(model.tracers)...,
              propertynames(model.free_surface)...)
-    names = filter(getfield(mset, :names)) do n
-        haskey(variable_glossary, n) && variable_glossary[n] in short
-    end
-    return _set_glossary!(model, mset, names)
+    names = Tuple(n for (n, s) in variable_glossary if s in short)
+    return set!(model, mset, names)
 end
 
 # Sea ice: ClimaSeaIce's `set!(::SeaIceModel; h, ℵ)` only accepts these two.
 using ClimaSeaIce: SeaIceModel
 function Fields.set!(model::SeaIceModel, mset::MetadataSet)
-    sea_ice_names = (:sea_ice_thickness, :sea_ice_concentration)
-    names = filter(in(sea_ice_names), getfield(mset, :names))
-    return _set_glossary!(model, mset, names)
+    return set!(model, mset, (:sea_ice_thickness, :sea_ice_concentration))
 end
 
 """

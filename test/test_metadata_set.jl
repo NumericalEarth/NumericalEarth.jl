@@ -234,15 +234,12 @@ function NumericalEarth.DataWrangling.set!(m::RestrictiveStubModel; kw...)
     return m
 end
 
-# Override the dispatch to filter to `m.accepts` — same shape as the real
-# HydrostaticFreeSurfaceModel/SeaIceModel methods.
+# Override the 2-arg dispatch to pass a narrowed `names` to the generic
+# 3-arg form — same shape as the real HydrostaticFreeSurfaceModel/SeaIceModel
+# methods.
 function Oceananigans.Fields.set!(m::RestrictiveStubModel, mset::MetadataSet)
-    names = filter(getfield(mset, :names)) do n
-        haskey(variable_glossary, n) && variable_glossary[n] in m.accepts
-    end
-    isempty(names) && return m
-    kwargs = NamedTuple{Tuple(variable_glossary[n] for n in names)}(Tuple(mset[n] for n in names))
-    return set!(m; kwargs...)
+    names = Tuple(n for (n, s) in variable_glossary if s in m.accepts)
+    return set!(m, mset, names)
 end
 
 @testset "set!(model, mset) — per-model overrides filter a shared MetadataSet" begin
