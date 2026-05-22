@@ -3,7 +3,7 @@ using Oceananigans.Grids: inactive_node
 atmosphere_ocean_fields(coupled_model) = coupled_model.interfaces.exchanger.atmosphere.state
 
 atmosphere_ocean_data(coupled_model) = merge(atmosphere_ocean_fields(coupled_model),
-                                       (; h_bℓ = boundary_layer_height(coupled_model.atmosphere)))
+                                             (; h_bℓ = boundary_layer_height(coupled_model.atmosphere)))
 
 atmosphere_ocean_properties(coupled_model) = (; thermodynamics_parameters = thermodynamics_parameters(coupled_model.atmosphere),
                                                 surface_layer_height = surface_layer_height(coupled_model.atmosphere),
