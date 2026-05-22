@@ -36,7 +36,7 @@ examples = [
     Example("Near-global ocean simulation", "near_global_ocean_simulation", false),
     Example("Global climate simulation", "global_climate_simulation", false),
     # Example("Veros ocean simulation", "veros_ocean_forced_simulation", false),
-    Example("Breeze over two oceans", "breeze_over_two_oceans", false),
+    Example("Breeze over four oceans", "breeze_over_four_oceans", false),
     Example("ERA5 hourly data", "ERA5_hourly_data", true),
 ]
 
