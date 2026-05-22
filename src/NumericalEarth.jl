@@ -90,7 +90,6 @@ export
     DatasetRestoring,
     atmosphere_simulation,
     ocean_simulation,
-    nonhydrostatic_ocean_simulation,
     sea_ice_simulation,
     default_sea_ice,
     sea_ice_dynamics,

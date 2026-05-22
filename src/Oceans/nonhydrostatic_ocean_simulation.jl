@@ -14,7 +14,8 @@ using SeawaterPolynomials.TEOS10: TEOS10EquationOfState
                                     boundary_conditions::NamedTuple = NamedTuple(),
                                     verbose = false)
 
-Construct and return a nonhydrostatic ocean simulation suitable for Large Eddy Simulation (LES).
+Construct and return a nonhydrostatic ocean simulation suitable for Large Eddy
+Simulation (LES). Called by `ocean_simulation(grid; model=:nonhydrostatic, ...)`.
 
 Uses Oceananigans' `NonhydrostaticModel`, which resolves the full 3D pressure field
 (no hydrostatic approximation). No free surface, barotropic forcing, or split-explicit

@@ -1,6 +1,6 @@
 module Oceans
 
-export ocean_simulation, nonhydrostatic_ocean_simulation, SlabOcean, PrescribedOcean
+export ocean_simulation, SlabOcean, PrescribedOcean
 
 using Adapt: Adapt, adapt
 using KernelAbstractions: @kernel, @index

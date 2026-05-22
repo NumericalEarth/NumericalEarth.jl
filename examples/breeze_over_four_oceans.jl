@@ -138,7 +138,7 @@ nh_ocean_grid = RectilinearGrid(grid.architecture,
                                 z = (-50, 0),
                                 topology = (Periodic, Flat, Bounded))
 
-nh_ocean = nonhydrostatic_ocean_simulation(nh_ocean_grid; coriolis, Δt=2)
+nh_ocean = ocean_simulation(nh_ocean_grid; model=:nonhydrostatic, coriolis, Δt=2)
 set!(nh_ocean.model, T=Tᵢ, S=35)
 
 # ## Coupled models
