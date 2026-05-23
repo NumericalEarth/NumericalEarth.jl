@@ -86,6 +86,19 @@ function Oceananigans.TimeSteppers.reconcile_state!(model::ESM)
     return nothing
 end
 
+function remove_default_stop_callbacks!(component)
+    callbacks = component.callbacks
+
+    if !isnothing(callbacks)
+        pop!(callbacks, :stop_time_exceeded, nothing)
+        pop!(callbacks, :stop_iteration_exceeded, nothing)
+        pop!(callbacks, :wall_time_limit_exceeded, nothing)
+        pop!(callbacks, :nan_checker, nothing)
+    end
+
+    return nothing
+end
+
 reference_density(unsupported) =
     throw(ArgumentError("Cannot extract reference density from $(typeof(unsupported))"))
 
@@ -165,24 +178,8 @@ function EarthSystemModel(radiation, atmosphere, land, sea_ice, ocean;
         """ maxlog=1
     end
 
-    if ocean isa Simulation
-        if !isnothing(ocean.callbacks)
-            # Remove some potentially irksome callbacks from the ocean simulation
-            pop!(ocean.callbacks, :stop_time_exceeded, nothing)
-            pop!(ocean.callbacks, :stop_iteration_exceeded, nothing)
-            pop!(ocean.callbacks, :wall_time_limit_exceeded, nothing)
-            pop!(ocean.callbacks, :nan_checker, nothing)
-        end
-    end
-
-    if sea_ice isa Simulation
-        if !isnothing(sea_ice.callbacks)
-            pop!(sea_ice.callbacks, :stop_time_exceeded, nothing)
-            pop!(sea_ice.callbacks, :stop_iteration_exceeded, nothing)
-            pop!(sea_ice.callbacks, :wall_time_limit_exceeded, nothing)
-            pop!(sea_ice.callbacks, :nan_checker, nothing)
-        end
-    end
+    ocean   isa Simulation && remove_default_stop_callbacks!(ocean)
+    sea_ice isa Simulation && remove_default_stop_callbacks!(sea_ice)
 
     # Contains information about flux contributions: bulk formula, prescribed fluxes, etc.
     if isnothing(interfaces) && !(isnothing(atmosphere) && isnothing(sea_ice))
