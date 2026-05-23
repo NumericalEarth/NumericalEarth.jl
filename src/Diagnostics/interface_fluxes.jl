@@ -23,7 +23,7 @@ function frazil_temperature_flux(esm::EarthSystemModel)
     return frazil_temperature_flux
 end
 
-frazil_temperature_flux(esm::NoSeaIceOceanInterfaceModel) = ZeroField()
+frazil_temperature_flux(::NoSeaIceOceanInterfaceModel) = ZeroField()
 
 """
     net_ocean_temperature_flux(esm::EarthSystemModel)
@@ -50,7 +50,7 @@ function sea_ice_ocean_temperature_flux(esm::EarthSystemModel)
     return sea_ice_ocean_temperature_flux
 end
 
-sea_ice_ocean_temperature_flux(esm::NoSeaIceOceanInterfaceModel) = ZeroField()
+sea_ice_ocean_temperature_flux(::NoSeaIceOceanInterfaceModel) = ZeroField()
 
 """
     atmosphere_ocean_temperature_flux(esm::EarthSystemModel)
@@ -79,7 +79,7 @@ function frazil_heat_flux(esm::EarthSystemModel)
     return frazil_heat_flux
 end
 
-frazil_heat_flux(esm::NoSeaIceOceanInterfaceModel) = ZeroField()
+frazil_heat_flux(::NoSeaIceOceanInterfaceModel) = ZeroField()
 
 """
     net_ocean_heat_flux(esm::EarthSystemModel)
@@ -105,7 +105,7 @@ function sea_ice_ocean_heat_flux(esm::EarthSystemModel)
     return sea_ice_ocean_heat_flux
 end
 
-sea_ice_ocean_heat_flux(esm::NoSeaIceOceanInterfaceModel) = ZeroField()
+sea_ice_ocean_heat_flux(::NoSeaIceOceanInterfaceModel) = ZeroField()
 
 """
     atmosphere_ocean_heat_flux(esm::EarthSystemModel)
@@ -147,7 +147,7 @@ function sea_ice_ocean_salinity_flux(esm::EarthSystemModel)
     return sea_ice_ocean_salinity_flux
 end
 
-sea_ice_ocean_salinity_flux(esm::NoSeaIceOceanInterfaceModel) = ZeroField()
+sea_ice_ocean_salinity_flux(::NoSeaIceOceanInterfaceModel) = ZeroField()
 
 """
     atmosphere_ocean_salinity_flux(esm::EarthSystemModel)
@@ -191,7 +191,7 @@ function sea_ice_ocean_freshwater_flux(esm::EarthSystemModel; reference_salinity
     return sea_ice_ocean_freshwater_flux
 end
 
-sea_ice_ocean_freshwater_flux(esm::NoSeaIceOceanInterfaceModel; kwargs...) = ZeroField()
+sea_ice_ocean_freshwater_flux(::NoSeaIceOceanInterfaceModel; kwargs...) = ZeroField()
 
 """
     atmosphere_ocean_freshwater_flux(esm::EarthSystemModel)
