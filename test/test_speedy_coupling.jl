@@ -1,8 +1,8 @@
-using SpeedyWeather
-using NumericalEarth
 using ConservativeRegridding
-using Oceananigans
 using Dates
+using Oceananigans
+using NumericalEarth
+using SpeedyWeather
 using Test
 
 NumericalEarthSpeedyWeatherExt = Base.get_extension(NumericalEarth, :NumericalEarthSpeedyWeatherExt)

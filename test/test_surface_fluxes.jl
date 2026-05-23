@@ -1,5 +1,12 @@
 include("runtests_setup.jl")
 
+using ClimaSeaIce.SeaIceDynamics
+using ClimaSeaIce.Rheologies
+using CUDA
+using KernelAbstractions: @kernel, @index
+using Oceananigans.TimeSteppers: update_state!
+using Oceananigans.Units: hours, days
+using NumericalEarth.DataWrangling: all_dates
 using NumericalEarth.EarthSystemModels.InterfaceComputations:
                                    ComponentInterfaces,
                                    celsius_to_kelvin,
@@ -9,26 +16,14 @@ using NumericalEarth.EarthSystemModels.InterfaceComputations:
                                    SkinTemperature,
                                    BulkTemperature,
                                    DiffusiveFlux
-
-using Thermodynamics
-using CUDA
-using KernelAbstractions: @kernel, @index
-using Oceananigans.TimeSteppers: update_state!
-using Oceananigans.Units: hours, days
-using NumericalEarth.DataWrangling: all_dates
-
-using ClimaSeaIce.SeaIceDynamics
-using ClimaSeaIce.Rheologies
-
-import NumericalEarth.EarthSystemModels.InterfaceComputations: surface_specific_humidity
-
 using Statistics: mean, std
+using Thermodynamics
 
 struct FixedSpecificHumidity{FT}
     qᵒᶜ :: FT
 end
 
-@inline surface_specific_humidity(h::FixedSpecificHumidity, args...) = h.qᵒᶜ
+@inline NumericalEarth.EarthSystemModels.InterfaceComputations.surface_specific_humidity(h::FixedSpecificHumidity, args...) = h.qᵒᶜ
 
 @testset "Test surface fluxes" begin
     for arch in test_architectures
