@@ -61,10 +61,10 @@ start_date = DateTime(2005, 2, 16, 12)
         @test length(lat) > 0
 
         # Check that data is within expected bounds
-        @test minimum(lon) >= -1  # Allow some tolerance
-        @test maximum(lon) <= 6
-        @test minimum(lat) >= 39
-        @test maximum(lat) <= 46
+        @test minimum(lon) ≥ -1  # Allow some tolerance
+        @test maximum(lon) ≤ 6
+        @test minimum(lat) ≥ 39
+        @test maximum(lat) ≤ 46
 
         # Check that the temperature data exists and is valid
         t2m = ds["t2m"]

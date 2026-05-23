@@ -108,7 +108,7 @@ const ZIP_MAGIC = UInt8[0x50, 0x4b, 0x03, 0x04]
 function is_zip(path)
     open(path, "r") do io
         magic = read(io, 4)
-        return length(magic) >= 4 && magic == ZIP_MAGIC
+        return length(magic) ≥ 4 && magic == ZIP_MAGIC
     end
 end
 
