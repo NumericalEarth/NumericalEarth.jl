@@ -5,7 +5,6 @@ using NumericalEarth.Atmospheres: PrescribedAtmosphere, PrescribedPrecipitationF
 using NumericalEarth.Radiations: PrescribedRadiation
 using Oceananigans.BoundaryConditions: BoundaryCondition, Flux, getbc
 using Oceananigans.Units: minutes
-using CUDA: @allowscalar
 
 const OSPAPA_TEST_START = DateTime(2012, 10, 1)
 const OSPAPA_TEST_END   = DateTime(2012, 10, 3)
