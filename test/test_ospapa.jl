@@ -43,16 +43,16 @@ const OSPAPA_TEST_END   = DateTime(2012, 10, 3)
             sw_data = interior(ℐꜜˢʷ)
             lw_data = interior(ℐꜜˡʷ)
 
-            @test all(sw_data .>= 0)                  # downwelling SW is non-negative
-            @test all(lw_data .>= 0)                  # downwelling LW is non-negative
+            @test all(sw_data .≥ 0)                  # downwelling SW is non-negative
+            @test all(lw_data .≥ 0)                  # downwelling LW is non-negative
             @test maximum(sw_data) < 1500             # below solar constant
             @test maximum(lw_data) < 600              # reasonable atmospheric LW
             @test maximum(lw_data) > 50               # not all zero
 
             # Air temperature in physical range (K)
             T_data = interior(atmosphere.tracers.T)
-            @test all(T_data .>= 240)
-            @test all(T_data .<= 320)
+            @test all(T_data .≥ 240)
+            @test all(T_data .≤ 320)
         end
     end
 end

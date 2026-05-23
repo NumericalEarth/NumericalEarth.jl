@@ -28,7 +28,7 @@ function restrict(bbox_interfaces, interfaces::NTuple{2,Any}, N)
     Δ = (right - left) / N
     i⁻ = max(floor(Int, (bbox_interfaces[1] - left) / Δ), 0)
     i⁺ = min(ceil( Int, (bbox_interfaces[2] - left) / Δ), N)
-    if i⁺ <= i⁻
+    if i⁺ ≤ i⁻
         i⁺ = min(i⁻ + 1, N)
         i⁻ = max(i⁺ - 1, 0)
     end

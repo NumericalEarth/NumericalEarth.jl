@@ -68,7 +68,7 @@ start_date = DateTime(2005, 2, 16, 12)
 
         # Check that the temperature data exists and is valid
         t2m = ds["t2m"]
-        @test ndims(t2m) >= 2
+        @test ndims(t2m) ≥ 2
 
         close(ds)
 
