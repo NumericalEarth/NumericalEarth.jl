@@ -8,7 +8,7 @@
 # CairoMakie to visualize the simulation.
 
 using NumericalEarth
-using PythonCall
+using CondaPkg, PythonCall
 using Oceananigans, Oceananigans.Units
 using CairoMakie
 using Printf
@@ -68,12 +68,11 @@ ocean.set_forcing = set_forcing_tke_only
 # This includes 2-meter wind velocity, temperature, humidity, downwelling longwave and shortwave
 # radiation, as well as freshwater fluxes.
 
-atmos = JRA55PrescribedAtmosphere(; backend = JRA55NetCDFBackend(10))
+atmos = JRA55PrescribedAtmosphere()
+radiation = JRA55PrescribedRadiation()
 
-# The coupled ocean--atmosphere model.
-# We use the default radiation model and we do not couple an ice model for simplicity.
+# The coupled ocean--atmosphere model. We do not couple an ice model for simplicity.
 
-radiation = Radiation()
 coupled_model = OceanSeaIceModel(ocean, nothing; atmosphere=atmos, radiation)
 simulation = Simulation(coupled_model; Δt = 1800, stop_time = 60days)
 
@@ -122,7 +121,7 @@ un = @lift(u[$n])
 vn = @lift(v[$n])
 Nt = length(u)
 
-fig = Figure(resolution = (1000, 700))
+fig = Figure(size = (1000, 700))
 ax1 = Axis(fig[1, 1]; title = "Surface zonal velocity (m/s)", xlabel = "", ylabel = "Latitude")
 ax2 = Axis(fig[2, 1]; title = "Surface meridional velocity (m/s)", xlabel = "", ylabel = "Latitude")
 hm1 = heatmap!(ax1, un, colormap = :bwr, colorrange = (-0.2, 0.2))

@@ -1,56 +1,53 @@
 module NumericalEarthCopernicusMarineExt
 
-using NumericalEarth
-using CopernicusMarine
-
-using Oceananigans
-using Oceananigans.DistributedComputations: @root
-
+using CopernicusMarine: CopernicusMarine
 using Dates: DateTime
-using NumericalEarth.DataWrangling.GLORYS: GLORYSMetadata, GLORYSMetadatum
-
-import NumericalEarth.DataWrangling: download_dataset
+using Downloads: Downloads
+using Oceananigans.DistributedComputations: @root
+using NumericalEarth: NumericalEarth
+using NumericalEarth.DataWrangling.GLORYS: GLORYS, GLORYSMetadata, GLORYSMetadatum
 
 # Download each date individually, instead of downloading the entire dataset at once.
 # This is useful for a possible extension of the temporal horizon of the dataset.
-function download_dataset(metadata::GLORYSMetadata; kwargs...)
+function Downloads.download(metadata::GLORYSMetadata; kwargs...)
     paths = Array{String}(undef, length(metadata))
     for (m, metadatum) in enumerate(metadata)
-        paths[m] = download_dataset(metadatum; kwargs...)
+        paths[m] = Downloads.download(metadatum; kwargs...)
     end
     return paths
 end
 
-function download_dataset(meta::GLORYSMetadatum;
-                          skip_existing=true,
-                          username=get(ENV, "COPERNICUS_USERNAME", nothing),
-                          password=get(ENV, "COPERNICUS_PASSWORD", nothing),
-                          additional_kw...)
+function Downloads.download(meta::GLORYSMetadatum;
+                                                       skip_existing=true,
+                                                       username=get(ENV, "COPERNICUS_USERNAME", nothing),
+                                                       password=get(ENV, "COPERNICUS_PASSWORD", nothing),
+                                                       additional_kw...)
 
     output_directory = meta.dir
-    output_filename = NumericalEarth.DataWrangling.metadata_filename(meta)
+    output_filename = meta.filename
     output_path = joinpath(output_directory, output_filename)
     isfile(output_path) && return output_path
 
     toolbox = CopernicusMarine.copernicusmarine
 
-    variable_name = NumericalEarth.DataWrangling.GLORYS.GLORYS_dataset_variable_names[meta.name]
+    variable_name = GLORYS.GLORYS_dataset_variable_names[meta.name]
     variables = CopernicusMarine.pylist([variable_name])
 
-    dataset_id = NumericalEarth.DataWrangling.GLORYS.copernicusmarine_dataset_id(meta.dataset)
-    datetime_kw = if meta.dataset isa NumericalEarth.DataWrangling.GLORYS.GLORYSStatic
+    dataset_id = GLORYS.copernicusmarine_dataset_id(meta.dataset)
+    datetime_kw = if meta.dataset isa GLORYS.GLORYSStatic
         NamedTuple()
     else
-        start_datetime = NumericalEarth.DataWrangling.GLORYS.start_date_str(meta.dates)
-        end_datetime = NumericalEarth.DataWrangling.GLORYS.end_date_str(meta.dates)
+        start_datetime = GLORYS.start_date_str(meta.dates)
+        end_datetime = GLORYS.end_date_str(meta.dates)
         (; start_datetime, end_datetime)
     end
 
-    lon_kw = longitude_bounds_kw(meta.bounding_box)
-    lat_kw = latitude_bounds_kw(meta.bounding_box)
-    z_kw = depth_bounds_kw(meta.bounding_box)
+    lon_kw = longitude_bounds_kw(meta.region)
+    lat_kw = latitude_bounds_kw(meta.region)
+    z_kw = depth_bounds_kw(meta.region)
+    selection_method = coordinates_selection_method(meta.region)
 
-    kw = (; coordinates_selection_method = "outside",
+    kw = (; coordinates_selection_method = selection_method,
           skip_existing,
           dataset_id,
           variables,
@@ -76,12 +73,38 @@ end
 longitude_bounds_kw(::Nothing) = NamedTuple()
 latitude_bounds_kw(::Nothing) = NamedTuple()
 depth_bounds_kw(::Nothing) = NamedTuple()
+coordinates_selection_method(::Nothing) = "outside"
 
 const BBOX = NumericalEarth.DataWrangling.BoundingBox
+const COL  = NumericalEarth.DataWrangling.Column
+const LIN  = NumericalEarth.DataWrangling.Linear
+const NR   = NumericalEarth.DataWrangling.Nearest
 
-longitude_bounds_kw(bounding_box::BBOX) = longitude_bounds_kw(bounding_box.longitude)
-latitude_bounds_kw(bounding_box::BBOX) = latitude_bounds_kw(bounding_box.latitude)
-depth_bounds_kw(bounding_box::BBOX) = depth_bounds_kw(bounding_box.z)
+longitude_bounds_kw(bbox::BBOX) = longitude_bounds_kw(bbox.longitude)
+latitude_bounds_kw(bbox::BBOX) = latitude_bounds_kw(bbox.latitude)
+depth_bounds_kw(bbox::BBOX) = depth_bounds_kw(bbox.z)
+coordinates_selection_method(::BBOX) = "outside"
+
+# Column with Nearest interpolation: download the single nearest point
+longitude_bounds_kw(col::COL{<:Any, <:Any, <:Any, NR}) = (; minimum_longitude = col.longitude, maximum_longitude = col.longitude)
+latitude_bounds_kw(col::COL{<:Any, <:Any, <:Any, NR})  = (; minimum_latitude = col.latitude, maximum_latitude = col.latitude)
+depth_bounds_kw(col::COL) = depth_bounds_kw(col.z)
+coordinates_selection_method(::COL{<:Any, <:Any, <:Any, NR}) = "nearest"
+
+# Column with Linear interpolation: expand by a small margin for interpolation
+longitude_bounds_kw(col::COL{<:Any, <:Any, <:Any, LIN}) = expand_longitude(col.longitude)
+latitude_bounds_kw(col::COL{<:Any, <:Any, <:Any, LIN})  = expand_latitude(col.latitude)
+coordinates_selection_method(::COL{<:Any, <:Any, <:Any, LIN}) = "outside"
+
+function expand_longitude(lon)
+    ε = 1/6  # slightly more than one GLORYS grid cell (1/12°)
+    return (; minimum_longitude = lon - ε, maximum_longitude = lon + ε)
+end
+
+function expand_latitude(lat)
+    ε = 1/6
+    return (; minimum_latitude = lat - ε, maximum_latitude = lat + ε)
+end
 
 function longitude_bounds_kw(longitude)
     minimum_longitude = longitude[1]

@@ -186,6 +186,8 @@ function regrid_bathymetry(target_grid, metadata;
                            major_basins = 1,
                            cache = true)
 
+    validate_dataset_coverage(target_grid, metadata)
+
     config = BathymetryRegridding(target_grid, metadata;
                                   height_above_water, minimum_depth,
                                   interpolation_passes, major_basins)
@@ -201,7 +203,7 @@ function regrid_bathymetry(target_grid, metadata;
         end
     end
 
-    download_dataset(metadata)
+    download(metadata)
 
     target_z = _regrid_bathymetry(target_grid, metadata;
                                   height_above_water,
@@ -240,7 +242,7 @@ function _regrid_bathymetry(target_grid, metadata;
     filepath = metadata_path(metadata)
     dataset = Dataset(filepath, "r")
 
-    z_data = convert(Array{FT}, dataset["z"][:, :])
+    z_data = convert(Array{FT}, dataset[dataset_variable_name(metadata)][:, :])
     close(dataset)
 
     if !isnothing(height_above_water)
@@ -299,8 +301,8 @@ function regrid_bathymetry(target_grid::DistributedGrid, metadata;
                                   height_above_water, minimum_depth,
                                   interpolation_passes, major_basins)
 
-    # download_dataset uses @root internally; all ranks must call it
-    download_dataset(metadata)
+    # download uses @root internally; all ranks must call it
+    download(metadata)
 
     # Only rank 0 performs cache lookup and computation to avoid OOM
     bottom_height = if arch.local_rank == 0
@@ -367,7 +369,8 @@ function interpolate_bathymetry_in_passes(native_z, target_grid;
     Nφ = Int[Nφ..., Nφt]
 
     old_z  = native_z
-    TX, TY = topology(target_grid)
+    TXt, _, _ = topology(target_grid)
+    _, TYn, _ = topology(native_z.grid)
 
     Hx, Hy, Hz = Oceananigans.halo_size(native_z.grid)
 
@@ -381,7 +384,7 @@ function interpolate_bathymetry_in_passes(native_z, target_grid;
                                          latitude = (latitude[1],  latitude[2]),
                                          longitude = (longitude[1], longitude[2]),
                                          z = (0, 1),
-                                         topology = (TX, TY, Bounded),
+                                         topology = (TXt, TYn, Bounded),
                                          halo = (Hx, Hy, Hz))
 
         new_z = Field{Center, Center, Nothing}(new_grid)

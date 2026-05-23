@@ -1,9 +1,90 @@
 
+@inline flux_field(condition) = condition
+@inline flux_field(bc::MultipleFluxes) = bc.flux_field
+@inline flux_field(bc::DiscreteBoundaryFunction) = flux_field(bc.func)
+
+const NoSeaIceOceanInterfaceModel = Union{NoSeaIceInterfaceModel,
+                                          NoOceanInterfaceModel,
+                                          NoInterfaceModel}
+
+###########################
+### Temperature fluxes
+###########################
+
+"""
+    frazil_temperature_flux(esm::EarthSystemModel)
+
+Return the two-dimensional frazil temperature flux (K m s⁻¹) in a coupled `esm`.
+"""
+function frazil_temperature_flux(esm::EarthSystemModel)
+    ρᵒᶜ = esm.interfaces.ocean_properties.reference_density
+    cᵒᶜ = esm.interfaces.ocean_properties.heat_capacity
+    frazil_temperature_flux = 1 / (ρᵒᶜ * cᵒᶜ) * frazil_heat_flux(esm)
+    return Field(frazil_temperature_flux)
+end
+
+frazil_temperature_flux(esm::NoSeaIceOceanInterfaceModel) = ZeroField()
+
+"""
+    net_ocean_temperature_flux(esm::EarthSystemModel)
+
+Return the net temperature flux (K m s⁻¹) at the ocean's surface in a coupled `esm`.
+"""
+function net_ocean_temperature_flux(esm::EarthSystemModel)
+    Jᵀ = flux_field(esm.ocean.model.tracers.T.boundary_conditions.top.condition)
+    net_ocean_temperature_flux = Jᵀ + frazil_temperature_flux(esm)
+    return Field(net_ocean_temperature_flux)
+end
+
+
+"""
+    sea_ice_ocean_temperature_flux(esm::EarthSystemModel)
+
+Return the sea ice-ocean temperature flux (K m s⁻¹) at the sea ice-ocean interface
+in a coupled `esm`.
+"""
+function sea_ice_ocean_temperature_flux(esm::EarthSystemModel)
+    ρᵒᶜ = esm.interfaces.ocean_properties.reference_density
+    cᵒᶜ = esm.interfaces.ocean_properties.heat_capacity
+    sea_ice_ocean_temperature_flux = 1 / (ρᵒᶜ * cᵒᶜ) * sea_ice_ocean_heat_flux(esm)
+    return Field(sea_ice_ocean_temperature_flux)
+end
+
+sea_ice_ocean_temperature_flux(esm::NoSeaIceOceanInterfaceModel) = ZeroField()
+
+"""
+    atmosphere_ocean_temperature_flux(esm::EarthSystemModel)
+
+Return the atmosphere-ocean temperature flux (K m s⁻¹) at the atmosphere-ocean
+interface in a coupled `esm`.
+"""
+function atmosphere_ocean_temperature_flux(esm::EarthSystemModel)
+    atmosphere_ocean_temperature_flux =
+        net_ocean_temperature_flux(esm) - sea_ice_ocean_temperature_flux(esm)
+    return Field(atmosphere_ocean_temperature_flux)
+end
+
+
 ###########################
 ### Heat fluxes
 ###########################
 
 """
+<<<<<<< HEAD
+=======
+    frazil_heat_flux(esm::EarthSystemModel)
+
+Return the two-dimensional frazil heat flux (W m⁻²) in a coupled `esm`.
+"""
+function frazil_heat_flux(esm::EarthSystemModel)
+    frazil_heat_flux = esm.interfaces.sea_ice_ocean_interface.fluxes.frazil_heat
+    return frazil_heat_flux
+end
+
+frazil_heat_flux(esm::NoSeaIceOceanInterfaceModel) = ZeroField()
+
+"""
+>>>>>>> main
     net_ocean_heat_flux(esm::EarthSystemModel)
 
 Return the net heat flux (W m⁻²) at the ocean's surface in a coupled `esm`.
@@ -23,9 +104,17 @@ Return the sea ice-ocean heat flux (W m⁻²) at the sea ice-ocean interface
 in a coupled `esm`.
 """
 function sea_ice_ocean_heat_flux(esm::EarthSystemModel)
+<<<<<<< HEAD
     frazil_heat_flux = esm.interfaces.sea_ice_ocean_interface.fluxes.frazil_heat
     return esm.interfaces.sea_ice_ocean_interface.fluxes.interface_heat + frazil_heat_flux
+=======
+    sea_ice_ocean_fluxes = esm.interfaces.sea_ice_ocean_interface.fluxes
+    sea_ice_ocean_heat_flux = sea_ice_ocean_fluxes.interface_heat + frazil_heat_flux(esm)
+    return Field(sea_ice_ocean_heat_flux)
+>>>>>>> main
 end
+
+sea_ice_ocean_heat_flux(esm::NoSeaIceOceanInterfaceModel) = ZeroField()
 
 """
     atmosphere_ocean_heat_flux(esm::EarthSystemModel)
@@ -33,8 +122,58 @@ end
 Return the atmosphere-ocean heat flux (W m⁻²) at the atmosphere-ocean
 interface in a coupled `esm`.
 """
+<<<<<<< HEAD
 atmosphere_ocean_heat_flux(esm::EarthSystemModel) =
     net_ocean_heat_flux(esm) - sea_ice_ocean_heat_flux(esm)
+=======
+function atmosphere_ocean_heat_flux(esm::EarthSystemModel)
+    ρᵒᶜ = esm.interfaces.ocean_properties.reference_density
+    cᵒᶜ = esm.interfaces.ocean_properties.heat_capacity
+    atmosphere_ocean_heat_flux = ρᵒᶜ * cᵒᶜ * atmosphere_ocean_temperature_flux(esm)
+    return Field(atmosphere_ocean_heat_flux)
+end
+
+
+###########################
+### Salinity fluxes
+###########################
+
+"""
+    net_ocean_salinity_flux(esm::EarthSystemModel)
+
+Return the net salinity flux (g/kg m s⁻¹) at the ocean's surface in a coupled `esm`.
+"""
+function net_ocean_salinity_flux(esm::EarthSystemModel)
+    Jˢ = flux_field(esm.ocean.model.tracers.S.boundary_conditions.top.condition)
+    return Jˢ
+end
+
+
+"""
+    sea_ice_ocean_salinity_flux(esm::EarthSystemModel)
+
+Return the sea ice-ocean salinity flux (g/kg m s⁻¹) at the sea ice-ocean interface
+in a coupled `esm`.
+"""
+function sea_ice_ocean_salinity_flux(esm::EarthSystemModel)
+    sea_ice_ocean_salinity_flux = esm.interfaces.sea_ice_ocean_interface.fluxes.salt
+    return sea_ice_ocean_salinity_flux
+end
+
+sea_ice_ocean_salinity_flux(esm::NoSeaIceOceanInterfaceModel) = ZeroField()
+
+"""
+    atmosphere_ocean_salinity_flux(esm::EarthSystemModel)
+
+Return the atmosphere-ocean salinity flux (g/kg m s⁻¹) at the atmosphere-ocean
+interface in a coupled `esm`.
+"""
+function atmosphere_ocean_salinity_flux(esm::EarthSystemModel)
+    atmosphere_ocean_salinity_flux =
+        net_ocean_salinity_flux(esm) - sea_ice_ocean_salinity_flux(esm)
+    return Field(atmosphere_ocean_salinity_flux)
+end
+>>>>>>> main
 
 
 ###########################
@@ -57,6 +196,8 @@ in a coupled `esm`.
 """
 sea_ice_ocean_freshwater_flux(esm::EarthSystemModel) =
     esm.interfaces.sea_ice_ocean_interface.fluxes.freshwater_flux
+
+sea_ice_ocean_freshwater_flux(esm::NoSeaIceOceanInterfaceModel; kwargs...) = ZeroField()
 
 """
     atmosphere_ocean_freshwater_flux(esm::EarthSystemModel)

@@ -120,6 +120,7 @@ end
 # We use the JRA55 reanalysis for the atmosphere and the ECCO4Monthly dataset to initialize our slab ocean.
 # We also initialize the sea ice with climatological data and see how the sea ice evolves.
 
+using CUDA
 using NumericalEarth
 using Oceananigans
 using Oceananigans.Units
@@ -140,7 +141,7 @@ set!(sea_ice.model, h=Metadatum(:sea_ice_thickness,     dataset=ECCO4Monthly()),
                     ℵ=Metadatum(:sea_ice_concentration, dataset=ECCO4Monthly()))
 
 interfaces = ComponentInterfaces(atmosphere, slab_ocean, sea_ice; exchange_grid=grid)
-coupled_model = NumericalEarth.EarthSystemModel(atmosphere, slab_ocean, sea_ice; interfaces)
+coupled_model = NumericalEarth.EarthSystemModel(; atmosphere, sea_ice, ocean=slab_ocean, interfaces)
 
 simulation = Simulation(coupled_model, Δt=60minutes, stop_time=120days)
 run!(simulation)

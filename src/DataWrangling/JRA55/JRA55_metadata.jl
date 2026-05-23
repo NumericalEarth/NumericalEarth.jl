@@ -1,36 +1,60 @@
-using CFTime
-using Dates
-using Downloads
-
+using CFTime: CFTime
+using Dates: Dates, DateTime, Day, Hour
+using Downloads: Downloads
 using Oceananigans.DistributedComputations
 
-using NumericalEarth.DataWrangling
-using NumericalEarth.DataWrangling: Metadata, metadata_path, download_progress, AnyDateTime
+using ..DataWrangling: all_dates, DataWrangling, Metadata, metadata_path,
+                       DownloadProgress, DatasetBackend, metadata_url,
+                       dataset_variable_name, getfilename
 
-import Dates: year, month, day
-import Oceananigans.Fields: set!
-import Base
+abstract type JRA55Dataset end
 
-import Oceananigans.Fields: set!, location
-import NumericalEarth.DataWrangling: all_dates, metadata_filename, download_dataset, default_download_directory, available_variables
+struct MultiYearJRA55 <: JRA55Dataset end
+struct RepeatYearJRA55 <: JRA55Dataset  end
 
-struct MultiYearJRA55 end
-struct RepeatYearJRA55 end
+const JRA55Metadata{D} = Metadata{<:JRA55Dataset, D}
+const JRA55Metadatum   = Metadatum{<:JRA55Dataset}
 
-const JRA55Metadata{D} = Metadata{<:Union{<:MultiYearJRA55, <:RepeatYearJRA55}, D}
-const JRA55Metadatum   = Metadatum{<:Union{<:MultiYearJRA55, <:RepeatYearJRA55}}
+const RepeatYearJRA55Metadatum = Metadatum{<:RepeatYearJRA55}
+const MultiYearJRA55Metadatum  = Metadatum{<:MultiYearJRA55}
 
-default_download_directory(::Union{<:MultiYearJRA55, <:RepeatYearJRA55}) = download_JRA55_cache
+DataWrangling.default_download_directory(::JRA55Dataset) = download_JRA55_cache
 
-Base.size(data::JRA55Metadata) = (640, 320, length(data.dates))
-Base.size(::JRA55Metadatum)    = (640, 320, 1)
+function Base.size(::JRA55Dataset, variable)
+    if variable ∈ [:river_freshwater_flux, :iceberg_freshwater_flux]
+        (1440, 720, 1)
+    else
+        (640, 320, 1)
+    end
+end
 
-# JRA55 is a spatially 2D dataset
-is_three_dimensional(data::JRA55Metadata) = false
+DataWrangling.longitude_interfaces(md::JRA55Metadata) = first(jra55_native_interfaces(metadata_path(first(md))))
+DataWrangling.latitude_interfaces(md::JRA55Metadata)  = last(jra55_native_interfaces(metadata_path(first(md))))
+
+DataWrangling.longitude_name(::JRA55Metadata) = "lon"
+DataWrangling.latitude_name(::JRA55Metadata)  = "lat"
+
+# `lon_bnds`/`lat_bnds` hold only the left/lower interface; append the trailing one.
+function jra55_native_interfaces(path)
+    ds = Dataset(path)
+    λn = Array{Float64}(ds["lon_bnds"][1, :])
+    φn = Array{Float64}(ds["lat_bnds"][1, :])
+    close(ds)
+
+    # `lon_bnds` / `lat_bnds` hold only the left/lower interface,
+    # so we need to append the trailing interface.
+    push!(λn, λn[1] + 360)
+    push!(φn, 90)
+    return λn, φn
+end
+
+DataWrangling.is_three_dimensional(::JRA55Metadata) = false
+
+DataWrangling.default_inpainting(::JRA55Metadata) = nothing
 
 # The whole range of dates in the different dataset datasets
 # NOTE! rivers and icebergs have a different frequency! (typical JRA55 data is three-hourly while rivers and icebergs are daily)
-function all_dates(::RepeatYearJRA55, name)
+function DataWrangling.all_dates(::RepeatYearJRA55, name)
     if name == :river_freshwater_flux || name == :iceberg_freshwater_flux
         return DateTime(1990, 1, 1) : Day(1) : DateTime(1990, 12, 31)
     else
@@ -38,10 +62,10 @@ function all_dates(::RepeatYearJRA55, name)
     end
 end
 
-all_dates(::MultiYearJRA55, name) = JRA55_multiple_year_dates[name]
+DataWrangling.all_dates(::MultiYearJRA55, name) = JRA55_multiple_year_dates[name]
 
 # Fallback, if we not provide the name, take the highest frequency
-all_dates(dataset::Union{<:MultiYearJRA55, <:RepeatYearJRA55}) = all_dates(dataset, :temperature)
+DataWrangling.all_dates(dataset::JRA55Dataset) = all_dates(dataset, :temperature)
 
 # Valid for all JRA55 datasets
 function JRA55_time_indices(dataset, dates, name)
@@ -57,20 +81,20 @@ function JRA55_time_indices(dataset, dates, name)
 end
 
 # File name generation specific to each Dataset dataset
-# Note that `RepeatYearJRA55` has only one file associated, so we can define
-# the filename directly for the whole `Metadata` object, independent of the `dates`
-function metadata_filename(metadata::Metadata{<:RepeatYearJRA55}) # No difference
-    shortname = dataset_variable_name(metadata)
-    return "RYF." * shortname * ".1990_1991.nc"
-end
+# Note that `RepeatYearJRA55` has only one file associated, so the filename
+# is independent of the date. Override the multi-date fallback to return a plain String.
+DataWrangling.metadata_filename(::RepeatYearJRA55, name, date, region) =
+    "RYF." * JRA55_dataset_variable_names[name] * ".1990_1991.nc"
 
-function metadata_filename(metadata::Metadatum{<:MultiYearJRA55})
-    # fix the filename
-    shortname = dataset_variable_name(metadata)
-    year      = Dates.year(metadata.dates)
+DataWrangling.build_filename(::RepeatYearJRA55, name, dates::AbstractArray, region) =
+    "RYF." * JRA55_dataset_variable_names[name] * ".1990_1991.nc"
+
+function DataWrangling.metadata_filename(::MultiYearJRA55, name, date, region)
+    shortname = JRA55_dataset_variable_names[name]
+    year      = Dates.year(date)
     suffix    = "_input4MIPs_atmosphericState_OMIP_MRI-JRA55-do-1-5-0_gr_"
 
-    end_date = last(JRA55_multiple_year_dates[metadata.name])
+    end_date = last(JRA55_multiple_year_dates[name])
     end_hour = Hour(end_date)
 
     if end_hour == Hour(0)
@@ -85,11 +109,9 @@ function metadata_filename(metadata::Metadatum{<:MultiYearJRA55})
 end
 
 # Convenience functions
-dataset_variable_name(data::JRA55Metadata) = JRA55_dataset_variable_names[data.name]
-location(::JRA55Metadata) = (Center, Center, Center)
-
-available_variables(::MultiYearJRA55)  = JRA55_variable_names
-available_variables(::RepeatYearJRA55) = JRA55_variable_names
+DataWrangling.dataset_variable_name(data::JRA55Metadata) = JRA55_dataset_variable_names[data.name]
+DataWrangling.available_variables(::JRA55Dataset) = JRA55_variable_names
+Oceananigans.Fields.location(::JRA55Metadata) = (Center, Center, Center)
 
 # A list of all variables provided in the JRA55 dataset:
 JRA55_variable_names = (:river_freshwater_flux,
@@ -186,14 +208,14 @@ JRA55_repeat_year_urls = Dict(
                            "RYF.vas.1990_1991.nc?rlkey=f9y3e57kx8xrb40gbstarf0x6&dl=0",
 )
 
-metadata_url(metadata::Metadata{<:RepeatYearJRA55}) = JRA55_repeat_year_urls[metadata.name]
+DataWrangling.metadata_url(metadata::Metadata{<:RepeatYearJRA55}) = JRA55_repeat_year_urls[metadata.name]
 
-function metadata_url(m::Metadata{<:MultiYearJRA55})
+function DataWrangling.metadata_url(m::Metadata{<:MultiYearJRA55})
     prefix = JRA55_multiple_year_prefix[m.name]
-    return JRA55_multiple_year_url * prefix * "/" * dataset_variable_name(m) * "/gr/v20200916/" * metadata_filename(m)
+    return JRA55_multiple_year_url * prefix * "/" * dataset_variable_name(m) * "/gr/v20200916/" * m.filename
 end
 
-function download_dataset(metadata::JRA55Metadata)
+function Downloads.download(metadata::JRA55Metadata)
 
     @root for metadatum in metadata
 
@@ -201,9 +223,9 @@ function download_dataset(metadata::JRA55Metadata)
         filepath = metadata_path(metadatum)
 
         if !isfile(filepath)
-            Downloads.download(fileurl, filepath; progress=download_progress)
+            Downloads.download(fileurl, filepath; progress=DownloadProgress())
         end
     end
 
-    return nothing
+    return metadata_path(metadata)
 end

@@ -1,13 +1,5 @@
-using Oceananigans.Grids: AbstractGrid, prettysummary
-
-using Adapt
-using Printf
-using Thermodynamics: Liquid
-using KernelAbstractions.Extras.LoopInfo: @unroll
-using Statistics: norm
-
-import Thermodynamics as AtmosphericThermodynamics
-import Thermodynamics.Parameters: Rv_over_Rd
+using Oceananigans.Utils: prettysummary
+using Thermodynamics: Thermodynamics as AtmosphericThermodynamics
 
 #####
 ##### Bulk turbulent fluxes based on similarity theory
@@ -267,7 +259,6 @@ L★ = u★² / ϰ b★ .
     return b★
 end
 
-import Statistics
 
 #####
 ##### Struct that represents a 3-tuple of momentum, heat, and water vapor
@@ -566,6 +557,52 @@ Base.show(io::IO, ss::SplitStabilityFunction) = print(io, "SplitStabilityFunctio
     Ψ_unstable = stability_profile(ψ.unstable, ζ)
     stable = ζ > 0
     return ifelse(stable, Ψ_stable, Ψ_unstable)
+end
+
+#####
+##### Linear stable stability function (ψ = -c ζ, bounded)
+#####
+
+"""
+    LinearStableStabilityFunction{FT}
+
+A simple linear stability function for stable conditions: ``ψ = -c ζ``,
+bounded at ``|ζ| ≤ ζ_{max}``.
+
+Used by the NCAR/Large-Yeager (2004) bulk formulae with ``c = 5`` and ``ζ_{max} = 10``.
+
+References:
+- Large, W.G. & Yeager, S.G. (2004): NCAR/TN-460+STR
+"""
+@kwdef struct LinearStableStabilityFunction{FT} <: AbstractStabilityFunction
+    coefficient :: FT = 5.0
+    maximum_stability_parameter :: FT = 10.0
+end
+
+@inline function stability_profile(ψ::LinearStableStabilityFunction, ζ)
+    c = ψ.coefficient
+    ζmax = ψ.maximum_stability_parameter
+    ζ⁺ = max(zero(ζ), ζ)
+    return -c * min(ζ⁺, ζmax)
+end
+
+Base.summary(::LinearStableStabilityFunction{FT}) where FT = "LinearStableStabilityFunction{$FT}"
+Base.show(io::IO, ::LinearStableStabilityFunction{FT}) where FT = print(io, "LinearStableStabilityFunction{$FT}")
+
+"""
+    large_yeager_stability_functions(FT = Float64)
+
+NCAR/Large-Yeager (2004) stability functions combining:
+- Unstable: Paulson (1970) with γ = 16
+- Stable: linear ψ = -5ζ, bounded at |ζ| ≤ 10
+
+Used for OMIP-2 protocol compliance.
+"""
+function large_yeager_stability_functions(FT=Oceananigans.defaults.FloatType)
+    stable   = LinearStableStabilityFunction{FT}()
+    momentum = SplitStabilityFunction(stable, PaulsonMomentumStabilityFunction{FT}())
+    scalar   = SplitStabilityFunction(stable, PaulsonScalarStabilityFunction{FT}())
+    return SimilarityScales(momentum, scalar, scalar)
 end
 
 function atmosphere_sea_ice_stability_functions(FT=Oceananigans.defaults.FloatType)

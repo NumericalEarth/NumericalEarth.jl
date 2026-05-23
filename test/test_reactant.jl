@@ -1,8 +1,11 @@
 using Test
 using Reactant
-using Oceananigans.Models: initialization_update_state!
+using Oceananigans: Oceananigans
 using Oceananigans.Architectures: ReactantState
+using Oceananigans.Grids: Bounded, Flat, LatitudeLongitudeGrid, Periodic
+using Oceananigans.Models.HydrostaticFreeSurfaceModels.SplitExplicitFreeSurfaces: SplitExplicitFreeSurface
 using NumericalEarth
+using CUDA
 
 gpu_test = get(ENV, "GPU_TEST", "false") == "true"
 
@@ -33,8 +36,7 @@ end
     atmos_times = range(0, 360Oceananigans.Units.days, length=10)
     atmosphere  = PrescribedAtmosphere(atmos_grid, atmos_times)
 
-    radiation = Radiation(arch)
-    coupled_model = OceanOnlyModel(ocean; atmosphere, radiation)
+    coupled_model = OceanOnlyModel(ocean; atmosphere)
 
     # Test that Reactant does _not_ initialize in the constructor for EarthSystemModel
     exchanger = coupled_model.interfaces.exchanger.atmosphere

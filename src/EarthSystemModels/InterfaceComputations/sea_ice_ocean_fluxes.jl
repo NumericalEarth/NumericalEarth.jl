@@ -1,7 +1,8 @@
 using Oceananigans.Operators: Δzᶜᶜᶜ
-using NumericalEarth.EarthSystemModels: ocean_temperature, ocean_salinity
 using ClimaSeaIce.SeaIceThermodynamics: melting_temperature
 using ClimaSeaIce.SeaIceDynamics: x_momentum_stress, y_momentum_stress
+
+using ..EarthSystemModels: ocean_temperature, ocean_salinity
 
 """
     compute_sea_ice_ocean_fluxes!(coupled_model)
@@ -36,7 +37,7 @@ function compute_sea_ice_ocean_fluxes!(interface, ocean, sea_ice, ocean_properti
     hˢⁱ = sea_ice.model.ice_thickness
     hc = sea_ice.model.ice_consolidation_thickness
 
-    phase_transitions = sea_ice.model.ice_thermodynamics.phase_transitions
+    phase_transitions = sea_ice.model.phase_transitions
     liquidus = phase_transitions.liquidus
     L = phase_transitions.reference_latent_heat
 
@@ -176,12 +177,12 @@ end
     qᶠ = δ𝒬ᶠʳᶻ / ℰ
 
     @inbounds begin
-        Tᴺ = Tᵒᶜ[i, j, Nz]
-        Sᴺ = Sᵒᶜ[i, j, Nz]
+        Tᴺ  = Tᵒᶜ[i, j, Nz]
+        Sᴺ  = Sᵒᶜ[i, j, Nz]
         Sˢⁱ = ice_salinity[i, j, 1]
         hˢⁱ = ice_thickness[i, j, 1]
-        ℵᵢ = ice_concentration[i, j, 1]
-        hc = ice_consolidation_thickness[i, j, 1]
+        ℵᵢ  = ice_concentration[i, j, 1]
+        hc  = ice_consolidation_thickness[i, j, 1]
     end
 
     # Extract internal temperature (for ConductiveFluxTEF, zero otherwise)
@@ -203,9 +204,8 @@ end
                                                   liquidus, ocean_properties, ℰ, u★)
 
     # Store interface values and heat flux
-    @inbounds T★[i, j, 1] = Tᵦ
-    @inbounds S★[i, j, 1] = Sᵦ
     @inbounds 𝒬ⁱⁿᵗ[i, j, 1] = 𝒬ⁱᵒ
+    store_interface_state!(flux_formulation, T★, S★, i, j, Tᵦ, Sᵦ)
 
     # =============================================
     # Part 4: Salt flux
