@@ -302,8 +302,44 @@ end
     OceanSeaIceModel(ocean, sea_ice; atmosphere=nothing, radiation=nothing, land=nothing, kw...)
 
 Construct a coupled ocean--sea ice model.
-This is a convenience constructor for [`EarthSystemModel`](@ref) with an explicit sea ice component
-and an optional prescribed atmosphere. Positional arguments are `ocean` then `sea_ice`.
+
+This is a convenience constructor for [`EarthSystemModel`](@ref) with explicit ocean and sea ice components
+and optional prescribed atmosphere, prescribed radiation, and prescribed land.
+
+Positional arguments are `ocean` then `sea_ice`.
+
+Example
+=======
+
+```jldoctest
+using NumericalEarth, Oceananigans
+
+grid = LatitudeLongitudeGrid(size = (20, 20, 4),
+                             z = (-100, 0),
+                             latitude = (-80, 80),
+                             longitude = (0, 360),
+                             halo = (6, 6, 3))
+
+ocean = ocean_simulation(grid, closure=nothing)
+set!(ocean.model, T=20, S=35, u=0.01, v=-0.005)
+
+sea_ice = sea_ice_simulation(grid, ocean)
+
+hi(λ, φ) = φ > 70 || φ < -70
+set!(sea_ice.model, h=hi, ℵ=hi)
+
+coupled_model = OceanSeaIceModel(ocean, sea_ice)
+
+# output
+
+EarthSystemModel{CPU}(time = 0 seconds, iteration = 0)
+├── radiation: Nothing
+├── atmosphere: Nothing
+├── land: Nothing
+├── sea_ice: SeaIceModel
+├── ocean: HydrostaticFreeSurfaceModel{CPU, LatitudeLongitudeGrid}(time = 0 seconds, iteration = 0)
+└── interfaces: ComponentInterfaces
+````
 """
 function OceanSeaIceModel(ocean, sea_ice; atmosphere=nothing, land=nothing, radiation=nothing, kw...)
     is_ocean_component(ocean) || throw(invalid_component(:OceanSeaIceModel, 1, "an ocean simulation", ocean))
