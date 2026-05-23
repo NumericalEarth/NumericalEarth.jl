@@ -66,6 +66,8 @@ function Oceananigans.Simulations.reset_clock!(model::ESM)
 
     for component in components(model)
         reset_clock!(component)
+
+        # Keep prescribed atmospheric forcing synchronized during component resets.
         update_state!(model.atmosphere)
     end
 
