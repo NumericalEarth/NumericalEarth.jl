@@ -82,21 +82,18 @@ ocean = ocean_simulation(grid)
 ocean.model
 
 # We initialize the ocean model with ECCO4 temperature and salinity for January 1, 1992.
-
-set!(ocean.model, T=Metadatum(:temperature, dataset=ECCO4Monthly()),
-                  S=Metadatum(:salinity, dataset=ECCO4Monthly()))
+date = DateTime(1992, 1, 1)
+set!(ocean.model, MetadataSet(:temperature, :salinity; dataset=ECCO4Monthly(), date))
 
 # ### Prescribed atmosphere and radiation
 #
 # Next we build a prescribed atmosphere state and radiation component,
 # which together drive the ocean simulation. The atmospheric data and
 # downwelling shortwave / longwave radiation are both prescribed using JRA55.
-# The number of snapshots loaded into memory is set by the backend.
 
-jra55_backend = JRA55NetCDFBackend(41)
-atmosphere = JRA55PrescribedAtmosphere(arch; backend=jra55_backend)
-radiation  = JRA55PrescribedRadiation(arch; backend=jra55_backend)
-land       = JRA55PrescribedLand(arch; backend=jra55_backend)
+atmosphere = JRA55PrescribedAtmosphere(arch)
+radiation  = JRA55PrescribedRadiation(arch)
+land       = JRA55PrescribedLand(arch)
 
 # ## The coupled simulation
 

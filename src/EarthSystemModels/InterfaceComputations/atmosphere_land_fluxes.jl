@@ -208,7 +208,7 @@ end
     u★ = convert(FT, 1e-4)
 
     q_formulation = interface_properties.specific_humidity_formulation
-    qₛ = surface_specific_humidity(q_formulation, ℂᵃᵗ, Tᵃᵗ, pᵃᵗ, qᵃᵗ, Tₛ, βₛ)
+    qₛ = surface_specific_humidity(q_formulation, ℂᵃᵗ, pᵃᵗ, Tₛ, βₛ, qᵃᵗ)
     initial_interface_state = InterfaceState(u★, u★, u★, uₛ, vₛ, Tₛ, βₛ, qₛ)
 
     interface_state = compute_interface_state(turbulent_flux_formulation,

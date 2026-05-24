@@ -1,5 +1,7 @@
-using NumericalEarth.EarthSystemModels: EarthSystemModel
-using NumericalEarth.EarthSystemModels.InterfaceComputations: kernel_radiation_properties
+using Oceananigans.Grids: inactive_node
+
+using ..EarthSystemModels: EarthSystemModel
+using ..EarthSystemModels.InterfaceComputations: kernel_radiation_properties
 
 """
     apply_air_land_radiative_fluxes!(coupled_model)
@@ -9,7 +11,9 @@ diagnostic radiative fluxes into `coupled_model.radiation.interface_fluxes.land`
 
 When `coupled_model.radiation === nothing`, this is a no-op.
 """
-function apply_air_land_radiative_fluxes!(coupled_model::EarthSystemModel)
+EarthSystemModels.apply_air_land_radiative_fluxes!(::EarthSystemModel{<:Nothing}) = nothing
+
+function EarthSystemModels.apply_air_land_radiative_fluxes!(coupled_model::EarthSystemModel)
     land = coupled_model.land
     isnothing(land) && return nothing
 
@@ -72,7 +76,7 @@ end
     ℐₐˡʷ = absorbed_longwave_radiation(rs.ϵ, rs.ℐꜜˡʷ)
     ℐₜˢʷ = transmitted_shortwave_radiation(rs.α, rs.ℐꜜˢʷ)
 
-    # Total radiative contribution to surface energy balance. Positive is into the land.
+    # Total radiative contribution to surface energy balance, positive into the land.
     ΣQ_rad = -ℐꜛˡʷ - (ℐₐˡʷ + ℐₜˢʷ)
 
     inactive = inactive_node(i, j, 1, grid, Center(), Center(), Center())

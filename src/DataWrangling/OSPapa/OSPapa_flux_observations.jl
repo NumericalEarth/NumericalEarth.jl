@@ -1,6 +1,3 @@
-import Oceananigans: location
-import Oceananigans.Fields: set!
-
 using Oceananigans.Architectures: on_architecture
 using Oceananigans.DistributedComputations: child_architecture
 
@@ -35,7 +32,7 @@ const OSPapa_flux_variable_names = Dict(
 
 dataset_variable_name(md::OSPapaFluxMetadata) = OSPapa_flux_variable_names[md.name]
 
-location(::OSPapaFluxMetadata) = (Center, Center, Center)
+Oceananigans.location(::OSPapaFluxMetadata) = (Center, Center, Center)
 is_three_dimensional(::OSPapaFluxMetadata) = false
 conversion_units(::OSPapaFluxMetadatum) = nothing
 default_inpainting(::OSPapaFluxMetadata) = nothing
@@ -43,7 +40,7 @@ default_inpainting(::OSPapaFluxMetadata) = nothing
 Base.size(::OSPapaFluxHourly, variable) = (1, 1, 1)
 
 # The uniform hourly cache file is regenerated from the raw ERDDAP file by
-# download_dataset; metadata_epoch and metadata_time_step describe the
+# download; metadata_epoch and metadata_time_step describe the
 # intended uniform axis.
 metadata_epoch(::OSPapaFluxHourly)     = DateTime(2007, 6, 8)
 metadata_time_step(::OSPapaFluxHourly) = 3600
@@ -81,7 +78,7 @@ function download_ospapa_flux(; start_date, end_date, dir=download_OSPapa_cache)
         t1 = Dates.format(end_date, "yyyy-mm-ddTHH:MM:SSZ")
         url = "$(ERDDAP_BASE)/ocs_papa_flux.nc?$(ERDDAP_FLUX_VARS)&time>=$(t0)&time<=$(t1)"
         @info "Downloading OS Papa flux data from ERDDAP..."
-        Downloads.download(url, filepath; progress=download_progress)
+        Downloads.download(url, filepath; progress=DownloadProgress())
     end
     return filepath
 end
@@ -94,7 +91,7 @@ metadata_filename(::OSPapaFluxHourly, name, date, region) = flux_uniform_filenam
 build_filename(::OSPapaFluxHourly, name, dates::AbstractArray, region) =
     flux_uniform_filename(first(dates), last(dates))
 
-function download_dataset(md::OSPapaFluxMetadata)
+function Downloads.download(md::OSPapaFluxMetadata)
     uniform_path = joinpath(md.dir, metadata_filename(md))
     isfile(uniform_path) && return uniform_path
 
@@ -173,7 +170,7 @@ function retrieve_data(metadata::OSPapaFluxMetadatum)
     return reshape([data], 1, 1, 1)
 end
 
-function set!(target_field::Field, metadata::OSPapaFluxMetadatum; kw...)
+function Oceananigans.Fields.set!(target_field::Field, metadata::OSPapaFluxMetadatum; kw...)
     grid = target_field.grid
     arch = child_architecture(grid)
     meta_field = Field(metadata, arch; kw...)

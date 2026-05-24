@@ -1,7 +1,7 @@
 # PrescribedRadiation-aware methods for the radiation getter functions
 # declared (with `nothing` fallbacks) in InterfaceComputations.
 
-@inline kernel_radiation_properties(r::PrescribedRadiation) =
+@inline EarthSystemModels.InterfaceComputations.kernel_radiation_properties(r::PrescribedRadiation) =
     (σ = r.stefan_boltzmann_constant,
      surface_properties = r.surface_properties)
 
@@ -21,17 +21,20 @@ end
     return (; σ, α, ϵ, ℐꜜˢʷ, ℐꜜˡʷ)
 end
 
-@inline air_sea_interface_radiation_state(rk, exchanger_state, i, j, k, grid, time) =
+@inline EarthSystemModels.InterfaceComputations.air_sea_interface_radiation_state(
+        rk, exchanger_state, i, j, k, grid, time) =
     _surface_radiation_state(rk.surface_properties.ocean,
                              rk, exchanger_state, i, j, k, grid, time)
 
-@inline air_sea_ice_interface_radiation_state(rk, exchanger_state, i, j, k, grid, time) =
+@inline EarthSystemModels.InterfaceComputations.air_sea_ice_interface_radiation_state(
+        rk, exchanger_state, i, j, k, grid, time) =
     _surface_radiation_state(rk.surface_properties.sea_ice,
                              rk, exchanger_state, i, j, k, grid, time)
 
 # Land radiative properties are optional (no `:land` key ⇒ no land
 # radiative forcing); fall back to a zero state in that case.
-@inline function air_land_interface_radiation_state(rk, exchanger_state, i, j, k, grid, time)
+@inline function EarthSystemModels.InterfaceComputations.air_land_interface_radiation_state(
+        rk, exchanger_state, i, j, k, grid, time)
     haskey(rk.surface_properties, :land) || return _zero_radiation_state(grid)
     return _surface_radiation_state(rk.surface_properties.land,
                                     rk, exchanger_state, i, j, k, grid, time)

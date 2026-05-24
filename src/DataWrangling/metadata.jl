@@ -1,7 +1,6 @@
-using CFTime
-using Dates
+using CFTime: AbstractCFDateTime, CFTime
+using Dates: Dates, Date, DateTime
 using Base: @propagate_inbounds
-import Oceananigans.Utils: prettysummary
 
 struct BoundingBox{X, Y, Z}
     longitude :: X
@@ -86,6 +85,11 @@ Metadata(name, dataset, dates, region, dir) = Metadata(name, dataset, dates, reg
 
 is_three_dimensional(::Metadata) = true
 z_interfaces(md::Metadata) = z_interfaces(md.dataset)
+
+# NetCDF coordinate-variable names. Default follows CF standard; datasets
+# whose files use different names (e.g. JRA55 uses `lon`/`lat`) override.
+longitude_name(::Metadata) = "longitude"
+latitude_name(::Metadata)  = "latitude"
 longitude_interfaces(md::Metadata) = longitude_interfaces(md.dataset)
 latitude_interfaces(md::Metadata) = latitude_interfaces(md.dataset)
 
@@ -213,7 +217,7 @@ datestr(md::Metadatum) = string(md.dates)
 datasetstr(md::Metadata) = string(md.dataset)
 metaprefix(md::Metadata) = string("Metadata{", md.dataset, "}")
 
-prettysummary(dt::DateTime) = Dates.format(dt, "yyyy-mm-dd HH:MM:SS")
+Oceananigans.Utils.prettysummary(dt::DateTime) = Dates.format(dt, "yyyy-mm-dd HH:MM:SS")
 
 function Base.show(io::IO, metadata::Metadata)
     V = typeof(metadata.dataset)
@@ -284,6 +288,299 @@ function metadata_path(metadata::Metadata)
         # Single filename (String) — one file for all dates
         return joinpath(metadata.dir, fn)
     end
+end
+
+#####
+##### MetadataSet — a bundle of `Metadata` sharing dataset, dates, region, and dir.
+#####
+##### A `MetadataSet` is keyed by *verbose* dataset variable names. Iteration is
+##### over variables (orthogonal to `Metadata`'s date-axis iteration); every
+##### element returned by `mset[name]` / `mset[i]` is itself a `Metadata` or
+##### `Metadatum`, so all existing per-`Metadata` machinery (`Field`, `set!`,
+##### `download`, ...) keeps working unchanged on the elements.
+#####
+
+struct MetadataSet{V, D, R, N, F}
+    names :: N      # NTuple{K, Symbol} — verbose dataset variable names
+    dataset :: V    # shared
+    dates :: D      # shared; scalar or AbstractVector
+    region :: R     # shared
+    dir :: String   # shared
+    filenames :: F  # NamedTuple keyed by `names`, one entry per variable
+end
+
+"""
+    MetadataSet(variable_names::Symbol...;
+                dataset,
+                dates = all_dates(dataset, first(variable_names)),
+                date = nothing,
+                dir = default_download_directory(dataset),
+                region = nothing,
+                filenames = nothing,
+                start_date = nothing,
+                end_date = nothing)
+
+A bundle of [`Metadata`](@ref) for many variables that share `dataset`, `dates`,
+`region`, and `dir` — differing only in variable name.
+
+Each element `mset[name]` (or equivalently `mset.name` or `mset[i]`) is itself a
+`Metadata` — or a `Metadatum` when `dates` is a single date. Iteration walks the
+variable axis, yielding one `Metadata` per variable.
+
+Arguments
+=========
+- `variable_names`: one or more `Symbol`s naming the dataset variables to bundle
+  (e.g. `:temperature, :salinity`). Verbose dataset-internal names — no aliases.
+
+Keyword Arguments
+=================
+- `dataset`: the shared dataset (e.g. `ECCO4Monthly()`, `ERA5HourlyPressureLevels()`).
+- `dates`: shared date axis. Either a single `AbstractDateTime`/`AbstractCFDateTime`
+  (yielding a [`MetadatumSet`](@ref)) or an `AbstractVector` of dates.
+  Defaults to `all_dates(dataset, first(variable_names))`.
+- `date`: convenience scalar form; cannot be used together with `dates`.
+- `region`: shared spatial region — `BoundingBox`, `Column`, or `nothing`.
+- `dir`: shared download directory.
+- `filenames`: an optional `NamedTuple` keyed by `variable_names` overriding the
+  auto-computed per-variable filenames.
+- `start_date`, `end_date`: optional date cropping, matching [`Metadata`](@ref).
+
+See also [`Metadata`](@ref), [`Metadatum`](@ref).
+"""
+function MetadataSet(variable_names::Symbol...;
+                     dataset,
+                     dates = nothing,
+                     date = nothing,
+                     dir = default_download_directory(dataset),
+                     region = nothing,
+                     filenames = nothing,
+                     start_date = nothing,
+                     end_date = nothing)
+
+    isempty(variable_names) &&
+        throw(ArgumentError("MetadataSet requires at least one variable name"))
+
+    if !isnothing(date) && !isnothing(dates)
+        throw(ArgumentError("Specify either `date` (scalar) or `dates` (vector), not both"))
+    end
+
+    # Resolve the effective date axis.
+    effective_dates = if !isnothing(date)
+        date isa Date ? DateTime(date) : date
+    elseif !isnothing(dates)
+        dates
+    else
+        all_dates(dataset, first(variable_names))
+    end
+
+    if !isnothing(date) && !(effective_dates isa AnyDateTime)
+        msg = "`date` must be a `Dates.AbstractDateTime` or `CFTime.AbstractCFDateTime`, received $(typeof(date))"
+        throw(ArgumentError(msg))
+    end
+
+    # Optional date cropping (parallels Metadata).
+    if !isnothing(start_date) || !isnothing(end_date)
+        effective_dates isa AnyDateTime &&
+            throw(ArgumentError("`start_date`/`end_date` are not compatible with a scalar `date`"))
+        sd = isnothing(start_date) ? effective_dates[1]   : start_date
+        ed = isnothing(end_date)   ? effective_dates[end] : end_date
+        effective_dates = compute_native_date_range(effective_dates, sd, ed)
+    end
+
+    # Auto-build per-variable filenames if not supplied.
+    if isnothing(filenames)
+        filename_values = map(n -> build_filename(dataset, n, effective_dates, region), variable_names)
+        filenames = NamedTuple{variable_names}(filename_values)
+    else
+        filenames isa NamedTuple ||
+            throw(ArgumentError("`filenames` must be a NamedTuple keyed by variable names"))
+        keys(filenames) === variable_names ||
+            throw(ArgumentError("`filenames` keys $(keys(filenames)) must match variable names $variable_names"))
+    end
+
+    return MetadataSet(variable_names, dataset, effective_dates, region, dir, filenames)
+end
+
+MetadataSet(names::NTuple{<:Any, <:Symbol}; kw...) = MetadataSet(names...; kw...)
+
+# Property access: variables first via filenames lookup, struct fields second.
+function Base.getproperty(mset::MetadataSet, name::Symbol)
+    if name in fieldnames(MetadataSet)
+        return getfield(mset, name)
+    elseif name in getfield(mset, :names)
+        return getindex(mset, name)
+    else
+        throw(KeyError(name))
+    end
+end
+
+Base.propertynames(mset::MetadataSet) =
+    (getfield(mset, :names)..., fieldnames(MetadataSet)...)
+
+# Indexed access. We use `getfield` here so subsequent edits to `getproperty`
+# can't make these recursive.
+function Base.getindex(mset::MetadataSet, name::Symbol)
+    fname = getfield(mset, :filenames)[name]
+    return Metadata(name,
+                    getfield(mset, :dataset),
+                    getfield(mset, :dates),
+                    getfield(mset, :region),
+                    getfield(mset, :dir),
+                    fname)
+end
+
+@propagate_inbounds Base.getindex(mset::MetadataSet, i::Int) =
+    getindex(mset, getfield(mset, :names)[i])
+
+Base.length(mset::MetadataSet) = length(getfield(mset, :names))
+Base.keys(mset::MetadataSet)   = getfield(mset, :names)
+Base.eltype(::Type{<:MetadataSet}) = Metadata
+Base.firstindex(::MetadataSet) = 1
+Base.lastindex(mset::MetadataSet) = length(mset)
+
+@inline function Base.iterate(mset::MetadataSet, state::Int=1)
+    state > length(mset) && return nothing
+    return mset[state], state + 1
+end
+
+Base.NamedTuple(mset::MetadataSet) =
+    NamedTuple{getfield(mset, :names)}(map(n -> mset[n], getfield(mset, :names)))
+
+"""
+    metadata_path(mset::MetadataSet)
+
+Return a `NamedTuple` keyed by the set's variable names whose values are the
+file paths of each variable's `Metadata` (a `String` for single-date sets,
+a `Vector{String}` for multi-date sets — matching `metadata_path(::Metadata)`).
+"""
+function metadata_path(mset::MetadataSet)
+    names = getfield(mset, :names)
+    return NamedTuple{names}(map(n -> metadata_path(mset[n]), names))
+end
+
+function Base.show(io::IO, mset::MetadataSet)
+    V = typeof(getfield(mset, :dataset))
+    D = typeof(getfield(mset, :dates))
+
+    print(io, "MetadataSet{$V, $D}:", '\n',
+          "├── names: ", getfield(mset, :names), '\n',
+          "├── dataset: ", prettysummary(getfield(mset, :dataset)), '\n',
+          "├── dates: ", prettysummary(getfield(mset, :dates)), '\n')
+
+    rgn = getfield(mset, :region)
+    if !isnothing(rgn)
+        print(io, "├── region: ", summary(rgn), '\n')
+    end
+
+    print(io, "└── dir: $(getfield(mset, :dir))")
+end
+
+Base.summary(mset::MetadataSet) =
+    string("MetadataSet{", typeof(getfield(mset, :dataset)), "} of ",
+           length(mset), " variables")
+
+"""
+    set!(fields::NamedTuple, mset::MetadataSet)
+
+Set each `fields[name]` from the corresponding `mset[name]`. The NamedTuple's
+keys must be a subset of the set's variable names; extra fields are ignored.
+
+This is the explicit form that takes verbose dataset names on both sides — no
+glossary translation. For the auto-routing form (short model field-names), see
+`set!(model, ::MetadataSet)`.
+"""
+function Fields.set!(fields::NamedTuple, mset::MetadataSet)
+    for name in keys(fields)
+        in(name, getfield(mset, :names)) ||
+            throw(ArgumentError("Field $(name) is not in MetadataSet variables $(getfield(mset, :names))"))
+        set!(fields[name], mset[name])
+    end
+    return fields
+end
+
+"""
+    set!(model, mset::MetadataSet, names=keys(variable_glossary))
+
+Route variables from `mset` to `set!(model; kwargs...)`, translating verbose
+dataset names to short model field-names via [`variable_glossary`](@ref).
+Only the intersection of `names` and `mset.names` is forwarded.
+
+The default `names` is every glossary key — fine for permissive models. Models
+that throw on unknown kwargs (`HydrostaticFreeSurfaceModel`, `SeaIceModel`)
+override the 2-argument form to pass a narrower `names`, letting a single
+multi-component MetadataSet drive both an ocean and a sea-ice model.
+Each model's override of `set!(model, ::MetadataSet)` filters the same `mset`
+down to the variables that model knows how to consume:
+
+```jldoctest
+using NumericalEarth
+using Oceananigans
+using Statistics
+using Dates
+
+grid = LatitudeLongitudeGrid(size = (60, 30, 5),
+                             longitude = (-180, 180),
+                             latitude  = (-60, 60),
+                             z = (-5000, 0),
+                             halo = (7, 7, 7))
+
+ocean = ocean_simulation(grid)
+
+mset = MetadataSet(:temperature, :salinity;
+                   dataset = ECCO4Monthly(),
+                   date    = DateTime(1993, 1, 1))
+
+# Ocean override routes :temperature → T, :salinity → S; sea-ice vars are
+# filtered out. A `set!(sea_ice.model, mset)` call against the same `mset`
+# would route :sea_ice_thickness → h, :sea_ice_concentration → ℵ.
+set!(ocean.model, mset)
+
+T = ocean.model.tracers.T
+(min = round(minimum(T), digits = 2),
+ max = round(maximum(T), digits = 2),
+ mean = round(mean(T), digits = 2))
+
+# output
+(min = -1.06, max = 21.41, mean = 3.3)
+```
+"""
+function Fields.set!(model, mset::MetadataSet, names=keys(variable_glossary))
+    routed = filter(in(names), getfield(mset, :names))
+    isempty(routed) && return model
+    kwargs = NamedTuple{Tuple(variable_glossary[n] for n in routed)}(Tuple(mset[n] for n in routed))
+    return set!(model; kwargs...)
+end
+
+# Ocean: route only variables whose short name appears in velocities,
+# tracers, or free_surface — the three places HydrostaticFreeSurfaceModel's
+# `set!` looks up kwargs.
+using Oceananigans.Models.HydrostaticFreeSurfaceModels: HydrostaticFreeSurfaceModel
+function Fields.set!(model::HydrostaticFreeSurfaceModel, mset::MetadataSet)
+    hfsm_short_names = (propertynames(model.velocities)..., propertynames(model.tracers)..., :η)
+    valid_long_names = Tuple(long_name for (long_name, short_name) in variable_glossary if short_name in hfsm_short_names)
+    return set!(model, mset, valid_long_names)
+end
+
+# Sea ice: ClimaSeaIce's `set!(::SeaIceModel; h, ℵ)` only accepts these two.
+using ClimaSeaIce: SeaIceModel
+function Fields.set!(model::SeaIceModel, mset::MetadataSet)
+    return set!(model, mset, (:sea_ice_thickness, :sea_ice_concentration))
+end
+
+"""
+    download(mset::MetadataSet; kwargs...)
+
+Download every variable in `mset`. The default is a per-variable loop calling
+`download(mset[name]; kwargs...)`; backends that support batched multi-variable
+requests (e.g. the ERA5 pressure-level CDS path) override this to route through
+a single batched call.
+
+Returns a `NamedTuple` keyed by the set's variable names, whose values are the
+results of each per-variable `download` call (typically the file path(s)).
+"""
+function Downloads.download(mset::MetadataSet; kwargs...)
+    names = getfield(mset, :names)
+    return NamedTuple{names}(map(n -> Downloads.download(mset[n]; kwargs...), names))
 end
 
 """
@@ -385,6 +682,13 @@ metadata_filename(metadata::Metadata) = metadata.filename
 Compute the filename for a single date. Extended by each dataset module.
 """
 function metadata_filename end
+
+"""
+    metadata_url(metadata)
+
+Return the URL for the dataset described by `metadata`. Extended by each dataset module.
+"""
+function metadata_url end
 
 # Internal: build filename for construction.
 # Single date: delegate to metadata_filename

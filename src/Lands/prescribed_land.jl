@@ -3,7 +3,7 @@
 # coupling would require additional fields (e.g. albedo, skin temperature); see
 # https://github.com/NumericalEarth/NumericalEarth.jl/issues/30 for the related
 # discussion of moving surface albedo to a radiation component.
-mutable struct PrescribedLand{G, T, F, TI} <: AbstractLand
+mutable struct PrescribedLand{G, T, F, TI} <: AbstractPrescribedComponent
     grid :: G
     clock :: Clock{T}
     freshwater_flux :: F   # NamedTuple, e.g. (rivers=FTS, icebergs=FTS)
@@ -47,7 +47,7 @@ function PrescribedLand(freshwater_flux; clock=nothing)
     return land
 end
 
-@inline function update_state!(land::PrescribedLand)
+@inline function Oceananigans.TimeSteppers.update_state!(land::PrescribedLand)
     time = Time(land.clock.time)
     ftses = extract_field_time_series(land)
 
@@ -57,30 +57,30 @@ end
     return nothing
 end
 
-@inline function time_step!(land::PrescribedLand, Δt)
+@inline function Oceananigans.TimeSteppers.time_step!(land::PrescribedLand, Δt)
     tick!(land.clock, Δt)
     update_state!(land)
     return nothing
 end
 
-# No net fluxes to update for prescribed land
-update_net_fluxes!(coupled_model, ::PrescribedLand) = nothing
+# No net fluxes to update for prescribed land; and there's no SlabLand-style
+# closure to build an atmosphere-land flux interface from, so the dispatch
+# returns nothing for this land type.
+EarthSystemModels.update_net_fluxes!(coupled_model, ::PrescribedLand) = nothing
 atmosphere_land_interface(grid, atmosphere, land::PrescribedLand, args...) = nothing
 
 #####
 ##### Checkpointing
 #####
 
-import Oceananigans: prognostic_state, restore_prognostic_state!
-
-function prognostic_state(land::PrescribedLand)
+function Oceananigans.prognostic_state(land::PrescribedLand)
     return (; clock = prognostic_state(land.clock))
 end
 
-function restore_prognostic_state!(land::PrescribedLand, state)
+function Oceananigans.restore_prognostic_state!(land::PrescribedLand, state)
     restore_prognostic_state!(land.clock, state.clock)
     update_state!(land)
     return land
 end
 
-restore_prognostic_state!(land::PrescribedLand, ::Nothing) = land
+Oceananigans.restore_prognostic_state!(land::PrescribedLand, ::Nothing) = land

@@ -3,8 +3,9 @@ using Oceananigans
 using CUDA
 using Test
 
+using Downloads: download
 using NumericalEarth.DataWrangling
-using NumericalEarth.DataWrangling: metadata_path, download_dataset
+using NumericalEarth.DataWrangling: metadata_path
 using NumericalEarth.EN4
 using NumericalEarth.ECCO
 using NumericalEarth.ETOPO
@@ -50,14 +51,6 @@ test_fields = Dict(
     EN4Monthly() => (:T, :S),
 )
 
-# Install XESMF for windows architectures
-if Sys.iswindows() && Sys.ARCH == :x86_64
-    @info "Installing XESMF for windows architectures"
-    using Pkg
-    Pkg.add("CondaPkg")
-    using CondaPkg
-    CondaPkg.add(["esmf", "esmpy"])
-end
 
 #####
 ##### Test utilities
@@ -124,7 +117,7 @@ function test_ocean_metadata_utilities(arch, dataset, dates, inpainting;
         metadata = Metadata(name; dates, dataset)
         filepaths = [metadata_path(datum) for datum in metadata]
         download_dataset_with_fallback(filepaths; dataset_name="$(typeof(dataset)) $name") do
-            download_dataset(metadata)
+            download(metadata)
         end
         restoring = DatasetRestoring(metadata, arch; rate=1/1000, inpainting)
 
@@ -182,7 +175,7 @@ function test_dataset_restoring(arch, dataset, dates, inpainting;
         metadata = Metadata(name; dates, dataset)
         filepaths = [metadata_path(datum) for datum in metadata]
         download_dataset_with_fallback(filepaths; dataset_name="$(typeof(dataset)) $name") do
-            download_dataset(metadata)
+            download(metadata)
         end
         var_restoring = DatasetRestoring(metadata, arch; mask, inpainting, rate=1/1000)
 
@@ -223,7 +216,7 @@ function test_timestepping_with_dataset_restoring(arch, dataset, dates, inpainti
     metadata = Metadata(varnames[end]; dates, dataset)
     filepaths = [metadata_path(datum) for datum in metadata]
     download_dataset_with_fallback(filepaths; dataset_name="$(typeof(dataset)) $(varnames[end])") do
-        download_dataset(metadata)
+        download(metadata)
     end
     restoring = DatasetRestoring(metadata, arch; inpainting, rate=1/1000)
     forcing = NamedTuple{tuple(fldnames[end])}(tuple(restoring))

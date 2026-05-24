@@ -16,35 +16,33 @@ export AbstractLand,
 """
     abstract type AbstractLand end
 
-Top-level abstract type for NumericalEarth land components. Concrete
-subtypes (e.g. [`SlabLand`](@ref), [`PrescribedLand`](@ref)) participate
-in the `EarthSystemModel` coupling by implementing
-`time_step!`, `update_state!`, `surface_temperature`, and the
-component-exchanger / atmosphere-land flux entry points.
+Marker abstract type for *prognostic* NumericalEarth land components
+([`SlabLand`](@ref) and any future multi-layer variants). `PrescribedLand`
+is a prescribed-forcing component and subtypes `AbstractPrescribedComponent`
+instead.
 """
 abstract type AbstractLand end
 
-using Oceananigans
-using Oceananigans.Utils: launch!, prettytime
-using Oceananigans.Fields: AbstractField, Center, Face, CenterField, ZeroField, interior
-using Oceananigans.Grids: grid_name, architecture, prettysummary
-using Oceananigans.OutputReaders: FieldTimeSeries, update_field_time_series!, extract_field_time_series
-using Oceananigans.TimeSteppers: Clock, tick!
-using Oceananigans.Units: Time
-using Oceananigans.BoundaryConditions: fill_halo_regions!
-
 using KernelAbstractions: @kernel, @index
-using NumericalEarth.EarthSystemModels.InterfaceComputations: interface_kernel_parameters
+using Oceananigans: Oceananigans, prognostic_state, restore_prognostic_state!
+using Oceananigans.Architectures: architecture
+using Oceananigans.BoundaryConditions: fill_halo_regions!
+using Oceananigans.Fields: AbstractField, CenterField, ConstantField, Field, Center, Face, ZeroField, interior
+using Oceananigans.Grids: grid_name
+using Oceananigans.OutputReaders: FieldTimeSeries, update_field_time_series!, extract_field_time_series
+using Oceananigans.TimeSteppers: Clock, tick!, update_state!
+using Oceananigans.Units: Time
+using Oceananigans.Utils: launch!, prettysummary, prettytime
 
-import Oceananigans.TimeSteppers: time_step!, update_state!
+using ..NumericalEarth: NumericalEarth
+using ..EarthSystemModels: EarthSystemModels, AbstractPrescribedComponent
+using ..EarthSystemModels.InterfaceComputations: interface_kernel_parameters, ComponentExchanger
 
-import NumericalEarth.EarthSystemModels: interpolate_state!,
-                                         update_net_fluxes!,
-                                         surface_temperature
-
-import NumericalEarth.EarthSystemModels.InterfaceComputations: ComponentExchanger,
-                                                              atmosphere_land_interface,
-                                                              initialize!
+import Oceananigans.TimeSteppers: time_step!
+import ..EarthSystemModels: interpolate_state!,
+                            update_net_fluxes!,
+                            surface_temperature
+import ..EarthSystemModels.InterfaceComputations: atmosphere_land_interface, initialize!
 
 # Closure interfaces
 include("energy_balance/energy_balance.jl")

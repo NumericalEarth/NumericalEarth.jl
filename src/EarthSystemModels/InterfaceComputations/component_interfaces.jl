@@ -1,30 +1,17 @@
-using StaticArrays
-using Thermodynamics
-using OffsetArrays
+using KernelAbstractions: @kernel, @index
+using Oceananigans: initialize!
+using Oceananigans.Architectures: architecture
+using Oceananigans.Units: Time
+using Oceananigans.Grids: inactive_node, topology
+using Oceananigans.Utils: launch!, KernelParameters
+using Oceananigans.Operators: ℑxᶜᵃᵃ, ℑyᵃᶜᵃ
+using Oceananigans.Units: Time
 
 using ..EarthSystemModels: reference_density,
                            heat_capacity,
-                           sea_ice_concentration,
-                           sea_ice_thickness,
                            thermodynamics_parameters,
                            ocean_surface_temperature,
                            ocean_surface_salinity
-
-using ClimaSeaIce: SeaIceModel
-
-using Oceananigans: HydrostaticFreeSurfaceModel, architecture
-using Oceananigans.Units: Time
-using Oceananigans.Grids: inactive_node, node, topology
-using Oceananigans.BoundaryConditions: fill_halo_regions!
-using Oceananigans.Fields: ConstantField, interpolate, FractionalIndices
-using Oceananigans.Utils: launch!, KernelParameters
-using Oceananigans.Operators: ℑxᶜᵃᵃ, ℑyᵃᶜᵃ, ℑxᶠᵃᵃ, ℑyᵃᶠᵃ
-using Oceananigans.Units: Time
-
-using KernelAbstractions: @kernel, @index
-
-import Oceananigans.Simulations: initialize!
-import Oceananigans.Architectures: on_architecture
 
 #####
 ##### Container for organizing information related to fluxes
@@ -100,7 +87,7 @@ Adapt.adapt_structure(to, fluxes::AtmosphereSurfaceFluxes) =
                             Adapt.adapt(to, fluxes.temperature_scale),
                             Adapt.adapt(to, fluxes.water_vapor_scale))
 
-on_architecture(arch, fluxes::AtmosphereSurfaceFluxes) =
+Oceananigans.Architectures.on_architecture(arch, fluxes::AtmosphereSurfaceFluxes) =
     AtmosphereSurfaceFluxes(on_architecture(arch, fluxes.latent_heat),
                             on_architecture(arch, fluxes.sensible_heat),
                             on_architecture(arch, fluxes.water_vapor),
@@ -125,14 +112,14 @@ end
 
 AtmosphereSeaIceFluxes(::Nothing) = AtmosphereSeaIceFluxes(ntuple(_ -> ZeroField(), 5)...)
 
-Adapt.adapt_structure(to, fluxes::AtmosphereSeaIceFluxes) = 
+Adapt.adapt_structure(to, fluxes::AtmosphereSeaIceFluxes) =
     AtmosphereSeaIceFluxes(Adapt.adapt(to, fluxes.latent_heat),
                            Adapt.adapt(to, fluxes.sensible_heat),
                            Adapt.adapt(to, fluxes.water_vapor),
                            Adapt.adapt(to, fluxes.x_momentum),
                            Adapt.adapt(to, fluxes.y_momentum))
 
-on_architecture(arch, fluxes::AtmosphereSeaIceFluxes) = 
+Oceananigans.Architectures.on_architecture(arch, fluxes::AtmosphereSeaIceFluxes) =
     AtmosphereSeaIceFluxes(on_architecture(arch, fluxes.latent_heat),
                            on_architecture(arch, fluxes.sensible_heat),
                            on_architecture(arch, fluxes.water_vapor),
@@ -156,14 +143,14 @@ end
 
 SeaIceOceanFluxes(::Nothing) = SeaIceOceanFluxes(ntuple(_ -> ZeroField(), 5)...)
 
-Adapt.adapt_structure(to, fluxes::SeaIceOceanFluxes) = 
+Adapt.adapt_structure(to, fluxes::SeaIceOceanFluxes) =
     SeaIceOceanFluxes(Adapt.adapt(to, fluxes.interface_heat),
                       Adapt.adapt(to, fluxes.frazil_heat),
                       Adapt.adapt(to, fluxes.salt),
                       Adapt.adapt(to, fluxes.x_momentum),
                       Adapt.adapt(to, fluxes.y_momentum))
 
-on_architecture(arch, fluxes::SeaIceOceanFluxes) = 
+Oceananigans.Architectures.on_architecture(arch, fluxes::SeaIceOceanFluxes) =
     SeaIceOceanFluxes(on_architecture(arch, fluxes.interface_heat),
                       on_architecture(arch, fluxes.frazil_heat),
                       on_architecture(arch, fluxes.salt),
@@ -206,10 +193,8 @@ mutable struct ComponentInterfaces{AO, ASI, SIO, AL, C, AP, OP, SIP, EX, P}
     properties :: P
 end
 
-using ..EarthSystemModels: DegreesCelsius, DegreesKelvin,
-                           celsius_to_kelvin,
-                           convert_to_kelvin, convert_from_kelvin,
-                           exchange_grid, temperature_units
+using ..EarthSystemModels: DegreesCelsius, temperature_units, exchange_grid,
+                           celsius_to_kelvin, convert_to_kelvin, convert_from_kelvin
 
 Base.summary(crf::ComponentInterfaces) = "ComponentInterfaces"
 Base.show(io::IO, crf::ComponentInterfaces) = print(io, summary(crf))
@@ -492,8 +477,6 @@ end
 ##### Chekpointing (not needed for ComponentInterfaces)
 #####
 
-import Oceananigans: prognostic_state, restore_prognostic_state!
-
-prognostic_state(::ComponentInterfaces) = nothing
-restore_prognostic_state!(ci::ComponentInterfaces, state) = ci
-restore_prognostic_state!(ci::ComponentInterfaces, ::Nothing) = ci
+Oceananigans.prognostic_state(::ComponentInterfaces) = nothing
+Oceananigans.restore_prognostic_state!(ci::ComponentInterfaces, state) = ci
+Oceananigans.restore_prognostic_state!(ci::ComponentInterfaces, ::Nothing) = ci

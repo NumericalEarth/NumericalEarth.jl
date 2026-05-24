@@ -87,13 +87,14 @@ and interior properties `ℙₛ`, `ℙₐ`, and `ℙᵢ`.
     FT = eltype(approximate_interface_state)
     ℂᵃᵗ = atmosphere_properties.thermodynamics_parameters
 
-    # Recompute the saturation specific humidity at the interface based on the new temperature
+    # Recompute the saturation specific humidity at the interface based on the new temperature.
+    # `qᵃᵗ` is passed so the land-side `BetaSurfaceSpecificHumidity` formulation can blend
+    # `qₛ = qₐ + β·(q⁺ − qₐ)`. `ImpureSaturationSpecificHumidity` ignores it.
     q_formulation = interface_properties.specific_humidity_formulation
     Sₛ = approximate_interface_state.S
-    Tᵃᵗ = atmosphere_state.T
     pᵃᵗ = atmosphere_state.p
     qᵃᵗ = atmosphere_state.q
-    qₛ = surface_specific_humidity(q_formulation, ℂᵃᵗ, Tᵃᵗ, pᵃᵗ, qᵃᵗ, Tₛ, Sₛ)
+    qₛ = surface_specific_humidity(q_formulation, ℂᵃᵗ, pᵃᵗ, Tₛ, Sₛ, qᵃᵗ)
 
     # Compute the specific humidity increment
     Δq = qᵃᵗ - qₛ

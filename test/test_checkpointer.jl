@@ -3,6 +3,7 @@ include("runtests_setup.jl")
 using Glob
 using Oceananigans.OutputWriters: Checkpointer
 using Oceananigans.TimeSteppers: reset!
+using NumericalEarth.EarthSystemModels: components
 
 function make_coupled_model(grid)
     @inline hi(λ, φ) = φ > 70 || φ < -70
@@ -14,12 +15,26 @@ function make_coupled_model(grid)
     set!(sea_ice.model, h=hi, ℵ=hi)
 
     arch = architecture(grid)
-    backend = JRA55NetCDFBackend(4)
-    atmosphere = JRA55PrescribedAtmosphere(arch; backend)
-    land = JRA55PrescribedLand(arch; backend)
-    radiation = JRA55PrescribedRadiation(arch; backend)
+    atmosphere = JRA55PrescribedAtmosphere(arch)
+    land = JRA55PrescribedLand(arch)
+    radiation = JRA55PrescribedRadiation(arch)
 
-    return OceanSeaIceModel(sea_ice, ocean; atmosphere, land, radiation)
+    return OceanSeaIceModel(ocean, sea_ice; atmosphere, land, radiation)
+end
+
+function test_clock_time_and_iteration(simulation, expected_iteration)
+    Δt = simulation.Δt
+    @test simulation.model.clock.iteration == expected_iteration
+    @test simulation.model.clock.time == expected_iteration * Δt
+    for component in components(simulation.model)
+        if component isa AbstractPrescribedComponent
+            @test component.clock.iteration == expected_iteration
+            @test component.clock.time == expected_iteration * Δt
+        else
+            @test component.model.clock.iteration == expected_iteration
+            @test component.model.clock.time == expected_iteration * Δt
+        end
+    end
 end
 
 @testset "EarthSystemModel checkpointing" begin
@@ -39,11 +54,11 @@ end
         # (This matches the checkpointed workflow where we create a new Simulation
         # after iteration 3, which is what happens during checkpoint restore)
         model = make_coupled_model(grid)
-        simulation = Simulation(model, Δt=60, stop_iteration=3)
+        simulation = Simulation(model, Δt=60, stop_iteration=3, verbose=false)
         run!(simulation)
 
         # Continue on the same model (simulates what happens after checkpoint restore)
-        simulation = Simulation(model, Δt=60, stop_iteration=6)
+        simulation = Simulation(model, Δt=60, stop_iteration=6, verbose=false)
         run!(simulation)
 
         # Store reference states at iteration 6
@@ -59,7 +74,7 @@ end
 
         # Checkpointed run: 3 iterations, then checkpoint
         model = make_coupled_model(grid)
-        simulation = Simulation(model, Δt=60, stop_iteration=3)
+        simulation = Simulation(model, Δt=60, stop_iteration=3, verbose=false)
 
         prefix = "osm_checkpointer_test_$(typeof(arch))"
         simulation.output_writers[:checkpointer] = Checkpointer(simulation.model;
@@ -72,7 +87,7 @@ end
 
         # Create new model and restore from checkpoint
         model = make_coupled_model(grid)
-        simulation = Simulation(model, Δt=60, stop_iteration=6)
+        simulation = Simulation(model, Δt=60, stop_iteration=6, verbose=false)
 
         simulation.output_writers[:checkpointer] = Checkpointer(model;
                                                                 schedule = IterationInterval(3),
@@ -80,11 +95,11 @@ end
 
         set!(simulation; checkpoint=:latest)
 
-        @test simulation.model.clock.iteration == 3
+        test_clock_time_and_iteration(simulation, 3)
 
         set!(simulation; iteration=3)
 
-        @test simulation.model.clock.iteration == 3
+        test_clock_time_and_iteration(simulation, 3)
 
         run!(simulation)
 
@@ -128,43 +143,27 @@ end
                                      halo = (6, 6, 6))
 
         model = make_coupled_model(grid)
-        simulation = Simulation(model, Δt=60, stop_iteration=3, verbose=false)
+        simulation = Simulation(model; Δt=60, stop_iteration=3, verbose=false)
+
+        # check that clock stops when intended
+        @test model.atmosphere isa AbstractPrescribedComponent
+        @test model.land isa AbstractPrescribedComponent
+        @test model.radiation isa AbstractPrescribedComponent
 
         # check that clock stops when intended
         run!(simulation)
 
-        @test simulation.model.clock.iteration == 3
-        @test simulation.model.ocean.model.clock.iteration == 3
-        @test simulation.model.sea_ice.model.clock.iteration == 3
-        @test simulation.model.atmosphere.clock.iteration == 3
-        @test simulation.model.land.clock.iteration == 3
-        @test simulation.model.radiation.clock.iteration == 3
+        test_clock_time_and_iteration(simulation, 3)
 
         # check that reset!(simulation) rewinds model clock and its components
         reset!(simulation)
 
-        @test simulation.model.clock.iteration == 0
-        @test simulation.model.clock.time == 0
-        @test simulation.model.ocean.model.clock.iteration == 0
-        @test simulation.model.ocean.model.clock.time == 0
-        @test simulation.model.sea_ice.model.clock.iteration == 0
-        @test simulation.model.sea_ice.model.clock.time == 0
-        @test simulation.model.atmosphere.clock.iteration == 0
-        @test simulation.model.atmosphere.clock.time == 0
-        @test simulation.model.radiation.clock.iteration == 0
-        @test simulation.model.radiation.clock.time == 0
-        @test simulation.model.land.clock.iteration == 0
-        @test simulation.model.land.clock.time == 0
+        test_clock_time_and_iteration(simulation, 0)
 
         # check we can restart the simulation
         simulation.stop_iteration = 2
         run!(simulation)
 
-        @test simulation.model.clock.iteration == 2
-        @test simulation.model.ocean.model.clock.iteration == 2
-        @test simulation.model.sea_ice.model.clock.iteration == 2
-        @test simulation.model.atmosphere.clock.iteration == 2
-        @test simulation.model.land.clock.iteration == 2
-        @test simulation.model.radiation.clock.iteration == 2
+        test_clock_time_and_iteration(simulation, 2)
     end
 end

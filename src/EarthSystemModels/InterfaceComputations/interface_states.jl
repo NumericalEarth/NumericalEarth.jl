@@ -1,9 +1,5 @@
-using GPUArraysCore: @allowscalar
-using Printf
-
-import ClimaSeaIce
-import Thermodynamics as AtmosphericThermodynamics
-using Thermodynamics: Liquid, Ice
+using ClimaSeaIce: ClimaSeaIce
+using Thermodynamics: Thermodynamics as AtmosphericThermodynamics
 
 #####
 ##### Interface properties
@@ -36,7 +32,7 @@ function Base.summary(q★::ImpureSaturationSpecificHumidity)
 
 
     return string("ImpureSaturationSpecificHumidity{$phase_str}(water_mole_fraction=",
-                  prettysummary(q★.water_mole_fraction), ")") 
+                  prettysummary(q★.water_mole_fraction), ")")
 end
 
 Base.show(io::IO, q★::ImpureSaturationSpecificHumidity) = print(io, summary(q★))
@@ -51,31 +47,23 @@ ImpureSaturationSpecificHumidity(phase) = ImpureSaturationSpecificHumidity(phase
 @inline compute_water_mole_fraction(::Nothing, salinity) = 1
 @inline compute_water_mole_fraction(x_H₂O::Number, salinity) = x_H₂O
 
-@inline function surface_specific_humidity(formulation::ImpureSaturationSpecificHumidity,
-                                            ℂᵃᵗ, Tᵃᵗ, pᵃᵗ, qᵃᵗ,
-                                            Tₛ, Sₛ=zero(Tₛ))
-    # Extrapolate air density to the surface temperature
-    # following an adiabatic ideal gas transformation
-    cvₘ = Thermodynamics.cv_m(ℂᵃᵗ, qᵃᵗ)
-    Rᵃᵗ = Thermodynamics.gas_constant_air(ℂᵃᵗ, qᵃᵗ)
-    κᵃᵗ = cvₘ / Rᵃᵗ # 1 / (γ - 1)
-    ρᵃᵗ = Thermodynamics.air_density(ℂᵃᵗ, Tᵃᵗ, pᵃᵗ, qᵃᵗ)
-    ρₛ = ρᵃᵗ * (Tₛ / Tᵃᵗ)^κᵃᵗ
-    return surface_specific_humidity(formulation, ℂᵃᵗ, ρₛ, Tₛ, Sₛ)
-end
-
-@inline function surface_specific_humidity(formulation::ImpureSaturationSpecificHumidity, ℂᵃᵗ, ρₛ::Number, Tₛ, Sₛ=zero(Tₛ))
+# COARE 3.6 / Edson (2013) pressure-based saturation specific humidity:
+#   qₛ = εᵈᵛ⁻¹ pᵛ⁺ / (p − (1 − ε) pᵛ⁺),   εᵈᵛ⁻¹ = Rᵈ / Rᵥ
+# Direct evaluation at the atmospheric pressure p. The 6th positional
+# argument `qᵃᵗ` is accepted (and ignored) so the same call site can
+# dispatch on either `ImpureSaturationSpecificHumidity` or
+# [`BetaSurfaceSpecificHumidity`](@ref), which does need it.
+@inline function surface_specific_humidity(formulation::ImpureSaturationSpecificHumidity, ℂᵃᵗ, pᵃᵗ, Tₛ, Sₛ=zero(Tₛ), qᵃᵗ=zero(Tₛ))
     FT = eltype(Tₛ)
     CT = eltype(ℂᵃᵗ)
-    Tₛ = convert(CT, Tₛ)
-    ρₛ = convert(CT, ρₛ)
-    phase = formulation.phase
-    p★ = Thermodynamics.saturation_vapor_pressure(ℂᵃᵗ, Tₛ, phase)
-    q★ = Thermodynamics.q_vap_from_p_vap(ℂᵃᵗ, Tₛ, ρₛ, p★)
-
-    # Compute saturation specific humidity according to Raoult's law
+    T  = convert(CT, Tₛ)
+    p  = convert(CT, pᵃᵗ)
+    
+    # Raoult's law on the saturation vapor pressure.
     χ_H₂O = compute_water_mole_fraction(formulation.water_mole_fraction, Sₛ)
-    qₛ = χ_H₂O * q★
+    pᵛ⁺   = χ_H₂O * AtmosphericThermodynamics.saturation_vapor_pressure(ℂᵃᵗ, T, formulation.phase)
+    εᵈᵛ⁻¹ = 1 / AtmosphericThermodynamics.Parameters.Rv_over_Rd(ℂᵃᵗ)
+    qₛ    = εᵈᵛ⁻¹ * pᵛ⁺ / (p - (1 - εᵈᵛ⁻¹) * pᵛ⁺)
 
     return convert(FT, qₛ)
 end
@@ -94,27 +82,30 @@ Base.summary(::BetaSurfaceSpecificHumidity{Φ}) where Φ =
            Φ === AtmosphericThermodynamics.Liquid ? "Liquid" : "Ice", "}")
 Base.show(io::IO, q::BetaSurfaceSpecificHumidity) = print(io, summary(q))
 
+# β-reduced surface specific humidity, pressure-based to match
+# `ImpureSaturationSpecificHumidity`. Computes the saturation specific
+# humidity at the interface (with the same Raoult / pressure formula),
+# then blends with the atmospheric specific humidity:
+#
+#     qₛ = qₐ + β · (qₛ_sat(Tₛ, p) − qₐ),     β ∈ [0, 1].
+#
+# β is carried through the iteration via the `S` slot of `InterfaceState`
+# (see the `InterfaceState` docstring); qₐ is taken from the optional
+# 5th argument and defaults to zero, in which case this reduces to
+# `qₛ = β · qₛ_sat`.
 @inline function surface_specific_humidity(formulation::BetaSurfaceSpecificHumidity,
-                                           ℂᵃᵗ, Tᵃᵗ, pᵃᵗ, qᵃᵗ,
-                                           Tₛ, β=one(Tₛ))
-    cvₘ = Thermodynamics.cv_m(ℂᵃᵗ, qᵃᵗ)
-    Rᵃᵗ = Thermodynamics.gas_constant_air(ℂᵃᵗ, qᵃᵗ)
-    κᵃᵗ = cvₘ / Rᵃᵗ
-    ρᵃᵗ = Thermodynamics.air_density(ℂᵃᵗ, Tᵃᵗ, pᵃᵗ, qᵃᵗ)
-    ρₛ = ρᵃᵗ * (Tₛ / Tᵃᵗ)^κᵃᵗ
-    return surface_specific_humidity(formulation, ℂᵃᵗ, ρₛ, Tₛ, β, qᵃᵗ)
-end
-
-@inline function surface_specific_humidity(formulation::BetaSurfaceSpecificHumidity,
-                                           ℂᵃᵗ, ρₛ::Number, Tₛ, β=one(Tₛ), qₐ=zero(Tₛ))
+                                           ℂᵃᵗ, pᵃᵗ, Tₛ, β=one(Tₛ), qᵃᵗ=zero(Tₛ))
     FT = eltype(Tₛ)
     CT = eltype(ℂᵃᵗ)
-    Tₛ = convert(CT, Tₛ)
-    ρₛ = convert(CT, ρₛ)
-    p★ = Thermodynamics.saturation_vapor_pressure(ℂᵃᵗ, Tₛ, formulation.phase)
-    q★ = Thermodynamics.q_vap_from_p_vap(ℂᵃᵗ, Tₛ, ρₛ, p★)
-    qₐ = convert(FT, qₐ)
-    return convert(FT, qₐ + β * (q★ - qₐ))
+    T  = convert(CT, Tₛ)
+    p  = convert(CT, pᵃᵗ)
+
+    pᵛ⁺   = AtmosphericThermodynamics.saturation_vapor_pressure(ℂᵃᵗ, T, formulation.phase)
+    εᵈᵛ⁻¹ = 1 / AtmosphericThermodynamics.Parameters.Rv_over_Rd(ℂᵃᵗ)
+    qₛ_sat = εᵈᵛ⁻¹ * pᵛ⁺ / (p - (1 - εᵈᵛ⁻¹) * pᵛ⁺)
+
+    qₐ = convert(FT, qᵃᵗ)
+    return convert(FT, qₐ + β * (qₛ_sat - qₐ))
 end
 
 struct SalinityConstituent{FT}
@@ -299,7 +290,7 @@ end
     Ωᵀ = 𝒬ᵀ * λ  # unnormalized sensible heat coefficient (= Ωc * ΔT)
     D  = F.κ * ΔT - Ωᵀ * F.δ
     T★ = (Ψᵢ.T * F.κ * ΔT - (Jᵀ * ΔT + Ωᵀ * Tᵃᵗ) * F.δ) / D
-    
+
     return ifelse(D == 0, Ψₛ.T, T★)
 end
 

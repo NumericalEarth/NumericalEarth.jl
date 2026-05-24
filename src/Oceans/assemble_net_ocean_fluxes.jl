@@ -1,12 +1,5 @@
-using Printf
-using Oceananigans.Grids: inactive_node
-using Oceananigans.Operators: ℑxᶠᵃᵃ, ℑyᵃᶠᵃ
-using Oceananigans.Forcings: MultipleForcings
-using NumericalEarth.EarthSystemModels: EarthSystemModel, NoOceanInterfaceModel, NoInterfaceModel
-
-using NumericalEarth.EarthSystemModels.InterfaceComputations: interface_kernel_parameters,
-                                                              computed_fluxes,
-                                                              sea_ice_concentration
+using ..EarthSystemModels: NoOceanInterfaceModel, NoInterfaceModel, sea_ice_concentration
+using ..EarthSystemModels.InterfaceComputations: computed_fluxes
 
 @inline τᶜᶜᶜ(i, j, k, grid, ρᵒᶜ⁻¹, ℵ, ρτᶜᶜᶜ) = @inbounds ρᵒᶜ⁻¹ * (1 - ℵ[i, j, k]) * ρτᶜᶜᶜ[i, j, k]
 
@@ -16,9 +9,9 @@ using NumericalEarth.EarthSystemModels.InterfaceComputations: interface_kernel_p
 #####
 
 # Fallback for an ocean-only model (it has no interfaces!)
-update_net_fluxes!(coupled_model::Union{NoOceanInterfaceModel, NoInterfaceModel}, ocean::Simulation{<:HydrostaticFreeSurfaceModel}) = nothing
+EarthSystemModels.update_net_fluxes!(coupled_model::Union{NoOceanInterfaceModel, NoInterfaceModel}, ocean::OceananigansModelSimulations) = nothing
 
-update_net_fluxes!(coupled_model, ocean::Simulation{<:HydrostaticFreeSurfaceModel}) =
+EarthSystemModels.update_net_fluxes!(coupled_model, ocean::OceananigansModelSimulations) =
     update_net_ocean_fluxes!(coupled_model, ocean, ocean.model.grid)
 
 function update_net_ocean_fluxes!(coupled_model, ocean_model, grid)
@@ -55,7 +48,6 @@ function update_net_ocean_fluxes!(coupled_model, ocean_model, grid)
             snowfall_flux,
             land_freshwater_flux,
             ocean_properties)
-
     return nothing
 end
 

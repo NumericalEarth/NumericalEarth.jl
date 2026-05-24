@@ -274,7 +274,7 @@ interpolate_state!(exchanger, grid, ::SlabLand, coupled_model) = nothing
 Expose the generic atmosphere-facing SlabLand state through accessors:
 skin temperature `T`, `moisture_availability`, and the two roughness lengths.
 """
-function ComponentExchanger(land::SlabLand, grid)
+function EarthSystemModels.InterfaceComputations.ComponentExchanger(land::SlabLand, grid)
     state = (T                         = surface_temperature(land),
              moisture_availability     = surface_wetness(land),
              momentum_roughness_length = momentum_roughness_length(land),
@@ -282,4 +282,4 @@ function ComponentExchanger(land::SlabLand, grid)
     return ComponentExchanger(state, nothing)
 end
 
-initialize!(::ComponentExchanger, grid, ::SlabLand) = nothing
+EarthSystemModels.InterfaceComputations.initialize!(::ComponentExchanger, grid, ::SlabLand) = nothing

@@ -1,4 +1,3 @@
-using Oceananigans.Operators: intrinsic_vector
 using Oceananigans.Grids: inactive_node
 
 compute_atmosphere_ocean_fluxes!(coupled_model) =
@@ -116,7 +115,7 @@ end
 
     # Estimate interface specific humidity using interior temperature
     q_formulation = interface_properties.specific_humidity_formulation
-    qₛ = surface_specific_humidity(q_formulation, ℂᵃᵗ, Tᵃᵗ, pᵃᵗ, qᵃᵗ, Tᵒᶜ, Sᵒᶜ)
+    qₛ = surface_specific_humidity(q_formulation, ℂᵃᵗ, pᵃᵗ, Tᵒᶜ, Sᵒᶜ)
     initial_interface_state = InterfaceState(u★, u★, u★, uᵒᶜ, vᵒᶜ, Tᵒᶜ, Sᵒᶜ, qₛ)
 
     # Don't use convergence criteria in an inactive cell

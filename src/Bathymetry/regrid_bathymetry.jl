@@ -203,7 +203,7 @@ function regrid_bathymetry(target_grid, metadata;
         end
     end
 
-    download_dataset(metadata)
+    download(metadata)
 
     target_z = _regrid_bathymetry(target_grid, metadata;
                                   height_above_water,
@@ -301,8 +301,8 @@ function regrid_bathymetry(target_grid::DistributedGrid, metadata;
                                   height_above_water, minimum_depth,
                                   interpolation_passes, major_basins)
 
-    # download_dataset uses @root internally; all ranks must call it
-    download_dataset(metadata)
+    # download uses @root internally; all ranks must call it
+    download(metadata)
 
     # Only rank 0 performs cache lookup and computation to avoid OOM
     bottom_height = if arch.local_rank == 0

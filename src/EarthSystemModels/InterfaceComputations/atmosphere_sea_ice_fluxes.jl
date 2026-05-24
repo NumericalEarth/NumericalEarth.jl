@@ -1,6 +1,5 @@
-using Oceananigans.Operators: intrinsic_vector
-using Oceananigans.Grids: inactive_node
 using Oceananigans.Fields: ZeroField
+using Oceananigans.Grids: inactive_node
 
 compute_atmosphere_sea_ice_fluxes!(coupled_model) =
     compute_atmosphere_sea_ice_fluxes!(coupled_model, coupled_model.interfaces.atmosphere_sea_ice_interface)
@@ -116,8 +115,7 @@ end
 
     local_interior_state = (u=uˢⁱ, v=vˢⁱ, T=Tᵒᶜ, S=Sᵒᶜ, hi=hˢⁱ, hs=hˢⁿ, hc=hc)
 
-    # Local radiative state at this cell. Returns zero-valued state when
-    # radiation is off.
+    # Local radiative state at this cell. Returns zero-valued state when radiation is off.
     radiation_state = air_sea_ice_interface_radiation_state(radiation_kernel_props,
                                                             radiation_exchanger_state,
                                                             i, j, kᴺ, grid, time)
@@ -127,7 +125,7 @@ end
 
     # Estimate interface specific humidity using interior temperature
     q_formulation = interface_properties.specific_humidity_formulation
-    qₛ = surface_specific_humidity(q_formulation, ℂᵃᵗ, Tᵃᵗ, pᵃᵗ, qᵃᵗ, Tₛ, Sᵒᶜ)
+    qₛ = surface_specific_humidity(q_formulation, ℂᵃᵗ, pᵃᵗ, Tₛ, Sᵒᶜ)
 
     # Guess
     Sₛ = zero(FT) # what should we use for interface salinity?
