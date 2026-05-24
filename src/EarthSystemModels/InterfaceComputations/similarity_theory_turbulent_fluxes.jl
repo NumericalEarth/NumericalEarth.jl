@@ -152,7 +152,15 @@ end
     return log(h / ℓ) - ψh
 end
 
+# `local_roughness_length(ℓ, interior_properties, ::Val{R})` is the
+# per-surface entry point used by `local_roughness_lengths` below. `R`
+# is `:momentum` or `:scalar` and lets surface-specific formulations
+# (e.g. `LandRoughnessLength`) pick the right field on the interior
+# properties NamedTuple. The default just returns the formulation
+# unchanged, regardless of R or interior_properties — ocean
+# `MomentumRoughnessLength` / `ScalarRoughnessLength` hit this fallback.
 @inline local_roughness_length(ℓ, interior_properties) = ℓ
+@inline local_roughness_length(ℓ, interior_properties, ::Val) = ℓ
 
 @inline function local_roughness_length(ℓ::LandRoughnessLength,
                                         interior_properties::NamedTuple{names, T},
