@@ -74,9 +74,14 @@ function compute_atmosphere_land_fluxes!(coupled_model, atmosphere_land_interfac
     radiation_exchanger    = exchanger.radiation
     radiation_state        = isnothing(radiation_exchanger) ? nothing : radiation_exchanger.state
 
-    kernel_parameters = interface_kernel_parameters(grid)
-
-    launch!(arch, grid, kernel_parameters,
+    # Land turbulent fluxes are evaluated only over interior cells; the
+    # downstream SlabLand step uses `:xy` (interior-only), and halo
+    # cells of the atmosphere exchanger state may not be initialized
+    # when the atmosphere grid is a regional cutout matching the
+    # exchange-grid interior exactly (`interface_kernel_parameters`
+    # iterates 0:Nx+1 for the ocean's benefit; we do not need that
+    # here).
+    launch!(arch, grid, :xy,
             _compute_atmosphere_land_interface_state!,
             interface_fluxes,
             interface_temperature,
