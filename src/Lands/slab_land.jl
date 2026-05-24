@@ -15,6 +15,14 @@
 ##### thermal slab with no hydrology has `state = (T = ...,)` only; a
 ##### Manabe-bucket slab adds `(:W, :moisture_availability)`.
 #####
+##### Some `state` entries are diagnostic in nature (e.g. β =
+##### `state.moisture_availability` is a function of `state.W`). These
+##### are still declared in `prognostic_variables` so the container
+##### allocates a field for them, but are recomputed inside
+##### `update_diagnostics!` (called at the end of `time_step!`) rather
+##### than inside `step!`. The single-namedtuple convention keeps the
+##### atmosphere-facing accessors simple.
+#####
 
 #####
 ##### Helpers — assemble state and flux NamedTuples from closure declarations
@@ -22,16 +30,20 @@
 
 @inline merge_unique(a::NTuple, b::NTuple) = (a..., (s for s in b if !(s in a))...)
 
-function all_prognostic_keys(energy, hydrology, surface)
-    return merge_unique(merge_unique(prognostic_variables(energy),
-                                     prognostic_variables(hydrology)),
-                        prognostic_variables(surface))
-end
-
-function all_flux_keys(energy, hydrology, surface)
-    return merge_unique(merge_unique(flux_variables(energy),
-                                     flux_variables(hydrology)),
-                        flux_variables(surface))
+# Generic field-tuple builder. Each closure declares its own keys via
+# `keyfn(closure)` and constructs each field via `initfn(closure, name, grid)`.
+function _build_closure_fields(keyfn, initfn, grid, energy, hydrology, surface)
+    keys = merge_unique(merge_unique(keyfn(energy), keyfn(hydrology)), keyfn(surface))
+    fields = map(keys) do name
+        if name in keyfn(energy)
+            initfn(energy, name, grid)
+        elseif name in keyfn(hydrology)
+            initfn(hydrology, name, grid)
+        else
+            initfn(surface, name, grid)
+        end
+    end
+    return NamedTuple{keys}(fields)
 end
 
 """
@@ -42,19 +54,8 @@ contributed by exactly one closure (or shared); duplicates are merged.
 The per-symbol `Field` is built by `initial_state(closure, name, grid)`,
 giving each closure a hook to install non-zero defaults.
 """
-function build_state(grid, energy, hydrology, surface)
-    keys = all_prognostic_keys(energy, hydrology, surface)
-    fields = map(keys) do name
-        if name in prognostic_variables(energy)
-            return initial_state(energy, name, grid)
-        elseif name in prognostic_variables(hydrology)
-            return initial_state(hydrology, name, grid)
-        else
-            return initial_state(surface, name, grid)
-        end
-    end
-    return NamedTuple{keys}(fields)
-end
+build_state(grid, energy, hydrology, surface) =
+    _build_closure_fields(prognostic_variables, initial_state, grid, energy, hydrology, surface)
 
 """
     build_flux_accumulators(grid, energy, hydrology, surface)
@@ -63,19 +64,8 @@ Allocate the flux/forcing accumulator `NamedTuple` for a `SlabLand`.
 Same shape as `build_state`. The coupler writes into these every step;
 closures only read.
 """
-function build_flux_accumulators(grid, energy, hydrology, surface)
-    keys = all_flux_keys(energy, hydrology, surface)
-    fields = map(keys) do name
-        if name in flux_variables(energy)
-            return initial_flux(energy, name, grid)
-        elseif name in flux_variables(hydrology)
-            return initial_flux(hydrology, name, grid)
-        else
-            return initial_flux(surface, name, grid)
-        end
-    end
-    return NamedTuple{keys}(fields)
-end
+build_flux_accumulators(grid, energy, hydrology, surface) =
+    _build_closure_fields(flux_variables, initial_flux, grid, energy, hydrology, surface)
 
 #####
 ##### Top-level struct
@@ -98,7 +88,7 @@ energy, hydrology, or surface-property closure.
 - `hydrology` : an `AbstractHydrology`.
 - `surface`   : an `AbstractSurfaceProperties`.
 """
-struct SlabLand{FT, G, Clk, S, F, E, H, Sfc}
+struct SlabLand{FT, G, Clk, S, F, E, H, Sfc} <: AbstractLand
     grid      :: G
     clock     :: Clk
     state     :: S
@@ -167,13 +157,16 @@ end
     time_step!(land::SlabLand, Δt)
 
 Advance the slab by `Δt`. Each closure runs its own `step!`, then
-`update_state!` refreshes any cached diagnostics (e.g. snow-cover
-fraction, Jarvis resistance). State halos are filled at
+`update_state!` refreshes diagnostics. State halos are filled at
 the end so atmosphere kernels reading `state.T` see consistent values.
 
-Order of closure invocations is fixed: `energy → hydrology`. Hydrology
-runs after energy so closures that close the energy budget through
-phase change (snow melt, soil freeze/thaw) see the freshly updated `T`.
+Closure-invocation order: `energy → hydrology`. Hydrology runs after
+energy so future closures that close the energy budget through phase
+change (snow melt, soil freeze/thaw) see the freshly updated `T`.
+
+The clock is ticked first; subsequent closures see `land.clock.time =
+t + Δt`. Time-dependent property providers should therefore evaluate
+at the post-step time (consistent with `Atmospheres` and `Radiations`).
 """
 function Oceananigans.TimeSteppers.time_step!(land::SlabLand, Δt)
     tick!(land.clock, Δt)
@@ -190,8 +183,11 @@ end
 """
     update_state!(land::SlabLand)
 
-Refresh closure-owned diagnostics, in the order
-`hydrology → surface → energy`.
+Refresh closure-owned diagnostics. Order is `hydrology → surface →
+energy`: hydrology produces wetness/β, the surface closure may consume
+β (e.g. wetness-dependent albedo, LAI-aware roughness) before the
+energy closure assembles an effective heat capacity diagnostic from
+the freshly updated water storage.
 """
 function Oceananigans.TimeSteppers.update_state!(land::SlabLand)
     update_diagnostics!(land.hydrology, land.state, land.fluxes, land.surface, land.grid)
@@ -218,8 +214,15 @@ scalar_roughness_length(land::SlabLand)   = scalar_roughness_length(land.surface
 
 Consume atmosphere-land turbulent fluxes and populate the
 `net_energy_flux`, `precipitation`, and `evaporation` accumulators
-declared by the land closures. `net_energy_flux` is positive into the
-slab.
+declared by the land closures.
+
+* `net_energy_flux` ← `-(𝒬ᵀ + 𝒬ᵛ)`, positive into the slab.
+* `precipitation`   ← atmospheric rainfall flux + condensation (dew),
+                      both positive into the slab.
+* `evaporation`     ← net upward vapor flux, positive out of the slab.
+
+Radiative contributions are added on top in
+`apply_air_land_radiative_fluxes!`.
 """
 function update_net_fluxes!(coupled_model, land::SlabLand)
     al_interface = coupled_model.interfaces.atmosphere_land_interface
@@ -236,23 +239,31 @@ function update_net_fluxes!(coupled_model, land::SlabLand)
 
     (isnothing(Q) && isnothing(P) && isnothing(E)) && return nothing
 
-    launch!(arch, grid, :xy, _assemble_slab_land_fluxes!, Q, P, E, interface_fluxes)
+    # Prescribed atmospheric rainfall reaches the land via the atmosphere
+    # exchanger (`Jʳⁿ` is allocated by `PrescribedAtmosphere`'s exchanger
+    # state). When absent (e.g. radiatively decoupled or atmosphere
+    # without precipitation), fall back to a `ZeroField`.
+    atmos_state = coupled_model.interfaces.exchanger.atmosphere.state
+    Jʳⁿ = hasproperty(atmos_state, :Jʳⁿ) ? atmos_state.Jʳⁿ : ZeroField()
+
+    launch!(arch, grid, :xy, _assemble_slab_land_fluxes!, Q, P, E, interface_fluxes, Jʳⁿ)
     return nothing
 end
 
 @inline _maybe_write!(::Nothing, i, j, value) = nothing
 @inline _maybe_write!(field, i, j, value) = @inbounds field[i, j, 1] = value
 
-@kernel function _assemble_slab_land_fluxes!(Q, P, E, interface_fluxes)
+@kernel function _assemble_slab_land_fluxes!(Q, P, E, interface_fluxes, Jʳⁿ)
     i, j = @index(Global, NTuple)
     @inbounds begin
         𝒬ᵀ = interface_fluxes.sensible_heat[i, j, 1]
         𝒬ᵛ = interface_fluxes.latent_heat[i, j, 1]
         Jᵛ = interface_fluxes.water_vapor[i, j, 1]
+        rain = Jʳⁿ[i, j, 1]
     end
     _maybe_write!(Q, i, j, -(𝒬ᵀ + 𝒬ᵛ))
-    _maybe_write!(P, i, j, max(zero(Jᵛ),  Jᵛ))
-    _maybe_write!(E, i, j, max(zero(Jᵛ), -Jᵛ))
+    _maybe_write!(P, i, j, rain + max(zero(Jᵛ), -Jᵛ))
+    _maybe_write!(E, i, j, max(zero(Jᵛ),  Jᵛ))
 end
 
 interpolate_state!(exchanger, grid, ::SlabLand, coupled_model) = nothing
@@ -261,12 +272,13 @@ interpolate_state!(exchanger, grid, ::SlabLand, coupled_model) = nothing
     ComponentExchanger(land::SlabLand, grid)
 
 Expose the generic atmosphere-facing SlabLand state through accessors:
-skin temperature `T`, `moisture_availability`, and `roughness_length`.
+skin temperature `T`, `moisture_availability`, and the two roughness lengths.
 """
 function ComponentExchanger(land::SlabLand, grid)
-    state = (T                     = surface_temperature(land),
-             moisture_availability = surface_wetness(land),
-             roughness_length      = momentum_roughness_length(land))
+    state = (T                         = surface_temperature(land),
+             moisture_availability     = surface_wetness(land),
+             momentum_roughness_length = momentum_roughness_length(land),
+             scalar_roughness_length   = scalar_roughness_length(land))
     return ComponentExchanger(state, nothing)
 end
 

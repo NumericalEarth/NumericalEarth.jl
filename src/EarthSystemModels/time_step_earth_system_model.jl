@@ -71,6 +71,7 @@ function update_state!(coupled_model::EarthSystemModel, callbacks=[])
 
     # Phase 4: add radiative contributions on top
     apply_air_sea_radiative_fluxes!(coupled_model)
+    apply_air_land_radiative_fluxes!(coupled_model)
     apply_air_sea_ice_radiative_fluxes!(coupled_model)
 
     return nothing

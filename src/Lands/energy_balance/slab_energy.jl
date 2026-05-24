@@ -2,41 +2,81 @@
 ##### `SlabEnergy` — single-temperature explicit-Euler energy balance.
 #####
 ##### One prognostic variable `state.T`, one flux accumulator
-##### `fluxes.net_energy_flux` (W m⁻²). Heat capacity is the areal
-##### `(ρ c H)` of the slab, a scalar uniform over the grid. The
-##### atmosphere-facing `surface_temperature` returns `state.T`.
+##### `fluxes.net_energy_flux` (W m⁻², positive into the land slab).
+##### The areal heat capacity is either a uniform value or includes a
+##### liquid-water contribution proportional to `state.W`:
+#####
+##### ``dry_heat_capacity + liquid_heat_capacity * W``
+#####
+##### where `W` is the land water storage field when bucket hydrology is used.
+##### The atmosphere-facing `surface_temperature` returns `state.T`.
 #####
 
 """
-    SlabEnergy(FT = Float64; heat_capacity = 1480 * 1500 * 0.10)
+    SlabEnergy(FT = Float64;
+               dry_heat_capacity = 1480 * 1500 * 0.10,
+               liquid_heat_capacity = 4186)
 
-Single-temperature slab energy balance. `heat_capacity` is the areal
-heat capacity `(ρ c H)` in `J m⁻² K⁻¹`.
+Single-temperature slab energy balance. `dry_heat_capacity` and
+`liquid_heat_capacity` may be scalars or per-cell `Field`s.
+
+The slab heat capacity used to update `state.T` is
+
+``dry_heat_capacity + liquid_heat_capacity * state.W``
+
+with default `liquid_heat_capacity = 4186 J m⁻² K⁻¹` per `kg m⁻²` of liquid
+water.
 """
-struct SlabEnergy{FT} <: AbstractEnergyBalance
-    heat_capacity :: FT
+struct SlabEnergy{C, L} <: AbstractEnergyBalance
+    dry_heat_capacity    :: C
+    liquid_heat_capacity :: L
 end
 
-function SlabEnergy(FT::Type = Float64; heat_capacity = 1480.0 * 1500.0 * 0.10)
-    return SlabEnergy{FT}(convert(FT, heat_capacity))
+function SlabEnergy(FT::Type = Float64;
+                    dry_heat_capacity = 1480.0 * 1500.0 * 0.10,
+                    liquid_heat_capacity = 4186.0)
+    dry_heat_capacity    = normalize_property(FT, dry_heat_capacity)
+    liquid_heat_capacity = normalize_property(FT, liquid_heat_capacity)
+    return SlabEnergy(dry_heat_capacity, liquid_heat_capacity)
 end
 
 prognostic_variables(::SlabEnergy) = (:T,)
 flux_variables(::SlabEnergy)       = (:net_energy_flux,)
 
-@kernel function _slab_energy_step!(T, Q, Δt, C)
+@kernel function _slab_energy_step!(T, Q, Δt, Cdry)
     i, j = @index(Global, NTuple)
-    @inbounds T[i, j, 1] += Q[i, j, 1] * Δt / C
+    @inbounds begin
+        heat_capacity = property_value(Cdry, i, j, 1)
+        T[i, j, 1] += Q[i, j, 1] * Δt / heat_capacity
+    end
+end
+
+@kernel function _slab_energy_step_with_water!(T, Q, W, Δt, Cdry, Cl)
+    i, j = @index(Global, NTuple)
+    @inbounds begin
+        Cdry_ij1 = property_value(Cdry, i, j, 1)
+        Cl_ij1   = property_value(Cl, i, j, 1)
+        heat_capacity = Cdry_ij1 + Cl_ij1 * W[i, j, 1]
+        T[i, j, 1] += Q[i, j, 1] * Δt / heat_capacity
+    end
 end
 
 function step!(energy::SlabEnergy, state, fluxes, surface, grid, Δt)
     arch = architecture(grid)
-    launch!(arch, grid, :xy, _slab_energy_step!,
-            state.T, fluxes.net_energy_flux, Δt, energy.heat_capacity)
+    Cdry = energy.dry_heat_capacity
+
+    if hasproperty(state, :W)
+        launch!(arch, grid, :xy, _slab_energy_step_with_water!,
+                state.T, fluxes.net_energy_flux, state.W, Δt, Cdry, energy.liquid_heat_capacity)
+    else
+        launch!(arch, grid, :xy, _slab_energy_step!,
+                state.T, fluxes.net_energy_flux, Δt, Cdry)
+    end
     return nothing
 end
 
 surface_temperature(::SlabEnergy, state) = state.T
 
-Base.summary(s::SlabEnergy{FT}) where FT =
-    string("SlabEnergy{$FT}(ρcH=", s.heat_capacity, ")")
+Base.summary(s::SlabEnergy) =
+    string("SlabEnergy(dry_heat_capacity=", prettysummary(s.dry_heat_capacity),
+           ", liquid_heat_capacity=", prettysummary(s.liquid_heat_capacity), ")")

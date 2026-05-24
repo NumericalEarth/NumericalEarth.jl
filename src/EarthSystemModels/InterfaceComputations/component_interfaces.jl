@@ -61,45 +61,54 @@ end
 @inline computed_fluxes(interface::AtmosphereInterface)  = interface.fluxes
 @inline computed_fluxes(interface::SeaIceOceanInterface) = interface.fluxes
 
-struct AtmosphereOceanFluxes{F}
-    latent_heat           :: F
-    sensible_heat         :: F
-    water_vapor           :: F
-    x_momentum            :: F
-    y_momentum            :: F
-    friction_velocity     :: F
-    temperature_scale     :: F
-    water_vapor_scale     :: F
+"""
+    AtmosphereSurfaceFluxes{F}
+
+Atmosphere↔surface turbulent flux container, shared by the
+atmosphere–ocean and atmosphere–land interfaces (both produce the same
+8 quantities). Atmosphere–sea-ice uses a smaller container
+([`AtmosphereSeaIceFluxes`](@ref)) because it does not emit the
+characteristic scales.
+"""
+struct AtmosphereSurfaceFluxes{F}
+    latent_heat       :: F
+    sensible_heat     :: F
+    water_vapor       :: F
+    x_momentum        :: F
+    y_momentum        :: F
+    friction_velocity :: F
+    temperature_scale :: F
+    water_vapor_scale :: F
 end
 
-function AtmosphereOceanFluxes(grid)
+function AtmosphereSurfaceFluxes(grid)
     F = Field{Center, Center, Nothing}
-    return AtmosphereOceanFluxes(F(grid), F(grid), F(grid),
-                                 F(grid), F(grid), F(grid),
-                                 F(grid), F(grid))
+    return AtmosphereSurfaceFluxes(F(grid), F(grid), F(grid),
+                                   F(grid), F(grid), F(grid),
+                                   F(grid), F(grid))
 end
 
-AtmosphereOceanFluxes(::Nothing) = AtmosphereOceanFluxes(ntuple(_ -> ZeroField(), 8)...)
+AtmosphereSurfaceFluxes(::Nothing) = AtmosphereSurfaceFluxes(ntuple(_ -> ZeroField(), 8)...)
 
-Adapt.adapt_structure(to, fluxes::AtmosphereOceanFluxes) =
-    AtmosphereOceanFluxes(Adapt.adapt(to, fluxes.latent_heat),
-                          Adapt.adapt(to, fluxes.sensible_heat),
-                          Adapt.adapt(to, fluxes.water_vapor),
-                          Adapt.adapt(to, fluxes.x_momentum),
-                          Adapt.adapt(to, fluxes.y_momentum),
-                          Adapt.adapt(to, fluxes.friction_velocity),
-                          Adapt.adapt(to, fluxes.temperature_scale),
-                          Adapt.adapt(to, fluxes.water_vapor_scale))
+Adapt.adapt_structure(to, fluxes::AtmosphereSurfaceFluxes) =
+    AtmosphereSurfaceFluxes(Adapt.adapt(to, fluxes.latent_heat),
+                            Adapt.adapt(to, fluxes.sensible_heat),
+                            Adapt.adapt(to, fluxes.water_vapor),
+                            Adapt.adapt(to, fluxes.x_momentum),
+                            Adapt.adapt(to, fluxes.y_momentum),
+                            Adapt.adapt(to, fluxes.friction_velocity),
+                            Adapt.adapt(to, fluxes.temperature_scale),
+                            Adapt.adapt(to, fluxes.water_vapor_scale))
 
-on_architecture(arch, fluxes::AtmosphereOceanFluxes) =
-    AtmosphereOceanFluxes(on_architecture(arch, fluxes.latent_heat),
-                          on_architecture(arch, fluxes.sensible_heat),
-                          on_architecture(arch, fluxes.water_vapor),
-                          on_architecture(arch, fluxes.x_momentum),
-                          on_architecture(arch, fluxes.y_momentum),
-                          on_architecture(arch, fluxes.friction_velocity),
-                          on_architecture(arch, fluxes.temperature_scale),
-                          on_architecture(arch, fluxes.water_vapor_scale))
+on_architecture(arch, fluxes::AtmosphereSurfaceFluxes) =
+    AtmosphereSurfaceFluxes(on_architecture(arch, fluxes.latent_heat),
+                            on_architecture(arch, fluxes.sensible_heat),
+                            on_architecture(arch, fluxes.water_vapor),
+                            on_architecture(arch, fluxes.x_momentum),
+                            on_architecture(arch, fluxes.y_momentum),
+                            on_architecture(arch, fluxes.friction_velocity),
+                            on_architecture(arch, fluxes.temperature_scale),
+                            on_architecture(arch, fluxes.water_vapor_scale))
 
 struct AtmosphereSeaIceFluxes{F}
     latent_heat   :: F
@@ -221,7 +230,7 @@ function atmosphere_ocean_interface(grid,
                                     velocity_formulation,
                                     specific_humidity_formulation)
 
-    ao_fluxes = AtmosphereOceanFluxes(grid)
+    ao_fluxes = AtmosphereSurfaceFluxes(grid)
 
     ao_properties = InterfaceProperties(specific_humidity_formulation,
                                         temperature_formulation,
@@ -462,20 +471,21 @@ default_al_specific_humidity(::Nothing) = nothing
 default_al_specific_humidity(land) =
     BetaSurfaceSpecificHumidity(AtmosphericThermodynamics.Liquid())
 
-# Default atmosphere--land flux formulation. The momentum roughness length
-# is read from the land-side `roughness_length` field, with thermal/moisture roughness
-# 10× smaller (Garratt 1992). To override this behavior, pass
+# Default atmosphere--land flux formulation. The momentum and scalar roughness
+# lengths are read from `momentum_roughness_length` / `scalar_roughness_length`
+# when present, with legacy fallback to the single `roughness_length` field.
+# To override this behavior, pass
 # `atmosphere_land_fluxes = SimilarityTheoryFluxes(...)` with explicit
 # roughness lengths to `ComponentInterfaces` / `AtmosphereLandModel`.
 default_atmosphere_land_fluxes(::Nothing, FT) = nothing
 
 function default_atmosphere_land_fluxes(land, FT)
-    z₀_m = LandRoughnessLength(FT)
-    z₀_h = LandRoughnessLength(FT; multiplier = 0.1)
+    ℓm = LandRoughnessLength(FT)
+    ℓh = LandRoughnessLength(FT; multiplier = 0.1)
     return SimilarityTheoryFluxes(FT;
-                                   momentum_roughness_length    = z₀_m,
-                                   temperature_roughness_length = z₀_h,
-                                   water_vapor_roughness_length = z₀_h)
+                                   momentum_roughness_length    = ℓm,
+                                   temperature_roughness_length = ℓh,
+                                   water_vapor_roughness_length = ℓh)
 end
 
 #####

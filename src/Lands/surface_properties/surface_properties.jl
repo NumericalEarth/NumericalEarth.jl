@@ -20,10 +20,10 @@ abstract type AbstractSurfaceProperties end
 #####
 
 prognostic_variables(::AbstractSurfaceProperties) = ()
-flux_variables(::AbstractSurfaceProperties) = ()
+flux_variables(::AbstractSurfaceProperties)       = ()
 
-initial_state(::AbstractSurfaceProperties, ::Symbol, grid) = CenterField(grid)
-initial_flux(::AbstractSurfaceProperties, ::Symbol, grid) = CenterField(grid)
+initial_state(::AbstractSurfaceProperties, ::Symbol, grid)      = CenterField(grid)
+initial_flux(::AbstractSurfaceProperties, ::Symbol, grid)       = CenterField(grid)
 
 step!(::AbstractSurfaceProperties, state, fluxes, surface, grid, Δt) = nothing
 update_diagnostics!(::AbstractSurfaceProperties, state, fluxes, surface, grid) = nothing

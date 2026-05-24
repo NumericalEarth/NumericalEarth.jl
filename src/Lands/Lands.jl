@@ -1,6 +1,7 @@
 module Lands
 
-export PrescribedLand,
+export AbstractLand,
+       PrescribedLand,
        # Composable container
        SlabLand,
        # Energy-balance closures
@@ -12,9 +13,20 @@ export PrescribedLand,
        # Atmosphere-facing accessors
        surface_temperature, surface_wetness
 
+"""
+    abstract type AbstractLand end
+
+Top-level abstract type for NumericalEarth land components. Concrete
+subtypes (e.g. [`SlabLand`](@ref), [`PrescribedLand`](@ref)) participate
+in the `EarthSystemModel` coupling by implementing
+`time_step!`, `update_state!`, `surface_temperature`, and the
+component-exchanger / atmosphere-land flux entry points.
+"""
+abstract type AbstractLand end
+
 using Oceananigans
 using Oceananigans.Utils: launch!, prettytime
-using Oceananigans.Fields: Center, Face, CenterField, ConstantField, ZeroField, interior
+using Oceananigans.Fields: AbstractField, Center, Face, CenterField, ZeroField, interior
 using Oceananigans.Grids: grid_name, architecture, prettysummary
 using Oceananigans.OutputReaders: FieldTimeSeries, update_field_time_series!, extract_field_time_series
 using Oceananigans.TimeSteppers: Clock, tick!
@@ -38,6 +50,7 @@ import NumericalEarth.EarthSystemModels.InterfaceComputations: ComponentExchange
 include("energy_balance/energy_balance.jl")
 include("hydrology/hydrology.jl")
 include("surface_properties/surface_properties.jl")
+include("properties/property_providers.jl")
 
 # Container.
 include("slab_land.jl")

@@ -81,11 +81,10 @@ end
 end
 
 # A β-reduced saturation specific humidity for land surfaces:
-# qₛ = β · q_sat(Tₛ), where β ∈ [0, 1] is the moisture availability
-# exposed by the land's `surface_wetness`. The β is threaded through the
-# existing iteration pipeline by hijacking the `Sₛ` slot of
-# `InterfaceState`, so no plumbing changes are needed downstream of the
-# fixed-point solver.
+# qₛ = qₐ + β · (surface saturation specific humidity - qₐ), where β ∈ [0, 1] is the moisture
+# availability exposed by the land's `surface_wetness`. The β is threaded through
+# the existing iteration pipeline by hijacking the `S` slot of `InterfaceState`,
+# so no plumbing changes are needed downstream of the fixed-point solver.
 struct BetaSurfaceSpecificHumidity{Φ}
     phase :: Φ
 end
@@ -103,18 +102,19 @@ Base.show(io::IO, q::BetaSurfaceSpecificHumidity) = print(io, summary(q))
     κᵃᵗ = cvₘ / Rᵃᵗ
     ρᵃᵗ = Thermodynamics.air_density(ℂᵃᵗ, Tᵃᵗ, pᵃᵗ, qᵃᵗ)
     ρₛ = ρᵃᵗ * (Tₛ / Tᵃᵗ)^κᵃᵗ
-    return surface_specific_humidity(formulation, ℂᵃᵗ, ρₛ, Tₛ, β)
+    return surface_specific_humidity(formulation, ℂᵃᵗ, ρₛ, Tₛ, β, qᵃᵗ)
 end
 
 @inline function surface_specific_humidity(formulation::BetaSurfaceSpecificHumidity,
-                                           ℂᵃᵗ, ρₛ::Number, Tₛ, β=one(Tₛ))
+                                           ℂᵃᵗ, ρₛ::Number, Tₛ, β=one(Tₛ), qₐ=zero(Tₛ))
     FT = eltype(Tₛ)
     CT = eltype(ℂᵃᵗ)
     Tₛ = convert(CT, Tₛ)
     ρₛ = convert(CT, ρₛ)
     p★ = Thermodynamics.saturation_vapor_pressure(ℂᵃᵗ, Tₛ, formulation.phase)
     q★ = Thermodynamics.q_vap_from_p_vap(ℂᵃᵗ, Tₛ, ρₛ, p★)
-    return convert(FT, β * q★)
+    qₐ = convert(FT, qₐ)
+    return convert(FT, qₐ + β * (q★ - qₐ))
 end
 
 struct SalinityConstituent{FT}
@@ -427,6 +427,27 @@ end
 ###### Interface state
 ######
 
+"""
+    InterfaceState{FT}
+
+Interior-side state seen by the similarity-theory fixed-point solver
+(`compute_interface_state`).
+
+The `S` slot is overloaded by surface type:
+
+* atmosphere–ocean: ocean surface salinity (used by `WaterMoleFraction`
+  for `ImpureSaturationSpecificHumidity`).
+* atmosphere–sea-ice: ignored (humidity is over `Ice` phase).
+* atmosphere–land: moisture availability `β ∈ [0, 1]`, consumed by
+  [`BetaSurfaceSpecificHumidity`](@ref) to scale the surface saturation
+  humidity (`qₛ = qₐ + β·(q⁺ − qₐ)`). The land-coupling kernel writes
+  `S = βₛ` in `_compute_atmosphere_land_interface_state!`.
+
+The reuse keeps the iteration pipeline shared across surface types
+without growing `InterfaceState`. Future surfaces that need an
+additional scalar should add a separate field instead of re-overloading
+`S`.
+"""
 struct InterfaceState{FT}
     u★ :: FT # friction velocity
     θ★ :: FT # flux characteristic temperature
@@ -434,7 +455,7 @@ struct InterfaceState{FT}
     u :: FT  # interface x-velocity
     v :: FT  # interface y-velocity
     T :: FT  # interface temperature
-    S :: FT  # interface salinity
+    S :: FT  # ocean: salinity; land: moisture availability β. See docstring.
     q :: FT  # interface specific humidity
     melting :: Bool
 end

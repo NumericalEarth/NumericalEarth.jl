@@ -108,6 +108,7 @@ denote the _component_ or _location_.
 | ``q`` | `q` | specific humidity | Mass mixing ratio of water vapor (kg kg⁻¹) |
 | ``u`` | `u` | zonal velocity | Eastward wind component (m s⁻¹) |
 | ``v`` | `v` | meridional velocity | Northward wind component (m s⁻¹) |
+| ``\beta`` | `β` | moisture availability | Land surface wetness availability (–) |
 | ``\mathscr{I}_\downarrow^{\mathrm{sw}}`` | `ℐꜜˢʷ` | downwelling shortwave | Downwelling shortwave radiation (W m⁻²) |
 | ``\mathscr{I}_\downarrow^{\mathrm{lw}}`` | `ℐꜜˡʷ` | downwelling longwave | Downwelling longwave radiation (W m⁻²) |
 | ``J^c`` | `Jᶜ` | condensate flux | Precipitation (condensate) mass flux (kg m⁻² s⁻¹) |

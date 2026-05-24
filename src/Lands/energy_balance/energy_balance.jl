@@ -54,7 +54,7 @@ zeroed `CenterField`.
 initial_flux(::AbstractEnergyBalance, ::Symbol, grid) = CenterField(grid)
 
 """
-    step!(energy, state, fluxes, surface, grid, Δt)
+step!(energy, state, fluxes, surface, grid, Δt)
 
 Advance the energy-balance state by `Δt`. The closure may read other
 closures' state through the `state` `NamedTuple` and shared surface

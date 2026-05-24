@@ -23,10 +23,10 @@ abstract type AbstractHydrology end
 #####
 
 prognostic_variables(::AbstractHydrology) = ()
-flux_variables(::AbstractHydrology) = ()
+flux_variables(::AbstractHydrology)       = ()
 
-initial_state(::AbstractHydrology, ::Symbol, grid) = CenterField(grid)
-initial_flux(::AbstractHydrology, ::Symbol, grid) = CenterField(grid)
+initial_state(::AbstractHydrology, ::Symbol, grid)      = CenterField(grid)
+initial_flux(::AbstractHydrology, ::Symbol, grid)       = CenterField(grid)
 
 step!(::AbstractHydrology, state, fluxes, surface, grid, Δt) = nothing
 update_diagnostics!(::AbstractHydrology, state, fluxes, surface, grid) = nothing
@@ -39,7 +39,7 @@ update_diagnostics!(::AbstractHydrology, state, fluxes, surface, grid) = nothing
     wetness(hydrology::AbstractHydrology, state) -> AbstractField
 
 Return the moisture-availability factor `β ∈ [0, 1]` the atmosphere's
-latent-heat BC reads. May be a `Field`, `ConstantField`, `ZeroField`,
-or any `AbstractField`.
+latent-heat BC reads. May be a `Field`, `ZeroField`, any `AbstractField`,
+or a `Number`.
 """
 function wetness end

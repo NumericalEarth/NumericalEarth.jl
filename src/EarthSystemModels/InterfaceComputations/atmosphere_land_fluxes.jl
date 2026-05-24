@@ -1,51 +1,11 @@
 using Oceananigans.Grids: inactive_node
 
 #####
-##### Atmosphere-Land flux container
-#####
-
-struct AtmosphereLandFluxes{F}
-    latent_heat       :: F
-    sensible_heat     :: F
-    water_vapor       :: F
-    x_momentum        :: F
-    y_momentum        :: F
-    friction_velocity :: F
-    temperature_scale :: F
-    water_vapor_scale :: F
-end
-
-function AtmosphereLandFluxes(grid)
-    F = Field{Center, Center, Nothing}
-    return AtmosphereLandFluxes(F(grid), F(grid), F(grid),
-                                F(grid), F(grid), F(grid),
-                                F(grid), F(grid))
-end
-
-AtmosphereLandFluxes(::Nothing) = AtmosphereLandFluxes(ntuple(_ -> ZeroField(), 8)...)
-
-Adapt.adapt_structure(to, fluxes::AtmosphereLandFluxes) =
-    AtmosphereLandFluxes(Adapt.adapt(to, fluxes.latent_heat),
-                         Adapt.adapt(to, fluxes.sensible_heat),
-                         Adapt.adapt(to, fluxes.water_vapor),
-                         Adapt.adapt(to, fluxes.x_momentum),
-                         Adapt.adapt(to, fluxes.y_momentum),
-                         Adapt.adapt(to, fluxes.friction_velocity),
-                         Adapt.adapt(to, fluxes.temperature_scale),
-                         Adapt.adapt(to, fluxes.water_vapor_scale))
-
-on_architecture(arch, fluxes::AtmosphereLandFluxes) =
-    AtmosphereLandFluxes(on_architecture(arch, fluxes.latent_heat),
-                         on_architecture(arch, fluxes.sensible_heat),
-                         on_architecture(arch, fluxes.water_vapor),
-                         on_architecture(arch, fluxes.x_momentum),
-                         on_architecture(arch, fluxes.y_momentum),
-                         on_architecture(arch, fluxes.friction_velocity),
-                         on_architecture(arch, fluxes.temperature_scale),
-                         on_architecture(arch, fluxes.water_vapor_scale))
-
-#####
 ##### Atmosphere-Land interface constructor
+#####
+##### The atmosphere–land turbulent fluxes share their container type
+##### with atmosphere–ocean ([`AtmosphereSurfaceFluxes`](@ref)); only
+##### the compute kernel differs.
 #####
 
 atmosphere_land_interface(grid, ::Nothing,    land,     args...) = nothing
@@ -60,7 +20,7 @@ function atmosphere_land_interface(grid,
                                    velocity_formulation,
                                    specific_humidity_formulation)
 
-    al_fluxes = AtmosphereLandFluxes(grid)
+    al_fluxes = AtmosphereSurfaceFluxes(grid)
 
     al_properties = InterfaceProperties(specific_humidity_formulation,
                                         temperature_formulation,
@@ -100,7 +60,8 @@ function compute_atmosphere_land_fluxes!(coupled_model, atmosphere_land_interfac
                              surface_layer_height = surface_layer_height(coupled_model.atmosphere),
                              gravitational_acceleration = coupled_model.interfaces.properties.gravitational_acceleration)
 
-    # Land surface state from the exchanger (T_g [K], β = moisture_availability).
+    # Land surface state from the exchanger (`Tₛ` in the interface solver,
+    # `β = moisture_availability` in the land hydrology closure).
     # The generic SlabLand `ComponentExchanger` exposes these directly.
     land_state = exchanger.land.state
     Tₛ = land_state.T
@@ -135,18 +96,54 @@ function compute_atmosphere_land_fluxes!(coupled_model, atmosphere_land_interfac
 end
 
 function atmosphere_land_surface_properties(land_state::NamedTuple{names}) where names
-    if :roughness_length in names
-        return (; roughness_length = land_state.roughness_length)
+    momentum_roughness = _atmosphere_land_roughness_field(land_state,
+                                                           :momentum_roughness_length)
+    scalar_roughness   = _atmosphere_land_roughness_field(land_state,
+                                                           :scalar_roughness_length)
+    return _assemble_atmosphere_land_surface_properties(momentum_roughness, scalar_roughness)
+end
+
+@inline function _atmosphere_land_roughness_field(land_state::NamedTuple{names}, name::Symbol) where names
+    if name in names
+        return getproperty(land_state, name)
+    elseif :roughness_length in names
+        return land_state.roughness_length
     else
+        return nothing
+    end
+end
+
+@inline function _assemble_atmosphere_land_surface_properties(ℓm, ℓs)
+    if isnothing(ℓm) && isnothing(ℓs)
         return (;)
+    elseif isnothing(ℓs)
+        return (; momentum_roughness_length = ℓm)
+    elseif isnothing(ℓm)
+        return (; scalar_roughness_length = ℓs)
+    else
+        return (; momentum_roughness_length = ℓm,
+                 scalar_roughness_length   = ℓs)
     end
 end
 
 @inline local_atmosphere_land_surface_properties(land_properties, i, j) = (;)
 
-@inline function local_atmosphere_land_surface_properties(land_properties::NamedTuple{(:roughness_length,), T}, i, j) where T
-    roughness_length = @inbounds land_properties.roughness_length[i, j, 1]
-    return (; roughness_length)
+@inline _roughness_value(::Nothing, i, j, k=1) = nothing
+@inline _roughness_value(ℓ::Number, i, j, k=1) = ℓ
+@inline _roughness_value(field, i, j, k=1) = @inbounds field[i, j, k]
+
+@inline _moisture_availability(β::Number, i, j, k=1) = β
+@inline _moisture_availability(β, i, j, k=1) = @inbounds β[i, j, k]
+
+@inline function local_atmosphere_land_surface_properties(land_properties::NamedTuple{names}, i, j) where names
+    ℓm = _roughness_value(_atmosphere_land_roughness_field(land_properties,
+                                                           :momentum_roughness_length),
+                           i, j, 1)
+    ℓs = _roughness_value(_atmosphere_land_roughness_field(land_properties,
+                                                           :scalar_roughness_length),
+                           i, j, 1)
+
+    return _assemble_atmosphere_land_surface_properties(ℓm, ℓs)
 end
 
 @kernel function _compute_atmosphere_land_interface_state!(interface_fluxes,
@@ -174,7 +171,7 @@ end
         qᵃᵗ = atmosphere_state.q[i, j, 1]
 
         Tₛ = Tₛ_field[i, j, 1]      # surface temperature [K]
-        βₛ = βₛ_field[i, j, 1]      # moisture availability ∈ [0, 1]
+        βₛ = convert(typeof(Tₛ), _moisture_availability(βₛ_field, i, j, 1)) # moisture availability ∈ [0, 1]
     end
 
     ℂᵃᵗ = atmosphere_properties.thermodynamics_parameters

@@ -316,7 +316,7 @@ land but no ocean or sea ice. All keyword arguments are forwarded to
 
 The atmosphere--land turbulent fluxes are computed via
 `SimilarityTheoryFluxes` using land-side roughness and a β-reduced surface
-specific humidity (`moisture_availability · q_sat(T_g)`).
+specific humidity (`qᵃᵗ + β·[qₛ - qᵃᵗ]`).
 """
 AtmosphereLandModel(atmosphere, land; radiation=nothing, kw...) =
     EarthSystemModel(radiation, atmosphere, land, nothing, nothing; kw...)

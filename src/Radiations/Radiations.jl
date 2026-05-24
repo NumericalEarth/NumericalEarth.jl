@@ -32,6 +32,7 @@ import NumericalEarth.EarthSystemModels: interpolate_state!,
                                          update_net_fluxes!,
                                          apply_air_sea_radiative_fluxes!,
                                          apply_air_sea_ice_radiative_fluxes!,
+                                         apply_air_land_radiative_fluxes!,
                                          allocate_interface_fluxes!
 
 import NumericalEarth.EarthSystemModels.InterfaceComputations: ComponentExchanger,
@@ -52,5 +53,6 @@ include("interpolate_radiation_state.jl")
 include("air_sea_interface_radiation_state.jl")
 include("apply_air_sea_radiative_fluxes.jl")
 include("apply_air_sea_ice_radiative_fluxes.jl")
+include("apply_air_land_radiative_fluxes.jl")
 
 end # module Radiations

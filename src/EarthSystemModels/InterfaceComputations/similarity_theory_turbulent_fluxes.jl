@@ -163,15 +163,29 @@ end
 @inline local_roughness_length(ℓ, interior_properties) = ℓ
 
 @inline function local_roughness_length(ℓ::LandRoughnessLength,
-                                        interior_properties::NamedTuple{(:roughness_length,), T}) where T
-    z₀ = max(interior_properties.roughness_length, ℓ.minimum_roughness_length)
-    return max(ℓ.multiplier * z₀, ℓ.minimum_roughness_length)
+                                        interior_properties::NamedTuple{names, T},
+                                        ::Val{R}) where {names, T, R}
+    candidate = if R === :momentum && hasproperty(interior_properties, :momentum_roughness_length)
+        max(interior_properties.momentum_roughness_length, ℓ.minimum_roughness_length)
+    elseif R === :scalar && hasproperty(interior_properties, :scalar_roughness_length)
+        max(interior_properties.scalar_roughness_length, ℓ.minimum_roughness_length)
+    else
+        ℓ.minimum_roughness_length
+    end
+
+    return max(ℓ.multiplier * candidate, ℓ.minimum_roughness_length)
 end
 
 @inline function local_roughness_lengths(roughness_lengths, interior_properties)
-    momentum    = local_roughness_length(roughness_lengths.momentum, interior_properties)
-    temperature = local_roughness_length(roughness_lengths.temperature, interior_properties)
-    water_vapor = local_roughness_length(roughness_lengths.water_vapor, interior_properties)
+    momentum    = local_roughness_length(roughness_lengths.momentum,
+                                          interior_properties,
+                                          Val(:momentum))
+    temperature = local_roughness_length(roughness_lengths.temperature,
+                                          interior_properties,
+                                          Val(:scalar))
+    water_vapor = local_roughness_length(roughness_lengths.water_vapor,
+                                          interior_properties,
+                                          Val(:scalar))
     return SimilarityScales(momentum, temperature, water_vapor)
 end
 
