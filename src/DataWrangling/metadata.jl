@@ -301,12 +301,12 @@ end
 #####
 
 struct MetadataSet{V, D, R, N, F}
-    names     :: N        # NTuple{K, Symbol} — verbose dataset variable names
-    dataset   :: V        # shared
-    dates     :: D        # shared; scalar or AbstractVector
-    region    :: R        # shared
-    dir       :: String   # shared
-    filenames :: F        # NamedTuple keyed by `names`, one entry per variable
+    names :: N      # NTuple{K, Symbol} — verbose dataset variable names
+    dataset :: V    # shared
+    dates :: D      # shared; scalar or AbstractVector
+    region :: R     # shared
+    dir :: String   # shared
+    filenames :: F  # NamedTuple keyed by `names`, one entry per variable
 end
 
 """
@@ -400,6 +400,8 @@ function MetadataSet(variable_names::Symbol...;
 
     return MetadataSet(variable_names, dataset, effective_dates, region, dir, filenames)
 end
+
+MetadataSet(names::NTuple{<:Any, <:Symbol}; kw...) = MetadataSet(names...; kw...)
 
 # Property access: variables first via filenames lookup, struct fields second.
 function Base.getproperty(mset::MetadataSet, name::Symbol)
@@ -506,14 +508,40 @@ Only the intersection of `names` and `mset.names` is forwarded.
 The default `names` is every glossary key — fine for permissive models. Models
 that throw on unknown kwargs (`HydrostaticFreeSurfaceModel`, `SeaIceModel`)
 override the 2-argument form to pass a narrower `names`, letting a single
-multi-component MetadataSet drive both an ocean and a sea-ice model:
+multi-component MetadataSet drive both an ocean and a sea-ice model.
+Each model's override of `set!(model, ::MetadataSet)` filters the same `mset`
+down to the variables that model knows how to consume:
 
-```julia
-mset = MetadataSet(:temperature, :salinity,
-                   :sea_ice_thickness, :sea_ice_concentration;
-                   dataset = ECCO4Monthly(), date = start_date)
-set!(ocean.model,   mset)   # consumes :temperature, :salinity  → T, S
-set!(sea_ice.model, mset)   # consumes :sea_ice_thickness, :sea_ice_concentration → h, ℵ
+```jldoctest
+using NumericalEarth
+using Oceananigans
+using Statistics
+using Dates
+
+grid = LatitudeLongitudeGrid(size = (60, 30, 5),
+                             longitude = (-180, 180),
+                             latitude  = (-60, 60),
+                             z = (-5000, 0),
+                             halo = (7, 7, 7))
+
+ocean = ocean_simulation(grid)
+
+mset = MetadataSet(:temperature, :salinity;
+                   dataset = ECCO4Monthly(),
+                   date    = DateTime(1993, 1, 1))
+
+# Ocean override routes :temperature → T, :salinity → S; sea-ice vars are
+# filtered out. A `set!(sea_ice.model, mset)` call against the same `mset`
+# would route :sea_ice_thickness → h, :sea_ice_concentration → ℵ.
+set!(ocean.model, mset)
+
+T = ocean.model.tracers.T
+(min = round(minimum(T), digits = 2),
+ max = round(maximum(T), digits = 2),
+ mean = round(mean(T), digits = 2))
+
+# output
+(min = -1.06, max = 21.41, mean = 3.3)
 ```
 """
 function Fields.set!(model, mset::MetadataSet, names=keys(variable_glossary))
@@ -528,11 +556,9 @@ end
 # `set!` looks up kwargs.
 using Oceananigans.Models.HydrostaticFreeSurfaceModels: HydrostaticFreeSurfaceModel
 function Fields.set!(model::HydrostaticFreeSurfaceModel, mset::MetadataSet)
-    short = (propertynames(model.velocities)...,
-             propertynames(model.tracers)...,
-             propertynames(model.free_surface)...)
-    names = Tuple(n for (n, s) in variable_glossary if s in short)
-    return set!(model, mset, names)
+    hfsm_short_names = (propertynames(model.velocities)..., propertynames(model.tracers)..., :η)
+    valid_long_names = Tuple(long_name for (long_name, short_name) in variable_glossary if short_name in hfsm_short_names)
+    return set!(model, mset, valid_long_names)
 end
 
 # Sea ice: ClimaSeaIce's `set!(::SeaIceModel; h, ℵ)` only accepts these two.
