@@ -2,8 +2,7 @@
 ##### `ConstantSurfaceProperties` — minimal aerodynamic surface-property closure.
 #####
 ##### The simplest aerodynamic surface-property closure. It accepts either
-##### uniform scalars or per-cell Fields and materializes scalars to
-##### constant fields the coupler can index uniformly.
+##### uniform scalars or per-cell Fields.
 #####
 ##### Radiative properties (albedo, emissivity) live on the top-level
 ##### `radiation` component, not here.

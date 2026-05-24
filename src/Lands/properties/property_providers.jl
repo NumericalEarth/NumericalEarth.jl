@@ -16,7 +16,7 @@ representation: convert scalar numerics to type `FT`, keep fields as-is.
 """
 @inline normalize_property(::Type{FT}, p::Number) where FT = convert(FT, p)
 @inline normalize_property(::Type, p::AbstractField) = p
-@inline normalize_property(::Type, p) = p
+@inline normalize_property(::Type, p) = throw(ArgumentError("land property must be a Number or AbstractField, got $(typeof(p))"))
 
 """
     property_value(prop, i, j[, k=1])
@@ -25,4 +25,4 @@ Evaluate a land property at `(i, j, k)`.
 """
 @inline property_value(p::Number, i, j, k=1) = p
 @inline property_value(p::AbstractField, i, j, k=1) = @inbounds p[i, j, k]
-
+@inline property_value(p, i, j, k=1) = throw(ArgumentError("land property must be a Number or AbstractField, got $(typeof(p))"))

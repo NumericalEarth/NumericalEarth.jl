@@ -1,6 +1,7 @@
 include("runtests_setup.jl")
 
 using CUDA
+using Oceananigans.Fields: AbstractField
 using Oceananigans
 using Oceananigans.Utils: launch!
 using Oceananigans.TimeSteppers: update_state!
@@ -24,6 +25,13 @@ using Oceananigans.TimeSteppers: update_state!
                                            scalar_roughness_length = 0.01)
 
         land = SlabLand(grid; energy, hydrology, surface)
+
+        @test land.energy.dry_heat_capacity isa Number
+        @test land.energy.liquid_heat_capacity isa Number
+        @test land.hydrology.field_capacity isa Number
+        @test land.hydrology.critical_wetness isa Number
+        @test land.surface.momentum_roughness_length isa Number
+        @test land.surface.scalar_roughness_length isa Number
 
         # With `state.W = 0`, the slab responds to `fluxes.net_energy_flux`
         # using only `dry_heat_capacity`.
@@ -76,15 +84,15 @@ end
         Cl   = CenterField(grid)
         Wmax = CenterField(grid)
         Wcrit = CenterField(grid)
-        ℓm = CenterField(grid)
-        ℓh = CenterField(grid)
+        ℓᵐ = CenterField(grid)
+        ℓˢ = CenterField(grid)
 
         fill!(Cdry, 8.0)
         fill!(Cl, 2.0)
         fill!(Wmax, 12.0)
         fill!(Wcrit, 0.5)
-        fill!(ℓm, 0.2)
-        fill!(ℓh, 0.02)
+        fill!(ℓᵐ, 0.2)
+        fill!(ℓˢ, 0.02)
 
         energy = SlabEnergy(eltype(grid);
                             dry_heat_capacity = Cdry,
@@ -93,10 +101,17 @@ end
                                     field_capacity = Wmax,
                                     critical_wetness = Wcrit)
         surface = ConstantSurfaceProperties(eltype(grid);
-                                            momentum_roughness_length = ℓm,
-                                            scalar_roughness_length = ℓh)
+                                            momentum_roughness_length = ℓᵐ,
+                                            scalar_roughness_length = ℓˢ)
 
         land = SlabLand(grid; energy, hydrology, surface)
+
+        @test land.energy.dry_heat_capacity isa AbstractField
+        @test land.energy.liquid_heat_capacity isa AbstractField
+        @test land.hydrology.field_capacity isa AbstractField
+        @test land.hydrology.critical_wetness isa AbstractField
+        @test land.surface.momentum_roughness_length isa AbstractField
+        @test land.surface.scalar_roughness_length isa AbstractField
 
         fill!(land.state.W, 4.0)
         fill!(land.state.T, 10.0)
