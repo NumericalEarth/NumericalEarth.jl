@@ -8,7 +8,7 @@ or coefficient-based "bulk formula".
 NumericalEarth builds off Oceananigans, which provides tools for gridded finite-volume computations on CPUs and GPUs and building ocean-flavored fluid dynamics simulations. ClimaSeaIce, which provides software for both stand-alone and coupled sea ice simulations, is also built with Oceananigans.
 
 NumericalEarth's core abstraction is [`EarthSystemModel`](@ref), which encapsulates the ocean, sea ice, atmosphere, and their interfacial flux parameterizations.
-The package also provides [`ocean_simulation`](@ref) and [`sea_ice_simulation`](@ref), utilities for building component simulations that can be run standalone or coupled through `EarthSystemModel` and its convenience constructors such as `OceanOnlyModel`, `OceanSeaIceModel`, and `AtmosphereOceanModel`.
+The package also provides [`ocean_simulation`](@ref) and [`sea_ice_simulation`](@ref), utilities for building component simulations that can be run standalone or coupled through [`EarthSystemModel`](@ref).
 
 NumericalEarth is written in Julia. The effort started by the [Climate Modeling Alliance](https://clima.caltech.edu) and heroic external collaborators and evolved into a community effort.
 
