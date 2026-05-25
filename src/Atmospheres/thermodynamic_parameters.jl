@@ -56,15 +56,7 @@ Construct a set of parameters that define the density of moist air,
 
 where ``p`` is pressure, ``T`` is temperature, ``q`` defines the partition
 of total mass into vapor, liquid, and ice mass fractions, and
-``Rᵐ`` is the effective specific gas constant for the mixture,
-
-```math
-Rᵐ(q) =
-```
-
-where
-
-For more information see [reference docs].
+``Rᵐ`` is the effective specific gas constant for the mixture.
 """
 function ConstitutiveParameters(FT = Oceananigans.defaults.FloatType;
                                 gas_constant       = 8.3144598,
