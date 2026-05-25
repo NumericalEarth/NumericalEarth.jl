@@ -222,6 +222,7 @@ makedocs(; sitename = "NumericalEarth.jl",
              r"┌ Warning:.*",  # remove standard warning lines
              r"│ Use at own risk",
              r"└ @ .*",        # remove the source location of warnings
+             r"(?s)(└── dir:).*" => s"\1",
          ],
          clean = true,
          warnonly = [:cross_references, :missing_docs],
