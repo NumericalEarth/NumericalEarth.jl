@@ -27,9 +27,9 @@ using KernelAbstractions: @kernel, @index
 using Oceananigans: Oceananigans, prognostic_state, restore_prognostic_state!
 using Oceananigans.Architectures: architecture
 using Oceananigans.BoundaryConditions: fill_halo_regions!
-using Oceananigans.Fields: AbstractField, CenterField, ConstantField, Field, Center, Face, ZeroField, interior
+using Oceananigans.Fields: AbstractField, CenterField, Field, Center, Face, ZeroField
 using Oceananigans.Grids: grid_name
-using Oceananigans.OutputReaders: FieldTimeSeries, update_field_time_series!, extract_field_time_series
+using Oceananigans.OutputReaders: update_field_time_series!, extract_field_time_series
 using Oceananigans.TimeSteppers: Clock, tick!, update_state!
 using Oceananigans.Units: Time
 using Oceananigans.Utils: launch!, prettysummary, prettytime
@@ -38,11 +38,10 @@ using ..NumericalEarth: NumericalEarth
 using ..EarthSystemModels: EarthSystemModels, AbstractPrescribedComponent
 using ..EarthSystemModels.InterfaceComputations: interface_kernel_parameters, ComponentExchanger
 
-import Oceananigans.TimeSteppers: time_step!
 import ..EarthSystemModels: interpolate_state!,
                             update_net_fluxes!,
                             surface_temperature
-import ..EarthSystemModels.InterfaceComputations: atmosphere_land_interface, initialize!
+import ..EarthSystemModels.InterfaceComputations: atmosphere_land_interface
 
 # Closure interfaces
 include("energy_balance/energy_balance.jl")

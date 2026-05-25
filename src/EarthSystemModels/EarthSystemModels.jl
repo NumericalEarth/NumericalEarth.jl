@@ -80,9 +80,13 @@ InterfaceComputations.compute_atmosphere_land_fluxes!(::NoAtmosInterfaceModel)  
 InterfaceComputations.compute_atmosphere_ocean_fluxes!(::NoOceanInterfaceModel) = nothing
 InterfaceComputations.compute_sea_ice_ocean_fluxes!(::NoOceanInterfaceModel)    = nothing
 
+# `NoInterface` means atmosphere-ocean / atmosphere-sea-ice / sea-ice-ocean
+# are all absent. The atmosphere-land interface may still be present
+# (e.g. an `AtmosphereLandModel` with ocean = sea_ice = nothing), so we
+# explicitly do *not* fall back `compute_atmosphere_land_fluxes!` here —
+# its own 2-arg Nothing dispatch handles the missing-AL-interface case.
 InterfaceComputations.compute_atmosphere_ocean_fluxes!(::NoInterfaceModel)   = nothing
 InterfaceComputations.compute_atmosphere_sea_ice_fluxes!(::NoInterfaceModel) = nothing
-InterfaceComputations.compute_atmosphere_land_fluxes!(::NoInterfaceModel)    = nothing
 InterfaceComputations.compute_sea_ice_ocean_fluxes!(::NoInterfaceModel)      = nothing
 
 end # module
