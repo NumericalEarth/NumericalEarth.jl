@@ -1,4 +1,7 @@
 using NumericalEarth
+using Breeze
+using PythonCall, CondaPkg
+using SpeedyWeather, ConservativeRegridding
 using CUDA
 using Documenter
 using DocumenterCitations
@@ -34,13 +37,13 @@ mkpath(OUTPUT_DIR)
 # Set `build_always = false` for long-running examples that should only be built
 # on pushes to `main`/tags, or when the `build all examples` label is added to a PR.
 examples = [
-    Example("Single-column ocean simulation", "single_column_os_papa_simulation", true),
-    Example("One-degree ocean--sea ice simulation", "one_degree_simulation", false),
-    Example("Near-global ocean simulation", "near_global_ocean_simulation", false),
-    Example("Global climate simulation", "global_climate_simulation", false),
-    # Example("Veros ocean simulation", "veros_ocean_forced_simulation", false),
-    Example("Breeze over four oceans", "breeze_over_four_oceans", false),
-    Example("ERA5 hourly data", "ERA5_hourly_data", true),
+    # Example("Single-column ocean simulation", "single_column_os_papa_simulation", true),
+    # Example("One-degree ocean--sea ice simulation", "one_degree_simulation", false),
+    # Example("Near-global ocean simulation", "near_global_ocean_simulation", false),
+    # Example("Global climate simulation", "global_climate_simulation", false),
+    # # Example("Veros ocean simulation", "veros_ocean_forced_simulation", false),
+    # Example("Breeze over four oceans", "breeze_over_four_oceans", false),
+    # Example("ERA5 hourly data", "ERA5_hourly_data", true),
 ]
 
 # Developer examples from docs/src/developers/ directory
@@ -77,149 +80,95 @@ else
     end
 end
 
-#####
-##### Library autodocs generation
-#####
+modules = Module[]
+NumericalEarthBreezeExt = isdefined(Base, :get_extension) ? Base.get_extension(NumericalEarth, :NumericalEarthBreezeExt) : NumericalEarth.NumericalEarthBreezeExt
+NumericalEarthSpeedyWeatherExt = isdefined(Base, :get_extension) ? Base.get_extension(NumericalEarth, :NumericalEarthSpeedyWeatherExt) : NumericalEarth.NumericalEarthSpeedyWeatherExt
+NumericalEarthVerosExt = isdefined(Base, :get_extension) ? Base.get_extension(NumericalEarth, :NumericalEarthVerosExt) : NumericalEarth.NumericalEarthVerosExt
 
-const LIBRARY_DIR = joinpath(@__DIR__, "src", "library")
-
-function direct_child_modules(parent::Module)
-    children = Module[]
-
-    for name in names(parent; all = true, imported = false)
-        isdefined(parent, name) || continue
-        child = getfield(parent, name)
-        child isa Module || continue
-        child === parent && continue
-        parentmodule(child) === parent || continue
-        push!(children, child)
+for m in [NumericalEarth, NumericalEarthBreezeExt, NumericalEarthSpeedyWeatherExt, NumericalEarthVerosExt]
+    if !isnothing(m)
+        push!(modules, m)
     end
-
-    sort!(children; by = string)
-    return children
 end
 
-function collect_module_tree!(modules, parent::Module, seen)
-    parent in seen && return modules
-    push!(seen, parent)
-    push!(modules, parent)
 
-    for child in direct_child_modules(parent)
-        collect_module_tree!(modules, child, seen)
-    end
+#####
+##### Automatically generate files with docstrings for all modules
+#####
 
-    return modules
-end
+function walk_submodules!(result, visited, mod::Module)
+    for name in sort(names(mod; all=true, imported=false))
+        isdefined(mod, name) || continue
+        value = getproperty(mod, name)
+        if value isa Module &&
+            parentmodule(value) === mod &&
+            !(value in visited) &&
+            value !== mod
 
-function collect_module_tree(parent::Module)
-    return collect_module_tree!(Module[], parent, IdSet{Module}())
-end
-
-function extension_trigger_package_names(project_toml_path)
-    project = TOML.parsefile(project_toml_path)
-    extensions = get(project, "extensions", Dict())
-    trigger_names = String[]
-
-    for triggers in values(extensions)
-        if triggers isa AbstractString
-            push!(trigger_names, triggers)
-        else
-            append!(trigger_names, triggers)
+            push!(visited, value)
+            push!(result, value)
+            walk_submodules!(result, visited, value)
         end
     end
-
-    sort!(unique!(trigger_names))
-    return Symbol.(trigger_names)
 end
 
-function load_extension_trigger_packages(package_project_toml_path, docs_project_toml_path)
-    package_trigger_names = extension_trigger_package_names(package_project_toml_path)
-    docs_dependencies = keys(get(TOML.parsefile(docs_project_toml_path), "deps", Dict()))
-    docs_dependency_names = Set(Symbol.(docs_dependencies))
+function get_submodules(mod::Module)
+    result = Module[]
+    visited = Set{Module}()
 
-    for trigger_name in package_trigger_names
-        trigger_name in docs_dependency_names || continue
-        Base.eval(Main, :(import $(trigger_name)))
-    end
-
-    return nothing
+    walk_submodules!(result, visited, mod)
+    return result
 end
 
-function loaded_extension_modules(package::Module)
-    ext_dir = joinpath(dirname(@__DIR__), "ext")
-    extension_symbols = Symbol[]
+function write_api_md()
+    modules = get_submodules(NumericalEarth)
+    append!(modules, [NumericalEarthBreezeExt, NumericalEarthSpeedyWeatherExt, NumericalEarthVerosExt])
+    io = IOBuffer()
 
-    for (root, _, files) in walkdir(ext_dir)
-        for file in files
-            endswith(file, "Ext.jl") || continue
-            push!(extension_symbols, Symbol(first(splitext(file))))
-        end
-    end
+    println(io, """
+            # API Documentation
 
-    sort!(unique!(extension_symbols); by = string)
+            ## Public API
 
-    extensions = Module[]
-    for extension_symbol in extension_symbols
-        extension = isdefined(Base, :get_extension) ? Base.get_extension(package, extension_symbol) : nothing
-        isnothing(extension) || push!(extensions, extension)
-    end
-
-    return extensions
-end
-
-function bind_modules_in_main!(modules)
+            ```@autodocs
+            Modules = [NumericalEarth]
+            Private = false
+            ```
+            """)
     for mod in modules
-        name = nameof(mod)
-        isdefined(Main, name) || Core.eval(Main, :(const $name = $mod))
+        println(io, """
+                ### $(chopprefix(string(mod), "NumericalEarth."))
+
+                ```@autodocs
+                Modules = [$(mod)]
+                Private = false
+                ```
+                """)
+    end
+    println(io, """
+            ## Private API
+
+            ```@autodocs
+            Modules = [NumericalEarth]
+            Public = false
+            ```
+            """)
+    for mod in modules
+        println(io, """
+                ### $(chopprefix(string(mod), "NumericalEarth."))
+
+                ```@autodocs
+                Modules = [$(mod)]
+                Public = false
+                ```
+                """)
     end
 
-    return modules
+    # Remove multiple trailing whitespaces, but keep the final one.
+    write(joinpath(@__DIR__, "src", "library", "api.md"), strip(String(take!(io))) * "\n")
 end
 
-function write_library_autodocs(path, title, description, modules; private)
-    open(path, "w") do io
-        println(io, "# ", title)
-        println(io)
-        println(io, description)
-        println(io)
-        println(io, "<!-- This file is autogenerated by docs/make.jl. -->")
-        println(io)
-
-        for mod in modules
-            println(io, "## ", string(mod))
-            println(io)
-            println(io, "```@autodocs")
-            println(io, "Modules = [", string(mod), "]")
-            println(io, private ? "Public = false" : "Private = false")
-            println(io, "```")
-            println(io)
-        end
-    end
-
-    return nothing
-end
-
-package_project_toml_path = joinpath(dirname(@__DIR__), "Project.toml")
-docs_project_toml_path = joinpath(@__DIR__, "Project.toml")
-
-load_extension_trigger_packages(package_project_toml_path, docs_project_toml_path)
-
-core_modules = collect_module_tree(NumericalEarth)
-extension_modules = loaded_extension_modules(NumericalEarth)
-bind_modules_in_main!(extension_modules)
-modules = vcat(core_modules, extension_modules)
-
-write_library_autodocs(joinpath(LIBRARY_DIR, "public.md"),
-                       "Public Documentation",
-                       "Documentation for `NumericalEarth.jl`'s public interface. This page is generated from the loaded module tree, so new submodules and loaded extensions are included automatically.",
-                       modules;
-                       private = false)
-
-write_library_autodocs(joinpath(LIBRARY_DIR, "internals.md"),
-                       "Private types and functions",
-                       "Documentation for `NumericalEarth.jl`'s internal interface. This page is generated from the loaded module tree, so new submodules and loaded extensions are included automatically.",
-                       modules;
-                       private = true)
+write_api_md()
 
 #####
 ##### Build docs
@@ -255,8 +204,7 @@ pages = [
 
     "Library" => [
         "Contents"       => "library/outline.md",
-        "Public"         => "library/public.md",
-        "Private"        => "library/internals.md",
+        "API"            => "library/api.md",
         "Function index" => "library/function_index.md",
     ],
 
