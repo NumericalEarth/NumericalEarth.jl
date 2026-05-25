@@ -58,20 +58,26 @@ Keyword Arguments
 =================
 - `Δt`: time step for the sea ice simulation
 - `ice_salinity`: salinity of the sea ice (psu)
-- `advection`: optional advection scheme for the sea ice model
+- `advection`: optional advection scheme for the sea ice model; if `nothing` (default), no advection
+               is applied and only thermodynamics evolve the sea ice state
 - `tracers`: optional tracers to include in the sea ice model
 - `ice_heat_capacity`: heat capacity of the sea ice (J kg⁻¹ K⁻¹)
 - `ice_consolidation_thickness`: thickness threshold for sea ice consolidation (m)
 - `sea_ice_density`: density of the sea ice (kg m⁻³)
 - `snow_density`: density of the snow (kg m⁻³)
 - `dynamics`: sea ice dynamics model to use (default is `sea_ice_dynamics(grid, ocean)`)
-- `bottom_heat_boundary_condition`: heat boundary condition at the ice-ocean interface (default is `IceWaterThermalEquilibrium` with ocean surface salinity)
-- `top_heat_boundary_condition`: heat boundary condition at the ice-atmosphere interface (default is a prescribed temperature calculated in the flux computation)
+- `bottom_heat_boundary_condition`: heat boundary condition at the ice-ocean interface (default
+                                    is `IceWaterThermalEquilibrium` with ocean surface salinity)
+- `top_heat_boundary_condition`: heat boundary condition at the ice-atmosphere interface (default
+                                 is a prescribed temperature calculated in the flux computation)
 - `timestepper`: time stepper to use for the sea ice model (default is `:SplitRungeKutta3`)
-- `phase_transitions`: phase transition properties for the sea ice (default is a `PhaseTransitions` with specified heat capacity and density)
+- `phase_transitions`: phase transition properties for the sea ice (default is a `PhaseTransitions`
+                       with specified heat capacity and density)
 - `conductivity`: thermal conductivity for the internal heat flux (W m⁻¹ K⁻¹)
-- `internal_heat_flux`: internal heat flux formulation for the sea ice (default is a `ConductiveFlux` with specified conductivity)
-- `snow_thermodynamics`: thermodynamics for the snow layer (default is a slab thermodynamics with specified conductivity and prescribed temperature)
+- `internal_heat_flux`: internal heat flux formulation for the sea ice (default is a
+                        `ConductiveFlux` with specified conductivity)
+- `snow_thermodynamics`: thermodynamics for the snow layer (default is a slab thermodynamics with
+                         specified conductivity and prescribed temperature)
 """
 function sea_ice_simulation(grid, ocean=nothing;
                             Δt = 5minutes,
