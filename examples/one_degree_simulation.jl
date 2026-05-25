@@ -116,7 +116,7 @@ radiation = JRA55PrescribedRadiation(arch; ocean_surface)
 # With Runge-Kutta 3rd order time-stepping we can safely use a timestep of 20 minutes.
 
 coupled_model = OceanSeaIceModel(ocean, sea_ice; atmosphere, land, radiation)
-simulation = Simulation(coupled_model; Δt=20minutes, stop_time=365days)
+simulation = Simulation(coupled_model; Δt=20minutes, stop_time=20days)
 
 # ### A progress messenger
 #
