@@ -119,12 +119,42 @@ the selected model raises the usual `MethodError`.
 
 # Examples
 
-```julia
-# Hydrostatic (default)
-ocean = ocean_simulation(grid)
+```jldoctest
+julia> using NumericalEarth, Oceananigans
 
-# Nonhydrostatic LES
-les   = ocean_simulation(grid; model = :nonhydrostatic, Δt = 2)
+julia> grid = RectilinearGrid(size = (10, 10, 6), extent = (1, 1, 1), halo=(6, 6, 5));
+
+julia> ocean = ocean_simulation(grid)
+Simulation of HydrostaticFreeSurfaceModel{CPU, RectilinearGrid}(time = 0 seconds, iteration = 0)
+├── Next time step: 30 minutes
+├── run_wall_time: 0 seconds
+├── run_wall_time / iteration: NaN days
+├── stop_time: Inf days
+├── stop_iteration: Inf
+├── wall_time_limit: Inf
+├── minimum_relative_step: 0.0
+├── callbacks: OrderedDict with 4 entries:
+│   ├── stop_time_exceeded => Callback of stop_time_exceeded on IterationInterval(1)
+│   ├── stop_iteration_exceeded => Callback of stop_iteration_exceeded on IterationInterval(1)
+│   ├── wall_time_limit_exceeded => Callback of wall_time_limit_exceeded on IterationInterval(1)
+│   └── nan_checker => Callback of NaNChecker for u on IterationInterval(100)
+└── output_writers: OrderedDict with no entries
+
+julia> les = ocean_simulation(grid; model = :nonhydrostatic, Δt = 2)
+Simulation of NonhydrostaticModel{CPU, RectilinearGrid}(time = 0 seconds, iteration = 0)
+├── Next time step: 2 seconds
+├── run_wall_time: 0 seconds
+├── run_wall_time / iteration: NaN days
+├── stop_time: Inf days
+├── stop_iteration: Inf
+├── wall_time_limit: Inf
+├── minimum_relative_step: 0.0
+├── callbacks: OrderedDict with 4 entries:
+│   ├── stop_time_exceeded => Callback of stop_time_exceeded on IterationInterval(1)
+│   ├── stop_iteration_exceeded => Callback of stop_iteration_exceeded on IterationInterval(1)
+│   ├── wall_time_limit_exceeded => Callback of wall_time_limit_exceeded on IterationInterval(1)
+│   └── nan_checker => Callback of NaNChecker for u on IterationInterval(100)
+└── output_writers: OrderedDict with no entries
 ```
 """
 function ocean_simulation(grid; model::Symbol = :hydrostatic, kwargs...)
