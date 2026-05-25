@@ -170,9 +170,10 @@ at the post-step time (consistent with `Atmospheres` and `Radiations`).
 """
 function Oceananigans.TimeSteppers.time_step!(land::SlabLand, Δt)
     tick!(land.clock, Δt)
+    time = land.clock.time
 
-    step!(land.energy,    land.state, land.fluxes, land.surface, land.grid, Δt)
-    step!(land.hydrology, land.state, land.fluxes, land.surface, land.grid, Δt)
+    step!(land.energy,    land.state, land.fluxes, land.surface, land.grid, Δt, time)
+    step!(land.hydrology, land.state, land.fluxes, land.surface, land.grid, Δt, time)
 
     Oceananigans.TimeSteppers.update_state!(land)
 

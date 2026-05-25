@@ -75,6 +75,7 @@ export
     AbstractLand,
     SlabLand,
     SlabEnergy,
+    ForceRestoreEnergy,
     BucketHydrology,
     DryLand,
     SaturatedSurface,
@@ -118,7 +119,7 @@ export
 using DataDeps: DataDeps
 using Oceananigans: Oceananigans
 using Oceananigans.Architectures: CPU
-using Oceananigans.Grids: node
+using Oceananigans.Grids: _node
 using Oceananigans.ImmersedBoundaries: ImmersedBoundaryGrid, GridFittedBottom
 using Oceananigans.OutputReaders: GPUAdaptedFieldTimeSeries, FieldTimeSeries
 
@@ -134,7 +135,10 @@ const SKOFTS = SomeKindOfFieldTimeSeries
 @inline stateindex(a::SKOFTS, i, j, k, grid, time, args...) = @inbounds a[i, j, k, time]
 
 @inline function stateindex(a::Function, i, j, k, grid, time, (LX, LY, LZ), args...)
-    λ, φ, z = node(i, j, k, grid, LX(), LY(), LZ())
+    # `_node` always returns the full (λ, φ, z) triple — with placeholder
+    # values for Flat dimensions — whereas `node` drops Flat-dim entries
+    # and produces a shorter tuple that breaks the destructuring below.
+    λ, φ, z = _node(i, j, k, grid, LX(), LY(), LZ())
     return a(λ, φ, z, time)
 end
 

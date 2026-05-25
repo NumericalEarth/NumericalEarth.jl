@@ -29,6 +29,8 @@ initial_state(::AbstractHydrology, ::Symbol, grid)      = CenterField(grid)
 initial_flux(::AbstractHydrology, ::Symbol, grid)       = CenterField(grid)
 
 step!(::AbstractHydrology, state, fluxes, surface, grid, Δt) = nothing
+step!(hydrology::AbstractHydrology, state, fluxes, surface, grid, Δt, time) =
+    step!(hydrology, state, fluxes, surface, grid, Δt)
 update_diagnostics!(::AbstractHydrology, state, fluxes, surface, grid) = nothing
 
 #####

@@ -5,6 +5,7 @@ using Oceananigans.Fields: AbstractField
 using Oceananigans
 using Oceananigans.Utils: launch!
 using Oceananigans.TimeSteppers: update_state!
+using NumericalEarth.Lands: update_diagnostics!
 
 @testset "SlabLand energy and hydrology" begin
     for arch in test_architectures
@@ -133,6 +134,119 @@ end
         ex = NumericalEarth.EarthSystemModels.InterfaceComputations.ComponentExchanger(land, land.grid)
         @test isapprox(CUDA.@allowscalar(ex.state.momentum_roughness_length[1, 1, 1]), 0.2; atol=1e-12)
         @test isapprox(CUDA.@allowscalar(ex.state.scalar_roughness_length[1, 1, 1]), 0.02; atol=1e-12)
+    end
+end
+
+@testset "BucketHydrology root depth and LAI modifiers" begin
+    for arch in test_architectures
+        grid = RectilinearGrid(arch;
+                               size = 1,
+                               x = (0, 1),
+                               y = (0, 1),
+                               z = (-1, 0),
+                               topology = (Flat, Flat, Bounded))
+
+        Wmax = CenterField(grid)
+        Wcrit = CenterField(grid)
+        zʳ = CenterField(grid)
+        Λ = CenterField(grid)
+
+        fill!(Wmax, 10.0)
+        fill!(Wcrit, 0.5)
+        fill!(zʳ, 2.0)
+        fill!(Λ, 1.0)
+
+        energy = SlabEnergy(eltype(grid); dry_heat_capacity = 1000.0, liquid_heat_capacity = 4000.0)
+        hydrology = BucketHydrology(eltype(grid);
+                                    field_capacity = Wmax,
+                                    critical_wetness = Wcrit,
+                                    root_depth = zʳ,
+                                    leaf_area_index = Λ,
+                                    lai_stress = 0.2)
+        surface = ConstantSurfaceProperties(eltype(grid);
+                                            momentum_roughness_length = 0.1,
+                                            scalar_roughness_length = 0.01)
+
+        land = SlabLand(grid; energy, hydrology, surface)
+
+        fill!(land.state.W, 5.0)
+        fill!(land.state.moisture_availability, 0.0)
+        update_diagnostics!(land.hydrology, land.state, land.fluxes, land.surface, land.grid)
+
+        # Effective capacity is Wmax * zʳ = 20 kg m⁻², so β_before = 5/(0.5*20)=0.5.
+        # LAI stress with kᴸ=0.2 and Λ=1.0 gives β = 0.5 * exp(-0.2).
+        expected_β = 0.5 * exp(-0.2)
+        @test isapprox(CUDA.@allowscalar(land.state.moisture_availability[1, 1, 1]), expected_β; atol=1e-12)
+
+        fill!(land.state.W, 18.0)
+        fill!(land.fluxes.precipitation, 7.0)
+        fill!(land.fluxes.evaporation, 0.0)
+        fill!(land.fluxes.runoff, 0.0)
+        time_step!(land, 1.0)
+
+        @test isapprox(CUDA.@allowscalar(land.state.W[1, 1, 1]), 20.0; atol=1e-12)
+        # At saturation β_raw = 1; the canopy LAI stress (kᴸ Λ = 0.2)
+        # still multiplies through, giving β = exp(-0.2).
+        @test isapprox(CUDA.@allowscalar(land.state.moisture_availability[1, 1, 1]), exp(-0.2); atol=1e-12)
+        @test isapprox(CUDA.@allowscalar(land.fluxes.runoff[1, 1, 1]), 5.0; atol=1e-12)
+    end
+end
+
+@testset "Force restore energy closure" begin
+    for arch in test_architectures
+        grid = RectilinearGrid(arch;
+                               size = 1,
+                               x = (0, 1),
+                               y = (0, 1),
+                               z = (-1, 0),
+                               topology = (Flat, Flat, Bounded))
+
+        energy = ForceRestoreEnergy(eltype(grid);
+                                   dry_heat_capacity = 2.0,
+                                   liquid_heat_capacity = 4.0,
+                                   deep_temperature = 260.0,
+                                   surface_to_deep_time_scale = 1.0e6,
+                                   deep_to_climate_time_scale = 1.0)
+        surface = ConstantSurfaceProperties(eltype(grid);
+                                           momentum_roughness_length = 0.1,
+                                           scalar_roughness_length = 0.01)
+        land = SlabLand(grid; energy, hydrology = DryLand(), surface)
+
+        fill!(land.state.T, 280.0)
+        fill!(land.state.Tᵈ, 280.0)
+        fill!(land.fluxes.net_energy_flux, 10.0)
+
+        NumericalEarth.Lands.step!(land.energy, land.state, land.fluxes, land.surface, land.grid, 1.0, 0.0)
+        @test isapprox(CUDA.@allowscalar(land.state.T[1, 1, 1]), 285.0; atol=1e-12)
+        # Tᵈ relaxes toward Tᶜ = 260 over one second with τᵈ = 1 s.
+        @test isapprox(CUDA.@allowscalar(land.state.Tᵈ[1, 1, 1]), 260.0; atol=1e-12)
+
+        # Initialize deep-state from per-cell deep-temperature field (stateindex path).
+        deep = CenterField(grid)
+        fill!(deep, 265.0)
+        energy_field = ForceRestoreEnergy(eltype(grid);
+                                         dry_heat_capacity = 2.0,
+                                         liquid_heat_capacity = 4.0,
+                                         deep_temperature = deep,
+                                         surface_to_deep_time_scale = 1.0e6,
+                                         deep_to_climate_time_scale = 2.0)
+
+        land_field = SlabLand(grid; energy = energy_field, hydrology = DryLand(), surface)
+        @test isapprox(CUDA.@allowscalar(land_field.state.Tᵈ[1, 1, 1]), 265.0; atol=1e-12)
+
+        deep_by_time = (λ, φ, z, t) -> t > 0 ? 265.0 : 260.0
+        energy_time = ForceRestoreEnergy(eltype(grid);
+                                        dry_heat_capacity = 2.0,
+                                        liquid_heat_capacity = 4.0,
+                                        deep_temperature = deep_by_time,
+                                        deep_to_climate_time_scale = 1.0)
+        land_time = SlabLand(grid; energy = energy_time, hydrology = DryLand(), surface)
+
+        fill!(land_time.state.T, 280.0)
+        fill!(land_time.state.Tᵈ, 280.0)
+        fill!(land_time.fluxes.net_energy_flux, 0.0)
+        time_step!(land_time, 1.0)
+        @test isapprox(CUDA.@allowscalar(land_time.state.Tᵈ[1, 1, 1]), 265.0; atol=1e-12)
     end
 end
 

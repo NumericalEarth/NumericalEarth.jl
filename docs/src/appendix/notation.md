@@ -116,6 +116,19 @@ denote the _component_ or _location_.
 | ``h_{b\ell}`` | `h_bℓ` | boundary layer height | Atmospheric boundary layer height (m) |
 | ``pᵛ⁺`` | ``pᵛ⁺`` | saturation vapor pressure | Vapor pressure at saturation (Pa) |
 
+## Land state variables
+
+| Math | Code | Property | Description |
+|:----:|:----:|:---------|:------------|
+| ``W`` | `W` | water storage | Layer-integrated liquid water storage (kg m⁻²) |
+| ``β`` | `β` | moisture availability | Moisture availability factor (–) |
+| ``Tᶜ`` | `Tᶜ` | deep climatological temperature | Prescribed deep/climatological target temperature (K) |
+| ``Tᵈ`` | `Tᵈ` | deep temperature state | Prognostic deep-layer soil temperature (K) |
+| ``zʳ`` | `zʳ` | effective root depth | Root-zone scaling of moisture capacity (m) |
+| ``\Lambda`` | `Λ` | leaf area index | Leaf area index (–) |
+| ``τˢ`` | `τˢ` | surface-to-deep coupling timescale | Surface/deep temperature relaxation timescale (s) |
+| ``τᵈ`` | `τᵈ` | deep-to-climate coupling timescale | Deep temperature climatological relaxation timescale (s) |
+
 ## Ocean state variables
 
 | Math | Code | Property | Description |
@@ -251,6 +264,7 @@ collects the less obvious completions used in this notation.
 | `𝒬` | `\scrQ` | Script Q (heat flux) |
 | `ℐ` | `\scrI` | Script I (radiative intensity) |
 | `ℒ` | `\scrL` | Script L (latent heat) |
+| `Λ` | `\Lambda` | Lambda (leaf area index) |
 | `τ` | `\tau` | Tau (kinematic stress) |
 | `ρ` | `\rho` | Rho (density) |
 | `σ` | `\sigma` | Sigma (Stefan–Boltzmann constant) |

@@ -21,12 +21,19 @@ Unsupported input types raise a `MethodError` at construction time.
 """
     property_value(prop, i, j[, k=1])
 
-Evaluate a land property at `(i, j, k)`. Defined for `Number` and
-`AbstractField`; unsupported types raise a `MethodError` at compile
-time. We avoid a catch-all throwing fallback here because GPUCompiler
-cannot lower the `throw(ArgumentError("…\$(typeof(p))…"))` codepath
-(it needs runtime `Symbol` construction), which trips GPU kernel
-compilation even when the fallback isn't reached.
+Evaluate a land property at `(i, j, k)`. Defined for `Number`,
+`AbstractArray`, and `AbstractField`; unsupported types raise a
+`MethodError` at compile time. We avoid a catch-all throwing fallback
+here because GPUCompiler cannot lower the
+`throw(ArgumentError("…\$(typeof(p))…"))` codepath (it needs runtime
+`Symbol` construction), which trips GPU kernel compilation even when
+the fallback isn't reached.
+
+`AbstractArray` covers the GPU-adapted case: Oceananigans `Field`s are
+adapted to their underlying `OffsetArray{T, 3, CuDeviceArray{T, 3}}`
+on the device, which is not `<: AbstractField` even though it is the
+same memory.
 """
 @inline property_value(p::Number, i, j, k=1) = p
+@inline property_value(p::AbstractArray, i, j, k=1) = @inbounds p[i, j, k]
 @inline property_value(p::AbstractField, i, j, k=1) = @inbounds p[i, j, k]

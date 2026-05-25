@@ -63,6 +63,8 @@ directly. The default is a no-op (used by closures with no prognostic
 state, e.g. prescribed surface temperature).
 """
 step!(::AbstractEnergyBalance, state, fluxes, surface, grid, Δt) = nothing
+step!(energy::AbstractEnergyBalance, state, fluxes, surface, grid, Δt, time) =
+    step!(energy, state, fluxes, surface, grid, Δt)
 
 """
     update_diagnostics!(energy, state, fluxes, surface, grid)

@@ -6,6 +6,7 @@ export AbstractLand,
        SlabLand,
        # Energy-balance closures
        SlabEnergy,
+       ForceRestoreEnergy,
        # Hydrology closures
        BucketHydrology, DryLand, SaturatedSurface,
        # Surface-property closures
@@ -34,7 +35,7 @@ using Oceananigans.TimeSteppers: Clock, tick!, update_state!
 using Oceananigans.Units: Time
 using Oceananigans.Utils: launch!, prettysummary, prettytime
 
-using ..NumericalEarth: NumericalEarth
+using ..NumericalEarth: NumericalEarth, stateindex
 using ..EarthSystemModels: EarthSystemModels, AbstractPrescribedComponent
 using ..EarthSystemModels.InterfaceComputations: interface_kernel_parameters, ComponentExchanger
 
@@ -55,6 +56,7 @@ include("slab_land.jl")
 # Default closures (sized so `SlabEnergy + BucketHydrology + ConstantSurfaceProperties`
 # is the canonical Manabe-bucket slab).
 include("energy_balance/slab_energy.jl")
+include("energy_balance/force_restore_energy.jl")
 include("hydrology/bucket_hydrology.jl")
 include("hydrology/dry_land.jl")
 include("hydrology/saturated_surface.jl")
