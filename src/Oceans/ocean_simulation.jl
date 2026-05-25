@@ -107,8 +107,7 @@ selects the underlying Oceananigans model formulation:
 
 - `:hydrostatic` (default) — builds a `HydrostaticFreeSurfaceModel`-based simulation
   with a free surface, CATKE vertical mixing, quadratic bottom drag, and a
-  TEOS-10 equation of state. See [`hydrostatic_ocean_simulation`](@ref) for the
-  full kwarg list.
+  TEOS-10 equation of state. See [`hydrostatic_ocean_simulation`](@ref) for the full kwarg list.
 
 - `:nonhydrostatic` — builds a `NonhydrostaticModel`-based simulation suitable
   for LES (full 3D pressure, no free surface, no barotropic forcing). See
@@ -203,8 +202,9 @@ It then wraps the model into an Oceananigans's `Simulation` with the specified t
 ## Behaviour and automatic configuration
 
 ### Coriolis
-- On spherical grids, a `HydrostaticSphericalCoriolis` object is used by default.
-- On rectilinear grids, Coriolis is disabled unless explicitly provided.
+- On spherical grids, an `Oceananigans.Coriolis.HydrostaticSphericalCoriolis` object
+  is used by default.
+- On rectilinear grids, Coriolis force is disabled unless explicitly provided.
 
 ### Single-column grids (`grid.Nx == 1 && grid.Ny == 1`)
 - Advection is turned off (`momentum_advection = nothing`, `tracer_advection = nothing`).
