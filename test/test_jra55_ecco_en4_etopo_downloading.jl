@@ -8,11 +8,11 @@ include("download_utils.jl")
         datum = Metadatum(name; dataset=JRA55.RepeatYearJRA55())
         filepath = metadata_path(datum)
 
-        fts = download_dataset_with_fallback(filepath; dataset_name="JRA55 $name") do
-            NumericalEarth.JRA55.JRA55FieldTimeSeries(name; backend=NumericalEarth.JRA55.JRA55NetCDFBackend(2))
+        download_dataset_with_fallback(filepath; dataset_name="JRA55 $name") do
+            FieldTimeSeries(Metadata(name; dataset=NumericalEarth.JRA55.RepeatYearJRA55()); time_indices_in_memory=2)
         end
-        @test isfile(fts.path)
-        rm(fts.path; force=true)
+        @test isfile(filepath)
+        rm(filepath; force=true)
     end
 end
 
@@ -35,7 +35,7 @@ end
             isfile(filepath) && rm(filepath; force=true)
 
             download_dataset_with_fallback(filepath; dataset_name="$(typeof(dataset)) $variable") do
-                NumericalEarth.DataWrangling.download_dataset(metadata)
+                download(metadata)
             end
             @test isfile(filepath)
             rm(filepath; force=true)
@@ -50,7 +50,7 @@ end
     isfile(filepath) && rm(filepath; force=true)
 
     download_dataset_with_fallback(filepath; dataset_name="ETOPO2022") do
-        NumericalEarth.DataWrangling.download_dataset(metadata)
+        download(metadata)
     end
     @test isfile(filepath)
 end

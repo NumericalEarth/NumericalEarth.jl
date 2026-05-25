@@ -28,7 +28,7 @@ for arch in test_architectures
             atmosphere = PrescribedAtmosphere(grid, [0.0])
             esm = if config.with_sea_ice
                 sea_ice = sea_ice_simulation(grid, ocean)
-                OceanSeaIceModel(sea_ice, ocean; atmosphere)
+                OceanSeaIceModel(ocean, sea_ice; atmosphere)
             else
                 OceanOnlyModel(ocean; atmosphere)
             end

@@ -1,6 +1,19 @@
-using Oceananigans.Operators: intrinsic_vector
-using Oceananigans.Grids: inactive_node
 using Oceananigans.Fields: ZeroField
+using Oceananigans.Grids: inactive_node
+
+atmosphere_sea_ice_fields(coupled_model) = coupled_model.interfaces.exchanger.atmosphere.state
+
+atmosphere_sea_ice_data(coupled_model) = merge(atmosphere_sea_ice_fields(coupled_model),
+                                               (; h_bℓ = boundary_layer_height(coupled_model.atmosphere)))
+
+atmosphere_sea_ice_properties(coupled_model) = (; thermodynamics_parameters = thermodynamics_parameters(coupled_model.atmosphere),
+                                                  surface_layer_height = surface_layer_height(coupled_model.atmosphere),
+                                                  gravitational_acceleration = coupled_model.interfaces.properties.gravitational_acceleration)
+
+atmosphere_sea_ice_radiation_state(coupled_model) = begin
+    radiation_exchanger = coupled_model.interfaces.exchanger.radiation
+    return isnothing(radiation_exchanger) ? nothing : radiation_exchanger.state
+end
 
 function compute_atmosphere_sea_ice_fluxes!(coupled_model)
     exchanger = coupled_model.interfaces.exchanger
@@ -12,10 +25,7 @@ function compute_atmosphere_sea_ice_fluxes!(coupled_model)
                            (; Tᵒᶜ = exchanger.ocean.state.T,
                               Sᵒᶜ = exchanger.ocean.state.S))
 
-    atmosphere_fields = exchanger.atmosphere.state
-
-    atmosphere_data = merge(atmosphere_fields,
-                            (; h_bℓ = boundary_layer_height(coupled_model.atmosphere)))
+    atmosphere_data = atmosphere_sea_ice_data(coupled_model)
 
     flux_formulation = coupled_model.interfaces.atmosphere_sea_ice_interface.flux_formulation
     interface_fluxes = coupled_model.interfaces.atmosphere_sea_ice_interface.fluxes
@@ -24,14 +34,11 @@ function compute_atmosphere_sea_ice_fluxes!(coupled_model)
     sea_ice_properties = coupled_model.interfaces.sea_ice_properties
     ocean_properties = coupled_model.interfaces.ocean_properties
 
-    atmosphere_properties = (thermodynamics_parameters = thermodynamics_parameters(coupled_model.atmosphere),
-                             surface_layer_height = surface_layer_height(coupled_model.atmosphere),
-                             gravitational_acceleration = coupled_model.interfaces.properties.gravitational_acceleration)
+    atmosphere_properties = atmosphere_sea_ice_properties(coupled_model)
 
     radiation = coupled_model.radiation
     radiation_kernel_props = kernel_radiation_properties(radiation)
-    radiation_exchanger    = exchanger.radiation
-    radiation_state        = isnothing(radiation_exchanger) ? nothing : radiation_exchanger.state
+    radiation_state = atmosphere_sea_ice_radiation_state(coupled_model)
 
     kernel_parameters = interface_kernel_parameters(grid)
 
@@ -111,8 +118,7 @@ end
 
     local_interior_state = (u=uˢⁱ, v=vˢⁱ, T=Tᵒᶜ, S=Sᵒᶜ, hi=hˢⁱ, hs=hˢⁿ, hc=hc)
 
-    # Local radiative state at this cell. Returns zero-valued state when
-    # radiation is off.
+    # Local radiative state at this cell. Returns zero-valued state when radiation is off.
     radiation_state = air_sea_ice_interface_radiation_state(radiation_kernel_props,
                                                             radiation_exchanger_state,
                                                             i, j, kᴺ, grid, time)
@@ -122,7 +128,7 @@ end
 
     # Estimate interface specific humidity using interior temperature
     q_formulation = interface_properties.specific_humidity_formulation
-    qₛ = surface_specific_humidity(q_formulation, ℂᵃᵗ, Tᵃᵗ, pᵃᵗ, qᵃᵗ, Tₛ, Sᵒᶜ)
+    qₛ = surface_specific_humidity(q_formulation, ℂᵃᵗ, pᵃᵗ, Tₛ, Sᵒᶜ)
 
     # Guess
     Sₛ = zero(FT) # what should we use for interface salinity?

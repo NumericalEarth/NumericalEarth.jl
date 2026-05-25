@@ -83,35 +83,37 @@ sea_ice = sea_ice_simulation(grid, ocean; advection=tracer_advection)
 # We initialize the ocean and sea ice models with data from the ECCO state estimate.
 
 date = DateTime(1993, 1, 1)
-dataset = ECCO4Monthly()
-ecco_temperature           = Metadatum(:temperature; date, dataset)
-ecco_salinity              = Metadatum(:salinity; date, dataset)
-ecco_sea_ice_thickness     = Metadatum(:sea_ice_thickness; date, dataset)
-ecco_sea_ice_concentration = Metadatum(:sea_ice_concentration; date, dataset)
+ecco_variables = (:temperature, :salinity, :sea_ice_thickness, :sea_ice_concentration)
+ecco_set = MetadataSet(ecco_variables; dataset = ECCO4Monthly(), date)
 
-set!(ocean.model, T=ecco_temperature, S=ecco_salinity)
-set!(sea_ice.model, h=ecco_sea_ice_thickness, ℵ=ecco_sea_ice_concentration)
+# A single MetadataSet drives both components; variables not in
+# `variable_glossary` for a given model fall through silently.
+set!(ocean.model,   ecco_set)   # picks up :temperature, :salinity → T, S
+set!(sea_ice.model, ecco_set)   # picks up :sea_ice_thickness, :sea_ice_concentration → h, ℵ
 
-# ### Atmospheric forcing
+# ### JRA55-based atmospheric state, radiation, and land model
+#
+# We force the simulation with data derived from the JRA55-do atmospheric reanalysis,
+# which include the atmospheric state and radiative fluxes, as well as
+# land-based freshwater fluxes from rivers and icebergs.
+#
+# In the radiation component we prescribed a latitude-dependent ocean albedo due to
+# Large & Yeager 2009.
 
-# We force the simulation with a JRA55-do atmospheric reanalysis.
-jra55_backend = JRA55NetCDFBackend(80)
-atmosphere = JRA55PrescribedAtmosphere(arch; backend=jra55_backend)
-# Use a latitude-dependent ocean albedo (Large & Yeager 2009); keep the
-# default ocean emissivity (0.97) and sea-ice surface (albedo 0.7,
-# emissivity 1.0).
-radiation  = JRA55PrescribedRadiation(arch; backend=jra55_backend,
-                                      ocean_surface = SurfaceRadiationProperties(albedo = LatitudeDependentAlbedo()))
-land       = JRA55PrescribedLand(arch; backend=jra55_backend)
+land = JRA55PrescribedLand(arch)
+atmosphere = JRA55PrescribedAtmosphere(arch)
+
+ocean_surface = SurfaceRadiationProperties(albedo = LatitudeDependentAlbedo())
+radiation = JRA55PrescribedRadiation(arch; ocean_surface)
 
 # ### Coupled simulation
-
+#
 # Now we are ready to build the coupled ocean--sea ice model and bring everything
 # together into a `simulation`.
 
 # With Runge-Kutta 3rd order time-stepping we can safely use a timestep of 20 minutes.
 
-coupled_model = OceanSeaIceModel(sea_ice, ocean; atmosphere, land, radiation)
+coupled_model = OceanSeaIceModel(ocean, sea_ice; atmosphere, land, radiation)
 simulation = Simulation(coupled_model; Δt=20minutes, stop_time=365days)
 
 # ### A progress messenger

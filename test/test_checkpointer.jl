@@ -15,12 +15,11 @@ function make_coupled_model(grid)
     set!(sea_ice.model, h=hi, ℵ=hi)
 
     arch = architecture(grid)
-    backend = JRA55NetCDFBackend(4)
-    atmosphere = JRA55PrescribedAtmosphere(arch; backend)
-    land = JRA55PrescribedLand(arch; backend)
-    radiation = JRA55PrescribedRadiation(arch; backend)
+    atmosphere = JRA55PrescribedAtmosphere(arch)
+    land = JRA55PrescribedLand(arch)
+    radiation = JRA55PrescribedRadiation(arch)
 
-    return OceanSeaIceModel(sea_ice, ocean; atmosphere, land, radiation)
+    return OceanSeaIceModel(ocean, sea_ice; atmosphere, land, radiation)
 end
 
 function test_clock_time_and_iteration(simulation, expected_iteration)

@@ -2,9 +2,37 @@ module NumericalEarth
 
 # Use the README as the module docs
 @doc let
+    """Helper function to read the README.md file and convert it to plain Markdown for use as module documentation."""
+    function readme_for_module_docs(path::AbstractString)
+        readme = read(path, String)
+
+        # Julia docstrings use Base.Markdown, which escapes raw HTML.
+        # Translate the HTML-heavy README sections to plain Markdown on the fly.
+        readme = replace(readme, r"<!--.*?-->"s => "")
+        readme = replace(readme,
+                        r"<a\s+href=\"([^\"]+)\"[^>]*>\s*<img\s+src=\"([^\"]+)\"[^>]*?(?:alt=\"([^\"]*)\")?[^>]*>\s*</a>"s =>
+                        s"[![\3](\2)](\1)")
+        readme = replace(readme,
+                        r"<a\s+href=\"([^\"]+)\"[^>]*>([^<]+)</a>"s =>
+                        s"[\2](\1)")
+        readme = replace(readme, r"<h1[^>]*>\s*([^<]+?)\s*</h1>"s => s"# \1\n")
+        readme = replace(readme, r"<pre>\s*<code>"s => "```bibtex\n")
+        readme = replace(readme, r"</code>\s*</pre>"s => "\n```")
+        readme = replace(readme, r"<code>\s*(.*?)\s*</code>"s => s"```\n\1\n```")
+        readme = replace(readme, r"</?p\b[^>]*>" => "")
+        readme = replace(readme, r"</?strong\b[^>]*>" => "")
+        readme = replace(readme,
+                        r"<details>\s*<summary>\s*([^<]+?)\s*</summary>"s =>
+                        s"### \1\n")
+        readme = replace(readme, "</details>" => "")
+        readme = replace(readme, r"\n{3,}" => "\n\n")
+
+        return strip(readme)
+    end
+
     path = joinpath(dirname(@__DIR__), "README.md")
     include_dependency(path)
-    read(path, String)
+    readme_for_module_docs(path)
 end NumericalEarth
 
 export
@@ -13,6 +41,7 @@ export
     OceanSeaIceModel,
     AtmosphereOceanModel,
     SlabOcean,
+    PrescribedOcean,
     AbstractPrescribedComponent,
     PrescribedRadiation,
     PrescribedAtmosphere,
@@ -30,15 +59,17 @@ export
     InterfaceRadiationFlux,
     LatitudeDependentAlbedo,
     TabulatedAlbedo,
+    SeaIceAlbedo,
     SimilarityTheoryFluxes,
     CoefficientBasedFluxes,
+    SimilarityScales,
     MomentumRoughnessLength,
     ScalarRoughnessLength,
     ComponentInterfaces,
     SkinTemperature,
     BulkTemperature,
     regrid_bathymetry,
-    Metadata, Metadatum,
+    Metadata, Metadatum, MetadataSet,
     BoundingBox,
     Column, Linear, Nearest,
     ECCOMetadatum,
@@ -52,7 +83,6 @@ export
     RepeatYearJRA55, MultiYearJRA55,
     OSPapaHourly,
     JRA55FieldTimeSeries,
-    JRA55NetCDFBackend,
     ORCA1, ORCA12,
     ORCAGrid,
     first_date, last_date, all_dates,
@@ -72,11 +102,11 @@ export
     location,
     native_grid
 
-using DataDeps
-
-using Oceananigans
+using DataDeps: DataDeps
+using Oceananigans: Oceananigans
+using Oceananigans.Architectures: CPU
 using Oceananigans.Grids: node
-using Oceananigans.Operators: ℑxyᶠᶜᵃ, ℑxyᶜᶠᵃ
+using Oceananigans.ImmersedBoundaries: ImmersedBoundaryGrid, GridFittedBottom
 using Oceananigans.OutputReaders: GPUAdaptedFieldTimeSeries, FieldTimeSeries
 
 import Oceananigans: location
@@ -112,6 +142,7 @@ end
 ##### Source code
 #####
 
+include("Grids/Grids.jl")
 include("EarthSystemModels/EarthSystemModels.jl")
 include("Oceans/Oceans.jl")
 include("Atmospheres/Atmospheres.jl")
@@ -123,6 +154,7 @@ include("DataWrangling/DataWrangling.jl")
 include("Bathymetry/Bathymetry.jl")
 include("Diagnostics/Diagnostics.jl")
 
+using .Grids
 using .DataWrangling
 using .DataWrangling: ETOPO, ECCO, GLORYS, EN4, WOA, JRA55, OSPapa
 using .Bathymetry
@@ -134,18 +166,15 @@ using .Radiations
 using .Oceans
 using .SeaIces
 using .Diagnostics
-
-using NumericalEarth.EarthSystemModels: ComponentInterfaces, MomentumRoughnessLength, ScalarRoughnessLength, default_sea_ice
-
-using NumericalEarth.DataWrangling.ECCO
-using NumericalEarth.DataWrangling.ETOPO
-using NumericalEarth.DataWrangling.EN4
-using NumericalEarth.DataWrangling.GLORYS
-using NumericalEarth.DataWrangling.JRA55
-using NumericalEarth.DataWrangling.JRA55: JRA55NetCDFBackend
-using NumericalEarth.DataWrangling.ORCA
-using NumericalEarth.DataWrangling.OSPapa
-using NumericalEarth.DataWrangling.WOA
+using .EarthSystemModels: ComponentInterfaces, MomentumRoughnessLength, ScalarRoughnessLength, default_sea_ice
+using .DataWrangling.ETOPO
+using .DataWrangling.ECCO
+using .DataWrangling.GLORYS
+using .DataWrangling.EN4
+using .DataWrangling.ORCA
+using .DataWrangling.WOA
+using .DataWrangling.JRA55
+using .DataWrangling.OSPapa
 
 using PrecompileTools: @setup_workload, @compile_workload
 

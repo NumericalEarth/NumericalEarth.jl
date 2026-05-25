@@ -47,6 +47,9 @@ function thermodynamics_parameters end
 function surface_layer_height end
 function boundary_layer_height end
 
+surface_layer_height(::Nothing) = 0
+boundary_layer_height(::Nothing) = 0
+
 #####
 ##### Functions extended by all component models
 #####

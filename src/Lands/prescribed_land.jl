@@ -47,7 +47,7 @@ function PrescribedLand(freshwater_flux; clock=nothing)
     return land
 end
 
-@inline function update_state!(land::PrescribedLand)
+@inline function Oceananigans.TimeSteppers.update_state!(land::PrescribedLand)
     time = Time(land.clock.time)
     ftses = extract_field_time_series(land)
 
@@ -57,29 +57,27 @@ end
     return nothing
 end
 
-@inline function time_step!(land::PrescribedLand, Δt)
+@inline function Oceananigans.TimeSteppers.time_step!(land::PrescribedLand, Δt)
     tick!(land.clock, Δt)
     update_state!(land)
     return nothing
 end
 
 # No net fluxes to update for prescribed land
-update_net_fluxes!(coupled_model, ::PrescribedLand) = nothing
+EarthSystemModels.update_net_fluxes!(coupled_model, ::PrescribedLand) = nothing
 
 #####
 ##### Checkpointing
 #####
 
-import Oceananigans: prognostic_state, restore_prognostic_state!
-
-function prognostic_state(land::PrescribedLand)
+function Oceananigans.prognostic_state(land::PrescribedLand)
     return (; clock = prognostic_state(land.clock))
 end
 
-function restore_prognostic_state!(land::PrescribedLand, state)
+function Oceananigans.restore_prognostic_state!(land::PrescribedLand, state)
     restore_prognostic_state!(land.clock, state.clock)
     update_state!(land)
     return land
 end
 
-restore_prognostic_state!(land::PrescribedLand, ::Nothing) = land
+Oceananigans.restore_prognostic_state!(land::PrescribedLand, ::Nothing) = land

@@ -23,8 +23,6 @@ import Thermodynamics.Parameters:
     pow_icenuc      # "Power parameter" that controls liquid/ice condensate partitioning
                     # during partial ice nucleation
 
-import ..EarthSystemModels: update_net_fluxes!
-
 #####
 ##### Atmospheric thermodynamics parameters
 #####

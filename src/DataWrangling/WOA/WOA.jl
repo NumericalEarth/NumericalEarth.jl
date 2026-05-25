@@ -2,43 +2,12 @@ module WOA
 
 export WOAClimatology, WOAAnnual, WOAMonthly
 
-using NumericalEarth
-using Oceananigans
-using NCDatasets
-using JLD2
-using Scratch
-using Adapt
-using Dates
+using Dates: DateTime, month
+using NCDatasets: Dataset
+using Scratch: Scratch, @get_scratch!
 
-using ..DataWrangling:
-    Metadata,
-    Metadatum,
-    BoundingBox,
-    inpaint_mask!,
-    NearestNeighborInpainting,
-    DownloadProgress
-
-using Oceananigans.DistributedComputations: @root
-
-import NumericalEarth.DataWrangling:
-    all_dates,
-    first_date,
-    last_date,
-    metadata_filename,
-    download_dataset,
-    default_download_directory,
-    metadata_path,
-    dataset_variable_name,
-    metaprefix,
-    z_interfaces,
-    longitude_interfaces,
-    latitude_interfaces,
-    is_three_dimensional,
-    reversed_vertical_axis,
-    inpainted_metadata_path,
-    available_variables,
-    retrieve_data
-
+using ..DataWrangling: DataWrangling, Metadata, Metadatum, metadata_path,
+                       dataset_variable_name, reversed_vertical_axis
 
 download_WOA_cache::String = ""
 function __init__()
@@ -68,28 +37,30 @@ end
 WOAAnnual(;  product_year=2023) = WOAAnnual(product_year)
 WOAMonthly(; product_year=2023) = WOAMonthly(product_year)
 
-function default_download_directory(::WOAAnnual)
+function DataWrangling.default_download_directory(::WOAAnnual)
     return mkpath(joinpath(download_WOA_cache, "annual"))
 end
 
-function default_download_directory(::WOAMonthly)
+function DataWrangling.default_download_directory(::WOAMonthly)
     return mkpath(joinpath(download_WOA_cache, "monthly"))
 end
 
 # Annual: single snapshot, no date
-all_dates(::WOAAnnual, args...) = nothing
-first_date(::WOAAnnual, args...) = nothing
-last_date(::WOAAnnual, args...) = nothing
+DataWrangling.all_dates(::WOAAnnual, args...) = nothing
+DataWrangling.first_date(::WOAAnnual, args...) = nothing
+DataWrangling.last_date(::WOAAnnual, args...) = nothing
 
 # Monthly: 12 climatological months (year is arbitrary, month matters)
-all_dates(::WOAMonthly, args...) = [DateTime(2018, m, 1) for m in 1:12]
+DataWrangling.all_dates(::WOAMonthly, args...) = [DateTime(2018, m, 1) for m in 1:12]
 
 # WOA stores depth as positive values, surface first (0 to 5500m)
-reversed_vertical_axis(::WOAClimatology) = true
+DataWrangling.reversed_vertical_axis(::WOAClimatology) = true
 
-longitude_interfaces(::WOAClimatology) = (-180, 180)
-latitude_interfaces(::WOAClimatology) = (-90, 90)
-available_variables(::WOAClimatology) = WOA_variable_names
+DataWrangling.longitude_interfaces(::WOAClimatology) = (-180, 180)
+DataWrangling.latitude_interfaces(::WOAClimatology) = (-90, 90)
+DataWrangling.longitude_name(::Metadata{<:WOAClimatology}) = "lon"
+DataWrangling.latitude_name(::Metadata{<:WOAClimatology})  = "lat"
+DataWrangling.available_variables(::WOAClimatology) = WOA_variable_names
 
 """
     woa_z_interfaces_from_centers(depth_centers)
@@ -128,7 +99,7 @@ function Base.size(metadata::Metadata{<:WOAClimatology})
     return (Nlon, Nlat, Nz, Nt)
 end
 
-function z_interfaces(metadata::Metadata{<:WOAClimatology})
+function DataWrangling.z_interfaces(metadata::Metadata{<:WOAClimatology})
     path = metadata_path(first(metadata))
     ds = Dataset(path)
     depth_centers = Float64.(ds["depth"][:])
@@ -140,28 +111,28 @@ end
 const WOAMetadata{D} = Metadata{<:WOAClimatology, D}
 const WOAMetadatum   = Metadatum{<:WOAClimatology}
 
-metaprefix(::WOAMetadata) = "WOAMetadata"
-metaprefix(::WOAMetadatum) = "WOAMetadatum"
+DataWrangling.metaprefix(::WOAMetadata) = "WOAMetadata"
+DataWrangling.metaprefix(::WOAMetadatum) = "WOAMetadatum"
 
 # Map from date to WOA period number (used by extension for download)
 woa_period(::WOAAnnual, date) = 0
-woa_period(::WOAMonthly, date) = Dates.month(date)
+woa_period(::WOAMonthly, date) = month(date)
 
-function metadata_filename(::WOAAnnual, name, date, region)
+function DataWrangling.metadata_filename(::WOAAnnual, name, date, region)
     varname = WOA_variable_names[name]
     return "woa_$(varname)_annual.nc"
 end
 
-function metadata_filename(::WOAMonthly, name, date, region)
+function DataWrangling.metadata_filename(::WOAMonthly, name, date, region)
     varname = WOA_variable_names[name]
-    m = lpad(Dates.month(date), 2, '0')
+    m = lpad(month(date), 2, '0')
     return "woa_$(varname)_monthly_$(m).nc"
 end
 
 # WOA NetCDF variables are named "{tracer}_an" for the objectively analyzed field
-dataset_variable_name(data::WOAMetadata) = WOA_variable_names[data.name] * "_an"
+DataWrangling.dataset_variable_name(data::WOAMetadata) = WOA_variable_names[data.name] * "_an"
 
-is_three_dimensional(::WOAMetadata) = true
+DataWrangling.is_three_dimensional(::WOAMetadata) = true
 
 function inpainted_metadata_filename(metadata::WOAMetadatum)
     without_extension = metadata.filename[1:end-3]
@@ -169,11 +140,11 @@ function inpainted_metadata_filename(metadata::WOAMetadatum)
     return without_extension * "_" * var * "_inpainted.jld2"
 end
 
-inpainted_metadata_path(metadata::WOAMetadatum) = joinpath(metadata.dir, inpainted_metadata_filename(metadata))
+DataWrangling.inpainted_metadata_path(metadata::WOAMetadatum) = joinpath(metadata.dir, inpainted_metadata_filename(metadata))
 
 # Custom retrieve_data: WOA NetCDF files contain Missing values (from _FillValue)
 # which must be converted to NaN before the GPU kernel in set_metadata_field!.
-function retrieve_data(metadata::Metadatum{<:WOAClimatology})
+function DataWrangling.retrieve_data(metadata::Metadatum{<:WOAClimatology})
     path = metadata_path(metadata)
     name = dataset_variable_name(metadata)
 

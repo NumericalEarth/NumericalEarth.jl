@@ -32,7 +32,7 @@ end
 
 @testset "Test surface fluxes" begin
     for arch in test_architectures
-        grid = LatitudeLongitudeGrid(arch;
+        grid = LatitudeLongitudeGrid(arch, Float32;
                                      size = 1,
                                      latitude = 10,
                                      longitude = 10,
@@ -46,14 +46,14 @@ end
                                  bottom_drag_coefficient = 0)
 
         dates = all_dates(RepeatYearJRA55(), :temperature)
-        atmosphere = JRA55PrescribedAtmosphere(arch, Float64; end_date=dates[2], backend = InMemory())
+        atmosphere = JRA55PrescribedAtmosphere(arch; end_date=dates[2])
 
         CUDA.@allowscalar begin
             h  = atmosphere.surface_layer_height
             pᵃᵗ = atmosphere.pressure[1][1, 1, 1]
 
             Tᵃᵗ = 15 + celsius_to_kelvin
-            qᵃᵗ = 0.003
+            qᵃᵗ = Float32(0.003)
 
             uᵃᵗ = atmosphere.velocities.u[1][1, 1, 1]
             vᵃᵗ = atmosphere.velocities.v[1][1, 1, 1]
@@ -141,7 +141,7 @@ end
 
             interface_properties = interfaces.atmosphere_ocean_interface.properties
             q_formulation = interface_properties.specific_humidity_formulation
-            qᵒᶜ = surface_specific_humidity(q_formulation, ℂᵃᵗ, Tᵃᵗ, pᵃᵗ, qᵃᵗ, Tᵒᶜ, Sᵒᶜ)
+            qᵒᶜ = surface_specific_humidity(q_formulation, ℂᵃᵗ, pᵃᵗ, Tᵒᶜ, Sᵒᶜ)
             g  = ocean.model.buoyancy.formulation.gravitational_acceleration
 
             # Differences!
@@ -193,7 +193,7 @@ end
 
         set!(ocean_with_land.model, T = 15, S = 30)
         land_dates = all_dates(RepeatYearJRA55(), :river_freshwater_flux)
-        land = JRA55PrescribedLand(arch; end_date=land_dates[2], backend = InMemory())
+        land = JRA55PrescribedLand(arch; end_date=land_dates[2])
         model_with_land = OceanOnlyModel(ocean_with_land; atmosphere, land)
 
         # Verify land exchanger is wired up
@@ -229,7 +229,7 @@ end
                                   bottom_drag_coefficient = 0.0)
 
         dates = all_dates(RepeatYearJRA55(), :temperature)
-        atmosphere = JRA55PrescribedAtmosphere(arch; end_date=dates[2], backend = InMemory())
+        atmosphere = JRA55PrescribedAtmosphere(arch; end_date=dates[2])
 
         fill!(ocean.model.tracers.T, -2.0)
 
@@ -243,7 +243,7 @@ end
             # Always cooling!
             fill!(atmosphere.tracers.T, 273.15 - 20)
 
-            coupled_model = OceanSeaIceModel(sea_ice, ocean; atmosphere)
+            coupled_model = OceanSeaIceModel(ocean, sea_ice; atmosphere)
 
             # Test that the temperature has snapped up to freezing
             @test minimum(ocean.model.tracers.T) == 0
@@ -283,7 +283,7 @@ end
         fill!(ocean.model.tracers.T,   -2.0)
 
         # Test that we populate the sea-ice ocean stress
-        earth = OceanSeaIceModel(sea_ice, ocean; atmosphere)
+        earth = OceanSeaIceModel(ocean, sea_ice; atmosphere)
 
         τˣ = earth.interfaces.sea_ice_ocean_interface.fluxes.x_momentum
         τʸ = earth.interfaces.sea_ice_ocean_interface.fluxes.y_momentum
@@ -327,7 +327,7 @@ end
 #         radiation  = Radiation(ocean_albedo=0.1, ocean_emissivity=1.0)
 #         sea_ice    = nothing
 
-#         coupled_model = OceanSeaIceModel(sea_ice, ocean; atmosphere, radiation)
+#         coupled_model = OceanSeaIceModel(ocean, sea_ice; atmosphere, radiation)
 #         times = 0:1hours:1days
 #         Ntimes = length(times)
 

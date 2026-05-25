@@ -45,7 +45,7 @@ Example
 =======
 
 ```jldoctest
-using NumericalEarth
+using ..NumericalEarth
 using Oceananigans
 
 grid = RectilinearGrid(size = (4, 5, 2), extent = (1, 1, 1),
@@ -62,7 +62,7 @@ sea_ice = sea_ice_simulation(grid, ocean)
 atmosphere = PrescribedAtmosphere(grid, [0.0])
 radiation = PrescribedRadiation(grid)
 
-esm = OceanSeaIceModel(sea_ice, ocean; atmosphere, radiation)
+esm = OceanSeaIceModel(ocean, sea_ice; atmosphere, radiation)
 
 mht = meridional_heat_transport(esm)
 
