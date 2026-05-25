@@ -293,9 +293,9 @@ end
 #####
 ##### MetadataSet — a bundle of `Metadata` sharing dataset, dates, region, and dir.
 #####
-##### A `MetadataSet` is keyed by *verbose* dataset variable names. Iteration is
+##### An `mset::MetadataSet` is keyed by *verbose* dataset variable names. Iteration is
 ##### over variables (orthogonal to `Metadata`'s date-axis iteration); every
-##### element returned by `MetadataSet[name]` / `MetadataSet[i]` is itself a `Metadata` or
+##### element returned by `mset[name]` / `mset[i]` is itself a `Metadata` or
 ##### `Metadatum`, so all existing per-`Metadata` machinery (`Field`, `set!`,
 ##### `download`, ...) keeps working unchanged on the elements.
 #####
@@ -363,7 +363,7 @@ mset = MetadataSet(:temperature, :salinity;
                    dataset = ECCO4Monthly(),
                    date = DateTime(1995, 1, 1))
 
-mset[2] # Metadata for :temperature
+mset[2] # Metadata for :salinity
 
 # output
 Metadatum{ECCO4Monthly, DateTime}:
