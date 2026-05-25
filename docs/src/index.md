@@ -42,7 +42,7 @@ NumericalEarth can be used in four complementary ways:
 3. Build a standalone sea ice simulation with [`sea_ice_simulation`](@ref).
 4. Couple ocean, atmosphere, sea ice, and other components with [`EarthSystemModel`](@ref), `OceanOnlyModel`, `OceanSeaIceModel`, or `AtmosphereOceanModel`.
 
-The following script implements a near-global ocean simulation initialized from the [ECCO state estimate](https://doi.org/10.5194/gmd-8-3071-2015) and coupled to a prescribed atmosphere derived from the [JRA55-do reanalysis](https://www.sciencedirect.com/science/article/pii/S146350031830235X):
+The following script implements a near-global ocean simulation initialized from the [ECCO state estimate](https://doi.org/10.5194/gmd-8-3071-2015) and coupled to a prescribed atmosphere derived from the [JRA55-do reanalysis](@cite tsujino2018jra):
 
 ```julia
 using Oceananigans

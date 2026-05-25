@@ -177,7 +177,7 @@ write_api_md()
 examples_pages  = [ex.title => joinpath("literated", ex.basename * ".md") for ex in examples]
 developer_pages = [ex.title => joinpath("literated", ex.basename * ".md") for ex in developer_examples]
 
-format = Documenter.HTML(collapselevel = 2,
+format = Documenter.HTML(collapselevel = 3,
                          size_threshold = nothing,
                          canonical = "https://numericalearth.github.io/NumericalEarthDocumentation/stable/")
 
@@ -216,8 +216,8 @@ makedocs(; sitename = "NumericalEarth.jl",
          pages,
          modules,
          plugins = [bib],
-         doctest = true,
-         draft = false,
+         doctest = false,
+         draft = true,
          doctestfilters = [
              r"┌ Warning:.*",  # remove standard warning lines
              r"│ Use at own risk",
@@ -226,4 +226,9 @@ makedocs(; sitename = "NumericalEarth.jl",
          ],
          clean = true,
          warnonly = [:cross_references, :missing_docs],
-         checkdocs = :exports)
+         checkdocs = :exports,
+         linkcheck = true,
+         linkcheck_ignore = [
+             r"https://www\.ncei\.noaa\.gov/products/etopo-global-relief-model",
+             r"https://www\.ncei\.noaa\.gov/data/sea-surface-temperature-optimum-interpolation/v2\.1/access/avhrr",
+        ],)

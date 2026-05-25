@@ -1,7 +1,7 @@
 # Notation
 
 This page summarizes the mathematical and code notation used in NumericalEarth.jl,
-following the conventions established in [Breeze.jl](https://github.com/CliMA/Breeze.jl).
+following the conventions established in [Breeze.jl](https://github.com/NumericalEarth/Breeze.jl).
 
 ## How the notation works
 
@@ -215,7 +215,7 @@ with a superscript band.
 ## CF standard name mapping
 
 The following table maps code variable names to their
-[CF standard names](http://cfconventions.org/Data/cf-standard-names/current/build/cf-standard-name-table.html)
+[CF standard names](https://cfconventions.org/Data/cf-standard-names/current/build/cf-standard-name-table.html)
 where applicable.
 
 | Code | CF standard name |

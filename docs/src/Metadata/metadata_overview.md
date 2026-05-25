@@ -1,10 +1,9 @@
 # Metadata
 
 [`Metadata`](@ref) is an abstraction that _represents_ data, but does not embody it.
-Unlike [`Oceananigans.Field`](https://clima.github.io/OceananigansDocumentation/stable/appendix/library/#Oceananigans.Fields.Field-Union{Tuple{Oceananigans.Grids.AbstractGrid},%20Tuple{LZ},%20Tuple{LY},%20Tuple{LX},%20Tuple{Oceananigans.Grids.AbstractGrid,%20DataType}}%20where%20{LX,%20LY,%20LZ}),
-which points to an array occupying space in memory,
-`Metadata` only contains information about where files are stored, their origin, the grid
-they live on, and the date(s) they correspond to (if any).
+Unlike [`Oceananigans.Field`](https://clima.github.io/OceananigansDocumentation/stable/appendix/library#Fields),
+which points to an array occupying space in memory, `Metadata` only contains information about
+where files are stored, their origin, the grid they live on, and the date(s) they correspond to (if any).
 
 ```@docs
 Metadata
