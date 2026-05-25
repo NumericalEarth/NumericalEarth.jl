@@ -111,5 +111,5 @@ jobs:
       - name: Deploy documentation
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          DOCUMENTER_KEY: ${{ secrets.DOCUMENTER_KEY }}
+          DOCUMENTER_KEY: ${{ secrets.NUMERICALEARTHDOCUMENTATION_DOCUMENTER_KEY }}
         run: julia --color=yes docs/deploy.jl
