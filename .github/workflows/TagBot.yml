@@ -13,4 +13,4 @@ jobs:
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
           lookback: 3
-          ssh: ${{ secrets.TAGBOT_KEY }}
+          ssh: ${{ secrets.DOCUMENTER_KEY }}
