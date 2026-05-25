@@ -336,8 +336,7 @@ Keyword Arguments
 =================
 - `dataset`: the shared dataset (e.g. `ECCO4Monthly()`, `ERA5HourlyPressureLevels()`).
 - `dates`: shared date axis. Either a single `AbstractDateTime`/`AbstractCFDateTime`
-  (yielding a [`MetadatumSet`](@ref)) or an `AbstractVector` of dates.
-  Defaults to `all_dates(dataset, first(variable_names))`.
+  or an `AbstractVector` of dates. Defaults to `all_dates(dataset, first(variable_names))`.
 - `date`: convenience scalar form; cannot be used together with `dates`.
 - `region`: shared spatial region — `BoundingBox`, `Column`, or `nothing`.
 - `dir`: shared download directory.
