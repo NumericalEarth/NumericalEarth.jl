@@ -60,7 +60,7 @@ Keyword Arguments
 - `ice_salinity`: salinity of the sea ice (psu)
 - `advection`: optional advection scheme for the sea ice model
 - `tracers`: optional tracers to include in the sea ice model
-- `ice_heat_capacity`: heat capacity of the sea ice (J kg⁻¹ K
+- `ice_heat_capacity`: heat capacity of the sea ice (J kg⁻¹ K⁻¹)
 - `ice_consolidation_thickness`: thickness threshold for sea ice consolidation (m)
 - `sea_ice_density`: density of the sea ice (kg m⁻³)
 - `snow_density`: density of the snow (kg m⁻³)
