@@ -120,55 +120,38 @@ function get_submodules(mod::Module)
     return result
 end
 
-function write_api_md()
+function write_api_md(filename; public)
     modules = get_submodules(NumericalEarth)
     append!(modules, [NumericalEarthBreezeExt, NumericalEarthSpeedyWeatherExt, NumericalEarthVerosExt])
     io = IOBuffer()
 
-    println(io, """
-            # API Documentation
+    title = public ? "Public API" : "Private API"
+    privacy_keyword = public ? "Private = false" : "Public = false"
 
-            ## Public API
+    println(io, "# ", title)
+    println(io)
+    println(io, "```@autodocs")
+    println(io, "Modules = [NumericalEarth]")
+    println(io, privacy_keyword)
+    println(io, "```")
+    println(io)
 
-            ```@autodocs
-            Modules = [NumericalEarth]
-            Private = false
-            ```
-            """)
     for mod in modules
-        println(io, """
-                ### $(chopprefix(string(mod), "NumericalEarth."))
-
-                ```@autodocs
-                Modules = [$(mod)]
-                Private = false
-                ```
-                """)
-    end
-    println(io, """
-            ## Private API
-
-            ```@autodocs
-            Modules = [NumericalEarth]
-            Public = false
-            ```
-            """)
-    for mod in modules
-        println(io, """
-                ### $(chopprefix(string(mod), "NumericalEarth."))
-
-                ```@autodocs
-                Modules = [$(mod)]
-                Public = false
-                ```
-                """)
+        println(io, "## ", chopprefix(string(mod), "NumericalEarth."))
+        println(io)
+        println(io, "```@autodocs")
+        println(io, "Modules = [", mod, "]")
+        println(io, privacy_keyword)
+        println(io, "```")
+        println(io)
     end
 
     # Remove multiple trailing whitespaces, but keep the final one.
-    write(joinpath(@__DIR__, "src", "library", "api.md"), strip(String(take!(io))) * "\n")
+    write(joinpath(@__DIR__, "src", "library", filename), strip(String(take!(io))) * "\n")
 end
 
-write_api_md()
+write_api_md("public_api.md"; public = true)
+write_api_md("private_api.md"; public = false)
 
 #####
 ##### Build docs
@@ -204,7 +187,8 @@ pages = [
 
     "Library" => [
         "Contents"       => "library/outline.md",
-        "API"            => "library/api.md",
+        "Public API"     => "library/public_api.md",
+        "Private API"    => "library/private_api.md",
         "Function index" => "library/function_index.md",
     ],
 
@@ -216,8 +200,8 @@ makedocs(; sitename = "NumericalEarth.jl",
          pages,
          modules,
          plugins = [bib],
-         doctest = false,
-         draft = true,
+         doctest = true,
+         draft = false,
          doctestfilters = [
              r"┌ Warning:.*",  # remove standard warning lines
              r"│ Use at own risk",
