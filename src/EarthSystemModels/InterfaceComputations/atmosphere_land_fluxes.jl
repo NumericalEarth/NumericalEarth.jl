@@ -100,34 +100,32 @@ function compute_atmosphere_land_fluxes!(coupled_model, atmosphere_land_interfac
     return nothing
 end
 
-function atmosphere_land_surface_properties(land_state::NamedTuple{names}) where names
-    momentum_roughness = _atmosphere_land_roughness_field(land_state,
-                                                           :momentum_roughness_length)
-    scalar_roughness   = _atmosphere_land_roughness_field(land_state,
-                                                           :scalar_roughness_length)
-    return _assemble_atmosphere_land_surface_properties(momentum_roughness, scalar_roughness)
+function atmosphere_land_surface_properties(land_state::NamedTuple)
+    ℓᵐ = _atmosphere_land_roughness_field(land_state, :momentum_roughness_length)
+    ℓˢ = _atmosphere_land_roughness_field(land_state, :scalar_roughness_length)
+    return _assemble_atmosphere_land_surface_properties(ℓᵐ, ℓˢ)
 end
 
-@inline function _atmosphere_land_roughness_field(land_state::NamedTuple{names}, name::Symbol) where names
-    if name in names
+@inline function _atmosphere_land_roughness_field(land_state::NamedTuple, name::Symbol)
+    if hasproperty(land_state, name)
         return getproperty(land_state, name)
-    elseif :roughness_length in names
+    elseif hasproperty(land_state, :roughness_length)
         return land_state.roughness_length
     else
         return nothing
     end
 end
 
-@inline function _assemble_atmosphere_land_surface_properties(ℓm, ℓs)
-    if isnothing(ℓm) && isnothing(ℓs)
+@inline function _assemble_atmosphere_land_surface_properties(ℓᵐ, ℓˢ)
+    if isnothing(ℓᵐ) && isnothing(ℓˢ)
         return (;)
-    elseif isnothing(ℓs)
-        return (; momentum_roughness_length = ℓm)
-    elseif isnothing(ℓm)
-        return (; scalar_roughness_length = ℓs)
+    elseif isnothing(ℓˢ)
+        return (; momentum_roughness_length = ℓᵐ)
+    elseif isnothing(ℓᵐ)
+        return (; scalar_roughness_length = ℓˢ)
     else
-        return (; momentum_roughness_length = ℓm,
-                 scalar_roughness_length   = ℓs)
+        return (; momentum_roughness_length = ℓᵐ,
+                 scalar_roughness_length   = ℓˢ)
     end
 end
 
@@ -140,15 +138,13 @@ end
 @inline _moisture_availability(β::Number, i, j, k=1) = β
 @inline _moisture_availability(β, i, j, k=1) = @inbounds β[i, j, k]
 
-@inline function local_atmosphere_land_surface_properties(land_properties::NamedTuple{names}, i, j) where names
-    ℓm = _roughness_value(_atmosphere_land_roughness_field(land_properties,
-                                                           :momentum_roughness_length),
-                           i, j, 1)
-    ℓs = _roughness_value(_atmosphere_land_roughness_field(land_properties,
-                                                           :scalar_roughness_length),
-                           i, j, 1)
+@inline function local_atmosphere_land_surface_properties(land_properties::NamedTuple, i, j)
+    ℓᵐ = _roughness_value(_atmosphere_land_roughness_field(land_properties, :momentum_roughness_length),
+                         i, j, 1)
+    ℓˢ = _roughness_value(_atmosphere_land_roughness_field(land_properties, :scalar_roughness_length),
+                         i, j, 1)
 
-    return _assemble_atmosphere_land_surface_properties(ℓm, ℓs)
+    return _assemble_atmosphere_land_surface_properties(ℓᵐ, ℓˢ)
 end
 
 @kernel function _compute_atmosphere_land_interface_state!(interface_fluxes,

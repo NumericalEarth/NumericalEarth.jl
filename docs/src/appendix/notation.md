@@ -156,6 +156,8 @@ denote the _component_ or _location_.
 | ``\psi`` | `ψ` | stability function | Integrated stability correction (–) |
 | ``\zeta`` | `ζ` | stability parameter | ``z / L_\star`` (–) |
 | ``\ell`` | `ℓ` | roughness length | Aerodynamic roughness length (m) |
+| ``\ell^\mathrm{m}`` | `ℓᵐ` | momentum roughness length | Aerodynamic momentum roughness length (m) |
+| ``\ell^\mathrm{s}`` | `ℓˢ` | scalar roughness length | Aerodynamic scalar roughness length (m) |
 | ``\varkappa`` | `ϰ` | von Kármán constant | ``\approx 0.4`` (–) |
 
 ## Radiative fluxes

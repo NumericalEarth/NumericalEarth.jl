@@ -25,6 +25,7 @@ Suppressor = "fd094767-a336-5f1f-9728-57cf17d0bbfb"
 [sources]
 ConservativeRegridding = {rev = "main", url = "https://github.com/JuliaGeo/ConservativeRegridding.jl"}
 NumericalEarth = {path = ".."}
+Oceananigans = {url = "https://github.com/CliMA/Oceananigans.jl", rev = "main"}
 
 [compat]
 CUDA = "~6.0"

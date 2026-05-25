@@ -95,3 +95,6 @@ Thermodynamics = "0.15.3"
 WorldOceanAtlasTools = "0.6"
 ZipFile = "0.10"
 julia = "1.10"
+
+[sources]
+Oceananigans = {url = "https://github.com/CliMA/Oceananigans.jl", rev = "main"}

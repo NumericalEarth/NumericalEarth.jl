@@ -465,12 +465,12 @@ default_al_specific_humidity(land) =
 default_atmosphere_land_fluxes(::Nothing, FT) = nothing
 
 function default_atmosphere_land_fluxes(land, FT)
-    ℓm = LandRoughnessLength(FT)
-    ℓh = LandRoughnessLength(FT; multiplier = 0.1)
+    ℓᵐ = LandRoughnessLength(FT)
+    ℓˢ = LandRoughnessLength(FT; multiplier = 0.1)
     return SimilarityTheoryFluxes(FT;
-                                   momentum_roughness_length    = ℓm,
-                                   temperature_roughness_length = ℓh,
-                                   water_vapor_roughness_length = ℓh)
+                                   momentum_roughness_length    = ℓᵐ,
+                                   temperature_roughness_length = ℓˢ,
+                                   water_vapor_roughness_length = ℓˢ)
 end
 
 #####
