@@ -8,7 +8,7 @@ using DocumenterCitations
 using Literate
 using TOML
 
-if CUDA.has_cuda()
+if CUDA.functional()
     CUDA.versioninfo()
 end
 
