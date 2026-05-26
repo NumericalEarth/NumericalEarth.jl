@@ -76,21 +76,44 @@ land_grid = RectilinearGrid(arch;
                             topology = (Periodic, Flat, Flat))
 
 hydrology = BucketHydrology(eltype(land_grid);
-                            field_capacity   = 150.0,
-                            critical_wetness = 0.75)
+                            maximum_water_storage  = 150,
+                            critical_wetness_ratio = 0.75)
 
 slab_land = SlabLand(land_grid; hydrology)
 
-# Gaussian moisture pattern: saturated in the center, dry at the edges.
+# ### Moisture availability and the wet/dry contrast
+#
+# The bucket hydrology stores land water mass per area `Mˡᵃ` (kg m⁻²) with a
+# Manabe-style saturation cap `Mˡᵃ⁺` (`maximum_water_storage`, the soil-science
+# "field capacity"). The coupler reads a moisture availability factor
+# `β ∈ [0, 1]` that linearly scales the surface specific humidity above which
+# evaporation can occur:
+#
+# ```math
+# β = \min\!\left(\frac{M^{\mathrm{la}}}{\varepsilon^{w} \, M^{\mathrm{la}\!+}},\ 1\right),
+# ```
+#
+# so cells with `Mˡᵃ ≥ εʷ · Mˡᵃ⁺` (here `εʷ = 0.75`) evaporate as if
+# saturated, and cells with `Mˡᵃ = 0` cannot evaporate at all. The coupler
+# then uses `qₛ = qᵃ + β · (qᵛ⁺(Tₛ) − qᵃ)` — β = 1 → full latent heat flux,
+# β = 0 → zero latent flux (all surface energy goes into sensible heating).
+#
+# We initialize `Mˡᵃ` as a Gaussian centered at the domain midpoint:
+# saturated in the middle (`β ≈ 1`), dry at the edges (`β ≈ 0`). That
+# contrast persists through the run because (i) the wet center can
+# evaporate but starts deep inside the saturated plateau
+# (`Mˡᵃ > εʷ · Mˡᵃ⁺`), so `β` stays pegged at 1 even as `Mˡᵃ` decreases,
+# and (ii) the dry edges have no water to gain except via precipitation,
+# which is not prescribed here.
 
-T₀     = 295.0
-W_wet  = 0.95 * hydrology.field_capacity
+T₀     = 295
+M_wet  = 0.95 * hydrology.maximum_water_storage
 σ_wet  = Lx / 8
 
-W_init(x) = W_wet * exp(-(x/σ_wet)^2)
+M_init(x) = M_wet * exp(-(x/σ_wet)^2)
 
 set!(slab_land.state.T, T₀)
-set!(slab_land.state.W, W_init)
+set!(slab_land.state.water_storage, M_init)
 Oceananigans.TimeSteppers.update_state!(slab_land)
 
 # ## RRTMGP radiation
@@ -99,19 +122,7 @@ Oceananigans.TimeSteppers.update_state!(slab_land)
 # `surface_temperature` is the slab land's prognostic skin temperature,
 # so radiation responds to surface heating and cooling in real time.
 
-@inline function tropical_ozone(z)
-    troposphere_O₃ = 30e-9 * (1 + 0.5 * z / 10_000)
-    zˢᵗ = 25e3
-    Hˢᵗ = 5e3
-    stratosphere_O₃ = 8e-6 * exp(-((z - zˢᵗ) / Hˢᵗ)^2)
-    χˢᵗ = 1 / (1 + exp(-(z - 15e3) / 2))
-    return troposphere_O₃ * (1 - χˢᵗ) + stratosphere_O₃ * χˢᵗ
-end
-
-background_atmosphere = BackgroundAtmosphere(CO₂ = 420e-6,
-                                             CH₄ = 1.8e-6,
-                                             N₂O = 330e-9,
-                                             O₃  = tropical_ozone)
+background_atmosphere = BackgroundAtmosphere()
 
 latitude = 15
 solar_position = ApparentSolarPosition(coordinate = (0, latitude),
@@ -138,8 +149,7 @@ radiation = RadiativeTransferModel(grid, AllSkyOptics(), constants;
 atmos = atmosphere_simulation(grid;
                               surface_pressure      = 101325,
                               potential_temperature = 300,
-                              coriolis              = FPlane(latitude = latitude),
-                              Δt                    = 2.0)
+                              coriolis = FPlane(latitude = latitude))
 
 # Initial atmospheric profile: dry-adiabatic sub-cloud layer capped by a
 # stably stratified troposphere transitioning to a 210 K stratosphere.
@@ -168,7 +178,8 @@ set!(atmos.model; T = Tᵢ, ℋ = ℋᵢ)
 
 model = AtmosphereLandModel(atmos, slab_land; radiation)
 
-simulation = Simulation(model; Δt = atmos.Δt, stop_time = 24hours)
+simulation = Simulation(model; Δt = 10, stop_time = 3days)
+conjure_time_step_wizard!(simulation; cfl = 0.7, max_Δt = 60)
 
 # ## Progress
 
@@ -197,7 +208,7 @@ function progress(sim)
     return nothing
 end
 
-add_callback!(simulation, progress, IterationInterval(200))
+add_callback!(simulation, progress, IterationInterval(1000))
 
 # ## Output
 
@@ -213,7 +224,7 @@ simulation.output_writers[:atmos] = JLD2Writer(model, (; w, T, qᵛ, qˡ);
 
 simulation.output_writers[:land] = JLD2Writer(model,
                                               (; Tg = slab_land.state.T,
-                                                  W  = slab_land.state.W,
+                                                  W  = slab_land.state.water_storage,
                                                   β  = slab_land.state.moisture_availability);
                                               filename = "breeze_slab_land_surface",
                                               schedule = TimeInterval(10minutes),
@@ -231,12 +242,12 @@ run!(simulation)
 # and cloud liquid water. Bottom row: 1D land state along x — skin
 # temperature, soil moisture, and moisture availability β.
 
-w_ts  = FieldTimeSeries("breeze_slab_land_atmos.jld2",   "w";  architecture=CPU())
-T_ts  = FieldTimeSeries("breeze_slab_land_atmos.jld2",   "T";  architecture=CPU())
-qˡ_ts = FieldTimeSeries("breeze_slab_land_atmos.jld2",   "qˡ"; architecture=CPU())
-Tg_ts = FieldTimeSeries("breeze_slab_land_surface.jld2", "Tg"; architecture=CPU())
-W_ts  = FieldTimeSeries("breeze_slab_land_surface.jld2", "W";  architecture=CPU())
-β_ts  = FieldTimeSeries("breeze_slab_land_surface.jld2", "β";  architecture=CPU())
+w_ts  = FieldTimeSeries("breeze_slab_land_atmos.jld2",   "w")
+T_ts  = FieldTimeSeries("breeze_slab_land_atmos.jld2",   "T")
+qˡ_ts = FieldTimeSeries("breeze_slab_land_atmos.jld2",   "qˡ")
+Tg_ts = FieldTimeSeries("breeze_slab_land_surface.jld2", "Tg")
+W_ts  = FieldTimeSeries("breeze_slab_land_surface.jld2", "W")
+β_ts  = FieldTimeSeries("breeze_slab_land_surface.jld2", "β")
 
 times = w_ts.times
 Nt    = length(times)
@@ -279,7 +290,7 @@ lines!(ax_Tg, x_land, Tg_n; color = :black, linewidth = 2)
 lines!(ax_W,  x_land, W_n;  color = :black, linewidth = 2)
 lines!(ax_β,  x_land, β_n;  color = :black, linewidth = 2)
 
-ylims!(ax_W, 0, hydrology.field_capacity * 1.05)
+ylims!(ax_W, 0, hydrology.maximum_water_storage * 1.05)
 ylims!(ax_β, 0, 1.05)
 
 title = @lift "Diurnal convection over heterogeneous slab land, t = " * prettytime(times[$n])

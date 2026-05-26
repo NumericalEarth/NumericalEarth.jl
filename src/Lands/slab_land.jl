@@ -13,10 +13,10 @@
 ##### closure declares `prognostic_variables` / `flux_variables`, and the
 ##### constructor allocates exactly the union, keyed by `Symbol`. A pure
 ##### thermal slab with no hydrology has `state = (T = ...,)` only; a
-##### Manabe-bucket slab adds `(:W, :moisture_availability)`.
+##### Manabe-bucket slab adds `(:water_storage, :moisture_availability)`.
 #####
 ##### Some `state` entries are diagnostic in nature (e.g. β =
-##### `state.moisture_availability` is a function of `state.W`). These
+##### `state.moisture_availability` is a function of `state.water_storage`). These
 ##### are still declared in `prognostic_variables` so the container
 ##### allocates a field for them, but are recomputed inside
 ##### `update_diagnostics!` (called at the end of `time_step!`) rather

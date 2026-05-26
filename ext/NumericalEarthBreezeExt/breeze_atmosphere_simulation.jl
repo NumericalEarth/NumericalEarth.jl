@@ -20,7 +20,7 @@ using Breeze: ThermodynamicConstants, ReferenceState, AnelasticDynamics,
                           forcing = NamedTuple(),
                           closure = nothing,
                           clock = Clock{eltype(grid)}(time=0),
-                          Δt = 1)
+                          Δt = Inf)
 
 Construct an Oceananigans `Simulation` wrapping a Breeze `AtmosphereModel`,
 with sensible defaults for coupled simulations. Mirrors the role of
@@ -40,7 +40,10 @@ aliases `coupled_model.radiation.flux_divergence`. Passing a
 `AtmosphereLandModel(atmosphere, land; radiation = rtm)` instead.
 
 Returns the `Simulation` so callers can attach output writers, callbacks, or
-later wrap inside a coupled `EarthSystemModel`.
+later wrap inside a coupled `EarthSystemModel`. The inner `Δt` defaults to
+`Inf` since the *coupled* `Simulation` (around an `EarthSystemModel`) owns
+the time step in coupled use; if you wrap this `Simulation` directly in a
+`run!`, pass a finite `Δt`.
 """
 function NumericalEarth.Atmospheres.atmosphere_simulation(grid;
                                                           surface_pressure = 101325,
@@ -56,7 +59,7 @@ function NumericalEarth.Atmospheres.atmosphere_simulation(grid;
                                                           forcing = NamedTuple(),
                                                           closure = nothing,
                                                           clock = Oceananigans.TimeSteppers.Clock{eltype(grid)}(time = 0),
-                                                          Δt = 1,
+                                                          Δt = Inf,
                                                           radiation = CoupledRadiation())
 
     if radiation isa Breeze.RadiativeTransferModel

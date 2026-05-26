@@ -208,7 +208,7 @@ slab_land = SlabLand(land_grid;
                      energy    = SlabEnergy(FT;
                                             dry_heat_capacity    = 1500.0 * 1480.0 * 0.10,
                                             liquid_heat_capacity = 4186.0),
-                     hydrology = BucketHydrology(FT; field_capacity = 150.0, critical_wetness = 0.75),
+                     hydrology = BucketHydrology(FT; maximum_water_storage = 150.0, critical_wetness_ratio = 0.75),
                      surface   = ConstantSurfaceProperties(FT;
                                                            momentum_roughness_length = 0.1,
                                                            scalar_roughness_length   = 0.01))
@@ -219,7 +219,7 @@ slab_land = SlabLand(land_grid;
 T_init = interior(T_local[1], :, :, 1)
 fill!(parent(slab_land.state.T), mean(T_init))
 interior(slab_land.state.T, :, :, 1) .= T_init
-fill!(parent(slab_land.state.W), 0.5 * 150.0)
+fill!(parent(slab_land.state.water_storage), 0.5 * 150.0)
 update_state!(slab_land)
 
 # ## Coupled model
@@ -231,7 +231,7 @@ wall_time = Ref(time_ns())
 function progress(sim)
     land = sim.model.land
     Tmin, Tmax = minimum(land.state.T), maximum(land.state.T)
-    Wmin, Wmax = minimum(land.state.W), maximum(land.state.W)
+    Wmin, Wmax = minimum(land.state.water_storage), maximum(land.state.water_storage)
     βmean      = mean(land.state.moisture_availability)
     Qmean      = mean(land.fluxes.net_energy_flux)
     elapsed    = 1e-9 * (time_ns() - wall_time[]); wall_time[] = time_ns()
@@ -242,7 +242,7 @@ end
 add_callback!(simulation, progress, IterationInterval(144))  # ~12 h
 
 outputs = (T = slab_land.state.T,
-           W = slab_land.state.W,
+           W = slab_land.state.water_storage,
            β = slab_land.state.moisture_availability,
            Q = slab_land.fluxes.net_energy_flux,
            E = slab_land.fluxes.evaporation,
@@ -275,15 +275,18 @@ GC.gc(true); GC.gc(true)
 # a domain-mean T(t) time series. The elevation panel makes the
 # lapse-rate signature in T(λ, φ) directly readable.
 
-T_ts = FieldTimeSeries("era5_forced_slab_land.jld2", "T"; architecture = CPU())
-β_ts = FieldTimeSeries("era5_forced_slab_land.jld2", "β"; architecture = CPU())
-Q_ts = FieldTimeSeries("era5_forced_slab_land.jld2", "Q"; architecture = CPU())
+T_ts = FieldTimeSeries("era5_forced_slab_land.jld2", "T")
+β_ts = FieldTimeSeries("era5_forced_slab_land.jld2", "β")
+Q_ts = FieldTimeSeries("era5_forced_slab_land.jld2", "Q")
 
 times      = T_ts.times
 Nframes    = length(times)
 times_days = collect(times) ./ 86400
-λ = λnodes(land_grid, Center())
-φ = φnodes(land_grid, Center())
+
+# Colorrange for β covers the actual span over the run (clamped to a sensible
+# minimum width so an unusually static field still renders cleanly).
+β_lo, β_hi = extrema(β_ts)
+β_range = (β_lo, max(β_hi, β_lo + 0.1))
 
 fig = Figure(size = (1500, 1000), fontsize = 12)
 ax_T = Axis(fig[1, 1]; title = "Skin temperature T (K)",    xlabel = "longitude", ylabel = "latitude", aspect = DataAspect())
@@ -293,23 +296,23 @@ ax_z = Axis(fig[2, 1]; title = "Elevation (m, ETOPO 2022)", xlabel = "longitude"
 ax_t = Axis(fig[2, 2:3]; title = "Domain T extrema and mean over time", xlabel = "t (days)", ylabel = "T (K)")
 
 n  = Observable(1)
-Tn = @lift view(interior(T_ts[$n]), :, :, 1)
-βn = @lift view(interior(β_ts[$n]), :, :, 1)
-Qn = @lift view(interior(Q_ts[$n]), :, :, 1)
+Tn = @lift T_ts[$n]
+βn = @lift β_ts[$n]
+Qn = @lift Q_ts[$n]
 
-heatmap!(ax_T, λ, φ, Tn; colormap = :thermal, colorrange = (250, 300))
-heatmap!(ax_β, λ, φ, βn; colormap = :tempo,   colorrange = (0, 1))
-heatmap!(ax_Q, λ, φ, Qn; colormap = :balance, colorrange = (-400, 400))
-heatmap!(ax_z, λ, φ, z_land; colormap = :terrain, colorrange = (1000, 3500))
+hm_T = heatmap!(ax_T, Tn;           colormap = :thermal, colorrange = (250, 300))
+hm_β = heatmap!(ax_β, βn;           colormap = :tempo,   colorrange = β_range)
+hm_Q = heatmap!(ax_Q, Qn;           colormap = :balance, colorrange = (-400, 400))
+hm_z = heatmap!(ax_z, z_land_field; colormap = :terrain, colorrange = (1000, 3500))
 
-Colorbar(fig[1, 1, Right()], limits = (250, 300),   colormap = :thermal, label = "T (K)")
-Colorbar(fig[1, 2, Right()], limits = (0, 1),       colormap = :tempo,   label = "β")
-Colorbar(fig[1, 3, Right()], limits = (-400, 400),  colormap = :balance, label = "Q (W m⁻²)")
-Colorbar(fig[2, 1, Right()], limits = (1000, 3500), colormap = :terrain, label = "elevation (m)")
+Colorbar(fig[1, 1, Right()], hm_T; label = "T (K)")
+Colorbar(fig[1, 2, Right()], hm_β; label = "β")
+Colorbar(fig[1, 3, Right()], hm_Q; label = "Q (W m⁻²)")
+Colorbar(fig[2, 1, Right()], hm_z; label = "elevation (m)")
 
-T_mean = [mean(interior(T_ts[k]))    for k in 1:Nframes]
-T_max  = [maximum(interior(T_ts[k])) for k in 1:Nframes]
-T_min  = [minimum(interior(T_ts[k])) for k in 1:Nframes]
+T_mean = [mean(T_ts[k])    for k in 1:Nframes]
+T_max  = [maximum(T_ts[k]) for k in 1:Nframes]
+T_min  = [minimum(T_ts[k]) for k in 1:Nframes]
 lines!(ax_t, times_days, T_max;  color = :red,   linewidth = 1.5, label = "max")
 lines!(ax_t, times_days, T_mean; color = :black, linewidth = 1.5, label = "mean")
 lines!(ax_t, times_days, T_min;  color = :blue,  linewidth = 1.5, label = "min")

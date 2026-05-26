@@ -125,10 +125,10 @@ function step!(energy::ForceRestoreEnergy, state, fluxes, surface, grid, Δt, ti
     arch = architecture(grid)
     Q = fluxes.net_energy_flux
 
-    if hasproperty(state, :W)
+    if hasproperty(state, :water_storage)
         launch!(arch, grid, :xy, _force_restore_step_with_water!,
                 state.T, state.Tᵈ, Q,
-                state.W, Δt,
+                state.water_storage, Δt,
                 energy.dry_heat_capacity, energy.liquid_heat_capacity,
                 energy.deep_temperature,
                 energy.surface_to_deep_time_scale, energy.deep_to_climate_time_scale,

@@ -19,8 +19,8 @@ using NumericalEarth.Lands: update_diagnostics!
         energy = SlabEnergy(eltype(grid); dry_heat_capacity = 2.0,
                                          liquid_heat_capacity = 4.0)
         hydrology = BucketHydrology(eltype(grid);
-                                   field_capacity = 10.0,
-                                   critical_wetness = 0.5)
+                                   maximum_water_storage = 10.0,
+                                   critical_wetness_ratio = 0.5)
         surface = ConstantSurfaceProperties(eltype(grid);
                                            momentum_roughness_length = 0.1,
                                            scalar_roughness_length = 0.01)
@@ -29,40 +29,40 @@ using NumericalEarth.Lands: update_diagnostics!
 
         @test land.energy.dry_heat_capacity isa Number
         @test land.energy.liquid_heat_capacity isa Number
-        @test land.hydrology.field_capacity isa Number
-        @test land.hydrology.critical_wetness isa Number
+        @test land.hydrology.maximum_water_storage isa Number
+        @test land.hydrology.critical_wetness_ratio isa Number
         @test land.surface.momentum_roughness_length isa Number
         @test land.surface.scalar_roughness_length isa Number
 
-        # With `state.W = 0`, the slab responds to `fluxes.net_energy_flux`
+        # With `state.water_storage = 0`, the slab responds to `fluxes.net_energy_flux`
         # using only `dry_heat_capacity`.
-        fill!(land.state.W, 0)
+        fill!(land.state.water_storage, 0)
         fill!(land.state.T, 10.0)
         fill!(land.fluxes.net_energy_flux, 10.0)
         NumericalEarth.Lands.step!(land.energy, land.state, land.fluxes, land.surface, land.grid, 1.0)
         @test isapprox(CUDA.@allowscalar(land.state.T[1, 1, 1]), 15.0; atol=1e-12)
 
-        # With `state.W = 5`, the liquid-water contribution reduces the
+        # With `state.water_storage = 5`, the liquid-water contribution reduces the
         # temperature tendency.
-        fill!(land.state.W, 5.0)
+        fill!(land.state.water_storage, 5.0)
         fill!(land.state.T, 10.0)
         fill!(land.fluxes.net_energy_flux, 10.0)
         NumericalEarth.Lands.step!(land.energy, land.state, land.fluxes, land.surface, land.grid, 1.0)
         @test isapprox(CUDA.@allowscalar(land.state.T[1, 1, 1]), 10.4545454545; rtol=1e-7)
 
-        # Hydrology produces runoff when `state.W` exceeds `field_capacity`.
-        fill!(land.state.W, 8.0)
+        # Hydrology produces runoff when `state.water_storage` exceeds `maximum_water_storage`.
+        fill!(land.state.water_storage, 8.0)
         fill!(land.fluxes.precipitation, 4.0)
         fill!(land.fluxes.evaporation, 1.0)
         fill!(land.fluxes.runoff, 0.0)
         fill!(land.fluxes.net_energy_flux, 0.0)
         time_step!(land, 1.0)
 
-        @test isapprox(CUDA.@allowscalar(land.state.W[1, 1, 1]), 10.0; atol=1e-12)
+        @test isapprox(CUDA.@allowscalar(land.state.water_storage[1, 1, 1]), 10.0; atol=1e-12)
         @test isapprox(CUDA.@allowscalar(land.state.moisture_availability[1, 1, 1]), 1.0; atol=1e-12)
 
         # The bucket receives `3 kg m⁻²` net water over the step, so only
-        # `1 kg m⁻²` remains above `field_capacity`.
+        # `1 kg m⁻²` remains above `maximum_water_storage`.
         @test isapprox(CUDA.@allowscalar(land.fluxes.runoff[1, 1, 1]), 1.0; atol=1e-12)
 
         # Exposer for atmosphere-facing roughness fields.
@@ -99,8 +99,8 @@ end
                             dry_heat_capacity = Cdry,
                             liquid_heat_capacity = Cl)
         hydrology = BucketHydrology(eltype(grid);
-                                    field_capacity = Wmax,
-                                    critical_wetness = Wcrit)
+                                    maximum_water_storage = Wmax,
+                                    critical_wetness_ratio = Wcrit)
         surface = ConstantSurfaceProperties(eltype(grid);
                                             momentum_roughness_length = ℓᵐ,
                                             scalar_roughness_length = ℓˢ)
@@ -109,12 +109,12 @@ end
 
         @test land.energy.dry_heat_capacity isa AbstractField
         @test land.energy.liquid_heat_capacity isa AbstractField
-        @test land.hydrology.field_capacity isa AbstractField
-        @test land.hydrology.critical_wetness isa AbstractField
+        @test land.hydrology.maximum_water_storage isa AbstractField
+        @test land.hydrology.critical_wetness_ratio isa AbstractField
         @test land.surface.momentum_roughness_length isa AbstractField
         @test land.surface.scalar_roughness_length isa AbstractField
 
-        fill!(land.state.W, 4.0)
+        fill!(land.state.water_storage, 4.0)
         fill!(land.state.T, 10.0)
         fill!(land.fluxes.net_energy_flux, 10.0)
         NumericalEarth.Lands.step!(land.energy, land.state, land.fluxes, land.surface, land.grid, 1.0)
@@ -122,13 +122,13 @@ end
         # The field-valued land properties are read pointwise from the grid.
         @test isapprox(CUDA.@allowscalar(land.state.T[1, 1, 1]), 10.625; atol=1e-12)
 
-        fill!(land.state.W, 10.0)
+        fill!(land.state.water_storage, 10.0)
         fill!(land.fluxes.precipitation, 4.0)
         fill!(land.fluxes.evaporation, 0.0)
         fill!(land.fluxes.runoff, 0.0)
         time_step!(land, 1.0)
 
-        @test isapprox(CUDA.@allowscalar(land.state.W[1, 1, 1]), 12.0; atol=1e-12)
+        @test isapprox(CUDA.@allowscalar(land.state.water_storage[1, 1, 1]), 12.0; atol=1e-12)
         @test isapprox(CUDA.@allowscalar(land.fluxes.runoff[1, 1, 1]), 2.0; atol=1e-12)
 
         ex = NumericalEarth.EarthSystemModels.InterfaceComputations.ComponentExchanger(land, land.grid)
@@ -158,8 +158,8 @@ end
 
         energy = SlabEnergy(eltype(grid); dry_heat_capacity = 1000.0, liquid_heat_capacity = 4000.0)
         hydrology = BucketHydrology(eltype(grid);
-                                    field_capacity = Wmax,
-                                    critical_wetness = Wcrit,
+                                    maximum_water_storage = Wmax,
+                                    critical_wetness_ratio = Wcrit,
                                     root_depth = zʳ,
                                     leaf_area_index = Λ,
                                     lai_stress = 0.2)
@@ -169,7 +169,7 @@ end
 
         land = SlabLand(grid; energy, hydrology, surface)
 
-        fill!(land.state.W, 5.0)
+        fill!(land.state.water_storage, 5.0)
         fill!(land.state.moisture_availability, 0.0)
         update_diagnostics!(land.hydrology, land.state, land.fluxes, land.surface, land.grid)
 
@@ -178,13 +178,13 @@ end
         expected_β = 0.5 * exp(-0.2)
         @test isapprox(CUDA.@allowscalar(land.state.moisture_availability[1, 1, 1]), expected_β; atol=1e-12)
 
-        fill!(land.state.W, 18.0)
+        fill!(land.state.water_storage, 18.0)
         fill!(land.fluxes.precipitation, 7.0)
         fill!(land.fluxes.evaporation, 0.0)
         fill!(land.fluxes.runoff, 0.0)
         time_step!(land, 1.0)
 
-        @test isapprox(CUDA.@allowscalar(land.state.W[1, 1, 1]), 20.0; atol=1e-12)
+        @test isapprox(CUDA.@allowscalar(land.state.water_storage[1, 1, 1]), 20.0; atol=1e-12)
         # At saturation β_raw = 1; the canopy LAI stress (kᴸ Λ = 0.2)
         # still multiplies through, giving β = exp(-0.2).
         @test isapprox(CUDA.@allowscalar(land.state.moisture_availability[1, 1, 1]), exp(-0.2); atol=1e-12)
@@ -362,8 +362,8 @@ end
             fill!(parent(m.atmosphere.pressure), 101_325.0)
             fill!(m.land.state.T, 300.0)
             fill!(parent(m.land.fluxes.net_energy_flux), 0.0)
-            if hasproperty(m.land.state, :W)
-                fill!(m.land.state.W, 0)
+            if hasproperty(m.land.state, :water_storage)
+                fill!(m.land.state.water_storage, 0)
             end
         end
 
