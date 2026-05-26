@@ -9,23 +9,20 @@
 #####   - `hydrology :: AbstractHydrology`         -- water + moisture availability β ∈ [0, 1]
 #####   - `surface   :: AbstractSurfaceProperties` -- roughness length
 #####
-##### State and flux fields are not allocated by the container: each
-##### closure declares `prognostic_variables` / `flux_variables`, and the
-##### constructor allocates exactly the union, keyed by `Symbol`. A pure
-##### thermal slab with no hydrology has `state = (T = ...,)` only; a
-##### Manabe-bucket slab adds `(:water_storage, :moisture_availability)`.
+##### The prognostic `temperature` and `water_storage` fields and the
+##### diagnostic `moisture_availability` field live directly on the
+##### container (top-level access: `land.temperature`, `land.water_storage`,
+##### `land.moisture_availability`). The flux accumulators the coupler
+##### writes are sized from each closure's `flux_variables` declaration and
+##### grouped in the `fluxes` NamedTuple.
 #####
-##### Some `state` entries are diagnostic in nature (e.g. β =
-##### `state.moisture_availability` is a function of `state.water_storage`). These
-##### are still declared in `prognostic_variables` so the container
-##### allocates a field for them, but are recomputed inside
-##### `update_diagnostics!` (called at the end of `time_step!`) rather
-##### than inside `step!`. The single-namedtuple convention keeps the
-##### atmosphere-facing accessors simple.
+##### `moisture_availability` (β) is diagnostic — recomputed from
+##### `water_storage` inside `update_diagnostics!` (called at the end of
+##### `time_step!`) rather than inside `step!`.
 #####
 
 #####
-##### Helpers — assemble state and flux NamedTuples from closure declarations
+##### Helpers — assemble the flux-accumulator NamedTuple from closure declarations
 #####
 
 @inline merge_unique(a::NTuple, b::NTuple) = (a..., (s for s in b if !(s in a))...)
@@ -47,22 +44,10 @@ function _build_closure_fields(keyfn, initfn, grid, energy, hydrology, surface)
 end
 
 """
-    build_state(grid, energy, hydrology, surface)
-
-Allocate the prognostic-state `NamedTuple` for a `SlabLand`. Each key is
-contributed by exactly one closure (or shared); duplicates are merged.
-The per-symbol `Field` is built by `initial_state(closure, name, grid)`,
-giving each closure a hook to install non-zero defaults.
-"""
-build_state(grid, energy, hydrology, surface) =
-    _build_closure_fields(prognostic_variables, initial_state, grid, energy, hydrology, surface)
-
-"""
     build_flux_accumulators(grid, energy, hydrology, surface)
 
 Allocate the flux/forcing accumulator `NamedTuple` for a `SlabLand`.
-Same shape as `build_state`. The coupler writes into these every step;
-closures only read.
+The coupler writes into these every step; closures only read.
 """
 build_flux_accumulators(grid, energy, hydrology, surface) =
     _build_closure_fields(flux_variables, initial_flux, grid, energy, hydrology, surface)
@@ -72,7 +57,7 @@ build_flux_accumulators(grid, energy, hydrology, surface) =
 #####
 
 """
-    SlabLand{FT, G, Clk, S, F, E, H, Sfc}
+    SlabLand{FT, G, Clk, T, W, B, F, E, H, Sfc}
 
 A composable slab land-surface component. The default configuration —
 `SlabEnergy + BucketHydrology + ConstantSurfaceProperties` — is the
@@ -80,30 +65,36 @@ classic Manabe-bucket slab. Replace any axis to swap in a different
 energy, hydrology, or surface-property closure.
 
 # Fields
-- `grid`      : Oceananigans grid (typically `(Nx, Ny, Flat)`).
-- `clock`     : `Oceananigans.TimeSteppers.Clock`.
-- `state`     : `NamedTuple` of prognostic `Field`s (keys per closure).
-- `fluxes`    : `NamedTuple` of flux/forcing `Field`s the coupler writes.
-- `energy`    : an `AbstractEnergyBalance`.
-- `hydrology` : an `AbstractHydrology`.
-- `surface`   : an `AbstractSurfaceProperties`.
+- `grid`                  : Oceananigans grid (typically `(Nx, Ny, Flat)`).
+- `clock`                 : `Oceananigans.TimeSteppers.Clock`.
+- `temperature`           : prognostic bulk land temperature `T` (K).
+- `water_storage`         : prognostic land water mass per area `Mˡᵃ` (kg m⁻²).
+- `moisture_availability` : diagnostic moisture availability `β` (–).
+- `fluxes`                : `NamedTuple` of flux/forcing `Field`s the coupler writes.
+- `energy`                : an `AbstractEnergyBalance` (parameters).
+- `hydrology`             : an `AbstractHydrology` (parameters).
+- `surface`               : an `AbstractSurfaceProperties` (parameters).
 """
-struct SlabLand{FT, G, Clk, S, F, E, H, Sfc} <: AbstractLand
-    grid      :: G
-    clock     :: Clk
-    state     :: S
-    fluxes    :: F
-    energy    :: E
-    hydrology :: H
-    surface   :: Sfc
+struct SlabLand{FT, G, Clk, T, W, B, F, E, H, Sfc} <: AbstractLand
+    grid                  :: G
+    clock                 :: Clk
+    temperature           :: T
+    water_storage         :: W
+    moisture_availability :: B
+    fluxes                :: F
+    energy                :: E
+    hydrology             :: H
+    surface               :: Sfc
 end
 
 # Inner-style typed constructor capturing FT.
-SlabLand{FT}(grid, clock, state, fluxes, energy, hydrology, surface) where FT =
+SlabLand{FT}(grid, clock, temperature, water_storage, moisture_availability,
+             fluxes, energy, hydrology, surface) where FT =
     SlabLand{FT, typeof(grid), typeof(clock),
-             typeof(state), typeof(fluxes),
-             typeof(energy), typeof(hydrology), typeof(surface)}(grid, clock, state, fluxes,
-                                                                 energy, hydrology, surface)
+             typeof(temperature), typeof(water_storage), typeof(moisture_availability),
+             typeof(fluxes), typeof(energy), typeof(hydrology), typeof(surface)}(
+                 grid, clock, temperature, water_storage, moisture_availability,
+                 fluxes, energy, hydrology, surface)
 
 """
     SlabLand(grid;
@@ -112,9 +103,11 @@ SlabLand{FT}(grid, clock, state, fluxes, energy, hydrology, surface) where FT =
              surface   = ConstantSurfaceProperties(eltype(grid)),
              clock     = Clock{eltype(grid)}(time = 0))
 
-Construct a `SlabLand` with the chosen closures. State and flux fields
-are sized from each closure's declarations, then any closure-specific
-initial state is applied through `initial_state(closure, name, grid)`.
+Construct a `SlabLand` with the chosen closures. The prognostic
+`temperature` and `water_storage` fields and the diagnostic
+`moisture_availability` field are allocated on `grid`; the flux
+accumulators the coupler writes are sized from each closure's
+`flux_variables` declaration.
 """
 function SlabLand(grid;
                   energy    = SlabEnergy(eltype(grid)),
@@ -122,11 +115,13 @@ function SlabLand(grid;
                   surface   = ConstantSurfaceProperties(eltype(grid)),
                   clock     = Clock{eltype(grid)}(time = 0))
 
-    state  = build_state(grid, energy, hydrology, surface)
-    fluxes = build_flux_accumulators(grid, energy, hydrology, surface)
-    FT     = eltype(grid)
-    return SlabLand{FT}(grid, clock, state, fluxes,
-                        energy, hydrology, surface)
+    temperature           = CenterField(grid)
+    water_storage         = CenterField(grid)
+    moisture_availability = CenterField(grid)
+    fluxes                = build_flux_accumulators(grid, energy, hydrology, surface)
+    FT                    = eltype(grid)
+    return SlabLand{FT}(grid, clock, temperature, water_storage, moisture_availability,
+                        fluxes, energy, hydrology, surface)
 end
 
 Base.eltype(::SlabLand{FT}) where FT = FT
@@ -141,12 +136,14 @@ end
 
 function Base.show(io::IO, land::SlabLand)
     print(io, summary(land), '\n',
-              "├── grid:       ", summary(land.grid), '\n',
-              "├── energy:     ", summary(land.energy), '\n',
-              "├── hydrology:  ", summary(land.hydrology), '\n',
-              "├── surface:    ", summary(land.surface), '\n',
-              "├── state:      ", keys(land.state), '\n',
-              "└── fluxes:     ", keys(land.fluxes))
+              "├── grid:                  ", summary(land.grid), '\n',
+              "├── energy:                ", summary(land.energy), '\n',
+              "├── hydrology:             ", summary(land.hydrology), '\n',
+              "├── surface:               ", summary(land.surface), '\n',
+              "├── temperature:           ", summary(land.temperature), '\n',
+              "├── water_storage:         ", summary(land.water_storage), '\n',
+              "├── moisture_availability: ", summary(land.moisture_availability), '\n',
+              "└── fluxes:                ", keys(land.fluxes))
 end
 
 #####
@@ -157,12 +154,13 @@ end
     time_step!(land::SlabLand, Δt)
 
 Advance the slab by `Δt`. Each closure runs its own `step!`, then
-`update_state!` refreshes diagnostics. State halos are filled at
-the end so atmosphere kernels reading `state.T` see consistent values.
+`update_state!` refreshes diagnostics. Prognostic halos are filled at
+the end so atmosphere kernels reading the surface state see consistent
+values.
 
 Closure-invocation order: `energy → hydrology`. Hydrology runs after
 energy so future closures that close the energy budget through phase
-change (snow melt, soil freeze/thaw) see the freshly updated `T`.
+change (snow melt, soil freeze/thaw) see the freshly updated `temperature`.
 
 The clock is ticked first; subsequent closures see `land.clock.time =
 t + Δt`. Time-dependent property providers should therefore evaluate
@@ -172,12 +170,14 @@ function Oceananigans.TimeSteppers.time_step!(land::SlabLand, Δt)
     tick!(land.clock, Δt)
     time = land.clock.time
 
-    step!(land.energy,    land.state, land.fluxes, land.surface, land.grid, Δt, time)
-    step!(land.hydrology, land.state, land.fluxes, land.surface, land.grid, Δt, time)
+    step!(land.energy,    land, Δt, time)
+    step!(land.hydrology, land, Δt, time)
 
     Oceananigans.TimeSteppers.update_state!(land)
 
-    foreach(fill_halo_regions!, values(land.state))
+    fill_halo_regions!(land.temperature)
+    fill_halo_regions!(land.water_storage)
+    fill_halo_regions!(land.moisture_availability)
     return nothing
 end
 
@@ -185,15 +185,15 @@ end
     update_state!(land::SlabLand)
 
 Refresh closure-owned diagnostics. Order is `hydrology → surface →
-energy`: hydrology produces wetness/β, the surface closure may consume
-β (e.g. wetness-dependent albedo, LAI-aware roughness) before the
-energy closure assembles an effective heat capacity diagnostic from
-the freshly updated water storage.
+energy`: hydrology produces `moisture_availability` (β), the surface
+closure may consume β (e.g. wetness-dependent albedo, LAI-aware
+roughness) before the energy closure assembles any heat-capacity
+diagnostic from the freshly updated water storage.
 """
 function Oceananigans.TimeSteppers.update_state!(land::SlabLand)
-    update_diagnostics!(land.hydrology, land.state, land.fluxes, land.surface, land.grid)
-    update_diagnostics!(land.surface,   land.state, land.fluxes, land.surface, land.grid)
-    update_diagnostics!(land.energy,    land.state, land.fluxes, land.surface, land.grid)
+    update_diagnostics!(land.hydrology, land)
+    update_diagnostics!(land.surface,   land)
+    update_diagnostics!(land.energy,    land)
     return nothing
 end
 
@@ -201,10 +201,10 @@ end
 ##### Container-level atmosphere-facing accessors
 #####
 
-surface_temperature(land::SlabLand)       = surface_temperature(land.energy, land.state)
-surface_wetness(land::SlabLand)           = wetness(land.hydrology, land.state)
-momentum_roughness_length(land::SlabLand) = momentum_roughness_length(land.surface, land.state)
-scalar_roughness_length(land::SlabLand)   = scalar_roughness_length(land.surface, land.state)
+surface_temperature(land::SlabLand)       = surface_temperature(land.energy, land)
+surface_wetness(land::SlabLand)           = wetness(land.hydrology, land)
+momentum_roughness_length(land::SlabLand) = momentum_roughness_length(land.surface, land)
+scalar_roughness_length(land::SlabLand)   = scalar_roughness_length(land.surface, land)
 
 #####
 ##### EarthSystemModel interface — generic SlabLand coupling.

@@ -22,28 +22,12 @@ abstract type AbstractEnergyBalance end
 #####
 
 """
-    prognostic_variables(energy::AbstractEnergyBalance) -> Tuple{Vararg{Symbol}}
-
-Names of prognostic state variables this closure adds to `SlabLand.state`.
-"""
-prognostic_variables(::AbstractEnergyBalance) = ()
-
-"""
     flux_variables(energy::AbstractEnergyBalance) -> Tuple{Vararg{Symbol}}
 
 Names of flux/forcing accumulator fields this closure consumes from
 `SlabLand.fluxes`. The coupler writes into these every time step.
 """
 flux_variables(::AbstractEnergyBalance) = ()
-
-"""
-    initial_state(energy::AbstractEnergyBalance, name::Symbol, grid)
-
-Build the initial `Field` for prognostic variable `name`. Override on a
-closure to inject a non-zero default (e.g. fill with a reference T).
-Defaults to a freshly allocated `CenterField`.
-"""
-initial_state(::AbstractEnergyBalance, ::Symbol, grid) = CenterField(grid)
 
 """
     initial_flux(energy::AbstractEnergyBalance, name::Symbol, grid)
@@ -54,33 +38,32 @@ zeroed `CenterField`.
 initial_flux(::AbstractEnergyBalance, ::Symbol, grid) = CenterField(grid)
 
 """
-step!(energy, state, fluxes, surface, grid, Δt)
+    step!(energy, land, Δt[, time])
 
-Advance the energy-balance state by `Δt`. The closure may read other
-closures' state through the `state` `NamedTuple` and shared surface
-properties through `surface`, but it does not call other closures
-directly. The default is a no-op (used by closures with no prognostic
-state, e.g. prescribed surface temperature).
+Advance the energy-balance state by `Δt`. The closure reads the land's
+prognostic fields (`land.temperature`, `land.water_storage`), the net
+energy flux (`land.fluxes.net_energy_flux`), and the surface closure
+(`land.surface`) as needed. The default is a no-op (used by closures
+with no prognostic state, e.g. prescribed surface temperature).
 """
-step!(::AbstractEnergyBalance, state, fluxes, surface, grid, Δt) = nothing
-step!(energy::AbstractEnergyBalance, state, fluxes, surface, grid, Δt, time) =
-    step!(energy, state, fluxes, surface, grid, Δt)
+step!(::AbstractEnergyBalance, land, Δt) = nothing
+step!(energy::AbstractEnergyBalance, land, Δt, time) = step!(energy, land, Δt)
 
 """
-    update_diagnostics!(energy, state, fluxes, surface, grid)
+    update_diagnostics!(energy, land)
 
 Refresh any cached diagnostics owned by the energy closure. Called by the
 container's `update_state!` at the end of each step. Default is no-op.
 """
-update_diagnostics!(::AbstractEnergyBalance, state, fluxes, surface, grid) = nothing
+update_diagnostics!(::AbstractEnergyBalance, land) = nothing
 
 #####
 ##### Atmosphere-facing accessor
 #####
 
 """
-    surface_temperature(energy::AbstractEnergyBalance, state) -> AbstractField
+    surface_temperature(energy::AbstractEnergyBalance, land) -> AbstractField
 
-Return the field of skin temperatures the atmosphere reads as a BC.
+Return the field of surface temperatures the atmosphere reads as a BC.
 """
-surface_temperature(::AbstractEnergyBalance, state) = state.T
+surface_temperature(::AbstractEnergyBalance, land) = land.temperature

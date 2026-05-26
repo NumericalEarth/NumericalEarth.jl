@@ -112,8 +112,8 @@ M_wet  = 0.95 * hydrology.maximum_water_storage
 
 M_init(x) = M_wet * exp(-(x/σ_wet)^2)
 
-set!(slab_land.state.T, T₀)
-set!(slab_land.state.water_storage, M_init)
+set!(slab_land.temperature, T₀)
+set!(slab_land.water_storage, M_init)
 Oceananigans.TimeSteppers.update_state!(slab_land)
 
 # ## RRTMGP radiation
@@ -132,7 +132,7 @@ constants = ThermodynamicConstants()
 
 radiation = RadiativeTransferModel(grid, AllSkyOptics(), constants;
                                    solar_position, background_atmosphere,
-                                   surface_temperature = slab_land.state.T,
+                                   surface_temperature = slab_land.temperature,
                                    surface_albedo      = 0.20,
                                    surface_emissivity  = 0.95,
                                    solar_constant      = 1361,
@@ -194,7 +194,7 @@ function progress(sim)
     wmax       = maximum(abs, w)
     Tmin, Tmax = extrema(T)
 
-    Tg = sim.model.land.state.T
+    Tg = sim.model.land.temperature
     Tg_min, Tg_max = extrema(Tg)
 
     rtm = sim.model.radiation
@@ -223,9 +223,9 @@ simulation.output_writers[:atmos] = JLD2Writer(model, (; w, T, qᵛ, qˡ);
                                                overwrite_existing = true)
 
 simulation.output_writers[:land] = JLD2Writer(model,
-                                              (; Tg = slab_land.state.T,
-                                                  W  = slab_land.state.water_storage,
-                                                  β  = slab_land.state.moisture_availability);
+                                              (; Tg = slab_land.temperature,
+                                                  W  = slab_land.water_storage,
+                                                  β  = slab_land.moisture_availability);
                                               filename = "breeze_slab_land_surface",
                                               schedule = TimeInterval(10minutes),
                                               overwrite_existing = true)

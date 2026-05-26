@@ -7,9 +7,8 @@
 
 struct DryLand <: AbstractHydrology end
 
-prognostic_variables(::DryLand) = ()
-flux_variables(::DryLand)       = ()
+flux_variables(::DryLand) = ()
 
-wetness(::DryLand, state) = 0.0
+wetness(::DryLand, land) = 0.0
 
 Base.summary(::DryLand) = "DryLand (moisture availability β ≡ 0)"

@@ -58,11 +58,9 @@ function BucketHydrology(FT::Type = Float64;
                            root_depth, leaf_area_index, lai_stress)
 end
 
-# `:water_storage` is the prognostic; `:moisture_availability` is a diagnostic
-# recomputed in `update_diagnostics!`. Both share the `state` namedtuple
-# so the container allocates a field for each.
-prognostic_variables(::BucketHydrology) = (:water_storage, :moisture_availability)
-flux_variables(::BucketHydrology)       = (:precipitation, :evaporation)
+# The container always allocates `water_storage` (prognostic) and
+# `moisture_availability` (diagnostic, recomputed in `update_diagnostics!`).
+flux_variables(::BucketHydrology) = (:precipitation, :evaporation)
 
 @inline function _bucket_root_zone_capacity(maximum_water_storage, root_depth, i, j, k=1)
     M_max = property_value(maximum_water_storage, i, j, k)
@@ -80,11 +78,11 @@ end
     end
 end
 
-function step!(b::BucketHydrology, state, fluxes, surface, grid, Δt)
-    arch = architecture(grid)
-    launch!(arch, grid, :xy, _bucket_hydrology_step!,
-            state.water_storage,
-            fluxes.precipitation, fluxes.evaporation,
+function step!(b::BucketHydrology, land, Δt)
+    arch = architecture(land.grid)
+    launch!(arch, land.grid, :xy, _bucket_hydrology_step!,
+            land.water_storage,
+            land.fluxes.precipitation, land.fluxes.evaporation,
             Δt, b.maximum_water_storage, b.root_depth)
     return nothing
 end
@@ -118,18 +116,18 @@ end
     end
 end
 
-function update_diagnostics!(b::BucketHydrology, state, fluxes, surface, grid)
-    arch = architecture(grid)
+function update_diagnostics!(b::BucketHydrology, land)
+    arch = architecture(land.grid)
 
-    launch!(arch, grid, :xy, _bucket_hydrology_moisture_availability!,
-            state.moisture_availability, state.water_storage,
+    launch!(arch, land.grid, :xy, _bucket_hydrology_moisture_availability!,
+            land.moisture_availability, land.water_storage,
             b.maximum_water_storage, b.critical_wetness_ratio,
             b.root_depth, b.leaf_area_index, b.lai_stress)
 
     return nothing
 end
 
-wetness(::BucketHydrology, state) = state.moisture_availability
+wetness(::BucketHydrology, land) = land.moisture_availability
 
 Base.summary(b::BucketHydrology) =
     string("BucketHydrology(maximum_water_storage=", prettysummary(b.maximum_water_storage),

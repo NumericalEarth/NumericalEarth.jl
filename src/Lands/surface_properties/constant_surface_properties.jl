@@ -29,8 +29,8 @@ function ConstantSurfaceProperties(FT::Type = Float64;
     return ConstantSurfaceProperties(momentum_roughness_length, scalar_roughness_length)
 end
 
-momentum_roughness_length(s::ConstantSurfaceProperties, state) = s.momentum_roughness_length
-scalar_roughness_length(s::ConstantSurfaceProperties, state)   = s.scalar_roughness_length
+momentum_roughness_length(s::ConstantSurfaceProperties, land) = s.momentum_roughness_length
+scalar_roughness_length(s::ConstantSurfaceProperties, land)   = s.scalar_roughness_length
 
 Base.summary(s::ConstantSurfaceProperties) =
     string("ConstantSurfaceProperties(momentum_roughness_length=", prettysummary(s.momentum_roughness_length),

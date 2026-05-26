@@ -217,9 +217,9 @@ slab_land = SlabLand(land_grid;
 # snapshot; fill the parent first so halo cells start at the
 # domain-mean rather than uninitialised memory.
 T_init = interior(T_local[1], :, :, 1)
-fill!(parent(slab_land.state.T), mean(T_init))
-interior(slab_land.state.T, :, :, 1) .= T_init
-fill!(parent(slab_land.state.water_storage), 0.5 * 150.0)
+fill!(parent(slab_land.temperature), mean(T_init))
+interior(slab_land.temperature, :, :, 1) .= T_init
+fill!(parent(slab_land.water_storage), 0.5 * 150.0)
 update_state!(slab_land)
 
 # ## Coupled model
@@ -230,9 +230,9 @@ simulation = Simulation(model; Δt = 5minutes, stop_time = (Nt - 1) * 3600.0)
 wall_time = Ref(time_ns())
 function progress(sim)
     land = sim.model.land
-    Tmin, Tmax = minimum(land.state.T), maximum(land.state.T)
-    Wmin, Wmax = minimum(land.state.water_storage), maximum(land.state.water_storage)
-    βmean      = mean(land.state.moisture_availability)
+    Tmin, Tmax = minimum(land.temperature), maximum(land.temperature)
+    Wmin, Wmax = minimum(land.water_storage), maximum(land.water_storage)
+    βmean      = mean(land.moisture_availability)
     Qmean      = mean(land.fluxes.net_energy_flux)
     elapsed    = 1e-9 * (time_ns() - wall_time[]); wall_time[] = time_ns()
     @info @sprintf("Iter %d  t = %s  T %.1f–%.1f K  W %.1f–%.1f kg m⁻²  ⟨β⟩ %.2f  ⟨Q⟩ %+6.1f W m⁻²  wall Δ %.1fs",
@@ -241,9 +241,9 @@ function progress(sim)
 end
 add_callback!(simulation, progress, IterationInterval(144))  # ~12 h
 
-outputs = (T = slab_land.state.T,
-           W = slab_land.state.water_storage,
-           β = slab_land.state.moisture_availability,
+outputs = (T = slab_land.temperature,
+           W = slab_land.water_storage,
+           β = slab_land.moisture_availability,
            Q = slab_land.fluxes.net_energy_flux,
            E = slab_land.fluxes.evaporation,
            P = slab_land.fluxes.precipitation)

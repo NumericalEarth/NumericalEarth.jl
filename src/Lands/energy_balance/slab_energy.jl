@@ -40,42 +40,29 @@ function SlabEnergy(FT::Type = Float64;
     return SlabEnergy(dry_heat_capacity, liquid_heat_capacity)
 end
 
-prognostic_variables(::SlabEnergy) = (:T,)
-flux_variables(::SlabEnergy)       = (:net_energy_flux,)
+flux_variables(::SlabEnergy) = (:net_energy_flux,)
 
-@kernel function _slab_energy_step!(T, Q, Δt, Cdry)
-    i, j = @index(Global, NTuple)
-    @inbounds begin
-        heat_capacity = property_value(Cdry, i, j, 1)
-        T[i, j, 1] += Q[i, j, 1] * Δt / heat_capacity
-    end
-end
-
-@kernel function _slab_energy_step_with_water!(T, Q, W, Δt, Cdry, Cl)
+@kernel function _slab_energy_step!(T, Q, M, Δt, Cdry, Cl)
     i, j = @index(Global, NTuple)
     @inbounds begin
         Cdry_ij1 = property_value(Cdry, i, j, 1)
         Cl_ij1   = property_value(Cl, i, j, 1)
-        heat_capacity = Cdry_ij1 + Cl_ij1 * W[i, j, 1]
+        # Effective heat capacity adds the liquid-water term; for dry land
+        # water_storage is zero so this reduces to Cdry.
+        heat_capacity = Cdry_ij1 + Cl_ij1 * max(M[i, j, 1], 0)
         T[i, j, 1] += Q[i, j, 1] * Δt / heat_capacity
     end
 end
 
-function step!(energy::SlabEnergy, state, fluxes, surface, grid, Δt)
-    arch = architecture(grid)
-    Cdry = energy.dry_heat_capacity
-
-    if hasproperty(state, :water_storage)
-        launch!(arch, grid, :xy, _slab_energy_step_with_water!,
-                state.T, fluxes.net_energy_flux, state.water_storage, Δt, Cdry, energy.liquid_heat_capacity)
-    else
-        launch!(arch, grid, :xy, _slab_energy_step!,
-                state.T, fluxes.net_energy_flux, Δt, Cdry)
-    end
+function step!(energy::SlabEnergy, land, Δt)
+    arch = architecture(land.grid)
+    launch!(arch, land.grid, :xy, _slab_energy_step!,
+            land.temperature, land.fluxes.net_energy_flux, land.water_storage,
+            Δt, energy.dry_heat_capacity, energy.liquid_heat_capacity)
     return nothing
 end
 
-surface_temperature(::SlabEnergy, state) = state.T
+surface_temperature(::SlabEnergy, land) = land.temperature
 
 Base.summary(s::SlabEnergy) =
     string("SlabEnergy(dry_heat_capacity=", prettysummary(s.dry_heat_capacity),

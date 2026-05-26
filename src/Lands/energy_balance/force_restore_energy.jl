@@ -52,32 +52,16 @@ function ForceRestoreEnergy(FT::Type = Float64;
                               deep_temperature, deep_time_scale)
 end
 
-prognostic_variables(::ForceRestoreEnergy) = (:T,)
-flux_variables(::ForceRestoreEnergy)       = (:net_energy_flux,)
+flux_variables(::ForceRestoreEnergy) = (:net_energy_flux,)
 
-@kernel function _force_restore_step_no_water!(T, Q, Δt, Cdry, Cl, Tdeep, τ, grid, time)
+@kernel function _force_restore_step!(T, Q, M, Δt, Cdry, Cl, Tdeep, τ, grid, time)
     i, j = @index(Global, NTuple)
     @inbounds begin
-        # No-water variant: hydrology contributes nothing to the slab
-        # heat capacity, so C reduces to the dry value.
-        C     = property_value(Cdry, i, j, 1)
-        C_inv = ifelse(C <= 0, 0, inv(C))
-        τ⁻    = ifelse(τ > 0, inv(τ), 0)
-
-        Tᵈᵉᵉᵖ = stateindex(Tdeep, i, j, 1, grid, time, (Center, Center, Center))
-        Tˢ    = T[i, j, 1]
-
-        T[i, j, 1] = Tˢ + (Q[i, j, 1] * C_inv + (Tᵈᵉᵉᵖ - Tˢ) * τ⁻) * Δt
-    end
-end
-
-@kernel function _force_restore_step_with_water!(T, Q, M, Δt, Cdry, Cl, Tdeep, τ, grid, time)
-    i, j = @index(Global, NTuple)
-    @inbounds begin
-        Mᵃ       = ifelse(M[i, j, 1] < 0, 0, M[i, j, 1])
+        # Effective heat capacity adds the liquid-water term; for dry land
+        # water_storage is zero so C reduces to Cdry.
         Cdry_ij1 = property_value(Cdry, i, j, 1)
         Cl_ij1   = property_value(Cl, i, j, 1)
-        C        = Cdry_ij1 + Cl_ij1 * Mᵃ
+        C        = Cdry_ij1 + Cl_ij1 * max(M[i, j, 1], 0)
         C_inv    = ifelse(C <= 0, 0, inv(C))
         τ⁻       = ifelse(τ > 0, inv(τ), 0)
 
@@ -88,28 +72,18 @@ end
     end
 end
 
-function step!(energy::ForceRestoreEnergy, state, fluxes, surface, grid, Δt, time)
+function step!(energy::ForceRestoreEnergy, land, Δt, time)
+    grid = land.grid
     arch = architecture(grid)
-    Q = fluxes.net_energy_flux
-
-    if hasproperty(state, :water_storage)
-        launch!(arch, grid, :xy, _force_restore_step_with_water!,
-                state.T, Q, state.water_storage, Δt,
-                energy.dry_heat_capacity, energy.liquid_heat_capacity,
-                energy.deep_temperature, energy.deep_time_scale,
-                grid, time)
-    else
-        launch!(arch, grid, :xy, _force_restore_step_no_water!,
-                state.T, Q, Δt,
-                energy.dry_heat_capacity, energy.liquid_heat_capacity,
-                energy.deep_temperature, energy.deep_time_scale,
-                grid, time)
-    end
-
+    launch!(arch, grid, :xy, _force_restore_step!,
+            land.temperature, land.fluxes.net_energy_flux, land.water_storage, Δt,
+            energy.dry_heat_capacity, energy.liquid_heat_capacity,
+            energy.deep_temperature, energy.deep_time_scale,
+            grid, time)
     return nothing
 end
 
-surface_temperature(::ForceRestoreEnergy, state) = state.T
+surface_temperature(::ForceRestoreEnergy, land) = land.temperature
 
 Base.summary(energy::ForceRestoreEnergy) =
     string("ForceRestoreEnergy(dry_heat_capacity=", prettysummary(energy.dry_heat_capacity),
