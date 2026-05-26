@@ -8,13 +8,13 @@ import Thermodynamics.Parameters:
     LH_s0,          # Sublimation enthalpy at the reference temperature
     LH_f0,          # Fusion enthalpy at the reference temperature
     cp_d,           # Heat capacity of dry air at constant pressure
-    cp_v,           # Isobaric specific heat capacity of gaseous water vapor
-    cp_l,           # Isobaric specific heat capacity of liquid water
-    cp_i,           # Isobaric specific heat capacity of water ice
-    cv_v,           # Heat capacity of dry air at constant volume
-    cv_l,           # Isobaric specific heat capacity of liquid water
-    cv_i,           # Isobaric specific heat capacity of liquid water
-    e_int_v0,       # what? something about reference internal energy of water vapor
+    cp_v,           # Isobaric (constant pressure) specific heat capacity of gaseous water vapor
+    cp_l,           # Isobaric (constant pressure) specific heat capacity of liquid water
+    cp_i,           # Isobaric (constant pressure) specific heat capacity of water ice
+    cv_v,           # Isochoric (constant volume) specific heat capacity of gaseous water vapor
+    cv_l,           # Isochoric (constant volume) specific heat capacity of liquid water
+    cv_i,           # Isochoric (constant volume) specific heat capacity of water ice
+    e_int_v0,       # Internal energy of vaporization at reference temperature `T_0`.
     T_freeze,       # Freezing temperature of _pure_ water
     T_triple,       # Triple point temperature of _pure_ water
     press_triple,   # Triple point pressure of pure water
@@ -89,7 +89,7 @@ function Base.summary(p::HeatCapacityParameters{FT}) where FT
                     "κᵈ=", prettysummary(p.dry_air_adiabatic_exponent),
                   ", cᵖᵛ=", prettysummary(p.water_vapor_heat_capacity),
                   ", cᵖˡ=", prettysummary(p.liquid_water_heat_capacity),
-                  ", cᵖⁱ=", prettysummary(p.water_ice_heat_capacity))
+                  ", cᵖⁱ=", prettysummary(p.water_ice_heat_capacity), ')')
 end
 
 Base.show(io::IO, p::HeatCapacityParameters) = print(io, summary(p))
