@@ -111,12 +111,13 @@ function sea_ice_dynamics(grid, ocean=nothing;
                           rheology = ElastoViscoPlasticRheology(),
                           coriolis = default_coriolis(ocean),
                           free_drift = nothing,
+                          ocean_reference_density = ocean_reference_density(ocean),
                           solver = default_solver(grid, ocean))
 
     SSU, SSV = ocean_surface_velocities(ocean)
     FT = eltype(grid)
     sea_ice_ocean_drag_coefficient = convert(FT, sea_ice_ocean_drag_coefficient)
-    ρₑ = ocean_reference_density(ocean, FT)
+    ρₑ = convert(FT, ocean_reference_density)
 
     τo  = SemiImplicitStress(uₑ=SSU, vₑ=SSV, Cᴰ=sea_ice_ocean_drag_coefficient, ρₑ=ρₑ)
     τua = Field{Face, Center, Nothing}(grid)
