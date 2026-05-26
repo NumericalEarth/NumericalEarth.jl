@@ -18,21 +18,6 @@ using Oceananigans.Architectures: architecture
 using Oceananigans.OutputReaders: SplitFilePath, InMemoryFTS, InMemory, time_indices, file_and_local_index
 import Oceananigans.Fields: set!
 
-import ClimaSeaIce.SeaIceDynamics: implicit_τx_coefficient, implicit_τy_coefficient
-using ClimaSeaIce: SemiImplicitStress
-
-@inline function implicit_τx_coefficient(i, j, k, grid, τ::SemiImplicitStress, clock, fields)
-    Δu = @inbounds τ.uₑ[i, j, k] - fields.u[i, j, k]
-    Δv = ℑxyᶠᶜᵃ(i, j, k, grid, τ.vₑ) - ℑxyᶠᶜᵃ(i, j, k, grid, fields.v)
-    return τ.ρₑ * τ.Cᴰ * sqrt(Δu^2 + Δv^2)
-end
-
-@inline function implicit_τy_coefficient(i, j, k, grid, τ::SemiImplicitStress, clock, fields)
-    Δu = ℑxyᶜᶠᵃ(i, j, k, grid, τ.uₑ) - ℑxyᶜᶠᵃ(i, j, k, grid, fields.u)
-    Δv = @inbounds τ.vₑ[i, j, k] - fields.v[i, j, k]
-    return τ.ρₑ * τ.Cᴰ * sqrt(Δu^2 + Δv^2)
-end
-
 #####
 ##### BatchedTridiagonalSolver: fix size -> worksize
 #####
