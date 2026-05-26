@@ -1,4 +1,4 @@
-# # An Ocean Simulation at 4ᵒ Resolution Forced by JRA55 Reanalysis 
+# # An Ocean Simulation at 4ᵒ Resolution Forced by JRA55 Reanalysis
 #
 # This example showcases the use of NumericalEarth's PythonCall extension to run a
 # near-global ocean simulation at 4-degree resolution using the Veros ocean model.
@@ -31,8 +31,8 @@ ocean = VerosModule.VerosOceanSimulation("global_4deg", :GlobalFourDegreeSetup)
 
 # The loaded Veros setup contains a `set_forcing` method which computes the fluxes as restoring from climatology.
 # We replace it with a custom function that only computes the TKE forcing (which depends on the wind stresses
-# that we set in NumericalEarth). This way our u, v, T, S forcings are not overwritten. 
-# The `set_forcing_tke_only` method defined below is modified from the `set_forcing` method defined in 
+# that we set in NumericalEarth). This way our u, v, T, S forcings are not overwritten.
+# The `set_forcing_tke_only` method defined below is modified from the `set_forcing` method defined in
 # https://github.com/team-ocean/veros/blob/main/veros/setups/global_4deg/global_4deg.py
 
 pyexec("""
@@ -42,7 +42,7 @@ def set_forcing_tke_only(state):
 
     vs = state.variables
     settings = state.settings
-    
+
     if settings.enable_tke:
         vs.forc_tke_surface = update(
             vs.forc_tke_surface,
@@ -74,7 +74,7 @@ radiation = JRA55PrescribedRadiation()
 # The coupled ocean--atmosphere model. We do not couple an ice model for simplicity.
 
 coupled_model = OceanSeaIceModel(ocean, nothing; atmosphere=atmos, radiation)
-simulation = Simulation(coupled_model; Δt = 1800, stop_time = 60days)
+simulation = Simulation(coupled_model; Δt = 30minutes, stop_time = 60days)
 
 # We set up a progress callback that will print the current time, iteration, and maximum velocities
 # every 10days. We also set up another callback that collects the surface prognostic variables
@@ -115,6 +115,8 @@ add_callback!(simulation, save_variables, IterationInterval(10))
 # Let's run the simulation!
 
 run!(simulation)
+
+# After the simulation is done, we can visualize the surface zonal and meridional velocities as a function of latitude and time.
 
 n  = Observable(1)
 un = @lift(u[$n])
