@@ -9,6 +9,7 @@ export validate_dataset_coverage, metadata_filename
 export BoundingBox, Column, Linear, Nearest
 export WOAClimatology, WOAAnnual, WOAMonthly
 export metadata_time_step, metadata_epoch
+export supported_datasets
 export LinearlyTaperedPolarMask
 export DatasetRestoring, SurfaceFluxRestoring
 export ERA5HourlySingleLevel, ERA5MonthlySingleLevel, ERA5HourlyPressureLevels, ERA5MonthlyPressureLevels
@@ -339,6 +340,82 @@ using .OSPapa
 using .IBCSO
 using .GEBCO
 using .IBCAO
+
+function dataset_modules()
+    modules = Module[]
+
+    for name in names(DataWrangling; all = true, imported = false)
+        isdefined(DataWrangling, name) || continue
+        child = getfield(DataWrangling, name)
+        child isa Module || continue
+        child === DataWrangling && continue
+        parentmodule(child) === DataWrangling || continue
+        push!(modules, child)
+    end
+
+    sort!(modules; by = string)
+    return modules
+end
+
+function is_supported_dataset_constructor(dataset_constructor)
+    dataset_constructor isa DataType || return false
+    isconcretetype(dataset_constructor) || return false
+    applicable(dataset_constructor) || return false
+
+    dataset = try
+        dataset_constructor()
+    catch
+        return false
+    end
+
+    return applicable(default_download_directory, dataset)
+end
+
+function dataset_constructor_list()
+    constructors = DataType[]
+    seen = Set{DataType}()
+
+    for mod in dataset_modules()
+        for name in names(mod)
+            isdefined(mod, name) || continue
+            constructor = getfield(mod, name)
+            is_supported_dataset_constructor(constructor) || continue
+            constructor in seen && continue
+            push!(seen, constructor)
+            push!(constructors, constructor)
+        end
+    end
+
+    sort!(constructors; by = string)
+    return constructors
+end
+
+function dataset_constructor_docstring()
+    constructors = dataset_constructor_list()
+    names = ["`$(nameof(constructor))()`" for constructor in constructors]
+    N = length(names)
+
+    if N == 0
+        return "No dataset constructors are currently available."
+    elseif N == 1
+        return only(names)
+    else
+        return string(join(names[1:N-1], ", "), ", and ", names[N])
+    end
+end
+
+"""
+    supported_datasets()
+
+Return the dataset constructors currently supported by [`Metadata`](@ref).
+
+Currently, these are: $(dataset_constructor_docstring()).
+
+!!! "info"
+    Some of the above datasets are not exported and need to be explicitly imported
+    before, e.g., passed to [`Metadata`](@ref).
+"""
+supported_datasets() = dataset_constructor_list()
 
 # Fallback: if no download extension is loaded, check that all files already exist
 function Downloads.download(metadata::Metadata)
