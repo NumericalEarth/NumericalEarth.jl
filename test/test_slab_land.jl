@@ -194,52 +194,40 @@ end
                                z = (-1, 0),
                                topology = (Flat, Flat, Bounded))
 
+        # Surface flux + relaxation toward the prescribed deep temperature.
+        # With τ = 1 s and Δt = 1 s, the restoring term moves T all the way
+        # from 280 to Tᵈᵉᵉᵖ = 260, plus Q/C = 10/2 = 5 K of flux heating.
         energy = ForceRestoreEnergy(eltype(grid);
                                    dry_heat_capacity = 2.0,
                                    liquid_heat_capacity = 4.0,
                                    deep_temperature = 260.0,
-                                   surface_to_deep_time_scale = 1.0e6,
-                                   deep_to_climate_time_scale = 1.0)
+                                   deep_time_scale = 1.0)
         surface = ConstantSurfaceProperties(eltype(grid);
                                            momentum_roughness_length = 0.1,
                                            scalar_roughness_length = 0.01)
         land = SlabLand(grid; energy, hydrology = DryLand(), surface)
 
         fill!(land.state.T, 280.0)
-        fill!(land.state.Tᵈ, 280.0)
         fill!(land.fluxes.net_energy_flux, 10.0)
 
         NumericalEarth.Lands.step!(land.energy, land.state, land.fluxes, land.surface, land.grid, 1.0, 0.0)
-        @test isapprox(CUDA.@allowscalar(land.state.T[1, 1, 1]), 285.0; atol=1e-12)
-        # Tᵈ relaxes toward Tᶜ = 260 over one second with τᵈ = 1 s.
-        @test isapprox(CUDA.@allowscalar(land.state.Tᵈ[1, 1, 1]), 260.0; atol=1e-12)
+        # T_new = 280 + (10/2 + (260 − 280)/1)·1 = 280 + 5 − 20 = 265.
+        @test isapprox(CUDA.@allowscalar(land.state.T[1, 1, 1]), 265.0; atol=1e-12)
 
-        # Initialize deep-state from per-cell deep-temperature field (stateindex path).
-        deep = CenterField(grid)
-        fill!(deep, 265.0)
-        energy_field = ForceRestoreEnergy(eltype(grid);
-                                         dry_heat_capacity = 2.0,
-                                         liquid_heat_capacity = 4.0,
-                                         deep_temperature = deep,
-                                         surface_to_deep_time_scale = 1.0e6,
-                                         deep_to_climate_time_scale = 2.0)
-
-        land_field = SlabLand(grid; energy = energy_field, hydrology = DryLand(), surface)
-        @test isapprox(CUDA.@allowscalar(land_field.state.Tᵈ[1, 1, 1]), 265.0; atol=1e-12)
-
+        # Time-dependent prescribed deep temperature (stateindex path).
         deep_by_time = (λ, φ, z, t) -> t > 0 ? 265.0 : 260.0
         energy_time = ForceRestoreEnergy(eltype(grid);
                                         dry_heat_capacity = 2.0,
                                         liquid_heat_capacity = 4.0,
                                         deep_temperature = deep_by_time,
-                                        deep_to_climate_time_scale = 1.0)
+                                        deep_time_scale = 1.0)
         land_time = SlabLand(grid; energy = energy_time, hydrology = DryLand(), surface)
 
         fill!(land_time.state.T, 280.0)
-        fill!(land_time.state.Tᵈ, 280.0)
         fill!(land_time.fluxes.net_energy_flux, 0.0)
         time_step!(land_time, 1.0)
-        @test isapprox(CUDA.@allowscalar(land_time.state.Tᵈ[1, 1, 1]), 265.0; atol=1e-12)
+        # Post-step time is 1 s ⇒ Tᵈᵉᵉᵖ = 265; T relaxes fully to it in one step.
+        @test isapprox(CUDA.@allowscalar(land_time.state.T[1, 1, 1]), 265.0; atol=1e-12)
     end
 end
 
