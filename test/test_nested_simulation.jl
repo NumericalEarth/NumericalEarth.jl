@@ -3,6 +3,7 @@ include("runtests_setup.jl")
 using NumericalEarth
 using NumericalEarth.EarthSystemModels.NestedSimulations: parent_boundary_conditions
 using Oceananigans
+using Oceananigans.BoundaryConditions: ValueBoundaryCondition
 using Test
 
 @testset "PrescribedAtmosphere defaults switch on grid dimensionality" begin
@@ -101,4 +102,39 @@ end
     # few short timesteps — i.e. max |u| stays well above the background U.
     u_interior = Array(interior(model.velocities.u))
     @test maximum(abs, u_interior) > 1.5 * U_LO
+end
+
+@testset "parent_boundary_conditions: bc_types selects BC kind per field" begin
+    parent_grid = RectilinearGrid(size     = (8, 8, 4),
+                                  x        = (0, 100), y = (0, 100), z = (0, 100),
+                                  topology = (Bounded, Bounded, Bounded))
+
+    times = collect(0.0:50.0:200.0)
+    u_fts = FieldTimeSeries{Face,   Center, Center}(parent_grid, times)
+    T_fts = FieldTimeSeries{Center, Center, Center}(parent_grid, times)
+    fill!(parent(u_fts.data), 1.0)
+    fill!(parent(T_fts.data), 42.0)
+
+    child_grid = RectilinearGrid(size     = (4, 4, 4),
+                                 x        = (20, 80), y = (20, 80), z = (10, 90),
+                                 topology = (Bounded, Bounded, Bounded))
+
+    bcs = parent_boundary_conditions(child_grid;
+                                     variables = (u = u_fts, T = T_fts),
+                                     sides     = (:west, :east, :south, :north),
+                                     bc_types  = (T = ValueBoundaryCondition,))
+
+    # u falls through to the OpenBoundaryCondition default.
+    for side in (:west, :east, :south, :north)
+        @test getproperty(bcs.u, side).classification isa Oceananigans.BoundaryConditions.Open
+        @test getproperty(bcs.T, side).classification isa Oceananigans.BoundaryConditions.Value
+    end
+
+    # Passing `schemes` for a non-OpenBC field must error.
+    @test_throws ArgumentError parent_boundary_conditions(
+        child_grid;
+        variables = (T = T_fts,),
+        sides     = (:west, :east),
+        schemes   = (T = nothing,),
+        bc_types  = (T = ValueBoundaryCondition,))
 end

@@ -1,20 +1,24 @@
 #####
-##### parent_boundary_conditions: derive Open BCs from a parent's FieldTimeSeries
+##### parent_boundary_conditions: derive lateral BCs from a parent's FieldTimeSeries
 #####
 #
-# `OpenBoundaryCondition(fts)` is regularized by Oceananigans into an
-# `InterpolatedFTSBoundary` (defined in interpolated_fts_boundary.jl) — a
-# side-tagged condition whose `getbc` interpolates the FTS at the boundary
-# face. No closures, no edge-coord bookkeeping, no Val(side) dispatch in
-# user code.
+# Each side BC wraps the parent FTS in `Interpolated` (interpolated_fts_boundary.jl).
+# Oceananigans regularization tags the wrapper with the boundary's dim/side/loc;
+# afterward `getbc` interpolates the FTS at the boundary-face node. No closures,
+# no edge-coord bookkeeping, no Val(side) dispatch in user code.
+#
+# The BC kind defaults to `OpenBoundaryCondition` per child variable; pass
+# `bc_types = (name = ValueBoundaryCondition, ...)` to override for cell-centered
+# scalars where OpenBC writes asymmetrically into the interior.
 
 """
     parent_boundary_conditions(grid;
                                variables,
-                               sides   = (:west, :east, :south, :north),
-                               schemes = NamedTuple())
+                               sides    = (:west, :east, :south, :north),
+                               schemes  = NamedTuple(),
+                               bc_types = NamedTuple())
 
-Build a `NamedTuple` of `FieldBoundaryConditions` driving the child's open
+Build a `NamedTuple` of `FieldBoundaryConditions` driving the child's lateral
 boundaries directly from a parent's `FieldTimeSeries`.
 
 Arguments
@@ -33,17 +37,34 @@ Arguments
 
 - `schemes`: optional `NamedTuple` keyed by child field name giving the
   `OpenBoundaryCondition` scheme (e.g. a `PerturbationAdvection`). Fields not
-  listed default to `scheme = nothing` (stiff Dirichlet).
+  listed default to `scheme = nothing` (stiff Dirichlet). Only consulted when
+  the BC type for that field is `OpenBoundaryCondition`.
+
+- `bc_types`: optional `NamedTuple` keyed by child field name giving the BC
+  constructor to use for that field. Defaults to `OpenBoundaryCondition` for
+  Face-located prognostics. For cell-centered scalars (e.g. ρ, ρθ in a
+  compressible LAM), pass `ValueBoundaryCondition` to avoid the
+  `OpenBoundaryCondition`-on-Center asymmetric-halo behavior.
 """
 function parent_boundary_conditions(grid;
                                     variables,
-                                    sides   = (:west, :east, :south, :north),
-                                    schemes = NamedTuple())
+                                    sides    = (:west, :east, :south, :north),
+                                    schemes  = NamedTuple(),
+                                    bc_types = NamedTuple())
 
     field_pairs = []
     for (child_name, fts) in pairs(variables)
-        scheme = haskey(schemes, child_name) ? getproperty(schemes, child_name) : nothing
-        side_pairs = [side => OpenBoundaryCondition(Interpolated(fts); scheme) for side in sides]
+        BCType = haskey(bc_types, child_name) ? getproperty(bc_types, child_name) : OpenBoundaryCondition
+        condition = Interpolated(fts)
+        if BCType === OpenBoundaryCondition
+            scheme = haskey(schemes, child_name) ? getproperty(schemes, child_name) : nothing
+            side_pairs = [side => OpenBoundaryCondition(condition; scheme) for side in sides]
+        else
+            haskey(schemes, child_name) && throw(ArgumentError(
+                "`schemes` entry provided for $(child_name) but `bc_types[$(child_name)] = $BCType` " *
+                "is not `OpenBoundaryCondition`. Schemes apply only to `OpenBoundaryCondition`."))
+            side_pairs = [side => BCType(condition) for side in sides]
+        end
         push!(field_pairs, child_name => FieldBoundaryConditions(; side_pairs...))
     end
 
