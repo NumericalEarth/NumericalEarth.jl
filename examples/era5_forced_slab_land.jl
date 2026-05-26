@@ -28,7 +28,7 @@
 # `SlabLand` itself has no terrain knowledge, and ERA5's T₂ₘ is at its
 # own ~28 km grid-cell mean elevation (~2 km in this domain). To make
 # the 1 km grid show elevation-driven temperature contrasts we apply a
-# dry-environmental lapse-rate correction:
+# moist-environmental lapse-rate correction:
 #
 #     T_local(λ, φ) = T_ERA5(λ, φ) − Γ · (z_ETOPO(λ, φ) − z_ERA5_eff(λ, φ))
 #
