@@ -69,6 +69,7 @@ function Oceananigans.Simulations.reset_clock!(model::ESM)
         reset_clock!(component)
     end
 
+    # Keep prescribed atmospheric forcing synchronized during component resets.
     update_state!(model.atmosphere)
 
     return nothing
@@ -85,6 +86,19 @@ end
 function Oceananigans.TimeSteppers.reconcile_state!(model::ESM)
     initialize!(model.interfaces.exchanger, model)
     update_state!(model)
+    return nothing
+end
+
+function remove_default_stop_callbacks!(component)
+    callbacks = component.callbacks
+
+    if !isnothing(callbacks)
+        pop!(callbacks, :stop_time_exceeded, nothing)
+        pop!(callbacks, :stop_iteration_exceeded, nothing)
+        pop!(callbacks, :wall_time_limit_exceeded, nothing)
+        pop!(callbacks, :nan_checker, nothing)
+    end
+
     return nothing
 end
 
@@ -158,7 +172,7 @@ function EarthSystemModel(radiation, atmosphere, land, sea_ice, ocean;
             results will be physically inconsistent.
 
             If you previously relied on `Radiation()` defaults: pass \
-            `radiation = JRA55PrescribedRadiation(arch; backend, ...)` (or \
+            `radiation = JRA55PrescribedRadiation(arch; kwargs...)` (or \
             `ECCOPrescribedRadiation` / `OSPapaPrescribedRadiation`) to restore \
             radiative forcing. Pass `radiation = PrescribedRadiation(grid)` for \
             emission-only mode. To suppress this warning, build the model \
@@ -167,24 +181,8 @@ function EarthSystemModel(radiation, atmosphere, land, sea_ice, ocean;
         """ maxlog=1
     end
 
-    if ocean isa Simulation
-        if !isnothing(ocean.callbacks)
-            # Remove some potentially irksome callbacks from the ocean simulation
-            pop!(ocean.callbacks, :stop_time_exceeded, nothing)
-            pop!(ocean.callbacks, :stop_iteration_exceeded, nothing)
-            pop!(ocean.callbacks, :wall_time_limit_exceeded, nothing)
-            pop!(ocean.callbacks, :nan_checker, nothing)
-        end
-    end
-
-    if sea_ice isa Simulation
-        if !isnothing(sea_ice.callbacks)
-            pop!(sea_ice.callbacks, :stop_time_exceeded, nothing)
-            pop!(sea_ice.callbacks, :stop_iteration_exceeded, nothing)
-            pop!(sea_ice.callbacks, :wall_time_limit_exceeded, nothing)
-            pop!(sea_ice.callbacks, :nan_checker, nothing)
-        end
-    end
+    ocean   isa Simulation && remove_default_stop_callbacks!(ocean)
+    sea_ice isa Simulation && remove_default_stop_callbacks!(sea_ice)
 
     # Contains information about flux contributions: bulk formula, prescribed fluxes, etc.
     if isnothing(interfaces) && !(isnothing(atmosphere) && isnothing(sea_ice))
@@ -315,7 +313,7 @@ EarthSystemModel{CPU}(time = 0 seconds, iteration = 0)
 ├── sea_ice: FreezingLimitedOceanTemperature{ClimaSeaIce.SeaIceThermodynamics.LinearLiquidus{Float64}}
 ├── ocean: HydrostaticFreeSurfaceModel{CPU, LatitudeLongitudeGrid}(time = 0 seconds, iteration = 0)
 └── interfaces: ComponentInterfaces
-````
+```
 """
 function OceanOnlyModel(ocean; atmosphere=nothing, land=nothing, radiation=nothing, kw...)
     is_ocean_component(ocean) || throw(invalid_component(:OceanOnlyModel, 1, "an ocean simulation", ocean))
@@ -363,7 +361,7 @@ EarthSystemModel{CPU}(time = 0 seconds, iteration = 0)
 ├── sea_ice: SeaIceModel
 ├── ocean: HydrostaticFreeSurfaceModel{CPU, LatitudeLongitudeGrid}(time = 0 seconds, iteration = 0)
 └── interfaces: ComponentInterfaces
-````
+```
 """
 function OceanSeaIceModel(ocean, sea_ice; atmosphere=nothing, land=nothing, radiation=nothing, kw...)
     is_ocean_component(ocean) || throw(invalid_component(:OceanSeaIceModel, 1, "an ocean simulation", ocean))

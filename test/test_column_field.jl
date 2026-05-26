@@ -257,7 +257,7 @@ end
     @test rN == 3
     grid_interfaces, rN = restrict((-1.0, 1.5), interfaces, 10)
     @test first(grid_interfaces) == 0.0
-    @test rN >= 1
+    @test rN ≥ 1
 
     @test restrict(nothing, (0.0, 360.0), 1440) == ((0.0, 360.0), 1440)
     @test restrict(nothing, interfaces, 10) == (interfaces, 10)
