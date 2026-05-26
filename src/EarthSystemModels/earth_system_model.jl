@@ -101,6 +101,21 @@ allocate_interface_fluxes!(::Any, exchange_grid, surfaces) = nothing
 allocate_interface_fluxes!(::Nothing, exchange_grid, surfaces) = nothing
 
 """
+    materialize_earth_system_radiation!(atmosphere, radiation)
+
+Return `atmosphere` with any radiation skeletons populated against the
+coupled-model `radiation`. Atmospheric components that carry an internal
+radiation handle (e.g. Breeze's `AtmosphereModel.radiation`) overload this to
+alias their internal flux divergence onto `radiation.flux_divergence`, so the
+atmosphere's tendency machinery reads from the same field the coupled
+`radiation` writes. Default: no-op, returning `atmosphere` unchanged.
+
+Called from inside the [`EarthSystemModel`](@ref) constructor before
+`ComponentInterfaces` is built.
+"""
+materialize_earth_system_radiation!(atmosphere, radiation) = atmosphere
+
+"""
     EarthSystemModel(radiation, atmosphere, land, sea_ice, ocean;
                      clock = Clock{Float64}(time=0),
                      ocean_reference_density = reference_density(ocean),
@@ -185,6 +200,20 @@ function EarthSystemModel(radiation, atmosphere, land, sea_ice, ocean;
             pop!(sea_ice.callbacks, :nan_checker, nothing)
         end
     end
+
+    if atmosphere isa Simulation
+        if !isnothing(atmosphere.callbacks)
+            pop!(atmosphere.callbacks, :stop_time_exceeded, nothing)
+            pop!(atmosphere.callbacks, :stop_iteration_exceeded, nothing)
+            pop!(atmosphere.callbacks, :wall_time_limit_exceeded, nothing)
+            pop!(atmosphere.callbacks, :nan_checker, nothing)
+        end
+    end
+
+    # Materialize any radiation skeletons in the atmosphere against the
+    # coupled-model radiation. No-op by default; Breeze (or any other
+    # atmosphere with an internal radiation handle) overloads this.
+    atmosphere = materialize_earth_system_radiation!(atmosphere, radiation)
 
     # Contains information about flux contributions: bulk formula, prescribed fluxes, etc.
     if isnothing(interfaces) && !(isnothing(atmosphere) && isnothing(sea_ice))

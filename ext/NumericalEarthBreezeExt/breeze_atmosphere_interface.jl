@@ -3,7 +3,14 @@ using Breeze.AtmosphereModels: thermodynamic_density
 using NumericalEarth.Atmospheres: AtmosphereThermodynamicsParameters
 using NumericalEarth.EarthSystemModels.InterfaceComputations: interface_kernel_parameters
 
-const BreezeAtmosphere = Breeze.AtmosphereModel
+const BreezeAtmosphere    = Breeze.AtmosphereModel
+const BreezeAtmosphereSim = Simulation{<:Breeze.AtmosphereModel}
+
+# Unwrap convenience: callers in this file work in terms of the underlying
+# `Breeze.AtmosphereModel`, and Simulation-typed entry points delegate to the
+# Model-typed methods below by unwrapping `.model`.
+@inline _atmosphere_model(atmos::BreezeAtmosphere)    = atmos
+@inline _atmosphere_model(atmos::BreezeAtmosphereSim) = atmos.model
 
 #####
 ##### Thermodynamics parameters
@@ -12,6 +19,8 @@ const BreezeAtmosphere = Breeze.AtmosphereModel
 # This is a _hack_: the parameters should ideally be derived from Breeze.ThermodynamicConstants,
 # but the ESM similarity theory expects CliMA Thermodynamics parameters.
 NumericalEarth.EarthSystemModels.thermodynamics_parameters(::BreezeAtmosphere) = AtmosphereThermodynamicsParameters(Float64)
+NumericalEarth.EarthSystemModels.thermodynamics_parameters(atmos::BreezeAtmosphereSim) =
+    NumericalEarth.EarthSystemModels.thermodynamics_parameters(_atmosphere_model(atmos))
 
 #####
 ##### Surface layer and boundary layer height
@@ -24,7 +33,11 @@ function NumericalEarth.EarthSystemModels.surface_layer_height(atmosphere::Breez
     return Oceananigans.zspacing(1, 1, 1, grid, Center(), Center(), Center()) / 2
 end
 
-NumericalEarth.EarthSystemModels.boundary_layer_height(::BreezeAtmosphere) = 600
+NumericalEarth.EarthSystemModels.surface_layer_height(atmos::BreezeAtmosphereSim) =
+    NumericalEarth.EarthSystemModels.surface_layer_height(_atmosphere_model(atmos))
+
+NumericalEarth.EarthSystemModels.boundary_layer_height(::BreezeAtmosphere)    = 600
+NumericalEarth.EarthSystemModels.boundary_layer_height(::BreezeAtmosphereSim) = 600
 
 #####
 ##### ComponentExchanger: state fields for flux computations
@@ -43,6 +56,9 @@ function NumericalEarth.EarthSystemModels.InterfaceComputations.ComponentExchang
 
     return ComponentExchanger(state, nothing)
 end
+
+NumericalEarth.EarthSystemModels.InterfaceComputations.ComponentExchanger(atmos::BreezeAtmosphereSim, exchange_grid) =
+    NumericalEarth.EarthSystemModels.InterfaceComputations.ComponentExchanger(_atmosphere_model(atmos), exchange_grid)
 
 #####
 ##### Interpolate atmospheric state onto exchange grid
@@ -84,6 +100,9 @@ function NumericalEarth.EarthSystemModels.interpolate_state!(exchanger, exchange
     return nothing
 end
 
+NumericalEarth.EarthSystemModels.interpolate_state!(exchanger, exchange_grid, atmos::BreezeAtmosphereSim, coupled_model) =
+    NumericalEarth.EarthSystemModels.interpolate_state!(exchanger, exchange_grid, _atmosphere_model(atmos), coupled_model)
+
 #####
 ##### Net fluxes: extract coupling flux fields from Breeze boundary conditions
 #####
@@ -105,6 +124,9 @@ function NumericalEarth.EarthSystemModels.InterfaceComputations.net_fluxes(atmos
     return (; ρu, ρv, ρe, ρqᵛᵉ)
 end
 
+NumericalEarth.EarthSystemModels.InterfaceComputations.net_fluxes(atmos::BreezeAtmosphereSim) =
+    NumericalEarth.EarthSystemModels.InterfaceComputations.net_fluxes(_atmosphere_model(atmos))
+
 #####
 ##### Assemble ESM similarity-theory fluxes into Breeze bottom BCs
 #####
@@ -123,6 +145,9 @@ end
         net.ρqᵛᵉ[i, j, 1] = Fv
     end
 end
+
+NumericalEarth.EarthSystemModels.update_net_fluxes!(coupled_model, atmos::BreezeAtmosphereSim) =
+    NumericalEarth.EarthSystemModels.update_net_fluxes!(coupled_model, _atmosphere_model(atmos))
 
 function NumericalEarth.EarthSystemModels.update_net_fluxes!(coupled_model, atmosphere::BreezeAtmosphere)
     net = coupled_model.interfaces.net_fluxes.atmosphere
@@ -163,3 +188,6 @@ end
 
 Oceananigans.Advection.cell_advection_timescale(model::NumericalEarth.EarthSystemModel{<:Any, <:BreezeAtmosphere}) =
     cell_advection_timescale(model.atmosphere)
+
+Oceananigans.Advection.cell_advection_timescale(model::NumericalEarth.EarthSystemModel{<:Any, <:BreezeAtmosphereSim}) =
+    cell_advection_timescale(_atmosphere_model(model.atmosphere))
