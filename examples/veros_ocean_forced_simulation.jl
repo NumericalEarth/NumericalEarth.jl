@@ -8,7 +8,7 @@
 # CairoMakie to visualize the simulation.
 
 using NumericalEarth
-using CondaPkg, PythonCall
+using PythonCall
 using Oceananigans, Oceananigans.Units
 using CairoMakie
 using Printf
