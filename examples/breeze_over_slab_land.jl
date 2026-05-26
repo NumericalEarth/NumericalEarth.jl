@@ -1,135 +1,274 @@
-# # Atmospheric convection over a homogeneous slab land (3D)
+# # Diurnal radiative convection over heterogeneous slab land (2D)
 #
-# Couples a Breeze atmospheric large eddy simulation (LES) to a
-# `SlabLand` composed of:
-#   energy    = SlabEnergy(heat_capacity = ρcH_g)
-#   hydrology = BucketHydrology(...)
-#   surface   = ConstantSurfaceProperties(...)
-# through NumericalEarth's `EarthSystemModel` framework in a doubly-
-# periodic 3D domain. Turbulent surface fluxes (sensible, latent,
-# momentum) are computed with Monin–Obukhov similarity theory through
-# `AtmosphereLandModel`, with surface humidity reduced by the slab's
-# `moisture_availability` (β-factor).
+# A 2D Breeze atmospheric large eddy simulation (LES) coupled to a
+# `SlabLand` with spatially-varying surface moisture, driven by full
+# RRTMGP all-sky radiation with a diurnal cycle.
 #
-# The land is spatially uniform: a single roughness length applies
-# everywhere. (Radiative properties — albedo, emissivity — live on the
-# top-level `radiation` component when one is attached; this example
-# runs without radiation.) The animation pairs the horizontal 2D
-# ground-temperature field with bottom-level wind vectors, and shows
-# the domain-mean vertical profiles of θ and u.
+# The land's central wet patch (`W ≈ W_max`, β ≈ 1) evaporates strongly
+# during the day so that incoming radiation is partitioned into latent
+# heat. The dry edges (`W = 0`, β = 0) cannot evaporate, so all the net
+# radiation goes into sensible heat — producing strong surface heating
+# and a vigorous dry convective boundary layer. At the wet/dry boundary
+# the contrast drives a low-level "sea breeze"-like circulation.
+#
+# Coupling:
+#   - `AtmosphereLandModel(atmos, slab_land)` wires turbulent surface
+#     fluxes (sensible, latent, momentum) through Monin–Obukhov
+#     similarity theory, with the surface specific humidity reduced by
+#     the slab's β-factor.
+#   - RRTMGP reads `slab_land.state.T` as its surface temperature each
+#     step and computes spectrally-resolved SW and LW fluxes.
+#   - A callback adds the net surface radiative flux back into the
+#     slab's `net_energy_flux`, closing the coupled surface energy
+#     balance.
 
 using NumericalEarth
 using Breeze
-using CUDA
 using Oceananigans
 using Oceananigans.Units
-using Printf
+using RRTMGP
+using NCDatasets
+using Printf, Random, Statistics
+using Oceananigans.Utils.KernelAbstractions: @kernel, @index
+using Dates: DateTime
+using CairoMakie
 
-# ## Grid setup
+Random.seed!(2025)
+
+# ## Grid
 #
-# Doubly-periodic 3D domain, 20 km × 20 km × 10 km, 64³ grid points.
+# A 2D vertical slice: periodic in x, flat in y, bounded in z. Vertical
+# stretching gives fine 100 m cells in the boundary layer (z ≤ 3 km),
+# transitioning to 1 km cells in the stratosphere (z up to 15 km).
 
-arch = GPU()
+arch = CPU()
+Oceananigans.defaults.FloatType = Float32
 
-Nxᵃᵗ = 64
-Nyᵃᵗ = 64
-Nzᵃᵗ = 64
+Nx = 64
+Lx = 20kilometers
 
-grid = RectilinearGrid(arch,
-                       size = (Nxᵃᵗ, Nyᵃᵗ, Nzᵃᵗ), halo = (5, 5, 5),
-                       x = (-10kilometers, 10kilometers),
-                       y = (-10kilometers, 10kilometers),
-                       z = (0, 10kilometers),
-                       topology = (Periodic, Periodic, Bounded))
+z = PiecewiseStretchedDiscretization(z  = [0, 3000, 8000, 15000],
+                                     Δz = [100,  100, 1000,  1000])
 
-# ## Atmosphere
+Nz = length(z) - 1
+
+grid = RectilinearGrid(arch;
+                       size = (Nx, Nz),
+                       x = (-Lx/2, Lx/2),
+                       z,
+                       halo = (5, 5),
+                       topology = (Periodic, Flat, Bounded))
+
+# ## Reference state and dynamics
+
+p₀ = 101325  # surface pressure (Pa)
+θ₀ = 300     # reference potential temperature (K)
+
+constants = ThermodynamicConstants()
+
+reference_state = ReferenceState(grid, constants;
+                                 surface_pressure = p₀,
+                                 potential_temperature = θ₀,
+                                 vapor_mass_fraction = 0)
+
+dynamics = AnelasticDynamics(reference_state)
+
+# ## Background atmosphere
 #
-# Warm ground, cool air aloft → unstable PBL with upward sensible and
-# latent heat fluxes that cool the ground toward equilibrium and drive
-# convective overturning.
+# Modern trace gas concentrations plus a tropical ozone profile,
+# required by RRTMGP for spectrally-resolved absorption.
 
-Tᵍ₀ = 305 # K, initial ground temperature
-θᵃᵗ = 295 # K, atmospheric potential temperature
-U₀  = 2   # m/s
+@inline function tropical_ozone(z)
+    troposphere_O₃ = 30e-9 * (1 + 0.5 * z / 10_000)
+    zˢᵗ = 25e3
+    Hˢᵗ = 5e3
+    stratosphere_O₃ = 8e-6 * exp(-((z - zˢᵗ) / Hˢᵗ)^2)
+    χˢᵗ = 1 / (1 + exp(-(z - 15e3) / 2))
+    return troposphere_O₃ * (1 - χˢᵗ) + stratosphere_O₃ * χˢᵗ
+end
 
-atmos = atmosphere_simulation(grid; potential_temperature=θᵃᵗ)
+background_atmosphere = BackgroundAtmosphere(CO₂ = 420e-6,
+                                             CH₄ = 1.8e-6,
+                                             N₂O = 330e-9,
+                                             O₃  = tropical_ozone)
 
-reference_state = atmos.dynamics.reference_state
-θᵢ(x, y, z) = reference_state.potential_temperature + 0.1 * randn() * (z < 500)
-set!(atmos, θ=θᵢ, u=U₀)
-
-# ## Slab land
+# ## Heterogeneous slab land
 #
-# Single homogeneous patch — `SlabEnergy + BucketHydrology +
-# ConstantSurfaceProperties`. The bucket is 15 cm deep (Manabe's
-# original `W_max = 150 kg m⁻²`); the soil thermal slab carries the
-# same areal heat capacity as the previous example for comparability.
+# A 1D land grid (size Nx, flat in y and z) carrying skin temperature,
+# soil moisture, and moisture availability. The land grid spans the
+# same x extent as the atmosphere so that the slab T can serve directly
+# as RRTMGP's surface temperature.
 
-land_grid = RectilinearGrid(grid.architecture,
-                            size = (grid.Nx, grid.Ny),
-                            halo = (grid.Hx, grid.Hy),
-                            x = (-10kilometers, 10kilometers),
-                            y = (-10kilometers, 10kilometers),
-                            topology = (Periodic, Periodic, Flat))
+land_grid = RectilinearGrid(arch;
+                            size = Nx,
+                            x = (-Lx/2, Lx/2),
+                            halo = grid.Hx,
+                            topology = (Periodic, Flat, Flat))
 
-ρcH_g = 1500.0 * 1480.0 * 0.10      # J m⁻² K⁻¹
+ρcH = 1500.0 * 1480.0 * 0.10    # J m⁻² K⁻¹
 
-energy    = SlabEnergy(eltype(land_grid); heat_capacity = ρcH_g)
+energy    = SlabEnergy(eltype(land_grid); dry_heat_capacity = ρcH)
 hydrology = BucketHydrology(eltype(land_grid);
-                         field_capacity   = 150.0,
-                         critical_wetness = 0.75)
+                            field_capacity   = 150.0,
+                            critical_wetness = 0.75)
 surface   = ConstantSurfaceProperties(eltype(land_grid);
-                                       momentum_roughness_length = 0.1,
-                                       scalar_roughness_length = 0.01)
+                                      momentum_roughness_length = 0.1,
+                                      scalar_roughness_length   = 0.01)
 
 slab_land = SlabLand(land_grid; energy, hydrology, surface)
 
-set!(slab_land.state.T, Tᵍ₀)
-set!(slab_land.state.W, 0.5 * hydrology.field_capacity)   # 50% saturation
+# Gaussian moisture pattern: saturated in the center, dry at the edges.
+
+T₀     = 295.0                        # initial skin temperature (K)
+W_wet  = 0.95 * hydrology.field_capacity
+σ_wet  = Lx / 8
+
+W_init(x) = W_wet * exp(-(x/σ_wet)^2)
+
+set!(slab_land.state.T, T₀)
+set!(slab_land.state.W, W_init)
 Oceananigans.TimeSteppers.update_state!(slab_land)
 
-# ## Coupled model
+# ## Radiation
 #
-# `AtmosphereLandModel` wires the atmosphere to the slab through
-# similarity theory. Roughness lengths come from the surface closure.
+# All-sky RRTMGP at 15°N starting at the equinox, midnight local. The
+# `surface_temperature` is the slab land's prognostic skin temperature,
+# so radiation responds to surface heating and cooling in real time.
+
+latitude = 15
+
+radiation = RadiativeTransferModel(grid, AllSkyOptics(), constants;
+                                   surface_temperature = slab_land.state.T,
+                                   surface_albedo      = 0.20,
+                                   surface_emissivity  = 0.95,
+                                   solar_constant      = 1361,
+                                   background_atmosphere,
+                                   solar_position = ApparentSolarPosition(coordinate = (0, latitude),
+                                                                          epoch      = DateTime(2024, 3, 20, 0, 0, 0)),
+                                   schedule = TimeInterval(10minutes),
+                                   liquid_effective_radius = ConstantRadiusParticles(10e-6),
+                                   ice_effective_radius    = ConstantRadiusParticles(30e-6))
+
+# ## Atmosphere model
+#
+# `atmosphere_simulation` wires Breeze's `AtmosphereModel` with bottom
+# boundary conditions that the `EarthSystemModel` coupler fills with
+# similarity-theory turbulent fluxes. Additional Breeze kwargs are
+# forwarded — here we pass the RRTMGP radiation and an f-plane Coriolis.
+
+coriolis = FPlane(latitude = latitude)
+
+atmos = atmosphere_simulation(grid;
+                              surface_pressure       = p₀,
+                              potential_temperature  = θ₀,
+                              radiation,
+                              coriolis)
+
+# Initial atmospheric profile: dry-adiabatic sub-cloud layer capped by a
+# stably stratified troposphere transitioning to a 210 K stratosphere.
+# Small perturbations in the lowest 1 km trigger convection once the
+# surface heats up.
+
+function Tᵇᵍ(z)
+    T = 300 - 1e-3 * max(z, 1000) - 5e-3 * max(0, z - 1000)
+    return max(T, 210)
+end
+
+δT = 1
+zδ = 1000
+
+Tᵢ(x, z)  = Tᵇᵍ(z) + δT * (rand() - 0.5) * (z < zδ)
+ℋᵢ(x, z)  = (0.5 + 1e-2 * (rand() - 0.5)) * (z < zδ)
+
+set!(atmos; T = Tᵢ, ℋ = ℋᵢ)
+
+# ## Coupled model
 
 model = AtmosphereLandModel(atmos, slab_land)
 
-Δt = 5seconds
-stop_time = 4hours
+Δt        = 2.0
+stop_time = 24hours
+
 simulation = Simulation(model; Δt, stop_time)
 
-# ## Progress callback
+# ## Radiative coupling to the land
+#
+# Breeze's sign convention is "positive = upward". The net radiative
+# flux *into* the surface is therefore `-(↑LW + ↓LW + ↓SW)` at z = 0.
+# We add this contribution to the slab's `net_energy_flux` accumulator
+# every step, after the coupler has populated the turbulent
+# (sensible + latent) flux.
 
-function progress(sim)
-    a = sim.model.atmosphere
-    u, v, w = a.velocities
-    umax = maximum(abs, u)
-    wmax = maximum(abs, w)
-    Tg   = sim.model.land.state.T
-    msg = @sprintf("Iter: %d, t = %s, max|u|: %.2e, max|w|: %.2e, T_g: (%.3f, %.3f)",
-                   iteration(sim), prettytime(sim), umax, wmax,
-                   minimum(Tg), maximum(Tg))
-    @info msg
+@kernel function _apply_rrtmgp_to_land!(Q, ℐ_lw_up, ℐ_lw_dn, ℐ_sw_dn)
+    i, j = @index(Global, NTuple)
+    @inbounds Q[i, j, 1] -= (ℐ_lw_up[i, j, 1] + ℐ_lw_dn[i, j, 1] + ℐ_sw_dn[i, j, 1])
+end
+
+function apply_rrtmgp_to_land!(sim)
+    cm = sim.model
+    rad = cm.atmosphere.radiation
+    land = cm.land
+    Q = land.fluxes.net_energy_flux
+    arch = Oceananigans.Architectures.architecture(land.grid)
+    Oceananigans.Utils.launch!(arch, land.grid, :xy,
+                               _apply_rrtmgp_to_land!,
+                               Q,
+                               rad.upwelling_longwave_flux,
+                               rad.downwelling_longwave_flux,
+                               rad.downwelling_shortwave_flux)
     return nothing
 end
 
-add_callback!(simulation, progress, IterationInterval(400))
+add_callback!(simulation, apply_rrtmgp_to_land!, IterationInterval(1))
 
-# ## Output writers
+# ## Progress
 
-u, v, w = atmos.velocities
-s = @at (Center, Center, Center) √(u^2 + v^2 + w^2)
-θ = liquid_ice_potential_temperature(atmos)
+wall_clock = Ref(time_ns())
 
-simulation.output_writers[:atmos] = JLD2Writer(model, (; θ, u, v, s);
+function progress(sim)
+    elapsed = 1e-9 * (time_ns() - wall_clock[])
+
+    atmos = sim.model.atmosphere
+    T = atmos.temperature
+    u, _, w = atmos.velocities
+    wmax = maximum(abs, w)
+    Tmin, Tmax = extrema(T)
+
+    Tg = sim.model.land.state.T
+    Tg_min, Tg_max = extrema(Tg)
+
+    rad = atmos.radiation
+    OLR = mean(view(rad.upwelling_longwave_flux, :, 1, Nz+1))
+
+    msg = @sprintf("iter %5d, t %8s, Δt %5.2fs, wall %6s, max|w| %4.2f m/s, T [%5.1f,%5.1f] K, Tg [%5.1f,%5.1f] K, OLR %5.1f W/m²",
+                   iteration(sim), prettytime(sim), sim.Δt, prettytime(elapsed),
+                   wmax, Tmin, Tmax, Tg_min, Tg_max, OLR)
+    @info msg
+
+    wall_clock[] = time_ns()
+    return nothing
+end
+
+add_callback!(simulation, progress, IterationInterval(200))
+
+# ## Output
+
+u, _, w = atmos.velocities
+T  = atmos.temperature
+qᵛ = atmos.microphysical_fields.qᵛ
+qˡ = atmos.microphysical_fields.qˡ
+
+simulation.output_writers[:atmos] = JLD2Writer(model, (; u, w, T, qᵛ, qˡ);
                                                filename = "breeze_slab_land_atmos",
-                                               schedule = TimeInterval(1minute),
+                                               schedule = TimeInterval(10minutes),
                                                overwrite_existing = true)
 
-simulation.output_writers[:land] = JLD2Writer(model, (; Tg=slab_land.state.T);
+simulation.output_writers[:land] = JLD2Writer(model,
+                                              (; Tg = slab_land.state.T,
+                                                  W  = slab_land.state.W,
+                                                  β  = slab_land.state.moisture_availability);
                                               filename = "breeze_slab_land_surface",
-                                              schedule = TimeInterval(1minute),
+                                              schedule = TimeInterval(10minutes),
                                               overwrite_existing = true)
 
 # ## Run
@@ -140,87 +279,71 @@ run!(simulation)
 
 # ## Animation
 #
-# Layout: top row shows horizontal (x–y) maps of bottom-level θₗᵢ and
-# bottom-level wind speed alongside domain-mean vertical profiles of θ;
-# bottom row shows the domain-mean T_g time series, the ground
-# temperature T_g with surface wind vectors overlaid as quivers, and
-# the domain-mean vertical profile of u.
+# Top row shows the vertical slice (x–z) of moist convection: vertical
+# velocity (w), temperature anomaly from the horizontal mean, and cloud
+# liquid water. Bottom row shows the land state along x: skin
+# temperature, soil moisture, and moisture availability β.
 
-using CairoMakie
-using Statistics
-
-θ_ts  = FieldTimeSeries("breeze_slab_land_atmos.jld2",   "θ"; architecture=CPU())
-u_ts  = FieldTimeSeries("breeze_slab_land_atmos.jld2",   "u"; architecture=CPU())
-v_ts  = FieldTimeSeries("breeze_slab_land_atmos.jld2",   "v"; architecture=CPU())
-s_ts  = FieldTimeSeries("breeze_slab_land_atmos.jld2",   "s"; architecture=CPU())
+w_ts  = FieldTimeSeries("breeze_slab_land_atmos.jld2", "w"; architecture=CPU())
+T_ts  = FieldTimeSeries("breeze_slab_land_atmos.jld2", "T"; architecture=CPU())
+qˡ_ts = FieldTimeSeries("breeze_slab_land_atmos.jld2", "qˡ"; architecture=CPU())
 Tg_ts = FieldTimeSeries("breeze_slab_land_surface.jld2", "Tg"; architecture=CPU())
+W_ts  = FieldTimeSeries("breeze_slab_land_surface.jld2", "W"; architecture=CPU())
+β_ts  = FieldTimeSeries("breeze_slab_land_surface.jld2", "β"; architecture=CPU())
 
-times = θ_ts.times
+times = w_ts.times
 Nt = length(times)
 
-x_atmos = xnodes(grid, Center())
-y_atmos = ynodes(grid, Center())
-z_atmos = znodes(grid, Center())
-x_land  = xnodes(land_grid, Center())
-y_land  = ynodes(land_grid, Center())
+x_atmos  = xnodes(grid, Center())
+z_center = znodes(grid, Center())
+z_face   = znodes(grid, Face())
+x_land   = xnodes(land_grid, Center())
 
-qstep = max(grid.Nx ÷ 16, 1)
-i_quiver = 1:qstep:grid.Nx
-j_quiver = 1:qstep:grid.Ny
-x_quiver = x_atmos[i_quiver]
-y_quiver = y_atmos[j_quiver]
+wlim  = maximum(abs, w_ts) / 2
+qˡlim = max(1e-6, maximum(qˡ_ts) / 2)
 
-fig = Figure(size = (1500, 900), fontsize = 12)
+fig = Figure(size = (1500, 800), fontsize = 13)
 
-ax_θ  = Axis(fig[1, 1], title="θₗᵢ (K), bottom level",               xlabel="x (m)", ylabel="y (m)",
-             aspect=DataAspect())
-ax_s  = Axis(fig[1, 2], title="√(u² + v² + w²) (m/s), bottom level", xlabel="x (m)", ylabel="y (m)",
-             aspect=DataAspect())
-ax_θp = Axis(fig[1, 3], title="⟨θ⟩(z)",                              xlabel="θ (K)", ylabel="z (m)")
+ax_w  = Axis(fig[1, 1], title = "w (m/s)", ylabel = "z (m)",
+             limits = (nothing, (0, 5e3)))
+ax_T  = Axis(fig[1, 2], title = "T anomaly (K)",
+             limits = (nothing, (0, 5e3)))
+ax_qˡ = Axis(fig[1, 3], title = "qˡ (kg/kg)",
+             limits = (nothing, (0, 5e3)))
 
-ax_tg = Axis(fig[2, 1], title="Domain-mean T_g(t)",     xlabel="t (h)",   ylabel="T_g (K)")
-ax_hs = Axis(fig[2, 2], title="T_g (K) + surface wind", xlabel="x (m)",   ylabel="y (m)",
-             aspect=DataAspect())
-ax_up = Axis(fig[2, 3], title="⟨u⟩(z)",                 xlabel="u (m/s)", ylabel="z (m)")
-
-colsize!(fig.layout, 3, Relative(0.2))
+ax_Tg = Axis(fig[2, 1], title = "Skin temperature (K)",  xlabel = "x (m)", ylabel = "T_g (K)")
+ax_W  = Axis(fig[2, 2], title = "Soil water (kg/m²)",    xlabel = "x (m)", ylabel = "W")
+ax_β  = Axis(fig[2, 3], title = "Moisture availability", xlabel = "x (m)", ylabel = "β")
 
 n = Observable(1)
 
-θn_bot = @lift view(interior(θ_ts[$n]), :, :, 1)
-sn_bot = @lift view(interior(s_ts[$n]), :, :, 1)
-Tg2d   = @lift view(interior(Tg_ts[$n]), :, :, 1)
-u_bot  = @lift view(interior(u_ts[$n]), i_quiver, j_quiver, 1)
-v_bot  = @lift view(interior(v_ts[$n]), i_quiver, j_quiver, 1)
+wn  = @lift view(interior(w_ts[$n]),  :, 1, :)
+Tn  = @lift begin
+    T_xz = view(interior(T_ts[$n]), :, 1, :)
+    T_xz .- mean(T_xz, dims = 1)
+end
+qˡn = @lift view(interior(qˡ_ts[$n]), :, 1, :)
 
-θ_mean = @lift vec(mean(interior(θ_ts[$n]); dims=(1, 2)))
-u_mean = @lift vec(mean(interior(u_ts[$n]); dims=(1, 2)))
+Tg_n = @lift vec(interior(Tg_ts[$n], :, 1, 1))
+W_n  = @lift vec(interior(W_ts[$n],  :, 1, 1))
+β_n  = @lift vec(interior(β_ts[$n],  :, 1, 1))
 
-heatmap!(ax_θ,  x_atmos, y_atmos, θn_bot; colormap=:thermal, colorrange=(θᵃᵗ - 0.5, θᵃᵗ + 8))
-heatmap!(ax_s,  x_atmos, y_atmos, sn_bot; colormap=:speed,   colorrange=(0, 5))
-heatmap!(ax_hs, x_land,  y_land,  Tg2d;   colormap=:thermal, colorrange=(Tᵍ₀ - 10, Tᵍ₀ + 15))
-arrows2d!(ax_hs, x_quiver, y_quiver, u_bot, v_bot; lengthscale=200, color=:white)
+heatmap!(ax_w,  x_atmos, z_face,   wn;  colormap = :balance, colorrange = (-wlim, wlim))
+heatmap!(ax_T,  x_atmos, z_center, Tn;  colormap = :balance, colorrange = (-2, 2))
+heatmap!(ax_qˡ, x_atmos, z_center, qˡn; colormap = :dense,   colorrange = (0, qˡlim))
 
-times_hours = collect(times) ./ 3600
-Tg_mean_ts  = [mean(interior(Tg_ts[k])) for k in 1:Nt]
+lines!(ax_Tg, x_land, Tg_n; color = :black, linewidth = 2)
+lines!(ax_W,  x_land, W_n;  color = :black, linewidth = 2)
+lines!(ax_β,  x_land, β_n;  color = :black, linewidth = 2)
 
-lines!(ax_tg, times_hours, Tg_mean_ts; linewidth=1.5, color=:black)
-t_now = @lift [times_hours[$n]]
-vlines!(ax_tg, t_now; color=:black, linewidth=1.0, linestyle=:dash)
+ylims!(ax_W, 0, hydrology.field_capacity * 1.05)
+ylims!(ax_β, 0, 1.05)
 
-lines!(ax_θp, θ_mean, z_atmos; linewidth=1.5, color=:black)
-xlims!(ax_θp, θᵃᵗ - 1, θᵃᵗ + 8)
-
-lines!(ax_up, u_mean, z_atmos; linewidth=1.5, color=:black)
-xlims!(ax_up, -3, 8)
-
-title = @lift "Breeze LES over homogeneous slab land (3D), t = " * prettytime(times[$n])
-Label(fig[0, 1:3], title, fontsize=16)
-
-# ## Record
+title = @lift "Diurnal convection over heterogeneous slab land, t = " * prettytime(times[$n])
+Label(fig[0, 1:3], title, fontsize = 16)
 
 @info "Rendering animation..."
-CairoMakie.record(fig, "breeze_over_slab_land.mp4", 1:Nt; framerate=12) do nn
+CairoMakie.record(fig, "breeze_over_slab_land.mp4", 1:Nt; framerate = 12) do nn
     n[] = nn
 end
 

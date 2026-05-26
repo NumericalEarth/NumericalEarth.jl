@@ -37,8 +37,9 @@ examples = [
     Example("Global climate simulation", "global_climate_simulation", false),
     # Example("Veros ocean simulation", "veros_ocean_forced_simulation", false),
     Example("Breeze over four oceans", "breeze_over_four_oceans", false),
-    Example("ERA5 hourly data", "ERA5_hourly_data", true),
+    Example("Exploring ERA5 reanalysis data", "exploring_era5_reanalysis_data", true),
     Example("ERA5-forced slab land", "era5_forced_slab_land", true),
+    Example("Breeze over slab land", "breeze_over_slab_land", true),
 ]
 
 # Developer examples from docs/src/developers/ directory

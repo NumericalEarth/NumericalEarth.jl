@@ -1,4 +1,4 @@
-# # ERA5 hourly atmospheric data on single- and pressure-levels
+# # Exploring ERA5 reanalysis data
 #
 # This walkthrough covers downloading ERA5 reanalysis fields from the
 # Copernicus Climate Data Store (CDS), with the Rain in Shallow Cumulus Over
