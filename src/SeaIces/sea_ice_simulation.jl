@@ -12,8 +12,8 @@ using ..EarthSystemModels.InterfaceComputations: InterfaceComputations, SkinTemp
 
 default_rotation_rate = Oceananigans.defaults.planet_rotation_rate
 
-ocean_reference_density(ocean::Simulation, FT) = convert(FT, reference_density(ocean))
-ocean_reference_density(::Nothing, FT) = convert(FT, 1026.0)
+ocean_reference_density(ocean::Simulation) = reference_density(ocean)
+ocean_reference_density(::Nothing) = 1026.0
 
 function default_snow_thermodynamics(grid)
     FT = eltype(grid)
