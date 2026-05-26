@@ -116,19 +116,65 @@ set!(slab_land.temperature, T₀)
 set!(slab_land.water_storage, M_init)
 Oceananigans.TimeSteppers.update_state!(slab_land)
 
+# ## Reference state, dynamics, and a stratospheric sponge
+#
+# The 15 km column gives RRTMGP a realistic atmosphere, but the initial
+# stratosphere is not in radiative equilibrium and the coarse upper cells
+# respond strongly once radiation switches on. A Newtonian relaxation of
+# temperature toward the reference profile above 8 km anchors the
+# stratosphere without affecting the troposphere (as in Breeze's
+# `radiative_convection` example). We build the reference state explicitly
+# so the sponge and the radiation share the same thermodynamic constants.
+
+p₀ = 101325
+θ₀ = 300
+latitude = 15
+
+constants       = ThermodynamicConstants()
+reference_state = ReferenceState(grid, constants;
+                                 surface_pressure = p₀,
+                                 potential_temperature = θ₀,
+                                 vapor_mass_fraction = 0)
+dynamics = AnelasticDynamics(reference_state)
+
+Tᵣ  = reference_state.temperature
+ρᵣ  = reference_state.density
+cᵖᵈ = constants.dry_air.heat_capacity / constants.dry_air.molar_mass
+τ_sponge = 6hours
+
+@inline function stratospheric_relaxation(i, j, k, grid, clock, model_fields, p)
+    @inbounds T  = model_fields.T[i, j, k]
+    @inbounds Tᵣ = p.Tᵣ[i, j, k]
+    @inbounds ρ  = p.ρᵣ[i, j, k]
+    z = Oceananigans.Grids.znode(i, j, k, grid, Center(), Center(), Center())
+    α = clamp((z - 8000) / 4000, 0, 1)
+    return ρ * p.cᵖᵈ * (-α * (T - Tᵣ) / p.τ)
+end
+
+sponge = Forcing(stratospheric_relaxation; discrete_form = true,
+                 parameters = (; Tᵣ, ρᵣ, cᵖᵈ, τ = τ_sponge))
+
 # ## RRTMGP radiation
 #
 # All-sky RRTMGP at 15°N starting at the equinox, midnight local. The
 # `surface_temperature` is the slab land's prognostic skin temperature,
 # so radiation responds to surface heating and cooling in real time.
+#
+# A tropical ozone profile is required for stratospheric radiative balance:
+# without it the upper column is far from radiative equilibrium and
+# destabilizes when the spectral fluxes recompute over the convecting
+# troposphere.
 
-background_atmosphere = BackgroundAtmosphere()
+@inline function tropical_ozone(z)
+    troposphere_O₃   = 30e-9 * (1 + 0.5 * z / 10_000)
+    stratosphere_O₃  = 8e-6 * exp(-((z - 25e3) / 5e3)^2)
+    χˢᵗ = 1 / (1 + exp(-(z - 15e3) / 2))
+    return troposphere_O₃ * (1 - χˢᵗ) + stratosphere_O₃ * χˢᵗ
+end
 
-latitude = 15
+background_atmosphere = BackgroundAtmosphere(O₃ = tropical_ozone)
 solar_position = ApparentSolarPosition(coordinate = (0, latitude),
                                        epoch = DateTime(2024, 3, 20, 0, 0, 0))
-
-constants = ThermodynamicConstants()
 
 radiation = RadiativeTransferModel(grid, AllSkyOptics(), constants;
                                    solar_position, background_atmosphere,
@@ -146,9 +192,8 @@ radiation = RadiativeTransferModel(grid, AllSkyOptics(), constants;
 # `AtmosphereLandModel` materializes it against the RTM below — no
 # `radiation` kwarg is passed here.
 
-atmos = atmosphere_simulation(grid;
-                              surface_pressure      = 101325,
-                              potential_temperature = 300,
+atmos = atmosphere_simulation(grid; dynamics,
+                              forcing  = (; ρe = sponge),
                               coriolis = FPlane(latitude = latitude))
 
 # Initial atmospheric profile: dry-adiabatic sub-cloud layer capped by a
@@ -169,6 +214,13 @@ Tᵢ(x, z) = Tᵇᵍ(z) + δT * (rand() - 0.5) * (z < zδ)
 
 set!(atmos.model; T = Tᵢ, ℋ = ℋᵢ)
 
+# Recompute the reference state from the horizontal mean. In a tall Float32
+# column the default dry-adiabat reference diverges from the actual
+# stratospheric profile, producing density errors that overwhelm Float32
+# precision; `set_to_mean!` anchors `ρᵣ` to the current state.
+
+set_to_mean!(reference_state, atmos.model, rescale_densities = true)
+
 # ## Coupled model
 #
 # Passing `radiation = rtm` here triggers `materialize_earth_system_radiation!`,
@@ -178,8 +230,16 @@ set!(atmos.model; T = Tᵢ, ℋ = ℋᵢ)
 
 model = AtmosphereLandModel(atmos, slab_land; radiation)
 
-simulation = Simulation(model; Δt = 10, stop_time = 3days)
-conjure_time_step_wizard!(simulation; cfl = 0.7, max_Δt = 60)
+# The wizard recomputes Δt every iteration so the step always tracks the
+# current CFL — important for a convective LES on a 100 m grid, where a
+# cumulus updraft can tighten the vertical CFL within a few steps. `max_Δt`
+# caps the step during the quiescent cold-start (velocities ≈ 0 ⇒ unbounded
+# advective timescale).
+# The wizard recomputes Δt every iteration so the step tracks the vertical
+# CFL on the 100 m grid as convection develops; `max_Δt` caps it during the
+# quiescent cold-start (velocities ≈ 0 ⇒ unbounded advective timescale).
+simulation = Simulation(model; Δt = 2, stop_time = 3days)
+conjure_time_step_wizard!(simulation, IterationInterval(1); cfl = 0.7, max_Δt = 6)
 
 # ## Progress
 
