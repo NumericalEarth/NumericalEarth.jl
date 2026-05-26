@@ -66,6 +66,13 @@ jobs:
           CUDA.precompile_runtime()
       - name: Instantiate docs folder
         run: julia --project=docs --color=yes -e 'using Pkg; Pkg.instantiate(verbose=true)'
+      - name: Install Veros in docs CondaPkg environment
+        run: |
+          julia --project=docs --color=yes -e '
+              using NumericalEarth, CondaPkg, PythonCall
+              VerosModule = Base.get_extension(NumericalEarth, :NumericalEarthVerosExt)
+              VerosModule.install_veros()
+          '
       - name: Build documentation
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

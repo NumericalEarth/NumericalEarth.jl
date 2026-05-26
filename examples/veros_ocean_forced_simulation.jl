@@ -17,12 +17,19 @@ using Printf
 # with a uniform resolution of 4 degrees in both latitude and longitude and a latitude range spanning
 # from 80S to 80N. The setup is defined in the `veros.setups.global_4deg` module.
 
-# Before importing the setup, we need to ensure that the Veros module is installed and loaded
-# and that every output is removed to avoid conflicts.
+# Before importing the setup, the Veros Python package must be available in the
+# active CondaPkg environment. In the documentation CI this is installed ahead of
+# time in the workflow. For a fresh local environment, run
+#
+# ```julia
+# VerosModule = Base.get_extension(NumericalEarth, :NumericalEarthVerosExt)
+# VerosModule.install_veros()
+# ```
+#
+# once before executing this example.
 
 VerosModule = Base.get_extension(NumericalEarth, :NumericalEarthVerosExt)
 
-VerosModule.install_veros()
 VerosModule.remove_outputs(:global_4deg)
 
 # Actually loading and instantiating the Veros setup in the variable `ocean`.
