@@ -62,7 +62,7 @@ end
 # recomputed in `update_diagnostics!`. Both share the `state` namedtuple
 # so the container allocates a field for each.
 prognostic_variables(::BucketHydrology) = (:water_storage, :moisture_availability)
-flux_variables(::BucketHydrology)       = (:precipitation, :evaporation, :runoff)
+flux_variables(::BucketHydrology)       = (:precipitation, :evaporation)
 
 @inline function _bucket_root_zone_capacity(maximum_water_storage, root_depth, i, j, k=1)
     M_max = property_value(maximum_water_storage, i, j, k)
@@ -70,24 +70,20 @@ flux_variables(::BucketHydrology)       = (:precipitation, :evaporation, :runoff
     return max(M_max * max(zʳ, 0), 0)
 end
 
-@kernel function _bucket_hydrology_step!(M, runoff, P, E, Δt, maximum_water_storage, root_depth)
+@kernel function _bucket_hydrology_step!(M, P, E, Δt, maximum_water_storage, root_depth)
     i, j = @index(Global, NTuple)
     @inbounds begin
         M_max = _bucket_root_zone_capacity(maximum_water_storage, root_depth, i, j, 1)
-        Mnew  = M[i, j, 1] + (P[i, j, 1] - E[i, j, 1]) * Δt
-        # Saturation cap; excess liquid water leaves as runoff.
-        R    = max(Mnew - M_max, 0) / Δt
-        Mnew = clamp(Mnew, 0, M_max)
-
-        runoff[i, j, 1] = R
-        M[i, j, 1]      = Mnew
+        # Saturation cap; excess water above M_max is shed (runoff diagnostic
+        # to be reintroduced when downstream coupling needs it).
+        M[i, j, 1] = clamp(M[i, j, 1] + (P[i, j, 1] - E[i, j, 1]) * Δt, 0, M_max)
     end
 end
 
 function step!(b::BucketHydrology, state, fluxes, surface, grid, Δt)
     arch = architecture(grid)
     launch!(arch, grid, :xy, _bucket_hydrology_step!,
-            state.water_storage, fluxes.runoff,
+            state.water_storage,
             fluxes.precipitation, fluxes.evaporation,
             Δt, b.maximum_water_storage, b.root_depth)
     return nothing

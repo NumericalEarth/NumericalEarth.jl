@@ -50,20 +50,16 @@ using NumericalEarth.Lands: update_diagnostics!
         NumericalEarth.Lands.step!(land.energy, land.state, land.fluxes, land.surface, land.grid, 1.0)
         @test isapprox(CUDA.@allowscalar(land.state.T[1, 1, 1]), 10.4545454545; rtol=1e-7)
 
-        # Hydrology produces runoff when `state.water_storage` exceeds `maximum_water_storage`.
+        # Hydrology clamps water_storage at maximum_water_storage; excess is shed.
         fill!(land.state.water_storage, 8.0)
         fill!(land.fluxes.precipitation, 4.0)
         fill!(land.fluxes.evaporation, 1.0)
-        fill!(land.fluxes.runoff, 0.0)
         fill!(land.fluxes.net_energy_flux, 0.0)
         time_step!(land, 1.0)
 
+        # The bucket receives `3 kg m⁻²` net water over the step, capping at 10.
         @test isapprox(CUDA.@allowscalar(land.state.water_storage[1, 1, 1]), 10.0; atol=1e-12)
         @test isapprox(CUDA.@allowscalar(land.state.moisture_availability[1, 1, 1]), 1.0; atol=1e-12)
-
-        # The bucket receives `3 kg m⁻²` net water over the step, so only
-        # `1 kg m⁻²` remains above `maximum_water_storage`.
-        @test isapprox(CUDA.@allowscalar(land.fluxes.runoff[1, 1, 1]), 1.0; atol=1e-12)
 
         # Exposer for atmosphere-facing roughness fields.
         ex = NumericalEarth.EarthSystemModels.InterfaceComputations.ComponentExchanger(land, land.grid)
@@ -125,11 +121,9 @@ end
         fill!(land.state.water_storage, 10.0)
         fill!(land.fluxes.precipitation, 4.0)
         fill!(land.fluxes.evaporation, 0.0)
-        fill!(land.fluxes.runoff, 0.0)
         time_step!(land, 1.0)
 
         @test isapprox(CUDA.@allowscalar(land.state.water_storage[1, 1, 1]), 12.0; atol=1e-12)
-        @test isapprox(CUDA.@allowscalar(land.fluxes.runoff[1, 1, 1]), 2.0; atol=1e-12)
 
         ex = NumericalEarth.EarthSystemModels.InterfaceComputations.ComponentExchanger(land, land.grid)
         @test isapprox(CUDA.@allowscalar(ex.state.momentum_roughness_length[1, 1, 1]), 0.2; atol=1e-12)
@@ -181,14 +175,13 @@ end
         fill!(land.state.water_storage, 18.0)
         fill!(land.fluxes.precipitation, 7.0)
         fill!(land.fluxes.evaporation, 0.0)
-        fill!(land.fluxes.runoff, 0.0)
         time_step!(land, 1.0)
 
+        # Effective capacity is Wmax * zʳ = 20 kg m⁻²; water_storage caps there.
         @test isapprox(CUDA.@allowscalar(land.state.water_storage[1, 1, 1]), 20.0; atol=1e-12)
         # At saturation β_raw = 1; the canopy LAI stress (kᴸ Λ = 0.2)
         # still multiplies through, giving β = exp(-0.2).
         @test isapprox(CUDA.@allowscalar(land.state.moisture_availability[1, 1, 1]), exp(-0.2); atol=1e-12)
-        @test isapprox(CUDA.@allowscalar(land.fluxes.runoff[1, 1, 1]), 5.0; atol=1e-12)
     end
 end
 
