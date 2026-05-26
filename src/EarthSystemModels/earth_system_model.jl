@@ -315,7 +315,7 @@ EarthSystemModel{CPU}(time = 0 seconds, iteration = 0)
 ├── sea_ice: FreezingLimitedOceanTemperature{ClimaSeaIce.SeaIceThermodynamics.LinearLiquidus{Float64}}
 ├── ocean: HydrostaticFreeSurfaceModel{CPU, LatitudeLongitudeGrid}(time = 0 seconds, iteration = 0)
 └── interfaces: ComponentInterfaces
-````
+```
 """
 function OceanOnlyModel(ocean; atmosphere=nothing, land=nothing, radiation=nothing, kw...)
     is_ocean_component(ocean) || throw(invalid_component(:OceanOnlyModel, 1, "an ocean simulation", ocean))
@@ -363,7 +363,7 @@ EarthSystemModel{CPU}(time = 0 seconds, iteration = 0)
 ├── sea_ice: SeaIceModel
 ├── ocean: HydrostaticFreeSurfaceModel{CPU, LatitudeLongitudeGrid}(time = 0 seconds, iteration = 0)
 └── interfaces: ComponentInterfaces
-````
+```
 """
 function OceanSeaIceModel(ocean, sea_ice; atmosphere=nothing, land=nothing, radiation=nothing, kw...)
     is_ocean_component(ocean) || throw(invalid_component(:OceanSeaIceModel, 1, "an ocean simulation", ocean))
