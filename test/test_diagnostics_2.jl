@@ -1,5 +1,7 @@
 include("runtests_setup.jl")
 
+using NumericalEarth.Diagnostics: Diagnostics
+
 for arch in test_architectures
     A = typeof(arch)
     @info "Testing InterfaceFluxOutputs [$A]..."
@@ -15,8 +17,8 @@ for arch in test_architectures
     interface_heat_flux_value = 0.3
     sea_ice_ocean_salt_flux_value = 0.9
 
-    model_configurations = ((name = "OceanSeaIceModel", with_sea_ice = true),
-                            (name = "OceanOnlyModel", with_sea_ice = false))
+    model_configurations = ((name = "OceanOnlyModel", with_sea_ice = false),
+                            (name = "OceanSeaIceModel", with_sea_ice = true))
 
     for config in model_configurations
         @testset "InterfaceFluxOutputs on $(config.name) [$A]" begin
@@ -54,20 +56,23 @@ for arch in test_architectures
             cᵒᶜ = esm.interfaces.ocean_properties.heat_capacity
             Sᵒᶜ = 35.0
 
-            frazil_temperature = frazil_temperature_flux(esm)
-            net_ocean_temperature = net_ocean_temperature_flux(esm)
-            sea_ice_ocean_temperature = sea_ice_ocean_temperature_flux(esm)
-            atmosphere_ocean_temperature = atmosphere_ocean_temperature_flux(esm)
-            frazil_heat = frazil_heat_flux(esm)
+            # exported diagnostics
             net_ocean_heat = net_ocean_heat_flux(esm)
             sea_ice_ocean_heat = sea_ice_ocean_heat_flux(esm)
             atmosphere_ocean_heat = atmosphere_ocean_heat_flux(esm)
-            net_ocean_salinity = net_ocean_salinity_flux(esm)
-            sea_ice_ocean_salinity = sea_ice_ocean_salinity_flux(esm)
-            atmosphere_ocean_salinity = atmosphere_ocean_salinity_flux(esm)
             net_ocean_freshwater = net_ocean_freshwater_flux(esm; reference_salinity = Sᵒᶜ)
             sea_ice_ocean_freshwater = sea_ice_ocean_freshwater_flux(esm; reference_salinity = Sᵒᶜ)
             atmosphere_ocean_freshwater = atmosphere_ocean_freshwater_flux(esm; reference_salinity = Sᵒᶜ)
+
+            # internal diagnostics
+            frazil_temperature = Diagnostics.frazil_temperature_flux(esm)
+            net_ocean_temperature = Diagnostics.net_ocean_temperature_flux(esm)
+            sea_ice_ocean_temperature = Diagnostics.sea_ice_ocean_temperature_flux(esm)
+            atmosphere_ocean_temperature = Diagnostics.atmosphere_ocean_temperature_flux(esm)
+            frazil_heat = Diagnostics.frazil_heat_flux(esm)
+            net_ocean_salinity = Diagnostics.net_ocean_salinity_flux(esm)
+            sea_ice_ocean_salinity = Diagnostics.sea_ice_ocean_salinity_flux(esm)
+            atmosphere_ocean_salinity = Diagnostics.atmosphere_ocean_salinity_flux(esm)
 
             for f in (frazil_temperature, net_ocean_temperature, sea_ice_ocean_temperature,
                       atmosphere_ocean_temperature, frazil_heat, net_ocean_heat, sea_ice_ocean_heat,
