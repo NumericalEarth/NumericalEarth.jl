@@ -153,17 +153,17 @@ function progress(sim)
     atmos = sim.model.atmosphere
     ocean = sim.model.ocean
 
-    ua, va     = atmos.variables.dynamics.u_mean_grid, atmos.variables.dynamics.v_mean_grid
-    uo, vo, wo = ocean.model.velocities
+    uᵃᵗ, vᵃᵗ      = atmos.variables.dynamics.u_mean_grid, atmos.variables.dynamics.v_mean_grid
+    uᵒᶜ, vᵒᶜ, wᵒᶜ = ocean.model.velocities
 
-    uamax = (maximum(abs, ua), maximum(abs, va))
-    uomax = (maximum(abs, uo), maximum(abs, vo), maximum(abs, wo))
+    uᵃᵗmax = (maximum(abs, uᵃᵗ), maximum(abs, vᵃᵗ))
+    uᵒᶜmax = (maximum(abs, uᵒᶜ), maximum(abs, vᵒᶜ), maximum(abs, wᵒᶜ))
 
     step_time = 1e-9 * (time_ns() - wall_time[])
 
     msg1 = @sprintf("time: %s, iter: %d", prettytime(sim), iteration(sim))
-    msg2 = @sprintf(", max|ua|: (%.1e, %.1e) m s⁻¹", uamax...)
-    msg3 = @sprintf(", max|uo|: (%.1e, %.1e, %.1e) m s⁻¹", uomax...)
+    msg2 = @sprintf(", max|uᵃᵗ|: (%.1e, %.1e) m s⁻¹", uᵃᵗmax...)
+    msg3 = @sprintf(", max|uᵒᶜ|: (%.1e, %.1e, %.1e) m s⁻¹", uᵒᶜmax...)
     msg4 = @sprintf(", wall time: %s \n", prettytime(step_time))
 
     @info msg1 * msg2 * msg3 * msg4
@@ -206,32 +206,15 @@ SIA = FieldTimeSeries("sea_ice_fields.jld2", "ℵ")
 Nt = min(length(sp[1, 1, :]), length(𝒬ᵀᵃᵒ))
 times = 𝒬ᵀᵃᵒ.times
 
-uotmp = Oceananigans.Field{Face, Center, Nothing}(SST.grid)
-votmp = Oceananigans.Field{Center, Face, Nothing}(SST.grid)
-
-uitmp = Oceananigans.Field{Face,   Center, Nothing}(SST.grid)
-vitmp = Oceananigans.Field{Center, Face,   Nothing}(SST.grid)
-atmp  = Oceananigans.Field{Center, Center, Nothing}(SST.grid)
-
-sotmp = Oceananigans.Field(sqrt(uotmp^2 + votmp^2))
-sitmp = Oceananigans.Field(sqrt(uitmp^2 + vitmp^2) * atmp)
-
 iter = Observable(1)
 
+# `sp` and `Ta` are plain arrays from SpeedyWeather output, so we slice them directly.
+# Ocean and sea-ice quantities are Oceananigans `Field`s/`AbstractOperation`s on the
+# immersed TripolarGrid — passing them through `@lift` lets the Oceananigans Makie
+# extension `compute!` and fill land cells with `NaN` automatically.
 san = @lift sp[:, :, $iter]
-son  = @lift begin
-    Oceananigans.set!(uotmp, SSU[$iter])
-    Oceananigans.set!(votmp, SSV[$iter])
-    Oceananigans.compute!(sotmp)
-    Oceananigans.interior(sotmp, :, :, 1)
-end
-ssn  = @lift begin
-    Oceananigans.set!(uitmp, SIU[$iter])
-    Oceananigans.set!(vitmp, SIV[$iter])
-    Oceananigans.set!(atmp,  SIA[$iter])
-    Oceananigans.compute!(sitmp)
-    Oceananigans.interior(sitmp, :, :, 1)
-end
+son = @lift sqrt(SSU[$iter]^2 + SSV[$iter]^2)
+ssn = @lift sqrt(SIU[$iter]^2 + SIV[$iter]^2) * SIA[$iter]
 
 fig = Figure(size = (1000, 1500))
 
@@ -262,9 +245,9 @@ nothing #hide
 # ![](surface_speeds.mp4)
 
 Tan = @lift Ta[:, :, $iter]
-Ton = @lift interior(SST[$iter], :, :, 1)
-𝒬ᵀn = @lift interior(𝒬ᵀᵃᵒ[$iter], :, :, 1)
-𝒬ᵛn = @lift interior(𝒬ᵛᵃᵒ[$iter], :, :, 1)
+Ton = @lift SST[$iter]
+𝒬ᵀn = @lift 𝒬ᵀᵃᵒ[$iter]
+𝒬ᵛn = @lift 𝒬ᵛᵃᵒ[$iter]
 
 fig = Figure(size = (1000, 2000))
 

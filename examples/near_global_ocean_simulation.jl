@@ -82,6 +82,7 @@ ocean = ocean_simulation(grid)
 ocean.model
 
 # We initialize the ocean model with ECCO4 temperature and salinity for January 1, 1992.
+
 date = DateTime(1992, 1, 1)
 set!(ocean.model, MetadataSet(:temperature, :salinity; dataset=ECCO4Monthly(), date))
 
@@ -171,39 +172,14 @@ Nt = length(times)
 
 n = Observable(Nt)
 
-land = interior(T.grid.immersed_boundary.bottom_height) .>= 0
-
-Tn = @lift begin
-    Tn = interior(T[$n])
-    Tn[land] .= NaN
-    view(Tn, :, :, 1)
-end
-
-en = @lift begin
-    en = interior(e[$n])
-    en[land] .= NaN
-    view(en, :, :, 1)
-end
-
-un = Field{Face, Center, Nothing}(u.grid)
-vn = Field{Center, Face, Nothing}(v.grid)
-
-s = @at (Center, Center, Nothing) sqrt(un^2 + vn^2) # compute √(u²+v²) and interpolate back to Center, Center
-s = Field(s)
-
-sn = @lift begin
-    parent(un) .= parent(u[$n])
-    parent(vn) .= parent(v[$n])
-    compute!(s)
-    sn = interior(s)
-    sn[land] .= NaN
-    view(sn, :, :, 1)
-end
+# The Oceananigans Makie extension fills immersed (land) cells with `NaN` automatically
+# when a `Field`, `AbstractOperation`, or `Observable` thereof is passed to `heatmap!`.
+Tn = @lift T[$n]
+en = @lift e[$n]
+sn = @lift sqrt(u[$n]^2 + v[$n]^2)
 
 title = @lift string("Near-global 1/4 degree ocean simulation after ",
                      prettytime(times[$n] - times[1]))
-
-λ, φ, _ = nodes(T) # T, e, and s all live on the same grid locations
 
 fig = Figure(size = (1000, 1500))
 
@@ -211,13 +187,13 @@ axs = Axis(fig[1, 1], xlabel="Longitude (deg)", ylabel="Latitude (deg)")
 axT = Axis(fig[2, 1], xlabel="Longitude (deg)", ylabel="Latitude (deg)")
 axe = Axis(fig[3, 1], xlabel="Longitude (deg)", ylabel="Latitude (deg)")
 
-hm = heatmap!(axs, λ, φ, sn, colorrange = (0, 0.5), colormap = :deep, nan_color=:lightgray)
+hm = heatmap!(axs, sn, colorrange = (0, 0.5), colormap = :deep, nan_color=:lightgray)
 Colorbar(fig[1, 2], hm, label = "Surface Speed (m s⁻¹)")
 
-hm = heatmap!(axT, λ, φ, Tn, colorrange = (-1, 30), colormap = :magma, nan_color=:lightgray)
+hm = heatmap!(axT, Tn, colorrange = (-1, 30), colormap = :magma, nan_color=:lightgray)
 Colorbar(fig[2, 2], hm, label = "Surface Temperature (ᵒC)")
 
-hm = heatmap!(axe, λ, φ, en, colorrange = (0, 1e-3), colormap = :solar, nan_color=:lightgray)
+hm = heatmap!(axe, en, colorrange = (0, 1e-3), colormap = :solar, nan_color=:lightgray)
 Colorbar(fig[3, 2], hm, label = "Turbulent Kinetic Energy (m² s⁻²)")
 
 Label(fig[0, :], title)
