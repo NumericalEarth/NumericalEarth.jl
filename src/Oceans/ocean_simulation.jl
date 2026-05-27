@@ -29,6 +29,10 @@ using Statistics: mean
 @inline build_top_bc(flux_field, ::Nothing) = FluxBoundaryCondition(flux_field)
 @inline build_top_bc(flux_field, additional) = FluxBoundaryCondition(MultipleFluxes(flux_field, additional); discrete_form=true)
 
+# Momentum top BC: a semi-implicit surface stress
+@inline build_momentum_top_bc(flux_field, coefficient_field, ::Nothing) = ImplicitExplicitFluxBoundaryCondition(flux_field; coefficient=coefficient_field)
+@inline build_momentum_top_bc(flux_field, coefficient_field, additional) = ImplicitExplicitFluxBoundaryCondition(MultipleFluxes(flux_field, additional); coefficient=coefficient_field, discrete_form=true)
+
 #####
 ##### Defaults
 #####
@@ -274,6 +278,10 @@ function ocean_simulation(grid;
     # Set up boundary conditions using Field
     top_zonal_momentum_flux      = τˣ = Field{Face, Center, Nothing}(grid)
     top_meridional_momentum_flux = τʸ = Field{Center, Face, Nothing}(grid)
+
+    # Implicitdrag coefficients for the surface momentum flux, zero by default.
+    implicit_zonal_momentum_coefficient      = λˣ = Field{Face, Center, Nothing}(grid)
+    implicit_meridional_momentum_coefficient = λʸ = Field{Center, Face, Nothing}(grid)
     top_ocean_heat_flux          = Jᵀ = Field{Center, Center, Nothing}(grid)
     top_salt_flux                = Jˢ = Field{Center, Center, Nothing}(grid)
 
@@ -282,8 +290,8 @@ function ocean_simulation(grid;
     additional = merge(default_additional_fluxes, additional_surface_fluxes)
 
     # Construct ocean boundary conditions including surface forcing and bottom drag
-    u_top_bc = build_top_bc(τˣ, additional.u)
-    v_top_bc = build_top_bc(τʸ, additional.v)
+    u_top_bc = build_momentum_top_bc(τˣ, λˣ, additional.u)
+    v_top_bc = build_momentum_top_bc(τʸ, λʸ, additional.v)
     T_top_bc = build_top_bc(Jᵀ, additional.T)
     S_top_bc = build_top_bc(Jˢ, additional.S)
 

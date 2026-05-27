@@ -28,14 +28,14 @@ Statistics = "10745b16-79ce-11e8-11f9-7d13ad32a3b2"
 WorldOceanAtlasTools = "04f20302-f1b9-11e8-29d9-7d841cb0a64a"
 
 [sources]
+ClimaSeaIce = {rev = "ss/correct-bugs", url = "https://github.com/CliMA/ClimaSeaIce.jl.git"}
 NumericalEarth = {path = "../.."}
-ClimaSeaIce = {rev = "main", url = "https://github.com/CliMA/ClimaSeaIce.jl.git"}
 Oceananigans = {rev = "ss/for-omip", url = "https://github.com/CliMA/Oceananigans.jl.git"}
 SeawaterPolynomials = {rev = "ss/conversion-functions", url = "https://github.com/CliMA/SeawaterPolynomials.jl.git"}
 
 [compat]
 CUDA = "5.11.0, 6"
-ClimaSeaIce = "0.5.1"
+ClimaSeaIce = "0.5"
 ConservativeRegridding = "0.2.0"
 Glob = "1.4.0"
 MPIPreferences = "0.1.12"

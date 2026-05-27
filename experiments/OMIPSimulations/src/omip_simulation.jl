@@ -734,8 +734,8 @@ function build_sea_ice(config, grid, ocean; restoring_dir, snow_thermodynamics =
                                  snow_thermodynamics)
 
     set!(sea_ice.model,
-         h = Metadatum(:sea_ice_thickness;     dir=restoring_dir, dataset=ECCO4Monthly()),
-         ℵ = Metadatum(:sea_ice_concentration; dir=restoring_dir, dataset=ECCO4Monthly()))
+         h = Metadatum(:sea_ice_thickness;     dir=restoring_dir, dataset=ECCO4Monthly(), date = DateTime(1993, 1, 1)),
+         ℵ = Metadatum(:sea_ice_concentration; dir=restoring_dir, dataset=ECCO4Monthly(), date = DateTime(1993, 1, 1)))
 
     return sea_ice
 end
