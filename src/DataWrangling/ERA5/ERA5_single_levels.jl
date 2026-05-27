@@ -105,6 +105,11 @@ DataWrangling.available_variables(::ERA5Dataset) = ERA5_dataset_variable_names
 # directly in `NumericalEarthCDSAPIExt`.
 DataWrangling.dataset_variable_name(md::ERA5Metadata) = ERA5_netcdf_variable_names[md.name]
 
+# `geopotential_height` divides the (surface) geopotential by g to give the
+# model surface elevation in metres; `geopotential` is left in m² s⁻².
+DataWrangling.conversion_units(md::ERA5Metadata) =
+    md.name == :geopotential_height ? InverseGravity() : nothing
+
 DataWrangling.default_inpainting(md::ERA5Metadata) = nothing
 
 """

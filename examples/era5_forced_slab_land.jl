@@ -55,6 +55,7 @@ using NumericalEarth.DataWrangling.ERA5: ERA5HourlySingleLevel        # not reex
 using NumericalEarth.Atmospheres: PrescribedPrecipitationFlux         # not reexported at the top level
 using Oceananigans
 using Oceananigans.Units
+using Oceananigans.Fields: interpolate!
 using Oceananigans.TimeSteppers: update_state!
 using CDSAPI                         # activates the CDS-API extension
 using CairoMakie                     # rendered up-front: see note below the run
@@ -71,61 +72,21 @@ const ε       = 0.62198       # R_d / R_v
 
 arch  = CPU()
 
-lat_min, lat_max = 43.25, 45.25
-lon_min, lon_max = -111.0, -109.0
+latitude = lat_min, lat_max = 43.25, 45.25
+longitude = lon_min, lon_max = -111.0, -109.0
 
-land_grid = LatitudeLongitudeGrid(arch;
-                                  size      = (200, 200, 1),
-                                  latitude  = (lat_min, lat_max),
-                                  longitude = (lon_min, lon_max),
-                                  z         = (-1.0, 0.0),
-                                  topology  = (Bounded, Bounded, Bounded))
+# The slab land is a 2D surface, so the grid is `Flat` in the vertical.
+land_grid = LatitudeLongitudeGrid(arch; latitude, longitude,
+                                  size = (200, 200),
+                                  topology  = (Bounded, Bounded, Flat))
 
-# ## ETOPO elevation on the land grid + ERA5-effective elevation
+# ## ETOPO surface elevation
 #
-# `regrid_bathymetry` returns `bottom_height` — positive over land. We
-# regrid ETOPO 2022 onto two grids: the 1 km land grid and a coarse
-# 0.25° "ERA5-like" grid covering the same region. Box-averaging ETOPO
-# onto the ERA5 grid approximates ERA5's effective grid-cell elevation;
-# projecting that field back to 1 km gives the elevation each ERA5
-# cell "thinks" applies everywhere within it.
+# `regrid_topography` regrids ETOPO 2022 onto the land grid as a positive land
+# surface elevation (the topographic counterpart of `regrid_bathymetry`). This
+# is the *desired* elevation the atmosphere is corrected to.
 
-z_land_field = regrid_bathymetry(land_grid; dataset = ETOPO2022(),
-                                 interpolation_passes = 1, minimum_depth = 0)
-
-pad = 0.25                    # one ERA5 cell of padding on every side
-era5_lat = (lat_min - pad, lat_max + pad)
-era5_lon = (lon_min - pad, lon_max + pad)
-era5_Ny  = round(Int, (era5_lat[2] - era5_lat[1]) / 0.25)
-era5_Nx  = round(Int, (era5_lon[2] - era5_lon[1]) / 0.25)
-
-era5_grid = LatitudeLongitudeGrid(arch;
-                                  size      = (era5_Nx, era5_Ny, 1),
-                                  latitude  = era5_lat,
-                                  longitude = era5_lon,
-                                  z         = (-1.0, 0.0),
-                                  topology  = (Bounded, Bounded, Bounded))
-
-z_era5_field = regrid_bathymetry(era5_grid; dataset = ETOPO2022(),
-                                 interpolation_passes = 1, minimum_depth = 0)
-
-# Project the ERA5-effective elevation onto the 1 km grid by a
-# piecewise-constant lookup: each 1 km cell inherits the value of the
-# ERA5 cell that contains its centre. (Bilinear `set!` between grids
-# of different size is not yet supported in Oceananigans main.)
-λ_land = λnodes(land_grid, Center())
-φ_land = φnodes(land_grid, Center())
-z_land     = max.(interior(z_land_field, :, :, 1), 0.0)
-z_era5_raw = interior(z_era5_field, :, :, 1)
-z_era5_eff = similar(z_land)
-@inbounds for j in eachindex(φ_land), i in eachindex(λ_land)
-    i_e = clamp(floor(Int, (λ_land[i] - era5_lon[1]) / 0.25) + 1, 1, era5_Nx)
-    j_e = clamp(floor(Int, (φ_land[j] - era5_lat[1]) / 0.25) + 1, 1, era5_Ny)
-    z_era5_eff[i, j] = max(z_era5_raw[i_e, j_e], 0.0)
-end
-Δz = z_land .- z_era5_eff       # m, positive over peaks
-
-@info "Elevation field stats" land=(minimum(z_land), maximum(z_land)) era5_eff=(minimum(z_era5_eff), maximum(z_era5_eff)) Δz=(minimum(Δz), maximum(Δz))
+z_land = regrid_topography(land_grid; dataset = ETOPO2022())
 
 # ## ERA5 forcing — 3-day window
 #
@@ -134,10 +95,12 @@ end
 # ~10 min on CPU. Bundle the eight required variables into one
 # `MetadataSet` so the same `dataset`, `dates`, and `region` aren't
 # repeated; `FieldTimeSeries(mset, land_grid)` returns a `NamedTuple`
-# of pre-downscaled FTS keyed by variable name.
+# of pre-downscaled FTS keyed by variable name. The region is just the land
+# domain — the dataset fetch center-brackets it by one native cell automatically,
+# so downscaling onto the 1 km grid is well-posed at the domain edges.
 
 dates  = DateTime(2020, 4, 1):Hour(1):DateTime(2020, 4, 3, 23)
-region = BoundingBox(latitude = era5_lat, longitude = era5_lon)
+region = BoundingBox(; latitude, longitude)
 Nt     = length(dates)
 
 forcing_set = MetadataSet(:eastward_velocity,
@@ -153,6 +116,18 @@ forcing_set = MetadataSet(:eastward_velocity,
 
 era5 = FieldTimeSeries(forcing_set, land_grid; time_indices_in_memory = Nt)
 atmos_times = era5.eastward_velocity.times
+
+# ERA5's own model surface elevation — the elevation its near-surface fields
+# actually correspond to — extracted directly from the (static) surface
+# geopotential (`:geopotential_height` divides by g → metres) and interpolated
+# onto the land grid. This is what the correction lifts the atmosphere *from*.
+z_era5 = Field{Center, Center, Nothing}(land_grid)
+interpolate!(z_era5, Field(Metadatum(:geopotential_height;
+                                     dataset = ERA5HourlySingleLevel(),
+                                     date = first(dates), region), arch))
+
+Δz = interior(z_land, :, :, 1) .- interior(z_era5, :, :, 1) # m, positive over peaks
+@info "Elevation field stats" land=extrema(interior(z_land, :, :, 1)) era5=extrema(interior(z_era5, :, :, 1)) Δz=extrema(Δz)
 
 # ## Atmosphere forcing fields
 #
@@ -185,7 +160,7 @@ end
 # grid under the hood and applies `T -= Γ Δz` plus the hydrostatic pressure
 # adjustment to the regridded atmosphere every step (any atmosphere, prescribed
 # or online).
-elevation_correction = ElevationCorrection(z_era5_eff, z_land;
+elevation_correction = ElevationCorrection(z_era5, z_land;
                                            lapse_rate = Γ_lapse,
                                            gravitational_acceleration = g_acc,
                                            dry_air_gas_constant = Rd)
