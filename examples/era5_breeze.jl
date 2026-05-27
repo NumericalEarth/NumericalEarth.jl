@@ -25,8 +25,8 @@ using CDSAPI  # activates NumericalEarthCDSAPIExt
 using Oceananigans
 using Oceananigans.Fields: interpolate!
 using Oceananigans.BoundaryConditions: fill_halo_regions!
+using Oceananigans.OutputReaders: FieldTimeSeries
 using Breeze
-using Breeze.Thermodynamics # TODO: https://github.com/NumericalEarth/Breeze.jl/pull/699
 using Statistics: mean
 using Dates
 using Printf
@@ -215,68 +215,121 @@ function column_interp_z!(inter_field, era5_data;
     return inter_field
 end
 
-# Two-stage interpolation: column-z onto intermediate, then horizontal
-# `interpolate!` onto the target LAM field.
-function interp_era5_to_lam!(target, era5_data, intermediate_grid;
-                             z_above_sfc, p_era5_lev, p₀_arr)
-    inter = CenterField(intermediate_grid)
-    column_interp_z!(inter, era5_data; z_above_sfc, p_era5_lev, p₀_arr)
-    interpolate!(target, inter)
-    return target
-end
+# --- Parent grid: ERA5 native (λ, φ), LAM z ---
+# Mirror NumericalEarth's `native_grid`/`restrict` behavior: it pads the
+# requested bbox outward by Δ/2 on each side so cell *centers* land on the
+# ERA5 native grid. Without that adjustment, `parent_grid`'s cell centers
+# would be offset from the actual ERA5 data positions (up to ~0.12° at the
+# bbox edges), which biases the horizontal `interpolate!` onto the LAM.
+#
+# A single ERA5 fetch (snapshot 1's geopotential metadata) gives us the
+# native node coordinates and pressure levels needed to size the grid.
 
-# --- ERA5 raw arrays and per-column metadata ---
-meta_common = (date = start_date, region = era5_region, dir = era5_datadir)
-ϕ_field     = Field(Metadatum(:geopotential;        dataset=ds_pl, meta_common...))
-Φ₀_field    = Field(Metadatum(:geopotential_height; dataset=ds_sl, meta_common...))
-p₀_field    = Field(Metadatum(:surface_pressure;    dataset=ds_sl, meta_common...))
-
-# Native ERA5 array shapes: 3-D (Nλ_e, Nφ_e, Np_e); 2-D fields stored as
-# (Nλ_e, Nφ_e, 1) — slice them down to plain 2-D.
-Φ₀_arr = Array(interior(Φ₀_field))[:, :, 1]  # m²/s² (raw geopotential — `:geopotential_height`
-                                              #       is a misnomer; ERA5 stores it without /g)
-p₀_arr = Array(interior(p₀_field))[:, :, 1]  # Pa
-
-# Height above local surface for each ERA5 (i, j, k); see "Terrain workaround"
-# above. Both Φ and Φ₀ are in m²/s²; broadcast Φ₀ over the vertical axis with
-# `reshape` + `..., 1`, then divide once by g at the end.
-z_above_sfc = (Array(interior(ϕ_field)) .-
-               reshape(Φ₀_arr, size(Φ₀_arr, 1), size(Φ₀_arr, 2), 1)) ./ g
+const meta_common_snap1 = (date = start_date, region = era5_region, dir = era5_datadir)
+const ϕ_field_snap1     = Field(Metadatum(:geopotential; dataset=ds_pl, meta_common_snap1...))
 
 p_era5_lev = sort(ds_pl.pressure_levels, rev=true)
 
-read3d(name) = Array(interior(Field(Metadatum(name; dataset=ds_pl, meta_common...))))
-u_era5  = read3d(:eastward_velocity)
-v_era5  = read3d(:northward_velocity)
-T_era5  = read3d(:temperature)
-qᵛ_era5 = read3d(:specific_humidity)
-qᶜ_era5 = read3d(:specific_cloud_liquid_water_content)
-qⁱ_era5 = read3d(:specific_cloud_ice_water_content)
-
-# Pressure as a 3-D array (constant in λ, φ; pressure-level values broadcast)
-p_era5_3d = repeat(reshape(p_era5_lev, 1, 1, :), size(z_above_sfc, 1), size(z_above_sfc, 2), 1)
-
-# --- Intermediate grid: ERA5 native (λ, φ), LAM z ---
-# Mirror NumericalEarth's `native_grid`/`restrict` behavior: it pads the
-# requested bbox outward by Δ/2 on each side so cell *centers* land on the
-# ERA5 native grid. Without that adjustment, `intermediate_grid`'s cell
-# centers would be offset from the actual ERA5 data positions (up to ~0.12°
-# at the bbox edges), which biases stage-2's `interpolate!` onto the LAM.
-Nλ_e, Nφ_e = size(z_above_sfc, 1), size(z_above_sfc, 2)
-λ_centers_era5 = collect(λnodes(ϕ_field.grid, Center(), Center(), Center()))
-φ_centers_era5 = collect(φnodes(ϕ_field.grid, Center(), Center(), Center()))
+λ_centers_era5 = collect(λnodes(ϕ_field_snap1.grid, Center(), Center(), Center()))
+φ_centers_era5 = collect(φnodes(ϕ_field_snap1.grid, Center(), Center(), Center()))
+Nλ_e, Nφ_e = length(λ_centers_era5), length(φ_centers_era5)
 Δλ_e = (λ_centers_era5[end] - λ_centers_era5[1]) / (Nλ_e - 1)
 Δφ_e = (φ_centers_era5[end] - φ_centers_era5[1]) / (Nφ_e - 1)
-intermediate_grid = LatitudeLongitudeGrid(longitude = (λ_centers_era5[1]   - Δλ_e/2,
-                                                       λ_centers_era5[end] + Δλ_e/2),
-                                          latitude  = (φ_centers_era5[1]   - Δφ_e/2,
-                                                       φ_centers_era5[end] + Δφ_e/2),
-                                          z         = z_discretization,
-                                          size      = (Nλ_e, Nφ_e, Nz),
-                                          halo      = (5, 5, 5),
-                                          topology  = (Bounded, Bounded, Bounded))
 
-# --- LAM fields populated by stage-1 + stage-2 ---
+parent_grid = LatitudeLongitudeGrid(longitude = (λ_centers_era5[1]   - Δλ_e/2,
+                                                 λ_centers_era5[end] + Δλ_e/2),
+                                    latitude  = (φ_centers_era5[1]   - Δφ_e/2,
+                                                 φ_centers_era5[end] + Δφ_e/2),
+                                    z         = z_discretization,
+                                    size      = (Nλ_e, Nφ_e, Nz),
+                                    halo      = (5, 5, 5),
+                                    topology  = (Bounded, Bounded, Bounded))
+
+# --- PrescribedAtmosphere on the parent grid ---
+# Times in seconds since the first snapshot. PrescribedAtmosphere allocates
+# default Center-located FTSs for velocities, tracers (T, q), pressure.
+# qᶜ, qⁱ aren't standard slots; we own those alongside.
+
+parent_times = [Float64(Dates.value(d - start_date)) / 1000 for d in dates]
+parent = PrescribedAtmosphere(parent_grid, parent_times; thermodynamics_parameters = nothing)
+
+qᶜ_fts = FieldTimeSeries{Center, Center, Center}(parent_grid, parent_times)
+qⁱ_fts = FieldTimeSeries{Center, Center, Center}(parent_grid, parent_times)
+
+# --- Time-invariant: surface geopotential Φ₀ ---
+# Φ₀ is terrain elevation × g; load once from snapshot 1.
+
+const Φ₀_arr_snap1 = Array(interior(Field(Metadatum(:geopotential_height;
+                                                    dataset=ds_sl,
+                                                    meta_common_snap1...))))[:, :, 1]
+
+# --- Per-snapshot ERA5 → parent FTS population ---
+#
+# For each ERA5 hourly snapshot:
+#   1. Pull T, q*, u, v, geopotential (3D), surface-pressure.
+#   2. Build height-above-surface z_above_sfc = (Φ − Φ₀)/g (terrain workaround).
+#   3. Column-wise linear-in-z interp onto the parent z-grid, masking
+#      sub-surface levels (p > p_surface).
+#   4. Copy the result into FTS slot n.
+
+function populate_parent_snapshot!(n, date)
+    meta = (date = date, region = era5_region, dir = era5_datadir)
+
+    ϕ_field  = Field(Metadatum(:geopotential;     dataset=ds_pl, meta...))
+    p₀_field = Field(Metadatum(:surface_pressure; dataset=ds_sl, meta...))
+
+    p₀_arr = Array(interior(p₀_field))[:, :, 1]   # Pa
+    z_above_sfc = (Array(interior(ϕ_field)) .-
+                   reshape(Φ₀_arr_snap1, size(Φ₀_arr_snap1, 1), size(Φ₀_arr_snap1, 2), 1)) ./ g
+
+    read3d(name) = Array(interior(Field(Metadatum(name; dataset=ds_pl, meta...))))
+    u_era5  = read3d(:eastward_velocity)
+    v_era5  = read3d(:northward_velocity)
+    T_era5  = read3d(:temperature)
+    qᵛ_era5 = read3d(:specific_humidity)
+    qᶜ_era5 = read3d(:specific_cloud_liquid_water_content)
+    qⁱ_era5 = read3d(:specific_cloud_ice_water_content)
+    p_era5_3d = repeat(reshape(p_era5_lev, 1, 1, :),
+                       size(z_above_sfc, 1), size(z_above_sfc, 2), 1)
+
+    era5_kw = (; z_above_sfc, p_era5_lev, p₀_arr)
+
+    u_p  = CenterField(parent_grid)
+    v_p  = CenterField(parent_grid)
+    T_p  = CenterField(parent_grid)
+    qᵛ_p = CenterField(parent_grid)
+    qᶜ_p = CenterField(parent_grid)
+    qⁱ_p = CenterField(parent_grid)
+    p_p  = CenterField(parent_grid)
+
+    column_interp_z!(u_p,  u_era5;    era5_kw...)
+    column_interp_z!(v_p,  v_era5;    era5_kw...)
+    column_interp_z!(T_p,  T_era5;    era5_kw...)
+    column_interp_z!(qᵛ_p, qᵛ_era5;   era5_kw...)
+    column_interp_z!(qᶜ_p, qᶜ_era5;   era5_kw...)
+    column_interp_z!(qⁱ_p, qⁱ_era5;   era5_kw...)
+    column_interp_z!(p_p,  p_era5_3d; era5_kw...)
+
+    interior(parent.velocities.u, :, :, :, n) .= interior(u_p)
+    interior(parent.velocities.v, :, :, :, n) .= interior(v_p)
+    interior(parent.tracers.T,    :, :, :, n) .= interior(T_p)
+    interior(parent.tracers.q,    :, :, :, n) .= interior(qᵛ_p)
+    interior(parent.pressure,     :, :, :, n) .= interior(p_p)
+    interior(qᶜ_fts,              :, :, :, n) .= interior(qᶜ_p)
+    interior(qⁱ_fts,              :, :, :, n) .= interior(qⁱ_p)
+
+    return nothing
+end
+
+for (n, date) in enumerate(dates)
+    @info @sprintf("Populating parent snapshot %d/%d at %s", n, length(dates), date)
+    populate_parent_snapshot!(n, date)
+end
+
+# --- LAM-grid IC fields: horizontal regrid of snapshot 1 from the parent ---
+# `interpolate!` does the bilinear-in-(λ, φ) regrid; the vertical coord is
+# already on the parent grid so this is purely horizontal.
+
 u  = XFaceField(grid)
 v  = YFaceField(grid)
 T  = CenterField(grid)
@@ -285,15 +338,13 @@ qᶜ = CenterField(grid)
 qⁱ = CenterField(grid)
 p  = CenterField(grid)
 
-era5_kw = (; z_above_sfc, p_era5_lev, p₀_arr)
-
-interp_era5_to_lam!(u,  u_era5,    intermediate_grid; era5_kw...)
-interp_era5_to_lam!(v,  v_era5,    intermediate_grid; era5_kw...)
-interp_era5_to_lam!(T,  T_era5,    intermediate_grid; era5_kw...)
-interp_era5_to_lam!(qᵛ, qᵛ_era5,   intermediate_grid; era5_kw...)
-interp_era5_to_lam!(qᶜ, qᶜ_era5,   intermediate_grid; era5_kw...)
-interp_era5_to_lam!(qⁱ, qⁱ_era5,   intermediate_grid; era5_kw...)
-interp_era5_to_lam!(p,  p_era5_3d, intermediate_grid; era5_kw...)
+interpolate!(u,  parent.velocities.u[1])
+interpolate!(v,  parent.velocities.v[1])
+interpolate!(T,  parent.tracers.T[1])
+interpolate!(qᵛ, parent.tracers.q[1])
+interpolate!(qᶜ, qᶜ_fts[1])
+interpolate!(qⁱ, qⁱ_fts[1])
+interpolate!(p,  parent.pressure[1])
 
 # Calculate virtual temperature: Tᵛ = T·(1 + (1 − ε)/ε·qᵛ), ε = Rᵈ/Rᵛ.
 # Vapor only by convention — the qᶜ, qⁱ terms belong to the density temperature Tρ.
@@ -316,7 +367,7 @@ surface_grid = LatitudeLongitudeGrid(longitude = (λ_west,  λ_east),
                                      topology  = (Bounded, Bounded, Bounded))
 
 p₀ = CenterField(surface_grid)
-set!(p₀, Metadatum(:surface_pressure; dataset=ds_sl, meta_common...))
+set!(p₀, Metadatum(:surface_pressure; dataset=ds_sl, meta_common_snap1...))
 
 # ## Build the Breeze model
 #
@@ -383,6 +434,24 @@ sites = [("East TX",     -93.5,   34.0),
          ("SGP",         -97.485, 36.605),
          ("High Plains", -101.5,  35.0)]
 
+# Re-fetch the snapshot-1 ERA5 raw arrays for the gray stencil overlay
+# (the FTSs hold vertically-interpolated data; the overlay needs the native
+# pressure-level columns).
+
+Φ₀_arr = Array(interior(Field(Metadatum(:geopotential_height; dataset=ds_sl, meta_common_snap1...))))[:, :, 1]
+p₀_arr = Array(interior(Field(Metadatum(:surface_pressure;    dataset=ds_sl, meta_common_snap1...))))[:, :, 1]
+z_above_sfc = (Array(interior(Field(Metadatum(:geopotential;  dataset=ds_pl, meta_common_snap1...)))) .-
+               reshape(Φ₀_arr, size(Φ₀_arr, 1), size(Φ₀_arr, 2), 1)) ./ g
+
+read3d_snap1(name) = Array(interior(Field(Metadatum(name; dataset=ds_pl, meta_common_snap1...))))
+u_era5  = read3d_snap1(:eastward_velocity)
+v_era5  = read3d_snap1(:northward_velocity)
+T_era5  = read3d_snap1(:temperature)
+qᵛ_era5 = read3d_snap1(:specific_humidity)
+qᶜ_era5 = read3d_snap1(:specific_cloud_liquid_water_content)
+qⁱ_era5 = read3d_snap1(:specific_cloud_ice_water_content)
+p_era5_3d = repeat(reshape(p_era5_lev, 1, 1, :), size(z_above_sfc, 1), size(z_above_sfc, 2), 1)
+
 # Materialize θ (currently an abstract op) and derive ERA5-native counterparts.
 θ_lam   = compute!(Field(T * (pˢᵗ / p)^κ))
 Tᵛ_era5 = T_era5 .* (1 .+ εfac .* qᵛ_era5)
@@ -396,8 +465,8 @@ v_arr   = Array(interior(v))
 θ_arr   = Array(interior(θ_lam))
 qᵗ_arr  = Array(interior(qᵗ))
 
-λ_e = collect(λnodes(ϕ_field.grid, Center(), Center(), Center()))
-φ_e = collect(φnodes(ϕ_field.grid, Center(), Center(), Center()))
+λ_e = collect(λnodes(ϕ_field_snap1.grid, Center(), Center(), Center()))
+φ_e = collect(φnodes(ϕ_field_snap1.grid, Center(), Center(), Center()))
 λ_c = collect(λnodes(grid, Center(), Center(), Center()))
 φ_c = collect(φnodes(grid, Center(), Center(), Center()))
 λ_f = collect(λnodes(grid, Face(),   Center(), Center()))
