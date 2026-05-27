@@ -112,23 +112,29 @@ end
 @inline _boundary_index(::Type{LeftBoundary},  N) = 1
 @inline _boundary_index(::Type{RightBoundary}, N) = N + 1
 
+# `fill_halo_regions!` is sometimes invoked without a clock — most notably
+# during `set!`-time IC setup, where the kernel is launched with an empty
+# `args` tuple. Default `time = 0` in that case so dispatch succeeds.
+@inline _clock_time(clock) = clock.time
+@inline _clock_time(::Nothing) = 0.0
+
 @inline function getbc(bc::Interpolated{1, S, LX, LY, LZ},
-                       j::Integer, k::Integer, grid::AbstractGrid, clock, args...) where {S, LX, LY, LZ}
+                       j::Integer, k::Integer, grid::AbstractGrid, clock=nothing, args...) where {S, LX, LY, LZ}
     i = _boundary_index(S, grid.Nx)
     X = node(i, j, k, grid, LX(), LY(), LZ())
-    return _query_source(bc.source, X, clock.time)
+    return _query_source(bc.source, X, _clock_time(clock))
 end
 
 @inline function getbc(bc::Interpolated{2, S, LX, LY, LZ},
-                       i::Integer, k::Integer, grid::AbstractGrid, clock, args...) where {S, LX, LY, LZ}
+                       i::Integer, k::Integer, grid::AbstractGrid, clock=nothing, args...) where {S, LX, LY, LZ}
     j = _boundary_index(S, grid.Ny)
     X = node(i, j, k, grid, LX(), LY(), LZ())
-    return _query_source(bc.source, X, clock.time)
+    return _query_source(bc.source, X, _clock_time(clock))
 end
 
 @inline function getbc(bc::Interpolated{3, S, LX, LY, LZ},
-                       i::Integer, j::Integer, grid::AbstractGrid, clock, args...) where {S, LX, LY, LZ}
+                       i::Integer, j::Integer, grid::AbstractGrid, clock=nothing, args...) where {S, LX, LY, LZ}
     k = _boundary_index(S, grid.Nz)
     X = node(i, j, k, grid, LX(), LY(), LZ())
-    return _query_source(bc.source, X, clock.time)
+    return _query_source(bc.source, X, _clock_time(clock))
 end
