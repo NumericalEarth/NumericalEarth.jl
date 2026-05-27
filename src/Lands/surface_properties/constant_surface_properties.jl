@@ -9,7 +9,7 @@
 #####
 
 """
-    ConstantSurfaceProperties(FT = Float64;
+    ConstantSurfaceProperties(FT = Oceananigans.defaults.FloatType;
                               momentum_roughness_length = 0.1,
                               scalar_roughness_length = 0.01)
 
@@ -21,7 +21,7 @@ struct ConstantSurfaceProperties{M, S} <: AbstractSurfaceProperties
     scalar_roughness_length   :: S
 end
 
-function ConstantSurfaceProperties(FT::Type = Float64;
+function ConstantSurfaceProperties(FT::Type = Oceananigans.defaults.FloatType;
                                    momentum_roughness_length = 0.1,
                                    scalar_roughness_length = 0.01)
     momentum_roughness_length = normalize_property(FT, momentum_roughness_length)

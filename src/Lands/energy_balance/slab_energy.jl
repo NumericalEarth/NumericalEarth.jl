@@ -13,7 +13,7 @@
 #####
 
 """
-    SlabEnergy(FT = Float64;
+    SlabEnergy(FT = Oceananigans.defaults.FloatType;
                dry_heat_capacity = 1480 * 1500 * 0.10,
                liquid_heat_capacity = 4186)
 
@@ -32,7 +32,7 @@ struct SlabEnergy{C, L} <: AbstractEnergyBalance
     liquid_heat_capacity :: L
 end
 
-function SlabEnergy(FT::Type = Float64;
+function SlabEnergy(FT::Type = Oceananigans.defaults.FloatType;
                     dry_heat_capacity = 1480.0 * 1500.0 * 0.10,
                     liquid_heat_capacity = 4186.0)
     dry_heat_capacity    = normalize_property(FT, dry_heat_capacity)

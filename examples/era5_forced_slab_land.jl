@@ -70,12 +70,11 @@ const Rd      = 287.052       # J kg⁻¹ K⁻¹
 const ε       = 0.62198       # R_d / R_v
 
 arch  = CPU()
-FT    = Float64
 
 lat_min, lat_max = 43.25, 45.25
 lon_min, lon_max = -111.0, -109.0
 
-land_grid = LatitudeLongitudeGrid(arch, FT;
+land_grid = LatitudeLongitudeGrid(arch;
                                   size      = (200, 200, 1),
                                   latitude  = (lat_min, lat_max),
                                   longitude = (lon_min, lon_max),
@@ -100,7 +99,7 @@ era5_lon = (lon_min - pad, lon_max + pad)
 era5_Ny  = round(Int, (era5_lat[2] - era5_lat[1]) / 0.25)
 era5_Nx  = round(Int, (era5_lon[2] - era5_lon[1]) / 0.25)
 
-era5_grid = LatitudeLongitudeGrid(arch, FT;
+era5_grid = LatitudeLongitudeGrid(arch;
                                   size      = (era5_Nx, era5_Ny, 1),
                                   latitude  = era5_lat,
                                   longitude = era5_lon,
@@ -207,12 +206,10 @@ radiation = PrescribedRadiation(ssrd_rate, strd_rate;
                                 land_surface    = SurfaceRadiationProperties(0.18, 0.95))
 
 slab_land = SlabLand(land_grid;
-                     energy    = SlabEnergy(FT;
-                                            dry_heat_capacity    = 1500.0 * 1480.0 * 0.10,
+                     energy    = SlabEnergy(dry_heat_capacity    = 1500.0 * 1480.0 * 0.10,
                                             liquid_heat_capacity = 4186.0),
-                     hydrology = BucketHydrology(FT; maximum_water_storage = 150.0),
-                     surface   = ConstantSurfaceProperties(FT;
-                                                           momentum_roughness_length = 0.1,
+                     hydrology = BucketHydrology(maximum_water_storage = 150.0),
+                     surface   = ConstantSurfaceProperties(momentum_roughness_length = 0.1,
                                                            scalar_roughness_length   = 0.01))
 
 # Initialize T₀ from the elevation-corrected ERA5 T₂ₘ at the first snapshot

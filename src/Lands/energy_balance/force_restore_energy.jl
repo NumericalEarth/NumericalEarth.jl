@@ -19,7 +19,7 @@
 ##### target rather than a companion prognostic.
 #####
 """
-    ForceRestoreEnergy(FT = Float64;
+    ForceRestoreEnergy(FT = Oceananigans.defaults.FloatType;
                        dry_heat_capacity = 1480 * 1500 * 0.10,
                        liquid_heat_capacity = 4186,
                        deep_temperature = 280.0,
@@ -39,7 +39,7 @@ struct ForceRestoreEnergy{C, L, Td, T} <: AbstractEnergyBalance
     deep_time_scale      :: T
 end
 
-function ForceRestoreEnergy(FT::Type = Float64;
+function ForceRestoreEnergy(FT::Type = Oceananigans.defaults.FloatType;
                             dry_heat_capacity = 1480.0 * 1500.0 * 0.10,
                             liquid_heat_capacity = 4186.0,
                             deep_temperature = 280.0,

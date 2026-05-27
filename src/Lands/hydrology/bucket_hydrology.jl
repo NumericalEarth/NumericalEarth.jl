@@ -10,7 +10,7 @@
 #####
 
 """
-    BucketHydrology(FT = Float64;
+    BucketHydrology(FT = Oceananigans.defaults.FloatType;
                     maximum_water_storage = 150,
                     root_depth = 1)
 
@@ -34,7 +34,7 @@ struct BucketHydrology{Mmax, R} <: AbstractHydrology
     root_depth            :: R
 end
 
-function BucketHydrology(FT::Type = Float64;
+function BucketHydrology(FT::Type = Oceananigans.defaults.FloatType;
                          maximum_water_storage = 150.0,
                          root_depth            = 1)
     maximum_water_storage = normalize_property(FT, maximum_water_storage)
