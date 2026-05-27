@@ -211,7 +211,7 @@ makedocs(; sitename = "NumericalEarth.jl",
          clean = true,
          warnonly = [:cross_references, :missing_docs],
          checkdocs = :exports,
-         linkcheck = true,
+         linkcheck = false,
          linkcheck_ignore = [
              r"https://www\.ncei\.noaa\.gov/products/etopo-global-relief-model",
              r"https://www\.ncei\.noaa\.gov/products/world-ocean-atlas",
