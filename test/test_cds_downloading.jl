@@ -172,6 +172,31 @@ start_date = DateTime(2005, 2, 16, 12)
         @test NumericalEarth.DataWrangling.default_inpainting(md) === nothing
     end
 
+    @testset "ERA5 single-level load-time unit conversions" begin
+        conversion_units = NumericalEarth.DataWrangling.conversion_units
+        convert_units    = NumericalEarth.DataWrangling.convert_units
+        InverseGravity   = NumericalEarth.DataWrangling.InverseGravity
+        MetersPerHour    = NumericalEarth.DataWrangling.MetersPerHour
+        Jm²ph            = NumericalEarth.DataWrangling.JoulesPerSquareMeterPerHour
+        ds = ERA5HourlySingleLevel()
+        era5m(name) = Metadatum(name; dataset=ds, date=start_date)
+
+        # Surface geopotential ÷ g → metres; accumulated SW/LW (J/m²) ÷ 3600 → W/m²;
+        # accumulated precip depth (m) × 1000/3600 → kg/m²/s. Others are unconverted.
+        @test conversion_units(era5m(:geopotential_height)) isa InverseGravity
+        @test conversion_units(era5m(:downwelling_shortwave_radiation)) isa Jm²ph
+        @test conversion_units(era5m(:downwelling_longwave_radiation))  isa Jm²ph
+        @test conversion_units(era5m(:total_precipitation)) isa MetersPerHour
+        @test conversion_units(era5m(:temperature)) === nothing
+
+        @test convert_units(3600.0, Jm²ph()) ≈ 1.0          # 3600 J/m²/hr → 1 W/m²
+        @test convert_units(3.6, MetersPerHour()) ≈ 1.0     # 3.6 m/hr → 1 kg/m²/s
+
+        # The regional hindcast prescribed components are first-class, top-level API.
+        @test ERA5PrescribedAtmosphere isa Function
+        @test ERA5PrescribedRadiation  isa Function
+    end
+
     @testset "ERA5 single-level metadata_prefix" begin
         ds = ERA5HourlySingleLevel()
         mp = NumericalEarth.DataWrangling.ERA5.metadata_prefix

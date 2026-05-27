@@ -105,10 +105,18 @@ DataWrangling.available_variables(::ERA5Dataset) = ERA5_dataset_variable_names
 # directly in `NumericalEarthCDSAPIExt`.
 DataWrangling.dataset_variable_name(md::ERA5Metadata) = ERA5_netcdf_variable_names[md.name]
 
-# `geopotential_height` divides the (surface) geopotential by g to give the
-# model surface elevation in metres; `geopotential` is left in m² s⁻².
-DataWrangling.conversion_units(md::ERA5Metadata) =
-    md.name == :geopotential_height ? InverseGravity() : nothing
+# Unit conversions applied at load time:
+# - `geopotential_height` divides the (surface) geopotential by g to give the
+#   model surface elevation in metres (`geopotential` is left in m² s⁻²);
+# - downwelling SW/LW are hourly-accumulated energy (J/m²) → mean flux (W/m²);
+# - total precipitation is an hourly-accumulated depth (m) → mass flux (kg/m²/s).
+function DataWrangling.conversion_units(md::ERA5Metadata)
+    md.name == :geopotential_height && return InverseGravity()
+    md.name == :total_precipitation && return MetersPerHour()
+    md.name in (:downwelling_shortwave_radiation, :downwelling_longwave_radiation) &&
+        return JoulesPerSquareMeterPerHour()
+    return nothing
+end
 
 DataWrangling.default_inpainting(md::ERA5Metadata) = nothing
 

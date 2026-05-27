@@ -346,7 +346,7 @@ nothing #hide
 cloud_set = MetadataSet(:specific_cloud_liquid_water_content,
                         :specific_rain_water_content;
                         dataset = ds_pl, dates, region = rico_column)
-cloud_series  = FieldTimeSeries(cloud_set)
+cloud_series  = NamedTuple(name => FieldTimeSeries(cloud_set[name]) for name in cloud_set.names)
 qᶜ_col_series = cloud_series.specific_cloud_liquid_water_content
 qʳ_col_series = cloud_series.specific_rain_water_content
 
@@ -407,7 +407,7 @@ rico_set = MetadataSet(:temperature, :specific_humidity,
                        :eastward_velocity, :northward_velocity;
                        dataset = ds_pl, dates, region = rico_region)
 
-rico_series = @suppress_out FieldTimeSeries(rico_set)
+rico_series = @suppress_out NamedTuple(name => FieldTimeSeries(rico_set[name]) for name in rico_set.names)
 T_series = rico_series.temperature
 q_series = rico_series.specific_humidity
 u_series = rico_series.eastward_velocity

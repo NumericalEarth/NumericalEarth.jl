@@ -374,6 +374,12 @@ end
 # Precipitation rate (assuming ρ_water = 1000 kg/m³, so 1 mm/hr = 1 kg/m²/hr = 1/3600 kg/m²/s)
 @inline convert_units(r::FT, ::MillimetersPerHour) where FT = r / convert(FT, 3600)
 
+# ERA5 total precipitation is an hourly accumulated depth (m); m/hr → kg/m²/s.
+@inline convert_units(p::FT, ::MetersPerHour) where FT = p * convert(FT, 1000) / convert(FT, 3600)
+
+# ERA5 ssrd/strd are energy accumulated over the previous hour (J/m²); ÷3600 s → mean W/m².
+@inline convert_units(ℐ::FT, ::JoulesPerSquareMeterPerHour) where FT = ℐ / convert(FT, 3600)
+
 # Molar units
 @inline convert_units(C::FT, ::Union{MolePerLiter, MolePerKilogram})           where FT = C * convert(FT, 1e3)
 @inline convert_units(C::FT, ::Union{MillimolePerLiter, MillimolePerKilogram}) where FT = C * convert(FT, 1)
@@ -435,15 +441,17 @@ end
 Build a `NamedTuple` of `Field`s — one per variable in `mset`, keyed by the
 verbose dataset variable name. Each value is `Field(mset[name], arch; kw...)`.
 
-Requires `mset` to hold scalar `dates` so each `mset[name]` is a `Metadatum`;
-for multi-date sets, use `FieldTimeSeries(::MetadataSet)`.
+Requires `mset` to hold scalar `dates` so each `mset[name]` is a `Metadatum`; for
+multi-date sets, build a `NamedTuple` of `FieldTimeSeries` per variable, e.g.
+`NamedTuple(name => FieldTimeSeries(mset[name], grid) for name in mset.names)`.
 """
 function Oceananigans.Fields.Field(mset::MetadataSet, arch=CPU(); kw...)
     dates = getfield(mset, :dates)
     if !(dates isa AnyDateTime)
         throw(ArgumentError(
             "Field(::MetadataSet) requires a scalar `date`, but this `MetadataSet` carries a multi-date axis. " *
-            "Use `FieldTimeSeries(mset)` for multi-date sets."))
+            "For multi-date sets build a NamedTuple of FieldTimeSeries per variable, e.g. " *
+            "`NamedTuple(name => FieldTimeSeries(mset[name], grid) for name in mset.names)`."))
     end
     names = getfield(mset, :names)
     return NamedTuple{names}(map(n -> Field(mset[n], arch; kw...), names))

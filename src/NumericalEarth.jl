@@ -56,6 +56,8 @@ export
     JRA55PrescribedRadiation,
     JRA55PrescribedAtmosphere,
     JRA55PrescribedLand,
+    ERA5PrescribedAtmosphere,
+    ERA5PrescribedRadiation,
     OSPapaPrescribedRadiation,
     OSPapaPrescribedAtmosphere,
     os_papa_prescribed_fluxes,
@@ -196,6 +198,7 @@ using .DataWrangling.ORCA
 using .DataWrangling.WOA
 using .DataWrangling.JRA55
 using .DataWrangling.OSPapa
+using .DataWrangling.ERA5: ERA5PrescribedAtmosphere, ERA5PrescribedRadiation
 
 using PrecompileTools: @setup_workload, @compile_workload
 

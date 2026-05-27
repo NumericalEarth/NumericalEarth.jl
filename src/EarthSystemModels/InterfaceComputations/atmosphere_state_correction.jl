@@ -9,17 +9,20 @@
 #####
 
 """
-    ElevationCorrection(atmosphere_elevation, surface_elevation;
-                        lapse_rate = 6.5e-3, gravitational_acceleration = 9.81,
-                        dry_air_gas_constant = 287.052)
+    ElevationCorrection(surface_elevation, atmosphere_elevation; lapse_rate = 6.5e-3)
 
 A moist-environmental lapse-rate correction of the near-surface atmosphere state
-for the mismatch between the elevation the atmosphere data assumes
-(`atmosphere_elevation`) and the desired surface elevation (`surface_elevation`).
-The elevation difference `Δz = surface_elevation − atmosphere_elevation` is
-materialized on the exchange grid under the hood; the user just supplies the two
-elevations (anything `set!` accepts — a `Field`, function, number, or
-exchange-grid array).
+for the mismatch between the desired surface elevation (`surface_elevation`, the
+first argument) and the elevation the atmosphere data assumes
+(`atmosphere_elevation`). The elevation difference
+`Δz = surface_elevation − atmosphere_elevation` is materialized on the exchange
+grid under the hood; the user just supplies the two elevations (anything `set!`
+accepts — a `Field`, function, number, or exchange-grid array).
+
+The gravitational acceleration and dry-air gas constant used in the hydrostatic
+pressure adjustment are *not* supplied here — they are pulled from the
+atmosphere's thermodynamics via [`thermodynamic_constants`](@ref) when the
+`StateExchanger` materializes the correction, so they aren't duplicated.
 
 Applied in place to the regridded exchange state each step,
 
@@ -41,26 +44,39 @@ struct ElevationCorrection{A, S, FT, Z}
     elevation_difference :: Z # materialized Δz on the exchange grid; `nothing` until then
 end
 
-function ElevationCorrection(atmosphere_elevation, surface_elevation;
-                             lapse_rate = 6.5e-3,
-                             gravitational_acceleration = 9.81,
-                             dry_air_gas_constant = 287.052)
-
+function ElevationCorrection(surface_elevation, atmosphere_elevation; lapse_rate = 6.5e-3)
     FT = Oceananigans.defaults.FloatType
 
+    # g and Rᵈ are placeholders here; they're filled from the atmosphere's
+    # thermodynamics when the correction is materialized on the exchange grid.
     return ElevationCorrection(atmosphere_elevation,
                                surface_elevation,
                                convert(FT, lapse_rate),
-                               convert(FT, gravitational_acceleration),
-                               convert(FT, dry_air_gas_constant),
+                               zero(FT),
+                               zero(FT),
                                nothing)
+end
+
+"""
+    thermodynamic_constants(atmosphere)
+
+Return the physical constants the atmosphere-state corrections need — the
+gravitational acceleration and the dry-air gas constant `Rᵈ` (the latter from the
+atmosphere's own thermodynamics) — so corrections like [`ElevationCorrection`](@ref)
+don't hard-code or duplicate them.
+"""
+function thermodynamic_constants(atmosphere)
+    ℂ  = thermodynamics_parameters(atmosphere)
+    Rᵈ = AtmosphericThermodynamics.Parameters.R_d(ℂ)
+    return (; gravitational_acceleration = default_gravitational_acceleration,
+              dry_air_gas_constant = Rᵈ)
 end
 
 #####
 ##### Materialization onto the exchange grid (called by `StateExchanger`).
 #####
 
-@inline materialize_atmosphere_state_correction(::Nothing, grid) = nothing
+@inline materialize_atmosphere_state_correction(::Nothing, grid, atmosphere) = nothing
 
 # Fill an exchange-grid field from an elevation spec (`Field`, function, number,
 # or a horizontal exchange-grid array).
@@ -68,7 +84,7 @@ end
 @inline materialize_elevation!(field, elevation::AbstractArray) =
     (Oceananigans.interior(field, :, :, 1) .= elevation; field)
 
-function materialize_atmosphere_state_correction(c::ElevationCorrection, grid)
+function materialize_atmosphere_state_correction(c::ElevationCorrection, grid, atmosphere)
     zᵃ = Field{Center, Center, Nothing}(grid)
     zˢ = Field{Center, Center, Nothing}(grid)
     materialize_elevation!(zᵃ, c.atmosphere_elevation)
@@ -77,11 +93,14 @@ function materialize_atmosphere_state_correction(c::ElevationCorrection, grid)
     Δz = Field{Center, Center, Nothing}(grid)
     Oceananigans.interior(Δz) .= Oceananigans.interior(zˢ) .- Oceananigans.interior(zᵃ)
 
+    FT = eltype(grid)
+    constants = thermodynamic_constants(atmosphere)
+
     return ElevationCorrection(c.atmosphere_elevation,
                                c.surface_elevation,
                                c.lapse_rate,
-                               c.gravitational_acceleration,
-                               c.dry_air_gas_constant,
+                               convert(FT, constants.gravitational_acceleration),
+                               convert(FT, constants.dry_air_gas_constant),
                                Δz)
 end
 

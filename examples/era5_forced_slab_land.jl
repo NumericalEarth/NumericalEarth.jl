@@ -16,12 +16,13 @@
 #     hydrology = BucketHydrology(...)
 #     surface   = ConstantSurfaceProperties(...)
 #
-# coupled to a `PrescribedAtmosphere` and `PrescribedRadiation` through
-# `AtmosphereLandModel`. ERA5 single-level fields (T₂ₘ, dewpoint, 10 m
-# wind, surface pressure, total precipitation, downwelling SW/LW) are
-# bundled into a single [`MetadataSet`](@ref) and loaded onto the 1 km
-# land grid in one call — the dataset backend bilinearly downscales
-# from ERA5 native to 1 km at load time.
+# coupled through `AtmosphereLandModel` to an [`ERA5PrescribedAtmosphere`](@ref)
+# and [`ERA5PrescribedRadiation`](@ref): these download the required ERA5
+# single-level fields (T₂ₘ, dewpoint, 10 m wind, surface pressure, total
+# precipitation, downwelling SW/LW) over the domain, derive specific humidity
+# from the dewpoint, and convert ERA5's accumulated radiation/precipitation to
+# fluxes. They live on the ERA5 native grid; the coupled model interpolates them
+# onto the 1 km land exchange grid.
 #
 # ## Elevation downscaling
 #
@@ -30,10 +31,9 @@
 # the 1 km grid show elevation-driven temperature contrasts we apply a
 # moist-environmental lapse-rate correction for the elevation difference
 #
-#     Δz(λ, φ) = z_ETOPO(λ, φ) − z_ERA5_eff(λ, φ)
+#     Δz(λ, φ) = z_ETOPO(λ, φ) − z_ERA5(λ, φ)
 #
-# where `z_ERA5_eff` is ETOPO box-averaged onto the ERA5 native grid (≈ what
-# ERA5 thinks the surface elevation is in each cell), projected back to 1 km.
+# where `z_ERA5` is ERA5's own surface elevation (its surface geopotential ÷ g).
 # The correction `T ← T − Γ Δz` (Γ = 6.5 K km⁻¹) with a hydrostatic pressure
 # adjustment is applied at run time by the coupled model's state exchanger
 # ([`ElevationCorrection`](@ref)) — the prescribed atmosphere carries raw ERA5
@@ -52,7 +52,6 @@
 
 using NumericalEarth
 using NumericalEarth.DataWrangling.ERA5: ERA5HourlySingleLevel        # not reexported at the top level
-using NumericalEarth.Atmospheres: PrescribedPrecipitationFlux         # not reexported at the top level
 using Oceananigans
 using Oceananigans.Units
 using Oceananigans.Fields: interpolate!
@@ -66,9 +65,6 @@ import Dates: DateTime, Hour         # `Dates.hour` clashes with `Oceananigans.U
 # ## Domain — 2° × 2° Yellowstone box at ~1 km
 
 const Γ_lapse = 6.5e-3        # K m⁻¹  environmental lapse rate
-const g_acc   = 9.81          # m s⁻²
-const Rd      = 287.052       # J kg⁻¹ K⁻¹
-const ε       = 0.62198       # R_d / R_v
 
 arch  = CPU()
 
@@ -90,95 +86,54 @@ z_land = regrid_topography(land_grid; dataset = ETOPO2022())
 
 # ## ERA5 forcing — 3-day window
 #
-# Three days of hourly data is enough for two diurnal cycles plus a
-# synoptic pulse and keeps the data download + simulation under
-# ~10 min on CPU. Bundle the eight required variables into one
-# `MetadataSet` so the same `dataset`, `dates`, and `region` aren't
-# repeated; `FieldTimeSeries(mset, land_grid)` returns a `NamedTuple`
-# of pre-downscaled FTS keyed by variable name. The region is just the land
-# domain — the dataset fetch center-brackets it by one native cell automatically,
-# so downscaling onto the 1 km grid is well-posed at the domain edges.
+# Three days of hourly data spans two diurnal cycles plus a synoptic pulse and
+# keeps the download + simulation under ~10 min on CPU.
+# [`ERA5PrescribedAtmosphere`](@ref) and [`ERA5PrescribedRadiation`](@ref)
+# download the required single-level fields over `region`, derive specific
+# humidity from the 2 m dewpoint, and convert ERA5's hourly-accumulated
+# radiation (J m⁻²) and precipitation (m) to fluxes (W m⁻², kg m⁻² s⁻¹) — they
+# return standard prescribed components on the ERA5 native grid, which the
+# coupled model interpolates onto the 1 km land grid. The region is just the
+# land domain; the dataset fetch center-brackets it by one native cell, so the
+# downscaling is well-posed at the domain edges.
 
-dates  = DateTime(2020, 4, 1):Hour(1):DateTime(2020, 4, 3, 23)
-region = BoundingBox(; latitude, longitude)
-Nt     = length(dates)
+dataset    = ERA5HourlySingleLevel()
+dates      = DateTime(2020, 4, 1):Hour(1):DateTime(2020, 4, 3, 23)
+region     = BoundingBox(; latitude, longitude)
+start_date = first(dates)
+end_date   = last(dates)
+Nt         = length(dates)
 
-forcing_set = MetadataSet(:eastward_velocity,
-                          :northward_velocity,
-                          :temperature,
-                          :dewpoint_temperature,
-                          :surface_pressure,
-                          :total_precipitation,
-                          :downwelling_shortwave_radiation,
-                          :downwelling_longwave_radiation;
-                          dataset = ERA5HourlySingleLevel(),
-                          dates, region)
+atmosphere = ERA5PrescribedAtmosphere(arch; dataset, start_date, end_date, region,
+                                      time_indices_in_memory = Nt,
+                                      surface_layer_height  = 10,
+                                      boundary_layer_height = 800)
 
-era5 = FieldTimeSeries(forcing_set, land_grid; time_indices_in_memory = Nt)
-atmos_times = era5.eastward_velocity.times
+radiation = ERA5PrescribedRadiation(arch; dataset, start_date, end_date, region,
+                                    time_indices_in_memory = Nt,
+                                    ocean_surface   = nothing,
+                                    sea_ice_surface = nothing,
+                                    land_surface    = SurfaceRadiationProperties(0.18, 0.95))
 
-# ERA5's own model surface elevation — the elevation its near-surface fields
-# actually correspond to — extracted directly from the (static) surface
-# geopotential (`:geopotential_height` divides by g → metres) and interpolated
-# onto the land grid. This is what the correction lifts the atmosphere *from*.
-z_era5 = Field{Center, Center, Nothing}(land_grid)
-interpolate!(z_era5, Field(Metadatum(:geopotential_height;
-                                     dataset = ERA5HourlySingleLevel(),
-                                     date = first(dates), region), arch))
-
-Δz = interior(z_land, :, :, 1) .- interior(z_era5, :, :, 1) # m, positive over peaks
-@info "Elevation field stats" land=extrema(interior(z_land, :, :, 1)) era5=extrema(interior(z_era5, :, :, 1)) Δz=extrema(Δz)
-
-# ## Atmosphere forcing fields
+# ## Elevation correction
 #
-# The elevation lapse-rate correction is applied lazily by the coupled model's
-# state exchanger (`ElevationCorrection`, below), so the prescribed atmosphere
-# carries the *raw* ERA5 temperature and pressure — no elevation-corrected copies.
-# We still convert the ERA5-specific inputs: dewpoint → specific humidity (at the
-# raw surface pressure; the correction conserves `q`), *accumulated* SW/LW
-# (J m⁻² per hour) → power (W m⁻²), and total precipitation (m per hour) → kg m⁻² s⁻¹.
+# ERA5's near-surface fields correspond to ERA5's own ~28 km grid-cell mean
+# elevation (~2 km here). [`ElevationCorrection`](@ref) lifts the regridded
+# atmosphere from that elevation (`z_era5`) to the 1 km ETOPO surface (`z_land`)
+# with a moist lapse-rate shift + hydrostatic pressure adjustment, applied by the
+# state exchanger every step (`q` conserved). `z_era5` comes straight from ERA5's
+# surface geopotential (`:geopotential_height` ÷ g → metres); the gravitational
+# acceleration and gas constant the pressure adjustment needs are pulled from the
+# atmosphere's thermodynamics, not hand-passed.
+z_era5 = Field{Center, Center, Nothing}(land_grid)
+interpolate!(z_era5, Field(Metadatum(:geopotential_height; dataset, date = start_date, region), arch))
 
-@inline saturation_vapor_pressure(T) = 611.2 * exp(17.62 * (T - 273.15) / (T - 30.04))
-@inline q_from_dewpoint(Td, p) = (e = saturation_vapor_pressure(Td); ε * e / (p - (1 - ε) * e))
+Δz = z_land - z_era5
+@info "Elevation field stats" land=extrema(z_land) era5=extrema(z_era5) Δz=extrema(Δz)
 
-q_local   = FieldTimeSeries{Center, Center, Nothing}(land_grid, atmos_times)
-rain      = FieldTimeSeries{Center, Center, Nothing}(land_grid, atmos_times)
-ssrd_rate = FieldTimeSeries{Center, Center, Nothing}(land_grid, atmos_times)
-strd_rate = FieldTimeSeries{Center, Center, Nothing}(land_grid, atmos_times)
+correction = ElevationCorrection(z_land, z_era5; lapse_rate = Γ_lapse)
 
-for n in 1:Nt
-    p_era5 = interior(era5.surface_pressure[n], :, :, 1)
-    Td     = interior(era5.dewpoint_temperature[n], :, :, 1)
-    interior(q_local[n], :, :, 1) .= q_from_dewpoint.(Td, p_era5)
-
-    interior(rain[n],      :, :, 1) .= max.(interior(era5.total_precipitation[n],             :, :, 1) .* (1000.0 / 3600.0), 0)
-    interior(ssrd_rate[n], :, :, 1) .= max.(interior(era5.downwelling_shortwave_radiation[n], :, :, 1) ./ 3600.0,            0)
-    interior(strd_rate[n], :, :, 1) .= max.(interior(era5.downwelling_longwave_radiation[n],  :, :, 1) ./ 3600.0,            0)
-end
-
-# The state exchanger differences these two elevations into `Δz` on the exchange
-# grid under the hood and applies `T -= Γ Δz` plus the hydrostatic pressure
-# adjustment to the regridded atmosphere every step (any atmosphere, prescribed
-# or online).
-elevation_correction = ElevationCorrection(z_era5, z_land;
-                                           lapse_rate = Γ_lapse,
-                                           gravitational_acceleration = g_acc,
-                                           dry_air_gas_constant = Rd)
-
-# ## Prescribed atmosphere, radiation, and slab land
-
-atmosphere = PrescribedAtmosphere(land_grid, atmos_times;
-                                  velocities = (u = era5.eastward_velocity, v = era5.northward_velocity),
-                                  tracers    = (T = era5.temperature, q = q_local),
-                                  pressure   = era5.surface_pressure,
-                                  freshwater_flux = PrescribedPrecipitationFlux(rain = rain),
-                                  surface_layer_height  = 10.0,
-                                  boundary_layer_height = 800.0)
-
-radiation = PrescribedRadiation(ssrd_rate, strd_rate;
-                                ocean_surface   = nothing,
-                                sea_ice_surface = nothing,
-                                land_surface    = SurfaceRadiationProperties(0.18, 0.95))
+# ## Slab land
 
 slab_land = SlabLand(land_grid;
                      energy    = SlabEnergy(dry_heat_capacity    = 1500.0 * 1480.0 * 0.10,
@@ -187,20 +142,18 @@ slab_land = SlabLand(land_grid;
                      surface   = ConstantSurfaceProperties(momentum_roughness_length = 0.1,
                                                            scalar_roughness_length   = 0.01))
 
-# Initialize T₀ from the elevation-corrected ERA5 T₂ₘ at the first snapshot
-# (mirroring the runtime correction for a consistent cold start); fill the
-# parent first so halo cells start at the domain-mean rather than uninitialised
-# memory.
-T_init = interior(era5.temperature[1], :, :, 1) .- Γ_lapse .* Δz
-fill!(parent(slab_land.temperature), mean(T_init))
-interior(slab_land.temperature, :, :, 1) .= T_init
-fill!(parent(slab_land.water_storage), 0.5 * 150.0)
+# Cold-start the skin temperature from the elevation-corrected ERA5 T₂ₘ at the
+# first snapshot (interpolated onto the 1 km grid), mirroring the runtime lift.
+T₀ = Field{Center, Center, Nothing}(land_grid)
+interpolate!(T₀, atmosphere.tracers.T[1])
+set!(slab_land.temperature, T₀ - Γ_lapse * Δz)
+set!(slab_land.water_storage, 0.5 * 150.0)
 update_state!(slab_land)
 
 # ## Coupled model
 
 model      = AtmosphereLandModel(atmosphere, slab_land; radiation,
-                                 atmosphere_state_correction = elevation_correction)
+                                 atmosphere_state_correction = correction)
 simulation = Simulation(model; Δt = 5minutes, stop_time = (Nt - 1) * 3600.0)
 
 wall_time = Ref(time_ns())
@@ -241,8 +194,7 @@ run!(simulation)
 # segfault the same Julia session during heatmap setup.
 close(simulation.output_writers[:land])
 delete!(simulation.output_writers, :land)
-atmosphere = simulation = model = nothing
-era5 = T_local = p_local = q_local = rain = ssrd_rate = strd_rate = nothing
+atmosphere = radiation = simulation = model = nothing
 GC.gc(true); GC.gc(true)
 
 # ## Animation
