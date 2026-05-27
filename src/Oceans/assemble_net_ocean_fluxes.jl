@@ -16,11 +16,11 @@ EarthSystemModels.update_net_fluxes!(coupled_model::Union{NoOceanInterfaceModel,
 EarthSystemModels.update_net_fluxes!(coupled_model, ocean::OceananigansModelSimulations) =
     update_net_ocean_fluxes!(coupled_model, ocean, ocean.model.grid)
 
-rainfall_flux(::NoAtmosInterfaceModel, ::Type{FT}) where FT = ZeroField(FT)
-rainfall_flux(coupled_model, FT) = coupled_model.interfaces.exchanger.atmosphere.state.Jʳⁿ.data
+rainfall_flux(coupled_model::NoAtmosInterfaceModel) = ZeroField(eltype(model))
+rainfall_flux(coupled_model) = coupled_model.interfaces.exchanger.atmosphere.state.Jʳⁿ.data
 
-snowfall_flux(::NoAtmosInterfaceModel, ::Type{FT}) where FT = ZeroField(FT)
-snowfall_flux(coupled_model, FT) = coupled_model.interfaces.exchanger.atmosphere.state.Jˢⁿ.data
+snowfall_flux(coupled_model::NoAtmosInterfaceModel) = ZeroField(eltype(model))
+snowfall_flux(coupled_model) = coupled_model.interfaces.exchanger.atmosphere.state.Jˢⁿ.data
 
 atmos_ocean_flux(coupled_model) = computed_fluxes(coupled_model.interfaces.atmosphere_ocean_interface)
 
@@ -36,8 +36,8 @@ function update_net_ocean_fluxes!(coupled_model, ocean_model, grid)
     sea_ice_ocean_fluxes = computed_fluxes(coupled_model.interfaces.sea_ice_ocean_interface)
 
     atmos_ocean_fluxes = atmos_ocean_flux(coupled_model)
-    rainfall = rainfall_flux(coupled_model, eltype(grid))
-    snowfall = snowfall_flux(coupled_model, eltype(grid))
+    rainfall = rainfall_flux(coupled_model)
+    snowfall = snowfall_flux(coupled_model)
 
     land_exchanger = coupled_model.interfaces.exchanger.land
     freshwater_flux = land_freshwater_flux(land_exchanger)

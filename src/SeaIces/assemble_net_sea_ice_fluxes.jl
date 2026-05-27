@@ -5,8 +5,8 @@ using ..EarthSystemModels.InterfaceComputations: computed_fluxes
 
 EarthSystemModels.update_net_fluxes!(coupled_model, ::FreezingLimitedOceanTemperature) = nothing
 
-snowfall_flux(::NoAtmosInterfaceModel, ::Type{FT}) where FT = ZeroField(FT)
-snowfall_flux(coupled_model, FT) = coupled_model.interfaces.exchanger.atmosphere.state.Jˢⁿ.data
+snowfall_flux(coupled_model::NoAtmosInterfaceModel) = ZeroField(eltype(coupled_model))
+snowfall_flux(coupled_model) = coupled_model.interfaces.exchanger.atmosphere.state.Jˢⁿ.data
 
 function EarthSystemModels.update_net_fluxes!(coupled_model, sea_ice::Simulation{<:SeaIceModel})
     ocean = coupled_model.ocean
@@ -19,7 +19,7 @@ function EarthSystemModels.update_net_fluxes!(coupled_model, sea_ice::Simulation
     sea_ice_ocean_fluxes = computed_fluxes(coupled_model.interfaces.sea_ice_ocean_interface)
     atmosphere_sea_ice_fluxes = computed_fluxes(coupled_model.interfaces.atmosphere_sea_ice_interface)
 
-    snowfall = snowfall_flux(coupled_model, eltype(grid))
+    snowfall = snowfall_flux(coupled_model)
 
     sea_ice_properties = coupled_model.interfaces.sea_ice_properties
     ice_concentration = sea_ice_concentration(sea_ice)
