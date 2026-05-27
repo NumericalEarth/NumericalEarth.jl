@@ -106,7 +106,7 @@ function NumericalEarth.DataWrangling.conversion_units(md::OceanStationPapaMetad
     return nothing
 end
 
-function download_ospapa(dir = default_download_directory(OceanStationPapaObservations()))
+function download_ospapa(dir = NumericalEarth.DataWrangling.default_download_directory(OceanStationPapaObservations()))
     path = joinpath(dir, OSPapa_filename)
     isfile(path) || Downloads.download(OSPapa_url, path)
     return path
