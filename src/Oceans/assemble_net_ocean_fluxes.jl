@@ -1,4 +1,3 @@
-using Oceananigans.Architectures: architecture
 using Oceananigans.Fields: ZeroField
 
 using ..EarthSystemModels: NoAtmosInterfaceModel, NoOceanInterfaceModel, NoInterfaceModel, sea_ice_concentration

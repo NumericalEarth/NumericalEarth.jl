@@ -1,4 +1,3 @@
-using Oceananigans.Architectures: architecture
 using Oceananigans.Fields: ZeroField
 
 using ..EarthSystemModels: sea_ice_concentration, NoAtmosInterfaceModel
@@ -62,6 +61,9 @@ end
         Jˢⁿ  = snowfall_flux[i, j, 1]
     end
 
+    ρτˣ = atmosphere_sea_ice_fluxes.x_momentum # zonal momentum flux
+    ρτʸ = atmosphere_sea_ice_fluxes.y_momentum # meridional momentum flux
+
     # Turbulent contributions only (radiation added later by apply_air_sea_ice_radiative_fluxes!)
     ΣQt = (𝒬ᵀ + 𝒬ᵛ) * (ℵi > 0)
     ΣQb = 𝒬ᶠʳᶻ + 𝒬ⁱⁿᵗ
@@ -71,7 +73,7 @@ end
 
     @inbounds top_fluxes.heat[i, j, 1]     = ifelse(inactive, zero(grid), ΣQt)
     @inbounds top_fluxes.snowfall[i, j, 1] = ifelse(inactive, zero(grid), Jˢⁿ)
-    @inbounds top_fluxes.u[i, j, 1]        = ifelse(inactive, zero(grid), ℑxᶠᵃᵃ(i, j, 1, grid, atmosphere_sea_ice_fluxes.x_momentum))
-    @inbounds top_fluxes.v[i, j, 1]        = ifelse(inactive, zero(grid), ℑyᵃᶠᵃ(i, j, 1, grid, atmosphere_sea_ice_fluxes.y_momentum))
+    @inbounds top_fluxes.u[i, j, 1]        = ifelse(inactive, zero(grid), ℑxᶠᵃᵃ(i, j, 1, grid, ρτˣ))
+    @inbounds top_fluxes.v[i, j, 1]        = ifelse(inactive, zero(grid), ℑyᵃᶠᵃ(i, j, 1, grid, ρτʸ))
     @inbounds bottom_heat_flux[i, j, 1]    = ifelse(inactive, zero(grid), ΣQb)
 end
