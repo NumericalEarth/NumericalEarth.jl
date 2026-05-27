@@ -19,7 +19,7 @@ function make_coupled_model(grid)
     land = JRA55PrescribedLand(arch)
     radiation = JRA55PrescribedRadiation(arch)
 
-    return OceanSeaIceModel(sea_ice, ocean; atmosphere, land, radiation)
+    return OceanSeaIceModel(ocean, sea_ice; atmosphere, land, radiation)
 end
 
 function test_clock_time_and_iteration(simulation, expected_iteration)

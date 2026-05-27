@@ -48,11 +48,10 @@ end
 # to a single part file, producing "No data found for time …" warnings (and
 # stale/zero data) on later snapshot reads.
 #
-# The patches below: (a) extend `set!` on an `InMemoryFTS` to iterate
-# the per-part files referenced by a `SplitFilePath`, and (b) override the
-# `FieldTimeSeries(path, name; …)` constructor so that an `InMemory`
-# backend whose `fts.path` is a single file is detected as a split set and
-# re-wrapped with the correct `SplitFilePath`.
+# The patch below overrides the `FieldTimeSeries(path, name; …)` constructor so that an `InMemory`
+# backend whose `fts.path` is a single file is detected as a split set and re-wrapped with the
+# correct `SplitFilePath`. (`set!(::InMemoryFTS, ::SplitFilePath)` is now provided by Oceananigans,
+# so the former local definition was removed.)
 #
 # The helpers (`jld2_output_part_paths`, etc.) are factored out so this file
 # and `scripts/visualize/common.jl` (and any future call site) can share a
@@ -241,23 +240,9 @@ function rebuild_fts_with_path(fts, new_path)
         fts.time_indexing, fts.reader_kw)
 end
 
-# Patch 1: iterate per-part files when an InMemory FTS is `set!` from a
-# `SplitFilePath` (Oceananigans does this only for `OnDisk` in 0.107.x).
-function set!(fts::InMemoryFTS, sfp::SplitFilePath, name::String = fts.name;
-              warn_missing_data = false, kwargs...)
-    idxs = time_indices(fts)
-    Ntot = last(sfp.cumulative_length)
-    needed = String[]
-    for n in idxs
-        (n < 1 || n > Ntot) && continue
-        file_path, _ = file_and_local_index(sfp, n)
-        file_path ∉ needed && push!(needed, file_path)
-    end
-    for p in needed
-        set!(fts, p, name; warn_missing_data, kwargs...)
-    end
-    return nothing
-end
+# Patch 1 removed: `set!(::InMemoryFTS, ::SplitFilePath)` is now provided by Oceananigans
+# (OutputReaders/set_field_time_series.jl) with identical per-part iteration. Re-defining it here
+# overwrites the upstream method, which is an error during precompilation.
 
 # Patch 2: detect split sets when the user passes a single stem path with an
 # `InMemory` backend, and rewrap the FTS so its `path` is a `SplitFilePath`.

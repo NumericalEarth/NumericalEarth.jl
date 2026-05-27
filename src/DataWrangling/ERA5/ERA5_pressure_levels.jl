@@ -47,11 +47,11 @@ dataset_name(::ERA5MonthlyPressureLevels) = "ERA5MonthlyPressureLevels"
 #####
 
 # ERA5 reanalysis data available from 1940 to present (we use a practical range here)
-all_dates(::ERA5HourlyPressureLevels, var) = range(DateTime("1940-01-01"), stop=DateTime("2025-12-31"), step=Hour(1))
-all_dates(::ERA5MonthlyPressureLevels, var) = range(DateTime("1940-01-01"), stop=DateTime("2025-12-01"), step=Month(1))
+DataWrangling.all_dates(::ERA5HourlyPressureLevels, var) = range(DateTime("1940-01-01"), stop=DateTime("2025-12-31"), step=Hour(1))
+DataWrangling.all_dates(::ERA5MonthlyPressureLevels, var) = range(DateTime("1940-01-01"), stop=DateTime("2025-12-01"), step=Month(1))
 
 # ERA5 pressure-level data is a spatially 3-D dataset
-is_three_dimensional(::ERA5PressureMetadata) = true
+DataWrangling.is_three_dimensional(::ERA5PressureMetadata) = true
 
 # TODO: drop once Oceananigans.Units exports `hPa` in a tagged release
 const hPa = 100
@@ -61,7 +61,7 @@ const ERA5_all_pressure_levels = [1, 2, 3, 5, 7, 10, 20, 30, 50, 70, 100, 125, 1
     825, 850, 875, 900, 925, 950, 975, 1000]hPa
 
 # ERA5 stores pressure levels bottom-to-top
-reversed_vertical_axis(::ERA5PressureLevelsDataset) = false
+DataWrangling.reversed_vertical_axis(::ERA5PressureLevelsDataset) = false
 
 Base.size(ds::ERA5PressureLevelsDataset, variable) = (1440, 720, length(ds.pressure_levels))
 
@@ -112,18 +112,18 @@ ERA5PL_netcdf_variable_names = Dict(
 )
 
 # Variables available for download
-available_variables(::ERA5PressureLevelsDataset) = ERA5PL_dataset_variable_names
+DataWrangling.available_variables(::ERA5PressureLevelsDataset) = ERA5PL_dataset_variable_names
 
 # `dataset_variable_name` returns the short name as stored in the NetCDF file
 # (e.g. "u"). The CDS API catalog name (e.g. "u_component_of_wind") used in
 # download requests is accessed via the `ERA5PL_dataset_variable_names` dict
 # directly in `NumericalEarthCDSAPIExt`.
-dataset_variable_name(md::ERA5PressureMetadata) = ERA5PL_netcdf_variable_names[md.name]
+DataWrangling.dataset_variable_name(md::ERA5PressureMetadata) = ERA5PL_netcdf_variable_names[md.name]
 
-conversion_units(md::ERA5PressureMetadata) =
+DataWrangling.conversion_units(md::ERA5PressureMetadata) =
     md.name == :geopotential_height ? InverseGravity() : nothing
 
-default_inpainting(md::ERA5PressureMetadata) = nothing
+DataWrangling.default_inpainting(md::ERA5PressureMetadata) = nothing
 
 """
     retrieve_data(metadata::ERA5PressureMetadatum)
@@ -132,7 +132,7 @@ Retrieve ERA5 pressure-level data from a NetCDF file.
 Returns a 3D array (lon, lat, level) with levels ordered bottom-to-top
 (highest pressure at k=1, lowest pressure at k=Nz).
 """
-function retrieve_data(metadata::ERA5PressureMetadatum)
+function DataWrangling.retrieve_data(metadata::ERA5PressureMetadatum)
     path = metadata_path(metadata)
     name = dataset_variable_name(metadata)
     ds   = NCDatasets.Dataset(path)
@@ -182,7 +182,7 @@ end
 
 # ERA5 pressure-levels (3-D) data product. If the caller pre-supplied a `z`,
 # use it; otherwise build a per-column geopotential discretization.
-function z_interfaces(metadata::ERA5PressureMetadata)
+function DataWrangling.z_interfaces(metadata::ERA5PressureMetadata)
     !isnothing(metadata.dataset.z) && return metadata.dataset.z
     return per_column_geopotential_discretization(metadata)
 end
@@ -266,8 +266,8 @@ function per_column_geopotential_discretization(metadata::ERA5PressureMetadata)
     ϕ_sl_meta = Metadata(:geopotential_height; dataset=sl_ds,
                          dates=metadata.dates, region=metadata.region, dir=metadata.dir)
 
-    download_dataset(ϕ_meta)
-    download_dataset(ϕ_sl_meta)
+    Downloads.download(ϕ_meta)
+    Downloads.download(ϕ_sl_meta)
 
     Φ = Field(first(ϕ_meta))         # 3-D geopotential, m²/s²
     Φ_sfc = Field(first(ϕ_sl_meta))  # 2-D surface geopotential, m²/s²

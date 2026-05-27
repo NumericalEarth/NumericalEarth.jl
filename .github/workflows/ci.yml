@@ -73,7 +73,7 @@ jobs:
           echo " --> df -a /"
           df -a /
       - uses: actions/checkout@v6
-      - uses: julia-actions/setup-julia@v2
+      - uses: julia-actions/setup-julia@v3
         with:
           version: ${{ matrix.version }}
           arch: ${{ matrix.arch }}
@@ -88,6 +88,14 @@ jobs:
         with:
           files: lcov.info
           token: ${{ secrets.CODECOV_TOKEN }}
+      - name: Show available storage at the end
+        if: always()
+        timeout-minutes: 2
+        run: |
+          echo " --> df -h /"
+          df -h /
+          echo " --> df -a /"
+          df -a /
 
   #####
   ##### GPU tests (AWS self-hosted runners with Docker)
@@ -100,7 +108,8 @@ jobs:
       image: ghcr.io/numericalearth/numerical-earth-docker-images:test-julia_1.12.5
       options: --gpus=all
       volumes:
-        # Mount host `/usr/local` so that we can delete some stuff afterwards
+        # Mount host directories so that we can delete some stuff afterwards
+        - /opt:/host-opt
         - /usr/local:/host-usr-local
     timeout-minutes: 120
     strategy:
@@ -129,10 +138,10 @@ jobs:
       - name: df before cleanup
         run: |
           df -hT
-      - name: Clean up old CUDA toolkits
-        # Save storage by deleting old CUDA toolkits, we'll use v13
+      - name: Clean up space on host device
+        # Save storage by deleting CUDA toolkits and other Nvidia tools we don't need
         run: |
-          rm -rf /host-usr-local/cuda-12.*
+          rm -rfv /host-opt/nvidia/ /host-usr-local/cuda*
       - name: df after cleanup
         run: |
           df -hT
@@ -164,6 +173,14 @@ jobs:
         with:
           files: lcov.info
           token: ${{ secrets.CODECOV_TOKEN }}
+      - name: Show available storage at the end
+        if: always()
+        timeout-minutes: 2
+        run: |
+          echo " --> df -h /"
+          df -h /
+          echo " --> df -a /"
+          df -a /
 
   #####
   ##### Specialized tests (GitHub-hosted runners)

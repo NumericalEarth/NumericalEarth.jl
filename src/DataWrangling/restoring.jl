@@ -198,7 +198,7 @@ function DatasetRestoring(metadata::Metadata,
                           cache_inpainted_data = true,
                           prefetch = false)
 
-    download_dataset(metadata)
+    Downloads.download(metadata)
 
     fts = FieldTimeSeries(metadata, arch_or_grid;
                           time_indices_in_memory,
@@ -246,11 +246,12 @@ tendency into a 2D surface flux boundary condition.
 When used as a boundary condition (via `getbc`), the wrapped `DatasetRestoring`
 is evaluated at the top cell (`k = Nz`) and the resulting tendency `G` is
 converted to a surface flux as `-G * Δz`, consistent with the Oceananigans
-top-flux sign convention (tendency contribution = `-J / Δz`).
+top-flux sign convention (tendency contribution = `- J / Δz`).
 
 This is intended for use with the `additional_surface_fluxes` keyword argument of
-[`ocean_simulation`](@ref), allowing a `DatasetRestoring` to contribute an
-additional flux at the surface without overwriting the coupled exchange fluxes.
+[`ocean_simulation`](@ref NumericalEarth.Oceans.ocean_simulation), allowing a
+`DatasetRestoring` to contribute an additional flux at the surface without
+overwriting the coupled exchange fluxes.
 
 Example
 =======

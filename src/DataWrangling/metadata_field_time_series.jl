@@ -30,7 +30,7 @@ Keyword Arguments
                           Default: `true`.
 """
 function Oceananigans.OutputReaders.FieldTimeSeries(metadata::Metadata, arch::AbstractArchitecture=CPU(); kw...)
-    download_dataset(metadata)
+    Downloads.download(metadata)
     grid = native_grid(metadata, arch)
     return FieldTimeSeries(metadata, grid; kw...)
 end
@@ -42,7 +42,7 @@ function Oceananigans.OutputReaders.FieldTimeSeries(metadata::Metadata, grid::Ab
                                                     cache_inpainted_data = true,
                                                     prefetch = false)
 
-    download_dataset(metadata)
+    Downloads.download(metadata)
 
     times = native_times(metadata)
 
@@ -85,4 +85,21 @@ function Oceananigans.OutputReaders.FieldTimeSeries(variable_name::Symbol;
     dates = compute_native_date_range(native_dates, start_date, end_date)
     metadata = Metadata(variable_name; dataset, dates, dir)
     return FieldTimeSeries(metadata, architecture; kw...)
+end
+
+"""
+    FieldTimeSeries(mset::MetadataSet, arch_or_grid=CPU(); kw...)
+
+Build a `NamedTuple` of `FieldTimeSeries` — one per variable in `mset`, keyed
+by the verbose dataset variable name. Each value is
+`FieldTimeSeries(mset[name], arch_or_grid; kw...)`.
+"""
+function Oceananigans.OutputReaders.FieldTimeSeries(mset::MetadataSet, arch::AbstractArchitecture=CPU(); kw...)
+    names = getfield(mset, :names)
+    return NamedTuple{names}(map(n -> FieldTimeSeries(mset[n], arch; kw...), names))
+end
+
+function Oceananigans.OutputReaders.FieldTimeSeries(mset::MetadataSet, grid::AbstractGrid; kw...)
+    names = getfield(mset, :names)
+    return NamedTuple{names}(map(n -> FieldTimeSeries(mset[n], grid; kw...), names))
 end

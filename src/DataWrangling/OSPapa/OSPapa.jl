@@ -8,7 +8,7 @@ export OSPapaHourly
 export OSPapaFluxHourly
 
 using Dates: Dates, DateTime, Hour
-using Downloads: Downloads, download
+using Downloads: Downloads
 using Oceananigans: Oceananigans, location
 using Oceananigans.Architectures: CPU
 using Oceananigans.BoundaryConditions: FieldBoundaryConditions, FluxBoundaryCondition
@@ -34,7 +34,6 @@ import ..DataWrangling:
     metadata_time_step,
     metadata_filename,
     build_filename,
-    download_dataset,
     dataset_variable_name,
     longitude_interfaces,
     latitude_interfaces,
@@ -65,7 +64,7 @@ function download_ospapa_file(dir=download_OSPapa_cache)
     if !isfile(filepath)
         url = OSPAPA_S3_URL * OSPAPA_FILENAME
         @info "Downloading Ocean Station Papa data from AWS S3..."
-        download(url, filepath; progress=DownloadProgress())
+        Downloads.download(url, filepath; progress=DownloadProgress())
     end
     return filepath
 end

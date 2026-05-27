@@ -6,7 +6,7 @@ export atlantic_ocean_basin, indian_ocean_basin, southern_ocean_basin, pacific_o
 export label_ocean_basins
 export meridional_barrier
 
-using Downloads: Downloads
+using Downloads: Downloads, download
 using ImageMorphology: ImageMorphology
 using JLD2: JLD2, jldopen
 using KernelAbstractions: @kernel, @index
@@ -25,7 +25,7 @@ using NCDatasets: NCDatasets, Dataset
 using Printf: Printf
 using Scratch: Scratch, @get_scratch!
 
-using ..DataWrangling: Metadatum, native_grid, metadata_path, download_dataset,
+using ..DataWrangling: Metadatum, native_grid, metadata_path,
                        dataset_variable_name, validate_dataset_coverage
 using ..DataWrangling.ETOPO: ETOPO2022
 

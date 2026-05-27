@@ -135,7 +135,7 @@ function build_coupled_model(ocean, sea_ice, atmosphere, radiation, land, flux_c
                                          radiation,
                                          land,
                                          ocean_minimum_salinity = convert(FT, ocean_minimum_salinity))
-        return OceanSeaIceModel(sea_ice, ocean; atmosphere, radiation, land, interfaces)
+        return OceanSeaIceModel(ocean, sea_ice; atmosphere, radiation, land, interfaces)
     end
 
     velocity_difference_obj = velocity_formulation == :relative ? RelativeVelocity() :
@@ -169,7 +169,7 @@ function build_coupled_model(ocean, sea_ice, atmosphere, radiation, land, flux_c
         error("Unknown flux_configuration: $flux_configuration. Options: :default, :corrected, :shear_aware, :ncar")
     end
 
-    return OceanSeaIceModel(sea_ice, ocean; atmosphere, radiation, land, interfaces)
+    return OceanSeaIceModel(ocean, sea_ice; atmosphere, radiation, land, interfaces)
 end
 
 #####

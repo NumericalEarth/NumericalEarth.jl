@@ -2,22 +2,22 @@ module NumericalEarthCopernicusMarineExt
 
 using CopernicusMarine: CopernicusMarine
 using Dates: DateTime
+using Downloads: Downloads
 using Oceananigans.DistributedComputations: @root
 using NumericalEarth: NumericalEarth
-using NumericalEarth.DataWrangling: download_dataset
 using NumericalEarth.DataWrangling.GLORYS: GLORYS, GLORYSMetadata, GLORYSMetadatum
 
 # Download each date individually, instead of downloading the entire dataset at once.
 # This is useful for a possible extension of the temporal horizon of the dataset.
-function NumericalEarth.DataWrangling.download_dataset(metadata::GLORYSMetadata; kwargs...)
+function Downloads.download(metadata::GLORYSMetadata; kwargs...)
     paths = Array{String}(undef, length(metadata))
     for (m, metadatum) in enumerate(metadata)
-        paths[m] = download_dataset(metadatum; kwargs...)
+        paths[m] = Downloads.download(metadatum; kwargs...)
     end
     return paths
 end
 
-function NumericalEarth.DataWrangling.download_dataset(meta::GLORYSMetadatum;
+function Downloads.download(meta::GLORYSMetadatum;
                                                        skip_existing=true,
                                                        username=get(ENV, "COPERNICUS_USERNAME", nothing),
                                                        password=get(ENV, "COPERNICUS_PASSWORD", nothing),

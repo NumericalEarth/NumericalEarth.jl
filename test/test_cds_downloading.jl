@@ -6,13 +6,13 @@ using Dates
 using Random: shuffle!
 using NCDatasets
 
+using NumericalEarth.DataWrangling: metadata_path, BoundingBox, Column, Linear, Nearest, is_three_dimensional
 using NumericalEarth.DataWrangling.ERA5
 using NumericalEarth.DataWrangling.ERA5: ERA5HourlySingleLevel, ERA5MonthlySingleLevel,
                                          ERA5_dataset_variable_names, ERA5_netcdf_variable_names
 using NumericalEarth.DataWrangling.ERA5: ERA5HourlyPressureLevels, ERA5MonthlyPressureLevels,
                                          ERA5_all_pressure_levels, ERA5PL_dataset_variable_names,
                                          ERA5PL_netcdf_variable_names, pressure_field
-using NumericalEarth.DataWrangling: metadata_path, download_dataset, BoundingBox, Column, Linear, Nearest
 
 # Internal extension module — exposes dispatch helpers and NetCDF utilities
 # that are not part of the public API but worth pinning behavior for.
@@ -39,7 +39,7 @@ start_date = DateTime(2005, 2, 16, 12)
 
         # Download the data (falls back to NumericalEarthArtifacts if CDS is unreachable)
         download_dataset_with_fallback(filepath; dataset_name="ERA5Hourly $variable") do
-            download_dataset(metadatum)
+            download(metadatum)
         end
         @test isfile(filepath)
 
@@ -61,14 +61,14 @@ start_date = DateTime(2005, 2, 16, 12)
         @test length(lat) > 0
 
         # Check that data is within expected bounds
-        @test minimum(lon) >= -1  # Allow some tolerance
-        @test maximum(lon) <= 6
-        @test minimum(lat) >= 39
-        @test maximum(lat) <= 46
+        @test minimum(lon) ≥ -1  # Allow some tolerance
+        @test maximum(lon) ≤ 6
+        @test minimum(lat) ≥ 39
+        @test maximum(lat) ≤ 46
 
         # Check that the temperature data exists and is valid
         t2m = ds["t2m"]
-        @test ndims(t2m) >= 2
+        @test ndims(t2m) ≥ 2
 
         close(ds)
 
@@ -108,7 +108,7 @@ start_date = DateTime(2005, 2, 16, 12)
         @test Nt == 1     # Single time step
 
         # Test that ERA5 is correctly identified as 2D
-        @test NumericalEarth.DataWrangling.ERA5.is_three_dimensional(metadatum) == false
+        @test is_three_dimensional(metadatum) == false
     end
 
     @testset "ERA5 wave variable metadata sizes" begin
@@ -221,7 +221,7 @@ start_date = DateTime(2005, 2, 16, 12)
         meta = Metadatum(:temperature; dataset=ds_sub, region=region, date=start_date)
         Nx, Ny, Nz, Nt = size(meta)
         @test Nz == 2
-        @test NumericalEarth.DataWrangling.ERA5.is_three_dimensional(meta) == true
+        @test is_three_dimensional(meta) == true
 
         # Variable name lookups
         @test ERA5PL_dataset_variable_names[:temperature] == "temperature"
@@ -299,7 +299,7 @@ start_date = DateTime(2005, 2, 16, 12)
             # Download if not present (falls back to NumericalEarthArtifacts if CDS is unreachable)
             filepath = metadata_path(metadatum)
             isfile(filepath) || download_dataset_with_fallback(filepath; dataset_name="ERA5Hourly $variable") do
-                download_dataset(metadatum)
+                download(metadatum)
             end
 
             # Create a Field from the downloaded data
@@ -325,7 +325,7 @@ start_date = DateTime(2005, 2, 16, 12)
             # Download if not present (falls back to NumericalEarthArtifacts if CDS is unreachable)
             filepath = metadata_path(metadatum)
             isfile(filepath) || download_dataset_with_fallback(filepath; dataset_name="ERA5Hourly $variable") do
-                download_dataset(metadatum)
+                download(metadatum)
             end
 
             # Create a target grid matching the bounding box region
@@ -361,7 +361,7 @@ start_date = DateTime(2005, 2, 16, 12)
             filepath = metadata_path(meta)
             isfile(filepath) && rm(filepath; force=true)
 
-            download_dataset(meta)
+            download(meta)
             @test isfile(filepath)
 
             # Verify the NetCDF has a pressure_level dimension and the right variable
@@ -849,7 +849,7 @@ end
 
 @testset "ERA5 CDSAPIExt skip_existing short-circuit" begin
     # Build a temporary directory and pre-create the expected output files so
-    # `download_dataset(...; skip_existing=true)` returns without contacting CDS.
+    # `download(...; skip_existing=true)` returns without contacting CDS.
     # If the short-circuit ever regresses, these tests will throw a credentials
     # error (or 4xx from the CDS API) and fail loudly.
     region = NumericalEarth.DataWrangling.BoundingBox(longitude=(0, 5), latitude=(40, 45))
@@ -859,7 +859,7 @@ end
         date2  = DateTime(2005, 2, 16, 18)
         names  = [:temperature, :eastward_velocity]
 
-        # Helper: pre-create the file that `download_dataset` would write
+        # Helper: pre-create the file that `download` would write
         function touch_expected(name, dataset, date)
             md = Metadatum(name; dataset, region, date, dir=tmp)
             path = metadata_path(md)
@@ -872,7 +872,7 @@ end
             paths = [touch_expected(name, ds_pl, date1) for name in names]
             meta = Metadatum(:temperature; dataset=ds_pl, region, date=date1, dir=tmp)
 
-            result = download_dataset(names, meta; skip_existing=true)
+            result = download(names, meta; skip_existing=true)
             @test result isa Vector{String}
             @test length(result) == length(names)
             @test Set(result) == Set(paths)
@@ -913,7 +913,7 @@ end
             expected = [touch_expected(:temperature, ds_sl, dt) for dt in (date_day1, date_day2)]
             meta = Metadata(:temperature; dataset=ds_sl, dates=[date_day1, date_day2], region, dir=tmp)
 
-            result = download_dataset(meta; skip_existing=true)
+            result = download(meta; skip_existing=true)
             @test result isa Vector{String}
             @test Set(result) == Set(expected)
         end
@@ -922,7 +922,7 @@ end
             expected = [touch_expected(name, ds_pl, dt) for name in names for dt in (date_day1, date_day2)]
             meta = Metadata(:temperature; dataset=ds_pl, dates=[date_day1, date_day2], region, dir=tmp)
 
-            result = download_dataset(names, meta; skip_existing=true)
+            result = download(names, meta; skip_existing=true)
             @test result isa Vector{String}
             @test Set(result) == Set(expected)
         end
@@ -931,7 +931,7 @@ end
             ds_sl = ERA5HourlySingleLevel()
             expected = [touch_expected(name, ds_sl, dt) for name in names for dt in (date_day1, date_day2)]
 
-            result = download_dataset(names, ds_sl, [date_day1, date_day2];
+            result = download(names, ds_sl, [date_day1, date_day2];
                                        region, dir=tmp, skip_existing=true, cleanup=true)
             @test result isa Vector{String}
             @test Set(result) == Set(expected)
