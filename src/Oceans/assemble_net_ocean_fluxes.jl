@@ -16,10 +16,10 @@ EarthSystemModels.update_net_fluxes!(coupled_model::Union{NoOceanInterfaceModel,
 EarthSystemModels.update_net_fluxes!(coupled_model, ocean::OceananigansModelSimulations) =
     update_net_ocean_fluxes!(coupled_model, ocean, ocean.model.grid)
 
-rainfall_flux(coupled_model::NoAtmosInterfaceModel) = ZeroField(eltype(model))
+rainfall_flux(coupled_model::NoAtmosInterfaceModel) = ZeroField(eltype(coupled_model))
 rainfall_flux(coupled_model) = coupled_model.interfaces.exchanger.atmosphere.state.Jʳⁿ.data
 
-snowfall_flux(coupled_model::NoAtmosInterfaceModel) = ZeroField(eltype(model))
+snowfall_flux(coupled_model::NoAtmosInterfaceModel) = ZeroField(eltype(coupled_model))
 snowfall_flux(coupled_model) = coupled_model.interfaces.exchanger.atmosphere.state.Jˢⁿ.data
 
 atmos_ocean_flux(coupled_model) = computed_fluxes(coupled_model.interfaces.atmosphere_ocean_interface)
