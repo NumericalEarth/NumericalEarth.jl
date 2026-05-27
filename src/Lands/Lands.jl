@@ -9,8 +9,6 @@ export AbstractLand,
        ForceRestoreEnergy,
        # Hydrology closures
        BucketHydrology, DryLand, SaturatedSurface,
-       # Surface-property closures
-       ConstantSurfaceProperties,
        # Atmosphere-facing accessors
        surface_temperature, surface_saturation
 
@@ -47,20 +45,18 @@ import ..EarthSystemModels.InterfaceComputations: atmosphere_land_interface
 # Closure interfaces
 include("energy_balance/energy_balance.jl")
 include("hydrology/hydrology.jl")
-include("surface_properties/surface_properties.jl")
 include("properties/property_providers.jl")
 
 # Container.
 include("slab_land.jl")
 
-# Default closures (sized so `SlabEnergy + BucketHydrology + ConstantSurfaceProperties`
-# is the canonical Manabe-bucket slab).
+# Default closures (sized so `SlabEnergy + BucketHydrology` is the canonical
+# Manabe-bucket slab).
 include("energy_balance/slab_energy.jl")
 include("energy_balance/force_restore_energy.jl")
 include("hydrology/bucket_hydrology.jl")
 include("hydrology/dry_land.jl")
 include("hydrology/saturated_surface.jl")
-include("surface_properties/constant_surface_properties.jl")
 
 # Legacy PrescribedLand component (river / iceberg freshwater forcing).
 include("prescribed_land.jl")

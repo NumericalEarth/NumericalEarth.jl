@@ -12,9 +12,10 @@
 #
 # `SlabLand` composes
 #
-#     energy    = SlabEnergy(dry_heat_capacity = ρcH_g, liquid_heat_capacity = cˡ)
+#     energy    = SlabEnergy(dry_heat_capacity = ρcH_g)
 #     hydrology = BucketHydrology(...)
-#     surface   = ConstantSurfaceProperties(...)
+#
+# (roughness lengths are set on the atmosphere-land flux closure, not the land)
 #
 # coupled through `AtmosphereLandModel` to an [`ERA5PrescribedAtmosphere`](@ref)
 # and [`ERA5PrescribedRadiation`](@ref): these download the required ERA5
@@ -134,13 +135,13 @@ interpolate!(z_era5, Field(Metadatum(:geopotential_height; dataset, date = start
 correction = ElevationCorrection(z_land, z_era5; lapse_rate = Γ_lapse)
 
 # ## Slab land
-
+#
+# `SlabLand` is purely energy + hydrology; aerodynamic roughness is a property of
+# the atmosphere-land flux closure (set on the model below), not of the land.
+dry_heat_capacity = 0.1 * 1500 * 1480
 slab_land = SlabLand(land_grid;
-                     energy    = SlabEnergy(dry_heat_capacity    = 1500.0 * 1480.0 * 0.10,
-                                            liquid_heat_capacity = 4186.0),
-                     hydrology = BucketHydrology(maximum_water_storage = 150.0),
-                     surface   = ConstantSurfaceProperties(momentum_roughness_length = 0.1,
-                                                           scalar_roughness_length   = 0.01))
+                     energy    = SlabEnergy(; dry_heat_capacity),
+                     hydrology = BucketHydrology(maximum_water_storage = 150))
 
 # Cold-start the skin temperature from the elevation-corrected ERA5 T₂ₘ at the
 # first snapshot (interpolated onto the 1 km grid), mirroring the runtime lift.
@@ -151,9 +152,17 @@ set!(slab_land.water_storage, 0.5 * 150.0)
 update_state!(slab_land)
 
 # ## Coupled model
+#
+# Roughness lengths live with the atmosphere-land flux closure: pass a
+# `SimilarityTheoryFluxes` with the desired land roughness (0.1 m momentum,
+# 0.01 m scalar here) via `atmosphere_land_fluxes`.
 
-model      = AtmosphereLandModel(atmosphere, slab_land; radiation,
-                                 atmosphere_state_correction = correction)
+model = AtmosphereLandModel(atmosphere, slab_land; radiation,
+                            atmosphere_state_correction = correction,
+                            atmosphere_land_fluxes = SimilarityTheoryFluxes(;
+                                momentum_roughness_length    = 0.1,
+                                temperature_roughness_length = 0.01,
+                                water_vapor_roughness_length = 0.01))
 simulation = Simulation(model; Δt = 5minutes, stop_time = (Nt - 1) * 3600.0)
 
 wall_time = Ref(time_ns())

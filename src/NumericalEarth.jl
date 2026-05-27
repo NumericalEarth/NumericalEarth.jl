@@ -85,7 +85,6 @@ export
     BucketHydrology,
     DryLand,
     SaturatedSurface,
-    ConstantSurfaceProperties,
     surface_temperature,
     surface_saturation,
     regrid_bathymetry,

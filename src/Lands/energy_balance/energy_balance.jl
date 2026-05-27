@@ -41,10 +41,9 @@ initial_flux(::AbstractEnergyBalance, ::Symbol, grid) = CenterField(grid)
     step!(energy, land, Δt[, time])
 
 Advance the energy-balance state by `Δt`. The closure reads the land's
-prognostic fields (`land.temperature`, `land.water_storage`), the net
-energy flux (`land.fluxes.net_energy_flux`), and the surface closure
-(`land.surface`) as needed. The default is a no-op (used by closures
-with no prognostic state, e.g. prescribed surface temperature).
+prognostic fields (`land.temperature`, `land.water_storage`) and the net
+energy flux (`land.fluxes.net_energy_flux`) as needed. The default is a no-op
+(used by closures with no prognostic state, e.g. prescribed surface temperature).
 """
 step!(::AbstractEnergyBalance, land, Δt) = nothing
 step!(energy::AbstractEnergyBalance, land, Δt, time) = step!(energy, land, Δt)

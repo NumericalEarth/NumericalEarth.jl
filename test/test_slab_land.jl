@@ -19,17 +19,12 @@ using NumericalEarth.Lands: update_diagnostics!
         energy = SlabEnergy(eltype(grid); dry_heat_capacity = 2.0,
                                          liquid_heat_capacity = 4.0)
         hydrology = BucketHydrology(eltype(grid); maximum_water_storage = 10.0)
-        surface = ConstantSurfaceProperties(eltype(grid);
-                                           momentum_roughness_length = 0.1,
-                                           scalar_roughness_length = 0.01)
 
-        land = SlabLand(grid; energy, hydrology, surface)
+        land = SlabLand(grid; energy, hydrology)
 
         @test land.energy.dry_heat_capacity isa Number
         @test land.energy.liquid_heat_capacity isa Number
         @test land.hydrology.maximum_water_storage isa Number
-        @test land.surface.momentum_roughness_length isa Number
-        @test land.surface.scalar_roughness_length isa Number
 
         # With `state.water_storage = 0`, the slab responds to `fluxes.net_energy_flux`
         # using only `dry_heat_capacity`.
@@ -58,10 +53,12 @@ using NumericalEarth.Lands: update_diagnostics!
         @test isapprox(CUDA.@allowscalar(land.water_storage[1, 1, 1]), 10.0; atol=1e-12)
         @test isapprox(CUDA.@allowscalar(land.saturation[1, 1, 1]), 1.0; atol=1e-12)
 
-        # Exposer for atmosphere-facing roughness fields.
+        # The atmosphere-facing land state exposes skin temperature and saturation;
+        # roughness lengths belong to the flux closure, not the land.
         ex = NumericalEarth.EarthSystemModels.InterfaceComputations.ComponentExchanger(land, land.grid)
-        @test hasproperty(ex.state, :momentum_roughness_length)
-        @test hasproperty(ex.state, :scalar_roughness_length)
+        @test hasproperty(ex.state, :T)
+        @test hasproperty(ex.state, :saturation)
+        @test !hasproperty(ex.state, :momentum_roughness_length)
     end
 end
 
@@ -77,30 +74,21 @@ end
         Cdry = CenterField(grid)
         Cl   = CenterField(grid)
         Wmax = CenterField(grid)
-        ℓᵐ = CenterField(grid)
-        ℓˢ = CenterField(grid)
 
         fill!(Cdry, 8.0)
         fill!(Cl, 2.0)
         fill!(Wmax, 12.0)
-        fill!(ℓᵐ, 0.2)
-        fill!(ℓˢ, 0.02)
 
         energy = SlabEnergy(eltype(grid);
                             dry_heat_capacity = Cdry,
                             liquid_heat_capacity = Cl)
         hydrology = BucketHydrology(eltype(grid); maximum_water_storage = Wmax)
-        surface = ConstantSurfaceProperties(eltype(grid);
-                                            momentum_roughness_length = ℓᵐ,
-                                            scalar_roughness_length = ℓˢ)
 
-        land = SlabLand(grid; energy, hydrology, surface)
+        land = SlabLand(grid; energy, hydrology)
 
         @test land.energy.dry_heat_capacity isa AbstractField
         @test land.energy.liquid_heat_capacity isa AbstractField
         @test land.hydrology.maximum_water_storage isa AbstractField
-        @test land.surface.momentum_roughness_length isa AbstractField
-        @test land.surface.scalar_roughness_length isa AbstractField
 
         fill!(land.water_storage, 4.0)
         fill!(land.temperature, 10.0)
@@ -116,10 +104,6 @@ end
         time_step!(land, 1.0)
 
         @test isapprox(CUDA.@allowscalar(land.water_storage[1, 1, 1]), 12.0; atol=1e-12)
-
-        ex = NumericalEarth.EarthSystemModels.InterfaceComputations.ComponentExchanger(land, land.grid)
-        @test isapprox(CUDA.@allowscalar(ex.state.momentum_roughness_length[1, 1, 1]), 0.2; atol=1e-12)
-        @test isapprox(CUDA.@allowscalar(ex.state.scalar_roughness_length[1, 1, 1]), 0.02; atol=1e-12)
     end
 end
 
@@ -141,11 +125,8 @@ end
         hydrology = BucketHydrology(eltype(grid);
                                     maximum_water_storage = Wmax,
                                     root_depth = zʳ)
-        surface = ConstantSurfaceProperties(eltype(grid);
-                                            momentum_roughness_length = 0.1,
-                                            scalar_roughness_length = 0.01)
 
-        land = SlabLand(grid; energy, hydrology, surface)
+        land = SlabLand(grid; energy, hydrology)
 
         # Saturation is continuous: θ = M / M_max, with M_max = Wmax * zʳ = 20.
         fill!(land.water_storage, 5.0)
@@ -186,10 +167,7 @@ end
                                    liquid_heat_capacity = 4.0,
                                    deep_temperature = 260.0,
                                    deep_time_scale = 1.0)
-        surface = ConstantSurfaceProperties(eltype(grid);
-                                           momentum_roughness_length = 0.1,
-                                           scalar_roughness_length = 0.01)
-        land = SlabLand(grid; energy, hydrology = DryLand(), surface)
+        land = SlabLand(grid; energy, hydrology = DryLand())
 
         fill!(land.temperature, 280.0)
         fill!(land.fluxes.net_energy_flux, 10.0)
@@ -205,7 +183,7 @@ end
                                         liquid_heat_capacity = 4.0,
                                         deep_temperature = deep_by_time,
                                         deep_time_scale = 1.0)
-        land_time = SlabLand(grid; energy = energy_time, hydrology = DryLand(), surface)
+        land_time = SlabLand(grid; energy = energy_time, hydrology = DryLand())
 
         fill!(land_time.temperature, 280.0)
         fill!(land_time.fluxes.net_energy_flux, 0.0)
@@ -305,10 +283,7 @@ end
 
         make_land() = SlabLand(grid;
                                hydrology = DryLand(),
-                               energy = SlabEnergy(eltype(grid); dry_heat_capacity = 10_000.0),
-                               surface = ConstantSurfaceProperties(eltype(grid);
-                                                                  momentum_roughness_length = 0.1,
-                                                                  scalar_roughness_length = 0.01))
+                               energy = SlabEnergy(eltype(grid); dry_heat_capacity = 10_000.0))
 
         radiation_none = PrescribedRadiation(grid; ocean_surface = SurfaceRadiationProperties(0.0, 1.0),
                                             sea_ice_surface = SurfaceRadiationProperties(0.0, 1.0))

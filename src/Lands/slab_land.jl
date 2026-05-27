@@ -3,11 +3,13 @@
 ##### `EarthSystemModel` (and direct atmosphere-side coupling).
 #####
 ##### A `SlabLand` is a 2D land model on an Oceananigans grid composed of
-##### three closures along independent axes:
+##### two closures along independent axes:
 #####
 #####   - `energy    :: AbstractEnergyBalance`     -- skin temperature
 #####   - `hydrology :: AbstractHydrology`         -- water + moisture availability β ∈ [0, 1]
-#####   - `surface   :: AbstractSurfaceProperties` -- roughness length
+#####
+##### Aerodynamic roughness lengths are a property of the atmosphere-land flux
+##### closure (`atmosphere_land_fluxes`), not of the land model.
 #####
 ##### The prognostic `temperature` and `water_storage` fields and the
 ##### diagnostic `saturation` field live directly on the
@@ -29,40 +31,39 @@
 
 # Generic field-tuple builder. Each closure declares its own keys via
 # `keyfn(closure)` and constructs each field via `initfn(closure, name, grid)`.
-function _build_closure_fields(keyfn, initfn, grid, energy, hydrology, surface)
-    keys = merge_unique(merge_unique(keyfn(energy), keyfn(hydrology)), keyfn(surface))
+function _build_closure_fields(keyfn, initfn, grid, energy, hydrology)
+    keys = merge_unique(keyfn(energy), keyfn(hydrology))
     fields = map(keys) do name
         if name in keyfn(energy)
             initfn(energy, name, grid)
-        elseif name in keyfn(hydrology)
-            initfn(hydrology, name, grid)
         else
-            initfn(surface, name, grid)
+            initfn(hydrology, name, grid)
         end
     end
     return NamedTuple{keys}(fields)
 end
 
 """
-    build_flux_accumulators(grid, energy, hydrology, surface)
+    build_flux_accumulators(grid, energy, hydrology)
 
 Allocate the flux/forcing accumulator `NamedTuple` for a `SlabLand`.
 The coupler writes into these every step; closures only read.
 """
-build_flux_accumulators(grid, energy, hydrology, surface) =
-    _build_closure_fields(flux_variables, initial_flux, grid, energy, hydrology, surface)
+build_flux_accumulators(grid, energy, hydrology) =
+    _build_closure_fields(flux_variables, initial_flux, grid, energy, hydrology)
 
 #####
 ##### Top-level struct
 #####
 
 """
-    SlabLand{FT, G, Clk, T, W, B, F, E, H, Sfc}
+    SlabLand{FT, G, Clk, T, W, B, F, E, H}
 
 A composable slab land-surface component. The default configuration —
-`SlabEnergy + BucketHydrology + ConstantSurfaceProperties` — is the
-classic Manabe-bucket slab. Replace any axis to swap in a different
-energy, hydrology, or surface-property closure.
+`SlabEnergy + BucketHydrology` — is the classic Manabe-bucket slab. Replace
+either axis to swap in a different energy or hydrology closure. Aerodynamic
+roughness lengths are a property of the atmosphere-land flux closure
+(`atmosphere_land_fluxes`), not of the land model.
 
 # Fields
 - `grid`                  : Oceananigans grid (typically `(Nx, Ny, Flat)`).
@@ -73,9 +74,8 @@ energy, hydrology, or surface-property closure.
 - `fluxes`                : `NamedTuple` of flux/forcing `Field`s the coupler writes.
 - `energy`                : an `AbstractEnergyBalance` (parameters).
 - `hydrology`             : an `AbstractHydrology` (parameters).
-- `surface`               : an `AbstractSurfaceProperties` (parameters).
 """
-struct SlabLand{FT, G, Clk, T, W, B, F, E, H, Sfc} <: AbstractLand
+struct SlabLand{FT, G, Clk, T, W, B, F, E, H} <: AbstractLand
     grid                  :: G
     clock                 :: Clk
     temperature           :: T
@@ -84,23 +84,21 @@ struct SlabLand{FT, G, Clk, T, W, B, F, E, H, Sfc} <: AbstractLand
     fluxes                :: F
     energy                :: E
     hydrology             :: H
-    surface               :: Sfc
 end
 
 # Inner-style typed constructor capturing FT.
 SlabLand{FT}(grid, clock, temperature, water_storage, saturation,
-             fluxes, energy, hydrology, surface) where FT =
+             fluxes, energy, hydrology) where FT =
     SlabLand{FT, typeof(grid), typeof(clock),
              typeof(temperature), typeof(water_storage), typeof(saturation),
-             typeof(fluxes), typeof(energy), typeof(hydrology), typeof(surface)}(
+             typeof(fluxes), typeof(energy), typeof(hydrology)}(
                  grid, clock, temperature, water_storage, saturation,
-                 fluxes, energy, hydrology, surface)
+                 fluxes, energy, hydrology)
 
 """
     SlabLand(grid;
              energy    = SlabEnergy(eltype(grid)),
              hydrology = BucketHydrology(eltype(grid)),
-             surface   = ConstantSurfaceProperties(eltype(grid)),
              clock     = Clock{eltype(grid)}(time = 0))
 
 Construct a `SlabLand` with the chosen closures. The prognostic
@@ -112,16 +110,15 @@ accumulators the coupler writes are sized from each closure's
 function SlabLand(grid;
                   energy    = SlabEnergy(eltype(grid)),
                   hydrology = BucketHydrology(eltype(grid)),
-                  surface   = ConstantSurfaceProperties(eltype(grid)),
                   clock     = Clock{eltype(grid)}(time = 0))
 
     temperature           = CenterField(grid)
     water_storage         = CenterField(grid)
     saturation = CenterField(grid)
-    fluxes                = build_flux_accumulators(grid, energy, hydrology, surface)
+    fluxes                = build_flux_accumulators(grid, energy, hydrology)
     FT                    = eltype(grid)
     return SlabLand{FT}(grid, clock, temperature, water_storage, saturation,
-                        fluxes, energy, hydrology, surface)
+                        fluxes, energy, hydrology)
 end
 
 Base.eltype(::SlabLand{FT}) where FT = FT
@@ -139,7 +136,6 @@ function Base.show(io::IO, land::SlabLand)
               "├── grid:                  ", summary(land.grid), '\n',
               "├── energy:                ", summary(land.energy), '\n',
               "├── hydrology:             ", summary(land.hydrology), '\n',
-              "├── surface:               ", summary(land.surface), '\n',
               "├── temperature:           ", summary(land.temperature), '\n',
               "├── water_storage:         ", summary(land.water_storage), '\n',
               "├── saturation: ", summary(land.saturation), '\n',
@@ -184,15 +180,12 @@ end
 """
     update_state!(land::SlabLand)
 
-Refresh closure-owned diagnostics. Order is `hydrology → surface →
-energy`: hydrology produces `saturation` (𝒮), the surface
-closure may consume 𝒮 (e.g. saturation-dependent albedo, LAI-aware
-roughness) before the energy closure assembles any heat-capacity
-diagnostic from the freshly updated water storage.
+Refresh closure-owned diagnostics. Order is `hydrology → energy`: hydrology
+produces `saturation` (𝒮) before the energy closure assembles any
+heat-capacity diagnostic from the freshly updated water storage.
 """
 function Oceananigans.TimeSteppers.update_state!(land::SlabLand)
     update_diagnostics!(land.hydrology, land)
-    update_diagnostics!(land.surface,   land)
     update_diagnostics!(land.energy,    land)
     return nothing
 end
@@ -203,8 +196,6 @@ end
 
 surface_temperature(land::SlabLand)       = surface_temperature(land.energy, land)
 surface_saturation(land::SlabLand)           = saturation(land.hydrology, land)
-momentum_roughness_length(land::SlabLand) = momentum_roughness_length(land.surface, land)
-scalar_roughness_length(land::SlabLand)   = scalar_roughness_length(land.surface, land)
 
 #####
 ##### EarthSystemModel interface — generic SlabLand coupling.
@@ -272,14 +263,13 @@ interpolate_state!(exchanger, grid, ::SlabLand, coupled_model) = nothing
 """
     ComponentExchanger(land::SlabLand, grid)
 
-Expose the generic atmosphere-facing SlabLand state through accessors:
-skin temperature `T`, `saturation`, and the two roughness lengths.
+Expose the generic atmosphere-facing SlabLand state: skin temperature `T` and
+surface `saturation`. Aerodynamic roughness lengths belong to the atmosphere-land
+flux closure (`atmosphere_land_fluxes`), not the land state.
 """
 function EarthSystemModels.InterfaceComputations.ComponentExchanger(land::SlabLand, grid)
-    state = (T                         = surface_temperature(land),
-             saturation     = surface_saturation(land),
-             momentum_roughness_length = momentum_roughness_length(land),
-             scalar_roughness_length   = scalar_roughness_length(land))
+    state = (T          = surface_temperature(land),
+             saturation = surface_saturation(land))
     return ComponentExchanger(state, nothing)
 end
 

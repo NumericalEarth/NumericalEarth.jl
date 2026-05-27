@@ -458,21 +458,19 @@ default_al_specific_humidity(::Nothing) = nothing
 default_al_specific_humidity(land) =
     BulkHumidity(AtmosphericThermodynamics.Liquid())
 
-# Default atmosphere--land flux formulation. The momentum and scalar roughness
-# lengths are read from `momentum_roughness_length` / `scalar_roughness_length`
-# when present, with legacy fallback to the single `roughness_length` field.
-# To override this behavior, pass
-# `atmosphere_land_fluxes = SimilarityTheoryFluxes(...)` with explicit
-# roughness lengths to `ComponentInterfaces` / `AtmosphereLandModel`.
+# Default atmosphere--land flux formulation. Aerodynamic roughness lengths are a
+# property of the flux closure, not the land model: the defaults below are
+# uniform constants (0.1 m momentum, 0.01 m scalar). Override per-domain by
+# passing `atmosphere_land_fluxes = SimilarityTheoryFluxes(...)` with explicit
+# roughness lengths (constants, `Field`s, or roughness-length models such as
+# `LandRoughnessLength`) to `ComponentInterfaces` / `AtmosphereLandModel`.
 default_atmosphere_land_fluxes(::Nothing, FT) = nothing
 
 function default_atmosphere_land_fluxes(land, FT)
-    ℓᵐ = LandRoughnessLength(FT)
-    ℓˢ = LandRoughnessLength(FT; multiplier = 0.1)
     return SimilarityTheoryFluxes(FT;
-                                   momentum_roughness_length    = ℓᵐ,
-                                   temperature_roughness_length = ℓˢ,
-                                   water_vapor_roughness_length = ℓˢ)
+                                   momentum_roughness_length    = convert(FT, 0.1),
+                                   temperature_roughness_length = convert(FT, 0.01),
+                                   water_vapor_roughness_length = convert(FT, 0.01))
 end
 
 #####
