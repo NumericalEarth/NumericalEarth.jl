@@ -113,7 +113,7 @@ Argument
 Keyword Arguments
 =================
 
-- `dataset`: Supported datasets are returned by [`supported_metadata_datasets`](@ref).
+- `dataset`: Supported datasets are returned by [`supported_datasets`](@ref).
 
 - `dates`: The dates of the dataset (`Dates.AbstractDateTime` or `CFTime.AbstractCFDateTime`).
            Note that `dates` can either be a range or a vector of dates, representing a time-series.
@@ -334,7 +334,7 @@ Arguments
 
 Keyword Arguments
 =================
-- `dataset`: The shared dataset. Supported datasets are returned by [`supported_metadata_datasets`](@ref).
+- `dataset`: The shared dataset. Supported datasets are returned by [`supported_datasets`](@ref).
 - `dates`: Shared date axis. Either a single `AbstractDateTime`/`AbstractCFDateTime`
            or an `AbstractVector` of dates. Defaults to `all_dates(dataset, first(variable_names))`.
 - `date`: Convenience scalar form; cannot be used together with `dates`.

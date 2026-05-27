@@ -411,7 +411,7 @@ Return the dataset constructors currently supported by [`Metadata`](@ref).
 
 Currently, these are: $(dataset_constructor_docstring()).
 
-!!! "info"
+!!! info "Importing datasets"
     Some of the above datasets are not exported and need to be explicitly imported
     before, e.g., passed to [`Metadata`](@ref).
 """

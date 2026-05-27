@@ -6,9 +6,9 @@ NumericalEarth currently ships connectors for the following data products:
 |--------------------|-----------------------------------------------------------|-----------------------------------------------------------------------------------------------------|
 | **Bathymetry and static grids** |                                            |                                                                                                     |
 | `ETOPO2022`        | [Supported variables](@ref dataset-etopo2022-vars)        | [NOAA ETOPO 2022 overview](https://www.ncei.noaa.gov/products/etopo-global-relief-model)           |
-| `GEBCO2024`        | [Supported variables](@ref dataset-gebco2024-vars)        | [GEBCO 2024 overview](https://www.gebco.net/data_and_products/gridded_bathymetry_data/)            |
+| `GEBCO2024`        | [Supported variables](@ref dataset-gebco2024-vars)        | [GEBCO 2024 overview](https://www.gebco.net/data-products/gridded-bathymetry-data)                 |
 | `IBCSOv2`          | [Supported variables](@ref dataset-ibcsov2-vars)          | [IBCSO overview](https://ibcso.org/ibcso-2024-annual-release/)                                     |
-| `IBCAOv5`          | [Supported variables](@ref dataset-ibcaov5-vars)          | [IBCAO overview](https://www.gebco.net/data_and_products/gridded_bathymetry_data/arctic_ocean/)    |
+| `IBCAOv5`          | [Supported variables](@ref dataset-ibcaov5-vars)          | [IBCAO overview](https://www.gebco.net/data-products/gridded-bathymetry-data/arctic-ocean)         |
 | `ORCA1`            | `:bottom_height`, `:mesh_mask`                            | [ORCA1 mesh and bathymetry (Zenodo)](https://zenodo.org/records/4436658)                           |
 | `ORCA12`           | `:bottom_height`, `:mesh_mask`                            | [ORCA12 mesh and bathymetry (Zenodo)](https://zenodo.org/records/15495870)                         |
 | `GLORYSStatic`     | `:depth`                                                  | [Copernicus GLORYS static product](https://data.marine.copernicus.eu/product/GLOBAL_MULTIYEAR_PHY_001_030/description) |
