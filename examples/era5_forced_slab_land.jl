@@ -279,7 +279,7 @@ Qn = @lift Q_ts[$n]
 hm_T = heatmap!(ax_T, Tn;           colormap = :thermal, colorrange = (250, 300))
 hm_𝒮 = heatmap!(ax_𝒮, 𝒮n;           colormap = :tempo,   colorrange = 𝒮_range)
 hm_Q = heatmap!(ax_Q, Qn;           colormap = :balance, colorrange = (-400, 400))
-hm_z = heatmap!(ax_z, z_land_field; colormap = :terrain, colorrange = (1000, 3500))
+hm_z = heatmap!(ax_z, z_land; colormap = :terrain, colorrange = (1000, 3500))
 
 Colorbar(fig[1, 1, Right()], hm_T; label = "T (K)")
 Colorbar(fig[1, 2, Right()], hm_𝒮; label = "𝒮")
