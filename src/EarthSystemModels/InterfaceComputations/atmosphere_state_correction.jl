@@ -46,9 +46,7 @@ function ElevationCorrection(atmosphere_elevation, surface_elevation;
                              gravitational_acceleration = 9.81,
                              dry_air_gas_constant = 287.052)
 
-    FT = promote_type(typeof(lapse_rate),
-                      typeof(gravitational_acceleration),
-                      typeof(dry_air_gas_constant))
+    FT = Oceananigans.defaults.FloatType
 
     return ElevationCorrection(atmosphere_elevation,
                                surface_elevation,
