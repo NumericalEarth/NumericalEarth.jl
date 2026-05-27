@@ -115,11 +115,6 @@ era5_region = era5_bbox()
 ds_pl = ERA5HourlyPressureLevels()
 ds_sl = ERA5HourlySingleLevel()
 
-pl_vars = [:eastward_velocity, :northward_velocity, :temperature,
-           :specific_humidity, :geopotential,
-           :specific_cloud_liquid_water_content,
-           :specific_cloud_ice_water_content]
-
 # ## Setup LAM grid
 #
 # `LatitudeLongitudeGrid` with `Bounded` horizontal topologies (LAM-style).
@@ -175,6 +170,13 @@ Lₛ   = constants.ice.reference_latent_heat
 # Φ₀ comes from ERA5's `:geopotential_height` on single levels.
 #
 # TODO: When terrain support lands, swap back to Φ/g.
+
+# These two helpers exist only because the LAM grid lacks terrain (the
+# `- [ ] terrain` checklist item above). They implement the sigma-z workaround
+# — map ERA5 (Φ − Φ₀)/g to LAM z. Once terrain support lands (e.g.
+# `ImmersedBoundaryGrid + GridFittedBottom(Φ₀/g)`), `set!(target, metadatum)`
+# replaces this entire block via NumericalEarth's `PressureLevelGrid` path
+# (introduced in PR #241).
 
 # Per-column linear interpolation in z, skipping sub-surface levels.
 function interp_z_masked(z, z_col, var_col, p_levels, p₀_local)
@@ -284,9 +286,9 @@ qᵗ_fts = FieldTimeSeries{Center, Center, Center}(parent_grid, parent_times)
 # --- Time-invariant: surface geopotential Φ₀ ---
 # Φ₀ is terrain elevation × g; load once from snapshot 1.
 
-const Φ₀_arr_snap1 = Array(interior(Field(Metadatum(:geopotential_height;
-                                                    dataset=ds_sl,
-                                                    meta_common_snap1...))))[:, :, 1]
+const Φ₀_arr = Array(interior(Field(Metadatum(:geopotential_height;
+                                              dataset=ds_sl,
+                                              meta_common_snap1...))))[:, :, 1]
 
 # --- Per-snapshot ERA5 → parent FTS population ---
 #
@@ -296,6 +298,8 @@ const Φ₀_arr_snap1 = Array(interior(Field(Metadatum(:geopotential_height;
 #   3. Column-wise linear-in-z interp onto the parent z-grid, masking
 #      sub-surface levels (p > p_surface).
 #   4. Copy the result into FTS slot n.
+#   5. Return the raw ERA5 arrays so the caller can capture snapshot 1 for
+#      the profile-plot block below without re-fetching.
 
 function populate_parent_snapshot!(n, date)
     meta = (date = date, region = era5_region, dir = era5_datadir)
@@ -305,7 +309,7 @@ function populate_parent_snapshot!(n, date)
 
     p₀_arr = Array(interior(p₀_field))[:, :, 1]   # Pa
     z_above_sfc = (Array(interior(ϕ_field)) .-
-                   reshape(Φ₀_arr_snap1, size(Φ₀_arr_snap1, 1), size(Φ₀_arr_snap1, 2), 1)) ./ g
+                   reshape(Φ₀_arr, size(Φ₀_arr, 1), size(Φ₀_arr, 2), 1)) ./ g
 
     read3d(name) = Array(interior(Field(Metadatum(name; dataset=ds_pl, meta...))))
     u_era5  = read3d(:eastward_velocity)
@@ -368,12 +372,17 @@ function populate_parent_snapshot!(n, date)
     interior(θ_fts,   :, :, :, n) .= θˡⁱ_arr
     interior(qᵗ_fts,  :, :, :, n) .= qᵗ_arr
 
-    return nothing
+    return (; p₀_arr, z_above_sfc, p_era5_3d,
+              u_era5, v_era5, T_era5, qᵛ_era5, qᶜ_era5, qⁱ_era5)
 end
 
-for (n, date) in enumerate(dates)
-    @info @sprintf("Populating parent snapshot %d/%d at %s", n, length(dates), date)
-    populate_parent_snapshot!(n, date)
+# Snapshot 1 is captured for the plot block's native-grid stencil overlay.
+@info @sprintf("Populating parent snapshot 1/%d at %s", length(dates), dates[1])
+snap1 = populate_parent_snapshot!(1, dates[1])
+
+for n in 2:length(dates)
+    @info @sprintf("Populating parent snapshot %d/%d at %s", n, length(dates), dates[n])
+    populate_parent_snapshot!(n, dates[n])
 end
 
 # --- LAM-grid IC fields: horizontal regrid of snapshot 1 from the parent ---
@@ -546,23 +555,12 @@ sites = [("East TX",     -93.5,   34.0),
          ("SGP",         -97.485, 36.605),
          ("High Plains", -101.5,  35.0)]
 
-# Re-fetch the snapshot-1 ERA5 raw arrays for the gray stencil overlay
-# (the FTSs hold vertically-interpolated data; the overlay needs the native
-# pressure-level columns).
+# Snapshot-1 ERA5 raw arrays captured during the populate loop (see `snap1`
+# above) — the FTSs hold vertically-interpolated data; the gray-stencil
+# overlay needs the native pressure-level columns.
 
-Φ₀_arr = Array(interior(Field(Metadatum(:geopotential_height; dataset=ds_sl, meta_common_snap1...))))[:, :, 1]
-p₀_arr = Array(interior(Field(Metadatum(:surface_pressure;    dataset=ds_sl, meta_common_snap1...))))[:, :, 1]
-z_above_sfc = (Array(interior(Field(Metadatum(:geopotential;  dataset=ds_pl, meta_common_snap1...)))) .-
-               reshape(Φ₀_arr, size(Φ₀_arr, 1), size(Φ₀_arr, 2), 1)) ./ g
-
-read3d_snap1(name) = Array(interior(Field(Metadatum(name; dataset=ds_pl, meta_common_snap1...))))
-u_era5  = read3d_snap1(:eastward_velocity)
-v_era5  = read3d_snap1(:northward_velocity)
-T_era5  = read3d_snap1(:temperature)
-qᵛ_era5 = read3d_snap1(:specific_humidity)
-qᶜ_era5 = read3d_snap1(:specific_cloud_liquid_water_content)
-qⁱ_era5 = read3d_snap1(:specific_cloud_ice_water_content)
-p_era5_3d = repeat(reshape(p_era5_lev, 1, 1, :), size(z_above_sfc, 1), size(z_above_sfc, 2), 1)
+(; p₀_arr, z_above_sfc, p_era5_3d,
+   u_era5, v_era5, T_era5, qᵛ_era5, qᶜ_era5, qⁱ_era5) = snap1
 
 # Materialize θ (currently an abstract op) and derive ERA5-native counterparts.
 θ_lam   = compute!(Field(T * (pˢᵗ / p)^κ))
@@ -577,8 +575,8 @@ v_arr   = Array(interior(v))
 θ_arr   = Array(interior(θ_lam))
 qᵗ_arr  = Array(interior(qᵗ))
 
-λ_e = collect(λnodes(ϕ_field_snap1.grid, Center(), Center(), Center()))
-φ_e = collect(φnodes(ϕ_field_snap1.grid, Center(), Center(), Center()))
+λ_e = λ_centers_era5   # already shifted to LAM's [-180°, 180°] convention
+φ_e = φ_centers_era5
 λ_c = collect(λnodes(grid, Center(), Center(), Center()))
 φ_c = collect(φnodes(grid, Center(), Center(), Center()))
 λ_f = collect(λnodes(grid, Face(),   Center(), Center()))
