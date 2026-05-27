@@ -141,7 +141,7 @@ NumericalEarth.DataWrangling.z_interfaces(md::Metadata{<:OceanStationPapaObserva
 function NumericalEarth.DataWrangling.retrieve_data(md::OceanStationPapaMetadatum)
     ds = Dataset(metadata_path(md))
     t = findfirst(==(md.dates), DateTime.(ds["TIME"][:]))
-    raw = ds[dataset_variable_name(md)][:, :, :, t]
+    raw = ds[NumericalEarth.DataWrangling.dataset_variable_name(md)][:, :, :, t]
     close(ds)
     return reverse(Float64.(replace(raw, missing => NaN)), dims = 3)
 end
