@@ -17,10 +17,10 @@ JRA55PrescribedRadiation(arch::Distributed; kw...) =
                              region = nothing,
                              other_kw...)
 
-Return a [`NumericalEarth.Radiations.PrescribedRadiation`](@ref) backed by JRA55 downwelling shortwave
-and longwave `FieldTimeSeries`. Surface radiative properties (albedo,
-emissivity) for ocean and sea-ice surfaces default to standard values; pass
-`ocean_surface = nothing` (or `sea_ice_surface = nothing`) to omit a surface.
+Return a [`PrescribedRadiation`](@ref NumericalEarth.Radiations.PrescribedRadiation)
+backed by JRA55 downwelling shortwave and longwave `FieldTimeSeries`. Surface radiative
+properties (albedo, emissivity) for ocean and sea-ice surfaces default to standard values;
+pass `ocean_surface = nothing` (or `sea_ice_surface = nothing`) to omit a surface.
 """
 function JRA55PrescribedRadiation(architecture = CPU();
                                   dataset = RepeatYearJRA55(),
