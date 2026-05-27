@@ -1,4 +1,5 @@
 include("runtests_setup.jl")
+include("download_utils.jl")
 
 using NumericalEarth.DataWrangling: mangle, mangling_for, ShiftSouth, AverageNorthSouth
 
@@ -31,8 +32,11 @@ end
 end
 
 @testset "ECCO v_velocity Field uses ShiftSouth mangling end-to-end" begin
+    md = Metadatum(:v_velocity; dataset=ECCO4Monthly(), date=start_date)
+    download_dataset_with_fallback([metadata_path(md)]; dataset_name="ECCO4Monthly v_velocity") do
+        download(md)
+    end
     for arch in test_architectures
-        md = Metadatum(:v_velocity; dataset=ECCO4Monthly(), date=start_date)
         field = Field(md, arch)
 
         # v lives on the latitude Face for ECCO; the file ships Ny-1 lat

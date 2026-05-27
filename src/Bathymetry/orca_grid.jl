@@ -421,7 +421,7 @@ function ORCAGrid(arch = CPU(), FT::DataType = Float64;
                   dir = default_download_directory(dataset))
 
     mesh_meta = Metadatum(:mesh_mask; dataset, dir)
-    mesh_mask_path = download_dataset(mesh_meta)
+    mesh_mask_path = download(mesh_meta)
 
     ds = Dataset(mesh_mask_path)
     mesh = read_orca_staggered_mesh(ds; radius)
@@ -496,7 +496,7 @@ function ORCAGrid(arch = CPU(), FT::DataType = Float64;
     with_bathymetry || return underlying_grid
 
     bathy_meta = Metadatum(:bottom_height; dataset, dir)
-    bathymetry_path = download_dataset(bathy_meta)
+    bathymetry_path = download(bathy_meta)
 
     bathy_ds   = Dataset(bathymetry_path)
     bathy_name = dataset_variable_name(bathy_meta)

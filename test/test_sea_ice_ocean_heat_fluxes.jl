@@ -73,8 +73,8 @@ using ClimaSeaIce.SeaIceThermodynamics: LinearLiquidus, melting_temperature
             Tᵦ, Sᵦ, q = solve_interface_conditions(flux, Tᵒᶜ, Sᵒᶜ, ice_state, αₕ, αₛ, u★, L, ρᵒᶜ, cᵒᶜ, liquidus)
 
             # Interface salinity should be between ice and ocean salinity
-            @test Sᵦ >= Sˢⁱ
-            @test Sᵦ <= Sᵒᶜ
+            @test Sᵦ ≥ Sˢⁱ
+            @test Sᵦ ≤ Sᵒᶜ
 
             # Interface temperature should be at freezing point of interface salinity
             Tₘ = melting_temperature(liquidus, Sᵦ)
@@ -95,8 +95,8 @@ using ClimaSeaIce.SeaIceThermodynamics: LinearLiquidus, melting_temperature
             Tᵦ, Sᵦ, q = solve_interface_conditions(flux, Tᵒᶜ, Sᵒᶜ, ice_state, αₕ, αₛ, u★, L, ρᵒᶜ, cᵒᶜ, liquidus)
 
             # Interface salinity should be between ice and ocean salinity
-            @test Sᵦ >= Sˢⁱ
-            @test Sᵦ <= Sᵒᶜ
+            @test Sᵦ ≥ Sˢⁱ
+            @test Sᵦ ≤ Sᵒᶜ
 
             # Interface temperature should be at freezing point
             Tₘ = melting_temperature(liquidus, Sᵦ)
@@ -128,8 +128,8 @@ using ClimaSeaIce.SeaIceThermodynamics: LinearLiquidus, melting_temperature
                 Tᵦ, Sᵦ, q = solve_interface_conditions(flux, Tᵒᶜ, Sᵒᶜ, ice_state, αₕ, αₛ, u★, L, ρᵒᶜ, cᵒᶜ, liquidus)
 
                 # Interface salinity must always be bounded
-                @test Sᵦ >= Sˢⁱ
-                @test Sᵦ <= Sᵒᶜ
+                @test Sᵦ ≥ Sˢⁱ
+                @test Sᵦ ≤ Sᵒᶜ
 
                 # Interface temperature at freezing point
                 Tₘ = melting_temperature(liquidus, Sᵦ)
@@ -145,8 +145,8 @@ using ClimaSeaIce.SeaIceThermodynamics: LinearLiquidus, melting_temperature
             ice_state = (; S = Sˢⁱ, h = default_h, hc = default_hc, ℵ = default_ℵ, T = default_Tⁱⁿᵗ)
             Tᵦ, Sᵦ, q = solve_interface_conditions(flux, Tᵒᶜ, Sᵒᶜ, ice_state, αₕ, αₛ, u★, L, ρᵒᶜ, cᵒᶜ, liquidus)
 
-            @test Sᵦ >= Sˢⁱ
-            @test Sᵦ <= Sᵒᶜ
+            @test Sᵦ ≥ Sˢⁱ
+            @test Sᵦ ≤ Sᵒᶜ
             @test Tᵦ ≈ melting_temperature(liquidus, Sᵦ)
         end
 
@@ -159,8 +159,8 @@ using ClimaSeaIce.SeaIceThermodynamics: LinearLiquidus, melting_temperature
             ice_state = (; S = Sˢⁱ, h = default_h, hc = default_hc, ℵ = default_ℵ, T = default_Tⁱⁿᵗ)
             Tᵦ, Sᵦ, q = solve_interface_conditions(flux, Tᵒᶜ, Sᵒᶜ, ice_state, αₕ, αₛ, u★_high, L, ρᵒᶜ, cᵒᶜ, liquidus)
 
-            @test Sᵦ >= Sˢⁱ
-            @test Sᵦ <= Sᵒᶜ
+            @test Sᵦ ≥ Sˢⁱ
+            @test Sᵦ ≤ Sᵒᶜ
             @test Tᵦ ≈ melting_temperature(liquidus, Sᵦ)
         end
 
@@ -173,8 +173,8 @@ using ClimaSeaIce.SeaIceThermodynamics: LinearLiquidus, melting_temperature
             ice_state = (; S = Sˢⁱ, h = default_h, hc = default_hc, ℵ = default_ℵ, T = default_Tⁱⁿᵗ)
             Tᵦ, Sᵦ, q = solve_interface_conditions(flux, Tᵒᶜ, Sᵒᶜ, ice_state, αₕ, αₛ, u★_low, L, ρᵒᶜ, cᵒᶜ, liquidus)
 
-            @test Sᵦ >= Sˢⁱ
-            @test Sᵦ <= Sᵒᶜ
+            @test Sᵦ ≥ Sˢⁱ
+            @test Sᵦ ≤ Sᵒᶜ
             @test Tᵦ ≈ melting_temperature(liquidus, Sᵦ)
         end
     end
@@ -207,7 +207,7 @@ end
                 interfaces = ComponentInterfaces(atmosphere, ocean, sea_ice;
                                                  radiation,
                                                  sea_ice_ocean_heat_flux)
-                coupled_model = OceanSeaIceModel(sea_ice, ocean; atmosphere, radiation, interfaces)
+                coupled_model = OceanSeaIceModel(ocean, sea_ice; atmosphere, radiation, interfaces)
 
                 # Test melting conditions: warm ocean above freezing
                 # Freezing point at S=35 is about -1.9°C
@@ -264,7 +264,7 @@ end
                 interfaces = ComponentInterfaces(atmosphere, ocean, sea_ice;
                                                  radiation,
                                                  sea_ice_ocean_heat_flux)
-                coupled_model = OceanSeaIceModel(sea_ice, ocean; atmosphere, radiation, interfaces)
+                coupled_model = OceanSeaIceModel(ocean, sea_ice; atmosphere, radiation, interfaces)
 
                 # Set up melting conditions
                 set!(ocean.model, T=2.0, S=35.0)  # Warm ocean
@@ -407,7 +407,7 @@ end
                 interfaces = ComponentInterfaces(atmosphere, ocean, sea_ice;
                                                  radiation,
                                                  sea_ice_ocean_heat_flux)
-                coupled_model = OceanSeaIceModel(sea_ice, ocean; atmosphere, radiation, interfaces)
+                coupled_model = OceanSeaIceModel(ocean, sea_ice; atmosphere, radiation, interfaces)
 
                 # Set up conditions where frazil might form:
                 # Cold ocean near freezing with ice present
@@ -454,7 +454,7 @@ end
 
         # Test with ThreeEquationHeatFlux (default)
         @test begin
-            coupled_model = OceanSeaIceModel(sea_ice, ocean; atmosphere, radiation)
+            coupled_model = OceanSeaIceModel(ocean, sea_ice; atmosphere, radiation)
             flux_form = coupled_model.interfaces.sea_ice_ocean_interface.flux_formulation
             flux_form isa ThreeEquationHeatFlux
         end
@@ -465,7 +465,7 @@ end
             interfaces = ComponentInterfaces(atmosphere, ocean, sea_ice;
                                               radiation,
                                               sea_ice_ocean_heat_flux = flux)
-            coupled_model = OceanSeaIceModel(sea_ice, ocean; atmosphere, radiation, interfaces)
+            coupled_model = OceanSeaIceModel(ocean, sea_ice; atmosphere, radiation, interfaces)
             flux_form = coupled_model.interfaces.sea_ice_ocean_interface.flux_formulation
             flux_form isa IceBathHeatFlux
         end
@@ -478,7 +478,7 @@ end
                 interfaces = ComponentInterfaces(atmosphere, ocean, sea_ice;
                                                  radiation,
                                                  sea_ice_ocean_heat_flux)
-                coupled_model = OceanSeaIceModel(sea_ice, ocean; atmosphere, radiation, interfaces)
+                coupled_model = OceanSeaIceModel(ocean, sea_ice; atmosphere, radiation, interfaces)
                 @test begin
                     time_step!(coupled_model, 60)
                     true

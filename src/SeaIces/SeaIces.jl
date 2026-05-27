@@ -25,6 +25,10 @@ include("assemble_net_sea_ice_fluxes.jl")
 
 EarthSystemModels.default_sea_ice() = FreezingLimitedOceanTemperature()
 
+# A sea ice simulation is not an ocean — used to catch swapped positional args
+# in the convenience constructors (e.g. `OceanSeaIceModel`).
+EarthSystemModels.is_ocean_component(::Simulation{<:SeaIceModel}) = false
+
 # When using an ClimaSeaIce simulation, we assume that the exchange grid is the sea-ice grid
 EarthSystemModels.interpolate_state!(exchanger, grid, ::Simulation{<:SeaIceModel},       coupled_model) = nothing
 EarthSystemModels.interpolate_state!(exchanger, grid, ::FreezingLimitedOceanTemperature, coupled_model) = nothing

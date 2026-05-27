@@ -1,7 +1,7 @@
 # Notation
 
 This page summarizes the mathematical and code notation used in NumericalEarth.jl,
-following the conventions established in [Breeze.jl](https://github.com/CliMA/Breeze.jl).
+following the conventions established in [Breeze.jl](https://github.com/NumericalEarth/Breeze.jl).
 
 ## How the notation works
 
@@ -194,6 +194,13 @@ with a superscript band.
 | ``J^S`` | `Jˢ` | salinity flux | Net ocean salinity flux (g kg⁻¹ m s⁻¹) |
 | ``\mathcal{Q}^{\mathrm{frz}}`` | `𝒬ᶠʳᶻ` | frazil heat flux | Heat released by frazil ice formation (W m⁻²) |
 
+## Net surface freshwater fluxes
+
+| Math | Code | Property | Description |
+|:----:|:----:|:---------|:------------|
+| ``J^{\mathrm{rn}}`` | `Jʳⁿ` | rain freshwater flux | Rain mass flux at the surface (kg m⁻² s⁻¹) |
+| ``J^{\mathrm{sn}}`` | `Jˢⁿ` | snow freshwater flux | Snow mass flux at the surface (kg m⁻² s⁻¹) |
+
 ## Thermodynamic properties
 
 | Math | Code | Property | Description |
@@ -208,7 +215,7 @@ with a superscript band.
 ## CF standard name mapping
 
 The following table maps code variable names to their
-[CF standard names](http://cfconventions.org/Data/cf-standard-names/current/build/cf-standard-name-table.html)
+[CF standard names](https://cfconventions.org/Data/cf-standard-names/current/build/cf-standard-name-table.html)
 where applicable.
 
 | Code | CF standard name |

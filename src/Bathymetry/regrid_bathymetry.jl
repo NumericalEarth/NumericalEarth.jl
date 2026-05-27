@@ -203,7 +203,7 @@ function regrid_bathymetry(target_grid, metadata;
         end
     end
 
-    download_dataset(metadata)
+    download(metadata)
 
     target_z = _regrid_bathymetry(target_grid, metadata;
                                   height_above_water,
@@ -301,8 +301,8 @@ function regrid_bathymetry(target_grid::DistributedGrid, metadata;
                                   height_above_water, minimum_depth,
                                   interpolation_passes, major_basins)
 
-    # download_dataset uses @root internally; all ranks must call it
-    download_dataset(metadata)
+    # download uses @root internally; all ranks must call it
+    download(metadata)
 
     # Only rank 0 performs cache lookup and computation to avoid OOM
     bottom_height = if arch.local_rank == 0
@@ -497,7 +497,7 @@ function remove_minor_basins!(zb, keep_major_basins, core_size)
 
     # We add basin indexes until we reach the specified number (m == keep_major_basins) or
     # we run out of basins to keep -> isempty(valid)
-    while (m <= keep_major_basins) && !isempty(valid)
+    while (m ≤ keep_major_basins) && !isempty(valid)
         # Among the remaining valid labels, find the one with the largest core area.
         _, idx = findmax(total_elements[valid])
         next_label = label_elements[valid[idx]]

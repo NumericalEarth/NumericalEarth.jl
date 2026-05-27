@@ -1,10 +1,9 @@
 # Metadata
 
 [`Metadata`](@ref) is an abstraction that _represents_ data, but does not embody it.
-Unlike [`Oceananigans.Field`](https://clima.github.io/OceananigansDocumentation/stable/appendix/library/#Oceananigans.Fields.Field-Union{Tuple{Oceananigans.Grids.AbstractGrid},%20Tuple{LZ},%20Tuple{LY},%20Tuple{LX},%20Tuple{Oceananigans.Grids.AbstractGrid,%20DataType}}%20where%20{LX,%20LY,%20LZ}),
-which points to an array occupying space in memory,
-`Metadata` only contains information about where files are stored, their origin, the grid
-they live on, and the date(s) they correspond to (if any).
+Unlike [`Oceananigans.Field`](https://clima.github.io/OceananigansDocumentation/stable/appendix/library#Fields),
+which points to an array occupying space in memory, `Metadata` only contains information about
+where files are stored, their origin, the grid they live on, and the date(s) they correspond to (if any).
 
 ```@docs
 Metadata
@@ -73,6 +72,88 @@ The key ingredients stored in a [`Metadata`](@ref) or [`Metadatum`](@ref) object
 This bookkeeping lets downstream utilities (for example `set!` or `FieldTimeSeries`) request exactly the
 slices of data they need, and it keeps track of where those slices live so we do not redownload
 them unnecessarily.
+
+## Bundling variables with `MetadataSet`
+
+Workflows often need _many_ variables from the same dataset — for example, temperature and salinity
+to initialize an ocean model, or wind, humidity, pressure, and precipitation to drive an atmosphere.
+Writing one `Metadata` (or `Metadatum`) per variable repeats the same `dataset`, `dates`, `region`, and
+`dir` over and over. A [`MetadataSet`](@ref) bundles those variables into one object whose elements
+are still individual `Metadata`/`Metadatum`:
+
+```@example metadata
+mset = MetadataSet(:temperature, :salinity;
+                   dataset = EN4Monthly(),
+                   date    = Date(2010, 1, 1))
+```
+
+The variable axis is exposed via property and indexed access; struct fields stay reachable too.
+With a scalar `date`, each element is a `Metadatum`:
+
+```@example metadata
+mset.temperature              # → a `Metadatum`
+```
+
+```@example metadata
+mset[:salinity] === mset[2]   # property and indexed access are symmetric
+```
+
+```@example metadata
+keys(mset), mset.dataset      # the variable axis, plus shared kwargs
+```
+
+Pass a `dates` range (or vector) instead of a scalar `date` to bundle a time axis;
+each element is then a `Metadata` covering that range:
+
+```@example metadata
+mset_ts = MetadataSet(:temperature, :salinity;
+                      dataset = EN4Monthly(),
+                      dates   = DateTime(2010, 1, 1):Month(1):DateTime(2010, 3, 1))
+mset_ts.temperature           # → a `Metadata` (multi-date)
+```
+
+### `set!(model, mset)` — auto-routing
+
+`set!(model, mset)` translates each variable's verbose dataset name (`:temperature`, `:salinity`, ...)
+to the short model field-name the model expects (`:T`, `:S`, `:u`, `:ℵ`, ...) and forwards the result
+as keyword arguments to the model's underlying `set!`. The translation table lives in
+`NumericalEarth.DataWrangling.variable_glossary`, populated from the conventions in
+[Notation](@ref Notation) — so a coupled set can drive ocean and sea-ice components from one call:
+
+```julia
+mset = MetadataSet(:temperature, :salinity,
+                   :sea_ice_thickness, :sea_ice_concentration;
+                   dataset = ECCO4Monthly(), date = start_date)
+
+set!(ocean.model,   mset)   # picks up :temperature, :salinity → T, S
+set!(sea_ice.model, mset)   # picks up :sea_ice_thickness, :sea_ice_concentration → h, ℵ
+```
+
+Variables absent from `variable_glossary` are silently skipped (lets one set partially drive each
+component without manual filtering).
+
+### Building `Field`s and `FieldTimeSeries` in bulk
+
+`Field(mset, arch=CPU(); kw...)` and `FieldTimeSeries(mset, arch_or_grid; kw...)` build a
+`NamedTuple` keyed by the variable names, with each value materialized from the underlying
+per-variable `Metadata`. `Field` requires a scalar `date` (one snapshot per variable); for
+multi-date sets, use `FieldTimeSeries`:
+
+```@example metadata
+fields = Field(mset)              # (; temperature = Field, salinity = Field)
+fields.temperature
+```
+
+```@example metadata
+fts = FieldTimeSeries(mset_ts)    # NamedTuple of FieldTimeSeries, one per variable
+fts.temperature[1]                # first temperature snapshot, as a Field
+```
+
+### Downloading
+
+`download(mset)` fetches every variable in the set. The default is a per-variable loop; backends
+that support batched multi-variable requests override this — for example, ERA5 pressure-level sets
+route through one CDS API request per calendar day instead of one per (variable, day) pair.
 
 ## Supported datasets
 

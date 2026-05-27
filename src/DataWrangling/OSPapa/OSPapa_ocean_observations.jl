@@ -62,7 +62,7 @@ default_inpainting(::OSPapaMetadata) = nothing
 metadata_filename(::OSPapaMetadatum) = OSPAPA_FILENAME
 metadata_filename(::OSPapaHourly, name, date, region) = OSPAPA_FILENAME
 
-download_dataset(metadata::OSPapaMetadata) = download_ospapa_file(metadata.dir)
+Downloads.download(metadata::OSPapaMetadata) = download_ospapa_file(metadata.dir)
 
 function inpainted_metadata_path(metadata::OSPapaMetadata)
     filename = metadata_filename(first(metadata))
@@ -242,9 +242,9 @@ function vertical_interpolate(::OSPapaMetadatum, z_src, data_src, z_dst)
     dv = dv[perm]
 
     for (i, zt) in enumerate(z_dst)
-        if zt <= zv[1]
+        if zt ≤ zv[1]
             result[i] = dv[1]
-        elseif zt >= zv[end]
+        elseif zt ≥ zv[end]
             result[i] = dv[end]
         else
             j = searchsortedlast(zv, zt)
