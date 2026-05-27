@@ -11,10 +11,10 @@
 # In progress:
 # - [x] Breeze model construction
 # - [x] initial state setting (set! the model from ingested fields)
+# - [x] open boundary conditions (parent-driven OBC + Davies fringe relaxation)
+# - [ ] dynamical initialization
 # - [ ] test with GPU
 # - [ ] acoustic substepping
-# - [ ] dynamical initialization
-# - [ ] open boundary conditions
 # - [ ] land/ocean coupling
 # - [ ] terrain
 
@@ -142,14 +142,15 @@ grid = LatitudeLongitudeGrid(longitude = (λ_west,  λ_east),
 
 constants = ThermodynamicConstants()
 
-g   = ERA5.ERA5_gravitational_acceleration
-Rᵈ  = dry_air_gas_constant(constants)
-Rᵛ  = vapor_gas_constant(constants)
-cₚᵈ = constants.dry_air.heat_capacity
-κ   = Rᵈ / cₚᵈ
-pˢᵗ = 1e5  # Pa
-Lᵥ  = constants.liquid.reference_latent_heat
-Lₛ  = constants.ice.reference_latent_heat
+g    = ERA5.ERA5_gravitational_acceleration
+Rᵈ   = dry_air_gas_constant(constants)
+Rᵛ   = vapor_gas_constant(constants)
+cₚᵈ  = constants.dry_air.heat_capacity
+κ    = Rᵈ / cₚᵈ
+pˢᵗ  = 1e5  # Pa
+εfac = Rᵛ / Rᵈ - 1   # for virtual-temperature correction: Tᵛ = T·(1 + εfac·qᵛ)
+Lᵥ   = constants.liquid.reference_latent_heat
+Lₛ   = constants.ice.reference_latent_heat
 
 # ## Interpolate ERA5 onto the LAM grid
 #
@@ -233,6 +234,12 @@ p_era5_lev = sort(ds_pl.pressure_levels, rev=true)
 λ_centers_era5 = collect(λnodes(ϕ_field_snap1.grid, Center(), Center(), Center()))
 φ_centers_era5 = collect(φnodes(ϕ_field_snap1.grid, Center(), Center(), Center()))
 Nλ_e, Nφ_e = length(λ_centers_era5), length(φ_centers_era5)
+
+# ERA5 returns longitudes in the [0°, 360°] convention; the LAM uses
+# [-180°, 180°]. Shift the parent grid labels to match. The FTS data is
+# array-indexed and unaffected — only the (λ, φ) labels change.
+λ_centers_era5 .= ifelse.(λ_centers_era5 .> 180, λ_centers_era5 .- 360, λ_centers_era5)
+
 Δλ_e = (λ_centers_era5[end] - λ_centers_era5[1]) / (Nλ_e - 1)
 Δφ_e = (φ_centers_era5[end] - φ_centers_era5[1]) / (Nφ_e - 1)
 
@@ -255,6 +262,24 @@ parent = PrescribedAtmosphere(parent_grid, parent_times; thermodynamics_paramete
 
 qᶜ_fts = FieldTimeSeries{Center, Center, Center}(parent_grid, parent_times)
 qⁱ_fts = FieldTimeSeries{Center, Center, Center}(parent_grid, parent_times)
+
+# Density-weighted FTSs — drive lateral BCs on Breeze's prognostic state
+# (ρ, ρu, ρv at Face momenta, ρθ, ρqᵉ at Center scalars). Stored at Center
+# locations regardless of the BC stagger; `Interpolated` handles the location
+# conversion at boundary-fill time.
+
+ρ_fts   = FieldTimeSeries{Center, Center, Center}(parent_grid, parent_times)
+ρu_fts  = FieldTimeSeries{Center, Center, Center}(parent_grid, parent_times)
+ρv_fts  = FieldTimeSeries{Center, Center, Center}(parent_grid, parent_times)
+ρθ_fts  = FieldTimeSeries{Center, Center, Center}(parent_grid, parent_times)
+ρqᵉ_fts = FieldTimeSeries{Center, Center, Center}(parent_grid, parent_times)
+
+# Specific-quantity FTSs — Davies-fringe relaxation targets. Under
+# `SpecificForcing` (Breeze PR #708) the kernel multiplies by ρ at the
+# target stagger automatically; we provide u/v/θ/qᵉ values directly.
+
+θ_fts  = FieldTimeSeries{Center, Center, Center}(parent_grid, parent_times)
+qᵗ_fts = FieldTimeSeries{Center, Center, Center}(parent_grid, parent_times)
 
 # --- Time-invariant: surface geopotential Φ₀ ---
 # Φ₀ is terrain elevation × g; load once from snapshot 1.
@@ -318,6 +343,31 @@ function populate_parent_snapshot!(n, date)
     interior(qᶜ_fts,              :, :, :, n) .= interior(qᶜ_p)
     interior(qⁱ_fts,              :, :, :, n) .= interior(qⁱ_p)
 
+    # Derive ρ, θˡⁱ, qᵗ pointwise on the parent grid, then store both the
+    # specific quantities (for SpecificForcing-keyed Davies targets) and the
+    # density-weighted forms (for BC values on the prognostic state).
+    T_arr  = Array(interior(T_p))
+    qᵛ_arr = Array(interior(qᵛ_p))
+    qᶜ_arr = Array(interior(qᶜ_p))
+    qⁱ_arr = Array(interior(qⁱ_p))
+    p_arr  = Array(interior(p_p))
+    u_arr  = Array(interior(u_p))
+    v_arr  = Array(interior(v_p))
+
+    Tᵛ_arr  = T_arr  .* (1 .+ εfac .* qᵛ_arr)
+    ρ_arr   = p_arr  ./ (Rᵈ .* Tᵛ_arr)
+    θ_arr   = T_arr  .* (pˢᵗ ./ p_arr) .^ κ
+    θˡⁱ_arr = θ_arr  .* (1 .- (Lᵥ .* qᶜ_arr .+ Lₛ .* qⁱ_arr) ./ (cₚᵈ .* T_arr))
+    qᵗ_arr  = qᵛ_arr .+ qᶜ_arr .+ qⁱ_arr
+
+    interior(ρ_fts,   :, :, :, n) .= ρ_arr
+    interior(ρu_fts,  :, :, :, n) .= ρ_arr .* u_arr
+    interior(ρv_fts,  :, :, :, n) .= ρ_arr .* v_arr
+    interior(ρθ_fts,  :, :, :, n) .= ρ_arr .* θˡⁱ_arr
+    interior(ρqᵉ_fts, :, :, :, n) .= ρ_arr .* qᵗ_arr
+    interior(θ_fts,   :, :, :, n) .= θˡⁱ_arr
+    interior(qᵗ_fts,  :, :, :, n) .= qᵗ_arr
+
     return nothing
 end
 
@@ -349,8 +399,6 @@ interpolate!(p,  parent.pressure[1])
 # Calculate virtual temperature: Tᵛ = T·(1 + (1 − ε)/ε·qᵛ), ε = Rᵈ/Rᵛ.
 # Vapor only by convention — the qᶜ, qⁱ terms belong to the density temperature Tρ.
 
-εfac = Rᵛ / Rᵈ - 1
-
 Tᵛ = Field(T * (1 + εfac * qᵛ))
 compute!(Tᵛ)
 
@@ -369,6 +417,57 @@ surface_grid = LatitudeLongitudeGrid(longitude = (λ_west,  λ_east),
 p₀ = CenterField(surface_grid)
 set!(p₀, Metadatum(:surface_pressure; dataset=ds_sl, meta_common_snap1...))
 
+# ## Lateral boundary conditions and Davies relaxation
+#
+# Drive the LAM's lateral boundaries from the parent FTSs:
+#   - `ρu`, `ρv` get `OpenBoundaryCondition(Interpolated(fts))` (Face-stagger).
+#   - `ρ`, `ρθ`, `ρqᵉ` get `ValueBoundaryCondition(Interpolated(fts))` —
+#     `OpenBC` on Center-located fields silently overwrites the first interior
+#     cell on the W/S walls (validated against vortex-transit tests).
+#
+# Davies fringe relaxation toward the same parent state, keyed under specific
+# names (`u`, `v`, `θ`, `qᵉ`) so Breeze's `SpecificForcing` (PR #708) applies
+# the ρ multiply at kernel time at the right face stagger.
+
+bcs = parent_boundary_conditions(grid;
+    variables = (ρu  = ρu_fts,
+                 ρv  = ρv_fts,
+                 ρ   = ρ_fts,
+                 ρe  = ρθ_fts,    # `atmosphere_simulation` already sets bottom :ρe
+                                  # flux; Breeze converts the merged :ρe BCs to :ρθ
+                                  # at model-build time (ValueBC values pass through).
+                 ρqᵉ = ρqᵉ_fts),
+    sides     = (:west, :east, :south, :north),
+    bc_types  = (ρ   = ValueBoundaryCondition,
+                 ρe  = ValueBoundaryCondition,
+                 ρqᵉ = ValueBoundaryCondition))
+
+# Fringe geometry: 5 cells deep in each lateral direction. The mask is a
+# cosine ramp in degree-distance to the nearest wall — Davies is a numerical
+# smoother, so the precise ramp shape isn't physics-critical.
+
+FRINGE_N = 5
+fringe_deg = FRINGE_N * max(Δλ, Δφ)
+
+function lateral_mask(λ, φ, z)
+    dW = λ - λ_west
+    dE = λ_east - λ
+    dS = φ - φ_south
+    dN = φ_north - φ
+    d  = min(dW, dE, dS, dN)
+    d >= fringe_deg && return 0.0
+    return 0.5 * (1 + cos(π * d / fringe_deg))
+end
+
+# τ_relax ≈ 5·Δx / U_scale at the domain center latitude, U ~ 20 m/s.
+Δx_phys = 6371e3 * cos(deg2rad(φ₀)) * deg2rad(Δλ)   # m
+τ_relax = FRINGE_N * Δx_phys / 20.0                 # s
+
+davies = (u  = Relaxation(rate = 1/τ_relax, mask = lateral_mask, target = parent.velocities.u),
+          v  = Relaxation(rate = 1/τ_relax, mask = lateral_mask, target = parent.velocities.v),
+          θ  = Relaxation(rate = 1/τ_relax, mask = lateral_mask, target = θ_fts),
+          qᵉ = Relaxation(rate = 1/τ_relax, mask = lateral_mask, target = qᵗ_fts))
+
 # ## Build the Breeze model
 #
 # Piggyback on the `atmosphere_simulation` helper from
@@ -383,7 +482,9 @@ p̄₀ = mean(interior(p₀))
 
 model = atmosphere_simulation(grid;
                               thermodynamic_constants = constants,
-                              dynamics = CompressibleDynamics(; surface_pressure = p̄₀))
+                              dynamics            = CompressibleDynamics(; surface_pressure = p̄₀),
+                              boundary_conditions = bcs,
+                              forcing             = davies)
 
 # ## Set initial state from ERA5
 #
@@ -407,6 +508,17 @@ compute!(θˡⁱ)
 compute!(qᵗ)
 
 set!(model; ρ = ρ, u = u, v = v, qᵗ = qᵗ, θˡⁱ = θˡⁱ)
+
+# ## NestedSimulation
+#
+# Wrap the child model in a `NestedSimulation` paired with the parent
+# `PrescribedAtmosphere`. `NestedModel.time_step!` syncs the parent clock
+# each iteration so the FTS-driven BCs and forcings get the correct
+# interpolation time. Construction is currently the deliverable — running
+# is a follow-up once Δt and the time-step wizard are configured.
+
+Δt = 1.0   # placeholder; needs acoustic-CFL tuning
+nested = NestedSimulation(parent, model; Δt, stop_time = parent_times[end])
 
 # ## Report
 
