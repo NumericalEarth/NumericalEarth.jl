@@ -12,7 +12,7 @@ export AbstractLand,
        # Surface-property closures
        ConstantSurfaceProperties,
        # Atmosphere-facing accessors
-       surface_temperature, surface_wetness
+       surface_temperature, surface_saturation
 
 """
     abstract type AbstractLand end

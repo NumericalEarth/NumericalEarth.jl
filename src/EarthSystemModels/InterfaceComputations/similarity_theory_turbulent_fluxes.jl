@@ -202,9 +202,9 @@ function iterate_interface_fluxes(flux_formulation::SimilarityTheoryFluxes,
     pᵃᵗ = atmosphere_state.p
 
     # "initial" scales because we will recompute them
-    u★ = approximate_interface_state.u★
-    θ★ = approximate_interface_state.θ★
-    q★ = approximate_interface_state.q★
+    u★ = approximate_interface_state.fluxes.u★
+    θ★ = approximate_interface_state.fluxes.θ★
+    q★ = approximate_interface_state.fluxes.q★
 
     # Stability functions for momentum, heat, and vapor
     ψu = flux_formulation.stability_functions.momentum

@@ -10,13 +10,13 @@
 #####   - `surface   :: AbstractSurfaceProperties` -- roughness length
 #####
 ##### The prognostic `temperature` and `water_storage` fields and the
-##### diagnostic `moisture_availability` field live directly on the
+##### diagnostic `saturation` field live directly on the
 ##### container (top-level access: `land.temperature`, `land.water_storage`,
-##### `land.moisture_availability`). The flux accumulators the coupler
+##### `land.saturation`). The flux accumulators the coupler
 ##### writes are sized from each closure's `flux_variables` declaration and
 ##### grouped in the `fluxes` NamedTuple.
 #####
-##### `moisture_availability` (β) is diagnostic — recomputed from
+##### `saturation` (𝒮) is diagnostic — recomputed from
 ##### `water_storage` inside `update_diagnostics!` (called at the end of
 ##### `time_step!`) rather than inside `step!`.
 #####
@@ -69,7 +69,7 @@ energy, hydrology, or surface-property closure.
 - `clock`                 : `Oceananigans.TimeSteppers.Clock`.
 - `temperature`           : prognostic bulk land temperature `T` (K).
 - `water_storage`         : prognostic land water mass per area `Mˡᵃ` (kg m⁻²).
-- `moisture_availability` : diagnostic moisture availability `β` (–).
+- `saturation`            : diagnostic surface saturation `𝒮 = Mˡᵃ/Mˡᵃ⁺ ∈ [0, 1]` (–).
 - `fluxes`                : `NamedTuple` of flux/forcing `Field`s the coupler writes.
 - `energy`                : an `AbstractEnergyBalance` (parameters).
 - `hydrology`             : an `AbstractHydrology` (parameters).
@@ -80,7 +80,7 @@ struct SlabLand{FT, G, Clk, T, W, B, F, E, H, Sfc} <: AbstractLand
     clock                 :: Clk
     temperature           :: T
     water_storage         :: W
-    moisture_availability :: B
+    saturation :: B
     fluxes                :: F
     energy                :: E
     hydrology             :: H
@@ -88,12 +88,12 @@ struct SlabLand{FT, G, Clk, T, W, B, F, E, H, Sfc} <: AbstractLand
 end
 
 # Inner-style typed constructor capturing FT.
-SlabLand{FT}(grid, clock, temperature, water_storage, moisture_availability,
+SlabLand{FT}(grid, clock, temperature, water_storage, saturation,
              fluxes, energy, hydrology, surface) where FT =
     SlabLand{FT, typeof(grid), typeof(clock),
-             typeof(temperature), typeof(water_storage), typeof(moisture_availability),
+             typeof(temperature), typeof(water_storage), typeof(saturation),
              typeof(fluxes), typeof(energy), typeof(hydrology), typeof(surface)}(
-                 grid, clock, temperature, water_storage, moisture_availability,
+                 grid, clock, temperature, water_storage, saturation,
                  fluxes, energy, hydrology, surface)
 
 """
@@ -105,7 +105,7 @@ SlabLand{FT}(grid, clock, temperature, water_storage, moisture_availability,
 
 Construct a `SlabLand` with the chosen closures. The prognostic
 `temperature` and `water_storage` fields and the diagnostic
-`moisture_availability` field are allocated on `grid`; the flux
+`saturation` field are allocated on `grid`; the flux
 accumulators the coupler writes are sized from each closure's
 `flux_variables` declaration.
 """
@@ -117,10 +117,10 @@ function SlabLand(grid;
 
     temperature           = CenterField(grid)
     water_storage         = CenterField(grid)
-    moisture_availability = CenterField(grid)
+    saturation = CenterField(grid)
     fluxes                = build_flux_accumulators(grid, energy, hydrology, surface)
     FT                    = eltype(grid)
-    return SlabLand{FT}(grid, clock, temperature, water_storage, moisture_availability,
+    return SlabLand{FT}(grid, clock, temperature, water_storage, saturation,
                         fluxes, energy, hydrology, surface)
 end
 
@@ -142,7 +142,7 @@ function Base.show(io::IO, land::SlabLand)
               "├── surface:               ", summary(land.surface), '\n',
               "├── temperature:           ", summary(land.temperature), '\n',
               "├── water_storage:         ", summary(land.water_storage), '\n',
-              "├── moisture_availability: ", summary(land.moisture_availability), '\n',
+              "├── saturation: ", summary(land.saturation), '\n',
               "└── fluxes:                ", keys(land.fluxes))
 end
 
@@ -177,7 +177,7 @@ function Oceananigans.TimeSteppers.time_step!(land::SlabLand, Δt)
 
     fill_halo_regions!(land.temperature)
     fill_halo_regions!(land.water_storage)
-    fill_halo_regions!(land.moisture_availability)
+    fill_halo_regions!(land.saturation)
     return nothing
 end
 
@@ -185,8 +185,8 @@ end
     update_state!(land::SlabLand)
 
 Refresh closure-owned diagnostics. Order is `hydrology → surface →
-energy`: hydrology produces `moisture_availability` (β), the surface
-closure may consume β (e.g. wetness-dependent albedo, LAI-aware
+energy`: hydrology produces `saturation` (𝒮), the surface
+closure may consume 𝒮 (e.g. saturation-dependent albedo, LAI-aware
 roughness) before the energy closure assembles any heat-capacity
 diagnostic from the freshly updated water storage.
 """
@@ -202,7 +202,7 @@ end
 #####
 
 surface_temperature(land::SlabLand)       = surface_temperature(land.energy, land)
-surface_wetness(land::SlabLand)           = wetness(land.hydrology, land)
+surface_saturation(land::SlabLand)           = saturation(land.hydrology, land)
 momentum_roughness_length(land::SlabLand) = momentum_roughness_length(land.surface, land)
 scalar_roughness_length(land::SlabLand)   = scalar_roughness_length(land.surface, land)
 
@@ -273,11 +273,11 @@ interpolate_state!(exchanger, grid, ::SlabLand, coupled_model) = nothing
     ComponentExchanger(land::SlabLand, grid)
 
 Expose the generic atmosphere-facing SlabLand state through accessors:
-skin temperature `T`, `moisture_availability`, and the two roughness lengths.
+skin temperature `T`, `saturation`, and the two roughness lengths.
 """
 function EarthSystemModels.InterfaceComputations.ComponentExchanger(land::SlabLand, grid)
     state = (T                         = surface_temperature(land),
-             moisture_availability     = surface_wetness(land),
+             saturation     = surface_saturation(land),
              momentum_roughness_length = momentum_roughness_length(land),
              scalar_roughness_length   = scalar_roughness_length(land))
     return ComponentExchanger(state, nothing)

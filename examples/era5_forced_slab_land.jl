@@ -208,7 +208,7 @@ slab_land = SlabLand(land_grid;
                      energy    = SlabEnergy(FT;
                                             dry_heat_capacity    = 1500.0 * 1480.0 * 0.10,
                                             liquid_heat_capacity = 4186.0),
-                     hydrology = BucketHydrology(FT; maximum_water_storage = 150.0, critical_wetness_ratio = 0.75),
+                     hydrology = BucketHydrology(FT; maximum_water_storage = 150.0),
                      surface   = ConstantSurfaceProperties(FT;
                                                            momentum_roughness_length = 0.1,
                                                            scalar_roughness_length   = 0.01))
@@ -232,18 +232,18 @@ function progress(sim)
     land = sim.model.land
     Tmin, Tmax = minimum(land.temperature), maximum(land.temperature)
     Wmin, Wmax = minimum(land.water_storage), maximum(land.water_storage)
-    βmean      = mean(land.moisture_availability)
+    𝒮mean      = mean(land.saturation)
     Qmean      = mean(land.fluxes.net_energy_flux)
     elapsed    = 1e-9 * (time_ns() - wall_time[]); wall_time[] = time_ns()
-    @info @sprintf("Iter %d  t = %s  T %.1f–%.1f K  W %.1f–%.1f kg m⁻²  ⟨β⟩ %.2f  ⟨Q⟩ %+6.1f W m⁻²  wall Δ %.1fs",
-                   iteration(sim), prettytime(sim), Tmin, Tmax, Wmin, Wmax, βmean, Qmean, elapsed)
+    @info @sprintf("Iter %d  t = %s  T %.1f–%.1f K  W %.1f–%.1f kg m⁻²  ⟨𝒮⟩ %.2f  ⟨Q⟩ %+6.1f W m⁻²  wall Δ %.1fs",
+                   iteration(sim), prettytime(sim), Tmin, Tmax, Wmin, Wmax, 𝒮mean, Qmean, elapsed)
     return nothing
 end
 add_callback!(simulation, progress, IterationInterval(144))  # ~12 h
 
 outputs = (T = slab_land.temperature,
            W = slab_land.water_storage,
-           β = slab_land.moisture_availability,
+           𝒮 = slab_land.saturation,
            Q = slab_land.fluxes.net_energy_flux,
            E = slab_land.fluxes.evaporation,
            P = slab_land.fluxes.precipitation)
@@ -271,42 +271,42 @@ GC.gc(true); GC.gc(true)
 
 # ## Animation
 #
-# Three spatial panels — T, β, Q — plus a static elevation panel and
+# Three spatial panels — T, 𝒮, Q — plus a static elevation panel and
 # a domain-mean T(t) time series. The elevation panel makes the
 # lapse-rate signature in T(λ, φ) directly readable.
 
 T_ts = FieldTimeSeries("era5_forced_slab_land.jld2", "T")
-β_ts = FieldTimeSeries("era5_forced_slab_land.jld2", "β")
+𝒮_ts = FieldTimeSeries("era5_forced_slab_land.jld2", "𝒮")
 Q_ts = FieldTimeSeries("era5_forced_slab_land.jld2", "Q")
 
 times      = T_ts.times
 Nframes    = length(times)
 times_days = collect(times) ./ 86400
 
-# Colorrange for β covers the actual span over the run (clamped to a sensible
+# Colorrange for 𝒮 covers the actual span over the run (clamped to a sensible
 # minimum width so an unusually static field still renders cleanly).
-β_lo, β_hi = extrema(β_ts)
-β_range = (β_lo, max(β_hi, β_lo + 0.1))
+𝒮_lo, 𝒮_hi = extrema(𝒮_ts)
+𝒮_range = (𝒮_lo, max(𝒮_hi, 𝒮_lo + 0.1))
 
 fig = Figure(size = (1500, 1000), fontsize = 12)
 ax_T = Axis(fig[1, 1]; title = "Skin temperature T (K)",    xlabel = "longitude", ylabel = "latitude", aspect = DataAspect())
-ax_β = Axis(fig[1, 2]; title = "Moisture availability β",   xlabel = "longitude", ylabel = "latitude", aspect = DataAspect())
+ax_𝒮 = Axis(fig[1, 2]; title = "Surface saturation 𝒮",   xlabel = "longitude", ylabel = "latitude", aspect = DataAspect())
 ax_Q = Axis(fig[1, 3]; title = "Net energy flux Q (W m⁻²)", xlabel = "longitude", ylabel = "latitude", aspect = DataAspect())
 ax_z = Axis(fig[2, 1]; title = "Elevation (m, ETOPO 2022)", xlabel = "longitude", ylabel = "latitude", aspect = DataAspect())
 ax_t = Axis(fig[2, 2:3]; title = "Domain T extrema and mean over time", xlabel = "t (days)", ylabel = "T (K)")
 
 n  = Observable(1)
 Tn = @lift T_ts[$n]
-βn = @lift β_ts[$n]
+𝒮n = @lift 𝒮_ts[$n]
 Qn = @lift Q_ts[$n]
 
 hm_T = heatmap!(ax_T, Tn;           colormap = :thermal, colorrange = (250, 300))
-hm_β = heatmap!(ax_β, βn;           colormap = :tempo,   colorrange = β_range)
+hm_𝒮 = heatmap!(ax_𝒮, 𝒮n;           colormap = :tempo,   colorrange = 𝒮_range)
 hm_Q = heatmap!(ax_Q, Qn;           colormap = :balance, colorrange = (-400, 400))
 hm_z = heatmap!(ax_z, z_land_field; colormap = :terrain, colorrange = (1000, 3500))
 
 Colorbar(fig[1, 1, Right()], hm_T; label = "T (K)")
-Colorbar(fig[1, 2, Right()], hm_β; label = "β")
+Colorbar(fig[1, 2, Right()], hm_𝒮; label = "𝒮")
 Colorbar(fig[1, 3, Right()], hm_Q; label = "Q (W m⁻²)")
 Colorbar(fig[2, 1, Right()], hm_z; label = "elevation (m)")
 

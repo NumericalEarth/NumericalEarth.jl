@@ -1,65 +1,49 @@
 #####
-##### `BucketHydrology` — Manabe-style single-bucket soil moisture.
+##### `BucketHydrology` — single-bucket land water budget.
 #####
-##### One prognostic variable `state.water_storage` (Mˡᵃ, kg m⁻²) and
-##### the flux accumulators `fluxes.precipitation`, `fluxes.evaporation`
-##### (kg m⁻² s⁻¹). The atmosphere-facing moisture availability `β` is
-##### a diagnostic of `water_storage` provided through
-##### `wetness(::BucketHydrology, state)`.
+##### One prognostic variable `water_storage` (Mˡᵃ, kg m⁻²) evolving under
+##### `P − E` (the flux accumulators `fluxes.precipitation`,
+##### `fluxes.evaporation`, kg m⁻² s⁻¹). The atmosphere-facing
+##### `surface_saturation` is the continuous diagnostic `saturation`
+##### `𝒮 = Mˡᵃ/Mˡᵃ⁺ ∈ [0, 1]`; the interface humidity models derive their
+##### availability from it.
 #####
 
 """
     BucketHydrology(FT = Float64;
                     maximum_water_storage = 150,
-                    critical_wetness_ratio = 0.75,
-                    root_depth = 1,
-                    leaf_area_index = 0,
-                    lai_stress = 0)
+                    root_depth = 1)
 
-Manabe-style single-bucket hydrology. The land water mass per area `Mˡᵃ`
-evolves under `P − E`, clamped to `[0, Mˡᵃ⁺]` where `Mˡᵃ⁺` is the bucket
-capacity (`maximum_water_storage`, the soil-science "field capacity"; 150 kg m⁻²
-corresponds to roughly 15 cm of equivalent liquid water).
+Single-bucket land hydrology. The land water mass per area `Mˡᵃ`
+(`water_storage`) evolves under `P − E`, clamped to `[0, Mˡᵃ⁺]` where `Mˡᵃ⁺`
+is the bucket capacity (`maximum_water_storage`, the soil-science "field
+capacity"; 150 kg m⁻² ≈ 15 cm of equivalent liquid water, scaled by
+`root_depth`).
 
-The moisture availability factor `β` plateaus at 1 above the critical wetness
-threshold `εʷ · Mˡᵃ⁺`, where `εʷ = critical_wetness_ratio`. Below the
-threshold, `β` rises linearly with `Mˡᵃ`.
+The atmosphere-facing `surface_saturation` is the continuous saturation
+`𝒮 = clamp(Mˡᵃ/Mˡᵃ⁺, 0, 1)`. The interface surface-humidity models derive their
+own availability from it: [`BulkHumidity`](@ref) is the binary limit (saturated
+where `𝒮 > 0`), [`FractionalHumidity`](@ref) scales saturation by `β(𝒮)`, and
+[`SkinHumidity`](@ref) solves a vapor-flux balance. The availability
+parameterization belongs on the interface, not here.
 
-Both `maximum_water_storage` and `critical_wetness_ratio` may be scalars or
-per-cell `Field`s. `root_depth` and `leaf_area_index` support per-cell fields
-and introduce simple literature-inspired modifiers:
-
-- effective capacity scales with `maximum_water_storage * root_depth`
-- canopy stress scales moisture availability by `exp(-lai_stress * LAI)`
-
-The defaults (`root_depth = 1`, `leaf_area_index = 0`, `lai_stress = 0`) recover
-the classic Manabe bucket.
+`maximum_water_storage` and `root_depth` may be scalars or per-cell `Field`s.
 """
-struct BucketHydrology{Mmax, Ew, R, L, S} <: AbstractHydrology
-    maximum_water_storage  :: Mmax
-    critical_wetness_ratio :: Ew
-    root_depth             :: R
-    leaf_area_index        :: L
-    lai_stress             :: S
+struct BucketHydrology{Mmax, R} <: AbstractHydrology
+    maximum_water_storage :: Mmax
+    root_depth            :: R
 end
 
 function BucketHydrology(FT::Type = Float64;
-                         maximum_water_storage  = 150.0,
-                         critical_wetness_ratio = 0.75,
-                         root_depth             = 1,
-                         leaf_area_index        = 0,
-                         lai_stress             = 0.0)
-    maximum_water_storage  = normalize_property(FT, maximum_water_storage)
-    critical_wetness_ratio = normalize_property(FT, critical_wetness_ratio)
-    root_depth             = normalize_property(FT, root_depth)
-    leaf_area_index        = normalize_property(FT, leaf_area_index)
-    lai_stress             = normalize_property(FT, lai_stress)
-    return BucketHydrology(maximum_water_storage, critical_wetness_ratio,
-                           root_depth, leaf_area_index, lai_stress)
+                         maximum_water_storage = 150.0,
+                         root_depth            = 1)
+    maximum_water_storage = normalize_property(FT, maximum_water_storage)
+    root_depth            = normalize_property(FT, root_depth)
+    return BucketHydrology(maximum_water_storage, root_depth)
 end
 
 # The container always allocates `water_storage` (prognostic) and
-# `moisture_availability` (diagnostic, recomputed in `update_diagnostics!`).
+# `saturation` (diagnostic, recomputed in `update_diagnostics!`).
 flux_variables(::BucketHydrology) = (:precipitation, :evaporation)
 
 @inline function _bucket_root_zone_capacity(maximum_water_storage, root_depth, i, j, k=1)
@@ -87,51 +71,29 @@ function step!(b::BucketHydrology, land, Δt)
     return nothing
 end
 
-@kernel function _bucket_hydrology_moisture_availability!(moisture_availability, M,
-                                                          maximum_water_storage,
-                                                          critical_wetness_ratio,
-                                                          root_depth,
-                                                          leaf_area_index,
-                                                          lai_stress)
+# Continuous surface saturation 𝒮 = M / M_max ∈ [0, 1] (`𝒮` follows Breeze's
+# saturation symbol). The interface humidity models (`BulkHumidity`,
+# `FractionalHumidity`, …) derive their own availability from it; `BulkHumidity`'s
+# wet/dry test (`𝒮 > 0`) is the binary special case.
+@kernel function _bucket_hydrology_saturation!(saturation, M, maximum_water_storage, root_depth)
     i, j = @index(Global, NTuple)
     @inbounds begin
-        FT    = eltype(M)
         M_max = _bucket_root_zone_capacity(maximum_water_storage, root_depth, i, j, 1)
-        εʷ    = property_value(critical_wetness_ratio, i, j, 1)
-        Mnow  = max(M[i, j, 1], 0)
-
-        # M_max ≤ 0 means no storage capacity (e.g. inactive tile) ⇒ no moisture.
-        # εʷ ≤ 0 is the degenerate limit (everything above zero M behaves like
-        # a saturated surface).
-        β = ifelse(M_max <= 0, 0,
-            ifelse(εʷ <= 0, one(FT),
-                   clamp(Mnow / (εʷ * M_max), 0, one(FT))))
-
-        LAI = property_value(leaf_area_index, i, j, 1)
-        kᴸ  = property_value(lai_stress, i, j, 1)
-        β *= exp(-kᴸ * LAI)
-        β  = clamp(β, 0, one(FT))
-
-        moisture_availability[i, j, 1] = β
+        𝒮 = ifelse(M_max > 0, clamp(M[i, j, 1] / M_max, 0, 1), zero(eltype(M)))
+        saturation[i, j, 1] = 𝒮
     end
 end
 
 function update_diagnostics!(b::BucketHydrology, land)
     arch = architecture(land.grid)
-
-    launch!(arch, land.grid, :xy, _bucket_hydrology_moisture_availability!,
-            land.moisture_availability, land.water_storage,
-            b.maximum_water_storage, b.critical_wetness_ratio,
-            b.root_depth, b.leaf_area_index, b.lai_stress)
-
+    launch!(arch, land.grid, :xy, _bucket_hydrology_saturation!,
+            land.saturation, land.water_storage,
+            b.maximum_water_storage, b.root_depth)
     return nothing
 end
 
-wetness(::BucketHydrology, land) = land.moisture_availability
+saturation(::BucketHydrology, land) = land.saturation
 
 Base.summary(b::BucketHydrology) =
     string("BucketHydrology(maximum_water_storage=", prettysummary(b.maximum_water_storage),
-           ", critical_wetness_ratio=", prettysummary(b.critical_wetness_ratio),
-           ", root_depth=", prettysummary(b.root_depth),
-           ", leaf_area_index=", prettysummary(b.leaf_area_index),
-           ", lai_stress=", prettysummary(b.lai_stress), ")")
+           ", root_depth=", prettysummary(b.root_depth), ")")

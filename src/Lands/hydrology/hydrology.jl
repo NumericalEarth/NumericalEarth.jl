@@ -4,7 +4,7 @@
 ##### A concrete `AbstractHydrology` closes the surface water budget.
 ##### Like `AbstractEnergyBalance`, it declares its prognostic state and
 ##### incoming flux accumulators through `prognostic_variables` and
-##### `flux_variables`. Beyond that, it must provide `wetness(...)`, the
+##### `flux_variables`. Beyond that, it must provide `saturation(...)`, the
 ##### moisture-availability factor `β ∈ [0, 1]` that the atmosphere's
 ##### latent-heat BC reads. β is the only consumer-facing diagnostic.
 #####
@@ -35,10 +35,10 @@ update_diagnostics!(::AbstractHydrology, land) = nothing
 #####
 
 """
-    wetness(hydrology::AbstractHydrology, land) -> AbstractField
+    saturation(hydrology::AbstractHydrology, land) -> AbstractField
 
 Return the moisture-availability factor `β ∈ [0, 1]` the atmosphere's
 latent-heat BC reads. May be a `Field`, `ZeroField`, any `AbstractField`,
 or a `Number`.
 """
-function wetness end
+function saturation end

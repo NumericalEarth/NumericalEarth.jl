@@ -18,9 +18,7 @@ using NumericalEarth.Lands: update_diagnostics!
 
         energy = SlabEnergy(eltype(grid); dry_heat_capacity = 2.0,
                                          liquid_heat_capacity = 4.0)
-        hydrology = BucketHydrology(eltype(grid);
-                                   maximum_water_storage = 10.0,
-                                   critical_wetness_ratio = 0.5)
+        hydrology = BucketHydrology(eltype(grid); maximum_water_storage = 10.0)
         surface = ConstantSurfaceProperties(eltype(grid);
                                            momentum_roughness_length = 0.1,
                                            scalar_roughness_length = 0.01)
@@ -30,7 +28,6 @@ using NumericalEarth.Lands: update_diagnostics!
         @test land.energy.dry_heat_capacity isa Number
         @test land.energy.liquid_heat_capacity isa Number
         @test land.hydrology.maximum_water_storage isa Number
-        @test land.hydrology.critical_wetness_ratio isa Number
         @test land.surface.momentum_roughness_length isa Number
         @test land.surface.scalar_roughness_length isa Number
 
@@ -59,7 +56,7 @@ using NumericalEarth.Lands: update_diagnostics!
 
         # The bucket receives `3 kg m⁻²` net water over the step, capping at 10.
         @test isapprox(CUDA.@allowscalar(land.water_storage[1, 1, 1]), 10.0; atol=1e-12)
-        @test isapprox(CUDA.@allowscalar(land.moisture_availability[1, 1, 1]), 1.0; atol=1e-12)
+        @test isapprox(CUDA.@allowscalar(land.saturation[1, 1, 1]), 1.0; atol=1e-12)
 
         # Exposer for atmosphere-facing roughness fields.
         ex = NumericalEarth.EarthSystemModels.InterfaceComputations.ComponentExchanger(land, land.grid)
@@ -80,23 +77,19 @@ end
         Cdry = CenterField(grid)
         Cl   = CenterField(grid)
         Wmax = CenterField(grid)
-        Wcrit = CenterField(grid)
         ℓᵐ = CenterField(grid)
         ℓˢ = CenterField(grid)
 
         fill!(Cdry, 8.0)
         fill!(Cl, 2.0)
         fill!(Wmax, 12.0)
-        fill!(Wcrit, 0.5)
         fill!(ℓᵐ, 0.2)
         fill!(ℓˢ, 0.02)
 
         energy = SlabEnergy(eltype(grid);
                             dry_heat_capacity = Cdry,
                             liquid_heat_capacity = Cl)
-        hydrology = BucketHydrology(eltype(grid);
-                                    maximum_water_storage = Wmax,
-                                    critical_wetness_ratio = Wcrit)
+        hydrology = BucketHydrology(eltype(grid); maximum_water_storage = Wmax)
         surface = ConstantSurfaceProperties(eltype(grid);
                                             momentum_roughness_length = ℓᵐ,
                                             scalar_roughness_length = ℓˢ)
@@ -106,7 +99,6 @@ end
         @test land.energy.dry_heat_capacity isa AbstractField
         @test land.energy.liquid_heat_capacity isa AbstractField
         @test land.hydrology.maximum_water_storage isa AbstractField
-        @test land.hydrology.critical_wetness_ratio isa AbstractField
         @test land.surface.momentum_roughness_length isa AbstractField
         @test land.surface.scalar_roughness_length isa AbstractField
 
@@ -131,7 +123,7 @@ end
     end
 end
 
-@testset "BucketHydrology root depth and LAI modifiers" begin
+@testset "BucketHydrology root depth and continuous saturation" begin
     for arch in test_architectures
         grid = RectilinearGrid(arch;
                                size = 1,
@@ -141,47 +133,39 @@ end
                                topology = (Flat, Flat, Bounded))
 
         Wmax = CenterField(grid)
-        Wcrit = CenterField(grid)
-        zʳ = CenterField(grid)
-        Λ = CenterField(grid)
-
+        zʳ   = CenterField(grid)
         fill!(Wmax, 10.0)
-        fill!(Wcrit, 0.5)
         fill!(zʳ, 2.0)
-        fill!(Λ, 1.0)
 
         energy = SlabEnergy(eltype(grid); dry_heat_capacity = 1000.0, liquid_heat_capacity = 4000.0)
         hydrology = BucketHydrology(eltype(grid);
                                     maximum_water_storage = Wmax,
-                                    critical_wetness_ratio = Wcrit,
-                                    root_depth = zʳ,
-                                    leaf_area_index = Λ,
-                                    lai_stress = 0.2)
+                                    root_depth = zʳ)
         surface = ConstantSurfaceProperties(eltype(grid);
                                             momentum_roughness_length = 0.1,
                                             scalar_roughness_length = 0.01)
 
         land = SlabLand(grid; energy, hydrology, surface)
 
+        # Saturation is continuous: θ = M / M_max, with M_max = Wmax * zʳ = 20.
         fill!(land.water_storage, 5.0)
-        fill!(land.moisture_availability, 0.0)
+        fill!(land.saturation, 0.0)
         update_diagnostics!(land.hydrology, land)
+        @test isapprox(CUDA.@allowscalar(land.saturation[1, 1, 1]), 0.25; atol=1e-12)
 
-        # Effective capacity is Wmax * zʳ = 20 kg m⁻², so β_before = 5/(0.5*20)=0.5.
-        # LAI stress with kᴸ=0.2 and Λ=1.0 gives β = 0.5 * exp(-0.2).
-        expected_β = 0.5 * exp(-0.2)
-        @test isapprox(CUDA.@allowscalar(land.moisture_availability[1, 1, 1]), expected_β; atol=1e-12)
+        # No water ⇒ 0.
+        fill!(land.water_storage, 0.0)
+        update_diagnostics!(land.hydrology, land)
+        @test isapprox(CUDA.@allowscalar(land.saturation[1, 1, 1]), 0.0; atol=1e-12)
 
+        # root_depth scales the storage cap: effective capacity = Wmax * zʳ = 20,
+        # and saturation tops out at 1 when the bucket is full.
         fill!(land.water_storage, 18.0)
         fill!(land.fluxes.precipitation, 7.0)
         fill!(land.fluxes.evaporation, 0.0)
         time_step!(land, 1.0)
-
-        # Effective capacity is Wmax * zʳ = 20 kg m⁻²; water_storage caps there.
         @test isapprox(CUDA.@allowscalar(land.water_storage[1, 1, 1]), 20.0; atol=1e-12)
-        # At saturation β_raw = 1; the canopy LAI stress (kᴸ Λ = 0.2)
-        # still multiplies through, giving β = exp(-0.2).
-        @test isapprox(CUDA.@allowscalar(land.moisture_availability[1, 1, 1]), exp(-0.2); atol=1e-12)
+        @test isapprox(CUDA.@allowscalar(land.saturation[1, 1, 1]), 1.0; atol=1e-12)
     end
 end
 

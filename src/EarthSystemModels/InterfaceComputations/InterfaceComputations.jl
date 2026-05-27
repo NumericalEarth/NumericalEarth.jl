@@ -27,7 +27,10 @@ export
     compute_atmosphere_sea_ice_fluxes!,
     compute_atmosphere_land_fluxes!,
     compute_sea_ice_ocean_fluxes!,
-    BetaSurfaceSpecificHumidity,
+    BulkHumidity,
+    SkinHumidity,
+    FractionalHumidity,
+    CriticalWetness,
     # Sea ice-ocean heat flux formulations
     IceBathHeatFlux,
     ThreeEquationHeatFlux,

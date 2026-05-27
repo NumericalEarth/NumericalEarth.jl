@@ -110,13 +110,15 @@ denote the _component_ or _location_.
 | ``q`` | `q` | specific humidity | Mass mixing ratio of water vapor (kg kg⁻¹) |
 | ``u`` | `u` | zonal velocity | Eastward wind component (m s⁻¹) |
 | ``v`` | `v` | meridional velocity | Northward wind component (m s⁻¹) |
-| ``\beta`` | `β` | moisture availability | Land surface wetness availability (–) |
+| ``𝒮`` | `saturation` | surface saturation | Land surface saturation ``Mˡᵃ/Mˡᵃ⁺ ∈ [0,1]`` (shares Breeze's saturation symbol; cf. its supersaturation); humidity models derive their availability from it (–) |
+| ``\beta`` | `β` | evaporation efficiency | Derived surface availability ``β(𝒮)``; e.g. `CriticalWetness` gives ``\min(𝒮/𝒮ᶜ, 1)`` (–) |
 | ``\mathscr{I}_\downarrow^{\mathrm{sw}}`` | `ℐꜜˢʷ` | downwelling shortwave | Downwelling shortwave radiation (W m⁻²) |
 | ``\mathscr{I}_\downarrow^{\mathrm{lw}}`` | `ℐꜜˡʷ` | downwelling longwave | Downwelling longwave radiation (W m⁻²) |
 | ``J^c`` | `Jᶜ` | condensate flux | Precipitation (condensate) mass flux (kg m⁻² s⁻¹) |
 | ``h_{b\ell}`` | `h_bℓ` | boundary layer height | Atmospheric boundary layer height (m) |
 | ``pᵛ⁺`` | ``pᵛ⁺`` | saturation vapor pressure | Vapor pressure at saturation (Pa) |
 | ``qᵛ⁺`` | `qᵛ⁺` | saturation specific humidity | Specific humidity at saturation, ``q^{v+}(T)`` (kg kg⁻¹) |
+| ``qˢ`` | `q` | surface specific humidity | Specific humidity at the interface; set by the humidity model (`β·qᵛ⁺` for `FractionalHumidity`, a vapor-flux balance for `SkinHumidity`) (kg kg⁻¹) |
 
 ## Land state variables and parameters
 
@@ -125,11 +127,13 @@ denote the _component_ or _location_.
 | ``T`` | `temperature` | bulk land temperature | Prognostic land-column temperature (K) |
 | ``M^{\mathrm{la}}`` | `water_storage` | land water | Prognostic land water mass per area (kg m⁻²) |
 | ``M^{\mathrm{la}\!+}`` | `maximum_water_storage` | maximum land water | Bucket capacity; soil-science "field capacity" (kg m⁻²) |
-| ``\varepsilon^w`` | `critical_wetness_ratio` | critical wetness ratio | Fraction of ``M^{\mathrm{la}\!+}`` above which ``\beta`` plateaus at 1 (–) |
+| ``𝒮`` | `moisture_availability` | surface saturation | Continuous land surface saturation ``\mathrm{clamp}(Mˡᵃ/Mˡᵃ⁺, 0, 1)``; the interface humidity models derive their availability ``β`` from it (–) |
+| ``𝒮ᶜ`` | `critical_saturation` | critical saturation | Saturation above which the surface evaporates at full efficiency, for `CriticalWetness` (–) |
 | ``T^{\mathrm{deep}}`` | `deep_temperature` | deep climatological temperature | Prescribed deep/climatological target temperature for force-restore (K) |
 | ``τ^{\mathrm{deep}}`` | `deep_time_scale` | deep-restore time scale | Time scale of surface relaxation toward ``T^{\mathrm{deep}}`` (s) |
-| ``zʳ`` | `root_depth` | effective root depth | Root-zone scaling of moisture capacity (m) |
-| ``\Lambda`` | `leaf_area_index` | leaf area index | Leaf area index (–) |
+| ``zʳ`` | `root_depth` | effective root depth | Root-zone scaling of storage capacity (m) |
+| ``d`` | `surface_thickness` | saturation depth | Depth of the dry surface layer through which soil vapor diffuses, for `SkinHumidity` (m) |
+| ``κ^q`` | `vapor_diffusivity` | soil vapor diffusivity | Vapor mass diffusivity in the surface soil layer, for `SkinHumidity` (kg m⁻¹ s⁻¹) |
 
 ## Ocean state variables
 
@@ -266,7 +270,6 @@ collects the less obvious completions used in this notation.
 | `𝒬` | `\scrQ` | Script Q (heat flux) |
 | `ℐ` | `\scrI` | Script I (radiative intensity) |
 | `ℒ` | `\scrL` | Script L (latent heat) |
-| `Λ` | `\Lambda` | Lambda (leaf area index) |
 | `τ` | `\tau` | Tau (kinematic stress) |
 | `ρ` | `\rho` | Rho (density) |
 | `σ` | `\sigma` | Sigma (Stefan–Boltzmann constant) |

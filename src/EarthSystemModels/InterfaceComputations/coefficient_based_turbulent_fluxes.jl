@@ -295,9 +295,9 @@ end
     g   = atmosphere_properties.gravitational_acceleration
 
     κ  = ly.von_karman_constant
-    u★ = approximate_interface_state.u★
-    θ★ = approximate_interface_state.θ★
-    q★ = approximate_interface_state.q★
+    u★ = approximate_interface_state.fluxes.u★
+    θ★ = approximate_interface_state.fluxes.θ★
+    q★ = approximate_interface_state.fluxes.q★
 
     neutral_drag = ly.neutral_drag_coefficient
     h₀   = ly.reference_height

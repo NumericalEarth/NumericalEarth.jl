@@ -4,9 +4,9 @@
 # `SlabLand` with spatially-varying surface moisture, driven by full
 # RRTMGP all-sky radiation with a diurnal cycle.
 #
-# The land's central wet patch (`W ≈ W_max`, β ≈ 1) evaporates strongly
-# during the day so that incoming radiation is partitioned into latent
-# heat. The dry edges (`W = 0`, β = 0) cannot evaporate, so all the net
+# The land's central wet patch (`𝒮 ≈ 1`, full evaporation efficiency)
+# evaporates strongly during the day so that incoming radiation is partitioned
+# into latent heat. The dry edges (`𝒮 = 0`) cannot evaporate, so all the net
 # radiation goes into sensible heat — producing strong surface heating
 # and a vigorous dry convective boundary layer. At the wet/dry boundary
 # the contrast drives a low-level "sea breeze"-like circulation.
@@ -75,36 +75,30 @@ land_grid = RectilinearGrid(arch;
                             halo = grid.Hx,
                             topology = (Periodic, Flat, Flat))
 
-hydrology = BucketHydrology(eltype(land_grid);
-                            maximum_water_storage  = 150,
-                            critical_wetness_ratio = 0.75)
-
+hydrology = BucketHydrology(maximum_water_storage = 150)
 slab_land = SlabLand(land_grid; hydrology)
 
-# ### Moisture availability and the wet/dry contrast
+# ### Surface saturation and the wet/dry contrast
 #
 # The bucket hydrology stores land water mass per area `Mˡᵃ` (kg m⁻²) with a
-# Manabe-style saturation cap `Mˡᵃ⁺` (`maximum_water_storage`, the soil-science
-# "field capacity"). The coupler reads a moisture availability factor
-# `β ∈ [0, 1]` that linearly scales the surface specific humidity above which
-# evaporation can occur:
+# saturation cap `Mˡᵃ⁺` (`maximum_water_storage`, the soil-science "field
+# capacity"), and exposes the continuous surface saturation
+# `𝒮 = Mˡᵃ/Mˡᵃ⁺ ∈ [0, 1]`. The interface's `FractionalHumidity` model with a
+# Manabe `CriticalWetness(𝒮ᶜ)` efficiency scales the saturation specific humidity
+# by the evaporation efficiency `β(𝒮) = min(𝒮/𝒮ᶜ, 1)`:
 #
 # ```math
-# β = \min\!\left(\frac{M^{\mathrm{la}}}{\varepsilon^{w} \, M^{\mathrm{la}\!+}},\ 1\right),
+# q_s = β(𝒮) \, q^{v+}(T_s),  \qquad β(𝒮) = \min(𝒮/𝒮_c, 1).
 # ```
 #
-# so cells with `Mˡᵃ ≥ εʷ · Mˡᵃ⁺` (here `εʷ = 0.75`) evaporate as if
-# saturated, and cells with `Mˡᵃ = 0` cannot evaporate at all. The coupler
-# then uses `qₛ = qᵃ + β · (qᵛ⁺(Tₛ) − qᵃ)` — β = 1 → full latent heat flux,
-# β = 0 → zero latent flux (all surface energy goes into sensible heating).
+# The wet center (`𝒮 ≥ 𝒮ᶜ`) evaporates at full efficiency (`qₛ = qᵛ⁺`, strong
+# latent-heat flux), while the dry edges (`𝒮 = 0`) cannot evaporate (no latent
+# flux ⇒ all surface energy goes into sensible heating).
 #
-# We initialize `Mˡᵃ` as a Gaussian centered at the domain midpoint:
-# saturated in the middle (`β ≈ 1`), dry at the edges (`β ≈ 0`). That
-# contrast persists through the run because (i) the wet center can
-# evaporate but starts deep inside the saturated plateau
-# (`Mˡᵃ > εʷ · Mˡᵃ⁺`), so `β` stays pegged at 1 even as `Mˡᵃ` decreases,
-# and (ii) the dry edges have no water to gain except via precipitation,
-# which is not prescribed here.
+# We initialize `Mˡᵃ` as a Gaussian centered at the domain midpoint: wet in
+# the middle (`qₛ = qᵛ⁺`), bone-dry at the edges (`qₛ = 0`). The contrast
+# persists because the wet center retains water through the run while the dry
+# edges have no source (no precipitation is prescribed here).
 
 T₀     = 295
 M_wet  = 0.95 * hydrology.maximum_water_storage
@@ -228,7 +222,12 @@ set_to_mean!(reference_state, atmos.model, rescale_densities = true)
 # `rtm.flux_divergence`, and installs the Breeze-aware
 # `apply_air_land_radiative_fluxes!`.
 
-model = AtmosphereLandModel(atmos, slab_land; radiation)
+# The surface specific humidity uses a Manabe evaporation efficiency: saturated
+# above the critical saturation `𝒮ᶜ = 0.75`, scaling down linearly below it.
+land_humidity = FractionalHumidity(efficiency = CriticalWetness(0.75))
+
+model = AtmosphereLandModel(atmos, slab_land; radiation,
+                            atmosphere_land_interface_specific_humidity = land_humidity)
 
 # The wizard recomputes Δt every iteration so the step always tracks the
 # current CFL — important for a convective LES on a 100 m grid, where a
@@ -285,7 +284,7 @@ simulation.output_writers[:atmos] = JLD2Writer(model, (; w, T, qᵛ, qˡ);
 simulation.output_writers[:land] = JLD2Writer(model,
                                               (; Tg = slab_land.temperature,
                                                   W  = slab_land.water_storage,
-                                                  β  = slab_land.moisture_availability);
+                                                  𝒮  = slab_land.saturation);
                                               filename = "breeze_slab_land_surface",
                                               schedule = TimeInterval(10minutes),
                                               overwrite_existing = true)
@@ -300,14 +299,14 @@ run!(simulation)
 #
 # Top row: x–z vertical slices of vertical velocity, temperature anomaly,
 # and cloud liquid water. Bottom row: 1D land state along x — skin
-# temperature, soil moisture, and moisture availability β.
+# temperature, soil water, and surface saturation 𝒮.
 
 w_ts  = FieldTimeSeries("breeze_slab_land_atmos.jld2",   "w")
 T_ts  = FieldTimeSeries("breeze_slab_land_atmos.jld2",   "T")
 qˡ_ts = FieldTimeSeries("breeze_slab_land_atmos.jld2",   "qˡ")
 Tg_ts = FieldTimeSeries("breeze_slab_land_surface.jld2", "Tg")
 W_ts  = FieldTimeSeries("breeze_slab_land_surface.jld2", "W")
-β_ts  = FieldTimeSeries("breeze_slab_land_surface.jld2", "β")
+𝒮_ts  = FieldTimeSeries("breeze_slab_land_surface.jld2", "𝒮")
 
 times = w_ts.times
 Nt    = length(times)
@@ -328,7 +327,7 @@ ax_qˡ = Axis(fig[1, 3], title = "qˡ (kg/kg)",                      limits = (n
 
 ax_Tg = Axis(fig[2, 1], title = "Skin temperature (K)",  xlabel = "x (m)", ylabel = "T_g (K)")
 ax_W  = Axis(fig[2, 2], title = "Soil water (kg/m²)",    xlabel = "x (m)", ylabel = "W")
-ax_β  = Axis(fig[2, 3], title = "Moisture availability", xlabel = "x (m)", ylabel = "β")
+ax_𝒮  = Axis(fig[2, 3], title = "Surface saturation",    xlabel = "x (m)", ylabel = "𝒮")
 
 n = Observable(1)
 
@@ -340,7 +339,7 @@ end
 qˡn  = @lift view(interior(qˡ_ts[$n]), :, 1, :)
 Tg_n = @lift vec(interior(Tg_ts[$n], :, 1, 1))
 W_n  = @lift vec(interior(W_ts[$n],  :, 1, 1))
-β_n  = @lift vec(interior(β_ts[$n],  :, 1, 1))
+𝒮_n  = @lift vec(interior(𝒮_ts[$n],  :, 1, 1))
 
 heatmap!(ax_w,  x_atmos, z_face,   wn;  colormap = :balance, colorrange = (-wlim, wlim))
 heatmap!(ax_T,  x_atmos, z_center, Tn;  colormap = :balance, colorrange = (-2, 2))
@@ -348,10 +347,10 @@ heatmap!(ax_qˡ, x_atmos, z_center, qˡn; colormap = :dense,   colorrange = (0, 
 
 lines!(ax_Tg, x_land, Tg_n; color = :black, linewidth = 2)
 lines!(ax_W,  x_land, W_n;  color = :black, linewidth = 2)
-lines!(ax_β,  x_land, β_n;  color = :black, linewidth = 2)
+lines!(ax_𝒮,  x_land, 𝒮_n;  color = :black, linewidth = 2)
 
 ylims!(ax_W, 0, hydrology.maximum_water_storage * 1.05)
-ylims!(ax_β, 0, 1.05)
+ylims!(ax_𝒮, 0, 1.05)
 
 title = @lift "Diurnal convection over heterogeneous slab land, t = " * prettytime(times[$n])
 Label(fig[0, 1:3], title, fontsize = 16)
