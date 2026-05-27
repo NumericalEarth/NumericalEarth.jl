@@ -17,15 +17,17 @@ end
 Container for one `ComponentExchanger` per component. The `grid` is the shared
 exchange grid onto which each component's state is regridded each time step.
 """
-struct StateExchanger{G, R, A, L, O, S}
+struct StateExchanger{G, R, A, L, O, S, C}
     grid :: G
     radiation :: R
     atmosphere :: A
     land :: L
     ocean :: O
     sea_ice :: S
+    correction :: C # applied to the atmosphere exchange state each step (or `nothing`)
 
-    function StateExchanger(grid, radiation, atmosphere, land, ocean, sea_ice)
+    function StateExchanger(grid, radiation, atmosphere, land, ocean, sea_ice;
+                            correction = nothing)
         radiation_exchanger  = ComponentExchanger(radiation, grid)
         atmosphere_exchanger = ComponentExchanger(atmosphere, grid)
         land_exchanger       = ComponentExchanger(land, grid)
@@ -38,13 +40,15 @@ struct StateExchanger{G, R, A, L, O, S}
         L = typeof(land_exchanger)
         O = typeof(ocean_exchanger)
         S = typeof(sea_ice_exchanger)
+        C = typeof(correction)
 
-        return new{G, R, A, L, O, S}(grid,
-                                     radiation_exchanger,
-                                     atmosphere_exchanger,
-                                     land_exchanger,
-                                     ocean_exchanger,
-                                     sea_ice_exchanger)
+        return new{G, R, A, L, O, S, C}(grid,
+                                        radiation_exchanger,
+                                        atmosphere_exchanger,
+                                        land_exchanger,
+                                        ocean_exchanger,
+                                        sea_ice_exchanger,
+                                        correction)
     end
 end
 

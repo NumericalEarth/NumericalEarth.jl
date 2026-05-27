@@ -13,6 +13,7 @@ export
     SkinHumidity,
     FractionalHumidity,
     CriticalWetness,
+    ElevationCorrection,
     SimilarityTheoryFluxes,
     LandRoughnessLength,
     CoefficientBasedFluxes,

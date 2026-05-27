@@ -45,6 +45,7 @@ export
     SkinHumidity,
     FractionalHumidity,
     CriticalWetness,
+    ElevationCorrection,
     SlabOcean,
     PrescribedOcean,
     AbstractPrescribedComponent,

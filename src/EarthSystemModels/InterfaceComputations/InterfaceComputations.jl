@@ -31,6 +31,7 @@ export
     SkinHumidity,
     FractionalHumidity,
     CriticalWetness,
+    ElevationCorrection,
     # Sea ice-ocean heat flux formulations
     IceBathHeatFlux,
     ThreeEquationHeatFlux,
@@ -111,6 +112,7 @@ include("friction_velocity.jl")
 include("sea_ice_ocean_heat_flux_formulations.jl")
 
 include("component_interfaces.jl")
+include("atmosphere_state_correction.jl")
 include("atmosphere_ocean_fluxes.jl")
 include("atmosphere_sea_ice_fluxes.jl")
 include("atmosphere_land_fluxes.jl")

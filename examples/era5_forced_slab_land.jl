@@ -28,15 +28,17 @@
 # `SlabLand` itself has no terrain knowledge, and ERA5's T₂ₘ is at its
 # own ~28 km grid-cell mean elevation (~2 km in this domain). To make
 # the 1 km grid show elevation-driven temperature contrasts we apply a
-# moist-environmental lapse-rate correction:
+# moist-environmental lapse-rate correction for the elevation difference
 #
-#     T_local(λ, φ) = T_ERA5(λ, φ) − Γ · (z_ETOPO(λ, φ) − z_ERA5_eff(λ, φ))
+#     Δz(λ, φ) = z_ETOPO(λ, φ) − z_ERA5_eff(λ, φ)
 #
-# with Γ = 6.5 K km⁻¹. `z_ERA5_eff` is ETOPO box-averaged onto the ERA5
-# native grid (≈ what ERA5 thinks the surface elevation is in each
-# cell), then projected back to 1 km. Surface pressure is adjusted
-# hydrostatically by the same `Δz`, and specific humidity is recomputed
-# from dewpoint at the corrected (T, p).
+# where `z_ERA5_eff` is ETOPO box-averaged onto the ERA5 native grid (≈ what
+# ERA5 thinks the surface elevation is in each cell), projected back to 1 km.
+# The correction `T ← T − Γ Δz` (Γ = 6.5 K km⁻¹) with a hydrostatic pressure
+# adjustment is applied at run time by the coupled model's state exchanger
+# ([`ElevationCorrection`](@ref)) — the prescribed atmosphere carries raw ERA5
+# fields, and the same correction would apply to a live atmosphere. Specific
+# humidity is conserved through the lift.
 #
 # Net effect: ~2 km elevation contrast between the Snake River Plain
 # floor and the Wind River summits → ≈ 13 K skin-temperature spread
@@ -153,48 +155,49 @@ forcing_set = MetadataSet(:eastward_velocity,
 era5 = FieldTimeSeries(forcing_set, land_grid; time_indices_in_memory = Nt)
 atmos_times = era5.eastward_velocity.times
 
-# ## Elevation-corrected atmosphere
+# ## Atmosphere forcing fields
 #
-# ERA5's *accumulated* SW/LW (J m⁻² over the past hour) divides by 3600 s
-# to give power (W m⁻²) that `PrescribedRadiation` expects; total
-# precipitation in m liquid-water-equivalent per hour becomes kg m⁻² s⁻¹.
-# Dewpoint + corrected surface pressure → specific humidity via Magnus's
-# saturation-vapor-pressure formula.
+# The elevation lapse-rate correction is applied lazily by the coupled model's
+# state exchanger (`ElevationCorrection`, below), so the prescribed atmosphere
+# carries the *raw* ERA5 temperature and pressure — no elevation-corrected copies.
+# We still convert the ERA5-specific inputs: dewpoint → specific humidity (at the
+# raw surface pressure; the correction conserves `q`), *accumulated* SW/LW
+# (J m⁻² per hour) → power (W m⁻²), and total precipitation (m per hour) → kg m⁻² s⁻¹.
 
 @inline saturation_vapor_pressure(T) = 611.2 * exp(17.62 * (T - 273.15) / (T - 30.04))
 @inline q_from_dewpoint(Td, p) = (e = saturation_vapor_pressure(Td); ε * e / (p - (1 - ε) * e))
 
-T_local   = FieldTimeSeries{Center, Center, Nothing}(land_grid, atmos_times)
-p_local   = FieldTimeSeries{Center, Center, Nothing}(land_grid, atmos_times)
 q_local   = FieldTimeSeries{Center, Center, Nothing}(land_grid, atmos_times)
 rain      = FieldTimeSeries{Center, Center, Nothing}(land_grid, atmos_times)
 ssrd_rate = FieldTimeSeries{Center, Center, Nothing}(land_grid, atmos_times)
 strd_rate = FieldTimeSeries{Center, Center, Nothing}(land_grid, atmos_times)
 
-ΓΔz = Γ_lapse .* Δz
 for n in 1:Nt
-    T_era5 = interior(era5.temperature[n], :, :, 1)
     p_era5 = interior(era5.surface_pressure[n], :, :, 1)
     Td     = interior(era5.dewpoint_temperature[n], :, :, 1)
-
-    T_loc = T_era5 .- ΓΔz
-    p_loc = p_era5 .* exp.(.- g_acc .* Δz ./ (Rd .* (0.5 .* (T_era5 .+ T_loc))))
-
-    interior(T_local[n], :, :, 1) .= T_loc
-    interior(p_local[n], :, :, 1) .= p_loc
-    interior(q_local[n], :, :, 1) .= q_from_dewpoint.(Td, p_loc)
+    interior(q_local[n], :, :, 1) .= q_from_dewpoint.(Td, p_era5)
 
     interior(rain[n],      :, :, 1) .= max.(interior(era5.total_precipitation[n],             :, :, 1) .* (1000.0 / 3600.0), 0)
     interior(ssrd_rate[n], :, :, 1) .= max.(interior(era5.downwelling_shortwave_radiation[n], :, :, 1) ./ 3600.0,            0)
     interior(strd_rate[n], :, :, 1) .= max.(interior(era5.downwelling_longwave_radiation[n],  :, :, 1) ./ 3600.0,            0)
 end
 
+# Elevation difference Δz (m, positive over peaks) as an exchange-grid field. The
+# state exchanger applies `T -= Γ Δz` and the hydrostatic pressure adjustment to
+# the regridded atmosphere every step, for any atmosphere (prescribed or online).
+Δz_field = Field{Center, Center, Nothing}(land_grid)
+interior(Δz_field, :, :, 1) .= Δz
+elevation_correction = ElevationCorrection(Δz_field;
+                                           lapse_rate = Γ_lapse,
+                                           gravitational_acceleration = g_acc,
+                                           dry_air_gas_constant = Rd)
+
 # ## Prescribed atmosphere, radiation, and slab land
 
 atmosphere = PrescribedAtmosphere(land_grid, atmos_times;
                                   velocities = (u = era5.eastward_velocity, v = era5.northward_velocity),
-                                  tracers    = (T = T_local, q = q_local),
-                                  pressure   = p_local,
+                                  tracers    = (T = era5.temperature, q = q_local),
+                                  pressure   = era5.surface_pressure,
                                   freshwater_flux = PrescribedPrecipitationFlux(rain = rain),
                                   surface_layer_height  = 10.0,
                                   boundary_layer_height = 800.0)
@@ -213,10 +216,11 @@ slab_land = SlabLand(land_grid;
                                                            momentum_roughness_length = 0.1,
                                                            scalar_roughness_length   = 0.01))
 
-# Initialize T₀ from the elevation-corrected ERA5 T₂ₘ at the first
-# snapshot; fill the parent first so halo cells start at the
-# domain-mean rather than uninitialised memory.
-T_init = interior(T_local[1], :, :, 1)
+# Initialize T₀ from the elevation-corrected ERA5 T₂ₘ at the first snapshot
+# (mirroring the runtime correction for a consistent cold start); fill the
+# parent first so halo cells start at the domain-mean rather than uninitialised
+# memory.
+T_init = interior(era5.temperature[1], :, :, 1) .- Γ_lapse .* Δz
 fill!(parent(slab_land.temperature), mean(T_init))
 interior(slab_land.temperature, :, :, 1) .= T_init
 fill!(parent(slab_land.water_storage), 0.5 * 150.0)
@@ -224,7 +228,8 @@ update_state!(slab_land)
 
 # ## Coupled model
 
-model      = AtmosphereLandModel(atmosphere, slab_land; radiation)
+model      = AtmosphereLandModel(atmosphere, slab_land; radiation,
+                                 atmosphere_state_correction = elevation_correction)
 simulation = Simulation(model; Δt = 5minutes, stop_time = (Nt - 1) * 3600.0)
 
 wall_time = Ref(time_ns())
