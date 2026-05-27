@@ -35,11 +35,7 @@
 
 using NumericalEarth
 using NumericalEarth.DataWrangling: Metadata, Metadatum, metadata_path, centers_to_interfaces,
-    Celsius, Millibar, MillimetersPerHour, CentimetersPerSecond
-
-import NumericalEarth.DataWrangling: default_download_directory, default_region, all_dates,
-    metadata_filename, dataset_variable_name, longitude_name, latitude_name,
-    z_interfaces, is_three_dimensional, conversion_units, retrieve_data
+                                    Celsius, Millibar, MillimetersPerHour, CentimetersPerSecond
 
 using Oceananigans
 using Dates: DateTime, Day
@@ -88,21 +84,21 @@ const OSPapa_depth_variable_names = Dict(
 # fixed location, so we embed its [`Column`](@ref) via `default_region` — every `Metadata` for this dataset
 # then carries it automatically and callers never repeat the coordinates:
 
-default_download_directory(::OceanStationPapaObservations) = mkpath(joinpath(tempdir(), "OceanStationPapaObservations"))
-metadata_filename(::OceanStationPapaObservations, name, date, region) = OSPapa_filename
-dataset_variable_name(md::Metadata{<:OceanStationPapaObservations}) = OSPapa_dataset_variable_names[md.name]
-longitude_name(::Metadata{<:OceanStationPapaObservations}) = "LONGITUDE"
-latitude_name(::Metadata{<:OceanStationPapaObservations})  = "LATITUDE"
-default_region(::OceanStationPapaObservations) = Column(-144.9, 50.1)
+NumericalEarth.DataWrangling.default_download_directory(::OceanStationPapaObservations) = mkpath(joinpath(tempdir(), "OceanStationPapaObservations"))
+NumericalEarth.DataWrangling.metadata_filename(::OceanStationPapaObservations, name, date, region) = OSPapa_filename
+NumericalEarth.DataWrangling.dataset_variable_name(md::Metadata{<:OceanStationPapaObservations}) = OSPapa_dataset_variable_names[md.name]
+NumericalEarth.DataWrangling.longitude_name(::Metadata{<:OceanStationPapaObservations}) = "LONGITUDE"
+NumericalEarth.DataWrangling.latitude_name(::Metadata{<:OceanStationPapaObservations}) = "LATITUDE"
+NumericalEarth.DataWrangling.default_region(::OceanStationPapaObservations) = Column(-144.9, 50.1)
 
 # A variable is three-dimensional exactly when it has a depth axis; the surface met fields are single-level.
 # Most variables already arrive in the model's units; the few that do not are converted on read — air
 # temperature from ᵒC to K, pressure from mbar to Pa, rain from mm hr⁻¹ to kg m⁻² s⁻¹, and currents from
 # cm s⁻¹ to m s⁻¹.
 
-is_three_dimensional(md::Metadata{<:OceanStationPapaObservations}) = haskey(OSPapa_depth_variable_names, md.name)
+NumericalEarth.DataWrangling.is_three_dimensional(md::Metadata{<:OceanStationPapaObservations}) = haskey(OSPapa_depth_variable_names, md.name)
 
-function conversion_units(md::OceanStationPapaMetadatum)
+function NumericalEarth.DataWrangling.conversion_units(md::OceanStationPapaMetadatum)
     md.name == :air_temperature                          && return Celsius()
     md.name == :sea_level_pressure                       && return Millibar()
     md.name == :rain                                     && return MillimetersPerHour()
@@ -122,13 +118,13 @@ Downloads.download(md::Metadata{<:OceanStationPapaObservations}) = download_ospa
 # (We can avoid building a `Metadatum` here)
 
 function read_coordinate(variable)
-    ds   = Dataset(download_ospapa())
+    ds = Dataset(download_ospapa())
     data = Array(ds[variable][:])
     close(ds)
     return data
 end
 
-all_dates(::OceanStationPapaObservations, name) = DateTime.(read_coordinate("TIME"))
+NumericalEarth.DataWrangling.all_dates(::OceanStationPapaObservations, name) = DateTime.(read_coordinate("TIME"))
 ospapa_depths(name) = Float64.(read_coordinate(OSPapa_depth_variable_names[name]))
 
 Base.size(::OceanStationPapaObservations, name) = haskey(OSPapa_depth_variable_names, name) ? (1, 1, length(ospapa_depths(name))) : (1, 1, 1)
@@ -136,15 +132,15 @@ Base.size(::OceanStationPapaObservations, name) = haskey(OSPapa_depth_variable_n
 # `z_interfaces` turns the measurement depths (positive-down in the file) into ascending cell faces via the
 # `centers_to_interfaces` helper:
 
-z_interfaces(md::Metadata{<:OceanStationPapaObservations}) = centers_to_interfaces(sort(- ospapa_depths(md.name)))
+NumericalEarth.DataWrangling.z_interfaces(md::Metadata{<:OceanStationPapaObservations}) = centers_to_interfaces(sort(- ospapa_depths(md.name)))
 
 # Finally, `retrieve_data` reads one profile. The file stores the variable as `(longitude, latitude, depth,
 # time)`, shallow-to-deep, so we select the requested time and flip the column to match the grid's bottom-up
 # `z`-axis:
 
-function retrieve_data(md::OceanStationPapaMetadatum)
-    ds  = Dataset(metadata_path(md))
-    t   = findfirst(==(md.dates), DateTime.(ds["TIME"][:]))
+function NumericalEarth.DataWrangling.retrieve_data(md::OceanStationPapaMetadatum)
+    ds = Dataset(metadata_path(md))
+    t = findfirst(==(md.dates), DateTime.(ds["TIME"][:]))
     raw = ds[dataset_variable_name(md)][:, :, :, t]
     close(ds)
     return reverse(Float64.(replace(raw, missing => NaN)), dims = 3)
