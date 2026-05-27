@@ -9,7 +9,6 @@ using .InterfaceComputations: compute_atmosphere_ocean_fluxes!, compute_sea_ice_
 apply_air_sea_radiative_fluxes!(::Any) = nothing
 apply_air_sea_ice_radiative_fluxes!(::Any) = nothing
 
-
 function Oceananigans.TimeSteppers.time_step!(coupled_model::EarthSystemModel, Δt; callbacks=[])
     maybe_prepare_first_time_step!(coupled_model, callbacks)
 
