@@ -12,8 +12,8 @@
 # - [x] Breeze model construction
 # - [x] initial state setting (set! the model from ingested fields)
 # - [x] open boundary conditions (parent-driven OBC + Davies fringe relaxation)
+# - [x] test with GPU
 # - [ ] dynamical initialization
-# - [ ] test with GPU
 # - [ ] acoustic substepping
 # - [ ] land/ocean coupling
 # - [ ] terrain
@@ -466,6 +466,29 @@ bcs = parent_boundary_conditions(grid;
                  ρe  = ValueBoundaryCondition,
                  ρqᵉ = ValueBoundaryCondition))
 
+# Surface-BC placeholders, pending SlabLand wiring. Override `atmosphere_simulation`'s
+# coupling Jᵉ/Jᵛ bottom-flux BCs with Dirichlet ValueBCs at constant placeholder
+# surface T and qᵛ. Keeping the coupling Jᵉ would route the bottom flux through
+# Breeze's `EnergyFluxBoundaryCondition` → `𝒬_to_Jᶿ`, which can't evaluate until
+# the bulk-flux state (and qᵛ at the surface) is populated by the land model.
+
+const T_surface_placeholder   = 290.0
+const qᵛ_surface_placeholder  = 0.0
+const ρ_surface_placeholder   = 1.2                                   # kg/m³ at p₀=10⁵ Pa, T≈290 K
+const ρθ_surface_placeholder  = ρ_surface_placeholder * T_surface_placeholder
+const ρqᵉ_surface_placeholder = ρ_surface_placeholder * qᵛ_surface_placeholder
+
+bcs = merge(bcs, (; ρe  = FieldBoundaryConditions(west   = bcs.ρe.west,
+                                                  east   = bcs.ρe.east,
+                                                  south  = bcs.ρe.south,
+                                                  north  = bcs.ρe.north,
+                                                  bottom = ValueBoundaryCondition(ρθ_surface_placeholder)),
+                   ρqᵉ = FieldBoundaryConditions(west   = bcs.ρqᵉ.west,
+                                                  east   = bcs.ρqᵉ.east,
+                                                  south  = bcs.ρqᵉ.south,
+                                                  north  = bcs.ρqᵉ.north,
+                                                  bottom = ValueBoundaryCondition(ρqᵉ_surface_placeholder))))
+
 # Fringe geometry: 5 cells deep in each lateral direction. The mask is a
 # cosine ramp in degree-distance to the nearest wall — Davies is a numerical
 # smoother, so the precise ramp shape isn't physics-critical.
@@ -543,11 +566,39 @@ set!(model; ρ = ρ, u = u, v = v, qᵗ = qᵗ, θˡⁱ = θˡⁱ)
 # Wrap the child model in a `NestedSimulation` paired with the parent
 # `PrescribedAtmosphere`. `NestedModel.time_step!` syncs the parent clock
 # each iteration so the FTS-driven BCs and forcings get the correct
-# interpolation time. Construction is currently the deliverable — running
-# is a follow-up once Δt and the time-step wizard are configured.
+# interpolation time.
+#
+# Δt is set from the acoustic CFL on the vertical grid — Δz_min = 50 m near
+# the surface (the binding constraint here, since horizontal Δx ≈ 3 km is
+# much larger) and c_sound ≈ 340 m/s at the reference state. Substepping
+# would let us bypass the acoustic limit and use an advection-CFL Δt instead;
+# that's the next step.
 
-Δt = 1.0   # placeholder; needs acoustic-CFL tuning
-nested = NestedSimulation(parent, model; Δt, stop_time = parent_times[end])
+c_sound = sqrt(constants.dry_air.heat_capacity / (constants.dry_air.heat_capacity - Rᵈ) * Rᵈ * 290.0)
+Δt = 0.3 * minimum_zspacing(grid) / c_sound
+
+nested = NestedSimulation(parent, model; Δt, stop_iteration = 100)
+
+function progress(sim)
+    m = sim.model
+    @info @sprintf("iter=%3d  t=%.3f s  max|u|=%.3f  max|v|=%.3f  max|w|=%.2e  ρ∈[%.4f, %.4f]",
+                   m.clock.iteration, m.clock.time,
+                   maximum(abs, m.velocities.u),
+                   maximum(abs, m.velocities.v),
+                   maximum(abs, m.velocities.w),
+                   minimum(interior(m.dynamics.density)),
+                   maximum(interior(m.dynamics.density)))
+end
+add_callback!(nested, progress, IterationInterval(10))
+
+# ## Run
+#
+# 100-iteration smoke run at acoustic CFL — exercises BC machinery + Davies
+# forcing before substepping and any IC-balance work.
+
+@info @sprintf("Δt = %.4f s (acoustic CFL); running %d iterations", Δt, nested.stop_iteration)
+run!(nested)
+@info "Done."
 
 # ## Report
 
@@ -595,6 +646,16 @@ v_arr   = Array(interior(v))
 θ_arr   = Array(interior(θ_lam))
 qᵗ_arr  = Array(interior(qᵗ))
 
+# Post-run LAM state. Specific quantities (θ, qᵗ) are derived from the
+# prognostic ρθ, ρqᵉ divided by ρ.
+ρ_final_arr  = Array(interior(model.dynamics.density))
+u_final_arr  = Array(interior(model.velocities.u))
+v_final_arr  = Array(interior(model.velocities.v))
+ρθ_final     = Array(interior(model.formulation.potential_temperature_density))
+ρqᵉ_final    = Array(interior(model.moisture_density))
+θ_final_arr  = ρθ_final  ./ ρ_final_arr
+qᵗ_final_arr = ρqᵉ_final ./ ρ_final_arr
+
 λ_e = λ_centers_era5   # already shifted to LAM's [-180°, 180°] convention
 φ_e = φ_centers_era5
 λ_c = collect(λnodes(grid, Center(), Center(), Center()))
@@ -603,11 +664,11 @@ qᵗ_arr  = Array(interior(qᵗ))
 φ_f = collect(φnodes(grid, Center(), Face(),   Center()))
 z_c = collect(znodes(grid, Center(), Center(), Center()))
 
-vars = [(:ρ,  ρ_arr,  ρ_era5,  "ρ (kg/m³)",  :center),
-        (:u,  u_arr,  u_era5,  "u (m/s)",    :xface),
-        (:v,  v_arr,  v_era5,  "v (m/s)",    :yface),
-        (:θ,  θ_arr,  θ_era5,  "θ (K)",      :center),
-        (:qᵗ, qᵗ_arr, qᵗ_era5, "qᵗ (kg/kg)", :center)]
+vars = [(:ρ,  ρ_arr,  ρ_final_arr,  ρ_era5,  "ρ (kg/m³)",  :center),
+        (:u,  u_arr,  u_final_arr,  u_era5,  "u (m/s)",    :xface),
+        (:v,  v_arr,  v_final_arr,  v_era5,  "v (m/s)",    :yface),
+        (:θ,  θ_arr,  θ_final_arr,  θ_era5,  "θ (K)",      :center),
+        (:qᵗ, qᵗ_arr, qᵗ_final_arr, qᵗ_era5, "qᵗ (kg/kg)", :center)]
 
 fig = Figure(size=(1600, 1000), fontsize=12)
 
@@ -624,7 +685,7 @@ for (row, (label, λ_site, φ_site)) in enumerate(sites)
     Label(fig[2*row - 1, 1:Ncols], "$label (elevation: $elev_m m)";
           fontsize=15, font=:bold, halign=:center, tellwidth=false)
 
-    for (col, (vname, lam_arr, era5_arr, xlab, stagger)) in enumerate(vars)
+    for (col, (vname, lam_arr, lam_final_arr, era5_arr, xlab, stagger)) in enumerate(vars)
         # Pick the LAM cell closest to the site for this variable's stagger,
         # then center the ERA5 bilinear stencil around the LAM cell's actual
         # position so the blue line is exactly the bilinear mix of the
@@ -658,7 +719,9 @@ for (row, (label, λ_site, φ_site)) in enumerate(sites)
         # LAM profile at the chosen point — markers at cell centers so the
         # discretization is explicit (no implied between-cell behavior).
         scatter!(ax, lam_arr[i_lam, j_lam, :], z_c ./ 1000;
-                 color=:steelblue, markersize=6)
+                 color=:steelblue, markersize=6, label="t=0")
+        scatter!(ax, lam_final_arr[i_lam, j_lam, :], z_c ./ 1000;
+                 color=:crimson, markersize=6, label=@sprintf("t=%.2f s", model.clock.time))
 
         ylims!(ax, 0, 15)
         vname === :θ && xlims!(ax, 280, 400)
@@ -674,7 +737,9 @@ for r in 1:Nrows
     end
 end
 
-Label(fig[0, 1:Ncols], "ERA5 → LAM profiles  (LAM: blue;  ERA5 stencil: gray)";
+axislegend(axs[1, end]; position = :rb)
+
+Label(fig[0, 1:Ncols], "ERA5 → LAM profiles  (ERA5 stencil: gray)";
       fontsize=20, font=:bold, tellwidth=false)
 
 save("era5_breeze_profiles.png", fig)
