@@ -26,127 +26,52 @@ function EarthSystemModels.update_net_fluxes!(coupled_model, sea_ice::Simulation
     ice_concentration = sea_ice_concentration(sea_ice)
 
     launch!(arch, grid, :xy,
-            _assemble_net_sea_ice_top_heat_fluxes!,
+            _assemble_net_sea_ice_fluxes!,
             top_fluxes,
-            grid,
-            clock,
-            atmosphere_sea_ice_fluxes,
-            sea_ice_ocean_fluxes,
-            ice_concentration,
-            sea_ice_properties)
-
-    launch!(arch, grid, :xy,
-            _assemble_net_sea_ice_snowfall_fluxes!,
-            top_fluxes,
-            grid,
-            clock,
-            snowfall,
-            ice_concentration,
-            sea_ice_properties)
-
-    launch!(arch, grid, :xy,
-            _assemble_net_sea_ice_bottom_heat_fluxes!,
             bottom_heat_flux,
             grid,
             clock,
+            atmosphere_sea_ice_fluxes,
             sea_ice_ocean_fluxes,
-            ice_concentration,
-            sea_ice_properties)
-
-    launch!(arch, grid, :xy,
-            _assemble_net_sea_ice_u_momentum_fluxes!,
-            top_fluxes,
-            grid,
-            clock,
-            atmosphere_sea_ice_fluxes,
-            ice_concentration,
-            sea_ice_properties)
-
-    launch!(arch, grid, :xy,
-            _assemble_net_sea_ice_v_momentum_fluxes!,
-            top_fluxes,
-            grid,
-            clock,
-            atmosphere_sea_ice_fluxes,
+            snowfall,
             ice_concentration,
             sea_ice_properties)
 
     return nothing
 end
 
-@kernel function _assemble_net_sea_ice_top_heat_fluxes!(top_fluxes,
-                                                         grid,
-                                                         clock,
-                                                         atmosphere_sea_ice_fluxes,
-                                                         sea_ice_ocean_fluxes,
-                                                         ice_concentration,
-                                                         sea_ice_properties)
+@kernel function _assemble_net_sea_ice_fluxes!(top_fluxes,
+                                               bottom_heat_flux,
+                                               grid,
+                                               clock,
+                                               atmosphere_sea_ice_fluxes,
+                                               sea_ice_ocean_fluxes,
+                                               snowfall_flux,
+                                               ice_concentration,
+                                               sea_ice_properties)
+
     i, j = @index(Global, NTuple)
     kᴺ = size(grid, 3)
 
     @inbounds begin
         ℵi = ice_concentration[i, j, 1]
-        𝒬ᵀ = atmosphere_sea_ice_fluxes.sensible_heat[i, j, 1] # sensible heat flux
-        𝒬ᵛ = atmosphere_sea_ice_fluxes.latent_heat[i, j, 1]   # latent heat flux
+        𝒬ᵀ   = atmosphere_sea_ice_fluxes.sensible_heat[i, j, 1] # sensible heat flux
+        𝒬ᵛ   = atmosphere_sea_ice_fluxes.latent_heat[i, j, 1]   # latent heat flux
+        𝒬ᶠʳᶻ = sea_ice_ocean_fluxes.frazil_heat[i, j, 1]        # frazil heat flux
+        𝒬ⁱⁿᵗ = sea_ice_ocean_fluxes.interface_heat[i, j, 1]     # interfacial heat flux
+        Jˢⁿ  = snowfall_flux[i, j, 1]
     end
 
+    # Turbulent contributions only (radiation added later by apply_air_sea_ice_radiative_fluxes!)
     ΣQt = (𝒬ᵀ + 𝒬ᵛ) * (ℵi > 0)
-    inactive = inactive_node(i, j, kᴺ, grid, Center(), Center(), Center())
-    @inbounds top_fluxes.heat[i, j, 1] = ifelse(inactive, zero(grid), ΣQt)
-end
-
-@kernel function _assemble_net_sea_ice_snowfall_fluxes!(top_fluxes,
-                                                         grid,
-                                                         clock,
-                                                         snowfall_flux,
-                                                         ice_concentration,
-                                                         sea_ice_properties)
-    i, j = @index(Global, NTuple)
-    kᴺ = size(grid, 3)
-    @inbounds Jˢⁿ = snowfall_flux[i, j, 1]
-    inactive = inactive_node(i, j, kᴺ, grid, Center(), Center(), Center())
-    @inbounds top_fluxes.snowfall[i, j, 1] = ifelse(inactive, zero(grid), Jˢⁿ)
-end
-
-@kernel function _assemble_net_sea_ice_bottom_heat_fluxes!(bottom_heat_flux,
-                                                            grid,
-                                                            clock,
-                                                            sea_ice_ocean_fluxes,
-                                                            ice_concentration,
-                                                            sea_ice_properties)
-    i, j = @index(Global, NTuple)
-    kᴺ = size(grid, 3)
-    @inbounds begin
-        𝒬ᶠʳᶻ = sea_ice_ocean_fluxes.frazil_heat[i, j, 1]    # frazil heat flux
-        𝒬ⁱⁿᵗ = sea_ice_ocean_fluxes.interface_heat[i, j, 1] # interfacial heat flux
-    end
     ΣQb = 𝒬ᶠʳᶻ + 𝒬ⁱⁿᵗ
-    inactive = inactive_node(i, j, kᴺ, grid, Center(), Center(), Center())
-    @inbounds bottom_heat_flux[i, j, 1] = ifelse(inactive, zero(grid), ΣQb)
-end
 
-@kernel function _assemble_net_sea_ice_u_momentum_fluxes!(top_fluxes,
-                                                           grid,
-                                                           clock,
-                                                           atmosphere_sea_ice_fluxes,
-                                                           ice_concentration,
-                                                           sea_ice_properties)
-    i, j = @index(Global, NTuple)
-    kᴺ = size(grid, 3)
-    ρτˣ = atmosphere_sea_ice_fluxes.x_momentum
+    # Mask fluxes over land for convenience
     inactive = inactive_node(i, j, kᴺ, grid, Center(), Center(), Center())
-    @inbounds top_fluxes.u[i, j, 1] = ifelse(inactive, zero(grid), ℑxᶠᵃᵃ(i, j, 1, grid, ρτˣ))
-end
 
-@kernel function _assemble_net_sea_ice_v_momentum_fluxes!(top_fluxes,
-                                                           grid,
-                                                           clock,
-                                                           atmosphere_sea_ice_fluxes,
-                                                           ice_concentration,
-                                                           sea_ice_properties)
-    i, j = @index(Global, NTuple)
-    kᴺ = size(grid, 3)
-    ρτʸ = atmosphere_sea_ice_fluxes.y_momentum
-    inactive = inactive_node(i, j, kᴺ, grid, Center(), Center(), Center())
-    @inbounds top_fluxes.v[i, j, 1] = ifelse(inactive, zero(grid), ℑyᵃᶠᵃ(i, j, 1, grid, ρτʸ))
+    @inbounds top_fluxes.heat[i, j, 1]     = ifelse(inactive, zero(grid), ΣQt)
+    @inbounds top_fluxes.snowfall[i, j, 1] = ifelse(inactive, zero(grid), Jˢⁿ)
+    @inbounds top_fluxes.u[i, j, 1]        = ifelse(inactive, zero(grid), ℑxᶠᵃᵃ(i, j, 1, grid, atmosphere_sea_ice_fluxes.x_momentum))
+    @inbounds top_fluxes.v[i, j, 1]        = ifelse(inactive, zero(grid), ℑyᵃᶠᵃ(i, j, 1, grid, atmosphere_sea_ice_fluxes.y_momentum))
+    @inbounds bottom_heat_flux[i, j, 1]    = ifelse(inactive, zero(grid), ΣQb)
 end

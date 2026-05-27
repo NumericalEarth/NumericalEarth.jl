@@ -48,7 +48,7 @@ function update_net_ocean_fluxes!(coupled_model, ocean_model, grid)
     ocean_properties = coupled_model.interfaces.ocean_properties
 
     launch!(arch, grid, :xy,
-            _assemble_net_ocean_tracer_fluxes!,
+            _assemble_net_ocean_fluxes!,
             net_ocean_fluxes,
             grid,
             clock,
@@ -60,30 +60,12 @@ function update_net_ocean_fluxes!(coupled_model, ocean_model, grid)
             snowfall,
             freshwater_flux,
             ocean_properties)
-
-    launch!(arch, grid, :xy,
-            _assemble_net_ocean_atmosphere_momentum_fluxes!,
-            net_ocean_fluxes,
-            grid,
-            clock,
-            atmos_ocean_fluxes,
-            ice_concentration,
-            ocean_properties)
-
-    launch!(arch, grid, :xy,
-            _assemble_net_ocean_sea_ice_momentum_fluxes!,
-            net_ocean_fluxes,
-            grid,
-            clock,
-            sea_ice_ocean_fluxes,
-            ice_concentration,
-            ocean_properties)
     return nothing
 end
 
 Base.@propagate_inbounds get_land_freshwater_flux(i, j, flux) = flux[i, j, 1]
 
-@kernel function _assemble_net_ocean_tracer_fluxes!(net_ocean_fluxes,
+@kernel function _assemble_net_ocean_fluxes!(net_ocean_fluxes,
                                              grid,
                                              clock,
                                              atmos_ocean_fluxes,
@@ -97,6 +79,11 @@ Base.@propagate_inbounds get_land_freshwater_flux(i, j, flux) = flux[i, j, 1]
 
     i, j = @index(Global, NTuple)
     kᴺ = size(grid, 3)
+    ρτˣᵃᵒ = atmos_ocean_fluxes.x_momentum   # atmosphere - ocean zonal momentum flux
+    ρτʸᵃᵒ = atmos_ocean_fluxes.y_momentum   # atmosphere - ocean meridional momentum flux
+    ρτˣⁱᵒ = sea_ice_ocean_fluxes.x_momentum # sea_ice - ocean zonal momentum flux
+    ρτʸⁱᵒ = sea_ice_ocean_fluxes.y_momentum # sea_ice - ocean meridional momentum flux
+
     @inbounds begin
         ℵᵢ = sea_ice_concentration[i, j, 1]
         Sᵒᶜ = ocean_surface_salinity[i, j, 1]
@@ -120,8 +107,11 @@ Base.@propagate_inbounds get_land_freshwater_flux(i, j, flux) = flux[i, j, 1]
     ρᵒᶜ⁻¹ = 1 / ocean_properties.reference_density
     ΣFao = - (Jʳⁿ + Jˡⁿ + (1 - ℵᵢ) * Jˢⁿ) * ρᵒᶜ⁻¹ + (1 - ℵᵢ) * Jᵛ * ρᵒᶜ⁻¹
 
+    τˣ = net_ocean_fluxes.u
+    τʸ = net_ocean_fluxes.v
     Jᵀ = net_ocean_fluxes.T
     Jˢ = net_ocean_fluxes.S
+    ℵ  = sea_ice_concentration
     cᵒᶜ⁻¹ = 1 / ocean_properties.heat_capacity
     inactive = inactive_node(i, j, kᴺ, grid, Center(), Center(), Center())
 
@@ -134,56 +124,16 @@ Base.@propagate_inbounds get_land_freshwater_flux(i, j, flux) = flux[i, j, 1]
         # salinity flux > 0 extracts salinity (opposite of water vapor flux sign)
         Jˢao = - Sᵒᶜ * ΣFao
 
+        τˣᵃᵒ = ℑxᶠᵃᵃ(i, j, 1, grid, τᶜᶜᶜ, ρᵒᶜ⁻¹, ℵ, ρτˣᵃᵒ)
+        τʸᵃᵒ = ℑyᵃᶠᵃ(i, j, 1, grid, τᶜᶜᶜ, ρᵒᶜ⁻¹, ℵ, ρτʸᵃᵒ)
+        τˣⁱᵒ = ρτˣⁱᵒ[i, j, 1] * ρᵒᶜ⁻¹ * ℑxᶠᵃᵃ(i, j, 1, grid, ℵ)
+        τʸⁱᵒ = ρτʸⁱᵒ[i, j, 1] * ρᵒᶜ⁻¹ * ℑyᵃᶠᵃ(i, j, 1, grid, ℵ)
+
+        τˣ[i, j, 1] = ifelse(inactive, zero(grid), τˣᵃᵒ + τˣⁱᵒ)
+        τʸ[i, j, 1] = ifelse(inactive, zero(grid), τʸᵃᵒ + τʸⁱᵒ)
+
         # Tracer fluxes — radiative contributions added later by apply_air_sea_radiative_fluxes!
         Jᵀ[i, j, 1] = ifelse(inactive, zero(grid), Jᵀao + Jᵀio)
         Jˢ[i, j, 1] = ifelse(inactive, zero(grid), Jˢao + Jˢio)
-    end
-end
-
-@kernel function _assemble_net_ocean_atmosphere_momentum_fluxes!(net_ocean_fluxes,
-                                                                 grid,
-                                                                 clock,
-                                                                 atmos_ocean_fluxes,
-                                                                 sea_ice_concentration,
-                                                                 ocean_properties)
-    i, j = @index(Global, NTuple)
-    kᴺ = size(grid, 3)
-    ρτˣᵃᵒ = atmos_ocean_fluxes.x_momentum
-    ρτʸᵃᵒ = atmos_ocean_fluxes.y_momentum
-    ℵ = sea_ice_concentration
-    τˣ = net_ocean_fluxes.u
-    τʸ = net_ocean_fluxes.v
-    ρᵒᶜ⁻¹ = 1 / ocean_properties.reference_density
-    inactive = inactive_node(i, j, kᴺ, grid, Center(), Center(), Center())
-
-    @inbounds begin
-        τˣᵃᵒ = ℑxᶠᵃᵃ(i, j, 1, grid, τᶜᶜᶜ, ρᵒᶜ⁻¹, ℵ, ρτˣᵃᵒ)
-        τʸᵃᵒ = ℑyᵃᶠᵃ(i, j, 1, grid, τᶜᶜᶜ, ρᵒᶜ⁻¹, ℵ, ρτʸᵃᵒ)
-        τˣ[i, j, 1] = ifelse(inactive, zero(grid), τˣᵃᵒ)
-        τʸ[i, j, 1] = ifelse(inactive, zero(grid), τʸᵃᵒ)
-    end
-end
-
-@kernel function _assemble_net_ocean_sea_ice_momentum_fluxes!(net_ocean_fluxes,
-                                                               grid,
-                                                               clock,
-                                                               sea_ice_ocean_fluxes,
-                                                               sea_ice_concentration,
-                                                               ocean_properties)
-    i, j = @index(Global, NTuple)
-    kᴺ = size(grid, 3)
-    ρτˣⁱᵒ = sea_ice_ocean_fluxes.x_momentum
-    ρτʸⁱᵒ = sea_ice_ocean_fluxes.y_momentum
-    ℵ = sea_ice_concentration
-    τˣ = net_ocean_fluxes.u
-    τʸ = net_ocean_fluxes.v
-    ρᵒᶜ⁻¹ = 1 / ocean_properties.reference_density
-    inactive = inactive_node(i, j, kᴺ, grid, Center(), Center(), Center())
-
-    @inbounds begin
-        τˣⁱᵒ = ρτˣⁱᵒ[i, j, 1] * ρᵒᶜ⁻¹ * ℑxᶠᵃᵃ(i, j, 1, grid, ℵ)
-        τʸⁱᵒ = ρτʸⁱᵒ[i, j, 1] * ρᵒᶜ⁻¹ * ℑyᵃᶠᵃ(i, j, 1, grid, ℵ)
-        τˣ[i, j, 1] = ifelse(inactive, zero(grid), τˣ[i, j, 1] + τˣⁱᵒ)
-        τʸ[i, j, 1] = ifelse(inactive, zero(grid), τʸ[i, j, 1] + τʸⁱᵒ)
     end
 end
