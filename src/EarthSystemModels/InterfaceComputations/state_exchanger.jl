@@ -34,6 +34,9 @@ struct StateExchanger{G, R, A, L, O, S, C}
         ocean_exchanger      = ComponentExchanger(ocean, grid)
         sea_ice_exchanger    = ComponentExchanger(sea_ice, grid)
 
+        # Materialize the (grid-free) atmosphere state correction onto the exchange grid.
+        correction = materialize_atmosphere_state_correction(correction, grid)
+
         G = typeof(grid)
         R = typeof(radiation_exchanger)
         A = typeof(atmosphere_exchanger)

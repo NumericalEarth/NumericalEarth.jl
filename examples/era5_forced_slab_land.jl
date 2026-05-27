@@ -182,12 +182,11 @@ for n in 1:Nt
     interior(strd_rate[n], :, :, 1) .= max.(interior(era5.downwelling_longwave_radiation[n],  :, :, 1) ./ 3600.0,            0)
 end
 
-# Elevation difference Δz (m, positive over peaks) as an exchange-grid field. The
-# state exchanger applies `T -= Γ Δz` and the hydrostatic pressure adjustment to
-# the regridded atmosphere every step, for any atmosphere (prescribed or online).
-Δz_field = Field{Center, Center, Nothing}(land_grid)
-interior(Δz_field, :, :, 1) .= Δz
-elevation_correction = ElevationCorrection(Δz_field;
+# The state exchanger differences these two elevations into `Δz` on the exchange
+# grid under the hood and applies `T -= Γ Δz` plus the hydrostatic pressure
+# adjustment to the regridded atmosphere every step (any atmosphere, prescribed
+# or online).
+elevation_correction = ElevationCorrection(z_era5_eff, z_land;
                                            lapse_rate = Γ_lapse,
                                            gravitational_acceleration = g_acc,
                                            dry_air_gas_constant = Rd)
