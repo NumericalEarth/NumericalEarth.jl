@@ -522,10 +522,12 @@ end
         @test all(s -> s isa String, req["pressure_level"])
     end
 
-    @testset "BoundingBox region produces area in [N, W, S, E] order" begin
+    @testset "BoundingBox region: area in [N, W, S, E] order, padded by 2 native cells" begin
+        # The request fetches two native cells (2 × 0.25° = 0.5°) of margin so the
+        # downloaded file covers the center-bracketed native grid the data lands on.
         req = CDSExt.build_era5_request(:temperature, sl, dt; region=bbox)
         @test haskey(req, "area")
-        @test req["area"] == [50.0, -10.0, 40.0, 5.0]
+        @test req["area"] == [50.5, -10.5, 39.5, 5.5]
     end
 
     @testset "Column with Nearest interpolation: tight ε=1e-3 box" begin

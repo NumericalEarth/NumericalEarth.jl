@@ -22,12 +22,17 @@ restrict(::Nothing, interfaces, N) = interfaces, N
 restrict(::Nothing, interfaces::NTuple{2,Any}, N) = interfaces, N
 restrict(::Nothing, interfaces::AbstractVector, N) = interfaces, N
 
-# Snap bbox outward to native cell faces so restricted centers land on native centers
+# Snap so the native cell *centers* bracket the bbox: include the cell whose
+# center is at or below the lower edge and the one whose center is at or above the
+# upper edge. This keeps the bbox inside the center hull so it stays interpolatable
+# at its edges (downscaling clamps outside the hull). Pads by 0 or 1 cell depending
+# on where the edge falls within a native cell (an edge in a cell's first half — or
+# exactly on a face — needs the extra cell; an edge past the center does not).
 function restrict(bbox_interfaces, interfaces::NTuple{2,Any}, N)
     left, right = interfaces
     Δ = (right - left) / N
-    i⁻ = max(floor(Int, (bbox_interfaces[1] - left) / Δ), 0)
-    i⁺ = min(ceil( Int, (bbox_interfaces[2] - left) / Δ), N)
+    i⁻ = clamp(floor(Int, (bbox_interfaces[1] - left) / Δ - 1/2), 0, N)
+    i⁺ = clamp(ceil( Int, (bbox_interfaces[2] - left) / Δ + 1/2), 0, N)
     if i⁺ <= i⁻
         i⁺ = min(i⁻ + 1, N)
         i⁻ = max(i⁺ - 1, 0)
@@ -35,10 +40,14 @@ function restrict(bbox_interfaces, interfaces::NTuple{2,Any}, N)
     return (left + i⁻ * Δ, left + i⁺ * Δ), i⁺ - i⁻
 end
 
-# Stretched native grid: snap outward to the nearest native cell interfaces.
+# Stretched native grid: same center-bracketing on irregular interfaces.
 function restrict(bbox_interfaces, interfaces::AbstractVector, N)
-    i⁻ = max(searchsortedlast(interfaces,  bbox_interfaces[1]), 1)
-    i⁺ = min(searchsortedfirst(interfaces, bbox_interfaces[2]), length(interfaces))
+    lo, hi = bbox_interfaces
+    n = length(interfaces)
+    k  = clamp(searchsortedlast(interfaces,  lo), 1, n - 1)
+    i⁻ = (interfaces[k]   + interfaces[k+1]) / 2 ≤ lo ? k : max(k - 1, 1)
+    m  = clamp(searchsortedfirst(interfaces, hi), 2, n)
+    i⁺ = (interfaces[m-1] + interfaces[m])   / 2 ≥ hi ? m : min(m + 1, n)
     rN = max(i⁺ - i⁻, 1)
     return interfaces[i⁻:i⁺], rN
 end
@@ -59,14 +68,15 @@ restrict_longitude(::Nothing, interfaces::NTuple{2,Any}, N) = interfaces, N
 function restrict_longitude(bbox_interfaces, interfaces::NTuple{2,Any}, N)
     left, right = interfaces
     Δ = (right - left) / N
-    i⁻ = max(floor(Int, (bbox_interfaces[1] - left) / Δ), 0)
-    i⁺ = ceil(Int, (bbox_interfaces[2] - left) / Δ)
 
     # Longitude bounding boxes may cross the native periodic seam after being
     # mapped into the dataset's longitude convention, for example -110°..30°
     # on ERA5's 0°..360° grid becomes 249.875°..389.875°. Preserve that
-    # continuous span instead of clamping to the native upper face.
+    # continuous span (center-bracketed, see `restrict`) instead of clamping to
+    # the native upper face.
     if bbox_interfaces[1] >= left && bbox_interfaces[2] > right
+        i⁻ = max(floor(Int, (bbox_interfaces[1] - left) / Δ - 1/2), 0)
+        i⁺ = ceil(Int, (bbox_interfaces[2] - left) / Δ + 1/2)
         return (left + i⁻ * Δ, left + i⁺ * Δ), i⁺ - i⁻
     else
         return restrict(bbox_interfaces, interfaces, N)
