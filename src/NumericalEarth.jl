@@ -50,10 +50,6 @@ export
     JRA55PrescribedRadiation,
     JRA55PrescribedAtmosphere,
     JRA55PrescribedLand,
-    OSPapaPrescribedRadiation,
-    OSPapaPrescribedAtmosphere,
-    os_papa_prescribed_fluxes,
-    os_papa_prescribed_flux_boundary_conditions,
     FreezingLimitedOceanTemperature,
     SurfaceRadiationProperties,
     InterfaceRadiationFlux,
@@ -81,7 +77,6 @@ export
     WOAClimatology, WOAAnnual, WOAMonthly,
     GLORYSDaily, GLORYSMonthly, GLORYSStatic,
     RepeatYearJRA55, MultiYearJRA55,
-    OSPapaHourly,
     JRA55FieldTimeSeries,
     ORCA1, ORCA12,
     ORCAGrid,
@@ -154,7 +149,7 @@ include("Diagnostics/Diagnostics.jl")
 
 using .Grids
 using .DataWrangling
-using .DataWrangling: ETOPO, ECCO, GLORYS, EN4, WOA, JRA55, OSPapa
+using .DataWrangling: ETOPO, ECCO, GLORYS, EN4, WOA, JRA55
 using .Bathymetry
 using .InitialConditions
 using .EarthSystemModels
@@ -172,7 +167,6 @@ using .DataWrangling.EN4
 using .DataWrangling.ORCA
 using .DataWrangling.WOA
 using .DataWrangling.JRA55
-using .DataWrangling.OSPapa
 
 using PrecompileTools: @setup_workload, @compile_workload
 

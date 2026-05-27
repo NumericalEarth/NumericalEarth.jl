@@ -240,6 +240,11 @@ function Oceananigans.Fields.Field(metadata::Metadatum, arch=CPU();
     set_metadata_field!(field, data, metadata)
     fill_halo_regions!(field)
 
+    # Columns have no horizontal neighbours, the propagate is vertical
+    if metadata.region isa Column
+        propagate_vertically!(field)
+    end
+
     if !isnothing(inpainting)
         # Respect user-supplied mask, but otherwise build default mask for this dataset.
         if isnothing(mask)
