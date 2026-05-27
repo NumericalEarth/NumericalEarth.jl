@@ -113,8 +113,7 @@ Argument
 Keyword Arguments
 =================
 
-- `dataset`: Supported datasets are `ETOPO2022()`, `ECCO2Monthly()`, `ECCO2Daily()`, `ECCO4Monthly()`, `EN4Monthly()`,
-             `GLORYSDaily()`, `GLORYSMonthly()`, `RepeatYearJRA55()`, and `MultiYearJRA55()`.
+- `dataset`: Supported datasets are returned by [`supported_datasets`](@ref).
 
 - `dates`: The dates of the dataset (`Dates.AbstractDateTime` or `CFTime.AbstractCFDateTime`).
            Note that `dates` can either be a range or a vector of dates, representing a time-series.
@@ -293,7 +292,7 @@ end
 #####
 ##### MetadataSet — a bundle of `Metadata` sharing dataset, dates, region, and dir.
 #####
-##### A `MetadataSet` is keyed by *verbose* dataset variable names. Iteration is
+##### An `mset::MetadataSet` is keyed by *verbose* dataset variable names. Iteration is
 ##### over variables (orthogonal to `Metadata`'s date-axis iteration); every
 ##### element returned by `mset[name]` / `mset[i]` is itself a `Metadata` or
 ##### `Metadatum`, so all existing per-`Metadata` machinery (`Field`, `set!`,
@@ -323,27 +322,56 @@ end
 A bundle of [`Metadata`](@ref) for many variables that share `dataset`, `dates`,
 `region`, and `dir` — differing only in variable name.
 
-Each element `mset[name]` (or equivalently `mset.name` or `mset[i]`) is itself a
-`Metadata` — or a `Metadatum` when `dates` is a single date. Iteration walks the
-variable axis, yielding one `Metadata` per variable.
+Each element of an `mset::MetadataSet`, e.g., `mset[name]` (or equivalently `mset.name` or
+`mset[i]`) is itself a `Metadata` — or a `Metadatum` when `dates` is a single date.
+Iteration walks the variable axis, yielding one `Metadata` per variable.
 
 Arguments
 =========
 - `variable_names`: one or more `Symbol`s naming the dataset variables to bundle
   (e.g. `:temperature, :salinity`). Verbose dataset-internal names — no aliases.
+  It can also be a tuple of Symbols, e.g., `(:temperature, :salinity)`, but not a vector of Symbols.
 
 Keyword Arguments
 =================
-- `dataset`: the shared dataset (e.g. `ECCO4Monthly()`, `ERA5HourlyPressureLevels()`).
-- `dates`: shared date axis. Either a single `AbstractDateTime`/`AbstractCFDateTime`
-  (yielding a [`MetadatumSet`](@ref)) or an `AbstractVector` of dates.
-  Defaults to `all_dates(dataset, first(variable_names))`.
-- `date`: convenience scalar form; cannot be used together with `dates`.
-- `region`: shared spatial region — `BoundingBox`, `Column`, or `nothing`.
-- `dir`: shared download directory.
-- `filenames`: an optional `NamedTuple` keyed by `variable_names` overriding the
-  auto-computed per-variable filenames.
-- `start_date`, `end_date`: optional date cropping, matching [`Metadata`](@ref).
+- `dataset`: The shared dataset. Supported datasets are returned by [`supported_datasets`](@ref).
+- `dates`: Shared date axis. Either a single `AbstractDateTime`/`AbstractCFDateTime`
+           or an `AbstractVector` of dates. Defaults to `all_dates(dataset, first(variable_names))`.
+- `date`: Convenience scalar form; cannot be used together with `dates`.
+- `region`: Shared spatial region — `BoundingBox`, `Column`, or `nothing`.
+- `dir`: Shared download directory.
+- `filenames`: An optional `NamedTuple` keyed by `variable_names` overriding the
+               auto-computed per-variable filenames.
+- `start_date`, `end_date`: Optional date cropping, matching [`Metadata`](@ref).
+
+Example
+=======
+
+```jldoctest
+using NumericalEarth, Dates
+
+mset = MetadataSet(:temperature, :salinity;
+                   dataset = ECCO4Monthly(),
+                   date = DateTime(1995, 1, 1))
+
+mset[2] # Metadata for :salinity
+
+using NumericalEarth, Dates
+
+mset = MetadataSet(:temperature, :salinity;
+                   dataset = ECCO4Monthly(),
+                   date = DateTime(1995, 1, 1))
+
+mset[2] # Metadata for :salinity
+
+# output
+Metadatum{ECCO4Monthly, DateTime}:
+├── name: salinity
+├── dataset: ECCO4Monthly
+├── dates: 1995-01-01 00:00:00
+├── filename: SALT_1995_01.nc
+└── dir: /.julia/scratchspaces/904d977b-046a-4731-8b86-9235c0d1ef02/ECCO/v4
+```
 
 See also [`Metadata`](@ref), [`Metadatum`](@ref).
 """

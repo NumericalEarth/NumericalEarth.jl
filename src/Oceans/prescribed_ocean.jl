@@ -36,15 +36,15 @@ Keyword Arguments
 - `sea_surface_salinity`: `FieldTimeSeries` for SSS.
 - `velocities`: `NamedTuple` of `FieldTimeSeries` for `(u, v)`.
 """
-struct PrescribedOcean{FT, G, Clk, SST, SSS, U, TI, ρ, C}
+struct PrescribedOcean{FT, G, Clk, SST, SSS, U, TI, Rho, Cp}
     grid :: G
     clock :: Clk
     sea_surface_temperature :: SST
     sea_surface_salinity :: SSS
     velocities :: U
     times :: TI
-    density :: ρ
-    heat_capacity :: C
+    density :: Rho
+    heat_capacity :: Cp
 end
 
 function default_prescribed_sst(grid, times)
@@ -80,10 +80,14 @@ function PrescribedOcean(grid, times=[zero(grid)];
                                convert(FT, heat_capacity))
 end
 
-PrescribedOcean{FT}(grid, clock, sst, sss, vel, times, ρ, c) where FT =
-    PrescribedOcean{FT, typeof(grid), typeof(clock), typeof(sst), typeof(sss),
-                    typeof(vel), typeof(times), typeof(ρ), typeof(c)}(
-                    grid, clock, sst, sss, vel, times, ρ, c)
+PrescribedOcean{FT}(grid, clock, sea_surface_temperature, sea_surface_salinity,
+                    velocities, times, density, heat_capacity) where FT =
+    PrescribedOcean{FT, typeof(grid), typeof(clock),
+                    typeof(sea_surface_temperature), typeof(sea_surface_salinity),
+                    typeof(velocities), typeof(times),
+                    typeof(density), typeof(heat_capacity)}(
+                    grid, clock, sea_surface_temperature, sea_surface_salinity,
+                    velocities, times, density, heat_capacity)
 
 function Oceananigans.set!(ocean::PrescribedOcean; T=nothing, S=nothing, u=nothing, v=nothing)
     !isnothing(T) && (parent(ocean.sea_surface_temperature) .= T)

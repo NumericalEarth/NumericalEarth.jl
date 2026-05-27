@@ -1,14 +1,14 @@
 include("runtests_setup.jl")
 include("download_utils.jl")
 
-using NumericalEarth
-using NumericalEarth.DataWrangling: metadata_path
-using NumericalEarth.DataWrangling.ORCA: default_south_rows_to_remove
 using Oceananigans
-using Oceananigans.Architectures: CPU, GPU
+using Oceananigans.Architectures: CPU
 using Oceananigans.OrthogonalSphericalShellGrids: TripolarGrid
 using Oceananigans.ImmersedBoundaries: ImmersedBoundaryGrid
 using NCDatasets
+using NumericalEarth
+using NumericalEarth.DataWrangling: metadata_path
+using NumericalEarth.DataWrangling.ORCA: default_south_rows_to_remove
 using Statistics
 using Test
 

@@ -512,7 +512,7 @@ function remove_minor_basins!(zb, keep_major_basins, core_size)
 
     # We add basin indexes until we reach the specified number (m == keep_major_basins) or
     # we run out of basins to keep -> isempty(valid)
-    while (m <= keep_major_basins) && !isempty(valid)
+    while (m ≤ keep_major_basins) && !isempty(valid)
         # Among the remaining valid labels, find the one with the largest core area.
         _, idx = findmax(total_elements[valid])
         next_label = label_elements[valid[idx]]
