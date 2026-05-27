@@ -65,9 +65,9 @@ grid = RectilinearGrid(arch;
 # ## Heterogeneous slab land
 #
 # A 1D land grid (size Nx, flat in y and z) carrying skin temperature,
-# soil moisture, and moisture availability. The land grid spans the
-# same x extent as the atmosphere so that the slab T can serve directly
-# as the RRTMGP surface temperature.
+# soil water, and surface saturation. The land grid spans the same x
+# extent as the atmosphere so that the slab T can serve directly as the
+# RRTMGP surface temperature.
 
 land_grid = RectilinearGrid(arch;
                             size = Nx,
@@ -234,9 +234,6 @@ model = AtmosphereLandModel(atmos, slab_land; radiation,
 # cumulus updraft can tighten the vertical CFL within a few steps. `max_Δt`
 # caps the step during the quiescent cold-start (velocities ≈ 0 ⇒ unbounded
 # advective timescale).
-# The wizard recomputes Δt every iteration so the step tracks the vertical
-# CFL on the 100 m grid as convection develops; `max_Δt` caps it during the
-# quiescent cold-start (velocities ≈ 0 ⇒ unbounded advective timescale).
 simulation = Simulation(model; Δt = 2, stop_time = 3days)
 conjure_time_step_wizard!(simulation, IterationInterval(1); cfl = 0.7, max_Δt = 6)
 
@@ -273,10 +270,9 @@ add_callback!(simulation, progress, IterationInterval(1000))
 
 _, _, w = atmos.model.velocities
 T  = atmos.model.temperature
-qᵛ = atmos.model.microphysical_fields.qᵛ
 qˡ = atmos.model.microphysical_fields.qˡ
 
-simulation.output_writers[:atmos] = JLD2Writer(model, (; w, T, qᵛ, qˡ);
+simulation.output_writers[:atmos] = JLD2Writer(model, (; w, T, qˡ);
                                                filename = "breeze_slab_land_atmos",
                                                schedule = TimeInterval(10minutes),
                                                overwrite_existing = true)

@@ -136,8 +136,10 @@ struct CriticalWetness{FT}
     critical_saturation :: FT
 end
 
-@inline evaporation_efficiency(e::CriticalWetness, hydrology) =
-    min(hydrology.saturation / e.critical_saturation, one(hydrology.saturation))
+@inline function evaporation_efficiency(e::CriticalWetness, hydrology)
+    𝒮 = hydrology.saturation
+    return min(𝒮 / convert(typeof(𝒮), e.critical_saturation), one(𝒮))
+end
 
 # Constant efficiency — a uniformly sub-saturated surface; reads no land state.
 @inline evaporation_efficiency(β::Number, hydrology) = β

@@ -231,7 +231,7 @@ end
     # Estimate initial interface state. Use the saturated value as the initial
     # surface humidity guess (the solver recomputes it via the formulation).
     u★ = convert(FT, 1e-4)
-    qₛ = saturation_specific_humidity(ℂᵃᵗ, Tₛ, pᵃᵗ, q_formulation.phase)
+    qₛ = convert(FT, saturation_specific_humidity(ℂᵃᵗ, Tₛ, pᵃᵗ, q_formulation.phase))
     initial_interface_state = AirLandInterfaceState(u★, u★, u★, uₛ, vₛ, Tₛ, qₛ, hydrology, energy)
 
     interface_state = compute_interface_state(turbulent_flux_formulation,

@@ -164,7 +164,8 @@ function EarthSystemModel(radiation, atmosphere, land, sea_ice, ocean;
                           ocean_heat_capacity = heat_capacity(ocean),
                           sea_ice_reference_density = reference_density(sea_ice),
                           sea_ice_heat_capacity = heat_capacity(sea_ice),
-                          interfaces = nothing)
+                          interfaces = nothing,
+                          interface_kw...) # e.g. `atmosphere_land_interface_specific_humidity`
     if isnothing(radiation) && atmosphere isa AbstractPrescribedComponent
         @warn """
             `EarthSystemModel` was constructed with a `PrescribedAtmosphere` but \
@@ -223,7 +224,8 @@ function EarthSystemModel(radiation, atmosphere, land, sea_ice, ocean;
                                          ocean_reference_density,
                                          ocean_heat_capacity,
                                          sea_ice_reference_density,
-                                         sea_ice_heat_capacity)
+                                         sea_ice_heat_capacity,
+                                         interface_kw...)
     end
 
     arch = architecture(interfaces.exchanger.grid)
