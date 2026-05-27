@@ -46,20 +46,26 @@ boundary-face node.
 scheme that consults `getbc` for its exterior value (e.g.
 `PerturbationAdvection`).
 """
-struct Interpolated{Dim, SideType, LX, LY, LZ, S}
-    source :: S
+struct Interpolated{Dim, SideType, LX, LY, LZ, S, G}
+    source       :: S
+    source_grid  :: G
 end
 
 # User-facing constructor — pre-regularization, all tags are `Nothing`.
+# We capture `source.grid` at construction time and carry it as a separate
+# field, mirroring Oceananigans' `FieldTimeSeriesTarget`: this is essential
+# for GPU compilation because `GPUAdaptedFieldTimeSeries` drops the `.grid`
+# field during Adapt, and `_query_source` (below) needs the grid to evaluate
+# the interpolation.
 Interpolated(source::S) where S<:InterpolatedSource =
-    Interpolated{Nothing, Nothing, Nothing, Nothing, Nothing, S}(source)
+    Interpolated{Nothing, Nothing, Nothing, Nothing, Nothing, S, typeof(source.grid)}(source, source.grid)
 
 # Type-stable post-regularization constructor.
-@inline Interpolated{Dim, SideType, LX, LY, LZ}(source::S) where {Dim, SideType, LX, LY, LZ, S} =
-    Interpolated{Dim, SideType, LX, LY, LZ, S}(source)
+@inline Interpolated{Dim, SideType, LX, LY, LZ}(source::S, source_grid::G) where {Dim, SideType, LX, LY, LZ, S, G} =
+    Interpolated{Dim, SideType, LX, LY, LZ, S, G}(source, source_grid)
 
 Adapt.adapt_structure(to, w::Interpolated{D, S, LX, LY, LZ}) where {D, S, LX, LY, LZ} =
-    Interpolated{D, S, LX, LY, LZ}(adapt(to, w.source))
+    Interpolated{D, S, LX, LY, LZ}(adapt(to, w.source), adapt(to, w.source_grid))
 
 #####
 ##### Regularization: convert the location-less wrapper to the tagged form.
@@ -70,7 +76,7 @@ function regularize_boundary_condition(c::Interpolated{Nothing}, grid, loc, dim,
     LY = typeof(loc[2])
     LZ = typeof(loc[3])
     _validate_source_bracket(c.source, grid, LX, LY, LZ)
-    return Interpolated{dim, SideType, LX, LY, LZ, typeof(c.source)}(c.source)
+    return Interpolated{dim, SideType, LX, LY, LZ, typeof(c.source), typeof(c.source_grid)}(c.source, c.source_grid)
 end
 
 # Match the strict "source must bracket every child sampling node" check that
@@ -99,15 +105,15 @@ end
 # in space + time, while an `AbstractField` source is interpolated in space at
 # the parent's current state.
 
-@inline _query_source(fts::FlavorOfFTS, X, t) =
+@inline _query_source(fts::FlavorOfFTS, source_grid, X, t) =
     Oceananigans.Fields.interpolate(X, Time(t), fts,
                                     Oceananigans.Fields.instantiated_location(fts),
-                                    fts.grid)
+                                    source_grid)
 
-@inline _query_source(field::Oceananigans.Fields.AbstractField, X, t) =
+@inline _query_source(field::Oceananigans.Fields.AbstractField, source_grid, X, t) =
     Oceananigans.Fields.interpolate(X, field,
                                     Oceananigans.Fields.instantiated_location(field),
-                                    field.grid)
+                                    source_grid)
 
 @inline _boundary_index(::Type{LeftBoundary},  N) = 1
 @inline _boundary_index(::Type{RightBoundary}, N) = N + 1
@@ -122,19 +128,19 @@ end
                        j::Integer, k::Integer, grid::AbstractGrid, clock=nothing, args...) where {S, LX, LY, LZ}
     i = _boundary_index(S, grid.Nx)
     X = node(i, j, k, grid, LX(), LY(), LZ())
-    return _query_source(bc.source, X, _clock_time(clock))
+    return _query_source(bc.source, bc.source_grid, X, _clock_time(clock))
 end
 
 @inline function getbc(bc::Interpolated{2, S, LX, LY, LZ},
                        i::Integer, k::Integer, grid::AbstractGrid, clock=nothing, args...) where {S, LX, LY, LZ}
     j = _boundary_index(S, grid.Ny)
     X = node(i, j, k, grid, LX(), LY(), LZ())
-    return _query_source(bc.source, X, _clock_time(clock))
+    return _query_source(bc.source, bc.source_grid, X, _clock_time(clock))
 end
 
 @inline function getbc(bc::Interpolated{3, S, LX, LY, LZ},
                        i::Integer, j::Integer, grid::AbstractGrid, clock=nothing, args...) where {S, LX, LY, LZ}
     k = _boundary_index(S, grid.Nz)
     X = node(i, j, k, grid, LX(), LY(), LZ())
-    return _query_source(bc.source, X, _clock_time(clock))
+    return _query_source(bc.source, bc.source_grid, X, _clock_time(clock))
 end

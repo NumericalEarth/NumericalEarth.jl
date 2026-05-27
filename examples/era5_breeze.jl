@@ -31,6 +31,14 @@ using Statistics: mean
 using Dates
 using Printf
 
+# Set `ARCH=GPU` in the environment to run on CUDA.
+if get(ENV, "ARCH", "CPU") == "GPU"
+    using CUDA
+    const arch = GPU(CUDA.CUDABackend(always_inline = true))
+else
+    const arch = CPU()
+end
+
 # ## Configuration
 
 # ### Domain
@@ -122,7 +130,8 @@ ds_sl = ERA5HourlySingleLevel()
 # metadata supplies a domain-mean z(p) profile via the time-mean spatial-mean
 # geopotential height (the dataset's default `mean_geopotential_height=true`).
 
-grid = LatitudeLongitudeGrid(longitude = (λ_west,  λ_east),
+grid = LatitudeLongitudeGrid(arch;
+                             longitude = (λ_west,  λ_east),
                              latitude  = (φ_south, φ_north),
                              z         = z_discretization,
                              size      = (Nx, Ny, Nz),
@@ -199,21 +208,24 @@ end
 # Stage 1: column-wise z interpolation onto the intermediate grid.
 # The intermediate field shares the ERA5 native (λ, φ) but has the LAM z;
 # we simply loop over (i, j) of the native grid and linearly interpolate
-# each column to the LAM z-centers, applying the sub-surface mask.
+# each column to the LAM z-centers, applying the sub-surface mask. The compute
+# is host-side (the loop indexes column-by-column) and the result is then
+# copied into the field's interior — works regardless of `arch`.
 function column_interp_z!(inter_field, era5_data;
                           z_above_sfc, p_era5_lev, p₀_arr)
-    out   = interior(inter_field)
     z_lam = collect(znodes(inter_field.grid, Center(), Center(), Center()))
-    Nλ_e, Nφ_e, _ = size(era5_data)
+    Nλ_e, Nφ_e = size(era5_data, 1), size(era5_data, 2)
+    out_host = zeros(eltype(era5_data), Nλ_e, Nφ_e, length(z_lam))
 
     for k in eachindex(z_lam), j in 1:Nφ_e, i in 1:Nλ_e
-        out[i, j, k] = interp_z_masked(z_lam[k],
-                                       @view(z_above_sfc[i, j, :]),
-                                       @view(era5_data[i, j, :]),
-                                       p_era5_lev,
-                                       p₀_arr[i, j])
+        out_host[i, j, k] = interp_z_masked(z_lam[k],
+                                            @view(z_above_sfc[i, j, :]),
+                                            @view(era5_data[i, j, :]),
+                                            p_era5_lev,
+                                            p₀_arr[i, j])
     end
 
+    copyto!(interior(inter_field), out_host)
     fill_halo_regions!(inter_field)
     return inter_field
 end
@@ -245,7 +257,8 @@ Nλ_e, Nφ_e = length(λ_centers_era5), length(φ_centers_era5)
 Δλ_e = (λ_centers_era5[end] - λ_centers_era5[1]) / (Nλ_e - 1)
 Δφ_e = (φ_centers_era5[end] - φ_centers_era5[1]) / (Nφ_e - 1)
 
-parent_grid = LatitudeLongitudeGrid(longitude = (λ_centers_era5[1]   - Δλ_e/2,
+parent_grid = LatitudeLongitudeGrid(arch;
+                                    longitude = (λ_centers_era5[1]   - Δλ_e/2,
                                                  λ_centers_era5[end] + Δλ_e/2),
                                     latitude  = (φ_centers_era5[1]   - Δφ_e/2,
                                                  φ_centers_era5[end] + Δφ_e/2),
@@ -364,13 +377,15 @@ function populate_parent_snapshot!(n, date)
     θˡⁱ_arr = θ_arr  .* (1 .- (Lᵥ .* qᶜ_arr .+ Lₛ .* qⁱ_arr) ./ (cₚᵈ .* T_arr))
     qᵗ_arr  = qᵛ_arr .+ qᶜ_arr .+ qⁱ_arr
 
-    interior(ρ_fts,   :, :, :, n) .= ρ_arr
-    interior(ρu_fts,  :, :, :, n) .= ρ_arr .* u_arr
-    interior(ρv_fts,  :, :, :, n) .= ρ_arr .* v_arr
-    interior(ρθ_fts,  :, :, :, n) .= ρ_arr .* θˡⁱ_arr
-    interior(ρqᵉ_fts, :, :, :, n) .= ρ_arr .* qᵗ_arr
-    interior(θ_fts,   :, :, :, n) .= θˡⁱ_arr
-    interior(qᵗ_fts,  :, :, :, n) .= qᵗ_arr
+    # Host → device writes via `copyto!` (works on both CPU and GPU; the
+    # broadcast form `.=` can fail on `CuArray .= Array`).
+    copyto!(interior(ρ_fts,   :, :, :, n), ρ_arr)
+    copyto!(interior(ρu_fts,  :, :, :, n), ρ_arr .* u_arr)
+    copyto!(interior(ρv_fts,  :, :, :, n), ρ_arr .* v_arr)
+    copyto!(interior(ρθ_fts,  :, :, :, n), ρ_arr .* θˡⁱ_arr)
+    copyto!(interior(ρqᵉ_fts, :, :, :, n), ρ_arr .* qᵗ_arr)
+    copyto!(interior(θ_fts,   :, :, :, n), θˡⁱ_arr)
+    copyto!(interior(qᵗ_fts,  :, :, :, n), qᵗ_arr)
 
     return (; p₀_arr, z_above_sfc, p_era5_3d,
               u_era5, v_era5, T_era5, qᵛ_era5, qᶜ_era5, qⁱ_era5)
@@ -458,14 +473,19 @@ bcs = parent_boundary_conditions(grid;
 FRINGE_N = 5
 fringe_deg = FRINGE_N * max(Δλ, Δφ)
 
-function lateral_mask(λ, φ, z)
-    dW = λ - λ_west
-    dE = λ_east - λ
-    dS = φ - φ_south
-    dN = φ_north - φ
-    d  = min(dW, dE, dS, dN)
-    d >= fringe_deg && return 0.0
-    return 0.5 * (1 + cos(π * d / fringe_deg))
+# Capture domain extents + fringe width into closure-local bindings so the
+# resulting function is type-stable (required for GPU kernel compilation —
+# non-const module globals produce dynamic-dispatch IR).
+lateral_mask = let λ_w = λ_west, λ_e = λ_east, φ_s = φ_south, φ_n = φ_north, fringe = fringe_deg
+    (λ, φ, z) -> begin
+        dW = λ - λ_w
+        dE = λ_e - λ
+        dS = φ - φ_s
+        dN = φ_n - φ
+        d  = min(dW, dE, dS, dN)
+        d >= fringe && return zero(λ)
+        return 0.5 * (1 + cos(π * d / fringe))
+    end
 end
 
 # τ_relax ≈ 5·Δx / U_scale at the domain center latitude, U ~ 20 m/s.
