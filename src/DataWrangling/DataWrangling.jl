@@ -261,7 +261,7 @@ disambiguators when a single dataset (e.g. `ECCO4Monthly`) carries both ocean
 and atmosphere fields.
 
 Every value here is documented in `docs/src/appendix/notation.md` (or in
-[Breeze.jl's notation](https://github.com/CliMA/Breeze.jl/blob/main/docs/src/appendix/notation.md)
+[Breeze.jl's notation](https://numericalearth.github.io/BreezeDocumentation/stable/appendix/notation/)
 for the microphysics symbols).
 """
 const variable_glossary = Dict{Symbol, Symbol}(

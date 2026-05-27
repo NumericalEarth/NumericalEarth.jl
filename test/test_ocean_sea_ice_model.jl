@@ -12,16 +12,16 @@ using ClimaSeaIce.Rheologies
 @testset "Time stepping test" begin
     for arch in test_architectures
         A = typeof(arch)
-        
+
         grid = TripolarGrid(arch;
                             size = (50, 50, 10),
                             halo = (7, 7, 7),
                             z = (-5000, 0))
 
         bottom_height = regrid_bathymetry(grid;
-                                minimum_depth = 10,
-                                interpolation_passes = 5,
-                                major_basins = 1)
+                                          minimum_depth = 10,
+                                          interpolation_passes = 5,
+                                          major_basins = 1)
 
         grid = ImmersedBoundaryGrid(grid, GridFittedBottom(bottom_height); active_cells_map=true)
         free_surface = SplitExplicitFreeSurface(grid; substeps=20)
@@ -37,7 +37,7 @@ using ClimaSeaIce.Rheologies
             time_resolution = dataset isa ECCO2Daily ? Day(1) : Month(1)
             end_date = DateTimeProlepticGregorian(1993, 2, 1)
             dates = start_date : time_resolution : end_date
-    
+
             initial_state = MetadataSet(:temperature, :salinity;
                                         dataset, date=start_date)
 
@@ -59,7 +59,7 @@ using ClimaSeaIce.Rheologies
 
             atmosphere = JRA55PrescribedAtmosphere(arch; time_indices_in_memory=4)
             radiation = JRA55PrescribedRadiation(arch; time_indices_in_memory=4)
-            
+
             # Fluxes are computed when the model is constructed, so we just test that this works.
             # And that we can time step with sea ice
             @test begin
