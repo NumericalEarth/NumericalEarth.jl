@@ -374,7 +374,7 @@ function ComponentInterfaces(atmosphere, ocean, sea_ice=nothing;
                              sea_ice_reference_density = reference_density(sea_ice),
                              sea_ice_heat_capacity = heat_capacity(sea_ice),
                              gravitational_acceleration = default_gravitational_acceleration,
-                             atmosphere_state_correction = nothing)
+                             exchanger_correction = nothing)
 
     FT = eltype(exchange_grid)
 
@@ -435,7 +435,7 @@ function ComponentInterfaces(atmosphere, ocean, sea_ice=nothing;
                     atmosphere = net_fluxes(atmosphere))
 
     exchanger = StateExchanger(exchange_grid, radiation, atmosphere, land, ocean, sea_ice;
-                               correction = atmosphere_state_correction)
+                               correction = exchanger_correction)
 
     properties = (; gravitational_acceleration)
 

@@ -158,7 +158,7 @@ update_state!(slab_land)
 # 0.01 m scalar here) via `atmosphere_land_fluxes`.
 
 model = AtmosphereLandModel(atmosphere, slab_land; radiation,
-                            atmosphere_state_correction = correction,
+                            exchanger_correction = correction,
                             atmosphere_land_fluxes = SimilarityTheoryFluxes(;
                                 momentum_roughness_length    = 0.1,
                                 temperature_roughness_length = 0.01,
