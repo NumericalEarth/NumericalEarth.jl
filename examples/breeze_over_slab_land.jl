@@ -246,20 +246,20 @@ function progress(sim)
     elapsed = 1e-9 * (time_ns() - wall_clock[])
 
     atmos_model = sim.model.atmosphere.model
-    T = atmos_model.temperature
+    Tᵃᵗ = atmos_model.temperature
     _, _, w = atmos_model.velocities
-    wmax       = maximum(abs, w)
-    Tmin, Tmax = extrema(T)
+    wmax            = maximum(abs, w)
+    Tᵃᵗ_min, Tᵃᵗ_max = extrema(Tᵃᵗ)
 
-    T_land = sim.model.land.temperature
-    T_land_min, T_land_max = extrema(T_land)
+    Tˡᵃ = sim.model.land.temperature
+    Tˡᵃ_min, Tˡᵃ_max = extrema(Tˡᵃ)
 
     rtm = sim.model.radiation
     OLR = mean(view(rtm.upwelling_longwave_flux, :, 1, Nz+1))
 
-    @info @sprintf("iter %5d, t %8s, Δt %4.1fs, wall %6s, max|w| %4.2f m/s, T [%5.1f,%5.1f] K, T_land [%5.1f,%5.1f] K, OLR %5.1f W/m²",
+    @info @sprintf("iter %5d, t %8s, Δt %4.1fs, wall %6s, max|w| %4.2f m/s, Tᵃᵗ [%5.1f,%5.1f] K, Tˡᵃ [%5.1f,%5.1f] K, OLR %5.1f W/m²",
                    iteration(sim), prettytime(sim), sim.Δt, prettytime(elapsed),
-                   wmax, Tmin, Tmax, T_land_min, T_land_max, OLR)
+                   wmax, Tᵃᵗ_min, Tᵃᵗ_max, Tˡᵃ_min, Tˡᵃ_max, OLR)
 
     wall_clock[] = time_ns()
     return nothing
@@ -279,9 +279,9 @@ simulation.output_writers[:atmos] = JLD2Writer(model, (; w, T, qˡ);
                                                overwrite_existing = true)
 
 simulation.output_writers[:land] = JLD2Writer(model,
-                                              (; T_land = slab_land.temperature,
-                                                  M     = slab_land.water_storage,
-                                                  𝒮     = slab_land.saturation);
+                                              (; T = slab_land.temperature,
+                                                  M = slab_land.water_storage,
+                                                  𝒮 = slab_land.saturation);
                                               filename = "breeze_slab_land_surface",
                                               schedule = TimeInterval(10minutes),
                                               overwrite_existing = true)
@@ -298,12 +298,12 @@ run!(simulation)
 # and cloud liquid water. Bottom row: 1D land state along x — skin
 # temperature, soil water, and surface saturation 𝒮.
 
-w_ts  = FieldTimeSeries("breeze_slab_land_atmos.jld2",   "w")
-T_ts  = FieldTimeSeries("breeze_slab_land_atmos.jld2",   "T")
-qˡ_ts = FieldTimeSeries("breeze_slab_land_atmos.jld2",   "qˡ")
-T_land_ts = FieldTimeSeries("breeze_slab_land_surface.jld2", "T_land")
-M_ts      = FieldTimeSeries("breeze_slab_land_surface.jld2", "M")
-𝒮_ts      = FieldTimeSeries("breeze_slab_land_surface.jld2", "𝒮")
+w_ts   = FieldTimeSeries("breeze_slab_land_atmos.jld2",   "w")
+Tᵃᵗ_ts = FieldTimeSeries("breeze_slab_land_atmos.jld2",   "T")
+qˡ_ts  = FieldTimeSeries("breeze_slab_land_atmos.jld2",   "qˡ")
+Tˡᵃ_ts = FieldTimeSeries("breeze_slab_land_surface.jld2", "T")
+M_ts   = FieldTimeSeries("breeze_slab_land_surface.jld2", "M")
+𝒮_ts   = FieldTimeSeries("breeze_slab_land_surface.jld2", "𝒮")
 
 times = w_ts.times
 Nt    = length(times)
@@ -318,33 +318,33 @@ qˡlim = max(1e-6, maximum(qˡ_ts) / 2)
 
 fig = Figure(size = (1500, 800), fontsize = 13)
 
-ax_w  = Axis(fig[1, 1], title = "w (m/s)",       ylabel = "z (m)", limits = (nothing, (0, 5e3)))
-ax_T  = Axis(fig[1, 2], title = "T anomaly (K)",                   limits = (nothing, (0, 5e3)))
-ax_qˡ = Axis(fig[1, 3], title = "qˡ (kg/kg)",                      limits = (nothing, (0, 5e3)))
+ax_w   = Axis(fig[1, 1], title = "w (m/s)",         ylabel = "z (m)", limits = (nothing, (0, 5e3)))
+ax_Tᵃᵗ = Axis(fig[1, 2], title = "Tᵃᵗ anomaly (K)",                  limits = (nothing, (0, 5e3)))
+ax_qˡ  = Axis(fig[1, 3], title = "qˡ (kg/kg)",                       limits = (nothing, (0, 5e3)))
 
-ax_T_land = Axis(fig[2, 1], title = "Skin temperature (K)",  xlabel = "x (m)", ylabel = "T_land (K)")
-ax_M      = Axis(fig[2, 2], title = "Soil water (kg/m²)",    xlabel = "x (m)", ylabel = "M (kg/m²)")
-ax_𝒮      = Axis(fig[2, 3], title = "Surface saturation",    xlabel = "x (m)", ylabel = "𝒮")
+ax_Tˡᵃ = Axis(fig[2, 1], title = "Skin temperature (K)", xlabel = "x (m)", ylabel = "Tˡᵃ (K)")
+ax_M   = Axis(fig[2, 2], title = "Soil water (kg/m²)",   xlabel = "x (m)", ylabel = "M (kg/m²)")
+ax_𝒮   = Axis(fig[2, 3], title = "Surface saturation",   xlabel = "x (m)", ylabel = "𝒮")
 
 n = Observable(1)
 
-wn  = @lift view(interior(w_ts[$n]),  :, 1, :)
-Tn  = @lift begin
-    T_xz = view(interior(T_ts[$n]), :, 1, :)
+wn    = @lift view(interior(w_ts[$n]),  :, 1, :)
+Tᵃᵗ_n = @lift begin
+    T_xz = view(interior(Tᵃᵗ_ts[$n]), :, 1, :)
     T_xz .- mean(T_xz, dims = 1)
 end
-qˡn  = @lift view(interior(qˡ_ts[$n]), :, 1, :)
-T_land_n = @lift vec(interior(T_land_ts[$n], :, 1, 1))
-M_n      = @lift vec(interior(M_ts[$n],      :, 1, 1))
-𝒮_n      = @lift vec(interior(𝒮_ts[$n],      :, 1, 1))
+qˡn   = @lift view(interior(qˡ_ts[$n]), :, 1, :)
+Tˡᵃ_n = @lift vec(interior(Tˡᵃ_ts[$n], :, 1, 1))
+M_n   = @lift vec(interior(M_ts[$n],   :, 1, 1))
+𝒮_n   = @lift vec(interior(𝒮_ts[$n],   :, 1, 1))
 
-heatmap!(ax_w,  x_atmos, z_face,   wn;  colormap = :balance, colorrange = (-wlim, wlim))
-heatmap!(ax_T,  x_atmos, z_center, Tn;  colormap = :balance, colorrange = (-2, 2))
-heatmap!(ax_qˡ, x_atmos, z_center, qˡn; colormap = :dense,   colorrange = (0, qˡlim))
+heatmap!(ax_w,   x_atmos, z_face,   wn;    colormap = :balance, colorrange = (-wlim, wlim))
+heatmap!(ax_Tᵃᵗ, x_atmos, z_center, Tᵃᵗ_n; colormap = :balance, colorrange = (-2, 2))
+heatmap!(ax_qˡ,  x_atmos, z_center, qˡn;   colormap = :dense,   colorrange = (0, qˡlim))
 
-lines!(ax_T_land, x_land, T_land_n; color = :black, linewidth = 2)
-lines!(ax_M,      x_land, M_n;      color = :black, linewidth = 2)
-lines!(ax_𝒮,      x_land, 𝒮_n;      color = :black, linewidth = 2)
+lines!(ax_Tˡᵃ, x_land, Tˡᵃ_n; color = :black, linewidth = 2)
+lines!(ax_M,   x_land, M_n;   color = :black, linewidth = 2)
+lines!(ax_𝒮,   x_land, 𝒮_n;   color = :black, linewidth = 2)
 
 ylims!(ax_M, 0, hydrology.maximum_water_storage * 1.05)
 ylims!(ax_𝒮, 0, 1.05)
