@@ -183,7 +183,7 @@ start_date = DateTime(2005, 2, 16, 12)
 
         # Surface geopotential ÷ g → metres; accumulated SW/LW (J/m²) ÷ 3600 → W/m²;
         # accumulated precip depth (m) × 1000/3600 → kg/m²/s. Others are unconverted.
-        @test conversion_units(era5m(:geopotential_height)) isa InverseGravity
+        @test conversion_units(era5m(:orography)) isa InverseGravity
         @test conversion_units(era5m(:downwelling_shortwave_radiation)) isa Jm²ph
         @test conversion_units(era5m(:downwelling_longwave_radiation))  isa Jm²ph
         @test conversion_units(era5m(:total_precipitation)) isa MetersPerHour

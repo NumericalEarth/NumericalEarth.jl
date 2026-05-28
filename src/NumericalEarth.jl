@@ -89,7 +89,7 @@ export
     surface_temperature,
     surface_saturation,
     regrid_bathymetry,
-    regrid_topography,
+    regrid_orography,
     Metadata, Metadatum, MetadataSet,
     supported_datasets,
     BoundingBox,

@@ -74,11 +74,11 @@ land_grid = LatitudeLongitudeGrid(arch; latitude, longitude,
 
 # ## ETOPO surface elevation
 #
-# `regrid_topography` regrids ETOPO 2022 onto the land grid as a positive land
-# surface elevation (the topographic counterpart of `regrid_bathymetry`). This
+# `regrid_orography` regrids ETOPO 2022 onto the land grid as a positive land
+# surface elevation (the orographic counterpart of `regrid_bathymetry`). This
 # is the *desired* elevation the atmosphere is corrected to.
 
-z_land = regrid_topography(land_grid; dataset = ETOPO2022())
+z_land = regrid_orography(land_grid; dataset = ETOPO2022())
 
 # ## ERA5 forcing — 3-day window
 #
@@ -113,11 +113,11 @@ radiation = ERA5PrescribedRadiation(arch; dataset, start_date, end_date, region,
 # elevation (~2 km here). [`ElevationCorrection`](@ref) lifts the regridded
 # atmosphere from that elevation (`z_era5`) to the 1 km ETOPO surface (`z_land`)
 # with a moist lapse-rate shift + hydrostatic pressure adjustment, applied by the
-# state exchanger every step (`q` conserved). `z_era5` comes straight from ERA5's
-# surface geopotential (`:geopotential_height` ÷ g → metres); the gravitational
-# acceleration and gas constant the pressure adjustment needs are pulled from the
-# atmosphere's thermodynamics, not hand-passed.
-z_meta = Metadatum(:geopotential_height; dataset, date = start_date, region)
+# state exchanger every step (`q` conserved). `z_era5` is ERA5's model orography
+# (its surface geopotential ÷ g → metres); the gravitational acceleration and
+# gas constant the pressure adjustment needs are pulled from the atmosphere's
+# thermodynamics, not hand-passed.
+z_meta = Metadatum(:orography; dataset, date = start_date, region)
 z_era5 = Field(z_meta, land_grid)
 
 Δz = z_land - z_era5
