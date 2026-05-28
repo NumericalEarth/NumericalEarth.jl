@@ -52,11 +52,8 @@
 # see <https://cds.climate.copernicus.eu/how-to-api>.
 
 using NumericalEarth
-using NumericalEarth.DataWrangling.ERA5: ERA5HourlySingleLevel        # not reexported at the top level
 using Oceananigans
 using Oceananigans.Units
-using Oceananigans.Fields: interpolate!
-using Oceananigans.TimeSteppers: update_state!
 using CDSAPI                         # activates the CDS-API extension
 using CairoMakie                     # rendered up-front: see note below the run
 using Printf
@@ -64,8 +61,6 @@ using Statistics
 import Dates: DateTime, Hour         # `Dates.hour` clashes with `Oceananigans.Units.hour`
 
 # ## Domain — 2° × 2° Yellowstone box at ~1 km
-
-const Γ_lapse = 6.5e-3        # K m⁻¹  environmental lapse rate
 
 arch  = CPU()
 
@@ -106,15 +101,11 @@ end_date   = last(dates)
 Nt         = length(dates)
 
 atmosphere = ERA5PrescribedAtmosphere(arch; dataset, start_date, end_date, region,
-                                      time_indices_in_memory = Nt,
                                       surface_layer_height  = 10,
                                       boundary_layer_height = 800)
 
 radiation = ERA5PrescribedRadiation(arch; dataset, start_date, end_date, region,
-                                    time_indices_in_memory = Nt,
-                                    ocean_surface   = nothing,
-                                    sea_ice_surface = nothing,
-                                    land_surface    = SurfaceRadiationProperties(0.18, 0.95))
+                                    land_surface = SurfaceRadiationProperties(0.18, 0.95))
 
 # ## Elevation correction
 #
@@ -126,12 +117,13 @@ radiation = ERA5PrescribedRadiation(arch; dataset, start_date, end_date, region,
 # surface geopotential (`:geopotential_height` ÷ g → metres); the gravitational
 # acceleration and gas constant the pressure adjustment needs are pulled from the
 # atmosphere's thermodynamics, not hand-passed.
-z_era5 = Field{Center, Center, Nothing}(land_grid)
-interpolate!(z_era5, Field(Metadatum(:geopotential_height; dataset, date = start_date, region), arch))
+z_meta = Metadatum(:geopotential_height; dataset, date = start_date, region)
+z_era5 = Field(z_meta, land_grid)
 
 Δz = z_land - z_era5
 @info "Elevation field stats" land=extrema(z_land) era5=extrema(z_era5) Δz=extrema(Δz)
 
+Γ_lapse = 6.5e-3 # K m⁻¹  environmental lapse rate
 correction = ElevationCorrection(z_land, z_era5; lapse_rate = Γ_lapse)
 
 # ## Slab land
@@ -140,16 +132,14 @@ correction = ElevationCorrection(z_land, z_era5; lapse_rate = Γ_lapse)
 # the atmosphere-land flux closure (set on the model below), not of the land.
 dry_heat_capacity = 0.1 * 1500 * 1480
 slab_land = SlabLand(land_grid;
-                     energy    = SlabEnergy(; dry_heat_capacity),
+                     energy = SlabEnergy(; dry_heat_capacity),
                      hydrology = BucketHydrology(maximum_water_storage = 150))
 
 # Cold-start the skin temperature from the elevation-corrected ERA5 T₂ₘ at the
 # first snapshot (interpolated onto the 1 km grid), mirroring the runtime lift.
 T₀ = Field{Center, Center, Nothing}(land_grid)
-interpolate!(T₀, atmosphere.tracers.T[1])
-set!(slab_land.temperature, T₀ - Γ_lapse * Δz)
-set!(slab_land.water_storage, 0.5 * 150.0)
-update_state!(slab_land)
+Oceananigans.Fields.interpolate!(T₀, atmosphere.tracers.T[1])
+set!(slab_land; T = T₀ - Γ_lapse * Δz, M = 0.5 * 150)
 
 # ## Coupled model
 #
@@ -157,15 +147,18 @@ update_state!(slab_land)
 # `SimilarityTheoryFluxes` with the desired land roughness (0.1 m momentum,
 # 0.01 m scalar here) via `atmosphere_land_fluxes`.
 
-model = AtmosphereLandModel(atmosphere, slab_land; radiation,
-                            exchanger_correction = correction,
-                            atmosphere_land_fluxes = SimilarityTheoryFluxes(;
-                                momentum_roughness_length    = 0.1,
-                                temperature_roughness_length = 0.01,
-                                water_vapor_roughness_length = 0.01))
-simulation = Simulation(model; Δt = 5minutes, stop_time = (Nt - 1) * 3600.0)
+atmosphere_land_fluxes = SimilarityTheoryFluxes(momentum_roughness_length    = 0.1,
+                                                temperature_roughness_length = 0.01,
+                                                water_vapor_roughness_length = 0.01)
+
+model = AtmosphereLandModel(atmosphere, slab_land;
+                            radiation, atmosphere_land_fluxes,
+                            exchanger_correction = correction)
+
+simulation = Simulation(model; Δt = 5minutes, stop_time = (Nt - 1) * 3600)
 
 wall_time = Ref(time_ns())
+
 function progress(sim)
     land = sim.model.land
     Tmin, Tmax = minimum(land.temperature), maximum(land.temperature)
@@ -237,9 +230,9 @@ Tn = @lift T_ts[$n]
 𝒮n = @lift 𝒮_ts[$n]
 Qn = @lift Q_ts[$n]
 
-hm_T = heatmap!(ax_T, Tn;           colormap = :thermal, colorrange = (250, 300))
-hm_𝒮 = heatmap!(ax_𝒮, 𝒮n;           colormap = :tempo,   colorrange = 𝒮_range)
-hm_Q = heatmap!(ax_Q, Qn;           colormap = :balance, colorrange = (-400, 400))
+hm_T = heatmap!(ax_T, Tn; colormap = :thermal, colorrange = (250, 300))
+hm_𝒮 = heatmap!(ax_𝒮, 𝒮n; colormap = :tempo,   colorrange = 𝒮_range)
+hm_Q = heatmap!(ax_Q, Qn; colormap = :balance, colorrange = (-400, 400))
 hm_z = heatmap!(ax_z, z_land; colormap = :terrain, colorrange = (1000, 3500))
 
 Colorbar(fig[1, 1, Right()], hm_T; label = "T (K)")

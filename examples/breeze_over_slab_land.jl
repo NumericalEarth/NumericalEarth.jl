@@ -224,8 +224,9 @@ set_to_mean!(reference_state, atmos.model, rescale_densities = true)
 
 # The surface specific humidity uses a Manabe evaporation efficiency: saturated
 # above the critical saturation `𝒮ᶜ = 0.75`, scaling down linearly below it.
+interface_specific_humidity = FractionalHumidity(efficiency = CriticalWetness(0.75))
 al_interface = atmosphere_land_interface(slab_land.grid, atmos, slab_land;
-                                         specific_humidity = FractionalHumidity(efficiency = CriticalWetness(0.75)))
+                                         specific_humidity = interface_specific_humidity)
 
 model = AtmosphereLandModel(atmos, slab_land; radiation,
                             atmosphere_land_interface = al_interface)
