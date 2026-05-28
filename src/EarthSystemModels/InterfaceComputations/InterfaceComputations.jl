@@ -32,6 +32,7 @@ export
     FractionalHumidity,
     CriticalWetness,
     ElevationCorrection,
+    atmosphere_land_interface,
     # Sea ice-ocean heat flux formulations
     IceBathHeatFlux,
     ThreeEquationHeatFlux,

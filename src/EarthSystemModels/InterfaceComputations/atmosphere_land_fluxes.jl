@@ -8,28 +8,36 @@ using Oceananigans.Grids: inactive_node
 ##### the compute kernel differs.
 #####
 
-atmosphere_land_interface(grid, ::Nothing,    land,     args...) = nothing
-atmosphere_land_interface(grid, atmosphere, ::Nothing, args...) = nothing
-atmosphere_land_interface(grid, ::Nothing,  ::Nothing, args...) = nothing
+atmosphere_land_interface(grid, ::Nothing,    land;     kw...) = nothing
+atmosphere_land_interface(grid, atmosphere, ::Nothing; kw...) = nothing
+atmosphere_land_interface(grid, ::Nothing,  ::Nothing; kw...) = nothing
 
-function atmosphere_land_interface(grid,
-                                   atmosphere,
-                                   land,
-                                   al_flux_formulation,
-                                   temperature_formulation,
-                                   velocity_formulation,
-                                   specific_humidity_formulation)
+"""
+    atmosphere_land_interface(grid, atmosphere, land;
+                              fluxes               = default_atmosphere_land_fluxes(land, eltype(grid)),
+                              temperature          = BulkTemperature(),
+                              velocity_difference  = RelativeVelocity(),
+                              specific_humidity    = default_al_specific_humidity(land))
+
+Build the atmosphere--land interface on `grid` from `atmosphere` and `land` with
+the given turbulent-flux closure, interface-temperature model, atmosphere-relative
+velocity model, and specific-humidity formulation. Pass the result as
+`atmosphere_land_interface = ...` to `ComponentInterfaces` /
+`AtmosphereLandModel` to override the default.
+"""
+function atmosphere_land_interface(grid, atmosphere, land;
+                                   fluxes              = default_atmosphere_land_fluxes(land, eltype(grid)),
+                                   temperature         = BulkTemperature(),
+                                   velocity_difference = RelativeVelocity(),
+                                   specific_humidity   = default_al_specific_humidity(land))
 
     al_fluxes = AtmosphereSurfaceFluxes(grid)
 
-    al_properties = InterfaceProperties(specific_humidity_formulation,
-                                        temperature_formulation,
-                                        velocity_formulation)
+    al_properties = InterfaceProperties(specific_humidity, temperature, velocity_difference)
 
     interface_temperature = Field{Center, Center, Nothing}(grid)
 
-    return AtmosphereInterface(al_fluxes, al_flux_formulation,
-                               interface_temperature, al_properties)
+    return AtmosphereInterface(al_fluxes, fluxes, interface_temperature, al_properties)
 end
 
 #####

@@ -224,10 +224,11 @@ set_to_mean!(reference_state, atmos.model, rescale_densities = true)
 
 # The surface specific humidity uses a Manabe evaporation efficiency: saturated
 # above the critical saturation `𝒮ᶜ = 0.75`, scaling down linearly below it.
-land_humidity = FractionalHumidity(efficiency = CriticalWetness(0.75))
+al_interface = atmosphere_land_interface(slab_land.grid, atmos, slab_land;
+                                         specific_humidity = FractionalHumidity(efficiency = CriticalWetness(0.75)))
 
 model = AtmosphereLandModel(atmos, slab_land; radiation,
-                            atmosphere_land_interface_specific_humidity = land_humidity)
+                            atmosphere_land_interface = al_interface)
 
 # The wizard recomputes Δt every iteration so the step always tracks the
 # current CFL — important for a convective LES on a 100 m grid, where a

@@ -46,6 +46,7 @@ export
     FractionalHumidity,
     CriticalWetness,
     ElevationCorrection,
+    atmosphere_land_interface,
     SlabOcean,
     PrescribedOcean,
     AbstractPrescribedComponent,

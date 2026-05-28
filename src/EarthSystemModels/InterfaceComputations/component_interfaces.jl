@@ -367,6 +367,7 @@ function ComponentInterfaces(atmosphere, ocean, sea_ice=nothing;
                              atmosphere_land_interface_temperature = BulkTemperature(),
                              atmosphere_land_velocity_difference = RelativeVelocity(),
                              atmosphere_land_interface_specific_humidity = default_al_specific_humidity(land),
+                             atmosphere_land_interface = nothing,
                              ocean_reference_density = reference_density(ocean),
                              ocean_heat_capacity = heat_capacity(ocean),
                              ocean_temperature_units = temperature_units(ocean),
@@ -422,13 +423,18 @@ function ComponentInterfaces(atmosphere, ocean, sea_ice=nothing;
                                                 atmosphere_sea_ice_interface_temperature,
                                                 atmosphere_sea_ice_velocity_difference)
 
-    al_interface = atmosphere_land_interface(exchange_grid,
-                                             atmosphere,
-                                             land,
-                                             atmosphere_land_fluxes,
-                                             atmosphere_land_interface_temperature,
-                                             atmosphere_land_velocity_difference,
-                                             atmosphere_land_interface_specific_humidity)
+    # User can supply a pre-built `atmosphere_land_interface` (typically via the
+    # `atmosphere_land_interface(grid, atmos, land; …)` helper) to override; the
+    # four sibling kwargs above are used to build the default otherwise. The
+    # local kwarg name shadows the helper here, so call the helper through the
+    # module namespace.
+    al_interface = isnothing(atmosphere_land_interface) ?
+        InterfaceComputations.atmosphere_land_interface(exchange_grid, atmosphere, land;
+                                                        fluxes              = atmosphere_land_fluxes,
+                                                        temperature         = atmosphere_land_interface_temperature,
+                                                        velocity_difference = atmosphere_land_velocity_difference,
+                                                        specific_humidity   = atmosphere_land_interface_specific_humidity) :
+        atmosphere_land_interface
     # Total interface fluxes
     total_fluxes = (ocean      = net_fluxes(ocean),
                     sea_ice    = net_fluxes(sea_ice),
