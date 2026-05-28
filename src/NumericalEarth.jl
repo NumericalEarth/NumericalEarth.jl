@@ -66,6 +66,7 @@ export
     BulkTemperature,
     regrid_bathymetry,
     Metadata, Metadatum, MetadataSet,
+    supported_datasets,
     BoundingBox,
     Column, Linear, Nearest,
     ECCOMetadatum,
