@@ -124,11 +124,10 @@ p₀ = 101325
 θ₀ = 300
 latitude = 15
 
-constants       = ThermodynamicConstants()
+constants = ThermodynamicConstants()
 reference_state = ReferenceState(grid, constants;
                                  surface_pressure = p₀,
-                                 potential_temperature = θ₀,
-                                 vapor_mass_fraction = 0)
+                                 potential_temperature = θ₀)
 dynamics = AnelasticDynamics(reference_state)
 
 Tᵣ  = reference_state.temperature
@@ -236,7 +235,7 @@ model = AtmosphereLandModel(atmos, slab_land; radiation,
 # cumulus updraft can tighten the vertical CFL within a few steps. `max_Δt`
 # caps the step during the quiescent cold-start (velocities ≈ 0 ⇒ unbounded
 # advective timescale).
-simulation = Simulation(model; Δt = 2, stop_time = 3days)
+simulation = Simulation(model; Δt = 1e-6, stop_time = 3days)
 conjure_time_step_wizard!(simulation, IterationInterval(1); cfl = 0.7, max_Δt = 6)
 
 # ## Progress
@@ -252,15 +251,15 @@ function progress(sim)
     wmax       = maximum(abs, w)
     Tmin, Tmax = extrema(T)
 
-    Tg = sim.model.land.temperature
-    Tg_min, Tg_max = extrema(Tg)
+    T_land = sim.model.land.temperature
+    T_land_min, T_land_max = extrema(T_land)
 
     rtm = sim.model.radiation
     OLR = mean(view(rtm.upwelling_longwave_flux, :, 1, Nz+1))
 
-    @info @sprintf("iter %5d, t %8s, Δt %4.1fs, wall %6s, max|w| %4.2f m/s, T [%5.1f,%5.1f] K, Tg [%5.1f,%5.1f] K, OLR %5.1f W/m²",
+    @info @sprintf("iter %5d, t %8s, Δt %4.1fs, wall %6s, max|w| %4.2f m/s, T [%5.1f,%5.1f] K, T_land [%5.1f,%5.1f] K, OLR %5.1f W/m²",
                    iteration(sim), prettytime(sim), sim.Δt, prettytime(elapsed),
-                   wmax, Tmin, Tmax, Tg_min, Tg_max, OLR)
+                   wmax, Tmin, Tmax, T_land_min, T_land_max, OLR)
 
     wall_clock[] = time_ns()
     return nothing
@@ -280,9 +279,9 @@ simulation.output_writers[:atmos] = JLD2Writer(model, (; w, T, qˡ);
                                                overwrite_existing = true)
 
 simulation.output_writers[:land] = JLD2Writer(model,
-                                              (; Tg = slab_land.temperature,
-                                                  W  = slab_land.water_storage,
-                                                  𝒮  = slab_land.saturation);
+                                              (; T_land = slab_land.temperature,
+                                                  M     = slab_land.water_storage,
+                                                  𝒮     = slab_land.saturation);
                                               filename = "breeze_slab_land_surface",
                                               schedule = TimeInterval(10minutes),
                                               overwrite_existing = true)
@@ -302,9 +301,9 @@ run!(simulation)
 w_ts  = FieldTimeSeries("breeze_slab_land_atmos.jld2",   "w")
 T_ts  = FieldTimeSeries("breeze_slab_land_atmos.jld2",   "T")
 qˡ_ts = FieldTimeSeries("breeze_slab_land_atmos.jld2",   "qˡ")
-Tg_ts = FieldTimeSeries("breeze_slab_land_surface.jld2", "Tg")
-W_ts  = FieldTimeSeries("breeze_slab_land_surface.jld2", "W")
-𝒮_ts  = FieldTimeSeries("breeze_slab_land_surface.jld2", "𝒮")
+T_land_ts = FieldTimeSeries("breeze_slab_land_surface.jld2", "T_land")
+M_ts      = FieldTimeSeries("breeze_slab_land_surface.jld2", "M")
+𝒮_ts      = FieldTimeSeries("breeze_slab_land_surface.jld2", "𝒮")
 
 times = w_ts.times
 Nt    = length(times)
@@ -323,9 +322,9 @@ ax_w  = Axis(fig[1, 1], title = "w (m/s)",       ylabel = "z (m)", limits = (not
 ax_T  = Axis(fig[1, 2], title = "T anomaly (K)",                   limits = (nothing, (0, 5e3)))
 ax_qˡ = Axis(fig[1, 3], title = "qˡ (kg/kg)",                      limits = (nothing, (0, 5e3)))
 
-ax_Tg = Axis(fig[2, 1], title = "Skin temperature (K)",  xlabel = "x (m)", ylabel = "T_g (K)")
-ax_W  = Axis(fig[2, 2], title = "Soil water (kg/m²)",    xlabel = "x (m)", ylabel = "W")
-ax_𝒮  = Axis(fig[2, 3], title = "Surface saturation",    xlabel = "x (m)", ylabel = "𝒮")
+ax_T_land = Axis(fig[2, 1], title = "Skin temperature (K)",  xlabel = "x (m)", ylabel = "T_land (K)")
+ax_M      = Axis(fig[2, 2], title = "Soil water (kg/m²)",    xlabel = "x (m)", ylabel = "M (kg/m²)")
+ax_𝒮      = Axis(fig[2, 3], title = "Surface saturation",    xlabel = "x (m)", ylabel = "𝒮")
 
 n = Observable(1)
 
@@ -335,19 +334,19 @@ Tn  = @lift begin
     T_xz .- mean(T_xz, dims = 1)
 end
 qˡn  = @lift view(interior(qˡ_ts[$n]), :, 1, :)
-Tg_n = @lift vec(interior(Tg_ts[$n], :, 1, 1))
-W_n  = @lift vec(interior(W_ts[$n],  :, 1, 1))
-𝒮_n  = @lift vec(interior(𝒮_ts[$n],  :, 1, 1))
+T_land_n = @lift vec(interior(T_land_ts[$n], :, 1, 1))
+M_n      = @lift vec(interior(M_ts[$n],      :, 1, 1))
+𝒮_n      = @lift vec(interior(𝒮_ts[$n],      :, 1, 1))
 
 heatmap!(ax_w,  x_atmos, z_face,   wn;  colormap = :balance, colorrange = (-wlim, wlim))
 heatmap!(ax_T,  x_atmos, z_center, Tn;  colormap = :balance, colorrange = (-2, 2))
 heatmap!(ax_qˡ, x_atmos, z_center, qˡn; colormap = :dense,   colorrange = (0, qˡlim))
 
-lines!(ax_Tg, x_land, Tg_n; color = :black, linewidth = 2)
-lines!(ax_W,  x_land, W_n;  color = :black, linewidth = 2)
-lines!(ax_𝒮,  x_land, 𝒮_n;  color = :black, linewidth = 2)
+lines!(ax_T_land, x_land, T_land_n; color = :black, linewidth = 2)
+lines!(ax_M,      x_land, M_n;      color = :black, linewidth = 2)
+lines!(ax_𝒮,      x_land, 𝒮_n;      color = :black, linewidth = 2)
 
-ylims!(ax_W, 0, hydrology.maximum_water_storage * 1.05)
+ylims!(ax_M, 0, hydrology.maximum_water_storage * 1.05)
 ylims!(ax_𝒮, 0, 1.05)
 
 title = @lift "Diurnal convection over heterogeneous slab land, t = " * prettytime(times[$n])
