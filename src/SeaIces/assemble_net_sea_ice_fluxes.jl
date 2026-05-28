@@ -57,7 +57,7 @@ end
         𝒬ᵀ   = atmosphere_sea_ice_fluxes.sensible_heat[i, j, 1] # sensible heat flux
         𝒬ᵛ   = atmosphere_sea_ice_fluxes.latent_heat[i, j, 1]   # latent heat flux
         𝒬ᶠʳᶻ = sea_ice_ocean_fluxes.frazil_heat[i, j, 1]          # frazil heat flux
-        𝒬ⁱⁿᵗ = sea_ice_ocean_fluxes.interface_heat[i, j, 1]       # interfacial heat flux
+        𝒬ⁱⁿ = sea_ice_ocean_fluxes.interface_heat[i, j, 1]       # interfacial heat flux
         Jˢⁿ  = snowfall_flux[i, j, 1]
     end
 
@@ -66,7 +66,7 @@ end
 
     # Turbulent contributions only (radiation added later by apply_air_sea_ice_radiative_fluxes!)
     ΣQt = (𝒬ᵀ + 𝒬ᵛ) * (ℵi > 0)
-    ΣQb = 𝒬ᶠʳᶻ + 𝒬ⁱⁿᵗ
+    ΣQb = 𝒬ᶠʳᶻ + 𝒬ⁱⁿ
 
     # Mask fluxes over land for convenience
     inactive = inactive_node(i, j, kᴺ, grid, Center(), Center(), Center())

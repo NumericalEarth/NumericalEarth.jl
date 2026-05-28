@@ -93,7 +93,7 @@ function build_era5_request(name_or_names, dataset, datetimes; region)
 
     extra_request_keys!(request, dataset)
 
-    area = era5_request_area(region, dataset, first(names), first(dts))
+    area = era5_request_area(region, dataset, first(names))
     isnothing(area) || (request["area"] = area)
 
     return request
@@ -662,7 +662,7 @@ const LIN  = NumericalEarth.DataWrangling.Linear
 const NR   = NumericalEarth.DataWrangling.Nearest
 
 # Columns and unbounded regions: the area is a pure function of the region.
-era5_request_area(region, dataset, name, date) = build_era5_area(region)
+era5_request_area(region, dataset, name) = build_era5_area(region)
 
 # Bounding box: the native grid is built by center-bracketing `restrict`, which
 # can reach one cell past a boundary-aligned edge. Fetch two native cells of
@@ -670,7 +670,7 @@ era5_request_area(region, dataset, name, date) = build_era5_area(region)
 # covers the grid the data is interpolated onto — otherwise downscaling leaves
 # NaNs at the domain edges. Over-fetching is harmless: `restrict` selects the
 # exact cells from the larger file.
-function era5_request_area(bbox::BBOX, dataset, name, date)
+function era5_request_area(bbox::BBOX, dataset, name)
     (isnothing(bbox.longitude) || isnothing(bbox.latitude)) && return nothing
     Nx, Ny, _ = size(dataset, name)
     Δλ = 360 / Nx

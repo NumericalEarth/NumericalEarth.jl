@@ -15,16 +15,16 @@ radiative intensity, `J` for mass flux, and `τ` for kinematic momentum flux.
 **Superscripts** refine the meaning in several ways:
 
 - _Phase or species_: `ᵛ` (vapor), `ˡ` (liquid), `ⁱ` (ice), `ᶜ` (condensate)
-- _Component_: `ᵃᵗ` (atmosphere), `ᵒᶜ` (ocean), `ˢⁱ` (sea ice), `ˡᵈ` (land)
+- _Component_: `ᵃᵗ` (atmosphere), `ᵒᶜ` (ocean), `ˢⁱ` (sea ice), `ˡᵃ` (land)
 - _Interface pair_: `ᵃᵒ` (atm–ocean), `ᵃⁱ` (atm–ice), `ⁱᵒ` (ice–ocean)
 - _Direction_: `ˣ` / `ʸ` (spatial), `ˢʷ` / `ˡʷ` (shortwave / longwave)
-- _Process_: `ⁱⁿᵗ` (interface), `ᶠʳᶻ` (frazil)
+- _Process_: `ⁱⁿ` (interface), `ᶠʳᶻ` (frazil)
 
 **Modifier arrows** `ꜜ` (`\^downarrow`) and `ꜛ` (`\^uparrow`) denote
 downwelling and upwelling directions in radiative fluxes.
 
-**Subscripts** encode radiative process (`ₜ` transmitted, `ₐ` absorbed,
-`ₚ` penetrating) and the similarity-theory scale `★`.
+**Subscripts** encode radiative process (`ₜ` transmitted, `ₐ` absorbed)
+and the similarity-theory scale `★`.
 
 For example, `𝒬ᵛ` is the latent (vapor) heat flux, `ℐꜜˢʷ` is the downwelling
 shortwave radiative intensity, and `τˣ` is the zonal kinematic momentum flux.
@@ -71,7 +71,7 @@ denote the _component_ or _location_.
 | ``m`` | `ᵐ` | mixture (moist air) | ``c^{pm}`` (moist isobaric heat capacity) |
 | ``d`` | `ᵈ` | dry (air) | ``c^{pd}`` (dry air heat capacity) |
 | ``D`` | `ᴰ` | drag | ``C^D`` (drag coefficient) |
-| ``\mathrm{int}`` | `ⁱⁿᵗ` | interface | ``T^{\mathrm{int}}`` (interface temperature) |
+| ``\mathrm{in}`` | `ⁱⁿ` | interface | ``T^{\mathrm{in}}`` (interface temperature) |
 | ``\mathrm{frz}`` | `ᶠʳᶻ` | frazil | ``\mathcal{Q}^{\mathrm{frz}}`` (frazil heat flux) |
 | ``x`` | `ˣ` | zonal / x-direction | ``\tau^x`` (zonal kinematic stress) |
 | ``y`` | `ʸ` | meridional / y-direction | ``\tau^y`` (meridional kinematic stress) |
@@ -98,7 +98,6 @@ denote the _component_ or _location_.
 |:-----:|:----:|:--------|:--------|
 | ``t`` | `ₜ` | transmitted | ``\mathscr{I}_{t}^{\mathrm{sw}}`` (transmitted shortwave) |
 | ``a`` | `ₐ` | absorbed | ``\mathscr{I}_{a}^{\mathrm{lw}}`` (absorbed longwave) |
-| ``p`` | `ₚ` | penetrating | ``\mathscr{I}_{p}^{\mathrm{sw}}`` (penetrating shortwave) |
 | ``\star`` | `★` | similarity theory scale | ``u_\star`` (friction velocity) |
 
 ## Atmosphere state variables
@@ -110,11 +109,8 @@ denote the _component_ or _location_.
 | ``q`` | `q` | specific humidity | Mass mixing ratio of water vapor (kg kg⁻¹) |
 | ``u`` | `u` | zonal velocity | Eastward wind component (m s⁻¹) |
 | ``v`` | `v` | meridional velocity | Northward wind component (m s⁻¹) |
-| ``𝒮`` | `saturation` | surface saturation | Land surface saturation ``Mˡᵃ/Mˡᵃ⁺ ∈ [0,1]`` (shares Breeze's saturation symbol; cf. its supersaturation); humidity models derive their availability from it (–) |
-| ``\beta`` | `β` | evaporation efficiency | Derived surface availability ``β(𝒮)``; e.g. `CriticalWetness` gives ``\min(𝒮/𝒮ᶜ, 1)`` (–) |
 | ``\mathscr{I}_\downarrow^{\mathrm{sw}}`` | `ℐꜜˢʷ` | downwelling shortwave | Downwelling shortwave radiation (W m⁻²) |
 | ``\mathscr{I}_\downarrow^{\mathrm{lw}}`` | `ℐꜜˡʷ` | downwelling longwave | Downwelling longwave radiation (W m⁻²) |
-| ``J^c`` | `Jᶜ` | condensate flux | Precipitation (condensate) mass flux (kg m⁻² s⁻¹) |
 | ``h_{b\ell}`` | `h_bℓ` | boundary layer height | Atmospheric boundary layer height (m) |
 | ``pᵛ⁺`` | ``pᵛ⁺`` | saturation vapor pressure | Vapor pressure at saturation (Pa) |
 | ``qᵛ⁺`` | `qᵛ⁺` | saturation specific humidity | Specific humidity at saturation, ``q^{v+}(T)`` (kg kg⁻¹) |
@@ -127,12 +123,12 @@ denote the _component_ or _location_.
 | ``T`` | `temperature` | bulk land temperature | Prognostic land-column temperature (K) |
 | ``M^{\mathrm{la}}`` | `water_storage` | land water | Prognostic land water mass per area (kg m⁻²) |
 | ``M^{\mathrm{la}\!+}`` | `maximum_water_storage` | maximum land water | Bucket capacity; soil-science "field capacity" (kg m⁻²) |
-| ``𝒮`` | `moisture_availability` | surface saturation | Continuous land surface saturation ``\mathrm{clamp}(Mˡᵃ/Mˡᵃ⁺, 0, 1)``; the interface humidity models derive their availability ``β`` from it (–) |
+| ``𝒮`` | `saturation` | surface saturation | Continuous land surface saturation ``\mathrm{clamp}(Mˡᵃ/Mˡᵃ⁺, 0, 1)``; the interface humidity models derive their availability ``β`` from it (–) |
 | ``𝒮ᶜ`` | `critical_saturation` | critical saturation | Saturation above which the surface evaporates at full efficiency, for `CriticalWetness` (–) |
 | ``T^{\mathrm{deep}}`` | `deep_temperature` | deep climatological temperature | Prescribed deep/climatological target temperature for force-restore (K) |
 | ``τ^{\mathrm{deep}}`` | `deep_time_scale` | deep-restore time scale | Time scale of surface relaxation toward ``T^{\mathrm{deep}}`` (s) |
 | ``zʳ`` | `root_depth` | effective root depth | Root-zone scaling of storage capacity (m) |
-| ``d`` | `surface_thickness` | saturation depth | Depth of the dry surface layer through which soil vapor diffuses, for `SkinHumidity` (m) |
+| ``d`` | `surface_thickness` | surface thickness | Thickness of the dry surface layer through which soil vapor diffuses, for `SkinHumidity` (m) |
 | ``κ^q`` | `vapor_diffusivity` | soil vapor diffusivity | Vapor mass diffusivity in the surface soil layer, for `SkinHumidity` (kg m⁻¹ s⁻¹) |
 
 ## Ocean state variables
@@ -189,12 +185,11 @@ denote the _component_ or _location_.
 
 | ``\mathscr{I}_{t}^{\mathrm{sw}}`` | `ℐₜˢʷ` | transmitted shortwave | Shortwave passing through the surface, ``(1-\alpha) \mathscr{I}_\downarrow^{\mathrm{sw}}`` (W m⁻²) |
 | ``\mathscr{I}_{a}^{\mathrm{lw}}`` | `ℐₐˡʷ` | absorbed longwave | Longwave absorbed at the surface, ``\epsilon \mathscr{I}_\downarrow^{\mathrm{lw}}`` (W m⁻²) |
-| ``\mathscr{I}_{p}^{\mathrm{sw}}`` | `ℐₚˢʷ` | penetrating shortwave | Shortwave penetrating into the ocean interior (W m⁻²) |
 
 Radiative fluxes use ``\mathscr{I}`` (`ℐ`, for "intensity") with a modifier
 arrow (`ꜜ`/`ꜛ` for downwelling/upwelling) and superscript band (`ˢʷ`/`ˡʷ`).
-Derived radiative quantities use a subscript process label (`ₜ`, `ₐ`, `ₚ`)
-with a superscript band.
+Derived radiative quantities use a subscript process label (`ₜ`, `ₐ`) with a
+superscript band.
 
 ## Turbulent interface fluxes
 
@@ -232,7 +227,7 @@ with a superscript band.
 | ``c^{pm}`` | `cᵖᵐ` | moist air heat capacity | Moist isobaric specific heat (J kg⁻¹ K⁻¹) |
 | ``c^{pd}`` | `cᵖᵈ` | dry air heat capacity | Dry-air isobaric specific heat (J kg⁻¹ K⁻¹) |
 | ``\rho^{\mathrm{at}}`` | `ρᵃᵗ` | air density | Atmospheric air density (kg m⁻³) |
-| ``\varepsilon^{\mathrm{dv}}`` | ``εᵈᵛ`` | specific gas constant ratio (``Rd / Rv`` ) | Ratio of dry air and vapor gas constants (-) |
+| ``\varepsilon^{\mathrm{dv}}`` | ``εᵈᵛ`` | vapor / dry-air gas-constant ratio | ``εᵈᵛ = R_v / R_d`` (so ``(εᵈᵛ)^{-1} = R_d / R_v ≈ 0.622`` is the conventional ε in ``q = ε e / p``) (–) |
 
 ## CF standard name mapping
 

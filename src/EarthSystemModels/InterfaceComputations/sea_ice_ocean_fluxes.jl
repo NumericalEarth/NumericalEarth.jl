@@ -124,7 +124,7 @@ end
 
     Nz = size(grid, 3)
     𝒬ᶠʳᶻ = fluxes.frazil_heat
-    𝒬ⁱⁿᵗ = fluxes.interface_heat
+    𝒬ⁱⁿ = fluxes.interface_heat
     Jˢ = fluxes.salt
     τˣ = fluxes.x_momentum
     τʸ = fluxes.y_momentum
@@ -205,7 +205,7 @@ end
                                                    liquidus, ocean_properties, ℰ, u★)
 
     # Store interface values and heat flux
-    @inbounds 𝒬ⁱⁿᵗ[i, j, 1] = 𝒬ⁱᵒ
+    @inbounds 𝒬ⁱⁿ[i, j, 1] = 𝒬ⁱᵒ
     store_interface_state!(flux_formulation, T★, S★, i, j, Tᵦ, Sᵦ)
 
     # =============================================
