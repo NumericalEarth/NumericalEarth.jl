@@ -23,14 +23,12 @@ SpeedyWeather = "9e226e20-d153-4fed-8a5b-493def4f21a9"
 Suppressor = "fd094767-a336-5f1f-9728-57cf17d0bbfb"
 
 [sources]
-ConservativeRegridding = {rev = "main", url = "https://github.com/JuliaGeo/ConservativeRegridding.jl"}
+ConservativeRegridding = {rev = "ncc/add-oceananigans-v0.109", url = "https://github.com/JuliaGeo/ConservativeRegridding.jl"}
 NumericalEarth = {path = ".."}
 
 [compat]
 CUDA = "~6.0"
 CairoMakie = "0.15"
-ClimaSeaIce = "0.5.2"
 Documenter = "1"
 DocumenterCitations = "1.3"
-Oceananigans = "0.109"
 Literate = "2.2"
