@@ -190,6 +190,22 @@ function Oceananigans.TimeSteppers.update_state!(land::SlabLand)
     return nothing
 end
 
+"""
+    set!(land::SlabLand, temperature, water_storage)
+
+Set the slab's prognostic skin `temperature` and `water_storage` and refresh
+diagnostics in one call. Each argument is anything `Oceananigans.set!` accepts —
+a `Number`, `Field`, `AbstractOperation`, function `(λ, φ, z)`, or array — so the
+initial state can be expressed abstractly, e.g.
+`set!(land, ERA5_T2m[1] - Γ * (z_land - z_era5), 75)`.
+"""
+function Oceananigans.set!(land::SlabLand, temperature, water_storage)
+    Oceananigans.set!(land.temperature,   temperature)
+    Oceananigans.set!(land.water_storage, water_storage)
+    Oceananigans.TimeSteppers.update_state!(land)
+    return land
+end
+
 #####
 ##### Container-level atmosphere-facing accessors
 #####
