@@ -287,6 +287,22 @@ function Oceananigans.Fields.Field(metadata::Metadatum, arch=CPU();
     return field
 end
 
+"""
+    Field(metadata::Metadatum, grid::AbstractGrid; kw...)
+
+Load `metadata` on its native grid and interpolate onto `grid` — the
+`Field` analog of `FieldTimeSeries(metadata, grid)`. Keyword arguments are
+forwarded to the native-grid `Field(metadata, arch; …)` (e.g. `inpainting`,
+`mask`, `halo`, `cache_inpainted_data`).
+"""
+function Oceananigans.Fields.Field(metadata::Metadatum, grid::AbstractGrid; kw...)
+    native = Field(metadata, architecture(grid); kw...)
+    LX, LY, LZ = location(metadata)
+    target = Field{LX, LY, LZ}(grid)
+    Oceananigans.Fields.interpolate!(target, native)
+    return target
+end
+
 function Oceananigans.Fields.set!(target_field::Field, metadata::Metadatum; kw...)
     grid = target_field.grid
     arch = child_architecture(grid)
