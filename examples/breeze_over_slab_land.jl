@@ -86,7 +86,7 @@ slab_land = SlabLand(land_grid; hydrology)
 # saturation cap `Mˡᵃ⁺` (`maximum_water_storage`, the soil-science "field
 # capacity"), and exposes the continuous surface saturation
 # `𝒮 = Mˡᵃ/Mˡᵃ⁺ ∈ [0, 1]`. The interface's `FractionalHumidity` model with a
-# Manabe `CriticalWetness(𝒮ᶜ)` efficiency scales the saturation specific humidity
+# Manabe `CriticalSaturation(𝒮ᶜ)` efficiency scales the saturation specific humidity
 # by the evaporation efficiency `β(𝒮) = min(𝒮/𝒮ᶜ, 1)`:
 #
 # ```math
@@ -225,7 +225,7 @@ set_to_mean!(reference_state, atmos.model, rescale_densities = true)
 
 # The surface specific humidity uses a Manabe evaporation efficiency: saturated
 # above the critical saturation `𝒮ᶜ = 0.75`, scaling down linearly below it.
-interface_specific_humidity = FractionalHumidity(efficiency = CriticalWetness(0.75))
+interface_specific_humidity = FractionalHumidity(efficiency = CriticalSaturation(0.75))
 al_interface = atmosphere_land_interface(slab_land.grid, atmos, slab_land;
                                          specific_humidity = interface_specific_humidity)
 

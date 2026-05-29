@@ -14,7 +14,7 @@ using NumericalEarth.EarthSystemModels.InterfaceComputations: ComponentInterface
                                                               DiffusiveFlux,
                                                               SkinHumidity,
                                                               FractionalHumidity,
-                                                              CriticalWetness,
+                                                              CriticalSaturation,
                                                               evaporation_efficiency,
                                                               AirLandInterfaceState,
                                                               compute_interface_humidity,
@@ -358,11 +358,11 @@ end
     qᵛ⁺ = saturation_specific_humidity(ℂ, Tₛ, pᵃᵗ, Thermodynamics.Liquid())
 
     # Manabe efficiency: β = min(𝒮/𝒮ᶜ, 1), 𝒮ᶜ = 0.75
-    cw = CriticalWetness(0.75)
-    @test evaporation_efficiency(cw, (saturation = 0.0,))   == 0.0
-    @test evaporation_efficiency(cw, (saturation = 0.375,)) ≈ 0.5
-    @test evaporation_efficiency(cw, (saturation = 0.75,))  ≈ 1.0
-    @test evaporation_efficiency(cw, (saturation = 1.0,))   ≈ 1.0   # saturated above 𝒮ᶜ
+    cs = CriticalSaturation(0.75)
+    @test evaporation_efficiency(cs, (saturation = 0.0,))   == 0.0
+    @test evaporation_efficiency(cs, (saturation = 0.375,)) ≈ 0.5
+    @test evaporation_efficiency(cs, (saturation = 0.75,))  ≈ 1.0
+    @test evaporation_efficiency(cs, (saturation = 1.0,))   ≈ 1.0   # saturated above 𝒮ᶜ
 
     # Constant efficiency ignores the land state
     @test evaporation_efficiency(0.3, (saturation = 0.9,)) == 0.3

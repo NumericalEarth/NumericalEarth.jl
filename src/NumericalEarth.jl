@@ -44,7 +44,7 @@ export
     BulkHumidity,
     SkinHumidity,
     FractionalHumidity,
-    CriticalWetness,
+    CriticalSaturation,
     ElevationCorrection,
     atmosphere_land_interface,
     SlabOcean,

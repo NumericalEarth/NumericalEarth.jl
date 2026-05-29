@@ -124,7 +124,7 @@ denote the _component_ or _location_.
 | ``M^{\mathrm{la}}`` | `water_storage` | land water | Prognostic land water mass per area (kg m⁻²) |
 | ``M^{\mathrm{la}\!+}`` | `maximum_water_storage` | maximum land water | Bucket capacity; soil-science "field capacity" (kg m⁻²) |
 | ``𝒮`` | `saturation` | surface saturation | Continuous land surface saturation ``\mathrm{clamp}(Mˡᵃ/Mˡᵃ⁺, 0, 1)``; the interface humidity models derive their availability ``β`` from it (–) |
-| ``𝒮ᶜ`` | `critical_saturation` | critical saturation | Saturation above which the surface evaporates at full efficiency, for `CriticalWetness` (–) |
+| ``𝒮ᶜ`` | `critical_saturation` | critical saturation | Saturation above which the surface evaporates at full efficiency, for `CriticalSaturation` (–) |
 | ``T^{\mathrm{deep}}`` | `deep_temperature` | deep climatological temperature | Prescribed deep/climatological target temperature for force-restore (K) |
 | ``τ^{\mathrm{deep}}`` | `deep_time_scale` | deep-restore time scale | Time scale of surface relaxation toward ``T^{\mathrm{deep}}`` (s) |
 | ``d`` | `surface_thickness` | surface thickness | Thickness of the dry surface layer through which soil vapor diffuses, for `SkinHumidity` (m) |

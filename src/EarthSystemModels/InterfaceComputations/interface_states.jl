@@ -119,7 +119,7 @@ end
 #####
 
 """
-    struct CriticalWetness
+    struct CriticalSaturation
 
 Manabe-style evaporation efficiency: the surface is saturated (`β = 1`) above a
 critical saturation `𝒮ᶜ`, and the efficiency falls off linearly below it,
@@ -132,13 +132,13 @@ Used as the `efficiency` of [`FractionalHumidity`](@ref). The type declares its
 land-state dependency (the saturation `𝒮`); the interface materializes exactly
 that into the land interface state.
 """
-struct CriticalWetness{FT}
+struct CriticalSaturation{FT}
     critical_saturation :: FT
 end
 
-@inline function evaporation_efficiency(e::CriticalWetness, hydrology)
+@inline function evaporation_efficiency(𝒮ᶜ::CriticalSaturation, hydrology)
     𝒮 = hydrology.saturation
-    return min(𝒮 / convert(typeof(𝒮), e.critical_saturation), one(𝒮))
+    return min(𝒮 / convert(typeof(𝒮), 𝒮ᶜ.critical_saturation), one(𝒮))
 end
 
 # Constant efficiency — a uniformly sub-saturated surface; reads no land state.
@@ -153,7 +153,7 @@ Surface specific humidity as a fraction of saturation at the surface temperature
 qˢ = β · qᵛ⁺(Tₛ),
 ```
 
-where the evaporation efficiency `β` is set by `efficiency` — a [`CriticalWetness`](@ref)
+where the evaporation efficiency `β` is set by `efficiency` — a [`CriticalSaturation`](@ref)
 (Manabe) or a constant `Number`. Unlike [`SkinHumidity`](@ref), the saturation is
 taken at the *skin* temperature: `β` is a surface evaporation efficiency, not a deep
 reservoir. `BulkHumidity` is the `𝒮ᶜ → 0` corner (saturated wherever `𝒮 > 0`).
