@@ -168,11 +168,15 @@ denote the _component_ or _location_.
 | ``L_\star`` | `L★` | Obukhov length | Monin–Obukhov length scale (m) |
 | ``C^D`` | `Cᴰ` | drag coefficient | Bulk transfer coefficient for momentum (–) |
 | ``\psi`` | `ψ` | stability function | Integrated stability correction (–) |
+| ``\Psi`` | `Ψ` | interface state | Aggregate interface state (an `AbstractInterfaceState`) carried through the similarity-theory fixed-point solver `compute_interface_state` |
 | ``\zeta`` | `ζ` | stability parameter | ``z / L_\star`` (–) |
 | ``\ell`` | `ℓ` | roughness length | Aerodynamic roughness length (m) |
 | ``\ell^\mathrm{m}`` | `ℓᵐ` | momentum roughness length | Aerodynamic momentum roughness length (m) |
 | ``\ell^\mathrm{s}`` | `ℓˢ` | scalar roughness length | Aerodynamic scalar roughness length (m) |
 | ``\varkappa`` | `ϰ` | von Kármán constant | ``\approx 0.4`` (–) |
+
+Note the case distinction: lowercase ``\psi`` (`ψ`) is the stability
+function, while capital ``\Psi`` (`Ψ`) is the aggregate interface-state object.
 
 ## Radiative fluxes
 
@@ -271,6 +275,7 @@ collects the less obvious completions used in this notation.
 | `ϵ` | `\epsilon` | Epsilon (emissivity) |
 | `ℵ` | `\aleph` | Aleph (ice concentration) |
 | `ϰ` | `\varkappa` | Varkappa (von Kármán constant) |
+| `Ψ` | `\Psi` | Capital Psi (interface state) |
 | `★` | `\bigstar` | Star (similarity-theory scale) |
 | `ꜜ` | `\^downarrow` | Modifier down arrow (downwelling) |
 | `ꜛ` | `\^uparrow` | Modifier up arrow (upwelling) |
