@@ -6,50 +6,51 @@ using ..EarthSystemModels.InterfaceComputations: kernel_radiation_properties
 """
     apply_air_land_radiative_fluxes!(coupled_model)
 
-Add the radiative contribution to the land net energy flux `Q` and write
+Add the radiative contribution to the land net energy flux `𝒬ˡᵃ` and write
 diagnostic radiative fluxes into `coupled_model.radiation.interface_fluxes.land`.
 
 When `coupled_model.radiation === nothing`, this is a no-op.
 """
 EarthSystemModels.apply_air_land_radiative_fluxes!(::EarthSystemModel{<:Nothing}) = nothing
 
-function EarthSystemModels.apply_air_land_radiative_fluxes!(coupled_model::EarthSystemModel)
-    land = coupled_model.land
-    isnothing(land) && return nothing
+EarthSystemModels.apply_air_land_radiative_fluxes!(coupled_model::EarthSystemModel) =
+    apply_air_land_radiative_fluxes!(coupled_model, coupled_model.land)
 
-    # No atmosphere--land interface (no atmosphere or no land): nothing to do.
+# No land: nothing to do.
+apply_air_land_radiative_fluxes!(coupled_model, ::Nothing) = nothing
+
+function apply_air_land_radiative_fluxes!(coupled_model, land)
+    # No atmosphere--land interface (no atmosphere): nothing to do.
     al_interface = coupled_model.interfaces.atmosphere_land_interface
     isnothing(al_interface) && return nothing
 
     radiation = coupled_model.radiation
     interface_fluxes = radiation.interface_fluxes
     isnothing(interface_fluxes) && return nothing
-    haskey(interface_fluxes, :land) || return nothing
 
-    grid = coupled_model.interfaces.exchanger.grid
-    arch = architecture(grid)
-    clock = coupled_model.clock
+    # Skip when the radiation was not configured with a land surface — the
+    # accumulator and the surface properties must both be present.
+    land_radiative_flux = get(interface_fluxes, :land, nothing)
+    isnothing(land_radiative_flux) && return nothing
 
-    net_land_fluxes = coupled_model.land.fluxes
-    hasproperty(net_land_fluxes, :net_energy_flux) || return nothing
-
-    radiation_state = coupled_model.interfaces.exchanger.radiation.state
     rk = kernel_radiation_properties(radiation)
+    land_surface_props = get(rk.surface_properties, :land, nothing)
+    isnothing(land_surface_props) && return nothing
 
-    # Skip land radiative forcing unless land surface properties were provided.
-    haskey(rk.surface_properties, :land) || return nothing
-
-    interface_temperature = al_interface.temperature
+    grid  = coupled_model.interfaces.exchanger.grid
+    arch  = architecture(grid)
+    clock = coupled_model.clock
+    radiation_state = coupled_model.interfaces.exchanger.radiation.state
 
     launch!(arch, grid, :xy,
             _apply_air_land_radiative_fluxes!,
-            net_land_fluxes.net_energy_flux,
-            interface_fluxes.land,
+            land.fluxes.net_energy_flux,
+            land_radiative_flux,
             grid,
             clock,
             rk,
             radiation_state,
-            interface_temperature)
+            al_interface.temperature)
 
     return nothing
 end

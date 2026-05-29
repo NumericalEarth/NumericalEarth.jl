@@ -121,7 +121,7 @@ end
 """
     struct CriticalSaturation
 
-Manabe-style evaporation efficiency: the surface is saturated (`β = 1`) above a
+Evaporation efficiency after [Manabe (1969)](@cite manabe1969climate): the surface is saturated (`β = 1`) above a
 critical saturation `𝒮ᶜ`, and the efficiency falls off linearly below it,
 
 ```math
@@ -154,7 +154,7 @@ qˢ = β · qᵛ⁺(Tₛ),
 ```
 
 where the evaporation efficiency `β` is set by `efficiency` — a [`CriticalSaturation`](@ref)
-(Manabe) or a constant `Number`. Unlike [`SkinHumidity`](@ref), the saturation is
+([Manabe, 1969](@cite manabe1969climate)) or a constant `Number`. Unlike [`SkinHumidity`](@ref), the saturation is
 taken at the *skin* temperature: `β` is a surface evaporation efficiency, not a deep
 reservoir. `BulkHumidity` is the `𝒮ᶜ → 0` corner (saturated wherever `𝒮 > 0`).
 """
@@ -608,19 +608,19 @@ end
 ######
 
 """
-    InterfaceFluxes{FT}
+    InterfaceFluxScales{FT}
 
 The solved similarity-theory characteristic scales at an interface: friction
 velocity `u★`, temperature flux scale `θ★`, and specific-humidity flux scale
 `q★`. Shared by every interface-state type.
 """
-struct InterfaceFluxes{FT}
+struct InterfaceFluxScales{FT}
     u★ :: FT
     θ★ :: FT
     q★ :: FT
 end
 
-Base.eltype(::InterfaceFluxes{FT}) where FT = FT
+Base.eltype(::InterfaceFluxScales{FT}) where FT = FT
 
 """
     InterfaceVelocities{FT}
@@ -657,7 +657,7 @@ Air–sea (ocean and sea-ice) interface state. Carries `salinity`, used by
 `ImpureSaturationSpecificHumidity` for the Raoult reduction of saturation.
 """
 struct AirSeaInterfaceState{FT} <: AbstractInterfaceState{FT}
-    fluxes            :: InterfaceFluxes{FT}
+    fluxes            :: InterfaceFluxScales{FT}
     velocities        :: InterfaceVelocities{FT}
     temperature       :: FT
     specific_humidity :: FT
@@ -665,7 +665,7 @@ struct AirSeaInterfaceState{FT} <: AbstractInterfaceState{FT}
 end
 
 @inline AirSeaInterfaceState(u★, θ★, q★, u, v, T, S, q) =
-    AirSeaInterfaceState(InterfaceFluxes(u★, θ★, q★), InterfaceVelocities(u, v), T, q, S)
+    AirSeaInterfaceState(InterfaceFluxScales(u★, θ★, q★), InterfaceVelocities(u, v), T, q, S)
 
 @inline humidity_surface_scalar(Ψ::AirSeaInterfaceState) = Ψ.salinity
 
@@ -678,14 +678,14 @@ the skin-temperature solve needs comes from the interior state). The humidity
 scalar is therefore zero.
 """
 struct AirIceInterfaceState{FT} <: AbstractInterfaceState{FT}
-    fluxes            :: InterfaceFluxes{FT}
+    fluxes            :: InterfaceFluxScales{FT}
     velocities        :: InterfaceVelocities{FT}
     temperature       :: FT
     specific_humidity :: FT
 end
 
 @inline AirIceInterfaceState(u★, θ★, q★, u, v, T, q) =
-    AirIceInterfaceState(InterfaceFluxes(u★, θ★, q★), InterfaceVelocities(u, v), T, q)
+    AirIceInterfaceState(InterfaceFluxScales(u★, θ★, q★), InterfaceVelocities(u, v), T, q)
 
 @inline humidity_surface_scalar(Ψ::AirIceInterfaceState) = zero(eltype(Ψ))
 
@@ -699,7 +699,7 @@ availability `β`, the reservoir temperature, etc. `β` is *not* stored: it is
 `evaporation_efficiency(efficiency, saturation)`, computed by the formulation.
 """
 struct AirLandInterfaceState{FT, H, E} <: AbstractInterfaceState{FT}
-    fluxes            :: InterfaceFluxes{FT}
+    fluxes            :: InterfaceFluxScales{FT}
     velocities        :: InterfaceVelocities{FT}
     temperature       :: FT
     specific_humidity :: FT
@@ -708,7 +708,24 @@ struct AirLandInterfaceState{FT, H, E} <: AbstractInterfaceState{FT}
 end
 
 @inline AirLandInterfaceState(u★, θ★, q★, u, v, T, q, hydrology, energy) =
-    AirLandInterfaceState(InterfaceFluxes(u★, θ★, q★), InterfaceVelocities(u, v), T, q, hydrology, energy)
+    AirLandInterfaceState(InterfaceFluxScales(u★, θ★, q★), InterfaceVelocities(u, v), T, q, hydrology, energy)
+
+# (i, j, grid)-first convenience constructor — pulls the per-cell land
+# energy/hydrology substate from `land_state` via the humidity formulation, so
+# the kernel call site stays compact. `Tₛ` and `qₛ` are passed in because they
+# typically share computation with the atmosphere thermodynamics at the call
+# site (e.g. the saturation humidity needs `Tₛ`, `pᵃᵗ`, and `ℂᵃᵗ`).
+@inline function AirLandInterfaceState(i, j, grid,
+                                       fluxes::InterfaceFluxScales,
+                                       velocities::InterfaceVelocities,
+                                       q_formulation,
+                                       land_state,
+                                       Tₛ, qₛ)
+    FT  = eltype(grid)
+    energy    = interface_energy_state(i, j, grid, q_formulation, land_state)
+    hydrology = interface_hydrology_state(i, j, grid, q_formulation, land_state)
+    return AirLandInterfaceState(fluxes, velocities, convert(FT, Tₛ), convert(FT, qₛ), hydrology, energy)
+end
 
 @inline humidity_surface_scalar(Ψ::AirLandInterfaceState) = Ψ.hydrology.saturation
 
@@ -737,3 +754,21 @@ end
                                                         zero(FT), zero(FT),
                                                         convert(FT, 273.15),
                                                         zero(FT), zero(FT))
+
+"""
+    AirLandRadiationState{FT}
+
+Air-land interface radiation state at one cell: Stefan–Boltzmann constant `σ`,
+surface albedo `α`, emissivity `ϵ`, downwelling shortwave `ℐꜜˢʷ`, and
+downwelling longwave `ℐꜜˡʷ`. Returned by `air_land_interface_radiation_state`
+and consumed by the air-land flux kernel and `apply_air_land_radiative_fluxes!`.
+"""
+struct AirLandRadiationState{FT}
+    σ    :: FT
+    α    :: FT
+    ϵ    :: FT
+    ℐꜜˢʷ :: FT
+    ℐꜜˡʷ :: FT
+end
+
+Base.eltype(::AirLandRadiationState{FT}) where FT = FT

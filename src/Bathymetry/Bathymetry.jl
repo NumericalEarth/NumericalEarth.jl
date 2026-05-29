@@ -1,6 +1,6 @@
 module Bathymetry
 
-export regrid_bathymetry, regrid_orography, ORCAGrid
+export regrid_bathymetry, regrid_topography, ORCAGrid
 
 using Downloads: Downloads, download
 using ImageMorphology: ImageMorphology

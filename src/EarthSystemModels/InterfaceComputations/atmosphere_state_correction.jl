@@ -5,7 +5,7 @@
 ##### exchange grid (`interpolate_state!`), so it applies identically whether the
 ##### atmosphere is prescribed (reanalysis) or a live coupled model. `nothing` is
 ##### a no-op (the default). A correction is constructed grid-free by the user and
-##### *materialized* onto the exchange grid when the `StateExchanger` is built.
+##### *materialized* onto the exchange grid when its `ComponentExchanger` is built.
 #####
 
 """
@@ -22,7 +22,8 @@ accepts — a `Field`, function, number, or exchange-grid array).
 The gravitational acceleration and dry-air gas constant used in the hydrostatic
 pressure adjustment are *not* supplied here — they are pulled from the
 atmosphere's thermodynamics via [`thermodynamic_constants`](@ref) when the
-`StateExchanger` materializes the correction, so they aren't duplicated.
+atmosphere `ComponentExchanger` materializes the correction, so they aren't
+duplicated.
 
 Applied in place to the regridded exchange state each step,
 
@@ -73,10 +74,11 @@ function thermodynamic_constants(atmosphere)
 end
 
 #####
-##### Materialization onto the exchange grid (called by `StateExchanger`).
+##### Materialization onto the exchange grid (called by per-component
+##### `ComponentExchanger` constructors).
 #####
 
-@inline materialize_atmosphere_state_correction(::Nothing, grid, atmosphere) = nothing
+@inline materialize_correction(::Nothing, grid, component) = nothing
 
 # Fill an exchange-grid field from an elevation spec (`Field`, function, number,
 # or a horizontal exchange-grid array).
@@ -84,7 +86,7 @@ end
 @inline materialize_elevation!(field, elevation::AbstractArray) =
     (Oceananigans.interior(field, :, :, 1) .= elevation; field)
 
-function materialize_atmosphere_state_correction(c::ElevationCorrection, grid, atmosphere)
+function materialize_correction(c::ElevationCorrection, grid, atmosphere)
     zᵃ = Field{Center, Center, Nothing}(grid)
     zˢ = Field{Center, Center, Nothing}(grid)
     materialize_elevation!(zᵃ, c.atmosphere_elevation)
@@ -105,16 +107,21 @@ function materialize_atmosphere_state_correction(c::ElevationCorrection, grid, a
 end
 
 #####
-##### Apply the correction to the atmosphere exchange state.
+##### Apply the per-component correction to its exchange state.
 #####
 
-@inline correct_atmosphere_state!(::Nothing, atmosphere_exchanger, grid) = nothing
-@inline correct_atmosphere_state!(correction, ::Nothing, grid) = nothing
-@inline correct_atmosphere_state!(::Nothing, ::Nothing, grid) = nothing
+# Generic dispatcher: read the correction from the component's exchanger and
+# apply it. No-op when the component is absent or carries no correction.
+@inline correct_state!(::Nothing, grid) = nothing
+@inline correct_state!(exchanger::ComponentExchanger, grid) =
+    correct_state!(exchanger.correction, exchanger, grid)
 
-function correct_atmosphere_state!(correction::ElevationCorrection, atmosphere_exchanger, grid)
+# Per-correction-type kernels.
+@inline correct_state!(::Nothing, exchanger, grid) = nothing
+
+function correct_state!(correction::ElevationCorrection, exchanger, grid)
     arch  = architecture(grid)
-    state = atmosphere_exchanger.state
+    state = exchanger.state
     launch!(arch, grid, interface_kernel_parameters(grid),
             _correct_atmosphere_elevation!,
             state.T, state.p,

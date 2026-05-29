@@ -57,6 +57,20 @@ boundary_layer_height(::Nothing) = 0
 ##### Functions extended by all component models
 #####
 
+"""
+    component_model(component)
+
+Return the bare component model from a wrapper. ESM components are sometimes
+passed as a bare model (e.g. `Breeze.AtmosphereModel`, `Breeze.RadiativeTransferModel`)
+and sometimes as a `Simulation` wrapping that model (e.g. `Simulation{<:Breeze.AtmosphereModel}`).
+Component-interface methods that need the underlying model — to reach for
+`.grid`, `.velocities`, boundary conditions, etc. — call `component_model(x)` so
+they can share one implementation between the wrapped and unwrapped forms. The
+default unwraps a `Simulation`; the identity fallback covers bare models.
+"""
+@inline component_model(sim::Simulation) = sim.model
+@inline component_model(component) = component
+
 function interpolate_state! end
 function update_net_fluxes! end
 
@@ -68,11 +82,12 @@ interpolate_state!(exchanger, grid, component, coupled_model) = nothing
 apply_air_land_radiative_fluxes!(::Any) = nothing
 
 #####
-##### Functions extended by land models
+##### Surface (skin) temperature diagnostic
 #####
 
-# Surface skin temperature exposed by a land component. Default is `nothing`
-# so consumers (e.g. the default NaN checker) can fall back when the land
-# component doesn't track a skin temperature.
+# The surface skin temperature that the atmosphere "sees" lives at the
+# atmosphere-surface interface, not on the land component — for skin-temperature
+# closures (where the surface T differs from the bulk land T) the interface
+# field is the authoritative value.
 function surface_temperature end
 surface_temperature(::Any) = nothing

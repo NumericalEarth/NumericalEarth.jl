@@ -20,7 +20,7 @@
 #####
 ##### `saturation` (𝒮) is diagnostic — recomputed from
 ##### `water_storage` inside `update_diagnostics!` (called at the end of
-##### `time_step!`) rather than inside `step!`.
+##### `time_step!`) rather than inside the per-closure update.
 #####
 
 #####
@@ -60,7 +60,8 @@ build_flux_accumulators(grid, energy, hydrology) =
     SlabLand{FT, G, Clk, T, W, B, F, E, H}
 
 A composable slab land-surface component. The default configuration —
-`SlabEnergy + BucketHydrology` — is the classic Manabe-bucket slab. Replace
+`SlabEnergy + BucketHydrology` — is the classic bucket slab introduced by
+[Manabe (1969)](@cite manabe1969climate). Replace
 either axis to swap in a different energy or hydrology closure. Aerodynamic
 roughness lengths are a property of the atmosphere-land flux closure
 (`atmosphere_land_fluxes`), not of the land model.
@@ -76,14 +77,14 @@ roughness lengths are a property of the atmosphere-land flux closure
 - `hydrology`             : an `AbstractHydrology` (parameters).
 """
 struct SlabLand{FT, G, Clk, T, W, B, F, E, H} <: AbstractLand
-    grid                  :: G
-    clock                 :: Clk
-    temperature           :: T
-    water_storage         :: W
-    saturation :: B
-    fluxes                :: F
-    energy                :: E
-    hydrology             :: H
+    grid          :: G
+    clock         :: Clk
+    temperature   :: T
+    water_storage :: W
+    saturation    :: B
+    fluxes        :: F
+    energy        :: E
+    hydrology     :: H
 end
 
 # Inner-style typed constructor capturing FT.
@@ -149,7 +150,7 @@ end
 """
     time_step!(land::SlabLand, Δt)
 
-Advance the slab by `Δt`. Each closure runs its own `step!`, then
+Advance the slab by `Δt`. Each closure runs its own `time_step!`, then
 `update_state!` refreshes diagnostics. Prognostic halos are filled at
 the end so atmosphere kernels reading the surface state see consistent
 values.
@@ -166,8 +167,8 @@ function Oceananigans.TimeSteppers.time_step!(land::SlabLand, Δt)
     tick!(land.clock, Δt)
     time = land.clock.time
 
-    step!(land.energy,    land, Δt, time)
-    step!(land.hydrology, land, Δt, time)
+    time_step!(land.energy,    land, Δt, time)
+    time_step!(land.hydrology, land, Δt, time)
 
     Oceananigans.TimeSteppers.update_state!(land)
 

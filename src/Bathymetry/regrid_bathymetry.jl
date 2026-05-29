@@ -284,15 +284,15 @@ function regrid_bathymetry(target_grid; dataset = ETOPO2022(), cache = true, kw.
 end
 
 """
-    regrid_orography(target_grid; dataset = ETOPO2022(), kw...)
+    regrid_topography(target_grid; dataset = ETOPO2022(), kw...)
 
-Land surface elevation (m, ≥ 0) regridded onto `target_grid` — the orographic
+Land surface elevation (m, ≥ 0) regridded onto `target_grid` — the topographic
 counterpart of [`regrid_bathymetry`](@ref) for land applications. Returns the
 positive part of the dataset's bottom height (the elevation over land), with
 ocean clamped to sea level (0). Accepts the same regridding keywords
 (`interpolation_passes`, etc.); there is no depth/`minimum_depth` notion.
 """
-function regrid_orography(target_grid; dataset = ETOPO2022(), kw...)
+function regrid_topography(target_grid; dataset = ETOPO2022(), kw...)
     elevation = regrid_bathymetry(target_grid; dataset, kw...)
     parent(elevation) .= max.(parent(elevation), 0) # land elevation; ocean → 0
     return elevation

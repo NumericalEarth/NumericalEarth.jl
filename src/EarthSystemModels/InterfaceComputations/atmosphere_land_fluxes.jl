@@ -30,13 +30,9 @@ function atmosphere_land_interface(grid, atmosphere, land;
                                    temperature         = BulkTemperature(),
                                    velocity_difference = RelativeVelocity(),
                                    specific_humidity   = default_al_specific_humidity(land))
-
     al_fluxes = AtmosphereSurfaceFluxes(grid)
-
     al_properties = InterfaceProperties(specific_humidity, temperature, velocity_difference)
-
     interface_temperature = Field{Center, Center, Nothing}(grid)
-
     return AtmosphereInterface(al_fluxes, fluxes, interface_temperature, al_properties)
 end
 
@@ -108,40 +104,12 @@ function compute_atmosphere_land_fluxes!(coupled_model, atmosphere_land_interfac
     return nothing
 end
 
-function atmosphere_land_surface_properties(land_state::NamedTuple)
-    ℓᵐ = _atmosphere_land_roughness_field(land_state, :momentum_roughness_length)
-    ℓˢ = _atmosphere_land_roughness_field(land_state, :scalar_roughness_length)
-    return _assemble_atmosphere_land_surface_properties(ℓᵐ, ℓˢ)
-end
-
-@inline function _atmosphere_land_roughness_field(land_state::NamedTuple, name::Symbol)
-    if hasproperty(land_state, name)
-        return getproperty(land_state, name)
-    elseif hasproperty(land_state, :roughness_length)
-        return land_state.roughness_length
-    else
-        return nothing
-    end
-end
-
-@inline function _assemble_atmosphere_land_surface_properties(ℓᵐ, ℓˢ)
-    if isnothing(ℓᵐ) && isnothing(ℓˢ)
-        return (;)
-    elseif isnothing(ℓˢ)
-        return (; momentum_roughness_length = ℓᵐ)
-    elseif isnothing(ℓᵐ)
-        return (; scalar_roughness_length = ℓˢ)
-    else
-        return (; momentum_roughness_length = ℓᵐ,
-                 scalar_roughness_length   = ℓˢ)
-    end
-end
-
+# Roughness is set on the atmosphere-land flux closure (`atmosphere_land_fluxes`),
+# not the land state — `SlabLand` carries no roughness. The two helpers below
+# dispatch to `(;)` here; a future land model that wants per-cell roughness can
+# override either one for its own land state type.
+@inline atmosphere_land_surface_properties(land_state) = (;)
 @inline local_atmosphere_land_surface_properties(land_properties, i, j) = (;)
-
-@inline _roughness_value(::Nothing, i, j, k=1) = nothing
-@inline _roughness_value(ℓ::Number, i, j, k=1) = ℓ
-@inline _roughness_value(field, i, j, k=1) = @inbounds field[i, j, k]
 
 # Per-cell scalar from a constant or a `Field`.
 @inline land_field_value(x::Number, i, j) = x
@@ -172,15 +140,6 @@ end
     (temperature = convert(eltype(grid), land_field_value(land_state.T, i, j)),)
 @inline interface_energy_state(i, j, grid, interface_model, land_state) = (;) # default: pulls nothing
 
-@inline function local_atmosphere_land_surface_properties(land_properties::NamedTuple, i, j)
-    ℓᵐ = _roughness_value(_atmosphere_land_roughness_field(land_properties, :momentum_roughness_length),
-                         i, j, 1)
-    ℓˢ = _roughness_value(_atmosphere_land_roughness_field(land_properties, :scalar_roughness_length),
-                         i, j, 1)
-
-    return _assemble_atmosphere_land_surface_properties(ℓᵐ, ℓˢ)
-end
-
 @kernel function _compute_atmosphere_land_interface_state!(interface_fluxes,
                                                            interface_temperature,
                                                            grid,
@@ -207,11 +166,9 @@ end
 
     q_formulation = interface_properties.specific_humidity_formulation
 
-    # Bulk land temperature (the initial skin-temperature guess). The surface
-    # models pull only the sub-state they consume from `land_state`.
-    Tₛ = convert(eltype(grid), land_field_value(land_state.T, i, j))
-    energy    = interface_energy_state(i, j, grid, q_formulation, land_state)
-    hydrology = interface_hydrology_state(i, j, grid, q_formulation, land_state)
+    # Bulk land temperature serves as the initial skin-temperature guess.
+    FT = eltype(grid)
+    Tₛ = convert(FT, land_field_value(land_state.T, i, j))
 
     ℂᵃᵗ = atmosphere_properties.thermodynamics_parameters
     zᵃᵗ = atmosphere_properties.surface_layer_height
@@ -225,7 +182,6 @@ end
                               h_bℓ = atmosphere_state.h_bℓ)
 
     # Surface velocities are zero for land.
-    FT = typeof(Tₛ)
     uₛ = zero(FT)
     vₛ = zero(FT)
 
@@ -240,7 +196,10 @@ end
     # surface humidity guess (the solver recomputes it via the formulation).
     u★ = convert(FT, 1e-4)
     qₛ = convert(FT, saturation_specific_humidity(ℂᵃᵗ, Tₛ, pᵃᵗ, q_formulation.phase))
-    initial_interface_state = AirLandInterfaceState(u★, u★, u★, uₛ, vₛ, Tₛ, qₛ, hydrology, energy)
+    initial_interface_state = AirLandInterfaceState(i, j, grid,
+                                                    InterfaceFluxScales(u★, u★, u★),
+                                                    InterfaceVelocities(uₛ, vₛ),
+                                                    q_formulation, land_state, Tₛ, qₛ)
 
     interface_state = compute_interface_state(turbulent_flux_formulation,
                                               initial_interface_state,

@@ -183,14 +183,14 @@ start_date = DateTime(2005, 2, 16, 12)
 
         # Surface geopotential ÷ g → metres; accumulated SW/LW (J/m²) ÷ 3600 → W/m²;
         # accumulated precip depth (m) × 1000/3600 → kg/m²/s. Others are unconverted.
-        @test conversion_units(era5m(:orography)) isa InverseGravity
+        @test conversion_units(era5m(:topography)) isa InverseGravity
         @test conversion_units(era5m(:downwelling_shortwave_radiation)) isa Jm²ph
         @test conversion_units(era5m(:downwelling_longwave_radiation))  isa Jm²ph
         @test conversion_units(era5m(:total_precipitation)) isa MetersPerHour
         @test conversion_units(era5m(:temperature)) === nothing
 
-        @test convert_units(3600.0, Jm²ph()) ≈ 1.0          # 3600 J/m²/hr → 1 W/m²
-        @test convert_units(3.6, MetersPerHour()) ≈ 1.0     # 3.6 m/hr → 1 kg/m²/s
+        @test convert_units(3600, Jm²ph()) ≈ 1               # 3600 J/m²/hr → 1 W/m²
+        @test convert_units(3.6, MetersPerHour()) ≈ 1        # 3.6 m/hr → 1 kg/m²/s
 
         # The regional hindcast prescribed components are first-class, top-level API.
         @test ERA5PrescribedAtmosphere isa Function

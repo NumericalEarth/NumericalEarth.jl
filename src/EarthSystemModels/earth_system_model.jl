@@ -433,12 +433,11 @@ time(coupled_model::EarthSystemModel) = coupled_model.clock.time
 # Check for NaNs in the first prognostic field (generalizes to prescribed velocities).
 function Oceananigans.Diagnostics.default_nan_checker(model::EarthSystemModel)
     if isnothing(model.ocean)
-        # Fall back to the land surface temperature when there is no ocean.
-        # If neither ocean nor land is present, return no NaN checker.
-        if isnothing(model.land)
-            return nothing
-        end
-        T_land = surface_temperature(model.land)
+        # Fall back to the surface skin temperature held at the atmosphere-land
+        # interface when there is no ocean. If neither ocean nor the
+        # atmosphere-land interface is present, return no NaN checker.
+        T_land = surface_temperature(model.interfaces)
+        isnothing(T_land) && return nothing
         return NaNChecker((; T_land))
     end
 

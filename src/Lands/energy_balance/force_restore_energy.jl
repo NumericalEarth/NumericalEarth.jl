@@ -40,10 +40,10 @@ struct ForceRestoreEnergy{C, L, Td, T} <: AbstractEnergyBalance
 end
 
 function ForceRestoreEnergy(FT::Type = Oceananigans.defaults.FloatType;
-                            dry_heat_capacity = 1480.0 * 1500.0 * 0.10,
-                            liquid_heat_capacity = 4186.0,
-                            deep_temperature = 280.0,
-                            deep_time_scale = 12 * 3600.0)
+                            dry_heat_capacity = 1480 * 1500 * 0.10,
+                            liquid_heat_capacity = 4186,
+                            deep_temperature = 280,
+                            deep_time_scale = 12 * 3600)
     dry_heat_capacity    = normalize_property(FT, dry_heat_capacity)
     liquid_heat_capacity = normalize_property(FT, liquid_heat_capacity)
     deep_temperature     = deep_temperature isa Number ? convert(FT, deep_temperature) : deep_temperature
@@ -54,25 +54,28 @@ end
 
 flux_variables(::ForceRestoreEnergy) = (:net_energy_flux,)
 
-@kernel function _force_restore_step!(T, Q, M, Δt, Cdry, Cl, Tdeep, τ, grid, time)
+# `τᵈ` is the deep-restore time scale (math `τᵈᵉᵉᵖ` in notation.md); not the
+# kinematic momentum flux `τ`. `Tᵈ` is the deep-target temperature.
+@kernel function _force_restore_step!(T, Q, M, Δt, Cdry, Cl, Tᵈ, τᵈ, grid, time)
     i, j = @index(Global, NTuple)
     @inbounds begin
-        # Effective heat capacity adds the liquid-water term; for dry land
-        # water_storage is zero so C reduces to Cdry.
-        Cdry_ij1 = property_value(Cdry, i, j, 1)
-        Cl_ij1   = property_value(Cl, i, j, 1)
-        C        = Cdry_ij1 + Cl_ij1 * max(M[i, j, 1], 0)
-        C_inv    = ifelse(C <= 0, 0, inv(C))
-        τ⁻       = ifelse(τ > 0, inv(τ), 0)
+        # Effective areal heat capacity (Cdry + Cl·Mˡᵃ); with dry land
+        # (M = 0) this reduces to Cdry.
+        Cdry_ij = property_value(Cdry, i, j, 1)
+        Cl_ij   = property_value(Cl, i, j, 1)
+        C       = Cdry_ij + Cl_ij * max(M[i, j, 1], 0)
 
-        Tᵈᵉᵉᵖ = stateindex(Tdeep, i, j, 1, grid, time, (Center, Center, Center))
-        Tˢ    = T[i, j, 1]
+        Tᵈ_ij = stateindex(Tᵈ, i, j, 1, grid, time, (Center, Center, Center))
+        Tᵢⱼ   = T[i, j, 1]
 
-        T[i, j, 1] = Tˢ + (Q[i, j, 1] * C_inv + (Tᵈᵉᵉᵖ - Tˢ) * τ⁻) * Δt
+        # ∂T/∂t = Q/C + (Tᵈ − T)/τᵈ
+        forcing   = Q[i, j, 1] / C
+        restoring = (Tᵈ_ij - Tᵢⱼ) / τᵈ
+        T[i, j, 1] = Tᵢⱼ + (forcing + restoring) * Δt
     end
 end
 
-function step!(energy::ForceRestoreEnergy, land, Δt, time)
+function time_step!(energy::ForceRestoreEnergy, land, Δt, time)
     grid = land.grid
     arch = architecture(grid)
     launch!(arch, grid, :xy, _force_restore_step!,
@@ -90,3 +93,22 @@ Base.summary(energy::ForceRestoreEnergy) =
            ", liquid_heat_capacity=", prettysummary(energy.liquid_heat_capacity),
            ", deep_temperature=", prettysummary(energy.deep_temperature),
            ", deep_time_scale=", prettysummary(energy.deep_time_scale), ")")
+
+"""
+    SlabEnergy(FT = Oceananigans.defaults.FloatType;
+               dry_heat_capacity = 1480 * 1500 * 0.10,
+               liquid_heat_capacity = 4186)
+
+Pure slab energy balance — the `τ → ∞` limit of [`ForceRestoreEnergy`](@ref),
+with no deep restoring term. Returns a `ForceRestoreEnergy` configured so the
+restoring contribution vanishes: `deep_time_scale = Inf` (so `(Tᵈ − T)/τ = 0`)
+and `deep_temperature` is set to a finite sentinel that is never used.
+"""
+SlabEnergy(FT::Type = Oceananigans.defaults.FloatType;
+           dry_heat_capacity = 1480 * 1500 * 0.10,
+           liquid_heat_capacity = 4186) =
+    ForceRestoreEnergy(FT;
+                       dry_heat_capacity,
+                       liquid_heat_capacity,
+                       deep_temperature = 0,
+                       deep_time_scale = FT(Inf))

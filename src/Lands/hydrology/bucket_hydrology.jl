@@ -56,7 +56,7 @@ end
     end
 end
 
-function step!(b::BucketHydrology, land, Δt)
+function time_step!(b::BucketHydrology, land, Δt)
     arch = architecture(land.grid)
     launch!(arch, land.grid, :xy, _bucket_hydrology_step!,
             land.water_storage,

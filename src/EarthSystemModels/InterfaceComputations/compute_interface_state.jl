@@ -113,7 +113,7 @@ and interior properties `ℙₛ`, `ℙₐ`, and `ℙᵢ`.
                                           atmosphere_properties,
                                           interior_properties)
 
-    fluxes = InterfaceFluxes(convert(FT, u★), convert(FT, θ★), convert(FT, q★))
+    fluxes = InterfaceFluxScales(convert(FT, u★), convert(FT, θ★), convert(FT, q★))
 
     return rebuild_interface_state(approximate_interface_state,
                                    fluxes,

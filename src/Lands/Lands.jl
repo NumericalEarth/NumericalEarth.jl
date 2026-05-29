@@ -51,8 +51,9 @@ include("properties/property_providers.jl")
 include("slab_land.jl")
 
 # Default closures (sized so `SlabEnergy + BucketHydrology` is the canonical
-# Manabe-bucket slab).
-include("energy_balance/slab_energy.jl")
+# bucket slab of Manabe (1969); see `docs/src/NumericalEarth.bib`).
+# `SlabEnergy` is the `τ → ∞` limit of `ForceRestoreEnergy` and lives in the
+# same file as a thin constructor.
 include("energy_balance/force_restore_energy.jl")
 include("hydrology/bucket_hydrology.jl")
 include("hydrology/dry_land.jl")

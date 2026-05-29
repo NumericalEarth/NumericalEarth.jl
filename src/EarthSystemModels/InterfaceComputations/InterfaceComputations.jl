@@ -40,7 +40,8 @@ export
     # Friction velocity formulations
     MomentumBasedFrictionVelocity
 
-using ..EarthSystemModels: default_gravitational_acceleration,
+using ..EarthSystemModels: EarthSystemModels,
+                           default_gravitational_acceleration,
                            default_freshwater_density,
                            thermodynamics_parameters,
                            surface_layer_height,
@@ -74,7 +75,7 @@ end
 
 @inline function air_land_interface_radiation_state(::Nothing, ::Nothing, i, j, k, grid, time)
     z = zero(eltype(grid))
-    return (σ = z, α = z, ϵ = z, ℐꜜˢʷ = z, ℐꜜˡʷ = z)
+    return AirLandRadiationState(z, z, z, z, z)
 end
 
 #####

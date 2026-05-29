@@ -60,7 +60,7 @@ ERA5_dataset_variable_names = Dict(
     :mean_wave_period                => "mean_wave_period",
     :mean_wave_direction             => "mean_wave_direction",
     :geopotential                    => "geopotential",
-    :orography                       => "geopotential",
+    :topography                       => "geopotential",
 )
 
 # NetCDF short variable names (what's actually in the downloaded files)
@@ -93,7 +93,7 @@ ERA5_netcdf_variable_names = Dict(
     :mean_wave_period                => "mwp",
     :mean_wave_direction             => "mwd",
     :geopotential                    => "z",
-    :orography                       => "z",
+    :topography                       => "z",
 )
 
 # Variables available for download
@@ -106,12 +106,12 @@ DataWrangling.available_variables(::ERA5Dataset) = ERA5_dataset_variable_names
 DataWrangling.dataset_variable_name(md::ERA5Metadata) = ERA5_netcdf_variable_names[md.name]
 
 # Unit conversions applied at load time:
-# - `orography` divides the (surface) geopotential by g to give ERA5's model
+# - `topography` divides the (surface) geopotential by g to give ERA5's model
 #   surface elevation in metres (`geopotential` is left in m² s⁻²);
 # - downwelling SW/LW are hourly-accumulated energy (J/m²) → mean flux (W/m²);
 # - total precipitation is an hourly-accumulated depth (m) → mass flux (kg/m²/s).
 function DataWrangling.conversion_units(md::ERA5Metadata)
-    md.name == :orography           && return InverseGravity()
+    md.name == :topography           && return InverseGravity()
     md.name == :total_precipitation && return MetersPerHour()
     md.name in (:downwelling_shortwave_radiation, :downwelling_longwave_radiation) &&
         return JoulesPerSquareMeterPerHour()

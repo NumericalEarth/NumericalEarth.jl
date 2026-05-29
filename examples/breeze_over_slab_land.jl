@@ -12,16 +12,16 @@
 # the contrast drives a low-level "sea breeze"-like circulation.
 #
 # Coupling lives entirely in the `EarthSystemModel`:
-#   * `AtmosphereLandModel(atmos, slab_land; radiation = rtm)` wires
-#     turbulent surface fluxes (sensible, latent, momentum) through
-#     Monin–Obukhov similarity theory — using land stability functions
+#   * `AtmosphereLandModel(atmos, slab_land; radiation)` wires turbulent
+#     surface fluxes (sensible, latent, momentum) through Monin–Obukhov
+#     similarity theory — using land stability functions
 #     (`atmosphere_land_stability_functions`, the Businger–Dyer /
 #     Large–Yeager form) rather than the ocean Edson default — and hands
 #     the RRTMGP `RadiativeTransferModel` to the coupled model.
 #   * The atmosphere is built with a skeleton `CoupledRadiation`
-#     placeholder; the coupled-model constructor materializes it to
-#     alias `rtm.flux_divergence` so Breeze's tendency machinery reads
-#     directly from the RTM's flux divergence.
+#     placeholder; the coupled-model constructor materializes it to alias
+#     `radiative_transfer_model.flux_divergence` so Breeze's tendency
+#     machinery reads directly from the RTM's flux divergence.
 #   * The atmosphere's own `update_state!` drives the RRTMGP solve
 #     through the proxy (honoring the RTM's `schedule`).
 #   * Net surface SW/LW from the RTM feeds the slab's `net_energy_flux`
@@ -218,9 +218,10 @@ set_to_mean!(reference_state, atmos.model, rescale_densities = true)
 
 # ## Coupled model
 #
-# Passing `radiation = rtm` here triggers `materialize_earth_system_radiation!`,
-# which aliases the atmosphere's `CoupledRadiation.flux_divergence` to
-# `rtm.flux_divergence`, and installs the Breeze-aware
+# Passing `radiation = radiative_transfer_model` here triggers
+# `materialize_earth_system_radiation!`, which aliases the atmosphere's
+# `CoupledRadiation.flux_divergence` to
+# `radiative_transfer_model.flux_divergence` and installs the Breeze-aware
 # `apply_air_land_radiative_fluxes!`.
 
 # The surface specific humidity uses a Manabe evaporation efficiency: saturated
@@ -256,8 +257,8 @@ function progress(sim)
     Tˡᵃ = sim.model.land.temperature
     Tˡᵃ_min, Tˡᵃ_max = extrema(Tˡᵃ)
 
-    rtm = sim.model.radiation
-    OLR = mean(view(rtm.upwelling_longwave_flux, :, 1, Nz+1))
+    radiative_transfer_model = sim.model.radiation
+    OLR = mean(view(radiative_transfer_model.upwelling_longwave_flux, :, 1, Nz+1))
 
     @info @sprintf("iter %5d, t %8s, Δt %4.1fs, wall %6s, max|w| %4.2f m/s, Tᵃᵗ [%5.1f,%5.1f] K, Tˡᵃ [%5.1f,%5.1f] K, OLR %5.1f W/m²",
                    iteration(sim), prettytime(sim), sim.Δt, prettytime(elapsed),

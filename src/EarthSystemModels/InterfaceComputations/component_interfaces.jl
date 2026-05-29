@@ -199,6 +199,14 @@ using ..EarthSystemModels: DegreesCelsius, temperature_units, exchange_grid,
 Base.summary(crf::ComponentInterfaces) = "ComponentInterfaces"
 Base.show(io::IO, crf::ComponentInterfaces) = print(io, summary(crf))
 
+# Diagnostic surface (skin) temperature — the atmosphere-land interface field
+# that the atmosphere actually "sees", *not* a prognostic land variable. For
+# skin-temperature closures this differs from `land.temperature`. Returns
+# `nothing` if there is no atmosphere-land interface.
+EarthSystemModels.surface_temperature(al_interface::AtmosphereInterface) = al_interface.temperature
+EarthSystemModels.surface_temperature(interfaces::ComponentInterfaces) =
+    EarthSystemModels.surface_temperature(interfaces.atmosphere_land_interface)
+
 #####
 ##### Atmosphere-Ocean Interface
 #####
@@ -436,7 +444,7 @@ function ComponentInterfaces(atmosphere, ocean, sea_ice=nothing;
                     atmosphere = net_fluxes(atmosphere))
 
     exchanger = StateExchanger(exchange_grid, radiation, atmosphere, land, ocean, sea_ice;
-                               correction = exchanger_correction)
+                               atmosphere_correction = exchanger_correction)
 
     properties = (; gravitational_acceleration)
 

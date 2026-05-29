@@ -28,18 +28,20 @@ the source `RadiativeTransferModel` so that the atmosphere's
 `update_radiation!` call can delegate without the atmosphere knowing about
 the real RTM.
 
-Defaults to the *skeleton* form (`flux_divergence = nothing`, `rtm = nothing`),
-which makes the atmosphere radiatively decoupled with zero extra allocation.
+Defaults to the *skeleton* form (`flux_divergence = nothing`,
+`radiative_transfer_model = nothing`), which makes the atmosphere
+radiatively decoupled with zero extra allocation.
 `materialize_earth_system_radiation!` replaces the skeleton in-place when an
 `EarthSystemModel` is constructed with a non-`nothing` radiation.
 """
 struct CoupledRadiation{F, R}
-    flux_divergence :: F
-    rtm             :: R
+    flux_divergence          :: F
+    radiative_transfer_model :: R
 end
 
 CoupledRadiation() = CoupledRadiation(nothing, nothing)
-CoupledRadiation(rtm::Breeze.RadiativeTransferModel) = CoupledRadiation(rtm.flux_divergence, rtm)
+CoupledRadiation(radiative_transfer_model::Breeze.RadiativeTransferModel) =
+    CoupledRadiation(radiative_transfer_model.flux_divergence, radiative_transfer_model)
 
 Base.summary(::CoupledRadiation{Nothing, Nothing}) = "CoupledRadiation (skeleton)"
 Base.summary(::CoupledRadiation) = "CoupledRadiation (materialized)"
@@ -51,11 +53,12 @@ Breeze.AtmosphereModels.radiation_flux_divergence(r::CoupledRadiation) = r.flux_
 
 # Breeze update hook: skeleton form does nothing; materialized form delegates
 # to the RTM's schedule-aware `update_radiation!`, which fires the RRTMGP
-# solve when due and writes into `rtm.flux_divergence` — same memory as
-# `r.flux_divergence`, so the atmosphere sees the update on the next tendency.
+# solve when due and writes into `radiative_transfer_model.flux_divergence` —
+# same memory as `r.flux_divergence`, so the atmosphere sees the update on
+# the next tendency.
 Breeze.AtmosphereModels.update_radiation!(::CoupledRadiation{Nothing, Nothing}, model) = nothing
 Breeze.AtmosphereModels.update_radiation!(r::CoupledRadiation, model) =
-    Breeze.AtmosphereModels.update_radiation!(r.rtm, model)
+    Breeze.AtmosphereModels.update_radiation!(r.radiative_transfer_model, model)
 
 # Time step at the EarthSystemModel level is a no-op for the RTM: the
 # atmosphere's own `update_state!` (which runs each step) drives the radiation
@@ -71,10 +74,10 @@ Oceananigans.TimeSteppers.time_step!(::Breeze.RadiativeTransferModel, Δt) = not
 NumericalEarth.EarthSystemModels.materialize_earth_system_radiation!(atmosphere::Simulation{<:Breeze.AtmosphereModel}, ::Nothing) = atmosphere
 
 # Real RTM: replace the AtmosphereModel's CoupledRadiation with one that
-# aliases rtm.flux_divergence. The atmosphere is now coupled.
+# aliases radiative_transfer_model.flux_divergence. The atmosphere is now coupled.
 function NumericalEarth.EarthSystemModels.materialize_earth_system_radiation!(
-        atmosphere :: Simulation{<:Breeze.AtmosphereModel},
-        rtm        :: Breeze.RadiativeTransferModel)
-    materialized = CoupledRadiation(rtm)
+        atmosphere               :: Simulation{<:Breeze.AtmosphereModel},
+        radiative_transfer_model :: Breeze.RadiativeTransferModel)
+    materialized = CoupledRadiation(radiative_transfer_model)
     return @set atmosphere.model.radiation = materialized
 end

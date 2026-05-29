@@ -26,8 +26,8 @@ flux_variables(::AbstractHydrology) = ()
 
 initial_flux(::AbstractHydrology, ::Symbol, grid) = CenterField(grid)
 
-step!(::AbstractHydrology, land, Δt) = nothing
-step!(hydrology::AbstractHydrology, land, Δt, time) = step!(hydrology, land, Δt)
+time_step!(::AbstractHydrology, land, Δt) = nothing
+time_step!(hydrology::AbstractHydrology, land, Δt, time) = time_step!(hydrology, land, Δt)
 update_diagnostics!(::AbstractHydrology, land) = nothing
 
 #####

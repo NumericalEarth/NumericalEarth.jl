@@ -49,12 +49,17 @@ function Oceananigans.TimeSteppers.update_state!(coupled_model::EarthSystemModel
     # Phase 1: bring all component states onto the exchange grid
     interpolate_state!(exchanger.radiation,  grid, radiation,  coupled_model)
     interpolate_state!(exchanger.atmosphere, grid, atmosphere, coupled_model)
-    # Optional in-place correction of the regridded atmosphere state (e.g. an
-    # elevation lapse-rate adjustment); a no-op when no correction is set.
-    InterfaceComputations.correct_atmosphere_state!(exchanger.correction, exchanger.atmosphere, grid)
     interpolate_state!(exchanger.land,       grid, land,       coupled_model)
     interpolate_state!(exchanger.sea_ice,    grid, sea_ice,    coupled_model)
     interpolate_state!(exchanger.ocean,      grid, ocean,      coupled_model)
+
+    # Phase 1.5: apply each component's optional post-regrid correction
+    # (no-op when the component carries no correction).
+    InterfaceComputations.correct_state!(exchanger.radiation,  grid)
+    InterfaceComputations.correct_state!(exchanger.atmosphere, grid)
+    InterfaceComputations.correct_state!(exchanger.land,       grid)
+    InterfaceComputations.correct_state!(exchanger.sea_ice,    grid)
+    InterfaceComputations.correct_state!(exchanger.ocean,      grid)
 
     # Phase 2: compute interface turbulent fluxes
     compute_atmosphere_ocean_fluxes!(coupled_model)
