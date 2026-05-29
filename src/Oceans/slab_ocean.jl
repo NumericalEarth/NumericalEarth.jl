@@ -128,6 +128,15 @@ EarthSystemModels.interpolate_state!(exchanger, grid, ::SlabOcean, coupled_model
 EarthSystemModels.update_net_fluxes!(coupled_model, ocean::SlabOcean) =
     update_net_ocean_fluxes!(coupled_model, ocean, ocean.grid)
 
+# `FT` is not inferable from the fields, so rebuild explicitly to preserve it.
+function EarthSystemModels.adopt_clock(ocean::SlabOcean{FT}, clock) where FT
+    new_clock = EarthSystemModels.matching_clock(ocean.clock, clock)
+    isnothing(new_clock) && return ocean
+    EarthSystemModels.warn_clock_coercion(ocean, new_clock)
+    return SlabOcean{FT}(ocean.grid, new_clock, ocean.temperature,
+                         ocean.temperature_flux, ocean.depth, ocean.density, ocean.heat_capacity)
+end
+
 #####
 ##### Time stepping
 #####

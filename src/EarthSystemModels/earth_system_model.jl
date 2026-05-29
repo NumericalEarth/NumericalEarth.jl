@@ -184,6 +184,15 @@ function EarthSystemModel(radiation, atmosphere, land, sea_ice, ocean;
     ocean   isa Simulation && remove_default_stop_callbacks!(ocean)
     sea_ice isa Simulation && remove_default_stop_callbacks!(sea_ice)
 
+    # Enforce a single clock time type across all components: the model `clock` is authoritative, so every
+    # component adopts its time type. This prevents clocks from drifting apart over long simulations (e.g.
+    # Float32 vs Float64 round-off accumulating across thousands of days).
+    radiation  = adopt_clock(radiation, clock)
+    atmosphere = adopt_clock(atmosphere, clock)
+    land       = adopt_clock(land, clock)
+    sea_ice    = adopt_clock(sea_ice, clock)
+    ocean      = adopt_clock(ocean, clock)
+
     # Contains information about flux contributions: bulk formula, prescribed fluxes, etc.
     if isnothing(interfaces) && !(isnothing(atmosphere) && isnothing(sea_ice))
         interfaces = ComponentInterfaces(atmosphere, ocean, sea_ice;

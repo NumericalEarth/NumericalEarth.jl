@@ -66,6 +66,8 @@ end
 # No net fluxes to update for prescribed land
 EarthSystemModels.update_net_fluxes!(coupled_model, ::PrescribedLand) = nothing
 
+EarthSystemModels.adopt_clock(land::PrescribedLand, clock) = EarthSystemModels.reclock(land, clock)
+
 #####
 ##### Checkpointing
 #####
