@@ -58,18 +58,18 @@ const OSPapa_url      = "https://noaa-oar-keo-papa-pds.s3.amazonaws.com/PAPA/OS_
 const OSPapa_filename = "OS_PAPA_200706_M_TSVMBP_50N145W_hr.nc"
 
 const OSPapa_dataset_variable_names = Dict(
-    :temperature        => "TEMP",
-    :salinity           => "PSAL",
-    :eastward_wind      => "UWND",
-    :northward_wind     => "VWND",
-    :air_temperature    => "AIRT",
-    :relative_humidity  => "RELH",
-    :sea_level_pressure => "ATMS",
+    :temperature         => "TEMP",
+    :salinity            => "PSAL",
+    :eastward_wind       => "UWND",
+    :northward_wind      => "VWND",
+    :air_temperature     => "AIRT",
+    :relative_humidity   => "RELH",
+    :sea_level_pressure  => "ATMS",
     :shortwave_radiation => "SW",
     :longwave_radiation  => "LW",
-    :rain               => "RAIN",
-    :eastward_velocity  => "UCUR",
-    :northward_velocity => "VCUR",
+    :rain                => "RAIN",
+    :eastward_velocity   => "UCUR",
+    :northward_velocity  => "VCUR",
 )
 
 const OSPapa_depth_variable_names = Dict(
