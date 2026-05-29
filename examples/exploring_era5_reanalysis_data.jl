@@ -420,10 +420,16 @@ z  = znodes(T_series.grid, nothing, nothing, Center())
 Nz = length(z)
 p_levs  = sort(selected_levels, rev=true) ./ hPa   # Pa → hPa, from bottom-to-top
 
+## ERA5 pressure-level fields are NaN-filled below the local surface, so we
+## skip NaNs when averaging horizontally.
 function horizontal_mean_profiles(series)
     profiles = zeros(Nz, Nt)
     for n in 1:Nt
-        profiles[:, n] = mean(interior(series[n], :, :, :), dims=(1, 2))
+        slab = interior(series[n], :, :, :)
+        for k in 1:Nz
+            column = filter(!isnan, @view slab[:, :, k])
+            profiles[k, n] = isempty(column) ? NaN : mean(column)
+        end
     end
     return profiles
 end
@@ -459,9 +465,10 @@ ax_v = Axis(fig4[1, 4], xlabel="v [m s⁻¹]",   ylabel="Height [m]", xticks=-10
 
 for (ax, profiles) in [(ax_θ, θ_profiles), (ax_q, q_profiles),
                        (ax_u, u_profiles), (ax_v, v_profiles)]
-    μ  = vec(mean(profiles, dims=2))
-    lo = [quantile(r, 0.25) for r in eachrow(profiles)]
-    hi = [quantile(r, 0.75) for r in eachrow(profiles)]
+    rows = [filter(!isnan, r) for r in eachrow(profiles)]
+    μ  = [isempty(r) ? NaN : mean(r)           for r in rows]
+    lo = [isempty(r) ? NaN : quantile(r, 0.25) for r in rows]
+    hi = [isempty(r) ? NaN : quantile(r, 0.75) for r in rows]
     band!(ax, z, lo, hi; direction=:y, color=(:gray, 0.4))
     lines!(ax, μ, z; color=:black, linewidth=2)
 end
