@@ -263,7 +263,7 @@ function per_column_geopotential_discretization(metadata::ERA5PressureMetadata)
 
     ϕ_meta = Metadata(:geopotential; dataset=static_ds,
                       dates=metadata.dates, region=metadata.region, dir=metadata.dir)
-    ϕ_sl_meta = Metadata(:geopotential_height; dataset=sl_ds,
+    ϕ_sl_meta = Metadata(:geopotential; dataset=sl_ds,
                          dates=metadata.dates, region=metadata.region, dir=metadata.dir)
 
     Downloads.download(ϕ_meta)
