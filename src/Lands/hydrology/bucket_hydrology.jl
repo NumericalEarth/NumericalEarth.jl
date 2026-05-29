@@ -41,7 +41,7 @@ end
 # `saturation` (diagnostic, recomputed in `update_diagnostics!`).
 flux_variables(::BucketHydrology) = (:precipitation, :evaporation)
 
-@inline function _bucket_capacity(maximum_water_storage, i, j, k=1)
+@inline function bucket_capacity(maximum_water_storage, i, j, k=1)
     M_max = property_value(maximum_water_storage, i, j, k)
     return max(M_max, 0)
 end
@@ -49,7 +49,7 @@ end
 @kernel function _bucket_hydrology_step!(M, P, E, Δt, maximum_water_storage)
     i, j = @index(Global, NTuple)
     @inbounds begin
-        M_max = _bucket_capacity(maximum_water_storage, i, j, 1)
+        M_max = bucket_capacity(maximum_water_storage, i, j, 1)
         # Saturation cap; excess water above M_max is shed (runoff diagnostic
         # to be reintroduced when downstream coupling needs it).
         M[i, j, 1] = clamp(M[i, j, 1] + (P[i, j, 1] - E[i, j, 1]) * Δt, 0, M_max)
@@ -72,7 +72,7 @@ end
 @kernel function _bucket_hydrology_saturation!(saturation, M, maximum_water_storage)
     i, j = @index(Global, NTuple)
     @inbounds begin
-        M_max = _bucket_capacity(maximum_water_storage, i, j, 1)
+        M_max = bucket_capacity(maximum_water_storage, i, j, 1)
         𝒮 = ifelse(M_max > 0, clamp(M[i, j, 1] / M_max, 0, 1), zero(eltype(M)))
         saturation[i, j, 1] = 𝒮
     end

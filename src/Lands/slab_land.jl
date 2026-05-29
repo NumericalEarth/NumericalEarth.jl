@@ -31,7 +31,7 @@
 
 # Generic field-tuple builder. Each closure declares its own keys via
 # `keyfn(closure)` and constructs each field via `initfn(closure, name, grid)`.
-function _build_closure_fields(keyfn, initfn, grid, energy, hydrology)
+function build_closure_fields(keyfn, initfn, grid, energy, hydrology)
     keys = merge_unique(keyfn(energy), keyfn(hydrology))
     fields = map(keys) do name
         if name in keyfn(energy)
@@ -50,7 +50,7 @@ Allocate the flux/forcing accumulator `NamedTuple` for a `SlabLand`.
 The coupler writes into these every step; closures only read.
 """
 build_flux_accumulators(grid, energy, hydrology) =
-    _build_closure_fields(flux_variables, initial_flux, grid, energy, hydrology)
+    build_closure_fields(flux_variables, initial_flux, grid, energy, hydrology)
 
 #####
 ##### Top-level struct
