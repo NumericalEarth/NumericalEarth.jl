@@ -6,6 +6,10 @@ using Oceananigans
 using Oceananigans.Utils: launch!
 using Oceananigans.TimeSteppers: update_state!
 using NumericalEarth.Lands: update_diagnostics!
+using NumericalEarth.EarthSystemModels.InterfaceComputations: default_atmosphere_land_fluxes,
+                                                              atmosphere_land_stability_functions,
+                                                              atmosphere_ocean_stability_functions,
+                                                              EdsonMomentumStabilityFunction
 
 @testset "SlabLand energy and hydrology" begin
     for arch in test_architectures
@@ -318,4 +322,24 @@ end
         Q_land_with_props = CUDA.@allowscalar(model_with_land.land.fluxes.net_energy_flux[1, 1, 1])
         @test Q_land_with_props < Q_land_no_props
     end
+end
+
+@testset "Land default stability functions (footgun guard)" begin
+    FT = Float64
+
+    land_ψ  = atmosphere_land_stability_functions(FT)
+    ocean_ψ = atmosphere_ocean_stability_functions(FT)
+
+    # The named land seam must differ from the Edson ocean functions.
+    @test !(land_ψ.momentum isa EdsonMomentumStabilityFunction)
+    @test typeof(land_ψ.momentum) != typeof(ocean_ψ.momentum)
+
+    # `default_atmosphere_land_fluxes` must wire the land functions explicitly
+    # rather than silently inheriting the `SimilarityTheoryFluxes` ocean default.
+    grid = RectilinearGrid(size = 1, x = (0, 1), y = (0, 1), z = (-1, 0),
+                           topology = (Flat, Flat, Bounded))
+    land = SlabLand(grid)
+    fluxes = default_atmosphere_land_fluxes(land, FT)
+    @test typeof(fluxes.stability_functions.momentum) == typeof(land_ψ.momentum)
+    @test !(fluxes.stability_functions.momentum isa EdsonMomentumStabilityFunction)
 end

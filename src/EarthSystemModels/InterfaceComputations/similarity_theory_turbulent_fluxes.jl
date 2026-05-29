@@ -646,6 +646,12 @@ function large_yeager_stability_functions(FT=Oceananigans.defaults.FloatType)
     return SimilarityScales(momentum, scalar, scalar)
 end
 
+# Land currently borrows the NCAR/Large–Yeager Businger–Dyer form
+# (Paulson 1970 unstable + linear stable). TODO: replace with land-tuned
+# stability functions.
+atmosphere_land_stability_functions(FT=Oceananigans.defaults.FloatType) =
+    large_yeager_stability_functions(FT)
+
 function atmosphere_sea_ice_stability_functions(FT=Oceananigans.defaults.FloatType)
     unstable_momentum = PaulsonMomentumStabilityFunction{FT}()
     stable_momentum = ShebaMomentumStabilityFunction{FT}()

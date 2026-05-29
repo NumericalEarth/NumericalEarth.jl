@@ -14,8 +14,10 @@
 # Coupling lives entirely in the `EarthSystemModel`:
 #   * `AtmosphereLandModel(atmos, slab_land; radiation = rtm)` wires
 #     turbulent surface fluxes (sensible, latent, momentum) through
-#     Monin–Obukhov similarity theory and hands the RRTMGP
-#     `RadiativeTransferModel` to the coupled model.
+#     Monin–Obukhov similarity theory — using land stability functions
+#     (`atmosphere_land_stability_functions`, the Businger–Dyer /
+#     Large–Yeager form) rather than the ocean Edson default — and hands
+#     the RRTMGP `RadiativeTransferModel` to the coupled model.
 #   * The atmosphere is built with a skeleton `CoupledRadiation`
 #     placeholder; the coupled-model constructor materializes it to
 #     alias `rtm.flux_divergence` so Breeze's tendency machinery reads

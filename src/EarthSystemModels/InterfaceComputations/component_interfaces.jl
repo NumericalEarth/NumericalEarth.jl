@@ -474,6 +474,7 @@ default_atmosphere_land_fluxes(::Nothing, FT) = nothing
 
 function default_atmosphere_land_fluxes(land, FT)
     return SimilarityTheoryFluxes(FT;
+                                   stability_functions          = atmosphere_land_stability_functions(FT),
                                    momentum_roughness_length    = convert(FT, 0.1),
                                    temperature_roughness_length = convert(FT, 0.01),
                                    water_vapor_roughness_length = convert(FT, 0.01))

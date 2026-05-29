@@ -21,6 +21,7 @@ export
     SkinTemperature,
     BulkTemperature,
     atmosphere_ocean_stability_functions,
+    atmosphere_land_stability_functions,
     atmosphere_sea_ice_stability_functions,
     large_yeager_stability_functions,
     compute_atmosphere_ocean_fluxes!,
