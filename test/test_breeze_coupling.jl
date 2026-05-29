@@ -57,7 +57,8 @@ end
 
             @test model isa EarthSystemModel
             @test model.ocean isa SlabOcean
-            @test model.atmosphere isa Breeze.AtmosphereModel
+            @test model.atmosphere isa Simulation
+            @test model.atmosphere.model isa Breeze.AtmosphereModel
             @test model.architecture isa typeof(arch)
 
             # Check that interfaces were created
