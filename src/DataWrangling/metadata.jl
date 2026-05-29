@@ -113,8 +113,7 @@ Argument
 Keyword Arguments
 =================
 
-- `dataset`: Supported datasets are `ETOPO2022()`, `ECCO2Monthly()`, `ECCO2Daily()`, `ECCO4Monthly()`, `EN4Monthly()`,
-             `GLORYSDaily()`, `GLORYSMonthly()`, `RepeatYearJRA55()`, and `MultiYearJRA55()`.
+- `dataset`: Supported datasets are returned by [`supported_datasets`](@ref).
 
 - `dates`: The dates of the dataset (`Dates.AbstractDateTime` or `CFTime.AbstractCFDateTime`).
            Note that `dates` can either be a range or a vector of dates, representing a time-series.
@@ -335,15 +334,15 @@ Arguments
 
 Keyword Arguments
 =================
-- `dataset`: the shared dataset (e.g. `ECCO4Monthly()`, `ERA5HourlyPressureLevels()`).
-- `dates`: shared date axis. Either a single `AbstractDateTime`/`AbstractCFDateTime`
+- `dataset`: The shared dataset. Supported datasets are returned by [`supported_datasets`](@ref).
+- `dates`: Shared date axis. Either a single `AbstractDateTime`/`AbstractCFDateTime`
            or an `AbstractVector` of dates. Defaults to `all_dates(dataset, first(variable_names))`.
-- `date`: convenience scalar form; cannot be used together with `dates`.
-- `region`: shared spatial region — `BoundingBox`, `Column`, or `nothing`.
-- `dir`: shared download directory.
-- `filenames`: an optional `NamedTuple` keyed by `variable_names` overriding the
+- `date`: Convenience scalar form; cannot be used together with `dates`.
+- `region`: Shared spatial region — `BoundingBox`, `Column`, or `nothing`.
+- `dir`: Shared download directory.
+- `filenames`: An optional `NamedTuple` keyed by `variable_names` overriding the
                auto-computed per-variable filenames.
-- `start_date`, `end_date`: optional date cropping, matching [`Metadata`](@ref).
+- `start_date`, `end_date`: Optional date cropping, matching [`Metadata`](@ref).
 
 Example
 =======

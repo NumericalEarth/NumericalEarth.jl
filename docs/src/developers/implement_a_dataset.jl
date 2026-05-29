@@ -47,8 +47,9 @@ using NCDatasets: Dataset
 # A dataset is identified by a singleton type. We also alias the single-date `Metadatum` specialization,
 # which `retrieve_data` dispatches on.
 
-struct OceanStationPapaObservations end
-const OceanStationPapaMetadatum = Metadatum{<:OceanStationPapaObservations}
+struct OceanStationPapa end
+const OceanStationPapaMetadatum = Metadatum{<:OceanStationPapa}
+const OceanStationPapaMetadata  = Metadata{<:OceanStationPapa}
 
 # Ocean Station Papa packs the whole record into one NetCDF file. We expose the ocean profiles (temperature,
 # salinity, currents) and the surface met fields (winds, air temperature, humidity, pressure, radiation,
@@ -84,19 +85,19 @@ const OSPapa_depth_variable_names = Dict(
 # fixed location, so we embed its [`Column`](@ref) via `default_region` — every `Metadata` for this dataset
 # then carries it automatically and callers never repeat the coordinates:
 
-NumericalEarth.DataWrangling.default_download_directory(::OceanStationPapaObservations) = mkpath(joinpath(tempdir(), "OceanStationPapaObservations"))
-NumericalEarth.DataWrangling.metadata_filename(::OceanStationPapaObservations, name, date, region) = OSPapa_filename
-NumericalEarth.DataWrangling.dataset_variable_name(md::Metadata{<:OceanStationPapaObservations}) = OSPapa_dataset_variable_names[md.name]
-NumericalEarth.DataWrangling.longitude_name(::Metadata{<:OceanStationPapaObservations}) = "LONGITUDE"
-NumericalEarth.DataWrangling.latitude_name(::Metadata{<:OceanStationPapaObservations}) = "LATITUDE"
-NumericalEarth.DataWrangling.default_region(::OceanStationPapaObservations) = Column(-144.9, 50.1)
+NumericalEarth.DataWrangling.default_download_directory(::OceanStationPapa) = mkpath(joinpath(tempdir(), "OceanStationPapa"))
+NumericalEarth.DataWrangling.metadata_filename(::OceanStationPapa, name, date, region) = OSPapa_filename
+NumericalEarth.DataWrangling.dataset_variable_name(md::OceanStationPapaMetadata) = OSPapa_dataset_variable_names[md.name]
+NumericalEarth.DataWrangling.longitude_name(::OceanStationPapaMetadata) = "LONGITUDE"
+NumericalEarth.DataWrangling.latitude_name(::OceanStationPapaMetadata) = "LATITUDE"
+NumericalEarth.DataWrangling.default_region(::OceanStationPapa) = Column(-144.9, 50.1)
 
 # A variable is three-dimensional exactly when it has a depth axis; the surface met fields are single-level.
 # Most variables already arrive in the model's units; the few that do not are converted on read — air
 # temperature from ᵒC to K, pressure from mbar to Pa, rain from mm hr⁻¹ to kg m⁻² s⁻¹, and currents from
 # cm s⁻¹ to m s⁻¹.
 
-NumericalEarth.DataWrangling.is_three_dimensional(md::Metadata{<:OceanStationPapaObservations}) = haskey(OSPapa_depth_variable_names, md.name)
+NumericalEarth.DataWrangling.is_three_dimensional(md::OceanStationPapaMetadata) = haskey(OSPapa_depth_variable_names, md.name)
 
 function NumericalEarth.DataWrangling.conversion_units(md::OceanStationPapaMetadatum)
     md.name == :air_temperature                          && return Celsius()
@@ -106,13 +107,13 @@ function NumericalEarth.DataWrangling.conversion_units(md::OceanStationPapaMetad
     return nothing
 end
 
-function download_ospapa(dir = NumericalEarth.DataWrangling.default_download_directory(OceanStationPapaObservations()))
+function download_ospapa(dir = NumericalEarth.DataWrangling.default_download_directory(OceanStationPapa()))
     path = joinpath(dir, OSPapa_filename)
     isfile(path) || Downloads.download(OSPapa_url, path)
     return path
 end
 
-Downloads.download(md::Metadata{<:OceanStationPapaObservations}) = download_ospapa(md.dir)
+Downloads.download(md::OceanStationPapaMetadata) = download_ospapa(md.dir)
 
 # The dates and depths live *inside* the file, so we read them straight from it.
 # (We can avoid building a `Metadatum` here)
@@ -124,15 +125,15 @@ function read_coordinate(variable)
     return data
 end
 
-NumericalEarth.DataWrangling.all_dates(::OceanStationPapaObservations, name) = DateTime.(read_coordinate("TIME"))
+NumericalEarth.DataWrangling.all_dates(::OceanStationPapa, name) = DateTime.(read_coordinate("TIME"))
 ospapa_depths(name) = Float64.(read_coordinate(OSPapa_depth_variable_names[name]))
 
-Base.size(::OceanStationPapaObservations, name) = haskey(OSPapa_depth_variable_names, name) ? (1, 1, length(ospapa_depths(name))) : (1, 1, 1)
+Base.size(::OceanStationPapa, name) = haskey(OSPapa_depth_variable_names, name) ? (1, 1, length(ospapa_depths(name))) : (1, 1, 1)
 
 # `z_interfaces` turns the measurement depths (positive-down in the file) into ascending cell faces via the
 # `centers_to_interfaces` helper:
 
-NumericalEarth.DataWrangling.z_interfaces(md::Metadata{<:OceanStationPapaObservations}) = centers_to_interfaces(sort(- ospapa_depths(md.name)))
+NumericalEarth.DataWrangling.z_interfaces(md::OceanStationPapaMetadata) = centers_to_interfaces(sort(- ospapa_depths(md.name)))
 
 # Finally, `retrieve_data` reads one profile. The file stores the variable as `(longitude, latitude, depth,
 # time)`, shallow-to-deep, so we select the requested time and flip the column to match the grid's bottom-up
@@ -168,7 +169,7 @@ axu = Axis(fig[1, 3], xlabel = "Eastward velocity (m s⁻¹)")
 axv = Axis(fig[1, 4], xlabel = "Northward velocity (m s⁻¹)")
 
 for (ax, name) in ((axT, :temperature), (axS, :salinity), (axu, :eastward_velocity), (axv, :northward_velocity))
-    metadatum = Metadatum(name; dataset = OceanStationPapaObservations(), date)
+    metadatum = Metadatum(name; dataset = OceanStationPapa(), date)
 
     observations = Field(metadatum)
     scatter!(ax, interior(observations, 1, 1, :), znodes(observations), label = "observations")
@@ -198,7 +199,7 @@ using Oceananigans.Units: days
 
 dates = DateTime(2012, 10, 1):Day(1):DateTime(2012, 12, 1)
 
-temperature = Metadata(:temperature; dataset = OceanStationPapaObservations(), dates)
+temperature = Metadata(:temperature; dataset = OceanStationPapa(), dates)
 Tt = FieldTimeSeries(temperature; time_indices_in_memory = length(dates))
 
 t = Tt.times ./ days
@@ -225,7 +226,7 @@ nothing #hide
 # (already m s⁻¹) pass through untouched.
 
 function surface_series(name)
-    metadata = Metadata(name; dataset = OceanStationPapaObservations(), dates)
+    metadata = Metadata(name; dataset = OceanStationPapa(), dates)
     fts = FieldTimeSeries(metadata; time_indices_in_memory = length(dates))
     return interior(fts, 1, 1, 1, :)
 end
