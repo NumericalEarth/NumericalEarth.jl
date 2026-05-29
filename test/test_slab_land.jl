@@ -111,7 +111,7 @@ end
     end
 end
 
-@testset "BucketHydrology root depth and continuous saturation" begin
+@testset "BucketHydrology continuous saturation" begin
     for arch in test_architectures
         grid = RectilinearGrid(arch;
                                size = 1,
@@ -121,18 +121,14 @@ end
                                topology = (Flat, Flat, Bounded))
 
         Wmax = CenterField(grid)
-        zʳ   = CenterField(grid)
-        fill!(Wmax, 10.0)
-        fill!(zʳ, 2.0)
+        fill!(Wmax, 20.0)
 
         energy = SlabEnergy(eltype(grid); dry_heat_capacity = 1000.0, liquid_heat_capacity = 4000.0)
-        hydrology = BucketHydrology(eltype(grid);
-                                    maximum_water_storage = Wmax,
-                                    root_depth = zʳ)
+        hydrology = BucketHydrology(eltype(grid); maximum_water_storage = Wmax)
 
         land = SlabLand(grid; energy, hydrology)
 
-        # Saturation is continuous: θ = M / M_max, with M_max = Wmax * zʳ = 20.
+        # Saturation is continuous: 𝒮 = M / Mˡᵃ⁺, with Mˡᵃ⁺ = Wmax = 20.
         fill!(land.water_storage, 5.0)
         fill!(land.saturation, 0.0)
         update_diagnostics!(land.hydrology, land)
@@ -143,8 +139,8 @@ end
         update_diagnostics!(land.hydrology, land)
         @test isapprox(CUDA.@allowscalar(land.saturation[1, 1, 1]), 0.0; atol=1e-12)
 
-        # root_depth scales the storage cap: effective capacity = Wmax * zʳ = 20,
-        # and saturation tops out at 1 when the bucket is full.
+        # The bucket caps at Mˡᵃ⁺ = 20: excess water is shed and saturation tops
+        # out at 1 when the bucket is full.
         fill!(land.water_storage, 18.0)
         fill!(land.fluxes.precipitation, 7.0)
         fill!(land.fluxes.evaporation, 0.0)
