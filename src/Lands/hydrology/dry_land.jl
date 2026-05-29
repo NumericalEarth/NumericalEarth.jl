@@ -9,6 +9,6 @@ struct DryLand <: AbstractHydrology end
 
 flux_variables(::DryLand) = ()
 
-saturation(::DryLand, land) = 0.0
+saturation(::DryLand, land) = 0
 
 Base.summary(::DryLand) = "DryLand (moisture availability β ≡ 0)"
