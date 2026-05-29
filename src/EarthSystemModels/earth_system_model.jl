@@ -476,28 +476,28 @@ above_freezing_ocean_temperature!(ocean, grid, ::Nothing) = nothing
 ##### Checkpointing
 #####
 
-function Oceananigans.prognostic_state(osm::EarthSystemModel)
-    return (clock = prognostic_state(osm.clock),
-            radiation = prognostic_state(osm.radiation),
-            ocean = prognostic_state(osm.ocean),
-            atmosphere = prognostic_state(osm.atmosphere),
-            land = prognostic_state(osm.land),
-            sea_ice = prognostic_state(osm.sea_ice),
-            interfaces = prognostic_state(osm.interfaces))
+function Oceananigans.prognostic_state(esm::EarthSystemModel)
+    return (clock = prognostic_state(esm.clock),
+            radiation = prognostic_state(esm.radiation),
+            ocean = prognostic_state(esm.ocean),
+            atmosphere = prognostic_state(esm.atmosphere),
+            land = prognostic_state(esm.land),
+            sea_ice = prognostic_state(esm.sea_ice),
+            interfaces = prognostic_state(esm.interfaces))
 end
 
-function Oceananigans.restore_prognostic_state!(osm::EarthSystemModel, state)
-    restore_prognostic_state!(osm.clock, state.clock)
+function Oceananigans.restore_prognostic_state!(esm::EarthSystemModel, state)
+    restore_prognostic_state!(esm.clock, state.clock)
     # Backwards-compatible: older checkpoints may not have a `radiation` entry
     if hasproperty(state, :radiation)
-        restore_prognostic_state!(osm.radiation, state.radiation)
+        restore_prognostic_state!(esm.radiation, state.radiation)
     end
-    restore_prognostic_state!(osm.ocean, state.ocean)
-    restore_prognostic_state!(osm.atmosphere, state.atmosphere)
-    restore_prognostic_state!(osm.land, state.land)
-    restore_prognostic_state!(osm.sea_ice, state.sea_ice)
-    restore_prognostic_state!(osm.interfaces, state.interfaces)
-    return osm
+    restore_prognostic_state!(esm.ocean, state.ocean)
+    restore_prognostic_state!(esm.atmosphere, state.atmosphere)
+    restore_prognostic_state!(esm.land, state.land)
+    restore_prognostic_state!(esm.sea_ice, state.sea_ice)
+    restore_prognostic_state!(esm.interfaces, state.interfaces)
+    return esm
 end
 
-Oceananigans.restore_prognostic_state!(osm::EarthSystemModel, ::Nothing) = osm
+Oceananigans.restore_prognostic_state!(esm::EarthSystemModel, ::Nothing) = esm
