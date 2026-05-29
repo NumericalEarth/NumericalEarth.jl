@@ -110,6 +110,7 @@ end
 
 @inline correct_atmosphere_state!(::Nothing, atmosphere_exchanger, grid) = nothing
 @inline correct_atmosphere_state!(correction, ::Nothing, grid) = nothing
+@inline correct_atmosphere_state!(::Nothing, ::Nothing, grid) = nothing
 
 function correct_atmosphere_state!(correction::ElevationCorrection, atmosphere_exchanger, grid)
     arch  = architecture(grid)

@@ -48,7 +48,8 @@ end
                                    topology = (Periodic, Flat, Bounded))
 
             atmos = atmosphere_simulation(grid)
-            @test atmos isa Breeze.AtmosphereModel
+            @test atmos isa Simulation
+            @test atmos.model isa Breeze.AtmosphereModel
         end
 
         @testset "Construction on $A" begin

@@ -369,7 +369,7 @@ end
 
     # qˢ = β · qᵛ⁺(Tₛ), with β derived from the materialized hydrology state
     mkΨₛ(𝒮) = AirLandInterfaceState(0.3, 0.0, 0.0, 0.0, 0.0, Tₛ, 0.0, (saturation = 𝒮,), (;))
-    fh = FractionalHumidity(efficiency = cw)
+    fh = FractionalHumidity(efficiency = cs)
     @test compute_interface_humidity(fh, Tₛ, mkΨₛ(0.0),   Ψₐ, Ψᵢ, ℙₐ) ≈ 0.0
     @test compute_interface_humidity(fh, Tₛ, mkΨₛ(0.375), Ψₐ, Ψᵢ, ℙₐ) ≈ 0.5 * qᵛ⁺
     @test compute_interface_humidity(fh, Tₛ, mkΨₛ(1.0),   Ψₐ, Ψᵢ, ℙₐ) ≈ qᵛ⁺ # saturated
