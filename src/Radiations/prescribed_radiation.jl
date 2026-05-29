@@ -76,7 +76,7 @@ function PrescribedRadiation(downwelling_shortwave::FieldTimeSeries,
     FT    = eltype(downwelling_shortwave)
 
     if isnothing(clock)
-        clock = Clock{FT}(time = 0)
+        clock = Clock{Float64}(time = 0)
     end
 
     surface_properties = _filter_surface_properties(ocean = ocean_surface,
