@@ -32,6 +32,9 @@ Thermodynamics = "b60c26fb-14c3-4610-9d3e-2d17fe7ff00c"
 WorldOceanAtlasTools = "04f20302-f1b9-11e8-29d9-7d841cb0a64a"
 
 [sources]
+# Temporary: point at the ClimaSeaIce branch that fixes the SemiImplicitStress
+# checkpoint round-trip (CliMA/ClimaSeaIce.jl#151). Drop once 0.5.5 is tagged.
+ClimaSeaIce = {url = "https://github.com/glwagner/ClimaSeaIce.jl", rev = "glw/checkpoint-semi-implicit-stress"}
 NumericalEarth = {path = ".."}
 
 [compat]
@@ -40,7 +43,7 @@ Breeze = "0.5.2"
 CDSAPI = "2.2.2"
 CFTime = "0.1, 0.2"
 CUDA = "5.9.5"
-ClimaSeaIce = "0.5.4"
+ClimaSeaIce = "0.5.5"
 CondaPkg = "0.2.33"
 ConservativeRegridding = "0.2.3"
 CopernicusMarine = "0.1.1"
