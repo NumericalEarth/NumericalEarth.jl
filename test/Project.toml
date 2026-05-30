@@ -32,6 +32,7 @@ Thermodynamics = "b60c26fb-14c3-4610-9d3e-2d17fe7ff00c"
 WorldOceanAtlasTools = "04f20302-f1b9-11e8-29d9-7d841cb0a64a"
 
 [sources]
+ClimaSeaIce = {url = "https://github.com/CliMA/ClimaSeaIce.jl", rev = "ncc/checkpoint-reconcile-external-stresses"}
 NumericalEarth = {path = ".."}
 
 [compat]
