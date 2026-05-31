@@ -317,13 +317,19 @@ z_center = znodes(grid, Center())
 x_land   = xnodes(land_grid, Center())
 
 wlim  = maximum(abs, w_ts) / 2
-qˡlim = max(1e-6, maximum(qˡ_ts) / 2)
+
+# Cloud liquid water is sparse and the single peak value is much larger than a
+# typical cloudy cell, so scaling the colorbar to the global maximum washes the
+# clouds out. Anchor the upper bound to a high quantile of the *cloudy* (qˡ > 0)
+# values instead, so the bulk of the cloud field spans the colormap.
+qˡ_cloudy = filter(>(0), interior(qˡ_ts))
+qˡlim     = isempty(qˡ_cloudy) ? 1e-6 : quantile(qˡ_cloudy, 0.99)
 
 fig = Figure(size = (1500, 800), fontsize = 13)
 
-ax_w   = Axis(fig[1, 1], title = "w (m/s)",         ylabel = "z (m)", limits = (nothing, (0, 5e3)))
-ax_Tᵃᵗ = Axis(fig[1, 2], title = "Tᵃᵗ anomaly (K)",                  limits = (nothing, (0, 5e3)))
-ax_qˡ  = Axis(fig[1, 3], title = "qˡ (kg/kg)",                       limits = (nothing, (0, 5e3)))
+ax_w   = Axis(fig[1, 1][1, 1], title = "w (m/s)",         ylabel = "z (m)", limits = (nothing, (0, 5e3)))
+ax_Tᵃᵗ = Axis(fig[1, 2][1, 1], title = "Tᵃᵗ anomaly (K)",                   limits = (nothing, (0, 5e3)))
+ax_qˡ  = Axis(fig[1, 3][1, 1], title = "qˡ (kg/kg)",                        limits = (nothing, (0, 5e3)))
 
 ax_Tˡᵃ = Axis(fig[2, 1], title = "Skin temperature (K)", xlabel = "x (m)", ylabel = "Tˡᵃ (K)")
 ax_M   = Axis(fig[2, 2], title = "Soil water (kg/m²)",   xlabel = "x (m)", ylabel = "M (kg/m²)")
@@ -341,9 +347,13 @@ Tˡᵃ_n = @lift vec(interior(Tˡᵃ_ts[$n], :, 1, 1))
 M_n   = @lift vec(interior(M_ts[$n],   :, 1, 1))
 𝒮_n   = @lift vec(interior(𝒮_ts[$n],   :, 1, 1))
 
-heatmap!(ax_w,   x_atmos, z_face,   wn;    colormap = :balance, colorrange = (-wlim, wlim))
-heatmap!(ax_Tᵃᵗ, x_atmos, z_center, Tᵃᵗ_n; colormap = :balance, colorrange = (-2, 2))
-heatmap!(ax_qˡ,  x_atmos, z_center, qˡn;   colormap = :dense,   colorrange = (0, qˡlim))
+hm_w   = heatmap!(ax_w,   x_atmos, z_face,   wn;    colormap = :balance, colorrange = (-wlim, wlim))
+hm_Tᵃᵗ = heatmap!(ax_Tᵃᵗ, x_atmos, z_center, Tᵃᵗ_n; colormap = :balance, colorrange = (-2, 2))
+hm_qˡ  = heatmap!(ax_qˡ,  x_atmos, z_center, qˡn;   colormap = :dense,   colorrange = (0, qˡlim))
+
+Colorbar(fig[1, 1][1, 2], hm_w)
+Colorbar(fig[1, 2][1, 2], hm_Tᵃᵗ)
+Colorbar(fig[1, 3][1, 2], hm_qˡ)
 
 lines!(ax_Tˡᵃ, x_land, Tˡᵃ_n; color = :black, linewidth = 2)
 lines!(ax_M,   x_land, M_n;   color = :black, linewidth = 2)
