@@ -91,6 +91,8 @@ Environment variables (I/O & runtime):
                 with symlinks from FORCING_DIR; files are progressively
                 copied ahead of each simulated year.
                 Keeps ~50 GB per run (current + next year).
+  OUTPUT_DIR    Base directory for simulation output (default: ".").
+                A per-run subdirectory (OUTPUT_DIR/<run_name>_run) is created.
   NODE          Pin job to a specific node (default: 2904)
   THREADS       Number of Julia threads / CPUs per task (default: 4)
   PROFILE       Set to "true" for nsys profiling. Also:
@@ -410,7 +412,7 @@ sim = omip_simulation(:${CONFIG};
                       ${STAGING_KWARG}
                       ${BACKEND_KWARG}
                       ${FILE_SPLIT}
-                      output_dir = \"${OUTPUT_PATH}/${RUN_NAME}_run\",
+                      output_dir = \"${OUTPUT_DIR}/${RUN_NAME}_run\",
                       filename_prefix = \"${RUN_NAME}\")
 
 ${RUN_CMD}"
