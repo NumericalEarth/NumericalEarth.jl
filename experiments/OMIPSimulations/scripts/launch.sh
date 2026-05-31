@@ -154,22 +154,27 @@ case "$CONFIG" in
 run!(sim, pickup=:latest)"
         ;;
     orca)
-        DEFAULT_KSKEW=500;  DEFAULT_KSYMM=250; NZ=70;  DEFAULT_DT="45minutes"; DEFAULT_DZ_TOP="1.5"
+        DEFAULT_KSKEW=500;  DEFAULT_KSYMM=250; NZ=70;  DEFAULT_DT="20minutes"; DEFAULT_DZ_TOP="1.5"
         DEFAULT_BIHARMONIC="10days"; ARCH="GPU()"; GPUS_PER_NODE=1
         EXTRA_USING=""; FILE_SPLIT=""
-        RUN_CMD="sim.stop_time = 300 * 365days
+        RUN_CMD="sim.stop_time = 720day
 run!(sim; pickup = :latest)
+
+sim.stop_time = 300 * 365days
+sim.Δt = 30minutes
+
+run!(sim)
 "
         ;;
     tenthdegree)
-        DEFAULT_KSKEW=0;    DEFAULT_KSYMM=0;   NZ=100; DEFAULT_DT="2minutes";  DEFAULT_DZ_TOP="1.5"
+        DEFAULT_KSKEW=0;    DEFAULT_KSYMM=0;   NZ=100; DEFAULT_DT="6minutes";  DEFAULT_DZ_TOP="1.5"
         DEFAULT_BIHARMONIC="nothing"; ARCH="Distributed(GPU(), partition=Partition(1, 4))"; GPUS_PER_NODE=4
         EXTRA_USING="using Oceananigans.DistributedComputations"
         FILE_SPLIT="file_splitting_interval = 180days,"
-        RUN_CMD="sim.stop_time = 91days
+        RUN_CMD="sim.stop_time = 181days
 run!(sim)
 
-sim.Δt = 10minutes
+sim.Δt = 15minutes
 sim.stop_time = 300 * 365days
 run!(sim; pickup = true)"
         ;;
@@ -242,7 +247,7 @@ fi
 if [[ "${PARTITION}" == "default" ]]; then
     TIME="${TIME:-05:00:00}"
 else
-    TIME="${TIME:-10:00:00}"
+    TIME="${TIME:-120:00:00}"
 fi
 SBATCH_ARGS+=(--time="${TIME}")
 
@@ -314,6 +319,7 @@ NCAR="${NCAR:-false}"
 CORRECTED="${CORRECTED:-false}"
 SNOW="${SNOW:-false}"
 ICE_DYNAMICS="${ICE_DYNAMICS:-true}"
+OUTPUT_DIR="${OUTPUT_DIR:-.}"
 
 # ── Build optional kwargs strings ─────────────────────────────────────
 
@@ -404,7 +410,7 @@ sim = omip_simulation(:${CONFIG};
                       ${STAGING_KWARG}
                       ${BACKEND_KWARG}
                       ${FILE_SPLIT}
-                      output_dir = \"${RUN_NAME}_run\",
+                      output_dir = \"${OUTPUT_PATH}/${RUN_NAME}_run\",
                       filename_prefix = \"${RUN_NAME}\")
 
 ${RUN_CMD}"
