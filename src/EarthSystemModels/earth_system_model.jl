@@ -390,7 +390,7 @@ EarthSystemModel{CPU}(time = 0 seconds, iteration = 0)
 ├── radiation: Nothing
 ├── atmosphere: Nothing
 ├── land: Nothing
-├── sea_ice: SeaIceModel
+├── sea_ice: SeaIceModel{CPU, LatitudeLongitudeGrid}(time = 0 seconds, iteration = 0)
 ├── ocean: HydrostaticFreeSurfaceModel{CPU, LatitudeLongitudeGrid}(time = 0 seconds, iteration = 0)
 └── interfaces: ComponentInterfaces
 ```
