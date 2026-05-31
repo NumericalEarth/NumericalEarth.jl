@@ -115,10 +115,10 @@ Base.@propagate_inbounds get_land_freshwater_flux(i, j, flux) = flux[i, j, 1]
     inactive = inactive_node(i, j, kᴺ, grid, Center(), Center(), Center())
 
     @inbounds begin
-        𝒬ⁱⁿᵗ = sea_ice_ocean_fluxes.interface_heat[i, j, 1]
+        𝒬ⁱⁿ = sea_ice_ocean_fluxes.interface_heat[i, j, 1]
         Jˢio = sea_ice_ocean_fluxes.salt[i, j, 1]
         Jᵀao = ΣQao * ρᵒᶜ⁻¹ * cᵒᶜ⁻¹
-        Jᵀio = 𝒬ⁱⁿᵗ * ρᵒᶜ⁻¹ * cᵒᶜ⁻¹
+        Jᵀio = 𝒬ⁱⁿ * ρᵒᶜ⁻¹ * cᵒᶜ⁻¹
 
         # salinity flux > 0 extracts salinity (opposite of water vapor flux sign)
         Jˢao = - Sᵒᶜ * ΣFao
