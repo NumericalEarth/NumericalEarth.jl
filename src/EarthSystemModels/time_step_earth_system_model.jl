@@ -1,5 +1,5 @@
 using ClimaSeaIce: SeaIceThermodynamics
-using Oceananigans.TimeSteppers: maybe_prepare_first_time_step!, reconcile_state!
+using Oceananigans.TimeSteppers: maybe_prepare_first_time_step!
 
 using .InterfaceComputations: compute_atmosphere_ocean_fluxes!, compute_sea_ice_ocean_fluxes!
 
@@ -50,9 +50,6 @@ function Oceananigans.TimeSteppers.update_state!(coupled_model::EarthSystemModel
     interpolate_state!(exchanger.land,       grid, land,       coupled_model)
     interpolate_state!(exchanger.sea_ice,    grid, sea_ice,    coupled_model)
     interpolate_state!(exchanger.ocean,      grid, ocean,      coupled_model)
-
-    # Reconcile state that depends on exchanged component fields before computing fluxes.
-    !isnothing(sea_ice) && reconcile_state!(sea_ice.model)
 
     # Phase 2: compute interface turbulent fluxes
     compute_atmosphere_ocean_fluxes!(coupled_model)
