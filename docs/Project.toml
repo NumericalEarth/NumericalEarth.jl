@@ -25,9 +25,6 @@ SpeedyWeather = "9e226e20-d153-4fed-8a5b-493def4f21a9"
 Suppressor = "fd094767-a336-5f1f-9728-57cf17d0bbfb"
 
 [sources]
-# Temporary: point at the ClimaSeaIce branch that fixes the SemiImplicitStress
-# checkpoint round-trip (CliMA/ClimaSeaIce.jl#151). Drop once 0.5.5 is tagged.
-ClimaSeaIce = {url = "https://github.com/glwagner/ClimaSeaIce.jl", rev = "glw/checkpoint-semi-implicit-stress"}
 NumericalEarth = {path = ".."}
 
 [compat]

@@ -59,11 +59,6 @@ NumericalEarthSpeedyWeatherExt = ["SpeedyWeather", "ConservativeRegridding"]
 NumericalEarthVerosExt = ["PythonCall", "CondaPkg"]
 NumericalEarthWOAExt = "WorldOceanAtlasTools"
 
-[sources]
-# Temporary: point at the ClimaSeaIce branch that fixes the SemiImplicitStress
-# checkpoint round-trip (CliMA/ClimaSeaIce.jl#151). Drop once 0.5.5 is tagged.
-ClimaSeaIce = {url = "https://github.com/glwagner/ClimaSeaIce.jl", rev = "glw/checkpoint-semi-implicit-stress"}
-
 [compat]
 Accessors = "0.1.44"
 Adapt = "4"
