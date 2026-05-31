@@ -326,7 +326,8 @@ to `EarthSystemModel`.
 ```jldoctest
 using NumericalEarth, Oceananigans
 
-grid = LatitudeLongitudeGrid(size = (20, 20, 4),
+grid = LatitudeLongitudeGrid(GPU();
+                             size = (20, 20, 4),
                              z = (-100, 0),
                              latitude = (-80, 80),
                              longitude = (0, 360),
@@ -338,12 +339,12 @@ set!(ocean.model, T=20, S=35, u=0.01, v=-0.005)
 ocean = OceanOnlyModel(ocean)
 # output
 
-EarthSystemModel{CPU}(time = 0 seconds, iteration = 0)
+EarthSystemModel{GPU}(time = 0 seconds, iteration = 0)
 ├── radiation: Nothing
 ├── atmosphere: Nothing
 ├── land: Nothing
 ├── sea_ice: FreezingLimitedOceanTemperature{ClimaSeaIce.SeaIceThermodynamics.LinearLiquidus{Float64}}
-├── ocean: HydrostaticFreeSurfaceModel{CPU, LatitudeLongitudeGrid}(time = 0 seconds, iteration = 0)
+├── ocean: HydrostaticFreeSurfaceModel{CUDAGPU, LatitudeLongitudeGrid}(time = 0 seconds, iteration = 0)
 └── interfaces: ComponentInterfaces
 ```
 """
