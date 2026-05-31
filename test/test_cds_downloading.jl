@@ -172,6 +172,31 @@ start_date = DateTime(2005, 2, 16, 12)
         @test NumericalEarth.DataWrangling.default_inpainting(md) === nothing
     end
 
+    @testset "ERA5 single-level load-time unit conversions" begin
+        conversion_units = NumericalEarth.DataWrangling.conversion_units
+        convert_units    = NumericalEarth.DataWrangling.convert_units
+        InverseGravity   = NumericalEarth.DataWrangling.InverseGravity
+        MetersPerHour    = NumericalEarth.DataWrangling.MetersPerHour
+        Jm²ph            = NumericalEarth.DataWrangling.JoulesPerSquareMeterPerHour
+        ds = ERA5HourlySingleLevel()
+        era5m(name) = Metadatum(name; dataset=ds, date=start_date)
+
+        # Surface geopotential ÷ g → metres; accumulated SW/LW (J/m²) ÷ 3600 → W/m²;
+        # accumulated precip depth (m) × 1000/3600 → kg/m²/s. Others are unconverted.
+        @test conversion_units(era5m(:topography)) isa InverseGravity
+        @test conversion_units(era5m(:downwelling_shortwave_radiation)) isa Jm²ph
+        @test conversion_units(era5m(:downwelling_longwave_radiation))  isa Jm²ph
+        @test conversion_units(era5m(:total_precipitation)) isa MetersPerHour
+        @test conversion_units(era5m(:temperature)) === nothing
+
+        @test convert_units(3600, Jm²ph()) ≈ 1               # 3600 J/m²/hr → 1 W/m²
+        @test convert_units(3.6, MetersPerHour()) ≈ 1        # 3.6 m/hr → 1 kg/m²/s
+
+        # The regional hindcast prescribed components are first-class, top-level API.
+        @test ERA5PrescribedAtmosphere isa Function
+        @test ERA5PrescribedRadiation  isa Function
+    end
+
     @testset "ERA5 single-level metadata_prefix" begin
         ds = ERA5HourlySingleLevel()
         mp = NumericalEarth.DataWrangling.ERA5.metadata_prefix
@@ -522,10 +547,12 @@ end
         @test all(s -> s isa String, req["pressure_level"])
     end
 
-    @testset "BoundingBox region produces area in [N, W, S, E] order" begin
+    @testset "BoundingBox region: area in [N, W, S, E] order, padded by 2 native cells" begin
+        # The request fetches two native cells (2 × 0.25° = 0.5°) of margin so the
+        # downloaded file covers the center-bracketed native grid the data lands on.
         req = CDSExt.build_era5_request(:temperature, sl, dt; region=bbox)
         @test haskey(req, "area")
-        @test req["area"] == [50.0, -10.0, 40.0, 5.0]
+        @test req["area"] == [50.5, -10.5, 39.5, 5.5]
     end
 
     @testset "Column with Nearest interpolation: tight ε=1e-3 box" begin
