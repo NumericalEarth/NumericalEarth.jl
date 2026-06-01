@@ -80,6 +80,7 @@ export
     SlabLand,
     SlabEnergy,
     BucketHydrology,
+    WaterCoupledForceRestoreEnergy,
     VariablySaturatedBucketHydrology,
     VanGenuchtenRetention, VanGenuchtenConductivity,
     NoDeepLiquidFlux, FreeDrainageFlux, DarcyDeepLiquidFlux, LinearReservoirDrainage,

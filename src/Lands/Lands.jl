@@ -7,6 +7,7 @@ export AbstractLand,
        # Energy-balance closures
        SlabEnergy,
        ForceRestoreEnergy,
+       WaterCoupledForceRestoreEnergy,
        # Hydrology closures
        BucketHydrology, DryLand, SaturatedSurface,
        # Variably saturated hydrology + sub-closures
@@ -60,6 +61,7 @@ include("slab_land.jl")
 # `SlabEnergy` is the `τ → ∞` limit of `ForceRestoreEnergy` and lives in the
 # same file as a thin constructor.
 include("energy_balance/force_restore_energy.jl")
+include("energy_balance/water_coupled_force_restore_energy.jl")
 include("hydrology/bucket_hydrology.jl")
 include("hydrology/dry_land.jl")
 include("hydrology/saturated_surface.jl")
