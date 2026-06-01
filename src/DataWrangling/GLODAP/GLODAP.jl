@@ -85,7 +85,7 @@ DataWrangling.available_variables(::GLODAPClimatology) = GLODAP_variable_names
     glodap_z_interfaces_from_centers(depth_centers)
 
 Compute cell interfaces (negative z, bottom-first) from GLODAP standard
-depth centers (positive, surface-first). 
+depth centers (positive, surface-first).
 
 ** We use the assumption that pressure is dbar is close enough to depth in meters **
 """
