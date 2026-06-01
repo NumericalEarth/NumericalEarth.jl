@@ -7,18 +7,25 @@ export ERA5HourlySingleLevel, ERA5MonthlySingleLevel
 export ERA5HourlyPressureLevels, ERA5MonthlyPressureLevels, ERA5_all_pressure_levels, pressure_field, hPa
 export standard_atmosphere_z_interfaces, mean_geopotential_z_interfaces
 
+# Prescribed components
+export ERA5PrescribedAtmosphere, ERA5PrescribedRadiation
+
 using Dates: Dates, DateTime, Month, Hour
 using Downloads: Downloads
 using Oceananigans.Architectures: CPU
 using Oceananigans.BoundaryConditions: fill_halo_regions!
+using Oceananigans.DistributedComputations: Distributed, child_architecture
 using Oceananigans.Fields: Field, Center, set!
+using Oceananigans.OutputReaders: Cyclical, FieldTimeSeries
 using NCDatasets: NCDatasets
 using Printf: Printf, @sprintf
 using Scratch: Scratch, @get_scratch!
 using Statistics: Statistics, mean
 
-using ..DataWrangling: DataWrangling, Metadata, Metadatum, InverseGravity, metadata_path,
-                       native_grid, dataset_variable_name, available_variables, retrieve_data
+using ..DataWrangling: DataWrangling, Metadata, Metadatum, InverseGravity,
+                       MetersPerHour, JoulesPerSquareMeterPerHour, metadata_path,
+                       native_grid, dataset_variable_name, available_variables, retrieve_data,
+                       first_date, last_date
 using ...Grids: PressureLevelVerticalDiscretization
 
 download_ERA5_cache::String = ""
@@ -131,5 +138,7 @@ DataWrangling.inpainted_metadata_path(metadata::ERA5Metadatum) = joinpath(metada
 
 include("ERA5_single_levels.jl")
 include("ERA5_pressure_levels.jl")
+include("ERA5_prescribed_radiation.jl")
+include("ERA5_prescribed_atmosphere.jl")
 
 end # module ERA5

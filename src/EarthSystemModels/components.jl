@@ -16,7 +16,10 @@ const celsius_to_kelvin = 273.15
 ##### generic defaults
 #####
 
-exchange_grid(atmosphere, ocean, sea_ice) = ocean.model.grid
+# Default: build the exchange grid from the ocean. When the model has no
+# ocean / sea ice, fall back to the land grid (used by AtmosphereLandModel).
+exchange_grid(atmosphere, ocean, sea_ice, land=nothing) = ocean.model.grid
+exchange_grid(atmosphere, ::Nothing, ::Nothing, land) = land.grid
 
 #####
 ##### Functions extended by sea-ice and ocean models
@@ -54,12 +57,36 @@ boundary_layer_height(::Nothing) = 0
 ##### Functions extended by all component models
 #####
 
+"""
+    component_model(component)
+
+Return the bare component model from a wrapper. ESM components are sometimes
+passed as a bare model (e.g. `Breeze.AtmosphereModel`, `Breeze.RadiativeTransferModel`)
+and sometimes as a `Simulation` wrapping that model (e.g. `Simulation{<:Breeze.AtmosphereModel}`).
+Component-interface methods that need the underlying model — to reach for
+`.grid`, `.velocities`, boundary conditions, etc. — call `component_model(x)` so
+they can share one implementation between the wrapped and unwrapped forms. The
+default unwraps a `Simulation`; the identity fallback covers bare models.
+"""
+@inline component_model(sim::Simulation) = sim.model
+@inline component_model(component) = component
+
 function interpolate_state! end
 function update_net_fluxes! end
 
 # Fallbacks for a  generic component model
 update_net_fluxes!(coupled_model, component) = nothing
 interpolate_state!(exchanger, grid, component, coupled_model) = nothing
+
+# Fallback for radiative coupling when no radiation is configured.
+apply_air_land_radiative_fluxes!(::Any) = nothing
+
+#####
+##### Surface (skin) temperature diagnostic
+#####
+
+function surface_temperature end
+surface_temperature(::Any) = nothing
 
 #####
 ##### Clock type consistency across components
@@ -107,15 +134,10 @@ function matching_clock(old::Clock, clock)
                      stage = old.stage)
 end
 
-warn_clock_coercion(component, new_clock) =
-    @warn string(summary(component), " tracks time as ", typeof(component.clock.time),
-                 " but the EarthSystemModel clock uses ", typeof(new_clock.time),
-                 "; coercing the component clock to keep components synchronized.")
+warn_clock_coercion(component, new_clock) = @warn string(summary(component), " tracks time as ",  typeof(component.clock.time),
+                                                         " but the EarthSystemModel clock uses ", typeof(new_clock.time),
+                                                         "; coercing the component clock to keep components synchronized.")
 
-# Rebuild a component that stores an Oceananigans `Clock` in its `clock` field, giving it a clock with the
-# same time type as `clock`. Relies on the default field-order constructor, so it works for any component
-# whose type parameters are all inferable from its fields. Components with a type parameter that is not
-# field-inferable (e.g. a separate float-type parameter) extend `adopt_clock` directly and rebuild themselves.
 function reclock(component, clock)
     new_clock = matching_clock(component.clock, clock)
     isnothing(new_clock) && return component

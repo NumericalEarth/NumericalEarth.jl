@@ -22,12 +22,17 @@ restrict(::Nothing, interfaces, N) = interfaces, N
 restrict(::Nothing, interfaces::NTuple{2,Any}, N) = interfaces, N
 restrict(::Nothing, interfaces::AbstractVector, N) = interfaces, N
 
-# Snap bbox outward to native cell faces so restricted centers land on native centers
+# Snap so the native cell *centers* bracket the bbox: include the cell whose
+# center is at or below the lower edge and the one whose center is at or above the
+# upper edge. This keeps the bbox inside the center hull so it stays interpolatable
+# at its edges (downscaling clamps outside the hull). Pads by 0 or 1 cell depending
+# on where the edge falls within a native cell (an edge in a cell's first half — or
+# exactly on a face — needs the extra cell; an edge past the center does not).
 function restrict(bbox_interfaces, interfaces::NTuple{2,Any}, N)
     left, right = interfaces
     Δ = (right - left) / N
-    i⁻ = max(floor(Int, (bbox_interfaces[1] - left) / Δ), 0)
-    i⁺ = min(ceil( Int, (bbox_interfaces[2] - left) / Δ), N)
+    i⁻ = clamp(floor(Int, (bbox_interfaces[1] - left) / Δ - 1/2), 0, N)
+    i⁺ = clamp(ceil( Int, (bbox_interfaces[2] - left) / Δ + 1/2), 0, N)
     if i⁺ ≤ i⁻
         i⁺ = min(i⁻ + 1, N)
         i⁻ = max(i⁺ - 1, 0)
@@ -35,10 +40,14 @@ function restrict(bbox_interfaces, interfaces::NTuple{2,Any}, N)
     return (left + i⁻ * Δ, left + i⁺ * Δ), i⁺ - i⁻
 end
 
-# Stretched native grid: snap outward to the nearest native cell interfaces.
+# Stretched native grid: same center-bracketing on irregular interfaces.
 function restrict(bbox_interfaces, interfaces::AbstractVector, N)
-    i⁻ = max(searchsortedlast(interfaces,  bbox_interfaces[1]), 1)
-    i⁺ = min(searchsortedfirst(interfaces, bbox_interfaces[2]), length(interfaces))
+    lo, hi = bbox_interfaces
+    n = length(interfaces)
+    k  = clamp(searchsortedlast(interfaces,  lo), 1, n - 1)
+    i⁻ = (interfaces[k]   + interfaces[k+1]) / 2 ≤ lo ? k : max(k - 1, 1)
+    m  = clamp(searchsortedfirst(interfaces, hi), 2, n)
+    i⁺ = (interfaces[m-1] + interfaces[m])   / 2 ≥ hi ? m : min(m + 1, n)
     rN = max(i⁺ - i⁻, 1)
     return interfaces[i⁻:i⁺], rN
 end
@@ -59,14 +68,15 @@ restrict_longitude(::Nothing, interfaces::NTuple{2,Any}, N) = interfaces, N
 function restrict_longitude(bbox_interfaces, interfaces::NTuple{2,Any}, N)
     left, right = interfaces
     Δ = (right - left) / N
-    i⁻ = max(floor(Int, (bbox_interfaces[1] - left) / Δ), 0)
-    i⁺ = ceil(Int, (bbox_interfaces[2] - left) / Δ)
 
     # Longitude bounding boxes may cross the native periodic seam after being
     # mapped into the dataset's longitude convention, for example -110°..30°
     # on ERA5's 0°..360° grid becomes 249.875°..389.875°. Preserve that
-    # continuous span instead of clamping to the native upper face.
+    # continuous span (center-bracketed, see `restrict`) instead of clamping to
+    # the native upper face.
     if bbox_interfaces[1] ≥ left && bbox_interfaces[2] > right
+        i⁻ = max(floor(Int, (bbox_interfaces[1] - left) / Δ - 1/2), 0)
+        i⁺ = ceil(Int, (bbox_interfaces[2] - left) / Δ + 1/2)
         return (left + i⁻ * Δ, left + i⁺ * Δ), i⁺ - i⁻
     else
         return restrict(bbox_interfaces, interfaces, N)
@@ -277,6 +287,22 @@ function Oceananigans.Fields.Field(metadata::Metadatum, arch=CPU();
     return field
 end
 
+"""
+    Field(metadata::Metadatum, grid::AbstractGrid; kw...)
+
+Load `metadata` on its native grid and interpolate onto `grid` — the
+`Field` analog of `FieldTimeSeries(metadata, grid)`. Keyword arguments are
+forwarded to the native-grid `Field(metadata, arch; …)` (e.g. `inpainting`,
+`mask`, `halo`, `cache_inpainted_data`).
+"""
+function Oceananigans.Fields.Field(metadata::Metadatum, grid::AbstractGrid; kw...)
+    native = Field(metadata, architecture(grid); kw...)
+    LX, LY, LZ = location(metadata)
+    target = Field{LX, LY, LZ}(grid)
+    Oceananigans.Fields.interpolate!(target, native)
+    return target
+end
+
 function Oceananigans.Fields.set!(target_field::Field, metadata::Metadatum; kw...)
     grid = target_field.grid
     arch = child_architecture(grid)
@@ -364,6 +390,12 @@ end
 # Precipitation rate (assuming ρ_water = 1000 kg/m³, so 1 mm/hr = 1 kg/m²/hr = 1/3600 kg/m²/s)
 @inline convert_units(r::FT, ::MillimetersPerHour) where FT = r / convert(FT, 3600)
 
+# ERA5 total precipitation is an hourly accumulated depth (m); m/hr → kg/m²/s.
+@inline convert_units(p::FT, ::MetersPerHour) where FT = p * convert(FT, 1000) / convert(FT, 3600)
+
+# ERA5 ssrd/strd are energy accumulated over the previous hour (J/m²); ÷3600 s → mean W/m².
+@inline convert_units(ℐ::FT, ::JoulesPerSquareMeterPerHour) where FT = ℐ / convert(FT, 3600)
+
 # Molar units
 @inline convert_units(C::FT, ::Union{MolePerLiter, MolePerKilogram})           where FT = C * convert(FT, 1e3)
 @inline convert_units(C::FT, ::Union{MillimolePerLiter, MillimolePerKilogram}) where FT = C * convert(FT, 1)
@@ -425,15 +457,17 @@ end
 Build a `NamedTuple` of `Field`s — one per variable in `mset`, keyed by the
 verbose dataset variable name. Each value is `Field(mset[name], arch; kw...)`.
 
-Requires `mset` to hold scalar `dates` so each `mset[name]` is a `Metadatum`;
-for multi-date sets, use `FieldTimeSeries(::MetadataSet)`.
+Requires `mset` to hold scalar `dates` so each `mset[name]` is a `Metadatum`; for
+multi-date sets, build a `NamedTuple` of `FieldTimeSeries` per variable, e.g.
+`NamedTuple(name => FieldTimeSeries(mset[name], grid) for name in mset.names)`.
 """
 function Oceananigans.Fields.Field(mset::MetadataSet, arch=CPU(); kw...)
     dates = getfield(mset, :dates)
     if !(dates isa AnyDateTime)
         throw(ArgumentError(
             "Field(::MetadataSet) requires a scalar `date`, but this `MetadataSet` carries a multi-date axis. " *
-            "Use `FieldTimeSeries(mset)` for multi-date sets."))
+            "For multi-date sets build a NamedTuple of FieldTimeSeries per variable, e.g. " *
+            "`NamedTuple(name => FieldTimeSeries(mset[name], grid) for name in mset.names)`."))
     end
     names = getfield(mset, :names)
     return NamedTuple{names}(map(n -> Field(mset[n], arch; kw...), names))

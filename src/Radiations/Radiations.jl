@@ -30,7 +30,9 @@ using ..EarthSystemModels.InterfaceComputations: interface_kernel_parameters,
                                                  ComponentExchanger,
                                                  kernel_radiation_properties,
                                                  air_sea_interface_radiation_state,
-                                                 air_sea_ice_interface_radiation_state
+                                                 air_sea_ice_interface_radiation_state,
+                                                 air_land_interface_radiation_state,
+                                                 AirLandRadiationState
 
 include("surface_radiation_properties.jl")
 include("interface_radiation_flux.jl")
@@ -44,5 +46,6 @@ include("interpolate_radiation_state.jl")
 include("air_sea_interface_radiation_state.jl")
 include("apply_air_sea_radiative_fluxes.jl")
 include("apply_air_sea_ice_radiative_fluxes.jl")
+include("apply_air_land_radiative_fluxes.jl")
 
 end # module Radiations
