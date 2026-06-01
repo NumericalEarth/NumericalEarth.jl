@@ -152,7 +152,7 @@ function Downloads.download(metadata::Metadatum{<:GLODAPDataset})
     path = metadata_path(metadata)
     needs_download = !isfile(path)
 
-    if  needs_download 
+    if needs_download
         mktempdir() do tmpdir
             @info "tmpdir=" tmpdir
             archive = joinpath(tmpdir, "GLODAPv2_Mapped_Climatology.tar.gz")
