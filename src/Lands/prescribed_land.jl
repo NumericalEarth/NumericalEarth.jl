@@ -67,7 +67,7 @@ end
 # closure to build an atmosphere-land flux interface from, so the dispatch
 # returns nothing for this land type.
 EarthSystemModels.update_net_fluxes!(coupled_model, ::PrescribedLand) = nothing
-atmosphere_land_interface(grid, atmosphere, land::PrescribedLand; kw...) = nothing
+EarthSystemModels.InterfaceComputations.atmosphere_land_interface(grid, atmosphere, land::PrescribedLand; kw...) = nothing
 
 #####
 ##### Checkpointing
