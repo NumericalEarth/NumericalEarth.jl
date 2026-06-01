@@ -130,29 +130,70 @@ correction = ElevationCorrection(z_land, z_era5; lapse_rate = Γ_lapse)
 #
 # `SlabLand` is purely energy + hydrology; aerodynamic roughness is a property of
 # the atmosphere-land flux closure (set on the model below), not of the land.
-dry_heat_capacity = 0.1 * 1500 * 1480
+# We use the variably-saturated bucket and the water-mass-coupled
+# force-restore energy: the storage variable `Mˡᵃ` evolves under a signed
+# conservative budget (positive-upward fluxes; saturated overflow allowed via
+# the augmented liquid fraction), and the areal heat capacity
+# `C(Mˡᵃ) = C_dry + cˡ Mˡᵃ` is recomputed every step.
+
 slab_land = SlabLand(land_grid;
-                     energy = SlabEnergy(; dry_heat_capacity),
-                     hydrology = BucketHydrology(maximum_water_storage = 150))
+    hydrology = VariablySaturatedBucketHydrology(eltype(land_grid);
+        slab_depth = 1.0,
+        porosity = 0.4,
+        residual_liquid_fraction = 0.05,
+        specific_storage = 1e-3,
+        critical_saturation = 0.5,
+        retention_curve = VanGenuchtenRetention(α = 1.0, n = 2.0),
+        hydraulic_conductivity = VanGenuchtenConductivity(K_saturated = 1e-7, n = 2.0),
+        deep_liquid_flux = NoDeepLiquidFlux(),
+        runoff = InfiltrationCapacityRunoff(infiltration_capacity = 1e-3)),
+    energy = WaterCoupledForceRestoreEnergy(eltype(land_grid);
+        dry_heat_capacity = 0.1 * 1500 * 1480,
+        liquid_heat_capacity = 4186,
+        reference_temperature = 273.15,
+        deep_temperature = 280.0,
+        deep_time_scale = 12hours,
+        advect_deep_liquid_energy = false,
+        advect_surface_liquid_energy = false))
 
 # Cold-start the skin temperature from the elevation-corrected ERA5 T₂ₘ at the
 # first snapshot (interpolated onto the 1 km grid), mirroring the runtime lift.
+# Initial soil water = half saturation (= 200 kg m⁻² with ν = 0.4, D = 1 m).
 T₀ = Field{Center, Center, Nothing}(land_grid)
 Oceananigans.Fields.interpolate!(T₀, atmosphere.tracers.T[1])
-set!(slab_land; T = T₀ - Γ_lapse * Δz, M = 0.5 * 150)
+set!(slab_land; T = T₀ - Γ_lapse * Δz, M = 200.0)
 
 # ## Coupled model
 #
 # Roughness lengths live with the atmosphere-land flux closure: pass a
 # `SimilarityTheoryFluxes` with the desired land roughness (0.1 m momentum,
-# 0.01 m scalar here) via `atmosphere_land_fluxes`.
+# 0.01 m scalar here) via `atmosphere_land_fluxes`. The atmosphere-facing
+# specific humidity uses [`EvaporationFrontHumidity`](@ref): vapor diffuses
+# from a saturation-dependent dry-layer depth `δᵛ(𝒮)` and a Fickian balance
+# closes for `qⁱⁿ` — drying-induced evaporation suppression is automatic.
 
 atmosphere_land_fluxes = SimilarityTheoryFluxes(momentum_roughness_length    = 0.1,
                                                 temperature_roughness_length = 0.01,
                                                 water_vapor_roughness_length = 0.01)
 
+interface_specific_humidity = EvaporationFrontHumidity(;
+    evaporation_front_depth = StorageBasedEvaporationFrontDepth(
+        maximum_front_depth = 0.05,
+        critical_saturation = 0.5,
+        front_depth_exponent = 2),
+    vapor_exchange = DryLayerVaporPistonVelocity(
+        minimum_front_depth = 1e-4,
+        molecular_diffusivity = 2.5e-5,
+        tortuosity_model = :millington_quirk),
+    thermal_exchange_depth = 0.10,
+    porosity = 0.4)
+
+al_interface = atmosphere_land_interface(slab_land.grid, atmosphere, slab_land;
+                                         specific_humidity = interface_specific_humidity)
+
 model = AtmosphereLandModel(atmosphere, slab_land;
                             radiation, atmosphere_land_fluxes,
+                            atmosphere_land_interface = al_interface,
                             exchanger_correction = correction)
 
 simulation = Simulation(model; Δt = 5minutes, stop_time = (Nt - 1) * 3600)

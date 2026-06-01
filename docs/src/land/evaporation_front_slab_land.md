@@ -227,14 +227,16 @@ interface = EvaporationFrontHumidity(;
     porosity = 0.4)
 ```
 
-See the three examples for runnable demonstrations:
+See the two coupled examples for runnable demonstrations:
 
-* [Evaporation-front drydown](../literated/evaporation_front_drydown.md) —
-  standalone, prescribed `Jᵛ`, drydown curve over 60 days.
-* [Diurnal force-restore slab land](../literated/diurnal_force_restore_slab_land.md) —
-  wet-vs-dry diurnal temperature amplitude contrast.
-* [Breeze over evaporation-front slab land](../literated/breeze_over_evaporation_front_slab_land.md) —
-  fully coupled 2D Breeze + the new closures.
+* [Breeze over slab land](../literated/breeze_over_slab_land.md) — a 2D
+  Breeze LES with the wet-center / dry-edge `Mˡᵃ` configuration; the
+  wet/dry contrast in latent and sensible heat fluxes is driven by the
+  saturation-dependent dry-layer depth `δᵛ(𝒮)`.
+* [ERA5-forced slab land](../literated/era5_forced_slab_land.md) — a
+  ~1 km Greater Yellowstone simulation forced by ERA5 reanalysis; the
+  new conservative water budget and `M`-dependent heat capacity inherit
+  the elevation correction from the original example.
 
 ## 10. Out of scope for this PR
 

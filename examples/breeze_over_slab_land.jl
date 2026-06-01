@@ -77,34 +77,59 @@ land_grid = RectilinearGrid(arch;
                             halo = grid.Hx,
                             topology = (Periodic, Flat, Flat))
 
-hydrology = BucketHydrology(maximum_water_storage = 150)
-slab_land = SlabLand(land_grid; hydrology)
+# A conservative, variably-saturated bucket replaces the classic clamped
+# bucket. Storage is the augmented liquid fraction `ϑˡ = θˡ + Sₛ max(Π, 0)`,
+# so wetting beyond saturation (`Mˡᵃ > Mˡᵃ⁺ = ρˡ ν D`) is admitted and
+# corresponds to positive pressure head rather than a hard clamp. We use Van
+# Genuchten retention and conductivity, free drainage at the bottom (a small
+# bulk soil drainage), and an infiltration-capacity runoff closure for any
+# precipitation that exceeds the soil capacity.
+
+hydrology = VariablySaturatedBucketHydrology(eltype(land_grid);
+    slab_depth = 1.0,
+    porosity = 0.4,
+    residual_liquid_fraction = 0.05,
+    specific_storage = 1e-3,
+    critical_saturation = 0.5,
+    retention_curve = VanGenuchtenRetention(α = 1.0, n = 2.0),
+    hydraulic_conductivity = VanGenuchtenConductivity(K_saturated = 1e-7, n = 2.0),
+    deep_liquid_flux = NoDeepLiquidFlux(),
+    runoff = InfiltrationCapacityRunoff(infiltration_capacity = 1e-3))
+
+# Force-restore energy with a water-mass-dependent areal heat capacity
+# `C(Mˡᵃ) = C_dry + cˡ Mˡᵃ` and conservative `Tˡᵃ` update — adding or removing
+# water at the slab temperature leaves `Tˡᵃ` unchanged.
+
+energy = WaterCoupledForceRestoreEnergy(eltype(land_grid);
+    dry_heat_capacity = 1480 * 1500 * 0.10,
+    liquid_heat_capacity = 4186,
+    reference_temperature = 273.15,
+    deep_temperature = 290.0,
+    deep_time_scale = 12hours,
+    advect_deep_liquid_energy = false,
+    advect_surface_liquid_energy = false)
+
+slab_land = SlabLand(land_grid; hydrology, energy)
 
 # ### Surface saturation and the wet/dry contrast
 #
-# The bucket hydrology stores land water mass per area `Mˡᵃ` (kg m⁻²) with a
-# saturation cap `Mˡᵃ⁺` (`maximum_water_storage`, the soil-science "field
-# capacity"), and exposes the continuous surface saturation
-# `𝒮 = Mˡᵃ/Mˡᵃ⁺ ∈ [0, 1]`. The interface's `FractionalHumidity` model with a
-# Manabe `CriticalSaturation(𝒮ᶜ)` efficiency scales the saturation specific humidity
-# by the evaporation efficiency `β(𝒮) = min(𝒮/𝒮ᶜ, 1)`:
+# The hydrology exposes the diagnostic surface saturation
+# `𝒮 = clamp(θˡ/ν, 0, 1) ∈ [0, 1]`. The interface's
+# [`EvaporationFrontHumidity`](@ref) closure further below solves for the
+# atmosphere-facing specific humidity `qⁱⁿ` from a vapor-flux balance through
+# an unresolved evaporation front at saturation-dependent depth
+# `δᵛ(𝒮) = δᵛ_max[1 − min(𝒮/𝒮ᶜ, 1)]^η`. The wet center (`𝒮 ≥ 𝒮ᶜ`) has
+# `δᵛ = 0` and a saturated skin (`qⁱⁿ = qᵛ⁺`); the dry edges have
+# `δᵛ → δᵛ_max` and the small dry-layer piston velocity `wᵈ = Dᵛ_eff/δᵛ`
+# kills evaporation entirely. The contrast emerges from the dry-layer physics
+# rather than a prescribed evaporation efficiency `β(𝒮)`.
 #
-# ```math
-# q_s = β(𝒮) \, q^{v+}(T_s),  \qquad β(𝒮) = \min(𝒮/𝒮_c, 1).
-# ```
-#
-# The wet center (`𝒮 ≥ 𝒮ᶜ`) evaporates at full efficiency (`qₛ = qᵛ⁺`, strong
-# latent-heat flux), while the dry edges (`𝒮 = 0`) cannot evaporate (no latent
-# flux ⇒ all surface energy goes into sensible heating).
-#
-# We initialize `Mˡᵃ` as a Gaussian centered at the domain midpoint: wet in
-# the middle (`qₛ = qᵛ⁺`), bone-dry at the edges (`qₛ = 0`). The contrast
-# persists because the wet center retains water through the run while the dry
-# edges have no source (no precipitation is prescribed here).
+# We initialize `Mˡᵃ` as a Gaussian centered at the domain midpoint.
 
-T₀     = 295
-M_wet  = 0.95 * hydrology.maximum_water_storage
-σ_wet  = Lx / 8
+T₀ = 295
+Mˡᵃ⁺ = slab_land.hydrology.porosity * slab_land.hydrology.slab_depth * 1000   # ρˡ ν D
+M_wet = 0.95 * Mˡᵃ⁺
+σ_wet = Lx / 8
 
 M_init(x) = M_wet * exp(-(x/σ_wet)^2)
 
@@ -224,9 +249,22 @@ set_to_mean!(reference_state, atmos.model, rescale_densities = true)
 # `radiative_transfer_model.flux_divergence` and installs the Breeze-aware
 # `apply_air_land_radiative_fluxes!`.
 
-# The surface specific humidity uses a Manabe evaporation efficiency: saturated
-# above the critical saturation `𝒮ᶜ = 0.75`, scaling down linearly below it.
-interface_specific_humidity = FractionalHumidity(efficiency = CriticalSaturation(0.75))
+# The surface specific humidity is solved by [`EvaporationFrontHumidity`](@ref):
+# a Fickian vapor-flux balance between the saturated soil at depth `δᵛ` and
+# the atmosphere. The wet center has `δᵛ = 0` (saturated skin); the dry edges
+# have `δᵛ → δᵛ_max` and the dry-layer piston velocity `wᵈ = Dᵛ_eff/δᵛ`
+# limits evaporation self-consistently.
+interface_specific_humidity = EvaporationFrontHumidity(;
+    evaporation_front_depth = StorageBasedEvaporationFrontDepth(
+        maximum_front_depth = 0.05,
+        critical_saturation = 0.5,
+        front_depth_exponent = 2),
+    vapor_exchange = DryLayerVaporPistonVelocity(
+        minimum_front_depth = 1e-4,
+        molecular_diffusivity = 2.5e-5,
+        tortuosity_model = :millington_quirk),
+    thermal_exchange_depth = 0.10,
+    porosity = slab_land.hydrology.porosity)
 al_interface = atmosphere_land_interface(slab_land.grid, atmos, slab_land;
                                          specific_humidity = interface_specific_humidity)
 
