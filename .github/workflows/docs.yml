@@ -1,15 +1,15 @@
 name: Documentation
 
+# Path-based gating is implemented *inside* this workflow (via the `changes`
+# job and per-job `if:` conditions) rather than via a trigger-level `paths:`
+# filter. With a trigger-level filter, the entire workflow — including the
+# `docs-summary` aggregator — would not run on out-of-path PRs, leaving any
+# required status checks pending forever and blocking the merge button for
+# non-admins. By dropping `paths:` here, the workflow always starts and
+# `docs-summary` always reports a status to branch protection.
 on:
   pull_request:
-    paths: &paths
-      - ".github/workflows/docs.yml"
-      - "docs/**"
-      - "examples/**"
-      - "src/**"
-      - "Project.toml"
   push:
-    paths: *paths
     branches:
       - main
     tags: '*'
@@ -32,8 +32,31 @@ env:
   JULIA_CUDA_USE_COMPAT: false
 
 jobs:
+  # Detect whether any docs-relevant paths changed on this PR / push. The
+  # `build-docs` job gates itself on the `docs` output (`push` events always
+  # build).
+  changes:
+    name: Detect path changes
+    runs-on: ubuntu-latest
+    outputs:
+      docs: ${{ steps.filter.outputs.docs }}
+    steps:
+      - uses: actions/checkout@v6
+      - uses: dorny/paths-filter@v3
+        id: filter
+        with:
+          filters: |
+            docs:
+              - '.github/workflows/docs.yml'
+              - 'docs/**'
+              - 'examples/**'
+              - 'src/**'
+              - 'Project.toml'
+
   build-docs:
     name: Build documentation
+    needs: changes
+    if: ${{ github.event_name != 'pull_request' || needs.changes.outputs.docs == 'true' }}
     runs-on: [self-hosted, tartarus, gpu-3]
     timeout-minutes: 1440
     permissions:
@@ -120,3 +143,27 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           DOCUMENTER_KEY: ${{ secrets.NUMERICALEARTHDOCUMENTATION_DOCUMENTER_KEY }}
         run: julia --color=yes docs/deploy.jl
+
+  #####
+  ##### Aggregator: single required check for branch protection
+  #####
+  ##### `docs-summary` is intended to be the *only* Documentation status check
+  ##### listed as required in branch protection / rulesets. It runs
+  ##### unconditionally (`if: always()`) and passes iff every needed job is
+  ##### `success` or `skipped` — so PRs that legitimately skip jobs (e.g.
+  ##### out-of-path changes, or `deploy-docs` on a fork PR) can still merge,
+  ##### while real failures still block.
+
+  docs-summary:
+    name: docs-summary
+    if: always()
+    needs:
+      - changes
+      - build-docs
+      - deploy-docs
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check that all needed jobs passed or were skipped
+        run: |
+          echo '${{ toJSON(needs) }}'
+          jq -e 'to_entries | all(.value.result == "success" or .value.result == "skipped")' <<< '${{ toJSON(needs) }}'
