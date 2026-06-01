@@ -112,22 +112,20 @@ adopt_clock(component, clock) = component
 adopt_clock(::Nothing, clock) = nothing
 
 function adopt_clock(simulation::Simulation, clock)
-    TT = typeof(clock.time)
-    simulation_time = simulation.model.clock.time
-    same_time_type(simulation_time, TT) && return simulation
+    same_time_type(simulation.model.clock.time, clock.time) && return simulation
     throw(ArgumentError(string(
-        "the simulation clock tracks time as ", typeof(simulation_time),
-        " but the EarthSystemModel clock uses ", TT, ". A Simulation's clock type ",
+        "the simulation clock tracks time as ", typeof(simulation.model.clock.time),
+        " but the EarthSystemModel clock uses ", typeof(clock.time), ". A Simulation's clock type ",
         "follows its grid and cannot be coerced; rebuild the simulation on a grid ",
-        "with float type ", TT, ", or construct the EarthSystemModel with a matching `clock`.")))
+        "with float type ", typeof(clock.time), ", or construct the EarthSystemModel with a matching `clock`.")))
 end
 
-same_time_type(time, TT) = typeof(time) === TT
+same_time_type(::TT, ::ST) where {TT, ST} = ST === TT
 
 # Return a clock matching `clock`'s time type (or nothing if clocks are the same)
 function matching_clock(old::Clock, clock)
+    same_time_type(old.time, clock.time) && return nothing
     TT = typeof(clock.time)
-    typeof(old.time) === TT && return nothing
     return Clock{TT}(time = convert(TT, old.time),
                      last_Δt = old.last_Δt,
                      last_stage_Δt = old.last_stage_Δt,
