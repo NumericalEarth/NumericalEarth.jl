@@ -218,19 +218,22 @@ end
 @testset "restrict (BoundingBox grid construction helper)" begin
     restrict = NumericalEarth.DataWrangling.restrict
 
-    # Uniform: snap bbox outward to native faces (Δ = 0.25 throughout).
+    # Center-bracket the bbox (Δ = 0.25 throughout). Edges on cell centers
+    # (0.0 and 5.0 here) need no extra cell.
     grid_interfaces, rN = restrict((0.0, 5.0), (-0.125, 359.875), 1440)
     @test grid_interfaces == (-0.125, 5.125)
     @test rN == 21
 
-    # Already face-aligned — snap is a no-op.
+    # Face-aligned edges need one extra cell so a native center brackets them
+    # (the lower end clamps to the native domain start).
     grid_interfaces, rN = restrict((-0.125, 5.125), (-0.125, 359.875), 1440)
-    @test grid_interfaces == (-0.125, 5.125)
-    @test rN == 21
+    @test grid_interfaces == (-0.125, 5.375)
+    @test rN == 22
 
+    # 40.0 and 45.0 land on cell faces → one extra cell at each end.
     grid_interfaces, rN_off = restrict((40.0, 45.0), (-90.0, 90.0), 720)
-    @test grid_interfaces == (40.0, 45.0)
-    @test rN_off == 20
+    @test grid_interfaces == (39.75, 45.25)
+    @test rN_off == 22
 
     grid_interfaces, rN = restrict((0.0, 360.0), (0.0, 360.0), 1440)
     @test grid_interfaces == (0.0, 360.0)
@@ -247,14 +250,14 @@ end
     @test grid_interfaces[2] == 1.625
     @test rN == 7
 
-    # Stretched (Vector) interfaces.
+    # Stretched (Vector) interfaces, center-bracketed (cell centers at 0.5, 1.5, …).
     interfaces = collect(0.0:1.0:10.0)
     grid_interfaces, rN = restrict((2.0, 5.0), interfaces, 10)
-    @test grid_interfaces == [2.0, 3.0, 4.0, 5.0]
-    @test rN == 3
+    @test grid_interfaces == [1.0, 2.0, 3.0, 4.0, 5.0, 6.0]
+    @test rN == 5
     grid_interfaces, rN = restrict((2.3, 4.7), interfaces, 10)
-    @test grid_interfaces == [2.0, 3.0, 4.0, 5.0]
-    @test rN == 3
+    @test grid_interfaces == [1.0, 2.0, 3.0, 4.0, 5.0, 6.0]
+    @test rN == 5
     grid_interfaces, rN = restrict((-1.0, 1.5), interfaces, 10)
     @test first(grid_interfaces) == 0.0
     @test rN ≥ 1

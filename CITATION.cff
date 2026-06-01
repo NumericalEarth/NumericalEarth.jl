@@ -40,6 +40,10 @@ authors:
     family-names: Quon
     affiliation: Aeolus Labs
     orcid: 'https://orcid.org/0000-0002-8445-5840'
+  - given-names: Kai-Yuan
+    family-names: Cheng
+    affiliation: Aeolus Labs
+    orcid: 'https://orcid.org/0000-0002-4246-7659'
 identifiers:
   - type: doi
     value: 10.5281/zenodo.18665405

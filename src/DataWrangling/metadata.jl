@@ -764,6 +764,8 @@ struct MilliliterPerLiter end # Sometimes for disssolved_oxygen
 struct CentimetersPerSecond end
 struct Millibar end               # pressure in mbar (hPa) → Pa
 struct MillimetersPerHour end     # liquid precipitation rate in mm/hr → kg/m²/s
+struct MetersPerHour end          # liquid precipitation depth in m/hr → kg/m²/s (ERA5 total_precipitation)
+struct JoulesPerSquareMeterPerHour end # radiative energy accumulated over 1 hr, J/m² → mean flux W/m² (ERA5 ssrd/strd)
 
 # Fallback
 conversion_units(metadatum) = nothing
