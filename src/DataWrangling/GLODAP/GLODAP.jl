@@ -136,7 +136,8 @@ function DataWrangling.metadata_filename(::GLODAPClimatology, name, date, region
 end
 
 # augment the metadata file path
-DataWrangling.metadata_path(metadata::GLODAPMetadatum) = joinpath(metadata.dir, "GLODAPv2_Mapped_Climatologies", metadata.filename) 
+DataWrangling.metadata_path(metadata::GLODAPMetadatum) =
+    joinpath(metadata.dir, "GLODAPv2_Mapped_Climatologies", metadata.filename)
 
 DataWrangling.is_three_dimensional(::GLODAPMetadatum) = true
 
