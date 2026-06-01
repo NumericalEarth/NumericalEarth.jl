@@ -38,6 +38,22 @@ zeroed `CenterField`.
 initial_flux(::AbstractEnergyBalance, ::Symbol, grid) = CenterField(grid)
 
 """
+    diagnostic_variables(energy::AbstractEnergyBalance) -> Tuple{Vararg{Symbol}}
+
+Names of closure-owned diagnostic fields published into `SlabLand.diagnostics`.
+Default: no diagnostics.
+"""
+diagnostic_variables(::AbstractEnergyBalance) = ()
+
+"""
+    initial_diagnostic(energy::AbstractEnergyBalance, name::Symbol, grid)
+
+Build the initial diagnostic `Field` for diagnostic variable `name`. Defaults
+to a zeroed `CenterField`.
+"""
+initial_diagnostic(::AbstractEnergyBalance, ::Symbol, grid) = CenterField(grid)
+
+"""
     time_step!(energy, land, Δt[, time])
 
 Advance the energy-balance state by `Δt`. The closure reads the land's

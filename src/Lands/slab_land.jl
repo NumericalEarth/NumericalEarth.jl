@@ -52,6 +52,18 @@ The coupler writes into these every step; closures only read.
 build_flux_accumulators(grid, energy, hydrology) =
     build_closure_fields(flux_variables, initial_flux, grid, energy, hydrology)
 
+"""
+    build_diagnostic_accumulators(grid, energy, hydrology)
+
+Allocate the closure-owned diagnostics `NamedTuple` (e.g. `deep_liquid_flux`,
+`surface_runoff`, `water_storage_tendency`). One closure can write a key the
+other reads (hydrology publishes `water_storage_tendency`; energy reads it for
+the variable-heat-capacity correction). Closures that need no diagnostics
+declare an empty tuple via `diagnostic_variables(closure) = ()`.
+"""
+build_diagnostic_accumulators(grid, energy, hydrology) =
+    build_closure_fields(diagnostic_variables, initial_diagnostic, grid, energy, hydrology)
+
 #####
 ##### Top-level struct
 #####
@@ -76,25 +88,27 @@ roughness lengths are a property of the atmosphere-land flux closure
 - `energy`                : an `AbstractEnergyBalance` (parameters).
 - `hydrology`             : an `AbstractHydrology` (parameters).
 """
-struct SlabLand{FT, G, Clk, T, W, B, F, E, H} <: AbstractLand
+struct SlabLand{FT, G, Clk, T, W, B, F, D, E, H} <: AbstractLand
     grid          :: G
     clock         :: Clk
     temperature   :: T
     water_storage :: W
     saturation    :: B
     fluxes        :: F
+    diagnostics   :: D
     energy        :: E
     hydrology     :: H
 end
 
 # Inner-style typed constructor capturing FT.
 SlabLand{FT}(grid, clock, temperature, water_storage, saturation,
-             fluxes, energy, hydrology) where FT =
+             fluxes, diagnostics, energy, hydrology) where FT =
     SlabLand{FT, typeof(grid), typeof(clock),
              typeof(temperature), typeof(water_storage), typeof(saturation),
-             typeof(fluxes), typeof(energy), typeof(hydrology)}(
+             typeof(fluxes), typeof(diagnostics),
+             typeof(energy), typeof(hydrology)}(
                  grid, clock, temperature, water_storage, saturation,
-                 fluxes, energy, hydrology)
+                 fluxes, diagnostics, energy, hydrology)
 
 """
     SlabLand(grid;
@@ -113,13 +127,14 @@ function SlabLand(grid;
                   hydrology = BucketHydrology(eltype(grid)),
                   clock     = Clock{eltype(grid)}(time = 0))
 
-    temperature           = CenterField(grid)
-    water_storage         = CenterField(grid)
-    saturation = CenterField(grid)
-    fluxes                = build_flux_accumulators(grid, energy, hydrology)
-    FT                    = eltype(grid)
+    temperature   = CenterField(grid)
+    water_storage = CenterField(grid)
+    saturation    = CenterField(grid)
+    fluxes        = build_flux_accumulators(grid, energy, hydrology)
+    diagnostics   = build_diagnostic_accumulators(grid, energy, hydrology)
+    FT            = eltype(grid)
     return SlabLand{FT}(grid, clock, temperature, water_storage, saturation,
-                        fluxes, energy, hydrology)
+                        fluxes, diagnostics, energy, hydrology)
 end
 
 Base.eltype(::SlabLand{FT}) where FT = FT
@@ -139,8 +154,9 @@ function Base.show(io::IO, land::SlabLand)
               "├── hydrology:             ", summary(land.hydrology), '\n',
               "├── temperature:           ", summary(land.temperature), '\n',
               "├── water_storage:         ", summary(land.water_storage), '\n',
-              "├── saturation: ", summary(land.saturation), '\n',
-              "└── fluxes:                ", keys(land.fluxes))
+              "├── saturation:            ", summary(land.saturation), '\n',
+              "├── fluxes:                ", keys(land.fluxes), '\n',
+              "└── diagnostics:           ", keys(land.diagnostics))
 end
 
 #####

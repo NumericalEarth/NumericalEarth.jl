@@ -13,6 +13,7 @@ export AbstractLand,
        VanGenuchtenRetention, VanGenuchtenConductivity,
        NoDeepLiquidFlux, FreeDrainageFlux, DarcyDeepLiquidFlux, LinearReservoirDrainage,
        NoRunoff, InfiltrationCapacityRunoff,
+       VariablySaturatedBucketHydrology,
        # Atmosphere-facing accessors
        surface_temperature, surface_saturation
 
@@ -69,6 +70,7 @@ include("hydrology/saturated_surface.jl")
 include("hydrology/hydraulic_functions.jl")
 include("hydrology/deep_liquid_fluxes.jl")
 include("hydrology/runoff_models.jl")
+include("hydrology/variably_saturated_bucket_hydrology.jl")
 
 # Legacy PrescribedLand component (river / iceberg freshwater forcing).
 include("prescribed_land.jl")
