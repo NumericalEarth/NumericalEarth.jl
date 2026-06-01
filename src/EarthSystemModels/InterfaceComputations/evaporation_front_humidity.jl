@@ -142,7 +142,9 @@ saturated-skin BC when the slab is wet enough (`𝒮 ≥ 𝒮ᶜ`).
 * `porosity` — `ν`, soil porosity (matches the hydrology closure; needed
   for the Millington–Quirk tortuosity).
 * `water_activity` — `aᵉ` model (only [`UnitWaterActivity`](@ref) in this
-  PR; Kelvin-activity is a follow-up).
+  PR; a `MatricPotentialActivity` model — matric-suction-driven vapor-pressure
+  reduction via the Kelvin equation, only relevant at extreme dryness — is a
+  follow-up).
 """
 struct EvaporationFrontHumidity{EFD, VEX, FT, A, Φ}
     evaporation_front_depth :: EFD

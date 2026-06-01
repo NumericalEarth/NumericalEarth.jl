@@ -244,7 +244,9 @@ The following are deferred to follow-up PRs:
 
 * Snow, sea-ice, vegetation, multi-layer soil columns, river routing.
 * `Eˡᵃ` as a first-class state variable (needed for phase change).
-* `KelvinWaterActivity` (interface slot exists; implementation deferred).
+* `MatricPotentialActivity` — matric-suction-driven vapor-pressure reduction
+  via the Kelvin equation (interface slot exists; implementation deferred,
+  only relevant at extreme dryness).
 * Land-side `SkinTemperature(DiffusiveFlux)` solve so that
   `Tⁱⁿ ≠ Tˡᵃ` and the `Tᵉ` interpolation has bite.
 * `HydraulicInfiltrationRunoff`, `StorageOverflowRunoff`,
