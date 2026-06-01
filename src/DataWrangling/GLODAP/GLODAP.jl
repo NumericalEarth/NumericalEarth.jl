@@ -1,16 +1,13 @@
 module GLODAP
 
-using Adapt: Adapt
-using Dates: Dates, DateTime, Day, Month
-using Downloads: Downloads
-using Tar
-using CodecZlib
-
 export GLODAPClimatology
 
-using Dates: DateTime, month
+using Adapt: Adapt
+using Dates: month
+using Downloads: Downloads
 using NCDatasets: Dataset
 using Scratch: Scratch, @get_scratch!
+using Tar: Tar
 
 using ..DataWrangling: DataWrangling, Metadata, Metadatum, metadata_path,
                        reversed_vertical_axis, DownloadProgress
