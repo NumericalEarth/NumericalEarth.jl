@@ -132,6 +132,8 @@ end
 # Prescribed radiation has no internal state to update from net fluxes.
 EarthSystemModels.update_net_fluxes!(coupled_model, ::PrescribedRadiation) = nothing
 
+EarthSystemModels.adopt_clock(radiation::PrescribedRadiation, clock) = EarthSystemModels.reclock(radiation, clock)
+
 """
     allocate_interface_fluxes!(radiation, exchange_grid, surfaces)
 
