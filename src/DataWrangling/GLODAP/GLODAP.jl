@@ -148,11 +148,8 @@ end
 
 DataWrangling.inpainted_metadata_path(metadata::GLODAPMetadatum) = joinpath(metadata.dir, inpainted_metadata_filename(metadata))
 
-
 function Downloads.download(metadata::Metadatum{<:GLODAPDataset})
-
     path = metadata_path(metadata)
-
     needs_download = !isfile(path)
 
     if  needs_download 
