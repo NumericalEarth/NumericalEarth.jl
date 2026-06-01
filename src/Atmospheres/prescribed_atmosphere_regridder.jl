@@ -1,5 +1,5 @@
-function EarthSystemModels.InterfaceComputations.ComponentExchanger(atmosphere::PrescribedAtmosphere, grid)
-
+function EarthSystemModels.InterfaceComputations.ComponentExchanger(atmosphere::PrescribedAtmosphere, grid;
+                                                                    correction = nothing)
     regridder = atmosphere_regridder(atmosphere, grid)
 
     state = (; u   = Field{Center, Center, Nothing}(grid),
@@ -10,7 +10,8 @@ function EarthSystemModels.InterfaceComputations.ComponentExchanger(atmosphere::
                Jʳⁿ = Field{Center, Center, Nothing}(grid),
                Jˢⁿ = Field{Center, Center, Nothing}(grid))
 
-    return ComponentExchanger(state, regridder)
+    correction = EarthSystemModels.InterfaceComputations.materialize_correction(correction, grid, atmosphere)
+    return ComponentExchanger(state, regridder, correction)
 end
 
 # Note that Field location can also affect fractional index type.

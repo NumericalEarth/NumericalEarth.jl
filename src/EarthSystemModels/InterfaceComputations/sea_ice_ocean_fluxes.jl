@@ -20,9 +20,11 @@ This function computes:
 The interface heat flux formulation is determined by `coupled_model.interfaces.sea_ice_ocean_interface.flux_formulation`.
 """
 function compute_sea_ice_ocean_fluxes!(coupled_model)
+    interface = coupled_model.interfaces.sea_ice_ocean_interface
+    isnothing(interface) && return nothing
+
     ocean = coupled_model.ocean
     sea_ice = coupled_model.sea_ice
-    interface = coupled_model.interfaces.sea_ice_ocean_interface
     ocean_properties = coupled_model.interfaces.ocean_properties
 
     compute_sea_ice_ocean_fluxes!(interface, ocean, sea_ice, ocean_properties)
@@ -131,7 +133,7 @@ end
 
     Nz = size(grid, 3)
     𝒬ᶠʳᶻ = fluxes.frazil_heat
-    𝒬ⁱⁿᵗ = fluxes.interface_heat
+    𝒬ⁱⁿ = fluxes.interface_heat
     Jˢ = fluxes.salt
     τˣ = fluxes.x_momentum
     τʸ = fluxes.y_momentum
@@ -212,7 +214,7 @@ end
                                                    liquidus, ocean_properties, ℰ, u★)
 
     # Store interface values and heat flux
-    @inbounds 𝒬ⁱⁿᵗ[i, j, 1] = 𝒬ⁱᵒ
+    @inbounds 𝒬ⁱⁿ[i, j, 1] = 𝒬ⁱᵒ
     store_interface_state!(flux_formulation, T★, S★, i, j, Tᵦ, Sᵦ)
 
     # =============================================

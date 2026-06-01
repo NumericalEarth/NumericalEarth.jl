@@ -40,6 +40,12 @@ export
     OceanOnlyModel,
     OceanSeaIceModel,
     AtmosphereOceanModel,
+    AtmosphereLandModel,
+    SkinHumidity,
+    FractionalHumidity,
+    CriticalSaturation,
+    ElevationCorrection,
+    atmosphere_land_interface,
     SlabOcean,
     PrescribedOcean,
     AbstractPrescribedComponent,
@@ -50,6 +56,8 @@ export
     JRA55PrescribedRadiation,
     JRA55PrescribedAtmosphere,
     JRA55PrescribedLand,
+    ERA5PrescribedAtmosphere,
+    ERA5PrescribedRadiation,
     OSPapaPrescribedRadiation,
     OSPapaPrescribedAtmosphere,
     os_papa_prescribed_fluxes,
@@ -68,6 +76,11 @@ export
     ComponentInterfaces,
     SkinTemperature,
     BulkTemperature,
+    # Land (prognostic SlabLand + closures)
+    SlabLand,
+    SlabEnergy,
+    BucketHydrology,
+    surface_temperature,
     regrid_bathymetry,
     label_ocean_basins,
     Basin,
@@ -77,8 +90,8 @@ export
     southern_ocean_basin,
     pacific_ocean_basin,
     arctic_ocean_basin,
+    regrid_topography,
     Metadata, Metadatum, MetadataSet,
-    supported_datasets,
     BoundingBox,
     Column, Linear, Nearest,
     ECCOMetadatum,
@@ -90,6 +103,8 @@ export
     WOAClimatology, WOAAnnual, WOAMonthly,
     GLORYSDaily, GLORYSMonthly, GLORYSStatic,
     RepeatYearJRA55, MultiYearJRA55,
+    ERA5HourlySingleLevel, ERA5MonthlySingleLevel,
+    ERA5HourlyPressureLevels, ERA5MonthlyPressureLevels,
     OSPapaHourly,
     ORCA1, ORCA12,
     ORCAGrid,
@@ -111,7 +126,7 @@ export
 using DataDeps: DataDeps
 using Oceananigans: Oceananigans
 using Oceananigans.Architectures: CPU
-using Oceananigans.Grids: node
+using Oceananigans.Grids: _node
 using Oceananigans.ImmersedBoundaries: ImmersedBoundaryGrid, GridFittedBottom
 using Oceananigans.OutputReaders: GPUAdaptedFieldTimeSeries, FieldTimeSeries
 
@@ -127,7 +142,10 @@ const SKOFTS = SomeKindOfFieldTimeSeries
 @inline stateindex(a::SKOFTS, i, j, k, grid, time, args...) = @inbounds a[i, j, k, time]
 
 @inline function stateindex(a::Function, i, j, k, grid, time, (LX, LY, LZ), args...)
-    λ, φ, z = node(i, j, k, grid, LX(), LY(), LZ())
+    # `_node` always returns the full (λ, φ, z) triple — with placeholder
+    # values for Flat dimensions — whereas `node` drops Flat-dim entries
+    # and produces a shorter tuple that breaks the destructuring below.
+    λ, φ, z = _node(i, j, k, grid, LX(), LY(), LZ())
     return a(λ, φ, z, time)
 end
 
@@ -181,6 +199,7 @@ using .DataWrangling.ORCA
 using .DataWrangling.WOA
 using .DataWrangling.JRA55
 using .DataWrangling.OSPapa
+using .DataWrangling.ERA5
 
 using PrecompileTools: @setup_workload, @compile_workload
 

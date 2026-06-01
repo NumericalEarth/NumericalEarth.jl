@@ -86,20 +86,3 @@ function Oceananigans.OutputReaders.FieldTimeSeries(variable_name::Symbol;
     metadata = Metadata(variable_name; dataset, dates, dir)
     return FieldTimeSeries(metadata, architecture; kw...)
 end
-
-"""
-    FieldTimeSeries(mset::MetadataSet, arch_or_grid=CPU(); kw...)
-
-Build a `NamedTuple` of `FieldTimeSeries` — one per variable in `mset`, keyed
-by the verbose dataset variable name. Each value is
-`FieldTimeSeries(mset[name], arch_or_grid; kw...)`.
-"""
-function Oceananigans.OutputReaders.FieldTimeSeries(mset::MetadataSet, arch::AbstractArchitecture=CPU(); kw...)
-    names = getfield(mset, :names)
-    return NamedTuple{names}(map(n -> FieldTimeSeries(mset[n], arch; kw...), names))
-end
-
-function Oceananigans.OutputReaders.FieldTimeSeries(mset::MetadataSet, grid::AbstractGrid; kw...)
-    names = getfield(mset, :names)
-    return NamedTuple{names}(map(n -> FieldTimeSeries(mset[n], grid; kw...), names))
-end
