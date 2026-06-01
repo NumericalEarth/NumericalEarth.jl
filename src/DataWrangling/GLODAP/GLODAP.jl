@@ -37,10 +37,10 @@ GLODAP_variable_names = Dict(
 # this is necessary because the variable name in the dataset
 # does not necessarily correspond to what is in the filename
 # Note: We are excluding the following files for now:
-#       GLODAPv2.OmegaCinsitu.nc 
-#       GLODAPv2.pHtsinsitu.nc  
-#       GLODAPv2.OmegaAinsitu.nc 
-#       GLODAPv2.pHts25p0.nc  
+#       GLODAPv2.OmegaCinsitu.nc
+#       GLODAPv2.pHtsinsitu.nc
+#       GLODAPv2.OmegaAinsitu.nc
+#       GLODAPv2.pHts25p0.nc
 GLODAP_file_variable_names = Dict(
     :temperature       => "theta",
     :salinity          => "salinity",
