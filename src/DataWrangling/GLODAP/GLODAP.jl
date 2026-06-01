@@ -133,7 +133,6 @@ DataWrangling.metaprefix(::GLODAPMetadatum) = "GLODAPMetadatum"
 function DataWrangling.metadata_filename(::GLODAPClimatology, name, date, region)
     varname = GLODAP_file_variable_names[name]
     return "GLODAPv2.$(varname).nc"
-
 end
 
 # augment the metadata file path
