@@ -9,6 +9,10 @@ export AbstractLand,
        ForceRestoreEnergy,
        # Hydrology closures
        BucketHydrology, DryLand, SaturatedSurface,
+       # Variably saturated hydrology + sub-closures
+       VanGenuchtenRetention, VanGenuchtenConductivity,
+       NoDeepLiquidFlux, FreeDrainageFlux, DarcyDeepLiquidFlux, LinearReservoirDrainage,
+       NoRunoff, InfiltrationCapacityRunoff,
        # Atmosphere-facing accessors
        surface_temperature, surface_saturation
 
@@ -58,6 +62,13 @@ include("energy_balance/force_restore_energy.jl")
 include("hydrology/bucket_hydrology.jl")
 include("hydrology/dry_land.jl")
 include("hydrology/saturated_surface.jl")
+
+# Variably saturated bucket hydrology + sub-closures (deep liquid flux, runoff,
+# retention/conductivity). These are pure helpers and small types used by
+# `VariablySaturatedBucketHydrology`; they have no dependence on each other.
+include("hydrology/hydraulic_functions.jl")
+include("hydrology/deep_liquid_fluxes.jl")
+include("hydrology/runoff_models.jl")
 
 # Legacy PrescribedLand component (river / iceberg freshwater forcing).
 include("prescribed_land.jl")
