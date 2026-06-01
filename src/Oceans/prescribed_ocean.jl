@@ -36,7 +36,7 @@ Keyword Arguments
 - `sea_surface_salinity`: `FieldTimeSeries` for SSS.
 - `velocities`: `NamedTuple` of `FieldTimeSeries` for `(u, v)`.
 """
-struct PrescribedOcean{FT, G, Clk, SST, SSS, U, TI, Rho, Cp}
+mutable struct PrescribedOcean{FT, G, Clk, SST, SSS, U, TI, Rho, Cp} <: AbstractPrescribedComponent
     grid :: G
     clock :: Clk
     sea_surface_temperature :: SST
@@ -169,16 +169,6 @@ end
 # Prescribed ocean does not evolve, so net flux assembly is not needed.
 # The atmosphere still receives its fluxes from compute_atmosphere_ocean_fluxes!.
 EarthSystemModels.update_net_fluxes!(coupled_model, ocean::PrescribedOcean) = nothing
-
-# `FT` is not inferable from the fields, so rebuild explicitly to preserve it.
-function EarthSystemModels.adopt_clock(ocean::PrescribedOcean{FT}, clock) where FT
-    new_clock = EarthSystemModels.matching_clock(ocean.clock, clock)
-    isnothing(new_clock) && return ocean
-    EarthSystemModels.warn_clock_coercion(ocean, new_clock)
-    return PrescribedOcean{FT}(ocean.grid, new_clock,
-                               ocean.sea_surface_temperature, ocean.sea_surface_salinity,
-                               ocean.velocities, ocean.times, ocean.density, ocean.heat_capacity)
-end
 
 #####
 ##### Time stepping — update FieldTimeSeries backends, tick the clock

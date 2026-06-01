@@ -114,7 +114,7 @@ adopt_clock(::Nothing, clock) = nothing
 function adopt_clock(simulation::Simulation, clock)
     TT = typeof(clock.time)
     simulation_time = simulation.model.clock.time
-    typeof(simulation_time) === TT && return simulation
+    same_time_type(simulation_time, TT) && return simulation
     throw(ArgumentError(string(
         "the simulation clock tracks time as ", typeof(simulation_time),
         " but the EarthSystemModel clock uses ", TT, ". A Simulation's clock type ",
@@ -122,8 +122,9 @@ function adopt_clock(simulation::Simulation, clock)
         "with float type ", TT, ", or construct the EarthSystemModel with a matching `clock`.")))
 end
 
-# Return a clock matching `clock`'s time type, copied from `old`, or `nothing` when `old` already has that
-# time type. Components extending `adopt_clock` use this to decide whether — and to what — to coerce.
+same_time_type(time, TT) = typeof(time) === TT
+
+# Return a clock matching `clock`'s time type (or nothing if clocks are the same)
 function matching_clock(old::Clock, clock)
     TT = typeof(clock.time)
     typeof(old.time) === TT && return nothing
