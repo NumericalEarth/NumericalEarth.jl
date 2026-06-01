@@ -46,6 +46,9 @@ examples = [
     Example("Exploring ERA5 reanalysis data", "exploring_era5_reanalysis_data", true),
     Example("ERA5-forced slab land", "era5_forced_slab_land", true),
     Example("Breeze over slab land", "breeze_over_slab_land", true),
+    Example("Evaporation-front drydown", "evaporation_front_drydown", true),
+    Example("Diurnal force-restore slab land", "diurnal_force_restore_slab_land", true),
+    Example("Breeze over evaporation-front slab land", "breeze_over_evaporation_front_slab_land", true),
 ]
 
 # Developer examples from docs/src/developers/ directory
@@ -182,6 +185,10 @@ pages = [
         "Supported variables" => "Metadata/supported_variables.md",
     ],
     "Interface fluxes" => "interface_fluxes.md",
+
+    "Land" => [
+        "Evaporation-front slab land" => "land/evaporation_front_slab_land.md",
+    ],
 
     "Appendix" => [
         "Notation" => "appendix/notation.md",

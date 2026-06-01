@@ -130,6 +130,39 @@ denote the _component_ or _location_.
 | ``d`` | `surface_thickness` | surface thickness | Thickness of the dry surface layer through which soil vapor diffuses, for `SkinHumidity` (m) |
 | ``κ^q`` | `vapor_diffusivity` | soil vapor diffusivity | Vapor mass diffusivity in the surface soil layer, for `SkinHumidity` (kg m⁻¹ s⁻¹) |
 
+### Variably-saturated slab land
+
+Symbols introduced by [`VariablySaturatedBucketHydrology`](@ref),
+[`WaterCoupledForceRestoreEnergy`](@ref), and
+[`EvaporationFrontHumidity`](@ref). See the
+[evaporation-front slab-land page](../land/evaporation_front_slab_land.md)
+for an extended discussion.
+
+| Math | Code | Property | Description |
+|:----:|:----:|:---------|:------------|
+| ``D`` | `slab_depth` | slab depth | Vertical thickness of the integrated slab from ``z_s`` to ``z_b`` (m) |
+| ``\nu`` | `porosity` | soil porosity | Total pore fraction (–) |
+| ``\theta^l`` | – | pore liquid fraction | Physical liquid-filled pore fraction; surface physics consumes this (–) |
+| ``\vartheta^l`` | – | augmented liquid fraction | Conservative storage variable ``= \theta^l + S_s \max(\Pi, 0)``; allows ``M^{la} > M^{la+}`` saturated overflow (–) |
+| ``\theta^r`` | `residual_liquid_fraction` | residual liquid fraction | Minimum liquid-filled pore fraction (–) |
+| ``S_s`` | `specific_storage` | specific storage | Saturated pressure-storage coefficient (m⁻¹) |
+| ``\Pi`` | – | soil pressure head | Matric/pressure head; ``\Pi \le 0`` unsaturated, ``\Pi > 0`` saturated overflow (m) |
+| ``h`` | – | hydraulic head | ``h = z + \Pi`` (m) |
+| ``K`` | – | hydraulic conductivity | Darcy conductivity (m s⁻¹) |
+| ``\kappa^T`` | `thermal_conductivity` | thermal conductivity | Effective ground thermal conductivity (W m⁻¹ K⁻¹) |
+| ``\Lambda^{deep}`` | `deep_conductance` | deep energy conductance | Force-restore deep energy conductance (W m⁻² K⁻¹); see also ``τ^{\mathrm{deep}}`` |
+| ``T_r`` | `reference_temperature` | reference temperature | Reference temperature for internal energy ``e^l(T) = c^l (T - T_r)`` (K) |
+| ``T^{in}`` | – | interface temperature | Atmosphere-facing skin temperature, ``T^{in}`` (K) |
+| ``q^{in}`` | – | interface specific humidity | Atmosphere-facing skin humidity, ``q^{in}`` (kg kg⁻¹) |
+| ``T^e`` | – | evaporation-front temperature | Diagnostic temperature at the evaporation front (K) |
+| ``q^e`` | – | evaporation-front specific humidity | Vapor source humidity at the evaporation front (kg kg⁻¹) |
+| ``\delta^v`` | `evaporation_front_depth` | evaporation-front depth | Dry-layer thickness through which vapor diffuses, diagnostic of ``𝒮`` (m) |
+| ``\chi`` | – | blend coefficient | ``\chi = \mathrm{clip}(\delta^v/\ell^T, 0, 1)``; weights ``T^e`` between ``T^{in}`` and ``T^{la}`` (–) |
+| ``\eta`` | `front_depth_exponent` | front-depth exponent | Exponent in ``\delta^v = \delta^v_{max}[1 - \min(𝒮/𝒮^c, 1)]^\eta`` (–) |
+| ``\ell^T`` | `thermal_exchange_depth`, `exchange_depth` | thermal exchange depth | Depth over which ``\Lambda^{in} = \kappa^T/\ell^T`` couples ``T^{la}`` to ``T^{in}`` (m) |
+| ``D^v`` | `molecular_diffusivity` | vapor diffusivity in air | Molecular vapor diffusivity in air (m² s⁻¹) |
+| ``w^d`` | – | dry-layer piston velocity | ``w^d = D^v_{eff}/\max(\delta^v, \delta^v_{min})`` (m s⁻¹) |
+
 ## Ocean state variables
 
 | Math | Code | Property | Description |
