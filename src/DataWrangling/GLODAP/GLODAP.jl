@@ -164,7 +164,6 @@ function Downloads.download(metadata::Metadatum{<:GLODAPDataset})
             open(GzipDecompressorStream, archive) do io
                 Tar.extract(io, metadata.dir)
             end
-
         end
     end
 end
