@@ -198,7 +198,11 @@ end
         # Verify land exchanger is wired up
         @test isnothing(model_no_land.interfaces.exchanger.land)
         @test !isnothing(model_with_land.interfaces.exchanger.land)
-        @test model_with_land.land === land
+
+        # The model coerces every component clock to its own time type, so the stored
+        # land is a reclocked copy of `land` sharing all other fields by reference.
+        @test model_with_land.land.freshwater_flux === land.freshwater_flux
+        @test typeof(model_with_land.land.clock.time) === typeof(model_with_land.clock.time)
 
         # Test PrescribedLand display methods
         @test summary(land) isa String

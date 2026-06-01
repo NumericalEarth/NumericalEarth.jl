@@ -37,15 +37,19 @@ Keyword Arguments
 - `sea_surface_salinity`: `FieldTimeSeries` for SSS.
 - `velocities`: `NamedTuple` of `FieldTimeSeries` for `(u, v)`.
 """
-mutable struct PrescribedOcean{FT, G, Clk, SST, SSS, U, TI, Rho, Cp} <: AbstractPrescribedComponent
+mutable struct PrescribedOcean{FT, G, C, T, S, U, TI, R, HC} <: AbstractPrescribedComponent
     grid :: G
-    clock :: Clk
-    sea_surface_temperature :: SST
-    sea_surface_salinity :: SSS
+    clock :: C
+    sea_surface_temperature :: T
+    sea_surface_salinity :: S
     velocities :: U
     times :: TI
-    density :: Rho
-    heat_capacity :: Cp
+    density :: R
+    heat_capacity :: HC
+
+    function PrescribedOcean{FT}(grid::G, clock::C, sst::T, sss::S, u::U, times::TI, ρ::R, cp::HC) where {FT, G, C, T, S, U, TI, R, HC}
+        return new{FT, G, C, T, S, U, TI, R, HC}(grid, clock, sst, sss, u, times, ρ, cp)
+    end
 end
 
 function default_prescribed_sst(grid, times)
@@ -73,22 +77,15 @@ function PrescribedOcean(grid, times=[zero(grid)];
                          sea_surface_salinity = default_prescribed_sss(grid, times),
                          velocities = default_prescribed_velocities(grid, times))
 
-    return PrescribedOcean{FT}(grid, clock,
+    return PrescribedOcean{FT}(grid, 
+                               clock,
                                sea_surface_temperature,
                                sea_surface_salinity,
-                               velocities, times,
+                               velocities, 
+                               times,
                                convert(FT, density),
                                convert(FT, heat_capacity))
 end
-
-PrescribedOcean{FT}(grid, clock, sea_surface_temperature, sea_surface_salinity,
-                    velocities, times, density, heat_capacity) where FT =
-    PrescribedOcean{FT, typeof(grid), typeof(clock),
-                    typeof(sea_surface_temperature), typeof(sea_surface_salinity),
-                    typeof(velocities), typeof(times),
-                    typeof(density), typeof(heat_capacity)}(
-                    grid, clock, sea_surface_temperature, sea_surface_salinity,
-                    velocities, times, density, heat_capacity)
 
 function Oceananigans.set!(ocean::PrescribedOcean; T=nothing, S=nothing, u=nothing, v=nothing)
     !isnothing(T) && (parent(ocean.sea_surface_temperature) .= T)
@@ -121,6 +118,20 @@ Base.eltype(::PrescribedOcean{FT}) where FT = FT
 #####
 
 EarthSystemModels.is_sea_ice_component(::PrescribedOcean) = false
+
+function EarthSystemModels.adopt_clock(ocean::PrescribedOcean{FT}, clock) where FT
+    new_clock = EarthSystemModels.matching_clock(ocean.clock, clock)
+    isnothing(new_clock) && return ocean
+    EarthSystemModels.warn_clock_coercion(ocean, new_clock)
+    return PrescribedOcean{FT}(ocean.grid, 
+                               new_clock,
+                               ocean.sea_surface_temperature,
+                               ocean.sea_surface_salinity,
+                               ocean.velocities, 
+                               ocean.times,
+                               ocean.density, 
+                               ocean.heat_capacity)
+end
 
 EarthSystemModels.reference_density(ocean::PrescribedOcean) = ocean.density
 EarthSystemModels.heat_capacity(ocean::PrescribedOcean) = ocean.heat_capacity
