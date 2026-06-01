@@ -239,13 +239,16 @@ surface_saturation(land::SlabLand)           = saturation(land.hydrology, land)
     update_net_fluxes!(coupled_model, land::SlabLand)
 
 Consume atmosphere-land turbulent fluxes and populate the
-`net_energy_flux`, `precipitation`, and `evaporation` accumulators
+`net_energy_flux`, `precipitation`, `evaporation`, `vapor_flux`,
+`surface_energy_flux`, and `liquid_precipitation_flux` accumulators
 declared by the land closures.
 
-* `net_energy_flux` ← `-(𝒬ᵀ + 𝒬ᵛ)`, positive into the slab.
-* `precipitation`   ← atmospheric rainfall flux + condensation (dew),
-                      both positive into the slab.
-* `evaporation`     ← net upward vapor flux, positive out of the slab.
+* `net_energy_flux`            ← `-(𝒬ᵀ + 𝒬ᵛ)`, positive into the slab (legacy).
+* `surface_energy_flux`        ← `𝒬ᵀ + 𝒬ᵛ`, positive upward (new closures).
+* `precipitation`              ← rainfall + condensation, positive into the slab.
+* `evaporation`                ← positive part of upward vapor flux.
+* `vapor_flux`                 ← signed `Jᵛ`, positive upward (new closures).
+* `liquid_precipitation_flux`  ← rainfall as Pˡ, positive downward (new closures).
 
 Radiative contributions are added on top in
 `apply_air_land_radiative_fluxes!`.
@@ -259,11 +262,15 @@ function update_net_fluxes!(coupled_model, land::SlabLand)
     grid = land.grid
     arch = architecture(grid)
 
-    Q = hasproperty(fluxes, :net_energy_flux) ? fluxes.net_energy_flux : nothing
-    P = hasproperty(fluxes, :precipitation)   ? fluxes.precipitation   : nothing
-    E = hasproperty(fluxes, :evaporation)     ? fluxes.evaporation     : nothing
+    Q  = hasproperty(fluxes, :net_energy_flux)             ? fluxes.net_energy_flux             : nothing
+    P  = hasproperty(fluxes, :precipitation)               ? fluxes.precipitation               : nothing
+    E  = hasproperty(fluxes, :evaporation)                 ? fluxes.evaporation                 : nothing
+    Jv = hasproperty(fluxes, :vapor_flux)                  ? fluxes.vapor_flux                  : nothing
+    Es = hasproperty(fluxes, :surface_energy_flux)         ? fluxes.surface_energy_flux         : nothing
+    Pl = hasproperty(fluxes, :liquid_precipitation_flux)   ? fluxes.liquid_precipitation_flux   : nothing
 
-    (isnothing(Q) && isnothing(P) && isnothing(E)) && return nothing
+    (isnothing(Q) && isnothing(P) && isnothing(E) &&
+     isnothing(Jv) && isnothing(Es) && isnothing(Pl)) && return nothing
 
     # Prescribed atmospheric rainfall reaches the land via the atmosphere
     # exchanger (`Jʳⁿ` is allocated by `PrescribedAtmosphere`'s exchanger
@@ -272,14 +279,15 @@ function update_net_fluxes!(coupled_model, land::SlabLand)
     atmos_state = coupled_model.interfaces.exchanger.atmosphere.state
     Jʳⁿ = hasproperty(atmos_state, :Jʳⁿ) ? atmos_state.Jʳⁿ : ZeroField()
 
-    launch!(arch, grid, :xy, _assemble_slab_land_fluxes!, Q, P, E, interface_fluxes, Jʳⁿ)
+    launch!(arch, grid, :xy, _assemble_slab_land_fluxes!,
+            Q, P, E, Jv, Es, Pl, interface_fluxes, Jʳⁿ)
     return nothing
 end
 
 @inline _maybe_write!(::Nothing, i, j, value) = nothing
 @inline _maybe_write!(field, i, j, value) = @inbounds field[i, j, 1] = value
 
-@kernel function _assemble_slab_land_fluxes!(Q, P, E, interface_fluxes, Jʳⁿ)
+@kernel function _assemble_slab_land_fluxes!(Q, P, E, Jv, Es, Pl, interface_fluxes, Jʳⁿ)
     i, j = @index(Global, NTuple)
     @inbounds begin
         𝒬ᵀ = interface_fluxes.sensible_heat[i, j, 1]
@@ -287,9 +295,12 @@ end
         Jᵛ = interface_fluxes.water_vapor[i, j, 1]
         rain = Jʳⁿ[i, j, 1]
     end
-    _maybe_write!(Q, i, j, -(𝒬ᵀ + 𝒬ᵛ))
-    _maybe_write!(P, i, j, rain + max(zero(Jᵛ), -Jᵛ))
-    _maybe_write!(E, i, j, max(zero(Jᵛ),  Jᵛ))
+    _maybe_write!(Q,  i, j, -(𝒬ᵀ + 𝒬ᵛ))
+    _maybe_write!(Es, i, j,  (𝒬ᵀ + 𝒬ᵛ))
+    _maybe_write!(P,  i, j, rain + max(zero(Jᵛ), -Jᵛ))
+    _maybe_write!(E,  i, j, max(zero(Jᵛ),  Jᵛ))
+    _maybe_write!(Jv, i, j, Jᵛ)
+    _maybe_write!(Pl, i, j, rain)
 end
 
 interpolate_state!(exchanger, grid, ::SlabLand, coupled_model) = nothing
