@@ -8,6 +8,7 @@ using Downloads: Downloads
 using NCDatasets: Dataset
 using Scratch: Scratch, @get_scratch!
 using Tar: Tar
+using CodecZlib: GzipDecompressorStream
 
 using ..DataWrangling: DataWrangling, Metadata, Metadatum, metadata_path,
                        reversed_vertical_axis, DownloadProgress
@@ -152,9 +153,8 @@ function Downloads.download(metadata::Metadatum{<:GLODAPDataset})
 
     if needs_download
         mktempdir() do tmpdir
-            @info "tmpdir=" tmpdir
             archive = joinpath(tmpdir, "GLODAPv2_Mapped_Climatology.tar.gz")
-            @info "archive=" archive
+            @info "path to GLODAP file in tmp directory" archive
             if !isfile(archive)
                 Downloads.download(GLODAP_url, archive; progress=DownloadProgress())
             end
