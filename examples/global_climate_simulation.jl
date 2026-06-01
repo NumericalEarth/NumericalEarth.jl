@@ -7,7 +7,7 @@
 #
 # The atmosphere is initialized with the [jablonowski2006baroclinic](@citet) initial conditions,
 # which consist of a zonal wind centered at mid-latitudes and higher altitudes and a temperature
-# profile that is baroclinically unstable. The surface pressure is adjusted by orography for
+# profile that is baroclinically unstable. The surface pressure is adjusted by topography for
 # approximately globally constant mean-sea level pressure. The initial specific humidity is
 # calculated from temperature for a constant relative humidity everywhere.
 # The ocean and sea ice are initialized by ocean temperature, salinity, sea ice concentration,

@@ -12,6 +12,7 @@ export
     SimilarityTheoryFluxes,
     MomentumRoughnessLength,
     ScalarRoughnessLength,
+    LandRoughnessLength,
     CoefficientBasedFluxes,
     SimilarityScales,
     PolynomialNeutralDragCoefficient,
@@ -20,18 +21,27 @@ export
     SkinTemperature,
     BulkTemperature,
     atmosphere_ocean_stability_functions,
+    atmosphere_land_stability_functions,
     atmosphere_sea_ice_stability_functions,
     large_yeager_stability_functions,
     compute_atmosphere_ocean_fluxes!,
     compute_atmosphere_sea_ice_fluxes!,
+    compute_atmosphere_land_fluxes!,
     compute_sea_ice_ocean_fluxes!,
+    BulkHumidity,
+    SkinHumidity,
+    FractionalHumidity,
+    CriticalSaturation,
+    ElevationCorrection,
+    atmosphere_land_interface,
     # Sea ice-ocean heat flux formulations
     IceBathHeatFlux,
     ThreeEquationHeatFlux,
     # Friction velocity formulations
     MomentumBasedFrictionVelocity
 
-using ..EarthSystemModels: default_gravitational_acceleration,
+using ..EarthSystemModels: EarthSystemModels,
+                           default_gravitational_acceleration,
                            default_freshwater_density,
                            thermodynamics_parameters,
                            surface_layer_height,
@@ -61,6 +71,11 @@ end
 @inline function air_sea_ice_interface_radiation_state(::Nothing, ::Nothing, i, j, k, grid, time)
     z = zero(eltype(grid))
     return (σ = z, α = z, ϵ = z, ℐꜜˢʷ = z, ℐꜜˡʷ = z)
+end
+
+@inline function air_land_interface_radiation_state(::Nothing, ::Nothing, i, j, k, grid, time)
+    z = zero(eltype(grid))
+    return AirLandRadiationState(z, z, z, z, z)
 end
 
 #####
@@ -100,8 +115,10 @@ include("friction_velocity.jl")
 include("sea_ice_ocean_heat_flux_formulations.jl")
 
 include("component_interfaces.jl")
+include("atmosphere_state_correction.jl")
 include("atmosphere_ocean_fluxes.jl")
 include("atmosphere_sea_ice_fluxes.jl")
+include("atmosphere_land_fluxes.jl")
 include("sea_ice_ocean_fluxes.jl")
 
 end # module

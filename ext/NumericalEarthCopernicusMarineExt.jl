@@ -80,10 +80,25 @@ const COL  = NumericalEarth.DataWrangling.Column
 const LIN  = NumericalEarth.DataWrangling.Linear
 const NR   = NumericalEarth.DataWrangling.Nearest
 
-longitude_bounds_kw(bbox::BBOX) = longitude_bounds_kw(bbox.longitude)
-latitude_bounds_kw(bbox::BBOX) = latitude_bounds_kw(bbox.latitude)
+# The native grid is built by center-bracketing `restrict`, which can reach one
+# native cell past a boundary-aligned bbox edge. CopernicusMarine subsets to the
+# requested bounds, so fetch two native cells of margin to guarantee the
+# downloaded file always covers the center-bracketed native grid; otherwise
+# `set_region_data!` indexes one cell past the file at the domain edge. Over-
+# fetching is harmless: `restrict` + `BoundingBoxOffset` select the exact cells
+# from the larger file. Mirrors `era5_request_area` in the CDS extension.
+const GLORYS_native_resolution = 1/12  # degrees (the 0.083° GLORYS grid)
+
+longitude_bounds_kw(bbox::BBOX) = longitude_bounds_kw(pad_bounds(bbox.longitude))
+latitude_bounds_kw(bbox::BBOX) = latitude_bounds_kw(clamp_latitude(pad_bounds(bbox.latitude)))
 depth_bounds_kw(bbox::BBOX) = depth_bounds_kw(bbox.z)
 coordinates_selection_method(::BBOX) = "outside"
+
+pad_bounds(::Nothing) = nothing
+pad_bounds(bounds) = (bounds[1] - 2GLORYS_native_resolution, bounds[2] + 2GLORYS_native_resolution)
+
+clamp_latitude(::Nothing) = nothing
+clamp_latitude(bounds) = (max(bounds[1], -90), min(bounds[2], 90))
 
 # Column with Nearest interpolation: download the single nearest point
 longitude_bounds_kw(col::COL{<:Any, <:Any, <:Any, NR}) = (; minimum_longitude = col.longitude, maximum_longitude = col.longitude)
