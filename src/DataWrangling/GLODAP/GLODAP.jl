@@ -60,7 +60,7 @@ struct GLODAPClimatology <: GLODAPDataset
     product_year :: Int
 end
 
-GLODAPClimatology(;  product_year=2016) = GLODAPClimatology(product_year)
+GLODAPClimatology(; product_year=2016) = GLODAPClimatology(product_year)
 
 function DataWrangling.default_download_directory(::GLODAPClimatology)
     return mkpath(download_GLODAP_cache)
