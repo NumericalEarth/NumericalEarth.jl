@@ -13,7 +13,7 @@ using NCDatasets: Dataset
 using Scratch: Scratch, @get_scratch!
 
 using ..DataWrangling: DataWrangling, Metadata, Metadatum, metadata_path,
-                       dataset_variable_name, reversed_vertical_axis, DownloadProgress
+                       reversed_vertical_axis, DownloadProgress
 
 download_GLODAP_cache::String = ""
 function __init__()
