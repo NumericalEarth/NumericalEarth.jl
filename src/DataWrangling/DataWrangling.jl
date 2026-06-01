@@ -327,6 +327,7 @@ include("OSPapa/OSPapa.jl")
 include("IBCSO/IBCSO.jl")
 include("GEBCO/GEBCO.jl")
 include("IBCAO/IBCAO.jl")
+include("GLODAP/GLODAP.jl")
 
 using .ETOPO
 using .ECCO
@@ -340,6 +341,7 @@ using .OSPapa
 using .IBCSO
 using .GEBCO
 using .IBCAO
+using .GLODAP
 
 function dataset_modules()
     modules = Module[]

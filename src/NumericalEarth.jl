@@ -81,6 +81,7 @@ export
     EN4Monthly,
     WOAClimatology, WOAAnnual, WOAMonthly,
     GLORYSDaily, GLORYSMonthly, GLORYSStatic,
+    GLODAPClimatology,
     RepeatYearJRA55, MultiYearJRA55,
     OSPapaHourly,
     JRA55FieldTimeSeries,
@@ -155,7 +156,7 @@ include("Diagnostics/Diagnostics.jl")
 
 using .Grids
 using .DataWrangling
-using .DataWrangling: ETOPO, ECCO, GLORYS, EN4, WOA, JRA55, OSPapa
+using .DataWrangling: ETOPO, ECCO, GLORYS, EN4, WOA, JRA55, OSPapa, GLODAP
 using .Bathymetry
 using .InitialConditions
 using .EarthSystemModels
@@ -174,6 +175,7 @@ using .DataWrangling.ORCA
 using .DataWrangling.WOA
 using .DataWrangling.JRA55
 using .DataWrangling.OSPapa
+using .DataWrangling.GLODAP
 
 using PrecompileTools: @setup_workload, @compile_workload
 
