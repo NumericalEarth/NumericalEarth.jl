@@ -3,6 +3,7 @@ using Oceananigans.OutputReaders: update_field_time_series!, FieldTimeSeries
 using Oceananigans.TimeSteppers: Clock, tick!
 using Oceananigans.Units: Time
 using Oceananigans.Utils: prettysummary, prettytime
+using NumericalEarth.EarthSystemModels: AbstractPrescribedComponent
 
 """
     PrescribedOcean(grid, times=[zero(grid)];
