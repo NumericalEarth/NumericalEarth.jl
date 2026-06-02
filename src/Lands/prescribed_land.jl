@@ -69,6 +69,8 @@ end
 EarthSystemModels.update_net_fluxes!(coupled_model, ::PrescribedLand) = nothing
 EarthSystemModels.InterfaceComputations.atmosphere_land_interface(grid, atmosphere, land::PrescribedLand; kw...) = nothing
 
+EarthSystemModels.adopt_clock(land::PrescribedLand, clock) = EarthSystemModels.reclock(land, clock)
+
 #####
 ##### Checkpointing
 #####
