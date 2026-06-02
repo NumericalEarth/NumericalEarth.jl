@@ -184,7 +184,7 @@ pages = [
     "Interface fluxes" => "interface_fluxes.md",
 
     "Land" => [
-        "Evaporation-front slab land" => "land/evaporation_front_slab_land.md",
+        "SlabLand tutorial" => "land/evaporation_front_slab_land.md",
     ],
 
     "Appendix" => [
