@@ -176,7 +176,8 @@ Lₛ   = constants.ice.reference_latent_heat
 # Terrain workaround (TEMPORARY): we don't yet have terrain in the LAM, so we
 # map ERA5's (Φ − Φ₀)/g (height above local surface) → LAM z. This treats the
 # LAM z=0 as "at the surface" everywhere, equivalent to a sigma-z coordinate.
-# Φ₀ comes from ERA5's `:geopotential_height` on single levels.
+# Φ₀ comes from ERA5's `:geopotential` on single levels (surface geopotential
+# in m² s⁻², same units as the pressure-level `:geopotential` field).
 #
 # TODO: When terrain support lands, swap back to Φ/g.
 
@@ -299,7 +300,7 @@ qᵗ_fts = FieldTimeSeries{Center, Center, Center}(parent_grid, parent_times)
 # --- Time-invariant: surface geopotential Φ₀ ---
 # Φ₀ is terrain elevation × g; load once from snapshot 1.
 
-const Φ₀_arr = Array(interior(Field(Metadatum(:geopotential_height;
+const Φ₀_arr = Array(interior(Field(Metadatum(:geopotential;
                                               dataset=ds_sl,
                                               meta_common_snap1...))))[:, :, 1]
 
@@ -529,6 +530,11 @@ davies = (u  = Relaxation(rate = 1/τ_relax, mask = lateral_mask, target = paren
 # `RectilinearGrid` only) with `CompressibleDynamics`, whose prognostic-density
 # / diagnostic-pressure formulation needs no FFT-based Poisson solve and works
 # directly on the LAM `LatitudeLongitudeGrid`.
+#
+# `atmosphere_simulation` returns an Oceananigans `Simulation`; we drive the
+# child through `NestedSimulation` below, so unwrap the underlying
+# `AtmosphereModel`. The skeleton `CoupledRadiation` it carries is a no-op
+# (radiatively decoupled) until materialized inside an `EarthSystemModel`.
 
 p̄₀ = mean(interior(p₀))
 
@@ -536,7 +542,7 @@ model = atmosphere_simulation(grid;
                               thermodynamic_constants = constants,
                               dynamics            = CompressibleDynamics(; surface_pressure = p̄₀),
                               boundary_conditions = bcs,
-                              forcing             = davies)
+                              forcing             = davies).model
 
 # ## Set initial state from ERA5
 #
