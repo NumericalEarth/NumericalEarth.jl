@@ -72,7 +72,7 @@ end
             ℐꜜˡʷ_data = interior(ℐꜜˡʷ)
 
             # Longwave radiation should be positive (always some downwelling longwave)
-            @test all(ℐꜜˡʷ_data .>= 0)
+            @test all(ℐꜜˡʷ_data .≥ 0)
 
             # Typical ranges for radiation (sanity checks)
             # Shortwave: 0 to ~1400 W/m² (solar constant at TOA)

@@ -1,6 +1,6 @@
 module Oceans
 
-export ocean_simulation, SlabOcean
+export ocean_simulation, SlabOcean, PrescribedOcean
 
 using Adapt: Adapt, adapt
 using KernelAbstractions: @kernel, @index
@@ -11,12 +11,14 @@ using Oceananigans.BoundaryConditions: DefaultBoundaryCondition, DiscreteBoundar
 using Oceananigans.BuoyancyFormulations: SeawaterBuoyancy
 using Oceananigans.Coriolis: HydrostaticSphericalCoriolis
 using Oceananigans.Fields: Field, CenterField, set!, interior
+using Oceananigans.Forcings: MultipleForcings
 using Oceananigans.Grids: inactive_node, Face, Center, xspacings, yspacings, RectilinearGrid
 using Oceananigans.ImmersedBoundaries: ImmersedBoundaryGrid, ImmersedBoundaryCondition
 using Oceananigans.Models.HydrostaticFreeSurfaceModels: HydrostaticFreeSurfaceModel
 using Oceananigans.Models.HydrostaticFreeSurfaceModels.SplitExplicitFreeSurfaces: SplitExplicitFreeSurface
+using Oceananigans.Models.NonhydrostaticModels: NonhydrostaticModel
 using Oceananigans.OrthogonalSphericalShellGrids: OrthogonalSphericalShellGrids, TripolarGrid
-using Oceananigans.Operators: ℑxyᶠᶜᵃ, ℑxyᶜᶠᵃ
+using Oceananigans.Operators: ℑxyᶠᶜᵃ, ℑxyᶜᶠᵃ, ℑxᶠᵃᵃ, ℑyᵃᶠᵃ, ∂xᶠᶜᶜ, ∂yᶜᶠᶜ
 using Oceananigans.Simulations: Simulation
 using Oceananigans.TurbulenceClosures.TKEBasedVerticalDiffusivities: CATKEVerticalDiffusivity,
                                                                      CATKEMixingLength,
@@ -55,10 +57,12 @@ default_or_override(default::Default, possibly_alternative_default=default.value
 default_or_override(override, alternative_default=nothing) = override
 
 include("slab_ocean.jl")
+include("prescribed_ocean.jl")
 include("barotropic_potential_forcing.jl")
 include("radiative_forcing.jl")
 include("multiple_surface_fluxes.jl")
 include("ocean_simulation.jl")
+include("nonhydrostatic_ocean_simulation.jl")
 include("assemble_net_ocean_fluxes.jl")
 
 #####
@@ -67,31 +71,31 @@ include("assemble_net_ocean_fluxes.jl")
 
 # An ocean simulation is not a sea ice model — used to catch swapped positional
 # args in the convenience constructors (e.g. `OceanSeaIceModel`).
-EarthSystemModels.is_sea_ice_component(::Simulation{<:HydrostaticFreeSurfaceModel}) = false
+EarthSystemModels.is_sea_ice_component(::OceananigansModelSimulations) = false
 
-EarthSystemModels.ocean_salinity(ocean::Simulation{<:HydrostaticFreeSurfaceModel})    = ocean.model.tracers.S
-EarthSystemModels.ocean_temperature(ocean::Simulation{<:HydrostaticFreeSurfaceModel}) = ocean.model.tracers.T
+EarthSystemModels.ocean_salinity(ocean::OceananigansModelSimulations)    = ocean.model.tracers.S
+EarthSystemModels.ocean_temperature(ocean::OceananigansModelSimulations) = ocean.model.tracers.T
 
-function EarthSystemModels.ocean_surface_salinity(ocean::Simulation{<:HydrostaticFreeSurfaceModel})
+function EarthSystemModels.ocean_surface_salinity(ocean::OceananigansModelSimulations)
     kᴺ = size(ocean.model.grid, 3)
     return interior(ocean.model.tracers.S, :, :, kᴺ:kᴺ)
 end
 
-function EarthSystemModels.ocean_surface_temperature(ocean::Simulation{<:HydrostaticFreeSurfaceModel})
+function EarthSystemModels.ocean_surface_temperature(ocean::OceananigansModelSimulations)
     kᴺ = size(ocean.model.grid, 3)
     return interior(ocean.model.tracers.T, :, :, kᴺ:kᴺ)
 end
 
-function EarthSystemModels.ocean_surface_velocities(ocean::Simulation{<:HydrostaticFreeSurfaceModel})
+function EarthSystemModels.ocean_surface_velocities(ocean::OceananigansModelSimulations)
     kᴺ = size(ocean.model.grid, 3)
     return view(ocean.model.velocities.u, :, :, kᴺ), view(ocean.model.velocities.v, :, :, kᴺ)
 end
 
 # When using an Oceananigans simulation, we assume that the exchange grid is the ocean grid
 # We need, however, to interpolate the surface pressure to the ocean grid
-EarthSystemModels.interpolate_state!(exchanger, grid, ::Simulation{<:HydrostaticFreeSurfaceModel}, coupled_model) = nothing
+EarthSystemModels.interpolate_state!(exchanger, grid, ::OceananigansModelSimulations, coupled_model) = nothing
 
-function EarthSystemModels.InterfaceComputations.ComponentExchanger(ocean::Simulation{<:HydrostaticFreeSurfaceModel}, grid)
+function EarthSystemModels.InterfaceComputations.ComponentExchanger(ocean::OceananigansModelSimulations, grid)
     ocean_grid = ocean.model.grid
 
     if ocean_grid == grid
@@ -113,7 +117,7 @@ end
 @inline net_flux(bc::MultipleFluxes) = bc.flux_field
 @inline net_flux(bc::DiscreteBoundaryFunction) = net_flux(bc.func)
 
-function EarthSystemModels.InterfaceComputations.net_fluxes(ocean::Simulation{<:HydrostaticFreeSurfaceModel})
+function EarthSystemModels.InterfaceComputations.net_fluxes(ocean::OceananigansModelSimulations)
     # TODO: Generalize this to work with any ocean model
     τˣ = net_flux(ocean.model.velocities.u.boundary_conditions.top.condition)
     τʸ = net_flux(ocean.model.velocities.v.boundary_conditions.top.condition)

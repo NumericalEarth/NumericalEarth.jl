@@ -38,9 +38,9 @@ using Oceananigans.OrthogonalSphericalShellGrids
                             z = (-5000, 0))
 
         bottom_height = regrid_bathymetry(grid;
-                                        minimum_depth = 10,
-                                        interpolation_passes = 5,
-                                        major_basins = 1)
+                                          minimum_depth = 10,
+                                          interpolation_passes = 5,
+                                          major_basins = 1)
 
         grid = ImmersedBoundaryGrid(grid, GridFittedBottom(bottom_height); active_cells_map=true)
 
@@ -71,7 +71,7 @@ using Oceananigans.OrthogonalSphericalShellGrids
 
             # Verify land exchanger is present
             @test !isnothing(coupled_model.interfaces.exchanger.land)
-            @test coupled_model.land === land
+            @test coupled_model.land.freshwater_flux === land.freshwater_flux
 
             time_step!(coupled_model, 1)
             true

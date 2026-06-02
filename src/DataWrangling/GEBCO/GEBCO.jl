@@ -10,14 +10,6 @@ using ZipFile: ZipFile
 
 using ..DataWrangling: DataWrangling, DownloadProgress, Metadatum, metadata_path, AbstractStaticBathymetry
 
-import ..DataWrangling:
-    metadata_filename,
-    default_download_directory,
-    dataset_variable_name,
-    longitude_interfaces,
-    latitude_interfaces,
-    reversed_vertical_axis
-
 download_GEBCO_cache::String = ""
 function __init__()
     global download_GEBCO_cache = @get_scratch!("GEBCO")
@@ -42,12 +34,12 @@ Data source: https://www.gebco.net/data_and_products/gridded_bathymetry_data/
 """
 struct GEBCO2024 <: AbstractStaticBathymetry end
 
-default_download_directory(::GEBCO2024) = download_GEBCO_cache
-reversed_vertical_axis(::GEBCO2024) = false
+DataWrangling.default_download_directory(::GEBCO2024) = download_GEBCO_cache
+DataWrangling.reversed_vertical_axis(::GEBCO2024) = false
 
 # GEBCO covers the entire globe
-longitude_interfaces(::GEBCO2024) = (-180, 180)
-latitude_interfaces(::GEBCO2024) = (-90, 90)
+DataWrangling.longitude_interfaces(::GEBCO2024) = (-180, 180)
+DataWrangling.latitude_interfaces(::GEBCO2024) = (-90, 90)
 
 # Grid size for 15 arc-second resolution
 # 360° / (15/3600)° = 86400 points in longitude
@@ -56,7 +48,7 @@ Base.size(::GEBCO2024) = (86400, 43200, 1)
 
 const GEBCOMetadatum = Metadatum{<:GEBCO2024}
 
-dataset_variable_name(data::GEBCOMetadatum) = GEBCO_bathymetry_variable_names[data.name]
+DataWrangling.dataset_variable_name(data::GEBCOMetadatum) = GEBCO_bathymetry_variable_names[data.name]
 
 # GEBCO 2024 download URL from BODC
 # Note: This is a large file (~8 GB zipped, ~22 GB unzipped)
@@ -64,7 +56,8 @@ const GEBCO_zip_url = "https://www.bodc.ac.uk/data/open_download/gebco/gebco_202
 
 # The expected NetCDF filename inside the ZIP
 const GEBCO_nc_filename = "GEBCO_2024.nc"
-metadata_filename(::GEBCO2024, name, date, bounding_box) = GEBCO_nc_filename
+
+DataWrangling.metadata_filename(::GEBCO2024, name, date, bounding_box) = GEBCO_nc_filename
 
 function Downloads.download(metadatum::GEBCOMetadatum)
     filepath = metadata_path(metadatum)

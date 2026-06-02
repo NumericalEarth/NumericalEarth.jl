@@ -1,10 +1,9 @@
 # Metadata
 
 [`Metadata`](@ref) is an abstraction that _represents_ data, but does not embody it.
-Unlike [`Oceananigans.Field`](https://clima.github.io/OceananigansDocumentation/stable/appendix/library/#Oceananigans.Fields.Field-Union{Tuple{Oceananigans.Grids.AbstractGrid},%20Tuple{LZ},%20Tuple{LY},%20Tuple{LX},%20Tuple{Oceananigans.Grids.AbstractGrid,%20DataType}}%20where%20{LX,%20LY,%20LZ}),
-which points to an array occupying space in memory,
-`Metadata` only contains information about where files are stored, their origin, the grid
-they live on, and the date(s) they correspond to (if any).
+Unlike [`Oceananigans.Field`](https://clima.github.io/OceananigansDocumentation/stable/appendix/library#Fields),
+which points to an array occupying space in memory, `Metadata` only contains information about
+where files are stored, their origin, the grid they live on, and the date(s) they correspond to (if any).
 
 ```@docs
 Metadata
@@ -67,7 +66,7 @@ The key ingredients stored in a [`Metadata`](@ref) or [`Metadatum`](@ref) object
 - an optional `region` describing the spatial extent — either a
   [`BoundingBox`](@ref NumericalEarth.DataWrangling.BoundingBox) for a rectangular sub-domain,
   a [`Column`](@ref NumericalEarth.DataWrangling.Column) for a single horizontal location, or
-  `nothing` for the full global domain (see [Regions, locations, and FieldTimeSeries](@ref));
+  `nothing` for the full global domain;
 - the on-disk `dir`ectory where the dataset files are cached.
 
 This bookkeeping lets downstream utilities (for example `set!` or `FieldTimeSeries`) request exactly the
@@ -133,12 +132,12 @@ set!(sea_ice.model, mset)   # picks up :sea_ice_thickness, :sea_ice_concentratio
 Variables absent from `variable_glossary` are silently skipped (lets one set partially drive each
 component without manual filtering).
 
-### Building `Field`s and `FieldTimeSeries` in bulk
+### Building `Field`s in bulk
 
-`Field(mset, arch=CPU(); kw...)` and `FieldTimeSeries(mset, arch_or_grid; kw...)` build a
-`NamedTuple` keyed by the variable names, with each value materialized from the underlying
-per-variable `Metadata`. `Field` requires a scalar `date` (one snapshot per variable); for
-multi-date sets, use `FieldTimeSeries`:
+`Field(mset, arch=CPU(); kw...)` builds a `NamedTuple` keyed by the variable names, with each
+value materialized from the underlying per-variable `Metadata`. It requires a scalar `date`
+(one snapshot per variable). For a multi-date set, build a `NamedTuple` of `FieldTimeSeries`
+explicitly — one per variable — with a comprehension over `mset.names`:
 
 ```@example metadata
 fields = Field(mset)              # (; temperature = Field, salinity = Field)
@@ -146,7 +145,7 @@ fields.temperature
 ```
 
 ```@example metadata
-fts = FieldTimeSeries(mset_ts)    # NamedTuple of FieldTimeSeries, one per variable
+fts = NamedTuple(name => FieldTimeSeries(mset_ts[name]) for name in mset_ts.names)
 fts.temperature[1]                # first temperature snapshot, as a Field
 ```
 
@@ -162,18 +161,33 @@ NumericalEarth currently ships connectors for the following data products:
 
 | Dataset            | Supported Variables                                      | Documentation Link                                                                                 |
 |--------------------|-----------------------------------------------------------|-----------------------------------------------------------------------------------------------------|
-| **Bathymetry**     |                                                           |                                                                                                     |
+| **Bathymetry and static grids** |                                            |                                                                                                     |
 | `ETOPO2022`        | [Supported variables](@ref dataset-etopo2022-vars)        | [NOAA ETOPO 2022 overview](https://www.ncei.noaa.gov/products/etopo-global-relief-model)           |
-| `GEBCO2024`        | [Supported variables](@ref dataset-gebco2024-vars)        | [GEBCO 2024 overview](https://www.gebco.net/data_and_products/gridded_bathymetry_data/)             |
-| `IBCSOv2`          | [Supported variables](@ref dataset-ibcsov2-vars)          | [IBCSO overview](https://ibcso.org/ibcso-2024-annual-release/)                                      |
-| `IBCAOv5`          | [Supported variables](@ref dataset-ibcaov5-vars)          | [IBCAO overview](https://www.gebco.net/data_and_products/gridded_bathymetry_data/arctic_ocean/)     |
-| **Ocean reanalysis** |                                                         |                                                                                                     |
+| `GEBCO2024`        | [Supported variables](@ref dataset-gebco2024-vars)        | [GEBCO 2024 overview](https://www.gebco.net/data-products/gridded-bathymetry-data)                 |
+| `IBCSOv2`          | [Supported variables](@ref dataset-ibcsov2-vars)          | [IBCSO overview](https://ibcso.org/ibcso-2024-annual-release/)                                     |
+| `IBCAOv5`          | [Supported variables](@ref dataset-ibcaov5-vars)          | [IBCAO overview](https://www.gebco.net/data-products/gridded-bathymetry-data/arctic-ocean)         |
+| `ORCA1`            | `:bottom_height`, `:mesh_mask`                            | [ORCA1 mesh and bathymetry (Zenodo)](https://zenodo.org/records/4436658)                           |
+| `ORCA12`           | `:bottom_height`, `:mesh_mask`                            | [ORCA12 mesh and bathymetry (Zenodo)](https://zenodo.org/records/15495870)                         |
+| `GLORYSStatic`     | `:depth`                                                  | [Copernicus GLORYS static product](https://data.marine.copernicus.eu/product/GLOBAL_MULTIYEAR_PHY_001_030/description) |
+| **Ocean reanalysis and climatology** |                                     |                                                                                                     |
 | `ECCO2Monthly`     | [Supported variables](@ref dataset-ecco2monthly-vars)     | [ECCO2 documentation](https://ecco.jpl.nasa.gov/products/all/)                                     |
 | `ECCO2Daily`       | [Supported variables](@ref dataset-ecco2daily-vars)       | [ECCO2 documentation](https://ecco.jpl.nasa.gov/products/all/)                                     |
 | `ECCO4Monthly`     | [Supported variables](@ref dataset-ecco4monthly-vars)     | [ECCO V4r4 product guide](https://ecco-group.org/products-ECCO-V4r4.htm)                           |
 | `EN4Monthly`       | [Supported variables](@ref dataset-en4monthly-vars)       | [Met Office EN4 overview](https://www.metoffice.gov.uk/hadobs/en4/)                                |
 | `GLORYSDaily`      | [Supported variables](@ref dataset-glorysdaily-vars)      | [Copernicus GLORYS product page](https://data.marine.copernicus.eu/product/GLOBAL_MULTIYEAR_PHY_001_030/description) |
 | `GLORYSMonthly`    | [Supported variables](@ref dataset-glorysmonthly-vars)    | [Copernicus GLORYS product page](https://data.marine.copernicus.eu/product/GLOBAL_MULTIYEAR_PHY_001_030/description) |
-| **Atmospheric forcing** |                                                      |                                                                                                     |
-| `RepeatYearJRA55`  | [Supported variables](@ref dataset-repeatyearjra55-vars)  | [JRA-55 Reanalysis](https://www.data.jma.go.jp/jra/html/JRA-55/index_en.html)                                 |
-| `MultiYearJRA55`   | [Supported variables](@ref dataset-multiyearjra55-vars)   | [JRA-55 Reanalysis](https://www.data.jma.go.jp/jra/html/JRA-55/index_en.html)                                 |
+| `WOAAnnual`        | `:temperature`, `:salinity`, `:phosphate`, `:nitrate`, `:silicate`, `:dissolved_oxygen` | [World Ocean Atlas overview](https://www.ncei.noaa.gov/products/world-ocean-atlas) |
+| `WOAMonthly`       | `:temperature`, `:salinity`, `:phosphate`, `:nitrate`, `:silicate`, `:dissolved_oxygen` | [World Ocean Atlas overview](https://www.ncei.noaa.gov/products/world-ocean-atlas) |
+| **Biogeochemical reanalysis** |                                             |                                                                                                     |
+| `ECCO2DarwinMonthly` | `:temperature`, `:salinity`, `:dissolved_inorganic_carbon`, `:alkalinity`, `:phosphate`, `:nitrate`, `:dissolved_organic_phosphorus`, `:particulate_organic_phosphorus`, `:dissolved_iron`, `:dissolved_silicate`, `:dissolved_oxygen` | [ECCO Darwin overview](https://ecco.jpl.nasa.gov/products/all/) |
+| `ECCO4DarwinMonthly` | `:temperature`, `:salinity`, `:dissolved_inorganic_carbon`, `:alkalinity`, `:phosphate`, `:nitrate`, `:dissolved_organic_phosphorus`, `:particulate_organic_phosphorus`, `:dissolved_iron`, `:dissolved_silicate`, `:dissolved_oxygen` | [ECCO Darwin overview](https://ecco.jpl.nasa.gov/products/all/) |
+| **Atmospheric forcing and reanalysis** |                                  |                                                                                                     |
+| `RepeatYearJRA55`  | [Supported variables](@ref dataset-repeatyearjra55-vars)  | [JRA-55 Reanalysis](https://www.data.jma.go.jp/jra/html/JRA-55/index_en.html)                      |
+| `MultiYearJRA55`   | [Supported variables](@ref dataset-multiyearjra55-vars)   | [JRA-55 Reanalysis](https://www.data.jma.go.jp/jra/html/JRA-55/index_en.html)                      |
+| `ERA5HourlySingleLevel` | surface meteorology, flux, radiation, and wave variables | [ERA5 single levels overview](https://cds.climate.copernicus.eu/datasets/reanalysis-era5-single-levels?tab=overview) |
+| `ERA5MonthlySingleLevel` | surface meteorology, flux, radiation, and wave variables | [ERA5 single levels overview](https://cds.climate.copernicus.eu/datasets/reanalysis-era5-single-levels-monthly-means?tab=overview) |
+| `ERA5HourlyPressureLevels` | pressure-level temperature, winds, humidity, geopotential, and cloud variables | [ERA5 pressure levels overview](https://cds.climate.copernicus.eu/datasets/reanalysis-era5-pressure-levels?tab=overview) |
+| `ERA5MonthlyPressureLevels` | pressure-level temperature, winds, humidity, geopotential, and cloud variables | [ERA5 pressure levels overview](https://cds.climate.copernicus.eu/datasets/reanalysis-era5-pressure-levels-monthly-means?tab=overview) |
+| **Regional observations** |                                                    |                                                                                                     |
+| `OSPapaHourly`     | ocean profiles, near-surface meteorology, and currents    | [Ocean Station Papa dataset](https://www.pmel.noaa.gov/ocs/Papa)                                   |
+| `OSPapaFluxHourly` | air-sea fluxes, stresses, evaporation, precipitation, and skin temperature | [Ocean Station Papa flux dataset](https://www.pmel.noaa.gov/ocs/Papa) |

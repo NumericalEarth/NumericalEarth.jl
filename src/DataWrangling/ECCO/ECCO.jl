@@ -19,38 +19,11 @@ using NCDatasets: NCDatasets
 using Scratch: Scratch, @get_scratch!
 
 using ...NumericalEarth: NumericalEarth
-using ..DataWrangling:
-    DataWrangling,
-    binary_data_grid,
-    binary_data_size,
-    default_mask_value,
-    dataset_variable_name,
-    default_download_directory,
-    longitude_interfaces,
-    latitude_interfaces,
-    netrc_downloader,
-    NearestNeighborInpainting,
-    metadata_path,
-    GramPerKilogramMinus35,
-    MicromolePerLiter,
-    Metadata,
-    Metadatum,
-    DownloadProgress,
-    metadata_url,
-    first_date,
-    last_date,
-    all_dates
-
-import ..DataWrangling:
-    default_download_directory,
-    all_dates,
-    dataset_variable_name,
-    longitude_interfaces,
-    latitude_interfaces,
-    default_mask_value,
-    retrieve_data,
-    binary_data_grid,
-    binary_data_size
+using ..DataWrangling: DataWrangling, binary_data_grid, binary_data_size, default_mask_value,
+                       dataset_variable_name, default_download_directory, longitude_interfaces,
+                       latitude_interfaces, netrc_downloader, NearestNeighborInpainting, metadata_path,
+                       GramPerKilogramMinus35, MicromolePerLiter, Metadata, Metadatum, DownloadProgress,
+                       metadata_url, first_date, last_date, all_dates
 
 download_ECCO_cache::String = ""
 function __init__()
@@ -298,7 +271,7 @@ DataWrangling.is_three_dimensional(data::ECCOMetadata) =
     data.name == :v_velocity
 
 # URLs for the ECCO datasets specific to each dataset
-DataWrangling.metadata_url(m::Metadata{<:ECCO2Monthly}) = ECCO2_url * "monthly/" * DataWrangling.dataset_variable_name(m) * "/" * m.filename
+DataWrangling.metadata_url(m::Metadata{<:ECCO2Monthly}) = ECCO2_url * "monthly/" * dataset_variable_name(m) * "/" * m.filename
 DataWrangling.metadata_url(m::Metadata{<:ECCO2Daily})   = ECCO2_url * "daily/"   * dataset_variable_name(m) * "/" * m.filename
 
 function DataWrangling.metadata_url(m::Metadata{<:ECCO4Monthly})
