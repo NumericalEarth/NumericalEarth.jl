@@ -242,9 +242,9 @@ function vertical_interpolate(::OSPapaMetadatum, z_src, data_src, z_dst)
     dv = dv[perm]
 
     for (i, zt) in enumerate(z_dst)
-        if zt <= zv[1]
+        if zt ≤ zv[1]
             result[i] = dv[1]
-        elseif zt >= zv[end]
+        elseif zt ≥ zv[end]
             result[i] = dv[end]
         else
             j = searchsortedlast(zv, zt)

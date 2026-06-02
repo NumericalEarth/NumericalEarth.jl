@@ -1,6 +1,20 @@
 using Oceananigans.Fields: ZeroField
 using Oceananigans.Grids: inactive_node
 
+atmosphere_sea_ice_fields(coupled_model) = coupled_model.interfaces.exchanger.atmosphere.state
+
+atmosphere_sea_ice_data(coupled_model) = merge(atmosphere_sea_ice_fields(coupled_model),
+                                               (; h_bℓ = boundary_layer_height(coupled_model.atmosphere)))
+
+atmosphere_sea_ice_properties(coupled_model) = (; thermodynamics_parameters = thermodynamics_parameters(coupled_model.atmosphere),
+                                                  surface_layer_height = surface_layer_height(coupled_model.atmosphere),
+                                                  gravitational_acceleration = coupled_model.interfaces.properties.gravitational_acceleration)
+
+atmosphere_sea_ice_radiation_state(coupled_model) = begin
+    radiation_exchanger = coupled_model.interfaces.exchanger.radiation
+    return isnothing(radiation_exchanger) ? nothing : radiation_exchanger.state
+end
+
 function compute_atmosphere_sea_ice_fluxes!(coupled_model)
     exchanger = coupled_model.interfaces.exchanger
     grid = exchanger.grid
@@ -11,10 +25,7 @@ function compute_atmosphere_sea_ice_fluxes!(coupled_model)
                            (; Tᵒᶜ = exchanger.ocean.state.T,
                               Sᵒᶜ = exchanger.ocean.state.S))
 
-    atmosphere_fields = exchanger.atmosphere.state
-
-    atmosphere_data = merge(atmosphere_fields,
-                            (; h_bℓ = boundary_layer_height(coupled_model.atmosphere)))
+    atmosphere_data = atmosphere_sea_ice_data(coupled_model)
 
     flux_formulation = coupled_model.interfaces.atmosphere_sea_ice_interface.flux_formulation
     interface_fluxes = coupled_model.interfaces.atmosphere_sea_ice_interface.fluxes
@@ -23,14 +34,11 @@ function compute_atmosphere_sea_ice_fluxes!(coupled_model)
     sea_ice_properties = coupled_model.interfaces.sea_ice_properties
     ocean_properties = coupled_model.interfaces.ocean_properties
 
-    atmosphere_properties = (thermodynamics_parameters = thermodynamics_parameters(coupled_model.atmosphere),
-                             surface_layer_height = surface_layer_height(coupled_model.atmosphere),
-                             gravitational_acceleration = coupled_model.interfaces.properties.gravitational_acceleration)
+    atmosphere_properties = atmosphere_sea_ice_properties(coupled_model)
 
     radiation = coupled_model.radiation
     radiation_kernel_props = kernel_radiation_properties(radiation)
-    radiation_exchanger    = exchanger.radiation
-    radiation_state        = isnothing(radiation_exchanger) ? nothing : radiation_exchanger.state
+    radiation_state = atmosphere_sea_ice_radiation_state(coupled_model)
 
     kernel_parameters = interface_kernel_parameters(grid)
 
@@ -122,9 +130,8 @@ end
     q_formulation = interface_properties.specific_humidity_formulation
     qₛ = surface_specific_humidity(q_formulation, ℂᵃᵗ, pᵃᵗ, Tₛ, Sᵒᶜ)
 
-    # Guess
-    Sₛ = zero(FT) # what should we use for interface salinity?
-    initial_interface_state = InterfaceState(u★, u★, u★, uˢⁱ, vˢⁱ, Tₛ, Sₛ, convert(FT, qₛ))
+    # Air–ice sublimation is over fresh ice — no interface salinity.
+    initial_interface_state = AirIceInterfaceState(u★, u★, u★, uˢⁱ, vˢⁱ, Tₛ, convert(FT, qₛ))
     not_water = inactive_node(i, j, kᴺ, grid, Center(), Center(), Center())
     ice_free = ℵᵢ == 0
 
@@ -132,7 +139,7 @@ end
     needs_to_converge = stop_criteria isa ConvergenceStopCriteria
 
     if (needs_to_converge && not_water) || ice_free
-        interface_state = InterfaceState(zero(FT), zero(FT), zero(FT), uˢⁱ, vˢⁱ, Tᵒᶜ, Sₛ, zero(FT))
+        interface_state = AirIceInterfaceState(zero(FT), zero(FT), zero(FT), uˢⁱ, vˢⁱ, Tᵒᶜ, zero(FT))
     else
         interface_state = compute_interface_state(turbulent_flux_formulation,
                                                   initial_interface_state,
@@ -144,9 +151,9 @@ end
                                                   sea_ice_properties)
     end
 
-    u★ = interface_state.u★
-    θ★ = interface_state.θ★
-    q★ = interface_state.q★
+    u★ = interface_state.fluxes.u★
+    θ★ = interface_state.fluxes.θ★
+    q★ = interface_state.fluxes.q★
     Ψₛ = interface_state
     Ψₐ = local_atmosphere_state
     Δu, Δv = velocity_difference(interface_properties.velocity_formulation, Ψₐ, Ψₛ)
@@ -173,6 +180,6 @@ end
         Jᵛ[i, j, 1]  = - ρᵃᵗ * u★ * q★
         ρτˣ[i, j, 1] = + ρᵃᵗ * τˣ
         ρτʸ[i, j, 1] = + ρᵃᵗ * τʸ
-        Ts[i, j, 1]  = convert_from_kelvin(sea_ice_properties.temperature_units, Ψₛ.T)
+        Ts[i, j, 1]  = convert_from_kelvin(sea_ice_properties.temperature_units, Ψₛ.temperature)
     end
 end

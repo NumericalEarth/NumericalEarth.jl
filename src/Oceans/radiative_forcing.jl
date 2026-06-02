@@ -98,3 +98,6 @@ get_radiative_forcing(sim::Simulation) = get_radiative_forcing(sim.model)
 
 get_radiative_forcing(model::HydrostaticFreeSurfaceModel) =
     get_radiative_forcing(model.forcing.T)
+
+get_radiative_forcing(model::NonhydrostaticModel) =
+    get_radiative_forcing(model.forcing.T)

@@ -14,6 +14,7 @@ using Oceananigans.Units: Time
 using Oceananigans.Utils: Utils, prettysummary, launch!
 using Thermodynamics.Parameters: AbstractThermodynamicsParameters
 
+using ...NumericalEarth: NumericalEarth
 using ..EarthSystemModels: EarthSystemModels, AbstractPrescribedComponent
 using ..EarthSystemModels.InterfaceComputations: interface_kernel_parameters, ComponentExchanger
 

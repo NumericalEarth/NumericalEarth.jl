@@ -20,7 +20,7 @@ function build_test_model(arch)
     θ₀ = 285
 
     atmosphere = atmosphere_simulation(grid; potential_temperature=θ₀)
-    set!(atmosphere, θ=atmosphere.dynamics.reference_state.potential_temperature, u=1)
+    set!(atmosphere.model, θ=atmosphere.model.dynamics.reference_state.potential_temperature, u=1)
 
     sst_grid = RectilinearGrid(arch,
                                size = grid.Nx,
@@ -48,7 +48,8 @@ end
                                    topology = (Periodic, Flat, Bounded))
 
             atmos = atmosphere_simulation(grid)
-            @test atmos isa Breeze.AtmosphereModel
+            @test atmos isa Simulation
+            @test atmos.model isa Breeze.AtmosphereModel
         end
 
         @testset "Construction on $A" begin
@@ -56,7 +57,8 @@ end
 
             @test model isa EarthSystemModel
             @test model.ocean isa SlabOcean
-            @test model.atmosphere isa Breeze.AtmosphereModel
+            @test model.atmosphere isa Simulation
+            @test model.atmosphere.model isa Breeze.AtmosphereModel
             @test model.architecture isa typeof(arch)
 
             # Check that interfaces were created

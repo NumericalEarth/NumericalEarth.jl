@@ -63,8 +63,13 @@ end
     return nothing
 end
 
-# No net fluxes to update for prescribed land
+# No net fluxes to update for prescribed land; and there's no SlabLand-style
+# closure to build an atmosphere-land flux interface from, so the dispatch
+# returns nothing for this land type.
 EarthSystemModels.update_net_fluxes!(coupled_model, ::PrescribedLand) = nothing
+atmosphere_land_interface(grid, atmosphere, land::PrescribedLand; kw...) = nothing
+
+EarthSystemModels.adopt_clock(land::PrescribedLand, clock) = EarthSystemModels.reclock(land, clock)
 
 #####
 ##### Checkpointing

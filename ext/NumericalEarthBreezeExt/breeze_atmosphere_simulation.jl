@@ -43,31 +43,34 @@ end
                           momentum_advection = WENO(order=9),
                           scalar_advection = WENO(order=5),
                           boundary_conditions = NamedTuple(),
-                          kw...)
+                          coriolis = nothing,
+                          forcing = NamedTuple(),
+                          closure = nothing,
+                          clock = Clock{eltype(grid)}(time=0),
+                          Δt = Inf)
 
-Construct a Breeze `AtmosphereModel` with sensible defaults for coupled simulations.
+Construct an Oceananigans `Simulation` wrapping a Breeze `AtmosphereModel`,
+with sensible defaults for coupled simulations. Mirrors the role of
+[`ocean_simulation`](@ref).
 
-Surface fluxes are handled by the `EarthSystemModel` coupling framework (via similarity
-theory), not by Breeze's own boundary conditions.
+Surface fluxes are handled by the `EarthSystemModel` coupling framework (via
+similarity theory), not by Breeze's own boundary conditions, so the bottom
+BCs on the prognostic momentum, energy, and moisture fields are pre-wired to
+2D coupling fields that the coupler fills each step.
 
-Arguments
-=========
+Radiation is wired in by the coupled-model constructor through
+[`materialize_earth_system_radiation!`](@ref). The atmosphere is built with a
+skeleton `CoupledRadiation` proxy (no allocation, no tendency contribution),
+which is replaced inside `EarthSystemModel` with a materialized proxy that
+aliases `coupled_model.radiation.flux_divergence`. Passing a
+`Breeze.RadiativeTransferModel` directly as `radiation` here is rejected — use
+`AtmosphereLandModel(atmosphere, land; radiation = rtm)` instead.
 
-- `grid`: An Oceananigans grid for the atmosphere domain.
-
-Keyword Arguments
-=================
-
-- `surface_pressure`: Reference surface pressure in Pa. Default: 101325.
-- `potential_temperature`: Reference potential temperature in K. Default: 285.
-- `thermodynamic_constants`: Breeze `ThermodynamicConstants`. Default: `ThermodynamicConstants(eltype(grid))`.
-- `dynamics`: Dynamics formulation. Default: `AnelasticDynamics` with the given reference state.
-- `microphysics`: Microphysics scheme. Default: `SaturationAdjustment(equilibrium = WarmPhaseEquilibrium())`.
-- `momentum_advection`: Advection scheme for momentum. Default: `WENO(order=9)`.
-- `scalar_advection`: Advection scheme for scalars. Default: `WENO(order=5)`.
-- `boundary_conditions`: Named tuple of boundary conditions. Default: `NamedTuple()`.
-
-All additional keyword arguments are forwarded to `Breeze.AtmosphereModel`.
+Returns the `Simulation` so callers can attach output writers, callbacks, or
+later wrap inside a coupled `EarthSystemModel`. The inner `Δt` defaults to
+`Inf` since the *coupled* `Simulation` (around an `EarthSystemModel`) owns
+the time step in coupled use; if you wrap this `Simulation` directly in a
+`run!`, pass a finite `Δt`.
 """
 function NumericalEarth.Atmospheres.atmosphere_simulation(grid;
                                                           surface_pressure = 101325,
@@ -79,13 +82,24 @@ function NumericalEarth.Atmospheres.atmosphere_simulation(grid;
                                                           momentum_advection = Oceananigans.WENO(order=9),
                                                           scalar_advection = Oceananigans.WENO(order=5),
                                                           boundary_conditions = NamedTuple(),
-                                                          kw...)
+                                                          coriolis = nothing,
+                                                          forcing = NamedTuple(),
+                                                          closure = nothing,
+                                                          clock = Oceananigans.TimeSteppers.Clock{eltype(grid)}(time = 0),
+                                                          Δt = Inf,
+                                                          radiation = CoupledRadiation())
 
-    # Create 2D flux fields for ESM coupling
+    if radiation isa Breeze.RadiativeTransferModel
+        throw(ArgumentError("`atmosphere_simulation` does not accept a `Breeze.RadiativeTransferModel`. " *
+                            "Pass the RTM to the coupled-model constructor instead, e.g. " *
+                            "`AtmosphereLandModel(atmos, land; radiation = rtm)`."))
+    end
+
+    # Create 2D coupling-flux fields populated by the ESM coupler each step.
     ρτˣ = Field{Center, Center, Nothing}(grid)
     ρτʸ = Field{Center, Center, Nothing}(grid)
-    Jᵉ = Field{Center, Center, Nothing}(grid)
-    Jᵛ = Field{Center, Center, Nothing}(grid)
+    Jᵉ  = Field{Center, Center, Nothing}(grid)
+    Jᵛ  = Field{Center, Center, Nothing}(grid)
 
     moisture_key = moisture_prognostic_name(microphysics)
     moisture_bc = NamedTuple{tuple(moisture_key)}(tuple(FieldBoundaryConditions(bottom = FluxBoundaryCondition(Jᵛ))))
@@ -103,7 +117,12 @@ function NumericalEarth.Atmospheres.atmosphere_simulation(grid;
     # the whole `FieldBoundaryConditions`.
     boundary_conditions = merge_boundary_conditions(coupling_bcs, NamedTuple(boundary_conditions))
 
-    return AtmosphereModel(grid; dynamics, microphysics,
-                           momentum_advection, scalar_advection,
-                           boundary_conditions, kw...)
+    atmosphere_model = AtmosphereModel(grid;
+                                       dynamics, microphysics,
+                                       momentum_advection, scalar_advection,
+                                       boundary_conditions,
+                                       coriolis, forcing, closure, clock,
+                                       radiation)
+
+    return Simulation(atmosphere_model; Δt, verbose = false)
 end

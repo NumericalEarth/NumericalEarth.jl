@@ -69,7 +69,7 @@ Container for prescribed precipitation fluxes. Either component may be `nothing`
 to indicate that the corresponding precipitation type is not represented by the
 atmosphere (e.g. rain-only datasets). Used as the `freshwater_flux` of a
 `PrescribedAtmosphere`; downstream callers query the snow component via
-[`surface_snowfall_flux`](@ref) so that prognostic atmospheres with or without
+`surface_snowfall_flux` so that prognostic atmospheres with or without
 snow can dispatch on this type as well.
 """
 struct PrescribedPrecipitationFlux{R, S}
@@ -142,6 +142,8 @@ end
 # No need to compute anything here...
 EarthSystemModels.update_net_fluxes!(coupled_model, ::PrescribedAtmosphere) = nothing
 
+EarthSystemModels.adopt_clock(atmosphere::PrescribedAtmosphere, clock) = EarthSystemModels.reclock(atmosphere, clock)
+
 """
     PrescribedAtmosphere(grid, times=[zero(grid)];
                          clock = Clock{Float64}(time = 0),
@@ -155,9 +157,10 @@ EarthSystemModels.update_net_fluxes!(coupled_model, ::PrescribedAtmosphere) = no
 
 Return a prescribed, time-evolving atmospheric state with data on `grid` and at given `times`.
 
-!!! compat Radiation component
+!!! compat "Radiation component"
     The downwelling shortwave / longwave radiation part of the top-level `radiation`
-    component (see [`PrescribedRadiation`](@ref), [`JRA55PrescribedRadiation`](@ref)).
+    component (see [`Radiations.PrescribedRadiation`](@ref NumericalEarth.Radiations.PrescribedRadiation),
+    [`DataWrangling.JRA55.JRA55PrescribedRadiation`](@ref NumericalEarth.DataWrangling.JRA55.JRA55PrescribedRadiation)).
 """
 function PrescribedAtmosphere(grid, times=[zero(grid)];
                               clock = Clock{Float64}(time = 0),
