@@ -66,7 +66,7 @@ end
 
     # Turbulent contributions only (radiation added later by apply_air_sea_ice_radiative_fluxes!)
     ΣQt = (𝒬ᵀ + 𝒬ᵛ) * ℵi
-    ΣQb = 𝒬ᶠʳᶻ + 𝒬ⁱⁿᵗ
+    ΣQb = 𝒬ᶠʳᶻ + 𝒬ⁱⁿ
 
     # Mask fluxes over land for convenience
     inactive = inactive_node(i, j, kᴺ, grid, Center(), Center(), Center())
