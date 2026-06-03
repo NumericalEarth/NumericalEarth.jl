@@ -123,6 +123,8 @@ end
 # No need to compute anything here...
 EarthSystemModels.update_net_fluxes!(coupled_model, ::PrescribedAtmosphere) = nothing
 
+EarthSystemModels.adopt_clock(atmosphere::PrescribedAtmosphere, clock) = EarthSystemModels.reclock(atmosphere, clock)
+
 """
     PrescribedAtmosphere(grid, times=[zero(grid)];
                          clock = Clock{Float64}(time = 0),

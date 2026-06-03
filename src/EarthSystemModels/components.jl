@@ -85,9 +85,63 @@ apply_air_land_radiative_fluxes!(::Any) = nothing
 ##### Surface (skin) temperature diagnostic
 #####
 
-# The surface skin temperature that the atmosphere "sees" lives at the
-# atmosphere-surface interface, not on the land component — for skin-temperature
-# closures (where the surface T differs from the bulk land T) the interface
-# field is the authoritative value.
 function surface_temperature end
 surface_temperature(::Any) = nothing
+
+#####
+##### Clock type consistency across components
+#####
+
+"""
+    adopt_clock(component, clock)
+
+Return `component` reconfigured so that its time is tracked with the same time type as the authoritative
+`EarthSystemModel` `clock`. `EarthSystemModel` construction calls this on every component so their clocks
+cannot drift apart over long runs — e.g. `Float32` and `Float64` clocks accumulating `Δt` differently across
+thousands of days.
+
+Behavior depends on how the component tracks time:
+
+  - the generic method leaves `component` untouched, so a component with its own clock representation (e.g.
+    SpeedyWeather or Veros, which track time internally) only extends this method if it needs coercion;
+  - a `Simulation`, whose clock type is fixed by its grid, errors on a mismatch since it cannot be coerced;
+  - prescribed components that carry an Oceananigans `Clock` extend this method through `reclock`, which
+    coerces the clock to the model time type and warns when the type actually changes.
+"""
+adopt_clock(component, clock) = component
+adopt_clock(::Nothing, clock) = nothing
+
+function adopt_clock(simulation::Simulation, clock)
+    same_time_type(simulation.model.clock.time, clock.time) && return simulation
+    throw(ArgumentError(string(
+        "the simulation clock tracks time as ", typeof(simulation.model.clock.time),
+        " but the EarthSystemModel clock uses ", typeof(clock.time), ". A Simulation's clock type ",
+        "follows its grid and cannot be coerced; rebuild the simulation on a grid ",
+        "with float type ", typeof(clock.time), ", or construct the EarthSystemModel with a matching `clock`.")))
+end
+
+same_time_type(::TT, ::ST) where {TT, ST} = ST === TT
+
+# Return a clock matching `clock`'s time type (or nothing if clocks are the same)
+function matching_clock(old::Clock, clock)
+    same_time_type(old.time, clock.time) && return nothing
+    TT = typeof(clock.time)
+    return Clock{TT}(time = convert(TT, old.time),
+                     last_Δt = old.last_Δt,
+                     last_stage_Δt = old.last_stage_Δt,
+                     iteration = old.iteration,
+                     stage = old.stage)
+end
+
+warn_clock_coercion(component, new_clock) = @warn string(summary(component), " tracks time as ",  typeof(component.clock.time),
+                                                         " but the EarthSystemModel clock uses ", typeof(new_clock.time),
+                                                         "; coercing the component clock to keep components synchronized.")
+
+function reclock(component, clock)
+    new_clock = matching_clock(component.clock, clock)
+    isnothing(new_clock) && return component
+    warn_clock_coercion(component, new_clock)
+    names = fieldnames(typeof(component))
+    args = ntuple(i -> names[i] === :clock ? new_clock : getfield(component, i), length(names))
+    return typeof(component).name.wrapper(args...)
+end
