@@ -105,15 +105,22 @@ end
 # in space + time, while an `AbstractField` source is interpolated in space at
 # the parent's current state.
 
-@inline _query_source(fts::FlavorOfFTS, source_grid, X, t) =
+# `loc` is the regularized boundary location passed in from `getbc`; for these
+# same-variable nesting BCs it equals the source field's location. Passing it
+# explicitly is essential on GPU: `Adapt` reduces an `AbstractField` source to its bare
+# data array (an `OffsetArray`, no longer `<:AbstractField` and with no
+# `instantiated_location`). So the prognostic-parent method must be generically typed —
+# otherwise `_query_source(::AbstractField, …)` fails to match the adapted source in the
+# halo-fill kernel (dynamic dispatch + device allocation → `InvalidIRError`) — and it
+# must NOT call `instantiated_location(source)` in-kernel. The FTS source survives
+# `Adapt` as a `FlavorOfFTS`, so its method is unchanged.
+@inline _query_source(fts::FlavorOfFTS, source_grid, X, loc, t) =
     Oceananigans.Fields.interpolate(X, Time(t), fts,
                                     Oceananigans.Fields.instantiated_location(fts),
                                     source_grid)
 
-@inline _query_source(field::Oceananigans.Fields.AbstractField, source_grid, X, t) =
-    Oceananigans.Fields.interpolate(X, field,
-                                    Oceananigans.Fields.instantiated_location(field),
-                                    source_grid)
+@inline _query_source(source, source_grid, X, loc, t) =
+    Oceananigans.Fields.interpolate(X, source, loc, source_grid)
 
 @inline _boundary_index(::Type{LeftBoundary},  N) = 1
 @inline _boundary_index(::Type{RightBoundary}, N) = N + 1
@@ -128,19 +135,19 @@ end
                        j::Integer, k::Integer, grid::AbstractGrid, clock=nothing, args...) where {S, LX, LY, LZ}
     i = _boundary_index(S, grid.Nx)
     X = node(i, j, k, grid, LX(), LY(), LZ())
-    return _query_source(bc.source, bc.source_grid, X, _clock_time(clock))
+    return _query_source(bc.source, bc.source_grid, X, (LX(), LY(), LZ()), _clock_time(clock))
 end
 
 @inline function getbc(bc::Interpolated{2, S, LX, LY, LZ},
                        i::Integer, k::Integer, grid::AbstractGrid, clock=nothing, args...) where {S, LX, LY, LZ}
     j = _boundary_index(S, grid.Ny)
     X = node(i, j, k, grid, LX(), LY(), LZ())
-    return _query_source(bc.source, bc.source_grid, X, _clock_time(clock))
+    return _query_source(bc.source, bc.source_grid, X, (LX(), LY(), LZ()), _clock_time(clock))
 end
 
 @inline function getbc(bc::Interpolated{3, S, LX, LY, LZ},
                        i::Integer, j::Integer, grid::AbstractGrid, clock=nothing, args...) where {S, LX, LY, LZ}
     k = _boundary_index(S, grid.Nz)
     X = node(i, j, k, grid, LX(), LY(), LZ())
-    return _query_source(bc.source, bc.source_grid, X, _clock_time(clock))
+    return _query_source(bc.source, bc.source_grid, X, (LX(), LY(), LZ()), _clock_time(clock))
 end

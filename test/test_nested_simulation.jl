@@ -138,3 +138,39 @@ end
         schemes   = (T = nothing,),
         bc_types  = (T = ValueBoundaryCondition,))
 end
+
+# Regression for the GPU `InvalidIRError` in the prognostic-parent path: a LIVE model
+# parent (not a PrescribedAtmosphere/FTS) drives the child through
+# `Interpolated{<:AbstractField}` BCs. On GPU the source field `Adapt`s to a bare data
+# array inside the halo-fill kernel, so `getbc`/`_query_source` must stay generically
+# typed and take the location explicitly (rather than dispatching on `::AbstractField`
+# and calling `instantiated_location(source)` in-kernel). Includes a Center
+# `ValueBoundaryCondition` — the exact BC kind that failed. Runs on every
+# `test_architecture` (GPU CI is where the regression bites).
+@testset "NestedSimulation: prognostic (live AbstractField) parent on $(arch)" for arch in test_architectures
+    parent_grid = RectilinearGrid(arch; size = (16, 16, 4),
+                                  x = (-1.5, 1.5), y = (-1.5, 1.5), z = (-0.2, 1.2),
+                                  topology = (Bounded, Bounded, Bounded))
+    parent = NonhydrostaticModel(parent_grid; tracers = :c)
+    set!(parent, u = (x, y, z) -> 0.1, v = (x, y, z) -> 0.05, c = (x, y, z) -> x + y)
+
+    child_grid = RectilinearGrid(arch; size = (8, 8, 4),
+                                 x = (-1, 1), y = (-1, 1), z = (0, 1),
+                                 topology = (Bounded, Bounded, Bounded))
+    bcs = parent_boundary_conditions(child_grid;
+                                     variables = (u = parent.velocities.u,   # Open (Face)
+                                                  v = parent.velocities.v,
+                                                  c = parent.tracers.c),      # Value (Center) — the kind that broke
+                                     sides     = (:west, :east, :south, :north),
+                                     bc_types  = (c = ValueBoundaryCondition,))
+    child = NonhydrostaticModel(child_grid; tracers = :c, boundary_conditions = bcs)
+    set!(child, u = (x, y, z) -> 0.1, v = (x, y, z) -> 0.05, c = (x, y, z) -> x + y)
+
+    nested = NestedSimulation(parent, child; Δt = 0.001, stop_iteration = 3, verbose = false)
+    run!(nested)   # pre-fix: InvalidIRError on GPU during the first child halo fill
+
+    @test child.clock.iteration == 3
+    @test parent.clock.time ≈ child.clock.time
+    @test all(isfinite, Array(interior(child.velocities.u)))
+    @test all(isfinite, Array(interior(child.tracers.c)))
+end
