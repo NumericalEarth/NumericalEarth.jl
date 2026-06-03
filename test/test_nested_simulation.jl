@@ -3,7 +3,7 @@ include("runtests_setup.jl")
 using NumericalEarth
 using NumericalEarth.EarthSystemModels.NestedSimulations: parent_boundary_conditions
 using Oceananigans
-using Oceananigans.BoundaryConditions: ValueBoundaryCondition
+using Oceananigans.BoundaryConditions: ValueBoundaryCondition, fill_halo_regions!
 using Test
 
 @testset "PrescribedAtmosphere defaults switch on grid dimensionality" begin
@@ -173,4 +173,40 @@ end
     @test parent.clock.time ≈ child.clock.time
     @test all(isfinite, Array(interior(child.velocities.u)))
     @test all(isfinite, Array(interior(child.tracers.c)))
+end
+
+# An `Interpolated` Value BC must sample the source at the boundary FACE, not the child
+# field's center node — otherwise a Center field's halo is reconstructed from a value a
+# half-cell *inside* the boundary (a half-cell-gradient bias). With a source exactly
+# linear in the boundary-normal coordinate, the reconstructed boundary-face value
+# ½(halo + first-interior) must equal the source AT the face — i.e. = 0 to roundoff with
+# the face fix, but off by ½Δ·(slope) with the (buggy) center placement. Covers BOTH
+# normal directions, so the Dim-1 (west/east) and Dim-2 (south/north) `node` edits are
+# each exercised.
+@testset "Interpolated Value BC samples at the boundary face on $(arch)" for arch in test_architectures
+    src_grid = RectilinearGrid(arch; size = (16, 16, 4), x = (-1, 3), y = (-1, 3), z = (0, 1),
+                               topology = (Bounded, Bounded, Bounded))
+    cg = RectilinearGrid(arch; size = (8, 8, 4), x = (0, 2), y = (0, 2), z = (0, 1),
+                         topology = (Bounded, Bounded, Bounded))
+
+    # child tracer c driven by a Value BC from a source equal to `f`, with c's IC = f too.
+    function reconstructed_c(f, sides)
+        src = CenterField(src_grid); set!(src, f)
+        bcs = parent_boundary_conditions(cg; variables = (c = src,),
+                                         sides = sides, bc_types = (c = ValueBoundaryCondition,))
+        model = NonhydrostaticModel(cg; tracers = :c, boundary_conditions = bcs)
+        set!(model, c = f)
+        fill_halo_regions!(model.tracers.c)
+        return model.tracers.c
+    end
+
+    # x-normal: source linear in x ⇒ west face at x=0, east face at x=2.
+    cx = reconstructed_c((x, y, z) -> x, (:west, :east))
+    @test isapprox(CUDA.@allowscalar((cx[0, 4, 2] + cx[1, 4, 2]) / 2), 0.0; atol = 1e-4)
+    @test isapprox(CUDA.@allowscalar((cx[8, 4, 2] + cx[9, 4, 2]) / 2), 2.0; atol = 1e-4)
+
+    # y-normal: source linear in y ⇒ south face at y=0, north face at y=2 (Dim-2 edit).
+    cy = reconstructed_c((x, y, z) -> y, (:south, :north))
+    @test isapprox(CUDA.@allowscalar((cy[4, 0, 2] + cy[4, 1, 2]) / 2), 0.0; atol = 1e-4)
+    @test isapprox(CUDA.@allowscalar((cy[4, 8, 2] + cy[4, 9, 2]) / 2), 2.0; atol = 1e-4)
 end

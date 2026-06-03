@@ -22,7 +22,7 @@
 import Oceananigans.BoundaryConditions: regularize_boundary_condition, getbc,
                                         LeftBoundary, RightBoundary
 import Oceananigans.OutputReaders: FlavorOfFTS
-using Oceananigans.Grids: node
+using Oceananigans.Grids: node, Face
 using Adapt: Adapt, adapt
 
 const InterpolatedSource = Union{FlavorOfFTS, Oceananigans.Fields.AbstractField}
@@ -134,20 +134,24 @@ end
 @inline function getbc(bc::Interpolated{1, S, LX, LY, LZ},
                        j::Integer, k::Integer, grid::AbstractGrid, clock=nothing, args...) where {S, LX, LY, LZ}
     i = _boundary_index(S, grid.Nx)
-    X = node(i, j, k, grid, LX(), LY(), LZ())
+    # Sample the source at the boundary FACE in the normal direction (not the field's
+    # center node). A Value BC's value is the value AT the boundary, so for a Center
+    # field this must be the face, not the half-cell-inside center; for a Face-normal
+    # field (the normal velocity) this is unchanged (its location is already Face).
+    X = node(i, j, k, grid, Face(), LY(), LZ())
     return _query_source(bc.source, bc.source_grid, X, (LX(), LY(), LZ()), _clock_time(clock))
 end
 
 @inline function getbc(bc::Interpolated{2, S, LX, LY, LZ},
                        i::Integer, k::Integer, grid::AbstractGrid, clock=nothing, args...) where {S, LX, LY, LZ}
     j = _boundary_index(S, grid.Ny)
-    X = node(i, j, k, grid, LX(), LY(), LZ())
+    X = node(i, j, k, grid, LX(), Face(), LZ())   # boundary face in the y-normal direction
     return _query_source(bc.source, bc.source_grid, X, (LX(), LY(), LZ()), _clock_time(clock))
 end
 
 @inline function getbc(bc::Interpolated{3, S, LX, LY, LZ},
                        i::Integer, j::Integer, grid::AbstractGrid, clock=nothing, args...) where {S, LX, LY, LZ}
     k = _boundary_index(S, grid.Nz)
-    X = node(i, j, k, grid, LX(), LY(), LZ())
+    X = node(i, j, k, grid, LX(), LY(), Face())   # boundary face in the z-normal direction
     return _query_source(bc.source, bc.source_grid, X, (LX(), LY(), LZ()), _clock_time(clock))
 end
