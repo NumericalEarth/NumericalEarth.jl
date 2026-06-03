@@ -12,18 +12,24 @@
 #
 # `SlabLand` composes
 #
-#     energy    = SlabEnergy(dry_heat_capacity = ρcH_g)
-#     hydrology = BucketHydrology(...)
+#     energy    = WaterCoupledForceRestoreEnergy(...)   # C(Mˡᵃ) = C_dry + cˡ Mˡᵃ
+#     hydrology = VariablySaturatedBucketHydrology(...) # ϑˡ storage, signed-flux budget
 #
-# (roughness lengths are set on the atmosphere-land flux closure, not the land)
+# with the atmosphere-facing humidity solved by
+# [`EvaporationFrontHumidity`](@ref) — a Fickian vapor-flux balance through
+# an unresolved evaporation front at saturation-dependent depth `δᵛ(𝒮)` —
+# instead of the prescribed `β(𝒮) qᵛ⁺(Tˡᵃ)` Manabe efficiency. See the
+# [SlabLand tutorial](../land/evaporation_front_slab_land.md) for the model
+# derivation. (Roughness lengths are set on the atmosphere–land flux
+# closure, not the land.)
 #
-# coupled through `AtmosphereLandModel` to an [`ERA5PrescribedAtmosphere`](@ref)
-# and [`ERA5PrescribedRadiation`](@ref): these download the required ERA5
-# single-level fields (T₂ₘ, dewpoint, 10 m wind, surface pressure, total
-# precipitation, downwelling SW/LW) over the domain, derive specific humidity
-# from the dewpoint, and convert ERA5's accumulated radiation/precipitation to
-# fluxes. They live on the ERA5 native grid; the coupled model interpolates them
-# onto the 1 km land exchange grid.
+# The land is coupled through `AtmosphereLandModel` to an
+# [`ERA5PrescribedAtmosphere`](@ref) and [`ERA5PrescribedRadiation`](@ref):
+# these download the required ERA5 single-level fields (T₂ₘ, dewpoint, 10 m
+# wind, surface pressure, total precipitation, downwelling SW/LW) over the
+# domain, derive specific humidity from the dewpoint, and convert ERA5's
+# accumulated radiation/precipitation to fluxes. They live on the ERA5 native
+# grid; the coupled model interpolates them onto the 1 km land exchange grid.
 #
 # ## Elevation downscaling
 #
