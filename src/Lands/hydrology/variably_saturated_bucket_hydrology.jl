@@ -197,16 +197,22 @@ saturation(h::VariablySaturatedBucketHydrology, land) = land.saturation
     Jˡb       = deep_liquid_flux(h.deep_liquid_flux, Mij, θˡ, 𝒮, Π, K, ψ_D, time)
     Rlat      = subsurface_runoff(h.runoff, Mij, Π, K)
 
-    dMdt = Jˡb - Jˡs - Jvij - Rlat
+    dMdt_signed = Jˡb - Jˡs - Jvij - Rlat
 
     @inbounds begin
-        Mnew = max(Mij + Δt * dMdt, zero(Mij))
+        Mnew = max(Mij + Δt * dMdt_signed, zero(Mij))
+        # Record the *realized* rate (post-positivity floor) so the energy
+        # step's conservative `cˡ(T−Tᵣ) dM/dt` correction matches what
+        # actually happened to `M`. The two differ only when the floor
+        # activates; in that branch a small amount of water is silently
+        # destroyed and the diagnostic records that as a slower dM/dt.
+        dMdt_realized = (Mnew - Mij) / Δt
         M[i, j, 1]         = Mnew
         Jˡb_diag[i, j, 1]  = Jˡb
         Jˡs_diag[i, j, 1]  = Jˡs
         Rsfc_diag[i, j, 1] = Rsfc
         Rlat_diag[i, j, 1] = Rlat
-        dMdt_diag[i, j, 1] = dMdt
+        dMdt_diag[i, j, 1] = dMdt_realized
         # Refresh saturation immediately so the energy step (which runs after
         # hydrology) sees state consistent with the new M.
         θˡn = liquid_fraction(h, Mnew)

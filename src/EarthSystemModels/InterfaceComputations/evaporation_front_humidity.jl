@@ -21,6 +21,10 @@
 ##### (`𝒬ᴿ + 𝒬ᵀ + 𝒬ᵛ`) — this PR doesn't need a new temperature formulation.
 #####
 
+using Oceananigans: Oceananigans
+using Oceananigans.Utils: prettysummary
+using Thermodynamics: Thermodynamics as AtmosphericThermodynamics
+
 #####
 ##### Evaporation-front depth diagnostics
 #####
@@ -69,25 +73,45 @@ Base.summary(d::StorageBasedEvaporationFrontDepth) =
 #####
 
 """
-    DryLayerVaporPistonVelocity(minimum_front_depth, molecular_diffusivity;
-                                tortuosity_model = :constant)
+    ConstantTortuosity()
 
-Parameters of the dry-layer vapor piston velocity `wᵈ = Dᵛ_eff / max(δᵛ, δᵛ_min)`:
-
-* `:constant` — `Dᵛ_eff = Dᵛ₀`.
-* `:millington_quirk` — `Dᵛ_eff = Dᵛ₀ · θᵍ^(10/3) / ν²` where `θᵍ = ν − θˡ` is
-  the gas-filled pore fraction.
+Trivial tortuosity model: `Dᵛ_eff = Dᵛ₀`. Used by
+[`DryLayerVaporPistonVelocity`](@ref) when the soil air space is not modeled
+explicitly.
 """
-struct DryLayerVaporPistonVelocity{FT}
+struct ConstantTortuosity end
+
+"""
+    MillingtonQuirk()
+
+Millington–Quirk tortuosity: `Dᵛ_eff = Dᵛ₀ · θᵍ^(10/3) / ν²` where
+`θᵍ = ν − θˡ` is the gas-filled pore fraction. Reduces vapor diffusivity in
+near-saturated soils.
+"""
+struct MillingtonQuirk end
+
+Base.summary(::ConstantTortuosity) = "ConstantTortuosity"
+Base.summary(::MillingtonQuirk)    = "MillingtonQuirk"
+
+"""
+    DryLayerVaporPistonVelocity(minimum_front_depth, molecular_diffusivity;
+                                tortuosity_model = ConstantTortuosity())
+
+Parameters of the dry-layer vapor piston velocity `wᵈ = Dᵛ_eff / max(δᵛ, δᵛ_min)`.
+The tortuosity model is a singleton type — [`ConstantTortuosity`](@ref) or
+[`MillingtonQuirk`](@ref) — dispatched on by
+`effective_vapor_diffusivity`.
+"""
+struct DryLayerVaporPistonVelocity{FT, T}
     minimum_front_depth   :: FT
     molecular_diffusivity :: FT
-    tortuosity_model      :: Symbol
+    tortuosity_model      :: T
 end
 
 DryLayerVaporPistonVelocity(FT::Type = Oceananigans.defaults.FloatType;
                             minimum_front_depth,
                             molecular_diffusivity,
-                            tortuosity_model = :constant) =
+                            tortuosity_model = ConstantTortuosity()) =
     DryLayerVaporPistonVelocity(convert(FT, minimum_front_depth),
                                 convert(FT, molecular_diffusivity),
                                 tortuosity_model)
@@ -95,7 +119,7 @@ DryLayerVaporPistonVelocity(FT::Type = Oceananigans.defaults.FloatType;
 Base.summary(v::DryLayerVaporPistonVelocity) =
     string("DryLayerVaporPistonVelocity(δᵛ_min=", prettysummary(v.minimum_front_depth),
            ", Dᵛ₀=", prettysummary(v.molecular_diffusivity),
-           ", tortuosity=", v.tortuosity_model, ")")
+           ", tortuosity=", summary(v.tortuosity_model), ")")
 
 #####
 ##### Water activity
@@ -181,17 +205,21 @@ Base.show(io::IO, q::EvaporationFrontHumidity) = print(io, summary(q))
 #####
 ##### Effective vapor diffusivity (tortuosity)
 #####
+##### Dispatched on the tortuosity-model singleton so the per-cell call is
+##### compile-time-resolved (no runtime `if` branch inside the kernel path).
+#####
 
-@inline function effective_vapor_diffusivity(v::DryLayerVaporPistonVelocity,
-                                             ν, θˡ, Tᵉ, pᵃᵗ)
-    FT = typeof(Tᵉ)
-    D₀ = convert(FT, v.molecular_diffusivity)
-    if v.tortuosity_model === :millington_quirk
-        θᵍ = max(convert(FT, ν) - θˡ, zero(FT))
-        return D₀ * θᵍ^(FT(10/3)) / convert(FT, ν)^2
-    else                                # :constant or anything else
-        return D₀
-    end
+@inline effective_vapor_diffusivity(v::DryLayerVaporPistonVelocity, ν, θˡ, Tᵉ, pᵃᵗ) =
+    effective_vapor_diffusivity(v.tortuosity_model, v.molecular_diffusivity, ν, θˡ)
+
+@inline effective_vapor_diffusivity(::ConstantTortuosity, D₀, ν, θˡ) =
+    convert(typeof(θˡ), D₀)
+
+@inline function effective_vapor_diffusivity(::MillingtonQuirk, D₀, ν, θˡ)
+    FT = typeof(θˡ)
+    νF = convert(FT, ν)
+    θᵍ = max(νF - θˡ, zero(FT))
+    return convert(FT, D₀) * θᵍ^(FT(10//3)) / νF^2
 end
 
 #####

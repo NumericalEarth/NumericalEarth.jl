@@ -62,7 +62,7 @@ function build_coupled_test_model(arch; M_init, T_init)
             vapor_exchange = DryLayerVaporPistonVelocity(
                 minimum_front_depth = 1e-4,
                 molecular_diffusivity = 2.5e-5,
-                tortuosity_model = :millington_quirk),
+                tortuosity_model = MillingtonQuirk()),
             thermal_exchange_depth = 0.10,
             porosity = 0.4))
 

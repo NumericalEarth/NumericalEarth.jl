@@ -50,7 +50,7 @@ end
             maximum_front_depth = 0.05, critical_saturation = 0.5, front_depth_exponent = 1.0),
         vapor_exchange = DryLayerVaporPistonVelocity(
             minimum_front_depth = 1e-4, molecular_diffusivity = 2.5e-5,
-            tortuosity_model = :constant),
+            tortuosity_model = ConstantTortuosity()),
         thermal_exchange_depth = 0.10, porosity = 0.4)
 
     # Fully dry: 𝒮 = 0 ⇒ δᵛ = δᵛ_max = 0.05, χ = 0.5 ⇒ Tᵉ = (Tⁱⁿ+Tˡᵃ)/2.
@@ -88,7 +88,7 @@ end
             maximum_front_depth = 0.05, critical_saturation = 0.5, front_depth_exponent = 1.0),
         vapor_exchange = DryLayerVaporPistonVelocity(
             minimum_front_depth = 1e-4, molecular_diffusivity = 2.5e-5,
-            tortuosity_model = :constant),
+            tortuosity_model = ConstantTortuosity()),
         thermal_exchange_depth = 0.10, porosity = 0.4)
 
     ℂ, Ψₛ, Ψₐ, Ψᵢ, ℙₐ = _make_call_args(q; Tˡᵃ, Tⁱⁿ, 𝒮 = 0.0,
@@ -112,7 +112,7 @@ end
             maximum_front_depth = 0.05, critical_saturation = 0.5, front_depth_exponent = 1.0),
         vapor_exchange = DryLayerVaporPistonVelocity(
             minimum_front_depth = 1e-4, molecular_diffusivity = 1e-14,
-            tortuosity_model = :constant),
+            tortuosity_model = ConstantTortuosity()),
         thermal_exchange_depth = 0.10, porosity = 0.4)
 
     Tⁱⁿ = 300.0; pᵃᵗ = 1.0e5; qᵃᵗ = 1.0e-2

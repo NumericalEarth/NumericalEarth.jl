@@ -16,6 +16,8 @@ export
     EvaporationFrontHumidity,
     StorageBasedEvaporationFrontDepth,
     DryLayerVaporPistonVelocity,
+    ConstantTortuosity,
+    MillingtonQuirk,
     UnitWaterActivity,
     ElevationCorrection,
     atmosphere_land_interface,

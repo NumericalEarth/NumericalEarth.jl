@@ -79,6 +79,18 @@ function WaterCoupledForceRestoreEnergy(FT::Type = Oceananigans.defaults.FloatTy
             "WaterCoupledForceRestoreEnergy requires exactly one of " *
             "`deep_conductance` (Λᵈᵉᵉᵖ, W m⁻² K⁻¹) or `deep_time_scale` (τᵈᵉᵉᵖ, s)."))
     end
+    # The surface-advective term needs the temperature at which liquid
+    # precipitation enters the slab, but `_assemble_slab_land_fluxes!` does not
+    # yet write that quantity. Until the precip-temperature is plumbed from the
+    # atmospheric state, this branch silently reads zeros and would treat rain
+    # as T = 0 K. Refuse the configuration with a pointer to the followup.
+    if advect_surface_liquid_energy
+        throw(ArgumentError(
+            "advect_surface_liquid_energy=true is not yet plumbed: the precip " *
+            "temperature `land.fluxes.liquid_precipitation_temperature` is " *
+            "declared but not written by the atmosphere–land flux assembly. " *
+            "Track via the followup item in docs/src/land/evaporation_front_slab_land.md §9."))
+    end
     Λ = isnothing(deep_conductance) ? nothing : normalize_property(FT, deep_conductance)
     τ = isnothing(deep_time_scale)  ? nothing : convert(FT, deep_time_scale)
     Td = deep_temperature isa Number ? convert(FT, deep_temperature) : deep_temperature
