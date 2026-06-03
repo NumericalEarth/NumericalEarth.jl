@@ -185,6 +185,7 @@ pages = [
 
     "Land" => [
         "SlabLand tutorial" => "land/evaporation_front_slab_land.md",
+        "Follow-up roadmap"  => "land/follow_up_roadmap.md",
     ],
 
     "Appendix" => [
