@@ -166,6 +166,47 @@ end
 end
 
 """
+    propagate_vertically!(field; maxiter = size(field, 3))
+
+Fill the NaN cells of `field` by repeatedly averaging their valid vertical neighbours,
+the ``z``-axis analogue of [`propagate_horizontally!`](@ref).
+"""
+function propagate_vertically!(field; maxiter = size(field, 3))
+    size(field, 3) < 2 && return field  # nothing to bridge along a single level
+
+    grid = field.grid
+    arch = architecture(grid)
+    substituting_field = deepcopy(field)
+
+    iter = 0
+    while sum(isnan, interior(field)) > 0 && iter < maxiter
+        launch!(arch, grid, size(field), _propagate_vertically!, substituting_field, field)
+        launch!(arch, grid, size(field), _substitute_values!, field, substituting_field)
+        iter += 1
+    end
+
+    launch!(arch, grid, size(field), _fill_nans!, field)
+    fill_halo_regions!(field)
+
+    return field
+end
+
+@kernel function _propagate_vertically!(substituting_field, field)
+    i, j, k = @index(Global, NTuple)
+
+    @inbounds begin
+        below = field[i, j, k - 1]
+        above = field[i, j, k + 1]
+    end
+
+    donors = !isnan(below) + !isnan(above)
+    value  = !isnan(below) * below + !isnan(above) * above
+
+    FT_NaN = convert(eltype(field), NaN)
+    @inbounds substituting_field[i, j, k] = ifelse(donors == 0, FT_NaN, value / donors)
+end
+
+"""
     fill_gaps!(fts::FieldTimeSeries; max_gap=6)
     fill_gaps!(data::AbstractArray; max_gap=6)
     fill_gaps!(data::AbstractVector; max_gap=6)

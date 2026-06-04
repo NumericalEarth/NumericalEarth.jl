@@ -190,7 +190,7 @@ function EarthSystemModel(radiation, atmosphere, land, sea_ice, ocean;
 
             If you previously relied on `Radiation()` defaults: pass \
             `radiation = JRA55PrescribedRadiation(arch; kwargs...)` (or \
-            `ECCOPrescribedRadiation` / `OSPapaPrescribedRadiation`) to restore \
+            `ECCOPrescribedRadiation`) to restore \
             radiative forcing. Pass `radiation = PrescribedRadiation(grid)` for \
             emission-only mode. To suppress this warning, build the model \
             without a `PrescribedAtmosphere` (radiatively decoupled is the \

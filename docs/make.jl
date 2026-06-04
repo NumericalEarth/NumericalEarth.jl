@@ -50,6 +50,7 @@ examples = [
 
 # Developer examples from docs/src/developers/ directory
 developer_examples = [
+    Example("Implementing a new dataset", "implement_a_dataset", true),
     # Example("EarthSystemModel interface", "slab_ocean", false),
 ]
 
@@ -173,7 +174,7 @@ pages = [
 
     "Examples" => examples_pages,
 
-    # "Developers" => developer_pages,
+    "Developers" => developer_pages,
 
     "Vertical grids" => "vertical_grids.md",
 

@@ -98,7 +98,7 @@ latitude_interfaces(md::Metadata) = latitude_interfaces(md.dataset)
              dataset,
              dates = all_dates(dataset, variable_name),
              dir = default_download_directory(dataset),
-             region = nothing,
+             region = default_region(dataset),
              filename = nothing,
              start_date = nothing,
              end_date = nothing)
@@ -141,7 +141,7 @@ function Metadata(variable_name;
                   dataset,
                   dates = all_dates(dataset, variable_name),
                   dir = default_download_directory(dataset),
-                  region = nothing,
+                  region = default_region(dataset),
                   filename = nothing,
                   start_date = nothing,
                   end_date = nothing)
@@ -181,7 +181,7 @@ end
 """
     Metadatum(variable_name;
               dataset,
-              region = nothing,
+              region = default_region(dataset),
               date = first_date(dataset, variable_name),
               filename = nothing,
               dir = default_download_directory(dataset))
@@ -190,7 +190,7 @@ A specialized constructor for a [`Metadata`](@ref) object with a single date, re
 """
 function Metadatum(variable_name;
                    dataset,
-                   region = nothing,
+                   region = default_region(dataset),
                    date = first_date(dataset, variable_name),
                    filename = nothing,
                    dir = default_download_directory(dataset))
@@ -314,7 +314,7 @@ end
                 dates = all_dates(dataset, first(variable_names)),
                 date = nothing,
                 dir = default_download_directory(dataset),
-                region = nothing,
+                region = default_region(dataset),
                 filenames = nothing,
                 start_date = nothing,
                 end_date = nothing)
@@ -380,7 +380,7 @@ function MetadataSet(variable_names::Symbol...;
                      dates = nothing,
                      date = nothing,
                      dir = default_download_directory(dataset),
-                     region = nothing,
+                     region = default_region(dataset),
                      filenames = nothing,
                      start_date = nothing,
                      end_date = nothing)
@@ -674,6 +674,16 @@ Return the native field location `(LX, LY, LZ)` for `variable_name` in
 staggered variables (e.g., ECCO velocity fields) need to extend this.
 """
 dataset_location(dataset, variable_name) = (Center, Center, Center)
+
+"""
+    default_region(dataset)
+
+Return the default `region` used when constructing `Metadata`/`Metadatum` for
+`dataset`. Defaults to `nothing` (full domain). Single-location datasets (e.g. a
+moored buoy) can override this to embed their fixed [`Column`](@ref) so callers
+need not repeat the coordinates.
+"""
+default_region(dataset) = nothing
 
 # Note: all_dates needs to be extended for any new dataset.
 """
