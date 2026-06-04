@@ -13,11 +13,17 @@ const OceananigansReactantExt = Base.get_extension(
      Oceananigans, :OceananigansReactantExt
 )
 
-const ReactantOSIM{I, A, O, F, C} = Union{
-    EarthSystemModel{I, A, O, F, C, <:ReactantState},
-    EarthSystemModel{I, A, O, F, C, <:Distributed{ReactantState}},
+const ReactantOSIM{R, A, L, I, O, F, C} = Union{
+    EarthSystemModel{R, A, L, I, O, F, C, <:ReactantState},
+    EarthSystemModel{R, A, L, I, O, F, C, <:Distributed{ReactantState}},
 }
 
 reconcile_state!(model::ReactantOSIM) = nothing
+
+import NumericalEarth.EarthSystemModels: same_time_type
+
+same_time_type(::Reactant.ConcretePJRTNumber{FT}, ::TT) where {FT, TT} = FT == TT
+same_time_type(::Reactant.ConcretePJRTNumber{FT}, ::Reactant.ConcretePJRTNumber{TT}) where {FT, TT} = FT == TT
+same_time_type(::FT, ::Reactant.ConcretePJRTNumber{TT}) where {FT, TT} = FT == TT
 
 end # module NumericalEarthReactantExt

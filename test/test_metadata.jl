@@ -3,9 +3,12 @@ include("runtests_setup.jl")
 using NumericalEarth.DataWrangling: Column, Linear, Nearest,
                                     BoundingBox, dataset_location,
                                     restrict_location, native_grid
+using NumericalEarth.DataWrangling: restrict
+using NumericalEarth.DataWrangling.ERA5: ERA5HourlySingleLevel
 
-using Oceananigans: RectilinearGrid, LatitudeLongitudeGrid, location
-using Oceananigans.Grids: topology, Flat, Bounded, Periodic
+using Oceananigans: location
+using Oceananigans.Grids: topology, Flat, Bounded, Periodic, RectilinearGrid,
+                          LatitudeLongitudeGrid, Center, λnodes
 
 @testset "Column construction" begin
     col = Column(35.1, 50.1)
@@ -111,6 +114,32 @@ end
     Nx, Ny, Nz = size(grid)
     @test Nx < Nx_full
     @test Ny < Ny_full
+
+    # Sub-360° bbox must be Bounded in x (not Periodic) so halos don't wrap.
+    @test topology(grid)[1] == Bounded
+
+    # 360°-spanning bbox keeps Periodic in x.
+    bbox_full = BoundingBox(longitude=(-180, 180), latitude=(-30, 30))
+    md_full = Metadatum(:temperature; dataset=ECCO4Monthly(), region=bbox_full)
+    @test topology(native_grid(md_full))[1] == Periodic
+
+    # Latitude-only restriction: longitude is unrestricted, x stays Periodic.
+    bbox_lat = BoundingBox(latitude=(-30, 30))
+    md_lat = Metadatum(:temperature; dataset=ECCO4Monthly(), region=bbox_lat)
+    @test topology(native_grid(md_lat))[1] == Periodic
+
+    # ERA5 uses a 0°..360° native longitude convention. A bbox specified as
+    # -110°..30° crosses that seam after conversion and must keep the full span.
+    seam_bbox = BoundingBox(longitude=(-110, 30), latitude=(-25, 35))
+    seam_md = Metadatum(:temperature; dataset=ERA5HourlySingleLevel(),
+                        date=DateTime(2004, 12, 27), region=seam_bbox)
+    seam_grid = native_grid(seam_md)
+    seam_λ = λnodes(seam_grid, Center())
+
+    @test length(seam_λ) == 561
+    @test first(seam_λ) == 250.0f0
+    @test last(seam_λ) == 390.0f0
+    @test topology(seam_grid)[1] == Bounded
 end
 
 @testset "Metadata region keyword" begin
@@ -140,4 +169,38 @@ end
     @test first(md).region === col
     @test last(md).region === col
     @test md[1].region === col
+end
+
+@testset "restrict() center-brackets the bbox on native interfaces" begin
+    # Uniform interfaces (cell centers at 0.5, 1.5, …): edges on cell boundaries
+    # get one extra cell at each end so a native center brackets them.
+    interfaces = collect(0.0:1.0:10.0)
+    sliced, rN = restrict((2.0, 6.0), interfaces, 10)
+    @test sliced == [1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0]
+    @test rN == 6
+
+    # Uniform interfaces, off-grid bbox: snap outward to the surrounding
+    # native cells so the result is a superset of the request.
+    sliced, rN = restrict((2.5, 6.5), interfaces, 10)
+    @test sliced[1]   ≤ 2.5
+    @test sliced[end] ≥ 6.5
+    @test rN == length(sliced) - 1
+
+    # Stretched interfaces (cells get wider): snapping must return the
+    # actual native interfaces, not a 2-tuple of the user's bbox.
+    stretched = [0.0, 0.5, 1.5, 3.0, 5.5, 9.5, 15.0]
+    sliced, rN = restrict((1.0, 6.0), stretched, length(stretched) - 1)
+    @test sliced == [0.5, 1.5, 3.0, 5.5, 9.5]
+    @test rN == 4
+
+    # Out-of-range bbox is clamped, not crashed.
+    sliced, rN = restrict((-100.0, 100.0), stretched, length(stretched) - 1)
+    @test sliced == stretched
+    @test rN == length(stretched) - 1
+
+    # 2-tuple endpoints on a uniform native grid: center-bracketing widens the
+    # boundary-aligned endpoints by one cell at each end.
+    sliced, rN = restrict((120, 240), (0, 360), 360)
+    @test sliced == (119, 241)
+    @test rN == 122
 end

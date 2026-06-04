@@ -1,13 +1,5 @@
-using Oceananigans.Grids: AbstractGrid, prettysummary
-
-using Adapt
-using Printf
-using Thermodynamics: Liquid
-using KernelAbstractions.Extras.LoopInfo: @unroll
-using Statistics: norm
-
-import Thermodynamics as AtmosphericThermodynamics
-import Thermodynamics.Parameters: Rv_over_Rd
+using Oceananigans.Utils: prettysummary
+using Thermodynamics: Thermodynamics as AtmosphericThermodynamics
 
 #####
 ##### Bulk turbulent fluxes based on similarity theory
@@ -160,31 +152,72 @@ end
     return log(h / ℓ) - ψh
 end
 
+# `local_roughness_length(ℓ, interior_properties, ::Val{R})` is the
+# per-surface entry point used by `local_roughness_lengths` below. `R`
+# is `:momentum` or `:scalar` and lets surface-specific formulations
+# (e.g. `LandRoughnessLength`) pick the right field on the interior
+# properties NamedTuple. The default just returns the formulation
+# unchanged, regardless of R or interior_properties — ocean
+# `MomentumRoughnessLength` / `ScalarRoughnessLength` hit this fallback.
+@inline local_roughness_length(ℓ, interior_properties) = ℓ
+@inline local_roughness_length(ℓ, interior_properties, ::Val) = ℓ
+
+@inline function local_roughness_length(ℓ::LandRoughnessLength,
+                                        interior_properties::NamedTuple{names, T},
+                                        ::Val{R}) where {names, T, R}
+    candidate = if R === :momentum && hasproperty(interior_properties, :momentum_roughness_length)
+        max(interior_properties.momentum_roughness_length, ℓ.minimum_roughness_length)
+    elseif R === :scalar && hasproperty(interior_properties, :scalar_roughness_length)
+        max(interior_properties.scalar_roughness_length, ℓ.minimum_roughness_length)
+    else
+        ℓ.minimum_roughness_length
+    end
+
+    return max(ℓ.multiplier * candidate, ℓ.minimum_roughness_length)
+end
+
+@inline function local_roughness_lengths(roughness_lengths, interior_properties)
+    momentum    = local_roughness_length(roughness_lengths.momentum,
+                                          interior_properties,
+                                          Val(:momentum))
+    temperature = local_roughness_length(roughness_lengths.temperature,
+                                          interior_properties,
+                                          Val(:scalar))
+    water_vapor = local_roughness_length(roughness_lengths.water_vapor,
+                                          interior_properties,
+                                          Val(:scalar))
+    return SimilarityScales(momentum, temperature, water_vapor)
+end
+
 function iterate_interface_fluxes(flux_formulation::SimilarityTheoryFluxes,
                                   Tₛ, qₛ, Δθ, Δq, Δh,
                                   approximate_interface_state,
                                   atmosphere_state,
                                   interface_properties,
-                                  atmosphere_properties)
+                                  atmosphere_properties,
+                                  interior_properties = nothing)
 
     ℂᵃᵗ = atmosphere_properties.thermodynamics_parameters
     g  = atmosphere_properties.gravitational_acceleration
     pᵃᵗ = atmosphere_state.p
 
     # "initial" scales because we will recompute them
-    u★ = approximate_interface_state.u★
-    θ★ = approximate_interface_state.θ★
-    q★ = approximate_interface_state.q★
+    u★ = approximate_interface_state.fluxes.u★
+    θ★ = approximate_interface_state.fluxes.θ★
+    q★ = approximate_interface_state.fluxes.q★
 
     # Stability functions for momentum, heat, and vapor
     ψu = flux_formulation.stability_functions.momentum
     ψθ = flux_formulation.stability_functions.temperature
     ψq = flux_formulation.stability_functions.water_vapor
 
-    # Extract roughness lengths
-    ℓu = flux_formulation.roughness_lengths.momentum
-    ℓθ = flux_formulation.roughness_lengths.temperature
-    ℓq = flux_formulation.roughness_lengths.water_vapor
+    # Extract roughness lengths, resolving field-aware land formulations from
+    # local per-cell interior properties.
+    roughness_lengths = local_roughness_lengths(flux_formulation.roughness_lengths,
+                                                interior_properties)
+    ℓu = roughness_lengths.momentum
+    ℓθ = roughness_lengths.temperature
+    ℓq = roughness_lengths.water_vapor
     β  = flux_formulation.gustiness_parameter
 
     # Compute Monin--Obukhov length scale depending on a `buoyancy flux`
@@ -267,7 +300,6 @@ L★ = u★² / ϰ b★ .
     return b★
 end
 
-import Statistics
 
 #####
 ##### Struct that represents a 3-tuple of momentum, heat, and water vapor
@@ -567,6 +599,58 @@ Base.show(io::IO, ss::SplitStabilityFunction) = print(io, "SplitStabilityFunctio
     stable = ζ > 0
     return ifelse(stable, Ψ_stable, Ψ_unstable)
 end
+
+#####
+##### Linear stable stability function (ψ = -c ζ, bounded)
+#####
+
+"""
+    LinearStableStabilityFunction{FT}
+
+A simple linear stability function for stable conditions: ``ψ = -c ζ``,
+bounded at ``|ζ| ≤ ζ_{max}``.
+
+Used by the NCAR/Large-Yeager (2004) bulk formulae with ``c = 5`` and ``ζ_{max} = 10``.
+
+References:
+- Large, W.G. & Yeager, S.G. (2004): NCAR/TN-460+STR
+"""
+@kwdef struct LinearStableStabilityFunction{FT} <: AbstractStabilityFunction
+    coefficient :: FT = 5.0
+    maximum_stability_parameter :: FT = 10.0
+end
+
+@inline function stability_profile(ψ::LinearStableStabilityFunction, ζ)
+    c = ψ.coefficient
+    ζmax = ψ.maximum_stability_parameter
+    ζ⁺ = max(zero(ζ), ζ)
+    return -c * min(ζ⁺, ζmax)
+end
+
+Base.summary(::LinearStableStabilityFunction{FT}) where FT = "LinearStableStabilityFunction{$FT}"
+Base.show(io::IO, ::LinearStableStabilityFunction{FT}) where FT = print(io, "LinearStableStabilityFunction{$FT}")
+
+"""
+    large_yeager_stability_functions(FT = Float64)
+
+NCAR/Large-Yeager (2004) stability functions combining:
+- Unstable: Paulson (1970) with γ = 16
+- Stable: linear ψ = -5ζ, bounded at |ζ| ≤ 10
+
+Used for OMIP-2 protocol compliance.
+"""
+function large_yeager_stability_functions(FT=Oceananigans.defaults.FloatType)
+    stable   = LinearStableStabilityFunction{FT}()
+    momentum = SplitStabilityFunction(stable, PaulsonMomentumStabilityFunction{FT}())
+    scalar   = SplitStabilityFunction(stable, PaulsonScalarStabilityFunction{FT}())
+    return SimilarityScales(momentum, scalar, scalar)
+end
+
+# Land currently borrows the NCAR/Large–Yeager Businger–Dyer form
+# (Paulson 1970 unstable + linear stable). TODO: replace with land-tuned
+# stability functions.
+atmosphere_land_stability_functions(FT=Oceananigans.defaults.FloatType) =
+    large_yeager_stability_functions(FT)
 
 function atmosphere_sea_ice_stability_functions(FT=Oceananigans.defaults.FloatType)
     unstable_momentum = PaulsonMomentumStabilityFunction{FT}()
