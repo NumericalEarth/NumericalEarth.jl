@@ -1,5 +1,5 @@
 #####
-##### Deep liquid flux closures for `VariablySaturatedBucketHydrology`.
+##### Deep liquid flux closures for `VariablySaturatedHydrology`.
 #####
 ##### Each closure implements
 #####

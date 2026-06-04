@@ -1,5 +1,5 @@
 #####
-##### Runoff closures for `VariablySaturatedBucketHydrology`.
+##### Runoff closures for `VariablySaturatedHydrology`.
 #####
 ##### Two diagnostic categories:
 #####

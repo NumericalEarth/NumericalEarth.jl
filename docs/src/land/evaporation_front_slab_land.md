@@ -16,8 +16,8 @@ prescribed evaporation-efficiency function `β(𝒮)`.
 All math symbols below follow
 [`docs/src/appendix/notation.md`](../appendix/notation.md). The model is
 built around three closures
-([`VariablySaturatedBucketHydrology`](@ref),
-[`WaterCoupledForceRestoreEnergy`](@ref),
+([`VariablySaturatedHydrology`](@ref),
+[`WaterCoupledEnergy`](@ref),
 [`EvaporationFrontHumidity`](@ref)) plus their sub-closures (deep liquid
 flux, runoff, retention curve, evaporation-front depth, dry-layer vapor
 exchange). It targets bare ground without snow, ice, or vegetation; see
@@ -34,7 +34,7 @@ The composable container keeps a two-prognostic shape:
 | `𝒮`  | `land.saturation` | diagnostic surface saturation, recomputed from `Mˡᵃ` every step |
 
 A closure-extensible `land.diagnostics` slot carries fields each closure
-publishes for downstream consumers — for the variably-saturated bucket:
+publishes for downstream consumers — for the variably-saturated hydrology:
 `deep_liquid_flux`, `surface_liquid_flux`, `surface_runoff`,
 `subsurface_runoff`, and `water_storage_tendency`. The hydrology step
 publishes `water_storage_tendency`; the energy step consumes it for the
@@ -194,7 +194,7 @@ and `Tˡᵃ` updates conservatively:
 The conservative `dTˡᵃ/dt` form guarantees that adding or removing
 water *at the slab temperature* leaves `Tˡᵃ` invariant — verified
 numerically to floating-point error in
-[`test_water_coupled_force_restore_energy.jl`](https://github.com/NumericalEarth/NumericalEarth.jl/blob/main/test/test_water_coupled_force_restore_energy.jl).
+[`test_water_coupled_energy.jl`](https://github.com/NumericalEarth/NumericalEarth.jl/blob/main/test/test_water_coupled_energy.jl).
 
 ## 3. Runoff: rejected input versus storage export
 
@@ -352,7 +352,7 @@ The Millington–Quirk tortuosity model multiplies `Dᵛ_eff` by
 using NumericalEarth
 
 land = SlabLand(land_grid;
-    hydrology = VariablySaturatedBucketHydrology(
+    hydrology = VariablySaturatedHydrology(
         slab_depth = 1.0,
         porosity = 0.4,
         residual_liquid_fraction = 0.05,
@@ -363,7 +363,7 @@ land = SlabLand(land_grid;
         deep_liquid_flux = FreeDrainageFlux(),
         runoff = InfiltrationCapacityRunoff(infiltration_capacity = 1e-3),
     ),
-    energy = WaterCoupledForceRestoreEnergy(
+    energy = WaterCoupledEnergy(
         dry_heat_capacity = 1.5e6,
         liquid_heat_capacity = 4186,
         reference_temperature = 273.15,

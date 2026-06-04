@@ -42,9 +42,27 @@ function apply_air_land_radiative_fluxes!(coupled_model, land)
     clock = coupled_model.clock
     radiation_state = coupled_model.interfaces.exchanger.radiation.state
 
+    # Add the radiative flux to whichever surface-energy accumulator the land's
+    # energy closure declares. The legacy `net_energy_flux` is positive *into*
+    # the slab, so radiation enters as `+ΣQ_rad`. The new `surface_energy_flux`
+    # (e.g. `WaterCoupledEnergy`) is positive *upward* (out of the slab), so the
+    # same downward-positive `ΣQ_rad` enters with a sign flip, `-ΣQ_rad`.
+    fluxes = land.fluxes
+    FT = eltype(grid)
+    if hasproperty(fluxes, :surface_energy_flux)
+        land_energy_flux = fluxes.surface_energy_flux
+        flux_sign = -one(FT)
+    elseif hasproperty(fluxes, :net_energy_flux)
+        land_energy_flux = fluxes.net_energy_flux
+        flux_sign = one(FT)
+    else
+        return nothing
+    end
+
     launch!(arch, grid, :xy,
             _apply_air_land_radiative_fluxes!,
-            land.fluxes.net_energy_flux,
+            land_energy_flux,
+            flux_sign,
             land_radiative_flux,
             grid,
             clock,
@@ -55,7 +73,8 @@ function apply_air_land_radiative_fluxes!(coupled_model, land)
     return nothing
 end
 
-@kernel function _apply_air_land_radiative_fluxes!(land_net_energy_flux,
+@kernel function _apply_air_land_radiative_fluxes!(land_energy_flux,
+                                                  flux_sign,
                                                   interface_radiative_flux,
                                                   grid,
                                                   clock,
@@ -83,7 +102,7 @@ end
     inactive = inactive_node(i, j, 1, grid, Center(), Center(), Center())
 
     @inbounds begin
-        land_net_energy_flux[i, j, 1] += ifelse(inactive, zero(grid), ΣQ_rad)
+        land_energy_flux[i, j, 1] += ifelse(inactive, zero(grid), flux_sign * ΣQ_rad)
         interface_radiative_flux.upwelling_longwave[i, j, 1]    = ℐꜛˡʷ
         interface_radiative_flux.downwelling_longwave[i, j, 1]  = - ℐₐˡʷ
         interface_radiative_flux.downwelling_shortwave[i, j, 1] = - ℐₜˢʷ

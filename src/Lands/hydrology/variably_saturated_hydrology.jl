@@ -1,5 +1,5 @@
 #####
-##### `VariablySaturatedBucketHydrology` — conservative variably saturated slab
+##### `VariablySaturatedHydrology` — conservative variably saturated slab
 ##### hydrology.
 #####
 ##### Replaces `BucketHydrology`'s `clamp(M + (P − E) Δt, 0, M⁺)` update with
@@ -26,7 +26,7 @@
 #####
 
 """
-    VariablySaturatedBucketHydrology(FT = Oceananigans.defaults.FloatType;
+    VariablySaturatedHydrology(FT = Oceananigans.defaults.FloatType;
                                      slab_depth,
                                      porosity,
                                      residual_liquid_fraction = 0,
@@ -58,7 +58,7 @@ surface; positive upward at the bottom).
 * `runoff` — runoff closure: [`NoRunoff`](@ref) or
   [`InfiltrationCapacityRunoff`](@ref).
 """
-struct VariablySaturatedBucketHydrology{FT, R, C, DF, PD, RO} <: AbstractHydrology
+struct VariablySaturatedHydrology{FT, R, C, DF, PD, RO} <: AbstractHydrology
     slab_depth               :: FT
     porosity                 :: FT
     residual_liquid_fraction :: FT
@@ -72,7 +72,7 @@ struct VariablySaturatedBucketHydrology{FT, R, C, DF, PD, RO} <: AbstractHydrolo
     runoff                   :: RO
 end
 
-function VariablySaturatedBucketHydrology(FT::Type = Oceananigans.defaults.FloatType;
+function VariablySaturatedHydrology(FT::Type = Oceananigans.defaults.FloatType;
                                           slab_depth,
                                           porosity,
                                           residual_liquid_fraction = 0,
@@ -84,7 +84,7 @@ function VariablySaturatedBucketHydrology(FT::Type = Oceananigans.defaults.Float
                                           deep_liquid_flux = NoDeepLiquidFlux(),
                                           deep_pressure_head = 0,
                                           runoff = NoRunoff())
-    return VariablySaturatedBucketHydrology(convert(FT, slab_depth),
+    return VariablySaturatedHydrology(convert(FT, slab_depth),
                                             convert(FT, porosity),
                                             convert(FT, residual_liquid_fraction),
                                             convert(FT, specific_storage),
@@ -101,10 +101,10 @@ end
 # `vapor_flux` is the signed `Jᵛ` (positive upward) — replaces the legacy
 # `precipitation/evaporation` positive-part fields for this closure.
 # `liquid_precipitation_flux` is `Pˡ` (positive downward).
-flux_variables(::VariablySaturatedBucketHydrology) =
+flux_variables(::VariablySaturatedHydrology) =
     (:vapor_flux, :liquid_precipitation_flux)
 
-diagnostic_variables(::VariablySaturatedBucketHydrology) =
+diagnostic_variables(::VariablySaturatedHydrology) =
     (:deep_liquid_flux,
      :surface_liquid_flux,
      :surface_runoff,
@@ -163,14 +163,14 @@ end
     end
 end
 
-function update_diagnostics!(h::VariablySaturatedBucketHydrology, land)
+function update_diagnostics!(h::VariablySaturatedHydrology, land)
     arch = architecture(land.grid)
     launch!(arch, land.grid, :xy, _variably_saturated_saturation!,
             land.saturation, land.water_storage, h)
     return nothing
 end
 
-saturation(h::VariablySaturatedBucketHydrology, land) = land.saturation
+saturation(h::VariablySaturatedHydrology, land) = land.saturation
 
 #####
 ##### Time-step kernel.
@@ -220,7 +220,7 @@ saturation(h::VariablySaturatedBucketHydrology, land) = land.saturation
     end
 end
 
-function time_step!(h::VariablySaturatedBucketHydrology, land, Δt, time)
+function time_step!(h::VariablySaturatedHydrology, land, Δt, time)
     arch = architecture(land.grid)
     launch!(arch, land.grid, :xy, _variably_saturated_step!,
             land.water_storage, land.saturation,
@@ -235,8 +235,8 @@ function time_step!(h::VariablySaturatedBucketHydrology, land, Δt, time)
     return nothing
 end
 
-Base.summary(h::VariablySaturatedBucketHydrology) =
-    string("VariablySaturatedBucketHydrology(",
+Base.summary(h::VariablySaturatedHydrology) =
+    string("VariablySaturatedHydrology(",
            "slab_depth=", prettysummary(h.slab_depth),
            ", porosity=", prettysummary(h.porosity),
            ", retention=", summary(h.retention_curve),

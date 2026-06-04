@@ -30,7 +30,7 @@ function build_coupled_test_model(arch; M_init, T_init)
                                 x = (-1kilometer, 1kilometer),
                                 topology = (Periodic, Flat, Flat))
 
-    hydrology = VariablySaturatedBucketHydrology(eltype(land_grid);
+    hydrology = VariablySaturatedHydrology(eltype(land_grid);
         slab_depth = 1.0, porosity = 0.4,
         residual_liquid_fraction = 0.0,
         specific_storage = 1e-3, critical_saturation = 0.5,
@@ -38,7 +38,7 @@ function build_coupled_test_model(arch; M_init, T_init)
         hydraulic_conductivity = VanGenuchtenConductivity(K_saturated = 1e-6, n = 2.0),
         deep_liquid_flux = NoDeepLiquidFlux(),
         runoff = NoRunoff())
-    energy = WaterCoupledForceRestoreEnergy(eltype(land_grid);
+    energy = WaterCoupledEnergy(eltype(land_grid);
         dry_heat_capacity = 1e6,
         liquid_heat_capacity = 4186,
         reference_temperature = 273.15,
@@ -80,8 +80,8 @@ end
             @test model.atmosphere isa Simulation
             @test model.atmosphere.model isa Breeze.AtmosphereModel
             @test model.land isa SlabLand
-            @test model.land.hydrology isa VariablySaturatedBucketHydrology
-            @test model.land.energy isa WaterCoupledForceRestoreEnergy
+            @test model.land.hydrology isa VariablySaturatedHydrology
+            @test model.land.energy isa WaterCoupledEnergy
 
             al_iface = model.interfaces.atmosphere_land_interface
             @test !isnothing(al_iface)

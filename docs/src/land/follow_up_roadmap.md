@@ -89,10 +89,10 @@ or dynamic dispatch on product type inside kernels.
 
 These are physical closures, not data products:
 
-- `VariablySaturatedBucketHydrology` — conservative signed-flux water
+- `VariablySaturatedHydrology` — conservative signed-flux water
   budget; augmented-liquid-fraction storage; supports `Mˡᵃ > Mˡᵃ⁺` via
   pressure head.
-- `WaterCoupledForceRestoreEnergy` — `Mˡᵃ`-dependent heat capacity
+- `WaterCoupledEnergy` — `Mˡᵃ`-dependent heat capacity
   `C(Mˡᵃ) = C_dry + cˡ Mˡᵃ`; conservative `dTˡᵃ/dt` (adding water at
   slab temperature leaves T invariant).
 - `VanGenuchtenRetention` + `VanGenuchtenConductivity` — retention curve
@@ -158,7 +158,7 @@ Test-coverage gaps Codecov flagged:
 5. `VanGenuchtenConductivity` `K(0) = 0`, `K(1) = K_saturated`.
 6. `MillingtonQuirk` diffusivity → 0 at saturation.
 7. `EvaporationFrontHumidity` `D == 0` fallback branch.
-8. `WaterCoupledForceRestoreEnergy` both `deep_time_scale` and
+8. `WaterCoupledEnergy` both `deep_time_scale` and
    `deep_conductance` branches exercised.
 9. Construction error for `advect_surface_liquid_energy = true` (loud
    fail).
@@ -166,6 +166,34 @@ Test-coverage gaps Codecov flagged:
     fluxes (not overwritten).
 
 Plus process: CPU CI, GPU CI, docs build, both converted examples render.
+
+#### Known issue: `WaterCoupledEnergy` deep restoring destabilizes the two-way-coupled LES (#326)
+
+`examples/breeze_over_slab_land.jl` (Breeze LES ↔ `SlabLand`, two-way coupled)
+blows up around day 3 when `WaterCoupledEnergy` is given a finite deep restoring
+(`deep_time_scale = 12 h`, `deep_temperature = 290`): the land temperature runs
+away to non-physical values, seeding a near-surface 2Δz coupling instability that
+crashes the atmospheric microphysics. Isolated by a ladder of controlled runs
+(identical grid/dynamics/timestep/radiation throughout):
+
+- Pre-PR closures (`SlabEnergy`+`BucketHydrology`+`FractionalHumidity`): stable.
+- Swap only the energy closure to `SlabEnergy` (keep the new hydrology +
+  `EvaporationFrontHumidity`): stable ⇒ the culprit is `WaterCoupledEnergy`.
+- Disable the water-mass coupling term `−cˡ(T−Tᵣ)dM/dt`: still blows up ⇒ not that term.
+- Set `deep_conductance = 0` (no deep restoring): **stable** ⇒ the deep restoring is the trigger.
+
+It is **not** a timestep/CFL issue (halving `cfl`/`max_Δt` makes it blow up *earlier*),
+**not** a heat-capacity difference (identical in both energy closures), and **not** a
+restoring-stiffness issue: with `Λᵈ = C/τ`, the restoring rate is `1/τ` so
+`Δt·Λᵈ/C = Δt/τ ≈ 1.4e-4`, and a backward-Euler (implicit) treatment of the
+conduction term changes the update by ~0.01% and does **not** fix the blow-up
+(verified). The instability is a genuine coupled surface-flux feedback that only
+appears under two-way coupling — the prescribed-atmosphere
+`era5_forced_slab_land.jl` is stable with the same closures *and* a finite deep
+restoring. Proper fix needs investigation of the surface-flux ↔ land-energy
+feedback (e.g. an implicitly-coupled surface flux, a deeper/larger-`C` slab, or a
+`deep_temperature` nearer the surface equilibrium), not a per-term implicit tweak.
+Worked around for now by `deep_conductance = 0` in the breeze example.
 
 ### Tier 1 — property-provider extension (one follow-up PR, ~400 LOC)
 
@@ -177,8 +205,8 @@ Turn scalar `FT` closure parameters into
 
 | Closure | Parameters |
 |---|---|
-| `WaterCoupledForceRestoreEnergy` | `dry_heat_capacity`; verify non-scalar `deep_temperature` / `deep_conductance` on CPU + GPU |
-| `VariablySaturatedBucketHydrology` | `porosity`, `residual_liquid_fraction`, `specific_storage`, `critical_saturation` |
+| `WaterCoupledEnergy` | `dry_heat_capacity`; verify non-scalar `deep_temperature` / `deep_conductance` on CPU + GPU |
+| `VariablySaturatedHydrology` | `porosity`, `residual_liquid_fraction`, `specific_storage`, `critical_saturation` |
 | `VanGenuchtenRetention` | `α`, `n` |
 | `VanGenuchtenConductivity` | `K_saturated`, `n`, `ℓ` |
 | `StorageBasedEvaporationFrontDepth` | `maximum_front_depth`, `front_depth_exponent` |

@@ -12,8 +12,8 @@
 #
 # `SlabLand` composes
 #
-#     energy    = WaterCoupledForceRestoreEnergy(...)   # C(Mˡᵃ) = C_dry + cˡ Mˡᵃ
-#     hydrology = VariablySaturatedBucketHydrology(...) # ϑˡ storage, signed-flux budget
+#     energy    = WaterCoupledEnergy(...)   # C(Mˡᵃ) = C_dry + cˡ Mˡᵃ
+#     hydrology = VariablySaturatedHydrology(...) # ϑˡ storage, signed-flux budget
 #
 # with the atmosphere-facing humidity solved by
 # [`EvaporationFrontHumidity`](@ref) — a Fickian vapor-flux balance through
@@ -136,14 +136,14 @@ correction = ElevationCorrection(z_land, z_era5; lapse_rate = Γ_lapse)
 #
 # `SlabLand` is purely energy + hydrology; aerodynamic roughness is a property of
 # the atmosphere-land flux closure (set on the model below), not of the land.
-# We use the variably-saturated bucket and the water-mass-coupled
+# We use variably-saturated hydrology and the water-mass-coupled
 # force-restore energy: the storage variable `Mˡᵃ` evolves under a signed
 # conservative budget (positive-upward fluxes; saturated overflow allowed via
 # the augmented liquid fraction), and the areal heat capacity
 # `C(Mˡᵃ) = C_dry + cˡ Mˡᵃ` is recomputed every step.
 
 slab_land = SlabLand(land_grid;
-    hydrology = VariablySaturatedBucketHydrology(eltype(land_grid);
+    hydrology = VariablySaturatedHydrology(eltype(land_grid);
         slab_depth = 1.0,
         porosity = 0.4,
         residual_liquid_fraction = 0.05,
@@ -153,7 +153,7 @@ slab_land = SlabLand(land_grid;
         hydraulic_conductivity = VanGenuchtenConductivity(K_saturated = 1e-7, n = 2.0),
         deep_liquid_flux = NoDeepLiquidFlux(),
         runoff = InfiltrationCapacityRunoff(infiltration_capacity = 1e-3)),
-    energy = WaterCoupledForceRestoreEnergy(eltype(land_grid);
+    energy = WaterCoupledEnergy(eltype(land_grid);
         dry_heat_capacity = 0.1 * 1500 * 1480,
         liquid_heat_capacity = 4186,
         reference_temperature = 273.15,
@@ -211,7 +211,7 @@ function progress(sim)
     Tmin, Tmax = minimum(land.temperature), maximum(land.temperature)
     Wmin, Wmax = minimum(land.water_storage), maximum(land.water_storage)
     𝒮mean      = mean(land.saturation)
-    Qmean      = mean(land.fluxes.net_energy_flux)
+    Qmean      = mean(land.fluxes.surface_energy_flux)
     elapsed    = 1e-9 * (time_ns() - wall_time[]); wall_time[] = time_ns()
     @info @sprintf("Iter %d  t = %s  T %.1f–%.1f K  W %.1f–%.1f kg m⁻²  ⟨𝒮⟩ %.2f  ⟨Q⟩ %+6.1f W m⁻²  wall Δ %.1fs",
                    iteration(sim), prettytime(sim), Tmin, Tmax, Wmin, Wmax, 𝒮mean, Qmean, elapsed)
@@ -222,9 +222,9 @@ add_callback!(simulation, progress, IterationInterval(144))  # ~12 h
 outputs = (T = slab_land.temperature,
            W = slab_land.water_storage,
            𝒮 = slab_land.saturation,
-           Q = slab_land.fluxes.net_energy_flux,
-           E = slab_land.fluxes.evaporation,
-           P = slab_land.fluxes.precipitation)
+           Q = slab_land.fluxes.surface_energy_flux,
+           E = slab_land.fluxes.vapor_flux,
+           P = slab_land.fluxes.liquid_precipitation_flux)
 
 simulation.output_writers[:land] = JLD2Writer(model, outputs;
                                               filename = "era5_forced_slab_land",
@@ -268,7 +268,7 @@ times_days = collect(times) ./ 86400
 fig = Figure(size = (1500, 1000), fontsize = 12)
 ax_T = Axis(fig[1, 1]; title = "Skin temperature T (K)",    xlabel = "longitude", ylabel = "latitude", aspect = DataAspect())
 ax_𝒮 = Axis(fig[1, 2]; title = "Surface saturation 𝒮",   xlabel = "longitude", ylabel = "latitude", aspect = DataAspect())
-ax_Q = Axis(fig[1, 3]; title = "Net energy flux Q (W m⁻²)", xlabel = "longitude", ylabel = "latitude", aspect = DataAspect())
+ax_Q = Axis(fig[1, 3]; title = "Surface energy flux (W m⁻², + up)", xlabel = "longitude", ylabel = "latitude", aspect = DataAspect())
 ax_z = Axis(fig[2, 1]; title = "Elevation (m, ETOPO 2022)", xlabel = "longitude", ylabel = "latitude", aspect = DataAspect())
 ax_t = Axis(fig[2, 2:3]; title = "Domain T extrema and mean over time", xlabel = "t (days)", ylabel = "T (K)")
 

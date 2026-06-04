@@ -77,7 +77,7 @@ land_grid = RectilinearGrid(arch;
                             halo = grid.Hx,
                             topology = (Periodic, Flat, Flat))
 
-# A conservative, variably-saturated bucket replaces the classic clamped
+# A conservative, variably-saturated hydrology replaces the classic clamped
 # bucket. Storage is the augmented liquid fraction `ϑˡ = θˡ + Sₛ max(Π, 0)`,
 # so wetting beyond saturation (`Mˡᵃ > Mˡᵃ⁺ = ρˡ ν D`) is admitted and
 # corresponds to positive pressure head rather than a hard clamp. We use Van
@@ -85,7 +85,7 @@ land_grid = RectilinearGrid(arch;
 # bulk soil drainage), and an infiltration-capacity runoff closure for any
 # precipitation that exceeds the soil capacity.
 
-hydrology = VariablySaturatedBucketHydrology(eltype(land_grid);
+hydrology = VariablySaturatedHydrology(eltype(land_grid);
     slab_depth = 1.0,
     porosity = 0.4,
     residual_liquid_fraction = 0.05,
@@ -96,16 +96,25 @@ hydrology = VariablySaturatedBucketHydrology(eltype(land_grid);
     deep_liquid_flux = NoDeepLiquidFlux(),
     runoff = InfiltrationCapacityRunoff(infiltration_capacity = 1e-3))
 
-# Force-restore energy with a water-mass-dependent areal heat capacity
+# Water-mass-coupled energy with a water-mass-dependent areal heat capacity
 # `C(Mˡᵃ) = C_dry + cˡ Mˡᵃ` and conservative `Tˡᵃ` update — adding or removing
 # water at the slab temperature leaves `Tˡᵃ` unchanged.
+#
+# Deep restoring is disabled here (`deep_conductance = 0`). A finite deep
+# restoring (e.g. `deep_time_scale = 12hours`) destabilizes this convection-
+# resolving, two-way-coupled LES: it drives a near-surface 2Δz coupling
+# instability that runs the land temperature away to non-physical values around
+# day 3. This is a coupled-feedback effect (not a timestep or restoring-stiffness
+# issue) tracked as a `WaterCoupledEnergy` follow-up (issue #326); see
+# `docs/src/land/follow_up_roadmap.md`. The prescribed-atmosphere
+# `era5_forced_slab_land.jl` example is unaffected and keeps its deep restoring.
 
-energy = WaterCoupledForceRestoreEnergy(eltype(land_grid);
+energy = WaterCoupledEnergy(eltype(land_grid);
     dry_heat_capacity = 1480 * 1500 * 0.10,
     liquid_heat_capacity = 4186,
     reference_temperature = 273.15,
     deep_temperature = 290.0,
-    deep_time_scale = 12hours,
+    deep_conductance = 0,
     advect_deep_liquid_energy = false,
     advect_surface_liquid_energy = false)
 
@@ -397,7 +406,7 @@ lines!(ax_Tˡᵃ, x_land, Tˡᵃ_n; color = :black, linewidth = 2)
 lines!(ax_M,   x_land, M_n;   color = :black, linewidth = 2)
 lines!(ax_𝒮,   x_land, 𝒮_n;   color = :black, linewidth = 2)
 
-ylims!(ax_M, 0, hydrology.maximum_water_storage * 1.05)
+ylims!(ax_M, 0, Mˡᵃ⁺ * 1.05)
 ylims!(ax_𝒮, 0, 1.05)
 
 title = @lift "Diurnal convection over heterogeneous slab land, t = " * prettytime(times[$n])

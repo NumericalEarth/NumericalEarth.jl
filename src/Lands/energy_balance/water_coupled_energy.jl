@@ -1,5 +1,5 @@
 #####
-##### `WaterCoupledForceRestoreEnergy` — force-restore energy closure with a
+##### `WaterCoupledEnergy` — force-restore energy closure with a
 ##### water-mass-dependent heat capacity and (optional) advective energy
 ##### carried across the slab boundaries by liquid water flux.
 #####
@@ -32,7 +32,7 @@
 #####
 
 """
-    WaterCoupledForceRestoreEnergy(FT = Oceananigans.defaults.FloatType;
+    WaterCoupledEnergy(FT = Oceananigans.defaults.FloatType;
                                    dry_heat_capacity = 1480 * 1500 * 0.10,
                                    liquid_heat_capacity = 4186,
                                    reference_temperature = 273.15,
@@ -54,7 +54,7 @@ s) to set the deep restoring strength; exactly one must be supplied. With
 The choice affects only the *advective* energy budget; the temperature update is
 invariant to `Tᵣ`. A standard choice is the triple point 273.15 K.
 """
-struct WaterCoupledForceRestoreEnergy{FT, TD, ΛD, Tau} <: AbstractEnergyBalance
+struct WaterCoupledEnergy{FT, TD, ΛD, Tau} <: AbstractEnergyBalance
     dry_heat_capacity            :: FT
     liquid_heat_capacity         :: FT
     reference_temperature        :: FT
@@ -65,7 +65,7 @@ struct WaterCoupledForceRestoreEnergy{FT, TD, ΛD, Tau} <: AbstractEnergyBalance
     advect_surface_liquid_energy :: Bool
 end
 
-function WaterCoupledForceRestoreEnergy(FT::Type = Oceananigans.defaults.FloatType;
+function WaterCoupledEnergy(FT::Type = Oceananigans.defaults.FloatType;
                                         dry_heat_capacity = 1480 * 1500 * 0.10,
                                         liquid_heat_capacity = 4186,
                                         reference_temperature = 273.15,
@@ -76,7 +76,7 @@ function WaterCoupledForceRestoreEnergy(FT::Type = Oceananigans.defaults.FloatTy
                                         advect_surface_liquid_energy = false)
     if isnothing(deep_conductance) === isnothing(deep_time_scale)
         throw(ArgumentError(
-            "WaterCoupledForceRestoreEnergy requires exactly one of " *
+            "WaterCoupledEnergy requires exactly one of " *
             "`deep_conductance` (Λᵈᵉᵉᵖ, W m⁻² K⁻¹) or `deep_time_scale` (τᵈᵉᵉᵖ, s)."))
     end
     # The surface-advective term needs the temperature at which liquid
@@ -94,7 +94,7 @@ function WaterCoupledForceRestoreEnergy(FT::Type = Oceananigans.defaults.FloatTy
     Λ = isnothing(deep_conductance) ? nothing : normalize_property(FT, deep_conductance)
     τ = isnothing(deep_time_scale)  ? nothing : convert(FT, deep_time_scale)
     Td = deep_temperature isa Number ? convert(FT, deep_temperature) : deep_temperature
-    return WaterCoupledForceRestoreEnergy(convert(FT, dry_heat_capacity),
+    return WaterCoupledEnergy(convert(FT, dry_heat_capacity),
                                           convert(FT, liquid_heat_capacity),
                                           convert(FT, reference_temperature),
                                           Td, Λ, τ,
@@ -106,14 +106,14 @@ end
 # the interface) plus the optional precipitation temperature for the surface
 # advective term. The legacy `net_energy_flux` is kept as a deprecated fallback
 # when the new interface isn't writing `surface_energy_flux`.
-flux_variables(::WaterCoupledForceRestoreEnergy) =
+flux_variables(::WaterCoupledEnergy) =
     (:surface_energy_flux, :liquid_precipitation_temperature)
 
 #####
 ##### Helpers
 #####
 
-@inline function deep_conductance_value(energy::WaterCoupledForceRestoreEnergy, C, i, j, grid, time)
+@inline function deep_conductance_value(energy::WaterCoupledEnergy, C, i, j, grid, time)
     FT = eltype(grid)
     Λ  = energy.deep_conductance
     τ  = energy.deep_time_scale
@@ -175,7 +175,7 @@ end
     @inbounds T[i, j, 1] = Tij + Δt * dTdt
 end
 
-function time_step!(energy::WaterCoupledForceRestoreEnergy, land, Δt, time)
+function time_step!(energy::WaterCoupledEnergy, land, Δt, time)
     grid = land.grid
     arch = architecture(grid)
     launch!(arch, grid, :xy, _water_coupled_step!,
@@ -198,10 +198,10 @@ function time_step!(energy::WaterCoupledForceRestoreEnergy, land, Δt, time)
     return nothing
 end
 
-surface_temperature(::WaterCoupledForceRestoreEnergy, land) = land.temperature
+surface_temperature(::WaterCoupledEnergy, land) = land.temperature
 
-Base.summary(energy::WaterCoupledForceRestoreEnergy) =
-    string("WaterCoupledForceRestoreEnergy(",
+Base.summary(energy::WaterCoupledEnergy) =
+    string("WaterCoupledEnergy(",
            "C_dry=", prettysummary(energy.dry_heat_capacity),
            ", cˡ=", prettysummary(energy.liquid_heat_capacity),
            ", Tᵣ=", prettysummary(energy.reference_temperature),

@@ -3,7 +3,7 @@ include("runtests_setup.jl")
 using Oceananigans
 using Oceananigans.TimeSteppers: time_step!
 
-@testset "WaterCoupledForceRestoreEnergy force-restore" begin
+@testset "WaterCoupledEnergy force-restore" begin
     for arch in test_architectures
         grid = RectilinearGrid(arch;
                                size = 1,
@@ -21,13 +21,13 @@ using Oceananigans.TimeSteppers: time_step!
         Δt    = 100.0
         steps = 100          # ~10000 s ≈ 0.05 * τ; small enough for the linear truncation
 
-        hydrology = VariablySaturatedBucketHydrology(eltype(grid);
+        hydrology = VariablySaturatedHydrology(eltype(grid);
             slab_depth = 1.0, porosity = 0.4, specific_storage = 1e-3,
             critical_saturation = 0.5,
             retention_curve = VanGenuchtenRetention(α = 1.0, n = 2.0),
             hydraulic_conductivity = VanGenuchtenConductivity(K_saturated = 1e-6, n = 2.0),
             deep_liquid_flux = NoDeepLiquidFlux(), runoff = NoRunoff())
-        energy = WaterCoupledForceRestoreEnergy(eltype(grid);
+        energy = WaterCoupledEnergy(eltype(grid);
             dry_heat_capacity = Cdry,
             liquid_heat_capacity = 4186,
             reference_temperature = 273.15,
@@ -57,7 +57,7 @@ using Oceananigans.TimeSteppers: time_step!
     end
 end
 
-@testset "WaterCoupledForceRestoreEnergy advective drainage at slab T" begin
+@testset "WaterCoupledEnergy advective drainage at slab T" begin
     for arch in test_architectures
         grid = RectilinearGrid(arch;
                                size = 1,
@@ -68,14 +68,14 @@ end
 
         # Drain water out the bottom at slab temperature; with Λᵈ = 0 and no surface
         # fluxes, dE/dt = eˡ(T) Jˡ_b cancels cˡ(T−Tᵣ) dM/dt exactly ⇒ dT/dt = 0.
-        hydrology = VariablySaturatedBucketHydrology(eltype(grid);
+        hydrology = VariablySaturatedHydrology(eltype(grid);
             slab_depth = 1.0, porosity = 0.4, specific_storage = 1e-3,
             critical_saturation = 0.5,
             retention_curve = VanGenuchtenRetention(α = 1.0, n = 2.0),
             hydraulic_conductivity = VanGenuchtenConductivity(K_saturated = 1e-6, n = 2.0),
             deep_liquid_flux = LinearReservoirDrainage(drainage_time_scale = 1e6),
             runoff = NoRunoff())
-        energy = WaterCoupledForceRestoreEnergy(eltype(grid);
+        energy = WaterCoupledEnergy(eltype(grid);
             dry_heat_capacity = 1e6,
             liquid_heat_capacity = 4186,
             reference_temperature = 273.15,

@@ -3,7 +3,7 @@ include("runtests_setup.jl")
 using Oceananigans
 using Oceananigans.TimeSteppers: time_step!
 
-@testset "VariablySaturatedBucketHydrology diagnostics" begin
+@testset "VariablySaturatedHydrology diagnostics" begin
     for arch in test_architectures
         grid = RectilinearGrid(arch;
                                size = 1,
@@ -13,7 +13,7 @@ using Oceananigans.TimeSteppers: time_step!
                                topology = (Flat, Flat, Bounded))
 
         # d = 1 m, ρˡ = 1000, ν = 0.4, Sₛ = 1e-3, θʳ = 0 ⇒ M⁺ = 400 kg/m².
-        hydrology = VariablySaturatedBucketHydrology(eltype(grid);
+        hydrology = VariablySaturatedHydrology(eltype(grid);
             slab_depth = 1.0,
             porosity = 0.4,
             residual_liquid_fraction = 0.0,
@@ -38,7 +38,7 @@ using Oceananigans.TimeSteppers: time_step!
     end
 end
 
-@testset "VariablySaturatedBucketHydrology conservation" begin
+@testset "VariablySaturatedHydrology conservation" begin
     for arch in test_architectures
         grid = RectilinearGrid(arch;
                                size = 1,
@@ -48,7 +48,7 @@ end
                                topology = (Flat, Flat, Bounded))
 
         # No-flux: M(t) = M₀.
-        hydrology = VariablySaturatedBucketHydrology(eltype(grid);
+        hydrology = VariablySaturatedHydrology(eltype(grid);
             slab_depth = 1.0,
             porosity = 0.4,
             specific_storage = 1e-3,
@@ -76,7 +76,7 @@ end
         @test @allowscalar(interior(land.water_storage)[1, 1, 1]) ≈ 190.0
 
         # Constant precip below infiltration capacity: dM/dt = +Pˡ.
-        hydrology_capped = VariablySaturatedBucketHydrology(eltype(grid);
+        hydrology_capped = VariablySaturatedHydrology(eltype(grid);
             slab_depth = 1.0,
             porosity = 0.4,
             specific_storage = 1e-3,
@@ -103,7 +103,7 @@ end
 
         # Free drainage: dM/dt = -ρˡ K_b. With K_sat = 1e-6, ρˡ = 1000:
         # at full saturation, K = K_sat, so Jˡ_b = -1e-3 kg/m²/s.
-        hydrology_drain = VariablySaturatedBucketHydrology(eltype(grid);
+        hydrology_drain = VariablySaturatedHydrology(eltype(grid);
             slab_depth = 1.0,
             porosity = 0.4,
             specific_storage = 1e-3,

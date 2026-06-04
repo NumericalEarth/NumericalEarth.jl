@@ -1,5 +1,5 @@
 #####
-##### Hydraulic property functions used by `VariablySaturatedBucketHydrology`.
+##### Hydraulic property functions used by `VariablySaturatedHydrology`.
 #####
 ##### Two closures: retention curve `Π_m(θˡ)` (pressure head from pore liquid
 ##### fraction) and hydraulic conductivity `K(𝒮, T)`. Both are pure `@inline`

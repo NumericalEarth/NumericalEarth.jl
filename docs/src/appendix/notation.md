@@ -132,8 +132,8 @@ denote the _component_ or _location_.
 
 ### Variably-saturated slab land
 
-Symbols introduced by [`VariablySaturatedBucketHydrology`](@ref),
-[`WaterCoupledForceRestoreEnergy`](@ref), and
+Symbols introduced by [`VariablySaturatedHydrology`](@ref),
+[`WaterCoupledEnergy`](@ref), and
 [`EvaporationFrontHumidity`](@ref). See the
 [evaporation-front slab-land page](../land/evaporation_front_slab_land.md)
 for an extended discussion.
