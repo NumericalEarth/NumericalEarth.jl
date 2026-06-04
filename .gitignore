@@ -20,6 +20,8 @@ deps/src/
 docs/build/
 docs/site/
 docs/src/literated/
+docs/src/library/public_api.md
+docs/src/library/private_api.md
 
 # Output files
 *.nc
@@ -65,3 +67,7 @@ docs/src/literated/
 CondaPkg.toml
 docs/plans/*
 !docs/CondaPkg.toml
+
+# claude
+.claude
+test/Manifest.toml
