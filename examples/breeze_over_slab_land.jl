@@ -100,21 +100,21 @@ hydrology = VariablySaturatedHydrology(eltype(land_grid);
 # `C(Mˡᵃ) = C_dry + cˡ Mˡᵃ` and conservative `Tˡᵃ` update — adding or removing
 # water at the slab temperature leaves `Tˡᵃ` unchanged.
 #
-# Deep restoring is disabled here (`deep_conductance = 0`). A finite deep
-# restoring (e.g. `deep_time_scale = 12hours`) destabilizes this convection-
-# resolving, two-way-coupled LES: it drives a near-surface 2Δz coupling
-# instability that runs the land temperature away to non-physical values around
-# day 3. This is a coupled-feedback effect (not a timestep or restoring-stiffness
-# issue) tracked as a `WaterCoupledEnergy` follow-up (issue #326); see
-# `docs/src/land/follow_up_roadmap.md`. The prescribed-atmosphere
-# `era5_forced_slab_land.jl` example is unaffected and keeps its deep restoring.
+# `deep_temperature` must sit near the surface's radiative–convective
+# equilibrium (~310 K here). With a much colder target (e.g. 290 K) the deep
+# restoring holds the thin, low-heat-capacity dry patches ~30 K below their
+# natural daytime equilibrium, and that cold-surface/warm-air regime is
+# marginally unstable in this convection-resolving, two-way-coupled LES — a
+# chaotic gust trips it into a near-surface 2Δz runaway around day 3. It is the
+# restoring *target*, not the conductance or the timestep (see issue #326 and
+# `docs/src/land/follow_up_roadmap.md`).
 
 energy = WaterCoupledEnergy(eltype(land_grid);
     dry_heat_capacity = 1480 * 1500 * 0.10,
     liquid_heat_capacity = 4186,
     reference_temperature = 273.15,
-    deep_temperature = 290.0,
-    deep_conductance = 0,
+    deep_temperature = 310.0,
+    deep_time_scale = 12hours,
     advect_deep_liquid_energy = false,
     advect_surface_liquid_energy = false)
 

@@ -167,33 +167,47 @@ Test-coverage gaps Codecov flagged:
 
 Plus process: CPU CI, GPU CI, docs build, both converted examples render.
 
-#### Known issue: `WaterCoupledEnergy` deep restoring destabilizes the two-way-coupled LES (#326)
+#### Known issue: a too-cold `WaterCoupledEnergy` deep-restoring target destabilizes the two-way-coupled LES (#326)
 
 `examples/breeze_over_slab_land.jl` (Breeze LES ↔ `SlabLand`, two-way coupled)
-blows up around day 3 when `WaterCoupledEnergy` is given a finite deep restoring
-(`deep_time_scale = 12 h`, `deep_temperature = 290`): the land temperature runs
-away to non-physical values, seeding a near-surface 2Δz coupling instability that
-crashes the atmospheric microphysics. Isolated by a ladder of controlled runs
-(identical grid/dynamics/timestep/radiation throughout):
+blew up around day 3 when `WaterCoupledEnergy` used `deep_temperature = 290` with a
+finite restoring (`deep_time_scale = 12 h`): the land temperature ran away to
+non-physical values, seeding a near-surface 2Δz coupling instability that crashes
+the atmospheric microphysics.
+
+Root cause, isolated by a ladder of controlled runs (identical
+grid/dynamics/timestep/radiation throughout): **it is the restoring target
+temperature, not the conductance or the numerics.**
 
 - Pre-PR closures (`SlabEnergy`+`BucketHydrology`+`FractionalHumidity`): stable.
-- Swap only the energy closure to `SlabEnergy` (keep the new hydrology +
-  `EvaporationFrontHumidity`): stable ⇒ the culprit is `WaterCoupledEnergy`.
+- Swap only the energy closure to `SlabEnergy`: stable ⇒ the culprit is `WaterCoupledEnergy`.
 - Disable the water-mass coupling term `−cˡ(T−Tᵣ)dM/dt`: still blows up ⇒ not that term.
-- Set `deep_conductance = 0` (no deep restoring): **stable** ⇒ the deep restoring is the trigger.
+- `deep_conductance = 0` (no restoring): stable.
+- Restoring on with `deep_temperature = 315` (same `Λᵈ`): **stable** ⇒ it is the *target*, not the conductance.
 
-It is **not** a timestep/CFL issue (halving `cfl`/`max_Δt` makes it blow up *earlier*),
+Tracing a failing run, the runaway **starts at the dry edges** (M = 0, smallest heat
+capacity): the driest cells collapse first while the wet center is still near the
+restoring target. `deep_temperature = 290` is ~30 K below the dry surface's natural
+radiative–convective equilibrium (~320 K daytime, per the stable `SlabEnergy` run).
+Holding the thin (0.1 m) low-`C` dry-edge surface that far below equilibrium drains
+the absorbed solar flux into the deep reservoir and leaves a cold surface under warmer
+near-surface air (stably stratified, weakly mixed) — a marginally-unstable coupled
+regime that a chaotic LES gust trips into a 2Δz surface↔lowest-cell runaway. The
+blow-up *time* varies (1.6–2.9 d) across otherwise-identical runs, but the *outcome*
+is robust.
+
+It is **not** a timestep/CFL issue (halving `cfl`/`max_Δt` blows up *earlier*),
 **not** a heat-capacity difference (identical in both energy closures), and **not** a
-restoring-stiffness issue: with `Λᵈ = C/τ`, the restoring rate is `1/τ` so
-`Δt·Λᵈ/C = Δt/τ ≈ 1.4e-4`, and a backward-Euler (implicit) treatment of the
-conduction term changes the update by ~0.01% and does **not** fix the blow-up
-(verified). The instability is a genuine coupled surface-flux feedback that only
-appears under two-way coupling — the prescribed-atmosphere
+restoring-stiffness issue: with `Λᵈ = C/τ`, `Δt·Λᵈ/C = Δt/τ ≈ 1.4e-4`, and a
+backward-Euler (implicit) treatment of the conduction term changes the update by
+~0.01% and does **not** fix it (verified). Consistently, the prescribed-atmosphere
 `era5_forced_slab_land.jl` is stable with the same closures *and* a finite deep
-restoring. Proper fix needs investigation of the surface-flux ↔ land-energy
-feedback (e.g. an implicitly-coupled surface flux, a deeper/larger-`C` slab, or a
-`deep_temperature` nearer the surface equilibrium), not a per-term implicit tweak.
-Worked around for now by `deep_conductance = 0` in the breeze example.
+restoring (no two-way feedback).
+
+Fix in the breeze example: set `deep_temperature` near the surface equilibrium
+(~310 K) with restoring on (verified stable) — keeps the deep coupling rather than
+disabling it. Optional robustness follow-up: an implicitly-coupled surface flux would
+let `WaterCoupledEnergy` tolerate a strongly out-of-equilibrium `deep_temperature`.
 
 ### Tier 1 — property-provider extension (one follow-up PR, ~400 LOC)
 
