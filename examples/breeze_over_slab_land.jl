@@ -230,7 +230,11 @@ interface_specific_humidity = FractionalHumidity(efficiency = CriticalSaturation
 al_interface = atmosphere_land_interface(slab_land.grid, atmos, slab_land;
                                          specific_humidity = interface_specific_humidity)
 
+# The coupled model's clock is authoritative for all components, and a
+# `Simulation`'s clock type is fixed by its grid — since the grids here are
+# `Float32`, the coupled model needs a matching `Float32` clock.
 model = AtmosphereLandModel(atmos, slab_land; radiation,
+                            clock = Clock{Float32}(time=0),
                             atmosphere_land_interface = al_interface)
 
 # The wizard recomputes Δt every iteration so the step always tracks the
