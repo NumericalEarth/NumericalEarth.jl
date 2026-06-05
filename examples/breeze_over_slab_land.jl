@@ -277,8 +277,12 @@ interface_specific_humidity = EvaporationFrontHumidity(;
 al_interface = atmosphere_land_interface(slab_land.grid, atmos, slab_land;
                                          specific_humidity = interface_specific_humidity)
 
+# The atmosphere runs in `Float32` (its clock follows the grid), so the coupled
+# model needs a matching `Float32` clock — `EarthSystemModel` otherwise defaults
+# to a `Float64` clock and rejects the mismatch.
 model = AtmosphereLandModel(atmos, slab_land; radiation,
-                            atmosphere_land_interface = al_interface)
+                            atmosphere_land_interface = al_interface,
+                            clock = Clock{eltype(grid)}(time = 0))
 
 # The wizard recomputes Δt every iteration so the step always tracks the
 # current CFL — important for a convective LES on a 100 m grid, where a
