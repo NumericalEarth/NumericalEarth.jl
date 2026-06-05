@@ -223,4 +223,7 @@ makedocs(; sitename = "NumericalEarth.jl",
              r"https://www\.ncei\.noaa\.gov/products/etopo-global-relief-model",
              r"https://www\.ncei\.noaa\.gov/products/world-ocean-atlas",
              r"https://www\.ncei\.noaa\.gov/data/sea-surface-temperature-optimum-interpolation/v2\.1/access/avhrr",
+             # Self-referential links to this repo's own test files on `main`:
+             # they 404 during a PR's CI (the files only land on `main` at merge).
+             r"https://github\.com/NumericalEarth/NumericalEarth\.jl/blob/main/test/",
         ],)
