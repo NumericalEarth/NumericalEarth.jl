@@ -274,7 +274,7 @@ parent_grid = LatitudeLongitudeGrid(arch;
 # qᶜ, qⁱ aren't standard slots; we own those alongside.
 
 parent_times = [Float64(Dates.value(d - start_date)) / 1000 for d in dates]
-parent = PrescribedAtmosphere(parent_grid, parent_times; thermodynamics_parameters = nothing)
+parent = PrescribedAtmosphere(parent_grid, parent_times; volumetric = true, thermodynamics_parameters = nothing)
 
 qᶜ_fts = FieldTimeSeries{Center, Center, Center}(parent_grid, parent_times)
 qⁱ_fts = FieldTimeSeries{Center, Center, Center}(parent_grid, parent_times)

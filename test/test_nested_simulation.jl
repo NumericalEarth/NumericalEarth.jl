@@ -6,30 +6,29 @@ using Oceananigans
 using Oceananigans.BoundaryConditions: ValueBoundaryCondition, fill_halo_regions!
 using Test
 
-@testset "PrescribedAtmosphere defaults switch on grid dimensionality" begin
-    # 2D (single z-layer) — existing surface-atmosphere defaults
-    g2 = LatitudeLongitudeGrid(longitude = (-180, 180),
-                               latitude  = (-80,  80),
-                               z         = (0, 1),
-                               size      = (8, 8, 1),
-                               topology  = (Periodic, Bounded, Bounded))
-    pa2 = PrescribedAtmosphere(g2, [0.0, 1.0])
-    @test keys(pa2.velocities) == (:u, :v)
-    @test keys(pa2.tracers) == (:T, :q)
-    @test pa2.freshwater_flux isa NumericalEarth.Atmospheres.PrescribedPrecipitationFlux
+@testset "PrescribedAtmosphere volumetric kwarg selects the field set" begin
+    # A multi-layer grid is the *ocean's* vertical resolution, not the
+    # atmosphere's: the default must stay a surface atmosphere (u, v; freshwater
+    # flux) so ocean / sea-ice coupling on such grids is unaffected.
+    g = RectilinearGrid(size     = (8, 8, 4),
+                        x        = (-1, 1),
+                        y        = (-1, 1),
+                        z        = (0, 1),
+                        topology = (Bounded, Bounded, Bounded))
 
-    # 3D (multi-layer) — volumetric defaults
-    g3 = RectilinearGrid(size     = (8, 8, 4),
-                         x        = (-1, 1),
-                         y        = (-1, 1),
-                         z        = (0, 1),
-                         topology = (Bounded, Bounded, Bounded))
-    pa3 = PrescribedAtmosphere(g3, [0.0, 1.0])
-    @test keys(pa3.velocities) == (:u, :v, :w)
-    @test keys(pa3.tracers) == (:T, :q)
-    @test pa3.freshwater_flux === nothing
-    @test size(pa3.velocities.u) == (8, 8, 4, 2)
-    @test size(pa3.pressure)     == (8, 8, 4, 2)
+    pa = PrescribedAtmosphere(g, [0.0, 1.0])
+    @test keys(pa.velocities) == (:u, :v)
+    @test keys(pa.tracers) == (:T, :q)
+    @test pa.freshwater_flux isa NumericalEarth.Atmospheres.PrescribedPrecipitationFlux
+
+    # Opt-in volumetric atmosphere (used as a NestedSimulation parent): adds w,
+    # drops the surface freshwater flux, and stores 3D fields.
+    pav = PrescribedAtmosphere(g, [0.0, 1.0]; volumetric = true)
+    @test keys(pav.velocities) == (:u, :v, :w)
+    @test keys(pav.tracers) == (:T, :q)
+    @test pav.freshwater_flux === nothing
+    @test size(pav.velocities.u) == (8, 8, 4, 2)
+    @test size(pav.pressure)     == (8, 8, 4, 2)
 end
 
 # A translating Lamb-Oseen vortex: a 2D vortex with closed-form velocity
@@ -51,7 +50,8 @@ end
 @testset "NestedSimulation: Lamb-Oseen vortex through a child NonhydrostaticModel" begin
     # Parent atmosphere holds the analytic Lamb-Oseen state on a 3D PrescribedAtmosphere,
     # populated by set! at a few coarse time snapshots; interpolation handles the rest.
-    # Nz > 1 so the volumetric defaults (CCC velocities/tracers/pressure) kick in.
+    # `volumetric = true` gives CCC velocities/tracers/pressure so the FTS can be
+    # interpolated at the child's interior z-nodes.
     # Domain extends strictly beyond the child so the FTS brackets every child
     # boundary node (required by InterpolatedFTSBoundary's validation).
     parent_grid = RectilinearGrid(size     = (16, 16, 4),
@@ -61,7 +61,7 @@ end
                                   topology = (Bounded, Bounded, Bounded))
 
     times  = collect(0.0:0.1:1.0)
-    parent = PrescribedAtmosphere(parent_grid, times)
+    parent = PrescribedAtmosphere(parent_grid, times; volumetric = true)
 
     set!(parent.velocities.u, (x, y, z, t) -> lamb_oseen_uv(x, y, t)[1])
     set!(parent.velocities.v, (x, y, z, t) -> lamb_oseen_uv(x, y, t)[2])
