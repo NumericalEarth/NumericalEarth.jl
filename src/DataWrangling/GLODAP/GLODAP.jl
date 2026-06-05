@@ -64,11 +64,6 @@ function DataWrangling.default_download_directory(::GLODAPClimatology)
     return mkpath(download_GLODAP_cache)
 end
 
-# Climatology: single snapshot, no date
-DataWrangling.all_dates(::GLODAPClimatology, args...) = nothing
-DataWrangling.first_date(::GLODAPClimatology, args...) = nothing
-DataWrangling.last_date(::GLODAPClimatology, args...) = nothing
-
 # GLODAP stores depth as positive values, surface first 
 # GLODAP actually stores pressure in dbar, not depth in meters
 DataWrangling.reversed_vertical_axis(::GLODAPClimatology) = true
