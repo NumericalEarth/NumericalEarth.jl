@@ -144,9 +144,8 @@ DataWrangling.inpainted_metadata_path(metadata::GLODAPMetadatum) = joinpath(meta
 
 function Downloads.download(metadata::Metadatum{<:GLODAPDataset})
     path = metadata_path(metadata)
-    needs_download = !isfile(path)
 
-    if needs_download
+    if !isfile(path)
         mktempdir() do tmpdir
             archive = joinpath(tmpdir, "GLODAPv2_Mapped_Climatology.tar.gz")
             @info "path to GLODAP file in tmp directory" archive
