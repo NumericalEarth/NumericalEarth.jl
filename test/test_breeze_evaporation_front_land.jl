@@ -4,6 +4,8 @@ using Breeze
 using NumericalEarth
 using Oceananigans
 using Oceananigans.Units
+using Oceananigans.TimeSteppers: update_state!
+using NumericalEarth.Radiations: PrescribedRadiation, SurfaceRadiationProperties
 using Statistics
 using Test
 
@@ -13,7 +15,7 @@ NumericalEarthBreezeExt = Base.get_extension(NumericalEarth, :NumericalEarthBree
 # Tiny coupled Breeze + variably saturated SlabLand for CI. Verifies the
 # end-to-end wiring (interface ↔ hydrology ↔ energy), then runs short enough
 # to keep CI under a few seconds.
-function build_coupled_test_model(arch; M_init, T_init)
+function build_coupled_test_model(arch; M_init, T_init, with_radiation = false)
     grid = RectilinearGrid(arch,
                            size = (8, 8), halo = (5, 5),
                            x = (-1kilometer, 1kilometer),
@@ -66,7 +68,18 @@ function build_coupled_test_model(arch; M_init, T_init)
             thermal_exchange_depth = 0.10,
             porosity = 0.4))
 
-    return AtmosphereLandModel(atmosphere, land; atmosphere_land_interface = al)
+    radiation = nothing
+    if with_radiation
+        # Lightweight prescribed radiation with known nonzero downwelling fluxes,
+        # so the land radiative contribution is unambiguous and nonzero.
+        radiation = PrescribedRadiation(land_grid; ocean_surface = nothing,
+                                        sea_ice_surface = nothing,
+                                        land_surface = SurfaceRadiationProperties(0.2, 0.95))
+        parent(radiation.downwelling_shortwave) .= 600  # W m⁻²
+        parent(radiation.downwelling_longwave)  .= 350  # W m⁻²
+    end
+
+    return AtmosphereLandModel(atmosphere, land; atmosphere_land_interface = al, radiation)
 end
 
 @testset "Breeze + EvaporationFrontHumidity wiring" begin
@@ -118,6 +131,36 @@ end
             # Even with a tiny number of steps, dry-down should drop M.
             @test all(M1 .<= M0)
             @test mean(M1) < mean(M0)
+        end
+
+        @testset "Radiation adds to surface_energy_flux, not overwritten, on $A" begin
+            # Regression guard for the radiation→land coupling (issue #326): the
+            # radiative flux must be *added* to the turbulent `surface_energy_flux`
+            # that `WaterCoupledEnergy` reads — not overwrite it, and not be
+            # overwritten by the turbulent assembly. Covers the call ordering in
+            # `time_step_earth_system_model.jl` and the accumulator/sign choice in
+            # `apply_air_land_radiative_fluxes.jl`.
+            m_rad = build_coupled_test_model(arch; M_init = 200.0, T_init = 295.0, with_radiation = true)
+            @test haskey(m_rad.radiation.interface_fluxes, :land)
+            update_state!(m_rad)
+            Es_rad = Array(interior(m_rad.land.fluxes.surface_energy_flux))
+
+            # Net radiative flux into the surface, reconstructed from the kernel's
+            # own stored diagnostics (downwelling stored negative, upwelling positive).
+            rf = m_rad.radiation.interface_fluxes.land
+            ΣQ_rad = Array(interior(rf.downwelling_longwave)) .+
+                     Array(interior(rf.downwelling_shortwave)) .-
+                     Array(interior(rf.upwelling_longwave))
+
+            m_nor = build_coupled_test_model(arch; M_init = 200.0, T_init = 295.0, with_radiation = false)
+            update_state!(m_nor)
+            Es_nor = Array(interior(m_nor.land.fluxes.surface_energy_flux))
+
+            @test maximum(abs, ΣQ_rad) > 0   # radiation contributes a nonzero flux
+            @test Es_rad != Es_nor           # ... which actually changed Es (not dropped)
+            # `surface_energy_flux` is positive-upward, so net-downward radiation
+            # enters as −ΣQ_rad, added on top of the turbulent flux:
+            @test Es_rad ≈ Es_nor .- ΣQ_rad
         end
     end
 end
