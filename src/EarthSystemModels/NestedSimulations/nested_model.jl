@@ -16,9 +16,8 @@
 # by the elapsed Δt.
 
 import Oceananigans
-import Oceananigans: AbstractModel, fields, prognostic_state, restore_prognostic_state!
+import Oceananigans: AbstractModel, fields, prognostic_state, restore_prognostic_state!, prognostic_fields
 import Oceananigans.Architectures: architecture
-import Oceananigans.Models: prognostic_fields
 import Oceananigans.TimeSteppers: time_step!, update_state!
 import Oceananigans.Simulations: iteration
 

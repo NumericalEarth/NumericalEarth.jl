@@ -83,7 +83,7 @@ end
 # Oceananigans uses for `Relaxation`-on-FTS. Same logic for FTS and AbstractField.
 function _validate_source_bracket(source, grid, ::Type{LX}, ::Type{LY}, ::Type{LZ}) where {LX, LY, LZ}
     sim_loc    = (LX(), LY(), LZ())
-    source_loc = Oceananigans.Fields.instantiated_location(source)
+    source_loc = Oceananigans.instantiated_location(source)
     source_grid = source.grid
     for (label, nodes_fn) in (("x", Oceananigans.Grids.xnodes),
                               ("y", Oceananigans.Grids.ynodes),
@@ -116,7 +116,7 @@ end
 # `Adapt` as a `FlavorOfFTS`, so its method is unchanged.
 @inline _query_source(fts::FlavorOfFTS, source_grid, X, loc, t) =
     Oceananigans.Fields.interpolate(X, Time(t), fts,
-                                    Oceananigans.Fields.instantiated_location(fts),
+                                    Oceananigans.instantiated_location(fts),
                                     source_grid)
 
 @inline _query_source(source, source_grid, X, loc, t) =

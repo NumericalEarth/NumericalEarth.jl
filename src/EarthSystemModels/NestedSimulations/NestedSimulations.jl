@@ -5,11 +5,10 @@ export NestedModel, NestedSimulation,
        child_simulation, parent_variables
 
 using Oceananigans
-using Oceananigans.Fields: Field, Center, Face, instantiated_location
+using Oceananigans.Fields: Face
 using Oceananigans.Forcings: Relaxation
-using Oceananigans.Grids: AbstractGrid, xnode, ynode, znode
+using Oceananigans.Grids: AbstractGrid
 using Oceananigans.BoundaryConditions: OpenBoundaryCondition, FieldBoundaryConditions
-using Oceananigans.OutputReaders: FieldTimeSeries
 using Oceananigans.Simulations: Simulation
 using Oceananigans.TimeSteppers: time_step!
 using Oceananigans.Units: Time
