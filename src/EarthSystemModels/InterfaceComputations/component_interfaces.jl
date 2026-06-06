@@ -449,8 +449,6 @@ function ComponentInterfaces(atmosphere, ocean, sea_ice=nothing;
     exchanger = StateExchanger(exchange_grid, radiation, atmosphere, land, ocean, sea_ice;
                                atmosphere_correction = exchanger_correction)
 
-    validate_interior_fields(atmosphere_ocean_interface_temperature, exchanger.ocean)
-
     properties = (; gravitational_acceleration)
 
     return ComponentInterfaces(ao_interface,
