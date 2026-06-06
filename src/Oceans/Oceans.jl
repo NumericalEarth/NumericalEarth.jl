@@ -158,8 +158,6 @@ end
     κzᶜᶜᶠ(i, j, k, grid,  closure[1],     K[1],     id, clock, model_fields) +
     Σκzᶜᶜᶠ(i, j, k, grid, closure[2:end], K[2:end], id, clock, model_fields)
 
-# Evaluated at the topmost interior face: boundary-layer closures (e.g. CATKE)
-# have a vanishing mixing length, and thus vanishing diffusivity, at the surface face.
 @inline function Σκzᴺ(i, j, k, grid, closure, K, id, clock, model_fields)
     Nz = size(grid, 3)
     return Σκzᶜᶜᶠ(i, j, Nz, grid, closure, K, id, clock, model_fields)
