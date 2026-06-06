@@ -180,6 +180,7 @@ function EarthSystemModel(radiation, atmosphere, land, sea_ice, ocean;
                           sea_ice_heat_capacity = heat_capacity(sea_ice),
                           interfaces = nothing,
                           interface_kw...) # e.g. `atmosphere_land_interface_specific_humidity`
+
     if isnothing(radiation) && atmosphere isa AbstractPrescribedComponent
         @warn """
             `EarthSystemModel` was constructed with a `PrescribedAtmosphere` but \
@@ -199,6 +200,13 @@ function EarthSystemModel(radiation, atmosphere, land, sea_ice, ocean;
 
     ocean   isa Simulation && remove_default_stop_callbacks!(ocean)
     sea_ice isa Simulation && remove_default_stop_callbacks!(sea_ice)
+
+    # Enforce a single clock time type across all components
+    radiation  = adopt_clock(radiation, clock)
+    atmosphere = adopt_clock(atmosphere, clock)
+    land       = adopt_clock(land, clock)
+    sea_ice    = adopt_clock(sea_ice, clock)
+    ocean      = adopt_clock(ocean, clock)
 
     if atmosphere isa Simulation
         if !isnothing(atmosphere.callbacks)

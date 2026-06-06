@@ -228,8 +228,8 @@ end
 ##### Container-level atmosphere-facing accessors
 #####
 
-surface_temperature(land::SlabLand)       = surface_temperature(land.energy, land)
-surface_saturation(land::SlabLand)           = saturation(land.hydrology, land)
+EarthSystemModels.surface_temperature(land::SlabLand) = surface_temperature(land.energy, land)
+surface_saturation(land::SlabLand) = saturation(land.hydrology, land)
 
 #####
 ##### EarthSystemModel interface — generic SlabLand coupling.
@@ -253,7 +253,7 @@ declared by the land closures.
 Radiative contributions are added on top in
 `apply_air_land_radiative_fluxes!`.
 """
-function update_net_fluxes!(coupled_model, land::SlabLand)
+function EarthSystemModels.update_net_fluxes!(coupled_model, land::SlabLand)
     al_interface = coupled_model.interfaces.atmosphere_land_interface
     isnothing(al_interface) && return nothing
 
@@ -303,7 +303,7 @@ end
     _maybe_write!(Pl, i, j, rain)
 end
 
-interpolate_state!(exchanger, grid, ::SlabLand, coupled_model) = nothing
+EarthSystemModels.interpolate_state!(exchanger, grid, ::SlabLand, coupled_model) = nothing
 
 """
     ComponentExchanger(land::SlabLand, grid)

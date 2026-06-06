@@ -71,7 +71,7 @@ using Oceananigans.OrthogonalSphericalShellGrids
 
             # Verify land exchanger is present
             @test !isnothing(coupled_model.interfaces.exchanger.land)
-            @test coupled_model.land === land
+            @test coupled_model.land.freshwater_flux === land.freshwater_flux
 
             time_step!(coupled_model, 1)
             true

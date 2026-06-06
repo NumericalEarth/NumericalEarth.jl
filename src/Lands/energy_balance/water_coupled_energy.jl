@@ -198,7 +198,7 @@ function time_step!(energy::WaterCoupledEnergy, land, Δt, time)
     return nothing
 end
 
-surface_temperature(::WaterCoupledEnergy, land) = land.temperature
+EarthSystemModels.surface_temperature(::WaterCoupledEnergy, land) = land.temperature
 
 Base.summary(energy::WaterCoupledEnergy) =
     string("WaterCoupledEnergy(",

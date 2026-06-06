@@ -20,4 +20,10 @@ const ReactantOSIM{R, A, L, I, O, F, C} = Union{
 
 reconcile_state!(model::ReactantOSIM) = nothing
 
+import NumericalEarth.EarthSystemModels: same_time_type
+
+same_time_type(::Reactant.ConcretePJRTNumber{FT}, ::TT) where {FT, TT} = FT == TT
+same_time_type(::Reactant.ConcretePJRTNumber{FT}, ::Reactant.ConcretePJRTNumber{TT}) where {FT, TT} = FT == TT
+same_time_type(::FT, ::Reactant.ConcretePJRTNumber{TT}) where {FT, TT} = FT == TT
+
 end # module NumericalEarthReactantExt
