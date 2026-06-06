@@ -12,6 +12,7 @@ using NumericalEarth.EarthSystemModels.InterfaceComputations: ComponentInterface
                                                               SkinTemperature,
                                                               BulkTemperature,
                                                               DiffusiveFlux,
+                                                              InteriorDiffusivity,
                                                               SkinHumidity,
                                                               FractionalHumidity,
                                                               CriticalSaturation,
@@ -76,7 +77,9 @@ end
 
             # No radiation: pass `radiation = nothing` to disable radiative
             # contributions wholesale.
-            for atmosphere_ocean_interface_temperature in (BulkTemperature(), SkinTemperature(DiffusiveFlux(1, 1e-2)))
+            for atmosphere_ocean_interface_temperature in (BulkTemperature(),
+                                                           SkinTemperature(DiffusiveFlux(1, 1e-2)),
+                                                           SkinTemperature(DiffusiveFlux(1, InteriorDiffusivity())))
                 @info " Testing zero fluxes with $(atmosphere_ocean_interface_temperature)..."
 
                 interfaces = ComponentInterfaces(atmosphere, ocean;
@@ -104,6 +107,31 @@ end
                 @test turbulent_fluxes.latent_heat[1, 1, 1]   < eps(eltype(grid))
                 @test turbulent_fluxes.water_vapor[1, 1, 1]   < eps(eltype(grid))
             end
+
+            @info " Testing interior diffusivity assessment..."
+
+            # The assessed diffusivity is the total vertical tracer diffusivity
+            # at the topmost interior face, summed over the closure tuple.
+            closure = (VerticalScalarDiffusivity(κ=1e-3), VerticalScalarDiffusivity(κ=2e-3))
+            diffusive_ocean = ocean_simulation(grid;
+                                               momentum_advection = nothing,
+                                               tracer_advection = nothing,
+                                               closure,
+                                               bottom_drag_coefficient = 0)
+
+            set!(diffusive_ocean.model, T = 15, S = 30)
+
+            skin_temperature = SkinTemperature(DiffusiveFlux(0.5, InteriorDiffusivity()))
+            interfaces = ComponentInterfaces(atmosphere, diffusive_ocean;
+                                             atmosphere_ocean_interface_temperature = skin_temperature)
+
+            coupled_model = OceanOnlyModel(diffusive_ocean; atmosphere, interfaces)
+            assessed_diffusivity = compute!(Field(interfaces.exchanger.ocean.state.κ))
+            @test all(Array(interior(assessed_diffusivity)) .≈ 3e-3)
+
+            # The skin temperature solve runs with the assessed diffusivity
+            Tₛ = interfaces.atmosphere_ocean_interface.temperature
+            @test all(isfinite, Array(interior(Tₛ)))
 
             @info " Testing neutral fluxes..."
 

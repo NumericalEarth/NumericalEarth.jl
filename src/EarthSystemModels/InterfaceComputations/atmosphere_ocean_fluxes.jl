@@ -59,6 +59,23 @@ function compute_atmosphere_ocean_fluxes!(coupled_model)
     return nothing
 end
 
+@inline function assemble_interior_state(i, j, kᴺ, grid, interior_state, ocean_properties, temperature_formulation)
+    @inbounds begin
+        uᵒᶜ = ℑxᶜᵃᵃ(i, j, kᴺ, grid, interior_state.u)
+        vᵒᶜ = ℑyᵃᶜᵃ(i, j, kᴺ, grid, interior_state.v)
+        Tᵒᶜ = interior_state.T[i, j, kᴺ]
+        Tᵒᶜ = convert_to_kelvin(ocean_properties.temperature_units, Tᵒᶜ)
+        Sᵒᶜ = interior_state.S[i, j, kᴺ]
+    end
+    return (u=uᵒᶜ, v=vᵒᶜ, T=Tᵒᶜ, S=Sᵒᶜ)
+end
+
+@inline function assemble_interior_state(i, j, kᴺ, grid, interior_state, ocean_properties, ::SkinTemperature{<:DiffusiveFlux{<:Any, <:InteriorDiffusivity}})
+    Ψᵢ = assemble_interior_state(i, j, kᴺ, grid, interior_state, ocean_properties, nothing)
+    κ  = @inbounds interior_state.κ[i, j, 1]
+    return merge(Ψᵢ, (; κ))
+end
+
 """ Compute turbulent fluxes between an atmosphere and an interface state using similarity theory """
 @kernel function _compute_atmosphere_ocean_interface_state!(interface_fluxes,
                                                             interface_temperature,
@@ -83,13 +100,6 @@ end
         Tᵃᵗ = atmosphere_state.T[i, j, 1]
         pᵃᵗ = atmosphere_state.p[i, j, 1]
         qᵃᵗ = atmosphere_state.q[i, j, 1]
-
-        # Ocean state at cell centers
-        uᵒᶜ = ℑxᶜᵃᵃ(i, j, kᴺ, grid, interior_state.u)
-        vᵒᶜ = ℑyᵃᶜᵃ(i, j, kᴺ, grid, interior_state.v)
-        Tᵒᶜ = interior_state.T[i, j, kᴺ]
-        Tᵒᶜ = convert_to_kelvin(ocean_properties.temperature_units, Tᵒᶜ)
-        Sᵒᶜ = interior_state.S[i, j, kᴺ]
     end
 
     # Build thermodynamic and dynamic states in the atmosphere and interface.
@@ -104,7 +114,12 @@ end
                               q = qᵃᵗ,
                               h_bℓ = atmosphere_state.h_bℓ)
 
-    local_interior_state = (u=uᵒᶜ, v=vᵒᶜ, T=Tᵒᶜ, S=Sᵒᶜ)
+    local_interior_state = assemble_interior_state(i, j, kᴺ, grid, interior_state, ocean_properties, interface_properties.temperature_formulation)
+
+    uᵒᶜ = local_interior_state.u
+    vᵒᶜ = local_interior_state.v
+    Tᵒᶜ = local_interior_state.T
+    Sᵒᶜ = local_interior_state.S
 
     # Local radiative state at this cell. Returns zero-valued state when
     # radiation is off.

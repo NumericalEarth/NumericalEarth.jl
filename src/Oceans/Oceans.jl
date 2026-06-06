@@ -5,6 +5,7 @@ export ocean_simulation, SlabOcean, PrescribedOcean
 using Adapt: Adapt, adapt
 using KernelAbstractions: @kernel, @index
 using Oceananigans: Oceananigans
+using Oceananigans.AbstractOperations: KernelFunctionOperation
 using Oceananigans.Advection: WENO, WENOVectorInvariant
 using Oceananigans.BoundaryConditions: DefaultBoundaryCondition, DiscreteBoundaryFunction,
                                        FieldBoundaryConditions, FluxBoundaryCondition, getbc
@@ -20,6 +21,7 @@ using Oceananigans.Models.NonhydrostaticModels: NonhydrostaticModel
 using Oceananigans.OrthogonalSphericalShellGrids: OrthogonalSphericalShellGrids, TripolarGrid
 using Oceananigans.Operators: ℑxyᶠᶜᵃ, ℑxyᶜᶠᵃ, ℑxᶠᵃᵃ, ℑyᵃᶠᵃ, ∂xᶠᶜᶜ, ∂yᶜᶠᶜ
 using Oceananigans.Simulations: Simulation
+using Oceananigans.TurbulenceClosures: κzᶜᶜᶠ
 using Oceananigans.TurbulenceClosures.TKEBasedVerticalDiffusivities: CATKEVerticalDiffusivity,
                                                                      CATKEMixingLength,
                                                                      CATKEEquation
@@ -110,7 +112,42 @@ function EarthSystemModels.InterfaceComputations.ComponentExchanger(ocean::Ocean
         S = Field{Center, Center, Nothing}(grid)
     end
 
-    return ComponentExchanger((; u, v, T, S), nothing)
+    # Near-surface vertical tracer diffusivity, evaluated lazily inside the
+    # interface flux kernel by formulations that consume it (`InteriorDiffusivity`).
+    model = ocean.model
+    temperature_index = findfirst(name -> name === :T, collect(keys(model.tracers)))
+    κ = KernelFunctionOperation{Center, Center, Nothing}(Σκzᴺ,
+                                                         ocean_grid,
+                                                         model.closure,
+                                                         model.closure_fields,
+                                                         Val(temperature_index),
+                                                         model.clock,
+                                                         Oceananigans.fields(model))
+
+    return ComponentExchanger((; u, v, T, S, κ), nothing)
+end
+
+#####
+##### Near-surface vertical diffusivity assessment
+#####
+
+# Total vertical tracer diffusivity at (Center, Center, Face), summed over the
+# closures of a closure tuple. `κzᶜᶜᶠ` falls back to zero for closures without
+# an explicit vertical diffusivity (e.g. purely horizontal ones).
+@inline Σκzᶜᶜᶠ(i, j, k, grid, closure, K, id, clock, model_fields) =
+    κzᶜᶜᶠ(i, j, k, grid, closure, K, id, clock, model_fields)
+
+@inline Σκzᶜᶜᶠ(i, j, k, grid, closure::Tuple, K::Tuple, id, clock, model_fields) =
+    κzᶜᶜᶠ(i, j, k, grid, first(closure), first(K), id, clock, model_fields) +
+    Σκzᶜᶜᶠ(i, j, k, grid, Base.tail(closure), Base.tail(K), id, clock, model_fields)
+
+@inline Σκzᶜᶜᶠ(i, j, k, grid, closure::Tuple{}, K::Tuple{}, id, clock, model_fields) = zero(grid)
+
+# Evaluated at the topmost interior face: boundary-layer closures (e.g. CATKE)
+# have a vanishing mixing length, and thus vanishing diffusivity, at the surface face.
+@inline function Σκzᴺ(i, j, k, grid, closure, K, id, clock, model_fields)
+    Nz = size(grid, 3)
+    return Σκzᶜᶜᶠ(i, j, Nz, grid, closure, K, id, clock, model_fields)
 end
 
 @inline net_flux(condition) = condition
