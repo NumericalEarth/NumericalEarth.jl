@@ -14,7 +14,7 @@ paths:
 - New examples should add value while remaining simple: judiciously introduce
   new features and do creative, surprising things with simulations
 - Don't "over import". Use names exported by `using NumericalEarth`. If needed
-  names aren't exported, consider exporting them from `Oceananigans.jl`
+  names aren't exported, consider exporting them from `NumericalEarth.jl`
 
 ## Literate.jl Comment Conventions
 
