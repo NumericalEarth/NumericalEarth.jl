@@ -5,7 +5,7 @@ paths:
 
 # Kernel Function Rules
 
-GPU-compatible kernel functions are critical for Oceananigans performance.
+GPU-compatible kernel functions are critical for NumericalEarth performance.
 
 ## Requirements
 
