@@ -131,17 +131,29 @@ end
 ##### Near-surface vertical diffusivity assessment
 #####
 
-# Total vertical tracer diffusivity at (Center, Center, Face), summed over the
-# closures of a closure tuple. `κzᶜᶜᶠ` falls back to zero for closures without
-# an explicit vertical diffusivity (e.g. purely horizontal ones).
-@inline Σκzᶜᶜᶠ(i, j, k, grid, closure, K, id, clock, model_fields) =
-    κzᶜᶜᶠ(i, j, k, grid, closure, K, id, clock, model_fields)
-
-@inline Σκzᶜᶜᶠ(i, j, k, grid, closure::Tuple, K::Tuple, id, clock, model_fields) =
-    κzᶜᶜᶠ(i, j, k, grid, first(closure), first(K), id, clock, model_fields) +
-    Σκzᶜᶜᶠ(i, j, k, grid, Base.tail(closure), Base.tail(K), id, clock, model_fields)
+# Total vertical tracer diffusivity at the surface. Salls back to zero for closures without vertical diffusivity
+@inline Σκzᶜᶜᶠ(i, j, k, grid, closure, K, id, clock, model_fields) = κzᶜᶜᶠ(i, j, k, grid, closure, K, id, clock, model_fields)
 
 @inline Σκzᶜᶜᶠ(i, j, k, grid, closure::Tuple{}, K::Tuple{}, id, clock, model_fields) = zero(grid)
+
+@inline Σκzᶜᶜᶠ(i, j, k, grid, closure::Tuple{<:Any}, K::Tuple{<:Any}, id, clock, model_fields) =
+    κzᶜᶜᶠ(i, j, k, grid, closure[1], K[1], id, clock, model_fields) +
+    κzᶜᶜᶠ(i, j, k, grid, closure[2], K[2], id, clock, model_fields) 
+
+@inline Σκzᶜᶜᶠ(i, j, k, grid, closure::Tuple{<:Any, <:Any}, K::Tuple{<:Any, <:Any}, id, clock, model_fields) =
+    κzᶜᶜᶠ(i, j, k, grid, closure[1], K[1], id, clock, model_fields) +
+    κzᶜᶜᶠ(i, j, k, grid, closure[2], K[2], id, clock, model_fields) +
+    κzᶜᶜᶠ(i, j, k, grid, closure[3], K[3], id, clock, model_fields) 
+
+@inline Σκzᶜᶜᶠ(i, j, k, grid, closure::Tuple{<:Any, <:Any, <:Any}, K::Tuple{<:Any, <:Any, <:Any}, id, clock, model_fields) =
+    κzᶜᶜᶠ(i, j, k, grid, closure[1], K[1], id, clock, model_fields) +
+    κzᶜᶜᶠ(i, j, k, grid, closure[2], K[2], id, clock, model_fields) +
+    κzᶜᶜᶠ(i, j, k, grid, closure[3], K[3], id, clock, model_fields) +
+    κzᶜᶜᶠ(i, j, k, grid, closure[4], K[4], id, clock, model_fields) 
+
+@inline Σκzᶜᶜᶠ(i, j, k, grid, closure::Tuple, K::Tuple, id, clock, model_fields) =
+    κzᶜᶜᶠ(i, j, k, grid,  closure[1],     K[1],    id, clock, model_fields) +
+    Σκzᶜᶜᶠ(i, j, k, grid, closure[2:end], K[2:end] id, clock, model_fields)
 
 # Evaluated at the topmost interior face: boundary-layer closures (e.g. CATKE)
 # have a vanishing mixing length, and thus vanishing diffusivity, at the surface face.
