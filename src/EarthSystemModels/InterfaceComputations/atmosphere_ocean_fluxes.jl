@@ -29,11 +29,7 @@ function compute_atmosphere_ocean_fluxes!(coupled_model)
     interface_properties = coupled_model.interfaces.atmosphere_ocean_interface.properties
     ocean_properties = coupled_model.interfaces.ocean_properties
     atmosphere_properties = atmosphere_ocean_properties(coupled_model)
-
-    # The diffusivity operation enters the kernel parameter space only when
-    # the temperature formulation consumes it (see issue #116).
-    ocean_state = assemble_interior_fields(exchanger.ocean.state,
-                                           interface_properties.temperature_formulation)
+    ocean_state = assemble_interior_fields(exchanger.ocean.state, interface_properties.temperature_formulation)
 
     # Radiation state for the interface solve (used by SkinTemperature).
     # When `radiation === nothing` these are `nothing`s and the getter
