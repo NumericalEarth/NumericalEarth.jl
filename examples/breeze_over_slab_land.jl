@@ -102,9 +102,9 @@ slab_land = SlabLand(land_grid; hydrology)
 # persists because the wet center retains water through the run while the dry
 # edges have no source (no precipitation is prescribed here).
 
-T₀     = 295
-M_wet  = 0.95 * hydrology.maximum_water_storage
-σ_wet  = Lx / 8
+T₀    = 295 # K
+M_wet = 0.95 * hydrology.maximum_water_storage
+σ_wet = Lx / 8
 
 M_init(x) = M_wet * exp(-(x/σ_wet)^2)
 
@@ -122,8 +122,8 @@ Oceananigans.TimeSteppers.update_state!(slab_land)
 # `radiative_convection` example). We build the reference state explicitly
 # so the sponge and the radiation share the same thermodynamic constants.
 
-p₀ = 101325
-θ₀ = 300
+p₀ = 101325    # Pa
+θ₀ = 300       # K
 latitude = 15
 
 constants = ThermodynamicConstants()
@@ -161,8 +161,8 @@ sponge = Forcing(stratospheric_relaxation; discrete_form = true,
 # troposphere.
 
 @inline function tropical_ozone(z)
-    troposphere_O₃   = 30e-9 * (1 + 0.5 * z / 10_000)
-    stratosphere_O₃  = 8e-6 * exp(-((z - 25e3) / 5e3)^2)
+    troposphere_O₃  = 3e-8 * (1 + 0.5 * z / 1e3)
+    stratosphere_O₃ = 8e-6 * exp(-((z - 25e3) / 5e3)^2)
     χˢᵗ = 1 / (1 + exp(-(z - 15e3) / 2))
     return troposphere_O₃ * (1 - χˢᵗ) + stratosphere_O₃ * χˢᵗ
 end
@@ -230,7 +230,11 @@ interface_specific_humidity = FractionalHumidity(efficiency = CriticalSaturation
 al_interface = atmosphere_land_interface(slab_land.grid, atmos, slab_land;
                                          specific_humidity = interface_specific_humidity)
 
+# The coupled model's clock is authoritative for all components, and a
+# `Simulation`'s clock type is fixed by its grid — since the grids here are
+# `Float32`, the coupled model needs a matching `Float32` clock.
 model = AtmosphereLandModel(atmos, slab_land; radiation,
+                            clock = Clock{Float32}(time=0),
                             atmosphere_land_interface = al_interface)
 
 # The wizard recomputes Δt every iteration so the step always tracks the
@@ -343,9 +347,9 @@ Tᵃᵗ_n = @lift begin
     T_xz .- mean(T_xz, dims = 1)
 end
 qˡn   = @lift view(interior(qˡ_ts[$n]), :, 1, :)
-Tˡᵃ_n = @lift vec(interior(Tˡᵃ_ts[$n], :, 1, 1))
-M_n   = @lift vec(interior(M_ts[$n],   :, 1, 1))
-𝒮_n   = @lift vec(interior(𝒮_ts[$n],   :, 1, 1))
+Tˡᵃ_n = @lift vec(interior(Tˡᵃ_ts[$n],  :, 1, 1))
+M_n   = @lift vec(interior(M_ts[$n],    :, 1, 1))
+𝒮_n   = @lift vec(interior(𝒮_ts[$n],    :, 1, 1))
 
 hm_w   = heatmap!(ax_w,   x_atmos, z_face,   wn;    colormap = :balance, colorrange = (-wlim, wlim))
 hm_Tᵃᵗ = heatmap!(ax_Tᵃᵗ, x_atmos, z_center, Tᵃᵗ_n; colormap = :balance, colorrange = (-2, 2))

@@ -275,6 +275,9 @@ function DataWrangling.metadata_url(m::Metadata{<:ECCO4Monthly})
 end
 
 function Downloads.download(metadata::ECCOMetadata)
+    # Skip download if all files already exist
+    all(isfile(metadata_path(m)) for m in metadata) && return metadata_path(metadata)
+
     username = get(ENV, "ECCO_USERNAME", nothing)
     password = get(ENV, "ECCO_WEBDAV_PASSWORD", nothing)
     dir = metadata.dir
