@@ -4,7 +4,6 @@ paths:
 ---
 
 # Testing Rules
-
 ## Running Tests
 
 ```julia
