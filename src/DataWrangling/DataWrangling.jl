@@ -22,15 +22,15 @@ using JLD2: JLD2, jldopen
 using KernelAbstractions: @kernel, @index
 using Oceananigans: Oceananigans, pretty_filesize, location
 using Oceananigans.Architectures: AbstractArchitecture, CPU, architecture,
-                                  on_architecture, child_architecture
+    on_architecture, child_architecture
 using Oceananigans.BoundaryConditions: fill_halo_regions!, FieldBoundaryConditions
 using Oceananigans.DistributedComputations: DistributedComputations, @root
 using Oceananigans.Grids: AbstractGrid, Center, Flat, Bounded,
-                          LatitudeLongitudeGrid, RectilinearGrid
+    LatitudeLongitudeGrid, RectilinearGrid
 using Oceananigans.Fields: Fields, Field, interpolate, interpolate!, interior, set!
 using Oceananigans.Grids: node
 using Oceananigans.OutputReaders: OnDisk, AbstractInMemoryBackend, Cyclical,
-                                  FieldTimeSeries, FlavorOfFTS, time_indices
+    FieldTimeSeries, FlavorOfFTS, time_indices
 using Oceananigans.Utils: launch!, prettytime, prettysummary
 using NCDatasets: NCDatasets, Dataset
 using Printf: Printf, @sprintf
@@ -42,8 +42,8 @@ using ..NumericalEarth: NumericalEarth, stateindex
 #####
 
 mutable struct DownloadProgress <: Function
-    next_fraction :: Float64
-    download_start_time :: UInt64
+    next_fraction::Float64
+    download_start_time::UInt64
 end
 
 DownloadProgress() = DownloadProgress(0.0, time_ns())
@@ -51,7 +51,7 @@ DownloadProgress() = DownloadProgress(0.0, time_ns())
 """
     DownloadProgress(total, now; filename="")
 """
-function (d::DownloadProgress)(total, now; filename="")
+function (d::DownloadProgress)(total, now; filename = "")
     messages = 10
 
     if total > 0
@@ -64,9 +64,11 @@ function (d::DownloadProgress)(total, now; filename="")
         end
 
         if fraction > d.next_fraction
-            elapsed = 1e-9 * (time_ns() - d.download_start_time)
-            msg = @sprintf(" ... downloaded %s (%d%% complete, %s)", pretty_filesize(now),
-                           100fraction, prettytime(elapsed))
+            elapsed = 1.0e-9 * (time_ns() - d.download_start_time)
+            msg = @sprintf(
+                " ... downloaded %s (%d%% complete, %s)", pretty_filesize(now),
+                100fraction, prettytime(elapsed)
+            )
             @info msg
             d.next_fraction = d.next_fraction + 1 / messages
         end
@@ -103,7 +105,7 @@ end
 function netrc_downloader(username, password, machine, dir)
     netrc_file = netrc_permission_file(username, password, machine, dir)
     downloader = Downloads.Downloader()
-    easy_hook  = (easy, _) -> begin
+    easy_hook = (easy, _) -> begin
         Downloads.Curl.setopt(easy, LibCURL.CURLOPT_NETRC_FILE, netrc_file)
         # Bypass certificate verification because ecco.jpl.nasa.gov is using an untrusted CA certificate
         Downloads.Curl.setopt(easy, LibCURL.CURLOPT_SSL_VERIFYPEER, false)
@@ -131,18 +133,20 @@ end
 ##### FieldTimeSeries utilities
 #####
 
-function save_field_time_series!(fts; path, name, overwrite_existing=false)
-    overwrite_existing && rm(path; force=true)
+function save_field_time_series!(fts; path, name, overwrite_existing = false)
+    overwrite_existing && rm(path; force = true)
 
     times = on_architecture(CPU(), fts.times)
-    grid  = on_architecture(CPU(), fts.grid)
+    grid = on_architecture(CPU(), fts.grid)
 
     LX, LY, LZ = location(fts)
-    ondisk_fts = FieldTimeSeries{LX, LY, LZ}(grid, times;
-                                             backend = OnDisk(), path, name)
+    ondisk_fts = FieldTimeSeries{LX, LY, LZ}(
+        grid, times;
+        backend = OnDisk(), path, name
+    )
 
     Nt = length(times)
-    for n = 1:Nt
+    for n in 1:Nt
         fill_halo_regions!(fts[n])
         set!(ondisk_fts, fts[n], n)
     end
@@ -219,9 +223,9 @@ Supertype for datasets without a time dimension. Provides default no-op implemen
 """
 abstract type AbstractStaticDataset end
 
-all_dates(::AbstractStaticDataset,  args...) = nothing
+all_dates(::AbstractStaticDataset, args...) = nothing
 first_date(::AbstractStaticDataset, args...) = nothing
-last_date(::AbstractStaticDataset,  args...) = nothing
+last_date(::AbstractStaticDataset, args...) = nothing
 
 """
     AbstractStaticBathymetry <: AbstractStaticDataset
@@ -267,38 +271,38 @@ for the microphysics symbols).
 """
 const variable_glossary = Dict{Symbol, Symbol}(
     # Ocean & atmosphere state (notation.md existing rows)
-    :temperature                          => :T,
-    :air_temperature                      => :T,
-    :salinity                             => :S,
-    :u_velocity                           => :u,
-    :v_velocity                           => :v,
-    :eastward_velocity                    => :u,
-    :northward_velocity                   => :v,
-    :eastward_wind                        => :u,
-    :northward_wind                       => :v,
-    :sea_level_pressure                   => :p,
+    :temperature => :T,
+    :air_temperature => :T,
+    :salinity => :S,
+    :u_velocity => :u,
+    :v_velocity => :v,
+    :eastward_velocity => :u,
+    :northward_velocity => :v,
+    :eastward_wind => :u,
+    :northward_wind => :v,
+    :sea_level_pressure => :p,
     # Atmosphere moisture / microphysics (Breeze notation.md rows)
-    :specific_humidity                    => :qᵛ,
-    :air_specific_humidity                => :qᵛ,
-    :specific_cloud_liquid_water_content  => :qᶜˡ,
-    :specific_cloud_ice_water_content     => :qᶜⁱ,
-    :specific_rain_water_content          => :qʳ,
+    :specific_humidity => :qᵛ,
+    :air_specific_humidity => :qᵛ,
+    :specific_cloud_liquid_water_content => :qᶜˡ,
+    :specific_cloud_ice_water_content => :qᶜⁱ,
+    :specific_rain_water_content => :qʳ,
     # Sea ice (notation.md `ℵ` row; `:h` matches ClimaSeaIce field name)
-    :sea_ice_thickness                    => :h,
-    :sea_ice_concentration                => :ℵ,
+    :sea_ice_thickness => :h,
+    :sea_ice_concentration => :ℵ,
     # Freshwater fluxes (notation.md "Net surface freshwater fluxes" subsection)
-    :rain_freshwater_flux                 => :Jʳⁿ,
-    :snow_freshwater_flux                 => :Jˢⁿ,
+    :rain_freshwater_flux => :Jʳⁿ,
+    :snow_freshwater_flux => :Jˢⁿ,
     # Biogeochemistry (matches the short symbols dispatched in restoring.jl:49-61)
-    :dissolved_inorganic_carbon           => :DIC,
-    :alkalinity                           => :ALK,
-    :nitrate                              => :NO₃,
-    :phosphate                            => :PO₄,
-    :dissolved_organic_phosphorus         => :DOP,
-    :particulate_organic_phosphorus       => :POP,
-    :dissolved_iron                       => :Fe,
-    :dissolved_silicate                   => :SiO₂,
-    :dissolved_oxygen                     => :O₂,
+    :dissolved_inorganic_carbon => :DIC,
+    :alkalinity => :ALK,
+    :nitrate => :NO₃,
+    :phosphate => :PO₄,
+    :dissolved_organic_phosphorus => :DOP,
+    :particulate_organic_phosphorus => :POP,
+    :dissolved_iron => :Fe,
+    :dissolved_silicate => :SiO₂,
+    :dissolved_oxygen => :O₂,
 )
 
 # Only temperature and salinity need a thorough inpainting because of stability,
@@ -324,6 +328,7 @@ include("ORCA/ORCA.jl")
 include("WOA/WOA.jl")
 include("JRA55/JRA55.jl")
 include("OSPapa/OSPapa.jl")
+include("SoilGrids/SoilGridsV2.jl")
 include("IBCSO/IBCSO.jl")
 include("GEBCO/GEBCO.jl")
 include("IBCAO/IBCAO.jl")
@@ -400,7 +405,7 @@ function dataset_constructor_docstring()
     elseif N == 1
         return only(names)
     else
-        return string(join(names[1:N-1], ", "), ", and ", names[N])
+        return string(join(names[1:(N - 1)], ", "), ", and ", names[N])
     end
 end
 
