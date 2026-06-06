@@ -4,21 +4,6 @@ paths:
 ---
 
 # Testing Rules
-## Running Tests
-
-```julia
-# All tests
-Pkg.test("Oceananigans")
-
-# Specific test group
-ENV["TEST_GROUP"] = "unit"  # or "time_stepping", "regression", etc.
-Pkg.test("Oceananigans")
-
-# CPU-only (disable GPU)
-ENV["CUDA_VISIBLE_DEVICES"] = "-1"
-ENV["TEST_ARCHITECTURE"] = "CPU"
-Pkg.test("Oceananigans")
-```
 
 ## Writing Tests
 
