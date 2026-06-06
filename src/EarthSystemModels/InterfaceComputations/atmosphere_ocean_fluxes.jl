@@ -19,7 +19,6 @@ function compute_atmosphere_ocean_fluxes!(coupled_model)
     grid = exchanger.grid
     arch = architecture(grid)
     clock = coupled_model.clock
-    ocean_state = exchanger.ocean.state
     # Simplify NamedTuple to reduce parameter space consumption.
     # See https://github.com/CliMA/NumericalEarth.jl/issues/116.
     atmosphere_data = atmosphere_ocean_data(coupled_model)
@@ -30,6 +29,11 @@ function compute_atmosphere_ocean_fluxes!(coupled_model)
     interface_properties = coupled_model.interfaces.atmosphere_ocean_interface.properties
     ocean_properties = coupled_model.interfaces.ocean_properties
     atmosphere_properties = atmosphere_ocean_properties(coupled_model)
+
+    # The diffusivity operation enters the kernel parameter space only when
+    # the temperature formulation consumes it (see issue #116).
+    ocean_state = assemble_interior_fields(exchanger.ocean.state,
+                                           interface_properties.temperature_formulation)
 
     # Radiation state for the interface solve (used by SkinTemperature).
     # When `radiation === nothing` these are `nothing`s and the getter
@@ -70,7 +74,7 @@ end
     return (u=uᵒᶜ, v=vᵒᶜ, T=Tᵒᶜ, S=Sᵒᶜ)
 end
 
-@inline function assemble_interior_state(i, j, kᴺ, grid, interior_state, ocean_properties, ::SkinTemperature{<:DiffusiveFlux{<:Any, <:InteriorDiffusivity}})
+@inline function assemble_interior_state(i, j, kᴺ, grid, interior_state, ocean_properties, ::IDST)
     Ψᵢ = assemble_interior_state(i, j, kᴺ, grid, interior_state, ocean_properties, nothing)
     κ  = @inbounds interior_state.κ[i, j, 1]
     return merge(Ψᵢ, (; κ))

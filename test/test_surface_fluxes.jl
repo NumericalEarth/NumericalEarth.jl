@@ -13,6 +13,7 @@ using NumericalEarth.EarthSystemModels.InterfaceComputations: ComponentInterface
                                                               BulkTemperature,
                                                               DiffusiveFlux,
                                                               InteriorDiffusivity,
+                                                              assemble_interior_fields,
                                                               SkinHumidity,
                                                               FractionalHumidity,
                                                               CriticalSaturation,
@@ -78,8 +79,8 @@ end
             # No radiation: pass `radiation = nothing` to disable radiative
             # contributions wholesale.
             for atmosphere_ocean_interface_temperature in (BulkTemperature(),
-                                                           SkinTemperature(DiffusiveFlux(1, 1e-2)),
-                                                           SkinTemperature(DiffusiveFlux(1, InteriorDiffusivity())))
+                                                           SkinTemperature(DiffusiveFlux(1e-2, 1)),
+                                                           SkinTemperature(DiffusiveFlux(InteriorDiffusivity(), 1)))
                 @info " Testing zero fluxes with $(atmosphere_ocean_interface_temperature)..."
 
                 interfaces = ComponentInterfaces(atmosphere, ocean;
@@ -121,7 +122,7 @@ end
 
             set!(diffusive_ocean.model, T = 15, S = 30)
 
-            skin_temperature = SkinTemperature(DiffusiveFlux(0.5, InteriorDiffusivity()))
+            skin_temperature = SkinTemperature(DiffusiveFlux(InteriorDiffusivity(), 0.5))
             interfaces = ComponentInterfaces(atmosphere, diffusive_ocean;
                                              atmosphere_ocean_interface_temperature = skin_temperature)
 
@@ -132,6 +133,12 @@ end
             # The skin temperature solve runs with the assessed diffusivity
             Tₛ = interfaces.atmosphere_ocean_interface.temperature
             @test all(isfinite, Array(interior(Tₛ)))
+
+            # The diffusivity operation is stripped from the kernel arguments
+            # unless the temperature formulation needs it
+            exchanged_state = interfaces.exchanger.ocean.state
+            @test !haskey(assemble_interior_fields(exchanged_state, BulkTemperature()), :κ)
+            @test haskey(assemble_interior_fields(exchanged_state, skin_temperature), :κ)
 
             @info " Testing neutral fluxes..."
 

@@ -349,7 +349,7 @@ end
 SkinTemperature(internal_flux; max_ΔT=5) = SkinTemperature(internal_flux, max_ΔT)
 
 """
-    DiffusiveFlux(δ, κ)
+    DiffusiveFlux(κ, δ)
 
 Internal flux ``J = - κ (Tₛ - Tᵢ) / δ`` between the interior temperature ``Tᵢ``,
 located a distance ``δ`` below the interface (typically half the spacing of the topmost
@@ -357,9 +357,9 @@ interior cell), and the interface temperature ``Tₛ``. The diffusivity `κ` (m�
 either a prescribed constant or an [`InteriorDiffusivity`](@ref) assessed from the
 interior model.
 """
-struct DiffusiveFlux{Z, K}
-    δ :: Z # Boundary layer thickness, as a first guess we will use half the grid spacing
+struct DiffusiveFlux{K, Z}
     κ :: K # diffusivity in m² s⁻¹
+    δ :: Z # Boundary layer thickness, as a first guess we will use half the grid spacing
 end
 
 """
@@ -374,24 +374,27 @@ struct InteriorDiffusivity{FT}
     minimum_diffusivity :: FT
 end
 
-InteriorDiffusivity(FT::DataType = Oceananigans.defaults.FloatType; minimum_diffusivity = 1.4e-7) =
-    InteriorDiffusivity(convert(FT, minimum_diffusivity))
+InteriorDiffusivity(FT::DataType = Oceananigans.defaults.FloatType; minimum_diffusivity = 1.4e-7) =  InteriorDiffusivity(convert(FT, minimum_diffusivity))
 
 @inline internal_diffusivity(κ::Number, Ψᵢ) = κ
 @inline internal_diffusivity(d::InteriorDiffusivity, Ψᵢ) = max(Ψᵢ.κ, d.minimum_diffusivity)
 
-@inline requires_interior_diffusivity(temperature_formulation) = false
-@inline requires_interior_diffusivity(st::SkinTemperature) = requires_interior_diffusivity(st.internal_flux)
-@inline requires_interior_diffusivity(flux::DiffusiveFlux) = flux.κ isa InteriorDiffusivity
+# A skin temperature whose internal flux uses the interior model's diffusivity
+const IDST = SkinTemperature{<:DiffusiveFlux{<:InteriorDiffusivity}}
 
-function validate_interior_fields(temperature_formulation, ocean_exchanger)
-    requires_interior_diffusivity(temperature_formulation) || return nothing
+# We try to keep the parameter space clean. If we do not need the diffusivity we remove it.
+assemble_interior_fields(state, temperature_formulation) = Base.structdiff(state, NamedTuple{(:κ,)})
+assemble_interior_fields(state, temperature_formulation::IDST) = state
+
+validate_interior_fields(temperature_formulation, ocean_exchanger) = nothing
+
+function validate_interior_fields(temperature_formulation::IDST, ocean_exchanger)
     state = isnothing(ocean_exchanger) ? NamedTuple() : ocean_exchanger.state
     haskey(state, :κ) ||
         throw(ArgumentError("$(summary(temperature_formulation)) uses an InteriorDiffusivity, \
                              which requires an ocean component that exposes its near-surface \
                              vertical diffusivity. Either use such an ocean component or \
-                             prescribe the diffusivity with SkinTemperature(DiffusiveFlux(δ, κ))."))
+                             prescribe the diffusivity with SkinTemperature(DiffusiveFlux(κ, δ))."))
     return nothing
 end
 
