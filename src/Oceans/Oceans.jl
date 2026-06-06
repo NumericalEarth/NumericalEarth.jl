@@ -137,15 +137,18 @@ end
 @inline Σκzᶜᶜᶠ(i, j, k, grid, closure::Tuple{}, K::Tuple{}, id, clock, model_fields) = zero(grid)
 
 @inline Σκzᶜᶜᶠ(i, j, k, grid, closure::Tuple{<:Any}, K::Tuple{<:Any}, id, clock, model_fields) =
+    κzᶜᶜᶠ(i, j, k, grid, closure[1], K[1], id, clock, model_fields) 
+
+@inline Σκzᶜᶜᶠ(i, j, k, grid, closure::Tuple{<:Any, <:Any}, K::Tuple{<:Any, <:Any}, id, clock, model_fields) =
     κzᶜᶜᶠ(i, j, k, grid, closure[1], K[1], id, clock, model_fields) +
     κzᶜᶜᶠ(i, j, k, grid, closure[2], K[2], id, clock, model_fields) 
 
-@inline Σκzᶜᶜᶠ(i, j, k, grid, closure::Tuple{<:Any, <:Any}, K::Tuple{<:Any, <:Any}, id, clock, model_fields) =
+@inline Σκzᶜᶜᶠ(i, j, k, grid, closure::Tuple{<:Any, <:Any, <:Any}, K::Tuple{<:Any, <:Any, <:Any}, id, clock, model_fields) =
     κzᶜᶜᶠ(i, j, k, grid, closure[1], K[1], id, clock, model_fields) +
     κzᶜᶜᶠ(i, j, k, grid, closure[2], K[2], id, clock, model_fields) +
     κzᶜᶜᶠ(i, j, k, grid, closure[3], K[3], id, clock, model_fields) 
 
-@inline Σκzᶜᶜᶠ(i, j, k, grid, closure::Tuple{<:Any, <:Any, <:Any}, K::Tuple{<:Any, <:Any, <:Any}, id, clock, model_fields) =
+@inline Σκzᶜᶜᶠ(i, j, k, grid, closure::Tuple{<:Any, <:Any, <:Any, <:Any}, K::Tuple{<:Any, <:Any, <:Any, <:Any}, id, clock, model_fields) =
     κzᶜᶜᶠ(i, j, k, grid, closure[1], K[1], id, clock, model_fields) +
     κzᶜᶜᶠ(i, j, k, grid, closure[2], K[2], id, clock, model_fields) +
     κzᶜᶜᶠ(i, j, k, grid, closure[3], K[3], id, clock, model_fields) +
