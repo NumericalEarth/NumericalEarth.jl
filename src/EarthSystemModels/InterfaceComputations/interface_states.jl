@@ -386,18 +386,6 @@ const IDST = SkinTemperature{<:DiffusiveFlux{<:InteriorDiffusivity}}
 assemble_interior_fields(state, temperature_formulation) = Base.structdiff(state, NamedTuple{(:κ,)})
 assemble_interior_fields(state, temperature_formulation::IDST) = state
 
-validate_interior_fields(temperature_formulation, ocean_exchanger) = nothing
-
-function validate_interior_fields(temperature_formulation::IDST, ocean_exchanger)
-    state = isnothing(ocean_exchanger) ? NamedTuple() : ocean_exchanger.state
-    haskey(state, :κ) ||
-        throw(ArgumentError("$(summary(temperature_formulation)) uses an InteriorDiffusivity, \
-                             which requires an ocean component that exposes its near-surface \
-                             vertical diffusivity. Either use such an ocean component or \
-                             prescribe the diffusivity with SkinTemperature(DiffusiveFlux(κ, δ))."))
-    return nothing
-end
-
 # The flux balance is solved by computing
 #
 #            κ
