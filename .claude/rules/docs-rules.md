@@ -31,7 +31,7 @@ serve(dir="docs/build")
 ## Style
 
 - Use Documenter.jl syntax for cross-references
-- Add paper references via bibtex in `oceananigans.bib` with corresponding citations
+- Add paper references via bibtex in `NumericalEarth.bib` with corresponding citations
 - Make use of cross-references with equations
 - In example code, NEVER explicitly import names already exported by `using NumericalEarth`
 
