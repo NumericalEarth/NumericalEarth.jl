@@ -25,12 +25,12 @@ end
 
 # Variable name mappings from NumericalEarth names to SoilGridsV2 variable names
 SoilGridsV2_dataset_variable_names = Dict(
-    :sand_content => "sand",
-    :silt_content => "silt",
-    :clay_content => "clay",
-    :bulk_density => "bdod",
-    :organic_carbon_density => "ocd",
-    :soil_organic_carbon => "soc"
+    :sand_fraction           => "sand",
+    :silt_fraction           => "silt",
+    :clay_fraction           => "clay",
+    :bulk_density            => "bdod",
+    :organic_carbon_density  => "ocd",
+    :soil_organic_carbon     => "soc"
 )
 
 Base.size(::SoilGridsV2, variable) = (3956, 1979, 6, 4)
@@ -56,6 +56,21 @@ DataWrangling.metadata_url(::SoilGridsV2Metadatum) = SoilGridsV2_url
 DataWrangling.longitude_name(::SoilGridsV2Metadatum) = "lon"
 DataWrangling.latitude_name(::SoilGridsV2Metadatum) = "lat"
 
+# Unit conversions
+function DataWrangling.conversion_units(metadatum::SoilGridsV2Metadatum)
+    if metadatum.name ∈ (:sand_fraction, :silt_fraction, :clay_fraction)
+        return GramPerKilogram()
+    elseif metadatum.name == :bulk_density
+        return CentigramPerCubicCentimeter()
+    elseif metadatum.name == :organic_carbon_density
+        return HectogramPerCubicMeter()
+    elseif metadatum.name == :soil_organic_carbon
+        return DecigramPerKilogram()
+    else
+        return nothing
+    end
+end
+
 function Downloads.download(metadatum::SoilGridsV2Metadatum)
     fileurl = metadata_url(metadatum)
     filepath = metadata_path(metadatum)
@@ -67,9 +82,7 @@ function Downloads.download(metadatum::SoilGridsV2Metadatum)
     return filepath
 end
 
-Oceananigans.Fields.location(::SoilGridsV2Metadatum) = (Center, Center, Center)
-
-function retrieve_data(metadata::SoilGridsV2Metadatum)
+function DataWrangling.retrieve_data(metadata::SoilGridsV2Metadatum)
     path = metadata_path(metadata)
     name = dataset_variable_name(metadata)
 
@@ -84,5 +97,7 @@ function retrieve_data(metadata::SoilGridsV2Metadatum)
     data = reverse(data, dims = 2)
     return data
 end
+
+Oceananigans.Fields.location(::SoilGridsV2Metadatum) = (Center, Center, Center)
 
 end # module

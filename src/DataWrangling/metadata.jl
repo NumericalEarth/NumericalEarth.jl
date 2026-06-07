@@ -745,6 +745,10 @@ struct MicromolePerKilogram end
 struct MicromolePerLiter end
 struct NanomolePerKilogram end
 struct NanomolePerLiter end
+struct CentigramPerCubicCentimeter end
+struct HectogramPerCubicMeter end
+struct GramPerKilogram end
+struct DecigramPerKilogram end
 
 struct InverseSign end
 struct InverseGravity end

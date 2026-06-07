@@ -406,6 +406,13 @@ end
 @inline convert_units(Φ::FT, ::InverseGravity)                                 where FT = Φ / convert(FT, 9.80665)
 @inline convert_units(V::FT, ::CentimetersPerSecond)                           where FT = V / convert(FT, 100)
 
+# Mass fractions (convert to kg/kg)
+@inline convert_units(χ::FT, ::DecigramPerKilogram) where FT = χ / convert(FT, 1e4)
+@inline convert_units(χ::FT, ::GramPerKilogram) where FT = χ / convert(FT, 1e3)
+
+# Densities (convert to kg/m^3)
+@inline convert_units(ρ::FT, ::HectogramPerCubicMeter) where FT = ρ / convert(FT, 10)
+@inline convert_units(ρ::FT, ::CentigramPerCubicCentimeter) where FT = ρ * convert(FT, 10)
 
 #####
 ##### Masking data for inpainting
