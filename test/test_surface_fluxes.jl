@@ -111,10 +111,15 @@ end
 
             @info " Testing interior diffusivity assessment..."
 
-            # The assessed diffusivity is the total vertical tracer diffusivity
-            # at the topmost interior face, summed over the closure tuple.
+            column_grid = RectilinearGrid(arch, Float32;
+                                          size = 1,
+                                          x = 10,
+                                          y = 10,
+                                          z = (-1, 0),
+                                          topology = (Flat, Flat, Bounded))
+
             closure = (VerticalScalarDiffusivity(κ=1e-3), VerticalScalarDiffusivity(κ=2e-3))
-            diffusive_ocean = ocean_simulation(grid;
+            diffusive_ocean = ocean_simulation(column_grid;
                                                momentum_advection = nothing,
                                                tracer_advection = nothing,
                                                closure,

@@ -30,7 +30,6 @@ function Base.summary(q★::ImpureSaturationSpecificHumidity)
         "Liquid"
     end
 
-
     return string("ImpureSaturationSpecificHumidity{$phase_str}(water_mole_fraction=",
                   prettysummary(q★.water_mole_fraction), ")")
 end
@@ -365,9 +364,9 @@ end
 """
     InteriorDiffusivity(FT = Oceananigans.defaults.FloatType; minimum_diffusivity = 1.4e-7)
 
-Diffusivity for a [`DiffusiveFlux`](@ref) that is assessed from the interior model (for example the near-surface 
+Diffusivity for a [`DiffusiveFlux`](@ref) that is assessed from the interior model (for example the near-surface
 vertical diffusivity predicted by the ocean turbulence closure) instead of being prescribed. The assessed value is floored by
-`minimum_diffusivity`, which defaults to the molecular thermal diffusivity of seawater, guarding stably-stratified conditions 
+`minimum_diffusivity`, which defaults to the molecular thermal diffusivity of seawater, guarding stably-stratified conditions
 in which modeled diffusivities vanish.
 """
 struct InteriorDiffusivity{FT}
@@ -421,8 +420,10 @@ assemble_interior_fields(state, temperature_formulation::IDST) = state
 #
 # corresponding to a linearization of the outgoing longwave radiation term.
 @inline function flux_balance_temperature(st::SkinTemperature{<:DiffusiveFlux}, Ψₛ, ℙₛ, 𝒬ᵀ, 𝒬ᵛ, ℐꜛˡʷ, Qd, Ψᵢ, ℙᵢ, Ψₐ, ℙₐ)
+    FT = typeof(Ψₛ.temperature)
     F  = st.internal_flux
-    κ  = internal_diffusivity(F.κ, Ψᵢ)
+    κ  = convert(FT, internal_diffusivity(F.κ, Ψᵢ))
+    δ  = convert(FT, F.δ)
     ρ  = ℙᵢ.reference_density
     c  = ℙᵢ.heat_capacity
     Qa = 𝒬ᵛ + ℐꜛˡʷ + Qd # Net flux excluding sensible heat (positive out of the ocean)
@@ -436,10 +437,10 @@ assemble_interior_fields(state, temperature_formulation::IDST) = state
     # Flux balance: T★ = (Tᵢ κ - (Jᵀ + Ωc Tᵃᵗ) δ) / (κ - Ωc δ)
     # where Ωc = 𝒬ᵀ λ / ΔT. Multiply through by ΔT to avoid Inf when ΔT → 0.
     Ωᵀ = 𝒬ᵀ * λ  # unnormalized sensible heat coefficient (= Ωc * ΔT)
-    D  = κ * ΔT - Ωᵀ * F.δ
-    T★ = (Ψᵢ.T * κ * ΔT - (Jᵀ * ΔT + Ωᵀ * Tᵃᵗ) * F.δ) / D
+    D  = κ * ΔT - Ωᵀ * δ
+    T★ = (Ψᵢ.T * κ * ΔT - (Jᵀ * ΔT + Ωᵀ * Tᵃᵗ) * δ) / D
     T★ = ifelse(D == 0, Ψₛ.temperature, T★)
-    max_ΔT = convert(typeof(T★), st.max_ΔT)
+    max_ΔT = convert(FT, st.max_ΔT)
     return Ψᵢ.T + clamp(T★ - Ψᵢ.T, -max_ΔT, max_ΔT)
 end
 
