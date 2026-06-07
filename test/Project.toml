@@ -32,6 +32,8 @@ Thermodynamics = "b60c26fb-14c3-4610-9d3e-2d17fe7ff00c"
 WorldOceanAtlasTools = "04f20302-f1b9-11e8-29d9-7d841cb0a64a"
 
 [sources]
+Breeze = {url = "https://github.com/NumericalEarth/Breeze.jl.git", rev = "ncc/normal-flow-boundary-conditions"}
+ClimaSeaIce = {url = "https://github.com/CliMA/ClimaSeaIce.jl.git", rev = "ncc/oceananigans-v0.110"}
 NumericalEarth = {path = ".."}
 
 [compat]
@@ -53,7 +55,7 @@ JLD2 = "0.4, 0.5, 0.6"
 KernelAbstractions = "0.9"
 MPI = "0.20"
 NCDatasets = "0.12, 0.13, 0.14"
-Oceananigans = "0.109.1"
+Oceananigans = "0.110.1"
 PythonCall = "0.9.28"
 Random = "<0.0.1, 1"
 Reactant = "=0.2.255"

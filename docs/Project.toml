@@ -25,6 +25,8 @@ SpeedyWeather = "9e226e20-d153-4fed-8a5b-493def4f21a9"
 Suppressor = "fd094767-a336-5f1f-9728-57cf17d0bbfb"
 
 [sources]
+Breeze = {url = "https://github.com/NumericalEarth/Breeze.jl.git", rev = "ncc/normal-flow-boundary-conditions"}
+ClimaSeaIce = {url = "https://github.com/CliMA/ClimaSeaIce.jl.git", rev = "ncc/oceananigans-v0.110"}
 NumericalEarth = {path = ".."}
 
 [compat]
