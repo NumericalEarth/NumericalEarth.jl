@@ -167,11 +167,11 @@ function construct_native_grid(metadata, col::Column, arch; halo)
 end
 
 """
-    retrieve_data(metadata, last_index = 1)
+    retrieve_data(metadata)
 
 Retrieve data from netcdf file according to `metadata`.
 """
-function retrieve_data(metadata::Metadatum, last_index = 1)
+function retrieve_data(metadata::Metadatum)
     path = metadata_path(metadata)
     name = dataset_variable_name(metadata)
 
@@ -179,14 +179,14 @@ function retrieve_data(metadata::Metadatum, last_index = 1)
     ds = Dataset(path)
 
     if is_three_dimensional(metadata)
-        data = ds[name][:, :, :, last_index]
+        data = ds[name][:, :, :, 1]
 
         # Many ocean datasets use a "depth convention" for their vertical axis
         if reversed_vertical_axis(metadata.dataset)
             data = reverse(data, dims = 3)
         end
     else
-        data = ds[name][:, :, last_index]
+        data = ds[name][:, :, 1]
     end
 
     close(ds)

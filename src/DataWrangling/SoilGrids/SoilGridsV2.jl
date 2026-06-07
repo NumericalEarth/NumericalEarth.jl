@@ -19,7 +19,9 @@ function __init__()
     return global download_SoilGridsV2_cache = @get_scratch!("SoilGridsV2")
 end
 
-struct SoilGridsV2 <: AbstractStaticDataset end
+@kwdef struct SoilGridsV2 <: AbstractStaticDataset
+    stat::SoilGridsStat = mean
+end
 
 # Variable name mappings from NumericalEarth names to SoilGridsV2 variable names
 SoilGridsV2_dataset_variable_names = Dict(
@@ -67,26 +69,20 @@ end
 
 Oceananigans.Fields.location(::SoilGridsV2Metadatum) = (Center, Center, Center)
 
-function Oceananigans.Fields.Field(
-        metadatum::SoilGridsV2Metadatum, arch = CPU();
-        halo = (3, 3, 3),
-        stat::SoilGridsStat = mean
-    )
-    Downloads.download(metadatum)
+function retrieve_data(metadata::SoilGridsV2Metadatum)
+    path = metadata_path(metadata)
+    name = dataset_variable_name(metadata)
 
-    grid = native_grid(metadatum, arch; halo)
-    LX, LY, LZ = location(metadatum)
-    field = Field{LX, LY, LZ}(grid)
+    # Open NetCDF file
+    data = Dataset(path) do ds
+        data = ds[name][:, :, :, Int(metadata.dataset.stat) + 1]
+        # Reverse vertical axis to be increasing upwards
+        reverse(data, dims = 3)
+    end
 
-    # Retrieve data from file according to metadatum type
-    data = retrieve_data(metadatum, Int(stat) + 1)
-    # Replace fill value
-    data = replace(data, -32768 => 0)
-
-    set_metadata_field!(field, data, metadatum)
-    fill_halo_regions!(field)
-
-    return field
+    # Reverse latitude axis
+    data = reverse(data, dims = 2)
+    return data
 end
 
 end # module
