@@ -626,7 +626,7 @@ function find_exponential_scale(Nz, depth, Δzᵀ; tolerance = 1e-7, maxiter = 2
         abs(Δz - Δzᵀ) <= tolerance * Δzᵀ && return h
         Δz < Δzᵀ ? (h⁻ = h) : (h⁺ = h)
     end
-    error("Could not converge to scale matching Δz_top = $Δz_top within relative tolerance $tolerance")
+    error("Could not converge to scale matching Δz_top = $Δzᵀ within relative tolerance $tolerance")
 end
 
 exponential_scale(Nz, depth, ::Nothing) = 1300
