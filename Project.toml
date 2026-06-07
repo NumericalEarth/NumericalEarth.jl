@@ -64,7 +64,7 @@ ClimaSeaIce = {url = "https://github.com/CliMA/ClimaSeaIce.jl.git", rev = "ncc/o
 Accessors = "0.1.44"
 Adapt = "4"
 ArchGDAL = "0.10"
-Breeze = "0.5.2"
+Breeze = "0.5.3"
 CDSAPI = "2.2.1"
 CFTime = "0.1, 0.2"
 ClimaSeaIce = "0.5.5"

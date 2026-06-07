@@ -30,7 +30,7 @@ ClimaSeaIce = {url = "https://github.com/CliMA/ClimaSeaIce.jl.git", rev = "ncc/o
 NumericalEarth = {path = ".."}
 
 [compat]
-Breeze = "0.5.2"
+Breeze = "0.5.3"
 CUDA = "~6.0"
 CairoMakie = "0.15"
 ConservativeRegridding = "0.2.3"
