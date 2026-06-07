@@ -17,6 +17,11 @@ function install_veros()
     CondaPkg.add("h5py"; version=">=3.0,<3.13", channel="conda-forge")
     # veros main pins requests==2.34.0; drop once team-ocean/veros#829 merges
     CondaPkg.add("requests"; version="==2.34.0", channel="conda-forge")
+    # veros main pins tqdm==4.67.3 (requirements.txt); without this the conda
+    # solve pulls a newer conda-forge tqdm (e.g. 4.68.1) that pixi cannot
+    # reconcile with veros's pip requirement ("failed to solve the pypi
+    # requirements"). Drop/loosen once veros loosens its tqdm pin.
+    CondaPkg.add("tqdm"; version="==4.67.3", channel="conda-forge")
     CondaPkg.add_pip("veros", version="@ https://github.com/team-ocean/veros/archive/refs/heads/main.zip")
     cli = CondaPkg.which("veros")
 
