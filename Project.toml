@@ -58,7 +58,6 @@ NumericalEarthVerosExt = ["PythonCall", "CondaPkg"]
 NumericalEarthWOAExt = "WorldOceanAtlasTools"
 
 [sources]
-Breeze = {url = "https://github.com/NumericalEarth/Breeze.jl.git", rev = "ncc/normal-flow-boundary-conditions"}
 ClimaSeaIce = {url = "https://github.com/CliMA/ClimaSeaIce.jl.git", rev = "ncc/oceananigans-v0.110"}
 
 [compat]
@@ -101,6 +100,3 @@ Thermodynamics = "0.15.3, 1"
 WorldOceanAtlasTools = "0.6"
 ZipFile = "0.10"
 julia = "1.10"
-
-[extras]
-Breeze = "660aa2fb-d4c8-4359-a52c-9c057bc511da"
