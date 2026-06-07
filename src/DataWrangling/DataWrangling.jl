@@ -299,6 +299,13 @@ const variable_glossary = Dict{Symbol, Symbol}(
     :dissolved_iron                       => :Fe,
     :dissolved_silicate                   => :SiO₂,
     :dissolved_oxygen                     => :O₂,
+    # Land surface variables
+    :sand_fraction                        => :sand,
+    :silt_fraction                        => :silt,
+    :clay_fraction                        => :clay,
+    :bulk_density                         => :ρ_soil,
+    :organic_carbon_density               => :ρ_soc,
+    :soil_organic_carbon                  => :SOC
 )
 
 # Only temperature and salinity need a thorough inpainting because of stability,
