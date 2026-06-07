@@ -131,7 +131,7 @@ end
 ##### Near-surface vertical diffusivity assessment
 #####
 
-# Total vertical tracer diffusivity at the surface. Salls back to zero for closures without vertical diffusivity
+# Total vertical tracer diffusivity at the surface. Falls back to zero for closures without vertical diffusivity
 @inline Σκzᶜᶜᶠ(i, j, k, grid, closure, K, id, clock, model_fields) = κzᶜᶜᶠ(i, j, k, grid, closure, K, id, clock, model_fields)
 
 @inline Σκzᶜᶜᶠ(i, j, k, grid, closure::Tuple{}, K::Tuple{}, id, clock, model_fields) = zero(grid)
