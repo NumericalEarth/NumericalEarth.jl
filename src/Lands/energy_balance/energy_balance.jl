@@ -65,4 +65,4 @@ update_diagnostics!(::AbstractEnergyBalance, land) = nothing
 
 Return the field of surface temperatures the atmosphere reads as a BC.
 """
-surface_temperature(::AbstractEnergyBalance, land) = land.temperature
+EarthSystemModels.surface_temperature(::AbstractEnergyBalance, land) = land.temperature
