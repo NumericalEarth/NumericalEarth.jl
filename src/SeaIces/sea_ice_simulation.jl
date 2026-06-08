@@ -42,7 +42,8 @@ end
                                                             density=sea_ice_density),
                        conductivity = 2, # W m⁻¹ K⁻¹
                        internal_heat_flux = ConductiveFlux(; conductivity),
-                       snow_thermodynamics = default_snow_thermodynamics(grid))
+                       snow_thermodynamics = default_snow_thermodynamics(grid),
+                       clock = nothing)
 
 Construct a sea ice simulation with the given grid and optional ocean simulation.
 The sea ice model is configured with a slab thermodynamics, Elasto-Visco-Plastic rheology,
@@ -80,6 +81,8 @@ Keyword Arguments
                         `ConductiveFlux` with specified conductivity)
 - `snow_thermodynamics`: thermodynamics for the snow layer (default is a slab thermodynamics with
                          specified conductivity and prescribed temperature)
+- `clock`: clock for the sea ice model. Defaults to `nothing`, in which case the model builds its
+           own default clock; pass a `Clock` to control the time type (e.g. when coupling)
 """
 function sea_ice_simulation(grid, ocean=nothing;
                             Δt = 5minutes,
@@ -99,7 +102,8 @@ function sea_ice_simulation(grid, ocean=nothing;
                                                                  density=sea_ice_density),
                             conductivity = 2, # W m⁻¹ K⁻¹
                             internal_heat_flux = ConductiveFlux(; conductivity),
-                            snow_thermodynamics = default_snow_thermodynamics(grid))
+                            snow_thermodynamics = default_snow_thermodynamics(grid),
+                            clock = nothing)
 
     # Build consistent boundary conditions for the ice model:
     # - bottom -> flux boundary condition
@@ -128,6 +132,9 @@ function sea_ice_simulation(grid, ocean=nothing;
     top_heat_flux    = Field{Center, Center, Nothing}(grid)
     snowfall         = Field{Center, Center, Nothing}(grid)
 
+    # Only forward `clock` when supplied so the model keeps its own default otherwise.
+    clock_kw = isnothing(clock) ? NamedTuple() : (; clock)
+
     # Build the sea ice model
     sea_ice_model = SeaIceModel(grid;
                                 ice_salinity,
@@ -143,7 +150,8 @@ function sea_ice_simulation(grid, ocean=nothing;
                                 dynamics,
                                 timestepper,
                                 bottom_heat_flux,
-                                top_heat_flux)
+                                top_heat_flux,
+                                clock_kw...)
 
     verbose = false
     sea_ice = Simulation(sea_ice_model; Δt, verbose)
