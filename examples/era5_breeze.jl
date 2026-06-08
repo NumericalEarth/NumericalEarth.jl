@@ -153,8 +153,7 @@ cₚᵈ  = constants.dry_air.heat_capacity
 κ    = Rᵈ / cₚᵈ
 pˢᵗ  = 1e5  # Pa
 εfac = Rᵛ / Rᵈ - 1   # for virtual-temperature correction: Tᵛ = T·(1 + εfac·qᵛ)
-Lᵥ   = constants.liquid.reference_latent_heat
-Lₛ   = constants.ice.reference_latent_heat
+# (latent heats Lᵥ, Lₛ now live inside `breeze_prognostic_state`.)
 
 # ## Interpolate ERA5 onto the LAM grid
 #
@@ -361,32 +360,20 @@ function populate_parent_snapshot!(n, date)
     interior(qᶜ_fts,              :, :, :, n) .= interior(qᶜ_p)
     interior(qⁱ_fts,              :, :, :, n) .= interior(qⁱ_p)
 
-    # Derive ρ, θˡⁱ, qᵗ pointwise on the parent grid, then store both the
-    # specific quantities (for SpecificForcing-keyed Davies targets) and the
-    # density-weighted forms (for BC values on the prognostic state).
-    T_arr  = Array(interior(T_p))
-    qᵛ_arr = Array(interior(qᵛ_p))
-    qᶜ_arr = Array(interior(qᶜ_p))
-    qⁱ_arr = Array(interior(qⁱ_p))
-    p_arr  = Array(interior(p_p))
-    u_arr  = Array(interior(u_p))
-    v_arr  = Array(interior(v_p))
+    # Derive ρ, θˡⁱ, qᵗ on the parent grid via the shared `breeze_prognostic_state`
+    # conversion (the child IC uses the same helper), then store the specific
+    # quantities (SpecificForcing-keyed Davies targets) and their density-weighted
+    # forms (BC values on the prognostic state). Everything stays on `arch`, so the
+    # FTS writes are plain device-side broadcasts.
+    state = breeze_prognostic_state(constants, T_p, qᵛ_p, qᶜ_p, qⁱ_p, p_p)
 
-    Tᵛ_arr  = T_arr  .* (1 .+ εfac .* qᵛ_arr)
-    ρ_arr   = p_arr  ./ (Rᵈ .* Tᵛ_arr)
-    θ_arr   = T_arr  .* (pˢᵗ ./ p_arr) .^ κ
-    θˡⁱ_arr = θ_arr  .* (1 .- (Lᵥ .* qᶜ_arr .+ Lₛ .* qⁱ_arr) ./ (cₚᵈ .* T_arr))
-    qᵗ_arr  = qᵛ_arr .+ qᶜ_arr .+ qⁱ_arr
-
-    # Host → device writes via `copyto!` (works on both CPU and GPU; the
-    # broadcast form `.=` can fail on `CuArray .= Array`).
-    copyto!(interior(ρ_fts,   :, :, :, n), ρ_arr)
-    copyto!(interior(ρu_fts,  :, :, :, n), ρ_arr .* u_arr)
-    copyto!(interior(ρv_fts,  :, :, :, n), ρ_arr .* v_arr)
-    copyto!(interior(ρθ_fts,  :, :, :, n), ρ_arr .* θˡⁱ_arr)
-    copyto!(interior(ρqᵉ_fts, :, :, :, n), ρ_arr .* qᵗ_arr)
-    copyto!(interior(θ_fts,   :, :, :, n), θˡⁱ_arr)
-    copyto!(interior(qᵗ_fts,  :, :, :, n), qᵗ_arr)
+    interior(ρ_fts,   :, :, :, n) .= interior(state.ρ)
+    interior(ρu_fts,  :, :, :, n) .= interior(state.ρ) .* interior(u_p)
+    interior(ρv_fts,  :, :, :, n) .= interior(state.ρ) .* interior(v_p)
+    interior(ρθ_fts,  :, :, :, n) .= interior(state.ρ) .* interior(state.θˡⁱ)
+    interior(ρqᵉ_fts, :, :, :, n) .= interior(state.ρ) .* interior(state.qᵗ)
+    interior(θ_fts,   :, :, :, n) .= interior(state.θˡⁱ)
+    interior(qᵗ_fts,  :, :, :, n) .= interior(state.qᵗ)
 
     return (; p₀_arr, z_above_sfc, p_era5_3d,
               u_era5, v_era5, T_era5, qᵛ_era5, qᶜ_era5, qⁱ_era5)
@@ -450,9 +437,11 @@ set!(p₀, Metadatum(:surface_pressure; dataset=ds_sl, meta_common_snap1...))
 #     `OpenBC` on Center-located fields silently overwrites the first interior
 #     cell on the W/S walls (validated against vortex-transit tests).
 #
-# Davies fringe relaxation toward the same parent state, keyed under specific
-# names (`u`, `v`, `θ`, `qᵉ`) so Breeze's `SpecificForcing` (PR #708) applies
-# the ρ multiply at kernel time at the right face stagger.
+# Davies fringe relaxation toward the same parent state via `parent_forcings`,
+# which wraps each parent `FieldTimeSeries` target in an Oceananigans
+# `Relaxation` (space/time-interpolated). We key them under specific names
+# (`u`, `v`, `θ`, `qᵉ`) so Breeze's `SpecificForcing` (PR #708) applies the ρ
+# multiply at kernel time at the right face stagger.
 
 bcs = parent_boundary_conditions(grid;
     variables = (ρu  = ρu_fts,
@@ -516,10 +505,12 @@ end
 Δx_phys = 6371e3 * cos(deg2rad(φ₀)) * deg2rad(Δλ)   # m
 τ_relax = FRINGE_N * Δx_phys / 20.0                 # s
 
-davies = (u  = Relaxation(rate = 1/τ_relax, mask = lateral_mask, target = parent.velocities.u),
-          v  = Relaxation(rate = 1/τ_relax, mask = lateral_mask, target = parent.velocities.v),
-          θ  = Relaxation(rate = 1/τ_relax, mask = lateral_mask, target = θ_fts),
-          qᵉ = Relaxation(rate = 1/τ_relax, mask = lateral_mask, target = qᵗ_fts))
+davies = parent_forcings(; rate = 1/τ_relax,
+                         mask = lateral_mask,
+                         variables = (u  = parent.velocities.u,
+                                      v  = parent.velocities.v,
+                                      θ  = θ_fts,
+                                      qᵉ = qᵗ_fts))
 
 # ## Build the Breeze model
 #
@@ -546,24 +537,13 @@ model = atmosphere_simulation(grid;
 
 # ## Set initial state from ERA5
 #
-# Derive the prognostic variables Breeze's `CompressibleDynamics` needs from
-# the per-column-interpolated ERA5 fields:
-#
-#   ρ   = p / (Rᵈ · Tᵛ)                                  (moist ideal gas law)
-#   θˡⁱ = θ · (1 − (Lᵥ qᶜ + Lₛ qⁱ) / (cₚᵈ T))            (Breeze's diagnostic form,
-#         with θ = T · (pˢᵗ/p)^κ                          using cₚᵈ ≈ cᵖᵐ)
-#   qᵗ  = qᵛ + qᶜ + qⁱ                                   (saturation adjustment
-#                                                         partitions on first
-#                                                         update_state!)
+# Derive Breeze's `CompressibleDynamics` prognostic variables (ρ, θˡⁱ, qᵗ) from
+# the per-column-interpolated ERA5 fields via the shared `breeze_prognostic_state`
+# helper — the same conversion used to populate the parent FTSs above. (qᵗ is
+# repartitioned into vapor/condensate by saturation adjustment on the first
+# `update_state!`.)
 
-ρ   = Field(p / (Rᵈ * Tᵛ))
-θ   = T * (pˢᵗ / p)^κ
-θˡⁱ = Field(θ * (1 - (Lᵥ * qᶜ + Lₛ * qⁱ) / (cₚᵈ * T)))
-qᵗ  = Field(qᵛ + qᶜ + qⁱ)
-
-compute!(ρ)
-compute!(θˡⁱ)
-compute!(qᵗ)
+(; ρ, θˡⁱ, qᵗ) = breeze_prognostic_state(constants, T, qᵛ, qᶜ, qⁱ, p)
 
 set!(model; ρ = ρ, u = u, v = v, qᵗ = qᵗ, θˡⁱ = θˡⁱ)
 

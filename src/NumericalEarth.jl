@@ -112,6 +112,7 @@ export
     LinearlyTaperedPolarMask,
     DatasetRestoring,
     atmosphere_simulation,
+    breeze_prognostic_state,
     ocean_simulation,
     sea_ice_simulation,
     default_sea_ice,
