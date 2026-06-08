@@ -33,6 +33,7 @@ WorldOceanAtlasTools = "04f20302-f1b9-11e8-29d9-7d841cb0a64a"
 
 [sources]
 NumericalEarth = {path = ".."}
+CopernicusMarine = {url = "https://github.com/NumericalEarth/CopernicusMarine.jl", rev = "add-netcdf-backend"}
 
 [compat]
 ArchGDAL = "0.10"
