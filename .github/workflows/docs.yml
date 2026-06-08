@@ -6,6 +6,7 @@ on:
       - ".github/workflows/docs.yml"
       - "docs/**"
       - "examples/**"
+      - "ext/**"
       - "src/**"
       - "Project.toml"
   push:
