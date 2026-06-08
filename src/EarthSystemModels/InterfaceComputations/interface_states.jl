@@ -30,7 +30,6 @@ function Base.summary(q★::ImpureSaturationSpecificHumidity)
         "Liquid"
     end
 
-
     return string("ImpureSaturationSpecificHumidity{$phase_str}(water_mole_fraction=",
                   prettysummary(q★.water_mole_fraction), ")")
 end
@@ -348,10 +347,43 @@ end
 
 SkinTemperature(internal_flux; max_ΔT=5) = SkinTemperature(internal_flux, max_ΔT)
 
-struct DiffusiveFlux{Z, K}
-    δ :: Z # Boundary layer thickness, as a first guess we will use half the grid spacing
+"""
+    DiffusiveFlux(κ, δ)
+
+Internal flux ``J = - κ (Tₛ - Tᵢ) / δ`` between the interior temperature ``Tᵢ``,
+located a distance ``δ`` below the interface (typically half the spacing of the topmost
+interior cell), and the interface temperature ``Tₛ``. The diffusivity `κ` (m² s⁻¹) is
+either a prescribed constant or an [`InteriorDiffusivity`](@ref) assessed from the
+interior model.
+"""
+struct DiffusiveFlux{K, Z}
     κ :: K # diffusivity in m² s⁻¹
+    δ :: Z # Boundary layer thickness, as a first guess we will use half the grid spacing
 end
+
+"""
+    InteriorDiffusivity(FT = Oceananigans.defaults.FloatType; minimum_diffusivity = 1.4e-7)
+
+Diffusivity for a [`DiffusiveFlux`](@ref) that is assessed from the interior model (for example the near-surface
+vertical diffusivity predicted by the ocean turbulence closure) instead of being prescribed. The assessed value is floored by
+`minimum_diffusivity`, which defaults to the molecular thermal diffusivity of seawater, guarding stably-stratified conditions
+in which modeled diffusivities vanish.
+"""
+struct InteriorDiffusivity{FT}
+    minimum_diffusivity :: FT
+end
+
+InteriorDiffusivity(FT::DataType = Oceananigans.defaults.FloatType; minimum_diffusivity = 1.4e-7) =  InteriorDiffusivity(convert(FT, minimum_diffusivity))
+
+@inline internal_diffusivity(κ::Number, Ψᵢ) = κ
+@inline internal_diffusivity(d::InteriorDiffusivity, Ψᵢ) = max(Ψᵢ.κ, d.minimum_diffusivity)
+
+# A skin temperature whose internal flux uses the interior model's diffusivity
+const IDST = SkinTemperature{<:DiffusiveFlux{<:InteriorDiffusivity}}
+
+# We try to keep the parameter space clean. If we do not need the diffusivity we remove it.
+assemble_interior_fields(state, temperature_formulation) = Base.structdiff(state, NamedTuple{(:κ,)})
+assemble_interior_fields(state, temperature_formulation::IDST) = state
 
 # The flux balance is solved by computing
 #
@@ -388,11 +420,13 @@ end
 #
 # corresponding to a linearization of the outgoing longwave radiation term.
 @inline function flux_balance_temperature(st::SkinTemperature{<:DiffusiveFlux}, Ψₛ, ℙₛ, 𝒬ᵀ, 𝒬ᵛ, ℐꜛˡʷ, Qd, Ψᵢ, ℙᵢ, Ψₐ, ℙₐ)
-    Qa = 𝒬ᵛ + ℐꜛˡʷ + Qd # Net flux (positive out of the ocean)
+    FT = typeof(Ψₛ.temperature)
     F  = st.internal_flux
+    κ  = convert(FT, internal_diffusivity(F.κ, Ψᵢ))
+    δ  = convert(FT, F.δ)
     ρ  = ℙᵢ.reference_density
     c  = ℙᵢ.heat_capacity
-    Qa = (𝒬ᵛ + ℐꜛˡʷ + Qd) # Net flux excluding sensible heat (positive out of the ocean)
+    Qa = 𝒬ᵛ + ℐꜛˡʷ + Qd # Net flux excluding sensible heat (positive out of the ocean)
     λ  = 1 / (ρ * c) # m³ K J⁻¹
     Jᵀ = Qa * λ
 
@@ -403,10 +437,11 @@ end
     # Flux balance: T★ = (Tᵢ κ - (Jᵀ + Ωc Tᵃᵗ) δ) / (κ - Ωc δ)
     # where Ωc = 𝒬ᵀ λ / ΔT. Multiply through by ΔT to avoid Inf when ΔT → 0.
     Ωᵀ = 𝒬ᵀ * λ  # unnormalized sensible heat coefficient (= Ωc * ΔT)
-    D  = F.κ * ΔT - Ωᵀ * F.δ
-    T★ = (Ψᵢ.T * F.κ * ΔT - (Jᵀ * ΔT + Ωᵀ * Tᵃᵗ) * F.δ) / D
-
-    return ifelse(D == 0, Ψₛ.temperature, T★)
+    D  = κ * ΔT - Ωᵀ * δ
+    T★ = (Ψᵢ.T * κ * ΔT - (Jᵀ * ΔT + Ωᵀ * Tᵃᵗ) * δ) / D
+    T★ = ifelse(D == 0, Ψₛ.temperature, T★)
+    max_ΔT = convert(FT, st.max_ΔT)
+    return Ψᵢ.T + clamp(T★ - Ψᵢ.T, -max_ΔT, max_ΔT)
 end
 
 # Solve the surface flux balance equation:
