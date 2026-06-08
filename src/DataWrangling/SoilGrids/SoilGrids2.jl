@@ -12,7 +12,7 @@ using ..DataWrangling: DataWrangling, DownloadProgress, AbstractStaticDataset, M
 
 import Oceananigans
 
-@enum SoilGridsStat mean Q5 Q50 Q95
+@enum SoilGridsStatistic mean Q5 Q50 Q95
 
 download_SoilGrids2_cache::String = ""
 function __init__()
@@ -20,7 +20,8 @@ function __init__()
 end
 
 @kwdef struct SoilGrids2 <: AbstractStaticDataset
-    stat::SoilGridsStat = mean
+    "Specifies which statistic to load from the dataset; defaults to `mean`"
+    statistic::SoilGridsStatistic = mean
 end
 
 # Variable name mappings from NumericalEarth names to SoilGrids2 variable names
@@ -46,7 +47,7 @@ DataWrangling.reversed_vertical_axis(::SoilGrids2) = true
 DataWrangling.reversed_latitude_axis(::SoilGrids2) = true
 DataWrangling.longitude_interfaces(::SoilGrids2) = (-180, 180)
 DataWrangling.latitude_interfaces(::SoilGrids2) = (-90, 90)
-DataWrangling.z_interfaces(::SoilGrids2) = [-200.0, -100.0, -60.0, -30.0, -15.0, -5.0, 0.0]
+DataWrangling.z_interfaces(::SoilGrids2) = [-200, -100, -60, -30, -15, -5, 0]
 DataWrangling.metadata_filename(::SoilGrids2, name, date, region) = "SoilGrids2_clenshaw_10km_full.nc"
 
 # Metadatum methods
@@ -88,7 +89,7 @@ function DataWrangling.retrieve_data(metadata::SoilGrids2Metadatum)
 
     # Open NetCDF file
     data = Dataset(path) do ds
-        data = ds[name][:, :, :, Int(metadata.dataset.stat) + 1]
+        data = ds[name][:, :, :, Int(metadata.dataset.statistic) + 1]
         # Reverse vertical axis to be increasing upwards
         reverse(data, dims = 3)
     end
