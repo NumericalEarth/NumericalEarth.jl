@@ -93,7 +93,7 @@ end
 
         T_lateral_bcs = FieldBoundaryConditions(east = ValueBoundaryCondition(2),
                                                 west = ValueBoundaryCondition(4))
-        u_lateral_bcs = FieldBoundaryConditions(east = NormalFlowBoundaryCondition(0.1))
+        u_lateral_bcs = FieldBoundaryConditions(east = OpenBoundaryCondition(0.1))
 
         reference = ocean_simulation(grid)
         ocean = ocean_simulation(grid; boundary_conditions = (u = u_lateral_bcs, T = T_lateral_bcs))
