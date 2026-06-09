@@ -30,8 +30,16 @@ function Base.show(io::IO, pa::PrescribedAtmosphere)
 end
 
 function default_atmosphere_velocities(grid, times)
-    ua = FieldTimeSeries{Center, Center, Nothing}(grid, times)
-    va = FieldTimeSeries{Center, Center, Nothing}(grid, times)
+    velocity_bcs = FieldBoundaryConditions(grid, (Center(), Center(), nothing))
+
+    if grid isa OrthogonalSphericalShellGrids.TripolarGrid
+        north_bc = OrthogonalSphericalShellGrids.north_fold_boundary_condition(grid)(-1)
+        velocity_bcs = FieldBoundaryConditions(grid, (Center(), Center(), nothing);
+                                               north = north_bc)
+    end
+
+    ua = FieldTimeSeries{Center, Center, Nothing}(grid, times; boundary_conditions = velocity_bcs)
+    va = FieldTimeSeries{Center, Center, Nothing}(grid, times; boundary_conditions = velocity_bcs)
     return (u=ua, v=va)
 end
 
