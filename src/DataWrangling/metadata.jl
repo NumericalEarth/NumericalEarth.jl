@@ -769,18 +769,26 @@ conversion_units(metadatum) = nothing
 
 Compute the range of `native_dates` that fall within the specified `start_date` and `end_date`.
 """
+comparable_datetime(date::Dates.AbstractDateTime) = DateTime(date)
+comparable_datetime(date::AbstractCFDateTime) = DateTime(date)
+
 function compute_native_date_range(native_dates, start_date, end_date)
-    if last(native_dates) < end_date
-        @warn "`end_date` ($end_date) is after the last date in the dataset $(last(native_dates))"
+    last_native_date = last(native_dates)
+    start_datetime = comparable_datetime(start_date)
+    end_datetime = comparable_datetime(end_date)
+    last_native_datetime = comparable_datetime(last_native_date)
+
+    if last_native_datetime < end_datetime
+        @warn "`end_date` ($end_date) is after the last date in the dataset $last_native_date"
     end
 
-    if last(native_dates) < start_date
-       throw(ArgumentError("`start_date` ($start_date) is after the last date in the dataset $(last(native_dates))"))
+    if last_native_datetime < start_datetime
+       throw(ArgumentError("`start_date` ($start_date) is after the last date in the dataset $last_native_date"))
     end
 
-    start_idx = findfirst(x -> x ≥ start_date, native_dates)
-    end_idx   = findfirst(x -> x ≥ end_date,   native_dates)
-    start_idx = (start_idx > 1 && native_dates[start_idx] > start_date) ? start_idx - 1 : start_idx
+    start_idx = findfirst(x -> comparable_datetime(x) ≥ start_datetime, native_dates)
+    end_idx   = findfirst(x -> comparable_datetime(x) ≥ end_datetime, native_dates)
+    start_idx = (start_idx > 1 && comparable_datetime(native_dates[start_idx]) > start_datetime) ? start_idx - 1 : start_idx
     end_idx   = isnothing(end_idx) ? length(native_dates) : end_idx
 
     return native_dates[start_idx:end_idx]

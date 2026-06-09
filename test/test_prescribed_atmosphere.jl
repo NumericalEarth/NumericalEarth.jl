@@ -43,16 +43,15 @@ end
     atmospheres = (
         (name = "JRA55", atmosphere = JRA55PrescribedAtmosphere(CPU(); time_indices_in_memory = 2)),
         (name = "ECCO", atmosphere = ECCOPrescribedAtmosphere(CPU(); dataset = ECCO4Monthly(),
-                                                                start_date = start_date,
-                                                                end_date = start_date + Month(1),
-                                                                time_indices_in_memory = 2)),
+                                                                     start_date = start_date,
+                                                                     end_date = start_date + Month(1),
+                                                                     time_indices_in_memory = 2)),
         (name = "ERA5", atmosphere = ERA5PrescribedAtmosphere(CPU(); dataset = era5_dataset,
-                                                                start_date = era5_start,
-                                                                end_date = era5_end,
-                                                                time_indices_in_memory = 2)),
-        (name = "OSPapa", atmosphere = OSPapaPrescribedAtmosphere(CPU();
-                                                                    start_date = ospapa_start,
-                                                                    end_date = ospapa_end))
+                                                                     start_date = era5_start,
+                                                                     end_date = era5_end,
+                                                                     time_indices_in_memory = 2)),
+        (name = "OSPapa", atmosphere = OSPapaPrescribedAtmosphere(CPU(); start_date = ospapa_start,
+                                                                         end_date = ospapa_end))
     )
 
     for (; name, atmosphere) in atmospheres
