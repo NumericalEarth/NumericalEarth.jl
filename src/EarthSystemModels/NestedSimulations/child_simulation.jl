@@ -17,7 +17,7 @@
 # intentionally undefined; the generic fallback throws an explanatory
 # `ArgumentError` and the user must pass `variables=` explicitly to override.
 #
-# The underlying model constructor is selected by `_build_child_model(modeltype, grid; …)`
+# The underlying model constructor is selected by `build_child_model(modeltype, grid; …)`
 # — also extended via package extensions for new model types.
 
 """
@@ -43,8 +43,7 @@ method body documents the convention.
 """
 function parent_variables end
 
-# Generic fallback — errors with a message that explains the situation and
-# suggests the two ways out.
+# Generic fallback — errors with a descriptive message.
 function parent_variables(child_modeltype, parent)
     throw(ArgumentError(string(
         "No `parent_variables` mapping is defined for ",
@@ -62,14 +61,14 @@ function parent_variables(child_modeltype, parent)
 end
 
 """
-    _build_child_model(modeltype, grid; kwargs...)
+    build_child_model(modeltype, grid; kwargs...)
 
 Construct the child model. Defaults to `modeltype(grid; kwargs...)`; package
 extensions override this for specific model types (e.g. the Breeze ext routes
 `AtmosphereModel` through `atmosphere_simulation` so Breeze's default
 advection / microphysics apply).
 """
-_build_child_model(modeltype, grid; kwargs...) = modeltype(grid; kwargs...)
+build_child_model(modeltype, grid; kwargs...) = modeltype(grid; kwargs...)
 
 """
     child_simulation(modeltype, grid, parent;
@@ -84,7 +83,7 @@ Construct a child model (of type `modeltype`) on `grid` with Open boundary
 conditions driven by `parent`. Returns the constructed `AbstractModel`.
 
 `parent_boundary_conditions` wires the BCs from `variables`; `model_kwargs`
-are forwarded to the underlying constructor (see `_build_child_model`).
+are forwarded to the underlying constructor (see `build_child_model`).
 
 If `relaxation_rate` is supplied, [`parent_forcings`](@ref) builds an
 Oceananigans `Relaxation` per variable that nudges the child interior toward
@@ -117,7 +116,7 @@ function child_simulation(modeltype, grid, parent;
         merge(user_forcing, relaxation)
     end
 
-    return _build_child_model(modeltype, grid;
+    return build_child_model(modeltype, grid;
                               boundary_conditions = bcs,
                               forcing,
                               rest_kwargs...)

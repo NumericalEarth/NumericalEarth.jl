@@ -44,13 +44,7 @@ struct AverageNorthSouth end
 # `mangle(i, j, k, data, mangling)` reads file `data` at metadata-grid index `(i, j, k)`, accounting
 # for staggered lat-axis offsets. Used inside the region-aware kernel.
 #
-# Read indices are clamped to the data extent. A `BoundingBox` whose edge does
-# not land on a native cell face can produce a target grid one cell larger than
-# the downloaded data (CDS snaps the request outward to its 0.25° grid, and the
-# latitude axis is half-cell staggered). The clamp reads the nearest edge cell
-# there — the "clamp outside the hull" behaviour `restrict` documents — instead
-# of reading past the array bounds into uninitialized memory. For every read
-# that already lands in bounds (i.e. all aligned regions) the clamp is a no-op.
+# Clamp indices to avoid out-of-bounds access
 @inline clamp_i(i, data) = clamp(i, 1, size(data, 1))
 @inline clamp_j(j, data) = clamp(j, 1, size(data, 2))
 @inline mangle(i, j, k, data, ::Nothing) = @inbounds data[clamp_i(i, data), clamp_j(j, data), k]

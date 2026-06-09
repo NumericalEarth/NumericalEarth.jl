@@ -75,13 +75,13 @@ function regularize_boundary_condition(c::Interpolated{Nothing}, grid, loc, dim,
     LX = typeof(loc[1])
     LY = typeof(loc[2])
     LZ = typeof(loc[3])
-    _validate_source_bracket(c.source, grid, LX, LY, LZ)
+    validate_source_bracket(c.source, grid, LX, LY, LZ)
     return Interpolated{dim, SideType, LX, LY, LZ, typeof(c.source), typeof(c.source_grid)}(c.source, c.source_grid)
 end
 
 # Match the strict "source must bracket every child sampling node" check that
 # Oceananigans uses for `Relaxation`-on-FTS. Same logic for FTS and AbstractField.
-function _validate_source_bracket(source, grid, ::Type{LX}, ::Type{LY}, ::Type{LZ}) where {LX, LY, LZ}
+function validate_source_bracket(source, grid, ::Type{LX}, ::Type{LY}, ::Type{LZ}) where {LX, LY, LZ}
     sim_loc    = (LX(), LY(), LZ())
     source_loc = Oceananigans.instantiated_location(source)
     source_grid = source.grid
@@ -128,8 +128,8 @@ end
 # `fill_halo_regions!` is sometimes invoked without a clock — most notably
 # during `set!`-time IC setup, where the kernel is launched with an empty
 # `args` tuple. Default `time = 0` in that case so dispatch succeeds.
-@inline _clock_time(clock) = clock.time
-@inline _clock_time(::Nothing) = 0.0
+@inline clock_time(clock) = clock.time
+@inline clock_time(::Nothing) = 0.0
 
 @inline function getbc(bc::Interpolated{1, S, LX, LY, LZ},
                        j::Integer, k::Integer, grid::AbstractGrid, clock=nothing, args...) where {S, LX, LY, LZ}
@@ -139,19 +139,19 @@ end
     # field this must be the face, not the half-cell-inside center; for a Face-normal
     # field (the normal velocity) this is unchanged (its location is already Face).
     X = node(i, j, k, grid, Face(), LY(), LZ())
-    return _query_source(bc.source, bc.source_grid, X, (LX(), LY(), LZ()), _clock_time(clock))
+    return _query_source(bc.source, bc.source_grid, X, (LX(), LY(), LZ()), clock_time(clock))
 end
 
 @inline function getbc(bc::Interpolated{2, S, LX, LY, LZ},
                        i::Integer, k::Integer, grid::AbstractGrid, clock=nothing, args...) where {S, LX, LY, LZ}
     j = _boundary_index(S, grid.Ny)
     X = node(i, j, k, grid, LX(), Face(), LZ())   # boundary face in the y-normal direction
-    return _query_source(bc.source, bc.source_grid, X, (LX(), LY(), LZ()), _clock_time(clock))
+    return _query_source(bc.source, bc.source_grid, X, (LX(), LY(), LZ()), clock_time(clock))
 end
 
 @inline function getbc(bc::Interpolated{3, S, LX, LY, LZ},
                        i::Integer, j::Integer, grid::AbstractGrid, clock=nothing, args...) where {S, LX, LY, LZ}
     k = _boundary_index(S, grid.Nz)
     X = node(i, j, k, grid, LX(), LY(), Face())   # boundary face in the z-normal direction
-    return _query_source(bc.source, bc.source_grid, X, (LX(), LY(), LZ()), _clock_time(clock))
+    return _query_source(bc.source, bc.source_grid, X, (LX(), LY(), LZ()), clock_time(clock))
 end
