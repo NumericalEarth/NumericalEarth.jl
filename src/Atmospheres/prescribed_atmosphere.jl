@@ -29,34 +29,30 @@ function Base.show(io::IO, pa::PrescribedAtmosphere)
     print(io, "└── boundary_layer_height: ", prettysummary(pa.boundary_layer_height))
 end
 
-# `volumetric` selects the atmosphere's field set. The default (`false`) builds a
-# conventional *surface* atmosphere — 2D `(Center, Center, Nothing)` fields, the
-# form the ocean / sea-ice coupling expects, regardless of how many vertical cells
-# the grid carries. `volumetric = true` builds 3D `(Center, Center, Center)` fields
-# (adding `w`, dropping the surface freshwater flux), used when a
-# `PrescribedAtmosphere` plays the role of a `NestedSimulation` parent.
-function default_atmosphere_velocities(grid, times; volumetric=false)
-    if volumetric
+# `two_dimensional = true` (default) builds a surface atmosphere; `false` builds a
+# 3D atmosphere (adds `w`, drops freshwater) for use as a `NestedSimulation` parent.
+function default_atmosphere_velocities(grid, times; two_dimensional=true)
+    if two_dimensional
+        ua = FieldTimeSeries{Center, Center, Nothing}(grid, times)
+        va = FieldTimeSeries{Center, Center, Nothing}(grid, times)
+        return (u=ua, v=va)
+    else
         ua = FieldTimeSeries{Center, Center, Center}(grid, times)
         va = FieldTimeSeries{Center, Center, Center}(grid, times)
         wa = FieldTimeSeries{Center, Center, Center}(grid, times)
         return (u=ua, v=va, w=wa)
-    else
-        ua = FieldTimeSeries{Center, Center, Nothing}(grid, times)
-        va = FieldTimeSeries{Center, Center, Nothing}(grid, times)
-        return (u=ua, v=va)
     end
 end
 
-function default_atmosphere_tracers(grid, times; volumetric=false)
-    if volumetric
-        Ta = FieldTimeSeries{Center, Center, Center}(grid, times)
-        qa = FieldTimeSeries{Center, Center, Center}(grid, times)
-        return (T=Ta, q=qa)
-    else
+function default_atmosphere_tracers(grid, times; two_dimensional=true)
+    if two_dimensional
         Ta = FieldTimeSeries{Center, Center, Nothing}(grid, times)
         qa = FieldTimeSeries{Center, Center, Nothing}(grid, times)
         parent(Ta) .= 273.15 + 20
+        return (T=Ta, q=qa)
+    else
+        Ta = FieldTimeSeries{Center, Center, Center}(grid, times)
+        qa = FieldTimeSeries{Center, Center, Center}(grid, times)
         return (T=Ta, q=qa)
     end
 end
@@ -83,11 +79,9 @@ PrescribedPrecipitationFlux(; rain=nothing, snow=nothing) =
 Adapt.adapt_structure(to, ff::PrescribedPrecipitationFlux) =
     PrescribedPrecipitationFlux(adapt(to, ff.rain), adapt(to, ff.snow))
 
-# Surface freshwater fluxes are meaningless for a volumetric atmosphere acting as
-# a nesting parent; default to `nothing` there. The surface_*_flux accessors and
-# `extract_field_time_series` already handle the Nothing branch.
-function default_freshwater_flux(grid, times; volumetric=false)
-    volumetric && return nothing
+# A 3D (nesting-parent) atmosphere carries no surface freshwater flux.
+function default_freshwater_flux(grid, times; two_dimensional=true)
+    two_dimensional || return nothing
     rain = FieldTimeSeries{Center, Center, Nothing}(grid, times)
     snow = FieldTimeSeries{Center, Center, Nothing}(grid, times)
     return PrescribedPrecipitationFlux(rain, snow)
@@ -106,13 +100,13 @@ end
 
 """ The standard unit of atmospheric pressure; 1 standard atmosphere (atm) = 101,325 Pascals (Pa)
 in SI units. This is approximately equal to the mean sea-level atmospheric pressure on Earth. """
-function default_atmosphere_pressure(grid, times; volumetric=false)
-    if volumetric
-        return FieldTimeSeries{Center, Center, Center}(grid, times)
-    else
+function default_atmosphere_pressure(grid, times; two_dimensional=true)
+    if two_dimensional
         pa = FieldTimeSeries{Center, Center, Nothing}(grid, times)
         parent(pa) .= 101325
         return pa
+    else
+        return FieldTimeSeries{Center, Center, Center}(grid, times)
     end
 end
 
@@ -147,25 +141,23 @@ EarthSystemModels.adopt_clock(atmosphere::PrescribedAtmosphere, clock) = EarthSy
 """
     PrescribedAtmosphere(grid, times=[zero(grid)];
                          clock = Clock{Float64}(time = 0),
-                         volumetric = false,
+                         two_dimensional = true,
                          surface_layer_height = 10, # meters
                          boundary_layer_height = 512, # meters
                          thermodynamics_parameters = AtmosphereThermodynamicsParameters(eltype(grid)),
-                         velocities      = default_atmosphere_velocities(grid, times; volumetric),
-                         tracers         = default_atmosphere_tracers(grid, times; volumetric),
-                         pressure        = default_atmosphere_pressure(grid, times; volumetric),
-                         freshwater_flux = default_freshwater_flux(grid, times; volumetric))
+                         velocities      = default_atmosphere_velocities(grid, times; two_dimensional),
+                         tracers         = default_atmosphere_tracers(grid, times; two_dimensional),
+                         pressure        = default_atmosphere_pressure(grid, times; two_dimensional),
+                         freshwater_flux = default_freshwater_flux(grid, times; two_dimensional))
 
-Return a prescribed, time-evolving atmospheric state with data on `grid` and at given `times`.
+Return a prescribed, time-evolving atmospheric state with data on `grid` at `times`.
 
-`volumetric = false` (the default) builds a surface atmosphere — 2D
-`(Center, Center, Nothing)` velocity/tracer/pressure fields plus a freshwater
-flux — suitable for ocean / sea-ice coupling on a grid with any number of
-vertical cells. `volumetric = true` builds 3D `(Center, Center, Center)` fields
-(adding `w`, omitting the freshwater flux), used when the atmosphere is a
-[`NestedSimulation`](@ref) parent. The default constructions can be overridden
-directly with the `velocities` / `tracers` / `pressure` / `freshwater_flux`
-keyword arguments.
+`two_dimensional = true` (the default) builds a surface atmosphere — 2D
+`(Center, Center, Nothing)` fields plus a freshwater flux — for ocean / sea-ice
+coupling. `two_dimensional = false` builds 3D `(Center, Center, Center)` fields
+(adding `w`, omitting freshwater), for use as a [`NestedSimulation`](@ref) parent.
+Override any default with the `velocities` / `tracers` / `pressure` /
+`freshwater_flux` keyword arguments.
 
 !!! compat "Radiation component"
     The downwelling shortwave / longwave radiation part of the top-level `radiation`
@@ -174,14 +166,14 @@ keyword arguments.
 """
 function PrescribedAtmosphere(grid, times=[zero(grid)];
                               clock = Clock{Float64}(time = 0),
-                              volumetric = false,
+                              two_dimensional = true,
                               surface_layer_height = 10,
                               boundary_layer_height = 512,
                               thermodynamics_parameters = AtmosphereThermodynamicsParameters(eltype(grid)),
-                              velocities      = default_atmosphere_velocities(grid, times; volumetric),
-                              tracers         = default_atmosphere_tracers(grid, times; volumetric),
-                              pressure        = default_atmosphere_pressure(grid, times; volumetric),
-                              freshwater_flux = default_freshwater_flux(grid, times; volumetric))
+                              velocities      = default_atmosphere_velocities(grid, times; two_dimensional),
+                              tracers         = default_atmosphere_tracers(grid, times; two_dimensional),
+                              pressure        = default_atmosphere_pressure(grid, times; two_dimensional),
+                              freshwater_flux = default_freshwater_flux(grid, times; two_dimensional))
 
     FT = eltype(grid)
     if isnothing(thermodynamics_parameters)

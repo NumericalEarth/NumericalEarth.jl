@@ -8,7 +8,7 @@ using Breeze
 using Breeze: ThermodynamicConstants, dry_air_gas_constant, vapor_gas_constant, CompressibleDynamics
 using Test
 
-@testset "PrescribedAtmosphere volumetric kwarg selects the field set" begin
+@testset "PrescribedAtmosphere two_dimensional kwarg selects the field set" begin
     # A multi-layer grid is the *ocean's* vertical resolution, not the
     # atmosphere's: the default must stay a surface atmosphere (u, v; freshwater
     # flux) so ocean / sea-ice coupling on such grids is unaffected.
@@ -23,9 +23,9 @@ using Test
     @test keys(pa.tracers) == (:T, :q)
     @test pa.freshwater_flux isa NumericalEarth.Atmospheres.PrescribedPrecipitationFlux
 
-    # Opt-in volumetric atmosphere (used as a NestedSimulation parent): adds w,
-    # drops the surface freshwater flux, and stores 3D fields.
-    pav = PrescribedAtmosphere(g, [0.0, 1.0]; volumetric = true)
+    # 3D atmosphere (`two_dimensional = false`, used as a NestedSimulation parent):
+    # adds w, drops the surface freshwater flux, and stores 3D fields.
+    pav = PrescribedAtmosphere(g, [0.0, 1.0]; two_dimensional = false)
     @test keys(pav.velocities) == (:u, :v, :w)
     @test keys(pav.tracers) == (:T, :q)
     @test pav.freshwater_flux === nothing
@@ -52,7 +52,7 @@ end
 @testset "NestedSimulation: Lamb-Oseen vortex through a child NonhydrostaticModel" begin
     # Parent atmosphere holds the analytic Lamb-Oseen state on a 3D PrescribedAtmosphere,
     # populated by set! at a few coarse time snapshots; interpolation handles the rest.
-    # `volumetric = true` gives CCC velocities/tracers/pressure so the FTS can be
+    # `two_dimensional = false` gives CCC velocities/tracers/pressure so the FTS can be
     # interpolated at the child's interior z-nodes.
     # Domain extends strictly beyond the child so the FTS brackets every child
     # boundary node (required by InterpolatedFTSBoundary's validation).
@@ -63,7 +63,7 @@ end
                                   topology = (Bounded, Bounded, Bounded))
 
     times  = collect(0.0:0.1:1.0)
-    parent = PrescribedAtmosphere(parent_grid, times; volumetric = true)
+    parent = PrescribedAtmosphere(parent_grid, times; two_dimensional = false)
 
     set!(parent.velocities.u, (x, y, z, t) -> lamb_oseen_uv(x, y, t)[1])
     set!(parent.velocities.v, (x, y, z, t) -> lamb_oseen_uv(x, y, t)[2])
@@ -257,14 +257,14 @@ end
 # #220 contract that `atmosphere_simulation` returns a `Simulation` whose `.model`
 # is an `AbstractModel` suitable for `NestedModel`, and steps it a few iterations.
 @testset "Breeze AtmosphereModel as a NestedSimulation child on $(arch)" for arch in test_architectures
-    # Parent: a volumetric PrescribedAtmosphere strictly bracketing the child,
+    # Parent: a 3D PrescribedAtmosphere strictly bracketing the child,
     # holding a uniform state. Velocity slots carry momentum (ρu, ρv) per the
     # Breeze nesting convention; density-weighted scalar FTSs drive the rest.
     parent_grid = RectilinearGrid(arch; size = (12, 12, 8),
                                   x = (-3000, 3000), y = (-3000, 3000), z = (-200, 2200),
                                   topology = (Bounded, Bounded, Bounded))
     times  = [0.0, 100.0]
-    parent = PrescribedAtmosphere(parent_grid, times; volumetric = true)
+    parent = PrescribedAtmosphere(parent_grid, times; two_dimensional = false)
     set!(parent.velocities.u, (x, y, z, t) -> 1.0)
     set!(parent.velocities.v, (x, y, z, t) -> 0.0)
 
