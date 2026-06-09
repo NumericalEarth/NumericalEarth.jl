@@ -48,7 +48,7 @@ end
                                                                      start_date = start_date,
                                                                      end_date = start_date + Month(1),
                                                                      time_indices_in_memory = 2)),
-        (name = "ERA5", atmosphere = ERA5PrescribedAtmosphere(CPU(); dataset = era5_dastarttaset,
+        (name = "ERA5", atmosphere = ERA5PrescribedAtmosphere(CPU(); dataset = ospapa_dataset,
                                                                      start_date = era5_start,
                                                                      end_date = era5_end,
                                                                      time_indices_in_memory = 2)),
