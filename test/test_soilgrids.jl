@@ -10,7 +10,7 @@ import Downloads
     sg_sand = Metadatum(:sand_fraction, dataset=sg_mean)
     Downloads.download(sg_sand)
     # Check that data is successfully downloaded
-    @test isfile(metadata_path(sg_sand))
+    @test isfile(DataWrangling.metadata_path(sg_sand))
     for var in keys(SoilGrids.SoilGrids2_dataset_variable_names)
         sgmd = Metadatum(var, dataset=sg_mean)
         field = Field(sgmd)
