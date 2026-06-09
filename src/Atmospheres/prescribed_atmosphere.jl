@@ -30,7 +30,7 @@ function Base.show(io::IO, pa::PrescribedAtmosphere)
 end
 
 # `two_dimensional = true` (default) builds a surface atmosphere; `false` builds a
-# 3D atmosphere (adds `w`, drops freshwater) for use as a `NestedSimulation` parent.
+# 3D atmosphere (adds `w`) for use as a `NestedSimulation` parent.
 function default_atmosphere_velocities(grid, times; two_dimensional=true)
     if two_dimensional
         ua = FieldTimeSeries{Center, Center, Nothing}(grid, times)
