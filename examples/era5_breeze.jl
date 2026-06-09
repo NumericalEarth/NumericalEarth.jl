@@ -275,26 +275,16 @@ parent_grid = LatitudeLongitudeGrid(arch;
 parent_times = [Float64(Dates.value(d - start_date)) / 1000 for d in dates]
 parent = PrescribedAtmosphere(parent_grid, parent_times; volumetric = true, thermodynamics_parameters = nothing)
 
-qᶜ_fts = FieldTimeSeries{Center, Center, Center}(parent_grid, parent_times)
-qⁱ_fts = FieldTimeSeries{Center, Center, Center}(parent_grid, parent_times)
-
-# Density-weighted FTSs — drive lateral BCs on Breeze's prognostic state
-# (ρ, ρu, ρv at Face momenta, ρθ, ρqᵉ at Center scalars). Stored at Center
-# locations regardless of the BC stagger; `Interpolated` handles the location
-# conversion at boundary-fill time.
-
-ρ_fts   = FieldTimeSeries{Center, Center, Center}(parent_grid, parent_times)
-ρu_fts  = FieldTimeSeries{Center, Center, Center}(parent_grid, parent_times)
-ρv_fts  = FieldTimeSeries{Center, Center, Center}(parent_grid, parent_times)
-ρθ_fts  = FieldTimeSeries{Center, Center, Center}(parent_grid, parent_times)
-ρqᵉ_fts = FieldTimeSeries{Center, Center, Center}(parent_grid, parent_times)
-
-# Specific-quantity FTSs — Davies-fringe relaxation targets. Under
-# `SpecificForcing` (Breeze PR #708) the kernel multiplies by ρ at the
-# target stagger automatically; we provide u/v/θ/qᵉ values directly.
-
-θ_fts  = FieldTimeSeries{Center, Center, Center}(parent_grid, parent_times)
-qᵗ_fts = FieldTimeSeries{Center, Center, Center}(parent_grid, parent_times)
+# Parent-side `FieldTimeSeries` that drive the child, kept alongside the
+# `PrescribedAtmosphere` (which owns u, v, T, q, p). All are Center-located
+# regardless of BC stagger — `Interpolated` converts location at boundary-fill
+# time. The bundle holds:
+#   - qᶜ, qⁱ             raw ERA5 cloud water/ice (inputs to the derivation),
+#   - ρ, ρu, ρv, ρθ, ρqᵉ density-weighted, drive the lateral BCs,
+#   - θ, qᵗ              specific, Davies-relaxation targets (Breeze PR #708's
+#                        `SpecificForcing` applies the ρ multiply at kernel time).
+parent_series = NamedTuple(name => FieldTimeSeries{Center, Center, Center}(parent_grid, parent_times)
+                           for name in (:qᶜ, :qⁱ, :ρ, :ρu, :ρv, :ρθ, :ρqᵉ, :θ, :qᵗ))
 
 # --- Time-invariant: surface geopotential Φ₀ ---
 # Φ₀ is terrain elevation × g; load once from snapshot 1.
@@ -315,16 +305,28 @@ const Φ₀_arr = Array(interior(Field(Metadatum(:geopotential;
 #      the profile-plot block below without re-fetching.
 
 function populate_parent_snapshot!(n, date)
-    meta = (date = date, region = era5_region, dir = era5_datadir)
+    # Pressure-level variables share one MetadataSet (#235): same dataset/date/
+    # region/dir, indexed by name below instead of repeating Metadatum kwargs.
+    #
+    # TODO (wholesale collapse): once terrain support lands (the `terrain`
+    # checklist item / the `PressureLevelGrid`, `set!(target, metadatum)` path of
+    # #241), the custom column interpolation and this entire per-snapshot loop
+    # fold into a single `dates`-spanning `FieldTimeSeries(pl, parent_grid)`,
+    # leaving only the derived (`breeze_prognostic_state`) fields to compute.
+    pl = MetadataSet(:geopotential, :eastward_velocity, :northward_velocity,
+                     :temperature, :specific_humidity,
+                     :specific_cloud_liquid_water_content, :specific_cloud_ice_water_content;
+                     dataset = ds_pl, date = date, region = era5_region, dir = era5_datadir)
 
-    ϕ_field  = Field(Metadatum(:geopotential;     dataset=ds_pl, meta...))
-    p₀_field = Field(Metadatum(:surface_pressure; dataset=ds_sl, meta...))
+    ϕ_field  = Field(pl[:geopotential])
+    p₀_field = Field(Metadatum(:surface_pressure; dataset = ds_sl, date = date,
+                               region = era5_region, dir = era5_datadir))
 
     p₀_arr = Array(interior(p₀_field))[:, :, 1]   # Pa
     z_above_sfc = (Array(interior(ϕ_field)) .-
                    reshape(Φ₀_arr, size(Φ₀_arr, 1), size(Φ₀_arr, 2), 1)) ./ g
 
-    read3d(name) = Array(interior(Field(Metadatum(name; dataset=ds_pl, meta...))))
+    read3d(name) = Array(interior(Field(pl[name])))
     u_era5  = read3d(:eastward_velocity)
     v_era5  = read3d(:northward_velocity)
     T_era5  = read3d(:temperature)
@@ -357,8 +359,8 @@ function populate_parent_snapshot!(n, date)
     interior(parent.tracers.T,    :, :, :, n) .= interior(T_p)
     interior(parent.tracers.q,    :, :, :, n) .= interior(qᵛ_p)
     interior(parent.pressure,     :, :, :, n) .= interior(p_p)
-    interior(qᶜ_fts,              :, :, :, n) .= interior(qᶜ_p)
-    interior(qⁱ_fts,              :, :, :, n) .= interior(qⁱ_p)
+    interior(parent_series.qᶜ,              :, :, :, n) .= interior(qᶜ_p)
+    interior(parent_series.qⁱ,              :, :, :, n) .= interior(qⁱ_p)
 
     # Derive ρ, θˡⁱ, qᵗ on the parent grid via the shared `breeze_prognostic_state`
     # conversion (the child IC uses the same helper), then store the specific
@@ -367,13 +369,13 @@ function populate_parent_snapshot!(n, date)
     # FTS writes are plain device-side broadcasts.
     state = breeze_prognostic_state(constants, T_p, qᵛ_p, qᶜ_p, qⁱ_p, p_p)
 
-    interior(ρ_fts,   :, :, :, n) .= interior(state.ρ)
-    interior(ρu_fts,  :, :, :, n) .= interior(state.ρ) .* interior(u_p)
-    interior(ρv_fts,  :, :, :, n) .= interior(state.ρ) .* interior(v_p)
-    interior(ρθ_fts,  :, :, :, n) .= interior(state.ρ) .* interior(state.θˡⁱ)
-    interior(ρqᵉ_fts, :, :, :, n) .= interior(state.ρ) .* interior(state.qᵗ)
-    interior(θ_fts,   :, :, :, n) .= interior(state.θˡⁱ)
-    interior(qᵗ_fts,  :, :, :, n) .= interior(state.qᵗ)
+    interior(parent_series.ρ,   :, :, :, n) .= interior(state.ρ)
+    interior(parent_series.ρu,  :, :, :, n) .= interior(state.ρ) .* interior(u_p)
+    interior(parent_series.ρv,  :, :, :, n) .= interior(state.ρ) .* interior(v_p)
+    interior(parent_series.ρθ,  :, :, :, n) .= interior(state.ρ) .* interior(state.θˡⁱ)
+    interior(parent_series.ρqᵉ, :, :, :, n) .= interior(state.ρ) .* interior(state.qᵗ)
+    interior(parent_series.θ,   :, :, :, n) .= interior(state.θˡⁱ)
+    interior(parent_series.qᵗ,  :, :, :, n) .= interior(state.qᵗ)
 
     return (; p₀_arr, z_above_sfc, p_era5_3d,
               u_era5, v_era5, T_era5, qᵛ_era5, qᶜ_era5, qⁱ_era5)
@@ -404,8 +406,8 @@ interpolate!(u,  parent.velocities.u[1])
 interpolate!(v,  parent.velocities.v[1])
 interpolate!(T,  parent.tracers.T[1])
 interpolate!(qᵛ, parent.tracers.q[1])
-interpolate!(qᶜ, qᶜ_fts[1])
-interpolate!(qⁱ, qⁱ_fts[1])
+interpolate!(qᶜ, parent_series.qᶜ[1])
+interpolate!(qⁱ, parent_series.qⁱ[1])
 interpolate!(p,  parent.pressure[1])
 
 # Calculate virtual temperature: Tᵛ = T·(1 + (1 − ε)/ε·qᵛ), ε = Rᵈ/Rᵛ.
@@ -444,13 +446,13 @@ set!(p₀, Metadatum(:surface_pressure; dataset=ds_sl, meta_common_snap1...))
 # multiply at kernel time at the right face stagger.
 
 bcs = parent_boundary_conditions(grid;
-    variables = (ρu  = ρu_fts,
-                 ρv  = ρv_fts,
-                 ρ   = ρ_fts,
-                 ρe  = ρθ_fts,    # `atmosphere_simulation` already sets bottom :ρe
+    variables = (ρu  = parent_series.ρu,
+                 ρv  = parent_series.ρv,
+                 ρ   = parent_series.ρ,
+                 ρe  = parent_series.ρθ,    # `atmosphere_simulation` already sets bottom :ρe
                                   # flux; Breeze converts the merged :ρe BCs to :ρθ
                                   # at model-build time (ValueBC values pass through).
-                 ρqᵉ = ρqᵉ_fts),
+                 ρqᵉ = parent_series.ρqᵉ),
     sides     = (:west, :east, :south, :north),
     bc_types  = (ρ   = ValueBoundaryCondition,
                  ρe  = ValueBoundaryCondition,
@@ -509,8 +511,8 @@ davies = parent_forcings(; rate = 1/τ_relax,
                          mask = lateral_mask,
                          variables = (u  = parent.velocities.u,
                                       v  = parent.velocities.v,
-                                      θ  = θ_fts,
-                                      qᵉ = qᵗ_fts))
+                                      θ  = parent_series.θ,
+                                      qᵉ = parent_series.qᵗ))
 
 # ## Build the Breeze model
 #
