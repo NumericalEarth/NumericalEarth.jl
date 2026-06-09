@@ -3,7 +3,9 @@ include("runtests_setup.jl")
 using NumericalEarth
 using NumericalEarth.EarthSystemModels.NestedSimulations: parent_boundary_conditions
 using Oceananigans
-using Oceananigans.BoundaryConditions: ValueBoundaryCondition, fill_halo_regions!
+using Oceananigans.BoundaryConditions: ValueBoundaryCondition, FieldBoundaryConditions, fill_halo_regions!
+using Breeze
+using Breeze: ThermodynamicConstants, dry_air_gas_constant, vapor_gas_constant, CompressibleDynamics
 using Test
 
 @testset "PrescribedAtmosphere volumetric kwarg selects the field set" begin
@@ -209,4 +211,100 @@ end
     cy = reconstructed_c((x, y, z) -> y, (:south, :north))
     @test isapprox(CUDA.@allowscalar((cy[4, 0, 2] + cy[4, 1, 2]) / 2), 0.0; atol = 1e-4)
     @test isapprox(CUDA.@allowscalar((cy[4, 8, 2] + cy[4, 9, 2]) / 2), 2.0; atol = 1e-4)
+end
+
+# Unit test for the Breeze-ext helper that converts a moist thermodynamic state
+# (T, qᵛ, qᶜ, qⁱ, p) into the prognostic fields Breeze's `CompressibleDynamics`
+# integrates (ρ, θˡⁱ, qᵗ). Checks the dry/saturation-pressure limit exactly and
+# the moist + condensate case against the documented formulas.
+@testset "breeze_prognostic_state derives (ρ, θˡⁱ, qᵗ)" begin
+    constants = ThermodynamicConstants()
+    Rᵈ   = dry_air_gas_constant(constants)
+    Rᵛ   = vapor_gas_constant(constants)
+    cₚᵈ  = constants.dry_air.heat_capacity
+    Lᵥ   = constants.liquid.reference_latent_heat
+    Lₛ   = constants.ice.reference_latent_heat
+    κ    = Rᵈ / cₚᵈ
+    εfac = Rᵛ / Rᵈ - 1
+    pˢᵗ  = 1e5
+
+    grid = RectilinearGrid(size = (2, 2, 2), x = (0, 1), y = (0, 1), z = (0, 1),
+                           topology = (Periodic, Periodic, Bounded))
+    T  = CenterField(grid); qᵛ = CenterField(grid); qᶜ = CenterField(grid)
+    qⁱ = CenterField(grid); p  = CenterField(grid)
+
+    # Dry, p = pˢᵗ ⇒ θ = T, no latent correction ⇒ θˡⁱ = T; ρ = p/(Rᵈ T); qᵗ = 0.
+    set!(T, 300.0); set!(qᵛ, 0); set!(qᶜ, 0); set!(qⁱ, 0); set!(p, pˢᵗ)
+    s = breeze_prognostic_state(constants, T, qᵛ, qᶜ, qⁱ, p)
+    @test all(interior(s.qᵗ) .== 0)
+    @test all(isapprox.(interior(s.θˡⁱ), 300.0; rtol = 1e-12))
+    @test all(isapprox.(interior(s.ρ), pˢᵗ / (Rᵈ * 300.0); rtol = 1e-12))
+
+    # Moist + condensate, p ≠ pˢᵗ ⇒ check against the documented formulas.
+    set!(T, 290.0); set!(qᵛ, 0.01); set!(qᶜ, 1e-3); set!(qⁱ, 5e-4); set!(p, 9e4)
+    s2 = breeze_prognostic_state(constants, T, qᵛ, qᶜ, qⁱ, p)
+    Tᵛ = 290.0 * (1 + εfac * 0.01)
+    θ  = 290.0 * (pˢᵗ / 9e4)^κ
+    @test all(isapprox.(interior(s2.qᵗ), 0.01 + 1e-3 + 5e-4; rtol = 1e-12))
+    @test all(isapprox.(interior(s2.ρ), 9e4 / (Rᵈ * Tᵛ); rtol = 1e-10))
+    @test all(isapprox.(interior(s2.θˡⁱ), θ * (1 - (Lᵥ * 1e-3 + Lₛ * 5e-4) / (cₚᵈ * 290.0)); rtol = 1e-10))
+    @test all(interior(s2.θˡⁱ) .< θ)   # condensate loading lowers θˡⁱ below the dry θ
+end
+
+# Integration test for the example's production path: a Breeze `AtmosphereModel`
+# driven as a `NestedSimulation` child via the direct-wiring primitives
+# (`atmosphere_simulation(…).model` + `parent_boundary_conditions`). Exercises the
+# #220 contract that `atmosphere_simulation` returns a `Simulation` whose `.model`
+# is an `AbstractModel` suitable for `NestedModel`, and steps it a few iterations.
+@testset "Breeze AtmosphereModel as a NestedSimulation child on $(arch)" for arch in test_architectures
+    # Parent: a volumetric PrescribedAtmosphere strictly bracketing the child,
+    # holding a uniform state. Velocity slots carry momentum (ρu, ρv) per the
+    # Breeze nesting convention; density-weighted scalar FTSs drive the rest.
+    parent_grid = RectilinearGrid(arch; size = (12, 12, 8),
+                                  x = (-3000, 3000), y = (-3000, 3000), z = (-200, 2200),
+                                  topology = (Bounded, Bounded, Bounded))
+    times  = [0.0, 100.0]
+    parent = PrescribedAtmosphere(parent_grid, times; volumetric = true)
+    set!(parent.velocities.u, (x, y, z, t) -> 1.0)
+    set!(parent.velocities.v, (x, y, z, t) -> 0.0)
+
+    ρ̄, θ̄ = 1.0, 288.0
+    ρ_fts   = FieldTimeSeries{Center, Center, Center}(parent_grid, times); fill!(ρ_fts.data,   ρ̄)
+    ρθ_fts  = FieldTimeSeries{Center, Center, Center}(parent_grid, times); fill!(ρθ_fts.data,  ρ̄ * θ̄)
+    ρqᵉ_fts = FieldTimeSeries{Center, Center, Center}(parent_grid, times); fill!(ρqᵉ_fts.data, 0.0)
+
+    child_grid = RectilinearGrid(arch; size = (8, 8, 8),
+                                 x = (-2000, 2000), y = (-2000, 2000), z = (0, 2000),
+                                 halo = (5, 5, 5), topology = (Bounded, Bounded, Bounded))
+
+    bcs = parent_boundary_conditions(child_grid;
+              variables = (ρu = parent.velocities.u, ρv = parent.velocities.v,
+                           ρ = ρ_fts, ρe = ρθ_fts, ρqᵉ = ρqᵉ_fts),
+              sides     = (:west, :east, :south, :north),
+              bc_types  = (ρ = ValueBoundaryCondition, ρe = ValueBoundaryCondition, ρqᵉ = ValueBoundaryCondition))
+
+    # No ESM coupling here, so override the coupling bottom-flux BCs with Dirichlet placeholders.
+    bcs = merge(bcs, (; ρe  = FieldBoundaryConditions(west = bcs.ρe.west,  east = bcs.ρe.east,
+                                                      south = bcs.ρe.south, north = bcs.ρe.north,
+                                                      bottom = ValueBoundaryCondition(ρ̄ * θ̄)),
+                        ρqᵉ = FieldBoundaryConditions(west = bcs.ρqᵉ.west,  east = bcs.ρqᵉ.east,
+                                                      south = bcs.ρqᵉ.south, north = bcs.ρqᵉ.north,
+                                                      bottom = ValueBoundaryCondition(0.0))))
+
+    # #220: `atmosphere_simulation` returns a `Simulation`; its `.model` is the child model.
+    child_sim = atmosphere_simulation(child_grid; boundary_conditions = bcs,
+                                      dynamics = CompressibleDynamics(surface_pressure = 1e5))
+    @test child_sim isa Simulation
+    child = child_sim.model
+    @test child isa Breeze.AtmosphereModel
+
+    set!(child; ρ = ρ̄, u = 1.0, v = 0.0, qᵗ = 0.0, θˡⁱ = θ̄)
+
+    nested = NestedSimulation(parent, child; Δt = 0.1, stop_iteration = 2, verbose = false)
+    run!(nested)
+
+    @test child.clock.iteration == 2
+    @test parent.clock.time ≈ child.clock.time
+    @test all(isfinite, Array(interior(child.velocities.u)))
+    @test all(isfinite, Array(interior(child.dynamics.density)))
 end
