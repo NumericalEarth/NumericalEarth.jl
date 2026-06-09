@@ -32,7 +32,7 @@ CopernicusMarine = {url = "https://github.com/NumericalEarth/CopernicusMarine.jl
 Breeze = "0.5.2"
 CUDA = "~6.0"
 CairoMakie = "0.15"
-ConservativeRegridding = "0.2.3"
+ConservativeRegridding = "0.2.4"
 Documenter = "1"
 DocumenterCitations = "1.3"
 Literate = "2.2"
