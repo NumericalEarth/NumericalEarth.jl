@@ -37,18 +37,7 @@ function velocity_boundary_conditions(grid::OrthogonalSphericalShellGrids.Tripol
 end
 
 function default_atmosphere_velocities(grid, times)
-<<<<<<< HEAD
     velocity_bcs = velocity_boundary_conditions(grid, (Center(), Center(), nothing))
-=======
-    velocity_bcs = FieldBoundaryConditions(grid, (Center(), Center(), nothing))
-
-    if grid isa OrthogonalSphericalShellGrids.TripolarGrid
-        north_bc = OrthogonalSphericalShellGrids.north_fold_boundary_condition(grid)(-1)
-        velocity_bcs = FieldBoundaryConditions(grid, (Center(), Center(), nothing);
-                                               north = north_bc)
-    end
-
->>>>>>> main
     ua = FieldTimeSeries{Center, Center, Nothing}(grid, times; boundary_conditions = velocity_bcs)
     va = FieldTimeSeries{Center, Center, Nothing}(grid, times; boundary_conditions = velocity_bcs)
     return (u=ua, v=va)
