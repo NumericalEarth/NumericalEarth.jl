@@ -131,13 +131,13 @@ end
                                      sides     = (:west, :east, :south, :north),
                                      bc_types  = (T = ValueBoundaryCondition,))
 
-    # u falls through to the OpenBoundaryCondition default.
+    # u falls through to the NormalFlowBoundaryCondition default.
     for side in (:west, :east, :south, :north)
-        @test getproperty(bcs.u, side).classification isa Oceananigans.BoundaryConditions.Open
+        @test getproperty(bcs.u, side).classification isa Oceananigans.BoundaryConditions.NormalFlow
         @test getproperty(bcs.T, side).classification isa Oceananigans.BoundaryConditions.Value
     end
 
-    # Passing `schemes` for a non-OpenBC field must error.
+    # Passing `schemes` for a non-NormalFlowBC field must error.
     @test_throws ArgumentError parent_boundary_conditions(
         child_grid;
         variables = (T = T_fts,),
@@ -165,7 +165,7 @@ end
                                  x = (-1, 1), y = (-1, 1), z = (0, 1),
                                  topology = (Bounded, Bounded, Bounded))
     bcs = parent_boundary_conditions(child_grid;
-                                     variables = (u = parent.velocities.u,   # Open (Face)
+                                     variables = (u = parent.velocities.u,   # NormalFlow (Face)
                                                   v = parent.velocities.v,
                                                   c = parent.tracers.c),      # Value (Center) — the kind that broke
                                      sides     = (:west, :east, :south, :north),

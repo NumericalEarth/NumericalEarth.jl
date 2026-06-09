@@ -3,7 +3,7 @@
 ##### with a parent state and ticks the parent's clock during `time_step!`.
 #####
 #
-# The child carries the actual prognostic state and the Open BCs / interior
+# The child carries the actual prognostic state and the NormalFlow BCs / interior
 # `Relaxation` forcings that reference the parent's `FieldTimeSeries`. Wrapping
 # the child in `NestedModel` lifts the parent-sync into the integrator itself
 # (where it belongs — it's not output behavior), so a plain
