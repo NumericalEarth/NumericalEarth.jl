@@ -79,9 +79,8 @@ PrescribedPrecipitationFlux(; rain=nothing, snow=nothing) =
 Adapt.adapt_structure(to, ff::PrescribedPrecipitationFlux) =
     PrescribedPrecipitationFlux(adapt(to, ff.rain), adapt(to, ff.snow))
 
-# A 3D (nesting-parent) atmosphere carries no surface freshwater flux.
-function default_freshwater_flux(grid, times; two_dimensional=true)
-    two_dimensional || return nothing
+# Freshwater flux is 2D regardless of the atmosphere's dimensionality
+function default_freshwater_flux(grid, times)
     rain = FieldTimeSeries{Center, Center, Nothing}(grid, times)
     snow = FieldTimeSeries{Center, Center, Nothing}(grid, times)
     return PrescribedPrecipitationFlux(rain, snow)
@@ -148,16 +147,16 @@ EarthSystemModels.adopt_clock(atmosphere::PrescribedAtmosphere, clock) = EarthSy
                          velocities      = default_atmosphere_velocities(grid, times; two_dimensional),
                          tracers         = default_atmosphere_tracers(grid, times; two_dimensional),
                          pressure        = default_atmosphere_pressure(grid, times; two_dimensional),
-                         freshwater_flux = default_freshwater_flux(grid, times; two_dimensional))
+                         freshwater_flux = default_freshwater_flux(grid, times))
 
 Return a prescribed, time-evolving atmospheric state with data on `grid` at `times`.
 
-`two_dimensional = true` (the default) builds a surface atmosphere — 2D
-`(Center, Center, Nothing)` fields plus a freshwater flux — for ocean / sea-ice
-coupling. `two_dimensional = false` builds 3D `(Center, Center, Center)` fields
-(adding `w`, omitting freshwater), for use as a [`NestedSimulation`](@ref) parent.
-Override any default with the `velocities` / `tracers` / `pressure` /
-`freshwater_flux` keyword arguments.
+`two_dimensional = true` (the default) builds a surface atmosphere with 2D
+`(Center, Center, Nothing)` velocity/tracer/pressure fields; `two_dimensional = false`
+builds 3D `(Center, Center, Center)` fields (adding `w`), e.g. for a
+[`NestedSimulation`](@ref) parent. The freshwater flux is a surface field either
+way — pass `freshwater_flux = nothing` to omit it. Override any default with the
+`velocities` / `tracers` / `pressure` / `freshwater_flux` keyword arguments.
 
 !!! compat "Radiation component"
     The downwelling shortwave / longwave radiation part of the top-level `radiation`
@@ -173,7 +172,7 @@ function PrescribedAtmosphere(grid, times=[zero(grid)];
                               velocities      = default_atmosphere_velocities(grid, times; two_dimensional),
                               tracers         = default_atmosphere_tracers(grid, times; two_dimensional),
                               pressure        = default_atmosphere_pressure(grid, times; two_dimensional),
-                              freshwater_flux = default_freshwater_flux(grid, times; two_dimensional))
+                              freshwater_flux = default_freshwater_flux(grid, times))
 
     FT = eltype(grid)
     if isnothing(thermodynamics_parameters)

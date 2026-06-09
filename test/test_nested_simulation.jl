@@ -23,14 +23,19 @@ using Test
     @test keys(pa.tracers) == (:T, :q)
     @test pa.freshwater_flux isa NumericalEarth.Atmospheres.PrescribedPrecipitationFlux
 
-    # 3D atmosphere (`two_dimensional = false`, used as a NestedSimulation parent):
-    # adds w, drops the surface freshwater flux, and stores 3D fields.
+    # `two_dimensional = false` switches velocities/tracers/pressure to 3D (adds w);
+    # the freshwater flux is a surface field, independent of that choice.
     pav = PrescribedAtmosphere(g, [0.0, 1.0]; two_dimensional = false)
     @test keys(pav.velocities) == (:u, :v, :w)
     @test keys(pav.tracers) == (:T, :q)
-    @test pav.freshwater_flux === nothing
     @test size(pav.velocities.u) == (8, 8, 4, 2)
     @test size(pav.pressure)     == (8, 8, 4, 2)
+    @test pav.freshwater_flux isa NumericalEarth.Atmospheres.PrescribedPrecipitationFlux
+    @test size(pav.freshwater_flux.rain) == (8, 8, 1, 2)   # still a 2D surface field
+
+    # Freshwater is opt-out via the keyword, not the dimensionality.
+    pa0 = PrescribedAtmosphere(g, [0.0, 1.0]; freshwater_flux = nothing)
+    @test pa0.freshwater_flux === nothing
 end
 
 # A translating Lamb-Oseen vortex: a 2D vortex with closed-form velocity
