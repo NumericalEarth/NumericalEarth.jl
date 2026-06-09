@@ -28,12 +28,12 @@ already cached locally.
 
 !!! note "Radiation and albedo"
     The buoy `SW` and `LW` variables are **downwelling** fluxes. When this
-    atmosphere is used with `OceanOnlyModel`, ClimaOcean applies its own
-    ocean albedo (default α = 0.05) to compute net absorbed shortwave, and
-    computes upwelling longwave from the model SST via Stefan-Boltzmann. This
-    means the resulting net heat flux will differ from the COARE-computed
-    `QNET` available via [`os_papa_prescribed_fluxes`](@ref). If you need the
-    exact observed net fluxes, use [`os_papa_prescribed_flux_boundary_conditions`](@ref)
+    atmosphere is used with `OceanOnlyModel`, NumericalEarth applies its own
+    ocean albedo (default ``α = 0.05``) to compute net absorbed shortwave, and
+    computes upwelling longwave from the model sea-surface temperature via the
+    Stefan-Boltzmann law. This means the resulting net heat flux will differ from
+    the COARE-computed `QNET` available via [`os_papa_prescribed_fluxes`](@ref).
+    If you need the exact observed net fluxes, use [`os_papa_prescribed_flux_boundary_conditions`](@ref)
     instead.
 
 Keyword Arguments
