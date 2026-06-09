@@ -783,11 +783,11 @@ function compute_native_date_range(native_dates, start_date, end_date)
     end
 
     if start_datetime < first_native_datetime
-       throw(ArgumentError("`start_date` ($start_date) is before the first date in the dataset $first_native_datetime"))
+       @warn "`start_date` ($start_date) is before the first date in the dataset $first_native_datetime"
     end
 
     if end_datetime < start_datetime
-       throw(ArgumentError("`end_date` ($end_date) is before the `start_date` ($start_date)"))
+       @warn "`end_date` ($end_date) is before the `start_date` ($start_date)"
     end
 
     start_idx = findfirst(x -> comparable_datetime(x) ≥ start_datetime, native_dates)
