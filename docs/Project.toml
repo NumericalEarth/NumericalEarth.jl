@@ -27,6 +27,7 @@ Suppressor = "fd094767-a336-5f1f-9728-57cf17d0bbfb"
 [sources]
 NumericalEarth = {path = ".."}
 CopernicusMarine = {url = "https://github.com/NumericalEarth/CopernicusMarine.jl", rev = "add-netcdf-backend"}
+ConservativeRegridding = {url = "https://github.com/JuliaGeo/ConservativeRegridding.jl", rev = "main"}
 
 [compat]
 Breeze = "0.5.2"
