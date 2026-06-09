@@ -84,7 +84,7 @@ no_correction(i, j, grid, clock, model_fields, p) = zero(grid)
                                                 salinity_flux_correction=no_correction)
 
 Create Oceananigans `FluxBoundaryCondition`s for u, v, T, S from prescribed
-OS Papa flux data. Returns a `NamedTuple` of `FieldBoundaryConditions` that
+Ocean Station Papa flux data. Returns a `NamedTuple` of `FieldBoundaryConditions` that
 can be passed directly to `ocean_simulation` or `HydrostaticFreeSurfaceModel`
 via the `boundary_conditions` keyword argument.
 

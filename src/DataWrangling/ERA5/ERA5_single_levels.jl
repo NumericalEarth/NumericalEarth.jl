@@ -60,7 +60,7 @@ ERA5_dataset_variable_names = Dict(
     :mean_wave_period                => "mean_wave_period",
     :mean_wave_direction             => "mean_wave_direction",
     :geopotential                    => "geopotential",
-    :topography                       => "geopotential",
+    :topography                      => "geopotential",
 )
 
 # NetCDF short variable names (what's actually in the downloaded files)
@@ -93,7 +93,7 @@ ERA5_netcdf_variable_names = Dict(
     :mean_wave_period                => "mwp",
     :mean_wave_direction             => "mwd",
     :geopotential                    => "z",
-    :topography                       => "z",
+    :topography                      => "z",
 )
 
 # Variables available for download
