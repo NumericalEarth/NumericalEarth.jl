@@ -12,6 +12,7 @@ using SeawaterPolynomials.TEOS10: TEOS10EquationOfState
                                     advection = WENO(order=9),
                                     forcing = NamedTuple(),
                                     boundary_conditions::NamedTuple = NamedTuple(),
+                                    clock = nothing,
                                     verbose = false)
 
 Construct and return a nonhydrostatic ocean simulation suitable for Large Eddy
@@ -33,6 +34,7 @@ timestepping is needed.
 - `advection`: Advection scheme. Defaults to `WENO(order=9)`.
 - `forcing`: Named tuple of additional forcing(s).
 - `boundary_conditions`: User-supplied boundary conditions; merged with defaults.
+- `clock`: Clock for the underlying model. Defaults to `nothing` (model builds its own).
 - `verbose`: If `true`, prints additional setup information.
 """
 function nonhydrostatic_ocean_simulation(grid;
@@ -46,6 +48,7 @@ function nonhydrostatic_ocean_simulation(grid;
                                          advection = WENO(order=9),
                                          forcing = NamedTuple(),
                                          boundary_conditions::NamedTuple = NamedTuple(),
+                                         clock = nothing,
                                          verbose = false)
 
     # Set up boundary conditions using Field
@@ -67,6 +70,9 @@ function nonhydrostatic_ocean_simulation(grid;
     boundary_conditions = merge(default_boundary_conditions, boundary_conditions)
     buoyancy = SeawaterBuoyancy(; gravitational_acceleration, equation_of_state)
 
+    # Only forward `clock` when supplied so the model keeps its own default otherwise.
+    clock_kw = isnothing(clock) ? NamedTuple() : (; clock)
+
     ocean_model = NonhydrostaticModel(grid;
                                       buoyancy,
                                       closure,
@@ -74,7 +80,8 @@ function nonhydrostatic_ocean_simulation(grid;
                                       tracers,
                                       coriolis,
                                       forcing,
-                                      boundary_conditions)
+                                      boundary_conditions,
+                                      clock_kw...)
 
     ocean = Simulation(ocean_model; Δt, verbose)
 
