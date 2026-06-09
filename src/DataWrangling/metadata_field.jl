@@ -372,8 +372,8 @@ function centers_to_interfaces(z_centers)
 end
 
 # Convert missing values to NaN
-@inline nan_convert_missing(FT, x, missing_val) = ifelse(x == missing_val, convert(FT, NaN), convert(FT, x))
-@inline nan_convert_missing(FT, x::Missing, missing_val) = convert(FT, NaN) # always handle missing types
+@inline nan_convert_missing(FT, x, ::Missing) = ifelse(ismissing(x), convert(FT, NaN), convert(FT, x))
+@inline nan_convert_missing(FT, x, missing_val) = ifelse(ismissing(x) || x == missing_val, convert(FT, NaN), convert(FT, x))
 
 # No units conversion
 @inline convert_units(T, units) = T
