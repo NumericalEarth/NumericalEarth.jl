@@ -265,7 +265,7 @@ end
 Clip each column of `geopotential` so that values below the local surface
 geopotential are replaced by the surface value. Required to keep columns
 monotonically increasing in z for the column bisection in
-[`_fractional_indices`](@ref).
+`_fractional_indices`.
 
 Works for either a `Field` (3-D geopotential at a single time) or a
 `TimeSeriesInterpolation` wrapping a `FieldTimeSeries` of geopotential.

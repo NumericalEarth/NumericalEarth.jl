@@ -41,7 +41,7 @@ end
 struct ShiftSouth end
 struct AverageNorthSouth end
 
-# `mangle(i, j, k, data, mangling)` reads file `data` at metadata-grid index `(i, j, k)`, accounting 
+# `mangle(i, j, k, data, mangling)` reads file `data` at metadata-grid index `(i, j, k)`, accounting
 # for staggered lat-axis offsets. Used inside the region-aware kernel.
 @inline mangle(i, j, k, data, ::Nothing) = @inbounds data[i, j, k]
 @inline mangle(i, j, k, data, ::ShiftSouth) = @inbounds data[i, max(j - 1, 1), k]
@@ -63,7 +63,7 @@ end
 """
     ColumnInfo{F, I}
 
-Resolved location of a `Column` extraction inside the file grid. Built once per `set_region_data!` call by 
+Resolved location of a `Column` extraction inside the file grid. Built once per `set_region_data!` call by
 `region_info(::Column, …)` and captured into `_set_region_kernel!` as a stack-friendly struct.
 
 - `i⁻`, `i⁺`: bracketing longitude indices (`i⁺` wraps to `1` across the periodic seam).
@@ -89,7 +89,7 @@ function region_info(::BoundingBox, target, λc, φc)
     λmin, λmax = compute_bounding_nodes(target.grid, LX, λnodes)
     φmin, φmax = compute_bounding_nodes(target.grid, LY, φnodes)
 
-    # Shift the target's longitude into the file's `[λc[1], λc[1]+360)` 
+    # Shift the target's longitude into the file's `[λc[1], λc[1]+360)`
     if !isempty(λc)
         λmin = convert_to_λ₀_λ₀_plus360(λmin, λc[1])
         λmax = convert_to_λ₀_λ₀_plus360(λmax, λc[1])
@@ -119,7 +119,7 @@ function infer_longitudinal_period(λc)
     return span ≈ 360 ? 360 : nothing
 end
 
-# Cyclic-aware bracketing. With `period`, the cell between `coords[end]` and `coords[1] + period` is the wrap cell: 
+# Cyclic-aware bracketing. With `period`, the cell between `coords[end]` and `coords[1] + period` is the wrap cell:
 # returns `(n, 1, w)` so the blend reads `data[n, …]` and `data[1, …]`.
 function bracket_with_weight(coords, x; period = nothing)
     n = length(coords)
@@ -173,19 +173,20 @@ end
     w01 = (1 - c.wx) *      c.wy  * !isnan(d01)
     w11 =      c.wx  *      c.wy  * !isnan(d11)
     Σw  = w00 + w10 + w01 + w11
-    Σw == 0 && return convert(FT, NaN)
-    return (w00 * ifelse(isnan(d00), zero(FT), d00) +
-            w10 * ifelse(isnan(d10), zero(FT), d10) +
-            w01 * ifelse(isnan(d01), zero(FT), d01) +
-            w11 * ifelse(isnan(d11), zero(FT), d11)) / Σw
+    numerator = (w00 * ifelse(isnan(d00), zero(FT), d00) +
+                 w10 * ifelse(isnan(d10), zero(FT), d10) +
+                 w01 * ifelse(isnan(d01), zero(FT), d01) +
+                 w11 * ifelse(isnan(d11), zero(FT), d11))
+    denominator = ifelse(Σw == 0, one(FT), Σw)
+    return ifelse(Σw == 0, convert(FT, NaN), numerator / denominator)
 end
 
 @inline function blend(::Nearest, data, c, k, mangling, FT)
-    i = c.wx ≥ 0.5 ? c.i⁺ : c.i⁻
-    j = c.wy ≥ 0.5 ? c.j⁺ : c.j⁻
+    i = ifelse(c.wx ≥ 0.5, c.i⁺, c.i⁻)
+    j = ifelse(c.wy ≥ 0.5, c.j⁺, c.j⁻)
     near = nan_convert_missing(FT, mangle(i, j, k, data, mangling))
     # If the closest corner is land, fall back to the NaN-aware Linear blend.
-    return isnan(near) ? blend(Linear(), data, c, k, mangling, FT) : near
+    return ifelse(isnan(near), blend(Linear(), data, c, k, mangling, FT), near)
 end
 
 @kernel function _set_region_kernel!(dst, data, region, mangling, conversion, FT)
@@ -198,13 +199,13 @@ end
 """
     set_region_data!(target, data, λc, φc, metadata)
 
-Fill the region of `target` (Field or FieldTimeSeries) implied by `metadata.region` from `data`, 
+Fill the region of `target` (Field or FieldTimeSeries) implied by `metadata.region` from `data`,
 applying mangling, NaN conversion, and unit conversion in a single GPU-friendly kernel pass.
 """
 function set_region_data!(target::Field, data, λc, φc, metadata;
                           mangling = mangling_for(metadata, size(data, 2)),
                           conversion = conversion_units(metadata))
-                          
+
     region = region_info(metadata.region, target, λc, φc)
     FT     = eltype(target)
     grid   = target.grid
