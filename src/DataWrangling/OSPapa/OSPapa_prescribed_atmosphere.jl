@@ -1,9 +1,9 @@
 """
     ospapa_specific_humidity_fts(RHa, Ta, Pa, params)
 
-Build a `FieldTimeSeries` of specific humidity (kg/kg) from OS Papa relative humidity
-(in %), air temperature (K), and pressure (Pa), using `Thermodynamics.q_vap_from_RH`
-with the `Liquid()` saturation curve.
+Build a `FieldTimeSeries` of specific humidity (kg/kg) from Ocean Station Papa
+relative humidity (in %), air temperature (K), and pressure (Pa),
+using `Thermodynamics.q_vap_from_RH` with the `Liquid()` saturation curve.
 """
 function ospapa_specific_humidity_fts(RHa, Ta, Pa, params)
     LX, LY, LZ = location(Ta)
@@ -16,7 +16,7 @@ end
 """
     OSPapaPrescribedAtmosphere(architecture = CPU(), FT = Float32;
                                start_date = first_date(OSPapaHourly(), :air_temperature),
-                               end_date   = last_date(OSPapaHourly(), :air_temperature),
+                               end_date = last_date(OSPapaHourly(), :air_temperature),
                                dir = download_OSPapa_cache,
                                surface_layer_height = 2.5,
                                max_gap_hours = 72)
@@ -42,9 +42,9 @@ Keyword Arguments
 - `end_date`: end of the time range
 - `dir`: directory for cached data files
 - `surface_layer_height`: measurement height in meters (default: 2.5, matching
-  the buoy's temperature/humidity instruments)
+                          the buoy's temperature/humidity instruments)
 - `max_gap_hours`: maximum gap size (in hours) to fill by linear interpolation
-  (default: 72)
+                   (default: 72)
 """
 function OSPapaPrescribedAtmosphere(architecture = CPU(), FT = Float32;
                                     start_date = first_date(OSPapaHourly(), :air_temperature),
