@@ -2,12 +2,7 @@ function EarthSystemModels.InterfaceComputations.ComponentExchanger(atmosphere::
                                                                     correction = nothing)
     regridder = atmosphere_regridder(atmosphere, grid)
 
-    velocity_bcs = FieldBoundaryConditions(grid, (Center(), Center(), nothing))
-
-    if grid isa Oceananigans.OrthogonalSphericalShellGrids.TripolarGrid
-        north_bc = Oceananigans.OrthogonalSphericalShellGrids.north_fold_boundary_condition(grid)(-1)
-        velocity_bcs = FieldBoundaryConditions(grid, (Center(), Center(), nothing); north = north_bc)
-    end
+    velocity_bcs = velocity_boundary_conditions(grid, (Center(), Center(), nothing))
 
     state = (; u   = Field{Center, Center, Nothing}(grid; boundary_conditions = velocity_bcs),
                v   = Field{Center, Center, Nothing}(grid; boundary_conditions = velocity_bcs),
