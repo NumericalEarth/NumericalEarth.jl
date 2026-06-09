@@ -761,8 +761,20 @@ struct MillimetersPerHour end     # liquid precipitation rate in mm/hr → kg/m�
 struct MetersPerHour end          # liquid precipitation depth in m/hr → kg/m²/s (ERA5 total_precipitation)
 struct JoulesPerSquareMeterPerHour end # radiative energy accumulated over 1 hr, J/m² → mean flux W/m² (ERA5 ssrd/strd)
 
-# Fallback
+"""
+    conversion_units(metadatum)
+
+Return the units of the source variable in the given dataset referenced by `metadatum`.
+These units will be used to apply automatic conversions to standard units for `NumericalEarth`.
+"""
 conversion_units(metadatum) = nothing
+
+"""
+    missing_value(metadatum)
+
+Return the value used by the underlying dataset to represent missing data. Defaults to `missing`.
+"""
+missing_value(metadatum) = missing
 
 #####
 ##### Utilities

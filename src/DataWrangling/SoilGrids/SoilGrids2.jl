@@ -7,8 +7,10 @@ using Oceananigans: CPU, Field, Center, location, fill_halo_regions!
 using Oceananigans.DistributedComputations: @root
 using Scratch: Scratch, @get_scratch!
 
-using ..DataWrangling: DataWrangling, DownloadProgress, AbstractStaticDataset, Metadatum,
-    metadata_path, metadata_url, native_grid, retrieve_data, set_metadata_field!
+using ..DataWrangling: DataWrangling,
+    Dataset, DownloadProgress, AbstractStaticDataset, Metadatum,
+    GramPerKilogram, CentigramPerCubicCentimeter, HectogramPerCubicMeter, DecigramPerKilogram,
+    metadata_path, metadata_url, dataset_variable_name
 
 import Oceananigans
 
@@ -56,6 +58,8 @@ DataWrangling.dataset_variable_name(data::SoilGrids2Metadatum) = SoilGrids2_data
 DataWrangling.metadata_url(::SoilGrids2Metadatum) = SoilGrids2_url
 DataWrangling.longitude_name(::SoilGrids2Metadatum) = "lon"
 DataWrangling.latitude_name(::SoilGrids2Metadatum) = "lat"
+DataWrangling.default_inpainting(md::SoilGrids2Metadatum) = nothing
+DataWrangling.missing_value(md::SoilGrids2Metadatum) = -32768
 
 # Unit conversions
 function DataWrangling.conversion_units(metadatum::SoilGrids2Metadatum)

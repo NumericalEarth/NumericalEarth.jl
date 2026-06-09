@@ -154,20 +154,20 @@ end
 
 # `read_data(data, i, j, k, region, mangling, FT)` returns the file value at
 # the grid's (i, j, k) as `FT`, with `Missing` converted to NaN.
-@inline read_data(data, i, j, k, ::Nothing,     mangling, FT) = nan_convert_missing(FT, mangle(i, j, k, data, mangling))
-@inline read_data(data, i, j, k, b::BoundingBoxOffset, mangling, FT) = nan_convert_missing(FT, mangle(i + b.di, j + b.dj, k, data, mangling))
-@inline read_data(data, _, _, k, c::ColumnInfo, mangling, FT) = blend(c.ℑ, data, c, k, mangling, FT)
+@inline read_data(data, i, j, k, ::Nothing,     mangling, missing_val, FT) = nan_convert_missing(FT, mangle(i, j, k, data, mangling), missing_val)
+@inline read_data(data, i, j, k, b::BoundingBoxOffset, mangling, missing_val, FT) = nan_convert_missing(FT, mangle(i + b.di, j + b.dj, k, data, mangling), missing_val)
+@inline read_data(data, _, _, k, c::ColumnInfo, mangling, missing_val, FT) = blend(c.ℑ, data, c, k, mangling, missing_val, FT)
 
 # Land cells arrive as NaN through `nan_convert_missing`.
 # A naive bilinear average of four corners would propagate that NaN into the
 # interior, biasing every column whose stencil touches a coast. Instead we drop
 # any NaN corner and renormalise the weights over the surviving wet corners,
 # returning NaN only when all four are land.
-@inline function blend(::Linear, data, c, k, mangling, FT)
-    d00 = nan_convert_missing(FT, mangle(c.i⁻, c.j⁻, k, data, mangling))
-    d10 = nan_convert_missing(FT, mangle(c.i⁺, c.j⁻, k, data, mangling))
-    d01 = nan_convert_missing(FT, mangle(c.i⁻, c.j⁺, k, data, mangling))
-    d11 = nan_convert_missing(FT, mangle(c.i⁺, c.j⁺, k, data, mangling))
+@inline function blend(::Linear, data, c, k, mangling, missing_val, FT)
+    d00 = nan_convert_missing(FT, mangle(c.i⁻, c.j⁻, k, data, mangling), missing_val)
+    d10 = nan_convert_missing(FT, mangle(c.i⁺, c.j⁻, k, data, mangling), missing_val)
+    d01 = nan_convert_missing(FT, mangle(c.i⁻, c.j⁺, k, data, mangling), missing_val)
+    d11 = nan_convert_missing(FT, mangle(c.i⁺, c.j⁺, k, data, mangling), missing_val)
     w00 = (1 - c.wx) * (1 - c.wy) * !isnan(d00)
     w10 =      c.wx  * (1 - c.wy) * !isnan(d10)
     w01 = (1 - c.wx) *      c.wy  * !isnan(d01)
@@ -181,17 +181,17 @@ end
     return ifelse(Σw == 0, convert(FT, NaN), numerator / denominator)
 end
 
-@inline function blend(::Nearest, data, c, k, mangling, FT)
+@inline function blend(::Nearest, data, c, k, mangling, missing_val, FT)
     i = ifelse(c.wx ≥ 0.5, c.i⁺, c.i⁻)
     j = ifelse(c.wy ≥ 0.5, c.j⁺, c.j⁻)
-    near = nan_convert_missing(FT, mangle(i, j, k, data, mangling))
+    near = nan_convert_missing(FT, mangle(i, j, k, data, mangling), missing_val)
     # If the closest corner is land, fall back to the NaN-aware Linear blend.
-    return ifelse(isnan(near), blend(Linear(), data, c, k, mangling, FT), near)
+    return ifelse(isnan(near), blend(Linear(), data, c, k, mangling, missing_val, FT), near)
 end
 
-@kernel function _set_region_kernel!(dst, data, region, mangling, conversion, FT)
+@kernel function _set_region_kernel!(dst, data, region, mangling, conversion, missing_val, FT)
     i, j, k = @index(Global, NTuple)
-    d = read_data(data, i, j, k, region, mangling, FT)
+    d = read_data(data, i, j, k, region, mangling, missing_val, FT)
     d = convert_units(d, conversion)
     @inbounds dst[i, j, k] = d
 end
@@ -206,12 +206,13 @@ function set_region_data!(target::Field, data, λc, φc, metadata;
                           mangling = mangling_for(metadata, size(data, 2)),
                           conversion = conversion_units(metadata))
 
-    region = region_info(metadata.region, target, λc, φc)
-    FT     = eltype(target)
-    grid   = target.grid
-    arch   = architecture(grid)
-    data   = on_architecture(arch, data)
-    launch!(arch, grid, :xyz, _set_region_kernel!, interior(target), data, region, mangling, conversion, FT)
+    region      = region_info(metadata.region, target, λc, φc)
+    FT          = eltype(target)
+    grid        = target.grid
+    arch        = architecture(grid)
+    data        = on_architecture(arch, data)
+    missing_val = missing_value(metadata)
+    launch!(arch, grid, :xyz, _set_region_kernel!, interior(target), data, region, mangling, conversion, missing_val, FT)
     return nothing
 end
 
@@ -220,15 +221,16 @@ function set_region_data!(target::FieldTimeSeries, data, λc, φc, metadata;
                           conversion = conversion_units(metadata),
                           slot_indices = 1:size(target, 4))
 
-    region = region_info(metadata.region, target, λc, φc)
-    grid   = target.grid
-    arch   = architecture(grid)
-    FT     = eltype(target)
-    data   = on_architecture(arch, data)
+    region      = region_info(metadata.region, target, λc, φc)
+    grid        = target.grid
+    arch        = architecture(grid)
+    FT          = eltype(target)
+    data        = on_architecture(arch, data)
+    missing_val = missing_value(metadata)
     for (data_time, slot_time) in zip(axes(data, 4), slot_indices)
         dest = view(interior(target), :, :, :, slot_time)
         slice = view(data, :, :, :, data_time)
-        launch!(arch, grid, :xyz, _set_region_kernel!, dest, slice, region, mangling, conversion, FT)
+        launch!(arch, grid, :xyz, _set_region_kernel!, dest, slice, region, mangling, conversion, missing_val, FT)
     end
     return nothing
 end
