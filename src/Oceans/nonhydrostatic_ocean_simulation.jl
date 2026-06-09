@@ -52,8 +52,8 @@ function nonhydrostatic_ocean_simulation(grid;
                                          verbose = false)
 
     # Set up boundary conditions using Field
-    top_zonal_momentum_flux      = τx = Field{Face, Center, Nothing}(grid)
-    top_meridional_momentum_flux = τy = Field{Center, Face, Nothing}(grid)
+    top_zonal_momentum_flux      = τx = Field{Face,   Center, Nothing}(grid)
+    top_meridional_momentum_flux = τy = Field{Center, Face,   Nothing}(grid)
     top_ocean_heat_flux          = Jᵀ = Field{Center, Center, Nothing}(grid)
     top_salt_flux                = Jˢ = Field{Center, Center, Nothing}(grid)
 
