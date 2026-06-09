@@ -63,6 +63,15 @@ ImpureSaturationSpecificHumidity(phase) = ImpureSaturationSpecificHumidity(phase
     χ_H₂O = compute_water_mole_fraction(formulation.water_mole_fraction, Sₛ)
     pᵛ⁺   = χ_H₂O * AtmosphericThermodynamics.saturation_vapor_pressure(ℂᵃᵗ, T, formulation.phase)
     εᵈᵛ⁻¹ = 1 / AtmosphericThermodynamics.Parameters.Rv_over_Rd(ℂᵃᵗ)
+
+    # Guard against an unphysically warm interface temperature. The denominator
+    # `p - (1 - εᵈᵛ⁻¹) pᵛ⁺` vanishes and then turns negative once pᵛ⁺ exceeds
+    # p / (1 - εᵈᵛ⁻¹) ≈ 2.6 p, returning a *negative* specific humidity that drives
+    # a runaway spurious-condensation instability in the coupled fluxes. This only
+    # happens for super-boiling temperatures (e.g. an ocean T mistakenly supplied in
+    # Kelvin, read as °C and converted to ~566 K); in the physical regime pᵛ⁺ ≪ p and
+    # the cap is inert. Capping pᵛ⁺ below p keeps qₛ ∈ [0, 1) and saturating.
+    pᵛ⁺   = min(pᵛ⁺, convert(CT, 0.999) * p)
     qₛ    = εᵈᵛ⁻¹ * pᵛ⁺ / (p - (1 - εᵈᵛ⁻¹) * pᵛ⁺)
 
     return convert(FT, qₛ)
