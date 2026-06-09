@@ -1,5 +1,7 @@
 include("runtests_setup.jl")
 
+using CDSAPI
+
 using Oceananigans.BoundaryConditions: fill_halo_regions!
 using Oceananigans.Fields: parent
 using Oceananigans.Grids: halo_size
