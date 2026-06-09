@@ -373,6 +373,7 @@ end
 
 # Convert missing values to NaN
 @inline nan_convert_missing(FT, x, missing_val) = ifelse(x == missing_val, convert(FT, NaN), convert(FT, x))
+@inline nan_convert_missing(FT, x::Missing, missing_val) = convert(FT, NaN) # always handle missing types
 
 # No units conversion
 @inline convert_units(T, units) = T
