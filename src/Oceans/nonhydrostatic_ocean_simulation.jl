@@ -48,6 +48,7 @@ function nonhydrostatic_ocean_simulation(grid;
                                          advection = WENO(order=9),
                                          forcing = NamedTuple(),
                                          boundary_conditions::NamedTuple = NamedTuple(),
+                                         clock = nothing,
                                          verbose = false)
 
     # Set up boundary conditions using Field
