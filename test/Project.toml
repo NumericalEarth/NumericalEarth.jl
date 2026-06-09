@@ -32,7 +32,6 @@ Thermodynamics = "b60c26fb-14c3-4610-9d3e-2d17fe7ff00c"
 WorldOceanAtlasTools = "04f20302-f1b9-11e8-29d9-7d841cb0a64a"
 
 [sources]
-Breeze = {url = "https://github.com/NumericalEarth/Breeze.jl.git", rev = "ncc/normal-flow-boundary-conditions"}
 ClimaSeaIce = {url = "https://github.com/CliMA/ClimaSeaIce.jl.git", rev = "ncc/oceananigans-v0.110"}
 ConservativeRegridding = {url = "https://github.com/JuliaGeo/ConservativeRegridding.jl.git", rev = "main"}
 NumericalEarth = {path = ".."}
