@@ -76,6 +76,8 @@ export
     ComponentInterfaces,
     SkinTemperature,
     BulkTemperature,
+    DiffusiveFlux,
+    InteriorDiffusivity,
     # Land (prognostic SlabLand + closures)
     SlabLand,
     SlabEnergy,
