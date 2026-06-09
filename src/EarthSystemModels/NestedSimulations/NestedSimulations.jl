@@ -1,8 +1,7 @@
 module NestedSimulations
 
 export NestedModel, NestedSimulation,
-       parent_boundary_conditions, parent_forcings,
-       child_simulation, parent_variables
+       parent_boundary_conditions, parent_forcings
 
 using Oceananigans
 using Oceananigans.Fields: Face
@@ -18,6 +17,5 @@ include("nested_simulation.jl")
 include("interpolated_fts_boundary.jl")
 include("parent_boundary_conditions.jl")
 include("parent_forcings.jl")
-include("child_simulation.jl")
 
 end # module
