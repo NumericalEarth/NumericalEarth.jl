@@ -347,7 +347,10 @@ Keyword Arguments
 - `freshwater_density`: reference density of freshwater. Default: `default_freshwater_density`.
 - `atmosphere_ocean_fluxes`: flux formulation for atmosphere-ocean interface. Default: `SimilarityTheoryFluxes()`.
 - `atmosphere_sea_ice_fluxes`: flux formulation for atmosphere-sea ice interface. Default: `SimilarityTheoryFluxes()`.
-- `atmosphere_ocean_interface_temperature`: temperature formulation for atmosphere-ocean interface. Default: `BulkTemperature()`.
+- `atmosphere_ocean_interface_temperature`: temperature formulation for atmosphere-ocean interface.
+   Options are `BulkTemperature()` (default) and `SkinTemperature(internal_flux)`, where for the ocean
+   `internal_flux` is a `DiffusiveFlux(κ, δ)` with either a prescribed diffusivity `κ` or an
+   `InteriorDiffusivity()` assessed from the ocean turbulence closure.
 - `atmosphere_ocean_interface_specific_humidity`: specific humidity formulation. Default: `default_ao_specific_humidity(ocean)`.
 - `atmosphere_sea_ice_interface_temperature`: temperature formulation for atmosphere-sea ice interface. Default: `default_ai_temperature(sea_ice)`.
 - `ocean_reference_density`: reference density for the ocean. Default: `reference_density(ocean)`.

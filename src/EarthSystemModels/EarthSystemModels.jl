@@ -21,6 +21,8 @@ export
     FreezingLimitedOceanTemperature,
     SkinTemperature,
     BulkTemperature,
+    DiffusiveFlux,
+    InteriorDiffusivity,
     compute_atmosphere_ocean_fluxes!,
     compute_atmosphere_sea_ice_fluxes!,
     compute_sea_ice_ocean_fluxes!,
