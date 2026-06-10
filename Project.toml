@@ -57,9 +57,6 @@ NumericalEarthSpeedyWeatherExt = ["SpeedyWeather", "ConservativeRegridding"]
 NumericalEarthVerosExt = ["PythonCall", "CondaPkg"]
 NumericalEarthWOAExt = "WorldOceanAtlasTools"
 
-[sources]
-ConservativeRegridding = {url = "https://github.com/JuliaGeo/ConservativeRegridding.jl", rev = "main"}
-
 [compat]
 Accessors = "0.1.44"
 Adapt = "4"
