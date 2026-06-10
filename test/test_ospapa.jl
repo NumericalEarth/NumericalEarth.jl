@@ -9,7 +9,7 @@ using Oceananigans.Units: minutes
 const OSPAPA_TEST_START = DateTime(2012, 10, 1)
 const OSPAPA_TEST_END   = DateTime(2012, 10, 3)
 
-@testset "OS Papa Prescribed Atmosphere" begin
+@testset "Ocean Station Papa Prescribed Atmosphere" begin
     for arch in test_architectures
         A = typeof(arch)
         @info "Testing OSPapaPrescribedAtmosphere on $A..."
@@ -57,7 +57,7 @@ const OSPAPA_TEST_END   = DateTime(2012, 10, 3)
     end
 end
 
-@testset "OS Papa Prescribed Fluxes" begin
+@testset "Ocean Station Papa Prescribed Fluxes" begin
     @info "Testing os_papa_prescribed_fluxes on CPU..."
 
     fluxes = os_papa_prescribed_fluxes(; start_date = OSPAPA_TEST_START,
@@ -90,7 +90,7 @@ end
     @test all(isfinite, fluxes.EMP)
 end
 
-@testset "OS Papa Prescribed Flux BCs" begin
+@testset "Ocean Station Papa Prescribed Flux BCs" begin
     for arch in test_architectures
         A = typeof(arch)
         @info "Testing os_papa_prescribed_flux_boundary_conditions on $A..."
@@ -134,7 +134,7 @@ end
     end
 end
 
-@testset "OS Papa ocean profile set!" begin
+@testset "Ocean Station Papa ocean profile set!" begin
     for arch in test_architectures
         A = typeof(arch)
         @info "Testing OSPapaMetadatum set! on $A..."
@@ -168,7 +168,7 @@ end
     end
 end
 
-@testset "OS Papa flux BC simulation" begin
+@testset "Ocean Station Papa flux BC simulation" begin
     for arch in test_architectures
         A = typeof(arch)
         @info "Testing short simulation with os_papa_prescribed_flux_boundary_conditions on $A..."
@@ -201,7 +201,7 @@ end
     end
 end
 
-@testset "OS Papa prescribed atmosphere simulation" begin
+@testset "Ocean Station Papa prescribed atmosphere simulation" begin
     for arch in test_architectures
         A = typeof(arch)
         @info "Testing OceanOnlyModel with OSPapaPrescribedAtmosphere on $A..."

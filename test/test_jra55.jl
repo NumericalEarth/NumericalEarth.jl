@@ -6,6 +6,14 @@ using NumericalEarth.DataWrangling: compute_native_date_range
 using NumericalEarth.JRA55: download_JRA55_cache
 
 @testset "JRA55 and data wrangling utilities" begin
+    native_dates = DateTime(1992, 1, 1):Month(1):DateTime(1992, 3, 1)
+    start_date = DateTimeProlepticGregorian(1992, 1, 15)
+    end_date = DateTimeProlepticGregorian(1992, 2, 15)
+
+    dates = compute_native_date_range(native_dates, start_date, end_date)
+
+    @test dates == native_dates[1:3]
+
     for arch in test_architectures
         A = typeof(arch)
         @info "Testing reanalysis_field_time_series on $A..."
