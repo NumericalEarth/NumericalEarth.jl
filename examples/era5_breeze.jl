@@ -3,20 +3,21 @@
 # This is a limited-area model (LAM) example that couples the Breeze
 # compressible solver to forthcoming SlabLand and SlabOcean components.
 #
-# At the moment, this script does just the data ingest: download ERA5
-# reanalysis restricted to a bounding box and interpolate it onto a
-# `LatitudeLongitudeGrid` sized for ~3 km horizontal cells at the domain
-# center latitude.
+# It downloads ERA5 reanalysis restricted to a bounding box, regrids it onto a
+# terrain-following `LatitudeLongitudeGrid` sized for ~3 km horizontal cells at
+# the domain center latitude, builds a compressible Breeze atmosphere, and drives
+# it through a `NestedSimulation`: an ERA5-forced parent supplies the lateral
+# boundary conditions and an interior Davies relaxation fringe.
 #
 # In progress:
 # - [x] Breeze model construction
 # - [x] initial state setting (set! the model from ingested fields)
 # - [x] open boundary conditions (parent-driven OBC + Davies fringe relaxation)
 # - [x] test with GPU
+# - [x] terrain (ETOPO 2022 + Breeze `follow_terrain!`, terrain-following coordinates)
 # - [ ] dynamical initialization
 # - [ ] acoustic substepping
 # - [ ] land/ocean coupling
-# - [ ] terrain
 
 using NumericalEarth
 using NumericalEarth.DataWrangling
@@ -26,6 +27,8 @@ using Oceananigans
 using Oceananigans.Fields: interpolate!
 using Oceananigans.BoundaryConditions: fill_halo_regions!
 using Oceananigans.OutputReaders: FieldTimeSeries
+using Oceananigans.Grids: MutableVerticalDiscretization, znode
+using Oceananigans.Architectures: on_architecture
 using Breeze
 using Statistics: mean
 using Dates
@@ -107,8 +110,8 @@ dates = start_date:Hour(1):end_date
 
 # ### ERA5 reanalysis
 #
-# TODO: define a `MetadataSet` as per
-# https://github.com/NumericalEarth/NumericalEarth.jl/issues/235
+# Pressure-level variables are regridded onto the parent grid as `FieldTimeSeries`
+# (and onto the child grid for the initial condition) further below.
 
 era5_datadir = "era5"   # Where data will be saved locally
 
@@ -140,28 +143,48 @@ ds_sl = ERA5HourlySingleLevel()
 
 # ## Setup LAM grid
 #
-# `LatitudeLongitudeGrid` with `Bounded` horizontal topologies (LAM-style).
-# The vertical coordinate is height in meters; the ERA5 pressure-level
-# metadata supplies a domain-mean z(p) profile via the time-mean spatial-mean
-# geopotential height (the dataset's default `mean_geopotential_height=true`).
+# Terrain-following `LatitudeLongitudeGrid` with `Bounded` horizontal topologies
+# (LAM-style). The vertical coordinate is a `MutableVerticalDiscretization` built
+# from the stretched height profile; `follow_terrain!` then deforms its coordinate
+# surfaces to follow the ETOPO 2022 surface elevation (a Gal-Chen–Somerville σ
+# coordinate). The bottom surface sits at the local terrain height; the top stays
+# flat. Node heights are true heights above sea level — the coordinate the #241
+# ERA5 ingest below interpolates onto.
 
 grid = LatitudeLongitudeGrid(arch;
                              longitude = (λ_west,  λ_east),
                              latitude  = (φ_south, φ_north),
-                             z         = z_discretization,
+                             z         = MutableVerticalDiscretization(z_discretization),
                              size      = (Nx, Ny, Nz),
                              halo      = (5, 5, 5),
                              topology  = (Bounded, Bounded, Bounded))
 
+# `follow_terrain!` sets the topography via `set_topography!(h_field, grid, topo)`,
+# but the registered Breeze only defines the `::Function` method (which samples
+# `xnode`/`ynode` — RectilinearGrid-only, so it errors on a `LatitudeLongitudeGrid`).
+# Provide the generic Field/array method ourselves: it routes the ETOPO `elevation`
+# Field straight through `set!`, bypassing the function path. The rest of
+# `follow_terrain!` is grid-agnostic, so this is all that's needed on a LatLon grid —
+# no Breeze #776 required. (Remove once the env's Breeze ships this method upstream.)
+Breeze.TerrainFollowingDiscretization.set_topography!(h_field, grid, topography) =
+    (set!(h_field, topography); nothing)
+
+# ETOPO 2022 surface elevation (≥ 0; ocean clamped to sea level) regridded onto
+# the LAM horizontal grid — ETOPO's 60″ (~1.85 km) relief is finer than the ~3 km
+# cells. `follow_terrain!` imposes it as terrain-following coordinates and returns
+# the `TerrainMetrics` (slopes, model top) that `CompressibleDynamics` consumes.
+
+elevation = regrid_topography(grid; dataset = ETOPO2022())
+metrics   = follow_terrain!(grid, elevation)
+
 # ## Thermodynamic constants
 #
-# All thermodynamic parameters used downstream (per-column z conversion,
-# moist gas law, liquid-ice potential temperature, virtual temperature)
-# come from Breeze's `ThermodynamicConstants`.
+# All thermodynamic parameters used downstream (moist gas law, liquid-ice
+# potential temperature, virtual temperature) come from Breeze's
+# `ThermodynamicConstants`.
 
 constants = ThermodynamicConstants()
 
-g    = ERA5.ERA5_gravitational_acceleration
 Rᵈ   = dry_air_gas_constant(constants)
 Rᵛ   = vapor_gas_constant(constants)
 cₚᵈ  = constants.dry_air.heat_capacity
@@ -172,80 +195,28 @@ pˢᵗ  = 1e5  # Pa
 
 # ## Interpolate ERA5 onto the LAM grid
 #
-# We bypass `set!(field, metadatum)` for two reasons:
-#  (a) use ERA5's instantaneous, spatially-varying Φ(λ, φ, p)/g as the
-#      z-mapping for each column rather than a single spatial-mean profile;
-#  (b) mask levels with p > p_surface(λ, φ).
+# `Field(metadatum, grid)` and `set!(field, metadatum)` regrid ERA5 pressure-level
+# data onto an arbitrary target grid, using the per-column geopotential height
+# z = Φ(λ, φ, p)/g as the vertical coordinate and clipping sub-surface levels at
+# the local surface (NumericalEarth's `PressureLevelGrid`, NumericalEarth/
+# NumericalEarth.jl#241). The interpolation is driven by the *target* grid's own
+# node heights, so the terrain-following child is sampled at its true physical
+# heights — no sigma-z workaround, no custom column interpolation.
 #
-# See NumericalEarth/NumericalEarth.jl#236 for context.
+# These regrids interpolate linearly in height between ERA5 levels. Within a layer
+# the hydrostatic z ↔ ln(p) relation is affine, and linear interpolation is invariant
+# under an affine change of the abscissa — so linear-in-z is identical to linear-in-
+# log-p for every quantity *except pressure itself*, which we interpolate in log-p
+# (see `regrid_pressure`) so it stays log-linear (hydrostatically consistent) in z.
+
+# --- Parent grid: ERA5 native (λ, φ), regular true-height z (no terrain) ---
 #
-# The interpolation is split into two stages:
-#  1. Per-column linear-in-z interpolation from the ERA5 native pressure
-#     levels onto the LAM z-coordinate, producing a Field on an intermediate
-#     grid that shares the ERA5 native (λ, φ) but the LAM's z.
-#  2. Horizontal-only `Oceananigans.interpolate!` from intermediate onto the
-#     target LAM field — since the two grids share z, only the horizontal
-#     bilinear remains.
+# The parent drives the child's lateral boundaries and Davies fringe. It stays on
+# a regular (non-terrain-following) grid; the #241 ingest regrids ERA5 onto it by
+# true Φ/g — the same vertical coordinate as the terrain-following child — so the
+# `Interpolated` lateral BCs and Davies relaxation sample a consistent state when
+# they interpolate the parent to the child's nodes.
 #
-# Terrain workaround (TEMPORARY): we don't yet have terrain in the LAM, so we
-# map ERA5's (Φ − Φ₀)/g (height above local surface) → LAM z. This treats the
-# LAM z=0 as "at the surface" everywhere, equivalent to a sigma-z coordinate.
-# Φ₀ comes from ERA5's `:geopotential` on single levels (surface geopotential
-# in m² s⁻², same units as the pressure-level `:geopotential` field).
-#
-# TODO: When terrain support lands, swap back to Φ/g.
-
-# These two helpers exist only because the LAM grid lacks terrain (the
-# `- [ ] terrain` checklist item above). They implement the sigma-z workaround
-# — map ERA5 (Φ − Φ₀)/g to LAM z. Once terrain support lands (e.g.
-# `ImmersedBoundaryGrid + GridFittedBottom(Φ₀/g)`), `set!(target, metadatum)`
-# replaces this entire block via NumericalEarth's `PressureLevelGrid` path
-# (introduced in PR #241).
-
-# Per-column linear interpolation in z, skipping sub-surface levels.
-function interp_z_masked(z, z_col, var_col, p_levels, p₀_local)
-    k_lo, k_hi = 0, 0
-    @inbounds for k in eachindex(p_levels)
-        p_levels[k] > p₀_local && continue
-        if z_col[k] <= z
-            k_lo = k
-        else
-            k_hi = k
-            break
-        end
-    end
-    k_lo == 0 && return var_col[k_hi]                  # below lowest valid level
-    k_hi == 0 && return var_col[k_lo]                  # above highest valid level
-    α = (z - z_col[k_lo]) / (z_col[k_hi] - z_col[k_lo])
-    return (1 - α) * var_col[k_lo] + α * var_col[k_hi]
-end
-
-# Stage 1: column-wise z interpolation onto the intermediate grid.
-# The intermediate field shares the ERA5 native (λ, φ) but has the LAM z;
-# we simply loop over (i, j) of the native grid and linearly interpolate
-# each column to the LAM z-centers, applying the sub-surface mask. The compute
-# is host-side (the loop indexes column-by-column) and the result is then
-# copied into the field's interior — works regardless of `arch`.
-function column_interp_z!(inter_field, era5_data;
-                          z_above_sfc, p_era5_lev, p₀_arr)
-    z_lam = collect(znodes(inter_field.grid, Center(), Center(), Center()))
-    Nλ_e, Nφ_e = size(era5_data, 1), size(era5_data, 2)
-    out_host = zeros(eltype(era5_data), Nλ_e, Nφ_e, length(z_lam))
-
-    for k in eachindex(z_lam), j in 1:Nφ_e, i in 1:Nλ_e
-        out_host[i, j, k] = interp_z_masked(z_lam[k],
-                                            @view(z_above_sfc[i, j, :]),
-                                            @view(era5_data[i, j, :]),
-                                            p_era5_lev,
-                                            p₀_arr[i, j])
-    end
-
-    copyto!(interior(inter_field), out_host)
-    fill_halo_regions!(inter_field)
-    return inter_field
-end
-
-# --- Parent grid: ERA5 native (λ, φ), LAM z ---
 # Mirror NumericalEarth's `native_grid`/`restrict` behavior: it pads the
 # requested bbox outward by Δ/2 on each side so cell *centers* land on the
 # ERA5 native grid. Without that adjustment, `parent_grid`'s cell centers
@@ -257,8 +228,6 @@ end
 
 const meta_common_snap1 = (date = start_date, region = era5_region, dir = era5_datadir)
 const ϕ_field_snap1     = Field(Metadatum(:geopotential; dataset=ds_pl, meta_common_snap1...))
-
-p_era5_lev = sort(ds_pl.pressure_levels, rev=true)
 
 λ_centers_era5 = collect(λnodes(ϕ_field_snap1.grid, Center(), Center(), Center()))
 φ_centers_era5 = collect(φnodes(ϕ_field_snap1.grid, Center(), Center(), Center()))
@@ -288,7 +257,7 @@ parent_grid = LatitudeLongitudeGrid(arch;
 # qᶜ, qⁱ aren't standard slots; we own those alongside.
 
 parent_times = [Float64(Dates.value(d - start_date)) / 1000 for d in dates]
-parent = PrescribedAtmosphere(parent_grid, parent_times; volumetric = true, thermodynamics_parameters = nothing)
+parent = PrescribedAtmosphere(parent_grid, parent_times; two_dimensional = false, freshwater_flux = nothing, thermodynamics_parameters = nothing)
 
 # Parent-side `FieldTimeSeries` that drive the child, kept alongside the
 # `PrescribedAtmosphere` (which owns u, v, T, q, p). All are Center-located
@@ -301,129 +270,84 @@ parent = PrescribedAtmosphere(parent_grid, parent_times; volumetric = true, ther
 parent_series = NamedTuple(name => FieldTimeSeries{Center, Center, Center}(parent_grid, parent_times)
                            for name in (:qᶜ, :qⁱ, :ρ, :ρu, :ρv, :ρθ, :ρqᵉ, :θ, :qᵗ))
 
-# --- Time-invariant: surface geopotential Φ₀ ---
-# Φ₀ is terrain elevation × g; load once from snapshot 1.
+# --- Regridded pressure coordinate ---
+# Pressure is the ERA5 vertical *coordinate*, not a stored field. `pressure_field`
+# returns the exact (time-constant) level values as a `(Nothing, Nothing, Center)`
+# field on the native grid. We regrid log(p) — so pressure interpolates log-linearly
+# in height, the hydrostatically-consistent choice and the one quantity for which
+# linear-in-z and linear-in-log-p differ — then exponentiate back onto `target_grid`.
+function regrid_pressure(metadatum, target_grid)
+    pf = pressure_field(metadatum, arch)
+    lnp_native = CenterField(pf.grid)
+    interior(lnp_native) .= log.(interior(pf))
+    fill_halo_regions!(lnp_native)
+    lnp = CenterField(target_grid)
+    interpolate!(lnp, lnp_native)
+    p = CenterField(target_grid)
+    interior(p) .= exp.(interior(lnp))
+    fill_halo_regions!(p)
+    return p
+end
 
-const Φ₀_arr = Array(interior(Field(Metadatum(:geopotential;
-                                              dataset=ds_sl,
-                                              meta_common_snap1...))))[:, :, 1]
-
-# --- Per-snapshot ERA5 → parent FTS population ---
+# --- ERA5 pressure-level primitives on the parent grid ---
 #
-# For each ERA5 hourly snapshot:
-#   1. Pull T, q*, u, v, geopotential (3D), surface-pressure.
-#   2. Build height-above-surface z_above_sfc = (Φ − Φ₀)/g (terrain workaround).
-#   3. Column-wise linear-in-z interp onto the parent z-grid, masking
-#      sub-surface levels (p > p_surface).
-#   4. Copy the result into FTS slot n.
-#   5. Return the raw ERA5 arrays so the caller can capture snapshot 1 for
-#      the profile-plot block below without re-fetching.
+# `FieldTimeSeries(metadata, parent_grid)` regrids the whole window at once. Its
+# per-file `set!` reads each snapshot with that snapshot's own geopotential, so the
+# Φ/g height mapping is per-snapshot (#241, highest fidelity). All times are held
+# resident so we can index by snapshot in the derivation loop below.
+parent_pl_series(name) =
+    FieldTimeSeries(Metadata(name; dataset = ds_pl, dates = dates,
+                             region = era5_region, dir = era5_datadir),
+                    parent_grid; time_indices_in_memory = length(dates))
 
-function populate_parent_snapshot!(n, date)
-    # Pressure-level variables share one MetadataSet (#235): same dataset/date/
-    # region/dir, indexed by name below instead of repeating Metadatum kwargs.
-    #
-    # TODO (wholesale collapse): once terrain support lands (the `terrain`
-    # checklist item / the `PressureLevelGrid`, `set!(target, metadatum)` path of
-    # #241), the custom column interpolation and this entire per-snapshot loop
-    # fold into a single `dates`-spanning `FieldTimeSeries(pl, parent_grid)`,
-    # leaving only the derived (`breeze_prognostic_state`) fields to compute.
-    pl = MetadataSet(:geopotential, :eastward_velocity, :northward_velocity,
-                     :temperature, :specific_humidity,
-                     :specific_cloud_liquid_water_content, :specific_cloud_ice_water_content;
-                     dataset = ds_pl, date = date, region = era5_region, dir = era5_datadir)
+u_series  = parent_pl_series(:eastward_velocity)
+v_series  = parent_pl_series(:northward_velocity)
+T_series  = parent_pl_series(:temperature)
+qᵛ_series = parent_pl_series(:specific_humidity)
+qᶜ_series = parent_pl_series(:specific_cloud_liquid_water_content)
+qⁱ_series = parent_pl_series(:specific_cloud_ice_water_content)
 
-    ϕ_field  = Field(pl[:geopotential])
-    p₀_field = Field(Metadatum(:surface_pressure; dataset = ds_sl, date = date,
-                               region = era5_region, dir = era5_datadir))
+# Derive (ρ, θˡⁱ, qᵗ) per snapshot via `breeze_prognostic_state` and store the
+# specific (Davies-target) and density-weighted (lateral-BC) forms. Pressure isn't
+# an ERA5 field, so it's regridded per snapshot (same per-snapshot Φ as the series).
+for n in eachindex(dates)
+    @info @sprintf("Deriving parent snapshot %d/%d at %s", n, length(dates), dates[n])
+    p_p = regrid_pressure(Metadatum(:temperature; dataset = ds_pl, date = dates[n],
+                                    region = era5_region, dir = era5_datadir), parent_grid)
+    state = breeze_prognostic_state(constants, T_series[n], qᵛ_series[n],
+                                    qᶜ_series[n], qⁱ_series[n], p_p)
 
-    p₀_arr = Array(interior(p₀_field))[:, :, 1]   # Pa
-    z_above_sfc = (Array(interior(ϕ_field)) .-
-                   reshape(Φ₀_arr, size(Φ₀_arr, 1), size(Φ₀_arr, 2), 1)) ./ g
-
-    read3d(name) = Array(interior(Field(pl[name])))
-    u_era5  = read3d(:eastward_velocity)
-    v_era5  = read3d(:northward_velocity)
-    T_era5  = read3d(:temperature)
-    qᵛ_era5 = read3d(:specific_humidity)
-    qᶜ_era5 = read3d(:specific_cloud_liquid_water_content)
-    qⁱ_era5 = read3d(:specific_cloud_ice_water_content)
-    p_era5_3d = repeat(reshape(p_era5_lev, 1, 1, :),
-                       size(z_above_sfc, 1), size(z_above_sfc, 2), 1)
-
-    era5_kw = (; z_above_sfc, p_era5_lev, p₀_arr)
-
-    u_p  = CenterField(parent_grid)
-    v_p  = CenterField(parent_grid)
-    T_p  = CenterField(parent_grid)
-    qᵛ_p = CenterField(parent_grid)
-    qᶜ_p = CenterField(parent_grid)
-    qⁱ_p = CenterField(parent_grid)
-    p_p  = CenterField(parent_grid)
-
-    column_interp_z!(u_p,  u_era5;    era5_kw...)
-    column_interp_z!(v_p,  v_era5;    era5_kw...)
-    column_interp_z!(T_p,  T_era5;    era5_kw...)
-    column_interp_z!(qᵛ_p, qᵛ_era5;   era5_kw...)
-    column_interp_z!(qᶜ_p, qᶜ_era5;   era5_kw...)
-    column_interp_z!(qⁱ_p, qⁱ_era5;   era5_kw...)
-    column_interp_z!(p_p,  p_era5_3d; era5_kw...)
-
-    interior(parent.velocities.u, :, :, :, n) .= interior(u_p)
-    interior(parent.velocities.v, :, :, :, n) .= interior(v_p)
-    interior(parent.tracers.T,    :, :, :, n) .= interior(T_p)
-    interior(parent.tracers.q,    :, :, :, n) .= interior(qᵛ_p)
+    interior(parent.velocities.u, :, :, :, n) .= interior(u_series[n])
+    interior(parent.velocities.v, :, :, :, n) .= interior(v_series[n])
+    interior(parent.tracers.T,    :, :, :, n) .= interior(T_series[n])
+    interior(parent.tracers.q,    :, :, :, n) .= interior(qᵛ_series[n])
     interior(parent.pressure,     :, :, :, n) .= interior(p_p)
-    interior(parent_series.qᶜ,              :, :, :, n) .= interior(qᶜ_p)
-    interior(parent_series.qⁱ,              :, :, :, n) .= interior(qⁱ_p)
-
-    # Derive ρ, θˡⁱ, qᵗ on the parent grid via the shared `breeze_prognostic_state`
-    # conversion (the child IC uses the same helper), then store the specific
-    # quantities (SpecificForcing-keyed Davies targets) and their density-weighted
-    # forms (BC values on the prognostic state). Everything stays on `arch`, so the
-    # FTS writes are plain device-side broadcasts.
-    state = breeze_prognostic_state(constants, T_p, qᵛ_p, qᶜ_p, qⁱ_p, p_p)
+    interior(parent_series.qᶜ,    :, :, :, n) .= interior(qᶜ_series[n])
+    interior(parent_series.qⁱ,    :, :, :, n) .= interior(qⁱ_series[n])
 
     interior(parent_series.ρ,   :, :, :, n) .= interior(state.ρ)
-    interior(parent_series.ρu,  :, :, :, n) .= interior(state.ρ) .* interior(u_p)
-    interior(parent_series.ρv,  :, :, :, n) .= interior(state.ρ) .* interior(v_p)
+    interior(parent_series.ρu,  :, :, :, n) .= interior(state.ρ) .* interior(u_series[n])
+    interior(parent_series.ρv,  :, :, :, n) .= interior(state.ρ) .* interior(v_series[n])
     interior(parent_series.ρθ,  :, :, :, n) .= interior(state.ρ) .* interior(state.θˡⁱ)
     interior(parent_series.ρqᵉ, :, :, :, n) .= interior(state.ρ) .* interior(state.qᵗ)
     interior(parent_series.θ,   :, :, :, n) .= interior(state.θˡⁱ)
     interior(parent_series.qᵗ,  :, :, :, n) .= interior(state.qᵗ)
-
-    return (; p₀_arr, z_above_sfc, p_era5_3d,
-              u_era5, v_era5, T_era5, qᵛ_era5, qᶜ_era5, qⁱ_era5)
 end
 
-# Snapshot 1 is captured for the plot block's native-grid stencil overlay.
-@info @sprintf("Populating parent snapshot 1/%d at %s", length(dates), dates[1])
-snap1 = populate_parent_snapshot!(1, dates[1])
+# --- LAM-grid IC fields: regrid snapshot 1 of ERA5 directly onto the child ---
+# `set!(field, metadatum)` regrids each ERA5 field onto the terrain-following
+# child grid by true Φ/g (#241), staggering to the field's own location
+# (velocities to faces, scalars to centers). No parent → child step is needed.
 
-for n in 2:length(dates)
-    @info @sprintf("Populating parent snapshot %d/%d at %s", n, length(dates), dates[n])
-    populate_parent_snapshot!(n, dates[n])
-end
+initial_metadatum(name) = Metadatum(name; dataset = ds_pl, meta_common_snap1...)
 
-# --- LAM-grid IC fields: horizontal regrid of snapshot 1 from the parent ---
-# `interpolate!` does the bilinear-in-(λ, φ) regrid; the vertical coord is
-# already on the parent grid so this is purely horizontal.
-
-u  = XFaceField(grid)
-v  = YFaceField(grid)
-T  = CenterField(grid)
-qᵛ = CenterField(grid)
-qᶜ = CenterField(grid)
-qⁱ = CenterField(grid)
-p  = CenterField(grid)
-
-interpolate!(u,  parent.velocities.u[1])
-interpolate!(v,  parent.velocities.v[1])
-interpolate!(T,  parent.tracers.T[1])
-interpolate!(qᵛ, parent.tracers.q[1])
-interpolate!(qᶜ, parent_series.qᶜ[1])
-interpolate!(qⁱ, parent_series.qⁱ[1])
-interpolate!(p,  parent.pressure[1])
+u  = XFaceField(grid);  set!(u,  initial_metadatum(:eastward_velocity))
+v  = YFaceField(grid);  set!(v,  initial_metadatum(:northward_velocity))
+T  = CenterField(grid); set!(T,  initial_metadatum(:temperature))
+qᵛ = CenterField(grid); set!(qᵛ, initial_metadatum(:specific_humidity))
+qᶜ = CenterField(grid); set!(qᶜ, initial_metadatum(:specific_cloud_liquid_water_content))
+qⁱ = CenterField(grid); set!(qⁱ, initial_metadatum(:specific_cloud_ice_water_content))
+p  = regrid_pressure(initial_metadatum(:temperature), grid)
 
 # Calculate virtual temperature: Tᵛ = T·(1 + (1 − ε)/ε·qᵛ), ε = Rᵈ/Rᵛ.
 # Vapor only by convention — the qᶜ, qⁱ terms belong to the density temperature Tρ.
@@ -449,9 +373,9 @@ set!(p₀, Metadatum(:surface_pressure; dataset=ds_sl, meta_common_snap1...))
 # ## Lateral boundary conditions and Davies relaxation
 #
 # Drive the LAM's lateral boundaries from the parent FTSs:
-#   - `ρu`, `ρv` get `OpenBoundaryCondition(Interpolated(fts))` (Face-stagger).
+#   - `ρu`, `ρv` get `NormalFlowBoundaryCondition(Interpolated(fts))` (Face-stagger).
 #   - `ρ`, `ρθ`, `ρqᵉ` get `ValueBoundaryCondition(Interpolated(fts))` —
-#     `OpenBC` on Center-located fields silently overwrites the first interior
+#     `NormalFlowBC` on Center-located fields silently overwrites the first interior
 #     cell on the W/S walls (validated against vortex-transit tests).
 #
 # Davies fringe relaxation toward the same parent state via `parent_forcings`,
@@ -537,7 +461,17 @@ davies = parent_forcings(; rate = 1/τ_relax,
 # We override the helper's default `AnelasticDynamics` (which dispatches on
 # `RectilinearGrid` only) with `CompressibleDynamics`, whose prognostic-density
 # / diagnostic-pressure formulation needs no FFT-based Poisson solve and works
-# directly on the LAM `LatitudeLongitudeGrid`.
+# directly on the LAM `LatitudeLongitudeGrid`. Passing the `terrain_metrics` from
+# `follow_terrain!` activates the terrain-following physics (contravariant vertical
+# velocity, corrected horizontal pressure gradient, terrain-aware divergence).
+#
+# TODO: pass `reference_potential_temperature = θ_ref(z)` to `CompressibleDynamics`.
+# A reference state lets Breeze compute the horizontal pressure gradient in
+# perturbation form (p′ = p − p_ref), which cuts the terrain-following PGF
+# cancellation error (Klemp 2011). Without it (current), the full-pressure gradient
+# is used — fine for the gentle SGP terrain, but worth adding for steeper domains.
+# Generate θ_ref(z) as the ERA5 domain-/time-mean potential-temperature profile
+# (regrid θ onto a column and average over (λ, φ) and snapshots).
 #
 # `atmosphere_simulation` returns an Oceananigans `Simulation`; we drive the
 # child through `NestedSimulation` below, so unwrap the underlying
@@ -548,7 +482,8 @@ p̄₀ = mean(interior(p₀))
 
 model = atmosphere_simulation(grid;
                               thermodynamic_constants = constants,
-                              dynamics            = CompressibleDynamics(; surface_pressure = p̄₀),
+                              dynamics            = CompressibleDynamics(; surface_pressure = p̄₀,
+                                                                         terrain_metrics = metrics),
                               boundary_conditions = bcs,
                               forcing             = davies).model
 
@@ -617,11 +552,10 @@ run!(nested)
 
 # ## Profile plots
 #
-# Plot ρ, u, v, θ, qᵗ at three locations spanning the domain's terrain range.
-# At each site we overlay the four surrounding ERA5 native-grid columns (the
-# bilinear stencil) in light gray. The vertical coordinate is height above
-# the local surface (Φ − Φ₀)/g — i.e., we strip the terrain offset out of
-# both the LAM (which has none) and the ERA5 columns.
+# Plot ρ, u, v, θ, qᵗ at three sites spanning the domain's terrain range,
+# comparing the initial state (blue) with the post-run state (red). The vertical
+# coordinate is the true physical height of the terrain-following grid, so each
+# profile's lowest marker sits at the local ETOPO surface elevation.
 
 using CairoMakie
 
@@ -629,25 +563,14 @@ sites = [("East TX",     -93.5,   34.0),
          ("SGP",         -97.485, 36.605),
          ("High Plains", -101.5,  35.0)]
 
-# Snapshot-1 ERA5 raw arrays captured during the populate loop (see `snap1`
-# above) — the FTSs hold vertically-interpolated data; the gray-stencil
-# overlay needs the native pressure-level columns.
+# Initial-state LAM arrays (from `set!` above); θ is the dry potential temperature.
+θ_lam = compute!(Field(T * (pˢᵗ / p)^κ))
 
-(; p₀_arr, z_above_sfc, p_era5_3d,
-   u_era5, v_era5, T_era5, qᵛ_era5, qᶜ_era5, qⁱ_era5) = snap1
-
-# Materialize θ (currently an abstract op) and derive ERA5-native counterparts.
-θ_lam   = compute!(Field(T * (pˢᵗ / p)^κ))
-Tᵛ_era5 = T_era5 .* (1 .+ εfac .* qᵛ_era5)
-ρ_era5  = p_era5_3d ./ (Rᵈ .* Tᵛ_era5)
-θ_era5  = T_era5 .* (pˢᵗ ./ p_era5_3d) .^ κ
-qᵗ_era5 = qᵛ_era5 .+ qᶜ_era5 .+ qⁱ_era5
-
-ρ_arr   = Array(interior(ρ))
-u_arr   = Array(interior(u))
-v_arr   = Array(interior(v))
-θ_arr   = Array(interior(θ_lam))
-qᵗ_arr  = Array(interior(qᵗ))
+ρ_arr  = Array(interior(ρ))
+u_arr  = Array(interior(u))
+v_arr  = Array(interior(v))
+θ_arr  = Array(interior(θ_lam))
+qᵗ_arr = Array(interior(qᵗ))
 
 # Post-run LAM state. Specific quantities (θ, qᵗ) are derived from the
 # prognostic ρθ, ρqᵉ divided by ρ.
@@ -659,19 +582,22 @@ v_final_arr  = Array(interior(model.velocities.v))
 θ_final_arr  = ρθ_final  ./ ρ_final_arr
 qᵗ_final_arr = ρqᵉ_final ./ ρ_final_arr
 
-λ_e = λ_centers_era5   # already shifted to LAM's [-180°, 180°] convention
-φ_e = φ_centers_era5
+# Terrain-following heights vary by column; read them from a host copy of the
+# grid (`znode` applies the σ scaling and η displacement per column).
+cpu_grid    = on_architecture(CPU(), grid)
+elevation_m = Array(interior(elevation))[:, :, 1]
 λ_c = collect(λnodes(grid, Center(), Center(), Center()))
 φ_c = collect(φnodes(grid, Center(), Center(), Center()))
 λ_f = collect(λnodes(grid, Face(),   Center(), Center()))
 φ_f = collect(φnodes(grid, Center(), Face(),   Center()))
-z_c = collect(znodes(grid, Center(), Center(), Center()))
 
-vars = [(:ρ,  ρ_arr,  ρ_final_arr,  ρ_era5,  "ρ (kg/m³)",  :center),
-        (:u,  u_arr,  u_final_arr,  u_era5,  "u (m/s)",    :xface),
-        (:v,  v_arr,  v_final_arr,  v_era5,  "v (m/s)",    :yface),
-        (:θ,  θ_arr,  θ_final_arr,  θ_era5,  "θ (K)",      :center),
-        (:qᵗ, qᵗ_arr, qᵗ_final_arr, qᵗ_era5, "qᵗ (kg/kg)", :center)]
+column_height(i, j) = [znode(i, j, k, cpu_grid, Center(), Center(), Center()) for k in 1:Nz]
+
+vars = [(:ρ,  ρ_arr,  ρ_final_arr,  "ρ (kg/m³)",  :center),
+        (:u,  u_arr,  u_final_arr,  "u (m/s)",    :xface),
+        (:v,  v_arr,  v_final_arr,  "v (m/s)",    :yface),
+        (:θ,  θ_arr,  θ_final_arr,  "θ (K)",      :center),
+        (:qᵗ, qᵗ_arr, qᵗ_final_arr, "qᵗ (kg/kg)", :center)]
 
 fig = Figure(size=(1600, 1000), fontsize=12)
 
@@ -680,50 +606,32 @@ Ncols = length(vars)
 axs   = Matrix{Axis}(undef, Nrows, Ncols)
 
 for (row, (label, λ_site, φ_site)) in enumerate(sites)
-    # Site header spanning all 5 columns; elevation read from Φ₀ at the
-    # ERA5 cell containing the site.
-    i_site = clamp(floor(Int, (λ_site - λ_e[1]) / Δλ_e + 1), 1, length(λ_e) - 1)
-    j_site = clamp(floor(Int, (φ_site - φ_e[1]) / Δφ_e + 1), 1, length(φ_e) - 1)
-    elev_m = round(Int, Φ₀_arr[i_site, j_site] / g)
+    # Site header; elevation from the regridded ETOPO field at the nearest cell.
+    i_site = argmin(abs.(λ_c .- λ_site))
+    j_site = argmin(abs.(φ_c .- φ_site))
+    elev_m = round(Int, elevation_m[i_site, j_site])
     Label(fig[2*row - 1, 1:Ncols], "$label (elevation: $elev_m m)";
           fontsize=15, font=:bold, halign=:center, tellwidth=false)
 
-    for (col, (vname, lam_arr, lam_final_arr, era5_arr, xlab, stagger)) in enumerate(vars)
-        # Pick the LAM cell closest to the site for this variable's stagger,
-        # then center the ERA5 bilinear stencil around the LAM cell's actual
-        # position so the blue line is exactly the bilinear mix of the
-        # plotted gray columns.
+    for (col, (vname, lam_arr, lam_final_arr, xlab, stagger)) in enumerate(vars)
         i_lam = stagger == :xface ? argmin(abs.(λ_f .- λ_site)) :
                                     argmin(abs.(λ_c .- λ_site))
         j_lam = stagger == :yface ? argmin(abs.(φ_f .- φ_site)) :
                                     argmin(abs.(φ_c .- φ_site))
-        λ_lam = stagger == :xface ? λ_f[i_lam] : λ_c[i_lam]
-        φ_lam = stagger == :yface ? φ_f[j_lam] : φ_c[j_lam]
 
-        fi = (λ_lam - λ_e[1]) / Δλ_e + 1
-        fj = (φ_lam - φ_e[1]) / Δφ_e + 1
-        i₀ = clamp(floor(Int, fi), 1, length(λ_e) - 1)
-        j₀ = clamp(floor(Int, fj), 1, length(φ_e) - 1)
-        cells = ((i₀, j₀), (i₀+1, j₀), (i₀, j₀+1), (i₀+1, j₀+1))
+        z_km = column_height(i_lam, j_lam) ./ 1000
 
         ax = Axis(fig[2*row, col]; xlabel=xlab,
-                  ylabel       = col == 1 ? "z above surface (km)" : "",
+                  ylabel       = col == 1 ? "height (km)" : "",
                   xlabelsize   = 14,
                   ylabelsize   = 14)
         axs[row, col] = ax
 
-        # ERA5 columns (light gray) — the LAM cell's actual bilinear stencil
-        for (i, j) in cells
-            valid = p_era5_lev .<= p₀_arr[i, j]
-            lines!(ax, era5_arr[i, j, valid], z_above_sfc[i, j, valid] ./ 1000;
-                   color=:gray70, linewidth=1)
-        end
-
         # LAM profile at the chosen point — markers at cell centers so the
         # discretization is explicit (no implied between-cell behavior).
-        scatter!(ax, lam_arr[i_lam, j_lam, :], z_c ./ 1000;
+        scatter!(ax, lam_arr[i_lam, j_lam, :], z_km;
                  color=:steelblue, markersize=6, label="t=0")
-        scatter!(ax, lam_final_arr[i_lam, j_lam, :], z_c ./ 1000;
+        scatter!(ax, lam_final_arr[i_lam, j_lam, :], z_km;
                  color=:crimson, markersize=6, label=@sprintf("t=%.2f s", model.clock.time))
 
         ylims!(ax, 0, 15)
@@ -742,7 +650,7 @@ end
 
 axislegend(axs[1, end]; position = :rb)
 
-Label(fig[0, 1:Ncols], "ERA5 → LAM profiles  (ERA5 stencil: gray)";
+Label(fig[0, 1:Ncols], "ERA5 → terrain-following LAM profiles";
       fontsize=20, font=:bold, tellwidth=false)
 
 save("era5_breeze_profiles.png", fig)
