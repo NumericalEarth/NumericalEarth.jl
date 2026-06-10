@@ -29,12 +29,20 @@ function Base.show(io::IO, pa::PrescribedAtmosphere)
     print(io, "└── boundary_layer_height: ", prettysummary(pa.boundary_layer_height))
 end
 
+velocity_boundary_conditions(grid, loc) = FieldBoundaryConditions(grid, loc)
+
+function velocity_boundary_conditions(grid::OrthogonalSphericalShellGrids.TripolarGrid, loc)
+    north_bc = OrthogonalSphericalShellGrids.north_fold_boundary_condition(grid)(-1)
+    return FieldBoundaryConditions(grid, loc; north = north_bc)
+end
+
 # `two_dimensional = true` (default) builds a surface atmosphere; `false` builds a
 # 3D atmosphere (adds `w`) for use as a `NestedSimulation` parent.
 function default_atmosphere_velocities(grid, times; two_dimensional=true)
     if two_dimensional
-        ua = FieldTimeSeries{Center, Center, Nothing}(grid, times)
-        va = FieldTimeSeries{Center, Center, Nothing}(grid, times)
+        velocity_bcs = velocity_boundary_conditions(grid, (Center(), Center(), nothing))
+        ua = FieldTimeSeries{Center, Center, Nothing}(grid, times; boundary_conditions = velocity_bcs)
+        va = FieldTimeSeries{Center, Center, Nothing}(grid, times; boundary_conditions = velocity_bcs)
         return (u=ua, v=va)
     else
         ua = FieldTimeSeries{Center, Center, Center}(grid, times)
