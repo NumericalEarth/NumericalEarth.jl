@@ -65,10 +65,10 @@ function OSPapaPrescribedAtmosphere(architecture = CPU(), FT = Float32;
         return fts
     end
 
-    ua = ospapa_fts(:eastward_wind)
-    va = ospapa_fts(:northward_wind)
-    Ta = ospapa_fts(:air_temperature)     # K  (Celsius conversion)
-    Pa = ospapa_fts(:sea_level_pressure)  # Pa (Millibar conversion)
+    ua   = ospapa_fts(:eastward_wind)
+    va   = ospapa_fts(:northward_wind)
+    Ta   = ospapa_fts(:air_temperature)     # K  (Celsius conversion)
+    Pa   = ospapa_fts(:sea_level_pressure)  # Pa (Millibar conversion)
     rain = ospapa_fts(:rain)                # kg/m²/s (MillimetersPerHour conversion)
 
     thermo_params = AtmosphereThermodynamicsParameters(FT)
