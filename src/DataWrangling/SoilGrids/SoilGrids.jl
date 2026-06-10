@@ -15,7 +15,7 @@ using ..DataWrangling: DataWrangling,
 import Oceananigans
 
 """
-    SoilGridsStatistic
+    Statistic
 
 Enum corresponding to the various prediction layers provided by the SoilGrids 2.0 dataset.
 Since SoilGrids was produced using quantile regression, multiple output statistics are available
@@ -26,7 +26,7 @@ analyses to check how sensitive model simulations are to uncertainty in soil pro
 the spread of the distribution should be expected to be larger in data-sparse regions such as
 remote islands, deserts, and the Arctic.
 """
-@enum SoilGridsStatistic Mean Q5 Q50 Q95
+@enum Statistic Mean Q5 Q50 Q95
 
 download_SoilGrids2_cache::String = ""
 function __init__()
@@ -34,8 +34,8 @@ function __init__()
 end
 
 @kwdef struct SoilGrids2 <: AbstractStaticDataset
-    "Specifies which dataset layer to load variables from; see [SoilGridsStatistic](@ref). Defaults to `Mean`"
-    statistic::SoilGridsStatistic = Mean
+    "Specifies which dataset layer to load variables from; see [SoilGrids.Statistic](@ref). Defaults to `Mean`"
+    statistic::Statistic = Mean
 end
 
 # Variable name mappings from NumericalEarth names to SoilGrids2 variable names
