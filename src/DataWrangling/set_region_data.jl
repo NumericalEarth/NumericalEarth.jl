@@ -189,6 +189,9 @@ end
     return ifelse(isnan(near), blend(Linear(), data, c, k, mangling, missing_val, FT), near)
 end
 
+# Fallback dispatch that assumes missing_val = missing
+blend(scheme, data, c, k, mangling, FT) = blend(scheme, data, c, k, mangling, missing, FT)
+
 @kernel function _set_region_kernel!(dst, data, region, mangling, conversion, missing_val, FT)
     i, j, k = @index(Global, NTuple)
     d = read_data(data, i, j, k, region, mangling, missing_val, FT)
