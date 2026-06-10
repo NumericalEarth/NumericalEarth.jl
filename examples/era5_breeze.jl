@@ -177,6 +177,51 @@ Breeze.TerrainFollowingDiscretization.set_topography!(h_field, grid, topography)
 elevation = regrid_topography(grid; dataset = ETOPO2022())
 metrics   = follow_terrain!(grid, elevation)
 
+# ## Nested domains
+#
+# Visualize the nesting before stepping the model: the ERA5 forcing region that
+# supplies the parent state (lateral BCs + Davies fringe) and the 3 km LAM —
+# Fan (2017)'s Domain 3, the `NestedSimulation` child — over ETOPO terrain,
+# centered on ARM SGP. Drawn here (not with the profile plots below) so the
+# domain geometry is written even if the run is cut short.
+
+using CairoMakie
+
+map_lon = (era5_region.longitude[1] - 0.5, era5_region.longitude[2] + 0.5)
+map_lat = (era5_region.latitude[1]  - 0.5, era5_region.latitude[2]  + 0.5)
+map_grid = LatitudeLongitudeGrid(CPU();
+                                 longitude = map_lon, latitude = map_lat,
+                                 z         = (0, 1),
+                                 size      = (480, 432, 1),
+                                 topology  = (Bounded, Bounded, Bounded))
+map_elevation = regrid_topography(map_grid; dataset = ETOPO2022())
+
+# Closed rectangle path from (λ, φ) bounds.
+domain_box(λ₁, λ₂, φ₁, φ₂) = ([λ₁, λ₂, λ₂, λ₁, λ₁], [φ₁, φ₁, φ₂, φ₂, φ₁])
+
+fig_map = Figure(size = (840, 760), fontsize = 13)
+ax_map  = Axis(fig_map[1, 1]; xlabel = "longitude (°)", ylabel = "latitude (°)",
+               title  = "ERA5 → 3 km LAM nest (MC3E squall line, ARM SGP)",
+               aspect = DataAspect())
+
+hm_map = heatmap!(ax_map,
+                  collect(λnodes(map_grid, Center(), Center(), Center())),
+                  collect(φnodes(map_grid, Center(), Center(), Center())),
+                  Array(interior(map_elevation))[:, :, 1];
+                  colormap = :terrain, colorrange = (0, 2000))
+Colorbar(fig_map[1, 2], hm_map; label = "elevation (m)")
+
+lines!(ax_map, domain_box(era5_region.longitude..., era5_region.latitude...)...;
+       color = :dodgerblue, linewidth = 3, label = "ERA5 forcing (parent)")
+lines!(ax_map, domain_box(λ_west, λ_east, φ_south, φ_north)...;
+       color = :crimson, linewidth = 3, label = "3 km LAM — Fan Domain 3 (child)")
+scatter!(ax_map, [λ₀], [φ₀]; color = :black, marker = :star5, markersize = 18, label = "ARM SGP")
+
+axislegend(ax_map; position = :rt, framevisible = true, backgroundcolor = (:white, 0.85))
+
+save("era5_breeze_domains.png", fig_map)
+@info "Wrote era5_breeze_domains.png"
+
 # ## Thermodynamic constants
 #
 # All thermodynamic parameters used downstream (moist gas law, liquid-ice
@@ -556,8 +601,6 @@ run!(nested)
 # comparing the initial state (blue) with the post-run state (red). The vertical
 # coordinate is the true physical height of the terrain-following grid, so each
 # profile's lowest marker sits at the local ETOPO surface elevation.
-
-using CairoMakie
 
 sites = [("East TX",     -93.5,   34.0),
          ("SGP",         -97.485, 36.605),
