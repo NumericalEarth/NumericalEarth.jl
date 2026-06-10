@@ -52,17 +52,17 @@ function os_papa_prescribed_fluxes(architecture = CPU(), FT = Float64;
         return fts
     end
 
-    return (; Qnet = flux_fts(:net_heat_flux),
-              Qlat = flux_fts(:latent_heat_flux),
-              Qsen = flux_fts(:sensible_heat_flux),
+    return (; Qnet  = flux_fts(:net_heat_flux),
+              Qlat  = flux_fts(:latent_heat_flux),
+              Qsen  = flux_fts(:sensible_heat_flux),
               SWnet = flux_fts(:net_shortwave_radiation),
               LWnet = flux_fts(:net_longwave_radiation),
-              τx = flux_fts(:zonal_stress),
-              τy = flux_fts(:meridional_stress),
-              evap = flux_fts(:evaporation),
-              rain = flux_fts(:rain),
-              EMP = flux_fts(:evaporation_minus_precipitation),
-              Tsk = flux_fts(:skin_temperature))
+              τx    = flux_fts(:zonal_stress),
+              τy    = flux_fts(:meridional_stress),
+              evap  = flux_fts(:evaporation),
+              rain  = flux_fts(:rain),
+              EMP   = flux_fts(:evaporation_minus_precipitation),
+              Tsk   = flux_fts(:skin_temperature))
 end
 
 """
