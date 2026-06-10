@@ -181,11 +181,36 @@ metrics   = follow_terrain!(grid, elevation)
 #
 # Visualize the nesting before stepping the model: the ERA5 forcing region that
 # supplies the parent state (lateral BCs + Davies fringe) and the 3 km LAM —
-# Fan (2017)'s Domain 3, the `NestedSimulation` child — over ETOPO terrain,
-# centered on ARM SGP. Drawn here (not with the profile plots below) so the
-# domain geometry is written even if the run is cut short.
+# Fan (2017)'s Domain 3, the `NestedSimulation` child — over ETOPO terrain with
+# Natural Earth state/country boundaries, centered on ARM SGP. Drawn here (not
+# with the profile plots below) so the domain geometry is written even if the run
+# is cut short.
 
 using CairoMakie
+using NaturalEarth
+import GeoInterface as GI
+
+# Flatten a Natural Earth (Multi)LineString feature collection to NaN-separated
+# lon/lat vectors that CairoMakie's `lines!` draws as disjoint border segments.
+append_border!(lons, lats, geom) = append_border!(lons, lats, GI.geomtrait(geom), geom)
+function append_border!(lons, lats, ::GI.LineStringTrait, line)
+    for p in GI.getpoint(line)
+        push!(lons, GI.x(p)); push!(lats, GI.y(p))
+    end
+    push!(lons, NaN); push!(lats, NaN)
+end
+append_border!(lons, lats, ::GI.MultiLineStringTrait, multiline) =
+    foreach(line -> append_border!(lons, lats, line), GI.getgeom(multiline))
+append_border!(lons, lats, ::Any, geom) = nothing
+
+function natural_earth_lines(name)
+    lons, lats = Float64[], Float64[]
+    for feature in naturalearth(name, 50)
+        geom = GI.geometry(feature)
+        isnothing(geom) || append_border!(lons, lats, geom)
+    end
+    return lons, lats
+end
 
 map_lon = (era5_region.longitude[1] - 0.5, era5_region.longitude[2] + 0.5)
 map_lat = (era5_region.latitude[1]  - 0.5, era5_region.latitude[2]  + 0.5)
@@ -211,6 +236,14 @@ hm_map = heatmap!(ax_map,
                   colormap = :terrain, colorrange = (0, 2000))
 Colorbar(fig_map[1, 2], hm_map; label = "elevation (m)")
 
+# Coastline, US state lines, and country borders over the terrain.
+for (name, color, linewidth) in (("coastline",                      (:black,  0.45), 0.8),
+                                 ("admin_1_states_provinces_lines", (:gray20, 0.55), 0.7),
+                                 ("admin_0_boundary_lines_land",     (:black,  0.75), 1.4))
+    lon, lat = natural_earth_lines(name)
+    lines!(ax_map, lon, lat; color, linewidth)
+end
+
 lines!(ax_map, domain_box(era5_region.longitude..., era5_region.latitude...)...;
        color = :dodgerblue, linewidth = 3, label = "ERA5 forcing (parent)")
 lines!(ax_map, domain_box(λ_west, λ_east, φ_south, φ_north)...;
@@ -218,6 +251,10 @@ lines!(ax_map, domain_box(λ_west, λ_east, φ_south, φ_north)...;
 scatter!(ax_map, [λ₀], [φ₀]; color = :black, marker = :star5, markersize = 18, label = "ARM SGP")
 
 axislegend(ax_map; position = :rt, framevisible = true, backgroundcolor = (:white, 0.85))
+
+# Clip to the map region — the Natural Earth lines span the globe.
+xlims!(ax_map, map_lon...)
+ylims!(ax_map, map_lat...)
 
 save("era5_breeze_domains.png", fig_map)
 @info "Wrote era5_breeze_domains.png"
