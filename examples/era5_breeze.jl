@@ -45,15 +45,22 @@ end
 #
 # Domain centered on the U.S. Department of Energy's Atmospheric Radiation
 # Measurement (ARM) Climate Research Facility's Southern Great Plains (SGP)
-# site in Lamont, OK. Angular grid steps are chosen so that the physical cells
-# are roughly square (~3 km) at the center latitude, using R = 6,371 km:
+# site in Lamont, OK. We match the 3 km inner domain (Domain 3) of the WRF
+# nest used by [Fan2017](@citet) for this MC3E case: a 27 → 9 → 3 km telescoping
+# nest. Their 1 km Domain 4 ("nest-down") is left out for now — that finer nest
+# is the natural next step for a `NestedSimulation` child.
+#
+# [Fan2017](@citet)'s Domain 3 carries 301 × 271 WRF grid points. Those count staggered
+# (cell-edge) locations, so they map to 300 × 270 Breeze *cells* (cells = points − 1).
+# Angular grid steps are chosen so that the physical cells are roughly square
+# (~3 km) at the center latitude, using R = 6,371 km:
 #   Δx = R·cos(φ₀)·Δλ ≈ 3.03 km
 #   Δy = R·Δφ         ≈ 3.00 km
 
 φ₀, λ₀ = 36.605, -97.485    # center latitude, longitude (deg)
 
 Δλ, Δφ = 0.034, 0.027       # grid spacings (deg)
-Nx, Ny = 256, 256
+Nx, Ny = 300, 270           # Fan et al. (2017) Domain 3: 301 × 271 points − 1
 
 # From these inputs, we determine the `BoundingBox` corners.
 
@@ -62,22 +69,25 @@ Nx, Ny = 256, 256
 φ_south = φ₀ - Ny * Δφ / 2
 φ_north = φ₀ + Ny * Δφ / 2
 
-# Vertical grid: Oceananigans' `ReferenceToStretchedDiscretization` gives one
-# constant 50 m cell at the surface, then a linear 1.08× stretching per cell
-# until Δz hits the 1 km cap, then uniform 1 km cells out to Lz ≈ 37 km —
-# comfortably below the ERA5 1 hPa top. `Nz` is determined by the stretching
-# law (≈ 64 with these parameters).
+# Vertical grid: matched to [Fan2017](@citet), who use 51 vertical levels with
+# spacing ~60 m at the lowest levels stretching to ~490 m aloft. WRF's 51 levels
+# count staggered (w) interfaces, so they map to 50 Breeze *cells*. Oceananigans'
+# `ReferenceToStretchedDiscretization` gives one constant 60 m cell at the
+# surface, then a 1.08× stretching per cell until Δz hits the 490 m cap, then
+# uniform 490 m cells. `extent = 16250` is tuned so the stretching law lands on
+# exactly `Nz = 50` (Lz ≈ 16.5 km, comfortably below the ERA5 1 hPa top).
 
 z_discretization = ReferenceToStretchedDiscretization(
-    extent                  = 36000.0,
+    extent                  = 16250.0,
     bias                    = :left,
     bias_edge               = 0.0,
-    constant_spacing        = 50.0,
-    constant_spacing_extent = 50.0,
-    maximum_spacing         = 1000.0,
+    constant_spacing        = 60.0,
+    constant_spacing_extent = 60.0,
+    maximum_spacing         = 490.0,
     stretching              = LinearStretching(0.08))
 
 Nz = length(z_discretization)
+@assert Nz == 50  # Fan et al. (2017): 51 staggered levels → 50 cells
 
 # ### Initial conditions
 #
