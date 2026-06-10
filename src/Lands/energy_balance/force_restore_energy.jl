@@ -86,7 +86,7 @@ function time_step!(energy::ForceRestoreEnergy, land, Δt, time)
     return nothing
 end
 
-surface_temperature(::ForceRestoreEnergy, land) = land.temperature
+EarthSystemModels.surface_temperature(::ForceRestoreEnergy, land) = land.temperature
 
 Base.summary(energy::ForceRestoreEnergy) =
     string("ForceRestoreEnergy(dry_heat_capacity=", prettysummary(energy.dry_heat_capacity),
