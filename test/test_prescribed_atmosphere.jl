@@ -1,4 +1,5 @@
 include("runtests_setup.jl")
+include("download_utils.jl")
 
 using CDSAPI
 
@@ -34,8 +35,23 @@ end
 @testset "Regridded prescribed atmosphere tripolar velocity zipper sign" begin
 
     era5_dataset = ERA5HourlySingleLevel()
-    era5_start = first_date(era5_dataset, :temperature)
+    # Use a known-good ERA5 timestamp instead of the earliest available
+    # temperature date: `ERA5PrescribedAtmosphere` also requests total
+    # precipitation, and the CDS/MARS archive can return `MarsNoDataError`
+    # for the generic 1940-01-01 hourly window.
+    era5_start = DateTime(2005, 2, 16, 12)
     era5_end = era5_start + Hour(1)
+    era5_dates = era5_start:Hour(1):era5_end
+
+    # Pre-download the small ERA5 window through the artifacts fallback so this
+    # test does not depend on live CDS access or accepted licences.
+    for name in (:eastward_velocity, :northward_velocity, :temperature,
+                 :dewpoint_temperature, :surface_pressure, :total_precipitation)
+        md = Metadata(name; dataset = era5_dataset, dates = era5_dates)
+        download_dataset_with_fallback(metadata_path(md); dataset_name = "ERA5Hourly $name") do
+            download(md)
+        end
+    end
 
     ospapa_dataset = OSPapaHourly()
     ospapa_start = first_date(ospapa_dataset, :air_temperature)
