@@ -313,3 +313,34 @@ end
     @test all(isfinite, Array(interior(child.velocities.u)))
     @test all(isfinite, Array(interior(child.dynamics.density)))
 end
+
+# Coupling a Breeze `CompressibleDynamics` atmosphere to a `SlabLand` via
+# `AtmosphereLandModel`, then wrapping it as a `NestedSimulation` child. The coupled
+# `update_state!` runs `interpolate_state!`, which must handle compressible dynamics
+# (prognostic density, no anelastic reference state) via the Breeze ext's
+# `dynamics_density`/`surface_pressure` accessors. Construction-level: stepping the
+# coupled child awaits a Breeze energy-flux/qᵛ fix for the compressible path.
+@testset "AtmosphereLandModel (compressible Breeze) as a NestedSimulation child on $(arch)" for arch in test_architectures
+    atmos_grid = RectilinearGrid(arch; size = (8, 8, 16),
+                                 x = (0, 8000), y = (0, 8000), z = (0, 8000),
+                                 halo = (5, 5, 5), topology = (Periodic, Periodic, Bounded))
+    land_grid = RectilinearGrid(arch; size = (8, 8), x = (0, 8000), y = (0, 8000),
+                                halo = (atmos_grid.Hx, atmos_grid.Hy), topology = (Periodic, Periodic, Flat))
+
+    atmos = atmosphere_simulation(atmos_grid; dynamics = CompressibleDynamics(surface_pressure = 1e5))
+    set!(atmos.model; ρ = 1.2, θˡⁱ = 288.0, qᵗ = 0.0)
+
+    land = SlabLand(land_grid)
+    set!(land.temperature, 288.0)
+    set!(land.water_storage, 50.0)
+    Oceananigans.TimeSteppers.update_state!(land)
+
+    alm = AtmosphereLandModel(atmos, land)            # radiation = nothing (radiatively decoupled)
+
+    parent = PrescribedAtmosphere(atmos_grid, [0.0, 100.0];
+                                  two_dimensional = false, freshwater_flux = nothing,
+                                  thermodynamics_parameters = nothing)
+    nested = NestedSimulation(parent, alm; Δt = 0.05, stop_iteration = 2)
+    @test nested isa Simulation                       # NestedModel accepted the coupled child
+    @test all(isfinite, Array(interior(atmos.model.dynamics.density)))
+end
