@@ -1,9 +1,9 @@
 """
     ospapa_specific_humidity_fts(RHa, Ta, Pa, params)
 
-Build a `FieldTimeSeries` of specific humidity (kg/kg) from OS Papa relative humidity
-(in %), air temperature (K), and pressure (Pa), using `Thermodynamics.q_vap_from_RH`
-with the `Liquid()` saturation curve.
+Build a `FieldTimeSeries` of specific humidity (kg/kg) from Ocean Station Papa
+relative humidity (in %), air temperature (K), and pressure (Pa),
+using `Thermodynamics.q_vap_from_RH` with the `Liquid()` saturation curve.
 """
 function ospapa_specific_humidity_fts(RHa, Ta, Pa, params)
     LX, LY, LZ = location(Ta)
@@ -28,12 +28,12 @@ already cached locally.
 
 !!! note "Radiation and albedo"
     The buoy `SW` and `LW` variables are **downwelling** fluxes. When this
-    atmosphere is used with `OceanOnlyModel`, ClimaOcean applies its own
-    ocean albedo (default α = 0.05) to compute net absorbed shortwave, and
-    computes upwelling longwave from the model SST via Stefan-Boltzmann. This
-    means the resulting net heat flux will differ from the COARE-computed
-    `QNET` available via [`os_papa_prescribed_fluxes`](@ref). If you need the
-    exact observed net fluxes, use [`os_papa_prescribed_flux_boundary_conditions`](@ref)
+    atmosphere is used with `OceanOnlyModel`, NumericalEarth applies its own
+    ocean albedo (default ``α = 0.05``) to compute net absorbed shortwave, and
+    computes upwelling longwave from the model sea-surface temperature via the
+    Stefan-Boltzmann law. This means the resulting net heat flux will differ from
+    the COARE-computed `QNET` available via [`os_papa_prescribed_fluxes`](@ref).
+    If you need the exact observed net fluxes, use [`os_papa_prescribed_flux_boundary_conditions`](@ref)
     instead.
 
 Keyword Arguments

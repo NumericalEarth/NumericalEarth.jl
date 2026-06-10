@@ -162,7 +162,7 @@ function retrieve_data(metadata::OSPapaMetadatum)
 
     if isnothing(t_idx)
         close(ds)
-        error("Date $(metadata.dates) not found in OS Papa dataset")
+        error("Date $(metadata.dates) not found in Ocean Station Papa dataset")
     end
 
     if is_three_dimensional(metadata)
