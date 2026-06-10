@@ -14,7 +14,19 @@ using ..DataWrangling: DataWrangling,
 
 import Oceananigans
 
-@enum SoilGridsStatistic mean Q5 Q50 Q95
+"""
+    SoilGridsStatistic
+
+Enum corresponding to the various prediction layers provided by the SoilGrids 2.0 dataset.
+Since SoilGrids was produced using quantile regression, multiple output statistics are available
+that capture uncertainty in estimates for each variable. The default is `Mean` which represents the
+most likely value. The 5th (`Q5`), 50th (`Q50`), and 95% (`Q90`) percentiles/quantiles represent the
+lower, middle, and upper bound of the predictions for each variable. These could be used in sensitivity
+analyses to check how sensitive model simulations are to uncertainty in soil properties. Note that
+the spread of the distribution should be expected to be larger in data-sparse regions such as
+remote islands, deserts, and the Arctic.
+"""
+@enum SoilGridsStatistic Mean Q5 Q50 Q95
 
 download_SoilGrids2_cache::String = ""
 function __init__()
@@ -22,8 +34,8 @@ function __init__()
 end
 
 @kwdef struct SoilGrids2 <: AbstractStaticDataset
-    "Specifies which statistic to load from the dataset; defaults to `mean`"
-    statistic::SoilGridsStatistic = mean
+    "Specifies which dataset layer to load variables from; see [SoilGridsStatistic](@ref). Defaults to `Mean`"
+    statistic::SoilGridsStatistic = Mean
 end
 
 # Variable name mappings from NumericalEarth names to SoilGrids2 variable names
@@ -93,7 +105,8 @@ function DataWrangling.retrieve_data(metadata::SoilGrids2Metadatum)
 
     # Open NetCDF file
     data = Dataset(path) do ds
-        data = ds[name][:, :, :, Int(metadata.dataset.statistic) + 1]
+        l = Int(metadata.dataset.statistic) + 1
+        data = ds[name][:, :, :, l]
         # Reverse vertical axis to be increasing upwards
         reverse(data, dims = 3)
     end
