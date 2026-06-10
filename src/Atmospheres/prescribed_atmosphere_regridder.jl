@@ -2,8 +2,10 @@ function EarthSystemModels.InterfaceComputations.ComponentExchanger(atmosphere::
                                                                     correction = nothing)
     regridder = atmosphere_regridder(atmosphere, grid)
 
-    state = (; u   = Field{Center, Center, Nothing}(grid),
-               v   = Field{Center, Center, Nothing}(grid),
+    velocity_bcs = velocity_boundary_conditions(grid, (Center(), Center(), nothing))
+
+    state = (; u   = Field{Center, Center, Nothing}(grid; boundary_conditions = velocity_bcs),
+               v   = Field{Center, Center, Nothing}(grid; boundary_conditions = velocity_bcs),
                T   = Field{Center, Center, Nothing}(grid),
                p   = Field{Center, Center, Nothing}(grid),
                q   = Field{Center, Center, Nothing}(grid),
