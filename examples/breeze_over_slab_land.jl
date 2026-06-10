@@ -78,8 +78,8 @@ land_grid = RectilinearGrid(arch;
                             topology = (Periodic, Flat, Flat))
 
 # A conservative, variably-saturated hydrology replaces the classic clamped
-# bucket. Storage is the augmented liquid fraction `ϑˡ = θˡ + Sₛ max(Π, 0)`,
-# so wetting beyond saturation (`Mˡᵃ > Mˡᵃ⁺ = ρˡ ν D`) is admitted and
+# bucket. Storage is the augmented liquid fraction `ϑˡ = θˡ + max(Π, 0)/hˢˢ`,
+# so wetting beyond saturation (`Mˡᵃ > Mˡᵃ⁺ = ρˡ ν hˡᵃ`) is admitted and
 # corresponds to positive pressure head rather than a hard clamp. We use Van
 # Genuchten retention and conductivity, free drainage at the bottom (a small
 # bulk soil drainage), and an infiltration-capacity runoff closure for any
@@ -89,7 +89,7 @@ hydrology = VariablySaturatedHydrology(eltype(land_grid);
     slab_depth = 1.0,
     porosity = 0.4,
     residual_liquid_fraction = 0.05,
-    specific_storage = 1e-3,
+    storage_height = 1000,
     critical_saturation = 0.5,
     retention_curve = VanGenuchtenRetention(α = 1.0, n = 2.0),
     hydraulic_conductivity = VanGenuchtenConductivity(K_saturated = 1e-7, n = 2.0),

@@ -140,12 +140,13 @@ for an extended discussion.
 
 | Math | Code | Property | Description |
 |:----:|:----:|:---------|:------------|
-| ``D`` | `slab_depth` | slab depth | Vertical thickness of the integrated slab from ``z_s`` to ``z_b`` (m) |
+| ``h^{\mathrm{la}}`` | `slab_depth` | depth of prognostic land | Vertical thickness of the integrated land slab, from ``z_b`` to ``z_s`` (m) |
 | ``\nu`` | `porosity` | soil porosity | Total pore fraction (–) |
 | ``\theta^l`` | – | pore liquid fraction | Physical liquid-filled pore fraction; surface physics consumes this (–) |
-| ``\vartheta^l`` | – | augmented liquid fraction | Conservative storage variable ``= \theta^l + S_s \max(\Pi, 0)``; allows ``M^{la} > M^{la+}`` saturated overflow (–) |
+| ``\vartheta^l`` | – | augmented liquid fraction | Conservative storage variable ``= \theta^l + \max(\Pi, 0)/h^{\mathrm{ss}}``; allows ``M^{la} > M^{la+}`` saturated overflow (–) |
 | ``\theta^r`` | `residual_liquid_fraction` | residual liquid fraction | Minimum liquid-filled pore fraction (–) |
-| ``S_s`` | `specific_storage` | specific storage | Saturated pressure-storage coefficient (m⁻¹) |
+| ``\mathcal{S}`` | `saturation` | effective saturation | Effective (relative) saturation ``\mathcal{S} = \mathrm{clamp}\!\left((\theta^l - \theta^r)/(\nu - \theta^r),\, 0,\, 1\right)``; the humidity availability and the front depth ``\delta^v`` derive from it (–) |
+| ``h^{\mathrm{ss}}`` | `storage_height` | storage height | Saturated storage height — the head built per unit fractional over-saturation; reciprocal of the specific storage (``1/S_s``) (m) |
 | ``\Pi`` | – | soil pressure head | Matric/pressure head; ``\Pi \le 0`` unsaturated, ``\Pi > 0`` saturated overflow (m) |
 | ``h`` | – | hydraulic head | ``h = z + \Pi`` (m) |
 | ``K`` | – | hydraulic conductivity | Darcy conductivity (m s⁻¹) |

@@ -147,7 +147,7 @@ slab_land = SlabLand(land_grid;
         slab_depth = 1.0,
         porosity = 0.4,
         residual_liquid_fraction = 0.05,
-        specific_storage = 1e-3,
+        storage_height = 1000,
         critical_saturation = 0.5,
         retention_curve = VanGenuchtenRetention(α = 1.0, n = 2.0),
         hydraulic_conductivity = VanGenuchtenConductivity(K_saturated = 1e-7, n = 2.0),

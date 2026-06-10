@@ -12,12 +12,12 @@ using Oceananigans.TimeSteppers: time_step!
                                z = (-1, 0),
                                topology = (Flat, Flat, Bounded))
 
-        # d = 1 m, ρˡ = 1000, ν = 0.4, Sₛ = 1e-3, θʳ = 0 ⇒ M⁺ = 400 kg/m².
+        # hˡᵃ = 1 m, ρˡ = 1000, ν = 0.4, hˢˢ = 1000, θʳ = 0 ⇒ M⁺ = 400 kg/m².
         hydrology = VariablySaturatedHydrology(eltype(grid);
             slab_depth = 1.0,
             porosity = 0.4,
             residual_liquid_fraction = 0.0,
-            specific_storage = 1e-3,
+            storage_height = 1000,
             critical_saturation = 0.5,
             retention_curve = VanGenuchtenRetention(α = 1.0, n = 2.0),
             hydraulic_conductivity = VanGenuchtenConductivity(K_saturated = 1e-6, n = 2.0),
@@ -51,7 +51,7 @@ end
         hydrology = VariablySaturatedHydrology(eltype(grid);
             slab_depth = 1.0,
             porosity = 0.4,
-            specific_storage = 1e-3,
+            storage_height = 1000,
             critical_saturation = 0.5,
             retention_curve = VanGenuchtenRetention(α = 1.0, n = 2.0),
             hydraulic_conductivity = VanGenuchtenConductivity(K_saturated = 1e-6, n = 2.0),
@@ -79,7 +79,7 @@ end
         hydrology_capped = VariablySaturatedHydrology(eltype(grid);
             slab_depth = 1.0,
             porosity = 0.4,
-            specific_storage = 1e-3,
+            storage_height = 1000,
             critical_saturation = 0.5,
             retention_curve = VanGenuchtenRetention(α = 1.0, n = 2.0),
             hydraulic_conductivity = VanGenuchtenConductivity(K_saturated = 1e-6, n = 2.0),
@@ -106,7 +106,7 @@ end
         hydrology_drain = VariablySaturatedHydrology(eltype(grid);
             slab_depth = 1.0,
             porosity = 0.4,
-            specific_storage = 1e-3,
+            storage_height = 1000,
             critical_saturation = 0.5,
             retention_curve = VanGenuchtenRetention(α = 1.0, n = 2.0),
             hydraulic_conductivity = VanGenuchtenConductivity(K_saturated = 1e-6, n = 2.0),

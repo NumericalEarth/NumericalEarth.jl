@@ -74,20 +74,21 @@ so the local water-mass balance is
 ```
 
 `ϑˡ` is the **augmented liquid fraction** — the actual pore liquid
-fraction `θˡ` below saturation (`Π ≤ 0`), with `Sₛ Π` added once
+fraction `θˡ` below saturation (`Π ≤ 0`), with `Π/hˢˢ` added once
 saturated (`Π > 0`):
 
 ```math
 \vartheta^l =
 \begin{cases}
 \theta^l(\Pi), & \Pi \le 0, \\
-\nu + S_s\,\Pi, & \Pi > 0.
+\nu + \Pi/h^{\mathrm{ss}}, & \Pi > 0.
 \end{cases}
 ```
 
 Below saturation this is the standard storage variable; above
 saturation it carries the *elastic* storage of the saturated soil
-skeleton (specific storage `Sₛ`). This single-variable framing lets the
+skeleton (storage height `hˢˢ`, the reciprocal of the specific storage
+`1/Sₛ`). This single-variable framing lets the
 prognostic exceed `ν` without a hard clamp.
 
 Internal energy (ignoring ice — out of scope here):
@@ -102,7 +103,7 @@ and `∂e/∂t = −∂_z Jᴱ + Sᴱ`.
 
 ### 2.2 Depth-integrated state and diagnostics
 
-Integrating from the slab bottom `z_b = z_s − D` to the surface `z_s`:
+Integrating from the slab bottom `z_b = z_s − hˡᵃ` to the surface `z_s`:
 
 ```math
 M^{la} = \int_{z_b}^{z_s} \rho^l\vartheta^l\,dz,
@@ -110,11 +111,11 @@ M^{la} = \int_{z_b}^{z_s} \rho^l\vartheta^l\,dz,
 E^{la} = \int_{z_b}^{z_s} e\,dz.
 ```
 
-The saturation storage is `Mˡᵃ⁺ = ρˡ ν D`. The model carries `Mˡᵃ` as
+The saturation storage is `Mˡᵃ⁺ = ρˡ ν hˡᵃ`. The model carries `Mˡᵃ` as
 the prognostic and reconstructs the rest as diagnostics:
 
 ```math
-\bar\vartheta^l = \frac{M^{la}}{\rho^l D},
+\bar\vartheta^l = \frac{M^{la}}{\rho^l h^{\mathrm{la}}},
 \qquad
 \bar\theta^l = \min(\bar\vartheta^l, \nu),
 ```
@@ -123,7 +124,7 @@ the prognostic and reconstructs the rest as diagnostics:
 \bar\Pi =
 \begin{cases}
 \Pi_m(\bar\theta^l), & M^{la} < M^{la+}\quad (\text{unsaturated}), \\
-(M^{la} - M^{la+})/(\rho^l D S_s), & M^{la} \ge M^{la+}\quad (\text{saturated overflow}),
+(M^{la} - M^{la+})\,h^{\mathrm{ss}}/(\rho^l h^{\mathrm{la}}), & M^{la} \ge M^{la+}\quad (\text{saturated overflow}),
 \end{cases}
 ```
 
@@ -317,7 +318,7 @@ A few notes for users running into convergence or stability issues:
   intentionally has no upper clamp at `Mˡᵃ⁺` — overflow corresponds to
   `Π > 0`, not a state error.
 * **Saturated-storage stiffness.** The Darcy deep-flux closure is
-  acceptable as-is for `Sₛ ≥ 10⁻⁴ m⁻¹`. Smaller `Sₛ` makes saturated
+  acceptable as-is for `hˢˢ ≤ 10⁴ m`. Larger `hˢˢ` makes saturated
   overflow stiff; either document the constraint or fall back to
   `NoDeepLiquidFlux`. An implicit Darcy treatment is a follow-up.
 * **Convergence tolerances.** Default `ε_q = 10⁻¹⁰ kg kg⁻¹`, `ε_T =
@@ -330,10 +331,10 @@ A reasonable starting set for bare loamy soil:
 
 | Symbol | Role | Suggested value | Notes |
 |---|---|---:|---|
-| `D` | slab depth | 1 m | classic Manabe-bucket depth |
+| `hˡᵃ` | depth of prognostic land | 1 m | classic Manabe-bucket depth |
 | `ν` | porosity | 0.4 | loamy soil |
 | `θʳ` | residual liquid fraction | 0.05 | finite for clay |
-| `Sₛ` | specific storage | 10⁻³–10⁻⁴ m⁻¹ | smaller ⇒ stiffer overflow |
+| `hˢˢ` | storage height | 10³–10⁴ m | larger ⇒ stiffer overflow |
 | `𝒮ᶜ` | critical saturation | 0.5–0.75 | Manabe (1969) used 0.75 |
 | `δᵛ_max` | maximum evap-front depth | 0.05 m | empirical; 1–10 cm typical |
 | `δᵛ_min` | minimum / wet-branch cutoff | 10⁻⁴ m | numerical, keeps `wᵈ` finite |
@@ -356,7 +357,7 @@ land = SlabLand(land_grid;
         slab_depth = 1.0,
         porosity = 0.4,
         residual_liquid_fraction = 0.05,
-        specific_storage = 1e-3,
+        storage_height = 1000,
         critical_saturation = 0.5,
         retention_curve = VanGenuchtenRetention(α = 1.0, n = 2.0),
         hydraulic_conductivity = VanGenuchtenConductivity(K_saturated = 1e-6, n = 2.0),
@@ -419,5 +420,5 @@ The following are deferred to follow-up PRs:
   `TopographicRunoff` (more elaborate runoff closures).
 * Brooks–Corey retention curve.
 * Two-node evaporation-front energy solve (`Tᵉ` as a second residual).
-* Implicit / semi-implicit deep Darcy treatment for small `Sₛ`.
+* Implicit / semi-implicit deep Darcy treatment for large `hˢˢ`.
 * Subgrid tile blending with ocean / sea ice.

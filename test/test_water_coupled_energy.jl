@@ -22,7 +22,7 @@ using Oceananigans.TimeSteppers: time_step!
         steps = 100          # ~10000 s ≈ 0.05 * τ; small enough for the linear truncation
 
         hydrology = VariablySaturatedHydrology(eltype(grid);
-            slab_depth = 1.0, porosity = 0.4, specific_storage = 1e-3,
+            slab_depth = 1.0, porosity = 0.4, storage_height = 1000,
             critical_saturation = 0.5,
             retention_curve = VanGenuchtenRetention(α = 1.0, n = 2.0),
             hydraulic_conductivity = VanGenuchtenConductivity(K_saturated = 1e-6, n = 2.0),
@@ -69,7 +69,7 @@ end
         # Drain water out the bottom at slab temperature; with Λᵈ = 0 and no surface
         # fluxes, dE/dt = eˡ(T) Jˡ_b cancels cˡ(T−Tᵣ) dM/dt exactly ⇒ dT/dt = 0.
         hydrology = VariablySaturatedHydrology(eltype(grid);
-            slab_depth = 1.0, porosity = 0.4, specific_storage = 1e-3,
+            slab_depth = 1.0, porosity = 0.4, storage_height = 1000,
             critical_saturation = 0.5,
             retention_curve = VanGenuchtenRetention(α = 1.0, n = 2.0),
             hydraulic_conductivity = VanGenuchtenConductivity(K_saturated = 1e-6, n = 2.0),

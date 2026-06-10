@@ -220,7 +220,7 @@ Turn scalar `FT` closure parameters into
 | Closure | Parameters |
 |---|---|
 | `WaterCoupledEnergy` | `dry_heat_capacity`; verify non-scalar `deep_temperature` / `deep_conductance` on CPU + GPU |
-| `VariablySaturatedHydrology` | `porosity`, `residual_liquid_fraction`, `specific_storage`, `critical_saturation` |
+| `VariablySaturatedHydrology` | `porosity`, `residual_liquid_fraction`, `storage_height`, `critical_saturation` |
 | `VanGenuchtenRetention` | `α`, `n` |
 | `VanGenuchtenConductivity` | `K_saturated`, `n`, `ℓ` |
 | `StorageBasedEvaporationFrontDepth` | `maximum_front_depth`, `front_depth_exponent` |
@@ -317,7 +317,7 @@ through Tier-3 observation operators; they do not *set* the states.
 | `porosity` scalar | No | Yes | Tier 1 → `Field` |
 | `porosity` field from SoilGrids | Not satellite — `PreprocessedLandCovariate` | Yes (pedotransfer) | Tier 2 |
 | `residual_liquid_fraction` | Same as porosity | Yes | Same |
-| `specific_storage` | No | Yes | Closure parameter |
+| `storage_height` | No | Yes | Closure parameter |
 | `critical_saturation` | No | Yes | Closure parameter, possibly learned |
 | Van Genuchten / Mualem formulas | No | Yes | Implemented |
 | Van Genuchten parameters | Not satellite — SoilGrids | Yes (pedotransfer) | Tier 2 |
@@ -392,7 +392,7 @@ follow-ups above:
   The χ-interpolation machinery in `EvaporationFrontHumidity` is already
   in place for this.
 - **Brooks–Corey retention** alongside Van Genuchten.
-- **Implicit / semi-implicit deep Darcy** treatment for small `Sₛ`.
+- **Implicit / semi-implicit deep Darcy** treatment for large `hˢˢ`.
 - **Subgrid tile blending** with ocean / sea ice (mixed grid cells).
 - **`MatricPotentialActivity`** — Kelvin-equation suction-driven vapor
   reduction. Interface slot exists in `EvaporationFrontHumidity`;

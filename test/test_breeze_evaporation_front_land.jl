@@ -35,7 +35,7 @@ function build_coupled_test_model(arch; M_init, T_init, with_radiation = false)
     hydrology = VariablySaturatedHydrology(eltype(land_grid);
         slab_depth = 1.0, porosity = 0.4,
         residual_liquid_fraction = 0.0,
-        specific_storage = 1e-3, critical_saturation = 0.5,
+        storage_height = 1000, critical_saturation = 0.5,
         retention_curve = VanGenuchtenRetention(α = 1.0, n = 2.0),
         hydraulic_conductivity = VanGenuchtenConductivity(K_saturated = 1e-6, n = 2.0),
         deep_liquid_flux = NoDeepLiquidFlux(),

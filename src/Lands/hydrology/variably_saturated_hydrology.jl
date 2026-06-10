@@ -9,7 +9,7 @@
 #####
 ##### where every term is positive-upward (`Jˡ_s = −Pˡ + Rᴹ_sfc`). The
 ##### conservative storage variable is the *augmented* liquid fraction
-##### `ϑˡ = θˡ + Sₛ·max(Π,0)`, so `Mˡᵃ > Mˡᵃ⁺` is admitted and corresponds to
+##### `ϑˡ = θˡ + max(Π,0)/hˢˢ`, so `Mˡᵃ > Mˡᵃ⁺` is admitted and corresponds to
 ##### saturated positive-pressure storage (`Π > 0`).
 #####
 ##### Diagnostics published every step:
@@ -30,7 +30,7 @@
                                      slab_depth,
                                      porosity,
                                      residual_liquid_fraction = 0,
-                                     specific_storage,
+                                     storage_height,
                                      critical_saturation,
                                      liquid_density = 1000,
                                      retention_curve,
@@ -46,7 +46,9 @@ surface; positive upward at the bottom).
 * `slab_depth` (`D`, m) — slab thickness.
 * `porosity` (`ν`) — total pore fraction.
 * `residual_liquid_fraction` (`θʳ`) — minimum pore liquid (default 0).
-* `specific_storage` (`Sₛ`, m⁻¹) — saturated pressure-storage coefficient.
+* `storage_height` (`hˢˢ`, m) — saturated storage height; the reciprocal of the
+  specific storage (`1/Sₛ`), i.e. the pressure head built per unit fractional
+  over-saturation.
 * `critical_saturation` (`𝒮ᶜ`) — saturation above which `β = 1`.
 * `retention_curve` — e.g. [`VanGenuchtenRetention`](@ref).
 * `hydraulic_conductivity` — e.g. [`VanGenuchtenConductivity`](@ref).
@@ -62,7 +64,7 @@ struct VariablySaturatedHydrology{FT, R, C, DF, PD, RO} <: AbstractHydrology
     slab_depth               :: FT
     porosity                 :: FT
     residual_liquid_fraction :: FT
-    specific_storage         :: FT
+    storage_height         :: FT
     critical_saturation      :: FT
     liquid_density           :: FT
     retention_curve          :: R
@@ -76,7 +78,7 @@ function VariablySaturatedHydrology(FT::Type = Oceananigans.defaults.FloatType;
                                           slab_depth,
                                           porosity,
                                           residual_liquid_fraction = 0,
-                                          specific_storage,
+                                          storage_height,
                                           critical_saturation,
                                           liquid_density = 1000,
                                           retention_curve,
@@ -87,7 +89,7 @@ function VariablySaturatedHydrology(FT::Type = Oceananigans.defaults.FloatType;
     return VariablySaturatedHydrology(convert(FT, slab_depth),
                                             convert(FT, porosity),
                                             convert(FT, residual_liquid_fraction),
-                                            convert(FT, specific_storage),
+                                            convert(FT, storage_height),
                                             convert(FT, critical_saturation),
                                             convert(FT, liquid_density),
                                             retention_curve,
@@ -137,13 +139,13 @@ end
     FT  = typeof(M)
     ν   = convert(FT, h.porosity)
     ρˡ  = convert(FT, h.liquid_density)
-    D   = convert(FT, h.slab_depth)
-    Sₛ  = convert(FT, h.specific_storage)
-    Mˡᵃ⁺ = ρˡ * ν * D
-    # Unsaturated branch: Π = Π_m(𝒮). Saturated branch: Π = (M − M⁺)/(ρˡ D Sₛ).
+    hˡᵃ = convert(FT, h.slab_depth)
+    hˢˢ = convert(FT, h.storage_height)
+    Mˡᵃ⁺ = ρˡ * ν * hˡᵃ
+    # Unsaturated branch: Π = Π_m(𝒮). Saturated branch: Π = (M − M⁺) hˢˢ/(ρˡ hˡᵃ).
     return ifelse(M < Mˡᵃ⁺,
                   pressure_head(h.retention_curve, 𝒮),
-                  (M - Mˡᵃ⁺) / (ρˡ * D * Sₛ))
+                  (M - Mˡᵃ⁺) * hˢˢ / (ρˡ * hˡᵃ))
 end
 
 @inline moisture_availability(h, 𝒮) =
