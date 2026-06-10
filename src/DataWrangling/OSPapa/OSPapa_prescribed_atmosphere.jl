@@ -15,11 +15,11 @@ end
 
 """
     OSPapaPrescribedAtmosphere(architecture = CPU(), FT = Float32;
-                                start_date = first_date(OSPapaHourly(), :air_temperature),
-                                end_date   = last_date(OSPapaHourly(), :air_temperature),
-                                dir = download_OSPapa_cache,
-                                surface_layer_height = 2.5,
-                                max_gap_hours = 72)
+                               start_date = first_date(OSPapaHourly(), :air_temperature),
+                               end_date = last_date(OSPapaHourly(), :air_temperature),
+                               dir = download_OSPapa_cache,
+                               surface_layer_height = 2.5,
+                               max_gap_hours = 72)
 
 Construct a `PrescribedAtmosphere` from Ocean Station Papa buoy observations.
 
@@ -42,20 +42,20 @@ Keyword Arguments
 - `end_date`: end of the time range
 - `dir`: directory for cached data files
 - `surface_layer_height`: measurement height in meters (default: 2.5, matching
-  the buoy's temperature/humidity instruments)
+                          the buoy's temperature/humidity instruments)
 - `max_gap_hours`: maximum gap size (in hours) to fill by linear interpolation
-  (default: 72)
+                   (default: 72)
 """
 function OSPapaPrescribedAtmosphere(architecture = CPU(), FT = Float32;
                                     start_date = first_date(OSPapaHourly(), :air_temperature),
-                                    end_date   = last_date(OSPapaHourly(), :air_temperature),
+                                    end_date = last_date(OSPapaHourly(), :air_temperature),
                                     dir = download_OSPapa_cache,
                                     surface_layer_height = 2.5,
                                     max_gap_hours = 72)
 
     mdkw = (; dataset = OSPapaHourly(), start_date, end_date, dir)
 
-    surface_grid = RectilinearGrid(architecture, FT; size=(), topology=(Flat, Flat, Flat))
+    surface_grid = RectilinearGrid(architecture, FT; size = (), topology = (Flat, Flat, Flat))
 
     function ospapa_fts(name)
         md = Metadata(name; mdkw...)
@@ -65,19 +65,19 @@ function OSPapaPrescribedAtmosphere(architecture = CPU(), FT = Float32;
         return fts
     end
 
-    ua   = ospapa_fts(:eastward_wind)
-    va   = ospapa_fts(:northward_wind)
-    Ta   = ospapa_fts(:air_temperature)     # K  (Celsius conversion)
-    Pa   = ospapa_fts(:sea_level_pressure)  # Pa (Millibar conversion)
+    ua = ospapa_fts(:eastward_wind)
+    va = ospapa_fts(:northward_wind)
+    Ta = ospapa_fts(:air_temperature)     # K  (Celsius conversion)
+    Pa = ospapa_fts(:sea_level_pressure)  # Pa (Millibar conversion)
     rain = ospapa_fts(:rain)                # kg/m²/s (MillimetersPerHour conversion)
 
     thermo_params = AtmosphereThermodynamicsParameters(FT)
     RHa = ospapa_fts(:relative_humidity)
-    qa  = ospapa_specific_humidity_fts(RHa, Ta, Pa, thermo_params)
+    qa = ospapa_specific_humidity_fts(RHa, Ta, Pa, thermo_params)
 
     return PrescribedAtmosphere(ua.grid, ua.times;
-                                velocities = (u=ua, v=va),
-                                tracers = (T=Ta, q=qa),
+                                velocities = (u = ua, v = va),
+                                tracers = (T = Ta, q = qa),
                                 pressure = Pa,
                                 freshwater_flux = PrescribedPrecipitationFlux(; rain),
                                 thermodynamics_parameters = thermo_params,
