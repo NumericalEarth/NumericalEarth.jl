@@ -212,12 +212,16 @@ function natural_earth_lines(name)
     return lons, lats
 end
 
-map_lon = (era5_region.longitude[1] - 0.5, era5_region.longitude[2] + 0.5)
-map_lat = (era5_region.latitude[1]  - 0.5, era5_region.latitude[2]  + 0.5)
+# A 2.5° buffer around the ERA5 box leaves the nest well inside the map edge;
+# the basemap grid samples ETOPO at ~0.03° (≈ 3 km).
+map_buffer = 2.5
+map_lon = (era5_region.longitude[1] - map_buffer, era5_region.longitude[2] + map_buffer)
+map_lat = (era5_region.latitude[1]  - map_buffer, era5_region.latitude[2]  + map_buffer)
 map_grid = LatitudeLongitudeGrid(CPU();
                                  longitude = map_lon, latitude = map_lat,
                                  z         = (0, 1),
-                                 size      = (480, 432, 1),
+                                 size      = (round(Int, (map_lon[2] - map_lon[1]) / 0.03),
+                                              round(Int, (map_lat[2] - map_lat[1]) / 0.03), 1),
                                  topology  = (Bounded, Bounded, Bounded))
 map_elevation = regrid_topography(map_grid; dataset = ETOPO2022())
 
@@ -233,7 +237,7 @@ hm_map = heatmap!(ax_map,
                   collect(λnodes(map_grid, Center(), Center(), Center())),
                   collect(φnodes(map_grid, Center(), Center(), Center())),
                   Array(interior(map_elevation))[:, :, 1];
-                  colormap = :terrain, colorrange = (0, 2000))
+                  colormap = :terrain, colorrange = (0, 3000))
 Colorbar(fig_map[1, 2], hm_map; label = "elevation (m)")
 
 # Coastline, US state lines, and country borders over the terrain.
@@ -364,7 +368,7 @@ function regrid_pressure(metadatum, target_grid)
     interior(lnp_native) .= log.(interior(pf))
     fill_halo_regions!(lnp_native)
     lnp = CenterField(target_grid)
-    interpolate!(lnp, lnp_native)
+    DataWrangling.interpolate_physical!(lnp, lnp_native)  # terrain-following-aware regrid
     p = CenterField(target_grid)
     interior(p) .= exp.(interior(lnp))
     fill_halo_regions!(p)
