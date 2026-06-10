@@ -43,16 +43,6 @@ end
     era5_end = era5_start + Hour(1)
     era5_dates = era5_start:Hour(1):era5_end
 
-    # Pre-download the small ERA5 window through the artifacts fallback so this
-    # test does not depend on live CDS access or accepted licences.
-    for name in (:eastward_velocity, :northward_velocity, :temperature,
-                 :dewpoint_temperature, :surface_pressure, :total_precipitation)
-        md = Metadata(name; dataset = era5_dataset, dates = era5_dates)
-        download_dataset_with_fallback(metadata_path(md); dataset_name = "ERA5Hourly $name") do
-            download(md)
-        end
-    end
-
     ospapa_dataset = OSPapaHourly()
     ospapa_start = first_date(ospapa_dataset, :air_temperature)
     ospapa_end = ospapa_start + Hour(1)
