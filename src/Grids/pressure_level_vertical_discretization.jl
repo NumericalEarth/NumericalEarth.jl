@@ -156,12 +156,15 @@ end
 @inline rnodes(grid::PressureLevelGrid, ::Nothing, ::Nothing, ℓz; kwargs...) = mean_height_profile(grid)
 
 function mean_height_profile(grid::PressureLevelGrid)
-    g = grid.z.gravitational_acceleration
+    g  = grid.z.gravitational_acceleration
     Φi = geopotential_data_for_extrema(grid.z.geopotential)
-    Nz = grid.Nz
-    # `selectdim(Φi, 3, k)` works for both 3-D (Field) and 4-D (TSI parent)
-    # geopotential storage; the trailing dims are reduced away by `mean`.
-    return [mean(selectdim(Φi, 3, k)) / g for k in 1:Nz]
+    # Reduce every dim except the vertical (3): the horizontals always, plus time
+    # for a `TimeSeriesInterpolation` parent (4-D). `mean(; dims)` is a GPU-safe
+    # reduction — the previous `mean(selectdim(Φi, 3, k))` scalar-indexed (`first`)
+    # the per-slice `CuArray`, which is disallowed on the GPU.
+    reduce_dims = Tuple(d for d in 1:ndims(Φi) if d != 3)
+    Φ̄ = dropdims(mean(Φi; dims = reduce_dims); dims = reduce_dims)
+    return Array(Φ̄) ./ g
 end
 
 # `znodes(::Field)` on a `PressureLevelGrid`:
