@@ -3,7 +3,8 @@ using Oceananigans.BoundaryConditions: DefaultBoundaryCondition
 using Oceananigans.DistributedComputations: DistributedGrid, all_reduce
 using Oceananigans.Grids: inactive_node
 using Oceananigans.OrthogonalSphericalShellGrids
-using Oceananigans.TurbulenceClosures: VerticallyImplicitTimeDiscretization
+using Oceananigans.TurbulenceClosures: VerticallyImplicitTimeDiscretization,
+                                       HorizontalScalarBiharmonicDiffusivity
 using Oceananigans.TurbulenceClosures.TKEBasedVerticalDiffusivities: CATKEVerticalDiffusivity,
                                                                      CATKEMixingLength,
                                                                      CATKEEquation
@@ -82,6 +83,24 @@ function default_ocean_closure(FT=Oceananigans.defaults.FloatType)
     mixing_length = CATKEMixingLength(Cᵇ=0.01)
     turbulent_kinetic_energy_equation = CATKEEquation(Cᵂϵ=1.0)
     return CATKEVerticalDiffusivity(VerticallyImplicitTimeDiscretization(), FT; mixing_length, turbulent_kinetic_energy_equation)
+end
+
+@inline _area_scaled_biharmonic_viscosity(i, j, k, grid, ℓx, ℓy, ℓz, clock, fields, λ) =
+    Az(i, j, k, grid, ℓx, ℓy, ℓz)^2 / λ
+
+"""
+    area_scaled_biharmonic_viscosity(FT=Oceananigans.defaults.FloatType; timescale=15days)
+
+Return a `HorizontalScalarBiharmonicDiffusivity` with a grid-area-scaled viscosity
+coefficient `ν = Az² / timescale`, where `Az` is the horizontal area of each grid cell.
+This produces a viscosity that adapts to local grid cell size, providing appropriate
+damping at all latitudes.
+"""
+function area_scaled_biharmonic_viscosity(FT=Oceananigans.defaults.FloatType; timescale=15days)
+    return HorizontalScalarBiharmonicDiffusivity(FT;
+        ν = _area_scaled_biharmonic_viscosity,
+        discrete_form = true,
+        parameters = timescale)
 end
 
 # Two-band shortwave penetration in the Paulson & Simpson (1977) form,

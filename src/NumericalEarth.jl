@@ -108,6 +108,7 @@ export
     DatasetRestoring,
     atmosphere_simulation,
     ocean_simulation,
+    area_scaled_biharmonic_viscosity,
     sea_ice_simulation,
     default_sea_ice,
     sea_ice_dynamics,
