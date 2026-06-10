@@ -81,12 +81,17 @@ Nz = length(z_discretization)
 
 # ### Initial conditions
 #
-# We've selected a case day from the Holistic Interactions of Shallow Clouds,
-# Aerosols and Land Ecosystems (HI-SCALE) campaign at the ARM SGP site.
-# This period features clear skies with periods of cirrus.
+# We target the 20 May 2011 squall-line MCS from the Midlatitude Continental
+# Convective Clouds Experiment (MC3E) at the ARM SGP site, the case studied by
+# [Fan2017](@citet). A NE–SW oriented quasi-linear mesoscale convective system
+# developed over the Southern Great Plains overnight, peaking in size around
+# 1100 UTC with leading deep convection and trailing stratiform precipitation.
+# Following the paper, we initialize at 0000 UTC and force for 18 h, spanning
+# the convective development (~0600–1000 UTC) and the mature line's passage
+# over SGP.
 
-start_date = DateTime(2016, 09, 10, 12) # 7 am LT
-end_date   = DateTime(2016, 09, 10, 18) # 1 pm LT
+start_date = DateTime(2011, 05, 20, 0)  # 7 pm LT (previous day)
+end_date   = DateTime(2011, 05, 20, 18) # 1 pm LT
 
 dates = start_date:Hour(1):end_date
 
