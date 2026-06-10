@@ -3,6 +3,9 @@ using Oceananigans.Fields: set!
 using NumericalEarth: NumericalEarth
 using NumericalEarth.EarthSystemModels: EarthSystemModel, ocean_salinity
 
+const veros_version = "1.6.2"
+const veros_requirements_url = "https://raw.githubusercontent.com/team-ocean/veros/v$(veros_version)/requirements.txt"
+
 """
     install_veros()
 
@@ -11,22 +14,23 @@ Returns a NamedTuple containing package information if successful.
 Also patches Veros's signal handling to work with PythonCall.
 """
 function install_veros()
-    # Veros uses hdf5 < 2. The shenanigans in the following two lines
-    # are necessary to allow loading compatible hdf5 and h5py.
-    CondaPkg.add("hdf5"; version="<2", channel="conda-forge")
-    CondaPkg.add("h5py"; version=">=3.0,<3.13", channel="conda-forge")
-    # veros main pins requests==2.34.0; drop once team-ocean/veros#829 merges
-    CondaPkg.add("requests"; version="==2.34.0", channel="conda-forge")
-    # veros main pins tqdm==4.67.3 (requirements.txt); without this the conda
-    # solve pulls a newer conda-forge tqdm (e.g. 4.68.1) that pixi cannot
-    # reconcile with veros's pip requirement ("failed to solve the pypi
-    # requirements"). Drop/loosen once veros loosens its tqdm pin.
-    CondaPkg.add("tqdm"; version="==4.67.3", channel="conda-forge")
-    CondaPkg.add_pip("veros", version="@ https://github.com/team-ocean/veros/archive/refs/heads/main.zip")
+    # Veros' setup.py rewrites every `==` pin in its requirements.txt into a `<=` cap,
+    # and pixi treats conda-installed packages as hard pins during the pip solve, so any
+    # conda-forge release newer than a veros cap makes the environment unsatisfiable.
+    # Mirroring the caps as conda pins keeps the conda solve within what veros accepts.
+    requirements = Downloads.download(veros_requirements_url, IOBuffer())
+    for line in eachline(seekstart(requirements))
+        # skip requirements with environment markers (`pkg==1.0; python_version < ...`)
+        pinned_requirement = match(r"^([A-Za-z0-9._-]+)==([^;\s]+)$", strip(line))
+        isnothing(pinned_requirement) && continue
+        package_name, pinned_version = pinned_requirement.captures
+        CondaPkg.add(package_name; version="<=" * pinned_version, channel="conda-forge", resolve=false)
+    end
+
+    CondaPkg.add_pip("veros", version="==" * veros_version)
     cli = CondaPkg.which("veros")
 
     # Patch signal handling as early as possible
-    # This ensures it's patched before any Veros modules are used
     patch_veros_signal_handling()
 
     @info "... the veros CLI has been installed at $(cli)."
