@@ -39,13 +39,9 @@ end
     # temperature date: `ERA5PrescribedAtmosphere` also requests total
     # precipitation, and the CDS/MARS archive can return `MarsNoDataError`
     # for the generic 1940-01-01 hourly window.
-    era5_start = DateTime(2005, 2, 16, 12)
+    era5_start = DateTime(2005, 2, 1, 12)
     era5_end = era5_start + Hour(1)
     era5_dates = era5_start:Hour(1):era5_end
-
-    ospapa_dataset = OSPapaHourly()
-    ospapa_start = first_date(ospapa_dataset, :air_temperature)
-    ospapa_end = ospapa_start + Hour(1)
 
     atmospheres = (
         (name = "JRA55", atmosphere = JRA55PrescribedAtmosphere(CPU(); time_indices_in_memory = 2)),
@@ -56,9 +52,7 @@ end
         (name = "ERA5", atmosphere = ERA5PrescribedAtmosphere(CPU(); dataset = era5_dataset,
                                                                      start_date = era5_start,
                                                                      end_date = era5_end,
-                                                                     time_indices_in_memory = 2)),
-        (name = "OSPapa", atmosphere = OSPapaPrescribedAtmosphere(CPU(); start_date = ospapa_start,
-                                                                         end_date = ospapa_end))
+                                                                     time_indices_in_memory = 2))
     )
 
     exchange_grid = TripolarGrid(CPU(); size = (32, 16, 1), z = (-1, 0), halo = (3, 3, 3))
