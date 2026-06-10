@@ -204,3 +204,11 @@ end
     @test sliced == (119, 241)
     @test rN == 122
 end
+
+@testset "nan_convert_missing" begin
+    @test isnan(DataWrangling.nan_convert_missing(Float32, missing, missing))
+    @test isnan(DataWrangling.nan_convert_missing(Float32, -999, -999))
+    @test DataWrangling.nan_convert_missing(Float32, 1.0, missing) === 1f0
+    @test DataWrangling.nan_convert_missing(Float32, 1.0, -999) === 1f0
+    @test DataWrangling.nan_convert_missing(Float32, Inf, -999) === Inf32
+end
