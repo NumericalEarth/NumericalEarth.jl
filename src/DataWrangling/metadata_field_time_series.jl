@@ -30,7 +30,7 @@ Keyword Arguments
                           Default: `true`.
 """
 function Oceananigans.OutputReaders.FieldTimeSeries(metadata::Metadata, arch::AbstractArchitecture=CPU(); kw...)
-    download_dataset(metadata)
+    Downloads.download(metadata)
     grid = native_grid(metadata, arch)
     return FieldTimeSeries(metadata, grid; kw...)
 end
@@ -41,7 +41,7 @@ function Oceananigans.OutputReaders.FieldTimeSeries(metadata::Metadata, grid::Ab
                                                     inpainting = default_inpainting(metadata),
                                                     cache_inpainted_data = true)
 
-    download_dataset(metadata)
+    Downloads.download(metadata)
 
     times = native_times(metadata)
 

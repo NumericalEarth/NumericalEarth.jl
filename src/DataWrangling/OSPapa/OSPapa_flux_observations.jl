@@ -40,7 +40,7 @@ default_inpainting(::OSPapaFluxMetadata) = nothing
 Base.size(::OSPapaFluxHourly, variable) = (1, 1, 1)
 
 # The uniform hourly cache file is regenerated from the raw ERDDAP file by
-# download_dataset; metadata_epoch and metadata_time_step describe the
+# download; metadata_epoch and metadata_time_step describe the
 # intended uniform axis.
 metadata_epoch(::OSPapaFluxHourly)     = DateTime(2007, 6, 8)
 metadata_time_step(::OSPapaFluxHourly) = 3600
@@ -77,8 +77,8 @@ function download_ospapa_flux(; start_date, end_date, dir=download_OSPapa_cache)
         t0 = Dates.format(start_date, "yyyy-mm-ddTHH:MM:SSZ")
         t1 = Dates.format(end_date, "yyyy-mm-ddTHH:MM:SSZ")
         url = "$(ERDDAP_BASE)/ocs_papa_flux.nc?$(ERDDAP_FLUX_VARS)&time>=$(t0)&time<=$(t1)"
-        @info "Downloading OS Papa flux data from ERDDAP..."
-        download(url, filepath; progress=DownloadProgress())
+        @info "Downloading Ocean Station Papa flux data from ERDDAP..."
+        Downloads.download(url, filepath; progress=DownloadProgress())
     end
     return filepath
 end
@@ -91,7 +91,7 @@ metadata_filename(::OSPapaFluxHourly, name, date, region) = flux_uniform_filenam
 build_filename(::OSPapaFluxHourly, name, dates::AbstractArray, region) =
     flux_uniform_filename(first(dates), last(dates))
 
-function download_dataset(md::OSPapaFluxMetadata)
+function Downloads.download(md::OSPapaFluxMetadata)
     uniform_path = joinpath(md.dir, metadata_filename(md))
     isfile(uniform_path) && return uniform_path
 
@@ -160,7 +160,7 @@ function retrieve_data(metadata::OSPapaFluxMetadatum)
 
     if isnothing(t_idx)
         close(ds)
-        error("Date $(metadata.dates) not found in OS Papa flux dataset")
+        error("Date $(metadata.dates) not found in Ocean Station Papa flux dataset")
     end
 
     raw = ds[varname][1, 1, 1, t_idx]

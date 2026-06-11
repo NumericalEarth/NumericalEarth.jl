@@ -40,7 +40,14 @@ export
     OceanOnlyModel,
     OceanSeaIceModel,
     AtmosphereOceanModel,
+    AtmosphereLandModel,
+    SkinHumidity,
+    FractionalHumidity,
+    CriticalSaturation,
+    ElevationCorrection,
+    atmosphere_land_interface,
     SlabOcean,
+    PrescribedOcean,
     AbstractPrescribedComponent,
     PrescribedRadiation,
     PrescribedAtmosphere,
@@ -49,6 +56,8 @@ export
     JRA55PrescribedRadiation,
     JRA55PrescribedAtmosphere,
     JRA55PrescribedLand,
+    ERA5PrescribedAtmosphere,
+    ERA5PrescribedRadiation,
     OSPapaPrescribedRadiation,
     OSPapaPrescribedAtmosphere,
     os_papa_prescribed_fluxes,
@@ -67,8 +76,16 @@ export
     ComponentInterfaces,
     SkinTemperature,
     BulkTemperature,
+    DiffusiveFlux,
+    InteriorDiffusivity,
+    # Land (prognostic SlabLand + closures)
+    SlabLand,
+    SlabEnergy,
+    BucketHydrology,
+    surface_temperature,
     regrid_bathymetry,
-    Metadata, Metadatum,
+    regrid_topography,
+    Metadata, Metadatum, MetadataSet,
     BoundingBox,
     Column, Linear, Nearest,
     ECCOMetadatum,
@@ -80,6 +97,8 @@ export
     WOAClimatology, WOAAnnual, WOAMonthly,
     GLORYSDaily, GLORYSMonthly, GLORYSStatic,
     RepeatYearJRA55, MultiYearJRA55,
+    ERA5HourlySingleLevel, ERA5MonthlySingleLevel,
+    ERA5HourlyPressureLevels, ERA5MonthlyPressureLevels,
     OSPapaHourly,
     JRA55FieldTimeSeries,
     ORCA1, ORCA12,
@@ -93,9 +112,7 @@ export
     default_sea_ice,
     sea_ice_dynamics,
     initialize!,
-    frazil_temperature_flux, net_ocean_temperature_flux, sea_ice_ocean_temperature_flux, atmosphere_ocean_temperature_flux,
-    frazil_heat_flux, net_ocean_heat_flux, sea_ice_ocean_heat_flux, atmosphere_ocean_heat_flux,
-    net_ocean_salinity_flux, sea_ice_ocean_salinity_flux, atmosphere_ocean_salinity_flux,
+    net_ocean_heat_flux, sea_ice_ocean_heat_flux, atmosphere_ocean_heat_flux,
     net_ocean_freshwater_flux, sea_ice_ocean_freshwater_flux, atmosphere_ocean_freshwater_flux,
     meridional_heat_transport,
     location,
@@ -104,7 +121,7 @@ export
 using DataDeps: DataDeps
 using Oceananigans: Oceananigans
 using Oceananigans.Architectures: CPU
-using Oceananigans.Grids: node
+using Oceananigans.Grids: _node
 using Oceananigans.ImmersedBoundaries: ImmersedBoundaryGrid, GridFittedBottom
 using Oceananigans.OutputReaders: GPUAdaptedFieldTimeSeries, FieldTimeSeries
 
@@ -120,7 +137,10 @@ const SKOFTS = SomeKindOfFieldTimeSeries
 @inline stateindex(a::SKOFTS, i, j, k, grid, time, args...) = @inbounds a[i, j, k, time]
 
 @inline function stateindex(a::Function, i, j, k, grid, time, (LX, LY, LZ), args...)
-    λ, φ, z = node(i, j, k, grid, LX(), LY(), LZ())
+    # `_node` always returns the full (λ, φ, z) triple — with placeholder
+    # values for Flat dimensions — whereas `node` drops Flat-dim entries
+    # and produces a shorter tuple that breaks the destructuring below.
+    λ, φ, z = _node(i, j, k, grid, LX(), LY(), LZ())
     return a(λ, φ, z, time)
 end
 
@@ -141,6 +161,7 @@ end
 ##### Source code
 #####
 
+include("Grids/Grids.jl")
 include("EarthSystemModels/EarthSystemModels.jl")
 include("Oceans/Oceans.jl")
 include("Atmospheres/Atmospheres.jl")
@@ -152,6 +173,7 @@ include("DataWrangling/DataWrangling.jl")
 include("Bathymetry/Bathymetry.jl")
 include("Diagnostics/Diagnostics.jl")
 
+using .Grids
 using .DataWrangling
 using .DataWrangling: ETOPO, ECCO, GLORYS, EN4, WOA, JRA55, OSPapa
 using .Bathymetry
@@ -172,6 +194,7 @@ using .DataWrangling.ORCA
 using .DataWrangling.WOA
 using .DataWrangling.JRA55
 using .DataWrangling.OSPapa
+using .DataWrangling.ERA5
 
 using PrecompileTools: @setup_workload, @compile_workload
 

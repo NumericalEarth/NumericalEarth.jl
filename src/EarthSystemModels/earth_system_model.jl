@@ -58,6 +58,7 @@ Oceananigans.Utils.prettytime(model::ESM) = prettytime(model.clock.time)
 default_clock(TT) = Clock{TT}(0, 0, 1)
 
 Oceananigans.Simulations.reset_clock!(::Nothing) = nothing
+Oceananigans.TimeSteppers.update_state!(::Nothing) = nothing
 Oceananigans.Simulations.reset_clock!(component::Simulation) = reset_clock!(component.model)
 Oceananigans.Simulations.reset_clock!(component) = reset!(getproperty(component, :clock))
 
@@ -66,8 +67,10 @@ function Oceananigans.Simulations.reset_clock!(model::ESM)
 
     for component in components(model)
         reset_clock!(component)
-        update_state!(model.atmosphere)
     end
+
+    # Keep prescribed atmospheric forcing synchronized during component resets.
+    update_state!(model.atmosphere)
 
     return nothing
 end
@@ -86,6 +89,19 @@ function Oceananigans.TimeSteppers.reconcile_state!(model::ESM)
     return nothing
 end
 
+function remove_default_stop_callbacks!(component)
+    callbacks = component.callbacks
+
+    if !isnothing(callbacks)
+        pop!(callbacks, :stop_time_exceeded, nothing)
+        pop!(callbacks, :stop_iteration_exceeded, nothing)
+        pop!(callbacks, :wall_time_limit_exceeded, nothing)
+        pop!(callbacks, :nan_checker, nothing)
+    end
+
+    return nothing
+end
+
 reference_density(unsupported) =
     throw(ArgumentError("Cannot extract reference density from $(typeof(unsupported))"))
 
@@ -97,6 +113,21 @@ heat_capacity(unsupported) =
 # allocate `interface_fluxes` per-surface on the exchange grid.
 allocate_interface_fluxes!(::Any, exchange_grid, surfaces) = nothing
 allocate_interface_fluxes!(::Nothing, exchange_grid, surfaces) = nothing
+
+"""
+    materialize_earth_system_radiation!(atmosphere, radiation)
+
+Return `atmosphere` with any radiation skeletons populated against the
+coupled-model `radiation`. Atmospheric components that carry an internal
+radiation handle (e.g. Breeze's `AtmosphereModel.radiation`) overload this to
+alias their internal flux divergence onto `radiation.flux_divergence`, so the
+atmosphere's tendency machinery reads from the same field the coupled
+`radiation` writes. Default: no-op, returning `atmosphere` unchanged.
+
+Called from inside the [`EarthSystemModel`](@ref) constructor before
+`ComponentInterfaces` is built.
+"""
+materialize_earth_system_radiation!(atmosphere, radiation) = atmosphere
 
 """
     EarthSystemModel(radiation, atmosphere, land, sea_ice, ocean;
@@ -147,7 +178,9 @@ function EarthSystemModel(radiation, atmosphere, land, sea_ice, ocean;
                           ocean_heat_capacity = heat_capacity(ocean),
                           sea_ice_reference_density = reference_density(sea_ice),
                           sea_ice_heat_capacity = heat_capacity(sea_ice),
-                          interfaces = nothing)
+                          interfaces = nothing,
+                          interface_kw...) # e.g. `atmosphere_land_interface_specific_humidity`
+
     if isnothing(radiation) && atmosphere isa AbstractPrescribedComponent
         @warn """
             `EarthSystemModel` was constructed with a `PrescribedAtmosphere` but \
@@ -156,7 +189,7 @@ function EarthSystemModel(radiation, atmosphere, land, sea_ice, ocean;
             results will be physically inconsistent.
 
             If you previously relied on `Radiation()` defaults: pass \
-            `radiation = JRA55PrescribedRadiation(arch; backend, ...)` (or \
+            `radiation = JRA55PrescribedRadiation(arch; kwargs...)` (or \
             `ECCOPrescribedRadiation` / `OSPapaPrescribedRadiation`) to restore \
             radiative forcing. Pass `radiation = PrescribedRadiation(grid)` for \
             emission-only mode. To suppress this warning, build the model \
@@ -165,24 +198,29 @@ function EarthSystemModel(radiation, atmosphere, land, sea_ice, ocean;
         """ maxlog=1
     end
 
-    if ocean isa Simulation
-        if !isnothing(ocean.callbacks)
-            # Remove some potentially irksome callbacks from the ocean simulation
-            pop!(ocean.callbacks, :stop_time_exceeded, nothing)
-            pop!(ocean.callbacks, :stop_iteration_exceeded, nothing)
-            pop!(ocean.callbacks, :wall_time_limit_exceeded, nothing)
-            pop!(ocean.callbacks, :nan_checker, nothing)
+    ocean   isa Simulation && remove_default_stop_callbacks!(ocean)
+    sea_ice isa Simulation && remove_default_stop_callbacks!(sea_ice)
+
+    # Enforce a single clock time type across all components
+    radiation  = adopt_clock(radiation, clock)
+    atmosphere = adopt_clock(atmosphere, clock)
+    land       = adopt_clock(land, clock)
+    sea_ice    = adopt_clock(sea_ice, clock)
+    ocean      = adopt_clock(ocean, clock)
+
+    if atmosphere isa Simulation
+        if !isnothing(atmosphere.callbacks)
+            pop!(atmosphere.callbacks, :stop_time_exceeded, nothing)
+            pop!(atmosphere.callbacks, :stop_iteration_exceeded, nothing)
+            pop!(atmosphere.callbacks, :wall_time_limit_exceeded, nothing)
+            pop!(atmosphere.callbacks, :nan_checker, nothing)
         end
     end
 
-    if sea_ice isa Simulation
-        if !isnothing(sea_ice.callbacks)
-            pop!(sea_ice.callbacks, :stop_time_exceeded, nothing)
-            pop!(sea_ice.callbacks, :stop_iteration_exceeded, nothing)
-            pop!(sea_ice.callbacks, :wall_time_limit_exceeded, nothing)
-            pop!(sea_ice.callbacks, :nan_checker, nothing)
-        end
-    end
+    # Materialize any radiation skeletons in the atmosphere against the
+    # coupled-model radiation. No-op by default; Breeze (or any other
+    # atmosphere with an internal radiation handle) overloads this.
+    atmosphere = materialize_earth_system_radiation!(atmosphere, radiation)
 
     # Contains information about flux contributions: bulk formula, prescribed fluxes, etc.
     if isnothing(interfaces) && !(isnothing(atmosphere) && isnothing(sea_ice))
@@ -192,13 +230,14 @@ function EarthSystemModel(radiation, atmosphere, land, sea_ice, ocean;
                                          ocean_reference_density,
                                          ocean_heat_capacity,
                                          sea_ice_reference_density,
-                                         sea_ice_heat_capacity)
+                                         sea_ice_heat_capacity,
+                                         interface_kw...)
     end
 
     arch = architecture(interfaces.exchanger.grid)
 
     # Allocate per-surface InterfaceRadiationFlux on the exchange grid.
-    surfaces = present_surfaces(ocean, sea_ice)
+    surfaces = present_surfaces(ocean, sea_ice, land)
     allocate_interface_fluxes!(radiation, interfaces.exchanger.grid, surfaces)
 
     earth_system_model = EarthSystemModel(arch,
@@ -261,11 +300,24 @@ end
 
 # Determine which surfaces are present in the model — used to allocate
 # per-surface diagnostic radiation flux buffers.
-function present_surfaces(ocean, sea_ice)
+function present_surfaces(ocean, sea_ice, land)
     surfaces = Symbol[]
     isnothing(ocean)   || push!(surfaces, :ocean)
     isnothing(sea_ice) || push!(surfaces, :sea_ice)
+    isnothing(land)    || push!(surfaces, :land)
     return Tuple(surfaces)
+end
+
+# Blacklist predicates for catching swapped positional arguments to the convenience
+# constructors below. The fallback returns `true` so unfamiliar component types are
+# permitted; specializations in `Oceans` and `SeaIces` set the obviously-wrong cases
+# (e.g. a sea ice simulation supplied where an ocean is expected) to `false`.
+is_sea_ice_component(component) = true
+is_ocean_component(component) = true
+
+function invalid_component(constructor, position, expected, received)
+    return ArgumentError("$constructor expects $expected as positional argument $position, " *
+                         "got a $(typeof(received)) instead")
 end
 
 """
@@ -275,23 +327,88 @@ Construct an ocean-only model without a sea ice component.
 This is a convenience constructor for [`EarthSystemModel`](@ref) that sets `sea_ice`
 to `FreezingLimitedOceanTemperature` (a simple freezing limiter that does not evolve sea ice variables).
 
-The `atmosphere` keyword can be used to specify a prescribed atmospheric forcing
-(e.g., `JRA55PrescribedAtmosphere`). All other keyword arguments are forwarded
+The `atmosphere`, `radiation`, and `land` keywords can be used to specify prescribed
+components (e.g., `JRA55PrescribedAtmosphere`). All other keyword arguments are forwarded
 to `EarthSystemModel`.
+
+```jldoctest
+using NumericalEarth, Oceananigans
+
+grid = LatitudeLongitudeGrid(GPU();
+                             size = (20, 20, 4),
+                             z = (-100, 0),
+                             latitude = (-80, 80),
+                             longitude = (0, 360),
+                             halo = (6, 6, 3))
+
+ocean = ocean_simulation(grid, closure=nothing)
+set!(ocean.model, T=20, S=35, u=0.01, v=-0.005)
+
+ocean = OceanOnlyModel(ocean)
+# output
+
+EarthSystemModel{GPU}(time = 0 seconds, iteration = 0)
+├── radiation: Nothing
+├── atmosphere: Nothing
+├── land: Nothing
+├── sea_ice: FreezingLimitedOceanTemperature{ClimaSeaIce.SeaIceThermodynamics.LinearLiquidus{Float64}}
+├── ocean: HydrostaticFreeSurfaceModel{CUDAGPU, LatitudeLongitudeGrid}(time = 0 seconds, iteration = 0)
+└── interfaces: ComponentInterfaces
+```
 """
-OceanOnlyModel(ocean; atmosphere=nothing, land=nothing, radiation=nothing, kw...) =
-    EarthSystemModel(radiation, atmosphere, land, default_sea_ice(), ocean; kw...)
+function OceanOnlyModel(ocean; atmosphere=nothing, land=nothing, radiation=nothing, kw...)
+    is_ocean_component(ocean) || throw(invalid_component(:OceanOnlyModel, 1, "an ocean simulation", ocean))
+    return EarthSystemModel(radiation, atmosphere, land, default_sea_ice(), ocean; kw...)
+end
 
 """
-    OceanSeaIceModel(sea_ice, ocean; atmosphere=nothing, radiation=nothing, land=nothing, kw...)
+    OceanSeaIceModel(ocean, sea_ice; atmosphere=nothing, radiation=nothing, land=nothing, kw...)
 
 Construct a coupled ocean--sea ice model.
-This is a convenience constructor for [`EarthSystemModel`](@ref) with an explicit sea ice component
-and an optional prescribed atmosphere. Positional arguments follow the
-struct convention (top→bottom): `sea_ice` then `ocean`.
+
+This is a convenience constructor for [`EarthSystemModel`](@ref) with explicit ocean and sea ice components
+and optional prescribed atmosphere, prescribed radiation, and prescribed land.
+
+Positional arguments are `ocean` then `sea_ice`.
+
+Example
+=======
+
+```jldoctest
+using NumericalEarth, Oceananigans
+
+grid = LatitudeLongitudeGrid(size = (20, 20, 4),
+                             z = (-100, 0),
+                             latitude = (-80, 80),
+                             longitude = (0, 360),
+                             halo = (6, 6, 3))
+
+ocean = ocean_simulation(grid, closure=nothing)
+set!(ocean.model, T=20, S=35, u=0.01, v=-0.005)
+
+sea_ice = sea_ice_simulation(grid, ocean)
+
+hi(λ, φ) = φ > 70 || φ < -70
+set!(sea_ice.model, h=hi, ℵ=hi)
+
+coupled_model = OceanSeaIceModel(ocean, sea_ice)
+
+# output
+
+EarthSystemModel{CPU}(time = 0 seconds, iteration = 0)
+├── radiation: Nothing
+├── atmosphere: Nothing
+├── land: Nothing
+├── sea_ice: SeaIceModel{CPU, LatitudeLongitudeGrid}(time = 0 seconds, iteration = 0)
+├── ocean: HydrostaticFreeSurfaceModel{CPU, LatitudeLongitudeGrid}(time = 0 seconds, iteration = 0)
+└── interfaces: ComponentInterfaces
+```
 """
-OceanSeaIceModel(sea_ice, ocean; atmosphere=nothing, land=nothing, radiation=nothing, kw...) =
-    EarthSystemModel(radiation, atmosphere, land, sea_ice, ocean; kw...)
+function OceanSeaIceModel(ocean, sea_ice; atmosphere=nothing, land=nothing, radiation=nothing, kw...)
+    is_ocean_component(ocean) || throw(invalid_component(:OceanSeaIceModel, 1, "an ocean simulation", ocean))
+    is_sea_ice_component(sea_ice) || throw(invalid_component(:OceanSeaIceModel, 2, "a sea ice simulation", sea_ice))
+    return EarthSystemModel(radiation, atmosphere, land, sea_ice, ocean; kw...)
+end
 
 """
     AtmosphereOceanModel(atmosphere, ocean; kw...)
@@ -300,16 +417,41 @@ Construct a coupled atmosphere--ocean model.
 Convenience constructor for [`EarthSystemModel`](@ref) with an atmosphere and ocean
 but no sea ice. All keyword arguments are forwarded to `EarthSystemModel`.
 """
-AtmosphereOceanModel(atmosphere, ocean; land=nothing, radiation=nothing, kw...) =
-    EarthSystemModel(radiation, atmosphere, land, nothing, ocean; kw...)
+function AtmosphereOceanModel(atmosphere, ocean; land=nothing, radiation=nothing, kw...)
+    is_ocean_component(ocean) || throw(invalid_component(:AtmosphereOceanModel, 2, "an ocean simulation", ocean))
+    return EarthSystemModel(radiation, atmosphere, land, nothing, ocean; kw...)
+end
+
+"""
+    AtmosphereLandModel(atmosphere, land; radiation=nothing, kw...)
+
+Construct a coupled atmosphere--land model.
+Convenience constructor for [`EarthSystemModel`](@ref) with an atmosphere and
+land but no ocean or sea ice. All keyword arguments are forwarded to
+`EarthSystemModel`.
+
+The atmosphere--land turbulent fluxes are computed via
+`SimilarityTheoryFluxes` using land-side roughness and a β-reduced surface
+specific humidity (`qᵃᵗ + β·[qₛ - qᵃᵗ]`).
+"""
+AtmosphereLandModel(atmosphere, land; radiation=nothing, kw...) =
+    EarthSystemModel(radiation, atmosphere, land, nothing, nothing; kw...)
 
 time(coupled_model::EarthSystemModel) = coupled_model.clock.time
 
 # Check for NaNs in the first prognostic field (generalizes to prescribed velocities).
 function Oceananigans.Diagnostics.default_nan_checker(model::EarthSystemModel)
+    if isnothing(model.ocean)
+        # Fall back to the surface skin temperature held at the atmosphere-land
+        # interface when there is no ocean. If neither ocean nor the
+        # atmosphere-land interface is present, return no NaN checker.
+        T_land = surface_temperature(model.interfaces)
+        isnothing(T_land) && return nothing
+        return NaNChecker((; T_land))
+    end
+
     T_ocean = ocean_temperature(model.ocean)
-    nan_checker = NaNChecker((; T_ocean))
-    return nan_checker
+    return NaNChecker((; T_ocean))
 end
 
 @kernel function _above_freezing_ocean_temperature!(T, grid, S, ℵ, liquidus)
@@ -343,28 +485,28 @@ above_freezing_ocean_temperature!(ocean, grid, ::Nothing) = nothing
 ##### Checkpointing
 #####
 
-function Oceananigans.prognostic_state(osm::EarthSystemModel)
-    return (clock = prognostic_state(osm.clock),
-            radiation = prognostic_state(osm.radiation),
-            ocean = prognostic_state(osm.ocean),
-            atmosphere = prognostic_state(osm.atmosphere),
-            land = prognostic_state(osm.land),
-            sea_ice = prognostic_state(osm.sea_ice),
-            interfaces = prognostic_state(osm.interfaces))
+function Oceananigans.prognostic_state(esm::EarthSystemModel)
+    return (clock = prognostic_state(esm.clock),
+            radiation = prognostic_state(esm.radiation),
+            ocean = prognostic_state(esm.ocean),
+            atmosphere = prognostic_state(esm.atmosphere),
+            land = prognostic_state(esm.land),
+            sea_ice = prognostic_state(esm.sea_ice),
+            interfaces = prognostic_state(esm.interfaces))
 end
 
-function Oceananigans.restore_prognostic_state!(osm::EarthSystemModel, state)
-    restore_prognostic_state!(osm.clock, state.clock)
+function Oceananigans.restore_prognostic_state!(esm::EarthSystemModel, state)
+    restore_prognostic_state!(esm.clock, state.clock)
     # Backwards-compatible: older checkpoints may not have a `radiation` entry
     if hasproperty(state, :radiation)
-        restore_prognostic_state!(osm.radiation, state.radiation)
+        restore_prognostic_state!(esm.radiation, state.radiation)
     end
-    restore_prognostic_state!(osm.ocean, state.ocean)
-    restore_prognostic_state!(osm.atmosphere, state.atmosphere)
-    restore_prognostic_state!(osm.land, state.land)
-    restore_prognostic_state!(osm.sea_ice, state.sea_ice)
-    restore_prognostic_state!(osm.interfaces, state.interfaces)
-    return osm
+    restore_prognostic_state!(esm.ocean, state.ocean)
+    restore_prognostic_state!(esm.atmosphere, state.atmosphere)
+    restore_prognostic_state!(esm.land, state.land)
+    restore_prognostic_state!(esm.sea_ice, state.sea_ice)
+    restore_prognostic_state!(esm.interfaces, state.interfaces)
+    return esm
 end
 
-Oceananigans.restore_prognostic_state!(osm::EarthSystemModel, ::Nothing) = osm
+Oceananigans.restore_prognostic_state!(esm::EarthSystemModel, ::Nothing) = esm

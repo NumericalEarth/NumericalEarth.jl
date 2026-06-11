@@ -16,7 +16,6 @@ import ..DataWrangling:
     first_date,
     last_date,
     dataset_variable_name,
-    download_dataset,
     longitude_interfaces,
     latitude_interfaces,
     z_interfaces,
@@ -109,7 +108,7 @@ end
 
 z_interfaces(::ORCAMetadatum) = nothing
 
-function download_dataset(metadatum::ORCAMetadatum)
+function Downloads.download(metadatum::ORCAMetadatum)
     fileurl  = metadata_url(metadatum)
     filepath = metadata_path(metadatum)
 

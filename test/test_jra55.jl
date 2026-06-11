@@ -1,11 +1,19 @@
 include("runtests_setup.jl")
 include("download_utils.jl")
 
-using NumericalEarth.JRA55: download_JRA55_cache
 using NumericalEarth.Atmospheres: PrescribedAtmosphere
 using NumericalEarth.DataWrangling: compute_native_date_range
+using NumericalEarth.JRA55: download_JRA55_cache
 
 @testset "JRA55 and data wrangling utilities" begin
+    native_dates = DateTime(1992, 1, 1):Month(1):DateTime(1992, 3, 1)
+    start_date = DateTimeProlepticGregorian(1992, 1, 15)
+    end_date = DateTimeProlepticGregorian(1992, 2, 15)
+
+    dates = compute_native_date_range(native_dates, start_date, end_date)
+
+    @test dates == native_dates[1:3]
+
     for arch in test_architectures
         A = typeof(arch)
         @info "Testing reanalysis_field_time_series on $A..."
@@ -28,14 +36,14 @@ using NumericalEarth.DataWrangling: compute_native_date_range
             @test Nt == 3
 
             if test_name == :downwelling_shortwave_radiation
-                CUDA.@allowscalar begin
+                @allowscalar begin
                     @test JRA55_fts[1, 1, 1, 1]   == 430.98105f0
                     @test JRA55_fts[641, 1, 1, 1] == 430.98105f0
                 end
             end
 
             # Test that halo regions were filled to respect boundary conditions
-            CUDA.@allowscalar begin
+            @allowscalar begin
                 @test view(JRA55_fts.data, 1, :, 1, :) == view(JRA55_fts.data, Nx+1, :, 1, :)
             end
 
@@ -69,15 +77,15 @@ using NumericalEarth.DataWrangling: compute_native_date_range
         f_first  = Field(md_first, arch)
         @test f_first isa Field
         @test size(f_first) == (640, 320, 1)
-        CUDA.@allowscalar @test f_first[1, 1, 1] == 430.98105f0
-        CUDA.@allowscalar @test view(f_first.data, 1, :, 1) == view(f_first.data, 641, :, 1)
+        @allowscalar @test f_first[1, 1, 1] == 430.98105f0
+        @allowscalar @test view(f_first.data, 1, :, 1) == view(f_first.data, 641, :, 1)
 
         md_mid = Metadatum(ds_var; dataset=JRA55.RepeatYearJRA55(), date=all_jra55_dates[100])
         f_mid  = Field(md_mid, arch)
         # Same time index loaded via the chunked-file FTS path → must agree
         fts100 = FieldTimeSeries(Metadata(ds_var; dataset=JRA55.RepeatYearJRA55(), end_date=all_jra55_dates[100]), arch; time_indices_in_memory=100)
-        CUDA.@allowscalar @test f_mid[1, 1, 1]   == fts100[1, 1, 1, 100]
-        CUDA.@allowscalar @test f_mid[640, 1, 1] == fts100[640, 1, 1, 100]
+        @allowscalar @test f_mid[1, 1, 1]   == fts100[1, 1, 1, 100]
+        @allowscalar @test f_mid[640, 1, 1] == fts100[640, 1, 1, 100]
 
         @info "Testing interpolate_field_time_series! on $A..."
 
@@ -109,7 +117,7 @@ using NumericalEarth.DataWrangling: compute_native_date_range
         interpolate!(target_fts, JRA55_fts)
 
         # Random regression test
-        CUDA.@allowscalar begin
+        @allowscalar begin
             @test Float32(target_fts[1, 1, 1, 1]) ≈ Float32(222.24313354492188)
 
             # Only include this if we are filling halo regions within
@@ -203,7 +211,7 @@ using NumericalEarth.DataWrangling: compute_native_date_range
 
             # Every slot in the single in-memory window must carry valid
             # (non-zero) atmospheric temperature data.
-            CUDA.@allowscalar begin
+            @allowscalar begin
                 for t in eachindex(Ta_span.times)
                     @test maximum(abs, interior(Ta_span[t])) > 0
                 end

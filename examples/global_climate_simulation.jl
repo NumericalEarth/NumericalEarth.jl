@@ -7,7 +7,7 @@
 #
 # The atmosphere is initialized with the [jablonowski2006baroclinic](@citet) initial conditions,
 # which consist of a zonal wind centered at mid-latitudes and higher altitudes and a temperature
-# profile that is baroclinically unstable. The surface pressure is adjusted by orography for
+# profile that is baroclinically unstable. The surface pressure is adjusted by topography for
 # approximately globally constant mean-sea level pressure. The initial specific humidity is
 # calculated from temperature for a constant relative humidity everywhere.
 # The ocean and sea ice are initialized by ocean temperature, salinity, sea ice concentration,
@@ -53,7 +53,7 @@ viscous_closure      = Oceananigans.TurbulenceClosures.HorizontalScalarBiharmoni
 closures             = (catke_closure, eddy_closure, viscous_closure)
 nothing #hide
 
-# The ocean simulation, complete with initial conditions for temperature and salinity from ECCO.
+# The ocean simulation, complete with initial conditions for temperature and salinity from ECCO on Jan 1st, 1992.
 
 ocean = ocean_simulation(grid;
                          momentum_advection,
@@ -61,15 +61,17 @@ ocean = ocean_simulation(grid;
                          free_surface,
                          closure = closures)
 
-Oceananigans.set!(ocean.model, T=Metadatum(:temperature, dataset=ECCO4Monthly()),
-                               S=Metadatum(:salinity,    dataset=ECCO4Monthly()))
+ecco_set = MetadataSet(:temperature, :salinity,
+                       :sea_ice_thickness, :sea_ice_concentration;
+                       dataset = ECCO4Monthly(),
+                       date = DateTime(1992, 1, 1))
+Oceananigans.set!(ocean.model, ecco_set)   # T, S
 
 # The sea-ice simulation, complete with initial conditions for sea-ice thickness and sea-ice concentration from ECCO.
 
 sea_ice = sea_ice_simulation(grid, ocean; advection=WENO(order=5))
 
-Oceananigans.set!(sea_ice.model, h=Metadatum(:sea_ice_thickness, dataset=ECCO4Monthly()),
-                                 ℵ=Metadatum(:sea_ice_concentration, dataset=ECCO4Monthly()))
+Oceananigans.set!(sea_ice.model, ecco_set)   # h, ℵ
 
 # ## Atmosphere model configuration
 # The atmosphere is provided by SpeedyWeather.jl. Here, we configure a T63L4 model with a 3-hour output interval.

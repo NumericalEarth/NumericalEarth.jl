@@ -82,9 +82,8 @@ ocean = ocean_simulation(grid)
 ocean.model
 
 # We initialize the ocean model with ECCO4 temperature and salinity for January 1, 1992.
-
-set!(ocean.model, T=Metadatum(:temperature, dataset=ECCO4Monthly()),
-                  S=Metadatum(:salinity, dataset=ECCO4Monthly()))
+date = DateTime(1992, 1, 1)
+set!(ocean.model, MetadataSet(:temperature, :salinity; dataset=ECCO4Monthly(), date))
 
 # ### Prescribed atmosphere and radiation
 #
@@ -172,7 +171,7 @@ Nt = length(times)
 
 n = Observable(Nt)
 
-land = interior(T.grid.immersed_boundary.bottom_height) .>= 0
+land = interior(T.grid.immersed_boundary.bottom_height) .≥ 0
 
 Tn = @lift begin
     Tn = interior(T[$n])

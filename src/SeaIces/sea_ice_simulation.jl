@@ -23,6 +23,67 @@ function default_snow_thermodynamics(grid)
     return snow_slab_thermodynamics(grid; conductivity = snow_conductivity, top_heat_boundary_condition)
 end
 
+"""
+    sea_ice_simulation(grid, ocean=nothing;
+                       Δt = 5minutes,
+                       ice_salinity = 4, # psu
+                       advection = nothing,
+                       tracers = (),
+                       ice_heat_capacity = 2100, # J kg⁻¹ K⁻¹
+                       ice_consolidation_thickness = 0.05, # m
+                       sea_ice_density = 900, # kg m⁻³
+                       snow_density = 330, # kg m⁻³
+                       dynamics = sea_ice_dynamics(grid, ocean),
+                       bottom_heat_boundary_condition = nothing,
+                       top_heat_boundary_condition = nothing,
+                       timestepper = :SplitRungeKutta3,
+                       phase_transitions = PhaseTransitions(eltype(grid);
+                                                            heat_capacity=ice_heat_capacity,
+                                                            density=sea_ice_density),
+                       conductivity = 2, # W m⁻¹ K⁻¹
+                       internal_heat_flux = ConductiveFlux(; conductivity),
+                       snow_thermodynamics = default_snow_thermodynamics(grid),
+                       clock = nothing)
+
+Construct a sea ice simulation with the given grid and optional ocean simulation.
+The sea ice model is configured with a slab thermodynamics, Elasto-Visco-Plastic rheology,
+and a SplitExplicit Runge-Kutta 3rd order time stepper by default. The thermodynamics
+include conductive internal heat flux, and the option to specify top and bottom heat
+boundary conditions. The dynamics include a semi-implicit ocean stress formulation,
+with the option to specify a free drift velocity.
+
+Arguments
+=========
+- `grid`: the grid on which to build the sea ice model
+- `ocean`: optional ocean simulation to provide surface velocities and salinity for the sea ice
+
+Keyword Arguments
+=================
+- `Δt`: time step for the sea ice simulation
+- `ice_salinity`: salinity of the sea ice (psu)
+- `advection`: optional advection scheme for the sea ice model; if `nothing` (default), no advection
+               is applied and only thermodynamics evolve the sea ice state
+- `tracers`: optional tracers to include in the sea ice model
+- `ice_heat_capacity`: heat capacity of the sea ice (J kg⁻¹ K⁻¹)
+- `ice_consolidation_thickness`: thickness threshold for sea ice consolidation (m)
+- `sea_ice_density`: density of the sea ice (kg m⁻³)
+- `snow_density`: density of the snow (kg m⁻³)
+- `dynamics`: sea ice dynamics model to use (default is `sea_ice_dynamics(grid, ocean)`)
+- `bottom_heat_boundary_condition`: heat boundary condition at the ice-ocean interface (default
+                                    is `IceWaterThermalEquilibrium` with ocean surface salinity)
+- `top_heat_boundary_condition`: heat boundary condition at the ice-atmosphere interface (default
+                                 is a prescribed temperature calculated in the flux computation)
+- `timestepper`: time stepper to use for the sea ice model (default is `:SplitRungeKutta3`)
+- `phase_transitions`: phase transition properties for the sea ice (default is a `PhaseTransitions`
+                       with specified heat capacity and density)
+- `conductivity`: thermal conductivity for the internal heat flux (W m⁻¹ K⁻¹)
+- `internal_heat_flux`: internal heat flux formulation for the sea ice (default is a
+                        `ConductiveFlux` with specified conductivity)
+- `snow_thermodynamics`: thermodynamics for the snow layer (default is a slab thermodynamics with
+                         specified conductivity and prescribed temperature)
+- `clock`: clock for the sea ice model. Defaults to `nothing`, in which case the model builds its
+           own default clock; pass a `Clock` to control the time type (e.g. when coupling)
+"""
 function sea_ice_simulation(grid, ocean=nothing;
                             Δt = 5minutes,
                             ice_salinity = 4, # psu
@@ -36,10 +97,13 @@ function sea_ice_simulation(grid, ocean=nothing;
                             bottom_heat_boundary_condition = nothing,
                             top_heat_boundary_condition = nothing,
                             timestepper = :SplitRungeKutta3,
-                            phase_transitions = PhaseTransitions(eltype(grid); heat_capacity=ice_heat_capacity, density=sea_ice_density),
+                            phase_transitions = PhaseTransitions(eltype(grid);
+                                                                 heat_capacity=ice_heat_capacity,
+                                                                 density=sea_ice_density),
                             conductivity = 2, # W m⁻¹ K⁻¹
                             internal_heat_flux = ConductiveFlux(; conductivity),
-                            snow_thermodynamics = default_snow_thermodynamics(grid))
+                            snow_thermodynamics = default_snow_thermodynamics(grid),
+                            clock = nothing)
 
     # Build consistent boundary conditions for the ice model:
     # - bottom -> flux boundary condition
@@ -68,6 +132,9 @@ function sea_ice_simulation(grid, ocean=nothing;
     top_heat_flux    = Field{Center, Center, Nothing}(grid)
     snowfall         = Field{Center, Center, Nothing}(grid)
 
+    # Only forward `clock` when supplied so the model keeps its own default otherwise.
+    clock_kw = isnothing(clock) ? NamedTuple() : (; clock)
+
     # Build the sea ice model
     sea_ice_model = SeaIceModel(grid;
                                 ice_salinity,
@@ -83,7 +150,8 @@ function sea_ice_simulation(grid, ocean=nothing;
                                 dynamics,
                                 timestepper,
                                 bottom_heat_flux,
-                                top_heat_flux)
+                                top_heat_flux,
+                                clock_kw...)
 
     verbose = false
     sea_ice = Simulation(sea_ice_model; Δt, verbose)

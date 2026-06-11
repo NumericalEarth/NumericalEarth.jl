@@ -15,8 +15,8 @@ NumericalEarth.EarthSystemModels.InterfaceComputations.net_fluxes(::SpeedySimula
 # If this work we can
 # 1. Copy speedyweather gridarrays to the GPU
 # 2. Perform the regridding on the GPU
-function NumericalEarth.EarthSystemModels.InterfaceComputations.ComponentExchanger(atmosphere::SpeedySimulation, exchange_grid)
-
+function NumericalEarth.EarthSystemModels.InterfaceComputations.ComponentExchanger(atmosphere::SpeedySimulation, exchange_grid;
+                                                                                   correction = nothing)
     spectral_grid = atmosphere.model.spectral_grid.grid
     # Use the exchange_grid's manifold for both grids to avoid
     # radius mismatch between Oceananigans and SpeedyWeather.
@@ -35,7 +35,8 @@ function NumericalEarth.EarthSystemModels.InterfaceComputations.ComponentExchang
                Jʳⁿ  = Field{Center, Center, Nothing}(exchange_grid),
                Jˢⁿ  = Field{Center, Center, Nothing}(exchange_grid))
 
-    return ComponentExchanger(state, regridder)
+    correction = NumericalEarth.EarthSystemModels.InterfaceComputations.materialize_correction(correction, exchange_grid, atmosphere)
+    return ComponentExchanger(state, regridder, correction)
 end
 
 function ConservativeRegridding.regrid!(field::Oceananigans.Field, regridder::Regridder, data::AbstractArray)

@@ -29,9 +29,17 @@ function Base.show(io::IO, pa::PrescribedAtmosphere)
     print(io, "└── boundary_layer_height: ", prettysummary(pa.boundary_layer_height))
 end
 
+velocity_boundary_conditions(grid, loc) = FieldBoundaryConditions(grid, loc)
+
+function velocity_boundary_conditions(grid::OrthogonalSphericalShellGrids.TripolarGrid, loc)
+    north_bc = OrthogonalSphericalShellGrids.north_fold_boundary_condition(grid)(-1)
+    return FieldBoundaryConditions(grid, loc; north = north_bc)
+end
+
 function default_atmosphere_velocities(grid, times)
-    ua = FieldTimeSeries{Center, Center, Nothing}(grid, times)
-    va = FieldTimeSeries{Center, Center, Nothing}(grid, times)
+    velocity_bcs = velocity_boundary_conditions(grid, (Center(), Center(), nothing))
+    ua = FieldTimeSeries{Center, Center, Nothing}(grid, times; boundary_conditions = velocity_bcs)
+    va = FieldTimeSeries{Center, Center, Nothing}(grid, times; boundary_conditions = velocity_bcs)
     return (u=ua, v=va)
 end
 
@@ -50,7 +58,7 @@ Container for prescribed precipitation fluxes. Either component may be `nothing`
 to indicate that the corresponding precipitation type is not represented by the
 atmosphere (e.g. rain-only datasets). Used as the `freshwater_flux` of a
 `PrescribedAtmosphere`; downstream callers query the snow component via
-[`surface_snowfall_flux`](@ref) so that prognostic atmospheres with or without
+`surface_snowfall_flux` so that prognostic atmospheres with or without
 snow can dispatch on this type as well.
 """
 struct PrescribedPrecipitationFlux{R, S}
@@ -115,6 +123,8 @@ end
 # No need to compute anything here...
 EarthSystemModels.update_net_fluxes!(coupled_model, ::PrescribedAtmosphere) = nothing
 
+EarthSystemModels.adopt_clock(atmosphere::PrescribedAtmosphere, clock) = EarthSystemModels.reclock(atmosphere, clock)
+
 """
     PrescribedAtmosphere(grid, times=[zero(grid)];
                          clock = Clock{Float64}(time = 0),
@@ -128,9 +138,10 @@ EarthSystemModels.update_net_fluxes!(coupled_model, ::PrescribedAtmosphere) = no
 
 Return a prescribed, time-evolving atmospheric state with data on `grid` and at given `times`.
 
-!!! compat Radiation component
+!!! compat "Radiation component"
     The downwelling shortwave / longwave radiation part of the top-level `radiation`
-    component (see [`PrescribedRadiation`](@ref), [`JRA55PrescribedRadiation`](@ref)).
+    component (see [`Radiations.PrescribedRadiation`](@ref NumericalEarth.Radiations.PrescribedRadiation),
+    [`DataWrangling.JRA55.JRA55PrescribedRadiation`](@ref NumericalEarth.DataWrangling.JRA55.JRA55PrescribedRadiation)).
 """
 function PrescribedAtmosphere(grid, times=[zero(grid)];
                               clock = Clock{Float64}(time = 0),
