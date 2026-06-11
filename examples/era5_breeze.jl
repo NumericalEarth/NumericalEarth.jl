@@ -222,7 +222,12 @@ map_grid = LatitudeLongitudeGrid(CPU();
                                  size      = (round(Int, (map_lon[2] - map_lon[1]) / 0.03),
                                               round(Int, (map_lat[2] - map_lat[1]) / 0.03), 1),
                                  topology  = (Bounded, Bounded, Bounded))
-map_elevation = regrid_topography(map_grid; dataset = ETOPO2022())
+# Full ETOPO relief (negative over ocean) for the basemap, so the map shows true
+# bathymetry as well as topography. The land–sea mask is just its sign — `regrid_topography`
+# (used above for the model's terrain) clamps the ocean to 0 and loses it. The mask is what
+# a SlabLand/ocean surface-BC split would key on; here only the Gulf corner of D2 is ocean.
+map_bathymetry = regrid_bathymetry(map_grid; dataset = ETOPO2022())
+is_ocean = interior(map_bathymetry)[:, :, 1] .< 0   # land–sea mask (true = ocean)
 
 # Closed rectangle path from (λ, φ) bounds.
 domain_box(λ₁, λ₂, φ₁, φ₂) = ([λ₁, λ₂, λ₂, λ₁, λ₁], [φ₁, φ₁, φ₂, φ₂, φ₁])
@@ -232,16 +237,18 @@ ax_map  = Axis(fig_map[1, 1]; xlabel = "longitude (°)", ylabel = "latitude (°)
                title  = "ERA5 → 3 km LAM nest (MC3E squall line, ARM SGP)",
                aspect = DataAspect())
 
+# `:topo` over a symmetric range puts its sea-level break at z = 0: ocean depths in blues,
+# land green → yellow → brown → white. The range clamps the deep Gulf / high Rockies so the
+# Plains gradient stays legible.
 hm_map = heatmap!(ax_map,
                   collect(λnodes(map_grid, Center(), Center(), Center())),
                   collect(φnodes(map_grid, Center(), Center(), Center())),
-                  Array(interior(map_elevation))[:, :, 1];
-                  colormap = :terrain, colorrange = (0, 3000))
-Colorbar(fig_map[1, 2], hm_map; label = "elevation (m)")
+                  Array(interior(map_bathymetry))[:, :, 1];
+                  colormap = :topo, colorrange = (-2500, 2500))
+Colorbar(fig_map[1, 2], hm_map; label = "elevation / depth (m)")
 
-# Coastline, US state lines, and country borders over the terrain.
-for (name, color, linewidth) in (("coastline",                      (:black,  0.45), 0.8),
-                                 ("admin_1_states_provinces_lines", (:gray20, 0.55), 0.7),
+# US state lines and country borders (the topo/bathy coloring renders the coastline itself).
+for (name, color, linewidth) in (("admin_1_states_provinces_lines", (:gray20, 0.55), 0.7),
                                  ("admin_0_boundary_lines_land",     (:black,  0.75), 1.4))
     lon, lat = natural_earth_lines(name)
     lines!(ax_map, lon, lat; color, linewidth)
