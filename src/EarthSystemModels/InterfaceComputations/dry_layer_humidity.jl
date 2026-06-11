@@ -239,11 +239,50 @@ end
 #####
 ##### Humidity solver — the headline of the closure.
 #####
-##### Sign convention for fluxes here matches `SkinHumidity` exactly: each
-##### `Jᵃ = -ρᵃᵗ u★ q★` (a positive Jᵃ means vapor moves upward into the
-##### atmosphere; q★ < 0 when evaporating). The dry-layer flux Jᵉ from the
-##### front up to the interface is taken as `Gᵉ(qᵉ - qⁱⁿ)`, so a wetter front
-##### (qᵉ > qⁱⁿ) drives vapor upward. The balance Jᵉ = Jᵃ closes for qⁱⁿ.
+##### Sign convention for fluxes here matches `SkinHumidity` exactly: every
+##### flux is positive upward, and `Jᵃ = -ρᵃᵗ u★ q★` is the atmospheric vapor
+##### flux the similarity solver computed from the previous Picard iterate
+##### (q★ < 0 when evaporating).
+#####
+##### Derivation of the update. The dry layer transmits a Fick flux from the
+##### front (humidity qᵉ) up to the interface (humidity qⁱⁿ),
+#####
+#####     Jᵉ = Gᵉ (qᵉ - qⁱⁿ),        Gᵉ = ρᵃᵗ Dᵛ_eff / max(δᵛ, δᵛ_min),
+#####
+##### so a wetter front (qᵉ > qⁱⁿ) drives vapor upward. Above the interface,
+##### similarity theory carries vapor away. Over one Picard iteration we
+##### linearize the similarity flux as a bulk conductance law anchored at the
+##### previous iterate qⁱⁿ⁻,
+#####
+#####     Jᵃ(q) ≈ Gᵃ (q - qᵃᵗ),      Gᵃ = Jᵃ / Δq,      Δq = qⁱⁿ⁻ - qᵃᵗ,
+#####
+##### chosen so that Jᵃ(qⁱⁿ⁻) reproduces the flux the similarity solver
+##### actually returned. The interface itself stores no vapor, so the two
+##### fluxes balance, Jᵉ = Jᵃ(qⁱⁿ):
+#####
+#####     Gᵉ (qᵉ - qⁱⁿ) = Gᵃ (qⁱⁿ - qᵃᵗ)
+#####
+#####     ⇒  qⁱⁿ = (Gᵉ qᵉ + Gᵃ qᵃᵗ) / (Gᵉ + Gᵃ).
+#####
+##### This is the standard two-conductances-in-series solution of a surface
+##### flux balance — eq. (12b) of Ye & Pielke (1993) with their pore relative
+##### humidity hₛ = 1, and the same expression CLM5/ClimaLand evaluate with a
+##### prescribed exchange coefficient in place of Gᵃ. Substituting
+##### Gᵃ = Jᵃ/Δq and multiplying numerator and denominator by Δq removes the
+##### 0/0 ambiguity of Gᵃ as Δq → 0:
+#####
+#####     qⁱⁿ = (Gᵉ qᵉ Δq + Jᵃ qᵃᵗ) / (Gᵉ Δq + Jᵃ),
+#####
+##### the form coded below (denominator `D = Gᵉ Δq + Jᵃ`; if `D == 0` the
+##### previous iterate is returned unchanged). Note Δq → 0 means qⁱⁿ⁻ = qᵃᵗ,
+##### and the update then returns qᵃᵗ — the two statements agree, so the
+##### limit is continuous.
+#####
+##### Limits worth checking: δᵛ → 0 gives Gᵉ → ∞ and qⁱⁿ → qᵉ, the saturated
+##### skin of the wet branch; a deep front gives Gᵉ → 0 and qⁱⁿ → qᵃᵗ, i.e.
+##### vanishing evaporation. At the Picard fixed point qⁱⁿ = qⁱⁿ⁻ the
+##### linearization is exact, so the converged humidity satisfies the true
+##### nonlinear balance Gᵉ (qᵉ - qⁱⁿ) = -ρᵃᵗ u★ q★(qⁱⁿ).
 #####
 @inline function compute_interface_humidity(q::DryLayerHumidity, Tₛ, Ψₛ, Ψₐ, Ψᵢ, ℙₐ)
     ℂᵃᵗ = ℙₐ.thermodynamics_parameters
@@ -291,8 +330,8 @@ end
     Jᵃ   = -ρᵃᵗ * u★ * q★               # positive upward
     Δq   = qⁱⁿ⁻ - qᵃᵗ
 
-    # Same Δq-multiplied form as SkinHumidity to stay finite when Δq → 0:
-    #   qⁱⁿ (Gᵉ Δq + Jᵃ) = Gᵉ qᵉ Δq + Jᵃ qᵃᵗ
+    # Δq-multiplied series solution qⁱⁿ = (Gᵉ qᵉ + Gᵃ qᵃᵗ)/(Gᵉ + Gᵃ);
+    # see the derivation in the banner above.
     D    = Gᵉ * Δq + Jᵃ
     qⁱⁿ★ = (Gᵉ * qᵉ * Δq + Jᵃ * qᵃᵗ) / D
     return convert(FT, ifelse(D == 0, qⁱⁿ⁻, qⁱⁿ★))
