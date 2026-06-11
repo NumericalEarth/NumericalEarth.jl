@@ -250,7 +250,12 @@ end
     kk = ifelse(z_hi == z_lo, oftype(z, low),
                 (high - low) / (z_hi - z_lo) * (z - z_lo) + low)
     FT = eltype(grid)
-    return convert(FT, kk)
+    # Clamp to a valid fractional index. A target height below the column's clipped
+    # surface (or above its top) extrapolates `kk` outside [1, Nz]; the downstream
+    # `@inbounds` interpolator read is then out of bounds — finite-but-clamped on the
+    # CPU, but uninitialized garbage on the GPU (which NaN'd the terrain-following
+    # ERA5 initial state). Nearest-level is the intended out-of-range behavior.
+    return clamp(convert(FT, kk), one(FT), convert(FT, grid.Nz))
 end
 
 #####
