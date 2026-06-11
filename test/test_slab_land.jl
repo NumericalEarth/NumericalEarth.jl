@@ -354,9 +354,9 @@ end
         # `prognostic_fields` is the math-named NamedTuple of the prognostics
         # (saturation is diagnostic), aliasing the underlying fields.
         pf = prognostic_fields(land)
-        @test keys(pf) == (:T, :Mˡᵃ)
+        @test keys(pf) == (:T, :M)
         @test pf.T === land.temperature
-        @test pf.Mˡᵃ === land.water_storage
+        @test pf.M === land.water_storage
 
         # Checkpoint round-trip. `deepcopy` decouples the snapshot from the live
         # fields the way on-disk serialization does in a real checkpoint.

@@ -229,7 +229,9 @@ end
 #####
 
 # Math-named NamedTuple of the prognostic fields (`saturation` is diagnostic).
-Oceananigans.prognostic_fields(land::SlabLand) = (; T = land.temperature, Mˡᵃ = land.water_storage)
+# Bare symbols within the land namespace; the `ˡᵃ` superscript is reserved for
+# cross-component contexts (coupling, the all-components notation table).
+Oceananigans.prognostic_fields(land::SlabLand) = (; T = land.temperature, M = land.water_storage)
 
 function Oceananigans.prognostic_state(land::SlabLand)
     return (; clock         = prognostic_state(land.clock),

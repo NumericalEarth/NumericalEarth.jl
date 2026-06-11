@@ -140,7 +140,7 @@ end
 
     @inbounds begin
         Tij   = prognostic.T[i, j, 1]
-        Mij   = prognostic.Mˡᵃ[i, j, 1]
+        Mij   = prognostic.M[i, j, 1]
         dMdt  = diagnostics.water_storage_tendency[i, j, 1]
         Jˡb   = diagnostics.deep_liquid_flux[i, j, 1]
         Jˡs   = diagnostics.surface_liquid_flux[i, j, 1]
