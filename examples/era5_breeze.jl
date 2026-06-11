@@ -115,24 +115,23 @@ dates = start_date:Hour(1):end_date
 
 era5_datadir = "era5"   # Where data will be saved locally
 
-# ERA5 bounding box: cover the LAM domain plus 1° padding, snapped outward
-# to ERA5's native 0.25° grid.
+# ERA5 forcing domain = the spatial extent of [Fan2017](@citet)'s Domain 2 (their 9 km
+# parent): 181 × 166 WRF points → 180 × 165 cells at 9 km (= 3× the 3 km D3 step),
+# centered on the same SGP point as D3 and snapped outward to ERA5's native 0.25° grid.
+# ERA5 supplies this parent state (lateral BCs + Davies fringe), so the realized nest is
+# ERA5 → D2 → 3 km D3. We match D2's *extent* only — the parent is at ERA5's ~0.25°
+# resolution, not a 9 km grid.
 
-function era5_bbox(; padding_deg = 1.0, snap_deg = 0.25)
-    λ_min = floor((λ_west  - padding_deg) / snap_deg) * snap_deg
-    λ_max =  ceil((λ_east  + padding_deg) / snap_deg) * snap_deg
-    φ_min = floor((φ_south - padding_deg) / snap_deg) * snap_deg
-    φ_max =  ceil((φ_north + padding_deg) / snap_deg) * snap_deg
+D2_Nx, D2_Ny = 180, 165   # Fan (2017) Domain 2: 181 × 166 points − 1
+ΔλD2, ΔφD2   = 3Δλ, 3Δφ   # 9 km angular steps
 
-    return BoundingBox(longitude = (λ_min, λ_max),
-                       latitude  = (φ_min, φ_max))
-end
+snap_out(lo, hi; d = 0.25) = (floor(lo / d) * d, ceil(hi / d) * d)
+era5_region = BoundingBox(longitude = snap_out(λ₀ - D2_Nx * ΔλD2 / 2, λ₀ + D2_Nx * ΔλD2 / 2),
+                          latitude  = snap_out(φ₀ - D2_Ny * ΔφD2 / 2, φ₀ + D2_Ny * ΔφD2 / 2))
 
-era5_region = era5_bbox()
-
-@info @sprintf("LAM grid : λ ∈ [%.3f, %.3f], φ ∈ [%.3f, %.3f]; Δλ=%.4f°, Δφ=%.4f°",
+@info @sprintf("D3 (3 km LAM): λ ∈ [%.3f, %.3f], φ ∈ [%.3f, %.3f]; Δλ=%.4f°, Δφ=%.4f°",
                λ_west, λ_east, φ_south, φ_north, Δλ, Δφ)
-@info @sprintf("ERA5 bbox: λ ∈ [%.2f, %.2f], φ ∈ [%.2f, %.2f]",
+@info @sprintf("D2 (ERA5 parent, Fan D2 extent): λ ∈ [%.2f, %.2f], φ ∈ [%.2f, %.2f]",
                era5_region.longitude[1], era5_region.longitude[2],
                era5_region.latitude[1],  era5_region.latitude[2])
 
@@ -249,7 +248,7 @@ for (name, color, linewidth) in (("coastline",                      (:black,  0.
 end
 
 lines!(ax_map, domain_box(era5_region.longitude..., era5_region.latitude...)...;
-       color = :dodgerblue, linewidth = 3, label = "ERA5 forcing (parent)")
+       color = :dodgerblue, linewidth = 3, label = "ERA5 parent — Fan Domain 2 extent")
 lines!(ax_map, domain_box(λ_west, λ_east, φ_south, φ_north)...;
        color = :crimson, linewidth = 3, label = "3 km LAM — Fan Domain 3 (child)")
 scatter!(ax_map, [λ₀], [φ₀]; color = :black, marker = :star5, markersize = 18, label = "ARM SGP")
