@@ -205,6 +205,7 @@ using .DataWrangling.WOA
 using .DataWrangling.JRA55
 using .DataWrangling.OSPapa
 using .DataWrangling.ERA5
+using .DataWrangling.SoilGrids
 
 using PrecompileTools: @setup_workload, @compile_workload
 
