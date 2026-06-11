@@ -223,16 +223,6 @@ Base.show(io::IO, q::DryLayerHumidity) = print(io, summary(q))
 end
 
 #####
-##### Interface-state hooks. Reads saturation, bulk land temperature, and
-##### actual pore liquid fraction from the materialized land state — the same
-##### slots SkinHumidity uses, plus θˡ for the tortuosity model.
-#####
-##### These hooks are extended in atmosphere_land_fluxes.jl (saturation +
-##### temperature already exist for SkinHumidity); DryLayerHumidity
-##### just needs the same two plus the (already-present) saturation.
-#####
-
-#####
 ##### Humidity solver — the headline of the closure.
 #####
 ##### Sign convention for fluxes here matches `SkinHumidity` exactly: each
