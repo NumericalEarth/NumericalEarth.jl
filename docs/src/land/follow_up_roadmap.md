@@ -1,7 +1,7 @@
 # SlabLand follow-up roadmap
 
 This page sets out how follow-up work on `SlabLand` after the
-"Conservative variably saturated SlabLand + evaporation-front humidity"
+"Conservative variably saturated SlabLand + dry-layer humidity"
 PR (#323) should be staged — what is metadata-backed external data,
 what is implementation-only physics, and what is training provenance
 for learned maps. It is a contributor-facing planning document, not user
@@ -101,9 +101,9 @@ These are physical closures, not data products:
   `LinearReservoirDrainage` — bottom-boundary closures.
 - `NoRunoff` / `InfiltrationCapacityRunoff` — surface/subsurface runoff
   diagnostics.
-- `EvaporationFrontHumidity` — Fickian vapor-flux balance for `qⁱⁿ`
-  through an unresolved evaporation front at saturation-dependent depth
-  `δᵛ(𝒮)`. Sub-closures: `StorageBasedEvaporationFrontDepth`,
+- `DryLayerHumidity` — Fickian vapor-flux balance for `qⁱⁿ`
+  through an unresolved dry layer at saturation-dependent depth
+  `δᵛ(𝒮)`. Sub-closures: `StorageBasedDryLayerDepth`,
   `DryLayerVaporPistonVelocity` (with `ConstantTortuosity` /
   `MillingtonQuirk` dispatch), `UnitWaterActivity`.
 - `SlabLand.diagnostics` — closure-extensible diagnostics slot.
@@ -157,7 +157,7 @@ Test-coverage gaps Codecov flagged:
 4. `VanGenuchtenRetention` endpoint + monotonicity.
 5. `VanGenuchtenConductivity` `K(0) = 0`, `K(1) = K_saturated`.
 6. `MillingtonQuirk` diffusivity → 0 at saturation.
-7. `EvaporationFrontHumidity` `D == 0` fallback branch.
+7. `DryLayerHumidity` `D == 0` fallback branch.
 8. `WaterCoupledEnergy` both `deep_time_scale` and
    `deep_conductance` branches exercised.
 9. Construction error for `advect_surface_liquid_energy = true` (loud
@@ -223,8 +223,8 @@ Turn scalar `FT` closure parameters into
 | `VariablySaturatedHydrology` | `porosity`, `residual_liquid_fraction`, `storage_height`, `critical_saturation` |
 | `VanGenuchtenRetention` | `α`, `n` |
 | `VanGenuchtenConductivity` | `K_saturated`, `n`, `ℓ` |
-| `StorageBasedEvaporationFrontDepth` | `maximum_front_depth`, `front_depth_exponent` |
-| `DryLayerVaporPistonVelocity` | `minimum_front_depth`, `molecular_diffusivity` |
+| `StorageBasedDryLayerDepth` | `maximum_dry_layer_depth`, `dry_layer_exponent` |
+| `DryLayerVaporPistonVelocity` | `minimum_dry_layer_depth`, `molecular_diffusivity` |
 
 **Per parameter:** struct field → generic; constructor calls
 `normalize_property(FT, value)`; kernel access via `property_value(...)`;
@@ -328,7 +328,7 @@ through Tier-3 observation operators; they do not *set* the states.
 
 | Parameter | Satellite `Metadata`? | Implementation? | Notes |
 |---|---:|---:|---|
-| Evaporation-front humidity solve | No | Yes | Implemented |
+| Dry-layer humidity solve | No | Yes | Implemented |
 | `qⁱⁿ` | No | Yes | Solved diagnostic; never prescribed from satellite |
 | `δᵛ_max`, `η` | No | Yes | Tier 1 → `Field`; Tier 4 learnable |
 | `δᵛ_min` | No | Yes | Numerical floor |
@@ -386,16 +386,16 @@ follow-ups above:
   integration with a column scheme.
 - **River routing.** Consumes the existing runoff diagnostics; needs
   river-network topology.
-- **Two-node evaporation-front energy solve** — `Tᵉ` as a second
+- **Two-node dry-layer energy solve** — `Tᵉ` as a second
   residual in the interface fixed point.
 - **Land-side `SkinTemperature(DiffusiveFlux)` solve** so `Tⁱⁿ ≠ Tˡᵃ`.
-  The χ-interpolation machinery in `EvaporationFrontHumidity` is already
+  The χ-interpolation machinery in `DryLayerHumidity` is already
   in place for this.
 - **Brooks–Corey retention** alongside Van Genuchten.
 - **Implicit / semi-implicit deep Darcy** treatment for large `hˢˢ`.
 - **Subgrid tile blending** with ocean / sea ice (mixed grid cells).
 - **`MatricPotentialActivity`** — Kelvin-equation suction-driven vapor
-  reduction. Interface slot exists in `EvaporationFrontHumidity`;
+  reduction. Interface slot exists in `DryLayerHumidity`;
   implementation deferred (matters only at extreme dryness).
 
 ## 8. Acceptance criteria per tier

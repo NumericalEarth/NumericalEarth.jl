@@ -124,9 +124,9 @@ slab_land = SlabLand(land_grid; hydrology, energy)
 #
 # The hydrology exposes the diagnostic surface saturation
 # `𝒮 = clamp(θˡ/ν, 0, 1) ∈ [0, 1]`. The interface's
-# [`EvaporationFrontHumidity`](@ref) closure further below solves for the
+# [`DryLayerHumidity`](@ref) closure further below solves for the
 # atmosphere-facing specific humidity `qⁱⁿ` from a vapor-flux balance through
-# an unresolved evaporation front at saturation-dependent depth
+# an unresolved dry layer at saturation-dependent depth
 # `δᵛ(𝒮) = δᵛ_max[1 − min(𝒮/𝒮ᶜ, 1)]^η`. The wet center (`𝒮 ≥ 𝒮ᶜ`) has
 # `δᵛ = 0` and a saturated skin (`qⁱⁿ = qᵛ⁺`); the dry edges have
 # `δᵛ → δᵛ_max` and the small dry-layer piston velocity `wᵈ = Dᵛ_eff/δᵛ`
@@ -258,18 +258,18 @@ set_to_mean!(reference_state, atmos.model, rescale_densities = true)
 # `radiative_transfer_model.flux_divergence` and installs the Breeze-aware
 # `apply_air_land_radiative_fluxes!`.
 
-# The surface specific humidity is solved by [`EvaporationFrontHumidity`](@ref):
+# The surface specific humidity is solved by [`DryLayerHumidity`](@ref):
 # a Fickian vapor-flux balance between the saturated soil at depth `δᵛ` and
 # the atmosphere. The wet center has `δᵛ = 0` (saturated skin); the dry edges
 # have `δᵛ → δᵛ_max` and the dry-layer piston velocity `wᵈ = Dᵛ_eff/δᵛ`
 # limits evaporation self-consistently.
-interface_specific_humidity = EvaporationFrontHumidity(;
-    evaporation_front_depth = StorageBasedEvaporationFrontDepth(
-        maximum_front_depth = 0.05,
+interface_specific_humidity = DryLayerHumidity(;
+    dry_layer_depth = StorageBasedDryLayerDepth(
+        maximum_dry_layer_depth = 0.05,
         critical_saturation = 0.5,
-        front_depth_exponent = 2),
+        dry_layer_exponent = 2),
     vapor_exchange = DryLayerVaporPistonVelocity(
-        minimum_front_depth = 1e-4,
+        minimum_dry_layer_depth = 1e-4,
         molecular_diffusivity = 2.5e-5,
         tortuosity_model = MillingtonQuirk()),
     thermal_exchange_depth = 0.10,

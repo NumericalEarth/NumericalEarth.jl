@@ -56,13 +56,13 @@ function build_coupled_test_model(arch; M_init, T_init, with_radiation = false)
     # alternative thermal-conductance models.) The χ-interpolation in the
     # humidity formulation collapses gracefully: Tᵉ = Tˡᵃ when Tⁱⁿ = Tˡᵃ.
     al = atmosphere_land_interface(land_grid, atmosphere, land;
-        specific_humidity = EvaporationFrontHumidity(;
-            evaporation_front_depth = StorageBasedEvaporationFrontDepth(
-                maximum_front_depth = 0.05,
+        specific_humidity = DryLayerHumidity(;
+            dry_layer_depth = StorageBasedDryLayerDepth(
+                maximum_dry_layer_depth = 0.05,
                 critical_saturation = 0.5,
-                front_depth_exponent = 2.0),
+                dry_layer_exponent = 2.0),
             vapor_exchange = DryLayerVaporPistonVelocity(
-                minimum_front_depth = 1e-4,
+                minimum_dry_layer_depth = 1e-4,
                 molecular_diffusivity = 2.5e-5,
                 tortuosity_model = MillingtonQuirk()),
             thermal_exchange_depth = 0.10,
@@ -82,7 +82,7 @@ function build_coupled_test_model(arch; M_init, T_init, with_radiation = false)
     return AtmosphereLandModel(atmosphere, land; atmosphere_land_interface = al, radiation)
 end
 
-@testset "Breeze + EvaporationFrontHumidity wiring" begin
+@testset "Breeze + DryLayerHumidity wiring" begin
     for arch in test_architectures
         A = typeof(arch)
 

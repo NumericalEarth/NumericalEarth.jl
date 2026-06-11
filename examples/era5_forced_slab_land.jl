@@ -16,8 +16,8 @@
 #     hydrology = VariablySaturatedHydrology(...) # ϑˡ storage, signed-flux budget
 #
 # with the atmosphere-facing humidity solved by
-# [`EvaporationFrontHumidity`](@ref) — a Fickian vapor-flux balance through
-# an unresolved evaporation front at saturation-dependent depth `δᵛ(𝒮)` —
+# [`DryLayerHumidity`](@ref) — a Fickian vapor-flux balance through
+# an unresolved dry layer at saturation-dependent depth `δᵛ(𝒮)` —
 # instead of the prescribed `β(𝒮) qᵛ⁺(Tˡᵃ)` Manabe efficiency. See the
 # [SlabLand tutorial](../land/evaporation_front_slab_land.md) for the model
 # derivation. (Roughness lengths are set on the atmosphere–land flux
@@ -174,7 +174,7 @@ set!(slab_land; T = T₀ - Γ_lapse * Δz, M = 200.0)
 # Roughness lengths live with the atmosphere-land flux closure: pass a
 # `SimilarityTheoryFluxes` with the desired land roughness (0.1 m momentum,
 # 0.01 m scalar here) via `atmosphere_land_fluxes`. The atmosphere-facing
-# specific humidity uses [`EvaporationFrontHumidity`](@ref): vapor diffuses
+# specific humidity uses [`DryLayerHumidity`](@ref): vapor diffuses
 # from a saturation-dependent dry-layer depth `δᵛ(𝒮)` and a Fickian balance
 # closes for `qⁱⁿ` — drying-induced evaporation suppression is automatic.
 
@@ -182,13 +182,13 @@ atmosphere_land_fluxes = SimilarityTheoryFluxes(momentum_roughness_length    = 0
                                                 temperature_roughness_length = 0.01,
                                                 water_vapor_roughness_length = 0.01)
 
-interface_specific_humidity = EvaporationFrontHumidity(;
-    evaporation_front_depth = StorageBasedEvaporationFrontDepth(
-        maximum_front_depth = 0.05,
+interface_specific_humidity = DryLayerHumidity(;
+    dry_layer_depth = StorageBasedDryLayerDepth(
+        maximum_dry_layer_depth = 0.05,
         critical_saturation = 0.5,
-        front_depth_exponent = 2),
+        dry_layer_exponent = 2),
     vapor_exchange = DryLayerVaporPistonVelocity(
-        minimum_front_depth = 1e-4,
+        minimum_dry_layer_depth = 1e-4,
         molecular_diffusivity = 2.5e-5,
         tortuosity_model = MillingtonQuirk()),
     thermal_exchange_depth = 0.10,

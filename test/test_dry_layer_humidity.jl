@@ -25,12 +25,12 @@ function _make_call_args(q; Tˡᵃ, Tⁱⁿ, 𝒮, pᵃᵗ, qᵃᵗ, Tᵃᵗ, u�
     return ℂ, Ψₛ, Ψₐ, Ψᵢ, ℙₐ
 end
 
-@testset "EvaporationFrontHumidity wet branch (𝒮 ≥ 𝒮ᶜ)" begin
-    q = EvaporationFrontHumidity(;
-        evaporation_front_depth = StorageBasedEvaporationFrontDepth(
-            maximum_front_depth = 0.05, critical_saturation = 0.5, front_depth_exponent = 2.0),
+@testset "DryLayerHumidity wet branch (𝒮 ≥ 𝒮ᶜ)" begin
+    q = DryLayerHumidity(;
+        dry_layer_depth = StorageBasedDryLayerDepth(
+            maximum_dry_layer_depth = 0.05, critical_saturation = 0.5, dry_layer_exponent = 2.0),
         vapor_exchange = DryLayerVaporPistonVelocity(
-            minimum_front_depth = 1e-4, molecular_diffusivity = 2.5e-5),
+            minimum_dry_layer_depth = 1e-4, molecular_diffusivity = 2.5e-5),
         thermal_exchange_depth = 0.10, porosity = 0.4)
 
     # 𝒮 = 0.5 ⇒ δᵛ = 0 ⇒ wet ⇒ qⁱⁿ = qᵛ⁺(Tⁱⁿ).
@@ -44,12 +44,12 @@ end
     @test isapprox(qⁱⁿ★, qˢᵃᵗ; atol = 1e-15)
 end
 
-@testset "EvaporationFrontHumidity vapor divider" begin
-    q = EvaporationFrontHumidity(;
-        evaporation_front_depth = StorageBasedEvaporationFrontDepth(
-            maximum_front_depth = 0.05, critical_saturation = 0.5, front_depth_exponent = 1.0),
+@testset "DryLayerHumidity vapor divider" begin
+    q = DryLayerHumidity(;
+        dry_layer_depth = StorageBasedDryLayerDepth(
+            maximum_dry_layer_depth = 0.05, critical_saturation = 0.5, dry_layer_exponent = 1.0),
         vapor_exchange = DryLayerVaporPistonVelocity(
-            minimum_front_depth = 1e-4, molecular_diffusivity = 2.5e-5,
+            minimum_dry_layer_depth = 1e-4, molecular_diffusivity = 2.5e-5,
             tortuosity_model = ConstantTortuosity()),
         thermal_exchange_depth = 0.10, porosity = 0.4)
 
@@ -72,7 +72,7 @@ end
     @test isapprox(qⁱⁿ★, expected; atol = 1e-15)
 end
 
-@testset "EvaporationFrontHumidity Tᵉ interpolation" begin
+@testset "DryLayerHumidity Tᵉ interpolation" begin
     # δᵛ controls χ = clip(δᵛ/ℓᵀ, 0, 1) ⇒ Tᵉ = Tⁱⁿ + χ(Tˡᵃ - Tⁱⁿ).
     # We don't directly expose Tᵉ, but the source humidity is qᵛ⁺(Tᵉ), so the
     # vapor balance pins Tᵉ implicitly. Use cases where 𝒮 → δᵛ is known.
@@ -83,11 +83,11 @@ end
     Tˡᵃ = 290.0; Tⁱⁿ = 310.0; pᵃᵗ = 1.0e5
     qᵃᵗ = 1.0e-2; Tᵃᵗ = 295.0; u★ = 0.3; q★ = -2.0e-4; qⁱⁿ⁻ = 0.005
 
-    q = EvaporationFrontHumidity(;
-        evaporation_front_depth = StorageBasedEvaporationFrontDepth(
-            maximum_front_depth = 0.05, critical_saturation = 0.5, front_depth_exponent = 1.0),
+    q = DryLayerHumidity(;
+        dry_layer_depth = StorageBasedDryLayerDepth(
+            maximum_dry_layer_depth = 0.05, critical_saturation = 0.5, dry_layer_exponent = 1.0),
         vapor_exchange = DryLayerVaporPistonVelocity(
-            minimum_front_depth = 1e-4, molecular_diffusivity = 2.5e-5,
+            minimum_dry_layer_depth = 1e-4, molecular_diffusivity = 2.5e-5,
             tortuosity_model = ConstantTortuosity()),
         thermal_exchange_depth = 0.10, porosity = 0.4)
 
@@ -105,13 +105,13 @@ end
     @test qⁱⁿ★_dry < qⁱⁿ★_wet
 end
 
-@testset "EvaporationFrontHumidity Gᵉ → 0 ⇒ qⁱⁿ → qᵃᵗ" begin
+@testset "DryLayerHumidity Gᵉ → 0 ⇒ qⁱⁿ → qᵃᵗ" begin
     # Gᵉ → 0 by setting Dᵛ₀ very small. Atmospheric flux drives qⁱⁿ toward qᵃᵗ.
-    q = EvaporationFrontHumidity(;
-        evaporation_front_depth = StorageBasedEvaporationFrontDepth(
-            maximum_front_depth = 0.05, critical_saturation = 0.5, front_depth_exponent = 1.0),
+    q = DryLayerHumidity(;
+        dry_layer_depth = StorageBasedDryLayerDepth(
+            maximum_dry_layer_depth = 0.05, critical_saturation = 0.5, dry_layer_exponent = 1.0),
         vapor_exchange = DryLayerVaporPistonVelocity(
-            minimum_front_depth = 1e-4, molecular_diffusivity = 1e-14,
+            minimum_dry_layer_depth = 1e-4, molecular_diffusivity = 1e-14,
             tortuosity_model = ConstantTortuosity()),
         thermal_exchange_depth = 0.10, porosity = 0.4)
 

@@ -133,16 +133,16 @@ end
 @inline interface_hydrology_state(i, j, grid, q::FractionalHumidity, land_state) =
     interface_hydrology_state(i, j, grid, q.efficiency, land_state)
 @inline interface_hydrology_state(i, j, grid, ::CriticalSaturation, land_state) = land_saturation(i, j, grid, land_state)
-@inline interface_hydrology_state(i, j, grid, ::EvaporationFrontHumidity, land_state) =
+@inline interface_hydrology_state(i, j, grid, ::DryLayerHumidity, land_state) =
     land_saturation(i, j, grid, land_state)
 @inline interface_hydrology_state(i, j, grid, interface_model, land_state) = (;) # default: pulls nothing
 
 # Energy state: humidity formulations that need the bulk land temperature
-# (the SkinHumidity reservoir and the EvaporationFrontHumidity dry-layer model)
+# (the SkinHumidity reservoir and the DryLayerHumidity dry-layer model)
 # pull it from the materialized land state.
 @inline interface_energy_state(i, j, grid, ::SkinHumidity, land_state) =
     (temperature = convert(eltype(grid), land_field_value(land_state.T, i, j)),)
-@inline interface_energy_state(i, j, grid, ::EvaporationFrontHumidity, land_state) =
+@inline interface_energy_state(i, j, grid, ::DryLayerHumidity, land_state) =
     (temperature = convert(eltype(grid), land_field_value(land_state.T, i, j)),)
 @inline interface_energy_state(i, j, grid, interface_model, land_state) = (;) # default: pulls nothing
 

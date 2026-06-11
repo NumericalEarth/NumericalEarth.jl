@@ -34,8 +34,8 @@ export
     SkinHumidity,
     FractionalHumidity,
     CriticalSaturation,
-    EvaporationFrontHumidity,
-    StorageBasedEvaporationFrontDepth,
+    DryLayerHumidity,
+    StorageBasedDryLayerDepth,
     DryLayerVaporPistonVelocity,
     ConstantTortuosity,
     MillingtonQuirk,
@@ -111,7 +111,7 @@ end
 # Turbulent fluxes
 include("roughness_lengths.jl")
 include("interface_states.jl")
-include("evaporation_front_humidity.jl")
+include("dry_layer_humidity.jl")
 include("compute_interface_state.jl")
 include("similarity_theory_turbulent_fluxes.jl")
 include("coefficient_based_turbulent_fluxes.jl")

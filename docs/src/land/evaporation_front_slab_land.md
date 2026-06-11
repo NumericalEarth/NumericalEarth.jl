@@ -6,7 +6,7 @@ configuration: a conservative slab water balance, a force-restore
 internal-energy budget with a water-mass-dependent heat capacity, and an
 atmosphere-facing humidity formulation that solves the surface specific
 humidity from a dry-layer vapor balance against an unresolved
-evaporation front.
+dry layer.
 
 The headline observable behavior — wet patches evaporate strongly while
 dry patches partition all surface energy into sensible heat — emerges
@@ -18,8 +18,8 @@ All math symbols below follow
 built around three closures
 ([`VariablySaturatedHydrology`](@ref),
 [`WaterCoupledEnergy`](@ref),
-[`EvaporationFrontHumidity`](@ref)) plus their sub-closures (deep liquid
-flux, runoff, retention curve, evaporation-front depth, dry-layer vapor
+[`DryLayerHumidity`](@ref)) plus their sub-closures (deep liquid
+flux, runoff, retention curve, dry-layer depth, dry-layer vapor
 exchange). It targets bare ground without snow, ice, or vegetation; see
 §9 ("Out of scope") below.
 
@@ -224,9 +224,9 @@ known weaknesses:
 2. The closure does not respond to *atmospheric* conditions — the same
    `β` is used for calm/windy days, dry/humid air.
 
-[`EvaporationFrontHumidity`](@ref) replaces this with a *vapor-flux
+[`DryLayerHumidity`](@ref) replaces this with a *vapor-flux
 balance* between the soil and the atmosphere. Vapor diffuses up from a
-saturated soil-air pocket at the evaporation front, at depth `δᵛ` below
+saturated soil-air pocket at the dry layer, at depth `δᵛ` below
 the surface, by Fickian diffusion through the dry layer above the
 front:
 
@@ -250,7 +250,7 @@ no prescribed exchange coefficient). When the surface is wet enough
 skin `qⁱⁿ = qᵛ⁺(Tⁱⁿ)`, reproducing the saturated-surface limit exactly.
 
 `δᵛ` is itself diagnostic of saturation via
-[`StorageBasedEvaporationFrontDepth`](@ref):
+[`StorageBasedDryLayerDepth`](@ref):
 
 ```math
 \delta^v(\mathcal S) = \delta^v_{max}\,\bigl[1 - \min(\mathcal S/\mathcal S^c, 1)\bigr]^\eta.
@@ -263,7 +263,7 @@ prescribed `β(𝒮)`.
 
 ### 4.1 Source temperature `Tᵉ` and the χ interpolation
 
-The vapor source temperature is the evaporation-front temperature `Tᵉ`,
+The vapor source temperature is the dry-layer temperature `Tᵉ`,
 which we diagnose between the atmosphere-facing skin `Tⁱⁿ` and the
 bulk-soil `Tˡᵃ` according to how deep the front sits relative to the
 thermal exchange scale `ℓᵀ`:
@@ -287,7 +287,7 @@ is already in place for the follow-up.
 The atmosphere–land flux solver iterates the interface state `(Tⁱⁿ,
 qⁱⁿ)` to convergence. Each iteration `k`:
 
-1. `δᵛ ← δᵛ(𝒮)` from [`StorageBasedEvaporationFrontDepth`](@ref).
+1. `δᵛ ← δᵛ(𝒮)` from [`StorageBasedDryLayerDepth`](@ref).
 2. `χ ← clip(δᵛ/ℓᵀ, 0, 1)`.
 3. `Tᵉ ← Tⁱⁿ + χ (Tˡᵃ − Tⁱⁿ)`.
 4. `qᵉ ← aᵉ qᵛ⁺(Tᵉ, pᵉ)`.
@@ -303,7 +303,7 @@ The Δq-multiplied form avoids the `0/0` indeterminacy when the
 near-iterate humidity matches `qᵃᵗ` exactly, and is the same trick the
 existing `SkinHumidity` closure uses. Convergence is robust across the
 dry / wet / windy / calm coverage matrix — see
-[`test_evaporation_front_humidity.jl`](https://github.com/NumericalEarth/NumericalEarth.jl/blob/main/test/test_evaporation_front_humidity.jl).
+[`test_dry_layer_humidity.jl`](https://github.com/NumericalEarth/NumericalEarth.jl/blob/main/test/test_dry_layer_humidity.jl).
 
 ## 5. Numerical robustness
 
@@ -374,13 +374,13 @@ land = SlabLand(land_grid;
     ),
 )
 
-interface = EvaporationFrontHumidity(;
-    evaporation_front_depth = StorageBasedEvaporationFrontDepth(
-        maximum_front_depth = 0.05,
+interface = DryLayerHumidity(;
+    dry_layer_depth = StorageBasedDryLayerDepth(
+        maximum_dry_layer_depth = 0.05,
         critical_saturation = 0.5,
-        front_depth_exponent = 2),
+        dry_layer_exponent = 2),
     vapor_exchange = DryLayerVaporPistonVelocity(
-        minimum_front_depth = 1e-4,
+        minimum_dry_layer_depth = 1e-4,
         molecular_diffusivity = 2.5e-5,
         tortuosity_model = :millington_quirk),
     thermal_exchange_depth = 0.10,
@@ -412,13 +412,13 @@ The following are deferred to follow-up PRs:
 * `Eˡᵃ` as a first-class state variable (needed for phase change).
 * `MatricPotentialActivity` — matric-suction-driven vapor-pressure
   reduction via the Kelvin equation `aᵉ = exp(g Π / (Rᵛ Tᵉ))`. Interface
-  slot exists in [`EvaporationFrontHumidity`](@ref); implementation
+  slot exists in [`DryLayerHumidity`](@ref); implementation
   deferred (only matters at extreme dryness).
 * Land-side `SkinTemperature(DiffusiveFlux)` solve so that `Tⁱⁿ ≠ Tˡᵃ`
   and the χ interpolation has bite.
 * `HydraulicInfiltrationRunoff`, `StorageOverflowRunoff`,
   `TopographicRunoff` (more elaborate runoff closures).
 * Brooks–Corey retention curve.
-* Two-node evaporation-front energy solve (`Tᵉ` as a second residual).
+* Two-node dry-layer energy solve (`Tᵉ` as a second residual).
 * Implicit / semi-implicit deep Darcy treatment for large `hˢˢ`.
 * Subgrid tile blending with ocean / sea ice.

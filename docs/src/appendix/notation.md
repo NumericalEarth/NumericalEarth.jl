@@ -134,8 +134,8 @@ denote the _component_ or _location_.
 
 Symbols introduced by [`VariablySaturatedHydrology`](@ref),
 [`WaterCoupledEnergy`](@ref), and
-[`EvaporationFrontHumidity`](@ref). See the
-[evaporation-front slab-land page](../land/evaporation_front_slab_land.md)
+[`DryLayerHumidity`](@ref). See the
+[dry-layer slab-land page](../land/evaporation_front_slab_land.md)
 for an extended discussion.
 
 | Math | Code | Property | Description |
@@ -155,11 +155,11 @@ for an extended discussion.
 | ``T_r`` | `reference_temperature` | reference temperature | Reference temperature for internal energy ``e^l(T) = c^l (T - T_r)`` (K) |
 | ``T^{in}`` | – | interface temperature | Atmosphere-facing skin temperature, ``T^{in}`` (K) |
 | ``q^{in}`` | – | interface specific humidity | Atmosphere-facing skin humidity, ``q^{in}`` (kg kg⁻¹) |
-| ``T^e`` | – | evaporation-front temperature | Diagnostic temperature at the evaporation front (K) |
-| ``q^e`` | – | evaporation-front specific humidity | Vapor source humidity at the evaporation front (kg kg⁻¹) |
-| ``\delta^v`` | `evaporation_front_depth` | evaporation-front depth | Dry-layer thickness through which vapor diffuses, diagnostic of ``𝒮`` (m) |
+| ``T^e`` | – | dry-layer temperature | Diagnostic temperature at the dry layer (K) |
+| ``q^e`` | – | dry-layer specific humidity | Vapor source humidity at the dry layer (kg kg⁻¹) |
+| ``\delta^v`` | `dry_layer_depth` | dry-layer depth | Dry-layer thickness through which vapor diffuses, diagnostic of ``𝒮`` (m) |
 | ``\chi`` | – | blend coefficient | ``\chi = \mathrm{clip}(\delta^v/\ell^T, 0, 1)``; weights ``T^e`` between ``T^{in}`` and ``T^{la}`` (–) |
-| ``\eta`` | `front_depth_exponent` | front-depth exponent | Exponent in ``\delta^v = \delta^v_{max}[1 - \min(𝒮/𝒮^c, 1)]^\eta`` (–) |
+| ``\eta`` | `dry_layer_exponent` | front-depth exponent | Exponent in ``\delta^v = \delta^v_{max}[1 - \min(𝒮/𝒮^c, 1)]^\eta`` (–) |
 | ``\ell^T`` | `thermal_exchange_depth`, `exchange_depth` | thermal exchange depth | Depth over which ``\Lambda^{in} = \kappa^T/\ell^T`` couples ``T^{la}`` to ``T^{in}`` (m) |
 | ``D^v`` | `molecular_diffusivity` | vapor diffusivity in air | Molecular vapor diffusivity in air (m² s⁻¹) |
 | ``w^d`` | – | dry-layer piston velocity | ``w^d = D^v_{eff}/\max(\delta^v, \delta^v_{min})`` (m s⁻¹) |
