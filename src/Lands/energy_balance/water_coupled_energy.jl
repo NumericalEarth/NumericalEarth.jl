@@ -134,8 +134,8 @@ end
 ##### Time-step kernel.
 #####
 
-@kernel function _water_coupled_step!(prognostic, fluxes, diagnostics, energy, Δt, grid, time)
-    i, j = @index(Global, NTuple)
+@inline function temperature_tendency(i, j, grid, energy::WaterCoupledEnergy,
+                                      prognostic, fluxes, diagnostics, time)
     FT = eltype(grid)
 
     @inbounds begin
@@ -167,20 +167,11 @@ end
 
     eR_lat = cˡ * (Tij - Tᵣ) * Rlat
 
-    dEdt  = Jᴱ_cond + Jᴱ_adv_b - (Jᴱs + Jᴱ_adv_s) - eR_lat
-    dTdt  = (dEdt - cˡ * (Tij - Tᵣ) * dMdt) / C
-
-    @inbounds prognostic.T[i, j, 1] = Tij + Δt * dTdt
+    dEdt = Jᴱ_cond + Jᴱ_adv_b - (Jᴱs + Jᴱ_adv_s) - eR_lat
+    return (dEdt - cˡ * (Tij - Tᵣ) * dMdt) / C
 end
 
-function time_step!(energy::WaterCoupledEnergy, land, Δt, time)
-    grid = land.grid
-    arch = architecture(grid)
-    launch!(arch, grid, :xy, _water_coupled_step!,
-            Oceananigans.prognostic_fields(land), land.fluxes, land.diagnostics,
-            energy, Δt, grid, time)
-    return nothing
-end
+time_step!(energy::WaterCoupledEnergy, land, Δt, time) = step_land_temperature!(energy, land, Δt, time)
 
 EarthSystemModels.surface_temperature(::WaterCoupledEnergy, land) = land.temperature
 

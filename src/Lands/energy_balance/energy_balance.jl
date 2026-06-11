@@ -64,6 +64,35 @@ energy flux (`land.fluxes.net_energy_flux`) as needed. The default is a no-op
 time_step!(::AbstractEnergyBalance, land, Δt, time) = nothing
 time_step!(energy::AbstractEnergyBalance, land, Δt) = time_step!(energy, land, Δt, zero(Δt))
 
+#####
+##### Shared explicit-Euler slab-temperature stepper
+#####
+
+"""
+    temperature_tendency(i, j, grid, energy, prognostic, fluxes, diagnostics, time)
+
+Pointwise ``∂Tˡᵃ/∂t`` for the energy closure `energy`, in kernel form. Dispatched
+on the closure; reads the land's `prognostic`, `fluxes`, and `diagnostics`
+NamedTuples. Each slab-temperature closure adds a method.
+"""
+function temperature_tendency end
+
+@kernel function _step_land_temperature!(prognostic, fluxes, diagnostics, energy, grid, Δt, time)
+    i, j = @index(Global, NTuple)
+    @inbounds prognostic.T[i, j, 1] += Δt *
+        temperature_tendency(i, j, grid, energy, prognostic, fluxes, diagnostics, time)
+end
+
+# Forward-Euler advance of `land.temperature` shared by the slab-temperature
+# energy closures; the physics lives in their `temperature_tendency` methods.
+function step_land_temperature!(energy, land, Δt, time)
+    grid = land.grid
+    launch!(architecture(grid), grid, :xy, _step_land_temperature!,
+            Oceananigans.prognostic_fields(land), land.fluxes, land.diagnostics,
+            energy, grid, Δt, time)
+    return nothing
+end
+
 """
     update_diagnostics!(energy, land)
 
