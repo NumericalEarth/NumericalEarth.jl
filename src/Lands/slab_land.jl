@@ -225,6 +225,29 @@ function Oceananigans.set!(land::SlabLand; T=nothing, M=nothing)
 end
 
 #####
+##### Prognostic-field accessors and checkpointing
+#####
+
+# Math-named NamedTuple of the prognostic fields (`saturation` is diagnostic).
+Oceananigans.prognostic_fields(land::SlabLand) = (; T = land.temperature, Mˡᵃ = land.water_storage)
+
+function Oceananigans.prognostic_state(land::SlabLand)
+    return (; clock         = prognostic_state(land.clock),
+              temperature   = prognostic_state(land.temperature),
+              water_storage = prognostic_state(land.water_storage))
+end
+
+function Oceananigans.restore_prognostic_state!(land::SlabLand, state)
+    restore_prognostic_state!(land.clock,         state.clock)
+    restore_prognostic_state!(land.temperature,   state.temperature)
+    restore_prognostic_state!(land.water_storage, state.water_storage)
+    update_state!(land)
+    return land
+end
+
+Oceananigans.restore_prognostic_state!(land::SlabLand, ::Nothing) = land
+
+#####
 ##### Container-level atmosphere-facing accessors
 #####
 

@@ -134,67 +134,51 @@ end
 ##### Time-step kernel.
 #####
 
-@kernel function _water_coupled_step!(T, JᴱS, Tˡp,
-                                      M_field, dMdt_field, Jˡb_field, Jˡs_field, Rlat_field,
-                                      Tᵣ, cˡ, Cdry, Tᵈ, energy,
-                                      advect_deep, advect_surf,
-                                      Δt, grid, time)
+@kernel function _water_coupled_step!(prognostic, fluxes, diagnostics, energy, Δt, grid, time)
     i, j = @index(Global, NTuple)
     FT = eltype(grid)
 
     @inbounds begin
-        Tij  = T[i, j, 1]
-        Mij  = M_field[i, j, 1]
-        dMdt = dMdt_field[i, j, 1]
-        Jˡb  = Jˡb_field[i, j, 1]
-        Jˡs  = Jˡs_field[i, j, 1]
-        Rlat = Rlat_field[i, j, 1]
-        Jᴱs  = JᴱS[i, j, 1]
-        Tˡpij = Tˡp[i, j, 1]
+        Tij   = prognostic.T[i, j, 1]
+        Mij   = prognostic.Mˡᵃ[i, j, 1]
+        dMdt  = diagnostics.water_storage_tendency[i, j, 1]
+        Jˡb   = diagnostics.deep_liquid_flux[i, j, 1]
+        Jˡs   = diagnostics.surface_liquid_flux[i, j, 1]
+        Rlat  = diagnostics.subsurface_runoff[i, j, 1]
+        Jᴱs   = fluxes.surface_energy_flux[i, j, 1]
+        Tˡpij = fluxes.liquid_precipitation_temperature[i, j, 1]
     end
 
-    Cdry_ij = property_value(Cdry, i, j, 1)
+    cˡ      = energy.liquid_heat_capacity
+    Tᵣ      = energy.reference_temperature
+    Cdry_ij = property_value(energy.dry_heat_capacity, i, j, 1)
     C       = Cdry_ij + cˡ * max(Mij, zero(Mij))
 
-    Tᵈ_ij = stateindex(Tᵈ, i, j, 1, grid, time, (Center, Center, Center))
+    Tᵈ_ij = stateindex(energy.deep_temperature, i, j, 1, grid, time, (Center, Center, Center))
     Λᵈ    = deep_conductance_value(energy, C, i, j, grid, time)
 
     Jᴱ_cond = Λᵈ * (Tᵈ_ij - Tij)
 
-    eb_up  = upwind_deep_internal_energy(Jˡb, Tᵈ_ij, Tij, Tᵣ, cˡ)
-    Jᴱ_adv_b = ifelse(advect_deep, eb_up * Jˡb, zero(FT))
+    eb_up    = upwind_deep_internal_energy(Jˡb, Tᵈ_ij, Tij, Tᵣ, cˡ)
+    Jᴱ_adv_b = ifelse(energy.advect_deep_liquid_energy, eb_up * Jˡb, zero(FT))
 
-    es_up  = upwind_surface_internal_energy(Jˡs, Tij, Tˡpij, Tᵣ, cˡ)
-    Jᴱ_adv_s = ifelse(advect_surf, es_up * Jˡs, zero(FT))
+    es_up    = upwind_surface_internal_energy(Jˡs, Tij, Tˡpij, Tᵣ, cˡ)
+    Jᴱ_adv_s = ifelse(energy.advect_surface_liquid_energy, es_up * Jˡs, zero(FT))
 
     eR_lat = cˡ * (Tij - Tᵣ) * Rlat
 
     dEdt  = Jᴱ_cond + Jᴱ_adv_b - (Jᴱs + Jᴱ_adv_s) - eR_lat
     dTdt  = (dEdt - cˡ * (Tij - Tᵣ) * dMdt) / C
 
-    @inbounds T[i, j, 1] = Tij + Δt * dTdt
+    @inbounds prognostic.T[i, j, 1] = Tij + Δt * dTdt
 end
 
 function time_step!(energy::WaterCoupledEnergy, land, Δt, time)
     grid = land.grid
     arch = architecture(grid)
     launch!(arch, grid, :xy, _water_coupled_step!,
-            land.temperature,
-            land.fluxes.surface_energy_flux,
-            land.fluxes.liquid_precipitation_temperature,
-            land.water_storage,
-            land.diagnostics.water_storage_tendency,
-            land.diagnostics.deep_liquid_flux,
-            land.diagnostics.surface_liquid_flux,
-            land.diagnostics.subsurface_runoff,
-            energy.reference_temperature,
-            energy.liquid_heat_capacity,
-            energy.dry_heat_capacity,
-            energy.deep_temperature,
-            energy,
-            energy.advect_deep_liquid_energy,
-            energy.advect_surface_liquid_energy,
-            Δt, grid, time)
+            Oceananigans.prognostic_fields(land), land.fluxes, land.diagnostics,
+            energy, Δt, grid, time)
     return nothing
 end
 
