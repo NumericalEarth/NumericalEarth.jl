@@ -5,12 +5,9 @@ following the conventions established in [Breeze.jl](https://github.com/Numerica
 
 ## How the notation works
 
-Variable names are built by combining a **base symbol** with **superscripts**
-and, occasionally, a short plain-text **tag**.
+Variable names are built by combining a **base symbol** with **superscripts** and, occasionally, a short plain-text **tag**.
 
-**Base symbols** are single characters (often script letters) that identify the
-physical category of a quantity — for example, `𝒬` for heat flux, `ℐ` for
-radiative intensity, `J` for mass flux, and `τ` for kinematic momentum flux.
+**Base symbols** are single characters (often script letters) that identify the physical category of a quantity — for example, `𝒬` for heat flux, `ℐ` for radiative intensity, `J` for mass flux, and `τ` for kinematic momentum flux.
 
 **Superscripts** refine the meaning in several ways:
 
@@ -26,12 +23,9 @@ downwelling and upwelling directions in radiative fluxes.
 **Subscripts** encode radiative process (`ₜ` transmitted, `ₐ` absorbed)
 and the similarity-theory scale `★`.
 
-For example, `𝒬ᵛ` is the latent (vapor) heat flux, `ℐꜜˢʷ` is the downwelling
-shortwave radiative intensity, and `τˣ` is the zonal kinematic momentum flux.
+For example, `𝒬ᵛ` is the latent (vapor) heat flux, `ℐꜜˢʷ` is the downwelling shortwave radiative intensity, and `τˣ` is the zonal kinematic momentum flux.
 
-In Julia code, superscripts are entered with Unicode (e.g. `\scrQ<tab>` → `𝒬`,
-then `\^v<tab>` → `ᵛ`). The modifier arrows `ꜜ` and `ꜛ` are entered with
-`\^downarrow<tab>` and `\^uparrow<tab>`.
+In Julia code, superscripts are entered with Unicode (e.g. `\scrQ<tab>` → `𝒬`, then `\^v<tab>` → `ᵛ`). The modifier arrows `ꜜ` and `ꜛ` are entered with `\^downarrow<tab>` and `\^uparrow<tab>`.
 
 ## Base symbols
 
@@ -53,8 +47,7 @@ These base symbols are combined with superscript and subscript labels
 ## Superscript and subscript labels
 
 Superscripts and subscripts are used systematically to label physical quantities.
-Superscripts generally denote the _type_ or _phase_ of a quantity, while subscripts
-denote the _component_ or _location_.
+Superscripts generally denote the _type_ or _phase_ of a quantity, while subscripts denote the _component_ or _location_.
 
 ### Superscript labels
 
@@ -120,7 +113,7 @@ denote the _component_ or _location_.
 
 | Math | Code | Property | Description |
 |:----:|:----:|:---------|:------------|
-| ``T`` | `temperature` | bulk land temperature | Prognostic land-column temperature (K) |
+| ``T`` | `temperature` | ground temperature | Prognostic land-column temperature (K) |
 | ``M^{\mathrm{la}}`` | `water_storage` | land water | Prognostic land water mass per area (kg m⁻²) |
 | ``M^{\mathrm{la}\!+}`` | `maximum_water_storage` | maximum land water | Bucket capacity; soil-science "field capacity" (kg m⁻²) |
 | ``𝒮`` | `saturation` | surface saturation | Continuous land surface saturation ``\mathrm{clamp}(Mˡᵃ/Mˡᵃ⁺, 0, 1)``; the interface humidity models derive their availability ``β`` from it (–) |
@@ -129,6 +122,12 @@ denote the _component_ or _location_.
 | ``τ^{\mathrm{deep}}`` | `deep_time_scale` | deep-restore time scale | Time scale of surface relaxation toward ``T^{\mathrm{deep}}`` (s) |
 | ``d`` | `surface_thickness` | surface thickness | Thickness of the dry surface layer through which soil vapor diffuses, for `SkinHumidity` (m) |
 | ``κ^q`` | `vapor_diffusivity` | soil vapor diffusivity | Vapor mass diffusivity in the surface soil layer, for `SkinHumidity` (kg m⁻¹ s⁻¹) |
+| ``\chi^{\mathrm{sand}}`` | `sand` | soil sand fraction | Mass fraction of sand grains in the mineral (non-organic) solid matrix (kg kg⁻¹)
+| ``\chi^{\mathrm{silt}}`` | `silt` | soil silt fraction | Mass fraction of silt grains in the mineral (non-organic) solid matrix (kg kg⁻¹)
+| ``\chi^{\mathrm{clay}}`` | `clay` | soil clay fraction | Mass fraction of clay grains in the mineral (non-organic) solid matrix (kg kg⁻¹)
+| ``\chi^{\mathrm{soc}}`` | `SOC` | soil organic carbon concentration | Mass fraction of organic carbon in the solid matrix (kg kg⁻¹)
+| ``\rho^{\mathrm{soil}}`` | `ρ_soil` | soil bulk dry density | Bulk dry density of the soil within each vertical layer (kg m⁻³)
+| ``\rho^{\mathrm{soc}}`` | `ρ_soc` | soil organic carbon density | Bulk density of organic material within each vertical layer (kg m⁻³)
 
 ## Ocean state variables
 
@@ -259,9 +258,7 @@ where applicable.
 
 ## Typing Unicode symbols in Julia
 
-Most symbols can be entered in the Julia REPL and in editors with Julia support
-by typing a LaTeX-like abbreviation followed by `<tab>`. The table below
-collects the less obvious completions used in this notation.
+Most symbols can be entered in the Julia REPL and in editors with Julia support by typing a LaTeX-like abbreviation followed by `<tab>`. The table below collects the less obvious completions used in this notation.
 
 | Symbol | Tab completion | Description |
 |:------:|:---------------|:------------|
