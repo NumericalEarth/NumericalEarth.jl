@@ -32,8 +32,6 @@ Thermodynamics = "b60c26fb-14c3-4610-9d3e-2d17fe7ff00c"
 WorldOceanAtlasTools = "04f20302-f1b9-11e8-29d9-7d841cb0a64a"
 
 [sources]
-CopernicusMarine = {url = "https://github.com/NumericalEarth/CopernicusMarine.jl", rev = "add-netcdf-backend"}
-ConservativeRegridding = {url = "https://github.com/JuliaGeo/ConservativeRegridding.jl", rev = "main"}
 NumericalEarth = {path = ".."}
 
 [compat]
@@ -44,8 +42,8 @@ CFTime = "0.1, 0.2"
 CUDA = "5.9.5"
 ClimaSeaIce = "0.5.6"
 CondaPkg = "0.2.33"
-ConservativeRegridding = "0.2.4"
-CopernicusMarine = "0.1.1"
+ConservativeRegridding = "0.2"
+CopernicusMarine = "0.1"
 Dates = "<0.0.1, 1"
 Downloads = "<0.0.1, 1"
 ExplicitImports = "1.15"
