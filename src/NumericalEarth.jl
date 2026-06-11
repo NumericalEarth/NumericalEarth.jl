@@ -49,7 +49,6 @@ export
     DryLayerVaporPistonVelocity,
     ConstantTortuosity,
     MillingtonQuirk,
-    UnitWaterActivity,
     ElevationCorrection,
     atmosphere_land_interface,
     SlabOcean,

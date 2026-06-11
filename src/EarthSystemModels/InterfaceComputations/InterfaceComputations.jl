@@ -39,7 +39,6 @@ export
     DryLayerVaporPistonVelocity,
     ConstantTortuosity,
     MillingtonQuirk,
-    UnitWaterActivity,
     ElevationCorrection,
     atmosphere_land_interface,
     # Sea ice-ocean heat flux formulations

@@ -1,19 +1,43 @@
 #####
 ##### `DryLayerHumidity` — atmosphere-facing specific humidity from a
-##### dry-layer vapor balance against an unresolved dry layer.
+##### vapor-flux balance across an unresolved dry surface layer.
 #####
-##### The atmosphere-facing humidity `qⁱⁿ` is solved by the existing
-##### `compute_interface_state` fixed point. Vapor diffuses up from an
-##### dry layer at depth `δᵛ(𝒮)` below the surface; the source humidity
-##### is the saturation value at the *front* temperature
-##### `Tᵉ = Tⁱⁿ + χ(Tˡᵃ − Tⁱⁿ)` with `χ = clip(δᵛ/ℓᵀ, 0, 1)`:
+##### Physical picture (Or et al. 2013, Vadose Zone J., review): bare-soil
+##### evaporation has two stages. While the surface is hydraulically connected
+##### to moist soil by capillary flow ("stage 1") the skin stays effectively
+##### saturated and evaporation is demand-limited. Once the soil dries, the
+##### evaporating front retreats below the surface and a dry surface layer
+##### grows; evaporation becomes limited by Fickian vapor diffusion through
+##### that layer ("stage 2"). In-soil vapor diffusion only dominates within
+##### this thin dry layer (Philip & de Vries 1957; Tang & Riley 2013), which
+##### is why land models — including multi-layer Richards-equation models —
+##### transport only liquid water in the soil column and represent the
+##### dry-layer vapor limitation at the surface, as a soil resistance or a
+##### reduced surface humidity (Vanderborght et al. 2017).
+#####
+##### This closure is that surface representation, written as a humidity
+##### boundary condition in the spirit of Ye & Pielke (1993): the
+##### atmosphere-facing humidity `qⁱⁿ` is solved (by the existing
+##### `compute_interface_state` fixed point) from the balance between the
+##### dry-layer Fick flux and the atmospheric turbulent flux,
 #####
 #####     Jᵉ→ⁱⁿ = Gᵉ (qᵉ - qⁱⁿ),         Gᵉ = ρᵃᵗ Dᵛ_eff / max(δᵛ, δᵛ_min),
 #####     Jⁱⁿ→ᵃ = ρᵃᵗ wᵛ (qⁱⁿ - qᵃᵗ)    (atmospheric side, from u★ q★)
 #####
-##### closed by `Jᵉ→ⁱⁿ = Jⁱⁿ→ᵃ`. The wet branch (`δᵛ ≤ δᵛ_min`) collapses to
-##### `qⁱⁿ = qᵛ⁺(Tⁱⁿ)` so the saturated-surface limit reproduces the existing
-##### similarity-theory behavior.
+##### closed by `Jᵉ→ⁱⁿ = Jⁱⁿ→ᵃ`. `Gᵉ` is the reciprocal of the dry-surface-
+##### layer soil resistance `r_soil = δᵛ/Dᵛ_eff` of Yamanaka et al. (1997)
+##### and Swenson & Lawrence (2014) (the CLM5 scheme); the diagnostic depth
+##### `δᵛ(𝒮)` plays their DSL-thickness role, and `Dᵛ_eff` optionally carries
+##### a Millington & Quirk (1961) tortuosity factor. Solving the balance
+##### rather than prescribing an efficiency follows Ye & Pielke's analysis:
+##### a prescribed `β(𝒮)` ignores the atmospheric state and an `α qᵛ⁺` skin
+##### overestimates evaporation from unsaturated soil, while the combined
+##### (flux-balance) form is accurate in both limits.
+#####
+##### The vapor source is saturated air at the front temperature
+##### `Tᵉ = Tⁱⁿ + χ(Tˡᵃ − Tⁱⁿ)` with `χ = clip(δᵛ/ℓᵀ, 0, 1)`. The wet branch
+##### (`δᵛ ≤ δᵛ_min`) collapses to `qⁱⁿ = qᵛ⁺(Tⁱⁿ)` so the saturated-surface
+##### limit reproduces the existing similarity-theory behavior.
 #####
 ##### Pair this with `SkinTemperature(DiffusiveFlux(δ=ℓᵀ, κ=κᵀ))` on the
 ##### temperature side: the same `Λⁱⁿ = κᵀ/ℓᵀ` couples the bulk land temperature
@@ -41,6 +65,12 @@ Diagnostic dry-layer depth `δᵛ` as a function of land saturation `𝒮`:
 ```
 
 `δᵛ = 0` when `𝒮 ≥ 𝒮ᶜ` (wet branch), growing toward `δᵛ_max` as the slab dries.
+
+Diagnosing the dry-surface-layer thickness from near-surface moisture follows
+the CLM5 scheme of [Swenson and Lawrence (2014)](@cite swenson2014dry)
+(also used by ClimaLand, with maximum depth ≈ 15 mm after Shokri and Or 2011);
+this closure differs only in using the slab saturation `𝒮` as the moisture
+variable and a power-law shape.
 """
 struct StorageBasedDryLayerDepth{FT}
     maximum_dry_layer_depth   :: FT
@@ -122,22 +152,6 @@ Base.summary(v::DryLayerVaporPistonVelocity) =
            ", tortuosity=", summary(v.tortuosity_model), ")")
 
 #####
-##### Water activity
-#####
-
-"""
-    UnitWaterActivity()
-
-Trivial water-activity model: `aᵉ ≡ 1`. The dry-layer source humidity
-is the saturation value at the front temperature.
-"""
-struct UnitWaterActivity end
-
-@inline water_activity(::UnitWaterActivity, Π, Tᵉ) = one(Tᵉ)
-
-Base.summary(::UnitWaterActivity) = "UnitWaterActivity"
-
-#####
 ##### DryLayerHumidity — the humidity formulation
 #####
 
@@ -146,12 +160,14 @@ Base.summary(::UnitWaterActivity) = "UnitWaterActivity"
                              dry_layer_depth,
                              vapor_exchange,
                              thermal_exchange_depth,
-                             porosity,
-                             water_activity = UnitWaterActivity())
+                             porosity)
 
 Surface specific-humidity formulation for the *dry-layer* model:
-`qⁱⁿ` is solved from a vapor-flux balance between a dry-layer Fick flux from
-an unresolved dry layer and the atmospheric vapor flux. The
+`qⁱⁿ` is solved from a vapor-flux balance between a Fick flux through an
+unresolved dry surface layer and the atmospheric vapor flux, following
+[Ye and Pielke (1993)](@cite yepielke1993) with the dry-layer (DSL)
+resistance of [Yamanaka et al. (1997)](@cite yamanaka1997surface) and
+[Swenson and Lawrence (2014)](@cite swenson2014dry). The
 formulation plugs into the existing `compute_interface_state` solver exactly
 where [`SkinHumidity`](@ref) does, and reduces to a wet-surface
 saturated-skin BC when the slab is wet enough (`𝒮 ≥ 𝒮ᶜ`).
@@ -165,17 +181,18 @@ saturated-skin BC when the slab is wet enough (`𝒮 ≥ 𝒮ᶜ`).
   interpolation `Tᵉ = Tⁱⁿ + χ(Tˡᵃ − Tⁱⁿ)` with `χ = clip(δᵛ/ℓᵀ, 0, 1)`.
 * `porosity` — `ν`, soil porosity (matches the hydrology closure; needed
   for the Millington–Quirk tortuosity).
-* `water_activity` — `aᵉ` model (only [`UnitWaterActivity`](@ref) in this
-  PR; a `MatricPotentialActivity` model — matric-suction-driven vapor-pressure
-  reduction via the Kelvin equation, only relevant at extreme dryness — is a
-  follow-up).
+
+The dry-layer source humidity is the saturation value at the front
+temperature, `qᵉ = qᵛ⁺(Tᵉ)`. A matric-suction reduction of `qᵉ` via the
+Kelvin equation (the pore relative humidity `hₛ` of
+[Ye and Pielke (1993)](@cite yepielke1993), after Philip 1957) only matters
+at extreme dryness and is deferred to a follow-up.
 """
-struct DryLayerHumidity{EFD, VEX, FT, A, Φ}
+struct DryLayerHumidity{EFD, VEX, FT, Φ}
     dry_layer_depth :: EFD
     vapor_exchange          :: VEX
     thermal_exchange_depth  :: FT
     porosity                :: FT
-    water_activity          :: A
     phase                   :: Φ
 end
 
@@ -183,23 +200,20 @@ DryLayerHumidity(phase = AtmosphericThermodynamics.Liquid();
                          dry_layer_depth,
                          vapor_exchange,
                          thermal_exchange_depth,
-                         porosity,
-                         water_activity = UnitWaterActivity()) =
+                         porosity) =
     DryLayerHumidity(dry_layer_depth,
                              vapor_exchange,
                              convert(Oceananigans.defaults.FloatType, thermal_exchange_depth),
                              convert(Oceananigans.defaults.FloatType, porosity),
-                             water_activity,
                              phase)
 
-Base.summary(q::DryLayerHumidity{EFD, VEX, FT, A, Φ}) where {EFD, VEX, FT, A, Φ} =
+Base.summary(q::DryLayerHumidity{EFD, VEX, FT, Φ}) where {EFD, VEX, FT, Φ} =
     string("DryLayerHumidity{",
            Φ === AtmosphericThermodynamics.Liquid ? "Liquid" : "Ice",
            "}(depth=", summary(q.dry_layer_depth),
            ", vapor=", summary(q.vapor_exchange),
            ", ℓᵀ=", prettysummary(q.thermal_exchange_depth),
-           ", ν=", prettysummary(q.porosity),
-           ", activity=", summary(q.water_activity), ")")
+           ", ν=", prettysummary(q.porosity), ")")
 Base.show(io::IO, q::DryLayerHumidity) = print(io, summary(q))
 
 #####
@@ -209,7 +223,7 @@ Base.show(io::IO, q::DryLayerHumidity) = print(io, summary(q))
 ##### compile-time-resolved (no runtime `if` branch inside the kernel path).
 #####
 
-@inline effective_vapor_diffusivity(v::DryLayerVaporPistonVelocity, ν, θˡ, Tᵉ, pᵃᵗ) =
+@inline effective_vapor_diffusivity(v::DryLayerVaporPistonVelocity, ν, θˡ) =
     effective_vapor_diffusivity(v.tortuosity_model, v.molecular_diffusivity, ν, θˡ)
 
 @inline effective_vapor_diffusivity(::ConstantTortuosity, D₀, ν, θˡ) =
@@ -258,17 +272,15 @@ end
         return convert(FT, qˢᵃᵗ_skin)
     end
 
-    # Dry branch: vapor activity at the front, dry-layer piston velocity,
+    # Dry branch: saturation humidity at the front, dry-layer piston velocity,
     # atmospheric vapor flux from the previous iterate.
-    Π   = zero(FT)                      # placeholder; UnitWaterActivity ignores it
-    aᵉ  = water_activity(q.water_activity, Π, Tᵉ)
-    qᵉ  = aᵉ * qˢᵃᵗ
+    qᵉ  = qˢᵃᵗ
 
     # Actual pore liquid fraction is θˡ = 𝒮(ν − θʳ) + θʳ; for the tortuosity
     # model we use the simpler θˡ ≈ 𝒮·ν (residual is small, this only enters
     # the tortuosity scaling).
     θˡ  = 𝒮 * convert(FT, q.porosity)
-    Dᵛ  = effective_vapor_diffusivity(q.vapor_exchange, q.porosity, θˡ, Tᵉ, pᵃᵗ)
+    Dᵛ  = effective_vapor_diffusivity(q.vapor_exchange, q.porosity, θˡ)
     wᵈ  = Dᵛ / max(δᵛ, δᵛmin)
     Gᵉ  = ρᵃᵗ * wᵈ
 

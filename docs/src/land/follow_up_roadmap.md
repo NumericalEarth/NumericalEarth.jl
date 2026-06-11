@@ -105,7 +105,7 @@ These are physical closures, not data products:
   through an unresolved dry layer at saturation-dependent depth
   `δᵛ(𝒮)`. Sub-closures: `StorageBasedDryLayerDepth`,
   `DryLayerVaporPistonVelocity` (with `ConstantTortuosity` /
-  `MillingtonQuirk` dispatch), `UnitWaterActivity`.
+  `MillingtonQuirk` dispatch).
 - `SlabLand.diagnostics` — closure-extensible diagnostics slot.
 - Signed flux assembly — `vapor_flux`, `surface_energy_flux`,
   `liquid_precipitation_flux` populated alongside the legacy
@@ -335,8 +335,7 @@ through Tier-3 observation operators; they do not *set* the states.
 | `ℓᵀ` | No | Yes | Aligns with future land-side skin-temperature solve |
 | `Dᵛ₀` | No | Yes | Physical constant |
 | `ConstantTortuosity`, `MillingtonQuirk` | No | Yes | Implemented |
-| `UnitWaterActivity` | No | Yes | Implemented |
-| `MatricPotentialActivity` (Kelvin) | No | Yes | Deferred implementation, not metadata |
+| Kelvin-equation pore humidity (`hₛ` of Ye & Pielke 1993) | No | No | Deferred follow-up, not metadata |
 
 ### 5.5 Atmosphere–land flux closure (lives outside `SlabLand`)
 
@@ -394,9 +393,10 @@ follow-ups above:
 - **Brooks–Corey retention** alongside Van Genuchten.
 - **Implicit / semi-implicit deep Darcy** treatment for large `hˢˢ`.
 - **Subgrid tile blending** with ocean / sea ice (mixed grid cells).
-- **`MatricPotentialActivity`** — Kelvin-equation suction-driven vapor
-  reduction. Interface slot exists in `DryLayerHumidity`;
-  implementation deferred (matters only at extreme dryness).
+- **Kelvin-equation pore humidity** — matric-suction-driven reduction of
+  the dry-layer source humidity, `qᵉ = hₛ qᵛ⁺(Tᵉ)` with
+  `hₛ = exp(g Π / (Rᵛ Tᵉ))` (the `hₛ` of Ye & Pielke 1993, after
+  Philip 1957). Matters only at extreme dryness; deferred.
 
 ## 8. Acceptance criteria per tier
 

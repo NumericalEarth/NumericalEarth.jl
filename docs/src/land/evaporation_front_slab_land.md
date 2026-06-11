@@ -21,7 +21,9 @@ built around three closures
 [`DryLayerHumidity`](@ref)) plus their sub-closures (deep liquid
 flux, runoff, retention curve, dry-layer depth, dry-layer vapor
 exchange). It targets bare ground without snow, ice, or vegetation; see
-§9 ("Out of scope") below.
+§10 ("Out of scope") below. §7 surveys the full closure menu, including
+the simpler configurations (`SlabEnergy`, `BucketHydrology`,
+`FractionalHumidity`) that predate this one.
 
 ## 1. What `SlabLand` stores
 
@@ -290,7 +292,7 @@ qⁱⁿ)` to convergence. Each iteration `k`:
 1. `δᵛ ← δᵛ(𝒮)` from [`StorageBasedDryLayerDepth`](@ref).
 2. `χ ← clip(δᵛ/ℓᵀ, 0, 1)`.
 3. `Tᵉ ← Tⁱⁿ + χ (Tˡᵃ − Tⁱⁿ)`.
-4. `qᵉ ← aᵉ qᵛ⁺(Tᵉ, pᵉ)`.
+4. `qᵉ ← qᵛ⁺(Tᵉ, pᵉ)`.
 5. `wᵈ ← Dᵛ_eff / max(δᵛ, δᵛ_min)`.
 6. Surface-layer similarity scheme provides `Gᵃ` from current
    `(Tⁱⁿ, qⁱⁿ)`.
@@ -304,6 +306,79 @@ near-iterate humidity matches `qᵃᵗ` exactly, and is the same trick the
 existing `SkinHumidity` closure uses. Convergence is robust across the
 dry / wet / windy / calm coverage matrix — see
 [`test_dry_layer_humidity.jl`](https://github.com/NumericalEarth/NumericalEarth.jl/blob/main/test/test_dry_layer_humidity.jl).
+
+### 4.3 Where this sits in the literature
+
+Bare-soil evaporation proceeds in two stages
+[Or et al. (2013)](@cite or2013advances). In *stage 1* the surface stays
+hydraulically connected to moist soil below by capillary flow, the skin
+is effectively saturated, and evaporation runs at the energy- and
+demand-limited rate. Once the soil dries past a soil-specific
+characteristic depth, the liquid network detaches, the evaporating front
+retreats below the surface, and a *dry surface layer* (DSL) grows; in
+*stage 2* evaporation is limited by Fickian vapor diffusion through that
+layer.
+
+Within the soil, vapor diffusion contributes meaningfully to the total
+water flux only inside this thin, very dry layer — coupled liquid–vapor
+theory goes back to [Philip and de Vries (1957)](@cite philip1957moisture),
+and [Tang and Riley (2013)](@cite tang2013new) put the crossover where
+the water-filled pore space falls below roughly a quarter. Everywhere
+wetter, capillary liquid transport dominates. This is why land models —
+including multi-layer Richards-equation models like GEOtop
+[Endrizzi et al. (2014)](@cite endrizzi2014geotop) and
+[ClimaLand](https://doi.org/10.1029/2025MS005118) — carry
+*only liquid water* in the soil column and represent the dry-layer vapor
+limitation as a surface condition
+[Vanderborght et al. (2017)](@cite vanderborght2017heat). The neglected
+process does not disappear; it reappears at the surface as a soil
+resistance, an evaporation efficiency `β`, or a reduced surface
+humidity `α qᵛ⁺`.
+
+[`DryLayerHumidity`](@ref) is that surface condition, assembled from
+three established pieces:
+
+1. **The dry-layer resistance.** `Gᵉ = ρᵃᵗ Dᵛ_eff/δᵛ` is the reciprocal
+   of the DSL soil resistance `r_soil = δᵛ/Dᵛ_eff` introduced by
+   [Yamanaka et al. (1997)](@cite yamanaka1997surface) (resistance from
+   the depth of the evaporating front, not from surface moisture) and
+   adopted by CLM5 via
+   [Swenson and Lawrence (2014)](@cite swenson2014dry), with the
+   DSL thickness diagnosed from near-surface moisture exactly as our
+   `δᵛ(𝒮)`. ClimaLand's bare-soil evaporation uses the same construction
+   (`g_soil = Dᵛ/δ_DSL` with a saturation-dependent `δ_DSL`, maximum
+   ≈ 15 mm). The [Millington and Quirk (1961)](@cite millington1961permeability)
+   factor reduces `Dᵛ_eff` for partially wet pores; CLM5 uses a
+   texture-dependent variant, ClimaLand omits it (`τ = 1`), and we make
+   it optional.
+2. **The flux balance.** Solving `Jᵉ = Jᵃ` for `qⁱⁿ` instead of
+   prescribing `β(𝒮)` or `α(Π)` follows
+   [Ye and Pielke (1993)](@cite yepielke1993), who derived the surface
+   humidity from exactly this balance between in-pore vapor diffusion
+   and the aerodynamic flux, and showed the two shortcut methods fail in
+   complementary ways: `α qᵛ⁺` always overestimates evaporation from
+   unsaturated soil, while a prescribed `β` is adequate by day but
+   breaks at night because it cannot respond to the atmospheric state
+   (see also the formulation comparison of
+   [Mahfouf and Noilhan (1991)](@cite mahfouf1991comparative)). GEOtop
+   adopts the Ye–Pielke parameterization directly as its surface
+   evaporation scheme. In series-conductance form our solution
+   `qⁱⁿ = (Gᵉ qᵉ + Gᵃ qᵃᵗ)/(Gᵉ + Gᵃ)` is algebraically the same
+   expression ClimaLand evaluates with its `g_soil/g_h` ratio — we
+   merely obtain the atmospheric conductance `Gᵃ` from the
+   similarity-theory iterate instead of a fixed exchange coefficient.
+3. **The front temperature.** Evaluating the source humidity at the
+   interpolated front temperature `Tᵉ` rather than at the skin follows
+   the same logic as Ye and Pielke's distinction between the
+   surface-layer and in-soil source temperatures. (CLM5 and ClimaLand
+   evaluate `qᵛ⁺` at the top-soil-layer temperature — the `χ → 1` limit.)
+
+What we deliberately leave out of this first step: the Kelvin-equation
+pore relative humidity `hₛ = exp(g Π/(Rᵛ Tᵉ))` (Ye and Pielke's `hₛ`,
+present in CLM5 and ClimaLand as the `α` factor; only departs
+appreciably from 1 at extreme dryness), texture-dependent tortuosity,
+and any in-column vapor transport. Each slots in without structural
+change.
 
 ## 5. Numerical robustness
 
@@ -336,23 +411,73 @@ A reasonable starting set for bare loamy soil:
 | `θʳ` | residual liquid fraction | 0.05 | finite for clay |
 | `hˢˢ` | storage height | 10³–10⁴ m | larger ⇒ stiffer overflow |
 | `𝒮ᶜ` | critical saturation | 0.5–0.75 | Manabe (1969) used 0.75 |
-| `δᵛ_max` | maximum evap-front depth | 0.05 m | empirical; 1–10 cm typical |
+| `δᵛ_max` | maximum dry-layer depth | 0.015–0.05 m | CLM5 and ClimaLand default to 15 mm |
 | `δᵛ_min` | minimum / wet-branch cutoff | 10⁻⁴ m | numerical, keeps `wᵈ` finite |
-| `η` | front-depth exponent | 2 | steeper ⇒ later dry-down onset |
+| `η` | dry-layer-depth exponent | 2 | steeper ⇒ later dry-down onset |
 | `ℓᵀ` | thermal exchange depth | 0.10 m | sets χ = δᵛ/ℓᵀ |
 | `κᵀ` | ground thermal conductivity | 0.5 W m⁻¹ K⁻¹ | loamy soil |
 | `Dᵛ₀` | vapor diffusivity in air | 2.5 × 10⁻⁵ m² s⁻¹ | standard kinetic-theory value |
 
-The Millington–Quirk tortuosity model multiplies `Dᵛ_eff` by
-`θᵍ^(10/3)/ν²` with `θᵍ = ν − θˡ` the gas-filled pore fraction;
-`:constant` skips this and uses `Dᵛ_eff = Dᵛ₀`.
+The [`MillingtonQuirk`](@ref) tortuosity model multiplies `Dᵛ_eff` by
+`θᵍ^(10/3)/ν²` with `θᵍ = ν − θˡ` the gas-filled pore fraction
+[Millington and Quirk (1961)](@cite millington1961permeability);
+[`ConstantTortuosity`](@ref) skips this and uses `Dᵛ_eff = Dᵛ₀`.
 
-## 7. Putting it together
+## 7. The closure menu
 
-```julia
+`SlabLand` is a container; each physics slot accepts any closure from
+the menus below, and the simpler entries remain first-class citizens —
+the variably-saturated configuration of this tutorial is the most
+elaborate column, not the only one.
+
+**Energy** (`energy =`) — governs `Tˡᵃ`:
+
+| Closure | `∂Tˡᵃ/∂t` | Use when |
+|---|---|---|
+| [`SlabEnergy`](@ref) | `Q/C` | pure slab; no deep ground coupling |
+| [`ForceRestoreEnergy`](@ref) | `Q/C + (Tᵈᵉᵉᵖ − Tˡᵃ)/τ` | restoring toward a deep climatology (`SlabEnergy` is its `τ → ∞` limit) |
+| [`WaterCoupledEnergy`](@ref) | conservative `dEˡᵃ/dt` form, §2.3 | `C(Mˡᵃ)`, advective water energy, exact `T`-invariance under water exchange |
+
+**Hydrology** (`hydrology =`) — governs `Mˡᵃ` and the diagnostic `𝒮`:
+
+| Closure | Behavior | Use when |
+|---|---|---|
+| [`DryLand`](@ref) | `𝒮 = 0`, no water | desert/idealized dry runs |
+| [`SaturatedSurface`](@ref) | `𝒮 = 1`, no storage | swamp/idealized wet runs |
+| [`BucketHydrology`](@ref) | Manabe bucket: fill to `Mˡᵃ_max`, spill | classic bucket experiments [Manabe (1969)](@cite manabe1969climate) |
+| [`VariablySaturatedHydrology`](@ref) | conservative augmented-storage budget, §2 | retention physics, drainage, runoff |
+
+`VariablySaturatedHydrology` composes four sub-closures: a retention
+curve ([`VanGenuchtenRetention`](@ref)), a hydraulic conductivity
+([`VanGenuchtenConductivity`](@ref)), a deep liquid flux
+([`NoDeepLiquidFlux`](@ref), [`FreeDrainageFlux`](@ref),
+[`DarcyDeepLiquidFlux`](@ref), [`LinearReservoirDrainage`](@ref)), and a
+runoff model ([`NoRunoff`](@ref), [`InfiltrationCapacityRunoff`](@ref)).
+
+**Interface humidity** (passed to `atmosphere_land_interface` via
+`specific_humidity =`) — the atmosphere-facing `qⁱⁿ`. The three
+formulations recapitulate the literature taxonomy of §4.3:
+
+| Formulation | Scheme | Literature analogue |
+|---|---|---|
+| [`FractionalHumidity`](@ref) | `qⁱⁿ = β(𝒮) qᵛ⁺(Tⁱⁿ)` | the "β method" |
+| [`SkinHumidity`](@ref) | flux balance, fixed soil conductance `κ^q/d` | constant soil resistance, after [Camillo and Gurney (1986)](@cite camillo1986resistance) |
+| [`DryLayerHumidity`](@ref) | flux balance, dry-layer conductance `Dᵛ_eff/δᵛ(𝒮)` | DSL resistance [Swenson and Lawrence (2014)](@cite swenson2014dry); balance closure [Ye and Pielke (1993)](@cite yepielke1993) |
+
+Finally, [`PrescribedLand`](@ref) replaces the prognostic component
+entirely with dataset-driven surface fields (e.g. ERA5 skin temperature)
+when no land physics should run at all.
+
+## 8. Putting it together
+
+```@example slabland
 using NumericalEarth
+using Oceananigans
 
-land = SlabLand(land_grid;
+grid = RectilinearGrid(size = (4, 4), x = (0, 1), y = (0, 1),
+                       topology = (Periodic, Periodic, Flat))
+
+land = SlabLand(grid;
     hydrology = VariablySaturatedHydrology(
         slab_depth = 1.0,
         porosity = 0.4,
@@ -374,7 +499,7 @@ land = SlabLand(land_grid;
     ),
 )
 
-interface = DryLayerHumidity(;
+interface_humidity = DryLayerHumidity(;
     dry_layer_depth = StorageBasedDryLayerDepth(
         maximum_dry_layer_depth = 0.05,
         critical_saturation = 0.5,
@@ -382,12 +507,17 @@ interface = DryLayerHumidity(;
     vapor_exchange = DryLayerVaporPistonVelocity(
         minimum_dry_layer_depth = 1e-4,
         molecular_diffusivity = 2.5e-5,
-        tortuosity_model = :millington_quirk),
+        tortuosity_model = MillingtonQuirk()),
     thermal_exchange_depth = 0.10,
     porosity = 0.4)
 ```
 
-## 8. Examples
+The humidity formulation is handed to the coupler, not the land:
+`atmosphere_land_interface(grid, atmosphere, land; specific_humidity =
+interface_humidity)` — see the Breeze example below for the full
+coupled assembly.
+
+## 9. Examples
 
 Two coupled examples exercise the full atmosphere ↔ interface ↔
 hydrology ↔ energy stack end-to-end:
@@ -404,16 +534,17 @@ hydrology ↔ energy stack end-to-end:
   preserving the existing example's elevation-correction setup with the
   new closures swapped in.
 
-## 9. Out of scope
+## 10. Out of scope
 
 The following are deferred to follow-up PRs:
 
 * Snow, sea ice, vegetation, multi-layer soil columns, river routing.
 * `Eˡᵃ` as a first-class state variable (needed for phase change).
-* `MatricPotentialActivity` — matric-suction-driven vapor-pressure
-  reduction via the Kelvin equation `aᵉ = exp(g Π / (Rᵛ Tᵉ))`. Interface
-  slot exists in [`DryLayerHumidity`](@ref); implementation
-  deferred (only matters at extreme dryness).
+* Kelvin-equation pore humidity — matric-suction-driven reduction of the
+  dry-layer source humidity, `qᵉ = hₛ qᵛ⁺(Tᵉ)` with
+  `hₛ = exp(g Π / (Rᵛ Tᵉ))` (the pore relative humidity `hₛ` of
+  [Ye and Pielke (1993)](@cite yepielke1993), after Philip 1957). Only
+  matters at extreme dryness; deferred.
 * Land-side `SkinTemperature(DiffusiveFlux)` solve so that `Tⁱⁿ ≠ Tˡᵃ`
   and the χ interpolation has bite.
 * `HydraulicInfiltrationRunoff`, `StorageOverflowRunoff`,

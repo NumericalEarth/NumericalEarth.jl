@@ -89,7 +89,7 @@ function WaterCoupledEnergy(FT::Type = Oceananigans.defaults.FloatType;
             "advect_surface_liquid_energy=true is not yet plumbed: the precip " *
             "temperature `land.fluxes.liquid_precipitation_temperature` is " *
             "declared but not written by the atmosphere–land flux assembly. " *
-            "Track via the followup item in docs/src/land/evaporation_front_slab_land.md §9."))
+            "Track via the followup item in docs/src/land/evaporation_front_slab_land.md §10."))
     end
     Λ = isnothing(deep_conductance) ? nothing : normalize_property(FT, deep_conductance)
     τ = isnothing(deep_time_scale)  ? nothing : convert(FT, deep_time_scale)
