@@ -227,7 +227,8 @@ map_grid = LatitudeLongitudeGrid(CPU();
 # (used above for the model's terrain) clamps the ocean to 0 and loses it. The mask is what
 # a SlabLand/ocean surface-BC split would key on; here only the Gulf corner of D2 is ocean.
 map_bathymetry = regrid_bathymetry(map_grid; dataset = ETOPO2022())
-is_ocean = interior(map_bathymetry)[:, :, 1] .< 0   # land–sea mask (true = ocean)
+relief   = Array(interior(map_bathymetry))[:, :, 1]   # m; negative over ocean
+is_ocean = relief .< 0                                # land–sea mask (true = ocean)
 
 # Closed rectangle path from (λ, φ) bounds.
 domain_box(λ₁, λ₂, φ₁, φ₂) = ([λ₁, λ₂, λ₂, λ₁, λ₁], [φ₁, φ₁, φ₂, φ₂, φ₁])
@@ -237,14 +238,20 @@ ax_map  = Axis(fig_map[1, 1]; xlabel = "longitude (°)", ylabel = "latitude (°)
                title  = "ERA5 → 3 km LAM nest (MC3E squall line, ARM SGP)",
                aspect = DataAspect())
 
-# `:topo` over a symmetric range puts its sea-level break at z = 0: ocean depths in blues,
-# land green → yellow → brown → white. The range clamps the deep Gulf / high Rockies so the
-# Plains gradient stays legible.
+# Two-sided normalization onto `:topo`: the full bathymetry range fills the lower (blue)
+# half and the full land range the upper (green→yellow→brown→white) half, with z=0 pinned
+# to the colormap's sea-level break (0.5). Bake it into a custom colormap so a *linear*
+# colorrange keeps the colorbar in physical metres. (Assumes the domain straddles sea level.)
+zmin, zmax = extrema(relief)
+g0   = -zmin / (zmax - zmin)                 # fraction of the linear range at z = 0
+topo = cgrad(:topo)
+remap(g) = g ≤ g0 ? 0.5 * (g / g0) : 0.5 + 0.5 * (g - g0) / (1 - g0)
+topo_centered = [topo[remap(g)] for g in range(0, 1; length = 512)]
+
 hm_map = heatmap!(ax_map,
                   collect(λnodes(map_grid, Center(), Center(), Center())),
                   collect(φnodes(map_grid, Center(), Center(), Center())),
-                  Array(interior(map_bathymetry))[:, :, 1];
-                  colormap = :topo, colorrange = (-2500, 2500))
+                  relief; colormap = topo_centered, colorrange = (zmin, zmax))
 Colorbar(fig_map[1, 2], hm_map; label = "elevation / depth (m)")
 
 # US state lines and country borders (the topo/bathy coloring renders the coastline itself).
