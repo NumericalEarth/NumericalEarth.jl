@@ -14,9 +14,9 @@
 # - [x] initial state setting (set! the model from ingested fields)
 # - [x] open boundary conditions (parent-driven OBC + Davies fringe relaxation)
 # - [x] test with GPU
-# - [x] terrain (ETOPO 2022 + Breeze `follow_terrain!`, terrain-following coordinates)
+# - [x] terrain (ETOPO 2022 + `TerrainFollowingVerticalDiscretization`)
 # - [ ] dynamical initialization
-# - [ ] acoustic substepping
+# - [x] acoustic substepping (Breeze split-explicit, PR #712)
 # - [ ] land/ocean coupling
 
 using NumericalEarth
@@ -24,12 +24,14 @@ using NumericalEarth.DataWrangling
 using NumericalEarth.DataWrangling.ERA5
 using CDSAPI  # activates NumericalEarthCDSAPIExt
 using Oceananigans
+using Oceananigans: location
 using Oceananigans.Fields: interpolate!
 using Oceananigans.BoundaryConditions: fill_halo_regions!
 using Oceananigans.OutputReaders: FieldTimeSeries
-using Oceananigans.Grids: MutableVerticalDiscretization, znode
+using Oceananigans.Grids: znode
 using Oceananigans.Architectures: on_architecture
 using Breeze
+using Breeze.TerrainFollowingDiscretization: TerrainFollowingVerticalDiscretization, materialize_terrain!
 using Statistics: mean
 using Dates
 using Printf
@@ -143,38 +145,30 @@ ds_sl = ERA5HourlySingleLevel()
 # ## Setup LAM grid
 #
 # Terrain-following `LatitudeLongitudeGrid` with `Bounded` horizontal topologies
-# (LAM-style). The vertical coordinate is a `MutableVerticalDiscretization` built
-# from the stretched height profile; `follow_terrain!` then deforms its coordinate
-# surfaces to follow the ETOPO 2022 surface elevation (a Gal-Chen–Somerville σ
-# coordinate). The bottom surface sits at the local terrain height; the top stays
-# flat. Node heights are true heights above sea level — the coordinate the #241
-# ERA5 ingest below interpolates onto.
+# (LAM-style). The vertical coordinate is a `TerrainFollowingVerticalDiscretization`
+# built from the stretched reference profile; `materialize_terrain!` (below) fills its
+# terrain components from the ETOPO 2022 surface elevation, deforming the coordinate
+# surfaces to follow the ground (a Gal-Chen–Somerville σ coordinate via the default
+# `LinearDecay` formulation). The bottom surface sits at the local terrain height;
+# the top stays flat. `znode` heights are true heights above sea level — the
+# coordinate the #241 ERA5 ingest below interpolates onto.
 
 grid = LatitudeLongitudeGrid(arch;
                              longitude = (λ_west,  λ_east),
                              latitude  = (φ_south, φ_north),
-                             z         = MutableVerticalDiscretization(z_discretization),
+                             z         = TerrainFollowingVerticalDiscretization(z_discretization),
                              size      = (Nx, Ny, Nz),
                              halo      = (5, 5, 5),
                              topology  = (Bounded, Bounded, Bounded))
 
-# `follow_terrain!` sets the topography via `set_topography!(h_field, grid, topo)`,
-# but the registered Breeze only defines the `::Function` method (which samples
-# `xnode`/`ynode` — RectilinearGrid-only, so it errors on a `LatitudeLongitudeGrid`).
-# Provide the generic Field/array method ourselves: it routes the ETOPO `elevation`
-# Field straight through `set!`, bypassing the function path. The rest of
-# `follow_terrain!` is grid-agnostic, so this is all that's needed on a LatLon grid —
-# no Breeze #776 required. (Remove once the env's Breeze ships this method upstream.)
-Breeze.TerrainFollowingDiscretization.set_topography!(h_field, grid, topography) =
-    (set!(h_field, topography); nothing)
-
 # ETOPO 2022 surface elevation (≥ 0; ocean clamped to sea level) regridded onto
 # the LAM horizontal grid — ETOPO's 60″ (~1.85 km) relief is finer than the ~3 km
-# cells. `follow_terrain!` imposes it as terrain-following coordinates and returns
-# the `TerrainMetrics` (slopes, model top) that `CompressibleDynamics` consumes.
+# cells. `materialize_terrain!` fills the grid's terrain-following coordinate from it
+# in place; `CompressibleDynamics` then builds the slope metrics it needs directly
+# from the grid (no `terrain_metrics` argument required).
 
 elevation = regrid_topography(grid; dataset = ETOPO2022())
-metrics   = follow_terrain!(grid, elevation)
+materialize_terrain!(grid, elevation)
 
 # ## Nested domains
 #
@@ -381,7 +375,7 @@ function regrid_pressure(metadatum, target_grid)
     interior(lnp_native) .= log.(interior(pf))
     fill_halo_regions!(lnp_native)
     lnp = CenterField(target_grid)
-    DataWrangling.interpolate_physical!(lnp, lnp_native)  # terrain-following-aware regrid
+    interpolate!(lnp, lnp_native)  # terrain-aware: TFVD's `_node` resolves the physical `znode`
     p = CenterField(target_grid)
     interior(p) .= exp.(interior(lnp))
     fill_halo_regions!(p)
@@ -560,9 +554,12 @@ davies = parent_forcings(; rate = 1/τ_relax,
 # We override the helper's default `AnelasticDynamics` (which dispatches on
 # `RectilinearGrid` only) with `CompressibleDynamics`, whose prognostic-density
 # / diagnostic-pressure formulation needs no FFT-based Poisson solve and works
-# directly on the LAM `LatitudeLongitudeGrid`. Passing the `terrain_metrics` from
-# `follow_terrain!` activates the terrain-following physics (contravariant vertical
-# velocity, corrected horizontal pressure gradient, terrain-aware divergence).
+# directly on the LAM `LatitudeLongitudeGrid`. On the `TerrainFollowingVerticalDiscretization`
+# grid, `CompressibleDynamics` activates the terrain-following physics automatically —
+# contravariant vertical velocity, corrected horizontal pressure gradient, terrain-aware
+# divergence — so no `terrain_metrics` argument is needed. The `SplitExplicitTimeDiscretization`
+# (Breeze PR #712) integrates the acoustic modes with inner substeps, freeing the outer
+# step to run at the advection CFL (see Δt below).
 #
 # TODO: pass `reference_potential_temperature = θ_ref(z)` to `CompressibleDynamics`.
 # A reference state lets Breeze compute the horizontal pressure gradient in
@@ -581,8 +578,8 @@ p̄₀ = mean(interior(p₀))
 
 model = atmosphere_simulation(grid;
                               thermodynamic_constants = constants,
-                              dynamics            = CompressibleDynamics(; surface_pressure = p̄₀,
-                                                                         terrain_metrics = metrics),
+                              dynamics            = CompressibleDynamics(SplitExplicitTimeDiscretization();
+                                                                         surface_pressure = p̄₀),
                               boundary_conditions = bcs,
                               forcing             = davies).model
 
@@ -605,14 +602,18 @@ set!(model; ρ = ρ, u = u, v = v, qᵗ = qᵗ, θˡⁱ = θˡⁱ)
 # each iteration so the FTS-driven BCs and forcings get the correct
 # interpolation time.
 #
-# Δt is set from the acoustic CFL on the vertical grid — Δz_min = 50 m near
-# the surface (the binding constraint here, since horizontal Δx ≈ 3 km is
-# much larger) and c_sound ≈ 340 m/s at the reference state. Substepping
-# would let us bypass the acoustic limit and use an advection-CFL Δt instead;
-# that's the next step.
+# With split-explicit substepping the acoustic modes are integrated by inner
+# substeps, so the outer Δt is limited by advection, not the sound speed. The 60 m
+# surface cells make VERTICAL advection the binding constraint (not the ~3 km
+# horizontal cells), so we take the smaller of the horizontal- and vertical-advection
+# CFLs with separate velocity scales. This is still ~25× the old acoustic-CFL Δt; the
+# fine near-surface layer caps it short of the horizontal limit until a balanced
+# (dynamically-initialized) state lets the vertical-velocity scale drop.
 
-c_sound = sqrt(constants.dry_air.heat_capacity / (constants.dry_air.heat_capacity - Rᵈ) * Rᵈ * 290.0)
-Δt = 0.3 * minimum_zspacing(grid) / c_sound
+U_horizontal = 60   # m/s — bounds the jet
+W_vertical   = 25   # m/s — bounds convective updrafts
+Δt = 0.5 * min(min(minimum_xspacing(grid), minimum_yspacing(grid)) / U_horizontal,
+               minimum_zspacing(grid) / W_vertical)
 
 nested = NestedSimulation(parent, model; Δt, stop_iteration = 100)
 
@@ -630,10 +631,14 @@ add_callback!(nested, progress, IterationInterval(10))
 
 # ## Run
 #
-# 100-iteration smoke run at acoustic CFL — exercises BC machinery + Davies
-# forcing before substepping and any IC-balance work.
+# 100-iteration smoke run at the advection-CFL outer Δt (split-explicit substepping).
+# The ERA5 analysis cold-starts w = 0, so the IC is not in discrete nonhydrostatic
+# balance; at this Δt the substepper unmasks that imbalance as a large spurious
+# adjustment (the old acoustic-CFL Δt only damped it slowly). A physical run needs
+# dynamical initialization next — `balance_adiabatically!` (Breeze #764) on a stripped
+# (no-microphysics, no-forcing, frozen-BC) model, then transfer (ρ, ρu, ρv, ρθ, ρqᵉ, ρw).
 
-@info @sprintf("Δt = %.4f s (acoustic CFL); running %d iterations", Δt, nested.stop_iteration)
+@info @sprintf("Δt = %.4f s (advection CFL, split-explicit); running %d iterations", Δt, nested.stop_iteration)
 run!(nested)
 @info "Done."
 
@@ -752,3 +757,114 @@ Label(fig[0, 1:Ncols], "ERA5 → terrain-following LAM profiles";
 
 save("era5_breeze_profiles.png", fig)
 @info "Wrote era5_breeze_profiles.png"
+
+# ## Horizontal cut-plane comparison
+#
+# Compare u, v, w on a horizontal plane 80 m above ground level across three
+# effective resolutions: the ERA5 forcing (~0.25°), a 9 km downscale (Fan
+# Domain 2 grid spacing), and the 3 km Breeze child (Domain 3). At the 100-step
+# (≈ 5 s) smoke horizon the ERA5/D2 rows are the downscaled initial state and the
+# D3 row is the child after a few acoustic steps — so the rows differ by
+# resolution and a brief transient, not yet by hours of distinct evolution (that
+# needs the substepping/multi-hour run).
+#
+# `cut_plane` interpolates each field's column to the target height above the
+# *local terrain surface*, honoring the field's stagger (u on λ-faces, v on
+# φ-faces, w on z-faces) and the terrain-following node heights — so it works
+# unchanged on the ERA5/D2 ingest grids and the live child model.
+#
+# TODO: promote `cut_plane` to `NumericalEarth.Diagnostics` once stabilized — it's
+# a generic terrain-following AGL slice, useful well beyond this example.
+
+function interp_to_height(zcol, vals, z_target)
+    n = length(zcol)
+    z_target <= zcol[1] && return vals[1]
+    z_target >= zcol[n] && return vals[n]
+    k = searchsortedlast(zcol, z_target)
+    t = (z_target - zcol[k]) / (zcol[k+1] - zcol[k])
+    return (1 - t) * vals[k] + t * vals[k+1]
+end
+
+function cut_plane(field, height_agl)
+    host_grid = on_architecture(CPU(), field.grid)
+    LX, LY, LZ = location(field)
+    data = Array(interior(field))
+    Nx_f, Ny_f, Nz_f = size(data)
+    slice = Matrix{eltype(data)}(undef, Nx_f, Ny_f)
+    for j in 1:Ny_f, i in 1:Nx_f
+        z_surface = znode(i, j, 1, host_grid, LX(), LY(), Face())  # deformed bottom interface
+        z_target  = z_surface + height_agl
+        zcol      = [znode(i, j, k, host_grid, LX(), LY(), LZ()) for k in 1:Nz_f]
+        slice[i, j] = interp_to_height(zcol, view(data, i, j, :), z_target)
+    end
+    λ = collect(λnodes(host_grid, LX(), LY(), LZ()))
+    φ = collect(φnodes(host_grid, LX(), LY(), LZ()))
+    return λ, φ, slice
+end
+
+# ERA5 snapshot-1 winds on a terrain-following grid at the requested resolution
+# over the D3 window. u, v ingest directly (#241); w is reconstructed from ERA5 ω
+# (Pa/s) via w ≈ -ω/(ρ g), with ρ = p/(Rᵈ T) (vapor correction on ρ < 1%, neglected).
+g_earth = Oceananigans.defaults.gravitational_acceleration
+
+function era5_winds_on_grid(nx, ny)
+    g = LatitudeLongitudeGrid(arch;
+                              longitude = (λ_west,  λ_east),
+                              latitude  = (φ_south, φ_north),
+                              z         = TerrainFollowingVerticalDiscretization(z_discretization),
+                              size      = (nx, ny, Nz),
+                              halo      = (5, 5, 5),
+                              topology  = (Bounded, Bounded, Bounded))
+    materialize_terrain!(g, regrid_topography(g; dataset = ETOPO2022()))
+
+    ug = XFaceField(g);  set!(ug, initial_metadatum(:eastward_velocity))
+    vg = YFaceField(g);  set!(vg, initial_metadatum(:northward_velocity))
+    Tg = CenterField(g); set!(Tg, initial_metadatum(:temperature))
+    ωg = CenterField(g); set!(ωg, initial_metadatum(:vertical_velocity))
+    pg = regrid_pressure(initial_metadatum(:temperature), g)
+    wg = compute!(Field(-ωg / (pg / (Rᵈ * Tg) * g_earth)))
+    return ug, vg, wg
+end
+
+# ERA5 row ≈ native 0.25°; D2 row at 3× the D3 spacing (so exactly Nx/3 × Ny/3).
+u_e, v_e, w_e = era5_winds_on_grid(round(Int, (λ_east - λ_west) / 0.25),
+                                   round(Int, (φ_north - φ_south) / 0.25))
+u_2, v_2, w_2 = era5_winds_on_grid(Nx ÷ 3, Ny ÷ 3)
+u_3, v_3, w_3 = model.velocities.u, model.velocities.v, model.velocities.w
+
+height_agl = 80.0
+rows = [("ERA5 ~0.25°",                              u_e, v_e, w_e),
+        ("D2 ~9 km",                                 u_2, v_2, w_2),
+        (@sprintf("D3 3 km (t=%.1f s)", model.clock.time), u_3, v_3, w_3)]
+cols = ("u (m/s)", "v (m/s)", "w (m/s)")
+
+fig_cut = Figure(size = (1500, 1300), fontsize = 13)
+
+for (r, (rlabel, fu, fv, fw)) in enumerate(rows)
+    for (c, fld) in enumerate((fu, fv, fw))
+        λ, φ, slice = cut_plane(fld, height_agl)
+
+        ax = Axis(fig_cut[r, 2c - 1];
+                  aspect = DataAspect(),
+                  title  = r == 1            ? cols[c]          : "",
+                  ylabel = c == 1            ? rlabel           : "",
+                  xlabel = r == length(rows) ? "longitude (°)"  : "")
+
+        finite = filter(isfinite, vec(slice))
+        m      = isempty(finite) ? one(eltype(slice)) : maximum(abs, finite)
+        m      = m == 0 ? one(m) : m
+
+        hm = heatmap!(ax, λ, φ, slice; colormap = :balance, colorrange = (-m, m))
+        Colorbar(fig_cut[r, 2c], hm)
+        scatter!(ax, [λ₀], [φ₀]; color = :black, marker = :star5, markersize = 12)
+
+        r != length(rows) && hidexdecorations!(ax; grid = false)
+        c != 1            && hideydecorations!(ax; grid = false)
+    end
+end
+
+Label(fig_cut[0, 1:6], @sprintf("Winds at %g m AGL — ERA5 → 9 km → 3 km (MC3E, ARM SGP)", height_agl);
+      fontsize = 18, font = :bold, tellwidth = false)
+
+save("era5_breeze_cutplanes.png", fig_cut)
+@info "Wrote era5_breeze_cutplanes.png"
