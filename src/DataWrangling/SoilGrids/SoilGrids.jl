@@ -3,7 +3,7 @@ module SoilGrids
 export SoilGrids2
 
 using Downloads: Downloads
-using Oceananigans: CPU, Field, Center, location, fill_halo_regions!
+using Oceananigans: Center
 using Oceananigans.DistributedComputations: @root
 using Scratch: Scratch, @get_scratch!
 
