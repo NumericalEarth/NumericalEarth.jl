@@ -5,6 +5,7 @@ using Oceananigans.Fields: AbstractField
 using Oceananigans
 using Oceananigans.Utils: launch!
 using Oceananigans.TimeSteppers: update_state!
+using Oceananigans: prognostic_fields, prognostic_state, restore_prognostic_state!
 using NumericalEarth.Lands: update_diagnostics!, ForceRestoreEnergy, DryLand
 using NumericalEarth.EarthSystemModels.InterfaceComputations: default_atmosphere_land_fluxes,
                                                               atmosphere_land_stability_functions,
@@ -338,4 +339,37 @@ end
     fluxes = default_atmosphere_land_fluxes(land, FT)
     @test typeof(fluxes.stability_functions.momentum) == typeof(land_ψ.momentum)
     @test !(fluxes.stability_functions.momentum isa EdsonMomentumStabilityFunction)
+end
+
+@testset "SlabLand prognostic_fields and checkpointing" begin
+    for arch in test_architectures
+        A = typeof(arch)
+        @info "Testing SlabLand prognostic_fields + checkpointing on $A"
+
+        grid = RectilinearGrid(arch; size = 1, x = (0, 1), y = (0, 1), z = (-1, 0),
+                               topology = (Flat, Flat, Bounded))
+        land = SlabLand(grid)
+        set!(land; T = 300.0, M = 150.0)
+
+        # `prognostic_fields` is the math-named NamedTuple of the prognostics
+        # (saturation is diagnostic), aliasing the underlying fields.
+        pf = prognostic_fields(land)
+        @test keys(pf) == (:T, :Mˡᵃ)
+        @test pf.T === land.temperature
+        @test pf.Mˡᵃ === land.water_storage
+
+        # Checkpoint round-trip. `deepcopy` decouples the snapshot from the live
+        # fields the way on-disk serialization does in a real checkpoint.
+        snapshot = deepcopy(prognostic_state(land))
+        @test :temperature in keys(snapshot)
+        @test :water_storage in keys(snapshot)
+
+        set!(land; T = 250.0, M = 50.0)
+        restore_prognostic_state!(land, snapshot)
+        @test Array(interior(land.temperature))[1]   == 300
+        @test Array(interior(land.water_storage))[1] == 150
+
+        # Restoring from `nothing` is a no-op that returns the land.
+        @test restore_prognostic_state!(land, nothing) === land
+    end
 end
