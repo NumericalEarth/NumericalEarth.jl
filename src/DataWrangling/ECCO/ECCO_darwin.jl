@@ -79,7 +79,7 @@ function DataWrangling.conversion_units(metadatum::Metadatum{<:Union{ECCO2Darwin
     elseif dataset_variable_name(metadatum) != "THETA"
         return MicromolePerLiter()
     else
-        return nothing
+        return MolePerLiter()
     end
 end
 
