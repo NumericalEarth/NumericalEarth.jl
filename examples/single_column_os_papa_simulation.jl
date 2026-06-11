@@ -63,10 +63,13 @@ set!(ocean.model, T=Metadatum(:temperature, dataset=GLORYSMonthly(), region=col)
 # We build a `JRA55PrescribedAtmosphere` at the same location as the single-colunm grid
 # which is based on the JRA55 reanalysis.
 
-atmosphere = JRA55PrescribedAtmosphere(longitude = λ★,
-                                       latitude = φ★,
+atmosphere = JRA55PrescribedAtmosphere(region   = Column(λ★, φ★),
                                        end_date = DateTime(1990, 1, 31), # Last day of the simulation
-                                       backend  = InMemory())
+                                       time_indices_in_memory = 1000)
+
+radiation = JRA55PrescribedRadiation(region   = Column(λ★, φ★),
+                                     end_date = DateTime(1990, 1, 31),
+                                     time_indices_in_memory = 1000)
 
 # This builds a representation of the atmosphere on the small grid
 
@@ -101,7 +104,6 @@ lines!(axq, t_days, qa)
 current_figure()
 
 # We continue constructing a simulation.
-radiation = Radiation()
 coupled_model = OceanOnlyModel(ocean; atmosphere, radiation)
 simulation = Simulation(coupled_model, Δt=ocean.Δt, stop_time=30days)
 
@@ -205,8 +207,8 @@ ua  = atmosphere.velocities.u
 va  = atmosphere.velocities.v
 Ta  = atmosphere.tracers.T
 qa  = atmosphere.tracers.q
-ℐꜜˡʷ = atmosphere.downwelling_radiation.longwave
-ℐꜜˢʷ = atmosphere.downwelling_radiation.shortwave
+ℐꜜˡʷ = radiation.downwelling_longwave
+ℐꜜˢʷ = radiation.downwelling_shortwave
 Pr  = atmosphere.freshwater_flux.rain
 Ps  = atmosphere.freshwater_flux.snow
 
