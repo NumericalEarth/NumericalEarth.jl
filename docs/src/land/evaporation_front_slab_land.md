@@ -5,8 +5,8 @@ component. This tutorial walks through the modern variably-saturated
 configuration: a conservative slab water balance, a force-restore
 internal-energy budget with a water-mass-dependent heat capacity, and an
 atmosphere-facing humidity formulation that solves the surface specific
-humidity from a dry-layer vapor balance against an unresolved
-dry layer.
+humidity from a vapor-flux balance across an unresolved dry surface
+layer.
 
 The headline observable behavior — wet patches evaporate strongly while
 dry patches partition all surface energy into sensible heat — emerges
@@ -40,18 +40,20 @@ publishes for downstream consumers — for the variably-saturated hydrology:
 `deep_liquid_flux`, `surface_liquid_flux`, `surface_runoff`,
 `subsurface_runoff`, and `water_storage_tendency`. The hydrology step
 publishes `water_storage_tendency`; the energy step consumes it for the
-`Mˡᵃ`-dependent `Tˡᵃ` correction (§3.3 below).
+`Mˡᵃ`-dependent `Tˡᵃ` correction (§2.3 below).
 
 `SlabLand` exposes a single atmosphere-facing convention through the
 flux accumulator `land.fluxes`:
 
-| Direction | Field | Sign |
+| Convention | Field | Sign |
 |---|---|---|
-| upward (positive) | `vapor_flux`, `surface_energy_flux`, `liquid_precipitation_flux`-as-Pˡ-flag | positive ⇒ leaves slab |
+| signed (new) | `vapor_flux`, `surface_energy_flux` | positive upward ⇒ leaves slab |
+| signed (new) | `liquid_precipitation_flux` (`Pˡ`) | positive downward ⇒ enters slab |
 | legacy | `net_energy_flux`, `evaporation`, `precipitation` | positive ⇒ into slab (pre-2026 convention) |
 
-Both conventions are populated by `update_net_fluxes!(land)` every step,
-so closures can read whichever set they declared in `flux_variables`.
+Both conventions are populated by the coupler's `update_net_fluxes!`
+every step, so closures can read whichever set they declared in
+`flux_variables`.
 
 ## 2. Continuous balances and the slab reduction
 
@@ -145,7 +147,7 @@ Three things to keep separate:
   saturated overflow read. Negative unsaturated, positive once
   saturated.
 
-`Π_m(𝒮)` is the unsaturated retention curve (Van Genuchten in this PR;
+`Π_m(θ̄ˡ)` is the unsaturated retention curve (Van Genuchten in this PR;
 Brooks–Corey is a follow-up).
 
 ### 2.3 Slab water and energy budgets
@@ -214,12 +216,13 @@ There are two distinct runoff categories that bookkeep differently:
   `InfiltrationCapacityRunoff` both return 0); future closures like
   `TopographicRunoff` plug into the same hook.
 
-The combined export is exposed as `runoff(land)`. It becomes a flux only
-when a river / ocean coupler consumes it.
+Both categories live in `land.diagnostics` (`surface_runoff`,
+`subsurface_runoff`); they become a flux only when a river / ocean
+coupler consumes them.
 
 ## 4. Solving the surface humidity
 
-A traditional bucket-land closure prescribes `qˢ = β(𝒮) qᵛ⁺(Tˡᵃ)`. Two
+A traditional bucket-land closure prescribes `qⁱⁿ = β(𝒮) qᵛ⁺(Tⁱⁿ)`. Two
 known weaknesses:
 
 1. The evaporation efficiency `β` is empirical and tuned per soil type.
@@ -227,19 +230,19 @@ known weaknesses:
    `β` is used for calm/windy days, dry/humid air.
 
 [`DryLayerHumidity`](@ref) replaces this with a *vapor-flux
-balance* between the soil and the atmosphere. Vapor diffuses up from a
-saturated soil-air pocket at the dry layer, at depth `δᵛ` below
-the surface, by Fickian diffusion through the dry layer above the
-front:
+balance* between the soil and the atmosphere. Vapor diffuses up to the
+surface from saturated pore air at the base of the dry layer — the
+*front*, at depth `δᵛ` below the surface — by Fickian diffusion through
+the dry layer:
 
 ```math
-J^{soil} = G^e\,(q^e - q^{in}),
+J^e = G^e\,(q^e - q^{in}),
 \qquad
 G^e = \rho^{at}\,\frac{D^v_{eff}}{\max(\delta^v, \delta^v_{min})}.
 ```
 
 The atmosphere carries vapor away at rate `Jᵃ = −ρᵃᵗ u★ q★`. The
-balance `J^soil = Jᵃ` closes for `qⁱⁿ`:
+balance `Jᵉ = Jᵃ` closes for `qⁱⁿ`:
 
 ```math
 q^{in} = \frac{G^e q^e + G^a q^{at}}{G^e + G^a},
@@ -292,14 +295,16 @@ qⁱⁿ)` to convergence. Each iteration `k`:
 1. `δᵛ ← δᵛ(𝒮)` from [`StorageBasedDryLayerDepth`](@ref).
 2. `χ ← clip(δᵛ/ℓᵀ, 0, 1)`.
 3. `Tᵉ ← Tⁱⁿ + χ (Tˡᵃ − Tⁱⁿ)`.
-4. `qᵉ ← qᵛ⁺(Tᵉ, pᵉ)`.
+4. `qᵉ ← qᵛ⁺(Tᵉ, pᵃᵗ)`.
 5. `wᵈ ← Dᵛ_eff / max(δᵛ, δᵛ_min)`.
-6. Surface-layer similarity scheme provides `Gᵃ` from current
+6. Surface-layer similarity scheme provides `Jᵃ = −ρᵃᵗ u★ q★` (and
+   hence the implicit conductance `Gᵃ = Jᵃ/Δq`) from the current
    `(Tⁱⁿ, qⁱⁿ)`.
-7. **Wet branch** (`δᵛ ≤ δᵛ_min`): `qⁱⁿ ← qᵛ⁺(Tⁱⁿ, pⁱⁿ)`.
+7. **Wet branch** (`δᵛ ≤ δᵛ_min`): `qⁱⁿ ← qᵛ⁺(Tⁱⁿ, pᵃᵗ)`.
    **Dry branch:**                `qⁱⁿ ← (Gᵉ qᵉ Δq + Jᵃ qᵃᵗ) / (Gᵉ Δq + Jᵃ)`
    (Δq-multiplied form, finite as `Δq → 0`).
-8. Update `Jᵛ = ρᵃᵗ wᵛ (qⁱⁿ − qᵃᵗ)`.
+8. The similarity solver recomputes `u★, q★` from the updated interface
+   state; at convergence the vapor flux is `Jᵛ = −ρᵃᵗ u★ q★`.
 
 The Δq-multiplied form avoids the `0/0` indeterminacy when the
 near-iterate humidity matches `qᵃᵗ` exactly, and is the same trick the
@@ -388,7 +393,7 @@ A few notes for users running into convergence or stability issues:
   qᵛ⁺(Tⁱⁿ)`. There is no smoothed blend in this PR; revisit only if
   convergence regressions appear.
 * **Bounded humidity update.** The iteration update is followed by
-  `qⁱⁿ ← clip(qⁱⁿ, 0, qᵛ⁺(Tⁱⁿ, pⁱⁿ))` to stay physical.
+  `qⁱⁿ ← clip(qⁱⁿ, 0, qᵛ⁺(Tⁱⁿ, pᵃᵗ))` to stay physical.
 * **Positivity floor on `Mˡᵃ` only.** The augmented-storage framing
   intentionally has no upper clamp at `Mˡᵃ⁺` — overflow corresponds to
   `Π > 0`, not a state error.
@@ -437,6 +442,9 @@ elaborate column, not the only one.
 | [`SlabEnergy`](@ref) | `Q/C` | pure slab; no deep ground coupling |
 | [`ForceRestoreEnergy`](@ref) | `Q/C + (Tᵈᵉᵉᵖ − Tˡᵃ)/τ` | restoring toward a deep climatology (`SlabEnergy` is its `τ → ∞` limit) |
 | [`WaterCoupledEnergy`](@ref) | conservative `dEˡᵃ/dt` form, §2.3 | `C(Mˡᵃ)`, advective water energy, exact `T`-invariance under water exchange |
+
+(`Q` is the net energy flux into the slab, `C` the areal heat capacity,
+`τ` the deep-restore time scale.)
 
 **Hydrology** (`hydrology =`) — governs `Mˡᵃ` and the diagnostic `𝒮`:
 
