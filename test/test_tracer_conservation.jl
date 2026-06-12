@@ -5,16 +5,11 @@ using Oceananigans.TimeSteppers: update_state!
 using Oceananigans.Units
 using NumericalEarth.EarthSystemModels: above_freezing_ocean_temperature!
 
-function get_value(field::Field{Nothing, Nothing, Nothing})
-    compute!(field)
-    return @allowscalar first(field)
-end
-
 @testset "Tracer conservation under surface fluxes" begin
     for arch in test_architectures
         for fold_topology in (RightFaceFolded, RightCenterFolded)
             underlying_grid = TripolarGrid(arch;
-                                           size = (20, 20, 8),
+                                           size = (20, 20, 20),
                                            z = (-100, 0),
                                            halo = (7, 7, 4),
                                            fold_topology)
@@ -48,7 +43,8 @@ end
 
             coupled_model = OceanSeaIceModel(ocean, sea_ice; atmosphere, radiation)
 
-            simulation = Simulation(coupled_model; Δt=10minutes, stop_iteration=3)
+            Δt = 1minute
+            simulation = Simulation(coupled_model; Δt, stop_iteration=3)
 
             ocean_properties = simulation.model.interfaces.ocean_properties
             ρᵒᶜ = ocean_properties.reference_density
@@ -58,31 +54,36 @@ end
             surface_forcing = (; heat_flux = net_ocean_heat_flux(simulation.model),
                                  freshwater_flux = net_ocean_freshwater_flux(simulation.model, reference_salinity=Sᵒᶜ))
 
-            ocean_heat_content = Field(Integral(ρᵒᶜ * cᵒᶜ * simulation.model.ocean.model.tracers.T, dims=(1, 2, 3)))
-            freshwater_content = Field(Integral(-ρᵒᶜ / Sᵒᶜ * simulation.model.ocean.model.tracers.S, dims=(1, 2, 3)))
-            heat_rate = Field(Integral(surface_forcing.heat_flux, dims=(1, 2, 3)))
-            freshwater_rate = Field(Integral(surface_forcing.freshwater_flux, dims=(1, 2, 3)))
+            T = simulation.model.ocean.model.tracers.T
+            S = simulation.model.ocean.model.tracers.S
+
+            ocean_heat_content = Integral( ρᵒᶜ * cᵒᶜ * T, dims=(1, 2, 3))
+            freshwater_content = Integral(-ρᵒᶜ / Sᵒᶜ * S, dims=(1, 2, 3))
+            heat_rate = Integral(surface_forcing.heat_flux, dims=(1, 2))
+            freshwater_rate = Integral(surface_forcing.freshwater_flux, dims=(1, 2))
 
             update_state!(simulation.model)
 
-            previous_ocean_heat_content = get_value(ocean_heat_content)
-            previous_freshwater_content = get_value(freshwater_content)
-            previous_heat_flux = get_value(heat_rate)
-            previous_freshwater_flux= get_value(freshwater_rate)
+            previous_ocean_heat_content = @allowscalar first(Field(ocean_heat_content))
+            previous_freshwater_content = @allowscalar first(Field(freshwater_content))
+            previous_heat_flux = @allowscalar first(Field(heat_rate))
+            previous_freshwater_flux= @allowscalar first(Field(freshwater_rate))
 
             previous_time = Float64(simulation.model.clock.time)
 
             @test abs(previous_heat_flux) > 0
             @test abs(previous_freshwater_flux) > 0
 
-            @show current_ocean_heat_content = get_value(ocean_heat_content)
-            @show current_freshwater_content = get_value(freshwater_content)
+            @show current_ocean_heat_content = @allowscalar first(Field(ocean_heat_content))
+            @show current_freshwater_content = @allowscalar first(Field(freshwater_content))
 
             for _ = 1:simulation.stop_iteration
-                time_step!(simulation.model, simulation.Δt)
+                time_step!(coupled_model, Δt)
 
-                @show current_ocean_heat_content = get_value(ocean_heat_content)
-                @show current_freshwater_content = get_value(freshwater_content)
+                @show T
+
+                @show current_ocean_heat_content = @allowscalar first(Field(ocean_heat_content))
+                @show current_freshwater_content = @allowscalar first(Field(freshwater_content))
                 current_time = Float64(simulation.model.clock.time)
                 last_Δt = simulation.model.clock.last_Δt
 
@@ -93,8 +94,8 @@ end
 
                 previous_ocean_heat_content = current_ocean_heat_content
                 previous_freshwater_content = current_freshwater_content
-                previous_heat_flux = get_value(heat_rate)
-                previous_freshwater_flux = get_value(freshwater_rate)
+                previous_heat_flux = @allowscalar first(heat_rate)
+                previous_freshwater_flux = @allowscalar first(freshwater_rate)
                 previous_time = current_time
             end
         end
