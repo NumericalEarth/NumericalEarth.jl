@@ -506,7 +506,12 @@ land = SlabLand(grid;
         advect_deep_liquid_energy = true,
     ),
 )
+```
 
+The humidity formulation belongs to the atmosphere–land interface, not
+the land itself:
+
+```@example slabland
 interface_humidity = DryLayerHumidity(;
     dry_layer_depth = StorageBasedDryLayerDepth(
         maximum_dry_layer_depth = 0.05,
@@ -520,7 +525,7 @@ interface_humidity = DryLayerHumidity(;
     porosity = 0.4)
 ```
 
-The humidity formulation is handed to the coupler, not the land:
+It is handed to the coupler via
 `atmosphere_land_interface(grid, atmosphere, land; specific_humidity =
 interface_humidity)` — see the Breeze example below for the full
 coupled assembly.
