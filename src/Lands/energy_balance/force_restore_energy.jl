@@ -54,6 +54,14 @@ end
 
 flux_variables(::ForceRestoreEnergy) = (:net_energy_flux,)
 
+# The closure rides into `_step_land_temperature!` whole, so Field-valued
+# properties must adapt to their GPU forms.
+Adapt.adapt_structure(to, energy::ForceRestoreEnergy) =
+    ForceRestoreEnergy(Adapt.adapt(to, energy.dry_heat_capacity),
+                       Adapt.adapt(to, energy.liquid_heat_capacity),
+                       Adapt.adapt(to, energy.deep_temperature),
+                       Adapt.adapt(to, energy.deep_time_scale))
+
 # `τᵈ` is the deep-restore time scale (math `τᵈᵉᵉᵖ` in notation.md); not the
 # kinematic momentum flux `τ`. `Tᵈ` is the deep-target temperature.
 # ∂T/∂t = Q/C + (Tᵈ − T)/τᵈ, with C = Cdry + Cl·max(Mˡᵃ, 0).

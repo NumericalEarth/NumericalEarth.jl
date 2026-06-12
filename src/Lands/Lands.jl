@@ -28,6 +28,7 @@ instead.
 """
 abstract type AbstractLand end
 
+using Adapt: Adapt
 using KernelAbstractions: @kernel, @index
 using Oceananigans: Oceananigans, prognostic_state, restore_prognostic_state!
 using Oceananigans.Architectures: architecture

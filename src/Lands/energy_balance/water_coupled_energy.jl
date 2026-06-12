@@ -109,6 +109,18 @@ end
 flux_variables(::WaterCoupledEnergy) =
     (:surface_energy_flux, :liquid_precipitation_temperature)
 
+# The closure rides into `_step_land_temperature!` whole, so Field-valued
+# properties must adapt to their GPU forms.
+Adapt.adapt_structure(to, energy::WaterCoupledEnergy) =
+    WaterCoupledEnergy(Adapt.adapt(to, energy.dry_heat_capacity),
+                       Adapt.adapt(to, energy.liquid_heat_capacity),
+                       Adapt.adapt(to, energy.reference_temperature),
+                       Adapt.adapt(to, energy.deep_temperature),
+                       Adapt.adapt(to, energy.deep_conductance),
+                       Adapt.adapt(to, energy.deep_time_scale),
+                       energy.advect_deep_liquid_energy,
+                       energy.advect_surface_liquid_energy)
+
 #####
 ##### Helpers
 #####
