@@ -3,6 +3,7 @@ include("runtests_setup.jl")
 using CUDA: @allowscalar
 using Oceananigans.TimeSteppers: update_state!
 using NumericalEarth.EarthSystemModels: above_freezing_ocean_temperature!
+using Oceananigans.Units
 
 scalar_integral(field) = begin
     compute!(field)
