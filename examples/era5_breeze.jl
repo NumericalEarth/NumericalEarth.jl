@@ -74,21 +74,21 @@ Nx, Ny = 300, 270           # Fan et al. (2017) Domain 3: 301 × 271 points − 
 φ_south = φ₀ - Ny * Δφ / 2
 φ_north = φ₀ + Ny * Δφ / 2
 
-# Vertical grid: matched to [Fan2017](@citet), who use 51 vertical levels with
-# spacing ~60 m at the lowest levels stretching to ~490 m aloft. WRF's 51 levels
-# count staggered (w) interfaces, so they map to 50 Breeze *cells*. Oceananigans'
-# `ReferenceToStretchedDiscretization` gives one constant 60 m cell at the
-# surface, then a 1.08× stretching per cell until Δz hits the 490 m cap, then
-# uniform 490 m cells. `extent = 16250` is tuned so the stretching law lands on
-# exactly `Nz = 50` (Lz ≈ 16.5 km, comfortably below the ERA5 1 hPa top).
+# Vertical grid: a constant 60 m surface cell, 1.08× stretching per cell to a 1150 m cap,
+# `Nz = 50`. `extent = 26500` puts the top at Lz ≈ 26.5 km (~20 hPa) — well above the jet,
+# so the rigid lid and the Rayleigh sponge (below) sit in the quiescent lower stratosphere
+# and absorb upward-propagating modes without distorting the troposphere. The cap is raised
+# from the Fan-matched 490 m so the same 50 cells reach this higher top (the upper cells
+# coarsen; the 60 m surface layer that resolves the boundary layer is unchanged). The ERA5
+# 1 hPa top still sits comfortably above Lz.
 
 z_discretization = ReferenceToStretchedDiscretization(
-    extent                  = 16250.0,
+    extent                  = 26500.0,
     bias                    = :left,
     bias_edge               = 0.0,
     constant_spacing        = 60.0,
     constant_spacing_extent = 60.0,
-    maximum_spacing         = 490.0,
+    maximum_spacing         = 1150.0,
     stretching              = LinearStretching(0.08))
 
 Nz = length(z_discretization)
@@ -559,8 +559,8 @@ davies = parent_forcings(; rate = 1/τ_relax,
 # contravariant vertical velocity, corrected horizontal pressure gradient, terrain-aware
 # divergence — so no `terrain_metrics` argument is needed. The `SplitExplicitTimeDiscretization`
 # (Breeze PR #712) integrates the acoustic modes with inner substeps, freeing the outer
-# step to run at the advection CFL (see Δt below). Its `UpperSponge` adds a 3 km-deep
-# Rayleigh layer that damps the vertical momentum (ρw)′ toward the 16.5 km rigid lid
+# step to run at the advection CFL (see Δt below). Its `UpperSponge` adds a 5 km-deep
+# Rayleigh layer that damps the vertical momentum (ρw)′ toward the ~26.5 km rigid lid
 # (5 s timescale), absorbing vertically-propagating modes so they don't reflect.
 #
 # TODO: pass `reference_potential_temperature = θ_ref(z)` to `CompressibleDynamics`.
@@ -578,9 +578,14 @@ davies = parent_forcings(; rate = 1/τ_relax,
 
 p̄₀ = mean(interior(p₀))
 
+# Add a Rayleigh damping layer
+damping_timescale = 5    # (s)
+damping_depth     = 5000 # (m)
+rayleigh_damping = UpperSponge(; damping_rate = 1/damping_timescale, depth = damping_depth)
+
 model = atmosphere_simulation(grid;
                               thermodynamic_constants = constants,
-                              dynamics            = CompressibleDynamics(SplitExplicitTimeDiscretization(sponge = UpperSponge(; damping_rate = 1/5, depth = 3e3));
+                              dynamics            = CompressibleDynamics(SplitExplicitTimeDiscretization(sponge = rayleigh_damping);
                                                                          surface_pressure = p̄₀),
                               boundary_conditions = bcs,
                               forcing             = davies).model
