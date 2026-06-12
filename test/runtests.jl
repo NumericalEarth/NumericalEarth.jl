@@ -10,7 +10,9 @@ using ParallelTestRunner: find_tests, parse_args, filter_tests!, runtests
 # Temporarily restrict local/CLI runs to the tracer conservation test while
 # iterating on its setup and budget assertions.
 testsuite = find_tests(@__DIR__)
-testsuite = filter(name -> name == "test_tracer_conservation", testsuite)
+for name in collect(keys(testsuite))
+    name == "test_tracer_conservation" || delete!(testsuite, name)
+end
 
 # Parse arguments
 args = parse_args(ARGS)
