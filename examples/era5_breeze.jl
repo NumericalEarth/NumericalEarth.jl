@@ -559,7 +559,9 @@ davies = parent_forcings(; rate = 1/τ_relax,
 # contravariant vertical velocity, corrected horizontal pressure gradient, terrain-aware
 # divergence — so no `terrain_metrics` argument is needed. The `SplitExplicitTimeDiscretization`
 # (Breeze PR #712) integrates the acoustic modes with inner substeps, freeing the outer
-# step to run at the advection CFL (see Δt below).
+# step to run at the advection CFL (see Δt below). Its `UpperSponge` adds a 3 km-deep
+# Rayleigh layer that damps the vertical momentum (ρw)′ toward the 16.5 km rigid lid
+# (5 s timescale), absorbing vertically-propagating modes so they don't reflect.
 #
 # TODO: pass `reference_potential_temperature = θ_ref(z)` to `CompressibleDynamics`.
 # A reference state lets Breeze compute the horizontal pressure gradient in
@@ -578,7 +580,7 @@ p̄₀ = mean(interior(p₀))
 
 model = atmosphere_simulation(grid;
                               thermodynamic_constants = constants,
-                              dynamics            = CompressibleDynamics(SplitExplicitTimeDiscretization();
+                              dynamics            = CompressibleDynamics(SplitExplicitTimeDiscretization(sponge = UpperSponge(; damping_rate = 1/5, depth = 3e3));
                                                                          surface_pressure = p̄₀),
                               boundary_conditions = bcs,
                               forcing             = davies).model
