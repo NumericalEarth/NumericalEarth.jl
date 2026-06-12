@@ -20,7 +20,7 @@ end
 
             bottom_height = regrid_bathymetry(underlying_grid, Metadatum(:bottom_height, dataset=ETOPO2022());
                                 minimum_depth=15,
-                                interpolation_passes=25,
+                                interpolation_passes=1,
                                 major_basins=1)
 
             grid = ImmersedBoundaryGrid(underlying_grid, GridFittedBottom(bottom_height); active_cells_map=true)
