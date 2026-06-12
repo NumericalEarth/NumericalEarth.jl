@@ -77,23 +77,15 @@ end
 
             @test abs(previous_heat_flux) > 0
             @test abs(previous_freshwater_flux) > 0
-<<<<<<< HEAD
 
             @show current_ocean_heat_content = get_value(ocean_heat_content)
             @show current_freshwater_content = get_value(freshwater_content)
-=======
->>>>>>> 8b357040a8b146af7e3b3def16cbdcc517acb0d9
 
             for _ = 1:simulation.stop_iteration
                 time_step!(simulation.model, simulation.Δt)
 
-<<<<<<< HEAD
                 @show current_ocean_heat_content = get_value(ocean_heat_content)
                 @show current_freshwater_content = get_value(freshwater_content)
-=======
-                current_ocean_heat_content = ocean_heat_content
-                current_freshwater_content = freshwater_content
->>>>>>> 8b357040a8b146af7e3b3def16cbdcc517acb0d9
                 current_time = Float64(simulation.model.clock.time)
                 last_Δt = simulation.model.clock.last_Δt
 
