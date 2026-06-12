@@ -204,7 +204,7 @@ using NumericalEarth.JRA55: download_JRA55_cache
             filepaths = unique(metadata_path(metadata))
 
             Ta_span = download_dataset_with_fallback(filepaths;
-                                                    dataset_name="MultiYearJRA55 :temperature year-boundary window") do
+                                                     dataset_name="MultiYearJRA55 :temperature year-boundary window") do
                 # backend window of 80 holds the whole range in a single window
                 FieldTimeSeries(metadata, arch; time_indices_in_memory=80)
             end
