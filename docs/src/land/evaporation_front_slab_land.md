@@ -21,7 +21,7 @@ built around three closures
 [`DryLayerHumidity`](@ref)) plus their sub-closures (deep liquid
 flux, runoff, retention curve, dry-layer depth, dry-layer vapor
 exchange). It targets bare ground without snow, ice, or vegetation; see
-§10 ("Limitations") below. §7 surveys the full closure menu, including
+§11 ("Limitations") below. §7 surveys the full closure menu, including
 the simpler configurations (`SlabEnergy`, `BucketHydrology`,
 `FractionalHumidity`).
 
@@ -278,7 +278,7 @@ the skin; when the front has retreated to `δᵛ ≥ ℓᵀ` it is the bulk
 soil. With the `BulkTemperature()` interface formulation the land uses,
 `Tⁱⁿ = Tˡᵃ`, so `Tᵉ` collapses to `Tˡᵃ` and the wet/dry contrast comes
 entirely from the dry-layer conductance; the χ interpolation acquires
-bite once a skin-temperature formulation makes `Tⁱⁿ ≠ Tˡᵃ` (§10).
+bite once a skin-temperature formulation makes `Tⁱⁿ ≠ Tˡᵃ` (§11).
 
 **The flux balance.** Vapor Fick-diffuses from the front up to the
 interface,
@@ -571,10 +571,130 @@ interface_humidity = DryLayerHumidity(;
 
 It is handed to the coupler via
 `atmosphere_land_interface(grid, atmosphere, land; specific_humidity =
-interface_humidity)` — see the Breeze example below for the full
-coupled assembly.
+interface_humidity)` — the case study below and the Breeze example in
+§10 show the full coupled assembly.
 
-## 9. Examples
+## 9. Case study: a slab drying under a warm atmosphere
+
+The two-stage behavior of §4.3 can be reproduced in seconds with a
+single-column `SlabLand` under a constant warm, dry atmosphere and
+prescribed radiation. A thin (20 cm) slab starts near saturation; with
+drainage and runoff turned off, evaporation is the only sink, so the
+dry-down is driven entirely by the vapor-flux balance.
+
+```@example slabland
+using Oceananigans.Units
+
+column = LatitudeLongitudeGrid(size = 1, latitude = 35, longitude = 0,
+                               z = (-1, 0), topology = (Flat, Flat, Bounded))
+
+slab = SlabLand(column;
+    hydrology = VariablySaturatedHydrology(
+        slab_depth = 0.2,
+        porosity = 0.4,
+        residual_liquid_fraction = 0.05,
+        storage_height = 1000,
+        critical_saturation = 0.5,
+        retention_curve = VanGenuchtenRetention(α = 1.0, n = 2.0),
+        hydraulic_conductivity = VanGenuchtenConductivity(K_saturated = 1e-6, n = 2.0)),
+    energy = WaterCoupledEnergy(
+        dry_heat_capacity = 3e5,
+        liquid_heat_capacity = 4186,
+        deep_temperature = 295,
+        deep_time_scale = 2days))
+
+fill!(slab.temperature, 300)
+fill!(slab.water_storage, 0.9 * 0.4 * 1000 * 0.2)   # 𝒮 ≈ 0.9 of Mˡᵃ⁺ = ρˡ ν hˡᵃ
+
+atmosphere = PrescribedAtmosphere(column; surface_layer_height = 10,
+                                          boundary_layer_height = 512)
+fill!(parent(atmosphere.velocities.u), 3)        # m s⁻¹
+fill!(parent(atmosphere.tracers.T), 305)         # K — warm
+fill!(parent(atmosphere.tracers.q), 0.004)       # kg kg⁻¹ — dry
+fill!(parent(atmosphere.pressure), 101_325)
+
+downwelling_shortwave = FieldTimeSeries{Center, Center, Nothing}(column, [0.0])
+downwelling_longwave  = FieldTimeSeries{Center, Center, Nothing}(column, [0.0])
+fill!(parent(downwelling_shortwave), 250)        # W m⁻²
+fill!(parent(downwelling_longwave), 350)         # W m⁻²
+radiation = PrescribedRadiation(downwelling_shortwave, downwelling_longwave;
+                                land_surface = SurfaceRadiationProperties(0.3, 0.95))
+
+column_humidity = DryLayerHumidity(;
+    dry_layer_depth = StorageBasedDryLayerDepth(
+        maximum_dry_layer_depth = 0.05,
+        critical_saturation = 0.5,
+        dry_layer_exponent = 2),
+    vapor_exchange = DryLayerVaporPistonVelocity(
+        minimum_dry_layer_depth = 1e-4,
+        molecular_diffusivity = 2.5e-5,
+        tortuosity_model = MillingtonQuirk()),
+    thermal_exchange_depth = 0.10,
+    porosity = 0.4)
+
+column_interface = atmosphere_land_interface(column, atmosphere, slab;
+                                             specific_humidity = column_humidity)
+model = AtmosphereLandModel(atmosphere, slab; radiation,
+                            atmosphere_land_interface = column_interface)
+```
+
+Step forward twelve days, recording the slab state and the vapor flux:
+
+```@example slabland
+Δt = 10minutes
+N  = Int(12days ÷ Δt)
+
+days_elapsed = zeros(N)
+saturation   = zeros(N)
+evaporation  = zeros(N)
+temperature  = zeros(N)
+
+for n in 1:N
+    time_step!(model, Δt)
+    days_elapsed[n] = model.clock.time / day
+    saturation[n]   = slab.saturation[1, 1, 1]
+    evaporation[n]  = slab.fluxes.vapor_flux[1, 1, 1] * day   # kg m⁻² s⁻¹ → mm day⁻¹
+    temperature[n]  = slab.temperature[1, 1, 1]
+end
+```
+
+```@example slabland
+using CairoMakie
+
+fig = Figure(size = (700, 700))
+
+axS = Axis(fig[1, 1], ylabel = "saturation 𝒮")
+lines!(axS, days_elapsed, saturation)
+hlines!(axS, [0.5], linestyle = :dash, color = :gray)
+text!(axS, 0.4, 0.52, text = "𝒮ᶜ", color = :gray)
+
+axJ = Axis(fig[2, 1], ylabel = "evaporation (mm day⁻¹)")
+lines!(axJ, days_elapsed, evaporation)
+
+axT = Axis(fig[3, 1], ylabel = "Tˡᵃ (K)", xlabel = "time (days)")
+lines!(axT, days_elapsed, temperature)
+
+linkxaxes!(axS, axJ, axT)
+hidexdecorations!(axS, grid = false)
+hidexdecorations!(axJ, grid = false)
+
+fig
+```
+
+Both stages of §4.3 appear. After a few hours of adjustment from the
+initial condition, the front sits at the skin while `𝒮 > 𝒮ᶜ` (the first
+week): evaporation holds a demand-limited plateau near 3.4 mm day⁻¹ and
+the slab temperature is steady near 298 K — evaporative cooling
+balances the radiative and sensible heating. Once `𝒮` crosses `𝒮ᶜ` the
+dry layer grows, the Fickian path lengthens, and evaporation collapses
+(to about a third of the plateau by day twelve) while the slab *warms*
+by several kelvin: the surface energy that latent heat no longer
+carries away is repartitioned into sensible heat and ground warming.
+The small notch right at the crossing is the hard wet/dry branch switch
+of §5. No `β(𝒮)` function was prescribed anywhere — the transition
+emerges from the flux balance.
+
+## 10. Examples
 
 Two coupled examples exercise the full atmosphere ↔ interface ↔
 hydrology ↔ energy stack end-to-end:
@@ -589,7 +709,7 @@ hydrology ↔ energy stack end-to-end:
   ~1 km Greater Yellowstone simulation forced by ERA5 reanalysis with
   elevation-corrected forcing.
 
-## 10. Limitations
+## 11. Limitations
 
 What `SlabLand` does not represent, for judging whether it fits a
 problem:
