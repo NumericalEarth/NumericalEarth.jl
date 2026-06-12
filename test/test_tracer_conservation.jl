@@ -53,18 +53,18 @@ end
 
             simulation = Simulation(coupled_model; Δt=10minutes, stop_iteration=3)
 
-            surface_forcing = (; heat_flux = net_ocean_heat_flux(simulation.model),
-                                 fw_flux = net_ocean_freshwater_flux(simulation.model))
-
             ocean_properties = simulation.model.interfaces.ocean_properties
             ρᵒᶜ = ocean_properties.reference_density
             cᵒᶜ = ocean_properties.heat_capacity
             Sᵒᶜ = 35
 
+            surface_forcing = (; heat_flux = net_ocean_heat_flux(simulation.model),
+                                 freshwater_flux = net_ocean_freshwater_flux(simulation.model, reference_salinity=Sᵒᶜ))
+
             ocean_heat_content = Field(Integral(ρᵒᶜ * cᵒᶜ * simulation.model.ocean.model.tracers.T, dims=(1, 2, 3)))
             freshwater_content = Field(Integral(-ρᵒᶜ / Sᵒᶜ * simulation.model.ocean.model.tracers.S, dims=(1, 2, 3)))
             heat_rate = Field(Integral(surface_forcing.heat_flux, dims=(1, 2, 3)))
-            freshwater_rate = Field(Integral(surface_forcing.fw_flux, dims=(1, 2, 3)))
+            freshwater_rate = Field(Integral(surface_forcing.freshwater_flux, dims=(1, 2, 3)))
 
             update_state!(simulation.model)
 
