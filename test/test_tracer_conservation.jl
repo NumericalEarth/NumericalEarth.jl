@@ -15,6 +15,7 @@ end
             underlying_grid = TripolarGrid(arch, Float32;
                                 size = (10, 10, 10),
                                 z = (-100, 0),
+                                halos = (7, 7, 4),
                                 fold_topology=topology)
 
             bottom_height = regrid_bathymetry(underlying_grid, Metadatum(:bottom_height, dataset=ETOPO2022());
