@@ -8,10 +8,34 @@ using NumericalEarth.DataWrangling: native_grid
 
 const CopernicusDEM = NumericalEarth.DataWrangling.CopernicusDEM
 
-# NOTE (verify on first live run): this assumes the Earth Data Hub Copernicus DEM
-# store names its coordinates "lon"/"lat" and stores `dsm` as (lat, lon). Ascending vs
-# descending order is detected and handled below; if the coordinate names or the
-# dimension order differ, adjust here.
+#####
+##### bitround filter
+#####
+
+# The GLO-90 store applies the numcodecs `bitround` filter (lossy mantissa
+# rounding done at write time). Decoding is a passthrough: the stored values are
+# already the rounded floats, so no inverse is needed. Zarr.jl has no built-in
+# bitround filter, so we register a minimal one in its global `filterdict`.
+struct BitRoundFilter{T, Tenc} <: Zarr.Filter{T, Tenc}
+    keepbits::Int32
+end
+
+BitRoundFilter(; keepbits = 14, T = Float32, Tenc = T) = BitRoundFilter{T, Tenc}(Int32(keepbits))
+
+Zarr.zencode(data::AbstractArray, ::BitRoundFilter) = data
+Zarr.zdecode(data::AbstractArray, ::BitRoundFilter) = data
+Zarr.JSON.lower(filter::BitRoundFilter) = Dict("id" => "bitround", "keepbits" => filter.keepbits)
+Zarr.getfilter(::Type{<:BitRoundFilter}, d) = BitRoundFilter(; keepbits = d["keepbits"])
+Zarr.filterdict["bitround"] = BitRoundFilter
+
+#####
+##### Copernicus DEM Zarr → regional NetCDF
+#####
+
+# The Earth Data Hub Copernicus DEM stores name their coordinates "lon"/"lat" and
+# store `dsm` as (lon, lat); both coordinates are ascending. Ascending vs descending
+# is detected and handled regardless, so only the coordinate names and dimension
+# order are assumed here.
 function CopernicusDEM.zarr_to_netcdf(metadatum::CopernicusDEM.CopernicusDEMMetadatum, nc_path)
     token = get(ENV, "DESTINE_ACCESS_TOKEN", nothing)
     isnothing(token) && error(
@@ -39,8 +63,7 @@ function CopernicusDEM.zarr_to_netcdf(metadatum::CopernicusDEM.CopernicusDEMMeta
     latitude_range,  latitude_ascending  = ascending_window(latitude,  first_latitude,  Ny)
 
     variable_name = CopernicusDEM.dataset_zarr_variable_name
-    slab = store[variable_name][latitude_range, longitude_range]  # (lat, lon)
-    elevation = permutedims(Float32.(slab), (2, 1))               # → (lon, lat)
+    elevation = Float32.(store[variable_name][longitude_range, latitude_range])  # (lon, lat)
 
     # The native LatitudeLongitudeGrid is ascending in both lon and lat.
     longitude_ascending || (elevation = reverse(elevation, dims = 1))
