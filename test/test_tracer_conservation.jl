@@ -12,7 +12,7 @@ end
 @testset "Tracer conservation under surface fluxes" begin
     for arch in test_architectures
         for topology in (RightFaceFolded, RightCenterFolded)
-            underlying_grid = TripolarGrid(arch, Float32;
+            underlying_grid = TripolarGrid(arch;
                                 size = (10, 10, 10),
                                 z = (-100, 0),
                                 halo = (7, 7, 4),
