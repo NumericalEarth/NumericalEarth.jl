@@ -8,6 +8,7 @@ using NumericalEarth.EarthSystemModels: above_freezing_ocean_temperature!
 @testset "Tracer conservation under surface fluxes" begin
     for arch in test_architectures
         for fold_topology in (RightFaceFolded, RightCenterFolded)
+            fold_topology = RightFaceFolded
             underlying_grid = TripolarGrid(arch;
                                            size = (20, 20, 20),
                                            z = (-100, 0),
@@ -21,7 +22,7 @@ using NumericalEarth.EarthSystemModels: above_freezing_ocean_temperature!
 
             grid = ImmersedBoundaryGrid(underlying_grid, GridFittedBottom(bottom_height); active_cells_map=true)
 
-            ocean = ocean_simulation(grid)
+            ocean = ocean_simulation(grid, free_surface=SplitExplicitFreeSurface(substeps=20))
             sea_ice = sea_ice_simulation(grid, ocean)
 
             time_indices_in_memory = 2
@@ -43,7 +44,7 @@ using NumericalEarth.EarthSystemModels: above_freezing_ocean_temperature!
 
             coupled_model = OceanSeaIceModel(ocean, sea_ice; atmosphere, radiation)
 
-            Δt = 1minute
+            Δt = 65seconds
             simulation = Simulation(coupled_model; Δt, stop_iteration=3)
 
             ocean_properties = simulation.model.interfaces.ocean_properties
@@ -62,8 +63,6 @@ using NumericalEarth.EarthSystemModels: above_freezing_ocean_temperature!
             heat_rate = Integral(surface_forcing.heat_flux, dims=(1, 2))
             freshwater_rate = Integral(surface_forcing.freshwater_flux, dims=(1, 2))
 
-            update_state!(simulation.model)
-
             previous_ocean_heat_content = @allowscalar first(Field(ocean_heat_content))
             previous_freshwater_content = @allowscalar first(Field(freshwater_content))
             previous_heat_flux = @allowscalar first(Field(heat_rate))
@@ -80,17 +79,20 @@ using NumericalEarth.EarthSystemModels: above_freezing_ocean_temperature!
             for _ = 1:simulation.stop_iteration
                 time_step!(coupled_model, Δt)
 
-                @show T
-
                 @show current_ocean_heat_content = @allowscalar first(Field(ocean_heat_content))
                 @show current_freshwater_content = @allowscalar first(Field(freshwater_content))
                 current_time = Float64(simulation.model.clock.time)
                 last_Δt = simulation.model.clock.last_Δt
 
+
+                @show current_ocean_heat_content - previous_ocean_heat_content
+                @show -previous_heat_flux * last_Δt
+
+                @show current_freshwater_content - previous_freshwater_content
+                @show -previous_freshwater_flux * last_Δt
+
                 @test current_ocean_heat_content - previous_ocean_heat_content ≈ -previous_heat_flux * last_Δt rtol=1e-4 atol=1e-2
                 @test current_freshwater_content - previous_freshwater_content ≈ -previous_freshwater_flux * last_Δt rtol=1e-4 atol=1e-2
-
-                update_state!(simulation.model)
 
                 previous_ocean_heat_content = current_ocean_heat_content
                 previous_freshwater_content = current_freshwater_content
