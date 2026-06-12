@@ -13,9 +13,6 @@ end
 @testset "Tracer conservation under surface fluxes" begin
     for arch in test_architectures
         for fold_topology in (RightFaceFolded, RightCenterFolded)
-
-            arch = CPU()
-            fold_topology = RightFaceFolded
             underlying_grid = TripolarGrid(arch;
                                            size = (20, 20, 8),
                                            z = (-100, 0),
@@ -68,10 +65,10 @@ end
 
             update_state!(simulation.model)
 
-            previous_ocean_heat_content = scalar_integral(ocean_heat_content)
-            previous_freshwater_content = scalar_integral(freshwater_content)
-            previous_heat_flux = scalar_integral(heat_rate)
-            previous_freshwater_flux= scalar_integral(freshwater_rate)
+            previous_ocean_heat_content = get_value(ocean_heat_content)
+            previous_freshwater_content = get_value(freshwater_content)
+            previous_heat_flux = get_value(heat_rate)
+            previous_freshwater_flux= get_value(freshwater_rate)
 
             previous_time = Float64(simulation.model.clock.time)
 
@@ -96,8 +93,8 @@ end
 
                 previous_ocean_heat_content = current_ocean_heat_content
                 previous_freshwater_content = current_freshwater_content
-                previous_heat_flux = scalar_integral(heat_rate)
-                previous_freshwater_flux = scalar_integral(freshwater_rate)
+                previous_heat_flux = get_value(heat_rate)
+                previous_freshwater_flux = get_value(freshwater_rate)
                 previous_time = current_time
             end
         end
