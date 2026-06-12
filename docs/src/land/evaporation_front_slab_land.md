@@ -1,7 +1,7 @@
 # SlabLand tutorial: conservative variably saturated land
 
 `SlabLand` is NumericalEarth's prognostic single-layer land-surface
-component. This tutorial walks through the modern variably-saturated
+component. This tutorial walks through the variably saturated
 configuration: a conservative slab water balance, a force-restore
 internal-energy budget with a water-mass-dependent heat capacity, and an
 atmosphere-facing humidity formulation that solves the surface specific
@@ -21,9 +21,9 @@ built around three closures
 [`DryLayerHumidity`](@ref)) plus their sub-closures (deep liquid
 flux, runoff, retention curve, dry-layer depth, dry-layer vapor
 exchange). It targets bare ground without snow, ice, or vegetation; see
-§10 ("Out of scope") below. §7 surveys the full closure menu, including
+§10 ("Limitations") below. §7 surveys the full closure menu, including
 the simpler configurations (`SlabEnergy`, `BucketHydrology`,
-`FractionalHumidity`) that predate this one.
+`FractionalHumidity`).
 
 ## 1. What `SlabLand` stores
 
@@ -34,6 +34,13 @@ The composable container keeps a two-prognostic shape:
 | `Tˡᵃ` | `land.temperature` | bulk land temperature, K |
 | `Mˡᵃ` | `land.water_storage` | slab water mass per land area, kg m⁻² |
 | `𝒮`  | `land.saturation` | diagnostic surface saturation, recomputed from `Mˡᵃ` every step |
+
+Land variables wear the component superscript `ˡᵃ` throughout this page
+because they appear alongside atmosphere (`ᵃᵗ`) and interface (`ⁱⁿ`)
+variables. Within the land model itself the bare symbols are used —
+`prognostic_fields(land)` returns `(; T, M)` — per the
+component-superscript rule in the
+[notation appendix](../appendix/notation.md).
 
 A closure-extensible `land.diagnostics` slot carries fields each closure
 publishes for downstream consumers — for the variably-saturated hydrology:
@@ -47,13 +54,14 @@ flux accumulator `land.fluxes`:
 
 | Convention | Field | Sign |
 |---|---|---|
-| signed (new) | `vapor_flux`, `surface_energy_flux` | positive upward ⇒ leaves slab |
-| signed (new) | `liquid_precipitation_flux` (`Pˡ`) | positive downward ⇒ enters slab |
-| legacy | `net_energy_flux`, `evaporation`, `precipitation` | positive ⇒ into slab (pre-2026 convention) |
+| signed | `vapor_flux`, `surface_energy_flux` | positive upward ⇒ leaves slab |
+| signed | `liquid_precipitation_flux` (`Pˡ`) | positive downward ⇒ enters slab |
+| positive-part | `net_energy_flux`, `evaporation`, `precipitation` | positive ⇒ into slab |
 
-Both conventions are populated by the coupler's `update_net_fluxes!`
-every step, so closures can read whichever set they declared in
-`flux_variables`.
+Both sets are populated by the coupler's `update_net_fluxes!` every
+step; each closure declares which fields it reads via `flux_variables`
+(`WaterCoupledEnergy` reads `surface_energy_flux`, `ForceRestoreEnergy`
+reads `net_energy_flux`).
 
 ## 2. Continuous balances and the slab reduction
 
@@ -147,8 +155,8 @@ Three things to keep separate:
   saturated overflow read. Negative unsaturated, positive once
   saturated.
 
-`Π_m(θ̄ˡ)` is the unsaturated retention curve (Van Genuchten in this PR;
-Brooks–Corey is a follow-up).
+`Π_m(θ̄ˡ)` is the unsaturated retention curve
+([`VanGenuchtenRetention`](@ref)).
 
 ### 2.3 Slab water and energy budgets
 
@@ -211,10 +219,9 @@ There are two distinct runoff categories that bookkeep differently:
   `land.diagnostics.surface_runoff`.
 * **Subsurface runoff** `Rᴹ_lat ≥ 0` is a *storage export* — appears
   both as a sink in `dMˡᵃ/dt` and as `cˡ(Tˡᵃ − Tᵣ) Rᴹ_lat` in
-  `dEˡᵃ/dt`. Stored in `land.diagnostics.subsurface_runoff`. No
-  subsurface-runoff closure ships in this PR (`NoRunoff` and
-  `InfiltrationCapacityRunoff` both return 0); future closures like
-  `TopographicRunoff` plug into the same hook.
+  `dEˡᵃ/dt`. Stored in `land.diagnostics.subsurface_runoff`. Both
+  available runoff closures (`NoRunoff`,
+  `InfiltrationCapacityRunoff`) produce zero subsurface runoff.
 
 Both categories live in `land.diagnostics` (`surface_runoff`,
 `subsurface_runoff`); they become a flux only when a river / ocean
@@ -281,11 +288,11 @@ T^e = T^{in} + \chi\,(T^{la} - T^{in}),
 
 When the front is at the surface (`δᵛ = 0`) the source temperature is
 the skin; when the front has retreated to `δᵛ ≥ ℓᵀ` the source
-temperature is the bulk soil. In this PR `Tⁱⁿ = Tˡᵃ` (the existing
-`BulkTemperature()` is reused — land-side `SkinTemperature` integration
-is deferred), so `Tᵉ` collapses to `Tˡᵃ` and the wet/dry contrast comes
-entirely from `wᵈ`, not from temperature interpolation. The χ machinery
-is already in place for the follow-up.
+temperature is the bulk soil. With the `BulkTemperature()` interface
+formulation the land uses, `Tⁱⁿ = Tˡᵃ`, so `Tᵉ` collapses to `Tˡᵃ` and
+the wet/dry contrast comes entirely from `wᵈ`, not from temperature
+interpolation; the χ interpolation acquires bite once a
+skin-temperature formulation makes `Tⁱⁿ ≠ Tˡᵃ` (§10).
 
 ### 4.2 Picard fixed-point algorithm
 
@@ -378,29 +385,26 @@ three established pieces:
    surface-layer and in-soil source temperatures. (CLM5 and ClimaLand
    evaluate `qᵛ⁺` at the top-soil-layer temperature — the `χ → 1` limit.)
 
-What we deliberately leave out of this first step: the Kelvin-equation
-pore relative humidity `hₛ = exp(g Π/(Rᵛ Tᵉ))` (Ye and Pielke's `hₛ`,
-present in CLM5 and ClimaLand as the `α` factor; only departs
-appreciably from 1 at extreme dryness), texture-dependent tortuosity,
-and any in-column vapor transport. Each slots in without structural
-change.
+The formulation omits the Kelvin-equation pore relative humidity
+`hₛ = exp(g Π/(Rᵛ Tᵉ))` (Ye and Pielke's `hₛ`, present in CLM5 and
+ClimaLand as the `α` factor; it departs appreciably from 1 only at
+extreme dryness), texture-dependent tortuosity, and in-column vapor
+transport.
 
 ## 5. Numerical robustness
 
 A few notes for users running into convergence or stability issues:
 
 * **Wet/dry branch is hard.** `δᵛ ≤ δᵛ_min` switches to `qⁱⁿ =
-  qᵛ⁺(Tⁱⁿ)`. There is no smoothed blend in this PR; revisit only if
-  convergence regressions appear.
+  qᵛ⁺(Tⁱⁿ)`; there is no smoothed blend.
 * **Bounded humidity update.** The iteration update is followed by
   `qⁱⁿ ← clip(qⁱⁿ, 0, qᵛ⁺(Tⁱⁿ, pᵃᵗ))` to stay physical.
 * **Positivity floor on `Mˡᵃ` only.** The augmented-storage framing
   intentionally has no upper clamp at `Mˡᵃ⁺` — overflow corresponds to
   `Π > 0`, not a state error.
-* **Saturated-storage stiffness.** The Darcy deep-flux closure is
-  acceptable as-is for `hˢˢ ≤ 10⁴ m`. Larger `hˢˢ` makes saturated
-  overflow stiff; either document the constraint or fall back to
-  `NoDeepLiquidFlux`. An implicit Darcy treatment is a follow-up.
+* **Saturated-storage stiffness.** With `DarcyDeepLiquidFlux`, storage
+  heights `hˢˢ ≤ 10⁴ m` are well behaved; larger values make saturated
+  overflow stiff — reduce `hˢˢ` or use `NoDeepLiquidFlux`.
 * **Convergence tolerances.** Default `ε_q = 10⁻¹⁰ kg kg⁻¹`, `ε_T =
   10⁻⁴ K`, max 30 Picard iterations. The flux solver under-relaxes at
   `ω = 0.7`.
@@ -538,31 +542,31 @@ hydrology ↔ energy stack end-to-end:
 * [Breeze over slab land](../literated/breeze_over_slab_land.md) — a 2D
   Breeze LES with a wet-center / dry-edge `Mˡᵃ` configuration. The
   wet/dry contrast in latent and sensible heat fluxes is driven by the
-  saturation-dependent dry-layer depth `δᵛ(𝒮)`. Verified ratio: the
-  wet patch evaporates approximately two orders of magnitude faster
-  than the dry edges in the steady-state inversion above the heated
-  surface.
+  saturation-dependent dry-layer depth `δᵛ(𝒮)`: the wet patch
+  evaporates approximately two orders of magnitude faster than the dry
+  edges in the steady-state inversion above the heated surface.
 * [ERA5-forced slab land](../literated/era5_forced_slab_land.md) — a
-  ~1 km Greater Yellowstone simulation forced by ERA5 reanalysis,
-  preserving the existing example's elevation-correction setup with the
-  new closures swapped in.
+  ~1 km Greater Yellowstone simulation forced by ERA5 reanalysis with
+  elevation-corrected forcing.
 
-## 10. Out of scope
+## 10. Limitations
 
-The following are deferred to follow-up PRs:
+What `SlabLand` does not represent, for judging whether it fits a
+problem:
 
-* Snow, sea ice, vegetation, multi-layer soil columns, river routing.
-* `Eˡᵃ` as a first-class state variable (needed for phase change).
-* Kelvin-equation pore humidity — matric-suction-driven reduction of the
-  dry-layer source humidity, `qᵉ = hₛ qᵛ⁺(Tᵉ)` with
-  `hₛ = exp(g Π / (Rᵛ Tᵉ))` (the pore relative humidity `hₛ` of
-  [Ye and Pielke (1993)](@cite yepielke1993), after Philip 1957). Only
-  matters at extreme dryness; deferred.
-* Land-side `SkinTemperature(DiffusiveFlux)` solve so that `Tⁱⁿ ≠ Tˡᵃ`
-  and the χ interpolation has bite.
-* `HydraulicInfiltrationRunoff`, `StorageOverflowRunoff`,
-  `TopographicRunoff` (more elaborate runoff closures).
-* Brooks–Corey retention curve.
-* Two-node dry-layer energy solve (`Tᵉ` as a second residual).
-* Implicit / semi-implicit deep Darcy treatment for large `hˢˢ`.
-* Subgrid tile blending with ocean / sea ice.
+* **Bare ground only** — no snow, vegetation, or multi-layer soil
+  columns; every land grid cell is wholly land (no subgrid tiles shared
+  with ocean or sea ice).
+* **No soil-water phase change** — slab water does not freeze or thaw.
+  (Sublimation over frozen ground is still representable on the
+  interface side: [`DryLayerHumidity`](@ref) accepts an ice `phase` for
+  the saturation humidity.)
+* **No river routing** — runoff accumulates in `land.diagnostics` but
+  is not transported anywhere.
+* **The skin temperature equals the bulk temperature** (`Tⁱⁿ = Tˡᵃ`),
+  so the front-temperature interpolation of §4.1 is inert and the
+  diurnal skin cycle is damped by the full slab heat capacity.
+* **The dry-layer source humidity is exactly saturated** — there is no
+  matric-suction (Kelvin) reduction `hₛ = exp(g Π/(Rᵛ Tᵉ))` of the pore
+  relative humidity, which overestimates the vapor source at extreme
+  dryness (§4.3).

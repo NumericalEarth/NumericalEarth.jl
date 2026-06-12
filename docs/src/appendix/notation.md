@@ -14,6 +14,13 @@ Variable names are built by combining a **base symbol** with **superscripts** an
 - _Phase or species_: `ᵛ` (vapor), `ˡ` (liquid), `ⁱ` (ice), `ᶜ` (condensate)
 - _Component_: `ᵃᵗ` (atmosphere), `ᵒᶜ` (ocean), `ˢⁱ` (sea ice), `ˡᵃ` (land)
 - _Interface pair_: `ᵃᵒ` (atm–ocean), `ᵃⁱ` (atm–ice), `ⁱᵒ` (ice–ocean)
+
+Component superscripts are worn only in *cross-component* context — wherever
+a variable appears alongside variables from other components, as in interface
+computations or coupled-model discussions (`Tˡᵃ` next to `Tᵃᵗ` and `Tⁱⁿ`).
+Within a single component's own namespace the bare symbol is used: the land
+model's prognostic state is `(; T, M)` (as returned by
+`prognostic_fields(land)`), just as the ocean's is `(; u, v, w, T, S)`.
 - _Direction_: `ˣ` / `ʸ` (spatial), `ˢʷ` / `ˡʷ` (shortwave / longwave)
 - _Process_: `ⁱⁿ` (interface), `ᶠʳᶻ` (frazil)
 
@@ -111,12 +118,16 @@ Superscripts generally denote the _type_ or _phase_ of a quantity, while subscri
 
 ## Land state variables and parameters
 
+Bare symbols below are the land model's internal names; in cross-component
+context they wear the `ˡᵃ` superscript (`Tˡᵃ`, `Mˡᵃ`, `Mˡᵃ⁺`) per the
+component-superscript rule above.
+
 | Math | Code | Property | Description |
 |:----:|:----:|:---------|:------------|
 | ``T`` | `temperature` | ground temperature | Prognostic land-column temperature (K) |
-| ``M^{\mathrm{la}}`` | `water_storage` | land water | Prognostic land water mass per area (kg m⁻²) |
-| ``M^{\mathrm{la}\!+}`` | `maximum_water_storage` | maximum land water | Bucket capacity; soil-science "field capacity" (kg m⁻²) |
-| ``𝒮`` | `saturation` | surface saturation | Continuous land surface saturation ``\mathrm{clamp}(Mˡᵃ/Mˡᵃ⁺, 0, 1)``; the interface humidity models derive their availability ``β`` from it (–) |
+| ``M`` | `water_storage` | land water | Prognostic land water mass per area (kg m⁻²) |
+| ``M^{+}`` | `maximum_water_storage` | maximum land water | Bucket capacity; soil-science "field capacity" (kg m⁻²) |
+| ``𝒮`` | `saturation` | surface saturation | Continuous land surface saturation ``\mathrm{clamp}(M/M⁺, 0, 1)``; the interface humidity models derive their availability ``β`` from it (–) |
 | ``𝒮ᶜ`` | `critical_saturation` | critical saturation | Saturation above which the surface evaporates at full efficiency, for `CriticalSaturation` (–) |
 | ``T^{\mathrm{deep}}`` | `deep_temperature` | deep climatological temperature | Prescribed deep/climatological target temperature for force-restore (K) |
 | ``τ^{\mathrm{deep}}`` | `deep_time_scale` | deep-restore time scale | Time scale of surface relaxation toward ``T^{\mathrm{deep}}`` (s) |

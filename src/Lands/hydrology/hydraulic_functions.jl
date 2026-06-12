@@ -5,8 +5,7 @@
 ##### fraction) and hydraulic conductivity `K(𝒮, T)`. Both are pure `@inline`
 ##### functions called from per-cell kernels — type-stable, allocation-free.
 #####
-##### Van Genuchten (1980) parameterization is the only retention/conductivity
-##### model in this PR; Brooks–Corey is a follow-up.
+##### Van Genuchten (1980) is the available retention/conductivity model.
 #####
 
 """

@@ -42,7 +42,7 @@
 ##### Pair this with `SkinTemperature(DiffusiveFlux(δ=ℓᵀ, κ=κᵀ))` on the
 ##### temperature side: the same `Λⁱⁿ = κᵀ/ℓᵀ` couples the bulk land temperature
 ##### `Tˡᵃ` to the skin temperature `Tⁱⁿ` and the energy fluxes
-##### (`𝒬ᴿ + 𝒬ᵀ + 𝒬ᵛ`) — this PR doesn't need a new temperature formulation.
+##### (`𝒬ᴿ + 𝒬ᵀ + 𝒬ᵛ`) — no separate temperature formulation is needed.
 #####
 
 using Oceananigans: Oceananigans
@@ -183,10 +183,10 @@ saturated-skin BC when the slab is wet enough (`𝒮 ≥ 𝒮ᶜ`).
   for the Millington–Quirk tortuosity).
 
 The dry-layer source humidity is the saturation value at the front
-temperature, `qᵉ = qᵛ⁺(Tᵉ)`. A matric-suction reduction of `qᵉ` via the
-Kelvin equation (the pore relative humidity `hₛ` of
-[Ye and Pielke (1993)](@cite yepielke1993), after Philip 1957) only matters
-at extreme dryness and is deferred to a follow-up.
+temperature, `qᵉ = qᵛ⁺(Tᵉ)`, with no matric-suction (Kelvin-equation)
+reduction of the pore relative humidity (the `hₛ` of
+[Ye and Pielke (1993)](@cite yepielke1993), after Philip 1957) — that factor
+departs appreciably from 1 only at extreme dryness.
 """
 struct DryLayerHumidity{EFD, VEX, FT, Φ}
     dry_layer_depth :: EFD
