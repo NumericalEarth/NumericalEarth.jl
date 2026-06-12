@@ -92,8 +92,8 @@ saturated (`Π > 0`):
 ```math
 \vartheta^l =
 \begin{cases}
-\theta^l(\Pi), & \Pi \le 0, \\
-\nu + \Pi/h^{\mathrm{ss}}, & \Pi > 0.
+\theta^l(\Pi), & \Pi \le 0, \\[2pt]
+\nu + \dfrac{\Pi}{h^{\mathrm{ss}}}, & \Pi > 0.
 \end{cases}
 ```
 
@@ -135,15 +135,15 @@ the prognostic and reconstructs the rest as diagnostics:
 ```math
 \bar\Pi =
 \begin{cases}
-\Pi_m(\bar\theta^l), & M^{la} < M^{la+}\quad (\text{unsaturated}), \\
-(M^{la} - M^{la+})\,h^{\mathrm{ss}}/(\rho^l h^{\mathrm{la}}), & M^{la} \ge M^{la+}\quad (\text{saturated overflow}),
+\Pi_m(\bar\theta^l), & M^{la} < M^{la+}\quad (\text{unsaturated}), \\[2pt]
+\dfrac{(M^{la} - M^{la+})\,h^{\mathrm{ss}}}{\rho^l h^{\mathrm{la}}}, & M^{la} \ge M^{la+}\quad (\text{saturated overflow}),
 \end{cases}
 ```
 
 ```math
 \mathcal S = \operatorname{clip}\!\left(\frac{\bar\theta^l - \theta^r}{\nu - \theta^r},\ 0,\ 1\right),
 \qquad
-\beta = \operatorname{clip}(\mathcal S/\mathcal S^c,\ 0,\ 1).
+\beta = \operatorname{clip}\!\left(\frac{\mathcal S}{\mathcal S^c},\ 0,\ 1\right).
 ```
 
 Three things to keep separate:
@@ -227,7 +227,7 @@ Both categories live in `land.diagnostics` (`surface_runoff`,
 `subsurface_runoff`); they become a flux only when a river / ocean
 coupler consumes them.
 
-## 4. Solving the surface humidity
+## 4. The dry-layer humidity model
 
 A traditional bucket-land closure prescribes `qⁱⁿ = β(𝒮) qᵛ⁺(Tⁱⁿ)`. Two
 known weaknesses:
@@ -236,86 +236,122 @@ known weaknesses:
 2. The closure does not respond to *atmospheric* conditions — the same
    `β` is used for calm/windy days, dry/humid air.
 
-[`DryLayerHumidity`](@ref) replaces this with a *vapor-flux
-balance* between the soil and the atmosphere. Vapor diffuses up to the
-surface from saturated pore air at the base of the dry layer — the
-*front*, at depth `δᵛ` below the surface — by Fickian diffusion through
-the dry layer:
+[`DryLayerHumidity`](@ref) instead *poses an equation* for `qⁱⁿ`: a
+vapor-flux balance between the soil and the atmosphere. §4.1 describes
+the physical model; §4.2 describes how the nonlinear problem it poses is
+solved.
 
-```math
-J^e = G^e\,(q^e - q^{in}),
-\qquad
-G^e = \rho^{at}\,\frac{D^v_{eff}}{\max(\delta^v, \delta^v_{min})}.
-```
+### 4.1 The model
 
-The atmosphere carries vapor away at rate `Jᵃ = −ρᵃᵗ u★ q★`. The
-balance `Jᵉ = Jᵃ` closes for `qⁱⁿ`:
-
-```math
-q^{in} = \frac{G^e q^e + G^a q^{at}}{G^e + G^a},
-```
-
-with `Gᵃ = Jᵃ/(qⁱⁿ⁻ − qᵃᵗ)` the implicit atmospheric conductance from
-the previous fixed-point iterate (the same trick `SkinHumidity` uses —
-no prescribed exchange coefficient). When the surface is wet enough
-(`𝒮 ≥ 𝒮ᶜ`, so `δᵛ ≤ δᵛ_min`), the formulation collapses to a saturated
-skin `qⁱⁿ = qᵛ⁺(Tⁱⁿ)`, reproducing the saturated-surface limit exactly.
-
-`δᵛ` is itself diagnostic of saturation via
+**Dry-layer depth.** The depth `δᵛ` of the evaporating front below the
+surface is diagnosed from saturation via
 [`StorageBasedDryLayerDepth`](@ref):
 
 ```math
-\delta^v(\mathcal S) = \delta^v_{max}\,\bigl[1 - \min(\mathcal S/\mathcal S^c, 1)\bigr]^\eta.
+\delta^v(\mathcal S) = \delta^v_{max}
+\left[1 - \min\!\left(\frac{\mathcal S}{\mathcal S^c},\ 1\right)\right]^\eta.
 ```
 
-A wet surface has `δᵛ = 0` (front sits at the skin). A dry surface has
-`δᵛ → δᵛ_max` (long Fickian path ⇒ small `wᵈ = Dᵛ_eff/δᵛ` ⇒ small `Jᵛ`).
-The result is a self-consistent moisture-availability *response*, not a
-prescribed `β(𝒮)`.
+A wet surface has `δᵛ = 0` (the front sits at the skin); as the slab
+dries, `δᵛ → δᵛ_max`.
 
-### 4.1 Source temperature `Tᵉ` and the χ interpolation
+**Front temperature and source humidity.** The pore air at the front is
+saturated, so the vapor source is the *saturation specific humidity at
+the front temperature*,
 
-The vapor source temperature is the dry-layer temperature `Tᵉ`,
-which we diagnose between the atmosphere-facing skin `Tⁱⁿ` and the
-bulk-soil `Tˡᵃ` according to how deep the front sits relative to the
-thermal exchange scale `ℓᵀ`:
+```math
+q^e = q^{v+}(T^e, p^{at}),
+```
+
+where the front temperature `Tᵉ` is interpolated between the
+atmosphere-facing skin `Tⁱⁿ` and the bulk soil `Tˡᵃ` according to how
+deep the front sits relative to the thermal exchange scale `ℓᵀ`:
 
 ```math
 T^e = T^{in} + \chi\,(T^{la} - T^{in}),
 \qquad
-\chi = \operatorname{clip}(\delta^v/\ell^T,\ 0,\ 1).
+\chi = \operatorname{clip}\!\left(\frac{\delta^v}{\ell^T},\ 0,\ 1\right).
 ```
 
 When the front is at the surface (`δᵛ = 0`) the source temperature is
-the skin; when the front has retreated to `δᵛ ≥ ℓᵀ` the source
-temperature is the bulk soil. With the `BulkTemperature()` interface
-formulation the land uses, `Tⁱⁿ = Tˡᵃ`, so `Tᵉ` collapses to `Tˡᵃ` and
-the wet/dry contrast comes entirely from `wᵈ`, not from temperature
-interpolation; the χ interpolation acquires bite once a
-skin-temperature formulation makes `Tⁱⁿ ≠ Tˡᵃ` (§10).
+the skin; when the front has retreated to `δᵛ ≥ ℓᵀ` it is the bulk
+soil. With the `BulkTemperature()` interface formulation the land uses,
+`Tⁱⁿ = Tˡᵃ`, so `Tᵉ` collapses to `Tˡᵃ` and the wet/dry contrast comes
+entirely from the dry-layer conductance; the χ interpolation acquires
+bite once a skin-temperature formulation makes `Tⁱⁿ ≠ Tˡᵃ` (§10).
 
-### 4.2 Picard fixed-point algorithm
+**The flux balance.** Vapor Fick-diffuses from the front up to the
+interface,
 
-The atmosphere–land flux solver iterates the interface state `(Tⁱⁿ,
-qⁱⁿ)` to convergence. Each iteration `k`:
+```math
+J^e = G^e \left[q^{v+}(T^e) - q^{in}\right],
+\qquad
+G^e = \rho^{at}\,\frac{D^v_{eff}}{\max(\delta^v, \delta^v_{min})},
+```
 
-1. `δᵛ ← δᵛ(𝒮)` from [`StorageBasedDryLayerDepth`](@ref).
-2. `χ ← clip(δᵛ/ℓᵀ, 0, 1)`.
-3. `Tᵉ ← Tⁱⁿ + χ (Tˡᵃ − Tⁱⁿ)`.
-4. `qᵉ ← qᵛ⁺(Tᵉ, pᵃᵗ)`.
-5. `wᵈ ← Dᵛ_eff / max(δᵛ, δᵛ_min)`.
-6. Surface-layer similarity scheme provides `Jᵃ = −ρᵃᵗ u★ q★` (and
-   hence the implicit conductance `Gᵃ = Jᵃ/Δq`) from the current
-   `(Tⁱⁿ, qⁱⁿ)`.
-7. **Wet branch** (`δᵛ ≤ δᵛ_min`): `qⁱⁿ ← qᵛ⁺(Tⁱⁿ, pᵃᵗ)`.
-   **Dry branch:**                `qⁱⁿ ← (Gᵉ qᵉ Δq + Jᵃ qᵃᵗ) / (Gᵉ Δq + Jᵃ)`
-   (Δq-multiplied form, finite as `Δq → 0`).
-8. The similarity solver recomputes `u★, q★` from the updated interface
-   state; at convergence the vapor flux is `Jᵛ = −ρᵃᵗ u★ q★`.
+while above the interface the atmosphere carries vapor away at the
+Monin–Obukhov similarity rate
 
-The Δq-multiplied form avoids the `0/0` indeterminacy when the
-near-iterate humidity matches `qᵃᵗ` exactly, and is the same trick the
-existing `SkinHumidity` closure uses. Convergence is robust across the
+```math
+J^a = -\rho^{at} u_\star q_\star,
+```
+
+where the scales `u★` and `q★` are themselves nonlinear functions of
+the interface state `(Tⁱⁿ, qⁱⁿ)`. The interface stores no vapor, so the
+two fluxes balance:
+
+```math
+G^e \left[q^{v+}(T^e) - q^{in}\right] = J^a(T^{in}, q^{in}).
+```
+
+This is the model: a nonlinear equation for `qⁱⁿ`, coupled to the
+skin-temperature balance through `Tⁱⁿ`. When the surface is wet enough
+(`𝒮 ≥ 𝒮ᶜ`, so `δᵛ ≤ δᵛ_min`) the front co-locates with the skin and the
+model reduces to the saturated-skin condition `qⁱⁿ = qᵛ⁺(Tⁱⁿ)`,
+reproducing the saturated-surface limit exactly. A dry surface has a
+long Fickian path (small `Gᵉ`), throttling evaporation — a
+self-consistent moisture-availability *response*, not a prescribed
+`β(𝒮)`.
+
+### 4.2 Numerical solution: Picard iteration
+
+The atmosphere–land flux solver iterates the interface state
+`(Tⁱⁿ, qⁱⁿ)` to convergence. Within one iteration the similarity scales
+are evaluated at the *previous* iterate `qⁱⁿ⁻`, which linearizes the
+atmospheric flux into a conductance law anchored there:
+
+```math
+J^a(q) \approx G^a\,(q - q^{at}),
+\qquad
+G^a = \frac{J^a}{\Delta q},
+\qquad
+\Delta q = q^{in-} - q^{at},
+```
+
+chosen so the linearization reproduces the flux `Jᵃ = −ρᵃᵗ u★ q★` the
+similarity solver actually returned. The balance of §4.1 then has the
+two-conductances-in-series solution
+
+```math
+q^{in} = \frac{G^e q^e + G^a q^{at}}{G^e + G^a}
+       = \frac{G^e q^e \Delta q + J^a q^{at}}{G^e \Delta q + J^a},
+```
+
+where the second, `Δq`-multiplied form is the one implemented: it stays
+finite as `Δq → 0` (the same trick `SkinHumidity` uses — no prescribed
+exchange coefficient). Each iteration therefore:
+
+1. Diagnoses `δᵛ(𝒮)`, `Tᵉ`, and `qᵉ = qᵛ⁺(Tᵉ, pᵃᵗ)`.
+2. Obtains `u★, q★` (hence `Jᵃ`) from the similarity scheme at the
+   previous iterate.
+3. Updates the humidity — **wet branch** (`δᵛ ≤ δᵛ_min`):
+   `qⁱⁿ ← qᵛ⁺(Tⁱⁿ, pᵃᵗ)`; **dry branch**: the `Δq`-multiplied series
+   solution above.
+4. Updates `Tⁱⁿ` from the skin-temperature balance.
+
+At the fixed point `qⁱⁿ = qⁱⁿ⁻` the linearization is exact, so the
+converged humidity satisfies the *nonlinear* model of §4.1, and the
+vapor flux is `Jᵛ = −ρᵃᵗ u★ q★`. Convergence is robust across the
 dry / wet / windy / calm coverage matrix — see
 [`test_dry_layer_humidity.jl`](https://github.com/NumericalEarth/NumericalEarth.jl/blob/main/test/test_dry_layer_humidity.jl).
 
@@ -397,17 +433,21 @@ A few notes for users running into convergence or stability issues:
 
 * **Wet/dry branch is hard.** `δᵛ ≤ δᵛ_min` switches to `qⁱⁿ =
   qᵛ⁺(Tⁱⁿ)`; there is no smoothed blend.
-* **Bounded humidity update.** The iteration update is followed by
-  `qⁱⁿ ← clip(qⁱⁿ, 0, qᵛ⁺(Tⁱⁿ, pᵃᵗ))` to stay physical.
+* **Degenerate-denominator guard.** When the series denominator
+  `Gᵉ Δq + Jᵃ` vanishes the update returns the previous iterate
+  unchanged. There is no clamp on `qⁱⁿ` between iterations (matching
+  `SkinHumidity`); transient out-of-range iterates are corrected by the
+  iteration itself.
 * **Positivity floor on `Mˡᵃ` only.** The augmented-storage framing
   intentionally has no upper clamp at `Mˡᵃ⁺` — overflow corresponds to
   `Π > 0`, not a state error.
 * **Saturated-storage stiffness.** With `DarcyDeepLiquidFlux`, storage
   heights `hˢˢ ≤ 10⁴ m` are well behaved; larger values make saturated
   overflow stiff — reduce `hˢˢ` or use `NoDeepLiquidFlux`.
-* **Convergence tolerances.** Default `ε_q = 10⁻¹⁰ kg kg⁻¹`, `ε_T =
-  10⁻⁴ K`, max 30 Picard iterations. The flux solver under-relaxes at
-  `ω = 0.7`.
+* **Convergence criterion.** The flux solver stops when the similarity
+  scales settle, `|Δu★| + |Δθ★| + |Δq★| < 10⁻⁸` (default), or after 100
+  iterations — configurable via `solver_tolerance` and `solver_maxiter`
+  of the flux formulation.
 
 ## 6. Parameter choices
 

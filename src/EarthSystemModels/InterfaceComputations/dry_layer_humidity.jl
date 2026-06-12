@@ -60,8 +60,8 @@ using Thermodynamics: Thermodynamics as AtmosphericThermodynamics
 Diagnostic dry-layer depth `δᵛ` as a function of land saturation `𝒮`:
 
 ```math
-\\delta^v(\\mathcal S) = \\delta^v_{max}\\,
-                         \\left[1 - \\min(\\mathcal S/\\mathcal S^c, 1)\\right]^\\eta.
+\\delta^v(\\mathcal S) = \\delta^v_{max}
+\\left[1 - \\min\\!\\left(\\frac{\\mathcal S}{\\mathcal S^c},\\ 1\\right)\\right]^\\eta.
 ```
 
 `δᵛ = 0` when `𝒮 ≥ 𝒮ᶜ` (wet branch), growing toward `δᵛ_max` as the slab dries.
@@ -73,18 +73,18 @@ this closure differs only in using the slab saturation `𝒮` as the moisture
 variable and a power-law shape.
 """
 struct StorageBasedDryLayerDepth{FT}
-    maximum_dry_layer_depth   :: FT
-    critical_saturation   :: FT
-    dry_layer_exponent  :: FT
+    maximum_dry_layer_depth :: FT
+    critical_saturation     :: FT
+    dry_layer_exponent      :: FT
 end
 
 StorageBasedDryLayerDepth(FT::Type = Oceananigans.defaults.FloatType;
-                                  maximum_dry_layer_depth,
-                                  critical_saturation,
-                                  dry_layer_exponent = 2) =
+                          maximum_dry_layer_depth,
+                          critical_saturation,
+                          dry_layer_exponent = 2) =
     StorageBasedDryLayerDepth(convert(FT, maximum_dry_layer_depth),
-                                      convert(FT, critical_saturation),
-                                      convert(FT, dry_layer_exponent))
+                              convert(FT, critical_saturation),
+                              convert(FT, dry_layer_exponent))
 
 @inline function dry_layer_depth(d::StorageBasedDryLayerDepth, 𝒮)
     FT = typeof(𝒮)
@@ -133,9 +133,9 @@ The tortuosity model is a singleton type — [`ConstantTortuosity`](@ref) or
 `effective_vapor_diffusivity`.
 """
 struct DryLayerVaporPistonVelocity{FT, T}
-    minimum_dry_layer_depth   :: FT
-    molecular_diffusivity :: FT
-    tortuosity_model      :: T
+    minimum_dry_layer_depth :: FT
+    molecular_diffusivity   :: FT
+    tortuosity_model        :: T
 end
 
 DryLayerVaporPistonVelocity(FT::Type = Oceananigans.defaults.FloatType;
@@ -189,23 +189,23 @@ reduction of the pore relative humidity (the `hₛ` of
 departs appreciably from 1 only at extreme dryness.
 """
 struct DryLayerHumidity{EFD, VEX, FT, Φ}
-    dry_layer_depth :: EFD
-    vapor_exchange          :: VEX
-    thermal_exchange_depth  :: FT
-    porosity                :: FT
-    phase                   :: Φ
+    dry_layer_depth        :: EFD
+    vapor_exchange         :: VEX
+    thermal_exchange_depth :: FT
+    porosity               :: FT
+    phase                  :: Φ
 end
 
 DryLayerHumidity(phase = AtmosphericThermodynamics.Liquid();
-                         dry_layer_depth,
-                         vapor_exchange,
-                         thermal_exchange_depth,
-                         porosity) =
+                 dry_layer_depth,
+                 vapor_exchange,
+                 thermal_exchange_depth,
+                 porosity) =
     DryLayerHumidity(dry_layer_depth,
-                             vapor_exchange,
-                             convert(Oceananigans.defaults.FloatType, thermal_exchange_depth),
-                             convert(Oceananigans.defaults.FloatType, porosity),
-                             phase)
+                     vapor_exchange,
+                     convert(Oceananigans.defaults.FloatType, thermal_exchange_depth),
+                     convert(Oceananigans.defaults.FloatType, porosity),
+                     phase)
 
 Base.summary(q::DryLayerHumidity{EFD, VEX, FT, Φ}) where {EFD, VEX, FT, Φ} =
     string("DryLayerHumidity{",
@@ -244,28 +244,32 @@ end
 ##### flux the similarity solver computed from the previous Picard iterate
 ##### (q★ < 0 when evaporating).
 #####
-##### Derivation of the update. The dry layer transmits a Fick flux from the
-##### front (humidity qᵉ) up to the interface (humidity qⁱⁿ),
+##### The model. The pore air at the front is saturated, so the source
+##### humidity is the saturation specific humidity at the front temperature,
+##### qᵉ = qᵛ⁺(Tᵉ, pᵃᵗ). The dry layer transmits a Fick flux from the front
+##### up to the interface (humidity qⁱⁿ),
 #####
 #####     Jᵉ = Gᵉ (qᵉ - qⁱⁿ),        Gᵉ = ρᵃᵗ Dᵛ_eff / max(δᵛ, δᵛ_min),
 #####
-##### so a wetter front (qᵉ > qⁱⁿ) drives vapor upward. Above the interface,
-##### similarity theory carries vapor away. Over one Picard iteration we
-##### linearize the similarity flux as a bulk conductance law anchored at the
-##### previous iterate qⁱⁿ⁻,
+##### so a wetter front (qᵉ > qⁱⁿ) drives vapor upward, while above the
+##### interface similarity theory carries vapor away at Jᵃ(Tⁱⁿ, qⁱⁿ). The
+##### interface stores no vapor, so Jᵉ = Jᵃ — a nonlinear equation for qⁱⁿ.
+#####
+##### The solver. Over one Picard iteration we linearize the similarity flux
+##### as a bulk conductance law anchored at the previous iterate qⁱⁿ⁻,
 #####
 #####     Jᵃ(q) ≈ Gᵃ (q - qᵃᵗ),      Gᵃ = Jᵃ / Δq,      Δq = qⁱⁿ⁻ - qᵃᵗ,
 #####
 ##### chosen so that Jᵃ(qⁱⁿ⁻) reproduces the flux the similarity solver
-##### actually returned. The interface itself stores no vapor, so the two
-##### fluxes balance, Jᵉ = Jᵃ(qⁱⁿ):
+##### actually returned. The linearized balance then has the
+##### two-conductances-in-series solution
 #####
 #####     Gᵉ (qᵉ - qⁱⁿ) = Gᵃ (qⁱⁿ - qᵃᵗ)
 #####
 #####     ⇒  qⁱⁿ = (Gᵉ qᵉ + Gᵃ qᵃᵗ) / (Gᵉ + Gᵃ).
 #####
-##### This is the standard two-conductances-in-series solution of a surface
-##### flux balance — eq. (12b) of Ye & Pielke (1993) with their pore relative
+##### This is the standard series solution of a surface flux balance —
+##### eq. (12b) of Ye & Pielke (1993) with their pore relative
 ##### humidity hₛ = 1, and the same expression CLM5/ClimaLand evaluate with a
 ##### prescribed exchange coefficient in place of Gᵃ. Substituting
 ##### Gᵃ = Jᵃ/Δq and multiplying numerator and denominator by Δq removes the
@@ -296,32 +300,21 @@ end
     𝒮   = Ψₛ.hydrology.saturation     # surface saturation
     Tⁱⁿ = Tₛ                           # current iterate of the skin temp
 
-    # Dry-layer depth and temperature.
+    # Dry-layer depth, front temperature, and front (source) humidity
+    # qᵉ = qᵛ⁺(Tᵉ) — the saturation specific humidity at the front.
     δᵛ    = dry_layer_depth(q.dry_layer_depth, 𝒮)
     δᵛmin = convert(FT, q.vapor_exchange.minimum_dry_layer_depth)
     ℓᵀ    = convert(FT, q.thermal_exchange_depth)
     χ     = clamp(δᵛ / ℓᵀ, zero(FT), one(FT))
     Tᵉ    = Tⁱⁿ + χ * (Tˡᵃ - Tⁱⁿ)
+    qᵉ    = saturation_specific_humidity(ℂᵃᵗ, Tᵉ, pᵃᵗ, q.phase)
 
-    # Wet branch: front sits at the surface, skin is saturated.
-    qˢᵃᵗ = saturation_specific_humidity(ℂᵃᵗ, Tᵉ, pᵃᵗ, q.phase)
-    if δᵛ <= δᵛmin
-        # Saturate the *skin* (which co-locates with the front when δᵛ=0).
-        qˢᵃᵗ_skin = saturation_specific_humidity(ℂᵃᵗ, Tⁱⁿ, pᵃᵗ, q.phase)
-        return convert(FT, qˢᵃᵗ_skin)
-    end
-
-    # Dry branch: saturation humidity at the front, dry-layer piston velocity,
-    # atmospheric vapor flux from the previous iterate.
-    qᵉ  = qˢᵃᵗ
-
-    # Actual pore liquid fraction is θˡ = 𝒮(ν − θʳ) + θʳ; for the tortuosity
-    # model we use the simpler θˡ ≈ 𝒮·ν (residual is small, this only enters
-    # the tortuosity scaling).
+    # Dry-layer conductance. The actual pore liquid fraction is
+    # θˡ = 𝒮(ν − θʳ) + θʳ; we use the simpler θˡ ≈ 𝒮·ν (the residual is
+    # small and θˡ only enters the tortuosity scaling).
     θˡ  = 𝒮 * convert(FT, q.porosity)
     Dᵛ  = effective_vapor_diffusivity(q.vapor_exchange, q.porosity, θˡ)
-    wᵈ  = Dᵛ / max(δᵛ, δᵛmin)
-    Gᵉ  = ρᵃᵗ * wᵈ
+    Gᵉ  = ρᵃᵗ * Dᵛ / max(δᵛ, δᵛmin)
 
     # Atmospheric flux from previous iterate.
     u★  = Ψₛ.fluxes.u★
@@ -333,6 +326,9 @@ end
     # Δq-multiplied series solution qⁱⁿ = (Gᵉ qᵉ + Gᵃ qᵃᵗ)/(Gᵉ + Gᵃ);
     # see the derivation in the banner above.
     D    = Gᵉ * Δq + Jᵃ
-    qⁱⁿ★ = (Gᵉ * qᵉ * Δq + Jᵃ * qᵃᵗ) / D
-    return convert(FT, ifelse(D == 0, qⁱⁿ⁻, qⁱⁿ★))
+    qⁱⁿ★ = ifelse(D == 0, qⁱⁿ⁻, (Gᵉ * qᵉ * Δq + Jᵃ * qᵃᵗ) / D)
+
+    # Wet branch: the front co-locates with the skin, which saturates.
+    qⁱⁿ⁺ = saturation_specific_humidity(ℂᵃᵗ, Tⁱⁿ, pᵃᵗ, q.phase)
+    return convert(FT, ifelse(δᵛ <= δᵛmin, qⁱⁿ⁺, qⁱⁿ★))
 end
