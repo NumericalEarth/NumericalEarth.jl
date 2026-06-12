@@ -14,7 +14,7 @@ end
     for arch in test_architectures
         for fold_topology in (RightFaceFolded, RightCenterFolded)
             underlying_grid = TripolarGrid(arch;
-                                           size = (10, 10, 10),
+                                           size = (20, 20, 8),
                                            z = (-100, 0),
                                            halo = (7, 7, 4),
                                            fold_topology)
@@ -27,27 +27,26 @@ end
             grid = ImmersedBoundaryGrid(underlying_grid, GridFittedBottom(bottom_height); active_cells_map=true)
 
             ocean = ocean_simulation(grid)
-            dates = collect(DateTime(1993, 1, 1):Month(1):DateTime(1993, 12, 1))
-
-            dataset = ECCO4Monthly()
-            set!(ocean.model,
-            T=Metadata(:temperature; dates=first(dates), dataset),
-            S=Metadata(:salinity; dates=first(dates), dataset))
-
-            @info "Creating sea ice model"
             sea_ice = sea_ice_simulation(grid, ocean)
-            set!(sea_ice.model,
-                 h=Metadatum(:sea_ice_thickness; dataset),
-                 ℵ=Metadatum(:sea_ice_concentration; dataset))
-            above_freezing_ocean_temperature!(ocean, grid, sea_ice)
 
-            @info "Defining Atmospheric state"
             time_indices_in_memory = 2
             radiation = JRA55PrescribedRadiation(arch; time_indices_in_memory)
             atmosphere = JRA55PrescribedAtmosphere(arch; time_indices_in_memory)
 
-            @info "Defining coupled model"
-            @time coupled_model = OceanSeaIceModel(ocean, sea_ice; atmosphere, radiation)
+            # initialize ocean and sea ice models
+            date = DateTime(1993, 1, 1)
+            dataset = ECCO4Monthly()
+
+            set!(ocean.model,
+                 T=Metadatum(:temperature; dataset, date),
+                 S=Metadatum(:salinity; dataset, date))
+
+            set!(sea_ice.model,
+                 h=Metadatum(:sea_ice_thickness; dataset, date),
+                 ℵ=Metadatum(:sea_ice_concentration; dataset, date))
+            above_freezing_ocean_temperature!(ocean, grid, sea_ice)
+
+            coupled_model = OceanSeaIceModel(ocean, sea_ice; atmosphere, radiation)
 
             simulation = Simulation(coupled_model; Δt=10minutes)
             simulation.stop_iteration = 10
