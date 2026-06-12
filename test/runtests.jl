@@ -70,61 +70,12 @@ function __init__()
     delete_inpainted_files(@get_scratch!("."))
 
     #####
-    ##### Download bathymetry data
+    ##### NOTE
     #####
 
-    ETOPOmetadata = Metadatum(:bottom_height, dataset=NumericalEarth.ETOPO.ETOPO2022())
-    download_dataset_with_fallback(metadata_path(ETOPOmetadata); dataset_name="ETOPO2022") do
-        download(ETOPOmetadata)
-    end
-
-    #####
-    ##### Download JRA55 data
-    #####
-
-    try
-        atmosphere = JRA55PrescribedAtmosphere(time_indices_in_memory=2)
-        land       = JRA55PrescribedLand(time_indices_in_memory=2)
-        # Touch the radiation variables (rlds/rsds) too, so a corrupted cached
-        # download is caught by the same fallback path.
-        radiation = JRA55PrescribedRadiation(time_indices_in_memory=2)
-    catch e
-        @warn "Original JRA55 download failed, trying NumericalEarthArtifacts fallback..." exception=(e, catch_backtrace())
-        emit_ci_warning("Broken JRA55 download", "Original source failed during init")
-        for name in NumericalEarth.DataWrangling.JRA55.JRA55_variable_names
-            datum = Metadatum(name; dataset=JRA55.RepeatYearJRA55())
-            download_from_artifacts(metadata_path(datum))
-        end
-        atmosphere = JRA55PrescribedAtmosphere(time_indices_in_memory=2)
-        land       = JRA55PrescribedLand(time_indices_in_memory=2)
-        radiation  = JRA55PrescribedRadiation(time_indices_in_memory=2)
-    end
-
-    #####
-    ##### Download Dataset data
-    #####
-
-    # Download few datasets for tests
-    for dataset in test_datasets
-        time_resolution = dataset isa ECCO2Daily ? Day(1) : Month(1)
-        end_date = start_date + 1 * time_resolution
-        dates = start_date:time_resolution:end_date
-
-        ts_set = MetadataSet(:temperature, :salinity; dataset, dates)
-
-        for md in ts_set
-            download_dataset_with_fallback(metadata_path(md); dataset_name="$(typeof(dataset)) $(md.name)") do
-                download(md)
-            end
-        end
-
-        if dataset isa Union{ECCO2DarwinMonthly, ECCO4DarwinMonthly}
-            PO₄_metadata = Metadata(:phosphate; dataset, dates)
-            download_dataset_with_fallback(metadata_path(PO₄_metadata); dataset_name="$(typeof(dataset)) phosphate") do
-                download(PO₄_metadata)
-            end
-        end
-    end
+    # Temporarily skip eager dataset downloads in CI while iterating on the
+    # tracer conservation test. Individual tests will fetch any required inputs
+    # on demand through the normal metadata constructors.
 end
 
 # Initialize and download required datasets
