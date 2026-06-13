@@ -578,9 +578,11 @@ interface_humidity)` — the case study below and the Breeze example in
 
 The two-stage behavior of §4.3 can be reproduced in seconds with a
 single-column `SlabLand` under a constant warm, dry atmosphere and
-prescribed radiation. A thin (20 cm) slab starts near saturation; with
-drainage and runoff turned off, evaporation is the only sink, so the
-dry-down is driven entirely by the vapor-flux balance.
+prescribed radiation. With no deep-drainage or runoff closures,
+evaporation is the only water sink, so the dry-down is driven entirely
+by the vapor-flux balance.
+
+A thin (20 cm) slab starts at 90% of its saturated storage:
 
 ```@example slabland
 using Oceananigans.Units
@@ -603,39 +605,33 @@ slab = SlabLand(column;
         deep_temperature = 295,
         deep_time_scale = 2days))
 
-fill!(slab.temperature, 300)
-fill!(slab.water_storage, 0.9 * 0.4 * 1000 * 0.2)   # 𝒮 ≈ 0.9 of Mˡᵃ⁺ = ρˡ ν hˡᵃ
+set!(slab; T = 300, M = 0.9 * 1000 * 0.4 * 0.2)   # M = 0.9 Mˡᵃ⁺, Mˡᵃ⁺ = ρˡ ν hˡᵃ
+```
 
+Force it with a constant warm, dry atmosphere (305 K, `q` = 4 g kg⁻¹,
+3 m s⁻¹) and prescribed downwelling radiation, then couple through the
+same [`DryLayerHumidity`](@ref) interface built in §8. The setter
+functions take time `t`, so a constant in `t` is a steady forcing:
+
+```@example slabland
 atmosphere = PrescribedAtmosphere(column; surface_layer_height = 10,
                                           boundary_layer_height = 512)
-fill!(parent(atmosphere.velocities.u), 3)        # m s⁻¹
-fill!(parent(atmosphere.tracers.T), 305)         # K — warm
-fill!(parent(atmosphere.tracers.q), 0.004)       # kg kg⁻¹ — dry
-fill!(parent(atmosphere.pressure), 101_325)
+set!(atmosphere.velocities.u, t -> 3)        # m s⁻¹
+set!(atmosphere.tracers.T,    t -> 305)      # K — warm
+set!(atmosphere.tracers.q,    t -> 0.004)    # kg kg⁻¹ — dry
+set!(atmosphere.pressure,     t -> 101_325)  # Pa
 
 downwelling_shortwave = FieldTimeSeries{Center, Center, Nothing}(column, [0.0])
 downwelling_longwave  = FieldTimeSeries{Center, Center, Nothing}(column, [0.0])
-fill!(parent(downwelling_shortwave), 250)        # W m⁻²
-fill!(parent(downwelling_longwave), 350)         # W m⁻²
+set!(downwelling_shortwave, t -> 250)        # W m⁻²
+set!(downwelling_longwave,  t -> 350)        # W m⁻²
 radiation = PrescribedRadiation(downwelling_shortwave, downwelling_longwave;
                                 land_surface = SurfaceRadiationProperties(0.3, 0.95))
 
-column_humidity = DryLayerHumidity(;
-    dry_layer_depth = StorageBasedDryLayerDepth(
-        maximum_dry_layer_depth = 0.05,
-        critical_saturation = 0.5,
-        dry_layer_exponent = 2),
-    vapor_exchange = DryLayerVaporPistonVelocity(
-        minimum_dry_layer_depth = 1e-4,
-        molecular_diffusivity = 2.5e-5,
-        tortuosity_model = MillingtonQuirk()),
-    thermal_exchange_depth = 0.10,
-    porosity = 0.4)
-
-column_interface = atmosphere_land_interface(column, atmosphere, slab;
-                                             specific_humidity = column_humidity)
+interface = atmosphere_land_interface(column, atmosphere, slab;
+                                      specific_humidity = interface_humidity)
 model = AtmosphereLandModel(atmosphere, slab; radiation,
-                            atmosphere_land_interface = column_interface)
+                            atmosphere_land_interface = interface)
 ```
 
 Step forward twelve days, recording the slab state and the vapor flux:
@@ -684,15 +680,15 @@ fig
 Both stages of §4.3 appear. After a few hours of adjustment from the
 initial condition, the front sits at the skin while `𝒮 > 𝒮ᶜ` (the first
 week): evaporation holds a demand-limited plateau near 3.4 mm day⁻¹ and
-the slab temperature is steady near 298 K — evaporative cooling
-balances the radiative and sensible heating. Once `𝒮` crosses `𝒮ᶜ` the
-dry layer grows, the Fickian path lengthens, and evaporation collapses
-(to about a third of the plateau by day twelve) while the slab *warms*
-by several kelvin: the surface energy that latent heat no longer
-carries away is repartitioned into sensible heat and ground warming.
-The small notch right at the crossing is the hard wet/dry branch switch
-of §5. No `β(𝒮)` function was prescribed anywhere — the transition
-emerges from the flux balance.
+the slab temperature is steady near 298 K, evaporative cooling removing
+most of the net surface heating. Once `𝒮` crosses `𝒮ᶜ` the dry layer
+grows, the Fickian path lengthens, and evaporation collapses (to about a
+third of the plateau by day twelve) while the slab *warms* by several
+kelvin: the surface energy that latent heat no longer carries away is
+repartitioned into sensible heat and ground warming. The small notch
+right at the crossing is the hard wet/dry branch switch of §5. No
+`β(𝒮)` function was prescribed anywhere — the transition emerges from
+the flux balance.
 
 ## 10. Examples
 
