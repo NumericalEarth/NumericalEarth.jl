@@ -188,3 +188,33 @@ function Oceananigans.restore_prognostic_state!(atmos::PrescribedAtmosphere, sta
 end
 
 Oceananigans.restore_prognostic_state!(atmos::PrescribedAtmosphere, ::Nothing) = atmos
+
+#####
+##### set!
+#####
+
+# Prescribed fields are FieldTimeSeries, so a Number must be wrapped as a
+# constant (in space and time) function; `nothing` leaves the field untouched.
+set_prescribed_field!(field, ::Nothing) = nothing
+set_prescribed_field!(field, value::Number) = Oceananigans.set!(field, (ξ...) -> value)
+set_prescribed_field!(field, value) = Oceananigans.set!(field, value)
+
+"""
+    set!(atmosphere::PrescribedAtmosphere; u=nothing, v=nothing, T=nothing, q=nothing, p=nothing)
+
+Set the prescribed atmospheric velocities (`u`, `v`), tracers (`T` air
+temperature, `q` specific humidity), and surface pressure (`p`), then refresh
+the interpolated state. Omitted keywords are left untouched. A `Number` sets a
+constant in space and time; a function or `Field` is forwarded to
+`Oceananigans.set!`.
+"""
+function Oceananigans.set!(atmosphere::PrescribedAtmosphere;
+                           u=nothing, v=nothing, T=nothing, q=nothing, p=nothing)
+    set_prescribed_field!(atmosphere.velocities.u, u)
+    set_prescribed_field!(atmosphere.velocities.v, v)
+    set_prescribed_field!(atmosphere.tracers.T, T)
+    set_prescribed_field!(atmosphere.tracers.q, q)
+    set_prescribed_field!(atmosphere.pressure, p)
+    update_state!(atmosphere)
+    return atmosphere
+end

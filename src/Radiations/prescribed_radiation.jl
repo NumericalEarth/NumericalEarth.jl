@@ -120,6 +120,28 @@ end
     return nothing
 end
 
+# Prescribed fields are FieldTimeSeries, so a Number must be wrapped as a
+# constant (in space and time) function; `nothing` leaves the field untouched.
+set_prescribed_field!(field, ::Nothing) = nothing
+set_prescribed_field!(field, value::Number) = Oceananigans.set!(field, (ξ...) -> value)
+set_prescribed_field!(field, value) = Oceananigans.set!(field, value)
+
+"""
+    set!(radiation::PrescribedRadiation; downwelling_shortwave=nothing, downwelling_longwave=nothing)
+
+Set the prescribed downwelling shortwave and longwave radiative fluxes (W m⁻²),
+then refresh the interpolated state. Omitted keywords are left untouched. A
+`Number` sets a constant in space and time; a function or `Field` is forwarded
+to `Oceananigans.set!`.
+"""
+function Oceananigans.set!(radiation::PrescribedRadiation;
+                           downwelling_shortwave=nothing, downwelling_longwave=nothing)
+    set_prescribed_field!(radiation.downwelling_shortwave, downwelling_shortwave)
+    set_prescribed_field!(radiation.downwelling_longwave, downwelling_longwave)
+    update_state!(radiation)
+    return radiation
+end
+
 @inline function Oceananigans.TimeSteppers.time_step!(radiation::PrescribedRadiation, Δt)
     tick!(radiation.clock, Δt)
     update_state!(radiation)

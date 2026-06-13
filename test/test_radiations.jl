@@ -44,6 +44,22 @@ using NumericalEarth.Radiations: PrescribedRadiation,
     end
 end
 
+@testset "PrescribedRadiation set!" begin
+    for arch in test_architectures
+        grid = RectilinearGrid(arch, size = 1, z = (-1, 0), topology = (Flat, Flat, Bounded))
+        rad = PrescribedRadiation(grid; land_surface = SurfaceRadiationProperties(0.3, 0.95))
+
+        set!(rad; downwelling_shortwave = 250, downwelling_longwave = 350)
+        @test only(Array(interior(rad.downwelling_shortwave[1]))) == 250
+        @test only(Array(interior(rad.downwelling_longwave[1])))  == 350
+
+        # An omitted keyword leaves that field untouched.
+        set!(rad; downwelling_shortwave = 100)
+        @test only(Array(interior(rad.downwelling_shortwave[1]))) == 100
+        @test only(Array(interior(rad.downwelling_longwave[1])))  == 350
+    end
+end
+
 @testset "Radiation surface property providers" begin
     for arch in test_architectures
         grid = RectilinearGrid(arch, size = 10, z = (-100, 0), topology = (Flat, Flat, Bounded))

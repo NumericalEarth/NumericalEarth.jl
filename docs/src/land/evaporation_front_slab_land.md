@@ -608,25 +608,18 @@ slab = SlabLand(column;
 set!(slab; T = 300, M = 0.9 * 1000 * 0.4 * 0.2)   # M = 0.9 Mˡᵃ⁺, Mˡᵃ⁺ = ρˡ ν hˡᵃ
 ```
 
-Force it with a constant warm, dry atmosphere (305 K, `q` = 4 g kg⁻¹,
-3 m s⁻¹) and prescribed downwelling radiation, then couple through the
-same [`DryLayerHumidity`](@ref) interface built in §8. The setter
-functions take time `t`, so a constant in `t` is a steady forcing:
+Force it with a constant warm, dry atmosphere and prescribed downwelling
+radiation, then couple through the same [`DryLayerHumidity`](@ref)
+interface built in §8. A `Number` passed to `set!` is a constant in
+space and time — a steady forcing:
 
 ```@example slabland
 atmosphere = PrescribedAtmosphere(column; surface_layer_height = 10,
                                           boundary_layer_height = 512)
-set!(atmosphere.velocities.u, t -> 3)        # m s⁻¹
-set!(atmosphere.tracers.T,    t -> 305)      # K — warm
-set!(atmosphere.tracers.q,    t -> 0.004)    # kg kg⁻¹ — dry
-set!(atmosphere.pressure,     t -> 101_325)  # Pa
+set!(atmosphere; u = 3, T = 305, q = 0.004, p = 101_325)   # warm (305 K), dry (4 g kg⁻¹)
 
-downwelling_shortwave = FieldTimeSeries{Center, Center, Nothing}(column, [0.0])
-downwelling_longwave  = FieldTimeSeries{Center, Center, Nothing}(column, [0.0])
-set!(downwelling_shortwave, t -> 250)        # W m⁻²
-set!(downwelling_longwave,  t -> 350)        # W m⁻²
-radiation = PrescribedRadiation(downwelling_shortwave, downwelling_longwave;
-                                land_surface = SurfaceRadiationProperties(0.3, 0.95))
+radiation = PrescribedRadiation(column; land_surface = SurfaceRadiationProperties(0.3, 0.95))
+set!(radiation; downwelling_shortwave = 250, downwelling_longwave = 350)   # W m⁻²
 
 interface = atmosphere_land_interface(column, atmosphere, slab;
                                       specific_humidity = interface_humidity)
