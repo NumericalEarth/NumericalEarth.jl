@@ -120,11 +120,16 @@ end
     return nothing
 end
 
-# Prescribed fields are FieldTimeSeries, so a Number must be wrapped as a
-# constant (in space and time) function; `nothing` leaves the field untouched.
-set_prescribed_field!(field, ::Nothing) = nothing
-set_prescribed_field!(field, value::Number) = Oceananigans.set!(field, (ξ...) -> value)
-set_prescribed_field!(field, value) = Oceananigans.set!(field, value)
+# Prescribed fields are FieldTimeSeries; their data lives in the per-time
+# `Field` slices, so `set!` each slice (which accepts a Number, Field, function,
+# or anything `set!(::Field, ⋅)` does). `nothing` leaves the field untouched.
+set_prescribed_field!(fts, ::Nothing) = nothing
+function set_prescribed_field!(fts, value)
+    for n in 1:length(fts.times)
+        Oceananigans.set!(fts[n], value)
+    end
+    return fts
+end
 
 """
     set!(radiation::PrescribedRadiation; downwelling_shortwave=nothing, downwelling_longwave=nothing)
