@@ -23,7 +23,7 @@ using ..DataWrangling: DataWrangling, binary_data_grid, binary_data_size, defaul
                        dataset_variable_name, default_download_directory, longitude_interfaces,
                        latitude_interfaces, netrc_downloader, NearestNeighborInpainting, metadata_path,
                        GramPerKilogramMinus35, MicromolePerLiter, Metadata, Metadatum, DownloadProgress,
-                       metadata_url, first_date, last_date, all_dates
+                       metadata_url, first_date, last_date, all_dates, read_file_coords
 
 download_ECCO_cache::String = ""
 function __init__()
@@ -345,6 +345,18 @@ function DataWrangling.default_inpainting(metadata::ECCOMetadata)
 end
 
 DataWrangling.inpainted_metadata_path(metadata::ECCOMetadatum) = joinpath(metadata.dir, inpainted_metadata_filename(metadata))
+
+function DataWrangling.read_file_coords(metadata::ECCOMetadatum)
+    Nx, Ny, _, _ = size(metadata)
+    resolution_X = 360/Nx
+    resolution_Y = 180/Ny
+    longitudes = longitude_interfaces(metadata.dataset)
+    latitudes  = latitude_interfaces(metadata.dataset)
+    lon = [i for i = longitudes[1]+resolution_X/2:resolution_X:longitudes[2]-resolution_X/2]
+    lat = [j for j = latitudes[1]+resolution_Y/2:resolution_Y:latitudes[2]-resolution_Y/2]
+
+    return lon, lat
+end
 
 include("ECCO_atmosphere.jl")
 include("ECCO_radiation.jl")

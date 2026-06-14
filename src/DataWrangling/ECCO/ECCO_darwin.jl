@@ -3,6 +3,9 @@ using MeshArrays: MeshArrays, GridSpec, GridLoad, GridLoadVar, interpolation_set
 struct ECCO2DarwinMonthly <:ECCODataset end
 struct ECCO4DarwinMonthly <:ECCODataset end
 
+const ECCODarwin = Union{ECCO2DarwinMonthly,ECCO4DarwinMonthly}
+const ECCODarwinMetadata = Metadata{<:Union{ECCO2DarwinMonthly,ECCO4DarwinMonthly}}
+
 # URLs for the ECCO datasets specific to each version
 const ECCO4Darwin_url = "https://ecco.jpl.nasa.gov/drive/files/ECCO2/LLC90/ECCO-Darwin/"
 const ECCO2Darwin_url = "https://ecco.jpl.nasa.gov/drive/files/ECCO2/LLC270/ECCO-Darwin_extension/"
@@ -31,7 +34,7 @@ Generate the filename for a given ECCO Darwin dataset and date.
 The filename is constructed using the dataset variable name, and the iteration number is calculated
 from the date and epoch.
 """
-function DataWrangling.metadata_filename(dataset::Union{ECCO2DarwinMonthly, ECCO4DarwinMonthly}, name, date, region)
+function DataWrangling.metadata_filename(dataset::ECCODarwin, name, date, region)
     shortname = ECCO_darwin_dataset_variable_names[name]
 
     reference_date = metadata_epoch(dataset)
@@ -48,9 +51,9 @@ end
 DataWrangling.default_mask_value(::ECCO4DarwinMonthly) = 0
 DataWrangling.default_mask_value(::ECCO2DarwinMonthly) = 0
 
-DataWrangling.dataset_variable_name(data::Metadata{<:Union{ECCO2DarwinMonthly,ECCO4DarwinMonthly}}) = ECCO_darwin_dataset_variable_names[data.name]
+DataWrangling.dataset_variable_name(data::ECCODarwinMetadata) = ECCO_darwin_dataset_variable_names[data.name]
 
-variable_is_three_dimensional(::Metadata{<:Union{ECCO2DarwinMonthly, ECCO4DarwinMonthly}}) = true
+variable_is_three_dimensional(::ECCODarwinMetadata) = true
 
 ECCO_darwin_dataset_variable_names = Dict(
     :temperature                    => "THETA",
@@ -66,14 +69,16 @@ ECCO_darwin_dataset_variable_names = Dict(
     :dissolved_oxygen               => "O2",
 )
 
+DataWrangling.is_three_dimensional(data::ECCODarwinMetadata) = true
+
 """
-    conversion_units(metadatum::Metadatum{<:Union{ECCO2DarwinMonthly, ECCO4DarwinMonthly}})
+    conversion_units(metadatum::Metadatum{<:ECCODarwin})
 
 Set up conversion from the ECCODarwin output data to standard units
   -  salinity = SALTanom + 35
   -  biogeochemical tracer concentrations are in uL => umol/L in the output files from Darwin
 """
-function DataWrangling.conversion_units(metadatum::Metadatum{<:Union{ECCO2DarwinMonthly, ECCO4DarwinMonthly}})
+function DataWrangling.conversion_units(metadatum::Metadatum{<:ECCODarwin})
     if dataset_variable_name(metadatum) == "SALTanom"
         return GramPerKilogramMinus35()
     elseif dataset_variable_name(metadatum) != "THETA"
