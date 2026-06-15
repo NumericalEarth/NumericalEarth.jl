@@ -47,7 +47,10 @@ function Downloads.download(meta::GLORYSMetadatum;
     z_kw = depth_bounds_kw(meta.region)
     selection_method = coordinates_selection_method(meta.region)
 
+    # netcdf3_compatible routes the write through xarray's netcdf4 engine instead of
+    # h5netcdf, whose h5py binds to the HDF5_jll libhdf5 (no ROS3 VFD) and fails in-process.
     kw = (; coordinates_selection_method = selection_method,
+          netcdf3_compatible = true,
           skip_existing,
           dataset_id,
           variables,
