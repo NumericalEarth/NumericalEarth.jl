@@ -344,7 +344,8 @@ function DataWrangling.default_inpainting(metadata::ECCOMetadata)
     end
 end
 
-DataWrangling.inpainted_metadata_path(metadata::ECCOMetadatum) = joinpath(metadata.dir, inpainted_metadata_filename(metadata))
+DataWrangling.inpainted_metadata_path(metadata::ECCOMetadatum) = 
+    joinpath(metadata.dir, inpainted_metadata_filename(metadata))
 
 function DataWrangling.read_file_coords(metadata::ECCOMetadatum)
     Nx, Ny, _, _ = size(metadata)
