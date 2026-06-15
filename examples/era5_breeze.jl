@@ -170,6 +170,14 @@ grid = LatitudeLongitudeGrid(arch;
 elevation = regrid_topography(grid; dataset = ETOPO2022())
 materialize_terrain!(grid, elevation)
 
+# Outer time step — defined here so the Davies relaxation timescale below can be tied to
+# it. Split-explicit substepping integrates the acoustic modes, so Δt is set by advection,
+# vertical-binding on the 60 m surface cells (C_z = w·Δt/Δz).
+U_horizontal = 60   # m/s — bounds the jet
+W_vertical   = 25   # m/s — bounds convective updrafts
+Δt = 0.5 * min(min(minimum_xspacing(grid), minimum_yspacing(grid)) / U_horizontal,
+               minimum_zspacing(grid) / W_vertical)
+
 # ## Nested domains
 #
 # Visualize the nesting before stepping the model: the ERA5 forcing region that
@@ -535,9 +543,9 @@ lateral_mask = let λ_w = λ_west, λ_e = λ_east, φ_s = φ_south, φ_n = φ_no
     end
 end
 
-# τ_relax ≈ 5·Δx / U_scale at the domain center latitude, U ~ 20 m/s.
-Δx_phys = 6371e3 * cos(deg2rad(φ₀)) * deg2rad(Δλ)   # m
-τ_relax = FRINGE_N * Δx_phys / 20.0                 # s
+# Relaxation timescale = 10 outer steps, so the fringe pulls the boundary toward the
+# parent within ~10 Δt. (The advective-crossing estimate τ ≈ 5·Δx/U was O(50–700) Δt — far too weak.)
+τ_relax = 10 * Δt                                   # s
 
 davies = parent_forcings(; rate = 1/τ_relax,
                          mask = lateral_mask,
@@ -615,18 +623,7 @@ set!(model; ρ = ρ, u = u, v = v, qᵗ = qᵗ, θˡⁱ = θˡⁱ)
 # each iteration so the FTS-driven BCs and forcings get the correct
 # interpolation time.
 #
-# With split-explicit substepping the acoustic modes are integrated by inner
-# substeps, so the outer Δt is limited by advection, not the sound speed. The 60 m
-# surface cells make VERTICAL advection the binding constraint (not the ~3 km
-# horizontal cells), so we take the smaller of the horizontal- and vertical-advection
-# CFLs with separate velocity scales. This is still ~25× the old acoustic-CFL Δt; the
-# fine near-surface layer caps it short of the horizontal limit until a balanced
-# (dynamically-initialized) state lets the vertical-velocity scale drop.
-
-U_horizontal = 60   # m/s — bounds the jet
-W_vertical   = 25   # m/s — bounds convective updrafts
-Δt = 0.5 * min(min(minimum_xspacing(grid), minimum_yspacing(grid)) / U_horizontal,
-               minimum_zspacing(grid) / W_vertical)
+# Δt is defined with the grid above; the Davies fringe relaxes on a 10·Δt timescale.
 
 nested = NestedSimulation(parent, model; Δt, stop_iteration = 100)
 
