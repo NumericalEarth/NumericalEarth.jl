@@ -22,8 +22,8 @@ using ...NumericalEarth: NumericalEarth
 using ..DataWrangling: DataWrangling, binary_data_grid, binary_data_size, default_mask_value,
                        dataset_variable_name, default_download_directory, longitude_interfaces,
                        latitude_interfaces, netrc_downloader, NearestNeighborInpainting, metadata_path,
-                       GramPerKilogramMinus35, MicromolePerLiter, Metadata, Metadatum, DownloadProgress,
-                       metadata_url, first_date, last_date, all_dates, read_file_coords
+                       GramPerKilogramMinus35, Metadata, Metadatum, DownloadProgress,
+                       metadata_url, first_date, last_date, all_dates
 
 download_ECCO_cache::String = ""
 function __init__()
@@ -204,10 +204,6 @@ const ECCOMetadatum   = Metadatum{<:ECCODataset}
 
 # sea surface pressure can exceed 1e5 (the default higher bound for datasets data)
 DataWrangling.higher_bound(::ECCOMetadata, ::Val{:sea_level_pressure}) = 1f10
-
-# Note: ECCO downwelling radiation variables (oceQsw, EXFlwdn) are already
-# in positive-downwelling convention, so no sign conversion is needed.
-DataWrangling.conversion_units(metadatum::ECCOMetadatum) = nothing
 
 """
     ECCOMetadatum(name;

@@ -3,8 +3,9 @@ using MeshArrays: MeshArrays, GridSpec, GridLoad, GridLoadVar, interpolation_set
 struct ECCO2DarwinMonthly <:ECCODataset end
 struct ECCO4DarwinMonthly <:ECCODataset end
 
-const ECCODarwin = Union{ECCO2DarwinMonthly,ECCO4DarwinMonthly}
-const ECCODarwinMetadata = Metadata{<:Union{ECCO2DarwinMonthly,ECCO4DarwinMonthly}}
+const ECCODarwin = Union{ECCO2DarwinMonthly, ECCO4DarwinMonthly}
+const ECCODarwinMetadata = Metadata{<:Union{ECCO2DarwinMonthly, ECCO4DarwinMonthly}}
+const ECCODarwinMetadatum = Metadatum{<:Union{ECCO2DarwinMonthly, ECCO4DarwinMonthly}}
 
 # URLs for the ECCO datasets specific to each version
 const ECCO4Darwin_url = "https://ecco.jpl.nasa.gov/drive/files/ECCO2/LLC90/ECCO-Darwin/"
@@ -78,13 +79,11 @@ Set up conversion from the ECCODarwin output data to standard units
   -  salinity = SALTanom + 35
   -  biogeochemical tracer concentrations are in uL => umol/L in the output files from Darwin
 """
-function DataWrangling.conversion_units(metadatum::Metadatum{<:ECCODarwin})
+function DataWrangling.conversion_units(metadatum::Union{ECCODarwinMetadata, ECCODarwinMetadatum})
     if dataset_variable_name(metadatum) == "SALTanom"
         return GramPerKilogramMinus35()
-    elseif dataset_variable_name(metadatum) != "THETA"
-        return MicromolePerLiter()
     else
-        return MolePerLiter()
+        return nothing
     end
 end
 
