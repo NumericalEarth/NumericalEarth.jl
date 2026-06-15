@@ -4,10 +4,10 @@
 # compressible solver to forthcoming SlabLand and SlabOcean components.
 #
 # It downloads ERA5 reanalysis restricted to a bounding box, regrids it onto a
-# terrain-following `LatitudeLongitudeGrid` sized for ~3 km horizontal cells at
-# the domain center latitude, builds a compressible Breeze atmosphere, and drives
-# it through a `NestedSimulation`: an ERA5-forced parent supplies the lateral
-# boundary conditions and an interior Davies relaxation fringe.
+# terrain-following `LatitudeLongitudeGrid` sized for ~9 km horizontal cells (1/12°,
+# exactly ERA5's 0.25° / 3) at the domain center latitude, builds a compressible Breeze
+# atmosphere, and drives it through a `NestedSimulation`: an ERA5-forced parent supplies
+# the lateral boundary conditions and an interior Davies relaxation fringe.
 #
 # In progress:
 # - [x] Breeze model construction
@@ -50,22 +50,23 @@ end
 #
 # Domain centered on the U.S. Department of Energy's Atmospheric Radiation
 # Measurement (ARM) Climate Research Facility's Southern Great Plains (SGP)
-# site in Lamont, OK. We match the 3 km inner domain (Domain 3) of the WRF
+# site in Lamont, OK. We match the 9 km middle domain (Domain 2) of the WRF
 # nest used by [Fan2017](@citet) for this MC3E case: a 27 → 9 → 3 km telescoping
-# nest. Their 1 km Domain 4 ("nest-down") is left out for now — that finer nest
-# is the natural next step for a `NestedSimulation` child.
+# nest. Starting at D2 sets the telescope up cleanly — ERA5's native 0.25° step
+# divides exactly by 3 to 1/12° here, and again by 3 to 1/36° (~3 km) for the
+# Domain 3 child we nest down to next via a `NestedSimulation`.
 #
-# [Fan2017](@citet)'s Domain 3 carries 301 × 271 WRF grid points. Those count staggered
-# (cell-edge) locations, so they map to 300 × 270 Breeze *cells* (cells = points − 1).
-# Angular grid steps are chosen so that the physical cells are roughly square
-# (~3 km) at the center latitude, using R = 6,371 km:
-#   Δx = R·cos(φ₀)·Δλ ≈ 3.03 km
-#   Δy = R·Δφ         ≈ 3.00 km
+# [Fan2017](@citet)'s Domain 2 carries 181 × 166 WRF grid points. Those count staggered
+# (cell-edge) locations, so they map to 180 × 165 Breeze *cells* (cells = points − 1).
+# We use a uniform 1/12° angular step (ERA5 0.25° / 3), so the physical cells are ~9 km —
+# anisotropic at this latitude, using R = 6,371 km:
+#   Δx = R·cos(φ₀)·Δλ ≈ 7.44 km
+#   Δy = R·Δφ         ≈ 9.27 km
 
 φ₀, λ₀ = 36.605, -97.485    # center latitude, longitude (deg)
 
-Δλ, Δφ = 0.034, 0.027       # grid spacings (deg)
-Nx, Ny = 300, 270           # Fan et al. (2017) Domain 3: 301 × 271 points − 1
+Δλ = Δφ = 1/12              # uniform 1/12° step (ERA5 0.25° / 3 — clean 3:1 telescoping)
+Nx, Ny = 180, 165           # Fan et al. (2017) Domain 2: 181 × 166 points − 1
 
 # From these inputs, we determine the `BoundingBox` corners.
 
@@ -74,25 +75,26 @@ Nx, Ny = 300, 270           # Fan et al. (2017) Domain 3: 301 × 271 points − 
 φ_south = φ₀ - Ny * Δφ / 2
 φ_north = φ₀ + Ny * Δφ / 2
 
-# Vertical grid: a constant 60 m surface cell, 1.08× stretching per cell to a 1150 m cap,
-# `Nz = 50`. `extent = 26500` puts the top at Lz ≈ 26.5 km (~20 hPa) — well above the jet,
-# so the rigid lid and the Rayleigh sponge (below) sit in the quiescent lower stratosphere
-# and absorb upward-propagating modes without distorting the troposphere. The cap is raised
-# from the Fan-matched 490 m so the same 50 cells reach this higher top (the upper cells
-# coarsen; the 60 m surface layer that resolves the boundary layer is unchanged). The ERA5
-# 1 hPa top still sits comfortably above Lz.
+# Vertical grid matched to [Fan2017](@citet)'s WRF nest: 51 staggered levels → `Nz = 50`
+# cells, a constant 60 m surface cell, and a 490 m maximum spacing. Fan publishes only
+# those three numbers (60 m near-surface, 490 m max, 51 levels) — no stretching ratio and
+# no model top, since WRF uses a terrain-following hydrostatic-pressure (η) coordinate. We
+# realize them with a 1.15× geometric stretch (`extent = 19525`), which lands the top at
+# Lz ≈ 20 km (~50 hPa, WRF's usual model top) — above the ~16 km jet, so the rigid lid and
+# the Rayleigh sponge sit in the quiescent lower stratosphere. 25 of the 50 cells ride the
+# 490 m cap; the 60 m surface layer that resolves the boundary layer is unchanged.
 
 z_discretization = ReferenceToStretchedDiscretization(
-    extent                  = 26500.0,
+    extent                  = 19525.0,
     bias                    = :left,
     bias_edge               = 0.0,
     constant_spacing        = 60.0,
     constant_spacing_extent = 60.0,
-    maximum_spacing         = 1150.0,
-    stretching              = LinearStretching(0.08))
+    maximum_spacing         = 490.0,
+    stretching              = LinearStretching(0.15))
 
 Nz = length(z_discretization)
-@assert Nz == 50  # Fan et al. (2017): 51 staggered levels → 50 cells
+@assert Nz == 50  # Fan et al. (2017): 51 staggered levels → 50 cells; 60 m → 490 m cap, top ~20 km
 
 # ### Initial conditions
 #
@@ -117,23 +119,21 @@ dates = start_date:Hour(1):end_date
 
 era5_datadir = "era5"   # Where data will be saved locally
 
-# ERA5 forcing domain = the spatial extent of [Fan2017](@citet)'s Domain 2 (their 9 km
-# parent): 181 × 166 WRF points → 180 × 165 cells at 9 km (= 3× the 3 km D3 step),
-# centered on the same SGP point as D3 and snapped outward to ERA5's native 0.25° grid.
-# ERA5 supplies this parent state (lateral BCs + Davies fringe), so the realized nest is
-# ERA5 → D2 → 3 km D3. We match D2's *extent* only — the parent is at ERA5's ~0.25°
-# resolution, not a 9 km grid.
+# ERA5 forcing region: the LAM footprint padded outward by `era5_pad` and snapped to
+# ERA5's native 0.25° grid, so the parent strictly encloses the 1/12° child (the
+# Interpolated lateral BCs and the 5-cell Davies fringe need parent data beyond the child
+# edge). At 0.25° (~28 km here) ERA5 stands in for Fan's 27 km Domain 1, completing the
+# telescope ERA5 → D2 (1/12°) → D3 (1/36°, the next nest-down).
 
-D2_Nx, D2_Ny = 180, 165   # Fan (2017) Domain 2: 181 × 166 points − 1
-ΔλD2, ΔφD2   = 3Δλ, 3Δφ   # 9 km angular steps
+era5_pad = 1.0   # deg; wider than the 5·(1/12°) ≈ 0.42° Davies fringe
 
 snap_out(lo, hi; d = 0.25) = (floor(lo / d) * d, ceil(hi / d) * d)
-era5_region = BoundingBox(longitude = snap_out(λ₀ - D2_Nx * ΔλD2 / 2, λ₀ + D2_Nx * ΔλD2 / 2),
-                          latitude  = snap_out(φ₀ - D2_Ny * ΔφD2 / 2, φ₀ + D2_Ny * ΔφD2 / 2))
+era5_region = BoundingBox(longitude = snap_out(λ_west - era5_pad, λ_east + era5_pad),
+                          latitude  = snap_out(φ_south - era5_pad, φ_north + era5_pad))
 
-@info @sprintf("D3 (3 km LAM): λ ∈ [%.3f, %.3f], φ ∈ [%.3f, %.3f]; Δλ=%.4f°, Δφ=%.4f°",
-               λ_west, λ_east, φ_south, φ_north, Δλ, Δφ)
-@info @sprintf("D2 (ERA5 parent, Fan D2 extent): λ ∈ [%.2f, %.2f], φ ∈ [%.2f, %.2f]",
+@info @sprintf("D2 (9 km LAM): λ ∈ [%.3f, %.3f], φ ∈ [%.3f, %.3f]; Δλ=Δφ=%.4f°",
+               λ_west, λ_east, φ_south, φ_north, Δλ)
+@info @sprintf("ERA5 parent (D1 role, padded + snapped to 0.25°): λ ∈ [%.2f, %.2f], φ ∈ [%.2f, %.2f]",
                era5_region.longitude[1], era5_region.longitude[2],
                era5_region.latitude[1],  era5_region.latitude[2])
 
@@ -162,7 +162,7 @@ grid = LatitudeLongitudeGrid(arch;
                              topology  = (Bounded, Bounded, Bounded))
 
 # ETOPO 2022 surface elevation (≥ 0; ocean clamped to sea level) regridded onto
-# the LAM horizontal grid — ETOPO's 60″ (~1.85 km) relief is finer than the ~3 km
+# the LAM horizontal grid — ETOPO's 60″ (~1.85 km) relief is finer than the ~9 km
 # cells. `materialize_terrain!` fills the grid's terrain-following coordinate from it
 # in place; `CompressibleDynamics` then builds the slope metrics it needs directly
 # from the grid (no `terrain_metrics` argument required).
@@ -173,8 +173,8 @@ materialize_terrain!(grid, elevation)
 # ## Nested domains
 #
 # Visualize the nesting before stepping the model: the ERA5 forcing region that
-# supplies the parent state (lateral BCs + Davies fringe) and the 3 km LAM —
-# Fan (2017)'s Domain 3, the `NestedSimulation` child — over ETOPO terrain with
+# supplies the parent state (lateral BCs + Davies fringe) and the 9 km LAM —
+# Fan (2017)'s Domain 2, the `NestedSimulation` child — over ETOPO terrain with
 # Natural Earth state/country boundaries, centered on ARM SGP. Drawn here (not
 # with the profile plots below) so the domain geometry is written even if the run
 # is cut short.
@@ -229,7 +229,7 @@ domain_box(λ₁, λ₂, φ₁, φ₂) = ([λ₁, λ₂, λ₂, λ₁, λ₁], [
 
 fig_map = Figure(size = (840, 760), fontsize = 13)
 ax_map  = Axis(fig_map[1, 1]; xlabel = "longitude (°)", ylabel = "latitude (°)",
-               title  = "ERA5 → 3 km LAM nest (MC3E squall line, ARM SGP)",
+               title  = "ERA5 → 9 km LAM nest (MC3E squall line, ARM SGP)",
                aspect = DataAspect())
 
 # Two-sided normalization onto `:topo`: the full bathymetry range fills the lower (blue)
@@ -256,9 +256,9 @@ for (name, color, linewidth) in (("admin_1_states_provinces_lines", (:gray20, 0.
 end
 
 lines!(ax_map, domain_box(era5_region.longitude..., era5_region.latitude...)...;
-       color = :dodgerblue, linewidth = 3, label = "ERA5 parent — Fan Domain 2 extent")
+       color = :dodgerblue, linewidth = 3, label = "ERA5 parent — Fan Domain 1 role")
 lines!(ax_map, domain_box(λ_west, λ_east, φ_south, φ_north)...;
-       color = :crimson, linewidth = 3, label = "3 km LAM — Fan Domain 3 (child)")
+       color = :crimson, linewidth = 3, label = "9 km LAM — Fan Domain 2 (child)")
 scatter!(ax_map, [λ₀], [φ₀]; color = :black, marker = :star5, markersize = 18, label = "ARM SGP")
 
 axislegend(ax_map; position = :rt, framevisible = true, backgroundcolor = (:white, 0.85))
@@ -578,10 +578,16 @@ davies = parent_forcings(; rate = 1/τ_relax,
 
 p̄₀ = mean(interior(p₀))
 
-# Add a Rayleigh damping layer
+# Add a Rayleigh damping layer. 3 km deep below the ~20 km lid (sponge spans ~17–20 km),
+# keeping it in the lower stratosphere above the jet now that the top is shallower.
 damping_timescale = 5    # (s)
-damping_depth     = 5000 # (m)
+damping_depth     = 3000 # (m)
 rayleigh_damping = UpperSponge(; damping_rate = 1/damping_timescale, depth = damping_depth)
+
+# Advection uses `atmosphere_simulation`'s defaults — WENO(9) for momentum, WENO(5) for
+# scalars — higher order than [Fan2017](@citet)'s 5th-order horizontal / 3rd-order vertical.
+# Matching Fan's per-direction orders (a `FluxFormAdvection` of WENO(5)/WENO(5)/WENO(3)) was
+# tested and left the dynamics essentially unchanged, so the higher-order default is kept.
 
 model = atmosphere_simulation(grid;
                               thermodynamic_constants = constants,
@@ -767,18 +773,17 @@ save("era5_breeze_profiles.png", fig)
 
 # ## Horizontal cut-plane comparison
 #
-# Compare u, v, w on a horizontal plane 80 m above ground level across three
-# effective resolutions: the ERA5 forcing (~0.25°), a 9 km downscale (Fan
-# Domain 2 grid spacing), and the 3 km Breeze child (Domain 3). At the 100-step
-# (≈ 5 s) smoke horizon the ERA5/D2 rows are the downscaled initial state and the
-# D3 row is the child after a few acoustic steps — so the rows differ by
-# resolution and a brief transient, not yet by hours of distinct evolution (that
-# needs the substepping/multi-hour run).
+# Compare u, v, w on a horizontal plane 80 m above ground level between the ERA5
+# forcing (~0.25°, the parent) and the 9 km Breeze child (Fan Domain 2). At the
+# smoke horizon the ERA5 row is the downscaled initial state and the model row is
+# the child after a few acoustic steps — so they differ by resolution and a brief
+# transient, not yet by hours of distinct evolution (that needs the multi-hour run).
+# The 3 km row arrives with the Domain 3 nest-down.
 #
 # `cut_plane` interpolates each field's column to the target height above the
 # *local terrain surface*, honoring the field's stagger (u on λ-faces, v on
 # φ-faces, w on z-faces) and the terrain-following node heights — so it works
-# unchanged on the ERA5/D2 ingest grids and the live child model.
+# unchanged on the ERA5 ingest grid and the live child model.
 #
 # TODO: promote `cut_plane` to `NumericalEarth.Diagnostics` once stabilized — it's
 # a generic terrain-following AGL slice, useful well beyond this example.
@@ -810,7 +815,7 @@ function cut_plane(field, height_agl)
 end
 
 # ERA5 snapshot-1 winds on a terrain-following grid at the requested resolution
-# over the D3 window. u, v ingest directly (#241); w is reconstructed from ERA5 ω
+# over the D2 window. u, v ingest directly (#241); w is reconstructed from ERA5 ω
 # (Pa/s) via w ≈ -ω/(ρ g), with ρ = p/(Rᵈ T) (vapor correction on ρ < 1%, neglected).
 g_earth = Oceananigans.defaults.gravitational_acceleration
 
@@ -833,16 +838,14 @@ function era5_winds_on_grid(nx, ny)
     return ug, vg, wg
 end
 
-# ERA5 row ≈ native 0.25°; D2 row at 3× the D3 spacing (so exactly Nx/3 × Ny/3).
+# ERA5 row at native 0.25°; model row is the live 9 km D2 child.
 u_e, v_e, w_e = era5_winds_on_grid(round(Int, (λ_east - λ_west) / 0.25),
                                    round(Int, (φ_north - φ_south) / 0.25))
-u_2, v_2, w_2 = era5_winds_on_grid(Nx ÷ 3, Ny ÷ 3)
-u_3, v_3, w_3 = model.velocities.u, model.velocities.v, model.velocities.w
+u_d, v_d, w_d = model.velocities.u, model.velocities.v, model.velocities.w
 
 height_agl = 80.0
-rows = [("ERA5 ~0.25°",                              u_e, v_e, w_e),
-        ("D2 ~9 km",                                 u_2, v_2, w_2),
-        (@sprintf("D3 3 km (t=%.1f s)", model.clock.time), u_3, v_3, w_3)]
+rows = [("ERA5 ~0.25°",                                u_e, v_e, w_e),
+        (@sprintf("D2 9 km (t=%.1f s)", model.clock.time), u_d, v_d, w_d)]
 cols = ("u (m/s)", "v (m/s)", "w (m/s)")
 
 fig_cut = Figure(size = (1500, 1300), fontsize = 13)
@@ -870,7 +873,7 @@ for (r, (rlabel, fu, fv, fw)) in enumerate(rows)
     end
 end
 
-Label(fig_cut[0, 1:6], @sprintf("Winds at %g m AGL — ERA5 → 9 km → 3 km (MC3E, ARM SGP)", height_agl);
+Label(fig_cut[0, 1:6], @sprintf("Winds at %g m AGL — ERA5 → 9 km D2 (MC3E, ARM SGP)", height_agl);
       fontsize = 18, font = :bold, tellwidth = false)
 
 save("era5_breeze_cutplanes.png", fig_cut)
