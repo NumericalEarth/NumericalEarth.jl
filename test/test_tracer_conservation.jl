@@ -47,7 +47,7 @@ using NumericalEarth.EarthSystemModels: above_freezing_ocean_temperature!
             coupled_model = OceanOnlyModel(ocean; atmosphere, radiation)
 
             Δt = 65seconds
-            simulation = Simulation(coupled_model; Δt, stop_iteration=3)
+            simulation = Simulation(coupled_model; Δt, stop_iteration=4)
 
             ocean_properties = simulation.model.interfaces.ocean_properties
             ρᵒᶜ = ocean_properties.reference_density / 1e16
@@ -68,11 +68,7 @@ using NumericalEarth.EarthSystemModels: above_freezing_ocean_temperature!
             heat_rate = Integral(surface_forcing.heat_flux, dims=(1, 2))
             freshwater_rate = Integral(surface_forcing.freshwater_flux, dims=(1, 2))
 
-            # @test abs(previous_heat_flux) > 0
-            # @test abs(previous_freshwater_flux) > 0
-
             for _ = 1:simulation.stop_iteration
-                previous_time = Float64(simulation.model.clock.time)
 
                 previous_ocean_heat_content = @allowscalar first(Field(ocean_heat_content))
                 previous_freshwater_content = @allowscalar first(Field(freshwater_content))
@@ -91,17 +87,13 @@ using NumericalEarth.EarthSystemModels: above_freezing_ocean_temperature!
 
 
                 @info "Iteration $(simulation.model.clock.iteration): time = $(current_time) s, Δt = $(last_Δt) s"
-                # @show current_freshwater_content
-                # @show previous_freshwater_content
-                # @show current_freshwater_content - previous_freshwater_content
-                # @show -previous_freshwater_flux * last_Δt
 
                 @show current_ocean_heat_content
                 @show previous_ocean_heat_content
                 @show current_ocean_heat_content - previous_ocean_heat_content
                 @show -previous_heat_flux * last_Δt
                 @test current_ocean_heat_content - previous_ocean_heat_content ≈ -previous_heat_flux * last_Δt
-                # @test current_freshwater_content - previous_freshwater_content ≈ -previous_freshwater_flux * last_Δt rtol=1e-4 atol=1e-2
+                @test current_freshwater_content - previous_freshwater_content ≈ -previous_freshwater_flux * last_Δt
             end
         end
     end
