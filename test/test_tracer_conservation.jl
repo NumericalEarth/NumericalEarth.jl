@@ -1,27 +1,27 @@
 include("runtests_setup.jl")
 
 using CUDA: @allowscalar
-using Oceananigans.TimeSteppers: update_state!
 using Oceananigans.Units
 using NumericalEarth.EarthSystemModels: above_freezing_ocean_temperature!
 
 @testset "Tracer conservation under surface fluxes" begin
     for arch in test_architectures
         for fold_topology in (RightFaceFolded, RightCenterFolded)
-            fold_topology = RightFaceFolded
+
             underlying_grid = TripolarGrid(arch;
                                            size = (20, 20, 20),
                                            z = (-100, 0),
                                            halo = (7, 7, 4),
-                                           fold_topology)
+                                           fold_topology=RightFaceFolded)
 
-            bottom_height = regrid_bathymetry(underlying_grid, Metadatum(:bottom_height, dataset=ETOPO2022());
+            bottom_height = regrid_bathymetry(underlying_grid,
+                                              Metadatum(:bottom_height, dataset=ETOPO2022());
                                               minimum_depth=15,
                                               interpolation_passes=1,
                                               major_basins=1)
 
-            grid = ImmersedBoundaryGrid(underlying_grid, GridFittedBottom(bottom_height); active_cells_map=true)
-            grid = ImmersedBoundaryGrid(underlying_grid, GridFittedBottom(bottom_height))
+            grid = ImmersedBoundaryGrid(underlying_grid, GridFittedBottom(bottom_height);
+                                        active_cells_map=true)
 
             ocean = ocean_simulation(grid, free_surface=SplitExplicitFreeSurface(substeps=20))
             sea_ice = sea_ice_simulation(grid, ocean)
@@ -30,70 +30,69 @@ using NumericalEarth.EarthSystemModels: above_freezing_ocean_temperature!
             radiation = JRA55PrescribedRadiation(arch; time_indices_in_memory)
             atmosphere = JRA55PrescribedAtmosphere(arch; time_indices_in_memory)
 
-            # initialize ocean and sea ice models
             date = DateTime(1993, 1, 1)
             dataset = ECCO4Monthly()
 
             set!(ocean.model,
-                 T=Metadatum(:temperature; dataset, date),
-                 S=Metadatum(:salinity; dataset, date))
+                 T = Metadatum(:temperature; dataset, date),
+                 S = Metadatum(:salinity; dataset, date))
 
-            # set!(sea_ice.model,
-            #      h=Metadatum(:sea_ice_thickness; dataset, date),
-            #      ℵ=Metadatum(:sea_ice_concentration; dataset, date))
-            # above_freezing_ocean_temperature!(ocean, grid, sea_ice)
-
-            # coupled_model = OceanSeaIceModel(ocean, sea_ice; atmosphere, radiation)
             coupled_model = OceanOnlyModel(ocean; atmosphere, radiation)
 
             Δt = 65seconds
             simulation = Simulation(coupled_model; Δt, stop_iteration=4)
 
             ocean_properties = simulation.model.interfaces.ocean_properties
-            ρᵒᶜ = ocean_properties.reference_density / 1e16
+            ρᵒᶜ = ocean_properties.reference_density
             cᵒᶜ = ocean_properties.heat_capacity
             Sᵒᶜ = 35
 
-            surface_forcing = (; heat_flux = net_ocean_heat_flux(simulation.model),
-                                 freshwater_flux = net_ocean_freshwater_flux(simulation.model, reference_salinity=Sᵒᶜ))
-
-            surface_forcing = (; heat_flux = ρᵒᶜ * cᵒᶜ * coupled_model.ocean.model.tracers.T.boundary_conditions.top.condition,
-                                 freshwater_flux = net_ocean_freshwater_flux(simulation.model, reference_salinity=Sᵒᶜ))
+            surface_forcing = (;
+                heat_flux = net_ocean_heat_flux(simulation.model),
+                freshwater_flux = net_ocean_freshwater_flux(simulation.model, reference_salinity=Sᵒᶜ),
+            )
 
             T = simulation.model.ocean.model.tracers.T
             S = simulation.model.ocean.model.tracers.S
 
-            ocean_heat_content = Integral( ρᵒᶜ * cᵒᶜ * T, dims=(1, 2, 3))
-            freshwater_content = Integral(-ρᵒᶜ / Sᵒᶜ * S, dims=(1, 2, 3))
+            T⁻ = Field(T)
+            S⁻ = Field(S)
+
+            ΔT = Field(T - T⁻)
+            ΔS = Field(S - S⁻)
+
+            Δocean_heat_content = Integral(ρᵒᶜ * cᵒᶜ * ΔT, dims=(1, 2, 3))
+            Δfreshwater_content = Integral(-ρᵒᶜ / Sᵒᶜ * ΔS, dims=(1, 2, 3))
+
             heat_rate = Integral(surface_forcing.heat_flux, dims=(1, 2))
             freshwater_rate = Integral(surface_forcing.freshwater_flux, dims=(1, 2))
 
             for _ = 1:simulation.stop_iteration
 
-                previous_ocean_heat_content = @allowscalar first(Field(ocean_heat_content))
-                previous_freshwater_content = @allowscalar first(Field(freshwater_content))
+                set!(T⁻, T)
+                set!(S⁻, S)
+
                 previous_heat_flux = @allowscalar first(Field(heat_rate))
-                previous_freshwater_flux= @allowscalar first(Field(freshwater_rate))
+                previous_freshwater_flux = @allowscalar first(Field(freshwater_rate))
 
                 time_step!(coupled_model, Δt)
 
-                current_ocean_heat_content = @allowscalar first(Field(ocean_heat_content))
-                current_freshwater_content = @allowscalar first(Field(freshwater_content))
-                current_heat_flux = @allowscalar first(Field(heat_rate))
-                current_freshwater_flux= @allowscalar first(Field(freshwater_rate))
-
-                current_time = Float64(simulation.model.clock.time)
                 last_Δt = simulation.model.clock.last_Δt
 
+                heat_content_tendency = @allowscalar first(Field(Δocean_heat_content))
+                freshwater_content_tendency = @allowscalar first(Field(Δfreshwater_content))
 
-                @info "Iteration $(simulation.model.clock.iteration): time = $(current_time) s, Δt = $(last_Δt) s"
+                expected_heat_content_tendency = -previous_heat_flux * last_Δt
+                expected_freshwater_content_tendency = -previous_freshwater_flux * last_Δt
 
-                @show current_ocean_heat_content
-                @show previous_ocean_heat_content
-                @show current_ocean_heat_content - previous_ocean_heat_content
-                @show -previous_heat_flux * last_Δt
-                @test current_ocean_heat_content - previous_ocean_heat_content ≈ -previous_heat_flux * last_Δt
-                @test current_freshwater_content - previous_freshwater_content ≈ -previous_freshwater_flux * last_Δt
+                @info "Iteration $(simulation.model.clock.iteration): time = $(Float64(simulation.model.clock.time)) s, Δt = $(last_Δt) s"
+
+                @show heat_content_tendency
+                @show expected_heat_content_tendency
+                @show heat_content_tendency - expected_heat_content_tendency
+
+                @test heat_content_tendency ≈ expected_heat_content_tendency
+                @test freshwater_content_tendency ≈ expected_freshwater_content_tendency
             end
         end
     end
