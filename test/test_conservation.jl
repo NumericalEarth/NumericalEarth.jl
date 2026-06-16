@@ -10,6 +10,7 @@ using ClimaSeaIce
 using ClimaSeaIce.SeaIceThermodynamics: latent_heat
 
 using NumericalEarth.Atmospheres: PrescribedAtmosphere
+using NumericalEarth.Radiation: PrescribedRadiation
 using NumericalEarth.Diagnostics: atmosphere_ocean_heat_flux, frazil_heat_flux
 using NumericalEarth.EarthSystemModels: OceanSeaIceModel, Radiation, update_state!
 using NumericalEarth.Oceans: ocean_simulation
@@ -57,24 +58,24 @@ end
 
     atmosphere_grid = RectilinearGrid(arch; size=(), topology=(Flat, Flat, Flat))
     atmosphere      = PrescribedAtmosphere(atmosphere_grid, [0.0, 1e9])
-    radiation       = Radiation()
+    radiation       = PrescribedRadiation(atmosphere_grid, [0.0, 1e9])
 
     coupled_model = OceanSeaIceModel(ocean, sea_ice; atmosphere, radiation)
 
-    function set_atmosphere!(atmosphere;
-                             T_air, q_air, u_air, v_air, p_air,
-                             SW_down, LW_down, rain_flux, snow_flux)
+    function set_forcing!(atmosphere, radiatipn;
+                          T_air, q_air, u_air, v_air, p_air,
+                          SW_down, LW_down, rain_flux, snow_flux)
         for (fts, value) in ((atmosphere.tracers.T,    T_air),
                              (atmosphere.tracers.q,    q_air),
                              (atmosphere.velocities.u, u_air),
                              (atmosphere.velocities.v, v_air),
                              (atmosphere.pressure,     p_air),
-                             (atmosphere.downwelling_radiation.shortwave, SW_down),
-                             (atmosphere.downwelling_radiation.longwave,  LW_down),
                              (atmosphere.freshwater_flux.rain, rain_flux),
                              (atmosphere.freshwater_flux.snow, snow_flux))
             fill!(parent(fts), value)
         end
+        fill!(radiation.downwelling_shortwave, SW_down)
+        fill!(radiation.downwelling_longwave,  LW_down)
         return nothing
     end
 
@@ -174,13 +175,13 @@ end
     # latent energy that was already deposited into the ocean by that same
     # frazil mutation. We preserve `𝒬ᶠʳᶻ` across the refresh and add it
     # back into the sea-ice bottom heat flux that the slab will read.
-    function run_phase!(coupled_model, spec, phase_id; Nsteps, Δt, history, atmosphere)
-        set_atmosphere!(atmosphere;
-                        T_air = spec.T_air, q_air = spec.q_air,
-                        u_air = spec.u_air, v_air = spec.v_air,
-                        p_air = spec.p_air,
-                        SW_down = spec.SW_down, LW_down = spec.LW_down,
-                        rain_flux = spec.rain_flux, snow_flux = spec.snow_flux)
+    function run_phase!(coupled_model, spec, phase_id; Nsteps, Δt, history, atmosphere, radiation)
+        set_forcing!(atmosphere, radiation;
+                     T_air = spec.T_air, q_air = spec.q_air,
+                     u_air = spec.u_air, v_air = spec.v_air,
+                     p_air = spec.p_air,
+                     SW_down = spec.SW_down, LW_down = spec.LW_down,
+                     rain_flux = spec.rain_flux, snow_flux = spec.snow_flux)
 
         Ṁ  = (spec.rain_flux + spec.snow_flux) * Az                          # freshwater input
         Qᵖ = - spec.snow_flux * ℒ₀ * Az                                      # snowfall enthalpy
@@ -202,8 +203,8 @@ end
         end
     end
 
-    run_phase!(coupled_model, freeze_phase, 1; Nsteps, Δt, history, atmosphere)
-    run_phase!(coupled_model, melt_phase,   2; Nsteps, Δt, history, atmosphere)
+    run_phase!(coupled_model, freeze_phase, 1; Nsteps, Δt, history, atmosphere, radiation)
+    run_phase!(coupled_model, melt_phase,   2; Nsteps, Δt, history, atmosphere, radiation)
 
     t = history.t
 
