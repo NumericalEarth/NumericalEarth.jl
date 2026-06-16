@@ -30,6 +30,7 @@ Statistics = "10745b16-79ce-11e8-11f9-7d13ad32a3b2"
 Test = "8dfed614-e22c-5e08-85e1-65c5234f0b40"
 Thermodynamics = "b60c26fb-14c3-4610-9d3e-2d17fe7ff00c"
 WorldOceanAtlasTools = "04f20302-f1b9-11e8-29d9-7d841cb0a64a"
+Zarr = "0a941bbe-ad1d-11e8-39d9-ab76183a1d99"
 
 [sources]
 NumericalEarth = {path = ".."}
@@ -64,6 +65,7 @@ Statistics = "<0.0.1, 1"
 Test = "<0.0.1, 1"
 Thermodynamics = "0.15.3"
 WorldOceanAtlasTools = "0.6"
+Zarr = "0.10"
 julia = "1.10"
 
 [extras]

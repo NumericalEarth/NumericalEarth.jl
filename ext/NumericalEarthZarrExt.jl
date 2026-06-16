@@ -26,7 +26,13 @@ Zarr.zencode(data::AbstractArray, ::BitRoundFilter) = data
 Zarr.zdecode(data::AbstractArray, ::BitRoundFilter) = data
 Zarr.JSON.lower(filter::BitRoundFilter) = Dict("id" => "bitround", "keepbits" => filter.keepbits)
 Zarr.getfilter(::Type{<:BitRoundFilter}, d) = BitRoundFilter(; keepbits = d["keepbits"])
-Zarr.filterdict["bitround"] = BitRoundFilter
+
+# Register at load time, not precompile time: mutating Zarr's global `filterdict`
+# from module top-level runs during precompilation and is discarded, so the entry
+# would be missing at runtime.
+function __init__()
+    Zarr.filterdict["bitround"] = BitRoundFilter
+end
 
 #####
 ##### Copernicus DEM Zarr → regional NetCDF
