@@ -1,3 +1,4 @@
+using DocStringExtensions: TYPEDSIGNATURES
 using Oceananigans.Architectures: architecture
 using Oceananigans.BoundaryConditions: DefaultBoundaryCondition
 using Oceananigans.DistributedComputations: DistributedGrid, all_reduce
@@ -13,6 +14,28 @@ using Statistics: mean
 #####
 ##### Utilities
 #####
+
+keep_user_boundary_condition(user, default) = user isa DefaultBoundaryCondition ? default : user
+
+merge_boundary_conditions(user, default) = user
+
+"""
+$(TYPEDSIGNATURES)
+
+Merge `user` and `default` boundary conditions side-by-side: every side the user left
+unspecified (a `DefaultBoundaryCondition`) inherits the corresponding default side. This
+allows users to prescribe, for example, only the lateral boundary conditions of a field
+while retaining the default surface fluxes, bottom drag, and immersed boundary condition.
+"""
+function merge_boundary_conditions(user::FieldBoundaryConditions, default::FieldBoundaryConditions)
+    return FieldBoundaryConditions(keep_user_boundary_condition(user.west,     default.west),
+                                   keep_user_boundary_condition(user.east,     default.east),
+                                   keep_user_boundary_condition(user.south,    default.south),
+                                   keep_user_boundary_condition(user.north,    default.north),
+                                   keep_user_boundary_condition(user.bottom,   default.bottom),
+                                   keep_user_boundary_condition(user.top,      default.top),
+                                   keep_user_boundary_condition(user.immersed, default.immersed))
+end
 
 @inline ϕ²(i, j, k, grid, ϕ)    = @inbounds ϕ[i, j, k]^2
 @inline spᶠᶜᶜ(i, j, k, grid, Φ) = @inbounds sqrt(Φ.u[i, j, k]^2 + ℑxyᶠᶜᵃ(i, j, k, grid, ϕ², Φ.v))
@@ -368,10 +391,13 @@ function hydrostatic_ocean_simulation(grid;
                                    T = FieldBoundaryConditions(top=T_top_bc),
                                    S = FieldBoundaryConditions(top=S_top_bc))
 
-    # Merge boundary conditions with preference to user
-    # TODO: support users specifying only _part_ of the bcs for u, v, T, S (ie adding the top and immersed
-    # conditions even when a user-bc is supplied).
-    boundary_conditions = merge(default_boundary_conditions, boundary_conditions)
+    # Merge boundary conditions side-by-side with preference to user
+    merged_boundary_conditions = NamedTuple(name => haskey(default_boundary_conditions, name) ?
+                                            merge_boundary_conditions(boundary_conditions[name], default_boundary_conditions[name]) :
+                                            boundary_conditions[name]
+                                            for name in keys(boundary_conditions))
+
+    boundary_conditions = merge(default_boundary_conditions, merged_boundary_conditions)
     buoyancy = SeawaterBuoyancy(; gravitational_acceleration, equation_of_state)
 
     if tracer_advection isa NamedTuple
