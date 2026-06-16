@@ -30,6 +30,7 @@ using Oceananigans.BoundaryConditions: fill_halo_regions!
 using Oceananigans.OutputReaders: FieldTimeSeries
 using Oceananigans.Grids: znode
 using Oceananigans.Architectures: on_architecture
+using Oceananigans.TimeSteppers: update_state!
 using Breeze
 using Breeze.TerrainFollowingDiscretization: TerrainFollowingVerticalDiscretization, materialize_terrain!
 using Statistics: mean
@@ -615,6 +616,17 @@ model = atmosphere_simulation(grid;
 (; ρ, θˡⁱ, qᵗ) = breeze_prognostic_state(constants, T, qᵛ, qᶜ, qⁱ, p)
 
 set!(model; ρ = ρ, u = u, v = v, qᵗ = qᵗ, θˡⁱ = θˡⁱ)
+
+# Consistent-w IC. The analysis cold-starts Cartesian w = 0, but the terrain-following
+# coordinate wants the contravariant w̃ = w − slopeₓ·u − slopeᵧ·v ≈ 0 (flow follows the
+# ground). With w = 0 the IC carries w̃ = −slopeₓ·u − slopeᵧ·v ≈ −u·∇h, which the surface
+# kinematic BC then discharges as a spurious near-surface w. Make ρw terrain-consistent by
+# grafting ρw ← ρw − ρw̃: after `update_state!` populates ρw̃ = ρw − slope·ρu = −slope·ρu
+# (since ρw=0), this sets ρw = slope·ρu — exactly the contravariant-zeroing momentum, using
+# Breeze's own slope. A second `update_state!` confirms w̃ ≈ 0.
+update_state!(model)
+interior(model.momentum.ρw) .-= interior(model.dynamics.contravariant_vertical_momentum)
+update_state!(model)
 
 # ## NestedSimulation
 #
