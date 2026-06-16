@@ -195,10 +195,10 @@ end
 function fill_gaps!(data::AbstractVector; max_gap=6)
     N = length(data)
     i = 1
-    while i <= N
+    while i ≤ N
         if isnan(data[i])
             gap_start = i
-            while i <= N && isnan(data[i])
+            while i ≤ N && isnan(data[i])
                 i += 1
             end
             gap_end = i - 1

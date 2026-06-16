@@ -44,6 +44,25 @@ using NumericalEarth.Radiations: PrescribedRadiation,
     end
 end
 
+@testset "Radiation surface property providers" begin
+    for arch in test_architectures
+        grid = RectilinearGrid(arch, size = 10, z = (-100, 0), topology = (Flat, Flat, Bounded))
+
+        albedo = 0.15
+        emissivity = 0.93
+        land_surface = SurfaceRadiationProperties(; albedo, emissivity)
+
+        rad = PrescribedRadiation(grid; ocean_surface = nothing,
+                                        sea_ice_surface = nothing,
+                                        land_surface)
+
+        @test rad.surface_properties.land.albedo isa Number
+        @test rad.surface_properties.land.emissivity isa Number
+        @test NumericalEarth.stateindex(rad.surface_properties.land.albedo, 1, 1, 1, grid, 0, nothing) == 0.15
+        @test NumericalEarth.stateindex(rad.surface_properties.land.emissivity, 1, 1, 1, grid, 0, nothing) == 0.93
+    end
+end
+
 @testset "PrescribedRadiation paired with model" begin
     for arch in test_architectures
         A = typeof(arch)
@@ -71,8 +90,7 @@ end
         A = typeof(arch)
         @info "Testing JRA55PrescribedRadiation on $A..."
 
-        backend = JRA55NetCDFBackend(2)
-        radiation = JRA55PrescribedRadiation(arch; backend)
+        radiation = JRA55PrescribedRadiation(arch; time_indices_in_memory=2)
 
         @test radiation isa PrescribedRadiation
         @test radiation.downwelling_shortwave isa FieldTimeSeries

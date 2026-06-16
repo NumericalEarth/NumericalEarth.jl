@@ -1,7 +1,8 @@
 using Oceananigans.Operators: Δzᶜᶜᶜ
-using NumericalEarth.EarthSystemModels: ocean_temperature, ocean_salinity
 using ClimaSeaIce.SeaIceThermodynamics: melting_temperature
 using ClimaSeaIce.SeaIceDynamics: x_momentum_stress, y_momentum_stress
+
+using ..EarthSystemModels: ocean_temperature, ocean_salinity
 
 """
     compute_sea_ice_ocean_fluxes!(coupled_model)
@@ -17,9 +18,11 @@ This function computes:
 The interface heat flux formulation is determined by `coupled_model.interfaces.sea_ice_ocean_interface.flux_formulation`.
 """
 function compute_sea_ice_ocean_fluxes!(coupled_model)
+    interface = coupled_model.interfaces.sea_ice_ocean_interface
+    isnothing(interface) && return nothing
+
     ocean = coupled_model.ocean
     sea_ice = coupled_model.sea_ice
-    interface = coupled_model.interfaces.sea_ice_ocean_interface
     ocean_properties = coupled_model.interfaces.ocean_properties
 
     compute_sea_ice_ocean_fluxes!(interface, ocean, sea_ice, ocean_properties)
@@ -70,9 +73,9 @@ function compute_sea_ice_ocean_fluxes!(interface, ocean, sea_ice, ocean_properti
     return nothing
 end
 
-@kernel function _compute_sea_ice_ocean_stress!(fluxes, 
-                                                grid, 
-                                                clock, 
+@kernel function _compute_sea_ice_ocean_stress!(fluxes,
+                                                grid,
+                                                clock,
                                                 ice_thickness,
                                                 ice_concentration,
                                                 sea_ice_u_velocity,
@@ -83,7 +86,7 @@ end
     τˣ = fluxes.x_momentum
     τʸ = fluxes.y_momentum
     Nz = size(grid, 3)
-    
+
     uˢⁱ = sea_ice_u_velocity
     vˢⁱ = sea_ice_v_velocity
     hˢⁱ = ice_thickness
@@ -121,7 +124,7 @@ end
 
     Nz = size(grid, 3)
     𝒬ᶠʳᶻ = fluxes.frazil_heat
-    𝒬ⁱⁿᵗ = fluxes.interface_heat
+    𝒬ⁱⁿ = fluxes.interface_heat
     Jˢ = fluxes.salt
     τˣ = fluxes.x_momentum
     τʸ = fluxes.y_momentum
@@ -175,12 +178,12 @@ end
     qᶠ = δ𝒬ᶠʳᶻ / ℰ
 
     @inbounds begin
-        Tᴺ  = Tᵒᶜ[i, j, Nz]               
-        Sᴺ  = Sᵒᶜ[i, j, Nz]               
-        Sˢⁱ = ice_salinity[i, j, 1]      
-        hˢⁱ = ice_thickness[i, j, 1]     
-        ℵᵢ  = ice_concentration[i, j, 1] 
-        hc  = ice_consolidation_thickness[i, j, 1] 
+        Tᴺ  = Tᵒᶜ[i, j, Nz]
+        Sᴺ  = Sᵒᶜ[i, j, Nz]
+        Sˢⁱ = ice_salinity[i, j, 1]
+        hˢⁱ = ice_thickness[i, j, 1]
+        ℵᵢ  = ice_concentration[i, j, 1]
+        hc  = ice_consolidation_thickness[i, j, 1]
     end
 
     # Extract internal temperature (for ConductiveFluxTEF, zero otherwise)
@@ -202,7 +205,7 @@ end
                                                    liquidus, ocean_properties, ℰ, u★)
 
     # Store interface values and heat flux
-    @inbounds 𝒬ⁱⁿᵗ[i, j, 1] = 𝒬ⁱᵒ
+    @inbounds 𝒬ⁱⁿ[i, j, 1] = 𝒬ⁱᵒ
     store_interface_state!(flux_formulation, T★, S★, i, j, Tᵦ, Sᵦ)
 
     # =============================================

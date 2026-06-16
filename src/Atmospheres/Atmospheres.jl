@@ -2,29 +2,23 @@ module Atmospheres
 
 export atmosphere_simulation, PrescribedAtmosphere, PrescribedPrecipitationFlux
 
-using Oceananigans
-using Oceananigans.Fields: Center
-using Oceananigans.Grids: grid_name, architecture, topology, Flat, prettysummary
-using Oceananigans.OutputReaders: FieldTimeSeries, update_field_time_series!, extract_field_time_series
-using Oceananigans.TimeSteppers: Clock, tick!
-using Oceananigans.Units: Time
-using Oceananigans.Utils
-
-using Adapt
-using Thermodynamics.Parameters: AbstractThermodynamicsParameters
+using Adapt: Adapt, adapt
 using KernelAbstractions: @kernel, @index
-using NumericalEarth.EarthSystemModels.InterfaceComputations: interface_kernel_parameters
+using Oceananigans: Oceananigans, prognostic_state, restore_prognostic_state!
+using Oceananigans.Architectures: architecture
+using Oceananigans.BoundaryConditions: FieldBoundaryConditions
+using Oceananigans.OrthogonalSphericalShellGrids: OrthogonalSphericalShellGrids
+using Oceananigans.Fields: Field, Face, Center
+using Oceananigans.Grids: grid_name, topology, Flat
+using Oceananigans.OutputReaders: FieldTimeSeries, update_field_time_series!, extract_field_time_series
+using Oceananigans.TimeSteppers: Clock, tick!, update_state!
+using Oceananigans.Units: Time
+using Oceananigans.Utils: Utils, prettysummary, launch!
+using Thermodynamics.Parameters: AbstractThermodynamicsParameters
 
-import Oceananigans.TimeSteppers: time_step!, update_state!
-
-import NumericalEarth.EarthSystemModels: interpolate_state!,
-                                         update_net_fluxes!,
-                                         thermodynamics_parameters,
-                                         surface_layer_height,
-                                         boundary_layer_height,
-                                         is_prescribed_atmosphere
-
-import NumericalEarth.EarthSystemModels.InterfaceComputations: ComponentExchanger, initialize!, net_fluxes
+using ...NumericalEarth: NumericalEarth
+using ..EarthSystemModels: EarthSystemModels, AbstractPrescribedComponent
+using ..EarthSystemModels.InterfaceComputations: interface_kernel_parameters, ComponentExchanger
 
 # Can be extended by atmosphere models
 function atmosphere_simulation end
@@ -34,7 +28,6 @@ include("prescribed_atmosphere.jl")
 include("prescribed_atmosphere_regridder.jl")
 include("interpolate_atmospheric_state.jl")
 
-net_fluxes(::PrescribedAtmosphere) = nothing
-is_prescribed_atmosphere(::PrescribedAtmosphere) = true
+EarthSystemModels.InterfaceComputations.net_fluxes(::PrescribedAtmosphere) = nothing
 
 end # module Atmospheres

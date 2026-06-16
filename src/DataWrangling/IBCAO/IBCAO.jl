@@ -2,19 +2,17 @@ module IBCAO
 
 export IBCAOv5
 
-using Downloads
-using Oceananigans
+using Downloads: Downloads
+using Oceananigans: Oceananigans
 using Oceananigans.DistributedComputations: @root
-using Scratch
-using NCDatasets
+using Scratch: Scratch, @get_scratch!
 
 using ..DataWrangling: DownloadProgress, Metadatum, metadata_path, AbstractStaticBathymetry
 
-import NumericalEarth.DataWrangling:
+import ..DataWrangling:
     metadata_filename,
     default_download_directory,
     dataset_variable_name,
-    download_dataset,
     longitude_interfaces,
     latitude_interfaces,
     reversed_vertical_axis,
@@ -77,7 +75,7 @@ function validate_dataset_coverage(grid, ::IBCAOMetadatum)
     end
 end
 
-function download_dataset(metadatum::IBCAOMetadatum)
+function Downloads.download(metadatum::IBCAOMetadatum)
     nc_path   = metadata_path(metadatum)
     tiff_path = joinpath(metadatum.dir, IBCAO_tiff_filename)
 

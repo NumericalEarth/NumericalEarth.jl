@@ -2,7 +2,7 @@
 ##### Prescribed atmosphere (as opposed to dynamically evolving / prognostic)
 #####
 
-mutable struct PrescribedAtmosphere{FT, G, T, U, P, C, F, TP, TI}
+mutable struct PrescribedAtmosphere{FT, G, T, U, P, C, F, TP, TI} <: AbstractPrescribedComponent
     grid :: G
     clock :: Clock{T}
     velocities :: U
@@ -29,9 +29,17 @@ function Base.show(io::IO, pa::PrescribedAtmosphere)
     print(io, "└── boundary_layer_height: ", prettysummary(pa.boundary_layer_height))
 end
 
+velocity_boundary_conditions(grid, loc) = FieldBoundaryConditions(grid, loc)
+
+function velocity_boundary_conditions(grid::OrthogonalSphericalShellGrids.TripolarGrid, loc)
+    north_bc = OrthogonalSphericalShellGrids.north_fold_boundary_condition(grid)(-1)
+    return FieldBoundaryConditions(grid, loc; north = north_bc)
+end
+
 function default_atmosphere_velocities(grid, times)
-    ua = FieldTimeSeries{Center, Center, Nothing}(grid, times)
-    va = FieldTimeSeries{Center, Center, Nothing}(grid, times)
+    velocity_bcs = velocity_boundary_conditions(grid, (Center(), Center(), nothing))
+    ua = FieldTimeSeries{Center, Center, Nothing}(grid, times; boundary_conditions = velocity_bcs)
+    va = FieldTimeSeries{Center, Center, Nothing}(grid, times; boundary_conditions = velocity_bcs)
     return (u=ua, v=va)
 end
 
@@ -50,7 +58,7 @@ Container for prescribed precipitation fluxes. Either component may be `nothing`
 to indicate that the corresponding precipitation type is not represented by the
 atmosphere (e.g. rain-only datasets). Used as the `freshwater_flux` of a
 `PrescribedAtmosphere`; downstream callers query the snow component via
-[`surface_snowfall_flux`](@ref) so that prognostic atmospheres with or without
+`surface_snowfall_flux` so that prognostic atmospheres with or without
 snow can dispatch on this type as well.
 """
 struct PrescribedPrecipitationFlux{R, S}
@@ -89,7 +97,7 @@ function default_atmosphere_pressure(grid, times)
     return pa
 end
 
-@inline function update_state!(atmos::PrescribedAtmosphere)
+@inline function Oceananigans.TimeSteppers.update_state!(atmos::PrescribedAtmosphere)
     time = Time(atmos.clock.time)
     ftses = extract_field_time_series(atmos)
 
@@ -99,7 +107,7 @@ end
     return nothing
 end
 
-@inline function time_step!(atmos::PrescribedAtmosphere, Δt)
+@inline function Oceananigans.TimeSteppers.time_step!(atmos::PrescribedAtmosphere, Δt)
     tick!(atmos.clock, Δt)
 
     update_state!(atmos)
@@ -107,13 +115,15 @@ end
     return nothing
 end
 
-@inline thermodynamics_parameters(atmos::Nothing) = nothing
-@inline thermodynamics_parameters(atmos::PrescribedAtmosphere) = atmos.thermodynamics_parameters
-@inline surface_layer_height(atmos::PrescribedAtmosphere) = atmos.surface_layer_height
-@inline boundary_layer_height(atmos::PrescribedAtmosphere) = atmos.boundary_layer_height
+@inline EarthSystemModels.thermodynamics_parameters(atmos::Nothing) = nothing
+@inline EarthSystemModels.thermodynamics_parameters(atmos::PrescribedAtmosphere) = atmos.thermodynamics_parameters
+@inline EarthSystemModels.surface_layer_height(atmos::PrescribedAtmosphere) = atmos.surface_layer_height
+@inline EarthSystemModels.boundary_layer_height(atmos::PrescribedAtmosphere) = atmos.boundary_layer_height
 
 # No need to compute anything here...
-update_net_fluxes!(coupled_model, ::PrescribedAtmosphere) = nothing
+EarthSystemModels.update_net_fluxes!(coupled_model, ::PrescribedAtmosphere) = nothing
+
+EarthSystemModels.adopt_clock(atmosphere::PrescribedAtmosphere, clock) = EarthSystemModels.reclock(atmosphere, clock)
 
 """
     PrescribedAtmosphere(grid, times=[zero(grid)];
@@ -126,12 +136,12 @@ update_net_fluxes!(coupled_model, ::PrescribedAtmosphere) = nothing
                          pressure        = default_atmosphere_pressure(grid, times),
                          freshwater_flux = default_freshwater_flux(grid, times))
 
-Return a representation of a prescribed time-evolving atmospheric
-state with data given at `times`.
+Return a prescribed, time-evolving atmospheric state with data on `grid` and at given `times`.
 
-Note: downwelling shortwave / longwave radiation is now part of the
-top-level `radiation` component (see `PrescribedRadiation`,
-`JRA55PrescribedRadiation`).
+!!! compat "Radiation component"
+    The downwelling shortwave / longwave radiation part of the top-level `radiation`
+    component (see [`Radiations.PrescribedRadiation`](@ref NumericalEarth.Radiations.PrescribedRadiation),
+    [`DataWrangling.JRA55.JRA55PrescribedRadiation`](@ref NumericalEarth.DataWrangling.JRA55.JRA55PrescribedRadiation)).
 """
 function PrescribedAtmosphere(grid, times=[zero(grid)];
                               clock = Clock{Float64}(time = 0),
@@ -167,16 +177,14 @@ end
 ##### Chekpointing
 #####
 
-import Oceananigans: prognostic_state, restore_prognostic_state!
-
-function prognostic_state(atmos::PrescribedAtmosphere)
+function Oceananigans.prognostic_state(atmos::PrescribedAtmosphere)
     return (; clock = prognostic_state(atmos.clock))
 end
 
-function restore_prognostic_state!(atmos::PrescribedAtmosphere, state)
+function Oceananigans.restore_prognostic_state!(atmos::PrescribedAtmosphere, state)
     restore_prognostic_state!(atmos.clock, state.clock)
     update_state!(atmos)
     return atmos
 end
 
-restore_prognostic_state!(atmos::PrescribedAtmosphere, ::Nothing) = atmos
+Oceananigans.restore_prognostic_state!(atmos::PrescribedAtmosphere, ::Nothing) = atmos

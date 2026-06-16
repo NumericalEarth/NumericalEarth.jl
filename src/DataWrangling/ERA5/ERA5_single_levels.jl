@@ -15,11 +15,11 @@ const ERA5_wave_variables = Set([
 #####
 
 # ERA5 reanalysis data available from 1940 to present (we use a practical range here)
-all_dates(::ERA5HourlySingleLevel,  var) = range(DateTime("1940-01-01"), stop=DateTime("2024-12-31"), step=Hour(1))
-all_dates(::ERA5MonthlySingleLevel, var) = range(DateTime("1940-01-01"), stop=DateTime("2024-12-01"), step=Month(1))
+DataWrangling.all_dates(::ERA5HourlySingleLevel,  var) = range(DateTime("1940-01-01"), stop=DateTime("2024-12-31"), step=Hour(1))
+DataWrangling.all_dates(::ERA5MonthlySingleLevel, var) = range(DateTime("1940-01-01"), stop=DateTime("2024-12-01"), step=Month(1))
 
 # ERA5 single-level data is a spatially 2-D dataset
-is_three_dimensional(::ERA5Metadata) = false
+DataWrangling.is_three_dimensional(::ERA5Metadata) = false
 
 function Base.size(::ERA5Dataset, variable)
     if variable in ERA5_wave_variables
@@ -59,6 +59,8 @@ ERA5_dataset_variable_names = Dict(
     :significant_wave_height         => "significant_height_of_combined_wind_waves_and_swell",
     :mean_wave_period                => "mean_wave_period",
     :mean_wave_direction             => "mean_wave_direction",
+    :geopotential                    => "geopotential",
+    :topography                      => "geopotential",
 )
 
 # NetCDF short variable names (what's actually in the downloaded files)
@@ -90,18 +92,33 @@ ERA5_netcdf_variable_names = Dict(
     :significant_wave_height         => "swh",
     :mean_wave_period                => "mwp",
     :mean_wave_direction             => "mwd",
+    :geopotential                    => "z",
+    :topography                      => "z",
 )
 
 # Variables available for download
-available_variables(::ERA5Dataset) = ERA5_dataset_variable_names
+DataWrangling.available_variables(::ERA5Dataset) = ERA5_dataset_variable_names
 
 # `dataset_variable_name` returns the short name as stored in the NetCDF file
 # (e.g. "t2m"). The CDS API catalog name (e.g. "2m_temperature") used in
 # download requests is accessed via the `ERA5_dataset_variable_names` dict
 # directly in `NumericalEarthCDSAPIExt`.
-dataset_variable_name(md::ERA5Metadata) = ERA5_netcdf_variable_names[md.name]
+DataWrangling.dataset_variable_name(md::ERA5Metadata) = ERA5_netcdf_variable_names[md.name]
 
-default_inpainting(md::ERA5Metadata) = nothing
+# Unit conversions applied at load time:
+# - `topography` divides the (surface) geopotential by g to give ERA5's model
+#   surface elevation in metres (`geopotential` is left in m² s⁻²);
+# - downwelling SW/LW are hourly-accumulated energy (J/m²) → mean flux (W/m²);
+# - total precipitation is an hourly-accumulated depth (m) → mass flux (kg/m²/s).
+function DataWrangling.conversion_units(md::ERA5Metadata)
+    md.name == :topography           && return InverseGravity()
+    md.name == :total_precipitation && return MetersPerHour()
+    md.name in (:downwelling_shortwave_radiation, :downwelling_longwave_radiation) &&
+        return JoulesPerSquareMeterPerHour()
+    return nothing
+end
+
+DataWrangling.default_inpainting(md::ERA5Metadata) = nothing
 
 """
     retrieve_data(metadata::ERA5Metadatum)
@@ -109,7 +126,7 @@ default_inpainting(md::ERA5Metadata) = nothing
 Retrieve ERA5 data from NetCDF file according to `metadata`.
 ERA5 is 2D surface data, so we return a 2D array with an added singleton z-dimension.
 """
-function retrieve_data(metadata::ERA5Metadatum)
+function DataWrangling.retrieve_data(metadata::ERA5Metadatum)
     path = metadata_path(metadata)
     name = dataset_variable_name(metadata)
 
