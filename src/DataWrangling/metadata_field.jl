@@ -60,6 +60,9 @@ function native_convention_longitude(bbox_longitude, native)
     return (λ⁻, λ⁻ + (bbox_longitude[2] - bbox_longitude[1]))
 end
 
+global_longitude(::Nothing) = true
+global_longitude(bbox::BoundingBox) = bbox_longitude[2] - bbox_longitude[1] == 360
+
 restrict_longitude(bbox_interfaces, interfaces, N) =
     restrict(bbox_interfaces, interfaces, N)
 
@@ -69,12 +72,9 @@ function restrict_longitude(bbox_interfaces, interfaces::NTuple{2,Any}, N)
     left, right = interfaces
     Δ = (right - left) / N
 
-    # Longitude bounding boxes may cross the native periodic seam after being
-    # mapped into the dataset's longitude convention, for example -110°..30°
-    # on ERA5's 0°..360° grid becomes 249.875°..389.875°. Preserve that
-    # continuous span (center-bracketed, see `restrict`) instead of clamping to
-    # the native upper face.
-    if bbox_interfaces[1] ≥ left && bbox_interfaces[2] > right
+    if bbox_longitude[2] - bbox_longitude[1] == 360
+        return bbox_interfaces, N
+    elseif bbox_interfaces[1] ≥ left && bbox_interfaces[2] > right
         i⁻ = max(floor(Int, (bbox_interfaces[1] - left) / Δ - 1/2), 0)
         i⁺ = ceil(Int, (bbox_interfaces[2] - left) / Δ + 1/2)
         return (left + i⁻ * Δ, left + i⁺ * Δ), i⁺ - i⁻

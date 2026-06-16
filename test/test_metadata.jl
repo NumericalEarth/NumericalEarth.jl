@@ -3,7 +3,7 @@ include("runtests_setup.jl")
 using NumericalEarth.DataWrangling: Column, Linear, Nearest,
                                     BoundingBox, dataset_location,
                                     restrict_location, native_grid
-using NumericalEarth.DataWrangling: restrict
+using NumericalEarth.DataWrangling: restrict, restrict_longitude
 using NumericalEarth.DataWrangling.ERA5: ERA5HourlySingleLevel
 
 using Oceananigans: location
@@ -41,6 +41,10 @@ end
     bbox = BoundingBox(longitude=(0, 10), latitude=(0, 10))
     @test restrict_location((Face, Center, Center), bbox) == (Face, Center, Center)
     @test restrict_location((Center, Center, Center), nothing) == (Center, Center, Center)
+
+    # Restrict location with (0, 360) longitude
+    bbox = BoundingBox(longitude=(0, 360), latitude=(0, 10))
+    @test restrict_longitude(bbox.longitude, (0, 360), Nx) == ((0, 360), Nx)
 end
 
 @testset "dataset_location fallback" begin
