@@ -44,7 +44,7 @@ end
 
     # Restrict location with (0, 360) longitude
     bbox = BoundingBox(longitude=(0, 360), latitude=(0, 10))
-    @test restrict_longitude(bbox.longitude, (0, 360), Nx) == ((0, 360), Nx)
+    @test restrict_longitude(bbox.longitude, (0, 360), 10) == ((0, 360), 10)
 end
 
 @testset "dataset_location fallback" begin
