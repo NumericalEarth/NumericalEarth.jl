@@ -1,4 +1,5 @@
 using Oceananigans.Grids: Center
+using GPUArraysCore: @allowscalar
 using Breeze.AtmosphereModels: thermodynamic_density
 using NumericalEarth.Atmospheres: AtmosphereThermodynamicsParameters
 using NumericalEarth.EarthSystemModels: component_model
@@ -26,10 +27,12 @@ NumericalEarth.EarthSystemModels.thermodynamics_parameters(atmos::BreezeAtmosphe
 #####
 
 # Height of the lowest atmospheric cell center (the "surface layer").
-# Note: for stretched grids on GPU, this may require allowscalar.
+# `zspacing` of the lowest cell reads a single device-array element on stretched or
+# terrain-following grids (GPU); `@allowscalar` permits that one scalar read.
 function NumericalEarth.EarthSystemModels.surface_layer_height(atmosphere::BreezeAtmosphere)
     grid = atmosphere.grid
-    return Oceananigans.zspacing(1, 1, 1, grid, Center(), Center(), Center()) / 2
+    Δz = @allowscalar Oceananigans.zspacing(1, 1, 1, grid, Center(), Center(), Center())
+    return Δz / 2
 end
 
 NumericalEarth.EarthSystemModels.surface_layer_height(atmos::BreezeAtmosphereSim) =
@@ -87,10 +90,19 @@ function NumericalEarth.EarthSystemModels.interpolate_state!(exchanger, exchange
     T = atmosphere.temperature
     ρqᵛᵉ = atmosphere.moisture_density
 
-    # Reference state (anelastic dynamics)
+    # Surface air density ρ₀ and pressure p₀. Anelastic dynamics expose a hydrostatic
+    # `reference_state` carrying both. Compressible (terrain-following) dynamics have
+    # `reference_state === nothing`; they instead carry a 3-D `terrain_reference_density`
+    # (whose surface level `[i, j, 1]` is what the interpolation kernel reads) and a scalar
+    # `surface_pressure`. Fall back to those so either atmosphere couples.
     ref = atmosphere.dynamics.reference_state
-    ρ₀ = ref.density
-    p₀ = ref.surface_pressure
+    if isnothing(ref)
+        ρ₀ = atmosphere.dynamics.terrain_reference_density
+        p₀ = atmosphere.dynamics.surface_pressure
+    else
+        ρ₀ = ref.density
+        p₀ = ref.surface_pressure
+    end
 
     arch = architecture(exchange_grid)
     kernel_parameters = interface_kernel_parameters(exchange_grid)
