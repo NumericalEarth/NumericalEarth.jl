@@ -169,6 +169,33 @@ grid = LatitudeLongitudeGrid(arch;
 # from the grid (no `terrain_metrics` argument required).
 
 elevation = regrid_topography(grid; dataset = ETOPO2022())
+
+# Terrain taper across the lateral relaxation fringe. The lateral BCs feed the child the
+# smooth ERA5 parent state, which assumes the surface sits at the parent orography; at the
+# west inflow edge the child ETOPO is up to +713 m above it, so the boundary-supplied
+# hydrostatic pressure is inconsistent with the child surface and discharges as a spurious
+# near-surface horizontal pressure-gradient force (the cold-start blow-up). Blend ETOPO →
+# parent orography over the first `N_taper` cells of every lateral edge so the boundary
+# terrain matches the parent (weight 0) and ramps to full ETOPO by the inner fringe edge.
+g_accel = Oceananigans.defaults.gravitational_acceleration
+orography_grid = LatitudeLongitudeGrid(longitude = (λ_west,  λ_east),
+                                       latitude  = (φ_south, φ_north),
+                                       z = (0, 1), size = (Nx, Ny, 1),
+                                       halo = (5, 5, 3), topology = (Bounded, Bounded, Bounded))
+Φ_sfc = CenterField(orography_grid)
+set!(Φ_sfc, Metadatum(:geopotential; dataset = ds_sl, date = start_date,
+                      region = era5_region, dir = era5_datadir))
+era5_orography = Array(interior(Φ_sfc))[:, :, 1] ./ g_accel
+
+N_taper = 5
+etopo_full = Array(interior(elevation))[:, :, 1]
+blended = similar(etopo_full)
+for j in 1:Ny, i in 1:Nx
+    weight = clamp(min(i - 1, Nx - i, j - 1, Ny - j) / N_taper, 0, 1)
+    blended[i, j] = weight * etopo_full[i, j] + (1 - weight) * era5_orography[i, j]
+end
+set!(elevation, reshape(blended, size(interior(elevation))))
+
 materialize_terrain!(grid, elevation)
 
 # Outer time step — defined here so the Davies relaxation timescale below can be tied to
