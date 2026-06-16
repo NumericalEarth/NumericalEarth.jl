@@ -69,7 +69,7 @@ function restrict_longitude(bbox_interfaces, interfaces::NTuple{2,Any}, N)
     left, right = interfaces
     Δ = (right - left) / N
 
-    if bbox_longitude[2] - bbox_longitude[1] == 360
+    if bbox_interfaces[2] - bbox_interfaces[1] == 360
         return interfaces, N
     elseif bbox_interfaces[1] ≥ left && bbox_interfaces[2] > right
         i⁻ = max(floor(Int, (bbox_interfaces[1] - left) / Δ - 1/2), 0)
