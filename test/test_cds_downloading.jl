@@ -655,7 +655,7 @@ end
 
         @testset "all paths missing: all pending, full plan populated" begin
             plan = CDSExt.plan_era5_month(:temperature, ds, [dt1, dt2];
-                                        region, dir=tmp, skip_existing=true)
+                                          region, dir=tmp, skip_existing=true)
             @test plan.dt_path_pairs == [(dt1, p1), (dt2, p2)]
             @test length(plan.pending) == 2
             @test plan.request !== nothing
@@ -671,7 +671,7 @@ end
         @testset "partial coverage: pending narrows to missing datetime" begin
             mkpath(dirname(p1)); touch(p1)
             plan = CDSExt.plan_era5_month(:temperature, ds, [dt1, dt2];
-                                        region, dir=tmp, skip_existing=true)
+                                          region, dir=tmp, skip_existing=true)
             @test length(plan.dt_path_pairs) == 2
             @test length(plan.pending) == 1
             @test plan.pending[1][1] == dt2
@@ -685,7 +685,7 @@ end
                 mkpath(dirname(p)); touch(p)
             end
             plan = CDSExt.plan_era5_month(:temperature, ds, [dt1, dt2];
-                                        region, dir=tmp, skip_existing=true)
+                                          region, dir=tmp, skip_existing=true)
             @test length(plan.dt_path_pairs) == 2
             @test isempty(plan.pending)
             @test plan.request   === nothing
@@ -698,7 +698,7 @@ end
             mkpath(dirname(p1)); touch(p1)
             mkpath(dirname(p2)); touch(p2)
             plan = CDSExt.plan_era5_month(:temperature, ds, [dt1, dt2];
-                                        region, dir=tmp, skip_existing=false)
+                                          region, dir=tmp, skip_existing=false)
             @test length(plan.pending) == 2
             @test plan.request !== nothing
             for p in (p1, p2); rm(p); end
@@ -721,7 +721,7 @@ end
 
         @testset "all missing: full plan with both names and times" begin
             plan = CDSExt.plan_era5_multivar_month(names, ds_pl, [dt1, dt2];
-                                                 region, dir=tmp, skip_existing=true)
+                                                   region, dir=tmp, skip_existing=true)
             @test length(plan.name_dt_paths) == 4   # 2 names × 2 datetimes
             @test length(plan.pending) == 4
             @test plan.request["time"] == ["00:00", "12:00"]
@@ -740,7 +740,7 @@ end
                 mkpath(dirname(p)); touch(p)
             end
             plan = CDSExt.plan_era5_multivar_month(names, ds_pl, [dt1, dt2];
-                                                 region, dir=tmp, skip_existing=true)
+                                                   region, dir=tmp, skip_existing=true)
             @test length(plan.pending) == 2
             @test all(p -> p[1] == :eastward_velocity, plan.pending)
             @test plan.request["variable"] == ["u_component_of_wind"]
@@ -754,7 +754,7 @@ end
                 mkpath(dirname(p)); touch(p)
             end
             plan = CDSExt.plan_era5_multivar_month(names, ds_pl, [dt1, dt2];
-                                                 region, dir=tmp, skip_existing=true)
+                                                   region, dir=tmp, skip_existing=true)
             @test length(plan.name_dt_paths) == 4
             @test isempty(plan.pending)
             @test plan.request   === nothing
@@ -771,7 +771,7 @@ end
                 mkpath(dirname(p)); touch(p)
             end
             plan = CDSExt.plan_era5_multivar_month(names, ds_pl, [dt1, dt2];
-                                                 region, dir=tmp, skip_existing=false)
+                                                   region, dir=tmp, skip_existing=false)
             @test length(plan.pending) == 4
             @test plan.request !== nothing
             for name in names, dt in (dt1, dt2); rm(expected_path(name, dt)); end
