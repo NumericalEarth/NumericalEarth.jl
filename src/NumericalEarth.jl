@@ -113,6 +113,7 @@ export
     DatasetRestoring,
     atmosphere_simulation,
     breeze_prognostic_state,
+    hydrostatic_pressure_from_surface,
     ocean_simulation,
     sea_ice_simulation,
     default_sea_ice,

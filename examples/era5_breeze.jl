@@ -332,11 +332,10 @@ pˢᵗ  = 1e5  # Pa
 # node heights, so the terrain-following child is sampled at its true physical
 # heights — no sigma-z workaround, no custom column interpolation.
 #
-# These regrids interpolate linearly in height between ERA5 levels. Within a layer
-# the hydrostatic z ↔ ln(p) relation is affine, and linear interpolation is invariant
-# under an affine change of the abscissa — so linear-in-z is identical to linear-in-
-# log-p for every quantity *except pressure itself*, which we interpolate in log-p
-# (see `regrid_pressure`) so it stays log-linear (hydrostatically consistent) in z.
+# These regrids interpolate linearly in height between ERA5 levels for T, qᵛ, qᶜ, qⁱ. Pressure
+# is NOT interpolated — over high terrain the sub-surface ERA5 levels clamp and corrupt the
+# near-surface state. Instead it is built by hydrostatic integration from the ERA5 surface
+# pressure (see `hydrostatic_pressure_from_surface`), keeping it in discrete hydrostatic balance.
 
 # --- Parent grid: ERA5 native (λ, φ), regular true-height z (no terrain) ---
 #
@@ -399,25 +398,6 @@ parent = PrescribedAtmosphere(parent_grid, parent_times; two_dimensional = false
 parent_series = NamedTuple(name => FieldTimeSeries{Center, Center, Center}(parent_grid, parent_times)
                            for name in (:qᶜ, :qⁱ, :ρ, :ρu, :ρv, :ρθ, :ρqᵉ, :θ, :qᵗ))
 
-# --- Regridded pressure coordinate ---
-# Pressure is the ERA5 vertical *coordinate*, not a stored field. `pressure_field`
-# returns the exact (time-constant) level values as a `(Nothing, Nothing, Center)`
-# field on the native grid. We regrid log(p) — so pressure interpolates log-linearly
-# in height, the hydrostatically-consistent choice and the one quantity for which
-# linear-in-z and linear-in-log-p differ — then exponentiate back onto `target_grid`.
-function regrid_pressure(metadatum, target_grid)
-    pf = pressure_field(metadatum, arch)
-    lnp_native = CenterField(pf.grid)
-    interior(lnp_native) .= log.(interior(pf))
-    fill_halo_regions!(lnp_native)
-    lnp = CenterField(target_grid)
-    interpolate!(lnp, lnp_native)  # terrain-aware: TFVD's `_node` resolves the physical `znode`
-    p = CenterField(target_grid)
-    interior(p) .= exp.(interior(lnp))
-    fill_halo_regions!(p)
-    return p
-end
-
 # --- ERA5 pressure-level primitives on the parent grid ---
 #
 # `FieldTimeSeries(metadata, parent_grid)` regrids the whole window at once. Its
@@ -436,13 +416,36 @@ qᵛ_series = parent_pl_series(:specific_humidity)
 qᶜ_series = parent_pl_series(:specific_cloud_liquid_water_content)
 qⁱ_series = parent_pl_series(:specific_cloud_ice_water_content)
 
-# Derive (ρ, θˡⁱ, qᵗ) per snapshot via `breeze_prognostic_state` and store the
-# specific (Davies-target) and density-weighted (lateral-BC) forms. Pressure isn't
-# an ERA5 field, so it's regridded per snapshot (same per-snapshot Φ as the series).
+# ERA5 surface pressure + orography on the parent horizontal, for the hydrostatic balance below.
+# Orography is time-constant; surface pressure is re-set per snapshot in the loop.
+parent_surface_grid = LatitudeLongitudeGrid(longitude = (λ_centers_era5[1]   - Δλ_e/2,
+                                                         λ_centers_era5[end] + Δλ_e/2),
+                                            latitude  = (φ_centers_era5[1]   - Δφ_e/2,
+                                                         φ_centers_era5[end] + Δφ_e/2),
+                                            z = (0, 1), size = (Nλ_e, Nφ_e, 1),
+                                            halo = (5, 5, 3), topology = (Bounded, Bounded, Bounded))
+Φ_sfc_parent = CenterField(parent_surface_grid)
+set!(Φ_sfc_parent, Metadatum(:geopotential; dataset = ds_sl, date = start_date,
+                             region = era5_region, dir = era5_datadir))
+parent_orography = Array(interior(Φ_sfc_parent))[:, :, 1] ./ g_accel
+p₀_parent = CenterField(parent_surface_grid)
+
+# Derive (ρ, θˡⁱ, qᵗ) per snapshot via `breeze_prognostic_state`, storing the specific
+# (Davies-target) and density-weighted (lateral-BC) forms. The pressure is built by hydrostatic
+# integration from the ERA5 surface pressure (`hydrostatic_pressure_from_surface`) rather than
+# interpolated — interpolation clamps the sub-surface levels over high terrain and yields a
+# spurious too-dense near-surface state that the lateral BCs would inject into the child.
+# TODO: this holds all parent snapshots resident; for production-length runs, recompute the
+# balance on a 2-snapshot streaming FieldTimeSeries (DatasetBackend pattern) to cut memory.
 for n in eachindex(dates)
     @info @sprintf("Deriving parent snapshot %d/%d at %s", n, length(dates), dates[n])
-    p_p = regrid_pressure(Metadatum(:temperature; dataset = ds_pl, date = dates[n],
-                                    region = era5_region, dir = era5_datadir), parent_grid)
+    set!(p₀_parent, Metadatum(:surface_pressure; dataset = ds_sl, date = dates[n],
+                              region = era5_region, dir = era5_datadir))
+    p_p = hydrostatic_pressure_from_surface(T_series[n], Array(interior(p₀_parent))[:, :, 1],
+                                            parent_orography;
+                                            qᵛ = qᵛ_series[n], qᶜ = qᶜ_series[n], qⁱ = qⁱ_series[n],
+                                            dry_gas_constant = Rᵈ, vapor_gas_constant = Rᵛ,
+                                            gravitational_acceleration = g_accel)
     state = breeze_prognostic_state(constants, T_series[n], qᵛ_series[n],
                                     qᶜ_series[n], qⁱ_series[n], p_p)
 
@@ -476,7 +479,6 @@ T  = CenterField(grid); set!(T,  initial_metadatum(:temperature))
 qᵛ = CenterField(grid); set!(qᵛ, initial_metadatum(:specific_humidity))
 qᶜ = CenterField(grid); set!(qᶜ, initial_metadatum(:specific_cloud_liquid_water_content))
 qⁱ = CenterField(grid); set!(qⁱ, initial_metadatum(:specific_cloud_ice_water_content))
-p  = regrid_pressure(initial_metadatum(:temperature), grid)
 
 # Calculate virtual temperature: Tᵛ = T·(1 + (1 − ε)/ε·qᵛ), ε = Rᵈ/Rᵛ.
 # Vapor only by convention — the qᶜ, qⁱ terms belong to the density temperature Tρ.
@@ -498,6 +500,15 @@ surface_grid = LatitudeLongitudeGrid(longitude = (λ_west,  λ_east),
 
 p₀ = CenterField(surface_grid)
 set!(p₀, Metadatum(:surface_pressure; dataset=ds_sl, meta_common_snap1...))
+
+# Hydrostatically-balanced initial pressure. Interpolating ERA5 pressure to the node heights
+# clamps the sub-surface levels over high terrain, leaving the cold-start IC out of the model's
+# discrete hydrostatic balance (a ~40 g vertical residual). Build `p` by integrating up from the
+# ERA5 surface pressure instead — anchored at each column's terrain surface, with the moist Rᵐ.
+p = hydrostatic_pressure_from_surface(T, Array(interior(p₀))[:, :, 1], era5_orography;
+                                      qᵛ = qᵛ, qᶜ = qᶜ, qⁱ = qⁱ,
+                                      dry_gas_constant = Rᵈ, vapor_gas_constant = Rᵛ,
+                                      gravitational_acceleration = g_accel)
 
 # ## Lateral boundary conditions and Davies relaxation
 #
@@ -869,7 +880,18 @@ function era5_winds_on_grid(nx, ny)
     vg = YFaceField(g);  set!(vg, initial_metadatum(:northward_velocity))
     Tg = CenterField(g); set!(Tg, initial_metadatum(:temperature))
     ωg = CenterField(g); set!(ωg, initial_metadatum(:vertical_velocity))
-    pg = regrid_pressure(initial_metadatum(:temperature), g)
+
+    # Hydrostatic pressure from the ERA5 surface pressure (dry — the ρ below already neglects the
+    # <1% vapor correction), anchored on g's terrain; gives a physical near-surface ρ over terrain.
+    sfc_grid_g = LatitudeLongitudeGrid(longitude = (λ_west, λ_east), latitude = (φ_south, φ_north),
+                                       z = (0, 1), size = (nx, ny, 1),
+                                       halo = (5, 5, 3), topology = (Bounded, Bounded, Bounded))
+    psfc_g = CenterField(sfc_grid_g); set!(psfc_g, Metadatum(:surface_pressure; dataset = ds_sl, meta_common_snap1...))
+    Φg     = CenterField(sfc_grid_g); set!(Φg,     Metadatum(:geopotential;     dataset = ds_sl, meta_common_snap1...))
+    pg = hydrostatic_pressure_from_surface(Tg, Array(interior(psfc_g))[:, :, 1],
+                                           Array(interior(Φg))[:, :, 1] ./ g_earth;
+                                           dry_gas_constant = Rᵈ, vapor_gas_constant = Rᵛ,
+                                           gravitational_acceleration = g_earth)
     wg = compute!(Field(-ωg / (pg / (Rᵈ * Tg) * g_earth)))
     return ug, vg, wg
 end

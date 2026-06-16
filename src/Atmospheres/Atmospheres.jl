@@ -1,6 +1,6 @@
 module Atmospheres
 
-export atmosphere_simulation, breeze_prognostic_state, PrescribedAtmosphere, PrescribedPrecipitationFlux
+export atmosphere_simulation, breeze_prognostic_state, hydrostatic_pressure_from_surface, PrescribedAtmosphere, PrescribedPrecipitationFlux
 
 using Adapt: Adapt, adapt
 using KernelAbstractions: @kernel, @index
@@ -27,6 +27,7 @@ function atmosphere_simulation end
 # prognostic fields. Extended by atmosphere models (see NumericalEarthBreezeExt).
 function breeze_prognostic_state end
 
+include("hydrostatic_pressure.jl")
 include("thermodynamic_parameters.jl")
 include("prescribed_atmosphere.jl")
 include("prescribed_atmosphere_regridder.jl")
