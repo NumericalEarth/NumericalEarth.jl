@@ -1,3 +1,6 @@
+using Statistics: median
+using Oceananigans.Grids: λnode, φnode
+using Oceananigans.Fields: fractional_x_index, fractional_y_index
 
 # Scratch space for cached regridded bathymetry files
 bathymetry_cache_dir::String = ""
@@ -10,24 +13,24 @@ end
 #####
 
 struct BathymetryRegridding
-    grid_type            :: String
-    grid_size            :: Tuple{Int, Int}
-    longitude            :: Tuple{Float64, Float64}
-    latitude             :: Tuple{Float64, Float64}
-    topology             :: Tuple{Symbol, Symbol}
-    float_type           :: Symbol
-    height_above_water   :: Union{Nothing, Float64}
-    minimum_depth        :: Float64
-    interpolation_passes :: Int
-    major_basins         :: Float64
-    dataset              :: String
+    grid_type          :: String
+    grid_size          :: Tuple{Int, Int}
+    longitude          :: Tuple{Float64, Float64}
+    latitude           :: Tuple{Float64, Float64}
+    topology           :: Tuple{Symbol, Symbol}
+    float_type         :: Symbol
+    height_above_water :: Union{Nothing, Float64}
+    minimum_depth      :: Float64
+    method             :: Any
+    major_basins       :: Float64
+    dataset            :: String
 end
 
 function BathymetryRegridding(grid, metadata;
-                              height_above_water = nothing,
-                              minimum_depth = 0,
-                              interpolation_passes = 1,
-                              major_basins = 1)
+                               height_above_water = nothing,
+                               minimum_depth = 0,
+                               method = Interpolate(1),
+                               major_basins = 1)
 
     Nx, Ny, _ = size(grid)
     TX, TY, _ = topology(grid)
@@ -46,23 +49,23 @@ function BathymetryRegridding(grid, metadata;
                                 Symbol(FT),
                                 haw,
                                 Float64(minimum_depth),
-                                Int(interpolation_passes),
+                                method,
                                 Float64(major_basins),
                                 dataset_name)
 end
 
 function Base.:(==)(a::BathymetryRegridding, b::BathymetryRegridding)
-    return a.grid_type            == b.grid_type &&
-           a.grid_size            == b.grid_size &&
-           a.longitude            == b.longitude &&
-           a.latitude             == b.latitude &&
-           a.topology             == b.topology &&
-           a.float_type           == b.float_type &&
-           a.height_above_water   == b.height_above_water &&
-           a.minimum_depth        == b.minimum_depth &&
-           a.interpolation_passes == b.interpolation_passes &&
-           a.major_basins         == b.major_basins &&
-           a.dataset              == b.dataset
+    return a.grid_type          == b.grid_type &&
+           a.grid_size          == b.grid_size &&
+           a.longitude          == b.longitude &&
+           a.latitude           == b.latitude &&
+           a.topology           == b.topology &&
+           a.float_type         == b.float_type &&
+           a.height_above_water == b.height_above_water &&
+           a.minimum_depth      == b.minimum_depth &&
+           a.method             == b.method &&
+           a.major_basins       == b.major_basins &&
+           a.dataset            == b.dataset
 end
 
 function Base.hash(c::BathymetryRegridding, h::UInt)
@@ -74,7 +77,7 @@ function Base.hash(c::BathymetryRegridding, h::UInt)
     h = hash(c.float_type, h)
     h = hash(c.height_above_water, h)
     h = hash(c.minimum_depth, h)
-    h = hash(c.interpolation_passes, h)
+    h = hash(c.method, h)
     h = hash(c.major_basins, h)
     h = hash(c.dataset, h)
     return h
@@ -133,10 +136,10 @@ end
                       height_above_water = nothing,
                       minimum_depth = 0,
                       major_basins = 1,
-                      interpolation_passes = 1,
+                      method = Interpolate(1),
                       cache = true)
 
-Return bathymetry that corresponds to  `metadata` onto `target_grid`.
+Return bathymetry that corresponds to `metadata` onto `target_grid`.
 
 Arguments
 =========
@@ -152,24 +155,11 @@ Keyword Arguments
 - `minimum_depth`: minimum depth for the shallow regions, defined as a positive value.
                    `h > - minimum_depth` is considered land. Default: 0.
 
-- `interpolation_passes`: regridding/interpolation passes. The bathymetry is interpolated in
-                          `interpolation_passes - 1` intermediate steps. The more the interpolation
-                          steps the smoother the final bathymetry becomes.
+- `method`: the regridding method to use. Currently supported:
 
-  Example
-  =======
-
-  Interpolating from a 400 x 200 grid to a 100 x 100 grid in 4 passes involves:
-
-  * 400 x 200 → 325 x 175
-  * 325 x 175 → 250 x 150
-  * 250 x 150 → 175 x 125
-  * 175 x 125 → 100 x 100
-
-  If _coarsening_ the original grid, linear interpolation in passes is equivalent to
-  applying a smoothing filter, with more passes increasing the strength of the filter.
-  If _refining_ the original grid, additional passes do not help and no intermediate
-  steps are performed.
+- `Interpolate(passes)` (default): interpolates the bathymetry from the native grid to the
+                                   target grid in `passes` successive steps. More passes produce a smoother result when
+                                    coarsening. See [`Interpolate`](@ref) for details.
 
 - `major_basins`: Number of "independent major basins", or fluid regions fully encompassed by land,
                   that are retained by [`remove_minor_basins!`](@ref). Basins are removed by order of size:
@@ -182,7 +172,7 @@ Keyword Arguments
 function regrid_bathymetry(target_grid, metadata;
                            height_above_water = nothing,
                            minimum_depth = 0,
-                           interpolation_passes = 1,
+                           method = Interpolate(1),
                            major_basins = 1,
                            cache = true)
 
@@ -190,7 +180,7 @@ function regrid_bathymetry(target_grid, metadata;
 
     config = BathymetryRegridding(target_grid, metadata;
                                   height_above_water, minimum_depth,
-                                  interpolation_passes, major_basins)
+                                  method, major_basins)
 
     # Try loading from cache
     if cache
@@ -208,7 +198,7 @@ function regrid_bathymetry(target_grid, metadata;
     target_z = _regrid_bathymetry(target_grid, metadata;
                                   height_above_water,
                                   minimum_depth,
-                                  interpolation_passes,
+                                  method,
                                   major_basins)
 
     # Save to cache
@@ -224,15 +214,8 @@ end
 function _regrid_bathymetry(target_grid, metadata;
                             height_above_water,
                             minimum_depth,
-                            interpolation_passes,
+                            method,
                             major_basins)
-    if isinteger(interpolation_passes)
-        interpolation_passes = convert(Int, interpolation_passes)
-    end
-
-    if interpolation_passes isa Nothing || !isa(interpolation_passes, Int) || interpolation_passes ≤ 0
-        return throw(ArgumentError("interpolation_passes has to be an integer ≥ 1"))
-    end
 
     arch = architecture(target_grid)
 
@@ -257,8 +240,7 @@ function _regrid_bathymetry(target_grid, metadata;
     set!(native_z, z_data)
     fill_halo_regions!(native_z)
 
-    target_z = interpolate_bathymetry_in_passes(native_z, target_grid;
-                                                passes = interpolation_passes)
+    target_z = _apply_regriding(method, native_z, target_grid)
 
     if minimum_depth > 0
         launch!(arch, target_grid, :xy, _enforce_minimum_depth!, target_z, minimum_depth)
@@ -290,7 +272,7 @@ Land surface elevation (m, ≥ 0) regridded onto `target_grid` — the topograph
 counterpart of [`regrid_bathymetry`](@ref) for land applications. Returns the
 positive part of the dataset's bottom height (the elevation over land), with
 ocean clamped to sea level (0). Accepts the same regridding keywords
-(`interpolation_passes`, etc.); there is no depth/`minimum_depth` notion.
+(`method`, etc.); there is no depth/`minimum_depth` notion.
 """
 function regrid_topography(target_grid; dataset = ETOPO2022(), kw...)
     elevation = regrid_bathymetry(target_grid; dataset, kw...)
@@ -303,7 +285,7 @@ end
 function regrid_bathymetry(target_grid::DistributedGrid, metadata;
                            height_above_water = nothing,
                            minimum_depth = 0,
-                           interpolation_passes = 1,
+                           method = Interpolate(1),
                            major_basins = 1,
                            cache = true)
 
@@ -314,7 +296,7 @@ function regrid_bathymetry(target_grid::DistributedGrid, metadata;
 
     config = BathymetryRegridding(global_grid, metadata;
                                   height_above_water, minimum_depth,
-                                  interpolation_passes, major_basins)
+                                  method, major_basins)
 
     # download uses @root internally; all ranks must call it
     download(metadata)
@@ -327,7 +309,7 @@ function regrid_bathymetry(target_grid::DistributedGrid, metadata;
         else
             bottom_field = _regrid_bathymetry(global_grid, metadata;
                                               height_above_water, minimum_depth,
-                                              interpolation_passes, major_basins)
+                                              method, major_basins)
             bh = Array(bottom_field.data[1:Nx, 1:Ny, 1])
             if cache
                 save_bathymetry_cache(config, bh)
@@ -361,59 +343,6 @@ end
     z = ifelse(active, min(z, -minimum_depth), z)
 
     @inbounds target_z[i, j, 1] = z
-end
-
-# Here we can either use `regrid!` (three dimensional version) or `interpolate!`.
-function interpolate_bathymetry_in_passes(native_z, target_grid;
-                                          passes = 10)
-
-    Nλt, Nφt = Nt = size(target_grid)
-    Nλn, Nφn = Nn = size(native_z)
-
-    # Interpolate in passes
-    latitude  = y_domain(native_z.grid)
-    longitude = x_domain(native_z.grid)
-
-    ΔNλ = floor((Nλn - Nλt) / passes)
-    ΔNφ = floor((Nφn - Nφt) / passes)
-
-    Nλ = [Nλn - ΔNλ * pass for pass in 1:passes-1]
-    Nφ = [Nφn - ΔNφ * pass for pass in 1:passes-1]
-
-    Nλ = Int[Nλ..., Nλt]
-    Nφ = Int[Nφ..., Nφt]
-
-    old_z  = native_z
-    TXt, _, _ = topology(target_grid)
-    _, TYn, _ = topology(native_z.grid)
-
-    Hx, Hy, Hz = Oceananigans.halo_size(native_z.grid)
-
-    @info "Interpolation passes of bathymetry size $(size(old_z)) onto a $(typeof(target_grid).name.wrapper) target grid of size $Nt:"
-    for pass = 1:passes - 1
-        new_size = (Nλ[pass], Nφ[pass], 1)
-        @info "    pass $pass to size $new_size"
-
-        new_grid = LatitudeLongitudeGrid(architecture(target_grid), Float32,
-                                         size = new_size,
-                                         latitude = (latitude[1],  latitude[2]),
-                                         longitude = (longitude[1], longitude[2]),
-                                         z = (0, 1),
-                                         topology = (TXt, TYn, Bounded),
-                                         halo = (Hx, Hy, Hz))
-
-        new_z = Field{Center, Center, Nothing}(new_grid)
-
-        interpolate!(new_z, old_z)
-        old_z = new_z
-    end
-
-    new_size = (Nλ[passes], Nφ[passes], 1)
-    @info "    pass $passes to size $new_size"
-    target_z = Field{Center, Center, Nothing}(target_grid)
-    interpolate!(target_z, old_z)
-
-    return target_z
 end
 
 """
@@ -534,4 +463,156 @@ function remove_minor_basins!(zb, keep_major_basins, core_size)
     zb[isnan.(labels)] .= 0
 
     return nothing
+end
+
+#####
+##### Regridding methods
+#####
+
+"""
+    Interpolate(; passes = 1)
+    Interpolate(passes)
+
+Regridding method that interpolates bathymetry in `passes` successive steps.
+
+The bathymetry is interpolated from the native resolution down to the target
+resolution in `passes - 1` intermediate grids. More passes produce a smoother
+result by acting as a repeated smoothing filter when coarsening. When refining,
+additional passes beyond 1 have no effect and no intermediate steps are created.
+
+# Example
+
+Interpolating from a 400×200 grid to a 100×100 grid with `passes = 4` involves:
+
+  * 400×200 → 325×175
+  * 325×175 → 250×150
+  * 250×150 → 175×125
+  * 175×125 → 100×100
+"""
+struct Interpolate
+    passes :: Int
+
+    function Interpolate(passes::Int)
+        passes ≥ 1 || throw(ArgumentError("Interpolate: passes must be ≥ 1, got $passes"))
+        return new(passes)
+    end
+end
+
+Interpolate(; passes = 1) = Interpolate(passes)
+
+Base.:(==)(a::Interpolate, b::Interpolate) = a.passes == b.passes
+
+# Here we can either use `regrid!` (three dimensional version) or `interpolate!`.
+function _apply_regriding(interpolate::Interpolate,
+                          native_z, target_grid)
+
+    passes = interpolate.passes
+
+    Nλt, Nφt = Nt = size(target_grid)
+    Nλn, Nφn = Nn = size(native_z)
+
+    # Interpolate in passes
+    latitude  = y_domain(native_z.grid)
+    longitude = x_domain(native_z.grid)
+
+    ΔNλ = floor((Nλn - Nλt) / passes)
+    ΔNφ = floor((Nφn - Nφt) / passes)
+
+    Nλ = [Nλn - ΔNλ * pass for pass in 1:passes-1]
+    Nφ = [Nφn - ΔNφ * pass for pass in 1:passes-1]
+
+    Nλ = Int[Nλ..., Nλt]
+    Nφ = Int[Nφ..., Nφt]
+
+    old_z  = native_z
+    TXt, _, _ = topology(target_grid)
+    _, TYn, _ = topology(native_z.grid)
+
+    Hx, Hy, Hz = Oceananigans.halo_size(native_z.grid)
+
+    @info "Interpolation passes of bathymetry size $(size(old_z)) onto a $(typeof(target_grid).name.wrapper) target grid of size $Nt:"
+    for pass = 1:passes - 1
+        new_size = (Nλ[pass], Nφ[pass], 1)
+        @info "    pass $pass to size $new_size"
+
+        new_grid = LatitudeLongitudeGrid(architecture(target_grid), Float32,
+                                         size = new_size,
+                                         latitude = (latitude[1],  latitude[2]),
+                                         longitude = (longitude[1], longitude[2]),
+                                         z = (0, 1),
+                                         topology = (TXt, TYn, Bounded),
+                                         halo = (Hx, Hy, Hz))
+
+        new_z = Field{Center, Center, Nothing}(new_grid)
+
+        interpolate!(new_z, old_z)
+        old_z = new_z
+    end
+
+    new_size = (Nλ[passes], Nφ[passes], 1)
+    @info "    pass $passes to size $new_size"
+    target_z = Field{Center, Center, Nothing}(target_grid)
+    interpolate!(target_z, old_z)
+
+    return target_z
+end
+
+struct MedianAveraging end
+
+function _apply_regriding(::MedianAveraging,
+                          native_z, target_grid)
+
+    native_grid = native_z.grid
+    target_z = Field{Center, Center, Nothing}(target_grid)
+
+    launch!(architecture(target_grid),
+            target_grid,
+            :xy, 
+            compute_median!,
+            target_z,
+            native_z,
+            target_grid,
+            native_grid)
+
+    return target_z
+end
+
+@kernel function compute_median!(target_z, native_z, target_grid, bathymetry_native_grid)
+    i, j = @index(Global, NTuple)
+
+    Nx = bathymetry_native_grid.Nx
+
+    λl = λnode(i,   j, target_grid, Face(), Center())
+    λr = ifelse(j == target_grid.Ny, 
+                λnode(i+1, j-1, target_grid, Face(), Center()), 
+                λnode(i+1, j, target_grid, Face(), Center()))
+    φl = φnode(i,   j, target_grid, Center(), Face())
+    φr = ifelse(j == target_grid.Ny, 
+                φnode(i+1, j-1, target_grid, Center(), Face()), 
+                φnode(i, j+1, target_grid, Center(), Face()))
+
+    φl, φr = ifelse(j == target_grid.Ny, 
+                    (min(φr, φl), max(φr, φl)), 
+                    (φl, φr))
+
+    locs = (Center(), Center(), Center())
+    
+    # assuming a regularly spaced lat/lon grid for the native
+    i0 = floor(Int, fractional_x_index(λl, locs, bathymetry_native_grid)) + 1
+    i1 = floor(Int, fractional_x_index(λr, locs, bathymetry_native_grid))
+    is = i0:i1
+
+    js = floor(Int, fractional_y_index(φl, locs, bathymetry_native_grid)) + 1:floor(Int, fractional_y_index(φr, locs, bathymetry_native_grid))
+
+    if i1 < i0 # on the fold
+        native_zs = @inbounds [native_z[floor(Int, fractional_x_index(λl, locs, bathymetry_native_grid)) + 1:Nx, js, 1]..., 
+                               native_z[1:floor(Int, fractional_x_index(λr, locs, bathymetry_native_grid)), js, 1]...]
+    else
+        native_zs = @inbounds native_z[is, js, 1]
+    end
+
+    # happens at fold point - has to be branching so we don't compute the median of an empty array
+    @inbounds target_z[i, j, 1] = isempty(native_zs) ? zero(target_grid) : median(native_zs) 
+
+    nothing
 end
