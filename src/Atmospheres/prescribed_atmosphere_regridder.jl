@@ -1,16 +1,19 @@
-function EarthSystemModels.InterfaceComputations.ComponentExchanger(atmosphere::PrescribedAtmosphere, grid)
-
+function EarthSystemModels.InterfaceComputations.ComponentExchanger(atmosphere::PrescribedAtmosphere, grid;
+                                                                    correction = nothing)
     regridder = atmosphere_regridder(atmosphere, grid)
 
-    state = (; u   = Field{Center, Center, Nothing}(grid),
-               v   = Field{Center, Center, Nothing}(grid),
+    velocity_bcs = velocity_boundary_conditions(grid, (Center(), Center(), nothing))
+
+    state = (; u   = Field{Center, Center, Nothing}(grid; boundary_conditions = velocity_bcs),
+               v   = Field{Center, Center, Nothing}(grid; boundary_conditions = velocity_bcs),
                T   = Field{Center, Center, Nothing}(grid),
                p   = Field{Center, Center, Nothing}(grid),
                q   = Field{Center, Center, Nothing}(grid),
                Jʳⁿ = Field{Center, Center, Nothing}(grid),
                Jˢⁿ = Field{Center, Center, Nothing}(grid))
 
-    return ComponentExchanger(state, regridder)
+    correction = EarthSystemModels.InterfaceComputations.materialize_correction(correction, grid, atmosphere)
+    return ComponentExchanger(state, regridder, correction)
 end
 
 # Note that Field location can also affect fractional index type.

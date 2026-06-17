@@ -132,12 +132,12 @@ set!(sea_ice.model, mset)   # picks up :sea_ice_thickness, :sea_ice_concentratio
 Variables absent from `variable_glossary` are silently skipped (lets one set partially drive each
 component without manual filtering).
 
-### Building `Field`s and `FieldTimeSeries` in bulk
+### Building `Field`s in bulk
 
-`Field(mset, arch=CPU(); kw...)` and `FieldTimeSeries(mset, arch_or_grid; kw...)` build a
-`NamedTuple` keyed by the variable names, with each value materialized from the underlying
-per-variable `Metadata`. `Field` requires a scalar `date` (one snapshot per variable); for
-multi-date sets, use `FieldTimeSeries`:
+`Field(mset, arch=CPU(); kw...)` builds a `NamedTuple` keyed by the variable names, with each
+value materialized from the underlying per-variable `Metadata`. It requires a scalar `date`
+(one snapshot per variable). For a multi-date set, build a `NamedTuple` of `FieldTimeSeries`
+explicitly — one per variable — with a comprehension over `mset.names`:
 
 ```@example metadata
 fields = Field(mset)              # (; temperature = Field, salinity = Field)
@@ -145,7 +145,7 @@ fields.temperature
 ```
 
 ```@example metadata
-fts = FieldTimeSeries(mset_ts)    # NamedTuple of FieldTimeSeries, one per variable
+fts = NamedTuple(name => FieldTimeSeries(mset_ts[name]) for name in mset_ts.names)
 fts.temperature[1]                # first temperature snapshot, as a Field
 ```
 
@@ -191,3 +191,6 @@ NumericalEarth currently ships connectors for the following data products:
 | **Regional observations** |                                                    |                                                                                                     |
 | `OSPapaHourly`     | ocean profiles, near-surface meteorology, and currents    | [Ocean Station Papa dataset](https://www.pmel.noaa.gov/ocs/Papa)                                   |
 | `OSPapaFluxHourly` | air-sea fluxes, stresses, evaporation, precipitation, and skin temperature | [Ocean Station Papa flux dataset](https://www.pmel.noaa.gov/ocs/Papa) |
+| **Land** |                                                    |                                                                                                     |
+| `SoilGrids 2.0`     | Global profiles of soil texture, bulk density, and organic content in upper 2 meters  | [SoilGrids documentation](https://docs.isric.org/globaldata/soilgrids/)                                   |
+

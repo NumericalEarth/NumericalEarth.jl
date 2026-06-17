@@ -19,7 +19,6 @@ function compute_atmosphere_ocean_fluxes!(coupled_model)
     grid = exchanger.grid
     arch = architecture(grid)
     clock = coupled_model.clock
-    ocean_state = exchanger.ocean.state
     # Simplify NamedTuple to reduce parameter space consumption.
     # See https://github.com/CliMA/NumericalEarth.jl/issues/116.
     atmosphere_data = atmosphere_ocean_data(coupled_model)
@@ -30,6 +29,7 @@ function compute_atmosphere_ocean_fluxes!(coupled_model)
     interface_properties = coupled_model.interfaces.atmosphere_ocean_interface.properties
     ocean_properties = coupled_model.interfaces.ocean_properties
     atmosphere_properties = atmosphere_ocean_properties(coupled_model)
+    ocean_state = assemble_interior_fields(exchanger.ocean.state, interface_properties.temperature_formulation)
 
     # Radiation state for the interface solve (used by SkinTemperature).
     # When `radiation === nothing` these are `nothing`s and the getter
@@ -59,6 +59,23 @@ function compute_atmosphere_ocean_fluxes!(coupled_model)
     return nothing
 end
 
+@inline function assemble_interior_state(i, j, kᴺ, grid, interior_state, ocean_properties, temperature_formulation)
+    @inbounds begin
+        uᵒᶜ = ℑxᶜᵃᵃ(i, j, kᴺ, grid, interior_state.u)
+        vᵒᶜ = ℑyᵃᶜᵃ(i, j, kᴺ, grid, interior_state.v)
+        Tᵒᶜ = interior_state.T[i, j, kᴺ]
+        Tᵒᶜ = convert_to_kelvin(ocean_properties.temperature_units, Tᵒᶜ)
+        Sᵒᶜ = interior_state.S[i, j, kᴺ]
+    end
+    return (u=uᵒᶜ, v=vᵒᶜ, T=Tᵒᶜ, S=Sᵒᶜ)
+end
+
+@inline function assemble_interior_state(i, j, kᴺ, grid, interior_state, ocean_properties, ::IDST)
+    Ψᵢ = assemble_interior_state(i, j, kᴺ, grid, interior_state, ocean_properties, nothing)
+    κ  = @inbounds interior_state.κ[i, j, 1]
+    return merge(Ψᵢ, (; κ))
+end
+
 """ Compute turbulent fluxes between an atmosphere and an interface state using similarity theory """
 @kernel function _compute_atmosphere_ocean_interface_state!(interface_fluxes,
                                                             interface_temperature,
@@ -83,13 +100,6 @@ end
         Tᵃᵗ = atmosphere_state.T[i, j, 1]
         pᵃᵗ = atmosphere_state.p[i, j, 1]
         qᵃᵗ = atmosphere_state.q[i, j, 1]
-
-        # Ocean state at cell centers
-        uᵒᶜ = ℑxᶜᵃᵃ(i, j, kᴺ, grid, interior_state.u)
-        vᵒᶜ = ℑyᵃᶜᵃ(i, j, kᴺ, grid, interior_state.v)
-        Tᵒᶜ = interior_state.T[i, j, kᴺ]
-        Tᵒᶜ = convert_to_kelvin(ocean_properties.temperature_units, Tᵒᶜ)
-        Sᵒᶜ = interior_state.S[i, j, kᴺ]
     end
 
     # Build thermodynamic and dynamic states in the atmosphere and interface.
@@ -104,7 +114,12 @@ end
                               q = qᵃᵗ,
                               h_bℓ = atmosphere_state.h_bℓ)
 
-    local_interior_state = (u=uᵒᶜ, v=vᵒᶜ, T=Tᵒᶜ, S=Sᵒᶜ)
+    local_interior_state = assemble_interior_state(i, j, kᴺ, grid, interior_state, ocean_properties, interface_properties.temperature_formulation)
+
+    uᵒᶜ = local_interior_state.u
+    vᵒᶜ = local_interior_state.v
+    Tᵒᶜ = local_interior_state.T
+    Sᵒᶜ = local_interior_state.S
 
     # Local radiative state at this cell. Returns zero-valued state when
     # radiation is off.
@@ -119,7 +134,7 @@ end
     # Estimate interface specific humidity using interior temperature
     q_formulation = interface_properties.specific_humidity_formulation
     qₛ = surface_specific_humidity(q_formulation, ℂᵃᵗ, pᵃᵗ, Tᵒᶜ, Sᵒᶜ)
-    initial_interface_state = InterfaceState(u★, u★, u★, uᵒᶜ, vᵒᶜ, Tᵒᶜ, Sᵒᶜ, qₛ)
+    initial_interface_state = AirSeaInterfaceState(u★, u★, u★, uᵒᶜ, vᵒᶜ, Tᵒᶜ, Sᵒᶜ, qₛ)
 
     # Don't use convergence criteria in an inactive cell
     stop_criteria = turbulent_flux_formulation.solver_stop_criteria
@@ -142,9 +157,9 @@ end
     # In the case of FixedIterations, make sure interface state is zero'd
     interface_state = ifelse(not_water, zero_interface_state(FT), interface_state)
 
-    u★ = interface_state.u★
-    θ★ = interface_state.θ★
-    q★ = interface_state.q★
+    u★ = interface_state.fluxes.u★
+    θ★ = interface_state.fluxes.θ★
+    q★ = interface_state.fluxes.q★
 
     Ψₛ = interface_state
     Ψₐ = local_atmosphere_state
@@ -173,7 +188,7 @@ end
         Jᵛ[i, j, 1]  = - ρᵃᵗ * u★ * q★
         ρτˣ[i, j, 1] = + ρᵃᵗ * τˣ
         ρτʸ[i, j, 1] = + ρᵃᵗ * τʸ
-        Ts[i, j, 1]  = convert_from_kelvin(ocean_properties.temperature_units, Ψₛ.T)
+        Ts[i, j, 1]  = convert_from_kelvin(ocean_properties.temperature_units, Ψₛ.temperature)
 
         interface_fluxes.friction_velocity[i, j, 1] = u★
         interface_fluxes.temperature_scale[i, j, 1] = θ★

@@ -93,7 +93,7 @@ function build_era5_request(name_or_names, dataset, datetimes; region)
 
     extra_request_keys!(request, dataset)
 
-    area = build_era5_area(region)
+    area = era5_request_area(region, dataset, first(names))
     isnothing(area) || (request["area"] = area)
 
     return request
@@ -420,15 +420,15 @@ end
 Download one or more ERA5 variables at a single datetime.
 """
 function Downloads.download(names::Vector{Symbol}, dataset::ERA5Dataset, datetime;
-                                                       region = nothing,
-                                                       dir = default_download_directory(dataset))
+                            region = nothing,
+                            dir = default_download_directory(dataset))
     meta = Metadatum(first(names); dataset, date=datetime, region, dir)
     return Downloads.download(names, meta)
 end
 
 function Downloads.download(name::Symbol, dataset::ERA5Dataset, datetime;
-                                                       region = nothing,
-                                                       dir = default_download_directory(dataset))
+                            region = nothing,
+                            dir = default_download_directory(dataset))
     return Downloads.download([name], dataset, datetime; region, dir)
 end
 
@@ -438,12 +438,12 @@ end
 Download one or more ERA5 variables for multiple datetimes, batching by calendar day.
 """
 function Downloads.download(names::Vector{Symbol},
-                                                       dataset::ERA5Dataset,
-                                                       datetimes::AbstractVector;
-                                                       region = nothing,
-                                                       dir = default_download_directory(dataset),
-                                                       skip_existing = true,
-                                                       cleanup = true)
+                            dataset::ERA5Dataset,
+                            datetimes::AbstractVector;
+                            region = nothing,
+                            dir = default_download_directory(dataset),
+                            skip_existing = true,
+                            cleanup = true)
 
     batches = batch_datetimes_for_cds(datetimes, dataset, length(names))
 
@@ -458,12 +458,12 @@ function Downloads.download(names::Vector{Symbol},
 end
 
 function Downloads.download(name::Symbol,
-                                                       dataset::ERA5Dataset,
-                                                       datetimes::AbstractVector;
-                                                       region = nothing,
-                                                       dir = default_download_directory(dataset),
-                                                       skip_existing = true,
-                                                       cleanup = true)
+                            dataset::ERA5Dataset,
+                            datetimes::AbstractVector;
+                            region = nothing,
+                            dir = default_download_directory(dataset),
+                            skip_existing = true,
+                            cleanup = true)
     return Downloads.download([name], dataset, datetimes; region, dir, skip_existing, cleanup)
 end
 
@@ -660,6 +660,27 @@ const BBOX = NumericalEarth.DataWrangling.BoundingBox
 const COL  = NumericalEarth.DataWrangling.Column
 const LIN  = NumericalEarth.DataWrangling.Linear
 const NR   = NumericalEarth.DataWrangling.Nearest
+
+# Columns and unbounded regions: the area is a pure function of the region.
+era5_request_area(region, dataset, name) = build_era5_area(region)
+
+# Bounding box: the native grid is built by center-bracketing `restrict`, which
+# can reach one cell past a boundary-aligned edge. Fetch two native cells of
+# margin (in the bbox's own longitude convention) so the downloaded file always
+# covers the grid the data is interpolated onto — otherwise downscaling leaves
+# NaNs at the domain edges. Over-fetching is harmless: `restrict` selects the
+# exact cells from the larger file.
+function era5_request_area(bbox::BBOX, dataset, name)
+    (isnothing(bbox.longitude) || isnothing(bbox.latitude)) && return nothing
+    Nx, Ny, _ = size(dataset, name)
+    Δλ = 360 / Nx
+    Δφ = 180 / Ny
+    lon = bbox.longitude
+    lat = bbox.latitude
+    padded = BBOX(longitude = (lon[1] - 2Δλ, lon[2] + 2Δλ),
+                  latitude  = (max(lat[1] - 2Δφ, -90), min(lat[2] + 2Δφ, 90)))
+    return build_era5_area(padded)
+end
 
 function build_era5_area(bbox::BBOX)
     lon = bbox.longitude
