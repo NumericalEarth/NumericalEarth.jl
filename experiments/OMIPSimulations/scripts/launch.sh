@@ -23,6 +23,7 @@ Usage: ./launch.sh <config> [extra sbatch args...]
 
 Configurations:
   halfdegree      Half-degree TripolarGrid
+  quarterdegree   1/4-degree TripolarGrid (2 GPUs)
   orca            ORCA grid
   tenthdegree     1/10-degree TripolarGrid (4 GPUs)
 
@@ -133,6 +134,9 @@ case "$CONFIG" in
     halfdegree|half_degree)
         CONFIG="halfdegree"
         ;;
+    quarterdegree|quarter_degree)
+        CONFIG="quarterdegree"
+        ;;
     orca|tenthdegree) ;;
     -h|--help)
         usage
@@ -154,6 +158,18 @@ case "$CONFIG" in
         EXTRA_USING=""; FILE_SPLIT=""
         RUN_CMD="sim.stop_time = 300 * 365days
 run!(sim, pickup=:latest)"
+        ;;
+    quarterdegree)
+        DEFAULT_KSKEW=0;    DEFAULT_KSYMM=0;   NZ=100; DEFAULT_DT="20minutes"; DEFAULT_DZ_TOP="1.5"
+        DEFAULT_BIHARMONIC="nothing"; ARCH="Distributed(GPU(), partition=Partition(1, 2))"; GPUS_PER_NODE=2
+        EXTRA_USING="using Oceananigans.DistributedComputations"
+        FILE_SPLIT=""
+        RUN_CMD="sim.stop_time = 365days
+run!(sim)
+
+sim.Δt = 30minutes
+sim.stop_time = 300 * 365days
+run!(sim; pickup = true)"
         ;;
     orca)
         DEFAULT_KSKEW=500;  DEFAULT_KSYMM=250; NZ=70;  DEFAULT_DT="20minutes"; DEFAULT_DZ_TOP="1.5"
