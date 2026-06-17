@@ -18,8 +18,6 @@
 # (the coupled system).
 #
 # The ConservativeRegridding.jl package is used to regrid fields between the atmosphere and ocean--sea ice components.
-ENV["ECCO_USERNAME"] = "maximiliangelbrecht"
-ENV["ECCO_WEBDAV_PASSWORD"] = "UT2vXAPMOV04qCZV@9D"
 
 using Oceananigans, SpeedyWeather, Terrarium, NumericalEarth, ConservativeRegridding
 using NCDatasets, CairoMakie
