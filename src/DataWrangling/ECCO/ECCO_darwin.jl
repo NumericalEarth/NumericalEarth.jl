@@ -130,7 +130,7 @@ function DataWrangling.retrieve_data(metadata::Metadatum{<:Union{ECCO4DarwinMont
     native_grid_coords = GridLoad(native_grid; option="full")
 
     # Check if the interpolation coefficients are already calculated
-    interp_file = joinpath(dirname(metadata_path(metadata)),"native_interp_coeffs.jld2")
+    interp_file = joinpath(dirname(metadata_path(metadata)), "native_interp_coeffs.jld2")
     if !isfile(interp_file)
         # Calculate coefficients to interpolate from native grid to regular lat-lon grid (as in the ECCO netcdf files)
         resolution_X = 360/Nx
@@ -156,13 +156,20 @@ function DataWrangling.retrieve_data(metadata::Metadatum{<:Union{ECCO4DarwinMont
 
     # Interpolate each masked layer on to the native lat lon grid
     for k in 1:Nz
+        # mash immersed values
+        meshed_data_k = meshed_data[:, k]
+        land_mask_k = land_mask(native_grid_fac_center[:, k])
+        for p in 1:size(meshed_data_k, 1)
+            meshed_data_k[p][isnan.(land_mask_k[p])] .= NaN
+        end
+
         i, j, c = MeshArrays.Interpolate(
-            meshed_data[:, k],
+            meshed_data_k,
             coeffs,
         )
         data[:, :, k] = c
         i, j, c = MeshArrays.Interpolate(
-            land_mask(native_grid_fac_center[:, k]),
+            land_mask_k,
             coeffs,
         )
         mask[:, :, k] = c
