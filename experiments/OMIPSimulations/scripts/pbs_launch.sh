@@ -25,16 +25,23 @@ export JULIA_NUM_PRECOMPILE_TASKS=64
 export JULIA_NUM_THREADS=64
 
 module --force purge
-module load ncarenv cuda cray-mpich
+# cray-mpich is hierarchical on Derecho: it needs ncarenv + a compiler (nvhpc) loaded first.
+# Pin exact versions so the batch stack matches the one CUDA.jl was set_runtime_version!'d against
+# (local CUDA 12.9 toolkit; see LocalPreferences.toml in the project).
+module load ncarenv/25.10 nvhpc/26.1 cuda/12.9.0 cray-mpich/8.1.32
 
 export MPICH_GPU_SUPPORT_ENABLED=1
 export JULIA_MPI_HAS_CUDA=true
 export PALS_TRANSFER=false
 export JULIA_CUDA_MEMORY_POOL=none
 
+# cray-mpich dlopen'd by MPI.jl does not auto-link the GPU Transport Layer, so with
+# MPICH_GPU_SUPPORT_ENABLED=1 it aborts ("GTL library is not linked") unless we preload it.
+export LD_PRELOAD="$CRAY_MPICH_ROOTDIR/gtl/lib/libmpi_gtl_cuda.so${LD_PRELOAD:+:$LD_PRELOAD}"
+
 # ── Inputs ───────────────────────────────────────────────────────────────
 RUN_NAME="${RUN_NAME:-tenthdegree}"
-JULIA="${JULIA:-$HOME/julia-1.12.5/bin/julia}"
+JULIA="${JULIA:-$HOME/software/julia-1.12.6/bin/julia}"
 JULIA_THREADS="${JULIA_THREADS:-16}"
 
 # ── Julia simulation expression (tenth-degree on 1×8 distributed GPUs) ────
