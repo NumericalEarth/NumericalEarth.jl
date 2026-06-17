@@ -25,7 +25,7 @@ export JULIA_NUM_PRECOMPILE_TASKS=64
 export JULIA_NUM_THREADS=64
 
 module --force purge
-module load ncarenv nvhpc cuda cray-mpich
+module load ncarenv cuda cray-mpich
 
 export MPICH_GPU_SUPPORT_ENABLED=1
 export JULIA_MPI_HAS_CUDA=true
