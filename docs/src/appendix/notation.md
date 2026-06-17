@@ -1,39 +1,33 @@
 # Notation
 
 This page summarizes the mathematical and code notation used in NumericalEarth.jl,
-following the conventions established in [Breeze.jl](https://github.com/CliMA/Breeze.jl).
+following the conventions established in [Breeze.jl](https://github.com/NumericalEarth/Breeze.jl).
 
 ## How the notation works
 
-Variable names are built by combining a **base symbol** with **superscripts**
-and, occasionally, a short plain-text **tag**.
+Variable names are built by combining a **base symbol** with **superscripts** and, occasionally, a short plain-text **tag**.
 
-**Base symbols** are single characters (often script letters) that identify the
-physical category of a quantity — for example, `𝒬` for heat flux, `ℐ` for
-radiative intensity, `J` for mass flux, and `τ` for kinematic momentum flux.
+**Base symbols** are single characters (often script letters) that identify the physical category of a quantity — for example, `𝒬` for heat flux, `ℐ` for radiative intensity, `J` for mass flux, and `τ` for kinematic momentum flux.
 
 **Superscripts** refine the meaning in several ways:
 
 - _Phase or species_: `ᵛ` (vapor), `ˡ` (liquid), `ⁱ` (ice), `ᶜ` (condensate)
-- _Component_: `ᵃᵗ` (atmosphere), `ᵒᶜ` (ocean), `ˢⁱ` (sea ice), `ˡᵈ` (land)
+- _Component_: `ᵃᵗ` (atmosphere), `ᵒᶜ` (ocean), `ˢⁱ` (sea ice), `ˡᵃ` (land)
 - _Interface pair_: `ᵃᵒ` (atm–ocean), `ᵃⁱ` (atm–ice), `ⁱᵒ` (ice–ocean)
 - _Direction_: `ˣ` / `ʸ` (spatial), `ˢʷ` / `ˡʷ` (shortwave / longwave)
-- _Process_: `ⁱⁿᵗ` (interface), `ᶠʳᶻ` (frazil)
+- _Process_: `ⁱⁿ` (interface), `ᶠʳᶻ` (frazil)
 
 **Modifier arrows** `ꜜ` (`\^downarrow`) and `ꜛ` (`\^uparrow`) denote
 downwelling and upwelling directions in radiative fluxes.
 
-**Subscripts** encode radiative process (`ₜ` transmitted, `ₐ` absorbed,
-`ₚ` penetrating) and the similarity-theory scale `★`.
+**Subscripts** encode radiative process (`ₜ` transmitted, `ₐ` absorbed)
+and the similarity-theory scale `★`.
 
-For example, `𝒬ᵛ` is the latent (vapor) heat flux, `ℐꜜˢʷ` is the downwelling
-shortwave radiative intensity, and `τˣ` is the zonal kinematic momentum flux.
+For example, `𝒬ᵛ` is the latent (vapor) heat flux, `ℐꜜˢʷ` is the downwelling shortwave radiative intensity, and `τˣ` is the zonal kinematic momentum flux.
 
-In Julia code, superscripts are entered with Unicode (e.g. `\scrQ<tab>` → `𝒬`,
-then `\^v<tab>` → `ᵛ`). The modifier arrows `ꜜ` and `ꜛ` are entered with
-`\^downarrow<tab>` and `\^uparrow<tab>`.
+In Julia code, superscripts are entered with Unicode (e.g. `\scrQ<tab>` → `𝒬`, then `\^v<tab>` → `ᵛ`). The modifier arrows `ꜜ` and `ꜛ` are entered with `\^downarrow<tab>` and `\^uparrow<tab>`.
 
-## Base flux symbols
+## Base symbols
 
 | Math | Code | Tab completion | Meaning |
 |:----:|:----:|:---------------|:--------|
@@ -42,6 +36,7 @@ then `\^v<tab>` → `ᵛ`). The modifier arrows `ꜜ` and `ꜛ` are entered with
 | ``J`` | `J` | | Mass flux (kg m⁻² s⁻¹) |
 | ``\tau`` | `τ` | `\tau` | Kinematic momentum flux (m² s⁻²) |
 | ``\mathcal{L}`` | `ℒ` | `\scrL` | Latent heat (J kg⁻¹) |
+| ``M`` | `M` | | Layer-integrated mass per area (kg m⁻²) |
 
 Note: ``\tau^x`` (`τˣ`) is the _kinematic_ momentum flux (stress divided
 by density). The mass-weighted stress is ``\rho \tau^x`` (`ρτˣ`, in N m⁻²).
@@ -52,8 +47,7 @@ These base symbols are combined with superscript and subscript labels
 ## Superscript and subscript labels
 
 Superscripts and subscripts are used systematically to label physical quantities.
-Superscripts generally denote the _type_ or _phase_ of a quantity, while subscripts
-denote the _component_ or _location_.
+Superscripts generally denote the _type_ or _phase_ of a quantity, while subscripts denote the _component_ or _location_.
 
 ### Superscript labels
 
@@ -61,7 +55,8 @@ denote the _component_ or _location_.
 |:-----:|:----:|:--------|:--------|
 | ``v`` | `ᵛ` | water vapor | ``\mathcal{Q}^v`` (latent heat flux) |
 | ``T`` | `ᵀ` | temperature / sensible | ``\mathcal{Q}^T`` (sensible heat flux) |
-| ``c`` | `ᶜ` | condensate | ``J^c`` (precipitation mass flux) |
+| ``\mathrm{rn}`` | `ʳⁿ` | rain | ``J^{\mathrm{rn}}`` (rainfall) |
+| ``\mathrm{sn}`` | `ˢⁿ` | snow | ``J^{\mathrm{sn}}`` (snowfall) |
 | ``S`` | `ˢ` | salinity | ``J^S`` (salinity flux) |
 | ``i`` | `ⁱ` | ice | ``\mathcal{L}^i`` (latent heat of sublimation) |
 | ``\ell`` | `ˡ` | liquid | ``\mathcal{L}^\ell`` (latent heat of vaporization) |
@@ -69,14 +64,14 @@ denote the _component_ or _location_.
 | ``m`` | `ᵐ` | mixture (moist air) | ``c^{pm}`` (moist isobaric heat capacity) |
 | ``d`` | `ᵈ` | dry (air) | ``c^{pd}`` (dry air heat capacity) |
 | ``D`` | `ᴰ` | drag | ``C^D`` (drag coefficient) |
-| ``\mathrm{int}`` | `ⁱⁿᵗ` | interface | ``T^{\mathrm{int}}`` (interface temperature) |
+| ``\mathrm{in}`` | `ⁱⁿ` | interface | ``T^{\mathrm{in}}`` (interface temperature) |
 | ``\mathrm{frz}`` | `ᶠʳᶻ` | frazil | ``\mathcal{Q}^{\mathrm{frz}}`` (frazil heat flux) |
 | ``x`` | `ˣ` | zonal / x-direction | ``\tau^x`` (zonal kinematic stress) |
 | ``y`` | `ʸ` | meridional / y-direction | ``\tau^y`` (meridional kinematic stress) |
 | ``\mathrm{at}`` | `ᵃᵗ` | atmosphere | ``\rho^{\mathrm{at}}`` (air density) |
 | ``\mathrm{oc}`` | `ᵒᶜ` | ocean | ``\rho^{\mathrm{oc}}`` (ocean reference density) |
 | ``\mathrm{si}`` | `ˢⁱ` | sea ice | ``h^{\mathrm{si}}`` (sea ice thickness) |
-| ``\mathrm{ld}`` | `ˡᵈ` | land | |
+| ``\mathrm{la}`` | `ˡᵃ` | land | ``M^{\mathrm{la}}`` (land water mass per area) |
 | ``\mathrm{ao}`` | `ᵃᵒ` | atmosphere–ocean interface | ``\mathcal{Q}^{\mathrm{ao}}`` (atm–ocean heat flux) |
 | ``\mathrm{ai}`` | `ᵃⁱ` | atmosphere–ice interface | ``\mathcal{Q}^{\mathrm{ai}}`` (atm–ice heat flux) |
 | ``\mathrm{io}`` | `ⁱᵒ` | ice–ocean interface | ``\mathcal{Q}^{\mathrm{io}}`` (ice–ocean heat flux) |
@@ -96,7 +91,6 @@ denote the _component_ or _location_.
 |:-----:|:----:|:--------|:--------|
 | ``t`` | `ₜ` | transmitted | ``\mathscr{I}_{t}^{\mathrm{sw}}`` (transmitted shortwave) |
 | ``a`` | `ₐ` | absorbed | ``\mathscr{I}_{a}^{\mathrm{lw}}`` (absorbed longwave) |
-| ``p`` | `ₚ` | penetrating | ``\mathscr{I}_{p}^{\mathrm{sw}}`` (penetrating shortwave) |
 | ``\star`` | `★` | similarity theory scale | ``u_\star`` (friction velocity) |
 
 ## Atmosphere state variables
@@ -110,8 +104,30 @@ denote the _component_ or _location_.
 | ``v`` | `v` | meridional velocity | Northward wind component (m s⁻¹) |
 | ``\mathscr{I}_\downarrow^{\mathrm{sw}}`` | `ℐꜜˢʷ` | downwelling shortwave | Downwelling shortwave radiation (W m⁻²) |
 | ``\mathscr{I}_\downarrow^{\mathrm{lw}}`` | `ℐꜜˡʷ` | downwelling longwave | Downwelling longwave radiation (W m⁻²) |
-| ``J^c`` | `Jᶜ` | condensate flux | Precipitation (condensate) mass flux (kg m⁻² s⁻¹) |
 | ``h_{b\ell}`` | `h_bℓ` | boundary layer height | Atmospheric boundary layer height (m) |
+| ``pᵛ⁺`` | ``pᵛ⁺`` | saturation vapor pressure | Vapor pressure at saturation (Pa) |
+| ``qᵛ⁺`` | `qᵛ⁺` | saturation specific humidity | Specific humidity at saturation, ``q^{v+}(T)`` (kg kg⁻¹) |
+| ``qˢ`` | `q` | surface specific humidity | Specific humidity at the interface; set by the humidity model (`β·qᵛ⁺` for `FractionalHumidity`, a vapor-flux balance for `SkinHumidity`) (kg kg⁻¹) |
+
+## Land state variables and parameters
+
+| Math | Code | Property | Description |
+|:----:|:----:|:---------|:------------|
+| ``T`` | `temperature` | ground temperature | Prognostic land-column temperature (K) |
+| ``M^{\mathrm{la}}`` | `water_storage` | land water | Prognostic land water mass per area (kg m⁻²) |
+| ``M^{\mathrm{la}\!+}`` | `maximum_water_storage` | maximum land water | Bucket capacity; soil-science "field capacity" (kg m⁻²) |
+| ``𝒮`` | `saturation` | surface saturation | Continuous land surface saturation ``\mathrm{clamp}(Mˡᵃ/Mˡᵃ⁺, 0, 1)``; the interface humidity models derive their availability ``β`` from it (–) |
+| ``𝒮ᶜ`` | `critical_saturation` | critical saturation | Saturation above which the surface evaporates at full efficiency, for `CriticalSaturation` (–) |
+| ``T^{\mathrm{deep}}`` | `deep_temperature` | deep climatological temperature | Prescribed deep/climatological target temperature for force-restore (K) |
+| ``τ^{\mathrm{deep}}`` | `deep_time_scale` | deep-restore time scale | Time scale of surface relaxation toward ``T^{\mathrm{deep}}`` (s) |
+| ``d`` | `surface_thickness` | surface thickness | Thickness of the dry surface layer through which soil vapor diffuses, for `SkinHumidity` (m) |
+| ``κ^q`` | `vapor_diffusivity` | soil vapor diffusivity | Vapor mass diffusivity in the surface soil layer, for `SkinHumidity` (kg m⁻¹ s⁻¹) |
+| ``\chi^{\mathrm{sand}}`` | `sand` | soil sand fraction | Mass fraction of sand grains in the mineral (non-organic) solid matrix (kg kg⁻¹)
+| ``\chi^{\mathrm{silt}}`` | `silt` | soil silt fraction | Mass fraction of silt grains in the mineral (non-organic) solid matrix (kg kg⁻¹)
+| ``\chi^{\mathrm{clay}}`` | `clay` | soil clay fraction | Mass fraction of clay grains in the mineral (non-organic) solid matrix (kg kg⁻¹)
+| ``\chi^{\mathrm{soc}}`` | `SOC` | soil organic carbon concentration | Mass fraction of organic carbon in the solid matrix (kg kg⁻¹)
+| ``\rho^{\mathrm{soil}}`` | `ρ_soil` | soil bulk dry density | Bulk dry density of the soil within each vertical layer (kg m⁻³)
+| ``\rho^{\mathrm{soc}}`` | `ρ_soc` | soil organic carbon density | Bulk density of organic material within each vertical layer (kg m⁻³)
 
 ## Ocean state variables
 
@@ -151,9 +167,15 @@ denote the _component_ or _location_.
 | ``L_\star`` | `L★` | Obukhov length | Monin–Obukhov length scale (m) |
 | ``C^D`` | `Cᴰ` | drag coefficient | Bulk transfer coefficient for momentum (–) |
 | ``\psi`` | `ψ` | stability function | Integrated stability correction (–) |
+| ``\Psi`` | `Ψ` | interface state | Aggregate interface state (an `AbstractInterfaceState`) carried through the similarity-theory fixed-point solver `compute_interface_state` |
 | ``\zeta`` | `ζ` | stability parameter | ``z / L_\star`` (–) |
 | ``\ell`` | `ℓ` | roughness length | Aerodynamic roughness length (m) |
+| ``\ell^\mathrm{m}`` | `ℓᵐ` | momentum roughness length | Aerodynamic momentum roughness length (m) |
+| ``\ell^\mathrm{s}`` | `ℓˢ` | scalar roughness length | Aerodynamic scalar roughness length (m) |
 | ``\varkappa`` | `ϰ` | von Kármán constant | ``\approx 0.4`` (–) |
+
+Note the case distinction: lowercase ``\psi`` (`ψ`) is the stability
+function, while capital ``\Psi`` (`Ψ`) is the aggregate interface-state object.
 
 ## Radiative fluxes
 
@@ -165,12 +187,11 @@ denote the _component_ or _location_.
 
 | ``\mathscr{I}_{t}^{\mathrm{sw}}`` | `ℐₜˢʷ` | transmitted shortwave | Shortwave passing through the surface, ``(1-\alpha) \mathscr{I}_\downarrow^{\mathrm{sw}}`` (W m⁻²) |
 | ``\mathscr{I}_{a}^{\mathrm{lw}}`` | `ℐₐˡʷ` | absorbed longwave | Longwave absorbed at the surface, ``\epsilon \mathscr{I}_\downarrow^{\mathrm{lw}}`` (W m⁻²) |
-| ``\mathscr{I}_{p}^{\mathrm{sw}}`` | `ℐₚˢʷ` | penetrating shortwave | Shortwave penetrating into the ocean interior (W m⁻²) |
 
 Radiative fluxes use ``\mathscr{I}`` (`ℐ`, for "intensity") with a modifier
 arrow (`ꜜ`/`ꜛ` for downwelling/upwelling) and superscript band (`ˢʷ`/`ˡʷ`).
-Derived radiative quantities use a subscript process label (`ₜ`, `ₐ`, `ₚ`)
-with a superscript band.
+Derived radiative quantities use a subscript process label (`ₜ`, `ₐ`) with a
+superscript band.
 
 ## Turbulent interface fluxes
 
@@ -192,6 +213,13 @@ with a superscript band.
 | ``J^S`` | `Jˢ` | salinity flux | Net ocean salinity flux (g kg⁻¹ m s⁻¹) |
 | ``\mathcal{Q}^{\mathrm{frz}}`` | `𝒬ᶠʳᶻ` | frazil heat flux | Heat released by frazil ice formation (W m⁻²) |
 
+## Net surface freshwater fluxes
+
+| Math | Code | Property | Description |
+|:----:|:----:|:---------|:------------|
+| ``J^{\mathrm{rn}}`` | `Jʳⁿ` | rain freshwater flux | Rain mass flux at the surface (kg m⁻² s⁻¹) |
+| ``J^{\mathrm{sn}}`` | `Jˢⁿ` | snow freshwater flux | Snow mass flux at the surface (kg m⁻² s⁻¹) |
+
 ## Thermodynamic properties
 
 | Math | Code | Property | Description |
@@ -201,11 +229,12 @@ with a superscript band.
 | ``c^{pm}`` | `cᵖᵐ` | moist air heat capacity | Moist isobaric specific heat (J kg⁻¹ K⁻¹) |
 | ``c^{pd}`` | `cᵖᵈ` | dry air heat capacity | Dry-air isobaric specific heat (J kg⁻¹ K⁻¹) |
 | ``\rho^{\mathrm{at}}`` | `ρᵃᵗ` | air density | Atmospheric air density (kg m⁻³) |
+| ``\varepsilon^{\mathrm{dv}}`` | ``εᵈᵛ`` | vapor / dry-air gas-constant ratio | ``εᵈᵛ = R_v / R_d`` (so ``(εᵈᵛ)^{-1} = R_d / R_v ≈ 0.622`` is the conventional ε in ``q = ε e / p``) (–) |
 
 ## CF standard name mapping
 
 The following table maps code variable names to their
-[CF standard names](http://cfconventions.org/Data/cf-standard-names/current/build/cf-standard-name-table.html)
+[CF standard names](https://cfconventions.org/Data/cf-standard-names/current/build/cf-standard-name-table.html)
 where applicable.
 
 | Code | CF standard name |
@@ -229,9 +258,7 @@ where applicable.
 
 ## Typing Unicode symbols in Julia
 
-Most symbols can be entered in the Julia REPL and in editors with Julia support
-by typing a LaTeX-like abbreviation followed by `<tab>`. The table below
-collects the less obvious completions used in this notation.
+Most symbols can be entered in the Julia REPL and in editors with Julia support by typing a LaTeX-like abbreviation followed by `<tab>`. The table below collects the less obvious completions used in this notation.
 
 | Symbol | Tab completion | Description |
 |:------:|:---------------|:------------|
@@ -245,6 +272,7 @@ collects the less obvious completions used in this notation.
 | `ϵ` | `\epsilon` | Epsilon (emissivity) |
 | `ℵ` | `\aleph` | Aleph (ice concentration) |
 | `ϰ` | `\varkappa` | Varkappa (von Kármán constant) |
+| `Ψ` | `\Psi` | Capital Psi (interface state) |
 | `★` | `\bigstar` | Star (similarity-theory scale) |
 | `ꜜ` | `\^downarrow` | Modifier down arrow (downwelling) |
 | `ꜛ` | `\^uparrow` | Modifier up arrow (upwelling) |

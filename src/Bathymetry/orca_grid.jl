@@ -1,15 +1,40 @@
+using CubedSphere.SphericalGeometry: lat_lon_to_cartesian, cartesian_to_lat_lon,
+                                     spherical_area_quadrilateral
+using Distances: haversine
 using Oceananigans.BoundaryConditions: fill_halo_regions!, FPivotZipperBoundaryCondition,
-    NoFluxBoundaryCondition, FieldBoundaryConditions
+                                       NoFluxBoundaryCondition, FieldBoundaryConditions
 using Oceananigans.Fields: set!, convert_to_0_360
 using Oceananigans.Grids: RightFaceFolded, generate_coordinate
 using Oceananigans.ImmersedBoundaries: ImmersedBoundaryGrid, GridFittedBottom
-using Oceananigans.OrthogonalSphericalShellGrids: Tripolar, continue_south!
-using CubedSphere.SphericalGeometry: lat_lon_to_cartesian, cartesian_to_lat_lon,
-    spherical_area_quadrilateral
-using Distances: haversine
+using Oceananigans.OrthogonalSphericalShellGrids: Tripolar
 
 using ..DataWrangling: dataset_variable_name, default_download_directory
-using ..DataWrangling.ORCA: ORCA1, ORCA12, default_south_rows_to_remove
+using ..DataWrangling.ORCA: ORCA1, default_south_rows_to_remove
+
+# Build an Oceananigans OrthogonalSphericalShellGrid with topology (Periodic, RightFaceFolded, Bounded) from
+# a NEMO eORCA mesh_mask file.
+#
+# NEMO C-grid: T is the cell center, U the east face of T, V the north face of T, F the northeast corner.
+# eORCA quirks handled before constructing the grid:
+#
+#   - Duplicated east-edge periodic columns (`periodic_overlap_index`, `shift_face_x`).
+#   - Optional southern land padding rows (`south_rows_to_remove`, `chop`).
+#
+# NEMO → Oceananigans index mapping:
+#
+#   Center-y[:, 1:Ny]   ← NEMO[:, 1:Ny]
+#   Face-y  [:, 2:Ny+1] ← NEMO V/F[:, 1:Ny]   (NEMO V is the north face of T[:, j] = south face of T[:, j+1])
+#
+# Face-y row j=1 has no NEMO counterpart; `halo_filled_data` mirrors the southernmost data row into it
+# (cf. Oceananigans #5565 — copy the j-row instead of using a LatitudeLongitudeGrid). `fill_halo_regions!`
+# then propagates it south using PeriodicBC east/west, NoFluxBC south, and FPivotZipperBC north.
+#
+# `read_orca_staggered_mesh` supports two read paths: a full staggered NEMO mesh used directly, or T/F
+# coordinates only, with U/V coordinates and all `e1`/`e2`/`Az` metrics reconstructed from spherical
+# midpoints, haversine distances, and spherical quadrilateral areas. Bathymetry (when
+# `with_bathymetry = true`): NEMO stores positive depth, so we negate it and map land (depth ≤ 0 or
+# missing) to +100 so `GridFittedBottom` masks it. `major_basins` optionally drops smaller disconnected
+# basins via `remove_minor_basins!`.
 
 """
     read_2d_nemo_variable(ds, name)
@@ -26,9 +51,6 @@ function read_2d_nemo_variable(ds, name)
     end
 
     if ndims(data) > 2
-        # Keep the two largest dimensions as horizontal (x, y), and pick
-        # the first index for all other dimensions (for example t=1, z=1).
-        # This handles layouts like (t, x, y), (x, y, t), (t, z, y, x), etc.
         sizes = collect(size(data))
         keep = sort(sortperm(sizes; rev = true)[1:2])
         indices = ntuple(d -> (d in keep ? Colon() : 1), ndims(data))
@@ -238,7 +260,6 @@ function read_orca_staggered_mesh(ds; radius = Oceananigans.defaults.planet_radi
                "e1t", "e1u", "e1v", "e1f",
                "e2t", "e2u", "e2v", "e2f")
 
-    # Assume ORCA horizontal variables are stored as (Nx, Ny).
     λCC = read_2d_nemo_variable(ds, "glamt")
     Nx, Ny = size(λCC)
     overlap = periodic_overlap_index(λCC)
@@ -246,7 +267,6 @@ function read_orca_staggered_mesh(ds; radius = Oceananigans.defaults.planet_radi
     orcaread(data, name) = orient_xy(read_2d_nemo_variable(data, name), Nx, Ny; name)
     shift_x(data) = shift_face_x(data, overlap)
 
-    # Face-y: no pre-shift here; halo_filled_data does the +1 y-shift after chop.
     if has_all_variables(ds, metrics)
         λCC, λFC, λCF, λFF = orcaread(ds, "glamt"), shift_x(orcaread(ds, "glamu")), orcaread(ds, "glamv"), shift_x(orcaread(ds, "glamf"))
         φCC, φFC, φCF, φFF = orcaread(ds, "gphit"), shift_x(orcaread(ds, "gphiu")), orcaread(ds, "gphiv"), shift_x(orcaread(ds, "gphif"))
@@ -277,9 +297,6 @@ function read_orca_staggered_mesh(ds; radius = Oceananigans.defaults.planet_radi
     throw(ArgumentError("Unsupported ORCA mesh format. Missing either full staggered variables $(metrics) or T/F variables $(coords)."))
 end
 
-# Detect periodic overlap columns in NEMO data.
-# The eORCA grid has `n` trailing columns that are copies of the first `n` columns
-# (e.g., columns 361:362 repeat columns 1:2 for eORCA1).
 function periodic_overlap_index(λCC)
     Nx = size(λCC, 1)
     for n in min(div(Nx, 4), 10):-1:1
@@ -290,21 +307,12 @@ function periodic_overlap_index(λCC)
     return 0
 end
 
-# Reindex x-face fields from NEMO to Oceananigans.
-# In NEMO, U[i, j] sits on the east face of T[i, j].
-# In Oceananigans, Face-x[i, j] is the west face of Center[i, j].
-# So Oceananigans Face-x[i, j] should receive NEMO U[i-1, j] (with periodic wrap).
-# `overlap` is the duplicated periodic tail-column count; `No = Nx - overlap`
-# maps i=1 to the last unique column instead of a duplicated overlap column.
 function shift_face_x(data, overlap)
     Nx = size(data, 1)
     No = Nx - overlap
     return data[vcat(No, 1:Nx-1), :]
 end
 
-# NEMO V/F (Ny rows) → Oceananigans Face-y (Ny+1 rows). Row 1 is zero so that
-# continue_south! fills metrics there while coordinates stay at zero, matching
-# the pre-refactor behavior exactly.
 function shift_face_y(data)
     Nx, Ny = size(data)
     shifted = similar(data, Nx, Ny + 1)
@@ -313,9 +321,6 @@ function shift_face_y(data)
     return shifted
 end
 
-# Copy data into a Field on `helper_grid`, fill halos, return as OffsetArray.
-# Accepts either matching row count, or Nj-1 rows for Face-y (NEMO-style: row 1
-# then gets filled by continue_south!).
 function halo_filled_data(data, helper_grid, bcs, LX, LY)
     TX, TY, _ = topology(helper_grid)
     Nx, Ny, _ = size(helper_grid)
@@ -328,6 +333,7 @@ function halo_filled_data(data, helper_grid, bcs, LX, LY)
         field.data[1:Ni, 1:Nj, 1] .= data[1:Ni, 1:Nj]
     elseif LY === Face && Nj_data == Nj - 1
         field.data[1:Ni, 2:Nj, 1] .= data[1:Ni, 1:Nj-1]
+        field.data[1:Ni, 1, 1]    .= data[1:Ni, 1]
     else
         throw(DimensionMismatch("data has $Nj_data rows but $LY field expects $Nj rows"))
     end
@@ -336,7 +342,6 @@ function halo_filled_data(data, helper_grid, bcs, LX, LY)
     return deepcopy(dropdims(field.data, dims = 3))
 end
 
-# Fill halos for all four stagger locations (CC, FC, CF, FF) at once.
 function halo_fill_stagger(CC, FC, CF, FF, helper_grid, bcs)
     return (
         halo_filled_data(CC, helper_grid, bcs, Center, Center),
@@ -355,6 +360,7 @@ end
              radius = Oceananigans.defaults.planet_radius,
              with_bathymetry = true,
              active_cells_map = true,
+             major_basins = Inf,
              south_rows_to_remove = default_south_rows_to_remove(dataset),
              dir = default_download_directory(dataset))
 
@@ -393,6 +399,9 @@ Keyword Arguments
                      `GridFittedBottom`. Default: `true`.
 - `active_cells_map`: If `true` and `with_bathymetry = true`, build an active cells map
                       for efficient kernel execution over wet cells only. Default: `true`.
+- `major_basins`: Number of independent connected ocean basins to retain via
+                  [`remove_minor_basins!`](@ref). Basins are removed from smallest to largest;
+                  `major_basins = 1` keeps only the largest. Default: `Inf` (keep all basins).
 - `south_rows_to_remove`: Number of southern rows to remove from the eORCA grid.  The "extended" eORCA grid
                           contains degenerate padding rows near Antarctica that are entirely land.
                           Removing them reduces memory usage and computation.
@@ -407,12 +416,12 @@ function ORCAGrid(arch = CPU(), FT::DataType = Float64;
                   radius = Oceananigans.defaults.planet_radius,
                   with_bathymetry = true,
                   active_cells_map = true,
+                  major_basins = Inf,
                   south_rows_to_remove = default_south_rows_to_remove(dataset),
                   dir = default_download_directory(dataset))
 
-    # Download mesh_mask via the metadata interface
     mesh_meta = Metadatum(:mesh_mask; dataset, dir)
-    mesh_mask_path = download_dataset(mesh_meta)
+    mesh_mask_path = download(mesh_meta)
 
     ds = Dataset(mesh_mask_path)
     mesh = read_orca_staggered_mesh(ds; radius)
@@ -424,14 +433,12 @@ function ORCAGrid(arch = CPU(), FT::DataType = Float64;
     e2t,  e2u,  e2v,  e2f  = mesh.e2t,  mesh.e2u,  mesh.e2v,  mesh.e2f
     AzCC, AzFC, AzCF, AzFF = mesh.AzCC, mesh.AzFC, mesh.AzCF, mesh.AzFF
 
-    # Extract tripolar pole parameters from F-point coordinates
     pole_idx = argmin(φFF[:, end])
     north_poles_latitude = φFF[pole_idx]
     first_pole_longitude = Float64(λFF[pole_idx])
 
     Nx, Ny = size(λCC)
 
-    # Remove degenerate southern rows from the extended eORCA grid
     jr = south_rows_to_remove
     if jr > 0
         chop(data) = data[:, jr+1:end]
@@ -447,16 +454,11 @@ function ORCAGrid(arch = CPU(), FT::DataType = Float64;
 
     southernmost_latitude = Float64(minimum(φCC))
 
-    # With RightFaceFolded (Bounded-like) topology:
-    #   Center-y has Ny interior points        ← matches NEMO data
-    #   Face-y   has Ny + 1 interior points
     Hx, Hy, Hz = halo
 
-    # Vertical coordinate
     topo = (Periodic, RightFaceFolded, Bounded)
     Lz, z_coord = generate_coordinate(FT, topo, (Nx, Ny, Nz), halo, z, :z, 3, CPU())
 
-    # Helper grid and boundary conditions for halo filling
     helper_grid = RectilinearGrid(; size = (Nx, Ny), halo = (Hx, Hy),
                                     x = (0, 1), y = (0, 1),
                                     topology = (Periodic, RightFaceFolded, Flat))
@@ -468,27 +470,12 @@ function ORCAGrid(arch = CPU(), FT::DataType = Float64;
                                   top    = nothing,
                                   bottom = nothing)
 
-    # Fill halos for all stagger locations
     λᶜᶜᵃ, λᶠᶜᵃ, λᶜᶠᵃ, λᶠᶠᵃ     = halo_fill_stagger(λCC,  λFC,  λCF,  λFF,  helper_grid, bcs)
     φᶜᶜᵃ, φᶠᶜᵃ, φᶜᶠᵃ, φᶠᶠᵃ     = halo_fill_stagger(φCC,  φFC,  φCF,  φFF,  helper_grid, bcs)
     Δxᶜᶜᵃ, Δxᶠᶜᵃ, Δxᶜᶠᵃ, Δxᶠᶠᵃ = halo_fill_stagger(e1t,  e1u,  e1v,  e1f,  helper_grid, bcs)
     Δyᶜᶜᵃ, Δyᶠᶜᵃ, Δyᶜᶠᵃ, Δyᶠᶠᵃ = halo_fill_stagger(e2t,  e2u,  e2v,  e2f,  helper_grid, bcs)
     Azᶜᶜᵃ, Azᶠᶜᵃ, Azᶜᶠᵃ, Azᶠᶠᵃ = halo_fill_stagger(AzCC, AzFC, AzCF, AzFF, helper_grid, bcs)
 
-    # Fill south halo metrics from a reference LatitudeLongitudeGrid
-    # (the eORCA south halo has degenerate/zero values after fill_halo_regions!)
-    ref_grid = LatitudeLongitudeGrid(; size = (Nx, Ny, Nz),
-                                       latitude = (southernmost_latitude, 90),
-                                       longitude = (-180, 180),
-                                       halo, z = (0, 1), radius)
-
-    for (field, ref_name) in ((Δxᶜᶜᵃ, :Δxᶜᶜᵃ), (Δxᶠᶜᵃ, :Δxᶠᶜᵃ), (Δxᶜᶠᵃ, :Δxᶜᶠᵃ), (Δxᶠᶠᵃ, :Δxᶠᶠᵃ),
-                              (Δyᶜᶜᵃ, :Δyᶜᶠᵃ), (Δyᶠᶜᵃ, :Δyᶠᶜᵃ), (Δyᶜᶠᵃ, :Δyᶜᶠᵃ), (Δyᶠᶠᵃ, :Δyᶠᶜᵃ),
-                              (Azᶜᶜᵃ, :Azᶜᶜᵃ), (Azᶠᶜᵃ, :Azᶠᶜᵃ), (Azᶜᶠᵃ, :Azᶜᶠᵃ), (Azᶠᶠᵃ, :Azᶠᶠᵃ))
-        continue_south!(field, getproperty(ref_grid, ref_name))
-    end
-
-    # Build the grid
     to_arch(data) = on_architecture(arch, map(FT, data))
 
     underlying_grid = OrthogonalSphericalShellGrid{Periodic, RightFaceFolded, Bounded}(
@@ -508,9 +495,8 @@ function ORCAGrid(arch = CPU(), FT::DataType = Float64;
 
     with_bathymetry || return underlying_grid
 
-    # Load bathymetry
     bathy_meta = Metadatum(:bottom_height; dataset, dir)
-    bathymetry_path = download_dataset(bathy_meta)
+    bathymetry_path = download(bathy_meta)
 
     bathy_ds   = Dataset(bathymetry_path)
     bathy_name = dataset_variable_name(bathy_meta)
@@ -523,11 +509,14 @@ function ORCAGrid(arch = CPU(), FT::DataType = Float64;
         bathy_data = chop(bathy_data)
     end
 
-    # NEMO bathymetry is positive depth; convert to negative bottom height.
-    # Land (bathymetry == 0) gets mapped to +100 so GridFittedBottom masks it.
-    bottom_height = FT.(coalesce.(bathy_data, FT(0)))
+    bottom_height  = FT.(coalesce.(bathy_data, FT(0)))
     bottom_height .= ifelse.(isfinite.(bottom_height) .& (bottom_height .> 0), .-bottom_height, FT(100))
-    bottom_height = on_architecture(arch, bottom_height)
+    bottom_field  = Field{Center, Center, Nothing}(underlying_grid)
+    set!(bottom_field, on_architecture(arch, bottom_height))
 
-    return ImmersedBoundaryGrid(underlying_grid, GridFittedBottom(bottom_height); active_cells_map)
+    if major_basins < Inf
+        remove_minor_basins!(bottom_field, major_basins)
+    end
+
+    return ImmersedBoundaryGrid(underlying_grid, GridFittedBottom(bottom_field); active_cells_map)
 end

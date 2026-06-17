@@ -1,26 +1,20 @@
 module NumericalEarthBreezeExt
 
-import Breeze
-import NumericalEarth
-import Oceananigans
-
+using Breeze: Breeze
+using DocStringExtensions: TYPEDSIGNATURES
 using KernelAbstractions: @kernel, @index
-using Oceananigans.BoundaryConditions: fill_halo_regions!, FluxBoundaryCondition, FieldBoundaryConditions
-using Oceananigans.Grids: architecture
+using Oceananigans: Oceananigans
+using Oceananigans.Architectures: architecture
+using Oceananigans.Advection: cell_advection_timescale
+using Oceananigans.BoundaryConditions: FluxBoundaryCondition, FieldBoundaryConditions
+using Oceananigans.Simulations: Simulation
 using Oceananigans.Utils: launch!
+using NumericalEarth: NumericalEarth
+using NumericalEarth.EarthSystemModels.InterfaceComputations: ComponentExchanger, computed_fluxes
 
-import NumericalEarth.Atmospheres: atmosphere_simulation
-import NumericalEarth.EarthSystemModels: thermodynamics_parameters,
-                                          surface_layer_height,
-                                          boundary_layer_height,
-                                          interpolate_state!,
-                                          update_net_fluxes!
-import NumericalEarth.EarthSystemModels.InterfaceComputations: ComponentExchanger, net_fluxes, computed_fluxes
-
-import Oceananigans.Advection: cell_advection_timescale
-import Oceananigans.TimeSteppers: time_step!
-
+include("coupled_radiation.jl")
 include("breeze_atmosphere_interface.jl")
 include("breeze_atmosphere_simulation.jl")
+include("breeze_air_land_radiation.jl")
 
 end # module NumericalEarthBreezeExt

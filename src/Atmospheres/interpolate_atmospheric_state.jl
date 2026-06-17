@@ -1,13 +1,12 @@
 using Oceananigans.Operators: intrinsic_vector
 using Oceananigans.Grids: _node
 using Oceananigans.Fields: FractionalIndices, interpolate
-using Oceananigans.OutputReaders: TimeInterpolator
 using Oceananigans.OutputReaders: cpu_interpolating_time_indices
 
-using NumericalEarth.Oceans: forcing_barotropic_potential
+using ..Oceans: forcing_barotropic_potential
 
 """Interpolate the atmospheric state onto the ocean / sea-ice grid."""
-function interpolate_state!(exchanger, grid, atmosphere::PrescribedAtmosphere, coupled_model)
+function EarthSystemModels.interpolate_state!(exchanger, grid, atmosphere::PrescribedAtmosphere, coupled_model)
     atmosphere_grid = atmosphere.grid
 
     # Basic model properties
@@ -27,10 +26,8 @@ function interpolate_state!(exchanger, grid, atmosphere::PrescribedAtmosphere, c
     atmosphere_tracers = (T = atmosphere.tracers.T.data,
                           q = atmosphere.tracers.q.data)
 
-    ℐꜜˢʷ = atmosphere.downwelling_radiation.shortwave
-    ℐꜜˡʷ = atmosphere.downwelling_radiation.longwave
-    downwelling_radiation = (shortwave=ℐꜜˢʷ.data, longwave=ℐꜜˡʷ.data)
-    freshwater_flux = map(ϕ -> ϕ.data, atmosphere.freshwater_flux)
+    rainfall_flux = surface_rainfall_flux(atmosphere)
+    snowfall_flux = surface_snowfall_flux(atmosphere)
     atmosphere_pressure = atmosphere.pressure.data
 
     # Extract info for time-interpolation
@@ -44,14 +41,13 @@ function interpolate_state!(exchanger, grid, atmosphere::PrescribedAtmosphere, c
 
     # Simplify NamedTuple to reduce parameter space consumption.
     # See https://github.com/CliMA/NumericalEarth.jl/issues/116.
-    atmosphere_data = (u    = atmosphere_fields.u.data,
-                       v    = atmosphere_fields.v.data,
-                       T    = atmosphere_fields.T.data,
-                       p    = atmosphere_fields.p.data,
-                       q    = atmosphere_fields.q.data,
-                       ℐꜜˢʷ = atmosphere_fields.ℐꜜˢʷ.data,
-                       ℐꜜˡʷ = atmosphere_fields.ℐꜜˡʷ.data,
-                       Jᶜ   = atmosphere_fields.Jᶜ.data)
+    atmosphere_data = (u   = atmosphere_fields.u.data,
+                       v   = atmosphere_fields.v.data,
+                       T   = atmosphere_fields.T.data,
+                       p   = atmosphere_fields.p.data,
+                       q   = atmosphere_fields.q.data,
+                       Jʳⁿ = atmosphere_fields.Jʳⁿ.data,
+                       Jˢⁿ = atmosphere_fields.Jˢⁿ.data)
 
     kernel_parameters = interface_kernel_parameters(grid)
 
@@ -72,8 +68,8 @@ function interpolate_state!(exchanger, grid, atmosphere::PrescribedAtmosphere, c
             atmosphere_velocities,
             atmosphere_tracers,
             atmosphere_pressure,
-            downwelling_radiation,
-            freshwater_flux,
+            rainfall_flux,
+            snowfall_flux,
             atmosphere_backend,
             atmosphere_time_indexing)
 
@@ -99,8 +95,8 @@ end
                                                          atmos_velocities,
                                                          atmos_tracers,
                                                          atmos_pressure,
-                                                         downwelling_radiation,
-                                                         prescribed_freshwater_flux,
+                                                         rainfall_flux,
+                                                         snowfall_flux,
                                                          atmos_backend,
                                                          atmos_time_indexing)
 
@@ -121,11 +117,8 @@ end
     qᵃᵗ = interp_atmos_time_series(atmos_tracers.q,    atmos_args...)
     pᵃᵗ = interp_atmos_time_series(atmos_pressure,     atmos_args...)
 
-    ℐꜜˢʷ = interp_atmos_time_series(downwelling_radiation.shortwave, atmos_args...)
-    ℐꜜˡʷ = interp_atmos_time_series(downwelling_radiation.longwave,  atmos_args...)
-
-    # Usually precipitation
-    Mh = interp_atmos_time_series(prescribed_freshwater_flux, atmos_args...)
+    Mr = interp_atmos_time_series(rainfall_flux, atmos_args...)
+    Ms = interp_atmos_time_series(snowfall_flux, atmos_args...)
 
     # Convert atmosphere velocities (usually defined on a latitude-longitude grid) to
     # the frame of reference of the native grid
@@ -138,9 +131,8 @@ end
         surface_atmos_state.T[i, j, 1] = Tᵃᵗ
         surface_atmos_state.p[i, j, 1] = pᵃᵗ
         surface_atmos_state.q[i, j, 1] = qᵃᵗ
-        surface_atmos_state.ℐꜜˢʷ[i, j, 1] = ℐꜜˢʷ
-        surface_atmos_state.ℐꜜˡʷ[i, j, 1] = ℐꜜˡʷ
-        surface_atmos_state.Jᶜ[i, j, 1] = Mh
+        surface_atmos_state.Jʳⁿ[i, j, 1] = Mr
+        surface_atmos_state.Jˢⁿ[i, j, 1] = Ms
     end
 end
 
@@ -148,9 +140,11 @@ end
 ##### Utility for interpolating tuples of fields
 #####
 
+@inline interp_atmos_time_series(::Nothing, X, time, grid, args...) = 0
+
 # Note: assumes loc = (c, c, nothing) (and the third location should not matter.)
-@inline interp_atmos_time_series(J::AbstractArray, x_itp::FractionalIndices, t_itp, args...) =
-    interpolate(x_itp, t_itp, J, args...)
+@inline interp_atmos_time_series(J::AbstractArray, X::FractionalIndices, time, args...) =
+    interpolate(X, time, J, args...)
 
 @inline interp_atmos_time_series(J::AbstractArray, X, time, grid, args...) =
     interpolate(X, time, J, (Center(), Center(), nothing), grid, args...)
@@ -159,7 +153,7 @@ end
     interp_atmos_time_series(values(ΣJ), args...)
 
 @inline interp_atmos_time_series(ΣJ::Tuple{<:Any}, args...) =
-    interp_atmos_time_series(ΣJ[1], args...) 
+    interp_atmos_time_series(ΣJ[1], args...)
 
 @inline interp_atmos_time_series(ΣJ::Tuple{<:Any, <:Any}, args...) =
     interp_atmos_time_series(ΣJ[1], args...) +
@@ -185,4 +179,4 @@ end
 
 @inline interp_atmos_time_series(ΣJ::Tuple, args...) =
     interp_atmos_time_series(ΣJ[1], args...) +
-    interp_atmos_time_series(ΣJ[2:end], args...) 
+    interp_atmos_time_series(ΣJ[2:end], args...)

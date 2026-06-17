@@ -12,16 +12,16 @@ using ClimaSeaIce.Rheologies
 @testset "Time stepping test" begin
     for arch in test_architectures
         A = typeof(arch)
-        
+
         grid = TripolarGrid(arch;
                             size = (50, 50, 10),
                             halo = (7, 7, 7),
                             z = (-5000, 0))
 
         bottom_height = regrid_bathymetry(grid;
-                                minimum_depth = 10,
-                                interpolation_passes = 5,
-                                major_basins = 1)
+                                          minimum_depth = 10,
+                                          interpolation_passes = 5,
+                                          major_basins = 1)
 
         grid = ImmersedBoundaryGrid(grid, GridFittedBottom(bottom_height); active_cells_map=true)
         free_surface = SplitExplicitFreeSurface(grid; substeps=20)
@@ -37,17 +37,17 @@ using ClimaSeaIce.Rheologies
             time_resolution = dataset isa ECCO2Daily ? Day(1) : Month(1)
             end_date = DateTimeProlepticGregorian(1993, 2, 1)
             dates = start_date : time_resolution : end_date
-    
-            temperature_metadata = Metadata(:temperature; dataset, dates)
-            salinity_metadata    = Metadata(:salinity; dataset, dates)
+
+            initial_state = MetadataSet(:temperature, :salinity;
+                                        dataset, date=start_date)
 
             ocean = ocean_simulation(grid; free_surface)
 
             sea_ice  = sea_ice_simulation(grid, ocean; advection=WENO(order=7))
-            liquidus = sea_ice.model.ice_thermodynamics.phase_transitions.liquidus
+            liquidus = sea_ice.model.phase_transitions.liquidus
 
             # Set the ocean temperature and salinity
-            set!(ocean.model, T=temperature_metadata[1], S=salinity_metadata[1])
+            set!(ocean.model, initial_state)
             above_freezing_ocean_temperature!(ocean, grid, sea_ice)
 
             # Test that ocean temperatures are above freezing
@@ -57,10 +57,9 @@ using ClimaSeaIce.Rheologies
             Tm = KernelFunctionOperation{Center, Center, Center}(kernel_melting_temperature, grid, liquidus, S)
             @test all(T .≥ Tm)
 
-            backend = JRA55NetCDFBackend(4)
-            atmosphere = JRA55PrescribedAtmosphere(arch; backend)
-            radiation = Radiation(arch)
-            
+            atmosphere = JRA55PrescribedAtmosphere(arch; time_indices_in_memory=4)
+            radiation = JRA55PrescribedRadiation(arch; time_indices_in_memory=4)
+
             # Fluxes are computed when the model is constructed, so we just test that this works.
             # And that we can time step with sea ice
             @test begin
@@ -71,11 +70,12 @@ using ClimaSeaIce.Rheologies
 
             # Test with land component
             @info "Testing OceanSeaIceModel with land on $A..."
-            land = JRA55PrescribedLand(arch; backend)
+            land_dates = all_dates(RepeatYearJRA55(), :river_freshwater_flux)
+            land = JRA55PrescribedLand(arch; end_date=land_dates[2])
 
             @test begin
                 ocean_with_land = ocean_simulation(grid; free_surface)
-                set!(ocean_with_land.model, T=temperature_metadata[1], S=salinity_metadata[1])
+                set!(ocean_with_land.model, initial_state)
                 sea_ice_with_land = sea_ice_simulation(grid, ocean_with_land; advection=WENO(order=7))
                 above_freezing_ocean_temperature!(ocean_with_land, grid, sea_ice_with_land)
 
