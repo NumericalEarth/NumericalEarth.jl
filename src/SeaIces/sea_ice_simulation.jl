@@ -1,8 +1,10 @@
 using ClimaSeaIce: ClimaSeaIce, SeaIceModel, PhaseTransitions, ConductiveFlux,
-                   sea_ice_slab_thermodynamics, snow_slab_thermodynamics
+                   sea_ice_slab_thermodynamics, snow_slab_thermodynamics,
+                   default_sea_ice_boundary_conditions
 using ClimaSeaIce.SeaIceThermodynamics.HeatBoundaryConditions: PrescribedTemperature
 using ClimaSeaIce.SeaIceThermodynamics: IceWaterThermalEquilibrium, IceSnowConductiveFlux
-using ClimaSeaIce.SeaIceDynamics: SplitExplicitSolver, SemiImplicitStress, SeaIceMomentumEquation, StressBalanceFreeDrift
+using ClimaSeaIce.SeaIceDynamics: SplitExplicitSolver, SemiImplicitStress, SeaIceMomentumEquation, StressBalanceFreeDrift,
+                                  maybe_extended_grid
 using ClimaSeaIce.Rheologies: ElastoViscoPlasticRheology
 
 using Oceananigans.TimeSteppers: SplitRungeKuttaTimeStepper
@@ -169,14 +171,17 @@ function sea_ice_dynamics(grid, ocean=nothing;
     ρₑ = ocean_reference_density(ocean, FT)
 
     τo  = SemiImplicitStress(uₑ=SSU, vₑ=SSV, Cᴰ=sea_ice_ocean_drag_coefficient, ρₑ=ρₑ)
-    τua = Field{Face, Center, Nothing}(grid)
-    τva = Field{Center, Face, Nothing}(grid)
+
+    velocity_grid = maybe_extended_grid(solver, grid)
+
+    τua = Field{Face, Center, Nothing}(velocity_grid; boundary_conditions = default_sea_ice_boundary_conditions(velocity_grid, :u))
+    τva = Field{Center, Face, Nothing}(velocity_grid; boundary_conditions = default_sea_ice_boundary_conditions(velocity_grid, :v))
 
     if isnothing(free_drift)
         free_drift = StressBalanceFreeDrift((u=τua, v=τva), τo)
     end
 
-    return SeaIceMomentumEquation(grid;
+    return SeaIceMomentumEquation(velocity_grid;
                                   coriolis,
                                   top_momentum_stress = (u=τua, v=τva),
                                   bottom_momentum_stress = τo,
