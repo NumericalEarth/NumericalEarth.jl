@@ -31,6 +31,7 @@ using ClimaSeaIce.SeaIceThermodynamics: latent_heat
 
 using NumericalEarth
 using NumericalEarth.Atmospheres: PrescribedAtmosphere
+using NumericalEarth.Radiations: PrescribedRadiation
 using NumericalEarth.Diagnostics: atmosphere_ocean_heat_flux, frazil_heat_flux
 using NumericalEarth.EarthSystemModels: OceanSeaIceModel, Radiation, update_state!
 using NumericalEarth.Oceans: ocean_simulation
@@ -87,25 +88,25 @@ set!(sea_ice.model, h = 1, ℵ = 1, hs = 0.10)
 
 atmosphere_grid = RectilinearGrid(arch; size=(), topology=(Flat, Flat, Flat))
 atmosphere      = PrescribedAtmosphere(atmosphere_grid, [0.0, 1e9])
-radiation       = Radiation()
+radiation       = PrescribedRadiation(atmosphere_grid, [0.0, 1e9])
 
 coupled_model = OceanSeaIceModel(ocean, sea_ice; atmosphere, radiation)
 
 # ## Helpers
 #
-# `set_atmosphere!` fills every `FieldTimeSeries` of the prescribed atmosphere with scalar constants 
+# `set_forcing!` fills every `FieldTimeSeries` of the prescribed atmosphere with scalar constants 
 # so the atmospheric forcing is spatio-temporally uniform.
 
-function set_atmosphere!(atmosphere, T, q, u, v, p, ℐꜜˢʷ, ℐꜜˡʷ, Jᶜ, Jˢⁿ)
-    fill!(parent(atmosphere.tracers.T),                       T   )
-    fill!(parent(atmosphere.tracers.q),                       q   )
-    fill!(parent(atmosphere.velocities.u),                    u   )
-    fill!(parent(atmosphere.velocities.v),                    v   )
-    fill!(parent(atmosphere.pressure),                        p   )
-    fill!(parent(atmosphere.downwelling_radiation.shortwave), ℐꜜˢʷ)
-    fill!(parent(atmosphere.downwelling_radiation.longwave),  ℐꜜˡʷ)
-    fill!(parent(atmosphere.freshwater_flux.rain),            Jᶜ  )
-    fill!(parent(atmosphere.freshwater_flux.snow),            Jˢⁿ )
+function set_forcing!(atmosphere, radiation, T, q, u, v, p, ℐꜜˢʷ, ℐꜜˡʷ, Jᶜ, Jˢⁿ)
+    fill!(parent(atmosphere.tracers.T),            T   )
+    fill!(parent(atmosphere.tracers.q),            q   )
+    fill!(parent(atmosphere.velocities.u),         u   )
+    fill!(parent(atmosphere.velocities.v),         v   )
+    fill!(parent(atmosphere.pressure),             p   )
+    fill!(parent(atmosphere.freshwater_flux.rain), Jᶜ  )
+    fill!(parent(atmosphere.freshwater_flux.snow), Jˢⁿ )
+    fill!(parent(radiation.downwelling_shortwave), ℐꜜˢʷ)
+    fill!(parent(radiation.downwelling_longwave),  ℐꜜˡʷ)
     return nothing
 end
 
@@ -235,8 +236,8 @@ end
 function phase_switch_callback(simulation)
     simulation.model.clock.time < Δτ && return nothing
 
-    set_atmosphere!(atmosphere,   melt_phase.T,    melt_phase.q,    melt_phase.u,  melt_phase.v, 
-                    melt_phase.p, melt_phase.ℐꜜˢʷ, melt_phase.ℐꜜˡʷ, melt_phase.Jᶜ, melt_phase.Jˢⁿ)
+    set_forcing!(atmosphere, radiation, melt_phase.T, melt_phase.q, melt_phase.u, melt_phase.v, 
+                 melt_phase.p, melt_phase.ℐꜜˢʷ, melt_phase.ℐꜜˡʷ, melt_phase.Jᶜ, melt_phase.Jˢⁿ)
 
     Qᵖ   = - melt_phase.Jˢⁿ * ℒ₀ * Az
     𝒬ᶠʳᶻ = simulation.model.interfaces.sea_ice_ocean_interface.fluxes.frazil_heat
@@ -257,7 +258,7 @@ add_callback!(simulation, phase_switch_callback, SpecifiedTimes([Δτ]))
 # Initialize the coupler for the freeze atmosphere. Oceananigans' `run!` will re-run `update_state!` at init 
 # and then fire `budget_callback` once, which serves as the `t = 0` seed entry for the history.
 
-set_atmosphere!(atmosphere,     freeze_phase.T,    freeze_phase.q,    freeze_phase.u,  freeze_phase.v, 
+set_atmosphere!(atmosphere, radiation, freeze_phase.T, freeze_phase.q, freeze_phase.u, freeze_phase.v, 
                 freeze_phase.p, freeze_phase.ℐꜜˢʷ, freeze_phase.ℐꜜˡʷ, freeze_phase.Jᶜ, freeze_phase.Jˢⁿ)
 
 @info "Running 60-day coupled freeze/melt cycle…"

@@ -10,7 +10,7 @@ using ClimaSeaIce
 using ClimaSeaIce.SeaIceThermodynamics: latent_heat
 
 using NumericalEarth.Atmospheres: PrescribedAtmosphere
-using NumericalEarth.Radiation: PrescribedRadiation
+using NumericalEarth.Radiations: PrescribedRadiation
 using NumericalEarth.Diagnostics: atmosphere_ocean_heat_flux, frazil_heat_flux
 using NumericalEarth.EarthSystemModels: OceanSeaIceModel, update_state!
 using NumericalEarth.Oceans: ocean_simulation
