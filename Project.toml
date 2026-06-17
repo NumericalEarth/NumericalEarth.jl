@@ -97,8 +97,3 @@ Thermodynamics = "0.15.3, 1"
 WorldOceanAtlasTools = "0.6"
 ZipFile = "0.10"
 julia = "1.10"
-
-# TEST ONLY: point CopernicusMarine at the Python-free CLI branch to verify
-# downstream compatibility. Revert (or re-pin to a released version) before merging.
-[sources]
-CopernicusMarine = {url = "https://github.com/NumericalEarth/CopernicusMarine.jl", rev = "remove-python-dependence"}
