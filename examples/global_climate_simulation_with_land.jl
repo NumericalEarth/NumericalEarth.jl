@@ -1,0 +1,393 @@
+# # Global climate simulation
+#
+# This example configures a global ocean--sea ice simulation at 1.5ᵒ horizontal resolution with
+# realistic bathymetry and a few closures including the "Gent-McWilliams" `IsopycnalSkewSymmetricDiffusivity`.
+# The atmosphere is represented by a 4-layer [SpeedyWeather](https://github.com/SpeedyWeather/SpeedyWeather.jl)
+# simulation on the T63 spectral grid (this grid has approximately 1.875ᵒ resolution).
+#
+# The atmosphere is initialized with the [jablonowski2006baroclinic](@citet) initial conditions,
+# which consist of a zonal wind centered at mid-latitudes and higher altitudes and a temperature
+# profile that is baroclinically unstable. The surface pressure is adjusted by orography for
+# approximately globally constant mean-sea level pressure. The initial specific humidity is
+# calculated from temperature for a constant relative humidity everywhere.
+# The ocean and sea ice are initialized by ocean temperature, salinity, sea ice concentration,
+# and sea ice thickness from the ECCO state estimate.
+#
+# For this example, we need `Oceananigans.HydrostaticFreeSurfaceModel` (the ocean), `ClimaSeaIce.SeaIceModel` (the sea ice) and
+# `SpeedyWeather.PrimitiveWetModel` (the atmosphere). All these are coupled and orchestrated by the `NumericalEarth.EarthSystemModel`
+# (the coupled system).
+#
+# The ConservativeRegridding.jl package is used to regrid fields between the atmosphere and ocean--sea ice components.
+ENV["ECCO_USERNAME"] = "maximiliangelbrecht"
+ENV["ECCO_WEBDAV_PASSWORD"] = "UT2vXAPMOV04qCZV@9D"
+
+using Oceananigans, SpeedyWeather, Terrarium, NumericalEarth, ConservativeRegridding
+using NCDatasets, CairoMakie
+using Oceananigans.Units
+using Printf, Statistics, Dates
+
+const SpeedyExt = Base.get_extension(
+    NumericalEarth,
+    :NumericalEarthSpeedyWeatherExt
+)
+
+# ## Atmospheric model configuration with Terrarium
+function atmosphere_land_simulation(spectral_grid::SpeedyWeather.SpectralGrid; output_interval=nothing)
+
+    # Terrarium prep 
+    ring_grid = spectral_grid.grid 
+
+    land_sea_mask_raw = RingGrids.get_asset(
+    "data/boundary_conditions/land-sea_mask.nc",
+    from_assets = true, name = "lsm",
+    ArrayType = RingGrids.FullClenshawField, FileFormat = NCDataset)
+
+    land_sea_mask_terrarium = clamp.(RingGrids.grid_cell_average!(RingGrids.Field(ring_grid), land_sea_mask_raw), 0, 1)
+
+    # Build the Terrarium land model on the matching ring grid
+    Nz = 30
+    Δz_min = 0.05
+    grid = ColumnRingGrid(Terrarium.CPU(), Float32, ExponentialSpacing(; N = Nz, Δz_min), ring_grid, land_sea_mask_terrarium .> 0.0f0)
+    soil_initializer = SoilInitializer(eltype(grid))
+    soil = SoilEnergyWaterCarbon(eltype(grid), hydrology = SoilHydrology(eltype(grid)))
+    terrarium_model = Terrarium.LandModel(grid; initializer = soil_initializer, vegetation = nothing, soil)
+
+    # Wrap the Terrarium model as a SpeedyWeather land component
+    land = SpeedyWeather.LandModel(
+        spectral_grid, terrarium_model;
+        timestepper = ForwardEuler(eltype(grid)),
+        Δt = 300.0,
+    )
+
+    # Surface fluxes
+    humidity_flux_ocean = SpeedyWeather.PrescribedOceanHumidityFlux(spectral_grid)
+    humidity_flux_land = SpeedyWeather.PrescribedLandHumidityFlux(spectral_grid)
+    surface_humidity_flux = SpeedyWeather.SurfaceHumidityFlux(ocean=humidity_flux_ocean, land=humidity_flux_land)
+
+    ocean_heat_flux = SpeedyWeather.PrescribedOceanHeatFlux(spectral_grid)
+    land_heat_flux = SpeedyWeather.PrescribedLandHeatFlux(spectral_grid)
+    surface_heat_flux = SpeedyWeather.SurfaceHeatFlux(ocean=ocean_heat_flux, land=land_heat_flux)
+
+    time_stepping = SpeedyWeather.Leapfrog(land.spectral_grid, Δt_at_T31 = Minute(15))
+
+    output = SpeedyWeather.NetCDFOutput(land.spectral_grid, SpeedyWeather.PrimitiveWetModel; nlayers_soil = land.geometry.nlayers)
+
+    # The atmospheric model
+    atmosphere_model = SpeedyWeather.PrimitiveWetModel(
+        spectral_grid;
+        land, 
+        time_stepping,
+        output,
+        surface_heat_flux,
+        surface_humidity_flux,
+        ocean = SpeedyWeather.PrescribedOcean(),
+        sea_ice = nothing # provided by ClimaSeaIce
+    )
+
+    output = !isnothing(output_interval)
+    output && (atmosphere_model.output.interval = SpeedyWeather.Second(output_interval))
+    SpeedyWeather.add!(atmosphere_model.output, SpeedyWeather.SoilTemperatureOutput())
+    SpeedyWeather.add!(atmosphere_model.output, SpeedyWeather.SurfaceLatentHeatFluxOutput())
+    SpeedyWeather.add!(atmosphere_model.output, SpeedyWeather.SurfaceSensibleHeatFluxOutput())
+
+    # Construct the simulation
+    atmosphere = SpeedyWeather.initialize!(atmosphere_model)
+
+    # Initialize the simulation
+    SpeedyWeather.initialize!(atmosphere; output)
+
+    # Fill in prognostic fields
+    SpeedyExt.initialize_atmospheric_state!(atmosphere)
+
+    return atmosphere
+end 
+
+# ## Ocean and sea-ice model configuration
+# The ocean and sea-ice are a simplified versions of the [one-degree ocean-sea ice example](@ref one-degree-ocean-seaice).
+#
+# The first step is to create the grid with realistic bathymetry.
+
+Nx = 240
+Ny = 120
+Nz = 10
+z = ExponentialDiscretization(Nz, -2000, 0)
+grid = TripolarGrid(Oceananigans.CPU(); size=(Nx, Ny, Nz), z, halo=(6, 6, 5))
+nothing #hide
+
+# We regrid the bathymetry.
+
+bottom_height = regrid_bathymetry(grid; major_basins=1, interpolation_passes=15)
+grid = ImmersedBoundaryGrid(grid, GridFittedBottom(bottom_height); active_cells_map=true)
+nothing #hide
+
+# Now we can specify the numerical details and the closures for the ocean simulation.
+
+momentum_advection   = VectorInvariant()
+tracer_advection     = WENO(order=5)
+free_surface         = SplitExplicitFreeSurface(grid; substeps=40)
+catke_closure        = NumericalEarth.Oceans.default_ocean_closure()
+eddy_closure         = Oceananigans.TurbulenceClosures.IsopycnalSkewSymmetricDiffusivity(κ_skew=1e3, κ_symmetric=1e3)
+viscous_closure      = Oceananigans.TurbulenceClosures.HorizontalScalarBiharmonicDiffusivity(ν=1e12)
+closures             = (catke_closure, eddy_closure, viscous_closure)
+nothing #hide
+
+# The ocean simulation, complete with initial conditions for temperature and salinity from ECCO on Jan 1st, 1992.
+
+ocean = ocean_simulation(grid;
+                         momentum_advection,
+                         tracer_advection,
+                         free_surface,
+                         closure = closures)
+
+ecco_set = MetadataSet(:temperature, :salinity,
+                       :sea_ice_thickness, :sea_ice_concentration;
+                       dataset = ECCO4Monthly(),
+                       date = DateTime(1992, 1, 1))
+Oceananigans.set!(ocean.model, ecco_set)   # T, S
+
+# The sea-ice simulation, complete with initial conditions for sea-ice thickness and sea-ice concentration from ECCO.
+
+sea_ice = sea_ice_simulation(grid, ocean; advection=WENO(order=5))
+
+Oceananigans.set!(sea_ice.model, ecco_set)   # h, ℵ
+
+# ## Atmosphere-Land model configuration
+# The atmosphere is provided by SpeedyWeather.jl with a Terrarium land model nested within it. Here, we configure a T63L4 model with a 3-hour output interval.
+# The `atmosphere_simulation` function takes care of building an atmosphere model with appropriate
+# hooks so that NumericalEarth can compute inter-component fluxes.
+nlayers = 4
+spectral_grid = SpeedyWeather.SpectralGrid(; trunc=63, nlayers, Grid=FullClenshawGrid)
+atmosphere = atmosphere_land_simulation(spectral_grid; output_interval=Hour(3))
+
+# The atmosphere model already includes some initial conditions as described above:
+
+atmosphere.model.initial_conditions
+
+# ## The coupled model
+# We are now ready to blend everything together.
+# We need to specify the time step for the coupled model.
+# We decide to step the global model every 4 atmosphere time steps (i.e., the ocean and the
+# sea-ice are stepped every two atmosphere time steps). 
+# (this is double that from the origial example of Oceananigans-Speedy)
+
+Δt = 4 * convert(eltype(grid), atmosphere.model.time_stepping.Δt_sec)
+nothing #hide
+
+# We build the complete coupled `earth_model` and the coupled simulation.
+# NumericalEarth still computes turbulent (sensible heat, water vapor) fluxes
+# here using its own bulk-formula machinery and writes them back to Speedy.
+# Top-level radiation, however, is not yet wired up against SpeedyWeather's
+# upwelling-LW path, so we leave `radiation = nothing` for now.
+
+earth_model = EarthSystemModel(; atmosphere, sea_ice, ocean)
+
+# ## Building and running the simulation
+#
+# We are ready to build and run the coupled simulation.
+# But before we do, we add callbacks to write outputs to disk every 3 hours.
+
+earth = Oceananigans.Simulation(earth_model; Δt, stop_time=30days)
+outputs = merge(ocean.model.velocities, ocean.model.tracers)
+sea_ice_fields = merge(sea_ice.model.velocities, sea_ice.model.dynamics.auxiliaries.fields,
+                       (; h=sea_ice.model.ice_thickness, ℵ=sea_ice.model.ice_concentration))
+
+ocean.output_writers[:free_surf] = JLD2Writer(ocean.model, (; η=ocean.model.free_surface.displacement);
+                                              overwrite_existing=true,
+                                              schedule=TimeInterval(3hours),
+                                              filename="ocean_free_surface.jld2")
+
+ocean.output_writers[:surface] = JLD2Writer(ocean.model, outputs;
+                                            overwrite_existing=true,
+                                            schedule=TimeInterval(3hours),
+                                            filename="ocean_surface_fields.jld2",
+                                            indices=(:, :, grid.Nz))
+
+sea_ice.output_writers[:fields] = JLD2Writer(sea_ice.model, sea_ice_fields;
+                                             overwrite_existing=true,
+                                             schedule=TimeInterval(3hours),
+                                             filename="sea_ice_fields.jld2")
+
+𝒬ᵀᵃᵒ = earth.model.interfaces.atmosphere_ocean_interface.fluxes.sensible_heat
+𝒬ᵛᵃᵒ = earth.model.interfaces.atmosphere_ocean_interface.fluxes.latent_heat
+τˣᵃᵒ = earth.model.interfaces.atmosphere_ocean_interface.fluxes.x_momentum
+τʸᵃᵒ = earth.model.interfaces.atmosphere_ocean_interface.fluxes.y_momentum
+𝒬ᵀᵃⁱ = earth.model.interfaces.atmosphere_sea_ice_interface.fluxes.sensible_heat
+𝒬ᵛᵃⁱ = earth.model.interfaces.atmosphere_sea_ice_interface.fluxes.latent_heat
+τˣᵃⁱ = earth.model.interfaces.atmosphere_sea_ice_interface.fluxes.x_momentum
+τʸᵃⁱ = earth.model.interfaces.atmosphere_sea_ice_interface.fluxes.y_momentum
+𝒬ⁱᵒ  = earth.model.interfaces.net_fluxes.sea_ice.bottom.heat
+Jˢⁱᵒ  = earth.model.interfaces.sea_ice_ocean_interface.fluxes.salt
+fluxes = (; 𝒬ᵀᵃᵒ, 𝒬ᵛᵃᵒ, τˣᵃᵒ, τʸᵃᵒ, 𝒬ᵀᵃⁱ, 𝒬ᵛᵃⁱ, τˣᵃⁱ, τʸᵃⁱ, 𝒬ⁱᵒ, Jˢⁱᵒ)
+
+ocean.output_writers[:fluxes] = JLD2Writer(earth.model.ocean.model, fluxes;
+                                           overwrite_existing=true,
+                                           schedule=TimeInterval(3hours),
+                                           filename="intercomponent_fluxes.jld2")
+
+# We also add a callback function that prints out a helpful progress message while the simulation runs.
+
+wall_time = Ref(time_ns())
+
+function progress(sim)
+    atmos = sim.model.atmosphere
+    ocean = sim.model.ocean
+
+    ua, va     = atmos.variables.dynamics.u_mean_grid, atmos.variables.dynamics.v_mean_grid
+    uo, vo, wo = ocean.model.velocities
+
+    uamax = (maximum(abs, ua), maximum(abs, va))
+    uomax = (maximum(abs, uo), maximum(abs, vo), maximum(abs, wo))
+
+    step_time = 1e-9 * (time_ns() - wall_time[])
+
+    msg1 = @sprintf("time: %s, iter: %d", prettytime(sim), iteration(sim))
+    msg2 = @sprintf(", max|ua|: (%.1e, %.1e) m s⁻¹", uamax...)
+    msg3 = @sprintf(", max|uo|: (%.1e, %.1e, %.1e) m s⁻¹", uomax...)
+    msg4 = @sprintf(", wall time: %s \n", prettytime(step_time))
+
+    @info msg1 * msg2 * msg3 * msg4
+
+    wall_time[] = time_ns()
+
+     return nothing
+end
+
+add_callback!(earth, progress, TimeInterval(1days))
+
+# Let's run the coupled model!
+
+Oceananigans.run!(earth)
+
+# ## Visualizing the results
+# We can visualize some of the results. Here, we plot the surface speeds in the atmosphere, ocean, and sea-ice
+# as well as the 2-meter temperature in the atmosphere, the sea surface temperature, and the sensible and latent heat
+# fluxes at the atmosphere-ocean interface. SpeedyWeather outputs are stored in a NetCDF file located in the `run_0001` folder,
+# while ocean and sea-ice outputs are stored in JLD2 files that can be read by Oceananigans.jl using the `FieldTimeSeries` type.
+
+SWO = Dataset("run_0002/output.nc")
+
+lsm = reverse(Matrix(atmosphere.model.land_sea_mask.mask), dims=2)
+
+Ta = reverse(SWO["temp"][:, :, nlayers, :], dims=2)
+ua = reverse(SWO["u"][:, :, nlayers, :],    dims=2)
+va = reverse(SWO["v"][:, :, nlayers, :],    dims=2)
+st = reverse(SWO["st"][:, :, 1, :], dims=2)
+st = ifelse.(lsm .< 1, NaN, st)
+sp = sqrt.(ua.^2 + va.^2)
+
+SST = FieldTimeSeries("ocean_surface_fields.jld2", "T")
+SSU = FieldTimeSeries("ocean_surface_fields.jld2", "u")
+SSV = FieldTimeSeries("ocean_surface_fields.jld2", "v")
+
+SIU = FieldTimeSeries("sea_ice_fields.jld2", "u")
+SIV = FieldTimeSeries("sea_ice_fields.jld2", "v")
+SIA = FieldTimeSeries("sea_ice_fields.jld2", "ℵ")
+
+𝒬ᵀᵃᵒ = FieldTimeSeries("intercomponent_fluxes.jld2", "𝒬ᵀᵃᵒ")
+𝒬ᵛᵃᵒ = FieldTimeSeries("intercomponent_fluxes.jld2", "𝒬ᵛᵃᵒ")
+
+Nt = min(length(sp[1, 1, :]), length(𝒬ᵀᵃᵒ))
+times = 𝒬ᵀᵃᵒ.times
+
+#=
+
+uotmp = Oceananigans.Field{Face, Center, Nothing}(SST.grid)
+votmp = Oceananigans.Field{Center, Face, Nothing}(SST.grid)
+
+uitmp = Oceananigans.Field{Face,   Center, Nothing}(SST.grid)
+vitmp = Oceananigans.Field{Center, Face,   Nothing}(SST.grid)
+atmp  = Oceananigans.Field{Center, Center, Nothing}(SST.grid)
+
+sotmp = Oceananigans.Field(sqrt(uotmp^2 + votmp^2))
+sitmp = Oceananigans.Field(sqrt(uitmp^2 + vitmp^2) * atmp)
+
+iter = Observable(1)
+
+san = @lift sp[:, :, $iter]
+son  = @lift begin
+    Oceananigans.set!(uotmp, SSU[$iter])
+    Oceananigans.set!(votmp, SSV[$iter])
+    Oceananigans.compute!(sotmp)
+    Oceananigans.interior(sotmp, :, :, 1)
+end
+ssn  = @lift begin
+    Oceananigans.set!(uitmp, SIU[$iter])
+    Oceananigans.set!(vitmp, SIV[$iter])
+    Oceananigans.set!(atmp,  SIA[$iter])
+    Oceananigans.compute!(sitmp)
+    Oceananigans.interior(sitmp, :, :, 1)
+end
+
+fig = Figure(size = (1000, 1500))
+
+ax1 = Axis(fig[1, 1], title = "Surface speed, atmosphere")
+ax2 = Axis(fig[2, 1], title = "Surface speed, ocean")
+ax3 = Axis(fig[3, 1], title = "Surface speed, sea-ice")
+
+hm1 = heatmap!(ax1, san; colormap = :deep,  nan_color=:lightgray, colorrange = (0, 35))
+hm2 = heatmap!(ax2, son; colormap = :magma, nan_color=:lightgray, colorrange = (0, 0.6))
+hm3 = heatmap!(ax3, ssn; colormap = :ice,   nan_color=:lightgray, colorrange = (0, 0.6))
+
+Colorbar(fig[1, 2], hm1, label="(m s⁻¹)")
+Colorbar(fig[2, 2], hm2, label="(m s⁻¹)")
+Colorbar(fig[3, 2], hm3, label="(m s⁻¹)")
+
+for ax in (ax1, ax2, ax3)
+    hidedecorations!(ax)
+end
+
+title = @lift string(prettytime(times[$iter] - times[1]))
+Label(fig[0, :], title, fontsize=18)
+
+record(fig, "surface_speeds.mp4", 1:Nt, framerate=8) do i
+    iter[] = i
+end
+nothing #hide
+=#
+
+# ![](surface_speeds.mp4)
+iter = Observable(1)
+
+Tan = @lift Ta[:, :, $iter]
+Ton = @lift interior(SST[$iter], :, :, 1)
+𝒬ᵀn = @lift interior(𝒬ᵀᵃᵒ[$iter], :, :, 1)
+𝒬ᵛn = @lift interior(𝒬ᵛᵃᵒ[$iter], :, :, 1)
+SIAn = @lift interior(SIA[$iter], :, :, 1)
+stn = @lift st[:, :, $iter]
+
+fig = Figure(size = (2000, 1000))
+
+ax1 = Axis(fig[1, 1], title = "2m Temperature, atmosphere")
+ax2 = Axis(fig[2, 1], title = "Sea Surface Temperature")
+ax3 = Axis(fig[1, 3], title = "Sensible heat flux")
+ax4 = Axis(fig[2, 3], title = "Latent heat flux")
+ax5 = Axis(fig[1, 5], title = "Sea Ice Concentration")
+ax6 = Axis(fig[2, 5], title = "Soil Temperature")
+
+hm1 = heatmap!(ax1, Tan; colormap = :plasma, nan_color=:lightgray, colorrange = (-45,45))
+hm2 = heatmap!(ax2, Ton; colormap = :plasma, nan_color=:lightgray, colorrange = (-2, 32))
+hm3 = heatmap!(ax3, 𝒬ᵀn; colormap = :balance, colorrange = (-200, 200),  nan_color=:lightgray)
+hm4 = heatmap!(ax4, 𝒬ᵛn; colormap = :balance, colorrange = (-200, 200),  nan_color=:lightgray)
+hm5 = heatmap!(ax5, SIAn; colormap = :balance, colorrange = (0, 1),  nan_color=:lightgray)
+hm6 = heatmap!(ax6, stn; colormap = :balance, colorrange = (-45, 45),  nan_color=:lightgray)
+
+Colorbar(fig[1, 2], hm1, label="(ᵒC)")
+Colorbar(fig[2, 2], hm2, label="(ᵒC)")
+Colorbar(fig[1, 4], hm3, label="(W/m²)")
+Colorbar(fig[2, 4], hm4, label="(W/m²)")
+Colorbar(fig[1, 6], hm5, label="([])")
+Colorbar(fig[2, 6], hm6, label="(ᵒC)")
+
+for ax in (ax1, ax2, ax3, ax4, ax5, ax6)
+    hidedecorations!(ax)
+end
+
+title = @lift string(prettytime(times[$iter] - times[1]))
+Label(fig[0, :], title, fontsize=18)
+
+record(fig, "surface_temperature_and_heat_flux_and_ice_and_soil.mp4", 1:Nt, framerate=8) do i
+    iter[] = i
+end
+nothing #hide
+
+# ![](surface_temperature_and_heat_flux.mp4)
