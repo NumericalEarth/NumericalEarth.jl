@@ -258,8 +258,8 @@ add_callback!(simulation, phase_switch_callback, SpecifiedTimes([Δτ]))
 # Initialize the coupler for the freeze atmosphere. Oceananigans' `run!` will re-run `update_state!` at init 
 # and then fire `budget_callback` once, which serves as the `t = 0` seed entry for the history.
 
-set_atmosphere!(atmosphere, radiation, freeze_phase.T, freeze_phase.q, freeze_phase.u, freeze_phase.v, 
-                freeze_phase.p, freeze_phase.ℐꜜˢʷ, freeze_phase.ℐꜜˡʷ, freeze_phase.Jᶜ, freeze_phase.Jˢⁿ)
+set_forcing!(atmosphere, radiation, freeze_phase.T, freeze_phase.q, freeze_phase.u, freeze_phase.v, 
+             freeze_phase.p, freeze_phase.ℐꜜˢʷ, freeze_phase.ℐꜜˡʷ, freeze_phase.Jᶜ, freeze_phase.Jˢⁿ)
 
 @info "Running 60-day coupled freeze/melt cycle…"
 run!(simulation)
