@@ -15,7 +15,11 @@ using NumericalEarth.DataWrangling.CopernicusDEM: GLO30, GLO90
 # https://earthdatahub.destine.eu/account-settings#my-personal-access-tokens).
 # Excluded from CI in runtests.jl; run manually with the token set.
 
-const dem_region = BoundingBox(longitude = (9, 11), latitude = (45, 47))  # European Alps
+# A small high-Alps window (Monte Rosa massif) — kept to 1°×1° so the GLO-30 read
+# stays light on the shared downloading CI job, while still spanning peaks > 1 km.
+const dem_longitude = (7.5, 8.5)
+const dem_latitude  = (45.5, 46.5)
+const dem_region = BoundingBox(longitude = dem_longitude, latitude = dem_latitude)
 
 @testset "Downloading Copernicus DEM regional window" begin
     for dataset in (GLO30(), GLO90())
@@ -31,8 +35,8 @@ end
     for dataset in (GLO30(), GLO90())
         grid = LatitudeLongitudeGrid(CPU();
                                      size = (40, 40, 1),
-                                     longitude = (9, 11),
-                                     latitude = (45, 47),
+                                     longitude = dem_longitude,
+                                     latitude = dem_latitude,
                                      z = (-1, 0))
 
         metadatum = Metadatum(:bottom_height; dataset, region = dem_region)
