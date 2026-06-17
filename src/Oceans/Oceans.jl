@@ -5,6 +5,7 @@ export ocean_simulation, SlabOcean, PrescribedOcean
 using Adapt: Adapt, adapt
 using KernelAbstractions: @kernel, @index
 using Oceananigans: Oceananigans
+using Oceananigans.AbstractOperations: KernelFunctionOperation
 using Oceananigans.Advection: WENO, WENOVectorInvariant
 using Oceananigans.BoundaryConditions: DefaultBoundaryCondition, DiscreteBoundaryFunction,
                                        FieldBoundaryConditions, FluxBoundaryCondition,
@@ -21,6 +22,7 @@ using Oceananigans.Models.NonhydrostaticModels: NonhydrostaticModel
 using Oceananigans.OrthogonalSphericalShellGrids: OrthogonalSphericalShellGrids, TripolarGrid
 using Oceananigans.Operators: ℑxyᶠᶜᵃ, ℑxyᶜᶠᵃ, ℑxᶠᵃᵃ, ℑyᵃᶠᵃ, ∂xᶠᶜᶜ, ∂yᶜᶠᶜ
 using Oceananigans.Simulations: Simulation
+using Oceananigans.TurbulenceClosures: κzᶜᶜᶠ
 using Oceananigans.TurbulenceClosures.TKEBasedVerticalDiffusivities: CATKEVerticalDiffusivity,
                                                                      CATKEMixingLength,
                                                                      CATKEEquation
@@ -123,10 +125,55 @@ function EarthSystemModels.InterfaceComputations.ComponentExchanger(ocean::Ocean
         S = Field{Center, Center, Nothing}(grid)
     end
 
-    # T is in potential temperature, model T in conservative temperature
-    T = Field{Center, Center, Nothing}(grid)
+    # Near-surface vertical tracer diffusivity, evaluated lazily inside the
+    # interface flux kernel by formulations that consume it (`InteriorDiffusivity`).
+    model = ocean.model
+    temperature_index = findfirst(name -> name === :T, collect(keys(model.tracers)))
+    κ = KernelFunctionOperation{Center, Center, Nothing}(Σκzᴺ,
+                                                         ocean_grid,
+                                                         model.closure,
+                                                         model.closure_fields,
+                                                         Val(temperature_index),
+                                                         model.clock,
+                                                         Oceananigans.fields(model))
 
-    return ComponentExchanger((; u, v, T, S), nothing)
+    return ComponentExchanger((; u, v, T, S, κ), nothing)
+end
+
+#####
+##### Near-surface vertical diffusivity assessment
+#####
+
+# Total vertical tracer diffusivity at the surface. Falls back to zero for closures without vertical diffusivity
+@inline Σκzᶜᶜᶠ(i, j, k, grid, closure, K, id, clock, model_fields) = κzᶜᶜᶠ(i, j, k, grid, closure, K, id, clock, model_fields)
+
+@inline Σκzᶜᶜᶠ(i, j, k, grid, closure::Tuple{}, K::Tuple{}, id, clock, model_fields) = zero(grid)
+
+@inline Σκzᶜᶜᶠ(i, j, k, grid, closure::Tuple{<:Any}, K::Tuple{<:Any}, id, clock, model_fields) =
+    κzᶜᶜᶠ(i, j, k, grid, closure[1], K[1], id, clock, model_fields) 
+
+@inline Σκzᶜᶜᶠ(i, j, k, grid, closure::Tuple{<:Any, <:Any}, K::Tuple{<:Any, <:Any}, id, clock, model_fields) =
+    κzᶜᶜᶠ(i, j, k, grid, closure[1], K[1], id, clock, model_fields) +
+    κzᶜᶜᶠ(i, j, k, grid, closure[2], K[2], id, clock, model_fields) 
+
+@inline Σκzᶜᶜᶠ(i, j, k, grid, closure::Tuple{<:Any, <:Any, <:Any}, K::Tuple{<:Any, <:Any, <:Any}, id, clock, model_fields) =
+    κzᶜᶜᶠ(i, j, k, grid, closure[1], K[1], id, clock, model_fields) +
+    κzᶜᶜᶠ(i, j, k, grid, closure[2], K[2], id, clock, model_fields) +
+    κzᶜᶜᶠ(i, j, k, grid, closure[3], K[3], id, clock, model_fields) 
+
+@inline Σκzᶜᶜᶠ(i, j, k, grid, closure::Tuple{<:Any, <:Any, <:Any, <:Any}, K::Tuple{<:Any, <:Any, <:Any, <:Any}, id, clock, model_fields) =
+    κzᶜᶜᶠ(i, j, k, grid, closure[1], K[1], id, clock, model_fields) +
+    κzᶜᶜᶠ(i, j, k, grid, closure[2], K[2], id, clock, model_fields) +
+    κzᶜᶜᶠ(i, j, k, grid, closure[3], K[3], id, clock, model_fields) +
+    κzᶜᶜᶠ(i, j, k, grid, closure[4], K[4], id, clock, model_fields) 
+
+@inline Σκzᶜᶜᶠ(i, j, k, grid, closure::Tuple, K::Tuple, id, clock, model_fields) =
+    κzᶜᶜᶠ(i, j, k, grid,  closure[1],     K[1],     id, clock, model_fields) +
+    Σκzᶜᶜᶠ(i, j, k, grid, closure[2:end], K[2:end], id, clock, model_fields)
+
+@inline function Σκzᴺ(i, j, k, grid, closure, K, id, clock, model_fields)
+    Nz = size(grid, 3)
+    return Σκzᶜᶜᶠ(i, j, Nz, grid, closure, K, id, clock, model_fields)
 end
 
 @inline net_flux(condition) = condition

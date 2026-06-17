@@ -22,6 +22,8 @@ export
     LinearStableStabilityFunction,
     SkinTemperature,
     BulkTemperature,
+    DiffusiveFlux,
+    InteriorDiffusivity,
     atmosphere_ocean_stability_functions,
     atmosphere_land_stability_functions,
     atmosphere_sea_ice_stability_functions,

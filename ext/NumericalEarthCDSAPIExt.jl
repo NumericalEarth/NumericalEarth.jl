@@ -420,15 +420,15 @@ end
 Download one or more ERA5 variables at a single datetime.
 """
 function Downloads.download(names::Vector{Symbol}, dataset::ERA5Dataset, datetime;
-                                                       region = nothing,
-                                                       dir = default_download_directory(dataset))
+                            region = nothing,
+                            dir = default_download_directory(dataset))
     meta = Metadatum(first(names); dataset, date=datetime, region, dir)
     return Downloads.download(names, meta)
 end
 
 function Downloads.download(name::Symbol, dataset::ERA5Dataset, datetime;
-                                                       region = nothing,
-                                                       dir = default_download_directory(dataset))
+                            region = nothing,
+                            dir = default_download_directory(dataset))
     return Downloads.download([name], dataset, datetime; region, dir)
 end
 
@@ -438,12 +438,12 @@ end
 Download one or more ERA5 variables for multiple datetimes, batching by calendar day.
 """
 function Downloads.download(names::Vector{Symbol},
-                                                       dataset::ERA5Dataset,
-                                                       datetimes::AbstractVector;
-                                                       region = nothing,
-                                                       dir = default_download_directory(dataset),
-                                                       skip_existing = true,
-                                                       cleanup = true)
+                            dataset::ERA5Dataset,
+                            datetimes::AbstractVector;
+                            region = nothing,
+                            dir = default_download_directory(dataset),
+                            skip_existing = true,
+                            cleanup = true)
 
     batches = batch_datetimes_for_cds(datetimes, dataset, length(names))
 
@@ -458,12 +458,12 @@ function Downloads.download(names::Vector{Symbol},
 end
 
 function Downloads.download(name::Symbol,
-                                                       dataset::ERA5Dataset,
-                                                       datetimes::AbstractVector;
-                                                       region = nothing,
-                                                       dir = default_download_directory(dataset),
-                                                       skip_existing = true,
-                                                       cleanup = true)
+                            dataset::ERA5Dataset,
+                            datetimes::AbstractVector;
+                            region = nothing,
+                            dir = default_download_directory(dataset),
+                            skip_existing = true,
+                            cleanup = true)
     return Downloads.download([name], dataset, datetimes; region, dir, skip_existing, cleanup)
 end
 

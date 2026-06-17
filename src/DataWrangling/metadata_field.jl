@@ -371,8 +371,11 @@ function centers_to_interfaces(z_centers)
     return z_faces
 end
 
+# Convert missing values to NaN
+@inline nan_convert_missing(FT, x::Number) = convert(FT, x)
 @inline nan_convert_missing(FT, ::Missing) = convert(FT, NaN)
-@inline nan_convert_missing(FT, d::Number) = convert(FT, d)
+@inline nan_convert_missing(FT, x, ::Missing) = nan_convert_missing(FT, x)
+@inline nan_convert_missing(FT, x, missing_val::Number) = ifelse(ismissing(x) || x == missing_val, convert(FT, NaN), nan_convert_missing(FT, x))
 
 # No units conversion
 @inline convert_units(T, units) = T
@@ -406,6 +409,13 @@ end
 @inline convert_units(Φ::FT, ::InverseGravity)                                 where FT = Φ / convert(FT, 9.80665)
 @inline convert_units(V::FT, ::CentimetersPerSecond)                           where FT = V / convert(FT, 100)
 
+# Mass fractions (convert to kg/kg)
+@inline convert_units(χ::FT, ::DecigramPerKilogram) where FT = χ / convert(FT, 1e4)
+@inline convert_units(χ::FT, ::GramPerKilogram) where FT = χ / convert(FT, 1e3)
+
+# Densities (convert to kg/m^3)
+@inline convert_units(ρ::FT, ::HectogramPerCubicMeter) where FT = ρ / convert(FT, 10)
+@inline convert_units(ρ::FT, ::CentigramPerCubicCentimeter) where FT = ρ * convert(FT, 10)
 
 #####
 ##### Masking data for inpainting

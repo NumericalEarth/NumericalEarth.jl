@@ -1,9 +1,10 @@
+using DocStringExtensions: TYPEDSIGNATURES
 using Oceananigans.Architectures: architecture
 using Oceananigans.BoundaryConditions: DefaultBoundaryCondition
 using Oceananigans.DistributedComputations: DistributedGrid, all_reduce
 using Oceananigans.Grids: inactive_node
 using Oceananigans.OrthogonalSphericalShellGrids
-using Oceananigans.TurbulenceClosures: VerticallyImplicitTimeDiscretization
+using Oceananigans.TimeSteppers: VerticallyImplicitTimeDiscretization, AdaptiveVerticallyImplicitDiscretization
 using Oceananigans.TurbulenceClosures.TKEBasedVerticalDiffusivities: CATKEVerticalDiffusivity,
                                                                      CATKEMixingLength,
                                                                      CATKEEquation
@@ -13,6 +14,28 @@ using Statistics: mean
 #####
 ##### Utilities
 #####
+
+keep_user_boundary_condition(user, default) = user isa DefaultBoundaryCondition ? default : user
+
+merge_boundary_conditions(user, default) = user
+
+"""
+$(TYPEDSIGNATURES)
+
+Merge `user` and `default` boundary conditions side-by-side: every side the user left
+unspecified (a `DefaultBoundaryCondition`) inherits the corresponding default side. This
+allows users to prescribe, for example, only the lateral boundary conditions of a field
+while retaining the default surface fluxes, bottom drag, and immersed boundary condition.
+"""
+function merge_boundary_conditions(user::FieldBoundaryConditions, default::FieldBoundaryConditions)
+    return FieldBoundaryConditions(keep_user_boundary_condition(user.west,     default.west),
+                                   keep_user_boundary_condition(user.east,     default.east),
+                                   keep_user_boundary_condition(user.south,    default.south),
+                                   keep_user_boundary_condition(user.north,    default.north),
+                                   keep_user_boundary_condition(user.bottom,   default.bottom),
+                                   keep_user_boundary_condition(user.top,      default.top),
+                                   keep_user_boundary_condition(user.immersed, default.immersed))
+end
 
 @inline ϕ²(i, j, k, grid, ϕ)    = @inbounds ϕ[i, j, k]^2
 @inline spᶠᶜᶜ(i, j, k, grid, Φ) = @inbounds sqrt(Φ.u[i, j, k]^2 + ℑxyᶠᶜᵃ(i, j, k, grid, ϕ², Φ.v))
@@ -186,11 +209,12 @@ end
                                  biogeochemistry = nothing,
                                  timestepper = :SplitRungeKutta3,
                                  coriolis = Default(HydrostaticSphericalCoriolis(; rotation_rate)),
-                                 momentum_advection = WENOVectorInvariant(),
-                                 tracer_advection = WENO(order=7),
+                                 momentum_advection = WENOVectorInvariant(time_discretization = AdaptiveVerticallyImplicitDiscretization(cfl=0.5)),
+                                 tracer_advection = WENO(order=7, time_discretization = AdaptiveVerticallyImplicitDiscretization(cfl=0.5)),
                                  equation_of_state = TEOS10EquationOfState(; reference_density),
                                  boundary_conditions::NamedTuple = NamedTuple(),
                                  radiative_forcing = default_radiative_forcing(grid),
+                                 clock = nothing,
                                  warn = true,
                                  verbose = false)
 
@@ -250,11 +274,14 @@ defaults on a per-field basis.
 - `biogeochemistry`: A biogeochemical model or `nothing`.
 - `timestepper`: Time-stepping scheme; options are `:SplitRungeKutta3` (default), or `:QuasiAdamsBashforth2`.
 - `coriolis`: Coriolis object or `Default(...)` wrapper.
-- `momentum_advection`: Momentum advection scheme. Defaults to `WENOVectorInvariant()`.
-- `tracer_advection`: Tracer advection scheme or named tuple of schemes. Defaults to `WENO(order=7)`.
+- `momentum_advection`: Momentum advection scheme. Defaults to `WENOVectorInvariant(time_discretization = AdaptiveVerticallyImplicitDiscretization(cfl=0.5))`.
+- `tracer_advection`: Tracer advection scheme or named tuple of schemes. Defaults to `WENO(order=7, time_discretization = AdaptiveVerticallyImplicitDiscretization(cfl=0.5))`.
 - `equation_of_state`: Equation of state object. Defaults to TEOS-10 (`TEOS10EquationOfState`).
 - `boundary_conditions`: User-supplied boundary conditions; merged with defaults.
 - `radiative_forcing`: Additional temperature forcing; merged into `forcing`.
+- `clock`: Clock for the underlying model. Defaults to `nothing`, in which case the
+  model builds its own default clock. Pass a `Clock` (e.g. `Clock{Float64}(time=0)` or
+  a `DateTime`-based clock) to control the time type, for instance when coupling.
 - `warn`: If `true`, warnings are emitted for potentially unintended setups.
 - `verbose`: If `true`, prints additional setup information.
 """
@@ -273,12 +300,13 @@ function hydrostatic_ocean_simulation(grid;
                                       biogeochemistry = nothing,
                                       timestepper = :SplitRungeKutta3,
                                       coriolis = Default(HydrostaticSphericalCoriolis(; rotation_rate)),
-                                      momentum_advection = WENOVectorInvariant(),
-                                      tracer_advection = WENO(order=7),
+                                      momentum_advection = WENOVectorInvariant(time_discretization = AdaptiveVerticallyImplicitDiscretization(cfl=0.5)),
+                                      tracer_advection = WENO(order=7, time_discretization = AdaptiveVerticallyImplicitDiscretization(cfl=0.5)),
                                       equation_of_state = TEOS10EquationOfState(; reference_density),
                                       boundary_conditions::NamedTuple = NamedTuple(),
                                       radiative_forcing = default_radiative_forcing(grid),
                                       materialize_buoyancy_gradients = true,
+                                      clock = nothing,
                                       warn = true,
                                       verbose = false)
 
@@ -373,10 +401,13 @@ function hydrostatic_ocean_simulation(grid;
                                    T = FieldBoundaryConditions(top=T_top_bc),
                                    S = FieldBoundaryConditions(top=S_top_bc))
 
-    # Merge boundary conditions with preference to user
-    # TODO: support users specifying only _part_ of the bcs for u, v, T, S (ie adding the top and immersed
-    # conditions even when a user-bc is supplied).
-    boundary_conditions = merge(default_boundary_conditions, boundary_conditions)
+    # Merge boundary conditions side-by-side with preference to user
+    merged_boundary_conditions = NamedTuple(name => haskey(default_boundary_conditions, name) ?
+                                            merge_boundary_conditions(boundary_conditions[name], default_boundary_conditions[name]) :
+                                            boundary_conditions[name]
+                                            for name in keys(boundary_conditions))
+
+    boundary_conditions = merge(default_boundary_conditions, merged_boundary_conditions)
     buoyancy = SeawaterBuoyancy(; gravitational_acceleration, equation_of_state)
     buoyancy = Oceananigans.BuoyancyFormulations.BuoyancyForce(grid, buoyancy; materialize_gradients = materialize_buoyancy_gradients)
    
@@ -392,6 +423,9 @@ function hydrostatic_ocean_simulation(grid;
         tracer_advection = merge(tracer_advection, tke_advection)
     end
 
+    # Only forward `clock` when supplied so the model keeps its own default otherwise.
+    clock_kw = isnothing(clock) ? NamedTuple() : (; clock)
+
     ocean_model = HydrostaticFreeSurfaceModel(grid;
                                               clock,
                                               buoyancy,
@@ -404,7 +438,8 @@ function hydrostatic_ocean_simulation(grid;
                                               free_surface,
                                               coriolis,
                                               forcing,
-                                              boundary_conditions)
+                                              boundary_conditions,
+                                              clock_kw...)
 
     ocean = Simulation(ocean_model; Δt, verbose)
 

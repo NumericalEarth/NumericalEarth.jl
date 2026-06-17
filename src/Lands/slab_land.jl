@@ -113,11 +113,12 @@ function SlabLand(grid;
                   hydrology = BucketHydrology(eltype(grid)),
                   clock     = Clock{eltype(grid)}(time = 0))
 
-    temperature           = CenterField(grid)
-    water_storage         = CenterField(grid)
-    saturation = CenterField(grid)
-    fluxes                = build_flux_accumulators(grid, energy, hydrology)
-    FT                    = eltype(grid)
+    temperature   = CenterField(grid)
+    water_storage = CenterField(grid)
+    saturation    = CenterField(grid)
+
+    fluxes = build_flux_accumulators(grid, energy, hydrology)
+    FT = eltype(grid)
     return SlabLand{FT}(grid, clock, temperature, water_storage, saturation,
                         fluxes, energy, hydrology)
 end
@@ -134,13 +135,13 @@ end
 
 function Base.show(io::IO, land::SlabLand)
     print(io, summary(land), '\n',
-              "├── grid:                  ", summary(land.grid), '\n',
-              "├── energy:                ", summary(land.energy), '\n',
-              "├── hydrology:             ", summary(land.hydrology), '\n',
-              "├── temperature:           ", summary(land.temperature), '\n',
-              "├── water_storage:         ", summary(land.water_storage), '\n',
-              "├── saturation: ", summary(land.saturation), '\n',
-              "└── fluxes:                ", keys(land.fluxes))
+              "├── grid:          ", summary(land.grid), '\n',
+              "├── energy:        ", summary(land.energy), '\n',
+              "├── hydrology:     ", summary(land.hydrology), '\n',
+              "├── temperature:   ", summary(land.temperature), '\n',
+              "├── water_storage: ", summary(land.water_storage), '\n',
+              "├── saturation:    ", summary(land.saturation), '\n',
+              "└── fluxes:        ", keys(land.fluxes))
 end
 
 #####
@@ -212,8 +213,8 @@ end
 ##### Container-level atmosphere-facing accessors
 #####
 
-surface_temperature(land::SlabLand)       = surface_temperature(land.energy, land)
-surface_saturation(land::SlabLand)           = saturation(land.hydrology, land)
+EarthSystemModels.surface_temperature(land::SlabLand) = surface_temperature(land.energy, land)
+surface_saturation(land::SlabLand) = saturation(land.hydrology, land)
 
 #####
 ##### EarthSystemModel interface — generic SlabLand coupling.
@@ -234,7 +235,7 @@ declared by the land closures.
 Radiative contributions are added on top in
 `apply_air_land_radiative_fluxes!`.
 """
-function update_net_fluxes!(coupled_model, land::SlabLand)
+function EarthSystemModels.update_net_fluxes!(coupled_model, land::SlabLand)
     al_interface = coupled_model.interfaces.atmosphere_land_interface
     isnothing(al_interface) && return nothing
 
@@ -276,7 +277,7 @@ end
     _maybe_write!(E, i, j, max(zero(Jᵛ),  Jᵛ))
 end
 
-interpolate_state!(exchanger, grid, ::SlabLand, coupled_model) = nothing
+EarthSystemModels.interpolate_state!(exchanger, grid, ::SlabLand, coupled_model) = nothing
 
 """
     ComponentExchanger(land::SlabLand, grid)
