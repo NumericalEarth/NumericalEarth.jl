@@ -44,13 +44,13 @@ NumericalEarth currently ships connectors for the following data products:
 ## [Supported variables for GLO30](@id dataset-glo30-vars)
 
 - `:bottom_height` - Surface elevation (Digital Surface Model) on a global 30 m
-  (1 arc-second) grid. Read in regional windows only; requires a DestinE access
-  token and `using Zarr`. See [`GLO30`](@ref).
+  (1 arc-second) grid from the `GLO30` dataset. Read in regional windows only;
+  requires a DestinE access token and `using Zarr`.
 
 ## [Supported variables for GLO90](@id dataset-glo90-vars)
 
 - `:bottom_height` - Surface elevation (Digital Surface Model) on a global 90 m
-  (3 arc-second) grid; the coarser sibling of GLO-30. See [`GLO90`](@ref).
+  (3 arc-second) grid from the `GLO90` dataset; the coarser sibling of GLO-30.
 
 ## [Supported variables for ECCO2Monthly](@id dataset-ecco2monthly-vars)
 
