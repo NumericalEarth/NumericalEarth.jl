@@ -8,8 +8,7 @@ using Oceananigans: Oceananigans
 using Oceananigans.AbstractOperations: KernelFunctionOperation
 using Oceananigans.Advection: WENO, WENOVectorInvariant
 using Oceananigans.BoundaryConditions: DefaultBoundaryCondition, DiscreteBoundaryFunction,
-                                       FieldBoundaryConditions, FluxBoundaryCondition,
-                                       ImplicitExplicitFluxBoundaryCondition, ImplicitExplicitFlux, getbc
+                                       FieldBoundaryConditions, FluxBoundaryCondition, getbc
 using Oceananigans.BuoyancyFormulations: SeawaterBuoyancy
 using Oceananigans.Coriolis: HydrostaticSphericalCoriolis
 using Oceananigans.Fields: Field, CenterField, set!, interior
@@ -179,19 +178,12 @@ end
 @inline net_flux(condition) = condition
 @inline net_flux(bc::MultipleFluxes) = bc.flux_field
 @inline net_flux(bc::DiscreteBoundaryFunction) = net_flux(bc.func)
-@inline net_flux(bc::ImplicitExplicitFlux) = net_flux(bc.explicit_flux)
-
-@inline net_flux_coefficient(condition) = nothing
-@inline net_flux_coefficient(bc::ImplicitExplicitFlux) = net_flux(bc.coefficient)
 
 function EarthSystemModels.InterfaceComputations.net_fluxes(ocean::OceananigansModelSimulations)
     # TODO: Generalize this to work with any ocean model
-    u_top = ocean.model.velocities.u.boundary_conditions.top.condition
-    v_top = ocean.model.velocities.v.boundary_conditions.top.condition
-    net_ocean_surface_fluxes = (; u = net_flux(u_top),
-                                  v = net_flux(v_top),
-                                  u_coefficient = net_flux_coefficient(u_top),
-                                  v_coefficient = net_flux_coefficient(v_top))
+    τˣ = net_flux(ocean.model.velocities.u.boundary_conditions.top.condition)
+    τʸ = net_flux(ocean.model.velocities.v.boundary_conditions.top.condition)
+    net_ocean_surface_fluxes = (; u=τˣ, v=τʸ)
 
     tracers = ocean.model.tracers
     ocean_surface_tracer_fluxes = NamedTuple(name => net_flux(tracers[name].boundary_conditions.top.condition) for name in keys(tracers))

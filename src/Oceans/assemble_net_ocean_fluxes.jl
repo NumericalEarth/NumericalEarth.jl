@@ -80,10 +80,8 @@ Base.@propagate_inbounds get_land_freshwater_flux(i, j, flux) = flux[i, j, 1]
     kᴺ = size(grid, 3)
     ρτˣᵃᵒ = atmos_ocean_fluxes.x_momentum   # atmosphere - ocean zonal momentum flux
     ρτʸᵃᵒ = atmos_ocean_fluxes.y_momentum   # atmosphere - ocean meridional momentum flux
-    ρτˣⁱᵒ = sea_ice_ocean_fluxes.x_momentum             # sea_ice - ocean zonal momentum flux (explicit part)
-    ρτʸⁱᵒ = sea_ice_ocean_fluxes.y_momentum             # sea_ice - ocean meridional momentum flux (explicit part)
-    ρλˣⁱᵒ = sea_ice_ocean_fluxes.x_momentum_coefficient # ice-ocean implicit drag coefficient (zonal)
-    ρλʸⁱᵒ = sea_ice_ocean_fluxes.y_momentum_coefficient # ice-ocean implicit drag coefficient (meridional)
+    ρτˣⁱᵒ = sea_ice_ocean_fluxes.x_momentum # sea_ice - ocean zonal momentum flux
+    ρτʸⁱᵒ = sea_ice_ocean_fluxes.y_momentum # sea_ice - ocean meridional momentum flux
 
     @inbounds begin
         ℵᵢ = sea_ice_concentration[i, j, 1]
@@ -108,11 +106,8 @@ Base.@propagate_inbounds get_land_freshwater_flux(i, j, flux) = flux[i, j, 1]
     ρᵒᶜ⁻¹ = 1 / ocean_properties.reference_density
     ΣFao = - (Jʳⁿ + Jˡⁿ + (1 - ℵᵢ) * Jˢⁿ) * ρᵒᶜ⁻¹ + (1 - ℵᵢ) * Jᵛ * ρᵒᶜ⁻¹
 
-
     τˣ = net_ocean_fluxes.u
     τʸ = net_ocean_fluxes.v
-    λˣ = net_ocean_fluxes.u_coefficient
-    λʸ = net_ocean_fluxes.v_coefficient
     Jᵀ = net_ocean_fluxes.T
     Jˢ = net_ocean_fluxes.S
     ℵ  = sea_ice_concentration
@@ -130,17 +125,11 @@ Base.@propagate_inbounds get_land_freshwater_flux(i, j, flux) = flux[i, j, 1]
 
         τˣᵃᵒ = ℑxᶠᵃᵃ(i, j, 1, grid, τᶜᶜᶜ, ρᵒᶜ⁻¹, ℵ, ρτˣᵃᵒ)
         τʸᵃᵒ = ℑyᵃᶠᵃ(i, j, 1, grid, τᶜᶜᶜ, ρᵒᶜ⁻¹, ℵ, ρτʸᵃᵒ)
-        # Ice-ocean drag, split for the ocean's semi-implicit momentum BC: the explicit part joins
-        # the atmosphere-ocean stress, the ℵ-weighted coefficient feeds the BC's implicit drag term.
         τˣⁱᵒ = ρτˣⁱᵒ[i, j, 1] * ρᵒᶜ⁻¹ * ℑxᶠᵃᵃ(i, j, 1, grid, ℵ)
         τʸⁱᵒ = ρτʸⁱᵒ[i, j, 1] * ρᵒᶜ⁻¹ * ℑyᵃᶠᵃ(i, j, 1, grid, ℵ)
-        λˣⁱᵒ = ρλˣⁱᵒ[i, j, 1] * ρᵒᶜ⁻¹ * ℑxᶠᵃᵃ(i, j, 1, grid, ℵ)
-        λʸⁱᵒ = ρλʸⁱᵒ[i, j, 1] * ρᵒᶜ⁻¹ * ℑyᵃᶠᵃ(i, j, 1, grid, ℵ)
 
         τˣ[i, j, 1] = ifelse(inactive, zero(grid), τˣᵃᵒ + τˣⁱᵒ)
         τʸ[i, j, 1] = ifelse(inactive, zero(grid), τʸᵃᵒ + τʸⁱᵒ)
-        λˣ[i, j, 1] = ifelse(inactive, zero(grid), λˣⁱᵒ)
-        λʸ[i, j, 1] = ifelse(inactive, zero(grid), λʸⁱᵒ)
 
         # Tracer fluxes — radiative contributions added later by apply_air_sea_radiative_fluxes!
         Jᵀ[i, j, 1] = ifelse(inactive, zero(grid), Jᵀao + Jᵀio)

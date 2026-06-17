@@ -10,7 +10,7 @@ using KernelAbstractions: @index, @kernel
 
 using Oceananigans
 using Oceananigans.Architectures: architecture
-using Oceananigans.BoundaryConditions: getbc, FieldBoundaryConditions, total_boundary_flux
+using Oceananigans.BoundaryConditions: getbc, FieldBoundaryConditions
 using Oceananigans.BuoyancyFormulations: ∂z_b, top_buoyancy_flux,
                                           thermal_expansionᶜᶜᶜ, haline_contractionᶜᶜᶜ,
                                           buoyancy_perturbationᶜᶜᶜ
