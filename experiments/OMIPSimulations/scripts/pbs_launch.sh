@@ -51,21 +51,28 @@ sim = omip_simulation(:tenthdegree;
                       arch = Distributed(GPU(), partition=Partition(1, 8)),
                       Nz = 100,
                       depth = 5500,
-                      Δz_top = 2.5,
+                      Δz_top = 1.5,
                       κ_skew = nothing,
                       κ_symmetric = nothing,
                       biharmonic_timescale = nothing,
-                      Δt = 2minutes,
+                      Δt = 5minutes,
                       forcing_dir = NumericalEarth.DataWrangling.JRA55.download_JRA55_cache,
+                      checkpoint_interval = 180days,
                       file_splitting_interval = 180days,
                       output_dir = \"${RUN_NAME}_run\",
                       filename_prefix = \"${RUN_NAME}\")
 
-sim.stop_time = 91days
+# Spin up at the safe 5-minute step until just past the first checkpoint (180 days),
+# so a checkpoint is on disk before switching to the 10-minute step. This also lets
+# resubmissions resume via pickup instead of redoing the spin-up from scratch.
+sim.stop_time = 181days
 run!(sim)
 
 sim.Δt = 10minutes
 sim.stop_time = 300 * 365days
-run!(sim; pickup = true)"
+# Pick up the furthest-progressed checkpoint by iteration, NOT by mtime: a resubmission
+# re-runs the spin-up and rewrites the day-90 checkpoint (cleanup=false keeps all files),
+# so `pickup=true` (:recent_time_stamp) would rewind to day 90. :highest_iteration avoids that.
+run!(sim; pickup = :highest_iteration)"
 
 mpiexec -n 8 -ppn 4 "$JULIA" --project=.. --check-bounds=no -t "${JULIA_THREADS}" -e "$JULIA_EXPR"

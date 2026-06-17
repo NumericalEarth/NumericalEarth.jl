@@ -260,13 +260,18 @@ plumbing is needed because `NumericalEarth.EarthSystemModels` provides
 - `arch`: architecture (`CPU()` or `GPU()`). Default: `CPU()`.
 - `Nz::Int`: number of vertical levels. Default: `100`.
 - `depth`: maximum ocean depth in metres. Default: `5500`.
-- `κ_skew`, `κ_symmetric`: GM/Redi diffusivities. Defaults: `500`, `100`.
+- `Δz_top`: target surface-cell thickness in metres (sets the exponential vertical scale). Per-config
+  default: `1.5` for `:tenthdegree`, `nothing` (scale derived from `depth`/`Nz`) otherwise.
+- `κ_skew`, `κ_symmetric`: GM/Redi diffusivities. Per-config defaults: `nothing` (no isopycnal
+  diffusivity) for the eddy-resolving `:tenthdegree`, `250`/`100` otherwise.
+- `biharmonic_timescale`: horizontal biharmonic-viscosity timescale. Per-config default: `nothing`
+  (no biharmonic viscosity) for `:tenthdegree`, `40days` otherwise.
 - `forcing_dir`: directory for JRA55 forcing data. Default: `"forcing_data"`.
 - `restoring_dir`: directory for restoring/IC climatology. Default: `"climatology"`.
 - `piston_velocity`: surface salinity restoring piston velocity in m/day. Default: `1/6`.
   Restoring is automatically masked by sea ice concentration (no restoring under ice).
 - `start_date`, `end_date`: bracket for forcing/restoring metadata. Defaults: 1958-01-01 .. 2018-01-01.
-- `Δt`: simulation time step. Default: `30minutes`.
+- `Δt`: simulation time step. Per-config default: `5minutes` for `:tenthdegree`, `30minutes` otherwise.
 - `stop_time`: stop time for the wrapping `Simulation`. Default: `Inf`.
 - `flux_configuration`: surface flux formulation. Options:
    * `:default` — current defaults (Edson/COARE with constant Charnock 0.02)
@@ -307,11 +312,11 @@ function omip_simulation(config::Symbol = :halfdegree;
                          arch = CPU(),
                          Nz = 100,
                          depth = 5500,
-                         Δz_top = nothing,
-                         κ_skew = 250,
-                         κ_symmetric = 100,
+                         Δz_top = ConfigDefault(),
+                         κ_skew = ConfigDefault(),
+                         κ_symmetric = ConfigDefault(),
                          Cᵇ = 0.28,
-                         biharmonic_timescale = 40days,
+                         biharmonic_timescale = ConfigDefault(),
                          biharmonic_viscosity = nothing,
                          forcing_dir = joinpath(get(ENV, "DATA", ""), "forcing_data"),
                          staging_dir = nothing,
@@ -320,7 +325,7 @@ function omip_simulation(config::Symbol = :halfdegree;
                          piston_velocity = 1 / 6, # m / day
                          start_date = DateTime(1958, 1, 1),
                          end_date = DateTime(2018, 1, 1),
-                         Δt = 30minutes,
+                         Δt = ConfigDefault(),
                          stop_time = Inf,
                          flux_configuration = :default,
                          vertical_closure = :catke,
@@ -340,6 +345,14 @@ function omip_simulation(config::Symbol = :halfdegree;
                          file_splitting_interval = 360days)
 
     cfg = Val(config)
+
+    # Resolve resolution-sensitive parameters to their per-configuration defaults unless the
+    # user passed an explicit value (see `config_*` below).
+    Δz_top               = resolve_config_default(Δz_top,               config_Δz_top(cfg))
+    κ_skew               = resolve_config_default(κ_skew,               config_κ_skew(cfg))
+    κ_symmetric          = resolve_config_default(κ_symmetric,          config_κ_symmetric(cfg))
+    biharmonic_timescale = resolve_config_default(biharmonic_timescale, config_biharmonic_timescale(cfg))
+    Δt                   = resolve_config_default(Δt,                   config_Δt(cfg))
 
     grid = build_grid(cfg, arch, Nz, depth; Δz_top)
 
@@ -680,6 +693,26 @@ using Oceananigans.Utils: NormalDivision
 config_momentum_advection(::Val{:orca})        = WENOVectorInvariant(order=5, time_discretization=AdaptiveVerticallyImplicitDiscretization(cfl=0.4))
 config_momentum_advection(::Val{:halfdegree})  = WENOVectorInvariant(order=5, time_discretization=AdaptiveVerticallyImplicitDiscretization(cfl=0.4))
 config_momentum_advection(::Val{:tenthdegree}) = WENOVectorInvariant(time_discretization=AdaptiveVerticallyImplicitDiscretization(cfl=0.4))
+.
+struct ConfigDefault end
+
+@inline resolve_config_default(value, default)           = value
+@inline resolve_config_default(::ConfigDefault, default) = default
+
+config_κ_skew(::Val)               = 250
+config_κ_skew(::Val{:tenthdegree}) = nothing
+
+config_κ_symmetric(::Val)               = 100
+config_κ_symmetric(::Val{:tenthdegree}) = nothing
+
+config_biharmonic_timescale(::Val)               = 40days
+config_biharmonic_timescale(::Val{:tenthdegree}) = nothing
+
+config_Δt(::Val)               = 30minutes
+config_Δt(::Val{:tenthdegree}) = 5minutes
+
+config_Δz_top(::Val)               = nothing
+config_Δz_top(::Val{:tenthdegree}) = 1.5
 
 function build_ocean(config, grid;
                      κ_skew, κ_symmetric, Cᵇ = 0.28,
