@@ -23,6 +23,7 @@ RRTMGP = "a01a1ee8-cea4-48fc-987c-fc7878d79da1"
 SeawaterPolynomials = "d496a93d-167e-4197-9f49-d3af4ff8fe40"
 SpeedyWeather = "9e226e20-d153-4fed-8a5b-493def4f21a9"
 Suppressor = "fd094767-a336-5f1f-9728-57cf17d0bbfb"
+Terrarium = "80418d68-07fa-499d-ae2b-c12e531f5cd8"
 
 [sources]
 NumericalEarth = {path = ".."}
@@ -35,3 +36,4 @@ ConservativeRegridding = "0.2"
 Documenter = "1"
 DocumenterCitations = "1.3"
 Literate = "2.2"
+SpeedyWeather = "0.21.1"
