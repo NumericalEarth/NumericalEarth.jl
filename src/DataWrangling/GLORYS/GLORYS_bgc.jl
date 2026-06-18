@@ -30,7 +30,7 @@ available_variables(::GLORYSBGCDaily) =
 
 available_variables(::GLORYSBGCMonthly) = 
     Dict(:chlorophyll => "chl",
-         :iron => "fe",
+         :dissolved_iron => "fe",
          :nitrate => "no3",
          :primary_production => "nppv",
          :oxygen => "o2",
@@ -78,7 +78,7 @@ const _AnalysisForecast_BGC_DATASET_ID = Dict(
     :nitrate            => "cmems_mod_glo_bgc-nut_anfc_0.25deg_P1D-m",
     :phosphate          => "cmems_mod_glo_bgc-nut_anfc_0.25deg_P1D-m",
     :silicate           => "cmems_mod_glo_bgc-nut_anfc_0.25deg_P1D-m",
-    :iron               => "cmems_mod_glo_bgc-nut_anfc_0.25deg_P1D-m",
+    :dissolved_iron     => "cmems_mod_glo_bgc-nut_anfc_0.25deg_P1D-m",
     # optics
     :light_attenuation  => "cmems_mod_glo_bgc-optics_anfc_0.25deg_P1D-m",
     # pft
@@ -96,20 +96,20 @@ copernicusmarine_dataset_id(::GLORYSAnalysisForecastBGCDaily,   var) = _Analysis
 copernicusmarine_dataset_id(::GLORYSAnalysisForecastBGCMonthly, var) = _AnalysisForecast_BGC_DATASET_ID_MONTHLY[var]
 
 available_variables(::GLORYSAnalysisForecastBGCDaily) =
-    Dict(:chlorophyll               => "chl",
+    Dict(:chlorophyll                => "chl",
          :dissolved_inorganic_carbon => "dissic",
-         :iron                      => "fe",
-         :light_attenuation         => "kd",
-         :nitrate                   => "no3",
-         :oxygen                    => "o2",
-         :pH                        => "ph",
-         :phytoplankton             => "phyc",
-         :phosphate                 => "po4",
-         :primary_production        => "nppv",
-         :silicate                  => "si",
-         :pCO₂                      => "spco2",
-         :alkalinity                => "talk",
-         :zooplankton               => "zooc")
+         :dissolved_iron             => "fe",
+         :light_attenuation          => "kd",
+         :nitrate                    => "no3",
+         :oxygen                     => "o2",
+         :pH                         => "ph",
+         :phytoplankton              => "phyc",
+         :phosphate                  => "po4",
+         :primary_production         => "nppv",
+         :silicate                   => "si",
+         :pCO₂                       => "spco2",
+         :alkalinity                 => "talk",
+         :zooplankton                => "zooc")
 
 available_variables(::GLORYSAnalysisForecastBGCMonthly) = available_variables(GLORYSAnalysisForecastBGCDaily())
 
