@@ -546,15 +546,17 @@ fig5
 # ### Routing discharge onto the ocean coastline
 #
 # To force an ocean model we need the discharge on the *ocean* grid, located on
-# wet coastal cells. We build a coarse regional ocean grid from ETOPO bathymetry
-# over the same region:
+# wet coastal cells. We build a regional ocean grid from ETOPO bathymetry over
+# the same region. The vertical grid needs enough near-surface resolution that
+# shallow shelf cells stay *active* — a single thick level would place every
+# cell center below the coastal seafloor, leaving no wet cells for the routing.
 
-ocean_grid = LatitudeLongitudeGrid(size = (80, 70, 1),
+ocean_grid = LatitudeLongitudeGrid(size = (80, 70, 30),
                                    longitude = amazon_region.longitude,
                                    latitude  = amazon_region.latitude,
-                                   z = (-1000, 0))
+                                   z = (-200, 0))
 
-bottom_height = regrid_bathymetry(ocean_grid; minimum_depth = 5, major_basins = 1)
+bottom_height = regrid_bathymetry(ocean_grid; minimum_depth = 5)
 ocean_grid = ImmersedBoundaryGrid(ocean_grid, GridFittedBottom(bottom_height))
 nothing #hide
 

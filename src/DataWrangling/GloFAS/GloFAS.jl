@@ -66,10 +66,14 @@ end
 
 date_str(dates::AbstractVector) = string(date_str(first(dates)), "_", date_str(last(dates)))
 
+region_suffix(::Nothing) = ""
+region_suffix(region) = string("_", region.longitude[1], "_", region.longitude[2],
+                               "_", region.latitude[1], "_", region.latitude[2])
+
 function DataWrangling.metadata_filename(dataset::GloFASDataset, name, date, region)
     var = available_variables(dataset)[name]
     ds = dataset_name(dataset)
-    return string(var, "_", ds, "_", date_str(date), ".nc")
+    return string(var, "_", ds, "_", date_str(date), region_suffix(region), ".nc")
 end
 
 function inpainted_metadata_filename(metadata::GloFASMetadatum)

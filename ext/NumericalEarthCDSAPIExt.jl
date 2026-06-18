@@ -754,19 +754,20 @@ const GLOFAS_COORD_VARS = Set(["longitude", "latitude",
                                "time", "valid_time", "step", "surface"])
 
 """
-    build_glofas_request(dataset, datetimes) -> Dict{String, Any}
+    build_glofas_request(dataset, datetimes, region) -> Dict{String, Any}
 
 Construct the EWDS request for a batch of GloFAS dates that share a `(year, month)`.
 GloFAS uses the `hyear`/`hmonth`/`hday` date keys (interpreted as a Cartesian product).
+A `BoundingBox` `region` is sent as an `area` key so the EWDS subsets server-side.
 """
-function build_glofas_request(dataset, datetimes)
+function build_glofas_request(dataset, datetimes, region)
     dts = datetimes isa AbstractVector ? datetimes : [datetimes]
 
     years  = unique(string.(Dates.year.(dts)))
     months = unique(lpad.(string.(Dates.month.(dts)), 2, '0'))
     days   = unique(lpad.(string.(Dates.day.(dts)), 2, '0'))
 
-    return Dict{String, Any}(
+    request = Dict{String, Any}(
         "system_version"     => [dataset.system_version],
         "hydrological_model" => ["lisflood"],
         "product_type"       => ["consolidated"],
@@ -777,6 +778,25 @@ function build_glofas_request(dataset, datetimes)
         "data_format"        => "netcdf",
         "download_format"    => "unarchived",
     )
+
+    area = glofas_request_area(region)
+    isnothing(area) || (request["area"] = area)
+
+    return request
+end
+
+glofas_request_area(region) = nothing
+
+# Pad the box by a few native (0.05°) cells so the file fully covers the
+# center-bracketed native grid the data is interpolated onto (cf. ERA5).
+function glofas_request_area(bbox::BBOX)
+    (isnothing(bbox.longitude) || isnothing(bbox.latitude)) && return nothing
+    pad = 0.2
+    north = min(bbox.latitude[2]  + pad,  90)
+    south = max(bbox.latitude[1]  - pad, -90)
+    west  = bbox.longitude[1] - pad
+    east  = bbox.longitude[2] + pad
+    return [north, west, south, east]
 end
 
 """
@@ -789,7 +809,7 @@ function Downloads.download(meta::GloFASMetadatum; skip_existing=true)
     skip_existing && isfile(output_path) && return output_path
 
     mkpath(dirname(output_path))
-    request = build_glofas_request(meta.dataset, meta.dates)
+    request = build_glofas_request(meta.dataset, meta.dates, meta.region)
     @root glofas_retrieve(glofas_product(meta.dataset), request, output_path)
 
     return output_path
@@ -827,7 +847,7 @@ function download_glofas_month(name, dataset, dates; region, dir, skip_existing,
     mkpath(dir)
     sorted_dts = sort(unique([dt for (dt, _) in pending]))
     dt_to_tidx = Dict(dt => i for (i, dt) in enumerate(sorted_dts))
-    request = build_glofas_request(dataset, sorted_dts)
+    request = build_glofas_request(dataset, sorted_dts, region)
 
     dt0 = first(sorted_dts)
     tmp_path = joinpath(dir, "_tmp_glofas_$(Dates.year(dt0))$(lpad(Dates.month(dt0), 2, '0')).nc")
