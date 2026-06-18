@@ -18,10 +18,10 @@ using NumericalEarth.DataWrangling: BoundingBox, metadata_path
     lon = CMExt.longitude_bounds_kw(bbox, dataset)
     lat = CMExt.latitude_bounds_kw(bbox, dataset)
 
-    @test lon.minimum_longitude ≈ 200 - 1/2
-    @test lon.maximum_longitude ≈ 202 + 1/2
-    @test lat.minimum_latitude  ≈ 35  - 1/2
-    @test lat.maximum_latitude  ≈ 37  + 1/2
+    @test lon.minimum_longitude ≈ 200 - 1/4
+    @test lon.maximum_longitude ≈ 202 + 1/4
+    @test lat.minimum_latitude  ≈ 35  - 1/4
+    @test lat.maximum_latitude  ≈ 37  + 1/4
 
     polar = BoundingBox(longitude=(0, 10), latitude=(-89.95, 89.95))
     plat = CMExt.latitude_bounds_kw(polar, dataset)
@@ -34,6 +34,7 @@ end
     region = BoundingBox(longitude=(200, 202), latitude=(35, 37))
     dataset = AVISOMonthly()
     date = DateTime(2020, 1, 1)
+
 
     for variable in variables
         metadatum = Metadatum(variable; dataset, date, region)

@@ -20,12 +20,12 @@ using Oceananigans.OutputReaders: time_indices
     dates = start_date:Month(1):DateTime(2020, 2, 1)
     metadata = Metadata(:free_surface; dates, dataset, region)
 
+    @test size(metadata) == (2880, 1440, 1, length(dates))
+
     download(metadata)
     for datum in metadata
         @test isfile(metadata_path(datum))
     end
-
-    @test size(metadata) == (1440, 720, 1, length(dates))
 
     for arch in test_architectures
         datum = first(metadata)

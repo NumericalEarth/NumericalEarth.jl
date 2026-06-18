@@ -37,7 +37,7 @@ function DataWrangling.default_download_directory(::AVISOMonthly)
     return mkpath(joinpath(download_AVISO_cache, "monthly"))
 end
 
-Base.size(::AVISODataset, variable) = (1440, 720, 1)
+Base.size(::AVISODataset, variable) = (2880, 1440, 1)
 
 DataWrangling.all_dates(::AVISODaily, variable) = DateTime(1993, 1, 1) : Day(1) : last_complete_day()
 DataWrangling.all_dates(::AVISOMonthly, variable) = DateTime(1993, 1, 1) : Month(1) : last_complete_month()
@@ -115,9 +115,9 @@ end
 DataWrangling.metaprefix(::AVISOMetadata) = "AVISOMetadata"
 DataWrangling.metaprefix(::AVISOMetadatum) = "AVISOMetadatum"
 
-copernicusmarine_dataset_id(::AVISODaily) = get(ENV, "AVISO_DAILY_DATASET_ID", "cmems_obs-sl_glo_phy-ssh_my_allsat-l4-duacs-0.25deg_P1D-m")
-copernicusmarine_dataset_id(::AVISOMonthly) = get(ENV, "AVISO_MONTHLY_DATASET_ID", "cmems_obs-sl_glo_phy-ssh_my_allsat-l4-duacs-0.25deg_P1M-m")
+copernicusmarine_dataset_id(::AVISODaily) = get(ENV, "AVISO_DAILY_DATASET_ID", "cmems_obs-sl_glo_phy-ssh_my_allsat-l4-duacs-0.125deg_P1D")
+copernicusmarine_dataset_id(::AVISOMonthly) = get(ENV, "AVISO_MONTHLY_DATASET_ID", "cmems_obs-sl_glo_phy-ssh_my_allsat-l4-duacs-0.125deg_P1M-m")
 
-native_horizontal_resolution(::AVISODataset) = 1 / 4
+native_horizontal_resolution(::AVISODataset) = 1 / 8
 
 end # module

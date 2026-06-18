@@ -25,7 +25,7 @@ end
 
 function native_horizontal_resolution(dataset)
     if dataset isa GLORYS.GLORYSDataset
-        return GLORYS.GLORYS_native_resolution
+        return 1 / 12
     elseif dataset isa AVISO.AVISODataset
         return AVISO.native_horizontal_resolution(dataset)
     end
