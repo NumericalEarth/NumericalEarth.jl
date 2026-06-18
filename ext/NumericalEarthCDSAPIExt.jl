@@ -420,15 +420,15 @@ end
 Download one or more ERA5 variables at a single datetime.
 """
 function Downloads.download(names::Vector{Symbol}, dataset::ERA5Dataset, datetime;
-                                                       region = nothing,
-                                                       dir = default_download_directory(dataset))
+                            region = nothing,
+                            dir = default_download_directory(dataset))
     meta = Metadatum(first(names); dataset, date=datetime, region, dir)
     return Downloads.download(names, meta)
 end
 
 function Downloads.download(name::Symbol, dataset::ERA5Dataset, datetime;
-                                                       region = nothing,
-                                                       dir = default_download_directory(dataset))
+                            region = nothing,
+                            dir = default_download_directory(dataset))
     return Downloads.download([name], dataset, datetime; region, dir)
 end
 
