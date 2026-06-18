@@ -46,6 +46,19 @@ end
     end
 end
 
+@testset "Downloading GLORYSBGC data" begin
+    variables = (:phytoplankton, :nitrate)
+    region = BoundingBox(longitude=(200, 202), latitude=(35, 37))
+    dataset = GLORYSAnalysisForecastBGCDaily()
+    for variable in variables
+        metadatum = Metadatum(variable; dataset, region, date = DateTime(now()))
+        filepath = NumericalEarth.DataWrangling.metadata_path(metadatum)
+        isfile(filepath) && rm(filepath; force=true)
+        download(metadatum)
+        @test isfile(filepath)
+    end
+end
+
 @testset "Download and set GLORYS free_surface" begin
     for arch in test_architectures
         region = BoundingBox(longitude=(200, 202), latitude=(35, 37))
