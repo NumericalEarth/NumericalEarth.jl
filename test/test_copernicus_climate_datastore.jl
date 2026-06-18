@@ -3,6 +3,8 @@ include("runtests_setup.jl")
 using CopernicusClimateDataStore
 using Dates
 
+import Downloads
+
 using NumericalEarth.DataWrangling.ERA5
 using NumericalEarth.DataWrangling.ERA5: ERA5HourlySingleLevel, ERA5Metadata, ERA5Metadatum
 
