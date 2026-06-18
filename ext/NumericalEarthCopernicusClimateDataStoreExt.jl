@@ -68,8 +68,8 @@ function Downloads.download(meta::ERA5Metadatum;
     day = Dates.day(date)
     hour = Dates.hour(date)
 
-    # Build area constraint from bounding box
-    area = build_era5_area(meta.bounding_box)
+    # Build area constraint from region
+    area = build_era5_area(meta.region)
 
     # Build output prefix (filename without extension)
     output_prefix = first(splitext(output_filename))
