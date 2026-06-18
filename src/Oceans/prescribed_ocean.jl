@@ -135,7 +135,7 @@ end
 
 EarthSystemModels.reference_density(ocean::PrescribedOcean) = ocean.density
 EarthSystemModels.heat_capacity(ocean::PrescribedOcean) = ocean.heat_capacity
-EarthSystemModels.exchange_grid(atmosphere, ocean::PrescribedOcean, sea_ice) = ocean.grid
+EarthSystemModels.exchange_grid(atmosphere, ocean::PrescribedOcean, sea_ice, land=nothing) = ocean.grid
 EarthSystemModels.temperature_units(::PrescribedOcean) = DegreesKelvin()
 
 EarthSystemModels.ocean_temperature(ocean::PrescribedOcean) = ocean.sea_surface_temperature
