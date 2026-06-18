@@ -1,5 +1,6 @@
 module NumericalEarthCopernicusClimateDataStoreExt
 
+using NumericalEarth
 using CopernicusClimateDataStore
 using Downloads: Downloads
 using Dates
