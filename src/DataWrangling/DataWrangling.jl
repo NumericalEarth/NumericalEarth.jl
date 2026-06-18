@@ -8,6 +8,7 @@ export Metadata, Metadatum, MetadataSet, DatewiseFilename, ECCOMetadatum, EN4Met
 export validate_dataset_coverage, metadata_filename
 export BoundingBox, Column, Linear, Nearest
 export WOAClimatology, WOAAnnual, WOAMonthly
+export AVISOMetadata, AVISODaily, AVISOMonthly, AVISOMetadatum
 export metadata_time_step, metadata_epoch
 export supported_datasets
 export LinearlyTaperedPolarMask
@@ -325,6 +326,7 @@ end
 include("ETOPO/ETOPO.jl")
 include("ECCO/ECCO.jl")
 include("GLORYS/GLORYS.jl")
+include("AVISO/AVISO.jl")
 include("ERA5/ERA5.jl")
 include("EN4/EN4.jl")
 include("ORCA/ORCA.jl")
@@ -339,6 +341,7 @@ include("IBCAO/IBCAO.jl")
 using .ETOPO
 using .ECCO
 using .GLORYS
+using .AVISO
 using .ERA5
 using .EN4
 using .ORCA

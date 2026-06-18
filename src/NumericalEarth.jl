@@ -96,6 +96,7 @@ export
     EN4Monthly,
     WOAClimatology, WOAAnnual, WOAMonthly,
     GLORYSDaily, GLORYSMonthly, GLORYSStatic,
+    AVISOMetadata, AVISODaily, AVISOMonthly, AVISOMetadatum,
     RepeatYearJRA55, MultiYearJRA55,
     ERA5HourlySingleLevel, ERA5MonthlySingleLevel,
     ERA5HourlyPressureLevels, ERA5MonthlyPressureLevels,
