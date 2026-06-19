@@ -48,14 +48,14 @@ Keyword Arguments
 """
 function OSPapaPrescribedAtmosphere(architecture = CPU(), FT = Float32;
                                     start_date = first_date(OSPapaHourly(), :air_temperature),
-                                    end_date   = last_date(OSPapaHourly(), :air_temperature),
+                                    end_date = last_date(OSPapaHourly(), :air_temperature),
                                     dir = download_OSPapa_cache,
                                     surface_layer_height = 2.5,
                                     max_gap_hours = 72)
 
     mdkw = (; dataset = OSPapaHourly(), start_date, end_date, dir)
 
-    surface_grid = RectilinearGrid(architecture, FT; size=(), topology=(Flat, Flat, Flat))
+    surface_grid = RectilinearGrid(architecture, FT; size = (), topology = (Flat, Flat, Flat))
 
     function ospapa_fts(name)
         md = Metadata(name; mdkw...)
@@ -73,11 +73,11 @@ function OSPapaPrescribedAtmosphere(architecture = CPU(), FT = Float32;
 
     thermo_params = AtmosphereThermodynamicsParameters(FT)
     RHa = ospapa_fts(:relative_humidity)
-    qa  = ospapa_specific_humidity_fts(RHa, Ta, Pa, thermo_params)
+    qa = ospapa_specific_humidity_fts(RHa, Ta, Pa, thermo_params)
 
     return PrescribedAtmosphere(ua.grid, ua.times;
-                                velocities = (u=ua, v=va),
-                                tracers = (T=Ta, q=qa),
+                                velocities = (u = ua, v = va),
+                                tracers = (T = Ta, q = qa),
                                 pressure = Pa,
                                 freshwater_flux = PrescribedPrecipitationFlux(; rain),
                                 thermodynamics_parameters = thermo_params,

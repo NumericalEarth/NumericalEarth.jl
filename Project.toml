@@ -1,7 +1,7 @@
 name = "NumericalEarth"
 uuid = "904d977b-046a-4731-8b86-9235c0d1ef02"
 license = "MIT"
-version = "0.5.5"
+version = "0.5.7"
 authors = ["NumericalEarth contributors"]
 
 [deps]
@@ -46,6 +46,7 @@ RRTMGP = "a01a1ee8-cea4-48fc-987c-fc7878d79da1"
 Reactant = "3c362404-f566-11ee-1572-e11a4b42c853"
 SpeedyWeather = "9e226e20-d153-4fed-8a5b-493def4f21a9"
 WorldOceanAtlasTools = "04f20302-f1b9-11e8-29d9-7d841cb0a64a"
+Zarr = "0a941bbe-ad1d-11e8-39d9-ab76183a1d99"
 
 [extensions]
 NumericalEarthArchGDALExt = "ArchGDAL"
@@ -56,18 +57,19 @@ NumericalEarthReactantExt = "Reactant"
 NumericalEarthSpeedyWeatherExt = ["SpeedyWeather", "ConservativeRegridding"]
 NumericalEarthVerosExt = ["PythonCall", "CondaPkg"]
 NumericalEarthWOAExt = "WorldOceanAtlasTools"
+NumericalEarthZarrExt = "Zarr"
 
 [compat]
 Accessors = "0.1.44"
 Adapt = "4"
 ArchGDAL = "0.10"
-Breeze = "0.5.3"
+Breeze = "0.5.3, 0.6"
 CDSAPI = "2.2.1"
 CFTime = "0.1, 0.2"
 ClimaSeaIce = "0.5.6"
 CondaPkg = "0.2.33"
 ConservativeRegridding = "0.2"
-CopernicusMarine = "0.1.1"
+CopernicusMarine = "0.2"
 CubedSphere = "0.3.4"
 DataDeps = "0.7"
 Dates = "<0.0.1, 1"
@@ -90,10 +92,11 @@ RRTMGP = "0.21.9"
 Reactant = "0.2.235 - 0.2.255"
 Scratch = "1"
 SeawaterPolynomials = "0.3.5"
-SpeedyWeather = "0.20"
+SpeedyWeather = "0.20, 0.21"
 StaticArrays = "1"
 Statistics = "<0.0.1, 1"
 Thermodynamics = "0.15.3, 1"
 WorldOceanAtlasTools = "0.6"
+Zarr = "0.10"
 ZipFile = "0.10"
 julia = "1.10"
