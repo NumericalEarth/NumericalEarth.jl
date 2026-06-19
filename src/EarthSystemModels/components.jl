@@ -79,7 +79,7 @@ update_net_fluxes!(coupled_model, component) = nothing
 interpolate_state!(exchanger, grid, component, coupled_model) = nothing
 
 # Fallback for radiative coupling when no radiation is configured.
-apply_air_land_radiative_fluxes!(::Any) = nothing
+compute_radiation_land_fluxes!(::Any) = nothing
 
 #####
 ##### Surface (skin) temperature diagnostic

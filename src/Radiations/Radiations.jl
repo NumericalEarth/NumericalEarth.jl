@@ -44,8 +44,8 @@ include("prescribed_radiation.jl")
 include("prescribed_radiation_regridder.jl")
 include("interpolate_radiation_state.jl")
 include("air_sea_interface_radiation_state.jl")
-include("apply_air_sea_radiative_fluxes.jl")
-include("apply_air_sea_ice_radiative_fluxes.jl")
-include("apply_air_land_radiative_fluxes.jl")
+include("compute_radiation_ocean_fluxes.jl")
+include("compute_radiation_sea_ice_fluxes.jl")
+include("compute_radiation_land_fluxes.jl")
 
 end # module Radiations

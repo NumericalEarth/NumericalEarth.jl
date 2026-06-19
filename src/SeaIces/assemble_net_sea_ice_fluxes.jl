@@ -64,7 +64,7 @@ end
     ρτˣ = atmosphere_sea_ice_fluxes.x_momentum # zonal momentum flux
     ρτʸ = atmosphere_sea_ice_fluxes.y_momentum # meridional momentum flux
 
-    # Turbulent contributions only (radiation added later by apply_air_sea_ice_radiative_fluxes!)
+    # Turbulent contributions only (radiation added later by compute_radiation_sea_ice_fluxes!)
     ΣQt = (𝒬ᵀ + 𝒬ᵛ) * (ℵi > 0)
     ΣQb = 𝒬ᶠʳᶻ + 𝒬ⁱⁿ
 

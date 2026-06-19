@@ -2,10 +2,10 @@ using Oceananigans.Grids: inactive_node
 
 using ..EarthSystemModels: EarthSystemModel, sea_ice_concentration
 using ..EarthSystemModels.InterfaceComputations: kernel_radiation_properties, convert_to_kelvin
-using ..Oceans: shortwave_radiative_forcing, get_radiative_forcing
+using ..Oceans: shortwave_radiative_forcing, get_radiative_forcing, compute_radiative_forcing!
 
 """
-    apply_air_sea_radiative_fluxes!(coupled_model)
+    compute_radiation_ocean_fluxes!(coupled_model)
 
 Add the radiative contribution to the net ocean heat flux `Jᵀ` and write
 the diagnostic radiative fluxes (upwelling LW, absorbed LW, transmitted SW)
@@ -13,9 +13,9 @@ into `coupled_model.radiation.interface_fluxes.ocean`.
 
 When `coupled_model.radiation === nothing`, this is a no-op.
 """
-EarthSystemModels.apply_air_sea_radiative_fluxes!(::EarthSystemModel{<:Nothing}) = nothing
+EarthSystemModels.compute_radiation_ocean_fluxes!(::EarthSystemModel{<:Nothing}) = nothing
 
-function EarthSystemModels.apply_air_sea_radiative_fluxes!(coupled_model::EarthSystemModel)
+function EarthSystemModels.compute_radiation_ocean_fluxes!(coupled_model::EarthSystemModel)
     ocean = coupled_model.ocean
     isnothing(ocean) && return nothing
 
@@ -43,8 +43,13 @@ function EarthSystemModels.apply_air_sea_radiative_fluxes!(coupled_model::EarthS
     ocean_properties = coupled_model.interfaces.ocean_properties
     penetrating_radiation = get_radiative_forcing(ocean)
 
+    # Precompute radiation-model state that requires a vertical pass over ocean
+    # tracers (e.g. biogeochemically-dependent absorption); no-op for analytic
+    # schemes like TwoColorRadiation, whose surface flux is set in the kernel below.
+    compute_radiative_forcing!(penetrating_radiation, coupled_model)
+
     launch!(arch, grid, :xy,
-            _apply_air_sea_radiative_fluxes!,
+            _compute_radiation_ocean_fluxes!,
             net_ocean_fluxes,
             interface_fluxes.ocean,
             penetrating_radiation,
@@ -59,7 +64,7 @@ function EarthSystemModels.apply_air_sea_radiative_fluxes!(coupled_model::EarthS
     return nothing
 end
 
-@kernel function _apply_air_sea_radiative_fluxes!(net_ocean_fluxes,
+@kernel function _compute_radiation_ocean_fluxes!(net_ocean_fluxes,
                                                   interface_radiative_flux,
                                                   penetrating_radiation,
                                                   grid,

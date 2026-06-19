@@ -8,8 +8,8 @@ using .InterfaceComputations: compute_atmosphere_ocean_fluxes!,
 # Hooks called from `update_state!` to apply radiative contributions on top of
 # turbulent fluxes. Concrete radiation types overload these (no-op when
 # `coupled_model.radiation === nothing`).
-apply_air_sea_radiative_fluxes!(::Any) = nothing
-apply_air_sea_ice_radiative_fluxes!(::Any) = nothing
+compute_radiation_ocean_fluxes!(::Any) = nothing
+compute_radiation_sea_ice_fluxes!(::Any) = nothing
 
 function Oceananigans.TimeSteppers.time_step!(coupled_model::EarthSystemModel, Δt; callbacks=[])
     maybe_prepare_first_time_step!(coupled_model, Δt, callbacks)
@@ -75,9 +75,9 @@ function Oceananigans.TimeSteppers.update_state!(coupled_model::EarthSystemModel
     update_net_fluxes!(coupled_model, ocean)
 
     # Phase 4: add radiative contributions on top
-    apply_air_sea_radiative_fluxes!(coupled_model)
-    apply_air_land_radiative_fluxes!(coupled_model)
-    apply_air_sea_ice_radiative_fluxes!(coupled_model)
+    compute_radiation_ocean_fluxes!(coupled_model)
+    compute_radiation_land_fluxes!(coupled_model)
+    compute_radiation_sea_ice_fluxes!(coupled_model)
 
     return nothing
 end
