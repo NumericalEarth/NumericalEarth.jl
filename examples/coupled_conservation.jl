@@ -1,8 +1,8 @@
 # # Coupled energy conservation
 #
-# In this example, we run a minimal-physics `OceanSeaIceModel` through a freeze-then-melt cycle and verify 
+# In this example, we run a minimal-physics `OceanSeaIceModel` through a freeze-then-melt cycle and verify
 # that the coupled energy budget closes. The setup is a single ocean column with thermodynamics-only sea ice, a snow
-# layer on top of the ice, and a uniform prescribed atmosphere. We drive two 30-day phases: a cold phase with 
+# layer on top of the ice, and a uniform prescribed atmosphere. We drive two 30-day phases: a cold phase with
 # light snowfall that grows the ice, and a warm phase with rainfall that melts it.
 #
 # The invariant we check at the end of the run is
@@ -11,8 +11,8 @@
 # ΔE = ∫ Q dt
 # ```
 #
-# where `E = Hₒ + Eis` is the ocean heat content plus the ice+snow stored latent energy, and `Q` is the atmospheric 
-# heat flux into the coupled system. Closure to machine precision requires that every internal flux cancels exactly 
+# where `E = Hₒ + Eis` is the ocean heat content plus the ice+snow stored latent energy, and `Q` is the atmospheric
+# heat flux into the coupled system. Closure to machine precision requires that every internal flux cancels exactly
 # between the components.
 #
 # ## Install dependencies
@@ -30,49 +30,45 @@ using ClimaSeaIce
 using ClimaSeaIce.SeaIceThermodynamics: latent_heat
 
 using NumericalEarth
-using NumericalEarth.Atmospheres: PrescribedAtmosphere
-using NumericalEarth.Radiations: PrescribedRadiation
 using NumericalEarth.Diagnostics: atmosphere_ocean_heat_flux, frazil_heat_flux
-using NumericalEarth.EarthSystemModels: OceanSeaIceModel, Radiation, update_state!
-using NumericalEarth.Oceans: ocean_simulation
+using NumericalEarth.EarthSystemModels: update_state!
 
 using CairoMakie
 using Printf
 
 # ## Constant latent heat for diagnostic closure
 #
-# `ClimaSeaIce`'s slab mass balance uses a temperature-dependent latent heat, `ℒ(T) = ℒ₀ + (ρℓ * cℓ / ρi − cᵢ)(T − T₀)`, 
-# with `ℰu = ρi * ℒ(T_u)` at the top interface and `ℰb = ρi * ℒ(T_b)` at the bottom. A single state-based 
-# `Eis = − ℵ * ρi * ℒ * h * Az` cannot simultaneously match freeze at `T_b` and top-melt at 0 ᵒC: the 4.7 kJ/kg gap accounts 
-# for a ~1% residual scaling with top-melt mass. To isolate coupler-side bookkeeping from this intrinsic `ℒ(T)` mismatch we 
+# `ClimaSeaIce`'s slab mass balance uses a temperature-dependent latent heat, `ℒ(T) = ℒ₀ + (ρℓ * cℓ / ρi − ci)(T − T₀)`,
+# with `ℰu = ρi * ℒ(T_u)` at the top interface and `ℰb = ρi * ℒ(T_b)` at the bottom. A single state-based
+# `Eis = − ℵ * ρi * ℒ * h * Az` cannot simultaneously match freeze at `T_b` and top-melt at 0 ᵒC: the 4.7 kJ/kg gap accounts
+# for a ~1% residual scaling with top-melt mass. To isolate coupler-side bookkeeping from this intrinsic `ℒ(T)` mismatch we
 # locally override `latent_heat` to the constant `pt.reference_latent_heat`. This is a diagnostic choice for the present
 # example and does not modify upstream.
 
-@inline ClimaSeaIce.SeaIceThermodynamics.latent_heat(pt::ClimaSeaIce.SeaIceThermodynamics.PhaseTransitions, T) = 
+@inline ClimaSeaIce.SeaIceThermodynamics.latent_heat(pt::ClimaSeaIce.SeaIceThermodynamics.PhaseTransitions, T) =
     pt.reference_latent_heat
 
 # ## Grid, ocean, sea ice, and atmosphere
 #
-# We build a single ocean column 100 m deep with 10 vertical levels on a `(Flat, Flat, Bounded)` `RectilinearGrid`. 
-# The ocean is started just above freezing at `S = 34`, with advection and Coriolis turned off and
+# We build a single ocean column, 100 m deep, with 10 vertical levels on a `(Flat, Flat, Bounded)` `RectilinearGrid`.
+# The ocean is initialized just above freezing at `S = 34`, with advection and Coriolis turned off and
 #  `CATKEVerticalDiffusivity` providing vertical mixing.
 
 arch = CPU()
-
 grid = RectilinearGrid(arch; size = 10, z = (-100, 0), topology = (Flat, Flat, Bounded))
 
 ocean = ocean_simulation(grid;
-                         momentum_advection      = nothing,
-                         tracer_advection        = nothing,
-                         closure                 = CATKEVerticalDiffusivity(),
-                         coriolis                = nothing,
+                         momentum_advection = nothing,
+                         tracer_advection = nothing,
+                         coriolis = nothing,
+                         closure = CATKEVerticalDiffusivity(),
                          bottom_drag_coefficient = 0)
 
-Tᵢ = -1.5  # ᵒC, just above freezing at S = 34
 Sᵢ = 34.0  # psu
+Tᵢ = -1.5  # ᵒC, just above freezing at S = 34
 set!(ocean.model, T = Tᵢ, S = Sᵢ)
 
-# Sea ice has thermodynamics only and starts with `h = 1 m`, `ℵ = 1`, and a 10 cm snow layer. 
+# Sea ice only includes thermodynamics and is initialized with `h = 1 m`, `ℵ = 1`, and a 10 cm snow layer.
 
 sea_ice = sea_ice_simulation(grid, ocean;
                              dynamics  = nothing,
@@ -80,18 +76,19 @@ sea_ice = sea_ice_simulation(grid, ocean;
 
 set!(sea_ice.model, h = 1, ℵ = 1, hs = 0.10)
 
-# The atmosphere is prescribed and spatially uniform. It lives on its own scalar grid and we overwrite 
+# The atmosphere is prescribed and spatially uniform. It lives on its own scalar grid and we overwrite
 # the `parent` array in place at the start of each phase.
 
 atmosphere_grid = RectilinearGrid(arch; size=(), topology=(Flat, Flat, Flat))
-atmosphere      = PrescribedAtmosphere(atmosphere_grid, [0.0, 1e9])
-radiation       = PrescribedRadiation(atmosphere_grid, [0.0, 1e9])
+times = [0.0, 1e9]
+atmosphere = PrescribedAtmosphere(atmosphere_grid, times)
+radiation  = PrescribedRadiation(atmosphere_grid, times)
 
 coupled_model = OceanSeaIceModel(ocean, sea_ice; atmosphere, radiation)
 
 # ## Helpers
 #
-# `set_forcing!` fills every `FieldTimeSeries` of the prescribed atmosphere with scalar constants 
+# `set_forcing!` fills every `FieldTimeSeries` of the prescribed atmosphere with scalar constants
 # so the atmospheric forcing is spatio-temporally uniform.
 
 function set_forcing!(atmosphere, radiation, T, q, u, v, p, ℐꜜˢʷ, ℐꜜˡʷ, Jᶜ, Jˢⁿ)
@@ -107,8 +104,9 @@ function set_forcing!(atmosphere, radiation, T, q, u, v, p, ℐꜜˢʷ, ℐꜜˡ
     return nothing
 end
 
-# Physical constants read directly from the coupled model so the budget diagnostics stay consistent with 
-# the constants the model itself is using. `Az` is the horizontal cell area (unity for `(Flat, Flat, Bounded)`).
+# Physical constants are read directly from the coupled model so the budget diagnostics stay
+# consistent with the constants the model itself is using. `Az` is the horizontal cell area
+# (unity for `(Flat, Flat, Bounded)`).
 
 ρi  = coupled_model.sea_ice.model.sea_ice_density[1, 1, 1]
 ρs  = coupled_model.sea_ice.model.snow_density[1, 1, 1]
@@ -118,12 +116,12 @@ cᵒᶜ = coupled_model.interfaces.ocean_properties.heat_capacity
 
 Az = Azᶜᶜᶜ(1, 1, 1, grid)
 
-# Volume integral of the ocean temperature, built once and re-used every step via `compute!`. The underlying `Integral` operation 
+# Volume integral of the ocean temperature, built once and re-used every step via `compute!`. The underlying `Integral` operation
 # keeps a reference to the live `T` field, so each `compute!` re-evaluates over the current state.
 
 ∫T = Field(Integral(ocean.model.tracers.T))
 
-# `column_state` returns a snapshot of the diagnostic quantities we track: ice and snow geometry, the ice+snow stored latent energy, 
+# `column_state` returns a snapshot of the diagnostic quantities we track: ice and snow geometry, the ice+snow stored latent energy,
 # and the ocean heat content.
 
 function column_state(coupled_model)
@@ -137,9 +135,9 @@ function column_state(coupled_model)
     return (; h, ℵ, hs, Eis, Hₒ)
 end
 
-# `net_top_heat_flux` returns the atmospheric energy input to the coupled (ice + ocean) system in Watts: 
+# `net_top_heat_flux` returns the atmospheric energy input to the coupled (ice + ocean) system in Watts:
 # `Q_atm = − (ΣQt + ΣQao) * Az`, where `ΣQt` is the sea-ice top heat flux per cell and `ΣQao` is the per-cell
-# atmosphere-to-ocean flux over the open-water fraction. The ocean-side piece comes from `atmosphere_ocean_heat_flux`, 
+# atmosphere-to-ocean flux over the open-water fraction. The ocean-side piece comes from `atmosphere_ocean_heat_flux`,
 # which subtracts the frazil and interface contributions internally so it never picks up a spurious ocean / ice exchange term.
 
 function net_top_heat_flux(coupled_model)
@@ -150,29 +148,28 @@ end
 
 # ## Running the freeze-melt cycle
 #
-# We run two 30-day phases at `Δt = 10 min`: a cold phase with light snowfall that grows the ice, then a warm phase with
-# rain and strong radiation that melts it back. The run is driven by a single `Simulation` spanning the full cycle. 
-# Two callbacks do the bookkeeping: `budget_callback` records state at every step, and `phase_switch_callback` swaps the 
+# We run two 40-day phases at `Δt = 20 min`: a cold phase with light snowfall that grows the ice, then a warm phase with
+# rain and strong radiation that melts it back. The run is driven by a single `Simulation` spanning the full cycle.
+# Two callbacks do the bookkeeping: `budget_callback` records state at every step, and `phase_switch_callback` swaps the
 # atmosphere from freeze to melt at `t = Δτ`.
 
 Δt = 20minutes
-Δτ = 40days            
-
+Δτ = 40days
 simulation = Simulation(coupled_model; Δt, stop_time = 2Δτ)
 
-freeze_phase = (T    = 253.15,       
+freeze_phase = (T    = 253.15,
                 q    = 1.0e-4,
-                u    = 2.0, 
+                u    = 2.0,
                 v    = 0.0,
                 p    = 101325.0,
-                ℐꜜˢʷ = 50.0,        
-                ℐꜜˡʷ = 180.0,       
+                ℐꜜˢʷ = 50.0,
+                ℐꜜˡʷ = 180.0,
                 Jᶜ   = 0.0,
-                Jˢⁿ  = 1.0e-5)       
+                Jˢⁿ  = 1.0e-5)
 
-melt_phase   = (T    = 278.15,       
+melt_phase   = (T    = 278.15,
                 q    = 5.0e-3,
-                u    = 2.0, 
+                u    = 2.0,
                 v    = 0.0,
                 p    = 101325.0,
                 ℐꜜˢʷ = 250.0,
@@ -184,12 +181,12 @@ melt_phase   = (T    = 278.15,
 
 history = (t     = Float64[],
            phase = Int[],
-           h     = Float64[], 
-           ℵ     = Float64[], 
+           h     = Float64[],
+           ℵ     = Float64[],
            hs    = Float64[],
-           Eis   = Float64[], 
+           Eis   = Float64[],
            Hₒ    = Float64[],
-           Q     = Float64[], 
+           Q     = Float64[],
            𝒬ᶠʳᶻ  = Float64[])
 
 function record!(history, coupled_model, phase_id, Q)
@@ -207,7 +204,7 @@ function record!(history, coupled_model, phase_id, Q)
     return nothing
 end
 
-# The `budget_callback` reads the current `phase_ctx` — a small mutable box holding the current phase id 
+# The `budget_callback` reads the current `phase_ctx` — a small mutable box holding the current phase id
 # and the snowfall enthalpy `Qᵖ` to add to the net atmospheric flux. `phase_switch_callback` is the one that
 # updates this context at the phase boundary.
 
@@ -220,20 +217,20 @@ function budget_callback(simulation)
     return nothing
 end
 
-# At `t = Δτ` the atmosphere swaps from freeze to melt. `update_state!` would zero the pending frazil flux 
-# (the ocean is at `Tₘ`, no supercooling), stranding the latent energy already deposited into the ocean by 
-# the last freeze step's frazil mutation. We preserve `𝒬ᶠʳᶻ` across the refresh and add it back into the 
-# sea-ice bottom heat flux that the slab will read. The callback also overwrites the just-recorded `Q` entry 
-# with the melt-phase starting flux, which is the flux that will drive the next step under rectangle-at-start 
+# At `t = Δτ` the atmosphere swaps from freeze to melt. `update_state!` would zero the pending frazil flux
+# (the ocean is at `Tₘ`, no supercooling), stranding the latent energy already deposited into the ocean by
+# the last freeze step's frazil mutation. We preserve `𝒬ᶠʳᶻ` across the refresh and add it back into the
+# sea-ice bottom heat flux that the slab will read. The callback also overwrites the just-recorded `Q` entry
+# with the melt-phase starting flux, which is the flux that will drive the next step under rectangle-at-start
 # integration.
 #
-# Oceananigans fires every scheduled callback once at initialization to sync its schedule, so we guard against 
+# Oceananigans fires every scheduled callback once at initialization to sync its schedule, so we guard against
 # the `t = 0` fire — we only want to switch at the actual phase boundary.
 
 function phase_switch_callback(simulation)
     simulation.model.clock.time < Δτ && return nothing
 
-    set_forcing!(atmosphere, radiation, melt_phase.T, melt_phase.q, melt_phase.u, melt_phase.v, 
+    set_forcing!(atmosphere, radiation, melt_phase.T, melt_phase.q, melt_phase.u, melt_phase.v,
                  melt_phase.p, melt_phase.ℐꜜˢʷ, melt_phase.ℐꜜˡʷ, melt_phase.Jᶜ, melt_phase.Jˢⁿ)
 
     Qᵖ   = - melt_phase.Jˢⁿ * ℒ₀ * Az
@@ -252,13 +249,13 @@ end
 add_callback!(simulation, budget_callback,       IterationInterval(1))
 add_callback!(simulation, phase_switch_callback, SpecifiedTimes([Δτ]))
 
-# Initialize the coupler for the freeze atmosphere. Oceananigans' `run!` will re-run `update_state!` at init 
+# Initialize the coupler for the freeze atmosphere. Oceananigans' `run!` will re-run `update_state!` at init
 # and then fire `budget_callback` once, which serves as the `t = 0` seed entry for the history.
 
-set_forcing!(atmosphere, radiation, freeze_phase.T, freeze_phase.q, freeze_phase.u, freeze_phase.v, 
+set_forcing!(atmosphere, radiation, freeze_phase.T, freeze_phase.q, freeze_phase.u, freeze_phase.v,
              freeze_phase.p, freeze_phase.ℐꜜˢʷ, freeze_phase.ℐꜜˡʷ, freeze_phase.Jᶜ, freeze_phase.Jˢⁿ)
 
-@info "Running 60-day coupled freeze/melt cycle…"
+@info "Running $(simulation.stop_time / days)-day coupled freeze/melt cycle…"
 run!(simulation)
 
 # ## Budget analysis
@@ -269,17 +266,17 @@ run!(simulation)
 t = history.t
 τ = t ./ day   # days axis
 
-∫Q    = similar(t)
+∫Q = similar(t)
 ∫Q[1] = 0.0
 for n in 2:length(t)
     ∫Q[n] = ∫Q[n-1] + history.Q[n-1] * (t[n] - t[n-1])
 end
 
-# The frazil mass gain is deposited by `compute_sea_ice_ocean_fluxes!` at the end of step `n` 
-# (mutating ocean `T` and writing `𝒬ᶠʳᶻ`) but the corresponding ice mass gain is consumed only during 
-# step `n + 1`. At a diagnostic snapshot the ocean shows the warming while the ice has not yet grown. 
-# We anticipate this one-step pending quantity by adding `𝒬ᶠʳᶻ(n) * Δt⁺ * Az` to `Eis(n)` so the energy 
-# budget closure is not polluted by bookkeeping lag.
+# The frazil mass gain is deposited by `compute_sea_ice_ocean_fluxes!` at the end of step `n`
+# (mutating ocean `T` and writing `𝒬ᶠʳᶻ`) but the corresponding ice mass gain is consumed only during
+# step `n + 1`. At a diagnostic snapshot the ocean shows the warming while the ice has not yet grown.
+# We anticipate this one-step pending quantity by adding `𝒬ᶠʳᶻ(n) * Δt⁺ * Az`, where `Δt⁺ = t[n+1] - t[n]`,
+# to `Eis(n)` so the energy budget closure is not polluted by bookkeeping lag.
 
 Δt⁺ = similar(t)
 for n in 1:(length(t) - 1)
@@ -295,7 +292,7 @@ nothing #hide
 
 # ## Visualizing the budget
 #
-# The plot shows the two stored components (ocean heat content and ice+snow stored latent energy), the cumulative 
+# The plot shows the two stored components (ocean heat content and ice+snow stored latent energy), the cumulative
 # match between `ΔE` and `∫Q dt`, and the residual on both absolute and relative log scales.
 
 set_theme!(Theme(fontsize=16, linewidth=2))
@@ -329,12 +326,14 @@ nothing #hide
 
 nᶠ = findlast(p -> p == 1, history.phase)
 
-ΔEᶠ = Ẽᵢₛ[nᶠ] + history.Hₒ[nᶠ] - Ẽᵢₛ[1] - history.Hₒ[1]
-ΔEᵐ = Ẽᵢₛ[end]      + history.Hₒ[end]      - Ẽᵢₛ[nᶠ] - history.Hₒ[nᶠ]
+ΔEᶠ = Ẽᵢₛ[nᶠ]  + history.Hₒ[nᶠ]  - Ẽᵢₛ[1]  - history.Hₒ[1]
+ΔEᵐ = Ẽᵢₛ[end] + history.Hₒ[end] - Ẽᵢₛ[nᶠ] - history.Hₒ[nᶠ]
 ∫Qᶠ = ∫Q[nᶠ]
 ∫Qᵐ = ∫Q[end] - ∫Q[nᶠ]
 
-@printf("  freeze: ΔE = %+.3e J   ∫Q = %+.3e J   residual = %+.2e (%.1e rel)\n", ΔEᶠ, ∫Qᶠ, ΔEᶠ - ∫Qᶠ, abs(ΔEᶠ - ∫Qᶠ) / max(abs(ΔEᶠ), 1))
-@printf("  melt  : ΔE = %+.3e J   ∫Q = %+.3e J   residual = %+.2e (%.1e rel)\n", ΔEᵐ, ∫Qᵐ, ΔEᵐ - ∫Qᵐ, abs(ΔEᵐ - ∫Qᵐ) / max(abs(ΔEᵐ), 1))
+@printf("  freeze: ΔE = %+.3e J   ∫Q = %+.3e J   residual = %+.2e (%.1e rel)\n",
+        ΔEᶠ, ∫Qᶠ, ΔEᶠ - ∫Qᶠ, abs(ΔEᶠ - ∫Qᶠ) / max(abs(ΔEᶠ), 1))
+@printf("  melt  : ΔE = %+.3e J   ∫Q = %+.3e J   residual = %+.2e (%.1e rel)\n",
+        ΔEᵐ, ∫Qᵐ, ΔEᵐ - ∫Qᵐ, abs(ΔEᵐ - ∫Qᵐ) / max(abs(ΔEᵐ), 1))
 @printf("  full-cycle relative residual: %.1e\n", abs(R[end]) / max(maximum(abs.(ΔE)), 1))
 nothing #hide
