@@ -3,7 +3,7 @@ include("runtests_setup.jl")
 using NumericalEarth.DataWrangling: Column, Linear, Nearest,
                                     BoundingBox, dataset_location,
                                     restrict_location, native_grid
-using NumericalEarth.DataWrangling: restrict
+using NumericalEarth.DataWrangling: restrict, vertical_size
 using NumericalEarth.DataWrangling.ERA5: ERA5HourlySingleLevel
 
 using Oceananigans: location
@@ -140,6 +140,14 @@ end
     @test first(seam_λ) == 250.0f0
     @test last(seam_λ) == 390.0f0
     @test topology(seam_grid)[1] == Bounded
+end
+
+@testset "vertical_size follows explicit z-interface vectors" begin
+    # A z-restricted download yields an explicit interface vector; the grid's Nz
+    # must follow that vector rather than the dataset's hard-coded full-column Nz.
+    @test vertical_size([-1000.0, -500.0, -100.0, 0.0], 50) == 3
+    # A regular (tuple) z keeps the dataset's full-column Nz.
+    @test vertical_size((-1000.0, 0.0), 50) == 50
 end
 
 @testset "Metadata region keyword" begin

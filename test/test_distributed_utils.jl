@@ -6,9 +6,21 @@ MPI.Init()
 using CFTime
 using Dates
 using NCDatasets
-using NumericalEarth.DataWrangling: metadata_path
+using NumericalEarth.DataWrangling: metadata_path, BoundingBox
+using NumericalEarth.DataWrangling.GLORYS: GLORYSDaily
 using Oceananigans.DistributedComputations
 using Oceananigans.DistributedComputations: reconstruct_global_grid
+
+# h5py/hdf5 are required to write the CopernicusMarine subset; add them once on
+# the root rank to avoid concurrent CondaPkg writes across ranks.
+using CondaPkg
+@root begin
+    CondaPkg.add("h5py"; channel="conda-forge", version=">=3.0,<3.13")
+    CondaPkg.add("hdf5"; channel="conda-forge", version="<2")
+end
+MPI.Barrier(MPI.COMM_WORLD)
+
+using CopernicusMarine
 
 # We start by building a fake bathymetry on rank 0 and save it to file
 rm("./trivial_bathymetry.nc", force=true)
@@ -101,6 +113,41 @@ end
         begin
             @test interior(global_height, irange, jrange, 1) == interior(local_height, :, :, 1)
         end
+    end
+end
+
+@testset "Distributed GLORYS set! matches serial" begin
+    # A bbox-restricted GLORYS field, set! onto a distributed target grid, must
+    # reproduce the serial result rank-by-rank: each rank's local interior equals
+    # the matching window of the field assembled on a single process.
+    region = BoundingBox(longitude=(200, 210), latitude=(30, 40))
+    md = Metadatum(:temperature; dataset=GLORYSDaily(), region)
+
+    # The CopernicusMarine extension already guards the subset call with `@root`.
+    download(md)
+    MPI.Barrier(MPI.COMM_WORLD)
+
+    target_grid(arch) = LatitudeLongitudeGrid(arch;
+                                              size = (20, 20, 10),
+                                              longitude = (201, 209),
+                                              latitude = (31, 39),
+                                              z = (-1000, 0))
+
+    serial = CenterField(target_grid(CPU()))
+    set!(serial, md; inpainting=nothing)
+    serial_interior = Array(interior(serial))
+
+    for partition in (Partition(4, 1), Partition(1, 4), Partition(2, 2))
+        arch = Distributed(CPU(); partition)
+        local_field = CenterField(target_grid(arch))
+        set!(local_field, md; inpainting=nothing)
+
+        Nx, Ny, _ = size(local_field.grid)
+        rx, ry, _ = arch.local_index
+        irange = (rx - 1) * Nx + 1 : rx * Nx
+        jrange = (ry - 1) * Ny + 1 : ry * Ny
+
+        @test Array(interior(local_field)) ≈ serial_interior[irange, jrange, :]
     end
 end
 
