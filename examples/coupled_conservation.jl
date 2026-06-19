@@ -292,8 +292,9 @@ end
 δE = history.𝒬ᶠʳᶻ .* Δt⁺ .* Az
 
 Ẽᵢₛ = history.Eis .+ δE
-ΔE   = (Ẽᵢₛ .+ history.Hₒ) .- (Ẽᵢₛ[1] + history.Hₒ[1])
-R    = ΔE .- ∫Q
+ΔE  = (Ẽᵢₛ .+ history.Hₒ) .- (Ẽᵢₛ[1] + history.Hₒ[1])
+R   = ΔE .- ∫Q
+nothing #hide
 
 # ## Visualizing the budget
 #
