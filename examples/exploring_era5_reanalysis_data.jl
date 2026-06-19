@@ -528,8 +528,7 @@ nothing #hide
 # the coast — the discharge concentrates into channels that grow downstream and
 # terminate at the river mouths.
 
-λd = λnodes(discharge)
-φd = φnodes(discharge)
+λd, φd, _ = nodes(discharge)
 
 ## Mask non-positive values so `log10` is well defined for the heatmap.
 discharge_data = interior(discharge, :, :, 1)

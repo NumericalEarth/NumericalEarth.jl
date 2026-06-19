@@ -69,16 +69,19 @@ end
     coj = Array(routing.contribution_outlet_j)
     cw  = Array(routing.contribution_weight)
 
+    # Scalar metric/mask queries run on a CPU copy of the grid (GPU-safe).
+    cpu_grid = on_architecture(CPU(), target_grid)
+    kᴺ = size(cpu_grid, 3)
+
     # Every destination must be an active (wet) ocean cell.
-    kᴺ = size(target_grid, 3)
     for c in eachindex(ti)
-        @test !inactive_node(ti[c], tj[c], kᴺ, target_grid, Center(), Center(), Center())
+        @test !inactive_node(ti[c], tj[c], kᴺ, cpu_grid, Center(), Center(), Center())
     end
 
     # Reconstruct the scattered freshwater mass flux and integrate it over the
     # ocean grid. It must equal ρ × total discharge (volume conservation).
     discharge_cpu = Array(interior(discharge))[:, :, 1]
-    Nx, Ny, _ = size(target_grid)
+    Nx, Ny, _ = size(cpu_grid)
     flux = zeros(Float64, Nx, Ny)
     for c in eachindex(ti)
         for k in off[c]:(off[c+1] - 1)
@@ -90,7 +93,7 @@ end
 
     integrated_mass_flux = 0.0
     for i in 1:Nx, j in 1:Ny
-        integrated_mass_flux += flux[i, j] * Azᶜᶜᶜ(i, j, kᴺ, target_grid)
+        integrated_mass_flux += flux[i, j] * Azᶜᶜᶜ(i, j, kᴺ, cpu_grid)
     end
 
     total_discharge = sum(q for q in discharge_cpu if !isnan(q))
@@ -124,12 +127,13 @@ end
     interpolate_state!(exchanger, target_grid, land, coupled_model)
 
     flux = Array(interior(exchanger.state.freshwater_flux))[:, :, 1]
-    Nx, Ny, _ = size(target_grid)
-    kᴺ = size(target_grid, 3)
+    cpu_grid = on_architecture(CPU(), target_grid)
+    Nx, Ny, _ = size(cpu_grid)
+    kᴺ = size(cpu_grid, 3)
 
     integrated_mass_flux = 0.0
     for i in 1:Nx, j in 1:Ny
-        integrated_mass_flux += flux[i, j] * Azᶜᶜᶜ(i, j, kᴺ, target_grid)
+        integrated_mass_flux += flux[i, j] * Azᶜᶜᶜ(i, j, kᴺ, cpu_grid)
     end
 
     @test integrated_mass_flux ≈ ρ * Q₀ rtol = 1e-5

@@ -17,7 +17,7 @@ using NumericalEarth.DataWrangling.ERA5: ERA5Dataset, ERA5Metadata, ERA5Metadatu
                                          ERA5PressureMetadata, ERA5PressureMetadatum,
                                          ERA5PL_dataset_variable_names, ERA5PL_netcdf_variable_names
 using NumericalEarth.DataWrangling.GloFAS: GloFASDataset, GloFASMetadata, GloFASMetadatum,
-                                           GloFAS_dataset_variable_names, GloFAS_netcdf_variable_names
+                                           GloFAS_netcdf_variable_names
 
 #####
 ##### Dispatch helpers — encapsulate single-level vs pressure-level differences
@@ -728,25 +728,31 @@ glofas_product(::GloFASDataset) = "cems-glofas-historical"
 
 const GLOFAS_EWDS_URL = "https://ewds.climate.copernicus.eu/api"
 
+restore_env!(name, ::Nothing) = (delete!(ENV, name); nothing)
+restore_env!(name, value) = (ENV[name] = value; nothing)
+
 # GloFAS lives on EWDS, a different Copernicus endpoint than the ERA5 CDS. We
-# override CDSAPI's url per call through its `ScopedValues`, so a `~/.cdsapirc`
-# pointed at the ERA5 CDS keeps working — the ECMWF token is shared across data
-# stores, so only the url differs. The `GLOFAS_CDSAPI_URL` / `GLOFAS_CDSAPI_KEY`
-# environment variables override the defaults (an empty key falls back to the
-# key resolved by CDSAPI from the environment or `~/.cdsapirc`).
+# point CDSAPI at the EWDS url by temporarily setting `CDSAPI_URL` (which CDSAPI
+# reads above `~/.cdsapirc`), so a `~/.cdsapirc` pointed at the ERA5 CDS keeps
+# working — the ECMWF token is shared across data stores, so only the url
+# differs. The `GLOFAS_CDSAPI_URL` / `GLOFAS_CDSAPI_KEY` environment variables
+# override the defaults (an empty key falls back to the key CDSAPI already
+# resolves from the environment or `~/.cdsapirc`).
 function glofas_retrieve(product, request, path)
-    scoped = CDSAPI.ScopedValues.with
     url = get(ENV, "GLOFAS_CDSAPI_URL", GLOFAS_EWDS_URL)
     key = get(ENV, "GLOFAS_CDSAPI_KEY", "")
 
-    if isempty(key)
-        return scoped(CDSAPI.URL => url) do
-            CDSAPI.retrieve(product, request, path)
-        end
-    else
-        return scoped(CDSAPI.URL => url, CDSAPI.KEY => key) do
-            CDSAPI.retrieve(product, request, path)
-        end
+    saved_url = get(ENV, "CDSAPI_URL", nothing)
+    saved_key = get(ENV, "CDSAPI_KEY", nothing)
+
+    ENV["CDSAPI_URL"] = url
+    isempty(key) || (ENV["CDSAPI_KEY"] = key)
+
+    try
+        return CDSAPI.retrieve(product, request, path)
+    finally
+        restore_env!("CDSAPI_URL", saved_url)
+        isempty(key) || restore_env!("CDSAPI_KEY", saved_key)
     end
 end
 
