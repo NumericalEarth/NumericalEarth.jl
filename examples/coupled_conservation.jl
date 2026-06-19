@@ -59,10 +59,7 @@ using Printf
 
 arch = CPU()
 
-grid = RectilinearGrid(arch;
-                       size     = 10,
-                       z        = (-100, 0),
-                       topology = (Flat, Flat, Bounded))
+grid = RectilinearGrid(arch; size = 10, z = (-100, 0), topology = (Flat, Flat, Bounded))
 
 ocean = ocean_simulation(grid;
                          momentum_advection      = nothing,
@@ -244,8 +241,8 @@ function phase_switch_callback(simulation)
     ΣQb  = simulation.model.interfaces.net_fluxes.sea_ice.bottom.heat
     𝒬⁻   = first(interior(𝒬ᶠʳᶻ))                                             # pending frazil
     update_state!(simulation.model)
-    interior(𝒬ᶠʳᶻ, 1, 1, 1)   .= 𝒬⁻
-    interior(ΣQb,  1, 1, 1)  .+= 𝒬⁻
+    interior(𝒬ᶠʳᶻ, 1, 1, 1)  .= 𝒬⁻
+    interior(ΣQb,  1, 1, 1) .+= 𝒬⁻
 
     phase_ctx[]    = (; phase_id = 2, Qᵖ)
     history.Q[end] = net_top_heat_flux(simulation.model) + Qᵖ
