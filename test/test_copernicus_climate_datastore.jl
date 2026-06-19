@@ -37,6 +37,29 @@ const CDSExt = Base.get_extension(NumericalEarth, :NumericalEarthCopernicusClima
         @test hasmethod(Downloads.download, Tuple{typeof(metadata)})
     end
 
+    @testset "Download dispatch and skip_existing" begin
+        dataset = ERA5HourlySingleLevel()
+
+        mktempdir() do dir
+            # Single timestep: a pre-existing file makes skip_existing return without downloading
+            date = DateTime(2020, 1, 1, 0)
+            metadatum = Metadatum(:temperature; dataset, date, dir)
+            output_path = joinpath(dir, NumericalEarth.DataWrangling.metadata_filename(metadatum))
+            touch(output_path)
+            @test Downloads.download(metadatum; skip_existing=true) == output_path
+
+            # Collection: dispatch loops over each metadatum, all of which already exist
+            dates = DateTime(2020, 1, 1, 0):Hour(1):DateTime(2020, 1, 1, 2)
+            metadata = Metadata(:temperature; dataset, dates, dir)
+            for m in metadata
+                touch(joinpath(dir, NumericalEarth.DataWrangling.metadata_filename(m)))
+            end
+            paths = Downloads.download(metadata; skip_existing=true)
+            @test length(paths) == length(metadata)
+            @test all(isfile, paths)
+        end
+    end
+
     @testset "Area builder utilities" begin
         # Test that the bounding box area builder is accessible
         @test isdefined(CDSExt, :build_era5_area)
