@@ -1,10 +1,8 @@
 include("runtests_setup.jl")
 include("download_utils.jl")
 
-using CondaPkg
-CondaPkg.add("h5py"; channel="conda-forge", version=">=3.0,<3.13")
-CondaPkg.add("hdf5"; channel="conda-forge", version="<2")
-
+# The CopernicusMarine standalone executable bundles its own HDF5/h5py, so the
+# previous in-process CondaPkg h5py/hdf5 pinning is no longer required.
 using CopernicusMarine
 
 using NumericalEarth.DataWrangling: BoundingBox, is_three_dimensional, z_interfaces, native_grid, metadata_path
