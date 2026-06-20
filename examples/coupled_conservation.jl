@@ -7,8 +7,8 @@
 #
 # The invariant we check at the end of the run is
 #
-# ```
-# ΔE = ∫ Q dt
+# ```math
+# ΔE = \int Q dt
 # ```
 #
 # where `E = Hₒ + Eis` is the ocean heat content plus the ice+snow stored latent energy, and `Q` is the atmospheric
