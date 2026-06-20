@@ -51,8 +51,8 @@ using Printf
 # ## Grid, ocean, sea ice, atmosphere, and radiation
 #
 # We build a single ocean column, 100 m deep, with 10 vertical levels on a `(Flat, Flat, Bounded)` `RectilinearGrid`.
-# The ocean is initialized just above freezing at `S = 34`, with advection and Coriolis turned off and
-#  `CATKEVerticalDiffusivity` providing vertical mixing.
+# The ocean is initialized just above freezing at `S = 34`, without advection nor Coriolis and with
+# `CATKEVerticalDiffusivity` providing vertical mixing.
 
 arch = CPU()
 grid = RectilinearGrid(arch; size = 10, z = (-100, 0), topology = (Flat, Flat, Bounded))
