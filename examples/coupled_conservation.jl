@@ -76,13 +76,13 @@ sea_ice = sea_ice_simulation(grid, ocean;
 
 set!(sea_ice.model, h = 1, ℵ = 1, hs = 0.10)
 
-# The atmosphere is prescribed and spatially uniform. It lives on its own scalar grid and we overwrite
-# the `parent` array in place at the start of each phase.
+# The atmosphere and radiation are prescribed and spatially uniform and they both live on a scalar grid.
+# We overwrite the `parent` array of their variables in place at the start of each phase.
 
-atmosphere_grid = RectilinearGrid(arch; size=(), topology=(Flat, Flat, Flat))
+surface_grid = slice(grid, :, :, 1)
 times = [0.0, 1e9]
-atmosphere = PrescribedAtmosphere(atmosphere_grid, times)
-radiation  = PrescribedRadiation(atmosphere_grid, times)
+atmosphere = PrescribedAtmosphere(surface_grid, times)
+radiation = PrescribedRadiation(surface_grid, times)
 
 coupled_model = OceanSeaIceModel(ocean, sea_ice; atmosphere, radiation)
 
