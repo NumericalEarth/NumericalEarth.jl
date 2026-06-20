@@ -126,9 +126,9 @@ Az = Azᶜᶜᶜ(1, 1, 1, grid)
 # and the ocean heat content.
 
 function column_state(coupled_model)
-    h  = first(interior(coupled_model.sea_ice.model.ice_thickness))
-    ℵ  = first(interior(coupled_model.sea_ice.model.ice_concentration))
-    hs = first(interior(coupled_model.sea_ice.model.snow_thickness))
+    h  = first(coupled_model.sea_ice.model.ice_thickness)
+    ℵ  = first(coupled_model.sea_ice.model.ice_concentration)
+    hs = first(coupled_model.sea_ice.model.snow_thickness)
 
     Eis = -ℵ * (ρi * ℒ₀ * h + ρs * ℒ₀ * hs) * Az
     Hₒ  = ρᵒᶜ * cᵒᶜ * first(compute!(∫T))
@@ -142,8 +142,8 @@ end
 # which subtracts the frazil and interface contributions internally so it never picks up a spurious ocean / ice exchange term.
 
 function net_top_heat_flux(coupled_model)
-    ΣQt  = first(interior(coupled_model.interfaces.net_fluxes.sea_ice.top.heat))
-    ΣQao = first(interior(atmosphere_ocean_heat_flux(coupled_model)))
+    ΣQt  = first(coupled_model.interfaces.net_fluxes.sea_ice.top.heat)
+    ΣQao = first(atmosphere_ocean_heat_flux(coupled_model))
     return -(ΣQt + ΣQao) * Az
 end
 
