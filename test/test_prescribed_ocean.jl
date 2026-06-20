@@ -1,6 +1,5 @@
 include("runtests_setup.jl")
 
-using NumericalEarth.Oceans: PrescribedOcean
 using NumericalEarth.EarthSystemModels: exchange_grid, reference_density, heat_capacity
 
 @testset "PrescribedOcean exchange grid and properties" begin
