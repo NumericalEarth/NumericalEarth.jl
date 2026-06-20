@@ -48,7 +48,7 @@ using Printf
 @inline ClimaSeaIce.SeaIceThermodynamics.latent_heat(pt::ClimaSeaIce.SeaIceThermodynamics.PhaseTransitions, T) =
     pt.reference_latent_heat
 
-# ## Grid, ocean, sea ice, and atmosphere
+# ## Grid, ocean, sea ice, atmosphere, and radiation
 #
 # We build a single ocean column, 100 m deep, with 10 vertical levels on a `(Flat, Flat, Bounded)` `RectilinearGrid`.
 # The ocean is initialized just above freezing at `S = 34`, with advection and Coriolis turned off and
@@ -65,16 +65,16 @@ ocean = ocean_simulation(grid;
                          bottom_drag_coefficient = 0)
 
 Sᵢ = 34.0  # psu
-Tᵢ = -1.5  # ᵒC, just above freezing at S = 34
+Tᵢ = -1.5  # ᵒC, just above freezing at S = 34 psu
 set!(ocean.model, T = Tᵢ, S = Sᵢ)
 
-# Sea ice only includes thermodynamics and is initialized with `h = 1 m`, `ℵ = 1`, and a 10 cm snow layer.
+# Sea ice only includes thermodynamics and is initialized with `h = 1 m`, `ℵ = 1`, and a `0.1 m` snow layer.
 
 sea_ice = sea_ice_simulation(grid, ocean;
                              dynamics  = nothing,
                              advection = nothing)
 
-set!(sea_ice.model, h = 1, ℵ = 1, hs = 0.10)
+set!(sea_ice.model, h = 1, ℵ = 1, hs = 0.1)
 
 # The atmosphere and radiation are prescribed and spatially uniform and they both live on a scalar grid.
 # We overwrite the `parent` array of their variables in place at the start of each phase.
@@ -88,8 +88,9 @@ coupled_model = OceanSeaIceModel(ocean, sea_ice; atmosphere, radiation)
 
 # ## Helpers
 #
-# `set_forcing!` fills every `FieldTimeSeries` of the prescribed atmosphere with scalar constants
-# so the atmospheric forcing is spatio-temporally uniform.
+# `set_forcing!` fills every `FieldTimeSeries` of the prescribed atmosphere and
+# prescribed radiation with scalar constants so the forcing is
+# spatio-temporally uniform.
 
 function set_forcing!(atmosphere, radiation, T, q, u, v, p, ℐꜜˢʷ, ℐꜜˡʷ, Jᶜ, Jˢⁿ)
     fill!(parent(atmosphere.tracers.T),            T   )
