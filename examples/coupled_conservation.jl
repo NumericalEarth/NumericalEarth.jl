@@ -144,7 +144,7 @@ end
 function net_top_heat_flux(coupled_model)
     ΣQt  = first(coupled_model.interfaces.net_fluxes.sea_ice.top.heat)
     ΣQao = first(atmosphere_ocean_heat_flux(coupled_model))
-    return -(ΣQt + ΣQao) * Az
+    return - (ΣQt + ΣQao) * Az
 end
 
 # ## Running the freeze-melt cycle
