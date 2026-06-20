@@ -8,10 +8,10 @@
 # The invariant we check at the end of the run is
 #
 # ```math
-# ΔE = \int Q dt
+# ΔE = \int Q \mathrm{d}t
 # ```
 #
-# where `E = Hₒ + Eis` is the ocean heat content plus the ice+snow stored latent energy, and `Q` is the atmospheric
+# where ``E = ℋᵒᶜ + E_{is}`` is the ocean heat content plus the ice+snow stored latent energy, and `Q` is the atmospheric
 # heat flux into the coupled system. Closure to machine precision requires that every internal flux cancels exactly
 # between the components.
 #
@@ -131,9 +131,9 @@ function column_state(coupled_model)
     hs = first(coupled_model.sea_ice.model.snow_thickness)
 
     Eis = -ℵ * (ρi * ℒ₀ * h + ρs * ℒ₀ * hs) * Az
-    Hₒ  = ρᵒᶜ * cᵒᶜ * first(compute!(∫T))
+    ℋᵒᶜ = ρᵒᶜ * cᵒᶜ * first(compute!(∫T))
 
-    return (; h, ℵ, hs, Eis, Hₒ)
+    return (; h, ℵ, hs, Eis, ℋᵒᶜ)
 end
 
 # `net_top_heat_flux` returns the atmospheric energy input to the coupled (ice + ocean) system in Watts:
@@ -186,7 +186,7 @@ history = (t     = Float64[],
            ℵ     = Float64[],
            hs    = Float64[],
            Eis   = Float64[],
-           Hₒ    = Float64[],
+           ℋᵒᶜ   = Float64[],
            Q     = Float64[],
            𝒬ᶠʳᶻ  = Float64[])
 
@@ -199,7 +199,7 @@ function record!(history, coupled_model, phase_id, Q)
     push!(history.ℵ,     st.ℵ)
     push!(history.hs,    st.hs)
     push!(history.Eis,   st.Eis)
-    push!(history.Hₒ,    st.Hₒ)
+    push!(history.ℋᵒᶜ,   st.ℋᵒᶜ)
     push!(history.Q,     Q)
     push!(history.𝒬ᶠʳᶻ,  𝒬f)
     return nothing
@@ -287,7 +287,7 @@ end
 δE = history.𝒬ᶠʳᶻ .* Δt⁺ .* Az
 
 Ẽᵢₛ = history.Eis .+ δE
-ΔE  = (Ẽᵢₛ .+ history.Hₒ) .- (Ẽᵢₛ[1] + history.Hₒ[1])
+ΔE  = (Ẽᵢₛ .+ history.ℋᵒᶜ) .- (Ẽᵢₛ[1] + history.ℋᵒᶜ[1])
 R   = ΔE .- ∫Q
 nothing #hide
 
@@ -305,7 +305,7 @@ axE3 = Axis(fig[3, 1], ylabel = "Cumulative (J)",          title = "ΔE vs. ∫Q
 axE4 = Axis(fig[4, 1], ylabel = "Residual (J)",            title = "Energy residual = ΔE − ∫Q dt")
 axE5 = Axis(fig[5, 1], ylabel = "log₁₀|rel residual|",     title = "Relative energy residual", xlabel = "Time (days)", )
 
-lines!(axE1, τ, history.Hₒ,  color = :royalblue)
+lines!(axE1, τ, history.ℋᵒᶜ, color = :royalblue)
 lines!(axE2, τ, history.Eis, color = :orange)
 lines!(axE3, τ, ΔE, label = "ΔE",  color = :black)
 lines!(axE3, τ, ∫Q, label = "∫Q dt", color = :crimson, linestyle = :dash)
@@ -327,8 +327,8 @@ nothing #hide
 
 nᶠ = findlast(p -> p == 1, history.phase)
 
-ΔEᶠ = Ẽᵢₛ[nᶠ]  + history.Hₒ[nᶠ]  - Ẽᵢₛ[1]  - history.Hₒ[1]
-ΔEᵐ = Ẽᵢₛ[end] + history.Hₒ[end] - Ẽᵢₛ[nᶠ] - history.Hₒ[nᶠ]
+ΔEᶠ = Ẽᵢₛ[nᶠ]  + history.ℋᵒᶜ[nᶠ]  - Ẽᵢₛ[1]  - history.ℋᵒᶜ[1]
+ΔEᵐ = Ẽᵢₛ[end] + history.ℋᵒᶜ[end] - Ẽᵢₛ[nᶠ] - history.ℋᵒᶜ[nᶠ]
 ∫Qᶠ = ∫Q[nᶠ]
 ∫Qᵐ = ∫Q[end] - ∫Q[nᶠ]
 
