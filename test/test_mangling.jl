@@ -34,7 +34,7 @@ end
 @testset "ECCO v_velocity Field uses ShiftSouth mangling end-to-end" begin
     md = Metadatum(:v_velocity; dataset=ECCO4Monthly(), date=start_date)
     download_dataset_with_fallback([metadata_path(md)]; dataset_name="ECCO4Monthly v_velocity") do
-        download(md)
+        download_dataset(md)
     end
     for arch in test_architectures
         field = Field(md, arch)

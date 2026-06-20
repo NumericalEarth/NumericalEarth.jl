@@ -195,7 +195,7 @@ function DatasetRestoring(metadata::Metadata,
                           cache_inpainted_data = true,
 						  field_name = oceananigans_fieldnames[metadata.name])
 
-    Downloads.download(metadata)
+    download_dataset(metadata)
 
     fts = FieldTimeSeries(metadata, arch_or_grid;
                           time_indices_in_memory,

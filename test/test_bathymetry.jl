@@ -18,7 +18,7 @@ using Statistics
 
         # Testing downloading
         download_dataset_with_fallback(filepath; dataset_name="ETOPO2022") do
-            download(ETOPOmetadata)
+            download_dataset(ETOPOmetadata)
         end
         @test isfile(filepath)
 

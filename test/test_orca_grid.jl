@@ -17,7 +17,7 @@ using Test
 for name in (:mesh_mask, :bottom_height)
     md = Metadatum(name; dataset=ORCA1())
     download_dataset_with_fallback(metadata_path(md); dataset_name="ORCA1 $name") do
-        download(md)
+        download_dataset(md)
     end
 end
 
@@ -166,7 +166,7 @@ end
 
 @testset "ORCA1 bathymetry retrieval" begin
     bathy_md = Metadatum(:bottom_height; dataset=ORCA1())
-    download(bathy_md)
+    download_dataset(bathy_md)
     path = metadata_path(bathy_md)
     @test isfile(path)
 

@@ -7,7 +7,6 @@ export JRA55PrescribedAtmosphere,
        MultiYearJRA55
 
 using Adapt: Adapt
-using CFTime: CFTime
 using Dates: Dates, DateTime, Day, Hour
 using Downloads: Downloads
 using Oceananigans: Oceananigans
@@ -27,6 +26,8 @@ download_JRA55_cache::String = ""
 
 function __init__()
     global download_JRA55_cache = @get_scratch!("JRA55")
+    DataWrangling.DataModes.register_dataset!(RepeatYearJRA55, "RepeatYearJRA55")
+    DataWrangling.DataModes.register_dataset!(MultiYearJRA55, "MultiYearJRA55")
 end
 
 include("JRA55_metadata.jl")

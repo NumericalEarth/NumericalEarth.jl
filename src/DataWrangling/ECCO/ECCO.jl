@@ -28,6 +28,11 @@ using ..DataWrangling: DataWrangling, binary_data_grid, binary_data_size, defaul
 download_ECCO_cache::String = ""
 function __init__()
     global download_ECCO_cache = @get_scratch!("ECCO")
+    DataWrangling.DataModes.register_dataset!(ECCO2Monthly, "ECCO2Monthly")
+    DataWrangling.DataModes.register_dataset!(ECCO2Daily, "ECCO2Daily")
+    DataWrangling.DataModes.register_dataset!(ECCO4Monthly, "ECCO4Monthly")
+    DataWrangling.DataModes.register_dataset!(ECCO2DarwinMonthly, "ECCO2DarwinMonthly")
+    DataWrangling.DataModes.register_dataset!(ECCO4DarwinMonthly, "ECCO4DarwinMonthly")
 end
 
 # Datasets

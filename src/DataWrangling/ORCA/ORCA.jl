@@ -25,6 +25,8 @@ download_ORCA_cache::String = ""
 
 function __init__()
     global download_ORCA_cache = @get_scratch!("ORCA")
+    DataWrangling.DataModes.register_dataset!(ORCA1, "ORCA1")
+    DataWrangling.DataModes.register_dataset!(ORCA12, "ORCA12")
 end
 
 abstract type ORCADataset end

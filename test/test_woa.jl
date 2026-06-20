@@ -16,7 +16,7 @@ inpainting = NearestNeighborInpainting(10)
 function ensure_woa_file(metadatum; label)
     filepath = metadata_path(metadatum)
     download_dataset_with_fallback(filepath; dataset_name=label) do
-        download(metadatum)
+        download_dataset(metadatum)
     end
     return filepath
 end

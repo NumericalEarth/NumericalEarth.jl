@@ -23,8 +23,8 @@ for arch in test_architectures, dataset in (ECCO4Monthly(),)
 
         grid = ImmersedBoundaryGrid(grid, GridFittedBottom(bottom_height))
 
-        start = DateTimeProlepticGregorian(1993, 1, 1)
-        stop  = DateTimeProlepticGregorian(1993, 2, 1)
+        start = DateTime(1993, 1, 1)
+        stop  = DateTime(1993, 2, 1)
         dates = range(start; stop, step=Month(1))
 
         Tmeta = Metadata(:temperature; dataset, dates)

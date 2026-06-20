@@ -13,6 +13,7 @@ using ..DataWrangling: DataWrangling, DownloadProgress, Metadatum, metadata_path
 download_GEBCO_cache::String = ""
 function __init__()
     global download_GEBCO_cache = @get_scratch!("GEBCO")
+    DataWrangling.DataModes.register_dataset!(GEBCO2024, "GEBCO2024")
 end
 
 GEBCO_bathymetry_variable_names = Dict(

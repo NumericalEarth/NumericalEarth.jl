@@ -202,6 +202,56 @@ using .DataWrangling.SoilGrids
 
 using PrecompileTools: @setup_workload, @compile_workload
 
+"""
+Process-level entry point that fires once after every submodule's `__init__` has run.
+
+- In `:auto` mode (the default), auto-downloads datasets listed in `NumericalEarthDataManifest.toml`
+  whenever a manifest sits next to the active project's `Project.toml`. Cached files are skipped by
+  each dataset's per-dataset `Downloads.download` method, so subsequent runs are cheap.
+- In `:pregenerate` mode (`NUMERICALEARTH_DATA=pregenerate` or `pregenerate:<dir>`), traces
+  `Base.PROGRAM_FILE` via `pregenerate_dataset_manifest` and `exit(0)` — the script's real
+  execution is skipped. The trace runs silently (`quiet = true`) so only the final
+  `wrote manifest` log appears.
+
+Both paths are no-ops during precompilation, in `:strict` mode, and when no real `PROGRAM_FILE`
+is set (REPL / `julia -e ...`).
+"""
+function __init__()
+    ccall(:jl_generating_output, Cint, ()) == 1 && return nothing
+    (!isempty(Base.PROGRAM_FILE) && isfile(Base.PROGRAM_FILE)) || return nothing
+
+    mode = DataWrangling.DataModes.DATA_MODE[]
+    if mode === :pregenerate
+        script = abspath(Base.PROGRAM_FILE)
+        # `MANIFEST_DIR[]` is populated by `DataModes.__init__` from the env var; if that init
+        # somehow hasn't run (precompile workload edge case), fall back to the current directory.
+        dir = isempty(DataWrangling.DataModes.MANIFEST_DIR[]) ? pwd() : DataWrangling.DataModes.MANIFEST_DIR[]
+        try
+            manifest = DataWrangling.DataModes.pregenerate_dataset_manifest(script; dir)
+            @info "NUMERICALEARTH_DATA=pregenerate: wrote manifest via AST trace" manifest script
+        catch err
+            @error "NUMERICALEARTH_DATA=pregenerate: trace failed" dir script exception=(err, catch_backtrace())
+        end
+        exit(0)
+    end
+
+    mode === :auto || return nothing
+
+    project = Base.active_project()
+    project === nothing && return nothing
+    project_dir = dirname(project)
+    manifest = joinpath(project_dir, DataWrangling.DataModes.MANIFEST_FILENAME)
+    isfile(manifest) || return nothing
+
+    @info "NumericalEarth: auto-downloading datasets from manifest" manifest
+    try
+        DataWrangling.DataModes.download_datasets(; dir = project_dir)
+    catch err
+        @error "NumericalEarth: auto-download failed; continuing without it" manifest exception=(err, catch_backtrace())
+    end
+    return nothing
+end
+
 @setup_workload begin
     Nx, Ny, Nz = 32, 32, 10
     @compile_workload begin

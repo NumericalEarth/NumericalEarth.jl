@@ -7,7 +7,7 @@ using Oceananigans: Oceananigans
 using Oceananigans.DistributedComputations: @root
 using Scratch: Scratch, @get_scratch!
 
-using ..DataWrangling: DownloadProgress, Metadatum, metadata_path, AbstractStaticBathymetry
+using ..DataWrangling: DataWrangling, DownloadProgress, Metadatum, metadata_path, AbstractStaticBathymetry
 
 import ..DataWrangling:
     metadata_filename,
@@ -22,6 +22,7 @@ import ..DataWrangling:
 download_IBCAO_cache::String = ""
 function __init__()
     global download_IBCAO_cache = @get_scratch!("IBCAO")
+    DataWrangling.DataModes.register_dataset!(IBCAOv5, "IBCAOv5")
 end
 
 IBCAO_bathymetry_variable_names = Dict(

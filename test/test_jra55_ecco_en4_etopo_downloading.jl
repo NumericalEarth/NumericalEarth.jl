@@ -30,12 +30,12 @@ end
                     error("what am I supposed to download?")
 
         for variable in variables
-            metadata = Metadata(variable; dates=DateTimeProlepticGregorian(1993, 1, 1), dataset)
+            metadata = Metadata(variable; dates=DateTime(1993, 1, 1), dataset)
             filepath = metadata_path(metadata)
             isfile(filepath) && rm(filepath; force=true)
 
             download_dataset_with_fallback(filepath; dataset_name="$(typeof(dataset)) $variable") do
-                download(metadata)
+                download_dataset(metadata)
             end
             @test isfile(filepath)
             rm(filepath; force=true)
@@ -50,7 +50,7 @@ end
     isfile(filepath) && rm(filepath; force=true)
 
     download_dataset_with_fallback(filepath; dataset_name="ETOPO2022") do
-        download(metadata)
+        download_dataset(metadata)
     end
     @test isfile(filepath)
 end

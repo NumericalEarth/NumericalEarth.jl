@@ -4,7 +4,8 @@ restoring, or validation.
 """
 module DataWrangling
 
-export Metadata, Metadatum, MetadataSet, DatewiseFilename, ECCOMetadatum, EN4Metadatum, all_dates, first_date, last_date
+export AbstractMetadata, Metadata, Metadatum, MetadataSet, DatewiseFilename, ECCOMetadatum, EN4Metadatum, all_dates, first_date, last_date
+export download_dataset
 export validate_dataset_coverage, metadata_filename
 export BoundingBox, Column, Linear, Nearest
 export WOAClimatology, WOAAnnual, WOAMonthly
@@ -234,14 +235,37 @@ abstract type AbstractStaticBathymetry <: AbstractStaticDataset end
 z_interfaces(::AbstractStaticBathymetry) = (0, 1)
 Base.size(dataset::AbstractStaticBathymetry, variable) = size(dataset)
 
+"""
+    AbstractMetadata
+
+Common supertype for [`Metadata`](@ref), [`Metadatum`](@ref), and [`MetadataSet`](@ref).
+Used to dispatch [`download_dataset`](@ref) on the three concrete kinds with a single method.
+"""
+abstract type AbstractMetadata end
+
+"""
+Hook called at the end of every `AbstractMetadata` inner constructor. The default is a no-op;
+[`NumericalEarth.DataWrangling.DataModes`](@ref) adds more-specific methods on `Metadata` and
+`MetadataSet` that record into the manifest in `:pregenerate` mode, so the trace captures Metadata
+constructed inside library functions too.
+"""
+observe_metadata(::AbstractMetadata) = nothing
+
 # Fundamentals
 include("metadata.jl")
+
+function download_dataset end
+
 include("set_region_data.jl")
 include("metadata_field.jl")
 include("dataset_backend.jl")
 include("metadata_field_time_series.jl")
 include("inpainting.jl")
 include("restoring.jl")
+
+# parse and verify what data is needed
+# download it all in one pass if needed
+include("DataModes/DataModes.jl")
 
 function metadata_time_step end
 function metadata_epoch end
@@ -432,6 +456,27 @@ supported_datasets() = dataset_constructor_list()
 # Fallback: if no download extension is loaded, check that all files already exist
 function Downloads.download(metadata::Metadata)
     error("No download method for $metadata is available (is the backend package loaded?)")
+end
+
+"""
+    download_dataset(metadata::AbstractMetadata)
+
+Acquire the data referenced by `metadata` according to the current
+`NUMERICALEARTH_DATA` mode (see [`DataModes`](@ref)):
+
+- `:auto`     — call `Downloads.download(metadata)` (the per-dataset method).
+- `:strict`      — verify every required file is already on disk; error otherwise.
+- `:pregenerate` — no-op (metadata is recorded into the manifest by `observe_metadata` at construction).
+
+This is the single chokepoint through which every code path that needs dataset files must go.
+Per-dataset modules keep extending `Downloads.download` for the `:auto` branch only.
+"""
+function download_dataset(metadata::AbstractMetadata)
+    mode = DataModes.DATA_MODE[]
+    mode === :auto        && return Downloads.download(metadata)
+    mode === :strict      && return DataModes.check_files_exist(metadata)
+    mode === :pregenerate && return nothing
+    error("Unknown NUMERICALEARTH_DATA mode: $(repr(mode))")
 end
 
 end # module

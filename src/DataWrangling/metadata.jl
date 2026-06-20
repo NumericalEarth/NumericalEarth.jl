@@ -1,4 +1,3 @@
-using CFTime: AbstractCFDateTime, CFTime
 using Dates: Dates, Date, DateTime
 using Base: @propagate_inbounds
 
@@ -72,15 +71,21 @@ getfilename(f::DatewiseFilename, i) = f.filenames[i]
 getfilename(f::String, i) = f
 getfilename(::Nothing, i) = nothing
 
-struct Metadata{V, D, R, S, F}
+struct Metadata{V, D, R, S, F} <: AbstractMetadata
     name :: S
     dataset :: V
     dates :: D
     region :: R
     dir :: String
     filename :: F
+    function Metadata{V, D, R, S, F}(name, dataset, dates, region, dir, filename) where {V, D, R, S, F}
+        m = new{V, D, R, S, F}(name, dataset, dates, region, dir, filename)
+        observe_metadata(m)
+        return m
+    end
 end
 
+Metadata(name::S, dataset::V, dates::D, region::R, dir::String, filename::F) where {V, D, R, S, F} = Metadata{V, D, R, S, F}(name, dataset, dates, region, dir, filename)
 Metadata(name, dataset, dates, region, dir) = Metadata(name, dataset, dates, region, dir, nothing)
 
 is_three_dimensional(::Metadata) = true
@@ -115,17 +120,17 @@ Keyword Arguments
 
 - `dataset`: Supported datasets are returned by [`supported_datasets`](@ref).
 
-- `dates`: The dates of the dataset (`Dates.AbstractDateTime` or `CFTime.AbstractCFDateTime`).
+- `dates`: The dates of the dataset (`Dates.AbstractDateTime`).
            Note that `dates` can either be a range or a vector of dates, representing a time-series.
            For a single date, use [`Metadatum`](@ref).
 
 - `start_date`: If `dates = nothing`, we can prescribe the first date of metadata as a date
-                (`Dates.AbstractDateTime` or `CFTime.AbstractCFDateTime`). If outside the
-                date range of the dataset, the first allowable date is chosen. Default: nothing.
+                (`Dates.AbstractDateTime`). If outside the date range of the dataset, the first
+                allowable date is chosen. Default: nothing.
 
 - `end_date`: If `dates = nothing`, we can prescribe the last date of metadata as a date
-              (`Dates.AbstractDateTime` or `CFTime.AbstractCFDateTime`). If outside the
-                date range of the dataset, the last allowable date is chosen. Default: nothing.
+              (`Dates.AbstractDateTime`). If outside the date range of the dataset, the last
+              allowable date is chosen. Default: nothing.
 
 - `region`: Specifies the spatial region of the dataset. Can be a [`BoundingBox`](@ref)
             for a rectangular region, a [`Column`](@ref) for a single horizontal location,
@@ -164,7 +169,7 @@ function Metadata(variable_name;
     return Metadata(variable_name, dataset, dates, region, dir, filename)
 end
 
-const AnyDateTime  = Union{AbstractCFDateTime, Dates.AbstractDateTime}
+const AnyDateTime  = Dates.AbstractDateTime
 const Metadatum{V} = Metadata{V, <:Union{AnyDateTime, Nothing}} where V
 
 function Base.size(metadata::Metadata)
@@ -200,7 +205,7 @@ function Metadatum(variable_name;
     end
 
     if !isnothing(date) && !(date isa AnyDateTime)
-        msg = "`date` must be `nothing`, a `Dates.AbstractDateTime`, or `CFTime.AbstractCFDateTime`, received $(typeof(date))"
+        msg = "`date` must be `nothing` or a `Dates.AbstractDateTime`, received $(typeof(date))"
         throw(ArgumentError(msg))
     end
 
@@ -299,14 +304,22 @@ end
 ##### `download`, ...) keeps working unchanged on the elements.
 #####
 
-struct MetadataSet{V, D, R, N, F}
-    names :: N      # NTuple{K, Symbol} — verbose dataset variable names
-    dataset :: V    # shared
-    dates :: D      # shared; scalar or AbstractVector
-    region :: R     # shared
-    dir :: String   # shared
-    filenames :: F  # NamedTuple keyed by `names`, one entry per variable
+struct MetadataSet{V, D, R, N, F} <: AbstractMetadata
+    names     :: N        # NTuple{K, Symbol} — verbose dataset variable names
+    dataset   :: V        # shared
+    dates     :: D        # shared; scalar or AbstractVector
+    region    :: R        # shared
+    dir       :: String   # shared
+    filenames :: F        # NamedTuple keyed by `names`, one entry per variable
+    function MetadataSet{V, D, R, N, F}(names, dataset, dates, region, dir, filenames) where {V, D, R, N, F}
+        m = new{V, D, R, N, F}(names, dataset, dates, region, dir, filenames)
+        observe_metadata(m)
+        return m
+    end
 end
+
+MetadataSet(names::N, dataset::V, dates::D, region::R, dir::String, filenames::F) where {V, D, R, N, F} =
+    MetadataSet{V, D, R, N, F}(names, dataset, dates, region, dir, filenames)
 
 """
     MetadataSet(variable_names::Symbol...;
@@ -319,8 +332,8 @@ end
                 start_date = nothing,
                 end_date = nothing)
 
-A bundle of [`Metadata`](@ref) for many variables that share `dataset`, `dates`,
-`region`, and `dir` — differing only in variable name.
+A bundle of [`Metadata`](@ref) for many variables that share `dataset`, `dates`, `region`, and `dir`
+— differing only in variable name.
 
 Each element of an `mset::MetadataSet`, e.g., `mset[name]` (or equivalently `mset.name` or
 `mset[i]`) is itself a `Metadata` — or a `Metadatum` when `dates` is a single date.
@@ -345,7 +358,6 @@ Keyword Arguments
 - `start_date`, `end_date`: Optional date cropping, matching [`Metadata`](@ref).
 
 Example
-=======
 
 ```jldoctest
 using NumericalEarth, Dates
@@ -385,8 +397,7 @@ function MetadataSet(variable_names::Symbol...;
                      start_date = nothing,
                      end_date = nothing)
 
-    isempty(variable_names) &&
-        throw(ArgumentError("MetadataSet requires at least one variable name"))
+    isempty(variable_names) && throw(ArgumentError("MetadataSet requires at least one variable name"))
 
     if !isnothing(date) && !isnothing(dates)
         throw(ArgumentError("Specify either `date` (scalar) or `dates` (vector), not both"))
@@ -402,7 +413,7 @@ function MetadataSet(variable_names::Symbol...;
     end
 
     if !isnothing(date) && !(effective_dates isa AnyDateTime)
-        msg = "`date` must be a `Dates.AbstractDateTime` or `CFTime.AbstractCFDateTime`, received $(typeof(date))"
+        msg = "`date` must be a `Dates.AbstractDateTime`, received $(typeof(date))"
         throw(ArgumentError(msg))
     end
 
@@ -445,8 +456,7 @@ end
 Base.propertynames(mset::MetadataSet) =
     (getfield(mset, :names)..., fieldnames(MetadataSet)...)
 
-# Indexed access. We use `getfield` here so subsequent edits to `getproperty`
-# can't make these recursive.
+# Indexed access. We use `getfield` here so subsequent edits to `getproperty` can't make these recursive.
 function Base.getindex(mset::MetadataSet, name::Symbol)
     fname = getfield(mset, :filenames)[name]
     return Metadata(name,
@@ -457,8 +467,7 @@ function Base.getindex(mset::MetadataSet, name::Symbol)
                     fname)
 end
 
-@propagate_inbounds Base.getindex(mset::MetadataSet, i::Int) =
-    getindex(mset, getfield(mset, :names)[i])
+@propagate_inbounds Base.getindex(mset::MetadataSet, i::Int) = getindex(mset, getfield(mset, :names)[i])
 
 Base.length(mset::MetadataSet) = length(getfield(mset, :names))
 Base.keys(mset::MetadataSet)   = getfield(mset, :names)
@@ -471,8 +480,7 @@ Base.lastindex(mset::MetadataSet) = length(mset)
     return mset[state], state + 1
 end
 
-Base.NamedTuple(mset::MetadataSet) =
-    NamedTuple{getfield(mset, :names)}(map(n -> mset[n], getfield(mset, :names)))
+Base.NamedTuple(mset::MetadataSet) = NamedTuple{getfield(mset, :names)}(map(n -> mset[n], getfield(mset, :names)))
 
 """
     metadata_path(mset::MetadataSet)
@@ -608,7 +616,7 @@ results of each per-variable `download` call (typically the file path(s)).
 """
 function Downloads.download(mset::MetadataSet; kwargs...)
     names = getfield(mset, :names)
-    return NamedTuple{names}(map(n -> Downloads.download(mset[n]; kwargs...), names))
+    return NamedTuple{names}(map(n -> download_dataset(mset[n]), names))
 end
 
 """

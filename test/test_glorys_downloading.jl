@@ -39,7 +39,7 @@ end
         metadatum = Metadatum(variable; dataset, region)
         filepath = NumericalEarth.DataWrangling.metadata_path(metadatum)
         isfile(filepath) && rm(filepath; force=true)
-        download(metadatum)
+        download_dataset(metadatum)
         @test isfile(filepath)
     end
 end
