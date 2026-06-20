@@ -31,6 +31,7 @@ using Oceananigans.OutputReaders: FieldTimeSeries
 using Oceananigans.Grids: znode
 using Oceananigans.Architectures: on_architecture
 using Oceananigans.TimeSteppers: update_state!
+using Oceananigans.Coriolis: SphericalCoriolis
 using Breeze
 using Breeze.TerrainFollowingDiscretization: TerrainFollowingVerticalDiscretization, materialize_terrain!
 using Statistics: mean
@@ -636,8 +637,14 @@ rayleigh_damping = UpperSponge(; damping_rate = 1/damping_timescale, depth = dam
 # Matching Fan's per-direction orders (a `FluxFormAdvection` of WENO(5)/WENO(5)/WENO(3)) was
 # tested and left the dynamics essentially unchanged, so the higher-order default is kept.
 
+# Coriolis: a synoptic-scale LAM forced by ERA5 needs the rotating-frame balance, else the ERA5
+# pressure field accelerates the interior winds with no geostrophic restoring force. `SphericalCoriolis`
+# gives the latitude-varying f on the lat-lon grid. (Disable with CORIOLIS=off for comparison.)
+coriolis_scheme = get(ENV, "CORIOLIS", "on") == "on" ? SphericalCoriolis() : nothing
+
 model = atmosphere_simulation(grid;
                               thermodynamic_constants = constants,
+                              coriolis            = coriolis_scheme,
                               dynamics            = CompressibleDynamics(SplitExplicitTimeDiscretization(sponge = rayleigh_damping);
                                                                          surface_pressure = p̄₀),
                               boundary_conditions = bcs,
