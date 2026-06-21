@@ -294,28 +294,33 @@ nothing #hide
 # ## Visualizing the budget
 #
 # The plot shows the two stored components (ocean heat content and ice+snow stored latent energy), the cumulative
-# match between `ΔE` and `∫Q dt`, and the residual on both absolute and relative log scales.
+# match between `ΔE` and `∫𝒬 dt`, and the residual on both absolute and relative log scales.
 
 set_theme!(Theme(fontsize=16, linewidth=2))
 
 fig = Figure(size=(1100, 900))
-axE1 = Axis(fig[1, 1], ylabel = "Ocean heat content (J)",  title = "Ocean heat content")
-axE2 = Axis(fig[2, 1], ylabel = "Ice + snow stored E (J)", title = "Ice + snow stored latent energy")
-axE3 = Axis(fig[3, 1], ylabel = "Cumulative (J)",          title = "ΔE vs. ∫Q dt")
-axE4 = Axis(fig[4, 1], ylabel = "Residual (J)",            title = "Energy residual = ΔE − ∫Q dt")
-axE5 = Axis(fig[5, 1], ylabel = "log₁₀|rel residual|",     title = "Relative energy residual", xlabel = "Time (days)", )
+ax1 = Axis(fig[1, 1], ylabel = "Ocean heat content (J)",  title = "Ocean heat content")
+ax2 = Axis(fig[2, 1], ylabel = "Ice + snow stored E (J)", title = "Ice + snow stored latent energy")
+ax3 = Axis(fig[3, 1], ylabel = "Cumulative (J)",          title = "ΔE vs. ∫𝒬 dt")
+ax4 = Axis(fig[4, 1], ylabel = "Residual (J)",            title = "Energy residual = ΔE − ∫𝒬 dt")
+ax5 = Axis(fig[5, 1], ylabel = "log₁₀|rel residual|",     title = "Relative energy residual", xlabel = "Time (days)", )
 
-lines!(axE1, τ, history.ℋᵒᶜ, color = :royalblue)
-lines!(axE2, τ, history.Eᵢₛ, color = :orange)
-lines!(axE3, τ, ΔE, label = "ΔE",  color = :black)
-lines!(axE3, τ, ∫𝒬, label = "∫𝒬 dt", color = :crimson, linestyle = :dash)
-lines!(axE4, τ, R,  color = :seagreen)
+lines!(ax1, τ, history.ℋᵒᶜ, color = :royalblue)
+
+lines!(ax2, τ, history.Eᵢₛ, color = :orange)
+
+lines!(ax3, τ, ΔE, label = "ΔE", color = :black)
+lines!(ax3, τ, ∫𝒬, label = "∫𝒬 dt", color = :crimson, linestyle = :dash)
+axislegend(ax3, position = :lt)
+
+lines!(ax4, τ, R, color = :seagreen)
+hlines!(ax4, [0], color = :gray, linestyle = :dot)
+
 ε = log10.(abs.(R ./ max(maximum(abs.(ΔE)), 1)))
-lines!(axE5, τ[2:end], ε[2:end], color = :seagreen)
-axislegend(axE3, position = :lt)
-hlines!(axE4, [0]; color = :gray, linestyle = :dot)
-for ax in (axE1, axE2, axE3, axE4, axE5)
-    vlines!(ax, [Δτ / day]; color = :gray, linestyle = :dot, linewidth = 1)
+lines!(ax5, τ[2:end], ε[2:end], color = :seagreen)
+
+for ax in (ax1, ax2, ax3, ax4, ax5)
+    vlines!(ax, [Δτ / day], color = :gray, linestyle = :dot, linewidth = 1)
 end
 
 save("coupled_conservation_energy.png", fig)
