@@ -40,7 +40,7 @@ using Printf
 #
 # `ClimaSeaIce`'s slab mass balance uses a temperature-dependent latent heat, `ℒ(T) = ℒ₀ + (ρℓ * cℓ / ρi − ci)(T − T₀)`,
 # with `ℰu = ρi * ℒ(T_u)` at the top interface and `ℰb = ρi * ℒ(T_b)` at the bottom. A single state-based
-# `Eis = − ℵ * ρi * ℒ * h * Az` cannot simultaneously match freeze at `T_b` and top-melt at 0 ᵒC: the 4.7 kJ/kg gap accounts
+# `Eᵢₛ = − ℵ * ρi * ℒ * h * Az` cannot simultaneously match freeze at `T_b` and top-melt at 0 ᵒC: the 4.7 kJ/kg gap accounts
 # for a ~1% residual scaling with top-melt mass. To isolate coupler-side bookkeeping from this intrinsic `ℒ(T)` mismatch we
 # locally override `latent_heat` to the constant `pt.reference_latent_heat`. This is a diagnostic choice for the present
 # example and does not modify upstream.
@@ -130,10 +130,10 @@ function column_state(coupled_model)
     ℵ  = first(coupled_model.sea_ice.model.ice_concentration)
     hs = first(coupled_model.sea_ice.model.snow_thickness)
 
-    Eis = -ℵ * (ρi * ℒ₀ * h + ρs * ℒ₀ * hs) * Az
+    Eᵢₛ = -ℵ * (ρi * ℒ₀ * h + ρs * ℒ₀ * hs) * Az
     ℋᵒᶜ = ρᵒᶜ * cᵒᶜ * first(compute!(∫T))
 
-    return (; h, ℵ, hs, Eis, ℋᵒᶜ)
+    return (; h, ℵ, hs, Eᵢₛ, ℋᵒᶜ)
 end
 
 # `net_top_heat_flux` returns the atmospheric energy input to the coupled (ice + ocean) system in Watts:
@@ -185,7 +185,7 @@ history = (t     = Float64[],
            h     = Float64[],
            ℵ     = Float64[],
            hs    = Float64[],
-           Eis   = Float64[],
+           Eᵢₛ   = Float64[],
            ℋᵒᶜ   = Float64[],
            𝒬     = Float64[],
            𝒬ᶠʳᶻ  = Float64[])
@@ -198,7 +198,7 @@ function record!(history, coupled_model, phase_id, 𝒬)
     push!(history.h,     st.h)
     push!(history.ℵ,     st.ℵ)
     push!(history.hs,    st.hs)
-    push!(history.Eis,   st.Eis)
+    push!(history.Eᵢₛ,   st.Eᵢₛ)
     push!(history.ℋᵒᶜ,   st.ℋᵒᶜ)
     push!(history.𝒬,     𝒬)
     push!(history.𝒬ᶠʳᶻ,  𝒬f)
@@ -277,7 +277,7 @@ end
 # (mutating ocean `T` and writing `𝒬ᶠʳᶻ`) but the corresponding ice mass gain is consumed only during
 # step `n + 1`. At a diagnostic snapshot the ocean shows the warming while the ice has not yet grown.
 # We anticipate this one-step pending quantity by adding `𝒬ᶠʳᶻ(n) * Δt⁺ * Az`, where `Δt⁺ = t[n+1] - t[n]`,
-# to `Eis(n)` so the energy budget closure is not polluted by bookkeeping lag.
+# to `Eᵢₛ[n]` so the energy budget closure is not polluted by bookkeeping lag.
 
 Δt⁺ = similar(t)
 for n in 1:(length(t) - 1)
@@ -286,7 +286,7 @@ end
 Δt⁺[end] = Δt⁺[end-1]
 δE = history.𝒬ᶠʳᶻ .* Δt⁺ .* Az
 
-Ẽᵢₛ = history.Eis .+ δE
+Ẽᵢₛ = history.Eᵢₛ .+ δE
 ΔE  = (Ẽᵢₛ .+ history.ℋᵒᶜ) .- (Ẽᵢₛ[1] + history.ℋᵒᶜ[1])
 R   = ΔE .- ∫𝒬
 nothing #hide
@@ -306,7 +306,7 @@ axE4 = Axis(fig[4, 1], ylabel = "Residual (J)",            title = "Energy resid
 axE5 = Axis(fig[5, 1], ylabel = "log₁₀|rel residual|",     title = "Relative energy residual", xlabel = "Time (days)", )
 
 lines!(axE1, τ, history.ℋᵒᶜ, color = :royalblue)
-lines!(axE2, τ, history.Eis, color = :orange)
+lines!(axE2, τ, history.Eᵢₛ, color = :orange)
 lines!(axE3, τ, ΔE, label = "ΔE",  color = :black)
 lines!(axE3, τ, ∫𝒬, label = "∫𝒬 dt", color = :crimson, linestyle = :dash)
 lines!(axE4, τ, R,  color = :seagreen)
