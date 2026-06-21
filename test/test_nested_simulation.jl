@@ -3,6 +3,7 @@ include("runtests_setup.jl")
 using NumericalEarth
 using NumericalEarth.EarthSystemModels.NestedSimulations: parent_boundary_conditions
 using Oceananigans
+using Oceananigans.Units: Time
 using Oceananigans.BoundaryConditions: ValueBoundaryCondition, FieldBoundaryConditions, fill_halo_regions!
 using Breeze
 using Breeze: ThermodynamicConstants, dry_air_gas_constant, vapor_gas_constant, CompressibleDynamics
@@ -180,6 +181,38 @@ end
     @test parent.clock.time ≈ child.clock.time
     @test all(isfinite, Array(interior(child.velocities.u)))
     @test all(isfinite, Array(interior(child.tracers.c)))
+end
+
+# The era5_breeze telescoping nest can't use a live AbstractField BC source (it fails GPU
+# codegen — see the prognostic-parent regression above), so it drives the inner child from a
+# "rolling FieldTimeSeries": each boundary variable is a 2-slot FTS on the parent grid whose both
+# slots are overwritten from the live parent field every step. An FTS survives Adapt as a
+# FlavorOfFTS (GPU-clean), and the wide [0, 1e9] time bracket makes the time-interpolation return
+# the current state at any clock time. This guards the rolling idiom: a refresh propagates the
+# live field into the FTS, and time-interpolation returns the refreshed state.
+@testset "Rolling FieldTimeSeries tracks a live parent field" begin
+    grid = RectilinearGrid(size = (4, 4, 4), x = (0, 1), y = (0, 1), z = (0, 1),
+                           topology = (Bounded, Bounded, Bounded))
+    src  = CenterField(grid)
+    set!(src, (x, y, z) -> x + 2y + 3z)
+
+    times = [0.0, 1.0e9]                         # wide bracket ⇒ interpolation returns the slot value
+    fts = FieldTimeSeries{Center, Center, Center}(grid, times)
+    for n in 1:2
+        interior(fts[n]) .= interior(src)
+    end
+    @test interior(fts[1]) == interior(src)
+    @test interior(fts[2]) == interior(src)
+
+    # Mutate the live field and "roll" the FTS forward; both slots follow.
+    set!(src, (x, y, z) -> 10 + x)
+    for n in 1:2
+        interior(fts[n]) .= interior(src)
+    end
+    @test interior(fts[1]) == interior(src)
+
+    # Time-interpolating anywhere inside the bracket returns the refreshed state.
+    @test interior(fts[Time(123.4)]) ≈ interior(src)
 end
 
 # An `Interpolated` Value BC must sample the source at the boundary FACE, not the child

@@ -33,8 +33,11 @@ using Oceananigans.Architectures: on_architecture
 using Oceananigans.TimeSteppers: update_state!
 using Oceananigans.Coriolis: SphericalCoriolis
 using Breeze
+using CloudMicrophysics  # triggers BreezeCloudMicrophysicsExt (OneMomentCloudMicrophysics)
+using Breeze.Microphysics: SaturationAdjustment, WarmPhaseEquilibrium, MixedPhaseEquilibrium
 using Breeze.TerrainFollowingDiscretization: TerrainFollowingVerticalDiscretization, materialize_terrain!
 using Statistics: mean
+using JLD2: jldsave
 using Dates
 using Printf
 
@@ -45,6 +48,11 @@ if get(ENV, "ARCH", "CPU") == "GPU"
 else
     const arch = CPU()
 end
+
+# Single precision (f32): the LAM is memory-bandwidth-bound on the GPU; f32 roughly halves
+# the footprint and step cost at no meaningful accuracy cost here. Sets Oceananigans' global
+# default float type, cascading to all grids, fields, FieldTimeSeries, constants, and dynamics.
+Oceananigans.defaults.FloatType = Float32
 
 # ## Configuration
 
@@ -206,6 +214,10 @@ U_horizontal = 60   # m/s — bounds the jet
 W_vertical   = 25   # m/s — bounds convective updrafts
 Δt = 0.5 * min(min(minimum_xspacing(grid), minimum_yspacing(grid)) / U_horizontal,
                minimum_zspacing(grid) / W_vertical)
+
+# Fixed step for explicit time stepping: the vertical acoustic CFL on the 60 m surface
+# cells bounds Δt well below the ≈1.2 s advection-CFL estimate above. Override with DT.
+Δt = parse(Float64, get(ENV, "DT", "0.15"))
 
 # ## Nested domains
 #
@@ -637,19 +649,6 @@ rayleigh_damping = UpperSponge(; damping_rate = 1/damping_timescale, depth = dam
 # Matching Fan's per-direction orders (a `FluxFormAdvection` of WENO(5)/WENO(5)/WENO(3)) was
 # tested and left the dynamics essentially unchanged, so the higher-order default is kept.
 
-# Coriolis: a synoptic-scale LAM forced by ERA5 needs the rotating-frame balance, else the ERA5
-# pressure field accelerates the interior winds with no geostrophic restoring force. `SphericalCoriolis`
-# gives the latitude-varying f on the lat-lon grid. (Disable with CORIOLIS=off for comparison.)
-coriolis_scheme = get(ENV, "CORIOLIS", "on") == "on" ? SphericalCoriolis() : nothing
-
-model = atmosphere_simulation(grid;
-                              thermodynamic_constants = constants,
-                              coriolis            = coriolis_scheme,
-                              dynamics            = CompressibleDynamics(SplitExplicitTimeDiscretization(sponge = rayleigh_damping);
-                                                                         surface_pressure = p̄₀),
-                              boundary_conditions = bcs,
-                              forcing             = davies).model
-
 # ## Set initial state from ERA5
 #
 # Derive Breeze's `CompressibleDynamics` prognostic variables (ρ, θˡⁱ, qᵗ) from
@@ -660,18 +659,92 @@ model = atmosphere_simulation(grid;
 
 (; ρ, θˡⁱ, qᵗ) = breeze_prognostic_state(constants, T, qᵛ, qᶜ, qⁱ, p)
 
+# ## Build the production model
+#
+# The actual simulation: real (live, parent-driven `Interpolated`) lateral BCs, microphysics,
+# Coriolis, and the Davies fringe forcing. The initial pressure is hydrostatically balanced
+# from the surface (above), and an optional dynamical-initialization pass (DFI=on, below) spins
+# ρw into nonhydrostatic balance before the run.
+
+# Time discretization: fully-explicit (default; the vertical acoustic CFL on the 60 m surface
+# cells bounds Δt) or split-explicit acoustic substepping with the Rayleigh UpperSponge
+# (TIME_SCHEME=split).
+time_discretization = get(ENV, "TIME_SCHEME", "explicit") == "split" ?
+    SplitExplicitTimeDiscretization(sponge = rayleigh_damping) :
+    ExplicitTimeStepping()
+
+# Momentum advection: WENO(9), higher-order than Fan's 5th/3rd; scalars keep the WENO(5) default.
+momentum_advection_scheme = WENO(order = 9)
+
+# Microphysics: equilibrium saturation adjustment (default) or 1-moment bulk precipitation
+# (warm-rain, or mixed-phase adding snow). Both 1M flavors use saturation-adjustment cloud
+# formation, so the prognostic moisture stays `ρqᵉ` (IC/BCs/Davies unchanged); the precip
+# categories `ρqʳ` (+`ρqˢ` for mixed) are added and initialize to zero.
+const OneMomentCloudMicrophysics = Base.get_extension(Breeze, :BreezeCloudMicrophysicsExt).OneMomentCloudMicrophysics
+microphysics_scheme =
+    get(ENV, "MICROPHYSICS", "equilibrium") == "1m_warm"  ? OneMomentCloudMicrophysics(cloud_formation = SaturationAdjustment(equilibrium = WarmPhaseEquilibrium())) :
+    get(ENV, "MICROPHYSICS", "equilibrium") == "1m_mixed" ? OneMomentCloudMicrophysics(cloud_formation = SaturationAdjustment(equilibrium = MixedPhaseEquilibrium())) :
+    SaturationAdjustment(equilibrium = WarmPhaseEquilibrium())
+
+# Coriolis: a synoptic-scale LAM forced by ERA5 needs the rotating-frame balance, else the
+# ERA5 pressure field accelerates the interior winds with no geostrophic restoring force (the
+# unbounded-wind drift). `SphericalCoriolis` gives the latitude-varying f on the lat-lon grid.
+coriolis_scheme = get(ENV, "CORIOLIS", "on") == "on" ? SphericalCoriolis() : nothing
+
+model = atmosphere_simulation(grid;
+                              thermodynamic_constants = constants,
+                              momentum_advection  = momentum_advection_scheme,
+                              microphysics        = microphysics_scheme,
+                              coriolis            = coriolis_scheme,
+                              dynamics            = CompressibleDynamics(time_discretization; surface_pressure = p̄₀),
+                              boundary_conditions = bcs,
+                              forcing             = davies).model
+
 set!(model; ρ = ρ, u = u, v = v, qᵗ = qᵗ, θˡⁱ = θˡⁱ)
 
-# Consistent-w IC. The analysis cold-starts Cartesian w = 0, but the terrain-following
-# coordinate wants the contravariant w̃ = w − slopeₓ·u − slopeᵧ·v ≈ 0 (flow follows the
-# ground). With w = 0 the IC carries w̃ = −slopeₓ·u − slopeᵧ·v ≈ −u·∇h, which the surface
-# kinematic BC then discharges as a spurious near-surface w. Make ρw terrain-consistent by
-# grafting ρw ← ρw − ρw̃: after `update_state!` populates ρw̃ = ρw − slope·ρu = −slope·ρu
-# (since ρw=0), this sets ρw = slope·ρu — exactly the contravariant-zeroing momentum, using
-# Breeze's own slope. A second `update_state!` confirms w̃ ≈ 0.
+# Consistent-w IC: graft ρw ← ρw − ρw̃ so the contravariant w̃ ≈ 0 (flow follows the ground),
+# then re-sync diagnostics.
 update_state!(model)
 interior(model.momentum.ρw) .-= interior(model.dynamics.contravariant_vertical_momentum)
 update_state!(model)
+@info @sprintf("IC ready (hydrostatic-balanced p + consistent-w): max|u|=%.2f max|w|=%.2f ρ∈[%.4f,%.4f]",
+               maximum(abs, interior(model.velocities.u)), maximum(abs, interior(model.velocities.w)),
+               minimum(interior(model.dynamics.density)), maximum(interior(model.dynamics.density)))
+
+# ## Dynamical initialization (DFI / FV3 `na_init`)
+#
+# ERA5 cold-starts w = 0 (hydrostatic), out of nonhydrostatic balance. Spin ρw into
+# balance on a stripped adiabatic twin — no microphysics, sponge, or forcing, frozen
+# lateral BCs — then graft the balanced dynamics subset (ρ, ρu, ρv, ρθ, ρw) into the
+# production model. `balance_adiabatically!` requires the stripped model: production
+# physics/forcing/sponge would corrupt the reversible forward/backward excursion.
+if get(ENV, "DFI", "off") == "on"
+    Δt_balance     = parse(Float64, get(ENV, "DFI_DT", string(Δt)))
+    balance_cycles = parse(Int, get(ENV, "DFI_CYCLES", "2"))
+    twin = atmosphere_simulation(grid;
+                                 thermodynamic_constants = constants,
+                                 momentum_advection = momentum_advection_scheme,
+                                 dynamics = CompressibleDynamics(ExplicitTimeStepping(); surface_pressure = p̄₀),
+                                 microphysics = nothing,
+                                 boundary_conditions = bcs).model
+    set!(twin; ρ = ρ, u = u, v = v, qᵛ = qᵛ, θˡⁱ = θˡⁱ)
+    update_state!(twin)
+    Breeze.balance_adiabatically!(twin; Δt = Δt_balance, cycles = balance_cycles)
+    ρθ_production = Breeze.AtmosphereModels.thermodynamic_density(model.formulation)
+    ρθ_balanced   = Breeze.AtmosphereModels.thermodynamic_density(twin.formulation)
+    for (field, balanced) in ((model.dynamics.density, twin.dynamics.density),
+                              (model.momentum.ρu, twin.momentum.ρu),
+                              (model.momentum.ρv, twin.momentum.ρv),
+                              (model.momentum.ρw, twin.momentum.ρw),
+                              (ρθ_production, ρθ_balanced))
+        interior(field) .= interior(balanced)
+    end
+    update_state!(model)
+    @info @sprintf("DFI done (cycles=%d, Δt=%.3f s): max|u|=%.2f max|w|=%.2f ρ∈[%.4f,%.4f]",
+                   balance_cycles, Δt_balance,
+                   maximum(abs, interior(model.velocities.u)), maximum(abs, interior(model.velocities.w)),
+                   minimum(interior(model.dynamics.density)), maximum(interior(model.dynamics.density)))
+end
 
 # ## NestedSimulation
 #
@@ -682,32 +755,94 @@ update_state!(model)
 #
 # Δt is defined with the grid above; the Davies fringe relaxes on a 10·Δt timescale.
 
-nested = NestedSimulation(parent, model; Δt, stop_iteration = 100)
+# Telescoping: TELESCOPE=on builds the live inner D3 nest from the developed D2 `model`
+# (era5_d3.jl defines D3, d3_davies!, capture_d3_slice!, d3_slice_frames) and runs the
+# genuine NestedModel-in-NestedModel `NestedSimulation(ERA5, NestedModel(D2, D3))`.
+telescope = get(ENV, "TELESCOPE", "off") == "on"
+telescope && include(joinpath(@__DIR__, "era5_d3.jl"))
+child  = telescope ? NestedModel(model, D3) : model
+nested = NestedSimulation(parent, child; Δt, stop_time = parse(Float64, get(ENV, "STOP_TIME", "900")))
+telescope && add_callback!(nested, refresh_d3_bc_fts!, IterationInterval(1))   # roll the D3 BC FTS ← live D2
+telescope && add_callback!(nested, d3_davies!, IterationInterval(1))           # D3 Davies fringe ← live D2
+
+# Terrain-following AGL slice (linear interpolation in physical znode height per column).
+function interp_to_height(zcol, vals, z_target)
+    n = length(zcol)
+    z_target <= zcol[1] && return vals[1]
+    z_target >= zcol[n] && return vals[n]
+    k = searchsortedlast(zcol, z_target)
+    t = (z_target - zcol[k]) / (zcol[k+1] - zcol[k])
+    return (1 - t) * vals[k] + t * vals[k+1]
+end
+
+function cut_plane(field, height_agl)
+    host_grid = on_architecture(CPU(), field.grid)
+    LX, LY, LZ = location(field)
+    data = Array(interior(field))
+    Nx_f, Ny_f, Nz_f = size(data)
+    slice = Matrix{eltype(data)}(undef, Nx_f, Ny_f)
+    for j in 1:Ny_f, i in 1:Nx_f
+        z_surface = znode(i, j, 1, host_grid, LX(), LY(), Face())
+        z_target  = z_surface + height_agl
+        zcol      = [znode(i, j, k, host_grid, LX(), LY(), LZ()) for k in 1:Nz_f]
+        slice[i, j] = interp_to_height(zcol, view(data, i, j, :), z_target)
+    end
+    λ = collect(λnodes(host_grid, LX(), LY(), LZ()))
+    φ = collect(φnodes(host_grid, LX(), LY(), LZ()))
+    return λ, φ, slice
+end
+
+# 2-km-AGL horizontal slices of w and rain ρqʳ, captured every SLICE_STRIDE iterations
+# (default 4000·0.15 s = 600 s = 10 min) into `slice_frames` + jldsave'd after `run!` — same
+# IterationInterval pattern as the volume capture (a TimeInterval writer deadlocks NestedModel).
+slice_frames   = NamedTuple[]
+capture_slices = get(ENV, "SLICE_OUTPUT", "0") == "1"
+slice_stride   = parse(Int, get(ENV, "SLICE_STRIDE", "4000"))
+slice_height   = parse(Float64, get(ENV, "SLICE_HEIGHT", "2000.0"))
 
 function progress(sim)
     m = sim.model
-    @info @sprintf("iter=%3d  t=%.3f s  max|u|=%.3f  max|v|=%.3f  max|w|=%.2e  ρ∈[%.4f, %.4f]",
+    u = interior(m.velocities.u)
+    v = interior(m.velocities.v)
+    w = interior(m.velocities.w)
+    ρ = interior(m.dynamics.density)
+    pf = Oceananigans.prognostic_fields(m)
+    qrmax = haskey(pf, :ρqʳ) ? maximum(interior(pf[:ρqʳ])) : 0.0
+    @info @sprintf("iter=%4d t=%6.1fs  max|u|=%7.2f  max|v|=%7.2f  max|w|=%6.2f  ρ∈[%.4f,%.4f]  max ρqʳ=%.3g",
                    m.clock.iteration, m.clock.time,
-                   maximum(abs, m.velocities.u),
-                   maximum(abs, m.velocities.v),
-                   maximum(abs, m.velocities.w),
-                   minimum(interior(m.dynamics.density)),
-                   maximum(interior(m.dynamics.density)))
+                   maximum(abs, u), maximum(abs, v), maximum(abs, w),
+                   minimum(ρ), maximum(ρ), qrmax)
+    if capture_slices && m.clock.iteration % slice_stride == 0
+        if telescope                       # one-way nest ⇒ sample D3 only (D2 reused from its standalone run)
+            capture_d3_slice!()
+        else
+            λs, φs, w_slice = cut_plane(m.velocities.w, slice_height)
+            ρqʳ_slice = haskey(pf, :ρqʳ) ? cut_plane(pf[:ρqʳ], slice_height)[3] : zero(w_slice)
+            push!(slice_frames, (t = m.clock.time, iter = m.clock.iteration, λ = λs, φ = φs, w = w_slice, ρqʳ = ρqʳ_slice))
+        end
+    end
+    flush(stdout); flush(stderr)  # Julia bypasses libc buffering — flush so SLURM streams live
 end
-add_callback!(nested, progress, IterationInterval(10))
+add_callback!(nested, progress, IterationInterval(50))
 
 # ## Run
 #
-# 100-iteration smoke run at the advection-CFL outer Δt (split-explicit substepping).
-# The ERA5 analysis cold-starts w = 0, so the IC is not in discrete nonhydrostatic
-# balance; at this Δt the substepper unmasks that imbalance as a large spurious
-# adjustment (the old acoustic-CFL Δt only damped it slowly). A physical run needs
-# dynamical initialization next — `balance_adiabatically!` (Breeze #764) on a stripped
-# (no-microphysics, no-forcing, frozen-BC) model, then transfer (ρ, ρu, ρv, ρθ, ρqᵉ, ρw).
+# Step the nest to `STOP_TIME`. Slices (and, when TELESCOPE=on, the inner-nest slices) are
+# captured into memory by the progress callback and written once after `run!` — a TimeInterval
+# JLD2Writer that touches GPU fields deadlocks this NestedModel mid-run.
 
-@info @sprintf("Δt = %.4f s (advection CFL, split-explicit); running %d iterations", Δt, nested.stop_iteration)
+@info @sprintf("Δt = %.4f s; %s, running to t = %.0f s", Δt, telescope ? "telescoped D2+D3" : "single-domain D2", nested.stop_time)
+flush(stdout); flush(stderr)
 run!(nested)
 @info "Done."
+slice_frames_out = telescope ? d3_slice_frames : slice_frames
+if get(ENV, "SLICE_OUTPUT", "0") == "1" && !isempty(slice_frames_out)
+    jldsave(get(ENV, "SLICE_DIR", ".") * "/era5_breeze_slices.jld2";
+            frames = slice_frames_out, height_agl = slice_height)
+    @info @sprintf("wrote %d slice frames (%.0f m AGL: w, ρqʳ) to %s/",
+                   length(slice_frames_out), slice_height, get(ENV, "SLICE_DIR", "."))
+    flush(stdout); flush(stderr)
+end
 
 # ## Report
 
@@ -842,31 +977,7 @@ save("era5_breeze_profiles.png", fig)
 # TODO: promote `cut_plane` to `NumericalEarth.Diagnostics` once stabilized — it's
 # a generic terrain-following AGL slice, useful well beyond this example.
 
-function interp_to_height(zcol, vals, z_target)
-    n = length(zcol)
-    z_target <= zcol[1] && return vals[1]
-    z_target >= zcol[n] && return vals[n]
-    k = searchsortedlast(zcol, z_target)
-    t = (z_target - zcol[k]) / (zcol[k+1] - zcol[k])
-    return (1 - t) * vals[k] + t * vals[k+1]
-end
-
-function cut_plane(field, height_agl)
-    host_grid = on_architecture(CPU(), field.grid)
-    LX, LY, LZ = location(field)
-    data = Array(interior(field))
-    Nx_f, Ny_f, Nz_f = size(data)
-    slice = Matrix{eltype(data)}(undef, Nx_f, Ny_f)
-    for j in 1:Ny_f, i in 1:Nx_f
-        z_surface = znode(i, j, 1, host_grid, LX(), LY(), Face())  # deformed bottom interface
-        z_target  = z_surface + height_agl
-        zcol      = [znode(i, j, k, host_grid, LX(), LY(), LZ()) for k in 1:Nz_f]
-        slice[i, j] = interp_to_height(zcol, view(data, i, j, :), z_target)
-    end
-    λ = collect(λnodes(host_grid, LX(), LY(), LZ()))
-    φ = collect(φnodes(host_grid, LX(), LY(), LZ()))
-    return λ, φ, slice
-end
+# `interp_to_height` / `cut_plane` are defined above (hoisted for the in-run slice capture).
 
 # ERA5 snapshot-1 winds on a terrain-following grid at the requested resolution
 # over the D2 window. u, v ingest directly (#241); w is reconstructed from ERA5 ω
