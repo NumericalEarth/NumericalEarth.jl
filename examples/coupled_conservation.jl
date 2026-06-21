@@ -337,9 +337,9 @@ nᶠ = findlast(p -> p == 1, history.phase)
 ∫𝒬ᶠ = ∫𝒬[nᶠ]
 ∫𝒬ᵐ = ∫𝒬[end] - ∫𝒬[nᶠ]
 
-@printf("  freeze: ΔE = %+.3e J   ∫𝒬 = %+.3e J   residual = %+.2e (%.1e rel)\n",
+@printf("  freeze: ΔE = %+.3e J   ∫𝒬 dt = %+.3e J   residual = %+.2e (%.1e rel)\n",
         ΔEᶠ, ∫𝒬ᶠ, ΔEᶠ - ∫𝒬ᶠ, abs(ΔEᶠ - ∫𝒬ᶠ) / max(abs(ΔEᶠ), 1))
-@printf("  melt  : ΔE = %+.3e J   ∫𝒬 = %+.3e J   residual = %+.2e (%.1e rel)\n",
+@printf("  melt  : ΔE = %+.3e J   ∫𝒬 dt = %+.3e J   residual = %+.2e (%.1e rel)\n",
         ΔEᵐ, ∫𝒬ᵐ, ΔEᵐ - ∫𝒬ᵐ, abs(ΔEᵐ - ∫𝒬ᵐ) / max(abs(ΔEᵐ), 1))
 @printf("  full-cycle relative residual: %.1e\n", abs(R[end]) / max(maximum(abs.(ΔE)), 1))
 nothing #hide
