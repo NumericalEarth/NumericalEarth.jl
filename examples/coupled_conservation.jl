@@ -8,12 +8,12 @@
 # The invariant we check at the end of the run is
 #
 # ```math
-# ΔE = \int Q \mathrm{d}t
+# ΔE = \int 𝒬 \mathrm{d}t
 # ```
 #
-# where ``E = ℋᵒᶜ + E_{is}`` is the ocean heat content plus the ice+snow stored latent energy, and `Q` is the atmospheric
-# heat flux into the coupled system. Closure to machine precision requires that every internal flux cancels exactly
-# between the components.
+# where ``E = ℋᵒᶜ + E_{is}``, with ``ℋᵒᶜ`` the ocean heat content, ``E_{is}`` the combined ice and snow stored
+# latent energy, and ``𝒬`` is the atmospheric heat flux into the coupled system. Closure to machine precision
+# requires that every internal flux cancels exactly between the components.
 #
 # ## Install dependencies
 #
@@ -187,12 +187,12 @@ history = (t     = Float64[],
            hs    = Float64[],
            Eis   = Float64[],
            ℋᵒᶜ   = Float64[],
-           Q     = Float64[],
+           𝒬     = Float64[],
            𝒬ᶠʳᶻ  = Float64[])
 
-function record!(history, coupled_model, phase_id, Q)
+function record!(history, coupled_model, phase_id, 𝒬)
     st = column_state(coupled_model)
-    𝒬f = first(interior(frazil_heat_flux(coupled_model)))
+    𝒬f = first(frazil_heat_flux(coupled_model))
     push!(history.t,     coupled_model.clock.time)
     push!(history.phase, phase_id)
     push!(history.h,     st.h)
@@ -200,21 +200,21 @@ function record!(history, coupled_model, phase_id, Q)
     push!(history.hs,    st.hs)
     push!(history.Eis,   st.Eis)
     push!(history.ℋᵒᶜ,   st.ℋᵒᶜ)
-    push!(history.Q,     Q)
+    push!(history.𝒬,     𝒬)
     push!(history.𝒬ᶠʳᶻ,  𝒬f)
     return nothing
 end
 
 # The `budget_callback` reads the current `phase_ctx` — a small mutable box holding the current phase id
-# and the snowfall enthalpy `Qᵖ` to add to the net atmospheric flux. `phase_switch_callback` is the one that
+# and the snowfall enthalpy `𝒬ᵖ` to add to the net atmospheric flux. `phase_switch_callback` is the one that
 # updates this context at the phase boundary.
 
-phase_ctx = Ref((; phase_id = 1, Qᵖ = - freeze_phase.Jˢⁿ * ℒ₀ * Az))
+phase_ctx = Ref((; phase_id = 1, 𝒬ᵖ = - freeze_phase.Jˢⁿ * ℒ₀ * Az))
 
 function budget_callback(simulation)
     ctx = phase_ctx[]
-    Q   = net_top_heat_flux(simulation.model) + ctx.Qᵖ
-    record!(history, simulation.model, ctx.phase_id, Q)
+    𝒬   = net_top_heat_flux(simulation.model) + ctx.𝒬ᵖ
+    record!(history, simulation.model, ctx.phase_id, 𝒬)
     return nothing
 end
 
@@ -234,16 +234,16 @@ function phase_switch_callback(simulation)
     set_forcing!(atmosphere, radiation, melt_phase.T, melt_phase.q, melt_phase.u, melt_phase.v,
                  melt_phase.p, melt_phase.ℐꜜˢʷ, melt_phase.ℐꜜˡʷ, melt_phase.Jᶜ, melt_phase.Jˢⁿ)
 
-    Qᵖ   = - melt_phase.Jˢⁿ * ℒ₀ * Az
+    𝒬ᵖ   = - melt_phase.Jˢⁿ * ℒ₀ * Az
     𝒬ᶠʳᶻ = simulation.model.interfaces.sea_ice_ocean_interface.fluxes.frazil_heat
     ΣQb  = simulation.model.interfaces.net_fluxes.sea_ice.bottom.heat
-    𝒬⁻   = first(interior(𝒬ᶠʳᶻ))                                             # pending frazil
+    𝒬⁻   = first(𝒬ᶠʳᶻ)                # pending frazil
     update_state!(simulation.model)
     interior(𝒬ᶠʳᶻ, 1, 1, 1)  .= 𝒬⁻
     interior(ΣQb,  1, 1, 1) .+= 𝒬⁻
 
-    phase_ctx[]    = (; phase_id = 2, Qᵖ)
-    history.Q[end] = net_top_heat_flux(simulation.model) + Qᵖ
+    phase_ctx[]    = (; phase_id = 2, 𝒬ᵖ)
+    history.𝒬[end] = net_top_heat_flux(simulation.model) + 𝒬ᵖ
     return nothing
 end
 
@@ -267,10 +267,10 @@ run!(simulation)
 t = history.t
 τ = t ./ day   # days axis
 
-∫Q = similar(t)
-∫Q[1] = 0.0
+∫𝒬 = similar(t)
+∫𝒬[1] = 0.0
 for n in 2:length(t)
-    ∫Q[n] = ∫Q[n-1] + history.Q[n-1] * (t[n] - t[n-1])
+    ∫𝒬[n] = ∫𝒬[n-1] + history.𝒬[n-1] * (t[n] - t[n-1])
 end
 
 # The frazil mass gain is deposited by `compute_sea_ice_ocean_fluxes!` at the end of step `n`
@@ -288,7 +288,7 @@ end
 
 Ẽᵢₛ = history.Eis .+ δE
 ΔE  = (Ẽᵢₛ .+ history.ℋᵒᶜ) .- (Ẽᵢₛ[1] + history.ℋᵒᶜ[1])
-R   = ΔE .- ∫Q
+R   = ΔE .- ∫𝒬
 nothing #hide
 
 # ## Visualizing the budget
@@ -308,7 +308,7 @@ axE5 = Axis(fig[5, 1], ylabel = "log₁₀|rel residual|",     title = "Relative
 lines!(axE1, τ, history.ℋᵒᶜ, color = :royalblue)
 lines!(axE2, τ, history.Eis, color = :orange)
 lines!(axE3, τ, ΔE, label = "ΔE",  color = :black)
-lines!(axE3, τ, ∫Q, label = "∫Q dt", color = :crimson, linestyle = :dash)
+lines!(axE3, τ, ∫𝒬, label = "∫𝒬 dt", color = :crimson, linestyle = :dash)
 lines!(axE4, τ, R,  color = :seagreen)
 ε = log10.(abs.(R ./ max(maximum(abs.(ΔE)), 1)))
 lines!(axE5, τ[2:end], ε[2:end], color = :seagreen)
@@ -329,12 +329,12 @@ nᶠ = findlast(p -> p == 1, history.phase)
 
 ΔEᶠ = Ẽᵢₛ[nᶠ]  + history.ℋᵒᶜ[nᶠ]  - Ẽᵢₛ[1]  - history.ℋᵒᶜ[1]
 ΔEᵐ = Ẽᵢₛ[end] + history.ℋᵒᶜ[end] - Ẽᵢₛ[nᶠ] - history.ℋᵒᶜ[nᶠ]
-∫Qᶠ = ∫Q[nᶠ]
-∫Qᵐ = ∫Q[end] - ∫Q[nᶠ]
+∫𝒬ᶠ = ∫𝒬[nᶠ]
+∫𝒬ᵐ = ∫𝒬[end] - ∫𝒬[nᶠ]
 
-@printf("  freeze: ΔE = %+.3e J   ∫Q = %+.3e J   residual = %+.2e (%.1e rel)\n",
-        ΔEᶠ, ∫Qᶠ, ΔEᶠ - ∫Qᶠ, abs(ΔEᶠ - ∫Qᶠ) / max(abs(ΔEᶠ), 1))
-@printf("  melt  : ΔE = %+.3e J   ∫Q = %+.3e J   residual = %+.2e (%.1e rel)\n",
-        ΔEᵐ, ∫Qᵐ, ΔEᵐ - ∫Qᵐ, abs(ΔEᵐ - ∫Qᵐ) / max(abs(ΔEᵐ), 1))
+@printf("  freeze: ΔE = %+.3e J   ∫𝒬 = %+.3e J   residual = %+.2e (%.1e rel)\n",
+        ΔEᶠ, ∫𝒬ᶠ, ΔEᶠ - ∫𝒬ᶠ, abs(ΔEᶠ - ∫𝒬ᶠ) / max(abs(ΔEᶠ), 1))
+@printf("  melt  : ΔE = %+.3e J   ∫𝒬 = %+.3e J   residual = %+.2e (%.1e rel)\n",
+        ΔEᵐ, ∫𝒬ᵐ, ΔEᵐ - ∫𝒬ᵐ, abs(ΔEᵐ - ∫𝒬ᵐ) / max(abs(ΔEᵐ), 1))
 @printf("  full-cycle relative residual: %.1e\n", abs(R[end]) / max(maximum(abs.(ΔE)), 1))
 nothing #hide
