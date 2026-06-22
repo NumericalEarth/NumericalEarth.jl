@@ -124,6 +124,8 @@ function EarthSystemModels.InterfaceComputations.ComponentExchanger(ocean::Ocean
         S = Field{Center, Center, Nothing}(grid)
     end
 
+    T = Field{Center, Center, Nothing}(grid)
+
     # Near-surface vertical tracer diffusivity, evaluated lazily inside the
     # interface flux kernel by formulations that consume it (`InteriorDiffusivity`).
     model = ocean.model
