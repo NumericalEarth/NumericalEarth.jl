@@ -39,6 +39,13 @@ export JULIA_CUDA_MEMORY_POOL=none
 # MPICH_GPU_SUPPORT_ENABLED=1 it aborts ("GTL library is not linked") unless we preload it.
 export LD_PRELOAD="$CRAY_MPICH_ROOTDIR/gtl/lib/libmpi_gtl_cuda.so${LD_PRELOAD:+:$LD_PRELOAD}"
 
+# The PBS prologue sets CUDA_VISIBLE_DEVICES to the MOM node's GPU *UUIDs*, and mpiexec forwards
+# that single value to every rank on every node. On any node other than the MOM, those UUIDs
+# do not exist, so CUDA inits with NO_DEVICE and GPU() throws "a CUDA GPU was not found". Unset it
+# so each node sees its own 4 local GPUs (cgroup-restricted); Oceananigans then binds each
+# node-local rank to a distinct device via the COMM_TYPE_SHARED communicator.
+unset CUDA_VISIBLE_DEVICES
+
 # ── Inputs ───────────────────────────────────────────────────────────────
 RUN_NAME="${RUN_NAME:-tenthdegree}"
 JULIA="${JULIA:-$HOME/software/julia-1.12.6/bin/julia}"
