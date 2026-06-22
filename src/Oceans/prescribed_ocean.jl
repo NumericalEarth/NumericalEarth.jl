@@ -87,6 +87,8 @@ function PrescribedOcean(grid, times=[zero(grid)];
                                convert(FT, heat_capacity))
 end
 
+Grids.grid(ocean::PrescribedOcean) = ocean.grid
+
 function Oceananigans.set!(ocean::PrescribedOcean; T=nothing, S=nothing, u=nothing, v=nothing)
     !isnothing(T) && (parent(ocean.sea_surface_temperature) .= T)
     !isnothing(S) && (parent(ocean.sea_surface_salinity) .= S)
@@ -135,7 +137,6 @@ end
 
 EarthSystemModels.reference_density(ocean::PrescribedOcean) = ocean.density
 EarthSystemModels.heat_capacity(ocean::PrescribedOcean) = ocean.heat_capacity
-EarthSystemModels.exchange_grid(atmosphere, ocean::PrescribedOcean, sea_ice) = ocean.grid
 EarthSystemModels.temperature_units(::PrescribedOcean) = DegreesKelvin()
 
 EarthSystemModels.ocean_temperature(ocean::PrescribedOcean) = ocean.sea_surface_temperature
