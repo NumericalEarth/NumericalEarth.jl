@@ -443,6 +443,8 @@ const OceananigansModelSimulations = Union{
     Simulation{<:NonhydrostaticModel}
 }
 
+Grids.grid(ocean::OceananigansModelSimulations) = ocean.model.grid
+
 #####
 ##### Extending NumericalEarth interface
 #####
