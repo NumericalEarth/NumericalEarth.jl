@@ -196,7 +196,8 @@ function DatasetRestoring(metadata::Metadata,
                           time_indexing = Cyclical(),
                           inpainting = NearestNeighborInpainting(Inf),
                           cache_inpainted_data = true,
-                          prefetch = false)
+                          prefetch = false,
+            						  field_name = oceananigans_fieldnames[metadata.name])
 
     Downloads.download(metadata)
 
@@ -209,10 +210,6 @@ function DatasetRestoring(metadata::Metadata,
 
     arch = architecture(fts)
     mask = on_architecture(arch, mask)
-
-    # Grab the correct Oceananigans field to restore
-    variable_name = metadata.name
-    field_name = oceananigans_fieldnames[variable_name]
 
     # If we pass the grid we do not need to interpolate
     # so we can save parameter space by setting the native grid to nothing
