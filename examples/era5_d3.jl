@@ -132,33 +132,43 @@ let inner = D3, outer = model
     dev(s...) = on_architecture(ai, zeros(FT, s...))
     ρxf = dev(Nxi + 1, Nyi, Nzi); ρyf = dev(Nxi, Nyi + 1, Nzi); ρzf = dev(Nxi, Nyi, Nzi + 1)
     u_t = XFaceField(inner.grid); v_t = YFaceField(inner.grid); w_t = ZFaceField(inner.grid)
-    ρ_t = CenterField(inner.grid); ρθ_t = CenterField(inner.grid)
+    ρ_t = CenterField(inner.grid); ρθ_t = CenterField(inner.grid); ρqᵉ_t = CenterField(inner.grid)
     global function d3_davies!(sim)
         α = 1 - exp(-sim.Δt / D3_TAU_RELAX)
         interpolate!(u_t, outer.velocities.u); interpolate!(v_t, outer.velocities.v); interpolate!(w_t, outer.velocities.w)
-        interpolate!(ρ_t, outer.dynamics.density); interpolate!(ρθ_t, thermo_density(outer))
-        θt = interior(ρθ_t) ./ interior(ρ_t)
+        interpolate!(ρ_t, outer.dynamics.density); interpolate!(ρθ_t, thermo_density(outer)); interpolate!(ρqᵉ_t, outer.moisture_density)
+        θt = interior(ρθ_t) ./ interior(ρ_t); qt = interior(ρqᵉ_t) ./ interior(ρ_t)
         ut = interior(u_t); vt = interior(v_t); wt = interior(w_t)
         ρc = interior(inner.dynamics.density)
         ρu = interior(inner.momentum.ρu); ρv = interior(inner.momentum.ρv); ρw = interior(inner.momentum.ρw)
-        ρθ = interior(thermo_density(inner))
+        ρθ = interior(thermo_density(inner)); ρqᵉ = interior(inner.moisture_density)
         xface_density!(ρxf, ρc); yface_density!(ρyf, ρc); zface_density!(ρzf, ρc)
         @. ρu += α * mask_u * (ρxf * ut - ρu)
         @. ρv += α * mask_v * (ρyf * vt - ρv)
         @. ρw += α * mask_w * (ρzf * wt - ρw)
-        @. ρθ += α * mask_c * (ρc * θt - ρθ)
+        @. ρθ  += α * mask_c * (ρc * θt - ρθ)
+        @. ρqᵉ += α * mask_c * (ρc * qt - ρqᵉ)     # relax q → D2's q (density-consistent, like θ) — the missing nudge
         return nothing
     end
 end
 
-# --- D3 2-km-AGL slice capture (w, ρqʳ) into d3_slice_frames ---
+# --- 2-km-AGL slice capture (u, v, w, θ, ρqʳ). The telescope samples BOTH the live D2 (`model`)
+#     and D3 so the cascade animation has all five fields on each domain; θ = ρθ/ρ (liquid-ice θ). ---
+d2_slice_frames = NamedTuple[]
 d3_slice_frames = NamedTuple[]
-function capture_d3_slice!()
-    λs, φs, w_slice = cut_plane(D3.velocities.w, slice_height)
-    pf = Oceananigans.prognostic_fields(D3)
+function capture_slice!(m, frames)
+    λs, φs, w_slice = cut_plane(m.velocities.w, slice_height)
+    u_slice = cut_plane(m.velocities.u, slice_height)[3]
+    v_slice = cut_plane(m.velocities.v, slice_height)[3]
+    ρ_slice = cut_plane(m.dynamics.density, slice_height)[3]
+    θ_slice = cut_plane(thermo_density(m), slice_height)[3] ./ ρ_slice
+    pf = Oceananigans.prognostic_fields(m)
     ρqʳ_slice = haskey(pf, :ρqʳ) ? cut_plane(pf[:ρqʳ], slice_height)[3] : zero(w_slice)
-    push!(d3_slice_frames, (t = D3.clock.time, iter = D3.clock.iteration, λ = λs, φ = φs, w = w_slice, ρqʳ = ρqʳ_slice))
+    push!(frames, (t = m.clock.time, iter = m.clock.iteration, λ = λs, φ = φs,
+                   u = u_slice, v = v_slice, w = w_slice, θ = θ_slice, ρqʳ = ρqʳ_slice))
 end
+capture_d2_slice!() = capture_slice!(model, d2_slice_frames)
+capture_d3_slice!() = capture_slice!(D3, d3_slice_frames)
 
 @info @sprintf("D3 telescoping nest: %d×%d @ 1/36° (λ %.2f–%.2f, φ %.2f–%.2f), SGP-centered inside D2",
                D3_Nx, D3_Ny, D3_λ0, D3_λ1, D3_φ0, D3_φ1)

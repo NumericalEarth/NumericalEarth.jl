@@ -28,6 +28,7 @@ using Oceananigans: location
 using Oceananigans.Fields: interpolate!
 using Oceananigans.BoundaryConditions: fill_halo_regions!
 using Oceananigans.OutputReaders: FieldTimeSeries
+using Oceananigans.Units: Time
 using Oceananigans.Grids: znode
 using Oceananigans.Architectures: on_architecture
 using Oceananigans.TimeSteppers: update_state!
@@ -118,7 +119,7 @@ Nz = length(z_discretization)
 # over SGP.
 
 start_date = DateTime(2011, 05, 20, 0)  # 7 pm LT (previous day)
-end_date   = DateTime(2011, 05, 20, 18) # 1 pm LT
+end_date   = DateTime(2011, 05, 20, parse(Int, get(ENV, "END_HOUR", "18")))  # forecast length (h); 18 = Fan (2017)
 
 dates = start_date:Hour(1):end_date
 
@@ -479,6 +480,46 @@ for n in eachindex(dates)
     interior(parent_series.qᵗ,  :, :, :, n) .= interior(state.qᵗ)
 end
 
+# Optional ERA5-parent ("D1") 2-km-AGL slice extraction for the cascade animation's ERA5 row:
+# read the resident hourly parent FTS (no model build / no stepping) and exit. Sampled 2 km ABOVE
+# the ERA5 orography per column (AGL) to match the terrain-following D2/D3 `cut_plane` — a fixed-ASL
+# level falls sub-surface over high terrain and yields a spurious warm θ. w ≈ 0 (hydrostatic
+# reanalysis) and ρqʳ is blank (ERA5 carries no model rain).
+if get(ENV, "PARENT_SLICES", "off") == "on"
+    zc_p = 0.5 .* (z_discretization.faces[1:end-1] .+ z_discretization.faces[2:end])
+    λ_p  = collect(λnodes(parent_grid, Center(), Center(), Center()))
+    φ_p  = collect(φnodes(parent_grid, Center(), Center(), Center()))
+    function at2km(fts, t)
+        a = Array(interior(fts[Time(t)]))
+        out = Matrix{Float32}(undef, size(a, 1), size(a, 2))
+        @inbounds for j in axes(a, 2), i in axes(a, 1)
+            zt = parent_orography[i, j] + 2000.0
+            if zt <= zc_p[1]
+                out[i, j] = a[i, j, 1]
+            elseif zt >= zc_p[end]
+                out[i, j] = a[i, j, end]
+            else
+                k = searchsortedlast(zc_p, zt)
+                f = (zt - zc_p[k]) / (zc_p[k+1] - zc_p[k])
+                out[i, j] = Float32((1 - f) * a[i, j, k] + f * a[i, j, k+1])
+            end
+        end
+        return out
+    end
+    dt_s   = parse(Float64, get(ENV, "SLICE_STRIDE", "4000")) * Δt
+    stop_s = parse(Float64, get(ENV, "STOP_TIME", "28800"))
+    d1_frames = NamedTuple[]
+    for t in 0.0:dt_s:stop_s
+        push!(d1_frames, (t = t, λ = λ_p, φ = φ_p,
+                          u = at2km(parent.velocities.u, t), v = at2km(parent.velocities.v, t),
+                          w = at2km(parent.velocities.w, t), θ = at2km(parent_series.θ, t),
+                          ρqʳ = zeros(Float32, length(λ_p), length(φ_p))))
+    end
+    jldsave(get(ENV, "SLICE_DIR", ".") * "/era5_breeze_slices_d1.jld2"; frames = d1_frames, height_agl = 2000.0)
+    @info @sprintf("wrote %d D1 (ERA5 parent) slice frames to %s/", length(d1_frames), get(ENV, "SLICE_DIR", "."))
+    exit(0)
+end
+
 # --- LAM-grid IC fields: regrid snapshot 1 of ERA5 directly onto the child ---
 # `set!(field, metadatum)` regrids each ERA5 field onto the terrain-following
 # child grid by true Φ/g (#241), staggering to the field's own location
@@ -691,6 +732,18 @@ microphysics_scheme =
 # unbounded-wind drift). `SphericalCoriolis` gives the latitude-varying f on the lat-lon grid.
 coriolis_scheme = get(ENV, "CORIOLIS", "on") == "on" ? SphericalCoriolis() : nothing
 
+# Lid sponge for the explicit path: the split-explicit `UpperSponge` is unavailable under
+# `ExplicitTimeStepping`, so apply the equivalent Rayleigh damping on ρw over the top
+# `damping_depth` (same rate/depth, cubic ramp) — matching D3's lid sponge so both nests
+# absorb vertically-propagating energy at the rigid lid rather than reflecting it.
+model_forcing = davies
+if time_discretization isa ExplicitTimeStepping
+    w_sponge_mask = let z_top = z_discretization.faces[end], depth = float(damping_depth)
+        (λ, φ, z) -> (s = clamp((z - (z_top - depth)) / depth, zero(z), one(z)); s * s * (3 - 2s))
+    end
+    model_forcing = merge(davies, (ρw = Relaxation(rate = 1/damping_timescale, mask = w_sponge_mask, target = 0.0),))
+end
+
 model = atmosphere_simulation(grid;
                               thermodynamic_constants = constants,
                               momentum_advection  = momentum_advection_scheme,
@@ -698,7 +751,7 @@ model = atmosphere_simulation(grid;
                               coriolis            = coriolis_scheme,
                               dynamics            = CompressibleDynamics(time_discretization; surface_pressure = p̄₀),
                               boundary_conditions = bcs,
-                              forcing             = davies).model
+                              forcing             = model_forcing).model
 
 set!(model; ρ = ρ, u = u, v = v, qᵗ = qᵗ, θˡⁱ = θˡⁱ)
 
@@ -813,12 +866,26 @@ function progress(sim)
                    maximum(abs, u), maximum(abs, v), maximum(abs, w),
                    minimum(ρ), maximum(ρ), qrmax)
     if capture_slices && m.clock.iteration % slice_stride == 0
-        if telescope                       # one-way nest ⇒ sample D3 only (D2 reused from its standalone run)
+        if telescope                       # sample both live nests (D2 from this model, plus D3)
+            capture_d2_slice!()
             capture_d3_slice!()
         else
             λs, φs, w_slice = cut_plane(m.velocities.w, slice_height)
+            u_slice  = cut_plane(m.velocities.u, slice_height)[3]
+            v_slice  = cut_plane(m.velocities.v, slice_height)[3]
+            ρ_slice  = cut_plane(m.dynamics.density, slice_height)[3]
+            ρθ_slice = cut_plane(Breeze.AtmosphereModels.thermodynamic_density(m.formulation), slice_height)[3]
             ρqʳ_slice = haskey(pf, :ρqʳ) ? cut_plane(pf[:ρqʳ], slice_height)[3] : zero(w_slice)
-            push!(slice_frames, (t = m.clock.time, iter = m.clock.iteration, λ = λs, φ = φs, w = w_slice, ρqʳ = ρqʳ_slice))
+            push!(slice_frames, (t = m.clock.time, iter = m.clock.iteration, λ = λs, φ = φs,
+                                 u = u_slice, v = v_slice, w = w_slice, θ = ρθ_slice ./ ρ_slice, ρqʳ = ρqʳ_slice))
+        end
+        # Crash-safe incremental write: host arrays only (no GPU access) → no NestedModel deadlock.
+        sd = get(ENV, "SLICE_DIR", ".")
+        if telescope
+            jldsave(sd * "/era5_breeze_slices_d2.jld2"; frames = d2_slice_frames, height_agl = slice_height)
+            jldsave(sd * "/era5_breeze_slices_d3.jld2"; frames = d3_slice_frames, height_agl = slice_height)
+        else
+            jldsave(sd * "/era5_breeze_slices.jld2"; frames = slice_frames, height_agl = slice_height)
         end
     end
     flush(stdout); flush(stderr)  # Julia bypasses libc buffering — flush so SLURM streams live
@@ -835,12 +902,18 @@ add_callback!(nested, progress, IterationInterval(50))
 flush(stdout); flush(stderr)
 run!(nested)
 @info "Done."
-slice_frames_out = telescope ? d3_slice_frames : slice_frames
-if get(ENV, "SLICE_OUTPUT", "0") == "1" && !isempty(slice_frames_out)
-    jldsave(get(ENV, "SLICE_DIR", ".") * "/era5_breeze_slices.jld2";
-            frames = slice_frames_out, height_agl = slice_height)
-    @info @sprintf("wrote %d slice frames (%.0f m AGL: w, ρqʳ) to %s/",
-                   length(slice_frames_out), slice_height, get(ENV, "SLICE_DIR", "."))
+if get(ENV, "SLICE_OUTPUT", "0") == "1"
+    sd = get(ENV, "SLICE_DIR", ".")
+    if telescope
+        jldsave(sd * "/era5_breeze_slices_d2.jld2"; frames = d2_slice_frames, height_agl = slice_height)
+        jldsave(sd * "/era5_breeze_slices_d3.jld2"; frames = d3_slice_frames, height_agl = slice_height)
+        @info @sprintf("wrote %d D2 + %d D3 slice frames (%.0f m AGL: u,v,w,θ,ρqʳ) to %s/",
+                       length(d2_slice_frames), length(d3_slice_frames), slice_height, sd)
+    elseif !isempty(slice_frames)
+        jldsave(sd * "/era5_breeze_slices.jld2"; frames = slice_frames, height_agl = slice_height)
+        @info @sprintf("wrote %d slice frames (%.0f m AGL: u,v,w,θ,ρqʳ) to %s/",
+                       length(slice_frames), slice_height, sd)
+    end
     flush(stdout); flush(stderr)
 end
 
