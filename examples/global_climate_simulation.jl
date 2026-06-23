@@ -169,13 +169,9 @@ function progress(sim)
 
     ua, va     = atmos.variables.dynamics.u_mean_grid, atmos.variables.dynamics.v_mean_grid
     uo, vo, wo = ocean.model.velocities
-    ua = SpeedyWeather.on_architecture(SpeedyWeather.CPU(), ua)
-    va = SpeedyWeather.on_architecture(SpeedyWeather.CPU(), va)
-    uo = Oceananigans.on_architecture(Oceananigans.CPU(), uo)
-    vo = Oceananigans.on_architecture(Oceananigans.CPU(), vo)
-    wo = Oceananigans.on_architecture(Oceananigans.CPU(), wo)
 
-    uamax = (maximum(abs, ua), maximum(abs, va))
+    ## RingGrids only defines the one-argument `maximum`, so `abs` must be broadcast first to stay on the GPU
+    uamax = (maximum(abs.(ua)), maximum(abs.(va)))
     uomax = (maximum(abs, uo), maximum(abs, vo), maximum(abs, wo))
 
     step_time = 1e-9 * (time_ns() - wall_time[])
