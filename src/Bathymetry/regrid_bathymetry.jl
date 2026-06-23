@@ -595,14 +595,14 @@ end
 
     Nx = bathymetry_native_grid.Nx
 
-    λl = λnode(i,   j, target_grid, Face(), Center())
+    λl = λnode(i, j, 1, target_grid, Face(), Center())
     λr = ifelse(j == target_grid.Ny, 
-                λnode(i+1, j-1, target_grid, Face(), Center()), 
-                λnode(i+1, j, target_grid, Face(), Center()))
-    φl = φnode(i,   j, target_grid, Center(), Face())
+                λnode(i+1, j-1, 1, target_grid, Face(), Center()), 
+                λnode(i+1, j, 1, target_grid, Face(), Center()))
+    φl = φnode(i, j, 1, target_grid, Center(), Face())
     φr = ifelse(j == target_grid.Ny, 
-                φnode(i+1, j-1, target_grid, Center(), Face()), 
-                φnode(i, j+1, target_grid, Center(), Face()))
+                φnode(i+1, j-1, 1, target_grid, Center(), Face()), 
+                φnode(i, j+1, 1, target_grid, Center(), Face()))
 
     φl, φr = ifelse(j == target_grid.Ny, 
                     (min(φr, φl), max(φr, φl)), 
