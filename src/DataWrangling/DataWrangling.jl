@@ -330,11 +330,13 @@ include("EN4/EN4.jl")
 include("ORCA/ORCA.jl")
 include("WOA/WOA.jl")
 include("JRA55/JRA55.jl")
+include("GloFAS/GloFAS.jl")
 include("OSPapa/OSPapa.jl")
 include("SoilGrids/SoilGrids.jl")
 include("IBCSO/IBCSO.jl")
 include("GEBCO/GEBCO.jl")
 include("IBCAO/IBCAO.jl")
+include("CopernicusDEM/CopernicusDEM.jl")
 
 using .ETOPO
 using .ECCO
@@ -344,10 +346,12 @@ using .EN4
 using .ORCA
 using .WOA
 using .JRA55
+using .GloFAS
 using .OSPapa
 using .IBCSO
 using .GEBCO
 using .IBCAO
+using .CopernicusDEM
 
 function dataset_modules()
     modules = Module[]

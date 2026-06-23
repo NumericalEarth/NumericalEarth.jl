@@ -280,6 +280,19 @@ function regrid_topography(target_grid; dataset = ETOPO2022(), kw...)
     return elevation
 end
 
+"""
+    regrid_topography(target_grid, metadata; kw...)
+
+Land surface elevation regridded onto `target_grid` from `metadata`, the positive
+counterpart of [`regrid_bathymetry`](@ref). Use this form for region-windowed
+datasets such as `GLO30()`, whose `metadata` carries a `BoundingBox` region.
+"""
+function regrid_topography(target_grid, metadata; kw...)
+    elevation = regrid_bathymetry(target_grid, metadata; kw...)
+    parent(elevation) .= max.(parent(elevation), 0) # land elevation; ocean → 0
+    return elevation
+end
+
 # Regridding bathymetry for distributed grids, we handle the whole process
 # on just one rank, and share the results with the other processors.
 function regrid_bathymetry(target_grid::DistributedGrid, metadata;
