@@ -56,6 +56,8 @@ export
     JRA55PrescribedRadiation,
     JRA55PrescribedAtmosphere,
     JRA55PrescribedLand,
+    GloFASPrescribedLand,
+    GloFASReanalysis,
     ERA5PrescribedAtmosphere,
     ERA5PrescribedRadiation,
     OSPapaPrescribedRadiation,
@@ -194,6 +196,7 @@ using .DataWrangling.EN4
 using .DataWrangling.ORCA
 using .DataWrangling.WOA
 using .DataWrangling.JRA55
+using .DataWrangling.GloFAS
 using .DataWrangling.OSPapa
 using .DataWrangling.ERA5
 using .DataWrangling.SoilGrids

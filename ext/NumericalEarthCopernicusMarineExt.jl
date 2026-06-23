@@ -28,10 +28,8 @@ function Downloads.download(meta::GLORYSMetadatum;
     output_path = joinpath(output_directory, output_filename)
     isfile(output_path) && return output_path
 
-    toolbox = CopernicusMarine.copernicusmarine
-
     variable_name = GLORYS.dataset_variable_name(meta)
-    variables = CopernicusMarine.pylist([variable_name])
+    variable = [variable_name]
 
     dataset_id = GLORYS.copernicusmarine_dataset_id(meta.dataset, meta.name)
     datetime_kw = if meta.dataset isa GLORYS.GLORYSStatic
@@ -47,13 +45,13 @@ function Downloads.download(meta::GLORYSMetadatum;
     z_kw = depth_bounds_kw(meta.region)
     selection_method = coordinates_selection_method(meta.region)
 
-    # netcdf3_compatible routes the write through xarray's netcdf4 engine instead of
-    # h5netcdf, whose h5py binds to the HDF5_jll libhdf5 (no ROS3 VFD) and fails in-process.
+    # The CopernicusMarine standalone executable runs the download out-of-process
+    # with its own bundled HDF5/h5py (with ROS3 VFD), so the in-process
+    # `netcdf3_compatible` workaround is no longer needed.
     kw = (; coordinates_selection_method = selection_method,
-          netcdf3_compatible = true,
           skip_existing,
           dataset_id,
-          variables,
+          variable,
           output_filename,
           output_directory)
 
@@ -68,7 +66,7 @@ function Downloads.download(meta::GLORYSMetadatum;
     additional_kw = NamedTuple(name => value for (name, value) in additional_kw)
     kw = merge(kw, datetime_kw, lon_kw, lat_kw, z_kw, additional_kw)
 
-    @root toolbox.subset(; kw...)
+    @root CopernicusMarine.subset(; kw...)
 
     return output_path
 end
