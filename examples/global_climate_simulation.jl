@@ -24,7 +24,7 @@ using Oceananigans, SpeedyWeather, NumericalEarth, ConservativeRegridding
 using CUDA
 using NCDatasets, CairoMakie
 using Oceananigans.Units
-using Printf, Statistics, Dates, Logging
+using Printf, Statistics, Dates
 
 # ## Ocean and sea-ice model configuration
 # The ocean and sea-ice are a simplified versions of the [one-degree ocean-sea ice example](@ref one-degree-ocean-seaice).
@@ -45,21 +45,16 @@ grid = ImmersedBoundaryGrid(grid, GridFittedBottom(bottom_height); active_cells_
 nothing #hide
 
 # Now we can specify the numerical details and the closures for the ocean simulation.
-# We use a biharmonic viscosity with a timescale of 15 days and a background vertical
-# diffusivity following [Henyey1986](@citet).
-
-biharmonic_timescale = 15days
-@inline νhb(i, j, k, grid, ℓx, ℓy, ℓz, clock, fields, λ) =
-    Oceananigans.Operators.Az(i, j, k, grid, ℓx, ℓy, ℓz)^2 / λ
-@inline henyey_diffusivity(x, y, z, t) = max(2e-6, 3e-5 * abs(sind(y)))
+# Some of these are overly simplistic; checkout [`ClimaOcean`](https://github.com/CliMA/ClimaOcean.jl)
+# for some examples of more realistic setups.
 
 momentum_advection   = WENOVectorInvariant(order=5)
 tracer_advection     = WENO(order=5)
 free_surface         = SplitExplicitFreeSurface(grid; substeps=70)
 catke_closure        = NumericalEarth.Oceans.default_ocean_closure()
 eddy_closure         = Oceananigans.TurbulenceClosures.IsopycnalSkewSymmetricDiffusivity(κ_skew=500, κ_symmetric=200)
-horizontal_viscosity = HorizontalScalarBiharmonicDiffusivity(ν=νhb, discrete_form=true, parameters=biharmonic_timescale)
-vertical_diffusivity = VerticalScalarDiffusivity(ν=1e-5, κ=henyey_diffusivity)
+horizontal_viscosity = HorizontalScalarBiharmonicDiffusivity(ν=1e12)
+vertical_diffusivity = VerticalScalarDiffusivity(ν=1e-5, κ=1e-5)
 closures             = (catke_closure, eddy_closure, horizontal_viscosity, vertical_diffusivity)
 nothing #hide
 
@@ -193,26 +188,7 @@ end
 
 add_callback!(earth, progress, TimeInterval(2days))
 
-# Let's run the coupled model! Each `JLD2Writer` above reopens its output file repeatedly
-# while initializing, and every reopen makes JLD2 re-resolve the `νhb` and `henyey_diffusivity`
-# closures baked into the boundary conditions of the output fields. Since those closures are
-# script-local rather than defined in a loaded package, JLD2 can't match them and falls back to
-# harmless but noisy "reconstructing" warnings; we filter those out below without touching the
-# `@info` progress messages from the callback above.
-
-struct JLD2WarningFilter <: Logging.AbstractLogger
-    logger :: Logging.AbstractLogger
-end
-
-Logging.min_enabled_level(filter::JLD2WarningFilter) = Logging.min_enabled_level(filter.logger)
-Logging.catch_exceptions(filter::JLD2WarningFilter) = Logging.catch_exceptions(filter.logger)
-Logging.shouldlog(filter::JLD2WarningFilter, level, _module, group, id) =
-    nameof(_module) !== :JLD2 && Logging.shouldlog(filter.logger, level, _module, group, id)
-Logging.handle_message(filter::JLD2WarningFilter, args...; kwargs...) =
-    Logging.handle_message(filter.logger, args...; kwargs...)
-
-previous_logger = global_logger()
-global_logger(JLD2WarningFilter(previous_logger))
+# Let's run the coupled model!
 
 Oceananigans.run!(earth)
 
@@ -239,8 +215,6 @@ SIA = FieldTimeSeries("sea_ice_fields.jld2", "ℵ")
 
 𝒬ᵀᵃᵒ = FieldTimeSeries("intercomponent_fluxes.jld2", "𝒬ᵀᵃᵒ")
 𝒬ᵛᵃᵒ = FieldTimeSeries("intercomponent_fluxes.jld2", "𝒬ᵛᵃᵒ")
-
-global_logger(previous_logger)
 
 Nt = min(length(sp[1, 1, :]), length(𝒬ᵀᵃᵒ))
 times = 𝒬ᵀᵃᵒ.times
