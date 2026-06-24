@@ -744,12 +744,26 @@ if time_discretization isa ExplicitTimeStepping
     model_forcing = merge(davies, (ρw = Relaxation(rate = 1/damping_timescale, mask = w_sponge_mask, target = 0.0),))
 end
 
+# Reference potential-temperature profile θ_ref(z) = ERA5 domain/time-mean liquid-ice θ, passed to
+# `CompressibleDynamics` so the horizontal pressure-gradient force is taken in perturbation form
+# (p′ = p − p_ref). This cuts the terrain-following PGF cancellation error (Klemp 2011) that otherwise
+# spuriously accelerates the near-surface winds in the lowest cells over the high western terrain.
+reference_θ = let zc = collect(0.5 .* (z_discretization.faces[1:end-1] .+ z_discretization.faces[2:end])),
+                  θ̄  = vec(mean(Array(interior(parent_series.θ)), dims = (1, 2, 4)))
+    z -> begin
+        z <= zc[1]   && return θ̄[1]
+        z >= zc[end] && return θ̄[end]
+        k = searchsortedlast(zc, z); f = (z - zc[k]) / (zc[k+1] - zc[k])
+        (1 - f) * θ̄[k] + f * θ̄[k+1]
+    end
+end
+
 model = atmosphere_simulation(grid;
                               thermodynamic_constants = constants,
                               momentum_advection  = momentum_advection_scheme,
                               microphysics        = microphysics_scheme,
                               coriolis            = coriolis_scheme,
-                              dynamics            = CompressibleDynamics(time_discretization; surface_pressure = p̄₀),
+                              dynamics            = CompressibleDynamics(time_discretization; surface_pressure = p̄₀, reference_potential_temperature = reference_θ),
                               boundary_conditions = bcs,
                               forcing             = model_forcing).model
 
