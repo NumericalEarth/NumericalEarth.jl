@@ -5,7 +5,6 @@ export SoilGrids2
 using Downloads: Downloads
 using Oceananigans: Center
 using Oceananigans.DistributedComputations: @root
-using Scratch: Scratch, @get_scratch!
 
 using ..DataWrangling: DataWrangling,
     Dataset, DownloadProgress, AbstractStaticDataset, Metadatum,
@@ -30,7 +29,7 @@ remote islands, deserts, and the Arctic.
 
 download_SoilGrids2_cache::String = ""
 function __init__()
-    return global download_SoilGrids2_cache = @get_scratch!("SoilGrids2")
+    return global download_SoilGrids2_cache = DataWrangling.download_cache("SoilGrids2")
 end
 
 @kwdef struct SoilGrids2 <: AbstractStaticDataset
@@ -43,6 +42,7 @@ SoilGrids2_dataset_variable_names = Dict(
     :sand_fraction           => "sand",
     :silt_fraction           => "silt",
     :clay_fraction           => "clay",
+    :coarse_fraction         => "cfvo",
     :bulk_density            => "bdod",
     :organic_carbon_density  => "ocd",
     :soil_organic_carbon     => "soc"
@@ -59,7 +59,7 @@ DataWrangling.available_variables(::SoilGrids2) = SoilGrids2_dataset_variable_na
 DataWrangling.default_download_directory(::SoilGrids2) = download_SoilGrids2_cache
 DataWrangling.reversed_vertical_axis(::SoilGrids2) = true
 DataWrangling.reversed_latitude_axis(::SoilGrids2) = true
-DataWrangling.longitude_interfaces(::SoilGrids2) = (-180, 180)
+DataWrangling.longitude_interfaces(::SoilGrids2) = (0, 360)
 DataWrangling.latitude_interfaces(::SoilGrids2) = (-90, 90)
 DataWrangling.z_interfaces(::SoilGrids2) = [-200, -100, -60, -30, -15, -5, 0]
 DataWrangling.metadata_filename(::SoilGrids2, name, date, region) = "SoilGrids2_clenshaw_10km_full.nc"
@@ -75,7 +75,8 @@ DataWrangling.missing_value(md::SoilGrids2Metadatum) = -32768
 
 # Unit conversions
 function DataWrangling.conversion_units(metadatum::SoilGrids2Metadatum)
-    if metadatum.name ∈ (:sand_fraction, :silt_fraction, :clay_fraction)
+    if metadatum.name ∈ (:sand_fraction, :silt_fraction, :clay_fraction, :coarse_fraction)
+        # Note that coarse_fraction is technically in cm³/dm³, but the conversion factor is the same, so we ignore that here
         return GramPerKilogram()
     elseif metadatum.name == :bulk_density
         return CentigramPerCubicCentimeter()

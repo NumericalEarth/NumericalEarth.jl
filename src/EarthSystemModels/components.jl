@@ -1,3 +1,5 @@
+using Oceananigans.Grids: grid
+
 #####
 ##### Temperature units
 #####
@@ -18,7 +20,7 @@ const celsius_to_kelvin = 273.15
 
 # Default: build the exchange grid from the ocean. When the model has no
 # ocean / sea ice, fall back to the land grid (used by AtmosphereLandModel).
-exchange_grid(atmosphere, ocean, sea_ice, land=nothing) = ocean.model.grid
+exchange_grid(atmosphere, ocean, sea_ice, land=nothing) = grid(ocean)
 exchange_grid(atmosphere, ::Nothing, ::Nothing, land) = land.grid
 
 #####

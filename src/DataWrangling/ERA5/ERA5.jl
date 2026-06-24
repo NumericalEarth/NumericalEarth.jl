@@ -19,7 +19,6 @@ using Oceananigans.Fields: Field, Center, set!
 using Oceananigans.OutputReaders: Cyclical, FieldTimeSeries
 using NCDatasets: NCDatasets
 using Printf: Printf, @sprintf
-using Scratch: Scratch, @get_scratch!
 using Statistics: Statistics, mean
 
 using ..DataWrangling: DataWrangling, Metadata, Metadatum, InverseGravity,
@@ -31,7 +30,7 @@ using ...Grids: PressureLevelVerticalDiscretization
 download_ERA5_cache::String = ""
 
 function __init__()
-    global download_ERA5_cache = @get_scratch!("ERA5")
+    global download_ERA5_cache = DataWrangling.download_cache("ERA5")
 end
 
 #####
