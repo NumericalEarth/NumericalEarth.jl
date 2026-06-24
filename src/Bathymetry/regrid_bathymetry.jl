@@ -1,5 +1,5 @@
 using Statistics: median
-using Oceananigans.Grids: λnode, φnode
+using Oceananigans.Grids: λnode, φnode, HRegularLLG
 using Oceananigans.Fields: fractional_x_index, fractional_y_index
 
 # Scratch space for cached regridded bathymetry files
@@ -571,8 +571,9 @@ end
 struct MedianAveraging end
 
 function apply_regriding(::MedianAveraging, native_z, target_grid)
-
     native_grid = native_z.grid
+    native_grid isa HRegularLLG || 
+        throw(ArgumentError("Bathymetry native grid must be regular lat/lon to regrid with `MedianAveraging`"))
     target_z = Field{Center, Center, Nothing}(target_grid)
 
     launch!(architecture(target_grid),
