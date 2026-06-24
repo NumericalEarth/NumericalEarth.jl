@@ -11,14 +11,6 @@ using NumericalEarth.DataWrangling.GLORYS: GLORYSDaily
 using Oceananigans.DistributedComputations
 using Oceananigans.DistributedComputations: reconstruct_global_grid
 
-# h5py/hdf5 are required to write the CopernicusMarine subset; add them once on
-# the root rank to avoid concurrent CondaPkg writes across ranks.
-using CondaPkg
-@root begin
-    CondaPkg.add("h5py"; channel="conda-forge", version=">=3.0,<3.13")
-    CondaPkg.add("hdf5"; channel="conda-forge", version="<2")
-end
-MPI.Barrier(MPI.COMM_WORLD)
 
 using CopernicusMarine
 
