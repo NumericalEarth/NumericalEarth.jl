@@ -8,8 +8,7 @@ dataset_name(::GLORYSBGCMonthly) = "GLORYSBGCMonthly"
 
 const GLORYSBGC = Union{GLORYSBGCDaily, GLORYSBGCMonthly}
 
-const GLORYSBGCMetadatum = 
-    Union{Metadatum{<:GLORYSBGCDaily}, Metadatum{<:GLORYSBGCMonthly}}
+const GLORYSBGCMetadatum = Union{Metadatum{<:GLORYSBGCDaily}, Metadatum{<:GLORYSBGCMonthly}}
 
 Base.size(::GLORYSBGC, variable) = (1140, 680, 75)
 Base.size(::GLORYSBGCMetadatum) = (1140, 680, 75, 1)
@@ -50,12 +49,11 @@ dataset_name(::GLORYSAnalysisForecastBGCMonthly) = "GLORYSAnalysisForecastBGCMon
 
 const GLORYSAnalysisForecastBGC = Union{GLORYSAnalysisForecastBGCDaily, GLORYSAnalysisForecastBGCMonthly}
 
-const GLORYSAnalysisForecastBGCMetadatum =
-    Union{Metadatum{<:GLORYSAnalysisForecastBGCDaily}, Metadatum{<:GLORYSAnalysisForecastBGCMonthly}}
+const GLORYSAnalysisForecastBGCMetadatum = Union{Metadatum{<:GLORYSAnalysisForecastBGCDaily}, Metadatum{<:GLORYSAnalysisForecastBGCMonthly}}
 
 # Grid: 1440 lon × 681 lat × 50 depth
-Base.size(::GLORYSAnalysisForecastBGC, variable)      = (1440, 681, 50)
-Base.size(::GLORYSAnalysisForecastBGCMetadatum)       = (1440, 681, 50, 1)
+Base.size(::GLORYSAnalysisForecastBGC, variable) = (1440, 681, 50)
+Base.size(::GLORYSAnalysisForecastBGCMetadatum)  = (1440, 681, 50, 1)
 
 # Running 2-year sliding window — update these bounds as the catalogue grows.
 # The analysis product currently runs from 2022-10-17; forecast extends 10 days ahead.
@@ -64,7 +62,7 @@ all_dates(::GLORYSAnalysisForecastBGCMonthly, var) = range(DateTime("2022-10-01"
 
 # Each variable group lives in its own sub-dataset.
 # The mapping below returns the correct dataset_id for a given variable symbol.
-const _AnalysisForecast_BGC_DATASET_ID = Dict(
+const AnalysisForecast_BGC_DATASET_ID = Dict(
     # bio
     :primary_production => "cmems_mod_glo_bgc-bio_anfc_0.25deg_P1D-m",
     :oxygen             => "cmems_mod_glo_bgc-bio_anfc_0.25deg_P1D-m",
@@ -88,12 +86,12 @@ const _AnalysisForecast_BGC_DATASET_ID = Dict(
     :zooplankton        => "cmems_mod_glo_bgc-plankton_anfc_0.25deg_P1D-m",
 )
 
-const _AnalysisForecast_BGC_DATASET_ID_MONTHLY = Dict(
-    k => replace(v, "P1D-m" => "P1M-m") for (k, v) in _AnalysisForecast_BGC_DATASET_ID
+const AnalysisForecast_BGC_DATASET_ID_MONTHLY = Dict(
+    k => replace(v, "P1D-m" => "P1M-m") for (k, v) in AnalysisForecast_BGC_DATASET_ID
 )
 
-copernicusmarine_dataset_id(::GLORYSAnalysisForecastBGCDaily,   var) = _AnalysisForecast_BGC_DATASET_ID[var]
-copernicusmarine_dataset_id(::GLORYSAnalysisForecastBGCMonthly, var) = _AnalysisForecast_BGC_DATASET_ID_MONTHLY[var]
+copernicusmarine_dataset_id(::GLORYSAnalysisForecastBGCDaily,   var) = AnalysisForecast_BGC_DATASET_ID[var]
+copernicusmarine_dataset_id(::GLORYSAnalysisForecastBGCMonthly, var) = AnalysisForecast_BGC_DATASET_ID_MONTHLY[var]
 
 available_variables(::GLORYSAnalysisForecastBGCDaily) =
     Dict(:chlorophyll                => "chl",
