@@ -24,6 +24,8 @@ using Oceananigans, SpeedyWeather, NumericalEarth, ConservativeRegridding
 using CUDA
 using NCDatasets, CairoMakie
 using Oceananigans.Units
+using Oceananigans.AbstractOperations: KernelFunctionOperation
+using Oceananigans.Grids: φnode
 using Printf, Statistics, Dates
 
 # ## Ocean and sea-ice model configuration
@@ -45,28 +47,28 @@ grid = ImmersedBoundaryGrid(grid, GridFittedBottom(bottom_height); active_cells_
 nothing #hide
 
 # Now we can specify the numerical details and the closures for the ocean simulation.
+# We use a biharmonic horizontal viscosity with a timescale of 15 days and set a 
+# background vertical diffusivity following [Henyey1986](@citet).
 
-momentum_advection   = WENOVectorInvariant(order=5)
-tracer_advection     = WENO(order=5)
-free_surface         = SplitExplicitFreeSurface(grid; substeps=70)
-catke_closure        = NumericalEarth.Oceans.default_ocean_closure()
-eddy_closure         = Oceananigans.TurbulenceClosures.IsopycnalSkewSymmetricDiffusivity(κ_skew=500, κ_symmetric=200)
-horizontal_viscosity = HorizontalScalarBiharmonicDiffusivity(ν=1e12)
-vertical_diffusivity = VerticalScalarDiffusivity(ν=1e-5, κ=1e-5)
-closures             = (catke_closure, eddy_closure, horizontal_viscosity, vertical_diffusivity)
+momentum_advection = WENOVectorInvariant(order=5)
+tracer_advection   = WENO(order=5)
+free_surface       = SplitExplicitFreeSurface(grid; substeps=70)
+catke_closure      = NumericalEarth.Oceans.default_ocean_closure()
+eddy_closure       = Oceananigans.TurbulenceClosures.IsopycnalSkewSymmetricDiffusivity(κ_skew=500, κ_symmetric=200)
+
+@inline νhb(i, j, k, grid, λ) = Oceananigans.Operators.Azᶜᶜᶜ(i, j, k, grid)^2 / λ
+ν = Field(KernelFunctionOperation{Center, Center, Center}(νhb, grid, 15days))
+Oceananigans.compute!(ν)
+horizontal_viscosity = HorizontalScalarBiharmonicDiffusivity(; ν)
+
+## κ(φ) = max(2e-6, 3e-5 * |sin(φ)|)
+@inline henyey_diffusivity(i, j, k, grid) = max(2e-6, 3e-5 * abs(sind(φnode(i, j, k, grid, Center(), Center(), Center()))))
+κ = Field(KernelFunctionOperation{Center, Center, Center}(henyey_diffusivity, grid))
+Oceananigans.compute!(κ)
+vertical_diffusivity = VerticalScalarDiffusivity(ν=1e-5; κ)
+
+closures = (catke_closure, eddy_closure, horizontal_viscosity, vertical_diffusivity)
 nothing #hide
-
-# If desired, one can instead set the biharmonic viscosity timescale and use a 
-# background vertical diffusivity following [Henyey1986](@citet) with:
-
-# ```Julia
-# biharmonic_timescale = 15days
-# @inline νhb(i, j, k, grid, ℓx, ℓy, ℓz, clock, fields, λ) =
-#     Oceananigans.Operators.Az(i, j, k, grid, ℓx, ℓy, ℓz)^2 / λ
-# horizontal_viscosity = HorizontalScalarBiharmonicDiffusivity(ν=νhb, discrete_form=true, parameters=biharmonic_timescale)
-# @inline henyey_diffusivity(λ, φ, z, t) = max(2e-6, 3e-5 * abs(sind(φ)))
-# vertical_diffusivity = VerticalScalarDiffusivity(ν=1e-5, κ=henyey_diffusivity)
-# ```
 
 # The ocean simulation, complete with initial conditions for temperature and salinity from ECCO on Jan 1st, 1992.
 
