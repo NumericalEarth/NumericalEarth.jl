@@ -3,6 +3,7 @@ module Oceans
 export ocean_simulation, SlabOcean, PrescribedOcean
 
 using Adapt: Adapt, adapt
+using DocStringExtensions: TYPEDSIGNATURES
 using KernelAbstractions: @kernel, @index
 using Oceananigans: Oceananigans
 using Oceananigans.AbstractOperations: KernelFunctionOperation
