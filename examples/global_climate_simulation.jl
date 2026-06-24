@@ -45,8 +45,6 @@ grid = ImmersedBoundaryGrid(grid, GridFittedBottom(bottom_height); active_cells_
 nothing #hide
 
 # Now we can specify the numerical details and the closures for the ocean simulation.
-# Some of these are overly simplistic; checkout [`ClimaOcean`](https://github.com/CliMA/ClimaOcean.jl)
-# for some examples of more realistic setups.
 
 momentum_advection   = WENOVectorInvariant(order=5)
 tracer_advection     = WENO(order=5)
@@ -57,6 +55,16 @@ horizontal_viscosity = HorizontalScalarBiharmonicDiffusivity(ν=1e12)
 vertical_diffusivity = VerticalScalarDiffusivity(ν=1e-5, κ=1e-5)
 closures             = (catke_closure, eddy_closure, horizontal_viscosity, vertical_diffusivity)
 nothing #hide
+
+# If desired, one can instead set the biharmonic viscosity timescale and use a 
+# background vertical diffusivity following [Henyey1986](@citet) with:
+
+## biharmonic_timescale = 15days
+## @inline νhb(i, j, k, grid, ℓx, ℓy, ℓz, clock, fields, λ) =
+##     Oceananigans.Operators.Az(i, j, k, grid, ℓx, ℓy, ℓz)^2 / λ
+## horizontal_viscosity = HorizontalScalarBiharmonicDiffusivity(ν=νhb, discrete_form=true, parameters=biharmonic_timescale)
+## @inline henyey_diffusivity(λ, φ, z, t) = max(2e-6, 3e-5 * abs(sind(φ)))
+## vertical_diffusivity = VerticalScalarDiffusivity(ν=1e-5, κ=henyey_diffusivity)
 
 # The ocean simulation, complete with initial conditions for temperature and salinity from ECCO on Jan 1st, 1992.
 
