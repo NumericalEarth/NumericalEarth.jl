@@ -3,7 +3,6 @@ module CopernicusDEM
 export GLO30, GLO90
 
 using Downloads: Downloads
-using Scratch: Scratch, @get_scratch!
 using Oceananigans.DistributedComputations: @root
 
 using ..DataWrangling: DataWrangling, AbstractStaticBathymetry, Metadatum,
@@ -11,7 +10,7 @@ using ..DataWrangling: DataWrangling, AbstractStaticBathymetry, Metadatum,
 
 download_CopernicusDEM_cache::String = ""
 function __init__()
-    global download_CopernicusDEM_cache = @get_scratch!("CopernicusDEM")
+    global download_CopernicusDEM_cache = DataWrangling.download_cache("CopernicusDEM")
 end
 
 # Variable name in the regional NetCDF we materialize from the Zarr store; this is
