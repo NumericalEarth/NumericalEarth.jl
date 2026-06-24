@@ -9,7 +9,10 @@ using NumericalEarth.Lands: update_diagnostics!, ForceRestoreEnergy, DryLand
 using NumericalEarth.EarthSystemModels.InterfaceComputations: default_atmosphere_land_fluxes,
                                                               atmosphere_land_stability_functions,
                                                               atmosphere_ocean_stability_functions,
-                                                              EdsonMomentumStabilityFunction
+                                                              EdsonMomentumStabilityFunction,
+                                                              SimilarityScales,
+                                                              celsius_to_kelvin
+using Thermodynamics
 
 @testset "SlabLand energy and hydrology" begin
     for arch in test_architectures
@@ -338,4 +341,119 @@ end
     fluxes = default_atmosphere_land_fluxes(land, FT)
     @test typeof(fluxes.stability_functions.momentum) == typeof(land_ψ.momentum)
     @test !(fluxes.stability_functions.momentum isa EdsonMomentumStabilityFunction)
+end
+
+@testset "Atmosphere-Land turbulent fluxes (analytic neutral)" begin
+    for arch in test_architectures
+        grid = LatitudeLongitudeGrid(arch, Float64;
+                                     size = 1, latitude = 10, longitude = 10,
+                                     z = (-1, 0), topology = (Flat, Flat, Bounded))
+
+        h   = 10.0
+        uᵃᵗ = 5.0
+        vᵃᵗ = 0.0
+        Tᵃᵗ = 288.0
+        qᵃᵗ = 0.003
+        pᵃᵗ = 101325.0
+
+        atmosphere = PrescribedAtmosphere(grid; surface_layer_height = h, boundary_layer_height = 512)
+        @allowscalar begin
+            fill!(parent(atmosphere.tracers.T),    Tᵃᵗ)
+            fill!(parent(atmosphere.tracers.q),    qᵃᵗ)
+            fill!(parent(atmosphere.velocities.u), uᵃᵗ)
+            fill!(parent(atmosphere.velocities.v), vᵃᵗ)
+            fill!(parent(atmosphere.pressure),     pᵃᵗ)
+        end
+
+        ℂᵃᵗ = atmosphere.thermodynamics_parameters
+        cp  = Thermodynamics.cp_m(ℂᵃᵗ, qᵃᵗ)
+        ρᵃᵗ = Thermodynamics.air_density(ℂᵃᵗ, Tᵃᵗ, pᵃᵗ, qᵃᵗ)
+
+        # Neutralize stability and gustiness with a constant roughness length so the
+        # land fluxes reduce to the analytic log-law form (cf. the atmosphere-ocean test).
+        ℓ = 1e-4
+        zero_ψ(ζ) = zero(ζ)
+        stability_functions = SimilarityScales(zero_ψ, zero_ψ, zero_ψ)
+        fluxes = SimilarityTheoryFluxes(; momentum_roughness_length    = ℓ,
+                                          temperature_roughness_length = ℓ,
+                                          water_vapor_roughness_length = ℓ,
+                                          gustiness_parameter = 0,
+                                          minimum_gustiness   = 0,
+                                          stability_functions)
+
+        land = SlabLand(grid; hydrology = DryLand(), energy = SlabEnergy(eltype(grid)))
+        T_skin = Tᵃᵗ + 2
+        set!(land; T = T_skin)
+
+        model = AtmosphereLandModel(atmosphere, land; atmosphere_land_fluxes = fluxes, radiation = nothing)
+        update_state!(model)
+
+        g = model.interfaces.properties.gravitational_acceleration
+        interface_fluxes = model.interfaces.atmosphere_land_interface.fluxes
+
+        # Surface velocities are zero for land, so ΔU is the full near-surface wind.
+        ϰ  = fluxes.von_karman_constant
+        ΔU = sqrt(uᵃᵗ^2 + vᵃᵗ^2)
+        Δθ = Tᵃᵗ - T_skin + h / cp * g
+        u★ = ϰ / log(h / ℓ) * ΔU
+        θ★ = ϰ / log(h / ℓ) * Δθ
+        τˣ = - ρᵃᵗ * u★^2 * uᵃᵗ / ΔU
+        𝒬ᵀ = - ρᵃᵗ * cp * u★ * θ★
+
+        @test @allowscalar(interface_fluxes.x_momentum[1, 1, 1])        ≈ τˣ
+        @test @allowscalar(interface_fluxes.friction_velocity[1, 1, 1]) ≈ u★
+        @test @allowscalar(interface_fluxes.sensible_heat[1, 1, 1])     ≈ 𝒬ᵀ
+        @test @allowscalar(abs(interface_fluxes.y_momentum[1, 1, 1]))   < eps(Float64)
+    end
+end
+
+@testset "Atmosphere-Land flux stability and roughness response" begin
+    for arch in test_architectures
+        # Single-column coupled model using the real land stability functions; returns
+        # the friction velocity and sensible heat for a given skin temperature / roughness.
+        function land_flux_response(T_skin; ℓ = 0.1)
+            grid = LatitudeLongitudeGrid(arch, Float64;
+                                         size = 1, latitude = 10, longitude = 10,
+                                         z = (-1, 0), topology = (Flat, Flat, Bounded))
+            h = 10.0
+            atmosphere = PrescribedAtmosphere(grid; surface_layer_height = h, boundary_layer_height = 512)
+            @allowscalar begin
+                fill!(parent(atmosphere.tracers.T),    288)
+                fill!(parent(atmosphere.tracers.q),    0.003)
+                fill!(parent(atmosphere.velocities.u), 5)
+                fill!(parent(atmosphere.velocities.v), 0)
+                fill!(parent(atmosphere.pressure),     101325)
+            end
+            fluxes = SimilarityTheoryFluxes(; momentum_roughness_length    = ℓ,
+                                              temperature_roughness_length = 0.01,
+                                              water_vapor_roughness_length = 0.01,
+                                              stability_functions = atmosphere_land_stability_functions(Float64))
+            land = SlabLand(grid; hydrology = DryLand(), energy = SlabEnergy(eltype(grid)))
+            set!(land; T = T_skin)
+            model = AtmosphereLandModel(atmosphere, land; atmosphere_land_fluxes = fluxes, radiation = nothing)
+            update_state!(model)
+            f  = model.interfaces.atmosphere_land_interface.fluxes
+            cp = Thermodynamics.cp_m(atmosphere.thermodynamics_parameters, 0.003)
+            g  = model.interfaces.properties.gravitational_acceleration
+            return (u★ = @allowscalar(f.friction_velocity[1, 1, 1]),
+                    Q  = @allowscalar(f.sensible_heat[1, 1, 1]),
+                    neutral_skin = 288 + h / cp * g)
+        end
+
+        neutral_skin = land_flux_response(290).neutral_skin
+        warm    = land_flux_response(neutral_skin + 6)
+        neutral = land_flux_response(neutral_skin)
+        cold    = land_flux_response(neutral_skin - 6)
+
+        # Sensible-heat sign tracks the surface-air temperature gradient.
+        @test warm.Q > 0
+        @test abs(neutral.Q) < 1e-6
+        @test cold.Q < 0
+
+        # Friction velocity responds to stability: unstable enhances drag, stable suppresses it.
+        @test warm.u★ > neutral.u★ > cold.u★
+
+        # Larger roughness length increases the surface drag for a fixed wind.
+        @test land_flux_response(neutral_skin; ℓ = 0.5).u★ > land_flux_response(neutral_skin; ℓ = 0.05).u★
+    end
 end
