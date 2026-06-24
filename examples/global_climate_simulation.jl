@@ -59,12 +59,14 @@ nothing #hide
 # If desired, one can instead set the biharmonic viscosity timescale and use a 
 # background vertical diffusivity following [Henyey1986](@citet) with:
 
-## biharmonic_timescale = 15days
-## @inline νhb(i, j, k, grid, ℓx, ℓy, ℓz, clock, fields, λ) =
-##     Oceananigans.Operators.Az(i, j, k, grid, ℓx, ℓy, ℓz)^2 / λ
-## horizontal_viscosity = HorizontalScalarBiharmonicDiffusivity(ν=νhb, discrete_form=true, parameters=biharmonic_timescale)
-## @inline henyey_diffusivity(λ, φ, z, t) = max(2e-6, 3e-5 * abs(sind(φ)))
-## vertical_diffusivity = VerticalScalarDiffusivity(ν=1e-5, κ=henyey_diffusivity)
+# ```Julia
+# biharmonic_timescale = 15days
+# @inline νhb(i, j, k, grid, ℓx, ℓy, ℓz, clock, fields, λ) =
+#     Oceananigans.Operators.Az(i, j, k, grid, ℓx, ℓy, ℓz)^2 / λ
+# horizontal_viscosity = HorizontalScalarBiharmonicDiffusivity(ν=νhb, discrete_form=true, parameters=biharmonic_timescale)
+# @inline henyey_diffusivity(λ, φ, z, t) = max(2e-6, 3e-5 * abs(sind(φ)))
+# vertical_diffusivity = VerticalScalarDiffusivity(ν=1e-5, κ=henyey_diffusivity)
+# ```
 
 # The ocean simulation, complete with initial conditions for temperature and salinity from ECCO on Jan 1st, 1992.
 
