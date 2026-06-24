@@ -13,16 +13,16 @@ function NumericalEarth.EarthSystemModels.InterfaceComputations.ComponentExchang
                                                                                    correction = nothing)
     spectral_grid = atmosphere.model.spectral_grid.grid
 
-    architecture            = exchange_grid.architecture
+    arch = architecture(exchange_grid)
     atmosphere_architecture = atmosphere.model.spectral_grid.architecture
-    if (architecture isa Oceananigans.CPU) != (atmosphere_architecture isa SpeedyWeather.CPU)
-        error("The exchange grid is on $architecture but the SpeedyWeather atmosphere is on \
+    if (arch isa Oceananigans.CPU) != (atmosphere_architecture isa SpeedyWeather.CPU)
+        error("The exchange grid is on $arch but the SpeedyWeather atmosphere is on \
               $atmosphere_architecture. The atmosphere and the exchange grid must run on the \
               same architecture (both CPU or both GPU) for the ConservativeRegridding regridders \
               to be transferred correctly.")
     end
 
-    # build regridders on the CPU and move the result onto `architecture` afterwards
+    # build regridders on the CPU and move the result onto `arch` afterwards
     # TODO: distributed GPUs?
     cpu_exchange_grid = Oceananigans.on_architecture(Oceananigans.CPU(), exchange_grid)
     cpu_spectral_grid = SpeedyWeather.on_architecture(SpeedyWeather.CPU(), spectral_grid)
@@ -32,8 +32,8 @@ function NumericalEarth.EarthSystemModels.InterfaceComputations.ComponentExchang
     from_atmosphere = Regridder(manifold, cpu_exchange_grid, cpu_spectral_grid)
     to_atmosphere   = Regridder(manifold, cpu_spectral_grid, cpu_exchange_grid)
 
-    to_atmosphere   = Oceananigans.on_architecture(architecture, to_atmosphere)
-    from_atmosphere = Oceananigans.on_architecture(architecture, from_atmosphere)
+    to_atmosphere   = Oceananigans.on_architecture(arch, to_atmosphere)
+    from_atmosphere = Oceananigans.on_architecture(arch, from_atmosphere)
     regridder = (; to_atmosphere, from_atmosphere)
 
     state = (; u    = Field{Center, Center, Nothing}(exchange_grid),
