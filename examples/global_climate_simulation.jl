@@ -24,7 +24,7 @@ using Oceananigans, SpeedyWeather, NumericalEarth, ConservativeRegridding
 using CUDA
 using NCDatasets, CairoMakie
 using Oceananigans.Units
-using Printf, Statistics, Dates
+using Printf, Statistics, Dates, Logging
 
 # ## Ocean and sea-ice model configuration
 # The ocean and sea-ice are a simplified versions of the [one-degree ocean-sea ice example](@ref one-degree-ocean-seaice).
@@ -45,8 +45,8 @@ grid = ImmersedBoundaryGrid(grid, GridFittedBottom(bottom_height); active_cells_
 nothing #hide
 
 # Now we can specify the numerical details and the closures for the ocean simulation.
-# Following the 1° configuration in ClimaOcean, we use a biharmonic viscosity with a 
-# timescale of 15 days and a background vertical diffusivity following Henyey et al. (1986).
+# We use a biharmonic viscosity with a timescale of 15 days and a background vertical
+# diffusivity following [Henyey1986](@citet).
 
 biharmonic_timescale = 15days
 @inline νhb(i, j, k, grid, ℓx, ℓy, ℓz, clock, fields, λ) =
@@ -94,6 +94,7 @@ spectral_grid = SpeedyWeather.SpectralGrid(; NF=Float64, trunc=63, nlayers, Grid
 time_stepping = SpeedyWeather.Leapfrog(spectral_grid; Δt_at_T31=Minute(40)) # gives Δt_sec = 20 min at trunc=63
 atmosphere = atmosphere_simulation(spectral_grid; output_interval, time_stepping, stop_time)
 atmosphere.model.feedback.verbose = false  # disable SpeedyWeather's progress bar in favor of the callback defined below
+nothing #hide
 
 # The atmosphere model already includes some initial conditions as described above:
 
@@ -101,8 +102,7 @@ atmosphere.model.initial_conditions
 
 # ## The coupled model
 # We are now ready to blend everything together.
-# We need to specify the time step for the coupled model.
-# Here we set the same timestep across all models.
+# Here we set the timestep to be the same across all models.
 
 Δt = convert(eltype(grid), atmosphere.model.time_stepping.Δt_sec) 
 nothing #hide
@@ -193,7 +193,26 @@ end
 
 add_callback!(earth, progress, TimeInterval(2days))
 
-# Let's run the coupled model!
+# Let's run the coupled model! Each `JLD2Writer` above reopens its output file repeatedly
+# while initializing, and every reopen makes JLD2 re-resolve the `νhb` and `henyey_diffusivity`
+# closures baked into the boundary conditions of the output fields. Since those closures are
+# script-local rather than defined in a loaded package, JLD2 can't match them and falls back to
+# harmless but noisy "reconstructing" warnings; we filter those out below without touching the
+# `@info` progress messages from the callback above.
+
+struct JLD2WarningFilter <: Logging.AbstractLogger
+    logger :: Logging.AbstractLogger
+end
+
+Logging.min_enabled_level(filter::JLD2WarningFilter) = Logging.min_enabled_level(filter.logger)
+Logging.catch_exceptions(filter::JLD2WarningFilter) = Logging.catch_exceptions(filter.logger)
+Logging.shouldlog(filter::JLD2WarningFilter, level, _module, group, id) =
+    nameof(_module) !== :JLD2 && Logging.shouldlog(filter.logger, level, _module, group, id)
+Logging.handle_message(filter::JLD2WarningFilter, args...; kwargs...) =
+    Logging.handle_message(filter.logger, args...; kwargs...)
+
+previous_logger = global_logger()
+global_logger(JLD2WarningFilter(previous_logger))
 
 Oceananigans.run!(earth)
 
@@ -220,6 +239,8 @@ SIA = FieldTimeSeries("sea_ice_fields.jld2", "ℵ")
 
 𝒬ᵀᵃᵒ = FieldTimeSeries("intercomponent_fluxes.jld2", "𝒬ᵀᵃᵒ")
 𝒬ᵛᵃᵒ = FieldTimeSeries("intercomponent_fluxes.jld2", "𝒬ᵛᵃᵒ")
+
+global_logger(previous_logger)
 
 Nt = min(length(sp[1, 1, :]), length(𝒬ᵀᵃᵒ))
 times = 𝒬ᵀᵃᵒ.times
