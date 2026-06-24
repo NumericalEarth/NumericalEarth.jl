@@ -20,24 +20,24 @@ copernicusmarine_dataset_id(::GLORYSBGCDaily) = "cmems_mod_glo_bgc_my_0.25deg_P1
 copernicusmarine_dataset_id(::GLORYSBGCMonthly) = "cmems_mod_glo_bgc_my_0.25deg_P1M-m"
 
 available_variables(::GLORYSBGCDaily) = 
-    Dict(:chlorophyll => "chl",
-         :nitrate => "no3",
+    Dict(       :chlorophyll => "chl",
+                    :nitrate => "no3",
          :primary_production => "nppv",
-         :oxygen => "o2",
-         :phosphate => "po4",
-         :silicate => "si")
+                     :oxygen => "o2",
+                  :phosphate => "po4",
+                   :silicate => "si")
 
 available_variables(::GLORYSBGCMonthly) = 
-    Dict(:chlorophyll => "chl",
-         :dissolved_iron => "fe",
-         :nitrate => "no3",
+    Dict(       :chlorophyll => "chl",
+             :dissolved_iron => "fe",
+                    :nitrate => "no3",
          :primary_production => "nppv",
-         :oxygen => "o2",
-         :pH => "ph",
-         :phytoplankton => "phyc",
-         :phosphate => "po4",
-         :silicate => "si",
-         :pCO₂ => "spco2")
+                     :oxygen => "o2",
+                         :pH => "ph",
+              :phytoplankton => "phyc",
+                  :phosphate => "po4",
+                   :silicate => "si",
+                       :pCO₂ => "spco2")
 
 is_three_dimensional(metadata::GLORYSBGCMetadatum) = metadata.name != :pCO₂
 
