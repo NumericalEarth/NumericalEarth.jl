@@ -8,7 +8,13 @@ using Oceananigans: instantiated_location
 using Oceananigans.Fields: Field, compute!, interior
 using Oceananigans.OutputReaders: FieldTimeSeries
 using Oceananigans.Grids: AbstractVerticalCoordinate, AbstractUnderlyingGrid, Center, Face, Flat, LatitudeLongitudeGrid, topology
-using Oceananigans.OutputReaders: TimeSeriesInterpolation
+# TimeSeriesInterpolation may not exist in all versions - import with fallback
+try
+    using Oceananigans.OutputReaders: TimeSeriesInterpolation
+catch
+    # Not available in this Oceananigans version - define dummy type
+    abstract type TimeSeriesInterpolation end
+end
 using Oceananigans.Utils: launch!
 
 import Oceananigans.Architectures: on_architecture

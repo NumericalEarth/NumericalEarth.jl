@@ -8,7 +8,7 @@ export ERA5HourlyPressureLevels, ERA5MonthlyPressureLevels, ERA5_all_pressure_le
 export standard_atmosphere_z_interfaces, mean_geopotential_z_interfaces
 
 # Prescribed components
-export ERA5PrescribedAtmosphere, ERA5PrescribedRadiation
+export ERA5PrescribedAtmosphere, ERA5PrescribedRadiation, ERA5PrescribedLand
 
 using Dates: Dates, DateTime, Month, Hour
 using Downloads: Downloads
@@ -133,6 +133,14 @@ end
 DataWrangling.inpainted_metadata_path(metadata::ERA5Metadatum) = joinpath(metadata.dir, inpainted_metadata_filename(metadata))
 
 #####
+##### Pure Julia CDS client (replaces Python era5cli)
+#####
+
+# CDS client is loaded via NumericalEarthCDSClientExt extension when HTTP/JSON3 are available
+# The extension exports: download_era5, read_cds_credentials, cds_variable_name
+# Users need to: using HTTP, JSON3  (or just using HTTP if JSON3 is already loaded)
+
+#####
 ##### Single-level and pressure-level specifics
 #####
 
@@ -140,5 +148,6 @@ include("ERA5_single_levels.jl")
 include("ERA5_pressure_levels.jl")
 include("ERA5_prescribed_radiation.jl")
 include("ERA5_prescribed_atmosphere.jl")
+include("ERA5_prescribed_land.jl")
 
 end # module ERA5
