@@ -799,6 +799,34 @@ if get(ENV, "DFI", "off") == "on"
                    minimum(interior(model.dynamics.density)), maximum(interior(model.dynamics.density)))
 end
 
+# ## Surface drag (bulk Monin–Obukhov-style stress)
+#
+# `atmosphere_simulation` pre-wires ρτˣ/ρτʸ bottom-flux BC fields for the SlabLand/ocean coupling;
+# with no land model attached they stay zero (free-slip). Until the SlabLand coupling is wired here —
+# its MOST solve scalar-reads Δz[1] and currently crashes on a GPU stretched terrain grid — fill them
+# each step with a bulk neutral surface stress ρτ = −ρ Cᵈ |U| U, per-column log-law Cᵈ = (κ/ln(z₁/z₀))²
+# (z₀ = 0.1 m; z₁ = first-cell-center height AGL): the dominant near-surface momentum sink. GPU-safe —
+# Cᵈ is precomputed host-side, so there is no per-step scalar Δz read. Applied to the D2 `model`.
+let κ_vk = 0.4, z₀_mom = 0.1
+    cpu_grid_drag = on_architecture(CPU(), grid)
+    z₁_drag = Float64[znode(i, j, 1, cpu_grid_drag, Center(), Center(), Center()) -
+                      znode(i, j, 1, cpu_grid_drag, Center(), Center(), Face()) for i in 1:Nx, j in 1:Ny]
+    Cd_drag  = on_architecture(arch, @. (κ_vk / log(z₁_drag / z₀_mom))^2)
+    ρτx_drag = model.momentum.ρu.boundary_conditions.bottom.condition
+    ρτy_drag = model.momentum.ρv.boundary_conditions.bottom.condition
+    global function surface_drag!(sim)
+        uf = view(interior(model.velocities.u), :, :, 1)
+        vf = view(interior(model.velocities.v), :, :, 1)
+        ρc = view(interior(model.dynamics.density), :, :, 1)
+        uc = 0.5 .* (view(uf, 1:Nx, :) .+ view(uf, 2:Nx+1, :))
+        vc = 0.5 .* (view(vf, :, 1:Ny) .+ view(vf, :, 2:Ny+1))
+        Um = sqrt.(uc .^ 2 .+ vc .^ 2 .+ 1e-12)
+        interior(ρτx_drag) .= reshape(.-(ρc .* Cd_drag .* Um .* uc), size(interior(ρτx_drag)))
+        interior(ρτy_drag) .= reshape(.-(ρc .* Cd_drag .* Um .* vc), size(interior(ρτy_drag)))
+        return nothing
+    end
+end
+
 # ## NestedSimulation
 #
 # Wrap the child model in a `NestedSimulation` paired with the parent
@@ -815,6 +843,7 @@ telescope = get(ENV, "TELESCOPE", "off") == "on"
 telescope && include(joinpath(@__DIR__, "era5_d3.jl"))
 child  = telescope ? NestedModel(model, D3) : model
 nested = NestedSimulation(parent, child; Δt, stop_time = parse(Float64, get(ENV, "STOP_TIME", "900")))
+add_callback!(nested, surface_drag!, IterationInterval(1))   # bulk surface stress → D2 ρτˣ/ρτʸ each step
 telescope && add_callback!(nested, refresh_d3_bc_fts!, IterationInterval(1))   # roll the D3 BC FTS ← live D2
 telescope && add_callback!(nested, d3_davies!, IterationInterval(1))           # D3 Davies fringe ← live D2
 
