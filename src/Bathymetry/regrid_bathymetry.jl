@@ -27,10 +27,10 @@ struct BathymetryRegridding
 end
 
 function BathymetryRegridding(grid, metadata;
-                               height_above_water = nothing,
-                               minimum_depth = 0,
-                               method = Interpolate(1),
-                               major_basins = 1)
+                              height_above_water = nothing,
+                              minimum_depth = 0,
+                              method = Interpolate(1),
+                              major_basins = 1)
 
     Nx, Ny, _ = size(grid)
     TX, TY, _ = topology(grid)
@@ -240,7 +240,7 @@ function _regrid_bathymetry(target_grid, metadata;
     set!(native_z, z_data)
     fill_halo_regions!(native_z)
 
-    target_z = _apply_regriding(method, native_z, target_grid)
+    target_z = apply_regriding(method, native_z, target_grid)
 
     if minimum_depth > 0
         launch!(arch, target_grid, :xy, _enforce_minimum_depth!, target_z, minimum_depth)
@@ -515,9 +515,7 @@ Interpolate(; passes = 1) = Interpolate(passes)
 
 Base.:(==)(a::Interpolate, b::Interpolate) = a.passes == b.passes
 
-# Here we can either use `regrid!` (three dimensional version) or `interpolate!`.
-function _apply_regriding(interpolate::Interpolate,
-                          native_z, target_grid)
+function apply_regriding(interpolate::Interpolate, native_z, target_grid)
 
     passes = interpolate.passes
 
@@ -572,8 +570,7 @@ end
 
 struct MedianAveraging end
 
-function _apply_regriding(::MedianAveraging,
-                          native_z, target_grid)
+function apply_regriding(::MedianAveraging, native_z, target_grid)
 
     native_grid = native_z.grid
     target_z = Field{Center, Center, Nothing}(target_grid)
@@ -581,7 +578,7 @@ function _apply_regriding(::MedianAveraging,
     launch!(architecture(target_grid),
             target_grid,
             :xy, 
-            compute_median!,
+            _compute_median!,
             target_z,
             native_z,
             target_grid,
@@ -590,7 +587,7 @@ function _apply_regriding(::MedianAveraging,
     return target_z
 end
 
-@kernel function compute_median!(target_z, native_z, target_grid, bathymetry_native_grid)
+@kernel function _compute_median!(target_z, native_z, target_grid, bathymetry_native_grid)
     i, j = @index(Global, NTuple)
 
     Nx = bathymetry_native_grid.Nx
@@ -598,11 +595,11 @@ end
     λl = λnode(i, j, 1, target_grid, Face(), Center())
     λr = ifelse(j == target_grid.Ny, 
                 λnode(i+1, j-1, 1, target_grid, Face(), Center()), 
-                λnode(i+1, j, 1, target_grid, Face(), Center()))
+                λnode(i+1, j,   1, target_grid, Face(), Center()))
     φl = φnode(i, j, 1, target_grid, Center(), Face())
     φr = ifelse(j == target_grid.Ny, 
                 φnode(i+1, j-1, 1, target_grid, Center(), Face()), 
-                φnode(i, j+1, 1, target_grid, Center(), Face()))
+                φnode(i,   j+1, 1, target_grid, Center(), Face()))
 
     φl, φr = ifelse(j == target_grid.Ny, 
                     (min(φr, φl), max(φr, φl)), 
