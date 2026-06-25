@@ -444,6 +444,7 @@ T_series  = parent_pl_series(:temperature)
 qᵛ_series = parent_pl_series(:specific_humidity)
 qᶜ_series = parent_pl_series(:specific_cloud_liquid_water_content)
 qⁱ_series = parent_pl_series(:specific_cloud_ice_water_content)
+ω_series  = parent_pl_series(:vertical_velocity)   # ERA5 pressure velocity (Pa/s); converted to w ≈ −ω/(ρg) for the animation
 
 # ERA5 surface pressure + orography on the parent horizontal, for the hydrostatic balance below.
 # Orography is time-constant; surface pressure is re-set per snapshot in the loop.
@@ -924,7 +925,8 @@ run!(nested)
 # AGL. θᵥ′ is referenced to the initial state — θᵥ′ = θᵥ − θᵥ(t=0), pointwise — so the terrain and
 # stratification background (which would swamp an anomaly-from-domain-mean over this terrain) cancels,
 # leaving the evolving cold pool. Row 1 samples the resident hourly parent FTS at the child's frame
-# times, at the same two levels as the child (`w ≈ 0` and `qʳ` blank — reanalysis carries no model rain).
+# times, at the same two levels as the child. ERA5's `w` is estimated from its pressure velocity ω as
+# w ≈ −ω/(ρg) (synoptic-scale, far weaker than the child's resolved convection); `qʳ` is blank (no model rain).
 
 parent_frames = let zc_p = 0.5 .* (z_discretization.faces[1:end-1] .+ z_discretization.faces[2:end]),
                     λ_p = collect(λnodes(parent_grid, Center(), Center(), Center())),
@@ -947,7 +949,7 @@ parent_frames = let zc_p = 0.5 .* (z_discretization.faces[1:end-1] .+ z_discreti
     [(t = f.t, λ = λ_p, φ = φ_p,
       u_sfc = cx(k1(parent.velocities.u, f.t)), v_sfc = cy(k1(parent.velocities.v, f.t)),
       θ_sfc = k1(parent_series.θ, f.t), qᵛ_sfc = k1(parent_series.qᵗ, f.t),
-      w = at2km(parent.velocities.w, f.t), qᵛ = at2km(parent_series.qᵗ, f.t),
+      w = -at2km(ω_series, f.t) ./ (at2km(parent_series.ρ, f.t) .* g_accel), qᵛ = at2km(parent_series.qᵗ, f.t),
       qʳ = zeros(Float32, nx_p, ny_p)) for f in slice_frames]
 end
 
@@ -969,9 +971,9 @@ wmax  = max(cascade_range(:w,   0.995), 1)
 θmax  = max(cascade_range(:θvp, 0.99),  0.5)
 qvmax = max(cascade_range(:qv,  0.995), 1)
 qrmax = max(cascade_range(:qr,  0.999), 0.1)
-cascade_columns = [(:U,   "|U|ₛ (m s⁻¹)",   :speed,   (0, Umax)),
+cascade_columns = [(:θvp, "θᵥ′ₛ (K)",       :balance, (-θmax, θmax)),
+                   (:U,   "|U|ₛ (m s⁻¹)",   :speed,   (0, Umax)),
                    (:w,   "w₂ₖₘ (m s⁻¹)",   :balance, (-wmax, wmax)),
-                   (:θvp, "θᵥ′ₛ (K)",       :balance, (-θmax, θmax)),
                    (:qv,  "qᵛ₂ₖₘ (g kg⁻¹)", :dense,   (0, qvmax)),
                    (:qr,  "qʳ₂ₖₘ (g kg⁻¹)", :dense,   (0, qrmax))]
 
