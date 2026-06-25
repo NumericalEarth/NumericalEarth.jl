@@ -45,9 +45,12 @@ end
 const c = Center()
 const f = Face()
 
+# In zstar we might have positive z, so  `exp(κ * z)` is not correct
 @inline function beers_law_radiation(i, j, k, grid, J₀ , κ)
-    z = Oceananigans.Grids.znode(i, j, k, grid, c, c, f)
-    return J₀ * exp(κ * z)
+    Nz = size(grid, 3)
+    z  = Oceananigans.Grids.znode(i, j, k,    grid, c, c, f)
+    η  = Oceananigans.Grids.znode(i, j, Nz+1, grid, c, c, f)
+    return J₀ * exp(κ * (z - η))
 end
 
 @inline function (R::TwoColorRadiation)(i, j, k, grid, clock, fields)
@@ -86,6 +89,7 @@ end
 end
 
 get_radiative_forcing(something) = nothing
+get_radiative_forcing(tcr::TwoColorRadiation) = tcr
 
 function get_radiative_forcing(FT::MultipleForcings)
     for forcing in FT.forcings
@@ -95,9 +99,5 @@ function get_radiative_forcing(FT::MultipleForcings)
 end
 
 get_radiative_forcing(sim::Simulation) = get_radiative_forcing(sim.model)
-
-get_radiative_forcing(model::HydrostaticFreeSurfaceModel) =
-    get_radiative_forcing(model.forcing.T)
-
-get_radiative_forcing(model::NonhydrostaticModel) =
-    get_radiative_forcing(model.forcing.T)
+get_radiative_forcing(model::HydrostaticFreeSurfaceModel) = get_radiative_forcing(model.forcing.T)
+get_radiative_forcing(model::NonhydrostaticModel) = get_radiative_forcing(model.forcing.T)

@@ -61,6 +61,7 @@ ocean = ocean_simulation(grid;
                          momentum_advection = nothing,
                          tracer_advection = nothing,
                          coriolis = nothing,
+                         radiative_forcing = nothing,
                          closure = CATKEVerticalDiffusivity(),
                          bottom_drag_coefficient = 0)
 
