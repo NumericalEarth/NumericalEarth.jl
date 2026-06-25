@@ -2,7 +2,7 @@
 # Scratch space for cached regridded bathymetry files
 bathymetry_cache_dir::String = ""
 function __init__()
-    global bathymetry_cache_dir = @get_scratch!("bathymetry_cache")
+    global bathymetry_cache_dir = DataWrangling.download_cache("bathymetry_cache")
 end
 
 #####
@@ -186,6 +186,8 @@ function regrid_bathymetry(target_grid, metadata;
                            major_basins = 1,
                            cache = true)
 
+    validate_dataset_coverage(target_grid, metadata)
+
     config = BathymetryRegridding(target_grid, metadata;
                                   height_above_water, minimum_depth,
                                   interpolation_passes, major_basins)
@@ -201,7 +203,7 @@ function regrid_bathymetry(target_grid, metadata;
         end
     end
 
-    download_dataset(metadata)
+    download(metadata)
 
     target_z = _regrid_bathymetry(target_grid, metadata;
                                   height_above_water,
@@ -240,7 +242,7 @@ function _regrid_bathymetry(target_grid, metadata;
     filepath = metadata_path(metadata)
     dataset = Dataset(filepath, "r")
 
-    z_data = convert(Array{FT}, dataset["z"][:, :])
+    z_data = convert(Array{FT}, dataset[dataset_variable_name(metadata)][:, :])
     close(dataset)
 
     if !isnothing(height_above_water)
@@ -281,6 +283,34 @@ function regrid_bathymetry(target_grid; dataset = ETOPO2022(), cache = true, kw.
     return regrid_bathymetry(target_grid, metadatum; cache, kw...)
 end
 
+"""
+    regrid_topography(target_grid; dataset = ETOPO2022(), kw...)
+
+Land surface elevation (m, ≥ 0) regridded onto `target_grid` — the topographic
+counterpart of [`regrid_bathymetry`](@ref) for land applications. Returns the
+positive part of the dataset's bottom height (the elevation over land), with
+ocean clamped to sea level (0). Accepts the same regridding keywords
+(`interpolation_passes`, etc.); there is no depth/`minimum_depth` notion.
+"""
+function regrid_topography(target_grid; dataset = ETOPO2022(), kw...)
+    elevation = regrid_bathymetry(target_grid; dataset, kw...)
+    parent(elevation) .= max.(parent(elevation), 0) # land elevation; ocean → 0
+    return elevation
+end
+
+"""
+    regrid_topography(target_grid, metadata; kw...)
+
+Land surface elevation regridded onto `target_grid` from `metadata`, the positive
+counterpart of [`regrid_bathymetry`](@ref). Use this form for region-windowed
+datasets such as `GLO30()`, whose `metadata` carries a `BoundingBox` region.
+"""
+function regrid_topography(target_grid, metadata; kw...)
+    elevation = regrid_bathymetry(target_grid, metadata; kw...)
+    parent(elevation) .= max.(parent(elevation), 0) # land elevation; ocean → 0
+    return elevation
+end
+
 # Regridding bathymetry for distributed grids, we handle the whole process
 # on just one rank, and share the results with the other processors.
 function regrid_bathymetry(target_grid::DistributedGrid, metadata;
@@ -299,8 +329,8 @@ function regrid_bathymetry(target_grid::DistributedGrid, metadata;
                                   height_above_water, minimum_depth,
                                   interpolation_passes, major_basins)
 
-    # download_dataset uses @root internally; all ranks must call it
-    download_dataset(metadata)
+    # download uses @root internally; all ranks must call it
+    download(metadata)
 
     # Only rank 0 performs cache lookup and computation to avoid OOM
     bottom_height = if arch.local_rank == 0
@@ -367,7 +397,8 @@ function interpolate_bathymetry_in_passes(native_z, target_grid;
     Nφ = Int[Nφ..., Nφt]
 
     old_z  = native_z
-    TX, TY = topology(target_grid)
+    TXt, _, _ = topology(target_grid)
+    _, TYn, _ = topology(native_z.grid)
 
     Hx, Hy, Hz = Oceananigans.halo_size(native_z.grid)
 
@@ -381,7 +412,7 @@ function interpolate_bathymetry_in_passes(native_z, target_grid;
                                          latitude = (latitude[1],  latitude[2]),
                                          longitude = (longitude[1], longitude[2]),
                                          z = (0, 1),
-                                         topology = (TX, TY, Bounded),
+                                         topology = (TXt, TYn, Bounded),
                                          halo = (Hx, Hy, Hz))
 
         new_z = Field{Center, Center, Nothing}(new_grid)
@@ -494,7 +525,7 @@ function remove_minor_basins!(zb, keep_major_basins, core_size)
 
     # We add basin indexes until we reach the specified number (m == keep_major_basins) or
     # we run out of basins to keep -> isempty(valid)
-    while (m <= keep_major_basins) && !isempty(valid)
+    while (m ≤ keep_major_basins) && !isempty(valid)
         # Among the remaining valid labels, find the one with the largest core area.
         _, idx = findmax(total_elements[valid])
         next_label = label_elements[valid[idx]]

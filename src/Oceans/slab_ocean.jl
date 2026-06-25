@@ -1,10 +1,19 @@
-using Oceananigans.TimeSteppers: Clock, tick!
 using Oceananigans.BoundaryConditions: fill_halo_regions!
 using Oceananigans.Fields: ConstantField, ZeroField
-using Oceananigans.Utils: prettytime, prettysummary
+
+struct SlabOcean{FT, G, Clk, T, F, H, ρ, C}
+    grid :: G
+    clock :: Clk
+    temperature :: T
+    temperature_flux :: F
+    depth :: H
+    density :: ρ
+    heat_capacity :: C
+end
 
 """
     SlabOcean(grid;
+              FT = eltype(grid),
               depth = 50,
               density = 1025,
               heat_capacity = 4000,
@@ -32,22 +41,13 @@ Arguments
 Keyword Arguments
 =================
 
+- `FT`: Floating point type for the slab ocean fields. Default: `eltype(grid)`.
 - `depth`: Depth of the slab in meters. Default: 50.
 - `density`: Seawater density in kg/m³. Default: 1025.
 - `heat_capacity`: Seawater specific heat capacity in J/(kg·K). Default: 4000.
 - `clock`: Clock for tracking slab ocean time. Default: `Clock{FT}(time=0)` where `FT` is the
   float type of the grid.
 """
-struct SlabOcean{FT, G, Clk, T, F, H, ρ, C}
-    grid :: G
-    clock :: Clk
-    temperature :: T
-    temperature_flux :: F
-    depth :: H
-    density :: ρ
-    heat_capacity :: C
-end
-
 function SlabOcean(grid;
                    FT = eltype(grid),
                    depth = 50,
@@ -88,32 +88,34 @@ function Base.show(io::IO, ocean::SlabOcean)
 end
 Base.eltype(::SlabOcean{FT}) where FT = FT
 
+Grids.grid(ocean::SlabOcean) = ocean.grid
+
 #####
 ##### EarthSystemModels interface
 #####
 
-reference_density(ocean::SlabOcean) = ocean.density
-heat_capacity(ocean::SlabOcean) = ocean.heat_capacity
-exchange_grid(atmosphere, ocean::SlabOcean, sea_ice) = ocean.grid
-temperature_units(::SlabOcean) = DegreesKelvin()
-ocean_temperature(ocean::SlabOcean) = ocean.temperature
-ocean_salinity(ocean::SlabOcean{FT}) where FT = ConstantField(convert(FT, 35))
-ocean_surface_temperature(ocean::SlabOcean) = ocean.temperature
-ocean_surface_salinity(ocean::SlabOcean{FT}) where FT = ConstantField(convert(FT, 35))
-ocean_surface_velocities(::SlabOcean{FT}) where FT = ZeroField(FT), ZeroField(FT)
+EarthSystemModels.reference_density(ocean::SlabOcean) = ocean.density
+EarthSystemModels.heat_capacity(ocean::SlabOcean) = ocean.heat_capacity
+EarthSystemModels.exchange_grid(atmosphere, ocean::SlabOcean, sea_ice, land=nothing) = ocean.grid
+EarthSystemModels.temperature_units(::SlabOcean) = DegreesKelvin()
+EarthSystemModels.ocean_temperature(ocean::SlabOcean) = ocean.temperature
+EarthSystemModels.ocean_salinity(ocean::SlabOcean{FT}) where FT = ConstantField(convert(FT, 35))
+EarthSystemModels.ocean_surface_temperature(ocean::SlabOcean) = ocean.temperature
+EarthSystemModels.ocean_surface_salinity(ocean::SlabOcean{FT}) where FT = ConstantField(convert(FT, 35))
+EarthSystemModels.ocean_surface_velocities(::SlabOcean{FT}) where FT = ZeroField(FT), ZeroField(FT)
 
 #####
 ##### InterfaceComputations interface
 #####
 
-function ComponentExchanger(ocean::SlabOcean, exchange_grid)
+function EarthSystemModels.InterfaceComputations.ComponentExchanger(ocean::SlabOcean, exchange_grid)
     T = ocean.temperature
     S = ocean_surface_salinity(ocean)
     u, v = ocean_surface_velocities(ocean)
     return ComponentExchanger((; u, v, T, S), nothing)
 end
 
-function net_fluxes(ocean::SlabOcean)
+function EarthSystemModels.InterfaceComputations.net_fluxes(ocean::SlabOcean)
     grid = ocean.grid
     Jˢ = CenterField(grid)
     τx = CenterField(grid)
@@ -122,11 +124,20 @@ function net_fluxes(ocean::SlabOcean)
 end
 
 # No interpolation needed: the slab ocean IS on the exchange grid
-interpolate_state!(exchanger, grid, ::SlabOcean, coupled_model) = nothing
+EarthSystemModels.interpolate_state!(exchanger, grid, ::SlabOcean, coupled_model) = nothing
 
 # Assemble net ocean fluxes from interface computations
-update_net_fluxes!(coupled_model, ocean::SlabOcean) =
-    Oceans.update_net_ocean_fluxes!(coupled_model, ocean, ocean.grid)
+EarthSystemModels.update_net_fluxes!(coupled_model, ocean::SlabOcean) =
+    update_net_ocean_fluxes!(coupled_model, ocean, ocean.grid)
+
+# `FT` is not inferable from the fields, so rebuild explicitly to preserve it.
+function EarthSystemModels.adopt_clock(ocean::SlabOcean{FT}, clock) where FT
+    new_clock = EarthSystemModels.matching_clock(ocean.clock, clock)
+    isnothing(new_clock) && return ocean
+    EarthSystemModels.warn_clock_coercion(ocean, new_clock)
+    return SlabOcean{FT}(ocean.grid, new_clock, ocean.temperature,
+                         ocean.temperature_flux, ocean.depth, ocean.density, ocean.heat_capacity)
+end
 
 #####
 ##### Time stepping

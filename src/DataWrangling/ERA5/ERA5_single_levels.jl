@@ -10,32 +10,16 @@ const ERA5_wave_variables = Set([
     :significant_wave_height, :mean_wave_period, :mean_wave_direction,
 ])
 
-# Mean rate / accumulated variables (CDS "step type" = accum).
-# All other single-level variables are instantaneous.
-# See ECMWF ERA5 documentation, Tables 3 and 4:
-# https://confluence.ecmwf.int/display/CKB/ERA5%3A+data+documentation#ERA5:datadocumentation-Meanrates/fluxesandaccumulations
-const ERA5_single_level_accumulated_variables = Set([
-    :total_precipitation,
-    :mean_surface_sensible_heat_flux,
-    :mean_surface_latent_heat_flux,
-    :mean_surface_momentum_flux_x,
-    :mean_surface_momentum_flux_y,
-    :downwelling_shortwave_radiation,
-    :downwelling_longwave_radiation,
-    :evaporation,
-    :mean_evaporation_rate,
-])
-
 #####
 ##### ERA5 single-level data availability
 #####
 
 # ERA5 reanalysis data available from 1940 to present (we use a practical range here)
-all_dates(::ERA5HourlySingleLevel,  var) = range(DateTime("1940-01-01"), stop=DateTime("2024-12-31"), step=Hour(1))
-all_dates(::ERA5MonthlySingleLevel, var) = range(DateTime("1940-01-01"), stop=DateTime("2024-12-01"), step=Month(1))
+DataWrangling.all_dates(::ERA5HourlySingleLevel,  var) = range(DateTime("1940-01-01"), stop=DateTime("2024-12-31"), step=Hour(1))
+DataWrangling.all_dates(::ERA5MonthlySingleLevel, var) = range(DateTime("1940-01-01"), stop=DateTime("2024-12-01"), step=Month(1))
 
 # ERA5 single-level data is a spatially 2-D dataset
-is_three_dimensional(::ERA5Metadata) = false
+DataWrangling.is_three_dimensional(::ERA5Metadata) = false
 
 function Base.size(::ERA5Dataset, variable)
     if variable in ERA5_wave_variables
@@ -60,6 +44,7 @@ ERA5_dataset_variable_names = Dict(
     :total_precipitation             => "total_precipitation",
     :mean_surface_momentum_flux_x    => "mean_eastward_turbulent_surface_stress",
     :mean_surface_momentum_flux_y    => "mean_northward_turbulent_surface_stress",
+    :skin_temperature                => "skin_temperature",
     :sea_surface_temperature         => "sea_surface_temperature",
     :mean_surface_sensible_heat_flux => "mean_surface_sensible_heat_flux",
     :mean_surface_latent_heat_flux   => "mean_surface_latent_heat_flux",
@@ -68,12 +53,13 @@ ERA5_dataset_variable_names = Dict(
     :total_cloud_cover               => "total_cloud_cover",
     :evaporation                     => "evaporation",
     :mean_evaporation_rate           => "mean_evaporation_rate",
-    :specific_humidity               => "specific_humidity",
     :eastward_stokes_drift           => "u_component_stokes_drift",
     :northward_stokes_drift          => "v_component_stokes_drift",
     :significant_wave_height         => "significant_height_of_combined_wind_waves_and_swell",
     :mean_wave_period                => "mean_wave_period",
     :mean_wave_direction             => "mean_wave_direction",
+    :geopotential                    => "geopotential",
+    :topography                      => "geopotential",
 )
 
 # NetCDF short variable names (what's actually in the downloaded files)
@@ -90,6 +76,7 @@ ERA5_netcdf_variable_names = Dict(
     :total_precipitation             => "tp",
     :mean_surface_momentum_flux_x    => "avg_iews", # shortName: metss
     :mean_surface_momentum_flux_y    => "avg_inss", # shortName: mntss
+    :skin_temperature                => "skt",
     :sea_surface_temperature         => "sst",
     :mean_surface_sensible_heat_flux => "avg_ishf", # shortName: msshf
     :mean_surface_latent_heat_flux   => "avg_slhtf", # shortName: mslhf
@@ -98,24 +85,38 @@ ERA5_netcdf_variable_names = Dict(
     :total_cloud_cover               => "tcc",
     :evaporation                     => "e",
     :mean_evaporation_rate           => "avg_ie", # shortName: mer
-    :specific_humidity               => "q",
     :eastward_stokes_drift           => "ust",
     :northward_stokes_drift          => "vst",
     :significant_wave_height         => "swh",
     :mean_wave_period                => "mwp",
     :mean_wave_direction             => "mwd",
+    :geopotential                    => "z",
+    :topography                      => "z",
 )
 
 # Variables available for download
-available_variables(::ERA5Dataset) = ERA5_dataset_variable_names
+DataWrangling.available_variables(::ERA5Dataset) = ERA5_dataset_variable_names
 
 # `dataset_variable_name` returns the short name as stored in the NetCDF file
 # (e.g. "t2m"). The CDS API catalog name (e.g. "2m_temperature") used in
 # download requests is accessed via the `ERA5_dataset_variable_names` dict
 # directly in `NumericalEarthCDSAPIExt`.
-dataset_variable_name(md::ERA5Metadata) = ERA5_netcdf_variable_names[md.name]
+DataWrangling.dataset_variable_name(md::ERA5Metadata) = ERA5_netcdf_variable_names[md.name]
 
-default_inpainting(md::ERA5Metadata) = nothing
+# Unit conversions applied at load time:
+# - `topography` divides the (surface) geopotential by g to give ERA5's model
+#   surface elevation in metres (`geopotential` is left in m² s⁻²);
+# - downwelling SW/LW are hourly-accumulated energy (J/m²) → mean flux (W/m²);
+# - total precipitation is an hourly-accumulated depth (m) → mass flux (kg/m²/s).
+function DataWrangling.conversion_units(md::ERA5Metadata)
+    md.name == :topography           && return InverseGravity()
+    md.name == :total_precipitation && return MetersPerHour()
+    md.name in (:downwelling_shortwave_radiation, :downwelling_longwave_radiation) &&
+        return JoulesPerSquareMeterPerHour()
+    return nothing
+end
+
+DataWrangling.default_inpainting(md::ERA5Metadata) = nothing
 
 """
     retrieve_data(metadata::ERA5Metadatum)
@@ -123,7 +124,7 @@ default_inpainting(md::ERA5Metadata) = nothing
 Retrieve ERA5 data from NetCDF file according to `metadata`.
 ERA5 is 2D surface data, so we return a 2D array with an added singleton z-dimension.
 """
-function retrieve_data(metadata::ERA5Metadatum)
+function DataWrangling.retrieve_data(metadata::ERA5Metadatum)
     path = metadata_path(metadata)
     name = dataset_variable_name(metadata)
 
@@ -152,31 +153,3 @@ function retrieve_data(metadata::ERA5Metadatum)
     return reshape(data_2d, size(data_2d, 1), size(data_2d, 2), 1)
 end
 
-#####
-##### Metadata filename construction
-#####
-
-function metadata_prefix(md::ERA5Metadata)
-    var = ERA5_dataset_variable_names[md.name]
-    dataset = dataset_name(md.dataset)
-    start_date = start_date_str(md.dates)
-    end_date = end_date_str(md.dates)
-    bbox = md.region
-
-    if !isnothing(bbox)
-        w, e = bbox_strs(bbox.longitude)
-        s, n = bbox_strs(bbox.latitude)
-        suffix = string(w, e, s, n)
-    else
-        suffix = ""
-    end
-
-    if start_date == end_date
-        prefix = string(var, "_", dataset, "_", start_date, suffix)
-    else
-        prefix = string(var, "_", dataset, "_", start_date, "_", end_date, suffix)
-    end
-    prefix = colon2dash(prefix)
-    prefix = underscore_spaces(prefix)
-    return prefix
-end

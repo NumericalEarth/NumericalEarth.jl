@@ -2,14 +2,14 @@ module GLORYS
 
 export GLORYSStatic, GLORYSDaily, GLORYSMonthly
 
-using NCDatasets
-using Printf
-
-using Oceananigans.Fields: Center
-using NumericalEarth.DataWrangling: Metadata, Metadatum, metadata_path
 using Dates: DateTime, Day, Month
+using Oceananigans.Fields: Center
+using NCDatasets: NCDatasets, Dataset
+using Printf: Printf, @sprintf
 
-import NumericalEarth.DataWrangling:
+using ..DataWrangling: DataWrangling, Metadata, Metadatum, metadata_path
+
+import ..DataWrangling:
     all_dates,
     dataset_variable_name,
     dataset_location,
@@ -23,11 +23,9 @@ import NumericalEarth.DataWrangling:
     available_variables,
     is_three_dimensional
 
-using Scratch
-
 download_GLORYS_cache::String = ""
 function __init__()
-    global download_GLORYS_cache = @get_scratch!("GLORYS")
+    global download_GLORYS_cache = DataWrangling.download_cache("GLORYS")
 end
 
 # Datasets

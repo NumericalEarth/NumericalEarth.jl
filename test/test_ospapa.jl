@@ -1,15 +1,15 @@
 include("runtests_setup.jl")
 
 using NumericalEarth.OSPapa
-using NumericalEarth.Atmospheres: PrescribedAtmosphere
+using NumericalEarth.Atmospheres: PrescribedAtmosphere, PrescribedPrecipitationFlux
+using NumericalEarth.Radiations: PrescribedRadiation
 using Oceananigans.BoundaryConditions: BoundaryCondition, Flux, getbc
 using Oceananigans.Units: minutes
-using CUDA: @allowscalar
 
 const OSPAPA_TEST_START = DateTime(2012, 10, 1)
 const OSPAPA_TEST_END   = DateTime(2012, 10, 3)
 
-@testset "OS Papa Prescribed Atmosphere" begin
+@testset "Ocean Station Papa Prescribed Atmosphere" begin
     for arch in test_architectures
         A = typeof(arch)
         @info "Testing OSPapaPrescribedAtmosphere on $A..."
@@ -18,7 +18,12 @@ const OSPAPA_TEST_END   = DateTime(2012, 10, 3)
                                                 start_date = OSPAPA_TEST_START,
                                                 end_date   = OSPAPA_TEST_END)
 
+        radiation = OSPapaPrescribedRadiation(arch;
+                                              start_date = OSPAPA_TEST_START,
+                                              end_date   = OSPAPA_TEST_END)
+
         @test atmosphere isa PrescribedAtmosphere
+        @test radiation isa PrescribedRadiation
 
         # All expected fields are present
         @test haskey(atmosphere.velocities, :u)
@@ -26,32 +31,33 @@ const OSPAPA_TEST_END   = DateTime(2012, 10, 3)
         @test haskey(atmosphere.tracers, :T)
         @test haskey(atmosphere.tracers, :q)
         @test !isnothing(atmosphere.pressure)
-        @test !isnothing(atmosphere.downwelling_radiation)
-        @test haskey(atmosphere.freshwater_flux, :rain)
+        @test atmosphere.freshwater_flux isa PrescribedPrecipitationFlux
+        @test atmosphere.freshwater_flux.rain isa FieldTimeSeries
+        @test isnothing(atmosphere.freshwater_flux.snow)
 
         # Radiation sanity checks
-        ℐꜜˢʷ = atmosphere.downwelling_radiation.shortwave
-        ℐꜜˡʷ = atmosphere.downwelling_radiation.longwave
+        ℐꜜˢʷ = radiation.downwelling_shortwave
+        ℐꜜˡʷ = radiation.downwelling_longwave
 
         @allowscalar begin
             sw_data = interior(ℐꜜˢʷ)
             lw_data = interior(ℐꜜˡʷ)
 
-            @test all(sw_data .>= 0)                  # downwelling SW is non-negative
-            @test all(lw_data .>= 0)                  # downwelling LW is non-negative
+            @test all(sw_data .≥ 0)                   # downwelling SW is non-negative
+            @test all(lw_data .≥ 0)                   # downwelling LW is non-negative
             @test maximum(sw_data) < 1500             # below solar constant
             @test maximum(lw_data) < 600              # reasonable atmospheric LW
             @test maximum(lw_data) > 50               # not all zero
 
             # Air temperature in physical range (K)
             T_data = interior(atmosphere.tracers.T)
-            @test all(T_data .>= 240)
-            @test all(T_data .<= 320)
+            @test all(T_data .≥ 240)
+            @test all(T_data .≤ 320)
         end
     end
 end
 
-@testset "OS Papa Prescribed Fluxes" begin
+@testset "Ocean Station Papa Prescribed Fluxes" begin
     @info "Testing os_papa_prescribed_fluxes on CPU..."
 
     fluxes = os_papa_prescribed_fluxes(; start_date = OSPAPA_TEST_START,
@@ -84,7 +90,7 @@ end
     @test all(isfinite, fluxes.EMP)
 end
 
-@testset "OS Papa Prescribed Flux BCs" begin
+@testset "Ocean Station Papa Prescribed Flux BCs" begin
     for arch in test_architectures
         A = typeof(arch)
         @info "Testing os_papa_prescribed_flux_boundary_conditions on $A..."
@@ -128,7 +134,7 @@ end
     end
 end
 
-@testset "OS Papa ocean profile set!" begin
+@testset "Ocean Station Papa ocean profile set!" begin
     for arch in test_architectures
         A = typeof(arch)
         @info "Testing OSPapaMetadatum set! on $A..."
@@ -162,7 +168,7 @@ end
     end
 end
 
-@testset "OS Papa flux BC simulation" begin
+@testset "Ocean Station Papa flux BC simulation" begin
     for arch in test_architectures
         A = typeof(arch)
         @info "Testing short simulation with os_papa_prescribed_flux_boundary_conditions on $A..."
@@ -195,7 +201,7 @@ end
     end
 end
 
-@testset "OS Papa prescribed atmosphere simulation" begin
+@testset "Ocean Station Papa prescribed atmosphere simulation" begin
     for arch in test_architectures
         A = typeof(arch)
         @info "Testing OceanOnlyModel with OSPapaPrescribedAtmosphere on $A..."
@@ -216,8 +222,11 @@ end
         atmosphere = OSPapaPrescribedAtmosphere(arch;
                                                 start_date = OSPAPA_TEST_START,
                                                 end_date   = OSPAPA_TEST_END)
+        radiation = OSPapaPrescribedRadiation(arch;
+                                              start_date = OSPAPA_TEST_START,
+                                              end_date   = OSPAPA_TEST_END)
 
-        coupled_model = OceanOnlyModel(ocean; atmosphere, radiation=Radiation(arch))
+        coupled_model = OceanOnlyModel(ocean; atmosphere, radiation)
         simulation = Simulation(coupled_model; Δt=ocean.Δt, stop_iteration=2)
 
         @test begin

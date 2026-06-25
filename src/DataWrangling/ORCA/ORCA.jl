@@ -2,32 +2,32 @@ module ORCA
 
 export ORCA1, ORCA2, ORCA12
 
-using Downloads
+using Downloads: Downloads
 using Tar
 using CodecZlib
-using Oceananigans
+using Oceananigans: Oceananigans
 using Oceananigans.DistributedComputations: @root
-using Scratch
 
-using ..DataWrangling: download_progress, Metadatum, metadata_path
+using ..DataWrangling: DataWrangling, DownloadProgress, Metadatum, metadata_path, metadata_url
 
-import NumericalEarth.DataWrangling:
+import ..DataWrangling:
     metadata_filename,
     default_download_directory,
     all_dates,
     first_date,
     last_date,
     dataset_variable_name,
-    download_dataset,
     longitude_interfaces,
     latitude_interfaces,
     z_interfaces,
     reversed_vertical_axis
 
 download_ORCA_cache::String = ""
+
 function __init__()
-    global download_ORCA_cache = @get_scratch!("ORCA")
+    global download_ORCA_cache = DataWrangling.download_cache("ORCA")
 end
+
 abstract type ORCADataset end
 
 struct ORCA1 <: ORCADataset end
@@ -67,7 +67,7 @@ const ORCA1_bathymetry_url = "https://zenodo.org/records/4436658/files/eORCA_R1_
 const ORCA12_mesh_mask_url  = "https://zenodo.org/records/15495870/files/grid_mask_eORCA12-GO6.nc"
 const ORCA12_bathymetry_url = "https://zenodo.org/records/15495870/files/bathy_eORCA12_noclosea_from_GEBCO2021_FillZero_S21TT_CloseaCopy.nc"
 
-function metadata_url(metadatum::ORCA1Metadatum)
+function DataWrangling.metadata_url(metadatum::ORCA1Metadatum)
     if metadatum.name == :mesh_mask
         return ORCA1_mesh_mask_url
     elseif metadatum.name == :bottom_height
@@ -77,7 +77,7 @@ function metadata_url(metadatum::ORCA1Metadatum)
     end
 end
 
-function metadata_url(metadatum::ORCA12Metadatum)
+function DataWrangling.metadata_url(metadatum::ORCA12Metadatum)
     if metadatum.name == :mesh_mask
         return ORCA12_mesh_mask_url
     elseif metadatum.name == :bottom_height
@@ -109,14 +109,14 @@ end
 
 z_interfaces(::ORCAMetadatum) = nothing
 
-function download_dataset(metadatum::ORCAMetadatum)
+function Downloads.download(metadatum::ORCAMetadatum)
     fileurl  = metadata_url(metadatum)
     filepath = metadata_path(metadatum)
 
     @root if !isfile(filepath)
         dataset_name = nameof(typeof(metadatum.dataset))
         @info "Downloading $(dataset_name) data: $(metadatum.name) to $(metadatum.dir)..."
-        Downloads.download(fileurl, filepath; progress=download_progress)
+        Downloads.download(fileurl, filepath; progress=DownloadProgress())
     end
 
     return filepath

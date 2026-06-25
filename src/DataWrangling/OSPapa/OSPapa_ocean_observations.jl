@@ -1,9 +1,5 @@
-import Oceananigans: location
-import Oceananigans.Fields: set!
-
 using Oceananigans.Grids: znodes
-using Oceananigans.Fields: CenterField, interpolate!
-using Oceananigans.Architectures: architecture, on_architecture
+using Oceananigans.Architectures: on_architecture
 using Oceananigans.DistributedComputations: child_architecture
 
 #####
@@ -44,7 +40,7 @@ const OSPapa_depth_variable_names = Dict(
 )
 
 dataset_variable_name(data::OSPapaMetadata) = OSPapa_dataset_variable_names[data.name]
-location(::OSPapaMetadata) = (Center, Center, Center)
+Oceananigans.location(::OSPapaMetadata) = (Center, Center, Center)
 is_three_dimensional(md::OSPapaMetadata) = md.name in (:temperature, :salinity, :eastward_velocity, :northward_velocity)
 reversed_vertical_axis(::OSPapaHourly) = true
 
@@ -66,7 +62,7 @@ default_inpainting(::OSPapaMetadata) = nothing
 metadata_filename(::OSPapaMetadatum) = OSPAPA_FILENAME
 metadata_filename(::OSPapaHourly, name, date, region) = OSPAPA_FILENAME
 
-download_dataset(metadata::OSPapaMetadata) = download_ospapa_file(metadata.dir)
+Downloads.download(metadata::OSPapaMetadata) = download_ospapa_file(metadata.dir)
 
 function inpainted_metadata_path(metadata::OSPapaMetadata)
     filename = metadata_filename(first(metadata))
@@ -166,7 +162,7 @@ function retrieve_data(metadata::OSPapaMetadatum)
 
     if isnothing(t_idx)
         close(ds)
-        error("Date $(metadata.dates) not found in OS Papa dataset")
+        error("Date $(metadata.dates) not found in Ocean Station Papa dataset")
     end
 
     if is_three_dimensional(metadata)
@@ -246,9 +242,9 @@ function vertical_interpolate(::OSPapaMetadatum, z_src, data_src, z_dst)
     dv = dv[perm]
 
     for (i, zt) in enumerate(z_dst)
-        if zt <= zv[1]
+        if zt ≤ zv[1]
             result[i] = dv[1]
-        elseif zt >= zv[end]
+        elseif zt ≥ zv[end]
             result[i] = dv[end]
         else
             j = searchsortedlast(zv, zt)
@@ -264,7 +260,7 @@ end
 # we want to perform a custom vertical interpolation/extrapolation that skips NaNs
 # which is not supported by interpolate!. For surface variables there is nothing to
 # interpolate vertically, so we just copy the native-grid data into the target field.
-function set!(target_field::Field, metadata::OSPapaMetadatum; kw...)
+function Oceananigans.Fields.set!(target_field::Field, metadata::OSPapaMetadatum; kw...)
     grid = target_field.grid
     arch = child_architecture(grid)
 

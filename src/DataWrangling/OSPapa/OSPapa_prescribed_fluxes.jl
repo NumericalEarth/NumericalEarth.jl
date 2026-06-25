@@ -6,7 +6,7 @@ using Oceananigans.Architectures: on_architecture
 """
     os_papa_prescribed_fluxes(architecture = CPU(), FT = Float64;
                               start_date = first_date(OSPapaFluxHourly(), :net_heat_flux),
-                              end_date   = last_date(OSPapaFluxHourly(), :net_heat_flux),
+                              end_date = last_date(OSPapaFluxHourly(), :net_heat_flux),
                               dir = download_OSPapa_cache,
                               max_gap_hours = 72)
 
@@ -34,17 +34,17 @@ Keyword Arguments
 """
 function os_papa_prescribed_fluxes(architecture = CPU(), FT = Float64;
                                    start_date = first_date(OSPapaFluxHourly(), :net_heat_flux),
-                                   end_date   = last_date(OSPapaFluxHourly(), :net_heat_flux),
+                                   end_date = last_date(OSPapaFluxHourly(), :net_heat_flux),
                                    dir = download_OSPapa_cache,
                                    max_gap_hours = 72)
 
     mdkw = (; dataset = OSPapaFluxHourly(), start_date, end_date, dir)
 
-    surface_grid = RectilinearGrid(architecture, FT; size=(), topology=(Flat, Flat, Flat))
+    surface_grid = RectilinearGrid(architecture, FT; size = (), topology = (Flat, Flat, Flat))
 
     function flux_fts(name)
         md = Metadata(name; mdkw...)
-        download_dataset(md)
+        Downloads.download(md)
         fts = FieldTimeSeries(md, surface_grid;
                               time_indices_in_memory = length(md),
                               time_indexing = Cyclical())
@@ -84,7 +84,7 @@ no_correction(i, j, grid, clock, model_fields, p) = zero(grid)
                                                 salinity_flux_correction=no_correction)
 
 Create Oceananigans `FluxBoundaryCondition`s for u, v, T, S from prescribed
-OS Papa flux data. Returns a `NamedTuple` of `FieldBoundaryConditions` that
+Ocean Station Papa flux data. Returns a `NamedTuple` of `FieldBoundaryConditions` that
 can be passed directly to `ocean_simulation` or `HydrostaticFreeSurfaceModel`
 via the `boundary_conditions` keyword argument.
 

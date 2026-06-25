@@ -1,4 +1,4 @@
-# # An Ocean Simulation at 4ᵒ Resolution Forced by JRA55 Reanalysis 
+# # An Ocean Simulation at 4ᵒ Resolution Forced by JRA55 Reanalysis
 #
 # This example showcases the use of NumericalEarth's PythonCall extension to run a
 # near-global ocean simulation at 4-degree resolution using the Veros ocean model.
@@ -17,12 +17,19 @@ using Printf
 # with a uniform resolution of 4 degrees in both latitude and longitude and a latitude range spanning
 # from 80S to 80N. The setup is defined in the `veros.setups.global_4deg` module.
 
-# Before importing the setup, we need to ensure that the Veros module is installed and loaded
-# and that every output is removed to avoid conflicts.
+# Before importing the setup, the Veros Python package must be available in the
+# active CondaPkg environment. In the documentation CI this is installed ahead of
+# time in the workflow. For a fresh local environment, run
+#
+# ```julia
+# VerosModule = Base.get_extension(NumericalEarth, :NumericalEarthVerosExt)
+# VerosModule.install_veros()
+# ```
+#
+# once before executing this example.
 
 VerosModule = Base.get_extension(NumericalEarth, :NumericalEarthVerosExt)
 
-VerosModule.install_veros()
 VerosModule.remove_outputs(:global_4deg)
 
 # Actually loading and instantiating the Veros setup in the variable `ocean`.
@@ -31,8 +38,8 @@ ocean = VerosModule.VerosOceanSimulation("global_4deg", :GlobalFourDegreeSetup)
 
 # The loaded Veros setup contains a `set_forcing` method which computes the fluxes as restoring from climatology.
 # We replace it with a custom function that only computes the TKE forcing (which depends on the wind stresses
-# that we set in NumericalEarth). This way our u, v, T, S forcings are not overwritten. 
-# The `set_forcing_tke_only` method defined below is modified from the `set_forcing` method defined in 
+# that we set in NumericalEarth). This way our u, v, T, S forcings are not overwritten.
+# The `set_forcing_tke_only` method defined below is modified from the `set_forcing` method defined in
 # https://github.com/team-ocean/veros/blob/main/veros/setups/global_4deg/global_4deg.py
 
 pyexec("""
@@ -42,7 +49,7 @@ def set_forcing_tke_only(state):
 
     vs = state.variables
     settings = state.settings
-    
+
     if settings.enable_tke:
         vs.forc_tke_surface = update(
             vs.forc_tke_surface,
@@ -68,14 +75,13 @@ ocean.set_forcing = set_forcing_tke_only
 # This includes 2-meter wind velocity, temperature, humidity, downwelling longwave and shortwave
 # radiation, as well as freshwater fluxes.
 
-atmos = JRA55PrescribedAtmosphere(; backend = JRA55NetCDFBackend(10))
+atmos = JRA55PrescribedAtmosphere()
+radiation = JRA55PrescribedRadiation()
 
-# The coupled ocean--atmosphere model.
-# We use the default radiation model and we do not couple an ice model for simplicity.
+# The coupled ocean--atmosphere model. We do not couple an ice model for simplicity.
 
-radiation = Radiation()
 coupled_model = OceanSeaIceModel(ocean, nothing; atmosphere=atmos, radiation)
-simulation = Simulation(coupled_model; Δt = 1800, stop_time = 60days)
+simulation = Simulation(coupled_model; Δt = 30minutes, stop_time = 60days)
 
 # We set up a progress callback that will print the current time, iteration, and maximum velocities
 # every 10days. We also set up another callback that collects the surface prognostic variables
@@ -117,12 +123,14 @@ add_callback!(simulation, save_variables, IterationInterval(10))
 
 run!(simulation)
 
+# After the simulation is done, we can visualize the surface zonal and meridional velocities as a function of latitude and time.
+
 n  = Observable(1)
 un = @lift(u[$n])
 vn = @lift(v[$n])
 Nt = length(u)
 
-fig = Figure(resolution = (1000, 700))
+fig = Figure(size = (1000, 700))
 ax1 = Axis(fig[1, 1]; title = "Surface zonal velocity (m/s)", xlabel = "", ylabel = "Latitude")
 ax2 = Axis(fig[2, 1]; title = "Surface meridional velocity (m/s)", xlabel = "", ylabel = "Latitude")
 hm1 = heatmap!(ax1, un, colormap = :bwr, colorrange = (-0.2, 0.2))

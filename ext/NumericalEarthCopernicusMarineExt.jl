@@ -1,48 +1,42 @@
 module NumericalEarthCopernicusMarineExt
 
-using NumericalEarth
-using CopernicusMarine
-
-using Oceananigans
-using Oceananigans.DistributedComputations: @root
-
+using CopernicusMarine: CopernicusMarine
 using Dates: DateTime
-using NumericalEarth.DataWrangling.GLORYS: GLORYSMetadata, GLORYSMetadatum
-
-import NumericalEarth.DataWrangling: download_dataset
+using Downloads: Downloads
+using Oceananigans.DistributedComputations: @root
+using NumericalEarth: NumericalEarth
+using NumericalEarth.DataWrangling.GLORYS: GLORYS, GLORYSMetadata, GLORYSMetadatum
 
 # Download each date individually, instead of downloading the entire dataset at once.
 # This is useful for a possible extension of the temporal horizon of the dataset.
-function download_dataset(metadata::GLORYSMetadata; kwargs...)
+function Downloads.download(metadata::GLORYSMetadata; kwargs...)
     paths = Array{String}(undef, length(metadata))
     for (m, metadatum) in enumerate(metadata)
-        paths[m] = download_dataset(metadatum; kwargs...)
+        paths[m] = Downloads.download(metadatum; kwargs...)
     end
     return paths
 end
 
-function download_dataset(meta::GLORYSMetadatum;
-                          skip_existing=true,
-                          username=get(ENV, "COPERNICUS_USERNAME", nothing),
-                          password=get(ENV, "COPERNICUS_PASSWORD", nothing),
-                          additional_kw...)
+function Downloads.download(meta::GLORYSMetadatum;
+                                                       skip_existing=true,
+                                                       username=get(ENV, "COPERNICUS_USERNAME", nothing),
+                                                       password=get(ENV, "COPERNICUS_PASSWORD", nothing),
+                                                       additional_kw...)
 
     output_directory = meta.dir
     output_filename = meta.filename
     output_path = joinpath(output_directory, output_filename)
     isfile(output_path) && return output_path
 
-    toolbox = CopernicusMarine.copernicusmarine
+    variable_name = GLORYS.GLORYS_dataset_variable_names[meta.name]
+    variable = [variable_name]
 
-    variable_name = NumericalEarth.DataWrangling.GLORYS.GLORYS_dataset_variable_names[meta.name]
-    variables = CopernicusMarine.pylist([variable_name])
-
-    dataset_id = NumericalEarth.DataWrangling.GLORYS.copernicusmarine_dataset_id(meta.dataset)
-    datetime_kw = if meta.dataset isa NumericalEarth.DataWrangling.GLORYS.GLORYSStatic
+    dataset_id = GLORYS.copernicusmarine_dataset_id(meta.dataset)
+    datetime_kw = if meta.dataset isa GLORYS.GLORYSStatic
         NamedTuple()
     else
-        start_datetime = NumericalEarth.DataWrangling.GLORYS.start_date_str(meta.dates)
-        end_datetime = NumericalEarth.DataWrangling.GLORYS.end_date_str(meta.dates)
+        start_datetime = GLORYS.start_date_str(meta.dates)
+        end_datetime = GLORYS.end_date_str(meta.dates)
         (; start_datetime, end_datetime)
     end
 
@@ -51,10 +45,13 @@ function download_dataset(meta::GLORYSMetadatum;
     z_kw = depth_bounds_kw(meta.region)
     selection_method = coordinates_selection_method(meta.region)
 
+    # The CopernicusMarine standalone executable runs the download out-of-process
+    # with its own bundled HDF5/h5py (with ROS3 VFD), so the in-process
+    # `netcdf3_compatible` workaround is no longer needed.
     kw = (; coordinates_selection_method = selection_method,
           skip_existing,
           dataset_id,
-          variables,
+          variable,
           output_filename,
           output_directory)
 
@@ -69,7 +66,7 @@ function download_dataset(meta::GLORYSMetadatum;
     additional_kw = NamedTuple(name => value for (name, value) in additional_kw)
     kw = merge(kw, datetime_kw, lon_kw, lat_kw, z_kw, additional_kw)
 
-    @root toolbox.subset(; kw...)
+    @root CopernicusMarine.subset(; kw...)
 
     return output_path
 end
@@ -84,10 +81,25 @@ const COL  = NumericalEarth.DataWrangling.Column
 const LIN  = NumericalEarth.DataWrangling.Linear
 const NR   = NumericalEarth.DataWrangling.Nearest
 
-longitude_bounds_kw(bbox::BBOX) = longitude_bounds_kw(bbox.longitude)
-latitude_bounds_kw(bbox::BBOX) = latitude_bounds_kw(bbox.latitude)
+# The native grid is built by center-bracketing `restrict`, which can reach one
+# native cell past a boundary-aligned bbox edge. CopernicusMarine subsets to the
+# requested bounds, so fetch two native cells of margin to guarantee the
+# downloaded file always covers the center-bracketed native grid; otherwise
+# `set_region_data!` indexes one cell past the file at the domain edge. Over-
+# fetching is harmless: `restrict` + `BoundingBoxOffset` select the exact cells
+# from the larger file. Mirrors `era5_request_area` in the CDS extension.
+const GLORYS_native_resolution = 1/12  # degrees (the 0.083° GLORYS grid)
+
+longitude_bounds_kw(bbox::BBOX) = longitude_bounds_kw(pad_bounds(bbox.longitude))
+latitude_bounds_kw(bbox::BBOX) = latitude_bounds_kw(clamp_latitude(pad_bounds(bbox.latitude)))
 depth_bounds_kw(bbox::BBOX) = depth_bounds_kw(bbox.z)
 coordinates_selection_method(::BBOX) = "outside"
+
+pad_bounds(::Nothing) = nothing
+pad_bounds(bounds) = (bounds[1] - 2GLORYS_native_resolution, bounds[2] + 2GLORYS_native_resolution)
+
+clamp_latitude(::Nothing) = nothing
+clamp_latitude(bounds) = (max(bounds[1], -90), min(bounds[2], 90))
 
 # Column with Nearest interpolation: download the single nearest point
 longitude_bounds_kw(col::COL{<:Any, <:Any, <:Any, NR}) = (; minimum_longitude = col.longitude, maximum_longitude = col.longitude)
