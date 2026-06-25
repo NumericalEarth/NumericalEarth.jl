@@ -144,6 +144,7 @@ DataWrangling.inpainted_metadata_path(metadata::ERA5Metadatum) = joinpath(metada
 ##### Single-level and pressure-level specifics
 #####
 
+include("ERA5_variables.jl")
 include("ERA5_single_levels.jl")
 include("ERA5_pressure_levels.jl")
 include("ERA5_prescribed_radiation.jl")
