@@ -45,12 +45,7 @@ const ORCA4Metadatum = Metadatum{<:ORCA4}
 const ORCA12Metadatum = Metadatum{<:ORCA12}
 const ORCAMetadatum = Metadatum{<:ORCADataset}
 
-ORCA1_variable_names = Dict(
-    :bottom_height => "Bathymetry",
-    :mesh_mask     => "glamt",
-)
-
-ORCA4_variable_names = Dict(
+ORCA_variable_names = Dict(
     :bottom_height => "Bathymetry",
     :mesh_mask     => "glamt",
 )
@@ -60,8 +55,7 @@ ORCA12_variable_names = Dict(
     :mesh_mask     => "e1t",
 )
 
-dataset_variable_name(data::ORCA1Metadatum) = ORCA1_variable_names[data.name]
-dataset_variable_name(data::ORCA4Metadatum) = ORCA4_variable_names[data.name]
+dataset_variable_name(data::ORCAMetadatum)   = ORCA_variable_names[data.name]
 dataset_variable_name(data::ORCA12Metadatum) = ORCA12_variable_names[data.name]
 
 # Zenodo record 4436658: eORCA1 mesh_mask and bathymetry
@@ -75,33 +69,13 @@ const ORCA4_bathymetry_url = "https://zenodo.org/records/15494369/files/bathy_eO
 const ORCA12_mesh_mask_url  = "https://zenodo.org/records/15495870/files/grid_mask_eORCA12-GO6.nc"
 const ORCA12_bathymetry_url = "https://zenodo.org/records/15495870/files/bathy_eORCA12_noclosea_from_GEBCO2021_FillZero_S21TT_CloseaCopy.nc"
 
-function DataWrangling.metadata_url(metadatum::ORCA1Metadatum)
+function DataWrangling.metadata_url(metadatum::ORCAMetadatum)
     if metadatum.name == :mesh_mask
-        return ORCA1_mesh_mask_url
+        return eval(Symbol(typeof(dataset), :_mesh_mask_url))
     elseif metadatum.name == :bottom_height
-        return ORCA1_bathymetry_url
+        return eval(Symbol(typeof(dataset), :_bathymetry_url))
     else
-        error("Unknown ORCA1 variable: $(metadatum.name)")
-    end
-end
-
-function DataWrangling.metadata_url(metadatum::ORCA4Metadatum)
-    if metadatum.name == :mesh_mask
-        return ORCA4_mesh_mask_url
-    elseif metadatum.name == :bottom_height
-        return ORCA4_bathymetry_url
-    else
-        error("Unknown ORCA4 variable: $(metadatum.name)")
-    end
-end
-
-function DataWrangling.metadata_url(metadatum::ORCA12Metadatum)
-    if metadatum.name == :mesh_mask
-        return ORCA12_mesh_mask_url
-    elseif metadatum.name == :bottom_height
-        return ORCA12_bathymetry_url
-    else
-        error("Unknown ORCA12 variable: $(metadatum.name)")
+        error("Unknown $(metadatum.dataset) variable: $(metadatum.name)")
     end
 end
 
