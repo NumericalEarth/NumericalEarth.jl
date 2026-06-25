@@ -3,7 +3,7 @@ include("runtests_setup.jl")
 using NumericalEarth.DataWrangling: Column, Linear, Nearest,
                                     BoundingBox, dataset_location,
                                     restrict_location, native_grid
-using NumericalEarth.DataWrangling: restrict
+using NumericalEarth.DataWrangling: restrict, restrict_longitude, download_cache
 using NumericalEarth.DataWrangling.ERA5: ERA5HourlySingleLevel
 
 using Oceananigans: location
@@ -41,6 +41,10 @@ end
     bbox = BoundingBox(longitude=(0, 10), latitude=(0, 10))
     @test restrict_location((Face, Center, Center), bbox) == (Face, Center, Center)
     @test restrict_location((Center, Center, Center), nothing) == (Center, Center, Center)
+
+    # Restrict location with (0, 360) longitude
+    bbox = BoundingBox(longitude=(0, 360), latitude=(0, 10))
+    @test restrict_longitude(bbox.longitude, (0, 360), 10) == ((0, 360), 10)
 end
 
 @testset "dataset_location fallback" begin
@@ -203,6 +207,28 @@ end
     sliced, rN = restrict((120, 240), (0, 360), 360)
     @test sliced == (119, 241)
     @test rN == 122
+end
+
+@testset "download_cache honors NUMERICALEARTH_DATA_DIRECTORY" begin
+    saved = get(ENV, "NUMERICALEARTH_DATA_DIRECTORY", nothing)
+    try
+        # Without the variable, caching falls back to a Scratch.jl space.
+        delete!(ENV, "NUMERICALEARTH_DATA_DIRECTORY")
+        @test occursin("scratchspaces", download_cache("JRA55"))
+
+        # With the variable, data is cached under a per-key subdirectory of it.
+        data_directory = mktempdir()
+        ENV["NUMERICALEARTH_DATA_DIRECTORY"] = data_directory
+        cache = download_cache("JRA55")
+        @test cache == joinpath(data_directory, "JRA55")
+        @test isdir(cache)
+    finally
+        if saved === nothing
+            delete!(ENV, "NUMERICALEARTH_DATA_DIRECTORY")
+        else
+            ENV["NUMERICALEARTH_DATA_DIRECTORY"] = saved
+        end
+    end
 end
 
 @testset "nan_convert_missing" begin
