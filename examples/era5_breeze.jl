@@ -15,7 +15,8 @@
 #   substeps + an adaptive outer-Δt wizard), 1-moment mixed-phase microphysics, Coriolis, a
 #   reference-θ perturbation-form pressure-gradient, bulk surface drag, and an `UpperSponge` + ρw
 #   Rayleigh lid sponge. Open BCs + the Davies fringe track the ERA5 parent.
-# - Writes 2-level horizontal slices (for the cascade animation) and hourly 3D volume snapshots.
+# - Captures 2-level horizontal slices (saved to `era5_breeze_slices.jld2`) and renders the 2-row
+#   ERA5-parent-vs-3 km-child cascade animation.
 #
 # ## What it does NOT do (yet)
 # - No data assimilation — one-way-nested downscaling, not an analysis.
@@ -54,7 +55,6 @@ using CDSAPI  # activates NumericalEarthCDSAPIExt
 using Oceananigans
 using Oceananigans: location
 using Oceananigans.Fields: interpolate!
-using Oceananigans.BoundaryConditions: fill_halo_regions!
 using Oceananigans.OutputReaders: FieldTimeSeries
 using Oceananigans.Units: Time
 using Oceananigans.Grids: znode
@@ -63,7 +63,7 @@ using Oceananigans.TimeSteppers: update_state!
 using Oceananigans.Coriolis: SphericalCoriolis
 using Breeze
 using CloudMicrophysics  # triggers BreezeCloudMicrophysicsExt (OneMomentCloudMicrophysics)
-using Breeze.Microphysics: SaturationAdjustment, WarmPhaseEquilibrium, MixedPhaseEquilibrium
+using Breeze.Microphysics: SaturationAdjustment, MixedPhaseEquilibrium
 using Breeze.TerrainFollowingDiscretization: TerrainFollowingVerticalDiscretization, materialize_terrain!
 using Statistics: mean, quantile
 using JLD2: jldsave
@@ -152,7 +152,7 @@ dates = start_date:Hour(1):end_date
 era5_datadir = "era5"   # Where data will be saved locally
 
 # ERA5 forcing region: the LAM footprint padded outward by `era5_pad` and snapped to
-# ERA5's native 0.25° grid, so the parent strictly encloses the 1/12° child (the
+# ERA5's native 0.25° grid, so the parent strictly encloses the child (the
 # Interpolated lateral BCs and the 5-cell Davies fringe need parent data beyond the child
 # edge). At 0.25° (~28 km here) ERA5 stands in for Fan's 27 km Domain 1, completing the
 # telescope ERA5 → D2 (1/12°) → D3 (1/36°, the next nest-down).
@@ -245,9 +245,7 @@ materialize_terrain!(grid, elevation)
 # Visualize the nesting before stepping the model: the ERA5 forcing region that supplies the parent
 # state (lateral BCs + Davies fringe) and the 3 km LAM — Fan (2017)'s Domain 3, the `NestedSimulation`
 # child — over ETOPO terrain with Natural Earth state/country boundaries, centered on ARM SGP.
-# Drawn here (not
-# with the profile plots below) so the domain geometry is written even if the run
-# is cut short.
+# Drawn here, before the run, so the domain geometry is written even if the run is cut short.
 
 using CairoMakie
 using NaturalEarth
@@ -350,9 +348,6 @@ constants = ThermodynamicConstants()
 
 Rᵈ   = dry_air_gas_constant(constants)
 Rᵛ   = vapor_gas_constant(constants)
-cₚᵈ  = constants.dry_air.heat_capacity
-κ    = Rᵈ / cₚᵈ
-pˢᵗ  = 1e5  # Pa
 εfac = Rᵛ / Rᵈ - 1   # for virtual-temperature correction: Tᵛ = T·(1 + εfac·qᵛ)
 # (latent heats Lᵥ, Lₛ now live inside `breeze_prognostic_state`.)
 
@@ -647,14 +642,6 @@ davies = parent_forcings(; rate = 1/τ_relax,
 # step to run at the advection CFL (see Δt below). Its `UpperSponge` adds a 5 km-deep
 # Rayleigh layer that damps the vertical momentum (ρw)′ toward the ~26.5 km rigid lid
 # (5 s timescale), absorbing vertically-propagating modes so they don't reflect.
-#
-# TODO: pass `reference_potential_temperature = θ_ref(z)` to `CompressibleDynamics`.
-# A reference state lets Breeze compute the horizontal pressure gradient in
-# perturbation form (p′ = p − p_ref), which cuts the terrain-following PGF
-# cancellation error (Klemp 2011). Without it (current), the full-pressure gradient
-# is used — fine for the gentle SGP terrain, but worth adding for steeper domains.
-# Generate θ_ref(z) as the ERA5 domain-/time-mean potential-temperature profile
-# (regrid θ onto a column and average over (λ, φ) and snapshots).
 #
 # `atmosphere_simulation` returns an Oceananigans `Simulation`; we drive the
 # child through `NestedSimulation` below, so unwrap the underlying
