@@ -13,7 +13,7 @@ using Oceananigans.BuoyancyFormulations: SeawaterBuoyancy
 using Oceananigans.Coriolis: HydrostaticSphericalCoriolis
 using Oceananigans.Fields: Field, CenterField, set!, interior
 using Oceananigans.Forcings: MultipleForcings
-using Oceananigans.Grids: Grids, inactive_node, Face, Center, xspacings, yspacings, RectilinearGrid
+using Oceananigans.Grids: Grids, architecture, inactive_node, Face, Center, xspacings, yspacings, RectilinearGrid
 using Oceananigans.ImmersedBoundaries: ImmersedBoundaryGrid, ImmersedBoundaryCondition
 using Oceananigans.Models.HydrostaticFreeSurfaceModels: HydrostaticFreeSurfaceModel
 using Oceananigans.Models.HydrostaticFreeSurfaceModels.SplitExplicitFreeSurfaces: SplitExplicitFreeSurface
@@ -28,7 +28,7 @@ using Oceananigans.TurbulenceClosures.TKEBasedVerticalDiffusivities: CATKEVertic
 using Oceananigans.Units: minutes, hours
 using Oceananigans.Utils: with_tracers, launch!
 using SeawaterPolynomials: SeawaterPolynomials
-using SeawaterPolynomials.TEOS10: TEOS10EquationOfState
+using SeawaterPolynomials.TEOS10: TEOS10EquationOfState, θᴾ_from_Θ
 
 using ..EarthSystemModels: EarthSystemModels,
                            ocean_surface_velocities,
@@ -80,12 +80,12 @@ EarthSystemModels.ocean_temperature(ocean::OceananigansModelSimulations) = ocean
 
 function EarthSystemModels.ocean_surface_salinity(ocean::OceananigansModelSimulations)
     kᴺ = size(ocean.model.grid, 3)
-    return interior(ocean.model.tracers.S, :, :, kᴺ:kᴺ)
+    return view(ocean.model.tracers.S.data, :, :, kᴺ:kᴺ)
 end
 
 function EarthSystemModels.ocean_surface_temperature(ocean::OceananigansModelSimulations)
     kᴺ = size(ocean.model.grid, 3)
-    return interior(ocean.model.tracers.T, :, :, kᴺ:kᴺ)
+    return view(ocean.model.tracers.T.data, :, :, kᴺ:kᴺ)
 end
 
 function EarthSystemModels.ocean_surface_velocities(ocean::OceananigansModelSimulations)
@@ -93,8 +93,22 @@ function EarthSystemModels.ocean_surface_velocities(ocean::OceananigansModelSimu
     return view(ocean.model.velocities.u, :, :, kᴺ), view(ocean.model.velocities.v, :, :, kᴺ)
 end
 
-# When using an Oceananigans simulation, we assume that the exchange grid is the ocean grid
-# We need, however, to interpolate the surface pressure to the ocean grid
+@kernel function _ocean_state_to_potential_temperature!(Tᵉˣ, Tᵒᶜ, Sᵒᶜ, kᴺ)
+    i, j = @index(Global, NTuple)
+    @inbounds Tᵉˣ[i, j, 1] = θᴾ_from_Θ(Sᵒᶜ[i, j, kᴺ], Tᵒᶜ[i, j, kᴺ])
+end
+
+function EarthSystemModels.interpolate_state!(exchanger, grid, ocean::Simulation{<:HydrostaticFreeSurfaceModel}, coupled_model)
+    Tᵉˣ = exchanger.state.T
+    Tᵒᶜ = ocean.model.tracers.T
+    Sᵒᶜ = ocean.model.tracers.S
+    kᴺ = size(ocean.model.grid, 3)
+    arch = architecture(ocean.model.grid)
+    launch!(arch, grid, :xy, _ocean_state_to_potential_temperature!, Tᵉˣ, Tᵒᶜ, Sᵒᶜ, kᴺ)
+    return nothing
+end
+
+# Other Oceananigans models (e.g. nonhydrostatic): the exchange grid is the ocean grid, no state interpolation needed.
 EarthSystemModels.interpolate_state!(exchanger, grid, ::OceananigansModelSimulations, coupled_model) = nothing
 
 function EarthSystemModels.InterfaceComputations.ComponentExchanger(ocean::OceananigansModelSimulations, grid)
@@ -103,14 +117,14 @@ function EarthSystemModels.InterfaceComputations.ComponentExchanger(ocean::Ocean
     if ocean_grid == grid
         u = ocean.model.velocities.u
         v = ocean.model.velocities.v
-        T = ocean.model.tracers.T
         S = ocean.model.tracers.S
     else
         u = Field{Center, Center, Nothing}(grid)
         v = Field{Center, Center, Nothing}(grid)
-        T = Field{Center, Center, Nothing}(grid)
         S = Field{Center, Center, Nothing}(grid)
     end
+
+    T = Field{Center, Center, Nothing}(grid)
 
     # Near-surface vertical tracer diffusivity, evaluated lazily inside the
     # interface flux kernel by formulations that consume it (`InteriorDiffusivity`).

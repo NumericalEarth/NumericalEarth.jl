@@ -133,6 +133,13 @@ Base.@propagate_inbounds get_land_freshwater_flux(i, j, flux) = flux[i, j, 1]
 
         # Tracer fluxes — radiative contributions added later by apply_air_sea_radiative_fluxes!
         Jᵀ[i, j, 1] = ifelse(inactive, zero(grid), Jᵀao + Jᵀio)
-        Jˢ[i, j, 1] = ifelse(inactive, zero(grid), Jˢao + Jˢio)
+
+        # Suppress freshening when surface salinity is at/below `minimum_salinity`.
+        Jˢo  = Jˢao + Jˢio
+        Smin = ocean_properties.minimum_salinity
+        clip = (Sᵒᶜ < Smin) & (Jˢo > zero(Jˢo))
+        Jˢo  = ifelse(clip, zero(Jˢo), Jˢo)
+
+        Jˢ[i, j, 1] = ifelse(inactive, zero(grid), Jˢo)
     end
 end

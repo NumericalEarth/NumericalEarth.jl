@@ -30,11 +30,12 @@ function ECCOPrescribedAtmosphere(architecture = CPU();
                                   end_date = last_date(dataset, :air_temperature),
                                   dir = default_download_directory(dataset),
                                   time_indexing = Cyclical(),
+                                  prefetch = false,
                                   time_indices_in_memory = 10,
                                   surface_layer_height = 2,  # meters
                                   other_kw...)
 
-    kw = (; time_indexing, time_indices_in_memory)
+    kw = (; time_indexing, time_indices_in_memory, prefetch)
     kw = merge(kw, other_kw)
 
     ua_meta = Metadata(:eastward_wind;         dataset, start_date, end_date, dir)

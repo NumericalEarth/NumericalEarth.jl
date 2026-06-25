@@ -184,6 +184,9 @@ Keyword Arguments
 
 - `cache_inpainted_data`: If `true`, the data is cached to disk after inpainting for later retrieving.
                           Default: `true`.
+
+- `prefetch`: If `true`, hide the next reload's I/O behind compute via a background `Threads.@spawn` task.
+              Intended for long-lived FTSes; short-lived ones leak one prefetch task. Default: `false`.
 """
 function DatasetRestoring(metadata::Metadata,
                           arch_or_grid = CPU();
@@ -193,7 +196,8 @@ function DatasetRestoring(metadata::Metadata,
                           time_indexing = Cyclical(),
                           inpainting = NearestNeighborInpainting(Inf),
                           cache_inpainted_data = true,
-						  field_name = oceananigans_fieldnames[metadata.name])
+                          prefetch = false,
+            						  field_name = oceananigans_fieldnames[metadata.name])
 
     Downloads.download(metadata)
 
@@ -201,7 +205,8 @@ function DatasetRestoring(metadata::Metadata,
                           time_indices_in_memory,
                           time_indexing,
                           inpainting,
-                          cache_inpainted_data)
+                          cache_inpainted_data,
+                          prefetch)
 
     arch = architecture(fts)
     mask = on_architecture(arch, mask)
@@ -256,8 +261,8 @@ ocean = ocean_simulation(grid;
     additional_surface_fluxes = (; S = SurfaceFluxRestoring(restoring)))
 ```
 """
-struct SurfaceFluxRestoring <: Function
-    dataset_restoring :: DatasetRestoring
+struct SurfaceFluxRestoring{DR} <: Function
+    dataset_restoring :: DR
 end
 
 Adapt.adapt_structure(to, sf::SurfaceFluxRestoring) = SurfaceFluxRestoring(Adapt.adapt(to, sf.dataset_restoring))

@@ -10,6 +10,8 @@ using Oceananigans.Utils: KernelParameters, worksize
 export
     ComponentInterfaces,
     SimilarityTheoryFluxes,
+    ConstantGustiness,
+    ShearAwareGustiness,
     MomentumRoughnessLength,
     ScalarRoughnessLength,
     LandRoughnessLength,

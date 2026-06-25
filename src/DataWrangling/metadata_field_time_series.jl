@@ -39,11 +39,13 @@ function Oceananigans.OutputReaders.FieldTimeSeries(metadata::Metadata, grid::Ab
                                                     time_indices_in_memory = 2,
                                                     time_indexing = Cyclical(),
                                                     inpainting = default_inpainting(metadata),
-                                                    cache_inpainted_data = true)
+                                                    cache_inpainted_data = true,
+                                                    prefetch = false)
 
     Downloads.download(metadata)
 
     times = native_times(metadata)
+
 
     # Make sure we do not use more indices then the ones available!
     if length(times) < time_indices_in_memory
@@ -52,10 +54,19 @@ function Oceananigans.OutputReaders.FieldTimeSeries(metadata::Metadata, grid::Ab
 
     inpainting isa Int && (inpainting = NearestNeighborInpainting(inpainting))
     on_native_grid = grid == native_grid(metadata, architecture(grid))
-    backend = DatasetBackend(time_indices_in_memory, metadata; on_native_grid, inpainting, cache_inpainted_data)
+    inner_backend = DatasetBackend(time_indices_in_memory, metadata; on_native_grid, inpainting, cache_inpainted_data)
 
     loc = LX, LY, LZ = location(metadata)
     boundary_conditions = FieldBoundaryConditions(grid, instantiate.(loc))
+
+    if prefetch
+        Threads.nthreads() < 2 && @warn "prefetch=true is a no-op with JULIA_NUM_THREADS=$(Threads.nthreads()); start Julia with ≥ 2 threads."
+        buffer_inner = new_backend(inner_backend, 1, time_indices_in_memory)
+        buffer_fts = FieldTimeSeries{LX, LY, LZ}(grid, times; backend=buffer_inner, time_indexing, boundary_conditions)
+        backend = PrefetchingBackend(inner_backend, buffer_fts)
+    else
+        backend = inner_backend
+    end
 
     fts = FieldTimeSeries{LX, LY, LZ}(grid, times; backend, time_indexing, boundary_conditions)
     set!(fts)

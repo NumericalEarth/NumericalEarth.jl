@@ -65,7 +65,14 @@ docs/src/library/private_api.md
 
 .CondaPkg
 CondaPkg.toml
+docs/plans/*
 !docs/CondaPkg.toml
+
+# OMIP stuff
+experiments/omips/half_degree_omip/*
+experiments/omips/orca_omip/*
+!experiments/omips/half_degree_omip/half_degree_omip.jl
+!experiments/omips/orca_omip/orca_omip.jl
 
 # claude
 .claude
