@@ -57,6 +57,11 @@ prognostic_fields(nm::NestedModel) = prognostic_fields(getfield(nm, :child))
 architecture(nm::NestedModel)      = architecture(getfield(nm, :child))
 iteration(nm::NestedModel)         = iteration(getfield(nm, :child))
 
+# Adaptive Δt: the wizard's `AdvectiveCFL` queries the simulation model, which is the
+# `NestedModel` — forward to the child (the prognostic model whose grid/velocities set the CFL).
+Oceananigans.Advection.cell_advection_timescale(nm::NestedModel) =
+    Oceananigans.Advection.cell_advection_timescale(getfield(nm, :child))
+
 # `update_state!` may receive callbacks; forward verbatim.
 update_state!(nm::NestedModel, callbacks=[]; kwargs...) =
     update_state!(getfield(nm, :child), callbacks; kwargs...)
