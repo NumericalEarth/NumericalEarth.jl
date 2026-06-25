@@ -597,7 +597,7 @@ end
     λr = ifelse(j == target_grid.Ny, 
                 λnode(i+1, j-1, 1, target_grid, Face(), Center(), Center()), 
                 λnode(i+1, j,   1, target_grid, Face(), Center(), Center()))
-    φl = φnode(i, j, 1, target_grid, Center(), Face())
+    φl = φnode(i, j, 1, target_grid, Center(), Face(), Center())
     φr = ifelse(j == target_grid.Ny, 
                 φnode(i+1, j-1, 1, target_grid, Center(), Face(), Center()), 
                 φnode(i,   j+1, 1, target_grid, Center(), Face(), Center()))
