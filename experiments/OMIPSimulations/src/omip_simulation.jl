@@ -243,6 +243,11 @@ The single positional argument selects the grid configuration:
 - `:quarterdegree` -- 1440x720  `TripolarGrid`
 - `:tenthdegree`   -- 3600x1800 `TripolarGrid`
 - `:orca`          -- NEMO eORCA mesh
+- `:test`          -- NEMO eORCA1 (~1ᵒ) mesh, locally-runnable preset for reproducing the
+                      quarter-degree spurious high-latitude ice + surface salinity drift.
+                      Overrides `Nz = 15`, `Δz_top = 1.5` m, `Δt = 45minutes`, and a `10days`
+                      biharmonic-viscosity timescale. GM/Redi is disabled (`κ_skew = κ_symmetric =
+                      nothing`) to keep short test runs cheap; momentum advection follows `:orca`.
 
 Returns a `Simulation` wrapping an `OceanSeaIceModel`. The simulation
 already has a progress callback attached, and (when `diagnostics=true`)
@@ -259,7 +264,7 @@ plumbing is needed because `NumericalEarth.EarthSystemModels` provides
 # Keyword arguments
 
 - `arch`: architecture (`CPU()` or `GPU()`). Default: `CPU()`.
-- `Nz::Int`: number of vertical levels. Default: `100`.
+- `Nz::Int`: number of vertical levels. Per-config default: `50` for `:test`, `100` otherwise.
 - `depth`: maximum ocean depth in metres. Default: `5500`.
 - `Δz_top`: target surface-cell thickness in metres (sets the exponential vertical scale). Per-config
   default: `1.5` for `:quarterdegree`/`:tenthdegree`, `nothing` (scale derived from `depth`/`Nz`) otherwise.
@@ -301,6 +306,10 @@ plumbing is needed because `NumericalEarth.EarthSystemModels` provides
      1990; Madec et al. 2017), vendored in `NEMOTKE/`. OMIP-2 ORCA1 preset:
      prognostic e, gradient-limited length scale, Langmuir + Mellor-Blumberg
      wave penetration + EVD on static instability. No `Cᵇ`.
+- `implicit_vertical_advection::Bool`: if `true` (default), tracer and momentum vertical advection use
+  `AdaptiveVerticallyImplicitDiscretization(cfl=0.5)` (switches the vertical advective flux to implicit
+  where the vertical Courant number is large — e.g. in thin near-surface cells). If `false`, fully
+  explicit `WENO`/`WENOVectorInvariant`. Use `false` to isolate adaptive-implicit advection effects.
 - `velocity_formulation::Symbol`: Δu used by the bulk formula. Options:
    * `:relative` — `Δu = u_atm − u_ocean` (OMIP-2 α=1, default).
    * `:wind` — `Δu = u_atm` (ignores ocean current). For isolating bulk-formula
@@ -312,7 +321,7 @@ plumbing is needed because `NumericalEarth.EarthSystemModels` provides
 """
 function omip_simulation(config::Symbol = :halfdegree;
                          arch = CPU(),
-                         Nz = 100,
+                         Nz = ConfigDefault(),
                          depth = 5500,
                          Δz_top = ConfigDefault(),
                          κ_skew = ConfigDefault(),
@@ -331,6 +340,7 @@ function omip_simulation(config::Symbol = :halfdegree;
                          stop_time = Inf,
                          flux_configuration = :default,
                          vertical_closure = :catke,
+                         implicit_vertical_advection = true,
                          velocity_formulation = :relative,
                          ocean_minimum_salinity = 4,
                          Cᵂu★ = nothing,
@@ -350,6 +360,7 @@ function omip_simulation(config::Symbol = :halfdegree;
 
     # Resolve resolution-sensitive parameters to their per-configuration defaults unless the
     # user passed an explicit value (see `config_*` below).
+    Nz                   = resolve_config_default(Nz,                   config_Nz(cfg))
     Δz_top               = resolve_config_default(Δz_top,               config_Δz_top(cfg))
     κ_skew               = resolve_config_default(κ_skew,               config_κ_skew(cfg))
     κ_symmetric          = resolve_config_default(κ_symmetric,          config_κ_symmetric(cfg))
@@ -363,6 +374,7 @@ function omip_simulation(config::Symbol = :halfdegree;
                         biharmonic_timescale,
                         biharmonic_viscosity,
                         vertical_closure,
+                        implicit_vertical_advection,
                         Cᵂu★,
                         restoring_dir, piston_velocity,
                         start_date, end_date)
@@ -686,48 +698,64 @@ function build_grid(::Val{:orca}, arch, Nz, depth; Δz_top = nothing)
                     active_cells_map = true)
 end
 
+# Locally-runnable testing configuration: the NEMO eORCA1 (~1ᵒ) mesh, used to reproduce the
+# quarter-degree spurious high-latitude ice + surface salinity drift at a fraction of the cost.
+build_grid(::Val{:test}, arch, Nz, depth; Δz_top = nothing) =
+    build_grid(Val(:orca), arch, Nz, depth; Δz_top)
+
 #####
 ##### ORCA builder
 #####
 
-using Oceananigans.TimeSteppers: AdaptiveVerticallyImplicitDiscretization
+using Oceananigans.TimeSteppers: AdaptiveVerticallyImplicitDiscretization, ExplicitTimeDiscretization
 using Oceananigans.Utils: NormalDivision
 
-config_momentum_advection(::Val{:orca})          = WENOVectorInvariant(order=5, time_discretization=AdaptiveVerticallyImplicitDiscretization(cfl=0.5))
-config_momentum_advection(::Val{:halfdegree})    = WENOVectorInvariant(order=5, time_discretization=AdaptiveVerticallyImplicitDiscretization(cfl=0.5))
-config_momentum_advection(::Val{:quarterdegree}) = WENOVectorInvariant(time_discretization=AdaptiveVerticallyImplicitDiscretization(cfl=0.5))
-config_momentum_advection(::Val{:tenthdegree})   = WENOVectorInvariant(time_discretization=AdaptiveVerticallyImplicitDiscretization(cfl=0.5))
+# `time_discretization` selects explicit vs. adaptive-implicit vertical advection (see `build_ocean`).
+config_momentum_advection(::Val{:orca},          td) = WENOVectorInvariant(order=5, time_discretization=td)
+config_momentum_advection(::Val{:test},          td) = WENOVectorInvariant(order=5, time_discretization=td)
+config_momentum_advection(::Val{:halfdegree},    td) = WENOVectorInvariant(order=5, time_discretization=td)
+config_momentum_advection(::Val{:quarterdegree}, td) = WENOVectorInvariant(time_discretization=td)
+config_momentum_advection(::Val{:tenthdegree},   td) = WENOVectorInvariant(time_discretization=td)
 
 struct ConfigDefault end
 
 @inline resolve_config_default(value, default)           = value
 @inline resolve_config_default(::ConfigDefault, default) = default
 
+config_Nz(::Val)        = 100
+config_Nz(::Val{:test}) = 15
+
 config_κ_skew(::Val)                 = 250
 config_κ_skew(::Val{:quarterdegree}) = nothing
 config_κ_skew(::Val{:tenthdegree})   = nothing
+config_κ_skew(::Val{:test})          = nothing
 
 config_κ_symmetric(::Val)                 = 100
 config_κ_symmetric(::Val{:quarterdegree}) = nothing
 config_κ_symmetric(::Val{:tenthdegree})   = nothing
+config_κ_symmetric(::Val{:test})          = nothing
 
 config_biharmonic_timescale(::Val)                 = 40days
 config_biharmonic_timescale(::Val{:quarterdegree}) = nothing
 config_biharmonic_timescale(::Val{:tenthdegree})   = nothing
+config_biharmonic_timescale(::Val{:test})          = 10days
 
 config_Δt(::Val)                 = 30minutes
 config_Δt(::Val{:quarterdegree}) = 20minutes
 config_Δt(::Val{:tenthdegree})   = 5minutes
+config_Δt(::Val{:test})          = 45minutes
 
 config_Δz_top(::Val)                 = nothing
 config_Δz_top(::Val{:quarterdegree}) = 1.5
 config_Δz_top(::Val{:tenthdegree})   = 1.5
+config_Δz_top(::Val{:test})          = 1.5
 
 # Buoyancy gradients are only needed by the GM/Redi closures; the eddy-resolving
 # configurations run without isopycnal diffusivities, so skip materializing them.
 config_materialize_buoyancy_gradients(::Val)                 = true
 config_materialize_buoyancy_gradients(::Val{:quarterdegree}) = false
 config_materialize_buoyancy_gradients(::Val{:tenthdegree})   = false
+config_materialize_buoyancy_gradients(::Val{:test})          = false
 
 function build_ocean(config, grid;
                      κ_skew, κ_symmetric, Cᵇ = 0.28,
@@ -735,6 +763,7 @@ function build_ocean(config, grid;
                      biharmonic_timescale,
                      biharmonic_viscosity = nothing,
                      vertical_closure = :catke,
+                     implicit_vertical_advection = true,
                      Cᵂu★ = nothing,
                      start_date, end_date)
 
@@ -744,12 +773,15 @@ function build_ocean(config, grid;
                            biharmonic_timescale, biharmonic_viscosity,
                            Cᵂu★)
     coriolis = HydrostaticSphericalCoriolis(scheme = Oceananigans.Coriolis.EnstrophyConserving())
-    momentum_advection = config_momentum_advection(config)
+
+    time_discretization = implicit_vertical_advection ?
+        AdaptiveVerticallyImplicitDiscretization(cfl=0.5) : ExplicitTimeDiscretization()
+    momentum_advection = config_momentum_advection(config, time_discretization)
 
     ocean = ocean_simulation(grid;
                              Δt = 1minutes,
                              momentum_advection,
-                             tracer_advection = WENO(order=7; minimum_buffer_upwind_order=3, time_discretization=AdaptiveVerticallyImplicitDiscretization(cfl=0.5)),
+                             tracer_advection = WENO(order=7; minimum_buffer_upwind_order=3, time_discretization),
                              coriolis,
                              timestepper = :SplitRungeKutta3,
                              materialize_buoyancy_gradients = config_materialize_buoyancy_gradients(config),
@@ -774,8 +806,7 @@ end
 ##### Sea Ice builder
 #####
 
-function build_sea_ice(config, grid, ocean; restoring_dir, snow_thermodynamics = nothing,
-                       with_ice_dynamics = true)
+function build_sea_ice(config, grid, ocean; restoring_dir, snow_thermodynamics = nothing, with_ice_dynamics = true)
     dynamics = with_ice_dynamics ? NumericalEarth.SeaIces.sea_ice_dynamics(grid, ocean) : nothing
     sea_ice = sea_ice_simulation(grid, ocean;
                                  advection = WENO(order=7, minimum_buffer_upwind_order=1, weight_computation=NormalDivision),
