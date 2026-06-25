@@ -5,7 +5,7 @@ using Oceananigans.Fields: fractional_x_index, fractional_y_index
 # Scratch space for cached regridded bathymetry files
 bathymetry_cache_dir::String = ""
 function __init__()
-    global bathymetry_cache_dir = @get_scratch!("bathymetry_cache")
+    global bathymetry_cache_dir = DataWrangling.download_cache("bathymetry_cache")
 end
 
 #####
