@@ -54,7 +54,7 @@ using Breeze
 using CloudMicrophysics  # triggers BreezeCloudMicrophysicsExt (OneMomentCloudMicrophysics)
 using Breeze.Microphysics: SaturationAdjustment, WarmPhaseEquilibrium, MixedPhaseEquilibrium
 using Breeze.TerrainFollowingDiscretization: TerrainFollowingVerticalDiscretization, materialize_terrain!
-using Statistics: mean
+using Statistics: mean, quantile
 using JLD2: jldsave
 using Dates
 using Printf
@@ -489,50 +489,9 @@ for n in eachindex(dates)
     interior(parent_series.qᵗ,  :, :, :, n) .= interior(state.qᵗ)
 end
 
-# Set `make_parent_slices = true` to extract the ERA5-parent slices for the cascade animation's row 1
-# — read the resident hourly parent FTS (no model build / no stepping), write them, and exit. Sampled
-# at the model's two levels (k=1 surface; 2 km AGL above the ERA5 orography to match the terrain-
-# following `cut_plane`). w ≈ 0 (hydrostatic reanalysis) and qʳ is blank (ERA5 carries no model rain).
-make_parent_slices = false
-if make_parent_slices
-    zc_p = 0.5 .* (z_discretization.faces[1:end-1] .+ z_discretization.faces[2:end])
-    λ_p  = collect(λnodes(parent_grid, Center(), Center(), Center()))
-    φ_p  = collect(φnodes(parent_grid, Center(), Center(), Center()))
-    function at2km(fts, t)
-        a = Array(interior(fts[Time(t)]))
-        out = Matrix{Float32}(undef, size(a, 1), size(a, 2))
-        @inbounds for j in axes(a, 2), i in axes(a, 1)
-            zt = parent_orography[i, j] + 2000.0
-            if zt <= zc_p[1]
-                out[i, j] = a[i, j, 1]
-            elseif zt >= zc_p[end]
-                out[i, j] = a[i, j, end]
-            else
-                k = searchsortedlast(zc_p, zt)
-                f = (zt - zc_p[k]) / (zc_p[k+1] - zc_p[k])
-                out[i, j] = Float32((1 - f) * a[i, j, k] + f * a[i, j, k+1])
-            end
-        end
-        return out
-    end
-    nx_p, ny_p = length(λ_p), length(φ_p)
-    k1(fts, t) = Array(interior(fts[Time(t)]))[:, :, 1]                                  # surface (k=1)
-    cx(a) = size(a, 1) > nx_p ? 0.5 .* (a[1:end-1, :] .+ a[2:end, :]) : a                # face→center
-    cy(a) = size(a, 2) > ny_p ? 0.5 .* (a[:, 1:end-1] .+ a[:, 2:end]) : a
-    dt_s   = 300.0    # parent sampling cadence (s) — fine, for a smooth animation row-1
-    stop_s = 7200.0   # 2 h, matching the example window
-    d1_frames = NamedTuple[]
-    for t in 0.0:dt_s:stop_s   # dual-level to match the child slices: k=1 u,v,θ,qᵛ + 2 km w,qᵛ,qʳ
-        push!(d1_frames, (t = t, λ = λ_p, φ = φ_p,
-                          u_sfc = cx(k1(parent.velocities.u, t)), v_sfc = cy(k1(parent.velocities.v, t)),
-                          θ_sfc = k1(parent_series.θ, t), qᵛ_sfc = k1(parent_series.qᵗ, t),
-                          w = at2km(parent.velocities.w, t), qᵛ = at2km(parent_series.qᵗ, t),
-                          qʳ = zeros(Float32, nx_p, ny_p)))
-    end
-    jldsave("era5_breeze_slices_d1.jld2"; frames = d1_frames, height_agl = 2000.0)
-    @info @sprintf("wrote %d ERA5-parent slice frames to era5_breeze_slices_d1.jld2", length(d1_frames))
-    exit(0)
-end
+# The ERA5-parent slices (row 1 of the cascade animation) are derived after the run, in the
+# "Cascade animation" section below — sampled from the resident hourly parent FTS at the child's
+# frame times, so no separate extraction pass is needed here.
 
 # --- LAM-grid IC fields: regrid snapshot 1 of ERA5 directly onto the child ---
 # `set!(field, metadatum)` regrids each ERA5 field onto the terrain-following
@@ -899,91 +858,53 @@ function cut_plane(field, height_agl)
     return λ, φ, slice
 end
 
-# Horizontal slices for the animation, captured every SLICE_STRIDE iterations into `slice_frames`
-# + jldsave'd after `run!` (an IterationInterval-folded write; a TimeInterval JLD2Writer that
-# touches GPU fields deadlocks this NestedModel). Two levels: near-surface (k=1) u,v,θ,qᵛ for the
-# surface wind speed + virtual potential temperature, and `slice_height` AGL w,qᵛ,qʳ aloft.
-slice_frames   = NamedTuple[]
-capture_slices = true        # capture 2-level horizontal slices for the cascade animation
-slice_stride   = 30          # iterations between slice captures
-slice_height   = 2000.0      # m AGL for the upper-level slice (w, qᵛ, qʳ)
-output_dir     = "."         # directory for slice + volume output
-
-# Volume output: all prognostic fields (ρ, ρu, ρv, ρw, ρθ, ρqᵉ, ρqʳ, …) dumped at a
-# `VOLUME_EVERY`-second cadence (default hourly) — one host-array `.jld2` per snapshot, folded into
-# the progress callback (a TimeInterval JLD2Writer touching GPU fields deadlocks this NestedModel).
-volume_output = true         # write hourly 3D snapshots of all prognostic fields
-volume_every  = 3600.0       # s between volume snapshots
-volume_next   = Ref(0.0)
+# Two-level horizontal slices for the cascade animation, accumulated in memory by the progress
+# callback every `slice_stride` iterations: near-surface (k=1) u, v, θ, qᵛ for the surface wind
+# speed + virtual potential temperature, and `slice_height` AGL w, qᵛ, qʳ aloft.
+slice_frames = NamedTuple[]
+slice_stride = 20          # iterations between slice captures
+slice_height = 2000.0      # m AGL for the upper-level slice (w, qᵛ, qʳ)
+output_dir   = "."
 
 function progress(sim)
-    m = sim.model
-    u = interior(m.velocities.u)
-    v = interior(m.velocities.v)
-    w = interior(m.velocities.w)
-    ρ = interior(m.dynamics.density)
+    m  = sim.model
+    ρ  = interior(m.dynamics.density)
     pf = Oceananigans.prognostic_fields(m)
     qᵉ = interior(m.moisture_density) ./ ρ                          # specific humidity (vapor + cloud)
     qʳ = haskey(pf, :ρqʳ) ? interior(pf[:ρqʳ]) ./ ρ : zero(ρ)       # rain mixing ratio
     @info @sprintf("iter=%4d t=%6.1fs Δt=%5.2f  max|u|=%7.2f max|v|=%7.2f max|w|=%6.2f  ρ∈[%.4f,%.4f]  qᵉ∈[%.4g,%.4g] qʳ∈[%.2g,%.2g]",
                    m.clock.iteration, m.clock.time, sim.Δt,
-                   maximum(abs, u), maximum(abs, v), maximum(abs, w),
-                   minimum(ρ), maximum(ρ),
+                   maximum(abs, interior(m.velocities.u)), maximum(abs, interior(m.velocities.v)),
+                   maximum(abs, interior(m.velocities.w)), minimum(ρ), maximum(ρ),
                    minimum(qᵉ), maximum(qᵉ), minimum(qʳ), maximum(qʳ))
-    if capture_slices && m.clock.iteration % slice_stride == 0
-        ## near-surface (k=1) fields → near-surface wind speed |U| and virtual potential
-        ## temperature θᵛ = θ(1 + 0.61 qᵛ); velocities averaged from faces to centers.
-        k1(field) = Array(interior(field))[:, :, 1]
-        ρ_k1   = k1(m.dynamics.density)
-        θ_sfc  = k1(Breeze.AtmosphereModels.thermodynamic_density(m.formulation)) ./ ρ_k1
-        qᵛ_sfc = k1(m.moisture_density) ./ ρ_k1
-        uf, vf = k1(m.velocities.u), k1(m.velocities.v)
-        u_sfc  = size(uf, 1) > size(ρ_k1, 1) ? 0.5 .* (uf[1:end-1, :] .+ uf[2:end, :]) : uf
-        v_sfc  = size(vf, 2) > size(ρ_k1, 2) ? 0.5 .* (vf[:, 1:end-1] .+ vf[:, 2:end]) : vf
-        ## upper level (slice_height AGL) → w and the moisture fields
-        λs, φs, w_up = cut_plane(m.velocities.w, slice_height)
-        ρ_up   = cut_plane(m.dynamics.density, slice_height)[3]
-        qᵛ_up  = cut_plane(m.moisture_density, slice_height)[3] ./ ρ_up
-        qʳ_up  = haskey(pf, :ρqʳ) ? cut_plane(pf[:ρqʳ], slice_height)[3] ./ ρ_up : zero(w_up)
-        push!(slice_frames, (t = m.clock.time, iter = m.clock.iteration, λ = λs, φ = φs,
-                             u_sfc = u_sfc, v_sfc = v_sfc, θ_sfc = θ_sfc, qᵛ_sfc = qᵛ_sfc,
-                             w = w_up, qᵛ = qᵛ_up, qʳ = qʳ_up))
-        # Crash-safe incremental write: host arrays only (no GPU access) → no NestedModel deadlock.
-        jldsave(output_dir * "/era5_breeze_slices.jld2"; frames = slice_frames, height_agl = slice_height)
-    end
-    if volume_output && m.clock.time >= volume_next[]
-        vol = Dict{Symbol, Any}(name => Array(interior(f)) for (name, f) in pairs(Oceananigans.prognostic_fields(m)))
-        haskey(vol, :ρ) || (vol[:ρ] = Array(interior(m.dynamics.density)))
-        hg = on_architecture(CPU(), grid)
-        nz = size(vol[:ρ], 3)
-        jldsave(output_dir * @sprintf("/era5_breeze_volume_%05d.jld2", m.clock.iteration);
-                t = m.clock.time, iter = m.clock.iteration, fields = vol,
-                λ = collect(λnodes(hg, Center(), Center(), Center())),
-                φ = collect(φnodes(hg, Center(), Center(), Center())),
-                z = [znode(Nx ÷ 2, Ny ÷ 2, k, hg, Center(), Center(), Center()) for k in 1:nz])
-        volume_next[] += volume_every
-        @info @sprintf("    wrote volume snapshot iter=%d t=%.0fs (%d fields)", m.clock.iteration, m.clock.time, length(vol))
-    end
+
+    ## near-surface (k=1) u, v, θ, qᵛ (velocities averaged faces→centers) + `slice_height`-AGL w, qᵛ, qʳ
+    k1(field) = Array(interior(field))[:, :, 1]
+    ρ_k1   = k1(m.dynamics.density)
+    θ_sfc  = k1(Breeze.AtmosphereModels.thermodynamic_density(m.formulation)) ./ ρ_k1
+    qᵛ_sfc = k1(m.moisture_density) ./ ρ_k1
+    uf, vf = k1(m.velocities.u), k1(m.velocities.v)
+    u_sfc  = size(uf, 1) > size(ρ_k1, 1) ? 0.5 .* (uf[1:end-1, :] .+ uf[2:end, :]) : uf
+    v_sfc  = size(vf, 2) > size(ρ_k1, 2) ? 0.5 .* (vf[:, 1:end-1] .+ vf[:, 2:end]) : vf
+    λs, φs, w_up = cut_plane(m.velocities.w, slice_height)
+    ρ_up   = cut_plane(m.dynamics.density, slice_height)[3]
+    qᵛ_up  = cut_plane(m.moisture_density, slice_height)[3] ./ ρ_up
+    qʳ_up  = haskey(pf, :ρqʳ) ? cut_plane(pf[:ρqʳ], slice_height)[3] ./ ρ_up : zero(w_up)
+    push!(slice_frames, (t = m.clock.time, λ = λs, φ = φs,
+                         u_sfc = u_sfc, v_sfc = v_sfc, θ_sfc = θ_sfc, qᵛ_sfc = qᵛ_sfc,
+                         w = w_up, qᵛ = qᵛ_up, qʳ = qʳ_up))
     flush(stdout); flush(stderr)  # Julia bypasses libc buffering — flush so SLURM streams live
 end
-add_callback!(nested, progress, IterationInterval(50))
+add_callback!(nested, progress, IterationInterval(slice_stride))
 
 # ## Run
 #
-# Step the nest to `stop_time`. Slices are captured into memory by the progress callback and written
-# incrementally there + once more after `run!` (a TimeInterval JLD2Writer touching GPU fields
-# deadlocks this NestedModel mid-run, so we fold the writes into the IterationInterval callback).
+# Step the nest to `stop_time`; the progress callback accumulates the cascade-animation slices in memory.
 
 @info @sprintf("Δt₀ = %.2f s; running ERA5 → 3 km Breeze to t = %.0f s", Δt, nested.stop_time)
 flush(stdout); flush(stderr)
 run!(nested)
 @info "Done."
-if capture_slices && !isempty(slice_frames)
-    jldsave(output_dir * "/era5_breeze_slices.jld2"; frames = slice_frames, height_agl = slice_height)
-    @info @sprintf("wrote %d slice frames (k=1: u,v,θ,qᵛ; %.0f m AGL: w,qᵛ,qʳ) to %s/",
-                   length(slice_frames), slice_height, output_dir)
-    flush(stdout); flush(stderr)
-end
 
 # ## Report
 
@@ -997,199 +918,90 @@ end
 @info @sprintf("  qⁱ ∈ [%.2e, %.2e] g/kg",  1000*minimum(interior(qⁱ)), 1000*maximum(interior(qⁱ)))
 @info @sprintf("  p₀ ∈ [%.1f, %.1f] Pa",    minimum(interior(p₀)), maximum(interior(p₀)))
 
-# ## Profile plots
+# ## Cascade animation
 #
-# Plot ρ, u, v, θ, qᵗ at three sites spanning the domain's terrain range,
-# comparing the initial state (blue) with the post-run state (red). The vertical
-# coordinate is the true physical height of the terrain-following grid, so each
-# profile's lowest marker sits at the local ETOPO surface elevation.
+# The headline deliverable: a 2-row × 5-column animation of the downscaling. Row 1 is the ERA5 parent
+# (dashed rectangle = the 3 km child extent); row 2 is the Breeze child. Columns are the near-surface
+# wind speed `|U|` and the virtual potential temperature perturbation θᵥ′, then `w`, `qᵛ`, `qʳ` at 2 km
+# AGL. θᵥ′ is referenced to the initial state — θᵥ′ = θᵥ − θᵥ(t=0), pointwise — so the terrain and
+# stratification background (which would swamp an anomaly-from-domain-mean over this terrain) cancels,
+# leaving the evolving cold pool. Row 1 samples the resident hourly parent FTS at the child's frame
+# times, at the same two levels as the child (`w ≈ 0` and `qʳ` blank — reanalysis carries no model rain).
 
-sites = [("East TX",     -93.5,   34.0),
-         ("SGP",         -97.485, 36.605),
-         ("High Plains", -101.5,  35.0)]
+parent_frames = let zc_p = 0.5 .* (z_discretization.faces[1:end-1] .+ z_discretization.faces[2:end]),
+                    λ_p = collect(λnodes(parent_grid, Center(), Center(), Center())),
+                    φ_p = collect(φnodes(parent_grid, Center(), Center(), Center()))
+    nx_p, ny_p = length(λ_p), length(φ_p)
+    function at2km(fts, t)
+        a = Array(interior(fts[Time(t)]))
+        out = Matrix{Float32}(undef, nx_p, ny_p)
+        @inbounds for j in 1:ny_p, i in 1:nx_p
+            zt   = parent_orography[i, j] + slice_height
+            k    = clamp(searchsortedlast(zc_p, zt), 1, length(zc_p) - 1)
+            frac = clamp((zt - zc_p[k]) / (zc_p[k+1] - zc_p[k]), 0, 1)
+            out[i, j] = Float32((1 - frac) * a[i, j, k] + frac * a[i, j, k+1])
+        end
+        return out
+    end
+    k1(fts, t) = Array(interior(fts[Time(t)]))[:, :, 1]
+    cx(a) = size(a, 1) > nx_p ? 0.5 .* (a[1:end-1, :] .+ a[2:end, :]) : a
+    cy(a) = size(a, 2) > ny_p ? 0.5 .* (a[:, 1:end-1] .+ a[:, 2:end]) : a
+    [(t = f.t, λ = λ_p, φ = φ_p,
+      u_sfc = cx(k1(parent.velocities.u, f.t)), v_sfc = cy(k1(parent.velocities.v, f.t)),
+      θ_sfc = k1(parent_series.θ, f.t), qᵛ_sfc = k1(parent_series.qᵗ, f.t),
+      w = at2km(parent.velocities.w, f.t), qᵛ = at2km(parent_series.qᵗ, f.t),
+      qʳ = zeros(Float32, nx_p, ny_p)) for f in slice_frames]
+end
 
-# Initial-state LAM arrays (from `set!` above); θ is the dry potential temperature.
-θ_lam = compute!(Field(T * (pˢᵗ / p)^κ))
+# Persist both rows' slices so the animation can be regenerated — and the fields analyzed — offline.
+jldsave(output_dir * "/era5_breeze_slices.jld2"; child = slice_frames, parent = parent_frames, height_agl = slice_height)
+@info @sprintf("wrote %d child + %d parent slice frames → %s/era5_breeze_slices.jld2",
+               length(slice_frames), length(parent_frames), output_dir)
 
-ρ_arr  = Array(interior(ρ))
-u_arr  = Array(interior(u))
-v_arr  = Array(interior(v))
-θ_arr  = Array(interior(θ_lam))
-qᵗ_arr = Array(interior(qᵗ))
+θᵥ(f) = f.θ_sfc .* (1 .+ 0.61f0 .* f.qᵛ_sfc)   # virtual potential temperature θᵥ ≈ θ(1 + 0.61 qᵛ)
+cascade_fields(f, θᵥ₀) = (; U = sqrt.(f.u_sfc .^ 2 .+ f.v_sfc .^ 2),
+                          w = f.w, θvp = θᵥ(f) .- θᵥ₀, qv = f.qᵛ .* 1f3, qr = f.qʳ .* 1f3)
+child_fields  = [cascade_fields(f, θᵥ(slice_frames[1]))  for f in slice_frames]
+parent_fields = [cascade_fields(f, θᵥ(parent_frames[1])) for f in parent_frames]
 
-# Post-run LAM state. Specific quantities (θ, qᵗ) are derived from the
-# prognostic ρθ, ρqᵉ divided by ρ.
-ρ_final_arr  = Array(interior(model.dynamics.density))
-u_final_arr  = Array(interior(model.velocities.u))
-v_final_arr  = Array(interior(model.velocities.v))
-ρθ_final     = Array(interior(model.formulation.potential_temperature_density))
-ρqᵉ_final    = Array(interior(model.moisture_density))
-θ_final_arr  = ρθ_final  ./ ρ_final_arr
-qᵗ_final_arr = ρqᵉ_final ./ ρ_final_arr
+cascade_range(key, hi) = quantile(filter(isfinite, abs.(reduce(vcat,
+                            [vec(getproperty(d, key)) for d in vcat(child_fields, parent_fields)]))), hi)
+Umax  = max(cascade_range(:U,   0.995), 5)
+wmax  = max(cascade_range(:w,   0.995), 1)
+θmax  = max(cascade_range(:θvp, 0.99),  0.5)
+qvmax = max(cascade_range(:qv,  0.995), 1)
+qrmax = max(cascade_range(:qr,  0.999), 0.1)
+cascade_columns = [(:U,   "|U|ₛ (m s⁻¹)",   :speed,   (0, Umax)),
+                   (:w,   "w₂ₖₘ (m s⁻¹)",   :balance, (-wmax, wmax)),
+                   (:θvp, "θᵥ′ₛ (K)",       :balance, (-θmax, θmax)),
+                   (:qv,  "qᵛ₂ₖₘ (g kg⁻¹)", :dense,   (0, qvmax)),
+                   (:qr,  "qʳ₂ₖₘ (g kg⁻¹)", :dense,   (0, qrmax))]
 
-# Terrain-following heights vary by column; read them from a host copy of the
-# grid (`znode` applies the σ scaling and η displacement per column).
-cpu_grid    = on_architecture(CPU(), grid)
-elevation_m = Array(interior(elevation))[:, :, 1]
-λ_c = collect(λnodes(grid, Center(), Center(), Center()))
-φ_c = collect(φnodes(grid, Center(), Center(), Center()))
-λ_f = collect(λnodes(grid, Face(),   Center(), Center()))
-φ_f = collect(φnodes(grid, Center(), Face(),   Center()))
+λbox = extrema(slice_frames[1].λ); φbox = extrema(slice_frames[1].φ)
+boxλ = [λbox[1], λbox[2], λbox[2], λbox[1], λbox[1]]
+boxφ = [φbox[1], φbox[1], φbox[2], φbox[2], φbox[1]]
 
-column_height(i, j) = [znode(i, j, k, cpu_grid, Center(), Center(), Center()) for k in 1:Nz]
-
-vars = [(:ρ,  ρ_arr,  ρ_final_arr,  "ρ (kg/m³)",  :center),
-        (:u,  u_arr,  u_final_arr,  "u (m/s)",    :xface),
-        (:v,  v_arr,  v_final_arr,  "v (m/s)",    :yface),
-        (:θ,  θ_arr,  θ_final_arr,  "θ (K)",      :center),
-        (:qᵗ, qᵗ_arr, qᵗ_final_arr, "qᵗ (kg/kg)", :center)]
-
-fig = Figure(size=(1600, 1000), fontsize=12)
-
-Nrows = length(sites)
-Ncols = length(vars)
-axs   = Matrix{Axis}(undef, Nrows, Ncols)
-
-for (row, (label, λ_site, φ_site)) in enumerate(sites)
-    # Site header; elevation from the regridded ETOPO field at the nearest cell.
-    i_site = argmin(abs.(λ_c .- λ_site))
-    j_site = argmin(abs.(φ_c .- φ_site))
-    elev_m = round(Int, elevation_m[i_site, j_site])
-    Label(fig[2*row - 1, 1:Ncols], "$label (elevation: $elev_m m)";
-          fontsize=15, font=:bold, halign=:center, tellwidth=false)
-
-    for (col, (vname, lam_arr, lam_final_arr, xlab, stagger)) in enumerate(vars)
-        i_lam = stagger == :xface ? argmin(abs.(λ_f .- λ_site)) :
-                                    argmin(abs.(λ_c .- λ_site))
-        j_lam = stagger == :yface ? argmin(abs.(φ_f .- φ_site)) :
-                                    argmin(abs.(φ_c .- φ_site))
-
-        z_km = column_height(i_lam, j_lam) ./ 1000
-
-        ax = Axis(fig[2*row, col]; xlabel=xlab,
-                  ylabel       = col == 1 ? "height (km)" : "",
-                  xlabelsize   = 14,
-                  ylabelsize   = 14)
-        axs[row, col] = ax
-
-        # LAM profile at the chosen point — markers at cell centers so the
-        # discretization is explicit (no implied between-cell behavior).
-        scatter!(ax, lam_arr[i_lam, j_lam, :], z_km;
-                 color=:steelblue, markersize=6, label="t=0")
-        scatter!(ax, lam_final_arr[i_lam, j_lam, :], z_km;
-                 color=:crimson, markersize=6, label=@sprintf("t=%.2f s", model.clock.time))
-
-        ylims!(ax, 0, 15)
-        vname === :θ && xlims!(ax, 280, 400)
+fig_cascade = Figure(size = (1500, 640))
+cascade_n   = Observable(1)
+Label(fig_cascade[0, 1:5],
+      (@lift @sprintf("MC3E 20 May 2011 — ERA5 → 3 km Breeze — t = %.1f h", slice_frames[$cascade_n].t / 3600)),
+      fontsize = 20, tellwidth = false)
+for (ci, (key, label, cmap, crange)) in enumerate(cascade_columns)
+    parent_ax = Axis(fig_cascade[1, ci]; title = label, aspect = DataAspect())
+    child_ax  = Axis(fig_cascade[2, ci]; aspect = DataAspect())
+    heatmap!(parent_ax, parent_frames[1].λ, parent_frames[1].φ,
+             (@lift getproperty(parent_fields[$cascade_n], key)); colormap = cmap, colorrange = crange)
+    lines!(parent_ax, boxλ, boxφ; color = :black, linestyle = :dash, linewidth = 1.5)
+    hm = heatmap!(child_ax, slice_frames[1].λ, slice_frames[1].φ,
+                  (@lift getproperty(child_fields[$cascade_n], key)); colormap = cmap, colorrange = crange)
+    Colorbar(fig_cascade[3, ci], hm; vertical = false, flipaxis = false, height = 10)
+    hidedecorations!(parent_ax); hidedecorations!(child_ax)
+    if ci == 1
+        text!(parent_ax, 0.03, 0.97; text = "ERA5 (D1)",   space = :relative, align = (:left, :top), color = :white, fontsize = 15, font = :bold)
+        text!(child_ax,  0.03, 0.97; text = "Breeze 3 km", space = :relative, align = (:left, :top), color = :white, fontsize = 15, font = :bold)
     end
 end
-
-# Share y-axis behavior across each site's row; only the leftmost column
-# shows ticks and label.
-for r in 1:Nrows
-    linkyaxes!(axs[r, :]...)
-    for c in 2:Ncols
-        hideydecorations!(axs[r, c]; grid=false)
-    end
+CairoMakie.record(fig_cascade, output_dir * "/era5_cascade_2row.mp4", 1:length(slice_frames); framerate = 8) do nn
+    cascade_n[] = nn   # CairoMakie.record: `record` is also exported by CUDA, so qualify it
 end
-
-axislegend(axs[1, end]; position = :rb)
-
-Label(fig[0, 1:Ncols], "ERA5 → terrain-following LAM profiles";
-      fontsize=20, font=:bold, tellwidth=false)
-
-save("era5_breeze_profiles.png", fig)
-@info "Wrote era5_breeze_profiles.png"
-
-# ## Horizontal cut-plane comparison
-#
-# Compare u, v, w on a horizontal plane 80 m above ground level between the ERA5 forcing
-# (~0.25°, the parent) and the 3 km Breeze child. The ERA5 row is the downscaled initial state and
-# the model row is the child at the end of the run — so they differ by resolution and by the child's
-# evolution over the window.
-#
-# `cut_plane` interpolates each field's column to the target height above the
-# *local terrain surface*, honoring the field's stagger (u on λ-faces, v on
-# φ-faces, w on z-faces) and the terrain-following node heights — so it works
-# unchanged on the ERA5 ingest grid and the live child model.
-#
-# TODO: promote `cut_plane` to `NumericalEarth.Diagnostics` once stabilized — it's
-# a generic terrain-following AGL slice, useful well beyond this example.
-
-# `interp_to_height` / `cut_plane` are defined above (hoisted for the in-run slice capture).
-
-# ERA5 snapshot-1 winds on a terrain-following grid at the requested resolution
-# over the D2 window. u, v ingest directly (#241); w is reconstructed from ERA5 ω
-# (Pa/s) via w ≈ -ω/(ρ g), with ρ = p/(Rᵈ T) (vapor correction on ρ < 1%, neglected).
-g_earth = Oceananigans.defaults.gravitational_acceleration
-
-function era5_winds_on_grid(nx, ny)
-    g = LatitudeLongitudeGrid(arch;
-                              longitude = (λ_west,  λ_east),
-                              latitude  = (φ_south, φ_north),
-                              z         = TerrainFollowingVerticalDiscretization(z_discretization),
-                              size      = (nx, ny, Nz),
-                              halo      = (5, 5, 5),
-                              topology  = (Bounded, Bounded, Bounded))
-    materialize_terrain!(g, regrid_topography(g; dataset = ETOPO2022()))
-
-    ug = XFaceField(g);  set!(ug, initial_metadatum(:eastward_velocity))
-    vg = YFaceField(g);  set!(vg, initial_metadatum(:northward_velocity))
-    Tg = CenterField(g); set!(Tg, initial_metadatum(:temperature))
-    ωg = CenterField(g); set!(ωg, initial_metadatum(:vertical_velocity))
-
-    # Hydrostatic pressure from the ERA5 surface pressure (dry — the ρ below already neglects the
-    # <1% vapor correction), anchored on g's terrain; gives a physical near-surface ρ over terrain.
-    sfc_grid_g = LatitudeLongitudeGrid(longitude = (λ_west, λ_east), latitude = (φ_south, φ_north),
-                                       z = (0, 1), size = (nx, ny, 1),
-                                       halo = (5, 5, 3), topology = (Bounded, Bounded, Bounded))
-    psfc_g = CenterField(sfc_grid_g); set!(psfc_g, Metadatum(:surface_pressure; dataset = ds_sl, meta_common_snap1...))
-    Φg     = CenterField(sfc_grid_g); set!(Φg,     Metadatum(:geopotential;     dataset = ds_sl, meta_common_snap1...))
-    pg = hydrostatic_pressure_from_surface(Tg, Array(interior(psfc_g))[:, :, 1],
-                                           Array(interior(Φg))[:, :, 1] ./ g_earth;
-                                           dry_gas_constant = Rᵈ, vapor_gas_constant = Rᵛ,
-                                           gravitational_acceleration = g_earth)
-    wg = compute!(Field(-ωg / (pg / (Rᵈ * Tg) * g_earth)))
-    return ug, vg, wg
-end
-
-# ERA5 row at native 0.25°; model row is the live 3 km child.
-u_e, v_e, w_e = era5_winds_on_grid(round(Int, (λ_east - λ_west) / 0.25),
-                                   round(Int, (φ_north - φ_south) / 0.25))
-u_d, v_d, w_d = model.velocities.u, model.velocities.v, model.velocities.w
-
-height_agl = 80.0
-rows = [("ERA5 ~0.25°",                                u_e, v_e, w_e),
-        (@sprintf("3 km child (t=%.1f s)", model.clock.time), u_d, v_d, w_d)]
-cols = ("u (m/s)", "v (m/s)", "w (m/s)")
-
-fig_cut = Figure(size = (1500, 1300), fontsize = 13)
-
-for (r, (rlabel, fu, fv, fw)) in enumerate(rows)
-    for (c, fld) in enumerate((fu, fv, fw))
-        λ, φ, slice = cut_plane(fld, height_agl)
-
-        ax = Axis(fig_cut[r, 2c - 1];
-                  aspect = DataAspect(),
-                  title  = r == 1            ? cols[c]          : "",
-                  ylabel = c == 1            ? rlabel           : "",
-                  xlabel = r == length(rows) ? "longitude (°)"  : "")
-
-        finite = filter(isfinite, vec(slice))
-        m      = isempty(finite) ? one(eltype(slice)) : maximum(abs, finite)
-        m      = m == 0 ? one(m) : m
-
-        hm = heatmap!(ax, λ, φ, slice; colormap = :balance, colorrange = (-m, m))
-        Colorbar(fig_cut[r, 2c], hm)
-        scatter!(ax, [λ₀], [φ₀]; color = :black, marker = :star5, markersize = 12)
-
-        r != length(rows) && hidexdecorations!(ax; grid = false)
-        c != 1            && hideydecorations!(ax; grid = false)
-    end
-end
-
-Label(fig_cut[0, 1:6], @sprintf("Winds at %g m AGL — ERA5 → 3 km (MC3E, ARM SGP)", height_agl);
-      fontsize = 18, font = :bold, tellwidth = false)
-
-save("era5_breeze_cutplanes.png", fig_cut)
-@info "Wrote era5_breeze_cutplanes.png"
+@info @sprintf("wrote %s/era5_cascade_2row.mp4 (%d frames)", output_dir, length(slice_frames))
