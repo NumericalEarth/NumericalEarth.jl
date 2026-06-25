@@ -46,6 +46,20 @@ end
     @test occursin("eORCA12", metadata_path(bathy_meta))
 end
 
+@testset "ORCA4 Metadatum construction" begin
+    bathy_meta = Metadatum(:bottom_height; dataset=ORCA4())
+    @test bathy_meta.name == :bottom_height
+    @test bathy_meta.dataset isa ORCA4
+
+    mesh_meta = Metadatum(:mesh_mask; dataset=ORCA4())
+    @test mesh_meta.name == :mesh_mask
+    @test mesh_meta.dataset isa ORCA4
+
+    @test default_south_rows_to_remove(ORCA4()) == 155
+    @test occursin("eORCA025", metadata_path(mesh_meta))
+    @test occursin("eORCA025", metadata_path(bathy_meta))
+end
+
 @testset "ORCAGrid with ORCA1 dataset on $(arch)" for arch in test_architectures
     south_rows_to_remove = 43
     grid = ORCAGrid(arch; dataset=ORCA1(), Nz=5, z=(-5000, 0), halo=(4, 4, 4), south_rows_to_remove)
