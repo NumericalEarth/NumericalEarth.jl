@@ -390,6 +390,9 @@ parent_grid = LatitudeLongitudeGrid(arch;
 # default Center-located FTSs for velocities, tracers (T, q), pressure.
 # qᶜ, qⁱ aren't standard slots; we own those alongside.
 # Times are in seconds since the first snapshot.
+#
+# TODO: Implement `ERA5PrescribedAtmosphere`, which will construct the parent FTSs
+# and replace the code below
 
 parent_times = [Float64(Dates.value(d - start_date)) / 1000 for d in dates]
 parent = PrescribedAtmosphere(parent_grid, parent_times; two_dimensional = false, freshwater_flux = nothing, thermodynamics_parameters = nothing)
@@ -443,8 +446,12 @@ p₀_parent = CenterField(parent_surface_grid)
 # integration from the ERA5 surface pressure (`hydrostatic_pressure_from_surface`) rather than
 # interpolated — interpolation clamps the sub-surface levels over high terrain and yields a
 # spurious too-dense near-surface state that the lateral BCs would inject into the child.
+#
 # TODO: this holds all parent snapshots resident; for production-length runs, recompute the
 # balance on a 2-snapshot streaming FieldTimeSeries (DatasetBackend pattern) to cut memory.
+# Replace `breeze_prognostic_state` with on-the-fly calculations.
+#
+# TODO: is `hydrostatic_pressure_from_surface` really necessary?
 for n in eachindex(dates)
     @info @sprintf("Deriving parent snapshot %d/%d at %s", n, length(dates), dates[n])
     set!(p₀_parent, Metadatum(:surface_pressure; dataset = ds_sl, date = dates[n],
@@ -474,9 +481,9 @@ for n in eachindex(dates)
     interior(parent_series.qᵗ,  :, :, :, n) .= interior(state.qᵗ)
 end
 
-# The ERA5-parent slices (row 1 of the cascade animation) are derived after the run, in the
-# "Cascade animation" section below — sampled from the resident hourly parent FTS at the child's
-# frame times, so no separate extraction pass is needed here.
+# TODO: `ERA5PrescribedAtmosphere` should replace the code above
+
+# ## Initial conditions
 
 # --- LAM-grid IC fields: regrid snapshot 1 of ERA5 directly onto the child ---
 # `set!(field, metadatum)` regrids each ERA5 field onto the terrain-following
@@ -591,8 +598,7 @@ lateral_mask = let λ_w = λ_west, λ_e = λ_east, φ_s = φ_south, φ_n = φ_no
     end
 end
 
-# Relaxation timescale = 10 outer steps
-τ_relax = 10 * Δt  # s
+τ_relax = 10 * Δt  # relaxation timescale (s)
 
 davies = parent_forcings(; rate = 1/τ_relax,
                          mask = lateral_mask,
@@ -606,52 +612,27 @@ davies = parent_forcings(; rate = 1/τ_relax,
 # Piggyback on the `atmosphere_simulation` helper from
 # `ext/NumericalEarthBreezeExt/`, which also pre-wires bottom flux fields
 # (ρτˣ, ρτʸ, Jᵉ, Jᵛ) ready for the forthcoming SlabLand / SlabOcean coupling.
-# We override the helper's default `AnelasticDynamics` (which dispatches on
-# `RectilinearGrid` only) with `CompressibleDynamics`, whose prognostic-density
-# / diagnostic-pressure formulation needs no FFT-based Poisson solve and works
-# directly on the LAM `LatitudeLongitudeGrid`. On the `TerrainFollowingVerticalDiscretization`
-# grid, `CompressibleDynamics` activates the terrain-following physics automatically —
-# contravariant vertical velocity, corrected horizontal pressure gradient, terrain-aware
-# divergence — so no `terrain_metrics` argument is needed. The `SplitExplicitTimeDiscretization`
-# (Breeze PR #712) integrates the acoustic modes with inner substeps, freeing the outer
-# step to run at the advection CFL (see Δt below). Its `UpperSponge` adds a 5 km-deep
-# Rayleigh layer that damps the vertical momentum (ρw)′ toward the ~26.5 km rigid lid
-# (5 s timescale), absorbing vertically-propagating modes so they don't reflect.
+#
+# On the `TerrainFollowingVerticalDiscretization` grid, `CompressibleDynamics` activates
+# the terrain-following physics automatically — contravariant vertical velocity, corrected
+# horizontal pressure gradient, terrain-aware divergence — so no `terrain_metrics` argument
+# is needed.
+#
+# The `SplitExplicitTimeDiscretization` (Breeze PR #712) integrates the acoustic modes with
+# inner substeps, freeing the outer step to run at the advection CFL. Its `UpperSponge` adds
+# a 5 km-deep Rayleigh layer that damps the vertical momentum (ρw)′ toward the rigid lid at a
+# 5 s timescale, absorbing vertically-propagating modes so they don't reflect.
 #
 # `atmosphere_simulation` returns an Oceananigans `Simulation`; we drive the
 # child through `NestedSimulation` below, so unwrap the underlying
 # `AtmosphereModel`. The skeleton `CoupledRadiation` it carries is a no-op
 # (radiatively decoupled) until materialized inside an `EarthSystemModel`.
 
-p̄₀ = mean(interior(p₀))
-
 # Add a Rayleigh damping layer. 3 km deep below the ~20 km lid (sponge spans ~17–20 km),
 # keeping it in the lower stratosphere above the jet now that the top is shallower.
 damping_timescale = 5    # (s)
 damping_depth     = 3000 # (m)
 rayleigh_damping = UpperSponge(; damping_rate = 1/damping_timescale, depth = damping_depth)
-
-# Advection uses `atmosphere_simulation`'s defaults — WENO(9) for momentum, WENO(5) for
-# scalars — higher order than [Fan2017](@citet)'s 5th-order horizontal / 3rd-order vertical.
-# Matching Fan's per-direction orders (a `FluxFormAdvection` of WENO(5)/WENO(5)/WENO(3)) was
-# tested and left the dynamics essentially unchanged, so the higher-order default is kept.
-
-# ## Set initial state from ERA5
-#
-# Derive Breeze's `CompressibleDynamics` prognostic variables (ρ, θˡⁱ, qᵗ) from
-# the per-column-interpolated ERA5 fields via the shared `breeze_prognostic_state`
-# helper — the same conversion used to populate the parent FTSs above. (qᵗ is
-# repartitioned into vapor/condensate by saturation adjustment on the first
-# `update_state!`.)
-
-(; ρ, θˡⁱ, qᵗ) = breeze_prognostic_state(constants, T, qᵛ, qᶜ, qⁱ, p)
-
-# ## Build the production model
-#
-# The actual simulation: real (live, parent-driven `Interpolated`) lateral BCs, microphysics,
-# Coriolis, and the Davies relaxation. The initial pressure is hydrostatically balanced
-# from the surface (above), and an optional dynamical-initialization pass (DFI=on, below) spins
-# ρw into nonhydrostatic balance before the run.
 
 # Time discretization: split-explicit acoustic substepping. Adaptive substeps handle the acoustic
 # CFL, letting the outer step run at the (slower) advection CFL (so the adaptive wizard below can use
@@ -681,7 +662,7 @@ w_sponge_mask = let z_top = z_discretization.faces[end], depth = float(damping_d
 end
 model_forcing = merge(davies, (ρw = Relaxation(rate = 1/damping_timescale, mask = w_sponge_mask, target = 0.0),))
 
-# Reference potential-temperature profile θ_ref(z) = ERA5 domain/time-mean liquid-ice θ, passed to
+# Reference potential-temperature profile θ_ref(z) = ERA5 domain/time-mean θˡⁱ, passed to
 # `CompressibleDynamics` so the horizontal pressure-gradient force is taken in perturbation form
 # (p′ = p − p_ref). This cuts the terrain-following PGF cancellation error (Klemp 2011) that otherwise
 # spuriously accelerates the near-surface winds in the lowest cells over the high western terrain.
@@ -695,6 +676,8 @@ reference_θ = let zc = collect(0.5 .* (z_discretization.faces[1:end-1] .+ z_dis
     end
 end
 
+p̄₀ = mean(interior(p₀))
+
 model = atmosphere_simulation(grid;
                               thermodynamic_constants = constants,
                               momentum_advection  = momentum_advection_scheme,
@@ -703,6 +686,10 @@ model = atmosphere_simulation(grid;
                               dynamics            = CompressibleDynamics(time_discretization; surface_pressure = p̄₀, reference_potential_temperature = reference_θ),
                               boundary_conditions = bcs,
                               forcing             = model_forcing).model
+
+# Initial state from ERA5
+
+(; ρ, θˡⁱ, qᵗ) = breeze_prognostic_state(constants, T, qᵛ, qᶜ, qⁱ, p)
 
 set!(model; ρ = ρ, u = u, v = v, qᵗ = qᵗ, θˡⁱ = θˡⁱ)
 
@@ -763,6 +750,8 @@ end
 # each step with a bulk neutral surface stress ρτ = −ρ Cᵈ |U| U, per-column log-law Cᵈ = (κ/ln(z₁/z₀))²
 # (z₀ = 0.1 m; z₁ = first-cell-center height AGL): the dominant near-surface momentum sink. GPU-safe —
 # Cᵈ is precomputed host-side, so there is no per-step scalar Δz read.
+#
+# TODO: Wire up SlabLand/ocean coupling
 let κ_vk = 0.4, z₀_mom = 0.1
     cpu_grid_drag = on_architecture(CPU(), grid)
     z₁_drag = Float64[znode(i, j, 1, cpu_grid_drag, Center(), Center(), Center()) -
@@ -785,13 +774,6 @@ end
 
 # ## NestedSimulation
 #
-# Wrap the child model in a `NestedSimulation` paired with the parent
-# `PrescribedAtmosphere`. `NestedModel.time_step!` syncs the parent clock
-# each iteration so the FTS-driven BCs and forcings get the correct
-# interpolation time.
-#
-# Δt is defined with the grid above; the Davies relaxation acts on a 10·Δt timescale.
-
 # `NestedSimulation` pairs the prescribed ERA5 parent with the Breeze child; `NestedModel.time_step!`
 # advances the child then ticks the parent clock so the FTS-driven BCs/forcing interpolate at the
 # right time. To telescope further (ERA5 → 9 km → 3 km) you nest a NestedModel inside another —
@@ -804,6 +786,8 @@ add_callback!(nested, surface_drag!, IterationInterval(1))   # bulk surface stre
 # _advective_ CFL.
 
 conjure_time_step_wizard!(nested, IterationInterval(1); cfl = 0.7, max_Δt = 30)
+
+# ## Setup coprocessing
 
 # Terrain-following AGL slice (linear interpolation in physical znode height per column).
 function interp_to_height(zcol, vals, z_target)
