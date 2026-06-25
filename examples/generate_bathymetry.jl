@@ -10,17 +10,19 @@ using NumericalEarth
 using Oceananigans
 using CairoMakie
 
+using NumericalEarth.Bathymetry: Interpolate, MedianAveraging
+
 # We start by defining a gridded domain for the Mediterranean Sea using the `LatitudeLongitudeGrid` from Oceananigans.
 #
 # The Mediterranean sea is positioned roughly between 28ᵒ and 48ᵒ latitude and 0ᵒ and 42ᵒ longitude.
 # We define a grid in this region and to have a reasonable resolution, we set a grid resolution to 1/25ᵒ
 # in both latitude and longitude directions.
 
-latitude_range = (28, 48)
-longitude_range = (0, 42)
+latitude_range = (-80, 80)#(28, 48)
+longitude_range = (-180, 180)#(0, 42)
 
-Nφ = 25 * (latitude_range[2] - latitude_range[1])
-Nλ = 25 * (longitude_range[2] - longitude_range[1])
+Nφ = (latitude_range[2] - latitude_range[1])
+Nλ = (longitude_range[2] - longitude_range[1])
 
 grid = LatitudeLongitudeGrid(size = (Nλ, Nφ, 1),
                              latitude = latitude_range,
@@ -42,9 +44,10 @@ grid = LatitudeLongitudeGrid(size = (Nλ, Nφ, 1),
 #    means that the function does not allow connected regions in the bathymetry  (e.g., lakes)
 #    and fills them with land.
 
-h_rough = regrid_bathymetry(grid)
-h_smooth = regrid_bathymetry(grid; interpolation_passes = 40)
-h_one_basin = regrid_bathymetry(grid; major_basins = 1)
+h_rough = regrid_bathymetry(grid; major_basins = Inf)
+h_smooth = regrid_bathymetry(grid; method = Interpolate(40), major_basins = Inf)
+#h_one_basin = regrid_bathymetry(grid; major_basins = 1)
+h_averaged = regrid_bathymetry(grid; major_basins = Inf, method = MedianAveraging())
 nothing #hide
 
 # Finally, we visualize the generated bathymetry data for the Mediterranean Sea using CairoMakie.
@@ -57,6 +60,9 @@ interior(h_rough)[land_rough] .= NaN
 land_one_basin = interior(h_one_basin) .≥ 0
 interior(h_one_basin)[land_one_basin] .= NaN
 
+land_averaged = interior(h_averaged) .≥ 0
+interior(h_averaged)[land_averaged] .= NaN
+
 fig = Figure(size=(850, 1150))
 
 ax = Axis(fig[1, 1], title = "Rough bathymetry", xlabel = "Longitude", ylabel = "Latitude")
@@ -65,12 +71,35 @@ hm = heatmap!(ax, h_rough, nan_color=:lightgray, colormap = Reverse(:deep))
 ax = Axis(fig[2, 1], title = "Smooth bathymetry", xlabel = "Longitude", ylabel = "Latitude")
 hm = heatmap!(ax, h_smooth, nan_color=:lightgray, colormap = Reverse(:deep))
 
-ax = Axis(fig[3, 1], title = "Bathymetry with only one basin", xlabel = "Longitude", ylabel = "Latitude")
-hm = heatmap!(ax, h_one_basin, nan_color=:lightgray, colormap = Reverse(:deep))
+#ax = Axis(fig[3, 1], title = "Bathymetry with only one basin", xlabel = "Longitude", ylabel = "Latitude")
+#hm = heatmap!(ax, h_one_basin, nan_color=:lightgray, colormap = Reverse(:deep))
 
-cb = Colorbar(fig[1:3, 2], hm, height = Relative(3/4), label = "Depth (m)")
+ax = Axis(fig[4, 1], title = "Averaged bathymetry", xlabel = "Longitude", ylabel = "Latitude")
+hm = heatmap!(ax, h_averaged, nan_color=:lightgray, colormap = Reverse(:deep))
+
+cb = Colorbar(fig[1:4, 2], hm, height = Relative(3/4), label = "Depth (m)")
 
 save("different_bottom_heights.png", fig)
+nothing #hide
+
+# ![](different_bottom_heights.png)
+
+fig = Figure(size=(850, 1150))
+
+ax = Axis(fig[1, 1], title = "Rough bathymetry roughness", xlabel = "Longitude", ylabel = "Latitude")
+hm = heatmap!(ax, abs(∂x(h_rough) + ∂y(h_rough)), nan_color=:lightgray, colormap = Reverse(:deep))
+
+ax = Axis(fig[2, 1], title = "Averaged bathymetry roughness", xlabel = "Longitude", ylabel = "Latitude")
+hm = heatmap!(ax, abs(∂x(h_averaged) + ∂y(h_averaged)), nan_color=:lightgray, colormap = Reverse(:deep))
+
+cb = Colorbar(fig[1:2, 2], hm, height = Relative(3/4), label = "Roughness (m/m)")
+
+ax = Axis(fig[3, 1], title = "Difference", xlabel = "Longitude", ylabel = "Latitude")
+hm = heatmap!(ax, abs(∂x(h_averaged) + ∂y(h_averaged)) - abs(∂x(h_rough) + ∂y(h_rough)), nan_color=:lightgray, colormap = Reverse(:deep))
+
+cb = Colorbar(fig[3, 2], hm, height = Relative(3/4), label = "Roughness (m/m)")
+
+save("different_bottom_heights_roughness.png", fig)
 nothing #hide
 
 # ![](different_bottom_heights.png)
