@@ -941,14 +941,18 @@ parent_fields = [cascade_fields(f, θᵥ(parent_frames[1])) for f in parent_fram
 
 cascade_range(key, hi) = quantile(filter(isfinite, abs.(reduce(vcat,
                             [vec(getproperty(d, key)) for d in vcat(child_fields, parent_fields)]))), hi)
+row_range(fields, key, hi) = quantile(filter(isfinite, abs.(reduce(vcat,
+                            [vec(getproperty(d, key)) for d in fields]))), hi)
 Umax  = max(cascade_range(:U,   0.995), 5)
-wmax  = max(cascade_range(:w,   0.995), 1)
+# w spans ~10× between the ERA5 parent (~0.1 m/s) and the 3 km child (~2 m/s) — scale each row separately
+wmax_parent = max(row_range(parent_fields, :w, 0.995), 0.3)
+wmax_child  = max(row_range(child_fields,  :w, 0.995), 1)
 θmax  = max(cascade_range(:θvp, 0.99),  0.5)
 qvmax = max(cascade_range(:qv,  0.995), 1)
 qrmax = max(cascade_range(:qr,  0.999), 0.1)
 cascade_columns = [(:θvp, "θᵥ′ₛ (K)",       :balance, (-θmax, θmax)),
                    (:U,   "|U|ₛ (m s⁻¹)",   :speed,   (0, Umax)),
-                   (:w,   "w₂ₖₘ (m s⁻¹)",   :balance, (-wmax, wmax)),
+                   (:w,   "w₂ₖₘ (m s⁻¹)",   :balance, (-wmax_child, wmax_child)),
                    (:qv,  "qᵛ₂ₖₘ (g kg⁻¹)", :dense,   (0, qvmax)),
                    (:qr,  "qʳ₂ₖₘ (g kg⁻¹)", :dense,   (0, qrmax))]
 
@@ -956,7 +960,7 @@ cascade_columns = [(:θvp, "θᵥ′ₛ (K)",       :balance, (-θmax, θmax)),
 boxλ = [λbox[1], λbox[2], λbox[2], λbox[1], λbox[1]]
 boxφ = [φbox[1], φbox[1], φbox[2], φbox[2], φbox[1]]
 
-fig_cascade = Figure(size = (1500, 640))
+fig_cascade = Figure(size = (1500, 700))
 cascade_n   = Observable(1)
 Label(fig_cascade[0, 1:5],
       (@lift @sprintf("MC3E 20 May 2011 — ERA5 → 3 km Breeze — t = %.1f h", slice_frames[$cascade_n].t / 3600)),
@@ -964,12 +968,18 @@ Label(fig_cascade[0, 1:5],
 for (ci, (key, label, cmap, crange)) in enumerate(cascade_columns)
     parent_ax = Axis(fig_cascade[1, ci]; title = label, aspect = DataAspect())
     child_ax  = Axis(fig_cascade[2, ci]; aspect = DataAspect())
-    heatmap!(parent_ax, parent_frames[1].λ, parent_frames[1].φ,
-             (@lift getproperty(parent_fields[$cascade_n], key)); colormap = cmap, colorrange = crange)
+    parent_range = key === :w ? (-wmax_parent, wmax_parent) : crange
+    hmp = heatmap!(parent_ax, parent_frames[1].λ, parent_frames[1].φ,
+                   (@lift getproperty(parent_fields[$cascade_n], key)); colormap = cmap, colorrange = parent_range)
     lines!(parent_ax, boxλ, boxφ; color = :black, linestyle = :dash, linewidth = 1.5)
-    hm = heatmap!(child_ax, slice_frames[1].λ, slice_frames[1].φ,
-                  (@lift getproperty(child_fields[$cascade_n], key)); colormap = cmap, colorrange = crange)
-    Colorbar(fig_cascade[3, ci], hm; vertical = false, flipaxis = false, height = 10)
+    hmc = heatmap!(child_ax, slice_frames[1].λ, slice_frames[1].φ,
+                   (@lift getproperty(child_fields[$cascade_n], key)); colormap = cmap, colorrange = crange)
+    if key === :w   # ERA5 (~0.1 m/s) and 3 km child (~2 m/s) w differ ~10× — one colorbar per row
+        Colorbar(fig_cascade[3, ci], hmp; vertical = false, flipaxis = false, height = 10, label = "ERA5")
+        Colorbar(fig_cascade[4, ci], hmc; vertical = false, flipaxis = false, height = 10, label = "3 km")
+    else
+        Colorbar(fig_cascade[3, ci], hmc; vertical = false, flipaxis = false, height = 10)
+    end
     hidedecorations!(parent_ax); hidedecorations!(child_ax)
     if ci == 1
         text!(parent_ax, 0.03, 0.97; text = "ERA5 (D1)",   space = :relative, align = (:left, :top), color = :white, fontsize = 15, font = :bold)
