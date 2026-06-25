@@ -45,9 +45,12 @@ end
 const c = Center()
 const f = Face()
 
+# In zstar we might have positive z, so  `exp(κ * z)` is not correct
 @inline function beers_law_radiation(i, j, k, grid, J₀ , κ)
-    z = Oceananigans.Grids.znode(i, j, k, grid, c, c, f)
-    return J₀ * exp(κ * z)
+    Nz = size(grid, 3)
+    z  = Oceananigans.Grids.znode(i, j, k,    grid, c, c, f)
+    η  = Oceananigans.Grids.znode(i, j, Nz+1, grid, c, c, f)
+    return J₀ * exp(κ * (z - η))
 end
 
 @inline function (R::TwoColorRadiation)(i, j, k, grid, clock, fields)
