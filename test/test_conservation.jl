@@ -43,6 +43,7 @@ end
                              tracer_advection        = nothing,
                              closure                 = CATKEVerticalDiffusivity(),
                              coriolis                = nothing,
+                             radiative_forcing       = nothing,
                              bottom_drag_coefficient = 0)
 
     Tᵢ = -1.5

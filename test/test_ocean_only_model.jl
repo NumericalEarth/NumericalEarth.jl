@@ -47,6 +47,8 @@ using Oceananigans.OrthogonalSphericalShellGrids
         free_surface = SplitExplicitFreeSurface(grid; substeps=20)
         ocean = ocean_simulation(grid; free_surface)
 
+        @test NumericalEarth.Oceans.get_radiative_forcing(ocean) isa NumericalEarth.Oceans.TwoColorRadiation
+        
         atmosphere = JRA55PrescribedAtmosphere(arch; time_indices_in_memory=4)
         radiation = JRA55PrescribedRadiation(arch; time_indices_in_memory=4)
 
