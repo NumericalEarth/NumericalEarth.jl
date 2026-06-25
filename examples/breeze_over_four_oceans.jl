@@ -51,10 +51,10 @@ Tᵒᶜ = 290 # K
 U₀ = 10 # m/s
 coriolis = FPlane(latitude=33)
 
-prescribed_ocean_atmos = atmosphere_simulation(grid; potential_temperature=θᵃᵗ, coriolis)
-slab_ocean_atmos       = atmosphere_simulation(grid; potential_temperature=θᵃᵗ, coriolis)
-full_ocean_atmos       = atmosphere_simulation(grid; potential_temperature=θᵃᵗ, coriolis)
-nh_ocean_atmos         = atmosphere_simulation(grid; potential_temperature=θᵃᵗ, coriolis)
+prescribed_ocean_atmos = atmosphere_simulation(grid; potential_temperature=θᵃᵗ, coriolis).model
+slab_ocean_atmos       = atmosphere_simulation(grid; potential_temperature=θᵃᵗ, coriolis).model
+full_ocean_atmos       = atmosphere_simulation(grid; potential_temperature=θᵃᵗ, coriolis).model
+nh_ocean_atmos         = atmosphere_simulation(grid; potential_temperature=θᵃᵗ, coriolis).model
 
 # ## Atmospheric initial conditions
 #
