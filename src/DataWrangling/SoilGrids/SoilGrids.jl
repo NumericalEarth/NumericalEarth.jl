@@ -5,7 +5,6 @@ export SoilGrids2
 using Downloads: Downloads
 using Oceananigans: Center
 using Oceananigans.DistributedComputations: @root
-using Scratch: Scratch, @get_scratch!
 
 using ..DataWrangling: DataWrangling,
     Dataset, DownloadProgress, AbstractStaticDataset, Metadatum,
@@ -30,7 +29,7 @@ remote islands, deserts, and the Arctic.
 
 download_SoilGrids2_cache::String = ""
 function __init__()
-    return global download_SoilGrids2_cache = @get_scratch!("SoilGrids2")
+    return global download_SoilGrids2_cache = DataWrangling.download_cache("SoilGrids2")
 end
 
 @kwdef struct SoilGrids2 <: AbstractStaticDataset
