@@ -35,6 +35,17 @@
 #   robust multi-hour run needs explicit convective treatment / horizontal mixing — deferred. This
 #   example demonstrates the wired stack runs end-to-end; physical validity of the convection is
 #   future work.
+# - A DFI cycle-count sensitivity study (1/2/4/8 adiabatic balance cycles) found the post-DFI max|w|
+#   is already ~0.6 m/s after a single cycle and the subsequent max|w| growth is insensitive to the
+#   cycle count — the deep updrafts are CAPE-driven at grey-zone resolution, not seeded by the
+#   initialization transient. A single balance cycle therefore suffices (`balance_cycles = 1`).
+# - Near-surface initialization transient: the ERA5 winds are set on the terrain-following grid as-is,
+#   in balance with neither surface drag nor the model's pressure field. The lowest cell samples the
+#   free-atmosphere ERA5 wind — strongest over high terrain, where k=1 sits ~1 km above sea level — so
+#   the near-surface |U| sheds ~25% in the first ~0.5 h as surface drag spins up and the flow
+#   geostrophically adjusts (DFI balances ρw, not the horizontal momentum). A balanced / terrain-aware
+#   wind initialization, or a DFI that also balances horizontal momentum, would reduce it; motivates
+#   further development of the initialization routine.
 
 using NumericalEarth
 using NumericalEarth.DataWrangling
@@ -755,7 +766,7 @@ let
     # acoustic CFL on the 60 m surface cells (Δz/c ≈ 0.17 s) — independent of the (much larger)
     # split-explicit outer Δt the production run uses.
     Δt_balance     = 0.15
-    balance_cycles = 2
+    balance_cycles = 1   # one cycle suffices — see the DFI sensitivity note in the header
     twin = atmosphere_simulation(grid;
                                  thermodynamic_constants = constants,
                                  momentum_advection = momentum_advection_scheme,
