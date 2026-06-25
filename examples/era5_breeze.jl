@@ -1,10 +1,12 @@
 # # ERA5 → 3 km convection-permitting hindcast (Breeze + NestedSimulation)
 #
 # A limited-area model (LAM) example that downscales ERA5 reanalysis to a 3 km Breeze compressible
-# atmosphere over the U.S. Southern Great Plains, for the MC3E 20 May 2011 squall-line case
-# ([Fan2017](@citet)). ERA5 (the "parent", ~0.25°) drives a single 3 km child through a
-# `NestedSimulation`: parent-interpolated open lateral boundary conditions + an interior Davies
-# relaxation fringe.
+# atmosphere over the U.S. Southern Great Plains, for the Midlatitude Continental
+# Convective Clouds Experiment (MC3E) 20 May 2011 squall-line case ([Fan2017](@citet)).
+# A `NestedSimulation` constructs an Oceananigans `Simulation` with a `NestedModel`, which pairs a
+# "parent" `PrescribedAtmosphere` or `AbstractModel` with a "child" `AbstractModel`. The parent here
+# is an ERA5 `PrescribedAtmosphere` (on a 0.25° grid), driving a ~3 km Breeze `AtmosphereModel` child
+# through interpolated open lateral boundary conditions + interior Davies relaxation zones.
 #
 # ## What this example does
 # - Downloads ERA5 (pressure + single levels) for a fixed parent region and regrids it onto a
@@ -13,23 +15,22 @@
 #   terrain-consistent `w̃ ≈ 0`; a dynamical-initialization (DFI) pass then spins `ρw` into balance.
 # - Integrates the compressible equations with split-explicit acoustic substepping (adaptive
 #   substeps + an adaptive outer-Δt wizard), 1-moment mixed-phase microphysics, Coriolis, a
-#   reference-θ perturbation-form pressure-gradient, bulk surface drag, and an `UpperSponge` + ρw
-#   Rayleigh lid sponge. Open BCs + the Davies fringe track the ERA5 parent.
-# - Captures 2-level horizontal slices (saved to `era5_breeze_slices.jld2`) and renders the 2-row
-#   ERA5-parent-vs-3 km-child cascade animation.
+#   reference-θ perturbation-form pressure-gradient, bulk surface drag, and Rayleigh damping.
+# - Writes and animates horizontal slices.
 #
 # ## What it does NOT do (yet)
-# - No data assimilation — one-way-nested downscaling, not an analysis.
-# - No cumulus parameterization: 3 km is convection-*permitting*, so deep convection is resolved on
-#   the grid. At this grey-zone-adjacent resolution the resolved convection can be over-vigorous.
-# - No land/ocean coupling (surface stress is a bulk-drag stand-in; the SlabLand MOST link is unwired).
 # - Single nest only (ERA5 → 3 km). The window here is 2 h to keep the example short; the full MC3E
-#   case is 18 h.
+#   study in [Fan2017](@citet) was run for 18 h, with most analyses performed between 6 and 12 h.
+# - No land/ocean coupling (surface stress is a bulk-drag stand-in; the SlabLand MOST link is unwired).
+# - No boundary layer parameterization: diffusion is provided by numerical dissipation.
+# - No cumulus parameterization: 3 km is convection-*permitting*, so deep convection is resolved on
+#   the grid.
+# - No `RectilinearGrid` (constant Δx, Δy) with map projection.
 #
 # ## What we attempted / known issues
-# - First set up as a telescope ERA5 → 9 km → 3 km. The 9 km middle nest sits in the convective grey
-#   zone, where under-resolved convection runs away (a vertical-mixing band-aid bounds but never makes
-#   it physical). Reducing to ERA5 → 3 km direct sidesteps the 9 km grey zone.
+# - First set up as a telescoping nest: ERA5 → 9 km → 3 km. The 9 km middle nest sits in the convective
+#   grey zone, where under-resolved convection runs away (a vertical-mixing band-aid bounds but never
+#   makes it physical). Reducing to ERA5 → 3 km direct sidesteps the 9 km grey zone.
 # - The split-explicit cold start disables `ThermalDivergenceDamping` (`NoDivergenceDamping`): its
 #   (ρθ)′-proxy damper injects a spurious force on the unbalanced start (Breeze #793).
 # - The resolved 3 km convection is still vigorous (deep updrafts, locally high max|w|); a physically
@@ -75,9 +76,7 @@ using Printf
 using CUDA
 const arch = GPU(CUDA.CUDABackend(always_inline = true))
 
-# Single precision (f32): the LAM is memory-bandwidth-bound on the GPU; f32 roughly halves
-# the footprint and step cost at no meaningful accuracy cost here. Sets Oceananigans' global
-# default float type, cascading to all grids, fields, FieldTimeSeries, constants, and dynamics.
+# Set Oceananigans' global default float type, cascading to all grids, fields, FieldTimeSeries, constants, and dynamics.
 Oceananigans.defaults.FloatType = Float32
 
 # ## Configuration
@@ -85,20 +84,19 @@ Oceananigans.defaults.FloatType = Float32
 # ### Domain
 #
 # Domain centered on the U.S. Department of Energy's Atmospheric Radiation Measurement (ARM) Climate
-# Research Facility's Southern Great Plains (SGP) site in Lamont, OK. We take the innermost 3 km
-# domain (Domain 3) of the WRF 27 → 9 → 3 km telescoping nest used by [Fan2017](@citet) for this MC3E
+# Research Facility's Southern Great Plains (SGP) site in Lamont, OK. We take the 3 km domain (Domain 3)
+# of the WRF 27 → 9 → 3 → 1 km telescoping nest used by [Fan2017](@citet) for this MC3E
 # case, driven directly by ERA5 (the parent). ERA5's native 0.25° step divides by 9 to 1/36° (~3 km)
 # here, so the child cells align cleanly with the reanalysis grid.
 #
-# We use a uniform 1/36° angular step, so the physical cells are ~3 km — anisotropic at this
-# latitude, using R = 6,371 km:
+# Note that the Breeze cells are anisotropic at this latitude, using R = 6,371 km:
 #   Δx = R·cos(φ₀)·Δλ ≈ 2.48 km
 #   Δy = R·Δφ         ≈ 3.09 km
 
 φ₀, λ₀ = 36.605, -97.485    # center latitude, longitude (deg)
 
-Δλ = Δφ = 1/36              # uniform 1/36° step (ERA5 0.25° / 9 — ~3 km, convection-permitting)
-Nx, Ny = 300, 270           # Fan et al. (2017) Domain 3 (3 km) footprint
+Δλ = Δφ = 1/36              # uniform 1/36° step
+Nx, Ny = 300, 270           # Fan et al. (2017) Domain 3 footprint
 
 # From these inputs, we determine the `BoundingBox` corners.
 
@@ -107,14 +105,14 @@ Nx, Ny = 300, 270           # Fan et al. (2017) Domain 3 (3 km) footprint
 φ_south = φ₀ - Ny * Δφ / 2
 φ_north = φ₀ + Ny * Δφ / 2
 
-# Vertical grid matched to [Fan2017](@citet)'s WRF nest: 51 staggered levels → `Nz = 50`
-# cells, a constant 60 m surface cell, and a 490 m maximum spacing. Fan publishes only
-# those three numbers (60 m near-surface, 490 m max, 51 levels) — no stretching ratio and
-# no model top, since WRF uses a terrain-following hydrostatic-pressure (η) coordinate. We
-# realize them with a 1.15× geometric stretch (`extent = 19525`), which lands the top at
-# Lz ≈ 20 km (~50 hPa, WRF's usual model top) — above the ~16 km jet, so the rigid lid and
-# the Rayleigh sponge sit in the quiescent lower stratosphere. 25 of the 50 cells ride the
-# 490 m cap; the 60 m surface layer that resolves the boundary layer is unchanged.
+# Relaxation zone geometry: 5 cells deep in each lateral direction
+
+relax_width = 5
+relax_width_deg = relax_width * max(Δλ, Δφ)
+
+# Vertical grid matched to [Fan2017](@citet)'s WRF nest with 51 staggered levels → `Nz = 50`
+# cells, a constant 60 m surface cell, and a 490 m maximum spacing. Stretching ratio is estimated
+# to give a model top at Lz ≈ 20 km (~50 hPa, WRF's default model top).
 
 z_discretization = ReferenceToStretchedDiscretization(
     extent                  = 19525.0,
@@ -126,45 +124,49 @@ z_discretization = ReferenceToStretchedDiscretization(
     stretching              = LinearStretching(0.15))
 
 Nz = length(z_discretization)
-@assert Nz == 50  # Fan et al. (2017): 51 staggered levels → 50 cells; 60 m → 490 m cap, top ~20 km
+@assert Nz == 50
 
-# ### Initial conditions
-#
-# We target the 20 May 2011 squall-line MCS from the Midlatitude Continental
-# Convective Clouds Experiment (MC3E) at the ARM SGP site, the case studied by
-# [Fan2017](@citet). A NE–SW oriented quasi-linear mesoscale convective system
-# developed over the Southern Great Plains overnight, peaking in size around
-# 1100 UTC with leading deep convection and trailing stratiform precipitation.
-# Following the paper, we initialize at 0000 UTC and force for 18 h, spanning
-# the convective development (~0600–1000 UTC) and the mature line's passage
-# over SGP.
+# ### Simulation time control
 
-start_date = DateTime(2011, 05, 20, 0)  # 0000 UTC (7 pm LT previous day)
+start_date = DateTime(2011, 05, 20, 0)
 end_date   = DateTime(2011, 05, 20, 2)  # 2 h here to keep the example short; the full MC3E case is 18 h
 
 dates = start_date:Hour(1):end_date
 
+# Initial outer time step for the adaptive wizard (configured after the simulation, below).
+# Split-explicit substepping integrates the acoustic modes, so the outer step is advection-limited;
+# we start gentle at 1 s — which also avoids amplifying the cold-start transient — and let the wizard
+# ramp it toward `max_Δt`. The Davies relaxation timescale `τ_relax` is tied to this Δt.
+
+Δt = 1.0
+
 # ### ERA5 reanalysis
 #
+# Used for initial and boundary conditions.
 # Pressure-level variables are regridded onto the parent grid as `FieldTimeSeries`
 # (and onto the child grid for the initial condition) further below.
+# Hourly datasets define metadata for data retrieval.
 
 era5_datadir = "era5"   # Where data will be saved locally
 
+ds_pl = ERA5HourlyPressureLevels()
+ds_sl = ERA5HourlySingleLevel()
+
 # ERA5 forcing region: the LAM footprint padded outward by `era5_pad` and snapped to
 # ERA5's native 0.25° grid, so the parent strictly encloses the child (the
-# Interpolated lateral BCs and the 5-cell Davies fringe need parent data beyond the child
-# edge). At 0.25° (~28 km here) ERA5 stands in for Fan's 27 km Domain 1, completing the
-# telescope ERA5 → D2 (1/12°) → D3 (1/36°, the next nest-down).
+# Interpolated lateral BCs and the 5-cell Davies relaxation zone needs parent data beyond
+# the child edge). At 0.25°, ERA5 can stand in for Fan's 27 km Domain 1.
 
-era5_pad = 1.0   # deg; wider than the 5·(1/12°) ≈ 0.42° Davies fringe
+era5_pad = 1.0  # deg; wider than the 5·(1/12°) ≈ 0.42° Davies relaxation zone width
 
 snap_out(lo, hi; d = 0.25) = (floor(lo / d) * d, ceil(hi / d) * d)
-# ERA5 parent region anchored to the original 9 km Fan Domain-2 footprint (180×165 @ 1/12°,
-# SGP-centered) + buffer — NOT the 3 km child. One ERA5 retrieval then serves the 3 km child now
-# and a 9 km D2 outer nest later (ERA5 → D2 → D3) without re-downloading, and gives the animation's
-# parent row the wider synoptic context. Snapped outward to ERA5's native 0.25° grid.
+
+# We anchor the parent region to Fan's 9 km Domain 2 footprint (180×165 @ ~1/12°,
+# SGP-centered), not the 3 km child. One ERA5 retrieval then serves the 3 km child now
+# and a 9 km D2 outer nest later (ERA5 → D2 → D3) without re-downloading, and gives the
+# later animation's parent row wider synoptic context.
 D2_Nx, D2_Ny, D2_Δ = 180, 165, 1/12
+
 era5_region = BoundingBox(longitude = snap_out(λ₀ - D2_Nx * D2_Δ / 2 - era5_pad, λ₀ + D2_Nx * D2_Δ / 2 + era5_pad),
                           latitude  = snap_out(φ₀ - D2_Ny * D2_Δ / 2 - era5_pad, φ₀ + D2_Ny * D2_Δ / 2 + era5_pad))
 
@@ -174,21 +176,10 @@ era5_region = BoundingBox(longitude = snap_out(λ₀ - D2_Nx * D2_Δ / 2 - era5_
                era5_region.longitude[1], era5_region.longitude[2],
                era5_region.latitude[1],  era5_region.latitude[2])
 
-# We use hourly dataset on both single levels and pressure levels.
-
-ds_pl = ERA5HourlyPressureLevels()
-ds_sl = ERA5HourlySingleLevel()
-
 # ## Setup LAM grid
 #
-# Terrain-following `LatitudeLongitudeGrid` with `Bounded` horizontal topologies
-# (LAM-style). The vertical coordinate is a `TerrainFollowingVerticalDiscretization`
-# built from the stretched reference profile; `materialize_terrain!` (below) fills its
-# terrain components from the ETOPO 2022 surface elevation, deforming the coordinate
-# surfaces to follow the ground (a Gal-Chen–Somerville σ coordinate via the default
-# `LinearDecay` formulation). The bottom surface sits at the local terrain height;
-# the top stays flat. `znode` heights are true heights above sea level — the
-# coordinate the #241 ERA5 ingest below interpolates onto.
+# We create a bounded terrain-following `LatitudeLongitudeGrid` with a
+# `TerrainFollowingVerticalDiscretization` built from our custom stretching profile
 
 grid = LatitudeLongitudeGrid(arch;
                              longitude = (λ_west,  λ_east),
@@ -198,21 +189,8 @@ grid = LatitudeLongitudeGrid(arch;
                              halo      = (5, 5, 5),
                              topology  = (Bounded, Bounded, Bounded))
 
-# ETOPO 2022 surface elevation (≥ 0; ocean clamped to sea level) regridded onto
-# the LAM horizontal grid — ETOPO's 60″ (~1.85 km) relief is finer than the ~9 km
-# cells. `materialize_terrain!` fills the grid's terrain-following coordinate from it
-# in place; `CompressibleDynamics` then builds the slope metrics it needs directly
-# from the grid (no `terrain_metrics` argument required).
+# Get the parent terrain
 
-elevation = regrid_topography(grid; dataset = ETOPO2022())
-
-# Terrain taper across the lateral relaxation fringe. The lateral BCs feed the child the
-# smooth ERA5 parent state, which assumes the surface sits at the parent orography; at the
-# west inflow edge the child ETOPO is up to +713 m above it, so the boundary-supplied
-# hydrostatic pressure is inconsistent with the child surface and discharges as a spurious
-# near-surface horizontal pressure-gradient force (the cold-start blow-up). Blend ETOPO →
-# parent orography over the first `N_taper` cells of every lateral edge so the boundary
-# terrain matches the parent (weight 0) and ramps to full ETOPO by the inner fringe edge.
 g_accel = Oceananigans.defaults.gravitational_acceleration
 orography_grid = LatitudeLongitudeGrid(longitude = (λ_west,  λ_east),
                                        latitude  = (φ_south, φ_north),
@@ -221,29 +199,40 @@ orography_grid = LatitudeLongitudeGrid(longitude = (λ_west,  λ_east),
 Φ_sfc = CenterField(orography_grid)
 set!(Φ_sfc, Metadatum(:geopotential; dataset = ds_sl, date = start_date,
                       region = era5_region, dir = era5_datadir))
-era5_orography = Array(interior(Φ_sfc))[:, :, 1] ./ g_accel
+parent_elevation = Array(interior(Φ_sfc))[:, :, 1] ./ g_accel
 
-N_taper = 5
+# ETOPO 2022, with 60" (~1.85 km) relief, is finer than the our LAM grid cells. The
+# surface elevation (≥ 0; ocean clamped to sea level) is regridded onto
+# the LAM horizontal grid.
+
+elevation = regrid_topography(grid; dataset = ETOPO2022())
+
+# Now blend the terrain across the lateral relaxation zone such that the terrain along the boundary
+# matches the parent elevation and at the interior edge matches the child elevation.
+
 etopo_full = Array(interior(elevation))[:, :, 1]
 blended = similar(etopo_full)
 for j in 1:Ny, i in 1:Nx
-    weight = clamp(min(i - 1, Nx - i, j - 1, Ny - j) / N_taper, 0, 1)
-    blended[i, j] = weight * etopo_full[i, j] + (1 - weight) * era5_orography[i, j]
+    weight = clamp(min(i - 1, Nx - i, j - 1, Ny - j) / relax_width, 0, 1)
+    blended[i, j] = weight * etopo_full[i, j] + (1 - weight) * parent_elevation[i, j]
 end
 set!(elevation, reshape(blended, size(interior(elevation))))
 
-materialize_terrain!(grid, elevation)
+# Fill the grid's terrain-following coordinate from the regridded surface elevation
+# in place, deforming the coordinate surfaces to follow the ground (a Gal-Chen–Somerville
+# σ coordinate via the default `LinearDecay` formulation).
+# The bottom surface sits at the local terrain height; the top stays flat.
+# `znode` heights are true heights above sea level — the coordinate the #241 ERA5 ingest
+# below interpolates onto.
+# `CompressibleDynamics` will build the slope metrics it needs directly
+# from the grid (no `terrain_metrics` argument required).
 
-# Initial outer time step for the adaptive wizard (configured after the simulation, below).
-# Split-explicit substepping integrates the acoustic modes, so the outer step is advection-limited;
-# we start gentle at 1 s — which also avoids amplifying the cold-start transient — and let the wizard
-# ramp it toward `max_Δt`. The Davies fringe relaxation timescale `τ_relax` is tied to this Δt.
-Δt = 1.0
+materialize_terrain!(grid, elevation)
 
 # ## Nested domains
 #
 # Visualize the nesting before stepping the model: the ERA5 forcing region that supplies the parent
-# state (lateral BCs + Davies fringe) and the 3 km LAM — Fan (2017)'s Domain 3, the `NestedSimulation`
+# state (lateral BCs + Davies relaxation) and the 3 km LAM — Fan (2017)'s Domain 3, the `NestedSimulation`
 # child — over ETOPO terrain with Natural Earth state/country boundaries, centered on ARM SGP.
 # Drawn here, before the run, so the domain geometry is written even if the run is cut short.
 
@@ -284,6 +273,7 @@ map_grid = LatitudeLongitudeGrid(CPU();
                                  size      = (round(Int, (map_lon[2] - map_lon[1]) / 0.03),
                                               round(Int, (map_lat[2] - map_lat[1]) / 0.03), 1),
                                  topology  = (Bounded, Bounded, Bounded))
+
 # Full ETOPO relief (negative over ocean) for the basemap, so the map shows true
 # bathymetry as well as topography. The land–sea mask is just its sign — `regrid_topography`
 # (used above for the model's terrain) clamps the ocean to 0 and loses it. The mask is what
@@ -318,7 +308,7 @@ Colorbar(fig_map[1, 2], hm_map; label = "elevation / depth (m)")
 
 # US state lines and country borders (the topo/bathy coloring renders the coastline itself).
 for (name, color, linewidth) in (("admin_1_states_provinces_lines", (:gray20, 0.55), 0.7),
-                                 ("admin_0_boundary_lines_land",     (:black,  0.75), 1.4))
+                                 ("admin_0_boundary_lines_land",    (:black,  0.75), 1.4))
     lon, lat = natural_earth_lines(name)
     lines!(ax_map, lon, lat; color, linewidth)
 end
@@ -348,38 +338,24 @@ constants = ThermodynamicConstants()
 
 Rᵈ   = dry_air_gas_constant(constants)
 Rᵛ   = vapor_gas_constant(constants)
-εfac = Rᵛ / Rᵈ - 1   # for virtual-temperature correction: Tᵛ = T·(1 + εfac·qᵛ)
-# (latent heats Lᵥ, Lₛ now live inside `breeze_prognostic_state`.)
 
 # ## Interpolate ERA5 onto the LAM grid
 #
+# ### Parent grid
+#
+# The parent grid is in ERA5 native coordinates: (λ, φ), regular true-height z
+# (non-terrain-following).
 # `Field(metadatum, grid)` and `set!(field, metadatum)` regrid ERA5 pressure-level
-# data onto an arbitrary target grid, using the per-column geopotential height
+# data onto an arbitrary target grid, using the true per-column geopotential height
 # z = Φ(λ, φ, p)/g as the vertical coordinate and clipping sub-surface levels at
-# the local surface (NumericalEarth's `PressureLevelGrid`, NumericalEarth/
-# NumericalEarth.jl#241). The interpolation is driven by the *target* grid's own
-# node heights, so the terrain-following child is sampled at its true physical
-# heights — no sigma-z workaround, no custom column interpolation.
+# the local surface (through NumericalEarth's `PressureLevelGrid`).
+# The interpolation is driven by the *target* grid's own node heights, so the
+# terrain-following child is sampled at its true physical heights.
 #
 # These regrids interpolate linearly in height between ERA5 levels for T, qᵛ, qᶜ, qⁱ. Pressure
-# is NOT interpolated — over high terrain the sub-surface ERA5 levels clamp and corrupt the
-# near-surface state. Instead it is built by hydrostatic integration from the ERA5 surface
+# is not interpolated but instead built by hydrostatic integration from the ERA5 surface
 # pressure (see `hydrostatic_pressure_from_surface`), keeping it in discrete hydrostatic balance.
 
-# --- Parent grid: ERA5 native (λ, φ), regular true-height z (no terrain) ---
-#
-# The parent drives the child's lateral boundaries and Davies fringe. It stays on
-# a regular (non-terrain-following) grid; the #241 ingest regrids ERA5 onto it by
-# true Φ/g — the same vertical coordinate as the terrain-following child — so the
-# `Interpolated` lateral BCs and Davies relaxation sample a consistent state when
-# they interpolate the parent to the child's nodes.
-#
-# Mirror NumericalEarth's `native_grid`/`restrict` behavior: it pads the
-# requested bbox outward by Δ/2 on each side so cell *centers* land on the
-# ERA5 native grid. Without that adjustment, `parent_grid`'s cell centers
-# would be offset from the actual ERA5 data positions (up to ~0.12° at the
-# bbox edges), which biases the horizontal `interpolate!` onto the LAM.
-#
 # A single ERA5 fetch (snapshot 1's geopotential metadata) gives us the
 # native node coordinates and pressure levels needed to size the grid.
 
@@ -408,10 +384,12 @@ parent_grid = LatitudeLongitudeGrid(arch;
                                     halo      = (5, 5, 5),
                                     topology  = (Bounded, Bounded, Bounded))
 
-# --- PrescribedAtmosphere on the parent grid ---
-# Times in seconds since the first snapshot. PrescribedAtmosphere allocates
+# ### Prescribed Atmosphere
+#
+# `PrescribedAtmosphere` allocates
 # default Center-located FTSs for velocities, tracers (T, q), pressure.
 # qᶜ, qⁱ aren't standard slots; we own those alongside.
+# Times are in seconds since the first snapshot.
 
 parent_times = [Float64(Dates.value(d - start_date)) / 1000 for d in dates]
 parent = PrescribedAtmosphere(parent_grid, parent_times; two_dimensional = false, freshwater_flux = nothing, thermodynamics_parameters = nothing)
@@ -517,6 +495,7 @@ qⁱ = CenterField(grid); set!(qⁱ, initial_metadatum(:specific_cloud_ice_water
 # Calculate virtual temperature: Tᵛ = T·(1 + (1 − ε)/ε·qᵛ), ε = Rᵈ/Rᵛ.
 # Vapor only by convention — the qᶜ, qⁱ terms belong to the density temperature Tρ.
 
+εfac = Rᵛ / Rᵈ - 1
 Tᵛ = Field(T * (1 + εfac * qᵛ))
 compute!(Tᵛ)
 
@@ -539,7 +518,7 @@ set!(p₀, Metadatum(:surface_pressure; dataset=ds_sl, meta_common_snap1...))
 # clamps the sub-surface levels over high terrain, leaving the cold-start IC out of the model's
 # discrete hydrostatic balance (a ~40 g vertical residual). Build `p` by integrating up from the
 # ERA5 surface pressure instead — anchored at each column's terrain surface, with the moist Rᵐ.
-p = hydrostatic_pressure_from_surface(T, Array(interior(p₀))[:, :, 1], era5_orography;
+p = hydrostatic_pressure_from_surface(T, Array(interior(p₀))[:, :, 1], parent_elevation;
                                       qᵛ = qᵛ, qᶜ = qᶜ, qⁱ = qⁱ,
                                       dry_gas_constant = Rᵈ, vapor_gas_constant = Rᵛ,
                                       gravitational_acceleration = g_accel)
@@ -552,7 +531,7 @@ p = hydrostatic_pressure_from_surface(T, Array(interior(p₀))[:, :, 1], era5_or
 #     `NormalFlowBC` on Center-located fields silently overwrites the first interior
 #     cell on the W/S walls (validated against vortex-transit tests).
 #
-# Davies fringe relaxation toward the same parent state via `parent_forcings`,
+# Davies relaxation toward the same parent state via `parent_forcings`,
 # which wraps each parent `FieldTimeSeries` target in an Oceananigans
 # `Relaxation` (space/time-interpolated). We key them under specific names
 # (`u`, `v`, `θ`, `qᵉ`) so Breeze's `SpecificForcing` (PR #708) applies the ρ
@@ -594,31 +573,26 @@ bcs = merge(bcs, (; ρe  = FieldBoundaryConditions(west   = bcs.ρe.west,
                                                   north  = bcs.ρqᵉ.north,
                                                   bottom = ValueBoundaryCondition(ρqᵉ_surface_placeholder))))
 
-# Fringe geometry: 5 cells deep in each lateral direction. The mask is a
-# cosine ramp in degree-distance to the nearest wall — Davies is a numerical
-# smoother, so the precise ramp shape isn't physics-critical.
-
-FRINGE_N = 5
-fringe_deg = FRINGE_N * max(Δλ, Δφ)
-
-# Capture domain extents + fringe width into closure-local bindings so the
+# The mask is a cosine ramp in degree-distance to the nearest wall — Davies is a
+# numerical smoother, so the precise ramp shape isn't physics-critical.
+#
+# Capture domain extents + relaxation width into closure-local bindings so the
 # resulting function is type-stable (required for GPU kernel compilation —
 # non-const module globals produce dynamic-dispatch IR).
-lateral_mask = let λ_w = λ_west, λ_e = λ_east, φ_s = φ_south, φ_n = φ_north, fringe = fringe_deg
+lateral_mask = let λ_w = λ_west, λ_e = λ_east, φ_s = φ_south, φ_n = φ_north, width = relax_width_deg
     (λ, φ, z) -> begin
         dW = λ - λ_w
         dE = λ_e - λ
         dS = φ - φ_s
         dN = φ_n - φ
         d  = min(dW, dE, dS, dN)
-        d >= fringe && return zero(λ)
-        return 0.5 * (1 + cos(π * d / fringe))
+        d >= width && return zero(λ)
+        return 0.5 * (1 + cos(π * d / width))
     end
 end
 
-# Relaxation timescale = 10 outer steps, so the fringe pulls the boundary toward the
-# parent within ~10 Δt. (The advective-crossing estimate τ ≈ 5·Δx/U was O(50–700) Δt — far too weak.)
-τ_relax = 10 * Δt                                   # s
+# Relaxation timescale = 10 outer steps
+τ_relax = 10 * Δt  # s
 
 davies = parent_forcings(; rate = 1/τ_relax,
                          mask = lateral_mask,
@@ -675,7 +649,7 @@ rayleigh_damping = UpperSponge(; damping_rate = 1/damping_timescale, depth = dam
 # ## Build the production model
 #
 # The actual simulation: real (live, parent-driven `Interpolated`) lateral BCs, microphysics,
-# Coriolis, and the Davies fringe forcing. The initial pressure is hydrostatically balanced
+# Coriolis, and the Davies relaxation. The initial pressure is hydrostatically balanced
 # from the surface (above), and an optional dynamical-initialization pass (DFI=on, below) spins
 # ρw into nonhydrostatic balance before the run.
 
@@ -816,19 +790,20 @@ end
 # each iteration so the FTS-driven BCs and forcings get the correct
 # interpolation time.
 #
-# Δt is defined with the grid above; the Davies fringe relaxes on a 10·Δt timescale.
+# Δt is defined with the grid above; the Davies relaxation acts on a 10·Δt timescale.
 
 # `NestedSimulation` pairs the prescribed ERA5 parent with the Breeze child; `NestedModel.time_step!`
 # advances the child then ticks the parent clock so the FTS-driven BCs/forcing interpolate at the
 # right time. To telescope further (ERA5 → 9 km → 3 km) you nest a NestedModel inside another —
 # `child = NestedModel(d2_model, d3_model)` — out of scope for this single-nest example.
+
 nested = NestedSimulation(parent, model; Δt, stop_time = 7200.0)   # 2 h (matches end_date above)
 add_callback!(nested, surface_drag!, IterationInterval(1))   # bulk surface stress → ρτˣ/ρτʸ each step
 
 # Adaptive outer Δt: the acoustic modes are substepped, so the outer step is bounded by the (slower)
-# advective CFL — the wizard floats Δt up to `max_Δt` when the flow is calm and pulls it back during
-# active convection (Δz/|w| binding).
-conjure_time_step_wizard!(nested, IterationInterval(1); cfl = 0.7, max_Δt = 30.0)
+# _advective_ CFL.
+
+conjure_time_step_wizard!(nested, IterationInterval(1); cfl = 0.7, max_Δt = 30)
 
 # Terrain-following AGL slice (linear interpolation in physical znode height per column).
 function interp_to_height(zcol, vals, z_target)
