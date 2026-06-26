@@ -28,7 +28,7 @@ end
 @testset "DryLayerHumidity wet branch (𝒮 ≥ 𝒮ᶜ)" begin
     q = DryLayerHumidity(;
         dry_layer_depth = StorageBasedDryLayerDepth(
-            maximum_dry_layer_depth = 0.05, critical_saturation = 0.5, dry_layer_exponent = 2.0),
+            maximum_dry_layer_depth = 0.05, dry_layer_onset_saturation = 0.5, dry_layer_exponent = 2.0),
         vapor_exchange = DryLayerVaporPistonVelocity(
             minimum_dry_layer_depth = 1e-4, molecular_diffusivity = 2.5e-5),
         thermal_exchange_depth = 0.10, porosity = 0.4)
@@ -47,7 +47,7 @@ end
 @testset "DryLayerHumidity vapor divider" begin
     q = DryLayerHumidity(;
         dry_layer_depth = StorageBasedDryLayerDepth(
-            maximum_dry_layer_depth = 0.05, critical_saturation = 0.5, dry_layer_exponent = 1.0),
+            maximum_dry_layer_depth = 0.05, dry_layer_onset_saturation = 0.5, dry_layer_exponent = 1.0),
         vapor_exchange = DryLayerVaporPistonVelocity(
             minimum_dry_layer_depth = 1e-4, molecular_diffusivity = 2.5e-5,
             tortuosity_model = ConstantTortuosity()),
@@ -85,7 +85,7 @@ end
 
     q = DryLayerHumidity(;
         dry_layer_depth = StorageBasedDryLayerDepth(
-            maximum_dry_layer_depth = 0.05, critical_saturation = 0.5, dry_layer_exponent = 1.0),
+            maximum_dry_layer_depth = 0.05, dry_layer_onset_saturation = 0.5, dry_layer_exponent = 1.0),
         vapor_exchange = DryLayerVaporPistonVelocity(
             minimum_dry_layer_depth = 1e-4, molecular_diffusivity = 2.5e-5,
             tortuosity_model = ConstantTortuosity()),
@@ -109,7 +109,7 @@ end
     # Gᵉ → 0 by setting Dᵛ₀ very small. Atmospheric flux drives qⁱⁿ toward qᵃᵗ.
     q = DryLayerHumidity(;
         dry_layer_depth = StorageBasedDryLayerDepth(
-            maximum_dry_layer_depth = 0.05, critical_saturation = 0.5, dry_layer_exponent = 1.0),
+            maximum_dry_layer_depth = 0.05, dry_layer_onset_saturation = 0.5, dry_layer_exponent = 1.0),
         vapor_exchange = DryLayerVaporPistonVelocity(
             minimum_dry_layer_depth = 1e-4, molecular_diffusivity = 1e-14,
             tortuosity_model = ConstantTortuosity()),

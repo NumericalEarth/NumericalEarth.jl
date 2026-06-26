@@ -35,7 +35,7 @@ function build_coupled_test_model(arch; M_init, T_init, with_radiation = false)
     hydrology = VariablySaturatedHydrology(eltype(land_grid);
         slab_depth = 1.0, porosity = 0.4,
         residual_liquid_fraction = 0.0,
-        storage_height = 1000, critical_saturation = 0.5,
+        storage_height = 1000,
         retention_curve = VanGenuchtenRetention(α = 1.0, n = 2.0),
         hydraulic_conductivity = VanGenuchtenConductivity(K_saturated = 1e-6, n = 2.0),
         deep_liquid_flux = NoDeepLiquidFlux(),
@@ -59,7 +59,7 @@ function build_coupled_test_model(arch; M_init, T_init, with_radiation = false)
         specific_humidity = DryLayerHumidity(;
             dry_layer_depth = StorageBasedDryLayerDepth(
                 maximum_dry_layer_depth = 0.05,
-                critical_saturation = 0.5,
+                dry_layer_onset_saturation = 0.5,
                 dry_layer_exponent = 2.0),
             vapor_exchange = DryLayerVaporPistonVelocity(
                 minimum_dry_layer_depth = 1e-4,

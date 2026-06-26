@@ -54,7 +54,7 @@ using Thermodynamics: Thermodynamics as AtmosphericThermodynamics
 #####
 
 """
-    StorageBasedDryLayerDepth(maximum_dry_layer_depth, critical_saturation,
+    StorageBasedDryLayerDepth(maximum_dry_layer_depth, dry_layer_onset_saturation,
                                       dry_layer_exponent)
 
 Diagnostic dry-layer depth `δᵛ` as a function of land saturation `𝒮`:
@@ -66,6 +66,9 @@ Diagnostic dry-layer depth `δᵛ` as a function of land saturation `𝒮`:
 
 `δᵛ = 0` when `𝒮 ≥ 𝒮ᶜ` (wet branch), growing toward `δᵛ_max` as the slab dries.
 
+Here `dry_layer_onset_saturation` (`𝒮ᶜ`) is the slab saturation at which the
+dry layer first appears.
+
 Diagnosing the dry-surface-layer thickness from near-surface moisture follows
 the CLM5 scheme of [Swenson and Lawrence (2014)](@cite swenson2014dry)
 (also used by ClimaLand, with maximum depth ≈ 15 mm after Shokri and Or 2011);
@@ -73,29 +76,29 @@ this closure differs only in using the slab saturation `𝒮` as the moisture
 variable and a power-law shape.
 """
 struct StorageBasedDryLayerDepth{FT}
-    maximum_dry_layer_depth :: FT
-    critical_saturation     :: FT
-    dry_layer_exponent      :: FT
+    maximum_dry_layer_depth    :: FT
+    dry_layer_onset_saturation :: FT
+    dry_layer_exponent         :: FT
 end
 
 StorageBasedDryLayerDepth(FT::Type = Oceananigans.defaults.FloatType;
                           maximum_dry_layer_depth,
-                          critical_saturation,
+                          dry_layer_onset_saturation,
                           dry_layer_exponent = 2) =
     StorageBasedDryLayerDepth(convert(FT, maximum_dry_layer_depth),
-                              convert(FT, critical_saturation),
+                              convert(FT, dry_layer_onset_saturation),
                               convert(FT, dry_layer_exponent))
 
 @inline function dry_layer_depth(d::StorageBasedDryLayerDepth, 𝒮)
     FT = typeof(𝒮)
-    s  = min(𝒮 / convert(FT, d.critical_saturation), one(FT))
+    s  = min(𝒮 / convert(FT, d.dry_layer_onset_saturation), one(FT))
     return convert(FT, d.maximum_dry_layer_depth) *
            max(one(FT) - s, zero(FT))^convert(FT, d.dry_layer_exponent)
 end
 
 Base.summary(d::StorageBasedDryLayerDepth) =
     string("StorageBasedDryLayerDepth(δᵛ_max=", prettysummary(d.maximum_dry_layer_depth),
-           ", 𝒮ᶜ=", prettysummary(d.critical_saturation),
+           ", 𝒮ᶜ=", prettysummary(d.dry_layer_onset_saturation),
            ", η=", prettysummary(d.dry_layer_exponent), ")")
 
 #####
@@ -237,7 +240,7 @@ Base.show(io::IO, q::DryLayerHumidity) = print(io, summary(q))
 end
 
 #####
-##### Humidity solver — the headline of the closure.
+##### Humidity solver
 #####
 ##### Sign convention for fluxes here matches `SkinHumidity` exactly: every
 ##### flux is positive upward, and `Jᵃ = -ρᵃᵗ u★ q★` is the atmospheric vapor
