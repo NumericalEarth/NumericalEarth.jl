@@ -8,7 +8,8 @@ using NumericalEarth.Bathymetry: remove_minor_basins!,
                                  load_bathymetry_cache,
                                  save_bathymetry_cache,
                                  Interpolate,
-                                 Averaging
+                                 Averaging,
+                                 MedianAveraging
 using NumericalEarth.DataWrangling.ETOPO
 using Statistics
 

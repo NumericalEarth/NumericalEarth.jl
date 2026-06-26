@@ -661,35 +661,36 @@ end
     Nx = bathymetry_native_grid.Nx
 
     λl = λnode(i, j, 1, target_grid, Face(), Center(), Center())
-    λr = ifelse(j == target_grid.Ny,
-                λnode(i+1, j-1, 1, target_grid, Face(), Center(), Center()),
+    λr = ifelse(j == target_grid.Ny, 
+                λnode(i+1, j-1, 1, target_grid, Face(), Center(), Center()), 
                 λnode(i+1, j,   1, target_grid, Face(), Center(), Center()))
     φl = φnode(i, j, 1, target_grid, Center(), Face(), Center())
-    φr = ifelse(j == target_grid.Ny,
-                φnode(i+1, j-1, 1, target_grid, Center(), Face(), Center()),
+    φr = ifelse(j == target_grid.Ny, 
+                φnode(i+1, j-1, 1, target_grid, Center(), Face(), Center()), 
                 φnode(i,   j+1, 1, target_grid, Center(), Face(), Center()))
 
-    φl, φr = ifelse(j == target_grid.Ny,
-                    (min(φr, φl), max(φr, φl)),
+    φl, φr = ifelse(j == target_grid.Ny, 
+                    (min(φr, φl), max(φr, φl)), 
                     (φl, φr))
 
     locs = (Center(), Center(), Center())
-
+    
+    # assuming a regularly spaced lat/lon grid for the native
     i0 = floor(Int, fractional_x_index(λl, locs, bathymetry_native_grid)) + 1
     i1 = floor(Int, fractional_x_index(λr, locs, bathymetry_native_grid))
-    j0 = floor(Int, fractional_y_index(φl, locs, bathymetry_native_grid)) + 1
-    j1 = floor(Int, fractional_y_index(φr, locs, bathymetry_native_grid))
+    is = i0:i1
 
-    js = j0:j1
-
+    js = floor(Int, fractional_y_index(φl, locs, bathymetry_native_grid)) + 1:floor(Int, fractional_y_index(φr, locs, bathymetry_native_grid))
+    
     if i1 < i0 # on the fold
-        native_zs = @inbounds [native_z[i0:Nx, js, 1]..., native_z[1:i1, js, 1]...]
+        native_zs = @inbounds [native_z[floor(Int, fractional_x_index(λl, locs, bathymetry_native_grid)) + 1:Nx, js, 1]..., 
+                               native_z[1:floor(Int, fractional_x_index(λr, locs, bathymetry_native_grid)), js, 1]...]
     else
-        native_zs = @inbounds native_z[i0:i1, js, 1]
+        native_zs = @inbounds native_z[is, js, 1]
     end
 
-    FT = eltype(target_z)
-    @inbounds target_z[i, j, 1] = isempty(native_zs) ? zero(FT) : median(native_zs)
+    # happens at fold point - has to be branching so we don't compute the median of an empty array
+    @inbounds target_z[i, j, 1] = isempty(native_zs) ? zero(target_grid) : median(native_zs) 
 
     nothing
 end
