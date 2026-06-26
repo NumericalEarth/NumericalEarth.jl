@@ -71,13 +71,13 @@ using JLD2: jldsave
 using Dates
 using Printf
 
-# This 3 km LAM (300×270×50 ≈ 4M cells, split-explicit) targets a CUDA GPU; switch to `CPU()` only
-# for a small smoke test.
+# This 12 km LAM (150×136×50 ≈ 1.0M cells, split-explicit) targets a CUDA GPU; switch to `CPU()` only
+# for a small smoke test. (Coarsened 4× from Fan's 3 km Domain 3, over a 2×-expanded domain.)
 using CUDA
 const arch = GPU(CUDA.CUDABackend(always_inline = true))
 
 # Set Oceananigans' global default float type, cascading to all grids, fields, FieldTimeSeries, constants, and dynamics.
-Oceananigans.defaults.FloatType = Float32
+Oceananigans.defaults.FloatType = Float64
 
 # ## Configuration
 
@@ -86,17 +86,16 @@ Oceananigans.defaults.FloatType = Float32
 # Domain centered on the U.S. Department of Energy's Atmospheric Radiation Measurement (ARM) Climate
 # Research Facility's Southern Great Plains (SGP) site in Lamont, OK. We take the 3 km domain (Domain 3)
 # of the WRF 27 → 9 → 3 → 1 km telescoping nest used by [Fan2017](@citet) for this MC3E
-# case, driven directly by ERA5 (the parent). ERA5's native 0.25° step divides by 9 to 1/36° (~3 km)
-# here, so the child cells align cleanly with the reanalysis grid.
+# case, driven directly by ERA5 (the parent), but coarsened 4× to ~12 km for a fast configuration.
 #
 # Note that the Breeze cells are anisotropic at this latitude, using R = 6,371 km:
-#   Δx = R·cos(φ₀)·Δλ ≈ 2.48 km
-#   Δy = R·Δφ         ≈ 3.09 km
+#   Δx = R·cos(φ₀)·Δλ ≈ 9.9 km
+#   Δy = R·Δφ         ≈ 12.4 km
 
 φ₀, λ₀ = 36.605, -97.485    # center latitude, longitude (deg)
 
-Δλ = Δφ = 1/36              # uniform 1/36° step
-Nx, Ny = 300, 270           # Fan et al. (2017) Domain 3 footprint
+Δλ = Δφ = 1/9               # uniform 1/9° step (~12 km; 4× coarser than Fan's 3 km Domain 3)
+Nx, Ny = 150, 136           # ~12 km cells over a 2×-expanded domain (vs Fan Domain 3 footprint)
 
 # From these inputs, we determine the `BoundingBox` corners.
 
@@ -129,7 +128,7 @@ Nz = length(z_discretization)
 # ### Simulation time control
 
 start_date = DateTime(2011, 05, 20, 0)
-end_date   = DateTime(2011, 05, 20, 2)  # 2 h here to keep the example short; the full MC3E case is 18 h
+end_date   = DateTime(2011, 05, 20, 12) # 12 h window (the full MC3E case in Fan2017 was 18 h)
 
 dates = start_date:Hour(1):end_date
 
@@ -161,16 +160,14 @@ era5_pad = 1.0  # deg; wider than the 5·(1/12°) ≈ 0.42° Davies relaxation z
 
 snap_out(lo, hi; d = 0.25) = (floor(lo / d) * d, ceil(hi / d) * d)
 
-# We anchor the parent region to Fan's 9 km Domain 2 footprint (180×165 @ ~1/12°,
-# SGP-centered), not the 3 km child. One ERA5 retrieval then serves the 3 km child now
-# and a 9 km D2 outer nest later (ERA5 → D2 → D3) without re-downloading, and gives the
-# later animation's parent row wider synoptic context.
-D2_Nx, D2_Ny, D2_Δ = 180, 165, 1/12
+# Anchor the parent region to the child extent, padded outward by `era5_pad` (wider than the
+# Davies relaxation zone) and snapped to ERA5's 0.25° grid, so the parent strictly encloses the
+# child + fringe for any child size. Downloaded on demand; ERA5 stands in for Fan's 27 km Domain 1.
 
-era5_region = BoundingBox(longitude = snap_out(λ₀ - D2_Nx * D2_Δ / 2 - era5_pad, λ₀ + D2_Nx * D2_Δ / 2 + era5_pad),
-                          latitude  = snap_out(φ₀ - D2_Ny * D2_Δ / 2 - era5_pad, φ₀ + D2_Ny * D2_Δ / 2 + era5_pad))
+era5_region = BoundingBox(longitude = snap_out(λ_west  - era5_pad, λ_east  + era5_pad),
+                          latitude  = snap_out(φ_south - era5_pad, φ_north + era5_pad))
 
-@info @sprintf("Breeze child (3 km): λ ∈ [%.3f, %.3f], φ ∈ [%.3f, %.3f]; Δλ=Δφ=%.4f°",
+@info @sprintf("Breeze child (~12 km): λ ∈ [%.3f, %.3f], φ ∈ [%.3f, %.3f]; Δλ=Δφ=%.4f°",
                λ_west, λ_east, φ_south, φ_north, Δλ)
 @info @sprintf("ERA5 parent (D1 role, padded + snapped to 0.25°): λ ∈ [%.2f, %.2f], φ ∈ [%.2f, %.2f]",
                era5_region.longitude[1], era5_region.longitude[2],
@@ -287,7 +284,7 @@ domain_box(λ₁, λ₂, φ₁, φ₂) = ([λ₁, λ₂, λ₂, λ₁, λ₁], [
 
 fig_map = Figure(size = (840, 760), fontsize = 13)
 ax_map  = Axis(fig_map[1, 1]; xlabel = "longitude (°)", ylabel = "latitude (°)",
-               title  = "ERA5 → 3 km LAM nest (MC3E squall line, ARM SGP)",
+               title  = "ERA5 → 12 km LAM nest (MC3E squall line, ARM SGP)",
                aspect = DataAspect())
 
 # Two-sided normalization onto `:topo`: the full bathymetry range fills the lower (blue)
@@ -316,7 +313,7 @@ end
 lines!(ax_map, domain_box(era5_region.longitude..., era5_region.latitude...)...;
        color = :dodgerblue, linewidth = 3, label = "ERA5 parent — Fan Domain 1 role")
 lines!(ax_map, domain_box(λ_west, λ_east, φ_south, φ_north)...;
-       color = :crimson, linewidth = 3, label = "3 km LAM — Fan Domain 3 (child)")
+       color = :crimson, linewidth = 3, label = "12 km LAM (child)")
 scatter!(ax_map, [λ₀], [φ₀]; color = :black, marker = :star5, markersize = 18, label = "ARM SGP")
 
 axislegend(ax_map; position = :rt, framevisible = true, backgroundcolor = (:white, 0.85))
@@ -395,7 +392,7 @@ parent_grid = LatitudeLongitudeGrid(arch;
 # and replace the code below
 
 parent_times = [Float64(Dates.value(d - start_date)) / 1000 for d in dates]
-parent = PrescribedAtmosphere(parent_grid, parent_times; two_dimensional = false, freshwater_flux = nothing, thermodynamics_parameters = nothing)
+parent = PrescribedAtmosphere(parent_grid, parent_times; freshwater_flux = nothing, thermodynamics_parameters = nothing)
 
 # Parent-side `FieldTimeSeries` that drive the child, kept alongside the
 # `PrescribedAtmosphere` (which owns u, v, T, q, p). All are Center-located
@@ -466,8 +463,8 @@ for n in eachindex(dates)
 
     interior(parent.velocities.u, :, :, :, n) .= interior(u_series[n])
     interior(parent.velocities.v, :, :, :, n) .= interior(v_series[n])
-    interior(parent.tracers.T,    :, :, :, n) .= interior(T_series[n])
-    interior(parent.tracers.q,    :, :, :, n) .= interior(qᵛ_series[n])
+    interior(parent.temperature,       :, :, :, n) .= interior(T_series[n])
+    interior(parent.specific_humidity, :, :, :, n) .= interior(qᵛ_series[n])
     interior(parent.pressure,     :, :, :, n) .= interior(p_p)
     interior(parent_series.qᶜ,    :, :, :, n) .= interior(qᶜ_series[n])
     interior(parent_series.qⁱ,    :, :, :, n) .= interior(qⁱ_series[n])
@@ -779,7 +776,7 @@ end
 # right time. To telescope further (ERA5 → 9 km → 3 km) you nest a NestedModel inside another —
 # `child = NestedModel(d2_model, d3_model)` — out of scope for this single-nest example.
 
-nested = NestedSimulation(parent, model; Δt, stop_time = 7200.0)   # 2 h (matches end_date above)
+nested = NestedSimulation(parent, model; Δt, stop_time = 43200.0)   # 12 h (matches end_date above)
 add_callback!(nested, surface_drag!, IterationInterval(1))   # bulk surface stress → ρτˣ/ρτʸ each step
 
 # Adaptive outer Δt: the acoustic modes are substepped, so the outer step is bounded by the (slower)
@@ -859,7 +856,7 @@ add_callback!(nested, progress, IterationInterval(slice_stride))
 #
 # Step the nest to `stop_time`; the progress callback accumulates the cascade-animation slices in memory.
 
-@info @sprintf("Δt₀ = %.2f s; running ERA5 → 3 km Breeze to t = %.0f s", Δt, nested.stop_time)
+@info @sprintf("Δt₀ = %.2f s; running ERA5 → 12 km Breeze to t = %.0f s", Δt, nested.stop_time)
 flush(stdout); flush(stderr)
 run!(nested)
 @info "Done."
@@ -947,7 +944,7 @@ boxφ = [φbox[1], φbox[1], φbox[2], φbox[2], φbox[1]]
 fig_cascade = Figure(size = (1500, 700))
 cascade_n   = Observable(1)
 Label(fig_cascade[0, 1:5],
-      (@lift @sprintf("MC3E 20 May 2011 — ERA5 → 3 km Breeze — t = %.1f h", slice_frames[$cascade_n].t / 3600)),
+      (@lift @sprintf("MC3E 20 May 2011 — ERA5 → 12 km Breeze — t = %.1f h", slice_frames[$cascade_n].t / 3600)),
       fontsize = 20, tellwidth = false)
 for (ci, (key, label, cmap, crange)) in enumerate(cascade_columns)
     parent_ax = Axis(fig_cascade[1, ci]; title = label, aspect = DataAspect())
@@ -967,7 +964,7 @@ for (ci, (key, label, cmap, crange)) in enumerate(cascade_columns)
     hidedecorations!(parent_ax); hidedecorations!(child_ax)
     if ci == 1
         text!(parent_ax, 0.03, 0.97; text = "ERA5 (D1)",   space = :relative, align = (:left, :top), color = :white, fontsize = 15, font = :bold)
-        text!(child_ax,  0.03, 0.97; text = "Breeze 3 km", space = :relative, align = (:left, :top), color = :white, fontsize = 15, font = :bold)
+        text!(child_ax,  0.03, 0.97; text = "Breeze 12 km", space = :relative, align = (:left, :top), color = :white, fontsize = 15, font = :bold)
     end
 end
 CairoMakie.record(fig_cascade, output_dir * "/era5_cascade_2row.mp4", 1:length(slice_frames); framerate = 8) do nn
