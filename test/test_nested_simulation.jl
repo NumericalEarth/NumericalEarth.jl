@@ -92,7 +92,7 @@ end
 @testset "NestedSimulation: Lamb-Oseen vortex through a child NonhydrostaticModel" begin
     # Parent atmosphere holds the analytic Lamb-Oseen state on a 3D PrescribedAtmosphere,
     # populated by set! at a few coarse time snapshots; interpolation handles the rest.
-    # `two_dimensional = false` gives CCC velocities/tracers/pressure so the FTS can be
+    # The resolved-vertical (3D) grid gives CCC velocities/tracers/pressure so the FTS can be
     # interpolated at the child's interior z-nodes.
     # Domain extends strictly beyond the child so the FTS brackets every child
     # boundary node (required by InterpolatedFTSBoundary's validation).
@@ -103,7 +103,7 @@ end
                                   topology = (Bounded, Bounded, Bounded))
 
     times  = collect(0.0:0.1:1.0)
-    parent = PrescribedAtmosphere(parent_grid, times; two_dimensional = false)
+    parent = PrescribedAtmosphere(parent_grid, times)
 
     set!(parent.velocities.u, (x, y, z, t) -> lamb_oseen_uv(x, y, t)[1])
     set!(parent.velocities.v, (x, y, z, t) -> lamb_oseen_uv(x, y, t)[2])
@@ -336,7 +336,7 @@ end
                                   x = (-3000, 3000), y = (-3000, 3000), z = (-200, 2200),
                                   topology = (Bounded, Bounded, Bounded))
     times  = [0.0, 100.0]
-    parent = PrescribedAtmosphere(parent_grid, times; two_dimensional = false)
+    parent = PrescribedAtmosphere(parent_grid, times)
     set!(parent.velocities.u, (x, y, z, t) -> 1.0)
     set!(parent.velocities.v, (x, y, z, t) -> 0.0)
 
@@ -405,7 +405,7 @@ end
     alm = AtmosphereLandModel(atmos, land)            # radiation = nothing (radiatively decoupled)
 
     parent = PrescribedAtmosphere(atmos_grid, [0.0, 100.0];
-                                  two_dimensional = false, freshwater_flux = nothing,
+                                  freshwater_flux = nothing,
                                   thermodynamics_parameters = nothing)
     nested = NestedSimulation(parent, alm; Δt = 0.05, stop_iteration = 2)
     @test nested isa Simulation                       # NestedModel accepted the coupled child
