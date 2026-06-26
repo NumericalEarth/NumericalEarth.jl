@@ -1,3 +1,4 @@
+using Statistics: median
 using Oceananigans.Grids: λnode, φnode, HRegularLLG
 using Oceananigans.Fields: fractional_x_index, fractional_y_index
 
@@ -628,6 +629,67 @@ end
     end
 
     @inbounds target_z[i, j, 1] = ifelse(n == 0, s, s / n)
+
+    nothing
+end
+
+struct MedianAveraging end
+
+function apply_regriding(::MedianAveraging, native_z, target_grid)
+    arch = architecture(target_grid)
+    if !(arch isa CPU)
+        @warn "MedianAveraging regridding always runs on CPU; moving data to CPU for computation."
+    end
+
+    native_z_cpu = on_architecture(CPU(), native_z)
+    cpu_target_grid = on_architecture(CPU(), target_grid)
+    target_z_cpu = Field{Center, Center, Nothing}(cpu_target_grid)
+
+    launch!(CPU(), cpu_target_grid, :xy,
+            _regrid_by_median!,
+            target_z_cpu, native_z_cpu, cpu_target_grid, native_z_cpu.grid)
+
+    target_z = Field{Center, Center, Nothing}(target_grid)
+    set!(target_z, Array(interior(target_z_cpu, :, :, 1)))
+
+    return target_z
+end
+
+@kernel function _regrid_by_median!(target_z, native_z, target_grid, bathymetry_native_grid)
+    i, j = @index(Global, NTuple)
+
+    Nx = bathymetry_native_grid.Nx
+
+    λl = λnode(i, j, 1, target_grid, Face(), Center(), Center())
+    λr = ifelse(j == target_grid.Ny,
+                λnode(i+1, j-1, 1, target_grid, Face(), Center(), Center()),
+                λnode(i+1, j,   1, target_grid, Face(), Center(), Center()))
+    φl = φnode(i, j, 1, target_grid, Center(), Face(), Center())
+    φr = ifelse(j == target_grid.Ny,
+                φnode(i+1, j-1, 1, target_grid, Center(), Face(), Center()),
+                φnode(i,   j+1, 1, target_grid, Center(), Face(), Center()))
+
+    φl, φr = ifelse(j == target_grid.Ny,
+                    (min(φr, φl), max(φr, φl)),
+                    (φl, φr))
+
+    locs = (Center(), Center(), Center())
+
+    i0 = floor(Int, fractional_x_index(λl, locs, bathymetry_native_grid)) + 1
+    i1 = floor(Int, fractional_x_index(λr, locs, bathymetry_native_grid))
+    j0 = floor(Int, fractional_y_index(φl, locs, bathymetry_native_grid)) + 1
+    j1 = floor(Int, fractional_y_index(φr, locs, bathymetry_native_grid))
+
+    js = j0:j1
+
+    if i1 < i0 # on the fold
+        native_zs = @inbounds [native_z[i0:Nx, js, 1]..., native_z[1:i1, js, 1]...]
+    else
+        native_zs = @inbounds native_z[i0:i1, js, 1]
+    end
+
+    FT = eltype(target_z)
+    @inbounds target_z[i, j, 1] = isempty(native_zs) ? zero(FT) : median(native_zs)
 
     nothing
 end

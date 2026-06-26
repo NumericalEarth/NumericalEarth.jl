@@ -1,6 +1,6 @@
 module Bathymetry
 
-export regrid_bathymetry, regrid_topography, ORCAGrid, Interpolate, Averaging
+export regrid_bathymetry, regrid_topography, ORCAGrid, Interpolate, Averaging, MedianAveraging
 
 using Downloads: Downloads, download
 using ImageMorphology: ImageMorphology
