@@ -41,6 +41,11 @@ export
     OceanSeaIceModel,
     AtmosphereOceanModel,
     AtmosphereLandModel,
+    NestedModel,
+    NestedSimulation,
+    parent_boundary_conditions,
+    parent_forcings,
+    # Atmosphere-land interface closures
     BulkHumidity,
     SkinHumidity,
     FractionalHumidity,
@@ -122,6 +127,8 @@ export
     LinearlyTaperedPolarMask,
     DatasetRestoring,
     atmosphere_simulation,
+    breeze_prognostic_state,
+    hydrostatic_pressure_from_surface,
     ocean_simulation,
     sea_ice_simulation,
     default_sea_ice,
@@ -201,6 +208,7 @@ using .Oceans
 using .SeaIces
 using .Diagnostics
 using .EarthSystemModels: ComponentInterfaces, MomentumRoughnessLength, ScalarRoughnessLength, default_sea_ice
+using .EarthSystemModels.NestedSimulations: NestedModel, NestedSimulation, parent_boundary_conditions, parent_forcings
 using .DataWrangling.ETOPO
 using .DataWrangling.ECCO
 using .DataWrangling.GLORYS

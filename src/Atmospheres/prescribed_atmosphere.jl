@@ -36,18 +36,33 @@ function velocity_boundary_conditions(grid::OrthogonalSphericalShellGrids.Tripol
     return FieldBoundaryConditions(grid, loc; north = north_bc)
 end
 
-function default_atmosphere_velocities(grid, times)
-    velocity_bcs = velocity_boundary_conditions(grid, (Center(), Center(), nothing))
-    ua = FieldTimeSeries{Center, Center, Nothing}(grid, times; boundary_conditions = velocity_bcs)
-    va = FieldTimeSeries{Center, Center, Nothing}(grid, times; boundary_conditions = velocity_bcs)
-    return (u=ua, v=va)
+# `two_dimensional = true` (default) builds a surface atmosphere; `false` builds a
+# 3D atmosphere (adds `w`) for use as a `NestedSimulation` parent.
+function default_atmosphere_velocities(grid, times; two_dimensional=true)
+    if two_dimensional
+        velocity_bcs = velocity_boundary_conditions(grid, (Center(), Center(), nothing))
+        ua = FieldTimeSeries{Center, Center, Nothing}(grid, times; boundary_conditions = velocity_bcs)
+        va = FieldTimeSeries{Center, Center, Nothing}(grid, times; boundary_conditions = velocity_bcs)
+        return (u=ua, v=va)
+    else
+        ua = FieldTimeSeries{Center, Center, Center}(grid, times)
+        va = FieldTimeSeries{Center, Center, Center}(grid, times)
+        wa = FieldTimeSeries{Center, Center, Center}(grid, times)
+        return (u=ua, v=va, w=wa)
+    end
 end
 
-function default_atmosphere_tracers(grid, times)
-    Ta = FieldTimeSeries{Center, Center, Nothing}(grid, times)
-    qa = FieldTimeSeries{Center, Center, Nothing}(grid, times)
-    parent(Ta) .= 273.15 + 20
-    return (T=Ta, q=qa)
+function default_atmosphere_tracers(grid, times; two_dimensional=true)
+    if two_dimensional
+        Ta = FieldTimeSeries{Center, Center, Nothing}(grid, times)
+        qa = FieldTimeSeries{Center, Center, Nothing}(grid, times)
+        parent(Ta) .= 273.15 + 20
+        return (T=Ta, q=qa)
+    else
+        Ta = FieldTimeSeries{Center, Center, Center}(grid, times)
+        qa = FieldTimeSeries{Center, Center, Center}(grid, times)
+        return (T=Ta, q=qa)
+    end
 end
 
 """
@@ -72,6 +87,7 @@ PrescribedPrecipitationFlux(; rain=nothing, snow=nothing) =
 Adapt.adapt_structure(to, ff::PrescribedPrecipitationFlux) =
     PrescribedPrecipitationFlux(adapt(to, ff.rain), adapt(to, ff.snow))
 
+# Freshwater flux is 2D regardless of the atmosphere's dimensionality
 function default_freshwater_flux(grid, times)
     rain = FieldTimeSeries{Center, Center, Nothing}(grid, times)
     snow = FieldTimeSeries{Center, Center, Nothing}(grid, times)
@@ -91,10 +107,14 @@ end
 
 """ The standard unit of atmospheric pressure; 1 standard atmosphere (atm) = 101,325 Pascals (Pa)
 in SI units. This is approximately equal to the mean sea-level atmospheric pressure on Earth. """
-function default_atmosphere_pressure(grid, times)
-    pa = FieldTimeSeries{Center, Center, Nothing}(grid, times)
-    parent(pa) .= 101325
-    return pa
+function default_atmosphere_pressure(grid, times; two_dimensional=true)
+    if two_dimensional
+        pa = FieldTimeSeries{Center, Center, Nothing}(grid, times)
+        parent(pa) .= 101325
+        return pa
+    else
+        return FieldTimeSeries{Center, Center, Center}(grid, times)
+    end
 end
 
 @inline function Oceananigans.TimeSteppers.update_state!(atmos::PrescribedAtmosphere)
@@ -128,15 +148,23 @@ EarthSystemModels.adopt_clock(atmosphere::PrescribedAtmosphere, clock) = EarthSy
 """
     PrescribedAtmosphere(grid, times=[zero(grid)];
                          clock = Clock{Float64}(time = 0),
+                         two_dimensional = true,
                          surface_layer_height = 10, # meters
                          boundary_layer_height = 512, # meters
                          thermodynamics_parameters = AtmosphereThermodynamicsParameters(eltype(grid)),
-                         velocities      = default_atmosphere_velocities(grid, times),
-                         tracers         = default_atmosphere_tracers(grid, times),
-                         pressure        = default_atmosphere_pressure(grid, times),
+                         velocities      = default_atmosphere_velocities(grid, times; two_dimensional),
+                         tracers         = default_atmosphere_tracers(grid, times; two_dimensional),
+                         pressure        = default_atmosphere_pressure(grid, times; two_dimensional),
                          freshwater_flux = default_freshwater_flux(grid, times))
 
-Return a prescribed, time-evolving atmospheric state with data on `grid` and at given `times`.
+Return a prescribed, time-evolving atmospheric state with data on `grid` at `times`.
+
+`two_dimensional = true` (the default) builds a surface atmosphere with 2D
+`(Center, Center, Nothing)` velocity/tracer/pressure fields; `two_dimensional = false`
+builds 3D `(Center, Center, Center)` fields (adding `w`), e.g. for a
+[`NestedSimulation`](@ref) parent. The freshwater flux is a surface field either
+way — pass `freshwater_flux = nothing` to omit it. Override any default with the
+`velocities` / `tracers` / `pressure` / `freshwater_flux` keyword arguments.
 
 !!! compat "Radiation component"
     The downwelling shortwave / longwave radiation part of the top-level `radiation`
@@ -145,12 +173,13 @@ Return a prescribed, time-evolving atmospheric state with data on `grid` and at 
 """
 function PrescribedAtmosphere(grid, times=[zero(grid)];
                               clock = Clock{Float64}(time = 0),
+                              two_dimensional = true,
                               surface_layer_height = 10,
                               boundary_layer_height = 512,
                               thermodynamics_parameters = AtmosphereThermodynamicsParameters(eltype(grid)),
-                              velocities      = default_atmosphere_velocities(grid, times),
-                              tracers         = default_atmosphere_tracers(grid, times),
-                              pressure        = default_atmosphere_pressure(grid, times),
+                              velocities      = default_atmosphere_velocities(grid, times; two_dimensional),
+                              tracers         = default_atmosphere_tracers(grid, times; two_dimensional),
+                              pressure        = default_atmosphere_pressure(grid, times; two_dimensional),
                               freshwater_flux = default_freshwater_flux(grid, times))
 
     FT = eltype(grid)

@@ -70,4 +70,6 @@ CondaPkg.toml
 # claude
 .claude
 test/Manifest.toml
-ye1993.pdf
+
+# Throwaway scratch scripts
+scratch/

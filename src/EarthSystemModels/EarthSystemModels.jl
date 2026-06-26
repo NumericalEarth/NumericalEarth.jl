@@ -68,6 +68,10 @@ using .InterfaceComputations
 include("earth_system_model.jl")
 include("time_step_earth_system_model.jl")
 
+include("NestedSimulations/NestedSimulations.jl")
+
+using .NestedSimulations
+
 #####
 #####  Fallbacks for no-interface models
 #####

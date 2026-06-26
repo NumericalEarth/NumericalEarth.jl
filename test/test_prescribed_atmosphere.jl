@@ -1,7 +1,4 @@
 include("runtests_setup.jl")
-include("download_utils.jl")
-
-using CDSAPI
 
 using Oceananigans.BoundaryConditions: fill_halo_regions!
 using Oceananigans.Fields: parent
@@ -51,36 +48,19 @@ end
 end
 
 @testset "Regridded prescribed atmosphere tripolar velocity zipper sign" begin
-
-    era5_dataset = ERA5HourlySingleLevel()
-    # Use a known-good ERA5 timestamp instead of the earliest available
-    # temperature date: `ERA5PrescribedAtmosphere` also requests total
-    # precipitation, and the CDS/MARS archive can return `MarsNoDataError`
-    # for the generic 1940-01-01 hourly window.
-    era5_start = DateTime(2005, 2, 1, 12)
-    era5_end = era5_start + Hour(1)
-    era5_dates = era5_start:Hour(1):era5_end
-
-    atmospheres = (
-        (name = "JRA55", atmosphere = JRA55PrescribedAtmosphere(CPU(); time_indices_in_memory = 2)),
-        (name = "ECCO", atmosphere = ECCOPrescribedAtmosphere(CPU(); dataset = ECCO4Monthly(),
-                                                                     start_date = start_date,
-                                                                     end_date = start_date + Month(1),
-                                                                     time_indices_in_memory = 2)),
-        (name = "ERA5", atmosphere = ERA5PrescribedAtmosphere(CPU(); dataset = era5_dataset,
-                                                                     start_date = era5_start,
-                                                                     end_date = era5_end,
-                                                                     time_indices_in_memory = 2))
-    )
+    # The exchanger builds its velocity state on the (tripolar) exchange grid with
+    # north-fold BCs, independent of the atmosphere's source grid or data, so a plain
+    # PrescribedAtmosphere on a lat-lon grid exercises the same path without any download.
+    # Dataset-backed atmosphere constructors are exercised by the download tests.
+    atmosphere_grid = LatitudeLongitudeGrid(CPU(); size = (36, 18, 1),
+                                            longitude = (0, 360), latitude = (-80, 80),
+                                            z = (-1, 0), halo = (3, 3, 3))
+    atmosphere = PrescribedAtmosphere(atmosphere_grid, [0.0])
 
     exchange_grid = TripolarGrid(CPU(); size = (32, 16, 1), z = (-1, 0), halo = (3, 3, 3))
+    exchanger = NumericalEarth.EarthSystemModels.InterfaceComputations.ComponentExchanger(atmosphere, exchange_grid)
 
-    for (; name, atmosphere) in atmospheres
-        @testset "$name" begin
-            exchanger = NumericalEarth.EarthSystemModels.InterfaceComputations.ComponentExchanger(atmosphere, exchange_grid)
-            for field in (exchanger.state.u, exchanger.state.v)
-                assert_tripolar_velocity_zipper(field, exchange_grid)
-            end
-        end
+    for field in (exchanger.state.u, exchanger.state.v)
+        assert_tripolar_velocity_zipper(field, exchange_grid)
     end
 end
