@@ -21,6 +21,8 @@ export
     ElevationCorrection,
     atmosphere_land_interface,
     SimilarityTheoryFluxes,
+    FixedIterations,
+    ConvergenceStopCriteria,
     LandRoughnessLength,
     CoefficientBasedFluxes,
     FreezingLimitedOceanTemperature,

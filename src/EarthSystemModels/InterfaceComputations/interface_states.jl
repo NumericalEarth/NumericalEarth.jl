@@ -107,6 +107,8 @@ struct BulkHumidity{Φ}
     phase :: Φ
 end
 
+BulkHumidity(; phase=AtmosphericThermodynamics.Liquid()) = BulkHumidity(phase)
+
 Base.summary(::BulkHumidity{Φ}) where Φ =
     string("BulkHumidity{", Φ === AtmosphericThermodynamics.Liquid ? "Liquid" : "Ice", "}")
 Base.show(io::IO, q::BulkHumidity) = print(io, summary(q))
