@@ -8,7 +8,7 @@ using NumericalEarth.Bathymetry: remove_minor_basins!,
                                  load_bathymetry_cache,
                                  save_bathymetry_cache,
                                  Interpolate,
-                                 MedianAveraging
+                                 Averaging
 using NumericalEarth.DataWrangling.ETOPO
 using Statistics
 
@@ -76,7 +76,7 @@ using Statistics
         # Testing that multiple passes _do_ change the solution when coarsening the grid
         @test parent(control_bottom_height) != parent(interpolated_bottom_height)
 
-        averaged_bottom_height = regrid_bathymetry(grid; method=MedianAveraging())
+        averaged_bottom_height = regrid_bathymetry(grid; method=Averaging())
 
         # Testing that averaging does change the solution when coarsening the grid
         @test parent(control_bottom_height) != parent(averaged_bottom_height)

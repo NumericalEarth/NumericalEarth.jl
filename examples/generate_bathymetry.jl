@@ -10,7 +10,7 @@ using NumericalEarth
 using Oceananigans
 using CairoMakie
 
-using NumericalEarth.Bathymetry: Interpolate, MedianAveraging
+using NumericalEarth.Bathymetry: Interpolate, Averaging
 
 # We start by defining a gridded domain for the Mediterranean Sea using the `LatitudeLongitudeGrid` from Oceananigans.
 #
@@ -47,7 +47,7 @@ grid = LatitudeLongitudeGrid(size = (Nλ, Nφ, 1),
 h_rough = regrid_bathymetry(grid; major_basins = Inf)
 h_smooth = regrid_bathymetry(grid; method = Interpolate(40), major_basins = Inf)
 #h_one_basin = regrid_bathymetry(grid; major_basins = 1)
-h_averaged = regrid_bathymetry(grid; major_basins = Inf, method = MedianAveraging())
+h_averaged = regrid_bathymetry(grid; major_basins = Inf, method = Averaging())
 nothing #hide
 
 # Finally, we visualize the generated bathymetry data for the Mediterranean Sea using CairoMakie.
@@ -57,8 +57,8 @@ interior(h_smooth)[land_smooth] .= NaN
 land_rough = interior(h_rough) .≥ 0
 interior(h_rough)[land_rough] .= NaN
 
-land_one_basin = interior(h_one_basin) .≥ 0
-interior(h_one_basin)[land_one_basin] .= NaN
+#land_one_basin = interior(h_one_basin) .≥ 0
+#interior(h_one_basin)[land_one_basin] .= NaN
 
 land_averaged = interior(h_averaged) .≥ 0
 interior(h_averaged)[land_averaged] .= NaN

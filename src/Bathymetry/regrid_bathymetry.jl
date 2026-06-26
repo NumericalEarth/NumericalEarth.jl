@@ -1,4 +1,3 @@
-using Statistics: median
 using Oceananigans.Grids: λnode, φnode, HRegularLLG
 using Oceananigans.Fields: fractional_x_index, fractional_y_index
 
@@ -568,18 +567,18 @@ function apply_regriding(interpolate::Interpolate, native_z, target_grid)
     return target_z
 end
 
-struct MedianAveraging end
+struct Averaging end
 
-function apply_regriding(::MedianAveraging, native_z, target_grid)
+function apply_regriding(::Averaging, native_z, target_grid)
     native_grid = native_z.grid
-    native_grid isa HRegularLLG || 
-        throw(ArgumentError("Bathymetry native grid must be regular lat/lon to regrid with `MedianAveraging`"))
+    native_grid isa HRegularLLG ||
+        throw(ArgumentError("Bathymetry native grid must be regular lat/lon to regrid with `Averaging`"))
     target_z = Field{Center, Center, Nothing}(target_grid)
 
     launch!(architecture(target_grid),
             target_grid,
-            :xy, 
-            _compute_median!,
+            :xy,
+            _regrid_by_averaging!,
             target_z,
             native_z,
             target_grid,
@@ -588,42 +587,47 @@ function apply_regriding(::MedianAveraging, native_z, target_grid)
     return target_z
 end
 
-@kernel function _compute_median!(target_z, native_z, target_grid, bathymetry_native_grid)
+@kernel function _regrid_by_averaging!(target_z, native_z, target_grid, bathymetry_native_grid)
     i, j = @index(Global, NTuple)
 
     Nx = bathymetry_native_grid.Nx
 
     λl = λnode(i, j, 1, target_grid, Face(), Center(), Center())
-    λr = ifelse(j == target_grid.Ny, 
-                λnode(i+1, j-1, 1, target_grid, Face(), Center(), Center()), 
+    λr = ifelse(j == target_grid.Ny,
+                λnode(i+1, j-1, 1, target_grid, Face(), Center(), Center()),
                 λnode(i+1, j,   1, target_grid, Face(), Center(), Center()))
     φl = φnode(i, j, 1, target_grid, Center(), Face(), Center())
-    φr = ifelse(j == target_grid.Ny, 
-                φnode(i+1, j-1, 1, target_grid, Center(), Face(), Center()), 
+    φr = ifelse(j == target_grid.Ny,
+                φnode(i+1, j-1, 1, target_grid, Center(), Face(), Center()),
                 φnode(i,   j+1, 1, target_grid, Center(), Face(), Center()))
 
-    φl, φr = ifelse(j == target_grid.Ny, 
-                    (min(φr, φl), max(φr, φl)), 
+    φl, φr = ifelse(j == target_grid.Ny,
+                    (min(φr, φl), max(φr, φl)),
                     (φl, φr))
 
     locs = (Center(), Center(), Center())
-    
-    # assuming a regularly spaced lat/lon grid for the native
+
     i0 = floor(Int, fractional_x_index(λl, locs, bathymetry_native_grid)) + 1
     i1 = floor(Int, fractional_x_index(λr, locs, bathymetry_native_grid))
-    is = i0:i1
+    j0 = floor(Int, fractional_y_index(φl, locs, bathymetry_native_grid)) + 1
+    j1 = floor(Int, fractional_y_index(φr, locs, bathymetry_native_grid))
 
-    js = floor(Int, fractional_y_index(φl, locs, bathymetry_native_grid)) + 1:floor(Int, fractional_y_index(φr, locs, bathymetry_native_grid))
+    # mod1 handles the antimeridian fold (i1 < i0) without branching
+    icount = i1 - i0 + 1 + ifelse(i1 < i0, Nx, 0)
 
-    if i1 < i0 # on the fold
-        native_zs = @inbounds [native_z[floor(Int, fractional_x_index(λl, locs, bathymetry_native_grid)) + 1:Nx, js, 1]..., 
-                               native_z[1:floor(Int, fractional_x_index(λr, locs, bathymetry_native_grid)), js, 1]...]
-    else
-        native_zs = @inbounds native_z[is, js, 1]
+    FT = eltype(target_z)
+    s = zero(FT)
+    n = 0
+
+    for jj in j0:j1
+        for k in 0:icount-1
+            ii = mod1(i0 + k, Nx)
+            s += @inbounds native_z[ii, jj, 1]
+            n += 1
+        end
     end
 
-    # happens at fold point - has to be branching so we don't compute the median of an empty array
-    @inbounds target_z[i, j, 1] = isempty(native_zs) ? zero(target_grid) : median(native_zs) 
+    @inbounds target_z[i, j, 1] = ifelse(n == 0, s, s / n)
 
     nothing
 end
