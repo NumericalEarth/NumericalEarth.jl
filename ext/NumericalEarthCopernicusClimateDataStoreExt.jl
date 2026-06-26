@@ -1,7 +1,7 @@
 module NumericalEarthCopernicusClimateDataStoreExt
 
 using NumericalEarth
-using CopernicusClimateDataStore
+using CopernicusClimateDataStore: CopernicusClimateDataStore
 using Downloads: Downloads
 using Dates
 using Oceananigans.DistributedComputations: @root
