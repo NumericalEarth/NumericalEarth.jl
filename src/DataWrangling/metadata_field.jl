@@ -1,8 +1,11 @@
 using NCDatasets
 using JLD2
-using Oceananigans.Grids: λnodes, φnodes, Periodic, Bounded
+using KernelAbstractions: @kernel, @index
+using Oceananigans.Grids: λnodes, φnodes, Periodic, Bounded, AbstractMutableGrid, interior_indices, ξnode, ηnode, znode
 using Oceananigans.Architectures: on_architecture
-using Oceananigans.Fields: interpolate!
+using Oceananigans.BoundaryConditions: fill_halo_regions!
+using Oceananigans.Fields: interpolate, interpolate!
+using Oceananigans.Utils: launch!, KernelParameters
 
 #####
 ##### Location with automatic restriction based on region
@@ -69,12 +72,9 @@ function restrict_longitude(bbox_interfaces, interfaces::NTuple{2,Any}, N)
     left, right = interfaces
     Δ = (right - left) / N
 
-    # Longitude bounding boxes may cross the native periodic seam after being
-    # mapped into the dataset's longitude convention, for example -110°..30°
-    # on ERA5's 0°..360° grid becomes 249.875°..389.875°. Preserve that
-    # continuous span (center-bracketed, see `restrict`) instead of clamping to
-    # the native upper face.
-    if bbox_interfaces[1] ≥ left && bbox_interfaces[2] > right
+    if bbox_interfaces[2] - bbox_interfaces[1] == 360
+        return interfaces, N
+    elseif bbox_interfaces[1] ≥ left && bbox_interfaces[2] > right
         i⁻ = max(floor(Int, (bbox_interfaces[1] - left) / Δ - 1/2), 0)
         i⁺ = ceil(Int, (bbox_interfaces[2] - left) / Δ + 1/2)
         return (left + i⁻ * Δ, left + i⁺ * Δ), i⁺ - i⁻
@@ -287,6 +287,49 @@ function Oceananigans.Fields.Field(metadata::Metadatum, arch=CPU();
     return field
 end
 
+@kernel function _interpolate_physical!(to_field, to_grid, to_location, from_field, from_grid, from_location)
+    i, j, k = @index(Global, NTuple)
+    ℓx, ℓy, ℓz = to_location
+    # Sample at the target's deformed `znode`, not the reference coordinate that
+    # `_node` (and hence Oceananigans' `interpolate!`) uses on a mutable grid.
+    to_node = (ξnode(i, j, k, to_grid, ℓx, ℓy, ℓz),
+               ηnode(i, j, k, to_grid, ℓx, ℓy, ℓz),
+               znode(i, j, k, to_grid, ℓx, ℓy, ℓz))
+    @inbounds to_field[i, j, k] = interpolate(to_node, from_field, from_location, from_grid)
+end
+
+"""
+    interpolate_physical!(to_field, from_field)
+
+Interpolate `from_field` onto `to_field`. Identical to Oceananigans'
+`interpolate!` for ordinary grids, but on a `MutableVerticalDiscretization`
+(terrain-following) target it samples the source at the target's *deformed*
+`znode` rather than the reference `rnode`. `interpolate!` builds its target node
+from `_node`, whose vertical component is `rnode`, so it would place the source
+at the LAM's reference heights and ignore the terrain — putting the lowest cells
+below the (clipped) surface of a `PressureLevelGrid` source.
+
+!!! note "TODO"
+    Drop this once Oceananigans' `interpolate!` resolves the target vertical node
+    from the physical `znode` for mutable grids.
+"""
+function interpolate_physical!(to_field, from_field)
+    to_field.grid isa AbstractMutableGrid || return interpolate!(to_field, from_field)
+
+    to_grid       = to_field.grid
+    from_grid     = from_field.grid
+    arch          = child_architecture(to_grid)
+    from_location = Tuple(L() for L in location(from_field))
+    to_location   = Tuple(L() for L in location(to_field))
+    params        = KernelParameters(interior_indices(to_field))
+
+    launch!(arch, to_grid, params, _interpolate_physical!,
+            to_field, to_grid, to_location, from_field, from_grid, from_location)
+
+    fill_halo_regions!(to_field)
+    return to_field
+end
+
 """
     Field(metadata::Metadatum, grid::AbstractGrid; kw...)
 
@@ -299,7 +342,7 @@ function Oceananigans.Fields.Field(metadata::Metadatum, grid::AbstractGrid; kw..
     native = Field(metadata, architecture(grid); kw...)
     LX, LY, LZ = location(metadata)
     target = Field{LX, LY, LZ}(grid)
-    Oceananigans.Fields.interpolate!(target, native)
+    interpolate_physical!(target, native)
     return target
 end
 
@@ -321,7 +364,7 @@ function Oceananigans.Fields.set!(target_field::Field, metadata::Metadatum; kw..
               "the target grid ($(Lzt) m). Some vertical levels cannot be filled with data.")
     end
 
-    interpolate!(target_field, meta_field)
+    interpolate_physical!(target_field, meta_field)
 
     return target_field
 end
@@ -371,8 +414,11 @@ function centers_to_interfaces(z_centers)
     return z_faces
 end
 
+# Convert missing values to NaN
+@inline nan_convert_missing(FT, x::Number) = convert(FT, x)
 @inline nan_convert_missing(FT, ::Missing) = convert(FT, NaN)
-@inline nan_convert_missing(FT, d::Number) = convert(FT, d)
+@inline nan_convert_missing(FT, x, ::Missing) = nan_convert_missing(FT, x)
+@inline nan_convert_missing(FT, x, missing_val::Number) = ifelse(ismissing(x) || x == missing_val, convert(FT, NaN), nan_convert_missing(FT, x))
 
 # No units conversion
 @inline convert_units(T, units) = T
@@ -406,6 +452,13 @@ end
 @inline convert_units(Φ::FT, ::InverseGravity)                                 where FT = Φ / convert(FT, 9.80665)
 @inline convert_units(V::FT, ::CentimetersPerSecond)                           where FT = V / convert(FT, 100)
 
+# Mass fractions (convert to kg/kg)
+@inline convert_units(χ::FT, ::DecigramPerKilogram) where FT = χ / convert(FT, 1e4)
+@inline convert_units(χ::FT, ::GramPerKilogram) where FT = χ / convert(FT, 1e3)
+
+# Densities (convert to kg/m^3)
+@inline convert_units(ρ::FT, ::HectogramPerCubicMeter) where FT = ρ / convert(FT, 10)
+@inline convert_units(ρ::FT, ::CentigramPerCubicCentimeter) where FT = ρ * convert(FT, 10)
 
 #####
 ##### Masking data for inpainting

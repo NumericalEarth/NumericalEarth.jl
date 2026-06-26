@@ -88,6 +88,8 @@ function Base.show(io::IO, ocean::SlabOcean)
 end
 Base.eltype(::SlabOcean{FT}) where FT = FT
 
+Grids.grid(ocean::SlabOcean) = ocean.grid
+
 #####
 ##### EarthSystemModels interface
 #####

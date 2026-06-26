@@ -6,7 +6,7 @@ using Oceananigans.Architectures: on_architecture
 """
     os_papa_prescribed_fluxes(architecture = CPU(), FT = Float64;
                               start_date = first_date(OSPapaFluxHourly(), :net_heat_flux),
-                              end_date   = last_date(OSPapaFluxHourly(), :net_heat_flux),
+                              end_date = last_date(OSPapaFluxHourly(), :net_heat_flux),
                               dir = download_OSPapa_cache,
                               max_gap_hours = 72)
 
@@ -34,13 +34,13 @@ Keyword Arguments
 """
 function os_papa_prescribed_fluxes(architecture = CPU(), FT = Float64;
                                    start_date = first_date(OSPapaFluxHourly(), :net_heat_flux),
-                                   end_date   = last_date(OSPapaFluxHourly(), :net_heat_flux),
+                                   end_date = last_date(OSPapaFluxHourly(), :net_heat_flux),
                                    dir = download_OSPapa_cache,
                                    max_gap_hours = 72)
 
     mdkw = (; dataset = OSPapaFluxHourly(), start_date, end_date, dir)
 
-    surface_grid = RectilinearGrid(architecture, FT; size=(), topology=(Flat, Flat, Flat))
+    surface_grid = RectilinearGrid(architecture, FT; size = (), topology = (Flat, Flat, Flat))
 
     function flux_fts(name)
         md = Metadata(name; mdkw...)
