@@ -373,13 +373,13 @@ function hydrostatic_ocean_simulation(grid;
     top_meridional_momentum_flux = τʸ = Field{Center, Face, Nothing}(grid)
     top_ocean_heat_flux          = Jᵀ = Field{Center, Center, Nothing}(grid)
     top_salt_flux                = Jˢ = Field{Center, Center, Nothing}(grid)
-    top_freshwater_volume_flux   = Fη = Field{Center, Center, Nothing}(grid)
+    top_freshwater_volume_flux   = Jʷ = Field{Center, Center, Nothing}(grid)
     
     if grid isa MutableGridOfSomeKind
         if :η ∈ keys(forcing)
-            forcing = merge(forcing, (η = (Fη, forcing.η),))
+            forcing = merge(forcing, (η = (Jʷ, forcing.η),))
         else
-            forcing = merge(forcing, (η = Fη,))
+            forcing = merge(forcing, (η = Jʷ,))
         end
     end
 
