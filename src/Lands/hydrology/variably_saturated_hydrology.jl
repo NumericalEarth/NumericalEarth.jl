@@ -20,9 +20,11 @@
 #####   * `water_storage_tendency`  (dMˡᵃ/dt, kg m⁻² s⁻¹)
 #####
 ##### The diagnostic surface saturation `𝒮 = clamp(θˡ/ν, 0, 1)` is written into
-##### `land.saturation` by `update_diagnostics!` (read by surface-property and
-##### humidity closures) and `moisture_availability = β = clamp(𝒮/𝒮ᶜ, 0, 1)` is
-##### the `saturation(...)` accessor result.
+##### `land.saturation` by `update_diagnostics!` and returned verbatim by the
+##### `saturation(...)` accessor. The evaporation-efficiency factor `β` is *not*
+##### computed here: the atmosphere reads raw `𝒮`, and the humidity formulation
+##### (`CriticalSaturation`, `StorageBasedDryLayerDepth`, …) owns the critical
+##### saturation `𝒮ᶜ` and the `𝒮 → β` mapping.
 #####
 
 """
@@ -31,7 +33,6 @@
                                      porosity,
                                      residual_liquid_fraction = 0,
                                      storage_height,
-                                     critical_saturation,
                                      liquid_density = 1000,
                                      retention_curve,
                                      hydraulic_conductivity,
@@ -49,7 +50,6 @@ surface; positive upward at the bottom).
 * `storage_height` (`hˢˢ`, m) — saturated storage height; the reciprocal of the
   specific storage (`1/Sₛ`), i.e. the pressure head built per unit fractional
   over-saturation.
-* `critical_saturation` (`𝒮ᶜ`) — saturation above which `β = 1`.
 * `retention_curve` — e.g. [`VanGenuchtenRetention`](@ref).
 * `hydraulic_conductivity` — e.g. [`VanGenuchtenConductivity`](@ref).
 * `deep_liquid_flux` — bottom-boundary closure: [`NoDeepLiquidFlux`](@ref),
@@ -65,7 +65,6 @@ struct VariablySaturatedHydrology{FT, R, C, DF, PD, RO} <: AbstractHydrology
     porosity                 :: FT
     residual_liquid_fraction :: FT
     storage_height         :: FT
-    critical_saturation      :: FT
     liquid_density           :: FT
     retention_curve          :: R
     hydraulic_conductivity   :: C
@@ -79,7 +78,6 @@ function VariablySaturatedHydrology(FT::Type = Oceananigans.defaults.FloatType;
                                           porosity,
                                           residual_liquid_fraction = 0,
                                           storage_height,
-                                          critical_saturation,
                                           liquid_density = 1000,
                                           retention_curve,
                                           hydraulic_conductivity,
@@ -90,7 +88,6 @@ function VariablySaturatedHydrology(FT::Type = Oceananigans.defaults.FloatType;
                                             convert(FT, porosity),
                                             convert(FT, residual_liquid_fraction),
                                             convert(FT, storage_height),
-                                            convert(FT, critical_saturation),
                                             convert(FT, liquid_density),
                                             retention_curve,
                                             hydraulic_conductivity,
@@ -147,9 +144,6 @@ end
                   pressure_head(h.retention_curve, 𝒮),
                   (M - Mˡᵃ⁺) * hˢˢ / (ρˡ * hˡᵃ))
 end
-
-@inline moisture_availability(h, 𝒮) =
-    clamp(𝒮 / convert(typeof(𝒮), h.critical_saturation), zero(𝒮), one(𝒮))
 
 #####
 ##### Diagnostic-saturation kernel — refreshes `land.saturation` from `M`.
