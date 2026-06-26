@@ -40,11 +40,12 @@ function velocity_boundary_conditions(grid::OrthogonalSphericalShellGrids.Tripol
     return FieldBoundaryConditions(grid, loc; north = north_boundary_condition)
 end
 
-# Surface (2D, z-`Nothing`) vs 3D (z-`Center`) defaults are inferred from the grid:
-# a `Flat` vertical ⇒ surface forcing (ocean / sea-ice coupling); a resolved vertical ⇒ a 3D
-# atmosphere (e.g. a `NestedSimulation` parent). Dataset builders pass their own fields explicitly
-# and so are unaffected; only the `default_*` paths consult this. Override any field via kwarg.
-@inline is_three_dimensional(grid) = topology(grid, 3) !== Flat
+# Surface (2D, z-`Nothing`) vs 3D (z-`Center`) defaults are inferred from the grid's vertical size:
+# `Nz == 1` ⇒ surface forcing (ocean / sea-ice coupling); `Nz > 1` ⇒ a 3D atmosphere (e.g. a
+# `NestedSimulation` parent). A single-level grid — even one with a `Bounded` z, like an ocean
+# coupling grid — is treated as surface. Dataset builders pass their own fields explicitly and so are
+# unaffected; only the `default_*` paths consult this. Override any field via kwarg.
+@inline is_three_dimensional(grid) = size(grid, 3) > 1
 
 function default_atmosphere_velocities(grid, times)
     # The horizontal velocity boundary conditions carry the tripolar north-fold sign flip, a property
@@ -188,8 +189,8 @@ in `microphysical_variables` instead).
 `ERA5PrescribedAtmosphere = PrescribedAtmosphere{<:ERA5Dataset}` dispatch on provenance.
 
 Surface (2D, `(Center, Center, Nothing)`) vs 3D (`(Center, Center, Center)`, adding `w`)
-default fields are inferred from the grid: a `Flat` vertical builds a surface atmosphere (ocean /
-sea-ice coupling), a resolved vertical a 3D atmosphere (e.g. a [`NestedSimulation`](@ref) parent).
+default fields are inferred from the grid's vertical size: `Nz == 1` builds a surface atmosphere
+(ocean / sea-ice coupling), `Nz > 1` a 3D atmosphere (e.g. a [`NestedSimulation`](@ref) parent).
 Pass any field explicitly to override; pass `precipitation_flux = nothing` to omit it.
 
 !!! compat "Radiation component"
