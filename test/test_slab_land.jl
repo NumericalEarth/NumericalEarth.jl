@@ -12,6 +12,7 @@ using NumericalEarth.EarthSystemModels.InterfaceComputations: default_atmosphere
                                                               EdsonMomentumStabilityFunction,
                                                               SimilarityScales,
                                                               celsius_to_kelvin
+using NumericalEarth.Atmospheres: AtmosphereThermodynamicsParameters
 using Thermodynamics
 
 @testset "SlabLand energy and hydrology" begin
@@ -366,7 +367,7 @@ end
         end
 
         ℂᵃᵗ = atmosphere.thermodynamics_parameters
-        cp  = Thermodynamics.cp_m(ℂᵃᵗ, qᵃᵗ)
+        cᵖᵐ = Thermodynamics.cp_m(ℂᵃᵗ, qᵃᵗ)
         ρᵃᵗ = Thermodynamics.air_density(ℂᵃᵗ, Tᵃᵗ, pᵃᵗ, qᵃᵗ)
 
         # Neutralize stability and gustiness with a constant roughness length so the
@@ -394,11 +395,11 @@ end
         # Surface velocities are zero for land, so ΔU is the full near-surface wind.
         ϰ  = fluxes.von_karman_constant
         ΔU = sqrt(uᵃᵗ^2 + vᵃᵗ^2)
-        Δθ = Tᵃᵗ - T_skin + h / cp * g
+        Δθ = Tᵃᵗ - T_skin + h / cᵖᵐ * g
         u★ = ϰ / log(h / ℓ) * ΔU
         θ★ = ϰ / log(h / ℓ) * Δθ
         τˣ = - ρᵃᵗ * u★^2 * uᵃᵗ / ΔU
-        𝒬ᵀ = - ρᵃᵗ * cp * u★ * θ★
+        𝒬ᵀ = - ρᵃᵗ * cᵖᵐ * u★ * θ★
 
         @test @allowscalar(interface_fluxes.x_momentum[1, 1, 1])        ≈ τˣ
         @test @allowscalar(interface_fluxes.friction_velocity[1, 1, 1]) ≈ u★
@@ -409,12 +410,11 @@ end
 
 @testset "Atmosphere-Land flux stability and roughness response" begin
     for arch in test_architectures
-    
-        T_atm = 288
-        q_atm = 0.003
-        cp       = Thermodynamics.cp_m(AtmosphereThermodynamicsParameters(Float64), q_atm)
-        g         = 9.80665
-        neutral_skin = T_atm + 10 / cp * g
+        Tᵃᵗ = 288
+        qᵃᵗ = 0.003
+        cᵖᵐ = Thermodynamics.cp_m(AtmosphereThermodynamicsParameters(Float64), qᵃᵗ)
+        g   = 9.80665
+        neutral_skin = Tᵃᵗ + 10 / cᵖᵐ * g
         # Single-column coupled model using the real land stability functions; returns
         # the friction velocity and sensible heat for a given skin temperature / roughness.
         function land_flux_response(T_skin; ℓ = 0.1)
@@ -424,8 +424,8 @@ end
             h = 10.0
             atmosphere = PrescribedAtmosphere(grid; surface_layer_height = h, boundary_layer_height = 512)
             @allowscalar begin
-                fill!(parent(atmosphere.tracers.T),    T_atm)
-                fill!(parent(atmosphere.tracers.q),    q_atm)
+                fill!(parent(atmosphere.tracers.T),    Tᵃᵗ)
+                fill!(parent(atmosphere.tracers.q),    qᵃᵗ)
                 fill!(parent(atmosphere.velocities.u), 5)
                 fill!(parent(atmosphere.velocities.v), 0)
                 fill!(parent(atmosphere.pressure),     101325)
@@ -438,9 +438,7 @@ end
             set!(land; T = T_skin)
             model = AtmosphereLandModel(atmosphere, land; atmosphere_land_fluxes = fluxes, radiation = nothing)
             update_state!(model)
-            f  = model.interfaces.atmosphere_land_interface.fluxes
-            cp = Thermodynamics.cp_m(atmosphere.thermodynamics_parameters, 0.003)
-            g  = model.interfaces.properties.gravitational_acceleration
+            f = model.interfaces.atmosphere_land_interface.fluxes
             return (u★ = @allowscalar(f.friction_velocity[1, 1, 1]),
                     Q  = @allowscalar(f.sensible_heat[1, 1, 1]))
         end
