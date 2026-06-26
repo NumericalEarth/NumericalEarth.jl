@@ -1,5 +1,9 @@
 using ...Atmospheres: PrescribedAtmosphere, PrescribedPrecipitationFlux
 
+# `JRA55PrescribedAtmosphere` is a type alias for a `PrescribedAtmosphere` whose `source` is any JRA55
+# dataset; the constructor methods below build one (the alias is both the dispatch type and the builder).
+const JRA55PrescribedAtmosphere = PrescribedAtmosphere{<:JRA55Dataset}
+
 JRA55PrescribedAtmosphere(arch::Distributed; kw...) =
     JRA55PrescribedAtmosphere(child_architecture(arch); kw...)
 
@@ -55,6 +59,7 @@ function JRA55PrescribedAtmosphere(architecture = CPU();
     FT    = eltype(u)
 
     return PrescribedAtmosphere(grid, times;
+                                source = dataset,
                                 velocities = (; u, v),
                                 temperature = T,
                                 specific_humidity = qᵛ,

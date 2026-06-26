@@ -6,6 +6,10 @@ using Oceananigans.Architectures: on_architecture
 using Oceananigans.Fields: CenterField, interior
 using Thermodynamics: Liquid
 
+# `ERA5PrescribedAtmosphere` is a type alias for a `PrescribedAtmosphere` whose `source` is any ERA5
+# dataset; the constructor methods below build one (the alias is both the dispatch type and the builder).
+const ERA5PrescribedAtmosphere = PrescribedAtmosphere{<:ERA5Dataset}
+
 ERA5PrescribedAtmosphere(arch::Distributed; kw...) =
     ERA5PrescribedAtmosphere(child_architecture(arch); kw...)
 
@@ -89,6 +93,7 @@ function ERA5PrescribedAtmosphere(architecture = CPU();
     precipitation_flux = PrescribedPrecipitationFlux(; rain)
 
     return PrescribedAtmosphere(grid, times;
+                                source = dataset,
                                 velocities = (; u, v),
                                 temperature = T,
                                 specific_humidity = qᵛ,
@@ -161,6 +166,7 @@ function ERA5PrescribedAtmosphere(bounding_box::BoundingBox, dates;
     times = T.times
 
     return PrescribedAtmosphere(grid, times;
+                                source = dataset,
                                 velocities = (; u, v),
                                 temperature = T,
                                 specific_humidity = qᵛ,

@@ -2,7 +2,8 @@
 ##### Prescribed atmosphere (as opposed to dynamically evolving / prognostic)
 #####
 
-mutable struct PrescribedAtmosphere{FT, G, T, U, Θ, Q, M, P, C, F, TP, TI} <: AbstractPrescribedComponent
+mutable struct PrescribedAtmosphere{S, FT, G, T, U, Θ, Q, M, P, C, F, TP, TI} <: AbstractPrescribedComponent
+    source :: S
     grid :: G
     clock :: Clock{T}
     velocities :: U
@@ -18,7 +19,7 @@ mutable struct PrescribedAtmosphere{FT, G, T, U, Θ, Q, M, P, C, F, TP, TI} <: A
     boundary_layer_height :: FT
 end
 
-function Base.summary(atmos::PrescribedAtmosphere{FT}) where FT
+function Base.summary(atmos::PrescribedAtmosphere{<:Any, FT}) where FT
     Nx, Ny, Nz = size(atmos.grid)
     Nt = length(atmos.times)
     sz_str = string(Nx, "×", Ny, "×", Nz, "×", Nt)
@@ -163,6 +164,7 @@ EarthSystemModels.adopt_clock(atmos::PrescribedAtmosphere, clock) = EarthSystemM
 
 """
     PrescribedAtmosphere(grid, times=[zero(grid)];
+                         source = nothing,
                          clock = Clock{Float64}(time = 0),
                          surface_layer_height = 10, # meters
                          boundary_layer_height = 512, # meters
@@ -183,6 +185,10 @@ empty by default), `pressure`, gas-species `tracers` (e.g. CO₂; empty by defau
 surface atmosphere — a `precipitation_flux` (a 3D atmosphere defaults to none, carrying precipitation
 in `microphysical_variables` instead).
 
+`source` records what the atmosphere was built from (a dataset object, e.g. `ERA5HourlyPressureLevels()`;
+`nothing` for a hand-built atmosphere). Dataset constructors set it so that aliases like
+`ERA5PrescribedAtmosphere = PrescribedAtmosphere{<:ERA5Dataset}` dispatch on provenance.
+
 Surface (2D, `(Center, Center, Nothing)`) vs 3D (`(Center, Center, Center)`, adding `w`)
 default fields are inferred from the grid: a `Flat` vertical builds a surface atmosphere (ocean /
 sea-ice coupling), a resolved vertical a 3D atmosphere (e.g. a [`NestedSimulation`](@ref) parent).
@@ -194,6 +200,7 @@ Pass any field explicitly to override; pass `precipitation_flux = nothing` to om
     [`DataWrangling.JRA55.JRA55PrescribedRadiation`](@ref NumericalEarth.DataWrangling.JRA55.JRA55PrescribedRadiation)).
 """
 function PrescribedAtmosphere(grid, times=[zero(grid)];
+                              source = nothing,
                               clock = Clock{Float64}(time = 0),
                               surface_layer_height = 10,
                               boundary_layer_height = 512,
@@ -211,7 +218,8 @@ function PrescribedAtmosphere(grid, times=[zero(grid)];
         thermodynamics_parameters = AtmosphereThermodynamicsParameters(FT)
     end
 
-    atmos = PrescribedAtmosphere(grid,
+    atmos = PrescribedAtmosphere(source,
+                                 grid,
                                  clock,
                                  velocities,
                                  temperature,
