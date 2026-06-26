@@ -47,9 +47,13 @@ end
 @inline is_three_dimensional(grid) = topology(grid, 3) !== Flat
 
 function default_atmosphere_velocities(grid, times)
+    # The horizontal velocity boundary conditions carry the tripolar north-fold sign flip, a property
+    # of the *horizontal* grid — so `u`/`v` need them whether the atmosphere is 2D or 3D. `w` keeps the
+    # grid's default (scalar fold). On non-tripolar grids these are the plain default BCs.
     if is_three_dimensional(grid)
-        u = FieldTimeSeries{Center, Center, Center}(grid, times)
-        v = FieldTimeSeries{Center, Center, Center}(grid, times)
+        boundary_conditions = velocity_boundary_conditions(grid, (Center(), Center(), Center()))
+        u = FieldTimeSeries{Center, Center, Center}(grid, times; boundary_conditions)
+        v = FieldTimeSeries{Center, Center, Center}(grid, times; boundary_conditions)
         w = FieldTimeSeries{Center, Center, Center}(grid, times)
         return (; u, v, w)
     else
@@ -61,13 +65,10 @@ function default_atmosphere_velocities(grid, times)
 end
 
 function default_atmosphere_temperature(grid, times)
-    if is_three_dimensional(grid)
-        return FieldTimeSeries{Center, Center, Center}(grid, times)
-    else
-        T = FieldTimeSeries{Center, Center, Nothing}(grid, times)
-        parent(T) .= 273.15 + 20
-        return T
-    end
+    LZ = is_three_dimensional(grid) ? Center : Nothing
+    T = FieldTimeSeries{Center, Center, LZ}(grid, times)
+    parent(T) .= 273.15 + 20   # a sane uniform placeholder (real atmospheres set this explicitly)
+    return T
 end
 
 function default_atmosphere_specific_humidity(grid, times)
@@ -125,13 +126,10 @@ end
 """ The standard unit of atmospheric pressure; 1 standard atmosphere (atm) = 101,325 Pascals (Pa)
 in SI units. This is approximately equal to the mean sea-level atmospheric pressure on Earth. """
 function default_atmosphere_pressure(grid, times)
-    if is_three_dimensional(grid)
-        return FieldTimeSeries{Center, Center, Center}(grid, times)
-    else
-        p = FieldTimeSeries{Center, Center, Nothing}(grid, times)
-        parent(p) .= 101325
-        return p
-    end
+    LZ = is_three_dimensional(grid) ? Center : Nothing
+    p = FieldTimeSeries{Center, Center, LZ}(grid, times)
+    parent(p) .= 101325   # a sane uniform placeholder (real atmospheres set this explicitly)
+    return p
 end
 
 @inline function Oceananigans.TimeSteppers.update_state!(atmos::PrescribedAtmosphere)
