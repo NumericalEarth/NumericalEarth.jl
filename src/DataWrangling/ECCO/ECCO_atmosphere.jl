@@ -57,7 +57,6 @@ function ECCOPrescribedAtmosphere(architecture = CPU();
     grid  = ua.grid
 
     velocities = (u = ua, v = va)
-    tracers = (T = Ta, q = qa)
     pressure = pa
 
     FT = eltype(ua)
@@ -66,7 +65,8 @@ function ECCOPrescribedAtmosphere(architecture = CPU();
     atmosphere = PrescribedAtmosphere(grid, times;
                                       velocities,
                                       freshwater_flux,
-                                      tracers,
+                                      temperature = Ta,
+                                      specific_humidity = qa,
                                       surface_layer_height,
                                       pressure)
 

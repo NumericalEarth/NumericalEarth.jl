@@ -93,7 +93,8 @@ function ERA5PrescribedAtmosphere(architecture = CPU();
 
     return PrescribedAtmosphere(grid, times;
                                 velocities = (u = ua, v = va),
-                                tracers    = (T = Ta, q = qa),
+                                temperature = Ta,
+                                specific_humidity = qa,
                                 pressure   = pa,
                                 freshwater_flux,
                                 thermodynamics_parameters = ℂ,

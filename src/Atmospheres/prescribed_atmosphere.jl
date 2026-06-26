@@ -2,10 +2,13 @@
 ##### Prescribed atmosphere (as opposed to dynamically evolving / prognostic)
 #####
 
-mutable struct PrescribedAtmosphere{FT, G, T, U, P, C, F, TP, TI} <: AbstractPrescribedComponent
+mutable struct PrescribedAtmosphere{FT, G, T, U, Θ, Q, M, P, C, F, TP, TI} <: AbstractPrescribedComponent
     grid :: G
     clock :: Clock{T}
     velocities :: U
+    temperature :: Θ
+    specific_humidity :: Q
+    microphysical_variables :: M
     pressure :: P
     tracers :: C
     freshwater_flux :: F
@@ -36,34 +39,44 @@ function velocity_boundary_conditions(grid::OrthogonalSphericalShellGrids.Tripol
     return FieldBoundaryConditions(grid, loc; north = north_bc)
 end
 
-# `two_dimensional = true` (default) builds a surface atmosphere; `false` builds a
-# 3D atmosphere (adds `w`) for use as a `NestedSimulation` parent.
-function default_atmosphere_velocities(grid, times; two_dimensional=true)
-    if two_dimensional
-        velocity_bcs = velocity_boundary_conditions(grid, (Center(), Center(), nothing))
-        ua = FieldTimeSeries{Center, Center, Nothing}(grid, times; boundary_conditions = velocity_bcs)
-        va = FieldTimeSeries{Center, Center, Nothing}(grid, times; boundary_conditions = velocity_bcs)
-        return (u=ua, v=va)
-    else
+# Surface (2D, z-`Nothing`) vs volumetric (3D, z-`Center`) defaults are inferred from the grid:
+# a `Flat` vertical ⇒ surface forcing (ocean / sea-ice coupling); a resolved vertical ⇒ a 3D
+# atmosphere (e.g. a `NestedSimulation` parent). Dataset builders pass their own fields explicitly
+# and so are unaffected; only the `default_*` paths consult this. Override any field via kwarg.
+@inline volumetric_atmosphere(grid) = topology(grid, 3) !== Flat
+
+function default_atmosphere_velocities(grid, times)
+    if volumetric_atmosphere(grid)
         ua = FieldTimeSeries{Center, Center, Center}(grid, times)
         va = FieldTimeSeries{Center, Center, Center}(grid, times)
         wa = FieldTimeSeries{Center, Center, Center}(grid, times)
         return (u=ua, v=va, w=wa)
+    else
+        velocity_bcs = velocity_boundary_conditions(grid, (Center(), Center(), nothing))
+        ua = FieldTimeSeries{Center, Center, Nothing}(grid, times; boundary_conditions = velocity_bcs)
+        va = FieldTimeSeries{Center, Center, Nothing}(grid, times; boundary_conditions = velocity_bcs)
+        return (u=ua, v=va)
     end
 end
 
-function default_atmosphere_tracers(grid, times; two_dimensional=true)
-    if two_dimensional
-        Ta = FieldTimeSeries{Center, Center, Nothing}(grid, times)
-        qa = FieldTimeSeries{Center, Center, Nothing}(grid, times)
-        parent(Ta) .= 273.15 + 20
-        return (T=Ta, q=qa)
+function default_atmosphere_temperature(grid, times)
+    if volumetric_atmosphere(grid)
+        return FieldTimeSeries{Center, Center, Center}(grid, times)
     else
-        Ta = FieldTimeSeries{Center, Center, Center}(grid, times)
-        qa = FieldTimeSeries{Center, Center, Center}(grid, times)
-        return (T=Ta, q=qa)
+        Ta = FieldTimeSeries{Center, Center, Nothing}(grid, times)
+        parent(Ta) .= 273.15 + 20
+        return Ta
     end
 end
+
+function default_atmosphere_specific_humidity(grid, times)
+    LZ = volumetric_atmosphere(grid) ? Center : Nothing
+    return FieldTimeSeries{Center, Center, LZ}(grid, times)
+end
+
+# Cloud / precipitation species: none by default. A 3D parent (e.g. from ERA5 pressure-level data)
+# populates this with a `NamedTuple` such as `(; qᶜˡ, qʳ, qᶜⁱ, qˢ)`.
+default_atmosphere_microphysical_variables(grid, times) = NamedTuple()
 
 """
     PrescribedPrecipitationFlux(; rain=nothing, snow=nothing)
@@ -107,13 +120,13 @@ end
 
 """ The standard unit of atmospheric pressure; 1 standard atmosphere (atm) = 101,325 Pascals (Pa)
 in SI units. This is approximately equal to the mean sea-level atmospheric pressure on Earth. """
-function default_atmosphere_pressure(grid, times; two_dimensional=true)
-    if two_dimensional
+function default_atmosphere_pressure(grid, times)
+    if volumetric_atmosphere(grid)
+        return FieldTimeSeries{Center, Center, Center}(grid, times)
+    else
         pa = FieldTimeSeries{Center, Center, Nothing}(grid, times)
         parent(pa) .= 101325
         return pa
-    else
-        return FieldTimeSeries{Center, Center, Center}(grid, times)
     end
 end
 
@@ -148,23 +161,28 @@ EarthSystemModels.adopt_clock(atmosphere::PrescribedAtmosphere, clock) = EarthSy
 """
     PrescribedAtmosphere(grid, times=[zero(grid)];
                          clock = Clock{Float64}(time = 0),
-                         two_dimensional = true,
                          surface_layer_height = 10, # meters
                          boundary_layer_height = 512, # meters
                          thermodynamics_parameters = AtmosphereThermodynamicsParameters(eltype(grid)),
-                         velocities      = default_atmosphere_velocities(grid, times; two_dimensional),
-                         tracers         = default_atmosphere_tracers(grid, times; two_dimensional),
-                         pressure        = default_atmosphere_pressure(grid, times; two_dimensional),
-                         freshwater_flux = default_freshwater_flux(grid, times))
+                         velocities              = default_atmosphere_velocities(grid, times),
+                         temperature             = default_atmosphere_temperature(grid, times),
+                         specific_humidity       = default_atmosphere_specific_humidity(grid, times),
+                         microphysical_variables = default_atmosphere_microphysical_variables(grid, times),
+                         pressure                = default_atmosphere_pressure(grid, times),
+                         tracers                 = NamedTuple(),
+                         freshwater_flux         = default_freshwater_flux(grid, times))
 
 Return a prescribed, time-evolving atmospheric state with data on `grid` at `times`.
 
-`two_dimensional = true` (the default) builds a surface atmosphere with 2D
-`(Center, Center, Nothing)` velocity/tracer/pressure fields; `two_dimensional = false`
-builds 3D `(Center, Center, Center)` fields (adding `w`), e.g. for a
-[`NestedSimulation`](@ref) parent. The freshwater flux is a surface field either
-way — pass `freshwater_flux = nothing` to omit it. Override any default with the
-`velocities` / `tracers` / `pressure` / `freshwater_flux` keyword arguments.
+The state holds `velocities`, `temperature`, `specific_humidity`, an optional
+`microphysical_variables` `NamedTuple` (cloud / precipitation species such as `(; qᶜˡ, qʳ, qᶜⁱ, qˢ)`,
+empty by default), `pressure`, gas-species `tracers` (e.g. CO₂; empty by default), and a surface
+`freshwater_flux`.
+
+Surface (2D, `(Center, Center, Nothing)`) vs volumetric (3D, `(Center, Center, Center)`, adding `w`)
+default fields are inferred from the grid: a `Flat` vertical builds a surface atmosphere (ocean /
+sea-ice coupling), a resolved vertical a 3D atmosphere (e.g. a [`NestedSimulation`](@ref) parent).
+Pass any field explicitly to override; pass `freshwater_flux = nothing` to omit it.
 
 !!! compat "Radiation component"
     The downwelling shortwave / longwave radiation part of the top-level `radiation`
@@ -173,14 +191,16 @@ way — pass `freshwater_flux = nothing` to omit it. Override any default with t
 """
 function PrescribedAtmosphere(grid, times=[zero(grid)];
                               clock = Clock{Float64}(time = 0),
-                              two_dimensional = true,
                               surface_layer_height = 10,
                               boundary_layer_height = 512,
                               thermodynamics_parameters = AtmosphereThermodynamicsParameters(eltype(grid)),
-                              velocities      = default_atmosphere_velocities(grid, times; two_dimensional),
-                              tracers         = default_atmosphere_tracers(grid, times; two_dimensional),
-                              pressure        = default_atmosphere_pressure(grid, times; two_dimensional),
-                              freshwater_flux = default_freshwater_flux(grid, times))
+                              velocities              = default_atmosphere_velocities(grid, times),
+                              temperature             = default_atmosphere_temperature(grid, times),
+                              specific_humidity       = default_atmosphere_specific_humidity(grid, times),
+                              microphysical_variables = default_atmosphere_microphysical_variables(grid, times),
+                              pressure                = default_atmosphere_pressure(grid, times),
+                              tracers                 = NamedTuple(),
+                              freshwater_flux         = default_freshwater_flux(grid, times))
 
     FT = eltype(grid)
     if isnothing(thermodynamics_parameters)
@@ -190,6 +210,9 @@ function PrescribedAtmosphere(grid, times=[zero(grid)];
     atmosphere = PrescribedAtmosphere(grid,
                                       clock,
                                       velocities,
+                                      temperature,
+                                      specific_humidity,
+                                      microphysical_variables,
                                       pressure,
                                       tracers,
                                       freshwater_flux,

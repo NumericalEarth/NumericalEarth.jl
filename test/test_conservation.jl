@@ -66,8 +66,8 @@ end
     function set_forcing!(atmosphere, radiatipn;
                           T_air, q_air, u_air, v_air, p_air,
                           SW_down, LW_down, rain_flux, snow_flux)
-        for (fts, value) in ((atmosphere.tracers.T,    T_air),
-                             (atmosphere.tracers.q,    q_air),
+        for (fts, value) in ((atmosphere.temperature,       T_air),
+                             (atmosphere.specific_humidity, q_air),
                              (atmosphere.velocities.u, u_air),
                              (atmosphere.velocities.v, v_air),
                              (atmosphere.pressure,     p_air),

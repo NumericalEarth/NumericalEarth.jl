@@ -47,8 +47,8 @@ end
         # Test that all expected fields are present
         @test haskey(atmosphere.velocities, :u)
         @test haskey(atmosphere.velocities, :v)
-        @test haskey(atmosphere.tracers, :T)
-        @test haskey(atmosphere.tracers, :q)
+        @test atmosphere.temperature isa FieldTimeSeries
+        @test atmosphere.specific_humidity isa FieldTimeSeries
         @test !isnothing(atmosphere.pressure)
         @test atmosphere.freshwater_flux isa PrescribedPrecipitationFlux
         @test atmosphere.freshwater_flux.rain isa FieldTimeSeries
@@ -101,6 +101,6 @@ end
         # Test grid consistency
         @test atmosphere.velocities.u.grid isa LatitudeLongitudeGrid
         @test atmosphere.velocities.u.grid == atmosphere.velocities.v.grid
-        @test atmosphere.velocities.u.grid == atmosphere.tracers.T.grid
+        @test atmosphere.velocities.u.grid == atmosphere.temperature.grid
     end
 end
