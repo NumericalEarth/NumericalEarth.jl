@@ -21,7 +21,7 @@ using NCDatasets: NCDatasets
 using Printf: Printf, @sprintf
 using Statistics: Statistics, mean
 
-using ..DataWrangling: DataWrangling, Metadata, Metadatum, InverseGravity,
+using ..DataWrangling: DataWrangling, Metadata, Metadatum, BoundingBox, InverseGravity,
                        MetersPerHour, JoulesPerSquareMeterPerHour, metadata_path,
                        native_grid, dataset_variable_name, available_variables, retrieve_data,
                        first_date, last_date

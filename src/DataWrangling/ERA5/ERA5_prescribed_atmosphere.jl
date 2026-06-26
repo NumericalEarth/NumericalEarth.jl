@@ -2,6 +2,8 @@ using ...Atmospheres: PrescribedAtmosphere, PrescribedPrecipitationFlux,
                       AtmosphereThermodynamicsParameters
 using ...EarthSystemModels.InterfaceComputations: saturation_specific_humidity
 using Oceananigans.AbstractOperations: KernelFunctionOperation
+using Oceananigans.Architectures: on_architecture
+using Oceananigans.Fields: CenterField, interior
 using Thermodynamics: Liquid
 
 ERA5PrescribedAtmosphere(arch::Distributed; kw...) =
@@ -100,4 +102,75 @@ function ERA5PrescribedAtmosphere(architecture = CPU();
                                 thermodynamics_parameters = ℂ,
                                 surface_layer_height  = convert(FT, surface_layer_height),
                                 boundary_layer_height = convert(FT, boundary_layer_height))
+end
+
+# Pressure on a `PressureLevelGrid` is the level coordinate (Pa), constant in space and time:
+# `pressure[i, j, k] = pˡᵉᵛᵉˡ[k]`. Holding it as a field lets a downstream consumer interpolate it
+# (in log space) at arbitrary heights via the grid's per-column geopotential — i.e. faithful ln(p)
+# interpolation of the native ERA5 pressure, no hydrostatic reconstruction.
+function pressure_level_field(grid, dataset, architecture)
+    Nx, Ny, Nz = size(grid)
+    FT = eltype(grid)
+    # `dataset.pressure_levels` is sorted descending (hPa) ⇒ k=1 is the bottom (highest pressure).
+    levels_Pa = on_architecture(architecture, FT.(dataset.pressure_levels) .* 100)
+    pressure = CenterField(grid)
+    interior(pressure) .= reshape(levels_Pa, 1, 1, Nz)
+    fill_halo_regions!(pressure)
+    return pressure
+end
+
+"""
+    ERA5PrescribedAtmosphere(bounding_box::BoundingBox, dates;
+                             architecture = CPU(),
+                             dataset = ERA5HourlyPressureLevels(),
+                             dir = download_ERA5_cache,
+                             time_indices_in_memory = length(dates),
+                             thermodynamics_parameters = nothing,
+                             other_kw...)
+
+Return a 3-D [`PrescribedAtmosphere`](@ref) built from ERA5 **pressure-level** reanalysis over
+`bounding_box` at the requested `dates`, on ERA5's **native grid** — a `PressureLevelGrid` at the
+reanalysis' native horizontal resolution with a geopotential-height-aware pressure-level vertical.
+Each variable loads natively (no pre-regridding); a downstream model (e.g. a `NestedSimulation`
+child) interpolates the parent onto its own grid on the fly.
+
+The atmosphere holds eastward/northward `velocities`, `temperature`, `specific_humidity`,
+`microphysical_variables = (; qᶜˡ, qʳ, qᶜⁱ, qˢ)` (cloud liquid/ice + rain/snow water content), and
+`pressure` (the level coordinate, via [`pressure_level_field`](@ref)). Use as the parent of a
+[`NestedSimulation`](@ref).
+"""
+function ERA5PrescribedAtmosphere(bounding_box::BoundingBox, dates;
+                                  architecture = CPU(),
+                                  dataset = ERA5HourlyPressureLevels(),
+                                  dir = download_ERA5_cache,
+                                  time_indices_in_memory = length(dates),
+                                  thermodynamics_parameters = nothing,
+                                  other_kw...)
+
+    region = bounding_box
+    kw = merge((; time_indices_in_memory), other_kw)
+
+    # Each loads on ERA5's native PressureLevelGrid (per-snapshot geopotential ⇒ true per-column heights).
+    pressure_level(name) = FieldTimeSeries(Metadata(name; dataset, dates, region, dir), architecture; kw...)
+
+    ua  = pressure_level(:eastward_velocity)
+    va  = pressure_level(:northward_velocity)
+    Ta  = pressure_level(:temperature)
+    qva = pressure_level(:specific_humidity)
+    qcl = pressure_level(:specific_cloud_liquid_water_content)
+    qrw = pressure_level(:specific_rain_water_content)
+    qci = pressure_level(:specific_cloud_ice_water_content)
+    qsw = pressure_level(:specific_snow_water_content)
+
+    grid  = Ta.grid    # native ERA5 PressureLevelGrid
+    times = Ta.times
+
+    return PrescribedAtmosphere(grid, times;
+                                velocities = (u = ua, v = va),
+                                temperature = Ta,
+                                specific_humidity = qva,
+                                microphysical_variables = (qᶜˡ = qcl, qʳ = qrw, qᶜⁱ = qci, qˢ = qsw),
+                                pressure = pressure_level_field(grid, dataset, architecture),
+                                freshwater_flux = nothing,
+                                thermodynamics_parameters)
 end
