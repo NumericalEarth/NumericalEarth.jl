@@ -87,10 +87,10 @@ function NumericalEarth.EarthSystemModels.interpolate_state!(exchanger, exchange
     T = atmosphere.temperature
     ρqᵛᵉ = atmosphere.moisture_density
 
-    # Reference state (anelastic dynamics)
-    ref = atmosphere.dynamics.reference_state
-    ρ₀ = ref.density
-    p₀ = ref.surface_pressure
+    # ρ₀, p₀ via Breeze's dynamics-agnostic accessors: anelastic returns its fixed
+    # reference state; compressible the prognostic density + mean surface pressure.
+    ρ₀ = Breeze.AtmosphereModels.dynamics_density(atmosphere.dynamics)
+    p₀ = Breeze.AtmosphereModels.surface_pressure(atmosphere.dynamics)
 
     arch = architecture(exchange_grid)
     kernel_parameters = interface_kernel_parameters(exchange_grid)
