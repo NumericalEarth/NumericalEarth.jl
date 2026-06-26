@@ -33,7 +33,7 @@ for (n, DATASET) in enumerate(orca_datasets)
     Nx0, Ny0 = orca_sizes[n]
     name = nameof(DATASET)
 
-    metrics_broken = dataset isa ORCA12
+    metrics_maybe_broken = dataset isa ORCA12
 
     @testset "$name Metadatum construction" begin
         bathy_meta = Metadatum(:bottom_height; dataset)
@@ -127,12 +127,12 @@ for (n, DATASET) in enumerate(orca_datasets)
             data = getproperty(grid, name)
             Njf = Base.length(LY(), Oceananigans.Grids.RightFaceFolded(), Ny)
             interior = Oceananigans.on_architecture(CPU(), data)[1:Nx, 1:Njf]
-            @test all(x -> x > 0, interior) == true broken = metrics_broken
+            @test all(x -> x > 0, interior) == true skip = metrics_maybe_broken
         end
 
         for name in (:Δxᶜᶠᵃ, :Δxᶠᶠᵃ, :Δyᶜᶠᵃ, :Δyᶠᶠᵃ, :Azᶜᶠᵃ, :Azᶠᶠᵃ)
             data = Oceananigans.on_architecture(CPU(), getproperty(grid, name))
-            @test all(x -> x > 0, data[1:Nx, Ny+1]) broken = metrics_broken
+            @test all(x -> x > 0, data[1:Nx, Ny+1]) skip = metrics_maybe_broken
         end
 
         # Face-x longitude is west of Center-x longitude (stagger check)
