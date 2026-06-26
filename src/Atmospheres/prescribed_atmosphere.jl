@@ -39,14 +39,14 @@ function velocity_boundary_conditions(grid::OrthogonalSphericalShellGrids.Tripol
     return FieldBoundaryConditions(grid, loc; north = north_boundary_condition)
 end
 
-# Surface (2D, z-`Nothing`) vs volumetric (3D, z-`Center`) defaults are inferred from the grid:
+# Surface (2D, z-`Nothing`) vs 3D (z-`Center`) defaults are inferred from the grid:
 # a `Flat` vertical ⇒ surface forcing (ocean / sea-ice coupling); a resolved vertical ⇒ a 3D
 # atmosphere (e.g. a `NestedSimulation` parent). Dataset builders pass their own fields explicitly
 # and so are unaffected; only the `default_*` paths consult this. Override any field via kwarg.
-@inline volumetric_atmosphere(grid) = topology(grid, 3) !== Flat
+@inline is_three_dimensional(grid) = topology(grid, 3) !== Flat
 
 function default_atmosphere_velocities(grid, times)
-    if volumetric_atmosphere(grid)
+    if is_three_dimensional(grid)
         u = FieldTimeSeries{Center, Center, Center}(grid, times)
         v = FieldTimeSeries{Center, Center, Center}(grid, times)
         w = FieldTimeSeries{Center, Center, Center}(grid, times)
@@ -60,7 +60,7 @@ function default_atmosphere_velocities(grid, times)
 end
 
 function default_atmosphere_temperature(grid, times)
-    if volumetric_atmosphere(grid)
+    if is_three_dimensional(grid)
         return FieldTimeSeries{Center, Center, Center}(grid, times)
     else
         T = FieldTimeSeries{Center, Center, Nothing}(grid, times)
@@ -70,7 +70,7 @@ function default_atmosphere_temperature(grid, times)
 end
 
 function default_atmosphere_specific_humidity(grid, times)
-    LZ = volumetric_atmosphere(grid) ? Center : Nothing
+    LZ = is_three_dimensional(grid) ? Center : Nothing
     return FieldTimeSeries{Center, Center, LZ}(grid, times)
 end
 
@@ -101,10 +101,10 @@ Adapt.adapt_structure(to, precipitation_flux::PrescribedPrecipitationFlux) =
     PrescribedPrecipitationFlux(adapt(to, precipitation_flux.rain), adapt(to, precipitation_flux.snow))
 
 # A surface (Flat-z) atmosphere defaults to a 2D precipitation flux for ocean / sea-ice / land
-# coupling; a volumetric (3D) atmosphere carries precipitation in `microphysical_variables` instead,
+# coupling; a 3D atmosphere carries precipitation in `microphysical_variables` instead,
 # so it has none by default (pass `precipitation_flux` explicitly to add one).
 function default_precipitation_flux(grid, times)
-    volumetric_atmosphere(grid) && return nothing
+    is_three_dimensional(grid) && return nothing
     rain = FieldTimeSeries{Center, Center, Nothing}(grid, times)
     snow = FieldTimeSeries{Center, Center, Nothing}(grid, times)
     return PrescribedPrecipitationFlux(rain, snow)
@@ -124,7 +124,7 @@ end
 """ The standard unit of atmospheric pressure; 1 standard atmosphere (atm) = 101,325 Pascals (Pa)
 in SI units. This is approximately equal to the mean sea-level atmospheric pressure on Earth. """
 function default_atmosphere_pressure(grid, times)
-    if volumetric_atmosphere(grid)
+    if is_three_dimensional(grid)
         return FieldTimeSeries{Center, Center, Center}(grid, times)
     else
         p = FieldTimeSeries{Center, Center, Nothing}(grid, times)
@@ -183,7 +183,7 @@ empty by default), `pressure`, gas-species `tracers` (e.g. CO₂; empty by defau
 surface atmosphere — a `precipitation_flux` (a 3D atmosphere defaults to none, carrying precipitation
 in `microphysical_variables` instead).
 
-Surface (2D, `(Center, Center, Nothing)`) vs volumetric (3D, `(Center, Center, Center)`, adding `w`)
+Surface (2D, `(Center, Center, Nothing)`) vs 3D (`(Center, Center, Center)`, adding `w`)
 default fields are inferred from the grid: a `Flat` vertical builds a surface atmosphere (ocean /
 sea-ice coupling), a resolved vertical a 3D atmosphere (e.g. a [`NestedSimulation`](@ref) parent).
 Pass any field explicitly to override; pass `precipitation_flux = nothing` to omit it.

@@ -10,7 +10,7 @@ ERA5PrescribedAtmosphere(arch::Distributed; kw...) =
     ERA5PrescribedAtmosphere(child_architecture(arch); kw...)
 
 # ERA5 carries the 2 m dewpoint temperature, not specific humidity. The air is
-# saturated at its dewpoint, so qᵛ = qˢᵃᵗ(Tᵈ, pˢ). Evaluated
+# saturated at its dewpoint, so qᵛ = qᵛ⁺(Tᵈ, pˢ). Evaluated
 # pointwise (GPU-safe, via a `KernelFunctionOperation`) with the same
 # thermodynamics the flux solver uses, so the prescribed q is self-consistent.
 @inline function specific_humidity_from_dewpoint(i, j, k, grid, dewpoint, pressure, ℂ, phase)
@@ -36,7 +36,7 @@ end
 Return a [`PrescribedAtmosphere`](@ref) representing ERA5 single-level reanalysis,
 suitable for regional hindcast forcing. Eastward/northward 10 m winds, 2 m
 temperature, and surface pressure are loaded directly; specific humidity is derived
-from the 2 m dewpoint and surface pressure (`qᵛ = qˢᵃᵗ(Tᵈ, pˢ)`); total
+from the 2 m dewpoint and surface pressure (`qᵛ = qᵛ⁺(Tᵈ, pˢ)`); total
 precipitation is converted from hourly-accumulated depth (m) to a mass flux
 (kg m⁻² s⁻¹) at load time and wrapped in a `PrescribedPrecipitationFlux`.
 
