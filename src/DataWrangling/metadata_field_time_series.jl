@@ -51,7 +51,12 @@ function Oceananigans.OutputReaders.FieldTimeSeries(metadata::Metadata, grid::Ab
     end
 
     inpainting isa Int && (inpainting = NearestNeighborInpainting(inpainting))
-    on_native_grid = grid == native_grid(metadata, architecture(grid))
+    # Grids of different type are never equal; the `typeof` guard short-circuits
+    # before the node comparison, which for a `PressureLevelGrid` reduces the whole
+    # geopotential to a column-mean profile (`mean_height_profile`) only to discard
+    # it whenever — as for any interpolation target — the grid isn't the native one.
+    native = native_grid(metadata, architecture(grid))
+    on_native_grid = typeof(grid) === typeof(native) && grid == native
     backend = DatasetBackend(time_indices_in_memory, metadata; on_native_grid, inpainting, cache_inpainted_data)
 
     loc = LX, LY, LZ = location(metadata)
