@@ -10,12 +10,13 @@ using Breeze
 using Breeze: ThermodynamicConstants, dry_air_gas_constant, vapor_gas_constant, CompressibleDynamics
 using Test
 
-# Transform-aware interpolation: `interpolate(f, …)` applies `f` per source value before the
-# weighted blend and `inverse_transform(f)` after. `f = log` gives log-space interpolation, which
-# is what the on-the-fly nesting BCs use for strictly-positive, exponentially-varying state
-# (pressure, density). Identity must reproduce stock `interpolate`. Crucially this works for a
-# `FieldTimeSeries` source — the path the lazy `log(field)` AbstractField trick cannot reach.
-@testset "transform-aware interpolate(f, …): field + FieldTimeSeries" begin
+# Mapped interpolation `interpolate(func, …)` (mirrors Oceananigans #5726): `func` is applied to each
+# source value *before* the weighted blend and the result stays in func-space (no inverse) — like
+# `mean(func, itr)`. So `interpolate(log, …)` blends log-values; the caller applies `exp`. This is what
+# the on-the-fly nesting BCs use for strictly-positive, exponentially-varying state (pressure). Identity
+# reproduces stock `interpolate`. Crucially it works for a `FieldTimeSeries` source — the path the lazy
+# `log(field)` AbstractField trick cannot reach.
+@testset "mapped interpolate(func, …): field + FieldTimeSeries" begin
     grid = RectilinearGrid(size = (8, 8, 8), x = (0, 1), y = (0, 1), z = (1, 2),
                            topology = (Periodic, Periodic, Bounded))
     loc  = (Center(), Center(), Center())
@@ -24,12 +25,12 @@ using Test
 
     c = CenterField(grid); set!(c, f)
 
-    # identity reproduces stock interpolate exactly (no-op transform)
+    # identity reproduces stock interpolate exactly (no-op map)
     @test interpolate(identity, X, c, loc, grid) == interpolate(X, c, loc, grid)
 
-    # log-space field interpolation == exp(linear interpolation of log(c))
+    # mapping through log == interpolating the lazy log(c) field (both in log-space; no inverse)
     logc = Field(log(c)); compute!(logc)
-    @test interpolate(log, X, c, loc, grid) ≈ exp(interpolate(X, logc, loc, grid))
+    @test interpolate(log, X, c, loc, grid) ≈ interpolate(X, logc, loc, grid)
 
     # FieldTimeSeries source (constant in time) ⇒ same as the field result, at any query time
     times = [0.0, 10.0]
