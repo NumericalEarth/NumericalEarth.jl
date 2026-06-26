@@ -409,6 +409,12 @@ end
 
 @testset "Atmosphere-Land flux stability and roughness response" begin
     for arch in test_architectures
+    
+        T_atm = 288
+        q_atm = 0.003
+        cp       = Thermodynamics.cp_m(AtmosphereThermodynamicsParameters(Float64), q_atm)
+        g         = 9.80665
+        neutral_skin = T_atm + 10 / cp * g
         # Single-column coupled model using the real land stability functions; returns
         # the friction velocity and sensible heat for a given skin temperature / roughness.
         function land_flux_response(T_skin; ℓ = 0.1)
@@ -418,8 +424,8 @@ end
             h = 10.0
             atmosphere = PrescribedAtmosphere(grid; surface_layer_height = h, boundary_layer_height = 512)
             @allowscalar begin
-                fill!(parent(atmosphere.tracers.T),    288)
-                fill!(parent(atmosphere.tracers.q),    0.003)
+                fill!(parent(atmosphere.tracers.T),    T_atm)
+                fill!(parent(atmosphere.tracers.q),    q_atm)
                 fill!(parent(atmosphere.velocities.u), 5)
                 fill!(parent(atmosphere.velocities.v), 0)
                 fill!(parent(atmosphere.pressure),     101325)
@@ -436,11 +442,9 @@ end
             cp = Thermodynamics.cp_m(atmosphere.thermodynamics_parameters, 0.003)
             g  = model.interfaces.properties.gravitational_acceleration
             return (u★ = @allowscalar(f.friction_velocity[1, 1, 1]),
-                    Q  = @allowscalar(f.sensible_heat[1, 1, 1]),
-                    neutral_skin = 288 + h / cp * g)
+                    Q  = @allowscalar(f.sensible_heat[1, 1, 1]))
         end
 
-        neutral_skin = land_flux_response(290).neutral_skin
         warm    = land_flux_response(neutral_skin + 6)
         neutral = land_flux_response(neutral_skin)
         cold    = land_flux_response(neutral_skin - 6)
