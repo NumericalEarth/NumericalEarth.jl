@@ -99,3 +99,40 @@ end
         @test M_actual < 200  # water did leave
     end
 end
+
+@testset "WaterCoupledEnergy evaporation is reference-temperature invariant" begin
+    for arch in test_architectures
+        grid = RectilinearGrid(arch; size = 1, x = (0, 1), y = (0, 1),
+                               z = (-1, 0), topology = (Flat, Flat, Bounded))
+
+        hydrology = VariablySaturatedHydrology(eltype(grid);
+            slab_depth = 1.0, porosity = 0.4, storage_height = 1000,
+            retention_curve = VanGenuchtenRetention(α = 1.0, n = 2.0),
+            hydraulic_conductivity = VanGenuchtenConductivity(K_saturated = 1e-6, n = 2.0),
+            deep_liquid_flux = NoDeepLiquidFlux(), runoff = NoRunoff())
+
+        # Identical forcing, two arbitrary internal-energy references. The physical
+        # temperature evolution cannot depend on Tᵣ; it does so iff the vapor mass
+        # flux is unpaired in the energy budget.
+        function evaporate_with_reference(Tᵣ)
+            energy = WaterCoupledEnergy(eltype(grid);
+                dry_heat_capacity = 1e6, liquid_heat_capacity = 4186,
+                reference_temperature = Tᵣ,
+                deep_temperature = 290.0, deep_conductance = 0.0,
+                advect_deep_liquid_energy = true,
+                advect_surface_liquid_energy = false)
+            land = SlabLand(grid; hydrology, energy)
+            set!(land; T = 300.0, M = 200.0)
+            fill!(land.fluxes.surface_energy_flux, 50.0)  # latent cooling, positive upward
+            fill!(land.fluxes.vapor_flux, 2e-5)           # evaporation, positive upward
+            fill!(land.fluxes.liquid_precipitation_flux, 0)
+            for _ in 1:100
+                time_step!(land, 100.0)
+            end
+            return @allowscalar interior(land.temperature)[1, 1, 1]
+        end
+
+        @test isapprox(evaporate_with_reference(0.0),
+                       evaporate_with_reference(273.15); atol = 1e-8)
+    end
+end
