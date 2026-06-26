@@ -8,7 +8,7 @@ using CodecZlib
 using Oceananigans: Oceananigans
 using Oceananigans.DistributedComputations: @root
 
-using ..DataWrangling: DataWrangling, DownloadProgress, Metadatum, metadata_path, metadata_url
+using ..DataWrangling: DataWrangling, DownloadProgress, Metadatum, metadata_path
 
 import ..DataWrangling:
     metadata_filename,
@@ -20,7 +20,8 @@ import ..DataWrangling:
     longitude_interfaces,
     latitude_interfaces,
     z_interfaces,
-    reversed_vertical_axis
+    reversed_vertical_axis,
+    metadata_url
 
 download_ORCA_cache::String = ""
 
