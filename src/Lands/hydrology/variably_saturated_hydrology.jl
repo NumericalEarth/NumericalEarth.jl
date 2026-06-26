@@ -132,7 +132,7 @@ end
     return clamp((θˡ - θʳ) / Δ, zero(FT), one(FT))
 end
 
-@inline function pressure_head_diag(h, M, θˡ, 𝒮)
+@inline function diagnostic_pressure_head(h, M, θˡ, 𝒮)
     FT  = typeof(M)
     ν   = convert(FT, h.porosity)
     ρˡ  = convert(FT, h.liquid_density)
@@ -186,7 +186,7 @@ saturation(h::VariablySaturatedHydrology, land) = land.saturation
 
     θˡ = liquid_fraction(h, Mij)
     𝒮  = liquid_saturation(h, θˡ)
-    Π  = pressure_head_diag(h, Mij, θˡ, 𝒮)
+    Π  = diagnostic_pressure_head(h, Mij, θˡ, 𝒮)
     K  = hydraulic_conductivity(h.hydraulic_conductivity, 𝒮)
 
     Jˡs, Rsfc = surface_liquid_flux_and_runoff(h.runoff, Plij, Mij, θˡ, 𝒮, Π, K)
