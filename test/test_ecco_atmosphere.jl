@@ -50,9 +50,9 @@ end
         @test atmosphere.temperature isa FieldTimeSeries
         @test atmosphere.specific_humidity isa FieldTimeSeries
         @test !isnothing(atmosphere.pressure)
-        @test atmosphere.freshwater_flux isa PrescribedPrecipitationFlux
-        @test atmosphere.freshwater_flux.rain isa FieldTimeSeries
-        @test isnothing(atmosphere.freshwater_flux.snow)
+        @test atmosphere.precipitation_flux isa PrescribedPrecipitationFlux
+        @test atmosphere.precipitation_flux.rain isa FieldTimeSeries
+        @test isnothing(atmosphere.precipitation_flux.snow)
 
         # Test downwelling radiation components
         ℐꜜˢʷ = radiation.downwelling_shortwave

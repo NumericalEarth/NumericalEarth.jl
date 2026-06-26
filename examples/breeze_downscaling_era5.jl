@@ -77,7 +77,7 @@ using CUDA
 const arch = GPU(CUDA.CUDABackend(always_inline = true))
 
 # Set Oceananigans' global default float type, cascading to all grids, fields, FieldTimeSeries, constants, and dynamics.
-Oceananigans.defaults.FloatType = Float64
+Oceananigans.defaults.FloatType = Float32
 
 # ## Configuration
 
@@ -392,7 +392,7 @@ parent_grid = LatitudeLongitudeGrid(arch;
 # and replace the code below
 
 parent_times = [Float64(Dates.value(d - start_date)) / 1000 for d in dates]
-parent = PrescribedAtmosphere(parent_grid, parent_times; freshwater_flux = nothing, thermodynamics_parameters = nothing)
+parent = PrescribedAtmosphere(parent_grid, parent_times; thermodynamics_parameters = nothing)
 
 # Parent-side `FieldTimeSeries` that drive the child, kept alongside the
 # `PrescribedAtmosphere` (which owns u, v, T, q, p). All are Center-located

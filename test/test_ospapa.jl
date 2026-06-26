@@ -31,9 +31,9 @@ const OSPAPA_TEST_END   = DateTime(2012, 10, 3)
         @test atmosphere.temperature isa FieldTimeSeries
         @test atmosphere.specific_humidity isa FieldTimeSeries
         @test !isnothing(atmosphere.pressure)
-        @test atmosphere.freshwater_flux isa PrescribedPrecipitationFlux
-        @test atmosphere.freshwater_flux.rain isa FieldTimeSeries
-        @test isnothing(atmosphere.freshwater_flux.snow)
+        @test atmosphere.precipitation_flux isa PrescribedPrecipitationFlux
+        @test atmosphere.precipitation_flux.rain isa FieldTimeSeries
+        @test isnothing(atmosphere.precipitation_flux.snow)
 
         # Radiation sanity checks
         ℐꜜˢʷ = radiation.downwelling_shortwave

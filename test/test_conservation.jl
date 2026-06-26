@@ -71,8 +71,8 @@ end
                              (atmosphere.velocities.u, u_air),
                              (atmosphere.velocities.v, v_air),
                              (atmosphere.pressure,     p_air),
-                             (atmosphere.freshwater_flux.rain, rain_flux),
-                             (atmosphere.freshwater_flux.snow, snow_flux))
+                             (atmosphere.precipitation_flux.rain, rain_flux),
+                             (atmosphere.precipitation_flux.snow, snow_flux))
             fill!(parent(fts), value)
         end
         fill!(radiation.downwelling_shortwave, SW_down)

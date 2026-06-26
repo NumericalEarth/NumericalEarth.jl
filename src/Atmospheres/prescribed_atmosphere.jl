@@ -11,32 +11,32 @@ mutable struct PrescribedAtmosphere{FT, G, T, U, Θ, Q, M, P, C, F, TP, TI} <: A
     microphysical_variables :: M
     pressure :: P
     tracers :: C
-    freshwater_flux :: F
+    precipitation_flux :: F
     thermodynamics_parameters :: TP
     times :: TI
     surface_layer_height :: FT
     boundary_layer_height :: FT
 end
 
-function Base.summary(pa::PrescribedAtmosphere{FT}) where FT
-    Nx, Ny, Nz = size(pa.grid)
-    Nt = length(pa.times)
+function Base.summary(atmos::PrescribedAtmosphere{FT}) where FT
+    Nx, Ny, Nz = size(atmos.grid)
+    Nt = length(atmos.times)
     sz_str = string(Nx, "×", Ny, "×", Nz, "×", Nt)
     return string(sz_str, " PrescribedAtmosphere{$FT}")
 end
 
-function Base.show(io::IO, pa::PrescribedAtmosphere)
-    print(io, summary(pa), " on ", grid_name(pa.grid), ":", '\n')
-    print(io, "├── times: ", prettysummary(pa.times), '\n')
-    print(io, "├── surface_layer_height: ", prettysummary(pa.surface_layer_height), '\n')
-    print(io, "└── boundary_layer_height: ", prettysummary(pa.boundary_layer_height))
+function Base.show(io::IO, atmos::PrescribedAtmosphere)
+    print(io, summary(atmos), " on ", grid_name(atmos.grid), ":", '\n')
+    print(io, "├── times: ", prettysummary(atmos.times), '\n')
+    print(io, "├── surface_layer_height: ", prettysummary(atmos.surface_layer_height), '\n')
+    print(io, "└── boundary_layer_height: ", prettysummary(atmos.boundary_layer_height))
 end
 
 velocity_boundary_conditions(grid, loc) = FieldBoundaryConditions(grid, loc)
 
 function velocity_boundary_conditions(grid::OrthogonalSphericalShellGrids.TripolarGrid, loc)
-    north_bc = OrthogonalSphericalShellGrids.north_fold_boundary_condition(grid)(-1)
-    return FieldBoundaryConditions(grid, loc; north = north_bc)
+    north_boundary_condition = OrthogonalSphericalShellGrids.north_fold_boundary_condition(grid)(-1)
+    return FieldBoundaryConditions(grid, loc; north = north_boundary_condition)
 end
 
 # Surface (2D, z-`Nothing`) vs volumetric (3D, z-`Center`) defaults are inferred from the grid:
@@ -47,15 +47,15 @@ end
 
 function default_atmosphere_velocities(grid, times)
     if volumetric_atmosphere(grid)
-        ua = FieldTimeSeries{Center, Center, Center}(grid, times)
-        va = FieldTimeSeries{Center, Center, Center}(grid, times)
-        wa = FieldTimeSeries{Center, Center, Center}(grid, times)
-        return (u=ua, v=va, w=wa)
+        u = FieldTimeSeries{Center, Center, Center}(grid, times)
+        v = FieldTimeSeries{Center, Center, Center}(grid, times)
+        w = FieldTimeSeries{Center, Center, Center}(grid, times)
+        return (; u, v, w)
     else
-        velocity_bcs = velocity_boundary_conditions(grid, (Center(), Center(), nothing))
-        ua = FieldTimeSeries{Center, Center, Nothing}(grid, times; boundary_conditions = velocity_bcs)
-        va = FieldTimeSeries{Center, Center, Nothing}(grid, times; boundary_conditions = velocity_bcs)
-        return (u=ua, v=va)
+        boundary_conditions = velocity_boundary_conditions(grid, (Center(), Center(), nothing))
+        u = FieldTimeSeries{Center, Center, Nothing}(grid, times; boundary_conditions)
+        v = FieldTimeSeries{Center, Center, Nothing}(grid, times; boundary_conditions)
+        return (; u, v)
     end
 end
 
@@ -63,9 +63,9 @@ function default_atmosphere_temperature(grid, times)
     if volumetric_atmosphere(grid)
         return FieldTimeSeries{Center, Center, Center}(grid, times)
     else
-        Ta = FieldTimeSeries{Center, Center, Nothing}(grid, times)
-        parent(Ta) .= 273.15 + 20
-        return Ta
+        T = FieldTimeSeries{Center, Center, Nothing}(grid, times)
+        parent(T) .= 273.15 + 20
+        return T
     end
 end
 
@@ -84,7 +84,7 @@ default_atmosphere_microphysical_variables(grid, times) = NamedTuple()
 
 Container for prescribed precipitation fluxes. Either component may be `nothing`
 to indicate that the corresponding precipitation type is not represented by the
-atmosphere (e.g. rain-only datasets). Used as the `freshwater_flux` of a
+atmosphere (e.g. rain-only datasets). Used as the `precipitation_flux` of a
 `PrescribedAtmosphere`; downstream callers query the snow component via
 `surface_snowfall_flux` so that prognostic atmospheres with or without
 snow can dispatch on this type as well.
@@ -97,11 +97,14 @@ end
 PrescribedPrecipitationFlux(; rain=nothing, snow=nothing) =
     PrescribedPrecipitationFlux(rain, snow)
 
-Adapt.adapt_structure(to, ff::PrescribedPrecipitationFlux) =
-    PrescribedPrecipitationFlux(adapt(to, ff.rain), adapt(to, ff.snow))
+Adapt.adapt_structure(to, precipitation_flux::PrescribedPrecipitationFlux) =
+    PrescribedPrecipitationFlux(adapt(to, precipitation_flux.rain), adapt(to, precipitation_flux.snow))
 
-# Freshwater flux is 2D regardless of the atmosphere's dimensionality
-function default_freshwater_flux(grid, times)
+# A surface (Flat-z) atmosphere defaults to a 2D precipitation flux for ocean / sea-ice / land
+# coupling; a volumetric (3D) atmosphere carries precipitation in `microphysical_variables` instead,
+# so it has none by default (pass `precipitation_flux` explicitly to add one).
+function default_precipitation_flux(grid, times)
+    volumetric_atmosphere(grid) && return nothing
     rain = FieldTimeSeries{Center, Center, Nothing}(grid, times)
     snow = FieldTimeSeries{Center, Center, Nothing}(grid, times)
     return PrescribedPrecipitationFlux(rain, snow)
@@ -111,12 +114,12 @@ end
 @inline field_data(field) = field.data
 
 @inline surface_snowfall_flux(::Nothing) = nothing
-@inline surface_snowfall_flux(atmos::PrescribedAtmosphere) = surface_snowfall_flux(atmos.freshwater_flux)
-@inline surface_snowfall_flux(ff::PrescribedPrecipitationFlux) = field_data(ff.snow)
+@inline surface_snowfall_flux(atmos::PrescribedAtmosphere) = surface_snowfall_flux(atmos.precipitation_flux)
+@inline surface_snowfall_flux(precipitation_flux::PrescribedPrecipitationFlux) = field_data(precipitation_flux.snow)
 
 @inline surface_rainfall_flux(::Nothing) = nothing
-@inline surface_rainfall_flux(atmos::PrescribedAtmosphere) = surface_rainfall_flux(atmos.freshwater_flux)
-@inline surface_rainfall_flux(ff::PrescribedPrecipitationFlux) = field_data(ff.rain)
+@inline surface_rainfall_flux(atmos::PrescribedAtmosphere) = surface_rainfall_flux(atmos.precipitation_flux)
+@inline surface_rainfall_flux(precipitation_flux::PrescribedPrecipitationFlux) = field_data(precipitation_flux.rain)
 
 """ The standard unit of atmospheric pressure; 1 standard atmosphere (atm) = 101,325 Pascals (Pa)
 in SI units. This is approximately equal to the mean sea-level atmospheric pressure on Earth. """
@@ -124,9 +127,9 @@ function default_atmosphere_pressure(grid, times)
     if volumetric_atmosphere(grid)
         return FieldTimeSeries{Center, Center, Center}(grid, times)
     else
-        pa = FieldTimeSeries{Center, Center, Nothing}(grid, times)
-        parent(pa) .= 101325
-        return pa
+        p = FieldTimeSeries{Center, Center, Nothing}(grid, times)
+        parent(p) .= 101325
+        return p
     end
 end
 
@@ -156,7 +159,7 @@ end
 # No need to compute anything here...
 EarthSystemModels.update_net_fluxes!(coupled_model, ::PrescribedAtmosphere) = nothing
 
-EarthSystemModels.adopt_clock(atmosphere::PrescribedAtmosphere, clock) = EarthSystemModels.reclock(atmosphere, clock)
+EarthSystemModels.adopt_clock(atmos::PrescribedAtmosphere, clock) = EarthSystemModels.reclock(atmos, clock)
 
 """
     PrescribedAtmosphere(grid, times=[zero(grid)];
@@ -170,19 +173,20 @@ EarthSystemModels.adopt_clock(atmosphere::PrescribedAtmosphere, clock) = EarthSy
                          microphysical_variables = default_atmosphere_microphysical_variables(grid, times),
                          pressure                = default_atmosphere_pressure(grid, times),
                          tracers                 = NamedTuple(),
-                         freshwater_flux         = default_freshwater_flux(grid, times))
+                         precipitation_flux      = default_precipitation_flux(grid, times))
 
 Return a prescribed, time-evolving atmospheric state with data on `grid` at `times`.
 
 The state holds `velocities`, `temperature`, `specific_humidity`, an optional
 `microphysical_variables` `NamedTuple` (cloud / precipitation species such as `(; qᶜˡ, qʳ, qᶜⁱ, qˢ)`,
-empty by default), `pressure`, gas-species `tracers` (e.g. CO₂; empty by default), and a surface
-`freshwater_flux`.
+empty by default), `pressure`, gas-species `tracers` (e.g. CO₂; empty by default), and — for a
+surface atmosphere — a `precipitation_flux` (a 3D atmosphere defaults to none, carrying precipitation
+in `microphysical_variables` instead).
 
 Surface (2D, `(Center, Center, Nothing)`) vs volumetric (3D, `(Center, Center, Center)`, adding `w`)
 default fields are inferred from the grid: a `Flat` vertical builds a surface atmosphere (ocean /
 sea-ice coupling), a resolved vertical a 3D atmosphere (e.g. a [`NestedSimulation`](@ref) parent).
-Pass any field explicitly to override; pass `freshwater_flux = nothing` to omit it.
+Pass any field explicitly to override; pass `precipitation_flux = nothing` to omit it.
 
 !!! compat "Radiation component"
     The downwelling shortwave / longwave radiation part of the top-level `radiation`
@@ -200,29 +204,29 @@ function PrescribedAtmosphere(grid, times=[zero(grid)];
                               microphysical_variables = default_atmosphere_microphysical_variables(grid, times),
                               pressure                = default_atmosphere_pressure(grid, times),
                               tracers                 = NamedTuple(),
-                              freshwater_flux         = default_freshwater_flux(grid, times))
+                              precipitation_flux      = default_precipitation_flux(grid, times))
 
     FT = eltype(grid)
     if isnothing(thermodynamics_parameters)
         thermodynamics_parameters = AtmosphereThermodynamicsParameters(FT)
     end
 
-    atmosphere = PrescribedAtmosphere(grid,
-                                      clock,
-                                      velocities,
-                                      temperature,
-                                      specific_humidity,
-                                      microphysical_variables,
-                                      pressure,
-                                      tracers,
-                                      freshwater_flux,
-                                      thermodynamics_parameters,
-                                      times,
-                                      convert(FT, surface_layer_height),
-                                      convert(FT, boundary_layer_height))
-    update_state!(atmosphere)
+    atmos = PrescribedAtmosphere(grid,
+                                 clock,
+                                 velocities,
+                                 temperature,
+                                 specific_humidity,
+                                 microphysical_variables,
+                                 pressure,
+                                 tracers,
+                                 precipitation_flux,
+                                 thermodynamics_parameters,
+                                 times,
+                                 convert(FT, surface_layer_height),
+                                 convert(FT, boundary_layer_height))
+    update_state!(atmos)
 
-    return atmosphere
+    return atmos
 end
 
 #####

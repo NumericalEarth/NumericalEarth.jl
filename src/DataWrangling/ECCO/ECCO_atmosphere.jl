@@ -51,7 +51,7 @@ function ECCOPrescribedAtmosphere(architecture = CPU();
     pa = FieldTimeSeries(pa_meta, architecture; kw...)
     Fr = FieldTimeSeries(Fr_meta, architecture; kw...)
 
-    freshwater_flux = PrescribedPrecipitationFlux(rain = Fr)
+    precipitation_flux = PrescribedPrecipitationFlux(rain = Fr)
 
     times = ua.times
     grid  = ua.grid
@@ -64,7 +64,7 @@ function ECCOPrescribedAtmosphere(architecture = CPU();
 
     atmosphere = PrescribedAtmosphere(grid, times;
                                       velocities,
-                                      freshwater_flux,
+                                      precipitation_flux,
                                       temperature = Ta,
                                       specific_humidity = qa,
                                       surface_layer_height,

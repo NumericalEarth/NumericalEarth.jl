@@ -4,41 +4,11 @@ using NumericalEarth
 using NumericalEarth.EarthSystemModels.NestedSimulations: parent_boundary_conditions
 using Oceananigans
 using Oceananigans.Units: Time
-using Oceananigans.Fields: interpolate, compute!, location
+using Oceananigans.Fields: location
 using Oceananigans.BoundaryConditions: ValueBoundaryCondition, FieldBoundaryConditions, fill_halo_regions!
 using Breeze
 using Breeze: ThermodynamicConstants, dry_air_gas_constant, vapor_gas_constant, CompressibleDynamics
 using Test
-
-# Mapped interpolation `interpolate(func, …)` (mirrors Oceananigans #5726): `func` is applied to each
-# source value *before* the weighted blend and the result stays in func-space (no inverse) — like
-# `mean(func, itr)`. So `interpolate(log, …)` blends log-values; the caller applies `exp`. This is what
-# the on-the-fly nesting BCs use for strictly-positive, exponentially-varying state (pressure). Identity
-# reproduces stock `interpolate`. Crucially it works for a `FieldTimeSeries` source — the path the lazy
-# `log(field)` AbstractField trick cannot reach.
-@testset "mapped interpolate(func, …): field + FieldTimeSeries" begin
-    grid = RectilinearGrid(size = (8, 8, 8), x = (0, 1), y = (0, 1), z = (1, 2),
-                           topology = (Periodic, Periodic, Bounded))
-    loc  = (Center(), Center(), Center())
-    X    = (0.5, 0.5, 1.5)
-    f(x, y, z) = exp(-2z) + 0.1   # strictly positive, exponential in z
-
-    c = CenterField(grid); set!(c, f)
-
-    # identity reproduces stock interpolate exactly (no-op map)
-    @test interpolate(identity, X, c, loc, grid) == interpolate(X, c, loc, grid)
-
-    # mapping through log == interpolating the lazy log(c) field (both in log-space; no inverse)
-    logc = Field(log(c)); compute!(logc)
-    @test interpolate(log, X, c, loc, grid) ≈ interpolate(X, logc, loc, grid)
-
-    # FieldTimeSeries source (constant in time) ⇒ same as the field result, at any query time
-    times = [0.0, 10.0]
-    fts = FieldTimeSeries{Center, Center, Center}(grid, times)
-    set!(fts[1], f); set!(fts[2], f)
-    @test interpolate(log,      X, Time(3.0), fts, loc, grid) ≈ interpolate(log, X, c, loc, grid)
-    @test interpolate(identity, X, Time(3.0), fts, loc, grid) ≈ interpolate(X, c, loc, grid)
-end
 
 @testset "PrescribedAtmosphere: grid vertical topology selects surface vs volumetric fields" begin
     # A `Flat` vertical builds a surface atmosphere (u, v; 2D temperature / specific_humidity /
@@ -52,7 +22,7 @@ end
     @test location(pas.specific_humidity) == (Center, Center, Nothing)
     @test pas.microphysical_variables == NamedTuple()
     @test pas.tracers == NamedTuple()
-    @test pas.freshwater_flux isa NumericalEarth.Atmospheres.PrescribedPrecipitationFlux
+    @test pas.precipitation_flux isa NumericalEarth.Atmospheres.PrescribedPrecipitationFlux
 
     # A resolved vertical builds a 3D atmosphere (adds w) — e.g. a `NestedSimulation` parent.
     gv = RectilinearGrid(size = (8, 8, 4), x = (-1, 1), y = (-1, 1), z = (0, 1),
@@ -62,11 +32,11 @@ end
     @test location(pav.temperature) == (Center, Center, Center)
     @test size(pav.velocities.u) == (8, 8, 4, 2)
     @test size(pav.pressure)     == (8, 8, 4, 2)
-    @test size(pav.freshwater_flux.rain) == (8, 8, 1, 2)   # freshwater flux stays a surface field
+    @test isnothing(pav.precipitation_flux)   # a 3D atmosphere carries precip in microphysical_variables
 
-    # Freshwater is opt-out via the keyword.
-    pa0 = PrescribedAtmosphere(gv, [0.0, 1.0]; freshwater_flux = nothing)
-    @test pa0.freshwater_flux === nothing
+    # A surface atmosphere defaults to a precipitation flux; opt out via the keyword.
+    pa0 = PrescribedAtmosphere(gs, [0.0, 1.0]; precipitation_flux = nothing)
+    @test pa0.precipitation_flux === nothing
 
     # Cloud / precip species ride through `microphysical_variables`.
     qcl = FieldTimeSeries{Center, Center, Center}(gv, [0.0, 1.0])
@@ -108,8 +78,8 @@ end
 
     set!(parent.velocities.u, (x, y, z, t) -> lamb_oseen_uv(x, y, t)[1])
     set!(parent.velocities.v, (x, y, z, t) -> lamb_oseen_uv(x, y, t)[2])
-    set!(parent.tracers.T,    (x, y, z, t) -> 288.15)        # isothermal
-    set!(parent.tracers.q,    (x, y, z, t) -> 0.0)            # dry
+    set!(parent.temperature,       (x, y, z, t) -> 288.15)   # isothermal
+    set!(parent.specific_humidity, (x, y, z, t) -> 0.0)      # dry
 
     # Child runs Oceananigans NonhydrostaticModel on a same-resolution grid.
     # A finer child would exercise spatial-interpolation in the BCs more, but
@@ -406,7 +376,6 @@ end
     alm = AtmosphereLandModel(atmos, land)            # radiation = nothing (radiatively decoupled)
 
     parent = PrescribedAtmosphere(atmos_grid, [0.0, 100.0];
-                                  freshwater_flux = nothing,
                                   thermodynamics_parameters = nothing)
     nested = NestedSimulation(parent, alm; Δt = 0.05, stop_iteration = 2)
     @test nested isa Simulation                       # NestedModel accepted the coupled child

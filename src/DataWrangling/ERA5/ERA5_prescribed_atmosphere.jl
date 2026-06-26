@@ -10,7 +10,7 @@ ERA5PrescribedAtmosphere(arch::Distributed; kw...) =
     ERA5PrescribedAtmosphere(child_architecture(arch); kw...)
 
 # ERA5 carries the 2 m dewpoint temperature, not specific humidity. The air is
-# saturated at its dewpoint, so q = qˢᵃᵗ(T_dewpoint, p_surface). Evaluated
+# saturated at its dewpoint, so qᵛ = qˢᵃᵗ(Tᵈ, pˢ). Evaluated
 # pointwise (GPU-safe, via a `KernelFunctionOperation`) with the same
 # thermodynamics the flux solver uses, so the prescribed q is self-consistent.
 @inline function specific_humidity_from_dewpoint(i, j, k, grid, dewpoint, pressure, ℂ, phase)
@@ -36,7 +36,7 @@ end
 Return a [`PrescribedAtmosphere`](@ref) representing ERA5 single-level reanalysis,
 suitable for regional hindcast forcing. Eastward/northward 10 m winds, 2 m
 temperature, and surface pressure are loaded directly; specific humidity is derived
-from the 2 m dewpoint and surface pressure (`q = qˢᵃᵗ(T_dewpoint, p)`); total
+from the 2 m dewpoint and surface pressure (`qᵛ = qˢᵃᵗ(Tᵈ, pˢ)`); total
 precipitation is converted from hourly-accumulated depth (m) to a mass flux
 (kg m⁻² s⁻¹) at load time and wrapped in a `PrescribedPrecipitationFlux`.
 
@@ -62,43 +62,38 @@ function ERA5PrescribedAtmosphere(architecture = CPU();
     kw = (; time_indexing, time_indices_in_memory)
     kw = merge(kw, other_kw)
 
-    ua_meta = Metadata(:eastward_velocity;    dataset, start_date, end_date, dir, region)
-    va_meta = Metadata(:northward_velocity;   dataset, start_date, end_date, dir, region)
-    Ta_meta = Metadata(:temperature;          dataset, start_date, end_date, dir, region)
-    Td_meta = Metadata(:dewpoint_temperature; dataset, start_date, end_date, dir, region)
-    pa_meta = Metadata(:surface_pressure;     dataset, start_date, end_date, dir, region)
-    Fr_meta = Metadata(:total_precipitation;  dataset, start_date, end_date, dir, region)
+    single_level(name) = FieldTimeSeries(Metadata(name; dataset, start_date, end_date, dir, region), architecture; kw...)
 
-    ua = FieldTimeSeries(ua_meta, architecture; kw...)
-    va = FieldTimeSeries(va_meta, architecture; kw...)
-    Ta = FieldTimeSeries(Ta_meta, architecture; kw...)
-    Td = FieldTimeSeries(Td_meta, architecture; kw...)
-    pa = FieldTimeSeries(pa_meta, architecture; kw...)
-    Fr = FieldTimeSeries(Fr_meta, architecture; kw...)
+    u    = single_level(:eastward_velocity)
+    v    = single_level(:northward_velocity)
+    T    = single_level(:temperature)
+    Tᵈ   = single_level(:dewpoint_temperature)
+    p    = single_level(:surface_pressure)
+    rain = single_level(:total_precipitation)
 
-    grid  = ua.grid
-    times = ua.times
-    FT    = eltype(ua)
+    grid  = u.grid
+    times = u.times
+    FT    = eltype(u)
 
     ℂ = isnothing(thermodynamics_parameters) ? AtmosphereThermodynamicsParameters(FT) :
                                                 thermodynamics_parameters
     phase = Liquid()
 
-    qa = FieldTimeSeries{Center, Center, Nothing}(grid, times)
+    qᵛ = FieldTimeSeries{Center, Center, Nothing}(grid, times)
     for n in eachindex(times)
         q = KernelFunctionOperation{Center, Center, Nothing}(specific_humidity_from_dewpoint,
-                                                             grid, Td[n], pa[n], ℂ, phase)
-        set!(qa[n], q)
+                                                             grid, Tᵈ[n], p[n], ℂ, phase)
+        set!(qᵛ[n], q)
     end
 
-    freshwater_flux = PrescribedPrecipitationFlux(rain = Fr)
+    precipitation_flux = PrescribedPrecipitationFlux(; rain)
 
     return PrescribedAtmosphere(grid, times;
-                                velocities = (u = ua, v = va),
-                                temperature = Ta,
-                                specific_humidity = qa,
-                                pressure   = pa,
-                                freshwater_flux,
+                                velocities = (; u, v),
+                                temperature = T,
+                                specific_humidity = qᵛ,
+                                pressure = p,
+                                precipitation_flux,
                                 thermodynamics_parameters = ℂ,
                                 surface_layer_height  = convert(FT, surface_layer_height),
                                 boundary_layer_height = convert(FT, boundary_layer_height))
@@ -112,9 +107,9 @@ function pressure_level_field(grid, dataset, architecture)
     Nx, Ny, Nz = size(grid)
     FT = eltype(grid)
     # `dataset.pressure_levels` is sorted descending (hPa) ⇒ k=1 is the bottom (highest pressure).
-    levels_Pa = on_architecture(architecture, FT.(dataset.pressure_levels) .* 100)
+    pˡᵉᵛᵉˡ = on_architecture(architecture, FT.(dataset.pressure_levels) .* 100)
     pressure = CenterField(grid)
-    interior(pressure) .= reshape(levels_Pa, 1, 1, Nz)
+    interior(pressure) .= reshape(pˡᵉᵛᵉˡ, 1, 1, Nz)
     fill_halo_regions!(pressure)
     return pressure
 end
@@ -153,24 +148,23 @@ function ERA5PrescribedAtmosphere(bounding_box::BoundingBox, dates;
     # Each loads on ERA5's native PressureLevelGrid (per-snapshot geopotential ⇒ true per-column heights).
     pressure_level(name) = FieldTimeSeries(Metadata(name; dataset, dates, region, dir), architecture; kw...)
 
-    ua  = pressure_level(:eastward_velocity)
-    va  = pressure_level(:northward_velocity)
-    Ta  = pressure_level(:temperature)
-    qva = pressure_level(:specific_humidity)
-    qcl = pressure_level(:specific_cloud_liquid_water_content)
-    qrw = pressure_level(:specific_rain_water_content)
-    qci = pressure_level(:specific_cloud_ice_water_content)
-    qsw = pressure_level(:specific_snow_water_content)
+    u   = pressure_level(:eastward_velocity)
+    v   = pressure_level(:northward_velocity)
+    T   = pressure_level(:temperature)
+    qᵛ  = pressure_level(:specific_humidity)
+    qᶜˡ = pressure_level(:specific_cloud_liquid_water_content)
+    qʳ  = pressure_level(:specific_rain_water_content)
+    qᶜⁱ = pressure_level(:specific_cloud_ice_water_content)
+    qˢ  = pressure_level(:specific_snow_water_content)
 
-    grid  = Ta.grid    # native ERA5 PressureLevelGrid
-    times = Ta.times
+    grid  = T.grid    # native ERA5 PressureLevelGrid
+    times = T.times
 
     return PrescribedAtmosphere(grid, times;
-                                velocities = (u = ua, v = va),
-                                temperature = Ta,
-                                specific_humidity = qva,
-                                microphysical_variables = (qᶜˡ = qcl, qʳ = qrw, qᶜⁱ = qci, qˢ = qsw),
+                                velocities = (; u, v),
+                                temperature = T,
+                                specific_humidity = qᵛ,
+                                microphysical_variables = (; qᶜˡ, qʳ, qᶜⁱ, qˢ),
                                 pressure = pressure_level_field(grid, dataset, architecture),
-                                freshwater_flux = nothing,
                                 thermodynamics_parameters)
 end

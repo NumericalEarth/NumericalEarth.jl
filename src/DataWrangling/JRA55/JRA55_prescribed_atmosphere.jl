@@ -38,42 +38,27 @@ function JRA55PrescribedAtmosphere(architecture = CPU();
     kw = (; time_indexing, time_indices_in_memory)
     kw = merge(kw, other_kw)
 
-    ua_meta  = Metadata(:eastward_velocity;    dataset, start_date, end_date, dir, region)
-    va_meta  = Metadata(:northward_velocity;   dataset, start_date, end_date, dir, region)
-    Ta_meta  = Metadata(:temperature;          dataset, start_date, end_date, dir, region)
-    qa_meta  = Metadata(:specific_humidity;    dataset, start_date, end_date, dir, region)
-    pa_meta  = Metadata(:sea_level_pressure;   dataset, start_date, end_date, dir, region)
-    Fra_meta = Metadata(:rain_freshwater_flux; dataset, start_date, end_date, dir, region)
-    Fsn_meta = Metadata(:snow_freshwater_flux; dataset, start_date, end_date, dir, region)
+    jra55_field(name) = FieldTimeSeries(Metadata(name; dataset, start_date, end_date, dir, region), architecture; kw...)
 
-    ua  = FieldTimeSeries(ua_meta,  architecture; kw...)
-    va  = FieldTimeSeries(va_meta,  architecture; kw...)
-    Ta  = FieldTimeSeries(Ta_meta,  architecture; kw...)
-    qa  = FieldTimeSeries(qa_meta,  architecture; kw...)
-    pa  = FieldTimeSeries(pa_meta,  architecture; kw...)
-    Fra = FieldTimeSeries(Fra_meta, architecture; kw...)
-    Fsn = FieldTimeSeries(Fsn_meta, architecture; kw...)
+    u    = jra55_field(:eastward_velocity)
+    v    = jra55_field(:northward_velocity)
+    T    = jra55_field(:temperature)
+    qᵛ   = jra55_field(:specific_humidity)
+    p    = jra55_field(:sea_level_pressure)
+    rain = jra55_field(:rain_freshwater_flux)
+    snow = jra55_field(:snow_freshwater_flux)
 
-    freshwater_flux = PrescribedPrecipitationFlux(rain = Fra, snow = Fsn)
+    precipitation_flux = PrescribedPrecipitationFlux(; rain, snow)
 
-    times = ua.times
-    grid  = ua.grid
+    grid  = u.grid
+    times = u.times
+    FT    = eltype(u)
 
-    velocities = (u = ua,
-                  v = va)
-
-    pressure = pa
-
-    FT = eltype(ua)
-    surface_layer_height = convert(FT, surface_layer_height)
-
-    atmosphere = PrescribedAtmosphere(grid, times;
-                                      velocities,
-                                      freshwater_flux,
-                                      temperature = Ta,
-                                      specific_humidity = qa,
-                                      surface_layer_height,
-                                      pressure)
-
-    return atmosphere
+    return PrescribedAtmosphere(grid, times;
+                                velocities = (; u, v),
+                                temperature = T,
+                                specific_humidity = qᵛ,
+                                pressure = p,
+                                precipitation_flux,
+                                surface_layer_height = convert(FT, surface_layer_height))
 end
