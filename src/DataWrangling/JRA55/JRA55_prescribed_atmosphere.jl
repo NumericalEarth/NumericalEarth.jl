@@ -38,15 +38,15 @@ function JRA55PrescribedAtmosphere(architecture = CPU();
     kw = (; time_indexing, time_indices_in_memory)
     kw = merge(kw, other_kw)
 
-    jra55_field(name) = FieldTimeSeries(Metadata(name; dataset, start_date, end_date, dir, region), architecture; kw...)
+    jra55_fts(name) = FieldTimeSeries(Metadata(name; dataset, start_date, end_date, dir, region), architecture; kw...)
 
-    u    = jra55_field(:eastward_velocity)
-    v    = jra55_field(:northward_velocity)
-    T    = jra55_field(:temperature)
-    qᵛ   = jra55_field(:specific_humidity)
-    p    = jra55_field(:sea_level_pressure)
-    rain = jra55_field(:rain_freshwater_flux)
-    snow = jra55_field(:snow_freshwater_flux)
+    u    = jra55_fts(:eastward_velocity)
+    v    = jra55_fts(:northward_velocity)
+    T    = jra55_fts(:temperature)
+    qᵛ   = jra55_fts(:specific_humidity)
+    p    = jra55_fts(:sea_level_pressure)
+    rain = jra55_fts(:rain_freshwater_flux)
+    snow = jra55_fts(:snow_freshwater_flux)
 
     precipitation_flux = PrescribedPrecipitationFlux(; rain, snow)
 

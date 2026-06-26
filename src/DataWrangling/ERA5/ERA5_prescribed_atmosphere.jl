@@ -62,14 +62,14 @@ function ERA5PrescribedAtmosphere(architecture = CPU();
     kw = (; time_indexing, time_indices_in_memory)
     kw = merge(kw, other_kw)
 
-    single_level(name) = FieldTimeSeries(Metadata(name; dataset, start_date, end_date, dir, region), architecture; kw...)
+    era5_fts(name) = FieldTimeSeries(Metadata(name; dataset, start_date, end_date, dir, region), architecture; kw...)
 
-    u    = single_level(:eastward_velocity)
-    v    = single_level(:northward_velocity)
-    T    = single_level(:temperature)
-    Tᵈ   = single_level(:dewpoint_temperature)
-    p    = single_level(:surface_pressure)
-    rain = single_level(:total_precipitation)
+    u    = era5_fts(:eastward_velocity)
+    v    = era5_fts(:northward_velocity)
+    T    = era5_fts(:temperature)
+    Tᵈ   = era5_fts(:dewpoint_temperature)
+    p    = era5_fts(:surface_pressure)
+    rain = era5_fts(:total_precipitation)
 
     grid  = u.grid
     times = u.times
@@ -146,16 +146,16 @@ function ERA5PrescribedAtmosphere(bounding_box::BoundingBox, dates;
     kw = merge((; time_indices_in_memory), other_kw)
 
     # Each loads on ERA5's native PressureLevelGrid (per-snapshot geopotential ⇒ true per-column heights).
-    pressure_level(name) = FieldTimeSeries(Metadata(name; dataset, dates, region, dir), architecture; kw...)
+    era5_fts(name) = FieldTimeSeries(Metadata(name; dataset, dates, region, dir), architecture; kw...)
 
-    u   = pressure_level(:eastward_velocity)
-    v   = pressure_level(:northward_velocity)
-    T   = pressure_level(:temperature)
-    qᵛ  = pressure_level(:specific_humidity)
-    qᶜˡ = pressure_level(:specific_cloud_liquid_water_content)
-    qʳ  = pressure_level(:specific_rain_water_content)
-    qᶜⁱ = pressure_level(:specific_cloud_ice_water_content)
-    qˢ  = pressure_level(:specific_snow_water_content)
+    u   = era5_fts(:eastward_velocity)
+    v   = era5_fts(:northward_velocity)
+    T   = era5_fts(:temperature)
+    qᵛ  = era5_fts(:specific_humidity)
+    qᶜˡ = era5_fts(:specific_cloud_liquid_water_content)
+    qʳ  = era5_fts(:specific_rain_water_content)
+    qᶜⁱ = era5_fts(:specific_cloud_ice_water_content)
+    qˢ  = era5_fts(:specific_snow_water_content)
 
     grid  = T.grid    # native ERA5 PressureLevelGrid
     times = T.times
