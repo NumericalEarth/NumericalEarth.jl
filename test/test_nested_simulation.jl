@@ -4,10 +4,40 @@ using NumericalEarth
 using NumericalEarth.EarthSystemModels.NestedSimulations: parent_boundary_conditions
 using Oceananigans
 using Oceananigans.Units: Time
+using Oceananigans.Fields: interpolate, compute!
 using Oceananigans.BoundaryConditions: ValueBoundaryCondition, FieldBoundaryConditions, fill_halo_regions!
 using Breeze
 using Breeze: ThermodynamicConstants, dry_air_gas_constant, vapor_gas_constant, CompressibleDynamics
 using Test
+
+# Transform-aware interpolation: `interpolate(f, …)` applies `f` per source value before the
+# weighted blend and `inverse_transform(f)` after. `f = log` gives log-space interpolation, which
+# is what the on-the-fly nesting BCs use for strictly-positive, exponentially-varying state
+# (pressure, density). Identity must reproduce stock `interpolate`. Crucially this works for a
+# `FieldTimeSeries` source — the path the lazy `log(field)` AbstractField trick cannot reach.
+@testset "transform-aware interpolate(f, …): field + FieldTimeSeries" begin
+    grid = RectilinearGrid(size = (8, 8, 8), x = (0, 1), y = (0, 1), z = (1, 2),
+                           topology = (Periodic, Periodic, Bounded))
+    loc  = (Center(), Center(), Center())
+    X    = (0.5, 0.5, 1.5)
+    f(x, y, z) = exp(-2z) + 0.1   # strictly positive, exponential in z
+
+    c = CenterField(grid); set!(c, f)
+
+    # identity reproduces stock interpolate exactly (no-op transform)
+    @test interpolate(identity, X, c, loc, grid) == interpolate(X, c, loc, grid)
+
+    # log-space field interpolation == exp(linear interpolation of log(c))
+    logc = Field(log(c)); compute!(logc)
+    @test interpolate(log, X, c, loc, grid) ≈ exp(interpolate(X, logc, loc, grid))
+
+    # FieldTimeSeries source (constant in time) ⇒ same as the field result, at any query time
+    times = [0.0, 10.0]
+    fts = FieldTimeSeries{Center, Center, Center}(grid, times)
+    set!(fts[1], f); set!(fts[2], f)
+    @test interpolate(log,      X, Time(3.0), fts, loc, grid) ≈ interpolate(log, X, c, loc, grid)
+    @test interpolate(identity, X, Time(3.0), fts, loc, grid) ≈ interpolate(X, c, loc, grid)
+end
 
 @testset "PrescribedAtmosphere two_dimensional kwarg selects the field set" begin
     # A multi-layer grid is the *ocean's* vertical resolution, not the
