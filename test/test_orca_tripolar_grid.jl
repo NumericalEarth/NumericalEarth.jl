@@ -2,7 +2,8 @@ include("runtests_setup.jl")
 include("download_utils.jl")
 
 using NumericalEarth
-using NumericalEarth.DataWrangling: download_dataset, metadata_path
+using Downloads: download
+using NumericalEarth.DataWrangling: metadata_path
 using NumericalEarth.DataWrangling.ORCA: default_south_rows_to_remove
 using Oceananigans
 using Oceananigans.OrthogonalSphericalShellGrids: TripolarGrid
@@ -11,17 +12,18 @@ using NCDatasets
 using Statistics
 using Test
 
-orca_datasets = (ORCA1, ORCA2)#, ORCA12)
-orca_sizes = ((362, 332), (180, 148))#, (4322, 3606))
+orca_datasets = (ORCA1, ORCA2, ORCA12)
+orca_sizes = ((362, 332), (180, 148), (4322, 3606))
 bathymetry_names = ("Bathymetry", "bathy_metry")#, "bottom_height")
 
 # Pre-download ORCA mesh_mask and bathymetry through the artifacts fallback so
 # subsequent ORCAGrid(...) calls find the files locally even when Zenodo is down.
 for dataset in orca_datasets
+    @info "Pre-downloading $dataset"
     for name in (:mesh_mask, :bottom_height)
         md = Metadatum(name; dataset=dataset())
         download_dataset_with_fallback(metadata_path(md); dataset_name="$dataset $name") do
-            download_dataset(md)
+            download(md)
         end
     end
 end
@@ -30,6 +32,8 @@ for (n, DATASET) in enumerate(orca_datasets)
     dataset = DATASET()
     Nx0, Ny0 = orca_sizes[n]
     name = nameof(DATASET)
+
+    metrics_broken = dataset isa ORCA12
 
     @testset "$name Metadatum construction" begin
         bathy_meta = Metadatum(:bottom_height; dataset)
@@ -123,12 +127,12 @@ for (n, DATASET) in enumerate(orca_datasets)
             data = getproperty(grid, name)
             Njf = Base.length(LY(), Oceananigans.Grids.RightFaceFolded(), Ny)
             interior = Oceananigans.on_architecture(CPU(), data)[1:Nx, 1:Njf]
-            @test all(x -> x > 0, interior) == true
+            @test all(x -> x > 0, interior) == true broken = metrics_broken
         end
 
         for name in (:Δxᶜᶠᵃ, :Δxᶠᶠᵃ, :Δyᶜᶠᵃ, :Δyᶠᶠᵃ, :Azᶜᶠᵃ, :Azᶠᶠᵃ)
             data = Oceananigans.on_architecture(CPU(), getproperty(grid, name))
-            @test all(x -> x > 0, data[1:Nx, Ny+1])
+            @test all(x -> x > 0, data[1:Nx, Ny+1]) broken = metrics_broken
         end
 
         # Face-x longitude is west of Center-x longitude (stagger check)
@@ -171,7 +175,9 @@ for (n, DATASET) in enumerate(orca_datasets)
 
     @testset "$name bathymetry retrieval" begin
         bathy_md = Metadatum(:bottom_height; dataset)
-        download_dataset(bathy_md)
+        download_dataset_with_fallback(metadata_path(bathy_md); dataset_name="$dataset $name") do
+            download(bathy_md)
+        end
         path = metadata_path(bathy_md)
         @test isfile(path)
 

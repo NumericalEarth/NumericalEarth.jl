@@ -2,7 +2,7 @@ module ORCA
 
 export ORCA1, ORCA2, ORCA12
 
-using Downloads: Downloads
+using Downloads
 using Tar
 using CodecZlib
 using Oceananigans: Oceananigans
@@ -22,6 +22,8 @@ import ..DataWrangling:
     z_interfaces,
     reversed_vertical_axis,
     metadata_url
+
+import Downloads: download
 
 download_ORCA_cache::String = ""
 
@@ -156,7 +158,7 @@ end
 
 z_interfaces(::ORCA2Metadatum) = nothing
 
-function download_dataset(metadatum::ORCA2Metadatum)
+function Downloads.download(metadatum::ORCA2Metadatum)
     fileurl  = metadata_url(metadatum)
     filepath = metadata_path(metadatum)
     fileroute = metadatum.dir

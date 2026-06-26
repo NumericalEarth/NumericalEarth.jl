@@ -4,7 +4,7 @@ using Distances: haversine
 using Oceananigans.BoundaryConditions: fill_halo_regions!, FPivotZipperBoundaryCondition,
                                        NoFluxBoundaryCondition, FieldBoundaryConditions
 using Oceananigans.Fields: set!, convert_to_0_360
-using Oceananigans.Grids: RightFaceFolded, generate_coordinate
+using Oceananigans.Grids: RightFaceFolded, RightCenterFolded, generate_coordinate
 using Oceananigans.ImmersedBoundaries: ImmersedBoundaryGrid, GridFittedBottom
 using Oceananigans.OrthogonalSphericalShellGrids: Tripolar
 
@@ -352,8 +352,8 @@ function halo_fill_stagger(CC, FC, CF, FF, helper_grid, bcs)
 end
 
 fold_topology(::ORCA12) = RightFaceFolded
-fold_topology(::ORCA1) = RightFaceFolded
-fold_topology(::ORCA2) = RightCenterFolded
+fold_topology(::ORCA1)  = RightFaceFolded
+fold_topology(::ORCA2)  = RightCenterFolded
 
 """
     ORCATripolarGrid(arch = CPU(), FT::DataType = Float64;
