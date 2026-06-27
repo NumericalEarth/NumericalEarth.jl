@@ -24,8 +24,10 @@
 ##### internal energy at `T = Tᵈᵉᵉᵖ`; drainage exports at `T = Tˡᵃ`. The surface
 ##### advective term (precipitation/evaporation) is optional and uses bulk
 ##### `Tˡᵃ` as the up-flux proxy and `liquid_precipitation_temperature` as the
-##### down-flux value. (Vapor latent heat is *not* an advective liquid term —
-##### it is already inside `surface_energy_flux` via the interface balance.)
+##### down-flux value. The vapor flux carries sensible internal energy out of the
+##### slab as an advective term `cˡ(Tˡᵃ − Tᵣ) Jᵛ` — evaporating liquid leaves at the
+##### slab temperature; its *latent* heat is separate, already inside
+##### `surface_energy_flux` via the interface balance.
 #####
 ##### `Tᵈᵉᵉᵖ` and `Λᵈᵉᵉᵖ` may each be a `Number`, `AbstractField`, or any
 ##### state-indexable property (e.g. `FieldTimeSeries`).
@@ -103,10 +105,10 @@ function WaterCoupledEnergy(FT::Type = Oceananigans.defaults.FloatType;
 end
 
 # Consumes the signed surface energy flux `Jᴱ_s` (positive upward, written by
-# the interface) plus the optional precipitation temperature for the surface
-# advective term.
+# the interface), the signed vapor flux `Jᵛ` (for the advective sensible-energy
+# term), and the optional precipitation temperature for the surface advective term.
 flux_variables(::WaterCoupledEnergy) =
-    (:surface_energy_flux, :liquid_precipitation_temperature)
+    (:surface_energy_flux, :vapor_flux, :liquid_precipitation_temperature)
 
 # The closure rides into `_step_land_temperature!` whole, so Field-valued
 # properties must adapt to their GPU forms.
@@ -157,6 +159,7 @@ end
         Jˡs   = diagnostics.surface_liquid_flux[i, j, 1]
         Rlat  = diagnostics.subsurface_runoff[i, j, 1]
         Jᴱs   = fluxes.surface_energy_flux[i, j, 1]
+        Jᵛ    = fluxes.vapor_flux[i, j, 1]
         Tˡpij = fluxes.liquid_precipitation_temperature[i, j, 1]
     end
 
@@ -178,7 +181,12 @@ end
 
     eR_lat = cˡ * (Tij - Tᵣ) * Rlat
 
-    dEdt = Jᴱ_cond + Jᴱ_adv_b - (Jᴱs + Jᴱ_adv_s) - eR_lat
+    # Evaporating liquid (Jᵛ > 0) leaves at the slab temperature carrying its
+    # sensible internal energy cˡ(Tij − Tᵣ); the latent heat is already inside Jᴱs.
+    # This pairs the vapor mass flux in dMdt and keeps the update invariant to Tᵣ.
+    Jᴱ_adv_v = cˡ * (Tij - Tᵣ) * Jᵛ
+
+    dEdt = Jᴱ_cond + Jᴱ_adv_b - (Jᴱs + Jᴱ_adv_s + Jᴱ_adv_v) - eR_lat
     return (dEdt - cˡ * (Tij - Tᵣ) * dMdt) / C
 end
 

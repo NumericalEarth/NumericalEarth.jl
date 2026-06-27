@@ -171,9 +171,13 @@ Advance the slab by `Δt`. Each closure runs its own `time_step!`, then
 the end so atmosphere kernels reading the surface state see consistent
 values.
 
-Closure-invocation order: `energy → hydrology`. Hydrology runs after
-energy so future closures that close the energy budget through phase
-change (snow melt, soil freeze/thaw) see the freshly updated `temperature`.
+Closure-invocation order: `hydrology → energy`. Hydrology runs first so the
+energy step reads the *same* step's `water_storage_tendency` (`dMˡᵃ/dt`) and
+updated `Mˡᵃ`. The conservative `WaterCoupledEnergy` closure pairs the advective
+energy carried by each mass flux against `cˡ(Tˡᵃ − Tᵣ) dMˡᵃ/dt`; that
+cancellation — and hence energy conservation under water exchange at the slab
+temperature — is exact only when both use the mass flux hydrology actually
+applied this step.
 
 The clock is ticked first; subsequent closures see `land.clock.time =
 t + Δt`. Time-dependent property providers should therefore evaluate
@@ -183,8 +187,8 @@ function Oceananigans.TimeSteppers.time_step!(land::SlabLand, Δt)
     tick!(land.clock, Δt)
     time = land.clock.time
 
-    time_step!(land.energy,    land, Δt, time)
     time_step!(land.hydrology, land, Δt, time)
+    time_step!(land.energy,    land, Δt, time)
 
     Oceananigans.TimeSteppers.update_state!(land)
 
