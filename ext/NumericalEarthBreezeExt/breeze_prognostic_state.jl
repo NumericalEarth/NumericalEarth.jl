@@ -25,6 +25,36 @@ const REFERENCE_PRESSURE = 1e5  # Pa, θ reference (pˢᵗ)
 
 @inline total_water_specific_humidity(qᵛ, qᶜˡ, qᶜⁱ) = qᵛ + qᶜˡ + qᶜⁱ
 
+#####
+##### Prognostic transforms for the on-the-fly nesting boundary conditions
+#####
+#
+# Each transform is a small `isbits` callable carrying the `ThermodynamicConstants`. It maps an
+# *interpolated parent-state* `NamedTuple` — keyed `velocity, T, qᵛ, qᶜˡ, qᶜⁱ, p` (whatever the
+# corresponding `ParentStateBoundary` `sources` provides) — to one Breeze `CompressibleDynamics`
+# density-weighted prognostic, reusing the pointwise maps above. Used as the `transform` of a
+# `ParentStateBoundary`, evaluated per boundary-face node (GPU-safe, allocation-free).
+
+struct AirDensity{C};      constants :: C; end
+struct MomentumDensity{C}; constants :: C; end
+struct EnergyDensity{C};   constants :: C; end
+struct MoistureDensity{C}; constants :: C; end
+
+@inline (ρ::AirDensity)(s) =
+    air_density(s.T, s.qᵛ, s.p, dry_air_gas_constant(ρ.constants), vapor_gas_constant(ρ.constants))
+
+@inline (ρu::MomentumDensity)(s) = s.velocity * AirDensity(ρu.constants)(s)
+
+@inline function (ρθ::EnergyDensity)(s)
+    c = ρθ.constants
+    Rᵈ = dry_air_gas_constant(c); cᵖᵈ = c.dry_air.heat_capacity
+    ℒˡ = c.liquid.reference_latent_heat; ℒⁱ = c.ice.reference_latent_heat
+    return AirDensity(c)(s) * liquid_ice_potential_temperature(s.T, s.qᶜˡ, s.qᶜⁱ, s.p, Rᵈ, cᵖᵈ, ℒˡ, ℒⁱ)
+end
+
+@inline (ρqᵗ::MoistureDensity)(s) =
+    AirDensity(ρqᵗ.constants)(s) * total_water_specific_humidity(s.qᵛ, s.qᶜˡ, s.qᶜⁱ)
+
 """
 $(TYPEDSIGNATURES)
 
