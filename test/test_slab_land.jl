@@ -301,8 +301,8 @@ end
         for m in (model_no_land, model_with_land)
             fill!(parent(m.atmosphere.velocities.u), 1)
             fill!(parent(m.atmosphere.velocities.v), 0)
-            fill!(parent(m.atmosphere.tracers.T), 300)
-            fill!(parent(m.atmosphere.tracers.q), 0.005)
+            fill!(parent(m.atmosphere.temperature), 300)
+            fill!(parent(m.atmosphere.specific_humidity), 0.005)
             fill!(parent(m.atmosphere.pressure), 101_325)
             fill!(m.land.temperature, 300)
             fill!(parent(m.land.fluxes.net_energy_flux), 0)
@@ -359,8 +359,8 @@ end
 
         atmosphere = PrescribedAtmosphere(grid; surface_layer_height = h, boundary_layer_height = 512)
         @allowscalar begin
-            fill!(parent(atmosphere.tracers.T),    Tᵃᵗ)
-            fill!(parent(atmosphere.tracers.q),    qᵃᵗ)
+            fill!(parent(atmosphere.temperature),       Tᵃᵗ)
+            fill!(parent(atmosphere.specific_humidity), qᵃᵗ)
             fill!(parent(atmosphere.velocities.u), uᵃᵗ)
             fill!(parent(atmosphere.velocities.v), vᵃᵗ)
             fill!(parent(atmosphere.pressure),     pᵃᵗ)
@@ -424,8 +424,8 @@ end
             h = 10.0
             atmosphere = PrescribedAtmosphere(grid; surface_layer_height = h, boundary_layer_height = 512)
             @allowscalar begin
-                fill!(parent(atmosphere.tracers.T),    Tᵃᵗ)
-                fill!(parent(atmosphere.tracers.q),    qᵃᵗ)
+                fill!(parent(atmosphere.temperature),       Tᵃᵗ)
+                fill!(parent(atmosphere.specific_humidity), qᵃᵗ)
                 fill!(parent(atmosphere.velocities.u), 5)
                 fill!(parent(atmosphere.velocities.v), 0)
                 fill!(parent(atmosphere.pressure),     101325)

@@ -1,9 +1,9 @@
 module NumericalEarthCopernicusClimateDataStoreExt
 
 using NumericalEarth
-using CopernicusClimateDataStore
+using CopernicusClimateDataStore: CopernicusClimateDataStore
 using Downloads: Downloads
-using Dates
+using Dates: Dates
 using Oceananigans.DistributedComputations: @root
 
 using NumericalEarth.DataWrangling.ERA5: ERA5Metadata, ERA5Metadatum, ERA5_dataset_variable_names
