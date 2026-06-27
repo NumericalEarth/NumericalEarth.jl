@@ -9,7 +9,7 @@
 #####
 
 using NumericalEarth.Atmospheres: PrescribedAtmosphere
-using NumericalEarth.EarthSystemModels.NestedSimulations: ParentStateBoundary, ParentStateTarget
+using NumericalEarth.EarthSystemModels.NestedSimulations: ParentStateBoundary, ParentStateTarget, NestedModel
 using Oceananigans: Relaxation
 using Oceananigans.BoundaryConditions: NormalFlowBoundaryCondition, ValueBoundaryCondition
 
@@ -95,4 +95,43 @@ function nested_relaxation_forcings(parent_atmosphere::PrescribedAtmosphere, con
 
     relax(target) = Relaxation(; rate, mask, target)
     return (u = relax(u), v = relax(v), θ = relax(θ_target), qᵉ = relax(qᵗ_target))
+end
+
+"""
+$(TYPEDSIGNATURES)
+
+Build a Breeze child atmosphere over `child_grid` nested in `parent_atmosphere`, wrapped in a
+`NestedModel`. The child's lateral boundary conditions (`ρ, ρu, ρv, ρe, <moisture>`) — and, when
+`relaxation_rate` (s⁻¹) is given, its interior Davies relaxation over `relaxation_mask` — are derived
+on the fly from the parent's raw state (see [`nested_lateral_boundary_conditions`] /
+[`nested_relaxation_forcings`]); no materialized parent prognostic series is needed. Remaining keyword
+arguments forward to [`atmosphere_simulation`](@ref) (`dynamics`, `microphysics`, advection, …); any
+`boundary_conditions` / `forcing` the caller passes are merged per-side with the parent-derived ones
+(caller wins). This is the combined `parent → child(parent) → NestedModel` constructor.
+"""
+function NumericalEarth.EarthSystemModels.NestedSimulations.nested_atmosphere_model(
+            parent_atmosphere::PrescribedAtmosphere, child_grid;
+            relaxation_rate = nothing,
+            relaxation_mask = 1,
+            sides = (:west, :east, :south, :north),
+            thermodynamic_constants = ThermodynamicConstants(eltype(child_grid)),
+            microphysics = SaturationAdjustment(equilibrium = WarmPhaseEquilibrium()),
+            boundary_conditions = NamedTuple(),
+            forcing = NamedTuple(),
+            kw...)
+
+    moisture_name = moisture_prognostic_name(microphysics)
+
+    nested_bcs = nested_lateral_boundary_conditions(parent_atmosphere, thermodynamic_constants, moisture_name; sides)
+    davies = isnothing(relaxation_rate) ? (;) :
+             nested_relaxation_forcings(parent_atmosphere, thermodynamic_constants;
+                                        rate = relaxation_rate, mask = relaxation_mask)
+
+    child = NumericalEarth.Atmospheres.atmosphere_simulation(child_grid;
+                thermodynamic_constants, microphysics,
+                boundary_conditions = merge_boundary_conditions(nested_bcs, NamedTuple(boundary_conditions)),
+                forcing = merge(davies, NamedTuple(forcing)),
+                kw...).model
+
+    return NestedModel(parent_atmosphere, child)
 end

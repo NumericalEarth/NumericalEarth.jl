@@ -1,7 +1,12 @@
 module NestedSimulations
 
-export NestedModel, NestedSimulation,
+export NestedModel, NestedSimulation, nested_atmosphere_model,
        parent_boundary_conditions, parent_forcings
+
+# A model-specific extension point: `nested_atmosphere_model(parent, child_grid; …)` builds a child
+# atmosphere over `child_grid` driven by `parent` (lateral BCs + Davies relaxation derived on the fly)
+# and wraps it in a `NestedModel`. The method is defined in the Breeze extension.
+function nested_atmosphere_model end
 
 using Oceananigans
 using Oceananigans.Fields: Face
