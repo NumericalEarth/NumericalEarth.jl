@@ -43,6 +43,7 @@ end
                           momentum_advection = WENO(order=9),
                           scalar_advection = WENO(order=5),
                           boundary_conditions = NamedTuple(),
+                          parent = nothing,
                           coriolis = nothing,
                           forcing = NamedTuple(),
                           closure = nothing,
@@ -66,6 +67,12 @@ aliases `coupled_model.radiation.flux_divergence`. Passing a
 `Breeze.RadiativeTransferModel` directly as `radiation` here is rejected — use
 `AtmosphereLandModel(atmosphere, land; radiation = rtm)` instead.
 
+Pass `parent` (a [`PrescribedAtmosphere`](@ref), e.g. an `ERA5PrescribedAtmosphere`) to nest this
+child in a coarser atmosphere: its lateral boundaries (`ρ, ρu, ρv, ρe, <moisture>`) are then driven on
+the fly from the parent's raw state via `ParentStateBoundary` — each density-weighted prognostic is
+derived per boundary-face node from the interpolated parent `(velocity, T, qᵛ, qᶜˡ, qᶜⁱ, p)`, so no
+materialized parent prognostic series is needed. Build order is parent → child(parent) → `NestedModel`.
+
 Returns the `Simulation` so callers can attach output writers, callbacks, or
 later wrap inside a coupled `EarthSystemModel`. The inner `Δt` defaults to
 `Inf` since the *coupled* `Simulation` (around an `EarthSystemModel`) owns
@@ -82,6 +89,7 @@ function NumericalEarth.Atmospheres.atmosphere_simulation(grid;
                                                           momentum_advection = Oceananigans.WENO(order=9),
                                                           scalar_advection = Oceananigans.WENO(order=5),
                                                           boundary_conditions = NamedTuple(),
+                                                          parent = nothing,
                                                           coriolis = nothing,
                                                           forcing = NamedTuple(),
                                                           closure = nothing,
@@ -111,6 +119,14 @@ function NumericalEarth.Atmospheres.atmosphere_simulation(grid;
     )
 
     coupling_bcs = merge(momentum_bcs, energy_bc, moisture_bc)
+
+    # Nested child: derive the lateral BCs from the `parent` atmosphere's raw state on the fly
+    # (ρ, ρu, ρv, ρe, moisture). Per-side merge keeps the coupling's bottom-flux BCs alongside the
+    # nested lateral BCs on the same prognostic.
+    if !isnothing(parent)
+        nested_bcs = nested_lateral_boundary_conditions(parent, thermodynamic_constants, moisture_key)
+        coupling_bcs = merge_boundary_conditions(coupling_bcs, nested_bcs)
+    end
 
     # User BCs override coupling defaults — per-side, so the user's lateral
     # BCs combine with the coupling's bottom-flux BCs rather than replacing
