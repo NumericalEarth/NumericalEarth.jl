@@ -35,6 +35,8 @@ Zarr = "0a941bbe-ad1d-11e8-39d9-ab76183a1d99"
 
 [sources]
 NumericalEarth = {path = ".."}
+# TODO: drop once Oceananigans tags a release containing `interpolate(f, …)` (#5726).
+Oceananigans = {url = "https://github.com/CliMA/Oceananigans.jl.git", rev = "main"}
 
 [compat]
 ArchGDAL = "0.10"

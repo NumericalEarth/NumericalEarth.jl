@@ -26,6 +26,8 @@ Suppressor = "fd094767-a336-5f1f-9728-57cf17d0bbfb"
 
 [sources]
 NumericalEarth = {path = ".."}
+# TODO: drop once Oceananigans tags a release containing `interpolate(f, …)` (#5726).
+Oceananigans = {url = "https://github.com/CliMA/Oceananigans.jl.git", rev = "main"}
 
 [compat]
 Breeze = "0.5.3, 0.6"

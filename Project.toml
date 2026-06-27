@@ -61,6 +61,10 @@ NumericalEarthVerosExt = ["PythonCall", "CondaPkg"]
 NumericalEarthWOAExt = "WorldOceanAtlasTools"
 NumericalEarthZarrExt = "Zarr"
 
+# TODO: drop once Oceananigans tags a release containing `interpolate(f, …)` (#5726); then bump [compat].
+[sources]
+Oceananigans = {url = "https://github.com/CliMA/Oceananigans.jl.git", rev = "main"}
+
 [compat]
 Accessors = "0.1.44"
 Adapt = "4"
