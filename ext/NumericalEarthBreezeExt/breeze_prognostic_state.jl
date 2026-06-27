@@ -55,6 +55,21 @@ end
 @inline (ρqᵗ::MoistureDensity)(s) =
     AirDensity(ρqᵗ.constants)(s) * total_water_specific_humidity(s.qᵛ, s.qᶜˡ, s.qᶜⁱ)
 
+# Specific (non-density-weighted) transforms for the Davies-relaxation targets, keyed under Breeze's
+# `SpecificForcing` names (`θ`, `qᵉ`); Breeze applies the ρ-weight at kernel time. Velocities relax
+# toward the raw parent `u`/`v` directly, so they need no transform.
+struct LiquidIcePotentialTemperature{C}; constants :: C; end
+struct TotalWater end
+
+@inline function (θ::LiquidIcePotentialTemperature)(s)
+    c = θ.constants
+    Rᵈ = dry_air_gas_constant(c); cᵖᵈ = c.dry_air.heat_capacity
+    ℒˡ = c.liquid.reference_latent_heat; ℒⁱ = c.ice.reference_latent_heat
+    return liquid_ice_potential_temperature(s.T, s.qᶜˡ, s.qᶜⁱ, s.p, Rᵈ, cᵖᵈ, ℒˡ, ℒⁱ)
+end
+
+@inline (::TotalWater)(s) = total_water_specific_humidity(s.qᵛ, s.qᶜˡ, s.qᶜⁱ)
+
 """
 $(TYPEDSIGNATURES)
 

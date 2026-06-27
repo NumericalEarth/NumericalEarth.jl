@@ -9,7 +9,8 @@
 #####
 
 using NumericalEarth.Atmospheres: PrescribedAtmosphere
-using NumericalEarth.EarthSystemModels.NestedSimulations: ParentStateBoundary
+using NumericalEarth.EarthSystemModels.NestedSimulations: ParentStateBoundary, ParentStateTarget
+using Oceananigans: Relaxation
 using Oceananigans.BoundaryConditions: NormalFlowBoundaryCondition, ValueBoundaryCondition
 
 # `ρu`/`ρv` are Face-staggered ⇒ `NormalFlowBoundaryCondition`; `ρ`/`ρe`/`ρqᵗ` are Center-located,
@@ -24,23 +25,23 @@ using Oceananigans.BoundaryConditions: NormalFlowBoundaryCondition, ValueBoundar
 $(TYPEDSIGNATURES)
 
 Build the child's lateral `FieldBoundaryConditions` for the Breeze prognostics
-`(ρ, ρu, ρv, ρe, <moisture>)`, deriving each on the fly from the `parent`
+`(ρ, ρu, ρv, ρe, <moisture>)`, deriving each on the fly from the `parent_atmosphere`
 [`PrescribedAtmosphere`](@ref)'s raw state via [`ParentStateBoundary`]. `constants`
 are the child's `ThermodynamicConstants`; `moisture_name` is the moisture prognostic
 key (`moisture_prognostic_name(microphysics)`). Replaces the materialized
 `breeze_prognostic_state` parent series + single-source `Interpolated` BCs.
 """
-function nested_lateral_boundary_conditions(parent::PrescribedAtmosphere, constants, moisture_name;
+function nested_lateral_boundary_conditions(parent_atmosphere::PrescribedAtmosphere, constants, moisture_name;
                                             sides = (:west, :east, :south, :north),
                                             momentum_scheme = nothing)
 
-    u  = parent.velocities.u
-    v  = parent.velocities.v
-    T  = parent.temperature
-    qᵛ = parent.specific_humidity
-    qᶜˡ = parent.microphysical_variables.qᶜˡ
-    qᶜⁱ = parent.microphysical_variables.qᶜⁱ
-    p  = parent.pressure
+    u  = parent_atmosphere.velocities.u
+    v  = parent_atmosphere.velocities.v
+    T  = parent_atmosphere.temperature
+    qᵛ = parent_atmosphere.specific_humidity
+    qᶜˡ = parent_atmosphere.microphysical_variables.qᶜˡ
+    qᶜⁱ = parent_atmosphere.microphysical_variables.qᶜⁱ
+    p  = parent_atmosphere.pressure
 
     # log-space for the strictly-positive thermodynamic quantities; linear (identity) otherwise.
     ρ_psb  = ParentStateBoundary((; T, qᵛ, p),
@@ -64,4 +65,34 @@ function nested_lateral_boundary_conditions(parent::PrescribedAtmosphere, consta
                ρe = _sided(ValueBoundaryCondition, ρe_psb, sides))
 
     return merge(lateral, NamedTuple{(moisture_name,)}((_sided(ValueBoundaryCondition, ρq_psb, sides),)))
+end
+
+"""
+$(TYPEDSIGNATURES)
+
+Build the interior Davies-relaxation forcings (`NamedTuple` of Oceananigans `Relaxation`) nudging the
+child toward the `parent_atmosphere`'s state at `rate` over `mask`. Keyed under Breeze's
+`SpecificForcing` names `(u, v, θ, qᵉ)`: `u`/`v` relax toward the raw parent velocities directly;
+`θ`/`qᵉ` toward the *specific* `θˡⁱ`/`qᵗ` derived on the fly from raw parent state via
+[`ParentStateTarget`] (Breeze applies the ρ-weight at kernel time). Replaces the materialized
+`breeze_prognostic_state` relaxation targets.
+"""
+function nested_relaxation_forcings(parent_atmosphere::PrescribedAtmosphere, constants; rate, mask = 1)
+    u  = parent_atmosphere.velocities.u
+    v  = parent_atmosphere.velocities.v
+    T  = parent_atmosphere.temperature
+    qᵛ = parent_atmosphere.specific_humidity
+    qᶜˡ = parent_atmosphere.microphysical_variables.qᶜˡ
+    qᶜⁱ = parent_atmosphere.microphysical_variables.qᶜⁱ
+    p  = parent_atmosphere.pressure
+
+    θ_target  = ParentStateTarget((; T, qᶜˡ, qᶜⁱ, p),
+                                  (T = log, qᶜˡ = identity, qᶜⁱ = identity, p = log),
+                                  LiquidIcePotentialTemperature(constants))
+    qᵗ_target = ParentStateTarget((; qᵛ, qᶜˡ, qᶜⁱ),
+                                  (qᵛ = identity, qᶜˡ = identity, qᶜⁱ = identity),
+                                  TotalWater())
+
+    relax(target) = Relaxation(; rate, mask, target)
+    return (u = relax(u), v = relax(v), θ = relax(θ_target), qᵉ = relax(qᵗ_target))
 end

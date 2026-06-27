@@ -95,3 +95,33 @@ end
     X = node(i, j, k, grid, LX(), LY(), Face())
     return _parent_state(bc, X, clock_time(clock))
 end
+
+#####
+##### ParentStateTarget: the interior-relaxation analogue of `ParentStateBoundary`. A callable
+##### `target(x, y, z, t)` for an Oceananigans `Relaxation` forcing that interpolates each parent
+##### source at the interior node `(x, y, z)` (each via its `interpolations` transform, un-mapped) and
+##### applies the prognostic `transform` — same `_query_source` machinery as the boundary carrier, but
+##### at an arbitrary node rather than a boundary face. Used for on-the-fly Davies relaxation.
+#####
+
+struct ParentStateTarget{S, G, I, F}
+    sources        :: S
+    source_grid    :: G
+    interpolations :: I
+    transform      :: F
+end
+
+function ParentStateTarget(sources::NamedTuple, interpolations::NamedTuple, transform)
+    grid = first(sources).grid
+    return ParentStateTarget(sources, grid, interpolations, transform)
+end
+
+@inline (t::ParentStateTarget)(x, y, z, time) =
+    t.transform(map((src, itp) -> _query_source(src, t.source_grid, (x, y, z), nothing, time, itp),
+                    t.sources, t.interpolations))
+
+Adapt.adapt_structure(to, t::ParentStateTarget) =
+    ParentStateTarget(map(s -> adapt(to, s), t.sources),
+                      adapt(to, t.source_grid),
+                      t.interpolations,
+                      adapt(to, t.transform))

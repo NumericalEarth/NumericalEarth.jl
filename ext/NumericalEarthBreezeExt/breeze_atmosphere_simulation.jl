@@ -43,7 +43,9 @@ end
                           momentum_advection = WENO(order=9),
                           scalar_advection = WENO(order=5),
                           boundary_conditions = NamedTuple(),
-                          parent = nothing,
+                          parent_atmosphere = nothing,
+                          relaxation_rate = nothing,
+                          relaxation_mask = 1,
                           coriolis = nothing,
                           forcing = NamedTuple(),
                           closure = nothing,
@@ -67,11 +69,13 @@ aliases `coupled_model.radiation.flux_divergence`. Passing a
 `Breeze.RadiativeTransferModel` directly as `radiation` here is rejected — use
 `AtmosphereLandModel(atmosphere, land; radiation = rtm)` instead.
 
-Pass `parent` (a [`PrescribedAtmosphere`](@ref), e.g. an `ERA5PrescribedAtmosphere`) to nest this
-child in a coarser atmosphere: its lateral boundaries (`ρ, ρu, ρv, ρe, <moisture>`) are then driven on
-the fly from the parent's raw state via `ParentStateBoundary` — each density-weighted prognostic is
+Pass `parent_atmosphere` (a [`PrescribedAtmosphere`](@ref), e.g. an `ERA5PrescribedAtmosphere`) to nest
+this child in a coarser atmosphere: its lateral boundaries (`ρ, ρu, ρv, ρe, <moisture>`) are then driven
+on the fly from the parent's raw state via `ParentStateBoundary` — each density-weighted prognostic is
 derived per boundary-face node from the interpolated parent `(velocity, T, qᵛ, qᶜˡ, qᶜⁱ, p)`, so no
-materialized parent prognostic series is needed. Build order is parent → child(parent) → `NestedModel`.
+materialized parent prognostic series is needed. Additionally passing `relaxation_rate` (s⁻¹) adds
+interior Davies relaxation toward the parent over `relaxation_mask` — also on the fly (specific `u, v,
+θ, qᵉ` targets). Build order is parent → child(parent_atmosphere) → `NestedModel`.
 
 Returns the `Simulation` so callers can attach output writers, callbacks, or
 later wrap inside a coupled `EarthSystemModel`. The inner `Δt` defaults to
@@ -89,7 +93,9 @@ function NumericalEarth.Atmospheres.atmosphere_simulation(grid;
                                                           momentum_advection = Oceananigans.WENO(order=9),
                                                           scalar_advection = Oceananigans.WENO(order=5),
                                                           boundary_conditions = NamedTuple(),
-                                                          parent = nothing,
+                                                          parent_atmosphere = nothing,
+                                                          relaxation_rate = nothing,
+                                                          relaxation_mask = 1,
                                                           coriolis = nothing,
                                                           forcing = NamedTuple(),
                                                           closure = nothing,
@@ -120,12 +126,19 @@ function NumericalEarth.Atmospheres.atmosphere_simulation(grid;
 
     coupling_bcs = merge(momentum_bcs, energy_bc, moisture_bc)
 
-    # Nested child: derive the lateral BCs from the `parent` atmosphere's raw state on the fly
+    # Nested child: derive the lateral BCs from the `parent_atmosphere`'s raw state on the fly
     # (ρ, ρu, ρv, ρe, moisture). Per-side merge keeps the coupling's bottom-flux BCs alongside the
     # nested lateral BCs on the same prognostic.
-    if !isnothing(parent)
-        nested_bcs = nested_lateral_boundary_conditions(parent, thermodynamic_constants, moisture_key)
+    if !isnothing(parent_atmosphere)
+        nested_bcs = nested_lateral_boundary_conditions(parent_atmosphere, thermodynamic_constants, moisture_key)
         coupling_bcs = merge_boundary_conditions(coupling_bcs, nested_bcs)
+
+        # Interior Davies relaxation toward the same parent, also on the fly (keyed u/v/θ/qᵉ).
+        if !isnothing(relaxation_rate)
+            davies = nested_relaxation_forcings(parent_atmosphere, thermodynamic_constants;
+                                                rate = relaxation_rate, mask = relaxation_mask)
+            forcing = merge(davies, NamedTuple(forcing))
+        end
     end
 
     # User BCs override coupling defaults — per-side, so the user's lateral
