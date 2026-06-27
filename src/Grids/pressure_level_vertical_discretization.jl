@@ -157,11 +157,14 @@ end
 
 function mean_height_profile(grid::PressureLevelGrid)
     g = grid.z.gravitational_acceleration
-    Φi = geopotential_data_for_extrema(grid.z.geopotential)
-    Nz = grid.Nz
-    # `selectdim(Φi, 3, k)` works for both 3-D (Field) and 4-D (TSI parent)
-    # geopotential storage; the trailing dims are reduced away by `mean`.
-    return [mean(selectdim(Φi, 3, k)) / g for k in 1:Nz]
+    # `mean` of `interior(Φ)` (a device `SubArray`) routes through `Statistics._mean`,
+    # which scalar-indexes (`first`) — disallowed on the GPU, for `dims = :` and
+    # `dims = (1, 2)` alike. Materialize the (small) geopotential to host, then reduce
+    # every dim except the vertical (3): the horizontals always, plus time for a 4-D
+    # `TimeSeriesInterpolation` parent. One-time setup/equality path, not a hot loop.
+    Φi = Array(geopotential_data_for_extrema(grid.z.geopotential))
+    reduce_dims = Tuple(d for d in 1:ndims(Φi) if d != 3)
+    return dropdims(mean(Φi; dims = reduce_dims); dims = reduce_dims) ./ g
 end
 
 # `znodes(::Field)` on a `PressureLevelGrid`:
@@ -247,7 +250,12 @@ end
     kk = ifelse(z_hi == z_lo, oftype(z, low),
                 (high - low) / (z_hi - z_lo) * (z - z_lo) + low)
     FT = eltype(grid)
-    return convert(FT, kk)
+    # Clamp to a valid fractional index. A target height below the column's clipped
+    # surface (or above its top) extrapolates `kk` outside [1, Nz]; the downstream
+    # `@inbounds` interpolator read is then out of bounds — finite-but-clamped on the
+    # CPU, but uninitialized garbage on the GPU (which NaN'd the terrain-following
+    # ERA5 initial state). Nearest-level is the intended out-of-range behavior.
+    return clamp(convert(FT, kk), one(FT), convert(FT, grid.Nz))
 end
 
 #####
