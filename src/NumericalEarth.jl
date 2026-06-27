@@ -114,6 +114,7 @@ export
     first_date, last_date, all_dates,
     LinearlyTaperedPolarMask,
     DatasetRestoring,
+    atmosphere_model,
     atmosphere_simulation,
     breeze_prognostic_state,
     hydrostatic_pressure_from_surface,

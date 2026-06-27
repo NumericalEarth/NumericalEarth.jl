@@ -33,7 +33,7 @@ function merge_boundary_conditions(coupling_bcs::NamedTuple, user_bcs::NamedTupl
 end
 
 """
-    atmosphere_simulation(grid;
+    atmosphere_model(grid;
                           surface_pressure = 101325,
                           potential_temperature = 285,
                           thermodynamic_constants = ThermodynamicConstants(eltype(grid)),
@@ -46,12 +46,11 @@ end
                           coriolis = nothing,
                           forcing = NamedTuple(),
                           closure = nothing,
-                          clock = Clock{eltype(grid)}(time=0),
-                          Δt = Inf)
+                          clock = Clock{eltype(grid)}(time=0))
 
-Construct an Oceananigans `Simulation` wrapping a Breeze `AtmosphereModel`,
-with sensible defaults for coupled simulations. Mirrors the role of
-[`ocean_simulation`](@ref).
+Construct a Breeze `AtmosphereModel` with sensible defaults for coupled simulations.
+[`atmosphere_simulation`](@ref) wraps this in an Oceananigans `Simulation` (mirroring
+the role of [`ocean_simulation`](@ref)).
 
 Surface fluxes are handled by the `EarthSystemModel` coupling framework (via
 similarity theory), not by Breeze's own boundary conditions, so the bottom
@@ -69,14 +68,8 @@ aliases `coupled_model.radiation.flux_divergence`. Passing a
 To nest this child in a coarser parent atmosphere, use [`nested_atmosphere_model`](@ref) (Breeze
 extension), which derives the lateral BCs and Davies relaxation from the parent and wraps the result
 in a `NestedModel`.
-
-Returns the `Simulation` so callers can attach output writers, callbacks, or
-later wrap inside a coupled `EarthSystemModel`. The inner `Δt` defaults to
-`Inf` since the *coupled* `Simulation` (around an `EarthSystemModel`) owns
-the time step in coupled use; if you wrap this `Simulation` directly in a
-`run!`, pass a finite `Δt`.
 """
-function NumericalEarth.Atmospheres.atmosphere_simulation(grid;
+function NumericalEarth.Atmospheres.atmosphere_model(grid;
                                                           surface_pressure = 101325,
                                                           potential_temperature = 285,
                                                           thermodynamic_constants = ThermodynamicConstants(eltype(grid)),
@@ -90,7 +83,6 @@ function NumericalEarth.Atmospheres.atmosphere_simulation(grid;
                                                           forcing = NamedTuple(),
                                                           closure = nothing,
                                                           clock = Oceananigans.TimeSteppers.Clock{eltype(grid)}(time = 0),
-                                                          Δt = Inf,
                                                           radiation = CoupledRadiation())
 
     if radiation isa Breeze.RadiativeTransferModel
@@ -121,12 +113,20 @@ function NumericalEarth.Atmospheres.atmosphere_simulation(grid;
     # the whole `FieldBoundaryConditions`.
     boundary_conditions = merge_boundary_conditions(coupling_bcs, NamedTuple(boundary_conditions))
 
-    atmosphere_model = AtmosphereModel(grid;
-                                       dynamics, microphysics,
-                                       momentum_advection, scalar_advection,
-                                       boundary_conditions,
-                                       coriolis, forcing, closure, clock,
-                                       radiation)
-
-    return Simulation(atmosphere_model; Δt, verbose = false)
+    return AtmosphereModel(grid;
+                           dynamics, microphysics,
+                           momentum_advection, scalar_advection,
+                           boundary_conditions,
+                           coriolis, forcing, closure, clock,
+                           radiation)
 end
+
+"""
+$(TYPEDSIGNATURES)
+
+Wrap [`atmosphere_model`](@ref) in an Oceananigans `Simulation`. `Δt` defaults to `Inf` because the
+coupled `Simulation` / `NestedModel` owns the time step in coupled use; pass a finite `Δt` to `run!`
+this `Simulation` directly. All other keyword arguments forward to `atmosphere_model`.
+"""
+NumericalEarth.Atmospheres.atmosphere_simulation(grid; Δt = Inf, kw...) =
+    Simulation(NumericalEarth.Atmospheres.atmosphere_model(grid; kw...); Δt, verbose = false)

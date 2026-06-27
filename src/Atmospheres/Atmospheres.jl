@@ -1,6 +1,6 @@
 module Atmospheres
 
-export atmosphere_simulation, breeze_prognostic_state, hydrostatic_pressure_from_surface, PrescribedAtmosphere, PrescribedPrecipitationFlux
+export atmosphere_model, atmosphere_simulation, breeze_prognostic_state, hydrostatic_pressure_from_surface, PrescribedAtmosphere, PrescribedPrecipitationFlux
 
 using Adapt: Adapt, adapt
 using KernelAbstractions: @kernel, @index
@@ -20,7 +20,9 @@ using ...NumericalEarth: NumericalEarth
 using ..EarthSystemModels: EarthSystemModels, AbstractPrescribedComponent
 using ..EarthSystemModels.InterfaceComputations: interface_kernel_parameters, ComponentExchanger
 
-# Can be extended by atmosphere models
+# Can be extended by atmosphere models. `atmosphere_model` builds the model; `atmosphere_simulation`
+# wraps it in a `Simulation`.
+function atmosphere_model end
 function atmosphere_simulation end
 
 # Map a moist thermodynamic state (T, qᵛ, qᶜ, qⁱ, p) to an atmosphere model's

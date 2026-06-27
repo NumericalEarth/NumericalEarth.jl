@@ -127,11 +127,11 @@ function NumericalEarth.EarthSystemModels.NestedSimulations.nested_atmosphere_mo
              nested_relaxation_forcings(parent_atmosphere, thermodynamic_constants;
                                         rate = relaxation_rate, mask = relaxation_mask)
 
-    child = NumericalEarth.Atmospheres.atmosphere_simulation(child_grid;
+    child = NumericalEarth.Atmospheres.atmosphere_model(child_grid;
                 thermodynamic_constants, microphysics,
                 boundary_conditions = merge_boundary_conditions(nested_bcs, NamedTuple(boundary_conditions)),
                 forcing = merge(davies, NamedTuple(forcing)),
-                kw...).model
+                kw...)
 
     return NestedModel(parent_atmosphere, child)
 end

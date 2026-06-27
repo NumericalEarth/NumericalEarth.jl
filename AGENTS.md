@@ -59,6 +59,10 @@ NumericalEarth.jl provides infrastructure for running Earth system model compone
 
 ### Software Design
 
+- **Never unpack a property immediately after a constructor** (`foo(args...).bar`). It means the
+  constructor returns the wrong type for the call site — fix it by providing a constructor that
+  returns what's needed (e.g. a model-level `atmosphere_model(grid; …)` alongside the simulation-level
+  `atmosphere_simulation(grid; …)`), not by reaching into the result. Use constructors as designed.
 - Minimize code duplication (allow only for trivial one-liners)
 - When something would be better in Oceananigans, add a detailed TODO note
 - Almost always extend functions in source code, not in examples
