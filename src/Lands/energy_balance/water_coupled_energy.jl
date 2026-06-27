@@ -104,8 +104,7 @@ end
 
 # Consumes the signed surface energy flux `Jᴱ_s` (positive upward, written by
 # the interface) plus the optional precipitation temperature for the surface
-# advective term. The legacy `net_energy_flux` is kept as a deprecated fallback
-# when the new interface isn't writing `surface_energy_flux`.
+# advective term.
 flux_variables(::WaterCoupledEnergy) =
     (:surface_energy_flux, :liquid_precipitation_temperature)
 

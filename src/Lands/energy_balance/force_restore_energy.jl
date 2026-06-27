@@ -3,10 +3,10 @@
 ##### temperature toward a prescribed deep climatology.
 #####
 ##### The single prognostic variable is the bulk temperature `T`, evolving
-##### under the net surface energy flux plus a restoring term toward a
-##### prescribed deep temperature `Tᵈᵉᵉᵖ`:
+##### under the surface energy flux (positive upward, hence the minus sign)
+##### plus a restoring term toward a prescribed deep temperature `Tᵈᵉᵉᵖ`:
 #####
-#####     ∂T/∂t = Q / C + (Tᵈᵉᵉᵖ − T) / τ
+#####     ∂T/∂t = −Jᴱs / C + (Tᵈᵉᵉᵖ − T) / τ
 #####
 ##### where `C = Cdry + Cl · Mˡᵃ` is the effective areal heat capacity
 ##### (the liquid-water term `Cl · Mˡᵃ` is included when bucket hydrology is
@@ -52,7 +52,7 @@ function ForceRestoreEnergy(FT::Type = Oceananigans.defaults.FloatType;
                               deep_temperature, deep_time_scale)
 end
 
-flux_variables(::ForceRestoreEnergy) = (:net_energy_flux,)
+flux_variables(::ForceRestoreEnergy) = (:surface_energy_flux,)
 
 # The closure rides into `_step_land_temperature!` whole, so Field-valued
 # properties must adapt to their GPU forms.
@@ -64,19 +64,21 @@ Adapt.adapt_structure(to, energy::ForceRestoreEnergy) =
 
 # `τᵈ` is the deep-restore time scale (math `τᵈᵉᵉᵖ` in notation.md); not the
 # kinematic momentum flux `τ`. `Tᵈ` is the deep-target temperature.
-# ∂T/∂t = Q/C + (Tᵈ − T)/τᵈ, with C = Cdry + Cl·max(Mˡᵃ, 0).
+# `Jᴱs` is the surface energy flux, positive *upward* (out of the slab), so it
+# enters the budget with a minus sign:
+# ∂T/∂t = −Jᴱs/C + (Tᵈ − T)/τᵈ, with C = Cdry + Cl·max(Mˡᵃ, 0).
 @inline function temperature_tendency(i, j, grid, energy::ForceRestoreEnergy,
                                       prognostic, fluxes, diagnostics, time)
     @inbounds begin
         Tᵢⱼ = prognostic.T[i, j, 1]
         Mᵢⱼ = prognostic.M[i, j, 1]
-        Q   = fluxes.net_energy_flux[i, j, 1]
+        Jᴱs = fluxes.surface_energy_flux[i, j, 1]
     end
     Cdry = property_value(energy.dry_heat_capacity, i, j, 1)
     Cl   = property_value(energy.liquid_heat_capacity, i, j, 1)
     C    = Cdry + Cl * max(Mᵢⱼ, 0)
     Tᵈ   = stateindex(energy.deep_temperature, i, j, 1, grid, time, (Center, Center, Center))
-    return Q / C + (Tᵈ - Tᵢⱼ) / energy.deep_time_scale
+    return -Jᴱs / C + (Tᵈ - Tᵢⱼ) / energy.deep_time_scale
 end
 
 time_step!(energy::ForceRestoreEnergy, land, Δt, time) = step_land_temperature!(energy, land, Δt, time)
