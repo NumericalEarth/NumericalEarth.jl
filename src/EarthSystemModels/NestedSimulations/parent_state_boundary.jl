@@ -14,8 +14,6 @@
 #
 # Reuses the node / boundary-index / clock helpers from `interpolated_fts_boundary.jl`.
 
-using Oceananigans.Fields: instantiated_location
-
 # `interpolate(func, …)` (Oceananigans #5726) returns the blend in func-space and applies no inverse —
 # the caller owns it. The carrier wants the *actual* state value (to feed the prognostic map), so
 # `_query_source` un-maps with `inverse_transform`: `log`-space interpolation of pressure becomes
