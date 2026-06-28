@@ -9,7 +9,8 @@
 #####
 
 using NumericalEarth.Atmospheres: PrescribedAtmosphere
-using NumericalEarth.EarthSystemModels.NestedSimulations: ParentStateBoundary, ParentStateTarget, NestedModel
+using NumericalEarth.EarthSystemModels.NestedSimulations: ParentStateBoundary, ParentStateTarget, NestedModel,
+                                                          nested_lateral_boundary_conditions
 using Oceananigans: Relaxation
 using Oceananigans.BoundaryConditions: NormalFlowBoundaryCondition, ValueBoundaryCondition
 
@@ -31,9 +32,10 @@ are the child's `ThermodynamicConstants`; `moisture_name` is the moisture progno
 key (`moisture_prognostic_name(microphysics)`). Replaces the materialized
 `breeze_prognostic_state` parent series + single-source `Interpolated` BCs.
 """
-function nested_lateral_boundary_conditions(parent_atmosphere::PrescribedAtmosphere, constants, moisture_name;
-                                            sides = (:west, :east, :south, :north),
-                                            momentum_scheme = nothing)
+function NumericalEarth.EarthSystemModels.NestedSimulations.nested_lateral_boundary_conditions(
+            parent_atmosphere::PrescribedAtmosphere, constants, moisture_name;
+            sides = (:west, :east, :south, :north),
+            momentum_scheme = nothing)
 
     u  = parent_atmosphere.velocities.u
     v  = parent_atmosphere.velocities.v

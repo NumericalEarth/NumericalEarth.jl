@@ -16,7 +16,7 @@
 # by the elapsed Δt.
 
 import Oceananigans
-import Oceananigans: AbstractModel, fields, prognostic_state, restore_prognostic_state!, prognostic_fields
+import Oceananigans: AbstractModel, fields, prognostic_state, restore_prognostic_state!, prognostic_fields, set!
 import Oceananigans.Architectures: architecture
 import Oceananigans.TimeSteppers: time_step!, update_state!
 import Oceananigans.Simulations: iteration
@@ -65,6 +65,9 @@ Oceananigans.Advection.cell_advection_timescale(nm::NestedModel) =
 # `update_state!` may receive callbacks; forward verbatim.
 update_state!(nm::NestedModel, callbacks=[]; kwargs...) =
     update_state!(getfield(nm, :child), callbacks; kwargs...)
+
+# Setting the initial state targets the child's prognostics.
+set!(nm::NestedModel, args...; kwargs...) = set!(getfield(nm, :child), args...; kwargs...)
 
 # The whole point of NestedModel: step the child, then advance the parent
 # clock to match. `Simulation` calls `time_step!(model, Δt; callbacks=...)`.
