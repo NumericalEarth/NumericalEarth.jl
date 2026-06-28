@@ -12,15 +12,15 @@ using NumericalEarth.Atmospheres: PrescribedAtmosphere
 using NumericalEarth.EarthSystemModels.NestedSimulations: ParentStateBoundary, ParentStateTarget, NestedModel,
                                                           nested_lateral_boundary_conditions
 using Oceananigans: Relaxation
-using Oceananigans.BoundaryConditions: NormalFlowBoundaryCondition, ValueBoundaryCondition
+using Oceananigans.BoundaryConditions: OpenBoundaryCondition, ValueBoundaryCondition
 
-# `ρu`/`ρv` are Face-staggered ⇒ `NormalFlowBoundaryCondition`; `ρ`/`ρe`/`ρqᵗ` are Center-located,
-# where `NormalFlowBC` overwrites the first interior cell asymmetrically ⇒ `ValueBoundaryCondition`.
+# `ρu`/`ρv` are Face-staggered ⇒ `OpenBoundaryCondition`; `ρ`/`ρe`/`ρqᵗ` are Center-located,
+# where an Open BC overwrites the first interior cell asymmetrically ⇒ `ValueBoundaryCondition`.
 @inline _sided(BCType, condition, sides) =
     FieldBoundaryConditions(; (side => BCType(condition) for side in sides)...)
 
 @inline _normal_flow(condition, sides, scheme) =
-    FieldBoundaryConditions(; (side => NormalFlowBoundaryCondition(condition; scheme) for side in sides)...)
+    FieldBoundaryConditions(; (side => OpenBoundaryCondition(condition; scheme) for side in sides)...)
 
 """
 $(TYPEDSIGNATURES)
