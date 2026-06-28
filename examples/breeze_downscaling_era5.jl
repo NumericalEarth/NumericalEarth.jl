@@ -3,10 +3,12 @@
 # A limited-area model (LAM) example that downscales ERA5 reanalysis to a 3 km Breeze compressible
 # atmosphere over the U.S. Southern Great Plains, for the Midlatitude Continental
 # Convective Clouds Experiment (MC3E) 20 May 2011 squall-line case ([Fan2017](@citet)).
-# A `NestedSimulation` constructs an Oceananigans `Simulation` with a `NestedModel`, which pairs a
-# "parent" `PrescribedAtmosphere` or `AbstractModel` with a "child" `AbstractModel`. The parent here
-# is an ERA5 `PrescribedAtmosphere` (on a 0.25° grid), driving a ~3 km Breeze `AtmosphereModel` child
-# through interpolated open lateral boundary conditions + interior Davies relaxation zones.
+# `nested_atmosphere_model(parent, child_grid; …)` builds a `NestedModel`, which pairs a "parent"
+# `PrescribedAtmosphere` with a "child" Breeze `AtmosphereModel`. The parent here is an ERA5
+# `PrescribedAtmosphere` (on its native 0.25° pressure-level grid), driving a ~3 km Breeze child
+# through open lateral boundary conditions + interior Davies relaxation — both derived on the fly from
+# the parent's raw state. A plain `Simulation(model)` then steps it (the `NestedModel`'s `time_step!`
+# advances the child and ticks the parent clock).
 #
 # ## What this example does
 # - Downloads ERA5 (pressure + single levels) for a fixed parent region and regrids it onto a
@@ -353,132 +355,21 @@ Rᵛ   = vapor_gas_constant(constants)
 # is not interpolated but instead built by hydrostatic integration from the ERA5 surface
 # pressure (see `hydrostatic_pressure_from_surface`), keeping it in discrete hydrostatic balance.
 
-# A single ERA5 fetch (snapshot 1's geopotential metadata) gives us the
-# native node coordinates and pressure levels needed to size the grid.
-
+# `meta_common_snap1` (snapshot 1) is reused by the initial-condition regrids below.
 const meta_common_snap1 = (date = start_date, region = era5_region, dir = era5_datadir)
-const ϕ_field_snap1     = Field(Metadatum(:geopotential; dataset=ds_pl, meta_common_snap1...))
 
-λ_centers_era5 = collect(λnodes(ϕ_field_snap1.grid, Center(), Center(), Center()))
-φ_centers_era5 = collect(φnodes(ϕ_field_snap1.grid, Center(), Center(), Center()))
-Nλ_e, Nφ_e = length(λ_centers_era5), length(φ_centers_era5)
-
-# ERA5 returns longitudes in the [0°, 360°] convention; the LAM uses
-# [-180°, 180°]. Shift the parent grid labels to match. The FTS data is
-# array-indexed and unaffected — only the (λ, φ) labels change.
-λ_centers_era5 .= ifelse.(λ_centers_era5 .> 180, λ_centers_era5 .- 360, λ_centers_era5)
-
-Δλ_e = (λ_centers_era5[end] - λ_centers_era5[1]) / (Nλ_e - 1)
-Δφ_e = (φ_centers_era5[end] - φ_centers_era5[1]) / (Nφ_e - 1)
-
-parent_grid = LatitudeLongitudeGrid(arch;
-                                    longitude = (λ_centers_era5[1]   - Δλ_e/2,
-                                                 λ_centers_era5[end] + Δλ_e/2),
-                                    latitude  = (φ_centers_era5[1]   - Δφ_e/2,
-                                                 φ_centers_era5[end] + Δφ_e/2),
-                                    z         = z_discretization,
-                                    size      = (Nλ_e, Nφ_e, Nz),
-                                    halo      = (5, 5, 5),
-                                    topology  = (Bounded, Bounded, Bounded))
-
-# ### Prescribed Atmosphere
+# ### Prescribed parent atmosphere
 #
-# `PrescribedAtmosphere` allocates
-# default Center-located FTSs for velocities, tracers (T, q), pressure.
-# qᶜ, qⁱ aren't standard slots; we own those alongside.
-# Times are in seconds since the first snapshot.
-#
-# TODO: Implement `ERA5PrescribedAtmosphere`, which will construct the parent FTSs
-# and replace the code below
+# `ERA5PrescribedAtmosphere(bounding_box, dates)` loads the parent state (u, v, T, qᵛ and the
+# cloud/precip species) onto ERA5's *native* pressure-level grid (geopotential-height aware). The
+# nested child below interpolates this parent on the fly for its lateral BCs and Davies relaxation —
+# no materialized parent prognostic series, no `breeze_prognostic_state` derivation loop.
+parent = ERA5PrescribedAtmosphere(era5_region, dates; architecture = arch, dir = era5_datadir)
 
-parent_times = [Float64(Dates.value(d - start_date)) / 1000 for d in dates]
-parent = PrescribedAtmosphere(parent_grid, parent_times; thermodynamics_parameters = nothing)
-
-# Parent-side `FieldTimeSeries` that drive the child, kept alongside the
-# `PrescribedAtmosphere` (which owns u, v, T, q, p). All are Center-located
-# regardless of BC stagger — `Interpolated` converts location at boundary-fill
-# time. The bundle holds:
-#   - qᶜ, qⁱ             raw ERA5 cloud water/ice (inputs to the derivation),
-#   - ρ, ρu, ρv, ρθ, ρqᵉ density-weighted, drive the lateral BCs,
-#   - θ, qᵗ              specific, Davies-relaxation targets (Breeze PR #708's
-#                        `SpecificForcing` applies the ρ multiply at kernel time).
-parent_series = NamedTuple(name => FieldTimeSeries{Center, Center, Center}(parent_grid, parent_times)
-                           for name in (:qᶜ, :qⁱ, :ρ, :ρu, :ρv, :ρθ, :ρqᵉ, :θ, :qᵗ))
-
-# --- ERA5 pressure-level primitives on the parent grid ---
-#
-# `FieldTimeSeries(metadata, parent_grid)` regrids the whole window at once. Its
-# per-file `set!` reads each snapshot with that snapshot's own geopotential, so the
-# Φ/g height mapping is per-snapshot (#241, highest fidelity). All times are held
-# resident so we can index by snapshot in the derivation loop below.
-parent_pl_series(name) =
-    FieldTimeSeries(Metadata(name; dataset = ds_pl, dates = dates,
-                             region = era5_region, dir = era5_datadir),
-                    parent_grid; time_indices_in_memory = length(dates))
-
-u_series  = parent_pl_series(:eastward_velocity)
-v_series  = parent_pl_series(:northward_velocity)
-T_series  = parent_pl_series(:temperature)
-qᵛ_series = parent_pl_series(:specific_humidity)
-qᶜ_series = parent_pl_series(:specific_cloud_liquid_water_content)
-qⁱ_series = parent_pl_series(:specific_cloud_ice_water_content)
-ω_series  = parent_pl_series(:vertical_velocity)   # ERA5 pressure velocity (Pa/s); converted to w ≈ −ω/(ρg) for the animation
-
-# ERA5 surface pressure + orography on the parent horizontal, for the hydrostatic balance below.
-# Orography is time-constant; surface pressure is re-set per snapshot in the loop.
-parent_surface_grid = LatitudeLongitudeGrid(longitude = (λ_centers_era5[1]   - Δλ_e/2,
-                                                         λ_centers_era5[end] + Δλ_e/2),
-                                            latitude  = (φ_centers_era5[1]   - Δφ_e/2,
-                                                         φ_centers_era5[end] + Δφ_e/2),
-                                            z = (0, 1), size = (Nλ_e, Nφ_e, 1),
-                                            halo = (5, 5, 3), topology = (Bounded, Bounded, Bounded))
-Φ_sfc_parent = CenterField(parent_surface_grid)
-set!(Φ_sfc_parent, Metadatum(:geopotential; dataset = ds_sl, date = start_date,
-                             region = era5_region, dir = era5_datadir))
-parent_orography = Array(interior(Φ_sfc_parent))[:, :, 1] ./ g_accel
-p₀_parent = CenterField(parent_surface_grid)
-
-# Derive (ρ, θˡⁱ, qᵗ) per snapshot via `breeze_prognostic_state`, storing the specific
-# (Davies-target) and density-weighted (lateral-BC) forms. The pressure is built by hydrostatic
-# integration from the ERA5 surface pressure (`hydrostatic_pressure_from_surface`) rather than
-# interpolated — interpolation clamps the sub-surface levels over high terrain and yields a
-# spurious too-dense near-surface state that the lateral BCs would inject into the child.
-#
-# TODO: this holds all parent snapshots resident; for production-length runs, recompute the
-# balance on a 2-snapshot streaming FieldTimeSeries (DatasetBackend pattern) to cut memory.
-# Replace `breeze_prognostic_state` with on-the-fly calculations.
-#
-# TODO: is `hydrostatic_pressure_from_surface` really necessary?
-for n in eachindex(dates)
-    @info @sprintf("Deriving parent snapshot %d/%d at %s", n, length(dates), dates[n])
-    set!(p₀_parent, Metadatum(:surface_pressure; dataset = ds_sl, date = dates[n],
-                              region = era5_region, dir = era5_datadir))
-    p_p = hydrostatic_pressure_from_surface(T_series[n], Array(interior(p₀_parent))[:, :, 1],
-                                            parent_orography;
-                                            qᵛ = qᵛ_series[n], qᶜ = qᶜ_series[n], qⁱ = qⁱ_series[n],
-                                            dry_gas_constant = Rᵈ, vapor_gas_constant = Rᵛ,
-                                            gravitational_acceleration = g_accel)
-    state = breeze_prognostic_state(constants, T_series[n], qᵛ_series[n],
-                                    qᶜ_series[n], qⁱ_series[n], p_p)
-
-    interior(parent.velocities.u, :, :, :, n) .= interior(u_series[n])
-    interior(parent.velocities.v, :, :, :, n) .= interior(v_series[n])
-    interior(parent.temperature,       :, :, :, n) .= interior(T_series[n])
-    interior(parent.specific_humidity, :, :, :, n) .= interior(qᵛ_series[n])
-    interior(parent.pressure,     :, :, :, n) .= interior(p_p)
-    interior(parent_series.qᶜ,    :, :, :, n) .= interior(qᶜ_series[n])
-    interior(parent_series.qⁱ,    :, :, :, n) .= interior(qⁱ_series[n])
-
-    interior(parent_series.ρ,   :, :, :, n) .= interior(state.ρ)
-    interior(parent_series.ρu,  :, :, :, n) .= interior(state.ρ) .* interior(u_series[n])
-    interior(parent_series.ρv,  :, :, :, n) .= interior(state.ρ) .* interior(v_series[n])
-    interior(parent_series.ρθ,  :, :, :, n) .= interior(state.ρ) .* interior(state.θˡⁱ)
-    interior(parent_series.ρqᵉ, :, :, :, n) .= interior(state.ρ) .* interior(state.qᵗ)
-    interior(parent_series.θ,   :, :, :, n) .= interior(state.θˡⁱ)
-    interior(parent_series.qᵗ,  :, :, :, n) .= interior(state.qᵗ)
-end
-
-# TODO: `ERA5PrescribedAtmosphere` should replace the code above
+# ERA5 pressure velocity ω (Pa/s) on the parent's native grid — the animation maps it to w ≈ −ω/(ρg).
+ω_series = FieldTimeSeries(Metadata(:vertical_velocity; dataset = ds_pl, dates = dates,
+                                    region = era5_region, dir = era5_datadir),
+                           arch; time_indices_in_memory = length(dates))
 
 # ## Initial conditions
 
@@ -529,53 +420,28 @@ p = hydrostatic_pressure_from_surface(T, Array(interior(p₀))[:, :, 1], parent_
 
 # ## Lateral boundary conditions and Davies relaxation
 #
-# Drive the LAM's lateral boundaries from the parent FTSs:
-#   - `ρu`, `ρv` get `NormalFlowBoundaryCondition(Interpolated(fts))` (Face-stagger).
-#   - `ρ`, `ρθ`, `ρqᵉ` get `ValueBoundaryCondition(Interpolated(fts))` —
-#     `NormalFlowBC` on Center-located fields silently overwrites the first interior
-#     cell on the W/S walls (validated against vortex-transit tests).
-#
-# Davies relaxation toward the same parent state via `parent_forcings`,
-# which wraps each parent `FieldTimeSeries` target in an Oceananigans
-# `Relaxation` (space/time-interpolated). We key them under specific names
-# (`u`, `v`, `θ`, `qᵉ`) so Breeze's `SpecificForcing` (PR #708) applies the ρ
-# multiply at kernel time at the right face stagger.
+# Both are derived on the fly from the parent's raw ERA5 state by `nested_atmosphere_model` below —
+# no materialized parent prognostic series. Internally, each density-weighted child prognostic
+# (`ρ, ρu, ρv, ρe, ρqᵉ`) gets a `ParentStateBoundary` that interpolates the parent
+# `(u, v, T, qᵛ, qᶜˡ, qᶜⁱ, p)` at the boundary face and applies the matching Breeze transform
+# (strictly-positive `p`, `T` interpolate in log space); `relaxation_rate`/`relaxation_mask` add the
+# interior Davies nudging toward the parent's `(u, v, θˡⁱ, qᵗ)` (Breeze's `SpecificForcing` applies the
+# ρ-weight at the right face stagger).
 
-bcs = parent_boundary_conditions(grid;
-    variables = (ρu  = parent_series.ρu,
-                 ρv  = parent_series.ρv,
-                 ρ   = parent_series.ρ,
-                 ρe  = parent_series.ρθ,    # `atmosphere_simulation` already sets bottom :ρe
-                                  # flux; Breeze converts the merged :ρe BCs to :ρθ
-                                  # at model-build time (ValueBC values pass through).
-                 ρqᵉ = parent_series.ρqᵉ),
-    sides     = (:west, :east, :south, :north),
-    bc_types  = (ρ   = ValueBoundaryCondition,
-                 ρe  = ValueBoundaryCondition,
-                 ρqᵉ = ValueBoundaryCondition))
-
-# Surface-BC placeholders, pending SlabLand wiring. Override `atmosphere_simulation`'s
-# coupling Jᵉ/Jᵛ bottom-flux BCs with Dirichlet ValueBCs at constant placeholder
-# surface T and qᵛ. Keeping the coupling Jᵉ would route the bottom flux through
-# Breeze's `EnergyFluxBoundaryCondition` → `𝒬_to_Jᶿ`, which can't evaluate until
-# the bulk-flux state (and qᵛ at the surface) is populated by the land model.
-
+# Surface-BC placeholders, pending SlabLand wiring. We pass *bottom-only* `FieldBoundaryConditions`
+# for `ρe`/`ρqᵉ`; `nested_atmosphere_model` merges them per-side with the parent-derived lateral BCs
+# (caller wins per side), so these override `atmosphere_model`'s coupling Jᵉ/Jᵛ bottom-flux BCs with
+# Dirichlet ValueBCs at constant placeholder surface state. Keeping the coupling Jᵉ would route the
+# bottom flux through Breeze's `EnergyFluxBoundaryCondition` → `𝒬_to_Jᶿ`, which can't evaluate until
+# the land model populates the bulk-flux state.
 const T_surface_placeholder   = 290.0
 const qᵛ_surface_placeholder  = 0.0
 const ρ_surface_placeholder   = 1.2                                   # kg/m³ at p₀=10⁵ Pa, T≈290 K
 const ρθ_surface_placeholder  = ρ_surface_placeholder * T_surface_placeholder
 const ρqᵉ_surface_placeholder = ρ_surface_placeholder * qᵛ_surface_placeholder
 
-bcs = merge(bcs, (; ρe  = FieldBoundaryConditions(west   = bcs.ρe.west,
-                                                  east   = bcs.ρe.east,
-                                                  south  = bcs.ρe.south,
-                                                  north  = bcs.ρe.north,
-                                                  bottom = ValueBoundaryCondition(ρθ_surface_placeholder)),
-                   ρqᵉ = FieldBoundaryConditions(west   = bcs.ρqᵉ.west,
-                                                  east   = bcs.ρqᵉ.east,
-                                                  south  = bcs.ρqᵉ.south,
-                                                  north  = bcs.ρqᵉ.north,
-                                                  bottom = ValueBoundaryCondition(ρqᵉ_surface_placeholder))))
+surface_bcs = (ρe  = FieldBoundaryConditions(bottom = ValueBoundaryCondition(ρθ_surface_placeholder)),
+               ρqᵉ = FieldBoundaryConditions(bottom = ValueBoundaryCondition(ρqᵉ_surface_placeholder)))
 
 # The mask is a cosine ramp in degree-distance to the nearest wall — Davies is a
 # numerical smoother, so the precise ramp shape isn't physics-critical.
@@ -595,20 +461,15 @@ lateral_mask = let λ_w = λ_west, λ_e = λ_east, φ_s = φ_south, φ_n = φ_no
     end
 end
 
-τ_relax = 10 * Δt  # relaxation timescale (s)
-
-davies = parent_forcings(; rate = 1/τ_relax,
-                         mask = lateral_mask,
-                         variables = (u  = parent.velocities.u,
-                                      v  = parent.velocities.v,
-                                      θ  = parent_series.θ,
-                                      qᵉ = parent_series.qᵗ))
+τ_relax = 10 * Δt  # relaxation timescale (s); passed to `nested_atmosphere_model` as `relaxation_rate = 1/τ_relax`
 
 # ## Build the Breeze model
 #
-# Piggyback on the `atmosphere_simulation` helper from
-# `ext/NumericalEarthBreezeExt/`, which also pre-wires bottom flux fields
-# (ρτˣ, ρτʸ, Jᵉ, Jᵛ) ready for the forthcoming SlabLand / SlabOcean coupling.
+# `nested_atmosphere_model` builds the child `AtmosphereModel` (via the same `atmosphere_model` helper
+# that pre-wires the ρτˣ/ρτʸ/Jᵉ/Jᵛ bottom-flux BC fields for the forthcoming SlabLand / SlabOcean
+# coupling), derives the parent-driven lateral BCs + Davies relaxation, and returns a `NestedModel` —
+# no `.model`/`.child` unpacking. Its skeleton `CoupledRadiation` is a no-op (radiatively decoupled)
+# until materialized inside an `EarthSystemModel`.
 #
 # On the `TerrainFollowingVerticalDiscretization` grid, `CompressibleDynamics` activates
 # the terrain-following physics automatically — contravariant vertical velocity, corrected
@@ -619,11 +480,6 @@ davies = parent_forcings(; rate = 1/τ_relax,
 # inner substeps, freeing the outer step to run at the advection CFL. Its `UpperSponge` adds
 # a 5 km-deep Rayleigh layer that damps the vertical momentum (ρw)′ toward the rigid lid at a
 # 5 s timescale, absorbing vertically-propagating modes so they don't reflect.
-#
-# `atmosphere_simulation` returns an Oceananigans `Simulation`; we drive the
-# child through `NestedSimulation` below, so unwrap the underlying
-# `AtmosphereModel`. The skeleton `CoupledRadiation` it carries is a no-op
-# (radiatively decoupled) until materialized inside an `EarthSystemModel`.
 
 # Add a Rayleigh damping layer. 3 km deep below the ~20 km lid (sponge spans ~17–20 km),
 # keeping it in the lower stratosphere above the jet now that the top is shallower.
@@ -657,14 +513,18 @@ coriolis_scheme = SphericalCoriolis()
 w_sponge_mask = let z_top = z_discretization.faces[end], depth = float(damping_depth)
     (λ, φ, z) -> (s = clamp((z - (z_top - depth)) / depth, zero(z), one(z)); s * s * (3 - 2s))
 end
-model_forcing = merge(davies, (ρw = Relaxation(rate = 1/damping_timescale, mask = w_sponge_mask, target = 0.0),))
+model_forcing = (; ρw = Relaxation(rate = 1/damping_timescale, mask = w_sponge_mask, target = 0.0))
 
-# Reference potential-temperature profile θ_ref(z) = ERA5 domain/time-mean θˡⁱ, passed to
+# Initial Breeze prognostics from ERA5 snapshot 1, computed here so the domain-mean θˡⁱ profile can
+# seed the reference state below; reused by `set!` after the model is built.
+(; ρ, θˡⁱ, qᵗ) = breeze_prognostic_state(constants, T, qᵛ, qᶜ, qⁱ, p)
+
+# Reference potential-temperature profile θ_ref(z) = the IC's domain-mean θˡⁱ, passed to
 # `CompressibleDynamics` so the horizontal pressure-gradient force is taken in perturbation form
 # (p′ = p − p_ref). This cuts the terrain-following PGF cancellation error (Klemp 2011) that otherwise
 # spuriously accelerates the near-surface winds in the lowest cells over the high western terrain.
 reference_θ = let zc = collect(0.5 .* (z_discretization.faces[1:end-1] .+ z_discretization.faces[2:end])),
-                  θ̄  = vec(mean(Array(interior(parent_series.θ)), dims = (1, 2, 4)))
+                  θ̄  = vec(mean(Array(interior(θˡⁱ)), dims = (1, 2)))
     z -> begin
         z <= zc[1]   && return θ̄[1]
         z >= zc[end] && return θ̄[end]
@@ -675,19 +535,23 @@ end
 
 p̄₀ = mean(interior(p₀))
 
-model = atmosphere_simulation(grid;
-                              thermodynamic_constants = constants,
-                              momentum_advection  = momentum_advection_scheme,
-                              microphysics        = microphysics_scheme,
-                              coriolis            = coriolis_scheme,
-                              dynamics            = CompressibleDynamics(time_discretization; surface_pressure = p̄₀, reference_potential_temperature = reference_θ),
-                              boundary_conditions = bcs,
-                              forcing             = model_forcing).model
+# `nested_atmosphere_model` (Breeze ext) builds the child `AtmosphereModel` over `grid`, derives its
+# lateral BCs + Davies relaxation on the fly from `parent`, and wraps the pair in a `NestedModel` —
+# whose `time_step!` advances the child then ticks the parent clock so the on-the-fly BCs/relaxation
+# sample the parent at the right time. `surface_bcs` merge per-side with the parent-derived lateral BCs.
+model = nested_atmosphere_model(parent, grid;
+                                thermodynamic_constants = constants,
+                                microphysics        = microphysics_scheme,
+                                momentum_advection  = momentum_advection_scheme,
+                                coriolis            = coriolis_scheme,
+                                dynamics            = CompressibleDynamics(time_discretization; surface_pressure = p̄₀, reference_potential_temperature = reference_θ),
+                                relaxation_rate     = 1 / τ_relax,
+                                relaxation_mask     = lateral_mask,
+                                boundary_conditions = surface_bcs,
+                                forcing             = model_forcing)
 
-# Initial state from ERA5
-
-(; ρ, θˡⁱ, qᵗ) = breeze_prognostic_state(constants, T, qᵛ, qᶜ, qⁱ, p)
-
+# Initial state from ERA5 (prognostics ρ/θˡⁱ/qᵗ computed above for the reference profile). `set!` on
+# the `NestedModel` forwards to the child.
 set!(model; ρ = ρ, u = u, v = v, qᵗ = qᵗ, θˡⁱ = θˡⁱ)
 
 # Consistent-w IC: graft ρw ← ρw − ρw̃ so the contravariant w̃ ≈ 0 (flow follows the ground),
@@ -713,12 +577,14 @@ let
     # split-explicit outer Δt the production run uses.
     Δt_balance     = 0.15
     balance_cycles = 1   # one cycle suffices — see the DFI sensitivity note in the header
-    twin = atmosphere_simulation(grid;
-                                 thermodynamic_constants = constants,
-                                 momentum_advection = momentum_advection_scheme,
-                                 dynamics = CompressibleDynamics(ExplicitTimeStepping(); surface_pressure = p̄₀),
-                                 microphysics = nothing,
-                                 boundary_conditions = bcs).model
+    twin_bcs = nested_lateral_boundary_conditions(parent, constants,
+                                                  Breeze.moisture_prognostic_name(microphysics_scheme))
+    twin = atmosphere_model(grid;
+                            thermodynamic_constants = constants,
+                            momentum_advection = momentum_advection_scheme,
+                            dynamics = CompressibleDynamics(ExplicitTimeStepping(); surface_pressure = p̄₀),
+                            microphysics = nothing,
+                            boundary_conditions = twin_bcs)
     set!(twin; ρ = ρ, u = u, v = v, qᵛ = qᵛ, θˡⁱ = θˡⁱ)
     update_state!(twin)
     Breeze.balance_adiabatically!(twin; Δt = Δt_balance, cycles = balance_cycles)
@@ -741,7 +607,7 @@ end
 
 # ## Surface drag (bulk Monin–Obukhov-style stress)
 #
-# `atmosphere_simulation` pre-wires ρτˣ/ρτʸ bottom-flux BC fields for the SlabLand/ocean coupling;
+# `atmosphere_model` pre-wires ρτˣ/ρτʸ bottom-flux BC fields for the SlabLand/ocean coupling;
 # with no land model attached they stay zero (free-slip). Until the SlabLand coupling is wired here —
 # its MOST solve scalar-reads Δz[1] and currently crashes on a GPU stretched terrain grid — fill them
 # each step with a bulk neutral surface stress ρτ = −ρ Cᵈ |U| U, per-column log-law Cᵈ = (κ/ln(z₁/z₀))²
@@ -776,13 +642,16 @@ end
 # right time. To telescope further (ERA5 → 9 km → 3 km) you nest a NestedModel inside another —
 # `child = NestedModel(d2_model, d3_model)` — out of scope for this single-nest example.
 
-nested = NestedSimulation(parent, model; Δt, stop_time = 43200.0)   # 12 h (matches end_date above)
-add_callback!(nested, surface_drag!, IterationInterval(1))   # bulk surface stress → ρτˣ/ρτʸ each step
+# `model` is a `NestedModel`, so a plain `Simulation` just works: its `time_step!` advances the Breeze
+# child then ticks the parent clock. To telescope further (ERA5 → 9 km → 3 km) you nest a NestedModel
+# inside another — `nested_atmosphere_model(d2_model, d3_grid; …)` — out of scope for this single nest.
+simulation = Simulation(model; Δt, stop_time = 43200.0)   # 12 h (matches end_date above)
+add_callback!(simulation, surface_drag!, IterationInterval(1))   # bulk surface stress → ρτˣ/ρτʸ each step
 
 # Adaptive outer Δt: the acoustic modes are substepped, so the outer step is bounded by the (slower)
 # _advective_ CFL.
 
-conjure_time_step_wizard!(nested, IterationInterval(1); cfl = 0.7, max_Δt = 30)
+conjure_time_step_wizard!(simulation, IterationInterval(1); cfl = 0.7, max_Δt = 30)
 
 # ## Setup coprocessing
 
@@ -850,15 +719,15 @@ function progress(sim)
                          w = w_up, qᵛ = qᵛ_up, qʳ = qʳ_up))
     flush(stdout); flush(stderr)  # Julia bypasses libc buffering — flush so SLURM streams live
 end
-add_callback!(nested, progress, IterationInterval(slice_stride))
+add_callback!(simulation, progress, IterationInterval(slice_stride))
 
 # ## Run
 #
 # Step the nest to `stop_time`; the progress callback accumulates the cascade-animation slices in memory.
 
-@info @sprintf("Δt₀ = %.2f s; running ERA5 → 12 km Breeze to t = %.0f s", Δt, nested.stop_time)
+@info @sprintf("Δt₀ = %.2f s; running ERA5 → 12 km Breeze to t = %.0f s", Δt, simulation.stop_time)
 flush(stdout); flush(stderr)
-run!(nested)
+run!(simulation)
 @info "Done."
 
 # ## Report
@@ -880,33 +749,33 @@ run!(nested)
 # wind speed `|U|` and the virtual potential temperature perturbation θᵥ′, then `w`, `qᵛ`, `qʳ` at 2 km
 # AGL. θᵥ′ is referenced to the initial state — θᵥ′ = θᵥ − θᵥ(t=0), pointwise — so the terrain and
 # stratification background (which would swamp an anomaly-from-domain-mean over this terrain) cancels,
-# leaving the evolving cold pool. Row 1 samples the resident hourly parent FTS at the child's frame
-# times, at the same two levels as the child. ERA5's `w` is estimated from its pressure velocity ω as
+# leaving the evolving cold pool. Row 1 reconstructs the parent prognostics on the fly from the ERA5
+# `PrescribedAtmosphere` at the child's frame times, at the same two levels as the child. ERA5's `w` is estimated from its pressure velocity ω as
 # w ≈ −ω/(ρg) (synoptic-scale, far weaker than the child's resolved convection); `qʳ` is blank (no model rain).
 
-parent_frames = let zc_p = 0.5 .* (z_discretization.faces[1:end-1] .+ z_discretization.faces[2:end]),
-                    λ_p = collect(λnodes(parent_grid, Center(), Center(), Center())),
-                    φ_p = collect(φnodes(parent_grid, Center(), Center(), Center()))
+parent_frames = let pg = parent.grid
+    λ_p = collect(λnodes(pg, Center(), Center(), Center()))
+    φ_p = collect(φnodes(pg, Center(), Center(), Center()))
     nx_p, ny_p = length(λ_p), length(φ_p)
-    function at2km(fts, t)
-        a = Array(interior(fts[Time(t)]))
-        out = Matrix{Float32}(undef, nx_p, ny_p)
-        @inbounds for j in 1:ny_p, i in 1:nx_p
-            zt   = parent_orography[i, j] + slice_height
-            k    = clamp(searchsortedlast(zc_p, zt), 1, length(zc_p) - 1)
-            frac = clamp((zt - zc_p[k]) / (zc_p[k+1] - zc_p[k]), 0, 1)
-            out[i, j] = Float32((1 - frac) * a[i, j, k] + frac * a[i, j, k+1])
-        end
-        return out
-    end
-    k1(fts, t) = Array(interior(fts[Time(t)]))[:, :, 1]
     cx(a) = size(a, 1) > nx_p ? 0.5 .* (a[1:end-1, :] .+ a[2:end, :]) : a
     cy(a) = size(a, 2) > ny_p ? 0.5 .* (a[:, 1:end-1] .+ a[:, 2:end]) : a
-    [(t = f.t, λ = λ_p, φ = φ_p,
-      u_sfc = cx(k1(parent.velocities.u, f.t)), v_sfc = cy(k1(parent.velocities.v, f.t)),
-      θ_sfc = k1(parent_series.θ, f.t), qᵛ_sfc = k1(parent_series.qᵗ, f.t),
-      w = -at2km(ω_series, f.t) ./ (at2km(parent_series.ρ, f.t) .* g_accel), qᵛ = at2km(parent_series.qᵗ, f.t),
-      qʳ = zeros(Float32, nx_p, ny_p)) for f in slice_frames]
+    k1(field) = Array(interior(field))[:, :, 1]
+    function frame(t)
+        ## Reconstruct the parent prognostics (ρ, θˡⁱ, qᵗ) on the fly from the raw ERA5 state at `t` —
+        ## the same transform the lateral BCs use — on the parent's native geopotential-height grid,
+        ## then `cut_plane` to the surface and `slice_height` AGL exactly as for the child row.
+        (; ρ, θˡⁱ, qᵗ) = breeze_prognostic_state(constants,
+                            parent.temperature[Time(t)], parent.specific_humidity[Time(t)],
+                            parent.microphysical_variables.qᶜˡ[Time(t)],
+                            parent.microphysical_variables.qᶜⁱ[Time(t)], parent.pressure)
+        ρ_up = cut_plane(ρ, slice_height)[3]
+        return (t = t, λ = λ_p, φ = φ_p,
+                u_sfc = cx(k1(parent.velocities.u[Time(t)])), v_sfc = cy(k1(parent.velocities.v[Time(t)])),
+                θ_sfc = k1(θˡⁱ), qᵛ_sfc = k1(qᵗ),
+                w = -cut_plane(ω_series[Time(t)], slice_height)[3] ./ (ρ_up .* g_accel),
+                qᵛ = cut_plane(qᵗ, slice_height)[3], qʳ = zeros(Float32, nx_p, ny_p))
+    end
+    [frame(f.t) for f in slice_frames]
 end
 
 # Persist both rows' slices so the animation can be regenerated — and the fields analyzed — offline.
