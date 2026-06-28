@@ -17,6 +17,8 @@ using Printf
 using Statistics
 using CUDA
 
+using NumericalEarth.Bathymetry: Interpolate
+
 # ### Grid and Bathymetry
 
 # We start by constructing an underlying TripolarGrid at ~1 degree resolution,
@@ -37,7 +39,7 @@ underlying_grid = TripolarGrid(arch; size = (Nx, Ny, Nz), halo = (5, 5, 4), z)
 
 bottom_height = regrid_bathymetry(underlying_grid;
                                   minimum_depth = 10,
-                                  interpolation_passes = 10,
+                                  method = Interpolate(10),
                                   major_basins = 2)
 
 # We then incorporate the bathymetry into an ImmersedBoundaryGrid,
