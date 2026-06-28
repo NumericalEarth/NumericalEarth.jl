@@ -7,9 +7,9 @@
 # afterward `getbc` interpolates the FTS at the boundary-face node. No closures,
 # no edge-coord bookkeeping, no Val(side) dispatch in user code.
 #
-# The BC kind defaults to `OpenBoundaryCondition` per child variable; pass
+# The BC kind defaults to `NormalFlowBoundaryCondition` per child variable; pass
 # `bc_types = (name = ValueBoundaryCondition, ...)` to override for cell-centered
-# scalars where Open BCs write asymmetrically into the interior.
+# scalars where NormalFlowBC writes asymmetrically into the interior.
 
 """
     parent_boundary_conditions(grid;
@@ -36,15 +36,15 @@ Arguments
   `:west, :east, :south, :north, :bottom, :top`.
 
 - `schemes`: optional `NamedTuple` keyed by child field name giving the
-  `OpenBoundaryCondition` scheme (e.g. a `PerturbationAdvection`). Fields not
+  `NormalFlowBoundaryCondition` scheme (e.g. a `PerturbationAdvection`). Fields not
   listed default to `scheme = nothing` (stiff Dirichlet). Only consulted when
-  the BC type for that field is `OpenBoundaryCondition`.
+  the BC type for that field is `NormalFlowBoundaryCondition`.
 
 - `bc_types`: optional `NamedTuple` keyed by child field name giving the BC
-  constructor to use for that field. Defaults to `OpenBoundaryCondition` for
+  constructor to use for that field. Defaults to `NormalFlowBoundaryCondition` for
   Face-located prognostics. For cell-centered scalars (e.g. ρ, ρθ in a
   compressible LAM), pass `ValueBoundaryCondition` to avoid the
-  `OpenBoundaryCondition`-on-Center asymmetric-halo behavior.
+  `NormalFlowBoundaryCondition`-on-Center asymmetric-halo behavior.
 """
 function parent_boundary_conditions(grid;
                                     variables,
@@ -54,15 +54,15 @@ function parent_boundary_conditions(grid;
 
     field_pairs = []
     for (child_name, fts) in pairs(variables)
-        BCType = haskey(bc_types, child_name) ? getproperty(bc_types, child_name) : OpenBoundaryCondition
+        BCType = haskey(bc_types, child_name) ? getproperty(bc_types, child_name) : NormalFlowBoundaryCondition
         condition = Interpolated(fts)
-        if BCType === OpenBoundaryCondition
+        if BCType === NormalFlowBoundaryCondition
             scheme = haskey(schemes, child_name) ? getproperty(schemes, child_name) : nothing
-            side_pairs = [side => OpenBoundaryCondition(condition; scheme) for side in sides]
+            side_pairs = [side => NormalFlowBoundaryCondition(condition; scheme) for side in sides]
         else
             haskey(schemes, child_name) && throw(ArgumentError(
                 "`schemes` entry provided for $(child_name) but `bc_types[$(child_name)] = $BCType` " *
-                "is not `OpenBoundaryCondition`. Schemes apply only to `OpenBoundaryCondition`."))
+                "is not `NormalFlowBoundaryCondition`. Schemes apply only to `NormalFlowBoundaryCondition`."))
             side_pairs = [side => BCType(condition) for side in sides]
         end
         push!(field_pairs, child_name => FieldBoundaryConditions(; side_pairs...))

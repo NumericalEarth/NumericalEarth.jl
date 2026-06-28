@@ -1,11 +1,11 @@
 #####
-##### Interpolated: a user-facing `OpenBoundaryCondition` wrapper around a
+##### Interpolated: a user-facing `NormalFlowBoundaryCondition` wrapper around a
 ##### parent state source (a `FieldTimeSeries` or an `AbstractField`).
 ##### Mirrors `Oceananigans.Forcings.FieldTimeSeriesTarget` (the FTS-`Relaxation`
 ##### machinery) but for boundary conditions.
 #####
 #
-# Usage: `OpenBoundaryCondition(Interpolated(source))` where `source` is
+# Usage: `NormalFlowBoundaryCondition(Interpolated(source))` where `source` is
 # either a `FieldTimeSeries` (prescribed parents — interpolates in space + time)
 # or an `AbstractField` (prognostic parents — interpolates in space; the
 # parent's `time_step!` advances the field state).
@@ -31,7 +31,7 @@ const InterpolatedSource = Union{FlavorOfFTS, Oceananigans.Fields.AbstractField}
     Interpolated(source)
 
 Wrap a parent state source for use as the condition value in an
-`OpenBoundaryCondition`. `source` can be:
+`NormalFlowBoundaryCondition`. `source` can be:
 
 - a `FieldTimeSeries` (prescribed parent — interpolated in space + time), or
 - an `AbstractField` (prognostic parent — interpolated in space at the
@@ -42,7 +42,7 @@ regularization tags this with the boundary's dimension / side / field
 location; afterward `getbc` evaluates the source at the appropriate
 boundary-face node.
 
-`OpenBoundaryCondition(Interpolated(source); scheme = …)` works with any
+`NormalFlowBoundaryCondition(Interpolated(source); scheme = …)` works with any
 scheme that consults `getbc` for its exterior value (e.g.
 `PerturbationAdvection`).
 """

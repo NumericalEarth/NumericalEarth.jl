@@ -15,7 +15,7 @@ using Oceananigans
 using Oceananigans.Fields: Face
 using Oceananigans.Forcings: Relaxation
 using Oceananigans.Grids: AbstractGrid
-using Oceananigans.BoundaryConditions: OpenBoundaryCondition, FieldBoundaryConditions
+using Oceananigans.BoundaryConditions: NormalFlowBoundaryCondition, FieldBoundaryConditions
 using Oceananigans.Simulations: Simulation
 using Oceananigans.TimeSteppers: time_step!
 using Oceananigans.Units: Time
