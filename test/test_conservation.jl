@@ -43,6 +43,7 @@ end
                              tracer_advection        = nothing,
                              closure                 = CATKEVerticalDiffusivity(),
                              coriolis                = nothing,
+                             radiative_forcing       = nothing,
                              bottom_drag_coefficient = 0)
 
     Tᵢ = -1.5
@@ -65,13 +66,13 @@ end
     function set_forcing!(atmosphere, radiatipn;
                           T_air, q_air, u_air, v_air, p_air,
                           SW_down, LW_down, rain_flux, snow_flux)
-        for (fts, value) in ((atmosphere.tracers.T,    T_air),
-                             (atmosphere.tracers.q,    q_air),
+        for (fts, value) in ((atmosphere.temperature,       T_air),
+                             (atmosphere.specific_humidity, q_air),
                              (atmosphere.velocities.u, u_air),
                              (atmosphere.velocities.v, v_air),
                              (atmosphere.pressure,     p_air),
-                             (atmosphere.freshwater_flux.rain, rain_flux),
-                             (atmosphere.freshwater_flux.snow, snow_flux))
+                             (atmosphere.precipitation_flux.rain, rain_flux),
+                             (atmosphere.precipitation_flux.snow, snow_flux))
             fill!(parent(fts), value)
         end
         fill!(radiation.downwelling_shortwave, SW_down)
