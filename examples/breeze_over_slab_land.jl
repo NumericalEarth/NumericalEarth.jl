@@ -329,7 +329,7 @@ wlim  = maximum(abs, w_ts) / 2
 qˡ_cloudy = filter(>(0), interior(qˡ_ts))
 qˡlim     = isempty(qˡ_cloudy) ? 1e-6 : quantile(qˡ_cloudy, 0.99)
 
-fig = Figure(size = (1500, 800), fontsize = 13)
+fig = Figure(size = (1200, 640))
 
 ax_w   = Axis(fig[1, 1][1, 1], title = "w (m/s)",         ylabel = "z (m)", limits = (nothing, (0, 5e3)))
 ax_Tᵃᵗ = Axis(fig[1, 2][1, 1], title = "Tᵃᵗ anomaly (K)",                   limits = (nothing, (0, 5e3)))
