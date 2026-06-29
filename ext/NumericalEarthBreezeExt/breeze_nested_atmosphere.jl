@@ -11,8 +11,12 @@
 using NumericalEarth.Atmospheres: PrescribedAtmosphere
 using NumericalEarth.EarthSystemModels.NestedSimulations: ParentStateBoundary, ParentStateTarget, NestedModel,
                                                           nested_lateral_boundary_conditions
-using Oceananigans: Relaxation
+using Oceananigans: Relaxation, WENO
 using Oceananigans.BoundaryConditions: NormalFlowBoundaryCondition, ValueBoundaryCondition
+using Oceananigans.Coriolis: SphericalCoriolis
+using Oceananigans.Grids: znode, Face
+using Breeze: CompressibleDynamics, SplitExplicitTimeDiscretization, UpperSponge, NoDivergenceDamping,
+              MixedPhaseEquilibrium
 
 # `ρu`/`ρv` are Face-staggered ⇒ `NormalFlowBoundaryCondition`; `ρ`/`ρe`/`ρqᵗ` are Center-located,
 # where `NormalFlowBC` overwrites the first interior cell asymmetrically ⇒ `ValueBoundaryCondition`.
@@ -99,6 +103,37 @@ function nested_relaxation_forcings(parent_atmosphere::PrescribedAtmosphere, con
     return (u = relax(u), v = relax(v), θ = relax(θ_target), qᵉ = relax(qᵗ_target))
 end
 
+# Default child microphysics: 1-moment bulk mixed-phase (rain + snow) precipitation with
+# saturation-adjustment cloud formation when Breeze's `CloudMicrophysics` extension is loaded,
+# else the Breeze-native warm-phase saturation-adjustment scheme. Resolved at call time, so a
+# caller that `using CloudMicrophysics` gets `OneMomentCloudMicrophysics` automatically.
+function default_nested_microphysics()
+    ext = Base.get_extension(Breeze, :BreezeCloudMicrophysicsExt)
+    isnothing(ext) && return SaturationAdjustment(equilibrium = WarmPhaseEquilibrium())
+    return ext.OneMomentCloudMicrophysics(cloud_formation = SaturationAdjustment(equilibrium = MixedPhaseEquilibrium()))
+end
+
+# Cubic-ramp (smoothstep) Rayleigh mask over the top `depth` metres of the domain, for the ρw lid sponge.
+function lid_sponge_mask(grid, depth)
+    z_top = znode(1, 1, size(grid, 3) + 1, grid, Center(), Center(), Face())
+    d = convert(eltype(grid), depth)
+    return (λ, φ, z) -> (s = clamp((z - (z_top - d)) / d, zero(z), one(z)); s * s * (3 - 2s))
+end
+
+# Default child dynamics: compressible with split-explicit acoustic substepping, an `UpperSponge`
+# Rayleigh layer over the top `damping_depth` metres at `damping_rate`, and no divergence damping
+# (its (ρθ)′-proxy damper injects a spurious force on an unbalanced cold start). When given,
+# `surface_pressure`/`reference_potential_temperature` anchor the hydrostatic reference and the
+# perturbation-form pressure-gradient reference profile.
+function default_nested_dynamics(grid; surface_pressure, reference_potential_temperature, damping_rate, damping_depth)
+    time_discretization = SplitExplicitTimeDiscretization(sponge = UpperSponge(; damping_rate, depth = damping_depth),
+                                                          damping = NoDivergenceDamping())
+    kw = (;)
+    isnothing(surface_pressure)                || (kw = merge(kw, (; surface_pressure)))
+    isnothing(reference_potential_temperature) || (kw = merge(kw, (; reference_potential_temperature)))
+    return CompressibleDynamics(time_discretization; kw...)
+end
+
 """
 $(TYPEDSIGNATURES)
 
@@ -106,10 +141,16 @@ Build a Breeze child atmosphere over `child_grid` nested in `parent_atmosphere`,
 `NestedModel`. The child's lateral boundary conditions (`ρ, ρu, ρv, ρe, <moisture>`) — and, when
 `relaxation_rate` (s⁻¹) is given, its interior Davies relaxation over `relaxation_mask` — are derived
 on the fly from the parent's raw state (see [`nested_lateral_boundary_conditions`] /
-[`nested_relaxation_forcings`]); no materialized parent prognostic series is needed. Remaining keyword
-arguments forward to [`atmosphere_simulation`](@ref) (`dynamics`, `microphysics`, advection, …); any
-`boundary_conditions` / `forcing` the caller passes are merged per-side with the parent-derived ones
-(caller wins). This is the combined `parent → child(parent) → NestedModel` constructor.
+[`nested_relaxation_forcings`]); no materialized parent prognostic series is needed.
+
+Provides sensible, overridable physics defaults for a nested limited-area atmosphere: `microphysics`
+(1-moment mixed-phase when `CloudMicrophysics` is loaded, see `default_nested_microphysics`),
+`momentum_advection = WENO(order=9)`, `coriolis = SphericalCoriolis()`, and a compressible
+split-explicit `dynamics` with an `UpperSponge` over the top `damping_depth` m at `damping_rate`
+(see `default_nested_dynamics`); a matching ρw Rayleigh lid sponge is added to `forcing`. Pass
+`surface_pressure`/`reference_potential_temperature` (e.g. from the initial state) to anchor the
+default dynamics. Any `boundary_conditions`/`forcing` the caller passes are merged with the
+parent-derived ones (caller wins).
 """
 function NumericalEarth.EarthSystemModels.NestedSimulations.nested_atmosphere_model(
             parent_atmosphere::PrescribedAtmosphere, child_grid;
@@ -117,7 +158,15 @@ function NumericalEarth.EarthSystemModels.NestedSimulations.nested_atmosphere_mo
             relaxation_mask = 1,
             sides = (:west, :east, :south, :north),
             thermodynamic_constants = ThermodynamicConstants(eltype(child_grid)),
-            microphysics = SaturationAdjustment(equilibrium = WarmPhaseEquilibrium()),
+            surface_pressure = nothing,
+            reference_potential_temperature = nothing,
+            microphysics = default_nested_microphysics(),
+            momentum_advection = WENO(order = 9),
+            coriolis = SphericalCoriolis(),
+            damping_rate = 1/5,
+            damping_depth = 3000,
+            dynamics = default_nested_dynamics(child_grid; surface_pressure, reference_potential_temperature,
+                                               damping_rate, damping_depth),
             boundary_conditions = NamedTuple(),
             forcing = NamedTuple(),
             kw...)
@@ -129,10 +178,12 @@ function NumericalEarth.EarthSystemModels.NestedSimulations.nested_atmosphere_mo
              nested_relaxation_forcings(parent_atmosphere, thermodynamic_constants;
                                         rate = relaxation_rate, mask = relaxation_mask)
 
+    lid_sponge = (; ρw = Relaxation(rate = damping_rate, mask = lid_sponge_mask(child_grid, damping_depth), target = 0))
+
     child = NumericalEarth.Atmospheres.atmosphere_model(child_grid;
-                thermodynamic_constants, microphysics,
+                thermodynamic_constants, microphysics, momentum_advection, coriolis, dynamics,
                 boundary_conditions = merge_boundary_conditions(nested_bcs, NamedTuple(boundary_conditions)),
-                forcing = merge(davies, NamedTuple(forcing)),
+                forcing = merge(lid_sponge, davies, NamedTuple(forcing)),
                 kw...)
 
     return NestedModel(parent_atmosphere, child)

@@ -63,10 +63,8 @@ using Oceananigans.Units: Time
 using Oceananigans.Grids: znode
 using Oceananigans.Architectures: on_architecture
 using Oceananigans.TimeSteppers: update_state!
-using Oceananigans.Coriolis: SphericalCoriolis
 using Breeze
-using CloudMicrophysics  # triggers BreezeCloudMicrophysicsExt (OneMomentCloudMicrophysics)
-using Breeze.Microphysics: SaturationAdjustment, MixedPhaseEquilibrium
+using CloudMicrophysics  # loaded so nested_atmosphere_model's default microphysics is 1-moment mixed-phase
 using Breeze.TerrainFollowingDiscretization: TerrainFollowingVerticalDiscretization, materialize_terrain!
 using Statistics: mean, quantile
 using JLD2: jldsave
@@ -448,49 +446,12 @@ end
 # no `.model`/`.child` unpacking. Its skeleton `CoupledRadiation` is a no-op (radiatively decoupled)
 # until materialized inside an `EarthSystemModel`.
 #
-# On the `TerrainFollowingVerticalDiscretization` grid, `CompressibleDynamics` activates
-# the terrain-following physics automatically — contravariant vertical velocity, corrected
-# horizontal pressure gradient, terrain-aware divergence — so no `terrain_metrics` argument
-# is needed.
-#
-# The `SplitExplicitTimeDiscretization` (Breeze PR #712) integrates the acoustic modes with
-# inner substeps, freeing the outer step to run at the advection CFL. Its `UpperSponge` adds
-# a 5 km-deep Rayleigh layer that damps the vertical momentum (ρw)′ toward the rigid lid at a
-# 5 s timescale, absorbing vertically-propagating modes so they don't reflect.
-
-# Add a Rayleigh damping layer. 3 km deep below the ~20 km lid (sponge spans ~17–20 km),
-# keeping it in the lower stratosphere above the jet now that the top is shallower.
-damping_timescale = 5    # (s)
-damping_depth     = 3000 # (m)
-rayleigh_damping = UpperSponge(; damping_rate = 1/damping_timescale, depth = damping_depth)
-
-# Time discretization: split-explicit acoustic substepping. Adaptive substeps handle the acoustic
-# CFL, letting the outer step run at the (slower) advection CFL (so the adaptive wizard below can use
-# a large Δt). `ThermalDivergenceDamping` is disabled (`NoDivergenceDamping`) — its (ρθ)′-proxy
-# divergence damper injects a spurious force on this unbalanced cold start (Breeze #793).
-time_discretization = SplitExplicitTimeDiscretization(sponge = rayleigh_damping, damping = NoDivergenceDamping())
-
-# Momentum advection: WENO(9), higher-order than Fan's 5th/3rd; scalars keep the WENO(5) default.
-momentum_advection_scheme = WENO(order = 9)
-
-# Microphysics: 1-moment bulk mixed-phase precipitation (rain + snow) with saturation-adjustment
-# cloud formation, so the prognostic moisture is `ρqᵉ` and the precip categories `ρqʳ`, `ρqˢ` are
-# added (initialized to zero).
-const OneMomentCloudMicrophysics = Base.get_extension(Breeze, :BreezeCloudMicrophysicsExt).OneMomentCloudMicrophysics
-microphysics_scheme = OneMomentCloudMicrophysics(cloud_formation = SaturationAdjustment(equilibrium = MixedPhaseEquilibrium()))
-
-# Coriolis: a synoptic-scale LAM forced by ERA5 needs the rotating-frame balance, else the
-# ERA5 pressure field accelerates the interior winds with no geostrophic restoring force (the
-# unbounded-wind drift). `SphericalCoriolis` gives the latitude-varying f on the lat-lon grid.
-coriolis_scheme = SphericalCoriolis()
-
-# Lid sponge: in addition to the in-substepper `UpperSponge`, apply a Rayleigh damping of ρw over the
-# top `damping_depth` (cubic ramp, `damping_timescale`) as an interior forcing, so vertically-
-# propagating energy is absorbed at the rigid lid rather than reflected.
-w_sponge_mask = let z_top = z_discretization.faces[end], depth = float(damping_depth)
-    (λ, φ, z) -> (s = clamp((z - (z_top - depth)) / depth, zero(z), one(z)); s * s * (3 - 2s))
-end
-model_forcing = (; ρw = Relaxation(rate = 1/damping_timescale, mask = w_sponge_mask, target = 0.0))
+# `nested_atmosphere_model` supplies the nested-LAM physics defaults: compressible split-explicit
+# dynamics with an `UpperSponge` + ρw Rayleigh lid sponge (no divergence damping, which would inject
+# a spurious force on this unbalanced cold start), `WENO(order = 9)` momentum advection,
+# `SphericalCoriolis`, and — since `CloudMicrophysics` is loaded — 1-moment bulk mixed-phase
+# (rain + snow) microphysics. We pass only the IC-derived `surface_pressure` /
+# `reference_potential_temperature` that anchor the default dynamics (computed next).
 
 # Initial Breeze prognostics from ERA5 snapshot 1, computed here so the domain-mean θˡⁱ profile can
 # seed the reference state below; reused by `set!` after the model is built.
@@ -500,6 +461,8 @@ model_forcing = (; ρw = Relaxation(rate = 1/damping_timescale, mask = w_sponge_
 # `CompressibleDynamics` so the horizontal pressure-gradient force is taken in perturbation form
 # (p′ = p − p_ref). This cuts the terrain-following PGF cancellation error (Klemp 2011) that otherwise
 # spuriously accelerates the near-surface winds in the lowest cells over the high western terrain.
+# (Breeze's `set_to_mean!`/`compute_reference_state` recompute only the anelastic `ReferenceState`, not
+# the split-explicit `ExnerReferenceState` used here, so the reference is set explicitly.)
 reference_θ = let zc = collect(0.5 .* (z_discretization.faces[1:end-1] .+ z_discretization.faces[2:end])),
                   θ̄  = vec(mean(Array(interior(θˡⁱ)), dims = (1, 2)))
     z -> begin
@@ -512,23 +475,19 @@ end
 
 p̄₀ = mean(interior(p₀))
 
-# `nested_atmosphere_model` (Breeze ext) builds the child `AtmosphereModel` over `grid`, derives its
-# lateral BCs + Davies relaxation on the fly from `parent`, and wraps the pair in a `NestedModel` —
-# whose `time_step!` advances the child then ticks the parent clock so the on-the-fly BCs/relaxation
-# sample the parent at the right time. `surface_bcs` merge per-side with the parent-derived lateral BCs.
+# `nested_atmosphere_model` builds the child `AtmosphereModel` over `grid`, derives its lateral BCs +
+# Davies relaxation on the fly from `parent`, applies the physics defaults above, and wraps the pair in
+# a `NestedModel` — whose `time_step!` advances the child then ticks the parent clock so the on-the-fly
+# BCs/relaxation sample the parent at the right time. `surface_bcs` merge per-side with the lateral BCs.
 model = nested_atmosphere_model(parent, grid;
                                 thermodynamic_constants = constants,
-                                microphysics        = microphysics_scheme,
-                                momentum_advection  = momentum_advection_scheme,
-                                coriolis            = coriolis_scheme,
-                                dynamics            = CompressibleDynamics(time_discretization; surface_pressure = p̄₀, reference_potential_temperature = reference_θ),
-                                relaxation_rate     = 1 / τ_relax,
-                                relaxation_mask     = lateral_mask,
-                                boundary_conditions = surface_bcs,
-                                forcing             = model_forcing)
+                                surface_pressure = p̄₀,
+                                reference_potential_temperature = reference_θ,
+                                relaxation_rate = 1 / τ_relax,
+                                relaxation_mask = lateral_mask,
+                                boundary_conditions = surface_bcs)
 
-# Initial state from ERA5 (prognostics ρ/θˡⁱ/qᵗ computed above for the reference profile). `set!` on
-# the `NestedModel` forwards to the child.
+# Initial state from ERA5; `set!` on the `NestedModel` forwards to the child.
 set!(model; ρ = ρ, u = u, v = v, qᵗ = qᵗ, θˡⁱ = θˡⁱ)
 
 # Consistent-w IC: graft ρw ← ρw − ρw̃ so the contravariant w̃ ≈ 0 (flow follows the ground),
@@ -555,10 +514,10 @@ let
     Δt_balance     = 0.15
     balance_cycles = 1   # one cycle suffices — see the DFI sensitivity note in the header
     twin_bcs = nested_lateral_boundary_conditions(parent, constants,
-                                                  Breeze.moisture_prognostic_name(microphysics_scheme))
+                                                  Breeze.moisture_prognostic_name(model.microphysics))
     twin = atmosphere_model(grid;
                             thermodynamic_constants = constants,
-                            momentum_advection = momentum_advection_scheme,
+                            momentum_advection = WENO(order = 9),
                             dynamics = CompressibleDynamics(ExplicitTimeStepping(); surface_pressure = p̄₀),
                             microphysics = nothing,
                             boundary_conditions = twin_bcs)
