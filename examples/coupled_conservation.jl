@@ -61,6 +61,7 @@ ocean = ocean_simulation(grid;
                          momentum_advection = nothing,
                          tracer_advection = nothing,
                          coriolis = nothing,
+                         radiative_forcing = nothing,
                          closure = CATKEVerticalDiffusivity(),
                          bottom_drag_coefficient = 0)
 
@@ -93,13 +94,13 @@ coupled_model = OceanSeaIceModel(ocean, sea_ice; atmosphere, radiation)
 # spatio-temporally uniform.
 
 function set_forcing!(atmosphere, radiation, T, q, u, v, p, ℐꜜˢʷ, ℐꜜˡʷ, Jᶜ, Jˢⁿ)
-    fill!(parent(atmosphere.tracers.T),            T   )
-    fill!(parent(atmosphere.tracers.q),            q   )
+    fill!(parent(atmosphere.temperature),          T   )
+    fill!(parent(atmosphere.specific_humidity),    q   )
     fill!(parent(atmosphere.velocities.u),         u   )
     fill!(parent(atmosphere.velocities.v),         v   )
     fill!(parent(atmosphere.pressure),             p   )
-    fill!(parent(atmosphere.freshwater_flux.rain), Jᶜ  )
-    fill!(parent(atmosphere.freshwater_flux.snow), Jˢⁿ )
+    fill!(parent(atmosphere.precipitation_flux.rain), Jᶜ  )
+    fill!(parent(atmosphere.precipitation_flux.snow), Jˢⁿ )
     fill!(parent(radiation.downwelling_shortwave), ℐꜜˢʷ)
     fill!(parent(radiation.downwelling_longwave),  ℐꜜˡʷ)
     return nothing
