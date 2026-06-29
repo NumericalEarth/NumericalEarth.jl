@@ -22,7 +22,7 @@
 import Oceananigans.BoundaryConditions: regularize_boundary_condition, getbc,
                                         LeftBoundary, RightBoundary
 import Oceananigans.OutputReaders: FlavorOfFTS
-using Oceananigans.Grids: node, Face
+using Oceananigans.Grids: node, Face, znode, Center
 using Adapt: Adapt, adapt
 
 const InterpolatedSource = Union{FlavorOfFTS, Oceananigans.Fields.AbstractField}
@@ -79,15 +79,17 @@ function regularize_boundary_condition(c::Interpolated{Nothing}, grid, loc, dim,
     return Interpolated{dim, SideType, LX, LY, LZ, typeof(c.source), typeof(c.source_grid)}(c.source, c.source_grid)
 end
 
-# Match the strict "source must bracket every child sampling node" check that
-# Oceananigans uses for `Relaxation`-on-FTS. Same logic for FTS and AbstractField.
+# The source must bracket the child *horizontally* (a too-small parent region there is a real
+# error). The vertical is intentionally NOT required to bracket: a child legitimately extends below
+# the parent's lowest level (e.g. ERA5 pressure-level data doesn't reach the surface), and the
+# vertical interpolation clamps to the parent's edge value there rather than extrapolating. (The
+# horizontal check mirrors the one Oceananigans uses for `Relaxation`-on-FTS.)
 function validate_source_bracket(source, grid, ::Type{LX}, ::Type{LY}, ::Type{LZ}) where {LX, LY, LZ}
     sim_loc    = (LX(), LY(), LZ())
     source_loc = Oceananigans.instantiated_location(source)
     source_grid = source.grid
     for (label, nodes_fn) in (("x", Oceananigans.Grids.xnodes),
-                              ("y", Oceananigans.Grids.ynodes),
-                              ("z", Oceananigans.Grids.znodes))
+                              ("y", Oceananigans.Grids.ynodes))
         sim_lo, sim_hi = extrema(nodes_fn(grid, sim_loc...))
         src_lo, src_hi = extrema(nodes_fn(source_grid, source_loc...))
         (src_lo ≤ sim_lo && sim_hi ≤ src_hi) || throw(ArgumentError(
