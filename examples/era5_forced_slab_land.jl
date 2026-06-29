@@ -166,8 +166,8 @@ slab_land = SlabLand(land_grid;
 # first snapshot (interpolated onto the 1 km grid), mirroring the runtime lift.
 # Initial soil water = half saturation (= 200 kg m⁻² with ν = 0.4, D = 1 m).
 T₀ = Field{Center, Center, Nothing}(land_grid)
-Oceananigans.Fields.interpolate!(T₀, atmosphere.tracers.T[1])
-set!(slab_land; T = T₀ - Γ_lapse * Δz, M = 200.0)
+Oceananigans.Fields.interpolate!(T₀, atmosphere.temperature[1])
+set!(slab_land; T = T₀ - Γ_lapse * Δz, M = 0.5 * 150)
 
 # ## Coupled model
 #
