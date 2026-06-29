@@ -236,30 +236,7 @@ materialize_terrain!(grid, elevation)
 # Drawn here, before the run, so the domain geometry is written even if the run is cut short.
 
 using CairoMakie
-using NaturalEarth
-import GeoInterface as GI
-
-# Flatten a Natural Earth (Multi)LineString feature collection to NaN-separated
-# lon/lat vectors that CairoMakie's `lines!` draws as disjoint border segments.
-append_border!(lons, lats, geom) = append_border!(lons, lats, GI.geomtrait(geom), geom)
-function append_border!(lons, lats, ::GI.LineStringTrait, line)
-    for p in GI.getpoint(line)
-        push!(lons, GI.x(p)); push!(lats, GI.y(p))
-    end
-    push!(lons, NaN); push!(lats, NaN)
-end
-append_border!(lons, lats, ::GI.MultiLineStringTrait, multiline) =
-    foreach(line -> append_border!(lons, lats, line), GI.getgeom(multiline))
-append_border!(lons, lats, ::Any, geom) = nothing
-
-function natural_earth_lines(name)
-    lons, lats = Float64[], Float64[]
-    for feature in naturalearth(name, 50)
-        geom = GI.geometry(feature)
-        isnothing(geom) || append_border!(lons, lats, geom)
-    end
-    return lons, lats
-end
+using NaturalEarth   # with its transitive GeoInterface, triggers NumericalEarthNaturalEarthExt → `natural_earth_lines`
 
 # A 2.5° buffer around the ERA5 box leaves the nest well inside the map edge;
 # the basemap grid samples ETOPO at ~0.03° (≈ 3 km).

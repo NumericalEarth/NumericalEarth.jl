@@ -128,7 +128,8 @@ export
     net_ocean_freshwater_flux, sea_ice_ocean_freshwater_flux, atmosphere_ocean_freshwater_flux,
     meridional_heat_transport,
     location,
-    native_grid
+    native_grid,
+    natural_earth_lines
 
 using DataDeps: DataDeps
 using Oceananigans: Oceananigans
@@ -138,6 +139,20 @@ using Oceananigans.ImmersedBoundaries: ImmersedBoundaryGrid, GridFittedBottom
 using Oceananigans.OutputReaders: GPUAdaptedFieldTimeSeries, FieldTimeSeries
 
 import Oceananigans: location
+
+"""
+    natural_earth_lines(name; scale = 50)
+
+Return `(longitudes, latitudes)` for the Natural Earth feature layer `name` (e.g.
+`"admin_1_states_provinces_lines"` or `"admin_0_boundary_lines_land"`) as NaN-separated
+vectors, ready to draw as disjoint segments with a plotting backend, as in
+`lines!(axis, longitudes, latitudes)`. `scale` selects the Natural Earth resolution
+(`10`, `50`, or `110`).
+
+Requires `NaturalEarth` and `GeoInterface` to be loaded — the method lives in
+`NumericalEarthNaturalEarthExt`.
+"""
+function natural_earth_lines end
 
 const SomeKindOfFieldTimeSeries = Union{FieldTimeSeries,
                                         GPUAdaptedFieldTimeSeries}
