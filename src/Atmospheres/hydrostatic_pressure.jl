@@ -84,3 +84,38 @@ function hydrostatic_pressure_from_surface(temperature, surface_pressure, orogra
     fill_halo_regions!(pressure)
     return pressure
 end
+
+"""
+$(TYPEDSIGNATURES)
+
+Moist-air density `ρ = p / (Rᵐ T)` on the grid of `temperature`, with the moist mixture gas constant
+`Rᵐ = qᵈ Rᵈ + qᵛ Rᵛ`, `qᵈ = 1 − qᵛ − qᶜ − qⁱ` — the same EOS as [`hydrostatic_pressure_from_surface`](@ref),
+so a density built from that pressure is mutually consistent. `temperature` and `pressure` are `Field`s
+on the same grid; the moisture `qᵛ`, `qᶜ`, `qⁱ` are optional `Field`s (omitting them gives the dry
+result `ρ = p / (Rᵈ T)`). Returns a `CenterField`. Useful to initialize a compressible model's density
+from an analysis temperature + (hydrostatic) pressure, e.g. `set!(model; ρ = density_from_pressure(T, p; …))`.
+"""
+function density_from_pressure(temperature, pressure;
+                               qᵛ = nothing, qᶜ = nothing, qⁱ = nothing,
+                               dry_gas_constant,
+                               vapor_gas_constant)
+    grid = temperature.grid
+    Nx, Ny, Nz = size(grid)
+
+    Tᵃ = Array(interior(temperature))
+    pᵃ = Array(interior(pressure))
+    no_moisture = zeros(eltype(Tᵃ), Nx, Ny, Nz)
+    qᵛᵃ = isnothing(qᵛ) ? no_moisture : Array(interior(qᵛ))
+    qᶜᵃ = isnothing(qᶜ) ? no_moisture : Array(interior(qᶜ))
+    qⁱᵃ = isnothing(qⁱ) ? no_moisture : Array(interior(qⁱ))
+
+    Rᵈ = dry_gas_constant
+    Rᵛ = vapor_gas_constant
+    Rᵐ = @. (1 - qᵛᵃ - qᶜᵃ - qⁱᵃ) * Rᵈ + qᵛᵃ * Rᵛ
+    ρ  = @. pᵃ / (Rᵐ * Tᵃ)
+
+    density = CenterField(grid)
+    set!(density, ρ)
+    fill_halo_regions!(density)
+    return density
+end

@@ -1,6 +1,6 @@
 module Atmospheres
 
-export atmosphere_model, atmosphere_simulation, breeze_prognostic_state, hydrostatic_pressure_from_surface, PrescribedAtmosphere, PrescribedPrecipitationFlux
+export atmosphere_model, atmosphere_simulation, breeze_prognostic_state, hydrostatic_pressure_from_surface, density_from_pressure, PrescribedAtmosphere, PrescribedPrecipitationFlux
 
 using Adapt: Adapt, adapt
 using KernelAbstractions: @kernel, @index
