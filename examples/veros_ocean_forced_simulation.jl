@@ -130,7 +130,7 @@ un = @lift(u[$n])
 vn = @lift(v[$n])
 Nt = length(u)
 
-fig = Figure(size = (1000, 700))
+fig = Figure(size = (900, 630))
 ax1 = Axis(fig[1, 1]; title = "Surface zonal velocity (m/s)", xlabel = "", ylabel = "Latitude")
 ax2 = Axis(fig[2, 1]; title = "Surface meridional velocity (m/s)", xlabel = "", ylabel = "Latitude")
 hm1 = heatmap!(ax1, un, colormap = :bwr, colorrange = (-0.2, 0.2))
