@@ -73,6 +73,20 @@ This bookkeeping lets downstream utilities (for example `set!` or `FieldTimeSeri
 slices of data they need, and it keeps track of where those slices live so we do not redownload
 them unnecessarily.
 
+## Where data is cached
+
+If `dir` is not provided, each dataset defaults to a [Scratch.jl](https://github.com/JuliaPackaging/Scratch.jl)
+space managed by Julia under the active depot (typically `~/.julia/scratchspaces/...`). To cache data
+somewhere else — for example on a large scratch filesystem on an HPC cluster, or in a shared location
+reused across Julia depots — set the `NUMERICALEARTH_DATA_DIRECTORY` environment variable *before* loading
+NumericalEarth. Each dataset is then cached under its own subdirectory of that path:
+
+```sh
+NUMERICALEARTH_DATA_DIRECTORY=/scratch/$USER/numerical_earth_data julia
+```
+
+A per-`Metadata` `dir` keyword still overrides this for any individual dataset.
+
 ## Bundling variables with `MetadataSet`
 
 Workflows often need _many_ variables from the same dataset — for example, temperature and salinity
@@ -191,3 +205,6 @@ NumericalEarth currently ships connectors for the following data products:
 | **Regional observations** |                                                    |                                                                                                     |
 | `OSPapaHourly`     | ocean profiles, near-surface meteorology, and currents    | [Ocean Station Papa dataset](https://www.pmel.noaa.gov/ocs/Papa)                                   |
 | `OSPapaFluxHourly` | air-sea fluxes, stresses, evaporation, precipitation, and skin temperature | [Ocean Station Papa flux dataset](https://www.pmel.noaa.gov/ocs/Papa) |
+| **Land** |                                                    |                                                                                                     |
+| `SoilGrids 2.0`     | Global profiles of soil texture, bulk density, and organic content in upper 2 meters  | [SoilGrids documentation](https://docs.isric.org/globaldata/soilgrids/)                                   |
+
