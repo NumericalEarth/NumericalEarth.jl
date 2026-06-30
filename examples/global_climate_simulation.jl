@@ -27,7 +27,6 @@ using Oceananigans.Units
 using Oceananigans.AbstractOperations: KernelFunctionOperation
 using Oceananigans.Grids: φnode
 using Printf, Statistics, Dates
-using Suppressor
 
 # ## Ocean and sea-ice model configuration
 # The ocean and sea-ice are a simplified versions of the [one-degree ocean-sea ice example](@ref one-degree-ocean-seaice).
@@ -58,14 +57,14 @@ catke_closure      = NumericalEarth.Oceans.default_ocean_closure()
 eddy_closure       = Oceananigans.TurbulenceClosures.IsopycnalSkewSymmetricDiffusivity(κ_skew=500, κ_symmetric=200)
 
 @inline νhb(i, j, k, grid, λ) = Oceananigans.Operators.Azᶜᶜᶜ(i, j, k, grid)^2 / λ
-ν = Oceananigans.Field(KernelFunctionOperation{Center, Center, Center}(νhb, grid, 15days))
-Oceananigans.compute!(ν)
+ν = Oceananigans.Field{Center, Center, Center}(grid)
+Oceananigans.set!(ν, KernelFunctionOperation{Center, Center, Center}(νhb, grid, 15days))
 horizontal_viscosity = HorizontalScalarBiharmonicDiffusivity(; ν)
 
 ## κ(φ) = max(2e-6, 3e-5 * |sin(φ)|)
 @inline henyey_diffusivity(i, j, k, grid) = max(2e-6, 3e-5 * abs(sind(φnode(i, j, k, grid, Center(), Center(), Center()))))
-κ = Oceananigans.Field(KernelFunctionOperation{Center, Center, Center}(henyey_diffusivity, grid))
-Oceananigans.compute!(κ)
+κ = Oceananigans.Field{Center, Center, Center}(grid)
+Oceananigans.set!(κ, KernelFunctionOperation{Center, Center, Center}(henyey_diffusivity, grid))
 vertical_diffusivity = VerticalScalarDiffusivity(ν=1e-5; κ)
 
 closures = (catke_closure, eddy_closure, horizontal_viscosity, vertical_diffusivity)
@@ -218,16 +217,16 @@ ua = reverse(SWO["u"][:, :, nlayers, :],    dims=2)
 va = reverse(SWO["v"][:, :, nlayers, :],    dims=2)
 sp = sqrt.(ua.^2 + va.^2)
 
-SST = @suppress_out FieldTimeSeries("ocean_surface_fields.jld2", "T")
-SSU = @suppress_out FieldTimeSeries("ocean_surface_fields.jld2", "u")
-SSV = @suppress_out FieldTimeSeries("ocean_surface_fields.jld2", "v")
+SST = FieldTimeSeries("ocean_surface_fields.jld2", "T")
+SSU = FieldTimeSeries("ocean_surface_fields.jld2", "u")
+SSV = FieldTimeSeries("ocean_surface_fields.jld2", "v")
 
-SIU = @suppress_out FieldTimeSeries("sea_ice_fields.jld2", "u")
-SIV = @suppress_out FieldTimeSeries("sea_ice_fields.jld2", "v")
-SIA = @suppress_out FieldTimeSeries("sea_ice_fields.jld2", "ℵ")
+SIU = FieldTimeSeries("sea_ice_fields.jld2", "u")
+SIV = FieldTimeSeries("sea_ice_fields.jld2", "v")
+SIA = FieldTimeSeries("sea_ice_fields.jld2", "ℵ")
 
-𝒬ᵀᵃᵒ = @suppress_out FieldTimeSeries("intercomponent_fluxes.jld2", "𝒬ᵀᵃᵒ")
-𝒬ᵛᵃᵒ = @suppress_out FieldTimeSeries("intercomponent_fluxes.jld2", "𝒬ᵛᵃᵒ")
+𝒬ᵀᵃᵒ = FieldTimeSeries("intercomponent_fluxes.jld2", "𝒬ᵀᵃᵒ")
+𝒬ᵛᵃᵒ = FieldTimeSeries("intercomponent_fluxes.jld2", "𝒬ᵛᵃᵒ")
 
 Nt = min(length(sp[1, 1, :]), length(𝒬ᵀᵃᵒ))
 times = 𝒬ᵀᵃᵒ.times
