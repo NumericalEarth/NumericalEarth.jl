@@ -65,7 +65,7 @@ using Oceananigans.Architectures: on_architecture
 using Oceananigans.TimeSteppers: update_state!
 using Breeze
 using CloudMicrophysics  # loaded so nested_atmosphere_model's default microphysics is 1-moment mixed-phase
-using Breeze.TerrainFollowingDiscretization: TerrainFollowingVerticalDiscretization, materialize_terrain!
+using Breeze.TerrainFollowingDiscretization: TerrainFollowingVerticalDiscretization
 using Statistics: mean, quantile
 using JLD2: jldsave
 using Dates
@@ -151,21 +151,16 @@ era5_datadir = "era5"   # Where data will be saved locally
 ds_pl = ERA5HourlyPressureLevels()
 ds_sl = ERA5HourlySingleLevel()
 
-# ERA5 forcing region: the LAM footprint padded outward by `era5_pad` and snapped to
-# ERA5's native 0.25° grid, so the parent strictly encloses the child (the
-# Interpolated lateral BCs and the 5-cell Davies relaxation zone needs parent data beyond
-# the child edge). At 0.25°, ERA5 can stand in for Fan's 27 km Domain 1.
+# ERA5 forcing region: the LAM footprint padded outward by `era5_pad`, so the parent encloses the
+# child with room for the lateral BCs + the 5-cell Davies relaxation zone. `BoundingBox` snaps the
+# requested region outward onto ERA5's native 0.25° grid when the data is read (the native grid is
+# restricted by `floor`/`ceil` to the enclosing cells), so no manual snapping is needed. Downloaded on
+# demand; at 0.25°, ERA5 stands in for Fan's 27 km Domain 1.
 
 era5_pad = 1.0  # deg; wider than the 5·(1/12°) ≈ 0.42° Davies relaxation zone width
 
-snap_out(lo, hi; d = 0.25) = (floor(lo / d) * d, ceil(hi / d) * d)
-
-# Anchor the parent region to the child extent, padded outward by `era5_pad` (wider than the
-# Davies relaxation zone) and snapped to ERA5's 0.25° grid, so the parent strictly encloses the
-# child + fringe for any child size. Downloaded on demand; ERA5 stands in for Fan's 27 km Domain 1.
-
-era5_region = BoundingBox(longitude = snap_out(λ_west  - era5_pad, λ_east  + era5_pad),
-                          latitude  = snap_out(φ_south - era5_pad, φ_north + era5_pad))
+era5_region = BoundingBox(longitude = (λ_west  - era5_pad, λ_east  + era5_pad),
+                          latitude  = (φ_south - era5_pad, φ_north + era5_pad))
 
 @info @sprintf("Breeze child (~12 km): λ ∈ [%.3f, %.3f], φ ∈ [%.3f, %.3f]; Δλ=Δφ=%.4f°",
                λ_west, λ_east, φ_south, φ_north, Δλ)
@@ -186,14 +181,11 @@ grid = LatitudeLongitudeGrid(arch;
                              halo      = (5, 5, 5),
                              topology  = (Bounded, Bounded, Bounded))
 
-# Get the parent terrain
+# Get the parent terrain: ERA5 surface geopotential regridded onto the child's horizontal grid as a
+# 2-D `(Center, Center, Nothing)` field — no separate orography grid needed.
 
 g_accel = Oceananigans.defaults.gravitational_acceleration
-orography_grid = LatitudeLongitudeGrid(longitude = (λ_west,  λ_east),
-                                       latitude  = (φ_south, φ_north),
-                                       z = (0, 1), size = (Nx, Ny, 1),
-                                       halo = (5, 5, 3), topology = (Bounded, Bounded, Bounded))
-Φ_sfc = CenterField(orography_grid)
+Φ_sfc = Field{Center, Center, Nothing}(grid)
 set!(Φ_sfc, Metadatum(:geopotential; dataset = ds_sl, date = start_date,
                       region = era5_region, dir = era5_datadir))
 parent_elevation = Array(interior(Φ_sfc))[:, :, 1] ./ g_accel
@@ -215,16 +207,12 @@ for j in 1:Ny, i in 1:Nx
 end
 set!(elevation, reshape(blended, size(interior(elevation))))
 
-# Fill the grid's terrain-following coordinate from the regridded surface elevation
-# in place, deforming the coordinate surfaces to follow the ground (a Gal-Chen–Somerville
-# σ coordinate via the default `LinearDecay` formulation).
-# The bottom surface sits at the local terrain height; the top stays flat.
-# `znode` heights are true heights above sea level — the coordinate the #241 ERA5 ingest
-# below interpolates onto.
-# `CompressibleDynamics` will build the slope metrics it needs directly
-# from the grid (no `terrain_metrics` argument required).
-
-materialize_terrain!(grid, elevation)
+# `elevation` is materialized onto the grid's terrain-following coordinate inside
+# `nested_atmosphere_model` (its `terrain` keyword), deforming the coordinate surfaces to follow the
+# ground (a Gal-Chen–Somerville σ coordinate, default `LinearDecay`): the bottom sits at the local
+# terrain height, the top stays flat. `CompressibleDynamics` then builds the slope metrics it needs
+# directly from the grid, and the #241 ERA5 ingest below interpolates onto the true `znode` heights
+# above sea level.
 
 # ## Nested domains
 #
@@ -346,33 +334,13 @@ parent = ERA5PrescribedAtmosphere(era5_region, dates; architecture = arch, dir =
                                     region = era5_region, dir = era5_datadir),
                            arch; time_indices_in_memory = length(dates))
 
-# ## Initial conditions
-
-# --- LAM-grid IC fields: regrid snapshot 1 of ERA5 directly onto the child ---
-# `set!(field, metadatum)` regrids each ERA5 field onto the terrain-following
-# child grid by true Φ/g (#241), staggering to the field's own location
-# (velocities to faces, scalars to centers). No parent → child step is needed.
-
-initial_metadatum(name) = Metadatum(name; dataset = ds_pl, meta_common_snap1...)
-
-u  = XFaceField(grid);  set!(u,  initial_metadatum(:eastward_velocity))
-v  = YFaceField(grid);  set!(v,  initial_metadatum(:northward_velocity))
-T  = CenterField(grid); set!(T,  initial_metadatum(:temperature))
-qᵛ = CenterField(grid); set!(qᵛ, initial_metadatum(:specific_humidity))
-qᶜ = CenterField(grid); set!(qᶜ, initial_metadatum(:specific_cloud_liquid_water_content))
-qⁱ = CenterField(grid); set!(qⁱ, initial_metadatum(:specific_cloud_ice_water_content))
-
-# Calculate virtual temperature: Tᵛ = T·(1 + (1 − ε)/ε·qᵛ), ε = Rᵈ/Rᵛ.
-# Vapor only by convention — the qᶜ, qⁱ terms belong to the density temperature Tρ.
-
-εfac = Rᵛ / Rᵈ - 1
-Tᵛ = Field(T * (1 + εfac * qᵛ))
-compute!(Tᵛ)
-
+# ## Surface pressure
+#
 # Surface pressure: horizontal field on a 3-D grid with Nz=1. (A `Flat` z
 # topology trips Oceananigans' interpolation kernel — `_fractional_indices`
 # unconditionally destructures `at_node` as `(x, y, z)`; mirrors the pattern
-# used in examples/ERA5_hourly_data.jl.)
+# used in examples/ERA5_hourly_data.jl.) Its domain mean `p̄₀` anchors the model's hydrostatic
+# reference at construction; `p₀` itself seeds the hydrostatic-from-surface initial pressure below.
 
 surface_grid = LatitudeLongitudeGrid(longitude = (λ_west,  λ_east),
                                      latitude  = (φ_south, φ_north),
@@ -383,15 +351,7 @@ surface_grid = LatitudeLongitudeGrid(longitude = (λ_west,  λ_east),
 
 p₀ = CenterField(surface_grid)
 set!(p₀, Metadatum(:surface_pressure; dataset=ds_sl, meta_common_snap1...))
-
-# Hydrostatically-balanced initial pressure. Interpolating ERA5 pressure to the node heights
-# clamps the sub-surface levels over high terrain, leaving the cold-start IC out of the model's
-# discrete hydrostatic balance (a ~40 g vertical residual). Build `p` by integrating up from the
-# ERA5 surface pressure instead — anchored at each column's terrain surface, with the moist Rᵐ.
-p = hydrostatic_pressure_from_surface(T, Array(interior(p₀))[:, :, 1], parent_elevation;
-                                      qᵛ = qᵛ, qᶜ = qᶜ, qⁱ = qⁱ,
-                                      dry_gas_constant = Rᵈ, vapor_gas_constant = Rᵛ,
-                                      gravitational_acceleration = g_accel)
+p̄₀ = mean(interior(p₀))
 
 # ## Lateral boundary conditions and Davies relaxation
 #
@@ -432,7 +392,7 @@ lateral_mask = let λ_w = λ_west, λ_e = λ_east, φ_s = φ_south, φ_n = φ_no
         dN = φ_n - φ
         d  = min(dW, dE, dS, dN)
         d >= width && return zero(λ)
-        return 0.5 * (1 + cos(π * d / width))
+        return oftype(λ, 0.5 * (1 + cos(π * d / width)))
     end
 end
 
@@ -453,42 +413,65 @@ end
 # (rain + snow) microphysics. We pass only the IC-derived `surface_pressure` /
 # `reference_potential_temperature` that anchor the default dynamics (computed next).
 
-# Initial Breeze prognostics from ERA5 snapshot 1, computed here so the domain-mean θˡⁱ profile can
-# seed the reference state below; reused by `set!` after the model is built.
-(; ρ, θˡⁱ, qᵗ) = breeze_prognostic_state(constants, T, qᵛ, qᶜ, qⁱ, p)
-
-# Reference potential-temperature profile θ_ref(z) = the IC's domain-mean θˡⁱ, passed to
-# `CompressibleDynamics` so the horizontal pressure-gradient force is taken in perturbation form
-# (p′ = p − p_ref). This cuts the terrain-following PGF cancellation error (Klemp 2011) that otherwise
-# spuriously accelerates the near-surface winds in the lowest cells over the high western terrain.
-# (Breeze's `set_to_mean!`/`compute_reference_state` recompute only the anelastic `ReferenceState`, not
-# the split-explicit `ExnerReferenceState` used here, so the reference is set explicitly.)
-reference_θ = let zc = collect(0.5 .* (z_discretization.faces[1:end-1] .+ z_discretization.faces[2:end])),
-                  θ̄  = vec(mean(Array(interior(θˡⁱ)), dims = (1, 2)))
-    z -> begin
-        z <= zc[1]   && return θ̄[1]
-        z >= zc[end] && return θ̄[end]
-        k = searchsortedlast(zc, z); f = (z - zc[k]) / (zc[k+1] - zc[k])
-        (1 - f) * θ̄[k] + f * θ̄[k+1]
-    end
-end
-
-p̄₀ = mean(interior(p₀))
-
 # `nested_atmosphere_model` builds the child `AtmosphereModel` over `grid`, derives its lateral BCs +
-# Davies relaxation on the fly from `parent`, applies the physics defaults above, and wraps the pair in
-# a `NestedModel` — whose `time_step!` advances the child then ticks the parent clock so the on-the-fly
-# BCs/relaxation sample the parent at the right time. `surface_bcs` merge per-side with the lateral BCs.
+# Davies relaxation on the fly from `parent`, applies the physics defaults above, materializes the
+# blended `terrain` onto the grid's terrain-following coordinate, and wraps the pair in a `NestedModel`
+# — whose `time_step!` advances the child then ticks the parent clock so the on-the-fly BCs/relaxation
+# sample the parent at the right time. `surface_bcs` merge per-side with the lateral BCs. The
+# hydrostatic reference is recomputed from the initial state below (`compute_reference_state = true`),
+# so no reference-θ profile need be supplied here.
 model = nested_atmosphere_model(parent, grid;
                                 thermodynamic_constants = constants,
                                 surface_pressure = p̄₀,
-                                reference_potential_temperature = reference_θ,
+                                terrain = elevation,
                                 relaxation_rate = 1 / τ_relax,
                                 relaxation_mask = lateral_mask,
                                 boundary_conditions = surface_bcs)
 
-# Initial state from ERA5; `set!` on the `NestedModel` forwards to the child.
-set!(model; ρ = ρ, u = u, v = v, qᵗ = qᵗ, θˡⁱ = θˡⁱ)
+# ## Initial conditions
+#
+# With the terrain now materialized on `grid`, regrid snapshot 1 of ERA5 directly onto the child:
+# `set!(field, metadatum)` interpolates each ERA5 field by true Φ/g (#241) onto the deformed
+# terrain-following coordinate, staggering to the field's own location (velocities to faces, scalars to
+# centers). No parent → child step is needed.
+
+initial_metadatum(name) = Metadatum(name; dataset = ds_pl, meta_common_snap1...)
+
+u  = XFaceField(grid);  set!(u,  initial_metadatum(:eastward_velocity))
+v  = YFaceField(grid);  set!(v,  initial_metadatum(:northward_velocity))
+T  = CenterField(grid); set!(T,  initial_metadatum(:temperature))
+qᵛ = CenterField(grid); set!(qᵛ, initial_metadatum(:specific_humidity))
+qᶜ = CenterField(grid); set!(qᶜ, initial_metadatum(:specific_cloud_liquid_water_content))
+qⁱ = CenterField(grid); set!(qⁱ, initial_metadatum(:specific_cloud_ice_water_content))
+
+# Virtual temperature Tᵛ = T·(1 + (Rᵛ/Rᵈ − 1)·qᵛ) — vapor only by convention (the qᶜ, qⁱ terms belong
+# to the density temperature Tρ); used in the IC diagnostics below.
+εfac = Rᵛ / Rᵈ - 1
+Tᵛ = Field(T * (1 + εfac * qᵛ))
+compute!(Tᵛ)
+
+# Hydrostatically-balanced initial pressure. Interpolating ERA5 pressure to the node heights
+# clamps the sub-surface levels over high terrain, leaving the cold-start IC out of the model's
+# discrete hydrostatic balance (a ~40 g vertical residual). Build `p` by integrating up from the
+# ERA5 surface pressure instead — anchored at each column's terrain surface, with the moist Rᵐ.
+p = hydrostatic_pressure_from_surface(T, Array(interior(p₀))[:, :, 1], parent_elevation;
+                                      qᵛ = qᵛ, qᶜ = qᶜ, qⁱ = qⁱ,
+                                      dry_gas_constant = Rᵈ, vapor_gas_constant = Rᵛ,
+                                      gravitational_acceleration = g_accel)
+
+# Initial density from the moist ideal-gas law ρ = p / (Rᵐ T), with Rᵐ = (1 − qᵛ − qᶜ − qⁱ)Rᵈ + qᵛRᵛ —
+# the same EOS used to build `p`, so the IC is internally consistent. Total water qᵗ = qᵛ + qᶜ + qⁱ.
+ρ  = density_from_pressure(T, p; qᵛ = qᵛ, qᶜ = qᶜ, qⁱ = qⁱ,
+                           dry_gas_constant = Rᵈ, vapor_gas_constant = Rᵛ)
+qᵗ = Field(qᵛ + qᶜ + qⁱ); compute!(qᵗ)
+
+# Initial state from ERA5; `set!` on the `NestedModel` forwards to the child. Temperature `T` is set
+# directly (Breeze inverts it to θˡⁱ given the moisture state); `compute_reference_state = true` then
+# recomputes the dynamics' Exner reference from the resulting domain-mean state, so the pressure-gradient
+# force is taken in perturbation form (p′ = p − p_ref) — cutting the terrain-following PGF cancellation
+# error (Klemp 2011) that otherwise spuriously accelerates the near-surface winds over high terrain,
+# without a hand-supplied reference-θ profile.
+set!(model; ρ = ρ, u = u, v = v, qᵗ = qᵗ, T = T, compute_reference_state = true)
 
 # Consistent-w IC: graft ρw ← ρw − ρw̃ so the contravariant w̃ ≈ 0 (flow follows the ground),
 # then re-sync diagnostics.
@@ -521,7 +504,7 @@ let
                             dynamics = CompressibleDynamics(ExplicitTimeStepping(); surface_pressure = p̄₀),
                             microphysics = nothing,
                             boundary_conditions = twin_bcs)
-    set!(twin; ρ = ρ, u = u, v = v, qᵛ = qᵛ, θˡⁱ = θˡⁱ)
+    set!(twin; ρ = ρ, u = u, v = v, qᵛ = qᵛ, T = T)
     update_state!(twin)
     Breeze.balance_adiabatically!(twin; Δt = Δt_balance, cycles = balance_cycles)
     ρθ_production = Breeze.AtmosphereModels.thermodynamic_density(model.formulation)

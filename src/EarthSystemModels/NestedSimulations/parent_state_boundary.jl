@@ -31,15 +31,15 @@
 @inline _query_source(source, source_grid, X, loc, t, f) =
     inverse_transform(f)(Oceananigans.Fields.interpolate(f, X, source, loc, source_grid))
 
-# Clamp the query's z-coordinate into the source grid's center-z range, so a child node below (or
+# Clamp the z-component of a position `X` into `grid`'s center-z range, so a child node below (or
 # above) the parent's vertical extent returns the parent's edge value (constant extrapolation in z)
 # rather than the halo-dependent / linearly-extrapolated value `interpolate` gives outside the grid.
 # `validate_source_bracket` intentionally lets the child exceed the parent in z (e.g. ERA5
 # pressure-level data doesn't reach the surface); this makes the resulting extrapolation well-defined.
-@inline function clamp_to_source_z(X, source_grid)
-    Nz = size(source_grid, 3)
-    z₁ = znode(1, 1, 1,  source_grid, Center(), Center(), Center())
-    zₙ = znode(1, 1, Nz, source_grid, Center(), Center(), Center())
+@inline function z_clamp(X, grid)
+    Nz = size(grid, 3)
+    z₁ = znode(1, 1, 1,  grid, Center(), Center(), Center())
+    zₙ = znode(1, 1, Nz, grid, Center(), Center(), Center())
     return (X[1], X[2], clamp(X[3], min(z₁, zₙ), max(z₁, zₙ)))
 end
 
@@ -81,7 +81,7 @@ end
 # state. Sources are Center-located parent fields; `X` is the boundary face in the normal direction.
 @inline function _parent_state(c::ParentStateBoundary{<:Any, <:Any, LX, LY, LZ}, X, t) where {LX, LY, LZ}
     loc   = (LX(), LY(), LZ())
-    Xc    = clamp_to_source_z(X, c.source_grid)
+    Xc    = z_clamp(X, c.source_grid)
     state = map((src, itp) -> _query_source(src, c.source_grid, Xc, loc, t, itp), c.sources, c.interpolations)
     return c.transform(state)
 end
@@ -106,35 +106,3 @@ end
     X = node(i, j, k, grid, LX(), LY(), Face())
     return _parent_state(bc, X, clock_time(clock))
 end
-
-#####
-##### ParentStateTarget: the interior-relaxation analogue of `ParentStateBoundary`. A callable
-##### `target(x, y, z, t)` for an Oceananigans `Relaxation` forcing that interpolates each parent
-##### source at the interior node `(x, y, z)` (each via its `interpolations` transform, un-mapped) and
-##### applies the prognostic `transform` — same `_query_source` machinery as the boundary carrier, but
-##### at an arbitrary node rather than a boundary face. Used for on-the-fly Davies relaxation.
-#####
-
-struct ParentStateTarget{S, G, I, F}
-    sources        :: S
-    source_grid    :: G
-    interpolations :: I
-    transform      :: F
-end
-
-function ParentStateTarget(sources::NamedTuple, interpolations::NamedTuple, transform)
-    grid = first(sources).grid
-    return ParentStateTarget(sources, grid, interpolations, transform)
-end
-
-@inline function (t::ParentStateTarget)(x, y, z, time)
-    Xc = clamp_to_source_z((x, y, z), t.source_grid)
-    return t.transform(map((src, itp) -> _query_source(src, t.source_grid, Xc, nothing, time, itp),
-                           t.sources, t.interpolations))
-end
-
-Adapt.adapt_structure(to, t::ParentStateTarget) =
-    ParentStateTarget(map(s -> adapt(to, s), t.sources),
-                      adapt(to, t.source_grid),
-                      t.interpolations,
-                      adapt(to, t.transform))

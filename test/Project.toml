@@ -37,10 +37,12 @@ Zarr = "0a941bbe-ad1d-11e8-39d9-ab76183a1d99"
 NumericalEarth = {path = ".."}
 # TODO: drop once Oceananigans tags a release containing `interpolate(f, …)` (#5726).
 Oceananigans = {url = "https://github.com/CliMA/Oceananigans.jl.git", rev = "main"}
+# TODO: drop once Breeze tags a release with compute_reference_state (#812).
+Breeze = {url = "https://github.com/NumericalEarth/Breeze.jl.git", rev = "glw/set-reference-state"}
 
 [compat]
 ArchGDAL = "0.10"
-Breeze = "0.5.3, 0.6"
+Breeze = "0.5.3, 0.6, 0.7"
 CDSAPI = "2.2.2"
 CFTime = "0.1, 0.2"
 CUDA = "5.9.5"
