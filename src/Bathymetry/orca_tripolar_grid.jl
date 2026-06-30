@@ -4,12 +4,12 @@ using Distances: haversine
 using Oceananigans.BoundaryConditions: fill_halo_regions!, FPivotZipperBoundaryCondition,
                                        NoFluxBoundaryCondition, FieldBoundaryConditions
 using Oceananigans.Fields: set!, convert_to_0_360
-using Oceananigans.Grids: RightFaceFolded, generate_coordinate
+using Oceananigans.Grids: RightFaceFolded, RightCenterFolded, generate_coordinate
 using Oceananigans.ImmersedBoundaries: ImmersedBoundaryGrid, GridFittedBottom
 using Oceananigans.OrthogonalSphericalShellGrids: Tripolar
 
 using ..DataWrangling: dataset_variable_name, default_download_directory
-using ..DataWrangling.ORCA: ORCA1, default_south_rows_to_remove
+using ..DataWrangling.ORCA: ORCA1, ORCA12, ORCA2, default_south_rows_to_remove
 
 # Build an Oceananigans OrthogonalSphericalShellGrid with topology (Periodic, RightFaceFolded, Bounded) from
 # a NEMO eORCA mesh_mask file.
@@ -351,8 +351,12 @@ function halo_fill_stagger(CC, FC, CF, FF, helper_grid, bcs)
     )
 end
 
+fold_topology(::ORCA12) = RightFaceFolded
+fold_topology(::ORCA1)  = RightFaceFolded
+fold_topology(::ORCA2)  = RightCenterFolded
+
 """
-    ORCAGrid(arch = CPU(), FT::DataType = Float64;
+    ORCATripolarGrid(arch = CPU(), FT::DataType = Float64;
              dataset,
              halo = (4, 4, 4),
              z = (-6000, 0),
@@ -408,17 +412,17 @@ Keyword Arguments
 - `dir`: Directory to store and look up ORCA files (`mesh_mask` and bathymetry).
          Defaults to the dataset scratch cache via `default_download_directory(dataset)`.
 """
-function ORCAGrid(arch = CPU(), FT::DataType = Float64;
-                  dataset = ORCA1(),
-                  halo = (4, 4, 4),
-                  z = (-6000, 0),
-                  Nz = 50,
-                  radius = Oceananigans.defaults.planet_radius,
-                  with_bathymetry = true,
-                  active_cells_map = true,
-                  major_basins = Inf,
-                  south_rows_to_remove = default_south_rows_to_remove(dataset),
-                  dir = default_download_directory(dataset))
+function ORCATripolarGrid(arch = CPU(), FT::DataType = Float64;
+                          dataset = ORCA1(),
+                          halo = (4, 4, 4),
+                          z = (-6000, 0),
+                          Nz = 50,
+                          radius = Oceananigans.defaults.planet_radius,
+                          with_bathymetry = true,
+                          active_cells_map = true,
+                          major_basins = Inf,
+                          south_rows_to_remove = default_south_rows_to_remove(dataset),
+                          dir = default_download_directory(dataset))
 
     mesh_meta = Metadatum(:mesh_mask; dataset, dir)
     mesh_mask_path = download(mesh_meta)
@@ -478,7 +482,7 @@ function ORCAGrid(arch = CPU(), FT::DataType = Float64;
 
     to_arch(data) = on_architecture(arch, map(FT, data))
 
-    underlying_grid = OrthogonalSphericalShellGrid{Periodic, RightFaceFolded, Bounded}(
+    underlying_grid = OrthogonalSphericalShellGrid{Periodic, fold_topology(dataset), Bounded}(
         arch,
         Nx, Ny, Nz,
         Hx, Hy, Hz,
