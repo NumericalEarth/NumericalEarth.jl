@@ -13,7 +13,8 @@ const OceananigansReactantExt = Base.get_extension(
      Oceananigans, :OceananigansReactantExt
 )
 
-const ReactantOSIM{R, A, L, I, O, F, C} = Union{
+# Any EarthSystemModel (every component combination) carried on `ReactantState`.
+const ReactantESM{R, A, L, I, O, F, C} = Union{
     EarthSystemModel{R, A, L, I, O, F, C, <:ReactantState},
     EarthSystemModel{R, A, L, I, O, F, C, <:Distributed{ReactantState}},
 }
@@ -22,7 +23,7 @@ const ReactantOSIM{R, A, L, I, O, F, C} = Union{
 # then update the state), but trace-and-run each step through Reactant. Eager
 # calls would not mutate the `ReactantState` arrays, leaving the regridder's
 # fractional indices uninitialized so `interpolate_state!` reads halo cell (0, 0).
-function reconcile_state!(model::ReactantOSIM)
+function reconcile_state!(model::ReactantESM)
     @jit Oceananigans.initialize!(model.interfaces.exchanger, model)
     @jit Oceananigans.TimeSteppers.update_state!(model)
     return nothing
