@@ -56,16 +56,17 @@ free_surface       = SplitExplicitFreeSurface(grid; substeps=70)
 catke_closure      = NumericalEarth.Oceans.default_ocean_closure()
 eddy_closure       = Oceananigans.TurbulenceClosures.IsopycnalSkewSymmetricDiffusivity(κ_skew=500, κ_symmetric=200)
 
-@inline νhb(i, j, k, grid, λ) = Oceananigans.Operators.Azᶜᶜᶜ(i, j, k, grid)^2 / λ
+@inline νhb(i, j, k, grid, timescale) = Oceananigans.Operators.Azᶜᶜᶜ(i, j, k, grid)^2 / timescale
 ν = Oceananigans.Field{Center, Center, Center}(grid)
 Oceananigans.set!(ν, KernelFunctionOperation{Center, Center, Center}(νhb, grid, 15days))
 horizontal_viscosity = HorizontalScalarBiharmonicDiffusivity(; ν)
 
-## κ(φ) = max(2e-6, 3e-5 * |sin(φ)|)
+νz = 1e-5
+## κz(φ) = max(2e-6, 3e-5 * |sin(φ)|)
 @inline henyey_diffusivity(i, j, k, grid) = max(2e-6, 3e-5 * abs(sind(φnode(i, j, k, grid, Center(), Center(), Center()))))
-κ = Oceananigans.Field{Center, Center, Center}(grid)
+κz = Oceananigans.Field{Center, Center, Center}(grid)
 Oceananigans.set!(κ, KernelFunctionOperation{Center, Center, Center}(henyey_diffusivity, grid))
-vertical_diffusivity = VerticalScalarDiffusivity(ν=1e-5; κ)
+vertical_diffusivity = VerticalScalarDiffusivity(ν=νz, κ=κz)
 
 closures = (catke_closure, eddy_closure, horizontal_viscosity, vertical_diffusivity)
 nothing #hide
