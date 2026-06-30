@@ -13,6 +13,7 @@ using NumericalEarth.EarthSystemModels.NestedSimulations: ParentStateBoundary, P
                                                           nested_lateral_boundary_conditions
 using Oceananigans: Relaxation, WENO
 using Oceananigans.BoundaryConditions: NormalFlowBoundaryCondition, ValueBoundaryCondition
+using Oceananigans.Architectures: on_architecture, CPU
 using Oceananigans.Coriolis: SphericalCoriolis
 using Oceananigans.Grids: znode, Face
 using Breeze: CompressibleDynamics, SplitExplicitTimeDiscretization, UpperSponge, NoDivergenceDamping,
@@ -82,14 +83,22 @@ $(TYPEDSIGNATURES)
 
 Build the interior Davies-relaxation forcings (`NamedTuple` of Oceananigans `Relaxation`) nudging the
 child toward the `parent_atmosphere`'s state at `rate` over `mask`. Keyed under Breeze's
-`SpecificForcing` names `(u, v, θ, qᵉ)`: `u`/`v` relax toward the raw parent velocities directly;
-`θ`/`qᵉ` toward the *specific* `θˡⁱ`/`qᵗ` derived on the fly from raw parent state via
-[`ParentStateTarget`] (Breeze applies the ρ-weight at kernel time). Replaces the materialized
-`breeze_prognostic_state` relaxation targets.
+`SpecificForcing` names `(u, v, θ, qᵉ)`: `u`/`v` relax toward the parent velocities, `θ`/`qᵉ` toward the
+*specific* `θˡⁱ`/`qᵗ` (Breeze applies the ρ-weight at kernel time) — all derived on the fly from raw
+parent state via [`ParentStateTarget`]. Replaces the materialized `breeze_prognostic_state` targets.
 """
 function nested_relaxation_forcings(parent_atmosphere::PrescribedAtmosphere, constants; rate, mask = 1)
     (; u, v, T, qᵛ, qᶜˡ, qᶜⁱ, p) = parent_state_fields(parent_atmosphere)
 
+    # Velocity targets go through `ParentStateTarget` (not a raw-FTS `Relaxation` target) for the same
+    # reasons as `θ`/`qᵉ`: it z-clamps to the parent's range (constant extrapolation below the parent,
+    # as the lateral BCs do) rather than reading unfilled FTS halos, and it sidesteps Oceananigans'
+    # `validate_fts_target_extent`, whose `extrema(znodes(grid))` scalar-indexes the child's 3D
+    # terrain-following z-nodes on GPU.
+    velocity_target(field) = ParentStateTarget((; velocity = field), (velocity = identity,), first)
+
+    u_target  = velocity_target(u)
+    v_target  = velocity_target(v)
     θ_target  = ParentStateTarget((; T, qᶜˡ, qᶜⁱ, p),
                                   (T = log, qᶜˡ = identity, qᶜⁱ = identity, p = log),
                                   LiquidIcePotentialTemperature(constants))
@@ -98,7 +107,7 @@ function nested_relaxation_forcings(parent_atmosphere::PrescribedAtmosphere, con
                                   TotalWater())
 
     relax(target) = Relaxation(; rate, mask, target)
-    return (u = relax(u), v = relax(v), θ = relax(θ_target), qᵉ = relax(qᵗ_target))
+    return (u = relax(u_target), v = relax(v_target), θ = relax(θ_target), qᵉ = relax(qᵗ_target))
 end
 
 # Default child microphysics: 1-moment bulk mixed-phase (rain + snow) precipitation with
@@ -113,7 +122,10 @@ end
 
 # Cubic-ramp (smoothstep) Rayleigh mask over the top `depth` metres of the domain, for the ρw lid sponge.
 function lid_sponge_mask(grid, depth)
-    z_top = znode(1, 1, size(grid, 3) + 1, grid, Center(), Center(), Face())
+    # `znode` on a terrain-following grid reads the device z-array; mirror to the host so this one-off
+    # top-of-domain lookup doesn't scalar-index a GPU array (cf. Breeze's reference-state construction).
+    cpu_grid = on_architecture(CPU(), grid)
+    z_top = znode(1, 1, size(grid, 3) + 1, cpu_grid, Center(), Center(), Face())
     d = convert(eltype(grid), depth)
     return (λ, φ, z) -> (s = clamp((z - (z_top - d)) / d, zero(z), one(z)); s * s * (3 - 2s))
 end

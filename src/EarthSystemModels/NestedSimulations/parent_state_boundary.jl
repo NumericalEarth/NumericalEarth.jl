@@ -76,14 +76,28 @@ function regularize_boundary_condition(c::ParentStateBoundary{Nothing}, grid, lo
     return ParentStateBoundary{dim, SideType, LX, LY, LZ}(c.sources, c.source_grid, c.interpolations, c.transform)
 end
 
-# Interpolate every source at the boundary-face node `X` (each via its own interpolation transform —
-# `log` for fields interpolated in log space) and apply the prognostic `transform` to the resulting
-# state. Sources are Center-located parent fields; `X` is the boundary face in the normal direction.
+# Interpolate the `(source, interpolation)` pairs into a `Tuple`, recursing over the value tuples rather
+# than `map`-ing: a closure passed to `map` over heterogeneous (FTS/field × log/identity) tuples is a
+# dynamic invocation that GPU IR validation rejects, whereas this recursion unrolls at compile time with
+# each `_query_source` call statically typed.
+@inline interpolate_sources(::Tuple{}, ::Tuple{}, source_grid, X, loc, t) = ()
+@inline interpolate_sources(sources::Tuple, interpolations::Tuple, source_grid, X, loc, t) =
+    (_query_source(first(sources), source_grid, X, loc, t, first(interpolations)),
+     interpolate_sources(Base.tail(sources), Base.tail(interpolations), source_grid, X, loc, t)...)
+
+# Interpolate every source at node `X` (each via its own transform — `log` for log-space fields) into a
+# state `NamedTuple` keyed like `sources`, rebuilt from the compile-time keys.
+@inline function interpolated_parent_state(sources::NamedTuple{names}, interpolations, source_grid, X, loc, t) where names
+    vals = interpolate_sources(values(sources), values(interpolations), source_grid, X, loc, t)
+    return NamedTuple{names}(vals)
+end
+
+# Interpolate every source at the boundary-face node `X` and apply the prognostic `transform` to the
+# resulting state. Sources are Center-located parent fields; `X` is the boundary face in the normal direction.
 @inline function _parent_state(c::ParentStateBoundary{<:Any, <:Any, LX, LY, LZ}, X, t) where {LX, LY, LZ}
-    loc   = (LX(), LY(), LZ())
-    Xc    = clamp_to_source_z(X, c.source_grid)
-    state = map((src, itp) -> _query_source(src, c.source_grid, Xc, loc, t, itp), c.sources, c.interpolations)
-    return c.transform(state)
+    loc = (LX(), LY(), LZ())
+    Xc  = clamp_to_source_z(X, c.source_grid)
+    return c.transform(interpolated_parent_state(c.sources, c.interpolations, c.source_grid, Xc, loc, t))
 end
 
 @inline function getbc(bc::ParentStateBoundary{1, S, LX, LY, LZ},
@@ -129,8 +143,7 @@ end
 
 @inline function (t::ParentStateTarget)(x, y, z, time)
     Xc = clamp_to_source_z((x, y, z), t.source_grid)
-    return t.transform(map((src, itp) -> _query_source(src, t.source_grid, Xc, nothing, time, itp),
-                           t.sources, t.interpolations))
+    return t.transform(interpolated_parent_state(t.sources, t.interpolations, t.source_grid, Xc, nothing, time))
 end
 
 Adapt.adapt_structure(to, t::ParentStateTarget) =
