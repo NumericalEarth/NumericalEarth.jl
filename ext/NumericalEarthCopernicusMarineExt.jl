@@ -28,10 +28,10 @@ function Downloads.download(meta::GLORYSMetadatum;
     output_path = joinpath(output_directory, output_filename)
     isfile(output_path) && return output_path
 
-    variable_name = GLORYS.GLORYS_dataset_variable_names[meta.name]
+    variable_name = GLORYS.dataset_variable_name(meta)
     variable = [variable_name]
 
-    dataset_id = GLORYS.copernicusmarine_dataset_id(meta.dataset)
+    dataset_id = GLORYS.copernicusmarine_dataset_id(meta.dataset, meta.name)
     datetime_kw = if meta.dataset isa GLORYS.GLORYSStatic
         NamedTuple()
     else
