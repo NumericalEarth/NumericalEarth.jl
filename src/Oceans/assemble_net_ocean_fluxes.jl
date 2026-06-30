@@ -7,7 +7,7 @@ using ..EarthSystemModels.InterfaceComputations: computed_fluxes
 
 #####
 ##### Generic flux assembler — turbulent + sea-ice contributions only.
-##### Radiative contributions are added later by `apply_air_sea_radiative_fluxes!`.
+##### Radiative contributions are added later by `compute_radiation_ocean_fluxes!`.
 #####
 
 # Fallback for an ocean-only model (it has no interfaces!)
@@ -131,7 +131,7 @@ Base.@propagate_inbounds get_land_freshwater_flux(i, j, flux) = flux[i, j, 1]
         τˣ[i, j, 1] = ifelse(inactive, zero(grid), τˣᵃᵒ + τˣⁱᵒ)
         τʸ[i, j, 1] = ifelse(inactive, zero(grid), τʸᵃᵒ + τʸⁱᵒ)
 
-        # Tracer fluxes — radiative contributions added later by apply_air_sea_radiative_fluxes!
+        # Tracer fluxes — radiative contributions added later by compute_radiation_ocean_fluxes!
         Jᵀ[i, j, 1] = ifelse(inactive, zero(grid), Jᵀao + Jᵀio)
         Jˢ[i, j, 1] = ifelse(inactive, zero(grid), Jˢao + Jˢio)
     end

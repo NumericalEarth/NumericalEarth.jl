@@ -233,7 +233,7 @@ declared by the land closures.
 * `evaporation`     ← net upward vapor flux, positive out of the slab.
 
 Radiative contributions are added on top in
-`apply_air_land_radiative_fluxes!`.
+`compute_radiation_land_fluxes!`.
 """
 function EarthSystemModels.update_net_fluxes!(coupled_model, land::SlabLand)
     al_interface = coupled_model.interfaces.atmosphere_land_interface

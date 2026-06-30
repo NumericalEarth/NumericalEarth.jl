@@ -4,22 +4,22 @@ using ..EarthSystemModels: EarthSystemModel
 using ..EarthSystemModels.InterfaceComputations: kernel_radiation_properties
 
 """
-    apply_air_land_radiative_fluxes!(coupled_model)
+    compute_radiation_land_fluxes!(coupled_model)
 
 Add the radiative contribution to the land net energy flux `𝒬ˡᵃ` and write
 diagnostic radiative fluxes into `coupled_model.radiation.interface_fluxes.land`.
 
 When `coupled_model.radiation === nothing`, this is a no-op.
 """
-EarthSystemModels.apply_air_land_radiative_fluxes!(::EarthSystemModel{<:Nothing}) = nothing
+EarthSystemModels.compute_radiation_land_fluxes!(::EarthSystemModel{<:Nothing}) = nothing
 
-EarthSystemModels.apply_air_land_radiative_fluxes!(coupled_model::EarthSystemModel) =
-    apply_air_land_radiative_fluxes!(coupled_model, coupled_model.land)
+EarthSystemModels.compute_radiation_land_fluxes!(coupled_model::EarthSystemModel) =
+    compute_radiation_land_fluxes!(coupled_model, coupled_model.land)
 
 # No land: nothing to do.
-apply_air_land_radiative_fluxes!(coupled_model, ::Nothing) = nothing
+compute_radiation_land_fluxes!(coupled_model, ::Nothing) = nothing
 
-function apply_air_land_radiative_fluxes!(coupled_model, land)
+function compute_radiation_land_fluxes!(coupled_model, land)
     # No atmosphere--land interface (no atmosphere): nothing to do.
     al_interface = coupled_model.interfaces.atmosphere_land_interface
     isnothing(al_interface) && return nothing
@@ -43,7 +43,7 @@ function apply_air_land_radiative_fluxes!(coupled_model, land)
     radiation_state = coupled_model.interfaces.exchanger.radiation.state
 
     launch!(arch, grid, :xy,
-            _apply_air_land_radiative_fluxes!,
+            _compute_radiation_land_fluxes!,
             land.fluxes.net_energy_flux,
             land_radiative_flux,
             grid,
@@ -55,7 +55,7 @@ function apply_air_land_radiative_fluxes!(coupled_model, land)
     return nothing
 end
 
-@kernel function _apply_air_land_radiative_fluxes!(land_net_energy_flux,
+@kernel function _compute_radiation_land_fluxes!(land_net_energy_flux,
                                                   interface_radiative_flux,
                                                   grid,
                                                   clock,

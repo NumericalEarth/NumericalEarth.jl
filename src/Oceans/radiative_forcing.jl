@@ -67,25 +67,30 @@ end
     return ϵ₁ * dJ₁dz + (1 - ϵ₁) * dJ₂dz
 end
 
-compute_radiative_forcing!(T_forcing, downwelling_shortwave_radiation, coupled_model) = nothing # fallback
+"""
+$(TYPEDSIGNATURES)
 
-function compute_radiative_forcing!(tcr::TwoColorRadiation, downwelling_shortwave_radiation, coupled_model)
-    ρᵒᶜ = coupled_model.interfaces.ocean_properties.reference_density
-    cᵒᶜ = coupled_model.interfaces.ocean_properties.heat_capacity
-    J⁰ = tcr.surface_flux
-    ℐꜜˢʷ = downwelling_shortwave_radiation
-    parent(J⁰) .= - parent(ℐꜜˢʷ) ./ (ρᵒᶜ * cᵒᶜ)
-    return nothing
-end
+Precompute any state a penetrating-`radiation` model needs before the air–sea
+radiative flux kernel runs. Models whose in-water absorption depends on a
+vertical integral over ocean tracers (e.g. biogeochemical, chlorophyll-based
+schemes) overload this. Analytic schemes need no precompute, so the fallback
+is a no-op.
+"""
+compute_radiative_forcing!(radiation, coupled_model) = nothing
+
+# TwoColorRadiation's absorption is analytic; its surface flux is set per-column
+# inside the air–sea flux kernel (see `shortwave_radiative_forcing`), so there
+# is nothing to precompute here.
+compute_radiative_forcing!(::TwoColorRadiation, coupled_model) = nothing
 
 @inline shortwave_radiative_forcing(i, j, grid, Fᵀ, ℐₜˢʷ, ocean_properties) = ℐₜˢʷ
 
-@inline function shortwave_radiative_forcing(i, j, grid, tcr::TwoColorRadiation, Iˢʷ, ocean_properties)
+@inline function shortwave_radiative_forcing(i, j, grid, tcr::TwoColorRadiation, ℐˢʷ, ocean_properties)
     ρᵒᶜ = ocean_properties.reference_density
     cᵒᶜ = ocean_properties.heat_capacity
     J₀ = tcr.surface_flux
-    @inbounds J₀[i, j,  1] = - Iˢʷ / (ρᵒᶜ * cᵒᶜ)
-    return zero(Iˢʷ)
+    @inbounds J₀[i, j, 1] = - ℐˢʷ / (ρᵒᶜ * cᵒᶜ)
+    return zero(ℐˢʷ)
 end
 
 get_radiative_forcing(something) = nothing
