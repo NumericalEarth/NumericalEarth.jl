@@ -26,6 +26,16 @@ using Breeze: CompressibleDynamics, SplitExplicitTimeDiscretization, UpperSponge
 @inline _normal_flow(condition, sides, scheme) =
     FieldBoundaryConditions(; (side => NormalFlowBoundaryCondition(condition; scheme) for side in sides)...)
 
+# The parent's raw prognostic-driver fields, shared by the lateral-BC and Davies-relaxation derivations.
+parent_state_fields(parent_atmosphere) =
+    (u   = parent_atmosphere.velocities.u,
+     v   = parent_atmosphere.velocities.v,
+     T   = parent_atmosphere.temperature,
+     qᵛ  = parent_atmosphere.specific_humidity,
+     qᶜˡ = parent_atmosphere.microphysical_variables.qᶜˡ,
+     qᶜⁱ = parent_atmosphere.microphysical_variables.qᶜⁱ,
+     p   = parent_atmosphere.pressure)
+
 """
 $(TYPEDSIGNATURES)
 
@@ -41,13 +51,7 @@ function NumericalEarth.EarthSystemModels.NestedSimulations.nested_lateral_bound
             sides = (:west, :east, :south, :north),
             momentum_scheme = nothing)
 
-    u  = parent_atmosphere.velocities.u
-    v  = parent_atmosphere.velocities.v
-    T  = parent_atmosphere.temperature
-    qᵛ = parent_atmosphere.specific_humidity
-    qᶜˡ = parent_atmosphere.microphysical_variables.qᶜˡ
-    qᶜⁱ = parent_atmosphere.microphysical_variables.qᶜⁱ
-    p  = parent_atmosphere.pressure
+    (; u, v, T, qᵛ, qᶜˡ, qᶜⁱ, p) = parent_state_fields(parent_atmosphere)
 
     # log-space for the strictly-positive thermodynamic quantities; linear (identity) otherwise.
     ρ_psb  = ParentStateBoundary((; T, qᵛ, p),
@@ -84,13 +88,7 @@ child toward the `parent_atmosphere`'s state at `rate` over `mask`. Keyed under 
 `breeze_prognostic_state` relaxation targets.
 """
 function nested_relaxation_forcings(parent_atmosphere::PrescribedAtmosphere, constants; rate, mask = 1)
-    u  = parent_atmosphere.velocities.u
-    v  = parent_atmosphere.velocities.v
-    T  = parent_atmosphere.temperature
-    qᵛ = parent_atmosphere.specific_humidity
-    qᶜˡ = parent_atmosphere.microphysical_variables.qᶜˡ
-    qᶜⁱ = parent_atmosphere.microphysical_variables.qᶜⁱ
-    p  = parent_atmosphere.pressure
+    (; u, v, T, qᵛ, qᶜˡ, qᶜⁱ, p) = parent_state_fields(parent_atmosphere)
 
     θ_target  = ParentStateTarget((; T, qᶜˡ, qᶜⁱ, p),
                                   (T = log, qᶜˡ = identity, qᶜⁱ = identity, p = log),
@@ -128,10 +126,10 @@ end
 function default_nested_dynamics(grid; surface_pressure, reference_potential_temperature, damping_rate, damping_depth)
     time_discretization = SplitExplicitTimeDiscretization(sponge = UpperSponge(; damping_rate, depth = damping_depth),
                                                           damping = NoDivergenceDamping())
-    kw = (;)
-    isnothing(surface_pressure)                || (kw = merge(kw, (; surface_pressure)))
-    isnothing(reference_potential_temperature) || (kw = merge(kw, (; reference_potential_temperature)))
-    return CompressibleDynamics(time_discretization; kw...)
+    # `CompressibleDynamics` `convert`s `surface_pressure`, so `nothing` must be withheld to take its
+    # default; `reference_potential_temperature` already accepts `nothing` (no base-state correction).
+    kw = isnothing(surface_pressure) ? (;) : (; surface_pressure)
+    return CompressibleDynamics(time_discretization; reference_potential_temperature, kw...)
 end
 
 """

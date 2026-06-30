@@ -8,6 +8,17 @@ using Oceananigans.Fields: CenterField, interior, set!
 using Oceananigans.Grids: znode
 using Oceananigans.BoundaryConditions: fill_halo_regions!
 
+# Host interior arrays of `temperature` and the optional moisture fields, with omitted moisture
+# zero-filled (the dry limit). Shared by `hydrostatic_pressure_from_surface` and `density_from_pressure`.
+function interior_temperature_and_moisture(temperature, qᵛ, qᶜ, qⁱ)
+    Tᵃ = Array(interior(temperature))
+    no_moisture = zero(Tᵃ)
+    qᵛᵃ = isnothing(qᵛ) ? no_moisture : Array(interior(qᵛ))
+    qᶜᵃ = isnothing(qᶜ) ? no_moisture : Array(interior(qᶜ))
+    qⁱᵃ = isnothing(qⁱ) ? no_moisture : Array(interior(qⁱ))
+    return Tᵃ, qᵛᵃ, qᶜᵃ, qⁱᵃ
+end
+
 """
 $(TYPEDSIGNATURES)
 
@@ -53,11 +64,7 @@ function hydrostatic_pressure_from_surface(temperature, surface_pressure, orogra
     Nx, Ny, Nz = size(grid)
     cpu_grid = on_architecture(CPU(), grid)
 
-    Tᵃ = Array(interior(temperature))
-    no_moisture = zeros(eltype(Tᵃ), Nx, Ny, Nz)
-    qᵛᵃ = isnothing(qᵛ) ? no_moisture : Array(interior(qᵛ))
-    qᶜᵃ = isnothing(qᶜ) ? no_moisture : Array(interior(qᶜ))
-    qⁱᵃ = isnothing(qⁱ) ? no_moisture : Array(interior(qⁱ))
+    Tᵃ, qᵛᵃ, qᶜᵃ, qⁱᵃ = interior_temperature_and_moisture(temperature, qᵛ, qᶜ, qⁱ)
 
     Rᵈ = dry_gas_constant
     Rᵛ = vapor_gas_constant
@@ -100,14 +107,9 @@ function density_from_pressure(temperature, pressure;
                                dry_gas_constant,
                                vapor_gas_constant)
     grid = temperature.grid
-    Nx, Ny, Nz = size(grid)
 
-    Tᵃ = Array(interior(temperature))
+    Tᵃ, qᵛᵃ, qᶜᵃ, qⁱᵃ = interior_temperature_and_moisture(temperature, qᵛ, qᶜ, qⁱ)
     pᵃ = Array(interior(pressure))
-    no_moisture = zeros(eltype(Tᵃ), Nx, Ny, Nz)
-    qᵛᵃ = isnothing(qᵛ) ? no_moisture : Array(interior(qᵛ))
-    qᶜᵃ = isnothing(qᶜ) ? no_moisture : Array(interior(qᶜ))
-    qⁱᵃ = isnothing(qⁱ) ? no_moisture : Array(interior(qⁱ))
 
     Rᵈ = dry_gas_constant
     Rᵛ = vapor_gas_constant
