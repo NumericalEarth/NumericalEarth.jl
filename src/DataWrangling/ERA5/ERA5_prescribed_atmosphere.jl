@@ -111,8 +111,9 @@ end
 function pressure_level_field(grid, dataset, architecture)
     Nx, Ny, Nz = size(grid)
     FT = eltype(grid)
-    # `dataset.pressure_levels` is sorted descending (hPa) ⇒ k=1 is the bottom (highest pressure).
-    pˡᵉᵛᵉˡ = on_architecture(architecture, FT.(dataset.pressure_levels) .* 100)
+    # `dataset.pressure_levels` is already in Pa (see `ERA5_all_pressure_levels`), sorted descending
+    # ⇒ k=1 is the bottom (highest pressure).
+    pˡᵉᵛᵉˡ = on_architecture(architecture, FT.(dataset.pressure_levels))
     pressure = CenterField(grid)
     interior(pressure) .= reshape(pˡᵉᵛᵉˡ, 1, 1, Nz)
     fill_halo_regions!(pressure)

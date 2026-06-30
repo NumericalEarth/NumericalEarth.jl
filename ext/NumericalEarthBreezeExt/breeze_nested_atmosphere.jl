@@ -40,23 +40,26 @@ using Breeze: CompressibleDynamics, SplitExplicitTimeDiscretization, UpperSponge
 ##### share one definition of "sample the parent."
 #####
 
+# Note: all fields interpolate linearly (`identity`). The log-space transform for T/p uses Oceananigans'
+# `mapped_data`/`MappedData`, which is broken for the time-interpolated FTS path (always-throws inference
+# → GPU-incompatible). Between dense ERA5 levels the linear/log-space difference is negligible.
 @inline function air_density_at(X, t, grid, T, qᵛ, p, constants)
     c = Center();  loc = (c, c, c);  Xc = z_clamp(X, grid)
-    return air_density(exp(interpolate(log, Xc, Time(t), T, loc, grid)),
-                           interpolate(identity, Xc, Time(t), qᵛ, loc, grid),
-                       exp(interpolate(log, Xc, Time(t), p, loc, grid)),
+    return air_density(interpolate(identity, Xc, Time(t), T, loc, grid),
+                       interpolate(identity, Xc, Time(t), qᵛ, loc, grid),
+                       interpolate(identity, Xc, Time(t), p, loc, grid),
                        dry_air_gas_constant(constants), vapor_gas_constant(constants))
 end
 
-@inline function liquid_ice_θ_at(X, t, grid, T, qᶜˡ, qᶜⁱ, p, constants)
+@inline function liquid_ice_θ_at(X, t, grid, T, qᶜˡ, qᶜⁱ, p, pˢᵗ, constants)
     c = Center();  loc = (c, c, c);  Xc = z_clamp(X, grid)
     Rᵈ = dry_air_gas_constant(constants);  cᵖᵈ = constants.dry_air.heat_capacity
     ℒˡ = constants.liquid.reference_latent_heat;  ℒⁱ = constants.ice.reference_latent_heat
-    return liquid_ice_potential_temperature(exp(interpolate(log, Xc, Time(t), T, loc, grid)),
-                                                interpolate(identity, Xc, Time(t), qᶜˡ, loc, grid),
-                                                interpolate(identity, Xc, Time(t), qᶜⁱ, loc, grid),
-                                            exp(interpolate(log, Xc, Time(t), p, loc, grid)),
-                                            Rᵈ, cᵖᵈ, ℒˡ, ℒⁱ)
+    return liquid_ice_potential_temperature(interpolate(identity, Xc, Time(t), T, loc, grid),
+                                            interpolate(identity, Xc, Time(t), qᶜˡ, loc, grid),
+                                            interpolate(identity, Xc, Time(t), qᶜⁱ, loc, grid),
+                                            interpolate(identity, Xc, Time(t), p, loc, grid),
+                                            pˢᵗ, Rᵈ, cᵖᵈ, ℒˡ, ℒⁱ)
 end
 
 @inline function total_water_at(X, t, grid, qᵛ, qᶜˡ, qᶜⁱ)
@@ -86,11 +89,11 @@ struct MomentumDensityBoundary{G, FV, FT, FQV, FP, C};  grid::G; velocity::FV; T
 Adapt.adapt_structure(to, s::MomentumDensityBoundary) =
     MomentumDensityBoundary(adapt(to, s.grid), adapt(to, s.velocity), adapt(to, s.T), adapt(to, s.qᵛ), adapt(to, s.p), s.constants)
 
-struct EnergyDensityBoundary{G, FT, QL, QI, FQV, FP, C};  grid::G; T::FT; qᶜˡ::QL; qᶜⁱ::QI; qᵛ::FQV; p::FP; constants::C;  end
+struct EnergyDensityBoundary{G, FT, QL, QI, FQV, FP, S, C};  grid::G; T::FT; qᶜˡ::QL; qᶜⁱ::QI; qᵛ::FQV; p::FP; pˢᵗ::S; constants::C;  end
 @inline (s::EnergyDensityBoundary)(X, t) =
-    air_density_at(X, t, s.grid, s.T, s.qᵛ, s.p, s.constants) * liquid_ice_θ_at(X, t, s.grid, s.T, s.qᶜˡ, s.qᶜⁱ, s.p, s.constants)
+    air_density_at(X, t, s.grid, s.T, s.qᵛ, s.p, s.constants) * liquid_ice_θ_at(X, t, s.grid, s.T, s.qᶜˡ, s.qᶜⁱ, s.p, s.pˢᵗ, s.constants)
 Adapt.adapt_structure(to, s::EnergyDensityBoundary) =
-    EnergyDensityBoundary(adapt(to, s.grid), adapt(to, s.T), adapt(to, s.qᶜˡ), adapt(to, s.qᶜⁱ), adapt(to, s.qᵛ), adapt(to, s.p), s.constants)
+    EnergyDensityBoundary(adapt(to, s.grid), adapt(to, s.T), adapt(to, s.qᶜˡ), adapt(to, s.qᶜⁱ), adapt(to, s.qᵛ), adapt(to, s.p), s.pˢᵗ, s.constants)
 
 struct MoistureDensityBoundary{G, FQV, QL, QI, FT, FP, C};  grid::G; qᵛ::FQV; qᶜˡ::QL; qᶜⁱ::QI; T::FT; p::FP; constants::C;  end
 @inline (s::MoistureDensityBoundary)(X, t) =
@@ -108,7 +111,7 @@ Build the child's lateral `FieldBoundaryConditions` for the Breeze prognostics
 the samplers share the `*_at` parent-state samplers with the Davies-relaxation forcings.
 """
 function NumericalEarth.EarthSystemModels.NestedSimulations.nested_lateral_boundary_conditions(
-            parent_atmosphere::PrescribedAtmosphere, constants, moisture_name;
+            parent_atmosphere::PrescribedAtmosphere, constants, pˢᵗ, moisture_name;
             sides = (:west, :east, :south, :north),
             momentum_scheme = nothing)
 
@@ -125,7 +128,7 @@ function NumericalEarth.EarthSystemModels.NestedSimulations.nested_lateral_bound
     ρ_bc  = bc(AirDensityBoundary(grid, T, qᵛ, p, constants))
     ρu_bc = bc(MomentumDensityBoundary(grid, u, T, qᵛ, p, constants))
     ρv_bc = bc(MomentumDensityBoundary(grid, v, T, qᵛ, p, constants))
-    ρe_bc = bc(EnergyDensityBoundary(grid, T, qᶜˡ, qᶜⁱ, qᵛ, p, constants))
+    ρe_bc = bc(EnergyDensityBoundary(grid, T, qᶜˡ, qᶜⁱ, qᵛ, p, pˢᵗ, constants))
     ρq_bc = bc(MoistureDensityBoundary(grid, qᵛ, qᶜˡ, qᶜⁱ, T, p, constants))
 
     lateral = (ρ  = _sided(ValueBoundaryCondition, ρ_bc, sides),
@@ -160,20 +163,20 @@ Breeze.AtmosphereModels.is_density_tendency_forcing(::NestedForcing) = true
 @inline mask_value(mask::Number, x, y, z) = mask
 
 # θˡⁱ → ρθ. Relax the child's `fields.θ` toward the parent's `liquid_ice_θ_at`, weighted by child ρᵈ.
-struct PotentialTemperatureRelaxation{G, FT, QL, QI, FP, R, M, C} <: NestedForcing
-    grid :: G;  T :: FT;  qᶜˡ :: QL;  qᶜⁱ :: QI;  p :: FP
+struct PotentialTemperatureRelaxation{G, FT, QL, QI, FP, S, R, M, C} <: NestedForcing
+    grid :: G;  T :: FT;  qᶜˡ :: QL;  qᶜⁱ :: QI;  p :: FP;  pˢᵗ :: S
     rate :: R;  mask :: M;  constants :: C
 end
 
 @inline function (f::PotentialTemperatureRelaxation)(i, j, k, grid, clock, fields)
     c = Center();  X = node(i, j, k, grid, c, c, c)
-    θ★ = liquid_ice_θ_at(X, clock.time, f.grid, f.T, f.qᶜˡ, f.qᶜⁱ, f.p, f.constants)
+    θ★ = liquid_ice_θ_at(X, clock.time, f.grid, f.T, f.qᶜˡ, f.qᶜⁱ, f.p, f.pˢᵗ, f.constants)
     @inbounds return fields.ρᵈ[i, j, k] * f.rate * mask_value(f.mask, X[1], X[2], X[3]) * (θ★ - fields.θ[i, j, k])
 end
 
 Adapt.adapt_structure(to, f::PotentialTemperatureRelaxation) =
     PotentialTemperatureRelaxation(adapt(to, f.grid), adapt(to, f.T), adapt(to, f.qᶜˡ), adapt(to, f.qᶜⁱ),
-                                   adapt(to, f.p), f.rate, adapt(to, f.mask), f.constants)
+                                   adapt(to, f.p), f.pˢᵗ, f.rate, adapt(to, f.mask), f.constants)
 
 # qᵗ → moisture density. Relax the child's specific moisture (`fields[current_name]`) toward `total_water_at`.
 struct MoistureRelaxation{G, QV, QL, QI, R, M, V} <: NestedForcing
@@ -246,7 +249,7 @@ the full `ρᵈ`-weighted tendency directly — applied by Breeze with no `Relax
 wrapper. `θ`/`qᵗ` targets are derived on the fly from raw parent state; `u`/`v` interpolate the parent
 velocities. The query is `z_clamp`ed into the parent's z-extent (the child may reach below it).
 """
-function nested_relaxation_forcings(parent_atmosphere::PrescribedAtmosphere, constants, microphysics; rate, mask = 1)
+function nested_relaxation_forcings(parent_atmosphere::PrescribedAtmosphere, constants, pˢᵗ, microphysics; rate, mask = 1)
     u   = parent_atmosphere.velocities.u
     v   = parent_atmosphere.velocities.v
     T   = parent_atmosphere.temperature
@@ -258,7 +261,7 @@ function nested_relaxation_forcings(parent_atmosphere::PrescribedAtmosphere, con
 
     # Supplied directly (no `Forcing` wrapper) — `materialize_atmosphere_model_forcing(::NestedForcing)`
     # returns each as-is, so Breeze calls them straight in the tendency kernel.
-    ρθ = PotentialTemperatureRelaxation(grid, T, qᶜˡ, qᶜⁱ, p, rate, mask, constants)
+    ρθ = PotentialTemperatureRelaxation(grid, T, qᶜˡ, qᶜⁱ, p, pˢᵗ, rate, mask, constants)
     ρu = URelaxation(grid, u, rate, mask)
     ρv = VRelaxation(grid, v, rate, mask)
     ρq = MoistureRelaxation(grid, qᵛ, qᶜˡ, qᶜⁱ, rate, mask, Val(moisture_specific_name(microphysics)))
@@ -347,10 +350,11 @@ function NumericalEarth.EarthSystemModels.NestedSimulations.nested_atmosphere_mo
     isnothing(terrain) || materialize_terrain!(child_grid, terrain)
 
     moisture_name = moisture_prognostic_name(microphysics)
+    pˢᵗ = dynamics.standard_pressure
 
-    nested_bcs = nested_lateral_boundary_conditions(parent_atmosphere, thermodynamic_constants, moisture_name; sides)
+    nested_bcs = nested_lateral_boundary_conditions(parent_atmosphere, thermodynamic_constants, pˢᵗ, moisture_name; sides)
     davies = isnothing(relaxation_rate) ? (;) :
-             nested_relaxation_forcings(parent_atmosphere, thermodynamic_constants, microphysics;
+             nested_relaxation_forcings(parent_atmosphere, thermodynamic_constants, pˢᵗ, microphysics;
                                         rate = relaxation_rate, mask = relaxation_mask)
 
     lid_sponge = (; ρw = LidSponge(damping_rate, lid_sponge_mask(child_grid, damping_depth)))

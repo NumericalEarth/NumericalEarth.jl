@@ -672,7 +672,7 @@ run!(simulation)
 # `PrescribedAtmosphere` at the child's frame times, at the same two levels as the child. ERA5's `w` is estimated from its pressure velocity ω as
 # w ≈ −ω/(ρg) (synoptic-scale, far weaker than the child's resolved convection); `qʳ` is blank (no model rain).
 
-parent_frames = let pg = parent.grid
+parent_frames = let pg = parent.grid, pˢᵗ = model.dynamics.standard_pressure
     λ_p = collect(λnodes(pg, Center(), Center(), Center()))
     φ_p = collect(φnodes(pg, Center(), Center(), Center()))
     nx_p, ny_p = length(λ_p), length(φ_p)
@@ -683,7 +683,7 @@ parent_frames = let pg = parent.grid
         ## Reconstruct the parent prognostics (ρ, θˡⁱ, qᵗ) on the fly from the raw ERA5 state at `t` —
         ## the same transform the lateral BCs use — on the parent's native geopotential-height grid,
         ## then `cut_plane` to the surface and `slice_height` AGL exactly as for the child row.
-        (; ρ, θˡⁱ, qᵗ) = breeze_prognostic_state(constants,
+        (; ρ, θˡⁱ, qᵗ) = breeze_prognostic_state(constants, pˢᵗ,
                             parent.temperature[Time(t)], parent.specific_humidity[Time(t)],
                             parent.microphysical_variables.qᶜˡ[Time(t)],
                             parent.microphysical_variables.qᶜⁱ[Time(t)], parent.pressure)
