@@ -4,39 +4,44 @@ using NumericalEarth
 using NumericalEarth.EarthSystemModels.NestedSimulations: parent_boundary_conditions
 using Oceananigans
 using Oceananigans.Units: Time
+using Oceananigans.Fields: location
 using Oceananigans.BoundaryConditions: ValueBoundaryCondition, FieldBoundaryConditions, fill_halo_regions!
 using Breeze
 using Breeze: ThermodynamicConstants, dry_air_gas_constant, vapor_gas_constant, CompressibleDynamics
 using Test
 
-@testset "PrescribedAtmosphere two_dimensional kwarg selects the field set" begin
-    # A multi-layer grid is the *ocean's* vertical resolution, not the
-    # atmosphere's: the default must stay a surface atmosphere (u, v; freshwater
-    # flux) so ocean / sea-ice coupling on such grids is unaffected.
-    g = RectilinearGrid(size     = (8, 8, 4),
-                        x        = (-1, 1),
-                        y        = (-1, 1),
-                        z        = (0, 1),
-                        topology = (Bounded, Bounded, Bounded))
+@testset "PrescribedAtmosphere: grid vertical topology selects surface vs volumetric fields" begin
+    # A `Flat` vertical builds a surface atmosphere (u, v; 2D temperature / specific_humidity /
+    # pressure) for ocean / sea-ice coupling. Temperature & humidity are direct properties now;
+    # `tracers` is reserved for gas species (empty by default), and `microphysical_variables` for
+    # cloud / precip species (also empty by default).
+    gs = RectilinearGrid(size = (8, 8), x = (-1, 1), y = (-1, 1), topology = (Bounded, Bounded, Flat))
+    pas = PrescribedAtmosphere(gs, [0.0, 1.0])
+    @test keys(pas.velocities) == (:u, :v)
+    @test location(pas.temperature) == (Center, Center, Nothing)
+    @test location(pas.specific_humidity) == (Center, Center, Nothing)
+    @test pas.microphysical_variables == NamedTuple()
+    @test pas.tracers == NamedTuple()
+    @test pas.precipitation_flux isa NumericalEarth.Atmospheres.PrescribedPrecipitationFlux
 
-    pa = PrescribedAtmosphere(g, [0.0, 1.0])
-    @test keys(pa.velocities) == (:u, :v)
-    @test keys(pa.tracers) == (:T, :q)
-    @test pa.freshwater_flux isa NumericalEarth.Atmospheres.PrescribedPrecipitationFlux
-
-    # `two_dimensional = false` switches velocities/tracers/pressure to 3D (adds w);
-    # the freshwater flux is a surface field, independent of that choice.
-    pav = PrescribedAtmosphere(g, [0.0, 1.0]; two_dimensional = false)
+    # A resolved vertical builds a 3D atmosphere (adds w) — e.g. a `NestedSimulation` parent.
+    gv = RectilinearGrid(size = (8, 8, 4), x = (-1, 1), y = (-1, 1), z = (0, 1),
+                         topology = (Bounded, Bounded, Bounded))
+    pav = PrescribedAtmosphere(gv, [0.0, 1.0])
     @test keys(pav.velocities) == (:u, :v, :w)
-    @test keys(pav.tracers) == (:T, :q)
+    @test location(pav.temperature) == (Center, Center, Center)
     @test size(pav.velocities.u) == (8, 8, 4, 2)
     @test size(pav.pressure)     == (8, 8, 4, 2)
-    @test pav.freshwater_flux isa NumericalEarth.Atmospheres.PrescribedPrecipitationFlux
-    @test size(pav.freshwater_flux.rain) == (8, 8, 1, 2)   # still a 2D surface field
+    @test isnothing(pav.precipitation_flux)   # a 3D atmosphere carries precip in microphysical_variables
 
-    # Freshwater is opt-out via the keyword, not the dimensionality.
-    pa0 = PrescribedAtmosphere(g, [0.0, 1.0]; freshwater_flux = nothing)
-    @test pa0.freshwater_flux === nothing
+    # A surface atmosphere defaults to a precipitation flux; opt out via the keyword.
+    pa0 = PrescribedAtmosphere(gs, [0.0, 1.0]; precipitation_flux = nothing)
+    @test pa0.precipitation_flux === nothing
+
+    # Cloud / precip species ride through `microphysical_variables`.
+    qcl = FieldTimeSeries{Center, Center, Center}(gv, [0.0, 1.0])
+    pam = PrescribedAtmosphere(gv, [0.0, 1.0]; microphysical_variables = (; qᶜˡ = qcl))
+    @test keys(pam.microphysical_variables) == (:qᶜˡ,)
 end
 
 # A translating Lamb-Oseen vortex: a 2D vortex with closed-form velocity
@@ -58,7 +63,7 @@ end
 @testset "NestedSimulation: Lamb-Oseen vortex through a child NonhydrostaticModel" begin
     # Parent atmosphere holds the analytic Lamb-Oseen state on a 3D PrescribedAtmosphere,
     # populated by set! at a few coarse time snapshots; interpolation handles the rest.
-    # `two_dimensional = false` gives CCC velocities/tracers/pressure so the FTS can be
+    # The resolved-vertical (3D) grid gives CCC velocities/tracers/pressure so the FTS can be
     # interpolated at the child's interior z-nodes.
     # Domain extends strictly beyond the child so the FTS brackets every child
     # boundary node (required by InterpolatedFTSBoundary's validation).
@@ -69,12 +74,12 @@ end
                                   topology = (Bounded, Bounded, Bounded))
 
     times  = collect(0.0:0.1:1.0)
-    parent = PrescribedAtmosphere(parent_grid, times; two_dimensional = false)
+    parent = PrescribedAtmosphere(parent_grid, times)
 
     set!(parent.velocities.u, (x, y, z, t) -> lamb_oseen_uv(x, y, t)[1])
     set!(parent.velocities.v, (x, y, z, t) -> lamb_oseen_uv(x, y, t)[2])
-    set!(parent.tracers.T,    (x, y, z, t) -> 288.15)        # isothermal
-    set!(parent.tracers.q,    (x, y, z, t) -> 0.0)            # dry
+    set!(parent.temperature,       (x, y, z, t) -> 288.15)   # isothermal
+    set!(parent.specific_humidity, (x, y, z, t) -> 0.0)      # dry
 
     # Child runs Oceananigans NonhydrostaticModel on a same-resolution grid.
     # A finer child would exercise spatial-interpolation in the BCs more, but
@@ -302,7 +307,7 @@ end
                                   x = (-3000, 3000), y = (-3000, 3000), z = (-200, 2200),
                                   topology = (Bounded, Bounded, Bounded))
     times  = [0.0, 100.0]
-    parent = PrescribedAtmosphere(parent_grid, times; two_dimensional = false)
+    parent = PrescribedAtmosphere(parent_grid, times)
     set!(parent.velocities.u, (x, y, z, t) -> 1.0)
     set!(parent.velocities.v, (x, y, z, t) -> 0.0)
 
@@ -371,7 +376,6 @@ end
     alm = AtmosphereLandModel(atmos, land)            # radiation = nothing (radiatively decoupled)
 
     parent = PrescribedAtmosphere(atmos_grid, [0.0, 100.0];
-                                  two_dimensional = false, freshwater_flux = nothing,
                                   thermodynamics_parameters = nothing)
     nested = NestedSimulation(parent, alm; Δt = 0.05, stop_iteration = 2)
     @test nested isa Simulation                       # NestedModel accepted the coupled child
