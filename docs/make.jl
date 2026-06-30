@@ -223,6 +223,7 @@ makedocs(; sitename = "NumericalEarth.jl",
          checkdocs = :exports,
          linkcheck = true,
          linkcheck_ignore = [
+             r"^https://ecco\.jpl\.nasa\.gov/.*",
              r"https://www\.ncei\.noaa\.gov/products/etopo-global-relief-model",
              r"https://www\.ncei\.noaa\.gov/products/world-ocean-atlas",
              r"https://www\.ncei\.noaa\.gov/data/sea-surface-temperature-optimum-interpolation/v2\.1/access/avhrr",

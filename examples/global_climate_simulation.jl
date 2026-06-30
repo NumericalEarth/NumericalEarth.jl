@@ -233,7 +233,7 @@ ssn  = @lift begin
     Oceananigans.interior(sitmp, :, :, 1)
 end
 
-fig = Figure(size = (1000, 1500))
+fig = Figure(size = (666, 1000))
 
 ax1 = Axis(fig[1, 1], title = "Surface speed, atmosphere")
 ax2 = Axis(fig[2, 1], title = "Surface speed, ocean")
@@ -266,7 +266,7 @@ Ton = @lift interior(SST[$iter], :, :, 1)
 𝒬ᵀn = @lift interior(𝒬ᵀᵃᵒ[$iter], :, :, 1)
 𝒬ᵛn = @lift interior(𝒬ᵛᵃᵒ[$iter], :, :, 1)
 
-fig = Figure(size = (1000, 2000))
+fig = Figure(size = (700, 1400))
 
 ax1 = Axis(fig[1, 1], title = "2m Temperature, atmosphere")
 ax2 = Axis(fig[2, 1], title = "Sea Surface Temperature")
