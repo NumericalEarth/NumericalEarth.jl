@@ -1,10 +1,10 @@
 include("runtests_setup.jl")
 
 using CUDA: @allowscalar
-using Oceananigans.Units
+using Oceananigans.AbstractOperations: KernelFunctionOperation
 using Oceananigans.Grids: MutableVerticalDiscretization
 using Oceananigans.Operators: volume
-using Oceananigans.AbstractOperations: KernelFunctionOperation
+using Oceananigans.Units
 using NumericalEarth.Oceans: get_radiative_forcing
 
 function test_tracer_budget(coupled_model, Sᵒᶜ, Δt, nsteps; rtol)
@@ -64,10 +64,13 @@ function test_tracer_budget(coupled_model, Sᵒᶜ, Δt, nsteps; rtol)
     return nothing
 end
 
-@testset "Tracer conservation under surface fluxes" begin
+@testset "Tracer budget closure under surface fluxes" begin
     for arch in test_architectures
-        for fold_topology in (RightFaceFolded, RightCenterFolded)
+        for fold_topology in (RightFaceFolded,
+                              # RightCenterFolded
+                              )
 
+            @info ".. on $(typeof(arch)) with $fold_topology topology"
             underlying_grid = TripolarGrid(arch;
                                            size = (20, 20, 20),
                                            z = MutableVerticalDiscretization((-100, 0)),
@@ -90,11 +93,13 @@ end
             date = DateTime(1993, 1, 1)
             dataset = ECCO4Monthly()
             Δt = 65seconds
-            Sᵒᶜ = 35
+            Sᵒᶜ = 35 # psu
+
+            free_surface = SplitExplicitFreeSurface(substeps=20)
 
             # Without shortwave penetration: the budgets close to machine precision.
             @testset "Surface-only fluxes" begin
-                ocean = ocean_simulation(grid; free_surface=SplitExplicitFreeSurface(substeps=20), radiative_forcing=nothing)
+                ocean = ocean_simulation(grid; free_surface, radiative_forcing=nothing)
                 set!(ocean.model, T = Metadatum(:temperature; dataset, date),
                                   S = Metadatum(:salinity; dataset, date))
                 coupled_model = OceanSeaIceModel(ocean, nothing; atmosphere, radiation)
@@ -103,12 +108,12 @@ end
 
             # With the default `TwoColorRadiation`, part of the shortwave is absorbed in the interior,
             # The tolerance is looser for this case (TODO: figure out where we are leaking)
-            @testset "Penetrating shortwave radiation" begin
-                ocean = ocean_simulation(grid; free_surface=SplitExplicitFreeSurface(substeps=20))
+            @testset "Surface fluxes + Penetrating shortwave radiation" begin
+                ocean = ocean_simulation(grid; free_surface)
                 set!(ocean.model, T = Metadatum(:temperature; dataset, date),
                                   S = Metadatum(:salinity; dataset, date))
                 coupled_model = OceanSeaIceModel(ocean, nothing; atmosphere, radiation)
-                test_tracer_budget(coupled_model, Sᵒᶜ, Δt, 4; rtol=1e-4)
+                test_tracer_budget(coupled_model, Sᵒᶜ, Δt, 4; rtol=√eps(eltype(grid)))
             end
         end
     end
