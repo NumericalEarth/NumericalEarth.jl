@@ -67,7 +67,7 @@ end
 @testset "Tracer budget closure under surface fluxes" begin
     for arch in test_architectures
         for fold_topology in (RightFaceFolded,
-                              # RightCenterFolded
+                              # RightCenterFolded # requires https://github.com/CliMA/Oceananigans.jl/pull/5099
                               )
 
             @info ".. on $(typeof(arch)) with $fold_topology topology"
