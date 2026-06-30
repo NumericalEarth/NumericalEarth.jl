@@ -44,6 +44,10 @@ Conservative slab hydrology with an augmented liquid fraction `ϑˡ`. The
 storage variable `Mˡᵃ` evolves under signed fluxes (positive upward at the
 surface; positive upward at the bottom).
 
+`slab_depth`, `porosity`, `residual_liquid_fraction`, and `storage_height` each
+accept either a scalar (uniform) or a `Field` that varies grid point by grid
+point (e.g. from a soil-texture map).
+
 * `slab_depth` (`D`, m) — slab thickness.
 * `porosity` (`ν`) — total pore fraction.
 * `residual_liquid_fraction` (`θʳ`) — minimum pore liquid (default 0).
@@ -60,11 +64,11 @@ surface; positive upward at the bottom).
 * `runoff` — runoff closure: [`NoRunoff`](@ref) or
   [`InfiltrationCapacityRunoff`](@ref).
 """
-struct VariablySaturatedHydrology{FT, R, C, DF, PD, RO} <: AbstractHydrology
-    slab_depth               :: FT
-    porosity                 :: FT
-    residual_liquid_fraction :: FT
-    storage_height         :: FT
+struct VariablySaturatedHydrology{FT, SD, P, RL, SH, R, C, DF, PD, RO} <: AbstractHydrology
+    slab_depth               :: SD
+    porosity                 :: P
+    residual_liquid_fraction :: RL
+    storage_height           :: SH
     liquid_density           :: FT
     retention_curve          :: R
     hydraulic_conductivity   :: C
@@ -72,6 +76,18 @@ struct VariablySaturatedHydrology{FT, R, C, DF, PD, RO} <: AbstractHydrology
     deep_pressure_head       :: PD
     runoff                   :: RO
 end
+
+Adapt.adapt_structure(to, h::VariablySaturatedHydrology) =
+    VariablySaturatedHydrology(Adapt.adapt(to, h.slab_depth),
+                               Adapt.adapt(to, h.porosity),
+                               Adapt.adapt(to, h.residual_liquid_fraction),
+                               Adapt.adapt(to, h.storage_height),
+                               Adapt.adapt(to, h.liquid_density),
+                               Adapt.adapt(to, h.retention_curve),
+                               Adapt.adapt(to, h.hydraulic_conductivity),
+                               Adapt.adapt(to, h.deep_liquid_flux),
+                               Adapt.adapt(to, h.deep_pressure_head),
+                               Adapt.adapt(to, h.runoff))
 
 function VariablySaturatedHydrology(FT::Type = Oceananigans.defaults.FloatType;
                                           slab_depth,
@@ -84,10 +100,10 @@ function VariablySaturatedHydrology(FT::Type = Oceananigans.defaults.FloatType;
                                           deep_liquid_flux = NoDeepLiquidFlux(),
                                           deep_pressure_head = 0,
                                           runoff = NoRunoff())
-    return VariablySaturatedHydrology(convert(FT, slab_depth),
-                                            convert(FT, porosity),
-                                            convert(FT, residual_liquid_fraction),
-                                            convert(FT, storage_height),
+    return VariablySaturatedHydrology(normalize_property(FT, slab_depth),
+                                            normalize_property(FT, porosity),
+                                            normalize_property(FT, residual_liquid_fraction),
+                                            normalize_property(FT, storage_height),
                                             convert(FT, liquid_density),
                                             retention_curve,
                                             hydraulic_conductivity,
@@ -114,30 +130,32 @@ diagnostic_variables(::VariablySaturatedHydrology) =
 ##### Per-cell helpers — used by both `update_diagnostics!` and `time_step!`.
 #####
 
-@inline function augmented_liquid_fraction(h, M)
-    FT = typeof(M)
-    return M / (convert(FT, h.liquid_density) * convert(FT, h.slab_depth))
+@inline function augmented_liquid_fraction(h, M, i, j)
+    FT  = typeof(M)
+    hˡᵃ = convert(FT, property_value(h.slab_depth, i, j))
+    return M / (convert(FT, h.liquid_density) * hˡᵃ)
 end
 
-@inline function liquid_fraction(h, M)
-    ϑˡ = augmented_liquid_fraction(h, M)
-    return min(ϑˡ, convert(typeof(ϑˡ), h.porosity))
+@inline function liquid_fraction(h, M, i, j)
+    ϑˡ = augmented_liquid_fraction(h, M, i, j)
+    ν  = property_value(h.porosity, i, j)
+    return min(ϑˡ, convert(typeof(ϑˡ), ν))
 end
 
-@inline function liquid_saturation(h, θˡ)
+@inline function liquid_saturation(h, θˡ, i, j)
     FT  = typeof(θˡ)
-    ν   = convert(FT, h.porosity)
-    θʳ  = convert(FT, h.residual_liquid_fraction)
+    ν   = convert(FT, property_value(h.porosity, i, j))
+    θʳ  = convert(FT, property_value(h.residual_liquid_fraction, i, j))
     Δ   = ν - θʳ
     return clamp((θˡ - θʳ) / Δ, zero(FT), one(FT))
 end
 
-@inline function diagnostic_pressure_head(h, M, θˡ, 𝒮)
+@inline function diagnostic_pressure_head(h, M, θˡ, 𝒮, i, j)
     FT  = typeof(M)
-    ν   = convert(FT, h.porosity)
+    ν   = convert(FT, property_value(h.porosity, i, j))
     ρˡ  = convert(FT, h.liquid_density)
-    hˡᵃ = convert(FT, h.slab_depth)
-    hˢˢ = convert(FT, h.storage_height)
+    hˡᵃ = convert(FT, property_value(h.slab_depth, i, j))
+    hˢˢ = convert(FT, property_value(h.storage_height, i, j))
     Mˡᵃ⁺ = ρˡ * ν * hˡᵃ
     # Unsaturated branch: Π = Π_m(𝒮). Saturated branch: Π = (M − M⁺) hˢˢ/(ρˡ hˡᵃ).
     return ifelse(M < Mˡᵃ⁺,
@@ -153,8 +171,8 @@ end
     i, j = @index(Global, NTuple)
     @inbounds begin
         Mij = M[i, j, 1]
-        θˡ  = liquid_fraction(h, Mij)
-        𝒮   = liquid_saturation(h, θˡ)
+        θˡ  = liquid_fraction(h, Mij, i, j)
+        𝒮   = liquid_saturation(h, θˡ, i, j)
         saturation[i, j, 1] = 𝒮
     end
 end
@@ -184,9 +202,9 @@ saturation(h::VariablySaturatedHydrology, land) = land.saturation
         ψ_D  = stateindex(deep_pressure_head, i, j, 1, grid, time, (Center, Center, Center))
     end
 
-    θˡ = liquid_fraction(h, Mij)
-    𝒮  = liquid_saturation(h, θˡ)
-    Π  = diagnostic_pressure_head(h, Mij, θˡ, 𝒮)
+    θˡ = liquid_fraction(h, Mij, i, j)
+    𝒮  = liquid_saturation(h, θˡ, i, j)
+    Π  = diagnostic_pressure_head(h, Mij, θˡ, 𝒮, i, j)
     K  = hydraulic_conductivity(h.hydraulic_conductivity, 𝒮)
 
     Jˡs, Rsfc = surface_liquid_flux_and_runoff(h.runoff, Plij, Mij, θˡ, 𝒮, Π, K)
@@ -211,8 +229,8 @@ saturation(h::VariablySaturatedHydrology, land) = land.saturation
         dMdt_diag[i, j, 1] = dMdt_realized
         # Refresh saturation immediately so the energy step (which runs after
         # hydrology) sees state consistent with the new M.
-        θˡn = liquid_fraction(h, Mnew)
-        sat[i, j, 1] = liquid_saturation(h, θˡn)
+        θˡn = liquid_fraction(h, Mnew, i, j)
+        sat[i, j, 1] = liquid_saturation(h, θˡn, i, j)
     end
 end
 

@@ -767,7 +767,7 @@ end
                                        q_formulation,
                                        land_state,
                                        Tₛ, qₛ)
-    FT  = eltype(grid)
+    FT  = typeof(Tₛ)
     energy    = interface_energy_state(i, j, grid, q_formulation, land_state)
     hydrology = interface_hydrology_state(i, j, grid, q_formulation, land_state)
     return AirLandInterfaceState(fluxes, velocities, convert(FT, Tₛ), convert(FT, qₛ), hydrology, energy)
