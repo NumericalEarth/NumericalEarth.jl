@@ -348,7 +348,7 @@ x_nh = xnodes(nh_ocean_grid, Center())
 
 # ### Figure layout
 
-fig = Figure(size = (2400, 900), fontsize = 12)
+fig = Figure(size = (1400, 525), fontsize = 12)
 
 ax_θ_p = Axis(fig[1, 1], title="θₗᵢ (K) — atmos (prescribed)", ylabel="z (m)")
 ax_u_p = Axis(fig[2, 1], title="u (m/s) — atmos (prescribed)", ylabel="z (m)")

@@ -270,7 +270,7 @@ end
 # Finally, we plot a snapshot of the surface speed, temperature, and the turbulent
 # eddy kinetic energy from the CATKE vertical mixing parameterization as well as the
 # sea ice speed and the effective sea ice thickness.
-fig = Figure(size=(1200, 1000))
+fig = Figure(size=(900, 750))
 
 title = @lift string("Global 1ᵒ ocean simulation after ", prettytime(times[$n] - times[1]))
 
