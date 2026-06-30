@@ -5,15 +5,15 @@
 ##### fraction) and hydraulic conductivity `K(𝒮, T)`. Both are pure `@inline`
 ##### functions called from per-cell kernels — type-stable, allocation-free.
 #####
-##### Van Genuchten (1980) is the available retention/conductivity model.
+##### van Genuchten (1980) / Mualem (1976) is the available retention/conductivity model.
 #####
 
 """
     VanGenuchtenRetention(α, n)
 
-Van Genuchten (1980) retention curve mapping liquid pore fraction `θˡ`
+Empirical soil-water retention curve mapping liquid pore fraction `θˡ`
 (or saturation `𝒮`) to soil matric pressure head `Π_m` (m, negative in
-unsaturated soil):
+unsaturated soil), following [van Genuchten (1980)](@cite vangenuchten1980):
 
 ```math
 \\Pi_m(\\mathcal S) = -\\frac{1}{\\alpha}\\left[\\mathcal S^{-1/m} - 1\\right]^{1/n},
@@ -48,7 +48,9 @@ Base.summary(r::VanGenuchtenRetention) =
 """
     VanGenuchtenConductivity(K_saturated, n, ℓ)
 
-Van Genuchten–Mualem hydraulic conductivity:
+Unsaturated hydraulic conductivity as a function of saturation `𝒮`, combining
+the [Mualem (1976)](@cite mualem1976new) pore-bundle model with the
+[van Genuchten (1980)](@cite vangenuchten1980) retention shape:
 
 ```math
 K(\\mathcal S) = K_{sat}\\,\\mathcal S^\\ell\\left[1 - (1 - \\mathcal S^{1/m})^m\\right]^2,
