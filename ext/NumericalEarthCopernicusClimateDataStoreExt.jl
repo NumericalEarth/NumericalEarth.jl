@@ -6,7 +6,7 @@ using Downloads: Downloads
 using Dates
 using Oceananigans.DistributedComputations: @root
 
-using NumericalEarth.DataWrangling.ERA5: ERA5Metadata, ERA5Metadatum, ERA5_dataset_variable_names
+using NumericalEarth.DataWrangling.ERA5: ERA5Metadata, ERA5Metadatum, ERA5_dataset_variable_names, MultiYearERA5
 
 """
     Downloads.download(metadata::ERA5Metadata; kwargs...)
@@ -104,6 +104,71 @@ function Downloads.download(meta::ERA5Metadatum;
     return output_path
 end
 
+"""
+    Downloads.download(meta::NumericalEarth.DataWrangling.Metadatum{<:MultiYearERA5};
+                      skip_existing=true, threads=1, additional_kw...)
+
+Download yearly ERA5 file if needed. Multiple metadata pointing to the same year
+will result in only one download (file is shared across all hours in that year).
+
+Yearly files contain all 8760-8784 hours for one variable for one year in a single NetCDF file.
+This is 8760× more efficient than downloading individual hourly files.
+"""
+function Downloads.download(meta::NumericalEarth.DataWrangling.Metadatum{<:MultiYearERA5};
+                           skip_existing = true,
+                           threads = 1,
+                           additional_kw...)
+
+    output_directory = meta.dir
+    output_filename = NumericalEarth.DataWrangling.metadata_filename(meta)
+    output_path = joinpath(output_directory, output_filename)
+
+    # Skip if yearly file already exists
+    if skip_existing && isfile(output_path)
+        # Silently skip (avoid logging once per hour for yearly files)
+        return output_path
+    end
+
+    # Ensure output directory exists
+    mkpath(output_directory)
+
+    # Extract metadata fields
+    variable_name = ERA5_dataset_variable_names[meta.name]
+    year = Dates.year(meta.dates)
+
+    # Build area constraint from region
+    area = build_era5_area(meta.region)
+
+    # Build output prefix (filename without extension)
+    output_prefix = first(splitext(output_filename))
+
+    # Download full year using CopernicusClimateDataStore.yearly()
+    # NOTE: Do NOT pass additional_kw - it may contain date restrictions
+    #       that would limit download to less than a full year
+    @root begin
+        downloaded_files = CopernicusClimateDataStore.yearly(;
+            variables = variable_name,
+            years = year,
+            area = area,
+            format = "netcdf",
+            outputprefix = output_prefix,
+            directory = output_directory,
+            overwrite = !skip_existing,
+            threads = threads
+        )
+
+        # Handle potential filename mismatch
+        if !isempty(downloaded_files)
+            downloaded_file = first(downloaded_files)
+            if downloaded_file != output_path && isfile(downloaded_file)
+                mv(downloaded_file, output_path; force=true)
+            end
+        end
+    end
+
+    return output_path
+end
+
 #####
 ##### Area/bounding box utilities
 #####
@@ -113,7 +178,7 @@ build_era5_area(::Nothing) = nothing
 const BBOX = NumericalEarth.DataWrangling.BoundingBox
 
 function build_era5_area(bbox::BBOX)
-    # ERA5/era5cli uses (lat_max, lon_min, lat_min, lon_max) ordering
+    # CDS API / yearly() uses [south, west, north, east] ordering (4-element array)
     # BoundingBox has longitude = (west, east), latitude = (south, north)
 
     lon = bbox.longitude
@@ -123,13 +188,13 @@ function build_era5_area(bbox::BBOX)
         return nothing
     end
 
-    lon_min = lon[1]  # west
-    lon_max = lon[2]  # east
-    lat_min = lat[1]  # south
-    lat_max = lat[2]  # north
+    west  = lon[1]
+    east  = lon[2]
+    south = lat[1]
+    north = lat[2]
 
-    # Return in era5cli order: (lat_max, lon_min, lat_min, lon_max)
-    return (lat = (lat_min, lat_max), lon = (lon_min, lon_max))
+    # Return as 4-element array: [south, west, north, east]
+    return [south, west, north, east]
 end
 
 end # module NumericalEarthCopernicusClimateDataStoreExt
