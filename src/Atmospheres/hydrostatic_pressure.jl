@@ -50,7 +50,7 @@ function hydrostatic_pressure_from_surface(temperature, surface_pressure, orogra
                                            vapor_gas_constant,
                                            gravitational_acceleration)
     grid = temperature.grid
-    Nx, Ny, Nz = size(grid)
+    Nx, Ny, Nz = worksize(grid)
     cpu_grid = on_architecture(CPU(), grid)
 
     Tᵃ = Array(interior(temperature))
