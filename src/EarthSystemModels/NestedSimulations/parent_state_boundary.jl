@@ -1,153 +1,81 @@
 #####
-##### ParentStateBoundary: a boundary value computed on the fly from several interpolated parent
-##### state fields. Internal — not a user-facing abstraction. The simple single-source case is
-##### `interpolated_fts_boundary.jl`; this is the multi-field generalization the nesting path uses
-##### to derive a child prognostic (e.g. Breeze's ρ, ρu, ρθˡⁱ, ρqᵉ) from raw parent state.
+##### ParentBoundary: a lateral boundary value sampled on the fly from the parent state. A thin carrier
+##### that pairs Oceananigans' boundary-regularization tags (Dim / Side / location) with a concrete
+##### `value` sampler — a callable `value(X, t) -> child prognostic boundary value` supplied by the
+##### consuming model (Breeze, in `NumericalEarthBreezeExt`). The sampler owns the parent fields, grid,
+##### and physics (interpolating each raw parent field and combining); this carrier only knows how to
+##### locate the boundary-face node and call it. Mirrors the discrete per-variable relaxation forcings:
+##### the same per-variable samplers drive both the lateral BCs (here) and the interior Davies relaxation.
 #####
-#
-# At each boundary-face node it interpolates each source in `sources` (a `NamedTuple` of parent
-# `FieldTimeSeries`) — each with its own `interpolations` transform (e.g. `log` for pressure and
-# temperature, `identity` otherwise) — and passes the resulting `NamedTuple` of scalar state values
-# to `transform`, a pointwise map to the child prognostic. `transform` and the per-source
-# interpolation transforms are supplied by the consuming model (Breeze, in `NumericalEarthBreezeExt`);
-# this carrier knows nothing about which prognostic or which dataset.
 #
 # Reuses the node / boundary-index / clock helpers from `interpolated_fts_boundary.jl`.
 
-# `interpolate(func, …)` (Oceananigans #5726) returns the blend in func-space and applies no inverse —
-# the caller owns it. The carrier wants the *actual* state value (to feed the prognostic map), so
-# `_query_source` un-maps with `inverse_transform`: `log`-space interpolation of pressure becomes
-# `exp(blend of log p)` (faithful ln-p interpolation); `identity` is a plain interpolation.
-@inline inverse_transform(::typeof(identity)) = identity
-@inline inverse_transform(::typeof(log))      = exp
-@inline inverse_transform(::typeof(log2))     = exp2
-@inline inverse_transform(::typeof(log10))    = exp10
-
-# Source query applying interpolation transform `f` per source value, then un-mapping. A
-# `FieldTimeSeries` is interpolated in space + time; an `AbstractField` (or GPU-adapted source) in space.
-@inline _query_source(fts::FlavorOfFTS, source_grid, X, loc, t, f) =
-    inverse_transform(f)(Oceananigans.Fields.interpolate(f, X, Time(t), fts, Oceananigans.instantiated_location(fts), source_grid))
-
-@inline _query_source(source, source_grid, X, loc, t, f) =
-    inverse_transform(f)(Oceananigans.Fields.interpolate(f, X, source, loc, source_grid))
-
-# Clamp the query's z-coordinate into the source grid's center-z range, so a child node below (or
-# above) the parent's vertical extent returns the parent's edge value (constant extrapolation in z)
-# rather than the halo-dependent / linearly-extrapolated value `interpolate` gives outside the grid.
-# `validate_source_bracket` intentionally lets the child exceed the parent in z (e.g. ERA5
+# Clamp the z-component of a position `X` into `grid`'s center-z range (constant extrapolation in z
+# beyond it), so a child node below (or above) the parent's vertical extent samples the parent's edge
+# value rather than the halo-dependent / linearly-extrapolated value `interpolate` gives outside the
+# grid. `validate_parent_bracket` intentionally lets the child exceed the parent in z (e.g. ERA5
 # pressure-level data doesn't reach the surface); this makes the resulting extrapolation well-defined.
-@inline function z_clamp(X, source_grid)
-    Nz = size(source_grid, 3)
-    z₁ = znode(1, 1, 1,  source_grid, Center(), Center(), Center())
-    zₙ = znode(1, 1, Nz, source_grid, Center(), Center(), Center())
+@inline function z_clamp(X, grid)
+    Nz = size(grid, 3)
+    z₁ = znode(1, 1, 1,  grid, Center(), Center(), Center())
+    zₙ = znode(1, 1, Nz, grid, Center(), Center(), Center())
     return (X[1], X[2], clamp(X[3], min(z₁, zₙ), max(z₁, zₙ)))
 end
 
-struct ParentStateBoundary{Dim, SideType, LX, LY, LZ, S, G, I, F}
-    sources        :: S   # NamedTuple of parent FieldTimeSeries (keyed by physical variable)
-    source_grid    :: G   # one shared parent grid (all sources live on it)
-    interpolations :: I   # NamedTuple (same keys) of per-source interp transforms (log / identity)
-    transform      :: F   # (state::NamedTuple) -> scalar child prognostic
-end
-
-# User-facing-ish constructor — pre-regularization, location/side/dim tags are `Nothing`. We capture
-# one shared `source_grid` (mirroring `Interpolated`), essential for GPU since adapted FTS drop `.grid`.
-function ParentStateBoundary(sources::NamedTuple, interpolations::NamedTuple, transform)
-    grid = first(sources).grid
-    return ParentStateBoundary{Nothing, Nothing, Nothing, Nothing, Nothing,
-                               typeof(sources), typeof(grid), typeof(interpolations), typeof(transform)}(
-        sources, grid, interpolations, transform)
-end
-
-@inline ParentStateBoundary{Dim, SideType, LX, LY, LZ}(sources::S, source_grid::G, interpolations::I, transform::F) where {Dim, SideType, LX, LY, LZ, S, G, I, F} =
-    ParentStateBoundary{Dim, SideType, LX, LY, LZ, S, G, I, F}(sources, source_grid, interpolations, transform)
-
-Adapt.adapt_structure(to, c::ParentStateBoundary{D, S, LX, LY, LZ}) where {D, S, LX, LY, LZ} =
-    ParentStateBoundary{D, S, LX, LY, LZ}(map(s -> adapt(to, s), c.sources),
-                                          adapt(to, c.source_grid),
-                                          c.interpolations,
-                                          adapt(to, c.transform))
-
-function regularize_boundary_condition(c::ParentStateBoundary{Nothing}, grid, loc, dim, SideType, args...)
-    LX = typeof(loc[1]); LY = typeof(loc[2]); LZ = typeof(loc[3])
-    for s in values(c.sources)
-        validate_source_bracket(s, grid, LX, LY, LZ)
+# The parent must bracket the child *horizontally* (a too-small parent region there is a real error);
+# the vertical is intentionally NOT required to bracket (`z_clamp` handles the overshoot).
+@inline function validate_parent_bracket(source_grid, grid, ::Type{LX}, ::Type{LY}, ::Type{LZ}) where {LX, LY, LZ}
+    sim_loc = (LX(), LY(), LZ())
+    src_loc = (Center(), Center(), Center())
+    for (label, nodes_fn) in (("x", Oceananigans.Grids.xnodes), ("y", Oceananigans.Grids.ynodes))
+        sim_lo, sim_hi = extrema(nodes_fn(grid, sim_loc...))
+        src_lo, src_hi = extrema(nodes_fn(source_grid, src_loc...))
+        (src_lo ≤ sim_lo && sim_hi ≤ src_hi) || throw(ArgumentError(
+            "Parent $(label)-extent [$src_lo, $src_hi] does not bracket child $(label)-extent [$sim_lo, $sim_hi]"))
     end
-    return ParentStateBoundary{dim, SideType, LX, LY, LZ}(c.sources, c.source_grid, c.interpolations, c.transform)
+    return nothing
 end
 
-# Interpolate the `(source, interpolation)` pairs into a `Tuple`, recursing over the value tuples rather
-# than `map`-ing: a closure passed to `map` over heterogeneous (FTS/field × log/identity) tuples is a
-# dynamic invocation that GPU IR validation rejects, whereas this recursion unrolls at compile time with
-# each `_query_source` call statically typed.
-@inline interpolate_sources(::Tuple{}, ::Tuple{}, source_grid, X, loc, t) = ()
-@inline interpolate_sources(sources::Tuple, interpolations::Tuple, source_grid, X, loc, t) =
-    (_query_source(first(sources), source_grid, X, loc, t, first(interpolations)),
-     interpolate_sources(Base.tail(sources), Base.tail(interpolations), source_grid, X, loc, t)...)
-
-# Interpolate every source at node `X` (each via its own transform — `log` for log-space fields) into a
-# state `NamedTuple` keyed like `sources`, rebuilt from the compile-time keys.
-@inline function interpolated_parent_state(sources::NamedTuple{names}, interpolations, source_grid, X, loc, t) where names
-    vals = interpolate_sources(values(sources), values(interpolations), source_grid, X, loc, t)
-    return NamedTuple{names}(vals)
+struct ParentBoundary{Dim, SideType, LX, LY, LZ, V, G}
+    value       :: V   # concrete sampler: (X, t) -> child prognostic boundary value
+    source_grid :: G   # parent grid, for the horizontal bracket check at regularization time
 end
 
-# Interpolate every source at the boundary-face node `X` and apply the prognostic `transform` to the
-# resulting state. Sources are Center-located parent fields; `X` is the boundary face in the normal direction.
-@inline function _parent_state(c::ParentStateBoundary{<:Any, <:Any, LX, LY, LZ}, X, t) where {LX, LY, LZ}
-    loc = (LX(), LY(), LZ())
-    Xc  = z_clamp(X, c.source_grid)
-    return c.transform(interpolated_parent_state(c.sources, c.interpolations, c.source_grid, Xc, loc, t))
+# User-facing-ish constructor — pre-regularization, dim/side/location tags are `Nothing`.
+ParentBoundary(value, source_grid) =
+    ParentBoundary{Nothing, Nothing, Nothing, Nothing, Nothing, typeof(value), typeof(source_grid)}(value, source_grid)
+
+@inline ParentBoundary{Dim, SideType, LX, LY, LZ}(value::V, source_grid::G) where {Dim, SideType, LX, LY, LZ, V, G} =
+    ParentBoundary{Dim, SideType, LX, LY, LZ, V, G}(value, source_grid)
+
+Adapt.adapt_structure(to, c::ParentBoundary{D, S, LX, LY, LZ}) where {D, S, LX, LY, LZ} =
+    ParentBoundary{D, S, LX, LY, LZ}(adapt(to, c.value), adapt(to, c.source_grid))
+
+function regularize_boundary_condition(c::ParentBoundary{Nothing}, grid, loc, dim, SideType, args...)
+    LX = typeof(loc[1]); LY = typeof(loc[2]); LZ = typeof(loc[3])
+    validate_parent_bracket(c.source_grid, grid, LX, LY, LZ)
+    return ParentBoundary{dim, SideType, LX, LY, LZ}(c.value, c.source_grid)
 end
 
-@inline function getbc(bc::ParentStateBoundary{1, S, LX, LY, LZ},
+# `getbc` evaluates the sampler at the boundary-face node in the normal direction. The sampler
+# `z_clamp`s and interpolates the parent internally, so this carrier is dataset/prognostic-agnostic.
+@inline function getbc(bc::ParentBoundary{1, S, LX, LY, LZ},
                        j::Integer, k::Integer, grid::AbstractGrid, clock=nothing, args...) where {S, LX, LY, LZ}
     i = _boundary_index(S, grid.Nx)
     X = node(i, j, k, grid, Face(), LY(), LZ())
-    return _parent_state(bc, X, clock_time(clock))
+    return bc.value(X, clock_time(clock))
 end
 
-@inline function getbc(bc::ParentStateBoundary{2, S, LX, LY, LZ},
+@inline function getbc(bc::ParentBoundary{2, S, LX, LY, LZ},
                        i::Integer, k::Integer, grid::AbstractGrid, clock=nothing, args...) where {S, LX, LY, LZ}
     j = _boundary_index(S, grid.Ny)
     X = node(i, j, k, grid, LX(), Face(), LZ())
-    return _parent_state(bc, X, clock_time(clock))
+    return bc.value(X, clock_time(clock))
 end
 
-@inline function getbc(bc::ParentStateBoundary{3, S, LX, LY, LZ},
+@inline function getbc(bc::ParentBoundary{3, S, LX, LY, LZ},
                        i::Integer, j::Integer, grid::AbstractGrid, clock=nothing, args...) where {S, LX, LY, LZ}
     k = _boundary_index(S, grid.Nz)
     X = node(i, j, k, grid, LX(), LY(), Face())
-    return _parent_state(bc, X, clock_time(clock))
+    return bc.value(X, clock_time(clock))
 end
-
-#####
-##### ParentStateTarget: the interior-relaxation analogue of `ParentStateBoundary`. A callable
-##### `target(x, y, z, t)` for an Oceananigans `Relaxation` forcing that interpolates each parent
-##### source at the interior node `(x, y, z)` (each via its `interpolations` transform, un-mapped) and
-##### applies the prognostic `transform` — same `_query_source` machinery as the boundary carrier, but
-##### at an arbitrary node rather than a boundary face. Used for on-the-fly Davies relaxation.
-#####
-
-struct ParentStateTarget{S, G, I, F}
-    sources        :: S
-    source_grid    :: G
-    interpolations :: I
-    transform      :: F
-end
-
-function ParentStateTarget(sources::NamedTuple, interpolations::NamedTuple, transform)
-    grid = first(sources).grid
-    return ParentStateTarget(sources, grid, interpolations, transform)
-end
-
-@inline function (t::ParentStateTarget)(x, y, z, time)
-    Xc = z_clamp((x, y, z), t.source_grid)
-    return t.transform(interpolated_parent_state(t.sources, t.interpolations, t.source_grid, Xc, nothing, time))
-end
-
-Adapt.adapt_structure(to, t::ParentStateTarget) =
-    ParentStateTarget(map(s -> adapt(to, s), t.sources),
-                      adapt(to, t.source_grid),
-                      t.interpolations,
-                      adapt(to, t.transform))

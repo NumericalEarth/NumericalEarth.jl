@@ -9,7 +9,7 @@
 #####
 
 using NumericalEarth.Atmospheres: PrescribedAtmosphere
-using NumericalEarth.EarthSystemModels.NestedSimulations: ParentStateBoundary, NestedModel,
+using NumericalEarth.EarthSystemModels.NestedSimulations: ParentBoundary, NestedModel,
                                                           nested_lateral_boundary_conditions, z_clamp
 using Oceananigans: WENO
 using Oceananigans.BoundaryConditions: NormalFlowBoundaryCondition, ValueBoundaryCondition
@@ -31,51 +31,109 @@ using Breeze: CompressibleDynamics, SplitExplicitTimeDiscretization, UpperSponge
 @inline _normal_flow(condition, sides, scheme) =
     FieldBoundaryConditions(; (side => NormalFlowBoundaryCondition(condition; scheme) for side in sides)...)
 
+#####
+##### Shared parent-state samplers: interpolate the raw parent fields at a node and combine into a
+##### physical quantity. Each `z_clamp`s internally (so the child may extend below the parent in z),
+##### interpolates `T`/`p` in log space and the rest linearly (`interpolate(func, …)`, Oceananigans
+##### #5726), and reuses the pointwise combines from `breeze_prognostic_state.jl`. Used by BOTH the
+##### lateral BCs (density-weighted) and the interior Davies relaxation (specific), so the two layers
+##### share one definition of "sample the parent."
+#####
+
+@inline function air_density_at(X, t, grid, T, qᵛ, p, constants)
+    c = Center();  loc = (c, c, c);  Xc = z_clamp(X, grid)
+    return air_density(exp(interpolate(log, Xc, Time(t), T, loc, grid)),
+                           interpolate(identity, Xc, Time(t), qᵛ, loc, grid),
+                       exp(interpolate(log, Xc, Time(t), p, loc, grid)),
+                       dry_air_gas_constant(constants), vapor_gas_constant(constants))
+end
+
+@inline function liquid_ice_θ_at(X, t, grid, T, qᶜˡ, qᶜⁱ, p, constants)
+    c = Center();  loc = (c, c, c);  Xc = z_clamp(X, grid)
+    Rᵈ = dry_air_gas_constant(constants);  cᵖᵈ = constants.dry_air.heat_capacity
+    ℒˡ = constants.liquid.reference_latent_heat;  ℒⁱ = constants.ice.reference_latent_heat
+    return liquid_ice_potential_temperature(exp(interpolate(log, Xc, Time(t), T, loc, grid)),
+                                                interpolate(identity, Xc, Time(t), qᶜˡ, loc, grid),
+                                                interpolate(identity, Xc, Time(t), qᶜⁱ, loc, grid),
+                                            exp(interpolate(log, Xc, Time(t), p, loc, grid)),
+                                            Rᵈ, cᵖᵈ, ℒˡ, ℒⁱ)
+end
+
+@inline function total_water_at(X, t, grid, qᵛ, qᶜˡ, qᶜⁱ)
+    c = Center();  loc = (c, c, c);  Xc = z_clamp(X, grid)
+    return total_water_specific_humidity(interpolate(identity, Xc, Time(t), qᵛ,  loc, grid),
+                                         interpolate(identity, Xc, Time(t), qᶜˡ, loc, grid),
+                                         interpolate(identity, Xc, Time(t), qᶜⁱ, loc, grid))
+end
+
+@inline velocity_at(X, t, grid, vel) =
+    interpolate(identity, z_clamp(X, grid), Time(t), vel, (Center(), Center(), Center()), grid)
+
+#####
+##### Concrete per-variable lateral-BC samplers: `value(X, t) -> density-weighted boundary value`,
+##### each holding the parent fields it needs. Wrapped in `ParentBoundary` (which supplies the
+##### boundary-face node); mirror the discrete relaxation forcings below and share the `*_at` samplers.
+#####
+
+struct AirDensityBoundary{G, FT, FQV, FP, C};  grid::G; T::FT; qᵛ::FQV; p::FP; constants::C;  end
+@inline (s::AirDensityBoundary)(X, t) = air_density_at(X, t, s.grid, s.T, s.qᵛ, s.p, s.constants)
+Adapt.adapt_structure(to, s::AirDensityBoundary) =
+    AirDensityBoundary(adapt(to, s.grid), adapt(to, s.T), adapt(to, s.qᵛ), adapt(to, s.p), s.constants)
+
+struct MomentumDensityBoundary{G, FV, FT, FQV, FP, C};  grid::G; velocity::FV; T::FT; qᵛ::FQV; p::FP; constants::C;  end
+@inline (s::MomentumDensityBoundary)(X, t) =
+    air_density_at(X, t, s.grid, s.T, s.qᵛ, s.p, s.constants) * velocity_at(X, t, s.grid, s.velocity)
+Adapt.adapt_structure(to, s::MomentumDensityBoundary) =
+    MomentumDensityBoundary(adapt(to, s.grid), adapt(to, s.velocity), adapt(to, s.T), adapt(to, s.qᵛ), adapt(to, s.p), s.constants)
+
+struct EnergyDensityBoundary{G, FT, QL, QI, FQV, FP, C};  grid::G; T::FT; qᶜˡ::QL; qᶜⁱ::QI; qᵛ::FQV; p::FP; constants::C;  end
+@inline (s::EnergyDensityBoundary)(X, t) =
+    air_density_at(X, t, s.grid, s.T, s.qᵛ, s.p, s.constants) * liquid_ice_θ_at(X, t, s.grid, s.T, s.qᶜˡ, s.qᶜⁱ, s.p, s.constants)
+Adapt.adapt_structure(to, s::EnergyDensityBoundary) =
+    EnergyDensityBoundary(adapt(to, s.grid), adapt(to, s.T), adapt(to, s.qᶜˡ), adapt(to, s.qᶜⁱ), adapt(to, s.qᵛ), adapt(to, s.p), s.constants)
+
+struct MoistureDensityBoundary{G, FQV, QL, QI, FT, FP, C};  grid::G; qᵛ::FQV; qᶜˡ::QL; qᶜⁱ::QI; T::FT; p::FP; constants::C;  end
+@inline (s::MoistureDensityBoundary)(X, t) =
+    air_density_at(X, t, s.grid, s.T, s.qᵛ, s.p, s.constants) * total_water_at(X, t, s.grid, s.qᵛ, s.qᶜˡ, s.qᶜⁱ)
+Adapt.adapt_structure(to, s::MoistureDensityBoundary) =
+    MoistureDensityBoundary(adapt(to, s.grid), adapt(to, s.qᵛ), adapt(to, s.qᶜˡ), adapt(to, s.qᶜⁱ), adapt(to, s.T), adapt(to, s.p), s.constants)
+
 """
 $(TYPEDSIGNATURES)
 
 Build the child's lateral `FieldBoundaryConditions` for the Breeze prognostics
 `(ρ, ρu, ρv, ρe, <moisture>)`, deriving each on the fly from the `parent_atmosphere`
-[`PrescribedAtmosphere`](@ref)'s raw state via [`ParentStateBoundary`]. `constants`
-are the child's `ThermodynamicConstants`; `moisture_name` is the moisture prognostic
-key (`moisture_prognostic_name(microphysics)`). Replaces the materialized
-`breeze_prognostic_state` parent series + single-source `Interpolated` BCs.
+[`PrescribedAtmosphere`](@ref)'s raw state. Each is a concrete per-variable sampler
+(`AirDensityBoundary`, …) wrapped in a `ParentBoundary` that supplies the boundary-face node;
+the samplers share the `*_at` parent-state samplers with the Davies-relaxation forcings.
 """
 function NumericalEarth.EarthSystemModels.NestedSimulations.nested_lateral_boundary_conditions(
             parent_atmosphere::PrescribedAtmosphere, constants, moisture_name;
             sides = (:west, :east, :south, :north),
             momentum_scheme = nothing)
 
-    u  = parent_atmosphere.velocities.u
-    v  = parent_atmosphere.velocities.v
-    T  = parent_atmosphere.temperature
-    qᵛ = parent_atmosphere.specific_humidity
+    u   = parent_atmosphere.velocities.u
+    v   = parent_atmosphere.velocities.v
+    T   = parent_atmosphere.temperature
+    qᵛ  = parent_atmosphere.specific_humidity
     qᶜˡ = parent_atmosphere.microphysical_variables.qᶜˡ
     qᶜⁱ = parent_atmosphere.microphysical_variables.qᶜⁱ
-    p  = parent_atmosphere.pressure
+    p   = parent_atmosphere.pressure
+    grid = u.grid
 
-    # log-space for the strictly-positive thermodynamic quantities; linear (identity) otherwise.
-    ρ_psb  = ParentStateBoundary((; T, qᵛ, p),
-                                 (T = log, qᵛ = identity, p = log), AirDensity(constants))
+    bc(value) = ParentBoundary(value, grid)
+    ρ_bc  = bc(AirDensityBoundary(grid, T, qᵛ, p, constants))
+    ρu_bc = bc(MomentumDensityBoundary(grid, u, T, qᵛ, p, constants))
+    ρv_bc = bc(MomentumDensityBoundary(grid, v, T, qᵛ, p, constants))
+    ρe_bc = bc(EnergyDensityBoundary(grid, T, qᶜˡ, qᶜⁱ, qᵛ, p, constants))
+    ρq_bc = bc(MoistureDensityBoundary(grid, qᵛ, qᶜˡ, qᶜⁱ, T, p, constants))
 
-    momentum_interp = (velocity = identity, T = log, qᵛ = identity, p = log)
-    ρu_psb = ParentStateBoundary((; velocity = u, T, qᵛ, p), momentum_interp, MomentumDensity(constants))
-    ρv_psb = ParentStateBoundary((; velocity = v, T, qᵛ, p), momentum_interp, MomentumDensity(constants))
+    lateral = (ρ  = _sided(ValueBoundaryCondition, ρ_bc, sides),
+               ρu = _normal_flow(ρu_bc, sides, momentum_scheme),
+               ρv = _normal_flow(ρv_bc, sides, momentum_scheme),
+               ρe = _sided(ValueBoundaryCondition, ρe_bc, sides))
 
-    ρe_psb = ParentStateBoundary((; T, qᶜˡ, qᶜⁱ, qᵛ, p),
-                                 (T = log, qᶜˡ = identity, qᶜⁱ = identity, qᵛ = identity, p = log),
-                                 EnergyDensity(constants))
-
-    ρq_psb = ParentStateBoundary((; qᵛ, qᶜˡ, qᶜⁱ, T, p),
-                                 (qᵛ = identity, qᶜˡ = identity, qᶜⁱ = identity, T = log, p = log),
-                                 MoistureDensity(constants))
-
-    lateral = (ρ  = _sided(ValueBoundaryCondition, ρ_psb, sides),
-               ρu = _normal_flow(ρu_psb, sides, momentum_scheme),
-               ρv = _normal_flow(ρv_psb, sides, momentum_scheme),
-               ρe = _sided(ValueBoundaryCondition, ρe_psb, sides))
-
-    return merge(lateral, NamedTuple{(moisture_name,)}((_sided(ValueBoundaryCondition, ρq_psb, sides),)))
+    return merge(lateral, NamedTuple{tuple(moisture_name)}(tuple(_sided(ValueBoundaryCondition, ρq_bc, sides))))
 end
 
 #####
@@ -101,43 +159,34 @@ Breeze.AtmosphereModels.is_density_tendency_forcing(::NestedForcing) = true
 @inline mask_value(mask, x, y, z) = mask(x, y, z)
 @inline mask_value(mask::Number, x, y, z) = mask
 
-# θˡⁱ → ρθ. Parent T, p interpolate in log space; qᶜˡ, qᶜⁱ linearly. Child θ read from `fields.θ`.
+# θˡⁱ → ρθ. Relax the child's `fields.θ` toward the parent's `liquid_ice_θ_at`, weighted by child ρᵈ.
 struct PotentialTemperatureRelaxation{G, FT, QL, QI, FP, R, M, C} <: NestedForcing
     grid :: G;  T :: FT;  qᶜˡ :: QL;  qᶜⁱ :: QI;  p :: FP
-    rate :: R;  mask :: M
-    Rᵈ :: C;  cᵖᵈ :: C;  ℒˡ :: C;  ℒⁱ :: C
+    rate :: R;  mask :: M;  constants :: C
 end
 
 @inline function (f::PotentialTemperatureRelaxation)(i, j, k, grid, clock, fields)
-    c = Center();  loc = (c, c, c);  t = clock.time
-    X = z_clamp(node(i, j, k, grid, c, c, c), f.grid)
-    θ★ = liquid_ice_potential_temperature(exp(interpolate(log, X, Time(t), f.T,  loc, f.grid)),
-                                              interpolate(identity, X, Time(t), f.qᶜˡ, loc, f.grid),
-                                              interpolate(identity, X, Time(t), f.qᶜⁱ, loc, f.grid),
-                                          exp(interpolate(log, X, Time(t), f.p,  loc, f.grid)),
-                                          f.Rᵈ, f.cᵖᵈ, f.ℒˡ, f.ℒⁱ)
+    c = Center();  X = node(i, j, k, grid, c, c, c)
+    θ★ = liquid_ice_θ_at(X, clock.time, f.grid, f.T, f.qᶜˡ, f.qᶜⁱ, f.p, f.constants)
     @inbounds return fields.ρᵈ[i, j, k] * f.rate * mask_value(f.mask, X[1], X[2], X[3]) * (θ★ - fields.θ[i, j, k])
 end
 
 Adapt.adapt_structure(to, f::PotentialTemperatureRelaxation) =
     PotentialTemperatureRelaxation(adapt(to, f.grid), adapt(to, f.T), adapt(to, f.qᶜˡ), adapt(to, f.qᶜⁱ),
-                                   adapt(to, f.p), f.rate, adapt(to, f.mask), f.Rᵈ, f.cᵖᵈ, f.ℒˡ, f.ℒⁱ)
+                                   adapt(to, f.p), f.rate, adapt(to, f.mask), f.constants)
 
-# qᵗ = qᵛ + qᶜˡ + qᶜⁱ → moisture density. Child specific moisture read from `fields[current_name]`.
+# qᵗ → moisture density. Relax the child's specific moisture (`fields[current_name]`) toward `total_water_at`.
 struct MoistureRelaxation{G, QV, QL, QI, R, M, V} <: NestedForcing
     grid :: G;  qᵛ :: QV;  qᶜˡ :: QL;  qᶜⁱ :: QI
     rate :: R;  mask :: M;  current_name :: V
 end
 
-@inline _field_name(::Val{N}) where N = N
+@inline field_name(::Val{N}) where N = N
 
 @inline function (f::MoistureRelaxation)(i, j, k, grid, clock, fields)
-    c = Center();  loc = (c, c, c);  t = clock.time
-    X = z_clamp(node(i, j, k, grid, c, c, c), f.grid)
-    qᵗ★ = total_water_specific_humidity(interpolate(identity, X, Time(t), f.qᵛ,  loc, f.grid),
-                                        interpolate(identity, X, Time(t), f.qᶜˡ, loc, f.grid),
-                                        interpolate(identity, X, Time(t), f.qᶜⁱ, loc, f.grid))
-    @inbounds qᵗ = getproperty(fields, _field_name(f.current_name))[i, j, k]
+    c = Center();  X = node(i, j, k, grid, c, c, c)
+    qᵗ★ = total_water_at(X, clock.time, f.grid, f.qᵛ, f.qᶜˡ, f.qᶜⁱ)
+    @inbounds qᵗ = getproperty(fields, field_name(f.current_name))[i, j, k]
     @inbounds return fields.ρᵈ[i, j, k] * f.rate * mask_value(f.mask, X[1], X[2], X[3]) * (qᵗ★ - qᵗ)
 end
 
@@ -145,30 +194,28 @@ Adapt.adapt_structure(to, f::MoistureRelaxation) =
     MoistureRelaxation(adapt(to, f.grid), adapt(to, f.qᵛ), adapt(to, f.qᶜˡ), adapt(to, f.qᶜⁱ),
                        f.rate, adapt(to, f.mask), f.current_name)
 
-# u → ρu (Face, Center, Center). ρᵈ interpolated to the x-face; child u from `fields.u`.
+# u → ρu (Face, Center, Center). Child `fields.u` toward the parent `velocity_at`, ρᵈ at the x-face.
 struct URelaxation{G, FU, R, M} <: NestedForcing
     grid :: G;  u :: FU;  rate :: R;  mask :: M
 end
 
 @inline function (f::URelaxation)(i, j, k, grid, clock, fields)
-    c = Center();  loc = (c, c, c);  t = clock.time
-    X = z_clamp(node(i, j, k, grid, Face(), c, c), f.grid)
-    u★ = interpolate(identity, X, Time(t), f.u, loc, f.grid)
+    c = Center();  X = node(i, j, k, grid, Face(), c, c)
+    u★ = velocity_at(X, clock.time, f.grid, f.u)
     @inbounds return ℑxᶠᵃᵃ(i, j, k, grid, fields.ρᵈ) * f.rate * mask_value(f.mask, X[1], X[2], X[3]) * (u★ - fields.u[i, j, k])
 end
 
 Adapt.adapt_structure(to, f::URelaxation) =
     URelaxation(adapt(to, f.grid), adapt(to, f.u), f.rate, adapt(to, f.mask))
 
-# v → ρv (Center, Face, Center). ρᵈ interpolated to the y-face; child v from `fields.v`.
+# v → ρv (Center, Face, Center). Child `fields.v` toward the parent `velocity_at`, ρᵈ at the y-face.
 struct VRelaxation{G, FV, R, M} <: NestedForcing
     grid :: G;  v :: FV;  rate :: R;  mask :: M
 end
 
 @inline function (f::VRelaxation)(i, j, k, grid, clock, fields)
-    c = Center();  loc = (c, c, c);  t = clock.time
-    X = z_clamp(node(i, j, k, grid, c, Face(), c), f.grid)
-    v★ = interpolate(identity, X, Time(t), f.v, loc, f.grid)
+    c = Center();  X = node(i, j, k, grid, c, Face(), c)
+    v★ = velocity_at(X, clock.time, f.grid, f.v)
     @inbounds return ℑyᵃᶠᵃ(i, j, k, grid, fields.ρᵈ) * f.rate * mask_value(f.mask, X[1], X[2], X[3]) * (v★ - fields.v[i, j, k])
 end
 
@@ -209,20 +256,15 @@ function nested_relaxation_forcings(parent_atmosphere::PrescribedAtmosphere, con
     p   = parent_atmosphere.pressure
     grid = u.grid
 
-    Rᵈ  = dry_air_gas_constant(constants)
-    cᵖᵈ = constants.dry_air.heat_capacity
-    ℒˡ  = constants.liquid.reference_latent_heat
-    ℒⁱ  = constants.ice.reference_latent_heat
-
     # Supplied directly (no `Forcing` wrapper) — `materialize_atmosphere_model_forcing(::NestedForcing)`
     # returns each as-is, so Breeze calls them straight in the tendency kernel.
-    ρθ = PotentialTemperatureRelaxation(grid, T, qᶜˡ, qᶜⁱ, p, rate, mask, Rᵈ, cᵖᵈ, ℒˡ, ℒⁱ)
+    ρθ = PotentialTemperatureRelaxation(grid, T, qᶜˡ, qᶜⁱ, p, rate, mask, constants)
     ρu = URelaxation(grid, u, rate, mask)
     ρv = VRelaxation(grid, v, rate, mask)
     ρq = MoistureRelaxation(grid, qᵛ, qᶜˡ, qᶜⁱ, rate, mask, Val(moisture_specific_name(microphysics)))
 
     moisture_name = moisture_prognostic_name(microphysics)
-    return merge((; ρθ, ρu, ρv), NamedTuple{(moisture_name,)}((ρq,)))
+    return merge((; ρθ, ρu, ρv), NamedTuple{tuple(moisture_name)}(tuple(ρq)))
 end
 
 # Default child microphysics: 1-moment bulk mixed-phase (rain + snow) precipitation with
