@@ -27,6 +27,7 @@ using Oceananigans.Units
 using Oceananigans.AbstractOperations: KernelFunctionOperation
 using Oceananigans.Grids: φnode
 using Printf, Statistics, Dates
+using Suppressor
 
 # ## Ocean and sea-ice model configuration
 # The ocean and sea-ice are a simplified versions of the [one-degree ocean-sea ice example](@ref one-degree-ocean-seaice).
@@ -47,7 +48,7 @@ grid = ImmersedBoundaryGrid(grid, GridFittedBottom(bottom_height); active_cells_
 nothing #hide
 
 # Now we can specify the numerical details and the closures for the ocean simulation.
-# We use a biharmonic horizontal viscosity with a timescale of 15 days and set a 
+# We use a biharmonic horizontal viscosity with a timescale of 15 days and set a
 # background vertical diffusivity following [Henyey1986](@citet).
 
 momentum_advection = WENOVectorInvariant(order=5)
@@ -111,7 +112,7 @@ atmosphere.model.initial_conditions
 # We are now ready to blend everything together.
 # Here we set the timestep to be the same across all models.
 
-Δt = convert(eltype(grid), atmosphere.model.time_stepping.Δt_sec) 
+Δt = convert(eltype(grid), atmosphere.model.time_stepping.Δt_sec)
 nothing #hide
 
 # We build the complete coupled `earth_model` and the coupled simulation.
@@ -217,16 +218,16 @@ ua = reverse(SWO["u"][:, :, nlayers, :],    dims=2)
 va = reverse(SWO["v"][:, :, nlayers, :],    dims=2)
 sp = sqrt.(ua.^2 + va.^2)
 
-SST = FieldTimeSeries("ocean_surface_fields.jld2", "T")
-SSU = FieldTimeSeries("ocean_surface_fields.jld2", "u")
-SSV = FieldTimeSeries("ocean_surface_fields.jld2", "v")
+SST = @suppress_out FieldTimeSeries("ocean_surface_fields.jld2", "T")
+SSU = @suppress_out FieldTimeSeries("ocean_surface_fields.jld2", "u")
+SSV = @suppress_out FieldTimeSeries("ocean_surface_fields.jld2", "v")
 
-SIU = FieldTimeSeries("sea_ice_fields.jld2", "u")
-SIV = FieldTimeSeries("sea_ice_fields.jld2", "v")
-SIA = FieldTimeSeries("sea_ice_fields.jld2", "ℵ")
+SIU = @suppress_out FieldTimeSeries("sea_ice_fields.jld2", "u")
+SIV = @suppress_out FieldTimeSeries("sea_ice_fields.jld2", "v")
+SIA = @suppress_out FieldTimeSeries("sea_ice_fields.jld2", "ℵ")
 
-𝒬ᵀᵃᵒ = FieldTimeSeries("intercomponent_fluxes.jld2", "𝒬ᵀᵃᵒ")
-𝒬ᵛᵃᵒ = FieldTimeSeries("intercomponent_fluxes.jld2", "𝒬ᵛᵃᵒ")
+𝒬ᵀᵃᵒ = @suppress_out FieldTimeSeries("intercomponent_fluxes.jld2", "𝒬ᵀᵃᵒ")
+𝒬ᵛᵃᵒ = @suppress_out FieldTimeSeries("intercomponent_fluxes.jld2", "𝒬ᵛᵃᵒ")
 
 Nt = min(length(sp[1, 1, :]), length(𝒬ᵀᵃᵒ))
 times = 𝒬ᵀᵃᵒ.times
