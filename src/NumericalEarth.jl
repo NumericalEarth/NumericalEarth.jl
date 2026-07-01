@@ -44,7 +44,6 @@ export
     NestedModel,
     NestedSimulation,
     nested_atmosphere_model,
-    nested_lateral_boundary_conditions,
     parent_boundary_conditions,
     parent_forcings,
     # Atmosphere-land interface closures
@@ -214,7 +213,7 @@ using .Oceans
 using .SeaIces
 using .Diagnostics
 using .EarthSystemModels: ComponentInterfaces, MomentumRoughnessLength, ScalarRoughnessLength, default_sea_ice
-using .EarthSystemModels.NestedSimulations: NestedModel, NestedSimulation, nested_atmosphere_model, nested_lateral_boundary_conditions, parent_boundary_conditions, parent_forcings
+using .EarthSystemModels.NestedSimulations: NestedModel, NestedSimulation, nested_atmosphere_model, parent_boundary_conditions, parent_forcings
 using .DataWrangling.ETOPO
 using .DataWrangling.ECCO
 using .DataWrangling.GLORYS

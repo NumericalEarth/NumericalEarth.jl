@@ -34,22 +34,29 @@ Construct via [`child_model`](@ref) plus this wrapper, or use the
 [`NestedSimulation`](@ref) convenience that bundles model construction and
 `Simulation` wrapping.
 """
-mutable struct NestedModel{P, M, TS, A} <: AbstractModel{TS, A}
-    parent :: P
-    child  :: M
+mutable struct NestedModel{P, M, X, TS, A} <: AbstractModel{TS, A}
+    parent    :: P
+    child     :: M
+    exchanger :: X   # mediates parent state → child variables (see `exchange_state!`); `nothing` if unused
 end
 
-NestedModel(parent, child::AbstractModel{TS, A}) where {TS, A} =
-    NestedModel{typeof(parent), typeof(child), TS, A}(parent, child)
+NestedModel(parent, child::AbstractModel{TS, A}, exchanger=nothing) where {TS, A} =
+    NestedModel{typeof(parent), typeof(child), typeof(exchanger), TS, A}(parent, child, exchanger)
 
 # Property forwarding: `nested.clock`, `nested.grid`, `nested.velocities`, etc.
-# all resolve through the child. Only `parent` and `child` are direct fields.
+# all resolve through the child. Only `parent`, `child`, `exchanger` are direct fields.
 @inline function Base.getproperty(nm::NestedModel, name::Symbol)
-    if name === :parent || name === :child
+    if name === :parent || name === :child || name === :exchanger
         return getfield(nm, name)
     end
     return getproperty(getfield(nm, :child), name)
 end
+
+# Refresh the parent-derived child state held by the exchanger to the current `time`. The exchanger
+# (a NumericalEarth object; see the Breeze extension's `StateExchanger`) recomputes the child
+# prognostics on the parent grid as needed. Default no-op so a bare `NestedModel(parent, child)` — or
+# one whose parent needs no state transform — just forwards.
+exchange_state!(exchanger, time) = nothing
 
 # Model-protocol dispatches that aren't covered by property forwarding.
 fields(nm::NestedModel)            = fields(getfield(nm, :child))
@@ -62,9 +69,13 @@ iteration(nm::NestedModel)         = iteration(getfield(nm, :child))
 Oceananigans.Advection.cell_advection_timescale(nm::NestedModel) =
     Oceananigans.Advection.cell_advection_timescale(getfield(nm, :child))
 
-# `update_state!` may receive callbacks; forward verbatim.
-update_state!(nm::NestedModel, callbacks=[]; kwargs...) =
-    update_state!(getfield(nm, :child), callbacks; kwargs...)
+# `update_state!` may receive callbacks; forward verbatim. Refresh the parent-derived child state first
+# so the child's boundary conditions / forcings see current values.
+function update_state!(nm::NestedModel, callbacks=[]; kwargs...)
+    child = getfield(nm, :child)
+    exchange_state!(getfield(nm, :exchanger), child.clock.time)
+    return update_state!(child, callbacks; kwargs...)
+end
 
 # Setting the initial state targets the child's prognostics.
 set!(nm::NestedModel, args...; kwargs...) = set!(getfield(nm, :child), args...; kwargs...)
@@ -75,6 +86,7 @@ function time_step!(nm::NestedModel, Δt; kwargs...)
     child  = getfield(nm, :child)
     parent = getfield(nm, :parent)
 
+    exchange_state!(getfield(nm, :exchanger), child.clock.time)
     time_step!(child, Δt; kwargs...)
 
     Δt_parent = child.clock.time - parent.clock.time

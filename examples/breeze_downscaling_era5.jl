@@ -496,8 +496,15 @@ let
     # split-explicit outer Δt the production run uses.
     Δt_balance     = 0.15
     balance_cycles = 1   # one cycle suffices — see the DFI sensitivity note in the header
-    twin_bcs = nested_lateral_boundary_conditions(parent, constants,
-                                                  Breeze.moisture_prognostic_name(model.microphysics))
+    ## Frozen lateral BCs matching production: interpolate the same parent-derived child prognostics
+    ## (held by the nested model's exchanger) at the twin's boundaries.
+    twin_prog = model.exchanger.prognostic
+    twin_moisture = Breeze.moisture_prognostic_name(nothing)
+    twin_bcs = parent_boundary_conditions(grid;
+        variables = merge((; ρᵈ = twin_prog.ρᵈ, ρu = twin_prog.ρu, ρv = twin_prog.ρv, ρe = twin_prog.ρθ),
+                          NamedTuple{tuple(twin_moisture)}(tuple(twin_prog.ρqᵛ))),
+        bc_types  = merge((; ρᵈ = ValueBoundaryCondition, ρe = ValueBoundaryCondition),
+                          NamedTuple{tuple(twin_moisture)}(tuple(ValueBoundaryCondition))))
     twin = atmosphere_model(grid;
                             thermodynamic_constants = constants,
                             momentum_advection = WENO(order = 9),
