@@ -2,6 +2,7 @@ module Oceans
 
 export ocean_simulation, SlabOcean, PrescribedOcean
 
+import Dates
 using Adapt: Adapt, adapt
 using KernelAbstractions: @kernel, @index
 using Oceananigans: Oceananigans
@@ -21,7 +22,7 @@ using Oceananigans.Models.NonhydrostaticModels: NonhydrostaticModel
 using Oceananigans.OrthogonalSphericalShellGrids: OrthogonalSphericalShellGrids, TripolarGrid
 using Oceananigans.Operators: ℑxyᶠᶜᵃ, ℑxyᶜᶠᵃ, ℑxᶠᵃᵃ, ℑyᵃᶠᵃ, ∂xᶠᶜᶜ, ∂yᶜᶠᶜ
 using Oceananigans.Simulations: Simulation
-using Oceananigans.Timesteppers: Clock
+using Oceananigans.TimeSteppers: Clock
 using Oceananigans.TurbulenceClosures: κzᶜᶜᶠ
 using Oceananigans.TurbulenceClosures.TKEBasedVerticalDiffusivities: CATKEVerticalDiffusivity,
                                                                      CATKEMixingLength,
