@@ -11,6 +11,7 @@ using Oceananigans.Models.HydrostaticFreeSurfaceModels: HydrostaticFreeSurfaceMo
 using Oceananigans.Operators: ℑxᶠᵃᵃ, ℑyᵃᶠᵃ
 using Oceananigans.OrthogonalSphericalShellGrids: OrthogonalSphericalShellGrids
 using Oceananigans.Simulations: Simulation
+using Oceananigans.Timesteppers: Clock
 using Oceananigans.Units: minutes
 using Oceananigans.Utils: launch!
 using KernelAbstractions: @kernel, @index
