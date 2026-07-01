@@ -18,9 +18,13 @@ DataWrangling.all_dates(::ERA5MonthlyLand, var) = range(DateTime("1950-01-01"), 
 # ERA5-Land is a spatially 2-D dataset
 DataWrangling.is_three_dimensional(::ERA5LandMetadata) = false
 
-# ERA5-Land lives on a 0.1° grid; the inherited single-level method returns the
-# 0.25° (1440, 720) size, so this override is mandatory.
-Base.size(::ERA5LandDataset, variable) = (3600, 1801, 1)
+# ERA5-Land is a global 0.1° product: the file carries 3600 longitudes
+# (0:0.1:359.9) and 1801 latitudes (90:-0.1:-90). As with the single-level grid,
+# the latitude cell count is one less than the file's row count, so the extra row
+# folds in through `AverageNorthSouth` mangling — placing the 1800 cell centers at
+# exactly -89.95:0.1:89.95 over (-90, 90). The inherited single-level method
+# returns the 0.25° (1440, 720) size, so this override is mandatory.
+Base.size(::ERA5LandDataset, variable) = (3600, 1800, 1)
 
 #####
 ##### Grid interfaces (0.1° resolution)
