@@ -1,12 +1,12 @@
 include("runtests_setup.jl")
 
-using NumericalEarth.DataWrangling: DerivedDatasetBackend
+using NumericalEarth.DataWrangling: DerivedInMemoryBackend
 using Oceananigans.OutputReaders: Cyclical, FieldTimeSeries, time_indices
 
 @inline product_of_sources(i, j, k, grid, a, b) = @inbounds a[i, j, k] * b[i, j, k]
 @inline scaled_source(i, j, k, grid, a, scale) = @inbounds scale * a[i, j, k]
 
-@testset "DerivedDatasetBackend" begin
+@testset "DerivedInMemoryBackend" begin
     for arch in test_architectures
         grid = LatitudeLongitudeGrid(arch; size = (4, 4), latitude = (0, 1), longitude = (0, 1),
                                      topology = (Bounded, Bounded, Flat))
@@ -21,7 +21,7 @@ using Oceananigans.OutputReaders: Cyclical, FieldTimeSeries, time_indices
         end
 
         window = 3
-        backend = DerivedDatasetBackend(window, product_of_sources, (a, b))
+        backend = DerivedInMemoryBackend(window, product_of_sources, (a, b))
         derived = FieldTimeSeries{Center, Center, Nothing}(grid, times; backend,
                                                            time_indexing = Cyclical())
         set!(derived)
@@ -41,7 +41,7 @@ using Oceananigans.OutputReaders: Cyclical, FieldTimeSeries, time_indices
         # Parameters are appended to the kernel function call.
         scale = 2.5
         scaled = FieldTimeSeries{Center, Center, Nothing}(grid, times;
-                     backend = DerivedDatasetBackend(window, scaled_source, (a,), (scale,)),
+                     backend = DerivedInMemoryBackend(window, scaled_source, (a,), (scale,)),
                      time_indexing = Cyclical())
         set!(scaled)
 

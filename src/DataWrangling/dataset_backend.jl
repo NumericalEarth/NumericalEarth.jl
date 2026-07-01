@@ -102,7 +102,7 @@ function set!(fts::DatasetFieldTimeSeries, backend=fts.backend)
 end
 
 """
-    DerivedDatasetBackend{F, S, P} <: AbstractInMemoryBackend{Int}
+    DerivedInMemoryBackend{F, S, P} <: AbstractInMemoryBackend{Int}
 
 In-memory backend for a `FieldTimeSeries` whose time slices are *computed* from
 other `FieldTimeSeries` (typically dataset-backed, partly-in-memory ones) rather
@@ -119,7 +119,7 @@ than read from disk. The backend carries
 `func` over the corresponding source slices, so only the resident window is ever
 computed — the derived series is exactly as lazy as its sources.
 """
-struct DerivedDatasetBackend{F, S, P} <: AbstractInMemoryBackend{Int}
+struct DerivedInMemoryBackend{F, S, P} <: AbstractInMemoryBackend{Int}
     start :: Int
     length :: Int
     func :: F
@@ -128,26 +128,26 @@ struct DerivedDatasetBackend{F, S, P} <: AbstractInMemoryBackend{Int}
 end
 
 """
-    DerivedDatasetBackend(length, func, sources, parameters=())
+    DerivedInMemoryBackend(length, func, sources, parameters=())
 
-Construct a `DerivedDatasetBackend` holding `length` in-memory time indices starting
+Construct a `DerivedInMemoryBackend` holding `length` in-memory time indices starting
 at `1`, whose slice `n` is computed as `func(i, j, k, grid, map(s -> s[n], sources)...,
 parameters...)`.
 """
-DerivedDatasetBackend(length::Int, func, sources, parameters=()) =
-    DerivedDatasetBackend(1, length, func, sources, parameters)
+DerivedInMemoryBackend(length::Int, func, sources, parameters=()) =
+    DerivedInMemoryBackend(1, length, func, sources, parameters)
 
 # Only the window extents are meaningful device-side; drop the host-only closure state.
-Adapt.adapt_structure(to, b::DerivedDatasetBackend) =
-    DerivedDatasetBackend(b.start, b.length, nothing, nothing, nothing)
+Adapt.adapt_structure(to, b::DerivedInMemoryBackend) =
+    DerivedInMemoryBackend(b.start, b.length, nothing, nothing, nothing)
 
-Base.length(backend::DerivedDatasetBackend)  = backend.length
-Base.summary(backend::DerivedDatasetBackend) = string("DerivedDatasetBackend(", backend.start, ", ", backend.length, ")")
+Base.length(backend::DerivedInMemoryBackend)  = backend.length
+Base.summary(backend::DerivedInMemoryBackend) = string("DerivedInMemoryBackend(", backend.start, ", ", backend.length, ")")
 
-new_backend(b::DerivedDatasetBackend, start, length) =
-    DerivedDatasetBackend(start, length, b.func, b.sources, b.parameters)
+new_backend(b::DerivedInMemoryBackend, start, length) =
+    DerivedInMemoryBackend(start, length, b.func, b.sources, b.parameters)
 
-const DerivedFieldTimeSeries = FlavorOfFTS{<:Any, <:Any, <:Any, <:Any, <:DerivedDatasetBackend}
+const DerivedFieldTimeSeries = FlavorOfFTS{<:Any, <:Any, <:Any, <:Any, <:DerivedInMemoryBackend}
 
 function set!(fts::DerivedFieldTimeSeries, backend=fts.backend)
     LX, LY, LZ = location(fts)
