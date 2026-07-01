@@ -199,6 +199,7 @@ include("InitialConditions/InitialConditions.jl")
 include("DataWrangling/DataWrangling.jl")
 include("Bathymetry/Bathymetry.jl")
 include("Diagnostics/Diagnostics.jl")
+include("NestedModels/NestedModels.jl")   # last: wraps a parent + a child (any component) model
 
 using .Grids
 using .DataWrangling
@@ -213,7 +214,8 @@ using .Oceans
 using .SeaIces
 using .Diagnostics
 using .EarthSystemModels: ComponentInterfaces, MomentumRoughnessLength, ScalarRoughnessLength, default_sea_ice
-using .EarthSystemModels.NestedSimulations: NestedModel, NestedSimulation, nested_atmosphere_model, parent_boundary_conditions, parent_forcings
+using .NestedModels
+using .NestedModels: NestedModel, NestedSimulation, nested_atmosphere_model, parent_boundary_conditions, parent_forcings
 using .DataWrangling.ETOPO
 using .DataWrangling.ECCO
 using .DataWrangling.GLORYS

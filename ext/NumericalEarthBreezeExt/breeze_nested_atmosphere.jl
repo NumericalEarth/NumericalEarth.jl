@@ -11,7 +11,7 @@
 # on a plain `FieldTimeSeries` (the same type Breeze compiles for any FTS forcing).
 
 using NumericalEarth.Atmospheres: PrescribedAtmosphere
-using NumericalEarth.EarthSystemModels.NestedSimulations: NestedModel, parent_boundary_conditions, parent_forcings
+using NumericalEarth.NestedModels: NestedModel, parent_boundary_conditions, parent_forcings
 using Oceananigans: WENO
 using Oceananigans.BoundaryConditions: ValueBoundaryCondition
 using Oceananigans.Coriolis: SphericalCoriolis
@@ -77,7 +77,7 @@ and a compressible split-explicit `dynamics` with an `UpperSponge` over the top 
 When `terrain` is given (anything `materialize_terrain!` accepts), the child grid's terrain-following
 coordinate is materialized in place before the model is built.
 """
-function NumericalEarth.EarthSystemModels.NestedSimulations.nested_atmosphere_model(
+function NumericalEarth.NestedModels.nested_atmosphere_model(
             parent_atmosphere::PrescribedAtmosphere, child_grid;
             relaxation_rate = nothing,
             relaxation_mask = 1,

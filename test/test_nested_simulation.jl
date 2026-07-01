@@ -1,7 +1,7 @@
 include("runtests_setup.jl")
 
 using NumericalEarth
-using NumericalEarth.EarthSystemModels.NestedSimulations: parent_boundary_conditions, ParentStateBoundary
+using NumericalEarth.NestedModels: parent_boundary_conditions, ParentStateBoundary
 using Oceananigans
 using Oceananigans.Units: Time
 using Oceananigans.Fields: location

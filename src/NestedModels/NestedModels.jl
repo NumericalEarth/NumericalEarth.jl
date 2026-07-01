@@ -1,4 +1,4 @@
-module NestedSimulations
+module NestedModels
 
 export NestedModel, NestedSimulation, nested_atmosphere_model,
        parent_boundary_conditions, parent_forcings
@@ -26,4 +26,4 @@ include("parent_state_boundary.jl")
 include("parent_boundary_conditions.jl")
 include("parent_forcings.jl")
 
-end # module
+end # module NestedModels

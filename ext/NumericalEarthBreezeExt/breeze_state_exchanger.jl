@@ -121,7 +121,7 @@ end
 
 # TODO: recomputes every resident level each call; a 2-level windowed cycle (recompute only when the
 # clock crosses a parent interval) is the memory-O(1) optimization for long runs.
-function NumericalEarth.EarthSystemModels.NestedSimulations.exchange_state!(ex::StateExchanger, time)
+function NumericalEarth.NestedModels.exchange_state!(ex::StateExchanger, time)
     compute_child_prognostics!(ex.prognostic, ex.parent, ex.pˢᵗ, ex.constants, ex.qᶜˡ_source, ex.qᶜⁱ_source)
     return nothing
 end

@@ -476,11 +476,11 @@ set!(model; ρ = ρ, u = u, v = v, qᵗ = qᵗ, T = T, compute_reference_state =
 # Consistent-w IC: graft ρw ← ρw − ρw̃ so the contravariant w̃ ≈ 0 (flow follows the ground),
 # then re-sync diagnostics.
 update_state!(model)
-interior(model.momentum.ρw) .-= interior(model.dynamics.contravariant_vertical_momentum)
+interior(model.child.momentum.ρw) .-= interior(model.child.dynamics.contravariant_vertical_momentum)
 update_state!(model)
 @info @sprintf("IC ready (hydrostatic-balanced p + consistent-w): max|u|=%.2f max|w|=%.2f ρ∈[%.4f,%.4f]",
-               maximum(abs, interior(model.velocities.u)), maximum(abs, interior(model.velocities.w)),
-               minimum(interior(model.dynamics.density)), maximum(interior(model.dynamics.density)))
+               maximum(abs, interior(model.child.velocities.u)), maximum(abs, interior(model.child.velocities.w)),
+               minimum(interior(model.child.dynamics.density)), maximum(interior(model.child.dynamics.density)))
 flush(stdout); flush(stderr)
 
 # ## Dynamical initialization (DFI / FV3 `na_init`)
@@ -514,20 +514,20 @@ let
     set!(twin; ρ = ρ, u = u, v = v, qᵛ = qᵛ, T = T)
     update_state!(twin)
     Breeze.balance_adiabatically!(twin; Δt = Δt_balance, cycles = balance_cycles)
-    ρθ_production = Breeze.AtmosphereModels.thermodynamic_density(model.formulation)
+    ρθ_production = Breeze.AtmosphereModels.thermodynamic_density(model.child.formulation)
     ρθ_balanced   = Breeze.AtmosphereModels.thermodynamic_density(twin.formulation)
-    for (field, balanced) in ((model.dynamics.density, twin.dynamics.density),
-                              (model.momentum.ρu, twin.momentum.ρu),
-                              (model.momentum.ρv, twin.momentum.ρv),
-                              (model.momentum.ρw, twin.momentum.ρw),
+    for (field, balanced) in ((model.child.dynamics.density, twin.dynamics.density),
+                              (model.child.momentum.ρu, twin.momentum.ρu),
+                              (model.child.momentum.ρv, twin.momentum.ρv),
+                              (model.child.momentum.ρw, twin.momentum.ρw),
                               (ρθ_production, ρθ_balanced))
         interior(field) .= interior(balanced)
     end
     update_state!(model)
     @info @sprintf("DFI done (cycles=%d, Δt=%.3f s): max|u|=%.2f max|w|=%.2f ρ∈[%.4f,%.4f]",
                    balance_cycles, Δt_balance,
-                   maximum(abs, interior(model.velocities.u)), maximum(abs, interior(model.velocities.w)),
-                   minimum(interior(model.dynamics.density)), maximum(interior(model.dynamics.density)))
+                   maximum(abs, interior(model.child.velocities.u)), maximum(abs, interior(model.child.velocities.w)),
+                   minimum(interior(model.child.dynamics.density)), maximum(interior(model.child.dynamics.density)))
     flush(stdout); flush(stderr)
 end
 
@@ -546,12 +546,12 @@ let κ_vk = 0.4, z₀_mom = 0.1
     z₁_drag = Float64[znode(i, j, 1, cpu_grid_drag, Center(), Center(), Center()) -
                       znode(i, j, 1, cpu_grid_drag, Center(), Center(), Face()) for i in 1:Nx, j in 1:Ny]
     Cd_drag  = on_architecture(arch, @. (κ_vk / log(z₁_drag / z₀_mom))^2)
-    ρτx_drag = model.momentum.ρu.boundary_conditions.bottom.condition
-    ρτy_drag = model.momentum.ρv.boundary_conditions.bottom.condition
+    ρτx_drag = model.child.momentum.ρu.boundary_conditions.bottom.condition
+    ρτy_drag = model.child.momentum.ρv.boundary_conditions.bottom.condition
     global function surface_drag!(sim)
-        uf = view(interior(model.velocities.u), :, :, 1)
-        vf = view(interior(model.velocities.v), :, :, 1)
-        ρc = view(interior(model.dynamics.density), :, :, 1)
+        uf = view(interior(model.child.velocities.u), :, :, 1)
+        vf = view(interior(model.child.velocities.v), :, :, 1)
+        ρc = view(interior(model.child.dynamics.density), :, :, 1)
         uc = 0.5 .* (view(uf, 1:Nx, :) .+ view(uf, 2:Nx+1, :))
         vc = 0.5 .* (view(vf, :, 1:Ny) .+ view(vf, :, 2:Ny+1))
         Um = sqrt.(uc .^ 2 .+ vc .^ 2 .+ 1e-12)
@@ -679,7 +679,7 @@ run!(simulation)
 # `PrescribedAtmosphere` at the child's frame times, at the same two levels as the child. ERA5's `w` is estimated from its pressure velocity ω as
 # w ≈ −ω/(ρg) (synoptic-scale, far weaker than the child's resolved convection); `qʳ` is blank (no model rain).
 
-parent_frames = let pg = parent.grid, pˢᵗ = model.dynamics.standard_pressure
+parent_frames = let pg = parent.grid, pˢᵗ = model.child.dynamics.standard_pressure
     λ_p = collect(λnodes(pg, Center(), Center(), Center()))
     φ_p = collect(φnodes(pg, Center(), Center(), Center()))
     nx_p, ny_p = length(λ_p), length(φ_p)
