@@ -84,34 +84,31 @@ end
                                               major_basins=1)
 
             grid = ImmersedBoundaryGrid(underlying_grid, GridFittedBottom(bottom_height);
-                                        active_cells_map=true)
+                                        active_cells_map = true)
 
             time_indices_in_memory = 4
             radiation  = JRA55PrescribedRadiation(arch; time_indices_in_memory)
             atmosphere = JRA55PrescribedAtmosphere(arch; time_indices_in_memory)
 
-            date = DateTime(1993, 1, 1)
-            dataset = ECCO4Monthly()
-            Δt = 65seconds
-            Sᵒᶜ = 35 # psu
-
+            ecco_set = MetadataSet(:temperature, :salinity,
+                                   dataset = ECCO4Monthly(),
+                                   date = DateTime(1993, 1, 1))
+            Δt = 605seconds
+            Sᵒᶜ = 35 # reference salinity [psu]
             free_surface = SplitExplicitFreeSurface(substeps=20)
 
-            # Without shortwave penetration: the budgets close to machine precision.
+            # Without shortwave penetration
             @testset "Surface-only fluxes" begin
                 ocean = ocean_simulation(grid; free_surface, radiative_forcing=nothing)
-                set!(ocean.model, T = Metadatum(:temperature; dataset, date),
-                                  S = Metadatum(:salinity; dataset, date))
+                set!(ocean.model, ecco_set)
                 coupled_model = OceanSeaIceModel(ocean, nothing; atmosphere, radiation)
                 test_tracer_budget(coupled_model, Sᵒᶜ, Δt, 4; rtol=√eps(eltype(grid)))
             end
 
-            # With the default `TwoColorRadiation`, part of the shortwave is absorbed in the interior,
-            # The tolerance is looser for this case (TODO: figure out where we are leaking)
+            # With penetrative shortwave radiation
             @testset "Surface fluxes + Penetrating shortwave radiation" begin
                 ocean = ocean_simulation(grid; free_surface)
-                set!(ocean.model, T = Metadatum(:temperature; dataset, date),
-                                  S = Metadatum(:salinity; dataset, date))
+                set!(ocean.model, ecco_set)
                 coupled_model = OceanSeaIceModel(ocean, nothing; atmosphere, radiation)
                 test_tracer_budget(coupled_model, Sᵒᶜ, Δt, 4; rtol=√eps(eltype(grid)))
             end
