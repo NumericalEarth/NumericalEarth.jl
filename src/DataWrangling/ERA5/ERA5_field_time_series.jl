@@ -4,7 +4,6 @@ using NCDatasets
 ##### Type aliases for yearly ERA5 FieldTimeSeries
 #####
 
-# Intermediate type alias for clarity and maintainability
 const ERA5YearlySingleLevelBackend = DatasetBackend{<:Any, <:Any, <:Any, <:Metadata{<:ERA5YearlySingleLevel}}
 const ERA5NetCDFFTSMultipleYears = FlavorOfFTS{<:Any, <:Any, <:Any, <:Any, <:ERA5YearlySingleLevelBackend}
 
