@@ -64,7 +64,7 @@ nh_ocean_atmos         = atmosphere_simulation(grid; potential_temperature=θᵃ
 # A background zonal wind `U₀` provides a nonzero wind speed for the
 # similarity theory flux computation.
 
-reference_state = slab_ocean_atmos.dynamics.reference_state
+reference_state = slab_ocean_atmos.model.dynamics.reference_state
 
 θᵢ(x, z) = reference_state.potential_temperature + 0.1 * randn() * (z < 500)
 set!(prescribed_ocean_atmos, θ=θᵢ, u=U₀)
