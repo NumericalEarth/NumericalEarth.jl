@@ -248,9 +248,9 @@ Pressure levels are extracted from the dataset and passed to the CDS API.
 This downloads 3D atmospheric data at specified pressure levels.
 """
 function Downloads.download(meta::NumericalEarth.DataWrangling.Metadatum{<:ERA5HourlyPressureLevels};
-                           skip_existing = true,
-                           threads = Threads.nthreads(),
-                           additional_kw...)
+                            skip_existing = true,
+                            threads = Threads.nthreads(),
+                            additional_kw...)
 
     output_directory = meta.dir
     output_filename = NumericalEarth.DataWrangling.metadata_filename(meta)
