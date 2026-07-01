@@ -417,3 +417,43 @@ end
     @test got[1] ≈ 102      # below the lowest level (z = -0.025) → clamped to T(0.2)
     @test got[4] ≈ 108      # above the highest level (z = 1.025) → clamped to T(0.8)
 end
+
+# The Breeze-ext `StateExchanger` holds the child prognostics as a 2-level FieldTimeSeries bracketing
+# the child clock (memory-O(1) in time); `exchange_state!` advances that window as the clock crosses a
+# parent time interval, recomputing the two resident levels from the parent. This guards the cycling:
+# the window `start` advances 1→2 crossing into the 2nd interval and back to 1, with finite + physical
+# prognostics throughout. Uses a synthetic `PrescribedAtmosphere` parent (no ERA5 download); here its
+# `pressure` is an FTS (the ERA5 parent uses a static `Field`) — the exchanger handles both.
+@testset "StateExchanger: 2-level window cycles across parent intervals on $(arch)" for arch in test_architectures
+    ext = Base.get_extension(NumericalEarth, :NumericalEarthBreezeExt)
+
+    parent_grid = RectilinearGrid(arch; size = (8, 8, 4), x = (-1.5, 1.5), y = (-1.5, 1.5),
+                                  z = (0, 1), topology = (Bounded, Bounded, Bounded))
+    times  = [0.0, 1.0, 2.0]                                   # 3 levels ⇒ 2 intervals
+    parent = PrescribedAtmosphere(parent_grid, times)
+    set!(parent.temperature,       (x, y, z, t) -> 280 + t)    # time-varying ⇒ cycling changes values
+    set!(parent.specific_humidity, (x, y, z, t) -> 0.005)
+    set!(parent.velocities.u,      (x, y, z, t) -> 1.0)
+    set!(parent.velocities.v,      (x, y, z, t) -> 0.0)
+    set!(parent.pressure,          (x, y, z, t) -> 9.0e4)
+
+    constants = ThermodynamicConstants()
+    exchanger = ext.state_exchanger(parent, 1.0e5, constants; condensates = (qᶜˡ = nothing, qᶜⁱ = nothing))
+    prog      = exchanger.prognostic
+    exchange  = NumericalEarth.NestedModels.exchange_state!
+
+    # Initial window brackets t = times[1] ⇒ start = 1.
+    @test prog.ρᵈ.backend.start == 1
+    @test all(isfinite, Array(interior(prog.ρθ[1])))
+
+    # Cross into the 2nd interval [1, 2] ⇒ the derived window cycles forward to start = 2.
+    exchange(exchanger, 1.5)
+    @test prog.ρᵈ.backend.start == 2
+    @test all(isfinite, Array(interior(prog.ρθ[2])))
+    θ = Array(interior(prog.ρθ[2])) ./ Array(interior(prog.ρᵈ[2]))
+    @test all(250 .< θ .< 400)                                 # physical potential temperature
+
+    # Cycle back to the 1st interval.
+    exchange(exchanger, 0.0)
+    @test prog.ρᵈ.backend.start == 1
+end

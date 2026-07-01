@@ -105,7 +105,7 @@ function compute_child_prognostics!(prognostic, parent_atmosphere, pˢᵗ, const
                 prognostic.ρᵈ[n], prognostic.ρu[n], prognostic.ρv[n], prognostic.ρθ[n], prognostic.ρqᵛ[n],
                 parent_atmosphere.temperature[n], parent_atmosphere.specific_humidity[n],
                 source_snapshot(condensates.qᶜˡ, n), source_snapshot(condensates.qᶜⁱ, n),
-                parent_atmosphere.pressure,
+                source_snapshot(parent_atmosphere.pressure, n),   # static Field (ERA5) or FTS: both handled
                 parent_atmosphere.velocities.u[n], parent_atmosphere.velocities.v[n],
                 pˢᵗ, Rᵈ, Rᵛ, cᵖᵈ, ℒˡ, ℒⁱ)
     end
