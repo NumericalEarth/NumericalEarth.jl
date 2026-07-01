@@ -118,9 +118,9 @@ Yearly files contain all 8760-8784 hours for one variable for one year in a sing
 This is 8760× more efficient than downloading individual hourly files.
 """
 function Downloads.download(meta::NumericalEarth.DataWrangling.Metadatum{<:ERA5YearlySingleLevel};
-                           skip_existing = true,
-                           threads = Threads.nthreads(),
-                           additional_kw...)
+                            skip_existing = true,
+                            threads = 1,
+                            additional_kw...)
 
     output_directory = meta.dir
     output_filename = NumericalEarth.DataWrangling.metadata_filename(meta)
