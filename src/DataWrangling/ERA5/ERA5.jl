@@ -1,7 +1,7 @@
 module ERA5
 
 # 2-D data
-export ERA5HourlySingleLevel, ERA5MonthlySingleLevel, MultiYearERA5
+export ERA5HourlySingleLevel, ERA5MonthlySingleLevel, ERA5YearlySingleLevel
 
 # 3-D data
 export ERA5HourlyPressureLevels, ERA5MonthlyPressureLevels, ERA5_all_pressure_levels, pressure_field, hPa
