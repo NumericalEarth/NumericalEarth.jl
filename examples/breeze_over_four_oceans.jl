@@ -67,10 +67,10 @@ nh_ocean_atmos         = atmosphere_simulation(grid; potential_temperature=θᵃ
 reference_state = slab_ocean_atmos.model.dynamics.reference_state
 
 θᵢ(x, z) = reference_state.potential_temperature + 0.1 * randn() * (z < 500)
-set!(prescribed_ocean_atmos, θ=θᵢ, u=U₀)
-set!(slab_ocean_atmos,       θ=θᵢ, u=U₀)
-set!(full_ocean_atmos,       θ=θᵢ, u=U₀)
-set!(nh_ocean_atmos,         θ=θᵢ, u=U₀)
+set!(prescribed_ocean_atmos.model, θ=θᵢ, u=U₀)
+set!(slab_ocean_atmos.model,       θ=θᵢ, u=U₀)
+set!(full_ocean_atmos.model,       θ=θᵢ, u=U₀)
+set!(nh_ocean_atmos.model,         θ=θᵢ, u=U₀)
 
 # ## Prescribed ocean (constant SST)
 #
@@ -168,7 +168,7 @@ nh_sim         = Simulation(nh_model; Δt, stop_time)
 # ## Progress callbacks
 
 function prescribed_progress(sim)
-    atmos = sim.model.atmosphere
+    atmos = sim.model.atmosphere.model
     u, v, w = atmos.velocities
     umax = maximum(abs, u)
     wmax = maximum(abs, w)
@@ -179,7 +179,7 @@ function prescribed_progress(sim)
 end
 
 function slab_progress(sim)
-    atmos = sim.model.atmosphere
+    atmos = sim.model.atmosphere.model
     u, v, w = atmos.velocities
     umax = maximum(abs, u)
     wmax = maximum(abs, w)
@@ -193,7 +193,7 @@ function slab_progress(sim)
 end
 
 function full_progress(sim)
-    atmos = sim.model.atmosphere
+    atmos = sim.model.atmosphere.model
     u, v, w = atmos.velocities
     umax = maximum(abs, u)
     wmax = maximum(abs, w)
@@ -209,7 +209,7 @@ function full_progress(sim)
 end
 
 function nh_progress(sim)
-    atmos = sim.model.atmosphere
+    atmos = sim.model.atmosphere.model
     u, v, w = atmos.velocities
     umax = maximum(abs, u)
     wmax = maximum(abs, w)
@@ -236,16 +236,16 @@ add_callback!(nh_sim,         nh_progress,         IterationInterval(400))
 # * Full simulation: atmospheric θ, u, cloud water, and w, plus full-depth ocean temperature T.
 # * Nonhydrostatic simulation: atmospheric θ, u, cloud water, and w, plus full-depth ocean temperature T.
 
-u_p, v_p, w_p = prescribed_ocean_atmos.velocities
-θ_p = liquid_ice_potential_temperature(prescribed_ocean_atmos)
+u_p, v_p, w_p = prescribed_ocean_atmos.model.velocities
+θ_p = liquid_ice_potential_temperature(prescribed_ocean_atmos.model)
 
 prescribed_sim.output_writers[:atmos] = JLD2Writer(prescribed_model, (; θ=θ_p, u=u_p),
                                                    filename = "prescribed_ocean_atmos",
                                                    schedule = TimeInterval(1minute),
                                                    overwrite_existing = true)
 
-u_s, v_s, w_s = slab_ocean_atmos.velocities
-θ_s = liquid_ice_potential_temperature(slab_ocean_atmos)
+u_s, v_s, w_s = slab_ocean_atmos.model.velocities
+θ_s = liquid_ice_potential_temperature(slab_ocean_atmos.model)
 
 slab_sim.output_writers[:atmos] = JLD2Writer(slab_model, (; θ=θ_s, u=u_s),
                                              filename = "slab_ocean_atmos",
@@ -257,9 +257,9 @@ slab_sim.output_writers[:sst] = JLD2Writer(slab_model, (; SST=slab_ocean.tempera
                                            schedule = TimeInterval(1minute),
                                            overwrite_existing = true)
 
-u_f, v_f, w_f = full_ocean_atmos.velocities
-θ_f = liquid_ice_potential_temperature(full_ocean_atmos)
-qˡ_f = full_ocean_atmos.microphysical_fields.qˡ
+u_f, v_f, w_f = full_ocean_atmos.model.velocities
+θ_f = liquid_ice_potential_temperature(full_ocean_atmos.model)
+qˡ_f = full_ocean_atmos.model.microphysical_fields.qˡ
 
 full_sim.output_writers[:atmos] = JLD2Writer(full_model, (; θ=θ_f, u=u_f, qˡ=qˡ_f, w=w_f),
                                              filename = "full_ocean_atmos",
@@ -271,9 +271,9 @@ full_sim.output_writers[:ocean] = JLD2Writer(full_model, (; T=ocean.model.tracer
                                              schedule = TimeInterval(1minute),
                                              overwrite_existing = true)
 
-u_nh, v_nh, w_nh = nh_ocean_atmos.velocities
-θ_nh = liquid_ice_potential_temperature(nh_ocean_atmos)
-qˡ_nh = nh_ocean_atmos.microphysical_fields.qˡ
+u_nh, v_nh, w_nh = nh_ocean_atmos.model.velocities
+θ_nh = liquid_ice_potential_temperature(nh_ocean_atmos.model)
+qˡ_nh = nh_ocean_atmos.model.microphysical_fields.qˡ
 
 nh_sim.output_writers[:atmos] = JLD2Writer(nh_model, (; θ=θ_nh, u=u_nh, qˡ=qˡ_nh, w=w_nh),
                                            filename = "nh_ocean_atmos",
