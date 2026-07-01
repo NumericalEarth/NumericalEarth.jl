@@ -24,7 +24,6 @@ function DataWrangling.retrieve_data(metadatum::Metadatum{<:ERA5YearlySingleLeve
     path = metadata_path(metadatum)
     name = dataset_variable_name(metadatum)
 
-    # Open yearly file
     ds = NCDatasets.Dataset(path)
 
     # Find time index for this specific datetime
