@@ -65,6 +65,7 @@ docs/src/library/private_api.md
 
 .CondaPkg
 CondaPkg.toml
+docs/plans/*
 !docs/CondaPkg.toml
 
 # claude
