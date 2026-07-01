@@ -41,6 +41,9 @@ export
     DryLayerVaporPistonVelocity,
     ConstantTortuosity,
     MillingtonQuirk,
+    CanopyConductanceHumidity,
+    FarquharPhotosynthesis,
+    MedlynConductance,
     ElevationCorrection,
     atmosphere_land_interface,
     # Sea ice-ocean heat flux formulations
@@ -113,6 +116,7 @@ end
 include("roughness_lengths.jl")
 include("interface_states.jl")
 include("dry_layer_humidity.jl")
+include("canopy_conductance.jl")
 include("compute_interface_state.jl")
 include("similarity_theory_turbulent_fluxes.jl")
 include("coefficient_based_turbulent_fluxes.jl")
