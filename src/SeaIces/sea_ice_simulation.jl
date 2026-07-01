@@ -26,7 +26,7 @@ end
 """
     sea_ice_simulation(grid, ocean=nothing;
                        clock = Clock(grid),
-                       stop_time = clock.time isa Number ? Inf : Dates.DateTime(9999, 12, 31, 23, 59, 59),
+                       stop_time = default_stop_time(grid, clock),
                        Δt = 5minutes,
                        ice_salinity = 4, # psu
                        advection = nothing,
@@ -60,8 +60,11 @@ Arguments
 
 Keyword Arguments
 =================
-- `clock`: Clock for the underlying model. Defaults to `Clock(grid)`, a numeric clock starting at `time = 0`. Pass a `DateTime`-based clock to step the simulation in calendar time (e.g. when coupling).
-- `stop_time`: Stop time for the simulation. Defaults to `Inf` for numeric clocks, or `DateTime(9999, 12, 31, 23, 59, 59)` for `DateTime` clocks.
+- `clock`: Clock for the underlying model. Defaults to `Clock(grid)`, a numeric clock starting at `time = 0`. 
+  Pass a `DateTime`-based clock to step the simulation in calendar time (e.g. when coupling).
+- `stop_time`: Stop time for the simulation. Defaults to `Inf` for numeric clocks, or 
+  `DateTime(9999, 12, 31, 23, 59, 59)` for `DateTime` clocks. On Reactant architectures it defaults to `nothing`, since 
+  Reactant does not support `stop_time`.
 - `Δt`: time step for the sea ice simulation
 - `ice_salinity`: salinity of the sea ice (psu)
 - `advection`: optional advection scheme for the sea ice model; if `nothing` (default), no advection
@@ -87,7 +90,7 @@ Keyword Arguments
 """
 function sea_ice_simulation(grid, ocean=nothing;
                             clock = Clock(grid),
-                            stop_time = clock.time isa Number ? Inf : Dates.DateTime(9999, 12, 31, 23, 59, 59),
+                            stop_time = default_stop_time(grid, clock),
                             Δt = 5minutes,
                             ice_salinity = 4, # psu
                             advection = nothing,

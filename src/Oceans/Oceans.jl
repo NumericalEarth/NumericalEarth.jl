@@ -2,7 +2,6 @@ module Oceans
 
 export ocean_simulation, SlabOcean, PrescribedOcean
 
-import Dates
 using Adapt: Adapt, adapt
 using KernelAbstractions: @kernel, @index
 using Oceananigans: Oceananigans
@@ -36,6 +35,7 @@ using ..EarthSystemModels: EarthSystemModels,
                            ocean_surface_velocities,
                            ocean_surface_salinity,
                            DegreesKelvin,
+                           default_stop_time,
                            heat_capacity
 using ..EarthSystemModels.InterfaceComputations: ComponentExchanger
 

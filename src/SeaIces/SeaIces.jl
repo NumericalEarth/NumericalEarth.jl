@@ -2,7 +2,6 @@ module SeaIces
 
 export sea_ice_simulation, FreezingLimitedOceanTemperature
 
-import Dates
 using Oceananigans: Oceananigans
 using Oceananigans.Architectures: architecture
 using Oceananigans.Coriolis: HydrostaticSphericalCoriolis
@@ -17,7 +16,7 @@ using Oceananigans.Units: minutes
 using Oceananigans.Utils: launch!
 using KernelAbstractions: @kernel, @index
 
-using ..EarthSystemModels: EarthSystemModels
+using ..EarthSystemModels: EarthSystemModels, default_stop_time
 using ..EarthSystemModels.InterfaceComputations: InterfaceComputations, ComponentExchanger,
                                                  ThreeEquationHeatFlux
 

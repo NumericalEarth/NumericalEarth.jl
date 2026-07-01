@@ -194,7 +194,7 @@ end
 """
     hydrostatic_ocean_simulation(grid;
                                  clock = Clock(grid),
-                                 stop_time = clock.time isa Number ? Inf : Dates.DateTime(9999, 12, 31, 23, 59, 59),
+                                 stop_time = default_stop_time(grid, clock),
                                  Δt = estimate_maximum_Δt(grid),
                                  closure = default_ocean_closure(),
                                  tracers = (:T, :S),
@@ -259,8 +259,11 @@ defaults on a per-field basis.
 
 ## Keyword Arguments
 
-- `clock`: Clock for the underlying model. Defaults to `Clock(grid)`, a numeric clock starting at `time = 0`. Pass a `DateTime`-based clock to step the simulation in calendar time (e.g. when coupling).
-- `stop_time`: Stop time for the simulation. Defaults to `Inf` for numeric clocks, or `DateTime(9999, 12, 31, 23, 59, 59)` for `DateTime` clocks.
+- `clock`: Clock for the underlying model. Defaults to `Clock(grid)`, a numeric clock starting at `time = 0`. 
+  Pass a `DateTime`-based clock to step the simulation in calendar time (e.g. when coupling).
+- `stop_time`: Stop time for the simulation. Defaults to `Inf` for numeric clocks, or 
+  `DateTime(9999, 12, 31, 23, 59, 59)` for `DateTime` clocks. On Reactant architectures it defaults to `nothing`, since 
+  Reactant does not support `stop_time`.
 - `Δt`: Timestep used by the `Simulation`. Defaults to the maximum stable timestep estimated from the `grid`.
 - `closure`: A turbulence or mixing closure. Defaults to `default_ocean_closure()`.
 - `tracers`: Tuple of tracer names. Defaults to `(:T, :S)`.
@@ -284,7 +287,7 @@ defaults on a per-field basis.
 """
 function hydrostatic_ocean_simulation(grid;
                                       clock = Clock(grid),
-                                      stop_time = clock.time isa Number ? Inf : Dates.DateTime(9999, 12, 31, 23, 59, 59),
+                                      stop_time = default_stop_time(grid, clock),
                                       Δt = estimate_maximum_Δt(grid),
                                       closure = default_ocean_closure(),
                                       tracers = (:T, :S),
