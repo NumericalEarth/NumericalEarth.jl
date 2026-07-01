@@ -40,7 +40,7 @@ using Thermodynamics: Thermodynamics as AtmosphericThermodynamics
 
 using Oceananigans: Oceananigans, AbstractModel, initialize!,
                     prognostic_state, restore_prognostic_state!
-using Oceananigans.Architectures: architecture, ReactantState
+using Oceananigans.Architectures: architecture, AbstractArchitecture, ReactantState
 using Oceananigans.Diagnostics: NaNChecker
 using Oceananigans.Fields: ZeroField
 using Oceananigans.Simulations: reset_clock!, Simulation
@@ -49,7 +49,7 @@ using Oceananigans.Utils: launch!, prettytime
 
 # Reactant does not support `stop_time`; it must stay `nothing` there.
 default_stop_time(grid, clock) = default_stop_time(architecture(grid), clock)
-default_stop_time(arch, clock) = clock.time isa Number ? Inf : Dates.DateTime(9999, 12, 31, 23, 59, 59)
+default_stop_time(::AbstractArchitecture, clock) = clock.time isa Number ? Inf : Dates.DateTime(9999, 12, 31, 23, 59, 59)
 default_stop_time(::ReactantState, clock) = nothing
 
 include("components.jl")
