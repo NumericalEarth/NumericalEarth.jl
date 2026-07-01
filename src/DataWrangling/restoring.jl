@@ -9,6 +9,7 @@ using Oceananigans.Operators: Δzᶜᶜᶜ
 using Oceananigans.OutputReaders: Cyclical
 using Oceananigans.Units: Time
 using NCDatasets
+using Dates: Second
 
 # Variable names for restorable data
 struct Temperature end
@@ -228,6 +229,7 @@ function Base.show(io::IO, dsr::DatasetRestoring)
 end
 
 Oceananigans.Forcings.materialize_forcing(forcing::DatasetRestoring, field, field_name, model_field_names) = forcing
+Oceananigans.OutputReaders.extract_field_time_series(forcing::DatasetRestoring) = forcing.field_time_series
 
 """
     SurfaceFluxRestoring(dataset_restoring::DatasetRestoring)
