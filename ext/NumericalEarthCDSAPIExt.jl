@@ -15,7 +15,9 @@ using NumericalEarth.DataWrangling.ERA5: ERA5Dataset, ERA5Metadata, ERA5Metadatu
                                          ERA5_dataset_variable_names, ERA5_netcdf_variable_names,
                                          ERA5PressureLevelsDataset,
                                          ERA5PressureMetadata, ERA5PressureMetadatum,
-                                         ERA5PL_dataset_variable_names, ERA5PL_netcdf_variable_names
+                                         ERA5PL_dataset_variable_names, ERA5PL_netcdf_variable_names,
+                                         ERA5HourlyLand, ERA5MonthlyLand, ERA5LandDataset,
+                                         ERA5Land_dataset_variable_names, ERA5Land_netcdf_variable_names
 using NumericalEarth.DataWrangling.GloFAS: GloFASDataset, GloFASMetadata, GloFASMetadatum,
                                            GloFAS_netcdf_variable_names
 
@@ -25,12 +27,16 @@ using NumericalEarth.DataWrangling.GloFAS: GloFASDataset, GloFASMetadata, GloFAS
 
 cds_product(::ERA5Dataset)               = "reanalysis-era5-single-levels"
 cds_product(::ERA5PressureLevelsDataset) = "reanalysis-era5-pressure-levels"
+cds_product(::ERA5HourlyLand)            = "reanalysis-era5-land"
+cds_product(::ERA5MonthlyLand)           = "reanalysis-era5-land-monthly-means"
 
 cds_varnames(::ERA5Dataset)               = ERA5_dataset_variable_names
 cds_varnames(::ERA5PressureLevelsDataset) = ERA5PL_dataset_variable_names
+cds_varnames(::ERA5LandDataset)           = ERA5Land_dataset_variable_names
 
 nc_varnames(::ERA5Dataset)               = ERA5_netcdf_variable_names
 nc_varnames(::ERA5PressureLevelsDataset) = ERA5PL_netcdf_variable_names
+nc_varnames(::ERA5LandDataset)           = ERA5Land_netcdf_variable_names
 
 # Coordinate / dimension variables to propagate into each split file
 const ERA5_COORD_VARS = Set(["longitude", "latitude",
@@ -44,12 +50,18 @@ const ERA5PL_COORD_VARS = Set(["longitude", "latitude",
 
 coord_vars(::ERA5Dataset)               = ERA5_COORD_VARS
 coord_vars(::ERA5PressureLevelsDataset) = ERA5PL_COORD_VARS
+coord_vars(::ERA5LandDataset)           = ERA5_COORD_VARS
 
 extra_request_keys!(request, ::ERA5Dataset) = nothing
 function extra_request_keys!(request, ds::ERA5PressureLevelsDataset)
     p_hPa = [round(Int, p * 1e-2) for p in ds.pressure_levels]
     request["pressure_level"] = [string(p) for p in p_hPa]
 end
+
+# ERA5 (single- and pressure-level) requests carry a `product_type`; the ERA5-Land
+# products reject it, so the land override omits the key entirely.
+set_product_type!(request, ::ERA5Dataset)     = (request["product_type"] = ["reanalysis"]; nothing)
+set_product_type!(request, ::ERA5LandDataset) = nothing
 
 #####
 ##### CDS request construction — pure, network-free
@@ -83,7 +95,6 @@ function build_era5_request(name_or_names, dataset, datetimes; region)
     hours  = unique([lpad(string(Dates.hour(dt)), 2, '0') * ":00" for dt in dts])
 
     request = Dict{String, Any}(
-        "product_type"    => ["reanalysis"],
         "variable"        => cds_vars,
         "year"            => years,
         "month"           => months,
@@ -93,6 +104,7 @@ function build_era5_request(name_or_names, dataset, datetimes; region)
         "download_format" => "unarchived",
     )
 
+    set_product_type!(request, dataset)
     extra_request_keys!(request, dataset)
 
     area = era5_request_area(region, dataset, first(names))
