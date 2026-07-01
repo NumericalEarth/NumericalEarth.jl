@@ -181,113 +181,35 @@ grid = LatitudeLongitudeGrid(arch;
                              halo      = (5, 5, 5),
                              topology  = (Bounded, Bounded, Bounded))
 
-# Get the parent terrain: ERA5 surface geopotential regridded onto the child's horizontal grid as a
-# 2-D `(Center, Center, Nothing)` field — no separate orography grid needed.
-
-g_accel = Oceananigans.defaults.gravitational_acceleration
-Φ_sfc = Field{Center, Center, Nothing}(grid)
-set!(Φ_sfc, Metadatum(:geopotential; dataset = ds_sl, date = start_date,
-                      region = era5_region, dir = era5_datadir))
-parent_elevation = Array(interior(Φ_sfc))[:, :, 1] ./ g_accel
-
-# ETOPO 2022, with 60" (~1.85 km) relief, is finer than the our LAM grid cells. The
-# surface elevation (≥ 0; ocean clamped to sea level) is regridded onto
-# the LAM horizontal grid.
-
-elevation = regrid_topography(grid; dataset = ETOPO2022())
-
-# Now blend the terrain across the lateral relaxation zone such that the terrain along the boundary
-# matches the parent elevation and at the interior edge matches the child elevation.
-
-etopo_full = Array(interior(elevation))[:, :, 1]
-blended = similar(etopo_full)
-for j in 1:Ny, i in 1:Nx
-    weight = clamp(min(i - 1, Nx - i, j - 1, Ny - j) / relax_width, 0, 1)
-    blended[i, j] = weight * etopo_full[i, j] + (1 - weight) * parent_elevation[i, j]
-end
-set!(elevation, reshape(blended, size(interior(elevation))))
-
-# `elevation` is materialized onto the grid's terrain-following coordinate inside
-# `nested_atmosphere_model` (its `terrain` keyword), deforming the coordinate surfaces to follow the
-# ground (a Gal-Chen–Somerville σ coordinate, default `LinearDecay`): the bottom sits at the local
-# terrain height, the top stays flat. `CompressibleDynamics` then builds the slope metrics it needs
-# directly from the grid, and the #241 ERA5 ingest below interpolates onto the true `znode` heights
-# above sea level.
+# Terrain is handled entirely by `nested_atmosphere_model` (its `terrain` keyword): ETOPO 2022 —
+# 60" (~1.85 km) relief, finer than the LAM cells; ocean clamped to sea level — is regridded onto the
+# child grid, blended toward the parent's ERA5 orography over the outermost `relax_width` cells (so the
+# terrain at the open boundaries matches the parent state driving them), and materialized onto the
+# grid's terrain-following coordinate (a Gal-Chen–Somerville σ coordinate, default `LinearDecay`): the
+# bottom sits at the local terrain height, the top stays flat. `CompressibleDynamics` then builds the
+# slope metrics it needs directly from the grid, and the #241 ERA5 ingest below interpolates onto the
+# true `znode` heights above sea level.
 
 # ## Nested domains
 #
 # Visualize the nesting before stepping the model: the ERA5 forcing region that supplies the parent
-# state (lateral BCs + Davies relaxation) and the 3 km LAM — Fan (2017)'s Domain 3, the `NestedSimulation`
-# child — over ETOPO terrain with Natural Earth state/country boundaries, centered on ARM SGP.
-# Drawn here, before the run, so the domain geometry is written even if the run is cut short.
+# state (lateral BCs + Davies relaxation) and the 12 km LAM child, over ETOPO relief with Natural
+# Earth state/country boundaries, centered on ARM SGP. Drawn here, before the run, so the domain
+# geometry is written even if the run is cut short. `visualize_domain` (NumericalEarthMakieExt) draws
+# the basemap and the two domain boxes; `padding` sets the margin between the ERA5 box and the map edge.
 
-using CairoMakie
+using CairoMakie     # loads Makie, activating NumericalEarthMakieExt → `visualize_domain`
 using NaturalEarth   # with its transitive GeoInterface, triggers NumericalEarthNaturalEarthExt → `natural_earth_lines`
 
-# A 2.5° buffer around the ERA5 box leaves the nest well inside the map edge;
-# the basemap grid samples ETOPO at ~0.03° (≈ 3 km).
-map_buffer = 2.5
-map_lon = (era5_region.longitude[1] - map_buffer, era5_region.longitude[2] + map_buffer)
-map_lat = (era5_region.latitude[1]  - map_buffer, era5_region.latitude[2]  + map_buffer)
-map_grid = LatitudeLongitudeGrid(CPU();
-                                 longitude = map_lon, latitude = map_lat,
-                                 z         = (0, 1),
-                                 size      = (round(Int, (map_lon[2] - map_lon[1]) / 0.03),
-                                              round(Int, (map_lat[2] - map_lat[1]) / 0.03), 1),
-                                 topology  = (Bounded, Bounded, Bounded))
+fig = visualize_domain(grid;
+                       parent       = era5_region,
+                       padding      = 2.5,
+                       title        = "ERA5 → 12 km LAM nest (MC3E squall line, ARM SGP)",
+                       label        = "12 km LAM (child)",
+                       parent_label = "ERA5 parent — Fan Domain 1 role",
+                       landmarks    = tuple("ARM SGP" => (λ₀, φ₀)))
 
-# Full ETOPO relief (negative over ocean) for the basemap, so the map shows true
-# bathymetry as well as topography. The land–sea mask is just its sign — `regrid_topography`
-# (used above for the model's terrain) clamps the ocean to 0 and loses it. The mask is what
-# a SlabLand/ocean surface-BC split would key on; here only the Gulf corner of D2 is ocean.
-map_bathymetry = regrid_bathymetry(map_grid; dataset = ETOPO2022())
-relief   = Array(interior(map_bathymetry))[:, :, 1]   # m; negative over ocean
-is_ocean = relief .< 0                                # land–sea mask (true = ocean)
-
-# Closed rectangle path from (λ, φ) bounds.
-domain_box(λ₁, λ₂, φ₁, φ₂) = ([λ₁, λ₂, λ₂, λ₁, λ₁], [φ₁, φ₁, φ₂, φ₂, φ₁])
-
-fig_map = Figure(size = (840, 760), fontsize = 13)
-ax_map  = Axis(fig_map[1, 1]; xlabel = "longitude (°)", ylabel = "latitude (°)",
-               title  = "ERA5 → 12 km LAM nest (MC3E squall line, ARM SGP)",
-               aspect = DataAspect())
-
-# Two-sided normalization onto `:topo`: the full bathymetry range fills the lower (blue)
-# half and the full land range the upper (green→yellow→brown→white) half, with z=0 pinned
-# to the colormap's sea-level break (0.5). Bake it into a custom colormap so a *linear*
-# colorrange keeps the colorbar in physical metres. (Assumes the domain straddles sea level.)
-zmin, zmax = extrema(relief)
-g0   = -zmin / (zmax - zmin)                 # fraction of the linear range at z = 0
-topo = cgrad(:topo)
-remap(g) = g ≤ g0 ? 0.5 * (g / g0) : 0.5 + 0.5 * (g - g0) / (1 - g0)
-topo_centered = [topo[remap(g)] for g in range(0, 1; length = 512)]
-
-hm_map = heatmap!(ax_map,
-                  collect(λnodes(map_grid, Center(), Center(), Center())),
-                  collect(φnodes(map_grid, Center(), Center(), Center())),
-                  relief; colormap = topo_centered, colorrange = (zmin, zmax))
-Colorbar(fig_map[1, 2], hm_map; label = "elevation / depth (m)")
-
-# US state lines and country borders (the topo/bathy coloring renders the coastline itself).
-for (name, color, linewidth) in (("admin_1_states_provinces_lines", (:gray20, 0.55), 0.7),
-                                 ("admin_0_boundary_lines_land",    (:black,  0.75), 1.4))
-    lon, lat = natural_earth_lines(name)
-    lines!(ax_map, lon, lat; color, linewidth)
-end
-
-lines!(ax_map, domain_box(era5_region.longitude..., era5_region.latitude...)...;
-       color = :dodgerblue, linewidth = 3, label = "ERA5 parent — Fan Domain 1 role")
-lines!(ax_map, domain_box(λ_west, λ_east, φ_south, φ_north)...;
-       color = :crimson, linewidth = 3, label = "12 km LAM (child)")
-scatter!(ax_map, [λ₀], [φ₀]; color = :black, marker = :star5, markersize = 18, label = "ARM SGP")
-
-axislegend(ax_map; position = :rt, framevisible = true, backgroundcolor = (:white, 0.85))
-
-# Clip to the map region — the Natural Earth lines span the globe.
-xlims!(ax_map, map_lon...)
-ylims!(ax_map, map_lat...)
-
-save("era5_breeze_domains.png", fig_map)
+save("era5_breeze_domains.png", fig)
 @info "Wrote era5_breeze_domains.png"
 
 # ## Thermodynamic constants
@@ -298,8 +220,8 @@ save("era5_breeze_domains.png", fig_map)
 
 constants = ThermodynamicConstants()
 
-Rᵈ   = dry_air_gas_constant(constants)
-Rᵛ   = vapor_gas_constant(constants)
+Rᵈ = dry_air_gas_constant(constants)
+Rᵛ = vapor_gas_constant(constants)
 
 # ## Interpolate ERA5 onto the LAM grid
 #
@@ -400,30 +322,25 @@ end
 
 # ## Build the Breeze model
 #
-# `nested_atmosphere_model` builds the child `AtmosphereModel` (via the same `atmosphere_model` helper
-# that pre-wires the ρτˣ/ρτʸ/Jᵉ/Jᵛ bottom-flux BC fields for the forthcoming SlabLand / SlabOcean
-# coupling), derives the parent-driven lateral BCs + Davies relaxation, and returns a `NestedModel` —
-# no `.model`/`.child` unpacking. Its skeleton `CoupledRadiation` is a no-op (radiatively decoupled)
-# until materialized inside an `EarthSystemModel`.
+# `nested_atmosphere_model` builds the child `AtmosphereModel` over `grid` (via the same
+# `atmosphere_model` helper that pre-wires the ρτˣ/ρτʸ/Jᵉ/Jᵛ bottom-flux BC fields for the forthcoming
+# SlabLand / SlabOcean coupling), derives the parent-driven lateral BCs + Davies relaxation on the fly
+# from `parent`, regrids/blends/materializes the ETOPO `terrain` onto the grid's terrain-following
+# coordinate, and wraps the pair in a `NestedModel` — whose `time_step!` advances the child then ticks
+# the parent clock so the on-the-fly BCs/relaxation sample the parent at the right time. Its skeleton
+# `CoupledRadiation` is a no-op (radiatively decoupled) until materialized inside an `EarthSystemModel`.
 #
-# `nested_atmosphere_model` supplies the nested-LAM physics defaults: compressible split-explicit
-# dynamics with an `UpperSponge` + ρw Rayleigh lid sponge (no divergence damping, which would inject
-# a spurious force on this unbalanced cold start), `WENO(order = 9)` momentum advection,
-# `SphericalCoriolis`, and — since `CloudMicrophysics` is loaded — 1-moment bulk mixed-phase
-# (rain + snow) microphysics. We pass only the IC-derived `surface_pressure` /
-# `reference_potential_temperature` that anchor the default dynamics (computed next).
-
-# `nested_atmosphere_model` builds the child `AtmosphereModel` over `grid`, derives its lateral BCs +
-# Davies relaxation on the fly from `parent`, applies the physics defaults above, materializes the
-# blended `terrain` onto the grid's terrain-following coordinate, and wraps the pair in a `NestedModel`
-# — whose `time_step!` advances the child then ticks the parent clock so the on-the-fly BCs/relaxation
-# sample the parent at the right time. `surface_bcs` merge per-side with the lateral BCs. The
-# hydrostatic reference is recomputed from the initial state below (`compute_reference_state = true`),
-# so no reference-θ profile need be supplied here.
+# It also supplies the nested-LAM physics defaults: compressible split-explicit dynamics with an
+# `UpperSponge` + ρw Rayleigh lid sponge (no divergence damping, which would inject a spurious force
+# on this unbalanced cold start), `WENO(order = 9)` momentum advection, `SphericalCoriolis`, and —
+# since `CloudMicrophysics` is loaded — 1-moment bulk mixed-phase (rain + snow) microphysics.
+# `surface_bcs` merge per-side with the lateral BCs. The hydrostatic reference is recomputed from the
+# initial state below (`compute_reference_state = true`), so no reference-θ profile need be supplied.
 model = nested_atmosphere_model(parent, grid;
                                 thermodynamic_constants = constants,
                                 surface_pressure = p̄₀,
-                                terrain = elevation,
+                                terrain = ETOPO2022(),
+                                terrain_blend_width = relax_width,
                                 relaxation_rate = 1 / τ_relax,
                                 relaxation_mask = lateral_mask,
                                 boundary_conditions = surface_bcs)
@@ -453,7 +370,14 @@ compute!(Tᵛ)
 # Hydrostatically-balanced initial pressure. Interpolating ERA5 pressure to the node heights
 # clamps the sub-surface levels over high terrain, leaving the cold-start IC out of the model's
 # discrete hydrostatic balance (a ~40 g vertical residual). Build `p` by integrating up from the
-# ERA5 surface pressure instead — anchored at each column's terrain surface, with the moist Rᵐ.
+# ERA5 surface pressure instead — anchored at each column's ERA5 orography height (the parent's
+# `surface_elevation`, regridded onto the child grid), with the moist Rᵐ.
+g_accel = Oceananigans.defaults.gravitational_acceleration
+
+parent_surface_elevation = Field{Center, Center, Nothing}(grid)
+interpolate!(parent_surface_elevation, surface_elevation(parent))
+parent_elevation = Array(interior(parent_surface_elevation))[:, :, 1]
+
 p = hydrostatic_pressure_from_surface(T, Array(interior(p₀))[:, :, 1], parent_elevation;
                                       qᵛ = qᵛ, qᶜ = qᶜ, qⁱ = qⁱ,
                                       dry_gas_constant = Rᵈ, vapor_gas_constant = Rᵛ,

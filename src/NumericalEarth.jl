@@ -129,7 +129,9 @@ export
     meridional_heat_transport,
     location,
     native_grid,
-    natural_earth_lines
+    natural_earth_lines,
+    surface_elevation,
+    visualize_domain
 
 using DataDeps: DataDeps
 using Oceananigans: Oceananigans
@@ -153,6 +155,33 @@ Requires `NaturalEarth` and `GeoInterface` to be loaded — the method lives in
 `NumericalEarthNaturalEarthExt`.
 """
 function natural_earth_lines end
+
+"""
+    visualize_domain(grid; parent = nothing, kw...)
+
+Return a `Makie.Figure` mapping the domain of `grid` — a topography/bathymetry basemap
+with the domain drawn as a box — for checking a configuration's geography before running.
+When `parent` (a `BoundingBox` or another grid) is given, its region is drawn as a second
+box, visualizing a nested configuration.
+
+Keyword arguments
+=================
+
+- `parent`: a `BoundingBox` or grid whose region is drawn as the outer (parent) box. Default: `nothing`.
+- `padding`: margin (degrees) between the outermost region and the map edge. Default: `2.5`.
+- `resolution`: basemap sampling resolution (degrees). Default: `1/30`.
+- `dataset`: relief dataset for the basemap. Default: `ETOPO2022()`.
+- `boundaries`: draw Natural Earth state/country boundary lines (requires `NaturalEarth`
+  and `GeoInterface` to be loaded). Default: `true`.
+- `landmarks`: `label => (λ, φ)` pairs marked with stars, e.g. `tuple("ARM SGP" => (-97.485, 36.605))`.
+  Default: `tuple()`.
+- `label`, `parent_label`: legend labels for the two domain boxes. Defaults: `"grid"`, `"parent"`.
+- `title`: axis title. Default: `""`.
+
+Requires a Makie backend (e.g. `CairoMakie`) to be loaded — the method lives in
+`NumericalEarthMakieExt`.
+"""
+function visualize_domain end
 
 const SomeKindOfFieldTimeSeries = Union{FieldTimeSeries,
                                         GPUAdaptedFieldTimeSeries}

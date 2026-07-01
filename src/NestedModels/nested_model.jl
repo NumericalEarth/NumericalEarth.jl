@@ -74,8 +74,10 @@ end
 # Setting the initial state targets the child's prognostics.
 set!(nm::NestedModel, args...; kwargs...) = set!(nm.child, args...; kwargs...)
 
-# The whole point of NestedModel: step the child, then advance the parent
-# clock to match. `Simulation` calls `time_step!(model, Δt; callbacks=...)`.
+# Ordering: refresh the exchanger FIRST — it advances the parent's own FTS windows to bracket the
+# current time and fills the derived 2-level window — so the parent data the child interpolates over
+# `[t, t+Δt]` is resident *before* the child steps. Then step the child, then tick the parent clock to
+# match the child's (adaptive) Δt. `Simulation` calls `time_step!(model, Δt; callbacks=...)`.
 function time_step!(nm::NestedModel, Δt; kwargs...)
     exchange_state!(nm.exchanger, nm.clock.time)
     time_step!(nm.child, Δt; kwargs...)
@@ -88,11 +90,8 @@ end
 
 # Checkpointing: only the child has prognostic state.
 prognostic_state(nm::NestedModel) = prognostic_state(nm.child)
-
 restore_prognostic_state!(nm::NestedModel, state) = restore_prognostic_state!(nm.child, state)
-
-Base.summary(nm::NestedModel) =
-    string("NestedModel(", summary(nm.parent), " → ", summary(nm.child), ")")
+Base.summary(nm::NestedModel) = string("NestedModel(", summary(nm.parent), " → ", summary(nm.child), ")")
 
 function Base.show(io::IO, nm::NestedModel)
     print(io, summary(nm), '\n',

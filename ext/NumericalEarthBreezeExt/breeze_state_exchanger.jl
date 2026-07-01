@@ -4,9 +4,10 @@
 #
 # The child (Breeze `CompressibleDynamics`) prognostic variables — dry density `ρᵈ`, momentum densities
 # `ρu`/`ρv`, potential-temperature density `ρθ`, and vapor density `ρqᵛ` — are computed from the raw
-# parent (ERA5) specific state *on the parent grid* and stored as `FieldTimeSeries`. A downstream child
-# boundary condition / forcing then interpolates these precomputed prognostics in space + time. Computing
-# the nonlinear combines on the dense parent grid first (then interpolating) is both cheaper — once per
+# parent (ERA5) specific state *on the parent grid* and stored as a `FieldTimeSeries` holding just the
+# **two time levels bracketing the child's clock** (memory-O(1) in time). A downstream child boundary
+# condition / forcing then interpolates these precomputed prognostics in space + time. Computing the
+# nonlinear combines on the dense parent grid first (then interpolating) is both cheaper — once per
 # parent time level rather than per child node per RK stage — and more faithful than interpolating the
 # raw fields and combining afterward.
 #
@@ -18,7 +19,32 @@
 #   ρqᵛ = ρ · qᵛ                                         ← TOTAL-weighted (moisture mass density)
 
 using Oceananigans.Fields: Center, ZeroField, AbstractField, fill_halo_regions!
-using Oceananigans.OutputReaders: FieldTimeSeries, Cyclical
+using Oceananigans.OutputReaders: FieldTimeSeries, Cyclical, AbstractInMemoryBackend, FlavorOfFTS,
+                                  time_indices, interpolating_time_indices, extract_field_time_series
+using Oceananigans.Units: Time
+using Adapt: Adapt
+import Oceananigans.OutputReaders: new_backend, update_field_time_series!
+import NumericalEarth.NestedModels: exchange_state!
+
+#####
+##### A 2-level in-memory backend whose resident window is filled by the StateExchanger (not by `set!`).
+##### `update_field_time_series!` is a no-op so the child's `update_model_field_time_series!` never cycles
+##### it — the exchanger is the sole owner of the window (advancing it as the child clock crosses a parent
+##### interval). The backend is isbits, so it survives `Adapt` to the device unchanged.
+#####
+
+struct PrognosticStateBackend <: AbstractInMemoryBackend{Int}
+    start  :: Int
+    length :: Int
+end
+
+Base.length(backend::PrognosticStateBackend) = backend.length
+new_backend(::PrognosticStateBackend, start, length) = PrognosticStateBackend(start, length)
+
+# No-op the auto-update: `update_model_field_time_series!` calls the `Time` form, so short-circuiting it
+# keeps the child from cycling these FTS — the StateExchanger owns their window.
+const PrognosticStateFTS = FieldTimeSeries{<:Any, <:Any, <:Any, <:Any, <:PrognosticStateBackend}
+update_field_time_series!(::PrognosticStateFTS, ::Time) = nothing
 
 @kernel function _compute_child_prognostics!(ρᵈ, ρu, ρv, ρθ, ρqᵛ,
                                              T, qᵛ, qᶜˡ, qᶜⁱ, p, u, v,
@@ -51,23 +77,20 @@ end
 @inline source_snapshot(field::AbstractField, n) = field
 @inline source_snapshot(::Nothing, n) = ZeroField()
 
-# Allocate the child-prognostic `FieldTimeSeries` NamedTuple on the *parent* grid (Center-located,
-# sharing the parent's time axis + indexing) and fill it from the raw parent state.
-function child_prognostic_field_time_series(parent_atmosphere, pˢᵗ, constants;
-                                            qᶜˡ_source = parent_atmosphere.microphysical_variables.qᶜˡ,
-                                            qᶜⁱ_source = parent_atmosphere.microphysical_variables.qᶜⁱ)
-
+# Allocate the child-prognostic `FieldTimeSeries` NamedTuple on the *parent* grid: Center-located, over
+# the parent's time axis + indexing, but holding only 2 resident levels (`PrognosticStateBackend`).
+function child_prognostic_field_time_series(parent_atmosphere)
     grid  = parent_atmosphere.temperature.grid
     times = parent_atmosphere.temperature.times
-    build() = FieldTimeSeries{Center, Center, Center}(grid, times; time_indexing = Cyclical())
-
-    prognostic = (ρᵈ = build(), ρu = build(), ρv = build(), ρθ = build(), ρqᵛ = build())
-    compute_child_prognostics!(prognostic, parent_atmosphere, pˢᵗ, constants, qᶜˡ_source, qᶜⁱ_source)
-    return prognostic
+    build() = FieldTimeSeries{Center, Center, Center}(grid, times;
+                                                      backend = PrognosticStateBackend(1, 2),
+                                                      time_indexing = Cyclical())
+    return (ρᵈ = build(), ρu = build(), ρv = build(), ρθ = build(), ρqᵛ = build())
 end
 
-# Fill every resident time level of the derived FTS with one fused `launch!` per level.
-function compute_child_prognostics!(prognostic, parent_atmosphere, pˢᵗ, constants, qᶜˡ_source, qᶜⁱ_source)
+# Fill the derived FTS's resident window (the 2 levels bracketing the child clock) with one fused
+# `launch!` per level, reading the parent at the matching resident time index.
+function compute_child_prognostics!(prognostic, parent_atmosphere, pˢᵗ, constants, condensates)
     grid = parent_atmosphere.temperature.grid
     arch = architecture(grid)
 
@@ -77,11 +100,11 @@ function compute_child_prognostics!(prognostic, parent_atmosphere, pˢᵗ, const
     ℒˡ  = constants.liquid.reference_latent_heat
     ℒⁱ  = constants.ice.reference_latent_heat
 
-    for n in eachindex(parent_atmosphere.temperature.times)
+    for n in time_indices(prognostic.ρᵈ)   # the 2 resident bracketing indices
         launch!(arch, grid, :xyz, _compute_child_prognostics!,
                 prognostic.ρᵈ[n], prognostic.ρu[n], prognostic.ρv[n], prognostic.ρθ[n], prognostic.ρqᵛ[n],
                 parent_atmosphere.temperature[n], parent_atmosphere.specific_humidity[n],
-                source_snapshot(qᶜˡ_source, n), source_snapshot(qᶜⁱ_source, n),
+                source_snapshot(condensates.qᶜˡ, n), source_snapshot(condensates.qᶜⁱ, n),
                 parent_atmosphere.pressure,
                 parent_atmosphere.velocities.u[n], parent_atmosphere.velocities.v[n],
                 pˢᵗ, Rᵈ, Rᵛ, cᵖᵈ, ℒˡ, ℒⁱ)
@@ -95,33 +118,51 @@ function compute_child_prognostics!(prognostic, parent_atmosphere, pˢᵗ, const
 end
 
 #####
-##### StateExchanger: owns the derived child-prognostic FTS and refreshes them from the parent.
+##### StateExchanger: owns the 2-level derived FTS and refreshes/cycles them from the parent.
 #####
 #
 # Held by `NestedModel` (as `nested.exchanger`). `NestedModel.time_step!`/`update_state!` call
-# `exchange_state!` before the child steps, so the child's FTS-driven boundary conditions / forcings see
-# current parent-derived prognostics. The name is direction-neutral for eventual two-way nesting.
+# `exchange_state!` before the child steps: it advances the parent's own FTS windows to bracket the
+# child clock, and — when the child clock has crossed into a new parent interval — cycles the derived
+# 2-level window forward and recomputes it. The name is direction-neutral for eventual two-way nesting.
 
-struct StateExchanger{P, Pr, C, S, QL, QI}
+struct StateExchanger{P, Pr, C, S, Q}
     parent       :: P    # the parent PrescribedAtmosphere (raw ERA5 state)
-    prognostic   :: Pr   # NamedTuple of derived child-prognostic FTS on the parent grid
+    prognostic   :: Pr   # NamedTuple of derived child-prognostic FTS on the parent grid (2 resident levels)
     constants    :: C
     pˢᵗ          :: S
-    qᶜˡ_source   :: QL
-    qᶜⁱ_source   :: QI
+    condensates  :: Q    # NamedTuple (qᶜˡ, qᶜⁱ); entries may be `nothing` (⇒ `ZeroField`)
 end
 
 function state_exchanger(parent_atmosphere, pˢᵗ, constants;
-                         qᶜˡ_source = parent_atmosphere.microphysical_variables.qᶜˡ,
-                         qᶜⁱ_source = parent_atmosphere.microphysical_variables.qᶜⁱ)
+                         condensates = (qᶜˡ = parent_atmosphere.microphysical_variables.qᶜˡ,
+                                        qᶜⁱ = parent_atmosphere.microphysical_variables.qᶜⁱ))
 
-    prognostic = child_prognostic_field_time_series(parent_atmosphere, pˢᵗ, constants; qᶜˡ_source, qᶜⁱ_source)
-    return StateExchanger(parent_atmosphere, prognostic, constants, pˢᵗ, qᶜˡ_source, qᶜⁱ_source)
+    prognostic = child_prognostic_field_time_series(parent_atmosphere)
+    exchanger  = StateExchanger(parent_atmosphere, prognostic, constants, pˢᵗ, condensates)
+    exchange_state!(exchanger, first(parent_atmosphere.temperature.times))   # fill the initial window
+    return exchanger
 end
 
-# TODO: recomputes every resident level each call; a 2-level windowed cycle (recompute only when the
-# clock crosses a parent interval) is the memory-O(1) optimization for long runs.
-function NumericalEarth.NestedModels.exchange_state!(ex::StateExchanger, time)
-    compute_child_prognostics!(ex.prognostic, ex.parent, ex.pˢᵗ, ex.constants, ex.qᶜˡ_source, ex.qᶜⁱ_source)
+# Advance the derived 2-level window (and the parent's own FTS windows) to bracket `time`, recomputing
+# the derived prognostics only when the bracket moves.
+function exchange_state!(ex::StateExchanger, time)
+    parent = ex.parent
+    p = ex.prognostic
+
+    # Advance the parent's own (possibly limited-memory) FTS windows to bracket `time`.
+    for fts in extract_field_time_series(parent)
+        update_field_time_series!(fts, Time(time))
+    end
+
+    # Bracketing indices for `time` on the parent's time axis; cycle the derived window if it moved.
+    _, n₁, _ = interpolating_time_indices(p.ρᵈ.time_indexing, p.ρᵈ.times, time)
+    if p.ρᵈ.backend.start != n₁
+        for fts in p
+            fts.backend = new_backend(fts.backend, n₁, length(fts.backend))
+        end
+    end
+
+    compute_child_prognostics!(p, parent, ex.pˢᵗ, ex.constants, ex.condensates)
     return nothing
 end

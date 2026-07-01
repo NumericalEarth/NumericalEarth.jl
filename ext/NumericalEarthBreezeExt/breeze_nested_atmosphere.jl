@@ -10,11 +10,14 @@
 # FTS-driven `parent_boundary_conditions` / `parent_forcings` builders, so a child forcing/BC specializes
 # on a plain `FieldTimeSeries` (the same type Breeze compiles for any FTS forcing).
 
+using NumericalEarth: regrid_topography, surface_elevation
 using NumericalEarth.Atmospheres: PrescribedAtmosphere
-using NumericalEarth.NestedModels: NestedModel, parent_boundary_conditions, parent_forcings
+using NumericalEarth.NestedModels: NestedModel, parent_boundary_conditions, parent_forcings,
+                                   blend_parent_terrain!
 using Oceananigans: WENO
 using Oceananigans.BoundaryConditions: ValueBoundaryCondition
 using Oceananigans.Coriolis: SphericalCoriolis
+using Oceananigans.Fields: AbstractField, Field, interpolate!
 using Oceananigans.Forcings: Relaxation
 using Oceananigans.Grids: znode, Center, Face
 using GPUArraysCore: @allowscalar
@@ -54,6 +57,22 @@ function default_nested_dynamics(grid; surface_pressure, reference_potential_tem
     return CompressibleDynamics(time_discretization; kw...)
 end
 
+# Child terrain for the nested LAM: an elevation `Field` passes through; anything else is treated
+# as a topography dataset and regridded onto the child grid. When the parent knows its surface
+# elevation (e.g. an ERA5 `PressureLevelGrid`), the child elevation is blended toward it over the
+# outermost `blend_width` cells, so the terrain at the open boundaries is consistent with the
+# orography the parent state was produced with.
+function materialize_nested_terrain!(child_grid, terrain, parent_atmosphere, blend_width)
+    elevation = terrain isa AbstractField ? terrain : regrid_topography(child_grid; dataset = terrain)
+    parent_surface = surface_elevation(parent_atmosphere)
+    if !isnothing(parent_surface) && blend_width > 0
+        parent_elevation = Field{Center, Center, Nothing}(child_grid)
+        interpolate!(parent_elevation, parent_surface)
+        blend_parent_terrain!(elevation, parent_elevation; width = blend_width)
+    end
+    return materialize_terrain!(child_grid, elevation)
+end
+
 """
 $(TYPEDSIGNATURES)
 
@@ -65,7 +84,8 @@ over `relaxation_mask` — interpolate those precomputed prognostics (via `paren
 `parent_forcings`).
 
 Cloud/ice inputs to the combine default to the parent's `qᶜˡ`/`qᶜⁱ` but may be supplied from any source
-(another dataset, or `nothing` ⇒ omitted, so `qᵗ = qᵛ`) via `qᶜˡ_source`/`qᶜⁱ_source`.
+via `parent_condensates`, a `NamedTuple` with `qᶜˡ`/`qᶜⁱ` entries. Either entry — or the whole
+`parent_condensates` — may be `nothing` (⇒ omitted, so `qᵗ = qᵛ`).
 
 Provides sensible, overridable physics defaults: `microphysics` (1-moment mixed-phase when
 `CloudMicrophysics` is loaded), `momentum_advection = WENO(order=9)`, `coriolis = SphericalCoriolis()`,
@@ -74,8 +94,11 @@ and a compressible split-explicit `dynamics` with an `UpperSponge` over the top 
 `surface_pressure`/`reference_potential_temperature` to anchor the default dynamics. Any
 `boundary_conditions`/`forcing` the caller passes are merged with the parent-derived ones (caller wins).
 
-When `terrain` is given (anything `materialize_terrain!` accepts), the child grid's terrain-following
-coordinate is materialized in place before the model is built.
+When `terrain` is given — an elevation `Field`, or a topography dataset (e.g. `ETOPO2022()`) that is
+regridded onto the child grid — the child grid's terrain-following coordinate is materialized in place
+before the model is built. If the parent knows its surface elevation ([`surface_elevation`](@ref)), the
+child elevation is first blended toward the parent's over the outermost `terrain_blend_width` cells,
+so the terrain at the open boundaries matches the orography the parent state was produced with.
 """
 function NumericalEarth.NestedModels.nested_atmosphere_model(
             parent_atmosphere::PrescribedAtmosphere, child_grid;
@@ -86,8 +109,9 @@ function NumericalEarth.NestedModels.nested_atmosphere_model(
             surface_pressure = nothing,
             reference_potential_temperature = nothing,
             terrain = nothing,
-            qᶜˡ_source = parent_atmosphere.microphysical_variables.qᶜˡ,
-            qᶜⁱ_source = parent_atmosphere.microphysical_variables.qᶜⁱ,
+            terrain_blend_width = 5,
+            parent_condensates = (qᶜˡ = parent_atmosphere.microphysical_variables.qᶜˡ,
+                                  qᶜⁱ = parent_atmosphere.microphysical_variables.qᶜⁱ),
             microphysics = default_nested_microphysics(),
             momentum_advection = WENO(order = 9),
             coriolis = SphericalCoriolis(),
@@ -99,14 +123,15 @@ function NumericalEarth.NestedModels.nested_atmosphere_model(
             forcing = NamedTuple(),
             kw...)
 
-    isnothing(terrain) || materialize_terrain!(child_grid, terrain)
+    isnothing(terrain) || materialize_nested_terrain!(child_grid, terrain, parent_atmosphere, terrain_blend_width)
 
     moisture_name = moisture_prognostic_name(microphysics)
     pˢᵗ = dynamics.standard_pressure
 
     # Precompute the child prognostics on the parent grid (combine-then-interpolate); the exchanger owns
     # them and refreshes them from the parent each step via `exchange_state!`.
-    exchanger  = state_exchanger(parent_atmosphere, pˢᵗ, thermodynamic_constants; qᶜˡ_source, qᶜⁱ_source)
+    condensates = isnothing(parent_condensates) ? (qᶜˡ = nothing, qᶜⁱ = nothing) : parent_condensates
+    exchanger  = state_exchanger(parent_atmosphere, pˢᵗ, thermodynamic_constants; condensates)
     prognostic = exchanger.prognostic
 
     ρqᵛ = prognostic.ρqᵛ
@@ -117,19 +142,27 @@ function NumericalEarth.NestedModels.nested_atmosphere_model(
     # BC is keyed `ρe` (Breeze's energy-BC interface): it merges with the coupling's bottom energy-flux BC on
     # the same field, and for a potential-temperature formulation Breeze routes the (Value) `ρθ` boundary
     # values through unchanged. `ρθ` and `ρe` must not both carry BCs.
-    bc_variables = merge((; ρᵈ = prognostic.ρᵈ, ρu = prognostic.ρu, ρv = prognostic.ρv, ρe = prognostic.ρθ),
-                         NamedTuple{tuple(moisture_name)}(tuple(ρqᵛ)))
-    bc_types = merge((; ρᵈ = ValueBoundaryCondition, ρe = ValueBoundaryCondition),
-                     NamedTuple{tuple(moisture_name)}(tuple(ValueBoundaryCondition)))
+    dry_bc_variables = (ρᵈ = prognostic.ρᵈ, ρu = prognostic.ρu, ρv = prognostic.ρv, ρe = prognostic.ρθ)
+    moist_bc_variables = NamedTuple{tuple(moisture_name)}(tuple(ρqᵛ))
+    bc_variables = merge(dry_bc_variables, moist_bc_variables)
+
+    density_and_energy_types = (ρᵈ = ValueBoundaryCondition, ρe = ValueBoundaryCondition)
+    moist_types = NamedTuple{tuple(moisture_name)}(tuple(ValueBoundaryCondition))
+    bc_types = merge(density_and_energy_types, moist_types)
+
     nested_bcs = parent_boundary_conditions(child_grid; variables = bc_variables, sides, bc_types)
 
     # Interior Davies relaxation toward the precomputed (density-weighted) prognostics. Oceananigans'
     # FTS `Relaxation` calls `mask(x, y, z)`, so wrap a scalar mask in a callable.
     relax_mask = relaxation_mask isa Number ? Returns(relaxation_mask) : relaxation_mask
-    davies = isnothing(relaxation_rate) ? (;) :
-             parent_forcings(variables = merge((; ρθ = prognostic.ρθ, ρu = prognostic.ρu, ρv = prognostic.ρv),
-                                               NamedTuple{tuple(moisture_name)}(tuple(ρqᵛ))),
-                             rate = relaxation_rate, mask = relax_mask)
+    davies = if isnothing(relaxation_rate)
+        NamedTuple()
+    else
+        dry_forcing_variables = (ρθ = prognostic.ρθ, ρu = prognostic.ρu, ρv = prognostic.ρv)
+        moist_forcing_variables = NamedTuple{tuple(moisture_name)}(tuple(ρqᵛ))
+        variables = merge(dry_forcing_variables, moist_forcing_variables)
+        parent_forcings(; variables, rate = relaxation_rate, mask = relax_mask)
+    end
 
     # ρw Rayleigh lid sponge: relax vertical momentum toward zero over the top `damping_depth` metres.
     lid_sponge = (; ρw = Relaxation(rate = damping_rate, mask = lid_sponge_mask(child_grid, damping_depth)))

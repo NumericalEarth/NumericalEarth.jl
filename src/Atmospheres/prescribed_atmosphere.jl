@@ -33,6 +33,9 @@ function Base.show(io::IO, atmos::PrescribedAtmosphere)
     print(io, "└── boundary_layer_height: ", prettysummary(atmos.boundary_layer_height))
 end
 
+NumericalEarth.Grids.surface_elevation(atmos::PrescribedAtmosphere) =
+    NumericalEarth.Grids.surface_elevation(atmos.grid)
+
 velocity_boundary_conditions(grid, loc) = FieldBoundaryConditions(grid, loc)
 
 function velocity_boundary_conditions(grid::OrthogonalSphericalShellGrids.TripolarGrid, loc)

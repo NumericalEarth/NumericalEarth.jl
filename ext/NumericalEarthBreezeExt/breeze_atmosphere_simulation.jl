@@ -2,7 +2,7 @@ using Oceananigans.Fields: Field
 using Oceananigans.Grids: Center
 using Oceananigans.BoundaryConditions: FieldBoundaryConditions, DefaultBoundaryCondition
 
-using Breeze: ThermodynamicConstants, ReferenceState, AnelasticDynamics,
+using Breeze: ThermodynamicConstants, CompressibleDynamics,
               SaturationAdjustment, WarmPhaseEquilibrium,
               AtmosphereModel, moisture_prognostic_name
 
@@ -34,19 +34,19 @@ end
 
 """
     atmosphere_model(grid;
-                          surface_pressure = 101325,
-                          potential_temperature = 285,
-                          thermodynamic_constants = ThermodynamicConstants(eltype(grid)),
-                          dynamics = AnelasticDynamics(ReferenceState(grid, thermodynamic_constants;
-                                                                      surface_pressure, potential_temperature)),
-                          microphysics = SaturationAdjustment(equilibrium = WarmPhaseEquilibrium()),
-                          momentum_advection = WENO(order=9),
-                          scalar_advection = WENO(order=5),
-                          boundary_conditions = NamedTuple(),
-                          coriolis = nothing,
-                          forcing = NamedTuple(),
-                          closure = nothing,
-                          clock = Clock{eltype(grid)}(time=0))
+                     surface_pressure = 101325,
+                     potential_temperature = 285,
+                     thermodynamic_constants = ThermodynamicConstants(eltype(grid)),
+                     dynamics = CompressibleDynamics(; surface_pressure,
+                                                     reference_potential_temperature = potential_temperature),
+                     microphysics = SaturationAdjustment(equilibrium = WarmPhaseEquilibrium()),
+                     momentum_advection = WENO(order=9),
+                     scalar_advection = WENO(order=5),
+                     boundary_conditions = NamedTuple(),
+                     coriolis = nothing,
+                     forcing = NamedTuple(),
+                     closure = nothing,
+                     clock = Clock{eltype(grid)}(time=0))
 
 Construct a Breeze `AtmosphereModel` with sensible defaults for coupled simulations.
 [`atmosphere_simulation`](@ref) wraps this in an Oceananigans `Simulation` (mirroring
@@ -70,20 +70,20 @@ extension), which derives the lateral BCs and Davies relaxation from the parent 
 in a `NestedModel`.
 """
 function NumericalEarth.Atmospheres.atmosphere_model(grid;
-                                                          surface_pressure = 101325,
-                                                          potential_temperature = 285,
-                                                          thermodynamic_constants = ThermodynamicConstants(eltype(grid)),
-                                                          dynamics = AnelasticDynamics(ReferenceState(grid, thermodynamic_constants;
-                                                                                                      surface_pressure, potential_temperature)),
-                                                          microphysics = SaturationAdjustment(equilibrium = WarmPhaseEquilibrium()),
-                                                          momentum_advection = Oceananigans.WENO(order=9),
-                                                          scalar_advection = Oceananigans.WENO(order=5),
-                                                          boundary_conditions = NamedTuple(),
-                                                          coriolis = nothing,
-                                                          forcing = NamedTuple(),
-                                                          closure = nothing,
-                                                          clock = Oceananigans.TimeSteppers.Clock{eltype(grid)}(time = 0),
-                                                          radiation = CoupledRadiation())
+                                                     surface_pressure = 101325,
+                                                     potential_temperature = 285,
+                                                     thermodynamic_constants = ThermodynamicConstants(eltype(grid)),
+                                                     dynamics = CompressibleDynamics(; surface_pressure,
+                                                                                     reference_potential_temperature = potential_temperature),
+                                                     microphysics = SaturationAdjustment(equilibrium = WarmPhaseEquilibrium()),
+                                                     momentum_advection = Oceananigans.WENO(order=9),
+                                                     scalar_advection = Oceananigans.WENO(order=5),
+                                                     boundary_conditions = NamedTuple(),
+                                                     coriolis = nothing,
+                                                     forcing = NamedTuple(),
+                                                     closure = nothing,
+                                                     clock = Oceananigans.TimeSteppers.Clock{eltype(grid)}(time = 0),
+                                                     radiation = CoupledRadiation())
 
     if radiation isa Breeze.RadiativeTransferModel
         throw(ArgumentError("`atmosphere_simulation` does not accept a `Breeze.RadiativeTransferModel`. " *
@@ -114,7 +114,7 @@ function NumericalEarth.Atmospheres.atmosphere_model(grid;
     boundary_conditions = merge_boundary_conditions(coupling_bcs, NamedTuple(boundary_conditions))
 
     return AtmosphereModel(grid;
-                           dynamics, microphysics,
+                           dynamics, microphysics, thermodynamic_constants,
                            momentum_advection, scalar_advection,
                            boundary_conditions,
                            coriolis, forcing, closure, clock,
