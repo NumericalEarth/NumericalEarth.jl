@@ -1,7 +1,7 @@
 using ...Atmospheres: PrescribedAtmosphere, PrescribedPrecipitationFlux,
                       AtmosphereThermodynamicsParameters
 using ...EarthSystemModels.InterfaceComputations: saturation_specific_humidity
-using Oceananigans.AbstractOperations: KernelFunctionOperation
+using ..DataWrangling: DerivedDatasetBackend
 using Oceananigans.Architectures: on_architecture
 using Oceananigans.Fields: CenterField, interior
 using Thermodynamics: Liquid
@@ -83,12 +83,14 @@ function ERA5PrescribedAtmosphere(architecture = CPU();
                                                 thermodynamics_parameters
     phase = Liquid()
 
-    qᵛ = FieldTimeSeries{Center, Center, Nothing}(grid, times)
-    for n in eachindex(times)
-        q = KernelFunctionOperation{Center, Center, Nothing}(specific_humidity_from_dewpoint,
-                                                             grid, Tᵈ[n], p[n], ℂ, phase)
-        set!(qᵛ[n], q)
-    end
+    # Specific humidity has no native ERA5 single-level variable, so it is derived from
+    # dewpoint and pressure — lazily, window by window, so the derived series stays as
+    # partly-in-memory as its sources rather than materializing the whole date range.
+    humidity_backend = DerivedDatasetBackend(min(time_indices_in_memory, length(times)),
+                                             specific_humidity_from_dewpoint,
+                                             (Tᵈ, p), (ℂ, phase))
+    qᵛ = FieldTimeSeries{Center, Center, Nothing}(grid, times; backend = humidity_backend, time_indexing)
+    set!(qᵛ)
 
     precipitation_flux = PrescribedPrecipitationFlux(; rain)
 
