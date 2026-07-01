@@ -193,7 +193,6 @@ function Downloads.download(meta::NumericalEarth.DataWrangling.Metadatum{<:ERA5M
 
     # Skip if monthly file already exists
     if skip_existing && isfile(output_path)
-        # Silently skip (avoid logging once per hour for monthly files)
         return output_path
     end
 
