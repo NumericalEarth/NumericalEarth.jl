@@ -65,7 +65,7 @@ horizontal_viscosity = HorizontalScalarBiharmonicDiffusivity(; ν)
 ## κz(φ) = max(2e-6, 3e-5 * |sin(φ)|)
 @inline henyey_diffusivity(i, j, k, grid) = max(2e-6, 3e-5 * abs(sind(φnode(i, j, k, grid, Center(), Center(), Center()))))
 κz = Oceananigans.Field{Center, Center, Center}(grid)
-Oceananigans.set!(κ, KernelFunctionOperation{Center, Center, Center}(henyey_diffusivity, grid))
+Oceananigans.set!(κz, KernelFunctionOperation{Center, Center, Center}(henyey_diffusivity, grid))
 vertical_diffusivity = VerticalScalarDiffusivity(ν=νz, κ=κz)
 
 closures = (catke_closure, eddy_closure, horizontal_viscosity, vertical_diffusivity)
