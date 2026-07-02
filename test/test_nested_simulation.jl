@@ -420,4 +420,15 @@ end
     # Cycle back to the 1st interval.
     exchange(exchanger, 0.0)
     @test prog.ρᵈ.backend.start == 1
+
+    # reconstruct_parent_state reads the parent's FULL-memory fields, not the 2-level window: with the
+    # derived window parked at start = 2, a reconstruction at t = 0 still recovers the parent's t = 0 state
+    # (θˡⁱ = T (pˢᵗ/p)^κ with T = 280 + t, condensate-free), proving no residency aliasing.
+    reconstruct = NumericalEarth.NestedModels.reconstruct_parent_state
+    κ = dry_air_gas_constant(constants) / constants.dry_air.heat_capacity
+    exchange(exchanger, 1.5)                        # park the derived window at start = 2
+    θ₀ = Array(interior(reconstruct(exchanger, 0.0).θˡⁱ))
+    θ₂ = Array(interior(reconstruct(exchanger, 2.0).θˡⁱ))
+    @test all(θ₀ .≈ 280 * (1e5 / 9e4)^κ)
+    @test all(θ₂ .≈ 282 * (1e5 / 9e4)^κ)
 end

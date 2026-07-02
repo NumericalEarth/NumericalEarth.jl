@@ -24,7 +24,7 @@ using Oceananigans.OutputReaders: FieldTimeSeries, Cyclical, AbstractInMemoryBac
 using Oceananigans.Units: Time
 using Adapt: Adapt
 import Oceananigans.OutputReaders: new_backend, update_field_time_series!
-import NumericalEarth.NestedModels: exchange_state!, total_density
+import NumericalEarth.NestedModels: exchange_state!, total_density, reconstruct_parent_state
 
 #####
 ##### A 2-level in-memory backend whose resident window is filled by the StateExchanger (not by `set!`).
@@ -76,6 +76,16 @@ end
 @inline source_snapshot(fts::FieldTimeSeries, n) = fts[n]
 @inline source_snapshot(field::AbstractField, n) = field
 @inline source_snapshot(::Nothing, n) = ZeroField()
+
+# Full-memory snapshot at `Time(time)` for the parity reconstruction (`reconstruct_parent_state`): an FTS
+# yields its time-interpolated snapshot over its *whole* series (not a 2-level window), a static
+# `AbstractField` (the pressure-level coordinate) is time-constant, and `nothing` ⇒ a literal `0` (an
+# absent condensate). Unlike `source_snapshot`'s `ZeroField` (indexed inside a kernel), this feeds
+# `breeze_prognostic_state`'s AbstractOperations, where a scalar `0` composes but a grid-less `ZeroField`
+# cannot.
+@inline full_snapshot(fts::FieldTimeSeries, time) = fts[Time(time)]
+@inline full_snapshot(field::AbstractField, time) = field
+@inline full_snapshot(::Nothing, time) = 0
 
 # Allocate the child-prognostic `FieldTimeSeries` NamedTuple on the *parent* grid: Center-located, over
 # the parent's time axis + indexing, but holding only 2 resident levels (`PrognosticStateBackend`).
@@ -139,6 +149,20 @@ end
 # total density ρ = ρᵈ + Σρqˣ sums the dry density with every moisture/condensate partial density the
 # exchanger carries — currently just ρqᵛ, so it stays correct when condensate densities are added.
 total_density(ex::StateExchanger, n=1) = ex.prognostic.ρᵈ[n] + ex.prognostic.ρqᵛ[n]
+
+# Reconstruct the child prognostic state (ρ, θˡⁱ, qᵗ) at `time` from the parent's FULL-memory raw fields
+# via `breeze_prognostic_state`, using the exchanger's stored constants / pˢᵗ / condensate sources. Unlike
+# indexing the derived 2-level window, this is exact for any `time` (no residency aliasing) — the intended
+# path for post-run diagnostics/animation that query arbitrary times.
+function reconstruct_parent_state(ex::StateExchanger, time)
+    parent = ex.parent
+    return NumericalEarth.Atmospheres.breeze_prognostic_state(ex.constants, ex.pˢᵗ,
+               full_snapshot(parent.temperature, time),
+               full_snapshot(parent.specific_humidity, time),
+               full_snapshot(ex.condensates.qᶜˡ, time),
+               full_snapshot(ex.condensates.qᶜⁱ, time),
+               full_snapshot(parent.pressure, time))
+end
 
 function state_exchanger(parent_atmosphere, pˢᵗ, constants;
                          condensates = (qᶜˡ = parent_atmosphere.microphysical_variables.qᶜˡ,
