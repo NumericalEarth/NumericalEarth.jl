@@ -6,8 +6,8 @@ using Downloads: Downloads
 using Dates: Dates
 using Oceananigans.DistributedComputations: @root
 
-using NumericalEarth.DataWrangling: is_three_dimensional
-using NumericalEarth.DataWrangling.ERA5: ERA5Metadata, ERA5Metadatum, ERA5_dataset_variable_names, hPa
+using NumericalEarth.DataWrangling: is_three_dimensional, available_variables
+using NumericalEarth.DataWrangling.ERA5: ERA5Metadata, ERA5Metadatum, hPa
 
 """
     Downloads.download(metadata::ERA5Metadata; kwargs...)
@@ -59,8 +59,10 @@ function Downloads.download(meta::ERA5Metadatum;
     # Ensure output directory exists
     mkpath(output_directory)
 
-    # Get the ERA5 variable name
-    variable_name = ERA5_dataset_variable_names[meta.name]
+    # The CDS catalog name is dataset-dependent: `eastward_velocity` is `u_component_of_wind` on
+    # pressure levels but `10m_u_component_of_wind` on single levels. Dispatch on the dataset so a
+    # pressure-level request doesn't silently fetch the surface field (which returned `u10`).
+    variable_name = available_variables(meta.dataset)[meta.name]
 
     # era5cli defaults to the single-levels (surface) product unless `--levels` is given — so a
     # pressure-level request without levels silently returns a surface field (e.g. `u10` for
