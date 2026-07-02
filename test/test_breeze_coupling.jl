@@ -21,7 +21,7 @@ function build_test_model(arch)
     θ₀ = 285
 
     atmosphere = atmosphere_simulation(grid; potential_temperature=θ₀)
-    set!(atmosphere.model, θ=atmosphere.model.dynamics.reference_state.potential_temperature, u=1)
+    set!(atmosphere.model, θ=atmosphere.model.dynamics.reference_state.surface_potential_temperature, u=1)
 
     sst_grid = RectilinearGrid(arch,
                                size = grid.Nx,
@@ -49,7 +49,7 @@ function build_land_test_model(arch)
     θ₀ = 285
 
     atmosphere = atmosphere_simulation(grid; potential_temperature=θ₀)
-    set!(atmosphere.model, θ=atmosphere.model.dynamics.reference_state.potential_temperature, u=5)
+    set!(atmosphere.model, θ=atmosphere.model.dynamics.reference_state.surface_potential_temperature, u=5)
 
     land_grid = RectilinearGrid(arch,
                                 size = grid.Nx,

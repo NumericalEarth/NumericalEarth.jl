@@ -167,7 +167,7 @@ function NumericalEarth.Atmospheres.bulk_drag(model::AtmosphereModel; roughness_
     ρτˣ = model.momentum.ρu.boundary_conditions.bottom.condition
     ρτʸ = model.momentum.ρv.boundary_conditions.bottom.condition
     u, v = model.velocities.u, model.velocities.v
-    ρ = model.dynamics.density
+    ρ = model.dynamics.total_density
 
     function apply_bulk_drag!(simulation)
         launch!(architecture(grid), grid, :xy, _bulk_drag!, ρτˣ, ρτʸ, u, v, ρ, Cᵈ)

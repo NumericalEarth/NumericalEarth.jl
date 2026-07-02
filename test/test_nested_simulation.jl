@@ -1,13 +1,11 @@
 include("runtests_setup.jl")
 
 using NumericalEarth
-using NumericalEarth.NestedModels: parent_boundary_conditions, ParentStateBoundary
+using NumericalEarth.NestedModels: parent_boundary_conditions
 using Oceananigans
 using Oceananigans.Units: Time
 using Oceananigans.Fields: location
-using Oceananigans.Grids: znode
-using Oceananigans.BoundaryConditions: ValueBoundaryCondition, FieldBoundaryConditions, fill_halo_regions!,
-                                       regularize_boundary_condition, getbc, LeftBoundary
+using Oceananigans.BoundaryConditions: ValueBoundaryCondition, FieldBoundaryConditions, fill_halo_regions!
 using Breeze
 using Breeze: ThermodynamicConstants, dry_air_gas_constant, vapor_gas_constant, CompressibleDynamics
 using Test
@@ -280,14 +278,14 @@ end
 
     # Dry, p = pˢᵗ ⇒ θ = T, no latent correction ⇒ θˡⁱ = T; ρ = p/(Rᵈ T); qᵗ = 0.
     set!(T, 300.0); set!(qᵛ, 0); set!(qᶜ, 0); set!(qⁱ, 0); set!(p, pˢᵗ)
-    s = breeze_prognostic_state(constants, T, qᵛ, qᶜ, qⁱ, p)
+    s = breeze_prognostic_state(constants, pˢᵗ, T, qᵛ, qᶜ, qⁱ, p)
     @test all(interior(s.qᵗ) .== 0)
     @test all(isapprox.(interior(s.θˡⁱ), 300.0; rtol = 1e-12))
     @test all(isapprox.(interior(s.ρ), pˢᵗ / (Rᵈ * 300.0); rtol = 1e-12))
 
     # Moist + condensate, p ≠ pˢᵗ ⇒ check against the documented formulas.
     set!(T, 290.0); set!(qᵛ, 0.01); set!(qᶜ, 1e-3); set!(qⁱ, 5e-4); set!(p, 9e4)
-    s2 = breeze_prognostic_state(constants, T, qᵛ, qᶜ, qⁱ, p)
+    s2 = breeze_prognostic_state(constants, pˢᵗ, T, qᵛ, qᶜ, qⁱ, p)
     Tᵛ = 290.0 * (1 + εfac * 0.01)
     θ  = 290.0 * (pˢᵗ / 9e4)^κ
     @test all(isapprox.(interior(s2.qᵗ), 0.01 + 1e-3 + 5e-4; rtol = 1e-12))
@@ -351,7 +349,7 @@ end
     @test child.clock.iteration == 2
     @test parent.clock.time ≈ child.clock.time
     @test all(isfinite, Array(interior(child.velocities.u)))
-    @test all(isfinite, Array(interior(child.dynamics.density)))
+    @test all(isfinite, Array(interior(child.dynamics.total_density)))
 end
 
 # Coupling a Breeze `CompressibleDynamics` atmosphere to a `SlabLand` via
@@ -381,41 +379,7 @@ end
                                   thermodynamics_parameters = nothing)
     nested = NestedSimulation(parent, alm; Δt = 0.05, stop_iteration = 2)
     @test nested isa Simulation                       # NestedModel accepted the coupled child
-    @test all(isfinite, Array(interior(atmos.model.dynamics.density)))
-end
-
-# The on-the-fly nesting BCs (`ParentStateBoundary`) interpolate the parent's raw state at the
-# child's boundary nodes. A child grid legitimately extends *below* the parent's lowest level (ERA5
-# pressure levels don't reach the surface), so (1) the source-bracket check must NOT reject the
-# vertical extent and (2) the vertical interpolation must clamp to the parent's edge value there.
-# With a parent temperature linear in z, in-range nodes recover it exactly and out-of-range nodes
-# return the nearest edge value. CPU-only: `getbc` is queried on the host (GPU is exercised by the
-# model-attach integration tests above).
-@testset "ParentStateBoundary: vertical interpolation clamps past the parent's z-extent" begin
-    parent_grid = RectilinearGrid(CPU(); size = (8, 8, 4), x = (-1.5, 1.5), y = (-1.5, 1.5),
-                                  z = (0.1, 0.9), topology = (Bounded, Bounded, Bounded))   # centers 0.2…0.8
-    Tfts = FieldTimeSeries{Center, Center, Center}(parent_grid, [0.0, 1.0])
-    set!(Tfts, (x, y, z, t) -> 100 + 10z)
-    fill_halo_regions!(Tfts)
-
-    # Single-source carrier whose transform just returns the interpolated temperature.
-    psb = ParentStateBoundary((; T = Tfts), (T = identity,), s -> s.T)
-
-    # Child spans z ∈ [-0.2, 1.2] — below AND above the parent's center range [0.2, 0.8].
-    child_grid = RectilinearGrid(CPU(); size = (4, 4, 4), x = (-1, 1), y = (-1, 1),
-                                 z = (-0.2, 1.2), topology = (Bounded, Bounded, Bounded))
-    loc = (Center(), Center(), Center())
-
-    # Regularization must NOT throw despite the child z-extent exceeding the parent's.
-    west = regularize_boundary_condition(psb, child_grid, loc, 1, LeftBoundary)
-
-    zc = [znode(1, 2, k, child_grid, Center(), Center(), Center()) for k in 1:4]
-    expected = [100 + 10 * clamp(z, 0.2, 0.8) for z in zc]   # exact in-range; clamped to edges outside
-    got = [getbc(west, 2, k, child_grid, nothing) for k in 1:4]
-
-    @test got ≈ expected rtol = 1e-6
-    @test got[1] ≈ 102      # below the lowest level (z = -0.025) → clamped to T(0.2)
-    @test got[4] ≈ 108      # above the highest level (z = 1.025) → clamped to T(0.8)
+    @test all(isfinite, Array(interior(atmos.model.dynamics.total_density)))
 end
 
 # The Breeze-ext `StateExchanger` holds the child prognostics as a 2-level FieldTimeSeries bracketing

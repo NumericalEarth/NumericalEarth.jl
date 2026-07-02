@@ -190,7 +190,7 @@ simulation.output_writers[:aloft]   = JLD2Writer(child, aloft_fields; schedule,
 function progress(sim)
     child = sim.model.child
     u, v, w = child.velocities
-    ρ  = child.dynamics.density
+    ρ  = child.dynamics.total_density
     qᵛ = specific_humidity(child)
     qʳ = child.microphysical_fields.qʳ
     @info @sprintf("iter=%4d t=%6.1fs Δt=%5.2f  max|u|=%7.2f max|v|=%7.2f max|w|=%6.2f  ρ∈[%.4f,%.4f]  qᵛ∈[%.4g,%.4g] qʳ∈[%.2g,%.2g]",
