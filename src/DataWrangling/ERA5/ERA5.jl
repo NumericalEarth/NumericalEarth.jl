@@ -25,7 +25,7 @@ using Statistics: Statistics, mean
 using ..DataWrangling: DataWrangling, Metadata, Metadatum, BoundingBox, InverseGravity,
                        MetersPerHour, JoulesPerSquareMeterPerHour, metadata_path,
                        native_grid, dataset_variable_name, available_variables, retrieve_data,
-                       first_date, last_date, set_region_data!, DatasetBackend
+                       first_date, last_date, DatasetBackend
 using ...Grids: PressureLevelVerticalDiscretization
 
 download_ERA5_cache::String = ""
