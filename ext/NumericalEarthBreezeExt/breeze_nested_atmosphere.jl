@@ -10,14 +10,17 @@
 # FTS-driven `parent_boundary_conditions` / `parent_forcings` builders, so a child forcing/BC specializes
 # on a plain `FieldTimeSeries` (the same type Breeze compiles for any FTS forcing).
 
-using NumericalEarth: regrid_topography, surface_elevation
+using NumericalEarth: BoundingBox, Metadatum, regrid_topography, surface_elevation
 using NumericalEarth.Atmospheres: PrescribedAtmosphere
+using NumericalEarth.DataWrangling: default_download_directory, matching_single_level_dataset,
+                                    native_resolution
 using NumericalEarth.NestedModels: NestedModel, parent_boundary_conditions, parent_forcings,
                                    blend_parent_terrain!
 using Oceananigans: WENO
+using Oceananigans.Architectures: architecture
 using Oceananigans.BoundaryConditions: ValueBoundaryCondition
 using Oceananigans.Coriolis: SphericalCoriolis
-using Oceananigans.Fields: AbstractField, Field, interpolate!
+using Oceananigans.Fields: AbstractField, Field, interior, interpolate!, set!
 using Oceananigans.Forcings: Relaxation
 using Oceananigans.Grids: znode, Center, Face
 using GPUArraysCore: @allowscalar
@@ -174,4 +177,43 @@ function NumericalEarth.NestedModels.nested_atmosphere_model(
                 kw...)
 
     return NestedModel(parent_atmosphere, child, exchanger)
+end
+
+# Domain-mean dataset surface pressure at `date`, regridded onto the child grid — anchors the
+# default compressible dynamics' hydrostatic reference to the parent state.
+function mean_surface_pressure(dataset, child_grid, date, dir)
+    single_level_dataset = matching_single_level_dataset(dataset)
+    p₀ = Field{Center, Center, Nothing}(child_grid)
+    set!(p₀, Metadatum(:surface_pressure; dataset = single_level_dataset, date,
+                       region = BoundingBox(child_grid), dir))
+    return sum(interior(p₀)) / length(interior(p₀))
+end
+
+"""
+    nested_atmosphere_model(child_grid, parent_dataset; dates, kw...)
+
+Build the parent `PrescribedAtmosphere` internally and nest a Breeze child atmosphere in it.
+The parent spans `child_grid`'s bounding box padded by `parent_padding` — by default two of
+`parent_dataset`'s native cells, margin for the lateral-BC interpolation stencils — at `dates`,
+on `parent_dataset`'s native grid. Unless given, the default dynamics' `surface_pressure`
+anchor is the domain-mean dataset surface pressure over the child at `first(dates)`. All other
+keyword arguments flow to `nested_atmosphere_model(parent, child_grid; kw...)`.
+"""
+function NumericalEarth.NestedModels.nested_atmosphere_model(child_grid, parent_dataset;
+            dates,
+            dir = default_download_directory(parent_dataset),
+            parent_padding = 2 * native_resolution(parent_dataset),
+            surface_pressure = nothing,
+            kw...)
+
+    parent_region = BoundingBox(child_grid; padding = parent_padding)
+    parent_atmosphere = PrescribedAtmosphere(parent_region, dates, parent_dataset;
+                                             architecture = architecture(child_grid), dir)
+
+    if isnothing(surface_pressure)
+        surface_pressure = mean_surface_pressure(parent_dataset, child_grid, first(dates), dir)
+    end
+
+    return NumericalEarth.NestedModels.nested_atmosphere_model(parent_atmosphere, child_grid;
+                                                               surface_pressure, kw...)
 end

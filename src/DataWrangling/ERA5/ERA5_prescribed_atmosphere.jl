@@ -175,3 +175,12 @@ function ERA5PrescribedAtmosphere(bounding_box::BoundingBox, dates;
                                 pressure = pressure_level_field(grid, dataset, architecture),
                                 thermodynamics_parameters)
 end
+
+"""
+    PrescribedAtmosphere(bounding_box, dates, dataset::ERA5PressureLevelsDataset; kw...)
+
+Dataset-dispatched constructor: build an [`ERA5PrescribedAtmosphere`](@ref) over `bounding_box`
+at `dates` on `dataset`'s native grid. Keyword arguments flow to `ERA5PrescribedAtmosphere`.
+"""
+PrescribedAtmosphere(bounding_box::BoundingBox, dates, dataset::ERA5PressureLevelsDataset; kw...) =
+    ERA5PrescribedAtmosphere(bounding_box, dates; dataset, kw...)

@@ -19,11 +19,26 @@ mutable struct PrescribedAtmosphere{S, FT, G, T, U, Θ, Q, M, P, C, F, TP, TI} <
     boundary_layer_height :: FT
 end
 
+# Compact bounds for regional (λ-Bounded) latitude-longitude grids; empty for global or
+# non-lat-lon grids. Latitude alone being bounded doesn't count — it always is.
+horizontal_domain_summary(grid) = ""
+
+function horizontal_domain_summary(grid::LatitudeLongitudeGrid)
+    TX, _, _ = topology(grid)
+    TX == Bounded || return ""
+    λ₁, λ₂ = extrema(λnodes(grid, Face(), Center(), Center()))
+    φ₁, φ₂ = extrema(φnodes(grid, Center(), Face(), Center()))
+    return string("λ ∈ [", prettysummary(λ₁), ", ", prettysummary(λ₂),
+                  "], φ ∈ [", prettysummary(φ₁), ", ", prettysummary(φ₂), "]")
+end
+
 function Base.summary(atmos::PrescribedAtmosphere{<:Any, FT}) where FT
     Nx, Ny, Nz = size(atmos.grid)
     Nt = length(atmos.times)
     sz_str = string(Nx, "×", Ny, "×", Nz, "×", Nt)
-    return string(sz_str, " PrescribedAtmosphere{$FT}")
+    domain = horizontal_domain_summary(atmos.grid)
+    suffix = isempty(domain) ? "" : string(" (", domain, ")")
+    return string(sz_str, " PrescribedAtmosphere{$FT}", suffix)
 end
 
 function Base.show(io::IO, atmos::PrescribedAtmosphere)

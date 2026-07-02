@@ -24,6 +24,16 @@ Create a bounding box with `latitude`, `longitude`, and `z` bounds on the sphere
 BoundingBox(; longitude=nothing, latitude=nothing, z=nothing) =
     BoundingBox(longitude, latitude, z)
 
+"""
+    BoundingBox(grid; padding = 0)
+
+Create a `BoundingBox` spanning the horizontal extent of `grid`, widened on every
+side by `padding` (degrees).
+"""
+BoundingBox(grid::AbstractGrid; padding = 0) =
+    BoundingBox(longitude = extrema(λnodes(grid, Face(), Center(), Center())) .+ (-padding, padding),
+                latitude  = extrema(φnodes(grid, Center(), Face(), Center())) .+ (-padding, padding))
+
 #####
 ##### Column region and interpolation types
 #####
@@ -648,6 +658,21 @@ end
 Return the default directory to which `dataset` is downloaded.
 """
 function default_download_directory end
+
+"""
+    native_resolution(dataset)
+
+Return the native horizontal grid spacing of `dataset` (degrees).
+"""
+function native_resolution end
+
+"""
+    matching_single_level_dataset(dataset)
+
+Return the single-level (surface) dataset sharing `dataset`'s product family and temporal
+cadence — e.g. the surface companion of a pressure-level reanalysis product.
+"""
+function matching_single_level_dataset end
 
 """
     dataset_variable_name(metadata)
