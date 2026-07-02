@@ -168,6 +168,8 @@ end
 @inline net_flux(condition) = condition
 @inline net_flux(bc::MultipleFluxes) = bc.flux_field
 @inline net_flux(bc::DiscreteBoundaryFunction) = net_flux(bc.func)
+@inline net_flux(f::DiscreteForcing)   = f.parameters
+@inline net_flux(mf::MultipleForcings) = net_flux(mf.forcings[1])
 
 function EarthSystemModels.InterfaceComputations.net_fluxes(ocean::OceananigansModelSimulations)
     # TODO: Generalize this to work with any ocean model
@@ -177,7 +179,16 @@ function EarthSystemModels.InterfaceComputations.net_fluxes(ocean::OceananigansM
 
     tracers = ocean.model.tracers
     ocean_surface_tracer_fluxes = NamedTuple(name => net_flux(tracers[name].boundary_conditions.top.condition) for name in keys(tracers))
-    return merge(ocean_surface_tracer_fluxes, net_ocean_surface_fluxes)
+
+    freshwater_volume_flux = if ocean.model.vertical_coordinate isa ZStarCoordinate
+        net_flux(ocean.model.forcing.η)
+    else
+        Field{Center, Center, Nothing}(ocean.model.grid)
+    end
+
+    fluxes = merge(ocean_surface_tracer_fluxes, net_ocean_surface_fluxes, (; η = freshwater_volume_flux))
+
+    return fluxes
 end
 
 end # module

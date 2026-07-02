@@ -58,6 +58,7 @@ Superscripts generally denote the _type_ or _phase_ of a quantity, while subscri
 | ``\mathrm{rn}`` | `ʳⁿ` | rain | ``J^{\mathrm{rn}}`` (rainfall) |
 | ``\mathrm{sn}`` | `ˢⁿ` | snow | ``J^{\mathrm{sn}}`` (snowfall) |
 | ``S`` | `ˢ` | salinity | ``J^S`` (salinity flux) |
+| ``w`` | `ʷ` | freshwater | ``J^w`` (freshwater volume flux per unit area) |
 | ``i`` | `ⁱ` | ice | ``\mathcal{L}^i`` (latent heat of sublimation) |
 | ``\ell`` | `ˡ` | liquid | ``\mathcal{L}^\ell`` (latent heat of vaporization) |
 | ``p`` | `ᵖ` | constant pressure | ``c^{pm}`` (moist isobaric heat capacity) |

@@ -104,12 +104,14 @@ Base.@propagate_inbounds get_land_freshwater_flux(i, j, flux) = flux[i, j, 1]
     # - evaporation acts only over the open-water fraction (1 - ℵᵢ)
     # The atmospheric mass-flux convention is positive down; Jᵛ is positive up.
     ρᵒᶜ⁻¹ = 1 / ocean_properties.reference_density
-    ΣFao = - (Jʳⁿ + Jˡⁿ + (1 - ℵᵢ) * Jˢⁿ) * ρᵒᶜ⁻¹ + (1 - ℵᵢ) * Jᵛ * ρᵒᶜ⁻¹
+    ΣFao  = - (Jʳⁿ + Jˡⁿ + (1 - ℵᵢ) * Jˢⁿ) * ρᵒᶜ⁻¹ + (1 - ℵᵢ) * Jᵛ * ρᵒᶜ⁻¹
+    Jʷao  = - ΣFao # Freshwater flux (positive increases the volume)
 
     τˣ = net_ocean_fluxes.u
     τʸ = net_ocean_fluxes.v
     Jᵀ = net_ocean_fluxes.T
     Jˢ = net_ocean_fluxes.S
+    Jʷ = net_ocean_fluxes.η
     ℵ  = sea_ice_concentration
     cᵒᶜ⁻¹ = 1 / ocean_properties.heat_capacity
     inactive = inactive_node(i, j, kᴺ, grid, Center(), Center(), Center())
@@ -117,11 +119,12 @@ Base.@propagate_inbounds get_land_freshwater_flux(i, j, flux) = flux[i, j, 1]
     @inbounds begin
         𝒬ⁱⁿ = sea_ice_ocean_fluxes.interface_heat[i, j, 1]
         Jˢio = sea_ice_ocean_fluxes.salt[i, j, 1]
+        Jʷio = sea_ice_ocean_fluxes.freshwater[i, j, 1]
         Jᵀao = ΣQao * ρᵒᶜ⁻¹ * cᵒᶜ⁻¹
         Jᵀio = 𝒬ⁱⁿ * ρᵒᶜ⁻¹ * cᵒᶜ⁻¹
 
         # salinity flux > 0 extracts salinity (opposite of water vapor flux sign)
-        Jˢao = - Sᵒᶜ * ΣFao
+        Jˢao = Sᵒᶜ * Jʷao
 
         τˣᵃᵒ = ℑxᶠᵃᵃ(i, j, 1, grid, τᶜᶜᶜ, ρᵒᶜ⁻¹, ℵ, ρτˣᵃᵒ)
         τʸᵃᵒ = ℑyᵃᶠᵃ(i, j, 1, grid, τᶜᶜᶜ, ρᵒᶜ⁻¹, ℵ, ρτʸᵃᵒ)
@@ -134,5 +137,6 @@ Base.@propagate_inbounds get_land_freshwater_flux(i, j, flux) = flux[i, j, 1]
         # Tracer fluxes — radiative contributions added later by apply_air_sea_radiative_fluxes!
         Jᵀ[i, j, 1] = ifelse(inactive, zero(grid), Jᵀao + Jᵀio)
         Jˢ[i, j, 1] = ifelse(inactive, zero(grid), Jˢao + Jˢio)
+        Jʷ[i, j, 1] = ifelse(inactive, zero(grid), Jʷao + Jʷio)
     end
 end
