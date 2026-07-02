@@ -1,13 +1,12 @@
 module NumericalEarthMakieExt
 
 using NumericalEarth: NumericalEarth, BoundingBox, ETOPO2022, regrid_bathymetry, natural_earth_lines
-using Oceananigans: CPU, LatitudeLongitudeGrid, Bounded, Center, Face, λnodes, φnodes, interior
+using Oceananigans: CPU, LatitudeLongitudeGrid, Bounded, Center, λnodes, φnodes, interior
 using Makie: Figure, Axis, Colorbar, DataAspect, axislegend, cgrad,
              heatmap!, lines!, scatter!, xlims!, ylims!
 
 bounding_box(region::BoundingBox) = region
-bounding_box(grid) = BoundingBox(longitude = extrema(λnodes(grid, Face(), Center(), Center())),
-                                 latitude  = extrema(φnodes(grid, Center(), Face(), Center())))
+bounding_box(grid) = BoundingBox(grid)
 
 # Closed rectangle path tracing the perimeter of `region`.
 function region_outline(region)
