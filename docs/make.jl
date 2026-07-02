@@ -47,6 +47,7 @@ examples = [
     Example("ERA5 and GloFAS reanalysis data", "exploring_era5_reanalysis_data", true),
     Example("ERA5-forced slab land", "era5_forced_slab_land", true),
     Example("Breeze over slab land", "breeze_over_slab_land", true),
+    Example("Differentiable dry-layer slab land", "differentiable_dry_layer_slab_land", true),
     # Example("ERA5 downscaling with Breeze and NestedSimulation", "era5_breeze", false),
 ]
 
@@ -185,6 +186,11 @@ pages = [
     ],
     "Interface fluxes" => "interface_fluxes.md",
 
+    "Land" => [
+        "SlabLand tutorial" => "land/evaporation_front_slab_land.md",
+        "Follow-up roadmap"  => "land/follow_up_roadmap.md",
+    ],
+
     "Appendix" => [
         "Notation" => "appendix/notation.md",
     ],
@@ -221,4 +227,7 @@ makedocs(; sitename = "NumericalEarth.jl",
              r"https://www\.ncei\.noaa\.gov/products/etopo-global-relief-model",
              r"https://www\.ncei\.noaa\.gov/products/world-ocean-atlas",
              r"https://www\.ncei\.noaa\.gov/data/sea-surface-temperature-optimum-interpolation/v2\.1/access/avhrr",
+             # Self-referential links to this repo's own test files on `main`:
+             # they 404 during a PR's CI (the files only land on `main` at merge).
+             r"https://github\.com/NumericalEarth/NumericalEarth\.jl/blob/main/test/",
         ],)

@@ -251,3 +251,38 @@ function Oceananigans.restore_prognostic_state!(atmos::PrescribedAtmosphere, sta
 end
 
 Oceananigans.restore_prognostic_state!(atmos::PrescribedAtmosphere, ::Nothing) = atmos
+
+#####
+##### set!
+#####
+
+# Prescribed fields are FieldTimeSeries; their data lives in the per-time
+# `Field` slices, so `set!` each slice (which accepts a Number, Field, function,
+# or anything `set!(::Field, ⋅)` does). `nothing` leaves the field untouched.
+set_prescribed_field!(fts, ::Nothing) = nothing
+function set_prescribed_field!(fts, value)
+    for n in 1:length(fts.times)
+        Oceananigans.set!(fts[n], value)
+    end
+    return fts
+end
+
+"""
+    set!(atmosphere::PrescribedAtmosphere; u=nothing, v=nothing, T=nothing, q=nothing, p=nothing)
+
+Set the prescribed atmospheric velocities (`u`, `v`), air temperature (`T`),
+specific humidity (`q`), and surface pressure (`p`), then refresh
+the interpolated state. Omitted keywords are left untouched. A `Number` sets a
+constant in space and time; a function or `Field` is forwarded to
+`Oceananigans.set!`.
+"""
+function Oceananigans.set!(atmosphere::PrescribedAtmosphere;
+                           u=nothing, v=nothing, T=nothing, q=nothing, p=nothing)
+    set_prescribed_field!(atmosphere.velocities.u, u)
+    set_prescribed_field!(atmosphere.velocities.v, v)
+    set_prescribed_field!(atmosphere.temperature, T)
+    set_prescribed_field!(atmosphere.specific_humidity, q)
+    set_prescribed_field!(atmosphere.pressure, p)
+    update_state!(atmosphere)
+    return atmosphere
+end

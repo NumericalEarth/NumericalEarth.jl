@@ -5,6 +5,7 @@ using Oceananigans.Fields: AbstractField
 using Oceananigans
 using Oceananigans.Utils: launch!
 using Oceananigans.TimeSteppers: update_state!
+using Oceananigans: prognostic_fields, prognostic_state, restore_prognostic_state!
 using NumericalEarth.Lands: update_diagnostics!, ForceRestoreEnergy, DryLand
 using NumericalEarth.EarthSystemModels.InterfaceComputations: default_atmosphere_land_fluxes,
                                                               atmosphere_land_stability_functions,
@@ -34,11 +35,12 @@ using Thermodynamics
         @test land.energy.liquid_heat_capacity isa Number
         @test land.hydrology.maximum_water_storage isa Number
 
-        # With `state.water_storage = 0`, the slab responds to `fluxes.net_energy_flux`
+        # With `state.water_storage = 0`, the slab responds to
+        # `fluxes.surface_energy_flux` (positive upward, so a negative value warms)
         # using only `dry_heat_capacity`.
         fill!(land.water_storage, 0)
         fill!(land.temperature, 10)
-        fill!(land.fluxes.net_energy_flux, 10)
+        fill!(land.fluxes.surface_energy_flux, -10)
         NumericalEarth.Lands.time_step!(land.energy, land, 1)
         @test isapprox(CUDA.@allowscalar(land.temperature[1, 1, 1]), 15; atol=1e-12)
 
@@ -46,7 +48,7 @@ using Thermodynamics
         # temperature tendency.
         fill!(land.water_storage, 5)
         fill!(land.temperature, 10)
-        fill!(land.fluxes.net_energy_flux, 10)
+        fill!(land.fluxes.surface_energy_flux, -10)
         NumericalEarth.Lands.time_step!(land.energy, land, 1)
         @test isapprox(CUDA.@allowscalar(land.temperature[1, 1, 1]), 10.4545454545; rtol=1e-7)
 
@@ -54,12 +56,26 @@ using Thermodynamics
         fill!(land.water_storage, 8)
         fill!(land.fluxes.precipitation, 4)
         fill!(land.fluxes.evaporation, 1)
-        fill!(land.fluxes.net_energy_flux, 0)
+        fill!(land.fluxes.surface_energy_flux, 0)
         time_step!(land, 1)
 
         # The bucket receives `3 kg m⁻²` net water over the step, capping at 10.
         @test isapprox(CUDA.@allowscalar(land.water_storage[1, 1, 1]), 10; atol=1e-12)
         @test isapprox(CUDA.@allowscalar(land.saturation[1, 1, 1]), 1; atol=1e-12)
+
+        # Sign-convention guard: `surface_energy_flux` is positive *upward* (out of
+        # the slab). Upward flux removes energy ⇒ cooling; downward (negative) ⇒ heating.
+        fill!(land.water_storage, 0)
+
+        fill!(land.temperature, 10)
+        fill!(land.fluxes.surface_energy_flux, 10)   # energy leaving the slab ⇒ cools
+        NumericalEarth.Lands.time_step!(land.energy, land, 1)
+        @test only(Array(interior(land.temperature))) < 10
+
+        fill!(land.temperature, 10)
+        fill!(land.fluxes.surface_energy_flux, -10)  # energy entering the slab ⇒ warms
+        NumericalEarth.Lands.time_step!(land.energy, land, 1)
+        @test only(Array(interior(land.temperature))) > 10
 
         # The atmosphere-facing land state exposes skin temperature and saturation;
         # roughness lengths belong to the flux closure, not the land.
@@ -100,7 +116,7 @@ end
 
         fill!(land.water_storage, 4)
         fill!(land.temperature, 10)
-        fill!(land.fluxes.net_energy_flux, 10)
+        fill!(land.fluxes.surface_energy_flux, -10)
         NumericalEarth.Lands.time_step!(land.energy, land, 1)
 
         # The field-valued land properties are read pointwise from the grid.
@@ -165,7 +181,7 @@ end
 
         # Surface flux + relaxation toward the prescribed deep temperature.
         # With τ = 1 s and Δt = 1 s, the restoring term moves T all the way
-        # from 280 to Tᵈᵉᵉᵖ = 260, plus Q/C = 10/2 = 5 K of flux heating.
+        # from 280 to Tᵈᵉᵉᵖ = 260, plus −Jᴱs/C = −(−10)/2 = 5 K of flux heating.
         energy = ForceRestoreEnergy(eltype(grid);
                                    dry_heat_capacity = 2,
                                    liquid_heat_capacity = 4,
@@ -174,10 +190,10 @@ end
         land = SlabLand(grid; energy, hydrology = DryLand())
 
         fill!(land.temperature, 280)
-        fill!(land.fluxes.net_energy_flux, 10)
+        fill!(land.fluxes.surface_energy_flux, -10)
 
         NumericalEarth.Lands.time_step!(land.energy, land, 1, 0)
-        # T_new = 280 + (10/2 + (260 − 280)/1)·1 = 280 + 5 − 20 = 265.
+        # T_new = 280 + (−(−10)/2 + (260 − 280)/1)·1 = 280 + 5 − 20 = 265.
         @test isapprox(CUDA.@allowscalar(land.temperature[1, 1, 1]), 265; atol=1e-12)
 
         # Time-dependent prescribed deep temperature (stateindex path).
@@ -190,7 +206,7 @@ end
         land_time = SlabLand(grid; energy = energy_time, hydrology = DryLand())
 
         fill!(land_time.temperature, 280)
-        fill!(land_time.fluxes.net_energy_flux, 0)
+        fill!(land_time.fluxes.surface_energy_flux, 0)
         time_step!(land_time, 1)
         # Post-step time is 1 s ⇒ Tᵈᵉᵉᵖ = 265; T relaxes fully to it in one step.
         @test isapprox(CUDA.@allowscalar(land_time.temperature[1, 1, 1]), 265; atol=1e-12)
@@ -206,7 +222,7 @@ end
                                z = (-1, 0),
                                topology = (Flat, Flat, Bounded))
 
-        Q = CenterField(grid)
+        Es = CenterField(grid)
         P = CenterField(grid)
         E = CenterField(grid)
         Jʳⁿ = CenterField(grid)  # atmospheric rainfall flux on exchange grid
@@ -219,13 +235,13 @@ end
         fill!(parent(interface_fluxes.latent_heat),   0)
         fill!(parent(interface_fluxes.water_vapor),   0.5)
         fill!(parent(Jʳⁿ), 0)
-        fill!(parent(Q), 0)
+        fill!(parent(Es), 0)
         fill!(parent(P), 0)
         fill!(parent(E), 0)
 
         launch!(arch, grid, :xy,
                 NumericalEarth.Lands._assemble_slab_land_fluxes!,
-                Q, P, E, interface_fluxes, Jʳⁿ)
+                P, E, nothing, nothing, nothing, interface_fluxes, Jʳⁿ)
 
         @test isapprox(CUDA.@allowscalar(P[1, 1, 1]), 0; atol=1e-12)
         @test isapprox(CUDA.@allowscalar(E[1, 1, 1]), 0.5; atol=1e-12)
@@ -237,7 +253,7 @@ end
 
         launch!(arch, grid, :xy,
                 NumericalEarth.Lands._assemble_slab_land_fluxes!,
-                Q, P, E, interface_fluxes, Jʳⁿ)
+                P, E, nothing, nothing, nothing, interface_fluxes, Jʳⁿ)
 
         @test isapprox(CUDA.@allowscalar(P[1, 1, 1]), 0.5; atol=1e-12)
         @test isapprox(CUDA.@allowscalar(E[1, 1, 1]), 0; atol=1e-12)
@@ -251,23 +267,24 @@ end
 
         launch!(arch, grid, :xy,
                 NumericalEarth.Lands._assemble_slab_land_fluxes!,
-                Q, P, E, interface_fluxes, Jʳⁿ)
+                P, E, nothing, nothing, nothing, interface_fluxes, Jʳⁿ)
 
         @test isapprox(CUDA.@allowscalar(P[1, 1, 1]), 1.7; atol=1e-12)
         @test isapprox(CUDA.@allowscalar(E[1, 1, 1]), 0; atol=1e-12)
 
-        # Net energy adds turbulent sensible + latent, positive into the land slab.
+        # `surface_energy_flux` adds turbulent sensible + latent, positive upward
+        # (out of the slab): Es = 𝒬ᵀ + 𝒬ᵛ = 2 + (−5) = −3.
         fill!(parent(interface_fluxes.sensible_heat),  2)
         fill!(parent(interface_fluxes.latent_heat),   -5)
         fill!(parent(interface_fluxes.water_vapor),    0)
         fill!(parent(Jʳⁿ), 0)
-        fill!(parent(Q), 0)
+        fill!(parent(Es), 0)
 
         launch!(arch, grid, :xy,
                 NumericalEarth.Lands._assemble_slab_land_fluxes!,
-                Q, P, E, interface_fluxes, Jʳⁿ)
+                P, E, nothing, Es, nothing, interface_fluxes, Jʳⁿ)
 
-        @test isapprox(CUDA.@allowscalar(Q[1, 1, 1]), 3; atol=1e-12)
+        @test isapprox(CUDA.@allowscalar(Es[1, 1, 1]), -3; atol=1e-12)
     end
 end
 
@@ -305,7 +322,7 @@ end
             fill!(parent(m.atmosphere.specific_humidity), 0.005)
             fill!(parent(m.atmosphere.pressure), 101_325)
             fill!(m.land.temperature, 300)
-            fill!(parent(m.land.fluxes.net_energy_flux), 0)
+            fill!(parent(m.land.fluxes.surface_energy_flux), 0)
             fill!(m.land.water_storage, 0)
         end
 
@@ -316,11 +333,12 @@ end
         @test all(parent(model_no_land.radiation.interface_fluxes.land.upwelling_longwave) .== 0)
         @test all(parent(model_with_land.radiation.interface_fluxes.land.upwelling_longwave) .> 0)
 
-        # Net land heating includes the emitted longwave radiative cooling term when land
-        # properties are available.
-        Q_land_no_props = CUDA.@allowscalar(model_no_land.land.fluxes.net_energy_flux[1, 1, 1])
-        Q_land_with_props = CUDA.@allowscalar(model_with_land.land.fluxes.net_energy_flux[1, 1, 1])
-        @test Q_land_with_props < Q_land_no_props
+        # `surface_energy_flux` is positive upward, so the emitted longwave radiative
+        # cooling term *raises* it (more energy leaving the slab) when land properties
+        # are available.
+        Es_land_no_props = CUDA.@allowscalar(model_no_land.land.fluxes.surface_energy_flux[1, 1, 1])
+        Es_land_with_props = CUDA.@allowscalar(model_with_land.land.fluxes.surface_energy_flux[1, 1, 1])
+        @test Es_land_with_props > Es_land_no_props
     end
 end
 
@@ -342,6 +360,39 @@ end
     fluxes = default_atmosphere_land_fluxes(land, FT)
     @test typeof(fluxes.stability_functions.momentum) == typeof(land_ψ.momentum)
     @test !(fluxes.stability_functions.momentum isa EdsonMomentumStabilityFunction)
+end
+
+@testset "SlabLand prognostic_fields and checkpointing" begin
+    for arch in test_architectures
+        A = typeof(arch)
+        @info "Testing SlabLand prognostic_fields + checkpointing on $A"
+
+        grid = RectilinearGrid(arch; size = 1, x = (0, 1), y = (0, 1), z = (-1, 0),
+                               topology = (Flat, Flat, Bounded))
+        land = SlabLand(grid)
+        set!(land; T = 300.0, M = 150.0)
+
+        # `prognostic_fields` is the math-named NamedTuple of the prognostics
+        # (saturation is diagnostic), aliasing the underlying fields.
+        pf = prognostic_fields(land)
+        @test keys(pf) == (:T, :M)
+        @test pf.T === land.temperature
+        @test pf.M === land.water_storage
+
+        # Checkpoint round-trip. `deepcopy` decouples the snapshot from the live
+        # fields the way on-disk serialization does in a real checkpoint.
+        snapshot = deepcopy(prognostic_state(land))
+        @test :temperature in keys(snapshot)
+        @test :water_storage in keys(snapshot)
+
+        set!(land; T = 250.0, M = 50.0)
+        restore_prognostic_state!(land, snapshot)
+        @test Array(interior(land.temperature))[1]   == 300
+        @test Array(interior(land.water_storage))[1] == 150
+
+        # Restoring from `nothing` is a no-op that returns the land.
+        @test restore_prognostic_state!(land, nothing) === land
+    end
 end
 
 @testset "Atmosphere-Land turbulent fluxes (analytic neutral)" begin

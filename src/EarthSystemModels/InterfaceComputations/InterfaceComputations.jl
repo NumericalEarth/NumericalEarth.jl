@@ -10,6 +10,8 @@ using Oceananigans.Utils: KernelParameters, worksize
 export
     ComponentInterfaces,
     SimilarityTheoryFluxes,
+    FixedIterations,
+    ConvergenceStopCriteria,
     MomentumRoughnessLength,
     ScalarRoughnessLength,
     LandRoughnessLength,
@@ -34,6 +36,11 @@ export
     SkinHumidity,
     FractionalHumidity,
     CriticalSaturation,
+    DryLayerHumidity,
+    StorageBasedDryLayerDepth,
+    DryLayerVaporPistonVelocity,
+    ConstantTortuosity,
+    MillingtonQuirk,
     ElevationCorrection,
     atmosphere_land_interface,
     # Sea ice-ocean heat flux formulations
@@ -105,6 +112,7 @@ end
 # Turbulent fluxes
 include("roughness_lengths.jl")
 include("interface_states.jl")
+include("dry_layer_humidity.jl")
 include("compute_interface_state.jl")
 include("similarity_theory_turbulent_fluxes.jl")
 include("coefficient_based_turbulent_fluxes.jl")

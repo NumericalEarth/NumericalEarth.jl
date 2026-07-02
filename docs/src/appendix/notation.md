@@ -14,6 +14,13 @@ Variable names are built by combining a **base symbol** with **superscripts** an
 - _Phase or species_: `ᵛ` (vapor), `ˡ` (liquid), `ⁱ` (ice), `ᶜ` (condensate)
 - _Component_: `ᵃᵗ` (atmosphere), `ᵒᶜ` (ocean), `ˢⁱ` (sea ice), `ˡᵃ` (land)
 - _Interface pair_: `ᵃᵒ` (atm–ocean), `ᵃⁱ` (atm–ice), `ⁱᵒ` (ice–ocean)
+
+Component superscripts are worn only in *cross-component* context — wherever
+a variable appears alongside variables from other components, as in interface
+computations or coupled-model discussions (`Tˡᵃ` next to `Tᵃᵗ` and `Tⁱⁿ`).
+Within a single component's own namespace the bare symbol is used: the land
+model's prognostic state is `(; T, M)` (as returned by
+`prognostic_fields(land)`), just as the ocean's is `(; u, v, w, T, S)`.
 - _Direction_: `ˣ` / `ʸ` (spatial), `ˢʷ` / `ˡʷ` (shortwave / longwave)
 - _Process_: `ⁱⁿ` (interface), `ᶠʳᶻ` (frazil)
 
@@ -111,12 +118,16 @@ Superscripts generally denote the _type_ or _phase_ of a quantity, while subscri
 
 ## Land state variables and parameters
 
+Bare symbols below are the land model's internal names; in cross-component
+context they wear the `ˡᵃ` superscript (`Tˡᵃ`, `Mˡᵃ`, `Mˡᵃ⁺`) per the
+component-superscript rule above.
+
 | Math | Code | Property | Description |
 |:----:|:----:|:---------|:------------|
 | ``T`` | `temperature` | ground temperature | Prognostic land-column temperature (K) |
-| ``M^{\mathrm{la}}`` | `water_storage` | land water | Prognostic land water mass per area (kg m⁻²) |
-| ``M^{\mathrm{la}\!+}`` | `maximum_water_storage` | maximum land water | Bucket capacity; soil-science "field capacity" (kg m⁻²) |
-| ``𝒮`` | `saturation` | surface saturation | Continuous land surface saturation ``\mathrm{clamp}(Mˡᵃ/Mˡᵃ⁺, 0, 1)``; the interface humidity models derive their availability ``β`` from it (–) |
+| ``M`` | `water_storage` | land water | Prognostic land water mass per area (kg m⁻²) |
+| ``M^{+}`` | `maximum_water_storage` | maximum land water | Bucket capacity; soil-science "field capacity" (kg m⁻²) |
+| ``𝒮`` | `saturation` | surface saturation | Continuous land surface saturation ``\mathrm{clamp}(M/M⁺, 0, 1)``; the interface humidity models derive their availability ``β`` from it (–) |
 | ``𝒮ᶜ`` | `critical_saturation` | critical saturation | Saturation above which the surface evaporates at full efficiency, for `CriticalSaturation` (–) |
 | ``T^{\mathrm{deep}}`` | `deep_temperature` | deep climatological temperature | Prescribed deep/climatological target temperature for force-restore (K) |
 | ``τ^{\mathrm{deep}}`` | `deep_time_scale` | deep-restore time scale | Time scale of surface relaxation toward ``T^{\mathrm{deep}}`` (s) |
@@ -128,6 +139,40 @@ Superscripts generally denote the _type_ or _phase_ of a quantity, while subscri
 | ``\chi^{\mathrm{soc}}`` | `SOC` | soil organic carbon concentration | Mass fraction of organic carbon in the solid matrix (kg kg⁻¹)
 | ``\rho^{\mathrm{soil}}`` | `ρ_soil` | soil bulk dry density | Bulk dry density of the soil within each vertical layer (kg m⁻³)
 | ``\rho^{\mathrm{soc}}`` | `ρ_soc` | soil organic carbon density | Bulk density of organic material within each vertical layer (kg m⁻³)
+
+### Variably-saturated slab land
+
+Symbols introduced by [`VariablySaturatedHydrology`](@ref),
+[`WaterCoupledEnergy`](@ref), and
+[`DryLayerHumidity`](@ref). See the
+[dry-layer slab-land page](../land/evaporation_front_slab_land.md)
+for an extended discussion.
+
+| Math | Code | Property | Description |
+|:----:|:----:|:---------|:------------|
+| ``h^{\mathrm{la}}`` | `slab_depth` | depth of prognostic land | Vertical thickness of the integrated land slab, from ``z_b`` to ``z_s`` (m) |
+| ``\nu`` | `porosity` | soil porosity | Total pore fraction (–) |
+| ``\theta^l`` | – | pore liquid fraction | Physical liquid-filled pore fraction; surface physics consumes this (–) |
+| ``\vartheta^l`` | – | augmented liquid fraction | Conservative storage variable ``= \theta^l + \max(\Pi, 0)/h^{\mathrm{ss}}``; allows ``M^{la} > M^{la+}`` saturated overflow (–) |
+| ``\theta^r`` | `residual_liquid_fraction` | residual liquid fraction | Minimum liquid-filled pore fraction (–) |
+| ``\mathcal{S}`` | `saturation` | effective saturation | Effective (relative) saturation ``\mathcal{S} = \mathrm{clamp}\!\left((\theta^l - \theta^r)/(\nu - \theta^r),\, 0,\, 1\right)``; the humidity availability and the front depth ``\delta^v`` derive from it (–) |
+| ``h^{\mathrm{ss}}`` | `storage_height` | storage height | Saturated storage height — the head built per unit fractional over-saturation; reciprocal of the specific storage (``1/S_s``) (m) |
+| ``\Pi`` | – | soil pressure head | Matric/pressure head; ``\Pi \le 0`` unsaturated, ``\Pi > 0`` saturated overflow (m) |
+| ``h`` | – | hydraulic head | ``h = z + \Pi`` (m) |
+| ``K`` | – | hydraulic conductivity | Darcy conductivity (m s⁻¹) |
+| ``\kappa^T`` | `thermal_conductivity` | thermal conductivity | Effective ground thermal conductivity (W m⁻¹ K⁻¹) |
+| ``\Lambda^{deep}`` | `deep_conductance` | deep energy conductance | Force-restore deep energy conductance (W m⁻² K⁻¹); see also ``τ^{\mathrm{deep}}`` |
+| ``T_r`` | `reference_temperature` | reference temperature | Reference temperature for internal energy ``e^l(T) = c^l (T - T_r)`` (K) |
+| ``T^{in}`` | – | interface temperature | Atmosphere-facing skin temperature, ``T^{in}`` (K) |
+| ``q^{in}`` | – | interface specific humidity | Atmosphere-facing skin humidity, ``q^{in}`` (kg kg⁻¹) |
+| ``T^e`` | – | dry-layer temperature | Diagnostic temperature at the dry layer (K) |
+| ``q^e`` | – | dry-layer specific humidity | Vapor source humidity at the dry layer (kg kg⁻¹) |
+| ``\delta^v`` | `dry_layer_depth` | dry-layer depth | Dry-layer thickness through which vapor diffuses, diagnostic of ``𝒮`` (m) |
+| ``\chi`` | – | blend coefficient | ``\chi = \mathrm{clip}(\delta^v/\ell^T, 0, 1)``; weights ``T^e`` between ``T^{in}`` and ``T^{la}`` (–) |
+| ``\eta`` | `dry_layer_exponent` | front-depth exponent | Exponent in ``\delta^v = \delta^v_{max}[1 - \min(𝒮/𝒮^c, 1)]^\eta`` (–) |
+| ``\ell^T`` | `thermal_exchange_depth`, `exchange_depth` | thermal exchange depth | Depth over which ``\Lambda^{in} = \kappa^T/\ell^T`` couples ``T^{la}`` to ``T^{in}`` (m) |
+| ``D^v`` | `molecular_diffusivity` | vapor diffusivity in air | Molecular vapor diffusivity in air (m² s⁻¹) |
+| ``w^d`` | – | dry-layer piston velocity | ``w^d = D^v_{eff}/\max(\delta^v, \delta^v_{min})`` (m s⁻¹) |
 
 ## Ocean state variables
 

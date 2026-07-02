@@ -6,8 +6,9 @@ using ..EarthSystemModels.InterfaceComputations: kernel_radiation_properties
 """
     apply_air_land_radiative_fluxes!(coupled_model)
 
-Add the radiative contribution to the land net energy flux `𝒬ˡᵃ` and write
-diagnostic radiative fluxes into `coupled_model.radiation.interface_fluxes.land`.
+Add the radiative contribution to the land `surface_energy_flux` (positive
+upward) and write diagnostic radiative fluxes into
+`coupled_model.radiation.interface_fluxes.land`.
 
 When `coupled_model.radiation === nothing`, this is a no-op.
 """
@@ -42,9 +43,16 @@ function apply_air_land_radiative_fluxes!(coupled_model, land)
     clock = coupled_model.clock
     radiation_state = coupled_model.interfaces.exchanger.radiation.state
 
+    # `surface_energy_flux` is positive *upward* (out of the slab), so the
+    # downward-positive radiative flux `ΣQ_rad` enters it with a sign flip,
+    # `-ΣQ_rad` (applied in the kernel).
+    fluxes = land.fluxes
+    hasproperty(fluxes, :surface_energy_flux) || return nothing
+    land_energy_flux = fluxes.surface_energy_flux
+
     launch!(arch, grid, :xy,
             _apply_air_land_radiative_fluxes!,
-            land.fluxes.net_energy_flux,
+            land_energy_flux,
             land_radiative_flux,
             grid,
             clock,
@@ -55,7 +63,7 @@ function apply_air_land_radiative_fluxes!(coupled_model, land)
     return nothing
 end
 
-@kernel function _apply_air_land_radiative_fluxes!(land_net_energy_flux,
+@kernel function _apply_air_land_radiative_fluxes!(land_energy_flux,
                                                   interface_radiative_flux,
                                                   grid,
                                                   clock,
@@ -82,8 +90,9 @@ end
 
     inactive = inactive_node(i, j, 1, grid, Center(), Center(), Center())
 
+    # `surface_energy_flux` is positive upward, so the into-land `ΣQ_rad` enters as `-ΣQ_rad`.
     @inbounds begin
-        land_net_energy_flux[i, j, 1] += ifelse(inactive, zero(grid), ΣQ_rad)
+        land_energy_flux[i, j, 1] += ifelse(inactive, zero(grid), -ΣQ_rad)
         interface_radiative_flux.upwelling_longwave[i, j, 1]    = ℐꜛˡʷ
         interface_radiative_flux.downwelling_longwave[i, j, 1]  = - ℐₐˡʷ
         interface_radiative_flux.downwelling_shortwave[i, j, 1] = - ℐₜˢʷ
