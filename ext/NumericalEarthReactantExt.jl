@@ -19,9 +19,14 @@ const ReactantESM{R, A, L, I, O, F, C} = Union{
     EarthSystemModel{R, A, L, I, O, F, C, <:Distributed{ReactantState}},
 }
 
+# Raise the coupled-model kernels to StableHLO. Without `raise`, the GPU backend
+# lowers the kernel launch through EnzymeXLA's kernel-call ABI rewrite
+# (`rewriteKernelCallABI` → `gpu.LaunchFuncOp`), which segfaults on the coupled
+# `update_state!` kernel. Raising is also what the differentiable examples use for
+# the gradient, so the forward and adjoint passes share the same lowering.
 function reconcile_state!(model::ReactantESM)
-    @jit Oceananigans.initialize!(model.interfaces.exchanger, model)
-    @jit Oceananigans.TimeSteppers.update_state!(model)
+    @jit raise=true Oceananigans.initialize!(model.interfaces.exchanger, model)
+    @jit raise=true Oceananigans.TimeSteppers.update_state!(model)
     return nothing
 end
 
