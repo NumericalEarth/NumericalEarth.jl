@@ -62,11 +62,18 @@ function Downloads.download(meta::ERA5Metadatum;
     # Get the ERA5 variable name
     variable_name = ERA5_dataset_variable_names[meta.name]
 
-    # era5cli's "geopotential" is ambiguous — it exists on both pressure levels and the surface, and
-    # defaults to the (4-D) pressure-level field. A single-level request for it (the orography
-    # clip-source, `:geopotential`/`:topography`) must be disambiguated with `levels = :surface`;
-    # pressure-level datasets keep era5cli's default (`nothing`).
-    levels = !is_three_dimensional(meta) && variable_name == "geopotential" ? :surface : nothing
+    # era5cli defaults to the single-levels (surface) product unless `--levels` is given — so a
+    # pressure-level request without levels silently returns a surface field (e.g. `u10` for
+    # `u_component_of_wind`). Pass the dataset's pressure levels for 3-D datasets; disambiguate the
+    # single-level `geopotential`/`topography` (surface geopotential, exists on both) with `:surface`;
+    # ordinary single-level variables keep era5cli's default (`nothing`).
+    levels = if is_three_dimensional(meta)
+        Int.(meta.dataset.pressure_levels)
+    elseif variable_name == "geopotential"
+        :surface
+    else
+        nothing
+    end
 
     # Extract date information
     date = meta.dates
