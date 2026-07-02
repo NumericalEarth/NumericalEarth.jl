@@ -104,7 +104,7 @@ export
     WOAClimatology, WOAAnnual, WOAMonthly,
     GLORYSDaily, GLORYSMonthly, GLORYSStatic,
     RepeatYearJRA55, MultiYearJRA55,
-    ERA5HourlySingleLevel, ERA5MonthlySingleLevel,
+    ERA5HourlySingleLevel, ERA5MonthlySingleLevel, ERA5YearlySingleLevel,
     ERA5HourlyPressureLevels, ERA5MonthlyPressureLevels,
     OSPapaHourly,
     JRA55FieldTimeSeries,

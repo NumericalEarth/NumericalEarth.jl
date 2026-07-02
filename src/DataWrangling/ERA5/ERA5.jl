@@ -1,7 +1,7 @@
 module ERA5
 
 # 2-D data
-export ERA5HourlySingleLevel, ERA5MonthlySingleLevel
+export ERA5HourlySingleLevel, ERA5MonthlySingleLevel, ERA5YearlySingleLevel
 
 # 3-D data
 export ERA5HourlyPressureLevels, ERA5MonthlyPressureLevels, ERA5_all_pressure_levels, pressure_field, hPa
@@ -12,11 +12,12 @@ export ERA5PrescribedAtmosphere, ERA5PrescribedRadiation
 
 using Dates: Dates, DateTime, Month, Hour
 using Downloads: Downloads
+using Oceananigans: Oceananigans
 using Oceananigans.Architectures: CPU
 using Oceananigans.BoundaryConditions: fill_halo_regions!
 using Oceananigans.DistributedComputations: Distributed, child_architecture
 using Oceananigans.Fields: Field, Center, set!
-using Oceananigans.OutputReaders: Cyclical, FieldTimeSeries
+using Oceananigans.OutputReaders: Cyclical, FieldTimeSeries, FlavorOfFTS, time_indices
 using NCDatasets: NCDatasets
 using Printf: Printf, @sprintf
 using Statistics: Statistics, mean
@@ -24,7 +25,7 @@ using Statistics: Statistics, mean
 using ..DataWrangling: DataWrangling, Metadata, Metadatum, BoundingBox, InverseGravity,
                        MetersPerHour, JoulesPerSquareMeterPerHour, metadata_path,
                        native_grid, dataset_variable_name, available_variables, retrieve_data,
-                       first_date, last_date
+                       first_date, last_date, DatasetBackend
 using ...Grids: PressureLevelVerticalDiscretization
 
 download_ERA5_cache::String = ""
@@ -124,6 +125,7 @@ function DataWrangling.metadata_filename(dataset::ERA5Dataset, name, date, regio
     return string(prefix, ".nc")
 end
 
+
 function inpainted_metadata_filename(metadata::ERA5Metadatum)
     without_extension = metadata.filename[1:end-3]
     return without_extension * "_inpainted.jld2"
@@ -132,10 +134,20 @@ end
 DataWrangling.inpainted_metadata_path(metadata::ERA5Metadatum) = joinpath(metadata.dir, inpainted_metadata_filename(metadata))
 
 #####
+##### Pure Julia CDS client (replaces Python era5cli)
+#####
+
+# CDS client is loaded via NumericalEarthCDSClientExt extension when HTTP/JSON3 are available
+# The extension exports: download_era5, read_cds_credentials, cds_variable_name
+# Users need to: using HTTP, JSON3  (or just using HTTP if JSON3 is already loaded)
+
+#####
 ##### Single-level and pressure-level specifics
 #####
 
+include("ERA5_variables.jl")
 include("ERA5_single_levels.jl")
+include("ERA5_field_time_series.jl")  # Yearly file reading (like JRA55)
 include("ERA5_pressure_levels.jl")
 include("ERA5_prescribed_radiation.jl")
 include("ERA5_prescribed_atmosphere.jl")
