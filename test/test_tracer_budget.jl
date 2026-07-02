@@ -18,7 +18,7 @@ function test_tracer_budget(coupled_model, Sᵒᶜ, Δt, nsteps; rtol)
     T = ocean.model.tracers.T
     S = ocean.model.tracers.S
 
-    heat_rate       = Integral(ρᵒᶜ * cᵒᶜ * T.boundary_conditions.top.condition, dims=(1, 2))
+    heat_rate       = Integral(net_ocean_heat_flux(coupled_model), dims=(1, 2))
     freshwater_rate = Integral(net_ocean_freshwater_flux(coupled_model; reference_salinity=Sᵒᶜ), dims=(1, 2))
 
     penetrating_radiation = get_radiative_forcing(ocean)
