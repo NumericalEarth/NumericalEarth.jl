@@ -21,6 +21,7 @@ using Oceananigans.Models.NonhydrostaticModels: NonhydrostaticModel
 using Oceananigans.OrthogonalSphericalShellGrids: OrthogonalSphericalShellGrids, TripolarGrid
 using Oceananigans.Operators: ℑxyᶠᶜᵃ, ℑxyᶜᶠᵃ, ℑxᶠᵃᵃ, ℑyᵃᶠᵃ, ∂xᶠᶜᶜ, ∂yᶜᶠᶜ
 using Oceananigans.Simulations: Simulation
+using Oceananigans.TimeSteppers: Clock
 using Oceananigans.TurbulenceClosures: κzᶜᶜᶠ
 using Oceananigans.TurbulenceClosures.TKEBasedVerticalDiffusivities: CATKEVerticalDiffusivity,
                                                                      CATKEMixingLength,
@@ -34,6 +35,7 @@ using ..EarthSystemModels: EarthSystemModels,
                            ocean_surface_velocities,
                            ocean_surface_salinity,
                            DegreesKelvin,
+                           default_stop_time,
                            heat_capacity
 using ..EarthSystemModels.InterfaceComputations: ComponentExchanger
 
