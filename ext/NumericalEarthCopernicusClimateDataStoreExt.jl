@@ -6,6 +6,7 @@ using Downloads: Downloads
 using Dates: Dates
 using Oceananigans.DistributedComputations: @root
 
+using NumericalEarth.DataWrangling: is_three_dimensional
 using NumericalEarth.DataWrangling.ERA5: ERA5Metadata, ERA5Metadatum, ERA5_dataset_variable_names
 
 """
@@ -61,6 +62,12 @@ function Downloads.download(meta::ERA5Metadatum;
     # Get the ERA5 variable name
     variable_name = ERA5_dataset_variable_names[meta.name]
 
+    # era5cli's "geopotential" is ambiguous — it exists on both pressure levels and the surface, and
+    # defaults to the (4-D) pressure-level field. A single-level request for it (the orography
+    # clip-source, `:geopotential`/`:topography`) must be disambiguated with `levels = :surface`;
+    # pressure-level datasets keep era5cli's default (`nothing`).
+    levels = !is_three_dimensional(meta) && variable_name == "geopotential" ? :surface : nothing
+
     # Extract date information
     date = meta.dates
     year = Dates.year(date)
@@ -82,6 +89,7 @@ function Downloads.download(meta::ERA5Metadatum;
             months = month,
             days = day,
             hours = hour,
+            levels = levels,
             area = area,
             format = "netcdf",
             outputprefix = output_prefix,

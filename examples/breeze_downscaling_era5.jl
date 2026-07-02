@@ -234,7 +234,7 @@ g = constants.gravitational_acceleration
 ε = vapor_gas_constant(constants) / dry_air_gas_constant(constants) - 1   # virtual-temperature coefficient
 exchanger = model.exchanger
 
-slice(operation, k) = compute!(Field(operation, indices = (:, :, k)))
+slice(operation, k) = Field(operation, indices = (:, :, k))
 
 function parent_slices(t)
     exchange_state!(exchanger, t)                    # advance the 2-level window to bracket t
