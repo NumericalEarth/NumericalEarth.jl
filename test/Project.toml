@@ -37,8 +37,8 @@ Zarr = "0a941bbe-ad1d-11e8-39d9-ab76183a1d99"
 NumericalEarth = {path = ".."}
 # TODO: drop once Oceananigans PR #5620 (simplify Relaxation + FTS/Field targets, w/ vertical-clamp; incl. #5726 `interpolate(f, …)`) is tagged.
 Oceananigans = {url = "https://github.com/CliMA/Oceananigans.jl.git", rev = "glw/simplify-relaxation"}
-# TODO: drop once Breeze tags a release with compute_reference_state (#812).
-Breeze = {url = "https://github.com/NumericalEarth/Breeze.jl.git", rev = "glw/set-reference-state"}
+# TODO: drop once Breeze tags a release including compute_reference_state (#812, merged to main).
+Breeze = {url = "https://github.com/NumericalEarth/Breeze.jl.git", rev = "main"}
 
 [compat]
 ArchGDAL = "0.10"

@@ -29,8 +29,8 @@ SpeedyWeather = "9e226e20-d153-4fed-8a5b-493def4f21a9"
 Suppressor = "fd094767-a336-5f1f-9728-57cf17d0bbfb"
 
 [sources]
-# TODO: drop once Breeze tags a release with compute_reference_state (#812).
-Breeze = {rev = "glw/set-reference-state", url = "https://github.com/NumericalEarth/Breeze.jl.git"}
+# TODO: drop once Breeze tags a release including compute_reference_state (#812, merged to main).
+Breeze = {rev = "main", url = "https://github.com/NumericalEarth/Breeze.jl.git"}
 NumericalEarth = {path = ".."}
 # TODO: drop once Oceananigans PR #5620 (simplify Relaxation + FTS/Field targets, w/ vertical-clamp) is tagged.
 Oceananigans = {rev = "glw/simplify-relaxation", url = "https://github.com/CliMA/Oceananigans.jl.git"}
