@@ -126,8 +126,9 @@ Keyword Arguments
 - `dataset`: Supported datasets are returned by [`supported_datasets`](@ref).
 
 - `dates`: The dates of the dataset (`Dates.AbstractDateTime` or `CFTime.AbstractCFDateTime`).
-           Note that `dates` can either be a range or a vector of dates, representing a time-series.
-           For a single date, use [`Metadatum`](@ref).
+           Note that `dates` can either be a range or a vector of dates, representing a time-series,
+           or a `(start_date, end_date)` tuple, which expands to the dataset's native dates in that
+           window (the cadence is the dataset's own). For a single date, use [`Metadatum`](@ref).
 
 - `start_date`: If `dates = nothing`, we can prescribe the first date of metadata as a date
                 (`Dates.AbstractDateTime` or `CFTime.AbstractCFDateTime`). If outside the
@@ -156,6 +157,8 @@ function Metadata(variable_name;
                   start_date = nothing,
                   end_date = nothing)
 
+    dates = expand_dates(dataset, variable_name, dates)
+
     # crop dates if _either_ a start date or an end date is provided
     if !isnothing(start_date) || !isnothing(end_date)
 
@@ -176,6 +179,16 @@ end
 
 const AnyDateTime  = Union{AbstractCFDateTime, Dates.AbstractDateTime}
 const Metadatum{V} = Metadata{V, <:Union{AnyDateTime, Nothing}} where V
+
+"""
+    expand_dates(dataset, variable_name, dates)
+
+Return `dates`, expanding a `(start_date, end_date)` tuple to the dataset's native dates
+in that window — the cadence is the dataset's own.
+"""
+expand_dates(dataset, variable_name, dates) = dates
+expand_dates(dataset, variable_name, dates::Tuple{<:AnyDateTime, <:AnyDateTime}) =
+    compute_native_date_range(all_dates(dataset, variable_name), first(dates), last(dates))
 
 function Base.size(metadata::Metadata)
     Nx, Ny, Nz = size(metadata.dataset, metadata.name)

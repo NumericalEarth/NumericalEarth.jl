@@ -117,6 +117,7 @@ export
     atmosphere_model,
     atmosphere_simulation,
     breeze_prognostic_state,
+    bulk_drag,
     hydrostatic_pressure_from_surface,
     density_from_pressure,
     ocean_simulation,
@@ -131,10 +132,12 @@ export
     native_grid,
     natural_earth_lines,
     surface_elevation,
-    visualize_domain
+    exchange_state!,
+    total_density,
+    visualize_nested_domain
 
 using DataDeps: DataDeps
-using Oceananigans: Oceananigans
+using Oceananigans: Oceananigans, initialize!
 using Oceananigans.Architectures: CPU
 using Oceananigans.Grids: _node
 using Oceananigans.ImmersedBoundaries: ImmersedBoundaryGrid, GridFittedBottom
@@ -157,12 +160,12 @@ Requires `NaturalEarth` and `GeoInterface` to be loaded — the method lives in
 function natural_earth_lines end
 
 """
-    visualize_domain(grid; parent = nothing, kw...)
+    visualize_nested_domain(grid; parent = nothing, kw...)
 
 Return a `Makie.Figure` mapping the domain of `grid` — a topography/bathymetry basemap
 with the domain drawn as a box — for checking a configuration's geography before running.
 When `parent` (a `BoundingBox` or another grid) is given, its region is drawn as a second
-box, visualizing a nested configuration.
+box, visualizing the nesting; omit it to map a single domain.
 
 Keyword arguments
 =================
@@ -181,7 +184,7 @@ Keyword arguments
 Requires a Makie backend (e.g. `CairoMakie`) to be loaded — the method lives in
 `NumericalEarthMakieExt`.
 """
-function visualize_domain end
+function visualize_nested_domain end
 
 const SomeKindOfFieldTimeSeries = Union{FieldTimeSeries,
                                         GPUAdaptedFieldTimeSeries}

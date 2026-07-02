@@ -1,7 +1,8 @@
 module NestedModels
 
 export NestedModel, NestedSimulation, nested_atmosphere_model,
-       parent_boundary_conditions, parent_forcings, blend_parent_terrain!
+       parent_boundary_conditions, parent_forcings, blend_parent_terrain!,
+       exchange_state!, total_density
 
 # Model-specific extension point (methods defined in the Breeze extension):
 #   `nested_atmosphere_model(parent, child_grid; …)` builds a child atmosphere over `child_grid` driven
@@ -9,6 +10,11 @@ export NestedModel, NestedSimulation, nested_atmosphere_model,
 # The child's lateral BCs / interior relaxation are built from the exchanger's parent-derived prognostic
 # `FieldTimeSeries` via the generic `parent_boundary_conditions` / `parent_forcings`.
 function nested_atmosphere_model end
+
+# Total air density ρ = ρᵈ + Σρqˣ from a state exchanger's density-weighted prognostics at time index
+# `n` (method in the Breeze extension). Centralizes the partial-density sum so recovering specific
+# quantities (qᵛ = ρqᵛ/ρ) stays correct as condensate species are added to the prognostic set.
+function total_density end
 
 using Oceananigans
 using Oceananigans.Fields: Face

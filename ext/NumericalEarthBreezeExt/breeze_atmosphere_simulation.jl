@@ -1,6 +1,9 @@
+using KernelAbstractions: @kernel, @index
+using Oceananigans.Architectures: architecture
 using Oceananigans.Fields: Field
-using Oceananigans.Grids: Center
+using Oceananigans.Grids: znode, Center, Face
 using Oceananigans.BoundaryConditions: FieldBoundaryConditions, DefaultBoundaryCondition
+using Oceananigans.Utils: launch!
 
 using Breeze: ThermodynamicConstants, CompressibleDynamics,
               SaturationAdjustment, WarmPhaseEquilibrium,
@@ -130,3 +133,46 @@ this `Simulation` directly. All other keyword arguments forward to `atmosphere_m
 """
 NumericalEarth.Atmospheres.atmosphere_simulation(grid; Δt = Inf, kw...) =
     Simulation(NumericalEarth.Atmospheres.atmosphere_model(grid; kw...); Δt, verbose = false)
+
+#####
+##### bulk_drag: bulk neutral log-law surface stress into the coupling ρτˣ/ρτʸ fields
+#####
+
+@kernel function _drag_coefficient!(Cᵈ, grid, κ, z₀)
+    i, j = @index(Global, NTuple)
+    @inbounds begin
+        z₁ = znode(i, j, 1, grid, Center(), Center(), Center()) - znode(i, j, 1, grid, Center(), Center(), Face())
+        Cᵈ[i, j, 1] = (κ / log(z₁ / z₀))^2
+    end
+end
+
+@kernel function _bulk_drag!(ρτˣ, ρτʸ, u, v, ρ, Cᵈ)
+    i, j = @index(Global, NTuple)
+    @inbounds begin
+        uᶜ = (u[i, j, 1] + u[i+1, j, 1]) / 2
+        vᶜ = (v[i, j, 1] + v[i, j+1, 1]) / 2
+        U = sqrt(uᶜ^2 + vᶜ^2)
+        ρτˣ[i, j, 1] = -ρ[i, j, 1] * Cᵈ[i, j, 1] * U * uᶜ
+        ρτʸ[i, j, 1] = -ρ[i, j, 1] * Cᵈ[i, j, 1] * U * vᶜ
+    end
+end
+
+function NumericalEarth.Atmospheres.bulk_drag(model::AtmosphereModel; roughness_length = 0.1, von_karman_constant = 0.4)
+    grid = model.grid
+    FT = eltype(grid)
+    Cᵈ = Field{Center, Center, Nothing}(grid)
+    launch!(architecture(grid), grid, :xy, _drag_coefficient!,
+            Cᵈ, grid, convert(FT, von_karman_constant), convert(FT, roughness_length))
+
+    ρτˣ = model.momentum.ρu.boundary_conditions.bottom.condition
+    ρτʸ = model.momentum.ρv.boundary_conditions.bottom.condition
+    u, v = model.velocities.u, model.velocities.v
+    ρ = model.dynamics.density
+
+    function apply_bulk_drag!(simulation)
+        launch!(architecture(grid), grid, :xy, _bulk_drag!, ρτˣ, ρτʸ, u, v, ρ, Cᵈ)
+        return nothing
+    end
+
+    return apply_bulk_drag!
+end

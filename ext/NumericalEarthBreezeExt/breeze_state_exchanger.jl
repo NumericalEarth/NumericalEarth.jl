@@ -24,7 +24,7 @@ using Oceananigans.OutputReaders: FieldTimeSeries, Cyclical, AbstractInMemoryBac
 using Oceananigans.Units: Time
 using Adapt: Adapt
 import Oceananigans.OutputReaders: new_backend, update_field_time_series!
-import NumericalEarth.NestedModels: exchange_state!
+import NumericalEarth.NestedModels: exchange_state!, total_density
 
 #####
 ##### A 2-level in-memory backend whose resident window is filled by the StateExchanger (not by `set!`).
@@ -133,6 +133,12 @@ struct StateExchanger{P, Pr, C, S, Q}
     pˢᵗ          :: S
     condensates  :: Q    # NamedTuple (qᶜˡ, qᶜⁱ); entries may be `nothing` (⇒ `ZeroField`)
 end
+
+# Diagnostics on the exchanger's density-weighted prognostics at time index `n`, as lazy operations.
+# Momentum/energy are dry-weighted (recover ÷ρᵈ); moisture is a partial density (recover ÷ρ). The
+# total density ρ = ρᵈ + Σρqˣ sums the dry density with every moisture/condensate partial density the
+# exchanger carries — currently just ρqᵛ, so it stays correct when condensate densities are added.
+total_density(ex::StateExchanger, n=1) = ex.prognostic.ρᵈ[n] + ex.prognostic.ρqᵛ[n]
 
 function state_exchanger(parent_atmosphere, pˢᵗ, constants;
                          condensates = (qᶜˡ = parent_atmosphere.microphysical_variables.qᶜˡ,

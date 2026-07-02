@@ -1,6 +1,7 @@
 module Atmospheres
 
-export atmosphere_model, atmosphere_simulation, breeze_prognostic_state, hydrostatic_pressure_from_surface, density_from_pressure, PrescribedAtmosphere, PrescribedPrecipitationFlux
+export atmosphere_model, atmosphere_simulation, breeze_prognostic_state, bulk_drag,
+       hydrostatic_pressure_from_surface, density_from_pressure, PrescribedAtmosphere, PrescribedPrecipitationFlux
 
 using Adapt: Adapt, adapt
 using KernelAbstractions: @kernel, @index
@@ -24,6 +25,17 @@ using ..EarthSystemModels.InterfaceComputations: interface_kernel_parameters, Co
 # wraps it in a `Simulation`.
 function atmosphere_model end
 function atmosphere_simulation end
+
+"""
+    bulk_drag(model; roughness_length = 0.1, von_karman_constant = 0.4)
+
+Return a callback `f(simulation)` that fills the model's coupling bottom-stress fields (ρτˣ, ρτʸ)
+with a bulk neutral surface stress ρτ = −ρ Cᵈ |U| U, with a per-column log-law drag coefficient
+Cᵈ = (κ / ln(z₁/z₀))² evaluated at the first-cell-center height z₁ above the local surface —
+a stand-in for land/ocean surface coupling. Methods live in atmosphere-model extensions
+(e.g. NumericalEarthBreezeExt).
+"""
+function bulk_drag end
 
 # Map a moist thermodynamic state (T, qᵛ, qᶜ, qⁱ, p) to an atmosphere model's
 # prognostic fields. Extended by atmosphere models (see NumericalEarthBreezeExt).

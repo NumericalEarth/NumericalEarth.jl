@@ -125,15 +125,17 @@ end
                              architecture = CPU(),
                              dataset = ERA5HourlyPressureLevels(),
                              dir = download_ERA5_cache,
-                             time_indices_in_memory = length(dates),
+                             time_indices_in_memory = nothing,
                              thermodynamics_parameters = nothing,
                              other_kw...)
 
 Return a 3-D [`PrescribedAtmosphere`](@ref) built from ERA5 **pressure-level** reanalysis over
-`bounding_box` at the requested `dates`, on ERA5's **native grid** — a `PressureLevelGrid` at the
-reanalysis' native horizontal resolution with a geopotential-height-aware pressure-level vertical.
-Each variable loads natively (no pre-regridding); a downstream model (e.g. a `NestedSimulation`
-child) interpolates the parent onto its own grid on the fly.
+`bounding_box` at the requested `dates` — a range or vector of dates, or a
+`(start_date, end_date)` tuple that expands to the dataset's native (hourly or monthly)
+cadence — on ERA5's **native grid**: a `PressureLevelGrid` at the reanalysis' native horizontal
+resolution with a geopotential-height-aware pressure-level vertical. Each variable loads
+natively (no pre-regridding); a downstream model (e.g. a `NestedSimulation` child) interpolates
+the parent onto its own grid on the fly. `time_indices_in_memory` defaults to all dates.
 
 The atmosphere holds eastward/northward `velocities`, `temperature`, `specific_humidity`,
 `microphysical_variables = (; qᶜˡ, qʳ, qᶜⁱ, qˢ)` (cloud liquid/ice + rain/snow water content), and
@@ -144,11 +146,13 @@ function ERA5PrescribedAtmosphere(bounding_box::BoundingBox, dates;
                                   architecture = CPU(),
                                   dataset = ERA5HourlyPressureLevels(),
                                   dir = download_ERA5_cache,
-                                  time_indices_in_memory = length(dates),
+                                  time_indices_in_memory = nothing,
                                   thermodynamics_parameters = nothing,
                                   other_kw...)
 
     region = bounding_box
+    dates = DataWrangling.expand_dates(dataset, :temperature, dates)
+    time_indices_in_memory = something(time_indices_in_memory, length(dates))
     kw = merge((; time_indices_in_memory), other_kw)
 
     # Each loads on ERA5's native PressureLevelGrid (per-snapshot geopotential ⇒ true per-column heights).

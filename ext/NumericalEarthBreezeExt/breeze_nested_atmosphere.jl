@@ -10,22 +10,26 @@
 # FTS-driven `parent_boundary_conditions` / `parent_forcings` builders, so a child forcing/BC specializes
 # on a plain `FieldTimeSeries` (the same type Breeze compiles for any FTS forcing).
 
-using NumericalEarth: BoundingBox, Metadatum, regrid_topography, surface_elevation
+using NumericalEarth: BoundingBox, Metadatum, density_from_pressure, hydrostatic_pressure_from_surface,
+                      regrid_topography, surface_elevation
 using NumericalEarth.Atmospheres: PrescribedAtmosphere
 using NumericalEarth.DataWrangling: default_download_directory, matching_single_level_dataset,
                                     native_resolution
 using NumericalEarth.NestedModels: NestedModel, parent_boundary_conditions, parent_forcings,
                                    blend_parent_terrain!
-using Oceananigans: WENO
+using Oceananigans: Oceananigans, WENO
 using Oceananigans.Architectures: architecture
 using Oceananigans.BoundaryConditions: ValueBoundaryCondition
 using Oceananigans.Coriolis: SphericalCoriolis
-using Oceananigans.Fields: AbstractField, Field, interior, interpolate!, set!
+using Oceananigans.Fields: AbstractField, CenterField, Field, XFaceField, YFaceField,
+                           compute!, interior, interpolate!, set!
 using Oceananigans.Forcings: Relaxation
-using Oceananigans.Grids: znode, Center, Face
+using Oceananigans.Grids: znode, λnodes, φnodes, Bounded, Center, Face, LatitudeLongitudeGrid
+using Oceananigans.TimeSteppers: update_state!
 using GPUArraysCore: @allowscalar
 using Breeze: CompressibleDynamics, SplitExplicitTimeDiscretization, UpperSponge, NoDivergenceDamping,
-              MixedPhaseEquilibrium, materialize_terrain!, moisture_prognostic_name
+              MixedPhaseEquilibrium, materialize_terrain!, moisture_prognostic_name,
+              dry_air_gas_constant, vapor_gas_constant
 
 # Default child microphysics: 1-moment bulk mixed-phase (rain + snow) precipitation with
 # saturation-adjustment cloud formation when Breeze's `CloudMicrophysics` extension is loaded,
@@ -35,6 +39,20 @@ function default_nested_microphysics()
     ext = Base.get_extension(Breeze, :BreezeCloudMicrophysicsExt)
     isnothing(ext) && return SaturationAdjustment(equilibrium = WarmPhaseEquilibrium())
     return ext.OneMomentCloudMicrophysics(cloud_formation = SaturationAdjustment(equilibrium = MixedPhaseEquilibrium()))
+end
+
+# Cosine-ramp Davies mask: 1 at the lateral walls, ramping to 0 over the outermost `width` cells.
+# Captures plain numbers so the closure is GPU-compilable.
+function davies_relaxation_mask(grid, width)
+    λ₁, λ₂ = extrema(λnodes(grid, Face(), Center(), Center()))
+    φ₁, φ₂ = extrema(φnodes(grid, Center(), Face(), Center()))
+    Nx, Ny, _ = size(grid)
+    w = width * max((λ₂ - λ₁) / Nx, (φ₂ - φ₁) / Ny)
+    return (λ, φ, z) -> begin
+        d = min(λ - λ₁, λ₂ - λ, φ - φ₁, φ₂ - φ)
+        d >= w && return zero(λ)
+        return oftype(λ, (1 + cos(π * d / w)) / 2)
+    end
 end
 
 # Cubic-ramp (smoothstep) Rayleigh mask over the top `depth` metres of the domain, for the ρw lid sponge.
@@ -83,8 +101,8 @@ Build a Breeze child atmosphere over `child_grid` nested in `parent_atmosphere`,
 `NestedModel`. The child's prognostics (`ρᵈ, ρu, ρv, ρθ, <moisture>`) are precomputed from the parent's
 raw state on the parent grid as `FieldTimeSeries` (see `child_prognostic_field_time_series`); the child's
 lateral boundary conditions — and, when `relaxation_rate` (s⁻¹) is given, its interior Davies relaxation
-over `relaxation_mask` — interpolate those precomputed prognostics (via `parent_boundary_conditions` /
-`parent_forcings`).
+over `relaxation_mask` (default: a cosine ramp over the outermost `relaxation_width` cells) — interpolate
+those precomputed prognostics (via `parent_boundary_conditions` / `parent_forcings`).
 
 Cloud/ice inputs to the combine default to the parent's `qᶜˡ`/`qᶜⁱ` but may be supplied from any source
 via `parent_condensates`, a `NamedTuple` with `qᶜˡ`/`qᶜⁱ` entries. Either entry — or the whole
@@ -106,7 +124,8 @@ so the terrain at the open boundaries matches the orography the parent state was
 function NumericalEarth.NestedModels.nested_atmosphere_model(
             parent_atmosphere::PrescribedAtmosphere, child_grid;
             relaxation_rate = nothing,
-            relaxation_mask = 1,
+            relaxation_width = 5,
+            relaxation_mask = davies_relaxation_mask(child_grid, relaxation_width),
             sides = (:west, :east, :south, :north),
             thermodynamic_constants = ThermodynamicConstants(eltype(child_grid)),
             surface_pressure = nothing,
@@ -192,12 +211,13 @@ end
 """
     nested_atmosphere_model(child_grid, parent_dataset; dates, kw...)
 
-Build the parent `PrescribedAtmosphere` internally and nest a Breeze child atmosphere in it.
-The parent spans `child_grid`'s bounding box padded by `parent_padding` — by default two of
-`parent_dataset`'s native cells, margin for the lateral-BC interpolation stencils — at `dates`,
-on `parent_dataset`'s native grid. Unless given, the default dynamics' `surface_pressure`
-anchor is the domain-mean dataset surface pressure over the child at `first(dates)`. All other
-keyword arguments flow to `nested_atmosphere_model(parent, child_grid; kw...)`.
+Build the parent `PrescribedAtmosphere`, nest a Breeze child in it, and initialize the child from
+`parent_dataset` at `first(dates)` — the returned model is ready to step. The parent spans
+`child_grid`'s bounding box padded by `parent_padding` (default two of `parent_dataset`'s native
+cells, margin for the lateral-BC interpolation stencils) at `dates`, on `parent_dataset`'s native
+grid. Unless given, the default dynamics' `surface_pressure` anchor is the domain-mean dataset surface
+pressure over the child at `first(dates)`. Remaining keyword arguments flow to
+`nested_atmosphere_model(parent, child_grid; kw...)`.
 """
 function NumericalEarth.NestedModels.nested_atmosphere_model(child_grid, parent_dataset;
             dates,
@@ -214,6 +234,71 @@ function NumericalEarth.NestedModels.nested_atmosphere_model(child_grid, parent_
         surface_pressure = mean_surface_pressure(parent_dataset, child_grid, first(dates), dir)
     end
 
-    return NumericalEarth.NestedModels.nested_atmosphere_model(parent_atmosphere, child_grid;
-                                                               surface_pressure, kw...)
+    nested_model = NumericalEarth.NestedModels.nested_atmosphere_model(parent_atmosphere, child_grid;
+                                                                       surface_pressure, kw...)
+    initialize_nested_child!(nested_model, parent_dataset, first(dates), dir)
+    return nested_model
+end
+
+NumericalEarth.Atmospheres.bulk_drag(model::NestedModel; kw...) =
+    NumericalEarth.Atmospheres.bulk_drag(model.child; kw...)
+
+# Initialize the nested child from `dataset` at `date`: regrid (u, v, T, qᵛ, qᶜˡ, qᶜⁱ) onto the child
+# grid (by true geopotential height, staggered to each field's location, clipped at the local surface),
+# build a hydrostatically-balanced pressure by integrating up from the dataset surface pressure at the
+# parent orography height, set the prognostic state (recomputing the Exner reference from the domain-mean
+# state), graft ρw ← ρw − ρw̃ so the flow follows the terrain, and spin ρw into nonhydrostatic balance.
+# `set!(…; balancer = true)` runs Breeze's adiabatic (FV3 `na_init`) balance on a stripped,
+# memory-sharing twin (no microphysics/sponge/forcing) at an automatically-derived acoustic-CFL step.
+function initialize_nested_child!(nested_model, dataset, date, dir)
+    child = nested_model.child
+    child_grid = child.grid
+    constants = child.thermodynamic_constants
+    Rᵈ = dry_air_gas_constant(constants)
+    Rᵛ = vapor_gas_constant(constants)
+
+    region = BoundingBox(child_grid)
+    metadatum(name) = Metadatum(name; dataset, date, region, dir)
+
+    u  = XFaceField(child_grid);  set!(u,  metadatum(:eastward_velocity))
+    v  = YFaceField(child_grid);  set!(v,  metadatum(:northward_velocity))
+    T  = CenterField(child_grid); set!(T,  metadatum(:temperature))
+    qᵛ = CenterField(child_grid); set!(qᵛ, metadatum(:specific_humidity))
+    qᶜ = CenterField(child_grid); set!(qᶜ, metadatum(:specific_cloud_liquid_water_content))
+    qⁱ = CenterField(child_grid); set!(qⁱ, metadatum(:specific_cloud_ice_water_content))
+
+    # Surface pressure on an Nz = 1 companion grid (a Flat z topology trips `_fractional_indices`).
+    Nx, Ny, _ = size(child_grid)
+    surface_grid = LatitudeLongitudeGrid(longitude = extrema(λnodes(child_grid, Face(), Center(), Center())),
+                                         latitude  = extrema(φnodes(child_grid, Center(), Face(), Center())),
+                                         z         = (0, 1),
+                                         size      = (Nx, Ny, 1),
+                                         halo      = (5, 5, 3),
+                                         topology  = (Bounded, Bounded, Bounded))
+    p₀ = CenterField(surface_grid)
+    set!(p₀, Metadatum(:surface_pressure; dataset = matching_single_level_dataset(dataset), date, region, dir))
+
+    # The dataset surface pressure sits at the parent's orography height, so the hydrostatic
+    # integration anchors each column there (not at the child's blended terrain).
+    parent_surface_elevation = Field{Center, Center, Nothing}(child_grid)
+    interpolate!(parent_surface_elevation, surface_elevation(nested_model.parent))
+    parent_elevation = Array(interior(parent_surface_elevation))[:, :, 1]
+
+    p = hydrostatic_pressure_from_surface(T, Array(interior(p₀))[:, :, 1], parent_elevation;
+                                          qᵛ, qᶜ, qⁱ, dry_gas_constant = Rᵈ, vapor_gas_constant = Rᵛ,
+                                          gravitational_acceleration = constants.gravitational_acceleration)
+    ρ = density_from_pressure(T, p; qᵛ, qᶜ, qⁱ, dry_gas_constant = Rᵈ, vapor_gas_constant = Rᵛ)
+    qᵗ = compute!(Field(qᵛ + qᶜ + qⁱ))
+
+    set!(nested_model; ρ, u, v, qᵗ, T, compute_reference_state = true)
+
+    # Consistent-w: graft ρw ← ρw − ρw̃ so the contravariant w̃ ≈ 0 (the initial flow follows the ground).
+    update_state!(nested_model)
+    if !isnothing(child.dynamics.contravariant_vertical_momentum)
+        interior(child.momentum.ρw) .-= interior(child.dynamics.contravariant_vertical_momentum)
+        update_state!(nested_model)
+    end
+
+    set!(nested_model; balancer = true)   # adiabatic (DFI) balance at Breeze's auto acoustic-CFL step
+    return nested_model
 end

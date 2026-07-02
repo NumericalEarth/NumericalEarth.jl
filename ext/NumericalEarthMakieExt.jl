@@ -31,7 +31,7 @@ function relief_colormap(minimum_relief, maximum_relief)
     return [topography_gradient[remap(g)] for g in range(0, 1, length = 512)]
 end
 
-function NumericalEarth.visualize_domain(grid;
+function NumericalEarth.visualize_nested_domain(grid;
                                          parent = nothing,
                                          padding = 2.5,
                                          resolution = 1/30,
