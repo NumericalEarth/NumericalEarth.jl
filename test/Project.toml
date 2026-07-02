@@ -35,8 +35,9 @@ Zarr = "0a941bbe-ad1d-11e8-39d9-ab76183a1d99"
 
 [sources]
 NumericalEarth = {path = ".."}
-# TODO: drop once Breeze tags a release including compute_reference_state (#812, merged to main).
-Breeze = {url = "https://github.com/NumericalEarth/Breeze.jl.git", rev = "main"}
+# TODO: drop back to a Breeze release/main once the balance-twin vapor-only grid_moisture_fractions
+# fix (glw/balance-twin-vapor-moisture-fractions, off main; also carries #812) merges to Breeze main.
+Breeze = {url = "https://github.com/NumericalEarth/Breeze.jl.git", rev = "glw/balance-twin-vapor-moisture-fractions"}
 
 [compat]
 ArchGDAL = "0.10"
