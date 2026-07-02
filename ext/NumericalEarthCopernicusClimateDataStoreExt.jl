@@ -7,7 +7,7 @@ using Dates: Dates
 using Oceananigans.DistributedComputations: @root
 
 using NumericalEarth.DataWrangling: is_three_dimensional
-using NumericalEarth.DataWrangling.ERA5: ERA5Metadata, ERA5Metadatum, ERA5_dataset_variable_names
+using NumericalEarth.DataWrangling.ERA5: ERA5Metadata, ERA5Metadatum, ERA5_dataset_variable_names, hPa
 
 """
     Downloads.download(metadata::ERA5Metadata; kwargs...)
@@ -66,9 +66,10 @@ function Downloads.download(meta::ERA5Metadatum;
     # pressure-level request without levels silently returns a surface field (e.g. `u10` for
     # `u_component_of_wind`). Pass the dataset's pressure levels for 3-D datasets; disambiguate the
     # single-level `geopotential`/`topography` (surface geopotential, exists on both) with `:surface`;
-    # ordinary single-level variables keep era5cli's default (`nothing`).
+    # ordinary single-level variables keep era5cli's default (`nothing`). `pressure_levels` is stored
+    # in Pa, but the CDS API expects hPa (`[1, …, 1000]`), so convert with `÷ hPa`.
     levels = if is_three_dimensional(meta)
-        Int.(meta.dataset.pressure_levels)
+        Int.(meta.dataset.pressure_levels) .÷ hPa
     elseif variable_name == "geopotential"
         :surface
     else
