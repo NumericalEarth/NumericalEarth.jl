@@ -183,6 +183,8 @@ NumericalEarth currently ships connectors for the following data products:
 | `ORCA1`            | `:bottom_height`, `:mesh_mask`                            | [ORCA1 mesh and bathymetry (Zenodo)](https://zenodo.org/records/4436658)                           |
 | `ORCA12`           | `:bottom_height`, `:mesh_mask`                            | [ORCA12 mesh and bathymetry (Zenodo)](https://zenodo.org/records/15495870)                         |
 | `GLORYSStatic`     | `:depth`                                                  | [Copernicus GLORYS static product](https://data.marine.copernicus.eu/product/GLOBAL_MULTIYEAR_PHY_001_030/description) |
+| `GLO30`            | `:bottom_height`                                          | [Copernicus DEM GLO-30 (Earth Data Hub)](https://earthdatahub.destine.eu/collections/copernicus-dem/datasets/GLO-30)   |
+| `GLO90`            | `:bottom_height`                                          | [Copernicus DEM GLO-90 (Earth Data Hub)](https://earthdatahub.destine.eu/collections/copernicus-dem/datasets/GLO-90)   |
 | **Ocean reanalysis and climatology** |                                     |                                                                                                     |
 | `ECCO2Monthly`     | [Supported variables](@ref dataset-ecco2monthly-vars)     | [ECCO2 documentation](https://ecco.jpl.nasa.gov/products/all/)                                     |
 | `ECCO2Daily`       | [Supported variables](@ref dataset-ecco2daily-vars)       | [ECCO2 documentation](https://ecco.jpl.nasa.gov/products/all/)                                     |
@@ -207,4 +209,5 @@ NumericalEarth currently ships connectors for the following data products:
 | `OSPapaFluxHourly` | air-sea fluxes, stresses, evaporation, precipitation, and skin temperature | [Ocean Station Papa flux dataset](https://www.pmel.noaa.gov/ocs/Papa) |
 | **Land** |                                                    |                                                                                                     |
 | `SoilGrids 2.0`     | Global profiles of soil texture, bulk density, and organic content in upper 2 meters  | [SoilGrids documentation](https://docs.isric.org/globaldata/soilgrids/)                                   |
+| `GloFASReanalysis` | `:river_discharge`                                       | [GloFAS-ERA5 river-discharge reanalysis (CDS)](https://cds.climate.copernicus.eu/datasets/cems-glofas-historical?tab=overview) |
 
