@@ -193,8 +193,8 @@ start_date = DateTime(2005, 2, 16, 12)
         @test convert_units(3.6, MetersPerHour()) ≈ 1        # 3.6 m/hr → 1 kg/m²/s
 
         # The regional hindcast prescribed components are first-class, top-level API.
-        @test ERA5PrescribedAtmosphere isa Function
-        @test ERA5PrescribedRadiation  isa Function
+        @test isdefined(NumericalEarth.DataWrangling.ERA5, :ERA5PrescribedAtmosphere)
+        @test isdefined(NumericalEarth.DataWrangling.ERA5, :ERA5PrescribedRadiation)
     end
 
     @testset "ERA5 single-level metadata_prefix" begin
