@@ -222,33 +222,30 @@ qᵛ_series = FieldTimeSeries(aloft_filename, "qᵛ")
 qʳ_series = FieldTimeSeries(aloft_filename, "qʳ")
 times = θᵥ_series.times
 
-# The parent is prescribed (no output file), so its rows come from the `StateExchanger` — the same
-# parent-derived child prognostics (ρᵈ, ρu, ρv, ρθ, ρqᵛ on the parent grid) that drive the child's
-# boundary conditions. `exchange_state!` advances the exchanger's 2-level window to each output time;
-# `total_density(exchanger)` sums the partial densities to ρ. Momentum/energy recover ÷ρᵈ, moisture
-# ÷ρ. ERA5's w is estimated from its pressure velocity as w ≈ −ω/(ρg); it carries no rain.
+# The parent is prescribed (no output file). Its rows are reconstructed at each frame time from the
+# parent's own raw ERA5 fields — which are full-in-memory `FieldTimeSeries` — via `breeze_prognostic_state`,
+# the exported (T, qᵛ, p) → (ρ, θˡⁱ, qᵗ) transform (the same physics the lateral BCs apply). We do NOT
+# read the `StateExchanger` prognostics here: that FTS is a 2-level window, so post-run per-frame reads
+# would alias to whatever the last `exchange_state!` left resident. ERA5's w ≈ −ω/(ρg); no rain.
 
 k_parent = searchsortedfirst(znodes(parent.grid, Center()), 2000)
 constants = child.thermodynamic_constants
+pˢᵗ = child.dynamics.standard_pressure
 g = constants.gravitational_acceleration
 ε = vapor_gas_constant(constants) / dry_air_gas_constant(constants) - 1   # virtual-temperature coefficient
-exchanger = model.exchanger
 
 slice(operation, k) = Field(operation, indices = (:, :, k))
 
 function parent_slices(t)
-    exchange_state!(exchanger, t)                    # advance the 2-level window to bracket t
-    p = exchanger.prognostic
-    ρᵈ = p.ρᵈ[Time(t)]
-    ρ  = total_density(exchanger, Time(t))
-    θˡⁱ = p.ρθ[Time(t)] / ρᵈ
-    qᵛ  = p.ρqᵛ[Time(t)] / ρ
-    u   = p.ρu[Time(t)] / ρᵈ
-    v   = p.ρv[Time(t)] / ρᵈ
-    return (θᵥ = slice(θˡⁱ * (1 + ε * qᵛ),           1),
+    (; ρ, θˡⁱ, qᵗ) = breeze_prognostic_state(constants, pˢᵗ,
+                        parent.temperature[Time(t)], parent.specific_humidity[Time(t)],
+                        parent.microphysical_variables.qᶜˡ[Time(t)],
+                        parent.microphysical_variables.qᶜⁱ[Time(t)], parent.pressure)
+    u, v = parent.velocities.u[Time(t)], parent.velocities.v[Time(t)]
+    return (θᵥ = slice(θˡⁱ * (1 + ε * qᵗ),           1),
             U  = slice(sqrt(u^2 + v^2),              1),
             w  = slice(-ω_series[Time(t)] / (ρ * g), k_parent),
-            qᵛ = slice(qᵛ,                           k_parent))
+            qᵛ = slice(qᵗ,                           k_parent))
 end
 parent_frames = [parent_slices(t) for t in times]
 nothing #hide
