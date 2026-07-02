@@ -13,6 +13,8 @@ using NumericalEarth.DataWrangling.ERA5: ERA5HourlySingleLevel, ERA5MonthlySingl
 using NumericalEarth.DataWrangling.ERA5: ERA5HourlyPressureLevels, ERA5MonthlyPressureLevels,
                                          ERA5_all_pressure_levels, ERA5PL_dataset_variable_names,
                                          ERA5PL_netcdf_variable_names, pressure_field
+using NumericalEarth.DataWrangling.ERA5: ERA5HourlyLand, ERA5MonthlyLand,
+                                         ERA5Land_dataset_variable_names, ERA5Land_netcdf_variable_names
 
 # Internal extension module — exposes dispatch helpers and NetCDF utilities
 # that are not part of the public API but worth pinning behavior for.
@@ -636,6 +638,147 @@ end
         @test req["product_type"]    == ["reanalysis"]
         @test req["data_format"]     == "netcdf"
         @test req["download_format"] == "unarchived"
+    end
+end
+
+@testset "ERA5-Land dataset, metadata, and dispatch" begin
+    hourly  = ERA5HourlyLand()
+    monthly = ERA5MonthlyLand()
+    # Central Borneo — snow-free equatorial land straddling some sea to the NW.
+    region  = BoundingBox(longitude=(113, 115), latitude=(0.5, 2.5))
+    dt      = DateTime(2020, 4, 1, 0)
+
+    all_dates            = NumericalEarth.DataWrangling.all_dates
+    available_variables  = NumericalEarth.DataWrangling.available_variables
+    dataset_variable_name = NumericalEarth.DataWrangling.dataset_variable_name
+    conversion_units     = NumericalEarth.DataWrangling.conversion_units
+    default_inpainting   = NumericalEarth.DataWrangling.default_inpainting
+    reversed_latitude    = NumericalEarth.DataWrangling.reversed_latitude_axis
+    longitude_interfaces = NumericalEarth.DataWrangling.longitude_interfaces
+    latitude_interfaces  = NumericalEarth.DataWrangling.latitude_interfaces
+
+    @testset "construction and supported_datasets membership" begin
+        @test hourly isa ERA5HourlyLand
+        @test monthly isa ERA5MonthlyLand
+        supported = NumericalEarth.DataWrangling.supported_datasets()
+        @test ERA5HourlyLand in supported
+        @test ERA5MonthlyLand in supported
+    end
+
+    @testset "0.1° grid: size, interfaces, exact cell spacing" begin
+        # The latitude count is 1800, not 1801 (the file's row count): the extra
+        # row folds in via AverageNorthSouth so the 1800 cells sit at exactly
+        # -89.95:0.1:89.95. This is what makes Δφ exactly 0.1°.
+        @test Base.size(hourly, :skin_temperature) == (3600, 1800, 1)
+
+        md = Metadatum(:skin_temperature; dataset=hourly, region, date=dt)
+        Nx, Ny, Nz, Nt = size(md)
+        @test (Nx, Ny, Nz, Nt) == (3600, 1800, 1, 1)
+        @test is_three_dimensional(md) == false
+
+        lon_i = longitude_interfaces(md)
+        lat_i = latitude_interfaces(md)
+        @test lon_i == (-0.05, 359.95)
+        @test lat_i == (-90, 90)
+        # Both axes must resolve to exactly 0.1° — Ny=1801 would break the latitude one.
+        @test (lon_i[2] - lon_i[1]) / 3600 ≈ 0.1
+        @test (lat_i[2] - lat_i[1]) / 1800 ≈ 0.1
+
+        # The file carries one extra latitude row (1801) that folds into the 1800
+        # grid cells through AverageNorthSouth — the same convention as single levels.
+        @test NumericalEarth.DataWrangling.mangling_for(md, 1801) isa
+              NumericalEarth.DataWrangling.AverageNorthSouth
+    end
+
+    @testset "variable-name dicts" begin
+        # API-name and netcdf-name dicts must cover the same variable set.
+        @test keys(ERA5Land_dataset_variable_names) == keys(ERA5Land_netcdf_variable_names)
+
+        # All four soil temperature levels and soil water layers are present.
+        for n in 1:4
+            @test haskey(ERA5Land_dataset_variable_names, Symbol("soil_temperature_level_$n"))
+            @test haskey(ERA5Land_dataset_variable_names, Symbol("volumetric_soil_water_layer_$n"))
+        end
+
+        # CDS catalogue names.
+        @test ERA5Land_dataset_variable_names[:skin_temperature] == "skin_temperature"
+        @test ERA5Land_dataset_variable_names[:soil_temperature_level_1] == "soil_temperature_level_1"
+        @test ERA5Land_dataset_variable_names[:volumetric_soil_water_layer_4] == "volumetric_soil_water_layer_4"
+        @test ERA5Land_dataset_variable_names[:temperature] == "2m_temperature"
+        @test ERA5Land_dataset_variable_names[:snow_water_equivalent] == "snow_depth_water_equivalent"
+
+        # NetCDF short names (verified against a real ERA5-Land download).
+        @test ERA5Land_netcdf_variable_names[:skin_temperature] == "skt"
+        @test ERA5Land_netcdf_variable_names[:soil_temperature_level_3] == "stl3"
+        @test ERA5Land_netcdf_variable_names[:volumetric_soil_water_layer_2] == "swvl2"
+        @test ERA5Land_netcdf_variable_names[:temperature] == "t2m"
+        @test ERA5Land_netcdf_variable_names[:dewpoint_temperature] == "d2m"
+        @test ERA5Land_netcdf_variable_names[:snow_water_equivalent] == "sd"
+        @test ERA5Land_netcdf_variable_names[:snow_depth] == "sde"
+    end
+
+    @testset "trait dispatch" begin
+        md = Metadatum(:skin_temperature; dataset=hourly, region, date=dt)
+
+        # available_variables returns the CDS-name dict; dataset_variable_name the netcdf short name.
+        @test available_variables(hourly) === ERA5Land_dataset_variable_names
+        @test dataset_variable_name(md) == "skt"
+
+        # Instantaneous analysis fields — no accumulation conversion.
+        @test conversion_units(md) === nothing
+        # Land-only targets must never be inpainted (ocean stays masked).
+        @test default_inpainting(md) === nothing
+        # Stored north-to-south, like single levels (inherited).
+        @test reversed_latitude(hourly) == true
+    end
+
+    @testset "all_dates" begin
+        dh = all_dates(hourly, :skin_temperature)
+        @test first(dh) == DateTime("1950-01-01")
+        @test step(dh) == Hour(1)
+
+        dm = all_dates(monthly, :skin_temperature)
+        @test first(dm) == DateTime("1950-01-01")
+        @test step(dm) == Month(1)
+    end
+
+    @testset "CDSAPIExt dispatch helpers" begin
+        @test CDSExt.cds_product(hourly)  == "reanalysis-era5-land"
+        @test CDSExt.cds_product(monthly) == "reanalysis-era5-land-monthly-means"
+        @test CDSExt.cds_varnames(hourly) === ERA5Land_dataset_variable_names
+        @test CDSExt.nc_varnames(hourly)  === ERA5Land_netcdf_variable_names
+        @test CDSExt.coord_vars(hourly)   === CDSExt.ERA5_COORD_VARS
+    end
+
+    @testset "build_era5_request omits product_type for ERA5-Land" begin
+        req = CDSExt.build_era5_request(:skin_temperature, hourly, dt; region=nothing)
+        # The one true divergence from single/pressure levels: the land product rejects it.
+        @test !haskey(req, "product_type")
+        @test !haskey(req, "pressure_level")
+        @test req["variable"]        == ["skin_temperature"]
+        @test req["data_format"]     == "netcdf"
+        @test req["download_format"] == "unarchived"
+
+        # A single-level request still carries product_type — guards the shared hook.
+        req_sl = CDSExt.build_era5_request(:temperature, ERA5HourlySingleLevel(), dt; region=nothing)
+        @test req_sl["product_type"] == ["reanalysis"]
+
+        # The set_product_type! hook directly: land omits, single-level injects.
+        r_land = Dict{String, Any}()
+        CDSExt.set_product_type!(r_land, hourly)
+        @test !haskey(r_land, "product_type")
+        r_sl = Dict{String, Any}()
+        CDSExt.set_product_type!(r_sl, ERA5HourlySingleLevel())
+        @test r_sl["product_type"] == ["reanalysis"]
+    end
+
+    @testset "BoundingBox area padded by 2 native (0.1°) cells" begin
+        # Δλ = 360/3600 = 0.1 and Δφ = 180/1800 = 0.1, so the 2-cell pad is 0.2° on
+        # each side and the area comes out clean. With Ny=1801 (Δφ ≠ 0.1) the
+        # latitude bounds would not land on 0.3 / 2.7 — this pins the grid choice.
+        req = CDSExt.build_era5_request(:skin_temperature, hourly, dt; region)
+        @test haskey(req, "area")
+        @test req["area"] ≈ [2.7, 112.8, 0.3, 115.2]   # [N, W, S, E]
     end
 end
 
