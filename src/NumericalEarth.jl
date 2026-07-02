@@ -41,6 +41,11 @@ export
     OceanSeaIceModel,
     AtmosphereOceanModel,
     AtmosphereLandModel,
+    NestedModel,
+    NestedSimulation,
+    parent_boundary_conditions,
+    parent_forcings,
+    # Atmosphere-land interface closures
     SkinHumidity,
     FractionalHumidity,
     CriticalSaturation,
@@ -56,6 +61,8 @@ export
     JRA55PrescribedRadiation,
     JRA55PrescribedAtmosphere,
     JRA55PrescribedLand,
+    GloFASPrescribedLand,
+    GloFASReanalysis,
     ERA5PrescribedAtmosphere,
     ERA5PrescribedRadiation,
     OSPapaPrescribedRadiation,
@@ -107,6 +114,8 @@ export
     LinearlyTaperedPolarMask,
     DatasetRestoring,
     atmosphere_simulation,
+    breeze_prognostic_state,
+    hydrostatic_pressure_from_surface,
     ocean_simulation,
     sea_ice_simulation,
     default_sea_ice,
@@ -186,6 +195,7 @@ using .Oceans
 using .SeaIces
 using .Diagnostics
 using .EarthSystemModels: ComponentInterfaces, MomentumRoughnessLength, ScalarRoughnessLength, default_sea_ice
+using .EarthSystemModels.NestedSimulations: NestedModel, NestedSimulation, parent_boundary_conditions, parent_forcings
 using .DataWrangling.ETOPO
 using .DataWrangling.ECCO
 using .DataWrangling.GLORYS
@@ -193,6 +203,7 @@ using .DataWrangling.EN4
 using .DataWrangling.ORCA
 using .DataWrangling.WOA
 using .DataWrangling.JRA55
+using .DataWrangling.GloFAS
 using .DataWrangling.OSPapa
 using .DataWrangling.ERA5
 using .DataWrangling.SoilGrids

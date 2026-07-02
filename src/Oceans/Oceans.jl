@@ -13,7 +13,7 @@ using Oceananigans.BuoyancyFormulations: SeawaterBuoyancy
 using Oceananigans.Coriolis: HydrostaticSphericalCoriolis
 using Oceananigans.Fields: Field, CenterField, set!, interior
 using Oceananigans.Forcings: MultipleForcings
-using Oceananigans.Grids: inactive_node, Face, Center, xspacings, yspacings, RectilinearGrid
+using Oceananigans.Grids: Grids, inactive_node, Face, Center, xspacings, yspacings, RectilinearGrid
 using Oceananigans.ImmersedBoundaries: ImmersedBoundaryGrid, ImmersedBoundaryCondition
 using Oceananigans.Models.HydrostaticFreeSurfaceModels: HydrostaticFreeSurfaceModel
 using Oceananigans.Models.HydrostaticFreeSurfaceModels.SplitExplicitFreeSurfaces: SplitExplicitFreeSurface
@@ -80,12 +80,12 @@ EarthSystemModels.ocean_temperature(ocean::OceananigansModelSimulations) = ocean
 
 function EarthSystemModels.ocean_surface_salinity(ocean::OceananigansModelSimulations)
     kᴺ = size(ocean.model.grid, 3)
-    return interior(ocean.model.tracers.S, :, :, kᴺ:kᴺ)
+    return view(ocean.model.tracers.S.data, :, :, kᴺ:kᴺ)
 end
 
 function EarthSystemModels.ocean_surface_temperature(ocean::OceananigansModelSimulations)
     kᴺ = size(ocean.model.grid, 3)
-    return interior(ocean.model.tracers.T, :, :, kᴺ:kᴺ)
+    return view(ocean.model.tracers.T.data, :, :, kᴺ:kᴺ)
 end
 
 function EarthSystemModels.ocean_surface_velocities(ocean::OceananigansModelSimulations)
