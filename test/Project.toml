@@ -35,8 +35,6 @@ Zarr = "0a941bbe-ad1d-11e8-39d9-ab76183a1d99"
 
 [sources]
 NumericalEarth = {path = ".."}
-# TODO: drop once Oceananigans PR #5620 (simplify Relaxation + FTS/Field targets, w/ vertical-clamp; incl. #5726 `interpolate(f, …)`) is tagged.
-Oceananigans = {url = "https://github.com/CliMA/Oceananigans.jl.git", rev = "glw/simplify-relaxation"}
 # TODO: drop once Breeze tags a release including compute_reference_state (#812, merged to main).
 Breeze = {url = "https://github.com/NumericalEarth/Breeze.jl.git", rev = "main"}
 
@@ -60,7 +58,7 @@ JLD2 = "0.4, 0.5, 0.6"
 KernelAbstractions = "0.9"
 MPI = "0.20"
 NCDatasets = "0.12, 0.13, 0.14"
-Oceananigans = "0.110.1, 0.111"
+Oceananigans = "0.110.7"
 PythonCall = "0.9.28"
 Random = "<0.0.1, 1"
 Reactant = "=0.2.255"
