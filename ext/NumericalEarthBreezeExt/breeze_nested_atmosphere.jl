@@ -19,7 +19,7 @@ using NumericalEarth.NestedModels: NestedModel, parent_boundary_conditions, pare
                                    blend_parent_terrain!
 using Oceananigans: Oceananigans, WENO
 using Oceananigans.Architectures: architecture
-using Oceananigans.BoundaryConditions: ValueBoundaryCondition
+using Oceananigans.BoundaryConditions: ValueBoundaryCondition, NormalFlowBoundaryCondition
 using Oceananigans.Coriolis: SphericalCoriolis
 using Oceananigans.Fields: AbstractField, CenterField, Field, XFaceField, YFaceField,
                            compute!, interior, interpolate!, set!
@@ -158,19 +158,26 @@ function NumericalEarth.NestedModels.nested_atmosphere_model(
 
     ρqᵛ = prognostic.ρqᵛ
 
-    # Lateral BCs: interpolate the precomputed prognostics at the boundary face. `ρu`/`ρv` are Face-normal
-    # (default `NormalFlowBoundaryCondition`); `ρᵈ`/energy/moisture are Center scalars (`ValueBoundaryCondition`,
-    # since `NormalFlowBC` overwrites the first interior cell asymmetrically for Center fields). The energy
-    # BC is keyed `ρe` (Breeze's energy-BC interface): it merges with the coupling's bottom energy-flux BC on
-    # the same field, and for a potential-temperature formulation Breeze routes the (Value) `ρθ` boundary
-    # values through unchanged. `ρθ` and `ρe` must not both carry BCs.
+    # Lateral BCs: interpolate the precomputed prognostics at the boundary face. Momentum is prescribed on
+    # every side, but the BC *type* is per-side: `NormalFlowBoundaryCondition` on the wall-normal side
+    # (where the velocity's face coincides with the boundary), `ValueBoundaryCondition` on the tangential
+    # side (prescribing the parent's tangential velocity in the halo — `NormalFlowBC` there leaves it
+    # under-constrained and injects spurious near-boundary convergence). `ρᵈ`/energy/moisture are Center
+    # scalars (`ValueBoundaryCondition` on all sides, since `NormalFlowBC` overwrites the first interior cell
+    # asymmetrically for Center fields). The energy BC is keyed `ρe` (Breeze's energy-BC interface): it merges
+    # with the coupling's bottom energy-flux BC on the same field, and for a potential-temperature formulation
+    # Breeze routes the (Value) `ρθ` boundary values through unchanged. `ρθ` and `ρe` must not both carry BCs.
     dry_bc_variables = (ρᵈ = prognostic.ρᵈ, ρu = prognostic.ρu, ρv = prognostic.ρv, ρe = prognostic.ρθ)
     moist_bc_variables = NamedTuple{tuple(moisture_name)}(tuple(ρqᵛ))
     bc_variables = merge(dry_bc_variables, moist_bc_variables)
 
     density_and_energy_types = (ρᵈ = ValueBoundaryCondition, ρe = ValueBoundaryCondition)
+    momentum_types = (ρu = (west = NormalFlowBoundaryCondition, east = NormalFlowBoundaryCondition,
+                            south = ValueBoundaryCondition, north = ValueBoundaryCondition),
+                      ρv = (west = ValueBoundaryCondition, east = ValueBoundaryCondition,
+                            south = NormalFlowBoundaryCondition, north = NormalFlowBoundaryCondition))
     moist_types = NamedTuple{tuple(moisture_name)}(tuple(ValueBoundaryCondition))
-    bc_types = merge(density_and_energy_types, moist_types)
+    bc_types = merge(density_and_energy_types, momentum_types, moist_types)
 
     nested_bcs = parent_boundary_conditions(child_grid; variables = bc_variables, sides, bc_types)
 
