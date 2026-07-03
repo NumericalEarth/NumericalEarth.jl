@@ -2,6 +2,7 @@ include("runtests_setup.jl")
 
 using CopernicusClimateDataStore
 using Dates
+import Downloads
 
 using NumericalEarth.DataWrangling.ERA5
 using NumericalEarth.DataWrangling.ERA5: ERA5HourlySingleLevel, ERA5YearlySingleLevel, ERA5MonthlySingleLevel,
@@ -51,10 +52,11 @@ const CDSExt = Base.get_extension(NumericalEarth, :NumericalEarthCopernicusClima
         )
         area = CDSExt.build_era5_area(bbox)
         @test !isnothing(area)
-        @test haskey(area, :lat)
-        @test haskey(area, :lon)
-        @test area.lat == (40, 50)
-        @test area.lon == (0, 10)
+        @test length(area) == 4
+        @test area[1] == 40   # south
+        @test area[2] == 0    # west
+        @test area[3] == 50   # north
+        @test area[4] == 10   # east
     end
 
     @testset "New ERA5 dataset types" begin
