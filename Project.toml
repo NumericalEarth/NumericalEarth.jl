@@ -106,3 +106,6 @@ WorldOceanAtlasTools = "0.6"
 Zarr = "0.10"
 ZipFile = "0.10"
 julia = "1.10"
+
+[sources]
+CopernicusClimateDataStore = {url = "https://github.com/NumericalEarth/CopernicusClimateDataStore.jl", rev = "feature/yearly-downloads"}
