@@ -63,6 +63,14 @@ function lid_sponge_mask(grid, depth)
     return (λ, φ, z) -> (s = clamp((z - (z_top - d)) / d, zero(z), one(z)); s * s * (3 - 2s))
 end
 
+# Default lid-sponge depth: the top ~25% of the vertical extent (≈5 km for a ~19.5 km column, base ≈15 km).
+# Thin enough to leave the deep-convective layer (~12–16 km) undamped, yet deep enough to absorb genuine
+# vertically-propagating gravity/acoustic reflection off the rigid top — the wall-mode source is removed
+# by the consistent (exchanger-derived) IC, so the sponge no longer needs to be strong/deep. Uses the grid's
+# vertical extent `Lz` (not the top node height, which on a terrain-following grid includes the terrain
+# offset) so it scales correctly regardless of where the bottom sits.
+default_lid_depth(grid) = convert(eltype(grid), grid.Lz / 4)
+
 # Default child dynamics: compressible with split-explicit acoustic substepping, an `UpperSponge`
 # Rayleigh layer over the top `damping_depth` metres at `damping_rate`, and no divergence damping
 # (its (ρθ)′-proxy damper injects a spurious force on an unbalanced cold start). When given,
@@ -137,7 +145,7 @@ function NumericalEarth.NestedModels.nested_atmosphere_model(
             momentum_advection = WENO(order = 9),
             coriolis = SphericalCoriolis(),
             damping_rate = 1/5,
-            damping_depth = 3000,
+            damping_depth = default_lid_depth(child_grid),
             dynamics = default_nested_dynamics(child_grid; surface_pressure, reference_potential_temperature,
                                                damping_rate, damping_depth),
             boundary_conditions = NamedTuple(),
