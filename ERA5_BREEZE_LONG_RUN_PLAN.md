@@ -92,10 +92,29 @@ ordered 12 → 0.5 km, so the convergence of the squall line's structure with re
 headline comparison. The mp4s stay on the cluster (`scratch_runenv/runs/`); the gallery links their
 paths.
 
+## Breeze pin (2026-07-03) and stability tripwires
+
+The branch tip of `glw/balance-twin-vapor-moisture-fractions` (rebased onto Breeze 0.7.1 +
+the #821 acoustic-substep reland) carries a **nondeterministic adiabatic-balance-twin blowup**:
+identical nested-init runs produce θ^γ DomainErrors spanning 24 orders of magnitude, silent NaNs,
+or an occasional clean pass (uninitialized-read suspect; full evidence table in
+`scratch_runenv/BREEZE_827_EVIDENCE.md`, for upstream Breeze.jl#827). The sweep therefore runs
+Breeze from `~/breeze-prereland` — the branch with only that reland `git revert`ed (both
+balance-twin fixes kept) — which passes the failing cell repeatedly where the tip fails ~7 in 8.
+Two further layers guard the runs regardless: the smoke job errors (blocking `afterok`
+dependents) if `max|w| > 15 m/s` at 30 iterations, and every run's progress callback kills the
+job if `max|w|` exceeds 150 m/s or goes non-finite.
+
+Two same-day fixes this campaign surfaced (committed on this branch): GPU region loading died at
+kernel compilation on reshaped host NetCDF data (`architecture_ready` in
+`src/DataWrangling/set_region_data.jl`), and `atmosphere_model` gained an `initialize` keyword so
+the nested child skips the construction-time resting state (semantic correction — not the twin
+cure).
+
 ## Files (scratch dev environment)
 
-The runs live in `scratch_runenv/` (gitignored) — a dev env pinning Breeze to its development
-branch (`glw/balance-twin-vapor-moisture-fractions`, mirroring `docs/Project.toml`):
+The runs live in `scratch_runenv/` (gitignored) — a dev env pinning Breeze as described above and
+NumericalEarth to the working tree:
 
 - `sweep_common.jl` — shared domain + model construction (ENV `RES_KM`, `ARCH ∈ {GPU, CPU}`, `SMOKE`).
 - `sweep_long.jl` — the run harness: simulation, wizard, writers, progress.
