@@ -42,7 +42,7 @@ grid; terrain is `ETOPO2022` blended to the parent orography over the outer 5 ce
 
 | Δx | grid (Nx × Ny × Nz) | cells | run on |
 |------|---------------------|-------|--------|
-| 12 km | 24 × 22 × 50 | 26 k | `gpua100` (1 × A100) |
+| 12 km | 24 × 22 × 50 | 26 k | `gpuprod` (H100) |
 | 6 km | 48 × 44 × 50 | 106 k | `gpua100x4` |
 | 3 km | 96 × 88 × 50 | 422 k | `gpua100x4` |
 | 1 km | 288 × 264 × 50 | 3.8 M | `gpua100x4` |
@@ -56,9 +56,11 @@ dx-independent, so the wall residual is a bounded boundary artifact, not a CFL/g
 
 - **`gpua100x4`** (1 node, 4 × A100-40GB, 24 CPUs, 330 GB): 0.5, 1, 3, 6 km — one A100 per case
   (`--gres=gpu:1`, 4 CPUs each), all four concurrent.
-- **`gpua100`** (1 node, 1 × A100, 6 CPUs): 12 km.
-- **`gpuprod`** (2 nodes, 1 × H100-80GB, 12 CPUs each): CPU-side rendering of the animations/panels
-  (the H100 stays idle). If a case ever outgrows an A100-40GB, an H100-80GB here is the fallback.
+- **`gpuprod`** (2 nodes, 1 × H100-80GB, 12 CPUs each): the 12 km case on one node, CPU-side
+  rendering of the animations/panels on whichever is free. If a case ever outgrows an A100-40GB,
+  an H100-80GB here is also the memory fallback.
+- **`gpua100`** (1 node, 1 × A100, 6 CPUs): unused — the node failed two consecutive boot probes
+  (16+ min silent vs gpuprod's 1m35s spin-up, 2026-07-03); revisit if it recovers.
 - The `cpu` partition nodes (1 core, 1.5 GB) are too small to even load the Julia stack — unused.
 - The head node (1 core, 3 GB) is orchestration only; the Julia depot lives on the NFS-shared home,
   so environment instantiation is itself a Slurm job on `gpua100x4` (`instantiate_long.batch`).
