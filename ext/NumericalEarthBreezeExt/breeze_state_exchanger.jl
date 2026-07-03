@@ -18,7 +18,8 @@
 #   ρθ  = ρᵈ · θˡⁱ,   ρu = ρᵈ · u,   ρv = ρᵈ · v         ← DRY-weighted (energy + momentum)
 #   ρqᵛ = ρ · qᵛ                                         ← TOTAL-weighted (moisture mass density)
 
-using Oceananigans.Fields: Center, ZeroField, AbstractField, fill_halo_regions!
+using Oceananigans.Fields: Center, ZeroField, AbstractField
+using Oceananigans.BoundaryConditions: fill_halo_regions!
 using Oceananigans.OutputReaders: FieldTimeSeries, Cyclical, AbstractInMemoryBackend, FlavorOfFTS,
                                   time_indices, interpolating_time_indices, extract_field_time_series
 using Oceananigans.Units: Time

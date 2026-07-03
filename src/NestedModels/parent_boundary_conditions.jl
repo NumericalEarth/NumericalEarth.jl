@@ -66,10 +66,15 @@ function parent_boundary_conditions(grid;
 
         # `spec` is either one BC constructor for all sides or a per-side NamedTuple; `scheme`
         # (e.g. PerturbationAdvection) is consulted only where the chosen type is NormalFlow.
-        bc_at(side) = begin
-            BCType = spec isa NamedTuple ? getproperty(spec, side) : spec
-            BCType === NormalFlowBoundaryCondition ? NormalFlowBoundaryCondition(condition; scheme) :
-                                                     BCType(condition)
+        bc_type(side) = spec isa NamedTuple ? getproperty(spec, side) : spec
+        bc_at(side)   = bc_type(side) === NormalFlowBoundaryCondition ?
+                            NormalFlowBoundaryCondition(condition; scheme) : bc_type(side)(condition)
+
+        # A `scheme` only takes effect on NormalFlow sides; requesting one for a field that is
+        # NormalFlow on no side means it would be silently ignored — flag that as a user error.
+        if haskey(schemes, child_name) && !any(side -> bc_type(side) === NormalFlowBoundaryCondition, sides)
+            throw(ArgumentError("`schemes` was given for :$child_name, but none of its sides use a " *
+                                "NormalFlowBoundaryCondition, so the scheme would be ignored."))
         end
 
         side_pairs = [side => bc_at(side) for side in sides]

@@ -22,7 +22,7 @@
 import Oceananigans.BoundaryConditions: regularize_boundary_condition, getbc,
                                         LeftBoundary, RightBoundary
 import Oceananigans.OutputReaders: FlavorOfFTS
-using Oceananigans.Grids: node, Face, znode, Center
+using Oceananigans.Grids: node, Face
 using Adapt: Adapt, adapt
 
 const InterpolatedSource = Union{FlavorOfFTS, Oceananigans.Fields.AbstractField}
