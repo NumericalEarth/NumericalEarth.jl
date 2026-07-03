@@ -7,7 +7,7 @@ using Oceananigans.Utils: launch!
 
 using Breeze: ThermodynamicConstants, CompressibleDynamics,
               SaturationAdjustment, WarmPhaseEquilibrium,
-              AtmosphereModel, moisture_prognostic_name
+              AtmosphereModel, moisture_prognostic_name, HydrostaticallyBalancedDensity
 
 # Per-side merge for FieldBoundaryConditions: user's non-default sides override
 # coupling's; coupling's non-default sides survive where the user leaves the
@@ -116,12 +116,22 @@ function NumericalEarth.Atmospheres.atmosphere_model(grid;
     # the whole `FieldBoundaryConditions`.
     boundary_conditions = merge_boundary_conditions(coupling_bcs, NamedTuple(boundary_conditions))
 
-    return AtmosphereModel(grid;
-                           dynamics, microphysics, thermodynamic_constants,
-                           momentum_advection, scalar_advection,
-                           boundary_conditions,
-                           coriolis, forcing, closure, clock,
-                           radiation)
+    model = AtmosphereModel(grid;
+                            dynamics, microphysics, thermodynamic_constants,
+                            momentum_advection, scalar_advection,
+                            boundary_conditions,
+                            coriolis, forcing, closure, clock,
+                            radiation)
+
+    # Breeze ≥0.7 no longer derives the prognostic density from the reference state inside a bare
+    # `set!(θ, …)` — an uninitialized model carries ρ ≡ 0, which NaNs anything that divides by density
+    # (e.g. the MOST surface-flux coupling). Initialize to a resting, hydrostatically balanced state at
+    # the reference θ so the returned atmosphere is valid; a later user `set!` of θ/velocities (without
+    # a `ρ` entry) preserves this density.
+    set!(model; θ = potential_temperature,
+                ρ = HydrostaticallyBalancedDensity(; surface_pressure))
+
+    return model
 end
 
 """
