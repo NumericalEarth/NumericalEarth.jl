@@ -49,11 +49,19 @@ end
                      coriolis = nothing,
                      forcing = NamedTuple(),
                      closure = nothing,
-                     clock = Clock{eltype(grid)}(time=0))
+                     clock = Clock{eltype(grid)}(time=0),
+                     initialize = true)
 
 Construct a Breeze `AtmosphereModel` with sensible defaults for coupled simulations.
 [`atmosphere_simulation`](@ref) wraps this in an Oceananigans `Simulation` (mirroring
 the role of [`ocean_simulation`](@ref)).
+
+When `initialize` (the default), the returned model is set to a resting, hydrostatically
+balanced state at the reference `potential_temperature` and `surface_pressure`, so its density
+is valid for anything that divides by it (e.g. the MOST surface-flux coupling). Pass
+`initialize = false` when a caller derives the full state itself — the nested-child path does,
+via `initialize_nested_child!`, whose ERA5-derived reference state must not carry the resting
+initialization's default anchors.
 
 Surface fluxes are handled by the `EarthSystemModel` coupling framework (via
 similarity theory), not by Breeze's own boundary conditions, so the bottom
@@ -86,6 +94,7 @@ function NumericalEarth.Atmospheres.atmosphere_model(grid;
                                                      forcing = NamedTuple(),
                                                      closure = nothing,
                                                      clock = Oceananigans.TimeSteppers.Clock{eltype(grid)}(time = 0),
+                                                     initialize = true,
                                                      radiation = CoupledRadiation())
 
     if radiation isa Breeze.RadiativeTransferModel
@@ -127,9 +136,11 @@ function NumericalEarth.Atmospheres.atmosphere_model(grid;
     # `set!(θ, …)` — an uninitialized model carries ρ ≡ 0, which NaNs anything that divides by density
     # (e.g. the MOST surface-flux coupling). Initialize to a resting, hydrostatically balanced state at
     # the reference θ so the returned atmosphere is valid; a later user `set!` of θ/velocities (without
-    # a `ρ` entry) preserves this density.
-    set!(model; θ = potential_temperature,
-                ρ = HydrostaticallyBalancedDensity(; surface_pressure))
+    # a `ρ` entry) preserves this density. Callers that derive the full state themselves (the nested
+    # child) pass `initialize = false`: this set!'s default-anchored state otherwise survives into
+    # `initialize_nested_child!` and destabilizes the adiabatic balance twin (DomainError blowup).
+    initialize && set!(model; θ = potential_temperature,
+                              ρ = HydrostaticallyBalancedDensity(; surface_pressure))
 
     return model
 end
