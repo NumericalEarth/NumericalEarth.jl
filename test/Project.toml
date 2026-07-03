@@ -35,10 +35,13 @@ Zarr = "0a941bbe-ad1d-11e8-39d9-ab76183a1d99"
 
 [sources]
 NumericalEarth = {path = ".."}
+# TODO: drop back to a Breeze release/main once the balance-twin vapor-only grid_moisture_fractions
+# fix (glw/balance-twin-vapor-moisture-fractions, off main; also carries #812) merges to Breeze main.
+Breeze = {url = "https://github.com/NumericalEarth/Breeze.jl.git", rev = "glw/balance-twin-vapor-moisture-fractions"}
 
 [compat]
 ArchGDAL = "0.10"
-Breeze = "0.5.3, 0.6"
+Breeze = "0.5.3, 0.6, 0.7"
 CDSAPI = "2.2.2"
 CFTime = "0.1, 0.2"
 CUDA = "5.9.5"
@@ -50,16 +53,16 @@ CopernicusMarine = "0.2"
 Dates = "<0.0.1, 1"
 Downloads = "<0.0.1, 1"
 ExplicitImports = "1.15"
-GPUCompiler = "~1.9"
+GPUCompiler = "1.17"
 Glob = "1"
 JLD2 = "0.4, 0.5, 0.6"
 KernelAbstractions = "0.9"
 MPI = "0.20"
 NCDatasets = "0.12, 0.13, 0.14"
-Oceananigans = "0.110.1, 0.111"
+Oceananigans = "0.110.7"
 PythonCall = "0.9.28"
 Random = "<0.0.1, 1"
-Reactant = "=0.2.255"
+Reactant = "0.2.268"
 Scratch = "1"
 SeawaterPolynomials = "0.3.5"
 SpeedyWeather = "0.20"

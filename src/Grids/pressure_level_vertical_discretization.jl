@@ -41,9 +41,10 @@ gives a time-evolving one driven by an attached `Clock`.
 The `LatitudeLongitudeGrid` constructor needs a value for `Lz`; we compute it
 as `extrema(geopotential) / g` inside `generate_coordinate`.
 """
-struct PressureLevelVerticalDiscretization{G, Geo} <: AbstractVerticalCoordinate
+struct PressureLevelVerticalDiscretization{G, Geo, S} <: AbstractVerticalCoordinate
     gravitational_acceleration :: G
     geopotential               :: Geo
+    surface_geopotential       :: S
 end
 
 """
@@ -58,13 +59,14 @@ If `surface_geopotential` is provided (a 2-D `Field`, m²/s²), columns are
 clipped so that `geopotential[i,j,k] ≥ surface_geopotential[i,j]`. Required
 when the source is ERA5 pressure-level data, because sub-surface levels are
 filled with non-physical extrapolations that would break the column-monotonicity
-assumed by `_fractional_indices`.
+assumed by `_fractional_indices`. The clip source is retained on the
+discretization and exposed through [`surface_elevation`](@ref).
 """
 function PressureLevelVerticalDiscretization(geopotential;
                                               gravitational_acceleration,
                                               surface_geopotential = nothing)
     isnothing(surface_geopotential) || clip_subsurface!(geopotential, surface_geopotential)
-    return PressureLevelVerticalDiscretization(gravitational_acceleration, geopotential)
+    return PressureLevelVerticalDiscretization(gravitational_acceleration, geopotential, surface_geopotential)
 end
 
 # Skip the generic validator (which would `length`-check the missing 1-D fields).
@@ -84,7 +86,9 @@ function generate_coordinate(FT, topo, sz, halo,
     z_lo, z_hi = FT.(extrema(Φi) ./ g)
     Lz = z_hi - z_lo
 
-    arch_discretization = PressureLevelVerticalDiscretization(g, on_architecture(arch, coord.geopotential))
+    arch_discretization = PressureLevelVerticalDiscretization(g,
+                                                              on_architecture(arch, coord.geopotential),
+                                                              on_architecture(arch, coord.surface_geopotential))
     return Lz, arch_discretization
 end
 
@@ -97,11 +101,13 @@ geopotential_data_for_extrema(Φ::TimeSeriesInterpolation) = interior(Φ.time_se
 
 Adapt.adapt_structure(to, z::PressureLevelVerticalDiscretization) =
     PressureLevelVerticalDiscretization(z.gravitational_acceleration,
-                                        Adapt.adapt(to, z.geopotential))
+                                        Adapt.adapt(to, z.geopotential),
+                                        Adapt.adapt(to, z.surface_geopotential))
 
 on_architecture(arch, z::PressureLevelVerticalDiscretization) =
     PressureLevelVerticalDiscretization(z.gravitational_acceleration,
-                                        on_architecture(arch, z.geopotential))
+                                        on_architecture(arch, z.geopotential),
+                                        on_architecture(arch, z.surface_geopotential))
 
 function Base.show(io::IO, z::PressureLevelVerticalDiscretization)
     print(io, "PressureLevelVerticalDiscretization with $(size(z.geopotential, 3)) levels, ",
@@ -165,6 +171,26 @@ function mean_height_profile(grid::PressureLevelGrid)
     Φi = Array(geopotential_data_for_extrema(grid.z.geopotential))
     reduce_dims = Tuple(d for d in 1:ndims(Φi) if d != 3)
     return dropdims(mean(Φi; dims = reduce_dims); dims = reduce_dims) ./ g
+end
+
+"""
+    surface_elevation(grid)
+
+Return the surface elevation (m) of the orography underlying `grid` as a two-dimensional
+`(Center, Center, Nothing)` field on the source's native horizontal grid — for a
+[`PressureLevelGrid`](@ref), the clip-source surface geopotential divided by the
+gravitational acceleration. Return `nothing` when the surface elevation is unknown
+(non-pressure-level grids, or a discretization built without `surface_geopotential`).
+"""
+surface_elevation(grid) = nothing
+
+function surface_elevation(grid::PressureLevelGrid)
+    Φˢᶠᶜ = grid.z.surface_geopotential
+    isnothing(Φˢᶠᶜ) && return nothing
+    elevation = Field{Center, Center, Nothing}(Φˢᶠᶜ.grid)
+    interior(elevation) .= interior(Φˢᶠᶜ) ./ grid.z.gravitational_acceleration
+    fill_halo_regions!(elevation)
+    return elevation
 end
 
 # `znodes(::Field)` on a `PressureLevelGrid`:

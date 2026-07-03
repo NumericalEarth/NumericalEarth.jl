@@ -259,7 +259,7 @@ static z values are arbitrary placeholders; only their shape matters.
 function per_column_geopotential_discretization(metadata::ERA5PressureMetadata)
     static_z = standard_atmosphere_z_interfaces(metadata.dataset.pressure_levels)
     static_ds = _with_z(metadata.dataset, static_z)
-    sl_ds = _matching_single_level_dataset(metadata.dataset)
+    sl_ds = DataWrangling.matching_single_level_dataset(metadata.dataset)
 
     ϕ_meta = Metadata(:geopotential; dataset=static_ds,
                       dates=metadata.dates, region=metadata.region, dir=metadata.dir)
@@ -281,10 +281,10 @@ _with_z(ds::ERA5HourlyPressureLevels, z) = ERA5HourlyPressureLevels(ds.pressure_
 _with_z(ds::ERA5MonthlyPressureLevels, z) = ERA5MonthlyPressureLevels(ds.pressure_levels, z)
 
 # Match each pressure-level dataset to the single-level dataset at the same
-# temporal cadence so the surface geopotential clip-source matches the data
-# we're clipping.
-_matching_single_level_dataset(::ERA5HourlyPressureLevels) = ERA5HourlySingleLevel()
-_matching_single_level_dataset(::ERA5MonthlyPressureLevels) = ERA5MonthlySingleLevel()
+# temporal cadence so surface fields (the geopotential clip-source, the surface
+# pressure anchor) match the data they accompany.
+DataWrangling.matching_single_level_dataset(::ERA5HourlyPressureLevels) = ERA5HourlySingleLevel()
+DataWrangling.matching_single_level_dataset(::ERA5MonthlyPressureLevels) = ERA5MonthlySingleLevel()
 
 #####
 ##### pressure_field — synthetic pressure coordinate field

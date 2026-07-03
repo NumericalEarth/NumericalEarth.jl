@@ -6,7 +6,8 @@ using Downloads: Downloads
 using Dates: Dates
 using Oceananigans.DistributedComputations: @root
 
-using NumericalEarth.DataWrangling.ERA5: ERA5Metadata, ERA5Metadatum, ERA5_dataset_variable_names
+using NumericalEarth.DataWrangling: is_three_dimensional, available_variables
+using NumericalEarth.DataWrangling.ERA5: ERA5Metadata, ERA5Metadatum, hPa
 
 """
     Downloads.download(metadata::ERA5Metadata; kwargs...)
@@ -58,8 +59,24 @@ function Downloads.download(meta::ERA5Metadatum;
     # Ensure output directory exists
     mkpath(output_directory)
 
-    # Get the ERA5 variable name
-    variable_name = ERA5_dataset_variable_names[meta.name]
+    # The CDS catalog name is dataset-dependent: `eastward_velocity` is `u_component_of_wind` on
+    # pressure levels but `10m_u_component_of_wind` on single levels. Dispatch on the dataset so a
+    # pressure-level request doesn't silently fetch the surface field (which returned `u10`).
+    variable_name = available_variables(meta.dataset)[meta.name]
+
+    # era5cli defaults to the single-levels (surface) product unless `--levels` is given — so a
+    # pressure-level request without levels silently returns a surface field (e.g. `u10` for
+    # `u_component_of_wind`). Pass the dataset's pressure levels for 3-D datasets; disambiguate the
+    # single-level `geopotential`/`topography` (surface geopotential, exists on both) with `:surface`;
+    # ordinary single-level variables keep era5cli's default (`nothing`). `pressure_levels` is stored
+    # in Pa, but the CDS API expects hPa (`[1, …, 1000]`), so convert with `÷ hPa`.
+    levels = if is_three_dimensional(meta)
+        Int.(meta.dataset.pressure_levels) .÷ hPa
+    elseif variable_name == "geopotential"
+        :surface
+    else
+        nothing
+    end
 
     # Extract date information
     date = meta.dates
@@ -82,6 +99,7 @@ function Downloads.download(meta::ERA5Metadatum;
             months = month,
             days = day,
             hours = hour,
+            levels = levels,
             area = area,
             format = "netcdf",
             outputprefix = output_prefix,

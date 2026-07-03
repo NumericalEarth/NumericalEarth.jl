@@ -1,7 +1,7 @@
 include("runtests_setup.jl")
 
 using NumericalEarth
-using NumericalEarth.EarthSystemModels.NestedSimulations: parent_boundary_conditions
+using NumericalEarth.NestedModels: parent_boundary_conditions
 using Oceananigans
 using Oceananigans.Units: Time
 using Oceananigans.Fields: location
@@ -278,14 +278,14 @@ end
 
     # Dry, p = pˢᵗ ⇒ θ = T, no latent correction ⇒ θˡⁱ = T; ρ = p/(Rᵈ T); qᵗ = 0.
     set!(T, 300.0); set!(qᵛ, 0); set!(qᶜ, 0); set!(qⁱ, 0); set!(p, pˢᵗ)
-    s = breeze_prognostic_state(constants, T, qᵛ, qᶜ, qⁱ, p)
+    s = breeze_prognostic_state(constants, pˢᵗ, T, qᵛ, qᶜ, qⁱ, p)
     @test all(interior(s.qᵗ) .== 0)
     @test all(isapprox.(interior(s.θˡⁱ), 300.0; rtol = 1e-12))
     @test all(isapprox.(interior(s.ρ), pˢᵗ / (Rᵈ * 300.0); rtol = 1e-12))
 
     # Moist + condensate, p ≠ pˢᵗ ⇒ check against the documented formulas.
     set!(T, 290.0); set!(qᵛ, 0.01); set!(qᶜ, 1e-3); set!(qⁱ, 5e-4); set!(p, 9e4)
-    s2 = breeze_prognostic_state(constants, T, qᵛ, qᶜ, qⁱ, p)
+    s2 = breeze_prognostic_state(constants, pˢᵗ, T, qᵛ, qᶜ, qⁱ, p)
     Tᵛ = 290.0 * (1 + εfac * 0.01)
     θ  = 290.0 * (pˢᵗ / 9e4)^κ
     @test all(isapprox.(interior(s2.qᵗ), 0.01 + 1e-3 + 5e-4; rtol = 1e-12))
@@ -349,7 +349,7 @@ end
     @test child.clock.iteration == 2
     @test parent.clock.time ≈ child.clock.time
     @test all(isfinite, Array(interior(child.velocities.u)))
-    @test all(isfinite, Array(interior(child.dynamics.density)))
+    @test all(isfinite, Array(interior(child.dynamics.total_density)))
 end
 
 # Coupling a Breeze `CompressibleDynamics` atmosphere to a `SlabLand` via
@@ -379,5 +379,56 @@ end
                                   thermodynamics_parameters = nothing)
     nested = NestedSimulation(parent, alm; Δt = 0.05, stop_iteration = 2)
     @test nested isa Simulation                       # NestedModel accepted the coupled child
-    @test all(isfinite, Array(interior(atmos.model.dynamics.density)))
+    @test all(isfinite, Array(interior(atmos.model.dynamics.total_density)))
+end
+
+# The Breeze-ext `StateExchanger` holds the child prognostics as a 2-level FieldTimeSeries bracketing
+# the child clock (memory-O(1) in time); `exchange_state!` advances that window as the clock crosses a
+# parent time interval, recomputing the two resident levels from the parent. This guards the cycling:
+# the window `start` advances 1→2 crossing into the 2nd interval and back to 1, with finite + physical
+# prognostics throughout. Uses a synthetic `PrescribedAtmosphere` parent (no ERA5 download); here its
+# `pressure` is an FTS (the ERA5 parent uses a static `Field`) — the exchanger handles both.
+@testset "StateExchanger: 2-level window cycles across parent intervals on $(arch)" for arch in test_architectures
+    ext = Base.get_extension(NumericalEarth, :NumericalEarthBreezeExt)
+
+    parent_grid = RectilinearGrid(arch; size = (8, 8, 4), x = (-1.5, 1.5), y = (-1.5, 1.5),
+                                  z = (0, 1), topology = (Bounded, Bounded, Bounded))
+    times  = [0.0, 1.0, 2.0]                                   # 3 levels ⇒ 2 intervals
+    parent = PrescribedAtmosphere(parent_grid, times)
+    set!(parent.temperature,       (x, y, z, t) -> 280 + t)    # time-varying ⇒ cycling changes values
+    set!(parent.specific_humidity, (x, y, z, t) -> 0.005)
+    set!(parent.velocities.u,      (x, y, z, t) -> 1.0)
+    set!(parent.velocities.v,      (x, y, z, t) -> 0.0)
+    set!(parent.pressure,          (x, y, z, t) -> 9.0e4)
+
+    constants = ThermodynamicConstants()
+    exchanger = ext.state_exchanger(parent, 1.0e5, constants; condensates = (qᶜˡ = nothing, qᶜⁱ = nothing))
+    prog      = exchanger.prognostic
+    exchange  = NumericalEarth.NestedModels.exchange_state!
+
+    # Initial window brackets t = times[1] ⇒ start = 1.
+    @test prog.ρᵈ.backend.start == 1
+    @test all(isfinite, Array(interior(prog.ρθ[1])))
+
+    # Cross into the 2nd interval [1, 2] ⇒ the derived window cycles forward to start = 2.
+    exchange(exchanger, 1.5)
+    @test prog.ρᵈ.backend.start == 2
+    @test all(isfinite, Array(interior(prog.ρθ[2])))
+    θ = Array(interior(prog.ρθ[2])) ./ Array(interior(prog.ρᵈ[2]))
+    @test all(250 .< θ .< 400)                                 # physical potential temperature
+
+    # Cycle back to the 1st interval.
+    exchange(exchanger, 0.0)
+    @test prog.ρᵈ.backend.start == 1
+
+    # reconstruct_parent_state reads the parent's FULL-memory fields, not the 2-level window: with the
+    # derived window parked at start = 2, a reconstruction at t = 0 still recovers the parent's t = 0 state
+    # (θˡⁱ = T (pˢᵗ/p)^κ with T = 280 + t, condensate-free), proving no residency aliasing.
+    reconstruct = NumericalEarth.NestedModels.reconstruct_parent_state
+    κ = dry_air_gas_constant(constants) / constants.dry_air.heat_capacity
+    exchange(exchanger, 1.5)                        # park the derived window at start = 2
+    θ₀ = Array(interior(reconstruct(exchanger, 0.0).θˡⁱ))
+    θ₂ = Array(interior(reconstruct(exchanger, 2.0).θˡⁱ))
+    @test all(θ₀ .≈ 280 * (1e5 / 9e4)^κ)
+    @test all(θ₂ .≈ 282 * (1e5 / 9e4)^κ)
 end
