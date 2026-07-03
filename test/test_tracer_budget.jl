@@ -18,7 +18,7 @@ function test_tracer_budget(coupled_model, Sᵒᶜ, Δt, nsteps; rtol)
     T = ocean.model.tracers.T
     S = ocean.model.tracers.S
 
-    heat_rate       = Integral(ρᵒᶜ * cᵒᶜ * T.boundary_conditions.top.condition, dims=(1, 2))
+    heat_rate       = Integral(net_ocean_heat_flux(coupled_model), dims=(1, 2))
     freshwater_rate = Integral(net_ocean_freshwater_flux(coupled_model; reference_salinity=Sᵒᶜ), dims=(1, 2))
 
     penetrating_radiation = get_radiative_forcing(ocean)
@@ -90,16 +90,18 @@ end
             radiation  = JRA55PrescribedRadiation(arch; time_indices_in_memory)
             atmosphere = JRA55PrescribedAtmosphere(arch; time_indices_in_memory)
 
-            ecco_set = MetadataSet(:temperature, :salinity,
+            ecco_set = MetadataSet(:temperature, :salinity, 
+                                   :sea_ice_thickness, :sea_ice_concentration,
                                    dataset = ECCO4Monthly(),
                                    date = DateTime(1993, 1, 1))
+            
             Δt = 605seconds
             Sᵒᶜ = 35 # reference salinity [psu]
             free_surface = SplitExplicitFreeSurface(substeps=20)
 
             # Without shortwave penetration
             @testset "Surface-only fluxes" begin
-                ocean = ocean_simulation(grid; free_surface, radiative_forcing=nothing)
+                ocean = ocean_simulation(deepcopy(grid); free_surface, radiative_forcing=nothing)
                 set!(ocean.model, ecco_set)
                 coupled_model = OceanSeaIceModel(ocean, nothing; atmosphere, radiation)
                 test_tracer_budget(coupled_model, Sᵒᶜ, Δt, 4; rtol=√eps(eltype(grid)))
@@ -107,11 +109,27 @@ end
 
             # With penetrative shortwave radiation
             @testset "Surface fluxes + Penetrating shortwave radiation" begin
-                ocean = ocean_simulation(grid; free_surface)
+                ocean = ocean_simulation(deepcopy(grid); free_surface)
                 set!(ocean.model, ecco_set)
                 coupled_model = OceanSeaIceModel(ocean, nothing; atmosphere, radiation)
                 test_tracer_budget(coupled_model, Sᵒᶜ, Δt, 4; rtol=√eps(eltype(grid)))
             end
+            @testset "Surface fluxes + sea ice" begin
+                new_grid = deepcopy(grid)
+                ocean = ocean_simulation(new_grid; free_surface)
+                sea_ice = sea_ice_simulation(new_grid, ocean)
+                set!(ocean.model, ecco_set)
+                set!(sea_ice.model, ecco_set)
+                coupled_model = OceanSeaIceModel(ocean, sea_ice; atmosphere, radiation)
+                test_tracer_budget(coupled_model, Sᵒᶜ, Δt, 4; rtol=√eps(eltype(grid)))
+            end
+            @testset "Surface fluxes + OceanOnlyModel" begin
+                ocean = ocean_simulation(deepcopy(grid); free_surface)
+                set!(ocean.model, ecco_set)
+                coupled_model = OceanOnlyModel(ocean; atmosphere, radiation)
+                test_tracer_budget(coupled_model, Sᵒᶜ, Δt, 4; rtol=√eps(eltype(grid)))
+            end
+
         end
     end
 end
