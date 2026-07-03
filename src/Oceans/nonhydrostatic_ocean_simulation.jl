@@ -2,6 +2,8 @@ using SeawaterPolynomials.TEOS10: TEOS10EquationOfState
 
 """
     nonhydrostatic_ocean_simulation(grid;
+                                    clock = Clock(grid),
+                                    stop_time = default_stop_time(grid, clock),
                                     Δt = 1,
                                     closure = nothing,
                                     tracers = (:T, :S),
@@ -12,7 +14,6 @@ using SeawaterPolynomials.TEOS10: TEOS10EquationOfState
                                     advection = WENO(order=9),
                                     forcing = NamedTuple(),
                                     boundary_conditions::NamedTuple = NamedTuple(),
-                                    clock = nothing,
                                     verbose = false)
 
 Construct and return a nonhydrostatic ocean simulation suitable for Large Eddy
@@ -24,6 +25,11 @@ timestepping is needed.
 
 ## Keyword Arguments
 
+- `clock`: Clock for the underlying model. Defaults to `Clock(grid)`, a numeric clock starting at `time = 0`. 
+  Pass a `DateTime`-based clock to step the simulation in calendar time (e.g. when coupling).
+- `stop_time`: Stop time for the simulation. Defaults to `Inf` for numeric clocks, or 
+  `DateTime(9999, 12, 31, 23, 59, 59)` for `DateTime` clocks. On Reactant architectures it defaults to `nothing`, since 
+  Reactant does not support `stop_time`.
 - `Δt`: Timestep used by the `Simulation`. Defaults to `1` second.
 - `closure`: Turbulence closure. Defaults to `nothing` (implicit LES via WENO advection scheme).
 - `tracers`: Tuple of tracer names. Defaults to `(:T, :S)`.
@@ -34,10 +40,11 @@ timestepping is needed.
 - `advection`: Advection scheme. Defaults to `WENO(order=9)`.
 - `forcing`: Named tuple of additional forcing(s).
 - `boundary_conditions`: User-supplied boundary conditions; merged with defaults.
-- `clock`: Clock for the underlying model. Defaults to `nothing` (model builds its own).
 - `verbose`: If `true`, prints additional setup information.
 """
 function nonhydrostatic_ocean_simulation(grid;
+                                         clock = Clock(grid),
+                                         stop_time = default_stop_time(grid, clock),
                                          Δt = 1,
                                          closure = nothing,
                                          tracers = (:T, :S),
@@ -48,7 +55,6 @@ function nonhydrostatic_ocean_simulation(grid;
                                          advection = WENO(order=9),
                                          forcing = NamedTuple(),
                                          boundary_conditions::NamedTuple = NamedTuple(),
-                                         clock = nothing,
                                          verbose = false)
 
     # Set up boundary conditions using Field
@@ -70,20 +76,17 @@ function nonhydrostatic_ocean_simulation(grid;
     boundary_conditions = merge(default_boundary_conditions, boundary_conditions)
     buoyancy = SeawaterBuoyancy(; gravitational_acceleration, equation_of_state)
 
-    # Only forward `clock` when supplied so the model keeps its own default otherwise.
-    clock_kw = isnothing(clock) ? NamedTuple() : (; clock)
-
     ocean_model = NonhydrostaticModel(grid;
+                                      clock,
                                       buoyancy,
                                       closure,
                                       advection,
                                       tracers,
                                       coriolis,
                                       forcing,
-                                      boundary_conditions,
-                                      clock_kw...)
+                                      boundary_conditions)
 
-    ocean = Simulation(ocean_model; Δt, verbose)
+    ocean = Simulation(ocean_model; Δt, stop_time, verbose)
 
     return ocean
 end
