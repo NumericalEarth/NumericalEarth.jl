@@ -1,3 +1,4 @@
+using ..SeaIces: FreezingLimitedEarthSystemModel
 
 @inline flux_field(condition) = condition
 @inline flux_field(bc::MultipleFluxes) = bc.flux_field
@@ -23,6 +24,9 @@ function frazil_temperature_flux(esm::EarthSystemModel)
 end
 
 frazil_temperature_flux(::NoSeaIceOceanInterfaceModel) = ZeroField()
+
+# TODO: Correct the method below; it's not zero, that's only a placeholder
+frazil_temperature_flux(::FreezingLimitedEarthSystemModel) = ZeroField()
 
 """
     net_ocean_temperature_flux(esm::EarthSystemModel)
