@@ -76,8 +76,10 @@ set!(nm::NestedModel, args...; kwargs...) = set!(nm.child, args...; kwargs...)
 
 # Ordering: refresh the exchanger FIRST — it advances the parent's own FTS windows to bracket the
 # current time and fills the derived 2-level window — so the parent data the child interpolates over
-# `[t, t+Δt]` is resident *before* the child steps. Then step the child, then tick the parent clock to
-# match the child's (adaptive) Δt. `Simulation` calls `time_step!(model, Δt; callbacks=...)`.
+# `[t, t+Δt]` is resident *before* the child steps. Then step the child, and advance the parent to the
+# child's new time with (adaptive) Δt. For a prescribed parent, that reduces to a clock tick +
+# FTS-window refresh; a live prognostic parent would instead integrate its own dynamics over
+# Δt_parent. `Simulation` calls `time_step!(model, Δt; callbacks=...)`.
 function time_step!(nm::NestedModel, Δt; kwargs...)
     exchange_state!(nm.exchanger, nm.clock.time)
     time_step!(nm.child, Δt; kwargs...)

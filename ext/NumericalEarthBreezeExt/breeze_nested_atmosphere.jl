@@ -206,10 +206,14 @@ function NumericalEarth.NestedModels.nested_atmosphere_model(
     # ρw Rayleigh lid sponge: relax vertical momentum toward zero over the top `damping_depth` metres.
     lid_sponge = (; ρw = Relaxation(rate = damping_rate, mask = lid_sponge_mask(child_grid, damping_depth)))
 
+    # initialize = false: the resting-state construction default would survive into
+    # `initialize_nested_child!` and destabilize the adiabatic balance twin — the child's full
+    # state (and reference) is derived from the parent instead.
     child = NumericalEarth.Atmospheres.atmosphere_model(child_grid;
                 thermodynamic_constants, microphysics, momentum_advection, coriolis, dynamics,
                 boundary_conditions = merge_boundary_conditions(nested_bcs, NamedTuple(boundary_conditions)),
                 forcing = merge(lid_sponge, davies, NamedTuple(forcing)),
+                initialize = false,
                 kw...)
 
     return NestedModel(parent_atmosphere, child, exchanger)

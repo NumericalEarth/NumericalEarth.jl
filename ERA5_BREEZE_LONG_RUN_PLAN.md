@@ -1,7 +1,7 @@
 # ERA5 → Breeze nested downscaling — long-run plan
 
 Convection-permitting 12 h hindcasts that downscale ERA5 to a Breeze compressible child across a
-resolution sweep (12 → 0.5 km), run simultaneously across both H100s and the CPU partition, each
+resolution sweep (12 → 0.5 km), run simultaneously across the A100 fleet via Slurm, each
 producing an animation of the result. Lamont, OK; 2011-05-20 00–12 UTC.
 
 ## Model configuration (the validated stable configuration)
@@ -42,41 +42,89 @@ grid; terrain is `ETOPO2022` blended to the parent orography over the outer 5 ce
 
 | Δx | grid (Nx × Ny × Nz) | cells | run on |
 |------|---------------------|-------|--------|
-| 12 km | 24 × 22 × 50 | 26 k | `cpu` partition |
-| 6 km | 48 × 44 × 50 | 106 k | `cpu` partition |
-| 3 km | 96 × 88 × 50 | 422 k | H100 (queues) |
-| 1 km | 288 × 264 × 50 | 3.8 M | H100 |
-| 0.5 km | 576 × 528 × 50 | 15 M | H100 |
+| 12 km | 24 × 22 × 50 | 26 k | `gpuprod` (H100) |
+| 6 km | 48 × 44 × 50 | 106 k | `gpua100x4` |
+| 3 km | 96 × 88 × 50 | 422 k | `gpua100x4` |
+| 1 km | 288 × 264 × 50 | 3.8 M | `gpua100x4` |
+| 0.5 km | 576 × 528 × 50 | 15 M | `gpua100x4` |
 
 **Prior stability check (30-step cold start, WENO-5 bounded, no closure):** stable at every resolution,
 `max|w| @ 30` = 6.13 / 6.34 / 6.23 / 6.20 / 5.70 m/s for 12 / 9 / 6 / 3 / 1 km — essentially
 dx-independent, so the wall residual is a bounded boundary artifact, not a CFL/gradient instability.
 
-## Compute allocation
+## Compute allocation (Slurm — everything runs through `sbatch`)
 
-- **gpu-prod** (2 × H100, 1 GPU/node): 0.5 km, 1 km, 3 km — the third queues until an H100 frees.
-- **cpu partition** (2-core nodes): 12 km, 6 km.
-- Head node has only 4 cores, so it is used for orchestration/pre-download, not the long runs.
+- **`gpua100x4`** (1 node, 4 × A100-40GB, 24 CPUs, 330 GB): 0.5, 1, 3, 6 km — one A100 per case
+  (`--gres=gpu:1`, 4 CPUs each), all four concurrent.
+- **`gpuprod`** (2 nodes, 1 × H100-80GB, 12 CPUs each): the 12 km case on one node, CPU-side
+  rendering of the animations/panels on whichever is free. If a case ever outgrows an A100-40GB,
+  an H100-80GB here is also the memory fallback.
+- **`gpua100`** (1 node, 1 × A100, 6 CPUs): unused — the node failed two consecutive boot probes
+  (16+ min silent vs gpuprod's 1m35s spin-up, 2026-07-03); revisit if it recovers.
+- The `cpu` partition nodes (1 core, 1.5 GB) are too small to even load the Julia stack — unused.
+- The head node (1 core, 3 GB) is orchestration only; the Julia depot lives on the NFS-shared home,
+  so environment instantiation is itself a Slurm job on `gpua100x4` (`instantiate_long.batch`).
 
 ## Outputs (per run)
 
-- 10-minute 2-D slices via `JLD2Writer` — an x–z cross-section (`w, speed, T`) and a surface slice
-  (`w, speed`) — never 3-D.
-- An **mp4 animation** (`long_<tag>_w.mp4`): `w` x–z cross-section + surface `w` over the 12 h, rendered
-  with `CairoMakie.record`.
-- A final multi-field panel (`long_<tag>_panel.png`).
-- Animations + panels are collected into the run gallery:
-  https://claude.ai/code/artifact/2ac43382-134c-49e3-b4a3-a3c76246162b
+- 10-minute 2-D slices via `JLD2Writer` — never 3-D — into `scratch_runenv/runs/long_<tag>/`:
+  a central x–z cross-section (`w, U, T`), a 2 km-AGL map (`w, U`), and a surface map (`U, θᵥ`).
+  `T` is `model.temperature` (recomputed each `update_state!`), not the Boussinesq
+  `TemperatureField` constructor.
+
+## Visualization
+
+Rendering is decoupled from the runs: each case gets its own CPU-only CairoMakie Slurm job
+(`visualize_long.batch`, `gpuprod` partition) submitted with `--dependency=afterok:<run job>`, so
+every animation starts rendering the moment its run finishes — no manual babysitting, and a crashed
+run never blocks the other renders.
+
+Per run (rendered by `visualize_long.jl` from the saved slices):
+
+- **`long_<tag>_w.mp4`** — the 12 h squall-line evolution of `w`: 2 km-AGL map (left) + central x–z
+  cross-section (right), 10-minute frames at 8 fps, color range fixed across frames (symmetric,
+  from the late-time state) so intensification is visible rather than renormalized away.
+- **`long_<tag>_panel.png`** — final-time 2 × 3 panel: cross-sections of `w, U, T` (top) over
+  maps of `w₂ₖₘ, Uₛ, θᵥₛ` (bottom).
+
+Across runs: a **gallery artifact** collecting all five panels (and animation stills) side by side,
+ordered 12 → 0.5 km, so the convergence of the squall line's structure with resolution is the
+headline comparison. The mp4s stay on the cluster (`scratch_runenv/runs/`); the gallery links their
+paths.
+
+## Breeze pin (2026-07-03) and stability tripwires
+
+The branch tip of `glw/balance-twin-vapor-moisture-fractions` (rebased onto Breeze 0.7.1 +
+the #821 acoustic-substep reland) carries a **nondeterministic adiabatic-balance-twin blowup**:
+identical nested-init runs produce θ^γ DomainErrors spanning 24 orders of magnitude, silent NaNs,
+or an occasional clean pass (uninitialized-read suspect; full evidence table in
+`scratch_runenv/BREEZE_827_EVIDENCE.md`, for upstream Breeze.jl#827). The sweep therefore runs
+Breeze from `~/breeze-prereland` — the branch with only that reland `git revert`ed (both
+balance-twin fixes kept) — which passes the failing cell repeatedly where the tip fails ~7 in 8.
+Two further layers guard the runs regardless: the smoke job errors (blocking `afterok`
+dependents) if `max|w| > 15 m/s` at 30 iterations, and every run's progress callback kills the
+job if `max|w|` exceeds 150 m/s or goes non-finite.
+
+Two same-day fixes this campaign surfaced (committed on this branch): GPU region loading died at
+kernel compilation on reshaped host NetCDF data (`architecture_ready` in
+`src/DataWrangling/set_region_data.jl`), and `atmosphere_model` gained an `initialize` keyword so
+the nested child skips the construction-time resting state (semantic correction — not the twin
+cure).
 
 ## Files (scratch dev environment)
 
-The runs live in `scratch_runenv/` — a dev env pinning Breeze + Oceananigans to their development
-branches (the registry lacks Oceananigans 0.110.x):
+The runs live in `scratch_runenv/` (gitignored) — a dev env pinning Breeze as described above and
+NumericalEarth to the working tree:
 
-- `sweep_long.jl` — the harness (ENV `RES_KM`, `ARCH ∈ {GPU, CPU}`).
-- `sweep_long_gpu.batch`, `sweep_long_cpu.batch` — Slurm batches (`sbatch --export=ALL,RES_KM=…`).
-- `launch_long.sh` — waits for the ERA5 pre-download, then submits all cases.
-- `predownload_long.jl` — pulls ERA5 00–12 UTC for the sweep region once, shared by all runs.
+- `sweep_common.jl` — shared domain + model construction (ENV `RES_KM`, `ARCH ∈ {GPU, CPU}`, `SMOKE`).
+- `sweep_long.jl` — the run harness: simulation, wizard, writers, progress.
+- `predownload_long.jl` — pulls ERA5 00–12 UTC + ETOPO2022 for the sweep region once, shared by all
+  runs (builds the 12 km model on CPU, which triggers every download). Needs `~/.cdsapirc`.
+- `visualize_long.jl` — renders one case's mp4 + panel from the saved slices.
+- `instantiate_long.batch`, `predownload_long.batch`, `sweep_long_gpu.batch`, `visualize_long.batch`
+  — the Slurm batches.
+- `launch_long.sh` — `predownload` | `smoke [jobid]` | `runs [jobid]`; `runs` submits the five cases
+  with their per-case partition/memory and chains each case's render via `afterok`.
 
 ## Reproduce a single case
 
