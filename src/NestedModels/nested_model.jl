@@ -74,14 +74,18 @@ end
 # Setting the initial state targets the child's prognostics.
 set!(nm::NestedModel, args...; kwargs...) = set!(nm.child, args...; kwargs...)
 
-# Ordering: refresh the exchanger FIRST — it advances the parent's own FTS windows to bracket the
-# current time and fills the derived 2-level window — so the parent data the child interpolates over
-# `[t, t+Δt]` is resident *before* the child steps. Then step the child, and advance the parent to the
-# child's new time with (adaptive) Δt. For a prescribed parent, that reduces to a clock tick +
-# FTS-window refresh; a live prognostic parent would instead integrate its own dynamics over
+# Ordering: refresh the exchanger FIRST — it advances the parent's own FTS windows and fills the
+# derived 2-level window — so the parent data the child interpolates over `[t, t+Δt]` is resident
+# *before* the child steps. Bracket the step END (`t + Δt`), not `t`: the exchanger positions a
+# 2-level window around the passed time, so refreshing at `t` leaves the whole step extrapolated
+# whenever `t` lands on a parent time level (every hourly ERA5 crossing). Refreshing at `t + Δt`
+# keeps the step's late stages in-window; at most a ≤Δt start-side extrapolation remains on the
+# crossing step (a 2-level window cannot span a parent interval). Then step the child, and advance
+# the parent to the child's new time with (adaptive) Δt. For a prescribed parent that reduces to a
+# clock tick + FTS-window refresh; a live prognostic parent would integrate its own dynamics over
 # Δt_parent. `Simulation` calls `time_step!(model, Δt; callbacks=...)`.
 function time_step!(nm::NestedModel, Δt; kwargs...)
-    exchange_state!(nm.exchanger, nm.clock.time)
+    exchange_state!(nm.exchanger, nm.clock.time + Δt)
     time_step!(nm.child, Δt; kwargs...)
 
     Δt_parent = nm.child.clock.time - nm.parent.clock.time
