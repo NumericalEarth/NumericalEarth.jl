@@ -237,7 +237,9 @@ Build the parent `PrescribedAtmosphere`, nest a Breeze child in it, and initiali
 `child_grid`'s bounding box padded by `parent_padding` (default two of `parent_dataset`'s native
 cells, margin for the lateral-BC interpolation stencils) at `dates`, on `parent_dataset`'s native
 grid. Unless given, the default dynamics' `surface_pressure` anchor is the domain-mean dataset surface
-pressure over the child at `first(dates)`. Remaining keyword arguments flow to
+pressure over the child at `first(dates)`. `balancer` controls the post-initialization adiabatic
+(DFI) balance: `true` (default) runs it, `false` skips it, and an `AdiabaticBalancer(Δt=…)` runs a
+custom (e.g. gentler) excursion. Remaining keyword arguments flow to
 `nested_atmosphere_model(parent, child_grid; kw...)`.
 """
 function NumericalEarth.NestedModels.nested_atmosphere_model(child_grid, parent_dataset;
@@ -245,6 +247,7 @@ function NumericalEarth.NestedModels.nested_atmosphere_model(child_grid, parent_
             dir = default_download_directory(parent_dataset),
             parent_padding = 2 * native_resolution(parent_dataset),
             surface_pressure = nothing,
+            balancer = true,
             kw...)
 
     parent_region = BoundingBox(child_grid; padding = parent_padding)
@@ -257,7 +260,7 @@ function NumericalEarth.NestedModels.nested_atmosphere_model(child_grid, parent_
 
     nested_model = NumericalEarth.NestedModels.nested_atmosphere_model(parent_atmosphere, child_grid;
                                                                        surface_pressure, kw...)
-    initialize_nested_child!(nested_model, parent_dataset, first(dates), dir)
+    initialize_nested_child!(nested_model, parent_dataset, first(dates), dir; balancer)
     return nested_model
 end
 
@@ -270,7 +273,7 @@ NumericalEarth.Atmospheres.bulk_drag(model::NestedModel; kw...) =
 # domain-mean state, graft ρw ← ρw − ρw̃ so the flow follows the terrain, and spin ρw into nonhydrostatic
 # balance. `set!(…; balancer = true)` runs Breeze's adiabatic (FV3 `na_init`) balance on a stripped,
 # memory-sharing twin (no microphysics/sponge/forcing) at an automatically-derived acoustic-CFL step.
-function initialize_nested_child!(nested_model, dataset, date, dir)
+function initialize_nested_child!(nested_model, dataset, date, dir; balancer = true)
     child = nested_model.child
     child_grid = child.grid
     prognostic = nested_model.exchanger.prognostic
@@ -305,6 +308,9 @@ function initialize_nested_child!(nested_model, dataset, date, dir)
         update_state!(nested_model)
     end
 
-    set!(nested_model; balancer = true)   # adiabatic (DFI) balance at Breeze's auto acoustic-CFL step
+    # Adiabatic (DFI) balance at Breeze's auto acoustic-CFL step. `balancer=false` skips it (to isolate
+    # whether the interpolated IC steps stably on its own); pass an `AdiabaticBalancer(Δt=…)` for a
+    # gentler excursion when the default 0.85·Δz/c DFI drives a pathological IC cell's pressure negative.
+    set!(nested_model; balancer)
     return nested_model
 end
