@@ -86,6 +86,11 @@ end
 function Oceananigans.TimeSteppers.reconcile_state!(model::ESM)
     initialize!(model.interfaces.exchanger, model)
     update_state!(model)
+    # Second call re-derives Jᵀ from the post-clamp SST: a sea-ice component
+    # (e.g. FreezingLimitedOceanTemperature) may have clamped T in the first call,
+    # so the stored Jᵀ is stale.  After the second call, reconcile_state! is
+    # idempotent w.r.t. maybe_prepare_first_time_step!.
+    update_state!(model)
     return nothing
 end
 
@@ -128,6 +133,16 @@ Called from inside the [`EarthSystemModel`](@ref) constructor before
 `ComponentInterfaces` is built.
 """
 materialize_earth_system_radiation!(atmosphere, radiation) = atmosphere
+
+"""
+    materialize_sea_ice(sea_ice, ocean)
+
+Return a fully-materialised `sea_ice` component that has access to the ocean's grid.
+Called from inside the [`EarthSystemModel`](@ref) constructor before `ComponentInterfaces`
+is built. Default: no-op, returning `sea_ice` unchanged. Sea ice types that require
+grid-allocated diagnostic fields (e.g. `FreezingLimitedOceanTemperature`) overload this.
+"""
+materialize_sea_ice(sea_ice, ocean) = sea_ice
 
 """
     EarthSystemModel(radiation, atmosphere, land, sea_ice, ocean;
@@ -221,6 +236,10 @@ function EarthSystemModel(radiation, atmosphere, land, sea_ice, ocean;
     # coupled-model radiation. No-op by default; Breeze (or any other
     # atmosphere with an internal radiation handle) overloads this.
     atmosphere = materialize_earth_system_radiation!(atmosphere, radiation)
+
+    # Materialize any sea ice components that require grid-allocated fields
+    # (e.g. FreezingLimitedOceanTemperature needs a frazil_heat field).
+    sea_ice = materialize_sea_ice(sea_ice, ocean)
 
     # Contains information about flux contributions: bulk formula, prescribed fluxes, etc.
     if isnothing(interfaces) && !(isnothing(atmosphere) && isnothing(sea_ice))
