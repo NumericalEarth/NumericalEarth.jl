@@ -30,7 +30,7 @@ using Downloads: Downloads
 using Oceananigans: Center
 using Oceananigans.DistributedComputations: @root
 
-using ..DataWrangling: DataWrangling, Metadata, Metadatum, BoundingBox, metadata_path
+using ..DataWrangling: DataWrangling, Metadata, Metadatum, BoundingBox, Dataset, metadata_path
 
 import Oceananigans
 
@@ -233,23 +233,39 @@ DataWrangling.reversed_latitude_axis(::LSTDataset) = false
 
 # Both products are ingested as regional 2-D lat/lon windows (GOES after
 # geostationary → lat/lon reprojection; ECOSTRESS is already geographic). The
-# regional grid is bracketed at read time from the `BoundingBox`, so these hulls
-# just declare the products' maximal geographic coverage.
+# regional grid is bracketed from the `BoundingBox`, so these hulls just declare
+# the products' maximal geographic coverage.
 DataWrangling.longitude_interfaces(::AbstractGOESDataset) = (-180, 180)
 DataWrangling.latitude_interfaces(::AbstractGOESDataset)  = (-90, 90)
 DataWrangling.longitude_interfaces(::AbstractECOSTRESSDataset) = (-180, 180)
 DataWrangling.latitude_interfaces(::AbstractECOSTRESSDataset)  = (-52, 52) # ECOSTRESS land coverage
 DataWrangling.z_interfaces(::LSTDataset) = (0, 1)
 
-# LST is a 2-D surface field; the true regional (Nx, Ny) is only known once the
-# reprojected/subset array is read (reads are gated), so the dataset-level size
-# is a placeholder singleton — see `retrieve_data`.
-Base.size(::LSTDataset, variable) = (1, 1, 1)
+# Native lat/lon resolution (degrees) of the reprojected regional raster. GOES-R
+# ABI LSTC is ≈2 km at nadir (≈0.02°); ECOSTRESS ECO_L2G_LSTE is a 70 m product
+# gridded to ≈0.0006–0.0007°. The download step (see the ArchGDAL extension) warps
+# each granule to this resolution over the requested `BoundingBox`.
+const GOES_RESOLUTION      = 0.02
+const ECOSTRESS_RESOLUTION = 0.0007
+
+# LST is a 2-D surface field. The "global" size is nominal (the maximal coverage
+# hull at native resolution); only the BoundingBox-restricted portion is ever
+# materialized, since `construct_native_grid` clips the hull to the region.
+Base.size(::AbstractGOESDataset, variable) =
+    (round(Int, 360 / GOES_RESOLUTION), round(Int, 180 / GOES_RESOLUTION), 1)
+Base.size(::AbstractECOSTRESSDataset, variable) =
+    (round(Int, 360 / ECOSTRESS_RESOLUTION), round(Int, 104 / ECOSTRESS_RESOLUTION), 1)
 
 DataWrangling.is_three_dimensional(::LSTMetadatum) = false
 DataWrangling.default_inpainting(::LSTMetadatum) = nothing # cloud gaps are the operator's mask
 DataWrangling.missing_value(::LSTMetadatum) = NaN
 Base.eltype(::LSTMetadatum) = Float32
+
+# The reprojected regional NetCDF written at download time stores its coordinates
+# as `lon` / `lat` (see the ArchGDAL extension); the generic `read_file_coords`
+# reads these axes back to bracket the data onto the native grid.
+DataWrangling.longitude_name(::LSTMetadatum) = "lon"
+DataWrangling.latitude_name(::LSTMetadatum)  = "lat"
 
 Oceananigans.Fields.location(::LSTMetadatum) = (Center, Center, Center)
 
@@ -335,13 +351,22 @@ function DataWrangling.validate_dataset_coverage(grid, metadata::LSTMetadatum)
 end
 
 #####
-##### Download + read (gated; fallback errors mirror CopernicusDEM.zarr_to_netcdf)
+##### Download + read
 #####
+
+# Both products are fetched and reprojected to a clean regional lat/lon NetCDF
+# (coordinate axes `lon` / `lat`, plus the decoded variable) at download time —
+# mirroring the proven MODISLand ingest — so the generic `Field` /
+# `set_region_data!` machinery can bracket the raster onto the native grid. The
+# real fetch + reprojection (anonymous GOES S3, Earthdata-gated ECOSTRESS CMR +
+# HDF5) lives in `ext/NumericalEarthArchGDALExt.jl`; the module-level fallbacks
+# below fire only when `ArchGDAL` (and network) are unavailable, mirroring
+# `CopernicusDEM.zarr_to_netcdf`.
 
 function Downloads.download(metadatum::GOESMetadatum)
     path = metadata_path(metadatum)
     @root if !isfile(path)
-        download_goes_granule(metadatum, path)
+        goes_granule_to_netcdf(metadatum, path)
     end
     return path
 end
@@ -349,40 +374,39 @@ end
 function Downloads.download(metadatum::ECOSTRESSMetadatum)
     path = metadata_path(metadatum)
     @root if !isfile(path)
-        download_ecostress_granule(metadatum, path)
+        ecostress_granule_to_netcdf(metadatum, path)
     end
     return path
 end
 
-# Implemented in ext/NumericalEarthArchGDALExt.jl once `ArchGDAL` is loaded. The
-# fallbacks below fire only when the extension / network path is not available.
-download_goes_granule(metadatum, path) =
-    error("Fetching GOES-R ABI-L2-LSTC granules from anonymous AWS " *
+# Implemented in ext/NumericalEarthArchGDALExt.jl once `ArchGDAL` is loaded.
+goes_granule_to_netcdf(metadatum, path) =
+    error("Fetching + reprojecting GOES-R ABI-L2-LSTC granules from anonymous AWS " *
           "(s3://noaa-$(metadatum.dataset.satellite)/ABI-L2-LSTC/, us-east-1, no-sign-request) " *
-          "requires the ArchGDAL package and network access. Load it with `using ArchGDAL`.")
-
-read_goes_lst_lonlat(metadatum, path) =
-    error("Reading GOES-R LST requires ArchGDAL.jl to reproject the geostationary " *
-          "fixed grid to lat/lon (geos → EPSG:4326). Load it with `using ArchGDAL`.")
+          "requires ArchGDAL.jl (geostationary → EPSG:4326 warp) and network access. " *
+          "Load it with `using ArchGDAL`.")
 
 # ECOSTRESS L2G is HDF5; `HDF5.jl` is not a project dependency (and must not be
 # added — AGENTS.md rule 10), so the read is routed through GDAL's HDF5 driver in
 # the ArchGDAL extension. The download is Earthdata-gated.
-download_ecostress_granule(metadatum, path) =
-    error("Fetching ECOSTRESS ECO_L2G_LSTE granules requires NASA Earthdata " *
-          "credentials (EARTHDATA_USERNAME / EARTHDATA_PASSWORD or a .netrc entry) " *
-          "and CMR discovery of overpasses — not available in this environment.")
+ecostress_granule_to_netcdf(metadatum, path) =
+    error("Fetching ECOSTRESS ECO_L2G_LSTE granules requires ArchGDAL.jl (GDAL HDF5 " *
+          "driver), NASA Earthdata credentials (EARTHDATA_USERNAME / EARTHDATA_PASSWORD " *
+          "or a .netrc entry), and CMR discovery of overpasses. Load ArchGDAL with " *
+          "`using ArchGDAL`.")
 
-read_ecostress_l2g(metadatum, path) =
-    error("Reading ECOSTRESS ECO_L2G_LSTE (HDF5) requires either HDF5.jl + Earthdata " *
-          "credentials, or ArchGDAL.jl via GDAL's HDF5 driver. HDF5.jl is not a " *
-          "project dependency; load ArchGDAL with `using ArchGDAL` to enable the read.")
-
-DataWrangling.retrieve_data(metadatum::GOESMetadatum) =
-    read_goes_lst_lonlat(metadatum, metadata_path(metadatum))
-
-DataWrangling.retrieve_data(metadatum::ECOSTRESSMetadatum) =
-    read_ecostress_l2g(metadatum, metadata_path(metadatum))
+# The download step writes a clean regional lat/lon NetCDF whose decoded variable
+# is stored under `dataset_variable_name` (LST already in Kelvin with `NaN` gaps);
+# reads are the generic 2-D NetCDF slurp (no scale/offset — decoding happened at
+# download time inside the pure `goes_lst` / `ecostress_lst` core).
+function DataWrangling.retrieve_data(metadata::LSTMetadatum)
+    path = metadata_path(metadata)
+    name = DataWrangling.dataset_variable_name(metadata)
+    ds = Dataset(path)
+    data = ds[name][:, :]
+    close(ds)
+    return data
+end
 
 #####
 ##### Half B — the `H_LST` observation operator (SCAFFOLD)
