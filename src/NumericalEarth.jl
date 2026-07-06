@@ -207,6 +207,7 @@ using .DataWrangling.GloFAS
 using .DataWrangling.OSPapa
 using .DataWrangling.ERA5
 using .DataWrangling.SoilGrids
+using .DataWrangling.ASTERGED
 
 using PrecompileTools: @setup_workload, @compile_workload
 
