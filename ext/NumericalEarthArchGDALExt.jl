@@ -91,8 +91,23 @@ function worldcover_tiles(longitude_bounds, latitude_bounds)
     return tiles
 end
 
+# GDAL_jll ships its own libcurl, which on some platforms (notably macOS) cannot
+# locate a system CA bundle and then fails TLS verification against the HTTPS S3
+# endpoint ("unable to get local issuer certificate"). If the environment has not
+# already pointed curl at a CA bundle, fall back to the CA certificates that ship
+# with Julia (the same bundle `Downloads`/`NetworkOptions` use) so the anonymous
+# HTTPS read can verify the endpoint. Only sets the variable when it is unset, so
+# an explicit user configuration always wins.
+function ensure_curl_ca_bundle!()
+    (haskey(ENV, "CURL_CA_BUNDLE") || haskey(ENV, "SSL_CERT_FILE")) && return nothing
+    bundled = normpath(joinpath(Sys.BINDIR, "..", "share", "julia", "cert.pem"))
+    isfile(bundled) && (ENV["CURL_CA_BUNDLE"] = bundled)
+    return nothing
+end
+
 function ESAWorldCover.worldcover_cog_to_netcdf(metadatum::ESAWorldCover.ESAWorldCoverMetadatum, nc_path)
     # Read the anonymous, unsigned public bucket.
+    ensure_curl_ca_bundle!()
     ArchGDAL.setconfigoption("AWS_NO_SIGN_REQUEST", "YES")
     ArchGDAL.setconfigoption("AWS_REGION", "eu-central-1")
 

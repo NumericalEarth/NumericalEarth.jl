@@ -291,7 +291,14 @@ DataWrangling.dataset_variable_name(data::ESAWorldCoverMetadatum) =
 DataWrangling.longitude_name(::ESAWorldCoverMetadatum) = "lon"
 DataWrangling.latitude_name(::ESAWorldCoverMetadatum)  = "lat"
 DataWrangling.default_inpainting(::ESAWorldCoverMetadatum) = nothing
-DataWrangling.missing_value(::ESAWorldCoverMetadatum) = ESA_WORLDCOVER_MISSING_VALUE
+
+# `0` is the no-data code for the categorical `:landcover_class` product and is
+# correctly masked to NaN on load. For the derived fraction products
+# (`:vegetation_fraction`, `:landcover_fractions`), `0.0` is a *legitimate* value
+# (e.g. a water cell has zero vegetation fraction), so there is no in-band missing
+# sentinel — use `NaN`, which never equals a real value and therefore masks nothing.
+DataWrangling.missing_value(data::ESAWorldCoverMetadatum) =
+    data.name === :landcover_class ? ESA_WORLDCOVER_MISSING_VALUE : NaN
 
 Oceananigans.Fields.location(::ESAWorldCoverMetadatum) = (Center, Center, Center)
 

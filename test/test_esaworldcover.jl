@@ -140,8 +140,14 @@ end
         meta = Metadatum(name; dataset, region)
         @test dataset_variable_name(meta) == "Map"
         @test is_three_dimensional(meta) == false
-        @test missing_value(meta) == 0
     end
+
+    # `0` is the no-data sentinel for the categorical class product, but a real
+    # value for the derived fractions (a water cell has 0 vegetation fraction),
+    # so the fractions carry NaN — which masks nothing — as their missing value.
+    @test missing_value(Metadatum(:landcover_class; dataset, region)) == 0
+    @test isnan(missing_value(Metadatum(:vegetation_fraction; dataset, region)))
+    @test isnan(missing_value(Metadatum(:landcover_fractions; dataset, region)))
 
     filename = metadata_filename(dataset, :landcover_class, nothing, region)
     @test startswith(filename, "ESA_WorldCover_v200_landcover_class_")
