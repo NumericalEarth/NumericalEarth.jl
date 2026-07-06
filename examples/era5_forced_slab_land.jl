@@ -1,24 +1,23 @@
-# # A systematic slab-land model: 0D column, sensitivities, and an ERA5 map
+# # A differentiable slab-land model: 0D column and 2D ERA5-forced map
 #
 # This page builds a differentiable land model in two parts, starting from an idealized 0D
-# example, then demonstrating a more realistic example with ERA5 forcing on realistic topography.
+# example, then demonstrating a more realistic case with ERA5 forcing on realistic topography.
 # We use a `SlabLand` composed of
 #
 #     energy    = WaterCoupledEnergy(...)          # C(Mˡᵃ) = C_dry + cˡ Mˡᵃ, conservative dTˡᵃ/dt
 #     hydrology = VariablySaturatedHydrology(...)  # augmented-storage ϑˡ budget
 #     humidity  = DryLayerHumidity(...)            # qⁱⁿ from a dry-layer vapor-flux balance
 #
-# 1. a 0D dry-layer slab under idealized analytic forcing;
-# 2. its sensitivity ``∂T / ∂P`` to the rain rate, from a single reverse pass;
-# 3. an ERA5-forced Central Borneo run at ~1 km, elevation-downscaled;
-# 4. a pointwise ``∂T / ∂ν`` porosity-sensitivity map over a sub-patch of that domain.
+# This page is split into four stages:
+# 1. A 0D dry-layer slab under idealized analytic forcing;
+# 2. its skin temperature's sensitivity to the rain rate``∂T / ∂𝒫̇`` from a single reverse pass;
+# 3. an ERA5-forced example in Central Borneo example run at ~1 km with downscaled elevation;
+# 4. a pointwise ``∂T / ∂ν`` porosity-sensitivity map over a 2D sub-patch of that domain.
 #
 # Stages 2 and 4 compile the coupled time step to
 # [XLA](https://en.wikipedia.org/wiki/Accelerated_Linear_Algebra) with
 # [Reactant.jl](https://github.com/EnzymeAD/Reactant.jl) and differentiate it in
-# reverse mode with [Enzyme.jl](https://github.com/EnzymeAD/Enzyme.jl); see the
-# [SlabLand tutorial](../land/evaporation_front_slab_land.md) for the model
-# derivation.
+# reverse mode with [Enzyme.jl](https://github.com/EnzymeAD/Enzyme.jl).
 #
 # ## The dry-layer humidity closure
 #
@@ -30,10 +29,11 @@
 # explained in detail in [Or et al. (2013)](@cite or2013advances). 
 # In this example, we use a thin slab to demonstrate the different stages over
 # a short roll out for demonstration purposes. A rain pulse on day 2 briefly over-saturates the slab
-# (`𝒮 = 1`) such that the latent heat flux jumps to its demand-limited daytime peaks.
+# (`𝒮 = 1`) such that the latent heat flux increases to the wet/saturated regime.
 # Once evaporation draws the slab back down through the dry layer onser`𝒮ᶜ`, the dry layer 
 # reopens and the latent heat collapses again.
 
+# ## Load packages
 using NumericalEarth
 using Oceananigans
 using Oceananigans.Units
@@ -51,19 +51,17 @@ using Reactant: @trace
 
 # ## Idealized forcing
 #
-# The diurnal air-temperature and shortwave cycle and the constant longwave /
-# wind / humidity are the warm, dry 280–290 K regime that keeps evaporative
+# The idealized forcings simulate a warm, dry 280–290 K regime that keeps evaporative
 # demand high. A six-hour rain pulse falls on day 2 with amplitude `𝒫̇` (nominally
-# `6e-4 kg m⁻² s⁻¹`, ≈ 13 mm over the six hours) 
-# We take gradients of the final day skin temperature against this rain rate in Stage 2.
+# `6e-4 kg m⁻² s⁻¹`, ≈ 13 mm over the six hours)
 
-const day = 86400
+const day = 1days
 
 air_temperature(t)       = 285 - 5 * cos(2π * t / day)               # K, 280–290 diurnal
 downwelling_shortwave(t) = max(0, 600 * cos(2π * (t - day/2) / day)) # W m⁻², daytime only
 downwelling_longwave(t)  = 320                                       # W m⁻², constant
 wind_speed               = 4.0                                       # m s⁻¹
-specific_humidity         = 0.004                                      # kg kg⁻¹ (dry air drives evaporation)
+specific_humidity         = 0.004                                     # kg kg⁻¹ (dry air drives evaporation)
 surface_pressure         = 101325                                    # Pa
 
 nominal_rain_rate = 6e-4                                             # kg m⁻² s⁻¹
@@ -175,10 +173,10 @@ make_dry_layer_humidity(porosity) = DryLayerHumidity(;
     thermal_exchange_depth = 0.10,
     porosity)
 
-# Assemble the coupled model used by the *differentiable* stages (2 and 4, and the
-# 0D forward run that shares its builder). The turbulent fluxes use a fixed-iteration
-# Monin–Obukhov solver (`FixedIterations`) instead of the default tolerance-based
-# `while` loop. This is done because the differentiated pass compiles the coupled
+# Now, we assemble the coupled model used by the *differentiable* stages.
+# For differentiability purposes, the turbulent fluxes use a fixed-iteration Monin–Obukhov solver 
+# (`FixedIterations`) instead of the default tolerance-based `while` loop. 
+# This is done because the differentiated pass compiles the coupled
 # time step to XLA, where a data-dependent `while` becomes an XLA op that does not
 # differentiate cheaply. On the other hand, a fixed iteration count unrolls into a static
 # graph Enzyme can traverse. `Clock(grid)` is a plain `Float64` clock on the CPU
@@ -264,9 +262,10 @@ end
 
 # # Differentiating skin temperature against rain rate in the idealized model
 #
-# We rebuild the same setup on a `ReactantState` grid so every array is an XLA
-# buffer, wrap the coupled time-stepping in a scalar `loss`, compile it once, and
-# differentiate it with respect to the rain-pulse amplitude.
+# To differentiate through the model, we rebuild the same setup on
+# a `ReactantState` grid so every array is an XLA buffer, wrap the
+# coupled time-stepping in a scalar objective `final_skin_temperature`, compile it
+# once, and differentiate it with respect to the rain-pulse amplitude.
 
 Reactant.set_default_backend("cpu")
 
@@ -286,12 +285,12 @@ d𝒫̇ = Enzyme.make_zero(𝒫̇)
 
 # ## The objective
 #
-# `loss` re-initializes the slab from the initial state, sets the rain pulse from
-# the current `𝒫̇`, runs `nsteps` of the coupled time step inside a `@trace` loop, 
-# and returns the final skin temperature. The `set!`s inside `loss` make the gradient track 
-# the live trajectory.
+# `final_skin_temperature` re-initializes the slab from the initial state, sets the
+# rain pulse from the current `𝒫̇`, runs `nsteps` of the coupled time step inside a
+# `@trace` loop, and returns the final skin temperature. The `set!`s inside it make
+# the gradient track the live trajectory.
 
-function loss(model, 𝒫̇, pulse_indices, initial_temperature, initial_water_storage, Δt, nsteps)
+function final_skin_temperature(model, 𝒫̇, pulse_indices, initial_temperature, initial_water_storage, Δt, nsteps)
     set!(model.land.temperature,   initial_temperature)
     set!(model.land.water_storage, initial_water_storage)
     set!(model.land.saturation,    saturation_from_storage(initial_water_storage))
@@ -314,11 +313,11 @@ end
 # Reverse mode with the model and rain amplitude as `Duplicated` (primal +
 # shadow); the loop length and scalar parameters are `Const`.
 
-function grad_loss(model, dmodel, 𝒫̇, d𝒫̇, pulse_indices, initial_temperature, initial_water_storage, Δt, nsteps)
+function grad_final_skin_temperature(model, dmodel, 𝒫̇, d𝒫̇, pulse_indices, initial_temperature, initial_water_storage, Δt, nsteps)
     parent(d𝒫̇) .= 0
     _, T = Enzyme.autodiff(
         Enzyme.set_strong_zero(Enzyme.ReverseWithPrimal),
-        loss, Enzyme.Active,
+        final_skin_temperature, Enzyme.Active,
         Enzyme.Duplicated(model, dmodel),
         Enzyme.Duplicated(𝒫̇, d𝒫̇),
         Enzyme.Const(pulse_indices),
@@ -332,7 +331,7 @@ end
 # ## Compilation and execution
 
 @info "Compiling differentiated dry-layer land model — this may take a minute..."
-compiled_grad = Reactant.@compile raise=true raise_first=true sync=true grad_loss(
+compiled_grad = Reactant.@compile raise=true raise_first=true sync=true grad_final_skin_temperature(
     model_ad, dmodel, 𝒫̇, d𝒫̇, pulse_indices,
     initial_temperature, initial_water_storage, Δt, Nsteps)
 
@@ -347,8 +346,8 @@ dT_drain = Array(d𝒫̇)[1]   # K / (kg m⁻² s⁻¹)
 
 # ## Finite-difference check
 #
-# One reverse pass gave the whole sensitivity; a central finite difference in the
-# rain amplitude reproduces the adjoint to four significant figures.
+# To check that our reverse-mode AD gives the right answer, we run a finite-difference 
+# approximation of the same derivative.
 
 function readout_skin_temperature(𝒫̇)
     model = dry_layer_model(grid, times, 𝒫̇)
@@ -437,40 +436,22 @@ nothing #hide
 # and carries ~2 km of relief.
 #
 # The domain is a 2° × 2° box (0.5–2.5 °N × 113–115 °E, ≈ 220 × 220 km) at
-# 200 × 200 = 40 000 cells (≈ 1 km).
+# 200 × 200 = 40 000 cells (≈ 1 km resolution).
 #
 # The land is coupled through `AtmosphereLandModel` to an
 # [`ERA5PrescribedAtmosphere`](@ref) and [`ERA5PrescribedRadiation`](@ref): these
 # download the required ERA5 single-level fields (T₂ₘ, dewpoint, 10 m wind,
-# surface pressure, total precipitation, downwelling SW/LW) over the domain,
+# surface pressure, total precipitation, downwelling shortwave/longwave) over the domain,
 # derive specific humidity from the dewpoint, and convert ERA5's accumulated
-# radiation/precipitation to fluxes. They live on the ERA5 native grid; the
+# radiation/precipitation to fluxes. Since the raw datasets live on the ERA5 native grid, the
 # coupled model interpolates them onto the 1 km land exchange grid.
-#
-# ## Elevation downscaling
-#
-# `SlabLand` itself has no terrain knowledge, and ERA5's T₂ₘ is at its own
-# ~28 km grid-cell mean elevation. To make the 1 km grid show elevation-driven
-# temperature contrasts we apply a moist-environmental lapse-rate correction for
-# the elevation difference
-#
-#     Δz(λ, φ) = z_ETOPO(λ, φ) − z_ERA5(λ, φ)
-#
-# where `z_ERA5` is ERA5's own surface elevation (its surface geopotential ÷ g).
-# The correction `T ← T − Γ Δz` (Γ = 6.5 K km⁻¹) with a hydrostatic pressure
-# adjustment is applied at run time by the coupled model's state exchanger
-# ([`ElevationCorrection`](@ref)) — the prescribed atmosphere carries raw ERA5
-# fields, and the same correction would apply to a live atmosphere. Specific
-# humidity is conserved through the lift. Net effect: ~2 km of relief in the
-# Müller/Schwaner ranges → a > 10 K skin-temperature spread from topography
-# alone, on top of the synoptic + diurnal variability ERA5 already carries.
 #
 # ## CDS API credentials
 #
 # Downloading ERA5 fields requires CDS API credentials at `~/.cdsapirc`;
 # see <https://cds.climate.copernicus.eu/how-to-api>.
 
-# ## Domain — 2° × 2° Central Borneo box at ~1 km
+# ## Domain: 2° × 2° Central Borneo box at ~1 km resolution
 
 arch = CPU()
 
@@ -484,12 +465,11 @@ land_grid = LatitudeLongitudeGrid(arch; latitude, longitude,
 # ## ETOPO surface elevation
 #
 # `regrid_topography` regrids ETOPO 2022 onto the land grid as a positive land
-# surface elevation (the topographic counterpart of `regrid_bathymetry`). This
-# is the *desired* elevation the atmosphere is corrected to.
+# surface elevation. This is the elevation the atmosphere is corrected to.
 
 z_land = regrid_topography(land_grid; dataset = ETOPO2022())
 
-# ## ERA5 forcing — 5-day window
+# ## ERA5 forcing
 
 dataset    = ERA5HourlySingleLevel()
 dates      = DateTime(2020, 4, 1):Hour(1):DateTime(2020, 4, 5, 23)
@@ -505,16 +485,22 @@ atmosphere = ERA5PrescribedAtmosphere(arch; dataset, start_date, end_date, regio
 radiation = ERA5PrescribedRadiation(arch; dataset, start_date, end_date, region,
                                     land_surface = SurfaceRadiationProperties(0.18, 0.95))
 
-# ## Elevation correction
+# ## Elevation correction and downscaling
 #
-# ERA5's near-surface fields correspond to ERA5's own ~28 km grid-cell mean
-# elevation. [`ElevationCorrection`](@ref) lifts the regridded atmosphere from
-# that elevation (`z_era5`) to the 1 km ETOPO surface (`z_land`) with a moist
-# lapse-rate shift + hydrostatic pressure adjustment, applied by the state
-# exchanger every step (`q` conserved). `z_era5` is ERA5's model topography (its
-# surface geopotential ÷ g → metres); the gravitational acceleration and gas
-# constant the pressure adjustment needs are pulled from the atmosphere's
-# thermodynamics.
+# `SlabLand` itself has no terrain knowledge, and ERA5's near-surface fields
+# correspond to ERA5's own ~28 km grid-cell mean elevation. To make the 1 km grid
+# show elevation-driven temperature contrasts, [`ElevationCorrection`](@ref) lifts
+# the regridded atmosphere from that elevation (`z_era5`) to the 1 km ETOPO surface
+# (`z_land`) over the elevation difference
+#
+#     Δz(λ, φ) = z_ETOPO(λ, φ) − z_ERA5(λ, φ)
+#
+# with a moist-environmental lapse-rate shift `T ← T − Γ Δz` (Γ = 6.5 K km⁻¹) and a
+# hydrostatic pressure adjustment, applied by the state exchanger every step
+# (specific humidity `q` conserved through the lift). `z_era5` is ERA5's own model
+# topography (its surface geopotential ÷ g → metres); the gravitational
+# acceleration and gas constant the pressure adjustment needs are pulled from the
+# atmosphere's thermodynamics.
 
 z_meta = Metadatum(:topography; dataset, date = start_date, region)
 z_era5 = Field(z_meta, land_grid)
@@ -526,7 +512,7 @@ correction = ElevationCorrection(z_land, z_era5; lapse_rate = Γ_lapse)
 
 # ## Slab land
 #
-# Here the same stack is a real 1 m soil column (`slab_depth = 1`) with the deep
+# For this example, we simulate a 1 m soil column (`slab_depth = 1`) with the deep
 # reservoir restoring on a 12 h time scale. Under heavy equatorial rainfall,
 # the `InfiltrationCapacityRunoff` sheds rain that arrives faster than the
 # soil infiltration capacity rather than letting it all enter storage.
@@ -711,7 +697,7 @@ nothing #hide
 
 # ![](era5_forced_slab_land.mp4)
 
-# # Differentiating the ERA5 run — a pointwise ``∂T / ∂ν`` map
+# # Differentiating the ERA5 run: a pointwise porosity sensitivity map
 #
 # The forward run above is dependent on the land parameters. We now ask a
 # calibration-style question: **how sensitive is the skin temperature to the
@@ -723,28 +709,17 @@ nothing #hide
 #
 # Differentiating across the full 200 × 200 grid is computationally expensive, so we
 # restrict to a 20 × 20 sub-patch in the interior of the same Central Borneo
-# domain (≈ 1 km cells, land only) for demonstration purposes. The land model
-# matches the Stage 3 forward run — including the runtime `ElevationCorrection` —
-# with a single change: a **fixed-iteration** Monin–Obukhov solver
-# (`FixedIterations`) replaces the default tolerance-based `while` loop, for the
-# same XLA reason as the 0D case.
-#
-# The correction is materialized on the `ReactantState` grid the same way the
-# forcing is. Its two static elevation fields (the ETOPO surface and ERA5's own
-# topography) are loaded once on the CPU and handed to `ElevationCorrection` as
-# plain arrays; the exchange-grid `Δz` is then filled by a device-safe array write
-# rather than the host I/O a `Field` would trigger, so the correction runs inside
-# the compiled step and differentiates alongside the rest of the model.
+# domain (≈ 1 km cells, land only) for demonstration purposes. As beforer, the 
+# **fixed-iteration** Monin–Obukhov solver (`FixedIterations`) replaces the 
+# default tolerance-based `while` loop, for the same XLA reason as the 0D case.
 #
 # The pointwise reading of the map relies on columns being independent: the
 # hydrology has no lateral coupling (`InfiltrationCapacityRunoff` is a per-cell
 # sink whose cap depends only on precipitation, not on ν, and `NoDeepLiquidFlux`
-# closes the bottom), so with the scalar loss `L = Σ T(λ, φ)` the cross terms
+# closes the bottom), so with the scalar objective `L = Σ T(λ, φ)` the cross terms
 # vanish and `dL/dν(λ, φ) = ∂T(λ, φ)/∂ν(λ, φ)` is exactly the pointwise
 # sensitivity. A per-cell finite difference checks both the adjoint and this
 # column-independence.
-
-# ## Sub-patch domain — a 20 × 20 box in interior Borneo
 
 patch_latitude  = patch_lat_min, patch_lat_max = 1.4, 1.6
 patch_longitude = patch_lon_min, patch_lon_max = 113.9, 114.1
@@ -776,14 +751,14 @@ land_surface          = SurfaceRadiationProperties(0.18, 0.95)
 
 initial_water_storage = 100.0      # kg m⁻²
 
-# ## ERA5 → patch-grid in-memory forcing
+# ## Moving ERA5 forcing into memory
 #
 # A `DatasetBackend` ERA5 `FieldTimeSeries` does host file I/O and cannot be
-# time-stepped inside a compiled XLA loop, so we load ERA5 once on the CPU and
-# interpolate every hourly slice onto an in-memory `PrescribedAtmosphere` /
-# `PrescribedRadiation` on the patch grid.
+# time-stepped inside a compiled XLA loop, so we load the ERA5 required for
+#  the simulation length once on the CPU and interpolate every hourly slice 
+# onto an in-memory `PrescribedAtmosphere` / `PrescribedRadiation` on the patch grid.
 
-# Apply `op!(dst, src)` to every forcing field in turn, pairing a patch-grid
+# This is done by applying `op!(dst, src)` to every forcing field in turn, pairing a patch-grid
 # atmosphere / radiation destination with a matching source set.
 function map_forcing_slices!(op!, times, dst_atmos, dst_rad, src_atmos, src_rad)
     for n in eachindex(times)
@@ -818,7 +793,7 @@ function inmemory_forcing(land_grid)
     return (; atmos, rad, times)
 end
 
-# Move a CPU forcing set onto the `ReactantState` grid buffer-by-buffer.
+# Then, we move the CPU forcing set onto the `ReactantState` grid buffer-by-buffer.
 function transfer_forcing(grid, cpu)
     times = cpu.times
     atmos = PrescribedAtmosphere(grid, times; surface_layer_height, boundary_layer_height)
@@ -836,8 +811,8 @@ end
 
 # ## Model builder
 
-# Build a `(Center, Center, Nothing)` porosity field. `value` may be a scalar or a
-# function `(λ, φ) -> …`; `set!` evaluates it at the cell centers.
+# The porosity is represented with a `(Center, Center, Nothing)` field. `value` may be a scalar or a
+# function `(λ, φ) -> …` while `set!` evaluates it at the cell centers.
 function porosity_field_on(grid, value)
     ν = Field{Center, Center, Nothing}(grid)
     set!(ν, value)
@@ -852,17 +827,16 @@ function era5_slab_land_model(grid, forcing, porosity_field, porosity_scalar; ex
                                    exchanger_correction)
 end
 
-# Initialize the skin temperature from the ERA5 T₂ₘ at the first snapshot.
+# We initialize the skin temperature from the ERA5 T₂ₘ at the first snapshot.
 cold_start_T₀(grid, forcing) =
     (T₀ = Field{Center, Center, Nothing}(grid);
      interpolate!(T₀, forcing.atmos.temperature[1]); T₀)
 
 # ## Forward run
 #
-# A run on the patch under the real ERA5 forcing, taking the
-# porosity as a `Field` so the same routine drives both the nominal run and the
-# per-cell finite-difference perturbations. On the CPU `set!(model.land; M = …)`
-# seeds the storage and the per-cell saturation diagnostic through its kernel.
+# We now run the model on the patch under the real ERA5 forcing, taking the
+# porosity as a `Field`. The same routine drives both the nominal run and the
+# per-cell finite-difference perturbations.
 
 cpu_grid     = make_land_grid(CPU())
 cpu_forcing  = inmemory_forcing(cpu_grid)
@@ -902,7 +876,7 @@ end
 forward = run_forward(cpu_grid, cpu_forcing, T₀_cpu, cpu_porosity; collect_series = true)
 @info @sprintf("Forward done: ⟨T(t=%.2f d)⟩ = %.4f K", run_time / 86400, mean(forward.T_final))
 
-# ## A differentiable workflow
+# ## Building a differentiable workflow with Reactant and Enzyme
 #
 # Rebuild the patch on a `ReactantState` grid so that every array is an XLA buffer
 # and differentiate with the porosity field as the variable.
@@ -928,12 +902,12 @@ dν = Enzyme.make_zero(ν)
 
 # ## The objective
 #
-# `loss` copies the porosity field into the model and runs `nsteps` of the coupled time
-# step inside a `@trace` loop, and returns the summed final skin temperature. 
-# The per-cell gradient of this sum is the pointwise sensitivity (columns are independent),
-# so no rescaling is needed to compare with the finite-difference map.
+# `final_skin_temperature_era5` copies the porosity field into the model and runs
+# `nsteps` of the coupled time step inside a `@trace` loop, and returns the summed
+# final skin temperature. The per-cell gradient of this sum is the pointwise sensitivity
+# (columns are independent), so no rescaling is needed to compare with the finite-difference map.
 
-function loss(model, ν, T₀_field, M0, Δt, nsteps)
+function final_skin_temperature_era5(model, ν, T₀_field, M0, Δt, nsteps)
     parent(model.land.hydrology.porosity) .= parent(ν)
 
     set!(model.land.water_storage, M0)
@@ -955,11 +929,11 @@ end
 # Reverse mode with the model and the porosity *field* as `Duplicated` (primal +
 # shadow); the initial state, step, and loop length are `Const`.
 
-function grad_loss(model, dmodel, ν, dν, T₀_field, M0, Δt, nsteps)
+function grad_final_skin_temperature_era5(model, dmodel, ν, dν, T₀_field, M0, Δt, nsteps)
     parent(dν) .= 0
     _, L = Enzyme.autodiff(
         Enzyme.set_strong_zero(Enzyme.ReverseWithPrimal),
-        loss, Enzyme.Active,
+        final_skin_temperature_era5, Enzyme.Active,
         Enzyme.Duplicated(model, dmodel),
         Enzyme.Duplicated(ν, dν),
         Enzyme.Const(T₀_field),
@@ -972,7 +946,7 @@ end
 # ## Compilation and execution
 
 @info "Compiling differentiated ERA5 slab-land model — this may take a few minutes..."
-compiled_grad = Reactant.@compile raise=true raise_first=true sync=true grad_loss(
+compiled_grad = Reactant.@compile raise=true raise_first=true sync=true grad_final_skin_temperature_era5(
     model_ad, dmodel, ν, dν, T₀_ad, initial_water_storage, Δt, Nsteps)
 
 @info "Running gradient..."
