@@ -756,7 +756,10 @@ end
                                        q_formulation,
                                        land_state,
                                        Tₛ, qₛ)
-    FT  = eltype(grid)
+    # `typeof(Tₛ)`, not `eltype(grid)`: inside a Reactant-raised kernel the grid's
+    # scalar metrics are traced numbers, so `eltype(grid)` is a traced type that
+    # plain field values cannot be `convert`ed to.
+    FT  = typeof(Tₛ)
     energy    = interface_energy_state(i, j, grid, q_formulation, land_state)
     hydrology = interface_hydrology_state(i, j, grid, q_formulation, land_state)
     return AirLandInterfaceState(fluxes, velocities, convert(FT, Tₛ), convert(FT, qₛ), hydrology, energy)

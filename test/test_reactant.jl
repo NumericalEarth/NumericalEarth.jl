@@ -19,6 +19,11 @@ else
     Reactant.set_default_backend("cpu")
 end
 
+# LLVM's SLP vectorizer miscompiles Reactant-raised kernels (it emits a
+# vector-of-i1 `select` on scalar operands, which fails LLVM verification);
+# disable it, as in the issue-#403 MWE.
+Reactant.LLVM.clopts("-vectorize-slp=false", "-vectorize-loops=false")
+
 @testset "Reactant extension tests" begin
     arch = ReactantState()
     grid = LatitudeLongitudeGrid(arch;
@@ -79,11 +84,17 @@ end
         end
         update_state!(atmos)
         land = SlabLand(grid)
-        # FixedIterations gives the flux solver a fixed trip count so the compiled and eager
-        # paths trace identically — the default convergence criterion is a data-dependent
-        # `while` loop that would not.
-        fluxes = IC.default_atmosphere_land_fluxes(land, eltype(grid);
-                                                   solver_stop_criteria = IC.FixedIterations(8))
+        # These are the default atmosphere--land fluxes except for FixedIterations, which
+        # gives the flux solver a fixed trip count so the compiled and eager paths trace
+        # identically — the default convergence criterion is a data-dependent `while` loop
+        # that would not.
+        FT = eltype(grid)
+        fluxes = IC.SimilarityTheoryFluxes(FT;
+                                           stability_functions          = IC.atmosphere_land_stability_functions(FT),
+                                           momentum_roughness_length    = convert(FT, 0.1),
+                                           temperature_roughness_length = convert(FT, 0.01),
+                                           water_vapor_roughness_length = convert(FT, 0.01),
+                                           solver_stop_criteria         = IC.FixedIterations(8))
         interface = atmosphere_land_interface(grid, atmos, land; fluxes)
         return AtmosphereLandModel(atmos, land; atmosphere_land_interface = interface)
     end
