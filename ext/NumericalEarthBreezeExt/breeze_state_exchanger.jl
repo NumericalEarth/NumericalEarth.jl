@@ -171,13 +171,13 @@ function state_exchanger(parent_atmosphere, pˢᵗ, constants;
 
     prognostic = child_prognostic_field_time_series(parent_atmosphere)
     exchanger  = StateExchanger(parent_atmosphere, prognostic, constants, pˢᵗ, condensates)
-    exchange_state!(exchanger, first(parent_atmosphere.temperature.times))   # fill the initial window
+    exchange_state!(exchanger, first(parent_atmosphere.temperature.times); force=true)   # fill the initial window
     return exchanger
 end
 
 # Advance the derived 2-level window (and the parent's own FTS windows) to bracket `time`, recomputing
-# the derived prognostics only when the bracket moves.
-function exchange_state!(ex::StateExchanger, time)
+# the derived prognostics only when the bracket moves (`force` fills it once at construction).
+function exchange_state!(ex::StateExchanger, time; force=false)
     parent = ex.parent
     p = ex.prognostic
 
@@ -188,12 +188,17 @@ function exchange_state!(ex::StateExchanger, time)
 
     # Bracketing indices for `time` on the parent's time axis; cycle the derived window if it moved.
     _, n₁, _ = interpolating_time_indices(p.ρᵈ.time_indexing, p.ρᵈ.times, time)
-    if p.ρᵈ.backend.start != n₁
+    moved = p.ρᵈ.backend.start != n₁
+    if moved
         for fts in p
             fts.backend = new_backend(fts.backend, n₁, length(fts.backend))
         end
     end
 
-    compute_child_prognostics!(p, parent, ex.pˢᵗ, ex.constants, ex.condensates)
+    # The window's values are a pure function of the two resident parent levels, so they change only
+    # when the bracket moves; on every intra-interval child step the recompute would reproduce identical
+    # values. Skip it unless the bracket moved (or this is the initial fill) to spare the hot path two
+    # parent-grid kernels + halo fills per step.
+    (moved || force) && compute_child_prognostics!(p, parent, ex.pˢᵗ, ex.constants, ex.condensates)
     return nothing
 end
