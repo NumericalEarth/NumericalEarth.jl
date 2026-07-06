@@ -35,18 +35,6 @@ end
 # Oceananigans handles its own Reactant models, and keeping the compiled stepping loop lean.
 maybe_prepare_first_time_step!(::ReactantESM, Δt, callbacks) = nothing
 
-# The explicit first step refreshes the auxiliary/flux state from the (possibly `set!`-seeded)
-# prognostic fields, then advances one step. It is the Reactant analogue of the generic
-# first-step reconcile that `maybe_prepare_first_time_step!` performs eagerly, and it is meant
-# to be `@compile`d as a whole — e.g. Oceananigans' `r_run!` driver dispatches iteration 0 to
-# `first_time_step!` and later iterations to `time_step!`.
-#
-# Note we deliberately do *not* re-run the state-exchanger initialization here (`reconcile_state!`
-# does, via `@jit`, at construction). The exchanger's regridder fractional indices are geometry
-# only — fixed once the grids are known (see #394) — so `set!`ing prognostic state after
-# construction does not invalidate them. The first-compiled-step bug (#403) is purely the missing
-# flux/auxiliary refresh, which `update_state!` provides; adding the regridder kernel back into
-# every `first_time_step!` graph would be redundant work for no correctness gain.
 function first_time_step!(model::ReactantESM, Δt)
     update_state!(model)
     time_step!(model, Δt)
