@@ -8,9 +8,10 @@ using NumericalEarth.DataWrangling: longitude_interfaces, latitude_interfaces,
     dataset_variable_name, validate_dataset_coverage, metadata_filename,
     is_three_dimensional, default_inpainting, missing_value
 
-# The HDF5 tile read and the Earthdata download are gated (HDF5.jl is not a
-# dependency and credentials are required), so only the pure decode/broadband/
-# mask core and the dataset-interface logic are exercised here.
+# The real HDF5 tile read + Earthdata download live in the ArchGDAL extension and
+# need network + NASA Earthdata credentials, so only the pure decode/broadband/
+# mask core and the dataset-interface logic are exercised here (verified live
+# end-to-end separately; see future_plans/status/aster-ged_STATUS.md).
 
 @testset "ASTER GED decode scaling" begin
     # Mean scale is 0.001; fill −9999 → NaN (not −9.999).
@@ -79,20 +80,21 @@ end
 @testset "ASTER GED water masking" begin
     ε_map = fill(0.95, 3, 3)
 
-    # LWmap with a water pixel (default coding: water == 2, land == 1).
-    lwmap = fill(1, 3, 3)
+    # LWmap with a water pixel (verified coding: land == 0, water == 1, so the
+    # default ASTERGED_WATER_CODE == 1).
+    lwmap = fill(0, 3, 3)
     lwmap[2, 2] = ASTERGED_WATER_CODE
     masked = mask_water(ε_map, lwmap)
     @test isnan(masked[2, 2])
     @test masked[1, 1] == 0.95
     @test count(isnan, masked) == 1
 
-    # The coding is documented as ambiguous; verify the keyword controls it.
-    lwmap01 = fill(0, 3, 3)
-    lwmap01[1, 3] = 1
-    masked01 = mask_water(ε_map, lwmap01; water_code = 1)
-    @test isnan(masked01[1, 3])
-    @test count(isnan, masked01) == 1
+    # Verify the keyword overrides the default coding.
+    lwmap2 = fill(1, 3, 3)
+    lwmap2[1, 3] = 2
+    masked2 = mask_water(ε_map, lwmap2; water_code = 2)
+    @test isnan(masked2[1, 3])
+    @test count(isnan, masked2) == 1
 end
 
 @testset "ASTER GED uncertainty broadband" begin

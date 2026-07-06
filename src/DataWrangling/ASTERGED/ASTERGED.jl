@@ -7,7 +7,7 @@ using Oceananigans: Center
 using Oceananigans.DistributedComputations: @root
 
 using ..DataWrangling: DataWrangling, AbstractStaticDataset, Metadatum,
-                       BoundingBox, metadata_path, dataset_variable_name
+                       BoundingBox, Dataset, metadata_path, dataset_variable_name
 
 import Oceananigans
 
@@ -33,12 +33,13 @@ end
 const OGAWA_2003_SLOPES = (0.025, 0.057, 0.237, 0.333, 0.146)
 const OGAWA_2003_BROADBAND_COEFFICIENTS = collect(OGAWA_2003_SLOPES ./ sum(OGAWA_2003_SLOPES))
 
-# Land/Water map coding. The ASTER GED `/Land_Water_Map/LWmap` layer uses a
-# coding that differs between documentation sources (LP DAAC vs GEE: land/water
-# as 1/2 vs 0/1). The LP DAAC User Guide V3 codes water as 2 (land as 1); we
-# take that as the default and expose it as a keyword so it can be corrected
-# once verified empirically on a real tile.
-const ASTERGED_WATER_CODE = 2
+# Land/Water map coding. The ASTER GED `/Land_Water_Map/LWmap` layer coding is
+# documented ambiguously (LP DAAC User Guide vs GEE), so we verified it on a real
+# AG100 v003 tile: the `/Land_Water_Map/LWmap` values are 0 (land) and 1 (water)
+# — the GEE-style 0/1 coding, NOT the 1/2 coding. On the Grand Canyon tile
+# `AG100.v003.37.-112` the only non-zero cells (851 of 10⁶) trace the Colorado
+# River, confirming water = 1. Exposed as a keyword in case a future tile differs.
+const ASTERGED_WATER_CODE = 1
 
 #####
 ##### Dataset type
@@ -62,10 +63,12 @@ default [`OGAWA_2003_BROADBAND_COEFFICIENTS`](@ref)).
 Because ASTER GED is a fine regional-window raster, it is read in regional
 windows only: construct the `Metadatum` with a longitude/latitude `BoundingBox`.
 
-Reading the HDF5 tiles requires `HDF5.jl` and NASA Earthdata credentials; that
-path is gated behind a fallback error (see the module status report). The pure
-decode/broadband/water-mask core (`decode_mean`, `decode_sdev`,
-`broadband_emissivity`) needs neither and is unit-tested directly.
+Reading the HDF5 tiles requires `ArchGDAL` (with the HDF5 driver) and NASA
+Earthdata credentials (`EARTHDATA_USERNAME` / `EARTHDATA_PASSWORD`); that path
+lives in `ext/NumericalEarthArchGDALExt.jl` and is gated behind a fallback error
+when `ArchGDAL` is not loaded. The pure decode/broadband/water-mask core
+(`decode_mean`, `decode_sdev`, `broadband_emissivity`) needs neither and is
+unit-tested directly.
 
 Data source: https://www.earthdata.nasa.gov/data/catalog/lpcloud-ag100-003
 Reference: Hulley et al. (2015), GRL, doi:10.1002/2015GL065564.
@@ -190,7 +193,9 @@ end
     mask_water(field, land_water_map; water_code = ASTERGED_WATER_CODE)
 
 Return a copy of `field` with cells where `land_water_map == water_code` set to
-`NaN`. See [`ASTERGED_WATER_CODE`](@ref) for the water-coding caveat.
+`NaN`. The default `water_code = 1` matches the ASTER GED `/Land_Water_Map/LWmap`
+0/1 (land/water) coding verified on a real AG100 v003 tile; see
+[`ASTERGED_WATER_CODE`](@ref).
 """
 mask_water(field, land_water_map; water_code = ASTERGED_WATER_CODE) =
     ifelse.(land_water_map .== water_code, NaN, field)
@@ -202,8 +207,9 @@ mask_water(field, land_water_map; water_code = ASTERGED_WATER_CODE) =
 DataWrangling.available_variables(::ASTERGEDv3) = ASTERGED_dataset_variable_names
 DataWrangling.default_download_directory(::ASTERGEDv3) = download_ASTERGED_cache
 
-# Native raster is stored N→S from each tile's NW corner; flip to S→N.
-DataWrangling.reversed_latitude_axis(::ASTERGEDv3) = true
+# The regional NetCDF written by the download step (see the ArchGDAL extension)
+# already stores latitude south→north to match the model grid, so no flip here.
+DataWrangling.reversed_latitude_axis(::ASTERGEDv3) = false
 
 # Follow CopernicusDEM: the native lat/lon hull is global integer-degree tile
 # boundaries; `construct_native_grid` restricts it to the requested BoundingBox.
@@ -259,73 +265,113 @@ DataWrangling.missing_value(::ASTERGEDMetadatum) = -9999
 DataWrangling.dataset_variable_name(metadata::ASTERGEDMetadatum) =
     ASTERGED_dataset_variable_names[metadata.name]
 
+# Coordinate variable names in the regional NetCDF written by the download step.
+DataWrangling.longitude_name(::ASTERGEDMetadatum) = "lon"
+DataWrangling.latitude_name(::ASTERGEDMetadatum)  = "lat"
+
 Oceananigans.Fields.location(::ASTERGEDMetadatum) = (Center, Center, Center)
 
 #####
-##### Data retrieval (pure processing over a gated HDF5 read)
+##### Product identity + CMR granule discovery
 #####
+
+# NASA CMR short name / version for the ASTER GED product at each resolution.
+asterged_short_name(dataset::ASTERGEDv3) = asterged_short_name(Val(dataset.resolution))
+asterged_short_name(::Val{:AG100}) = "AG100"
+asterged_short_name(::Val{:AG1km}) = "AG1KM"
+asterged_version(::ASTERGEDv3) = "003"
+
+"""
+    asterged_cmr_granules_url(short_name, version, bbox; page_size = 200)
+
+Build the NASA CMR (Common Metadata Repository) granule-search URL for the ASTER
+GED product `short_name` / `version` whose 1°×1° HDF5 tiles intersect the `bbox`
+[`BoundingBox`](@ref) (encoded `W,S,E,N`). CMR search is anonymous; only the tile
+download itself needs Earthdata credentials.
+"""
+function asterged_cmr_granules_url(short_name, version, bbox::BoundingBox; page_size = 200)
+    west, east = bbox.longitude
+    south, north = bbox.latitude
+    return string("https://cmr.earthdata.nasa.gov/search/granules.json",
+                  "?short_name=", short_name,
+                  "&version=", version,
+                  "&bounding_box=", west, ",", south, ",", east, ",", north,
+                  "&page_size=", page_size)
+end
+
+#####
+##### Data retrieval — reads the regional NetCDF of raw digital numbers written
+##### by the download step and applies the pure decode / broadband / mask core,
+##### returning a physical `(Nx, Ny)` array on the regional lat/lon grid.
+#####
+
+# NetCDF variable names for the raw digital-number layers written by the download
+# step (see the ArchGDAL extension). Band index is the first dimension.
+const ASTERGED_MEAN_LAYER  = "emissivity_mean"
+const ASTERGED_SDEV_LAYER  = "emissivity_sdev"
+const ASTERGED_LWMAP_LAYER = "land_water_map"
 
 """
     retrieve_data(metadata::ASTERGEDMetadatum)
 
-Read the raw ASTER GED tiles for `metadata.region`, decode the digital numbers,
-collapse the five narrowband emissivities to a single broadband value (or
-propagate the per-band uncertainty for `:emissivity_uncertainty`), and mask out
-water. Returns a regional `(Nx, Ny)` array. The HDF5 read is gated (see
-[`read_asterged_region`](@ref)); the decode/broadband/mask steps are the pure,
-unit-tested core.
+Read the regional NetCDF of raw ASTER GED digital numbers for `metadata.region`
+(written by the download step; see [`asterged_tiles_to_netcdf`](@ref)), decode the
+digital numbers, collapse the five narrowband emissivities to a single broadband
+value (or propagate the per-band uncertainty for `:emissivity_uncertainty`), and
+mask out water. Returns a regional `(Nx, Ny)` array. The decode/broadband/mask
+steps are the pure, unit-tested core.
 """
 function DataWrangling.retrieve_data(metadata::ASTERGEDMetadatum)
-    raw = read_asterged_region(metadata)
+    path = metadata_path(metadata)
     coefficients = metadata.dataset.broadband_coefficients
 
+    ds = DataWrangling.Dataset(path)
+    land_water_map = ds[ASTERGED_LWMAP_LAYER][:, :]
+
     if metadata.name === :emissivity
-        emissivity = broadband_emissivity_map(decode_mean.(raw.mean_dn), coefficients)
-        return mask_water(emissivity, raw.land_water_map)
+        mean_dn = ds[ASTERGED_MEAN_LAYER][:, :, :]
+        close(ds)
+        emissivity = broadband_emissivity_map(decode_mean.(mean_dn), coefficients)
+        return mask_water(emissivity, land_water_map)
     elseif metadata.name === :emissivity_uncertainty
-        uncertainty = broadband_uncertainty_map(decode_sdev.(raw.sdev_dn), coefficients)
-        return mask_water(uncertainty, raw.land_water_map)
+        sdev_dn = ds[ASTERGED_SDEV_LAYER][:, :, :]
+        close(ds)
+        uncertainty = broadband_uncertainty_map(decode_sdev.(sdev_dn), coefficients)
+        return mask_water(uncertainty, land_water_map)
     else
+        close(ds)
         error("ASTERGEDv3 does not provide variable :$(metadata.name); " *
               "available variables: $(collect(keys(ASTERGED_dataset_variable_names)))")
     end
 end
 
-"""
-    read_asterged_region(metadata::ASTERGEDMetadatum)
-
-Read and mosaic the raw ASTER GED HDF5 tiles intersecting `metadata.region`,
-returning a NamedTuple of raw digital-number arrays
-`(; mean_dn, sdev_dn, land_water_map)` (`mean_dn`/`sdev_dn` shaped `(5, Nx, Ny)`,
-band index first; `land_water_map` shaped `(Nx, Ny)`).
-
-This is the credentials- and format-gated path. ASTER GED tiles are HDF5, which
-`HDF5.jl` reads directly, but `HDF5.jl` is intentionally not a dependency of
-NumericalEarth (see AGENTS.md rule 10), and the download needs NASA Earthdata
-credentials. This fallback therefore errors clearly; wire an actual reader (and
-CMR/Earthdata download) before using `Field(::ASTERGEDMetadatum, grid)`.
-"""
-read_asterged_region(metadata::ASTERGEDMetadatum) =
-    error("Reading ASTER GED requires HDF5.jl and NASA Earthdata credentials, " *
-          "which are not wired in this build. HDF5.jl cannot be added to the root " *
-          "Project.toml (AGENTS.md rule 10); implement the HDF5 read + Earthdata/CMR " *
-          "download separately. See future_plans/status/aster-ged_STATUS.md. " *
-          "The pure decode/broadband/mask core (decode_mean, decode_sdev, " *
-          "broadband_emissivity) works without this path.")
+#####
+##### Download — the real fetch (CMR discovery, Earthdata GET, HDF5 subdataset
+##### read → regional NetCDF of raw DN) lives in ext/NumericalEarthArchGDALExt.jl.
+##### The module entry points below fall back to a clear error when that extension
+##### is not loaded.
+#####
 
 function Downloads.download(metadata::ASTERGEDMetadatum)
     path = metadata_path(metadata)
     @root if !isfile(path)
-        download_asterged(metadata, path)
+        asterged_tiles_to_netcdf(metadata, path)
     end
     return path
 end
 
-# Gated: the real download resolves tiles via CMR and fetches them with Earthdata
-# credentials (.netrc / bearer token). Fallback errors when not wired.
-download_asterged(metadata, path) =
-    error("Downloading ASTER GED requires NASA Earthdata credentials and a CMR/HTTPS " *
-          "download path that is not wired in this build. " *
-          "See future_plans/status/aster-ged_STATUS.md.")
+# Implemented in ext/NumericalEarthArchGDALExt.jl once `ArchGDAL` is loaded.
+asterged_tiles_to_netcdf(metadata, path) =
+    error("Reading ASTER GED HDF5 tiles requires ArchGDAL (built with the HDF5 driver) " *
+          "and NASA Earthdata credentials. Load ArchGDAL with `using ArchGDAL`, and provide " *
+          "credentials via EARTHDATA_USERNAME / EARTHDATA_PASSWORD (register free at " *
+          "https://urs.earthdata.nasa.gov). See future_plans/status/aster-ged_STATUS.md. " *
+          "The pure decode/broadband/mask core (decode_mean, decode_sdev, " *
+          "broadband_emissivity) works without this path.")
+
+# Implemented in ext/NumericalEarthArchGDALExt.jl once `ArchGDAL` is loaded.
+earthdata_cmr_granules(short_name, version, bbox) =
+    error("Resolving ASTER GED granule URLs via CMR requires network access; this helper " *
+          "is provided by the ArchGDAL extension. Load it with `using ArchGDAL`.")
 
 end # module ASTERGED
