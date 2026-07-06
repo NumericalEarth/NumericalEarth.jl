@@ -102,6 +102,14 @@ function interface_kernel_parameters(grid)
     return kernel_parameters
 end
 
+# Per-cell value from a scalar constant or a 2-D `Field`. A `Number` (e.g. a
+# prescribed measurement height or the 600 m BL-height fallback) broadcasts to
+# every column; a `Field` (e.g. Breeze's per-column surface- or boundary-layer
+# height) is read at column `(i, j)`. Used by the atmosphere–surface flux kernels
+# to consume `surface_layer_height` / `h_bℓ` uniformly.
+@inline field_value(x::Number, i, j) = x
+@inline field_value(x, i, j) = @inbounds x[i, j, 1]
+
 # Turbulent fluxes
 include("roughness_lengths.jl")
 include("interface_states.jl")

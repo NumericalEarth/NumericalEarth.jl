@@ -1,5 +1,6 @@
 using Oceananigans.Grids: Center
 using Breeze.AtmosphereModels: thermodynamic_density
+using GPUArraysCore: @allowscalar
 using NumericalEarth.Atmospheres: AtmosphereThermodynamicsParameters
 using NumericalEarth.EarthSystemModels: component_model
 using NumericalEarth.EarthSystemModels.InterfaceComputations: interface_kernel_parameters
@@ -25,18 +26,52 @@ NumericalEarth.EarthSystemModels.thermodynamics_parameters(atmos::BreezeAtmosphe
 ##### Surface layer and boundary layer height
 #####
 
-# Height of the lowest atmospheric cell center (the "surface layer").
-# Note: for stretched grids on GPU, this may require allowscalar.
+# The MOST reference height is the lowest cell-center elevation, Δz(i,j,1)/2. On a
+# Breeze grid this is per column (stretched or terrain-following), so materialize it as
+# a 2-D field on the exchange grid — co-indexed with the atmosphere grid via the direct
+# index-copy in `interpolate_state!`. Filling on-device sidesteps scalar GPU indexing.
+# Built once and cached in `interfaces.properties` (the grid geometry is static).
+@kernel function _fill_surface_layer_height!(zref, atmos_grid)
+    i, j = @index(Global, NTuple)
+    @inbounds zref[i, j, 1] = Oceananigans.zspacing(i, j, 1, atmos_grid, Center(), Center(), Center()) / 2
+end
+
+function NumericalEarth.EarthSystemModels.surface_layer_height(atmosphere::BreezeAtmosphere, exchange_grid)
+    zref = Oceananigans.Field{Center, Center, Nothing}(exchange_grid)
+    arch = architecture(exchange_grid)
+    launch!(arch, exchange_grid, interface_kernel_parameters(exchange_grid),
+            _fill_surface_layer_height!, zref, atmosphere.grid)
+    return zref
+end
+
+NumericalEarth.EarthSystemModels.surface_layer_height(atmos::BreezeAtmosphereSim, exchange_grid) =
+    NumericalEarth.EarthSystemModels.surface_layer_height(component_model(atmos), exchange_grid)
+
+# Scalar contract for the generic (single-argument) API. This is off the coupled hot
+# path — the flux kernels read the cached 2-D field above — so the single host-side
+# device read at the first column is guarded with `@allowscalar` for GPU safety.
 function NumericalEarth.EarthSystemModels.surface_layer_height(atmosphere::BreezeAtmosphere)
     grid = atmosphere.grid
-    return Oceananigans.zspacing(1, 1, 1, grid, Center(), Center(), Center()) / 2
+    return @allowscalar Oceananigans.zspacing(1, 1, 1, grid, Center(), Center(), Center()) / 2
 end
 
 NumericalEarth.EarthSystemModels.surface_layer_height(atmos::BreezeAtmosphereSim) =
     NumericalEarth.EarthSystemModels.surface_layer_height(component_model(atmos))
 
-NumericalEarth.EarthSystemModels.boundary_layer_height(::BreezeAtmosphere)    = 600
-NumericalEarth.EarthSystemModels.boundary_layer_height(::BreezeAtmosphereSim) = 600
+# The boundary-layer height is diagnosed per column by the turbulence closure when it
+# provides one (e.g. Breeze's ScaleAdaptiveTKE writes z_i into its `zi` closure field);
+# return that live field so the flux kernels read it per column via `field_value`. Fall
+# back to a 600 m constant otherwise. Duck-typed on the closure fields so this works
+# across closures and Breeze versions. Not cached: z_i evolves each step.
+diagnosed_boundary_layer_height(closure_fields) = 600
+diagnosed_boundary_layer_height(closure_fields::NamedTuple{names}) where names =
+    :zi in names ? closure_fields.zi : 600
+
+NumericalEarth.EarthSystemModels.boundary_layer_height(atmosphere::BreezeAtmosphere) =
+    diagnosed_boundary_layer_height(atmosphere.closure_fields)
+
+NumericalEarth.EarthSystemModels.boundary_layer_height(atmos::BreezeAtmosphereSim) =
+    NumericalEarth.EarthSystemModels.boundary_layer_height(component_model(atmos))
 
 #####
 ##### ComponentExchanger: state fields for flux computations

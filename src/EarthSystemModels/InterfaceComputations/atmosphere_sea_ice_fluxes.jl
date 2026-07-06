@@ -7,7 +7,7 @@ atmosphere_sea_ice_data(coupled_model) = merge(atmosphere_sea_ice_fields(coupled
                                                (; h_bℓ = boundary_layer_height(coupled_model.atmosphere)))
 
 atmosphere_sea_ice_properties(coupled_model) = (; thermodynamics_parameters = thermodynamics_parameters(coupled_model.atmosphere),
-                                                  surface_layer_height = surface_layer_height(coupled_model.atmosphere),
+                                                  surface_layer_height = coupled_model.interfaces.properties.surface_layer_height,
                                                   gravitational_acceleration = coupled_model.interfaces.properties.gravitational_acceleration)
 
 atmosphere_sea_ice_radiation_state(coupled_model) = begin
@@ -106,7 +106,7 @@ end
 
     # Build thermodynamic and dynamic states in the atmosphere and interface.
     ℂᵃᵗ = atmosphere_properties.thermodynamics_parameters
-    zᵃᵗ = atmosphere_properties.surface_layer_height
+    zᵃᵗ = field_value(atmosphere_properties.surface_layer_height, i, j)
 
     local_atmosphere_state = (z = zᵃᵗ,
                               u = uᵃᵗ,
@@ -114,7 +114,7 @@ end
                               T = Tᵃᵗ,
                               p = pᵃᵗ,
                               q = qᵃᵗ,
-                              h_bℓ = atmosphere_state.h_bℓ)
+                              h_bℓ = field_value(atmosphere_state.h_bℓ, i, j))
 
     local_interior_state = (u=uˢⁱ, v=vˢⁱ, T=Tᵒᶜ, S=Sᵒᶜ, hi=hˢⁱ, hs=hˢⁿ, hc=hc)
 
