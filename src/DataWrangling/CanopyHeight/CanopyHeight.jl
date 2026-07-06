@@ -104,11 +104,13 @@ DataWrangling.default_download_directory(::CanopyHeightDataset) = download_Canop
 DataWrangling.longitude_interfaces(::CanopyHeightDataset) = (-180, 180)
 DataWrangling.latitude_interfaces(::CanopyHeightDataset)  = (-90, 90)
 
-# Global native pixel counts (only used to set the native cell size Δ = 360/Nx,
-# from which the regional window is bracketed). ETH is 10 m ≈ 1/12000°; GLAD is
-# 30 m = 0.00025° = 1/4000°.
-Base.size(::ETHCanopyHeight,  variable) = (4_320_000, 2_160_000, 1)
-Base.size(::GLADCanopyHeight, variable) = (1_440_000,   720_000, 1)
+# Global native pixel counts (only used to set the windowed-read target cell size
+# Δ = 360/Nx). GLAD is 30 m = 0.00025° = 1/4000°. ETH's native 10 m 3° COG tiles
+# are no longer served anonymously (see the host note below): the anonymously
+# readable ETH product is the pre-downsampled global mosaic, whose finest grid is
+# 0.001° (~111 m) → 360000 × 144000 over −60°…84° latitude, so 360/Nx = 0.001°.
+Base.size(::ETHCanopyHeight,  variable) = (360_000,   144_000, 1)
+Base.size(::GLADCanopyHeight, variable) = (1_440_000, 720_000, 1)
 
 dataset_prefix(::ETHCanopyHeight)  = "ETHCanopyHeight"
 dataset_prefix(::GLADCanopyHeight) = "GLADCanopyHeight"
@@ -317,13 +319,35 @@ Base.show(io::IO, r::RoughnessFromCanopyHeight) = print(io, summary(r))
 ##### Download (regional COG → NetCDF via the ArchGDAL extension)
 #####
 
-# ETH share host, 3°×3° COG tiles named by their SW-corner lat/lon token
-# (e.g. "N51E004"); GLAD 10°×10° GeoTIFF tiles named by their NW corner.
+# ETH share host, 3°×3° full-resolution (10 m) COG tiles named by their SW-corner
+# lat/lon token (e.g. "N51E004"). NOTE (verified 2026-07 against the live host):
+# this `.../version1/3deg_cogs/` path no longer serves the tiles anonymously — it
+# now 301-redirects to the dataset DOI landing page, so the 10 m tiles are only
+# reachable through the DOI record, not via `/vsicurl/`. The `eth_tile_*` helpers
+# below still encode the (unchanged, correct) 3° tile addressing for that archive.
 const ETH_COG_HOST = "https://share.phys.ethz.ch/~pf/nlangdata/" *
                      "ETH_GlobalCanopyHeight_10m_2020_version1/3deg_cogs"
 
-const GLAD_COG_HOST = "https://glad.umd.edu/users/Potapov/GLCLUC2020/" *
-                      "Forest_height_2019"
+# The anonymously readable ETH product is the pre-downsampled global mosaic
+# (single COG, EPSG:4326, 255 = no-data). The finest publicly served grid is
+# 0.001° (~111 m) — adequate for ~1 km land cells — and is windowed via /vsicurl.
+const ETH_DOWNSAMPLED_HOST = "https://share.phys.ethz.ch/~pf/nlangdata/" *
+                             "ETH_GlobalCanopyHeight_10m_2020_version1_downsampled"
+
+const ETH_MOSAIC_RESOLUTION = 0.001  # degrees; finest anonymously served ETH grid
+
+eth_mosaic_url() = "/vsicurl/" * ETH_DOWNSAMPLED_HOST *
+    "/ETH_GlobalCanopyHeight_10m_2020_mosaic_Map_0.001deg.tif"
+
+# GLAD Global Forest Canopy Height 2019 ships as seven continental 30 m GeoTIFF
+# mosaics (not one global file) on the GLAD geog host, named by a continent code:
+# `Forest_height_2019_<CONT>.tif`. NOTE (verified 2026-07): every candidate tile
+# URL returned HTTP 404 from this environment (the host resolves but rejects the
+# path), so the GLAD read is documented best-effort / unverified — ETH is primary.
+const GLAD_COG_HOST = "https://glad.geog.umd.edu/Potapov/Forest_height_2019"
+
+# Continent codes covering the GLAD tiling (used to pick the intersecting tile).
+const GLAD_CONTINENTS = ("NAM", "SAM", "EURA", "NAFR", "SAFR", "AUS", "SASIA", "NASIA")
 
 """
     eth_tile_token(longitude, latitude)
@@ -366,6 +390,42 @@ intersecting `region`, ready to be mosaicked and windowed by GDAL.
 eth_tile_urls(region::BoundingBox, layer) =
     ["/vsicurl/" * ETH_COG_HOST * "/ETH_GlobalCanopyHeight_10m_2020_" *
      token * "_" * layer * ".tif" for token in eth_tiles_in_bbox(region)]
+
+"""
+    glad_continent(longitude, latitude)
+
+Coarse map of a point to the GLAD continental-mosaic code (`"NAM"`, `"SAM"`,
+`"EURA"`, `"NAFR"`, `"SAFR"`, `"AUS"`, `"SASIA"`, `"NASIA"`). This is a
+best-effort classifier for picking the intersecting GLAD tile; the boundaries are
+approximate (GLAD's tiles follow continental outlines, not a lat/lon lattice).
+"""
+function glad_continent(longitude, latitude)
+    λ = longitude
+    φ = latitude
+    if λ < -30                                   # Americas
+        return φ >= 12 ? "NAM" : "SAM"
+    elseif λ < 60                                # Europe / Africa
+        return φ >= 12 ? (φ >= 36 ? "EURA" : "NAFR") : (φ >= -35 ? "NAFR" : "SAFR")
+    elseif λ < 120                               # W/Central Asia
+        return φ >= 30 ? (φ >= 55 ? "NASIA" : "EURA") : "SASIA"
+    else                                         # E Asia / Oceania
+        return φ >= 30 ? "NASIA" : (φ >= -10 ? "SASIA" : "AUS")
+    end
+end
+
+"""
+    glad_tile_urls(region::BoundingBox)
+
+`/vsicurl/`-prefixed URLs of the GLAD continental mosaics intersecting `region`
+(deduplicated over the bbox corners). Best-effort: see [`GLAD_COG_HOST`](@ref).
+"""
+function glad_tile_urls(region::BoundingBox)
+    λ₁, λ₂ = region.longitude
+    φ₁, φ₂ = region.latitude
+    continents = unique!([glad_continent(λ, φ) for λ in (λ₁, λ₂) for φ in (φ₁, φ₂)])
+    return ["/vsicurl/" * GLAD_COG_HOST * "/Forest_height_2019_" * c * ".tif"
+            for c in continents]
+end
 
 function Downloads.download(metadatum::CanopyHeightMetadatum)
     DataWrangling.validate_dataset_coverage(nothing, metadatum)

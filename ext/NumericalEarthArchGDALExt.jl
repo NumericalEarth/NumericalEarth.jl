@@ -6,6 +6,37 @@ using NumericalEarth: NumericalEarth
 
 const CanopyHeight = NumericalEarth.DataWrangling.CanopyHeight
 
+# Candidate CA-certificate bundles, most portable first: Julia's own bundled
+# `cert.pem`, then the common system locations (macOS/BSD, Debian/Ubuntu, RHEL).
+_ca_bundle_candidates() = (
+    normpath(Sys.BINDIR, "..", "share", "julia", "cert.pem"),
+    "/etc/ssl/cert.pem",
+    "/etc/ssl/certs/ca-certificates.crt",
+    "/etc/pki/tls/certs/ca-bundle.crt",
+)
+
+# Configure GDAL's /vsicurl HTTP driver for anonymous COG reads. GDAL_jll's
+# bundled libcurl has no CA store on some platforms (notably macOS), so an https
+# open fails with "HTTP response code ... : 0" (a transport-layer TLS failure,
+# not a 404). Point libcurl at a CA bundle via `CURL_CA_BUNDLE` (respected at
+# request time) unless the caller already set one; if no bundle is found, fall
+# back to skipping verification so anonymous public COGs still load. Restricting
+# the allowed extensions to `.tif` avoids probing sidecar files that don't exist.
+function configure_vsicurl!()
+    if !haskey(ENV, "CURL_CA_BUNDLE") && !haskey(ENV, "SSL_CERT_FILE")
+        ca = findfirst(isfile, _ca_bundle_candidates())
+        if ca === nothing
+            ArchGDAL.GDAL.cplsetconfigoption("GDAL_HTTP_UNSAFESSL", "YES")
+        else
+            ENV["CURL_CA_BUNDLE"] = _ca_bundle_candidates()[ca]
+        end
+    end
+    ArchGDAL.GDAL.cplsetconfigoption("CPL_VSIL_CURL_ALLOWED_EXTENSIONS", ".tif")
+    ArchGDAL.GDAL.cplsetconfigoption("GDAL_HTTP_MAX_RETRY", "3")
+    ArchGDAL.GDAL.cplsetconfigoption("GDAL_HTTP_RETRY_DELAY", "1")
+    return nothing
+end
+
 function NumericalEarth.DataWrangling.IBCAO.reproject_ibcao_to_netcdf(tiff_path, nc_path)
     ArchGDAL.read(tiff_path) do src
         # Warp from EPSG:3996 (Polar Stereographic) to EPSG:4326 (WGS84)
@@ -55,10 +86,13 @@ end
 # region bbox at the product's native resolution, returning the height array in
 # (Nx, Ny) order with latitude increasing south→north.
 function warp_canopy_layer(sources, longitude, latitude, resolution; resampling = "bilinear")
+    configure_vsicurl!()
     λ₁, λ₂ = longitude
     φ₁, φ₂ = latitude
-    return ArchGDAL.read(sources) do datasets
-        ArchGDAL.gdalwarp(datasets,
+    # Open each source COG/URL; `gdalwarp` mosaics + windows the whole vector.
+    datasets = [ArchGDAL.read(source) for source in sources]
+    try
+        return ArchGDAL.gdalwarp(datasets,
             ["-t_srs", "EPSG:4326",
              "-te",    string(λ₁), string(φ₁), string(λ₂), string(φ₂),
              "-tr",    string(resolution), string(resolution),
@@ -67,6 +101,10 @@ function warp_canopy_layer(sources, longitude, latitude, resolution; resampling 
             # GDAL returns (Nx, Ny) with latitude north→south; flip to south→north.
             data = Float32.(ArchGDAL.read(warped, 1))
             return reverse(data, dims = 2)
+        end
+    finally
+        for dataset in datasets
+            ArchGDAL.destroy(dataset)
         end
     end
 end
@@ -101,33 +139,36 @@ function write_canopy_netcdf(nc_path, longitude, latitude, layers)
     return nothing
 end
 
-# ETH: mosaic the intersecting 3° COG tiles for the Map (and SD) layers, mask the
-# no-data byte to NaN (keeping non-forest zeros), and write one regional NetCDF.
+# ETH: window the anonymously served pre-downsampled global mosaic (single COG),
+# mask the no-data byte (255) to NaN — keeping non-forest zeros — and write one
+# regional NetCDF. The full-resolution 10 m 3° tiles are no longer served
+# anonymously (they 301-redirect to the DOI), so only the `"Map"` layer of the
+# 0.001° mosaic is available here; `"SD"` (uncertainty) needs the DOI archive.
+# Nearest-neighbour resampling keeps the categorical 255 no-data byte exact so
+# `mask_eth` catches it (bilinear would blend 255 into a valid neighbour).
 function CanopyHeight.canopy_height_cog_to_netcdf(metadatum::CanopyHeight.ETHCanopyHeightMetadatum, nc_path)
-    dataset = metadatum.dataset
     region  = metadatum.region
-    resolution = 360 / Base.size(dataset, :canopy_height)[1]
+    resolution = CanopyHeight.ETH_MOSAIC_RESOLUTION
     missing_value = 255
 
-    layers = Dict{String, Matrix{Float32}}()
-    for (variable, layer) in CanopyHeight.ETHCanopyHeight_variable_names
-        sources = CanopyHeight.eth_tile_urls(region, layer)
-        raw = warp_canopy_layer(sources, region.longitude, region.latitude, resolution)
-        layers[layer] = CanopyHeight.mask_eth.(raw, missing_value)
-    end
+    sources = [CanopyHeight.eth_mosaic_url()]
+    raw = warp_canopy_layer(sources, region.longitude, region.latitude, resolution;
+                            resampling = "near")
+    layers = Dict("Map" => CanopyHeight.mask_eth.(raw, missing_value))
 
     write_canopy_netcdf(nc_path, region.longitude, region.latitude, layers)
     return nothing
 end
 
-# GLAD: window the forest-height mosaic, mask the categorical fill codes
-# (101/102/103) to NaN *before* any averaging, keep non-forest zeros.
+# GLAD: window the intersecting continental forest-height mosaic(s), mask the
+# categorical fill codes (101/102/103) to NaN *before* any averaging, keep
+# non-forest zeros. Best-effort host (see `CanopyHeight.GLAD_COG_HOST`).
 function CanopyHeight.canopy_height_cog_to_netcdf(metadatum::CanopyHeight.GLADCanopyHeightMetadatum, nc_path)
     dataset = metadatum.dataset
     region  = metadatum.region
     resolution = 360 / Base.size(dataset, :canopy_height)[1]
 
-    sources = ["/vsicurl/" * CanopyHeight.GLAD_COG_HOST * ".tif"]
+    sources = CanopyHeight.glad_tile_urls(region)
     # Nearest-neighbor read so the categorical fill codes (101/102/103) are never
     # blended before `mask_glad` converts them to NaN.
     raw = warp_canopy_layer(sources, region.longitude, region.latitude, resolution;
