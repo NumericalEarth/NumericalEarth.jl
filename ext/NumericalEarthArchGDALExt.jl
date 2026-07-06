@@ -66,17 +66,20 @@ end
 ##### (e.g. AppEEARS) NetCDF.
 #####
 
-# Which raw SDS layers to warp for a given metadatum, and the GDAL resampler.
-function modis_layers_and_resampler(metadatum)
+# Which raw SDS layers to warp for a given metadatum, paired with the GDAL
+# resampler each layer needs. Continuous fields (albedo, LAI/FPAR) are bilinear;
+# categorical or bit-packed fields (PFT class codes, the `FparLai_QC` bitfield)
+# MUST be nearest-neighbour — averaging class codes or QA bits is meaningless.
+function modis_layers_and_resamplers(metadatum)
     dataset = metadatum.dataset
     name = metadatum.name
     if dataset isa MCD43Albedo
         black_sky, white_sky = MODISLand.MCD43Albedo_variable_names[name]
-        return [black_sky, white_sky], "bilinear"
+        return [black_sky, white_sky], ["bilinear", "bilinear"]
     elseif dataset isa MCD12Q1
-        return [MODISLand.MCD12Q1_variable_names[name]], "near"
+        return [MODISLand.MCD12Q1_variable_names[name]], ["near"]
     else # LAI / FPAR products, plus the QA layer for masking
-        return [MODISLand.MODISLAI_variable_names[name], "FparLai_QC"], "bilinear"
+        return [MODISLand.MODISLAI_variable_names[name], "FparLai_QC"], ["bilinear", "near"]
     end
 end
 
@@ -97,7 +100,7 @@ function earthdata_download(url, path)
 end
 
 # Query CMR for the granule `.hdf` download URLs intersecting the metadatum's bbox.
-function NumericalEarth.DataWrangling.MODISLand.earthdata_cmr_granules(short_name, version, bbox; temporal = nothing)
+function NumericalEarth.DataWrangling.MODISLand.earthdata_cmr_granules(short_name, version, bbox::BoundingBox; temporal = nothing)
     url = cmr_granules_url(short_name, version, bbox; temporal)
     granule_urls = String[]
     mktempdir() do tmp
@@ -126,14 +129,14 @@ function modis_subdataset(hdf_path, layer)
     end
 end
 
-function NumericalEarth.DataWrangling.MODISLand.modis_granules_to_netcdf(metadatum, nc_path)
+function NumericalEarth.DataWrangling.MODISLand.modis_granules_to_netcdf(metadatum::MODISLand.MODISLandMetadatum, nc_path)
     bbox = metadatum.region
     (bbox isa BoundingBox && !isnothing(bbox.longitude) && !isnothing(bbox.latitude)) ||
         error("modis_granules_to_netcdf requires a BoundingBox region.")
 
     short_name = MODISLand.modis_short_name(metadatum.dataset)
     version = MODISLand.modis_version(metadatum.dataset)
-    layers, resampler = modis_layers_and_resampler(metadatum)
+    layers, resamplers = modis_layers_and_resamplers(metadatum)
 
     temporal = isnothing(metadatum.dates) ? nothing :
                begin
@@ -160,7 +163,7 @@ function NumericalEarth.DataWrangling.MODISLand.modis_granules_to_netcdf(metadat
         latitude = nothing
         layer_data = Dict{String, Matrix{Float64}}()
 
-        for layer in layers
+        for (layer, resampler) in zip(layers, resamplers)
             # Mosaic the tiles for this layer, then warp SIN → EPSG:4326 clipped to bbox.
             subdatasets = [modis_subdataset(hdf_path, layer) for hdf_path in hdf_paths]
             sources = [ArchGDAL.read(name) for name in subdatasets]

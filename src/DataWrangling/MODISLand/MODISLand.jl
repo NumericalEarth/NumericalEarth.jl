@@ -484,8 +484,10 @@ function DataWrangling.retrieve_data(metadata::MODISLAIMetadatum)
     ds = Dataset(path)
     decoded = metadata.name === :fpar ? decode_fpar.(ds[name][:, :]) : decode_lai.(ds[name][:, :])
     # Keep only main radiative-transfer retrievals if the QA layer was retained.
+    # `FparLai_QC` is a bit-packed byte stored as raw DN (Float64 in the NetCDF);
+    # round back to a UInt8 before the bitwise QA decode (`&`, `>>`).
     if haskey(ds, "FparLai_QC")
-        quality = ds["FparLai_QC"][:, :]
+        quality = round.(UInt8, ds["FparLai_QC"][:, :])
         decoded = ifelse.(lai_quality_ok.(quality), decoded, NaN)
     end
     close(ds)
