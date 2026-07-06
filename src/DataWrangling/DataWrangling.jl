@@ -361,6 +361,7 @@ include("IBCSO/IBCSO.jl")
 include("GEBCO/GEBCO.jl")
 include("IBCAO/IBCAO.jl")
 include("CopernicusDEM/CopernicusDEM.jl")
+include("LandSurfaceTemperature/LandSurfaceTemperature.jl")
 
 using .ETOPO
 using .ECCO
@@ -376,6 +377,7 @@ using .IBCSO
 using .GEBCO
 using .IBCAO
 using .CopernicusDEM
+using .LandSurfaceTemperature
 
 function dataset_modules()
     modules = Module[]
