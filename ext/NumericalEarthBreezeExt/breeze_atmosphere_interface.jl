@@ -50,17 +50,8 @@ end
 NumericalEarth.EarthSystemModels.surface_layer_height(atmos::BreezeAtmosphereSim, exchange_grid) =
     NumericalEarth.EarthSystemModels.surface_layer_height(component_model(atmos), exchange_grid)
 
-# No single-argument (scalar) method: a Breeze atmosphere on a stretched or
-# terrain-following grid has no well-defined domain-wide surface-layer height, so
-# callers must use the grid-aware `(atmosphere, exchange_grid)` form above. (The
-# generic scalar fallback in EarthSystemModels serves prescribed/Speedy atmospheres,
-# whose reference height is a fixed measurement height.)
-
-# The boundary-layer height is diagnosed per column by the turbulence closure when it
-# provides one (e.g. Breeze's ScaleAdaptiveTKE writes z_i into its `zi` closure field);
-# return that live field so the flux kernels read it per column via `field_value`. Fall
-# back to a 600 m constant otherwise. Duck-typed on the closure fields so this works
-# across closures and Breeze versions. Not cached: z_i evolves each step.
+# The boundary-layer height is diagnosed per column by the turbulence closure
+# at each step when it provides one. Fall back to a 600 m constant otherwise.
 diagnosed_boundary_layer_height(closure_fields) = 600
 diagnosed_boundary_layer_height(closure_fields::NamedTuple{names}) where names =
     :zi in names ? closure_fields.zi : 600
