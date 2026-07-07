@@ -19,10 +19,11 @@ else
     Reactant.set_default_backend("cpu")
 end
 
-# LLVM's SLP vectorizer miscompiles Reactant-raised kernels (it emits a
-# vector-of-i1 `select` on scalar operands, which fails LLVM verification);
-# disable it, as in the issue-#403 MWE.
-Reactant.LLVM.clopts("-vectorize-slp=false", "-vectorize-loops=false")
+# LLVM's SLP vectorizer still miscompiles Reactant-raised kernels (it emits a
+# vector-of-i1 `select` on scalar operands, which fails to lower to LLVM IR);
+# disable it. The companion `-vectorize-loops=false` is no longer needed with
+# the current Reactant/LLVM — SLP is the only pass that has to be turned off.
+Reactant.LLVM.clopts("-vectorize-slp=false")
 
 @testset "Reactant extension tests" begin
     arch = ReactantState()
@@ -76,11 +77,13 @@ end
     function build_atmosphere_land_model(arch)
         grid  = make_land_grid(arch)
         atmos = PrescribedAtmosphere(grid, [0.0, 1.0e8])
+        # `set!` on a whole `FieldTimeSeries` with a scalar has no method (only
+        # `set!(fts, value, n)` / `set!(fts[n], value)`), so seed each time slice.
         for n in 1:2
-            set!(atmos.velocities.u[n], 4.0)
-            set!(atmos.temperature[n], 290.0)
+            set!(atmos.velocities.u[n], 4)
+            set!(atmos.temperature[n], 290)
             set!(atmos.specific_humidity[n], 0.004)
-            set!(atmos.pressure[n], 101325.0)
+            set!(atmos.pressure[n], 101325)
         end
         update_state!(atmos)
         land = SlabLand(grid)
@@ -91,9 +94,9 @@ end
         FT = eltype(grid)
         fluxes = IC.SimilarityTheoryFluxes(FT;
                                            stability_functions          = IC.atmosphere_land_stability_functions(FT),
-                                           momentum_roughness_length    = convert(FT, 0.1),
-                                           temperature_roughness_length = convert(FT, 0.01),
-                                           water_vapor_roughness_length = convert(FT, 0.01),
+                                           momentum_roughness_length    = 0.1,
+                                           temperature_roughness_length = 0.01,
+                                           water_vapor_roughness_length = 0.01,
                                            solver_stop_criteria         = IC.FixedIterations(8))
         interface = atmosphere_land_interface(grid, atmos, land; fluxes)
         return AtmosphereLandModel(atmos, land; atmosphere_land_interface = interface)
