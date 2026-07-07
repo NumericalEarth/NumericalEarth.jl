@@ -346,8 +346,8 @@ dT_drain = Array(d𝒫̇)[1]   # K / (kg m⁻² s⁻¹)
 
 # ## Finite-difference check
 #
-# To check that our reverse-mode AD gives the right answer, we run a finite-difference 
-# approximation of the same derivative.
+# To check that our reverse-mode AD gives the right answer, we run a finite-difference
+# approximation of the same derivative. The two are approximately equal.
 
 function readout_skin_temperature(𝒫̇)
     model = dry_layer_model(grid, times, 𝒫̇)
