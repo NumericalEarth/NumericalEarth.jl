@@ -158,13 +158,13 @@ end
 ##### Surface-layer reference height: per-column and GPU-safe (issue #379)
 #####
 
-@testset "field_value accessor" begin
+@testset "state2dindex accessor" begin
     IC = NumericalEarth.EarthSystemModels.InterfaceComputations
-    @test IC.field_value(3.0, 1, 1) === 3.0            # scalar broadcasts to every column
-    @test IC.field_value(600, 5, 2) === 600            # Int (boundary-layer-height fallback)
+    @test IC.state2dindex(3.0, 1, 1) === 3.0            # scalar broadcasts to every column
+    @test IC.state2dindex(600, 5, 2) === 600            # Int (boundary-layer-height fallback)
     f = CenterField(RectilinearGrid(CPU(), size = (3, 3, 1), extent = (1, 1, 1)))
     set!(f, (x, y, z) -> 10x + y)
-    @test IC.field_value(f, 2, 3) == f[2, 3, 1]        # field read at column (i, j)
+    @test IC.state2dindex(f, 2, 3) == f[2, 3, 1]        # field read at column (i, j)
 end
 
 @testset "surface_layer_height on a stretched vertical grid (issue #379)" begin

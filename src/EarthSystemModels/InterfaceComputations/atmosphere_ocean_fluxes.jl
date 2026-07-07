@@ -104,7 +104,7 @@ end
 
     # Build thermodynamic and dynamic states in the atmosphere and interface.
     ℂᵃᵗ = atmosphere_properties.thermodynamics_parameters
-    zᵃᵗ = field_value(atmosphere_properties.surface_layer_height, i, j) # elevation of atmos variables relative to interface
+    zᵃᵗ = state2dindex(atmosphere_properties.surface_layer_height, i, j) # elevation of atmos variables relative to interface
 
     local_atmosphere_state = (z = zᵃᵗ,
                               u = uᵃᵗ,
@@ -112,7 +112,7 @@ end
                               T = Tᵃᵗ,
                               p = pᵃᵗ,
                               q = qᵃᵗ,
-                              h_bℓ = field_value(atmosphere_state.h_bℓ, i, j))
+                              h_bℓ = state2dindex(atmosphere_state.h_bℓ, i, j))
 
     local_interior_state = assemble_interior_state(i, j, kᴺ, grid, interior_state, ocean_properties, interface_properties.temperature_formulation)
 

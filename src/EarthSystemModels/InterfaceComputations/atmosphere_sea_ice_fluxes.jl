@@ -106,7 +106,7 @@ end
 
     # Build thermodynamic and dynamic states in the atmosphere and interface.
     ℂᵃᵗ = atmosphere_properties.thermodynamics_parameters
-    zᵃᵗ = field_value(atmosphere_properties.surface_layer_height, i, j)
+    zᵃᵗ = state2dindex(atmosphere_properties.surface_layer_height, i, j)
 
     local_atmosphere_state = (z = zᵃᵗ,
                               u = uᵃᵗ,
@@ -114,7 +114,7 @@ end
                               T = Tᵃᵗ,
                               p = pᵃᵗ,
                               q = qᵃᵗ,
-                              h_bℓ = field_value(atmosphere_state.h_bℓ, i, j))
+                              h_bℓ = state2dindex(atmosphere_state.h_bℓ, i, j))
 
     local_interior_state = (u=uˢⁱ, v=vˢⁱ, T=Tᵒᶜ, S=Sᵒᶜ, hi=hˢⁱ, hs=hˢⁿ, hc=hc)
 

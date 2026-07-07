@@ -122,7 +122,7 @@ end
 #####
 
 @inline land_saturation(i, j, grid, land_state) =
-    (saturation = convert(eltype(grid), field_value(land_state.saturation, i, j)),)
+    (saturation = convert(eltype(grid), state2dindex(land_state.saturation, i, j)),)
 
 # Hydrology state, per humidity formulation.
 @inline interface_hydrology_state(i, j, grid, ::BulkHumidity, land_state) = land_saturation(i, j, grid, land_state)
@@ -133,7 +133,7 @@ end
 
 # Energy state: only the reservoir (skin-humidity) model needs the bulk temperature.
 @inline interface_energy_state(i, j, grid, ::SkinHumidity, land_state) =
-    (temperature = convert(eltype(grid), field_value(land_state.T, i, j)),)
+    (temperature = convert(eltype(grid), state2dindex(land_state.T, i, j)),)
 @inline interface_energy_state(i, j, grid, interface_model, land_state) = (;) # default: pulls nothing
 
 @kernel function _compute_atmosphere_land_interface_state!(interface_fluxes,
@@ -164,10 +164,10 @@ end
 
     # Bulk land temperature serves as the initial skin-temperature guess.
     FT = eltype(grid)
-    Tₛ = convert(FT, field_value(land_state.T, i, j))
+    Tₛ = convert(FT, state2dindex(land_state.T, i, j))
 
     ℂᵃᵗ = atmosphere_properties.thermodynamics_parameters
-    zᵃᵗ = field_value(atmosphere_properties.surface_layer_height, i, j)
+    zᵃᵗ = state2dindex(atmosphere_properties.surface_layer_height, i, j)
 
     local_atmosphere_state = (z = zᵃᵗ,
                               u = uᵃᵗ,
@@ -175,7 +175,7 @@ end
                               T = Tᵃᵗ,
                               p = pᵃᵗ,
                               q = qᵃᵗ,
-                              h_bℓ = field_value(atmosphere_state.h_bℓ, i, j))
+                              h_bℓ = state2dindex(atmosphere_state.h_bℓ, i, j))
 
     # Surface velocities are zero for land.
     uₛ = zero(FT)
