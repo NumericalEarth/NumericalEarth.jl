@@ -1,6 +1,5 @@
 using Oceananigans.Grids: Center
 using Breeze.AtmosphereModels: thermodynamic_density
-using GPUArraysCore: @allowscalar
 using NumericalEarth.Atmospheres: AtmosphereThermodynamicsParameters
 using NumericalEarth.EarthSystemModels: component_model
 using NumericalEarth.EarthSystemModels.InterfaceComputations: interface_kernel_parameters
@@ -47,16 +46,11 @@ end
 NumericalEarth.EarthSystemModels.surface_layer_height(atmos::BreezeAtmosphereSim, exchange_grid) =
     NumericalEarth.EarthSystemModels.surface_layer_height(component_model(atmos), exchange_grid)
 
-# Scalar contract for the generic (single-argument) API. This is off the coupled hot
-# path — the flux kernels read the cached 2-D field above — so the single host-side
-# device read at the first column is guarded with `@allowscalar` for GPU safety.
-function NumericalEarth.EarthSystemModels.surface_layer_height(atmosphere::BreezeAtmosphere)
-    grid = atmosphere.grid
-    return @allowscalar Oceananigans.zspacing(1, 1, 1, grid, Center(), Center(), Center()) / 2
-end
-
-NumericalEarth.EarthSystemModels.surface_layer_height(atmos::BreezeAtmosphereSim) =
-    NumericalEarth.EarthSystemModels.surface_layer_height(component_model(atmos))
+# No single-argument (scalar) method: a Breeze atmosphere on a stretched or
+# terrain-following grid has no well-defined domain-wide surface-layer height, so
+# callers must use the grid-aware `(atmosphere, exchange_grid)` form above. (The
+# generic scalar fallback in EarthSystemModels serves prescribed/Speedy atmospheres,
+# whose reference height is a fixed measurement height.)
 
 # The boundary-layer height is diagnosed per column by the turbulence closure when it
 # provides one (e.g. Breeze's ScaleAdaptiveTKE writes z_i into its `zi` closure field);
