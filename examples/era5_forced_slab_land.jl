@@ -963,7 +963,8 @@ N           = prod(patch_size)
 # One reverse pass gave the whole map. We check it against a per-cell central
 # finite difference: perturb *every* cell's porosity by `±δν` (uniformly, so each
 # diagonal entry `∂T(λ,φ)/∂ν(λ,φ)` is recovered under column independence) and read
-# the local skin-temperature response.
+# the local skin-temperature response. The adjoint map and the finite-difference map
+# are approximately equal.
 
 δν = 0.001 * nominal_porosity
 ν_plus  = porosity_field_on(cpu_grid, 0); parent(ν_plus)  .= parent(cpu_porosity) .+ δν
