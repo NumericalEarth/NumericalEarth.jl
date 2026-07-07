@@ -26,13 +26,8 @@ NumericalEarth.EarthSystemModels.thermodynamics_parameters(atmos::BreezeAtmosphe
 ##### Surface layer and boundary layer height
 #####
 
-# The MOST reference height is the lowest cell-center elevation, Δz(i,j,1)/2. It is filled
-# per column on-device (co-indexed with the atmosphere grid via the direct index-copy in
-# `interpolate_state!`), which sidesteps the host-side scalar read into a device Δz array
-# (the GPU crash in #379). Built once and cached in `interfaces.properties` (grid geometry
-# is static). Only a terrain-following grid makes the first-cell height vary per column;
-# on any other grid (uniform or vertically stretched) it is horizontally uniform, so we
-# collapse it to a scalar (the consumer `field_value` handles either transparently).
+# The MOST reference height is the lowest cell-center elevation, Δz(i,j,1)/2,
+# filled per column on-device.
 @kernel function _fill_surface_layer_height!(zref, atmos_grid)
     i, j = @index(Global, NTuple)
     @inbounds zref[i, j, 1] = Oceananigans.zspacing(i, j, 1, atmos_grid, Center(), Center(), Center()) / 2
