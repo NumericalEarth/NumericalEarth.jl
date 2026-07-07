@@ -665,6 +665,102 @@ end
     return 2 * log((1 + z^2) / 2)
 end
 
+#####
+##### From Fairall et al. (1996), for unstable boundary layers: a blend of the
+##### Kansas-type Paulson (1970) form with the convective form of Grachev et al. (2000),
+#####
+#####     ψ = (1 - f) ψᵏ + f ψᶜ,    f = ζ² / (1 + ζ²).
+#####
+##### Used over land by the revised MM5 scheme of Jiménez et al. (2012).
+#####
+
+@kwdef struct FairallMomentumStabilityFunction{FT} <: AbstractStabilityFunction
+    a  :: FT = 16.0        # Kansas coefficient, x = (1 - aζ)^(1/4)
+    b  :: FT = π/2         # Kansas additive constant
+    aᶜ :: FT = 10.0        # convective coefficient, y = (1 - aᶜζ)^(1/3)
+    bᶜ :: FT = π/sqrt(3)   # convective additive constant
+end
+
+@inline function stability_profile(ψ::FairallMomentumStabilityFunction, ζ)
+    a  = ψ.a
+    b  = ψ.b
+    aᶜ = ψ.aᶜ
+    bᶜ = ψ.bᶜ
+    ζ⁻ = min(zero(ζ), ζ)
+
+    # Kansas part (Paulson 1970)
+    x  = sqrt(sqrt(1 - a * ζ⁻))
+    ψᵏ = 2 * log((1 + x) / 2) + log((1 + x^2) / 2) - 2 * atan(x) + b
+
+    # Convective part (Grachev et al. 2000); exact ζ^(1/3) per the paper,
+    # where WRF's implementation hardcodes the approximation **0.33
+    y   = cbrt(1 - aᶜ * ζ⁻)
+    rt3 = sqrt(oftype(y, 3))
+    ψᶜ  = 3 * log((y^2 + y + 1) / 3) / 2 - rt3 * atan((2y + 1) / rt3) + bᶜ
+
+    f = ζ⁻^2 / (1 + ζ⁻^2)
+    return (1 - f) * ψᵏ + f * ψᶜ
+end
+
+@kwdef struct FairallScalarStabilityFunction{FT} <: AbstractStabilityFunction
+    a  :: FT = 16.0        # Kansas coefficient, x = (1 - aζ)^(1/4)
+    aᶜ :: FT = 34.0        # convective coefficient, y = (1 - aᶜζ)^(1/3)
+    bᶜ :: FT = π/sqrt(3)   # convective additive constant
+end
+
+@inline function stability_profile(ψ::FairallScalarStabilityFunction, ζ)
+    a  = ψ.a
+    aᶜ = ψ.aᶜ
+    bᶜ = ψ.bᶜ
+    ζ⁻ = min(zero(ζ), ζ)
+
+    # Kansas part (Paulson 1970)
+    x  = sqrt(sqrt(1 - a * ζ⁻))
+    ψᵏ = 2 * log((1 + x^2) / 2)
+
+    # Convective part (Grachev et al. 2000); exact ζ^(1/3) per the paper,
+    # where WRF's implementation hardcodes the approximation **0.33
+    y   = cbrt(1 - aᶜ * ζ⁻)
+    rt3 = sqrt(oftype(y, 3))
+    ψᶜ  = 3 * log((y^2 + y + 1) / 3) / 2 - rt3 * atan((2y + 1) / rt3) + bᶜ
+
+    f = ζ⁻^2 / (1 + ζ⁻^2)
+    return (1 - f) * ψᵏ + f * ψᶜ
+end
+
+#####
+##### From Cheng and Brutsaert (2005), for stable boundary layers:
+#####
+#####     ψ = - a log[ζ + (1 + ζᵇ)^(1/b)]
+#####
+##### Milder than the linear form at strong stability, keeping fluxes from
+##### collapsing entirely; used over land by Jiménez et al. (2012).
+#####
+
+@kwdef struct ChengBrutsaertMomentumStabilityFunction{FT} <: AbstractStabilityFunction
+    a :: FT = 6.1
+    b :: FT = 2.5
+end
+
+@inline function stability_profile(ψ::ChengBrutsaertMomentumStabilityFunction, ζ)
+    a = ψ.a
+    b = ψ.b
+    ζ⁺ = max(zero(ζ), ζ)
+    return - a * log(ζ⁺ + (1 + ζ⁺^b)^(1/b))
+end
+
+@kwdef struct ChengBrutsaertScalarStabilityFunction{FT} <: AbstractStabilityFunction
+    a :: FT = 5.3
+    b :: FT = 1.1
+end
+
+@inline function stability_profile(ψ::ChengBrutsaertScalarStabilityFunction, ζ)
+    a = ψ.a
+    b = ψ.b
+    ζ⁺ = max(zero(ζ), ζ)
+    return - a * log(ζ⁺ + (1 + ζ⁺^b)^(1/b))
+end
+
 struct SplitStabilityFunction{S, U}
     stable :: S
     unstable :: U
@@ -723,6 +819,30 @@ function large_yeager_stability_functions(FT=Oceananigans.defaults.FloatType)
     stable   = LinearStableStabilityFunction{FT}()
     momentum = SplitStabilityFunction(stable, PaulsonMomentumStabilityFunction{FT}())
     scalar   = SplitStabilityFunction(stable, PaulsonScalarStabilityFunction{FT}())
+    return SimilarityScales(momentum, scalar, scalar)
+end
+
+"""
+    jimenez_stability_functions(FT = Float64)
+
+Stability functions from the revised MM5 surface layer scheme of
+[Jiménez et al. (2012)](https://doi.org/10.1175/MWR-D-11-00056.1), combining:
+
+- Unstable: Fairall et al. (1996) blend of the Kansas-type Paulson (1970)
+  and convective Grachev et al. (2000) forms
+- Stable: Cheng and Brutsaert (2005)
+
+Intended for land, as an opt-in alternative to the Large--Yeager default:
+
+```julia
+fluxes = SimilarityTheoryFluxes(FT; stability_functions = jimenez_stability_functions(FT))
+```
+"""
+function jimenez_stability_functions(FT=Oceananigans.defaults.FloatType)
+    momentum = SplitStabilityFunction(ChengBrutsaertMomentumStabilityFunction{FT}(),
+                                      FairallMomentumStabilityFunction{FT}())
+    scalar   = SplitStabilityFunction(ChengBrutsaertScalarStabilityFunction{FT}(),
+                                      FairallScalarStabilityFunction{FT}())
     return SimilarityScales(momentum, scalar, scalar)
 end
 
