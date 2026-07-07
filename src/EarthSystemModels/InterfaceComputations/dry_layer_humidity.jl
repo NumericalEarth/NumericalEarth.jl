@@ -36,8 +36,10 @@
 #####
 ##### The vapor source is saturated air at the front temperature
 ##### `Tᵉ = Tⁱⁿ + χ(Tˡᵃ − Tⁱⁿ)` with `χ = clip(δᵛ/ℓᵀ, 0, 1)`. The wet branch
-##### (`δᵛ ≤ δᵛ_min`) collapses to `qⁱⁿ = qᵛ⁺(Tⁱⁿ)` so the saturated-surface
-##### limit reproduces the existing similarity-theory behavior.
+##### (`δᵛ ≲ δᵛ_min`) collapses to `qⁱⁿ = qᵛ⁺(Tⁱⁿ)` so the saturated-surface
+##### limit reproduces the existing similarity-theory behavior; it hands over
+##### to the dry-layer series solution through a smooth logistic blend of
+##### width `wet_transition_width` (sharp switch when 0).
 #####
 ##### Pair this with `SkinTemperature(DiffusiveFlux(δ=ℓᵀ, κ=κᵀ))` on the
 ##### temperature side: the same `Λⁱⁿ = κᵀ/ℓᵀ` couples the bulk land temperature
@@ -128,30 +130,46 @@ Base.summary(::MillingtonQuirk)    = "MillingtonQuirk"
 
 """
     DryLayerVaporPistonVelocity(minimum_dry_layer_depth, molecular_diffusivity;
-                                tortuosity_model = ConstantTortuosity())
+                                tortuosity_model = ConstantTortuosity(),
+                                wet_transition_width = 5 * minimum_dry_layer_depth)
 
-Parameters of the dry-layer vapor piston velocity `wᵈ = Dᵛ_eff / max(δᵛ, δᵛ_min)`.
-The tortuosity model is a singleton type — [`ConstantTortuosity`](@ref) or
-[`MillingtonQuirk`](@ref) — dispatched on by
-`effective_vapor_diffusivity`.
+Parameters of the dry-layer vapor piston velocity `wᵈ = Dᵛ_eff / max(δᵛ, δᵛ_min)`,
+the reciprocal of the dry-surface-layer soil resistance `r_soil = δᵛ/Dᵛ_eff` of
+[Yamanaka et al. (1997)](@cite yamanaka1997surface) and
+[Swenson and Lawrence (2014)](@cite swenson2014dry). The tortuosity model is a
+singleton type — [`ConstantTortuosity`](@ref) or [`MillingtonQuirk`](@ref),
+after [Millington and Quirk (1961)](@cite millington1961permeability) —
+dispatched on by `effective_vapor_diffusivity`. The piston velocity feeds the
+[`DryLayerHumidity`](@ref) flux balance.
+
+`wet_transition_width` (m) is the width over which the saturated-skin (wet)
+humidity transitions to the dry-layer series solution: the two are combined with
+a logistic weight in `δᵛ` centered at `δᵛ_min + wet_transition_width/2`, so the
+transition is infinitely differentiable (see [Kavetski and Kuczera (2007)](@cite kavetski2007smoothing))
+and ≈99 % complete across `δᵛ ∈ [δᵛ_min, δᵛ_min + wet_transition_width]`. 
+Pass `0` to recover a sharp switch at `δᵛ = δᵛ_min`.
 """
 struct DryLayerVaporPistonVelocity{FT, T}
     minimum_dry_layer_depth :: FT
     molecular_diffusivity   :: FT
+    wet_transition_width    :: FT
     tortuosity_model        :: T
 end
 
 DryLayerVaporPistonVelocity(FT::Type = Oceananigans.defaults.FloatType;
                             minimum_dry_layer_depth,
                             molecular_diffusivity,
+                            wet_transition_width = 5 * minimum_dry_layer_depth,
                             tortuosity_model = ConstantTortuosity()) =
     DryLayerVaporPistonVelocity(convert(FT, minimum_dry_layer_depth),
                                 convert(FT, molecular_diffusivity),
+                                convert(FT, wet_transition_width),
                                 tortuosity_model)
 
 Base.summary(v::DryLayerVaporPistonVelocity) =
     string("DryLayerVaporPistonVelocity(δᵛ_min=", prettysummary(v.minimum_dry_layer_depth),
            ", Dᵛ₀=", prettysummary(v.molecular_diffusivity),
+           ", δᵛʷ=", prettysummary(v.wet_transition_width),
            ", tortuosity=", summary(v.tortuosity_model), ")")
 
 #####
@@ -331,7 +349,13 @@ end
     D    = Gᵉ * Δq + Jᵃ
     qⁱⁿ★ = ifelse(D == 0, qⁱⁿ⁻, (Gᵉ * qᵉ * Δq + Jᵃ * qᵃᵗ) / D)
 
-    # Wet branch: the front co-locates with the skin, which saturates.
+    # Wet branch: the front co-locates with the skin, which saturates. The wet
+    # limit is not the δᵛ → 0 limit of the series solution (Millington-Quirk
+    # tortuosity closes the Fick path entirely at saturation), so the branches
+    # are combined with a smooth logistic weight after Kavetski & Kuczera (2007).
     qⁱⁿ⁺ = saturation_specific_humidity(ℂᵃᵗ, Tⁱⁿ, pᵃᵗ, q.phase)
-    return convert(FT, ifelse(δᵛ <= δᵛmin, qⁱⁿ⁺, qⁱⁿ★))
+    δᵛʷ  = convert(FT, q.vapor_exchange.wet_transition_width)
+    z    = 10 * (δᵛ - δᵛmin - δᵛʷ / 2) / max(δᵛʷ, eps(FT))
+    σ    = 1 / (1 + exp(-z))
+    return convert(FT, qⁱⁿ⁺ + σ * (qⁱⁿ★ - qⁱⁿ⁺))
 end

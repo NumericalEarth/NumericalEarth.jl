@@ -26,11 +26,13 @@ function _make_call_args(q; Tˡᵃ, Tⁱⁿ, 𝒮, pᵃᵗ, qᵃᵗ, Tᵃᵗ, u�
 end
 
 @testset "DryLayerHumidity wet branch (𝒮 ≥ 𝒮ᶜ)" begin
+    # wet_transition_width = 0 pins the sharp switch so the wet limit is exact.
     q = DryLayerHumidity(;
         dry_layer_depth = StorageBasedDryLayerDepth(
             maximum_dry_layer_depth = 0.05, dry_layer_onset_saturation = 0.5, dry_layer_exponent = 2.0),
         vapor_exchange = DryLayerVaporPistonVelocity(
-            minimum_dry_layer_depth = 1e-4, molecular_diffusivity = 2.5e-5),
+            minimum_dry_layer_depth = 1e-4, molecular_diffusivity = 2.5e-5,
+            wet_transition_width = 0),
         thermal_exchange_depth = 0.10, porosity = 0.4)
 
     # 𝒮 = 0.5 ⇒ δᵛ = 0 ⇒ wet ⇒ qⁱⁿ = qᵛ⁺(Tⁱⁿ).
@@ -83,12 +85,13 @@ end
     Tˡᵃ = 290.0; Tⁱⁿ = 310.0; pᵃᵗ = 1.0e5
     qᵃᵗ = 1.0e-2; Tᵃᵗ = 295.0; u★ = 0.3; q★ = -2.0e-4; qⁱⁿ⁻ = 0.005
 
+    # wet_transition_width = 0 pins the sharp switch so the wet limit is exact.
     q = DryLayerHumidity(;
         dry_layer_depth = StorageBasedDryLayerDepth(
             maximum_dry_layer_depth = 0.05, dry_layer_onset_saturation = 0.5, dry_layer_exponent = 1.0),
         vapor_exchange = DryLayerVaporPistonVelocity(
             minimum_dry_layer_depth = 1e-4, molecular_diffusivity = 2.5e-5,
-            tortuosity_model = ConstantTortuosity()),
+            tortuosity_model = ConstantTortuosity(), wet_transition_width = 0),
         thermal_exchange_depth = 0.10, porosity = 0.4)
 
     ℂ, Ψₛ, Ψₐ, Ψᵢ, ℙₐ = _make_call_args(q; Tˡᵃ, Tⁱⁿ, 𝒮 = 0.0,
@@ -121,4 +124,51 @@ end
                                           u★=0.3, q★=-2.0e-4, qⁱⁿ⁻=0.005)
     qⁱⁿ★ = compute_interface_humidity(q, Tⁱⁿ, Ψₛ, Ψₐ, Ψᵢ, ℙₐ)
     @test isapprox(qⁱⁿ★, qᵃᵗ; atol = 1e-6)
+end
+
+@testset "DryLayerHumidity wet-transition blend" begin
+    # η = 1 ⇒ δᵛ = δᵛ_max (1 - 𝒮/𝒮ᶜ), so 𝒮 dials δᵛ directly.
+    make_q(wet_transition_width) = DryLayerHumidity(;
+        dry_layer_depth = StorageBasedDryLayerDepth(
+            maximum_dry_layer_depth = 0.05, dry_layer_onset_saturation = 0.5, dry_layer_exponent = 1.0),
+        vapor_exchange = DryLayerVaporPistonVelocity(;
+            minimum_dry_layer_depth = 1e-4, molecular_diffusivity = 2.5e-5,
+            tortuosity_model = ConstantTortuosity(), wet_transition_width),
+        thermal_exchange_depth = 0.10, porosity = 0.4)
+
+    sharp = make_q(0)
+    blend = make_q(1e-2)
+
+    Tˡᵃ = 290.0; Tⁱⁿ = 300.0; pᵃᵗ = 1.0e5
+    qᵃᵗ = 1.0e-2; Tᵃᵗ = 295.0; u★ = 0.3; q★ = -2.0e-4; qⁱⁿ⁻ = 0.005
+    function humidity(q, 𝒮)
+        _, Ψₛ, Ψₐ, Ψᵢ, ℙₐ = _make_call_args(q; Tˡᵃ, Tⁱⁿ, 𝒮, pᵃᵗ, qᵃᵗ, Tᵃᵗ, u★, q★, qⁱⁿ⁻)
+        return compute_interface_humidity(q, Tⁱⁿ, Ψₛ, Ψₐ, Ψᵢ, ℙₐ)
+    end
+
+    ℂ = AtmosphereThermodynamicsParameters(Float64)
+    qˢᵃᵗ = saturation_specific_humidity(ℂ, Tⁱⁿ, pᵃᵗ, AtmosphericThermodynamics.Liquid())
+
+    # The default width is 5 δᵛ_min.
+    default_exchange = DryLayerVaporPistonVelocity(
+        minimum_dry_layer_depth = 1e-4, molecular_diffusivity = 2.5e-5)
+    @test default_exchange.wet_transition_width ≈ 5e-4
+
+    # Sharp switch at 𝒮 ≥ 𝒮ᶜ: exact wet branch (logistic tail underflows).
+    @test isapprox(humidity(sharp, 0.5), qˢᵃᵗ; atol = 1e-15)
+
+    # Blended wet side (δᵛ = 0): the logistic tail admixes < 1 % of the series
+    # solution, which is itself within a few percent of qˢᵃᵗ there.
+    @test isapprox(humidity(blend, 0.5), qˢᵃᵗ; rtol = 1e-3)
+
+    # Deep into the dry side (δᵛ = 0.05 ≫ δᵛ_min + δᵛʷ) the series solution
+    # survives to rounding.
+    @test isapprox(humidity(blend, 0.0), humidity(sharp, 0.0); rtol = 1e-14)
+
+    # At the logistic center δᵛ = δᵛ_min + δᵛʷ/2 the weight is exactly 1/2, so
+    # the blended humidity is the midpoint of the wet and series values.
+    δᵛ  = 1e-4 + 1e-2 / 2
+    𝒮ᵐ  = 0.5 * (1 - δᵛ / 0.05)
+    qᵈʳʸ = humidity(sharp, 𝒮ᵐ)
+    @test isapprox(humidity(blend, 𝒮ᵐ), (qˢᵃᵗ + qᵈʳʸ) / 2; rtol = 1e-12)
 end
