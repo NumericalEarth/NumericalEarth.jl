@@ -193,6 +193,8 @@ end
 
 """
     hydrostatic_ocean_simulation(grid;
+                                 clock = Clock(grid),
+                                 stop_time = default_stop_time(grid, clock),
                                  Δt = estimate_maximum_Δt(grid),
                                  closure = default_ocean_closure(),
                                  tracers = (:T, :S),
@@ -211,7 +213,6 @@ end
                                  equation_of_state = TEOS10EquationOfState(; reference_density),
                                  boundary_conditions::NamedTuple = NamedTuple(),
                                  radiative_forcing = default_radiative_forcing(grid),
-                                 clock = nothing,
                                  warn = true,
                                  verbose = false)
 
@@ -258,6 +259,11 @@ defaults on a per-field basis.
 
 ## Keyword Arguments
 
+- `clock`: Clock for the underlying model. Defaults to `Clock(grid)`, a numeric clock starting at `time = 0`. 
+  Pass a `DateTime`-based clock to step the simulation in calendar time (e.g. when coupling).
+- `stop_time`: Stop time for the simulation. Defaults to `Inf` for numeric clocks, or 
+  `DateTime(9999, 12, 31, 23, 59, 59)` for `DateTime` clocks. On Reactant architectures it defaults to `nothing`, since 
+  Reactant does not support `stop_time`.
 - `Δt`: Timestep used by the `Simulation`. Defaults to the maximum stable timestep estimated from the `grid`.
 - `closure`: A turbulence or mixing closure. Defaults to `default_ocean_closure()`.
 - `tracers`: Tuple of tracer names. Defaults to `(:T, :S)`.
@@ -276,13 +282,12 @@ defaults on a per-field basis.
 - `equation_of_state`: Equation of state object. Defaults to TEOS-10 (`TEOS10EquationOfState`).
 - `boundary_conditions`: User-supplied boundary conditions; merged with defaults.
 - `radiative_forcing`: Additional temperature forcing; merged into `forcing`.
-- `clock`: Clock for the underlying model. Defaults to `nothing`, in which case the
-  model builds its own default clock. Pass a `Clock` (e.g. `Clock{Float64}(time=0)` or
-  a `DateTime`-based clock) to control the time type, for instance when coupling.
 - `warn`: If `true`, warnings are emitted for potentially unintended setups.
 - `verbose`: If `true`, prints additional setup information.
 """
 function hydrostatic_ocean_simulation(grid;
+                                      clock = Clock(grid),
+                                      stop_time = default_stop_time(grid, clock),
                                       Δt = estimate_maximum_Δt(grid),
                                       closure = default_ocean_closure(),
                                       tracers = (:T, :S),
@@ -301,7 +306,6 @@ function hydrostatic_ocean_simulation(grid;
                                       equation_of_state = TEOS10EquationOfState(; reference_density),
                                       boundary_conditions::NamedTuple = NamedTuple(),
                                       radiative_forcing = default_radiative_forcing(grid),
-                                      clock = nothing,
                                       warn = true,
                                       verbose = false)
 
@@ -413,10 +417,8 @@ function hydrostatic_ocean_simulation(grid;
         tracer_advection = merge(tracer_advection, tke_advection)
     end
 
-    # Only forward `clock` when supplied so the model keeps its own default otherwise.
-    clock_kw = isnothing(clock) ? NamedTuple() : (; clock)
-
     ocean_model = HydrostaticFreeSurfaceModel(grid;
+                                              clock,
                                               buoyancy,
                                               closure,
                                               biogeochemistry,
@@ -427,10 +429,9 @@ function hydrostatic_ocean_simulation(grid;
                                               free_surface,
                                               coriolis,
                                               forcing,
-                                              boundary_conditions,
-                                              clock_kw...)
+                                              boundary_conditions)
 
-    ocean = Simulation(ocean_model; Δt, verbose)
+    ocean = Simulation(ocean_model; Δt, stop_time, verbose)
 
     return ocean
 end
