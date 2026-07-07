@@ -26,6 +26,7 @@
 
 using NumericalEarth
 using Oceananigans
+using Oceananigans.Units          # `minutes` for the output schedule (not re-exported by Oceananigans)
 using Breeze
 using CopernicusClimateDataStore # activates NumericalEarthCopernicusClimateDataStoreExt (ERA5 downloads)
 using CloudMicrophysics          # nested_atmosphere_model's default microphysics → 1-moment mixed-phase
@@ -165,7 +166,7 @@ conjure_time_step_wizard!(simulation, IterationInterval(1); cfl = 0.7, max_Δt =
 # time via `indices` — so `θᵥ`/`|U|` land as surface fields and `w`/`qᵛ`/`qʳ` as 2-km-AGL fields.
 
 child = model.child
-k_aloft = searchsortedfirst(znodes(grid, Center()), 2000)
+k_aloft = searchsortedfirst(Array(znodes(grid, Center())), 2000)
 
 surface_fields = (θᵥ = VirtualPotentialTemperature(child),
                   U  = sqrt(child.velocities.u^2 + child.velocities.v^2))
@@ -228,7 +229,7 @@ times = θᵥ_series.times
 # read the `StateExchanger` prognostics here: that FTS is a 2-level window, so post-run per-frame reads
 # would alias to whatever the last `exchange_state!` left resident. ERA5's w ≈ −ω/(ρg); no rain.
 
-k_parent = searchsortedfirst(znodes(parent.grid, Center()), 2000)
+k_parent = searchsortedfirst(Array(znodes(parent.grid, Center())), 2000)
 constants = child.thermodynamic_constants
 pˢᵗ = child.dynamics.standard_pressure
 g = constants.gravitational_acceleration
