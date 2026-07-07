@@ -181,11 +181,6 @@ function exchange_state!(ex::StateExchanger, time; force=false)
     parent = ex.parent
     p = ex.prognostic
 
-    # Advance the parent's own (possibly limited-memory) FTS windows to bracket `time`.
-    for fts in extract_field_time_series(parent)
-        update_field_time_series!(fts, Time(time))
-    end
-
     # Position the 3-level window one level BELOW the bracket of `time` (= t + Δt from `time_step!`): the
     # step's start t can sit in the previous interval [n₁-1, n₁] while `time` sits in [n₁, n₁+1], so a
     # window spanning [n₁-1, n₁, n₁+1] keeps EVERY sub-stage query resident across a node crossing.
@@ -194,6 +189,16 @@ function exchange_state!(ex::StateExchanger, time; force=false)
     _, n₁, _ = interpolating_time_indices(p.ρᵈ.time_indexing, p.ρᵈ.times, time)
     N = length(p.ρᵈ.times)
     start = clamp(n₁ - 1, 1, max(1, N - 2))
+
+    # Advance the parent's own (possibly limited-memory) FTS windows to bracket the child window's LOWER
+    # edge `times[start]`, NOT `time` (= t + Δt). A parent bracketed on t+Δt holds a forward window from
+    # n₁ that EXCLUDES the n₁-1 (= start) level the 3-level child window needs, so on a window-move recompute
+    # `parent[start]` would be non-resident → garbage → a discrete NaN at the crossing. Bracketing
+    # `times[start]` keeps parent levels [start, start+1, start+2] resident (needs time_indices_in_memory ≥ 3).
+    for fts in extract_field_time_series(parent)
+        update_field_time_series!(fts, Time(p.ρᵈ.times[start]))
+    end
+
     moved = p.ρᵈ.backend.start != start
     if moved
         for fts in p
