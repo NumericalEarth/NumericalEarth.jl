@@ -1,5 +1,6 @@
 using Oceananigans.Grids: Center
 using Breeze.AtmosphereModels: thermodynamic_density
+using Breeze.TerrainFollowingDiscretization: TerrainFollowingGrid
 using NumericalEarth.Atmospheres: AtmosphereThermodynamicsParameters
 using NumericalEarth.EarthSystemModels: component_model
 using NumericalEarth.EarthSystemModels.InterfaceComputations: interface_kernel_parameters
@@ -25,11 +26,13 @@ NumericalEarth.EarthSystemModels.thermodynamics_parameters(atmos::BreezeAtmosphe
 ##### Surface layer and boundary layer height
 #####
 
-# The MOST reference height is the lowest cell-center elevation, Δz(i,j,1)/2. On a
-# Breeze grid this is per column (stretched or terrain-following), so materialize it as
-# a 2-D field on the exchange grid — co-indexed with the atmosphere grid via the direct
-# index-copy in `interpolate_state!`. Filling on-device sidesteps scalar GPU indexing.
-# Built once and cached in `interfaces.properties` (the grid geometry is static).
+# The MOST reference height is the lowest cell-center elevation, Δz(i,j,1)/2. It is filled
+# per column on-device (co-indexed with the atmosphere grid via the direct index-copy in
+# `interpolate_state!`), which sidesteps the host-side scalar read into a device Δz array
+# (the GPU crash in #379). Built once and cached in `interfaces.properties` (grid geometry
+# is static). Only a terrain-following grid makes the first-cell height vary per column;
+# on any other grid (uniform or vertically stretched) it is horizontally uniform, so we
+# collapse it to a scalar (the consumer `field_value` handles either transparently).
 @kernel function _fill_surface_layer_height!(zref, atmos_grid)
     i, j = @index(Global, NTuple)
     @inbounds zref[i, j, 1] = Oceananigans.zspacing(i, j, 1, atmos_grid, Center(), Center(), Center()) / 2
@@ -40,7 +43,13 @@ function NumericalEarth.EarthSystemModels.surface_layer_height(atmosphere::Breez
     arch = architecture(exchange_grid)
     launch!(arch, exchange_grid, interface_kernel_parameters(exchange_grid),
             _fill_surface_layer_height!, zref, atmosphere.grid)
-    return zref
+    # Per-column field only where terrain makes it vary; otherwise one uniform value,
+    # read off the device via a bulk host copy (no scalar GPU indexing).
+    if atmosphere.grid isa TerrainFollowingGrid
+        return zref
+    else
+        return first(Array(Oceananigans.interior(zref)))
+    end
 end
 
 NumericalEarth.EarthSystemModels.surface_layer_height(atmos::BreezeAtmosphereSim, exchange_grid) =
