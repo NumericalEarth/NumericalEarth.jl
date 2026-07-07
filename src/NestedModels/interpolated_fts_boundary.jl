@@ -130,8 +130,11 @@ end
 # `fill_halo_regions!` is sometimes invoked without a clock — most notably
 # during `set!`-time IC setup, where the kernel is launched with an empty
 # `args` tuple. Default `time = 0` in that case so dispatch succeeds.
-@inline clock_time(clock) = clock.time
-@inline clock_time(::Nothing) = 0.0
+# Return the boundary-evaluation time as the grid's float type so `getbc` is type-stable regardless of
+# the model precision (`clock.time` may be Float32; a bare `0.0` literal would force a Union). The
+# `Nothing` branch (no clock — `set!`-time IC halo fills) evaluates the source at t = 0.
+@inline clock_time(clock, grid) = convert(eltype(grid), clock.time)
+@inline clock_time(::Nothing, grid) = zero(eltype(grid))
 
 @inline function getbc(bc::Interpolated{1, S, LX, LY, LZ},
                        j::Integer, k::Integer, grid::AbstractGrid, clock=nothing, args...) where {S, LX, LY, LZ}
@@ -141,19 +144,19 @@ end
     # field this must be the face, not the half-cell-inside center; for a Face-normal
     # field (the normal velocity) this is unchanged (its location is already Face).
     X = node(i, j, k, grid, Face(), LY(), LZ())
-    return _query_source(bc.source, bc.source_grid, X, (LX(), LY(), LZ()), clock_time(clock))
+    return _query_source(bc.source, bc.source_grid, X, (LX(), LY(), LZ()), clock_time(clock, grid))
 end
 
 @inline function getbc(bc::Interpolated{2, S, LX, LY, LZ},
                        i::Integer, k::Integer, grid::AbstractGrid, clock=nothing, args...) where {S, LX, LY, LZ}
     j = _boundary_index(S, grid.Ny)
     X = node(i, j, k, grid, LX(), Face(), LZ())   # boundary face in the y-normal direction
-    return _query_source(bc.source, bc.source_grid, X, (LX(), LY(), LZ()), clock_time(clock))
+    return _query_source(bc.source, bc.source_grid, X, (LX(), LY(), LZ()), clock_time(clock, grid))
 end
 
 @inline function getbc(bc::Interpolated{3, S, LX, LY, LZ},
                        i::Integer, j::Integer, grid::AbstractGrid, clock=nothing, args...) where {S, LX, LY, LZ}
     k = _boundary_index(S, grid.Nz)
     X = node(i, j, k, grid, LX(), LY(), Face())   # boundary face in the z-normal direction
-    return _query_source(bc.source, bc.source_grid, X, (LX(), LY(), LZ()), clock_time(clock))
+    return _query_source(bc.source, bc.source_grid, X, (LX(), LY(), LZ()), clock_time(clock, grid))
 end

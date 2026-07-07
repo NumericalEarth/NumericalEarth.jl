@@ -23,7 +23,7 @@ using Oceananigans.Coriolis: SphericalCoriolis
 using Oceananigans.Fields: AbstractField, CenterField, Field, XFaceField, YFaceField,
                            compute!, interior, interpolate!, set!
 using Oceananigans.Forcings: Relaxation
-using Oceananigans.Grids: znode, λnodes, φnodes, Bounded, Center, Face, LatitudeLongitudeGrid
+using Oceananigans.Grids: znode, λnodes, φnodes, Center, Face
 using Oceananigans.TimeSteppers: update_state!
 using Oceananigans.Units: Time
 using GPUArraysCore: @allowscalar

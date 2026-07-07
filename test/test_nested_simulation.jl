@@ -382,18 +382,18 @@ end
     @test all(isfinite, Array(interior(atmos.model.dynamics.total_density)))
 end
 
-# The Breeze-ext `StateExchanger` holds the child prognostics as a 2-level FieldTimeSeries bracketing
-# the child clock (memory-O(1) in time); `exchange_state!` advances that window as the clock crosses a
-# parent time interval, recomputing the two resident levels from the parent. This guards the cycling:
-# the window `start` advances 1→2 crossing into the 2nd interval and back to 1, with finite + physical
-# prognostics throughout. Uses a synthetic `PrescribedAtmosphere` parent (no ERA5 download); here its
-# `pressure` is an FTS (the ERA5 parent uses a static `Field`) — the exchanger handles both.
-@testset "StateExchanger: 2-level window cycles across parent intervals on $(arch)" for arch in test_architectures
+# The Breeze-ext `StateExchanger` holds the child prognostics as a 3-level FieldTimeSeries bracketing
+# the child clock (memory-O(1) in time); `exchange_state!` positions that window one level below the
+# bracket of `t + Δt` so it spans a node-crossing step, recomputing the resident levels from the parent.
+# This guards the cycling: the window `start` advances as the clock crosses parent intervals and back,
+# with finite + physical prognostics throughout. Uses a synthetic `PrescribedAtmosphere` parent (no ERA5
+# download); here `pressure` is an FTS (the ERA5 parent uses a static `Field`) — the exchanger handles both.
+@testset "StateExchanger: 3-level window cycles across parent intervals on $(arch)" for arch in test_architectures
     ext = Base.get_extension(NumericalEarth, :NumericalEarthBreezeExt)
 
     parent_grid = RectilinearGrid(arch; size = (8, 8, 4), x = (-1.5, 1.5), y = (-1.5, 1.5),
                                   z = (0, 1), topology = (Bounded, Bounded, Bounded))
-    times  = [0.0, 1.0, 2.0]                                   # 3 levels ⇒ 2 intervals
+    times  = [0.0, 1.0, 2.0, 3.0, 4.0]                         # 5 levels ⇒ the 3-level window can cycle
     parent = PrescribedAtmosphere(parent_grid, times)
     set!(parent.temperature,       (x, y, z, t) -> 280 + t)    # time-varying ⇒ cycling changes values
     set!(parent.specific_humidity, (x, y, z, t) -> 0.005)
@@ -406,29 +406,80 @@ end
     prog      = exchanger.prognostic
     exchange  = NumericalEarth.NestedModels.exchange_state!
 
-    # Initial window brackets t = times[1] ⇒ start = 1.
+    # Initial fill at t = times[1] = 0 ⇒ window start = 1 (resident levels 1, 2, 3).
     @test prog.ρᵈ.backend.start == 1
     @test all(isfinite, Array(interior(prog.ρθ[1])))
 
-    # Cross into the 2nd interval [1, 2] ⇒ the derived window cycles forward to start = 2.
-    exchange(exchanger, 1.5)
+    # Cross to a later interval ⇒ the window cycles forward (start = clamp(n₁-1, 1, N-2)).
+    exchange(exchanger, 2.5)                                    # bracket n₁ = 3 ⇒ start = 2 (levels 2, 3, 4)
     @test prog.ρᵈ.backend.start == 2
-    @test all(isfinite, Array(interior(prog.ρθ[2])))
-    θ = Array(interior(prog.ρθ[2])) ./ Array(interior(prog.ρᵈ[2]))
+    @test all(isfinite, Array(interior(prog.ρθ[3])))
+    θ = Array(interior(prog.ρθ[3])) ./ Array(interior(prog.ρᵈ[3]))
     @test all(250 .< θ .< 400)                                 # physical potential temperature
 
-    # Cycle back to the 1st interval.
-    exchange(exchanger, 0.0)
+    # Cycle back toward the 1st interval.
+    exchange(exchanger, 0.5)                                    # bracket n₁ = 1 ⇒ start = 1
     @test prog.ρᵈ.backend.start == 1
 
-    # reconstruct_parent_state reads the parent's FULL-memory fields, not the 2-level window: with the
-    # derived window parked at start = 2, a reconstruction at t = 0 still recovers the parent's t = 0 state
+    # reconstruct_parent_state reads the parent's FULL-memory fields, not the windowed levels: with the
+    # window parked forward, a reconstruction at t = 0 still recovers the parent's t = 0 state
     # (θˡⁱ = T (pˢᵗ/p)^κ with T = 280 + t, condensate-free), proving no residency aliasing.
     reconstruct = NumericalEarth.NestedModels.reconstruct_parent_state
     κ = dry_air_gas_constant(constants) / constants.dry_air.heat_capacity
-    exchange(exchanger, 1.5)                        # park the derived window at start = 2
+    exchange(exchanger, 2.5)                                    # park the window forward
     θ₀ = Array(interior(reconstruct(exchanger, 0.0).θˡⁱ))
-    θ₂ = Array(interior(reconstruct(exchanger, 2.0).θˡⁱ))
+    θ₃ = Array(interior(reconstruct(exchanger, 3.0).θˡⁱ))
     @test all(θ₀ .≈ 280 * (1e5 / 9e4)^κ)
-    @test all(θ₂ .≈ 282 * (1e5 / 9e4)^κ)
+    @test all(θ₃ .≈ 283 * (1e5 / 9e4)^κ)
+end
+
+# Temporal-seam correctness of the ON-THE-FLY (windowed FTS) interpolation the child's boundary
+# conditions + Davies relaxation actually query. `NestedModel.time_step!` refreshes the exchanger at the
+# step END (`t + Δt`), so on a step that CROSSES a parent node the derived 2-level window sits at
+# `[node, node+1]` while the child's start-of-step sub-stages sample at `t < node` — a start-side query
+# one interval BELOW the resident window. That query must return FINITE, PHYSICAL values (a clean
+# extrapolation/clamp toward the window edge), NOT window-eviction/wrap garbage. This is the exact
+# hourly-seam the ERA5 nest crosses every hour; the reconstruct_parent_state test above covers the
+# full-memory diagnostic path, but the RUNTIME path is the windowed `fts[Time(t)]` probed here.
+@testset "StateExchanger: windowed query across a parent node is finite + physical on $(arch)" for arch in test_architectures
+    ext = Base.get_extension(NumericalEarth, :NumericalEarthBreezeExt)
+
+    parent_grid = RectilinearGrid(arch; size = (8, 8, 4), x = (-1.5, 1.5), y = (-1.5, 1.5),
+                                  z = (0, 1), topology = (Bounded, Bounded, Bounded))
+    times  = [0.0, 1.0, 2.0, 3.0, 4.0]                         # 5 levels ⇒ the 3-level window is a strict subset
+    parent = PrescribedAtmosphere(parent_grid, times)
+    set!(parent.temperature,       (x, y, z, t) -> 280 + 5t)   # linear in t ⇒ a correct interpolation is exact
+    set!(parent.specific_humidity, (x, y, z, t) -> 0.005)
+    set!(parent.velocities.u,      (x, y, z, t) -> 1.0)
+    set!(parent.velocities.v,      (x, y, z, t) -> 0.0)
+    set!(parent.pressure,          (x, y, z, t) -> 9.0e4)
+
+    constants = ThermodynamicConstants()
+    exchanger = ext.state_exchanger(parent, 1.0e5, constants; condensates = (qᶜˡ = nothing, qᶜⁱ = nothing))
+    prog      = exchanger.prognostic
+    exchange  = NumericalEarth.NestedModels.exchange_state!
+    κ = dry_air_gas_constant(constants) / constants.dry_air.heat_capacity
+    θtrue(t) = (280 + 5t) * (1e5 / 9e4)^κ
+
+    # Baseline: an in-window query is correct.
+    exchange(exchanger, 0.5)                                    # bracket n₁ = 1 ⇒ start = 1 (levels 1,2,3)
+    @test prog.ρᵈ.backend.start == 1
+    θin = Array(interior(prog.ρθ[Time(0.5)])) ./ Array(interior(prog.ρᵈ[Time(0.5)]))
+    @test all(isapprox.(θin, θtrue(0.5); rtol = 1e-4))
+
+    # CROSSING STEP over the node at t = 2.0: bracket t+Δt = 2.1 ⇒ window advances to start = 2 (resident
+    # levels 2,3,4 = times [1,2,3]). The child's start-of-step query at t = 1.9 (< node) sits one interval
+    # BELOW where a 2-level window would sit — with a 2-level window that read a stale/wrong target (the
+    # hourly-seam kick); the 3-level window keeps [1.9's bracket] resident so the target stays correct.
+    exchange(exchanger, 2.1)
+    @test prog.ρᵈ.backend.start == 2
+
+    ρθq = Array(interior(prog.ρθ[Time(1.9)]))
+    ρdq = Array(interior(prog.ρᵈ[Time(1.9)]))
+    @test all(isfinite, ρθq)                    # a 2-level window would read an evicted level here
+    @test all(isfinite, ρdq)
+    @test all(0.05 .< ρdq .< 2.0)               # physical dry density (not a stale/aliased value)
+    θq = ρθq ./ ρdq
+    @test all(250 .< θq .< 400)                 # physical θ
+    @test all(isapprox.(θq, θtrue(1.9); rtol = 1e-4))   # linear-in-t ⇒ exact; a stale target would miss by ~5 K
 end

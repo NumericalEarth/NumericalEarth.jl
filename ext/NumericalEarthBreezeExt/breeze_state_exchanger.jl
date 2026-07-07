@@ -5,7 +5,7 @@
 # The child (Breeze `CompressibleDynamics`) prognostic variables — dry density `ρᵈ`, momentum densities
 # `ρu`/`ρv`, potential-temperature density `ρθ`, and vapor density `ρqᵛ` — are computed from the raw
 # parent (ERA5) specific state *on the parent grid* and stored as a `FieldTimeSeries` holding just the
-# **two time levels bracketing the child's clock** (memory-O(1) in time). A downstream child boundary
+# **three time levels bracketing the child's clock** (memory-O(1) in time). A downstream child boundary
 # condition / forcing then interpolates these precomputed prognostics in space + time. Computing the
 # nonlinear combines on the dense parent grid first (then interpolating) is both cheaper — once per
 # parent time level rather than per child node per RK stage — and more faithful than interpolating the
@@ -20,7 +20,7 @@
 
 using Oceananigans.Fields: Center, ZeroField, AbstractField
 using Oceananigans.BoundaryConditions: fill_halo_regions!
-using Oceananigans.OutputReaders: FieldTimeSeries, Cyclical, AbstractInMemoryBackend, FlavorOfFTS,
+using Oceananigans.OutputReaders: FieldTimeSeries, Cyclical, AbstractInMemoryBackend,
                                   time_indices, interpolating_time_indices, extract_field_time_series
 using Oceananigans.Units: Time
 using Adapt: Adapt
@@ -28,7 +28,7 @@ import Oceananigans.OutputReaders: new_backend, update_field_time_series!
 import NumericalEarth.NestedModels: exchange_state!, total_density, reconstruct_parent_state
 
 #####
-##### A 2-level in-memory backend whose resident window is filled by the StateExchanger (not by `set!`).
+##### A 3-level in-memory backend whose resident window is filled by the StateExchanger (not by `set!`).
 ##### `update_field_time_series!` is a no-op so the child's `update_model_field_time_series!` never cycles
 ##### it — the exchanger is the sole owner of the window (advancing it as the child clock crosses a parent
 ##### interval). The backend is isbits, so it survives `Adapt` to the device unchanged.
@@ -79,7 +79,7 @@ end
 @inline source_snapshot(::Nothing, n) = ZeroField()
 
 # Full-memory snapshot at `Time(time)` for the parity reconstruction (`reconstruct_parent_state`): an FTS
-# yields its time-interpolated snapshot over its *whole* series (not a 2-level window), a static
+# yields its time-interpolated snapshot over its *whole* series (not a 3-level window), a static
 # `AbstractField` (the pressure-level coordinate) is time-constant, and `nothing` ⇒ a literal `0` (an
 # absent condensate). Unlike `source_snapshot`'s `ZeroField` (indexed inside a kernel), this feeds
 # `breeze_prognostic_state`'s AbstractOperations, where a scalar `0` composes but a grid-less `ZeroField`
@@ -89,17 +89,17 @@ end
 @inline full_snapshot(::Nothing, time) = 0
 
 # Allocate the child-prognostic `FieldTimeSeries` NamedTuple on the *parent* grid: Center-located, over
-# the parent's time axis + indexing, but holding only 2 resident levels (`PrognosticStateBackend`).
+# the parent's time axis + indexing, but holding only 3 resident levels (`PrognosticStateBackend`).
 function child_prognostic_field_time_series(parent_atmosphere)
     grid  = parent_atmosphere.temperature.grid
     times = parent_atmosphere.temperature.times
     build() = FieldTimeSeries{Center, Center, Center}(grid, times;
-                                                      backend = PrognosticStateBackend(1, 2),
+                                                      backend = PrognosticStateBackend(1, 3),
                                                       time_indexing = Cyclical())
     return (ρᵈ = build(), ρu = build(), ρv = build(), ρθ = build(), ρqᵛ = build())
 end
 
-# Fill the derived FTS's resident window (the 2 levels bracketing the child clock) with one fused
+# Fill the derived FTS's resident window (the 3 levels bracketing the child clock) with one fused
 # `launch!` per level, reading the parent at the matching resident time index.
 function compute_child_prognostics!(prognostic, parent_atmosphere, pˢᵗ, constants, condensates)
     grid = parent_atmosphere.temperature.grid
@@ -111,7 +111,7 @@ function compute_child_prognostics!(prognostic, parent_atmosphere, pˢᵗ, const
     ℒˡ  = constants.liquid.reference_latent_heat
     ℒⁱ  = constants.ice.reference_latent_heat
 
-    for n in time_indices(prognostic.ρᵈ)   # the 2 resident bracketing indices
+    for n in time_indices(prognostic.ρᵈ)   # the 3 resident bracketing indices
         launch!(arch, grid, :xyz, _compute_child_prognostics!,
                 prognostic.ρᵈ[n], prognostic.ρu[n], prognostic.ρv[n], prognostic.ρθ[n], prognostic.ρqᵛ[n],
                 parent_atmosphere.temperature[n], parent_atmosphere.specific_humidity[n],
@@ -129,17 +129,17 @@ function compute_child_prognostics!(prognostic, parent_atmosphere, pˢᵗ, const
 end
 
 #####
-##### StateExchanger: owns the 2-level derived FTS and refreshes/cycles them from the parent.
+##### StateExchanger: owns the 3-level derived FTS and refreshes/cycles them from the parent.
 #####
 #
 # Held by `NestedModel` (as `nested.exchanger`). `NestedModel.time_step!`/`update_state!` call
 # `exchange_state!` before the child steps: it advances the parent's own FTS windows to bracket the
 # child clock, and — when the child clock has crossed into a new parent interval — cycles the derived
-# 2-level window forward and recomputes it. The name is direction-neutral for eventual two-way nesting.
+# 3-level window forward and recomputes it. The name is direction-neutral for eventual two-way nesting.
 
 struct StateExchanger{P, Pr, C, S, Q}
     parent       :: P    # the parent PrescribedAtmosphere (raw ERA5 state)
-    prognostic   :: Pr   # NamedTuple of derived child-prognostic FTS on the parent grid (2 resident levels)
+    prognostic   :: Pr   # NamedTuple of derived child-prognostic FTS on the parent grid (3 resident levels)
     constants    :: C
     pˢᵗ          :: S
     condensates  :: Q    # NamedTuple (qᶜˡ, qᶜⁱ); entries may be `nothing` (⇒ `ZeroField`)
@@ -153,7 +153,7 @@ total_density(ex::StateExchanger, n=1) = ex.prognostic.ρᵈ[n] + ex.prognostic.
 
 # Reconstruct the child prognostic state (ρ, θˡⁱ, qᵗ) at `time` from the parent's FULL-memory raw fields
 # via `breeze_prognostic_state`, using the exchanger's stored constants / pˢᵗ / condensate sources. Unlike
-# indexing the derived 2-level window, this is exact for any `time` (no residency aliasing) — the intended
+# indexing the derived 3-level window, this is exact for any `time` (no residency aliasing) — the intended
 # path for post-run diagnostics/animation that query arbitrary times.
 function reconstruct_parent_state(ex::StateExchanger, time)
     parent = ex.parent
@@ -175,7 +175,7 @@ function state_exchanger(parent_atmosphere, pˢᵗ, constants;
     return exchanger
 end
 
-# Advance the derived 2-level window (and the parent's own FTS windows) to bracket `time`, recomputing
+# Advance the derived 3-level window (and the parent's own FTS windows) to bracket `time`, recomputing
 # the derived prognostics only when the bracket moves (`force` fills it once at construction).
 function exchange_state!(ex::StateExchanger, time; force=false)
     parent = ex.parent
@@ -186,16 +186,22 @@ function exchange_state!(ex::StateExchanger, time; force=false)
         update_field_time_series!(fts, Time(time))
     end
 
-    # Bracketing indices for `time` on the parent's time axis; cycle the derived window if it moved.
+    # Position the 3-level window one level BELOW the bracket of `time` (= t + Δt from `time_step!`): the
+    # step's start t can sit in the previous interval [n₁-1, n₁] while `time` sits in [n₁, n₁+1], so a
+    # window spanning [n₁-1, n₁, n₁+1] keeps EVERY sub-stage query resident across a node crossing.
+    # A 2-level window cannot span the crossing — its start-side query returns a stale/wrong boundary target
+    # (the hourly-seam kick that tips the child at every ERA5 crossing).
     _, n₁, _ = interpolating_time_indices(p.ρᵈ.time_indexing, p.ρᵈ.times, time)
-    moved = p.ρᵈ.backend.start != n₁
+    N = length(p.ρᵈ.times)
+    start = clamp(n₁ - 1, 1, max(1, N - 2))
+    moved = p.ρᵈ.backend.start != start
     if moved
         for fts in p
-            fts.backend = new_backend(fts.backend, n₁, length(fts.backend))
+            fts.backend = new_backend(fts.backend, start, length(fts.backend))
         end
     end
 
-    # The window's values are a pure function of the two resident parent levels, so they change only
+    # The window's values are a pure function of the resident parent levels, so they change only
     # when the bracket moves; on every intra-interval child step the recompute would reproduce identical
     # values. Skip it unless the bracket moved (or this is the initial fill) to spare the hot path two
     # parent-grid kernels + halo fills per step.
