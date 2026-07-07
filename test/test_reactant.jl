@@ -19,12 +19,6 @@ else
     Reactant.set_default_backend("cpu")
 end
 
-# LLVM's SLP vectorizer still miscompiles Reactant-raised kernels (it emits a
-# vector-of-i1 `select` on scalar operands, which fails to lower to LLVM IR);
-# disable it. The companion `-vectorize-loops=false` is no longer needed with
-# the current Reactant/LLVM — SLP is the only pass that has to be turned off.
-Reactant.LLVM.clopts("-vectorize-slp=false")
-
 @testset "Reactant extension tests" begin
     arch = ReactantState()
     grid = LatitudeLongitudeGrid(arch;
