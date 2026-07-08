@@ -195,4 +195,32 @@ end
         # Lz = max - min = 20*1000 - 1*1000 = 19000.
         @test grid.Lz ≈ 19000.0
     end
+
+    @testset "TimeSeriesInterpolation-backed Φ heights follow the clock" begin
+        # The whole point of the FTS-backed vertical: `rnode` must return
+        # different per-cell heights as the shared clock advances.
+        Nx, Ny, Nz = 2, 2, 3
+        Φ_grid = LatitudeLongitudeGrid(CPU(); size=(Nx, Ny, Nz),
+                                       longitude=(0, 1), latitude=(0, 1), z=(0, 1))
+        Φ_fts = FieldTimeSeries{Center, Center, Center}(Φ_grid, [0.0, 10.0])
+        for i in 1:Nx, j in 1:Ny, k in 1:Nz
+            Φ_fts[1][i, j, k] = 1000.0 * k * g     # t=0:  heights {1, 2, 3} km
+            Φ_fts[2][i, j, k] = 2000.0 * k * g     # t=10: heights {2, 4, 6} km
+        end
+
+        clock = Clock(time = 0.0)
+        tsi   = TimeSeriesInterpolation(Φ_fts, Φ_fts.grid; clock)
+        plvd  = PressureLevelVerticalDiscretization(tsi; gravitational_acceleration = g)
+        grid  = LatitudeLongitudeGrid(CPU(); size=(Nx, Ny, Nz),
+                                      longitude=(0, 1), latitude=(0, 1), z=plvd)
+
+        rnode = Oceananigans.Grids.rnode
+        ℓ = (Center(), Center(), Center())
+
+        @test rnode(1, 1, 2, grid, ℓ...) ≈ 2000.0    # k=2 at t=0 → 2 km
+        clock.time = 10.0
+        @test rnode(1, 1, 2, grid, ℓ...) ≈ 4000.0    # same grid, later snapshot → 4 km
+        clock.time = 5.0
+        @test rnode(1, 1, 2, grid, ℓ...) ≈ 3000.0    # linear-in-time between snapshots
+    end
 end

@@ -94,9 +94,9 @@ end
 
 geopotential_data_for_extrema(Φ::Field) = interior(Φ)
 # Use `interior(fts)` — not `parent(fts)` — so halo zeros don't dominate the
-# extrema / column mean.
-# NOTE: For a TSI this reads every time slice. Fine while the FTS path isn't
-# exercised; switch to a per-time-slice extent if we ever advance the clock here.
+# extrema / column mean. For a TSI this reads every time slice, so `Lz` spans the
+# heights reached at any time in the window — the extent a child must be able to
+# bracket over the whole run. One-time setup, not a hot path.
 geopotential_data_for_extrema(Φ::TimeSeriesInterpolation) = interior(Φ.time_series)
 
 Adapt.adapt_structure(to, z::PressureLevelVerticalDiscretization) =
@@ -315,8 +315,10 @@ function clip_subsurface!(Φ::Field, Φ_sfc)
     return Φ
 end
 
-# TSI path is CPU-only for now (no FTS-backed discretization is exercised in
-# the current pipeline). When that lands, swap the loop for a 4-D launch.
+# A time-varying (FTS-backed) discretization clips every snapshot. This runs once at grid
+# construction, on the host geopotential before it is moved to the device, and each per-slice
+# `clip_subsurface!(fts[t], …)` launches a GPU-safe kernel — so the loop is fine on either
+# architecture (the slice count is small: one per date in the window).
 function clip_subsurface!(geopotential::TimeSeriesInterpolation, surface_geopotential)
     fts = geopotential.time_series
     for t in 1:length(fts.times)
