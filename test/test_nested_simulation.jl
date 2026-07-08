@@ -1,8 +1,9 @@
 include("runtests_setup.jl")
 
 using NumericalEarth
-using NumericalEarth.NestedModels: parent_boundary_conditions
+using NumericalEarth.NestedModels: parent_boundary_conditions, nested_atmosphere_model
 using Oceananigans
+using Oceananigans: prognostic_fields
 using Oceananigans.OutputReaders: interpolating_time_indices, memory_index
 using Oceananigans.Units: Time
 using Oceananigans.Fields: location
@@ -583,4 +584,50 @@ end
     θq = ρθq ./ ρdq
     @test all(250 .< θq .< 400)                 # physical θ
     @test all(isapprox.(θq, θtrue(1.9); rtol = 1e-4))   # linear-in-t ⇒ exact; a stale target would miss by ~5 K
+end
+
+# End-to-end guard for the moving-window fix: step the FULL coupled Breeze child across a derived-window
+# MOVE and assert its prognostics stay finite. The exchanger/`memory_index` @testsets above check the
+# derived FTS in isolation; this exercises the RUNTIME path that actually broke — the child's BC + Davies
+# forcing kernels reading the derived FTS elementwise while the window rolls `start` 1→2 mid-run. A uniform
+# synthetic parent with short (4 s) node spacing reaches the move (crossing node #3 at t = 8 s) in a few
+# acoustically-stable steps; the move is what triggered the blow-up, not the parent's data, so the minimal
+# parent reproduces it. Pre-fix (generic cyclic `memory_index` indexing past the window's storage) the
+# child NaNs the step `start` advances 1→2 (`InexactError: Int64(NaN)`).
+@testset "Nested child survives a derived-window move (moving-window regression) on $(arch)" for arch in test_architectures
+    ext   = Base.get_extension(NumericalEarth, :NumericalEarthBreezeExt)
+    times = [0.0, 4.0, 8.0, 12.0, 16.0]        # 5 levels ⇒ the 3-level window moves when crossing node #3
+
+    parent_grid = LatitudeLongitudeGrid(arch; size = (12, 12, 8),
+                                        longitude = (-2, 2), latitude = (34.6, 38.6),
+                                        z = (0, 16000), halo = (5, 5, 5),
+                                        topology = (Bounded, Bounded, Bounded))
+    parent = PrescribedAtmosphere(parent_grid, times)
+    set!(parent.temperature,       (λ, φ, z, t) -> 288 - 6.5e-3 * z + 1e-3 * t)
+    set!(parent.specific_humidity, (λ, φ, z, t) -> 0.006)
+    set!(parent.velocities.u,      (λ, φ, z, t) -> 8)
+    set!(parent.velocities.v,      (λ, φ, z, t) -> 0)
+    set!(parent.pressure,          (λ, φ, z, t) -> 1e5 * exp(-z / 8000))
+
+    child_grid = LatitudeLongitudeGrid(arch; size = (8, 8, 8),
+                                       longitude = (-1, 1), latitude = (35.6, 37.6),
+                                       z = (0, 16000), halo = (5, 5, 5),
+                                       topology = (Bounded, Bounded, Bounded))
+
+    # Default microphysics: with CloudMicrophysics unloaded (as in the test env) this is the Breeze-native
+    # `SaturationAdjustment(WarmPhaseEquilibrium())` — no extra dependency needed to exercise the seam.
+    model = nested_atmosphere_model(parent, child_grid;
+                relaxation_rate = 1/300, relaxation_width = 3, surface_pressure = 1e5,
+                coriolis = nothing, terrain = nothing, parent_condensates = nothing)
+    ext.initialize_nested_child!(model, nothing, first(times), ""; balancer = false)
+
+    sim = Simulation(model; Δt = 0.5, stop_time = 12.0)
+    conjure_time_step_wizard!(sim, IterationInterval(1); cfl = 0.3, max_Δt = 2.0)
+    run!(sim)
+
+    @test model.exchanger.prognostic.ρᵈ.backend.start > 1        # actually crossed the window move
+    @test model.clock.time ≥ 12.0 - 2.0                          # reached the end (no NaN Δt stall)
+    for (name, field) in pairs(prognostic_fields(model.child))
+        @test all(isfinite, Array(interior(field)))
+    end
 end
