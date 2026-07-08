@@ -147,6 +147,18 @@ function NumericalEarth.DataWrangling.MODISLand.modis_granules_to_netcdf(metadat
     granule_urls = NumericalEarth.DataWrangling.MODISLand.earthdata_cmr_granules(short_name, version, bbox; temporal)
     isempty(granule_urls) && error("CMR returned no $(short_name).$(version) granules for region $(bbox).")
 
+    # A MODIS granule's temporal extent spans its full multi-day retrieval window, so a
+    # single-date search also returns neighbouring granules whose window overlaps that
+    # date. Keep only the granule acquired on the requested day (the `.A<yyyy><doy>.`
+    # token) so we download one product per tile instead of the whole window.
+    if !isnothing(metadatum.dates)
+        date = MODISLand.Dates.DateTime(metadatum.dates)
+        token = string(".A", MODISLand.Dates.year(date),
+                       lpad(MODISLand.Dates.dayofyear(date), 3, '0'), ".")
+        matched = filter(url -> occursin(token, url), granule_urls)
+        isempty(matched) || (granule_urls = matched)
+    end
+
     west, east = bbox.longitude
     south, north = bbox.latitude
 
