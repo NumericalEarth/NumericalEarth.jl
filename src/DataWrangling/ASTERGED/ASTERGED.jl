@@ -22,7 +22,8 @@ end
 
 # Narrowband → broadband coefficients for ASTER TIR bands 10–14 (8.3, 8.6, 9.1,
 # 10.6, 11.3 µm) over the 8.0–13.5 µm window, from Ogawa & Schmugge (2004),
-# Earth Interactions 8(7). The weights sum to exactly unity, so
+# Earth Interactions 8(7), doi:10.1175/1087-3562(2004)008<0001:MSBEOT>2.0.CO;2.
+# The weights sum to exactly unity, so
 # `broadband_emissivity` is a convex combination of the five band emissivities —
 # the broadband value stays within their range (hence in [0.7, 1.0] over land).
 # Intercept-carrying regressions (e.g. Cheng et al. 2013, ε = 0.197 + Σ cᵢ εᵢ)
@@ -87,8 +88,8 @@ end
 
 Construct an [`ASTERGEDv3`](@ref) dataset. `resolution` is `:AG100` (100 m) or
 `:AG1km` (1 km). `broadband_coefficients` is the 5-band narrowband→broadband
-emissivity synthesis vector (default from Ogawa & Schmugge (2004), 8.0–13.5 µm
-window). `water_emissivity` is the emissivity substituted over water cells, where
+emissivity synthesis vector (default from [Ogawa & Schmugge (2004)](@cite ogawa2004mapping),
+8.0–13.5 µm window). `water_emissivity` is the emissivity substituted over water cells, where
 ASTER GED has no retrieval; the default `0.97` matches the ocean-surface
 emissivity used elsewhere in NumericalEarth so a coupled domain has one
 consistent water value.
