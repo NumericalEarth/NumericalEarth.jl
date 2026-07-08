@@ -59,8 +59,11 @@ If `surface_geopotential` is provided (a 2-D `Field`, m²/s²), columns are
 clipped so that `geopotential[i,j,k] ≥ surface_geopotential[i,j]`. Required
 when the source is ERA5 pressure-level data, because sub-surface levels are
 filled with non-physical extrapolations that would break the column-monotonicity
-assumed by `_fractional_indices`. The clip source is retained on the
-discretization and exposed through [`surface_elevation`](@ref).
+assumed by `_fractional_indices`. Clipping fixes only the *coordinate*: the raw
+sub-surface *data* stays on those levels, so `column_fractional_z_index` also
+clamps interpolation to the first above-ground level (never sampling it). The
+clip source is retained on the discretization and exposed through
+[`surface_elevation`](@ref).
 """
 function PressureLevelVerticalDiscretization(geopotential;
                                               gravitational_acceleration,
@@ -264,6 +267,26 @@ end
     return FractionalIndices(nothing, nothing, kk)
 end
 
+# First above-ground level of column `(i, j)`. `clip_subsurface!` parks every sub-surface level at the
+# surface geopotential, so those levels share the column's bottom height but still hold the raw ERA5
+# sub-surface *data* (the non-physical extrapolations). `column_fractional_z_index` clamps its result to
+# this level so interpolation near high terrain snaps to the lowest above-ground value instead of
+# sampling that data. Returns 1 when no `surface_geopotential` is set (no clip ⇒ no sub-surface plateau).
+# The `grid.z.surface_geopotential` argument selects the method: `nothing` (no clip) ⇒ level 1.
+@inline first_above_surface_level(i, j, grid) =
+    first_above_surface_level(i, j, grid, grid.z.surface_geopotential)
+
+@inline first_above_surface_level(i, j, grid, ::Nothing) = 1
+
+@inline function first_above_surface_level(i, j, grid, Φ_sfc)
+    Φˢ = @inbounds Φ_sfc[i, j, 1]
+    k = 1
+    @inbounds while k < grid.Nz && grid.z.geopotential[i, j, k] <= Φˢ
+        k += 1
+    end
+    return k
+end
+
 @inline function column_fractional_z_index(z, ii, jj, grid)
     i = clamp(Base.unsafe_trunc(Int, ii), 1, grid.Nx)
     j = clamp(Base.unsafe_trunc(Int, jj), 1, grid.Ny)
@@ -276,12 +299,15 @@ end
     kk = ifelse(z_hi == z_lo, oftype(z, low),
                 (high - low) / (z_hi - z_lo) * (z - z_lo) + low)
     FT = eltype(grid)
-    # Clamp to a valid fractional index. A target height below the column's clipped
-    # surface (or above its top) extrapolates `kk` outside [1, Nz]; the downstream
-    # `@inbounds` interpolator read is then out of bounds — finite-but-clamped on the
-    # CPU, but uninitialized garbage on the GPU (which NaN'd the terrain-following
-    # ERA5 initial state). Nearest-level is the intended out-of-range behavior.
-    return clamp(convert(FT, kk), one(FT), convert(FT, grid.Nz))
+    # Clamp to a valid, above-ground fractional index. The lower bound is the first above-ground level
+    # (not 1): `clip_subsurface!` fixes column monotonicity but leaves the raw ERA5 sub-surface data on
+    # the clipped levels, so a target near/below high terrain must snap to the lowest above-ground level
+    # rather than blend that data. The upper bound guards a target above the column top. (An unclamped
+    # `kk` outside [1, Nz] also drives the downstream `@inbounds` interpolator read out of bounds —
+    # finite-but-clamped on the CPU, but uninitialized garbage on the GPU, which NaN'd the
+    # terrain-following ERA5 initial state.)
+    k_sfc = first_above_surface_level(i, j, grid)
+    return clamp(convert(FT, kk), convert(FT, k_sfc), convert(FT, grid.Nz))
 end
 
 #####

@@ -6,7 +6,8 @@ using Oceananigans.Grids: Flat, Bounded, topology
 using Oceananigans.OutputReaders: TimeSeriesInterpolation
 using Statistics
 
-using NumericalEarth.Grids: PressureLevelGrid, PressureLevelVerticalDiscretization
+using NumericalEarth.Grids: PressureLevelGrid, PressureLevelVerticalDiscretization,
+                            column_fractional_z_index
 
 # Build a small static-Field-backed `PressureLevelVerticalDiscretization` from
 # a per-cell geopotential array. Returns the (Φ, Φ_sfc, plvd) triple.
@@ -110,6 +111,37 @@ end
             @test interior(plvd.geopotential)[i, j, 3] ≈ 3000.0 * g
             @test interior(plvd.geopotential)[i, j, 4] ≈ 4000.0 * g
         end
+    end
+
+    @testset "column_fractional_z_index snaps to the first above-ground level" begin
+        Nx, Ny, Nz = 2, 2, 5
+        Φ_grid = LatitudeLongitudeGrid(CPU(); size=(Nx, Ny, Nz),
+                                       longitude=(0, 1), latitude=(0, 1), z=(0, 1))
+        Φ = CenterField(Φ_grid)
+        for i in 1:Nx, j in 1:Ny, k in 1:Nz
+            interior(Φ)[i, j, k] = 1000.0 * k * g   # level heights 1..5 km
+        end
+        Φ_sfc_grid = LatitudeLongitudeGrid(CPU(); size=(Nx, Ny, 1),
+                                           longitude=(0, 1), latitude=(0, 1), z=(0, 1))
+        Φ_sfc = CenterField(Φ_sfc_grid)
+        interior(Φ_sfc) .= 2500.0 * g            # surface at 2.5 km ⇒ clips k=1,2; first above-ground = k=3
+        plvd = PressureLevelVerticalDiscretization(Φ; gravitational_acceleration=g,
+                                                   surface_geopotential=Φ_sfc)
+        grid = LatitudeLongitudeGrid(CPU(); size=(Nx, Ny, Nz), longitude=(0, 1), latitude=(0, 1),
+                                     z=plvd, topology=(Bounded, Bounded, Bounded))
+
+        # Clipped column heights (m): [2500, 2500, 3000, 4000, 5000]. Levels 1, 2 still hold the raw
+        # sub-surface data, so a target at/below the surface — or between it and the first above-ground
+        # level (k=3) — must snap to k=3, never extrapolate into the clipped plateau [1, 3).
+        @test column_fractional_z_index(2000.0, 1.0, 1.0, grid) == 3   # below surface
+        @test column_fractional_z_index(2500.0, 1.0, 1.0, grid) == 3   # at surface
+        @test column_fractional_z_index(2800.0, 1.0, 1.0, grid) == 3   # surface → first above-ground
+        # Above the first above-ground level, normal interpolation is unchanged.
+        @test column_fractional_z_index(3500.0, 1.0, 1.0, grid) ≈ 3.5
+
+        # No clip (surface below the whole column) ⇒ first above-ground level is 1, behavior unchanged.
+        grid0, _, _, _ = make_plg()
+        @test column_fractional_z_index(0.0, 1.0, 1.0, grid0) == 1
     end
 
     @testset "rnodes / znodes on the grid return the column-mean Vector" begin
