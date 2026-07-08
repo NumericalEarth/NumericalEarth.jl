@@ -3,6 +3,7 @@ include("runtests_setup.jl")
 using NumericalEarth
 using NumericalEarth.NestedModels: parent_boundary_conditions
 using Oceananigans
+using Oceananigans.OutputReaders: interpolating_time_indices, memory_index
 using Oceananigans.Units: Time
 using Oceananigans.Fields: location
 using Oceananigans.BoundaryConditions: ValueBoundaryCondition, FieldBoundaryConditions, fill_halo_regions!
@@ -382,6 +383,28 @@ end
     @test all(isfinite, Array(interior(atmos.model.dynamics.total_density)))
 end
 
+@testset "Breeze nested_atmosphere_model defaults to a moving derived window on CPU()" begin
+    parent_grid = LatitudeLongitudeGrid(CPU(); size = (8, 8, 4),
+                                         longitude = (-1.5, 1.5), latitude = (-1.5, 1.5),
+                                         z = (0, 1), topology = (Bounded, Bounded, Bounded))
+    times = collect(0.0:1.0:4.0)
+    parent = PrescribedAtmosphere(parent_grid, times)
+    set!(parent.temperature,       (x, y, z, t) -> 280 + t)
+    set!(parent.specific_humidity, (x, y, z, t) -> 0.005)
+    set!(parent.velocities.u,      (x, y, z, t) -> 1.0)
+    set!(parent.velocities.v,      (x, y, z, t) -> 0.0)
+    set!(parent.pressure,          (x, y, z, t) -> 9.0e4)
+
+    child_grid = LatitudeLongitudeGrid(CPU(); size = (8, 8, 8),
+                                        longitude = (-1, 1), latitude = (-1, 1), z = (0, 1000),
+                                        halo = (5, 5, 5), topology = (Bounded, Bounded, Bounded))
+
+    nested = nested_atmosphere_model(parent, child_grid; parent_condensates = (qᶜˡ = nothing, qᶜⁱ = nothing))
+    @test length(parent.temperature.times) == length(times)
+    @test length(times) > 3
+    @test length(nested.exchanger.prognostic.ρᵈ.backend) == 3
+end
+
 # The Breeze-ext `StateExchanger` holds the child prognostics as a 3-level FieldTimeSeries bracketing
 # the child clock (memory-O(1) in time); `exchange_state!` positions that window one level below the
 # bracket of `t + Δt` so it spans a node-crossing step, recomputing the resident levels from the parent.
@@ -431,6 +454,84 @@ end
     θ₃ = Array(interior(reconstruct(exchanger, 3.0).θˡⁱ))
     @test all(θ₀ .≈ 280 * (1e5 / 9e4)^κ)
     @test all(θ₃ .≈ 283 * (1e5 / 9e4)^κ)
+end
+
+@testset "StateExchanger: moving-window interpolation never aliases nonresident time slots on $(arch)" for arch in test_architectures
+    ext = Base.get_extension(NumericalEarth, :NumericalEarthBreezeExt)
+
+    parent_grid = RectilinearGrid(arch; size = (8, 8, 4), x = (-1.5, 1.5), y = (-1.5, 1.5),
+                                  z = (0, 1), topology = (Bounded, Bounded, Bounded))
+    times  = [0.0, 1.0, 2.0, 3.0, 4.0]
+    parent = PrescribedAtmosphere(parent_grid, times)
+    set!(parent.temperature,       (x, y, z, t) -> 280 + 5t)
+    set!(parent.specific_humidity, (x, y, z, t) -> 0.005)
+    set!(parent.velocities.u,      (x, y, z, t) -> 1.0)
+    set!(parent.velocities.v,      (x, y, z, t) -> 0.0)
+    set!(parent.pressure,          (x, y, z, t) -> 9.0e4)
+
+    constants = ThermodynamicConstants()
+    exchanger = ext.state_exchanger(parent, 1.0e5, constants; condensates = (qᶜˡ = nothing, qᶜⁱ = nothing))
+    prog      = exchanger.prognostic
+    exchange  = NumericalEarth.NestedModels.exchange_state!
+
+    exchange(exchanger, 2.1) # start = 2, resident time indices are 2, 3, 4.
+    fts = prog.ρθ
+    @test fts.backend.start == 2
+    @test length(fts.backend) == 3
+
+    # A runtime boundary/relaxation kernel uses elementwise interpolation, which computes memory slots
+    # directly under @inbounds. A query whose time bracket touches global index 5 must not map to slot 4
+    # of this 3-slot moving window; that is an out-of-bounds GPU read, unlike the full-memory path.
+    _, n₁, n₂ = interpolating_time_indices(fts.time_indexing, fts.times, 3.5)
+    m₁ = memory_index(fts.backend, fts.time_indexing, length(fts.times), n₁)
+    m₂ = memory_index(fts.backend, fts.time_indexing, length(fts.times), n₂)
+    @test 1 ≤ m₁ ≤ length(fts.backend)
+    @test 1 ≤ m₂ ≤ length(fts.backend)
+end
+
+@testset "StateExchanger: moving-window runtime queries match full-memory queries on CPU()" begin
+    ext = Base.get_extension(NumericalEarth, :NumericalEarthBreezeExt)
+
+    function parent_for_exchanger_equivalence()
+        parent_grid = RectilinearGrid(CPU(); size = (8, 8, 4), x = (-1.5, 1.5), y = (-1.5, 1.5),
+                                      z = (0, 1), topology = (Bounded, Bounded, Bounded))
+        times = collect(0.0:1.0:6.0)
+        parent = PrescribedAtmosphere(parent_grid, times)
+        set!(parent.temperature,       (x, y, z, t) -> 280 + 5t + 3x - 2y + z)
+        set!(parent.specific_humidity, (x, y, z, t) -> 0.005 + 1e-4*t + 1e-5*x)
+        set!(parent.velocities.u,      (x, y, z, t) -> 1 + 0.1t + x)
+        set!(parent.velocities.v,      (x, y, z, t) -> -0.2 + 0.05t + y)
+        set!(parent.pressure,          (x, y, z, t) -> 9.0e4 + 10t + 100x - 50y)
+        return parent
+    end
+
+    constants = ThermodynamicConstants()
+    condensates = (qᶜˡ = nothing, qᶜⁱ = nothing)
+    moving = ext.state_exchanger(parent_for_exchanger_equivalence(), 1.0e5, constants; condensates,
+                                 time_indices_in_memory = 3)
+    full = ext.state_exchanger(parent_for_exchanger_equivalence(), 1.0e5, constants; condensates,
+                               time_indices_in_memory = 7)
+    exchange = NumericalEarth.NestedModels.exchange_state!
+    field_names = (:ρᵈ, :ρθ, :ρqᵛ, :ρu, :ρv)
+    indices = ((1, 1, 1), (2, 2, 2), (8, 8, 4))
+
+    for step_end_time in (0.5, 1.1, 2.1, 3.1, 4.1, 5.1)
+        exchange(moving, step_end_time)
+        exchange(full, step_end_time)
+
+        for query_time in (max(0, step_end_time - 0.2), step_end_time)
+            for name in field_names
+                moving_fts = getproperty(moving.prognostic, name)
+                full_fts = getproperty(full.prognostic, name)
+
+                for I in indices
+                    moving_value = moving_fts[I..., Time(query_time)]
+                    full_value = full_fts[I..., Time(query_time)]
+                    @test isapprox(moving_value, full_value; rtol=1e-5, atol=1e-6)
+                end
+            end
+        end
+    end
 end
 
 # Temporal-seam correctness of the ON-THE-FLY (windowed FTS) interpolation the child's boundary

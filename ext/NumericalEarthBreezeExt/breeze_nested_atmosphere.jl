@@ -173,13 +173,9 @@ function NumericalEarth.NestedModels.nested_atmosphere_model(
     pˢᵗ = dynamics.standard_pressure
 
     # Precompute the child prognostics on the parent grid (combine-then-interpolate); the exchanger owns
-    # them and refreshes them from the parent each step via `exchange_state!`. Size the derived window to
-    # the parent's own resident memory: a full-memory parent (the usual case) then gets a window spanning
-    # the whole run that never moves, so no window-move recompute injects the lateral-corner mass imbalance
-    # that NaNs the run at the first parent seam past the initial window (the 2 h seam).
+    # its own 3-level moving window and refreshes it from the parent each step via `exchange_state!`.
     condensates = isnothing(parent_condensates) ? (qᶜˡ = nothing, qᶜⁱ = nothing) : parent_condensates
-    time_indices_in_memory = length(parent_atmosphere.temperature.backend)
-    exchanger  = state_exchanger(parent_atmosphere, pˢᵗ, thermodynamic_constants; condensates, time_indices_in_memory)
+    exchanger  = state_exchanger(parent_atmosphere, pˢᵗ, thermodynamic_constants; condensates)
     prognostic = exchanger.prognostic
 
     ρqᵛ = prognostic.ρqᵛ
