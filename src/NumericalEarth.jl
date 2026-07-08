@@ -102,6 +102,7 @@ export
     ECCO2DarwinMonthly, ECCO4DarwinMonthly,
     EN4Monthly,
     WOAClimatology, WOAAnnual, WOAMonthly,
+    ASTERGEDv3,
     GLORYSDaily, GLORYSMonthly, GLORYSStatic,
     RepeatYearJRA55, MultiYearJRA55,
     ERA5HourlySingleLevel, ERA5MonthlySingleLevel,

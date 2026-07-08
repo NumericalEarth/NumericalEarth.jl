@@ -170,3 +170,32 @@ points are the module + extension source and `test/test_asterged.jl`.)
    actually contribute interior cells.
 3. Exercise a larger bbox spanning several 1° tiles to stress the mosaic
    (single- and adjacent-tile cases are verified).
+
+## Revision 2026-07-08 (review follow-up)
+
+- **Broadband coefficients corrected.** The previous
+  `OGAWA_2003_SLOPES = (0.025, 0.057, 0.237, 0.333, 0.146)` were in fact the
+  Cheng et al. (2013) regression *slopes* (misattributed to Ogawa et al. 2003)
+  with the 0.197 intercept dropped and the slopes renormalized — an affine map
+  `0.197 + 0.798 ε̄` collapsed to `ε̄`, biasing broadband ε low by ~0.015–0.025
+  over low-emissivity (desert) surfaces. Replaced by
+  `OGAWA_SCHMUGGE_2004_BROADBAND_COEFFICIENTS = [0.088, 0.053, 0.174, 0.380, 0.305]`
+  (Ogawa & Schmugge 2004, 8.0–13.5 µm window, RMSE ≲ 0.005), which sums to
+  exactly 1 — a native convex combination, no intercept hack.
+- **Water and gap handling.** `mask_water` → `fill_water`: water cells now get
+  `dataset.water_emissivity` (default 0.985; zero for the uncertainty variable)
+  instead of NaN, and retrieval gaps (still NaN) are repaired by
+  `default_inpainting = NearestNeighborInpainting(Inf)` with an
+  `inpainted_metadata_path` cache — NaNs no longer reach flux kernels.
+- **Radiation wiring.** `location(::ASTERGEDMetadatum)` is now
+  `(Center, Center, Nothing)` (reduced field), so the emissivity `Field` is
+  `stateindex`-able at any `k` and slots directly into
+  `SurfaceRadiationProperties(albedo, emissivity = field)`; `ASTERGEDv3` is now
+  exported from `NumericalEarth` (the jldoctest previously could not pass).
+- **Decode in Float32** (matches `eltype(Metadata)`; halves the host→device copy).
+- **Download retry**: `earthdata_download` retries 3× with backoff.
+- **Coverage guard**: `Downloads.download` calls `require_bounded_region`
+  (shared with `validate_dataset_coverage`, which the `Field` path never hits).
+- **Tests**: synthetic regional-NetCDF `Field(metadatum, arch)` test over
+  `test_architectures` (exercises the full retrieve/decode/fill/inpaint/GPU-fill
+  pipeline and the `SurfaceRadiationProperties` wiring without credentials).

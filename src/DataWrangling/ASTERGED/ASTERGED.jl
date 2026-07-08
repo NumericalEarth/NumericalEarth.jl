@@ -7,7 +7,7 @@ using Oceananigans: Center
 using Oceananigans.DistributedComputations: @root
 
 using ..DataWrangling: DataWrangling, AbstractStaticDataset, Metadatum,
-                       BoundingBox, Dataset, metadata_path, dataset_variable_name
+                       BoundingBox, metadata_path, NearestNeighborInpainting
 
 import Oceananigans
 
@@ -20,25 +20,19 @@ end
 ##### Broadband-emissivity synthesis coefficients
 #####
 
-# Narrowband → broadband regression slope coefficients for ASTER TIR bands
-# 10–14 (8.3, 8.6, 9.1, 10.6, 11.3 µm) from the Ogawa et al. (2003) /
-# Ogawa & Schmugge broadband-emissivity regression over the 8–13.5 µm window.
-# The published regression carries an intercept; we drop it and normalize the
-# slopes to sum to unity so that `broadband_emissivity` is a convex combination
-# of the five narrowband emissivities — guaranteeing the broadband value stays
-# within the range of its inputs (and hence in [0.7, 1.0] over land). This is a
-# documented modeling choice; expose the vector as a struct field so it is
-# tunable. References: Ogawa et al. (2003), Int. J. Remote Sens.; Cheng et al.
-# (2013) narrowband→broadband emissivity regressions.
-const OGAWA_2003_SLOPES = (0.025, 0.057, 0.237, 0.333, 0.146)
-const OGAWA_2003_BROADBAND_COEFFICIENTS = collect(OGAWA_2003_SLOPES ./ sum(OGAWA_2003_SLOPES))
+# Narrowband → broadband coefficients for ASTER TIR bands 10–14 (8.3, 8.6, 9.1,
+# 10.6, 11.3 µm) over the 8.0–13.5 µm window, from Ogawa & Schmugge (2004),
+# Earth Interactions 8(7). The weights sum to exactly unity, so
+# `broadband_emissivity` is a convex combination of the five band emissivities —
+# the broadband value stays within their range (hence in [0.7, 1.0] over land).
+# Intercept-carrying regressions (e.g. Cheng et al. 2013, ε = 0.197 + Σ cᵢ εᵢ)
+# cannot be substituted by renormalizing their slopes: dropping the intercept
+# biases broadband ε low by ~0.02 over low-emissivity deserts.
+const OGAWA_SCHMUGGE_2004_BROADBAND_COEFFICIENTS = [0.088, 0.053, 0.174, 0.380, 0.305]
 
-# Land/Water map coding. The ASTER GED `/Land_Water_Map/LWmap` layer coding is
-# documented ambiguously (LP DAAC User Guide vs GEE), so we verified it on a real
-# AG100 v003 tile: the `/Land_Water_Map/LWmap` values are 0 (land) and 1 (water)
-# — the GEE-style 0/1 coding, NOT the 1/2 coding. On the Grand Canyon tile
-# `AG100.v003.37.-112` the only non-zero cells (851 of 10⁶) trace the Colorado
-# River, confirming water = 1. Exposed as a keyword in case a future tile differs.
+# The `/Land_Water_Map/LWmap` coding is documented inconsistently (LP DAAC User
+# Guide says 1/2, GEE says 0/1); real AG100 v003 tiles hold 0 = land, 1 = water.
+# `fill_water` exposes a `water_code` keyword in case a future tile differs.
 const ASTERGED_WATER_CODE = 1
 
 #####
@@ -46,7 +40,7 @@ const ASTERGED_WATER_CODE = 1
 #####
 
 """
-    ASTERGEDv3{R} <: AbstractStaticDataset
+    ASTERGEDv3{R, FT} <: AbstractStaticDataset
 
 ASTER Global Emissivity Dataset (GED) v3: a static (2000–2008 clear-sky mean)
 climatology of land-surface emissivity on a plain geographic (WGS84 lat/lon)
@@ -58,7 +52,14 @@ grid, distributed as HDF5 in 1°×1° tiles. Two resolutions are supported:
 The dataset provides five narrowband emissivities (ASTER TIR bands 10–14); a
 longwave scheme needs a single broadband value, so `retrieve_data` collapses the
 five bands to one broadband emissivity using `broadband_coefficients` (a 5-vector;
-default [`OGAWA_2003_BROADBAND_COEFFICIENTS`](@ref)).
+default [`OGAWA_SCHMUGGE_2004_BROADBAND_COEFFICIENTS`](@ref)).
+
+ASTER GED reports no emissivity over water, so water cells (per the tile
+land-water map) are filled with the constant `water_emissivity`; retrieval gaps
+(persistent cloud, e.g. the humid tropics) decode to `NaN` and are filled by the
+default `NearestNeighborInpainting` when building a `Field`. The resulting
+emissivity `Field` can be passed directly to `SurfaceRadiationProperties` as its
+`emissivity`.
 
 Because ASTER GED is a fine regional-window raster, it is read in regional
 windows only: construct the `Metadatum` with a longitude/latitude `BoundingBox`.
@@ -66,25 +67,29 @@ windows only: construct the `Metadatum` with a longitude/latitude `BoundingBox`.
 Reading the HDF5 tiles requires `ArchGDAL` (with the HDF5 driver) and NASA
 Earthdata credentials (`EARTHDATA_USERNAME` / `EARTHDATA_PASSWORD`); that path
 lives in `ext/NumericalEarthArchGDALExt.jl` and is gated behind a fallback error
-when `ArchGDAL` is not loaded. The pure decode/broadband/water-mask core
+when `ArchGDAL` is not loaded. The pure decode/broadband/water-fill core
 (`decode_mean`, `decode_sdev`, `broadband_emissivity`) needs neither and is
 unit-tested directly.
 
 Data source: https://www.earthdata.nasa.gov/data/catalog/lpcloud-ag100-003
 Reference: Hulley et al. (2015), GRL, doi:10.1002/2015GL065564.
 """
-struct ASTERGEDv3{R} <: AbstractStaticDataset
+struct ASTERGEDv3{R, FT} <: AbstractStaticDataset
     resolution :: Symbol           # :AG100 (100 m) or :AG1km (1 km)
     broadband_coefficients :: R    # 5-vector for the ε_broadband synthesis
+    water_emissivity :: FT         # constant substituted where the tile land-water map says water
 end
 
 """
     ASTERGEDv3(; resolution = :AG100,
-                 broadband_coefficients = OGAWA_2003_BROADBAND_COEFFICIENTS)
+                 broadband_coefficients = OGAWA_SCHMUGGE_2004_BROADBAND_COEFFICIENTS,
+                 water_emissivity = 0.985)
 
 Construct an [`ASTERGEDv3`](@ref) dataset. `resolution` is `:AG100` (100 m) or
 `:AG1km` (1 km). `broadband_coefficients` is the 5-band narrowband→broadband
-emissivity synthesis vector (default derived from Ogawa et al. (2003)).
+emissivity synthesis vector (default from Ogawa & Schmugge (2004), 8.0–13.5 µm
+window). `water_emissivity` is the broadband emissivity substituted over water
+cells, where ASTER GED has no retrieval (default 0.985, typical of inland water).
 
 ```jldoctest
 julia> using NumericalEarth
@@ -97,10 +102,11 @@ ASTERGEDv3(resolution = :AG1km)
 ```
 """
 function ASTERGEDv3(; resolution = :AG100,
-                      broadband_coefficients = OGAWA_2003_BROADBAND_COEFFICIENTS)
+                      broadband_coefficients = OGAWA_SCHMUGGE_2004_BROADBAND_COEFFICIENTS,
+                      water_emissivity = 0.985)
     resolution ∈ (:AG100, :AG1km) ||
         throw(ArgumentError("ASTERGEDv3 resolution must be :AG100 or :AG1km, got :$resolution"))
-    return ASTERGEDv3(resolution, broadband_coefficients)
+    return ASTERGEDv3(resolution, broadband_coefficients, water_emissivity)
 end
 
 Base.summary(dataset::ASTERGEDv3) = string("ASTERGEDv3(resolution = :", dataset.resolution, ")")
@@ -121,20 +127,21 @@ ASTERGED_dataset_variable_names = Dict(
 """
     decode_mean(DN)
 
-Decode a raw `/Emissivity/Mean` digital number to emissivity: fill value −9999
-maps to `NaN`, otherwise scale by **0.001** (`ε = 0.001 · DN`).
+Decode a raw `/Emissivity/Mean` digital number to a `Float32` emissivity: fill
+value −9999 maps to `NaN`, otherwise scale by **0.001** (`ε = 0.001 · DN`).
 """
-@inline decode_mean(DN) = ifelse(DN == -9999, NaN, 0.001 * DN)
+@inline decode_mean(DN) = ifelse(DN == -9999, NaN32, 0.001f0 * DN)
 
 """
     decode_sdev(DN)
 
-Decode a raw `/Emissivity/SDev` digital number to an emissivity standard
-deviation: fill value −9999 maps to `NaN`, otherwise scale by **0.0001**
-(`σ = 1.0e-4 · DN`). Note the scale differs from [`decode_mean`](@ref)'s 0.001
-by 10× — decoding SDev with the Mean scale is a silent 10× error.
+Decode a raw `/Emissivity/SDev` digital number to a `Float32` emissivity
+standard deviation: fill value −9999 maps to `NaN`, otherwise scale by
+**0.0001** (`σ = 1.0e-4 · DN`). Note the scale differs from
+[`decode_mean`](@ref)'s 0.001 by 10× — decoding SDev with the Mean scale is a
+silent 10× error.
 """
-@inline decode_sdev(DN) = ifelse(DN == -9999, NaN, 1.0e-4 * DN)
+@inline decode_sdev(DN) = ifelse(DN == -9999, NaN32, 1f-4 * DN)
 
 """
     broadband_emissivity(ε_vector, coefficients)
@@ -165,8 +172,8 @@ in the HDF5 `/Emissivity/Mean` layout) to a broadband `(Nx, Ny)` array via
 [`broadband_emissivity`](@ref) along the band dimension.
 """
 function broadband_emissivity_map(decoded_bands, coefficients)
-    nbands, Nx, Ny = size(decoded_bands)
-    result = Array{Float64}(undef, Nx, Ny)
+    _, Nx, Ny = size(decoded_bands)
+    result = Array{Float32}(undef, Nx, Ny)
     for j in 1:Ny, i in 1:Nx
         result[i, j] = broadband_emissivity(view(decoded_bands, :, i, j), coefficients)
     end
@@ -181,8 +188,8 @@ As [`broadband_emissivity_map`](@ref) but combines per-band standard deviations
 [`broadband_uncertainty`](@ref).
 """
 function broadband_uncertainty_map(decoded_sdev_bands, coefficients)
-    nbands, Nx, Ny = size(decoded_sdev_bands)
-    result = Array{Float64}(undef, Nx, Ny)
+    _, Nx, Ny = size(decoded_sdev_bands)
+    result = Array{Float32}(undef, Nx, Ny)
     for j in 1:Ny, i in 1:Nx
         result[i, j] = broadband_uncertainty(view(decoded_sdev_bands, :, i, j), coefficients)
     end
@@ -190,18 +197,21 @@ function broadband_uncertainty_map(decoded_sdev_bands, coefficients)
 end
 
 """
-    mask_water(field, land_water_map; water_code = ASTERGED_WATER_CODE)
+    fill_water(field, land_water_map, water_value; water_code = ASTERGED_WATER_CODE)
 
 Return a copy of `field` with cells where `land_water_map == water_code` set to
-`NaN`. The default `water_code = 1` matches the ASTER GED `/Land_Water_Map/LWmap`
-0/1 (land/water) coding verified on a real AG100 v003 tile; see
-[`ASTERGED_WATER_CODE`](@ref).
+`water_value` — ASTER GED has no emissivity retrieval over water, and a `NaN`
+there would otherwise poison downstream flux kernels. The default
+`water_code = 1` matches the ASTER GED `/Land_Water_Map/LWmap` 0/1 (land/water)
+coding; see [`ASTERGED_WATER_CODE`](@ref).
 """
-mask_water(field, land_water_map; water_code = ASTERGED_WATER_CODE) =
-    ifelse.(land_water_map .== water_code, NaN, field)
+function fill_water(field, land_water_map, water_value; water_code = ASTERGED_WATER_CODE)
+    water_value = convert(eltype(field), water_value)
+    return ifelse.(land_water_map .== water_code, water_value, field)
+end
 
 #####
-##### Dataset interface (per Part D.2)
+##### Dataset interface
 #####
 
 DataWrangling.available_variables(::ASTERGEDv3) = ASTERGED_dataset_variable_names
@@ -243,7 +253,9 @@ end
 bound_str(::Nothing) = "nothing"
 bound_str(bounds) = string(bounds[1], "_", bounds[2])
 
-function DataWrangling.validate_dataset_coverage(grid, metadata::ASTERGEDMetadatum)
+# Shared by `validate_dataset_coverage` and `Downloads.download` so the guard
+# fires on every load path.
+function require_bounded_region(metadata::ASTERGEDMetadatum)
     region = metadata.region
     if !(region isa BoundingBox) || isnothing(region.longitude) || isnothing(region.latitude)
         error("ASTERGEDv3() must be used with a bounded region. " *
@@ -255,21 +267,32 @@ function DataWrangling.validate_dataset_coverage(grid, metadata::ASTERGEDMetadat
     return nothing
 end
 
+DataWrangling.validate_dataset_coverage(grid, metadata::ASTERGEDMetadatum) =
+    require_bounded_region(metadata)
+
 #####
 ##### Metadatum interface
 #####
 
 DataWrangling.is_three_dimensional(::ASTERGEDMetadatum) = false
-DataWrangling.default_inpainting(::ASTERGEDMetadatum) = nothing
 DataWrangling.missing_value(::ASTERGEDMetadatum) = -9999
 DataWrangling.dataset_variable_name(metadata::ASTERGEDMetadatum) =
     ASTERGED_dataset_variable_names[metadata.name]
+
+# Retrieval gaps (persistent cloud, screened snow) decode to NaN; inpaint them
+# from the nearest valid emissivity. `Inf` iterations so no gap is ever left as
+# the zero that a capped inpainting writes into unfilled cells.
+DataWrangling.default_inpainting(::ASTERGEDMetadatum) = NearestNeighborInpainting(Inf)
+DataWrangling.inpainted_metadata_path(metadata::ASTERGEDMetadatum) =
+    joinpath(metadata.dir, string("inpainted_", replace(metadata.filename, ".nc" => ".jld2")))
 
 # Coordinate variable names in the regional NetCDF written by the download step.
 DataWrangling.longitude_name(::ASTERGEDMetadatum) = "lon"
 DataWrangling.latitude_name(::ASTERGEDMetadatum)  = "lat"
 
-Oceananigans.Fields.location(::ASTERGEDMetadatum) = (Center, Center, Center)
+# Emissivity is a surface property: a reduced (`Nothing` z-location) field can be
+# indexed at any k, as the interface flux kernels do via `stateindex` at k = Nz.
+Oceananigans.Fields.location(::ASTERGEDMetadatum) = (Center, Center, Nothing)
 
 #####
 ##### Product identity + CMR granule discovery
@@ -301,8 +324,8 @@ end
 
 #####
 ##### Data retrieval — reads the regional NetCDF of raw digital numbers written
-##### by the download step and applies the pure decode / broadband / mask core,
-##### returning a physical `(Nx, Ny)` array on the regional lat/lon grid.
+##### by the download step and applies the pure decode / broadband / water-fill
+##### core, returning a physical `(Nx, Ny)` array on the regional lat/lon grid.
 #####
 
 # NetCDF variable names for the raw digital-number layers written by the download
@@ -318,12 +341,14 @@ Read the regional NetCDF of raw ASTER GED digital numbers for `metadata.region`
 (written by the download step; see [`asterged_tiles_to_netcdf`](@ref)), decode the
 digital numbers, collapse the five narrowband emissivities to a single broadband
 value (or propagate the per-band uncertainty for `:emissivity_uncertainty`), and
-mask out water. Returns a regional `(Nx, Ny)` array. The decode/broadband/mask
-steps are the pure, unit-tested core.
+fill water cells with the dataset's `water_emissivity` (zero uncertainty).
+Retrieval gaps stay `NaN` for the downstream inpainting. Returns a regional
+`(Nx, Ny)` array. The decode/broadband/fill steps are the pure, unit-tested core.
 """
 function DataWrangling.retrieve_data(metadata::ASTERGEDMetadatum)
     path = metadata_path(metadata)
     coefficients = metadata.dataset.broadband_coefficients
+    water_emissivity = metadata.dataset.water_emissivity
 
     ds = DataWrangling.Dataset(path)
     land_water_map = ds[ASTERGED_LWMAP_LAYER][:, :]
@@ -332,12 +357,12 @@ function DataWrangling.retrieve_data(metadata::ASTERGEDMetadatum)
         mean_dn = ds[ASTERGED_MEAN_LAYER][:, :, :]
         close(ds)
         emissivity = broadband_emissivity_map(decode_mean.(mean_dn), coefficients)
-        return mask_water(emissivity, land_water_map)
+        return fill_water(emissivity, land_water_map, water_emissivity)
     elseif metadata.name === :emissivity_uncertainty
         sdev_dn = ds[ASTERGED_SDEV_LAYER][:, :, :]
         close(ds)
         uncertainty = broadband_uncertainty_map(decode_sdev.(sdev_dn), coefficients)
-        return mask_water(uncertainty, land_water_map)
+        return fill_water(uncertainty, land_water_map, 0)
     else
         close(ds)
         error("ASTERGEDv3 does not provide variable :$(metadata.name); " *
@@ -353,6 +378,7 @@ end
 #####
 
 function Downloads.download(metadata::ASTERGEDMetadatum)
+    require_bounded_region(metadata)
     path = metadata_path(metadata)
     @root if !isfile(path)
         asterged_tiles_to_netcdf(metadata, path)
@@ -365,9 +391,7 @@ asterged_tiles_to_netcdf(metadata, path) =
     error("Reading ASTER GED HDF5 tiles requires ArchGDAL (built with the HDF5 driver) " *
           "and NASA Earthdata credentials. Load ArchGDAL with `using ArchGDAL`, and provide " *
           "credentials via EARTHDATA_USERNAME / EARTHDATA_PASSWORD (register free at " *
-          "https://urs.earthdata.nasa.gov). See future_plans/status/aster-ged_STATUS.md. " *
-          "The pure decode/broadband/mask core (decode_mean, decode_sdev, " *
-          "broadband_emissivity) works without this path.")
+          "https://urs.earthdata.nasa.gov).")
 
 # Implemented in ext/NumericalEarthArchGDALExt.jl once `ArchGDAL` is loaded.
 earthdata_cmr_granules(short_name, version, bbox) =

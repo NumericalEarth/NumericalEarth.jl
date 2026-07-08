@@ -67,9 +67,10 @@ end
 ##### Requires GDAL_jll built with the HDF5 driver.
 #####
 
-# Earthdata-authenticated download of a single tile. Credentials come from the
-# EARTHDATA_USERNAME / EARTHDATA_PASSWORD environment variables.
-function earthdata_download(url, path)
+# Earthdata-authenticated download of a single tile, retried on transient
+# failures (Earthdata Cloud drops connections occasionally). Credentials come
+# from the EARTHDATA_USERNAME / EARTHDATA_PASSWORD environment variables.
+function earthdata_download(url, path; attempts = 3)
     haskey(ENV, "EARTHDATA_USERNAME") && haskey(ENV, "EARTHDATA_PASSWORD") ||
         error("NASA Earthdata credentials not found. Set EARTHDATA_USERNAME and " *
               "EARTHDATA_PASSWORD (register free at https://urs.earthdata.nasa.gov).")
@@ -77,7 +78,17 @@ function earthdata_download(url, path)
     password = ENV["EARTHDATA_PASSWORD"]
     mktempdir() do tmp
         downloader = netrc_downloader(username, password, "urs.earthdata.nasa.gov", tmp)
-        Downloads.download(url, path; downloader)
+        for attempt in 1:attempts
+            try
+                Downloads.download(url, path; downloader)
+                break
+            catch error
+                rm(path, force = true)
+                attempt == attempts && rethrow()
+                @warn "ASTER GED tile download failed (attempt $attempt of $attempts); retrying..." url error
+                sleep(2attempt)
+            end
+        end
     end
     return path
 end
