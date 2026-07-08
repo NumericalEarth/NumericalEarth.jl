@@ -242,10 +242,12 @@ g = constants.gravitational_acceleration
 slice(operation, k) = Field(operation, indices = (:, :, k))
 
 function parent_slices(t)
+    hydrometeors = parent.microphysical_variables
+    qˡ = hydrometeors.qᶜˡ[Time(t)] + hydrometeors.qʳ[Time(t)]   ## total liquid: cloud + rain
+    qⁱ = hydrometeors.qᶜⁱ[Time(t)] + hydrometeors.qˢ[Time(t)]   ## total ice: cloud ice + snow
     (; ρ, θˡⁱ, qᵗ) = breeze_prognostic_state(constants, pˢᵗ,
                         parent.temperature[Time(t)], parent.specific_humidity[Time(t)],
-                        parent.microphysical_variables.qᶜˡ[Time(t)],
-                        parent.microphysical_variables.qᶜⁱ[Time(t)], parent.pressure)
+                        qˡ, qⁱ, parent.pressure)
     u, v = parent.velocities.u[Time(t)], parent.velocities.v[Time(t)]
     return (θᵥ = slice(θˡⁱ * (1 + ε * qᵗ),           1),
             U  = slice(sqrt(u^2 + v^2),              1),

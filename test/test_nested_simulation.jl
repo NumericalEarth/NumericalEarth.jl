@@ -270,7 +270,6 @@ end
     Lᵥ   = constants.liquid.reference_latent_heat
     Lₛ   = constants.ice.reference_latent_heat
     κ    = Rᵈ / cₚᵈ
-    εfac = Rᵛ / Rᵈ - 1
     pˢᵗ  = 1e5
 
     grid = RectilinearGrid(size = (2, 2, 2), x = (0, 1), y = (0, 1), z = (0, 1),
@@ -288,10 +287,10 @@ end
     # Moist + condensate, p ≠ pˢᵗ ⇒ check against the documented formulas.
     set!(T, 290.0); set!(qᵛ, 0.01); set!(qᶜ, 1e-3); set!(qⁱ, 5e-4); set!(p, 9e4)
     s2 = breeze_prognostic_state(constants, pˢᵗ, T, qᵛ, qᶜ, qⁱ, p)
-    Tᵛ = 290.0 * (1 + εfac * 0.01)
+    Rᵐ = (1 - 0.01 - 1e-3 - 5e-4) * Rᵈ + 0.01 * Rᵛ   # mixture gas constant: condensate loads the mixture
     θ  = 290.0 * (pˢᵗ / 9e4)^κ
     @test all(isapprox.(interior(s2.qᵗ), 0.01 + 1e-3 + 5e-4; rtol = 1e-12))
-    @test all(isapprox.(interior(s2.ρ), 9e4 / (Rᵈ * Tᵛ); rtol = 1e-10))
+    @test all(isapprox.(interior(s2.ρ), 9e4 / (Rᵐ * 290.0); rtol = 1e-10))
     @test all(isapprox.(interior(s2.θˡⁱ), θ * (1 - (Lᵥ * 1e-3 + Lₛ * 5e-4) / (cₚᵈ * 290.0)); rtol = 1e-10))
     @test all(interior(s2.θˡⁱ) .< θ)   # condensate loading lowers θˡⁱ below the dry θ
 end
@@ -455,6 +454,51 @@ end
     θ₃ = Array(interior(reconstruct(exchanger, 3.0).θˡⁱ))
     @test all(θ₀ .≈ 280 * (1e5 / 9e4)^κ)
     @test all(θ₃ .≈ 283 * (1e5 / 9e4)^κ)
+end
+
+# Every liquid/ice hydrometeor the parent carries — cloud liquid + rain, cloud ice + snow — is mass that
+# is NOT dry gas, so it must load the density through Breeze's mixture gas constant (ρ = p / (Rᵐ T),
+# Rᵐ = (1 − qᵗ) Rᵈ + qᵛ Rᵛ) and enter qᵗ. Verifies both the kernel prognostics (`ρᵈ`) and the
+# `breeze_prognostic_state` broadcast path (`reconstruct_parent_state`) sum ALL hydrometeors, not just cloud.
+@testset "StateExchanger: cloud + precipitation load the density on $(arch)" for arch in test_architectures
+    ext = Base.get_extension(NumericalEarth, :NumericalEarthBreezeExt)
+    reconstruct = NumericalEarth.NestedModels.reconstruct_parent_state
+
+    parent_grid = RectilinearGrid(arch; size = (4, 4, 2), x = (-1, 1), y = (-1, 1),
+                                  z = (0, 1), topology = (Bounded, Bounded, Bounded))
+    times = [0.0, 1.0, 2.0]
+    hydrometeor() = FieldTimeSeries{Center, Center, Center}(parent_grid, times)
+    qᶜˡ, qʳ, qᶜⁱ, qˢ = hydrometeor(), hydrometeor(), hydrometeor(), hydrometeor()
+    set!(qᶜˡ, (x, y, z, t) -> 1.0e-3)   # cloud liquid
+    set!(qʳ,  (x, y, z, t) -> 1.5e-3)   # rain
+    set!(qᶜⁱ, (x, y, z, t) -> 4.0e-4)   # cloud ice
+    set!(qˢ,  (x, y, z, t) -> 2.0e-3)   # snow
+    parent = PrescribedAtmosphere(parent_grid, times; microphysical_variables = (; qᶜˡ, qʳ, qᶜⁱ, qˢ))
+    set!(parent.temperature,       (x, y, z, t) -> 280.0)
+    set!(parent.specific_humidity, (x, y, z, t) -> 0.005)
+    set!(parent.velocities.u,      (x, y, z, t) -> 1.0)
+    set!(parent.velocities.v,      (x, y, z, t) -> 0.0)
+    set!(parent.pressure,          (x, y, z, t) -> 9.0e4)
+
+    constants = ThermodynamicConstants()
+    exchanger = ext.state_exchanger(parent, 1.0e5, constants)   # default condensates ⇒ all four species
+    state     = reconstruct(exchanger, 0.0)
+
+    Rᵈ = dry_air_gas_constant(constants)
+    Rᵛ = vapor_gas_constant(constants)
+    qᵛ, T, p = 0.005, 280.0, 9.0e4
+    qˡ = 1.0e-3 + 1.5e-3            # total liquid: cloud + rain
+    qⁱ = 4.0e-4 + 2.0e-3            # total ice: cloud ice + snow
+    Rᵐ = (1 - qᵛ - qˡ - qⁱ) * Rᵈ + qᵛ * Rᵛ
+    ρ  = p / (Rᵐ * T)
+
+    @test all(Array(interior(state.qᵗ))            .≈ qᵛ + qˡ + qⁱ)       # qᵗ counts every hydrometeor
+    @test all(Array(interior(state.ρ))             .≈ ρ)                   # ρ = Breeze's mixture-gas EOS
+    @test all(Array(interior(exchanger.prognostic.ρᵈ[1])) .≈ ρ * (1 - (qᵛ + qˡ + qⁱ)))  # kernel path
+
+    # Dropping rain + snow (cloud-only) gives a measurably different, biased density.
+    ρ_cloud_only = p / (((1 - qᵛ - 1.0e-3 - 4.0e-4) * Rᵈ + qᵛ * Rᵛ) * T)
+    @test !isapprox(ρ, ρ_cloud_only; rtol = 1e-6)
 end
 
 @testset "StateExchanger: moving-window interpolation never aliases nonresident time slots on $(arch)" for arch in test_architectures

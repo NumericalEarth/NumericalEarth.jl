@@ -125,9 +125,11 @@ lateral boundary conditions — and, when `relaxation_rate` (s⁻¹) is given, i
 over `relaxation_mask` (default: a cosine ramp over the outermost `relaxation_width` cells) — interpolate
 those precomputed prognostics (via `parent_boundary_conditions` / `parent_forcings`).
 
-Cloud/ice inputs to the combine default to the parent's `qᶜˡ`/`qᶜⁱ` but may be supplied from any source
-via `parent_condensates`, a `NamedTuple` with `qᶜˡ`/`qᶜⁱ` entries. Either entry — or the whole
-`parent_condensates` — may be `nothing` (⇒ omitted, so `qᵗ = qᵛ`).
+Liquid/ice inputs to the combine default to the parent's hydrometeors — total liquid `qᶜˡ + qʳ`
+(cloud liquid + rain) and total ice `qᶜⁱ + qˢ` (cloud ice + snow) — but may be supplied from any
+source via `parent_condensates`, a `NamedTuple` with `qᶜˡ`/`qʳ`/`qᶜⁱ`/`qˢ` entries. Any missing or
+`nothing` entry — or the whole `parent_condensates` — is treated as absent (⇒ omitted; with all four
+absent, `qᵗ = qᵛ`).
 
 Provides sensible, overridable physics defaults: `microphysics` (1-moment mixed-phase when
 `CloudMicrophysics` is loaded), `momentum_advection = WENO(order=9)`, `coriolis = SphericalCoriolis()`,
@@ -154,7 +156,9 @@ function NumericalEarth.NestedModels.nested_atmosphere_model(
             terrain = nothing,
             terrain_blend_width = 5,
             parent_condensates = (qᶜˡ = parent_atmosphere.microphysical_variables.qᶜˡ,
-                                  qᶜⁱ = parent_atmosphere.microphysical_variables.qᶜⁱ),
+                                  qʳ  = parent_atmosphere.microphysical_variables.qʳ,
+                                  qᶜⁱ = parent_atmosphere.microphysical_variables.qᶜⁱ,
+                                  qˢ  = parent_atmosphere.microphysical_variables.qˢ),
             microphysics = default_nested_microphysics(),
             momentum_advection = WENO(order = 9),
             scalar_advection = default_nested_scalar_advection(microphysics),
@@ -174,7 +178,7 @@ function NumericalEarth.NestedModels.nested_atmosphere_model(
 
     # Precompute the child prognostics on the parent grid (combine-then-interpolate); the exchanger owns
     # its own 3-level moving window and refreshes it from the parent each step via `exchange_state!`.
-    condensates = isnothing(parent_condensates) ? (qᶜˡ = nothing, qᶜⁱ = nothing) : parent_condensates
+    condensates = isnothing(parent_condensates) ? (qᶜˡ = nothing, qʳ = nothing, qᶜⁱ = nothing, qˢ = nothing) : parent_condensates
     exchanger  = state_exchanger(parent_atmosphere, pˢᵗ, thermodynamic_constants; condensates)
     prognostic = exchanger.prognostic
 

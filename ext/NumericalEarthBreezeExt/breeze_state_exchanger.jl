@@ -13,8 +13,8 @@
 # raw fields and combining afterward.
 #
 # Density weighting matches Breeze's `establish_densities!`/`set!` (dry density is the prognostic):
-#   ρ   = p / (Rᵈ Tᵥ)            (total moist density),   Tᵥ = T (1 + (Rᵛ/Rᵈ − 1) qᵛ)
-#   qᵗ  = qᵛ + qᶜˡ + qᶜⁱ
+#   ρ   = p / (Rᵐ T)             (total moist density),   Rᵐ = (1 − qᵗ) Rᵈ + qᵛ Rᵛ  (condensate loads the mixture)
+#   qᵗ  = qᵛ + qˡ + qⁱ,   qˡ = qᶜˡ + qʳ (all liquid), qⁱ = qᶜⁱ + qˢ (all ice)
 #   ρᵈ  = ρ (1 − qᵗ)                                    ← the prognostic (dry) density
 #   ρθ  = ρᵈ · θˡⁱ,   ρu = ρᵈ · u,   ρv = ρᵈ · v         ← DRY-weighted (energy + momentum)
 #   ρqᵛ = ρ · qᵛ                                         ← TOTAL-weighted (moisture mass density)
@@ -66,17 +66,17 @@ const PrognosticStateFTS = FieldTimeSeries{<:Any, <:Any, <:Any, <:Any, <:Prognos
 update_field_time_series!(::PrognosticStateFTS, ::Time) = nothing
 
 @kernel function _compute_child_prognostics!(ρᵈ, ρu, ρv, ρθ, ρqᵛ,
-                                             T, qᵛ, qᶜˡ, qᶜⁱ, p, u, v,
+                                             T, qᵛ, qᶜˡ, qʳ, qᶜⁱ, qˢ, p, u, v,
                                              pˢᵗ, Rᵈ, Rᵛ, cᵖᵈ, ℒˡ, ℒⁱ)
     i, j, k = @index(Global, NTuple)
     @inbounds begin
         Tᵢ  = T[i, j, k]
         qᵛᵢ = qᵛ[i, j, k]
-        qˡ  = qᶜˡ[i, j, k]
-        qⁱ  = qᶜⁱ[i, j, k]
+        qˡ  = qᶜˡ[i, j, k] + qʳ[i, j, k]
+        qⁱ  = qᶜⁱ[i, j, k] + qˢ[i, j, k]
         pᵢ  = p[i, j, k]
 
-        ρ  = air_density(Tᵢ, qᵛᵢ, pᵢ, Rᵈ, Rᵛ)
+        ρ  = air_density(Tᵢ, qᵛᵢ, qˡ, qⁱ, pᵢ, Rᵈ, Rᵛ)
         qᵗ = qᵛᵢ + qˡ + qⁱ
         ρd = ρ * (1 - qᵗ)
         θ  = liquid_ice_potential_temperature(Tᵢ, qˡ, qⁱ, pᵢ, pˢᵗ, Rᵈ, cᵖᵈ, ℒˡ, ℒⁱ)
@@ -137,7 +137,8 @@ function compute_child_prognostics!(prognostic, parent_atmosphere, pˢᵗ, const
         launch!(arch, grid, :xyz, _compute_child_prognostics!,
                 prognostic.ρᵈ[n], prognostic.ρu[n], prognostic.ρv[n], prognostic.ρθ[n], prognostic.ρqᵛ[n],
                 parent_atmosphere.temperature[n], parent_atmosphere.specific_humidity[n],
-                source_snapshot(condensates.qᶜˡ, n), source_snapshot(condensates.qᶜⁱ, n),
+                source_snapshot(condensates.qᶜˡ, n), source_snapshot(condensates.qʳ, n),
+                source_snapshot(condensates.qᶜⁱ, n), source_snapshot(condensates.qˢ, n),
                 source_snapshot(parent_atmosphere.pressure, n),   # static Field (ERA5) or FTS: both handled
                 parent_atmosphere.velocities.u[n], parent_atmosphere.velocities.v[n],
                 pˢᵗ, Rᵈ, Rᵛ, cᵖᵈ, ℒˡ, ℒⁱ)
@@ -164,7 +165,7 @@ struct StateExchanger{P, Pr, C, S, Q}
     prognostic   :: Pr   # NamedTuple of derived child-prognostic FTS on the parent grid
     constants    :: C
     pˢᵗ          :: S
-    condensates  :: Q    # NamedTuple (qᶜˡ, qᶜⁱ); entries may be `nothing` (⇒ `ZeroField`)
+    condensates  :: Q    # NamedTuple (qᶜˡ, qʳ, qᶜⁱ, qˢ); entries may be `nothing` (⇒ `ZeroField`)
 end
 
 # Diagnostics on the exchanger's density-weighted prognostics at time index `n`, as lazy operations.
@@ -182,15 +183,21 @@ function reconstruct_parent_state(ex::StateExchanger, time)
     return NumericalEarth.Atmospheres.breeze_prognostic_state(ex.constants, ex.pˢᵗ,
                full_snapshot(parent.temperature, time),
                full_snapshot(parent.specific_humidity, time),
-               full_snapshot(ex.condensates.qᶜˡ, time),
-               full_snapshot(ex.condensates.qᶜⁱ, time),
+               full_snapshot(ex.condensates.qᶜˡ, time) + full_snapshot(ex.condensates.qʳ, time),
+               full_snapshot(ex.condensates.qᶜⁱ, time) + full_snapshot(ex.condensates.qˢ, time),
                full_snapshot(parent.pressure, time))
 end
 
 function state_exchanger(parent_atmosphere, pˢᵗ, constants;
                          condensates = (qᶜˡ = parent_atmosphere.microphysical_variables.qᶜˡ,
-                                        qᶜⁱ = parent_atmosphere.microphysical_variables.qᶜⁱ),
+                                        qʳ  = parent_atmosphere.microphysical_variables.qʳ,
+                                        qᶜⁱ = parent_atmosphere.microphysical_variables.qᶜⁱ,
+                                        qˢ  = parent_atmosphere.microphysical_variables.qˢ),
                          time_indices_in_memory = 3)
+
+    # Fill any hydrometeor a caller-supplied `condensates` omits with `nothing` (⇒ ZeroField), so the
+    # 4-species contract (qᶜˡ, qʳ, qᶜⁱ, qˢ) holds regardless of how many species the source carries.
+    condensates = merge((qᶜˡ = nothing, qʳ = nothing, qᶜⁱ = nothing, qˢ = nothing), condensates)
 
     prognostic = child_prognostic_field_time_series(parent_atmosphere; time_indices_in_memory)
     exchanger  = StateExchanger(parent_atmosphere, prognostic, constants, pˢᵗ, condensates)
