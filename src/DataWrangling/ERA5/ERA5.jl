@@ -17,7 +17,7 @@ using Oceananigans.Architectures: CPU
 using Oceananigans.BoundaryConditions: fill_halo_regions!, FieldBoundaryConditions
 using Oceananigans.DistributedComputations: Distributed, child_architecture
 using Oceananigans.Fields: Field, Center, set!
-using Oceananigans.OutputReaders: Cyclical, FieldTimeSeries, TimeSeriesInterpolation, FlavorOfFTS, time_indices
+using Oceananigans.OutputReaders: Cyclical, Linear, FieldTimeSeries, TimeSeriesInterpolation, FlavorOfFTS, time_indices
 using Oceananigans.TimeSteppers: Clock
 using NCDatasets: NCDatasets
 using Printf: Printf, @sprintf
