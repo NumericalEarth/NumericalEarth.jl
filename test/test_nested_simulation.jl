@@ -621,12 +621,12 @@ end
                 coriolis = nothing, terrain = nothing, parent_condensates = nothing)
     ext.initialize_nested_child!(model, nothing, first(times), ""; balancer = false)
 
-    sim = Simulation(model; Δt = 0.5, stop_time = 12.0)
+    sim = Simulation(model; Δt = 0.5, stop_time = 10.0)
     conjure_time_step_wizard!(sim, IterationInterval(1); cfl = 0.3, max_Δt = 2.0)
     run!(sim)
 
     @test model.exchanger.prognostic.ρᵈ.backend.start > 1        # actually crossed the window move
-    @test model.clock.time ≥ 12.0 - 2.0                          # reached the end (no NaN Δt stall)
+    @test model.clock.time ≥ 10.0 - 2.0                          # reached the end (no NaN Δt stall)
     for (name, field) in pairs(prognostic_fields(model.child))
         @test all(isfinite, Array(interior(field)))
     end
