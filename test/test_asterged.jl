@@ -9,7 +9,7 @@ using NumericalEarth.DataWrangling.ASTERGED: decode_mean, decode_sdev,
 using NumericalEarth.DataWrangling: longitude_interfaces, latitude_interfaces,
     dataset_variable_name, validate_dataset_coverage, metadata_filename,
     is_three_dimensional, default_inpainting, missing_value, native_grid,
-    NearestNeighborInpainting
+    NearestNeighborInpainting, supported_datasets
 using NumericalEarth: stateindex
 
 using Oceananigans.Grids: λnodes, φnodes
@@ -146,6 +146,9 @@ end
     end
 
     @test_throws ArgumentError ASTERGEDv3(resolution = :AG5km)
+
+    # Non-parametric concrete struct → discoverable by `supported_datasets()`.
+    @test ASTERGEDv3 in supported_datasets()
 end
 
 @testset "ASTER GED region-keyed filenames are distinct" begin

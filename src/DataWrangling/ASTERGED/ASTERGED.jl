@@ -40,7 +40,7 @@ const ASTERGED_WATER_CODE = 1
 #####
 
 """
-    ASTERGEDv3{R, FT} <: AbstractStaticDataset
+    ASTERGEDv3 <: AbstractStaticDataset
 
 ASTER Global Emissivity Dataset (GED) v3: a static (2000–2008 clear-sky mean)
 climatology of land-surface emissivity on a plain geographic (WGS84 lat/lon)
@@ -74,22 +74,24 @@ unit-tested directly.
 Data source: https://www.earthdata.nasa.gov/data/catalog/lpcloud-ag100-003
 Reference: Hulley et al. (2015), GRL, doi:10.1002/2015GL065564.
 """
-struct ASTERGEDv3{R, FT} <: AbstractStaticDataset
-    resolution :: Symbol           # :AG100 (100 m) or :AG1km (1 km)
-    broadband_coefficients :: R    # 5-vector for the ε_broadband synthesis
-    water_emissivity :: FT         # constant substituted where the tile land-water map says water
+struct ASTERGEDv3 <: AbstractStaticDataset
+    resolution :: Symbol                        # :AG100 (100 m) or :AG1km (1 km)
+    broadband_coefficients :: Vector{Float64}   # 5-vector for the ε_broadband synthesis
+    water_emissivity :: Float64                 # constant substituted where the tile land-water map says water
 end
 
 """
     ASTERGEDv3(; resolution = :AG100,
                  broadband_coefficients = OGAWA_SCHMUGGE_2004_BROADBAND_COEFFICIENTS,
-                 water_emissivity = 0.985)
+                 water_emissivity = 0.97)
 
 Construct an [`ASTERGEDv3`](@ref) dataset. `resolution` is `:AG100` (100 m) or
 `:AG1km` (1 km). `broadband_coefficients` is the 5-band narrowband→broadband
 emissivity synthesis vector (default from Ogawa & Schmugge (2004), 8.0–13.5 µm
-window). `water_emissivity` is the broadband emissivity substituted over water
-cells, where ASTER GED has no retrieval (default 0.985, typical of inland water).
+window). `water_emissivity` is the emissivity substituted over water cells, where
+ASTER GED has no retrieval; the default `0.97` matches the ocean-surface
+emissivity used elsewhere in NumericalEarth so a coupled domain has one
+consistent water value.
 
 ```jldoctest
 julia> using NumericalEarth
@@ -103,7 +105,7 @@ ASTERGEDv3(resolution = :AG1km)
 """
 function ASTERGEDv3(; resolution = :AG100,
                       broadband_coefficients = OGAWA_SCHMUGGE_2004_BROADBAND_COEFFICIENTS,
-                      water_emissivity = 0.985)
+                      water_emissivity = 0.97)
     resolution ∈ (:AG100, :AG1km) ||
         throw(ArgumentError("ASTERGEDv3 resolution must be :AG100 or :AG1km, got :$resolution"))
     return ASTERGEDv3(resolution, broadband_coefficients, water_emissivity)
