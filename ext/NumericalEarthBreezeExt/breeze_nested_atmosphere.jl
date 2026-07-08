@@ -29,6 +29,7 @@ using Oceananigans.Units: Time
 using GPUArraysCore: @allowscalar
 using Breeze: CompressibleDynamics, SplitExplicitTimeDiscretization, UpperSponge, NoDivergenceDamping,
               MixedPhaseEquilibrium, materialize_terrain!, moisture_prognostic_name
+using Breeze.AtmosphereModels: prognostic_field_names
 
 # Default child microphysics: 1-moment bulk mixed-phase (rain + snow) precipitation with
 # saturation-adjustment cloud formation when Breeze's `CloudMicrophysics` extension is loaded,
@@ -83,6 +84,19 @@ function default_nested_dynamics(grid; surface_pressure, reference_potential_tem
     isnothing(surface_pressure)                || (kw = merge(kw, (; surface_pressure)))
     isnothing(reference_potential_temperature) || (kw = merge(kw, (; reference_potential_temperature)))
     return CompressibleDynamics(time_discretization; kw...)
+end
+
+# Default child scalar advection: WENO(5) for the energy density `ρθ` and positivity-bounded WENO(5)
+# for the moisture + precipitation densities. `atmosphere_model`'s scalar default is `Centered(order=2)`,
+# which is oscillatory on the sharp moist fronts of a downscaled convective case — it overshoots the
+# moisture density into the density/saturation coupling and blows the cold start up within the first
+# minute. Bounding mirrors Breeze's own moist-convection examples (`ρqᵉ = WENO(order=5, bounds=(0, 1))`).
+# The energy density is unbounded (`ρθ` is not confined to `[0, 1]`). Names are derived from the
+# microphysics so the default tracks whichever moisture/precipitation prognostics it carries.
+function default_nested_scalar_advection(microphysics)
+    bounded = WENO(order = 5, bounds = (0, 1))
+    moist_names = (moisture_prognostic_name(microphysics), prognostic_field_names(microphysics)...)
+    return merge((ρθ = WENO(order = 5),), NamedTuple{moist_names}(map(_ -> bounded, moist_names)))
 end
 
 # Child terrain for the nested LAM: an elevation `Field` passes through; anything else is treated
@@ -143,6 +157,7 @@ function NumericalEarth.NestedModels.nested_atmosphere_model(
                                   qᶜⁱ = parent_atmosphere.microphysical_variables.qᶜⁱ),
             microphysics = default_nested_microphysics(),
             momentum_advection = WENO(order = 9),
+            scalar_advection = default_nested_scalar_advection(microphysics),
             coriolis = SphericalCoriolis(),
             damping_rate = 1/5,
             damping_depth = default_lid_depth(child_grid),
@@ -158,9 +173,13 @@ function NumericalEarth.NestedModels.nested_atmosphere_model(
     pˢᵗ = dynamics.standard_pressure
 
     # Precompute the child prognostics on the parent grid (combine-then-interpolate); the exchanger owns
-    # them and refreshes them from the parent each step via `exchange_state!`.
+    # them and refreshes them from the parent each step via `exchange_state!`. Size the derived window to
+    # the parent's own resident memory: a full-memory parent (the usual case) then gets a window spanning
+    # the whole run that never moves, so no window-move recompute injects the lateral-corner mass imbalance
+    # that NaNs the run at the first parent seam past the initial window (the 2 h seam).
     condensates = isnothing(parent_condensates) ? (qᶜˡ = nothing, qᶜⁱ = nothing) : parent_condensates
-    exchanger  = state_exchanger(parent_atmosphere, pˢᵗ, thermodynamic_constants; condensates)
+    time_indices_in_memory = length(parent_atmosphere.temperature.backend)
+    exchanger  = state_exchanger(parent_atmosphere, pˢᵗ, thermodynamic_constants; condensates, time_indices_in_memory)
     prognostic = exchanger.prognostic
 
     ρqᵛ = prognostic.ρqᵛ
@@ -203,14 +222,22 @@ function NumericalEarth.NestedModels.nested_atmosphere_model(
         parent_forcings(; variables, rate = relaxation_rate, mask = relax_mask)
     end
 
-    # ρw Rayleigh lid sponge: relax vertical momentum toward zero over the top `damping_depth` metres.
-    lid_sponge = (; ρw = Relaxation(rate = damping_rate, mask = lid_sponge_mask(child_grid, damping_depth)))
+    # ρw Rayleigh sponge over BOTH the top `damping_depth` metres AND the lateral relaxation zone. The
+    # horizontal Davies nudging drives a persistent vertical-velocity wave up the (inflow) lateral walls
+    # (nudging the horizontal mass/momentum harder makes it worse); `ρw` is otherwise undamped there, so
+    # the wave amplifies up the wall column until a top-only sponge catches it too late — at the wall/lid
+    # corner, where ρ collapses and the run NaNs past ~2 h. Damping `ρw` toward zero across the wall zone,
+    # where the parent's large-scale `w` is negligible, absorbs the creep at its source. One `Relaxation`
+    # on `ρw` with the pointwise max of the lid and lateral (Davies) masks.
+    lid_mask = lid_sponge_mask(child_grid, damping_depth)
+    sponge_mask = (λ, φ, z) -> max(lid_mask(λ, φ, z), relax_mask(λ, φ, z))
+    lid_sponge = (; ρw = Relaxation(rate = damping_rate, mask = sponge_mask))
 
     # initialize = false: the resting-state construction default would survive into
     # `initialize_nested_child!` and destabilize the adiabatic balance twin — the child's full
     # state (and reference) is derived from the parent instead.
     child = NumericalEarth.Atmospheres.atmosphere_model(child_grid;
-                thermodynamic_constants, microphysics, momentum_advection, coriolis, dynamics,
+                thermodynamic_constants, microphysics, momentum_advection, scalar_advection, coriolis, dynamics,
                 boundary_conditions = merge_boundary_conditions(nested_bcs, NamedTuple(boundary_conditions)),
                 forcing = merge(lid_sponge, davies, NamedTuple(forcing)),
                 initialize = false,

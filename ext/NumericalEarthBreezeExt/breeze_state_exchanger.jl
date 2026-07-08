@@ -89,12 +89,19 @@ end
 @inline full_snapshot(::Nothing, time) = 0
 
 # Allocate the child-prognostic `FieldTimeSeries` NamedTuple on the *parent* grid: Center-located, over
-# the parent's time axis + indexing, but holding only 3 resident levels (`PrognosticStateBackend`).
-function child_prognostic_field_time_series(parent_atmosphere)
+# the parent's time axis + indexing, holding `time_indices_in_memory` resident levels (bounded to
+# `[3, length(times)]`). Sizing this to match the parent's own resident memory is what a nested run does
+# (see `nested_atmosphere_model`): a full-memory parent then yields a derived window spanning the whole
+# run, which NEVER moves — so every parent seam behaves like the in-window 1 h seam. The window *move*
+# recompute (needed only for a limited-memory/streaming parent, and the default here) otherwise injects a
+# lateral-corner mass imbalance that drives the corner density negative and NaNs the run at the first move
+# (the 2 h seam). The 3-level default is the minimal window that still spans a node-crossing step.
+function child_prognostic_field_time_series(parent_atmosphere; time_indices_in_memory = 3)
     grid  = parent_atmosphere.temperature.grid
     times = parent_atmosphere.temperature.times
+    window = clamp(time_indices_in_memory, 3, length(times))
     build() = FieldTimeSeries{Center, Center, Center}(grid, times;
-                                                      backend = PrognosticStateBackend(1, 3),
+                                                      backend = PrognosticStateBackend(1, window),
                                                       time_indexing = Cyclical())
     return (ρᵈ = build(), ρu = build(), ρv = build(), ρθ = build(), ρqᵛ = build())
 end
@@ -167,9 +174,10 @@ end
 
 function state_exchanger(parent_atmosphere, pˢᵗ, constants;
                          condensates = (qᶜˡ = parent_atmosphere.microphysical_variables.qᶜˡ,
-                                        qᶜⁱ = parent_atmosphere.microphysical_variables.qᶜⁱ))
+                                        qᶜⁱ = parent_atmosphere.microphysical_variables.qᶜⁱ),
+                         time_indices_in_memory = 3)
 
-    prognostic = child_prognostic_field_time_series(parent_atmosphere)
+    prognostic = child_prognostic_field_time_series(parent_atmosphere; time_indices_in_memory)
     exchanger  = StateExchanger(parent_atmosphere, prognostic, constants, pˢᵗ, condensates)
     exchange_state!(exchanger, first(parent_atmosphere.temperature.times); force=true)   # fill the initial window
     return exchanger
@@ -186,9 +194,11 @@ function exchange_state!(ex::StateExchanger, time; force=false)
     # window spanning [n₁-1, n₁, n₁+1] keeps EVERY sub-stage query resident across a node crossing.
     # A 2-level window cannot span the crossing — its start-side query returns a stale/wrong boundary target
     # (the hourly-seam kick that tips the child at every ERA5 crossing).
+    # A full window (memory ≥ the whole time axis) holds every level, so it never moves — pinned at
+    # start = 1. Only a limited (streaming) window slides to bracket `time` one level below `t + Δt`.
     _, n₁, _ = interpolating_time_indices(p.ρᵈ.time_indexing, p.ρᵈ.times, time)
     N = length(p.ρᵈ.times)
-    start = clamp(n₁ - 1, 1, max(1, N - 2))
+    start = length(p.ρᵈ.backend) >= N ? 1 : clamp(n₁ - 1, 1, max(1, N - 2))
 
     # Advance the parent's own (possibly limited-memory) FTS windows to bracket the child window's LOWER
     # edge `times[start]`, NOT `time` (= t + Δt). A parent bracketed on t+Δt holds a forward window from

@@ -102,9 +102,12 @@ grid = LatitudeLongitudeGrid(arch;
 # `relaxation_width` cells), materializes the blended `terrain`, and wraps parent + child in a
 # `NestedModel` whose `time_step!` advances the child then ticks the parent clock.
 
-# Time window: a `(start, end)` tuple — the hourly forcing cadence is the dataset's own. The
-# initial outer time step is gentle (the adaptive wizard below ramps it); the Davies relaxation
-# timescale is tied to it.
+# Time window: a `(start, end)` tuple — the hourly forcing cadence is the dataset's own. The initial
+# outer time step is gentle (the adaptive wizard below ramps it). The Davies relaxation is an *explicit*
+# nudge `dφ/dt = −r(φ − φₚₐᵣₑₙₜ)`, stable only for `r·Δt ≲ 2`, so its rate is a fixed `1/300 s⁻¹` — small
+# enough that `r·Δt` stays well below 1 even at the wizard's `max_Δt`, rather than tied to Δt (which would
+# climb into the over-relaxation regime as Δt grows). Momentum uses a narrower `WENO(5)` stencil, which
+# interacts less violently with the open-boundary halo than the default `WENO(9)`.
 
 Δt = 1
 era5_datadir = "era5"   # where ERA5 data is saved locally
@@ -115,8 +118,9 @@ model = nested_atmosphere_model(grid, dataset;
                                 dir = era5_datadir,
                                 terrain = ETOPO2022(),
                                 terrain_blend_width = relax_width,
-                                relaxation_rate = 1 / (10Δt),
-                                relaxation_width = relax_width)
+                                relaxation_rate = 1/300,
+                                relaxation_width = relax_width,
+                                momentum_advection = WENO(order = 5))
 
 # The realized parent region (child + padding, snapped to the native 0.25° grid) serves the domain
 # map and the ERA5 snapshots below.
@@ -155,7 +159,7 @@ fig
 simulation = Simulation(model; Δt, stop_time = 43200.0)   # 12 h (matches `dates` above)
 
 add_callback!(simulation, bulk_drag(model), IterationInterval(1))
-conjure_time_step_wizard!(simulation, IterationInterval(1); cfl = 0.7, max_Δt = 30)
+conjure_time_step_wizard!(simulation, IterationInterval(1); cfl = 0.7, max_Δt = 20)
 
 # ## Output
 #
