@@ -207,6 +207,8 @@ using .DataWrangling.GloFAS
 using .DataWrangling.OSPapa
 using .DataWrangling.ERA5
 using .DataWrangling.SoilGrids
+using .DataWrangling.MODISLand
+using .DataWrangling.CanopyRoughness
 
 using PrecompileTools: @setup_workload, @compile_workload
 

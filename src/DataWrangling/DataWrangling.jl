@@ -361,6 +361,8 @@ include("IBCSO/IBCSO.jl")
 include("GEBCO/GEBCO.jl")
 include("IBCAO/IBCAO.jl")
 include("CopernicusDEM/CopernicusDEM.jl")
+include("MODISLand/MODISLand.jl")
+include("CanopyRoughness/CanopyRoughness.jl")
 
 using .ETOPO
 using .ECCO
@@ -376,6 +378,8 @@ using .IBCSO
 using .GEBCO
 using .IBCAO
 using .CopernicusDEM
+using .MODISLand
+using .CanopyRoughness
 
 function dataset_modules()
     modules = Module[]
