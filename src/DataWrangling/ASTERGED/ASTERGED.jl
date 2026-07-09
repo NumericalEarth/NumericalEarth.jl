@@ -49,8 +49,8 @@ ASTER Global Emissivity Dataset (GED) v3: a static (2000–2008 clear-sky mean)
 climatology of land-surface emissivity on a plain geographic (WGS84 lat/lon)
 grid, distributed as HDF5 in 1°×1° tiles. Two resolutions are supported:
 
-- `:highresolution` — 100 m (3 arcsec, 1000×1000 px/tile). Primary.
-- `:lowresolution` — 1 km (30 arcsec, 100×100 px/tile). Coarser sibling.
+- `:high_100m` — 100 m (3 arcsec, 1000×1000 px/tile). Primary.
+- `:low_1km` — 1 km (30 arcsec, 100×100 px/tile). Coarser sibling.
 
 Internally these map to NASA's product short names (`AG100` / `AG1KM`, where
 `AG` abbreviates ASTER GED), which appear in CMR queries and tile filenames.
@@ -81,18 +81,18 @@ Data source: https://www.earthdata.nasa.gov/data/catalog/lpcloud-ag100-003
 Reference: Hulley et al. (2015), GRL, doi:10.1002/2015GL065564.
 """
 struct ASTERGEDv3 <: AbstractStaticDataset
-    resolution :: Symbol                        # :highresolution (100 m) or :lowresolution (1 km)
+    resolution :: Symbol                        # :high_100m (100 m) or :low_1km (1 km)
     broadband_coefficients :: Vector{Float64}   # 5-vector for the ε_broadband synthesis
     water_emissivity :: Float64                 # constant substituted where the tile land-water map says water
 end
 
 """
-    ASTERGEDv3(; resolution = :highresolution,
+    ASTERGEDv3(; resolution = :high_100m,
                  broadband_coefficients = OGAWA_SCHMUGGE_2004_BROADBAND_COEFFICIENTS,
                  water_emissivity = default_water_emissivity)
 
-Construct an [`ASTERGEDv3`](@ref) dataset. `resolution` is `:highresolution`
-(100 m) or `:lowresolution` (1 km). `broadband_coefficients` is the 5-band narrowband→broadband
+Construct an [`ASTERGEDv3`](@ref) dataset. `resolution` is `:high_100m`
+(100 m) or `:low_1km` (1 km). `broadband_coefficients` is the 5-band narrowband→broadband
 emissivity synthesis vector (default from [Ogawa & Schmugge (2004)](@cite ogawa2004mapping),
 8.0–13.5 µm window). `water_emissivity` is the emissivity substituted over water cells, where
 ASTER GED has no retrieval; the default is the shared `default_water_emissivity`
@@ -103,17 +103,17 @@ has one consistent water value.
 julia> using NumericalEarth
 
 julia> ASTERGEDv3()
-ASTERGEDv3(resolution = :highresolution)
+ASTERGEDv3(resolution = :high_100m)
 
-julia> ASTERGEDv3(resolution = :lowresolution)
-ASTERGEDv3(resolution = :lowresolution)
+julia> ASTERGEDv3(resolution = :low_1km)
+ASTERGEDv3(resolution = :low_1km)
 ```
 """
-function ASTERGEDv3(; resolution = :highresolution,
+function ASTERGEDv3(; resolution = :high_100m,
                       broadband_coefficients = OGAWA_SCHMUGGE_2004_BROADBAND_COEFFICIENTS,
                       water_emissivity = default_water_emissivity)
-    resolution ∈ (:highresolution, :lowresolution) ||
-        throw(ArgumentError("ASTERGEDv3 resolution must be :highresolution or :lowresolution, got $(repr(resolution))"))
+    resolution ∈ (:high_100m, :low_1km) ||
+        throw(ArgumentError("ASTERGEDv3 resolution must be :high_100m or :low_1km, got $(repr(resolution))"))
     return ASTERGEDv3(resolution, broadband_coefficients, water_emissivity)
 end
 
@@ -229,9 +229,9 @@ DataWrangling.latitude_interfaces(::ASTERGEDv3) = (-90, 90)
 
 # Global pixel counts (Nx, Ny, Nz) used only to set the native resolution Δ;
 # `retrieve_data` returns the restricted regional window.
-# :highresolution: 1000 px/deg (100 m); :lowresolution: 100 px/deg (1 km).
-global_pixels(::Val{:highresolution}) = (360_000, 180_000, 1)
-global_pixels(::Val{:lowresolution})  = (36_000, 18_000, 1)
+# :high_100m: 1000 px/deg (100 m); :low_1km: 100 px/deg (1 km).
+global_pixels(::Val{:high_100m}) = (360_000, 180_000, 1)
+global_pixels(::Val{:low_1km})   = (36_000, 18_000, 1)
 
 Base.size(dataset::ASTERGEDv3) = global_pixels(Val(dataset.resolution))
 Base.size(dataset::ASTERGEDv3, variable) = size(dataset)
@@ -299,8 +299,8 @@ Oceananigans.Fields.location(::ASTERGEDMetadatum) = (Center, Center, Nothing)
 # NASA CMR short name / version for the ASTER GED product at each resolution
 # ("AG" abbreviates ASTER GED).
 asterged_short_name(dataset::ASTERGEDv3) = asterged_short_name(Val(dataset.resolution))
-asterged_short_name(::Val{:highresolution}) = "AG100"
-asterged_short_name(::Val{:lowresolution})  = "AG1KM"
+asterged_short_name(::Val{:high_100m}) = "AG100"
+asterged_short_name(::Val{:low_1km})   = "AG1KM"
 asterged_version(::ASTERGEDv3) = "003"
 
 """

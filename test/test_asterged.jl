@@ -119,15 +119,15 @@ end
 end
 
 @testset "ASTER GED dataset interfaces" begin
-    for resolution in (:highresolution, :lowresolution)
+    for resolution in (:high_100m, :low_1km)
         ds = ASTERGEDv3(; resolution)
         @test longitude_interfaces(ds) == (-180, 180)
         @test latitude_interfaces(ds) == (-90, 90)
 
         Nx, Ny, Nz = size(ds)
         @test Nz == 1
-        @test Nx == (resolution === :highresolution ? 360_000 : 36_000)
-        @test Ny == (resolution === :highresolution ? 180_000 : 18_000)
+        @test Nx == (resolution === :high_100m ? 360_000 : 36_000)
+        @test Ny == (resolution === :high_100m ? 180_000 : 18_000)
 
         region = BoundingBox(longitude = (110, 112), latitude = (0, 2))
         meta = Metadatum(:emissivity; dataset = ds, region)
@@ -145,7 +145,7 @@ end
         @test endswith(filename, ".nc")
     end
 
-    @test_throws ArgumentError ASTERGEDv3(resolution = :mediumresolution)
+    @test_throws ArgumentError ASTERGEDv3(resolution = :medium_500m)
 
     # Non-parametric concrete struct → discoverable by `supported_datasets()`.
     @test ASTERGEDv3 in supported_datasets()
