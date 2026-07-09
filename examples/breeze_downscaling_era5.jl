@@ -51,7 +51,7 @@ Oceananigans.defaults.FloatType = Float32
 
 φ₀, λ₀ = 36.605, -97.485    # center latitude, longitude (deg)
 start_date = DateTime(2011, 05, 20, 0)
-stop_date = DateTime(2011, 05, 20, 12)
+stop_date = DateTime(2011, 05, 20, 3)
 dates = (start_date, stop_date)
 
 Δλ = Δφ = 1/9               # uniform 1/9° step (~12 km)
@@ -156,7 +156,7 @@ fig
 # surface stress — the dominant near-surface momentum sink until a land model is attached. The
 # acoustic modes are substepped, so the adaptive outer Δt is bounded by the (slower) advective CFL.
 
-simulation = Simulation(model; Δt, stop_time = 43200.0)   # 12 h (matches `dates` above)
+simulation = Simulation(model; Δt, stop_time = 10800.0)   # 3 h (matches `dates` above)
 
 add_callback!(simulation, bulk_drag(model), IterationInterval(1))
 conjure_time_step_wizard!(simulation, IterationInterval(1); cfl = 0.7, max_Δt = 20)
