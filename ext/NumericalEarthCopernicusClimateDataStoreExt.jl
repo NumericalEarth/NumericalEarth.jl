@@ -9,6 +9,29 @@ using Oceananigans.DistributedComputations: @root
 using NumericalEarth.DataWrangling: is_three_dimensional, available_variables
 using NumericalEarth.DataWrangling.ERA5: ERA5Metadata, ERA5Metadatum, hPa
 
+#####
+##### era5cli credential bootstrap
+#####
+##### era5cli reads CDS credentials ONLY from ~/.config/era5cli/cds_key.txt; it ignores the
+##### CDSAPI_URL/CDSAPI_KEY env vars, and its ~/.cdsapirc fallback needs an interactive TTY, so in a
+##### non-interactive/env-var environment (e.g. CI) it raises InvalidLoginError even when valid CDS
+##### credentials are present. Write era5cli's config file from the CDSAPI_URL/CDSAPI_KEY env vars
+##### (the same variables the CDSAPI backend reads) when it is absent — never overwriting an existing
+##### config. Mirrors what `era5cli config` writes.
+#####
+
+const ERA5CLI_CONFIG_PATH = joinpath(homedir(), ".config", "era5cli", "cds_key.txt")
+
+function ensure_era5cli_credentials()
+    isfile(ERA5CLI_CONFIG_PATH) && return nothing
+    url = get(ENV, "CDSAPI_URL", "")
+    key = get(ENV, "CDSAPI_KEY", "")
+    (isempty(url) || isempty(key)) && return nothing
+    mkpath(dirname(ERA5CLI_CONFIG_PATH))
+    write(ERA5CLI_CONFIG_PATH, "url: $url\nkey: $key\n")
+    return nothing
+end
+
 """
     Downloads.download(metadata::ERA5Metadata; kwargs...)
 
@@ -93,6 +116,7 @@ function Downloads.download(meta::ERA5Metadatum;
 
     # Perform the download using era5cli via CopernicusClimateDataStore
     @root begin
+        ensure_era5cli_credentials()
         downloaded_files = CopernicusClimateDataStore.hourly(;
             variables = variable_name,
             startyear = year,
