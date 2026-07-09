@@ -4,10 +4,12 @@ export ASTERGEDv3
 
 using Downloads: Downloads
 using Oceananigans: Center
+using Oceananigans.Architectures: architecture, on_architecture
 using Oceananigans.DistributedComputations: @root
 
 using ..DataWrangling: DataWrangling, AbstractStaticDataset, Metadatum,
                        BoundingBox, metadata_path, NearestNeighborInpainting
+using ...Radiations: default_water_emissivity
 
 import Oceananigans
 
@@ -45,7 +47,9 @@ const ASTERGED_WATER_CODE = 1
 
 ASTER Global Emissivity Dataset (GED) v3: a static (2000–2008 clear-sky mean)
 climatology of land-surface emissivity on a plain geographic (WGS84 lat/lon)
-grid, distributed as HDF5 in 1°×1° tiles. Two resolutions are supported:
+grid, distributed as HDF5 in 1°×1° tiles. Two resolutions are supported, named
+by NASA's product short names (`AG` abbreviates ASTER GED; the names appear
+verbatim in CMR queries and tile filenames):
 
 - `:AG100` — 100 m (3 arcsec, 1000×1000 px/tile). Primary, highest resolution.
 - `:AG1km` — 1 km (30 arcsec, 100×100 px/tile). Coarser sibling.
@@ -84,15 +88,15 @@ end
 """
     ASTERGEDv3(; resolution = :AG100,
                  broadband_coefficients = OGAWA_SCHMUGGE_2004_BROADBAND_COEFFICIENTS,
-                 water_emissivity = 0.97)
+                 water_emissivity = default_water_emissivity)
 
 Construct an [`ASTERGEDv3`](@ref) dataset. `resolution` is `:AG100` (100 m) or
 `:AG1km` (1 km). `broadband_coefficients` is the 5-band narrowband→broadband
 emissivity synthesis vector (default from [Ogawa & Schmugge (2004)](@cite ogawa2004mapping),
 8.0–13.5 µm window). `water_emissivity` is the emissivity substituted over water cells, where
-ASTER GED has no retrieval; the default `0.97` matches the ocean-surface
-emissivity used elsewhere in NumericalEarth so a coupled domain has one
-consistent water value.
+ASTER GED has no retrieval; the default is the shared `default_water_emissivity`
+(0.97) that the ocean-surface radiation defaults also use, so a coupled domain
+has one consistent water value.
 
 ```jldoctest
 julia> using NumericalEarth
@@ -106,7 +110,7 @@ ASTERGEDv3(resolution = :AG1km)
 """
 function ASTERGEDv3(; resolution = :AG100,
                       broadband_coefficients = OGAWA_SCHMUGGE_2004_BROADBAND_COEFFICIENTS,
-                      water_emissivity = 0.97)
+                      water_emissivity = default_water_emissivity)
     resolution ∈ (:AG100, :AG1km) ||
         throw(ArgumentError("ASTERGEDv3 resolution must be :AG100 or :AG1km, got :$resolution"))
     return ASTERGEDv3(resolution, broadband_coefficients, water_emissivity)
@@ -171,32 +175,25 @@ broadband_uncertainty(σ_vector, coefficients) =
     broadband_emissivity_map(decoded_bands, coefficients)
 
 Collapse a decoded emissivity array of shape `(5, Nx, Ny)` (band index first, as
-in the HDF5 `/Emissivity/Mean` layout) to a broadband `(Nx, Ny)` array via
-[`broadband_emissivity`](@ref) along the band dimension.
+in the HDF5 `/Emissivity/Mean` layout) to a broadband `(Nx, Ny)` array — the
+array form of [`broadband_emissivity`](@ref). A broadcast + reduction along the
+band dimension, so it runs on whatever architecture holds `decoded_bands`.
 """
 function broadband_emissivity_map(decoded_bands, coefficients)
-    _, Nx, Ny = size(decoded_bands)
-    result = Array{Float32}(undef, Nx, Ny)
-    for j in 1:Ny, i in 1:Nx
-        result[i, j] = broadband_emissivity(view(decoded_bands, :, i, j), coefficients)
-    end
-    return result
+    weights = on_architecture(architecture(decoded_bands), reshape(coefficients, :, 1, 1))
+    return Float32.(dropdims(sum(weights .* decoded_bands; dims = 1); dims = 1))
 end
 
 """
     broadband_uncertainty_map(decoded_sdev_bands, coefficients)
 
 As [`broadband_emissivity_map`](@ref) but combines per-band standard deviations
-(shape `(5, Nx, Ny)`) into a broadband uncertainty `(Nx, Ny)` via
-[`broadband_uncertainty`](@ref).
+(shape `(5, Nx, Ny)`) into a broadband uncertainty `(Nx, Ny)` — the array form
+of [`broadband_uncertainty`](@ref).
 """
 function broadband_uncertainty_map(decoded_sdev_bands, coefficients)
-    _, Nx, Ny = size(decoded_sdev_bands)
-    result = Array{Float32}(undef, Nx, Ny)
-    for j in 1:Ny, i in 1:Nx
-        result[i, j] = broadband_uncertainty(view(decoded_sdev_bands, :, i, j), coefficients)
-    end
-    return result
+    weights = on_architecture(architecture(decoded_sdev_bands), reshape(coefficients, :, 1, 1))
+    return Float32.(sqrt.(dropdims(sum(weights .^ 2 .* decoded_sdev_bands .^ 2; dims = 1); dims = 1)))
 end
 
 """
