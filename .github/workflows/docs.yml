@@ -74,20 +74,6 @@ jobs:
               VerosModule = Base.get_extension(NumericalEarth, :NumericalEarthVerosExt)
               VerosModule.install_veros()
           '
-      - name: Configure era5cli CDS credentials
-        # era5cli (used by breeze_downscaling_era5.jl to download ERA5) reads
-        # credentials ONLY from ~/.config/era5cli/cds_key.txt. It ignores the
-        # CDSAPI_URL/CDSAPI_KEY env vars, and its ~/.cdsapirc fallback needs an
-        # interactive TTY (unavailable in CI) — so without this the ERA5
-        # downloads fail with InvalidLoginError. Materialize era5cli's native
-        # config from the secrets.
-        run: |
-          if [[ -z "${CDSAPI_KEY}" ]]; then
-            echo "::error::CDSAPI_KEY secret is empty; era5cli downloads will fail." >&2
-            exit 1
-          fi
-          mkdir -p "${HOME}/.config/era5cli"
-          printf 'url: %s\nkey: %s\n' "${CDSAPI_URL}" "${CDSAPI_KEY}" > "${HOME}/.config/era5cli/cds_key.txt"
       - name: Build documentation
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
