@@ -18,6 +18,9 @@ export AbstractLand,
        NoDeepLiquidFlux, FreeDrainageFlux, DarcyDeepLiquidFlux, LinearReservoirDrainage,
        NoRunoff, InfiltrationCapacityRunoff,
        VariablySaturatedHydrology,
+       # Pedotransfer functions + depth-layer combination
+       PedotransferFunction, ContinuousPedotransfer,
+       soil_hydraulic_parameters, soil_hydraulic_properties, layer_weights,
        # Atmosphere-facing accessors
        surface_temperature, surface_saturation
 
@@ -34,7 +37,7 @@ abstract type AbstractLand end
 using Adapt: Adapt
 using KernelAbstractions: @kernel, @index
 using Oceananigans: Oceananigans, prognostic_state, restore_prognostic_state!
-using Oceananigans.Architectures: architecture
+using Oceananigans.Architectures: architecture, on_architecture
 using Oceananigans.BoundaryConditions: fill_halo_regions!
 using Oceananigans.Fields: AbstractField, CenterField, Field, Center, Face, ZeroField
 using Oceananigans.Grids: grid_name, Center, Face
@@ -51,6 +54,11 @@ using ..EarthSystemModels.InterfaceComputations: interface_kernel_parameters, Co
 include("energy_balance/energy_balance.jl")
 include("hydrology/hydrology.jl")
 include("properties/property_providers.jl")
+
+# Pedotransfer functions (texture → van Genuchten params) + depth-layer combination.
+# Pure setup-time helpers that build the property `Field`s consumed by the closures.
+include("properties/pedotransfer.jl")
+include("properties/soil_hydraulic_properties.jl")
 
 # Container.
 include("slab_land.jl")

@@ -159,7 +159,7 @@ end
     Mˡᵃ⁺ = ρˡ * ν * hˡᵃ
     # Unsaturated branch: Π = Π_m(𝒮). Saturated branch: Π = (M − M⁺) hˢˢ/(ρˡ hˡᵃ).
     return ifelse(M < Mˡᵃ⁺,
-                  pressure_head(h.retention_curve, 𝒮),
+                  pressure_head(h.retention_curve, 𝒮, i, j),
                   (M - Mˡᵃ⁺) * hˢˢ / (ρˡ * hˡᵃ))
 end
 
@@ -205,7 +205,7 @@ saturation(h::VariablySaturatedHydrology, land) = land.saturation
     θˡ = liquid_fraction(h, Mij, i, j)
     𝒮  = liquid_saturation(h, θˡ, i, j)
     Π  = diagnostic_pressure_head(h, Mij, θˡ, 𝒮, i, j)
-    K  = hydraulic_conductivity(h.hydraulic_conductivity, 𝒮)
+    K  = hydraulic_conductivity(h.hydraulic_conductivity, 𝒮, i, j)
 
     Jˡs, Rsfc = surface_liquid_flux_and_runoff(h.runoff, Plij, Mij, θˡ, 𝒮, Π, K)
     Jˡb       = deep_liquid_flux(h.deep_liquid_flux, Mij, θˡ, 𝒮, Π, K, ψ_D, time)

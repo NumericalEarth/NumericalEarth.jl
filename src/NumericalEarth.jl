@@ -102,6 +102,8 @@ export
     VanGenuchtenRetention, VanGenuchtenConductivity,
     NoDeepLiquidFlux, FreeDrainageFlux, DarcyDeepLiquidFlux, LinearReservoirDrainage,
     NoRunoff, InfiltrationCapacityRunoff,
+    PedotransferFunction, ContinuousPedotransfer,
+    soil_hydraulic_parameters, soil_hydraulic_properties, layer_weights,
     surface_temperature,
     regrid_bathymetry,
     regrid_topography,
