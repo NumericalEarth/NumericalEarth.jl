@@ -136,44 +136,6 @@ function foreach_nc(f, download_path, cleanup_dir)
 end
 
 #####
-##### Transient-error retry around CDSAPI.retrieve
-#####
-##### CDS/EWDS occasionally answer with a 5xx from the fronting nginx (e.g. `502 Bad
-##### Gateway`) or drop the connection when the request queue is busy. These are
-##### transient — a retry with backoff succeeds. `CDSAPI.retrieve` submits the job with
-##### a non-idempotent POST, which HTTP.jl does not retry on its own, so without this a
-##### single gateway hiccup aborts the whole download (and, in CI, the docs build). A
-##### 4xx (bad request) and a `"failed"` job status are NOT transient and propagate.
-##### (HTTP is reached through `CDSAPI.HTTP` to avoid a direct HTTP dependency.)
-#####
-
-const CDS_MAX_RETRIES = 5
-const CDS_RETRY_BASE_DELAY = 5   # seconds; doubles each attempt
-
-is_transient_cds_error(e) = false
-is_transient_cds_error(e::CDSAPI.HTTP.StatusError) = e.status ≥ 500
-is_transient_cds_error(e::CDSAPI.HTTP.RequestError) = true
-
-transient_cds_reason(e::CDSAPI.HTTP.StatusError) = "HTTP $(e.status)"
-transient_cds_reason(e::CDSAPI.HTTP.RequestError) = "connection error"
-transient_cds_reason(e) = string(nameof(typeof(e)))
-
-function cds_retrieve(product, request, path;
-                      max_retries = CDS_MAX_RETRIES,
-                      base_delay = CDS_RETRY_BASE_DELAY)
-    for attempt in 1:(max_retries + 1)
-        try
-            return CDSAPI.retrieve(product, request, path)
-        catch e
-            (is_transient_cds_error(e) && attempt ≤ max_retries) || rethrow()
-            delay = base_delay * 2^(attempt - 1)
-            @warn "Transient CDS error ($(transient_cds_reason(e))) retrieving $product; attempt $attempt of $max_retries, retrying in $(delay)s"
-            sleep(delay)
-        end
-    end
-end
-
-#####
 ##### Single-date download
 #####
 
@@ -203,7 +165,7 @@ function Downloads.download(meta::ERA5Metadatum; skip_existing=true)
 
     request = build_era5_request(meta.name, meta.dataset, meta.dates; region=meta.region)
 
-    @root cds_retrieve(cds_product(meta.dataset), request, output_path)
+    @root CDSAPI.retrieve(cds_product(meta.dataset), request, output_path)
 
     return output_path
 end
@@ -350,7 +312,7 @@ function download_era5_month(name, dataset, dates;
     time_dimnames = Set(["time", "valid_time"])
 
     @root begin
-        cds_retrieve(cds_product(dataset), plan.request, plan.tmp_path)
+        CDSAPI.retrieve(cds_product(dataset), plan.request, plan.tmp_path)
         foreach_nc(plan.tmp_path, dir) do nc_path
             split_era5_nc_multistep(nc_path, plan.nc_triples, coord_vars(dataset), time_dimnames)
         end
@@ -444,7 +406,7 @@ function Downloads.download(names::Vector{Symbol}, meta::ERA5PressureMetadatum; 
     nc_name_path_pairs = [(nc_varnames(meta.dataset)[name], path) for (name, path) in pending]
 
     @root begin
-        cds_retrieve(cds_product(meta.dataset), request, tmp_path)
+        CDSAPI.retrieve(cds_product(meta.dataset), request, tmp_path)
         foreach_nc(tmp_path, meta.dir) do nc_path
             split_era5_nc(nc_path, nc_name_path_pairs, coord_vars(meta.dataset))
         end
@@ -567,7 +529,7 @@ function download_era5_multivar_month(names, dataset, dates;
     time_dimnames = Set(["time", "valid_time"])
 
     @root begin
-        cds_retrieve(cds_product(dataset), plan.request, plan.tmp_path)
+        CDSAPI.retrieve(cds_product(dataset), plan.request, plan.tmp_path)
         foreach_nc(plan.tmp_path, dir) do nc_path
             split_era5_nc_multistep(nc_path, plan.nc_triples, coord_vars(dataset), time_dimnames)
         end
@@ -787,7 +749,7 @@ function glofas_retrieve(product, request, path)
     isempty(key) || (ENV["CDSAPI_KEY"] = key)
 
     try
-        return cds_retrieve(product, request, path)
+        return CDSAPI.retrieve(product, request, path)
     finally
         restore_env!("CDSAPI_URL", saved_url)
         isempty(key) || restore_env!("CDSAPI_KEY", saved_key)
