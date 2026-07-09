@@ -23,7 +23,7 @@ using Oceananigans.Coriolis: SphericalCoriolis
 using Oceananigans.Fields: AbstractField, CenterField, Field, XFaceField, YFaceField,
                            compute!, interior, interpolate!, set!
 using Oceananigans.Forcings: Relaxation
-using Oceananigans.Grids: znode, λnodes, φnodes, Center, Face
+using Oceananigans.Grids: znode, λnodes, φnodes, minimum_xspacing, Center, Face
 using Oceananigans.TimeSteppers: update_state!
 using Oceananigans.Units: Time
 using GPUArraysCore: @allowscalar
@@ -99,6 +99,14 @@ function default_nested_scalar_advection(microphysics)
     return merge((ρθ = WENO(order = 5),), NamedTuple{moist_names}(map(_ -> bounded, moist_names)))
 end
 
+# Blend-zone width in CELLS from a PHYSICAL length: `cells = round(blend_length / Δx)`. A fixed cell
+# count spans a shrinking physical distance as resolution increases (5 cells = 60 km at 12 km but 15 km
+# at 3 km), so the parent→child terrain transition steepens ~1/Δx — that steeper σ-surface tilt
+# regenerates contravariant vertical momentum aloft at the boundary corner and destabilizes high-res
+# runs. Deriving the cell count from a physical length keeps the transition slope resolution-invariant.
+default_terrain_blend_width(grid, blend_length) =
+    max(1, round(Int, blend_length / minimum_xspacing(grid, Center(), Center(), Center())))
+
 # Child terrain for the nested LAM: an elevation `Field` passes through; anything else is treated
 # as a topography dataset and regridded onto the child grid. When the parent knows its surface
 # elevation (e.g. an ERA5 `PressureLevelGrid`), the child elevation is blended toward it over the
@@ -141,8 +149,10 @@ and a compressible split-explicit `dynamics` with an `UpperSponge` over the top 
 When `terrain` is given — an elevation `Field`, or a topography dataset (e.g. `ETOPO2022()`) that is
 regridded onto the child grid — the child grid's terrain-following coordinate is materialized in place
 before the model is built. If the parent knows its surface elevation ([`surface_elevation`](@ref)), the
-child elevation is first blended toward the parent's over the outermost `terrain_blend_width` cells,
-so the terrain at the open boundaries matches the orography the parent state was produced with.
+child elevation is first blended toward the parent's over an outer frame of physical width
+`terrain_blend_length` (metres; converted to a resolution-invariant cell count, or overridden directly
+with `terrain_blend_width`), so the terrain at the open boundaries matches the orography the parent
+state was produced with — and the blend slope stays fixed across resolutions rather than steepening.
 """
 function NumericalEarth.NestedModels.nested_atmosphere_model(
             parent_atmosphere::PrescribedAtmosphere, child_grid;
@@ -154,7 +164,8 @@ function NumericalEarth.NestedModels.nested_atmosphere_model(
             surface_pressure = nothing,
             reference_potential_temperature = nothing,
             terrain = nothing,
-            terrain_blend_width = 5,
+            terrain_blend_length = 60_000,   # metres; physical blend width → resolution-invariant slope
+            terrain_blend_width = nothing,    # explicit cell-count override; derived from length if `nothing`
             parent_condensates = (qᶜˡ = parent_atmosphere.microphysical_variables.qᶜˡ,
                                   qʳ  = parent_atmosphere.microphysical_variables.qʳ,
                                   qᶜⁱ = parent_atmosphere.microphysical_variables.qᶜⁱ,
@@ -171,7 +182,10 @@ function NumericalEarth.NestedModels.nested_atmosphere_model(
             forcing = NamedTuple(),
             kw...)
 
-    isnothing(terrain) || materialize_nested_terrain!(child_grid, terrain, parent_atmosphere, terrain_blend_width)
+    if !isnothing(terrain)
+        blend_width = something(terrain_blend_width, default_terrain_blend_width(child_grid, terrain_blend_length))
+        materialize_nested_terrain!(child_grid, terrain, parent_atmosphere, blend_width)
+    end
 
     moisture_name = moisture_prognostic_name(microphysics)
     pˢᵗ = dynamics.standard_pressure

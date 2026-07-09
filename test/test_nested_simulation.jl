@@ -675,3 +675,25 @@ end
         @test all(isfinite, Array(interior(field)))
     end
 end
+
+# The parent→child terrain blend is specified as a PHYSICAL length (`terrain_blend_length`, metres) and
+# converted to a cell count per grid. A fixed cell count would steepen the blend slope ~1/Δx as resolution
+# increases (which regenerates spurious vertical momentum aloft at high resolution); deriving cells from a
+# physical length keeps the transition slope resolution-invariant — so a 4×-finer grid gets ~4× the cells.
+@testset "default_terrain_blend_width: physical length gives a resolution-invariant slope" begin
+    ext = Base.get_extension(NumericalEarth, :NumericalEarthBreezeExt)
+    lon, lat = (-98.8, -96.2), (35.4, 37.8)
+    coarse = LatitudeLongitudeGrid(size = (24, 22, 4); longitude = lon, latitude = lat, z = (0, 1e4),
+                                   topology = (Bounded, Bounded, Bounded))
+    fine   = LatitudeLongitudeGrid(size = (96, 88, 4); longitude = lon, latitude = lat, z = (0, 1e4),
+                                   topology = (Bounded, Bounded, Bounded))
+    wc = ext.default_terrain_blend_width(coarse, 60_000)
+    wf = ext.default_terrain_blend_width(fine, 60_000)
+    @test wc ≥ 1
+    @test wf ≥ 3 * wc          # 4×-finer grid ⇒ ~4× cells (fixed physical width, not fixed cells)
+    # physical blend width ≈ the requested length at both resolutions
+    Δxc = minimum_xspacing(coarse, Center(), Center(), Center())
+    Δxf = minimum_xspacing(fine,   Center(), Center(), Center())
+    @test isapprox(wc * Δxc, 60_000; rtol = 0.2)
+    @test isapprox(wf * Δxf, 60_000; rtol = 0.2)
+end
