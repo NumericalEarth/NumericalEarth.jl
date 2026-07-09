@@ -33,7 +33,7 @@ using CloudMicrophysics          # nested_atmosphere_model's default microphysic
 using CairoMakie                 # loads Makie → NumericalEarthMakieExt (`visualize_nested_domain`)
 using NaturalEarth               # + GeoInterface → NumericalEarthNaturalEarthExt (`natural_earth_lines`)
 using CUDA
-using Dates
+using Dates: DateTime      # only `DateTime`; a bare `using Dates` also exports `Time`, colliding with `Oceananigans.Units.Time`
 using Printf
 
 # This 12 km LAM (150×136×50 ≈ 1.0M cells, split-explicit) targets a CUDA GPU; switch to `CPU()` only
