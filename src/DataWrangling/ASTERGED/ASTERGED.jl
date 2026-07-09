@@ -47,12 +47,13 @@ const ASTERGED_WATER_CODE = 1
 
 ASTER Global Emissivity Dataset (GED) v3: a static (2000–2008 clear-sky mean)
 climatology of land-surface emissivity on a plain geographic (WGS84 lat/lon)
-grid, distributed as HDF5 in 1°×1° tiles. Two resolutions are supported, named
-by NASA's product short names (`AG` abbreviates ASTER GED; the names appear
-verbatim in CMR queries and tile filenames):
+grid, distributed as HDF5 in 1°×1° tiles. Two resolutions are supported:
 
-- `:AG100` — 100 m (3 arcsec, 1000×1000 px/tile). Primary, highest resolution.
-- `:AG1km` — 1 km (30 arcsec, 100×100 px/tile). Coarser sibling.
+- `:highresolution` — 100 m (3 arcsec, 1000×1000 px/tile). Primary.
+- `:lowresolution` — 1 km (30 arcsec, 100×100 px/tile). Coarser sibling.
+
+Internally these map to NASA's product short names (`AG100` / `AG1KM`, where
+`AG` abbreviates ASTER GED), which appear in CMR queries and tile filenames.
 
 The dataset provides five narrowband emissivities (ASTER TIR bands 10–14); a
 longwave scheme needs a single broadband value, so `retrieve_data` collapses the
@@ -80,18 +81,18 @@ Data source: https://www.earthdata.nasa.gov/data/catalog/lpcloud-ag100-003
 Reference: Hulley et al. (2015), GRL, doi:10.1002/2015GL065564.
 """
 struct ASTERGEDv3 <: AbstractStaticDataset
-    resolution :: Symbol                        # :AG100 (100 m) or :AG1km (1 km)
+    resolution :: Symbol                        # :highresolution (100 m) or :lowresolution (1 km)
     broadband_coefficients :: Vector{Float64}   # 5-vector for the ε_broadband synthesis
     water_emissivity :: Float64                 # constant substituted where the tile land-water map says water
 end
 
 """
-    ASTERGEDv3(; resolution = :AG100,
+    ASTERGEDv3(; resolution = :highresolution,
                  broadband_coefficients = OGAWA_SCHMUGGE_2004_BROADBAND_COEFFICIENTS,
                  water_emissivity = default_water_emissivity)
 
-Construct an [`ASTERGEDv3`](@ref) dataset. `resolution` is `:AG100` (100 m) or
-`:AG1km` (1 km). `broadband_coefficients` is the 5-band narrowband→broadband
+Construct an [`ASTERGEDv3`](@ref) dataset. `resolution` is `:highresolution`
+(100 m) or `:lowresolution` (1 km). `broadband_coefficients` is the 5-band narrowband→broadband
 emissivity synthesis vector (default from [Ogawa & Schmugge (2004)](@cite ogawa2004mapping),
 8.0–13.5 µm window). `water_emissivity` is the emissivity substituted over water cells, where
 ASTER GED has no retrieval; the default is the shared `default_water_emissivity`
@@ -102,17 +103,17 @@ has one consistent water value.
 julia> using NumericalEarth
 
 julia> ASTERGEDv3()
-ASTERGEDv3(resolution = :AG100)
+ASTERGEDv3(resolution = :highresolution)
 
-julia> ASTERGEDv3(resolution = :AG1km)
-ASTERGEDv3(resolution = :AG1km)
+julia> ASTERGEDv3(resolution = :lowresolution)
+ASTERGEDv3(resolution = :lowresolution)
 ```
 """
-function ASTERGEDv3(; resolution = :AG100,
+function ASTERGEDv3(; resolution = :highresolution,
                       broadband_coefficients = OGAWA_SCHMUGGE_2004_BROADBAND_COEFFICIENTS,
                       water_emissivity = default_water_emissivity)
-    resolution ∈ (:AG100, :AG1km) ||
-        throw(ArgumentError("ASTERGEDv3 resolution must be :AG100 or :AG1km, got :$resolution"))
+    resolution ∈ (:highresolution, :lowresolution) ||
+        throw(ArgumentError("ASTERGEDv3 resolution must be :highresolution or :lowresolution, got $(repr(resolution))"))
     return ASTERGEDv3(resolution, broadband_coefficients, water_emissivity)
 end
 
@@ -228,18 +229,15 @@ DataWrangling.latitude_interfaces(::ASTERGEDv3) = (-90, 90)
 
 # Global pixel counts (Nx, Ny, Nz) used only to set the native resolution Δ;
 # `retrieve_data` returns the restricted regional window.
-# AG100: 1000 px/deg (100 m); AG1km: 100 px/deg (1 km).
-global_pixels(::Val{:AG100}) = (360_000, 180_000, 1)
-global_pixels(::Val{:AG1km}) = (36_000, 18_000, 1)
+# :highresolution: 1000 px/deg (100 m); :lowresolution: 100 px/deg (1 km).
+global_pixels(::Val{:highresolution}) = (360_000, 180_000, 1)
+global_pixels(::Val{:lowresolution})  = (36_000, 18_000, 1)
 
 Base.size(dataset::ASTERGEDv3) = global_pixels(Val(dataset.resolution))
 Base.size(dataset::ASTERGEDv3, variable) = size(dataset)
 
-resolution_code(::Val{:AG100}) = "AG100"
-resolution_code(::Val{:AG1km}) = "AG1km"
-
 DataWrangling.metadata_filename(dataset::ASTERGEDv3, name, date, region) =
-    string("ASTERGED_", resolution_code(Val(dataset.resolution)), "_",
+    string("ASTERGED_", dataset.resolution, "_",
            string(name), "_", region_suffix(region), ".nc")
 
 region_suffix(::Nothing) = "global"
@@ -298,10 +296,11 @@ Oceananigans.Fields.location(::ASTERGEDMetadatum) = (Center, Center, Nothing)
 ##### Product identity + CMR granule discovery
 #####
 
-# NASA CMR short name / version for the ASTER GED product at each resolution.
+# NASA CMR short name / version for the ASTER GED product at each resolution
+# ("AG" abbreviates ASTER GED).
 asterged_short_name(dataset::ASTERGEDv3) = asterged_short_name(Val(dataset.resolution))
-asterged_short_name(::Val{:AG100}) = "AG100"
-asterged_short_name(::Val{:AG1km}) = "AG1KM"
+asterged_short_name(::Val{:highresolution}) = "AG100"
+asterged_short_name(::Val{:lowresolution})  = "AG1KM"
 asterged_version(::ASTERGEDv3) = "003"
 
 """
