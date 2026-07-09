@@ -273,8 +273,16 @@ Base.summary(md::Metadata) = string(metaprefix(md),
                                     "{", datasetstr(md), "} of ",
                                     md.name, " for ", datestr(md))
 
-# If only one date, it's a single element array
+# A Metadatum holds a single date, so it acts as a length-1 collection whose sole element is
+# itself; the generic Metadata methods below index `dates`, which a scalar date cannot support.
 Base.length(metadata::Metadatum) = 1
+@propagate_inbounds function Base.getindex(m::Metadatum, i::Int)
+    @boundscheck i == 1 || throw(BoundsError(m, i))
+    return m
+end
+Base.first(m::Metadatum) = m
+Base.last(m::Metadatum) = m
+Base.iterate(m::Metadatum, i::Int=1) = i == 1 ? (m, 2) : nothing
 
 @propagate_inbounds Base.getindex(m::Metadata, i::Int) =
     Metadata(m.name, m.dataset, m.dates[i], m.region, m.dir, getfilename(m.filename, i))
