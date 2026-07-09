@@ -301,13 +301,6 @@ Base.iterate(m::Metadatum, i::Int=1) = i == 1 ? (m, 2) : nothing
     end
 end
 
-# Implementation for 1 date
-Base.axes(metadata::Metadatum)    = 1
-Base.first(metadata::Metadatum)   = metadata
-Base.last(metadata::Metadatum)    = metadata
-Base.iterate(metadata::Metadatum) = (metadata, nothing)
-Base.iterate(::Metadatum, ::Any)  = nothing
-
 metadata_path(metadata::Metadatum) = joinpath(metadata.dir, metadata.filename)
 
 function metadata_path(metadata::Metadata)
