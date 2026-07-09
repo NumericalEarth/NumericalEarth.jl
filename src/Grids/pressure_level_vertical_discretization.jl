@@ -18,7 +18,7 @@ import Oceananigans.Fields: _fractional_indices, fractional_x_index,
                             fractional_y_index, FractionalIndices, index_binary_search
 
 """
-    PressureLevelVerticalDiscretization{G, Geo}
+    PressureLevelVerticalDiscretization
 
 A vertical discretization for pressure-level reanalysis data on a
 `LatitudeLongitudeGrid`. Per-cell heights are `geopotential[i, j, k] /

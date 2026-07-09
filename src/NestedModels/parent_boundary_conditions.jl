@@ -49,8 +49,6 @@ Arguments
   momentum component, use per-side types — `NormalFlowBoundaryCondition` on the
   wall-normal side and `ValueBoundaryCondition` on the tangential side — so the
   tangential momentum is set (Dirichlet) rather than left to the normal-flow halo fill.
-
-- `schemes`: applies only to sides whose BC type is `NormalFlowBoundaryCondition`.
 """
 function parent_boundary_conditions(grid;
                                     variables,

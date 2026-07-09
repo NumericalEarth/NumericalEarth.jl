@@ -24,12 +24,10 @@ function total_density end
 function reconstruct_parent_state end
 
 using Oceananigans
-using Oceananigans.Fields: Face
 using Oceananigans.Forcings: Relaxation
 using Oceananigans.Grids: AbstractGrid
 using Oceananigans.BoundaryConditions: NormalFlowBoundaryCondition, FieldBoundaryConditions
 using Oceananigans.Simulations: Simulation
-using Oceananigans.TimeSteppers: time_step!
 using Oceananigans.Units: Time
 
 include("nested_model.jl")

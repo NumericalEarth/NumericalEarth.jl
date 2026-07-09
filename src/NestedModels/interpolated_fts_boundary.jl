@@ -76,7 +76,7 @@ function regularize_boundary_condition(c::Interpolated{Nothing}, grid, loc, dim,
     LY = typeof(loc[2])
     LZ = typeof(loc[3])
     validate_source_bracket(c.source, grid, LX, LY, LZ)
-    return Interpolated{dim, SideType, LX, LY, LZ, typeof(c.source), typeof(c.source_grid)}(c.source, c.source_grid)
+    return Interpolated{dim, SideType, LX, LY, LZ}(c.source, c.source_grid)
 end
 
 # The source must bracket the child *horizontally* (a too-small parent region there is a real

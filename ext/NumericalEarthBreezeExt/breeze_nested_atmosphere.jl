@@ -183,6 +183,7 @@ function NumericalEarth.NestedModels.nested_atmosphere_model(
     prognostic = exchanger.prognostic
 
     ρqᵛ = prognostic.ρqᵛ
+    moist_variables = NamedTuple{tuple(moisture_name)}(tuple(ρqᵛ))
 
     # Lateral BCs: interpolate the precomputed prognostics at the boundary face. Momentum is prescribed on
     # every side, but the BC *type* is per-side: `NormalFlowBoundaryCondition` on the wall-normal side
@@ -194,8 +195,7 @@ function NumericalEarth.NestedModels.nested_atmosphere_model(
     # with the coupling's bottom energy-flux BC on the same field, and for a potential-temperature formulation
     # Breeze routes the (Value) `ρθ` boundary values through unchanged. `ρθ` and `ρe` must not both carry BCs.
     dry_bc_variables = (ρᵈ = prognostic.ρᵈ, ρu = prognostic.ρu, ρv = prognostic.ρv, ρe = prognostic.ρθ)
-    moist_bc_variables = NamedTuple{tuple(moisture_name)}(tuple(ρqᵛ))
-    bc_variables = merge(dry_bc_variables, moist_bc_variables)
+    bc_variables = merge(dry_bc_variables, moist_variables)
 
     density_and_energy_types = (ρᵈ = ValueBoundaryCondition, ρe = ValueBoundaryCondition)
     momentum_types = (ρu = (west = NormalFlowBoundaryCondition, east = NormalFlowBoundaryCondition,
@@ -217,8 +217,7 @@ function NumericalEarth.NestedModels.nested_atmosphere_model(
         NamedTuple()
     else
         dry_forcing_variables = (ρᵈ = prognostic.ρᵈ, ρθ = prognostic.ρθ, ρu = prognostic.ρu, ρv = prognostic.ρv)
-        moist_forcing_variables = NamedTuple{tuple(moisture_name)}(tuple(ρqᵛ))
-        variables = merge(dry_forcing_variables, moist_forcing_variables)
+        variables = merge(dry_forcing_variables, moist_variables)
         parent_forcings(; variables, rate = relaxation_rate, mask = relax_mask)
     end
 

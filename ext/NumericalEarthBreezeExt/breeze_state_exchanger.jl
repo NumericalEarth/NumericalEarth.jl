@@ -24,7 +24,6 @@ using Oceananigans.BoundaryConditions: fill_halo_regions!
 using Oceananigans.OutputReaders: FieldTimeSeries, Cyclical, AbstractInMemoryBackend,
                                   time_indices, interpolating_time_indices, extract_field_time_series
 using Oceananigans.Units: Time
-using Adapt: Adapt
 import Oceananigans.OutputReaders: new_backend, update_field_time_series!
 import NumericalEarth.NestedModels: exchange_state!, total_density, reconstruct_parent_state
 
