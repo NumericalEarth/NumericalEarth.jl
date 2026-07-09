@@ -28,7 +28,7 @@ using NumericalEarth
 using Oceananigans
 using Oceananigans.Units          # `minutes` for the output schedule (not re-exported by Oceananigans)
 using Breeze
-using CDSAPI                     # activates NumericalEarthCDSAPIExt (ERA5 downloads via the CDS REST API)
+using CopernicusClimateDataStore # activates NumericalEarthCopernicusClimateDataStoreExt (ERA5 downloads)
 using CloudMicrophysics          # nested_atmosphere_model's default microphysics → 1-moment mixed-phase
 using CairoMakie                 # loads Makie → NumericalEarthMakieExt (`visualize_nested_domain`)
 using NaturalEarth               # + GeoInterface → NumericalEarthNaturalEarthExt (`natural_earth_lines`)
