@@ -60,10 +60,8 @@ end
 ##### `/Geolocation/*` arrays) through GDAL's HDF5 driver, clips + mosaics them to
 ##### the region, and writes a regional NetCDF of *raw digital numbers* (no scale
 ##### applied — the ASTERGED module decodes/blends/masks on read). The tile `.h5`
-##### is the download unit: Mean, SDev and LWmap are subdatasets of the same file
-##### (not separately downloadable), so one download — and the one regional
-##### NetCDF it is cached into — serves both the emissivity and the uncertainty
-##### variables. ASTER GED is
+##### is the download unit: Mean, SDev and LWmap are subdatasets of the same file,
+##### not separately downloadable. ASTER GED is
 ##### already on a plain geographic (WGS84 lat/lon) grid, so no reprojection is
 ##### needed; the coordinates come from the `/Geolocation/*` arrays (the HDF5
 ##### subdatasets carry an identity geotransform).
