@@ -115,6 +115,7 @@ export
     ECCO2DarwinMonthly, ECCO4DarwinMonthly,
     EN4Monthly,
     WOAClimatology, WOAAnnual, WOAMonthly,
+    CopernicusAlbedo, CopernicusAlbedoClimatology, build_monthly_climatology!,
     GLORYSDaily, GLORYSMonthly, GLORYSStatic,
     RepeatYearJRA55, MultiYearJRA55,
     ERA5HourlySingleLevel, ERA5MonthlySingleLevel,
@@ -220,6 +221,7 @@ using .DataWrangling.GloFAS
 using .DataWrangling.OSPapa
 using .DataWrangling.ERA5
 using .DataWrangling.SoilGrids
+using .DataWrangling.CopernicusLandAlbedo
 
 using PrecompileTools: @setup_workload, @compile_workload
 
