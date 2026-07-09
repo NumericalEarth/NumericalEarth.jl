@@ -123,6 +123,7 @@ export
     JRA55FieldTimeSeries,
     ORCA1, ORCA12,
     ORCAGrid,
+    OpenLandMapSoilDB,
     first_date, last_date, all_dates,
     LinearlyTaperedPolarMask,
     DatasetRestoring,
@@ -220,6 +221,7 @@ using .DataWrangling.GloFAS
 using .DataWrangling.OSPapa
 using .DataWrangling.ERA5
 using .DataWrangling.SoilGrids
+using .DataWrangling.OpenLandMap
 
 using PrecompileTools: @setup_workload, @compile_workload
 

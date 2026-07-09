@@ -455,10 +455,12 @@ end
 # Mass fractions (convert to kg/kg)
 @inline convert_units(χ::FT, ::DecigramPerKilogram) where FT = χ / convert(FT, 1e4)
 @inline convert_units(χ::FT, ::GramPerKilogram) where FT = χ / convert(FT, 1e3)
+@inline convert_units(χ::FT, ::WeightPercent) where FT = χ / convert(FT, 100)
 
 # Densities (convert to kg/m^3)
 @inline convert_units(ρ::FT, ::HectogramPerCubicMeter) where FT = ρ / convert(FT, 10)
 @inline convert_units(ρ::FT, ::CentigramPerCubicCentimeter) where FT = ρ * convert(FT, 10)
+@inline convert_units(ρ::FT, ::GramPerCubicCentimeter) where FT = ρ * convert(FT, 1000)
 
 #####
 ##### Masking data for inpainting
