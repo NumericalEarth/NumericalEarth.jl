@@ -56,12 +56,14 @@ Construct a Breeze `AtmosphereModel` with sensible defaults for coupled simulati
 [`atmosphere_simulation`](@ref) wraps this in an Oceananigans `Simulation` (mirroring
 the role of [`ocean_simulation`](@ref)).
 
-When `initialize` (the default), the returned model is set to a resting, hydrostatically
-balanced state at the reference `potential_temperature` and `surface_pressure`, so its density
-is valid for anything that divides by it (e.g. the MOST surface-flux coupling). Pass
-`initialize = false` when a caller derives the full state itself — the nested-child path does,
-via `initialize_nested_child!`, whose ERA5-derived reference state must not carry the resting
-initialization's default anchors.
+When `initialize` (the default) and `dynamics isa CompressibleDynamics`, the returned model is
+set to a resting, hydrostatically balanced state at the reference `potential_temperature` and
+`surface_pressure`, so its density is valid for anything that divides by it (e.g. the MOST
+surface-flux coupling). `AnelasticDynamics` needs no such step: its `reference_state` already
+prescribes a valid resting density, and zero prognostic perturbation is by construction the
+resting hydrostatically balanced state. Pass `initialize = false` when a caller derives the full
+state itself — the nested-child path does, via `initialize_nested_child!`, whose ERA5-derived
+reference state must not carry the resting initialization's default anchors.
 
 Surface fluxes are handled by the `EarthSystemModel` coupling framework (via
 similarity theory), not by Breeze's own boundary conditions, so the bottom
@@ -139,8 +141,13 @@ function NumericalEarth.Atmospheres.atmosphere_model(grid;
     # a `ρ` entry) preserves this density. Callers that derive the full state themselves (the nested
     # child) pass `initialize = false`: this set!'s default-anchored state otherwise survives into
     # `initialize_nested_child!` and destabilizes the adiabatic balance twin (DomainError blowup).
-    initialize && set!(model; θ = potential_temperature,
-                              ρ = HydrostaticallyBalancedDensity(; surface_pressure))
+    #
+    # `HydrostaticallyBalancedDensity` is documented for `CompressibleDynamics` only. For
+    # `AnelasticDynamics`, `reference_state.density` already prescribes a valid resting density —
+    # applying this compressible-only set! corrupts it in place (Breeze's set_to_mean.jl copies
+    # between mismatched-shape Fields), NaN-ing every field that divides by density.
+    initialize && dynamics isa CompressibleDynamics &&
+        set!(model; θ = potential_temperature, ρ = HydrostaticallyBalancedDensity(; surface_pressure))
 
     return model
 end
