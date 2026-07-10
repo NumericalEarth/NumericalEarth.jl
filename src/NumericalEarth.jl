@@ -56,6 +56,7 @@ export
     ConstantTortuosity,
     MillingtonQuirk,
     CanopyConductanceHumidity,
+    CompositeSurfaceHumidity,
     FarquharPhotosynthesis,
     MedlynConductance,
     PlainArrhenius,

@@ -309,17 +309,21 @@ end
 ##### linearization is exact, so the converged humidity satisfies the true
 ##### nonlinear balance Gᵉ (qᵉ - qⁱⁿ) = -ρᵃᵗ u★ q★(qⁱⁿ).
 #####
-@inline function compute_interface_humidity(q::DryLayerHumidity, Tₛ, Ψₛ, Ψₐ, Ψᵢ, ℙₐ)
+# Dry-layer flux terms, split off so the standalone formulation and the
+# composite (soil + canopy) share them. Returns the dry-layer conductance `Gᵉ`,
+# the front (dry-branch) source humidity `qᵉ = qᵛ⁺(Tᵉ)`, the wet-branch logistic
+# weight `σ`, and the wet (saturated-skin) humidity `qⁱⁿ⁺ = qᵛ⁺(Tⁱⁿ)`. The full
+# humidity is `(1 − σ) qⁱⁿ⁺ + σ · [Δq-series divider with (Gᵉ, qᵉ)]`.
+@inline function dry_layer_terms(q::DryLayerHumidity, Tⁱⁿ, Ψₛ, Ψₐ, ℙₐ)
     ℂᵃᵗ = ℙₐ.thermodynamics_parameters
     FT  = eltype(Ψₛ)
     pᵃᵗ = Ψₐ.p
-    qᵃᵗ = Ψₐ.q
     Tᵃᵗ = Ψₐ.T
+    qᵃᵗ = Ψₐ.q
     ρᵃᵗ = AtmosphericThermodynamics.air_density(ℂᵃᵗ, Tᵃᵗ, pᵃᵗ, qᵃᵗ)
 
     Tˡᵃ = Ψₛ.energy.temperature       # bulk land
     𝒮   = Ψₛ.hydrology.saturation     # surface saturation
-    Tⁱⁿ = Tₛ                           # current iterate of the skin temp
 
     # Dry-layer depth, front temperature, and front (source) humidity
     # qᵉ = qᵛ⁺(Tᵉ) — the saturation specific humidity at the front.
@@ -337,18 +341,6 @@ end
     Dᵛ  = effective_vapor_diffusivity(q.vapor_exchange, q.porosity, θˡ)
     Gᵉ  = ρᵃᵗ * Dᵛ / max(δᵛ, δᵛmin)
 
-    # Atmospheric flux from previous iterate.
-    u★  = Ψₛ.fluxes.u★
-    q★  = Ψₛ.fluxes.q★
-    qⁱⁿ⁻ = Ψₛ.specific_humidity
-    Jᵃ   = -ρᵃᵗ * u★ * q★               # positive upward
-    Δq   = qⁱⁿ⁻ - qᵃᵗ
-
-    # Δq-multiplied series solution qⁱⁿ = (Gᵉ qᵉ + Gᵃ qᵃᵗ)/(Gᵉ + Gᵃ);
-    # see the derivation in the banner above.
-    D    = Gᵉ * Δq + Jᵃ
-    qⁱⁿ★ = ifelse(D == 0, qⁱⁿ⁻, (Gᵉ * qᵉ * Δq + Jᵃ * qᵃᵗ) / D)
-
     # Wet branch: the front co-locates with the skin, which saturates. The wet
     # limit is not the δᵛ → 0 limit of the series solution (Millington-Quirk
     # tortuosity closes the Fick path entirely at saturation), so the branches
@@ -357,5 +349,22 @@ end
     δᵛʷ  = convert(FT, q.vapor_exchange.wet_transition_width)
     z    = 10 * (δᵛ - δᵛmin - δᵛʷ / 2) / max(δᵛʷ, eps(FT))
     σ    = 1 / (1 + exp(-z))
+
+    return Gᵉ, qᵉ, σ, qⁱⁿ⁺
+end
+
+@inline function compute_interface_humidity(q::DryLayerHumidity, Tₛ, Ψₛ, Ψₐ, Ψᵢ, ℙₐ)
+    FT = eltype(Ψₛ)
+    Gᵉ, qᵉ, σ, qⁱⁿ⁺ = dry_layer_terms(q, Tₛ, Ψₛ, Ψₐ, ℙₐ)
+
+    qⁱⁿ⁻ = Ψₛ.specific_humidity
+    qᵃᵗ  = Ψₐ.q
+    Jᵃ, Δq = atmospheric_vapor_flux(Ψₛ, Ψₐ, ℙₐ.thermodynamics_parameters)
+
+    # Δq-multiplied series solution qⁱⁿ = (Gᵉ qᵉ + Gᵃ qᵃᵗ)/(Gᵉ + Gᵃ);
+    # see the derivation in the banner above.
+    D    = Gᵉ * Δq + Jᵃ
+    qⁱⁿ★ = ifelse(D == 0, qⁱⁿ⁻, (Gᵉ * qᵉ * Δq + Jᵃ * qᵃᵗ) / D)
+
     return convert(FT, qⁱⁿ⁺ + σ * (qⁱⁿ★ - qⁱⁿ⁺))
 end

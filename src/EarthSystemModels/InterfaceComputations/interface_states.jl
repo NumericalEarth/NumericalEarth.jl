@@ -88,6 +88,23 @@ end
     return εᵈᵛ⁻¹ * pᵛ⁺ / (p - (1 - εᵈᵛ⁻¹) * pᵛ⁺)
 end
 
+# Saturation phase of a humidity formulation, used only for the initial surface-
+# humidity guess in the flux kernel. Most formulations store it directly;
+# composite formulations forward to their soil branch.
+@inline interface_phase(q_formulation) = q_formulation.phase
+
+# Atmospheric vapor flux `Jᵃ = -ρᵃᵗ u★ q★` (positive upward) from the previous
+# similarity iterate, and the humidity increment `Δq = qˢ⁻ - qᵃᵗ`. The series-
+# resistance humidity formulations (`SkinHumidity`, `DryLayerHumidity`,
+# `CanopyConductanceHumidity`, `CompositeSurfaceHumidity`) all close their flux
+# balance against these two quantities.
+@inline function atmospheric_vapor_flux(Ψₛ, Ψₐ, ℂᵃᵗ)
+    ρᵃᵗ = AtmosphericThermodynamics.air_density(ℂᵃᵗ, Ψₐ.T, Ψₐ.p, Ψₐ.q)
+    Jᵃ  = - ρᵃᵗ * Ψₛ.fluxes.u★ * Ψₛ.fluxes.q★
+    Δq  = Ψₛ.specific_humidity - Ψₐ.q
+    return Jᵃ, Δq
+end
+
 # `BulkHumidity` — surface specific humidity for a bulk land surface with no
 # skin-resistance parameterization. The surface is saturated at the bulk
 # (skin) temperature wherever there is water, and dry otherwise:

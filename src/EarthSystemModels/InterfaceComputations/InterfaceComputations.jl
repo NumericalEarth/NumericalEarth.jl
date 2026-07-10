@@ -42,6 +42,7 @@ export
     ConstantTortuosity,
     MillingtonQuirk,
     CanopyConductanceHumidity,
+    CompositeSurfaceHumidity,
     FarquharPhotosynthesis,
     MedlynConductance,
     PlainArrhenius,
@@ -119,6 +120,7 @@ include("roughness_lengths.jl")
 include("interface_states.jl")
 include("dry_layer_humidity.jl")
 include("canopy_conductance.jl")
+include("composite_surface_humidity.jl")
 include("compute_interface_state.jl")
 include("similarity_theory_turbulent_fluxes.jl")
 include("coefficient_based_turbulent_fluxes.jl")

@@ -390,17 +390,16 @@ Base.show(io::IO, q::CanopyConductanceHumidity) = print(io, summary(q))
 # temperature (= skin temperature Tₛ, single-source). The stomatal conductance is
 # the live Farquhar–Medlyn solve; g_c = LAI · gₛ · Mₐ converts the molar leaf
 # conductance to the mass conductance the specific-humidity balance uses.
-@inline function compute_interface_humidity(q::CanopyConductanceHumidity, Tₛ, Ψₛ, Ψₐ, Ψᵢ, ℙₐ)
+# Canopy flux terms, split off so the standalone formulation and the composite
+# (soil + canopy) share them. Returns the bulk canopy (stomatal) mass conductance
+# `g_c = LAI · gₛ · Mₐ` (kg m⁻² s⁻¹) and the leaf saturation source `qᵛ⁺(Tₗ)`.
+@inline function canopy_conductance_terms(q::CanopyConductanceHumidity, Tₗ, Ψₛ, Ψₐ, ℙₐ)
     ℂᵃᵗ = ℙₐ.thermodynamics_parameters
-    FT  = eltype(Ψₛ)
     pᵃᵗ = Ψₐ.p
     qᵃᵗ = Ψₐ.q
     Tᵃᵗ = Ψₐ.T
-    ρᵃᵗ = AtmosphericThermodynamics.air_density(ℂᵃᵗ, Tᵃᵗ, pᵃᵗ, qᵃᵗ)
 
-    Tₗ  = Tₛ                                # leaf temperature = skin temperature
     qᵛ⁺ = saturation_specific_humidity(ℂᵃᵗ, Tₗ, pᵃᵗ, q.phase)
-
     VPD = vapor_pressure_deficit(ℂᵃᵗ, Tₗ, Tᵃᵗ, pᵃᵗ, qᵃᵗ, q.phase)
     β   = evaporation_efficiency(q.moisture_stress, Ψₛ.hydrology)
 
@@ -410,12 +409,17 @@ Base.show(io::IO, q::CanopyConductanceHumidity) = print(io, summary(q))
     # Molar leaf conductance → canopy mass conductance (kg m⁻² s⁻¹).
     g_c = q.leaf_area_index * gs * oftype(gs, MOLAR_MASS_DRY_AIR)
 
-    u★  = Ψₛ.fluxes.u★
-    q★  = Ψₛ.fluxes.q★
-    qˢ⁻ = Ψₛ.specific_humidity
+    return g_c, qᵛ⁺
+end
 
-    Jᵃ = - ρᵃᵗ * u★ * q★                   # atmospheric vapor flux (positive up), prev iterate
-    Δq = qˢ⁻ - qᵃᵗ
+@inline function compute_interface_humidity(q::CanopyConductanceHumidity, Tₛ, Ψₛ, Ψₐ, Ψᵢ, ℙₐ)
+    FT = eltype(Ψₛ)
+    g_c, qᵛ⁺ = canopy_conductance_terms(q, Tₛ, Ψₛ, Ψₐ, ℙₐ)   # leaf temperature = skin temperature Tₛ
+
+    qˢ⁻ = Ψₛ.specific_humidity
+    qᵃᵗ = Ψₐ.q
+    Jᵃ, Δq = atmospheric_vapor_flux(Ψₛ, Ψₐ, ℙₐ.thermodynamics_parameters)
+
     D  = g_c * Δq + Jᵃ
     qˢ = (g_c * qᵛ⁺ * Δq + Jᵃ * qᵃᵗ) / D
 
