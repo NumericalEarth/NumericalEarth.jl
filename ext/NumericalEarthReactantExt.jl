@@ -26,13 +26,10 @@ function reconcile_state!(model::ReactantESM)
     return nothing
 end
 
-# Mirror Oceananigans' Reactant paradigm. The generic `maybe_prepare_first_time_step!` runs
-# on every step (called from the top of `time_step!`) and refreshes the auxiliary/flux state
-# only on the first step, guarded by `if model.clock.iteration == 0`. On `ReactantState` the
-# iteration is a traced scalar, so that guard cannot branch inside a compiled loop. Rather
-# than trace a first-step-only conditional into every iteration, we make the hook a no-op and
-# do the refresh explicitly and unconditionally in `first_time_step!` — matching how
-# Oceananigans handles its own Reactant models, and keeping the compiled stepping loop lean.
+# On `ReactantState` the clock iteration is a traced scalar, so the generic
+# `if iteration == 0` first-step guard can't branch inside a compiled loop. Make the
+# hook a no-op and do the first-step refresh explicitly in `first_time_step!`, as
+# Oceananigans does for its own Reactant models.
 maybe_prepare_first_time_step!(::ReactantESM, Δt, callbacks) = nothing
 
 function first_time_step!(model::ReactantESM, Δt)

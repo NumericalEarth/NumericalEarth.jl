@@ -125,19 +125,21 @@ end
 ##### model then derives `β`, the reservoir temperature, etc. from what it pulled.
 #####
 
-@inline land_saturation(i, j, grid, land_state) =
-    (saturation = land_field_value(land_state.saturation, i, j),)
+# Per-cell surface saturation; land models override this to return their own value.
+@inline land_saturation(i, j, grid, land_state) = land_field_value(land_state.saturation, i, j)
 
-# Hydrology state, per humidity formulation.
-@inline interface_hydrology_state(i, j, grid, ::BulkHumidity, land_state) = land_saturation(i, j, grid, land_state)
+# Hydrology state, per humidity formulation. The caller adds the `saturation` key.
+@inline interface_hydrology_state(i, j, grid, ::BulkHumidity, land_state) =
+    (; saturation = land_saturation(i, j, grid, land_state))
 @inline interface_hydrology_state(i, j, grid, q::FractionalHumidity, land_state) =
     interface_hydrology_state(i, j, grid, q.efficiency, land_state)
-@inline interface_hydrology_state(i, j, grid, ::CriticalSaturation, land_state) = land_saturation(i, j, grid, land_state)
+@inline interface_hydrology_state(i, j, grid, ::CriticalSaturation, land_state) =
+    (; saturation = land_saturation(i, j, grid, land_state))
 @inline interface_hydrology_state(i, j, grid, interface_model, land_state) = (;) # default: pulls nothing
 
 # Energy state: only the reservoir (skin-humidity) model needs the bulk temperature.
 @inline interface_energy_state(i, j, grid, ::SkinHumidity, land_state) =
-    (temperature = land_field_value(land_state.T, i, j),)
+    (; temperature = land_field_value(land_state.T, i, j))
 @inline interface_energy_state(i, j, grid, interface_model, land_state) = (;) # default: pulls nothing
 
 @kernel function _compute_atmosphere_land_interface_state!(interface_fluxes,
