@@ -80,6 +80,33 @@ function decode_cog_window(raw, scale, offset, nodata)
     return decoded
 end
 
+# The windowing math and the north→south row reversal below assume a north-up,
+# axis-aligned geographic (EPSG:4326, degrees) grid; fail loudly on anything else.
+function validate_geographic_northup(dataset, geotransform)
+    _, dx, rx, _, ry, dy = geotransform
+    (rx == 0 && ry == 0) ||
+        error("Windowed COG reader requires an axis-aligned grid (no rotation/shear); " *
+              "got geotransform $geotransform.")
+    (dx > 0 && dy < 0) ||
+        error("Windowed COG reader assumes west→east (Δλ > 0) and north→south (Δφ < 0) " *
+              "pixel order; got Δλ = $dx, Δφ = $dy.")
+
+    # If the source declares a CRS, require EPSG:4326 — the windowing is done in
+    # degrees, so a projected grid would silently land the window in the wrong place.
+    wkt = ArchGDAL.getproj(dataset)
+    if !isempty(wkt)
+        epsg = try
+            ArchGDAL.toEPSG(ArchGDAL.importWKT(wkt))
+        catch  # WKT without an EPSG authority tag: rely on the geometry checks above.
+            nothing
+        end
+        isnothing(epsg) || epsg == 4326 ||
+            error("Windowed COG reader expects EPSG:4326 lon/lat in degrees; " *
+                  "the source declares EPSG:$epsg.")
+    end
+    return nothing
+end
+
 # Dispatch on `bbox::BoundingBox` (more specific than the module fallback) so this
 # adds a specialization rather than overwriting a method during precompilation.
 function OpenLandMap.read_cog_window(source, bbox::BoundingBox)
@@ -89,8 +116,9 @@ function OpenLandMap.read_cog_window(source, bbox::BoundingBox)
     S, N = bbox.latitude
 
     return ArchGDAL.read(source) do ds
-        # EPSG:4326 geotransform: [x₀, Δλ, 0, y₀, 0, Δφ] with Δφ < 0 (north→south).
-        x0, dx, _, y0, _, dy = ArchGDAL.getgeotransform(ds)
+        geotransform = ArchGDAL.getgeotransform(ds)  # [x₀, Δλ, 0, y₀, 0, Δφ]
+        validate_geographic_northup(ds, geotransform)
+        x0, dx, _, y0, _, dy = geotransform
         width  = ArchGDAL.width(ds)
         height = ArchGDAL.height(ds)
 
@@ -106,6 +134,8 @@ function OpenLandMap.read_cog_window(source, bbox::BoundingBox)
 
         raw = ArchGDAL.read(ds, 1, xoff, yoff, xsize, ysize)  # (lon, lat), north-first
         longitude = [x0 + (xoff + i - 0.5) * dx for i in 1:xsize]
+        # COGs store rows north-first (Δφ < 0); reverse latitude and data so both
+        # come out ascending (south-to-north), per CF convention.
         latitude  = reverse([y0 + (yoff + j - 0.5) * dy for j in 1:ysize])
         data = reverse(decode_cog_window(raw, scale, offset, nodata), dims = 2)
         return (longitude, latitude, data)
