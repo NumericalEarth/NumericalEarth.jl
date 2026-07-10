@@ -280,13 +280,19 @@ boxφ = [φ_south, φ_south, φ_north, φ_north, φ_south]
 fig_cascade = Figure(size = (1500, 700))
 cascade_n = Observable(1)
 
-## Each frame's field is a fresh lazy operation whose *concrete* type varies between frames
-## (Oceananigans numbers the interpolation operators per construction), so a type-locked `@lift`
-## observable cannot hold successive frames. Drive an `Observable{Any}` from the frame index instead.
-function frame(field_of)
-    obs = Observable{Any}(field_of(1))
-    on(nn -> (obs[] = field_of(nn)), cascade_n)
-    return obs
+## CairoMakie locks each heatmap's data to the first frame's concrete array type, but these lazy
+## field operations convert to *different* array types across frames (the parent's pressure-level
+## slices especially). Materialize every frame to a host matrix on its grid's own λ/φ, so the plotted
+## type stays fixed and the axes read geographic coordinates.
+host_matrix(field) = Array(interior(compute!(Field(field)), :, :, 1))
+
+function panel!(ax, field_of, colormap, colorrange)
+    grid = Field(field_of(1)).grid
+    λ = Array(λnodes(grid, Center(), Center(), Center()))
+    φ = Array(φnodes(grid, Center(), Center(), Center()))
+    data = Observable(host_matrix(field_of(1)))
+    on(nn -> (data[] = host_matrix(field_of(nn))), cascade_n)
+    return heatmap!(ax, λ, φ, data; colormap, colorrange)
 end
 
 Label(fig_cascade[0, 1:5],
@@ -297,13 +303,13 @@ for (i, column) in enumerate(columns)
     parent_ax = Axis(fig_cascade[1, i]; title = column.title, aspect = DataAspect())
     child_ax  = Axis(fig_cascade[2, i]; aspect = DataAspect())
 
-    hmc = heatmap!(child_ax, frame(column.child); colormap = column.colormap, colorrange = column.child_range)
+    hmc = panel!(child_ax, column.child, column.colormap, column.child_range)
 
     if isnothing(column.parent(1))
         text!(parent_ax, 0.5, 0.5; text = "no rain", space = :relative, align = (:center, :center), color = :gray)
         Colorbar(fig_cascade[3, i], hmc; vertical = false, flipaxis = false, height = 10)
     else
-        hmp = heatmap!(parent_ax, frame(column.parent); colormap = column.colormap, colorrange = column.parent_range)
+        hmp = panel!(parent_ax, column.parent, column.colormap, column.parent_range)
         lines!(parent_ax, boxλ, boxφ; color = :black, linestyle = :dash, linewidth = 1.5)
         if column.parent_range == column.child_range
             Colorbar(fig_cascade[3, i], hmc; vertical = false, flipaxis = false, height = 10)
