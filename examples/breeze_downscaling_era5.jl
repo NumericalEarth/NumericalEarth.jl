@@ -145,9 +145,10 @@ save("era5_breeze_domains.png", fig)
 
 fig
 
-# ERA5 pressure velocity ω (Pa/s) on the parent's native grid — the animation maps it to w ≈ −ω/(ρg).
+# ERA5 pressure velocity ω (Pa/s), loaded raw onto the parent's own grid — so it shares the parent's
+# time-varying geopotential vertical and composes in the `w ≈ −ω/(ρg)` operation with the parent state.
 ω_metadata = Metadata(:vertical_velocity; dataset, dates, region = era5_region, dir = era5_datadir)
-ω_series = FieldTimeSeries(ω_metadata, arch; time_indices_in_memory = length(ω_metadata.dates))
+ω_series = FieldTimeSeries(ω_metadata, parent.grid; time_indices_in_memory = length(ω_metadata.dates))
 
 # ## Simulation
 #
@@ -277,6 +278,16 @@ boxφ = [φ_south, φ_south, φ_north, φ_north, φ_south]
 
 fig_cascade = Figure(size = (1500, 700))
 cascade_n = Observable(1)
+
+## Each frame's field is a fresh lazy operation whose *concrete* type varies between frames
+## (Oceananigans numbers the interpolation operators per construction), so a type-locked `@lift`
+## observable cannot hold successive frames. Drive an `Observable{Any}` from the frame index instead.
+function frame(field_of)
+    obs = Observable{Any}(field_of(1))
+    on(nn -> (obs[] = field_of(nn)), cascade_n)
+    return obs
+end
+
 Label(fig_cascade[0, 1:5],
       @lift(@sprintf("MC3E 20 May 2011 — ERA5 → 12 km Breeze — t = %.1f h", times[$cascade_n] / 3600)),
       fontsize = 20, tellwidth = false)
@@ -285,13 +296,13 @@ for (i, column) in enumerate(columns)
     parent_ax = Axis(fig_cascade[1, i]; title = column.title, aspect = DataAspect())
     child_ax  = Axis(fig_cascade[2, i]; aspect = DataAspect())
 
-    hmc = heatmap!(child_ax, @lift(column.child($cascade_n)); colormap = column.colormap, colorrange = column.child_range)
+    hmc = heatmap!(child_ax, frame(column.child); colormap = column.colormap, colorrange = column.child_range)
 
     if isnothing(column.parent(1))
         text!(parent_ax, 0.5, 0.5; text = "no rain", space = :relative, align = (:center, :center), color = :gray)
         Colorbar(fig_cascade[3, i], hmc; vertical = false, flipaxis = false, height = 10)
     else
-        hmp = heatmap!(parent_ax, @lift(column.parent($cascade_n)); colormap = column.colormap, colorrange = column.parent_range)
+        hmp = heatmap!(parent_ax, frame(column.parent); colormap = column.colormap, colorrange = column.parent_range)
         lines!(parent_ax, boxλ, boxφ; color = :black, linestyle = :dash, linewidth = 1.5)
         if column.parent_range == column.child_range
             Colorbar(fig_cascade[3, i], hmc; vertical = false, flipaxis = false, height = 10)

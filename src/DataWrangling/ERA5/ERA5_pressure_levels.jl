@@ -346,6 +346,23 @@ function era5_native_pressure_fts(metadata, grid;
     return fts
 end
 
+"""
+    FieldTimeSeries(metadata::ERA5PressureMetadata, grid::PressureLevelGrid; kw...)
+
+Load an ERA5 pressure-level variable **raw** onto an existing native
+[`PressureLevelGrid`](@ref) (e.g. a parent [`ERA5PrescribedAtmosphere`](@ref)'s
+`grid`), placing each pressure level straight into its `k`-slot — the same
+per-level load the atmosphere applies to its own fields. This lets an extra ERA5
+field share the parent's grid so it composes in `AbstractOperation`s with the
+atmosphere's state.
+
+The generic `FieldTimeSeries(metadata, grid)` would instead interpolate at load,
+freezing the data to one reference-height frame and desyncing it from the grid's
+time-varying geopotential heights.
+"""
+Oceananigans.OutputReaders.FieldTimeSeries(metadata::ERA5PressureMetadata, grid::PressureLevelGrid; kw...) =
+    era5_native_pressure_fts(metadata, grid; kw...)
+
 #####
 ##### pressure_field — synthetic pressure coordinate field
 #####

@@ -28,7 +28,7 @@ using ..DataWrangling: DataWrangling, Metadata, Metadatum, BoundingBox, InverseG
                        native_grid, dataset_variable_name, available_variables, retrieve_data,
                        first_date, last_date, native_times, set_metadata_field!, DatasetBackend,
                        instantiate
-using ...Grids: PressureLevelVerticalDiscretization
+using ...Grids: PressureLevelVerticalDiscretization, PressureLevelGrid
 
 download_ERA5_cache::String = ""
 
