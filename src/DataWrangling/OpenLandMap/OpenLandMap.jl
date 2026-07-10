@@ -3,6 +3,7 @@ module OpenLandMap
 export OpenLandMapSoilDB
 
 using Downloads: Downloads
+using NCDatasets: NCDataset, defDim, defVar
 using Oceananigans: Center
 using Oceananigans.DistributedComputations: @root
 
@@ -200,17 +201,57 @@ function DataWrangling.retrieve_data(metadata::OpenLandMapSoilDBMetadatum)
 end
 
 """
-    cog_window_to_netcdf(sources, nc_path, variable_name, bbox)
+    read_cog_window(source, bbox)
 
-Stream a longitude/latitude window from each depth COG in `sources`
-(deepest-first, already `/vsicurl/`-prefixed), decode raw integers to physical
-units (mask nodata → `NaN`, then apply the band `scale`/`offset`), stack into a
-`(lon, lat, depth)` array, and write it to `nc_path` with ascending lon/lat.
+Read the `bbox` longitude/latitude window from a single-band EPSG:4326
+cloud-optimized GeoTIFF `source`, decode raw integers to physical units (mask
+nodata → `NaN`, then apply the band `scale`/`offset`), and return
+`(longitude, latitude, data)` with ascending, cell-center coordinates (latitude
+south-to-north, per CF convention).
 
 Implemented in `ext/NumericalEarthArchGDALExt.jl` when ArchGDAL is loaded; the
 fallback below fires only when the extension is not active.
 """
-cog_window_to_netcdf(sources, nc_path, variable_name, bbox) =
+read_cog_window(source, bbox) =
     error("Reading OpenLandMap COGs requires the ArchGDAL package. Load it with `using ArchGDAL`.")
+
+# Window each depth COG in `sources` (deepest-first) over `bbox` and stack them
+# into a `(lon, lat, depth)` NetCDF at `nc_path`.
+function cog_window_to_netcdf(sources, nc_path, variable_name, bbox)
+    windows   = [read_cog_window(source, bbox) for source in sources]
+    longitude = windows[1][1]
+    latitude  = windows[1][2]
+    Nx, Ny, Nz = length(longitude), length(latitude), length(windows)
+
+    data = Array{Float32}(undef, Nx, Ny, Nz)
+    for (k, (_, _, layer)) in enumerate(windows)
+        data[:, :, k] = layer
+    end
+
+    # Interval midpoints (m) from the dataset's depth faces, deepest first.
+    z = DataWrangling.z_interfaces(OpenLandMapSoilDB())
+    depth_centers = Nz == length(z) - 1 ? (z[1:end-1] .+ z[2:end]) ./ 2 : collect(1.0:Nz)
+
+    NCDataset(nc_path, "c") do ds
+        defDim(ds, "lon", Nx)
+        defDim(ds, "lat", Ny)
+        defDim(ds, "depth", Nz)
+
+        lon_var   = defVar(ds, "lon", Float64, ("lon",);
+                           attrib = ["units" => "degrees_east", "long_name" => "longitude"])
+        lat_var   = defVar(ds, "lat", Float64, ("lat",);
+                           attrib = ["units" => "degrees_north", "long_name" => "latitude"])
+        depth_var = defVar(ds, "depth", Float64, ("depth",);
+                           attrib = ["units" => "m", "long_name" => "depth interval midpoint"])
+        data_var  = defVar(ds, variable_name, Float32, ("lon", "lat", "depth"))
+
+        lon_var[:]        = longitude
+        lat_var[:]        = latitude
+        depth_var[:]      = depth_centers
+        data_var[:, :, :] = data
+    end
+
+    return nothing
+end
 
 end # module OpenLandMap
