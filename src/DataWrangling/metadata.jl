@@ -20,6 +20,9 @@ Base.summary(bbox::BoundingBox) = string("BoundingBox(",
     BoundingBox(; longitude=nothing, latitude=nothing, z=nothing)
 
 Create a bounding box with `latitude`, `longitude`, and `z` bounds on the sphere.
+A non-`nothing` `z = (z_bottom, z_top)` restricts both the download (for backends
+that support it, e.g. CopernicusMarine/GLORYS) and the vertical extent of the
+native grid built by [`native_grid`](@ref).
 """
 BoundingBox(; longitude=nothing, latitude=nothing, z=nothing) =
     BoundingBox(longitude, latitude, z)
@@ -41,8 +44,9 @@ When used as a `Metadata` region, `native_grid` returns a single-column
 Keyword Arguments
 =================
 
-- `z`: depth range tuple `(z_bottom, z_top)` for restricting downloads
-  (used by CopernicusMarine/GLORYS). Default: `nothing` (full depth).
+- `z`: depth range tuple `(z_bottom, z_top)` that restricts both the download
+  (used by CopernicusMarine/GLORYS) and the vertical extent of the native grid.
+  Default: `nothing` (full depth).
 - `interpolation`: method for extracting data from the surrounding grid
   cells. `Linear()` (default) bilinearly interpolates to the exact point;
   `Nearest()` selects the closest grid cell.

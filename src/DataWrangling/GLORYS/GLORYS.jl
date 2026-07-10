@@ -102,8 +102,14 @@ end
 function region_suffix(region)
     w, e = bbox_strs(region.longitude)
     s, n = bbox_strs(region.latitude)
-    return string(w, e, s, n)
+    return string(w, e, s, n, z_suffix(region.z))
 end
+
+# A z-restricted download must cache to a distinct file from the full-column one,
+# otherwise `skip_existing` returns the wrong (full-depth) file. Regions without
+# `z` keep their existing filenames (empty suffix) for backward compatibility.
+z_suffix(::Nothing) = ""
+z_suffix(z) = string(bbox_strs(z)...)
 
 function metadata_prefix(dataset::GLORYSDataset, name, date, region)
     var = GLORYS_dataset_variable_names[name]
