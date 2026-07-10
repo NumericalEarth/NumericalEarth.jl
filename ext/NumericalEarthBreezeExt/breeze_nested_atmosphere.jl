@@ -41,27 +41,36 @@ function default_nested_microphysics()
     return ext.OneMomentCloudMicrophysics(cloud_formation = SaturationAdjustment(equilibrium = MixedPhaseEquilibrium()))
 end
 
-# Cosine-ramp Davies mask: 1 at the lateral walls, ramping to 0 over the outermost `width` cells.
-# Captures plain numbers so the closure is GPU-compilable.
-function davies_relaxation_mask(grid, width)
+# Ramp shapes (isbits callables) for a nudging zone: weight vs. normalized distance from the wall, s ∈ [0, 1].
+# Contract: ramp(0)=1, ramp(1)=0, monotone between.
+struct CosineRamp end
+struct SmoothStepRamp end
+
+@inline (::CosineRamp)(s)     = (1 + cos(π * s)) / 2
+@inline (::SmoothStepRamp)(s) = 1 - s^2 * (3 - 2s)
+
+# Davies mask: 1 at the lateral walls, ramping to 0 over the outermost `width` cells.
+function davies_relaxation_mask(grid, width; ramp = CosineRamp())
     λ₁, λ₂ = extrema(λnodes(grid, Face(), Center(), Center()))
     φ₁, φ₂ = extrema(φnodes(grid, Center(), Face(), Center()))
     Nx, Ny, _ = size(grid)
     w = width * max((λ₂ - λ₁) / Nx, (φ₂ - φ₁) / Ny)
     return (λ, φ, z) -> begin
         d = min(λ - λ₁, λ₂ - λ, φ - φ₁, φ₂ - φ)
-        d >= w && return zero(λ)
-        return oftype(λ, (1 + cos(π * d / w)) / 2)
+        s = clamp(d / w, zero(d), one(d))
+        return oftype(d, ramp(s))
     end
 end
 
 # Cubic-ramp (smoothstep) Rayleigh mask over the top `depth` metres of the domain, for the ρw lid sponge.
 # `z_top` is read once host-side under `@allowscalar`: a `znode` on a terrain-following GPU grid
-# indexes the (device) terrain arrays, which is otherwise disallowed.
-function lid_sponge_mask(grid, depth)
+# indexes the (device) terrain arrays, which is otherwise disallowed. `s` is the normalized distance
+# below the lid (0 at the top), so the shared ramp contract (1 at s=0) puts the strongest damping at
+# the model top.
+function lid_sponge_mask(grid, depth; ramp = SmoothStepRamp())
     z_top = @allowscalar znode(1, 1, size(grid, 3) + 1, grid, Center(), Center(), Face())
     d = convert(eltype(grid), depth)
-    return (λ, φ, z) -> (s = clamp((z - (z_top - d)) / d, zero(z), one(z)); s * s * (3 - 2s))
+    return (λ, φ, z) -> (s = clamp((z_top - z) / d, zero(z), one(z)); ramp(s))
 end
 
 # Default lid-sponge depth: the top ~25% of the vertical extent (≈5 km for a ~19.5 km column, base ≈15 km).
