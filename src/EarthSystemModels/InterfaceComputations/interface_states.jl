@@ -490,7 +490,7 @@ the physical conductance directly: the diagnostic balance
 `Rₙ(Tⁱⁿ) = H(Tⁱⁿ) + LE(Tⁱⁿ) + Λⁱⁿ(Tⁱⁿ − Tˡᵃ)` is a temperature *root*, so it is
 invariant to the overall energy-to-tendency scale and needs no soil `ρ`/`c`.
 
-A recommended first cut is `conductivity = 1.5`, `thickness = 0.05` ⇒ `Λⁱⁿ = 30`.
+Reasonable defaults are `conductivity = 1.5`, `thickness = 0.05` ⇒ `Λⁱⁿ = 30`.
 The skin is a thin radiometric film on top of the bulk diurnal layer; its
 conductance and the force-restore heat capacity / deep restoring represent distinct
 layers and coexist (no re-tuning of the bulk closure). Moisture-dependent
@@ -661,14 +661,12 @@ end
 ####    `G = Λⁱⁿ(Tⁱⁿ − Tˡᵃ)`, `Λⁱⁿ` from a [`SoilConductiveFlux`](@ref); identical
 ####    to `SkinTemperature(SoilConductiveFlux(...))`.
 ####
-#### A `CanopyLeaf` kind (a massless leaf, `Rₙ = H + LE`, no soil conduction) is the
-#### intended next instance. It is deferred: a robust `G = 0` leaf balance needs the
-#### outgoing-longwave `T⁴` term (a two-face canopy longwave ledger, ClimaLand
-#### D13–D17) or a small prognostic leaf heat capacity to condition the solve as the
-#### sensible flux vanishes, and its Beer–Lambert canopy/ground radiation split is
-#### not yet carried to the temperature call site. Those, plus a two-source
-#### canopy-air composite (distinct soil-skin and leaf source temperatures), are
-#### follow-ups.
+#### Only `SoilSkin` is implemented. A canopy-leaf kind (a massless leaf,
+#### `Rₙ = H + LE`, no soil conduction) is not included: a robust `G = 0` leaf
+#### balance needs the outgoing-longwave `T⁴` term (a two-face canopy longwave
+#### ledger) or a small prognostic leaf heat capacity to stay conditioned as the
+#### sensible flux vanishes, and it needs the canopy/ground shortwave split carried
+#### to the temperature call site.
 
 struct SoilSkin end
 Base.summary(::SoilSkin) = "SoilSkin"

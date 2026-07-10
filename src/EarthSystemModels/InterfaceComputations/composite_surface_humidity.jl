@@ -30,10 +30,10 @@
 ##### Where LAI enters (two physical channels, no blend weight): the canopy branch
 ##### through `g_c = LAI·gₛ`, and the soil branch through Beer–Lambert shading of
 ##### the available energy. Shading is an *energy* effect on the soil source
-##### temperature; in today's single-source world (leaf = soil = skin temperature
-##### `Tₛ`) it cannot be expressed, so v1 sums the two branches at a common skin
-##### temperature. Per-branch source temperatures (`qᵉ = qᵛ⁺(Tⁱⁿ_soil)`,
-##### `qᵛ⁺ = qᵛ⁺(T_canopy)`) wait on the energy-balance temperature abstraction.
+##### temperature; with a single skin temperature (leaf = soil = `Tₛ`) it cannot be
+##### expressed, so both branches share `Tₛ` here. Distinct per-branch source
+##### temperatures (`qᵉ = qᵛ⁺(Tⁱⁿ_soil)`, `qᵛ⁺ = qᵛ⁺(T_canopy)`) would require a
+##### separate soil-skin and leaf temperature.
 #####
 
 """

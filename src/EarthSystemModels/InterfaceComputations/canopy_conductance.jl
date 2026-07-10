@@ -1,39 +1,42 @@
 #####
-##### Slab canopy (Stage A) — single-source, resistance-only vegetation.
+##### Single-source, resistance-only vegetation surface.
 #####
 ##### A `CanopyConductanceHumidity` is the vegetation analogue of `SkinHumidity`:
 ##### it puts a *canopy (stomatal) conductance* `g_c = LAI · g_s` in series with
 ##### the aerodynamic conductance and solves the same surface vapor-flux balance
 ##### for `qˢ` inside the Monin–Obukhov fixed point. The stomatal conductance
-##### `g_s` is the modern photosynthesis-coupled optimality conductance of
+##### `g_s` is the photosynthesis-coupled optimality conductance of
 ##### [Medlyn et al. (2011)](@cite medlyn2011), driven by the net CO₂ assimilation
-##### `Aₙ` of the [Farquhar et al. (1980)](@cite farquhar1980) model. This is the
-##### dominant lever on the Bowen ratio — the single quantity an atmosphere-coupled
-##### LES most needs from the land (see `LAND_TRAINING_AND_CANOPY_PLAN.md`, Part II).
+##### `Aₙ` of the [Farquhar et al. (1980)](@cite farquhar1980) model — the dominant
+##### lever on the Bowen ratio, the sensible/latent partition an atmosphere-coupled
+##### simulation reads from the land.
 #####
 ##### Grounded in ClimaLand (Deck et al. 2026, JAMES, App. C–E): the series
 ##### resistance network `r_stomata + r_ae` (Eqs E15–E17), the Farquhar
-##### co-limitation (Eqs C1–C5), and the Medlyn conductance (their Eq for `gₛ`).
-##### Following the plan's differentiability discipline, the `min(A_c, A_j)`
-##### co-limitation is replaced by the smooth quadratic (θ) minimum, and every
-##### `√`/division is guarded, so the whole path is Enzyme/Reactant-friendly.
+##### co-limitation (Eqs C1–C5), and the Medlyn conductance. The `min(A_c, A_j)`
+##### co-limitation uses the smooth quadratic (θ) minimum and every `√`/division
+##### is guarded, so the whole path is Enzyme/Reactant-friendly.
 #####
-##### Deliberately *scalar / prescribed* in this first cut: absorbed PAR and CO₂
-##### are prescribed (the humidity call site does not carry the radiation state),
-##### and leaf temperature is the skin temperature `Tₛ` (single-source). Per-cell
-##### absorbed-PAR fields, a prognostic canopy temperature, and canopy-height
-##### roughness are the documented Stage-B follow-ups.
+##### Single exchange surface: absorbed PAR and CO₂ are prescribed (the humidity
+##### call site does not carry the radiation state), and the leaf temperature is
+##### the skin temperature `Tₛ`.
 #####
 
 #####
 ##### Small differentiable helpers
 #####
 
-# Universal gas constant and molar mass of dry air (SI). Literals keep these
-# kernel-safe and type-generic (Julia promotes against the caller's `FT`).
-const GAS_CONSTANT = 8.314462618        # J mol⁻¹ K⁻¹
-const MOLAR_MASS_DRY_AIR = 0.028965     # kg mol⁻¹
-const REFERENCE_TEMPERATURE = 298.15    # K (25 °C, the "25" subscript)
+# Universal gas constant and dry-air molar mass. These mirror the model's
+# constitutive thermodynamic parameters (`gas_constant`, `dry_air_molar_mass`);
+# the accessors live in the later-loaded `Atmospheres` module, and the
+# `Thermodynamics.Parameters` interface reachable here exposes only the specific
+# constants (`R_d`, `R_v`), so the canopy solve — a scalar physics kernel with no
+# thermodynamics parameter set in scope — restates them as module constants.
+const GAS_CONSTANT = 8.3144598          # J mol⁻¹ K⁻¹
+const MOLAR_MASS_DRY_AIR = 0.02897      # kg mol⁻¹
+# Reference temperature of the photosynthesis rate parameters (the "25" subscript
+# of Vcmax25, etc.) — distinct from the thermodynamic reference (triple point).
+const REFERENCE_TEMPERATURE = 298.15    # K (25 °C)
 
 # Arrhenius temperature scaling `f(T) = exp[ΔH (T − T₂₅) / (T₂₅ R T)]`
 # (ClimaLand Eq C6). Normalized to 1 at `T = T₂₅`.
@@ -45,7 +48,7 @@ end
 
 # Peaked Arrhenius for `Vcmax`/`Jmax` (ClimaLand Eq C11): plain Arrhenius times a
 # high-temperature deactivation term, so the capacity peaks near an optimum
-# (~35–40 °C) and rolls off, rather than climbing without bound. The numerator
+# (low-to-mid 30s °C) and rolls off, rather than climbing without bound. The numerator
 # normalizes `f′(T₂₅) = 1`, preserving the meaning of the 25 °C values. Activation
 # `ΔHa`, entropy `ΔS`, deactivation `ΔHd` are the Kattge & Knorr (2007) peaked set.
 # The deactivation exponent is clamped for Float32 / extreme-`T` autodiff safety;
@@ -71,7 +74,7 @@ end
 #####
 ##### Photosynthetic-capacity temperature response (trait). `PeakedArrhenius`
 ##### (default) rolls the capacities off above their optimum; `PlainArrhenius`
-##### keeps the monotone Stage-A response (deactivation disabled) for A/B tests.
+##### keeps a monotone response (deactivation disabled) for comparison.
 ##### `Rd` always uses the Heskel form; the trait toggles only `Vcmax`/`Jmax`.
 #####
 
@@ -334,7 +337,7 @@ temperature (`= Tₛ`, single-source), with the moisture-stress factor `β(𝒮)
 from the ground hydrology (`moisture_stress`, a `Number` or
 [`CriticalSaturation`](@ref)). Absorbed PAR and CO₂ are prescribed (`absorbed_par`,
 `atmospheric_co2`) because the radiation state is not carried to the humidity call
-site — per-cell absorbed-PAR fields are a Stage-B follow-up.
+site.
 
 Because the canopy vapor flux *is* transpiration, the resulting reduced `qˢ`
 lowers the latent-heat / vapor flux, which the existing

@@ -37,7 +37,7 @@ end
 @testset "EnergyBalanceTemperature (SoilSkin)" begin
     for arch in test_architectures
         # The SoilSkin instance is behaviorally identical to the equivalent
-        # SkinTemperature(SoilConductiveFlux(...)) (Plan B), bit-for-bit.
+        # SkinTemperature(SoilConductiveFlux(...)), bit-for-bit.
         Tin_ebt   = interface_temperature(arch, SoilSkinTemperature(1.5, 0.05); Tair=290.0, Tland=300.0, efficiency=1.0)
         Tin_skinT = interface_temperature(arch, SkinTemperature(SoilConductiveFlux(1.5, 0.05); max_ΔT=50.0);
                                           Tair=290.0, Tland=300.0, efficiency=1.0)
