@@ -37,21 +37,17 @@ mkpath(OUTPUT_DIR)
 # Set `build_always = false` for long-running examples that should only be built
 # on pushes to `main`/tags, or when the `build all examples` label is added to a PR.
 examples = [
-    # Temporarily focused on the ERA5 downscaling example for #388 (the on-the-fly nesting BCs).
-    # The other examples are commented out so the docs build exercises only the downscaling case;
-    # restore these before merge. Build the downscaling example by adding the `build all examples`
-    # label to the PR (sets NUMERICAL_EARTH_BUILD_ALL_EXAMPLES=true).
-    # Example("Single-column ocean simulation", "single_column_os_papa_simulation", true),
-    # Example("Coupled energy and freshwater conservation", "coupled_conservation", true),
-    # Example("One-degree ocean--sea ice simulation", "one_degree_simulation", false),
-    # Example("Near-global ocean simulation", "near_global_ocean_simulation", false),
-    # Example("Global climate simulation", "global_climate_simulation", false),
-    # Example("Veros ocean simulation", "veros_ocean_forced_simulation", false),
-    # Example("Breeze over four oceans", "breeze_over_four_oceans", false),
-    # Example("ERA5 and GloFAS reanalysis data", "exploring_era5_reanalysis_data", true),
-    # Example("ERA5-forced slab land", "era5_forced_slab_land", true),
-    # Example("Breeze over slab land", "breeze_over_slab_land", true),
-    Example("ERA5 downscaling with Breeze", "breeze_downscaling_era5", false),
+    Example("Single-column ocean simulation", "single_column_os_papa_simulation", true),
+    Example("Coupled energy and freshwater conservation", "coupled_conservation", true),
+    Example("One-degree ocean--sea ice simulation", "one_degree_simulation", false),
+    Example("Near-global ocean simulation", "near_global_ocean_simulation", false),
+    Example("Global climate simulation", "global_climate_simulation", false),
+    Example("Veros ocean simulation", "veros_ocean_forced_simulation", false),
+    Example("Breeze over four oceans", "breeze_over_four_oceans", false),
+    Example("ERA5 and GloFAS reanalysis data", "exploring_era5_reanalysis_data", true),
+    Example("ERA5-forced slab land", "era5_forced_slab_land", true),
+    Example("Breeze over slab land", "breeze_over_slab_land", true),
+    Example("ERA5 downscaling with Breeze", "breeze_downscaling_era5", true),
 ]
 
 # Developer examples from docs/src/developers/ directory
