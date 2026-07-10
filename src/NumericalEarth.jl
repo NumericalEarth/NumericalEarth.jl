@@ -99,6 +99,9 @@ export
     BulkTemperature,
     DiffusiveFlux,
     SoilConductiveFlux,
+    EnergyBalanceTemperature,
+    SoilSkin,
+    SoilSkinTemperature,
     InteriorDiffusivity,
     # Land (prognostic SlabLand + closures)
     SlabLand,

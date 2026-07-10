@@ -590,32 +590,24 @@ end
     return conductive_flux_balance_temperature(st, R, Ψₛ, ℙₛ, 𝒬ᵀ, 𝒬ᵛ, ℐꜛˡʷ, Qd, Ψᵢ, ℙᵢ, Ψₐ, ℙₐ)
 end
 
-@inline function compute_interface_temperature(st::SkinTemperature,
-                                               interface_state,
-                                               atmosphere_state,
-                                               interior_state,
-                                               radiation_state,
-                                               interface_properties,
-                                               atmosphere_properties,
-                                               interior_properties)
-
+# Turbulent (sensible + latent, positive up) and radiative (upwelling longwave
+# `ℐꜛˡʷ`, and the net-downward non-turbulent term `Qd`) fluxes at the previous
+# iterate. Shared by the `SkinTemperature` and `EnergyBalanceTemperature`
+# diagnostic temperature solves. `radiation_state` carries zero-valued σ/α/ϵ/SW/LW
+# when radiation is off.
+@inline function skin_surface_fluxes(interface_state, atmosphere_state, radiation_state, atmosphere_properties)
     ℂᵃᵗ = atmosphere_properties.thermodynamics_parameters
     Tᵃᵗ = atmosphere_state.T
     pᵃᵗ = atmosphere_state.p
     qᵃᵗ = atmosphere_state.q
     ρᵃᵗ = AtmosphericThermodynamics.air_density(ℂᵃᵗ, Tᵃᵗ, pᵃᵗ, qᵃᵗ)
     cᵃᵗ = AtmosphericThermodynamics.cp_m(ℂᵃᵗ, qᵃᵗ) # moist heat capacity
+    ℒⁱ  = interface_latent_heat(ℂᵃᵗ, Tᵃᵗ, interface_state)
 
-    ℒⁱ = interface_latent_heat(ℂᵃᵗ, Tᵃᵗ, interface_state)
-
-    # upwelling radiation is calculated explicitly. radiation_state is
-    # produced by `air_sea_interface_radiation_state` (or its sea-ice
-    # variant) and contains zero-valued σ/α/ϵ/SW/LW when radiation is off.
-    Tₛ⁻ = interface_state.temperature # approximate interface temperature from previous iteration
+    Tₛ⁻ = interface_state.temperature
     σ = radiation_state.σ
     ϵ = radiation_state.ϵ
     α = radiation_state.α
-
     ℐꜜˢʷ = radiation_state.ℐꜜˢʷ
     ℐꜜˡʷ = radiation_state.ℐꜜˡʷ
     ℐꜛˡʷ = σ * ϵ * Tₛ⁻^4
@@ -625,20 +617,121 @@ end
     θ★ = interface_state.fluxes.θ★
     q★ = interface_state.fluxes.q★
 
-    # Turbulent heat fluxes, sensible + latent (positive out of the ocean)
-    𝒬ᵀ = - ρᵃᵗ * cᵃᵗ * u★ * θ★ # = - ρᵃᵗ cᵃᵗ u★ Ch / sqrt(Cd) * (θᵃᵗ - Tₛ)
+    # Turbulent heat fluxes, sensible + latent (positive out of the surface)
+    𝒬ᵀ = - ρᵃᵗ * cᵃᵗ * u★ * θ★
     𝒬ᵛ = - ρᵃᵗ * ℒⁱ * u★ * q★
 
-    Tₛ = flux_balance_temperature(st,
-                                  interface_state,
-                                  interface_properties,
-                                  𝒬ᵀ, 𝒬ᵛ, ℐꜛˡʷ, Qd,
-                                  interior_state,
-                                  interior_properties,
-                                  atmosphere_state,
-                                  atmosphere_properties)
+    return 𝒬ᵀ, 𝒬ᵛ, ℐꜛˡʷ, Qd
+end
 
-    return Tₛ
+@inline function compute_interface_temperature(st::SkinTemperature,
+                                               interface_state,
+                                               atmosphere_state,
+                                               interior_state,
+                                               radiation_state,
+                                               interface_properties,
+                                               atmosphere_properties,
+                                               interior_properties)
+
+    𝒬ᵀ, 𝒬ᵛ, ℐꜛˡʷ, Qd = skin_surface_fluxes(interface_state, atmosphere_state,
+                                            radiation_state, atmosphere_properties)
+
+    return flux_balance_temperature(st,
+                                    interface_state,
+                                    interface_properties,
+                                    𝒬ᵀ, 𝒬ᵛ, ℐꜛˡʷ, Qd,
+                                    interior_state,
+                                    interior_properties,
+                                    atmosphere_state,
+                                    atmosphere_properties)
+end
+
+####
+#### EnergyBalanceTemperature — a diagnostic surface-energy-balance temperature,
+#### generalizing the land soil skin toward a shared soil-skin / canopy-leaf type.
+####
+#### A land soil skin and a canopy leaf are the same capability from two
+#### directions: each is a second temperature obtained by closing a surface
+#### energy balance `Rₙ = H + LE + G` inside the interface fixed point, differing
+#### only in the coupling `G` to the bulk slab. `EnergyBalanceTemperature` carries
+#### the `kind` and solves it with one (ρc-free) root, sharing the MO-consistent
+#### fluxes with `SkinTemperature` through `skin_surface_fluxes`.
+####
+####  - `SoilSkin(coupling)` — conducts to the bulk slab through
+####    `G = Λⁱⁿ(Tⁱⁿ − Tˡᵃ)`, `Λⁱⁿ` from a [`SoilConductiveFlux`](@ref); identical
+####    to `SkinTemperature(SoilConductiveFlux(...))`.
+####
+#### A `CanopyLeaf` kind (a massless leaf, `Rₙ = H + LE`, no soil conduction) is the
+#### intended next instance. It is deferred: a robust `G = 0` leaf balance needs the
+#### outgoing-longwave `T⁴` term (a two-face canopy longwave ledger, ClimaLand
+#### D13–D17) or a small prognostic leaf heat capacity to condition the solve as the
+#### sensible flux vanishes, and its Beer–Lambert canopy/ground radiation split is
+#### not yet carried to the temperature call site. Those, plus a two-source
+#### canopy-air composite (distinct soil-skin and leaf source temperatures), are
+#### follow-ups.
+
+struct SoilSkin end
+Base.summary(::SoilSkin) = "SoilSkin"
+
+"""
+    EnergyBalanceTemperature(kind, coupling; max_ΔT=50)
+
+Diagnostic interface temperature that closes a surface energy balance
+`Rₙ = H + LE + G` each step. The only `kind` presently implemented is
+[`SoilSkin`](@ref), which conducts to the bulk slab through `coupling`, a
+[`SoilConductiveFlux`](@ref); use the convenience constructor
+[`SoilSkinTemperature`](@ref). `Λⁱⁿ → ∞` recovers [`BulkTemperature`](@ref).
+"""
+struct EnergyBalanceTemperature{K, C, FT}
+    kind     :: K
+    coupling :: C
+    max_ΔT   :: FT
+end
+
+EnergyBalanceTemperature(kind, coupling; max_ΔT=50) = EnergyBalanceTemperature(kind, coupling, max_ΔT)
+
+"""
+    SoilSkinTemperature(conductivity, thickness; max_ΔT=50)
+
+A soil-skin [`EnergyBalanceTemperature`](@ref): the skin conducts to the bulk
+slab with conductance `Λⁱⁿ = conductivity/thickness` (W m⁻² K⁻¹). Behaviorally
+identical to `SkinTemperature(SoilConductiveFlux(conductivity, thickness))`.
+"""
+SoilSkinTemperature(conductivity, thickness; max_ΔT=50) =
+    EnergyBalanceTemperature(SoilSkin(), SoilConductiveFlux(conductivity, thickness), max_ΔT)
+
+Base.summary(t::EnergyBalanceTemperature) = string("EnergyBalanceTemperature(", summary(t.kind), ")")
+Base.show(io::IO, t::EnergyBalanceTemperature) = print(io, summary(t))
+
+# Skin↔bulk conductance per kind: SoilSkin conducts (Λⁱⁿ = κᵀ/ℓᵀ).
+@inline balance_conductance(::SoilSkin, coupling) = skin_conductance(coupling)
+
+@inline function compute_interface_temperature(t::EnergyBalanceTemperature,
+                                               interface_state,
+                                               atmosphere_state,
+                                               interior_state,
+                                               radiation_state,
+                                               interface_properties,
+                                               atmosphere_properties,
+                                               interior_properties)
+
+    𝒬ᵀ, 𝒬ᵛ, ℐꜛˡʷ, Qd = skin_surface_fluxes(interface_state, atmosphere_state,
+                                            radiation_state, atmosphere_properties)
+
+    FT  = typeof(interface_state.temperature)
+    Λ   = convert(FT, balance_conductance(t.kind, t.coupling))
+    Qa  = 𝒬ᵛ + ℐꜛˡʷ + Qd                       # net non-sensible flux, positive up
+    Tᵈ  = interior_state.T                       # bulk slab (deep endpoint / anchor)
+    Tᵃᵗ = surface_atmosphere_temperature(atmosphere_state, atmosphere_properties)
+    ΔT  = Tᵃᵗ - interface_state.temperature
+
+    # Rₙ − H − LE − Λ(Tⁱⁿ − Tᵈ) = 0, ΔT-multiplied to stay finite as ΔT → 0
+    # (the same root as `flux_balance_temperature(::SkinTemperature{<:SoilConductiveFlux})`).
+    D  = Λ * ΔT - 𝒬ᵀ
+    T★ = (Tᵈ * Λ * ΔT - Qa * ΔT - 𝒬ᵀ * Tᵃᵗ) / D
+    T★ = ifelse(D == 0, interface_state.temperature, T★)
+    max_ΔT = convert(FT, t.max_ΔT)
+    return Tᵈ + clamp(T★ - Tᵈ, -max_ΔT, max_ΔT)
 end
 
 ####
