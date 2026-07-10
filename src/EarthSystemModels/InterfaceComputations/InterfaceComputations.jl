@@ -23,6 +23,7 @@ export
     SkinTemperature,
     BulkTemperature,
     DiffusiveFlux,
+    SoilConductiveFlux,
     InteriorDiffusivity,
     atmosphere_ocean_stability_functions,
     atmosphere_land_stability_functions,

@@ -472,6 +472,57 @@ assemble_interior_fields(state, temperature_formulation::IDST) = state
     return Ψᵢ.T + clamp(T★ - Ψᵢ.T, -max_ΔT, max_ΔT)
 end
 
+"""
+    SoilConductiveFlux(conductivity, thickness)
+
+Internal conductive flux for a **land** skin temperature: the radiating skin
+exchanges heat with the bulk slab across a thin surface layer of thermal
+conductivity `κᵀ` (`conductivity`, W m⁻¹ K⁻¹) and thickness `ℓᵀ` (`thickness`, m),
+giving the skin↔bulk conductance `Λⁱⁿ = κᵀ/ℓᵀ` (W m⁻² K⁻¹). Pair with
+`SkinTemperature(SoilConductiveFlux(...))` on the atmosphere–land interface so the
+radiometric surface temperature `Tⁱⁿ` (what a satellite LST sees, and what sets the
+diurnal amplitude of the outgoing longwave and the sensible/latent partition) can
+differ from the bulk slab `Tˡᵃ`.
+
+Unlike the ocean [`DiffusiveFlux`](@ref), whose `κ` is a thermal *diffusivity*
+converted to a conductance through the interior density/heat capacity, this holds
+the physical conductance directly: the diagnostic balance
+`Rₙ(Tⁱⁿ) = H(Tⁱⁿ) + LE(Tⁱⁿ) + Λⁱⁿ(Tⁱⁿ − Tˡᵃ)` is a temperature *root*, so it is
+invariant to the overall energy-to-tendency scale and needs no soil `ρ`/`c`.
+
+A recommended first cut is `conductivity = 1.5`, `thickness = 0.05` ⇒ `Λⁱⁿ = 30`.
+The skin is a thin radiometric film on top of the bulk diurnal layer; its
+conductance and the force-restore heat capacity / deep restoring represent distinct
+layers and coexist (no re-tuning of the bulk closure). Moisture-dependent
+conductivity `κᵀ(𝒮)` (wet soil conducts better) is a natural learnable extension.
+"""
+struct SoilConductiveFlux{K, Z}
+    conductivity :: K   # κᵀ, W m⁻¹ K⁻¹
+    thickness    :: Z   # ℓᵀ, m
+end
+
+@inline skin_conductance(F::SoilConductiveFlux) = F.conductivity / F.thickness
+
+# Land skin balance, the ρc-free equivalent of the `DiffusiveFlux` method above:
+# Rₙ − H − LE − Λⁱⁿ(Tⁱⁿ − Tᵈ) = 0 with the deep endpoint Tᵈ = Ψᵢ.T (bulk slab),
+# the sensible heat linearized through Ωᵀ = 𝒬ᵀ/ΔT and the balance multiplied by
+# ΔT = Tᵃᵗ − Tⁱⁿ⁻ to stay finite as ΔT → 0. Λⁱⁿ → ∞ recovers `BulkTemperature`
+# (Tⁱⁿ → Tˡᵃ); Λⁱⁿ → 0 fully decouples the skin.
+@inline function flux_balance_temperature(st::SkinTemperature{<:SoilConductiveFlux}, Ψₛ, ℙₛ, 𝒬ᵀ, 𝒬ᵛ, ℐꜛˡʷ, Qd, Ψᵢ, ℙᵢ, Ψₐ, ℙₐ)
+    FT = typeof(Ψₛ.temperature)
+    Λ  = convert(FT, skin_conductance(st.internal_flux))
+    Qa = 𝒬ᵛ + ℐꜛˡʷ + Qd   # net non-sensible flux, positive up
+
+    Tᵃᵗ = surface_atmosphere_temperature(Ψₐ, ℙₐ)
+    ΔT  = Tᵃᵗ - Ψₛ.temperature
+
+    D  = Λ * ΔT - 𝒬ᵀ
+    T★ = (Ψᵢ.T * Λ * ΔT - Qa * ΔT - 𝒬ᵀ * Tᵃᵗ) / D
+    T★ = ifelse(D == 0, Ψₛ.temperature, T★)
+    max_ΔT = convert(FT, st.max_ΔT)
+    return Ψᵢ.T + clamp(T★ - Ψᵢ.T, -max_ΔT, max_ΔT)
+end
+
 # Solve the surface flux balance equation:
 #   Qa(Tₛ) + Ωc (Tᵃᵗ - Tₛ) + (Tₛ - Tᵦ) / R = 0
 # where R is the total thermal resistance (h/k for bare ice, hₛ/kₛ + hᵢ/kᵢ with snow),
@@ -555,9 +606,7 @@ end
     ρᵃᵗ = AtmosphericThermodynamics.air_density(ℂᵃᵗ, Tᵃᵗ, pᵃᵗ, qᵃᵗ)
     cᵃᵗ = AtmosphericThermodynamics.cp_m(ℂᵃᵗ, qᵃᵗ) # moist heat capacity
 
-    # TODO: this depends on the phase of the interface
-    #ℰv = 0 #AtmosphericThermodynamics.latent_heat_vapor(ℂᵃᵗ, Tᵃᵗ)
-    ℒⁱ = AtmosphericThermodynamics.latent_heat_sublim(ℂᵃᵗ, Tᵃᵗ)
+    ℒⁱ = interface_latent_heat(ℂᵃᵗ, Tᵃᵗ, interface_state)
 
     # upwelling radiation is calculated explicitly. radiation_state is
     # produced by `air_sea_interface_radiation_state` (or its sea-ice
@@ -791,6 +840,12 @@ end
 end
 
 @inline humidity_surface_scalar(Ψ::AirLandInterfaceState) = Ψ.hydrology.saturation
+
+# Latent heat of the surface vapor flux entering the `SkinTemperature` energy
+# balance. Land evaporates liquid water (vaporization); ocean and sea ice keep
+# the existing sublimation value so their skin solves are unchanged.
+@inline interface_latent_heat(ℂ, T, ::AbstractInterfaceState) = AtmosphericThermodynamics.latent_heat_sublim(ℂ, T)
+@inline interface_latent_heat(ℂ, T, ::AirLandInterfaceState)  = AtmosphericThermodynamics.latent_heat_vapor(ℂ, T)
 
 # Rebuild the next iterate, carrying the fixed per-surface state forward.
 @inline rebuild_interface_state(Ψ⁻::AirSeaInterfaceState, fluxes, T, q) =

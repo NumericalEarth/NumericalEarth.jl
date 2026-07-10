@@ -41,10 +41,11 @@
 ##### to the dry-layer series solution through a smooth logistic blend of
 ##### width `wet_transition_width` (sharp switch when 0).
 #####
-##### Pair this with `SkinTemperature(DiffusiveFlux(δ=ℓᵀ, κ=κᵀ))` on the
+##### Pair this with `SkinTemperature(SoilConductiveFlux(κᵀ, ℓᵀ))` on the
 ##### temperature side: the same `Λⁱⁿ = κᵀ/ℓᵀ` couples the bulk land temperature
-##### `Tˡᵃ` to the skin temperature `Tⁱⁿ` and the energy fluxes
-##### (`𝒬ᴿ + 𝒬ᵀ + 𝒬ᵛ`) — no separate temperature formulation is needed.
+##### `Tˡᵃ` to the skin temperature `Tⁱⁿ`, and the front-temperature interpolation
+##### `Tᵉ = Tⁱⁿ + χ(Tˡᵃ − Tⁱⁿ)` then becomes live (with `BulkTemperature`,
+##### `Tⁱⁿ = Tˡᵃ` and the χ term vanishes).
 #####
 
 using Oceananigans: Oceananigans
