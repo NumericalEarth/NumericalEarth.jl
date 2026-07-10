@@ -8,7 +8,9 @@ using Thermodynamics
 using NumericalEarth.Lands: SlabLand, SlabEnergy, SaturatedSurface
 using NumericalEarth.EarthSystemModels.InterfaceComputations:
     FarquharPhotosynthesis, MedlynConductance, CanopyConductanceHumidity, BulkHumidity,
-    net_assimilation, medlyn_conductance, stomatal_conductance
+    PlainArrhenius, PeakedArrhenius,
+    net_assimilation, medlyn_conductance, stomatal_conductance,
+    peaked_arrhenius, heskel_respiration_scaling
 using NumericalEarth.Atmospheres: PrescribedAtmosphere
 
 #####
@@ -57,6 +59,58 @@ using NumericalEarth.Atmospheres: PrescribedAtmosphere
         @test gs_str < gs_ref                    # moisture stress closes stomata
         @test gs_drk ≈ cond.g0 atol=1e-3         # no light → minimum conductance
         @test eltype(gs_ref) == FT
+    end
+end
+
+#####
+##### Peaked Arrhenius (Vcmax/Jmax rolloff) + Heskel respiration.
+#####
+
+@testset "Peaked Arrhenius + Heskel respiration" begin
+    for FT in (Float32, Float64)
+        T25 = FT(298.15)
+
+        # Normalization: both scalings are 1 at 25 °C.
+        @test peaked_arrhenius(T25, FT(71513), FT(649), FT(200000)) ≈ 1
+        @test heskel_respiration_scaling(T25, FT(0.1012), FT(-0.0005)) ≈ 1
+
+        # Vcmax/Jmax rise then fall — interior optimum with high-T rolloff.
+        Ts = FT(273):FT(1):FT(323)
+        vc = [peaked_arrhenius(T, FT(71513), FT(649), FT(200000)) for T in Ts]
+        jm = [peaked_arrhenius(T, FT(49884), FT(646), FT(200000)) for T in Ts]
+        @test vc[end] < maximum(vc)                       # rolls off by 50 °C
+        @test jm[end] < maximum(jm)
+        @test Ts[argmax(vc)] ≥ Ts[argmax(jm)]             # Vcmax optimum ≥ Jmax optimum
+
+        # Rd strictly increases over 0–45 °C (guards the Celsius-vs-Kelvin trap).
+        rd = [heskel_respiration_scaling(T, FT(0.1012), FT(-0.0005)) for T in FT(273):FT(1):FT(318)]
+        @test all(diff(rd) .> 0)
+
+        photo_peak  = FarquharPhotosynthesis(FT)                                 # PeakedArrhenius default
+        photo_plain = FarquharPhotosynthesis(FT; capacity_response = PlainArrhenius())
+
+        # The point of the change: peaked Aₙ(Tₗ) reaches an interior maximum and
+        # rolls off, and turns over at a lower temperature than the plain form.
+        Tl = FT(273):FT(1):FT(318)
+        An_peak  = [net_assimilation(photo_peak,  FT(28), FT(8e-4), T, FT(101325), FT(1)) for T in Tl]
+        An_plain = [net_assimilation(photo_plain, FT(28), FT(8e-4), T, FT(101325), FT(1)) for T in Tl]
+        @test An_peak[end] < maximum(An_peak)
+        @test argmax(An_peak) < argmax(An_plain)
+
+        # 25 °C regression anchor: peaked and plain agree at exactly 25 °C.
+        @test net_assimilation(photo_peak,  FT(28), FT(8e-4), T25, FT(101325), FT(1)) ≈
+              net_assimilation(photo_plain, FT(28), FT(8e-4), T25, FT(101325), FT(1))
+
+        # Type stability.
+        @test eltype(net_assimilation(photo_peak, FT(28), FT(8e-4), FT(298), FT(101325), FT(1))) == FT
+        @inferred net_assimilation(photo_peak, FT(28), FT(8e-4), FT(298), FT(101325), FT(1))
+
+        # Smooth: ∂Aₙ/∂Tₗ (finite difference) is finite and changes sign at the
+        # optimum — the continuous, AD-friendly signal the peaked form provides.
+        dAdT(T) = (net_assimilation(photo_peak, FT(28), FT(8e-4), T + FT(0.05), FT(101325), FT(1)) -
+                   net_assimilation(photo_peak, FT(28), FT(8e-4), T - FT(0.05), FT(101325), FT(1))) / FT(0.1)
+        @test dAdT(FT(288)) > 0    # below optimum: assimilation increasing
+        @test dAdT(FT(313)) < 0    # above optimum: assimilation decreasing
     end
 end
 

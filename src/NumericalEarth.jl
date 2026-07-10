@@ -58,6 +58,8 @@ export
     CanopyConductanceHumidity,
     FarquharPhotosynthesis,
     MedlynConductance,
+    PlainArrhenius,
+    PeakedArrhenius,
     ElevationCorrection,
     atmosphere_land_interface,
     SlabOcean,

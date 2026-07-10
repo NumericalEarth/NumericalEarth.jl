@@ -44,6 +44,8 @@ export
     CanopyConductanceHumidity,
     FarquharPhotosynthesis,
     MedlynConductance,
+    PlainArrhenius,
+    PeakedArrhenius,
     ElevationCorrection,
     atmosphere_land_interface,
     # Sea ice-ocean heat flux formulations
