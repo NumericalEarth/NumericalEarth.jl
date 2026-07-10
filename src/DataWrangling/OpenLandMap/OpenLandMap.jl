@@ -216,7 +216,8 @@ read_cog_window(source, bbox) =
     error("Reading OpenLandMap COGs requires the ArchGDAL package. Load it with `using ArchGDAL`.")
 
 # Window each depth COG in `sources` (deepest-first) over `bbox` and stack them
-# into a `(lon, lat, depth)` NetCDF at `nc_path`.
+# into a `(lon, lat, depth)` NetCDF at `nc_path`. All depths share one grid, so
+# the coordinate axes come from the first window.
 function cog_window_to_netcdf(sources, nc_path, variable_name, bbox)
     windows   = [read_cog_window(source, bbox) for source in sources]
     longitude = windows[1][1]
