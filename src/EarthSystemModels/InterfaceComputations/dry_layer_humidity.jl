@@ -147,7 +147,7 @@ dispatched on by `effective_vapor_diffusivity`. The piston velocity feeds the
 humidity transitions to the dry-layer series solution: the two are combined with
 a logistic weight in `δᵛ` centered at `δᵛ_min + wet_transition_width/2`, so the
 transition is infinitely differentiable (see [Kavetski and Kuczera (2007)](@cite kavetski2007smoothing))
-and ≈99 % complete across `δᵛ ∈ [δᵛ_min, δᵛ_min + wet_transition_width]`. 
+and ≈99 % complete across `δᵛ ∈ [δᵛ_min, δᵛ_min + wet_transition_width]`.
 Pass `0` to recover a sharp switch at `δᵛ = δᵛ_min`.
 """
 struct DryLayerVaporPistonVelocity{FT, T}
