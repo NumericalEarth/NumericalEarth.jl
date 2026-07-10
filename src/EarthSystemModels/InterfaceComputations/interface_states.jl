@@ -796,7 +796,7 @@ end
 Air-land interface radiation state at one cell: Stefan–Boltzmann constant `σ`,
 surface albedo `α`, emissivity `ϵ`, downwelling shortwave `ℐꜜˢʷ`, and
 downwelling longwave `ℐꜜˡʷ`. Returned by `air_land_interface_radiation_state`
-and consumed by the air-land flux kernel and `apply_air_land_radiative_fluxes!`.
+and consumed by the air-land flux kernel and `compute_radiation_land_fluxes!`.
 """
 struct AirLandRadiationState{FT}
     σ    :: FT

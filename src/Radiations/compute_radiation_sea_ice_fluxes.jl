@@ -1,7 +1,7 @@
 using ClimaSeaIce: SeaIceModel
 
 """
-    apply_air_sea_ice_radiative_fluxes!(coupled_model)
+    compute_radiation_sea_ice_fluxes!(coupled_model)
 
 Add the radiative contribution to the net sea-ice top heat flux and write
 the diagnostic radiative fluxes (upwelling LW, absorbed LW, transmitted SW)
@@ -10,15 +10,15 @@ into `coupled_model.radiation.interface_fluxes.sea_ice`.
 When `coupled_model.radiation === nothing`, this is a no-op.
 Also a no-op when sea-ice is not a `Simulation{<:SeaIceModel}`.
 """
-EarthSystemModels.apply_air_sea_ice_radiative_fluxes!(::EarthSystemModel{<:Nothing}) = nothing
+EarthSystemModels.compute_radiation_sea_ice_fluxes!(::EarthSystemModel{<:Nothing}) = nothing
 
-EarthSystemModels.apply_air_sea_ice_radiative_fluxes!(coupled_model::EarthSystemModel) =
-    _apply_air_sea_ice_radiative_fluxes_dispatch!(coupled_model, coupled_model.sea_ice)
+EarthSystemModels.compute_radiation_sea_ice_fluxes!(coupled_model::EarthSystemModel) =
+    _compute_radiation_sea_ice_fluxes_dispatch!(coupled_model, coupled_model.sea_ice)
 
 # No sea-ice or non-prognostic sea-ice: nothing to do.
-_apply_air_sea_ice_radiative_fluxes_dispatch!(coupled_model, ::Any) = nothing
+_compute_radiation_sea_ice_fluxes_dispatch!(coupled_model, ::Any) = nothing
 
-function _apply_air_sea_ice_radiative_fluxes_dispatch!(coupled_model::EarthSystemModel,
+function _compute_radiation_sea_ice_fluxes_dispatch!(coupled_model::EarthSystemModel,
                                                        sea_ice::Simulation{<:SeaIceModel})
     radiation = coupled_model.radiation
     interface_fluxes = radiation.interface_fluxes
@@ -38,7 +38,7 @@ function _apply_air_sea_ice_radiative_fluxes_dispatch!(coupled_model::EarthSyste
     sea_ice_properties = coupled_model.interfaces.sea_ice_properties
 
     launch!(arch, grid, :xy,
-            _apply_air_sea_ice_radiative_fluxes!,
+            _compute_radiation_sea_ice_fluxes!,
             top_heat_flux,
             interface_fluxes.sea_ice,
             grid,
@@ -52,7 +52,7 @@ function _apply_air_sea_ice_radiative_fluxes_dispatch!(coupled_model::EarthSyste
     return nothing
 end
 
-@kernel function _apply_air_sea_ice_radiative_fluxes!(top_heat_flux,
+@kernel function _compute_radiation_sea_ice_fluxes!(top_heat_flux,
                                                       interface_radiative_flux,
                                                       grid,
                                                       clock,

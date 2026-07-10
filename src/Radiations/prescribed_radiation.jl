@@ -5,7 +5,7 @@ Top-level radiation component holding prescribed downwelling shortwave and
 longwave radiation as `FieldTimeSeries`, plus per-surface radiative properties
 (albedo, emissivity) and the Stefan–Boltzmann constant. Diagnostic radiative
 fluxes (one `InterfaceRadiationFlux` per surface) are populated by the
-`apply_air_sea_*_radiative_fluxes!` kernels at every step; `interface_fluxes`
+`compute_radiation_*_fluxes!` kernels at every step; `interface_fluxes`
 is `nothing` until the radiation is paired with an `EarthSystemModel` (which
 allocates the per-surface buffers on the exchange grid).
 """
