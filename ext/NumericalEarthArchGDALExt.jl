@@ -2,6 +2,7 @@ module NumericalEarthArchGDALExt
 
 using ArchGDAL: ArchGDAL
 using NCDatasets: NCDataset, defDim, defVar
+using NetworkOptions: NetworkOptions
 using NumericalEarth: NumericalEarth
 
 const OpenLandMap = NumericalEarth.DataWrangling.OpenLandMap
@@ -52,35 +53,17 @@ end
 ##### OpenLandMap-soilDB windowed COG reader
 #####
 
-# GDAL's bundled libcurl may not find a CA bundle (breaking https /vsicurl reads);
-# point it at a CA file, honoring the usual override env vars first, then Julia's
-# bundled roots, then the common system locations.
-function vsicurl_ca_bundle()
-    for var in ("SSL_CERT_FILE", "CURL_CA_BUNDLE", "GDAL_HTTP_CAINFO")
-        path = get(ENV, var, "")
-        !isempty(path) && isfile(path) && return path
-    end
-    candidates = [joinpath(Sys.BINDIR, "..", "share", "julia", "cert.pem"),
-                  "/etc/ssl/certs/ca-certificates.crt",
-                  "/etc/ssl/cert.pem",
-                  "/etc/pki/tls/certs/ca-bundle.crt"]
-    for path in candidates
-        isfile(path) && return abspath(path)
-    end
-    return nothing
-end
-
 function configure_vsicurl!()
     ArchGDAL.setconfigoption("GDAL_DISABLE_READDIR_ON_OPEN", "EMPTY_DIR")
     ArchGDAL.setconfigoption("CPL_VSIL_CURL_ALLOWED_EXTENSIONS", ".tif")
     ArchGDAL.setconfigoption("GDAL_HTTP_MULTIRANGE", "YES")
 
-    # libcurl reads the CA bundle from the CURL_CA_BUNDLE environment variable;
-    # GDAL's config option does not always propagate to it. Set it only if the
-    # user hasn't, so an explicit override wins.
+    # GDAL's bundled libcurl reads its CA bundle from CURL_CA_BUNDLE and does not
+    # reliably fall back to a system trust store, which breaks https /vsicurl reads.
+    # Point it at Julia's cross-platform CA roots unless the user already set it, so
+    # an explicit override wins.
     if !haskey(ENV, "CURL_CA_BUNDLE")
-        ca = vsicurl_ca_bundle()
-        isnothing(ca) || (ENV["CURL_CA_BUNDLE"] = ca)
+        ENV["CURL_CA_BUNDLE"] = NetworkOptions.ca_roots_path()
     end
     return nothing
 end
