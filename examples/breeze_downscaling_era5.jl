@@ -160,7 +160,8 @@ fig
 simulation = Simulation(model; Δt, stop_time = 10800.0)   # 3 h (matches `dates` above)
 
 add_callback!(simulation, bulk_drag(model), IterationInterval(1))
-conjure_time_step_wizard!(simulation, IterationInterval(1); cfl = 0.7, max_Δt = 20)
+conjure_time_step_wizard!(simulation, IterationInterval(1); cfl = 0.7,
+                          max_Δt = NumericalEarth.Atmospheres.estimate_maximum_Δt(grid))
 
 # ## Output
 #
