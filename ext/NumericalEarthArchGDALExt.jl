@@ -73,11 +73,17 @@ end
 # failures (Earthdata Cloud drops connections occasionally). Credentials come
 # from the EARTHDATA_USERNAME / EARTHDATA_PASSWORD environment variables.
 function earthdata_download(url, path; attempts = 3)
-    haskey(ENV, "EARTHDATA_USERNAME") && haskey(ENV, "EARTHDATA_PASSWORD") ||
-        error("NASA Earthdata credentials not found. Set EARTHDATA_USERNAME and " *
-              "EARTHDATA_PASSWORD (register free at https://urs.earthdata.nasa.gov).")
-    username = ENV["EARTHDATA_USERNAME"]
-    password = ENV["EARTHDATA_PASSWORD"]
+    username = get(ENV, "EARTHDATA_USERNAME", nothing)
+    password = get(ENV, "EARTHDATA_PASSWORD", nothing)
+
+    if isnothing(username)
+        error("NASA Earthdata credentials not found: EARTHDATA_USERNAME is not set. " *
+              "Register free at https://urs.earthdata.nasa.gov.")
+    elseif isnothing(password)
+        error("NASA Earthdata credentials not found: EARTHDATA_PASSWORD is not set. " *
+              "Register free at https://urs.earthdata.nasa.gov.")
+    end
+  
     mktempdir() do tmp
         downloader = netrc_downloader(username, password, "urs.earthdata.nasa.gov", tmp)
         for attempt in 1:attempts
