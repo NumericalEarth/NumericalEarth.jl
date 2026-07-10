@@ -169,7 +169,7 @@ make_dry_layer_humidity(porosity) = DryLayerHumidity(;
                                                 dry_layer_exponent      = 2),
     vapor_exchange = DryLayerVaporPistonVelocity(minimum_dry_layer_depth = 1e-4,
                                                  molecular_diffusivity   = 2.5e-5,
-                                                 tortuosity_model        = MillingtonQuirk()),
+                                                 tortuosity              = PowerLawTortuosity()),
     thermal_exchange_depth = 0.10,
     porosity)
 

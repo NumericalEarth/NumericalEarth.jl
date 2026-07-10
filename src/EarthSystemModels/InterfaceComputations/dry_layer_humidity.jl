@@ -117,27 +117,27 @@ explicitly.
 struct ConstantTortuosity end
 
 """
-    MillingtonQuirk()
+    PowerLawTortuosity()
 
 Millington–Quirk tortuosity: `Dᵛ_eff = Dᵛ₀ · θᵍ^(10/3) / ν²` where
 `θᵍ = ν − θˡ` is the gas-filled pore fraction. Reduces vapor diffusivity in
 near-saturated soils.
 """
-struct MillingtonQuirk end
+struct PowerLawTortuosity end
 
 Base.summary(::ConstantTortuosity) = "ConstantTortuosity"
-Base.summary(::MillingtonQuirk)    = "MillingtonQuirk"
+Base.summary(::PowerLawTortuosity) = "PowerLawTortuosity"
 
 """
     DryLayerVaporPistonVelocity(minimum_dry_layer_depth, molecular_diffusivity;
-                                tortuosity_model = ConstantTortuosity(),
+                                tortuosity = ConstantTortuosity(),
                                 wet_transition_width = 5 * minimum_dry_layer_depth)
 
 Parameters of the dry-layer vapor piston velocity `wᵈ = Dᵛ_eff / max(δᵛ, δᵛ_min)`,
 the reciprocal of the dry-surface-layer soil resistance `r_soil = δᵛ/Dᵛ_eff` of
 [Yamanaka et al. (1997)](@cite yamanaka1997surface) and
 [Swenson and Lawrence (2014)](@cite swenson2014dry). The tortuosity model is a
-singleton type — [`ConstantTortuosity`](@ref) or [`MillingtonQuirk`](@ref),
+singleton type — [`ConstantTortuosity`](@ref) or [`PowerLawTortuosity`](@ref),
 after [Millington and Quirk (1961)](@cite millington1961permeability) —
 dispatched on by `effective_vapor_diffusivity`. The piston velocity feeds the
 [`DryLayerHumidity`](@ref) flux balance.
@@ -153,24 +153,24 @@ struct DryLayerVaporPistonVelocity{FT, T}
     minimum_dry_layer_depth :: FT
     molecular_diffusivity   :: FT
     wet_transition_width    :: FT
-    tortuosity_model        :: T
+    tortuosity              :: T
 end
 
 DryLayerVaporPistonVelocity(FT::Type = Oceananigans.defaults.FloatType;
                             minimum_dry_layer_depth,
                             molecular_diffusivity,
                             wet_transition_width = 5 * minimum_dry_layer_depth,
-                            tortuosity_model = ConstantTortuosity()) =
+                            tortuosity = ConstantTortuosity()) =
     DryLayerVaporPistonVelocity(convert(FT, minimum_dry_layer_depth),
                                 convert(FT, molecular_diffusivity),
                                 convert(FT, wet_transition_width),
-                                tortuosity_model)
+                                tortuosity)
 
 Base.summary(v::DryLayerVaporPistonVelocity) =
     string("DryLayerVaporPistonVelocity(δᵛ_min=", prettysummary(v.minimum_dry_layer_depth),
            ", Dᵛ₀=", prettysummary(v.molecular_diffusivity),
            ", δᵛʷ=", prettysummary(v.wet_transition_width),
-           ", tortuosity=", summary(v.tortuosity_model), ")")
+           ", tortuosity=", summary(v.tortuosity), ")")
 
 #####
 ##### DryLayerHumidity — the humidity formulation
@@ -245,12 +245,12 @@ Base.show(io::IO, q::DryLayerHumidity) = print(io, summary(q))
 #####
 
 @inline effective_vapor_diffusivity(v::DryLayerVaporPistonVelocity, ν, θˡ) =
-    effective_vapor_diffusivity(v.tortuosity_model, v.molecular_diffusivity, ν, θˡ)
+    effective_vapor_diffusivity(v.tortuosity, v.molecular_diffusivity, ν, θˡ)
 
 @inline effective_vapor_diffusivity(::ConstantTortuosity, D₀, ν, θˡ) =
     convert(typeof(θˡ), D₀)
 
-@inline function effective_vapor_diffusivity(::MillingtonQuirk, D₀, ν, θˡ)
+@inline function effective_vapor_diffusivity(::PowerLawTortuosity, D₀, ν, θˡ)
     FT = typeof(θˡ)
     νF = convert(FT, ν)
     θᵍ = max(νF - θˡ, zero(FT))

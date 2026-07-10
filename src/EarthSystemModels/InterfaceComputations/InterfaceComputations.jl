@@ -40,7 +40,7 @@ export
     StorageBasedDryLayerDepth,
     DryLayerVaporPistonVelocity,
     ConstantTortuosity,
-    MillingtonQuirk,
+    PowerLawTortuosity,
     ElevationCorrection,
     atmosphere_land_interface,
     # Sea ice-ocean heat flux formulations

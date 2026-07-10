@@ -54,7 +54,7 @@ export
     StorageBasedDryLayerDepth,
     DryLayerVaporPistonVelocity,
     ConstantTortuosity,
-    MillingtonQuirk,
+    PowerLawTortuosity,
     ElevationCorrection,
     atmosphere_land_interface,
     SlabOcean,
