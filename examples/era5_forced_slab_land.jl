@@ -267,13 +267,6 @@ end
 
 Reactant.set_default_backend("cpu")
 
-# Disable LLVM's auto-vectorizers before any kernel is compiled: they pack the
-# scalar per-grid-point arithmetic into vector ops that EnzymeXLA's
-# raise-to-StableHLO pass cannot lower. With the kernels kept scalar the raise
-# succeeds, and XLA re-vectorizes across grid points anyway, so the compiled
-# executable is not slowed down.
-Reactant.LLVM.clopts("-vectorize-slp=false", "-vectorize-loops=false")
-
 grid_ad  = RectilinearGrid(ReactantState(); size = (), topology = (Flat, Flat, Flat))
 model_ad = dry_layer_model(grid_ad, times, nominal_rain_rate)
 dmodel   = Enzyme.make_zero(model_ad)
