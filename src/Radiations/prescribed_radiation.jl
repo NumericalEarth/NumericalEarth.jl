@@ -125,8 +125,7 @@ end
 
 Set the prescribed downwelling shortwave and longwave radiative fluxes (W m⁻²),
 then refresh the interpolated state. Omitted keywords are left untouched. A
-`Number` sets a constant in space and time; a function or `Field` is forwarded
-to `Oceananigans.set!`.
+`Number` sets a constant in space and time.
 """
 function Oceananigans.set!(radiation::PrescribedRadiation;
                            downwelling_shortwave=nothing, downwelling_longwave=nothing)

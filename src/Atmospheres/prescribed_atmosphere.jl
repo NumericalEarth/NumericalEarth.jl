@@ -262,8 +262,7 @@ Oceananigans.restore_prognostic_state!(atmos::PrescribedAtmosphere, ::Nothing) =
 Set the prescribed atmospheric velocities (`u`, `v`), air temperature (`T`),
 specific humidity (`q`), and surface pressure (`p`), then refresh
 the interpolated state. Omitted keywords are left untouched. A `Number` sets a
-constant in space and time; a function or `Field` is forwarded to
-`Oceananigans.set!`.
+constant in space and time.
 """
 function Oceananigans.set!(atmosphere::PrescribedAtmosphere;
                            u=nothing, v=nothing, T=nothing, q=nothing, p=nothing)
