@@ -25,10 +25,9 @@ ERA5MonthlyPressureLevels(pressure_levels, z = nothing) =
 
 Hourly ERA5 pressure-levels dataset metadata. By default (`z = nothing`) the
 native grid's vertical coordinate is a 3-D
-[`PressureLevelVerticalDiscretization`](@ref) built from the **time-evolving**
-geopotential Φ(λ,φ,p,t)/g with sub-surface levels clipped at the surface — the
-right thing over terrain and synoptic Φ-displacement (issue #236). Each pressure
-level's height follows the reanalysis in time as the atmosphere's clock advances.
+[`PressureLevelVerticalDiscretization`](@ref) built from the instantaneous
+geopotential Φ(λ,φ,p)/g with sub-surface levels clipped at the surface — the
+right thing over terrain and synoptic Φ-displacement (issue #236).
 
 To pin the z-coordinate to something static — e.g. for a quick test without an
 extra Φ download — pass a precomputed vector:
@@ -241,53 +240,37 @@ function stagger(zc::AbstractVector)
 end
 
 #####
-##### per_column_geopotential_discretization — 3-D, time-evolving z-coordinate from Φ(t)
+##### per_column_geopotential_discretization — 3-D z-coordinate from instantaneous Φ
 #####
 
 """
-    per_column_geopotential_discretization(metadata::ERA5PressureMetadata;
-                                           clock = Clock{eltype(metadata)}(time = 0))
+    per_column_geopotential_discretization(metadata::ERA5PressureMetadata)
 
-Build a [`PressureLevelVerticalDiscretization`](@ref) whose per-column heights
-follow the ERA5 geopotential in time. The geopotential Φ(λ,φ,p,t) is loaded over
-the whole date window of `metadata` (all snapshots in memory) and wrapped in a
-`TimeSeriesInterpolation` bound to `clock`; `znode` reads Φ interpolated to
-`clock.time` and divides by `g`. Sub-surface levels are clipped to the local
-surface geopotential so that columns stay monotonic. The single-level surface
-geopotential (orography × g, static in time) is downloaded from the matching
-`ERA5*SingleLevel` dataset and used as the clip source.
+Build a [`PressureLevelVerticalDiscretization`](@ref) from the ERA5 instantaneous
+geopotential at the first date in `metadata`. The discretization stores raw Φ
+(m²/s²) and divides by `g` at read time. Sub-surface levels are clipped to the
+local surface geopotential so that columns are monotonic. The single-level
+surface geopotential is downloaded from the matching `ERA5*SingleLevel` dataset.
 
-A static-z copy of the pressure-level dataset backs the Φ `FieldTimeSeries`, to
-break the recursive `Field(ϕ) → native_grid → z_interfaces` chain. The static z
-values are arbitrary placeholders; only their shape matters.
-
-Pass the atmosphere's `clock` so that stepping the atmosphere advances the grid's
-heights; the default (a detached clock at `t = 0`) yields a first-date-static grid.
+A static-z copy of the pressure-level dataset is constructed for the Φ download
+to break the recursive `Field(ϕ_meta) → native_grid → z_interfaces` chain. The
+static z values are arbitrary placeholders; only their shape matters.
 """
-function per_column_geopotential_discretization(metadata::ERA5PressureMetadata;
-                                                 clock = Clock{eltype(metadata)}(time = zero(eltype(metadata))))
+function per_column_geopotential_discretization(metadata::ERA5PressureMetadata)
     static_z = standard_atmosphere_z_interfaces(metadata.dataset.pressure_levels)
     static_ds = _with_z(metadata.dataset, static_z)
-    sl_ds = DataWrangling.matching_single_level_dataset(metadata.dataset)
+    sl_ds = _matching_single_level_dataset(metadata.dataset)
 
-    # Φ(λ, φ, p, t) over the whole window, held in memory on the static-z grid. A
-    # `TimeSeriesInterpolation` bound to `clock` turns it into a time-varying z-coordinate.
     ϕ_meta = Metadata(:geopotential; dataset=static_ds,
                       dates=metadata.dates, region=metadata.region, dir=metadata.dir)
-    Nt = length(ϕ_meta)
-    # `Cyclical{Nothing}` infers the period from `times[end] - times[end-1]`, which
-    # requires at least two time steps. With a single snapshot there is nothing to
-    # cycle over, so fall back to `Linear()` — the resulting FTS returns a constant
-    # geopotential at every clock time, which is correct for a static snapshot.
-    time_indexing = Nt > 1 ? Cyclical() : Linear()
-    Φ_fts = FieldTimeSeries(ϕ_meta, CPU(); time_indices_in_memory = Nt, time_indexing)
-    Φ = TimeSeriesInterpolation(Φ_fts, Φ_fts.grid; clock)
+    ϕ_sl_meta = Metadata(:geopotential; dataset=sl_ds,
+                         dates=metadata.dates, region=metadata.region, dir=metadata.dir)
 
-    # Surface geopotential is orography × g — static in time — so a single snapshot is the clip source.
-    date = first(metadata).dates
-    ϕ_sl_datum = Metadatum(:geopotential; dataset=sl_ds, date, region=metadata.region, dir=metadata.dir)
-    Downloads.download(ϕ_sl_datum)
-    Φ_sfc = Field(ϕ_sl_datum)  # 2-D surface geopotential, m²/s²
+    Downloads.download(ϕ_meta)
+    Downloads.download(ϕ_sl_meta)
+
+    Φ = Field(first(ϕ_meta))         # 3-D geopotential, m²/s²
+    Φ_sfc = Field(first(ϕ_sl_meta))  # 2-D surface geopotential, m²/s²
 
     return PressureLevelVerticalDiscretization(Φ;
                                                gravitational_acceleration = ERA5_gravitational_acceleration,
@@ -298,70 +281,10 @@ _with_z(ds::ERA5HourlyPressureLevels, z) = ERA5HourlyPressureLevels(ds.pressure_
 _with_z(ds::ERA5MonthlyPressureLevels, z) = ERA5MonthlyPressureLevels(ds.pressure_levels, z)
 
 # Match each pressure-level dataset to the single-level dataset at the same
-# temporal cadence so surface fields (the geopotential clip-source, the surface
-# pressure anchor) match the data they accompany.
-DataWrangling.matching_single_level_dataset(::ERA5HourlyPressureLevels) = ERA5HourlySingleLevel()
-DataWrangling.matching_single_level_dataset(::ERA5MonthlyPressureLevels) = ERA5MonthlySingleLevel()
-
-#####
-##### Raw per-level native load
-#####
-
-# A `FieldTimeSeries` of native-grid ERA5 pressure-level data. It is loaded raw —
-# each pressure level's values go straight into the matching k-slot with no vertical
-# interpolation — because the grid's geopotential heights move in time (see
-# `per_column_geopotential_discretization`): the data belongs to pressure levels, and
-# the level→height mapping is applied later, at query time, from the current clock.
-# Interpolating at load onto one reference-height frame (as the generic `set!` does)
-# would freeze the data to that frame and desync it from the moving grid.
-const NativeERA5PressureFTS =
-    FlavorOfFTS{<:Any, <:Any, <:Any, <:Any, <:DatasetBackend{true, <:Any, <:Any, <:ERA5PressureMetadata}}
-
-function Oceananigans.Fields.set!(fts::NativeERA5PressureFTS, backend=fts.backend)
-    for t in time_indices(fts)
-        metadatum = @inbounds backend.metadata[t]
-        set_metadata_field!(fts[t], retrieve_data(metadatum), metadatum)
-    end
-    fill_halo_regions!(fts)
-    return nothing
-end
-
-# Load a variable's native pressure-level `FieldTimeSeries` on the pre-built,
-# time-evolving `grid`. `on_native_grid = true` selects the raw `set!` above and
-# skips the generic `FieldTimeSeries(metadata, grid)` constructor's redundant
-# `native_grid` rebuild + column-mean equality check (once per variable).
-function era5_native_pressure_fts(metadata, grid;
-                                  time_indexing = Cyclical(),
-                                  time_indices_in_memory = nothing)
-    Downloads.download(metadata)
-    times = convert.(eltype(grid), native_times(metadata))
-    Nt = length(times)
-    time_indices_in_memory = min(something(time_indices_in_memory, Nt), Nt)
-    loc = LX, LY, LZ = location(metadata)
-    boundary_conditions = FieldBoundaryConditions(grid, instantiate.(loc))
-    backend = DatasetBackend(time_indices_in_memory, metadata; on_native_grid = true,
-                             inpainting = nothing, cache_inpainted_data = false)
-    fts = FieldTimeSeries{LX, LY, LZ}(grid, times; backend, time_indexing, boundary_conditions)
-    set!(fts)
-    return fts
-end
-
-"""
-    FieldTimeSeries(metadata::ERA5PressureMetadata, grid::PressureLevelGrid; kw...)
-
-Load an ERA5 pressure-level variable **raw** onto an existing native
-[`PressureLevelGrid`](@ref) (e.g. a parent [`ERA5PrescribedAtmosphere`](@ref)'s
-`grid`), placing each pressure level straight into its `k`-slot — the same
-per-level load the atmosphere applies to its own fields. This lets an extra ERA5
-field share the parent's grid so it composes in `AbstractOperation`s with the
-atmosphere's state.
-
-The generic `FieldTimeSeries(metadata, grid)` would instead interpolate at load,
-freezing the data to one reference-height frame and desyncing it from the grid's
-time-varying geopotential heights.
-"""
-Oceananigans.OutputReaders.FieldTimeSeries(metadata::ERA5PressureMetadata, grid::PressureLevelGrid; kw...) =
-    era5_native_pressure_fts(metadata, grid; kw...)
+# temporal cadence so the surface geopotential clip-source matches the data
+# we're clipping.
+_matching_single_level_dataset(::ERA5HourlyPressureLevels) = ERA5HourlySingleLevel()
+_matching_single_level_dataset(::ERA5MonthlyPressureLevels) = ERA5MonthlySingleLevel()
 
 #####
 ##### pressure_field — synthetic pressure coordinate field

@@ -43,10 +43,7 @@ function Oceananigans.OutputReaders.FieldTimeSeries(metadata::Metadata, grid::Ab
 
     Downloads.download(metadata)
 
-    # Match the time axis to the grid's float type. `native_times` returns `Float64` seconds, but with a
-    # Float32 grid that mismatch makes `interpolate`'s time weight `Float64`, so the interpolated value is
-    # `Union{Float32, Float64}` — a type instability that boxes inside GPU tendency/halo kernels.
-    times = convert.(eltype(grid), native_times(metadata))
+    times = native_times(metadata)
 
     # Make sure we do not use more indices then the ones available!
     if length(times) < time_indices_in_memory

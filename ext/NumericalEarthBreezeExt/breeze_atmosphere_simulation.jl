@@ -1,13 +1,10 @@
-using KernelAbstractions: @kernel, @index
-using Oceananigans.Architectures: architecture
 using Oceananigans.Fields: Field
-using Oceananigans.Grids: znode, Center, Face
+using Oceananigans.Grids: Center
 using Oceananigans.BoundaryConditions: FieldBoundaryConditions, DefaultBoundaryCondition
-using Oceananigans.Utils: launch!
 
-using Breeze: ThermodynamicConstants, CompressibleDynamics,
+using Breeze: ThermodynamicConstants, ReferenceState, AnelasticDynamics,
               SaturationAdjustment, WarmPhaseEquilibrium,
-              AtmosphereModel, moisture_prognostic_name, HydrostaticallyBalancedDensity
+              AtmosphereModel, moisture_prognostic_name
 
 # Per-side merge for FieldBoundaryConditions: user's non-default sides override
 # coupling's; coupling's non-default sides survive where the user leaves the
@@ -36,34 +33,25 @@ function merge_boundary_conditions(coupling_bcs::NamedTuple, user_bcs::NamedTupl
 end
 
 """
-    atmosphere_model(grid;
-                     surface_pressure = 101325,
-                     potential_temperature = 285,
-                     thermodynamic_constants = ThermodynamicConstants(eltype(grid)),
-                     dynamics = CompressibleDynamics(; surface_pressure,
-                                                     reference_potential_temperature = potential_temperature),
-                     microphysics = SaturationAdjustment(equilibrium = WarmPhaseEquilibrium()),
-                     momentum_advection = WENO(order=9),
-                     scalar_advection = WENO(order=5),
-                     boundary_conditions = NamedTuple(),
-                     coriolis = nothing,
-                     forcing = NamedTuple(),
-                     closure = nothing,
-                     clock = Clock{eltype(grid)}(time=0),
-                     initialize = true)
+    atmosphere_simulation(grid;
+                          surface_pressure = 101325,
+                          potential_temperature = 285,
+                          thermodynamic_constants = ThermodynamicConstants(eltype(grid)),
+                          dynamics = AnelasticDynamics(ReferenceState(grid, thermodynamic_constants;
+                                                                      surface_pressure, potential_temperature)),
+                          microphysics = SaturationAdjustment(equilibrium = WarmPhaseEquilibrium()),
+                          momentum_advection = WENO(order=9),
+                          scalar_advection = WENO(order=5),
+                          boundary_conditions = NamedTuple(),
+                          coriolis = nothing,
+                          forcing = NamedTuple(),
+                          closure = nothing,
+                          clock = Clock{eltype(grid)}(time=0),
+                          Δt = Inf)
 
-Construct a Breeze `AtmosphereModel` with sensible defaults for coupled simulations.
-[`atmosphere_simulation`](@ref) wraps this in an Oceananigans `Simulation` (mirroring
-the role of [`ocean_simulation`](@ref)).
-
-When `initialize` (the default) and `dynamics isa CompressibleDynamics`, the returned model is
-set to a resting, hydrostatically balanced state at the reference `potential_temperature` and
-`surface_pressure`, so its density is valid for anything that divides by it (e.g. the MOST
-surface-flux coupling). `AnelasticDynamics` needs no such step: its `reference_state` already
-prescribes a valid resting density, and zero prognostic perturbation is by construction the
-resting hydrostatically balanced state. Pass `initialize = false` when a caller derives the full
-state itself — the nested-child path does, via `initialize_nested_child!`, whose ERA5-derived
-reference state must not carry the resting initialization's default anchors.
+Construct an Oceananigans `Simulation` wrapping a Breeze `AtmosphereModel`,
+with sensible defaults for coupled simulations. Mirrors the role of
+[`ocean_simulation`](@ref).
 
 Surface fluxes are handled by the `EarthSystemModel` coupling framework (via
 similarity theory), not by Breeze's own boundary conditions, so the bottom
@@ -78,26 +66,28 @@ aliases `coupled_model.radiation.flux_divergence`. Passing a
 `Breeze.RadiativeTransferModel` directly as `radiation` here is rejected — use
 `AtmosphereLandModel(atmosphere, land; radiation = rtm)` instead.
 
-To nest this child in a coarser parent atmosphere, use [`nested_atmosphere_model`](@ref) (Breeze
-extension), which derives the lateral BCs and Davies relaxation from the parent and wraps the result
-in a `NestedModel`.
+Returns the `Simulation` so callers can attach output writers, callbacks, or
+later wrap inside a coupled `EarthSystemModel`. The inner `Δt` defaults to
+`Inf` since the *coupled* `Simulation` (around an `EarthSystemModel`) owns
+the time step in coupled use; if you wrap this `Simulation` directly in a
+`run!`, pass a finite `Δt`.
 """
-function NumericalEarth.Atmospheres.atmosphere_model(grid;
-                                                     surface_pressure = 101325,
-                                                     potential_temperature = 285,
-                                                     thermodynamic_constants = ThermodynamicConstants(eltype(grid)),
-                                                     dynamics = CompressibleDynamics(; surface_pressure,
-                                                                                     reference_potential_temperature = potential_temperature),
-                                                     microphysics = SaturationAdjustment(equilibrium = WarmPhaseEquilibrium()),
-                                                     momentum_advection = Oceananigans.WENO(order=9),
-                                                     scalar_advection = Oceananigans.WENO(order=5),
-                                                     boundary_conditions = NamedTuple(),
-                                                     coriolis = nothing,
-                                                     forcing = NamedTuple(),
-                                                     closure = nothing,
-                                                     clock = Oceananigans.TimeSteppers.Clock{eltype(grid)}(time = 0),
-                                                     initialize = true,
-                                                     radiation = CoupledRadiation())
+function NumericalEarth.Atmospheres.atmosphere_simulation(grid;
+                                                          surface_pressure = 101325,
+                                                          potential_temperature = 285,
+                                                          thermodynamic_constants = ThermodynamicConstants(eltype(grid)),
+                                                          dynamics = AnelasticDynamics(ReferenceState(grid, thermodynamic_constants;
+                                                                                                      surface_pressure, potential_temperature)),
+                                                          microphysics = SaturationAdjustment(equilibrium = WarmPhaseEquilibrium()),
+                                                          momentum_advection = Oceananigans.WENO(order=9),
+                                                          scalar_advection = Oceananigans.WENO(order=5),
+                                                          boundary_conditions = NamedTuple(),
+                                                          coriolis = nothing,
+                                                          forcing = NamedTuple(),
+                                                          closure = nothing,
+                                                          clock = Oceananigans.TimeSteppers.Clock{eltype(grid)}(time = 0),
+                                                          Δt = Inf,
+                                                          radiation = CoupledRadiation())
 
     if radiation isa Breeze.RadiativeTransferModel
         throw(ArgumentError("`atmosphere_simulation` does not accept a `Breeze.RadiativeTransferModel`. " *
@@ -127,80 +117,12 @@ function NumericalEarth.Atmospheres.atmosphere_model(grid;
     # the whole `FieldBoundaryConditions`.
     boundary_conditions = merge_boundary_conditions(coupling_bcs, NamedTuple(boundary_conditions))
 
-    model = AtmosphereModel(grid;
-                            dynamics, microphysics, thermodynamic_constants,
-                            momentum_advection, scalar_advection,
-                            boundary_conditions,
-                            coriolis, forcing, closure, clock,
-                            radiation)
+    atmosphere_model = AtmosphereModel(grid;
+                                       dynamics, microphysics,
+                                       momentum_advection, scalar_advection,
+                                       boundary_conditions,
+                                       coriolis, forcing, closure, clock,
+                                       radiation)
 
-    # Breeze ≥0.7 no longer derives the prognostic density from the reference state inside a bare
-    # `set!(θ, …)` — an uninitialized model carries ρ ≡ 0, which NaNs anything that divides by density
-    # (e.g. the MOST surface-flux coupling). Initialize to a resting, hydrostatically balanced state at
-    # the reference θ so the returned atmosphere is valid; a later user `set!` of θ/velocities (without
-    # a `ρ` entry) preserves this density. Callers that derive the full state themselves (the nested
-    # child) pass `initialize = false`: this set!'s default-anchored state otherwise survives into
-    # `initialize_nested_child!` and destabilizes the adiabatic balance twin (DomainError blowup).
-    #
-    # `HydrostaticallyBalancedDensity` is documented for `CompressibleDynamics` only. For
-    # `AnelasticDynamics`, `reference_state.density` already prescribes a valid resting density —
-    # applying this compressible-only set! corrupts it in place (Breeze's set_to_mean.jl copies
-    # between mismatched-shape Fields), NaN-ing every field that divides by density.
-    initialize && dynamics isa CompressibleDynamics &&
-        set!(model; θ = potential_temperature, ρ = HydrostaticallyBalancedDensity(; surface_pressure))
-
-    return model
-end
-
-"""
-$(TYPEDSIGNATURES)
-
-Wrap [`atmosphere_model`](@ref) in an Oceananigans `Simulation`. `Δt` defaults to `Inf` because the
-coupled `Simulation` / `NestedModel` owns the time step in coupled use; pass a finite `Δt` to `run!`
-this `Simulation` directly. All other keyword arguments forward to `atmosphere_model`.
-"""
-NumericalEarth.Atmospheres.atmosphere_simulation(grid; Δt = Inf, kw...) =
-    Simulation(NumericalEarth.Atmospheres.atmosphere_model(grid; kw...); Δt, verbose = false)
-
-#####
-##### bulk_drag: bulk neutral log-law surface stress into the coupling ρτˣ/ρτʸ fields
-#####
-
-@kernel function _drag_coefficient!(Cᵈ, grid, κ, z₀)
-    i, j = @index(Global, NTuple)
-    @inbounds begin
-        z₁ = znode(i, j, 1, grid, Center(), Center(), Center()) - znode(i, j, 1, grid, Center(), Center(), Face())
-        Cᵈ[i, j, 1] = (κ / log(z₁ / z₀))^2
-    end
-end
-
-@kernel function _bulk_drag!(ρτˣ, ρτʸ, u, v, ρ, Cᵈ)
-    i, j = @index(Global, NTuple)
-    @inbounds begin
-        uᶜ = (u[i, j, 1] + u[i+1, j, 1]) / 2
-        vᶜ = (v[i, j, 1] + v[i, j+1, 1]) / 2
-        U = sqrt(uᶜ^2 + vᶜ^2)
-        ρτˣ[i, j, 1] = -ρ[i, j, 1] * Cᵈ[i, j, 1] * U * uᶜ
-        ρτʸ[i, j, 1] = -ρ[i, j, 1] * Cᵈ[i, j, 1] * U * vᶜ
-    end
-end
-
-function NumericalEarth.Atmospheres.bulk_drag(model::AtmosphereModel; roughness_length = 0.1, von_karman_constant = 0.4)
-    grid = model.grid
-    FT = eltype(grid)
-    Cᵈ = Field{Center, Center, Nothing}(grid)
-    launch!(architecture(grid), grid, :xy, _drag_coefficient!,
-            Cᵈ, grid, convert(FT, von_karman_constant), convert(FT, roughness_length))
-
-    ρτˣ = model.momentum.ρu.boundary_conditions.bottom.condition
-    ρτʸ = model.momentum.ρv.boundary_conditions.bottom.condition
-    u, v = model.velocities.u, model.velocities.v
-    ρ = model.dynamics.total_density
-
-    function apply_bulk_drag!(simulation)
-        launch!(architecture(grid), grid, :xy, _bulk_drag!, ρτˣ, ρτʸ, u, v, ρ, Cᵈ)
-        return nothing
-    end
-
-    return apply_bulk_drag!
+    return Simulation(atmosphere_model; Δt, verbose = false)
 end

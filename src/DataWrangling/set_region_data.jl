@@ -204,14 +204,6 @@ blend(scheme, data, c, k, mangling, FT) = blend(scheme, data, c, k, mangling, mi
     @inbounds dst[i, j, k] = d
 end
 
-# TODO: upstream to Oceananigans.Architectures alongside its SubArray/OffsetArray methods.
-# `on_architecture` has no `Base.ReshapedArray` method, so host data arriving reshaped — e.g. a
-# 2-D NetCDF variable reshaped to (Nx, Ny, 1) — falls through the generic identity fallback and
-# reaches GPU kernels as CPU memory (kernel compilation failure).
-architecture_ready(arch, data) = on_architecture(arch, data)
-architecture_ready(arch, data::Base.ReshapedArray) =
-    reshape(on_architecture(arch, parent(data)), size(data))
-
 """
     set_region_data!(target, data, λc, φc, metadata)
 
@@ -226,7 +218,7 @@ function set_region_data!(target::Field, data, λc, φc, metadata;
     FT          = eltype(target)
     grid        = target.grid
     arch        = architecture(grid)
-    data        = architecture_ready(arch, data)
+    data        = on_architecture(arch, data)
     missing_val = missing_value(metadata)
     launch!(arch, grid, :xyz, _set_region_kernel!, interior(target), data, region, mangling, conversion, missing_val, FT)
     return nothing
@@ -241,7 +233,7 @@ function set_region_data!(target::FieldTimeSeries, data, λc, φc, metadata;
     grid        = target.grid
     arch        = architecture(grid)
     FT          = eltype(target)
-    data        = architecture_ready(arch, data)
+    data        = on_architecture(arch, data)
     missing_val = missing_value(metadata)
     for (data_time, slot_time) in zip(axes(data, 4), slot_indices)
         dest = view(interior(target), :, :, :, slot_time)

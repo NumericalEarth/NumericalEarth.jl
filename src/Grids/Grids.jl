@@ -1,6 +1,6 @@
 module Grids
 
-export PressureLevelVerticalDiscretization, PressureLevelGrid, surface_elevation
+export PressureLevelVerticalDiscretization, PressureLevelGrid
 
 include("pressure_level_vertical_discretization.jl")
 
