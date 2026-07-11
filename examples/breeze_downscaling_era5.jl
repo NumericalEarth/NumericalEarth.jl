@@ -33,12 +33,12 @@ using CloudMicrophysics          # nested_atmosphere_model's default microphysic
 using CairoMakie                 # loads Makie → NumericalEarthMakieExt (`visualize_nested_domain`)
 using NaturalEarth               # + GeoInterface → NumericalEarthNaturalEarthExt (`natural_earth_lines`)
 using CUDA
-using Dates: DateTime      # only `DateTime`; a bare `using Dates` also exports `Time`, colliding with `Oceananigans.Units.Time`
 using Printf
+using Dates: DateTime, Second
 
 # This 12 km LAM (150×136×50 ≈ 1.0M cells, split-explicit) targets a CUDA GPU; switch to `CPU()` only
 # for a small smoke test.
-arch = GPU(CUDA.CUDABackend(always_inline = true))
+arch = GPU()
 
 # Set Oceananigans' global default float type, cascading to all grids, fields, and constants.
 Oceananigans.defaults.FloatType = Float32
@@ -49,30 +49,31 @@ Oceananigans.defaults.FloatType = Float32
 # in Lamont, OK — the 3 km Domain 3 of the WRF telescoping nest in [Fan2017](@citet), coarsened 4×
 # and driven directly by ERA5.
 
-φ₀, λ₀ = 36.605, -97.485    # center latitude, longitude (deg)
+## dates
+duration = 18hours
 start_date = DateTime(2011, 05, 20, 0)
-stop_date = DateTime(2011, 05, 20, 3)
+stop_date = start_date + Second(duration)
+
+## location
+φ₀, λ₀ = 36.605, -97.485    # center latitude, longitude (deg)
+Lλ, Lφ = 16.7, 15.1
+
+## horizontal resolution
+Nx, Ny = 150, 136 # grid cells (ERA5 → 12 km)
+
 dates = (start_date, stop_date)
-
-Δλ = Δφ = 1/9               # uniform 1/9° step (~12 km)
-Nx, Ny = 150, 136
-
-λ_west  = λ₀ - Nx * Δλ / 2
-λ_east  = λ₀ + Nx * Δλ / 2
-φ_south = φ₀ - Ny * Δφ / 2
-φ_north = φ₀ + Ny * Δφ / 2
-
-relax_width = 5             # cells: Davies relaxation zone and terrain blending zone
+λ_west, λ_east   = λ₀ .+ [-1, 1] .* Lλ / 2
+φ_south, φ_north = φ₀ .+ [-1, 1] .* Lφ / 2
 
 # Vertical grid matched to [Fan2017](@citet)'s WRF nest: `Nz = 50` cells, a constant 60 m surface
 # cell, 490 m maximum spacing, and a model top at ~20 km (~50 hPa).
 
 z = ReferenceToStretchedDiscretization(extent = 19525.0,
                                        bias = :left,
-                                       bias_edge = 0.0,
-                                       constant_spacing = 60.0,
-                                       constant_spacing_extent = 60.0,
-                                       maximum_spacing = 490.0,
+                                       bias_edge = 0,
+                                       constant_spacing = 60,
+                                       constant_spacing_extent = 60,
+                                       maximum_spacing = 490,
                                        stretching = LinearStretching(0.15))
 
 Nz = length(z)
@@ -109,9 +110,9 @@ grid = LatitudeLongitudeGrid(arch;
 # climb into the over-relaxation regime as Δt grows). Momentum uses a narrower `WENO(5)` stencil, which
 # interacts less violently with the open-boundary halo than the default `WENO(9)`.
 
-Δt = 1
 era5_datadir = "era5"   # where ERA5 data is saved locally
 dataset = ERA5HourlyPressureLevels()
+relax_width = 5
 
 model = nested_atmosphere_model(grid, dataset;
                                 dates,
@@ -134,12 +135,12 @@ era5_region = BoundingBox(parent.grid)
 # even if the run is cut short.
 
 fig = visualize_nested_domain(grid;
-                              parent       = era5_region,
-                              padding      = 2.5,
-                              title        = "ERA5 → 12 km LAM nest (MC3E squall line, ARM SGP)",
-                              label        = "12 km LAM (child)",
+                              parent = era5_region,
+                              padding = 2.5,
+                              title = "ERA5 → 12 km LAM nest (MC3E squall line, ARM SGP)",
+                              label = "12 km LAM (child)",
                               parent_label = "ERA5 parent",
-                              landmarks    = tuple("ARM SGP" => (λ₀, φ₀)))
+                              landmarks = tuple("ARM SGP" => (λ₀, φ₀)))
 
 save("era5_breeze_domains.png", fig)
 
@@ -157,11 +158,10 @@ fig
 # surface stress — the dominant near-surface momentum sink until a land model is attached. The
 # acoustic modes are substepped, so the adaptive outer Δt is bounded by the (slower) advective CFL.
 
-simulation = Simulation(model; Δt, stop_time = 10800.0)   # 3 h (matches `dates` above)
-
+Δt = 10
+simulation = Simulation(model; Δt, stop_time=duration)
 add_callback!(simulation, bulk_drag(model), IterationInterval(1))
-conjure_time_step_wizard!(simulation, IterationInterval(1); cfl = 0.7,
-                          max_Δt = NumericalEarth.Atmospheres.estimate_maximum_Δt(grid))
+conjure_time_step_wizard!(simulation, IterationInterval(3); cfl=0.5, max_Δt=Δt)
 
 # ## Output
 #
@@ -200,14 +200,14 @@ function progress(sim)
     ρ  = child.dynamics.total_density
     qᵛ = specific_humidity(child)
     qʳ = child.microphysical_fields.qʳ
-    @info @sprintf("iter=%4d t=%6.1fs Δt=%5.2f  max|u|=%7.2f max|v|=%7.2f max|w|=%6.2f  ρ∈[%.4f,%.4f]  qᵛ∈[%.4g,%.4g] qʳ∈[%.2g,%.2g]",
-                   sim.model.clock.iteration, sim.model.clock.time, sim.Δt,
+    @info @sprintf("iter=%4d, t=%s, Δt=%s, max|u|=(%7.2f, %7.2f, %6.2f)  ρ ∈ [%.4f, %.4f], qᵛ ∈ [%.4g, %.4g], qʳ ∈ [%.2g, %.2g]",
+                   sim.model.clock.iteration, prettytime(sim), prettytime(sim.Δt),
                    maximum(abs, u), maximum(abs, v), maximum(abs, w), minimum(ρ), maximum(ρ),
                    minimum(qᵛ), maximum(qᵛ), minimum(qʳ), maximum(qʳ))
     return nothing
 end
 
-add_callback!(simulation, progress, IterationInterval(20))
+add_callback!(simulation, progress, IterationInterval(100))
 
 # ## Run
 
@@ -284,7 +284,7 @@ cascade_n = Observable(1)
 ## field operations convert to *different* array types across frames (the parent's pressure-level
 ## slices especially). Materialize every frame to a host matrix on its grid's own λ/φ, so the plotted
 ## type stays fixed and the axes read geographic coordinates.
-host_matrix(field) = Array(interior(compute!(Field(field)), :, :, 1))
+host_matrix(field) = Array(interior(Field(field)), :, :, 1)))
 
 function panel!(ax, field_of, colormap, colorrange)
     grid = Field(field_of(1)).grid
