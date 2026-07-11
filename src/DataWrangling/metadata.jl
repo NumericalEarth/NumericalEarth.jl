@@ -24,16 +24,6 @@ Create a bounding box with `latitude`, `longitude`, and `z` bounds on the sphere
 BoundingBox(; longitude=nothing, latitude=nothing, z=nothing) =
     BoundingBox(longitude, latitude, z)
 
-"""
-    BoundingBox(grid; padding = 0)
-
-Create a `BoundingBox` spanning the horizontal extent of `grid`, widened on every
-side by `padding` (degrees).
-"""
-BoundingBox(grid::AbstractGrid; padding = 0) =
-    BoundingBox(longitude = extrema(λnodes(grid, Face(), Center(), Center())) .+ (-padding, padding),
-                latitude  = extrema(φnodes(grid, Center(), Face(), Center())) .+ (-padding, padding))
-
 #####
 ##### Column region and interpolation types
 #####
@@ -126,9 +116,8 @@ Keyword Arguments
 - `dataset`: Supported datasets are returned by [`supported_datasets`](@ref).
 
 - `dates`: The dates of the dataset (`Dates.AbstractDateTime` or `CFTime.AbstractCFDateTime`).
-           Note that `dates` can either be a range or a vector of dates, representing a time-series,
-           or a `(start_date, end_date)` tuple, which expands to the dataset's native dates in that
-           window (the cadence is the dataset's own). For a single date, use [`Metadatum`](@ref).
+           Note that `dates` can either be a range or a vector of dates, representing a time-series.
+           For a single date, use [`Metadatum`](@ref).
 
 - `start_date`: If `dates = nothing`, we can prescribe the first date of metadata as a date
                 (`Dates.AbstractDateTime` or `CFTime.AbstractCFDateTime`). If outside the
@@ -157,8 +146,6 @@ function Metadata(variable_name;
                   start_date = nothing,
                   end_date = nothing)
 
-    dates = expand_dates(dataset, variable_name, dates)
-
     # crop dates if _either_ a start date or an end date is provided
     if !isnothing(start_date) || !isnothing(end_date)
 
@@ -179,16 +166,6 @@ end
 
 const AnyDateTime  = Union{AbstractCFDateTime, Dates.AbstractDateTime}
 const Metadatum{V} = Metadata{V, <:Union{AnyDateTime, Nothing}} where V
-
-"""
-    expand_dates(dataset, variable_name, dates)
-
-Return `dates`, expanding a `(start_date, end_date)` tuple to the dataset's native dates
-in that window — the cadence is the dataset's own.
-"""
-expand_dates(dataset, variable_name, dates) = dates
-expand_dates(dataset, variable_name, dates::Tuple{<:AnyDateTime, <:AnyDateTime}) =
-    compute_native_date_range(all_dates(dataset, variable_name), first(dates), last(dates))
 
 function Base.size(metadata::Metadata)
     Nx, Ny, Nz = size(metadata.dataset, metadata.name)
@@ -273,16 +250,8 @@ Base.summary(md::Metadata) = string(metaprefix(md),
                                     "{", datasetstr(md), "} of ",
                                     md.name, " for ", datestr(md))
 
-# A Metadatum holds a single date, so it acts as a length-1 collection whose sole element is
-# itself; the generic Metadata methods below index `dates`, which a scalar date cannot support.
+# If only one date, it's a single element array
 Base.length(metadata::Metadatum) = 1
-@propagate_inbounds function Base.getindex(m::Metadatum, i::Int)
-    @boundscheck i == 1 || throw(BoundsError(m, i))
-    return m
-end
-Base.first(m::Metadatum) = m
-Base.last(m::Metadatum) = m
-Base.iterate(m::Metadatum, i::Int=1) = i == 1 ? (m, 2) : nothing
 
 @propagate_inbounds Base.getindex(m::Metadata, i::Int) =
     Metadata(m.name, m.dataset, m.dates[i], m.region, m.dir, getfilename(m.filename, i))
@@ -300,6 +269,13 @@ Base.iterate(m::Metadatum, i::Int=1) = i == 1 ? (m, 2) : nothing
         return nothing
     end
 end
+
+# Implementation for 1 date
+Base.axes(metadata::Metadatum)    = 1
+Base.first(metadata::Metadatum)   = metadata
+Base.last(metadata::Metadatum)    = metadata
+Base.iterate(metadata::Metadatum) = (metadata, nothing)
+Base.iterate(::Metadatum, ::Any)  = nothing
 
 metadata_path(metadata::Metadatum) = joinpath(metadata.dir, metadata.filename)
 
@@ -672,21 +648,6 @@ end
 Return the default directory to which `dataset` is downloaded.
 """
 function default_download_directory end
-
-"""
-    native_resolution(dataset)
-
-Return the native horizontal grid spacing of `dataset` (degrees).
-"""
-function native_resolution end
-
-"""
-    matching_single_level_dataset(dataset)
-
-Return the single-level (surface) dataset sharing `dataset`'s product family and temporal
-cadence — e.g. the surface companion of a pressure-level reanalysis product.
-"""
-function matching_single_level_dataset end
 
 """
     dataset_variable_name(metadata)

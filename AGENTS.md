@@ -12,17 +12,6 @@ NumericalEarth.jl provides infrastructure for running Earth system model compone
 - **Style**: ExplicitImports.jl for source code; `using NumericalEarth` for examples
 - **Testing**: ParallelTestRunner.jl for distributed testing
 
-### Environments
-
-- The root environment treats Breeze, Makie, and other extension triggers as **weakdeps** —
-  `julia --project=.` cannot `using Breeze`. Run Breeze-coupled code with `--project=test`
-  or `--project=docs`.
-- `docs/Project.toml` and `test/Project.toml` pin Oceananigans and Breeze to development
-  branches via `[sources]` (see the TODOs there). Manifests go stale when pins change —
-  re-resolve before diagnosing load errors or "undeclared at import time" warnings.
-- Quick syntax check without loading packages:
-  `julia -e 'Meta.parseall(read("file.jl", String))'`.
-
 ## Critical Rules
 
 ### Kernel Functions (GPU compatibility)
@@ -70,28 +59,6 @@ NumericalEarth.jl provides infrastructure for running Earth system model compone
 
 ### Software Design
 
-- **Never unpack a property immediately after a constructor** (`foo(args...).bar`). It means the
-  constructor returns the wrong type for the call site — fix it by providing a constructor that
-  returns what's needed (e.g. a model-level `atmosphere_model(grid; …)` alongside the simulation-level
-  `atmosphere_simulation(grid; …)`), not by reaching into the result. Use constructors as designed.
-- **The example drives the API**: when an example (or script) hand-rolls infrastructure — region
-  padding, relaxation masks, terrain preparation, initialization, output slicing — push it into
-  the library as a constructor keyword, dataset hook, or exported utility. Don't polish the
-  hand-rolled version in place.
-- **Constructors own their domain**: derive what is derivable instead of requiring precomputed
-  inputs — regions from grids plus the dataset's `native_resolution`, anchors from the dataset,
-  physics defaults internally. The user supplies intent (`grid`, `dataset`, `dates`), not plumbing.
-- **Dataset objects carry product identity only** (cadence, levels, native grid) — never variable
-  names, regions, or dates. Dataset-specific behavior enters through `DataWrangling` hooks
-  (`native_resolution`, `matching_single_level_dataset`, `default_download_directory`, …)
-  dispatched on the dataset type, so downstream packages can add datasets without touching
-  NumericalEarth.
-- **Date windows are `(start_date, end_date)` tuples**, expanded to the dataset's native cadence
-  by `DataWrangling.expand_dates`. Don't add `start_date`/`end_date` keyword arguments to new code.
-- **Put key identity in `Base.summary`** (e.g. a regional atmosphere's domain bounds) so composite
-  models' displays inherit it — never manually print what `show`/`summary` already displays.
-- **Extension-implemented API**: declare a stub with docstring and export in `src`
-  (`function foo end`), define the method in the extension as `NumericalEarth.Module.foo(...) = ...`.
 - Minimize code duplication (allow only for trivial one-liners)
 - When something would be better in Oceananigans, add a detailed TODO note
 - Almost always extend functions in source code, not in examples
