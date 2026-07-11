@@ -33,7 +33,6 @@ using Oceananigans:
     set!
 
 using Oceananigans.Architectures: architecture
-using Oceananigans.BoundaryConditions: 
 using Oceananigans.Coriolis: SphericalCoriolis
 using Oceananigans.Fields: AbstractField, interior, interpolate!
 using Oceananigans.Forcings: Relaxation
