@@ -12,8 +12,8 @@
 
 using NumericalEarth: BoundingBox, Metadatum, regrid_topography, surface_elevation
 using NumericalEarth.Atmospheres: PrescribedAtmosphere
-using NumericalEarth.DataWrangling: default_download_directory, matching_single_level_dataset,
-                                    native_resolution
+using NumericalEarth.DataWrangling: default_download_directory, default_horizontal_padding,
+                                    matching_single_level_dataset
 using NumericalEarth.NestedModels: NestedModel, parent_boundary_conditions, parent_forcings,
                                    blend_parent_terrain!
 using Oceananigans: Oceananigans, WENO
@@ -283,9 +283,9 @@ end
 
 Build the parent `PrescribedAtmosphere`, nest a Breeze child in it, and initialize the child from
 `parent_dataset` at `first(dates)` — the returned model is ready to step. The parent spans
-`child_grid`'s bounding box padded by `parent_padding` (default two of `parent_dataset`'s native
-cells, margin for the lateral-BC interpolation stencils) at `dates`, on `parent_dataset`'s native
-grid. Unless given, the default dynamics' `surface_pressure` anchor is the domain-mean dataset surface
+`child_grid`'s bounding box padded by `parent_padding` (default `parent_dataset`'s
+`default_horizontal_padding`, margin for the lateral-BC interpolation stencils) at `dates`, on
+`parent_dataset`'s native grid. Unless given, the default dynamics' `surface_pressure` anchor is the domain-mean dataset surface
 pressure over the child at `first(dates)`. `balancer` controls the post-initialization adiabatic
 (DFI) balance: `true` (default) runs it, `false` skips it, and an `AdiabaticBalancer(Δt=…)` runs a
 custom (e.g. gentler) excursion. Remaining keyword arguments flow to
@@ -294,7 +294,7 @@ custom (e.g. gentler) excursion. Remaining keyword arguments flow to
 function NumericalEarth.NestedModels.nested_atmosphere_model(child_grid, parent_dataset;
             dates,
             dir = default_download_directory(parent_dataset),
-            parent_padding = 2 * native_resolution(parent_dataset),
+            parent_padding = default_horizontal_padding(parent_dataset),
             surface_pressure = nothing,
             balancer = true,
             kw...)

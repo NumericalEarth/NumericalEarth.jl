@@ -674,11 +674,12 @@ Return the default directory to which `dataset` is downloaded.
 function default_download_directory end
 
 """
-    native_resolution(dataset)
+    default_horizontal_padding(dataset)
 
-Return the native horizontal grid spacing of `dataset` (degrees).
+Return the default horizontal padding (degrees) added around a bounding box requested
+from `dataset`, providing margin for interpolation stencils at the boundary.
 """
-function native_resolution end
+function default_horizontal_padding end
 
 """
     matching_single_level_dataset(dataset)

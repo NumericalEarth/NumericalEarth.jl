@@ -78,11 +78,11 @@ NumericalEarth.jl provides infrastructure for running Earth system model compone
   the library as a constructor keyword, dataset hook, or exported utility. Don't polish the
   hand-rolled version in place.
 - **Constructors own their domain**: derive what is derivable instead of requiring precomputed
-  inputs — regions from grids plus the dataset's `native_resolution`, anchors from the dataset,
+  inputs — regions from grids plus the dataset's `default_horizontal_padding`, anchors from the dataset,
   physics defaults internally. The user supplies intent (`grid`, `dataset`, `dates`), not plumbing.
 - **Dataset objects carry product identity only** (cadence, levels, native grid) — never variable
   names, regions, or dates. Dataset-specific behavior enters through `DataWrangling` hooks
-  (`native_resolution`, `matching_single_level_dataset`, `default_download_directory`, …)
+  (`default_horizontal_padding`, `matching_single_level_dataset`, `default_download_directory`, …)
   dispatched on the dataset type, so downstream packages can add datasets without touching
   NumericalEarth.
 - **Date windows are `(start_date, end_date)` tuples**, expanded to the dataset's native cadence

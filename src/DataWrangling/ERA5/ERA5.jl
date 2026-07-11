@@ -57,7 +57,7 @@ const ERA5Metadatum = Metadatum{<:ERA5Dataset}
 # ERA5 global coverage: 0-359.75 longitude, -90 to 90 latitude at 0.25 degree resolution
 DataWrangling.longitude_interfaces(::ERA5Metadata) = (-0.125, 359.875)
 DataWrangling.latitude_interfaces(::ERA5Metadata) = (-90, 90)
-DataWrangling.native_resolution(::ERA5Dataset) = 1/4
+DataWrangling.default_horizontal_padding(::ERA5Dataset) = 1/2  # two native (1/4°) cells
 
 # ERA5 single-levels (2-D) data product
 DataWrangling.z_interfaces(::ERA5Metadata) = (0, 1)
