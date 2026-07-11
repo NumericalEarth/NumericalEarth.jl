@@ -71,14 +71,10 @@ end
     function build_atmosphere_land_model(arch)
         grid  = make_land_grid(arch)
         atmos = PrescribedAtmosphere(grid, [0.0, 1.0e8])
-        # `set!` on a whole `FieldTimeSeries` with a scalar has no method (only
-        # `set!(fts, value, n)` / `set!(fts[n], value)`), so seed each time slice.
-        for n in 1:2
-            set!(atmos.velocities.u[n], 4)
-            set!(atmos.temperature[n], 290)
-            set!(atmos.specific_humidity[n], 0.004)
-            set!(atmos.pressure[n], 101325)
-        end
+        set!(atmos.velocities.u, 4)
+        set!(atmos.temperature, 290)
+        set!(atmos.specific_humidity, 0.004)
+        set!(atmos.pressure, 101325)
         update_state!(atmos)
         land = SlabLand(grid)
         # These are the default atmosphere--land fluxes except for FixedIterations, which
