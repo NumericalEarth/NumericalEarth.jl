@@ -17,8 +17,7 @@ NumericalEarth.jl provides infrastructure for running Earth system model compone
 - The root environment treats Breeze, Makie, and other extension triggers as **weakdeps** —
   `julia --project=.` cannot `using Breeze`. Run Breeze-coupled code with `--project=test`
   or `--project=docs`.
-- `docs/Project.toml` and `test/Project.toml` pin Oceananigans and Breeze to development
-  branches via `[sources]` (see the TODOs there). Manifests go stale when pins change —
+- Manifests go stale when compat bounds or `[sources]` pins change —
   re-resolve before diagnosing load errors or "undeclared at import time" warnings.
 - Quick syntax check without loading packages:
   `julia -e 'Meta.parseall(read("file.jl", String))'`.
