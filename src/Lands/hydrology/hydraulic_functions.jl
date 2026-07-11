@@ -20,26 +20,33 @@ unsaturated soil), following [van Genuchten (1980)](@cite vangenuchten1980):
 \\qquad m = 1 - 1/n.
 ```
 
-`α` (m⁻¹) and `n` (–) are the standard Van Genuchten shape parameters.
+`α` (m⁻¹) and `n` (–) are the standard Van Genuchten shape parameters. Each may be
+a scalar (uniform) or a `Field` that varies grid point by grid point, e.g. from a
+pedotransfer function over a soil-texture map (see [`soil_hydraulic_properties`](@ref)).
 """
-struct VanGenuchtenRetention{FT}
-    α :: FT
-    n :: FT
+struct VanGenuchtenRetention{A, N}
+    α :: A
+    n :: N
 end
 
 VanGenuchtenRetention(FT::Type = Oceananigans.defaults.FloatType; α, n) =
-    VanGenuchtenRetention(convert(FT, α), convert(FT, n))
+    VanGenuchtenRetention(normalize_property(FT, α), normalize_property(FT, n))
+
+Adapt.adapt_structure(to, r::VanGenuchtenRetention) =
+    VanGenuchtenRetention(Adapt.adapt(to, r.α), Adapt.adapt(to, r.n))
 
 @inline van_genuchten_m(n) = 1 - 1/n
 
-@inline function pressure_head(r::VanGenuchtenRetention, 𝒮)
+@inline function pressure_head(r::VanGenuchtenRetention, 𝒮, i, j)
     FT = typeof(𝒮)
-    m = van_genuchten_m(r.n)
+    α = convert(FT, property_value(r.α, i, j))
+    n = convert(FT, property_value(r.n, i, j))
+    m = van_genuchten_m(n)
     # Clamp 𝒮 strictly inside (0, 1] to avoid singularities at endpoints.
     𝒮c = clamp(𝒮, eps(FT), one(FT))
     return ifelse(𝒮c >= one(FT),
                   zero(FT),
-                  -(𝒮c^(-1/m) - one(FT))^(1/r.n) / r.α)
+                  -(𝒮c^(-1/m) - one(FT))^(1/n) / α)
 end
 
 Base.summary(r::VanGenuchtenRetention) =
@@ -59,24 +66,36 @@ K(\\mathcal S) = K_{sat}\\,\\mathcal S^\\ell\\left[1 - (1 - \\mathcal S^{1/m})^m
 
 `K_saturated` (m s⁻¹) is the saturated hydraulic conductivity, `n` matches the
 retention `n`, and `ℓ` (–) is the Mualem pore-connectivity exponent (default 0.5).
+`K_saturated`, `n`, and `ℓ` may each be a scalar or a `Field` (see
+[`soil_hydraulic_properties`](@ref)).
 """
-struct VanGenuchtenConductivity{FT}
-    K_saturated :: FT
-    n           :: FT
-    ℓ           :: FT
+struct VanGenuchtenConductivity{K, N, L}
+    K_saturated :: K
+    n           :: N
+    ℓ           :: L
 end
 
 VanGenuchtenConductivity(FT::Type = Oceananigans.defaults.FloatType;
                          K_saturated, n, ℓ = 0.5) =
-    VanGenuchtenConductivity(convert(FT, K_saturated), convert(FT, n), convert(FT, ℓ))
+    VanGenuchtenConductivity(normalize_property(FT, K_saturated),
+                             normalize_property(FT, n),
+                             normalize_property(FT, ℓ))
 
-@inline function hydraulic_conductivity(c::VanGenuchtenConductivity, 𝒮)
+Adapt.adapt_structure(to, c::VanGenuchtenConductivity) =
+    VanGenuchtenConductivity(Adapt.adapt(to, c.K_saturated),
+                             Adapt.adapt(to, c.n),
+                             Adapt.adapt(to, c.ℓ))
+
+@inline function hydraulic_conductivity(c::VanGenuchtenConductivity, 𝒮, i, j)
     FT = typeof(𝒮)
-    m = van_genuchten_m(c.n)
+    Kₛ = convert(FT, property_value(c.K_saturated, i, j))
+    n  = convert(FT, property_value(c.n, i, j))
+    ℓ  = convert(FT, property_value(c.ℓ, i, j))
+    m  = van_genuchten_m(n)
     𝒮c = clamp(𝒮, zero(FT), one(FT))
     # K → K_sat as 𝒮 → 1.
     inner = one(FT) - (one(FT) - 𝒮c^(1/m))^m
-    return c.K_saturated * 𝒮c^c.ℓ * inner^2
+    return Kₛ * 𝒮c^ℓ * inner^2
 end
 
 Base.summary(c::VanGenuchtenConductivity) =
