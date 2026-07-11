@@ -1,7 +1,7 @@
 #####
 ##### Nested-atmosphere model: a Breeze child driven by a parent `PrescribedAtmosphere`.
 #####
-#
+
 # The child's prognostic variables (dry density `ρᵈ`, momentum densities `ρu`/`ρv`, potential-temperature
 # density `ρθ`, vapor density `ρqᵛ`) are precomputed from the parent's raw state ON THE PARENT GRID and
 # stored as `FieldTimeSeries` (see `breeze_state_exchanger.jl`). The child's lateral boundary conditions
@@ -10,25 +10,48 @@
 # FTS-driven `parent_boundary_conditions` / `parent_forcings` builders, so a child forcing/BC specializes
 # on a plain `FieldTimeSeries` (the same type Breeze compiles for any FTS forcing).
 
-using NumericalEarth: BoundingBox, Metadatum, regrid_topography, surface_elevation
+using NumericalEarth:
+    BoundingBox,
+    Metadatum,
+    regrid_topography,
+    surface_elevation
+
 using NumericalEarth.Atmospheres: PrescribedAtmosphere
-using NumericalEarth.DataWrangling: default_download_directory, default_horizontal_padding,
-                                    matching_single_level_dataset
-using NumericalEarth.NestedModels: NestedModel, parent_boundary_conditions, parent_forcings,
-                                   blend_parent_terrain!
-using Oceananigans: Oceananigans, WENO
+using NumericalEarth.DataWrangling: default_download_directory, default_horizontal_padding, matching_single_level_dataset
+using NumericalEarth.NestedModels: NestedModel, parent_boundary_conditions, parent_forcings, blend_parent_terrain!
+
+using Oceananigans:
+    Oceananigans,
+    WENO,
+    ValueBoundaryCondition,
+    NormalFlowBoundaryCondition,
+    Field,
+    CenterField,
+    XFaceField,
+    YFaceField,
+    Center, Face,
+    set!
+
 using Oceananigans.Architectures: architecture
-using Oceananigans.BoundaryConditions: ValueBoundaryCondition, NormalFlowBoundaryCondition
+using Oceananigans.BoundaryConditions: 
 using Oceananigans.Coriolis: SphericalCoriolis
-using Oceananigans.Fields: AbstractField, CenterField, Field, XFaceField, YFaceField,
-                           compute!, interior, interpolate!, set!
+using Oceananigans.Fields: AbstractField, interior, interpolate!
 using Oceananigans.Forcings: Relaxation
-using Oceananigans.Grids: znode, λnodes, φnodes, minimum_xspacing, Center, Face
+using Oceananigans.Grids: znode, λnodes, φnodes, minimum_xspacing
 using Oceananigans.TimeSteppers: update_state!
 using Oceananigans.Units: Time
+
 using GPUArraysCore: @allowscalar
-using Breeze: CompressibleDynamics, SplitExplicitTimeDiscretization, UpperSponge, NoDivergenceDamping,
-              MixedPhaseEquilibrium, materialize_terrain!, moisture_prognostic_name
+
+using Breeze:
+    CompressibleDynamics,
+    SplitExplicitTimeDiscretization,
+    UpperSponge,
+    NoDivergenceDamping,
+    MixedPhaseEquilibrium,
+    materialize_terrain!,
+    moisture_prognostic_name
+
 using Breeze.AtmosphereModels: prognostic_field_names
 
 # Default child microphysics: 1-moment bulk mixed-phase (rain + snow) precipitation with
@@ -132,6 +155,13 @@ function materialize_nested_terrain!(child_grid, terrain, parent_atmosphere, ble
     return materialize_terrain!(child_grid, elevation)
 end
 
+function default_parent_condensates(parent_atmosphere::PrescribedAtmosphere)
+    return (qᶜˡ = parent_atmosphere.microphysical_variables.qᶜˡ,
+            qʳ  = parent_atmosphere.microphysical_variables.qʳ,
+            qᶜⁱ = parent_atmosphere.microphysical_variables.qᶜⁱ,
+            qˢ  = parent_atmosphere.microphysical_variables.qˢ),
+end
+
 """
 $(TYPEDSIGNATURES)
 
@@ -163,33 +193,28 @@ child elevation is first blended toward the parent's over an outer frame of phys
 with `terrain_blend_width`), so the terrain at the open boundaries matches the orography the parent
 state was produced with — and the blend slope stays fixed across resolutions rather than steepening.
 """
-function NumericalEarth.NestedModels.nested_atmosphere_model(
-            parent_atmosphere::PrescribedAtmosphere, child_grid;
-            relaxation_rate = nothing,
-            relaxation_width = 5,
-            relaxation_mask = davies_relaxation_mask(child_grid, relaxation_width),
-            sides = (:west, :east, :south, :north),
-            thermodynamic_constants = ThermodynamicConstants(eltype(child_grid)),
-            surface_pressure = nothing,
-            reference_potential_temperature = nothing,
-            terrain = nothing,
-            terrain_blend_length = 60_000,   # metres; physical blend width → resolution-invariant slope
-            terrain_blend_width = nothing,    # explicit cell-count override; derived from length if `nothing`
-            parent_condensates = (qᶜˡ = parent_atmosphere.microphysical_variables.qᶜˡ,
-                                  qʳ  = parent_atmosphere.microphysical_variables.qʳ,
-                                  qᶜⁱ = parent_atmosphere.microphysical_variables.qᶜⁱ,
-                                  qˢ  = parent_atmosphere.microphysical_variables.qˢ),
-            microphysics = default_nested_microphysics(),
-            momentum_advection = WENO(order = 9),
-            scalar_advection = default_nested_scalar_advection(microphysics),
-            coriolis = SphericalCoriolis(),
-            damping_rate = 1/5,
-            damping_depth = default_lid_depth(child_grid),
-            dynamics = default_nested_dynamics(child_grid; surface_pressure, reference_potential_temperature,
-                                               damping_rate, damping_depth),
-            boundary_conditions = NamedTuple(),
-            forcing = NamedTuple(),
-            kw...)
+function NumericalEarth.NestedModels.nested_atmosphere_model(parent_atmosphere::PrescribedAtmosphere, child_grid;
+    relaxation_rate = nothing,
+    relaxation_width = 5,
+    relaxation_mask = davies_relaxation_mask(child_grid, relaxation_width),
+    sides = (:west, :east, :south, :north),
+    thermodynamic_constants = ThermodynamicConstants(eltype(child_grid)),
+    surface_pressure = nothing,
+    reference_potential_temperature = nothing,
+    terrain = nothing,
+    terrain_blend_length = 60_000,   # metres; physical blend width → resolution-invariant slope
+    terrain_blend_width = nothing,    # explicit cell-count override; derived from length if `nothing`
+    parent_condensates = default_parent_condensates(parent_atmosphere),
+    microphysics = default_nested_microphysics(),
+    momentum_advection = WENO(order = 9),
+    scalar_advection = default_nested_scalar_advection(microphysics),
+    coriolis = SphericalCoriolis(),
+    damping_rate = 1/5,
+    damping_depth = default_lid_depth(child_grid),
+    dynamics = default_nested_dynamics(child_grid; surface_pressure, reference_potential_temperature, damping_rate, damping_depth),
+    boundary_conditions = NamedTuple(),
+    forcing = NamedTuple(),
+    kw...)
 
     if !isnothing(terrain)
         blend_width = something(terrain_blend_width, default_terrain_blend_width(child_grid, terrain_blend_length))
@@ -291,24 +316,21 @@ pressure over the child at `first(dates)`. `balancer` controls the post-initiali
 custom (e.g. gentler) excursion. Remaining keyword arguments flow to
 `nested_atmosphere_model(parent, child_grid; kw...)`.
 """
-function NumericalEarth.NestedModels.nested_atmosphere_model(child_grid, parent_dataset;
-            dates,
-            dir = default_download_directory(parent_dataset),
-            parent_padding = default_horizontal_padding(parent_dataset),
-            surface_pressure = nothing,
-            balancer = true,
-            kw...)
+function NumericalEarth.NestedModels.nested_atmosphere_model(child_grid, parent_dataset; dates,
+    dir = default_download_directory(parent_dataset),
+    parent_padding = default_horizontal_padding(parent_dataset),
+    surface_pressure = nothing,
+    balancer = true,
+    kw...)
 
     parent_region = BoundingBox(child_grid; padding = parent_padding)
-    parent_atmosphere = PrescribedAtmosphere(parent_region, dates, parent_dataset;
-                                             architecture = architecture(child_grid), dir)
+    parent_atmosphere = PrescribedAtmosphere(parent_region, dates, parent_dataset; architecture = architecture(child_grid), dir)
 
     if isnothing(surface_pressure)
         surface_pressure = mean_surface_pressure(parent_dataset, child_grid, first(dates), dir)
     end
 
-    nested_model = NumericalEarth.NestedModels.nested_atmosphere_model(parent_atmosphere, child_grid;
-                                                                       surface_pressure, kw...)
+    nested_model = NumericalEarth.NestedModels.nested_atmosphere_model(parent_atmosphere, child_grid; surface_pressure, kw...)
     initialize_nested_child!(nested_model, parent_dataset, first(dates), dir; balancer)
     return nested_model
 end
@@ -342,16 +364,17 @@ function initialize_nested_child!(nested_model, dataset, date, dir; balancer = t
 
     # Recover the specific state from the density-weighted prognostics (dry-weighted momentum/energy,
     # total-weighted vapor); `ρ` is the total density set! expects.
-    ρ   = compute!(Field(ρᵈ + ρqᵛ))
-    qᵗ  = compute!(Field(ρqᵛ / ρ))
-    θˡⁱ = compute!(Field(ρθ / ρᵈ))
-    u   = XFaceField(child_grid); interpolate!(u, compute!(Field(ρu / ρᵈ)))
-    v   = YFaceField(child_grid); interpolate!(v, compute!(Field(ρv / ρᵈ)))
+    ρ   = Field(ρᵈ + ρqᵛ)
+    qᵗ  = Field(ρqᵛ / ρ)
+    θˡⁱ = Field(ρθ / ρᵈ)
+    u   = Field(ρu / ρᵈ)
+    v   = Field(ρv / ρᵈ)
 
     set!(nested_model; ρ, u, v, qᵗ, θˡⁱ, compute_reference_state = true)
 
     # Consistent-w: graft ρw ← ρw − ρw̃ so the contravariant w̃ ≈ 0 (the initial flow follows the ground).
     update_state!(nested_model)
+
     if !isnothing(child.dynamics.contravariant_vertical_momentum)
         interior(child.momentum.ρw) .-= interior(child.dynamics.contravariant_vertical_momentum)
         update_state!(nested_model)
@@ -361,5 +384,6 @@ function initialize_nested_child!(nested_model, dataset, date, dir; balancer = t
     # whether the interpolated IC steps stably on its own); pass an `AdiabaticBalancer(Δt=…)` for a
     # gentler excursion when the default 0.85·Δz/c DFI drives a pathological IC cell's pressure negative.
     set!(nested_model; balancer)
+
     return nested_model
 end
