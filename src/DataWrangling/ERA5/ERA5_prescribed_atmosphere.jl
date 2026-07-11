@@ -111,8 +111,9 @@ end
 function pressure_level_field(grid, dataset, architecture)
     Nx, Ny, Nz = size(grid)
     FT = eltype(grid)
-    # `dataset.pressure_levels` is sorted descending (hPa) ⇒ k=1 is the bottom (highest pressure).
-    pˡᵉᵛᵉˡ = on_architecture(architecture, FT.(dataset.pressure_levels) .* 100)
+    # `dataset.pressure_levels` is already in Pa (see `ERA5_all_pressure_levels`), sorted descending
+    # ⇒ k=1 is the bottom (highest pressure).
+    pˡᵉᵛᵉˡ = on_architecture(architecture, FT.(dataset.pressure_levels))
     pressure = CenterField(grid)
     interior(pressure) .= reshape(pˡᵉᵛᵉˡ, 1, 1, Nz)
     fill_halo_regions!(pressure)
@@ -124,15 +125,19 @@ end
                              architecture = CPU(),
                              dataset = ERA5HourlyPressureLevels(),
                              dir = download_ERA5_cache,
-                             time_indices_in_memory = length(dates),
+                             time_indices_in_memory = nothing,
                              thermodynamics_parameters = nothing,
                              other_kw...)
 
 Return a 3-D [`PrescribedAtmosphere`](@ref) built from ERA5 **pressure-level** reanalysis over
-`bounding_box` at the requested `dates`, on ERA5's **native grid** — a `PressureLevelGrid` at the
-reanalysis' native horizontal resolution with a geopotential-height-aware pressure-level vertical.
-Each variable loads natively (no pre-regridding); a downstream model (e.g. a `NestedSimulation`
-child) interpolates the parent onto its own grid on the fly.
+`bounding_box` at the requested `dates` — a range or vector of dates, or a
+`(start_date, end_date)` tuple that expands to the dataset's native (hourly or monthly)
+cadence — on ERA5's **native grid**: a `PressureLevelGrid` at the reanalysis' native horizontal
+resolution with a **time-varying** geopotential-height vertical (each pressure level's height
+follows the reanalysis as the atmosphere's clock advances). Each variable loads natively and raw
+(per pressure level, no vertical remap); a downstream model (e.g. a `NestedSimulation` child)
+interpolates the parent onto its own grid on the fly, at the current heights.
+`time_indices_in_memory` defaults to all dates.
 
 The atmosphere holds eastward/northward `velocities`, `temperature`, `specific_humidity`,
 `microphysical_variables = (; qᶜˡ, qʳ, qᶜⁱ, qˢ)` (cloud liquid/ice + rain/snow water content), and
@@ -143,15 +148,30 @@ function ERA5PrescribedAtmosphere(bounding_box::BoundingBox, dates;
                                   architecture = CPU(),
                                   dataset = ERA5HourlyPressureLevels(),
                                   dir = download_ERA5_cache,
-                                  time_indices_in_memory = length(dates),
+                                  time_indices_in_memory = nothing,
                                   thermodynamics_parameters = nothing,
                                   other_kw...)
 
     region = bounding_box
-    kw = merge((; time_indices_in_memory), other_kw)
+    dates = DataWrangling.expand_dates(dataset, :temperature, dates)
+    time_indices_in_memory = something(time_indices_in_memory, length(dates))
 
-    # Each loads on ERA5's native PressureLevelGrid (per-snapshot geopotential ⇒ true per-column heights).
-    era5_fts(name) = FieldTimeSeries(Metadata(name; dataset, dates, region, dir), architecture; kw...)
+    # One clock drives both the atmosphere's own time and the pressure levels' time-varying
+    # geopotential heights. `time_step!(atmosphere, Δt)` advances it, so the grid geometry a child
+    # interpolates over follows the reanalysis in time.
+    temperature_metadata = Metadata(:temperature; dataset, dates, region, dir)
+    FT = eltype(temperature_metadata)
+    clock = Clock{FT}(time = zero(FT))
+
+    # Build the native PressureLevelGrid once, with a geopotential `TimeSeriesInterpolation` bound to
+    # `clock`. `_with_z` carries the fully built vertical only into this transient grid construction —
+    # the atmosphere's `source` stays the plain dataset (product identity only).
+    plvd = per_column_geopotential_discretization(temperature_metadata; clock)
+    grid = native_grid(Metadata(:temperature; dataset = _with_z(dataset, plvd), dates, region, dir), architecture)
+
+    # Each variable loads raw per pressure level on that shared, time-evolving grid.
+    era5_fts(name) = era5_native_pressure_fts(Metadata(name; dataset, dates, region, dir), grid;
+                                              time_indices_in_memory, other_kw...)
 
     u   = era5_fts(:eastward_velocity)
     v   = era5_fts(:northward_velocity)
@@ -162,10 +182,10 @@ function ERA5PrescribedAtmosphere(bounding_box::BoundingBox, dates;
     qᶜⁱ = era5_fts(:specific_cloud_ice_water_content)
     qˢ  = era5_fts(:specific_snow_water_content)
 
-    grid  = T.grid    # native ERA5 PressureLevelGrid
     times = T.times
 
     return PrescribedAtmosphere(grid, times;
+                                clock,
                                 source = dataset,
                                 velocities = (; u, v),
                                 temperature = T,
@@ -174,3 +194,12 @@ function ERA5PrescribedAtmosphere(bounding_box::BoundingBox, dates;
                                 pressure = pressure_level_field(grid, dataset, architecture),
                                 thermodynamics_parameters)
 end
+
+"""
+    PrescribedAtmosphere(bounding_box, dates, dataset::ERA5PressureLevelsDataset; kw...)
+
+Dataset-dispatched constructor: build an [`ERA5PrescribedAtmosphere`](@ref) over `bounding_box`
+at `dates` on `dataset`'s native grid. Keyword arguments flow to `ERA5PrescribedAtmosphere`.
+"""
+PrescribedAtmosphere(bounding_box::BoundingBox, dates, dataset::ERA5PressureLevelsDataset; kw...) =
+    ERA5PrescribedAtmosphere(bounding_box, dates; dataset, kw...)
