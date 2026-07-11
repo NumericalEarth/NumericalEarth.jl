@@ -43,9 +43,6 @@ function apply_air_land_radiative_fluxes!(coupled_model, land)
     clock = coupled_model.clock
     radiation_state = coupled_model.interfaces.exchanger.radiation.state
 
-    # `surface_energy_flux` is positive *upward* (out of the slab), so the
-    # downward-positive radiative flux `ΣQ_rad` enters it with a sign flip,
-    # `-ΣQ_rad` (applied in the kernel).
     fluxes = land.fluxes
     hasproperty(fluxes, :surface_energy_flux) || return nothing
     land_energy_flux = fluxes.surface_energy_flux

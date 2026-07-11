@@ -2,10 +2,11 @@
 ##### Hydraulic property functions used by `VariablySaturatedHydrology`.
 #####
 ##### Two closures: retention curve `Π_m(θˡ)` (pressure head from pore liquid
-##### fraction) and hydraulic conductivity `K(𝒮, T)`. Both are pure `@inline`
+##### fraction) and hydraulic conductivity `K(𝒮)`. Both are pure `@inline`
 ##### functions called from per-cell kernels — type-stable, allocation-free.
 #####
-##### van Genuchten (1980) / Mualem (1976) is the available retention/conductivity model.
+##### van Genuchten (1980) retention and Mualem (1976) conductivity are the
+##### available models.
 #####
 
 """
@@ -20,7 +21,7 @@ unsaturated soil), following [van Genuchten (1980)](@cite vangenuchten1980):
 \\qquad m = 1 - 1/n.
 ```
 
-`α` (m⁻¹) and `n` (–) are the standard Van Genuchten shape parameters.
+`α` (m⁻¹) and `n` (–) are the standard van Genuchten shape parameters.
 """
 struct VanGenuchtenRetention{FT}
     α :: FT
@@ -34,12 +35,14 @@ VanGenuchtenRetention(FT::Type = Oceananigans.defaults.FloatType; α, n) =
 
 @inline function pressure_head(r::VanGenuchtenRetention, 𝒮)
     FT = typeof(𝒮)
-    m = van_genuchten_m(r.n)
+    α = convert(FT, r.α)
+    n = convert(FT, r.n)
+    m = van_genuchten_m(n)
     # Clamp 𝒮 strictly inside (0, 1] to avoid singularities at endpoints.
     𝒮c = clamp(𝒮, eps(FT), one(FT))
     return ifelse(𝒮c >= one(FT),
                   zero(FT),
-                  -(𝒮c^(-1/m) - one(FT))^(1/r.n) / r.α)
+                  -(𝒮c^(-1/m) - one(FT))^(1/n) / α)
 end
 
 Base.summary(r::VanGenuchtenRetention) =
@@ -72,11 +75,14 @@ VanGenuchtenConductivity(FT::Type = Oceananigans.defaults.FloatType;
 
 @inline function hydraulic_conductivity(c::VanGenuchtenConductivity, 𝒮)
     FT = typeof(𝒮)
-    m = van_genuchten_m(c.n)
+    Ksat = convert(FT, c.K_saturated)
+    n = convert(FT, c.n)
+    ℓ = convert(FT, c.ℓ)
+    m = van_genuchten_m(n)
     𝒮c = clamp(𝒮, zero(FT), one(FT))
     # K → K_sat as 𝒮 → 1.
     inner = one(FT) - (one(FT) - 𝒮c^(1/m))^m
-    return c.K_saturated * 𝒮c^c.ℓ * inner^2
+    return Ksat * 𝒮c^ℓ * inner^2
 end
 
 Base.summary(c::VanGenuchtenConductivity) =

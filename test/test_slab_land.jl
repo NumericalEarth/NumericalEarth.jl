@@ -284,7 +284,7 @@ end
                 NumericalEarth.Lands._assemble_slab_land_fluxes!,
                 P, E, nothing, Es, nothing, interface_fluxes, Jʳⁿ)
 
-        @test isapprox(CUDA.@allowscalar(Es[1, 1, 1]), -3; atol=1e-12)
+        @test isapprox(only(Array(interior(Es))), -3; atol=1e-12)
     end
 end
 
@@ -336,9 +336,9 @@ end
         # `surface_energy_flux` is positive upward, so the emitted longwave radiative
         # cooling term *raises* it (more energy leaving the slab) when land properties
         # are available.
-        Es_land_no_props = CUDA.@allowscalar(model_no_land.land.fluxes.surface_energy_flux[1, 1, 1])
-        Es_land_with_props = CUDA.@allowscalar(model_with_land.land.fluxes.surface_energy_flux[1, 1, 1])
-        @test Es_land_with_props > Es_land_no_props
+        surface_energy_without_properties = only(Array(interior(model_no_land.land.fluxes.surface_energy_flux)))
+        surface_energy_with_properties = only(Array(interior(model_with_land.land.fluxes.surface_energy_flux)))
+        @test surface_energy_with_properties > surface_energy_without_properties
     end
 end
 

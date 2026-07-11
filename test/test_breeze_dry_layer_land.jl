@@ -15,7 +15,7 @@ NumericalEarthBreezeExt = Base.get_extension(NumericalEarth, :NumericalEarthBree
 # Tiny coupled Breeze + variably saturated SlabLand for CI. Verifies the
 # end-to-end wiring (interface ↔ hydrology ↔ energy), then runs short enough
 # to keep CI under a few seconds.
-function build_coupled_test_model(arch; M_init, T_init, with_radiation = false)
+function build_coupled_test_model(arch; M₀, T₀, with_radiation = false)
     grid = RectilinearGrid(arch,
                            size = (8, 8), halo = (5, 5),
                            x = (-1kilometer, 1kilometer),
@@ -44,17 +44,16 @@ function build_coupled_test_model(arch; M_init, T_init, with_radiation = false)
         dry_heat_capacity = 1e6,
         liquid_heat_capacity = 4186,
         reference_temperature = 273.15,
-        deep_temperature = T_init,
+        deep_temperature = T₀,
         deep_time_scale = 12hours,
         advect_deep_liquid_energy = true,
         advect_surface_liquid_energy = false)
     land = SlabLand(land_grid; hydrology, energy)
-    set!(land; T = T_init, M = M_init)
+    set!(land; T = T₀, M = M₀)
 
-    # Default `BulkTemperature()` on the temperature side: Tⁱⁿ = Tˡᵃ.
-    # (Land-side `SkinTemperature` is deferred — the PR plan §13 lists the
-    # alternative thermal-conductance models.) The χ-interpolation in the
-    # humidity formulation collapses gracefully: Tᵉ = Tˡᵃ when Tⁱⁿ = Tˡᵃ.
+    # Default `BulkTemperature()` on the temperature side: Tⁱⁿ = Tˡᵃ. The
+    # χ-interpolation in the humidity formulation collapses gracefully:
+    # Tᵉ = Tˡᵃ when Tⁱⁿ = Tˡᵃ.
     al = atmosphere_land_interface(land_grid, atmosphere, land;
         specific_humidity = DryLayerHumidity(;
             dry_layer_depth = StorageBasedDryLayerDepth(
@@ -75,8 +74,7 @@ function build_coupled_test_model(arch; M_init, T_init, with_radiation = false)
         radiation = PrescribedRadiation(land_grid; ocean_surface = nothing,
                                         sea_ice_surface = nothing,
                                         land_surface = SurfaceRadiationProperties(0.2, 0.95))
-        parent(radiation.downwelling_shortwave) .= 600  # W m⁻²
-        parent(radiation.downwelling_longwave)  .= 350  # W m⁻²
+        set!(radiation; downwelling_shortwave = 600, downwelling_longwave = 350)  # W m⁻²
     end
 
     return AtmosphereLandModel(atmosphere, land; atmosphere_land_interface = al, radiation)
@@ -87,7 +85,7 @@ end
         A = typeof(arch)
 
         @testset "Coupled construction and time stepping on $A" begin
-            model = build_coupled_test_model(arch; M_init = 200.0, T_init = 295.0)
+            model = build_coupled_test_model(arch; M₀ = 200.0, T₀ = 295.0)
 
             @test model isa EarthSystemModel
             @test model.atmosphere isa Simulation
@@ -96,8 +94,8 @@ end
             @test model.land.hydrology isa VariablySaturatedHydrology
             @test model.land.energy isa WaterCoupledEnergy
 
-            al_iface = model.interfaces.atmosphere_land_interface
-            @test !isnothing(al_iface)
+            interface = model.interfaces.atmosphere_land_interface
+            @test !isnothing(interface)
 
             simulation = Simulation(model; Δt = 0.5, stop_iteration = 10)
             run!(simulation)
@@ -107,11 +105,11 @@ end
 
             # End-to-end: turbulent fluxes are nonzero, no NaNs anywhere.
             land_fluxes = model.land.fluxes
-            T_after = Array(interior(model.land.temperature))
-            M_after = Array(interior(model.land.water_storage))
-            Jv      = Array(interior(land_fluxes.vapor_flux))
-            @test !any(isnan, T_after)
-            @test !any(isnan, M_after)
+            T₁ = Array(interior(model.land.temperature))
+            M₁ = Array(interior(model.land.water_storage))
+            Jv = Array(interior(land_fluxes.vapor_flux))
+            @test !any(isnan, T₁)
+            @test !any(isnan, M₁)
             @test !any(isnan, Jv)
             # Atmosphere is initialized warm and unsaturated, so we expect
             # evaporation upward: Jᵛ ≥ 0 everywhere.
@@ -120,47 +118,48 @@ end
             @test maximum(Jv) > 0
         end
 
-        @testset "Drydown reduces M and saturates skin on $A" begin
-            model = build_coupled_test_model(arch; M_init = 200.0, T_init = 295.0)
+        @testset "Drydown reduces M on $A" begin
+            model = build_coupled_test_model(arch; M₀ = 200.0, T₀ = 295.0)
 
-            M0 = Array(interior(model.land.water_storage))
+            M₀ = Array(interior(model.land.water_storage))
             simulation = Simulation(model; Δt = 0.5, stop_iteration = 100)
             run!(simulation)
-            M1 = Array(interior(model.land.water_storage))
+            M₁ = Array(interior(model.land.water_storage))
 
             # Even with a tiny number of steps, dry-down should drop M.
-            @test all(M1 .<= M0)
-            @test mean(M1) < mean(M0)
+            @test all(M₁ .<= M₀)
+            @test mean(M₁) < mean(M₀)
         end
 
         @testset "Radiation adds to surface_energy_flux, not overwritten, on $A" begin
-            # Regression guard for the radiation→land coupling (issue #326): the
-            # radiative flux must be *added* to the turbulent `surface_energy_flux`
-            # that `WaterCoupledEnergy` reads — not overwrite it, and not be
+            # Regression guard for the radiation→land coupling: the radiative
+            # flux must be *added* to the turbulent `surface_energy_flux` that
+            # `WaterCoupledEnergy` reads — not overwrite it, and not be
             # overwritten by the turbulent assembly. Covers the call ordering in
             # `time_step_earth_system_model.jl` and the accumulator/sign choice in
             # `apply_air_land_radiative_fluxes.jl`.
-            m_rad = build_coupled_test_model(arch; M_init = 200.0, T_init = 295.0, with_radiation = true)
-            @test haskey(m_rad.radiation.interface_fluxes, :land)
-            update_state!(m_rad)
-            Es_rad = Array(interior(m_rad.land.fluxes.surface_energy_flux))
+            model_with_radiation = build_coupled_test_model(arch; M₀ = 200.0, T₀ = 295.0, with_radiation = true)
+            @test haskey(model_with_radiation.radiation.interface_fluxes, :land)
+            update_state!(model_with_radiation)
+            surface_energy_with_radiation = Array(interior(model_with_radiation.land.fluxes.surface_energy_flux))
 
             # Net radiative flux into the surface, reconstructed from the kernel's
             # own stored diagnostics (downwelling stored negative, upwelling positive).
-            rf = m_rad.radiation.interface_fluxes.land
-            ΣQ_rad = Array(interior(rf.downwelling_longwave)) .+
-                     Array(interior(rf.downwelling_shortwave)) .-
-                     Array(interior(rf.upwelling_longwave))
+            rf = model_with_radiation.radiation.interface_fluxes.land
+            ΣQʳᵃᵈ = Array(interior(rf.downwelling_longwave)) .+
+                    Array(interior(rf.downwelling_shortwave)) .-
+                    Array(interior(rf.upwelling_longwave))
 
-            m_nor = build_coupled_test_model(arch; M_init = 200.0, T_init = 295.0, with_radiation = false)
-            update_state!(m_nor)
-            Es_nor = Array(interior(m_nor.land.fluxes.surface_energy_flux))
+            model_without_radiation = build_coupled_test_model(arch; M₀ = 200.0, T₀ = 295.0, with_radiation = false)
+            update_state!(model_without_radiation)
+            surface_energy_without_radiation = Array(interior(model_without_radiation.land.fluxes.surface_energy_flux))
 
-            @test maximum(abs, ΣQ_rad) > 0   # radiation contributes a nonzero flux
-            @test Es_rad != Es_nor           # ... which actually changed Es (not dropped)
+            @test maximum(abs, ΣQʳᵃᵈ) > 0   # radiation contributes a nonzero flux
+            # ... which actually changed the surface energy flux (not dropped):
+            @test surface_energy_with_radiation != surface_energy_without_radiation
             # `surface_energy_flux` is positive-upward, so net-downward radiation
-            # enters as −ΣQ_rad, added on top of the turbulent flux:
-            @test Es_rad ≈ Es_nor .- ΣQ_rad
+            # enters as −ΣQʳᵃᵈ, added on top of the turbulent flux:
+            @test surface_energy_with_radiation ≈ surface_energy_without_radiation .- ΣQʳᵃᵈ
         end
     end
 end

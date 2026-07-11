@@ -93,7 +93,7 @@ function NumericalEarth.EarthSystemModels.interpolate_state!(exchanger, exchange
     # Near-surface density (to convert moisture density ρqᵛ → specific humidity) and
     # surface pressure, via dynamics-generic accessors so coupling works for *both*
     # anelastic atmospheres (reference-state density) and compressible terrain-following
-    # atmospheres (prognostic density) — e.g. the Norway case. Reaching into
+    # atmospheres (prognostic density). Reaching into
     # `dynamics.reference_state` directly is anelastic-only (it is `nothing` for
     # `CompressibleDynamics`).
     ρ₀ = dynamics_density(atmosphere.dynamics)

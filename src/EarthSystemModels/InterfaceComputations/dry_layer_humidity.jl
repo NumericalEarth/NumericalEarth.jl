@@ -17,7 +17,7 @@
 #####
 ##### This closure is that surface representation, written as a humidity
 ##### boundary condition in the spirit of Ye & Pielke (1993): the
-##### atmosphere-facing humidity `qⁱⁿ` is solved (by the existing
+##### atmosphere-facing humidity `qⁱⁿ` is solved (by the
 ##### `compute_interface_state` fixed point) from the balance between the
 ##### dry-layer Fick flux and the atmospheric turbulent flux,
 #####
@@ -56,14 +56,15 @@ using Thermodynamics: Thermodynamics as AtmosphericThermodynamics
 #####
 
 """
-    StorageBasedDryLayerDepth(maximum_dry_layer_depth, dry_layer_onset_saturation,
-                                      dry_layer_exponent)
+    StorageBasedDryLayerDepth(FT = Oceananigans.defaults.FloatType;
+                              maximum_dry_layer_depth,
+                              dry_layer_onset_saturation,
+                              dry_layer_exponent = 2)
 
 Diagnostic dry-layer depth `δᵛ` as a function of land saturation `𝒮`:
 
 ```math
-\\delta^v(\\mathcal S) = \\delta^v_{max}
-\\left[1 - \\min\\!\\left(\\frac{\\mathcal S}{\\mathcal S^c},\\ 1\\right)\\right]^\\eta.
+δᵛ(𝒮) = δᵛ_{max} \\left[1 - \\min(𝒮 / 𝒮ᶜ, 1)\\right]^η
 ```
 
 `δᵛ = 0` when `𝒮 ≥ 𝒮ᶜ` (wet branch), growing toward `δᵛ_max` as the slab dries.
@@ -129,9 +130,11 @@ Base.summary(::ConstantTortuosity) = "ConstantTortuosity"
 Base.summary(::PowerLawTortuosity) = "PowerLawTortuosity"
 
 """
-    DryLayerVaporPistonVelocity(minimum_dry_layer_depth, molecular_diffusivity;
-                                tortuosity = ConstantTortuosity(),
-                                wet_transition_width = 5 * minimum_dry_layer_depth)
+    DryLayerVaporPistonVelocity(FT = Oceananigans.defaults.FloatType;
+                                minimum_dry_layer_depth,
+                                molecular_diffusivity,
+                                wet_transition_width = 5 * minimum_dry_layer_depth,
+                                tortuosity = ConstantTortuosity())
 
 Parameters of the dry-layer vapor piston velocity `wᵈ = Dᵛ_eff / max(δᵛ, δᵛ_min)`,
 the reciprocal of the dry-surface-layer soil resistance `r_soil = δᵛ/Dᵛ_eff` of
@@ -146,7 +149,7 @@ dispatched on by `effective_vapor_diffusivity`. The piston velocity feeds the
 humidity transitions to the dry-layer series solution: the two are combined with
 a logistic weight in `δᵛ` centered at `δᵛ_min + wet_transition_width/2`, so the
 transition is infinitely differentiable (see [Kavetski and Kuczera (2007)](@cite kavetski2007smoothing))
-and ≈99 % complete across `δᵛ ∈ [δᵛ_min, δᵛ_min + wet_transition_width]`. 
+and ≈99 % complete across `δᵛ ∈ [δᵛ_min, δᵛ_min + wet_transition_width]`.
 Pass `0` to recover a sharp switch at `δᵛ = δᵛ_min`.
 """
 struct DryLayerVaporPistonVelocity{FT, T}
@@ -177,11 +180,12 @@ Base.summary(v::DryLayerVaporPistonVelocity) =
 #####
 
 """
-    DryLayerHumidity(phase = AtmosphericThermodynamics.Liquid();
-                             dry_layer_depth,
-                             vapor_exchange,
-                             thermal_exchange_depth,
-                             porosity)
+    DryLayerHumidity(FT = Oceananigans.defaults.FloatType,
+                     phase = AtmosphericThermodynamics.Liquid();
+                     dry_layer_depth,
+                     vapor_exchange,
+                     thermal_exchange_depth,
+                     porosity)
 
 Surface specific-humidity formulation for the *dry-layer* model:
 `qⁱⁿ` is solved from a vapor-flux balance between a Fick flux through an
@@ -189,9 +193,9 @@ unresolved dry surface layer and the atmospheric vapor flux, following
 [Ye and Pielke (1993)](@cite yepielke1993) with the dry-layer (DSL)
 resistance of [Yamanaka et al. (1997)](@cite yamanaka1997surface) and
 [Swenson and Lawrence (2014)](@cite swenson2014dry). The
-formulation plugs into the existing `compute_interface_state` solver exactly
-where [`SkinHumidity`](@ref) does, and reduces to a wet-surface
-saturated-skin BC when the slab is wet enough (`𝒮 ≥ 𝒮ᶜ`).
+formulation plugs into the `compute_interface_state` solver exactly where
+[`SkinHumidity`](@ref) does, and reduces to a saturated-skin boundary
+condition when the slab is wet enough (`𝒮 ≥ 𝒮ᶜ`).
 
 * `dry_layer_depth` — depth diagnostic, e.g.
   [`StorageBasedDryLayerDepth`](@ref).
@@ -217,15 +221,16 @@ struct DryLayerHumidity{EFD, VEX, FT, Φ}
     phase                  :: Φ
 end
 
-DryLayerHumidity(phase = AtmosphericThermodynamics.Liquid();
+DryLayerHumidity(FT::Type = Oceananigans.defaults.FloatType,
+                 phase = AtmosphericThermodynamics.Liquid();
                  dry_layer_depth,
                  vapor_exchange,
                  thermal_exchange_depth,
                  porosity) =
     DryLayerHumidity(dry_layer_depth,
                      vapor_exchange,
-                     convert(Oceananigans.defaults.FloatType, thermal_exchange_depth),
-                     convert(Oceananigans.defaults.FloatType, porosity),
+                     convert(FT, thermal_exchange_depth),
+                     convert(FT, porosity),
                      phase)
 
 Base.summary(q::DryLayerHumidity{EFD, VEX, FT, Φ}) where {EFD, VEX, FT, Φ} =
