@@ -133,7 +133,8 @@ function OpenLandMap.read_cog_window(source, bbox::BoundingBox)
         nodata = ArchGDAL.getnodatavalue(band)
 
         raw = ArchGDAL.read(ds, 1, xoff, yoff, xsize, ysize)  # (lon, lat), north-first
-        # Cell centers: shift the pixel-corner origin x₀ by half a pixel (+0.5·Δ).
+        # Pixel centers: x₀ is the corner of pixel 0, so the 0-based column
+        # (xoff + i - 1) plus half a pixel (+0.5) gives the center: xoff + i - 0.5.
         longitude = [x0 + (xoff + i - 0.5) * dx for i in 1:xsize]
         # COGs store rows north-first (Δφ < 0); reverse latitude and data so both
         # come out ascending (south-to-north), per CF convention.
