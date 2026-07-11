@@ -354,7 +354,7 @@ end
     return Gᵉ, qᵉ, σ, qⁱⁿ⁺
 end
 
-@inline function compute_interface_humidity(q::DryLayerHumidity, Tₛ, Ψₛ, Ψₐ, Ψᵢ, ℙₐ)
+@inline function compute_interface_humidity(q::DryLayerHumidity, Tₛ, Ψₛ, Ψₐ, Ψᵢ, Ψᵣ, ℙₐ)
     FT = eltype(Ψₛ)
     Gᵉ, qᵉ, σ, qⁱⁿ⁺ = dry_layer_terms(q, Tₛ, Ψₛ, Ψₐ, ℙₐ)
 

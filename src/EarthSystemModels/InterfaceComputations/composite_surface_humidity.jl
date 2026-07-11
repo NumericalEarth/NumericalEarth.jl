@@ -70,11 +70,11 @@ Base.show(io::IO, q::CompositeSurfaceHumidity) = print(io, summary(q))
 @inline interface_energy_state(i, j, grid, ::CompositeSurfaceHumidity, land_state) =
     (temperature = land_field_value(land_state.T, i, j),)
 
-@inline function compute_interface_humidity(q::CompositeSurfaceHumidity, Tₛ, Ψₛ, Ψₐ, Ψᵢ, ℙₐ)
+@inline function compute_interface_humidity(q::CompositeSurfaceHumidity, Tₛ, Ψₛ, Ψₐ, Ψᵢ, Ψᵣ, ℙₐ)
     FT = eltype(Ψₛ)
 
-    Gᵉ, qᵉ, σ, q_wet = dry_layer_terms(q.soil, Tₛ, Ψₛ, Ψₐ, ℙₐ)   # soil branch (+ wet-blend)
-    g_c, q_leaf      = canopy_conductance_terms(q.canopy, Tₛ, Ψₛ, Ψₐ, ℙₐ)  # canopy branch
+    Gᵉ, qᵉ, σ, q_wet = dry_layer_terms(q.soil, Tₛ, Ψₛ, Ψₐ, ℙₐ)          # soil branch (+ wet-blend)
+    g_c, q_leaf      = canopy_conductance_terms(q.canopy, Tₛ, Ψₛ, Ψₐ, Ψᵣ, ℙₐ)  # canopy branch
 
     qˢ⁻ = Ψₛ.specific_humidity
     qᵃᵗ = Ψₐ.q
@@ -87,4 +87,26 @@ Base.show(io::IO, q::CompositeSurfaceHumidity) = print(io, summary(q))
     # Wet-soil limit (σ → 0): the saturated soil skin pins the surface to qᵛ⁺(Tⁱⁿ),
     # so that with no canopy this reproduces `DryLayerHumidity` bit-for-bit.
     return convert(FT, q_wet + σ * (qˢ_dry - q_wet))
+end
+
+"""
+    evaporation_partition(q::CompositeSurfaceHumidity, qˢ, Tₛ, Ψₛ, Ψₐ, Ψᵣ, ℙₐ)
+
+Split the total surface vapor flux of a vegetated soil cell into its bare-soil
+evaporation and canopy transpiration (mass flux, positive upward), given the
+solved surface humidity `qˢ`. The soil branch draws saturated air `qᵉ` through the
+dry-layer conductance `Gᵉ(𝒮)`, the canopy branch draws leaf-saturated air `qᵛ⁺`
+through `g_c = LAI · gₛ`; both drain to the common surface node `qˢ`,
+
+    E_soil = Gᵉ (qᵉ − qˢ),   T = g_c (qᵛ⁺ − qˢ),
+
+and their sum equals the total evaporation `E = Gᵃ (qˢ − qᵃᵗ)` where the soil is
+dry (`σ = 1`). Returns `(; soil_evaporation, transpiration)`.
+"""
+@inline function evaporation_partition(q::CompositeSurfaceHumidity, qˢ, Tₛ, Ψₛ, Ψₐ, Ψᵣ, ℙₐ)
+    Gᵉ, qᵉ, σ, q_wet = dry_layer_terms(q.soil, Tₛ, Ψₛ, Ψₐ, ℙₐ)
+    g_c, q_leaf      = canopy_conductance_terms(q.canopy, Tₛ, Ψₛ, Ψₐ, Ψᵣ, ℙₐ)
+    soil_evaporation = Gᵉ * (qᵉ - qˢ)
+    transpiration    = g_c * (q_leaf - qˢ)
+    return (; soil_evaporation, transpiration)
 end

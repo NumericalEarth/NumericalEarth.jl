@@ -739,13 +739,13 @@ end
 # Diagnostic formulations (`ImpureSaturationSpecificHumidity`, `BulkHumidity`):
 # qˢ is an explicit function of the interface temperature `Tₛ` and the surface
 # scalar (salinity / saturation `𝒮`) from `humidity_surface_scalar`. The interior
-# state `Ψᵢ` is ignored.
-@inline compute_interface_humidity(q_formulation, Tₛ, Ψₛ, Ψₐ, Ψᵢ, ℙₐ) =
+# state `Ψᵢ` and radiation state `Ψᵣ` are ignored.
+@inline compute_interface_humidity(q_formulation, Tₛ, Ψₛ, Ψₐ, Ψᵢ, Ψᵣ, ℙₐ) =
     surface_specific_humidity(q_formulation, ℙₐ.thermodynamics_parameters, Ψₐ.p, Tₛ, humidity_surface_scalar(Ψₛ), Ψₐ.q)
 
 # `FractionalHumidity`: qˢ = β · qᵛ⁺(Tₛ) at the skin temperature, with the
 # evaporation efficiency β derived from the materialized hydrology state.
-@inline function compute_interface_humidity(q::FractionalHumidity, Tₛ, Ψₛ, Ψₐ, Ψᵢ, ℙₐ)
+@inline function compute_interface_humidity(q::FractionalHumidity, Tₛ, Ψₛ, Ψₐ, Ψᵢ, Ψᵣ, ℙₐ)
     ℂᵃᵗ = ℙₐ.thermodynamics_parameters
     FT  = eltype(Ψₛ)
     β   = evaporation_efficiency(q.efficiency, Ψₛ.hydrology)
@@ -779,7 +779,7 @@ end
 # temperature — the same deep endpoint the conductive heat flux uses. `Tₛ` is
 # therefore unused here (`qˢ` is decoupled from the skin temperature, as a dry
 # skin implies).
-@inline function compute_interface_humidity(q::SkinHumidity, Tₛ, Ψₛ, Ψₐ, Ψᵢ, ℙₐ)
+@inline function compute_interface_humidity(q::SkinHumidity, Tₛ, Ψₛ, Ψₐ, Ψᵢ, Ψᵣ, ℙₐ)
     ℂᵃᵗ = ℙₐ.thermodynamics_parameters
     FT  = eltype(Ψₛ)
     pᵃᵗ = Ψₐ.p

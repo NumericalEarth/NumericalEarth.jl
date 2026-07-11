@@ -96,6 +96,7 @@ and interior properties `ℙₛ`, `ℙₐ`, and `ℙᵢ`.
                                     approximate_interface_state,
                                     atmosphere_state,
                                     interior_state,
+                                    radiation_state,
                                     atmosphere_properties)
 
     # Compute the specific humidity increment
