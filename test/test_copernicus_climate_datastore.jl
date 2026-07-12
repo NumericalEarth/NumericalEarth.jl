@@ -59,6 +59,16 @@ const CDSExt = Base.get_extension(NumericalEarth, :NumericalEarthCopernicusClima
             paths = Downloads.download(metadata; skip_existing=true)
             @test length(paths) == length(metadata)
             @test all(isfile, paths)
+
+            # MetadataSet: the multi-variable batched path sees every file present
+            # and skips the request too
+            mset = MetadataSet(:temperature, :eastward_velocity; dataset, dates, dir)
+            for name in keys(mset), m in mset[name]
+                touch(joinpath(dir, NumericalEarth.DataWrangling.metadata_filename(m)))
+            end
+            paths = Downloads.download(mset; skip_existing=true)
+            @test length(paths) == 2length(dates)
+            @test all(isfile, paths)
         end
     end
 

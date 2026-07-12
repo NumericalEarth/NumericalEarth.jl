@@ -16,11 +16,13 @@ using NumericalEarth.DataWrangling.ERA5: ERA5Dataset, ERA5Metadata, ERA5Metadatu
                                          ERA5PressureLevelsDataset,
                                          ERA5PressureMetadata, ERA5PressureMetadatum,
                                          ERA5PL_dataset_variable_names, ERA5PL_netcdf_variable_names,
-                                         ERA5_TIME_DIMNAMES, coord_vars, nc_varnames,
+                                         ERA5_TIME_DIMNAMES, ERA5_COORD_VARS,
+                                         coord_vars, nc_varnames,
                                          group_by_calendar_month, max_dts_per_cds_request,
                                          batch_datetimes_for_cds, is_zip, foreach_nc,
                                          split_era5_nc, split_era5_nc_multistep,
-                                         split_era5_nc_by_datetime
+                                         split_era5_nc_by_datetime,
+                                         ncvar_copy!, ncvar_copy_tslice!
 using NumericalEarth.DataWrangling.GloFAS: GloFASDataset, GloFASMetadata, GloFASMetadatum,
                                            GloFAS_netcdf_variable_names
 using NumericalEarth.DataWrangling.CopernicusLandAlbedo: CopernicusAlbedo,
@@ -245,42 +247,36 @@ end
 #####
 
 """
-    Downloads.download(names::Vector{Symbol}, metadata::ERA5PressureMetadata; kwargs...)
+    Downloads.download(names::Vector{Symbol}, metadata::ERA5Metadata; kwargs...)
 
-Download multiple ERA5 pressure-level variables for each date in `metadata`.
+Download multiple ERA5 variables for every date in `metadata`, bundling variables
+and datetimes into month-batched CDS requests.
 """
-function Downloads.download(names::Vector{Symbol}, metadata::ERA5PressureMetadata; kwargs...)
-    paths = String[]
-    for metadatum in metadata
-        append!(paths, Downloads.download(names, metadatum; kwargs...))
-    end
-    return paths
+function Downloads.download(names::Vector{Symbol}, metadata::ERA5Metadata; kwargs...)
+    dates = metadata.dates isa AbstractVector ? metadata.dates : [metadata.dates]
+    return Downloads.download(names, metadata.dataset, dates;
+                              region = metadata.region,
+                              dir = metadata.dir,
+                              kwargs...)
 end
 
 """
-    Downloads.download(mset::MetadataSet{<:ERA5PressureLevelsDataset}; kwargs...)
+    Downloads.download(mset::MetadataSet{<:ERA5Dataset}; kwargs...)
 
-Route a `MetadataSet` of ERA5 pressure-level variables through the existing
-multi-variable batched CDS path, instead of falling back to per-variable
-requests via the default `Downloads.download(::MetadataSet)`. Each calendar day's
-variables are bundled into one CDS API request.
+Route a `MetadataSet` of ERA5 variables through the multi-variable batched CDS
+path, instead of falling back to per-variable requests via the default
+`Downloads.download(::MetadataSet)`: each calendar-month batch of variables ×
+datetimes is bundled into one CDS API request (capped by the CDS cost limit).
 """
-function Downloads.download(mset::MetadataSet{<:ERA5PressureLevelsDataset}; kwargs...)
+function Downloads.download(mset::MetadataSet{<:ERA5Dataset}; kwargs...)
     names = collect(getfield(mset, :names))
+    dates = getfield(mset, :dates)
+    dates = dates isa AbstractVector ? dates : [dates]
 
-    # Build a representative ERA5PressureMetadata at the shared scope. The
-    # batched method only consults its `dataset`, `dates`, `region`, `dir` —
-    # the per-variable filename(s) are recomputed internally per (name, date).
-    representative = NumericalEarth.DataWrangling.Metadata(
-        first(names),
-        getfield(mset, :dataset),
-        getfield(mset, :dates),
-        getfield(mset, :region),
-        getfield(mset, :dir),
-        nothing,
-    )
-
-    return Downloads.download(names, representative; kwargs...)
+    return Downloads.download(names, getfield(mset, :dataset), dates;
+                              region = getfield(mset, :region),
+                              dir = getfield(mset, :dir),
+                              kwargs...)
 end
 
 """
