@@ -142,6 +142,25 @@ function foreach_nc(f, download_path, cleanup_dir)
 end
 
 #####
+##### Retry wrapper — the CDS/EWDS gateway intermittently answers valid requests
+##### with a transient error (e.g. 502 Bad Gateway); retry with backoff instead of
+##### failing on the first hiccup. Every `CDSAPI.retrieve` call site below goes
+##### through this one wrapper.
+#####
+
+function retrieve_with_retries(product, request, path; max_retries = 3)
+    for attempt in 1:max_retries
+        try
+            return CDSAPI.retrieve(product, request, path)
+        catch e
+            attempt < max_retries || rethrow(e)
+            @warn "CDS retrieve attempt $attempt/$max_retries failed for $product; retrying..." exception=(e, catch_backtrace())
+            sleep(5.0 * attempt)
+        end
+    end
+end
+
+#####
 ##### Single-date download
 #####
 
@@ -171,7 +190,7 @@ function Downloads.download(meta::ERA5Metadatum; skip_existing=true)
 
     request = build_era5_request(meta.name, meta.dataset, meta.dates; region=meta.region)
 
-    @root CDSAPI.retrieve(cds_product(meta.dataset), request, output_path)
+    @root retrieve_with_retries(cds_product(meta.dataset), request, output_path)
 
     return output_path
 end
@@ -318,7 +337,7 @@ function download_era5_month(name, dataset, dates;
     time_dimnames = Set(["time", "valid_time"])
 
     @root begin
-        CDSAPI.retrieve(cds_product(dataset), plan.request, plan.tmp_path)
+        retrieve_with_retries(cds_product(dataset), plan.request, plan.tmp_path)
         foreach_nc(plan.tmp_path, dir) do nc_path
             split_era5_nc_multistep(nc_path, plan.nc_triples, coord_vars(dataset), time_dimnames)
         end
@@ -412,7 +431,7 @@ function Downloads.download(names::Vector{Symbol}, meta::ERA5PressureMetadatum; 
     nc_name_path_pairs = [(nc_varnames(meta.dataset)[name], path) for (name, path) in pending]
 
     @root begin
-        CDSAPI.retrieve(cds_product(meta.dataset), request, tmp_path)
+        retrieve_with_retries(cds_product(meta.dataset), request, tmp_path)
         foreach_nc(tmp_path, meta.dir) do nc_path
             split_era5_nc(nc_path, nc_name_path_pairs, coord_vars(meta.dataset))
         end
@@ -535,7 +554,7 @@ function download_era5_multivar_month(names, dataset, dates;
     time_dimnames = Set(["time", "valid_time"])
 
     @root begin
-        CDSAPI.retrieve(cds_product(dataset), plan.request, plan.tmp_path)
+        retrieve_with_retries(cds_product(dataset), plan.request, plan.tmp_path)
         foreach_nc(plan.tmp_path, dir) do nc_path
             split_era5_nc_multistep(nc_path, plan.nc_triples, coord_vars(dataset), time_dimnames)
         end
@@ -755,7 +774,7 @@ function glofas_retrieve(product, request, path)
     isempty(key) || (ENV["CDSAPI_KEY"] = key)
 
     try
-        return CDSAPI.retrieve(product, request, path)
+        return retrieve_with_retries(product, request, path)
     finally
         restore_env!("CDSAPI_URL", saved_url)
         isempty(key) || restore_env!("CDSAPI_KEY", saved_key)
@@ -997,7 +1016,7 @@ function Downloads.download(metadata::AlbedoMetadata; skip_existing=true, cleanu
         tmp_download = joinpath(dir, "_tmp_albedo_$(key[1])$(lpad(key[2], 2, '0')).download")
         extraction_dir = mktempdir(dir)
         try
-            CDSAPI.retrieve(ALBEDO_CDS_PRODUCT, request, tmp_download)
+            retrieve_with_retries(ALBEDO_CDS_PRODUCT, request, tmp_download)
             nc_files = extract_albedo_files(tmp_download, extraction_dir)
             repack_albedo_batch(nc_files, batch, path_of, destination_names, expected_size)
         finally
