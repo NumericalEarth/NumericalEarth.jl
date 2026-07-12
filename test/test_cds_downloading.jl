@@ -13,6 +13,7 @@ using NumericalEarth.DataWrangling.ERA5: ERA5HourlySingleLevel, ERA5MonthlySingl
 using NumericalEarth.DataWrangling.ERA5: ERA5HourlyPressureLevels, ERA5MonthlyPressureLevels,
                                          ERA5_all_pressure_levels, ERA5PL_dataset_variable_names,
                                          ERA5PL_netcdf_variable_names, pressure_field
+using NumericalEarth.DataWrangling.ERA5: split_era5_nc_by_datetime, ERA5_COORD_VARS, ERA5_TIME_DIMNAMES
 
 # Internal extension module — exposes dispatch helpers and NetCDF utilities
 # that are not part of the public API but worth pinning behavior for.
@@ -666,8 +667,8 @@ end
             @test length(plan.nc_triples) == 2
             # All triples carry the netcdf short name for :temperature on single-level
             @test all(t -> first(t) == "t2m", plan.nc_triples)
-            # tidx values map sorted_dts to 1-based indices
-            @test Set(t[2] for t in plan.nc_triples) == Set([1, 2])
+            # Triples carry the pending datetimes, matched against the file's time coordinate
+            @test Set(t[2] for t in plan.nc_triples) == Set([dt1, dt2])
         end
 
         @testset "partial coverage: pending narrows to missing datetime" begin
@@ -732,7 +733,7 @@ end
             @test length(plan.nc_triples) == 4
             # Pressure-level netcdf short names for the two variables
             @test Set(first.(plan.nc_triples)) == Set(["t", "u"])
-            @test Set(t[2] for t in plan.nc_triples) == Set([1, 2])
+            @test Set(t[2] for t in plan.nc_triples) == Set([dt1, dt2])
         end
 
         @testset "partial coverage: pending narrows variables, request reflects subset" begin
@@ -873,6 +874,58 @@ end
         batches = CDSExt.batch_datetimes_for_cds(scrambled, sl, 1)
         flattened = reduce(vcat, batches)
         @test flattened == sort(dates)
+    end
+end
+
+@testset "ERA5 split_era5_nc_by_datetime" begin
+    # A synthetic multi-step file standing in for a CDS delivery. CDS expands
+    # year/month/day/time into a Cartesian product, so the file deliberately holds
+    # more datetimes than the split requests — matching must go by time value.
+    file_times = [DateTime(2005, 2, 16, 0), DateTime(2005, 2, 16, 6),
+                  DateTime(2005, 2, 16, 12), DateTime(2005, 2, 16, 18)]
+
+    mktempdir() do tmp
+        src_path = joinpath(tmp, "multistep.nc")
+        NCDataset(src_path, "c") do ds
+            defDim(ds, "longitude", 3)
+            defDim(ds, "latitude", 2)
+            defDim(ds, "valid_time", length(file_times))
+            defVar(ds, "longitude", [0.0, 0.25, 0.5], ("longitude",))
+            defVar(ds, "latitude", [40.0, 40.25], ("latitude",))
+            time_var = defVar(ds, "valid_time", Float64, ("valid_time",),
+                              attrib = Dict("units" => "seconds since 1970-01-01"))
+            time_var[:] = file_times
+            t2m = defVar(ds, "t2m", Float32, ("longitude", "latitude", "valid_time"))
+            for i in 1:length(file_times)
+                t2m[:, :, i] .= Float32(i)
+            end
+        end
+
+        @testset "extracts requested datetimes regardless of file position" begin
+            dst_18 = joinpath(tmp, "t2m_18.nc")
+            dst_06 = joinpath(tmp, "t2m_06.nc")
+            triples = [("t2m", DateTime(2005, 2, 16, 18), dst_18),
+                       ("t2m", DateTime(2005, 2, 16, 6),  dst_06)]
+
+            split_era5_nc_by_datetime(src_path, triples, ERA5_COORD_VARS, ERA5_TIME_DIMNAMES)
+
+            NCDataset(dst_18) do ds
+                @test ds.dim["valid_time"] == 1
+                @test ds["valid_time"][1] == DateTime(2005, 2, 16, 18)
+                @test all(ds["t2m"][:, :, 1] .== 4)
+            end
+            NCDataset(dst_06) do ds
+                @test ds["valid_time"][1] == DateTime(2005, 2, 16, 6)
+                @test all(ds["t2m"][:, :, 1] .== 2)
+            end
+        end
+
+        @testset "missing datetime errors loudly" begin
+            dst = joinpath(tmp, "t2m_missing.nc")
+            triples = [("t2m", DateTime(2005, 2, 17, 0), dst)]
+            @test_throws ErrorException split_era5_nc_by_datetime(src_path, triples,
+                                                                  ERA5_COORD_VARS, ERA5_TIME_DIMNAMES)
+        end
     end
 end
 

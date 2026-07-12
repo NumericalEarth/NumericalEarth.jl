@@ -6,8 +6,11 @@ using Downloads: Downloads
 using Dates: Dates
 using Oceananigans.DistributedComputations: @root
 
-using NumericalEarth.DataWrangling: is_three_dimensional, available_variables
-using NumericalEarth.DataWrangling.ERA5: ERA5Metadata, ERA5Metadatum, hPa
+using NumericalEarth.DataWrangling: available_variables, metadata_filename, metadata_path
+using NumericalEarth.DataWrangling.ERA5: ERA5Dataset, ERA5PressureLevelsDataset,
+                                         ERA5Metadata, ERA5Metadatum, hPa,
+                                         batch_datetimes_for_cds, coord_vars, nc_varnames,
+                                         split_era5_nc_by_datetime, ERA5_TIME_DIMNAMES
 
 #####
 ##### era5cli credential bootstrap
@@ -32,29 +35,27 @@ function ensure_era5cli_credentials()
     return nothing
 end
 
-"""
-    Downloads.download(metadata::ERA5Metadata; kwargs...)
-
-Download ERA5 data for each date in the metadata, returning paths to downloaded files.
-"""
-function Downloads.download(metadata::ERA5Metadata; kwargs...)
-    paths = Array{String}(undef, length(metadata))
-    for (m, metadatum) in enumerate(metadata)
-        paths[m] = Downloads.download(metadatum; kwargs...)
-    end
-    return paths
-end
+#####
+##### Batched downloads — same strategy as NumericalEarthCDSAPIExt
+#####
+##### One era5cli invocation (= one CDS request) per variable per calendar-month batch covers
+##### every pending datetime at once; era5cli expands `months`/`days`/`hours` into a Cartesian
+##### product server-side, and the returned multi-step NetCDF is split locally into the
+##### per-datetime files the readers expect. Splitting matches datetimes against the file's own
+##### time coordinate, so the product's over-fetch is harmless.
+#####
 
 """
-    Downloads.download(meta::ERA5Metadatum; skip_existing=true, kwargs...)
+    Downloads.download(metadata::ERA5Metadata; skip_existing=true, cleanup=true, threads=1, kwargs...)
 
-Download ERA5 data for a single date/time using the CopernicusClimateDataStore package.
-
-The download is performed using `era5cli` through the CopernicusClimateDataStore package.
+Download ERA5 data for every date in `metadata` using `era5cli` through the
+CopernicusClimateDataStore package, one CDS request per calendar-month batch,
+returning the paths of the per-datetime files.
 
 # Keyword Arguments
-- `skip_existing`: Skip download if the file already exists (default: `true`).
-- `threads`: Number of download threads (default: `1`).
+- `skip_existing`: Skip datetimes whose files already exist (default: `true`).
+- `cleanup`: Remove the temporary multi-step NetCDF after splitting (default: `true`).
+- `threads`: Number of era5cli download threads (default: `1`).
 - Additional keyword arguments are passed to `CopernicusClimateDataStore.hourly`.
 
 # Environment Setup
@@ -65,94 +66,142 @@ Before downloading, you must:
 
 See https://cds.climate.copernicus.eu/how-to-api for details.
 """
-function Downloads.download(meta::ERA5Metadatum;
+function Downloads.download(metadata::ERA5Metadata;
                             skip_existing = true,
+                            cleanup = true,
                             threads = 1,
                             additional_kw...)
 
-    output_directory = meta.dir
-    output_filename = NumericalEarth.DataWrangling.metadata_filename(meta)
-    output_path = joinpath(output_directory, output_filename)
+    dates = metadata.dates isa AbstractVector ? metadata.dates : [metadata.dates]
+    batches = batch_datetimes_for_cds(dates, metadata.dataset, 1)
 
-    # Skip if file already exists
-    if skip_existing && isfile(output_path)
-        return output_path
+    paths = String[]
+    for batch in batches
+        append!(paths, download_era5cli_month(metadata.name, metadata.dataset, batch;
+                                              region = metadata.region,
+                                              dir = metadata.dir,
+                                              skip_existing, cleanup, threads,
+                                              additional_kw...))
     end
 
-    # Ensure output directory exists
-    mkpath(output_directory)
+    return paths
+end
 
-    # The CDS catalog name is dataset-dependent: `eastward_velocity` is `u_component_of_wind` on
-    # pressure levels but `10m_u_component_of_wind` on single levels. Dispatch on the dataset so a
-    # pressure-level request doesn't silently fetch the surface field (which returned `u10`).
-    variable_name = available_variables(meta.dataset)[meta.name]
+"""
+    Downloads.download(meta::ERA5Metadatum; skip_existing=true, kwargs...)
 
-    # era5cli defaults to the single-levels (surface) product unless `--levels` is given — so a
-    # pressure-level request without levels silently returns a surface field (e.g. `u10` for
-    # `u_component_of_wind`). Pass the dataset's pressure levels for 3-D datasets; disambiguate the
-    # single-level `geopotential`/`topography` (surface geopotential, exists on both) with `:surface`;
-    # ordinary single-level variables keep era5cli's default (`nothing`). `pressure_levels` is stored
-    # in Pa, but the CDS API expects hPa (`[1, …, 1000]`), so convert with `÷ hPa`.
-    levels = if is_three_dimensional(meta)
-        Int.(meta.dataset.pressure_levels) .÷ hPa
-    elseif variable_name == "geopotential"
-        :surface
-    else
-        nothing
-    end
+Download ERA5 data for a single date/time using `era5cli` through the
+CopernicusClimateDataStore package, returning the path of the downloaded file.
+"""
+function Downloads.download(meta::ERA5Metadatum;
+                            skip_existing = true,
+                            cleanup = true,
+                            threads = 1,
+                            additional_kw...)
 
-    # Extract date information
-    date = meta.dates
-    year = Dates.year(date)
-    month = Dates.month(date)
-    day = Dates.day(date)
-    hour = Dates.hour(date)
+    download_era5cli_month(meta.name, meta.dataset, [meta.dates];
+                           region = meta.region,
+                           dir = meta.dir,
+                           skip_existing, cleanup, threads,
+                           additional_kw...)
 
-    # Build area constraint from region
-    area = build_era5_area(meta.region)
+    return metadata_path(meta)
+end
 
-    # Build output prefix (filename without extension)
-    output_prefix = first(splitext(output_filename))
+# era5cli defaults to the single-levels (surface) product unless `--levels` is given — so a
+# pressure-level request without levels silently returns a surface field (e.g. `u10` for
+# `u_component_of_wind`). Pass the dataset's pressure levels for 3-D datasets; disambiguate the
+# single-level `geopotential`/`topography` (surface geopotential, exists on both) with `:surface`;
+# ordinary single-level variables keep era5cli's default (`nothing`). `pressure_levels` is stored
+# in Pa, but the CDS API expects hPa (`[1, …, 1000]`), so convert with `÷ hPa`.
+era5cli_levels(dataset::ERA5PressureLevelsDataset, variable_name) = Int.(dataset.pressure_levels) .÷ hPa
+era5cli_levels(dataset::ERA5Dataset, variable_name) = variable_name == "geopotential" ? :surface : nothing
 
-    # Perform the download using era5cli via CopernicusClimateDataStore
+function download_era5cli_month(name, dataset, dates;
+                                region, dir,
+                                skip_existing = true,
+                                cleanup = true,
+                                threads = 1,
+                                additional_kw...)
+
+    dt_path_pairs = [(dt, joinpath(dir, metadata_filename(dataset, name, dt, region)))
+                     for dt in dates]
+
+    pending = skip_existing ? filter(dt_path -> !isfile(dt_path[2]), dt_path_pairs) : dt_path_pairs
+    isempty(pending) && return map(dt_path -> dt_path[2], dt_path_pairs)
+
+    mkpath(dir)
+
+    variable_name = available_variables(dataset)[name]
+    sorted_dts = sort(unique([dt for (dt, _) in pending]))
+    dt0 = first(sorted_dts)
+    outputprefix = "_tmp_era5cli_$(variable_name)_$(Dates.year(dt0))$(lpad(Dates.month(dt0), 2, '0'))"
+
     @root begin
         ensure_era5cli_credentials()
+
+        # A stale file left by an interrupted run would hide the fresh download from
+        # `hourly`'s before/after directory diff — clear matching leftovers first.
+        for leftover in filter(f -> startswith(f, outputprefix), readdir(dir))
+            rm(joinpath(dir, leftover); force=true)
+        end
+
         downloaded_files = CopernicusClimateDataStore.hourly(;
             variables = variable_name,
-            startyear = year,
-            months = month,
-            days = day,
-            hours = hour,
-            levels = levels,
-            area = area,
+            startyear = Dates.year(dt0),
+            months = unique(Dates.month.(sorted_dts)),
+            days = unique(Dates.day.(sorted_dts)),
+            hours = unique(Dates.hour.(sorted_dts)),
+            levels = era5cli_levels(dataset, variable_name),
+            area = era5cli_request_area(region, dataset, name),
             format = "netcdf",
-            outputprefix = output_prefix,
-            overwrite = !skip_existing,
-            threads = threads,
+            outputprefix,
+            overwrite = true,
+            threads,
             splitmonths = false,
-            directory = output_directory,
-            additional_kw...
-        )
+            directory = dir,
+            additional_kw...)
 
-        # era5cli generates its own filename suffix, so rename to our expected name
-        if !isempty(downloaded_files)
-            downloaded_file = first(downloaded_files)
-            if downloaded_file != output_path && isfile(downloaded_file)
-                mv(downloaded_file, output_path; force=true)
-            end
-        end
+        # One variable, one year, splitmonths=false → era5cli produces exactly one file
+        length(downloaded_files) == 1 ||
+            error("Expected era5cli to deliver one NetCDF for $variable_name; ",
+                  "got $(length(downloaded_files)): $downloaded_files")
+
+        file = first(downloaded_files)
+        nc_triples = [(nc_varnames(dataset)[name], dt, path) for (dt, path) in pending]
+        split_era5_nc_by_datetime(file, nc_triples, coord_vars(dataset), ERA5_TIME_DIMNAMES)
+        cleanup && rm(file; force=true)
     end
 
-    return output_path
+    return map(dt_path -> dt_path[2], dt_path_pairs)
 end
 
 #####
 ##### Area/bounding box utilities
 #####
 
-build_era5_area(::Nothing) = nothing
-
 const BBOX = NumericalEarth.DataWrangling.BoundingBox
+
+era5cli_request_area(::Nothing, dataset, name) = nothing
+
+# The native grid is built by center-bracketing `restrict`, which can reach one cell past a
+# boundary-aligned edge. Fetch two native cells of margin so the downloaded file always covers
+# the grid the data is interpolated onto (cf. `era5_request_area` in NumericalEarthCDSAPIExt);
+# the margin also absorbs era5cli's rounding of area coordinates to two decimals. Over-fetching
+# is harmless: `restrict` selects the exact cells from the larger file.
+function era5cli_request_area(bbox::BBOX, dataset, name)
+    (isnothing(bbox.longitude) || isnothing(bbox.latitude)) && return nothing
+    Nx, Ny, _ = size(dataset, name)
+    Δλ = 360 / Nx
+    Δφ = 180 / Ny
+    lon = bbox.longitude
+    lat = bbox.latitude
+    padded = BBOX(longitude = (lon[1] - 2Δλ, lon[2] + 2Δλ),
+                  latitude  = (max(lat[1] - 2Δφ, -90), min(lat[2] + 2Δφ, 90)))
+    return build_era5_area(padded)
+end
+
+build_era5_area(::Nothing) = nothing
 
 function build_era5_area(bbox::BBOX)
     # ERA5/era5cli uses (lat_max, lon_min, lat_min, lon_max) ordering
