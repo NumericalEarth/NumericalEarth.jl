@@ -25,8 +25,8 @@ using Oceananigans.Architectures: AbstractArchitecture, CPU, architecture,
                                   on_architecture, child_architecture
 using Oceananigans.BoundaryConditions: fill_halo_regions!, FieldBoundaryConditions
 using Oceananigans.DistributedComputations: DistributedComputations, @root
-using Oceananigans.Grids: AbstractGrid, Center, Flat, Bounded,
-                          LatitudeLongitudeGrid, RectilinearGrid
+using Oceananigans.Grids: AbstractGrid, Center, Face, Flat, Bounded,
+                          LatitudeLongitudeGrid, RectilinearGrid, λnodes, φnodes
 using Oceananigans.Fields: Fields, Field, interpolate, interpolate!, interior, set!
 using Oceananigans.Grids: node
 using Oceananigans.OutputReaders: OnDisk, AbstractInMemoryBackend, Cyclical,
@@ -361,6 +361,7 @@ include("IBCSO/IBCSO.jl")
 include("GEBCO/GEBCO.jl")
 include("IBCAO/IBCAO.jl")
 include("CopernicusDEM/CopernicusDEM.jl")
+include("CopernicusLandAlbedo/CopernicusLandAlbedo.jl")
 
 using .ETOPO
 using .ECCO
@@ -376,6 +377,7 @@ using .IBCSO
 using .GEBCO
 using .IBCAO
 using .CopernicusDEM
+using .CopernicusLandAlbedo
 
 function dataset_modules()
     modules = Module[]
