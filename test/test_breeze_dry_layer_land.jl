@@ -24,7 +24,7 @@ function build_coupled_test_model(arch; M₀, T₀, with_radiation = false)
 
     θ₀ = 295.0
     atmosphere = atmosphere_simulation(grid; potential_temperature = θ₀)
-    set!(atmosphere.model, θ = atmosphere.model.dynamics.reference_state.potential_temperature, u = 2)
+    set!(atmosphere.model, θ = atmosphere.model.dynamics.reference_state.surface_potential_temperature, u = 2)
 
     land_grid = RectilinearGrid(arch,
                                 size = grid.Nx,
