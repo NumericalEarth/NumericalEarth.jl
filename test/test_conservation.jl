@@ -2,6 +2,7 @@ include("runtests_setup.jl")
 
 using Oceananigans.Units
 using Oceananigans.Fields: interior
+using Oceananigans.Grids: MutableVerticalDiscretization
 using Oceananigans.Operators: Azᶜᶜᶜ, volume
 using Oceananigans.AbstractOperations: KernelFunctionOperation
 using Oceananigans.TimeSteppers: time_step!
@@ -257,4 +258,82 @@ end
     @test history.h[nᶠ] > history.h[1]   # ice grew during freeze
     @test history.h[end] < history.h[nᶠ] # ice shrank during melt
     @test history.ℵ[nᶠ] ≈ 1.0            # stays fully ice-covered through freeze
+end
+
+@testset "Rain increases the ocean volume and dilutes salinity" begin
+    for arch in test_architectures
+        A = typeof(arch)
+        @info "Testing the freshwater volume flux on a ZStar grid [$A]..."
+
+        Lx = Ly = 1e5
+        grid = RectilinearGrid(arch;
+                               size = (4, 4, 4),
+                               x = (0, Lx), y = (0, Ly),
+                               z = MutableVerticalDiscretization((-10, 0)),
+                               topology = (Periodic, Periodic, Bounded))
+
+        ocean = ocean_simulation(grid;
+                                 momentum_advection = nothing,
+                                 closure = nothing,
+                                 free_surface = SplitExplicitFreeSurface(substeps=30),
+                                 radiative_forcing = nothing,
+                                 bottom_drag_coefficient = 0)
+
+        S₀ = 35.0
+        set!(ocean.model, T=20, S=S₀)
+
+        atmosphere_grid = RectilinearGrid(arch;
+                                          size = (4, 4, 1),
+                                          x = (0, Lx), y = (0, Ly), z = (-1, 0),
+                                          topology = (Periodic, Periodic, Bounded))
+
+        # A quiescent atmosphere (default state, zero winds) with heavy rain, so that
+        # the rainfall dominates the small evaporative flux into the dry atmosphere
+        atmosphere = PrescribedAtmosphere(atmosphere_grid, [0.0])
+        rainfall = 1e-2 # kg m⁻² s⁻¹
+        fill!(parent(atmosphere.precipitation_flux.rain), rainfall)
+
+        coupled_model = OceanSeaIceModel(ocean, nothing; atmosphere, radiation=nothing)
+        update_state!(coupled_model)
+
+        # The net freshwater volume flux assembled at the surface is (rain - evaporation) / ρᵒᶜ
+        ρᵒᶜ = coupled_model.interfaces.ocean_properties.reference_density
+        Jʷ = coupled_model.interfaces.net_fluxes.ocean.η
+        Jᵛ = coupled_model.interfaces.atmosphere_ocean_interface.fluxes.water_vapor
+        evaporation = first(Array(interior(Jᵛ)))
+        @test all(Array(interior(Jʷ)) .≈ (rainfall - evaporation) / ρᵒᶜ)
+
+        S = ocean.model.tracers.S
+        cell_volume = KernelFunctionOperation{Center, Center, Center}(volume, grid, Center(), Center(), Center())
+        ocean_volume() = sum(cell_volume)
+        total_salt() = sum(S * cell_volume)
+
+        V⁻ = ocean_volume()
+        ∫S⁻ = total_salt()
+        freshwater_volume_flux = first(Array(interior(Jʷ)))
+
+        Δt = 2minutes
+        Nsteps = 30
+        for _ in 1:Nsteps
+            time_step!(coupled_model, Δt)
+        end
+
+        V = ocean_volume()
+        ∫S = total_salt()
+        elapsed_time = ocean.model.clock.time
+        expected_volume_change = Lx * Ly * freshwater_volume_flux * elapsed_time
+
+        # Rain increases the ocean volume by the input freshwater volume, up to the ~1%
+        # quadrature bias of the barotropic substepping averaging window...
+        @test V > V⁻
+        @test isapprox(V - V⁻, expected_volume_change, rtol=2e-2)
+
+        # ... carries no salt, so the total salt content is unchanged: the virtual salt
+        # flux must cancel the salt spuriously advected in with the added volume...
+        @test abs(∫S - ∫S⁻) < 1e-3 * S₀ * (V - V⁻)
+
+        # ... and therefore dilutes the mean salinity.
+        @test ∫S / V < S₀
+        @test isapprox(∫S / V, S₀ * V⁻ / V, rtol=1e-5)
+    end
 end
