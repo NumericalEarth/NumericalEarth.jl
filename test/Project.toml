@@ -35,6 +35,7 @@ Zarr = "0a941bbe-ad1d-11e8-39d9-ab76183a1d99"
 
 [sources]
 NumericalEarth = {path = ".."}
+Oceananigans = {url = "https://github.com/CliMA/Oceananigans.jl", rev = "ss/fix-barycentric-steps"}
 
 [compat]
 ArchGDAL = "0.10"
