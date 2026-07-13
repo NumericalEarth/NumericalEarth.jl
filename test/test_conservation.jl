@@ -88,7 +88,7 @@ end
     cᵒᶜ = coupled_model.interfaces.ocean_properties.heat_capacity
 
     Az = Azᶜᶜᶜ(1, 1, 1, grid)
-    Vᶜ = sum(KernelFunctionOperation{Center, Center, Center}(volume, grid, Center(), Center(), Center()))  # for the virtual-salt FW diagnostic
+    Vᶜ = sum(KernelFunctionOperation{Center, Center, Center}(volume, grid, Center(), Center(), Center()))
 
     # Built once and re-used every step via `compute!`; the operations keep
     # a reference to the live `T`/`S` fields so the reduction tracks them.
@@ -114,8 +114,6 @@ end
         return -(ΣQt + ΣQao) * Az
     end
 
-    ocean_virtual_freshwater(Sₒ, Sᵣ) = - ρᵒᶜ * Vᶜ * (Sₒ - Sᵣ) / Sᵣ
-
     # Short phases so the test stays under a few seconds of wall time.
     Δt = 10minutes
     Δτ = 2days      # phase duration
@@ -139,21 +137,40 @@ end
                     rain_flux = 5.0e-6,
                     snow_flux = 0.0)
 
-    history = (t = Float64[],
+    history = (t     = Float64[],
                phase = Int[],
-               h = Float64[],
-               ℵ = Float64[],
-               hs = Float64[],
-               Mᵢₛ = Float64[],
-               Eᵢₛ = Float64[],
-               Hₒ = Float64[],
-               Sₒ = Float64[],
-               Ṁ = Float64[],
-               Q = Float64[],
-               𝒬ᶠʳᶻ = Float64[])
+               h     = Float64[],
+               ℵ     = Float64[],
+               hs    = Float64[],
+               Mᵢₛ   = Float64[],
+               Eᵢₛ   = Float64[],
+               Hₒ    = Float64[],
+               Sₒ    = Float64[],
+               Jˢ    = Float64[],
+               Sᴺ    = Float64[],
+               ∂tM   = Float64[],
+               Ṁ     = Float64[],
+               Q     = Float64[],
+               𝒬ᶠʳᶻ  = Float64[])
 
-    function record!(history, coupled_model, phase_id, Ṁ, Q)
+    # The intercepted snowfall the ocean loses (−Pₛᵃᵇˢ) and the ice gains (+Pₛᵃᵇˢ) cancel in the
+    # combined ice+ocean budget, so Ṁ is the total atmospheric freshwater input to the coupled system.
+    function freshwater_flux_state(coupled_model, rain_flux, snow_flux)
+        Nz  = size(grid, 3)
+        Jˢ  = first(interior(coupled_model.interfaces.net_fluxes.ocean.S))
+        Sᴺ  = first(interior(coupled_model.ocean.model.tracers.S, 1, 1, Nz))
+        mass_fluxes = coupled_model.sea_ice.model.thermodynamic_mass_fluxes
+        ∂tM = first(interior(mass_fluxes.ice)) + first(interior(mass_fluxes.snow)) +
+              first(interior(mass_fluxes.intercepted_snowfall))
+        Jᵛ  = first(interior(coupled_model.interfaces.atmosphere_ocean_interface.fluxes.water_vapor))
+        ℵ   = first(interior(coupled_model.sea_ice.model.ice_concentration))
+        Ṁ   = (rain_flux + snow_flux - (1 - ℵ) * Jᵛ) * Az   # rain and snow reach the ocean in full
+        return (; Jˢ, Sᴺ, ∂tM, Ṁ)
+    end
+
+    function record!(history, coupled_model, phase_id, rain_flux, snow_flux, Q)
         st = column_state(coupled_model)
+        fw = freshwater_flux_state(coupled_model, rain_flux, snow_flux)
         𝒬f = first(interior(frazil_heat_flux(coupled_model)))
         push!(history.t,     coupled_model.clock.time)
         push!(history.phase, phase_id)
@@ -164,13 +181,16 @@ end
         push!(history.Eᵢₛ,  st.Eᵢₛ)
         push!(history.Hₒ,   st.Hₒ)
         push!(history.Sₒ,   st.Sₒ)
-        push!(history.Ṁ,     Ṁ)
+        push!(history.Jˢ,   fw.Jˢ)
+        push!(history.Sᴺ,   fw.Sᴺ)
+        push!(history.∂tM,  fw.∂tM)
+        push!(history.Ṁ,     fw.Ṁ)
         push!(history.Q,     Q)
         push!(history.𝒬ᶠʳᶻ,  𝒬f)
         return nothing
     end
 
-    record!(history, coupled_model, 0, 0.0, 0.0)
+    record!(history, coupled_model, 0, 0.0, 0.0, 0.0)
 
     # The phase-boundary `update_state!` would zero the pending frazil flux
     # written at the end of the previous phase's final step, stranding the
@@ -185,7 +205,6 @@ end
                      SW_down = spec.SW_down, LW_down = spec.LW_down,
                      rain_flux = spec.rain_flux, snow_flux = spec.snow_flux)
 
-        Ṁ  = (spec.rain_flux + spec.snow_flux) * Az                          # freshwater input
         Qᵖ = - spec.snow_flux * ℒ₀ * Az                                      # snowfall enthalpy
 
         𝒬ᶠʳᶻ = coupled_model.interfaces.sea_ice_ocean_interface.fluxes.frazil_heat
@@ -195,13 +214,19 @@ end
         𝒬ᶠʳᶻ[1, 1, 1] = 𝒬⁻
         ΣQb[1, 1, 1] += 𝒬⁻
 
-        history.Q[end] = net_top_heat_flux(coupled_model) + Qᵖ
-        history.Ṁ[end] = Ṁ
+        # The last record's fluxes apply to the upcoming interval, so recompute them under this
+        # phase's forcing (the phase-boundary `update_state!` reassembled them).
+        fw = freshwater_flux_state(coupled_model, spec.rain_flux, spec.snow_flux)
+        history.Q[end]   = net_top_heat_flux(coupled_model) + Qᵖ
+        history.Jˢ[end]  = fw.Jˢ
+        history.Sᴺ[end]  = fw.Sᴺ
+        history.∂tM[end] = fw.∂tM
+        history.Ṁ[end]   = fw.Ṁ
 
         for _ in 1:Nsteps
             time_step!(coupled_model, Δt)
             Q = net_top_heat_flux(coupled_model) + Qᵖ
-            record!(history, coupled_model, phase_id, Ṁ, Q)
+            record!(history, coupled_model, phase_id, spec.rain_flux, spec.snow_flux, Q)
         end
     end
 
@@ -234,10 +259,11 @@ end
 
     # --- Freshwater budget ---
     #
-    # TODO: the coupled freshwater budget does not currently close. The
-    # numbers below are computed for reference / plotting purposes but we
-    # do not assert on them; fix the underlying bookkeeping first, then
-    # add `@test εₘ < 1e-10`.
+    # Ocean freshwater is integrated flux-consistently: each salt flux Jˢ(n) encodes a freshwater
+    # volume Jˢ(n)/Sᴺ(n) using the surface salinity at flux-computation time, so the budget must
+    # divide by the same Sᴺ(n) (a fixed reference salinity differs at O(ΔS/S) and cannot reach 1e-10).
+    # Fluxes recorded at step n are applied to the ocean during step n+1, so the final step's
+    # ice-ocean exchange is still pending at the end of the run and is subtracted via ∂tM.
 
     ∫Ṁ = similar(t)
     ∫Ṁ[1] = 0.0
@@ -245,11 +271,23 @@ end
         ∫Ṁ[n] = ∫Ṁ[n-1] + history.Ṁ[n-1] * (t[n] - t[n-1])
     end
 
-    Sᵣ = history.Sₒ[1]
-    Mᶠʷ = @. ocean_virtual_freshwater(history.Sₒ, Sᵣ)
-    ΔM = (history.Mᵢₛ .+ Mᶠʷ) .- (history.Mᵢₛ[1] + Mᶠʷ[1])
+    Mᶠʷ = similar(t)
+    Mᶠʷ[1] = 0.0
+    for n in 2:length(t)
+        Mᶠʷ[n] = Mᶠʷ[n-1] + ρᵒᶜ * Az * history.Jˢ[n-1] / history.Sᴺ[n-1] * (t[n] - t[n-1])
+    end
+
+    pending = history.∂tM[end] * Az * Δt⁺[end]
+    ΔM = (history.Mᵢₛ .+ Mᶠʷ) .- history.Mᵢₛ[1]
     Rₘ = ΔM .- ∫Ṁ
-    εₘ = abs(Rₘ[end]) / max(maximum(abs.(ΔM)), 1)  # not tested (broken)
+    εₘ = abs(Rₘ[end] - pending) / max(maximum(abs.(ΔM)), 1)
+    @test εₘ < 1e-10
+
+    # The ocean integrator applies the assembled fluxes exactly (salt content matches ∫Jˢ dt)
+    ∫Jˢ = sum(history.Jˢ[1:end-1] .* Δt⁺[1:end-1])
+    S̄₁ = first(compute!(mean_S))
+    Sᵣ = history.Sₒ[1]
+    @test abs((S̄₁ - Sᵣ) * Vᶜ + ∫Jˢ * Az) / (Sᵣ * Vᶜ) < 1e-12
 
     # --- Sanity checks on the physics ---
 

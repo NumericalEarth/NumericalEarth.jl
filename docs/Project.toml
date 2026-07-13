@@ -31,6 +31,7 @@ Suppressor = "fd094767-a336-5f1f-9728-57cf17d0bbfb"
 
 [sources]
 NumericalEarth = {path = ".."}
+ClimaSeaIce = {url = "https://github.com/CliMA/ClimaSeaIce.jl", rev = "ss/thermodynamic-mass-fluxes"}
 
 [compat]
 Breeze = "0.7.3"

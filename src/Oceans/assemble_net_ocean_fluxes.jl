@@ -1,6 +1,6 @@
 using Oceananigans.Fields: ZeroField
 
-using ..EarthSystemModels: NoAtmosInterfaceModel, NoOceanInterfaceModel, NoInterfaceModel, sea_ice_concentration
+using ..EarthSystemModels: NoAtmosInterfaceModel, NoOceanInterfaceModel, NoInterfaceModel, sea_ice_concentration, intercepted_snowfall
 using ..EarthSystemModels.InterfaceComputations: computed_fluxes
 
 @inline τᶜᶜᶜ(i, j, k, grid, ρᵒᶜ⁻¹, ℵ, ρτᶜᶜᶜ) = @inbounds ρᵒᶜ⁻¹ * (1 - ℵ[i, j, k]) * ρτᶜᶜᶜ[i, j, k]
@@ -43,6 +43,7 @@ function update_net_ocean_fluxes!(coupled_model, ocean_model, grid)
     freshwater_flux = land_freshwater_flux(land_exchanger)
 
     ice_concentration = sea_ice_concentration(sea_ice)
+    intercepted_snowfall_flux = intercepted_snowfall(sea_ice)
     ocean_surface_salinity = EarthSystemModels.ocean_surface_salinity(ocean_model)
     ocean_properties = coupled_model.interfaces.ocean_properties
 
@@ -57,6 +58,7 @@ function update_net_ocean_fluxes!(coupled_model, ocean_model, grid)
             ice_concentration,
             rainfall,
             snowfall,
+            intercepted_snowfall_flux,
             freshwater_flux,
             ocean_properties)
     return nothing
@@ -73,6 +75,7 @@ Base.@propagate_inbounds get_land_freshwater_flux(i, j, flux) = flux[i, j, 1]
                                              sea_ice_concentration,
                                              rainfall_flux,
                                              snowfall_flux,
+                                             intercepted_snowfall_flux,
                                              land_freshwater_flux,
                                              ocean_properties)
 
@@ -89,6 +92,7 @@ Base.@propagate_inbounds get_land_freshwater_flux(i, j, flux) = flux[i, j, 1]
 
         Jʳⁿ = rainfall_flux[i, j, 1]
         Jˢⁿ = snowfall_flux[i, j, 1]
+        Pˢⁿ = intercepted_snowfall_flux[i, j, 1]
         Jˡⁿ = get_land_freshwater_flux(i, j, land_freshwater_flux)
         𝒬ᵀ = atmos_ocean_fluxes.sensible_heat[i, j, 1]
         𝒬ᵛ = atmos_ocean_fluxes.latent_heat[i, j, 1]
@@ -100,11 +104,12 @@ Base.@propagate_inbounds get_land_freshwater_flux(i, j, flux) = flux[i, j, 1]
 
     # Freshwater flux to the ocean per unit cell area (volume flux, positive up = leaving ocean):
     # - rain and land runoff reach the ocean everywhere (rain runs through cracks in ice)
-    # - snow only reaches the ocean through the open-water fraction (1 - ℵᵢ);
+    # - snowfall reaches the ocean except the part the sea ice reports having intercepted (Pˢⁿ),
+    #   so the atmosphere→{ice, ocean} split uses one number and is exactly conservative
     # - evaporation acts only over the open-water fraction (1 - ℵᵢ)
     # The atmospheric mass-flux convention is positive down; Jᵛ is positive up.
     ρᵒᶜ⁻¹ = 1 / ocean_properties.reference_density
-    ΣFao  = - (Jʳⁿ + Jˡⁿ + (1 - ℵᵢ) * Jˢⁿ) * ρᵒᶜ⁻¹ + (1 - ℵᵢ) * Jᵛ * ρᵒᶜ⁻¹
+    ΣFao  = - (Jʳⁿ + Jˡⁿ + Jˢⁿ - Pˢⁿ) * ρᵒᶜ⁻¹ + (1 - ℵᵢ) * Jᵛ * ρᵒᶜ⁻¹
     Jʷao  = - ΣFao # Freshwater flux (positive increases the volume)
 
     τˣ = net_ocean_fluxes.u
