@@ -3,52 +3,51 @@
 #####
 
 """
-    FLUXNETSite(site; product = "FLUXNET2015",
-                      kind = "FULLSET",
+    FLUXNETSite(site; grouping = "FULLSET",
                       resolution = :halfhourly,
                       longitude = 0.0,
                       latitude = 0.0,
                       dir = download_FLUXNET_cache)
 
-A handle to the flux-tower record for a single FLUXNET `site` (e.g. `"US-Var"`),
-used as the `dataset` of a [`Metadata`](@ref). The data live in one comma-separated
+A handle to the [FLUXNET Shuttle](https://data.fluxnet.org) data product for a
+single flux-tower `site` (e.g. `"US-Var"`), used as the `dataset` of a
+[`Metadata`](@ref). The Shuttle federates the ONEFlux-processed FLUXNET products
+of the regional networks (AmeriFlux, ICOS, TERN, …); each is one comma-separated
 file per site and time `resolution`, named
-`FLX_<site>_<product>_<kind>_<HH|HR|DD>_<years>_<version>.csv`, discovered in `dir`
-by globbing on everything but the (unpredictable) year/version suffix.
+`<PUBLISHER>_<site>_<PROCESSING-VERSION>_<grouping>_<HH|HR|DD>_<years>_<version>.csv`
+(e.g. `AMF_US-Var_FLUXNET_FULLSET_HH_…`). Files are discovered in `dir` by matching
+on the stable `grouping`/`resolution` tokens, so the publisher prefix and processing
+version — which differ across hubs — are irrelevant.
 
-FLUXNET data requires registration and acceptance of a data-use policy and so is
-**not** downloaded automatically: download a site archive from
-<https://fluxnet.org/data/download-data/> (or AmeriFlux / ICOS), unzip it, and place
-the CSV in `dir`. Site coordinates are not stored in the flux file; pass `longitude`
-and `latitude` if a downstream consumer needs them.
+If no matching file is present, it is downloaded from the Shuttle via the
+`fluxnet-shuttle` command-line tool (see [`download_from_shuttle`](@ref)). Site
+coordinates are not stored in the flux file; pass `longitude`/`latitude` if a
+downstream consumer needs them.
 
 Keyword Arguments
 =================
-- `product`: data product, e.g. `"FLUXNET2015"`.
-- `kind`: `"FULLSET"` or `"SUBSET"`.
+- `grouping`: `"FULLSET"` (all variables) or `"SUBSET"` (core variables).
 - `resolution`: `:halfhourly` (`HH`), `:hourly` (`HR`), or `:daily` (`DD`).
 - `longitude`, `latitude`: site coordinates in degrees.
-- `dir`: directory holding the site CSV.
+- `dir`: directory holding (or to download) the site CSV.
 """
 struct FLUXNETSite
     site :: String
-    product :: String
-    kind :: String
+    grouping :: String
     resolution :: Symbol
     longitude :: Float64
     latitude :: Float64
     dir :: String
 end
 
-function FLUXNETSite(site; product = "FLUXNET2015",
-                           kind = "FULLSET",
+function FLUXNETSite(site; grouping = "FULLSET",
                            resolution = :halfhourly,
                            longitude = 0.0,
                            latitude = 0.0,
                            dir = download_FLUXNET_cache)
 
     resolution_token(resolution) # validate early
-    return FLUXNETSite(String(site), String(product), String(kind), Symbol(resolution),
+    return FLUXNETSite(String(site), String(grouping), Symbol(resolution),
                        Float64(longitude), Float64(latitude), String(dir))
 end
 
@@ -56,7 +55,7 @@ const FLUXNETMetadata{D} = Metadata{<:FLUXNETSite, D}
 const FLUXNETMetadatum   = Metadatum{<:FLUXNETSite}
 
 #####
-##### Variable name mapping: NumericalEarth names → FLUXNET2015 column names
+##### Variable name mapping: NumericalEarth names → ONEFlux FLUXNET column names
 #####
 
 const FLUXNET_variable_names = Dict{Symbol, String}(
@@ -87,8 +86,11 @@ const FLUXNET_variable_names = Dict{Symbol, String}(
 ##### File discovery + cached access
 #####
 
+# Publisher- and processing-version-agnostic: match only the stable ONEFlux
+# `<grouping>_<resolution>` tokens, so `AMF_…_FLUXNET_…`, `FLX_…_FLUXNET2015_…`,
+# and other hubs' products are all found.
 fluxnet_glob(ds::FLUXNETSite) =
-    string("FLX_", ds.site, "_", ds.product, "_", ds.kind, "_",
+    string("*_", ds.site, "_*_", ds.grouping, "_",
            resolution_token(ds.resolution), "_*.csv")
 
 function fluxnet_path(ds::FLUXNETSite)
@@ -96,14 +98,12 @@ function fluxnet_path(ds::FLUXNETSite)
     matches = glob(pattern, ds.dir)
 
     if isempty(matches)
-        error("""
-              No FLUXNET file matching "$pattern" found in "$(ds.dir)".
-              FLUXNET data requires registration and acceptance of a data-use policy and
-              cannot be downloaded automatically. Download the site archive from
-              https://fluxnet.org/data/download-data/ (or AmeriFlux / ICOS), unzip it, and
-              place the "$pattern" file in "$(ds.dir)".
-              """)
+        download_from_shuttle(ds)            # fetch via the FLUXNET Shuttle
+        matches = glob(pattern, ds.dir)
     end
+
+    isempty(matches) &&
+        error("No FLUXNET file matching \"$pattern\" found in \"$(ds.dir)\" after download.")
 
     sorted = sort(matches)
     length(sorted) > 1 &&
@@ -159,8 +159,7 @@ DataWrangling.native_grid(::FLUXNETMetadata, arch=CPU(); halo=(3, 3, 3)) =
 DataWrangling.metadata_filename(ds::FLUXNETSite, name, date, region) = fluxnet_filename(ds)
 DataWrangling.build_filename(ds::FLUXNETSite, name, dates::AbstractArray, region) = fluxnet_filename(ds)
 
-# FLUXNET is distributed as local files (no anonymous download); resolve the path,
-# erroring with download instructions if the site CSV is not present.
+# Resolve the site file, downloading it from the FLUXNET Shuttle if not present.
 Downloads.download(md::FLUXNETMetadata) = fluxnet_path(md.dataset)
 
 #####

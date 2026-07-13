@@ -10,11 +10,12 @@ using Downloads: Downloads
 using Glob: glob
 using Oceananigans: Oceananigans
 using Oceananigans.Architectures: CPU, on_architecture
-using Oceananigans.DistributedComputations: child_architecture
+using Oceananigans.DistributedComputations: child_architecture, @root
 using Oceananigans.Fields: Field, interior
 using Oceananigans.Grids: RectilinearGrid, Center, Flat
 using Oceananigans.OutputReaders: FieldTimeSeries
 using Thermodynamics: q_vap_from_RH, saturation_vapor_pressure, Liquid
+using ZipFile: ZipFile
 
 using ..DataWrangling: DataWrangling, Metadata, Metadatum,
                        first_date, last_date, fill_gaps!, Celsius
@@ -34,7 +35,7 @@ end
 ##### Time resolution helpers
 #####
 
-# The FLUXNET2015 filename token and averaging interval (seconds) for each resolution.
+# The ONEFlux filename token and averaging interval (seconds) for each resolution.
 resolution_token(::Val{:halfhourly}) = "HH"
 resolution_token(::Val{:hourly})     = "HR"
 resolution_token(::Val{:daily})      = "DD"
@@ -68,7 +69,7 @@ _clean(value::Float64) = ifelse(value == FLUXNET_MISSING_VALUE, NaN, value)
 """
     read_fluxnet_csv(path)
 
-Parse a FLUXNET2015 CSV, returning `(timestamps, columns)` where `timestamps` is
+Parse an ONEFlux FLUXNET CSV, returning `(timestamps, columns)` where `timestamps` is
 a `Vector{DateTime}` built from `TIMESTAMP_START` (or `TIMESTAMP` for daily data)
 and `columns` maps each remaining column name to a `Vector{Float64}` with the
 `-9999` missing sentinel replaced by `NaN`.
@@ -110,6 +111,7 @@ const FLUXNET_FILE_CACHE = Dict{String, Tuple{Vector{DateTime}, Dict{String, Vec
 const FLUXNET_TIME_INDEX_CACHE = Dict{String, Dict{DateTime, Int}}()
 
 include("FLUXNET_metadata.jl")
+include("FLUXNET_shuttle.jl")
 
 #####
 ##### Shared builder utility

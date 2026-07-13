@@ -6,11 +6,14 @@ using NumericalEarth.Radiations: PrescribedRadiation
 using Dates: DateTime, Minute, format
 using Printf: @sprintf
 
-# Write a small synthetic FLUXNET2015 half-hourly CSV covering a few diurnal cycles.
-# `with_relative_humidity` toggles the FULLSET (`RH` present) vs SUBSET (`VPD_F` only)
-# humidity path. A handful of `-9999` and elevated QC flags exercise gap filling and
-# quality-control masking.
-function write_synthetic_fluxnet(dir; site="XX-Tst", kind="FULLSET",
+# Write a small synthetic ONEFlux FLUXNET half-hourly CSV covering a few diurnal
+# cycles, using the FLUXNET Shuttle file naming
+# `<publisher>_<site>_<processing_version>_<grouping>_HH_<years>_<version>.csv`.
+# `with_relative_humidity` toggles the FULLSET (`RH` present) vs SUBSET (`VPD_F`
+# only) humidity path. A handful of `-9999` and elevated QC flags exercise gap
+# filling and quality-control masking.
+function write_synthetic_fluxnet(dir; site="XX-Tst", grouping="FULLSET",
+                                 publisher="AMF", processing_version="FLUXNET",
                                  start = DateTime(2020, 1, 1), ndays = 3,
                                  with_relative_humidity = true)
     Δ = Minute(30)
@@ -60,7 +63,7 @@ function write_synthetic_fluxnet(dir; site="XX-Tst", kind="FULLSET",
         push!(rows, join(fields, ","))
     end
 
-    filename = "FLX_$(site)_FLUXNET2015_$(kind)_HH_2020-2020_1-1.csv"
+    filename = "$(publisher)_$(site)_$(processing_version)_$(grouping)_HH_2020-2020_1-1.csv"
     path = joinpath(dir, filename)
     open(io -> foreach(r -> println(io, r), rows), path, "w")
     return path
@@ -89,6 +92,19 @@ end
         pmd = Metadata(:surface_pressure; dataset = site, dir)
         pa = FieldTimeSeries(pmd, grid; time_indices_in_memory = length(pmd))
         @test all(Array(interior(pa)) .≈ 101300)
+    end
+end
+
+@testset "Shuttle publisher/version-agnostic discovery" begin
+    # The same site is found regardless of the hub's publisher prefix and
+    # processing version — AmeriFlux (AMF_/FLUXNET) and legacy FLUXNET2015 (FLX_).
+    for (publisher, version) in (("AMF", "FLUXNET"), ("FLX", "FLUXNET2015"))
+        dir = mktempdir()
+        write_synthetic_fluxnet(dir; publisher, processing_version = version)
+        site = FLUXNETSite("XX-Tst"; dir)
+        @test length(all_dates(site, :air_temperature)) == 48 * 3
+        @test basename(NumericalEarth.FLUXNET.fluxnet_path(site)) ==
+              "$(publisher)_XX-Tst_$(version)_FULLSET_HH_2020-2020_1-1.csv"
     end
 end
 
