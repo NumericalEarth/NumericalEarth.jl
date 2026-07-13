@@ -64,6 +64,10 @@ export
     OSPapaPrescribedAtmosphere,
     os_papa_prescribed_fluxes,
     os_papa_prescribed_flux_boundary_conditions,
+    FLUXNETSite,
+    FLUXNETPrescribedAtmosphere,
+    FLUXNETPrescribedRadiation,
+    fluxnet_flux_observations,
     FreezingLimitedOceanTemperature,
     SurfaceRadiationProperties,
     InterfaceRadiationFlux,
@@ -197,6 +201,7 @@ using .DataWrangling.WOA
 using .DataWrangling.JRA55
 using .DataWrangling.GloFAS
 using .DataWrangling.OSPapa
+using .DataWrangling.FLUXNET
 using .DataWrangling.ERA5
 using .DataWrangling.SoilGrids
 

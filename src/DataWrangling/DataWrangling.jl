@@ -356,6 +356,7 @@ include("WOA/WOA.jl")
 include("JRA55/JRA55.jl")
 include("GloFAS/GloFAS.jl")
 include("OSPapa/OSPapa.jl")
+include("FLUXNET/FLUXNET.jl")
 include("SoilGrids/SoilGrids.jl")
 include("IBCSO/IBCSO.jl")
 include("GEBCO/GEBCO.jl")
@@ -372,6 +373,7 @@ using .WOA
 using .JRA55
 using .GloFAS
 using .OSPapa
+using .FLUXNET
 using .IBCSO
 using .GEBCO
 using .IBCAO
