@@ -1,12 +1,36 @@
 module NumericalEarthCopernicusClimateDataStoreExt
 
 using NumericalEarth
-using CopernicusClimateDataStore
+using CopernicusClimateDataStore: CopernicusClimateDataStore
 using Downloads: Downloads
-using Dates
+using Dates: Dates
 using Oceananigans.DistributedComputations: @root
 
-using NumericalEarth.DataWrangling.ERA5: ERA5Metadata, ERA5Metadatum, ERA5_dataset_variable_names
+using NumericalEarth.DataWrangling: is_three_dimensional, available_variables
+using NumericalEarth.DataWrangling.ERA5: ERA5Metadata, ERA5Metadatum, hPa
+
+#####
+##### era5cli credential bootstrap
+#####
+##### era5cli reads CDS credentials ONLY from ~/.config/era5cli/cds_key.txt; it ignores the
+##### CDSAPI_URL/CDSAPI_KEY env vars, and its ~/.cdsapirc fallback needs an interactive TTY, so in a
+##### non-interactive/env-var environment (e.g. CI) it raises InvalidLoginError even when valid CDS
+##### credentials are present. Write era5cli's config file from the CDSAPI_URL/CDSAPI_KEY env vars
+##### (the same variables the CDSAPI backend reads) when it is absent — never overwriting an existing
+##### config. Mirrors what `era5cli config` writes.
+#####
+
+const ERA5CLI_CONFIG_PATH = joinpath(homedir(), ".config", "era5cli", "cds_key.txt")
+
+function ensure_era5cli_credentials()
+    isfile(ERA5CLI_CONFIG_PATH) && return nothing
+    url = get(ENV, "CDSAPI_URL", "")
+    key = get(ENV, "CDSAPI_KEY", "")
+    (isempty(url) || isempty(key)) && return nothing
+    mkpath(dirname(ERA5CLI_CONFIG_PATH))
+    write(ERA5CLI_CONFIG_PATH, "url: $url\nkey: $key\n")
+    return nothing
+end
 
 """
     Downloads.download(metadata::ERA5Metadata; kwargs...)
@@ -58,8 +82,24 @@ function Downloads.download(meta::ERA5Metadatum;
     # Ensure output directory exists
     mkpath(output_directory)
 
-    # Get the ERA5 variable name
-    variable_name = ERA5_dataset_variable_names[meta.name]
+    # The CDS catalog name is dataset-dependent: `eastward_velocity` is `u_component_of_wind` on
+    # pressure levels but `10m_u_component_of_wind` on single levels. Dispatch on the dataset so a
+    # pressure-level request doesn't silently fetch the surface field (which returned `u10`).
+    variable_name = available_variables(meta.dataset)[meta.name]
+
+    # era5cli defaults to the single-levels (surface) product unless `--levels` is given — so a
+    # pressure-level request without levels silently returns a surface field (e.g. `u10` for
+    # `u_component_of_wind`). Pass the dataset's pressure levels for 3-D datasets; disambiguate the
+    # single-level `geopotential`/`topography` (surface geopotential, exists on both) with `:surface`;
+    # ordinary single-level variables keep era5cli's default (`nothing`). `pressure_levels` is stored
+    # in Pa, but the CDS API expects hPa (`[1, …, 1000]`), so convert with `÷ hPa`.
+    levels = if is_three_dimensional(meta)
+        Int.(meta.dataset.pressure_levels) .÷ hPa
+    elseif variable_name == "geopotential"
+        :surface
+    else
+        nothing
+    end
 
     # Extract date information
     date = meta.dates
@@ -76,12 +116,14 @@ function Downloads.download(meta::ERA5Metadatum;
 
     # Perform the download using era5cli via CopernicusClimateDataStore
     @root begin
+        ensure_era5cli_credentials()
         downloaded_files = CopernicusClimateDataStore.hourly(;
             variables = variable_name,
             startyear = year,
             months = month,
             days = day,
             hours = hour,
+            levels = levels,
             area = area,
             format = "netcdf",
             outputprefix = output_prefix,

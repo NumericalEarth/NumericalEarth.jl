@@ -47,7 +47,7 @@ examples = [
     Example("ERA5 and GloFAS reanalysis data", "exploring_era5_reanalysis_data", true),
     Example("ERA5-forced slab land", "era5_forced_slab_land", true),
     Example("Breeze over slab land", "breeze_over_slab_land", true),
-    # Example("ERA5 downscaling with Breeze and NestedSimulation", "era5_breeze", false),
+    Example("ERA5 downscaling with Breeze", "breeze_downscaling_era5", true),
 ]
 
 # Developer examples from docs/src/developers/ directory
@@ -217,6 +217,7 @@ makedocs(; sitename = "NumericalEarth.jl",
          checkdocs = :exports,
          linkcheck = true,
          linkcheck_ignore = [
+             r"^https://ecco\.jpl\.nasa\.gov/.*",
              r"https://www\.ncei\.noaa\.gov/products/etopo-global-relief-model",
              r"https://www\.ncei\.noaa\.gov/products/world-ocean-atlas",
              r"https://www\.ncei\.noaa\.gov/data/sea-surface-temperature-optimum-interpolation/v2\.1/access/avhrr",
