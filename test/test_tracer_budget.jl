@@ -1,4 +1,5 @@
 include("runtests_setup.jl")
+include("download_utils.jl")
 
 using CUDA: @allowscalar
 using Oceananigans.AbstractOperations: KernelFunctionOperation
@@ -163,6 +164,14 @@ end
 
             @testset "Surface fluxes + penetrating shortwave radiation + Sea ice" begin
                 @info "    .. Surface fluxes + penetrating shortwave radiation + Sea ice"
+                for name in (:sea_ice_thickness, :sea_ice_concentration)
+                    metadata = ecco_set[name]
+                    download_dataset_with_fallback(metadata_path(metadata);
+                                                   dataset_name = "ECCO4Monthly $name") do
+                        download(metadata)
+                    end
+                end
+
                 new_grid = deepcopy(grid) # because the grid is mutable
                 ocean = ocean_simulation(new_grid; free_surface)
                 sea_ice = sea_ice_simulation(new_grid, ocean)
