@@ -44,6 +44,7 @@ function update_net_ocean_fluxes!(coupled_model, ocean_model, grid)
 
     ice_concentration = sea_ice_concentration(sea_ice)
     ocean_surface_salinity = EarthSystemModels.ocean_surface_salinity(ocean_model)
+    ocean_surface_temperature = EarthSystemModels.ocean_surface_temperature(ocean_model)
     ocean_properties = coupled_model.interfaces.ocean_properties
 
     launch!(arch, grid, :xy,
@@ -54,11 +55,13 @@ function update_net_ocean_fluxes!(coupled_model, ocean_model, grid)
             atmos_ocean_fluxes,
             sea_ice_ocean_fluxes,
             ocean_surface_salinity,
+            ocean_surface_temperature,
             ice_concentration,
             rainfall,
             snowfall,
             freshwater_flux,
             ocean_properties)
+
     return nothing
 end
 
@@ -70,6 +73,7 @@ Base.@propagate_inbounds get_land_freshwater_flux(i, j, flux) = flux[i, j, 1]
                                              atmos_ocean_fluxes,
                                              sea_ice_ocean_fluxes,
                                              ocean_surface_salinity,
+                                             ocean_surface_temperature,
                                              sea_ice_concentration,
                                              rainfall_flux,
                                              snowfall_flux,
@@ -86,6 +90,7 @@ Base.@propagate_inbounds get_land_freshwater_flux(i, j, flux) = flux[i, j, 1]
     @inbounds begin
         ℵᵢ = sea_ice_concentration[i, j, 1]
         Sᵒᶜ = ocean_surface_salinity[i, j, 1]
+        Tᵒᶜ = ocean_surface_temperature[i, j, 1]
 
         Jʳⁿ = rainfall_flux[i, j, 1]
         Jˢⁿ = snowfall_flux[i, j, 1]
@@ -120,7 +125,7 @@ Base.@propagate_inbounds get_land_freshwater_flux(i, j, flux) = flux[i, j, 1]
         𝒬ⁱⁿ = sea_ice_ocean_fluxes.interface_heat[i, j, 1]
         Jˢio = sea_ice_ocean_fluxes.salt[i, j, 1]
         Jʷio = sea_ice_ocean_fluxes.freshwater[i, j, 1]
-        Jᵀao = ΣQao * ρᵒᶜ⁻¹ * cᵒᶜ⁻¹
+        Jᵀao = ΣQao * ρᵒᶜ⁻¹ * cᵒᶜ⁻¹ + Tᵒᶜ * Jʷao # freshwater flux carries surface temperature
         Jᵀio = 𝒬ⁱⁿ * ρᵒᶜ⁻¹ * cᵒᶜ⁻¹
 
         # salinity flux > 0 extracts salinity (opposite of water vapor flux sign)

@@ -22,13 +22,13 @@ function test_tracer_budget(coupled_model, Sᵒᶜ, Δt, nsteps; rtol)
     freshwater_rate = Integral(net_ocean_freshwater_flux(coupled_model; reference_salinity=Sᵒᶜ), dims=(1, 2))
 
     penetrating_radiation = get_radiative_forcing(ocean)
-    if isnothing(penetrating_radiation)
-        radiative_rate = nothing
+    radiative_rate = if isnothing(penetrating_radiation)
+        nothing
     else
         radiative_forcing = KernelFunctionOperation{Center, Center, Center}(penetrating_radiation, grid,
                                                                             ocean.model.clock,
                                                                             Oceananigans.fields(ocean.model))
-        radiative_rate = Integral(ρᵒᶜ * cᵒᶜ * radiative_forcing, dims=(1, 2, 3))
+        Integral(ρᵒᶜ * cᵒᶜ * radiative_forcing, dims=(1, 2, 3))
     end
 
     VT⁻ = CenterField(grid)
@@ -42,8 +42,7 @@ function test_tracer_budget(coupled_model, Sᵒᶜ, Δt, nsteps; rtol)
 
         previous_heat_flux       = @allowscalar first(Field(heat_rate))
         previous_freshwater_flux = @allowscalar first(Field(freshwater_rate))
-        previous_radiative_rate  = isnothing(radiative_rate) ? zero(previous_heat_flux) :
-                                   @allowscalar first(Field(radiative_rate))
+        previous_radiative_rate  = isnothing(radiative_rate) ? zero(previous_heat_flux) : @allowscalar first(Field(radiative_rate))
 
         time_step!(coupled_model, Δt)
         last_Δt = ocean.model.clock.last_Δt
@@ -83,24 +82,21 @@ end
                                               interpolation_passes=1,
                                               major_basins=1)
 
-            grid = ImmersedBoundaryGrid(underlying_grid, GridFittedBottom(bottom_height);
-                                        active_cells_map = true)
+            grid = ImmersedBoundaryGrid(underlying_grid, GridFittedBottom(bottom_height); active_cells_map = true)
 
             time_indices_in_memory = 4
             radiation  = JRA55PrescribedRadiation(arch; time_indices_in_memory)
             atmosphere = JRA55PrescribedAtmosphere(arch; time_indices_in_memory)
 
-            ecco_set = MetadataSet(:temperature, :salinity,
-                                   dataset = ECCO4Monthly(),
-                                   date = DateTime(1993, 1, 1))
-            Δt = 605seconds
+            en4_set = MetadataSet(:temperature, :salinity, dataset = EN4Monthly(), date = DateTime(1993, 1, 1))
+            Δt  = 605seconds
             Sᵒᶜ = 35 # reference salinity [psu]
             free_surface = SplitExplicitFreeSurface(substeps=20)
 
             # Without shortwave penetration
             @testset "Surface-only fluxes" begin
                 ocean = ocean_simulation(grid; free_surface, radiative_forcing=nothing)
-                set!(ocean.model, ecco_set)
+                set!(ocean.model, en4_set)
                 coupled_model = OceanSeaIceModel(ocean, nothing; atmosphere, radiation)
                 test_tracer_budget(coupled_model, Sᵒᶜ, Δt, 4; rtol=√eps(eltype(grid)))
             end
@@ -108,7 +104,7 @@ end
             # With penetrative shortwave radiation
             @testset "Surface fluxes + Penetrating shortwave radiation" begin
                 ocean = ocean_simulation(grid; free_surface)
-                set!(ocean.model, ecco_set)
+                set!(ocean.model, en4_set)
                 coupled_model = OceanSeaIceModel(ocean, nothing; atmosphere, radiation)
                 test_tracer_budget(coupled_model, Sᵒᶜ, Δt, 4; rtol=√eps(eltype(grid)))
             end
