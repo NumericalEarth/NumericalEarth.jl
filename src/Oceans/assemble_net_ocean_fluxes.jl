@@ -62,6 +62,10 @@ function update_net_ocean_fluxes!(coupled_model, ocean_model, grid)
             freshwater_flux,
             ocean_properties)
 
+    if grid isa MutableGridOfSomeKind
+        fill_halo_regions!(net_ocean_fluxes.η)
+    end
+
     return nothing
 end
 

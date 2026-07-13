@@ -2,8 +2,9 @@ using DocStringExtensions: TYPEDSIGNATURES
 using Oceananigans.Architectures: architecture
 using Oceananigans.BoundaryConditions: DefaultBoundaryCondition
 using Oceananigans.DistributedComputations: DistributedGrid, all_reduce
-using Oceananigans.Grids: inactive_node
+using Oceananigans.Grids: inactive_node, topology
 using Oceananigans.OrthogonalSphericalShellGrids
+using Oceananigans.Models.HydrostaticFreeSurfaceModels.SplitExplicitFreeSurfaces: maybe_extend_halos
 using Oceananigans.TimeSteppers: VerticallyImplicitTimeDiscretization, AdaptiveVerticallyImplicitDiscretization
 using Oceananigans.TurbulenceClosures.TKEBasedVerticalDiffusivities: CATKEVerticalDiffusivity,
                                                                      CATKEMixingLength,
@@ -377,7 +378,16 @@ function hydrostatic_ocean_simulation(grid;
     top_meridional_momentum_flux = τʸ = Field{Center, Face, Nothing}(grid)
     top_ocean_heat_flux          = Jᵀ = Field{Center, Center, Nothing}(grid)
     top_salt_flux                = Jˢ = Field{Center, Center, Nothing}(grid)
-    top_freshwater_volume_flux   = Jʷ = Field{Center, Center, Nothing}(grid)
+
+    TX, TY, _ = topology(grid)
+    η_grid = if free_surface isa SplitExplicitFreeSurface
+        maybe_extend_halos(TX, TY, grid, free_surface.substepping)
+    else
+        grid
+    end
+
+    # Freshwater forcing is needed on the free surface grid
+    top_freshwater_volume_flux = Jʷ = Field{Center, Center, Nothing}(η_grid)
 
     if grid isa MutableGridOfSomeKind
         if :η ∈ keys(forcing)
