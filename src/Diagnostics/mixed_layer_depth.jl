@@ -87,12 +87,17 @@ const f = Face()
     Nz = size(grid, 3)
     FT = eltype(grid)
 
-    # Bracket cells (k⁺ above, k⁻ below) of `zʳ`. A descending sweep replaces
+    # Reference depth and MLD are measured below the actual (moving) free surface η, not z = 0,
+    # so the diagnostic stays correct on z-star grids where the surface rides up with η.
+    η    = znode(i, j, Nz+1, grid, c, c, f)
+    zref = η + zʳ
+
+    # Bracket cells (k⁺ above, k⁻ below) of `zref`. A descending sweep replaces
     # `searchsortedfirst`, which dispatches into non-GPU-compilable methods.
     k⁺ = Nz
     @inbounds for k in Nz:-1:1
         zₖ = znode(i, j, k, grid, c, c, c)
-        k⁺ = ifelse(zₖ ≥ zʳ, k, k⁺)
+        k⁺ = ifelse(zₖ ≥ zref, k, k⁺)
     end
     k⁻ = max(k⁺ - 1, 1)
     z⁺ = znode(i, j, k⁺, grid, c, c, c)
@@ -101,14 +106,14 @@ const f = Face()
     # Reference buoyancy bN at z = zʳ
     b⁺ = @inbounds b[i, j, k⁺]
     b⁻ = @inbounds b[i, j, k⁻]
-    w  = clamp((zʳ - z⁻) / max(z⁺ - z⁻, eps(FT)), zero(FT), one(FT))
+    w  = clamp((zref - z⁻) / max(z⁺ - z⁻, eps(FT)), zero(FT), one(FT))
     bN = b⁻ + w * (b⁺ - b⁻)
 
     # Descend from `k⁻` (first cell below `zʳ`) until Δb crosses Δb★.
     # `kc` tracks the cell where Δb was last evaluated
     Δb       = zero(FT)
     mixed    = true
-    
+
     nk  = 0
     k   = k⁻
     kc  = k⁻
@@ -123,14 +128,14 @@ const f = Face()
         inactive = inactive_cell(i, j, k, grid)
     end
 
-    # Linear interpolation between (zʳ, 0) and (z_{kc}, Δb).
+    # Linear interpolation between (zref, 0) and (z_{kc}, Δb).
     zk = znode(i, j, kc, grid, c, c, c)
-    Δz = zʳ - zk
+    Δz = zref - zk
     z★ = zk - Δz/Δb * (Δb★ - Δb)
-    z★ = ifelse(Δb == 0, zʳ, z★)
+    z★ = ifelse(Δb == 0, zref, z★)
 
-    # Apply various criterion
-    h = -z★
+    # Apply various criterion (depth below the free surface η)
+    h = η - z★
     h = max(h, zero(FT))
     H = static_column_depthᶜᶜᵃ(i, j, grid)
     h = min(h, H)
