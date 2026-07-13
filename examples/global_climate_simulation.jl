@@ -1,6 +1,6 @@
 # # Global climate simulation
 #
-# This example configures a global ocean--sea ice simulation at 1.5ᵒ horizontal resolution with
+# This example configures a global ocean--sea ice simulation at 1ᵒ horizontal resolution with
 # realistic bathymetry and a few closures including the "Gent-McWilliams" `IsopycnalSkewSymmetricDiffusivity`.
 # The atmosphere is represented by a 4-layer [SpeedyWeather](https://github.com/SpeedyWeather/SpeedyWeather.jl)
 # simulation on the T63 spectral grid (this grid has approximately 1.875ᵒ resolution).
@@ -18,10 +18,14 @@
 # (the coupled system).
 #
 # The ConservativeRegridding.jl package is used to regrid fields between the atmosphere and ocean--sea ice components.
+# Both the ocean--sea ice and atmosphere components run on a CUDA-enabled GPU.
 
 using Oceananigans, SpeedyWeather, NumericalEarth, ConservativeRegridding
+using CUDA
 using NCDatasets, CairoMakie
 using Oceananigans.Units
+using Oceananigans.AbstractOperations: KernelFunctionOperation
+using Oceananigans.Grids: φnode
 using Printf, Statistics, Dates
 
 # ## Ocean and sea-ice model configuration
@@ -29,28 +33,42 @@ using Printf, Statistics, Dates
 #
 # The first step is to create the grid with realistic bathymetry.
 
-Nx = 240
-Ny = 120
-Nz = 10
-z = ExponentialDiscretization(Nz, -2000, 0)
-grid = TripolarGrid(Oceananigans.CPU(); size=(Nx, Ny, Nz), z, halo=(6, 6, 5))
+Nx = 360
+Ny = 180
+Nz = 60
+z = ExponentialDiscretization(Nz, -6000, 0; mutable=true)
+grid = TripolarGrid(Oceananigans.GPU(); size=(Nx, Ny, Nz), z, halo=(5, 5, 4))
 nothing #hide
 
 # We regrid the bathymetry.
 
-bottom_height = regrid_bathymetry(grid; major_basins=1, interpolation_passes=15)
+bottom_height = regrid_bathymetry(grid; minimum_depth=10, major_basins=2, interpolation_passes=10)
 grid = ImmersedBoundaryGrid(grid, GridFittedBottom(bottom_height); active_cells_map=true)
 nothing #hide
 
 # Now we can specify the numerical details and the closures for the ocean simulation.
+# We use a biharmonic horizontal viscosity with a timescale of 15 days and set a
+# background vertical diffusivity following [Henyey1986](@citet).
 
-momentum_advection   = VectorInvariant()
-tracer_advection     = WENO(order=5)
-free_surface         = SplitExplicitFreeSurface(grid; substeps=40)
-catke_closure        = NumericalEarth.Oceans.default_ocean_closure()
-eddy_closure         = Oceananigans.TurbulenceClosures.IsopycnalSkewSymmetricDiffusivity(κ_skew=1e3, κ_symmetric=1e3)
-viscous_closure      = Oceananigans.TurbulenceClosures.HorizontalScalarBiharmonicDiffusivity(ν=1e12)
-closures             = (catke_closure, eddy_closure, viscous_closure)
+momentum_advection = WENOVectorInvariant(order=5)
+tracer_advection   = WENO(order=5)
+free_surface       = SplitExplicitFreeSurface(grid; substeps=70)
+catke_closure      = NumericalEarth.Oceans.default_ocean_closure()
+eddy_closure       = Oceananigans.TurbulenceClosures.IsopycnalSkewSymmetricDiffusivity(κ_skew=500, κ_symmetric=200)
+
+@inline νhb(i, j, k, grid, timescale) = Oceananigans.Operators.Azᶜᶜᶜ(i, j, k, grid)^2 / timescale
+ν = Oceananigans.Field{Center, Center, Center}(grid)
+Oceananigans.set!(ν, KernelFunctionOperation{Center, Center, Center}(νhb, grid, 15days))
+horizontal_viscosity = HorizontalScalarBiharmonicDiffusivity(; ν)
+
+νz = 1e-5
+## κz(φ) = max(2e-6, 3e-5 * |sin(φ)|)
+@inline henyey_diffusivity(i, j, k, grid) = max(2e-6, 3e-5 * abs(sind(φnode(i, j, k, grid, Center(), Center(), Center()))))
+κz = Oceananigans.Field{Center, Center, Center}(grid)
+Oceananigans.set!(κz, KernelFunctionOperation{Center, Center, Center}(henyey_diffusivity, grid))
+vertical_diffusivity = VerticalScalarDiffusivity(ν=νz, κ=κz)
+
+closures = (catke_closure, eddy_closure, horizontal_viscosity, vertical_diffusivity)
 nothing #hide
 
 # The ocean simulation, complete with initial conditions for temperature and salinity from ECCO on Jan 1st, 1992.
@@ -78,8 +96,13 @@ Oceananigans.set!(sea_ice.model, ecco_set)   # h, ℵ
 # The `atmosphere_simulation` function takes care of building an atmosphere model with appropriate
 # hooks so that NumericalEarth can compute inter-component fluxes.
 nlayers = 4
-spectral_grid = SpeedyWeather.SpectralGrid(; trunc=63, nlayers, Grid=FullClenshawGrid)
-atmosphere = atmosphere_simulation(spectral_grid; output_interval=Hour(3))
+output_interval = 3hours
+stop_time = 30days
+spectral_grid = SpeedyWeather.SpectralGrid(; NF=Float64, trunc=63, nlayers, Grid=FullClenshawGrid, architecture=SpeedyWeather.GPU())
+time_stepping = SpeedyWeather.Leapfrog(spectral_grid; Δt_at_T31=Minute(40)) # gives Δt_sec = 20 min at trunc=63
+atmosphere = atmosphere_simulation(spectral_grid; output_interval, time_stepping, stop_time)
+atmosphere.model.feedback.verbose = false  # disable SpeedyWeather's progress bar in favor of the callback defined below
+nothing #hide
 
 # The atmosphere model already includes some initial conditions as described above:
 
@@ -87,11 +110,9 @@ atmosphere.model.initial_conditions
 
 # ## The coupled model
 # We are now ready to blend everything together.
-# We need to specify the time step for the coupled model.
-# We decide to step the global model every 2 atmosphere time steps (i.e., the ocean and the
-# sea-ice are stepped every two atmosphere time steps).
+# Here we set the timestep to be the same across all models.
 
-Δt = 2 * convert(eltype(grid), atmosphere.model.time_stepping.Δt_sec)
+Δt = convert(eltype(grid), atmosphere.model.time_stepping.Δt_sec)
 nothing #hide
 
 # We build the complete coupled `earth_model` and the coupled simulation.
@@ -107,25 +128,25 @@ earth_model = EarthSystemModel(; atmosphere, sea_ice, ocean)
 # We are ready to build and run the coupled simulation.
 # But before we do, we add callbacks to write outputs to disk every 3 hours.
 
-earth = Oceananigans.Simulation(earth_model; Δt, stop_time=30days)
+earth = Oceananigans.Simulation(earth_model; Δt, stop_time)
 outputs = merge(ocean.model.velocities, ocean.model.tracers)
 sea_ice_fields = merge(sea_ice.model.velocities, sea_ice.model.dynamics.auxiliaries.fields,
                        (; h=sea_ice.model.ice_thickness, ℵ=sea_ice.model.ice_concentration))
 
 ocean.output_writers[:free_surf] = JLD2Writer(ocean.model, (; η=ocean.model.free_surface.displacement);
                                               overwrite_existing=true,
-                                              schedule=TimeInterval(3hours),
+                                              schedule=TimeInterval(output_interval),
                                               filename="ocean_free_surface.jld2")
 
 ocean.output_writers[:surface] = JLD2Writer(ocean.model, outputs;
                                             overwrite_existing=true,
-                                            schedule=TimeInterval(3hours),
+                                            schedule=TimeInterval(output_interval),
                                             filename="ocean_surface_fields.jld2",
                                             indices=(:, :, grid.Nz))
 
 sea_ice.output_writers[:fields] = JLD2Writer(sea_ice.model, sea_ice_fields;
                                              overwrite_existing=true,
-                                             schedule=TimeInterval(3hours),
+                                             schedule=TimeInterval(output_interval),
                                              filename="sea_ice_fields.jld2")
 
 𝒬ᵀᵃᵒ = earth.model.interfaces.atmosphere_ocean_interface.fluxes.sensible_heat
@@ -142,12 +163,13 @@ fluxes = (; 𝒬ᵀᵃᵒ, 𝒬ᵛᵃᵒ, τˣᵃᵒ, τʸᵃᵒ, 𝒬ᵀᵃⁱ,
 
 ocean.output_writers[:fluxes] = JLD2Writer(earth.model.ocean.model, fluxes;
                                            overwrite_existing=true,
-                                           schedule=TimeInterval(3hours),
+                                           schedule=TimeInterval(output_interval),
                                            filename="intercomponent_fluxes.jld2")
 
 # We also add a callback function that prints out a helpful progress message while the simulation runs.
 
 wall_time = Ref(time_ns())
+model_time = Ref(0.0)
 
 function progress(sim)
     atmos = sim.model.atmosphere
@@ -156,19 +178,23 @@ function progress(sim)
     ua, va     = atmos.variables.dynamics.u_mean_grid, atmos.variables.dynamics.v_mean_grid
     uo, vo, wo = ocean.model.velocities
 
-    uamax = (maximum(abs, ua), maximum(abs, va))
+    ## RingGrids only defines the one-argument `maximum`, so `abs` must be broadcast first to stay on the GPU
+    uamax = (maximum(abs.(ua)), maximum(abs.(va)))
     uomax = (maximum(abs, uo), maximum(abs, vo), maximum(abs, wo))
 
     step_time = 1e-9 * (time_ns() - wall_time[])
+    sypd = (time(sim) - model_time[]) / step_time / 365
 
     msg1 = @sprintf("time: %s, iter: %d", prettytime(sim), iteration(sim))
     msg2 = @sprintf(", max|ua|: (%.1e, %.1e) m s⁻¹", uamax...)
     msg3 = @sprintf(", max|uo|: (%.1e, %.1e, %.1e) m s⁻¹", uomax...)
-    msg4 = @sprintf(", wall time: %s \n", prettytime(step_time))
+    msg4 = @sprintf(", wall time: %s", prettytime(step_time))
+    msg5 = @sprintf(", SYPD: %.3f \n", sypd)
 
-    @info msg1 * msg2 * msg3 * msg4
+    @info msg1 * msg2 * msg3 * msg4 * msg5
 
     wall_time[] = time_ns()
+    model_time[] = time(sim)
 
      return nothing
 end
@@ -220,8 +246,8 @@ iter = Observable(1)
 
 san = @lift sp[:, :, $iter]
 son  = @lift begin
-    Oceananigans.set!(uotmp, SSU[$iter])
-    Oceananigans.set!(votmp, SSV[$iter])
+    parent(uotmp) .= parent(SSU[$iter])
+    parent(votmp) .= parent(SSV[$iter])
     Oceananigans.compute!(sotmp)
     Oceananigans.interior(sotmp, :, :, 1)
 end
@@ -254,7 +280,7 @@ end
 title = @lift string(prettytime(times[$iter] - times[1]))
 Label(fig[0, :], title, fontsize=18)
 
-record(fig, "surface_speeds.mp4", 1:Nt, framerate=8) do i
+CairoMakie.record(fig, "surface_speeds.mp4", 1:Nt, framerate=8) do i
     iter[] = i
 end
 nothing #hide
@@ -290,7 +316,7 @@ end
 title = @lift string(prettytime(times[$iter] - times[1]))
 Label(fig[0, :], title, fontsize=18)
 
-record(fig, "surface_temperature_and_heat_flux.mp4", 1:Nt, framerate=8) do i
+CairoMakie.record(fig, "surface_temperature_and_heat_flux.mp4", 1:Nt, framerate=8) do i
     iter[] = i
 end
 nothing #hide

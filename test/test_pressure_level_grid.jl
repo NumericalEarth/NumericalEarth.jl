@@ -6,7 +6,8 @@ using Oceananigans.Grids: Flat, Bounded, topology
 using Oceananigans.OutputReaders: TimeSeriesInterpolation
 using Statistics
 
-using NumericalEarth.Grids: PressureLevelGrid, PressureLevelVerticalDiscretization
+using NumericalEarth.Grids: PressureLevelGrid, PressureLevelVerticalDiscretization,
+                            column_fractional_z_index
 
 # Build a small static-Field-backed `PressureLevelVerticalDiscretization` from
 # a per-cell geopotential array. Returns the (Φ, Φ_sfc, plvd) triple.
@@ -112,6 +113,37 @@ end
         end
     end
 
+    @testset "column_fractional_z_index snaps to the first above-ground level" begin
+        Nx, Ny, Nz = 2, 2, 5
+        Φ_grid = LatitudeLongitudeGrid(CPU(); size=(Nx, Ny, Nz),
+                                       longitude=(0, 1), latitude=(0, 1), z=(0, 1))
+        Φ = CenterField(Φ_grid)
+        for i in 1:Nx, j in 1:Ny, k in 1:Nz
+            interior(Φ)[i, j, k] = 1000.0 * k * g   # level heights 1..5 km
+        end
+        Φ_sfc_grid = LatitudeLongitudeGrid(CPU(); size=(Nx, Ny, 1),
+                                           longitude=(0, 1), latitude=(0, 1), z=(0, 1))
+        Φ_sfc = CenterField(Φ_sfc_grid)
+        interior(Φ_sfc) .= 2500.0 * g            # surface at 2.5 km ⇒ clips k=1,2; first above-ground = k=3
+        plvd = PressureLevelVerticalDiscretization(Φ; gravitational_acceleration=g,
+                                                   surface_geopotential=Φ_sfc)
+        grid = LatitudeLongitudeGrid(CPU(); size=(Nx, Ny, Nz), longitude=(0, 1), latitude=(0, 1),
+                                     z=plvd, topology=(Bounded, Bounded, Bounded))
+
+        # Clipped column heights (m): [2500, 2500, 3000, 4000, 5000]. Levels 1, 2 still hold the raw
+        # sub-surface data, so a target at/below the surface — or between it and the first above-ground
+        # level (k=3) — must snap to k=3, never extrapolate into the clipped plateau [1, 3).
+        @test column_fractional_z_index(2000.0, 1.0, 1.0, grid) == 3   # below surface
+        @test column_fractional_z_index(2500.0, 1.0, 1.0, grid) == 3   # at surface
+        @test column_fractional_z_index(2800.0, 1.0, 1.0, grid) == 3   # surface → first above-ground
+        # Above the first above-ground level, normal interpolation is unchanged.
+        @test column_fractional_z_index(3500.0, 1.0, 1.0, grid) ≈ 3.5
+
+        # No clip (surface below the whole column) ⇒ first above-ground level is 1, behavior unchanged.
+        grid0, _, _, _ = make_plg()
+        @test column_fractional_z_index(0.0, 1.0, 1.0, grid0) == 1
+    end
+
     @testset "rnodes / znodes on the grid return the column-mean Vector" begin
         grid, _, _, _ = make_plg()
         Nz = grid.Nz
@@ -194,5 +226,33 @@ end
         @test znodes(grid, Center()) ≈ [3000.0, 6000.0, 9000.0, 12000.0]
         # Lz = max - min = 20*1000 - 1*1000 = 19000.
         @test grid.Lz ≈ 19000.0
+    end
+
+    @testset "TimeSeriesInterpolation-backed Φ heights follow the clock" begin
+        # The whole point of the FTS-backed vertical: `rnode` must return
+        # different per-cell heights as the shared clock advances.
+        Nx, Ny, Nz = 2, 2, 3
+        Φ_grid = LatitudeLongitudeGrid(CPU(); size=(Nx, Ny, Nz),
+                                       longitude=(0, 1), latitude=(0, 1), z=(0, 1))
+        Φ_fts = FieldTimeSeries{Center, Center, Center}(Φ_grid, [0.0, 10.0])
+        for i in 1:Nx, j in 1:Ny, k in 1:Nz
+            Φ_fts[1][i, j, k] = 1000.0 * k * g     # t=0:  heights {1, 2, 3} km
+            Φ_fts[2][i, j, k] = 2000.0 * k * g     # t=10: heights {2, 4, 6} km
+        end
+
+        clock = Clock(time = 0.0)
+        tsi   = TimeSeriesInterpolation(Φ_fts, Φ_fts.grid; clock)
+        plvd  = PressureLevelVerticalDiscretization(tsi; gravitational_acceleration = g)
+        grid  = LatitudeLongitudeGrid(CPU(); size=(Nx, Ny, Nz),
+                                      longitude=(0, 1), latitude=(0, 1), z=plvd)
+
+        rnode = Oceananigans.Grids.rnode
+        ℓ = (Center(), Center(), Center())
+
+        @test rnode(1, 1, 2, grid, ℓ...) ≈ 2000.0    # k=2 at t=0 → 2 km
+        clock.time = 10.0
+        @test rnode(1, 1, 2, grid, ℓ...) ≈ 4000.0    # same grid, later snapshot → 4 km
+        clock.time = 5.0
+        @test rnode(1, 1, 2, grid, ℓ...) ≈ 3000.0    # linear-in-time between snapshots
     end
 end

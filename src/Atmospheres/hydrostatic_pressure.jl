@@ -8,6 +8,17 @@ using Oceananigans.Fields: CenterField, interior
 using Oceananigans.Grids: znode
 using Oceananigans.BoundaryConditions: fill_halo_regions!
 
+# Host interior arrays of `temperature` and the optional moisture fields, with omitted moisture
+# zero-filled (the dry limit). Shared by `hydrostatic_pressure_from_surface` and `density_from_pressure`.
+function interior_temperature_and_moisture(temperature, qᵛ, qᶜ, qⁱ)
+    Tᵃ = Array(interior(temperature))
+    no_moisture = zero(Tᵃ)
+    qᵛᵃ = isnothing(qᵛ) ? no_moisture : Array(interior(qᵛ))
+    qᶜᵃ = isnothing(qᶜ) ? no_moisture : Array(interior(qᶜ))
+    qⁱᵃ = isnothing(qⁱ) ? no_moisture : Array(interior(qⁱ))
+    return Tᵃ, qᵛᵃ, qᶜᵃ, qⁱᵃ
+end
+
 """
 $(TYPEDSIGNATURES)
 
@@ -83,8 +94,7 @@ function hydrostatic_pressure_from_surface(temperature, surface_pressure, orogra
     grid = temperature.grid
     arch = architecture(grid)
 
-    surface_pressure = on_architecture(arch, surface_pressure)
-    orography = on_architecture(arch, orography)
+    Tᵃ, qᵛᵃ, qᶜᵃ, qⁱᵃ = interior_temperature_and_moisture(temperature, qᵛ, qᶜ, qⁱ)
 
     Rᵈ = dry_gas_constant
     Rᵛ = vapor_gas_constant
@@ -97,4 +107,34 @@ function hydrostatic_pressure_from_surface(temperature, surface_pressure, orogra
 
     fill_halo_regions!(pressure)
     return pressure
+end
+
+"""
+$(TYPEDSIGNATURES)
+
+Moist-air density `ρ = p / (Rᵐ T)` on the grid of `temperature`, with the moist mixture gas constant
+`Rᵐ = qᵈ Rᵈ + qᵛ Rᵛ`, `qᵈ = 1 − qᵛ − qᶜ − qⁱ` — the same EOS as [`hydrostatic_pressure_from_surface`](@ref),
+so a density built from that pressure is mutually consistent. `temperature` and `pressure` are `Field`s
+on the same grid; the moisture `qᵛ`, `qᶜ`, `qⁱ` are optional `Field`s (omitting them gives the dry
+result `ρ = p / (Rᵈ T)`). Returns a `CenterField`. Useful to initialize a compressible model's density
+from an analysis temperature + (hydrostatic) pressure, e.g. `set!(model; ρ = density_from_pressure(T, p; …))`.
+"""
+function density_from_pressure(temperature, pressure;
+                               qᵛ = nothing, qᶜ = nothing, qⁱ = nothing,
+                               dry_gas_constant,
+                               vapor_gas_constant)
+    grid = temperature.grid
+
+    Tᵃ, qᵛᵃ, qᶜᵃ, qⁱᵃ = interior_temperature_and_moisture(temperature, qᵛ, qᶜ, qⁱ)
+    pᵃ = Array(interior(pressure))
+
+    Rᵈ = dry_gas_constant
+    Rᵛ = vapor_gas_constant
+    Rᵐ = @. (1 - qᵛᵃ - qᶜᵃ - qⁱᵃ) * Rᵈ + qᵛᵃ * Rᵛ
+    ρ  = @. pᵃ / (Rᵐ * Tᵃ)
+
+    density = CenterField(grid)
+    set!(density, ρ)
+    fill_halo_regions!(density)
+    return density
 end
