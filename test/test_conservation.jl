@@ -323,8 +323,9 @@ end
         elapsed_time = ocean.model.clock.time
         expected_volume_change = Lx * Ly * freshwater_volume_flux * elapsed_time
 
-        # Rain increases the ocean volume by the input freshwater volume, up to the ~1%
-        # quadrature bias of the barotropic substepping averaging window...
+        # TODO: Tighten tolerances after https://github.com/CliMA/Oceananigans.jl/pull/5788
+
+        # Rain increases the ocean volume by the input freshwater volume...
         @test V > V⁻
         @test isapprox(V - V⁻, expected_volume_change, rtol=2e-2)
 
