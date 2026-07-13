@@ -1,15 +1,13 @@
-using ...Atmospheres: PrescribedAtmosphere, PrescribedPrecipitationFlux,
-                      AtmosphereThermodynamicsParameters
+using ...Atmospheres: Atmospheres, PrescribedPrecipitationFlux, AtmosphereThermodynamicsParameters
 using ...EarthSystemModels.InterfaceComputations: saturation_specific_humidity
 using Oceananigans.AbstractOperations: KernelFunctionOperation
 using Oceananigans.Architectures: on_architecture
 using Oceananigans.Fields: CenterField, interior
 using Thermodynamics: Liquid
 
-const ERA5PrescribedAtmosphere = PrescribedAtmosphere{<:ERA5Dataset}
+const ERA5PrescribedAtmosphere = Atmospheres.PrescribedAtmosphere{<:ERA5Dataset}
 
-ERA5PrescribedAtmosphere(arch::Distributed; kw...) =
-    ERA5PrescribedAtmosphere(child_architecture(arch); kw...)
+ERA5PrescribedAtmosphere(arch::Distributed; kw...) = ERA5PrescribedAtmosphere(child_architecture(arch); kw...)
 
 # ERA5 carries the 2 m dewpoint temperature, not specific humidity. The air is
 # saturated at its dewpoint, so qᵛ = qᵛ⁺(Tᵈ, pˢ).
@@ -84,16 +82,16 @@ function ERA5PrescribedAtmosphere(architecture = CPU();
 
     precipitation_flux = PrescribedPrecipitationFlux(; rain)
 
-    return PrescribedAtmosphere(grid, times;
-                                source = dataset,
-                                velocities = (; u, v),
-                                temperature = T,
-                                specific_humidity = qᵛ,
-                                pressure = p,
-                                precipitation_flux,
-                                thermodynamics_parameters = ℂ,
-                                surface_layer_height  = convert(FT, surface_layer_height),
-                                boundary_layer_height = convert(FT, boundary_layer_height))
+    return Atmospheres.PrescribedAtmosphere(grid, times;
+                                            source = dataset,
+                                            velocities = (; u, v),
+                                            temperature = T,
+                                            specific_humidity = qᵛ,
+                                            pressure = p,
+                                            precipitation_flux,
+                                            thermodynamics_parameters = ℂ,
+                                            surface_layer_height  = convert(FT, surface_layer_height),
+                                            boundary_layer_height = convert(FT, boundary_layer_height))
 end
 
 # Pressure on a `PressureLevelGrid` is the level coordinate (Pa), constant in space and time
@@ -166,15 +164,15 @@ function ERA5PrescribedAtmosphere(bounding_box::BoundingBox, dates;
 
     times = T.times
 
-    return PrescribedAtmosphere(grid, times;
-                                clock,
-                                source = dataset,
-                                velocities = (; u, v),
-                                temperature = T,
-                                specific_humidity = qᵛ,
-                                microphysical_variables = (; qᶜˡ, qʳ, qᶜⁱ, qˢ),
-                                pressure = pressure_level_field(grid, dataset, architecture),
-                                thermodynamics_parameters)
+    return Atmospheres.PrescribedAtmosphere(grid, times;
+                                            clock,
+                                            source = dataset,
+                                            velocities = (; u, v),
+                                            temperature = T,
+                                            specific_humidity = qᵛ,
+                                            microphysical_variables = (; qᶜˡ, qʳ, qᶜⁱ, qˢ),
+                                            pressure = pressure_level_field(grid, dataset, architecture),
+                                            thermodynamics_parameters)
 end
 
 """
@@ -183,5 +181,4 @@ end
 Dataset-dispatched constructor: build an [`ERA5PrescribedAtmosphere`](@ref) over `bounding_box`
 at `dates` on `dataset`'s native grid. Keyword arguments flow to `ERA5PrescribedAtmosphere`.
 """
-NumericalEarth.Atmospheres.PrescribedAtmosphere(bounding_box::BoundingBox, dates, dataset::ERA5PressureLevelsDataset; kw...) =
-    ERA5PrescribedAtmosphere(bounding_box, dates; dataset, kw...)
+Atmospheres.PrescribedAtmosphere(bounding_box::BoundingBox, dates, dataset::ERA5PressureLevelsDataset; kw...) = ERA5PrescribedAtmosphere(bounding_box, dates; dataset, kw...)
