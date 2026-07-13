@@ -2,7 +2,9 @@ include("runtests_setup.jl")
 
 using NumericalEarth.DataWrangling.ECOSTRESS: ECOSTRESSL2G, ecostress_lst,
                                               granule_timestamp, ecostress_overpasses,
-                                              ecostress_cmr_url, ECOSTRESS_RESOLUTION
+                                              ecostress_cmr_url, ECOSTRESS_RESOLUTION,
+                                              region_box_coverage, cmr_entries,
+                                              parse_cmr_granule
 using NumericalEarth.DataWrangling: BoundingBox, Metadatum, Metadata, native_grid,
                                     retrieve_data,
                                     dataset_variable_name, metadata_filename,
@@ -50,6 +52,40 @@ end
 
     # An unbounded region cannot be searched.
     @test_throws ArgumentError ecostress_cmr_url("002", BoundingBox(), DateTime(2021, 7, 1), DateTime(2021, 7, 3))
+end
+
+@testset "ECOSTRESS CMR coverage filtering (network-free)" begin
+    region = BoundingBox(longitude = (-101, -100), latitude = (33.5, 34.5))
+
+    # Boxes are "S W N E". A box fully containing the region → full coverage.
+    @test region_box_coverage("32.2546 -104.0781 37.2155 -97.9209", region) ≈ 1.0
+    # The empty first overpass from the live test: box east edge -100.7692 only clips
+    # the region's west sliver → low coverage (rejected by the 0.5 default).
+    @test region_box_coverage("30.0104 -106.7752 34.9601 -100.7692", region) < 0.5
+    # A box entirely elsewhere → no coverage.
+    @test region_box_coverage("10.0 20.0 12.0 22.0", region) == 0.0
+
+    # Entry splitting + per-granule parse, exercised on a synthetic 2-entry feed.
+    feed = """
+    {"feed":{"entry":[
+      {"boxes":["32.2546 -104.0781 37.2155 -97.9209"],
+       "links":[{"href":"https://data.lpdaac.earthdatacloud.nasa.gov/x/ECOv002_L2G_LSTE_16928_005_20210701T082749_0712_01.h5"},
+                {"href":"s3://lp/ECOv002_L2G_LSTE_16928_005_20210701T082749_0712_01.h5"}]},
+      {"boxes":["30.0104 -106.7752 34.9601 -100.7692"],
+       "links":[{"href":"https://data.lpdaac.earthdatacloud.nasa.gov/x/ECOv002_L2G_LSTE_16928_004_20210701T082657_0712_01.h5"}]}
+    ]}}
+    """
+    entries = cmr_entries(feed)
+    @test length(entries) == 2
+
+    g1 = parse_cmr_granule(entries[1], "ECOv002_L2G_LSTE_", region)
+    @test g1.time == DateTime(2021, 7, 1, 8, 27, 49)
+    @test startswith(g1.url, "https://") && endswith(g1.url, ".h5")   # https link, not s3
+    @test g1.coverage ≈ 1.0
+
+    g2 = parse_cmr_granule(entries[2], "ECOv002_L2G_LSTE_", region)
+    @test g2.time == DateTime(2021, 7, 1, 8, 26, 57)
+    @test g2.coverage < 0.5   # the barely-clipping scene
 end
 
 @testset "ECOSTRESSL2G dataset interface" begin

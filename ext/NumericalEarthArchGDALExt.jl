@@ -113,12 +113,16 @@ function ECOSTRESS.ecostress_granule_to_netcdf(metadatum::ECOSTRESS.ECOSTRESSMet
     version = metadatum.dataset.version
     date = metadatum.dates
 
-    # Search a ±1-day window around the requested overpass and pick the nearest.
+    # Search a ±1-day window around the requested overpass. Prefer granules that actually
+    # cover the region (CMR's spatial search over-reports); among those, pick the nearest
+    # in time. Fall back to all candidates only if none clear the coverage threshold.
     granules = ecostress_cmr_granules(version, region, date - Day(1), date + Day(1))
     isempty(granules) &&
         error("CMR returned no ECO_L2G_LSTE.$(version) granules for region $(region) near $(date).")
-    gaps = [abs(Dates.value(Second(t - date))) for (t, _) in granules]
-    _, url = granules[argmin(gaps)]
+    covered = filter(g -> g.coverage ≥ ECOSTRESS.ECOSTRESS_MIN_COVERAGE, granules)
+    candidates = isempty(covered) ? granules : covered
+    gaps = [abs(Dates.value(Second(g.time - date))) for g in candidates]
+    url = candidates[argmin(gaps)].url
 
     λ = region.longitude
     φ = region.latitude

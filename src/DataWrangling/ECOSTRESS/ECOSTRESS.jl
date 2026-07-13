@@ -190,48 +190,120 @@ function ecostress_cmr_url(version, region::BoundingBox, start_date, end_date; p
                   "&page_size=", page_size)
 end
 
+# Default fraction of the region a granule's footprint box must cover to be treated as
+# an overpass "over" the region. CMR's `bounding_box` search returns every granule whose
+# footprint merely *touches* the region, so many candidates barely clip it (their valid
+# swath is elsewhere) and read back as all-NaN. Filtering by box coverage rejects those.
+const ECOSTRESS_MIN_COVERAGE = 0.5
+
+"""
+    region_box_coverage(box, region)
+
+Fraction of `region`'s area covered by a CMR granule footprint `box`, the string
+`"S W N E"` (`lat_min lon_min lat_max lon_max`). This is an over-estimate of the valid-
+pixel coverage (the box bounds the whole scene footprint), but it is enough to reject
+the candidate granules whose footprint only clips the region.
+"""
+function region_box_coverage(box::AbstractString, region::BoundingBox)
+    s, w, n, e = parse.(Float64, split(box))
+    west, east = region.longitude
+    south, north = region.latitude
+    Δλ = max(0.0, min(e, east) - max(w, west))
+    Δφ = max(0.0, min(n, north) - max(s, south))
+    area = (east - west) * (north - south)
+    return area > 0 ? clamp(Δλ * Δφ / area, 0, 1) : 0.0
+end
+
+# Split the CMR feed's `entry` array into per-granule JSON-object substrings by brace
+# matching (string/escape aware), keeping each granule's box, links, and time together.
+# Avoids a JSON dependency for the small, regular CMR response.
+function cmr_entries(text::AbstractString)
+    entries = SubString{String}[]
+    key = findfirst("\"entry\":[", text)
+    key === nothing && return entries
+    tail = SubString(text, nextind(text, last(key)))
+    depth = 0
+    start = firstindex(tail)
+    in_string = false
+    escaped = false
+    for i in eachindex(tail)
+        c = tail[i]
+        if in_string
+            if escaped
+                escaped = false
+            elseif c == '\\'
+                escaped = true
+            elseif c == '"'
+                in_string = false
+            end
+        elseif c == '"'
+            in_string = true
+        elseif c == '{'
+            depth += 1
+            depth == 1 && (start = i)
+        elseif c == '}'
+            depth -= 1
+            depth == 0 && push!(entries, SubString(tail, start, i))
+        elseif c == ']' && depth == 0
+            break
+        end
+    end
+    return entries
+end
+
+# Parse one CMR entry into `(time, url, coverage)`, or `nothing` if it carries no
+# matching protected `.h5` granule. `region` is used only for the coverage estimate.
+function parse_cmr_granule(entry, prefix, region)
+    m = match(Regex("\"(https://[^\"]+/(" * prefix * "[^\"/]+)\\.h5)\""), entry)
+    m === nothing && return nothing
+    granule_url, granule_id = m.captures
+    occursin("_mvs", granule_id) && return nothing   # skip the median-view quicklook aux
+    box = match(r"\"boxes\":\[\"([^\"]+)\"\]", entry)
+    coverage = isnothing(box) ? 1.0 : region_box_coverage(box.captures[1], region)
+    return (; time = granule_timestamp(granule_id), url = String(granule_url), coverage)
+end
+
 """
     ecostress_cmr_granules(version, region, start_date, end_date)
 
-Query CMR and return the `(timestamp, download_url)` pairs of the `ECO_L2G_LSTE`
-granules intersecting `region` over `[start_date, end_date]`, sorted by time.
-Requires network access. The granule `.h5` URLs and their `YYYYMMDDThhmmss`
-acquisition tags are read straight out of the JSON response text.
+Query CMR and return, sorted by time, the `ECO_L2G_LSTE` granules intersecting `region`
+over `[start_date, end_date]` as `(; time, url, coverage)` named tuples, where `coverage`
+is [`region_box_coverage`](@ref) of the granule footprint. Requires network access.
 """
 function ecostress_cmr_granules(version, region::BoundingBox, start_date, end_date)
     url = ecostress_cmr_url(version, region, start_date, end_date)
     prefix = "ECOv" * version * "_L2G_LSTE_"
-    granules = Tuple{DateTime, String}[]
 
-    mktempdir() do tmp
+    granules = mktempdir() do tmp
         json = joinpath(tmp, "cmr.json")
         Downloads.download(url, json)
         text = read(json, String)
-        pattern = Regex("https://[^\"]+/(" * prefix * "[^\"/]+)\\.h5")
-        for m in eachmatch(pattern, text)
-            granule = m.captures[1]
-            occursin("_mvs", granule) && continue   # skip the median-view quicklook aux
-            t = granule_timestamp(granule)
-            push!(granules, (t, m.match))
-        end
+        parsed = [parse_cmr_granule(entry, prefix, region) for entry in cmr_entries(text)]
+        filter(!isnothing, parsed)
     end
 
-    unique!(granules)
-    sort!(granules; by = first)
+    sort!(granules; by = g -> g.time)
     return granules
 end
 
 """
-    ecostress_overpasses(region, start_date, end_date; version = "002")
+    ecostress_overpasses(region, start_date, end_date; version = "002", min_coverage = $(ECOSTRESS_MIN_COVERAGE))
 
-Discover the actual (irregular) ECOSTRESS ECO_L2G_LSTE overpass times intersecting
-the lon/lat [`BoundingBox`](@ref) `region` over `[start_date, end_date]`, by querying
-NASA's Common Metadata Repository. Returns a sorted `Vector{DateTime}`; pass it as
-`dates` to [`Metadata`](@ref) to build an irregular-time series. Requires network
-access.
+Discover the actual (irregular) ECOSTRESS ECO_L2G_LSTE overpass times intersecting the
+lon/lat [`BoundingBox`](@ref) `region` over `[start_date, end_date]`, by querying NASA's
+Common Metadata Repository. Returns a sorted `Vector{DateTime}`; pass it as `dates` to
+[`Metadata`](@ref) to build an irregular-time series. Requires network access.
+
+Only overpasses whose footprint covers at least `min_coverage` of the region are
+returned (see [`region_box_coverage`](@ref)) — CMR's spatial search over-reports, so the
+unfiltered candidates include scenes whose valid swath misses the region and read back
+as all-NaN. Lower `min_coverage` (e.g. `0`) to keep every candidate.
 """
-ecostress_overpasses(region::BoundingBox, start_date, end_date; version = "002") =
-    first.(ecostress_cmr_granules(version, region, start_date, end_date))
+function ecostress_overpasses(region::BoundingBox, start_date, end_date;
+                              version = "002", min_coverage = ECOSTRESS_MIN_COVERAGE)
+    granules = ecostress_cmr_granules(version, region, start_date, end_date)
+    return [g.time for g in granules if g.coverage ≥ min_coverage]
+end
 
 #####
 ##### Region-encoded filenames + coverage validation (per CopernicusDEM)
