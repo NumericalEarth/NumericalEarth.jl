@@ -78,3 +78,7 @@ lst_series = FieldTimeSeries(metadata)
   windowed at download time.
 - `:land_surface_temperature` (`LST`) and `:lst_uncertainty` (`LST_err`) are read
   from one downloaded file per overpass; both are in Kelvin with `NaN` gaps.
+- `ecostress_overpasses` returns *candidate* overpasses: CMR intersects the region
+  against each granule's bounding polygon, which over-reports — a returned overpass
+  can still have no valid retrieval over the exact window (all `NaN`, off-swath or
+  fully cloudy). Check that a slice actually has finite cells before relying on it.
