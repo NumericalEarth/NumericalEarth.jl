@@ -7,7 +7,7 @@ using Oceananigans.Operators: volume
 using Oceananigans.Units
 using NumericalEarth.Oceans: get_radiative_forcing
 
-function test_tracer_budget(coupled_model, Sᵒᶜ, Δt, nsteps; rtol)
+function test_tracer_budget(coupled_model, Δt, nsteps; rtol=1e-9)
     ocean = coupled_model.ocean
     grid  = ocean.model.grid
 
@@ -18,8 +18,15 @@ function test_tracer_budget(coupled_model, Sᵒᶜ, Δt, nsteps; rtol)
     T = ocean.model.tracers.T
     S = ocean.model.tracers.S
 
-    heat_rate       = Integral(ρᵒᶜ * cᵒᶜ * T.boundary_conditions.top.condition, dims=(1, 2))
-    freshwater_rate = Integral(net_ocean_freshwater_flux(coupled_model; reference_salinity=Sᵒᶜ), dims=(1, 2))
+    # The surface tracer fluxes are discrete boundary conditions (the virtual salt flux and heat
+    # exchange are evaluated live), so the applied fluxes are read from the assembled net-flux
+    # fields rather than integrated from the boundary condition.
+    Jᵀ  = coupled_model.interfaces.net_fluxes.ocean.T   # surface heat flux (turbulent + radiative)
+    Jʷ  = coupled_model.interfaces.net_fluxes.ocean.η   # freshwater volume flux
+    Jᴴ = coupled_model.interfaces.net_fluxes.ocean.freshwater_heat_content # Σᵢ Tᵢ Jʷᵢ (rain − evap at SST)
+    heat_rate     = Integral(ρᵒᶜ * cᵒᶜ * Jᵀ,  dims=(1, 2))
+    enthalpy_rate = Integral(ρᵒᶜ * cᵒᶜ * Jᴴ, dims=(1, 2))
+    volume_rate   = Integral(Jʷ, dims=(1, 2))
 
     penetrating_radiation = get_radiative_forcing(ocean)
     radiative_rate = if isnothing(penetrating_radiation)
@@ -31,34 +38,42 @@ function test_tracer_budget(coupled_model, Sᵒᶜ, Δt, nsteps; rtol)
         Integral(ρᵒᶜ * cᵒᶜ * radiative_forcing, dims=(1, 2, 3))
     end
 
+    cell_volume = KernelFunctionOperation{Center, Center, Center}(volume, grid, Center(), Center(), Center())
+
     VT⁻ = CenterField(grid)
-    VS⁻ = CenterField(grid)
     ΔVT = Field(T * volume - VT⁻)
-    ΔVS = Field(S * volume - VS⁻)
+
+    ∫S⁻ = sum(S * cell_volume)
 
     for _ = 1:nsteps
         set!(VT⁻, T * volume)
-        set!(VS⁻, S * volume)
+        V⁻ = sum(cell_volume)
 
-        previous_heat_flux       = @allowscalar first(Field(heat_rate))
-        previous_freshwater_flux = @allowscalar first(Field(freshwater_rate))
-        previous_radiative_rate  = isnothing(radiative_rate) ? zero(previous_heat_flux) : @allowscalar first(Field(radiative_rate))
+        previous_heat_flux      = @allowscalar first(Field(heat_rate))
+        previous_enthalpy       = @allowscalar first(Field(enthalpy_rate))
+        previous_volume_flux    = @allowscalar first(Field(volume_rate))
+        previous_radiative_rate = isnothing(radiative_rate) ? zero(previous_heat_flux) : @allowscalar first(Field(radiative_rate))
 
         time_step!(coupled_model, Δt)
         last_Δt = ocean.model.clock.last_Δt
 
         compute!(ΔVT)
-        compute!(ΔVS)
 
-        heat_content_tendency       = sum( ρᵒᶜ * cᵒᶜ * ΔVT)
-        freshwater_content_tendency = sum(-ρᵒᶜ / Sᵒᶜ * ΔVS)
-
-        expected_heat_content_tendency       = (previous_radiative_rate - previous_heat_flux) * last_Δt
-        expected_freshwater_content_tendency = -previous_freshwater_flux * last_Δt
-
+        # Heat content changes by the surface heat flux plus the enthalpy carried by the freshwater
+        # (rain − evaporation at SST). The live Tᴺ Jʷ exchange cancels the z-star ambient carry, so
+        # the freshwater's own enthalpy Σᵢ Tᵢ Jʷᵢ is what remains.
+        heat_content_tendency = sum(ρᵒᶜ * cᵒᶜ * ΔVT)
+        expected_heat_content_tendency = (previous_radiative_rate - previous_heat_flux + previous_enthalpy) * last_Δt
         @test isapprox(heat_content_tendency, expected_heat_content_tendency; rtol)
-        @test isapprox(freshwater_content_tendency, expected_freshwater_content_tendency; rtol)
+
+        # Volume grows by exactly the surface-integrated freshwater volume flux.
+        volume_tendency = sum(cell_volume) - V⁻
+        expected_volume_tendency = previous_volume_flux * last_Δt
+        @test isapprox(volume_tendency, expected_volume_tendency; rtol)
     end
+
+    # Freshwater carries no salt, so the total salt content is conserved over the run.
+    @test abs(sum(S * cell_volume) - ∫S⁻) < rtol * ∫S⁻
 
     return nothing
 end
@@ -95,18 +110,18 @@ end
 
             # Without shortwave penetration
             @testset "Surface-only fluxes" begin
-                ocean = ocean_simulation(grid; free_surface, radiative_forcing=nothing)
+                ocean = ocean_simulation(deepcopy(grid); free_surface, radiative_forcing=nothing)
                 set!(ocean.model, en4_set)
                 coupled_model = OceanSeaIceModel(ocean, nothing; atmosphere, radiation)
-                test_tracer_budget(coupled_model, Sᵒᶜ, Δt, 4; rtol=√eps(eltype(grid)))
+                test_tracer_budget(coupled_model, Δt, 4)
             end
 
             # With penetrative shortwave radiation
             @testset "Surface fluxes + Penetrating shortwave radiation" begin
-                ocean = ocean_simulation(grid; free_surface)
+                ocean = ocean_simulation(deepcopy(grid); free_surface)
                 set!(ocean.model, en4_set)
                 coupled_model = OceanSeaIceModel(ocean, nothing; atmosphere, radiation)
-                test_tracer_budget(coupled_model, Sᵒᶜ, Δt, 4; rtol=√eps(eltype(grid)))
+                test_tracer_budget(coupled_model, Δt, 4)
             end
         end
     end

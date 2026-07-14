@@ -120,7 +120,7 @@ function EarthSystemModels.InterfaceComputations.net_fluxes(ocean::SlabOcean)
     Jˢ = CenterField(grid)
     τx = CenterField(grid)
     τy = CenterField(grid)
-    Jʷ = ZeroField()
+    Jʷ = CenterField(grid)
     return (T=ocean.temperature_flux, S=Jˢ, u=τx, v=τy, η=Jʷ)
 end
 

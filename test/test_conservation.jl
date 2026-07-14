@@ -268,6 +268,7 @@ end
         Lx = Ly = 1e5
         grid = RectilinearGrid(arch;
                                size = (4, 4, 4),
+                               halo = (4, 4, 4), 
                                x = (0, Lx), y = (0, Ly),
                                z = MutableVerticalDiscretization((-10, 0)),
                                topology = (Periodic, Periodic, Bounded))
@@ -310,31 +311,32 @@ end
 
         V⁻ = ocean_volume()
         ∫S⁻ = total_salt()
-        freshwater_volume_flux = first(Array(interior(Jʷ)))
 
+        # Accumulate the surface-integrated freshwater volume flux ∫∫ Jʷ dA dt over the run (the
+        # flux is spatially uniform here); comparing against a single-sample flux × elapsed time
+        # would only close to O(Δt) as the evaporative flux drifts.
         Δt = 2minutes
         Nsteps = 30
+        expected_volume_change = 0.0
         for _ in 1:Nsteps
+            freshwater_volume_flux = first(Array(interior(Jʷ)))
             time_step!(coupled_model, Δt)
+            expected_volume_change += Lx * Ly * freshwater_volume_flux * ocean.model.clock.last_Δt
         end
 
         V = ocean_volume()
         ∫S = total_salt()
-        elapsed_time = ocean.model.clock.time
-        expected_volume_change = Lx * Ly * freshwater_volume_flux * elapsed_time
 
-        # TODO: Tighten tolerances after https://github.com/CliMA/Oceananigans.jl/pull/5788
-
-        # Rain increases the ocean volume by the input freshwater volume...
+        # Rain increases the ocean volume by exactly the integrated freshwater volume flux.
         @test V > V⁻
-        @test isapprox(V - V⁻, expected_volume_change, rtol=2e-2)
+        @test isapprox(V - V⁻, expected_volume_change, rtol=1e-10)
 
-        # ... carries no salt, so the total salt content is unchanged: the virtual salt
-        # flux must cancel the salt spuriously advected in with the added volume...
-        @test abs(∫S - ∫S⁻) < 1e-3 * S₀ * (V - V⁻)
+        # It carries no salt: the live virtual salt flux cancels the salt the volume change advects
+        # in, so the total salt content is conserved to machine precision...
+        @test abs(∫S - ∫S⁻) < 1e-10 * S₀ * (V - V⁻)
 
-        # ... and therefore dilutes the mean salinity.
+        # ... and therefore dilutes the mean salinity as pure volume growth.
         @test ∫S / V < S₀
-        @test isapprox(∫S / V, S₀ * V⁻ / V, rtol=1e-5)
+        @test isapprox(∫S / V, S₀ * V⁻ / V, rtol=1e-10)
     end
 end

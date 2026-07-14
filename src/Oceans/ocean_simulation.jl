@@ -53,6 +53,39 @@ end
 @inline build_top_bc(flux_field, ::Nothing) = FluxBoundaryCondition(flux_field)
 @inline build_top_bc(flux_field, additional) = FluxBoundaryCondition(MultipleFluxes(flux_field, additional); discrete_form=true)
 
+# A freshwater surface tracer exchange. Each freshwater source carries a prescribed concentration `cᵢ` into the tracer
+# (zero salinity for pure water; its own temperature for heat), so the net surface flux is
+#
+#     Σᵢ (cᴺ − cᵢ) Jʷᵢ  = cᴺ · (Σᵢ Jʷᵢ)  −  Σᵢ cᵢ Jʷᵢ
+#                         └─ carrying ─┘  └─ content ─┘
+#
+# Only the surface value `cᴺ` is read live — this cancels the z-star "ambient carry" (the tracer the volume change sweeps in)
+# to machine precision. `carrying_flux` and `content_flux` are summed over sources by the flux assembler, so adding a source
+# with its own temperature/salinity is a local two-line change there (`carrying += Jʷᵢ`, `content += cᵢ Jʷᵢ`) — no new mechanism.
+struct FreshwaterExchange{name, C, W, A}
+    carrying_flux :: C   # Σᵢ Jʷᵢ  (volume flux of the sources carrying a prescribed cᵢ)
+    content_flux  :: W   # Σᵢ cᵢ Jʷᵢ
+    additional    :: A
+end
+
+@inline FreshwaterExchange{name}(c, w, a) where name = FreshwaterExchange{name, typeof(c), typeof(w), typeof(a)}(c, w, a)
+
+Adapt.adapt_structure(to, f::FreshwaterExchange{name}) where name =
+    FreshwaterExchange{name}(Adapt.adapt(to, f.carrying_flux),
+                             Adapt.adapt(to, f.content_flux),
+                             Adapt.adapt(to, f.additional))
+
+@inline (f::FreshwaterExchange{name})(i, j, grid, clock, fields) where name =
+    @inbounds(getproperty(fields, name)[i, j, grid.Nz] * f.carrying_flux[i, j, 1] - f.content_flux[i, j, 1]) +
+    getbc(f.additional, i, j, grid, clock, fields)
+
+build_tracer_top_bc(Jᵀ, Jʷ, content, additional, name) = 
+    FluxBoundaryCondition(MultipleFluxes(Jᵀ, FreshwaterExchange{name}(carrying, content, additional)); discrete_form=true)
+
+@inline freshwater_exchange(bc::DiscreteBoundaryFunction) = freshwater_exchange(bc.func)
+@inline freshwater_exchange(mf::MultipleFluxes) = mf.additional_fluxes
+@inline extract_freshwater_flux(bc) = freshwater_exchange(bc).carrying_flux
+
 #####
 ##### Defaults
 #####
@@ -401,11 +434,18 @@ function hydrostatic_ocean_simulation(grid;
     default_additional_fluxes = (u=nothing, v=nothing, T=nothing, S=nothing)
     additional = merge(default_additional_fluxes, additional_surface_fluxes)
 
+    # Freshwater heat exchange: `carrying` is the shared freshwater volume flux Jʷ (as for salt),
+    # so `Tᴺ Jʷ` cancels the z-star ambient carry and heat content is conserved (closes like salt).
+    # `content = Σᵢ Tᵢ Jʷᵢ` is zero by default (conserve-content) and filled by the assembler once
+    # freshwater source temperatures are supplied.
+    freshwater_heat_content = Field{Center, Center, Nothing}(grid)
+    freshwater_salt_content = ZeroField()
+
     # Construct ocean boundary conditions including surface forcing and bottom drag
     u_top_bc = build_top_bc(τˣ, additional.u)
     v_top_bc = build_top_bc(τʸ, additional.v)
-    T_top_bc = build_top_bc(Jᵀ, additional.T)
-    S_top_bc = build_top_bc(Jˢ, additional.S)
+    T_top_bc = build_tracer_top_bc(Jᵀ, Jʷ, freshwater_heat_content, additional.T)
+    S_top_bc = build_tracer_top_bc(Jˢ, Jʷ, freshwater_salt_content, additional.S)
 
     u_bot_bc = FluxBoundaryCondition(u_quadratic_bottom_drag, discrete_form=true, parameters=bottom_drag_coefficient)
     v_bot_bc = FluxBoundaryCondition(v_quadratic_bottom_drag, discrete_form=true, parameters=bottom_drag_coefficient)

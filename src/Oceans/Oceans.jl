@@ -180,13 +180,17 @@ function EarthSystemModels.InterfaceComputations.net_fluxes(ocean::OceananigansM
     tracers = ocean.model.tracers
     ocean_surface_tracer_fluxes = NamedTuple(name => net_flux(tracers[name].boundary_conditions.top.condition) for name in keys(tracers))
 
-    freshwater_volume_flux = if ocean.model.vertical_coordinate isa ZStarCoordinate
-        net_flux(ocean.model.forcing.η)
-    else
-        Field{Center, Center, Nothing}(ocean.model.grid)
-    end
+    # The freshwater volume flux lives in the salinity top BC (and, on z-star grids, is the same
+    # field forcing η), so the assembler and the BC always write/read one shared field.
+    freshwater_volume_flux = extract_freshwater_flux(ocean.model.tracers.S.boundary_conditions.top.condition)
 
-    fluxes = merge(ocean_surface_tracer_fluxes, net_ocean_surface_fluxes, (; η = freshwater_volume_flux))
+    # Freshwater heat exchange shares the volume flux `η` as its carrying flux; only the
+    # source-temperature-weighted `content = Σᵢ Tᵢ Jʷᵢ` is a distinct assembler-written field.
+    heat_exchange = freshwater_exchange(ocean.model.tracers.T.boundary_conditions.top.condition)
+
+    fluxes = merge(ocean_surface_tracer_fluxes, net_ocean_surface_fluxes,
+                   (; η = freshwater_volume_flux,
+                      freshwater_heat_content = heat_exchange.content_flux))
 
     return fluxes
 end
