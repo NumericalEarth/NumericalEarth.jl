@@ -435,10 +435,7 @@ function hydrostatic_ocean_simulation(grid;
     default_additional_fluxes = (u=nothing, v=nothing, T=nothing, S=nothing)
     additional = merge(default_additional_fluxes, additional_surface_fluxes)
 
-    # Freshwater tracer exchange content `Σᵢ cᵢ Jʷᵢ` (the carrying flux is the shared `Jʷ`, so the
-    # live `cᴺ Jʷ` cancels the z-star ambient carry and leaves the freshwater's own content). Pure
-    # freshwater carries no salt; the assembler fills the heat content with the enthalpy of the
-    # atmosphere freshwater entering at the surface temperature (rain − evaporation at SST).
+    # Freshwater heat content is `Σᵢ Tᵢ Jʷᵢ`, the Freshwater salinity content is assumed to be 0 for the moment (no salinity for incoming freshwater)
     freshwater_heat_content = Field{Center, Center, Nothing}(grid)
     freshwater_salt_content = ZeroField()
 
