@@ -40,10 +40,12 @@ function Downloads.download(metadata::CopernicusMetadata; kwargs...)
     return paths
 end
 
+copernicus_credential(primary, legacy) = haskey(ENV, primary) ? ENV[primary] : get(ENV, legacy, nothing)
+
 function Downloads.download(meta::CopernicusMetadatum;
                                                        skip_existing=true,
-                                                       username=get(ENV, "COPERNICUS_USERNAME", nothing),
-                                                       password=get(ENV, "COPERNICUS_PASSWORD", nothing),
+                                                       username=copernicus_credential("COPERNICUSMARINE_SERVICE_USERNAME", "COPERNICUS_USERNAME"),
+                                                       password=copernicus_credential("COPERNICUSMARINE_SERVICE_PASSWORD", "COPERNICUS_PASSWORD"),
                                                        additional_kw...)
 
     output_directory = meta.dir
@@ -85,7 +87,7 @@ function Downloads.download(meta::CopernicusMetadatum;
         kw = merge(kw, (; username, password))
     else
         @warn "No Copernicus credentials found.
-        Set the COPERNICUS_USERNAME and COPERNICUS_PASSWORD environment variables to download data from the Copernicus Marine Service.
+        Set the COPERNICUSMARINE_SERVICE_USERNAME and COPERNICUSMARINE_SERVICE_PASSWORD environment variables to download data from the Copernicus Marine Service.
         You can sign up for free at: https://data.marine.copernicus.eu/register."
     end
 
