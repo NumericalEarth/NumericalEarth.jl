@@ -41,10 +41,14 @@ Arguments
   the BC type for that field is `NormalFlowBoundaryCondition`.
 
 - `bc_types`: optional `NamedTuple` keyed by child field name giving the BC
-  constructor to use for that field. Defaults to `NormalFlowBoundaryCondition` for
-  Face-located prognostics. For cell-centered scalars (e.g. ρ, ρθ in a
-  compressible LAM), pass `ValueBoundaryCondition` to avoid the
-  `NormalFlowBoundaryCondition`-on-Center asymmetric-halo behavior.
+  constructor to use for that field. Each entry is either a single BC constructor
+  applied to every side, or a per-side `NamedTuple` (keyed by `:west/:east/:south/:north`)
+  selecting the BC type per side. Defaults to `NormalFlowBoundaryCondition`. For
+  cell-centered scalars (e.g. ρ, ρθ in a compressible LAM), pass `ValueBoundaryCondition`
+  to avoid the `NormalFlowBoundaryCondition`-on-Center asymmetric-halo behavior. For a
+  momentum component, use per-side types — `NormalFlowBoundaryCondition` on the
+  wall-normal side and `ValueBoundaryCondition` on the tangential side — so the
+  tangential momentum is set (Dirichlet) rather than left to the normal-flow halo fill.
 """
 function parent_boundary_conditions(grid;
                                     variables,
@@ -54,17 +58,24 @@ function parent_boundary_conditions(grid;
 
     field_pairs = []
     for (child_name, fts) in pairs(variables)
-        BCType = haskey(bc_types, child_name) ? getproperty(bc_types, child_name) : NormalFlowBoundaryCondition
+        spec      = haskey(bc_types, child_name) ? getproperty(bc_types, child_name) : NormalFlowBoundaryCondition
+        scheme    = haskey(schemes, child_name) ? getproperty(schemes, child_name) : nothing
         condition = Interpolated(fts)
-        if BCType === NormalFlowBoundaryCondition
-            scheme = haskey(schemes, child_name) ? getproperty(schemes, child_name) : nothing
-            side_pairs = [side => NormalFlowBoundaryCondition(condition; scheme) for side in sides]
-        else
-            haskey(schemes, child_name) && throw(ArgumentError(
-                "`schemes` entry provided for $(child_name) but `bc_types[$(child_name)] = $BCType` " *
-                "is not `NormalFlowBoundaryCondition`. Schemes apply only to `NormalFlowBoundaryCondition`."))
-            side_pairs = [side => BCType(condition) for side in sides]
+
+        # `spec` is either one BC constructor for all sides or a per-side NamedTuple; `scheme`
+        # (e.g. PerturbationAdvection) is consulted only where the chosen type is NormalFlow.
+        bc_type(side) = spec isa NamedTuple ? getproperty(spec, side) : spec
+        bc_at(side)   = bc_type(side) === NormalFlowBoundaryCondition ?
+                            NormalFlowBoundaryCondition(condition; scheme) : bc_type(side)(condition)
+
+        # A `scheme` only takes effect on NormalFlow sides; requesting one for a field that is
+        # NormalFlow on no side means it would be silently ignored — flag that as a user error.
+        if haskey(schemes, child_name) && !any(side -> bc_type(side) === NormalFlowBoundaryCondition, sides)
+            throw(ArgumentError("`schemes` was given for :$child_name, but none of its sides use a " *
+                                "NormalFlowBoundaryCondition, so the scheme would be ignored."))
         end
+
+        side_pairs = [side => bc_at(side) for side in sides]
         push!(field_pairs, child_name => FieldBoundaryConditions(; side_pairs...))
     end
 

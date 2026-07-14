@@ -125,6 +125,15 @@ function construct_native_grid(metadata, bbox::BoundingBox, arch; halo)
 
     TX = infer_longitudinal_topology(native_longitude, longitude)
 
+    # Relabel the grid longitudes back to the bbox's convention (data is array-indexed, so the
+    # ordering is unchanged). The shift is 0 when the bbox already matches the dataset's native
+    # convention and ±360 when they differ (e.g. a [-180, 180] bbox over ERA5's [0, 360] native
+    # grid), so a `NestedSimulation` child sees a parent grid labeled in its own convention.
+    if !isnothing(bbox.longitude)
+        shift = bbox_lon[1] - bbox.longitude[1]
+        longitude = longitude .- shift
+    end
+
     if is_three_dimensional(metadata)
         z = z_interfaces(metadata)
         return LatitudeLongitudeGrid(arch, FT; size = (Nx, Ny, Nz),
