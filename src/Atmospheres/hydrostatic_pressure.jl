@@ -94,7 +94,8 @@ function hydrostatic_pressure_from_surface(temperature, surface_pressure, orogra
     grid = temperature.grid
     arch = architecture(grid)
 
-    Tᵃ, qᵛᵃ, qᶜᵃ, qⁱᵃ = interior_temperature_and_moisture(temperature, qᵛ, qᶜ, qⁱ)
+    surface_pressure = on_architecture(arch, surface_pressure)
+    orography = on_architecture(arch, orography)
 
     Rᵈ = dry_gas_constant
     Rᵛ = vapor_gas_constant
