@@ -44,16 +44,9 @@ DataWrangling.all_dates(::AVISOMonthly, variable) = DateTime(1993, 1, 1) : Month
 
 const AVISO_dataset_variable_names = Dict(
     :free_surface => "adt",
-    :ssh => "adt",
-    :sea_surface_height => "adt",
-    :absolute_dynamic_topography => "adt",
-    :adt => "adt",
     :sea_level_anomaly => "sla",
-    :sla => "sla",
     :zonal_geostrophic_velocity => "ugos",
-    :ugos => "ugos",
     :meridional_geostrophic_velocity => "vgos",
-    :vgos => "vgos",
 )
 
 DataWrangling.available_variables(::AVISODataset) = AVISO_dataset_variable_names
