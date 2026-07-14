@@ -55,6 +55,9 @@ function Downloads.download(meta::CopernicusMetadatum;
     variable = [variable_name]
 
     dataset_id = copernicusmarine_dataset_id(meta.dataset)
+    version_kw = meta.dataset isa AVISO.AVISODataset ?
+                 (; dataset_version = AVISO.copernicusmarine_dataset_version(meta.dataset)) :
+                 NamedTuple()
     datetime_kw = if meta.dataset isa GLORYS.GLORYSStatic
         NamedTuple()
     else
@@ -87,7 +90,7 @@ function Downloads.download(meta::CopernicusMetadatum;
     end
 
     additional_kw = NamedTuple(name => value for (name, value) in additional_kw)
-    kw = merge(kw, datetime_kw, lon_kw, lat_kw, z_kw, additional_kw)
+    kw = merge(kw, version_kw, datetime_kw, lon_kw, lat_kw, z_kw, additional_kw)
 
     @root CopernicusMarine.subset(; kw...)
 

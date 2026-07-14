@@ -46,8 +46,14 @@ const AVISO_dataset_variable_names = Dict(
     :meridional_geostrophic_velocity => "vgos",
 )
 
-DataWrangling.available_variables(::AVISODataset) = AVISO_dataset_variable_names
-DataWrangling.dataset_variable_name(metadata::Metadata{<:AVISODataset}) = AVISO_dataset_variable_names[metadata.name]
+const AVISO_monthly_dataset_variable_names = Dict(
+    :sea_level_anomaly => "sla",
+)
+
+DataWrangling.available_variables(::AVISODaily) = AVISO_dataset_variable_names
+DataWrangling.available_variables(::AVISOMonthly) = AVISO_monthly_dataset_variable_names
+DataWrangling.dataset_variable_name(metadata::Metadata{<:AVISODaily}) = AVISO_dataset_variable_names[metadata.name]
+DataWrangling.dataset_variable_name(metadata::Metadata{<:AVISOMonthly}) = AVISO_monthly_dataset_variable_names[metadata.name]
 DataWrangling.dataset_location(::AVISODataset, name) = (Center, Center, Nothing)
 DataWrangling.is_three_dimensional(::Metadata{<:AVISODataset}) = false
 DataWrangling.default_inpainting(metadata::Metadata{<:AVISODataset}) = nothing
@@ -106,6 +112,11 @@ DataWrangling.metaprefix(::AVISOMetadatum) = "AVISOMetadatum"
 
 copernicusmarine_dataset_id(::AVISODaily) = get(ENV, "AVISO_DAILY_DATASET_ID", "cmems_obs-sl_glo_phy-ssh_my_allsat-l4-duacs-0.125deg_P1D")
 copernicusmarine_dataset_id(::AVISOMonthly) = get(ENV, "AVISO_MONTHLY_DATASET_ID", "cmems_obs-sl_glo_phy-ssh_my_allsat-l4-duacs-0.125deg_P1M-m")
+
+# Pin the catalogue version advertised by the product data-access page. This is
+# important during Copernicus double-distribution transitions, when resolving
+# the bare dataset id can select a version with a different variable table.
+copernicusmarine_dataset_version(::AVISODataset) = get(ENV, "AVISO_DATASET_VERSION", "202411")
 
 native_horizontal_resolution(::AVISODataset) = 1 / 8
 
