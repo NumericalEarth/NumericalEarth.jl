@@ -82,8 +82,7 @@ Adapt.adapt_structure(to, f::FreshwaterExchange{name}) where name =
     @inbounds surface_tracer_value(fields, Val(name), i, j, grid.Nz) * f.carrying_flux[i, j, 1] - f.content_flux[i, j, 1] +
     getbc(f.additional, i, j, grid, clock, fields)
 
-build_tracer_top_bc(Jᶜ, Jʷ, content, additional, name) =
-    FluxBoundaryCondition(MultipleFluxes(Jᶜ, FreshwaterExchange{name}(Jʷ, content, additional)); discrete_form=true)
+build_tracer_top_bc(Jᶜ, Jʷ, content, additional, name) = FluxBoundaryCondition(MultipleFluxes(Jᶜ, FreshwaterExchange{name}(Jʷ, content, additional)); discrete_form=true)
 
 @inline freshwater_exchange(bc::DiscreteBoundaryFunction) = freshwater_exchange(bc.func)
 @inline freshwater_exchange(mf::MultipleFluxes) = mf.additional_fluxes
