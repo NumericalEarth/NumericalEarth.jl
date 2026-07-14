@@ -90,25 +90,27 @@ end
             radiation  = JRA55PrescribedRadiation(arch; time_indices_in_memory)
             atmosphere = JRA55PrescribedAtmosphere(arch; time_indices_in_memory)
 
-            ecco_set = MetadataSet(:temperature, :salinity,
-                                   dataset = ECCO4Monthly(),
-                                   date = DateTime(1993, 1, 1))
+            # An idealized, stably stratified initial state: a warm, slightly fresh surface over
+            # a cold, saltier interior, with surface temperature falling from equator to pole.
+            Tᵢ(λ, φ, z) = 2 + 26 * cosd(φ)^2 * exp(z / 30)
+            Sᵢ(λ, φ, z) = 35 - 1//2 * exp(z / 30)
+
             Δt = 605seconds
             Sᵒᶜ = 35 # reference salinity [psu]
             free_surface = SplitExplicitFreeSurface(substeps=20)
 
             # Without shortwave penetration
             @testset "Surface-only fluxes" begin
-                ocean = ocean_simulation(grid; free_surface, radiative_forcing=nothing)
-                set!(ocean.model, ecco_set)
+                ocean = ocean_simulation(deepcopy(grid); free_surface, radiative_forcing=nothing)
+                set!(ocean.model, T=Tᵢ, S=Sᵢ)
                 coupled_model = OceanSeaIceModel(ocean, nothing; atmosphere, radiation)
                 test_tracer_budget(coupled_model, Sᵒᶜ, Δt, 4; rtol=√eps(eltype(grid)))
             end
 
             # With penetrative shortwave radiation
             @testset "Surface fluxes + Penetrating shortwave radiation" begin
-                ocean = ocean_simulation(grid; free_surface)
-                set!(ocean.model, ecco_set)
+                ocean = ocean_simulation(deepcopy(grid); free_surface)
+                set!(ocean.model, T=Tᵢ, S=Sᵢ)
                 coupled_model = OceanSeaIceModel(ocean, nothing; atmosphere, radiation)
                 test_tracer_budget(coupled_model, Sᵒᶜ, Δt, 4; rtol=√eps(eltype(grid)))
             end
