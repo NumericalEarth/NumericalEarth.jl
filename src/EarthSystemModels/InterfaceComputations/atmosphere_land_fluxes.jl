@@ -74,6 +74,11 @@ function compute_atmosphere_land_fluxes!(coupled_model, atmosphere_land_interfac
 
     land_properties = atmosphere_land_surface_properties(land_exchanger_state)
 
+    # Prescribed leaf area index off the canopy formulation (or `nothing`),
+    # reduced to a kernel-friendly value plus its host-side time interpolator.
+    leaf_area_index = canopy_leaf_area_index(interface_properties.specific_humidity_formulation)
+    vegetation, leaf_area_index_time_interpolator = kernel_leaf_area_index(leaf_area_index, arch, clock.time)
+
     radiation = coupled_model.radiation
     radiation_kernel_props = kernel_radiation_properties(radiation)
     radiation_exchanger    = exchanger.radiation
@@ -94,6 +99,8 @@ function compute_atmosphere_land_fluxes!(coupled_model, atmosphere_land_interfac
             clock,
             flux_formulation,
             land_state,
+            vegetation,
+            leaf_area_index_time_interpolator,
             atmosphere_data,
             interface_properties,
             atmosphere_properties,
@@ -114,6 +121,46 @@ end
 # Per-cell scalar from a constant or a `Field`.
 @inline land_field_value(x::Number, i, j) = x
 @inline land_field_value(x, i, j) = @inbounds x[i, j, 1]
+
+#####
+##### Prescribed, possibly time-varying surface inputs (LAI today; roughness /
+##### albedo maps are future consumers). `surface_field_value` reads the per-cell
+##### value from a `Number`, a static `Field`, or — for a `FieldTimeSeries`
+##### interpolated to the model clock — a kernel-friendly `PrescribedLAIData`
+##### bundle. The bundle mirrors the atmosphere state interpolation: the FTS
+##### itself never enters the kernel (its `adapt_structure` does not preserve
+##### `.data`), so the driver extracts `.data` + `backend` + `time_indexing`.
+#####
+
+struct PrescribedLAIData{D, B, T}
+    data          :: D
+    backend       :: B
+    time_indexing :: T
+end
+
+Adapt.adapt_structure(to, p::PrescribedLAIData) =
+    PrescribedLAIData(adapt(to, p.data), adapt(to, p.backend), adapt(to, p.time_indexing))
+
+@inline surface_field_value(x, i, j, time_interpolator) = land_field_value(x, i, j)
+@inline surface_field_value(x::PrescribedLAIData, i, j, time_interpolator) =
+    interpolate(FractionalIndices(i, j, nothing), time_interpolator, x.data, x.backend, x.time_indexing)
+
+# Host-side: reduce a prescribed-LAI spec to a kernel-friendly value plus the
+# time index used to interpolate it. Constants and static fields pass through
+# untouched (`nothing` interpolator); a `FieldTimeSeries` is reduced to its
+# arrays and its time index is precomputed on the host.
+@inline kernel_leaf_area_index(leaf_area_index, arch, time) = (leaf_area_index, nothing)
+@inline function kernel_leaf_area_index(leaf_area_index::FieldTimeSeries, arch, time)
+    time_interpolator = cpu_interpolating_time_indices(arch, leaf_area_index.times,
+                                                       leaf_area_index.time_indexing, time)
+    bundle = PrescribedLAIData(leaf_area_index.data, leaf_area_index.backend,
+                               leaf_area_index.time_indexing)
+    return bundle, time_interpolator
+end
+
+# The LAI spec lives on the canopy humidity formulation; other formulations carry
+# none. The canopy / composite methods are defined alongside those formulations.
+@inline canopy_leaf_area_index(q_formulation) = nothing
 
 #####
 ##### Land surface state materialized into the interface state.
@@ -146,12 +193,18 @@ end
     (temperature = land_field_value(land_state.T, i, j),)
 @inline interface_energy_state(i, j, grid, interface_model, land_state) = (;) # default: pulls nothing
 
+# Vegetation state, per humidity formulation. Only the canopy formulations
+# (defined in their own files) pull a leaf area index; everything else is empty.
+@inline interface_vegetation_state(i, j, grid, interface_model, vegetation, time_interpolator) = (;)
+
 @kernel function _compute_atmosphere_land_interface_state!(interface_fluxes,
                                                            interface_temperature,
                                                            grid,
                                                            clock,
                                                            turbulent_flux_formulation,
                                                            land_state,
+                                                           vegetation,
+                                                           leaf_area_index_time_interpolator,
                                                            atmosphere_state,
                                                            interface_properties,
                                                            atmosphere_properties,
@@ -205,7 +258,9 @@ end
     initial_interface_state = AirLandInterfaceState(i, j, grid,
                                                     InterfaceFluxScales(u★, u★, u★),
                                                     InterfaceVelocities(uₛ, vₛ),
-                                                    q_formulation, land_state, Tₛ, qₛ)
+                                                    q_formulation, land_state,
+                                                    vegetation, leaf_area_index_time_interpolator,
+                                                    Tₛ, qₛ)
 
     interface_state = compute_interface_state(turbulent_flux_formulation,
                                               initial_interface_state,

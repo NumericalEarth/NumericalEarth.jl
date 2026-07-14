@@ -483,6 +483,12 @@ Base.show(io::IO, p::InteractiveAbsorbedPAR) = print(io, summary(p),
 @inline absorbed_par_spec(x::AbstractAbsorbedPAR, FT) = x
 @inline absorbed_par_spec(x::Number, FT) = PrescribedAbsorbedPAR(convert(FT, x))
 
+# Convert only a scalar LAI; a `Field` (static map) or `FieldTimeSeries` (monthly
+# data interpolated to the clock) passes through so the canopy conductance can
+# vary in space and time. The per-cell value is materialized in the flux kernel.
+@inline leaf_area_index_property(x::Number, FT) = convert(FT, x)
+@inline leaf_area_index_property(x, FT) = x
+
 @inline absorbed_par_value(p::PrescribedAbsorbedPAR, radiation, leaf_area_index) = p.value
 
 @inline function absorbed_par_value(p::InteractiveAbsorbedPAR, radiation, leaf_area_index)
@@ -553,7 +559,7 @@ function CanopyConductanceHumidity(FT=Oceananigans.defaults.FloatType;
 
     photosynthesis = default_photosynthesis(photosynthesis, conductance, FT)
 
-    return CanopyConductanceHumidity(convert(FT, leaf_area_index),
+    return CanopyConductanceHumidity(leaf_area_index_property(leaf_area_index, FT),
                                      photosynthesis, conductance, moisture_stress,
                                      absorbed_par_spec(absorbed_par, FT),
                                      convert(FT, atmospheric_co2), phase)
@@ -567,6 +573,15 @@ Base.show(io::IO, q::CanopyConductanceHumidity) = print(io, summary(q))
 # so the interface materializes it into the per-cell land state.
 @inline interface_hydrology_state(i, j, grid, ::CanopyConductanceHumidity, land_state) =
     land_saturation(i, j, grid, land_state)
+
+# The bulk LAI upscales the leaf conductance and shades the absorbed PAR. It is a
+# prescribed vegetation input (constant, static `Field`, or `FieldTimeSeries`),
+# materialized per-cell here so the fixed-point solve reads a plain scalar.
+@inline canopy_leaf_area_index(q::CanopyConductanceHumidity) = q.leaf_area_index
+# Convert to the grid float type: time-interpolating a `FieldTimeSeries` blends
+# the data with the (often `Float64`) times, so the raw value may not be `FT`.
+@inline interface_vegetation_state(i, j, grid, ::CanopyConductanceHumidity, vegetation, time_interpolator) =
+    (leaf_area_index = convert(eltype(grid), surface_field_value(vegetation, i, j, time_interpolator)),)
 
 # `CanopyConductanceHumidity`: solve the surface vapor-flux balance for qˢ with a
 # canopy conductance g_c in series with the turbulent transfer — the SkinHumidity
@@ -584,16 +599,17 @@ Base.show(io::IO, q::CanopyConductanceHumidity) = print(io, summary(q))
     qᵃᵗ = Ψₐ.q
     Tᵃᵗ = Ψₐ.T
 
+    LAI  = Ψₛ.vegetation.leaf_area_index               # materialized per-cell (constant, Field, or FTS)
     qᵛ⁺  = saturation_specific_humidity(ℂᵃᵗ, Tₗ, pᵃᵗ, q.phase)
     VPD  = vapor_pressure_deficit(ℂᵃᵗ, Tₗ, Tᵃᵗ, pᵃᵗ, qᵃᵗ, q.phase)
     β    = evaporation_efficiency(q.moisture_stress, Ψₛ.hydrology)
-    APAR = absorbed_par_value(q.absorbed_par, Ψᵣ, q.leaf_area_index)
+    APAR = absorbed_par_value(q.absorbed_par, Ψᵣ, LAI)
 
     gs, _, _ = stomatal_conductance(q.conductance, q.photosynthesis,
                                     APAR, VPD, Tₗ, q.atmospheric_co2, pᵃᵗ, β)
 
     # Molar leaf conductance → canopy mass conductance (kg m⁻² s⁻¹).
-    g_c = q.leaf_area_index * gs * oftype(gs, MOLAR_MASS_DRY_AIR)
+    g_c = LAI * gs * oftype(gs, MOLAR_MASS_DRY_AIR)
 
     return g_c, qᵛ⁺
 end

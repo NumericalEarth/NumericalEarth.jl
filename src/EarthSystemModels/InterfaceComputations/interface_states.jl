@@ -894,41 +894,55 @@ end
 @inline humidity_surface_scalar(Ψ::AirIceInterfaceState) = zero(eltype(Ψ))
 
 """
-    AirLandInterfaceState{FT, H, E}
+    AirLandInterfaceState{FT, H, E, V}
 
 Air–land interface state. In place of salinity it carries the land's `hydrology`
 and `energy` surface state (e.g. `(saturation = 𝒮,)` and `(temperature = Tᵢ,)`),
-from which the surface humidity models derive what they need — the moisture
-availability `β`, the reservoir temperature, etc. `β` is *not* stored: it is
+together with any prescribed `vegetation` surface state (e.g.
+`(leaf_area_index = LAI,)`), from which the surface humidity models derive what
+they need — the moisture availability `β`, the reservoir temperature, the canopy
+conductance, etc. `β` is *not* stored: it is
 `evaporation_efficiency(efficiency, saturation)`, computed by the formulation.
 """
-struct AirLandInterfaceState{FT, H, E} <: AbstractInterfaceState{FT}
+struct AirLandInterfaceState{FT, H, E, V} <: AbstractInterfaceState{FT}
     fluxes            :: InterfaceFluxScales{FT}
     velocities        :: InterfaceVelocities{FT}
     temperature       :: FT
     specific_humidity :: FT
     hydrology         :: H
     energy            :: E
+    vegetation        :: V
 end
 
-@inline AirLandInterfaceState(u★, θ★, q★, u, v, T, q, hydrology, energy) =
-    AirLandInterfaceState(InterfaceFluxScales(u★, θ★, q★), InterfaceVelocities(u, v), T, q, hydrology, energy)
+# Convenience constructors defaulting `vegetation` to an empty substate — every
+# non-canopy formulation ignores it, so their call sites stay unchanged.
+@inline AirLandInterfaceState(fluxes::InterfaceFluxScales, velocities::InterfaceVelocities, T, q, hydrology, energy) =
+    AirLandInterfaceState(fluxes, velocities, T, q, hydrology, energy, (;))
+
+@inline AirLandInterfaceState(u★, θ★, q★, u, v, T, q, hydrology, energy, vegetation=(;)) =
+    AirLandInterfaceState(InterfaceFluxScales(u★, θ★, q★), InterfaceVelocities(u, v), T, q, hydrology, energy, vegetation)
 
 # (i, j, grid)-first convenience constructor — pulls the per-cell land
-# energy/hydrology substate from `land_state` via the humidity formulation, so
-# the kernel call site stays compact. `Tₛ` and `qₛ` are passed in because they
-# typically share computation with the atmosphere thermodynamics at the call
-# site (e.g. the saturation humidity needs `Tₛ`, `pᵃᵗ`, and `ℂᵃᵗ`).
+# energy/hydrology/vegetation substate from `land_state`/`vegetation` via the
+# humidity formulation, so the kernel call site stays compact. `Tₛ` and `qₛ` are
+# passed in because they typically share computation with the atmosphere
+# thermodynamics at the call site (e.g. the saturation humidity needs `Tₛ`,
+# `pᵃᵗ`, and `ℂᵃᵗ`). `time_interpolator` is the host-side time index used to
+# interpolate a `FieldTimeSeries` vegetation input (`nothing` when static).
 @inline function AirLandInterfaceState(i, j, grid,
                                        fluxes::InterfaceFluxScales,
                                        velocities::InterfaceVelocities,
                                        q_formulation,
                                        land_state,
+                                       vegetation,
+                                       time_interpolator,
                                        Tₛ, qₛ)
     FT  = typeof(Tₛ)
-    energy    = interface_energy_state(i, j, grid, q_formulation, land_state)
-    hydrology = interface_hydrology_state(i, j, grid, q_formulation, land_state)
-    return AirLandInterfaceState(fluxes, velocities, convert(FT, Tₛ), convert(FT, qₛ), hydrology, energy)
+    energy           = interface_energy_state(i, j, grid, q_formulation, land_state)
+    hydrology        = interface_hydrology_state(i, j, grid, q_formulation, land_state)
+    vegetation_state = interface_vegetation_state(i, j, grid, q_formulation, vegetation, time_interpolator)
+    return AirLandInterfaceState(fluxes, velocities, convert(FT, Tₛ), convert(FT, qₛ),
+                                 hydrology, energy, vegetation_state)
 end
 
 @inline humidity_surface_scalar(Ψ::AirLandInterfaceState) = Ψ.hydrology.saturation
@@ -947,7 +961,7 @@ end
     AirIceInterfaceState(fluxes, Ψ⁻.velocities, T, q)
 
 @inline rebuild_interface_state(Ψ⁻::AirLandInterfaceState, fluxes, T, q) =
-    AirLandInterfaceState(fluxes, Ψ⁻.velocities, T, q, Ψ⁻.hydrology, Ψ⁻.energy)
+    AirLandInterfaceState(fluxes, Ψ⁻.velocities, T, q, Ψ⁻.hydrology, Ψ⁻.energy, Ψ⁻.vegetation)
 
 function Base.show(io::IO, Ψ::AbstractInterfaceState)
     print(io, nameof(typeof(Ψ)), "(",

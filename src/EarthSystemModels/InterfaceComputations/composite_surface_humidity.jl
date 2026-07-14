@@ -70,6 +70,11 @@ Base.show(io::IO, q::CompositeSurfaceHumidity) = print(io, summary(q))
 @inline interface_energy_state(i, j, grid, ::CompositeSurfaceHumidity, land_state) =
     (temperature = land_field_value(land_state.T, i, j),)
 
+# LAI enters only through the canopy branch, so both hooks delegate to it.
+@inline canopy_leaf_area_index(q::CompositeSurfaceHumidity) = canopy_leaf_area_index(q.canopy)
+@inline interface_vegetation_state(i, j, grid, q::CompositeSurfaceHumidity, vegetation, time_interpolator) =
+    interface_vegetation_state(i, j, grid, q.canopy, vegetation, time_interpolator)
+
 @inline function compute_interface_humidity(q::CompositeSurfaceHumidity, Tₛ, Ψₛ, Ψₐ, Ψᵢ, Ψᵣ, ℙₐ)
     FT = eltype(Ψₛ)
 

@@ -9,28 +9,29 @@ using NumericalEarth.EarthSystemModels.InterfaceComputations:
     saturation_specific_humidity, dry_layer_terms, canopy_conductance_terms, atmospheric_vapor_flux,
     evaporation_partition,
     DryLayerHumidity, StorageBasedDryLayerDepth, DryLayerVaporPistonVelocity,
-    ConstantTortuosity, MillingtonQuirk,
+    ConstantTortuosity,
     CanopyConductanceHumidity, CompositeSurfaceHumidity, BulkHumidity
 using NumericalEarth.Lands: SlabLand, SlabEnergy, BucketHydrology
 using NumericalEarth.Atmospheres: PrescribedAtmosphere, AtmosphereThermodynamicsParameters
 using Thermodynamics: Thermodynamics as AtmosphericThermodynamics
 
-make_soil(; molecular_diffusivity = 2.5e-5, tortuosity_model = ConstantTortuosity()) =
+make_soil(; molecular_diffusivity = 2.5e-5, tortuosity = ConstantTortuosity()) =
     DryLayerHumidity(;
         dry_layer_depth = StorageBasedDryLayerDepth(
             maximum_dry_layer_depth = 0.05, dry_layer_onset_saturation = 0.5, dry_layer_exponent = 1.0),
         vapor_exchange = DryLayerVaporPistonVelocity(;
-            minimum_dry_layer_depth = 1e-4, molecular_diffusivity, tortuosity_model),
+            minimum_dry_layer_depth = 1e-4, molecular_diffusivity, tortuosity),
         thermal_exchange_depth = 0.10, porosity = 0.4)
 
 # Mirror `compute_interface_humidity(formulation, Tₛ, Ψₛ, Ψₐ, Ψᵢ, Ψᵣ, ℙₐ)`. The
 # radiation state Ψᵣ only drives InteractiveAbsorbedPAR; these cases use the
 # prescribed-PAR default, so it is `nothing`.
-function _make_call_args(; Tˡᵃ, Tⁱⁿ, 𝒮, pᵃᵗ, qᵃᵗ, Tᵃᵗ, u★, q★, qⁱⁿ⁻)
+function _make_call_args(; Tˡᵃ, Tⁱⁿ, 𝒮, pᵃᵗ, qᵃᵗ, Tᵃᵗ, u★, q★, qⁱⁿ⁻, leaf_area_index = 2.0)
     ℂ  = AtmosphereThermodynamicsParameters(Float64)
     Ψₐ = (T = Tᵃᵗ, p = pᵃᵗ, q = qᵃᵗ, u = 1.0, v = 0.0, z = 10.0, h_bℓ = 1000.0)
     Ψₛ = AirLandInterfaceState(InterfaceFluxScales(u★, 0.0, q★), InterfaceVelocities(0.0, 0.0),
-                               Tⁱⁿ, qⁱⁿ⁻, (saturation=𝒮,), (temperature=Tˡᵃ,))
+                               Tⁱⁿ, qⁱⁿ⁻, (saturation=𝒮,), (temperature=Tˡᵃ,),
+                               (leaf_area_index=leaf_area_index,))
     Ψᵢ = (T = Tˡᵃ,)
     ℙₐ = (thermodynamics_parameters = ℂ, surface_layer_height = 10.0, gravitational_acceleration = 9.81)
     return ℂ, Ψₛ, Ψₐ, Ψᵢ, nothing, ℙₐ
@@ -43,7 +44,7 @@ end
 
     # Limit 1: no canopy (g_c = 0) reproduces DryLayerHumidity bit-for-bit.
     comp0 = CompositeSurfaceHumidity(soil, CanopyConductanceHumidity(Float64; leaf_area_index = 0.0))
-    _, Ψₛ, Ψₐ, Ψᵢ, Ψᵣ, ℙₐ = _make_call_args(; 𝒮=0.2, st...)
+    _, Ψₛ, Ψₐ, Ψᵢ, Ψᵣ, ℙₐ = _make_call_args(; 𝒮=0.2, leaf_area_index=0.0, st...)
     @test isapprox(compute_interface_humidity(comp0, st.Tⁱⁿ, Ψₛ, Ψₐ, Ψᵢ, Ψᵣ, ℙₐ),
                    compute_interface_humidity(soil,  st.Tⁱⁿ, Ψₛ, Ψₐ, Ψᵢ, Ψᵣ, ℙₐ); atol = 1e-15)
 
@@ -82,7 +83,8 @@ end
         Ψₐ = (T=FT(295), p=FT(1e5), q=FT(1e-2), u=FT(1), v=FT(0), z=FT(10), h_bℓ=FT(1000))
         Ψₛ = AirLandInterfaceState(InterfaceFluxScales(FT(0.3), FT(0), FT(-2e-4)),
                                    InterfaceVelocities(FT(0), FT(0)),
-                                   FT(300), FT(8e-3), (saturation=FT(0.3),), (temperature=FT(295),))
+                                   FT(300), FT(8e-3), (saturation=FT(0.3),), (temperature=FT(295),),
+                                   (leaf_area_index=FT(2),))
         Ψᵢ = (T=FT(295),)
         Ψᵣ = nothing
         ℙₐ = (thermodynamics_parameters=ℂ, surface_layer_height=FT(10), gravitational_acceleration=FT(9.81))
