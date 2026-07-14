@@ -237,9 +237,7 @@ function EarthSystemModel(radiation, atmosphere, land, sea_ice, ocean;
     # atmosphere with an internal radiation handle) overloads this.
     atmosphere = materialize_earth_system_radiation!(atmosphere, radiation)
 
-    # Materialize any sea ice components that require grid-allocated fields
-    # (e.g. FreezingLimitedOceanTemperature needs a frazil_heat field).
-    sea_ice = materialize_sea_ice(sea_ice, ocean)
+    sea_ice = materialize_sea_ice!(sea_ice, ocean)
 
     # Contains information about flux contributions: bulk formula, prescribed fluxes, etc.
     if isnothing(interfaces) && !(isnothing(atmosphere) && isnothing(sea_ice))
