@@ -80,11 +80,11 @@ jobs:
           arch: ${{ matrix.arch }}
       - uses: julia-actions/cache@v3
         with:
-          # Share one depot cache with `cds_downloading`: both instantiate the same
-          # test/Project.toml. Distinct cache names stored two near-identical ~1.3 GB copies,
-          # and the repo total (10.7 GB) sat above GitHub's 10 GB budget, so every save
-          # evicted an older cache and no job ever restored one. `include-matrix` appends
-          # os/arch/version, so macOS and any future matrix entry still get their own key.
+          # One depot cache shared with the nightly Data Availability workflow: both
+          # instantiate the same test/Project.toml. Distinct cache names stored two
+          # near-identical ~1.3 GB copies, and the repo total (10.7 GB) sat above GitHub's
+          # 10 GB budget, so every save evicted an older cache and no job ever restored one.
+          # `include-matrix` appends os/arch/version, so macOS still gets its own key.
           cache-name: julia-cache;env=test
           cache-scratchspaces: false
       # ParallelTestRunner schedules longest-first from a duration history it keeps in a
@@ -213,74 +213,6 @@ jobs:
           echo " --> df -a /"
           df -a /
 
-  #####
-  ##### Specialized tests (GitHub-hosted runners)
-  #####
-
-  cds_downloading:
-    name: Data Downloading - Julia ${{ matrix.version }} - ${{ matrix.os }} - ${{ matrix.arch }} - ${{ github.event_name }}
-    runs-on: ${{ matrix.os }}
-    timeout-minutes: 60
-    strategy:
-      fail-fast: false
-      matrix:
-        version:
-          - "1.12.5"
-        os:
-          - ubuntu-latest
-        arch:
-          - default
-        include:
-          - os: macOS-latest
-            arch: aarch64
-            version: "1.12.5"
-    steps:
-      - name: Show available storage before cleanup
-        run: |
-          echo " --> df -h /"
-          df -h /
-          echo " --> df -a /"
-          df -a /
-      - name: Free Disk Space
-        if: ${{ runner.os != 'macOS' }}
-        uses: jlumbroso/free-disk-space@54081f138730dfa15788a46383842cd2f914a1be # v1.3.1
-        with:
-          tool-cache: true
-          large-packages: false
-      - name: Cleanup /opt
-        if: ${{ runner.os != 'macOS' }}
-        run: |
-          sudo rm -rf /opt/*
-      - name: Show available storage after cleanup
-        run: |
-          echo " --> df -h /"
-          df -h /
-          echo " --> df -a /"
-          df -a /
-      - uses: actions/checkout@v6
-      - uses: julia-actions/setup-julia@v2
-        with:
-          version: ${{ matrix.version }}
-          arch: ${{ matrix.arch }}
-      - uses: julia-actions/cache@v3
-        with:
-          # Shares the depot cache with `cpu_tests` -- same test/Project.toml. See that job.
-          cache-name: julia-cache;env=test
-          cache-scratchspaces: false
-      - name: Run tests
-        run: |
-          julia --project --color=yes --check-bounds=yes -e '
-              using Pkg;
-              Pkg.test(; coverage=true,
-                        julia_args=["--check-bounds=yes", "--compiled-modules=yes", "-O0"],
-                        test_args=["--verbose", "test_cds_downloading", "test_jra55_ecco_en4_etopo_downloading", "test_glorys_downloading", "test_copernicus_dem_downloading"])
-          '
-      - uses: julia-actions/julia-processcoverage@v1
-      - uses: codecov/codecov-action@v5
-        with:
-          files: lcov.info
-          token: ${{ secrets.CODECOV_TOKEN }}
-  
   reactant:
     name: Reactant extension - Julia ${{ matrix.version }} - ${{ matrix.os }} - ${{ matrix.arch }} - ${{ github.event_name }}
     runs-on: ${{ matrix.os }}
@@ -289,7 +221,7 @@ jobs:
       fail-fast: false
       matrix:
         version:
-          - "1.12.5"
+          - "1.11.9"
         os:
           - ubuntu-latest
         arch:
@@ -329,8 +261,8 @@ jobs:
       # Runs against test/reactant/Project.toml, which carries Reactant and nothing else it
       # doesn't need. Reactant is the sole path to Enzyme (316 s, the largest single
       # precompile unit) and pulls the very large Reactant_jll artifact; keeping it out of
-      # the shared test env stops `cpu_tests`/`cds_downloading` from precompiling ~9 min of
-      # code they never call, and keeps their cache inside GitHub's 10 GB budget.
+      # the shared test env stops every other job from precompiling ~9 min of code it never
+      # calls, and keeps their cache inside GitHub's 10 GB budget.
       - name: Run tests
         run: |
           julia --project=test/reactant --color=yes --check-bounds=yes -O0 \
@@ -383,7 +315,6 @@ jobs:
     needs:
       - cpu_tests
       - gpu_tests
-      - cds_downloading
       - reactant
     runs-on: ubuntu-latest
     if: ${{ success() }}
