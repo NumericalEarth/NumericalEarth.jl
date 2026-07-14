@@ -209,8 +209,8 @@ n = Observable(Nt)
 
 # We create a land mask and use it to fill land points with `NaN`s.
 # The grid's `bottom_height` is stored as a halo-padded `OffsetArray`,
-# so we index its interior to obtain a plain `Array`.
-land = To.grid.immersed_boundary.bottom_height[1:Nx, 1:Ny, 1:1] .≥ 0
+# so we take a view of its interior to build the mask.
+land = view(To.grid.immersed_boundary.bottom_height, 1:Nx, 1:Ny, 1:1) .≥ 0
 
 Toₙ = @lift begin
     Tₙ = interior(To[$n])
