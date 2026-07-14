@@ -17,11 +17,12 @@ const ML = NumericalEarth.DataWrangling.MODISLand
 # arrays, with no file IO and no credentials.
 
 @testset "MODISLand pure decode / mask / blend" begin
-    @testset "Albedo decode (mask fill before scaling)" begin
-        @test ML.decode_albedo(0) == 0.0
-        @test ML.decode_albedo(500) ≈ 0.5      # 0.001 × 500
-        @test ML.decode_albedo(32766) ≈ 32.766 # last valid DN
-        @test isnan(ML.decode_albedo(32767))    # fill → NaN, not 32.767
+    @testset "Albedo fill masking (before blend and scale)" begin
+        # `mask_albedo_fill` returns raw DN; the 0.001 scale is applied by `conversion_units`.
+        @test ML.mask_albedo_fill(0) == 0.0
+        @test ML.mask_albedo_fill(500) == 500.0
+        @test ML.mask_albedo_fill(32766) == 32766.0 # last valid DN
+        @test isnan(ML.mask_albedo_fill(32767))      # fill → NaN
     end
 
     @testset "Blue-sky blend endpoints" begin
@@ -39,13 +40,12 @@ const ML = NumericalEarth.DataWrangling.MODISLand
         @test !ML.albedo_quality_ok(0xff)           # fill dropped
     end
 
-    @testset "LAI decode (mask DN>100 before scaling)" begin
-        @test ML.decode_lai(50) ≈ 5.0     # 0.1 × 50
-        @test ML.decode_lai(100) ≈ 10.0   # last valid DN
-        @test isnan(ML.decode_lai(101))   # first non-veg code → NaN
-        @test isnan(ML.decode_lai(255))   # fill → NaN, not 25.5
-        @test ML.decode_fpar(50) ≈ 0.5    # 0.01 × 50
-        @test isnan(ML.decode_fpar(255))
+    @testset "LAI fill masking (DN>100 → NaN, before scale)" begin
+        # `mask_lai_fill` returns raw DN; the 0.1 / 0.01 scale is applied by `conversion_units`.
+        @test ML.mask_lai_fill(50) == 50.0    # valid DN
+        @test ML.mask_lai_fill(100) == 100.0  # last valid DN
+        @test isnan(ML.mask_lai_fill(101))    # first non-veg code → NaN
+        @test isnan(ML.mask_lai_fill(255))    # fill → NaN
     end
 
     @testset "LAI QA (MODLAND_QC==0 & SCF_QC∈{0,1})" begin
@@ -57,11 +57,6 @@ const ML = NumericalEarth.DataWrangling.MODISLand
 end
 
 @testset "MODISLand categorical aggregation" begin
-    @testset "Fill masking" begin
-        @test ML.mask_landcover(5) == 5.0
-        @test isnan(ML.mask_landcover(255))
-    end
-
     @testset "Mode preserves valid codes" begin
         codes = [1, 1, 2, 255, 1, 3]
         @test ML.mode_aggregate(codes) == 1        # majority, one of the inputs
@@ -125,6 +120,8 @@ end
         @test DW.longitude_name(md) == "lon"
         @test location(md) == (Center, Center, Center)
         @test DW.dataset_variable_name(md) == "Albedo_BSA_shortwave"
+        # The 0.001 scale is applied by the framework via conversion_units.
+        @test DW.conversion_units(md).factor == 0.001
     end
 
     @testset "MCD15 LAI products" begin
@@ -132,8 +129,10 @@ end
             md = Metadatum(:leaf_area_index; dataset, region)
             @test DW.dataset_variable_name(md) == "Lai_500m"
             @test DW.is_three_dimensional(md) == false
+            @test DW.conversion_units(md).factor == 0.1    # LAI scale
             md_fpar = Metadatum(:fpar; dataset, region)
             @test DW.dataset_variable_name(md_fpar) == "Fpar_500m"
+            @test DW.conversion_units(md_fpar).factor == 0.01  # FPAR scale
         end
     end
 
@@ -141,6 +140,7 @@ end
         @test MCD12Q1().legend == :PFT
         md = Metadatum(:plant_functional_type; dataset = MCD12Q1(), region)
         @test DW.dataset_variable_name(md) == "LC_Type5"
+        @test DW.missing_value(md) == 255   # fill code masked to NaN by the framework
         md_igbp = Metadatum(:landcover_igbp; dataset = MCD12Q1(legend = :IGBP), region)
         @test DW.dataset_variable_name(md_igbp) == "LC_Type1"
     end

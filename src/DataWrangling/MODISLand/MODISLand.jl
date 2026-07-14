@@ -8,7 +8,7 @@ using Oceananigans: Center
 using Oceananigans.DistributedComputations: @root
 
 using ..DataWrangling: DataWrangling, AbstractStaticDataset, Metadatum, Metadata,
-                       BoundingBox, Dataset, metadata_path
+                       BoundingBox, Dataset, ScaleFactor, metadata_path
 
 import Oceananigans
 
@@ -24,22 +24,26 @@ end
 ##### These carry the physics of the MODIS-land ingest and are the core, testable
 ##### deliverable: they operate on raw digital numbers (DN) read from an HDF-EOS
 ##### granule (or a reprojected NetCDF of raw DN) and require no file IO and no
-##### credentials. All follow the MODIS `scale × DN (+ offset)` decode convention
-##### with fill/QA masking applied *before* scaling.
+##### credentials. They mask fills / QA *before* the framework applies the MODIS
+##### `scale × DN` decode via `missing_value` and `conversion_units`, so a fill never
+##### becomes a spuriously-scaled value.
 #####
 
-# MCD43A3 albedo: int16 DN, scale 0.001, offset 0, valid 0–32766, fill 32767.
+# MCD43A3 albedo: int16 DN, scale 0.001, offset 0, valid 0–32766, fill 32767. The
+# 0.001 scaling is applied downstream by `conversion_units`; masking the fill to NaN
+# happens here, before the black-sky/white-sky blend.
 const MODIS_ALBEDO_FILL = 32767
 const MODIS_ALBEDO_SCALE = 0.001
 
 """
-    decode_albedo(DN)
+    mask_albedo_fill(DN)
 
-Decode a MODIS MCD43A3 albedo digital number `DN` to a physical albedo in `[0, 1]`.
-The fill sentinel `32767` maps to `NaN`; the mask is applied *before* the `0.001`
-scaling so a fill does not become a spurious albedo of `32.767`.
+Map a MODIS MCD43A3 albedo digital number `DN` to itself as a `Float64`, or to `NaN`
+when it is the fill sentinel `32767`. Masking happens before the black-sky/white-sky
+blend and before the `0.001` scaling (applied downstream by `conversion_units`), so a
+fill does not become a spurious albedo of `32.767`.
 """
-@inline decode_albedo(DN) = ifelse(DN == MODIS_ALBEDO_FILL, NaN, MODIS_ALBEDO_SCALE * DN)
+@inline mask_albedo_fill(DN) = ifelse(DN == MODIS_ALBEDO_FILL, NaN, Float64(DN))
 
 """
     bluesky_blend(α_bs, α_ws, f_diff)
@@ -69,28 +73,21 @@ only the full-BRDF inversion; pass `1` to also keep magnitude inversions).
 
 # MCD15 LAI/FPAR: uint8 DN, valid 0–100. DN 249–255 are non-retrieval / land-cover
 # special codes (urban, wetland, snow, barren, water, fill) and must be rejected
-# *before* scaling. LAI scale 0.1 (→ 0–10 m²/m²); FPAR scale 0.01 (→ 0–1).
+# *before* scaling. LAI scale 0.1 (→ 0–10 m²/m²), FPAR scale 0.01 (→ 0–1); both
+# scalings are applied downstream by `conversion_units`.
 const MODIS_LAI_MAXIMUM_VALID = 100
 const MODIS_LAI_SCALE = 0.1
 const MODIS_FPAR_SCALE = 0.01
 
 """
-    decode_lai(DN)
+    mask_lai_fill(DN)
 
-Decode a MODIS MCD15 `Lai_500m` digital number `DN` to LAI in `m²/m²`. Any
-`DN > 100` (fill and the 249–255 land-cover special codes) maps to `NaN`; the mask
-is applied *before* the `0.1` scaling so a fill (e.g. `255`) does not become a
-spurious LAI of `25.5`.
+Map a MODIS MCD15 LAI/FPAR digital number `DN` to itself as a `Float64`, or to `NaN`
+when `DN > 100` (fill and the 249–255 land-cover special codes). Masking happens
+before the scaling (applied downstream by `conversion_units`), so a fill (e.g. `255`)
+does not become a spurious value.
 """
-@inline decode_lai(DN) = ifelse(DN > MODIS_LAI_MAXIMUM_VALID, NaN, MODIS_LAI_SCALE * DN)
-
-"""
-    decode_fpar(DN)
-
-Decode a MODIS MCD15 `Fpar_500m` digital number `DN` to FPAR in `[0, 1]`, masking
-`DN > 100` to `NaN` before the `0.01` scaling (see [`decode_lai`](@ref)).
-"""
-@inline decode_fpar(DN) = ifelse(DN > MODIS_LAI_MAXIMUM_VALID, NaN, MODIS_FPAR_SCALE * DN)
+@inline mask_lai_fill(DN) = ifelse(DN > MODIS_LAI_MAXIMUM_VALID, NaN, Float64(DN))
 
 # FparLai_QC (uint8) packed bitfield: bit 0 MODLAND_QC (0 good), bits 5–7 SCF_QC
 # (0 main-RT best, 1 main-RT w/ saturation, 2/3 backup empirical, 4 not produced).
@@ -108,17 +105,8 @@ retrievals, excluding the less-reliable backup empirical algorithm).
     (modland_quality_control(qc) == 0) & (scf_quality_control(qc) <= 0x01)
 
 # MCD12Q1 land-cover / PFT: uint8 class codes, fill 255. `LC_Type5` PFT ∈ [0, 11].
+# The fill is masked to NaN downstream by `missing_value`.
 const MODIS_LANDCOVER_FILL = 255
-
-"""
-    mask_landcover(code, fill = 255)
-
-Map a categorical land-cover `code` to itself as a `Float64`, or to `NaN` when it
-equals `fill` (default `255`). Used to carry a categorical field through the
-NaN-aware machinery without inventing intermediate codes.
-"""
-@inline mask_landcover(code, fill) = ifelse(code == fill, NaN, Float64(code))
-@inline mask_landcover(code) = mask_landcover(code, MODIS_LANDCOVER_FILL)
 
 """
     mode_aggregate(codes, fill = 255)
@@ -423,6 +411,15 @@ DataWrangling.dataset_variable_name(md::MCD43AlbedoMetadatum) = first(MCD43Albed
 DataWrangling.dataset_variable_name(md::MODISLAIMetadatum) = MODISLAI_variable_names[md.name]
 DataWrangling.dataset_variable_name(md::MCD12Q1Metadatum)  = MCD12Q1_variable_names[md.name]
 
+# The framework applies the MODIS `scale × DN` decode: `conversion_units` multiplies
+# by the product's stored scale factor, and `missing_value` masks the fill DN to NaN.
+# Albedo and LAI mask their fills before scaling in `retrieve_data` (the blend and the
+# DN > 100 / QA thresholds are not single sentinels), so only the scale is wired here.
+DataWrangling.conversion_units(::MCD43AlbedoMetadatum) = ScaleFactor(MODIS_ALBEDO_SCALE)
+DataWrangling.conversion_units(md::MODISLAIMetadatum) =
+    ScaleFactor(md.name === :fpar ? MODIS_FPAR_SCALE : MODIS_LAI_SCALE)
+DataWrangling.missing_value(::MCD12Q1Metadatum) = MODIS_LANDCOVER_FILL
+
 #####
 ##### Region-keyed filenames + coverage validation (require a BoundingBox)
 #####
@@ -467,14 +464,15 @@ end
 function DataWrangling.retrieve_data(metadata::MCD43AlbedoMetadatum)
     path = metadata_path(metadata)
     black_sky_name, white_sky_name = MCD43Albedo_variable_names[metadata.name]
-    f_diff = metadata.dataset.diffuse_fraction
+    diffuse_fraction = metadata.dataset.diffuse_fraction
 
     ds = Dataset(path)
-    black_sky = decode_albedo.(ds[black_sky_name][:, :])
-    white_sky = decode_albedo.(ds[white_sky_name][:, :])
+    black_sky = mask_albedo_fill.(ds[black_sky_name][:, :])
+    white_sky = mask_albedo_fill.(ds[white_sky_name][:, :])
     close(ds)
 
-    return bluesky_blend.(black_sky, white_sky, f_diff)
+    # Blend on raw DN; the 0.001 scale is applied downstream by `conversion_units`.
+    return bluesky_blend.(black_sky, white_sky, diffuse_fraction)
 end
 
 function DataWrangling.retrieve_data(metadata::MODISLAIMetadatum)
@@ -482,7 +480,8 @@ function DataWrangling.retrieve_data(metadata::MODISLAIMetadatum)
     name = MODISLAI_variable_names[metadata.name]
 
     ds = Dataset(path)
-    decoded = metadata.name === :fpar ? decode_fpar.(ds[name][:, :]) : decode_lai.(ds[name][:, :])
+    # Raw DN with fill/special codes masked; the scale is applied by `conversion_units`.
+    decoded = mask_lai_fill.(ds[name][:, :])
     # Keep only main radiative-transfer retrievals if the QA layer was retained.
     # `FparLai_QC` is a bit-packed byte stored as raw DN (Float64 in the NetCDF);
     # round back to a UInt8 before the bitwise QA decode (`&`, `>>`).
@@ -500,7 +499,8 @@ function DataWrangling.retrieve_data(metadata::MCD12Q1Metadatum)
     name = MCD12Q1_variable_names[metadata.name]
 
     ds = Dataset(path)
-    codes = mask_landcover.(ds[name][:, :])
+    # Raw class codes; the fill code is masked to NaN downstream by `missing_value`.
+    codes = Float64.(ds[name][:, :])
     close(ds)
 
     return codes

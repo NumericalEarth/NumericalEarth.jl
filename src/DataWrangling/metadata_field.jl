@@ -423,6 +423,9 @@ end
 # No units conversion
 @inline convert_units(T, units) = T
 
+# Multiply by a stored scale factor (e.g. a dataset's integer `scale_factor`).
+@inline convert_units(x::FT, s::ScaleFactor) where FT = x * convert(FT, s.factor)
+
 # Just switch sign!
 @inline convert_units(T::FT, ::InverseSign) where FT = - T
 

@@ -761,6 +761,10 @@ struct MillimetersPerHour end     # liquid precipitation rate in mm/hr → kg/m�
 struct MetersPerHour end          # liquid precipitation depth in m/hr → kg/m²/s (ERA5 total_precipitation)
 struct JoulesPerSquareMeterPerHour end # radiative energy accumulated over 1 hr, J/m² → mean flux W/m² (ERA5 ssrd/strd)
 
+struct ScaleFactor{FT}  # multiply by a stored scale factor (e.g. a dataset's integer `scale_factor`)
+    factor :: FT
+end
+
 """
     conversion_units(metadatum)
 
