@@ -80,7 +80,23 @@ jobs:
           arch: ${{ matrix.arch }}
       - uses: julia-actions/cache@v3
         with:
+          # Share one depot cache with `cds_downloading`: both instantiate the same
+          # test/Project.toml. Distinct cache names stored two near-identical ~1.3 GB copies,
+          # and the repo total (10.7 GB) sat above GitHub's 10 GB budget, so every save
+          # evicted an older cache and no job ever restored one. `include-matrix` appends
+          # os/arch/version, so macOS and any future matrix entry still get their own key.
+          cache-name: julia-cache;env=test
           cache-scratchspaces: false
+      # ParallelTestRunner schedules longest-first from a duration history it keeps in a
+      # scratchspace. `cache-scratchspaces: false` (needed: the dataset scratchspaces are
+      # tens of GB) also discards that history, so every duration defaults to Inf and the
+      # order falls back to random -- leaving a 38 min test to start last and run alone.
+      # Cache just the history: a few KB, keyed to ParallelTestRunner's UUID.
+      - uses: actions/cache@v4
+        with:
+          path: ~/.julia/scratchspaces/d3525ed8-44d0-4b2c-a655-542cee43accc/durations
+          key: julia-test-durations;job=cpu_tests;${{ github.run_id }}
+          restore-keys: julia-test-durations;job=cpu_tests;
       - uses: julia-actions/julia-runtest@v1
         with:
           # Cap parallelism at 2 workers. ParallelTestRunner's default_njobs
@@ -248,6 +264,8 @@ jobs:
           arch: ${{ matrix.arch }}
       - uses: julia-actions/cache@v3
         with:
+          # Shares the depot cache with `cpu_tests` -- same test/Project.toml. See that job.
+          cache-name: julia-cache;env=test
           cache-scratchspaces: false
       - name: Run tests
         run: |
@@ -271,7 +289,7 @@ jobs:
       fail-fast: false
       matrix:
         version:
-          - "1.11.9"
+          - "1.12.5"
         os:
           - ubuntu-latest
         arch:
@@ -304,14 +322,22 @@ jobs:
           arch: ${{ matrix.arch }}
       - uses: julia-actions/cache@v3
         with:
+          # `test/reactant` is a much smaller environment than `test`, so it gets its own
+          # (small) cache rather than sharing the `env=test` one.
+          cache-name: julia-cache;env=reactant
           cache-scratchspaces: false
+      # Runs against test/reactant/Project.toml, which carries Reactant and nothing else it
+      # doesn't need. Reactant is the sole path to Enzyme (316 s, the largest single
+      # precompile unit) and pulls the very large Reactant_jll artifact; keeping it out of
+      # the shared test env stops `cpu_tests`/`cds_downloading` from precompiling ~9 min of
+      # code they never call, and keeps their cache inside GitHub's 10 GB budget.
       - name: Run tests
         run: |
-          julia --project --color=yes --check-bounds=yes -e '
-              using Pkg;
-              Pkg.test(; coverage=true,
-                        julia_args=["--check-bounds=yes", "--compiled-modules=yes", "-O0"],
-                        test_args=["--verbose", "test_reactant"])
+          julia --project=test/reactant --color=yes --check-bounds=yes -O0 \
+                --code-coverage=@${PWD}/src -e '
+              using Pkg
+              Pkg.instantiate()
+              include("test/reactant/test_reactant.jl")
           '
       - uses: julia-actions/julia-processcoverage@v1
       - uses: codecov/codecov-action@v5
