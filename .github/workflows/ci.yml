@@ -99,14 +99,15 @@ jobs:
           restore-keys: julia-test-durations;job=cpu_tests;
       - uses: julia-actions/julia-runtest@v1
         with:
-          # Cap parallelism at 2 workers. ParallelTestRunner's default_njobs
-          # assumes ~2 GiB per worker, but the Breeze-compilation and bathymetry
-          # tests peak at 2.5-3.5 GiB RSS each. On the 16 GiB GitHub-hosted
-          # runner, the default (4 = core count) intermittently OOMs when several
-          # heavy tests coincide, and the runner reports it as
-          # "The operation was canceled." Two workers keep peak memory well
-          # within budget while staying comfortably under the job timeout.
-          test_args: '--verbose --jobs=2'
+          # Three workers. ParallelTestRunner's default_njobs assumes ~2 GiB per worker, but
+          # the Breeze-compilation and bathymetry tests peak at 2.5-3.5 GiB RSS each and
+          # `test_tracer_budget` at 5.6 GiB, so the default (4 = core count) intermittently
+          # OOMs on the 16 GiB runner and the runner reports it as "The operation was
+          # canceled." Three fit: 5.6 + 3.5 + 3.5 leaves headroom, and the third worker is
+          # what makes the suite's 38 min `test_tracer_budget` the wall clock rather than an
+          # unbalanced queue -- 95 min of tests over 2 workers is 47.7 min, over 3 it is 38.0,
+          # and a 4th buys nothing because that one test is the floor.
+          test_args: '--verbose --jobs=3'
       - uses: julia-actions/julia-processcoverage@v1
       - uses: codecov/codecov-action@v5
         with:
