@@ -79,8 +79,17 @@ Adapt.adapt_structure(to, f::FreshwaterExchange{name}) where name =
 @inline surface_tracer_value(fields, ::Val{:T}, i, j, k) = @inbounds fields.T[i, j, k]
 
 @inline (f::FreshwaterExchange{name})(i, j, grid, clock, fields) where name =
-    @inbounds surface_tracer_value(fields, Val(name), i, j, grid.Nz) * f.carrying_flux[i, j, 1] - f.content_flux[i, j, 1] +
-    getbc(f.additional, i, j, grid, clock, fields)
+    freshwater_exchange_flux(f, Val(name), i, j, grid, fields) + getbc(f.additional, i, j, grid, clock, fields)
+
+@inline carried_tracer_flux(f::FreshwaterExchange, ::Val{name}, i, j, grid, fields) where name =
+    @inbounds surface_tracer_value(fields, Val(name), i, j, grid.Nz) * f.carrying_flux[i, j, 1] - f.content_flux[i, j, 1]
+
+# The temperature carried flux is required only for mutable grids to cancel the volume movement. 
+# On the other hand, it is required always for salinity
+@inline freshwater_exchange_flux(f::FreshwaterExchange, name::Val{:S}, i, j, grid, fields) = carried_tracer_flux(f, name, i, j, grid, fields)
+@inline freshwater_exchange_flux(f::FreshwaterExchange, name::Val{:T}, i, j, grid, fields) = zero(grid)
+@inline freshwater_exchange_flux(f::FreshwaterExchange, name::Val{:T}, i, j, grid::MutableGridOfSomeKind, fields) = carried_tracer_flux(f, name, i, j, grid, fields)
+
 
 build_tracer_top_bc(Jᶜ, Jʷ, content, additional, name) = FluxBoundaryCondition(MultipleFluxes(Jᶜ, FreshwaterExchange{name}(Jʷ, content, additional)); discrete_form=true)
 
@@ -425,9 +434,7 @@ function hydrostatic_ocean_simulation(grid;
     top_freshwater_volume_flux = Jʷ = Field{Center, Center, Nothing}(η_grid)
 
     if grid isa MutableGridOfSomeKind
-        if :η ∈ keys(forcing)
-            Fη = (Fη, forcing.η)
-        end
+        Fη = :η ∈ keys(forcing) ? (Jʷ, forcing.η) : Jʷ
         forcing = merge(forcing, (; η = Fη))
     end
 
