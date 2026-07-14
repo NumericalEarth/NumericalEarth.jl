@@ -142,6 +142,25 @@ function foreach_nc(f, download_path, cleanup_dir)
 end
 
 #####
+##### Retry wrapper — the CDS/EWDS gateway intermittently answers valid requests
+##### with a transient error (e.g. 502 Bad Gateway); retry with backoff instead of
+##### failing on the first hiccup. Every `CDSAPI.retrieve` call site below goes
+##### through this one wrapper.
+#####
+
+function retrieve_with_retries(product, request, path; max_retries = 3)
+    for attempt in 1:max_retries
+        try
+            return CDSAPI.retrieve(product, request, path)
+        catch e
+            attempt < max_retries || rethrow(e)
+            @warn "CDS retrieve attempt $attempt/$max_retries failed for $product; retrying..." exception=(e, catch_backtrace())
+            sleep(5.0 * attempt)
+        end
+    end
+end
+
+#####
 ##### Single-date download
 #####
 
@@ -171,7 +190,7 @@ function Downloads.download(meta::ERA5Metadatum; skip_existing=true)
 
     request = build_era5_request(meta.name, meta.dataset, meta.dates; region=meta.region)
 
-    @root CDSAPI.retrieve(cds_product(meta.dataset), request, output_path)
+    @root retrieve_with_retries(cds_product(meta.dataset), request, output_path)
 
     return output_path
 end
@@ -292,7 +311,6 @@ function plan_era5_month(name, dataset, dates; region, dir, skip_existing)
     end
 
     sorted_dts = sort(unique([dt for (dt, _) in pending]))
-    dt_to_tidx = Dict(dt => i for (i, dt) in enumerate(sorted_dts))
 
     request = build_era5_request(name, dataset, sorted_dts; region)
 
@@ -303,7 +321,7 @@ function plan_era5_month(name, dataset, dates; region, dir, skip_existing)
 
     tmp_path   = joinpath(dir, "_tmp_$(year)$(month)$(day).nc")
     nc_varname = nc_varnames(dataset)[name]
-    nc_triples = [(nc_varname, dt_to_tidx[dt], path) for (dt, path) in pending]
+    nc_triples = [(nc_varname, dt, path) for (dt, path) in pending]
 
     return (; dt_path_pairs, pending, request, tmp_path, nc_triples)
 end
@@ -318,7 +336,7 @@ function download_era5_month(name, dataset, dates;
     time_dimnames = Set(["time", "valid_time"])
 
     @root begin
-        CDSAPI.retrieve(cds_product(dataset), plan.request, plan.tmp_path)
+        retrieve_with_retries(cds_product(dataset), plan.request, plan.tmp_path)
         foreach_nc(plan.tmp_path, dir) do nc_path
             split_era5_nc_multistep(nc_path, plan.nc_triples, coord_vars(dataset), time_dimnames)
         end
@@ -412,7 +430,7 @@ function Downloads.download(names::Vector{Symbol}, meta::ERA5PressureMetadatum; 
     nc_name_path_pairs = [(nc_varnames(meta.dataset)[name], path) for (name, path) in pending]
 
     @root begin
-        CDSAPI.retrieve(cds_product(meta.dataset), request, tmp_path)
+        retrieve_with_retries(cds_product(meta.dataset), request, tmp_path)
         foreach_nc(tmp_path, meta.dir) do nc_path
             split_era5_nc(nc_path, nc_name_path_pairs, coord_vars(meta.dataset))
         end
@@ -509,7 +527,6 @@ function plan_era5_multivar_month(names, dataset, dates; region, dir, skip_exist
 
     pending_names = unique(map(name_dt_path -> name_dt_path[1], pending))
     sorted_dts    = sort(unique(map(name_dt_path -> name_dt_path[2], pending)))
-    dt_to_tidx    = Dict(dt => i for (i, dt) in enumerate(sorted_dts))
 
     request = build_era5_request(pending_names, dataset, sorted_dts; region)
 
@@ -519,7 +536,7 @@ function plan_era5_multivar_month(names, dataset, dates; region, dir, skip_exist
     day   = lpad(string(Dates.day(dt0)),   2, '0')
 
     tmp_path   = joinpath(dir, "_tmp_multi_$(year)$(month)$(day).nc")
-    nc_triples = [(nc_varnames(dataset)[name], dt_to_tidx[dt], path)
+    nc_triples = [(nc_varnames(dataset)[name], dt, path)
                   for (name, dt, path) in pending]
 
     return (; name_dt_paths, pending, request, tmp_path, nc_triples)
@@ -535,7 +552,7 @@ function download_era5_multivar_month(names, dataset, dates;
     time_dimnames = Set(["time", "valid_time"])
 
     @root begin
-        CDSAPI.retrieve(cds_product(dataset), plan.request, plan.tmp_path)
+        retrieve_with_retries(cds_product(dataset), plan.request, plan.tmp_path)
         foreach_nc(plan.tmp_path, dir) do nc_path
             split_era5_nc_multistep(nc_path, plan.nc_triples, coord_vars(dataset), time_dimnames)
         end
@@ -582,15 +599,29 @@ end
     split_era5_nc_multistep(src_path, triples, coord_vars, time_dimnames)
 
 Split a multi-timestep NetCDF into individual per-variable, per-timestep files.
-`triples` is a vector of `(nc_varname, time_index, dst_path)`.
+`triples` is a vector of `(nc_varname, datetime, dst_path)`.
+
+Each `datetime`'s timestep is located by matching it against `src`'s time coordinate, NOT by its
+position in the request. CDS expands `day`/`time` into a Cartesian product, so a request whose
+datetimes span more than one day with differing hours (e.g. a window crossing midnight) comes back
+with extra, sorted timesteps that no longer line up positionally with the requested datetimes.
 """
-function split_era5_nc_multistep(src_path, nc_varname_tidx_path_triples, coord_vars, time_dimnames)
+function split_era5_nc_multistep(src_path, nc_varname_datetime_path_triples, coord_vars, time_dimnames)
     NCDatasets.Dataset(src_path, "r") do src
         src_varnames = Set(keys(src))
         unlimited = NCDatasets.unlimited(src)
 
-        for (nc_varname, tidx, dst_path) in nc_varname_tidx_path_triples
+        # Index this file's timesteps by their valid time (see the note above).
+        time_coord = "valid_time" in src_varnames ? "valid_time" :
+                     "time"       in src_varnames ? "time"       :
+                     error("split_era5_nc_multistep: no time coordinate variable in $src_path")
+        tidx_of = Dict(t => i for (i, t) in enumerate(src[time_coord][:]))
+
+        for (nc_varname, datetime, dst_path) in nc_varname_datetime_path_triples
             nc_varname in src_varnames || continue
+            haskey(tidx_of, datetime) ||
+                error("split_era5_nc_multistep: $datetime absent from $src_path")
+            tidx = tidx_of[datetime]
             NCDatasets.Dataset(dst_path, "c") do dst
                 for (dname, dlen) in src.dim
                     out_len = dname in time_dimnames ? 1 :
@@ -755,7 +786,7 @@ function glofas_retrieve(product, request, path)
     isempty(key) || (ENV["CDSAPI_KEY"] = key)
 
     try
-        return CDSAPI.retrieve(product, request, path)
+        return retrieve_with_retries(product, request, path)
     finally
         restore_env!("CDSAPI_URL", saved_url)
         isempty(key) || restore_env!("CDSAPI_KEY", saved_key)
@@ -858,13 +889,12 @@ function download_glofas_month(name, dataset, dates; region, dir, skip_existing,
 
     mkpath(dir)
     sorted_dts = sort(unique([dt for (dt, _) in pending]))
-    dt_to_tidx = Dict(dt => i for (i, dt) in enumerate(sorted_dts))
     request = build_glofas_request(dataset, sorted_dts, region)
 
     dt0 = first(sorted_dts)
     tmp_path = joinpath(dir, "_tmp_glofas_$(Dates.year(dt0))$(lpad(Dates.month(dt0), 2, '0')).nc")
     nc_varname = GloFAS_netcdf_variable_names[name]
-    nc_triples = [(nc_varname, dt_to_tidx[dt], path) for (dt, path) in pending]
+    nc_triples = [(nc_varname, dt, path) for (dt, path) in pending]
 
     time_dimnames = Set(["time", "valid_time"])
     @root begin
@@ -997,7 +1027,7 @@ function Downloads.download(metadata::AlbedoMetadata; skip_existing=true, cleanu
         tmp_download = joinpath(dir, "_tmp_albedo_$(key[1])$(lpad(key[2], 2, '0')).download")
         extraction_dir = mktempdir(dir)
         try
-            CDSAPI.retrieve(ALBEDO_CDS_PRODUCT, request, tmp_download)
+            retrieve_with_retries(ALBEDO_CDS_PRODUCT, request, tmp_download)
             nc_files = extract_albedo_files(tmp_download, extraction_dir)
             repack_albedo_batch(nc_files, batch, path_of, destination_names, expected_size)
         finally
