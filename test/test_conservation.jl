@@ -60,7 +60,7 @@ function test_coupled_energy_conservation(grid, atmosphere_grid; ocean_kwargs...
 
     coupled_model = OceanSeaIceModel(ocean, sea_ice; atmosphere, radiation)
 
-    function set_forcing!(atmosphere, radiatipn;
+    function set_forcing!(atmosphere, radiation;
                           T_air, q_air, u_air, v_air, p_air,
                           SW_down, LW_down, rain_flux, snow_flux)
         for (fts, value) in ((atmosphere.temperature,       T_air),
@@ -69,11 +69,11 @@ function test_coupled_energy_conservation(grid, atmosphere_grid; ocean_kwargs...
                              (atmosphere.velocities.v, v_air),
                              (atmosphere.pressure,     p_air),
                              (atmosphere.precipitation_flux.rain, rain_flux),
-                             (atmosphere.precipitation_flux.snow, snow_flux))
+                             (atmosphere.precipitation_flux.snow, snow_flux),
+                             (radiation.downwelling_shortwave, SW_down),
+                             (radiation.downwelling_longwave,  LW_down))
             fill!(parent(fts), value)
         end
-        fill!(radiation.downwelling_shortwave, SW_down)
-        fill!(radiation.downwelling_longwave,  LW_down)
         return nothing
     end
 
