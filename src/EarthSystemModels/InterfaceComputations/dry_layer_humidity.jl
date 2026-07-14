@@ -354,11 +354,20 @@ end
     D    = Gᵉ * Δq + Jᵃ
     qⁱⁿ★ = ifelse(D == 0, qⁱⁿ⁻, (Gᵉ * qᵉ * Δq + Jᵃ * qᵃᵗ) / D)
 
+    qⁱⁿ⁺ = saturation_specific_humidity(ℂᵃᵗ, Tⁱⁿ, pᵃᵗ, q.phase)
+
+    # The series solution has a pole where the linearized conductances cancel
+    # (D = Gᵉ Δq + Jᵃ → 0): a transiently negative atmospheric conductance
+    # Gᵃ = Jᵃ/Δq sends qⁱⁿ★ far past its source humidities and, under GPU
+    # rounding, to ±Inf. Clamp it to the admissible range [0, saturation] before
+    # the blend so a non-physical iterate cannot leak through σ·qⁱⁿ★ and cascade
+    # to NaN; the clamp is inactive at the converged, physical state.
+    qⁱⁿ★ = clamp(qⁱⁿ★, zero(FT), max(qⁱⁿ⁺, qᵉ, qᵃᵗ))
+
     # Wet branch: the front co-locates with the skin, which saturates. The wet
     # limit is not the δᵛ → 0 limit of the series solution (Millington-Quirk
     # tortuosity closes the Fick path entirely at saturation), so the branches
     # are combined with a smooth logistic weight after Kavetski & Kuczera (2007).
-    qⁱⁿ⁺ = saturation_specific_humidity(ℂᵃᵗ, Tⁱⁿ, pᵃᵗ, q.phase)
     δᵛʷ  = convert(FT, q.vapor_exchange.wet_transition_width)
     z    = 10 * (δᵛ - δᵛmin - δᵛʷ / 2) / max(δᵛʷ, eps(FT))
     σ    = 1 / (1 + exp(-z))
