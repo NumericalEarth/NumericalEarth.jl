@@ -82,9 +82,6 @@ Base.summary(sv::SubgridVelocityCorrection) =
 
 Base.show(io::IO, sv::SubgridVelocityCorrection) = print(io, summary(sv))
 
-# Float-type conversion of user-supplied corrections, mirroring the `convert(FT, ⋅)`
-# applied to the scalar parameters of `SimilarityTheoryFluxes`. Unknown formulation
-# types pass through unchanged (as for user-supplied `stability_functions`).
 subgrid_velocity_with_float_type(FT, x) = x
 subgrid_velocity_with_float_type(FT, v::Number) = convert(FT, v)
 subgrid_velocity_with_float_type(FT, g::ConvectiveGustiness) =
@@ -93,7 +90,6 @@ subgrid_velocity_with_float_type(FT, sv::SubgridVelocityCorrection) =
     SubgridVelocityCorrection(subgrid_velocity_with_float_type(FT, sv.convective),
                               subgrid_velocity_with_float_type(FT, sv.mesoscale))
 
-# Squared velocity contributions, summed in quadrature in the flux kernel.
 @inline subgrid_velocity²(::Nothing, u★, b★, h_bℓ) = 0
 @inline subgrid_velocity²(v::Number, u★, b★, h_bℓ) = v^2
 
