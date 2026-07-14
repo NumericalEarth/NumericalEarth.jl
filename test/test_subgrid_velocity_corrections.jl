@@ -11,7 +11,7 @@ using NumericalEarth.EarthSystemModels.InterfaceComputations:
     ConvectiveGustiness,
     SubgridVelocityCorrection,
     mahrt_sun_subgrid_velocity,
-    subgrid_velocity²,
+    vsgs²,
     atmosphere_land_stability_functions
 
 @testset "ConvectiveGustiness" begin
@@ -25,20 +25,20 @@ using NumericalEarth.EarthSystemModels.InterfaceComputations:
                            (1e-4, 0.0,   512.0))   # neutral: floor applies
         Jᵇ = - u★ * b★
         Uᴳ = max(g.minimum_gustiness, g.gustiness_parameter * cbrt(max(zero(Jᵇ), Jᵇ) * h_bℓ))
-        @test subgrid_velocity²(g, u★, b★, h_bℓ) == Uᴳ^2
+        @test vsgs²(g, u★, b★, h_bℓ) == Uᴳ^2
     end
 
     # Unstable enhancement exceeds the floor; stable falls back to it
-    @test subgrid_velocity²(g, 0.3, -0.005, 600.0) > g.minimum_gustiness^2
-    @test subgrid_velocity²(g, 0.3, 0.005, 600.0) == g.minimum_gustiness^2
+    @test vsgs²(g, 0.3, -0.005, 600.0) > g.minimum_gustiness^2
+    @test vsgs²(g, 0.3, 0.005, 600.0) == g.minimum_gustiness^2
 
     # Zeroed gustiness contributes exactly nothing (analytic log-law tests rely on this)
     g0 = ConvectiveGustiness{Float64}(gustiness_parameter = 0, minimum_gustiness = 0)
-    @test subgrid_velocity²(g0, 0.3, -0.005, 600.0) == 0.0
+    @test vsgs²(g0, 0.3, -0.005, 600.0) == 0.0
 
     # Float32 purity
     g32 = ConvectiveGustiness{Float32}()
-    @test subgrid_velocity²(g32, 0.1f0, -1f-3, 512f0) isa Float32
+    @test vsgs²(g32, 0.1f0, -1f-3, 512f0) isa Float32
 end
 
 @testset "Mahrt-Sun mesoscale velocity" begin
@@ -56,14 +56,14 @@ end
     vsg = mahrt_sun_subgrid_velocity(25e3)
 
     sv = SubgridVelocityCorrection(Float64; convective = g, mesoscale = vsg)
-    @test subgrid_velocity²(sv, u★, b★, h_bℓ) ==
-          subgrid_velocity²(g, u★, b★, h_bℓ) + vsg^2
+    @test vsgs²(sv, u★, b★, h_bℓ) ==
+          vsgs²(g, u★, b★, h_bℓ) + vsg^2
 
     sv_nomeso = SubgridVelocityCorrection(Float64; convective = g)
-    @test subgrid_velocity²(sv_nomeso, u★, b★, h_bℓ) == subgrid_velocity²(g, u★, b★, h_bℓ)
+    @test vsgs²(sv_nomeso, u★, b★, h_bℓ) == vsgs²(g, u★, b★, h_bℓ)
 
     sv_none = SubgridVelocityCorrection(Float64; convective = nothing)
-    @test subgrid_velocity²(sv_none, u★, b★, h_bℓ) == 0
+    @test vsgs²(sv_none, u★, b★, h_bℓ) == 0
 
     # FT-aware constructor converts a Float64 mesoscale scalar (no Float64 leak
     # into Float32 kernels)
@@ -74,36 +74,27 @@ end
 end
 
 @testset "SimilarityTheoryFluxes construction and adapt" begin
-    # Default: composite built from the legacy gustiness kwargs, no mesoscale
+    # Default: a bare ConvectiveGustiness with the standard parameters
     fluxes = SimilarityTheoryFluxes()
-    @test fluxes.subgrid_velocities isa SubgridVelocityCorrection
-    @test fluxes.subgrid_velocities.convective isa ConvectiveGustiness{Float64}
-    @test isnothing(fluxes.subgrid_velocities.mesoscale)
+    @test fluxes.subgrid_velocities isa ConvectiveGustiness{Float64}
+    @test fluxes.subgrid_velocities.gustiness_parameter == 1.2
+    @test fluxes.subgrid_velocities.minimum_gustiness == 0.01
 
-    # Legacy kwargs still parameterize the convective component
-    z = SimilarityTheoryFluxes(gustiness_parameter = 0, minimum_gustiness = 0)
-    @test z.subgrid_velocities.convective.gustiness_parameter == 0
-    @test z.subgrid_velocities.convective.minimum_gustiness == 0
+    # `nothing` disables the enhancement entirely
+    z = SimilarityTheoryFluxes(subgrid_velocities = nothing)
+    @test isnothing(z.subgrid_velocities)
 
-    # Explicit composite is used as-is
+    # An explicit correction is used as-is
     sv = SubgridVelocityCorrection(Float64; mesoscale = mahrt_sun_subgrid_velocity(25e3))
     fluxes = SimilarityTheoryFluxes(subgrid_velocities = sv)
     @test fluxes.subgrid_velocities === sv
 
-    # Float32 constructor produces a Float32 composite
+    # Float32 constructor produces a Float32 default
     f32 = SimilarityTheoryFluxes(Float32)
-    @test f32.subgrid_velocities.convective isa ConvectiveGustiness{Float32}
+    @test f32.subgrid_velocities isa ConvectiveGustiness{Float32}
     @test isbits(f32.subgrid_velocities)
 
-    # Explicitly supplied composites are converted to FT (no Float64 leak into
-    # Float32 kernels)
-    f32sv = SimilarityTheoryFluxes(Float32; subgrid_velocities = SubgridVelocityCorrection(Float64))
-    @test f32sv.subgrid_velocities.convective isa ConvectiveGustiness{Float32}
-    f32meso = SimilarityTheoryFluxes(Float32;
-                                     subgrid_velocities = SubgridVelocityCorrection(Float64; mesoscale = mahrt_sun_subgrid_velocity(25e3)))
-    @test f32meso.subgrid_velocities.mesoscale isa Float32
-
-    # The composite survives an `adapt` roundtrip (GPU struct integrity)
+    # The correction survives an `adapt` roundtrip (GPU struct integrity)
     adapted = adapt(Array, fluxes)
     @test adapted.subgrid_velocities === fluxes.subgrid_velocities
 end

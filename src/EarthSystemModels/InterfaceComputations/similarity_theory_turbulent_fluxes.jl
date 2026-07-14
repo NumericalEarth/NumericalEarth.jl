@@ -61,7 +61,7 @@ velocity, ``U² = Δu² + Δv² + Uᶜ² + Uᵐ²``:
   Default `nothing` (no contribution).
 
 Either slot may be `nothing`, a `Number` [m/s], or a formulation implementing
-`subgrid_velocity²(correction, u★, b★, h_bℓ)`.
+`vsgs²(correction, u★, b★, h_bℓ)`.
 """
 struct SubgridVelocityCorrection{C, M}
     convective :: C
@@ -71,8 +71,8 @@ end
 function SubgridVelocityCorrection(FT::DataType = Oceananigans.defaults.FloatType;
                                    convective = ConvectiveGustiness{FT}(),
                                    mesoscale = nothing)
-    convective = subgrid_velocity_with_float_type(FT, convective)
-    mesoscale  = subgrid_velocity_with_float_type(FT, mesoscale)
+    convective isa Number && (convective = convert(FT, convective))
+    mesoscale  isa Number && (mesoscale  = convert(FT, mesoscale))
     return SubgridVelocityCorrection(convective, mesoscale)
 end
 
@@ -82,25 +82,17 @@ Base.summary(sv::SubgridVelocityCorrection) =
 
 Base.show(io::IO, sv::SubgridVelocityCorrection) = print(io, summary(sv))
 
-subgrid_velocity_with_float_type(FT, x) = x
-subgrid_velocity_with_float_type(FT, v::Number) = convert(FT, v)
-subgrid_velocity_with_float_type(FT, g::ConvectiveGustiness) =
-    ConvectiveGustiness(convert(FT, g.gustiness_parameter), convert(FT, g.minimum_gustiness))
-subgrid_velocity_with_float_type(FT, sv::SubgridVelocityCorrection) =
-    SubgridVelocityCorrection(subgrid_velocity_with_float_type(FT, sv.convective),
-                              subgrid_velocity_with_float_type(FT, sv.mesoscale))
+@inline vsgs²(::Nothing, u★, b★, h_bℓ) = 0
+@inline vsgs²(v::Number, u★, b★, h_bℓ) = v^2
 
-@inline subgrid_velocity²(::Nothing, u★, b★, h_bℓ) = 0
-@inline subgrid_velocity²(v::Number, u★, b★, h_bℓ) = v^2
-
-@inline function subgrid_velocity²(g::ConvectiveGustiness, u★, b★, h_bℓ)
+@inline function vsgs²(g::ConvectiveGustiness, u★, b★, h_bℓ)
     Jᵇ = - u★ * b★
     Uᴳ = max(g.minimum_gustiness, g.gustiness_parameter * cbrt(max(zero(Jᵇ), Jᵇ) * h_bℓ))
     return Uᴳ^2
 end
 
-@inline subgrid_velocity²(sv::SubgridVelocityCorrection, u★, b★, h_bℓ) =
-    subgrid_velocity²(sv.convective, u★, b★, h_bℓ) + subgrid_velocity²(sv.mesoscale, u★, b★, h_bℓ)
+@inline vsgs²(sv::SubgridVelocityCorrection, u★, b★, h_bℓ) =
+    vsgs²(sv.convective, u★, b★, h_bℓ) + vsgs²(sv.mesoscale, u★, b★, h_bℓ)
 
 """
     mahrt_sun_subgrid_velocity(Δx; threshold = 5e3)
@@ -140,9 +132,7 @@ end
                            gravitational_acceleration = 9.81,
                            von_karman_constant = 0.4,
                            turbulent_prandtl_number = 1,
-                           gustiness_parameter = 1.2,
-                           minimum_gustiness = 0.01,
-                           subgrid_velocities = nothing,
+                           subgrid_velocities = ConvectiveGustiness{FT}(),
                            stability_functions = default_stability_functions(FT),
                            roughness_lengths = default_roughness_lengths(FT),
                            similarity_form = LogarithmicSimilarityProfile(),
@@ -158,14 +148,10 @@ Keyword Arguments
 
 - `von_karman_constant`: The von Karman constant. Default: 0.4.
 - `turbulent_prandtl_number`: The turbulent Prandtl number. Default: 1.
-- `gustiness_parameter`: Scaling factor for convective gustiness velocity. Default: 1.2.
-- `minimum_gustiness`: Minimum gustiness velocity [m/s], used as a floor in stable conditions
-                       where convective gustiness is zero. Default: 0.01.
-- `subgrid_velocities`: [`SubgridVelocityCorrection`](@ref) composing the empirical subgrid velocity
-                        enhancements of the bulk velocity. Default: `nothing`, which builds a
-                        `SubgridVelocityCorrection` with a [`ConvectiveGustiness`](@ref) from
-                        `gustiness_parameter` and `minimum_gustiness` and no mesoscale contribution.
-                        Explicitly supplied corrections are converted to `FT`.
+- `subgrid_velocities`: Empirical subgrid velocity enhancement of the bulk velocity: `nothing`,
+                        a `Number` [m/s], a formulation implementing `vsgs²`, or a
+                        [`SubgridVelocityCorrection`](@ref) composing several. Default:
+                        [`ConvectiveGustiness`](@ref)`{FT}()`.
 - `stability_functions`: The stability functions. Default: `default_stability_functions(FT)` that follow the
                          formulation of [edson2013exchange](@citet).
 - `roughness_lengths`: The roughness lengths used to calculate the characteristic scales for momentum, temperature and
@@ -178,9 +164,7 @@ Keyword Arguments
 function SimilarityTheoryFluxes(FT::DataType = Oceananigans.defaults.FloatType;
                                 von_karman_constant = 0.4,
                                 turbulent_prandtl_number = 1,
-                                gustiness_parameter = 1.2,
-                                minimum_gustiness = 0.01,
-                                subgrid_velocities = nothing,
+                                subgrid_velocities = ConvectiveGustiness{FT}(),
                                 stability_functions = atmosphere_ocean_stability_functions(FT),
                                 momentum_roughness_length = MomentumRoughnessLength(FT),
                                 temperature_roughness_length = ScalarRoughnessLength(FT),
@@ -202,14 +186,6 @@ function SimilarityTheoryFluxes(FT::DataType = Oceananigans.defaults.FloatType;
     if isnothing(stability_functions)
         returns_zero = Returns(zero(FT))
         stability_functions = SimilarityScales(returns_zero, returns_zero, returns_zero)
-    end
-
-    if isnothing(subgrid_velocities)
-        convective = ConvectiveGustiness(convert(FT, gustiness_parameter),
-                                         convert(FT, minimum_gustiness))
-        subgrid_velocities = SubgridVelocityCorrection(FT; convective)
-    else
-        subgrid_velocities = subgrid_velocity_with_float_type(FT, subgrid_velocities)
     end
 
     return SimilarityTheoryFluxes(convert(FT, von_karman_constant),
@@ -333,7 +309,7 @@ function iterate_interface_fluxes(flux_formulation::SimilarityTheoryFluxes,
     # Squared subgrid velocity enhancements: convective gustiness and, on coarse
     # grids, an optional mesoscale contribution (see `SubgridVelocityCorrection`).
     h_bℓ = atmosphere_state.h_bℓ
-    Uˢᵍ² = subgrid_velocity²(flux_formulation.subgrid_velocities, u★, b★, h_bℓ)
+    Uˢᵍ² = vsgs²(flux_formulation.subgrid_velocities, u★, b★, h_bℓ)
 
     # Velocity difference accounting for subgrid velocity enhancements
     Δu, Δv = velocity_difference(interface_properties.velocity_formulation,
