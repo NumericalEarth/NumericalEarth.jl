@@ -68,6 +68,9 @@ export
 using ..EarthSystemModels: EarthSystemModels,
                            default_gravitational_acceleration,
                            default_freshwater_density,
+                           default_gas_constant,
+                           default_dry_air_molar_mass,
+                           celsius_to_kelvin,
                            thermodynamics_parameters,
                            surface_layer_height,
                            boundary_layer_height
@@ -129,6 +132,9 @@ end
 include("roughness_lengths.jl")
 include("interface_states.jl")
 include("dry_layer_humidity.jl")
+include("photosynthesis.jl")
+include("stomatal_conductance.jl")
+include("absorbed_par.jl")
 include("canopy_conductance.jl")
 include("composite_surface_humidity.jl")
 include("compute_interface_state.jl")

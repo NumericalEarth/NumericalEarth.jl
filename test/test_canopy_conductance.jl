@@ -132,13 +132,13 @@ end
         @test An == 0 && ci == 0
         @test eltype(gs) == FT
 
-        # Factors: light saturates 0→1, VPD declines, temperature peaks at T_reference.
+        # Factors: light saturates 0→1, VPD declines, temperature peaks at optimal_temperature.
         @test jarvis_light_factor(jarv, FT(1e-2)) > jarvis_light_factor(jarv, FT(1e-4))
         @test jarvis_light_factor(jarv, FT(1e6)) ≈ 1 atol=1e-3
         @test jarvis_vpd_factor(jarv, FT(3000)) < jarvis_vpd_factor(jarv, FT(500))
-        @test jarvis_temperature_factor(jarv, jarv.T_reference) ≈ 1
-        @test jarvis_temperature_factor(jarv, jarv.T_reference + FT(15)) < 1
-        @test jarvis_temperature_factor(jarv, jarv.T_reference - FT(15)) < 1
+        @test jarvis_temperature_factor(jarv, jarv.optimal_temperature) ≈ 1
+        @test jarvis_temperature_factor(jarv, jarv.optimal_temperature + FT(15)) < 1
+        @test jarvis_temperature_factor(jarv, jarv.optimal_temperature - FT(15)) < 1
 
         # gₛ rises and saturates with APAR, falls with VPD.
         gs_dim = stomatal_conductance(jarv, nothing, FT(1e-5), FT(1000), Tₗ, ca, P, FT(1))[1]
