@@ -51,7 +51,7 @@ function Downloads.download(meta::CopernicusMetadatum;
     output_path = joinpath(output_directory, output_filename)
     isfile(output_path) && return output_path
 
-    variable_name = GLORYS.GLORYS_dataset_variable_names[meta.name]
+    variable_name = dataset_variable_name(meta)
     variable = [variable_name]
 
     dataset_id = copernicusmarine_dataset_id(meta.dataset)

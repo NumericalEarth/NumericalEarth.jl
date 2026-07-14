@@ -19,15 +19,12 @@ abstract type AVISODataset end
 struct AVISODaily <: AVISODataset end
 struct AVISOMonthly <: AVISODataset end
 
-function last_complete_day()
-    d = Dates.today() - Day(2)
-    return DateTime(Dates.year(d), Dates.month(d), Dates.day(d))
-end
-
-function last_complete_month()
-    d = Dates.firstdayofmonth(Dates.today()) - Month(2)
-    return DateTime(Dates.year(d), Dates.month(d), 1)
-end
+# AVISODaily and AVISOMonthly are the daily- and monthly-resolution datasets in
+# the delayed-time Multi-Year product. The product is extended only a few times
+# per year, so its temporal coverage cannot be inferred from today's date.
+const AVISO_FIRST_DATE = DateTime(1993, 1, 1)
+const AVISO_DAILY_LAST_DATE = DateTime(2026, 1, 16)
+const AVISO_MONTHLY_LAST_DATE = DateTime(2025, 12, 1)
 
 function DataWrangling.default_download_directory(::AVISODaily)
     return mkpath(joinpath(download_AVISO_cache, "daily"))
@@ -39,8 +36,8 @@ end
 
 Base.size(::AVISODataset, variable) = (2880, 1440, 1)
 
-DataWrangling.all_dates(::AVISODaily, variable) = DateTime(1993, 1, 1) : Day(1) : last_complete_day()
-DataWrangling.all_dates(::AVISOMonthly, variable) = DateTime(1993, 1, 1) : Month(1) : last_complete_month()
+DataWrangling.all_dates(::AVISODaily, variable) = AVISO_FIRST_DATE : Day(1) : AVISO_DAILY_LAST_DATE
+DataWrangling.all_dates(::AVISOMonthly, variable) = AVISO_FIRST_DATE : Month(1) : AVISO_MONTHLY_LAST_DATE
 
 const AVISO_dataset_variable_names = Dict(
     :free_surface => "adt",
@@ -53,7 +50,6 @@ DataWrangling.available_variables(::AVISODataset) = AVISO_dataset_variable_names
 DataWrangling.dataset_variable_name(metadata::Metadata{<:AVISODataset}) = AVISO_dataset_variable_names[metadata.name]
 DataWrangling.dataset_location(::AVISODataset, name) = (Center, Center, Nothing)
 DataWrangling.is_three_dimensional(::Metadata{<:AVISODataset}) = false
-DataWrangling.z_interfaces(::AVISODataset) = (-1.0, 0.0)
 DataWrangling.default_inpainting(metadata::Metadata{<:AVISODataset}) = nothing
 
 DataWrangling.longitude_name(::Metadata{<:AVISODataset}) = "longitude"
