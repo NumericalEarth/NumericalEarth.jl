@@ -147,6 +147,7 @@ end
                Hₒ    = Float64[],
                Sₒ    = Float64[],
                Jˢ    = Float64[],
+               Jʷ    = Float64[],
                Sᴺ    = Float64[],
                ∂tM   = Float64[],
                Ṁ     = Float64[],
@@ -158,6 +159,7 @@ end
     function freshwater_flux_state(coupled_model, rain_flux, snow_flux)
         Nz  = size(grid, 3)
         Jˢ  = first(interior(coupled_model.interfaces.net_fluxes.ocean.S))
+        Jʷ  = first(interior(coupled_model.interfaces.net_fluxes.ocean.η))
         Sᴺ  = first(interior(coupled_model.ocean.model.tracers.S, 1, 1, Nz))
         mass_fluxes = coupled_model.sea_ice.model.thermodynamic_mass_fluxes
         ∂tM = first(interior(mass_fluxes.ice)) + first(interior(mass_fluxes.snow)) +
@@ -165,7 +167,7 @@ end
         Jᵛ  = first(interior(coupled_model.interfaces.atmosphere_ocean_interface.fluxes.water_vapor))
         ℵ   = first(interior(coupled_model.sea_ice.model.ice_concentration))
         Ṁ   = (rain_flux + snow_flux - (1 - ℵ) * Jᵛ) * Az   # rain and snow reach the ocean in full
-        return (; Jˢ, Sᴺ, ∂tM, Ṁ)
+        return (; Jˢ, Jʷ, Sᴺ, ∂tM, Ṁ)
     end
 
     function record!(history, coupled_model, phase_id, rain_flux, snow_flux, Q)
@@ -182,6 +184,7 @@ end
         push!(history.Hₒ,   st.Hₒ)
         push!(history.Sₒ,   st.Sₒ)
         push!(history.Jˢ,   fw.Jˢ)
+        push!(history.Jʷ,   fw.Jʷ)
         push!(history.Sᴺ,   fw.Sᴺ)
         push!(history.∂tM,  fw.∂tM)
         push!(history.Ṁ,     fw.Ṁ)
@@ -219,6 +222,7 @@ end
         fw = freshwater_flux_state(coupled_model, spec.rain_flux, spec.snow_flux)
         history.Q[end]   = net_top_heat_flux(coupled_model) + Qᵖ
         history.Jˢ[end]  = fw.Jˢ
+        history.Jʷ[end]  = fw.Jʷ
         history.Sᴺ[end]  = fw.Sᴺ
         history.∂tM[end] = fw.∂tM
         history.Ṁ[end]   = fw.Ṁ
@@ -259,9 +263,8 @@ end
 
     # --- Freshwater budget ---
     #
-    # Ocean freshwater is integrated flux-consistently: each salt flux Jˢ(n) encodes a freshwater
-    # volume Jˢ(n)/Sᴺ(n) using the surface salinity at flux-computation time, so the budget must
-    # divide by the same Sᴺ(n) (a fixed reference salinity differs at O(ΔS/S) and cannot reach 1e-10).
+    # The ocean freshwater mass is ρᵒᶜ ∫Jʷ, where Jʷ = η is the assembled freshwater volume flux
+    # (rain + snow + runoff − evaporation + sea-ice melt) — one explicit stream, no salinity weighting.
     # Fluxes recorded at step n are applied to the ocean during step n+1, so the final step's
     # ice-ocean exchange is still pending at the end of the run and is subtracted via ∂tM.
 
@@ -274,7 +277,7 @@ end
     Mᶠʷ = similar(t)
     Mᶠʷ[1] = 0.0
     for n in 2:length(t)
-        Mᶠʷ[n] = Mᶠʷ[n-1] + ρᵒᶜ * Az * history.Jˢ[n-1] / history.Sᴺ[n-1] * (t[n] - t[n-1])
+        Mᶠʷ[n] = Mᶠʷ[n-1] + ρᵒᶜ * Az * history.Jʷ[n-1] * (t[n] - t[n-1])
     end
 
     pending = history.∂tM[end] * Az * Δt⁺[end]
@@ -283,8 +286,9 @@ end
     εₘ = abs(Rₘ[end] - pending) / max(maximum(abs.(ΔM)), 1)
     @test εₘ < 1e-10
 
-    # The ocean integrator applies the assembled fluxes exactly (salt content matches ∫Jˢ dt)
-    ∫Jˢ = sum(history.Jˢ[1:end-1] .* Δt⁺[1:end-1])
+    # The ocean integrator applies the assembled salt flux exactly: the sea-ice salt Jˢ plus the live
+    # virtual salt flux Sᴺ Jʷ, evaluated at each step's surface salinity (the same Sᴺ recorded here).
+    ∫Jˢ = sum((history.Jˢ[1:end-1] .+ history.Sᴺ[1:end-1] .* history.Jʷ[1:end-1]) .* Δt⁺[1:end-1])
     S̄₁ = first(compute!(mean_S))
     Sᵣ = history.Sₒ[1]
     @test abs((S̄₁ - Sᵣ) * Vᶜ + ∫Jˢ * Az) / (Sᵣ * Vᶜ) < 1e-12
@@ -306,6 +310,7 @@ end
         Lx = Ly = 1e5
         grid = RectilinearGrid(arch;
                                size = (4, 4, 4),
+                               halo = (4, 4, 4), 
                                x = (0, Lx), y = (0, Ly),
                                z = MutableVerticalDiscretization((-10, 0)),
                                topology = (Periodic, Periodic, Bounded))
@@ -348,31 +353,32 @@ end
 
         V⁻ = ocean_volume()
         ∫S⁻ = total_salt()
-        freshwater_volume_flux = first(Array(interior(Jʷ)))
 
+        # Accumulate the surface-integrated freshwater volume flux ∫∫ Jʷ dA dt over the run (the
+        # flux is spatially uniform here); comparing against a single-sample flux × elapsed time
+        # would only close to O(Δt) as the evaporative flux drifts.
         Δt = 2minutes
         Nsteps = 30
+        expected_volume_change = 0.0
         for _ in 1:Nsteps
+            freshwater_volume_flux = first(Array(interior(Jʷ)))
             time_step!(coupled_model, Δt)
+            expected_volume_change += Lx * Ly * freshwater_volume_flux * ocean.model.clock.last_Δt
         end
 
         V = ocean_volume()
         ∫S = total_salt()
-        elapsed_time = ocean.model.clock.time
-        expected_volume_change = Lx * Ly * freshwater_volume_flux * elapsed_time
 
-        # TODO: Tighten tolerances after https://github.com/CliMA/Oceananigans.jl/pull/5788
-
-        # Rain increases the ocean volume by the input freshwater volume...
+        # Rain increases the ocean volume by exactly the integrated freshwater volume flux.
         @test V > V⁻
-        @test isapprox(V - V⁻, expected_volume_change, rtol=2e-2)
+        @test isapprox(V - V⁻, expected_volume_change, rtol=1e-10)
 
-        # ... carries no salt, so the total salt content is unchanged: the virtual salt
-        # flux must cancel the salt spuriously advected in with the added volume...
-        @test abs(∫S - ∫S⁻) < 1e-3 * S₀ * (V - V⁻)
+        # It carries no salt: the live virtual salt flux cancels the salt the volume change advects
+        # in, so the total salt content is conserved to machine precision...
+        @test abs(∫S - ∫S⁻) < 1e-10 * S₀ * (V - V⁻)
 
-        # ... and therefore dilutes the mean salinity.
+        # ... and therefore dilutes the mean salinity as pure volume growth.
         @test ∫S / V < S₀
-        @test isapprox(∫S / V, S₀ * V⁻ / V, rtol=1e-5)
+        @test isapprox(∫S / V, S₀ * V⁻ / V, rtol=1e-10)
     end
 end

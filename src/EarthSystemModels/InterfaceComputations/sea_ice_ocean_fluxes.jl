@@ -214,11 +214,13 @@ end
     # =============================================
     # Part 4: Freshwater and salt fluxes
     # =============================================
-    # Derived from the mass the sea-ice model actually exchanged with the ocean during its last step
+    # Derived from the mass the sea-ice model actually exchanged with the ocean during its last step.
+    # Jˢ carries only the salt held in the ice itself (Eᵢ Sˢⁱ); the Sᴺ-weighted dilution from the
+    # freshwater volume Jʷ is applied live in the ocean salinity boundary condition.
     @inbounds begin
         Eᵢ = ice_ocean_mass_flux[i, j, 1]
         Eₛ = snow_ocean_mass_flux[i, j, 1]
         Jʷ[i, j, 1] = - (Eᵢ + Eₛ) / ρᵒᶜ
-        Jˢ[i, j, 1] = - (Eᵢ * (Sᴺ - Sˢⁱ) + Eₛ * Sᴺ) / ρᵒᶜ
+        Jˢ[i, j, 1] = Eᵢ * Sˢⁱ / ρᵒᶜ # the snow term Sˢⁿ * Eₛ drops since Sˢⁿ == 0
     end
 end
