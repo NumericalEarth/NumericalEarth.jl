@@ -17,17 +17,13 @@ export
     StorageBasedDryLayerDepth,
     DryLayerVaporPistonVelocity,
     ConstantTortuosity,
-<<<<<<< HEAD
-    MillingtonQuirk,
+    PowerLawTortuosity,
     CanopyConductanceHumidity,
     CompositeSurfaceHumidity,
     FarquharPhotosynthesis,
     MedlynConductance,
     PlainArrhenius,
     PeakedArrhenius,
-=======
-    PowerLawTortuosity,
->>>>>>> origin/glw/systematic-land-model
     ElevationCorrection,
     atmosphere_land_interface,
     SimilarityTheoryFluxes,

@@ -44,8 +44,7 @@ export
     StorageBasedDryLayerDepth,
     DryLayerVaporPistonVelocity,
     ConstantTortuosity,
-<<<<<<< HEAD
-    MillingtonQuirk,
+    PowerLawTortuosity,
     CanopyConductanceHumidity,
     CompositeSurfaceHumidity,
     FarquharPhotosynthesis,
@@ -57,9 +56,6 @@ export
     InteractiveAbsorbedPAR,
     PlainArrhenius,
     PeakedArrhenius,
-=======
-    PowerLawTortuosity,
->>>>>>> origin/glw/systematic-land-model
     ElevationCorrection,
     atmosphere_land_interface,
     # Sea ice-ocean heat flux formulations
