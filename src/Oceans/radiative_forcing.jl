@@ -1,4 +1,5 @@
 using Adapt: Adapt
+using Oceananigans.ImmersedBoundaries: inactive_cell
 using Oceananigans.Operators: ∂zᶜᶜᶜ
 
 struct TwoColorRadiation{FT, J}
@@ -50,7 +51,8 @@ const f = Face()
     Nz = size(grid, 3)
     z  = Oceananigans.Grids.znode(i, j, k,    grid, c, c, f)
     η  = Oceananigans.Grids.znode(i, j, Nz+1, grid, c, c, f)
-    return J₀ * exp(κ * (z - η))
+    J  = J₀ * exp(κ * (z - η))
+    return ifelse(inactive_cell(i, j, k - 1, grid), zero(J), J)
 end
 
 @inline function (R::TwoColorRadiation)(i, j, k, grid, clock, fields)
