@@ -46,17 +46,19 @@ fill does not become a spurious albedo of `32.767`.
 @inline mask_albedo_fill(DN) = ifelse(DN == MODIS_ALBEDO_FILL, NaN, Float64(DN))
 
 """
-    bluesky_blend(α_bs, α_ws, f_diff)
+    bluesky_blend(black_sky_albedo, white_sky_albedo, diffuse_fraction)
 
-Blend black-sky albedo `α_bs` (direct-beam) and white-sky albedo `α_ws` (fully
-diffuse) into the blue-sky (actual) albedo the surface energy budget uses, with
-`f_diff` the diffuse fraction (`skyl`) of downwelling shortwave:
+Blend the direct-beam `black_sky_albedo` and the fully-diffuse `white_sky_albedo`
+into the blue-sky (actual) albedo the surface energy budget uses, weighting by
+`diffuse_fraction`, the diffuse (`skyl`) fraction of downwelling shortwave:
 
-    α_blue = (1 − f_diff) · α_bs + f_diff · α_ws
+    blue_sky_albedo = (1 - diffuse_fraction) * black_sky_albedo + diffuse_fraction * white_sky_albedo
 
-`f_diff = 0` returns the black-sky value and `f_diff = 1` the white-sky value.
+`diffuse_fraction = 0` returns the black-sky value and `diffuse_fraction = 1` the
+white-sky value.
 """
-@inline bluesky_blend(α_bs, α_ws, f_diff) = (1 - f_diff) * α_bs + f_diff * α_ws
+@inline bluesky_blend(black_sky_albedo, white_sky_albedo, diffuse_fraction) =
+    (1 - diffuse_fraction) * black_sky_albedo + diffuse_fraction * white_sky_albedo
 
 # MCD43A3 mandatory QA (uint8): 0 = full BRDF inversion (best), 1 = magnitude
 # inversion, 2–7 = inversions with band-5/6 fill, 255 = fill.
@@ -67,8 +69,7 @@ Return `true` when the MCD43A3 mandatory-QA value `mandatory_qc` is a retained
 retrieval: not fill (`255`) and no worse than `maximum_quality` (default `0` keeps
 only the full-BRDF inversion; pass `1` to also keep magnitude inversions).
 """
-@inline albedo_quality_ok(mandatory_qc, maximum_quality) =
-    (mandatory_qc != 0xff) & (mandatory_qc <= maximum_quality)
+@inline albedo_quality_ok(mandatory_qc, maximum_quality) = (mandatory_qc != 0xff) & (mandatory_qc <= maximum_quality)
 @inline albedo_quality_ok(mandatory_qc) = albedo_quality_ok(mandatory_qc, 0x00)
 
 # MCD15 LAI/FPAR: uint8 DN, valid 0–100. DN 249–255 are non-retrieval / land-cover

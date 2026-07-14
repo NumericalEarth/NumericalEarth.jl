@@ -26,11 +26,11 @@ const ML = NumericalEarth.DataWrangling.MODISLand
     end
 
     @testset "Blue-sky blend endpoints" begin
-        α_bs = 0.15
-        α_ws = 0.22
-        @test ML.bluesky_blend(α_bs, α_ws, 0.0) == α_bs   # fully direct
-        @test ML.bluesky_blend(α_bs, α_ws, 1.0) == α_ws   # fully diffuse
-        @test ML.bluesky_blend(α_bs, α_ws, 0.2) ≈ 0.8 * α_bs + 0.2 * α_ws
+        black_sky_albedo = 0.15
+        white_sky_albedo = 0.22
+        @test ML.bluesky_blend(black_sky_albedo, white_sky_albedo, 0.0) == black_sky_albedo # fully direct
+        @test ML.bluesky_blend(black_sky_albedo, white_sky_albedo, 1.0) == white_sky_albedo # fully diffuse
+        @test ML.bluesky_blend(black_sky_albedo, white_sky_albedo, 0.2) ≈ 0.8 * black_sky_albedo + 0.2 * white_sky_albedo
     end
 
     @testset "Albedo mandatory QA" begin
