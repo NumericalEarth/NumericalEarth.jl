@@ -97,7 +97,7 @@ end
             interface = model.interfaces.atmosphere_land_interface
             @test !isnothing(interface)
 
-            simulation = Simulation(model; Δt = 0.5, stop_iteration = 10)
+            simulation = Simulation(model; Δt = 0.2, stop_iteration = 10)
             run!(simulation)
 
             @test model.clock.iteration == 10
@@ -122,7 +122,7 @@ end
             model = build_coupled_test_model(arch; M₀ = 200.0, T₀ = 295.0)
 
             M₀ = Array(interior(model.land.water_storage))
-            simulation = Simulation(model; Δt = 0.5, stop_iteration = 100)
+            simulation = Simulation(model; Δt = 0.2, stop_iteration = 100)
             run!(simulation)
             M₁ = Array(interior(model.land.water_storage))
 
