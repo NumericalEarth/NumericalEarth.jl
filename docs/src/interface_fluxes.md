@@ -335,7 +335,7 @@ ocean_grid = RectilinearGrid(size=(Nx, Ny, 1); x, y, z, topology=(Periodic, Peri
 
 # Build the atmosphere
 atmosphere = PrescribedAtmosphere(atmos_grid, surface_layer_height=10)
-interior(atmosphere.tracers.T) .= 273.15 + T₀ # K
+interior(atmosphere.temperature) .= 273.15 + T₀ # K
 interior(atmosphere.velocities.u, :, :, 1, 1) .= uᵃᵗ # m/s
 
 kw = (momentum_advection=nothing, tracer_advection=nothing, closure=nothing)
@@ -707,11 +707,11 @@ We then set the atmospheric state:
 
 ```@example interface_fluxes
 interior(atmosphere.pressure) .= 101352
-interior(atmosphere.tracers.q) .= qₛ
+interior(atmosphere.specific_humidity) .= qₛ
 
 Tᵃᵗ = 273.15 .+ range(-40, stop=40, length=Ny)
 Tᵃᵗ = reshape(Tᵃᵗ, 1, Ny)
-interior(atmosphere.tracers.T) .= Tᵃᵗ
+interior(atmosphere.temperature) .= Tᵃᵗ
 
 # Build a model with the default (Edson) stability functions to show non-neutral effects
 stability_interfaces = ComponentInterfaces(atmosphere, ocean)

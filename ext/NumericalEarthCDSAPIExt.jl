@@ -16,6 +16,14 @@ using NumericalEarth.DataWrangling.ERA5: ERA5Dataset, ERA5Metadata, ERA5Metadatu
                                          ERA5PressureLevelsDataset,
                                          ERA5PressureMetadata, ERA5PressureMetadatum,
                                          ERA5PL_dataset_variable_names, ERA5PL_netcdf_variable_names
+using NumericalEarth.DataWrangling.GloFAS: GloFASDataset, GloFASMetadata, GloFASMetadatum,
+                                           GloFAS_netcdf_variable_names
+using NumericalEarth.DataWrangling.CopernicusLandAlbedo: CopernicusAlbedo,
+                                                         albedo_cds_request_variables,
+                                                         albedo_source_variable_candidates,
+                                                         copernicus_albedo_variables,
+                                                         albedo_satellite, find_albedo_variable,
+                                                         repack_albedo_pair
 
 #####
 ##### Dispatch helpers — encapsulate single-level vs pressure-level differences
@@ -134,6 +142,25 @@ function foreach_nc(f, download_path, cleanup_dir)
 end
 
 #####
+##### Retry wrapper — the CDS/EWDS gateway intermittently answers valid requests
+##### with a transient error (e.g. 502 Bad Gateway); retry with backoff instead of
+##### failing on the first hiccup. Every `CDSAPI.retrieve` call site below goes
+##### through this one wrapper.
+#####
+
+function retrieve_with_retries(product, request, path; max_retries = 3)
+    for attempt in 1:max_retries
+        try
+            return CDSAPI.retrieve(product, request, path)
+        catch e
+            attempt < max_retries || rethrow(e)
+            @warn "CDS retrieve attempt $attempt/$max_retries failed for $product; retrying..." exception=(e, catch_backtrace())
+            sleep(5.0 * attempt)
+        end
+    end
+end
+
+#####
 ##### Single-date download
 #####
 
@@ -163,7 +190,7 @@ function Downloads.download(meta::ERA5Metadatum; skip_existing=true)
 
     request = build_era5_request(meta.name, meta.dataset, meta.dates; region=meta.region)
 
-    @root CDSAPI.retrieve(cds_product(meta.dataset), request, output_path)
+    @root retrieve_with_retries(cds_product(meta.dataset), request, output_path)
 
     return output_path
 end
@@ -284,7 +311,6 @@ function plan_era5_month(name, dataset, dates; region, dir, skip_existing)
     end
 
     sorted_dts = sort(unique([dt for (dt, _) in pending]))
-    dt_to_tidx = Dict(dt => i for (i, dt) in enumerate(sorted_dts))
 
     request = build_era5_request(name, dataset, sorted_dts; region)
 
@@ -295,7 +321,7 @@ function plan_era5_month(name, dataset, dates; region, dir, skip_existing)
 
     tmp_path   = joinpath(dir, "_tmp_$(year)$(month)$(day).nc")
     nc_varname = nc_varnames(dataset)[name]
-    nc_triples = [(nc_varname, dt_to_tidx[dt], path) for (dt, path) in pending]
+    nc_triples = [(nc_varname, dt, path) for (dt, path) in pending]
 
     return (; dt_path_pairs, pending, request, tmp_path, nc_triples)
 end
@@ -310,7 +336,7 @@ function download_era5_month(name, dataset, dates;
     time_dimnames = Set(["time", "valid_time"])
 
     @root begin
-        CDSAPI.retrieve(cds_product(dataset), plan.request, plan.tmp_path)
+        retrieve_with_retries(cds_product(dataset), plan.request, plan.tmp_path)
         foreach_nc(plan.tmp_path, dir) do nc_path
             split_era5_nc_multistep(nc_path, plan.nc_triples, coord_vars(dataset), time_dimnames)
         end
@@ -404,7 +430,7 @@ function Downloads.download(names::Vector{Symbol}, meta::ERA5PressureMetadatum; 
     nc_name_path_pairs = [(nc_varnames(meta.dataset)[name], path) for (name, path) in pending]
 
     @root begin
-        CDSAPI.retrieve(cds_product(meta.dataset), request, tmp_path)
+        retrieve_with_retries(cds_product(meta.dataset), request, tmp_path)
         foreach_nc(tmp_path, meta.dir) do nc_path
             split_era5_nc(nc_path, nc_name_path_pairs, coord_vars(meta.dataset))
         end
@@ -501,7 +527,6 @@ function plan_era5_multivar_month(names, dataset, dates; region, dir, skip_exist
 
     pending_names = unique(map(name_dt_path -> name_dt_path[1], pending))
     sorted_dts    = sort(unique(map(name_dt_path -> name_dt_path[2], pending)))
-    dt_to_tidx    = Dict(dt => i for (i, dt) in enumerate(sorted_dts))
 
     request = build_era5_request(pending_names, dataset, sorted_dts; region)
 
@@ -511,7 +536,7 @@ function plan_era5_multivar_month(names, dataset, dates; region, dir, skip_exist
     day   = lpad(string(Dates.day(dt0)),   2, '0')
 
     tmp_path   = joinpath(dir, "_tmp_multi_$(year)$(month)$(day).nc")
-    nc_triples = [(nc_varnames(dataset)[name], dt_to_tidx[dt], path)
+    nc_triples = [(nc_varnames(dataset)[name], dt, path)
                   for (name, dt, path) in pending]
 
     return (; name_dt_paths, pending, request, tmp_path, nc_triples)
@@ -527,7 +552,7 @@ function download_era5_multivar_month(names, dataset, dates;
     time_dimnames = Set(["time", "valid_time"])
 
     @root begin
-        CDSAPI.retrieve(cds_product(dataset), plan.request, plan.tmp_path)
+        retrieve_with_retries(cds_product(dataset), plan.request, plan.tmp_path)
         foreach_nc(plan.tmp_path, dir) do nc_path
             split_era5_nc_multistep(nc_path, plan.nc_triples, coord_vars(dataset), time_dimnames)
         end
@@ -574,15 +599,29 @@ end
     split_era5_nc_multistep(src_path, triples, coord_vars, time_dimnames)
 
 Split a multi-timestep NetCDF into individual per-variable, per-timestep files.
-`triples` is a vector of `(nc_varname, time_index, dst_path)`.
+`triples` is a vector of `(nc_varname, datetime, dst_path)`.
+
+Each `datetime`'s timestep is located by matching it against `src`'s time coordinate, NOT by its
+position in the request. CDS expands `day`/`time` into a Cartesian product, so a request whose
+datetimes span more than one day with differing hours (e.g. a window crossing midnight) comes back
+with extra, sorted timesteps that no longer line up positionally with the requested datetimes.
 """
-function split_era5_nc_multistep(src_path, nc_varname_tidx_path_triples, coord_vars, time_dimnames)
+function split_era5_nc_multistep(src_path, nc_varname_datetime_path_triples, coord_vars, time_dimnames)
     NCDatasets.Dataset(src_path, "r") do src
         src_varnames = Set(keys(src))
         unlimited = NCDatasets.unlimited(src)
 
-        for (nc_varname, tidx, dst_path) in nc_varname_tidx_path_triples
+        # Index this file's timesteps by their valid time (see the note above).
+        time_coord = "valid_time" in src_varnames ? "valid_time" :
+                     "time"       in src_varnames ? "time"       :
+                     error("split_era5_nc_multistep: no time coordinate variable in $src_path")
+        tidx_of = Dict(t => i for (i, t) in enumerate(src[time_coord][:]))
+
+        for (nc_varname, datetime, dst_path) in nc_varname_datetime_path_triples
             nc_varname in src_varnames || continue
+            haskey(tidx_of, datetime) ||
+                error("split_era5_nc_multistep: $datetime absent from $src_path")
+            tidx = tidx_of[datetime]
             NCDatasets.Dataset(dst_path, "c") do dst
                 for (dname, dlen) in src.dim
                     out_len = dname in time_dimnames ? 1 :
@@ -711,6 +750,293 @@ function build_era5_area(col::COL{<:Any, <:Any, <:Any, <:LIN})
     lon, lat = col.longitude, col.latitude
     ε = 0.3
     return [lat + ε, lon - ε, lat - ε, lon + ε]
+end
+
+#####
+##### GloFAS river-discharge download (Copernicus Emergency Management Service)
+#####
+##### GloFAS lives on the Early Warning Data Store (EWDS), a separate Copernicus
+##### endpoint from the ERA5 CDS. Configure `~/.cdsapirc` with the EWDS API url
+##### (https://ewds.climate.copernicus.eu/api) and key, and accept the
+##### `cems-glofas-historical` licence, before downloading.
+#####
+
+glofas_product(::GloFASDataset) = "cems-glofas-historical"
+
+const GLOFAS_EWDS_URL = "https://ewds.climate.copernicus.eu/api"
+
+restore_env!(name, ::Nothing) = (delete!(ENV, name); nothing)
+restore_env!(name, value) = (ENV[name] = value; nothing)
+
+# GloFAS lives on EWDS, a different Copernicus endpoint than the ERA5 CDS. We
+# point CDSAPI at the EWDS url by temporarily setting `CDSAPI_URL` (which CDSAPI
+# reads above `~/.cdsapirc`), so a `~/.cdsapirc` pointed at the ERA5 CDS keeps
+# working — the ECMWF token is shared across data stores, so only the url
+# differs. The `GLOFAS_CDSAPI_URL` / `GLOFAS_CDSAPI_KEY` environment variables
+# override the defaults (an empty key falls back to the key CDSAPI already
+# resolves from the environment or `~/.cdsapirc`).
+function glofas_retrieve(product, request, path)
+    url = get(ENV, "GLOFAS_CDSAPI_URL", GLOFAS_EWDS_URL)
+    key = get(ENV, "GLOFAS_CDSAPI_KEY", "")
+
+    saved_url = get(ENV, "CDSAPI_URL", nothing)
+    saved_key = get(ENV, "CDSAPI_KEY", nothing)
+
+    ENV["CDSAPI_URL"] = url
+    isempty(key) || (ENV["CDSAPI_KEY"] = key)
+
+    try
+        return retrieve_with_retries(product, request, path)
+    finally
+        restore_env!("CDSAPI_URL", saved_url)
+        isempty(key) || restore_env!("CDSAPI_KEY", saved_key)
+    end
+end
+
+const GLOFAS_COORD_VARS = Set(["longitude", "latitude",
+                               "time", "valid_time", "step", "surface"])
+
+"""
+    build_glofas_request(dataset, datetimes, region) -> Dict{String, Any}
+
+Construct the EWDS request for a batch of GloFAS dates that share a `(year, month)`.
+GloFAS uses the `hyear`/`hmonth`/`hday` date keys (interpreted as a Cartesian product).
+A `BoundingBox` `region` is sent as an `area` key so the EWDS subsets server-side.
+"""
+function build_glofas_request(dataset, datetimes, region)
+    dts = datetimes isa AbstractVector ? datetimes : [datetimes]
+
+    years  = unique(string.(Dates.year.(dts)))
+    months = unique(lpad.(string.(Dates.month.(dts)), 2, '0'))
+    days   = unique(lpad.(string.(Dates.day.(dts)), 2, '0'))
+
+    request = Dict{String, Any}(
+        "system_version"     => [dataset.system_version],
+        "hydrological_model" => ["lisflood"],
+        "product_type"       => ["consolidated"],
+        "variable"           => ["river_discharge_in_the_last_24_hours"],
+        "hyear"              => years,
+        "hmonth"             => months,
+        "hday"               => days,
+        "data_format"        => "netcdf",
+        "download_format"    => "unarchived",
+    )
+
+    area = glofas_request_area(region)
+    isnothing(area) || (request["area"] = area)
+
+    return request
+end
+
+glofas_request_area(region) = nothing
+
+# Pad the box by a few native (0.05°) cells so the file fully covers the
+# center-bracketed native grid the data is interpolated onto (cf. ERA5).
+function glofas_request_area(bbox::BBOX)
+    (isnothing(bbox.longitude) || isnothing(bbox.latitude)) && return nothing
+    pad = 0.2
+    north = min(bbox.latitude[2]  + pad,  90)
+    south = max(bbox.latitude[1]  - pad, -90)
+    west  = bbox.longitude[1] - pad
+    east  = bbox.longitude[2] + pad
+    return [north, west, south, east]
+end
+
+"""
+    download(meta::GloFASMetadatum; skip_existing=true)
+
+Download GloFAS river discharge for a single date via the EWDS CDS API.
+"""
+function Downloads.download(meta::GloFASMetadatum; skip_existing=true)
+    output_path = metadata_path(meta)
+    skip_existing && isfile(output_path) && return output_path
+
+    mkpath(dirname(output_path))
+    request = build_glofas_request(meta.dataset, meta.dates, meta.region)
+    @root glofas_retrieve(glofas_product(meta.dataset), request, output_path)
+
+    return output_path
+end
+
+"""
+    download(metadata::GloFASMetadata; skip_existing=true, cleanup=true)
+
+Download GloFAS river discharge for multiple dates, batching by calendar month
+and splitting the multi-timestep NetCDF into one file per day.
+"""
+function Downloads.download(metadata::GloFASMetadata; skip_existing=true, cleanup=true)
+    dates = metadata.dates isa AbstractVector ? metadata.dates : [metadata.dates]
+    monthly = group_by_calendar_month(dates)
+
+    paths = String[]
+    for key in sort(collect(keys(monthly)))
+        batch = sort(unique(monthly[key]))
+        append!(paths, download_glofas_month(metadata.name, metadata.dataset, batch;
+                                             region = metadata.region,
+                                             dir = metadata.dir,
+                                             skip_existing, cleanup))
+    end
+
+    return paths
+end
+
+function download_glofas_month(name, dataset, dates; region, dir, skip_existing, cleanup)
+    meta_filename = NumericalEarth.DataWrangling.metadata_filename
+
+    dt_path_pairs = [(dt, joinpath(dir, meta_filename(dataset, name, dt, region))) for dt in dates]
+    pending = skip_existing ? filter(dt_path -> !isfile(dt_path[2]), dt_path_pairs) : dt_path_pairs
+    isempty(pending) && return map(dt_path -> dt_path[2], dt_path_pairs)
+
+    mkpath(dir)
+    sorted_dts = sort(unique([dt for (dt, _) in pending]))
+    request = build_glofas_request(dataset, sorted_dts, region)
+
+    dt0 = first(sorted_dts)
+    tmp_path = joinpath(dir, "_tmp_glofas_$(Dates.year(dt0))$(lpad(Dates.month(dt0), 2, '0')).nc")
+    nc_varname = GloFAS_netcdf_variable_names[name]
+    nc_triples = [(nc_varname, dt, path) for (dt, path) in pending]
+
+    time_dimnames = Set(["time", "valid_time"])
+    @root begin
+        glofas_retrieve(glofas_product(dataset), request, tmp_path)
+        foreach_nc(tmp_path, dir) do nc_path
+            split_era5_nc_multistep(nc_path, nc_triples, GLOFAS_COORD_VARS, time_dimnames)
+        end
+        cleanup && rm(tmp_path; force=true)
+    end
+
+    return map(dt_path -> dt_path[2], dt_path_pairs)
+end
+
+#####
+##### Copernicus land surface albedo (C3S `satellite-albedo` catalogue entry)
+#####
+##### One CDS request per calendar month fetches the black-sky (`albb_dh`) and
+##### white-sky (`albb_bh`) products for all of that month's dekads; each dekad's
+##### pair is repacked into one compact local file by the CopernicusLandAlbedo module.
+#####
+
+const ALBEDO_CDS_PRODUCT = "satellite-albedo"
+
+const AlbedoMetadata = NumericalEarth.DataWrangling.Metadata{<:CopernicusAlbedo}
+
+"""
+    build_albedo_request(name, dates) -> Dict{String, Any}
+
+Construct the CDS request for the 1 km v2 black-sky/white-sky albedo pair covering
+`dates`, which must share a `(year, month)` (CDS interprets `year`/`month`/
+`nominal_day` as a Cartesian product, and the valid nominal days differ by month).
+"""
+function build_albedo_request(name, dates)
+    dts = dates isa AbstractVector ? dates : [dates]
+
+    years  = unique(string.(Dates.year.(dts)))
+    months = unique(lpad.(string.(Dates.month.(dts)), 2, '0'))
+    days   = unique(lpad.(string.(Dates.day.(dts)), 2, '0'))
+    satellites = unique([albedo_satellite(dt) for dt in dts])
+
+    return Dict{String, Any}(
+        "variable"              => collect(albedo_cds_request_variables[name]),
+        "satellite"             => satellites,
+        "sensor"                => ["vgt"],
+        "product_version"       => ["v2"],
+        "horizontal_resolution" => ["1km"],
+        "year"                  => years,
+        "month"                 => months,
+        "nominal_day"           => days,
+    )
+end
+
+# The delivery is either a ZIP of per-variable NetCDF files or a single NetCDF.
+function extract_albedo_files(download_path, extraction_dir)
+    if is_zip(download_path)
+        run(`unzip -qo $download_path -d $extraction_dir`)
+    else
+        cp(download_path, joinpath(extraction_dir, "albedo.nc"); force=true)
+    end
+    return filter(p -> endswith(p, ".nc"), readdir(extraction_dir; join=true))
+end
+
+# The dekad a delivered file belongs to, from its time coordinate (authoritative)
+# or the timestamp in its filename.
+function albedo_file_date(path)
+    date = NCDatasets.Dataset(path) do ds
+        haskey(ds, "time") || return nothing
+        t = ds["time"][1]
+        return Dates.DateTime(Dates.year(t), Dates.month(t), Dates.day(t))
+    end
+    isnothing(date) || return date
+
+    stamp = match(r"_(\d{8})\d{0,6}_", basename(path))
+    isnothing(stamp) &&
+        error("Cannot determine the date of the delivered albedo file $(basename(path)).")
+    return Dates.DateTime(stamp[1], Dates.dateformat"yyyymmdd")
+end
+
+function repack_albedo_batch(nc_files, batch, path_of, destination_names, expected_size)
+    members = Dict{Dates.DateTime, Dict{Symbol, Tuple{String, String}}}()
+    for path in nc_files
+        date = albedo_file_date(path)
+        entry = get!(members, date, Dict{Symbol, Tuple{String, String}}())
+        blacksky_name = find_albedo_variable(path, albedo_source_variable_candidates.blacksky)
+        whitesky_name = find_albedo_variable(path, albedo_source_variable_candidates.whitesky)
+        isnothing(blacksky_name) || (entry[:blacksky] = (path, blacksky_name))
+        isnothing(whitesky_name) || (entry[:whitesky] = (path, whitesky_name))
+    end
+
+    for date in batch
+        entry = get(members, date, nothing)
+        if isnothing(entry) || !haskey(entry, :blacksky) || !haskey(entry, :whitesky)
+            error("The CDS delivery is missing the black-sky/white-sky albedo pair for $date; ",
+                  "it contained dates $(sort!(collect(keys(members)))).")
+        end
+        repack_albedo_pair(entry[:blacksky], entry[:whitesky], destination_names,
+                           path_of[date], expected_size)
+    end
+    return nothing
+end
+
+"""
+    download(metadata::Metadata{<:CopernicusAlbedo}; skip_existing=true, cleanup=true)
+
+Download the dekadal black-sky and white-sky broadband albedo for every date of
+`metadata` from the C3S `satellite-albedo` catalogue entry, one CDS request per
+calendar month, and repack each dekad's pair into a single compact local NetCDF.
+Requires `~/.cdsapirc` credentials and acceptance of the Copernicus Global Land
+product licence on the CDS portal.
+"""
+function Downloads.download(metadata::AlbedoMetadata; skip_existing=true, cleanup=true)
+    meta_filename = NumericalEarth.DataWrangling.metadata_filename
+    dates = metadata.dates isa AbstractVector ? metadata.dates : [metadata.dates]
+    dir = metadata.dir
+    mkpath(dir)
+
+    dt_path_pairs = [(dt, joinpath(dir, meta_filename(metadata.dataset, metadata.name, dt, metadata.region)))
+                     for dt in dates]
+    pending = skip_existing ? filter(dt_path -> !isfile(dt_path[2]), dt_path_pairs) : dt_path_pairs
+    isempty(pending) && return metadata_path(metadata)
+
+    expected_size = size(metadata.dataset, metadata.name)[1:2]
+    destination_names = copernicus_albedo_variables[metadata.name]
+    path_of = Dict(dt => path for (dt, path) in pending)
+    monthly = group_by_calendar_month([dt for (dt, _) in pending])
+
+    @root for key in sort(collect(keys(monthly)))
+        batch = sort(unique(monthly[key]))
+        request = build_albedo_request(metadata.name, batch)
+        tmp_download = joinpath(dir, "_tmp_albedo_$(key[1])$(lpad(key[2], 2, '0')).download")
+        extraction_dir = mktempdir(dir)
+        try
+            retrieve_with_retries(ALBEDO_CDS_PRODUCT, request, tmp_download)
+            nc_files = extract_albedo_files(tmp_download, extraction_dir)
+            repack_albedo_batch(nc_files, batch, path_of, destination_names, expected_size)
+        finally
+            cleanup && rm(tmp_download; force=true)
+            rm(extraction_dir; recursive=true, force=true)
+        end
+    end
+
+    return metadata_path(metadata)
 end
 
 end # module NumericalEarthCDSAPIExt

@@ -18,7 +18,7 @@ import Oceananigans.Fields: _fractional_indices, fractional_x_index,
                             fractional_y_index, FractionalIndices, index_binary_search
 
 """
-    PressureLevelVerticalDiscretization{G, Geo}
+    PressureLevelVerticalDiscretization
 
 A vertical discretization for pressure-level reanalysis data on a
 `LatitudeLongitudeGrid`. Per-cell heights are `geopotential[i, j, k] /
@@ -41,9 +41,10 @@ gives a time-evolving one driven by an attached `Clock`.
 The `LatitudeLongitudeGrid` constructor needs a value for `Lz`; we compute it
 as `extrema(geopotential) / g` inside `generate_coordinate`.
 """
-struct PressureLevelVerticalDiscretization{G, Geo} <: AbstractVerticalCoordinate
+struct PressureLevelVerticalDiscretization{G, Geo, S} <: AbstractVerticalCoordinate
     gravitational_acceleration :: G
     geopotential               :: Geo
+    surface_geopotential       :: S
 end
 
 """
@@ -58,13 +59,17 @@ If `surface_geopotential` is provided (a 2-D `Field`, m²/s²), columns are
 clipped so that `geopotential[i,j,k] ≥ surface_geopotential[i,j]`. Required
 when the source is ERA5 pressure-level data, because sub-surface levels are
 filled with non-physical extrapolations that would break the column-monotonicity
-assumed by `_fractional_indices`.
+assumed by `_fractional_indices`. Clipping fixes only the *coordinate*: the raw
+sub-surface *data* stays on those levels, so `column_fractional_z_index` also
+clamps interpolation to the first above-ground level (never sampling it). The
+clip source is retained on the discretization and exposed through
+[`surface_elevation`](@ref).
 """
 function PressureLevelVerticalDiscretization(geopotential;
                                               gravitational_acceleration,
                                               surface_geopotential = nothing)
     isnothing(surface_geopotential) || clip_subsurface!(geopotential, surface_geopotential)
-    return PressureLevelVerticalDiscretization(gravitational_acceleration, geopotential)
+    return PressureLevelVerticalDiscretization(gravitational_acceleration, geopotential, surface_geopotential)
 end
 
 # Skip the generic validator (which would `length`-check the missing 1-D fields).
@@ -84,24 +89,28 @@ function generate_coordinate(FT, topo, sz, halo,
     z_lo, z_hi = FT.(extrema(Φi) ./ g)
     Lz = z_hi - z_lo
 
-    arch_discretization = PressureLevelVerticalDiscretization(g, on_architecture(arch, coord.geopotential))
+    arch_discretization = PressureLevelVerticalDiscretization(g,
+                                                              on_architecture(arch, coord.geopotential),
+                                                              on_architecture(arch, coord.surface_geopotential))
     return Lz, arch_discretization
 end
 
 geopotential_data_for_extrema(Φ::Field) = interior(Φ)
 # Use `interior(fts)` — not `parent(fts)` — so halo zeros don't dominate the
-# extrema / column mean.
-# NOTE: For a TSI this reads every time slice. Fine while the FTS path isn't
-# exercised; switch to a per-time-slice extent if we ever advance the clock here.
+# extrema / column mean. For a TSI this reads every time slice, so `Lz` spans the
+# heights reached at any time in the window — the extent a child must be able to
+# bracket over the whole run. One-time setup, not a hot path.
 geopotential_data_for_extrema(Φ::TimeSeriesInterpolation) = interior(Φ.time_series)
 
 Adapt.adapt_structure(to, z::PressureLevelVerticalDiscretization) =
     PressureLevelVerticalDiscretization(z.gravitational_acceleration,
-                                        Adapt.adapt(to, z.geopotential))
+                                        Adapt.adapt(to, z.geopotential),
+                                        Adapt.adapt(to, z.surface_geopotential))
 
 on_architecture(arch, z::PressureLevelVerticalDiscretization) =
     PressureLevelVerticalDiscretization(z.gravitational_acceleration,
-                                        on_architecture(arch, z.geopotential))
+                                        on_architecture(arch, z.geopotential),
+                                        on_architecture(arch, z.surface_geopotential))
 
 function Base.show(io::IO, z::PressureLevelVerticalDiscretization)
     print(io, "PressureLevelVerticalDiscretization with $(size(z.geopotential, 3)) levels, ",
@@ -157,11 +166,34 @@ end
 
 function mean_height_profile(grid::PressureLevelGrid)
     g = grid.z.gravitational_acceleration
-    Φi = geopotential_data_for_extrema(grid.z.geopotential)
-    Nz = grid.Nz
-    # `selectdim(Φi, 3, k)` works for both 3-D (Field) and 4-D (TSI parent)
-    # geopotential storage; the trailing dims are reduced away by `mean`.
-    return [mean(selectdim(Φi, 3, k)) / g for k in 1:Nz]
+    # `mean` of `interior(Φ)` (a device `SubArray`) routes through `Statistics._mean`,
+    # which scalar-indexes (`first`) — disallowed on the GPU, for `dims = :` and
+    # `dims = (1, 2)` alike. Materialize the (small) geopotential to host, then reduce
+    # every dim except the vertical (3): the horizontals always, plus time for a 4-D
+    # `TimeSeriesInterpolation` parent. One-time setup/equality path, not a hot loop.
+    Φi = Array(geopotential_data_for_extrema(grid.z.geopotential))
+    reduce_dims = Tuple(d for d in 1:ndims(Φi) if d != 3)
+    return dropdims(mean(Φi; dims = reduce_dims); dims = reduce_dims) ./ g
+end
+
+"""
+    surface_elevation(grid)
+
+Return the surface elevation (m) of the orography underlying `grid` as a two-dimensional
+`(Center, Center, Nothing)` field on the source's native horizontal grid — for a
+[`PressureLevelGrid`](@ref), the clip-source surface geopotential divided by the
+gravitational acceleration. Return `nothing` when the surface elevation is unknown
+(non-pressure-level grids, or a discretization built without `surface_geopotential`).
+"""
+surface_elevation(grid) = nothing
+
+function surface_elevation(grid::PressureLevelGrid)
+    Φˢᶠᶜ = grid.z.surface_geopotential
+    isnothing(Φˢᶠᶜ) && return nothing
+    elevation = Field{Center, Center, Nothing}(Φˢᶠᶜ.grid)
+    interior(elevation) .= interior(Φˢᶠᶜ) ./ grid.z.gravitational_acceleration
+    fill_halo_regions!(elevation)
+    return elevation
 end
 
 # `znodes(::Field)` on a `PressureLevelGrid`:
@@ -235,6 +267,26 @@ end
     return FractionalIndices(nothing, nothing, kk)
 end
 
+# First above-ground level of column `(i, j)`. `clip_subsurface!` parks every sub-surface level at the
+# surface geopotential, so those levels share the column's bottom height but still hold the raw ERA5
+# sub-surface *data* (the non-physical extrapolations). `column_fractional_z_index` clamps its result to
+# this level so interpolation near high terrain snaps to the lowest above-ground value instead of
+# sampling that data. Returns 1 when no `surface_geopotential` is set (no clip ⇒ no sub-surface plateau).
+# The `grid.z.surface_geopotential` argument selects the method: `nothing` (no clip) ⇒ level 1.
+@inline first_above_surface_level(i, j, grid) =
+    first_above_surface_level(i, j, grid, grid.z.surface_geopotential)
+
+@inline first_above_surface_level(i, j, grid, ::Nothing) = 1
+
+@inline function first_above_surface_level(i, j, grid, Φ_sfc)
+    Φˢ = @inbounds Φ_sfc[i, j, 1]
+    k = 1
+    @inbounds while k < grid.Nz && grid.z.geopotential[i, j, k] <= Φˢ
+        k += 1
+    end
+    return k
+end
+
 @inline function column_fractional_z_index(z, ii, jj, grid)
     i = clamp(Base.unsafe_trunc(Int, ii), 1, grid.Nx)
     j = clamp(Base.unsafe_trunc(Int, jj), 1, grid.Ny)
@@ -247,7 +299,15 @@ end
     kk = ifelse(z_hi == z_lo, oftype(z, low),
                 (high - low) / (z_hi - z_lo) * (z - z_lo) + low)
     FT = eltype(grid)
-    return convert(FT, kk)
+    # Clamp to a valid, above-ground fractional index. The lower bound is the first above-ground level
+    # (not 1): `clip_subsurface!` fixes column monotonicity but leaves the raw ERA5 sub-surface data on
+    # the clipped levels, so a target near/below high terrain must snap to the lowest above-ground level
+    # rather than blend that data. The upper bound guards a target above the column top. (An unclamped
+    # `kk` outside [1, Nz] also drives the downstream `@inbounds` interpolator read out of bounds —
+    # finite-but-clamped on the CPU, but uninitialized garbage on the GPU, which NaN'd the
+    # terrain-following ERA5 initial state.)
+    k_sfc = first_above_surface_level(i, j, grid)
+    return clamp(convert(FT, kk), convert(FT, k_sfc), convert(FT, grid.Nz))
 end
 
 #####
@@ -281,8 +341,10 @@ function clip_subsurface!(Φ::Field, Φ_sfc)
     return Φ
 end
 
-# TSI path is CPU-only for now (no FTS-backed discretization is exercised in
-# the current pipeline). When that lands, swap the loop for a 4-D launch.
+# A time-varying (FTS-backed) discretization clips every snapshot. This runs once at grid
+# construction, on the host geopotential before it is moved to the device, and each per-slice
+# `clip_subsurface!(fts[t], …)` launches a GPU-safe kernel — so the loop is fine on either
+# architecture (the slice count is small: one per date in the window).
 function clip_subsurface!(geopotential::TimeSeriesInterpolation, surface_geopotential)
     fts = geopotential.time_series
     for t in 1:length(fts.times)

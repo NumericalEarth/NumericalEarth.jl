@@ -26,8 +26,8 @@ using Oceananigans.Architectures: AbstractArchitecture, CPU, architecture,
                                   on_architecture, child_architecture
 using Oceananigans.BoundaryConditions: fill_halo_regions!, FieldBoundaryConditions
 using Oceananigans.DistributedComputations: DistributedComputations, @root
-using Oceananigans.Grids: AbstractGrid, Center, Flat, Bounded,
-                          LatitudeLongitudeGrid, RectilinearGrid
+using Oceananigans.Grids: AbstractGrid, Center, Face, Flat, Bounded,
+                          LatitudeLongitudeGrid, RectilinearGrid, λnodes, φnodes
 using Oceananigans.Fields: Fields, Field, interpolate, interpolate!, interior, set!
 using Oceananigans.Grids: node
 using Oceananigans.OutputReaders: OnDisk, AbstractInMemoryBackend, Cyclical,
@@ -35,12 +35,36 @@ using Oceananigans.OutputReaders: OnDisk, AbstractInMemoryBackend, Cyclical,
 using Oceananigans.Utils: launch!, prettytime, prettysummary
 using NCDatasets: NCDatasets, Dataset
 using Printf: Printf, @sprintf
+using Scratch: @get_scratch!
 
 using ..NumericalEarth: NumericalEarth, stateindex
 
 #####
 ##### Downloading utilities
 #####
+
+"""
+    download_cache(key)
+
+Return the directory used to cache `key` data downloaded by NumericalEarth.
+
+By default this is a [Scratch.jl](https://github.com/JuliaPackaging/Scratch.jl) space
+managed by Julia under the active depot. If the environment variable
+`NUMERICALEARTH_DATA_DIRECTORY` is set, data is instead cached under
+`joinpath(ENV["NUMERICALEARTH_DATA_DIRECTORY"], key)`. This is useful on systems where the
+Julia depot lives on a small or quota-limited filesystem (e.g. `\$HOME` on HPC clusters),
+or to share a single cache of large datasets across depots and users.
+
+The variable is read when NumericalEarth is loaded, so it must be set *before*
+`using NumericalEarth`.
+"""
+function download_cache(key)
+    if haskey(ENV, "NUMERICALEARTH_DATA_DIRECTORY")
+        return mkpath(joinpath(ENV["NUMERICALEARTH_DATA_DIRECTORY"], key))
+    else
+        return @get_scratch!(key)
+    end
+end
 
 mutable struct DownloadProgress <: Function
     next_fraction :: Float64
@@ -332,11 +356,14 @@ include("EN4/EN4.jl")
 include("ORCA/ORCA.jl")
 include("WOA/WOA.jl")
 include("JRA55/JRA55.jl")
+include("GloFAS/GloFAS.jl")
 include("OSPapa/OSPapa.jl")
 include("SoilGrids/SoilGrids.jl")
 include("IBCSO/IBCSO.jl")
 include("GEBCO/GEBCO.jl")
 include("IBCAO/IBCAO.jl")
+include("CopernicusDEM/CopernicusDEM.jl")
+include("CopernicusLandAlbedo/CopernicusLandAlbedo.jl")
 
 using .ETOPO
 using .ECCO
@@ -347,10 +374,13 @@ using .EN4
 using .ORCA
 using .WOA
 using .JRA55
+using .GloFAS
 using .OSPapa
 using .IBCSO
 using .GEBCO
 using .IBCAO
+using .CopernicusDEM
+using .CopernicusLandAlbedo
 
 function dataset_modules()
     modules = Module[]
