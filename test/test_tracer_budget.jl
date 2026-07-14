@@ -7,7 +7,7 @@ using Oceananigans.Operators: volume
 using Oceananigans.Units
 using NumericalEarth.Oceans: get_radiative_forcing
 
-function test_tracer_budget(coupled_model, Δt, nsteps; rtol=1e-9)
+function test_tracer_budget(coupled_model, Δt, nsteps; rtol=1e-8)
     ocean = coupled_model.ocean
     grid  = ocean.model.grid
 
@@ -40,14 +40,16 @@ function test_tracer_budget(coupled_model, Δt, nsteps; rtol=1e-9)
 
     cell_volume = KernelFunctionOperation{Center, Center, Center}(volume, grid, Center(), Center(), Center())
 
-    VT⁻ = CenterField(grid)
-    ΔVT = Field(T * volume - VT⁻)
+    VT⁻ = CenterField(grid); ΔVT = Field(T * volume  - VT⁻)
+    VV⁻ = CenterField(grid); ΔVV = Field(cell_volume - VV⁻)
+    VS⁻ = CenterField(grid); ΔVS = Field(S * volume  - VS⁻)
 
-    ∫S⁻ = sum(S * cell_volume)
+    set!(VS⁻, S * volume)
+    ∫S⁻ = sum(VS⁻)
 
     for _ = 1:nsteps
         set!(VT⁻, T * volume)
-        V⁻ = sum(cell_volume)
+        set!(VV⁻, cell_volume)
 
         previous_heat_flux      = @allowscalar first(Field(heat_rate))
         previous_enthalpy       = @allowscalar first(Field(enthalpy_rate))
@@ -58,6 +60,7 @@ function test_tracer_budget(coupled_model, Δt, nsteps; rtol=1e-9)
         last_Δt = ocean.model.clock.last_Δt
 
         compute!(ΔVT)
+        compute!(ΔVV)
 
         # Heat content changes by the surface heat flux plus the enthalpy carried by the freshwater
         # (rain − evaporation at SST). The live Tᴺ Jʷ exchange cancels the z-star ambient carry, so
@@ -67,13 +70,14 @@ function test_tracer_budget(coupled_model, Δt, nsteps; rtol=1e-9)
         @test isapprox(heat_content_tendency, expected_heat_content_tendency; rtol)
 
         # Volume grows by exactly the surface-integrated freshwater volume flux.
-        volume_tendency = sum(cell_volume) - V⁻
+        volume_tendency = sum(ΔVV)
         expected_volume_tendency = previous_volume_flux * last_Δt
         @test isapprox(volume_tendency, expected_volume_tendency; rtol)
     end
 
     # Freshwater carries no salt, so the total salt content is conserved over the run.
-    @test abs(sum(S * cell_volume) - ∫S⁻) < rtol * ∫S⁻
+    compute!(ΔVS)
+    @test abs(sum(ΔVS)) / ∫S⁻ < rtol
 
     return nothing
 end

@@ -75,12 +75,15 @@ Adapt.adapt_structure(to, f::FreshwaterExchange{name}) where name =
                              Adapt.adapt(to, f.content_flux),
                              Adapt.adapt(to, f.additional))
 
+@inline surface_tracer_value(fields, ::Val{:S}, i, j, k) = @inbounds fields.S[i, j, k]
+@inline surface_tracer_value(fields, ::Val{:T}, i, j, k) = @inbounds fields.T[i, j, k]
+
 @inline (f::FreshwaterExchange{name})(i, j, grid, clock, fields) where name =
-    @inbounds(getproperty(fields, name)[i, j, grid.Nz] * f.carrying_flux[i, j, 1] - f.content_flux[i, j, 1]) +
+    @inbounds surface_tracer_value(fields, Val(name), i, j, grid.Nz) * f.carrying_flux[i, j, 1] - f.content_flux[i, j, 1] +
     getbc(f.additional, i, j, grid, clock, fields)
 
-build_tracer_top_bc(Jᵀ, Jʷ, content, additional, name) = 
-    FluxBoundaryCondition(MultipleFluxes(Jᵀ, FreshwaterExchange{name}(carrying, content, additional)); discrete_form=true)
+build_tracer_top_bc(Jᶜ, Jʷ, content, additional, name) =
+    FluxBoundaryCondition(MultipleFluxes(Jᶜ, FreshwaterExchange{name}(Jʷ, content, additional)); discrete_form=true)
 
 @inline freshwater_exchange(bc::DiscreteBoundaryFunction) = freshwater_exchange(bc.func)
 @inline freshwater_exchange(mf::MultipleFluxes) = mf.additional_fluxes
@@ -434,18 +437,18 @@ function hydrostatic_ocean_simulation(grid;
     default_additional_fluxes = (u=nothing, v=nothing, T=nothing, S=nothing)
     additional = merge(default_additional_fluxes, additional_surface_fluxes)
 
-    # Freshwater heat exchange: `carrying` is the shared freshwater volume flux Jʷ (as for salt),
-    # so `Tᴺ Jʷ` cancels the z-star ambient carry and heat content is conserved (closes like salt).
-    # `content = Σᵢ Tᵢ Jʷᵢ` is zero by default (conserve-content) and filled by the assembler once
-    # freshwater source temperatures are supplied.
+    # Freshwater tracer exchange content `Σᵢ cᵢ Jʷᵢ` (the carrying flux is the shared `Jʷ`, so the
+    # live `cᴺ Jʷ` cancels the z-star ambient carry and leaves the freshwater's own content). Pure
+    # freshwater carries no salt; the assembler fills the heat content with the enthalpy of the
+    # atmosphere freshwater entering at the surface temperature (rain − evaporation at SST).
     freshwater_heat_content = Field{Center, Center, Nothing}(grid)
     freshwater_salt_content = ZeroField()
 
     # Construct ocean boundary conditions including surface forcing and bottom drag
     u_top_bc = build_top_bc(τˣ, additional.u)
     v_top_bc = build_top_bc(τʸ, additional.v)
-    T_top_bc = build_tracer_top_bc(Jᵀ, Jʷ, freshwater_heat_content, additional.T)
-    S_top_bc = build_tracer_top_bc(Jˢ, Jʷ, freshwater_salt_content, additional.S)
+    T_top_bc = build_tracer_top_bc(Jᵀ, Jʷ, freshwater_heat_content, additional.T, :T)
+    S_top_bc = build_tracer_top_bc(Jˢ, Jʷ, freshwater_salt_content, additional.S, :S)
 
     u_bot_bc = FluxBoundaryCondition(u_quadratic_bottom_drag, discrete_form=true, parameters=bottom_drag_coefficient)
     v_bot_bc = FluxBoundaryCondition(v_quadratic_bottom_drag, discrete_form=true, parameters=bottom_drag_coefficient)
