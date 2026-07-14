@@ -35,7 +35,6 @@ Zarr = "0a941bbe-ad1d-11e8-39d9-ab76183a1d99"
 
 [sources]
 NumericalEarth = {path = ".."}
-Oceananigans = {url = "https://github.com/CliMA/Oceananigans.jl", rev = "ss/fix-barycentric-steps"}
 
 [compat]
 ArchGDAL = "0.10"
@@ -57,7 +56,7 @@ JLD2 = "0.4, 0.5, 0.6"
 KernelAbstractions = "0.9"
 MPI = "0.20"
 NCDatasets = "0.12, 0.13, 0.14"
-Oceananigans = "0.110.7"
+Oceananigans = "0.110.10"
 PythonCall = "0.9.28"
 Random = "<0.0.1, 1"
 Reactant = "0.2.270"
