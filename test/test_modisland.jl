@@ -121,7 +121,7 @@ end
         @test location(md) == (Center, Center, Center)
         @test DW.dataset_variable_name(md) == "Albedo_BSA_shortwave"
         # The 0.001 scale is applied by the framework via conversion_units.
-        @test DW.conversion_units(md).factor == 0.001
+        @test DW.convert_units(500.0, DW.conversion_units(md)) ≈ 0.5
     end
 
     @testset "MCD15 LAI products" begin
@@ -129,10 +129,10 @@ end
             md = Metadatum(:leaf_area_index; dataset, region)
             @test DW.dataset_variable_name(md) == "Lai_500m"
             @test DW.is_three_dimensional(md) == false
-            @test DW.conversion_units(md).factor == 0.1    # LAI scale
+            @test DW.convert_units(50.0, DW.conversion_units(md)) ≈ 5.0       # 0.1 × 50
             md_fpar = Metadatum(:fpar; dataset, region)
             @test DW.dataset_variable_name(md_fpar) == "Fpar_500m"
-            @test DW.conversion_units(md_fpar).factor == 0.01  # FPAR scale
+            @test DW.convert_units(50.0, DW.conversion_units(md_fpar)) ≈ 0.5  # 0.01 × 50
         end
     end
 

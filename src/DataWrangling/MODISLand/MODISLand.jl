@@ -8,7 +8,7 @@ using Oceananigans: Center
 using Oceananigans.DistributedComputations: @root
 
 using ..DataWrangling: DataWrangling, AbstractStaticDataset, Metadatum, Metadata,
-                       BoundingBox, Dataset, ScaleFactor, metadata_path, netrc_downloader
+                       BoundingBox, Dataset, metadata_path, netrc_downloader
 
 import Oceananigans
 
@@ -416,9 +416,16 @@ DataWrangling.dataset_variable_name(md::MCD12Q1Metadatum)  = MCD12Q1_variable_na
 # by the product's stored scale factor, and `missing_value` masks the fill DN to NaN.
 # Albedo and LAI mask their fills before scaling in `retrieve_data` (the blend and the
 # DN > 100 / QA thresholds are not single sentinels), so only the scale is wired here.
-DataWrangling.conversion_units(::MCD43AlbedoMetadatum) = ScaleFactor(MODIS_ALBEDO_SCALE)
-DataWrangling.conversion_units(md::MODISLAIMetadatum) =
-    ScaleFactor(md.name === :fpar ? MODIS_FPAR_SCALE : MODIS_LAI_SCALE)
+struct MODISAlbedoScale end
+struct MODISLAIScale end
+struct MODISFPARScale end
+
+DataWrangling.convert_units(x::FT, ::MODISAlbedoScale) where FT = x * convert(FT, MODIS_ALBEDO_SCALE)
+DataWrangling.convert_units(x::FT, ::MODISLAIScale)    where FT = x * convert(FT, MODIS_LAI_SCALE)
+DataWrangling.convert_units(x::FT, ::MODISFPARScale)   where FT = x * convert(FT, MODIS_FPAR_SCALE)
+
+DataWrangling.conversion_units(::MCD43AlbedoMetadatum) = MODISAlbedoScale()
+DataWrangling.conversion_units(md::MODISLAIMetadatum) = md.name === :fpar ? MODISFPARScale() : MODISLAIScale()
 DataWrangling.missing_value(::MCD12Q1Metadatum) = MODIS_LANDCOVER_FILL
 
 #####
