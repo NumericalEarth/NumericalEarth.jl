@@ -109,7 +109,6 @@ end
 # (in log space) at arbitrary heights via the grid's per-column geopotential — i.e. faithful ln(p)
 # interpolation of the native ERA5 pressure, no hydrostatic reconstruction.
 function pressure_level_field(grid, dataset, architecture)
-    Nx, Ny, Nz = size(grid)
     FT = eltype(grid)
     # `dataset.pressure_levels` is already in Pa (see `ERA5_all_pressure_levels`), sorted descending
     # ⇒ k=1 is the bottom (highest pressure).
