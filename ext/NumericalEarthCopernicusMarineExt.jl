@@ -119,7 +119,7 @@ depth_bounds_kw(bbox::BBOX) = depth_bounds_kw(bbox.z)
 coordinates_selection_method(::BBOX) = "outside"
 
 pad_bounds(::Nothing, dataset) = nothing
-pad_bounds(bounds, dataset) = begin
+function pad_bounds(bounds, dataset)
     Δ = native_horizontal_resolution(dataset)
     return (bounds[1] - 2Δ, bounds[2] + 2Δ)
 end
