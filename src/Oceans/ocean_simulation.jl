@@ -426,10 +426,9 @@ function hydrostatic_ocean_simulation(grid;
 
     if grid isa MutableGridOfSomeKind
         if :η ∈ keys(forcing)
-            forcing = merge(forcing, (η = (Jʷ, forcing.η),))
-        else
-            forcing = merge(forcing, (η = Jʷ,))
+            Fη = (Fη, forcing.η)
         end
+        forcing = merge(forcing, (; η = Fη))
     end
 
     # Merge user-supplied additional fluxes with defaults
