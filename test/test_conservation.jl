@@ -103,8 +103,8 @@ function test_coupled_energy_conservation(grid, atmosphere_grid; ocean_kwargs...
 
         Mᵢₛ = sum(@. (ρᵢ * h + ρₛ * hs) * ℵ) * Az
         Eᵢₛ = -sum(@. ℵ * (ρᵢ * ℒ₀ * h + ρₛ * ℒ₀ * hs)) * Az
-        Hₒ  = ρᵒᶜ * cᵒᶜ * first(compute!(∫T))
-        Sₒ  = first(compute!(mean_S))
+        Hₒ  = ρᵒᶜ * cᵒᶜ * first(Array(interior(compute!(∫T))))
+        Sₒ  = first(Array(interior(compute!(mean_S))))
 
         return (; h = first(h), ℵ = first(ℵ), hs = first(hs), Mᵢₛ, Eᵢₛ, Hₒ, Sₒ)
     end
