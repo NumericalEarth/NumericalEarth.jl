@@ -8,7 +8,7 @@ using Oceananigans: Center
 using Oceananigans.DistributedComputations: @root
 
 using ..DataWrangling: DataWrangling, AbstractStaticDataset, Metadatum, Metadata,
-                       BoundingBox, Dataset, ScaleFactor, metadata_path
+                       BoundingBox, Dataset, ScaleFactor, metadata_path, netrc_downloader
 
 import Oceananigans
 
@@ -507,9 +507,9 @@ function DataWrangling.retrieve_data(metadata::MCD12Q1Metadatum)
 end
 
 #####
-##### Download — the real fetch (CMR discovery, Earthdata GET, SIN→lat/lon warp)
-##### lives in ext/NumericalEarthArchGDALExt.jl. The module entry points below
-##### fall back to a clear error when that extension is not loaded.
+##### Download — CMR granule discovery and Earthdata-authenticated fetch (plain HTTP,
+##### no ArchGDAL). The sinusoidal→lat/lon HDF-EOS warp itself needs ArchGDAL and lives
+##### in ext/NumericalEarthArchGDALExt.jl; without it the read path errors clearly.
 #####
 
 function Downloads.download(metadatum::MODISLandMetadatum)
@@ -520,6 +520,38 @@ function Downloads.download(metadatum::MODISLandMetadatum)
     return nc_path
 end
 
+# Earthdata-authenticated download of a single granule. Credentials come from the
+# EARTHDATA_USERNAME / EARTHDATA_PASSWORD environment variables (the same variables
+# the Python `earthaccess` library honours).
+function earthdata_download(url, path)
+    haskey(ENV, "EARTHDATA_USERNAME") && haskey(ENV, "EARTHDATA_PASSWORD") ||
+        error("NASA Earthdata credentials not found. Set EARTHDATA_USERNAME and " *
+              "EARTHDATA_PASSWORD (register free at https://urs.earthdata.nasa.gov).")
+    username = ENV["EARTHDATA_USERNAME"]
+    password = ENV["EARTHDATA_PASSWORD"]
+    mktempdir() do tmp
+        downloader = netrc_downloader(username, password, "urs.earthdata.nasa.gov", tmp)
+        Downloads.download(url, path; downloader)
+    end
+    return path
+end
+
+# Query CMR for the granule `.hdf` download URLs intersecting `bbox`. CMR search is
+# anonymous; only the download itself (`earthdata_download`) needs credentials.
+function earthdata_cmr_granules(short_name, version, bbox::BoundingBox; temporal = nothing)
+    url = cmr_granules_url(short_name, version, bbox; temporal)
+    granule_urls = String[]
+    mktempdir() do tmp
+        json_path = joinpath(tmp, "cmr_granules.json")
+        Downloads.download(url, json_path)
+        text = read(json_path, String)
+        for match in eachmatch(r"https://[^\"]+\.hdf", text)
+            push!(granule_urls, match.match)
+        end
+    end
+    return unique(granule_urls)
+end
+
 # Implemented in ext/NumericalEarthArchGDALExt.jl once `ArchGDAL` is loaded.
 modis_granules_to_netcdf(metadatum, nc_path) =
     error("Reading MODIS HDF-EOS granules requires ArchGDAL (built with the HDF4 driver) " *
@@ -527,9 +559,5 @@ modis_granules_to_netcdf(metadatum, nc_path) =
           "credentials via EARTHDATA_USERNAME / EARTHDATA_PASSWORD (or a ~/.netrc entry for " *
           "urs.earthdata.nasa.gov), and ensure GDAL_jll was built with the HDF4 driver " *
           "(GDAL.jl issue #84). See future_plans/00_shared_ingestion_infrastructure.md (Part B.3).")
-
-earthdata_cmr_granules(short_name, version, bbox; temporal = nothing) =
-    error("Resolving MODIS granule URLs via CMR requires network access; this helper is " *
-          "provided by the ArchGDAL extension. Load it with `using ArchGDAL`.")
 
 end # module MODISLand

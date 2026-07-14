@@ -1,13 +1,11 @@
 module NumericalEarthArchGDALExt
 
 using ArchGDAL: ArchGDAL
-using Downloads: Downloads
 using NCDatasets: NCDataset, defDim, defVar
 using NumericalEarth: NumericalEarth
 
-using NumericalEarth.DataWrangling: BoundingBox, metadata_path, netrc_downloader
-using NumericalEarth.DataWrangling.MODISLand: MODISLand, cmr_granules_url,
-                                              MCD43Albedo, MCD12Q1
+using NumericalEarth.DataWrangling: BoundingBox
+using NumericalEarth.DataWrangling.MODISLand: MODISLand, MCD43Albedo, MCD12Q1
 
 function NumericalEarth.DataWrangling.IBCAO.reproject_ibcao_to_netcdf(tiff_path, nc_path)
     ArchGDAL.read(tiff_path) do src
@@ -83,37 +81,6 @@ function modis_layers_and_resamplers(metadatum)
     end
 end
 
-# Earthdata-authenticated download of a single granule. Credentials come from the
-# EARTHDATA_USERNAME / EARTHDATA_PASSWORD environment variables (the same variables
-# the Python `earthaccess` library honours).
-function earthdata_download(url, path)
-    haskey(ENV, "EARTHDATA_USERNAME") && haskey(ENV, "EARTHDATA_PASSWORD") ||
-        error("NASA Earthdata credentials not found. Set EARTHDATA_USERNAME and " *
-              "EARTHDATA_PASSWORD (register free at https://urs.earthdata.nasa.gov).")
-    username = ENV["EARTHDATA_USERNAME"]
-    password = ENV["EARTHDATA_PASSWORD"]
-    mktempdir() do tmp
-        downloader = netrc_downloader(username, password, "urs.earthdata.nasa.gov", tmp)
-        Downloads.download(url, path; downloader)
-    end
-    return path
-end
-
-# Query CMR for the granule `.hdf` download URLs intersecting the metadatum's bbox.
-function NumericalEarth.DataWrangling.MODISLand.earthdata_cmr_granules(short_name, version, bbox::BoundingBox; temporal = nothing)
-    url = cmr_granules_url(short_name, version, bbox; temporal)
-    granule_urls = String[]
-    mktempdir() do tmp
-        json_path = joinpath(tmp, "cmr_granules.json")
-        Downloads.download(url, json_path)
-        text = read(json_path, String)
-        for match in eachmatch(r"https://[^\"]+\.hdf", text)
-            push!(granule_urls, match.match)
-        end
-    end
-    return unique(granule_urls)
-end
-
 # Open the `HDF4_EOS:EOS_GRID:"<hdf>":<Grid>:<layer>` subdataset whose name ends in
 # `:<layer>`, without hardcoding the per-product grid name.
 function modis_subdataset(hdf_path, layer)
@@ -144,7 +111,7 @@ function NumericalEarth.DataWrangling.MODISLand.modis_granules_to_netcdf(metadat
                    string(date, ",", date)
                end
 
-    granule_urls = NumericalEarth.DataWrangling.MODISLand.earthdata_cmr_granules(short_name, version, bbox; temporal)
+    granule_urls = MODISLand.earthdata_cmr_granules(short_name, version, bbox; temporal)
     isempty(granule_urls) && error("CMR returned no $(short_name).$(version) granules for region $(bbox).")
 
     # A MODIS granule's temporal extent spans its full multi-day retrieval window, so a
@@ -167,7 +134,7 @@ function NumericalEarth.DataWrangling.MODISLand.modis_granules_to_netcdf(metadat
         hdf_paths = String[]
         for (n, url) in enumerate(granule_urls)
             hdf_path = joinpath(tmp, string(short_name, "_tile_", n, ".hdf"))
-            earthdata_download(url, hdf_path)
+            MODISLand.earthdata_download(url, hdf_path)
             push!(hdf_paths, hdf_path)
         end
 
