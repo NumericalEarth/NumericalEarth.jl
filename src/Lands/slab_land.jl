@@ -69,7 +69,7 @@ build_diagnostic_accumulators(grid, energy, hydrology) =
 #####
 
 """
-    SlabLand{FT, G, Clk, T, W, B, F, E, H}
+    SlabLand{FT, G, Clk, T, W, B, F, D, E, H}
 
 A composable slab land-surface component. The default configuration —
 `SlabEnergy + BucketHydrology` — is the classic bucket slab introduced by
@@ -85,6 +85,7 @@ roughness lengths are a property of the atmosphere-land flux closure
 - `water_storage`         : prognostic land water mass per area `Mˡᵃ` (kg m⁻²).
 - `saturation`            : diagnostic surface saturation `𝒮 = Mˡᵃ/Mˡᵃ⁺ ∈ [0, 1]` (–).
 - `fluxes`                : `NamedTuple` of flux/forcing `Field`s the coupler writes.
+- `diagnostics`           : `NamedTuple` of closure-owned diagnostic `Field`s.
 - `energy`                : an `AbstractEnergyBalance` (parameters).
 - `hydrology`             : an `AbstractHydrology` (parameters).
 """
@@ -274,8 +275,10 @@ and `liquid_precipitation_flux` accumulators declared by the land closures.
 * `surface_energy_flux`        ← `𝒬ᵀ + 𝒬ᵛ`, positive upward (out of the slab).
 * `precipitation`              ← rainfall + condensation, positive into the slab.
 * `evaporation`                ← positive part of upward vapor flux.
-* `vapor_flux`                 ← signed `Jᵛ`, positive upward (new closures).
-* `liquid_precipitation_flux`  ← rainfall as Pˡ, positive downward (new closures).
+* `vapor_flux`                 ← signed `Jᵛ`, positive upward (consumed by
+                                 `VariablySaturatedHydrology` and `WaterCoupledEnergy`).
+* `liquid_precipitation_flux`  ← rainfall as Pˡ, positive downward (consumed by
+                                 `VariablySaturatedHydrology`).
 
 Radiative contributions are added on top in
 `apply_air_land_radiative_fluxes!`.

@@ -47,7 +47,7 @@ end
 @testset "PrescribedRadiation set!" begin
     for arch in test_architectures
         grid = RectilinearGrid(arch, size = 1, z = (-1, 0), topology = (Flat, Flat, Bounded))
-        rad = PrescribedRadiation(grid; land_surface = SurfaceRadiationProperties(0.3, 0.95))
+        rad = PrescribedRadiation(grid)
 
         set!(rad; downwelling_shortwave = 250, downwelling_longwave = 350)
         @test only(Array(interior(rad.downwelling_shortwave[1]))) == 250

@@ -132,8 +132,9 @@ end
     md_lat = Metadatum(:temperature; dataset=ECCO4Monthly(), region=bbox_lat)
     @test topology(native_grid(md_lat))[1] == Periodic
 
-    # ERA5 uses a 0°..360° native longitude convention. A bbox specified as
-    # -110°..30° crosses that seam after conversion and must keep the full span.
+    # ERA5 uses a 0°..360° native longitude convention. A bbox specified as -110°..30° crosses that
+    # seam; `native_grid` restricts to the enclosing native cells (250°..390°) but relabels the grid
+    # back into the bbox's own convention (-110°..30°), keeping the full 140° span across the seam.
     seam_bbox = BoundingBox(longitude=(-110, 30), latitude=(-25, 35))
     seam_md = Metadatum(:temperature; dataset=ERA5HourlySingleLevel(),
                         date=DateTime(2004, 12, 27), region=seam_bbox)
@@ -141,8 +142,8 @@ end
     seam_λ = λnodes(seam_grid, Center())
 
     @test length(seam_λ) == 561
-    @test first(seam_λ) == 250.0f0
-    @test last(seam_λ) == 390.0f0
+    @test first(seam_λ) == -110.0f0
+    @test last(seam_λ) == 30.0f0
     @test topology(seam_grid)[1] == Bounded
 end
 

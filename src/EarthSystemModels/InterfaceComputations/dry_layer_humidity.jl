@@ -17,7 +17,7 @@
 #####
 ##### This closure is that surface representation, written as a humidity
 ##### boundary condition in the spirit of Ye & Pielke (1993): the
-##### atmosphere-facing humidity `qⁱⁿ` is solved (by the existing
+##### atmosphere-facing humidity `qⁱⁿ` is solved (by the
 ##### `compute_interface_state` fixed point) from the balance between the
 ##### dry-layer Fick flux and the atmospheric turbulent flux,
 #####
@@ -57,14 +57,15 @@ using Thermodynamics: Thermodynamics as AtmosphericThermodynamics
 #####
 
 """
-    StorageBasedDryLayerDepth(maximum_dry_layer_depth, dry_layer_onset_saturation,
-                                      dry_layer_exponent)
+    StorageBasedDryLayerDepth(FT = Oceananigans.defaults.FloatType;
+                              maximum_dry_layer_depth,
+                              dry_layer_onset_saturation,
+                              dry_layer_exponent = 2)
 
 Diagnostic dry-layer depth `δᵛ` as a function of land saturation `𝒮`:
 
 ```math
-\\delta^v(\\mathcal S) = \\delta^v_{max}
-\\left[1 - \\min\\!\\left(\\frac{\\mathcal S}{\\mathcal S^c},\\ 1\\right)\\right]^\\eta.
+δᵛ(𝒮) = δᵛ_{max} \\left[1 - \\min(𝒮 / 𝒮ᶜ, 1)\\right]^η
 ```
 
 `δᵛ = 0` when `𝒮 ≥ 𝒮ᶜ` (wet branch), growing toward `δᵛ_max` as the slab dries.
@@ -118,27 +119,29 @@ explicitly.
 struct ConstantTortuosity end
 
 """
-    MillingtonQuirk()
+    PowerLawTortuosity()
 
 Millington–Quirk tortuosity: `Dᵛ_eff = Dᵛ₀ · θᵍ^(10/3) / ν²` where
 `θᵍ = ν − θˡ` is the gas-filled pore fraction. Reduces vapor diffusivity in
 near-saturated soils.
 """
-struct MillingtonQuirk end
+struct PowerLawTortuosity end
 
 Base.summary(::ConstantTortuosity) = "ConstantTortuosity"
-Base.summary(::MillingtonQuirk)    = "MillingtonQuirk"
+Base.summary(::PowerLawTortuosity) = "PowerLawTortuosity"
 
 """
-    DryLayerVaporPistonVelocity(minimum_dry_layer_depth, molecular_diffusivity;
-                                tortuosity_model = ConstantTortuosity(),
-                                wet_transition_width = 5 * minimum_dry_layer_depth)
+    DryLayerVaporPistonVelocity(FT = Oceananigans.defaults.FloatType;
+                                minimum_dry_layer_depth,
+                                molecular_diffusivity,
+                                wet_transition_width = 5 * minimum_dry_layer_depth,
+                                tortuosity = ConstantTortuosity())
 
 Parameters of the dry-layer vapor piston velocity `wᵈ = Dᵛ_eff / max(δᵛ, δᵛ_min)`,
 the reciprocal of the dry-surface-layer soil resistance `r_soil = δᵛ/Dᵛ_eff` of
 [Yamanaka et al. (1997)](@cite yamanaka1997surface) and
 [Swenson and Lawrence (2014)](@cite swenson2014dry). The tortuosity model is a
-singleton type — [`ConstantTortuosity`](@ref) or [`MillingtonQuirk`](@ref),
+singleton type — [`ConstantTortuosity`](@ref) or [`PowerLawTortuosity`](@ref),
 after [Millington and Quirk (1961)](@cite millington1961permeability) —
 dispatched on by `effective_vapor_diffusivity`. The piston velocity feeds the
 [`DryLayerHumidity`](@ref) flux balance.
@@ -154,35 +157,36 @@ struct DryLayerVaporPistonVelocity{FT, T}
     minimum_dry_layer_depth :: FT
     molecular_diffusivity   :: FT
     wet_transition_width    :: FT
-    tortuosity_model        :: T
+    tortuosity              :: T
 end
 
 DryLayerVaporPistonVelocity(FT::Type = Oceananigans.defaults.FloatType;
                             minimum_dry_layer_depth,
                             molecular_diffusivity,
                             wet_transition_width = 5 * minimum_dry_layer_depth,
-                            tortuosity_model = ConstantTortuosity()) =
+                            tortuosity = ConstantTortuosity()) =
     DryLayerVaporPistonVelocity(convert(FT, minimum_dry_layer_depth),
                                 convert(FT, molecular_diffusivity),
                                 convert(FT, wet_transition_width),
-                                tortuosity_model)
+                                tortuosity)
 
 Base.summary(v::DryLayerVaporPistonVelocity) =
     string("DryLayerVaporPistonVelocity(δᵛ_min=", prettysummary(v.minimum_dry_layer_depth),
            ", Dᵛ₀=", prettysummary(v.molecular_diffusivity),
            ", δᵛʷ=", prettysummary(v.wet_transition_width),
-           ", tortuosity=", summary(v.tortuosity_model), ")")
+           ", tortuosity=", summary(v.tortuosity), ")")
 
 #####
 ##### DryLayerHumidity — the humidity formulation
 #####
 
 """
-    DryLayerHumidity(phase = AtmosphericThermodynamics.Liquid();
-                             dry_layer_depth,
-                             vapor_exchange,
-                             thermal_exchange_depth,
-                             porosity)
+    DryLayerHumidity(FT = Oceananigans.defaults.FloatType,
+                     phase = AtmosphericThermodynamics.Liquid();
+                     dry_layer_depth,
+                     vapor_exchange,
+                     thermal_exchange_depth,
+                     porosity)
 
 Surface specific-humidity formulation for the *dry-layer* model:
 `qⁱⁿ` is solved from a vapor-flux balance between a Fick flux through an
@@ -190,9 +194,9 @@ unresolved dry surface layer and the atmospheric vapor flux, following
 [Ye and Pielke (1993)](@cite yepielke1993) with the dry-layer (DSL)
 resistance of [Yamanaka et al. (1997)](@cite yamanaka1997surface) and
 [Swenson and Lawrence (2014)](@cite swenson2014dry). The
-formulation plugs into the existing `compute_interface_state` solver exactly
-where [`SkinHumidity`](@ref) does, and reduces to a wet-surface
-saturated-skin BC when the slab is wet enough (`𝒮 ≥ 𝒮ᶜ`).
+formulation plugs into the `compute_interface_state` solver exactly where
+[`SkinHumidity`](@ref) does, and reduces to a saturated-skin boundary
+condition when the slab is wet enough (`𝒮 ≥ 𝒮ᶜ`).
 
 * `dry_layer_depth` — depth diagnostic, e.g.
   [`StorageBasedDryLayerDepth`](@ref).
@@ -218,15 +222,16 @@ struct DryLayerHumidity{EFD, VEX, FT, Φ}
     phase                  :: Φ
 end
 
-DryLayerHumidity(phase = AtmosphericThermodynamics.Liquid();
+DryLayerHumidity(FT::Type = Oceananigans.defaults.FloatType,
+                 phase = AtmosphericThermodynamics.Liquid();
                  dry_layer_depth,
                  vapor_exchange,
                  thermal_exchange_depth,
                  porosity) =
     DryLayerHumidity(dry_layer_depth,
                      vapor_exchange,
-                     convert(Oceananigans.defaults.FloatType, thermal_exchange_depth),
-                     convert(Oceananigans.defaults.FloatType, porosity),
+                     convert(FT, thermal_exchange_depth),
+                     convert(FT, porosity),
                      phase)
 
 Base.summary(q::DryLayerHumidity{EFD, VEX, FT, Φ}) where {EFD, VEX, FT, Φ} =
@@ -246,12 +251,12 @@ Base.show(io::IO, q::DryLayerHumidity) = print(io, summary(q))
 #####
 
 @inline effective_vapor_diffusivity(v::DryLayerVaporPistonVelocity, ν, θˡ) =
-    effective_vapor_diffusivity(v.tortuosity_model, v.molecular_diffusivity, ν, θˡ)
+    effective_vapor_diffusivity(v.tortuosity, v.molecular_diffusivity, ν, θˡ)
 
 @inline effective_vapor_diffusivity(::ConstantTortuosity, D₀, ν, θˡ) =
     convert(typeof(θˡ), D₀)
 
-@inline function effective_vapor_diffusivity(::MillingtonQuirk, D₀, ν, θˡ)
+@inline function effective_vapor_diffusivity(::PowerLawTortuosity, D₀, ν, θˡ)
     FT = typeof(θˡ)
     νF = convert(FT, ν)
     θᵍ = max(νF - θˡ, zero(FT))
