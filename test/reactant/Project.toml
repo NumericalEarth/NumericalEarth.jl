@@ -1,0 +1,20 @@
+[deps]
+CUDA = "052768ef-5323-5732-b1bb-66c8b64840ba"
+NumericalEarth = "904d977b-046a-4731-8b86-9235c0d1ef02"
+Oceananigans = "9e8cae18-63c1-5223-a75c-80ca9d6e9a09"
+Reactant = "3c362404-f566-11ee-1572-e11a4b42c853"
+Test = "8dfed614-e22c-5e08-85e1-65c5234f0b40"
+
+[sources]
+NumericalEarth = {path = "../.."}
+
+[compat]
+CUDA = "5.9.5, 6"
+Oceananigans = "0.110.7"
+Reactant = "0.2.270"
+Test = "<0.0.1, 1"
+julia = "1.10"
+
+[extras]
+CUDA_Runtime_jll = "76a88914-d11a-5bdc-97e0-2f5a05c973a2"
+Reactant_jll = "0192cb87-2b54-54ad-80e0-3be72ad8a3c0"
