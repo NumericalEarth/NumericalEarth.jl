@@ -284,7 +284,7 @@ cascade_n = Observable(1)
 ## field operations convert to *different* array types across frames (the parent's pressure-level
 ## slices especially). Materialize every frame to a host matrix on its grid's own λ/φ, so the plotted
 ## type stays fixed and the axes read geographic coordinates.
-host_matrix(field) = Array(interior(Field(field)), :, :, 1)))
+host_matrix(field) = interior(Field(field), :, :, 1) |> Array
 
 function panel!(ax, field_of, colormap, colorrange)
     grid = Field(field_of(1)).grid

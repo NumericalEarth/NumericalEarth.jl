@@ -158,7 +158,7 @@ function default_parent_condensates(parent_atmosphere::PrescribedAtmosphere)
     return (qᶜˡ = parent_atmosphere.microphysical_variables.qᶜˡ,
             qʳ  = parent_atmosphere.microphysical_variables.qʳ,
             qᶜⁱ = parent_atmosphere.microphysical_variables.qᶜⁱ,
-            qˢ  = parent_atmosphere.microphysical_variables.qˢ),
+            qˢ  = parent_atmosphere.microphysical_variables.qˢ)
 end
 
 """
