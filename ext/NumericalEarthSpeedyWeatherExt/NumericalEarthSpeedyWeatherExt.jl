@@ -1,5 +1,6 @@
 module NumericalEarthSpeedyWeatherExt
 
+using GPUArraysCore: @allowscalar
 using KernelAbstractions: KernelAbstractions, @index, @kernel
 using Oceananigans: Oceananigans
 using Oceananigans.Grids: Center

@@ -66,7 +66,7 @@ nh_ocean_atmos         = atmosphere_simulation(grid; potential_temperature=θᵃ
 
 reference_state = slab_ocean_atmos.dynamics.reference_state
 
-θᵢ(x, z) = reference_state.potential_temperature + 0.1 * randn() * (z < 500)
+θᵢ(x, z) = reference_state.surface_potential_temperature + 0.1 * randn() * (z < 500)
 set!(prescribed_ocean_atmos, θ=θᵢ, u=U₀)
 set!(slab_ocean_atmos,       θ=θᵢ, u=U₀)
 set!(full_ocean_atmos,       θ=θᵢ, u=U₀)
@@ -348,7 +348,7 @@ x_nh = xnodes(nh_ocean_grid, Center())
 
 # ### Figure layout
 
-fig = Figure(size = (2400, 900), fontsize = 12)
+fig = Figure(size = (1400, 525), fontsize = 12)
 
 ax_θ_p = Axis(fig[1, 1], title="θₗᵢ (K) — atmos (prescribed)", ylabel="z (m)")
 ax_u_p = Axis(fig[2, 1], title="u (m/s) — atmos (prescribed)", ylabel="z (m)")
