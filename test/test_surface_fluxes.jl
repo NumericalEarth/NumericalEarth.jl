@@ -162,8 +162,7 @@ end
             similarity_theory = SimilarityTheoryFluxes(; momentum_roughness_length = ℓ,
                                                          temperature_roughness_length = ℓ,
                                                          water_vapor_roughness_length = ℓ,
-                                                         gustiness_parameter = 0,
-                                                         minimum_gustiness = 0,
+                                                         subgrid_velocities = nothing,
                                                          stability_functions)
 
             interfaces = ComponentInterfaces(atmosphere, ocean;

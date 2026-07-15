@@ -42,5 +42,9 @@ Documenter = "1"
 DocumenterCitations = "1.3"
 Enzyme = "0.13.166"
 Literate = "2.2"
+<<<<<<< HEAD
 Oceananigans = "0.110.9"
+=======
+Oceananigans = "0.110"
+>>>>>>> origin/main
 Reactant = "0.2.270"

@@ -10,9 +10,14 @@ using NumericalEarth.Atmospheres: AtmosphereThermodynamicsParameters
 using Thermodynamics: Thermodynamics as AtmosphericThermodynamics
 
 # Build a state that the formulation can read; the kernel signature mirrors
+<<<<<<< HEAD
 # `compute_interface_humidity(formulation, Tₛ, Ψₛ, Ψₐ, Ψᵢ, Ψᵣ, ℙₐ)` (radiation
 # state Ψᵣ unused by the dry-layer soil model, hence `nothing`).
 function _make_call_args(q; Tˡᵃ, Tⁱⁿ, 𝒮, pᵃᵗ, qᵃᵗ, Tᵃᵗ, u★, q★, qⁱⁿ⁻)
+=======
+# `compute_interface_humidity(formulation, Tₛ, Ψₛ, Ψₐ, Ψᵢ, ℙₐ)`.
+function make_call_args(; Tˡᵃ, Tⁱⁿ, 𝒮, pᵃᵗ, qᵃᵗ, Tᵃᵗ, u★, q★, qⁱⁿ⁻)
+>>>>>>> origin/main
     FT = Float64
     ℂ  = AtmosphereThermodynamicsParameters(FT)
     Ψₐ = (T = Tᵃᵗ, p = pᵃᵗ, q = qᵃᵗ, u = 1.0, v = 0.0, z = 10.0, h_bℓ = 1000.0)
@@ -23,7 +28,11 @@ function _make_call_args(q; Tˡᵃ, Tⁱⁿ, 𝒮, pᵃᵗ, qᵃᵗ, Tᵃᵗ, u�
     ℙₐ = (thermodynamics_parameters = ℂ,
           surface_layer_height = 10.0,
           gravitational_acceleration = 9.81)
+<<<<<<< HEAD
     return ℂ, Ψₛ, Ψₐ, Ψᵢ, nothing, ℙₐ
+=======
+    return ℂ, Ψₛ, Ψₐ, Ψᵢ, ℙₐ
+>>>>>>> origin/main
 end
 
 @testset "DryLayerHumidity wet branch (𝒮 ≥ 𝒮ᶜ)" begin
@@ -39,10 +48,17 @@ end
     # 𝒮 = 0.5 ⇒ δᵛ = 0 ⇒ wet ⇒ qⁱⁿ = qᵛ⁺(Tⁱⁿ).
     Tⁱⁿ = 300.0
     pᵃᵗ = 1.0e5
+<<<<<<< HEAD
     ℂ, Ψₛ, Ψₐ, Ψᵢ, Ψᵣ, ℙₐ = _make_call_args(q; Tˡᵃ=290.0, Tⁱⁿ=Tⁱⁿ, 𝒮=0.5,
                                           pᵃᵗ=pᵃᵗ, qᵃᵗ=1.0e-2, Tᵃᵗ=295.0,
                                           u★=0.3, q★=-2.0e-4, qⁱⁿ⁻=0.005)
     qⁱⁿ★ = compute_interface_humidity(q, Tⁱⁿ, Ψₛ, Ψₐ, Ψᵢ, Ψᵣ, ℙₐ)
+=======
+    ℂ, Ψₛ, Ψₐ, Ψᵢ, ℙₐ = make_call_args(; Tˡᵃ=290.0, Tⁱⁿ=Tⁱⁿ, 𝒮=0.5,
+                                        pᵃᵗ=pᵃᵗ, qᵃᵗ=1.0e-2, Tᵃᵗ=295.0,
+                                        u★=0.3, q★=-2.0e-4, qⁱⁿ⁻=0.005)
+    qⁱⁿ★ = compute_interface_humidity(q, Tⁱⁿ, Ψₛ, Ψₐ, Ψᵢ, ℙₐ)
+>>>>>>> origin/main
     qˢᵃᵗ = saturation_specific_humidity(ℂ, Tⁱⁿ, pᵃᵗ, AtmosphericThermodynamics.Liquid())
     @test isapprox(qⁱⁿ★, qˢᵃᵗ; atol = 1e-15)
 end
@@ -60,9 +76,15 @@ end
     Tˡᵃ = 290.0; Tⁱⁿ = 300.0
     pᵃᵗ = 1.0e5; qᵃᵗ = 1.0e-2; Tᵃᵗ = 295.0
     u★ = 0.3;   q★ = -2.0e-4; qⁱⁿ⁻ = 0.005
+<<<<<<< HEAD
     ℂ, Ψₛ, Ψₐ, Ψᵢ, Ψᵣ, ℙₐ = _make_call_args(q; Tˡᵃ, Tⁱⁿ, 𝒮 = 0.0,
                                           pᵃᵗ, qᵃᵗ, Tᵃᵗ, u★, q★, qⁱⁿ⁻)
     qⁱⁿ★ = compute_interface_humidity(q, Tⁱⁿ, Ψₛ, Ψₐ, Ψᵢ, Ψᵣ, ℙₐ)
+=======
+    ℂ, Ψₛ, Ψₐ, Ψᵢ, ℙₐ = make_call_args(; Tˡᵃ, Tⁱⁿ, 𝒮 = 0.0,
+                                        pᵃᵗ, qᵃᵗ, Tᵃᵗ, u★, q★, qⁱⁿ⁻)
+    qⁱⁿ★ = compute_interface_humidity(q, Tⁱⁿ, Ψₛ, Ψₐ, Ψᵢ, ℙₐ)
+>>>>>>> origin/main
 
     Tᵉ  = (Tⁱⁿ + Tˡᵃ) / 2
     qᵉ  = saturation_specific_humidity(ℂ, Tᵉ, pᵃᵗ, AtmosphericThermodynamics.Liquid())
@@ -97,6 +119,7 @@ end
             tortuosity = ConstantTortuosity(), wet_transition_width = 0),
         thermal_exchange_depth = 0.10, porosity = 0.4)
 
+<<<<<<< HEAD
     ℂ, Ψₛ, Ψₐ, Ψᵢ, Ψᵣ, ℙₐ = _make_call_args(q; Tˡᵃ, Tⁱⁿ, 𝒮 = 0.0,
                                           pᵃᵗ, qᵃᵗ, Tᵃᵗ, u★, q★, qⁱⁿ⁻)
     qᵈʳʸ = compute_interface_humidity(q, Tⁱⁿ, Ψₛ, Ψₐ, Ψᵢ, Ψᵣ, ℙₐ)
@@ -104,6 +127,15 @@ end
     ℂ, Ψₛ, Ψₐ, Ψᵢ, Ψᵣ, ℙₐ = _make_call_args(q; Tˡᵃ, Tⁱⁿ, 𝒮 = 0.5,
                                           pᵃᵗ, qᵃᵗ, Tᵃᵗ, u★, q★, qⁱⁿ⁻)
     qʷᵉᵗ = compute_interface_humidity(q, Tⁱⁿ, Ψₛ, Ψₐ, Ψᵢ, Ψᵣ, ℙₐ)
+=======
+    ℂ, Ψₛ, Ψₐ, Ψᵢ, ℙₐ = make_call_args(; Tˡᵃ, Tⁱⁿ, 𝒮 = 0.0,
+                                        pᵃᵗ, qᵃᵗ, Tᵃᵗ, u★, q★, qⁱⁿ⁻)
+    qᵈʳʸ = compute_interface_humidity(q, Tⁱⁿ, Ψₛ, Ψₐ, Ψᵢ, ℙₐ)
+
+    ℂ, Ψₛ, Ψₐ, Ψᵢ, ℙₐ = make_call_args(; Tˡᵃ, Tⁱⁿ, 𝒮 = 0.5,
+                                        pᵃᵗ, qᵃᵗ, Tᵃᵗ, u★, q★, qⁱⁿ⁻)
+    qʷᵉᵗ = compute_interface_humidity(q, Tⁱⁿ, Ψₛ, Ψₐ, Ψᵢ, ℙₐ)
+>>>>>>> origin/main
 
     # Wet (𝒮 ≥ 𝒮ᶜ): qⁱⁿ = qᵛ⁺(Tⁱⁿ); dry: qⁱⁿ < qᵛ⁺(Tⁱⁿ) because the source is colder.
     qˢᵃᵗ = saturation_specific_humidity(ℂ, Tⁱⁿ, pᵃᵗ, AtmosphericThermodynamics.Liquid())
@@ -122,10 +154,17 @@ end
         thermal_exchange_depth = 0.10, porosity = 0.4)
 
     Tⁱⁿ = 300.0; pᵃᵗ = 1.0e5; qᵃᵗ = 1.0e-2
+<<<<<<< HEAD
     ℂ, Ψₛ, Ψₐ, Ψᵢ, Ψᵣ, ℙₐ = _make_call_args(q; Tˡᵃ=290.0, Tⁱⁿ=Tⁱⁿ, 𝒮 = 0.0,
                                           pᵃᵗ=pᵃᵗ, qᵃᵗ=qᵃᵗ, Tᵃᵗ=295.0,
                                           u★=0.3, q★=-2.0e-4, qⁱⁿ⁻=0.005)
     qⁱⁿ★ = compute_interface_humidity(q, Tⁱⁿ, Ψₛ, Ψₐ, Ψᵢ, Ψᵣ, ℙₐ)
+=======
+    ℂ, Ψₛ, Ψₐ, Ψᵢ, ℙₐ = make_call_args(; Tˡᵃ=290.0, Tⁱⁿ=Tⁱⁿ, 𝒮 = 0.0,
+                                        pᵃᵗ=pᵃᵗ, qᵃᵗ=qᵃᵗ, Tᵃᵗ=295.0,
+                                        u★=0.3, q★=-2.0e-4, qⁱⁿ⁻=0.005)
+    qⁱⁿ★ = compute_interface_humidity(q, Tⁱⁿ, Ψₛ, Ψₐ, Ψᵢ, ℙₐ)
+>>>>>>> origin/main
     @test isapprox(qⁱⁿ★, qᵃᵗ; atol = 1e-6)
 end
 
@@ -145,8 +184,13 @@ end
     Tˡᵃ = 290.0; Tⁱⁿ = 300.0; pᵃᵗ = 1.0e5
     qᵃᵗ = 1.0e-2; Tᵃᵗ = 295.0; u★ = 0.3; q★ = -2.0e-4; qⁱⁿ⁻ = 0.005
     function humidity(q, 𝒮)
+<<<<<<< HEAD
         _, Ψₛ, Ψₐ, Ψᵢ, Ψᵣ, ℙₐ = _make_call_args(q; Tˡᵃ, Tⁱⁿ, 𝒮, pᵃᵗ, qᵃᵗ, Tᵃᵗ, u★, q★, qⁱⁿ⁻)
         return compute_interface_humidity(q, Tⁱⁿ, Ψₛ, Ψₐ, Ψᵢ, Ψᵣ, ℙₐ)
+=======
+        _, Ψₛ, Ψₐ, Ψᵢ, ℙₐ = make_call_args(; Tˡᵃ, Tⁱⁿ, 𝒮, pᵃᵗ, qᵃᵗ, Tᵃᵗ, u★, q★, qⁱⁿ⁻)
+        return compute_interface_humidity(q, Tⁱⁿ, Ψₛ, Ψₐ, Ψᵢ, ℙₐ)
+>>>>>>> origin/main
     end
 
     ℂ = AtmosphereThermodynamicsParameters(Float64)

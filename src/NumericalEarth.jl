@@ -56,12 +56,15 @@ export
     DryLayerVaporPistonVelocity,
     ConstantTortuosity,
     PowerLawTortuosity,
+<<<<<<< HEAD
     CanopyConductanceHumidity,
     CompositeSurfaceHumidity,
     FarquharPhotosynthesis,
     MedlynConductance,
     PlainArrhenius,
     PeakedArrhenius,
+=======
+>>>>>>> origin/main
     ElevationCorrection,
     atmosphere_land_interface,
     SlabOcean,
