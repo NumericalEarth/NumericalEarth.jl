@@ -163,29 +163,40 @@ using NumericalEarth.JRA55: download_JRA55_cache
         @info "Testing MultiYearJRA55 data on $A..."
         dataset = JRA55.MultiYearJRA55()
 
+        # The multi-file `set!` path under test is variable-agnostic, so it runs on friver
+        # (57 MB/year) rather than tas (1.2 GB/year): both split one file per year and both
+        # span the 1958 → 1959 boundary, but tas costs ~13 min of ESGF transfer.
+        multiyear_name = :river_freshwater_flux
+        native_dates = NumericalEarth.DataWrangling.all_dates(dataset, multiyear_name)
+
+        # friver is a daily *mean*, timestamped at 12:00; anchoring the window on the hour would
+        # straddle native timestamps and change how many dates the range covers.
+        anchor = DateTime("1959-01-01T12:00:00")
+
         # Test that when date range spans two years both netCDF files are downloaded
         # and concatenated when reading the data.
-        start_date = DateTime("1959-01-01T00:00:00") - 15 * Day(1) # sometime in 1958
-        end_date   = DateTime("1959-01-01T00:00:00") + 85 * Day(1) # sometime in 1959
+        start_date = anchor - 15 * Day(1) # sometime in 1958
+        end_date   = anchor + 85 * Day(1) # sometime in 1959
 
-        # Use a temporary directory so different architectures don't clash
-        mktempdir("./") do dir
-            # Compute expected file paths so we can fall back to artifacts if needed
-            native_dates = NumericalEarth.DataWrangling.all_dates(dataset, :temperature)
-            dates = compute_native_date_range(native_dates, start_date, end_date)
-            metadata = Metadata(:temperature; dataset, dates, dir)
-            filepaths = unique(metadata_path(metadata))
+        dates = compute_native_date_range(native_dates, start_date, end_date)
+        metadata = Metadata(multiyear_name; dataset, dates)
+        filepaths = unique(metadata_path(metadata))
 
-            Ta = download_dataset_with_fallback(filepaths; dataset_name="MultiYearJRA55 :temperature") do
-                FieldTimeSeries(metadata, arch; time_indices_in_memory=10)
-            end
-            @test Second(end_date - start_date).value ≈ Ta.times[end] - Ta.times[1]
-
-            # Test we can access all the data
-            for t in eachindex(Ta.times)
-                @test Ta[t] isa Field
-            end
+        river_flux = download_dataset_with_fallback(filepaths; dataset_name="MultiYearJRA55 $multiyear_name") do
+            FieldTimeSeries(metadata, arch; time_indices_in_memory=10)
         end
+        @test Second(end_date - start_date).value ≈ river_flux.times[end] - river_flux.times[1]
+
+        # Test we can access all the data
+        for t in eachindex(river_flux.times)
+            @test river_flux[t] isa Field
+        end
+
+        # friver is daily, so it takes the `Hour(12)` branch of `metadata_filename`; keep the
+        # three-hourly branch that tas exercises covered. Building a path downloads nothing.
+        three_hourly_datum = Metadatum(:temperature; dataset, date=DateTime(1958, 6, 1))
+        @test basename(metadata_path(three_hourly_datum)) ==
+            "tas_input4MIPs_atmosphericState_OMIP_MRI-JRA55-do-1-5-0_gr_195801010000-195812312100.nc"
 
         @info "Testing MultiYearJRA55 single-window crossing year boundary on $A..."
 
@@ -194,45 +205,22 @@ using NumericalEarth.JRA55: download_JRA55_cache
         # iteration in `set!` would clobber the outer `ftsn` and write to the
         # wrong slots; this regression test would then leave some in-memory
         # slots untouched (zero-valued).
-        start_date_span = DateTime("1958-12-27T00:00:00")
-        end_date_span   = DateTime("1959-01-05T00:00:00")
+        start_date_span = DateTime("1958-12-27T12:00:00")
+        end_date_span   = DateTime("1959-01-05T12:00:00")
 
-        mktempdir("./") do dir
-            native_dates = NumericalEarth.DataWrangling.all_dates(dataset, :temperature)
-            dates = compute_native_date_range(native_dates, start_date_span, end_date_span)
-            metadata = Metadata(:temperature; dataset, dates, dir)
-            filepaths = unique(metadata_path(metadata))
+        dates_span = compute_native_date_range(native_dates, start_date_span, end_date_span)
+        metadata_span = Metadata(multiyear_name; dataset, dates=dates_span)
+        filepaths_span = unique(metadata_path(metadata_span))
 
-            Ta_span = download_dataset_with_fallback(filepaths;
-                                                     dataset_name="MultiYearJRA55 :temperature year-boundary window") do
-                # backend window of 80 holds the whole range in a single window
-                FieldTimeSeries(metadata, arch; time_indices_in_memory=80)
-            end
-
-            # Every slot in the single in-memory window must carry valid
-            # (non-zero) atmospheric temperature data.
-            @allowscalar begin
-                for t in eachindex(Ta_span.times)
-                    @test maximum(abs, interior(Ta_span[t])) > 0
-                end
-            end
+        river_flux_span = download_dataset_with_fallback(filepaths_span;
+                                                         dataset_name="MultiYearJRA55 $multiyear_name year-boundary window") do
+            # backend window of 80 holds the whole range in a single window
+            FieldTimeSeries(metadata_span, arch; time_indices_in_memory=80)
         end
 
-        @info "Testing MultiYearJRA55 daily variables on $A..."
-
-        for daily_name in (:river_freshwater_flux, :iceberg_freshwater_flux)
-            daily_dates = NumericalEarth.DataWrangling.all_dates(dataset, daily_name)
-            @test Hour(first(daily_dates)) == Hour(12)
-
-            daily_metadata = Metadata(daily_name; dataset, end_date=daily_dates[3])
-            daily_fts = download_dataset_with_fallback(unique(metadata_path(daily_metadata));
-                                                       dataset_name="MultiYearJRA55 $daily_name") do
-                FieldTimeSeries(daily_metadata, arch; time_indices_in_memory=3)
-            end
-
-            for t in eachindex(daily_fts.times)
-                @test maximum(abs, interior(daily_fts[t])) > 0
-            end
+        # Every slot in the single in-memory window must carry data.
+        for t in eachindex(river_flux_span.times)
+            @test maximum(abs, interior(river_flux_span[t])) > 0
         end
     end
 end
