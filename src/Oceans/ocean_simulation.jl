@@ -418,8 +418,9 @@ function hydrostatic_ocean_simulation(grid;
     bottom_drag_coefficient = convert(FT, bottom_drag_coefficient)
 
     # Set up boundary conditions using Field
-    x_velocity_bcs = vector_component_boundary_conditions(grid, (Face(), Center(), nothing))
-    y_velocity_bcs = vector_component_boundary_conditions(grid, (Center(), Face(), nothing))
+    x_velocity_bcs = InterfaceComputations.vector_component_boundary_conditions(grid, (Face(), Center(), nothing))
+    y_velocity_bcs = InterfaceComputations.vector_component_boundary_conditions(grid, (Center(), Face(), nothing))
+  
     top_zonal_momentum_flux      = τˣ = Field{Face, Center, Nothing}(grid; boundary_conditions = x_velocity_bcs)
     top_meridional_momentum_flux = τʸ = Field{Center, Face, Nothing}(grid; boundary_conditions = y_velocity_bcs)
     top_ocean_heat_flux          = Jᵀ = Field{Center, Center, Nothing}(grid)
