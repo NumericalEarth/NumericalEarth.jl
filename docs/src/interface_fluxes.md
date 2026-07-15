@@ -157,7 +157,7 @@ use `LargeYeagerTransferCoefficients`. This computes all three transfer coeffici
 stability corrections (L&Y eqs. 6c-6d, 10a-10c):
 
 ```@example interface_fluxes
-using NumericalEarth.EarthSystemModels.InterfaceComputations: FixedIterations, LargeYeagerTransferCoefficients
+using NumericalEarth.EarthSystemModels.InterfaceComputations: LargeYeagerTransferCoefficients
 
 ly = LargeYeagerTransferCoefficients()
 ly_fluxes = CoefficientBasedFluxes(transfer_coefficients = ly,

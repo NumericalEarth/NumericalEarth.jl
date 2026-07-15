@@ -480,14 +480,15 @@ default_al_specific_humidity(land) =
 # passing `atmosphere_land_fluxes = SimilarityTheoryFluxes(...)` with explicit
 # roughness lengths (constants, `Field`s, or roughness-length models such as
 # `LandRoughnessLength`) to `ComponentInterfaces` / `AtmosphereLandModel`.
-default_atmosphere_land_fluxes(::Nothing, FT) = nothing
+default_atmosphere_land_fluxes(::Nothing, FT; kw...) = nothing
 
-function default_atmosphere_land_fluxes(land, FT)
+function default_atmosphere_land_fluxes(land, FT; solver_stop_criteria = nothing)
     return SimilarityTheoryFluxes(FT;
                                    stability_functions          = atmosphere_land_stability_functions(FT),
                                    momentum_roughness_length    = convert(FT, 0.1),
                                    temperature_roughness_length = convert(FT, 0.01),
-                                   water_vapor_roughness_length = convert(FT, 0.01))
+                                   water_vapor_roughness_length = convert(FT, 0.01),
+                                   solver_stop_criteria)
 end
 
 #####

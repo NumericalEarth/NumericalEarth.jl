@@ -109,8 +109,7 @@ Base.@propagate_inbounds get_land_freshwater_flux(i, j, flux) = flux[i, j, 1]
 
     # Freshwater flux to the ocean per unit cell area (volume flux, positive up = leaving ocean):
     # - rain and land runoff reach the ocean everywhere (rain runs through cracks in ice)
-    # - snowfall reaches the ocean except the part the sea ice reports having intercepted (Pˢⁿ),
-    #   so the atmosphere→{ice, ocean} split uses one number and is exactly conservative
+    # - snowfall reaches the ocean except the part the sea ice reports having intercepted (Pˢⁿ)
     # - evaporation acts only over the open-water fraction (1 - ℵᵢ)
     # The atmospheric mass-flux convention is positive down; Jᵛ is positive up.
     ρᵒᶜ⁻¹ = 1 / ocean_properties.reference_density
