@@ -40,87 +40,70 @@ env:
 
 jobs:
   cpu_tests:
-    name: (CPU) - Julia ${{ matrix.version }}
-    runs-on: ${{ matrix.os }}
+    name: (CPU) - Julia 1.12.5
+    runs-on: ubuntu-latest
+    # The image ships a depot with `test/` already instantiated at `--check-bounds=yes`, which is
+    # exactly how this job runs, so the packages arrive precompiled and no Actions cache is
+    # needed. That matters: a Julia depot for this dependency tree is ~1.2 GB, GitHub caps a repo
+    # at 10 GB, and caches are keyed by (key, ref) -- so every open PR kept its own copy and the
+    # repo sat permanently over budget, evicting caches faster than jobs could restore them. Every
+    # run then paid ~25 min precompiling from scratch. The GPU job has never had that problem
+    # because it takes its depot from this same image. Rebuilt Mon/Thu from NumericalEarth main
+    # (see NumericalEarth/numerical-earth-docker-images); between rebuilds `Pkg.test` re-resolves
+    # and precompiles only whatever has drifted.
+    container:
+      image: ghcr.io/numericalearth/numerical-earth-docker-images:test-julia_1.12.5
     timeout-minutes: 120
-    strategy:
-      fail-fast: false
-      matrix:
-        version:
-          - "1.12.5"
-        os:
-          - ubuntu-latest
-        arch:
-          - "default"
+    env:
+      OPENBLAS_NUM_THREADS: 1
+      # Redirect temp to the workspace volume to keep large downloads and compiled artifacts off
+      # the container's overlay filesystem.
+      TMPDIR: /__w/_temp
+      # Writable depot first, the image's read-only depot second.
+      JULIA_DEPOT_PATH: '/__w/_temp/depot:/usr/local/share/julia:'
     steps:
-      - name: Show available storage before cleanup
-        run: |
-          echo " --> df -h /"
-          df -h /
-          echo " --> df -a /"
-          df -a /
-      - name: Free Disk Space
-        uses: jlumbroso/free-disk-space@54081f138730dfa15788a46383842cd2f914a1be # v1.3.1
-        with:
-          tool-cache: true
-          large-packages: false
-      - name: Cleanup /opt
-        run: |
-          sudo rm -rf /opt/*
-      - name: Show available storage after cleanup
-        run: |
-          echo " --> df -h /"
-          df -h /
-          echo " --> df -a /"
-          df -a /
       - uses: actions/checkout@v6
-      - uses: julia-actions/setup-julia@v3
-        with:
-          version: ${{ matrix.version }}
-          arch: ${{ matrix.arch }}
-      - uses: julia-actions/cache@v3
-        with:
-          # One depot cache shared with the nightly Data Availability workflow: both
-          # instantiate the same test/Project.toml. Distinct cache names stored two
-          # near-identical ~1.3 GB copies, and the repo total (10.7 GB) sat above GitHub's
-          # 10 GB budget, so every save evicted an older cache and no job ever restored one.
-          # `include-matrix` appends os/arch/version, so macOS still gets its own key.
-          cache-name: julia-cache;env=test
-          cache-scratchspaces: false
+      - name: Create workspace temp directories
+        run: mkdir -p "${TMPDIR}"
+      - name: Configure git safe directory
+        run: git config --global --add safe.directory ${PWD}
+      - name: Copy LocalPreferences
+        run: cp -v /usr/local/share/julia/environments/numericalearth/LocalPreferences.toml test/.
+      - name: df before tests
+        run: df -hT
       # ParallelTestRunner schedules longest-first from a duration history it keeps in a
-      # scratchspace. `cache-scratchspaces: false` (needed: the dataset scratchspaces are
-      # tens of GB) also discards that history, so every duration defaults to Inf and the
-      # order falls back to random -- leaving a 38 min test to start last and run alone.
-      # Cache just the history: a few KB, keyed to ParallelTestRunner's UUID.
+      # scratchspace, which is otherwise thrown away between runs: every duration then defaults to
+      # Inf, the sort is a no-op and the order falls back to random -- leaving a 38 min test to
+      # start last and run alone. A few KB, keyed to ParallelTestRunner's UUID.
       - uses: actions/cache@v4
         with:
-          path: ~/.julia/scratchspaces/d3525ed8-44d0-4b2c-a655-542cee43accc/durations
+          path: /__w/_temp/depot/scratchspaces/d3525ed8-44d0-4b2c-a655-542cee43accc/durations
           key: julia-test-durations;job=cpu_tests;${{ github.run_id }}
           restore-keys: julia-test-durations;job=cpu_tests;
-      - uses: julia-actions/julia-runtest@v1
-        with:
-          # Three workers. ParallelTestRunner's default_njobs assumes ~2 GiB per worker, but
-          # the Breeze-compilation and bathymetry tests peak at 2.5-3.5 GiB RSS each and
-          # `test_tracer_budget` at 5.6 GiB, so the default (4 = core count) intermittently
-          # OOMs on the 16 GiB runner and the runner reports it as "The operation was
-          # canceled." Three fit: 5.6 + 3.5 + 3.5 leaves headroom, and the third worker is
-          # what makes the suite's 38 min `test_tracer_budget` the wall clock rather than an
-          # unbalanced queue -- 95 min of tests over 2 workers is 47.7 min, over 3 it is 38.0,
-          # and a 4th buys nothing because that one test is the floor.
-          test_args: '--verbose --jobs=3'
+      # Three workers. ParallelTestRunner's default_njobs assumes ~2 GiB per worker, but the
+      # Breeze-compilation and bathymetry tests peak at 2.5-3.5 GiB RSS each and
+      # `test_tracer_budget` at 5.6 GiB, so the default (4 = core count) intermittently OOMs on
+      # the 16 GiB runner and it surfaces as "The operation was canceled." Three fit, and the
+      # third worker is what makes the longest single test the wall clock rather than an
+      # unbalanced queue: 95 min of tests over 2 workers is 47.7 min, over 3 it is 38.0, and a
+      # 4th buys nothing because that one test is the floor.
+      - name: Run tests
+        run: |
+          julia --project --color=yes --check-bounds=yes -e '
+              using Pkg;
+              Pkg.test(; coverage=true,
+                       julia_args=["--check-bounds=yes", "--compiled-modules=yes"],
+                       test_args=["--verbose", "--jobs=3"])
+          '
       - uses: julia-actions/julia-processcoverage@v1
       - uses: codecov/codecov-action@v5
         with:
           files: lcov.info
           token: ${{ secrets.CODECOV_TOKEN }}
-      - name: Show available storage at the end
+      - name: df at the end
         if: always()
         timeout-minutes: 2
-        run: |
-          echo " --> df -h /"
-          df -h /
-          echo " --> df -a /"
-          df -a /
+        run: df -hT
 
   #####
   ##### GPU tests (AWS self-hosted runners with Docker)
