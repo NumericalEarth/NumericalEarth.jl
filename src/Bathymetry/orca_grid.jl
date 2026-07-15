@@ -9,7 +9,7 @@ using Oceananigans.ImmersedBoundaries: ImmersedBoundaryGrid, GridFittedBottom
 using Oceananigans.OrthogonalSphericalShellGrids: Tripolar
 
 using ..DataWrangling: dataset_variable_name, default_download_directory
-using ..DataWrangling.ORCA: ORCA1, default_south_rows_to_remove
+using ..DataWrangling.ORCA: ORCAOne, default_south_rows_to_remove
 
 # Build an Oceananigans OrthogonalSphericalShellGrid with topology (Periodic, RightFaceFolded, Bounded) from
 # a NEMO eORCA mesh_mask file.
@@ -367,7 +367,7 @@ end
 Construct an `OrthogonalSphericalShellGrid` with `(Periodic, RightFaceFolded, Bounded)`
 topology using coordinate and metric data from a NEMO eORCA `mesh_mask` file.
 
-The `dataset` keyword argument specifies which ORCA configuration to use (e.g., `ORCA1()`, `ORCA4()`, or `ORCA12()`).
+The `dataset` keyword argument specifies which ORCA configuration to use (e.g., `ORCAOne()`, `ORCAQuarter()`, or `ORCATwelfth()`).
 The mesh mask and bathymetry files are downloaded automatically via the
 `DataWrangling.ORCA` metadata interface.
 
@@ -389,8 +389,8 @@ Positional Arguments
 Keyword Arguments
 =================
 
-- `dataset`: The ORCA dataset to use. Default: `ORCA1()`. `ORCA4()` (eORCA025, quarter-degree) and `ORCA12()`
-             (eORCA12, twelfth-degree) are also supported (ORCA1 data from Zenodo; <https://doi.org/10.5281/zenodo.4436658>).
+- `dataset`: The ORCA dataset to use. Default: `ORCAOne()`. `ORCAQuarter()` (eORCA025, quarter-degree) and `ORCATwelfth()`
+             (eORCA12, twelfth-degree) are also supported (eORCA1 data from Zenodo; <https://doi.org/10.5281/zenodo.4436658>).
 - `halo`: Halo size tuple `(Hx, Hy, Hz)`. Default: `(4, 4, 4)`.
 - `z`: Vertical coordinate specification. Can be a 2-tuple `(z_bottom, z_top)`, an array of z-interfaces,
        or, e.g., an `ExponentialDiscretization`. Default: `(-6000, 0)`.
@@ -410,7 +410,7 @@ Keyword Arguments
          Defaults to the dataset scratch cache via `default_download_directory(dataset)`.
 """
 function ORCAGrid(arch = CPU(), FT::DataType = Float64;
-                  dataset = ORCA1(),
+                  dataset = ORCAOne(),
                   halo = (4, 4, 4),
                   z = (-6000, 0),
                   Nz = 50,

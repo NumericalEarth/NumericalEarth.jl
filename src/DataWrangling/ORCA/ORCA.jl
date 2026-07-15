@@ -1,6 +1,6 @@
 module ORCA
 
-export ORCA1, ORCA4, ORCA12
+export ORCAOne, ORCAQuarter, ORCATwelfth
 
 using Downloads: Downloads
 using Oceananigans: Oceananigans
@@ -28,9 +28,10 @@ end
 
 abstract type ORCADataset end
 
-struct ORCA1 <: ORCADataset end
-struct ORCA4 <: ORCADataset end
-struct ORCA12 <: ORCADataset end
+# Names spell out the nominal horizontal resolution: 1°, 1/4° (eORCA025), and 1/12° (eORCA12).
+struct ORCAOne <: ORCADataset end
+struct ORCAQuarter <: ORCADataset end
+struct ORCATwelfth <: ORCADataset end
 
 default_download_directory(::ORCADataset) = download_ORCA_cache
 reversed_vertical_axis(::ORCADataset) = false
@@ -40,74 +41,49 @@ all_dates(::ORCADataset, args...) = nothing
 first_date(::ORCADataset, args...) = nothing
 last_date(::ORCADataset, args...) = nothing
 
-const ORCA1Metadatum = Metadatum{<:ORCA1}
-const ORCA4Metadatum = Metadatum{<:ORCA4}
-const ORCA12Metadatum = Metadatum{<:ORCA12}
+const ORCAOneMetadatum = Metadatum{<:ORCAOne}
+const ORCAQuarterMetadatum = Metadatum{<:ORCAQuarter}
+const ORCATwelfthMetadatum = Metadatum{<:ORCATwelfth}
 const ORCAMetadatum = Metadatum{<:ORCADataset}
 
-ORCA_variable_names = Dict(
+const ORCA_variable_names = Dict(
     :bottom_height => "Bathymetry",
     :mesh_mask     => "glamt",
 )
 
-ORCA12_variable_names = Dict(
+const ORCATwelfth_variable_names = Dict(
     :bottom_height => "Bathymetry",
     :mesh_mask     => "e1t",
 )
 
-dataset_variable_name(data::ORCAMetadatum)   = ORCA_variable_names[data.name]
-dataset_variable_name(data::ORCA12Metadatum) = ORCA12_variable_names[data.name]
+dataset_variable_name(data::ORCAMetadatum)         = ORCA_variable_names[data.name]
+dataset_variable_name(data::ORCATwelfthMetadatum)  = ORCATwelfth_variable_names[data.name]
 
 # Zenodo record 4436658: eORCA1 mesh_mask and bathymetry
-const ORCA1_mesh_mask_url  = "https://zenodo.org/records/4436658/files/eORCA1.2_mesh_mask.nc"
-const ORCA1_bathymetry_url = "https://zenodo.org/records/4436658/files/eORCA_R1_bathy_meter_v2.2.nc"
+mesh_mask_url(::ORCAOne)  = "https://zenodo.org/records/4436658/files/eORCA1.2_mesh_mask.nc"
+bathymetry_url(::ORCAOne) = "https://zenodo.org/records/4436658/files/eORCA_R1_bathy_meter_v2.2.nc"
 
-const ORCA4_mesh_mask_url  = "https://zenodo.org/records/15494369/files/grid_mask_eORCA025-GO6.nc"
-const ORCA4_bathymetry_url = "https://zenodo.org/records/15494369/files/bathy_eORCA025_noclosea_from_GEBCO2021_S21TT_CloseaCopy_edit.nc"
+# Zenodo record 15494369: eORCA025 mesh_mask and bathymetry
+mesh_mask_url(::ORCAQuarter)  = "https://zenodo.org/records/15494369/files/grid_mask_eORCA025-GO6.nc"
+bathymetry_url(::ORCAQuarter) = "https://zenodo.org/records/15494369/files/bathy_eORCA025_noclosea_from_GEBCO2021_S21TT_CloseaCopy_edit.nc"
 
-# Google Drive records for GLORYS12 (ORCA12) mesh mask and bathymetry
-const ORCA12_mesh_mask_url  = "https://zenodo.org/records/15495870/files/grid_mask_eORCA12-GO6.nc"
-const ORCA12_bathymetry_url = "https://zenodo.org/records/15495870/files/bathy_eORCA12_noclosea_from_GEBCO2021_FillZero_S21TT_CloseaCopy.nc"
+# Zenodo record 15495870: eORCA12 mesh_mask and bathymetry
+mesh_mask_url(::ORCATwelfth)  = "https://zenodo.org/records/15495870/files/grid_mask_eORCA12-GO6.nc"
+bathymetry_url(::ORCATwelfth) = "https://zenodo.org/records/15495870/files/bathy_eORCA12_noclosea_from_GEBCO2021_FillZero_S21TT_CloseaCopy.nc"
 
-function DataWrangling.metadata_url(metadatum::ORCAMetadatum)
-    if metadatum.name == :mesh_mask
-        return eval(Symbol(typeof(dataset), :_mesh_mask_url))
-    elseif metadatum.name == :bottom_height
-        return eval(Symbol(typeof(dataset), :_bathymetry_url))
-    else
-        error("Unknown $(metadatum.dataset) variable: $(metadatum.name)")
-    end
-end
-
-function metadata_filename(::ORCA1, name, date, region)
+function dataset_url(dataset::ORCADataset, name)
     if name == :mesh_mask
-        return "eORCA1.2_mesh_mask.nc"
+        return mesh_mask_url(dataset)
     elseif name == :bottom_height
-        return "eORCA_R1_bathy_meter_v2.2.nc"
+        return bathymetry_url(dataset)
     else
-        error("Unknown ORCA1 variable: $name")
+        error("Unknown $(dataset) variable: $(name)")
     end
 end
 
-function metadata_filename(::ORCA4, name, date, region)
-    if name == :mesh_mask
-        return "grid_mask_eORCA025-GO6.nc"
-    elseif name == :bottom_height
-        return "bathy_eORCA025_noclosea_from_GEBCO2021_S21TT_CloseaCopy_edit.nc"
-    else
-        error("Unknown ORCA4 variable: $name")
-    end
-end
+DataWrangling.metadata_url(metadatum::ORCAMetadatum) = dataset_url(metadatum.dataset, metadatum.name)
 
-function metadata_filename(::ORCA12, name, date, region)
-    if name == :mesh_mask
-        return "grid_mask_eORCA12-GO6.nc"
-    elseif name == :bottom_height
-        return "bathy_eORCA12_noclosea_from_GEBCO2021_FillZero_S21TT_CloseaCopy.nc"
-    else
-        error("Unknown ORCA12 variable: $name")
-    end
-end
+metadata_filename(dataset::ORCADataset, name, date, region) = basename(dataset_url(dataset, name))
 
 z_interfaces(::ORCAMetadatum) = nothing
 
@@ -124,8 +100,8 @@ function Downloads.download(metadatum::ORCAMetadatum)
     return filepath
 end
 
-default_south_rows_to_remove(::ORCA1)  = 35
-default_south_rows_to_remove(::ORCA4)  = 155
-default_south_rows_to_remove(::ORCA12) = 0
+default_south_rows_to_remove(::ORCAOne)     = 35
+default_south_rows_to_remove(::ORCAQuarter) = 155
+default_south_rows_to_remove(::ORCATwelfth) = 0
 
 end # module
