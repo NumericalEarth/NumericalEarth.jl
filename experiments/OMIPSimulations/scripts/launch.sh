@@ -51,7 +51,7 @@ Environment variables (physics):
                  "kpp"    = K-Profile Parameterization (Large 1994 / MITgcm,
                             vendored in `KPP/`);
                  "nemo_tke" = NEMO 3.6 TKE scheme (Blanke & Delecluse 1993,
-                            Madec 2017), OMIP-2 ORCA1 preset: prognostic e,
+                            Madec 2017), OMIP-2 ORCAOne preset: prognostic e,
                             gradient-limited length scale, Langmuir +
                             Mellor-Blumberg wave penetration + EVD.
                             Vendored in `NEMOTKE/`;

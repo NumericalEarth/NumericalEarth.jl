@@ -19,7 +19,7 @@ struct StraitSection
 end
 
 # Per-configuration section indices. The half-degree indices are derived
-# from a 720x360 TripolarGrid; the ORCA indices from ORCAGrid(ORCA1()).
+# from a 720x360 TripolarGrid; the ORCA indices from ORCAGrid(ORCAOne()).
 # Bering, Drake and ITF are picked at the cells closest to standard
 # observational sections (Bering Strait ~66°N/169°W, Drake ~67°W/57°S,
 # ITF ~110°-130°E/8.5°S).
@@ -47,7 +47,7 @@ Drake Passage and the Indonesian Throughflow from the offline 3-D output
 `fields_file` (typically `<prefix>_fields.jld2`).
 
 Dispatches on `config`: `:halfdegree` for the 720x360 TripolarGrid,
-`:orca` for the ORCA1 mesh.
+`:orca` for the ORCAOne mesh.
 
 Returns `(; bering, drake, itf, time)` where each transport is a
 `Vector{Float64}` in Sverdrups.

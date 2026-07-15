@@ -1,5 +1,5 @@
 # NEMO 3.6 TKE vertical-mixing closure (zdftke + zdfevd) — Blanke & Delecluse 1993,
-# Gaspar et al. 1990, Madec et al. 2017. OMIP-2 ORCA1 preset; vendored as a submodule.
+# Gaspar et al. 1990, Madec et al. 2017. OMIP-2 ORCAOne preset; vendored as a submodule.
 
 module NEMOTKE
 

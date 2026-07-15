@@ -286,7 +286,7 @@ plumbing is needed because `NumericalEarth.EarthSystemModels` provides
    * `:kpp` — KPP boundary-layer scheme (Large 1994 / MITgcm), vendored
      in `KPP/`. Includes nonlocal tracer flux + SW-aware Bf. No `Cᵇ`.
    * `:nemo_tke` — NEMO 3.6 TKE scheme (Blanke & Delecluse 1993; Gaspar et al.
-     1990; Madec et al. 2017), vendored in `NEMOTKE/`. OMIP-2 ORCA1 preset:
+     1990; Madec et al. 2017), vendored in `NEMOTKE/`. OMIP-2 ORCAOne preset:
      prognostic e, gradient-limited length scale, Langmuir + Mellor-Blumberg
      wave penetration + EVD on static instability. No `Cᵇ`.
 - `implicit_vertical_advection::Bool`: if `true` (default), tracer and momentum vertical advection use
@@ -671,7 +671,7 @@ function build_grid(::Val{:orca}, arch, Nz, depth; Δz_top = nothing)
     z_faces = ExponentialDiscretization(Nz, -depth, 0; scale, mutable=true)
 
     return ORCAGrid(arch;
-                    dataset = ORCA1(),
+                    dataset = ORCAOne(),
                     Nz,
                     z = z_faces,
                     halo = (8, 8, 8),

@@ -940,7 +940,7 @@ end
 # Session-level cache of `ConservativeRegridding.Regridder` keyed by a
 # content fingerprint of the source grid. Two cases that share the same
 # physical grid (typical: many cases run against the same config, e.g.
-# ORCA1) build the regridder exactly once and then share it. The
+# ORCAOne) build the regridder exactly once and then share it. The
 # `Regridder` constructor takes minutes per case at 1/10° because it
 # allocates sparse weight matrices over O(N²) candidate cell pairs, so
 # this cache saves wall-clock proportional to the case count.

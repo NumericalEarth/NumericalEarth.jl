@@ -130,7 +130,7 @@ export
     ERA5HourlySingleLevel, ERA5MonthlySingleLevel,
     ERA5HourlyPressureLevels, ERA5MonthlyPressureLevels,
     OSPapaHourly,
-    ORCA1, ORCA12,
+    ORCAOne, ORCAQuarter, ORCATwelfth,
     ORCAGrid,
     first_date, last_date, all_dates,
     LinearlyTaperedPolarMask,

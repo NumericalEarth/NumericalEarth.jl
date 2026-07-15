@@ -24,7 +24,7 @@ using OMIPSimulations.NEMOTKE: surface_TKE,
 
 @testset "NEMOTKE" begin
 
-    @testset "Parameters: OMIP-2 ORCA1 defaults" begin
+    @testset "Parameters: OMIP-2 ORCAOne defaults" begin
         p = NEMOTKEParameters()
         # Physics coefficients
         @test p.Cᴷ    == 0.1

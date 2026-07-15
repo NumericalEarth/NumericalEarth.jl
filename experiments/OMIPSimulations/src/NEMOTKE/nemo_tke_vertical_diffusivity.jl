@@ -22,7 +22,7 @@ end
                                maximum_diffusivity = 1.0,
                                kwargs...)
 
-Construct a `NEMOTKEVerticalDiffusivity` with NEMO 3.6 ORCA1 OMIP-2 defaults.
+Construct a `NEMOTKEVerticalDiffusivity` with NEMO 3.6 ORCAOne OMIP-2 defaults.
 Pass extra keyword args (e.g., `Cᴸ = 0.2`) to override individual `NEMOTKEParameters`.
 If `parameters` is supplied, individual parameter kwargs are not allowed.
 """
