@@ -7,11 +7,7 @@ using Oceananigans.Operators: volume
 using Oceananigans.Units
 using NumericalEarth.Oceans: get_radiative_forcing
 
-# Heat and freshwater have very different noise floors, so they get separate tolerances. Heat
-# closes to ~1e-13 once a column absorbs exactly its surface flux. Freshwater only reaches ~1e-9:
-# S ≈ 35 is nearly uniform, so `S * volume - VS⁻` differences ~1e18 to recover a signal ~1e-6 of
-# it, and `eps` over that ratio is ~4e-10. A single `√eps` tolerance was loose enough to hide a
-# 10⁴ error in the radiative budget.
+# Heat and freshwater have different noise floors, so they get separate tolerances.
 function test_tracer_budget(coupled_model, Sᵒᶜ, Δt, nsteps; heat_rtol, freshwater_rtol)
     ocean = coupled_model.ocean
     grid  = ocean.model.grid
@@ -95,22 +91,13 @@ end
             radiation  = JRA55PrescribedRadiation(arch; time_indices_in_memory)
             atmosphere = JRA55PrescribedAtmosphere(arch; time_indices_in_memory)
 
-            # An idealized, stably stratified initial state: a warm, slightly fresh surface over
-            # a cold, saltier interior, with surface temperature falling from equator to pole. The
-            # budget closes on any initial state, so this needs no dataset. It does need to stay in
-            # a realistic regime: a uniform column convects, and a uniform surface leaves the fluxes
-            # no meridional gradient. The halocline keeps the column stable at high latitude, where
-            # T alone is nearly uniform.
+            # An idealized, stably stratified initial state
             Tᵢ(λ, φ, z) = 2 + 26 * cosd(φ)^2 * exp(z / 30)
             Sᵢ(λ, φ, z) = 35 - 1//2 * exp(z / 30)
 
             Δt = 605seconds
             Sᵒᶜ = 35 # reference salinity [psu]
             free_surface = SplitExplicitFreeSurface(substeps=20)
-
-            # `deepcopy` the grid per testset: the z-star vertical coordinate (σ, ∂t_σ) lives in
-            # the grid, so timestepping mutates it. A second model built on the same grid starts
-            # from an evolved σ but a zero η, and its budget misses by that inconsistency.
 
             # Without shortwave penetration
             @testset "Surface-only fluxes" begin
