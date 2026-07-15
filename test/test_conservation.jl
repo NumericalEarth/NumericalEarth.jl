@@ -1,8 +1,10 @@
 include("runtests_setup.jl")
 
 using Oceananigans.Units
+using Oceananigans.Architectures: architecture, on_architecture
 using Oceananigans.Fields: interior
 using Oceananigans.Grids: MutableVerticalDiscretization
+using Oceananigans.ImmersedBoundaries: MutableGridOfSomeKind
 using Oceananigans.Operators: Azᶜᶜᶜ, volume
 using Oceananigans.AbstractOperations: KernelFunctionOperation
 using Oceananigans.TimeSteppers: time_step!
@@ -30,41 +32,34 @@ using NumericalEarth.SeaIces: sea_ice_simulation
     return pt.reference_latent_heat
 end
 
-@testset "Coupled energy conservation" begin
+function test_coupled_energy_conservation(grid, atmosphere_grid; ocean_kwargs...)
 
-    arch = CPU()
-
-    grid = RectilinearGrid(arch;
-                           size     = 10,
-                           z        = (-100, 0),
-                           topology = (Flat, Flat, Bounded))
+    arch = architecture(grid)
 
     ocean = ocean_simulation(grid;
                              momentum_advection      = nothing,
-                             tracer_advection        = nothing,
                              closure                 = CATKEVerticalDiffusivity(),
                              coriolis                = nothing,
                              radiative_forcing       = nothing,
-                             bottom_drag_coefficient = 0)
+                             bottom_drag_coefficient = 0,
+                             ocean_kwargs...)
 
     Tᵢ = -1.5
     Sᵢ = 34.0
     set!(ocean.model, T = Tᵢ, S = Sᵢ)
 
     sea_ice = sea_ice_simulation(grid, ocean;
-                                 dynamics     = nothing,
-                                 advection    = nothing,
-                                 ice_salinity = 0)
+                                 dynamics  = nothing,
+                                 advection = nothing)
 
     set!(sea_ice.model, h = 1.0, ℵ = 1.0, hs = 0.10)
 
-    atmosphere_grid = RectilinearGrid(arch; size=(), topology=(Flat, Flat, Flat))
-    atmosphere      = PrescribedAtmosphere(atmosphere_grid, [0.0, 1e9])
-    radiation       = PrescribedRadiation(atmosphere_grid, [0.0, 1e9])
+    atmosphere = PrescribedAtmosphere(atmosphere_grid, [0.0, 1e9])
+    radiation  = PrescribedRadiation(atmosphere_grid, [0.0, 1e9])
 
     coupled_model = OceanSeaIceModel(ocean, sea_ice; atmosphere, radiation)
 
-    function set_forcing!(atmosphere, radiatipn;
+    function set_forcing!(atmosphere, radiation;
                           T_air, q_air, u_air, v_air, p_air,
                           SW_down, LW_down, rain_flux, snow_flux)
         for (fts, value) in ((atmosphere.temperature,       T_air),
@@ -73,11 +68,11 @@ end
                              (atmosphere.velocities.v, v_air),
                              (atmosphere.pressure,     p_air),
                              (atmosphere.precipitation_flux.rain, rain_flux),
-                             (atmosphere.precipitation_flux.snow, snow_flux))
+                             (atmosphere.precipitation_flux.snow, snow_flux),
+                             (radiation.downwelling_shortwave, SW_down),
+                             (radiation.downwelling_longwave,  LW_down))
             fill!(parent(fts), value)
         end
-        fill!(radiation.downwelling_shortwave, SW_down)
-        fill!(radiation.downwelling_longwave,  LW_down)
         return nothing
     end
 
@@ -87,32 +82,49 @@ end
     ρᵒᶜ = coupled_model.interfaces.ocean_properties.reference_density
     cᵒᶜ = coupled_model.interfaces.ocean_properties.heat_capacity
 
-    Az = Azᶜᶜᶜ(1, 1, 1, grid)
-    Vᶜ = sum(KernelFunctionOperation{Center, Center, Center}(volume, grid, Center(), Center(), Center()))
+    Nz   = size(grid, 3)
+    Az   = Azᶜᶜᶜ(1, 1, 1, grid)
+    Aᵗᵒᵗ = Az * size(grid, 1) * size(grid, 2)
+    Vᶜ   = sum(KernelFunctionOperation{Center, Center, Center}(volume, grid, Center(), Center(), Center()))
 
-    # Built once and re-used every step via `compute!`; the operations keep
-    # a reference to the live `T`/`S` fields so the reduction tracks them.
+    # Built once and re-used every step via `compute!`; the operations keep a reference to the live
+    # `T`/`S` fields, so the reductions track them and pick up the z-star volume as the grid moves.
     ∫T = Field(Integral(ocean.model.tracers.T))
+    ∫S = Field(Integral(ocean.model.tracers.S))
     mean_S = Field(Average(ocean.model.tracers.S))
 
+    # Area-integrate a surface field, or the product of two of them. The fluxes are horizontally
+    # uniform here, but summing keeps the diagnostics identical for a single column and for a
+    # horizontally resolved grid.
+    surface(field) = vec(Array(interior(field)))
+    ∫dA(field) = sum(surface(field)) * Az
+    ∫dA(a, b) = sum(a .* b) * Az
+
+    surface_salinity(ocean) = vec(Array(interior(ocean.model.tracers.S))[:, :, Nz])
+
     function column_state(coupled_model)
-        h  = first(interior(coupled_model.sea_ice.model.ice_thickness))
-        ℵ  = first(interior(coupled_model.sea_ice.model.ice_concentration))
-        hs = first(interior(coupled_model.sea_ice.model.snow_thickness))
+        h  = Array(interior(coupled_model.sea_ice.model.ice_thickness))
+        ℵ  = Array(interior(coupled_model.sea_ice.model.ice_concentration))
+        hs = Array(interior(coupled_model.sea_ice.model.snow_thickness))
 
-        Mᵢₛ = (ρᵢ * h + ρₛ * hs) * ℵ * Az
-        Eᵢₛ = - ℵ * (ρᵢ * ℒ₀ * h + ρₛ * ℒ₀ * hs) * Az
-        Hₒ  = ρᵒᶜ * cᵒᶜ * first(compute!(∫T))
-        Sₒ  = first(compute!(mean_S))
+        Mᵢₛ = sum(@. (ρᵢ * h + ρₛ * hs) * ℵ) * Az
+        Eᵢₛ = -sum(@. ℵ * (ρᵢ * ℒ₀ * h + ρₛ * ℒ₀ * hs)) * Az
+        Hₒ  = ρᵒᶜ * cᵒᶜ * first(Array(interior(compute!(∫T))))
+        Cₒ  = first(Array(interior(compute!(∫S))))
+        Sₒ  = first(Array(interior(compute!(mean_S))))
 
-        return (; h, ℵ, hs, Mᵢₛ, Eᵢₛ, Hₒ, Sₒ)
+        return (; h = first(h), ℵ = first(ℵ), hs = first(hs), Mᵢₛ, Eᵢₛ, Hₒ, Cₒ, Sₒ)
     end
 
     function net_top_heat_flux(coupled_model)
-        ΣQt  = first(interior(coupled_model.interfaces.net_fluxes.sea_ice.top.heat))
-        ΣQao = first(interior(atmosphere_ocean_heat_flux(coupled_model)))
-        return -(ΣQt + ΣQao) * Az
+        ΣQt  = ∫dA(coupled_model.interfaces.net_fluxes.sea_ice.top.heat)
+        ΣQao = ∫dA(Field(atmosphere_ocean_heat_flux(coupled_model)))
+        return -(ΣQt + ΣQao)
     end
+
+    # Enthalpy the atmospheric freshwater carries into the ocean, `ρᵒᶜ cᵒᶜ ∮ Jᴴ dA` with `Jᴴ = Σᵢ Tᵢ Jʷᵢ`.
+    # Only a mutable grid admits the freshwater volume, so only there does its enthalpy cross the boundary.
+    freshwater_enthalpy_rate(coupled_model) = ρᵒᶜ * cᵒᶜ * ∫dA(coupled_model.interfaces.net_fluxes.ocean.freshwater_heat_content)
 
     # Short phases so the test stays under a few seconds of wall time.
     Δt = 10minutes
@@ -145,35 +157,39 @@ end
                Mᵢₛ   = Float64[],
                Eᵢₛ   = Float64[],
                Hₒ    = Float64[],
+               Cₒ    = Float64[],
                Sₒ    = Float64[],
                Jˢ    = Float64[],
+               Sᴺ    = Vector{Float64}[],
+               Jʷᴬ   = Vector{Float64}[],
                Jʷ    = Float64[],
-               Sᴺ    = Float64[],
                ∂tM   = Float64[],
                Ṁ     = Float64[],
                Q     = Float64[],
+               Qᴴ    = Float64[],
                𝒬ᶠʳᶻ  = Float64[])
 
     # The intercepted snowfall the ocean loses (−Pₛᵃᵇˢ) and the ice gains (+Pₛᵃᵇˢ) cancel in the
     # combined ice+ocean budget, so Ṁ is the total atmospheric freshwater input to the coupled system.
     function freshwater_flux_state(coupled_model, rain_flux, snow_flux)
-        Nz  = size(grid, 3)
-        Jˢ  = first(interior(coupled_model.interfaces.net_fluxes.ocean.S))
-        Jʷ  = first(interior(coupled_model.interfaces.net_fluxes.ocean.η))
-        Sᴺ  = first(interior(coupled_model.ocean.model.tracers.S, 1, 1, Nz))
-        mass_fluxes = coupled_model.sea_ice.model.thermodynamic_mass_fluxes
-        ∂tM = first(interior(mass_fluxes.ice)) + first(interior(mass_fluxes.snow)) +
-              first(interior(mass_fluxes.intercepted_snowfall))
-        Jᵛ  = first(interior(coupled_model.interfaces.atmosphere_ocean_interface.fluxes.water_vapor))
-        ℵ   = first(interior(coupled_model.sea_ice.model.ice_concentration))
-        Ṁ   = (rain_flux + snow_flux - (1 - ℵ) * Jᵛ) * Az   # rain and snow reach the ocean in full
-        return (; Jˢ, Jʷ, Sᴺ, ∂tM, Ṁ)
+        Jʷfield = coupled_model.interfaces.net_fluxes.ocean.η
+        Jˢ  = ∫dA(coupled_model.interfaces.net_fluxes.ocean.S)
+        Jʷ  = ∫dA(Jʷfield)
+        Jʷᴬ = surface(Jʷfield)
+        Sᴺ  = surface_salinity(coupled_model.ocean)
+        mass_fluxes = coupled_model.sea_ice.model.mass_fluxes
+        ∂tM = ∫dA(mass_fluxes.thermodynamics.ice) + ∫dA(mass_fluxes.thermodynamics.snow) +
+              ∫dA(mass_fluxes.intercepted_snowfall)
+        Jᵛ  = surface(coupled_model.interfaces.atmosphere_ocean_interface.fluxes.water_vapor)
+        ℵ   = surface(coupled_model.sea_ice.model.ice_concentration)
+        Ṁ   = (rain_flux + snow_flux) * Aᵗᵒᵗ - ∫dA(1 .- ℵ, Jᵛ)   # rain and snow reach the ocean in full
+        return (; Jˢ, Sᴺ, Jʷᴬ, Jʷ, ∂tM, Ṁ)
     end
 
     function record!(history, coupled_model, phase_id, rain_flux, snow_flux, Q)
         st = column_state(coupled_model)
         fw = freshwater_flux_state(coupled_model, rain_flux, snow_flux)
-        𝒬f = first(interior(frazil_heat_flux(coupled_model)))
+        𝒬f = ∫dA(Field(frazil_heat_flux(coupled_model)))
         push!(history.t,     coupled_model.clock.time)
         push!(history.phase, phase_id)
         push!(history.h,     st.h)
@@ -182,13 +198,16 @@ end
         push!(history.Mᵢₛ,  st.Mᵢₛ)
         push!(history.Eᵢₛ,  st.Eᵢₛ)
         push!(history.Hₒ,   st.Hₒ)
+        push!(history.Cₒ,   st.Cₒ)
         push!(history.Sₒ,   st.Sₒ)
         push!(history.Jˢ,   fw.Jˢ)
-        push!(history.Jʷ,   fw.Jʷ)
         push!(history.Sᴺ,   fw.Sᴺ)
+        push!(history.Jʷᴬ,  fw.Jʷᴬ)
+        push!(history.Jʷ,   fw.Jʷ)
         push!(history.∂tM,  fw.∂tM)
         push!(history.Ṁ,     fw.Ṁ)
         push!(history.Q,     Q)
+        push!(history.Qᴴ,    freshwater_enthalpy_rate(coupled_model))
         push!(history.𝒬ᶠʳᶻ,  𝒬f)
         return nothing
     end
@@ -208,22 +227,24 @@ end
                      SW_down = spec.SW_down, LW_down = spec.LW_down,
                      rain_flux = spec.rain_flux, snow_flux = spec.snow_flux)
 
-        Qᵖ = - spec.snow_flux * ℒ₀ * Az                                      # snowfall enthalpy
+        Qᵖ = - spec.snow_flux * ℒ₀ * Aᵗᵒᵗ                                    # snowfall enthalpy
 
         𝒬ᶠʳᶻ = coupled_model.interfaces.sea_ice_ocean_interface.fluxes.frazil_heat
         ΣQb  = coupled_model.interfaces.net_fluxes.sea_ice.bottom.heat
-        𝒬⁻   = first(interior(𝒬ᶠʳᶻ))                                         # pending frazil
+        𝒬⁻   = Array(interior(𝒬ᶠʳᶻ))                                         # pending frazil
         update_state!(coupled_model)
-        𝒬ᶠʳᶻ[1, 1, 1] = 𝒬⁻
-        ΣQb[1, 1, 1] += 𝒬⁻
+        interior(𝒬ᶠʳᶻ) .= on_architecture(arch, 𝒬⁻)
+        interior(ΣQb)  .+= on_architecture(arch, 𝒬⁻)
 
         # The last record's fluxes apply to the upcoming interval, so recompute them under this
         # phase's forcing (the phase-boundary `update_state!` reassembled them).
         fw = freshwater_flux_state(coupled_model, spec.rain_flux, spec.snow_flux)
         history.Q[end]   = net_top_heat_flux(coupled_model) + Qᵖ
+        history.Qᴴ[end]  = freshwater_enthalpy_rate(coupled_model)
         history.Jˢ[end]  = fw.Jˢ
-        history.Jʷ[end]  = fw.Jʷ
         history.Sᴺ[end]  = fw.Sᴺ
+        history.Jʷᴬ[end] = fw.Jʷᴬ
+        history.Jʷ[end]  = fw.Jʷ
         history.∂tM[end] = fw.∂tM
         history.Ṁ[end]   = fw.Ṁ
 
@@ -239,20 +260,27 @@ end
 
     t = history.t
 
-    # --- Energy budget ---
-
-    ∫Q = similar(t)
-    ∫Q[1] = 0.0
-    for n in 2:length(t)
-        ∫Q[n] = ∫Q[n-1] + history.Q[n-1] * (t[n] - t[n-1])
-    end
+    # A rate recorded at step n drives the ocean over the interval (n, n+1], which is how the
+    # coupler applies the fluxes it assembled at the end of step n.
+    accumulate_rate(rate) = [n == 1 ? 0.0 : sum(rate[m] * (t[m+1] - t[m]) for m in 1:(n-1)) for n in 1:length(t)]
 
     Δt⁺ = similar(t)
     for n in 1:(length(t) - 1)
         Δt⁺[n] = t[n+1] - t[n]
     end
     Δt⁺[end] = Δt⁺[end-1]
-    δE = history.𝒬ᶠʳᶻ .* Δt⁺ .* Az
+
+    # --- Energy budget ---
+
+    # On a mutable grid the freshwater enters the ocean and carries its enthalpy `ρᵒᶜ cᵒᶜ Jᴴ` with it, so
+    # that enthalpy is an energy input alongside the surface heat flux. A static grid admits no freshwater
+    # volume, so nothing is carried and the surface heat flux is the only input.
+    ∫Q = accumulate_rate(history.Q)
+    if grid isa MutableGridOfSomeKind
+        ∫Q .+= accumulate_rate(history.Qᴴ)
+    end
+
+    δE = history.𝒬ᶠʳᶻ .* Δt⁺
 
     Ẽᵢₛ = history.Eᵢₛ .+ δE
     ΔE = (Ẽᵢₛ .+ history.Hₒ) .- (Ẽᵢₛ[1] + history.Hₒ[1])
@@ -265,33 +293,35 @@ end
     #
     # The ocean freshwater mass is ρᵒᶜ ∫Jʷ, where Jʷ = η is the assembled freshwater volume flux
     # (rain + snow + runoff − evaporation + sea-ice melt) — one explicit stream, no salinity weighting.
-    # Fluxes recorded at step n are applied to the ocean during step n+1, so the final step's
-    # ice-ocean exchange is still pending at the end of the run and is subtracted via ∂tM.
+    # The ice mass is a state that already moved during the final step, while the freshwater it
+    # released is assembled at the end of that step and reaches the ocean only on the next one, so
+    # the last step's exchange is still pending and is subtracted via ∂tM.
 
-    ∫Ṁ = similar(t)
-    ∫Ṁ[1] = 0.0
-    for n in 2:length(t)
-        ∫Ṁ[n] = ∫Ṁ[n-1] + history.Ṁ[n-1] * (t[n] - t[n-1])
-    end
+    ∫Ṁ = accumulate_rate(history.Ṁ)
+    Mᶠʷ = ρᵒᶜ .* accumulate_rate(history.Jʷ)
 
-    Mᶠʷ = similar(t)
-    Mᶠʷ[1] = 0.0
-    for n in 2:length(t)
-        Mᶠʷ[n] = Mᶠʷ[n-1] + ρᵒᶜ * Az * history.Jʷ[n-1] * (t[n] - t[n-1])
-    end
-
-    pending = history.∂tM[end] * Az * Δt⁺[end]
+    pending = history.∂tM[end] * Δt⁺[end]
     ΔM = (history.Mᵢₛ .+ Mᶠʷ) .- history.Mᵢₛ[1]
     Rₘ = ΔM .- ∫Ṁ
     εₘ = abs(Rₘ[end] - pending) / max(maximum(abs.(ΔM)), 1)
     @test εₘ < 1e-10
 
-    # The ocean integrator applies the assembled salt flux exactly: the sea-ice salt Jˢ plus the live
-    # virtual salt flux Sᴺ Jʷ, evaluated at each step's surface salinity (the same Sᴺ recorded here).
-    ∫Jˢ = sum((history.Jˢ[1:end-1] .+ history.Sᴺ[1:end-1] .* history.Jʷ[1:end-1]) .* Δt⁺[1:end-1])
-    S̄₁ = first(compute!(mean_S))
+    # --- Salt budget ---
+    #
+    # On a mutable grid the volume the freshwater adds carries Sᴺ Jʷ back in, cancelling the virtual
+    # salt flux at every Runge-Kutta stage, so the salt content follows the sea-ice salt alone. A
+    # static grid admits no volume and the virtual flux stands: the surface salinity it sees sweeps
+    # from Sᴺ[n] to Sᴺ[n+1] across the step while the assembled Jʷ stays frozen, so the trapezoid in
+    # Sᴺ is the quadrature that recovers the flux the Runge-Kutta stages actually applied.
+    ∫Jˢ = accumulate_rate(history.Jˢ)[end]
+    if !(grid isa MutableGridOfSomeKind)
+        ∫Jˢ += sum(∫dA(0.5 .* (history.Sᴺ[n] .+ history.Sᴺ[n+1]), history.Jʷᴬ[n]) * Δt⁺[n]
+                   for n in 1:(length(t) - 1))
+    end
+
+    ΔC = history.Cₒ[end] - history.Cₒ[1]
     Sᵣ = history.Sₒ[1]
-    @test abs((S̄₁ - Sᵣ) * Vᶜ + ∫Jˢ * Az) / (Sᵣ * Vᶜ) < 1e-12
+    @test abs(ΔC + ∫Jˢ) / (Sᵣ * Vᶜ) < 1e-12
 
     # --- Sanity checks on the physics ---
 
@@ -300,6 +330,49 @@ end
     @test history.h[nᶠ] > history.h[1]   # ice grew during freeze
     @test history.h[end] < history.h[nᶠ] # ice shrank during melt
     @test history.ℵ[nᶠ] ≈ 1.0            # stays fully ice-covered through freeze
+
+    return nothing
+end
+
+@testset "Coupled energy conservation" begin
+    # Four levels is the floor: the default tracer advection needs a halo of 4, which cannot exceed
+    # the number of cells it spans.
+    Nz = 4
+
+    for arch in test_architectures
+        A = typeof(arch)
+
+        # A static ocean cannot change volume, so the freshwater flux never forces `η` and the
+        # temperature exchange in the tracer top BC stays inert.
+        @testset "Static grid [$A]" begin
+            @info "Testing coupled energy conservation on a static grid [$A]..."
+            grid = RectilinearGrid(arch; size=Nz, z=(-100, 0), topology=(Flat, Flat, Bounded))
+            atmosphere_grid = RectilinearGrid(arch; size=(), topology=(Flat, Flat, Flat))
+            test_coupled_energy_conservation(grid, atmosphere_grid; tracer_advection=nothing)
+        end
+
+        # A mutable ocean grows with the freshwater it takes in. This needs a free surface for `η` to
+        # respond to `Jʷ`, and tracer advection, which carries the z-star grid-motion term that the
+        # live `Tᴺ Jʷ` exchange in the tracer top BCs cancels.
+        @testset "Mutable grid [$A]" begin
+            @info "Testing coupled energy conservation on a mutable ZStar grid [$A]..."
+            Lx = Ly = 1e5
+            grid = RectilinearGrid(arch;
+                                   size     = (4, 4, Nz),
+                                   halo     = (4, 4, 4),
+                                   x        = (0, Lx), y = (0, Ly),
+                                   z        = MutableVerticalDiscretization((-100, 0)),
+                                   topology = (Periodic, Periodic, Bounded))
+
+            atmosphere_grid = RectilinearGrid(arch;
+                                              size     = (4, 4, 1),
+                                              x        = (0, Lx), y = (0, Ly), z = (-1, 0),
+                                              topology = (Periodic, Periodic, Bounded))
+
+            test_coupled_energy_conservation(grid, atmosphere_grid;
+                                             free_surface = SplitExplicitFreeSurface(substeps=30))
+        end
+    end
 end
 
 @testset "Rain increases the ocean volume and dilutes salinity" begin
@@ -310,7 +383,7 @@ end
         Lx = Ly = 1e5
         grid = RectilinearGrid(arch;
                                size = (4, 4, 4),
-                               halo = (4, 4, 4), 
+                               halo = (4, 4, 4),
                                x = (0, Lx), y = (0, Ly),
                                z = MutableVerticalDiscretization((-10, 0)),
                                topology = (Periodic, Periodic, Bounded))

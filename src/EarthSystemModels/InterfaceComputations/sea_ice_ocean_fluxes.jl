@@ -57,7 +57,7 @@ function compute_sea_ice_ocean_fluxes!(interface, ocean, sea_ice, ocean_properti
     Sˢⁱ = interface.salinity
 
     # Mass the ice/snow exchanged with the ocean during the previous sea-ice step
-    mass_fluxes = sea_ice.model.thermodynamic_mass_fluxes
+    mass_fluxes = sea_ice.model.mass_fluxes.thermodynamics
 
     if !isnothing(dynamics)
         kernel_parameters = interface_kernel_parameters(grid)

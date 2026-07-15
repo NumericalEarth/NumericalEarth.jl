@@ -79,8 +79,17 @@ Adapt.adapt_structure(to, f::FreshwaterExchange{name}) where name =
 @inline surface_tracer_value(fields, ::Val{:T}, i, j, k) = @inbounds fields.T[i, j, k]
 
 @inline (f::FreshwaterExchange{name})(i, j, grid, clock, fields) where name =
-    @inbounds surface_tracer_value(fields, Val(name), i, j, grid.Nz) * f.carrying_flux[i, j, 1] - f.content_flux[i, j, 1] +
-    getbc(f.additional, i, j, grid, clock, fields)
+    freshwater_exchange_flux(f, Val(name), i, j, grid, fields) + getbc(f.additional, i, j, grid, clock, fields)
+
+@inline carried_tracer_flux(f::FreshwaterExchange, ::Val{name}, i, j, grid, fields) where name =
+    @inbounds surface_tracer_value(fields, Val(name), i, j, grid.Nz) * f.carrying_flux[i, j, 1] - f.content_flux[i, j, 1]
+
+# The temperature carried flux is required only for mutable grids to cancel the volume movement. 
+# On the other hand, it is required always for salinity
+@inline freshwater_exchange_flux(f::FreshwaterExchange, name::Val{:S}, i, j, grid, fields) = carried_tracer_flux(f, name, i, j, grid, fields)
+@inline freshwater_exchange_flux(f::FreshwaterExchange, name::Val{:T}, i, j, grid, fields) = zero(grid)
+@inline freshwater_exchange_flux(f::FreshwaterExchange, name::Val{:T}, i, j, grid::MutableGridOfSomeKind, fields) = carried_tracer_flux(f, name, i, j, grid, fields)
+
 
 build_tracer_top_bc(Jᶜ, Jʷ, content, additional, name) = FluxBoundaryCondition(MultipleFluxes(Jᶜ, FreshwaterExchange{name}(Jʷ, content, additional)); discrete_form=true)
 
@@ -425,21 +434,15 @@ function hydrostatic_ocean_simulation(grid;
     top_freshwater_volume_flux = Jʷ = Field{Center, Center, Nothing}(η_grid)
 
     if grid isa MutableGridOfSomeKind
-        if :η ∈ keys(forcing)
-            forcing = merge(forcing, (η = (Jʷ, forcing.η),))
-        else
-            forcing = merge(forcing, (η = Jʷ,))
-        end
+        Fη = :η ∈ keys(forcing) ? (Jʷ, forcing.η) : Jʷ
+        forcing = merge(forcing, (; η = Fη))
     end
 
     # Merge user-supplied additional fluxes with defaults
     default_additional_fluxes = (u=nothing, v=nothing, T=nothing, S=nothing)
     additional = merge(default_additional_fluxes, additional_surface_fluxes)
 
-    # Freshwater tracer exchange content `Σᵢ cᵢ Jʷᵢ` (the carrying flux is the shared `Jʷ`, so the
-    # live `cᴺ Jʷ` cancels the z-star ambient carry and leaves the freshwater's own content). Pure
-    # freshwater carries no salt; the assembler fills the heat content with the enthalpy of the
-    # atmosphere freshwater entering at the surface temperature (rain − evaporation at SST).
+    # Freshwater heat content is `Σᵢ Tᵢ Jʷᵢ`, the Freshwater salinity content is assumed to be 0 for the moment (no salinity for incoming freshwater)
     freshwater_heat_content = Field{Center, Center, Nothing}(grid)
     freshwater_salt_content = ZeroField()
 

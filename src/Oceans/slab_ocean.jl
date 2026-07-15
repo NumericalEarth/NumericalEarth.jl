@@ -121,7 +121,8 @@ function EarthSystemModels.InterfaceComputations.net_fluxes(ocean::SlabOcean)
     τx = CenterField(grid)
     τy = CenterField(grid)
     Jʷ = CenterField(grid)
-    return (T=ocean.temperature_flux, S=Jˢ, u=τx, v=τy, η=Jʷ)
+    Jᴴ = CenterField(grid)
+    return (T=ocean.temperature_flux, S=Jˢ, u=τx, v=τy, η=Jʷ, freshwater_heat_content=Jᴴ)
 end
 
 # No interpolation needed: the slab ocean IS on the exchange grid
