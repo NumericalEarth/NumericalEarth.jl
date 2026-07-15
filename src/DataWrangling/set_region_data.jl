@@ -43,9 +43,14 @@ struct AverageNorthSouth end
 
 # `mangle(i, j, k, data, mangling)` reads file `data` at metadata-grid index `(i, j, k)`, accounting
 # for staggered lat-axis offsets. Used inside the region-aware kernel.
-@inline mangle(i, j, k, data, ::Nothing) = @inbounds data[i, j, k]
-@inline mangle(i, j, k, data, ::ShiftSouth) = @inbounds data[i, max(j - 1, 1), k]
-@inline mangle(i, j, k, data, ::AverageNorthSouth) = @inbounds (data[i, j, k] + data[i, j + 1, k]) / 2
+#
+# Clamp indices to avoid out-of-bounds access
+@inline clamp_i(i, data) = clamp(i, 1, size(data, 1))
+@inline clamp_j(j, data) = clamp(j, 1, size(data, 2))
+@inline mangle(i, j, k, data, ::Nothing) = @inbounds data[clamp_i(i, data), clamp_j(j, data), k]
+@inline mangle(i, j, k, data, ::ShiftSouth) = @inbounds data[clamp_i(i, data), clamp_j(j - 1, data), k]
+@inline mangle(i, j, k, data, ::AverageNorthSouth) =
+    @inbounds (data[clamp_i(i, data), clamp_j(j, data), k] + data[clamp_i(i, data), clamp_j(j + 1, data), k]) / 2
 
 #####
 ##### Region-aware filling for Fields and FieldTimeSeries via a single kernel.
@@ -199,6 +204,14 @@ blend(scheme, data, c, k, mangling, FT) = blend(scheme, data, c, k, mangling, mi
     @inbounds dst[i, j, k] = d
 end
 
+# TODO: upstream to Oceananigans.Architectures alongside its SubArray/OffsetArray methods.
+# `on_architecture` has no `Base.ReshapedArray` method, so host data arriving reshaped — e.g. a
+# 2-D NetCDF variable reshaped to (Nx, Ny, 1) — falls through the generic identity fallback and
+# reaches GPU kernels as CPU memory (kernel compilation failure).
+architecture_ready(arch, data) = on_architecture(arch, data)
+architecture_ready(arch, data::Base.ReshapedArray) =
+    reshape(on_architecture(arch, parent(data)), size(data))
+
 """
     set_region_data!(target, data, λc, φc, metadata)
 
@@ -213,7 +226,7 @@ function set_region_data!(target::Field, data, λc, φc, metadata;
     FT          = eltype(target)
     grid        = target.grid
     arch        = architecture(grid)
-    data        = on_architecture(arch, data)
+    data        = architecture_ready(arch, data)
     missing_val = missing_value(metadata)
     launch!(arch, grid, :xyz, _set_region_kernel!, interior(target), data, region, mangling, conversion, missing_val, FT)
     return nothing
@@ -228,7 +241,7 @@ function set_region_data!(target::FieldTimeSeries, data, λc, φc, metadata;
     grid        = target.grid
     arch        = architecture(grid)
     FT          = eltype(target)
-    data        = on_architecture(arch, data)
+    data        = architecture_ready(arch, data)
     missing_val = missing_value(metadata)
     for (data_time, slot_time) in zip(axes(data, 4), slot_indices)
         dest = view(interior(target), :, :, :, slot_time)

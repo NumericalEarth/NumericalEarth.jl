@@ -77,3 +77,9 @@ experiments/omips/orca_omip/*
 # claude
 .claude
 test/Manifest.toml
+
+# Throwaway scratch scripts
+scratch/
+
+# Long-run dev environment (documented in ERA5_BREEZE_LONG_RUN_PLAN.md)
+scratch_runenv/

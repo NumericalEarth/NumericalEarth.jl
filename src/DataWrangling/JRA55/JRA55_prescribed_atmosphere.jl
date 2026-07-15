@@ -1,5 +1,9 @@
 using ...Atmospheres: PrescribedAtmosphere, PrescribedPrecipitationFlux
 
+# `JRA55PrescribedAtmosphere` is a type alias for a `PrescribedAtmosphere` whose `source` is any JRA55
+# dataset; the constructor methods below build one (the alias is both the dispatch type and the builder).
+const JRA55PrescribedAtmosphere = PrescribedAtmosphere{<:JRA55Dataset}
+
 JRA55PrescribedAtmosphere(arch::Distributed; kw...) =
     JRA55PrescribedAtmosphere(child_architecture(arch); kw...)
 
@@ -41,44 +45,28 @@ function JRA55PrescribedAtmosphere(architecture = CPU();
     kw = (; time_indexing, time_indices_in_memory, prefetch)
     kw = merge(kw, other_kw)
 
-    ua_meta  = Metadata(:eastward_velocity;    dataset, start_date, end_date, dir, region)
-    va_meta  = Metadata(:northward_velocity;   dataset, start_date, end_date, dir, region)
-    Ta_meta  = Metadata(:temperature;          dataset, start_date, end_date, dir, region)
-    qa_meta  = Metadata(:specific_humidity;    dataset, start_date, end_date, dir, region)
-    pa_meta  = Metadata(:sea_level_pressure;   dataset, start_date, end_date, dir, region)
-    Fra_meta = Metadata(:rain_freshwater_flux; dataset, start_date, end_date, dir, region)
-    Fsn_meta = Metadata(:snow_freshwater_flux; dataset, start_date, end_date, dir, region)
+    jra55_fts(name) = FieldTimeSeries(Metadata(name; dataset, start_date, end_date, dir, region), architecture; kw...)
 
-    ua  = FieldTimeSeries(ua_meta,  architecture; kw...)
-    va  = FieldTimeSeries(va_meta,  architecture; kw...)
-    Ta  = FieldTimeSeries(Ta_meta,  architecture; kw...)
-    qa  = FieldTimeSeries(qa_meta,  architecture; kw...)
-    pa  = FieldTimeSeries(pa_meta,  architecture; kw...)
-    Fra = FieldTimeSeries(Fra_meta, architecture; kw...)
-    Fsn = FieldTimeSeries(Fsn_meta, architecture; kw...)
+    u    = jra55_fts(:eastward_velocity)
+    v    = jra55_fts(:northward_velocity)
+    T    = jra55_fts(:temperature)
+    qᵛ   = jra55_fts(:specific_humidity)
+    p    = jra55_fts(:sea_level_pressure)
+    rain = jra55_fts(:rain_freshwater_flux)
+    snow = jra55_fts(:snow_freshwater_flux)
 
-    freshwater_flux = PrescribedPrecipitationFlux(rain = Fra, snow = Fsn)
+    precipitation_flux = PrescribedPrecipitationFlux(; rain, snow)
 
-    times = ua.times
-    grid  = ua.grid
+    grid  = u.grid
+    times = u.times
+    FT    = eltype(u)
 
-    velocities = (u = ua,
-                  v = va)
-
-    tracers = (T = Ta,
-               q = qa)
-
-    pressure = pa
-
-    FT = eltype(ua)
-    surface_layer_height = convert(FT, surface_layer_height)
-
-    atmosphere = PrescribedAtmosphere(grid, times;
-                                      velocities,
-                                      freshwater_flux,
-                                      tracers,
-                                      surface_layer_height,
-                                      pressure)
-
-    return atmosphere
+    return PrescribedAtmosphere(grid, times;
+                                source = dataset,
+                                velocities = (; u, v),
+                                temperature = T,
+                                specific_humidity = qᵛ,
+                                pressure = p,
+                                precipitation_flux,
+                                surface_layer_height = convert(FT, surface_layer_height))
 end

@@ -43,7 +43,7 @@ function update_net_ocean_fluxes!(coupled_model, ocean_model, grid)
     freshwater_flux = land_freshwater_flux(land_exchanger)
 
     ice_concentration = sea_ice_concentration(sea_ice)
-    ocean_surface_salinity = EarthSystemModels.ocean_surface_salinity(ocean_model)
+    ocean_surface_temperature = EarthSystemModels.ocean_surface_temperature(ocean_model)
     ocean_properties = coupled_model.interfaces.ocean_properties
 
     launch!(arch, grid, :xy,
@@ -53,12 +53,17 @@ function update_net_ocean_fluxes!(coupled_model, ocean_model, grid)
             clock,
             atmos_ocean_fluxes,
             sea_ice_ocean_fluxes,
-            ocean_surface_salinity,
+            ocean_surface_temperature,
             ice_concentration,
             rainfall,
             snowfall,
             freshwater_flux,
             ocean_properties)
+
+    if grid isa MutableGridOfSomeKind
+        fill_halo_regions!(net_ocean_fluxes.η)
+    end
+
     return nothing
 end
 
@@ -69,7 +74,7 @@ Base.@propagate_inbounds get_land_freshwater_flux(i, j, flux) = flux[i, j, 1]
                                              clock,
                                              atmos_ocean_fluxes,
                                              sea_ice_ocean_fluxes,
-                                             ocean_surface_salinity,
+                                             ocean_surface_temperature,
                                              sea_ice_concentration,
                                              rainfall_flux,
                                              snowfall_flux,
@@ -85,7 +90,7 @@ Base.@propagate_inbounds get_land_freshwater_flux(i, j, flux) = flux[i, j, 1]
 
     @inbounds begin
         ℵᵢ = sea_ice_concentration[i, j, 1]
-        Sᵒᶜ = ocean_surface_salinity[i, j, 1]
+        Tᵒᶜ = ocean_surface_temperature[i, j, 1]
 
         Jʳⁿ = rainfall_flux[i, j, 1]
         Jˢⁿ = snowfall_flux[i, j, 1]
@@ -104,12 +109,15 @@ Base.@propagate_inbounds get_land_freshwater_flux(i, j, flux) = flux[i, j, 1]
     # - evaporation acts only over the open-water fraction (1 - ℵᵢ)
     # The atmospheric mass-flux convention is positive down; Jᵛ is positive up.
     ρᵒᶜ⁻¹ = 1 / ocean_properties.reference_density
-    ΣFao = - (Jʳⁿ + Jˡⁿ + (1 - ℵᵢ) * Jˢⁿ) * ρᵒᶜ⁻¹ + (1 - ℵᵢ) * Jᵛ * ρᵒᶜ⁻¹
+    ΣFao  = - (Jʳⁿ + Jˡⁿ + (1 - ℵᵢ) * Jˢⁿ) * ρᵒᶜ⁻¹ + (1 - ℵᵢ) * Jᵛ * ρᵒᶜ⁻¹
+    Jʷao  = - ΣFao # Freshwater flux (positive increases the volume)
 
     τˣ = net_ocean_fluxes.u
     τʸ = net_ocean_fluxes.v
     Jᵀ = net_ocean_fluxes.T
     Jˢ = net_ocean_fluxes.S
+    Jʷ = net_ocean_fluxes.η
+    Jᴴ = net_ocean_fluxes.freshwater_heat_content # Σᵢ Tᵢ Jʷᵢ — atmosphere freshwater enters at SST
     ℵ  = sea_ice_concentration
     cᵒᶜ⁻¹ = 1 / ocean_properties.heat_capacity
     inactive = inactive_node(i, j, kᴺ, grid, Center(), Center(), Center())
@@ -117,11 +125,9 @@ Base.@propagate_inbounds get_land_freshwater_flux(i, j, flux) = flux[i, j, 1]
     @inbounds begin
         𝒬ⁱⁿ = sea_ice_ocean_fluxes.interface_heat[i, j, 1]
         Jˢio = sea_ice_ocean_fluxes.salt[i, j, 1]
+        Jʷio = sea_ice_ocean_fluxes.freshwater[i, j, 1]
         Jᵀao = ΣQao * ρᵒᶜ⁻¹ * cᵒᶜ⁻¹
-        Jᵀio = 𝒬ⁱⁿ * ρᵒᶜ⁻¹ * cᵒᶜ⁻¹
-
-        # salinity flux > 0 extracts salinity (opposite of water vapor flux sign)
-        Jˢao = - Sᵒᶜ * ΣFao
+        Jᵀio =  𝒬ⁱⁿ * ρᵒᶜ⁻¹ * cᵒᶜ⁻¹
 
         τˣᵃᵒ = ℑxᶠᵃᵃ(i, j, 1, grid, τᶜᶜᶜ, ρᵒᶜ⁻¹, ℵ, ρτˣᵃᵒ)
         τʸᵃᵒ = ℑyᵃᶠᵃ(i, j, 1, grid, τᶜᶜᶜ, ρᵒᶜ⁻¹, ℵ, ρτʸᵃᵒ)
@@ -131,15 +137,13 @@ Base.@propagate_inbounds get_land_freshwater_flux(i, j, flux) = flux[i, j, 1]
         τˣ[i, j, 1] = ifelse(inactive, zero(grid), τˣᵃᵒ + τˣⁱᵒ)
         τʸ[i, j, 1] = ifelse(inactive, zero(grid), τʸᵃᵒ + τʸⁱᵒ)
 
-        # Tracer fluxes — radiative contributions added later by apply_air_sea_radiative_fluxes!
-        Jᵀ[i, j, 1] = ifelse(inactive, zero(grid), Jᵀao + Jᵀio)
-
-        # Suppress freshening when surface salinity is at/below `minimum_salinity`.
-        Jˢo  = Jˢao + Jˢio
-        Smin = ocean_properties.minimum_salinity
-        clip = (Sᵒᶜ < Smin) & (Jˢo > zero(Jˢo))
-        Jˢo  = ifelse(clip, zero(Jˢo), Jˢo)
-
-        Jˢ[i, j, 1] = ifelse(inactive, zero(grid), Jˢo)
+        # Tracer fluxes — radiative contributions added later by apply_air_sea_radiative_fluxes!.
+        # The atmosphere-ocean virtual salt flux (Sᴺ Jʷ) and the surface-value heat exchange
+        # (Tᴺ Jʷ) are applied live in the salinity/temperature top BCs, so Jˢ holds only the
+        # sea-ice contribution and Jᴴ the freshwater enthalpy (rain − evaporation at SST).
+        Jᵀ[i, j, 1]  = ifelse(inactive, zero(grid), Jᵀao + Jᵀio)
+        Jˢ[i, j, 1]  = ifelse(inactive, zero(grid), Jˢio)
+        Jʷ[i, j, 1]  = ifelse(inactive, zero(grid), Jʷao + Jʷio)
+        Jᴴ[i, j, 1] = ifelse(inactive, zero(grid), Tᵒᶜ * Jʷao)
     end
 end

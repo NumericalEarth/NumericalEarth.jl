@@ -65,18 +65,6 @@ Environment variables (physics):
                 Must satisfy 0 < DZ_TOP < depth/Nz. Default: unset (scale=1300).
 
 Equatorial-MLD tuning knobs (closure parameters; configuration switches):
-  SHEAR_GUST    Use the shear-aware Mahrt–Sun (1995) / Edson (2013) gustiness
-                form (Uᴳ² = (β·w★)² + (c·|Δu|)² + Uᴳ₀², c=0.04 by default).
-                Activates the :shear_aware flux configuration. Implies the
-                :corrected fluxes (constant Charnock disabled, etc.).
-                Useful when the equatorial mixed layer is too shallow because
-                of weak convective gustiness — adds shear-driven gust at all
-                wind speeds.
-  MIN_SALINITY  Floor (psu) below which the freshening (salt-extracting)
-                component of the air-sea freshwater flux is suppressed.
-                Salt-concentrating fluxes (E > P + R) are always applied.
-                Prevents NaN blow-ups in pathologically thin top cells
-                under strong precip + runoff plumes. Default: 1.
   NORMALIZE_SALINITY Set to "true" to normalize the salinity flux to the
                 surface salinity. Default: false.
   CATKE_CWUSTAR `Cᵂu★` of CATKEEquation: surface shear-driven TKE flux
@@ -116,7 +104,6 @@ Examples:
   BIHARMONIC=nothing ./launch.sh orca         # disable biharmonic viscosity
   BIHVISC=1e12 ./launch.sh orca               # constant biharmonic viscosity ν=1e12 m^4/s
   DZ_TOP=2 ./launch.sh orca                   # 2 m top cell (scale chosen by bisection)
-  SHEAR_GUST=true ./launch.sh orca            # Mahrt-Sun shear-aware gustiness
   CATKE_CWUSTAR=5.0 ./launch.sh orca          # stronger surface TKE injection in CATKE
   FORCING_DIR=/other/path/forcing_data STAGING_DIR=/scratch/staged ./launch.sh orca
   PROFILE=true ./launch.sh orca
@@ -236,9 +223,7 @@ RUN_NAME="$CONFIG"
 [[ "$BIHARMONIC" != "$DEFAULT_BIHARMONIC" ]]   && RUN_NAME="${RUN_NAME}_bih${BIHARMONIC}"
 [[ -n "${BIHVISC:-}" ]]                        && RUN_NAME="${RUN_NAME}_bihvisc${BIHVISC}"
 [[ "$DZ_TOP" != "$DEFAULT_DZ_TOP" ]]           && RUN_NAME="${RUN_NAME}_dz${DZ_TOP}"
-[[ "${SHEAR_GUST:-false}" == "true" ]]         && RUN_NAME="${RUN_NAME}_sgust"
 [[ -n "${CATKE_CWUSTAR:-}" ]]                  && RUN_NAME="${RUN_NAME}_cwu${CATKE_CWUSTAR}"
-[[ -n "${MIN_SALINITY:-}" ]]                   && RUN_NAME="${RUN_NAME}_smin${MIN_SALINITY}"
 
 REPORT_NAME="${REPORT_NAME:-${RUN_NAME}_report}"
 JOB_NAME="${JOB_NAME:-$RUN_NAME}"
@@ -329,9 +314,7 @@ STAGING_DIR="${STAGING_DIR:-./staged_data}"
 CB="${CB:-}"
 BIHVISC="${BIHVISC:-}"
 DZ_TOP="${DZ_TOP:-}"
-SHEAR_GUST="${SHEAR_GUST:-false}"
 CATKE_CWUSTAR="${CATKE_CWUSTAR:-}"
-MIN_SALINITY="${MIN_SALINITY:-}"
 BACKEND_SIZE="${BACKEND_SIZE:-}"
 NCAR="${NCAR:-false}"
 CORRECTED="${CORRECTED:-false}"
@@ -360,9 +343,6 @@ DZ_TOP_KWARG=""
 CATKE_CWUSTAR_KWARG=""
 [[ -n "$CATKE_CWUSTAR" ]] && CATKE_CWUSTAR_KWARG="Cᵂu★ = ${CATKE_CWUSTAR},"
 
-MIN_SALINITY_KWARG=""
-[[ -n "$MIN_SALINITY" ]] && MIN_SALINITY_KWARG="ocean_minimum_salinity = ${MIN_SALINITY},"
-
 NORMALIZE_SALINITY_KWARG=""
 [[ "$NORMALIZE_SALINITY" == "true" ]] && NORMALIZE_SALINITY_KWARG="normalize_salinity = true,"
 
@@ -372,7 +352,6 @@ BACKEND_KWARG=""
 FLUX_KWARG=""
 [[ "$NCAR" == "true" ]]        && FLUX_KWARG="flux_configuration = :ncar,"
 [[ "$CORRECTED" == "true" ]]   && FLUX_KWARG="flux_configuration = :corrected,"
-[[ "$SHEAR_GUST" == "true" ]]  && FLUX_KWARG="flux_configuration = :shear_aware,"
 
 CLOSURE_KWARG=""
 [[ "${CLOSURE:-catke}" == "simple"   ]] && CLOSURE_KWARG="vertical_closure = :simple,"
@@ -421,7 +400,6 @@ sim = omip_simulation(:${CONFIG};
                       ${ICE_DYNAMICS_KWARG}
                       ${DIAGNOSTICS_KWARG}
                       ${CATKE_CWUSTAR_KWARG}
-                      ${MIN_SALINITY_KWARG}
                       ${NORMALIZE_SALINITY_KWARG}
                       Δt = ${DT},
                       forcing_dir = \"${FORCING_DIR}\",

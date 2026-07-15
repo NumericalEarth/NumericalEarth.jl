@@ -19,7 +19,7 @@ using Oceananigans.Fields: Field, interior, interpolate!
 using Oceananigans.Grids: x_domain, y_domain, topology, Face, Center,
                           Flat, Periodic, Bounded,
                           RectilinearGrid, LatitudeLongitudeGrid, OrthogonalSphericalShellGrid
-using Oceananigans.Utils: launch!
+using Oceananigans.Utils: launch!, worksize
 using OffsetArrays: OffsetArrays, OffsetArray
 using NCDatasets: NCDatasets, Dataset
 using Printf: Printf
