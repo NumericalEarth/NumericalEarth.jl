@@ -32,8 +32,40 @@ function atmosphere_land_interface(grid, atmosphere, land;
                                    specific_humidity   = default_al_specific_humidity(land))
     al_fluxes = AtmosphereSurfaceFluxes(grid)
     al_properties = InterfaceProperties(specific_humidity, temperature, velocity_difference)
-    interface_temperature = Field{Center, Center, Nothing}(grid)
+    interface_temperature = build_interface_temperature(temperature, grid)
     return AtmosphereInterface(al_fluxes, fluxes, interface_temperature, al_properties)
+end
+
+# The atmosphere-facing interface temperature. A single field for the ordinary
+# closures; a `CanopyAirSpace` additionally needs the two diagnostic skins and the
+# skin→slab ground heat flux, so it carries a NamedTuple of fields — the presence of
+# that NamedTuple is the signal downstream (`slab_land.jl`, `apply_air_land_radiative_fluxes.jl`)
+# that the radiation is internalized and the slab is driven by conduction.
+@inline build_interface_temperature(temperature_formulation, grid) = Field{Center, Center, Nothing}(grid)
+@inline build_interface_temperature(::CanopyAirSpace, grid) =
+    (interface        = Field{Center, Center, Nothing}(grid),   # canopy-air node Tᵃᶜ (what MOST sees)
+     canopy           = Field{Center, Center, Nothing}(grid),   # leaf temperature Tᵛ
+     soil_skin        = Field{Center, Center, Nothing}(grid),   # soil-skin temperature Tⁱⁿ
+     effective        = Field{Center, Center, Nothing}(grid),   # radiating (LST) temperature Teff
+     ground_heat_flux = Field{Center, Center, Nothing}(grid))   # skin→bulk conduction Gcond
+
+# Store the diagnostic surface temperature(s) from the converged interface state.
+# Ordinary closures write the single skin temperature; a `CanopyAirSpace` re-runs its
+# (cheap, converged) solve to recover the leaf/soil-skin temperatures and the ground
+# heat flux, and writes all four.
+@inline store_interface_temperature!(Ts, i, j, formulation, Ψₛ, Ψₐ, Ψᵢ, Ψᵣ, ℙₐ) =
+    (@inbounds Ts[i, j, 1] = Ψₛ.temperature; nothing)
+
+@inline function store_interface_temperature!(Ts, i, j, cas::CanopyAirSpace, Ψₛ, Ψₐ, Ψᵢ, Ψᵣ, ℙₐ)
+    sol = canopy_air_space_solve(cas, Ψₛ, Ψₐ, Ψᵢ, Ψᵣ, ℙₐ)
+    @inbounds begin
+        Ts.interface[i, j, 1]        = sol.Tᵃᶜ
+        Ts.canopy[i, j, 1]           = sol.Tᵛ
+        Ts.soil_skin[i, j, 1]        = sol.Tⁱⁿ
+        Ts.effective[i, j, 1]        = sol.Teff
+        Ts.ground_heat_flux[i, j, 1] = sol.Gcond
+    end
+    return nothing
 end
 
 #####
@@ -292,7 +324,6 @@ end
     Jᵛ  = interface_fluxes.water_vapor
     ρτˣ = interface_fluxes.x_momentum
     ρτʸ = interface_fluxes.y_momentum
-    Ts  = interface_temperature
 
     @inbounds begin
         𝒬ᵛ[i, j, 1]  = - ρᵃᵗ * ℒˡ * u★ * q★
@@ -300,10 +331,14 @@ end
         Jᵛ[i, j, 1]  = - ρᵃᵗ * u★ * q★
         ρτˣ[i, j, 1] = + ρᵃᵗ * τˣ
         ρτʸ[i, j, 1] = + ρᵃᵗ * τʸ
-        Ts[i, j, 1]  = Ψₛ.temperature
 
         interface_fluxes.friction_velocity[i, j, 1] = u★
         interface_fluxes.temperature_scale[i, j, 1] = θ★
         interface_fluxes.water_vapor_scale[i, j, 1] = q★
     end
+
+    store_interface_temperature!(interface_temperature, i, j,
+                                 interface_properties.temperature_formulation,
+                                 interface_state, local_atmosphere_state, local_interior_state,
+                                 radiation_state, atmosphere_properties)
 end

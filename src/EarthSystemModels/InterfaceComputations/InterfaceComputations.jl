@@ -51,6 +51,7 @@ export
     PowerLawTortuosity,
     CanopyConductanceHumidity,
     CompositeSurfaceHumidity,
+    CanopyAirSpace,
     FarquharPhotosynthesis,
     AbstractStomatalConductance,
     MedlynConductance,
@@ -140,6 +141,7 @@ include("stomatal_conductance.jl")
 include("absorbed_par.jl")
 include("canopy_conductance.jl")
 include("composite_surface_humidity.jl")
+include("canopy_air_space.jl")
 include("compute_interface_state.jl")
 include("similarity_theory_turbulent_fluxes.jl")
 include("coefficient_based_turbulent_fluxes.jl")
