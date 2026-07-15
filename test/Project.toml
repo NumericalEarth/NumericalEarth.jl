@@ -35,6 +35,7 @@ Zarr = "0a941bbe-ad1d-11e8-39d9-ab76183a1d99"
 
 [sources]
 NumericalEarth = {path = ".."}
+ClimaSeaIce = {url = "https://github.com/CliMA/ClimaSeaIce.jl", rev = "ss/checkpoint-mass-fluxes"}
 
 [compat]
 ArchGDAL = "0.10"
@@ -42,7 +43,7 @@ Breeze = "0.7.3"
 CDSAPI = "2.2.2"
 CFTime = "0.1, 0.2"
 CUDA = "5.9.5, 6"
-ClimaSeaIce = "0.5, 0.6"
+ClimaSeaIce = "0.5.7, 0.6"
 CondaPkg = "0.2.33"
 ConservativeRegridding = "0.2"
 CopernicusClimateDataStore = "0.1"
