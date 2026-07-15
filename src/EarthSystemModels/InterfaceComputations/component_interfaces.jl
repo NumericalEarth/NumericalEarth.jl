@@ -130,23 +130,25 @@ struct SeaIceOceanFluxes{C, FX, FY}
     interface_heat :: C
     frazil_heat    :: C
     salt           :: C
+    freshwater     :: C
     x_momentum     :: FX
     y_momentum     :: FY
 end
 
 function SeaIceOceanFluxes(grid)
     C  = Field{Center, Center, Nothing}
-    return SeaIceOceanFluxes(C(grid), C(grid), C(grid),
+    return SeaIceOceanFluxes(C(grid), C(grid), C(grid), C(grid),
                              Field{Face, Center, Nothing}(grid),
                              Field{Center, Face, Nothing}(grid))
 end
 
-SeaIceOceanFluxes(::Nothing) = SeaIceOceanFluxes(ntuple(_ -> ZeroField(), 5)...)
+SeaIceOceanFluxes(::Nothing) = SeaIceOceanFluxes(ntuple(_ -> ZeroField(), 6)...)
 
 Adapt.adapt_structure(to, fluxes::SeaIceOceanFluxes) =
     SeaIceOceanFluxes(Adapt.adapt(to, fluxes.interface_heat),
                       Adapt.adapt(to, fluxes.frazil_heat),
                       Adapt.adapt(to, fluxes.salt),
+                      Adapt.adapt(to, fluxes.freshwater),
                       Adapt.adapt(to, fluxes.x_momentum),
                       Adapt.adapt(to, fluxes.y_momentum))
 
@@ -154,6 +156,7 @@ Oceananigans.Architectures.on_architecture(arch, fluxes::SeaIceOceanFluxes) =
     SeaIceOceanFluxes(on_architecture(arch, fluxes.interface_heat),
                       on_architecture(arch, fluxes.frazil_heat),
                       on_architecture(arch, fluxes.salt),
+                      on_architecture(arch, fluxes.freshwater),
                       on_architecture(arch, fluxes.x_momentum),
                       on_architecture(arch, fluxes.y_momentum))
 
@@ -174,9 +177,10 @@ struct ZeroFluxes{Z}
     interface_heat        :: Z
     frazil_heat           :: Z
     salt                  :: Z
+    freshwater            :: Z
 end
 
-ZeroFluxes() = ZeroFluxes(ntuple(_ -> ZeroField(), 11)...)
+ZeroFluxes() = ZeroFluxes(ntuple(_ -> ZeroField(), 12)...)
 
 @inline computed_fluxes(::Nothing) = ZeroFluxes()
 
