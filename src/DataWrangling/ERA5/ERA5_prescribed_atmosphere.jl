@@ -99,6 +99,7 @@ function pressure_level_field(grid, dataset, architecture)
     FT = eltype(grid)
     pˡᵉᵛᵉˡ = on_architecture(architecture, FT.(dataset.pressure_levels))
     pressure = CenterField(grid)
+    Nz = length(dataset.pressure_levels)
     interior(pressure) .= reshape(pˡᵉᵛᵉˡ, 1, 1, Nz)
     fill_halo_regions!(pressure)
     return pressure
