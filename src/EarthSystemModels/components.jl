@@ -23,6 +23,11 @@ const celsius_to_kelvin = 273.15
 exchange_grid(atmosphere, ocean, sea_ice, land=nothing) = grid(ocean)
 exchange_grid(atmosphere, ::Nothing, ::Nothing, land) = land.grid
 
+# Prescribed fields are FieldTimeSeries; set a `Number` into every time slice.
+# `nothing` leaves the field untouched.
+set_prescribed_field!(fts, ::Nothing) = nothing
+set_prescribed_field!(fts, value::Number) = Oceananigans.set!(fts, value)
+
 #####
 ##### Functions extended by sea-ice and ocean models
 #####

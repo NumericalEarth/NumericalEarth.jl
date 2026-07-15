@@ -2,8 +2,9 @@ using DocStringExtensions: TYPEDSIGNATURES
 using Oceananigans.Architectures: architecture
 using Oceananigans.BoundaryConditions: DefaultBoundaryCondition
 using Oceananigans.DistributedComputations: DistributedGrid, all_reduce
-using Oceananigans.Grids: inactive_node
+using Oceananigans.Grids: inactive_node, topology
 using Oceananigans.OrthogonalSphericalShellGrids
+using Oceananigans.Models.HydrostaticFreeSurfaceModels.SplitExplicitFreeSurfaces: maybe_extend_halos
 using Oceananigans.TimeSteppers: VerticallyImplicitTimeDiscretization, AdaptiveVerticallyImplicitDiscretization
 using Oceananigans.TurbulenceClosures.TKEBasedVerticalDiffusivities: CATKEVerticalDiffusivity,
                                                                      CATKEMixingLength,
@@ -51,6 +52,50 @@ end
 # With or without additional fluxes
 @inline build_top_bc(flux_field, ::Nothing) = FluxBoundaryCondition(flux_field)
 @inline build_top_bc(flux_field, additional) = FluxBoundaryCondition(MultipleFluxes(flux_field, additional); discrete_form=true)
+
+# A freshwater surface tracer exchange. Each freshwater source carries a prescribed concentration `cᵢ` into the tracer
+# (zero salinity for pure water; its own temperature for heat), so the net surface flux is
+#
+#     Σᵢ (cᴺ − cᵢ) Jʷᵢ  = cᴺ · (Σᵢ Jʷᵢ)  −  Σᵢ cᵢ Jʷᵢ
+#                         └─ carrying ─┘  └─ content ─┘
+#
+# Only the surface value `cᴺ` is read live — this cancels the z-star "ambient carry" (the tracer the volume change sweeps in)
+# to machine precision. `carrying_flux` and `content_flux` are summed over sources by the flux assembler, so adding a source
+# with its own temperature/salinity is a local two-line change there (`carrying += Jʷᵢ`, `content += cᵢ Jʷᵢ`) — no new mechanism.
+struct FreshwaterExchange{name, C, W, A}
+    carrying_flux :: C   # Σᵢ Jʷᵢ  (volume flux of the sources carrying a prescribed cᵢ)
+    content_flux  :: W   # Σᵢ cᵢ Jʷᵢ
+    additional    :: A
+end
+
+@inline FreshwaterExchange{name}(c, w, a) where name = FreshwaterExchange{name, typeof(c), typeof(w), typeof(a)}(c, w, a)
+
+Adapt.adapt_structure(to, f::FreshwaterExchange{name}) where name =
+    FreshwaterExchange{name}(Adapt.adapt(to, f.carrying_flux),
+                             Adapt.adapt(to, f.content_flux),
+                             Adapt.adapt(to, f.additional))
+
+@inline surface_tracer_value(fields, ::Val{:S}, i, j, k) = @inbounds fields.S[i, j, k]
+@inline surface_tracer_value(fields, ::Val{:T}, i, j, k) = @inbounds fields.T[i, j, k]
+
+@inline (f::FreshwaterExchange{name})(i, j, grid, clock, fields) where name =
+    freshwater_exchange_flux(f, Val(name), i, j, grid, fields) + getbc(f.additional, i, j, grid, clock, fields)
+
+@inline carried_tracer_flux(f::FreshwaterExchange, ::Val{name}, i, j, grid, fields) where name =
+    @inbounds surface_tracer_value(fields, Val(name), i, j, grid.Nz) * f.carrying_flux[i, j, 1] - f.content_flux[i, j, 1]
+
+# The temperature carried flux is required only for mutable grids to cancel the volume movement. 
+# On the other hand, it is required always for salinity
+@inline freshwater_exchange_flux(f::FreshwaterExchange, name::Val{:S}, i, j, grid, fields) = carried_tracer_flux(f, name, i, j, grid, fields)
+@inline freshwater_exchange_flux(f::FreshwaterExchange, name::Val{:T}, i, j, grid, fields) = zero(grid)
+@inline freshwater_exchange_flux(f::FreshwaterExchange, name::Val{:T}, i, j, grid::MutableGridOfSomeKind, fields) = carried_tracer_flux(f, name, i, j, grid, fields)
+
+
+build_tracer_top_bc(Jᶜ, Jʷ, content, additional, name) = FluxBoundaryCondition(MultipleFluxes(Jᶜ, FreshwaterExchange{name}(Jʷ, content, additional)); discrete_form=true)
+
+@inline freshwater_exchange(bc::DiscreteBoundaryFunction) = freshwater_exchange(bc.func)
+@inline freshwater_exchange(mf::MultipleFluxes) = mf.additional_fluxes
+@inline extract_freshwater_flux(bc) = freshwater_exchange(bc).carrying_flux
 
 #####
 ##### Defaults
@@ -193,6 +238,8 @@ end
 
 """
     hydrostatic_ocean_simulation(grid;
+                                 clock = Clock(grid),
+                                 stop_time = default_stop_time(grid, clock),
                                  Δt = estimate_maximum_Δt(grid),
                                  closure = default_ocean_closure(),
                                  tracers = (:T, :S),
@@ -211,7 +258,6 @@ end
                                  equation_of_state = TEOS10EquationOfState(; reference_density),
                                  boundary_conditions::NamedTuple = NamedTuple(),
                                  radiative_forcing = default_radiative_forcing(grid),
-                                 clock = nothing,
                                  warn = true,
                                  verbose = false)
 
@@ -258,6 +304,11 @@ defaults on a per-field basis.
 
 ## Keyword Arguments
 
+- `clock`: Clock for the underlying model. Defaults to `Clock(grid)`, a numeric clock starting at `time = 0`. 
+  Pass a `DateTime`-based clock to step the simulation in calendar time (e.g. when coupling).
+- `stop_time`: Stop time for the simulation. Defaults to `Inf` for numeric clocks, or 
+  `DateTime(9999, 12, 31, 23, 59, 59)` for `DateTime` clocks. On Reactant architectures it defaults to `nothing`, since 
+  Reactant does not support `stop_time`.
 - `Δt`: Timestep used by the `Simulation`. Defaults to the maximum stable timestep estimated from the `grid`.
 - `closure`: A turbulence or mixing closure. Defaults to `default_ocean_closure()`.
 - `tracers`: Tuple of tracer names. Defaults to `(:T, :S)`.
@@ -276,13 +327,12 @@ defaults on a per-field basis.
 - `equation_of_state`: Equation of state object. Defaults to TEOS-10 (`TEOS10EquationOfState`).
 - `boundary_conditions`: User-supplied boundary conditions; merged with defaults.
 - `radiative_forcing`: Additional temperature forcing; merged into `forcing`.
-- `clock`: Clock for the underlying model. Defaults to `nothing`, in which case the
-  model builds its own default clock. Pass a `Clock` (e.g. `Clock{Float64}(time=0)` or
-  a `DateTime`-based clock) to control the time type, for instance when coupling.
 - `warn`: If `true`, warnings are emitted for potentially unintended setups.
 - `verbose`: If `true`, prints additional setup information.
 """
 function hydrostatic_ocean_simulation(grid;
+                                      clock = Clock(grid),
+                                      stop_time = default_stop_time(grid, clock),
                                       Δt = estimate_maximum_Δt(grid),
                                       closure = default_ocean_closure(),
                                       tracers = (:T, :S),
@@ -301,7 +351,6 @@ function hydrostatic_ocean_simulation(grid;
                                       equation_of_state = TEOS10EquationOfState(; reference_density),
                                       boundary_conditions::NamedTuple = NamedTuple(),
                                       radiative_forcing = default_radiative_forcing(grid),
-                                      clock = nothing,
                                       warn = true,
                                       verbose = false)
 
@@ -374,15 +423,34 @@ function hydrostatic_ocean_simulation(grid;
     top_ocean_heat_flux          = Jᵀ = Field{Center, Center, Nothing}(grid)
     top_salt_flux                = Jˢ = Field{Center, Center, Nothing}(grid)
 
+    TX, TY, _ = topology(grid)
+    η_grid = if free_surface isa SplitExplicitFreeSurface
+        maybe_extend_halos(TX, TY, grid, free_surface.substepping)
+    else
+        grid
+    end
+
+    # Freshwater forcing is needed on the free surface grid
+    top_freshwater_volume_flux = Jʷ = Field{Center, Center, Nothing}(η_grid)
+
+    if grid isa MutableGridOfSomeKind
+        Fη = :η ∈ keys(forcing) ? (Jʷ, forcing.η) : Jʷ
+        forcing = merge(forcing, (; η = Fη))
+    end
+
     # Merge user-supplied additional fluxes with defaults
     default_additional_fluxes = (u=nothing, v=nothing, T=nothing, S=nothing)
     additional = merge(default_additional_fluxes, additional_surface_fluxes)
 
+    # Freshwater heat content is `Σᵢ Tᵢ Jʷᵢ`, the Freshwater salinity content is assumed to be 0 for the moment (no salinity for incoming freshwater)
+    freshwater_heat_content = Field{Center, Center, Nothing}(grid)
+    freshwater_salt_content = ZeroField()
+
     # Construct ocean boundary conditions including surface forcing and bottom drag
     u_top_bc = build_top_bc(τˣ, additional.u)
     v_top_bc = build_top_bc(τʸ, additional.v)
-    T_top_bc = build_top_bc(Jᵀ, additional.T)
-    S_top_bc = build_top_bc(Jˢ, additional.S)
+    T_top_bc = build_tracer_top_bc(Jᵀ, Jʷ, freshwater_heat_content, additional.T, :T)
+    S_top_bc = build_tracer_top_bc(Jˢ, Jʷ, freshwater_salt_content, additional.S, :S)
 
     u_bot_bc = FluxBoundaryCondition(u_quadratic_bottom_drag, discrete_form=true, parameters=bottom_drag_coefficient)
     v_bot_bc = FluxBoundaryCondition(v_quadratic_bottom_drag, discrete_form=true, parameters=bottom_drag_coefficient)
@@ -413,10 +481,8 @@ function hydrostatic_ocean_simulation(grid;
         tracer_advection = merge(tracer_advection, tke_advection)
     end
 
-    # Only forward `clock` when supplied so the model keeps its own default otherwise.
-    clock_kw = isnothing(clock) ? NamedTuple() : (; clock)
-
     ocean_model = HydrostaticFreeSurfaceModel(grid;
+                                              clock,
                                               buoyancy,
                                               closure,
                                               biogeochemistry,
@@ -427,10 +493,9 @@ function hydrostatic_ocean_simulation(grid;
                                               free_surface,
                                               coriolis,
                                               forcing,
-                                              boundary_conditions,
-                                              clock_kw...)
+                                              boundary_conditions)
 
-    ocean = Simulation(ocean_model; Δt, verbose)
+    ocean = Simulation(ocean_model; Δt, stop_time, verbose)
 
     return ocean
 end
