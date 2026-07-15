@@ -417,7 +417,7 @@ function hydrostatic_ocean_simulation(grid;
 
     bottom_drag_coefficient = convert(FT, bottom_drag_coefficient)
 
-    # Set up boundary conditions using Field
+    # Set up boundary conditions
     x_velocity_bcs = InterfaceComputations.vector_component_boundary_conditions(grid, (Face(), Center(), nothing))
     y_velocity_bcs = InterfaceComputations.vector_component_boundary_conditions(grid, (Center(), Face(), nothing))
   
