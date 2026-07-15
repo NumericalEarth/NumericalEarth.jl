@@ -49,7 +49,6 @@ export
     DryLayerVaporPistonVelocity,
     ConstantTortuosity,
     PowerLawTortuosity,
-<<<<<<< HEAD
     CanopyConductanceHumidity,
     CompositeSurfaceHumidity,
     FarquharPhotosynthesis,
@@ -61,8 +60,6 @@ export
     InteractiveAbsorbedPAR,
     PlainArrhenius,
     PeakedArrhenius,
-=======
->>>>>>> origin/main
     ElevationCorrection,
     atmosphere_land_interface,
     # Sea ice-ocean heat flux formulations
@@ -138,14 +135,11 @@ end
 include("roughness_lengths.jl")
 include("interface_states.jl")
 include("dry_layer_humidity.jl")
-<<<<<<< HEAD
 include("photosynthesis.jl")
 include("stomatal_conductance.jl")
 include("absorbed_par.jl")
 include("canopy_conductance.jl")
 include("composite_surface_humidity.jl")
-=======
->>>>>>> origin/main
 include("compute_interface_state.jl")
 include("similarity_theory_turbulent_fluxes.jl")
 include("coefficient_based_turbulent_fluxes.jl")

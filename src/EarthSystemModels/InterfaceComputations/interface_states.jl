@@ -938,17 +938,11 @@ end
                                        time_interpolator,
                                        Tₛ, qₛ)
     FT  = typeof(Tₛ)
-<<<<<<< HEAD
     energy           = interface_energy_state(i, j, grid, q_formulation, land_state)
     hydrology        = interface_hydrology_state(i, j, grid, q_formulation, land_state)
     vegetation_state = interface_vegetation_state(i, j, grid, q_formulation, vegetation, time_interpolator)
     return AirLandInterfaceState(fluxes, velocities, convert(FT, Tₛ), convert(FT, qₛ),
                                  hydrology, energy, vegetation_state)
-=======
-    energy    = interface_energy_state(i, j, grid, q_formulation, land_state)
-    hydrology = interface_hydrology_state(i, j, grid, q_formulation, land_state)
-    return AirLandInterfaceState(fluxes, velocities, convert(FT, Tₛ), convert(FT, qₛ), hydrology, energy)
->>>>>>> origin/main
 end
 
 @inline humidity_surface_scalar(Ψ::AirLandInterfaceState) = Ψ.hydrology.saturation
