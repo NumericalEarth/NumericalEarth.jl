@@ -102,6 +102,6 @@ end
 
 default_south_rows_to_remove(::ORCAOne)     = 35
 default_south_rows_to_remove(::ORCAQuarter) = 155
-default_south_rows_to_remove(::ORCATwelfth) = 0
+default_south_rows_to_remove(::ORCATwelfth) = 460
 
 end # module
