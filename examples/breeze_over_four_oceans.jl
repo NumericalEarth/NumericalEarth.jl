@@ -146,7 +146,7 @@ set!(nh_ocean.model, T=Tᵢ, S=35)
 # We disable gustiness in the similarity theory flux computation so the surface
 # wind speed is determined entirely by the resolved velocity field.
 
-atmosphere_ocean_fluxes = SimilarityTheoryFluxes(gustiness_parameter=0, minimum_gustiness=0)
+atmosphere_ocean_fluxes = SimilarityTheoryFluxes(subgrid_velocities = nothing)
 
 prescribed_interfaces = ComponentInterfaces(prescribed_ocean_atmos, prescribed_ocean; atmosphere_ocean_fluxes)
 slab_interfaces       = ComponentInterfaces(slab_ocean_atmos, slab_ocean; atmosphere_ocean_fluxes)

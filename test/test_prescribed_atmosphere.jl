@@ -29,6 +29,24 @@ end
     end
 end
 
+@testset "PrescribedAtmosphere set!" begin
+    for arch in test_architectures
+        grid = RectilinearGrid(arch, size = 1, z = (-1, 0), topology = (Flat, Flat, Bounded))
+        atmosphere = PrescribedAtmosphere(grid, [0.0])
+
+        set!(atmosphere; u = 3, T = 305, q = 0.004, p = 101_325)
+        @test only(Array(interior(atmosphere.velocities.u[1])))   == 3
+        @test only(Array(interior(atmosphere.temperature[1])))    == 305
+        @test only(Array(interior(atmosphere.specific_humidity[1]))) == 0.004
+        @test only(Array(interior(atmosphere.pressure[1])))       == 101_325
+
+        # An omitted keyword leaves that field untouched.
+        set!(atmosphere; T = 300)
+        @test only(Array(interior(atmosphere.temperature[1])))    == 300
+        @test only(Array(interior(atmosphere.velocities.u[1])))   == 3
+    end
+end
+
 @testset "Regridded prescribed atmosphere tripolar velocity zipper sign" begin
     # The exchanger builds its velocity state on the (tripolar) exchange grid with
     # north-fold BCs, independent of the atmosphere's source grid or data, so a plain

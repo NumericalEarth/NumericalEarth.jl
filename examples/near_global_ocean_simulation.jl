@@ -171,7 +171,7 @@ Nt = length(times)
 
 n = Observable(Nt)
 
-land = interior(T.grid.immersed_boundary.bottom_height) .≥ 0
+land = view(T.grid.immersed_boundary.bottom_height, 1:Nx, 1:Ny, 1:1) .≥ 0
 
 Tn = @lift begin
     Tn = interior(T[$n])
