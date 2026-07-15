@@ -80,6 +80,13 @@ jobs:
           path: /__w/_temp/depot/scratchspaces/d3525ed8-44d0-4b2c-a655-542cee43accc/durations
           key: julia-test-durations;job=cpu_tests;${{ github.run_id }}
           restore-keys: julia-test-durations;job=cpu_tests;
+      # `-O0` like the GPU job: compilation is ~63% of this suite's runtime, and dropping the
+      # optimisation level cuts compile-bound work ~60% (measured: a LatitudeLongitudeGrid
+      # `ocean_simulation` + first `time_step!` goes 48.9 s -> 19.5 s). It costs numeric speed
+      # (an EN4 inpaint goes 14.6 s -> 25.9 s), but the suite has minutes of compile against
+      # seconds of that. It needs no extra precompile: `opt_level` is part of Julia's cache
+      # flags, yet the `-O2` pkgimages in the image are accepted at `-O0`, so only runtime JIT
+      # gets cheaper while library code stays optimised.
       # Three workers. ParallelTestRunner's default_njobs assumes ~2 GiB per worker, but the
       # Breeze-compilation and bathymetry tests peak at 2.5-3.5 GiB RSS each and
       # `test_tracer_budget` at 5.6 GiB, so the default (4 = core count) intermittently OOMs on
@@ -92,7 +99,7 @@ jobs:
           julia --project --color=yes --check-bounds=yes -e '
               using Pkg;
               Pkg.test(; coverage=true,
-                       julia_args=["--check-bounds=yes", "--compiled-modules=yes"],
+                       julia_args=["--check-bounds=yes", "--compiled-modules=yes", "-O0"],
                        test_args=["--verbose", "--jobs=3"])
           '
       - uses: julia-actions/julia-processcoverage@v1

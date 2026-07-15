@@ -265,20 +265,14 @@ using .DataWrangling.CopernicusLandAlbedo
 using PrecompileTools: @setup_workload, @compile_workload
 
 @setup_workload begin
-    Nx, Ny, Nz = 20, 20, 20
+    Nx, Ny, Nz = 32, 32, 10
     @compile_workload begin
-        z = Oceananigans.Grids.MutableVerticalDiscretization((-100, 0))
-        underlying_grid = Oceananigans.OrthogonalSphericalShellGrids.TripolarGrid(CPU();
-                                                                                  size = (Nx, Ny, Nz),
-                                                                                  halo = (7, 7, 4),
-                                                                                  fold_topology = Oceananigans.Grids.RightFaceFolded,
-                                                                                  z)
-        bottom = Oceananigans.Fields.Field{Oceananigans.Grids.Center, Oceananigans.Grids.Center, Nothing}(underlying_grid)
-        Oceananigans.Fields.set!(bottom, -50)
-        grid = ImmersedBoundaryGrid(underlying_grid, GridFittedBottom(bottom); active_cells_map=true)
-        free_surface = Oceananigans.Models.HydrostaticFreeSurfaceModels.SplitExplicitFreeSurface(substeps=20)
-        ocean = ocean_simulation(grid; free_surface, radiative_forcing=nothing)
-        Oceananigans.TimeSteppers.time_step!(ocean.model, 60)
+        depth = 6000
+        z = Oceananigans.Grids.ExponentialDiscretization(Nz, -depth, 0)
+        grid = Oceananigans.OrthogonalSphericalShellGrids.TripolarGrid(CPU(); size=(Nx, Ny, Nz), halo=(7, 7, 7), z)
+        grid = ImmersedBoundaryGrid(grid, GridFittedBottom((x, y) -> -5000))
+        # ocean = ocean_simulation(grid)
+        # model = OceanOnlyModel(ocean)
     end
 end
 
