@@ -190,7 +190,7 @@ function meridional_heat_transport_via_ocean_heat_content(esm)
     ρᵒᶜ = reference_density(esm.ocean)
     cᵒᶜ = heat_capacity(esm.ocean)
     ∂t_T = temperature_tendency(esm.ocean.model.timestepper)
-    𝒬ᵃᵒₙₑₜ = net_ocean_heat_flux(esm) |> Field
+    𝒬ᵃᵒₙₑₜ = net_ocean_heat_flux(esm)
 
     𝒬 = Integral(ρᵒᶜ * cᵒᶜ * ∂t_T, dims=3) |> Field
     ∫Σ𝒬_dx = Integral(𝒬ᵃᵒₙₑₜ + 𝒬, dims=1) |> Field
