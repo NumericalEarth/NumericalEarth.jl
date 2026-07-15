@@ -1,31 +1,28 @@
 # # Coupled conservation on a z-star grid
 #
 # In this example, we run a minimal-physics `OceanSeaIceModel` through a freeze-then-melt cycle on a
-# free-surface-following (z-star) grid, and verify that four coupled budgets close to machine precision:
-# ocean volume, freshwater, salt, and energy. The setup is a small doubly periodic ocean with
-# thermodynamics-only sea ice, a snow layer on top of the ice, and a uniform prescribed atmosphere.
-# We drive two phases: a cold phase with light snowfall that grows the ice, and a warm phase with rainfall
-# that melts it.
+# free-surface-following (z-star) grid, and verify that three coupled budgets close to machine precision:
+# volume, salt, and energy. The setup is a small doubly periodic ocean with thermodynamics-only sea ice,
+# a snow layer on top of the ice, and a uniform prescribed atmosphere. We drive two phases: a cold phase with
+# light snowfall that grows the ice, and a warm phase with rainfall that melts it.
 #
 # On a z-star grid the freshwater flux ``J^w`` forces the free surface, so the ocean genuinely gains and loses
-# volume. That makes each budget a statement about a quantity we can measure directly from the model state:
+# volume. That makes each budget a statement about quantities we can measure directly from the model state:
 #
 # ```math
-# ΔV = \int\!\!\!\oint J^w \, \mathrm{d}A \, \mathrm{d}t, \qquad ΔM = \int \dot{M} \, \mathrm{d}t
-# ```
-# ```math
-# Δ𝒮 = 0, \qquad ΔE = \int (𝒬 + 𝒬^H) \, \mathrm{d}t
+# ΔV = \int \dot{M} / ρ^{oc} \, \mathrm{d}t, \qquad Δ𝒮 = 0, \qquad ΔE = \int (𝒬 + 𝒬^H) \, \mathrm{d}t
 # ```
 #
-# The volume grows by exactly the freshwater it takes in. The stored mass ``M = ρ^{oc} V + M_{is}`` — ocean water
-# plus ice and snow — changes by the atmospheric freshwater input ``\dot{M}`` (precipitation minus evaporation).
-# The total salt ``𝒮 = 𝒮^{oc} + 𝒮^{ice}`` does not change at all: the atmosphere delivers only freshwater, so the
-# ocean and the ice can only pass salt between them as the ice freezes and melts. Rain and meltwater dilute the
-# ocean by growing its volume — that volume carries ``S^N J^w`` back in and cancels the virtual salt flux — so
-# they change salinity without creating or destroying salt. Finally the stored energy ``E = ℋ^{oc} + E_{is}``
-# changes by the atmospheric heat flux ``𝒬`` together with the enthalpy ``𝒬^H`` that the freshwater carries
-# across the surface with its volume. Closure to machine precision requires that every internal flux cancels
-# exactly between the components.
+# Each budget is stored in two places, the ocean and the ice, which exchange it internally while the atmosphere
+# supplies the rest. The stored volume ``V = V^{oc} + M_{is} / ρ^{oc}`` — ocean water plus the volume the ice and
+# snow mass would occupy as ocean water — changes by the atmospheric freshwater input ``\dot{M}`` (precipitation
+# minus evaporation). The total salt ``𝒮 = 𝒮^{oc} + 𝒮^{ice}`` does not change at all: the atmosphere delivers only
+# freshwater, so the ocean and the ice can only pass salt between them as the ice freezes and melts. Rain and
+# meltwater dilute the ocean by growing its volume — that volume carries ``S^N J^w`` back in and cancels the
+# virtual salt flux — so they change salinity without creating or destroying salt. Finally the stored energy
+# ``E = ℋ^{oc} + E_{is}`` changes by the atmospheric heat flux ``𝒬`` together with the enthalpy ``𝒬^H`` that the
+# freshwater carries across the surface with its volume. Closure to machine precision requires that every
+# internal flux cancels exactly between the components.
 #
 # ## Install dependencies
 #
@@ -388,18 +385,18 @@ nothing #hide
 ∫Jʷ = accumulate_rate(history.Jʷ)
 nothing #hide
 
-# ### Freshwater
-#
-# The stored mass is the ocean water `ρᵒᶜ V` — read straight off the moving grid — plus the ice and snow mass `Mᵢₛ`.
-# The coupler assembles the ocean freshwater flux at the end of step `n` from the sea-ice mass change of that step,
-# but the ocean receives it only during step `n + 1`. We anticipate that one-step lag by rolling the ice+snow mass
-# back by `∂ₜM(n) * Δt⁺` so the two sides stay in step.
+# The coupled version of the same budget adds the ice and snow, written as the volume of ocean water their mass
+# would occupy, `Mᵢₛ / ρᵒᶜ`, so that both stores share the ocean's units. The coupler assembles the ocean
+# freshwater flux at the end of step `n` from the sea-ice mass change of that step, but the ocean receives it only
+# during step `n + 1`. We anticipate that one-step lag by rolling the ice+snow mass back by `∂ₜM(n) * Δt⁺` so the
+# two sides stay in step.
 
-δM  = history.∂ₜM .* Δt⁺
-M̃ᵢₛ = history.Mᵢₛ .- δM
-Mᵒᶜ = ρᵒᶜ .* history.V
-ΔM  = (M̃ᵢₛ .+ Mᵒᶜ) .- (M̃ᵢₛ[1] + Mᵒᶜ[1])
-∫Ṁ  = accumulate_rate(history.Ṁ)
+δM   = history.∂ₜM .* Δt⁺
+M̃ᵢₛ  = history.Mᵢₛ .- δM
+Vⁱᶜᵉ = history.Mᵢₛ ./ ρᵒᶜ
+Ṽⁱᶜᵉ = M̃ᵢₛ ./ ρᵒᶜ
+ΔVᵗᵒᵗ = (history.V .+ Ṽⁱᶜᵉ) .- (history.V[1] + Ṽⁱᶜᵉ[1])
+∫Ṁᵛ  = accumulate_rate(history.Ṁ) ./ ρᵒᶜ
 nothing #hide
 
 # ### Salt
@@ -437,86 +434,66 @@ nothing #hide
 
 # ## Visualizing the budgets
 #
-# Each budget gets the same figure: the stored components, the cumulative match between the stored change and the
-# integrated flux, and the residual on a relative log scale. A budget with no source has nothing to integrate
-# against, so its cumulative panel already shows the residual and we plot it once.
+# One column per budget. The top row puts the ocean and the ice+snow stores on the same axes as anomalies from
+# their initial values — raw values would bury the ice, which holds a thousand times less salt than the ocean —
+# so the internal exchange shows up as the two curves mirroring each other. The middle row is the closure itself,
+# the stored change against the flux that drove it, and the bottom row the residual on a relative log scale.
 
-set_theme!(Theme(fontsize=16, linewidth=2))
+set_theme!(Theme(fontsize=14, linewidth=2))
 
-function budget_figure(name, unit, stored, Δ, ∫F; scale = maximum(abs.(Δ)), flux_label = "∫ flux dt")
+function budget_column!(fig, col, name, unit, stores, Δ, ∫F;
+                        scale = maximum(abs.(Δ)), flux_label = "∫ atmospheric flux dt", legend_position = :lt)
     R = Δ .- ∫F
-    sourceless = all(iszero, ∫F)
-    n = length(stored)
-    rows = n + (sourceless ? 2 : 3)
-    fig = Figure(size=(1100, 180 * rows))
 
-    for (i, (label, data)) in enumerate(stored)
-        ax = Axis(fig[i, 1], ylabel = unit, title = label)
-        lines!(ax, τ, data, color = iseven(i) ? :orange : :royalblue)
+    axs = Axis(fig[1, col], title = "$name ($unit)", ylabel = "Store anomaly ($unit)")
+    for ((label, data), color) in zip(stores, (:royalblue, :orange))
+        lines!(axs, τ, data .- data[1]; label, color)
     end
+    axislegend(axs, position = :lt, framevisible = false)
 
-    axc = Axis(fig[n+1, 1], ylabel = unit, title = "Δ$name vs. $flux_label")
-    lines!(axc, τ, Δ, label = "Δ$name", color = :black)
-    lines!(axc, τ, ∫F, label = flux_label, color = :crimson, linestyle = :dash)
-    axislegend(axc, position = :lt)
+    # The two curves sit on top of each other, so the flux gets sparse markers to stay visible under the line.
+    axc = Axis(fig[2, col], ylabel = "Cumulative ($unit)")
+    marked = 1:(length(τ) ÷ 25):length(τ)
+    lines!(axc, τ, Δ, label = "Δ total", color = :black)
+    scatter!(axc, τ[marked], ∫F[marked], label = flux_label, color = :crimson, markersize = 10)
+    axislegend(axc, position = legend_position, framevisible = false)
 
-    if !sourceless
-        axr = Axis(fig[n+2, 1], ylabel = unit, title = "Residual = Δ$name − $flux_label")
-        lines!(axr, τ, R, color = :seagreen)
-        hlines!(axr, [0], color = :gray, linestyle = :dot)
-    end
-
-    axe = Axis(fig[rows, 1], ylabel = "log₁₀|rel residual|", title = "Relative residual", xlabel = "Time (days)")
+    axe = Axis(fig[3, col], ylabel = "log₁₀|rel residual|", xlabel = "Time (days)")
     ε = log10.(abs.(R ./ max(scale, 1)))
     finite = isfinite.(ε)   # a residual that lands on exactly zero would take the log to -Inf
     lines!(axe, τ[finite], ε[finite], color = :seagreen)
 
-    for ax in fig.content
-        ax isa Axis && vlines!(ax, [Δτ / day], color = :gray, linestyle = :dot, linewidth = 1)
+    for ax in (axs, axc, axe)
+        vlines!(ax, [Δτ / day], color = :gray, linestyle = :dot, linewidth = 1)
     end
 
-    return fig
+    return nothing
 end
 
-# The ocean volume rises with the meltwater and rain of the warm phase and falls while the ice grows.
+# The ocean takes in the freshwater the ice gives up and gives it back as the ice grows; the salt the ice locks
+# away is the salt the ocean loses, and the total never moves; the ocean warms as the ice melts. In each case
+# the two stores mirror each other, and what is left over is exactly what the atmosphere delivered.
 
-fig = budget_figure("V", "m³", ["Ocean volume" => history.V], ΔV, ∫Jʷ)
-save("coupled_conservation_volume.png", fig)
+fig = Figure(size=(1500, 780))
+
+budget_column!(fig, 1, "Volume", "m³",
+               ["Ocean" => history.V, "Ice + snow" => Vⁱᶜᵉ], ΔVᵗᵒᵗ, ∫Ṁᵛ;
+               flux_label = "∫ atmospheric freshwater dt")
+
+budget_column!(fig, 2, "Salt", "psu m³",
+               ["Ocean" => history.𝒮ᵒᶜ, "Ice" => history.𝒮ⁱᶜᵉ], Δ𝒮, ∫Jˢ;
+               scale = maximum(abs.(history.𝒮ᵒᶜ .- history.𝒮ᵒᶜ[1])),
+               flux_label = "zero (atmosphere brings no salt)",
+               legend_position = :rb)
+
+budget_column!(fig, 3, "Energy", "J",
+               ["Ocean" => history.ℋᵒᶜ, "Ice + snow" => history.Eᵢₛ], ΔE, ∫𝒬;
+               flux_label = "∫ atmospheric heat dt")
+
+save("coupled_conservation.png", fig)
 nothing #hide
 
-# ![](coupled_conservation_volume.png)
-
-# The freshwater the atmosphere delivers is shared between the ocean and the ice, and the two stores exchange
-# it internally as the ice grows and melts.
-
-fig = budget_figure("M", "kg", ["Ocean water mass" => Mᵒᶜ, "Ice + snow mass" => history.Mᵢₛ], ΔM, ∫Ṁ)
-save("coupled_conservation_freshwater.png", fig)
-nothing #hide
-
-# ![](coupled_conservation_freshwater.png)
-
-# The ocean salt content falls while the ice locks salt away and recovers as the ice melts, and the salt stored
-# in the ice mirrors it exactly: the total never moves. We normalize the residual by the size of that internal
-# exchange, which is the quantity a leak would have to hide in.
-
-fig = budget_figure("S", "psu m³",
-                    ["Ocean salt content" => history.𝒮ᵒᶜ, "Salt stored in the ice" => history.𝒮ⁱᶜᵉ],
-                    Δ𝒮, ∫Jˢ;
-                    scale = maximum(abs.(history.𝒮ᵒᶜ .- history.𝒮ᵒᶜ[1])),
-                    flux_label = "zero (no salt source)")
-save("coupled_conservation_salt.png", fig)
-nothing #hide
-
-# ![](coupled_conservation_salt.png)
-
-# The ocean cools and the ice grows through the freeze phase; the melt phase reverses both.
-
-fig = budget_figure("E", "J", ["Ocean heat content" => history.ℋᵒᶜ,
-                               "Ice + snow stored latent energy" => history.Eᵢₛ], ΔE, ∫𝒬)
-save("coupled_conservation_energy.png", fig)
-nothing #hide
-
-# ![](coupled_conservation_energy.png)
+# ![](coupled_conservation.png)
 
 # ## Per-phase summary
 
@@ -536,8 +513,8 @@ function report(name, unit, Δ, ∫F; scale = maximum(abs.(Δ)))
     return nothing
 end
 
-report("volume",     "m³",     ΔV, ∫Jʷ)
-report("freshwater", "kg",     ΔM, ∫Ṁ)
+report("ocean vol",  "m³",     ΔV, ∫Jʷ)      # the ocean alone, against the freshwater crossing its surface
+report("volume",     "m³",     ΔVᵗᵒᵗ, ∫Ṁᵛ)
 report("salt",       "psu m³", Δ𝒮, ∫Jˢ; scale = maximum(abs.(history.𝒮ᵒᶜ .- history.𝒮ᵒᶜ[1])))
 report("energy",     "J",      ΔE, ∫𝒬)
 nothing #hide
