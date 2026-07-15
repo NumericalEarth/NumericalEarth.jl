@@ -1,5 +1,5 @@
 using Oceananigans.Grids: Center
-using Breeze.AtmosphereModels: thermodynamic_density
+using Breeze.AtmosphereModels: thermodynamic_density, dynamics_density, surface_pressure
 using Breeze.TerrainFollowingDiscretization: TerrainFollowingGrid
 using NumericalEarth.Atmospheres: AtmosphereThermodynamicsParameters
 using NumericalEarth.EarthSystemModels: component_model
@@ -111,10 +111,14 @@ function NumericalEarth.EarthSystemModels.interpolate_state!(exchanger, exchange
     T = atmosphere.temperature
     ρqᵛᵉ = atmosphere.moisture_density
 
-    # ρ₀, p₀ via Breeze's dynamics-agnostic accessors: anelastic returns its fixed
-    # reference state; compressible the prognostic density + mean surface pressure.
-    ρ₀ = Breeze.AtmosphereModels.dynamics_density(atmosphere.dynamics)
-    p₀ = Breeze.AtmosphereModels.surface_pressure(atmosphere.dynamics)
+    # Near-surface density (to convert moisture density ρqᵛ → specific humidity) and
+    # surface pressure, via dynamics-generic accessors so coupling works for *both*
+    # anelastic atmospheres (reference-state density) and compressible terrain-following
+    # atmospheres (prognostic density). Reaching into
+    # `dynamics.reference_state` directly is anelastic-only (it is `nothing` for
+    # `CompressibleDynamics`).
+    ρ₀ = dynamics_density(atmosphere.dynamics)
+    p₀ = surface_pressure(atmosphere.dynamics)
 
     arch = architecture(exchange_grid)
     kernel_parameters = interface_kernel_parameters(exchange_grid)

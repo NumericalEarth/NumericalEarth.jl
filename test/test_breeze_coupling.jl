@@ -179,7 +179,7 @@ end
 
             θ₀ = 285
             atmosphere = atmosphere_simulation(grid; potential_temperature = θ₀)
-            set!(atmosphere.model, θ = atmosphere.model.dynamics.reference_state.potential_temperature, u = 5)
+            set!(atmosphere.model, θ = θ₀, u = 5)   # uniform background θ; the u = 5 shear drives a nonzero surface stress
 
             land_grid = RectilinearGrid(arch, size = (grid.Nx, grid.Ny), halo = (grid.Hx, grid.Hy),
                                         x = (-10kilometers, 10kilometers),
@@ -223,7 +223,7 @@ end
 
             θ₀ = 285
             atmosphere = atmosphere_simulation(grid; potential_temperature = θ₀)
-            set!(atmosphere.model, θ = atmosphere.model.dynamics.reference_state.potential_temperature, u = 5)
+            set!(atmosphere.model, θ = θ₀, u = 5)   # uniform background θ; the u = 5 shear drives a nonzero surface stress
 
             land_grid = RectilinearGrid(arch; size = Nx, halo = 5,
                                         x = (-Lx/2, Lx/2), topology = (Periodic, Flat, Flat))
