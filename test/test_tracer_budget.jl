@@ -78,7 +78,7 @@ function test_tracer_budget(coupled_model, Sᵒᶜ, Δt, nsteps; heat_rtol, fres
 
     # Freshwater carries no salt, so the total salt content is conserved over the run.
     compute!(ΔVS)
-    @test abs(sum(ΔVS)) / ∫S⁻ < rtol
+    @test abs(sum(ΔVS)) / ∫S⁻ < freshwater_rtol
 
     return nothing
 end
