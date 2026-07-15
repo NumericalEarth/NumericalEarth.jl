@@ -99,9 +99,8 @@ end
 @testset "Tracer budget closure under surface fluxes" begin
     for arch in test_architectures
         for fold_topology in (RightFaceFolded,
-                              # RightCenterFolded # requires https://github.com/CliMA/Oceananigans.jl/pull/5099
-                              )
-
+                              RightCenterFolded)
+                              
             @info ".. on $(typeof(arch)) with $fold_topology topology"
             underlying_grid = TripolarGrid(arch;
                                            size = (20, 20, 20),
