@@ -1,4 +1,6 @@
 
+import ..EarthSystemModels: net_ocean_heat_flux
+
 @inline flux_field(condition) = condition
 @inline flux_field(bc::MultipleFluxes) = bc.flux_field
 @inline flux_field(bc::DiscreteBoundaryFunction) = flux_field(bc.func)

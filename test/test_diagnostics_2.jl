@@ -143,31 +143,47 @@ for arch in test_architectures
         end
     end
 
-    if arch isa CPU
-        @testset "Tripolar tendency-based meridional heat transport" begin
-            tripolar_grid = TripolarGrid(arch;
-                                         size = (8, 4, 2),
-                                         z = (-1, 0))
+    @testset "Tripolar tendency-based meridional heat transport [$A]" begin
+        tripolar_grid = TripolarGrid(arch;
+                                     size = (8, 4, 2),
+                                     z = (-1, 0))
 
-            destination_grid = LatitudeLongitudeGrid(arch;
-                                                      size = (8, 4, 1),
-                                                      longitude = (0, 360),
-                                                      latitude = (-90, 90),
-                                                      z = (-1, 0))
+        destination_grid = LatitudeLongitudeGrid(arch;
+                                                  size = (8, 4, 1),
+                                                  longitude = (0, 360),
+                                                  latitude = (-90, 90),
+                                                  z = (-1, 0))
 
-            ocean = ocean_simulation(tripolar_grid;
-                                     momentum_advection = nothing,
-                                     tracer_advection = nothing,
-                                     closure = nothing,
-                                     coriolis = nothing)
+        ocean = ocean_simulation(tripolar_grid;
+                                 momentum_advection = nothing,
+                                 tracer_advection = nothing,
+                                 closure = nothing,
+                                 coriolis = nothing)
 
-            atmosphere = PrescribedAtmosphere(tripolar_grid, [0.0])
-            esm = OceanOnlyModel(ocean; atmosphere)
+        atmosphere = PrescribedAtmosphere(tripolar_grid, [0.0])
+        esm = OceanOnlyModel(ocean; atmosphere)
 
-            mht = Field(meridional_heat_transport(esm, TendencyMethod(); destination_grid))
-            compute!(mht)
+        mht = Field(meridional_heat_transport(esm, TendencyMethod(); destination_grid))
+        @test all(iszero, interior(mht))
 
-            @test all(iszero, interior(mht))
-        end
+        budget = esm.interfaces.budgets.ocean_heat
+        @test budget !== nothing
+
+        time_step!(esm, 1)
+        compute!(mht)
+        @test all(iszero, interior(mht))
+
+        # The same operation must conservatively remap newly completed budgets;
+        # reconstructing the diagnostic between output samples is not required.
+        set!(budget.residual, 1)
+        compute!(mht)
+        unit_budget_mht = Array(interior(mht))
+
+        set!(budget.residual, 2)
+        compute!(mht)
+        double_budget_mht = Array(interior(mht))
+
+        @test any(x -> !iszero(x), unit_budget_mht)
+        @test all(isapprox.(double_budget_mht, 2 .* unit_budget_mht))
     end
 end

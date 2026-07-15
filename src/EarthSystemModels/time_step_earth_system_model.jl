@@ -14,6 +14,9 @@ apply_air_sea_ice_radiative_fluxes!(::Any) = nothing
 function Oceananigans.TimeSteppers.time_step!(coupled_model::EarthSystemModel, Δt; callbacks=[])
     maybe_prepare_first_time_step!(coupled_model, Δt, callbacks)
 
+    ocean_heat = coupled_model.interfaces.budgets.ocean_heat
+    prepare_ocean_heat_budget!(ocean_heat, coupled_model)
+
     radiation  = coupled_model.radiation
     atmosphere = coupled_model.atmosphere
     land       = coupled_model.land
@@ -25,6 +28,10 @@ function Oceananigans.TimeSteppers.time_step!(coupled_model::EarthSystemModel, �
     !isnothing(land)       && time_step!(land, Δt)
     !isnothing(sea_ice)    && time_step!(sea_ice, Δt)
     !isnothing(ocean)      && time_step!(ocean, Δt)
+
+    # Complete the budget for the coupling interval using the heat content and
+    # interface fluxes retained immediately before the component steps above.
+    complete_ocean_heat_budget!(ocean_heat, coupled_model, Δt)
 
     # TODO:
     # - Store fractional ice-free / ice-covered _time_ for more

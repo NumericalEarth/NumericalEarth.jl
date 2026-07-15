@@ -180,7 +180,7 @@ ZeroFluxes() = ZeroFluxes(ntuple(_ -> ZeroField(), 11)...)
 
 @inline computed_fluxes(::Nothing) = ZeroFluxes()
 
-mutable struct ComponentInterfaces{AO, ASI, SIO, AL, C, AP, OP, SIP, EX, P}
+mutable struct ComponentInterfaces{AO, ASI, SIO, AL, C, AP, OP, SIP, EX, B, P}
     atmosphere_ocean_interface :: AO
     atmosphere_sea_ice_interface :: ASI
     sea_ice_ocean_interface :: SIO
@@ -190,6 +190,7 @@ mutable struct ComponentInterfaces{AO, ASI, SIO, AL, C, AP, OP, SIP, EX, P}
     sea_ice_properties :: SIP
     exchanger :: EX
     net_fluxes :: C
+    budgets :: B
     properties :: P
 end
 
@@ -449,6 +450,7 @@ function ComponentInterfaces(atmosphere, ocean, sea_ice=nothing;
     exchanger = StateExchanger(exchange_grid, radiation, atmosphere, land, ocean, sea_ice;
                                atmosphere_correction = exchanger_correction)
 
+    budgets = (; ocean_heat = EarthSystemModels.ocean_heat_budget(ocean))
     properties = (; gravitational_acceleration)
 
     return ComponentInterfaces(ao_interface,
@@ -460,6 +462,7 @@ function ComponentInterfaces(atmosphere, ocean, sea_ice=nothing;
                                sea_ice_properties,
                                exchanger,
                                total_fluxes,
+                               budgets,
                                properties)
 end
 
@@ -491,6 +494,12 @@ end
 ##### Chekpointing (not needed for ComponentInterfaces)
 #####
 
-Oceananigans.prognostic_state(::ComponentInterfaces) = nothing
-Oceananigans.restore_prognostic_state!(ci::ComponentInterfaces, state) = ci
+Oceananigans.prognostic_state(ci::ComponentInterfaces) =
+    (; budgets = Oceananigans.prognostic_state(ci.budgets))
+
+function Oceananigans.restore_prognostic_state!(ci::ComponentInterfaces, state)
+    hasproperty(state, :budgets) && Oceananigans.restore_prognostic_state!(ci.budgets, state.budgets)
+    return ci
+end
+
 Oceananigans.restore_prognostic_state!(ci::ComponentInterfaces, ::Nothing) = ci

@@ -20,6 +20,7 @@ function test_tracer_budget(coupled_model, Sᵒᶜ, Δt, nsteps; rtol)
 
     heat_rate       = Integral(ρᵒᶜ * cᵒᶜ * T.boundary_conditions.top.condition, dims=(1, 2))
     freshwater_rate = Integral(net_ocean_freshwater_flux(coupled_model; reference_salinity=Sᵒᶜ), dims=(1, 2))
+    heat_budget_rate = Integral(coupled_model.interfaces.budgets.ocean_heat.residual, dims=(1, 2))
 
     penetrating_radiation = get_radiative_forcing(ocean)
     if isnothing(penetrating_radiation)
@@ -47,6 +48,7 @@ function test_tracer_budget(coupled_model, Sᵒᶜ, Δt, nsteps; rtol)
 
         time_step!(coupled_model, Δt)
         last_Δt = ocean.model.clock.last_Δt
+        completed_heat_budget = @allowscalar first(Field(heat_budget_rate))
 
         compute!(ΔVT)
         compute!(ΔVS)
@@ -59,6 +61,9 @@ function test_tracer_budget(coupled_model, Sᵒᶜ, Δt, nsteps; rtol)
 
         @test isapprox(heat_content_tendency, expected_heat_content_tendency; rtol)
         @test isapprox(freshwater_content_tendency, expected_freshwater_content_tendency; rtol)
+
+        budget_scale = max(abs(previous_heat_flux), abs(previous_radiative_rate), one(previous_heat_flux))
+        @test isapprox(completed_heat_budget, zero(completed_heat_budget); atol=rtol * budget_scale)
     end
 
     return nothing

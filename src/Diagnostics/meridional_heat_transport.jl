@@ -1,9 +1,7 @@
-using Oceananigans.TimeSteppers: SplitRungeKuttaTimeStepper, QuasiAdamsBashforth2TimeStepper
 using ..EarthSystemModels: EarthSystemModel, reference_density, heat_capacity
 
 struct MeridionalFluxMethod end
 struct TendencyMethod end
-
 """
     meridional_heat_transport(esm::EarthSystemModel, MeridionalFluxMethod();
                               reference_temperature = 0)
@@ -56,7 +54,7 @@ Arguments
      The vertically-integrated heat budget is
 
      ```math
-     𝒬 = \\frac{∂ℋ}{∂t} = - \\boldsymbol{∇}_h \\cdot \\boldsymbol{F}_h - 𝒬ᵃᵒ_{\\rm net} + ℛ
+     𝒬 = \\frac{∂ℋ}{∂t} = - \\boldsymbol{∇}_h \\cdot \\boldsymbol{F}_h - 𝒬ᵃᵒ_{\\rm net} + 𝒬_{\\rm rad} + ℛ
      ```
 
      where
@@ -64,6 +62,8 @@ Arguments
      * ``\\boldsymbol{F}_h`` is the depth-integrated horizontal heat flux vector (units W m⁻¹),
        that includes advection and any parameterized lateral/eddy fluxes,
      * ``𝒬ᵃᵒ_{\\rm net}`` is the [net ocean surface heat flux](@ref NumericalEarth.Diagnostics.net_ocean_heat_flux)
+       (units W m⁻²), and
+     * ``𝒬_{\\rm rad}`` is the vertically integrated penetrating-radiation source
        (units W m⁻²), and
      * ``ℛ`` is the residual sources/sinks and non-closed terms (e.g. numerics, unaccounted
        physics, mass/volume effects).
@@ -83,6 +83,7 @@ Arguments
      \\frac{\\mathrm{d}}{\\mathrm{d}t} \\, \\mathrm{OHC}_S(φ, t) =
         - ∮_{∂A(φ)} \\boldsymbol{F}_h \\cdot \\hat{\\boldsymbol{n}} \\, \\mathrm{d}ℓ
         - ∫_{A(φ)} 𝒬ᵃᵒ_{\\rm net} \\, \\mathrm{d}A
+        + ∫_{A(φ)} 𝒬_{\\rm rad} \\, \\mathrm{d}A
         + ∫_{A(φ)} ℛ \\, \\mathrm{d}A
      ```
 
@@ -101,10 +102,22 @@ Arguments
      ```math
      \\begin{align*}
          \\mathrm{MHT} & = - ∫_{A(φ)} 𝒬ᵃᵒ_{\\rm net} \\, \\mathrm{d}A
+                           + ∫_{A(φ)} 𝒬_{\\rm rad} \\, \\mathrm{d}A
                            - \\frac{\\mathrm{d}}{\\mathrm{d}t} \\, \\mathrm{OHC}_S \\\\
-                       & = - ∫_{A(φ)} \\left( 𝒬ᵃᵒ_{\\rm net} + 𝒬 \\right) \\, \\mathrm{d}A
+                       & = - ∫_{A(φ)} \\left( 𝒬ᵃᵒ_{\\rm net} + 𝒬 - 𝒬_{\\rm rad} \\right) \\, \\mathrm{d}A
      \\end{align*}
      ```
+
+     The tendency is evaluated as the finite difference in column heat content over
+     the most recently completed coupled timestep. Surface and radiative fluxes are
+     retained from the beginning of that timestep, so all budget terms refer to the
+     same coupling interval. The completed budget is stored in
+     `esm.interfaces.budgets.ocean_heat.residual` after every coupled timestep.
+     Oceananigans' `ConservativeRegriddedField` recomputes the remapping whenever an
+     output writer materializes the diagnostic. Thus `TimeInterval(interval)` writes
+     the most recently completed timestep, while `AveragedTimeInterval(interval)`
+     samples and time-averages the completed budget from every timestep when using the
+     default `stride=1`.
 
 Keyword Arguments
 =================
@@ -209,35 +222,18 @@ function meridional_heat_transport_via_meridional_heat_flux(esm; reference_tempe
 end
 
 function meridional_heat_transport_via_ocean_heat_content(esm; destination_grid=nothing)
-    ρᵒᶜ = reference_density(esm.ocean)
-    cᵒᶜ = heat_capacity(esm.ocean)
-    ∂t_T = temperature_tendency(esm.ocean.model.timestepper)
-    𝒬ᵃᵒₙₑₜ = net_ocean_heat_flux(esm)
+    budget = esm.interfaces.budgets.ocean_heat
 
-    # Reduce only in the vertical before regridding. The resulting source field
-    # retains the source grid's true horizontal cell polygons; the zonal integral
-    # is performed only after remapping onto the latitude-longitude grid.
-    𝒬 = Integral(ρᵒᶜ * cᵒᶜ * ∂t_T, dims=3)
-    column_budget = 𝒬ᵃᵒₙₑₜ + 𝒬
+    budget === nothing &&
+        throw(ArgumentError("TendencyMethod() requires a prognostic Oceananigans ocean."))
+
+    column_budget = budget.residual
 
     if destination_grid !== nothing
-        source_budget = Field(column_budget)
-        destination_budget = Field{Center, Center, Nothing}(destination_grid)
-        regridder = Regridder(destination_budget, source_budget)
-        regrid!(destination_budget, regridder, source_budget)
-        column_budget = destination_budget
+        column_budget = ConservativeRegriddedField(column_budget, destination_grid)
     end
 
     zonal_budget = Field(Integral(column_budget, dims=1))
     MHT = CumulativeIntegral(-zonal_budget, dims=2)
     return MHT
-end
-
-temperature_tendency(timestepper::SplitRungeKuttaTimeStepper) = timestepper.Gⁿ.T
-
-function temperature_tendency(timestepper::QuasiAdamsBashforth2TimeStepper)
-    Gᵀⁿ = timestepper.Gⁿ.T
-    Gᵀ⁻ = timestepper.G⁻.T
-    χ = timestepper.χ
-    return (3/2 + χ) * Gᵀⁿ - (1/2 + χ) * Gᵀ⁻
 end
