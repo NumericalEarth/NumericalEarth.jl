@@ -1,11 +1,11 @@
 #!/bin/bash
 
 #PBS -A UMIT0080
-#PBS -N tenthdegree
+#PBS -N twelfthdegree
 #PBS -j oe
 #PBS -q main
 #PBS -l walltime=12:00:00
-#PBS -o tenthdegree.out
+#PBS -o twelfthdegree.out
 #PBS -l select=2:ncpus=64:mpiprocs=4:ngpus=4:gpu_type=a100:mem=384GB
 
 # Submit a tenth-degree OMIP simulation on Derecho (PBS + cray-mpich).
@@ -14,7 +14,7 @@
 #     qsub pbs_launch.sh
 #
 # Override defaults with env vars at submit time, e.g.:
-#     qsub -v RUN_NAME=tenthdegree_corrected pbs_launch.sh
+#     qsub -v RUN_NAME=twelfthdegree_corrected pbs_launch.sh
 #
 # For halfdegree/ORCA configurations use `launch.sh` (SLURM).
 
@@ -47,7 +47,7 @@ export LD_PRELOAD="$CRAY_MPICH_ROOTDIR/gtl/lib/libmpi_gtl_cuda.so${LD_PRELOAD:+:
 unset CUDA_VISIBLE_DEVICES
 
 # ── Inputs ───────────────────────────────────────────────────────────────
-RUN_NAME="${RUN_NAME:-tenthdegree}"
+RUN_NAME="${RUN_NAME:-twelfthdegree}"
 JULIA="${JULIA:-$HOME/software/julia-1.12.6/bin/julia}"
 JULIA_THREADS="${JULIA_THREADS:-16}"
 
@@ -61,7 +61,7 @@ using Oceananigans.DistributedComputations
 using NumericalEarth
 using CUDA
 
-sim = omip_simulation(:tenthdegree;
+sim = omip_simulation(:twelfthdegree;
                       arch = Distributed(GPU(), partition=Partition(1, 8)),
                       Nz = 100,
                       depth = 5500,

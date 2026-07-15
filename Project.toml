@@ -56,6 +56,8 @@ Zarr = "0a941bbe-ad1d-11e8-39d9-ab76183a1d99"
 
 [sources]
 SeawaterPolynomials = {rev = "ss/conversion-functions", url = "https://github.com/CliMA/SeawaterPolynomials.jl.git"}
+Oceananigans = {rev = "ss/for-omip", url = "https://github.com/CliMA/Oceananigans.jl.git"}
+ClimaSeaIce = {rev = "ss/checkpoint-mass-fluxes", url = "https://github.com/CliMA/ClimaSeaIce.jl.git"}
 
 [extensions]
 NumericalEarthArchGDALExt = "ArchGDAL"
@@ -109,7 +111,7 @@ PythonCall = "0.9.28"
 RRTMGP = "0.21.9"
 Reactant = "0.2.270"
 Scratch = "1"
-SeawaterPolynomials = "0.3.5, 0.4"
+SeawaterPolynomials = "0.4.0"
 SpeedyWeather = "0.20, 0.21"
 StaticArrays = "1"
 Statistics = "<0.0.1, 1"

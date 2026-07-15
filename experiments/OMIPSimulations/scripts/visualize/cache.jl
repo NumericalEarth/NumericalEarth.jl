@@ -1269,7 +1269,7 @@ end
 function strait_config_for(case)
     haskey(case, :config) && return case.config
     p = lowercase(case.prefix)
-    for cfg in (:tenthdegree, :halfdegree, :orca)
+    for cfg in (:twelfthdegree, :halfdegree, :orca)
         occursin(string(cfg), p) && return cfg
     end
     return nothing

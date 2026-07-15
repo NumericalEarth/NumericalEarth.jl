@@ -229,7 +229,7 @@ The single positional argument selects the grid configuration:
 
 - `:halfdegree`    -- 720x360   `TripolarGrid`
 - `:quarterdegree` -- 1440x720  `TripolarGrid`
-- `:tenthdegree`   -- 3600x1800 `TripolarGrid`
+- `:twelfthdegree`   -- 3600x1800 `TripolarGrid`
 - `:orca`          -- NEMO eORCA mesh
 - `:test`          -- NEMO eORCA1 (~1ᵒ) mesh, locally-runnable preset for reproducing the
                       quarter-degree spurious high-latitude ice + surface salinity drift.
@@ -255,17 +255,17 @@ plumbing is needed because `NumericalEarth.EarthSystemModels` provides
 - `Nz::Int`: number of vertical levels. Per-config default: `50` for `:test`, `100` otherwise.
 - `depth`: maximum ocean depth in metres. Default: `5500`.
 - `Δz_top`: target surface-cell thickness in metres (sets the exponential vertical scale). Per-config
-  default: `1.5` for `:quarterdegree`/`:tenthdegree`, `nothing` (scale derived from `depth`/`Nz`) otherwise.
+  default: `1.5` for `:quarterdegree`/`:twelfthdegree`, `nothing` (scale derived from `depth`/`Nz`) otherwise.
 - `κ_skew`, `κ_symmetric`: GM/Redi diffusivities. Per-config defaults: `nothing` (no isopycnal
-  diffusivity) for the eddy-resolving `:quarterdegree`/`:tenthdegree`, `250`/`100` otherwise.
+  diffusivity) for the eddy-resolving `:quarterdegree`/`:twelfthdegree`, `250`/`100` otherwise.
 - `biharmonic_timescale`: horizontal biharmonic-viscosity timescale. Per-config default: `nothing`
-  (no biharmonic viscosity) for `:quarterdegree`/`:tenthdegree`, `40days` otherwise.
+  (no biharmonic viscosity) for `:quarterdegree`/`:twelfthdegree`, `40days` otherwise.
 - `forcing_dir`: directory for JRA55 forcing data. Default: `"forcing_data"`.
 - `restoring_dir`: directory for restoring/IC climatology. Default: `"climatology"`.
 - `piston_velocity`: surface salinity restoring piston velocity in m/day. Default: `1/6`.
   Restoring is automatically masked by sea ice concentration (no restoring under ice).
 - `start_date`, `end_date`: bracket for forcing/restoring metadata. Defaults: 1958-01-01 .. 2018-01-01.
-- `Δt`: simulation time step. Per-config default: `5minutes` for `:tenthdegree`, `20minutes` for
+- `Δt`: simulation time step. Per-config default: `5minutes` for `:twelfthdegree`, `20minutes` for
   `:quarterdegree`, `30minutes` otherwise.
 - `stop_time`: stop time for the wrapping `Simulation`. Default: `Inf`.
 - `flux_configuration`: surface flux formulation. Options:
@@ -422,7 +422,7 @@ function omip_simulation(config::Symbol = :halfdegree;
                               filename_prefix,
                               file_splitting_interval)
 
-        # Dispatches to the active method only for cfg == Val(:tenthdegree);
+        # Dispatches to the active method only for cfg == Val(:twelfthdegree);
         # other configurations get the no-op fallback.
         add_ke_spectrum_diagnostic!(simulation, cfg;
                                      output_dir,
@@ -642,9 +642,7 @@ exponential_scale(Nz, depth, Δz_top)    = find_exponential_scale(Nz, depth, Δz
 
 function build_grid(config, arch, Nz, depth; Δz_top = nothing)
 
-    Nx = config == Val(:halfdegree)    ? 720 :
-         config == Val(:quarterdegree) ? 1440 :
-         config == Val(:tenthdegree)   ? 3600 :
+    Nx = config == Val(:halfdegree) ? 720 :
          throw("Configuration $(config) does not exist")
 
     Ny = Nx ÷ 2
@@ -665,13 +663,17 @@ function build_grid(config, arch, Nz, depth; Δz_top = nothing)
     return ImmersedBoundaryGrid(base_grid, GridFittedBottom(bottom_height); active_cells_map = true)
 end
 
-function build_grid(::Val{:orca}, arch, Nz, depth; Δz_top = nothing)
+build_grid(::Val{:orca}, arch, Nz, depth; Δz_top = nothing)          = build_grid(ORCAOne(),     arch, Nz, depth; Δz_top)
+build_grid(::Val{:quarterdegree}, arch, Nz, depth; Δz_top = nothing) = build_grid(ORCAQuarter(), arch, Nz, depth; Δz_top)
+build_grid(::Val{:twelfthdegree}, arch, Nz, depth; Δz_top = nothing) = build_grid(ORCATwelfth(), arch, Nz, depth; Δz_top)
+
+function build_grid(dataset::ORCADataset, arch, Nz, depth; Δz_top = nothing)
 
     scale = exponential_scale(Nz, depth, Δz_top)
     z_faces = ExponentialDiscretization(Nz, -depth, 0; scale, mutable=true)
 
     return ORCAGrid(arch;
-                    dataset = ORCAOne(),
+                    dataset,
                     Nz,
                     z = z_faces,
                     halo = (8, 8, 8),
@@ -681,8 +683,7 @@ end
 
 # Locally-runnable testing configuration: the NEMO eORCA1 (~1ᵒ) mesh, used to reproduce the
 # quarter-degree spurious high-latitude ice + surface salinity drift at a fraction of the cost.
-build_grid(::Val{:test}, arch, Nz, depth; Δz_top = nothing) =
-    build_grid(Val(:orca), arch, Nz, depth; Δz_top)
+build_grid(::Val{:test}, arch, Nz, depth; Δz_top = nothing) = build_grid(Val(:orca), arch, Nz, depth; Δz_top)
 
 #####
 ##### ORCA builder
@@ -696,7 +697,7 @@ config_momentum_advection(::Val{:orca},          td) = WENOVectorInvariant(order
 config_momentum_advection(::Val{:test},          td) = WENOVectorInvariant(order=5, time_discretization=td)
 config_momentum_advection(::Val{:halfdegree},    td) = WENOVectorInvariant(order=5, time_discretization=td)
 config_momentum_advection(::Val{:quarterdegree}, td) = WENOVectorInvariant(time_discretization=td)
-config_momentum_advection(::Val{:tenthdegree},   td) = WENOVectorInvariant(time_discretization=td)
+config_momentum_advection(::Val{:twelfthdegree}, td) = WENOVectorInvariant(time_discretization=td)
 
 struct ConfigDefault end
 
@@ -706,36 +707,38 @@ struct ConfigDefault end
 config_Nz(::Val)        = 100
 config_Nz(::Val{:test}) = 15
 
-config_κ_skew(::Val)                 = 250
+config_κ_skew(::Val{:orca})          = 800
+config_κ_skew(::Val{:halfdegree})    = 250
 config_κ_skew(::Val{:quarterdegree}) = nothing
-config_κ_skew(::Val{:tenthdegree})   = nothing
+config_κ_skew(::Val{:twelfthdegree}) = nothing
 config_κ_skew(::Val{:test})          = nothing
 
-config_κ_symmetric(::Val)                 = 100
-config_κ_symmetric(::Val{:quarterdegree}) = nothing
-config_κ_symmetric(::Val{:tenthdegree})   = nothing
+config_κ_symmetric(::Val{:orca})          = 800
+config_κ_symmetric(::Val{:quarterdegree}) = 250
+config_κ_symmetric(::Val{:halfdegree})    = nothing
+config_κ_symmetric(::Val{:twelfthdegree}) = nothing
 config_κ_symmetric(::Val{:test})          = nothing
 
-config_biharmonic_timescale(::Val)                 = 40days
+config_biharmonic_timescale(::Val)                 = 50days
 config_biharmonic_timescale(::Val{:quarterdegree}) = nothing
-config_biharmonic_timescale(::Val{:tenthdegree})   = nothing
+config_biharmonic_timescale(::Val{:twelfthdegree}) = nothing
 config_biharmonic_timescale(::Val{:test})          = 10days
 
 config_Δt(::Val)                 = 30minutes
 config_Δt(::Val{:quarterdegree}) = 20minutes
-config_Δt(::Val{:tenthdegree})   = 5minutes
+config_Δt(::Val{:twelfthdegree}) = 5minutes
 config_Δt(::Val{:test})          = 45minutes
 
 config_Δz_top(::Val)                 = nothing
 config_Δz_top(::Val{:quarterdegree}) = 1.5
-config_Δz_top(::Val{:tenthdegree})   = 1.5
+config_Δz_top(::Val{:twelfthdegree}) = 1.5
 config_Δz_top(::Val{:test})          = 1.5
 
 # Buoyancy gradients are only needed by the GM/Redi closures; the eddy-resolving
 # configurations run without isopycnal diffusivities, so skip materializing them.
 config_materialize_buoyancy_gradients(::Val)                 = true
-config_materialize_buoyancy_gradients(::Val{:quarterdegree}) = false
-config_materialize_buoyancy_gradients(::Val{:tenthdegree})   = false
+config_materialize_buoyancy_gradients(::Val{:quarterdegree}) = true
+config_materialize_buoyancy_gradients(::Val{:twelfthdegree}) = true
 config_materialize_buoyancy_gradients(::Val{:test})          = false
 
 function build_ocean(config, grid;

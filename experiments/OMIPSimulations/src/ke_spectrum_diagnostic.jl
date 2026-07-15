@@ -281,12 +281,12 @@ function flush_spectrum!(D::KESpectrumDiagnostic, sim_time::Float64)
     return nothing
 end
 
-# Default no-op for non-tenthdegree configurations.
+# Default no-op for non-twelfthdegree configurations.
 add_ke_spectrum_diagnostic!(simulation, ::Val; kwargs...) = nothing
 
-function add_ke_spectrum_diagnostic!(simulation, ::Val{:tenthdegree};
+function add_ke_spectrum_diagnostic!(simulation, ::Val{:twelfthdegree};
                                       output_dir = ".",
-                                      filename_prefix = "tenthdegree",
+                                      filename_prefix = "twelfthdegree",
                                       fft_interval = 1hours,
                                       flush_interval = 15days,
                                       start_time = 2 * 365days,

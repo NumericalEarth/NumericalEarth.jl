@@ -25,7 +25,7 @@ Configurations:
   halfdegree      Half-degree TripolarGrid
   quarterdegree   1/4-degree TripolarGrid (2 GPUs)
   orca            ORCA grid
-  tenthdegree     1/10-degree TripolarGrid (4 GPUs)
+  twelfthdegree     1/10-degree TripolarGrid (4 GPUs)
 
 Environment variables (physics):
   NCAR          Set to "true" for OMIP-2/NCAR bulk formulae
@@ -124,7 +124,7 @@ case "$CONFIG" in
     quarterdegree|quarter_degree)
         CONFIG="quarterdegree"
         ;;
-    orca|tenthdegree) ;;
+    orca|twelfthdegree) ;;
     -h|--help)
         usage
         exit 0
@@ -171,7 +171,7 @@ sim.Δt = 30minutes
 run!(sim)
 "
         ;;
-    tenthdegree)
+    twelfthdegree)
         DEFAULT_KSKEW=0;    DEFAULT_KSYMM=0;   NZ=100; DEFAULT_DT="6minutes";  DEFAULT_DZ_TOP="1.5"
         DEFAULT_BIHARMONIC="nothing"; ARCH="Distributed(GPU(), partition=Partition(1, 4))"; GPUS_PER_NODE=4
         EXTRA_USING="using Oceananigans.DistributedComputations"
@@ -237,7 +237,7 @@ if [[ "${PARTITION}" != "default" && -n "${NODE}" ]]; then
 fi
 SBATCH_ARGS+=(--gres="gpu:${GPUS_PER_NODE}")
 # Override the heredoc default `--ntasks-per-node=1` so distributed configs
-# (tenthdegree: 1×4 partition) actually launch GPUS_PER_NODE MPI ranks.
+# (twelfthdegree: 1×4 partition) actually launch GPUS_PER_NODE MPI ranks.
 SBATCH_ARGS+=(--ntasks-per-node="${GPUS_PER_NODE}")
 
 export THREADS="${THREADS:-8}"
