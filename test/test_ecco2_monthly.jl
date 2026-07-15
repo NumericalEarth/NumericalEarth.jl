@@ -1,8 +1,9 @@
 include("runtests_setup.jl")
+include("download_utils.jl")
 
 using NumericalEarth
 using NumericalEarth.ECCO
-using NumericalEarth.DataWrangling: NearestNeighborInpainting, metadata_path, native_times, download_dataset
+using NumericalEarth.DataWrangling: NearestNeighborInpainting, metadata_path, native_times
 
 using Dates
 using Oceananigans.Grids: topology
@@ -37,7 +38,12 @@ for arch in test_architectures, dataset in test_ecco_datasets
                 for name in test_names[dataset]
                     metadata = Metadata(name; dates, dataset)
 
-                    download_dataset(metadata) # just in case is not downloaded
+                    # just in case is not downloaded; fall back to NumericalEarthArtifacts
+                    # if the primary source is unreachable
+                    filepaths = [metadata_path(datum) for datum in metadata]
+                    download_dataset_with_fallback(filepaths; dataset_name="$D $name") do
+                        download(metadata)
+                    end
                     for datum in metadata
                         @test isfile(metadata_path(datum))
                     end

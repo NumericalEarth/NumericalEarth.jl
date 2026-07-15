@@ -1,9 +1,24 @@
 include("runtests_setup.jl")
+include("download_utils.jl")
 
 using Statistics: median
-using NumericalEarth.Atmospheres: PrescribedAtmosphere, TwoBandDownwellingRadiation
-using NumericalEarth.ECCO: ECCOPrescribedAtmosphere, ECCO4Monthly
-using NumericalEarth.DataWrangling: higher_bound
+using NumericalEarth.Atmospheres: PrescribedAtmosphere, PrescribedPrecipitationFlux
+using NumericalEarth.Radiations: PrescribedRadiation
+using NumericalEarth.ECCO: ECCOPrescribedAtmosphere, ECCOPrescribedRadiation, ECCO4Monthly
+using NumericalEarth.DataWrangling: metadata_path, higher_bound
+
+# Pre-download ECCO4Monthly atmospheric forcing variables through the artifacts
+# fallback so ECCOPrescribedAtmosphere(...) finds the files locally even when
+# the ECCO drive is down. The variable list mirrors the metadata constructed
+# inside ECCOPrescribedAtmosphere, and the dates match the testset window.
+let dates = DateTime(1992, 1, 1):Month(1):DateTime(1992, 3, 1)
+    for name in NumericalEarth.ECCO.ECCO_atmosphere_variables
+        md = Metadata(name; dataset=ECCO4Monthly(), dates)
+        download_dataset_with_fallback(metadata_path(md); dataset_name="ECCO4Monthly $name") do
+            download(md)
+        end
+    end
+end
 
 @testset "ECCO Prescribed Atmosphere" begin
     for arch in test_architectures
@@ -20,20 +35,28 @@ using NumericalEarth.DataWrangling: higher_bound
                                               end_date,
                                               time_indices_in_memory = 2)
 
+        radiation = ECCOPrescribedRadiation(arch;
+                                            dataset,
+                                            start_date,
+                                            end_date,
+                                            time_indices_in_memory = 2)
+
         @test atmosphere isa PrescribedAtmosphere
+        @test radiation isa PrescribedRadiation
 
         # Test that all expected fields are present
         @test haskey(atmosphere.velocities, :u)
         @test haskey(atmosphere.velocities, :v)
-        @test haskey(atmosphere.tracers, :T)
-        @test haskey(atmosphere.tracers, :q)
+        @test atmosphere.temperature isa FieldTimeSeries
+        @test atmosphere.specific_humidity isa FieldTimeSeries
         @test !isnothing(atmosphere.pressure)
-        @test !isnothing(atmosphere.downwelling_radiation)
-        @test haskey(atmosphere.freshwater_flux, :rain)
+        @test atmosphere.precipitation_flux isa PrescribedPrecipitationFlux
+        @test atmosphere.precipitation_flux.rain isa FieldTimeSeries
+        @test isnothing(atmosphere.precipitation_flux.snow)
 
         # Test downwelling radiation components
-        ℐꜜˢʷ = atmosphere.downwelling_radiation.shortwave
-        ℐꜜˡʷ = atmosphere.downwelling_radiation.longwave
+        ℐꜜˢʷ = radiation.downwelling_shortwave
+        ℐꜜˡʷ = radiation.downwelling_longwave
 
         @test ℐꜜˢʷ isa FieldTimeSeries
         @test ℐꜜˡʷ isa FieldTimeSeries
@@ -49,7 +72,7 @@ using NumericalEarth.DataWrangling: higher_bound
             ℐꜜˡʷ_data = interior(ℐꜜˡʷ)
 
             # Longwave radiation should be positive (always some downwelling longwave)
-            @test all(ℐꜜˡʷ_data .>= 0)
+            @test all(ℐꜜˡʷ_data .≥ 0)
 
             # Typical ranges for radiation (sanity checks)
             # Shortwave: 0 to ~1400 W/m² (solar constant at TOA)
@@ -78,6 +101,6 @@ using NumericalEarth.DataWrangling: higher_bound
         # Test grid consistency
         @test atmosphere.velocities.u.grid isa LatitudeLongitudeGrid
         @test atmosphere.velocities.u.grid == atmosphere.velocities.v.grid
-        @test atmosphere.velocities.u.grid == atmosphere.tracers.T.grid
+        @test atmosphere.velocities.u.grid == atmosphere.temperature.grid
     end
 end

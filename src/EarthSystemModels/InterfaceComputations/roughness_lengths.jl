@@ -18,6 +18,29 @@ end
 Base.summary(::ScalarRoughnessLength{FT}) where FT = "ScalarRoughnessLength{$FT}"
 Base.show(io::IO, ::ScalarRoughnessLength{FT}) where FT = print(io, "ScalarRoughnessLength{$FT}")
 
+struct LandRoughnessLength{FT}
+    multiplier :: FT
+    minimum_roughness_length :: FT
+end
+
+"""
+    LandRoughnessLength(FT = Float64; multiplier = 1, minimum_roughness_length = eps(FT))
+
+Use the local land aerodynamic roughness field `roughness_length` as a
+MOST roughness length. `multiplier` scales it, for example `0.1` for
+scalar roughness lengths when heat and moisture roughness are taken as
+`roughness_length / 10`.
+"""
+function LandRoughnessLength(FT=Oceananigans.defaults.FloatType;
+                             multiplier = 1,
+                             minimum_roughness_length = eps(FT))
+    return LandRoughnessLength(convert(FT, multiplier),
+                               convert(FT, minimum_roughness_length))
+end
+
+Base.summary(::LandRoughnessLength{FT}) where FT = "LandRoughnessLength{$FT}"
+Base.show(io::IO, ::LandRoughnessLength{FT}) where FT = print(io, "LandRoughnessLength{$FT}")
+
 struct WindDependentWaveFormulation{FT}
     Umax :: FT
     ℂ₁ :: FT
@@ -37,7 +60,7 @@ WindDependentWaveFormulation(FT=Oceananigans.defaults.FloatType; Umax = 19, ℂ�
                                  convert(FT, ℂ₂))
 
 gravity_wave_parameter(α::Number, args...) = α
-gravity_wave_parameter(α::WindDependentWaveFormulation, ΔU) = α.ℂ₁ * min(ΔU, α.Umax) + α.ℂ₂
+gravity_wave_parameter(α::WindDependentWaveFormulation, ΔU) = max(zero(ΔU), α.ℂ₁ * min(ΔU, α.Umax) + α.ℂ₂)
 
 """
     ScalarRoughnessLength(FT = Float64;

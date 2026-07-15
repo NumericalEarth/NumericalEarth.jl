@@ -4,19 +4,53 @@ NumericalEarth currently ships connectors for the following data products:
 
 | Dataset            | Supported Variables                                      | Documentation Link                                                                                 |
 |--------------------|-----------------------------------------------------------|-----------------------------------------------------------------------------------------------------|
+| **Bathymetry and static grids** |                                            |                                                                                                     |
 | `ETOPO2022`        | [Supported variables](@ref dataset-etopo2022-vars)        | [NOAA ETOPO 2022 overview](https://www.ncei.noaa.gov/products/etopo-global-relief-model)           |
+| `GEBCO2024`        | [Supported variables](@ref dataset-gebco2024-vars)        | [GEBCO 2024 overview](https://www.gebco.net/data-products/gridded-bathymetry-data)                 |
+| `IBCSOv2`          | [Supported variables](@ref dataset-ibcsov2-vars)          | [IBCSO overview](https://ibcso.org/ibcso-2024-annual-release/)                                     |
+| `IBCAOv5`          | [Supported variables](@ref dataset-ibcaov5-vars)          | [IBCAO overview](https://www.gebco.net/data-products/gridded-bathymetry-data/arctic-ocean)         |
+| `GLO30`            | [Supported variables](@ref dataset-glo30-vars)            | [Copernicus DEM GLO-30 (Earth Data Hub)](https://earthdatahub.destine.eu/collections/copernicus-dem/datasets/GLO-30) |
+| `GLO90`            | [Supported variables](@ref dataset-glo90-vars)            | [Copernicus DEM GLO-90 (Earth Data Hub)](https://earthdatahub.destine.eu/collections/copernicus-dem/datasets/GLO-90) |
+| `ORCA1`            | `:bottom_height`, `:mesh_mask`                            | [ORCA1 mesh and bathymetry (Zenodo)](https://zenodo.org/records/4436658)                           |
+| `ORCA12`           | `:bottom_height`, `:mesh_mask`                            | [ORCA12 mesh and bathymetry (Zenodo)](https://zenodo.org/records/15495870)                         |
+| `GLORYSStatic`     | `:depth`                                                  | [Copernicus GLORYS static product](https://data.marine.copernicus.eu/product/GLOBAL_MULTIYEAR_PHY_001_030/description) |
+| **Ocean reanalysis and climatology** |                                     |                                                                                                     |
 | `ECCO2Monthly`     | [Supported variables](@ref dataset-ecco2monthly-vars)     | [ECCO2 documentation](https://ecco.jpl.nasa.gov/products/all/)                                     |
 | `ECCO2Daily`       | [Supported variables](@ref dataset-ecco2daily-vars)       | [ECCO2 documentation](https://ecco.jpl.nasa.gov/products/all/)                                     |
 | `ECCO4Monthly`     | [Supported variables](@ref dataset-ecco4monthly-vars)     | [ECCO V4r4 product guide](https://ecco-group.org/products-ECCO-V4r4.htm)                           |
 | `EN4Monthly`       | [Supported variables](@ref dataset-en4monthly-vars)       | [Met Office EN4 overview](https://www.metoffice.gov.uk/hadobs/en4/)                                |
 | `GLORYSDaily`      | [Supported variables](@ref dataset-glorysdaily-vars)      | [Copernicus GLORYS product page](https://data.marine.copernicus.eu/product/GLOBAL_MULTIYEAR_PHY_001_030/description) |
 | `GLORYSMonthly`    | [Supported variables](@ref dataset-glorysmonthly-vars)    | [Copernicus GLORYS product page](https://data.marine.copernicus.eu/product/GLOBAL_MULTIYEAR_PHY_001_030/description) |
-| `RepeatYearJRA55`  | [Supported variables](@ref dataset-repeatyearjra55-vars)  | [JRA-55 Reanalysis](https://www.data.jma.go.jp/jra/html/JRA-55/index_en.html)                                 |
-| `MultiYearJRA55`   | [Supported variables](@ref dataset-multiyearjra55-vars)   | [JRA-55 Reanalysis](https://www.data.jma.go.jp/jra/html/JRA-55/index_en.html)                                 |
+| `WOAAnnual`        | `:temperature`, `:salinity`, `:phosphate`, `:nitrate`, `:silicate`, `:dissolved_oxygen` | [World Ocean Atlas overview](https://www.ncei.noaa.gov/products/world-ocean-atlas) |
+| `WOAMonthly`       | `:temperature`, `:salinity`, `:phosphate`, `:nitrate`, `:silicate`, `:dissolved_oxygen` | [World Ocean Atlas overview](https://www.ncei.noaa.gov/products/world-ocean-atlas) |
+| **Biogeochemical reanalysis** |                                             |                                                                                                     |
+| `ECCO2DarwinMonthly` | `:temperature`, `:salinity`, `:dissolved_inorganic_carbon`, `:alkalinity`, `:phosphate`, `:nitrate`, `:dissolved_organic_phosphorus`, `:particulate_organic_phosphorus`, `:dissolved_iron`, `:dissolved_silicate`, `:dissolved_oxygen` | [ECCO Darwin overview](https://ecco.jpl.nasa.gov/products/all/) |
+| `ECCO4DarwinMonthly` | `:temperature`, `:salinity`, `:dissolved_inorganic_carbon`, `:alkalinity`, `:phosphate`, `:nitrate`, `:dissolved_organic_phosphorus`, `:particulate_organic_phosphorus`, `:dissolved_iron`, `:dissolved_silicate`, `:dissolved_oxygen` | [ECCO Darwin overview](https://ecco.jpl.nasa.gov/products/all/) |
+| **Atmospheric forcing and reanalysis** |                                  |                                                                                                     |
+| `RepeatYearJRA55`  | [Supported variables](@ref dataset-repeatyearjra55-vars)  | [JRA-55 Reanalysis](https://www.data.jma.go.jp/jra/html/JRA-55/index_en.html)                      |
+| `MultiYearJRA55`   | [Supported variables](@ref dataset-multiyearjra55-vars)   | [JRA-55 Reanalysis](https://www.data.jma.go.jp/jra/html/JRA-55/index_en.html)                      |
+| `ERA5HourlySingleLevel` | surface meteorology, flux, radiation, and wave variables | [ERA5 single levels overview](https://cds.climate.copernicus.eu/datasets/reanalysis-era5-single-levels?tab=overview) |
+| `ERA5MonthlySingleLevel` | surface meteorology, flux, radiation, and wave variables | [ERA5 single levels overview](https://cds.climate.copernicus.eu/datasets/reanalysis-era5-single-levels-monthly-means?tab=overview) |
+| `ERA5HourlyPressureLevels` | pressure-level temperature, winds, humidity, geopotential, and cloud variables | [ERA5 pressure levels overview](https://cds.climate.copernicus.eu/datasets/reanalysis-era5-pressure-levels?tab=overview) |
+| `ERA5MonthlyPressureLevels` | pressure-level temperature, winds, humidity, geopotential, and cloud variables | [ERA5 pressure levels overview](https://cds.climate.copernicus.eu/datasets/reanalysis-era5-pressure-levels-monthly-means?tab=overview) |
+| **Regional observations** |                                                    |                                                                                                     |
+| `OSPapaHourly`     | ocean profiles, near-surface meteorology, and currents    | [Ocean Station Papa dataset](https://www.pmel.noaa.gov/ocs/Papa)                                   |
+| `OSPapaFluxHourly` | air-sea fluxes, stresses, evaporation, precipitation, and skin temperature | [Ocean Station Papa flux dataset](https://www.pmel.noaa.gov/ocs/Papa) |
 
 ## [Supported variables for ETOPO2022](@id dataset-etopo2022-vars)
 
 - `:bottom_height` - Global bathymetry/topography on a 1 arc-minute grid.
+
+## [Supported variables for GLO30](@id dataset-glo30-vars)
+
+- `:bottom_height` - Surface elevation (Digital Surface Model) on a global 30 m
+  (1 arc-second) grid from the `GLO30` dataset. Read in regional windows only;
+  requires a DestinE access token and `using Zarr`.
+
+## [Supported variables for GLO90](@id dataset-glo90-vars)
+
+- `:bottom_height` - Surface elevation (Digital Surface Model) on a global 90 m
+  (3 arc-second) grid from the `GLO90` dataset; the coarser sibling of GLO-30.
 
 ## [Supported variables for ECCO2Monthly](@id dataset-ecco2monthly-vars)
 
@@ -114,3 +148,15 @@ NumericalEarth currently ships connectors for the following data products:
 - `:snow_freshwater_flux` - Precipitation flux from snow/ice (kg m⁻² s⁻¹).
 - `:river_freshwater_flux` - River discharge flux (kg m⁻² s⁻¹).
 - `:iceberg_freshwater_flux` - Iceberg calving flux (kg m⁻² s⁻¹).
+
+## [Supported variables for IBCSOv2](@id dataset-ibcsov2-vars)
+
+- `:bottom_height` - Southern Ocean bathymetry at 500 m resolution, south of 50°S (m).
+
+## [Supported variables for GEBCO2024](@id dataset-gebco2024-vars)
+
+- `:bottom_height` - Global bathymetry and topography at 15 arc-second resolution (m).
+
+## [Supported variables for IBCAOv5](@id dataset-ibcaov5-vars)
+
+- `:bottom_height` - Arctic Ocean bathymetry at 100 m resolution, north of 64°N, including Greenland ice sheet surface elevation (m).

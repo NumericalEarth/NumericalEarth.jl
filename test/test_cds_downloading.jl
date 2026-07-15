@@ -1,12 +1,22 @@
 include("runtests_setup.jl")
+include("download_utils.jl")
 
 using CDSAPI
 using Dates
+using Random: shuffle!
 using NCDatasets
 
+using NumericalEarth.DataWrangling: metadata_path, BoundingBox, Column, Linear, Nearest, is_three_dimensional
 using NumericalEarth.DataWrangling.ERA5
-using NumericalEarth.DataWrangling.ERA5: ERA5Hourly, ERA5Monthly, ERA5_dataset_variable_names
-using NumericalEarth.DataWrangling: metadata_path, download_dataset
+using NumericalEarth.DataWrangling.ERA5: ERA5HourlySingleLevel, ERA5MonthlySingleLevel,
+                                         ERA5_dataset_variable_names, ERA5_netcdf_variable_names
+using NumericalEarth.DataWrangling.ERA5: ERA5HourlyPressureLevels, ERA5MonthlyPressureLevels,
+                                         ERA5_all_pressure_levels, ERA5PL_dataset_variable_names,
+                                         ERA5PL_netcdf_variable_names, pressure_field
+
+# Internal extension module — exposes dispatch helpers and NetCDF utilities
+# that are not part of the public API but worth pinning behavior for.
+const CDSExt = Base.get_extension(NumericalEarth, :NumericalEarthCDSAPIExt)
 
 # Test date: Kyoto Protocol ratification date, February 16, 2005
 start_date = DateTime(2005, 2, 16, 12)
@@ -14,21 +24,23 @@ start_date = DateTime(2005, 2, 16, 12)
 @testset "ERA5 data downloading and utilities" begin
     @info "Testing ERA5 downloading and NetCDF file verification..."
 
-    dataset = ERA5Hourly()
+    dataset = ERA5HourlySingleLevel()
 
     # Use a small bounding box to reduce download time
-    bounding_box = NumericalEarth.DataWrangling.BoundingBox(longitude=(0, 5), latitude=(40, 45))
+    region = NumericalEarth.DataWrangling.BoundingBox(longitude=(0, 5), latitude=(40, 45))
 
     @testset "Download ERA5 temperature data" begin
         variable = :temperature
-        metadatum = Metadatum(variable; dataset, bounding_box, date=start_date)
+        metadatum = Metadatum(variable; dataset, region, date=start_date)
 
         # Clean up any existing file
         filepath = metadata_path(metadatum)
         isfile(filepath) && rm(filepath; force=true)
 
-        # Download the data
-        download_dataset(metadatum)
+        # Download the data (falls back to NumericalEarthArtifacts if CDS is unreachable)
+        download_dataset_with_fallback(filepath; dataset_name="ERA5Hourly $variable") do
+            download(metadatum)
+        end
         @test isfile(filepath)
 
         # Verify the NetCDF file structure
@@ -49,19 +61,18 @@ start_date = DateTime(2005, 2, 16, 12)
         @test length(lat) > 0
 
         # Check that data is within expected bounds
-        @test minimum(lon) >= -1  # Allow some tolerance
-        @test maximum(lon) <= 6
-        @test minimum(lat) >= 39
-        @test maximum(lat) <= 46
+        @test minimum(lon) ≥ -1  # Allow some tolerance
+        @test maximum(lon) ≤ 6
+        @test minimum(lat) ≥ 39
+        @test maximum(lat) ≤ 46
 
         # Check that the temperature data exists and is valid
         t2m = ds["t2m"]
-        @test ndims(t2m) >= 2
+        @test ndims(t2m) ≥ 2
 
         close(ds)
 
-        # Clean up
-        rm(filepath; force=true)
+        # Note: leave `filepath` in place; downstream surface-level testsets reuse it.
     end
 
     @testset "Availability of ERA5 variables" begin
@@ -81,51 +92,51 @@ start_date = DateTime(2005, 2, 16, 12)
 
     @testset "ERA5 metadata properties" begin
         variable = :temperature
-        metadatum = Metadatum(variable; dataset, bounding_box, date=start_date)
+        metadatum = Metadatum(variable; dataset, region, date=start_date)
 
         # Test metadata properties
         @test metadatum.name == :temperature
-        @test metadatum.dataset isa ERA5Hourly
+        @test metadatum.dataset isa ERA5HourlySingleLevel
         @test metadatum.dates == start_date
-        @test metadatum.bounding_box == bounding_box
+        @test metadatum.region == region
 
         # Test size (should be global ERA5 size with 1 time step)
         Nx, Ny, Nz, Nt = size(metadatum)
         @test Nx == 1440  # ERA5 longitude points
-        @test Ny == 721   # ERA5 latitude points
+        @test Ny == 720   # ERA5 latitude points (poles averaged into adjacent cells)
         @test Nz == 1     # 2D surface data
         @test Nt == 1     # Single time step
 
         # Test that ERA5 is correctly identified as 2D
-        @test NumericalEarth.DataWrangling.ERA5.is_three_dimensional(metadatum) == false
+        @test is_three_dimensional(metadatum) == false
     end
 
     @testset "ERA5 wave variable metadata sizes" begin
-        # Wave variables should be on the 0.5° grid (720×361)
+        # Wave variables should be on the 0.5° grid (720×360)
         for wave_var in (:eastward_stokes_drift, :northward_stokes_drift,
                          :significant_wave_height, :mean_wave_period, :mean_wave_direction)
             metadatum = Metadatum(wave_var; dataset, date=start_date)
             Nx, Ny, Nz, Nt = size(metadatum)
             @test Nx == 720
-            @test Ny == 361
+            @test Ny == 360
             @test Nz == 1
             @test Nt == 1
         end
 
-        # Atmospheric variables should remain on the 0.25° grid (1440×721)
+        # Atmospheric variables should remain on the 0.25° grid (1440×720)
         for atmos_var in (:temperature, :eastward_velocity, :surface_pressure)
             metadatum = Metadatum(atmos_var; dataset, date=start_date)
             Nx, Ny, Nz, Nt = size(metadatum)
             @test Nx == 1440
-            @test Ny == 721
+            @test Ny == 720
             @test Nz == 1
             @test Nt == 1
         end
     end
 
     @testset "ERA5 Monthly dataset" begin
-        monthly_dataset = ERA5Monthly()
-        @test monthly_dataset isa ERA5Monthly
+        monthly_dataset = ERA5MonthlySingleLevel()
+        @test monthly_dataset isa ERA5MonthlySingleLevel
 
         # Test that all_dates returns a valid range
         dates = NumericalEarth.DataWrangling.all_dates(monthly_dataset, :temperature)
@@ -133,16 +144,190 @@ start_date = DateTime(2005, 2, 16, 12)
         @test step(dates) == Month(1)
     end
 
+    @testset "ERA5 single-level all_dates (Hourly)" begin
+        hourly_dataset = ERA5HourlySingleLevel()
+        dates = NumericalEarth.DataWrangling.all_dates(hourly_dataset, :temperature)
+        @test first(dates) == DateTime("1940-01-01")
+        @test step(dates) == Hour(1)
+    end
+
+    @testset "ERA5 single-level dispatch helpers" begin
+        ds = ERA5HourlySingleLevel()
+        md = Metadatum(:temperature; dataset=ds, region, date=start_date)
+
+        # API-name and netcdf-name dicts cover the same variable set —
+        # catches forgetting to add a new variable to one of the two
+        @test keys(ERA5_dataset_variable_names) == keys(ERA5_netcdf_variable_names)
+
+        # available_variables returns the API-name dict (used to build CDS requests),
+        # not the netcdf short-name dict — guards against the easy swap-mistake
+        @test NumericalEarth.DataWrangling.available_variables(ds) === ERA5_dataset_variable_names
+
+        # dataset_variable_name returns the netcdf short name (read from file),
+        # not the API catalog name — same swap risk
+        @test NumericalEarth.DataWrangling.dataset_variable_name(md) == "t2m"
+
+        # default_inpainting is nothing for ERA5 (vs NearestNeighborInpainting for ECCO);
+        # accidentally enabling it would massively slow Field construction
+        @test NumericalEarth.DataWrangling.default_inpainting(md) === nothing
+    end
+
+    @testset "ERA5 single-level load-time unit conversions" begin
+        conversion_units = NumericalEarth.DataWrangling.conversion_units
+        convert_units    = NumericalEarth.DataWrangling.convert_units
+        InverseGravity   = NumericalEarth.DataWrangling.InverseGravity
+        MetersPerHour    = NumericalEarth.DataWrangling.MetersPerHour
+        Jm²ph            = NumericalEarth.DataWrangling.JoulesPerSquareMeterPerHour
+        ds = ERA5HourlySingleLevel()
+        era5m(name) = Metadatum(name; dataset=ds, date=start_date)
+
+        # Surface geopotential ÷ g → metres; accumulated SW/LW (J/m²) ÷ 3600 → W/m²;
+        # accumulated precip depth (m) × 1000/3600 → kg/m²/s. Others are unconverted.
+        @test conversion_units(era5m(:topography)) isa InverseGravity
+        @test conversion_units(era5m(:downwelling_shortwave_radiation)) isa Jm²ph
+        @test conversion_units(era5m(:downwelling_longwave_radiation))  isa Jm²ph
+        @test conversion_units(era5m(:total_precipitation)) isa MetersPerHour
+        @test conversion_units(era5m(:temperature)) === nothing
+
+        @test convert_units(3600, Jm²ph()) ≈ 1               # 3600 J/m²/hr → 1 W/m²
+        @test convert_units(3.6, MetersPerHour()) ≈ 1        # 3.6 m/hr → 1 kg/m²/s
+
+        # The regional hindcast prescribed components are first-class, top-level API.
+        # `ERA5PrescribedAtmosphere` is a `PrescribedAtmosphere{<:ERA5Dataset}` type alias
+        # (dispatch on provenance) with constructor methods; `ERA5PrescribedRadiation` is a function.
+        @test ERA5PrescribedAtmosphere isa Type
+        @test ERA5PrescribedRadiation  isa Function
+    end
+
+    @testset "ERA5 single-level metadata_prefix" begin
+        ds = ERA5HourlySingleLevel()
+        mp = NumericalEarth.DataWrangling.ERA5.metadata_prefix
+
+        # Single-date with region: prefix should not duplicate the date
+        prefix_single = mp(ds, :temperature, start_date, region)
+        @test occursin("2m_temperature", prefix_single)
+        @test occursin("ERA5HourlySingleLevel", prefix_single)
+        @test occursin("2005-02-16", prefix_single)
+        @test count("2005-02-16", prefix_single) == 1   # date appears once for single-date
+        @test occursin("0.0", prefix_single)            # west bound
+        @test occursin("5.0", prefix_single)            # east bound
+        @test occursin("40.0", prefix_single)           # south bound
+        @test occursin("45.0", prefix_single)           # north bound
+        # Filename safety
+        @test !occursin(":", prefix_single)             # colons replaced by dashes
+        @test !occursin(" ", prefix_single)             # spaces replaced by underscores
+
+        # Single-date, no region: suffix should be empty
+        prefix_no_region = mp(ds, :temperature, start_date, nothing)
+        @test !occursin("0.0", prefix_no_region)
+        @test !occursin("nothing", prefix_no_region)
+
+        # Multi-date: prefix should include both start and end dates
+        end_date = start_date + Hour(2)
+        prefix_multi = mp(ds, :temperature, start_date:Hour(1):end_date, region)
+        @test occursin("2005-02-16T12", prefix_multi)
+        @test occursin("2005-02-16T14", prefix_multi)
+    end
+
+    @testset "ERA5HourlyPressureLevels construction and metadata" begin
+        # Default constructor uses all 37 standard levels
+        ds_full = ERA5HourlyPressureLevels()
+        @test ds_full isa ERA5HourlyPressureLevels
+        @test length(ds_full.pressure_levels) == 37
+        @test Base.size(ds_full, :temperature) == (1440, 720, 37)
+
+        # Subset constructor
+        ds_sub = ERA5HourlyPressureLevels(pressure_levels=[850, 500]hPa)
+        @test Base.size(ds_sub, :temperature) == (1440, 720, 2)
+
+        # Monthly variant
+        ds_monthly = ERA5MonthlyPressureLevels()
+        @test ds_monthly isa ERA5MonthlyPressureLevels
+
+        # Metadatum size propagates Nz correctly
+        meta = Metadatum(:temperature; dataset=ds_sub, region=region, date=start_date)
+        Nx, Ny, Nz, Nt = size(meta)
+        @test Nz == 2
+        @test is_three_dimensional(meta) == true
+
+        # Variable name lookups
+        @test ERA5PL_dataset_variable_names[:temperature] == "temperature"
+        @test ERA5PL_dataset_variable_names[:geopotential_height] == "geopotential"
+    end
+
+    @testset "ERA5 pressure-level z_interfaces (standard atmosphere)" begin
+        levels_2 = [850, 500]hPa
+        z = standard_atmosphere_z_interfaces(levels_2)
+        @test length(z) == 3                    # Nz+1 interfaces
+        @test issorted(z)                        # monotonically increasing with altitude
+        # 850 hPa ≈ 1457 m, 500 hPa ≈ 5575 m
+        @test z[1] < 1457.0 < z[2] < 5575.0 < z[3]
+
+        # Single level
+        z1 = standard_atmosphere_z_interfaces([500]hPa)
+        @test length(z1) == 2
+        @test z1[1] < z1[2]
+    end
+
+    @testset "ERA5 pressure-level constructors sort levels descending" begin
+        # Pass ASCENDING input so the test fails if the inner constructor's
+        # `sort(...; rev=true)` regresses to a no-op or different order.
+        ds_h = ERA5HourlyPressureLevels([500, 850]hPa)
+        @test ds_h.pressure_levels == [850 * hPa, 500 * hPa]    # stored highest-pressure-first
+        @test ds_h.z === nothing                                # default: per-column from Φ
+
+        ds_m = ERA5MonthlyPressureLevels([500, 850]hPa)
+        @test ds_m.pressure_levels == [850 * hPa, 500 * hPa]
+        @test ds_m.z === nothing
+
+        # Already-descending input is preserved (sort is a no-op here)
+        ds_h2 = ERA5HourlyPressureLevels([850, 500]hPa)
+        @test ds_h2.pressure_levels == [850 * hPa, 500 * hPa]
+
+        # Three-level shuffled input
+        ds_h3 = ERA5HourlyPressureLevels([500, 850, 700]hPa)
+        @test ds_h3.pressure_levels == [850 * hPa, 700 * hPa, 500 * hPa]
+    end
+
+    @testset "ERA5 pressure-level stagger" begin
+        stagger = NumericalEarth.DataWrangling.ERA5.stagger
+
+        # Two-element input (evenly spaced): bottom and top faces are
+        # extrapolated symmetrically; result is Nz+1 monotonic.
+        zf = stagger([0.0, 1.0])
+        @test length(zf) == 3
+        @test issorted(zf)
+        @test zf ≈ [-0.5, 0.5, 1.5]
+
+        # Three-element evenly-spaced: every interior interface is the
+        # midpoint of the adjacent centers; bottom/top are extrapolated.
+        zf = stagger([1.0, 3.0, 5.0])
+        @test length(zf) == 4
+        @test zf ≈ [0.0, 2.0, 4.0, 6.0]
+
+        # Three-element irregularly-spaced: interior midpoints honor the
+        # actual spacing (not assumed-uniform).
+        zf = stagger([1.0, 3.0, 7.0])
+        @test length(zf) == 4
+        @test zf[2] ≈ 2.0   # midpoint(1, 3)
+        @test zf[3] ≈ 5.0   # midpoint(3, 7)
+        # Boundaries extrapolated at half the adjacent interior spacing
+        @test zf[1] ≈ 1.0 - (zf[2] - 1.0)
+        @test zf[4] ≈ 7.0 + (7.0 - zf[3])
+    end
+
     for arch in test_architectures
         A = typeof(arch)
 
         @testset "Field creation from ERA5 on $A" begin
             variable = :temperature
-            metadatum = Metadatum(variable; dataset, bounding_box, date=start_date)
+            metadatum = Metadatum(variable; dataset, region, date=start_date)
 
-            # Download if not present
+            # Download if not present (falls back to NumericalEarthArtifacts if CDS is unreachable)
             filepath = metadata_path(metadatum)
-            isfile(filepath) || download_dataset(metadatum)
+            isfile(filepath) || download_dataset_with_fallback(filepath; dataset_name="ERA5Hourly $variable") do
+                download(metadatum)
+            end
 
             # Create a Field from the downloaded data
             ψ = Field(metadatum, arch)
@@ -157,19 +342,18 @@ start_date = DateTime(2005, 2, 16, 12)
                 @test !all(iszero, interior(ψ))
             end
 
-            # Clean up
-            rm(filepath; force=true)
-            inpainted_path = NumericalEarth.DataWrangling.inpainted_metadata_path(metadatum)
-            isfile(inpainted_path) && rm(inpainted_path; force=true)
+            # Note: cleanup happens in the last surface-level testset below.
         end
 
         @testset "Setting a field from ERA5 metadata on $A" begin
             variable = :temperature
-            metadatum = Metadatum(variable; dataset, bounding_box, date=start_date)
+            metadatum = Metadatum(variable; dataset, region, date=start_date)
 
-            # Download if not present
+            # Download if not present (falls back to NumericalEarthArtifacts if CDS is unreachable)
             filepath = metadata_path(metadatum)
-            isfile(filepath) || download_dataset(metadatum)
+            isfile(filepath) || download_dataset_with_fallback(filepath; dataset_name="ERA5Hourly $variable") do
+                download(metadatum)
+            end
 
             # Create a target grid matching the bounding box region
             grid = LatitudeLongitudeGrid(arch;
@@ -192,6 +376,867 @@ start_date = DateTime(2005, 2, 16, 12)
             rm(filepath; force=true)
             inpainted_path = NumericalEarth.DataWrangling.inpainted_metadata_path(metadatum)
             isfile(inpainted_path) && rm(inpainted_path; force=true)
+        end
+    end
+
+    @testset "ERA5 pressure-level download and Field on CPU" begin
+        arch = CPU()
+        ds_pl = ERA5HourlyPressureLevels(pressure_levels=[850, 500]hPa)
+
+        @testset "Download and 3D Field" begin
+            meta = Metadatum(:temperature; dataset=ds_pl, region, date=start_date)
+            filepath = metadata_path(meta)
+            isfile(filepath) && rm(filepath; force=true)
+
+            download(meta)
+            @test isfile(filepath)
+
+            # Verify the NetCDF has a pressure_level dimension and the right variable
+            ds_nc = NCDataset(filepath)
+            @test haskey(ds_nc, "t")
+            @test haskey(ds_nc, "pressure_level") || haskey(ds_nc, "level")
+            close(ds_nc)
+
+            f = Field(meta, arch)
+            @test f isa Field
+            Nx, Ny, Nz = size(f)
+            @test Nz == 2
+
+            @allowscalar begin
+                @test !all(iszero, interior(f))
+                # Temperature at these levels should be in a plausible range (K)
+                @test all(x -> 180 < x < 340, filter(!isnan, vec(interior(f))))
+            end
+
+            rm(filepath; force=true)
+            inpainted_path = NumericalEarth.DataWrangling.inpainted_metadata_path(meta)
+            isfile(inpainted_path) && rm(inpainted_path; force=true)
+        end
+
+        @testset "Geopotential height conversion" begin
+            meta_z = Metadatum(:geopotential_height; dataset=ds_pl, region, date=start_date)
+            filepath = metadata_path(meta_z)
+
+            # Field() downloads if needed; the file may already be on disk from
+            # the previous testset's z_interfaces side-effect.
+            fz = Field(meta_z, arch)
+
+            @allowscalar begin
+                max_z = maximum(filter(!isnan, vec(interior(fz))))
+                # 500 hPa geopotential height ≈ 5500 m
+                @test 4000 < max_z < 7000
+            end
+
+            rm(filepath; force=true)
+            inpainted_path = NumericalEarth.DataWrangling.inpainted_metadata_path(meta_z)
+            isfile(inpainted_path) && rm(inpainted_path; force=true)
+        end
+
+        @testset "pressure_field" begin
+            meta = Metadatum(:temperature; dataset=ds_pl, region, date=start_date)
+            pf = pressure_field(meta, arch)
+            @test pf isa Field
+            Nx, Ny, Nz = size(pf)
+            @test Nz == 2
+
+            @allowscalar begin
+                # k=1 should be 850 hPa = 85000 Pa (highest pressure, lowest altitude)
+                @test interior(pf)[1, 1, 1] ≈ Float32(850hPa)
+                # k=2 should be 500 hPa = 50000 Pa
+                @test interior(pf)[1, 1, 2] ≈ Float32(500hPa)
+            end
+        end
+    end
+end
+
+@testset "ERA5 CDSAPIExt dispatch helpers and area construction" begin
+    sl = ERA5HourlySingleLevel()
+    pl = ERA5HourlyPressureLevels(pressure_levels=[500hPa, 850hPa])
+
+    @testset "cds_product / cds_varnames / nc_varnames" begin
+        @test CDSExt.cds_product(sl) == "reanalysis-era5-single-levels"
+        @test CDSExt.cds_product(pl) == "reanalysis-era5-pressure-levels"
+
+        @test CDSExt.cds_varnames(sl) === ERA5_dataset_variable_names
+        @test CDSExt.cds_varnames(pl) === ERA5PL_dataset_variable_names
+
+        @test CDSExt.nc_varnames(sl) === ERA5_netcdf_variable_names
+        @test CDSExt.nc_varnames(pl) === ERA5PL_netcdf_variable_names
+    end
+
+    @testset "coord_vars" begin
+        sl_coords = CDSExt.coord_vars(sl)
+        pl_coords = CDSExt.coord_vars(pl)
+
+        @test sl_coords isa Set
+        @test "longitude" in sl_coords
+        @test "latitude" in sl_coords
+        @test "valid_time" in sl_coords
+        @test !("pressure_level" in sl_coords)
+
+        @test "longitude" in pl_coords
+        @test "pressure_level" in pl_coords
+        @test "level" in pl_coords
+    end
+
+    @testset "extra_request_keys!" begin
+        # ERA5Dataset (single level): no-op
+        request = Dict{String, Any}("variable" => ["2m_temperature"])
+        CDSExt.extra_request_keys!(request, sl)
+        @test !haskey(request, "pressure_level")
+
+        # ERA5PressureLevelsDataset: populates `pressure_level` (in hPa, as strings)
+        CDSExt.extra_request_keys!(request, pl)
+        @test haskey(request, "pressure_level")
+        @test Set(request["pressure_level"]) == Set(["500", "850"])
+    end
+
+    @testset "build_era5_area" begin
+        # Nothing → nothing
+        @test CDSExt.build_era5_area(nothing) === nothing
+
+        # BoundingBox with both axes → [N, W, S, E]
+        bbox = BoundingBox(longitude=(-10.0, 5.0), latitude=(40.0, 50.0))
+        @test CDSExt.build_era5_area(bbox) == [50.0, -10.0, 40.0, 5.0]
+
+        # BoundingBox with one axis missing → nothing (CDS gets the global slab)
+        bbox_no_lat = BoundingBox(longitude=(-10.0, 5.0))
+        @test CDSExt.build_era5_area(bbox_no_lat) === nothing
+        bbox_no_lon = BoundingBox(latitude=(40.0, 50.0))
+        @test CDSExt.build_era5_area(bbox_no_lon) === nothing
+
+        # Column with Nearest interpolation → tight ε=1e-3 box around the point
+        col_nr = Column(-61.5, 18.0; interpolation=Nearest())
+        area_nr = CDSExt.build_era5_area(col_nr)
+        @test length(area_nr) == 4
+        # [N, W, S, E]
+        @test area_nr[1] ≈ 18.0 + 1e-3      # north
+        @test area_nr[2] ≈ -61.5 - 1e-3     # west
+        @test area_nr[3] ≈ 18.0 - 1e-3      # south
+        @test area_nr[4] ≈ -61.5 + 1e-3     # east
+
+        # Column with Linear interpolation → ε=0.3 padding for 2x2 stencil
+        col_lin = Column(-61.5, 18.0; interpolation=Linear())
+        area_lin = CDSExt.build_era5_area(col_lin)
+        @test area_lin[1] ≈ 18.0 + 0.3
+        @test area_lin[2] ≈ -61.5 - 0.3
+        @test area_lin[3] ≈ 18.0 - 0.3
+        @test area_lin[4] ≈ -61.5 + 0.3
+        # Linear box must enclose more than one ERA5 grid cell (0.25°)
+        @test (area_lin[1] - area_lin[3]) > 0.25
+        @test (area_lin[4] - area_lin[2]) > 0.25
+    end
+end
+
+@testset "ERA5 CDSAPIExt build_era5_request" begin
+    sl = ERA5HourlySingleLevel()
+    pl = ERA5HourlyPressureLevels(pressure_levels=[500hPa, 850hPa])
+    bbox = BoundingBox(longitude=(-10.0, 5.0), latitude=(40.0, 50.0))
+    col_nr  = Column(-61.5, 18.0; interpolation=Nearest())
+    col_lin = Column(-61.5, 18.0; interpolation=Linear())
+    dt = DateTime(2005, 2, 16, 12)
+
+    @testset "Single-level dataset: no pressure_level key" begin
+        req = CDSExt.build_era5_request(:temperature, sl, dt; region=nothing)
+        @test !haskey(req, "pressure_level")
+    end
+
+    @testset "Pressure-level dataset: pressure_level is sorted hPa strings" begin
+        # Constructor sorts levels descending (highest-pressure-first); request preserves that order
+        req = CDSExt.build_era5_request(:temperature, pl, dt; region=nothing)
+        @test haskey(req, "pressure_level")
+        @test req["pressure_level"] == ["850", "500"]
+        @test all(s -> s isa String, req["pressure_level"])
+    end
+
+    @testset "BoundingBox region: area in [N, W, S, E] order, padded by 2 native cells" begin
+        # The request fetches two native cells (2 × 0.25° = 0.5°) of margin so the
+        # downloaded file covers the center-bracketed native grid the data lands on.
+        req = CDSExt.build_era5_request(:temperature, sl, dt; region=bbox)
+        @test haskey(req, "area")
+        @test req["area"] == [50.5, -10.5, 39.5, 5.5]
+    end
+
+    @testset "Column with Nearest interpolation: tight ε=1e-3 box" begin
+        req = CDSExt.build_era5_request(:temperature, sl, dt; region=col_nr)
+        @test haskey(req, "area")
+        area = req["area"]
+        @test area[1] ≈ 18.0 + 1e-3      # north
+        @test area[2] ≈ -61.5 - 1e-3     # west
+        @test area[3] ≈ 18.0 - 1e-3      # south
+        @test area[4] ≈ -61.5 + 1e-3     # east
+    end
+
+    @testset "Column with Linear interpolation: ε=0.3 padding" begin
+        req = CDSExt.build_era5_request(:temperature, sl, dt; region=col_lin)
+        @test haskey(req, "area")
+        area = req["area"]
+        @test area[1] ≈ 18.0 + 0.3
+        @test area[2] ≈ -61.5 - 0.3
+        @test area[3] ≈ 18.0 - 0.3
+        @test area[4] ≈ -61.5 + 0.3
+    end
+
+    @testset "region=nothing omits area key" begin
+        req = CDSExt.build_era5_request(:temperature, sl, dt; region=nothing)
+        @test !haskey(req, "area")
+    end
+
+    @testset "Multiple datetimes on same day: time is an array, not a single string" begin
+        dts = [DateTime(2005, 2, 16, 0), DateTime(2005, 2, 16, 6), DateTime(2005, 2, 16, 18)]
+        req = CDSExt.build_era5_request(:temperature, sl, dts; region=nothing)
+        @test req["time"]  == ["00:00", "06:00", "18:00"]
+        # year/month/day are scalars-in-an-array, taken from the first datetime
+        @test req["year"]  == ["2005"]
+        @test req["month"] == ["02"]
+        @test req["day"]   == ["16"]
+    end
+
+    @testset "Multiple datetimes across days in one month: day is multi-element" begin
+        # CDS computes the Cartesian product of year × month × day × time, so
+        # this single request covers Feb 16 00:00, Feb 16 12:00, Feb 17 00:00,
+        # Feb 17 12:00 (any (day, time) pair).
+        dts = [DateTime(2005, 2, 16, 0),
+               DateTime(2005, 2, 16, 12),
+               DateTime(2005, 2, 17, 0),
+               DateTime(2005, 2, 17, 12)]
+        req = CDSExt.build_era5_request(:temperature, sl, dts; region=nothing)
+        @test req["year"]  == ["2005"]
+        @test req["month"] == ["02"]
+        @test Set(req["day"])  == Set(["16", "17"])
+        @test Set(req["time"]) == Set(["00:00", "12:00"])
+    end
+
+    @testset "Single datetime still produces a one-element time array" begin
+        req = CDSExt.build_era5_request(:temperature, sl, dt; region=nothing)
+        @test req["time"] isa AbstractVector
+        @test req["time"] == ["12:00"]
+    end
+
+    @testset "Zero-padded month/day/hour" begin
+        # Month=2, day=3, hour=4 — must come out "02", "03", "04:00"
+        req = CDSExt.build_era5_request(:temperature, sl, DateTime(2005, 2, 3, 4); region=nothing)
+        @test req["year"]  == ["2005"]
+        @test req["month"] == ["02"]
+        @test req["day"]   == ["03"]
+        @test req["time"]  == ["04:00"]
+    end
+
+    @testset "Single Symbol and Vector{Symbol} inputs are equivalent" begin
+        req_sym = CDSExt.build_era5_request(:temperature, sl, dt; region=nothing)
+        req_vec = CDSExt.build_era5_request([:temperature], sl, dt; region=nothing)
+        @test req_sym["variable"] == req_vec["variable"] == ["2m_temperature"]
+    end
+
+    @testset "Multi-variable request unique-ifies variable list" begin
+        req = CDSExt.build_era5_request([:temperature, :temperature], sl, dt; region=nothing)
+        @test req["variable"] == ["2m_temperature"]
+    end
+
+    @testset "Constant keys present on every request" begin
+        req = CDSExt.build_era5_request(:temperature, sl, dt; region=nothing)
+        @test req["product_type"]    == ["reanalysis"]
+        @test req["data_format"]     == "netcdf"
+        @test req["download_format"] == "unarchived"
+    end
+end
+
+@testset "ERA5 CDSAPIExt plan_era5_month" begin
+    region = BoundingBox(longitude=(0, 5), latitude=(40, 45))
+    ds = ERA5HourlySingleLevel()
+    dt1 = DateTime(2005, 2, 16, 0)
+    dt2 = DateTime(2005, 2, 16, 12)
+
+    mktempdir() do tmp
+        # Helper: where each datetime's output file would live
+        function expected_path(date)
+            md = Metadatum(:temperature; dataset=ds, region, date, dir=tmp)
+            return metadata_path(md)
+        end
+        p1, p2 = expected_path(dt1), expected_path(dt2)
+
+        @testset "all paths missing: all pending, full plan populated" begin
+            plan = CDSExt.plan_era5_month(:temperature, ds, [dt1, dt2];
+                                          region, dir=tmp, skip_existing=true)
+            @test plan.dt_path_pairs == [(dt1, p1), (dt2, p2)]
+            @test length(plan.pending) == 2
+            @test plan.request !== nothing
+            @test plan.request["time"] == ["00:00", "12:00"]
+            @test plan.tmp_path == joinpath(tmp, "_tmp_20050216.nc")
+            @test length(plan.nc_triples) == 2
+            # All triples carry the netcdf short name for :temperature on single-level
+            @test all(t -> first(t) == "t2m", plan.nc_triples)
+            # Triples carry the requested datetime; the timestep is resolved by valid_time at split time
+            @test Set(t[2] for t in plan.nc_triples) == Set([dt1, dt2])
+        end
+
+        @testset "partial coverage: pending narrows to missing datetime" begin
+            mkpath(dirname(p1)); touch(p1)
+            plan = CDSExt.plan_era5_month(:temperature, ds, [dt1, dt2];
+                                          region, dir=tmp, skip_existing=true)
+            @test length(plan.dt_path_pairs) == 2
+            @test length(plan.pending) == 1
+            @test plan.pending[1][1] == dt2
+            @test plan.request["time"] == ["12:00"]
+            @test length(plan.nc_triples) == 1
+            rm(p1)
+        end
+
+        @testset "all paths present: empty pending and nothing fields" begin
+            for p in (p1, p2)
+                mkpath(dirname(p)); touch(p)
+            end
+            plan = CDSExt.plan_era5_month(:temperature, ds, [dt1, dt2];
+                                          region, dir=tmp, skip_existing=true)
+            @test length(plan.dt_path_pairs) == 2
+            @test isempty(plan.pending)
+            @test plan.request   === nothing
+            @test plan.tmp_path  === nothing
+            @test plan.nc_triples === nothing
+            for p in (p1, p2); rm(p); end
+        end
+
+        @testset "skip_existing=false ignores existing files" begin
+            mkpath(dirname(p1)); touch(p1)
+            mkpath(dirname(p2)); touch(p2)
+            plan = CDSExt.plan_era5_month(:temperature, ds, [dt1, dt2];
+                                          region, dir=tmp, skip_existing=false)
+            @test length(plan.pending) == 2
+            @test plan.request !== nothing
+            for p in (p1, p2); rm(p); end
+        end
+    end
+end
+
+@testset "ERA5 CDSAPIExt plan_era5_multivar_month" begin
+    region = BoundingBox(longitude=(0, 5), latitude=(40, 45))
+    ds_pl = ERA5HourlyPressureLevels(pressure_levels=[850, 500]hPa)
+    dt1 = DateTime(2005, 2, 16, 0)
+    dt2 = DateTime(2005, 2, 16, 12)
+    names = [:temperature, :eastward_velocity]
+
+    mktempdir() do tmp
+        function expected_path(name, date)
+            md = Metadatum(name; dataset=ds_pl, region, date, dir=tmp)
+            return metadata_path(md)
+        end
+
+        @testset "all missing: full plan with both names and times" begin
+            plan = CDSExt.plan_era5_multivar_month(names, ds_pl, [dt1, dt2];
+                                                   region, dir=tmp, skip_existing=true)
+            @test length(plan.name_dt_paths) == 4   # 2 names × 2 datetimes
+            @test length(plan.pending) == 4
+            @test plan.request["time"] == ["00:00", "12:00"]
+            @test Set(plan.request["variable"]) == Set(["temperature", "u_component_of_wind"])
+            @test plan.tmp_path == joinpath(tmp, "_tmp_multi_20050216.nc")
+            @test length(plan.nc_triples) == 4
+            # Pressure-level netcdf short names for the two variables
+            @test Set(first.(plan.nc_triples)) == Set(["t", "u"])
+            @test Set(t[2] for t in plan.nc_triples) == Set([dt1, dt2])
+        end
+
+        @testset "partial coverage: pending narrows variables, request reflects subset" begin
+            # Touch only :temperature paths so pending is just the velocity ones
+            for dt in (dt1, dt2)
+                p = expected_path(:temperature, dt)
+                mkpath(dirname(p)); touch(p)
+            end
+            plan = CDSExt.plan_era5_multivar_month(names, ds_pl, [dt1, dt2];
+                                                   region, dir=tmp, skip_existing=true)
+            @test length(plan.pending) == 2
+            @test all(p -> p[1] == :eastward_velocity, plan.pending)
+            @test plan.request["variable"] == ["u_component_of_wind"]
+            @test plan.request["time"] == ["00:00", "12:00"]
+            for dt in (dt1, dt2); rm(expected_path(:temperature, dt)); end
+        end
+
+        @testset "all present: empty pending and nothing fields" begin
+            for name in names, dt in (dt1, dt2)
+                p = expected_path(name, dt)
+                mkpath(dirname(p)); touch(p)
+            end
+            plan = CDSExt.plan_era5_multivar_month(names, ds_pl, [dt1, dt2];
+                                                   region, dir=tmp, skip_existing=true)
+            @test length(plan.name_dt_paths) == 4
+            @test isempty(plan.pending)
+            @test plan.request   === nothing
+            @test plan.tmp_path  === nothing
+            @test plan.nc_triples === nothing
+            for name in names, dt in (dt1, dt2)
+                rm(expected_path(name, dt))
+            end
+        end
+
+        @testset "skip_existing=false: pending is everything regardless" begin
+            for name in names, dt in (dt1, dt2)
+                p = expected_path(name, dt)
+                mkpath(dirname(p)); touch(p)
+            end
+            plan = CDSExt.plan_era5_multivar_month(names, ds_pl, [dt1, dt2];
+                                                   region, dir=tmp, skip_existing=false)
+            @test length(plan.pending) == 4
+            @test plan.request !== nothing
+            for name in names, dt in (dt1, dt2); rm(expected_path(name, dt)); end
+        end
+    end
+end
+
+@testset "ERA5 CDSAPIExt group_by_calendar_month" begin
+    # Multiple days in one calendar month → one group
+    same_month = [DateTime(2005, 2, 16, 0),
+                  DateTime(2005, 2, 17, 6),
+                  DateTime(2005, 2, 28, 23)]
+    g = CDSExt.group_by_calendar_month(same_month)
+    @test length(g) == 1
+    @test (2005, 2) in keys(g)
+    @test length(g[(2005, 2)]) == 3
+
+    # Month boundary: each month is its own group
+    month_boundary = [DateTime(2005, 2, 28, 23),
+                      DateTime(2005, 3, 1, 0)]
+    g = CDSExt.group_by_calendar_month(month_boundary)
+    @test length(g) == 2
+    @test g[(2005, 2)] == [DateTime(2005, 2, 28, 23)]
+    @test g[(2005, 3)] == [DateTime(2005, 3, 1, 0)]
+
+    # Year boundary: crossing Dec/Jan produces two groups under different years
+    year_boundary = [DateTime(2004, 12, 31, 23),
+                     DateTime(2005, 1, 1, 0)]
+    g = CDSExt.group_by_calendar_month(year_boundary)
+    @test length(g) == 2
+    @test g[(2004, 12)] == [DateTime(2004, 12, 31, 23)]
+    @test g[(2005, 1)]  == [DateTime(2005, 1, 1, 0)]
+
+    # Multiple months, interleaved order — grouping must be order-independent
+    mixed = [DateTime(2005, 3, 6),
+             DateTime(2005, 2, 16),
+             DateTime(2005, 3, 12),
+             DateTime(2005, 2, 28)]
+    g = CDSExt.group_by_calendar_month(mixed)
+    @test length(g) == 2
+    @test Set(g[(2005, 2)]) == Set([DateTime(2005, 2, 16), DateTime(2005, 2, 28)])
+    @test Set(g[(2005, 3)]) == Set([DateTime(2005, 3, 6),  DateTime(2005, 3, 12)])
+
+    # Duplicate datetimes are preserved (CDS will dedupe; we don't)
+    dups = [DateTime(2005, 2, 16, 12), DateTime(2005, 2, 16, 12)]
+    g = CDSExt.group_by_calendar_month(dups)
+    @test length(g) == 1
+    @test length(g[(2005, 2)]) == 2
+
+    # Single-element input
+    g = CDSExt.group_by_calendar_month([DateTime(2005, 2, 16, 12)])
+    @test length(g) == 1
+    @test g[(2005, 2)] == [DateTime(2005, 2, 16, 12)]
+end
+
+@testset "ERA5 CDSAPIExt batch_datetimes_for_cds" begin
+    sl    = ERA5HourlySingleLevel()
+    pl_21 = ERA5HourlyPressureLevels()  # default: all 37 levels
+    pl_5  = ERA5HourlyPressureLevels(pressure_levels=[1000, 850, 700, 500, 250]hPa)
+
+    # A week of hourly data straddling the Dec/Jan boundary
+    dates = collect(DateTime(2004, 12, 27):Hour(1):DateTime(2005, 1, 2, 23))
+
+    @testset "single-level fits in one batch per month" begin
+        # Each datetime costs 1 field × 1 level = 1; well under the 5000 cap.
+        batches = CDSExt.batch_datetimes_for_cds(dates, sl, 1)
+        @test length(batches) == 2
+        @test all(b -> length(unique(Dates.month.(b))) == 1, batches)
+        # Dec 2004 group has 120 dts, Jan 2005 has 48
+        @test sort([length(b) for b in batches]) == [48, 120]
+    end
+
+    @testset "pressure-level with many vars+levels splits within a month" begin
+        # 5 vars × 37 levels = 185 fields per datetime → max 27 dts per request
+        # at default cap of 5000.
+        batches = CDSExt.batch_datetimes_for_cds(dates, pl_21, 5)
+        @test length(batches) > 2   # must split within at least one month
+        @test all(b -> length(unique(Dates.month.(b))) == 1, batches)
+        # Batches are sorted in time and within each month
+        all_dts = reduce(vcat, batches)
+        @test all_dts == sort(dates)
+    end
+
+    @testset "max_dts_per_cds_request: arithmetic" begin
+        # Single-level, single variable: max_dts = 5000 / (1 * 1) = 5000
+        @test CDSExt.max_dts_per_cds_request(sl, 1) == 5000
+        # Pressure-level (5 levels) × 1 var → 5000 / 5 = 1000
+        @test CDSExt.max_dts_per_cds_request(pl_5, 1) == 1000
+        # Pressure-level (37 levels) × 5 vars → 5000 / 185 = 27
+        @test CDSExt.max_dts_per_cds_request(pl_21, 5) == fld(5000, 5 * 37)
+        # Tiny custom limit floored at 1
+        @test CDSExt.max_dts_per_cds_request(pl_21, 5; max_fields=10) == 1
+    end
+
+    @testset "ordering: batches come out chronologically" begin
+        scrambled = shuffle!(collect(dates))
+        batches = CDSExt.batch_datetimes_for_cds(scrambled, sl, 1)
+        flattened = reduce(vcat, batches)
+        @test flattened == sort(dates)
+    end
+end
+
+@testset "ERA5 CDSAPIExt skip_existing short-circuit" begin
+    # Build a temporary directory and pre-create the expected output files so
+    # `download(...; skip_existing=true)` returns without contacting CDS.
+    # If the short-circuit ever regresses, these tests will throw a credentials
+    # error (or 4xx from the CDS API) and fail loudly.
+    region = NumericalEarth.DataWrangling.BoundingBox(longitude=(0, 5), latitude=(40, 45))
+    mktempdir() do tmp
+        ds_pl  = ERA5HourlyPressureLevels(pressure_levels=[850, 500]hPa)
+        date1  = DateTime(2005, 2, 16, 12)
+        date2  = DateTime(2005, 2, 16, 18)
+        names  = [:temperature, :eastward_velocity]
+
+        # Helper: pre-create the file that `download` would write
+        function touch_expected(name, dataset, date)
+            md = Metadatum(name; dataset, region, date, dir=tmp)
+            path = metadata_path(md)
+            mkpath(dirname(path))
+            touch(path)
+            return path
+        end
+
+        @testset "multi-variable pressure-level (single date)" begin
+            paths = [touch_expected(name, ds_pl, date1) for name in names]
+            meta = Metadatum(:temperature; dataset=ds_pl, region, date=date1, dir=tmp)
+
+            result = download(names, meta; skip_existing=true)
+            @test result isa Vector{String}
+            @test length(result) == length(names)
+            @test Set(result) == Set(paths)
+        end
+
+        @testset "single-variable multi-date (download_era5_month)" begin
+            # All hours of date1, date2 already on disk
+            ds_sl = ERA5HourlySingleLevel()
+            expected = [touch_expected(:temperature, ds_sl, dt) for dt in (date1, date2)]
+
+            # Returns the existing paths without raising — the early-return guard fires
+            result = CDSExt.download_era5_month(:temperature, ds_sl, [date1, date2];
+                                              region, dir=tmp,
+                                              skip_existing=true, cleanup=true)
+            @test result isa Vector{String}
+            @test Set(result) == Set(expected)
+        end
+
+        @testset "multi-variable multi-date (download_era5_multivar_month)" begin
+            ds_sl = ERA5HourlySingleLevel()
+            expected = [touch_expected(name, ds_sl, dt) for name in names for dt in (date1, date2)]
+
+            result = CDSExt.download_era5_multivar_month(names, ds_sl, [date1, date2];
+                                                       region, dir=tmp,
+                                                       skip_existing=true, cleanup=true)
+            @test result isa Vector{String}
+            @test Set(result) == Set(expected)
+        end
+
+        # Dates spanning two calendar days — exercises the parents'
+        # path-collection across multiple `_group_by_calendar_day` groups.
+        # Catches regressions that drop or overwrite paths from one group.
+        date_day1 = DateTime(2005, 2, 16, 12)
+        date_day2 = DateTime(2005, 2, 17,  6)
+
+        @testset "ERA5Metadata parent (multi-day)" begin
+            ds_sl = ERA5HourlySingleLevel()
+            expected = [touch_expected(:temperature, ds_sl, dt) for dt in (date_day1, date_day2)]
+            meta = Metadata(:temperature; dataset=ds_sl, dates=[date_day1, date_day2], region, dir=tmp)
+
+            result = download(meta; skip_existing=true)
+            @test result isa Vector{String}
+            @test Set(result) == Set(expected)
+        end
+
+        @testset "ERA5PressureMetadata parent (multi-day, multi-name)" begin
+            expected = [touch_expected(name, ds_pl, dt) for name in names for dt in (date_day1, date_day2)]
+            meta = Metadata(:temperature; dataset=ds_pl, dates=[date_day1, date_day2], region, dir=tmp)
+
+            result = download(names, meta; skip_existing=true)
+            @test result isa Vector{String}
+            @test Set(result) == Set(expected)
+        end
+
+        @testset "names + dataset + datetimes convenience overload (multi-day)" begin
+            ds_sl = ERA5HourlySingleLevel()
+            expected = [touch_expected(name, ds_sl, dt) for name in names for dt in (date_day1, date_day2)]
+
+            result = download(names, ds_sl, [date_day1, date_day2];
+                                       region, dir=tmp, skip_existing=true, cleanup=true)
+            @test result isa Vector{String}
+            @test Set(result) == Set(expected)
+        end
+    end
+end
+
+@testset "ERA5 CDSAPIExt NetCDF copy and split helpers" begin
+    # Helper: write a synthetic ERA5-like NetCDF with `Nt` timesteps and two
+    # variables (`u`, `v`) on dims (longitude, latitude, valid_time).
+    function write_synthetic_era5_nc(path; Nx=2, Ny=2, Nt=3)
+        NCDatasets.Dataset(path, "c") do ds
+            NCDatasets.defDim(ds, "longitude", Nx)
+            NCDatasets.defDim(ds, "latitude",  Ny)
+            NCDatasets.defDim(ds, "valid_time", Nt)
+            ds.attrib["title"] = "synthetic_era5_test"
+
+            lon = NCDatasets.defVar(ds, "longitude", Float64, ("longitude",))
+            lat = NCDatasets.defVar(ds, "latitude",  Float64, ("latitude",))
+            t   = NCDatasets.defVar(ds, "valid_time", Int64,  ("valid_time",))
+            lon[:] = collect(range(-1.0, 1.0; length=Nx))
+            lat[:] = collect(range(40.0, 41.0; length=Ny))
+            t[:]   = collect(1:Nt)
+
+            # u: includes _FillValue and a custom attribute
+            u = NCDatasets.defVar(ds, "u", Float32,
+                                  ("longitude", "latitude", "valid_time");
+                                  fillvalue=Float32(-9999.0))
+            u.attrib["units"] = "m s**-1"
+            u.attrib["long_name"] = "u_component_of_wind"
+            for k in 1:Nt, j in 1:Ny, i in 1:Nx
+                u[i, j, k] = Float32(100k + 10j + i)
+            end
+
+            # v: no fill value, no extra attributes
+            v = NCDatasets.defVar(ds, "v", Float32,
+                                  ("longitude", "latitude", "valid_time"))
+            for k in 1:Nt, j in 1:Ny, i in 1:Nx
+                v[i, j, k] = Float32(-(100k + 10j + i))
+            end
+        end
+    end
+
+    coord_vars = CDSExt.ERA5_COORD_VARS
+
+    @testset "ncvar_copy! preserves data, attributes, fill value" begin
+        mktempdir() do dir
+            src_path = joinpath(dir, "src.nc")
+            dst_path = joinpath(dir, "dst.nc")
+            write_synthetic_era5_nc(src_path; Nx=3, Ny=2, Nt=1)
+
+            NCDatasets.Dataset(src_path, "r") do src
+                NCDatasets.Dataset(dst_path, "c") do dst
+                    for (dname, dlen) in src.dim
+                        NCDatasets.defDim(dst, dname, dlen)
+                    end
+                    CDSExt.ncvar_copy!(dst, src["u"], "u")
+                end
+            end
+
+            NCDatasets.Dataset(dst_path, "r") do dst
+                @test haskey(dst, "u")
+                @test eltype(dst["u"].var) == Float32
+                @test dst["u"].attrib["units"] == "m s**-1"
+                @test dst["u"].attrib["long_name"] == "u_component_of_wind"
+                @test dst["u"].attrib["_FillValue"] == Float32(-9999.0)
+
+                NCDatasets.Dataset(src_path, "r") do src
+                    @test dst["u"].var[:] == src["u"].var[:]
+                end
+            end
+        end
+    end
+
+    @testset "ncvar_copy_tslice! extracts a single timestep" begin
+        mktempdir() do dir
+            src_path = joinpath(dir, "src.nc")
+            dst_path = joinpath(dir, "dst.nc")
+            write_synthetic_era5_nc(src_path; Nx=2, Ny=2, Nt=3)
+
+            tidx = 2
+            time_dimnames = Set(["valid_time"])
+
+            NCDatasets.Dataset(src_path, "r") do src
+                NCDatasets.Dataset(dst_path, "c") do dst
+                    for (dname, dlen) in src.dim
+                        out_len = dname in time_dimnames ? 1 : dlen
+                        NCDatasets.defDim(dst, dname, out_len)
+                    end
+                    CDSExt.ncvar_copy_tslice!(dst, src["u"], "u", tidx, time_dimnames)
+                    # `valid_time` is a coord variable in the file — copy that too,
+                    # using the same tslice path. Exercises the has_time branch.
+                    CDSExt.ncvar_copy_tslice!(dst, src["valid_time"], "valid_time", tidx, time_dimnames)
+                    # `longitude` has no time dim — exercises the !has_time branch.
+                    CDSExt.ncvar_copy_tslice!(dst, src["longitude"], "longitude", tidx, time_dimnames)
+                end
+            end
+
+            NCDatasets.Dataset(dst_path, "r") do dst
+                @test dst.dim["valid_time"] == 1
+                @test size(dst["u"]) == (2, 2, 1)
+                @test dst["valid_time"][:] == [tidx]
+
+                NCDatasets.Dataset(src_path, "r") do src
+                    @test dst["u"].var[:, :, 1] == src["u"].var[:, :, tidx]
+                    @test dst["longitude"][:] == src["longitude"][:]
+                end
+            end
+        end
+    end
+
+    @testset "split_era5_nc produces per-variable files" begin
+        mktempdir() do dir
+            src_path = joinpath(dir, "src.nc")
+            write_synthetic_era5_nc(src_path; Nx=2, Ny=2, Nt=1)
+
+            pairs = [
+                ("u", joinpath(dir, "u_only.nc")),
+                ("v", joinpath(dir, "v_only.nc")),
+                ("missing_var", joinpath(dir, "should_not_exist.nc")),
+            ]
+
+            CDSExt.split_era5_nc(src_path, pairs, coord_vars)
+
+            @test !isfile(joinpath(dir, "should_not_exist.nc"))
+
+            for (vname, dst_path) in pairs[1:2]
+                @test isfile(dst_path)
+                NCDatasets.Dataset(dst_path, "r") do dst
+                    @test haskey(dst, vname)
+                    other = vname == "u" ? "v" : "u"
+                    @test !haskey(dst, other)
+                    NCDatasets.Dataset(src_path, "r") do src
+                        @test dst[vname].var[:] == src[vname].var[:]
+                    end
+                end
+            end
+        end
+    end
+
+    @testset "split_era5_nc_multistep produces per-(var,timestep) files" begin
+        mktempdir() do dir
+            src_path = joinpath(dir, "src.nc")
+            write_synthetic_era5_nc(src_path; Nx=2, Ny=2, Nt=3)
+
+            triples = [
+                ("u", 1, joinpath(dir, "u_t1.nc")),
+                ("u", 3, joinpath(dir, "u_t3.nc")),
+                ("v", 2, joinpath(dir, "v_t2.nc")),
+                # Variable not present in source — silently skipped, no file.
+                ("missing_var", 1, joinpath(dir, "should_not_exist.nc")),
+            ]
+            time_dimnames = Set(["valid_time"])
+
+            CDSExt.split_era5_nc_multistep(src_path, triples, coord_vars, time_dimnames)
+
+            # The skipped variable produces no output.
+            @test !isfile(joinpath(dir, "should_not_exist.nc"))
+
+            for (vname, tidx, dst_path) in triples[1:3]
+                @test isfile(dst_path)
+                NCDatasets.Dataset(dst_path, "r") do dst
+                    @test haskey(dst, vname)
+                    @test dst.dim["valid_time"] == 1
+                    @test haskey(dst, "longitude")
+                    @test haskey(dst, "latitude")
+                    # The other ERA5 variable should not have leaked in.
+                    other = vname == "u" ? "v" : "u"
+                    @test !haskey(dst, other)
+
+                    NCDatasets.Dataset(src_path, "r") do src
+                        @test dst[vname].var[:, :, 1] == src[vname].var[:, :, tidx]
+                    end
+                end
+            end
+        end
+    end
+
+    @testset "split_era5_nc_multistep selects timesteps by valid_time, not request position" begin
+        # Regression: CDS expands `day × time` into a Cartesian product, so a window that
+        # crosses midnight (e.g. requesting [day N 23:00, day N+1 00:00]) comes back with
+        # extra, sorted timesteps. The split must key on valid_time; keying on the request
+        # position silently assigns the wrong hour to each output file.
+        mktempdir() do dir
+            src_path = joinpath(dir, "src.nc")
+            # What CDS returns for day=[16,17] × time=[23:00, 00:00], sorted ascending:
+            times = [DateTime(2005, 2, 16, 0), DateTime(2005, 2, 16, 23),
+                     DateTime(2005, 2, 17, 0), DateTime(2005, 2, 17, 23)]
+            NCDatasets.Dataset(src_path, "c") do ds
+                NCDatasets.defDim(ds, "longitude", 2)
+                NCDatasets.defDim(ds, "latitude",  2)
+                NCDatasets.defDim(ds, "valid_time", length(times))
+                NCDatasets.defVar(ds, "longitude", Float64, ("longitude",))[:] = [-1.0, 1.0]
+                NCDatasets.defVar(ds, "latitude",  Float64, ("latitude",))[:]  = [40.0, 41.0]
+                tv = NCDatasets.defVar(ds, "valid_time", Float64, ("valid_time",);
+                                       attrib = ["units" => "seconds since 1970-01-01"])
+                tv[:] = times
+                u = NCDatasets.defVar(ds, "t", Float32, ("longitude", "latitude", "valid_time"))
+                for k in eachindex(times), j in 1:2, i in 1:2
+                    u[i, j, k] = Float32(k)          # marker == source timestep index
+                end
+            end
+
+            # Request only the two datetimes we actually want (timesteps 2 and 3 of `times`).
+            want = [DateTime(2005, 2, 16, 23), DateTime(2005, 2, 17, 0)]
+            triples = [("t", want[1], joinpath(dir, "a.nc")),
+                       ("t", want[2], joinpath(dir, "b.nc"))]
+            CDSExt.split_era5_nc_multistep(src_path, triples,
+                                           Set(["longitude", "latitude", "valid_time"]),
+                                           Set(["valid_time"]))
+
+            # a.nc must hold valid_time 16T23:00 (marker 2), b.nc 17T00:00 (marker 3).
+            # The old positional split would have written markers 1 and 2.
+            for (want_dt, fname, marker) in [(want[1], "a.nc", 2f0), (want[2], "b.nc", 3f0)]
+                NCDatasets.Dataset(joinpath(dir, fname), "r") do dst
+                    @test dst["valid_time"][1] == want_dt
+                    @test all(==(marker), dst["t"].var[:])
+                end
+            end
+        end
+    end
+end
+
+@testset "ERA5 CDSAPIExt is_zip and foreach_nc" begin
+    @testset "is_zip" begin
+        mktempdir() do tmp
+            # File starting with the ZIP magic header
+            zip_path = joinpath(tmp, "fake.zip")
+            open(zip_path, "w") do io
+                write(io, UInt8[0x50, 0x4b, 0x03, 0x04, 0x00, 0x00])
+            end
+            @test CDSExt.is_zip(zip_path) == true
+
+            # File with arbitrary non-magic bytes (NetCDF-3 starts with "CDF\x01")
+            nc_path = joinpath(tmp, "fake.nc")
+            open(nc_path, "w") do io
+                write(io, UInt8[0x43, 0x44, 0x46, 0x01])
+            end
+            @test CDSExt.is_zip(nc_path) == false
+
+            # Short file (<4 bytes) — length check guards against false positives
+            short_path = joinpath(tmp, "short.bin")
+            open(short_path, "w") do io
+                write(io, UInt8[0x50, 0x4b])   # only 2 of the 4 magic bytes
+            end
+            @test CDSExt.is_zip(short_path) == false
+        end
+    end
+
+    @testset "foreach_nc — non-zip path calls f exactly once" begin
+        mktempdir() do tmp
+            nc_path = joinpath(tmp, "data.nc")
+            touch(nc_path)
+
+            received = String[]
+            CDSExt.foreach_nc(p -> push!(received, p), nc_path, tmp)
+
+            @test received == [nc_path]
+        end
+    end
+
+    @testset "foreach_nc — zip path extracts and visits each .nc" begin
+        mktempdir() do tmp
+            # Build a ZIP fixture containing two .nc files (and a non-.nc file
+            # that should be ignored).
+            nc1 = joinpath(tmp, "a.nc"); touch(nc1)
+            nc2 = joinpath(tmp, "b.nc"); touch(nc2)
+            other = joinpath(tmp, "readme.txt"); touch(other)
+
+            zip_path = joinpath(tmp, "bundle.zip")
+            run(`zip -j -q $zip_path $nc1 $nc2 $other`)
+
+            received = String[]
+            CDSExt.foreach_nc(p -> push!(received, basename(p)), zip_path, tmp)
+
+            @test sort(received) == ["a.nc", "b.nc"]   # readme.txt filtered out
         end
     end
 end

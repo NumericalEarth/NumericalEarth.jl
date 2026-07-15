@@ -1,14 +1,25 @@
 include("runtests_setup.jl")
+include("download_utils.jl")
 
-using NumericalEarth
-using NumericalEarth.DataWrangling: download_dataset, metadata_path
-using NumericalEarth.DataWrangling.ORCA: default_south_rows_to_remove
 using Oceananigans
+using Oceananigans.Architectures: CPU
 using Oceananigans.OrthogonalSphericalShellGrids: TripolarGrid
 using Oceananigans.ImmersedBoundaries: ImmersedBoundaryGrid
 using NCDatasets
+using NumericalEarth
+using NumericalEarth.DataWrangling: metadata_path
+using NumericalEarth.DataWrangling.ORCA: default_south_rows_to_remove
 using Statistics
 using Test
+
+# Pre-download ORCA1 mesh_mask and bathymetry through the artifacts fallback so
+# subsequent ORCAGrid(...) calls find the files locally even when Zenodo is down.
+for name in (:mesh_mask, :bottom_height)
+    md = Metadatum(name; dataset=ORCA1())
+    download_dataset_with_fallback(metadata_path(md); dataset_name="ORCA1 $name") do
+        download(md)
+    end
+end
 
 @testset "ORCA1 Metadatum construction" begin
     bathy_meta = Metadatum(:bottom_height; dataset=ORCA1())
@@ -18,6 +29,21 @@ using Test
     mesh_meta = Metadatum(:mesh_mask; dataset=ORCA1())
     @test mesh_meta.name == :mesh_mask
     @test mesh_meta.dataset isa ORCA1
+end
+
+
+@testset "ORCA12 Metadatum construction" begin
+    bathy_meta = Metadatum(:bottom_height; dataset=ORCA12())
+    @test bathy_meta.name == :bottom_height
+    @test bathy_meta.dataset isa ORCA12
+
+    mesh_meta = Metadatum(:mesh_mask; dataset=ORCA12())
+    @test mesh_meta.name == :mesh_mask
+    @test mesh_meta.dataset isa ORCA12
+
+    @test default_south_rows_to_remove(ORCA12()) == 0
+    @test occursin("eORCA12", metadata_path(mesh_meta))
+    @test occursin("eORCA12", metadata_path(bathy_meta))
 end
 
 @testset "ORCAGrid with ORCA1 dataset on $(arch)" for arch in test_architectures
@@ -83,14 +109,21 @@ end
         @test all(isfinite, Oceananigans.on_architecture(CPU(), data)) == true
     end
 
-    # All interior metrics (Δx, Δy, Az) are strictly positive
-    # Check only interior points to avoid halo issues
-    for name in (:Δxᶜᶜᵃ, :Δxᶠᶜᵃ, :Δxᶜᶠᵃ, :Δxᶠᶠᵃ,
-                 :Δyᶜᶜᵃ, :Δyᶠᶜᵃ, :Δyᶜᶠᵃ, :Δyᶠᶠᵃ,
-                 :Azᶜᶜᵃ, :Azᶠᶜᵃ, :Azᶜᶠᵃ, :Azᶠᶠᵃ)
+    # Metrics strictly positive over the full interior. Face-y fields on
+    # RightFaceFolded have Ny+1 interior rows; the fold row Ny+1 must be checked.
+    LYs = Dict(:Δxᶜᶜᵃ => Center, :Δxᶠᶜᵃ => Center, :Δxᶜᶠᵃ => Face, :Δxᶠᶠᵃ => Face,
+               :Δyᶜᶜᵃ => Center, :Δyᶠᶜᵃ => Center, :Δyᶜᶠᵃ => Face, :Δyᶠᶠᵃ => Face,
+               :Azᶜᶜᵃ => Center, :Azᶠᶜᵃ => Center, :Azᶜᶠᵃ => Face, :Azᶠᶠᵃ => Face)
+    for (name, LY) in LYs
         data = getproperty(grid, name)
-        interior = Oceananigans.on_architecture(CPU(), data)[1:Nx, 1:Ny]
+        Njf = Base.length(LY(), Oceananigans.Grids.RightFaceFolded(), Ny)
+        interior = Oceananigans.on_architecture(CPU(), data)[1:Nx, 1:Njf]
         @test all(x -> x > 0, interior) == true
+    end
+
+    for name in (:Δxᶜᶠᵃ, :Δxᶠᶠᵃ, :Δyᶜᶠᵃ, :Δyᶠᶠᵃ, :Azᶜᶠᵃ, :Azᶠᶠᵃ)
+        data = Oceananigans.on_architecture(CPU(), getproperty(grid, name))
+        @test all(x -> x > 0, data[1:Nx, Ny+1])
     end
 
     # Face-x longitude is west of Center-x longitude (stagger check)
@@ -133,7 +166,7 @@ end
 
 @testset "ORCA1 bathymetry retrieval" begin
     bathy_md = Metadatum(:bottom_height; dataset=ORCA1())
-    download_dataset(bathy_md)
+    download(bathy_md)
     path = metadata_path(bathy_md)
     @test isfile(path)
 

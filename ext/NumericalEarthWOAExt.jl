@@ -1,12 +1,11 @@
 module NumericalEarthWOAExt
 
-using WorldOceanAtlasTools
-
+using Downloads: Downloads
 using Oceananigans.DistributedComputations: @root
-using NumericalEarth.DataWrangling: Metadata, Metadatum
-using NumericalEarth.WOA: WOAClimatology, WOA_variable_names, woa_period
-
-import NumericalEarth.DataWrangling: download_dataset, metadata_path
+using NumericalEarth: NumericalEarth
+using NumericalEarth.DataWrangling: Metadata, metadata_path
+using NumericalEarth.DataWrangling.WOA: WOAClimatology, WOA_variable_names, woa_period
+using WorldOceanAtlasTools: WorldOceanAtlasTools
 
 # NOAA servers have inconsistent availability across product years.
 # We try the user-specified product_year first, then fall back to others.
@@ -15,9 +14,9 @@ const fallback_product_years = (2023, 2018, 2013)
 function woa_filepath(woa_tracer, product_year, period)
     # Try user-specified product year first
     try
-        return WorldOceanAtlasTools.WOAfile(woa_tracer;
-                                            product_year, period, resolution=1)
-    catch
+        return WorldOceanAtlasTools.WOAfile(woa_tracer; product_year, period, resolution=1)
+    catch e
+        @warn "Errored with exception $(e)"
     end
 
     # Fall back to other product years
@@ -25,9 +24,9 @@ function woa_filepath(woa_tracer, product_year, period)
         py == product_year && continue
         try
             @info "WOA product year $product_year unavailable for tracer \"$woa_tracer\", trying $py..."
-            return WorldOceanAtlasTools.WOAfile(woa_tracer;
-                                                product_year=py, period, resolution=1)
-        catch
+            return WorldOceanAtlasTools.WOAfile(woa_tracer; product_year=py, period, resolution=1)
+        catch e
+            @warn "Errored with exception $(e)"
         end
     end
 
@@ -35,7 +34,7 @@ function woa_filepath(woa_tracer, product_year, period)
           "(tried product years: $product_year, $(join(fallback_product_years, ", ")))")
 end
 
-function download_dataset(metadata::Metadata{<:WOAClimatology}; skip_existing=true)
+function Downloads.download(metadata::Metadata{<:WOAClimatology}; skip_existing=true)
     @root for metadatum in metadata
         linkpath = metadata_path(metadatum)
 
@@ -50,12 +49,11 @@ function download_dataset(metadata::Metadata{<:WOAClimatology}; skip_existing=tr
         # Trigger DataDeps download and get the path to the original WOA file
         source = woa_filepath(woa_tracer, product_year, period)
 
-        # Symlink to avoid duplicating the data
         rm(linkpath; force=true)
-        symlink(source, linkpath)
+        cp(source, linkpath)
     end
 
-    return nothing
+    return metadata_path(metadata)
 end
 
 end # module

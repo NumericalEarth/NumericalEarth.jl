@@ -14,6 +14,7 @@
 # pkg"add Oceananigans, NumericalEarth, CairoMakie"
 # ```
 
+using CopernicusMarine
 using NumericalEarth
 using Oceananigans
 using Oceananigans: prognostic_fields
@@ -29,7 +30,7 @@ using Printf
 
 # Ocean station papa location
 location_name = "ocean_station_papa"
-λ★, φ★ = 35.1, 50.1
+λ★, φ★ = -144.9, 50.1
 
 grid = RectilinearGrid(size = 200,
                        x = λ★,
@@ -48,20 +49,27 @@ ocean = ocean_simulation(grid; Δt=10minutes, coriolis=FPlane(latitude = φ★))
 
 ocean.model
 
-# We set initial conditions from ECCO4:
+# We set initial conditions from GLORYS, using a `Column` region so that
+# only the single water column at `(λ★, φ★)` is downloaded from the
+# Copernicus Marine Service.
 
-set!(ocean.model, T=Metadatum(:temperature, dataset=ECCO4Monthly()),
-                  S=Metadatum(:salinity, dataset=ECCO4Monthly()))
+col = Column(λ★, φ★; interpolation=Nearest())
+
+set!(ocean.model, T=Metadatum(:temperature, dataset=GLORYSMonthly(), region=col),
+                  S=Metadatum(:salinity,    dataset=GLORYSMonthly(), region=col))
 
 # # A prescribed atmosphere based on JRA55 re-analysis
 #
 # We build a `JRA55PrescribedAtmosphere` at the same location as the single-colunm grid
 # which is based on the JRA55 reanalysis.
 
-atmosphere = JRA55PrescribedAtmosphere(longitude = λ★,
-                                       latitude = φ★,
+atmosphere = JRA55PrescribedAtmosphere(region   = Column(λ★, φ★),
                                        end_date = DateTime(1990, 1, 31), # Last day of the simulation
-                                       backend  = InMemory())
+                                       time_indices_in_memory = 1000)
+
+radiation = JRA55PrescribedRadiation(region   = Column(λ★, φ★),
+                                     end_date = DateTime(1990, 1, 31),
+                                     time_indices_in_memory = 1000)
 
 # This builds a representation of the atmosphere on the small grid
 
@@ -71,8 +79,8 @@ atmosphere.grid
 
 ua = interior(atmosphere.velocities.u, 1, 1, 1, :)
 va = interior(atmosphere.velocities.v, 1, 1, 1, :)
-Ta = interior(atmosphere.tracers.T, 1, 1, 1, :)
-qa = interior(atmosphere.tracers.q, 1, 1, 1, :)
+Ta = interior(atmosphere.temperature, 1, 1, 1, :)
+qa = interior(atmosphere.specific_humidity, 1, 1, 1, :)
 t_days = atmosphere.times / days
 
 using CairoMakie
@@ -96,7 +104,6 @@ lines!(axq, t_days, qa)
 current_figure()
 
 # We continue constructing a simulation.
-radiation = Radiation()
 coupled_model = OceanOnlyModel(ocean; atmosphere, radiation)
 simulation = Simulation(coupled_model, Δt=ocean.Δt, stop_time=30days)
 
@@ -198,12 +205,12 @@ times = 𝒬ᵀ.times
 
 ua  = atmosphere.velocities.u
 va  = atmosphere.velocities.v
-Ta  = atmosphere.tracers.T
-qa  = atmosphere.tracers.q
-ℐꜜˡʷ = atmosphere.downwelling_radiation.longwave
-ℐꜜˢʷ = atmosphere.downwelling_radiation.shortwave
-Pr  = atmosphere.freshwater_flux.rain
-Ps  = atmosphere.freshwater_flux.snow
+Ta  = atmosphere.temperature
+qa  = atmosphere.specific_humidity
+ℐꜜˡʷ = radiation.downwelling_longwave
+ℐꜜˢʷ = radiation.downwelling_shortwave
+Pr  = atmosphere.precipitation_flux.rain
+Ps  = atmosphere.precipitation_flux.snow
 
 Nt   = length(times)
 uat  = zeros(Nt)
@@ -306,7 +313,9 @@ scatterlines!(axκz, κn)
 
 axislegend(axuz)
 
-ulim = max(maximum(abs, u), maximum(abs, v))
+# Guard against ulim=0, which makes Makie's symmetric xlims collapse to (0, 0)
+# and triggers an "invalid colorrange" error.
+ulim = max(maximum(abs, u), maximum(abs, v), 1e-10)
 xlims!(axuz, -ulim, ulim)
 
 Tmin, Tmax = extrema(T)

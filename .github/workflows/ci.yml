@@ -26,10 +26,11 @@ permissions:
 env:
   ECCO_USERNAME: ${{ secrets.ECCO_USERNAME }}
   ECCO_WEBDAV_PASSWORD: ${{ secrets.ECCO_WEBDAV_PASSWORD }}
-  COPERNICUS_USERNAME: ${{ secrets.COPERNICUS_SERVICE_USERNAME }}
-  COPERNICUS_PASSWORD: ${{ secrets.COPERNICUS_USERNAME_PASSWORD }}
+  COPERNICUS_USERNAME: ${{ secrets.COPERNICUSMARINE_SERVICE_USERNAME }}
+  COPERNICUS_PASSWORD: ${{ secrets.COPERNICUSMARINE_SERVICE_PASSWORD }}
   CDSAPI_URL: "https://cds.climate.copernicus.eu/api"
   CDSAPI_KEY: ${{ secrets.CDSAPI_KEY }}
+  DESTINE_ACCESS_TOKEN: ${{ secrets.DESTINE_ACCESS_TOKEN }}
   DATADEPS_ALWAYS_ACCEPT: true
   JULIA_PKG_SERVER_REGISTRY_PREFERENCE: 'eager'
 
@@ -73,7 +74,7 @@ jobs:
           echo " --> df -a /"
           df -a /
       - uses: actions/checkout@v6
-      - uses: julia-actions/setup-julia@v2
+      - uses: julia-actions/setup-julia@v3
         with:
           version: ${{ matrix.version }}
           arch: ${{ matrix.arch }}
@@ -82,12 +83,27 @@ jobs:
           cache-scratchspaces: false
       - uses: julia-actions/julia-runtest@v1
         with:
-          test_args: '--verbose'
+          # Cap parallelism at 2 workers. ParallelTestRunner's default_njobs
+          # assumes ~2 GiB per worker, but the Breeze-compilation and bathymetry
+          # tests peak at 2.5-3.5 GiB RSS each. On the 16 GiB GitHub-hosted
+          # runner, the default (4 = core count) intermittently OOMs when several
+          # heavy tests coincide, and the runner reports it as
+          # "The operation was canceled." Two workers keep peak memory well
+          # within budget while staying comfortably under the job timeout.
+          test_args: '--verbose --jobs=2'
       - uses: julia-actions/julia-processcoverage@v1
       - uses: codecov/codecov-action@v5
         with:
           files: lcov.info
           token: ${{ secrets.CODECOV_TOKEN }}
+      - name: Show available storage at the end
+        if: always()
+        timeout-minutes: 2
+        run: |
+          echo " --> df -h /"
+          df -h /
+          echo " --> df -a /"
+          df -a /
 
   #####
   ##### GPU tests (AWS self-hosted runners with Docker)
@@ -100,7 +116,8 @@ jobs:
       image: ghcr.io/numericalearth/numerical-earth-docker-images:test-julia_1.12.5
       options: --gpus=all
       volumes:
-        # Mount host `/usr/local` so that we can delete some stuff afterwards
+        # Mount host directories so that we can delete some stuff afterwards
+        - /opt:/host-opt
         - /usr/local:/host-usr-local
     timeout-minutes: 120
     strategy:
@@ -124,13 +141,32 @@ jobs:
       - name: df before cleanup
         run: |
           df -hT
-      - name: Clean up old CUDA toolkits
-        # Save storage by deleting old CUDA toolkits, we'll use v13
+      - name: Clean up space on host device
+        # Save storage by deleting CUDA toolkits and other Nvidia tools we don't need
         run: |
-          rm -rf /host-usr-local/cuda-12.*
+          rm -rfv /host-opt/nvidia/ /host-usr-local/cuda*
       - name: df after cleanup
         run: |
           df -hT
+      - name: "Set test arguments"
+        shell: bash
+        run: |
+          # Run tests in verbose mode
+          TEST_ARGS=(--verbose)
+          # Cap parallelism at 4 workers. `nproc - 1` (== 7 on the 8-vCPU GPU
+          # runner) oversubscribes the box: the GPU job runs the full, heaviest
+          # test set (Breeze compilation, nested atmosphere, ocean-sea-ice,
+          # bathymetry), so workers frequently hit ParallelTestRunner's RSS
+          # limit and get recycled. Each recycle spawns a fresh Malt worker, and
+          # under the resulting contention a spawn occasionally exceeds Malt's
+          # fixed 30 s connect timeout -- which aborts the whole run with
+          # "Worker process exited before we could connect / Timeout" (not OOM;
+          # earlyoom never fires and swap is untouched). Four workers keep half
+          # the cores free for the manager and worker spawns while staying well
+          # under the job timeout. See the CPU job for the sibling OOM cap.
+          njobs=$(($(nproc) - 1))
+          TEST_ARGS+=(--jobs=$((njobs < 4 ? njobs : 4)))
+          echo "runtest_test_args=${TEST_ARGS[@]}" | tee -a "${GITHUB_ENV}"
       - name: Update registry
         shell: julia --color=yes {0}
         run: |
@@ -145,13 +181,21 @@ jobs:
               using Pkg;
               Pkg.test(; coverage=true,
                        julia_args=["--check-bounds=yes", "--compiled-modules=yes", "-O0"],
-                       test_args=["--verbose"])
+                       test_args=`${{ env.runtest_test_args }}`)
           '
       - uses: julia-actions/julia-processcoverage@v1
       - uses: codecov/codecov-action@v5
         with:
           files: lcov.info
           token: ${{ secrets.CODECOV_TOKEN }}
+      - name: Show available storage at the end
+        if: always()
+        timeout-minutes: 2
+        run: |
+          echo " --> df -h /"
+          df -h /
+          echo " --> df -a /"
+          df -a /
 
   #####
   ##### Specialized tests (GitHub-hosted runners)
@@ -175,6 +219,28 @@ jobs:
             arch: aarch64
             version: "1.12.5"
     steps:
+      - name: Show available storage before cleanup
+        run: |
+          echo " --> df -h /"
+          df -h /
+          echo " --> df -a /"
+          df -a /
+      - name: Free Disk Space
+        if: ${{ runner.os != 'macOS' }}
+        uses: jlumbroso/free-disk-space@54081f138730dfa15788a46383842cd2f914a1be # v1.3.1
+        with:
+          tool-cache: true
+          large-packages: false
+      - name: Cleanup /opt
+        if: ${{ runner.os != 'macOS' }}
+        run: |
+          sudo rm -rf /opt/*
+      - name: Show available storage after cleanup
+        run: |
+          echo " --> df -h /"
+          df -h /
+          echo " --> df -a /"
+          df -a /
       - uses: actions/checkout@v6
       - uses: julia-actions/setup-julia@v2
         with:
@@ -189,7 +255,7 @@ jobs:
               using Pkg;
               Pkg.test(; coverage=true,
                         julia_args=["--check-bounds=yes", "--compiled-modules=yes", "-O0"],
-                        test_args=["--verbose", "test_cds_downloading", "test_downloading"])
+                        test_args=["--verbose", "test_cds_downloading", "test_jra55_ecco_en4_etopo_downloading", "test_glorys_downloading", "test_copernicus_dem_downloading"])
           '
       - uses: julia-actions/julia-processcoverage@v1
       - uses: codecov/codecov-action@v5
@@ -211,6 +277,26 @@ jobs:
         arch:
           - default
     steps:
+      - name: Show available storage before cleanup
+        run: |
+          echo " --> df -h /"
+          df -h /
+          echo " --> df -a /"
+          df -a /
+      - name: Free Disk Space
+        uses: jlumbroso/free-disk-space@54081f138730dfa15788a46383842cd2f914a1be # v1.3.1
+        with:
+          tool-cache: true
+          large-packages: false
+      - name: Cleanup /opt
+        run: |
+          sudo rm -rf /opt/*
+      - name: Show available storage after cleanup
+        run: |
+          echo " --> df -h /"
+          df -h /
+          echo " --> df -a /"
+          df -a /
       - uses: actions/checkout@v6
       - uses: julia-actions/setup-julia@v2
         with:
