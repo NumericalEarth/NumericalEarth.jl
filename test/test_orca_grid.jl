@@ -178,6 +178,42 @@ end
     @test boundary_jump < 10 * interior_variation + 1e-10
 end
 
+# The eORCA1 mesh_mask ships both the staggered metrics and the T/F coordinates, so reconstructing it
+# from `glamt/gphit/glamf/gphif` alone and comparing against the shipped `e1`/`e2` exercises the path
+# taken by any mesh that stores coordinates only (eORCA025, eORCA12).
+@testset "ORCA mesh reconstruction agrees with the staggered mesh" begin
+    Bathymetry = NumericalEarth.Bathymetry
+    path = metadata_path(Metadatum(:mesh_mask; dataset=ORCAOne()))
+
+    ds = Dataset(path)
+    staggered = Bathymetry.read_orca_staggered_mesh(ds)
+    Nx, Ny = size(Bathymetry.read_2d_nemo_variable(ds, "glamt"))
+    read_coordinate(name) = Bathymetry.orient_xy(Bathymetry.read_2d_nemo_variable(ds, name), Nx, Ny; name)
+    λCC, φCC = read_coordinate("glamt"), read_coordinate("gphit")
+    λFF, φFF = read_coordinate("glamf"), read_coordinate("gphif")
+    close(ds)
+
+    reconstructed = Bathymetry.reconstruct_orca_mesh_from_CC_FF_points(λCC, φCC, λFF, φFF; radius = Oceananigans.defaults.planet_radius)
+
+    for name in (:e1t, :e2t, :e1u, :e2u, :e1v, :e2v, :e1f, :e2f, :λFC, :λCF, :λFF, :φFF)
+        @test size(getproperty(reconstructed, name)) == size(getproperty(staggered, name))
+    end
+
+    south = default_south_rows_to_remove(ORCAOne()) + 1
+    for name in (:e1t, :e2t, :e1u, :e2u, :e1v, :e2v, :e1f, :e2f)
+        reference = getproperty(staggered, name)[:, south:end]
+        computed  = getproperty(reconstructed, name)[:, south:end]
+        error     = abs.(computed .- reference) ./ max.(abs.(reference), 1e-6)
+
+        @test median(error) < 1e-3
+        @test count(>(0.01), error) / length(error) < 0.02
+    end
+
+    for name in (:e1t, :e2t, :e1u, :e2u, :e2v)
+        @test count(==(0), getproperty(reconstructed, name)) == 0
+    end
+end
+
 @testset "ORCAOne bathymetry retrieval" begin
     bathy_md = Metadatum(:bottom_height; dataset=ORCAOne())
     download(bathy_md)
