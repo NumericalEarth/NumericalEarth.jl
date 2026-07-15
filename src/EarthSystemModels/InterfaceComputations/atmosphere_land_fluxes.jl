@@ -135,10 +135,16 @@ end
     interface_hydrology_state(i, j, grid, q.efficiency, land_state)
 @inline interface_hydrology_state(i, j, grid, ::CriticalSaturation, land_state) =
     (; saturation = land_saturation(i, j, grid, land_state))
+@inline interface_hydrology_state(i, j, grid, ::DryLayerHumidity, land_state) =
+    (; saturation = land_saturation(i, j, grid, land_state))
 @inline interface_hydrology_state(i, j, grid, interface_model, land_state) = (;) # default: pulls nothing
 
-# Energy state: only the reservoir (skin-humidity) model needs the bulk temperature.
+# Energy state: humidity formulations that need the bulk land temperature
+# (the SkinHumidity reservoir and the DryLayerHumidity dry-layer model)
+# pull it from the materialized land state.
 @inline interface_energy_state(i, j, grid, ::SkinHumidity, land_state) =
+    (; temperature = land_field_value(land_state.T, i, j))
+@inline interface_energy_state(i, j, grid, ::DryLayerHumidity, land_state) =
     (; temperature = land_field_value(land_state.T, i, j))
 @inline interface_energy_state(i, j, grid, interface_model, land_state) = (;) # default: pulls nothing
 
@@ -168,10 +174,8 @@ end
 
     q_formulation = interface_properties.specific_humidity_formulation
 
-    # Bulk land temperature serves as the initial skin-temperature guess. `FT` is
-    # taken from the field value, not `eltype(grid)`: inside a Reactant-raised
-    # kernel the grid's scalar metrics are traced numbers, so `eltype(grid)` is a
-    # traced type that plain field values cannot be `convert`ed to.
+    # Bulk land temperature serves as the initial skin-temperature guess.
+    # Use `typeof(Tₛ)` (not `eltype(grid)`) for Reactant traced-grid compatibility.
     Tₛ = land_field_value(land_state.T, i, j)
     FT = typeof(Tₛ)
 

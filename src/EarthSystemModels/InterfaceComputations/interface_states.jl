@@ -47,7 +47,7 @@ ImpureSaturationSpecificHumidity(phase) = ImpureSaturationSpecificHumidity(phase
 @inline compute_water_mole_fraction(x_H₂O::Number, salinity) = x_H₂O
 
 # COARE 3.6 / Edson (2013) pressure-based saturation specific humidity:
-#   qₛ = εᵈᵛ⁻¹ pᵛ⁺ / (p − (1 − ε) pᵛ⁺),   εᵈᵛ⁻¹ = Rᵈ / Rᵥ
+#   qₛ = εᵈᵛ⁻¹ pᵛ⁺ / (p − (1 − εᵈᵛ⁻¹) pᵛ⁺),   εᵈᵛ⁻¹ = Rᵈ / Rᵥ
 # Direct evaluation at the atmospheric pressure p. The 6th positional
 # argument `qᵃᵗ` is accepted (and ignored) so the same call site can
 # dispatch on either `ImpureSaturationSpecificHumidity` or
@@ -57,11 +57,17 @@ ImpureSaturationSpecificHumidity(phase) = ImpureSaturationSpecificHumidity(phase
     CT = eltype(ℂᵃᵗ)
     T  = convert(CT, Tₛ)
     p  = convert(CT, pᵃᵗ)
-    
+
     # Raoult's law on the saturation vapor pressure.
     χ_H₂O = compute_water_mole_fraction(formulation.water_mole_fraction, Sₛ)
     pᵛ⁺   = χ_H₂O * AtmosphericThermodynamics.saturation_vapor_pressure(ℂᵃᵗ, T, formulation.phase)
     εᵈᵛ⁻¹ = 1 / AtmosphericThermodynamics.Parameters.Rv_over_Rd(ℂᵃᵗ)
+
+    # Guard against unphysically warm interface temperatures: once pᵛ⁺ exceeds
+    # p / (1 − εᵈᵛ⁻¹) the denominator below turns negative, producing a negative
+    # qₛ that drives a runaway spurious-condensation instability. In the physical
+    # regime pᵛ⁺ ≪ p the cap is inert; it keeps qₛ ∈ [0, 1).
+    pᵛ⁺   = min(pᵛ⁺, convert(CT, 0.999) * p)
     qₛ    = εᵈᵛ⁻¹ * pᵛ⁺ / (p - (1 - εᵈᵛ⁻¹) * pᵛ⁺)
 
     return convert(FT, qₛ)
@@ -76,6 +82,10 @@ end
     p  = convert(CT, pᵃᵗ)
     pᵛ⁺   = AtmosphericThermodynamics.saturation_vapor_pressure(ℂᵃᵗ, T, phase)
     εᵈᵛ⁻¹ = 1 / AtmosphericThermodynamics.Parameters.Rv_over_Rd(ℂᵃᵗ)
+
+    # Same negative-denominator guard as in `surface_specific_humidity` above;
+    # inert in the physical regime pᵛ⁺ ≪ p.
+    pᵛ⁺   = min(pᵛ⁺, convert(CT, 0.999) * p)
     return εᵈᵛ⁻¹ * pᵛ⁺ / (p - (1 - εᵈᵛ⁻¹) * pᵛ⁺)
 end
 
@@ -97,6 +107,8 @@ end
 struct BulkHumidity{Φ}
     phase :: Φ
 end
+
+BulkHumidity(; phase=AtmosphericThermodynamics.Liquid()) = BulkHumidity(phase)
 
 Base.summary(::BulkHumidity{Φ}) where Φ =
     string("BulkHumidity{", Φ === AtmosphericThermodynamics.Liquid ? "Liquid" : "Ice", "}")
@@ -756,9 +768,7 @@ end
                                        q_formulation,
                                        land_state,
                                        Tₛ, qₛ)
-    # `typeof(Tₛ)`, not `eltype(grid)`: inside a Reactant-raised kernel the grid's
-    # scalar metrics are traced numbers, so `eltype(grid)` is a traced type that
-    # plain field values cannot be `convert`ed to.
+    # `typeof(Tₛ)`, not `eltype(grid)`, for Reactant traced-grid compatibility.
     FT  = typeof(Tₛ)
     energy    = interface_energy_state(i, j, grid, q_formulation, land_state)
     hydrology = interface_hydrology_state(i, j, grid, q_formulation, land_state)
