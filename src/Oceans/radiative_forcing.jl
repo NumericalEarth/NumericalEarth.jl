@@ -47,6 +47,7 @@ const c = Center()
 const f = Face()
 
 # In zstar we might have positive z, so  `exp(κ * z)` is not correct
+# Radiation that reaches the bottom is dumped on the last cell
 @inline function beers_law_radiation(i, j, k, grid, J₀ , κ)
     Nz = size(grid, 3)
     z  = Oceananigans.Grids.znode(i, j, k,    grid, c, c, f)
