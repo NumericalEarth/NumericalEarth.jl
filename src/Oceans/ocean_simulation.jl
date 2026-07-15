@@ -352,7 +352,6 @@ function hydrostatic_ocean_simulation(grid;
                                       boundary_conditions::NamedTuple = NamedTuple(),
                                       radiative_forcing = default_radiative_forcing(grid),
                                       materialize_buoyancy_gradients = true,
-                                      clock = nothing,
                                       warn = true,
                                       verbose = false)
 
