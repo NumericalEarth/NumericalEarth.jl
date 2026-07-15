@@ -43,14 +43,7 @@ jobs:
     name: (CPU) - Julia 1.12.5
     runs-on: ubuntu-latest
     # The image ships a depot with `test/` already instantiated at `--check-bounds=yes`, which is
-    # exactly how this job runs, so the packages arrive precompiled and no Actions cache is
-    # needed. That matters: a Julia depot for this dependency tree is ~1.2 GB, GitHub caps a repo
-    # at 10 GB, and caches are keyed by (key, ref) -- so every open PR kept its own copy and the
-    # repo sat permanently over budget, evicting caches faster than jobs could restore them. Every
-    # run then paid ~25 min precompiling from scratch. The GPU job has never had that problem
-    # because it takes its depot from this same image. Rebuilt Mon/Thu from NumericalEarth main
-    # (see NumericalEarth/numerical-earth-docker-images); between rebuilds `Pkg.test` re-resolves
-    # and precompiles only whatever has drifted.
+    # exactly how this job runs, so the packages arrive precompiled and no Actions cache is needed. 
     container:
       image: ghcr.io/numericalearth/numerical-earth-docker-images:test-julia_1.12.5
     timeout-minutes: 120
@@ -87,20 +80,6 @@ jobs:
           path: /__w/_temp/depot/scratchspaces/d3525ed8-44d0-4b2c-a655-542cee43accc/durations
           key: julia-test-durations;job=cpu_tests;${{ github.run_id }}
           restore-keys: julia-test-durations;job=cpu_tests;
-      # `-O0` like the GPU job: compilation is ~63% of this suite's runtime, and dropping the
-      # optimisation level cuts compile-bound work ~60% (measured: a LatitudeLongitudeGrid
-      # `ocean_simulation` + first `time_step!` goes 48.9 s -> 19.5 s). It costs numeric speed
-      # (an EN4 inpaint goes 14.6 s -> 25.9 s), but the suite has minutes of compile against
-      # seconds of that. It needs no extra precompile: `opt_level` is part of Julia's cache
-      # flags, yet the `-O2` pkgimages in the image are accepted at `-O0`, so only runtime JIT
-      # gets cheaper while library code stays optimised.
-      # Three workers. ParallelTestRunner's default_njobs assumes ~2 GiB per worker, but the
-      # Breeze-compilation and bathymetry tests peak at 2.5-3.5 GiB RSS each and
-      # `test_tracer_budget` at 5.6 GiB, so the default (4 = core count) intermittently OOMs on
-      # the 16 GiB runner and it surfaces as "The operation was canceled." Three fit, and the
-      # third worker is what makes the longest single test the wall clock rather than an
-      # unbalanced queue: 95 min of tests over 2 workers is 47.7 min, over 3 it is 38.0, and a
-      # 4th buys nothing because that one test is the floor.
       - name: Run tests
         run: |
           julia --project --color=yes --check-bounds=yes -e '
@@ -210,6 +189,72 @@ jobs:
           df -h /
           echo " --> df -a /"
           df -a /
+          
+  #####
+  ##### Specialized tests (GitHub-hosted runners)
+  #####
+
+  cds_downloading:
+    name: Data Downloading - Julia ${{ matrix.version }} - ${{ matrix.os }} - ${{ matrix.arch }} - ${{ github.event_name }}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        version:
+          - "1.12.5"
+        os:
+          - ubuntu-latest
+        arch:
+          - default
+        include:
+          - os: macOS-latest
+            arch: aarch64
+            version: "1.12.5"
+    steps:
+      - name: Show available storage before cleanup
+        run: |
+          echo " --> df -h /"
+          df -h /
+          echo " --> df -a /"
+          df -a /
+      - name: Free Disk Space
+        if: ${{ runner.os != 'macOS' }}
+        uses: jlumbroso/free-disk-space@54081f138730dfa15788a46383842cd2f914a1be # v1.3.1
+        with:
+          tool-cache: true
+          large-packages: false
+      - name: Cleanup /opt
+        if: ${{ runner.os != 'macOS' }}
+        run: |
+          sudo rm -rf /opt/*
+      - name: Show available storage after cleanup
+        run: |
+          echo " --> df -h /"
+          df -h /
+          echo " --> df -a /"
+          df -a /
+      - uses: actions/checkout@v6
+      - uses: julia-actions/setup-julia@v2
+        with:
+          version: ${{ matrix.version }}
+          arch: ${{ matrix.arch }}
+      - uses: julia-actions/cache@v3
+        with:
+          cache-scratchspaces: false
+      - name: Run tests
+        run: |
+          julia --project --color=yes --check-bounds=yes -e '
+              using Pkg;
+              Pkg.test(; coverage=true,
+                        julia_args=["--check-bounds=yes", "--compiled-modules=yes", "-O0"],
+                        test_args=["--verbose", "test_cds_downloading", "test_jra55_ecco_en4_etopo_downloading", "test_glorys_downloading", "test_copernicus_dem_downloading"])
+          '
+      - uses: julia-actions/julia-processcoverage@v1
+      - uses: codecov/codecov-action@v5
+        with:
+          files: lcov.info
+          token: ${{ secrets.CODECOV_TOKEN }}
 
   reactant:
     name: Reactant extension - Julia ${{ matrix.version }} - ${{ matrix.os }} - ${{ matrix.arch }} - ${{ github.event_name }}
