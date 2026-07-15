@@ -2,6 +2,12 @@ name: Documentation
 
 on:
   workflow_dispatch:
+    inputs:
+      build_all_examples:
+        description: "Execute long-running documentation examples"
+        required: false
+        default: false
+        type: boolean
   pull_request:
     paths: &paths
       - ".github/workflows/docs.yml"
@@ -49,9 +55,14 @@ jobs:
         with:
           version: '1.12.5'
       - name: Set NUMERICAL_EARTH_BUILD_ALL_EXAMPLES
+        env:
+          BUILD_ALL_EXAMPLES_INPUT: ${{ inputs.build_all_examples || 'false' }}
+          HAS_BUILD_ALL_LABEL: ${{ contains(github.event.pull_request.labels.*.name, env.NUMERICAL_EARTH_LABEL_BUILD_ALL_EXAMPLES) }}
+          GITHUB_EVENT_NAME: ${{ github.event_name }}
         shell: bash
         run: |
-          if [[ ('${{ github.event_name }}' == 'push' && ('${{ github.ref }}' == 'refs/heads/main' || '${{ github.ref }}' == refs/tags/v*)) || ('${{ github.event_name }}' == 'pull_request' && ${{ contains(github.event.pull_request.labels.*.name, env.NUMERICAL_EARTH_LABEL_BUILD_ALL_EXAMPLES) }} == true) ]]; then
+          if [[ "${GITHUB_EVENT_NAME}" == "workflow_dispatch" && "${BUILD_ALL_EXAMPLES_INPUT}" == "true" ]] || \
+            [[ "${GITHUB_EVENT_NAME}" == "pull_request" && "${HAS_BUILD_ALL_LABEL}" == "true" ]]; then
               NUMERICAL_EARTH_BUILD_ALL_EXAMPLES=true
           else
               NUMERICAL_EARTH_BUILD_ALL_EXAMPLES=false

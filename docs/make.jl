@@ -35,7 +35,8 @@ mkpath(OUTPUT_DIR)
 
 # Examples from examples/ directory.
 # Set `build_always = false` for long-running examples that should only be built
-# on pushes to `main`/tags, or when the `build all examples` label is added to a PR.
+# when `NUMERICAL_EARTH_BUILD_ALL_EXAMPLES=true`, such as on an explicit
+# workflow dispatch or when the `build all examples` label is added to a PR.
 examples = [
     Example("Single-column ocean simulation", "single_column_os_papa_simulation", true),
     Example("Coupled energy and freshwater conservation", "coupled_conservation", true),
