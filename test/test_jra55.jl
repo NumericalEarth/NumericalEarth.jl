@@ -217,5 +217,22 @@ using NumericalEarth.JRA55: download_JRA55_cache
                 end
             end
         end
+
+        @info "Testing MultiYearJRA55 daily variables on $A..."
+
+        for daily_name in (:river_freshwater_flux, :iceberg_freshwater_flux)
+            daily_dates = NumericalEarth.DataWrangling.all_dates(dataset, daily_name)
+            @test Hour(first(daily_dates)) == Hour(12)
+
+            daily_metadata = Metadata(daily_name; dataset, end_date=daily_dates[3])
+            daily_fts = download_dataset_with_fallback(unique(metadata_path(daily_metadata));
+                                                       dataset_name="MultiYearJRA55 $daily_name") do
+                FieldTimeSeries(daily_metadata, arch; time_indices_in_memory=3)
+            end
+
+            for t in eachindex(daily_fts.times)
+                @test maximum(abs, interior(daily_fts[t])) > 0
+            end
+        end
     end
 end
