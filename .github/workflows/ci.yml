@@ -71,6 +71,13 @@ jobs:
         run: cp -v /usr/local/share/julia/environments/numericalearth/LocalPreferences.toml test/.
       - name: df before tests
         run: df -hT
+      - name: Update registry
+        shell: julia --color=yes {0}
+        run: |
+          using Pkg
+          Pkg.Registry.rm("General")
+          Pkg.Registry.add("General")
+          Pkg.Registry.update()
       # ParallelTestRunner schedules longest-first from a duration history it keeps in a
       # scratchspace, which is otherwise thrown away between runs: every duration then defaults to
       # Inf, the sort is a no-op and the order falls back to random -- leaving a 38 min test to
