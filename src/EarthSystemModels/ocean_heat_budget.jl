@@ -18,7 +18,7 @@ written with
 
 ```julia
 budget = esm.interfaces.budgets.ocean_heat
-heat_budget = ConservativeRegriddedField(budget.residual, destination_grid)
+heat_budget = RegriddedField(budget.residual, destination_grid)
 outputs = (; heat_budget)
 
 writer = JLD2Writer(esm, outputs;
