@@ -120,6 +120,21 @@ end
     return nothing
 end
 
+"""
+    set!(radiation::PrescribedRadiation; downwelling_shortwave=nothing, downwelling_longwave=nothing)
+
+Set the prescribed downwelling shortwave and longwave radiative fluxes (W m⁻²),
+then refresh the interpolated state. Omitted keywords are left untouched. A
+`Number` sets a constant in space and time.
+"""
+function Oceananigans.set!(radiation::PrescribedRadiation;
+                           downwelling_shortwave=nothing, downwelling_longwave=nothing)
+    set_prescribed_field!(radiation.downwelling_shortwave, downwelling_shortwave)
+    set_prescribed_field!(radiation.downwelling_longwave, downwelling_longwave)
+    update_state!(radiation)
+    return radiation
+end
+
 @inline function Oceananigans.TimeSteppers.time_step!(radiation::PrescribedRadiation, Δt)
     tick!(radiation.clock, Δt)
     update_state!(radiation)
