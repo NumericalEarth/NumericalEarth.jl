@@ -768,7 +768,9 @@ end
                                        q_formulation,
                                        land_state,
                                        Tₛ, qₛ)
-    # `typeof(Tₛ)`, not `eltype(grid)`, for Reactant traced-grid compatibility.
+    # `typeof(Tₛ)`, not `eltype(grid)`: inside a Reactant-raised kernel the grid's
+    # scalar metrics are traced numbers, so `eltype(grid)` is a traced type that
+    # plain field values cannot be `convert`ed to.
     FT  = typeof(Tₛ)
     energy    = interface_energy_state(i, j, grid, q_formulation, land_state)
     hydrology = interface_hydrology_state(i, j, grid, q_formulation, land_state)
