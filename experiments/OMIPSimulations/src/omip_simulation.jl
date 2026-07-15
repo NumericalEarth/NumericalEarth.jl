@@ -228,9 +228,9 @@ Create a fully coupled ocean--sea-ice--atmosphere OMIP simulation.
 The single positional argument selects the grid configuration:
 
 - `:halfdegree`    -- 720x360   `TripolarGrid`
-- `:quarterdegree` -- 1440x720  `TripolarGrid`
-- `:twelfthdegree`   -- 3600x1800 `TripolarGrid`
-- `:orca`          -- NEMO eORCA mesh
+- `:quarterdegree` -- NEMO eORCA025 (1/4ᵒ) mesh
+- `:twelfthdegree` -- NEMO eORCA12 (1/12ᵒ) mesh
+- `:orca`          -- NEMO eORCA1 (~1ᵒ) mesh
 - `:test`          -- NEMO eORCA1 (~1ᵒ) mesh, locally-runnable preset for reproducing the
                       quarter-degree spurious high-latitude ice + surface salinity drift.
                       Overrides `Nz = 15`, `Δz_top = 1.5` m, `Δt = 45minutes`, and a `10days`
@@ -252,14 +252,17 @@ plumbing is needed because `NumericalEarth.EarthSystemModels` provides
 # Keyword arguments
 
 - `arch`: architecture (`CPU()` or `GPU()`). Default: `CPU()`.
-- `Nz::Int`: number of vertical levels. Per-config default: `50` for `:test`, `100` otherwise.
+- `Nz::Int`: number of vertical levels. Per-config default: `15` for `:test`, `100` otherwise.
 - `depth`: maximum ocean depth in metres. Default: `5500`.
 - `Δz_top`: target surface-cell thickness in metres (sets the exponential vertical scale). Per-config
-  default: `1.5` for `:quarterdegree`/`:twelfthdegree`, `nothing` (scale derived from `depth`/`Nz`) otherwise.
+  default: `1.5` for `:quarterdegree`/`:twelfthdegree`/`:test`, `nothing` (scale derived from
+  `depth`/`Nz`) otherwise.
 - `κ_skew`, `κ_symmetric`: GM/Redi diffusivities. Per-config defaults: `nothing` (no isopycnal
-  diffusivity) for the eddy-resolving `:quarterdegree`/`:twelfthdegree`, `250`/`100` otherwise.
+  diffusivity) for the eddy-resolving `:quarterdegree`/`:twelfthdegree` and for `:test`, `800` for
+  `:orca`, `250` for `:halfdegree`.
 - `biharmonic_timescale`: horizontal biharmonic-viscosity timescale. Per-config default: `nothing`
-  (no biharmonic viscosity) for `:quarterdegree`/`:twelfthdegree`, `40days` otherwise.
+  (no biharmonic viscosity) for `:quarterdegree`/`:twelfthdegree`, `10days` for `:test`, `50days`
+  otherwise.
 - `forcing_dir`: directory for JRA55 forcing data. Default: `"forcing_data"`.
 - `restoring_dir`: directory for restoring/IC climatology. Default: `"climatology"`.
 - `piston_velocity`: surface salinity restoring piston velocity in m/day. Default: `1/6`.
@@ -642,8 +645,7 @@ exponential_scale(Nz, depth, Δz_top)    = find_exponential_scale(Nz, depth, Δz
 
 function build_grid(config, arch, Nz, depth; Δz_top = nothing)
 
-    Nx = config == Val(:halfdegree) ? 720 :
-         throw("Configuration $(config) does not exist")
+    Nx = config == Val(:halfdegree) ? 720 : throw("Configuration $(config) does not exist")
 
     Ny = Nx ÷ 2
 
@@ -714,8 +716,8 @@ config_κ_skew(::Val{:twelfthdegree}) = nothing
 config_κ_skew(::Val{:test})          = nothing
 
 config_κ_symmetric(::Val{:orca})          = 800
-config_κ_symmetric(::Val{:quarterdegree}) = 250
-config_κ_symmetric(::Val{:halfdegree})    = nothing
+config_κ_symmetric(::Val{:halfdegree})    = 250
+config_κ_symmetric(::Val{:quarterdegree}) = nothing
 config_κ_symmetric(::Val{:twelfthdegree}) = nothing
 config_κ_symmetric(::Val{:test})          = nothing
 
@@ -737,8 +739,8 @@ config_Δz_top(::Val{:test})          = 1.5
 # Buoyancy gradients are only needed by the GM/Redi closures; the eddy-resolving
 # configurations run without isopycnal diffusivities, so skip materializing them.
 config_materialize_buoyancy_gradients(::Val)                 = true
-config_materialize_buoyancy_gradients(::Val{:quarterdegree}) = true
-config_materialize_buoyancy_gradients(::Val{:twelfthdegree}) = true
+config_materialize_buoyancy_gradients(::Val{:quarterdegree}) = false
+config_materialize_buoyancy_gradients(::Val{:twelfthdegree}) = false
 config_materialize_buoyancy_gradients(::Val{:test})          = false
 
 function build_ocean(config, grid;

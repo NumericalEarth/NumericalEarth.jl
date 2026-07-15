@@ -31,7 +31,11 @@ using ..DataWrangling.ORCA: ORCAOne, default_south_rows_to_remove
 #
 # `read_orca_staggered_mesh` supports two read paths: a full staggered NEMO mesh used directly, or T/F
 # coordinates only, with U/V coordinates and all `e1`/`e2`/`Az` metrics reconstructed from spherical
-# midpoints, haversine distances, and spherical quadrilateral areas. Bathymetry (when
+# midpoints, haversine distances, and spherical quadrilateral areas. Both paths return arrays of size
+# `(Nx, Ny)` shifted in x but not in y, so the mapping above applies once to either. The reconstruction
+# resolves spacings down to the coordinate precision of the file: near the two tripolar north poles the
+# true spacing falls below Float32 resolution, so a file storing Float32 `glamt`/`gphit` without `e1`/`e2`
+# yields coincident points and zero spacings there. Bathymetry (when
 # `with_bathymetry = true`): NEMO stores positive depth, so we negate it and map land (depth ≤ 0 or
 # missing) to +100 so `GridFittedBottom` masks it. `major_basins` optionally drops smaller disconnected
 # basins via `remove_minor_basins!`.
@@ -117,13 +121,19 @@ end
     return spherical_area_quadrilateral(a, b, c, d; radius = 1)
 end
 
-@inline east_idx(i, Nx) = ifelse(i == Nx, 1, i + 1)
-@inline west_idx(i, Nx) = ifelse(i == 1, Nx, i - 1)
+# The duplicated east-edge columns (`periodic_overlap_index`) alias the west edge: column `i` and column
+# `Nx - overlap + i` hold the same point. Wrapping to `1`/`Nx` would therefore land on a copy of the
+# starting column and yield a zero spacing, so the wrap skips the duplicates.
+@inline east_idx(i, Nx, overlap) = ifelse(i == Nx, overlap + 1, i + 1)
+@inline west_idx(i, Nx, overlap) = ifelse(i == 1, Nx - overlap, i - 1)
 
-@kernel function _reconstruct_λFC_φFC_λCF_φCF!(λFC, φFC, λCF, φCF, λCC, φCC, λFF, φFF, Nx, Ny)
+# `λFF`/`φFF` are shifted in x only, matching the staggered read path: `FF[i, j]` is the north-west
+# corner of `T[i, j]` and `CF[i, j]` its north face, both in NEMO's y-indexing. `halo_filled_data`
+# applies the single +1 y-shift to the Face-y quantities once the mesh is assembled.
+@kernel function _reconstruct_λFC_φFC_λCF_φCF!(λFC, φFC, λCF, φCF, λCC, φCC, λFF, φFF, Nx, Ny, overlap)
     i, j = @index(Global, NTuple)
-    iE = east_idx(i, Nx)
-    iW = west_idx(i, Nx)
+    iE = east_idx(i, Nx, overlap)
+    iW = west_idx(i, Nx, overlap)
     λm₁, φm₁ = spherical_midpoint(λCC[iW, j], φCC[iW, j], λCC[i, j], φCC[i, j])
     λFC[i, j] = λm₁
     φFC[i, j] = φm₁
@@ -132,67 +142,68 @@ end
     φCF[i, j] = φm₂
 end
 
-@kernel function _reconstruct_e1_e2_metrics!(e1u, e1v, e1f, e1t, e2u, e2v, e2f, e2t, λCC, φCC, λFF, φFF, λFC, φFC, λCF, φCF, radius, Nx, Ny)
+# Every metric is a distance between points written by `_reconstruct_λFC_φFC_λCF_φCF!` in a prior launch,
+# so no thread reads a value another thread produces in this launch.
+@kernel function _reconstruct_e1_e2_metrics!(e1u, e1v, e1f, e1t, e2u, e2v, e2f, e2t, λCC, φCC, λFF, φFF, λFC, φFC, λCF, φCF, radius, Nx, Ny, overlap)
     i, j = @index(Global, NTuple)
-    iE = east_idx(i, Nx)
-    iW = west_idx(i, Nx)
-    e1u[i, j] = haversine((λCC[iW, j], φCC[iW, j]), (λCC[i, j], φCC[i, j]), radius)
-    e1v[i, j] = haversine((λFF[i, j], φFF[i, j]), (λFF[iE, j], φFF[iE, j]), radius)
-    e1f[i, j] = haversine((λCF[i, j], φCF[i, j]), (λCF[iE, j], φCF[iE, j]), radius)
+    iE = east_idx(i, Nx, overlap)
+    iW = west_idx(i, Nx, overlap)
+
+    e1t[i, j] = haversine((λFC[i, j],  φFC[i, j]),  (λFC[iE, j], φFC[iE, j]), radius)
+    e1u[i, j] = haversine((λCC[iW, j], φCC[iW, j]), (λCC[i, j],  φCC[i, j]),  radius)
+    e1v[i, j] = haversine((λFF[i, j],  φFF[i, j]),  (λFF[iE, j], φFF[iE, j]), radius)
+    e1f[i, j] = haversine((λCF[iW, j], φCF[iW, j]), (λCF[i, j],  φCF[i, j]),  radius)
+
     if Ny == 1
+        e2t[i, j] = e1t[i, j]
         e2u[i, j] = e1u[i, j]
         e2v[i, j] = e1v[i, j]
         e2f[i, j] = e1f[i, j]
     else
-        if j < Ny
-            e2u[i, j] = haversine((λFC[i, j], φFC[i, j]), (λFC[i, j+1], φFC[i, j+1]), radius)
-        else
-            e2u[i, Ny] = e2u[i, Ny-1]
-        end
-
+        # South of the first V row only the half-cell T→V is available, so double it.
         if j > 1
-            e2v[i, j] = haversine((λCC[i, j-1], φCC[i, j-1]), (λCC[i, j], φCC[i, j]), radius)
-            e2f[i, j] = haversine((λFC[i, j-1], φFC[i, j-1]), (λFC[i, j], φFC[i, j]), radius)
+            e2t[i, j] = haversine((λCF[i, j-1], φCF[i, j-1]), (λCF[i, j], φCF[i, j]), radius)
+            e2u[i, j] = haversine((λFF[i, j-1], φFF[i, j-1]), (λFF[i, j], φFF[i, j]), radius)
         else
-            e2v[i, 1] = e1v[i, 1]
-            e2f[i, 1] = e1f[i, 1]
+            e2t[i, 1] = 2 * haversine((λCC[i, 1], φCC[i, 1]), (λCF[i, 1], φCF[i, 1]), radius)
+            e2u[i, 1] = 2 * haversine((λFC[i, 1], φFC[i, 1]), (λFF[i, 1], φFF[i, 1]), radius)
         end
-    end
 
-    e1t[i, j] = haversine((λFC[iW, j], φFC[iW, j]), (λFC[i, j], φFC[i, j]), radius)
-    if Ny == 1
-        e2t[i, j] = e2v[i, j]
-    elseif j < Ny
-        e2t[i, j] = (e2v[i, j] + e2v[i, j+1]) / 2
-    else
-        e2t[i, Ny] = e2v[i, Ny]
+        # The north row reuses the last interior difference rather than copying a neighbour's output.
+        if j < Ny
+            e2v[i, j] = haversine((λCC[i, j], φCC[i, j]), (λCC[i, j+1], φCC[i, j+1]), radius)
+            e2f[i, j] = haversine((λFC[i, j], φFC[i, j]), (λFC[i, j+1], φFC[i, j+1]), radius)
+        else
+            e2v[i, Ny] = haversine((λCC[i, Ny-1], φCC[i, Ny-1]), (λCC[i, Ny], φCC[i, Ny]), radius)
+            e2f[i, Ny] = haversine((λFC[i, Ny-1], φFC[i, Ny-1]), (λFC[i, Ny], φFC[i, Ny]), radius)
+        end
     end
 end
 
-@kernel function _reconstruct_Az_interior!(AzCC, AzFF, λCC, φCC, λFF, φFF, radius, Nx, Ny)
+@kernel function _reconstruct_Az_interior!(AzCC, AzFF, λCC, φCC, λFF, φFF, radius, Nx, Ny, overlap)
     i, j = @index(Global, NTuple)
-    iE = east_idx(i, Nx)
-    iW = west_idx(i, Nx)
-    if j < Ny
-        A = spherical_quadrilateral_area_unit(λFF[i, j],    φFF[i, j],
+    iE = east_idx(i, Nx, overlap)
+    iW = west_idx(i, Nx, overlap)
+    if j > 1
+        A = spherical_quadrilateral_area_unit(λFF[i, j-1],  φFF[i, j-1],
+                                              λFF[iE, j-1], φFF[iE, j-1],
                                               λFF[iE, j],   φFF[iE, j],
-                                              λFF[iE, j+1], φFF[iE, j+1],
-                                              λFF[i, j+1],  φFF[i, j+1])
+                                              λFF[i, j],    φFF[i, j])
         AzCC[i, j] = A * radius^2
     end
-    if j > 1
-        A = spherical_quadrilateral_area_unit(λCC[iW, j-1], φCC[iW, j-1],
-                                              λCC[i, j-1],  φCC[i, j-1],
+    if j < Ny
+        A = spherical_quadrilateral_area_unit(λCC[iW, j],   φCC[iW, j],
                                               λCC[i, j],    φCC[i, j],
-                                              λCC[iW, j],   φCC[iW, j])
+                                              λCC[i, j+1],  φCC[i, j+1],
+                                              λCC[iW, j+1], φCC[iW, j+1])
         AzFF[i, j] = A * radius^2
     end
 end
 
 @kernel function _fill_AzCC_boundaries!(AzCC, AzFF, Ny)
     i = @index(Global, Linear)
-    AzCC[i, Ny] = AzCC[i, Ny-1]
-    AzFF[i, 1] = AzFF[i, 2]
+    AzCC[i, 1] = AzCC[i, 2]
+    AzFF[i, Ny] = AzFF[i, Ny-1]
 end
 
 function reconstruct_orca_mesh_from_CC_FF_points(λCC, φCC, λFF, φFF; radius)
@@ -204,8 +215,8 @@ function reconstruct_orca_mesh_from_CC_FF_points(λCC, φCC, λFF, φFF; radius)
     overlap = periodic_overlap_index(λCC)
     AFT = promote_type(eltype(λCC), eltype(φCC), eltype(λFF), eltype(φFF), typeof(radius))
 
-    λFFₒ = shift_face_y(shift_face_x(λFF, overlap))
-    φFFₒ = shift_face_y(shift_face_x(φFF, overlap))
+    λFFₒ = shift_face_x(λFF, overlap)
+    φFFₒ = shift_face_x(φFF, overlap)
 
     λFC  = similar(λCC, AFT)
     φFC  = similar(φCC, AFT)
@@ -213,7 +224,7 @@ function reconstruct_orca_mesh_from_CC_FF_points(λCC, φCC, λFF, φFF; radius)
     φCF  = similar(φCC, AFT)
     dev  = Oceananigans.Architectures.device(architecture(λFC))
 
-    _reconstruct_λFC_φFC_λCF_φCF!(dev, (16, 16), (Nx, Ny))(λFC, φFC, λCF, φCF, λCC, φCC, λFFₒ, φFFₒ, Nx, Ny)
+    _reconstruct_λFC_φFC_λCF_φCF!(dev, (16, 16), (Nx, Ny))(λFC, φFC, λCF, φCF, λCC, φCC, λFFₒ, φFFₒ, Nx, Ny, overlap)
 
     e1u = similar(λCC, AFT)
     e2u = similar(λCC, AFT)
@@ -224,7 +235,7 @@ function reconstruct_orca_mesh_from_CC_FF_points(λCC, φCC, λFF, φFF; radius)
     e1t = similar(λCC, AFT)
     e2t = similar(λCC, AFT)
 
-    _reconstruct_e1_e2_metrics!(dev, (16, 16), (Nx, Ny))(e1u, e1v, e1f, e1t, e2u, e2v, e2f, e2t, λCC, φCC, λFFₒ, φFFₒ, λFC, φFC, λCF, φCF, radius, Nx, Ny)
+    _reconstruct_e1_e2_metrics!(dev, (16, 16), (Nx, Ny))(e1u, e1v, e1f, e1t, e2u, e2v, e2f, e2t, λCC, φCC, λFFₒ, φFFₒ, λFC, φFC, λCF, φCF, radius, Nx, Ny, overlap)
 
     AzCC = similar(λCC, AFT)
     AzFC = e1u .* e2u
@@ -232,7 +243,7 @@ function reconstruct_orca_mesh_from_CC_FF_points(λCC, φCC, λFF, φFF; radius)
     AzFF = similar(λCC, AFT)
 
     if Ny > 1
-        _reconstruct_Az_interior!(dev, (16, 16), (Nx, Ny))(AzCC, AzFF, λCC, φCC, λFFₒ, φFFₒ, radius, Nx, Ny)
+        _reconstruct_Az_interior!(dev, (16, 16), (Nx, Ny))(AzCC, AzFF, λCC, φCC, λFFₒ, φFFₒ, radius, Nx, Ny, overlap)
         _fill_AzCC_boundaries!(dev, 16, Nx)(AzCC, AzFF, Ny)
     else
         AzCC .= e1t .* e2t
@@ -312,14 +323,6 @@ function shift_face_x(data, overlap)
     Nx = size(data, 1)
     No = Nx - overlap
     return data[vcat(No, 1:Nx-1), :]
-end
-
-function shift_face_y(data)
-    Nx, Ny = size(data)
-    shifted = similar(data, Nx, Ny + 1)
-    shifted[:, 1] .= zero(eltype(data))
-    shifted[:, 2:Ny+1] .= data[:, 1:Ny]
-    return shifted
 end
 
 function halo_filled_data(data, helper_grid, bcs, LX, LY)
