@@ -113,4 +113,61 @@ for arch in test_architectures
             end
         end
     end
+
+    @testset "Global meridional heat transport closure [$A]" begin
+        Nx, Ny, Nz = 4, 5, 2
+        grid = LatitudeLongitudeGrid(arch;
+                                     size = (Nx, Ny, Nz),
+                                     longitude = (0, 360),
+                                     latitude = (-90, 90),
+                                     z = (-1, 0))
+
+        ocean = ocean_simulation(grid;
+                                 momentum_advection = nothing,
+                                 tracer_advection = nothing,
+                                 closure = nothing,
+                                 coriolis = nothing)
+
+        atmosphere = PrescribedAtmosphere(grid, [0.0])
+        esm = OceanOnlyModel(ocean; atmosphere)
+
+        set!(ocean.model, v=1, T=1)
+
+        mht = Field(meridional_heat_transport(esm))
+        compute!(mht)
+
+        @allowscalar begin
+            @show mht[1, 1,      1], mht[1, Ny + 1, 1]
+            @test iszero(mht[1, 1,      1])
+            @test iszero(mht[1, Ny + 1, 1])
+        end
+    end
+
+    if arch isa CPU
+        @testset "Tripolar tendency-based meridional heat transport" begin
+            tripolar_grid = TripolarGrid(arch;
+                                         size = (8, 4, 2),
+                                         z = (-1, 0))
+
+            destination_grid = LatitudeLongitudeGrid(arch;
+                                                      size = (8, 4, 1),
+                                                      longitude = (0, 360),
+                                                      latitude = (-90, 90),
+                                                      z = (-1, 0))
+
+            ocean = ocean_simulation(tripolar_grid;
+                                     momentum_advection = nothing,
+                                     tracer_advection = nothing,
+                                     closure = nothing,
+                                     coriolis = nothing)
+
+            atmosphere = PrescribedAtmosphere(tripolar_grid, [0.0])
+            esm = OceanOnlyModel(ocean; atmosphere)
+
+            mht = Field(meridional_heat_transport(esm, TendencyMethod(); destination_grid))
+            compute!(mht)
+
+            @test all(iszero, interior(mht))
+        end
+    end
 end

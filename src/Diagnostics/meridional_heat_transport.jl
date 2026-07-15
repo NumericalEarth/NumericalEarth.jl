@@ -12,10 +12,11 @@ Return the meridional heat transport for the coupled `esm::EarthSystemModel` usi
 two methods: either by directly computing the meridional heat flux or indirectly using
 the total ocean heat content and the ocean heat uptake.
 
-!!! warning "Only works on LatitudeLongitudeGrid"
+!!! warning "The flux method only works on LatitudeLongitudeGrid"
 
-    The `meridional_heat_transport` diagnostic currently is only supported only on
-    `LongitudeLatitudeGrid`s.
+    `MeridionalFluxMethod()` currently supports only `LatitudeLongitudeGrid`.
+    For an `OrthogonalSphericalShellGrid`, use `TendencyMethod()` and provide a
+    `LatitudeLongitudeGrid` via `destination_grid`.
 
 Arguments
 =========
@@ -110,6 +111,10 @@ Keyword Arguments
 
 * `reference_temperature`: The reference temperature (in ᵒC) used for `MeridionalFluxMethod()`; default: 0 ᵒC.
 
+* `destination_grid`: A `LatitudeLongitudeGrid` onto which the two-dimensional column
+  heat budget is conservatively regridded before zonal integration. This is required
+  when using `TendencyMethod()` with an `OrthogonalSphericalShellGrid`.
+
   !!! info "Reference temperature"
 
       The reference temperature is only relevant when we compute the meridional heat transport over a section
@@ -151,31 +156,48 @@ Integral of BinaryOperation at (Center, Face, Center) over dims (1, 3)
     └── grid: 4×5×2 RectilinearGrid{Float64, Periodic, Bounded, Bounded} on CPU with 3×3×2 halo
 ```
 """
-function meridional_heat_transport(esm::EarthSystemModel, method=MeridionalFluxMethod();
-                                   reference_temperature=0)
+function meridional_heat_transport(esm::EarthSystemModel,
+                                   ::MeridionalFluxMethod=MeridionalFluxMethod();
+                                   reference_temperature=0,
+                                   destination_grid=nothing)
+    grid = underlying_grid(esm.ocean.model.grid)
+    validate_meridional_flux_grid(grid)
 
-    grid = esm.ocean.model.grid
-
-    validation_grid = grid isa ImmersedBoundaryGrid ? grid.underlying_grid : grid
-
-    grid isa OrthogonalSphericalShellGrid &&
-        throw(ArgumentError("meridional_heat_transport diagnostic does not work on OrthogonalSphericalShellGrid at the moment; use LatitudeLongitudeGrid."))
-
-    if method isa MeridionalFluxMethod
-        FT = eltype(esm)
-        reference_temperature = convert(FT, reference_temperature)
-        return meridional_heat_transport_via_meridional_heat_flux(esm; reference_temperature)
-    elseif method isa TendencyMethod
-        @warn """
-        Computing the meridional heat transport via the TendencyMethod
-                 does not ensure the heat budget is closed!
-                 If you require a closed heat budget, then use the MeridionalFluxMethod.
-        """
-        return meridional_heat_transport_via_ocean_heat_content(esm)
-    else
-        throw(ArgumentError("Unknown method $(method); choose either MeridionalFluxMethod() or TendencyMethod()."))
-    end
+    FT = eltype(esm)
+    reference_temperature = convert(FT, reference_temperature)
+    return meridional_heat_transport_via_meridional_heat_flux(esm; reference_temperature)
 end
+
+function meridional_heat_transport(esm::EarthSystemModel,
+                                   ::TendencyMethod;
+                                   reference_temperature=0,
+                                   destination_grid=nothing)
+    grid = underlying_grid(esm.ocean.model.grid)
+    validate_tendency_destination(grid, destination_grid)
+
+    return meridional_heat_transport_via_ocean_heat_content(esm; destination_grid)
+end
+
+function meridional_heat_transport(::EarthSystemModel, method; kwargs...)
+    throw(ArgumentError("Unknown method $(method); choose either MeridionalFluxMethod() or TendencyMethod()."))
+end
+
+underlying_grid(grid::ImmersedBoundaryGrid) = grid.underlying_grid
+underlying_grid(grid) = grid
+
+validate_meridional_flux_grid(::OrthogonalSphericalShellGrid) =
+    throw(ArgumentError("MeridionalFluxMethod() diagnostic does not work on OrthogonalSphericalShellGrid at the moment. Use TendencyMethod() instead."))
+
+validate_meridional_flux_grid(grid) = nothing
+
+validate_tendency_destination(::OrthogonalSphericalShellGrid, ::Nothing) =
+    throw(ArgumentError("TendencyMethod() on an OrthogonalSphericalShellGrid requires a `destination_grid`."))
+
+validate_tendency_destination(grid, ::Nothing) = nothing
+validate_tendency_destination(grid, ::LatitudeLongitudeGrid) = nothing
+
+validate_tendency_destination(grid, destination_grid) =
+    throw(ArgumentError("The `destination_grid` must be a LatitudeLongitudeGrid."))
 
 function meridional_heat_transport_via_meridional_heat_flux(esm; reference_temperature)
     ρᵒᶜ = reference_density(esm.ocean)
@@ -186,15 +208,28 @@ function meridional_heat_transport_via_meridional_heat_flux(esm; reference_tempe
     return MHT
 end
 
-function meridional_heat_transport_via_ocean_heat_content(esm)
+function meridional_heat_transport_via_ocean_heat_content(esm; destination_grid=nothing)
     ρᵒᶜ = reference_density(esm.ocean)
     cᵒᶜ = heat_capacity(esm.ocean)
     ∂t_T = temperature_tendency(esm.ocean.model.timestepper)
     𝒬ᵃᵒₙₑₜ = net_ocean_heat_flux(esm)
 
-    𝒬 = Integral(ρᵒᶜ * cᵒᶜ * ∂t_T, dims=3) |> Field
-    ∫Σ𝒬_dx = Integral(𝒬ᵃᵒₙₑₜ + 𝒬, dims=1) |> Field
-    MHT = CumulativeIntegral(- ∫Σ𝒬_dx, dims=2)
+    # Reduce only in the vertical before regridding. The resulting source field
+    # retains the source grid's true horizontal cell polygons; the zonal integral
+    # is performed only after remapping onto the latitude-longitude grid.
+    𝒬 = Integral(ρᵒᶜ * cᵒᶜ * ∂t_T, dims=3)
+    column_budget = 𝒬ᵃᵒₙₑₜ + 𝒬
+
+    if destination_grid !== nothing
+        source_budget = Field(column_budget)
+        destination_budget = Field{Center, Center, Nothing}(destination_grid)
+        regridder = Regridder(destination_budget, source_budget)
+        regrid!(destination_budget, regridder, source_budget)
+        column_budget = destination_budget
+    end
+
+    zonal_budget = Field(Integral(column_budget, dims=1))
+    MHT = CumulativeIntegral(-zonal_budget, dims=2)
     return MHT
 end
 
