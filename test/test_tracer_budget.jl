@@ -7,7 +7,8 @@ using Oceananigans.Operators: volume
 using Oceananigans.Units
 using NumericalEarth.Oceans: get_radiative_forcing
 
-function test_tracer_budget(coupled_model, Sᵒᶜ, Δt, nsteps; rtol)
+# The two budgets have different noise floors, so they get separate tolerances.
+function test_tracer_budget(coupled_model, Sᵒᶜ, Δt, nsteps; heat_rtol, freshwater_rtol)
     ocean = coupled_model.ocean
     grid  = ocean.model.grid
 
@@ -57,8 +58,8 @@ function test_tracer_budget(coupled_model, Sᵒᶜ, Δt, nsteps; rtol)
         expected_heat_content_tendency       = (previous_radiative_rate - previous_heat_flux) * last_Δt
         expected_freshwater_content_tendency = -previous_freshwater_flux * last_Δt
 
-        @test isapprox(heat_content_tendency, expected_heat_content_tendency; rtol)
-        @test isapprox(freshwater_content_tendency, expected_freshwater_content_tendency; rtol)
+        @test isapprox(heat_content_tendency, expected_heat_content_tendency; rtol=heat_rtol)
+        @test isapprox(freshwater_content_tendency, expected_freshwater_content_tendency; rtol=freshwater_rtol)
     end
 
     return nothing
@@ -104,7 +105,7 @@ end
                 ocean = ocean_simulation(deepcopy(grid); free_surface, radiative_forcing=nothing)
                 set!(ocean.model, T=Tᵢ, S=Sᵢ)
                 coupled_model = OceanSeaIceModel(ocean, nothing; atmosphere, radiation)
-                test_tracer_budget(coupled_model, Sᵒᶜ, Δt, 4; rtol=√eps(eltype(grid)))
+                test_tracer_budget(coupled_model, Sᵒᶜ, Δt, 4; heat_rtol=1e-11, freshwater_rtol=√eps(eltype(grid)))
             end
 
             # With penetrative shortwave radiation
@@ -112,7 +113,7 @@ end
                 ocean = ocean_simulation(deepcopy(grid); free_surface)
                 set!(ocean.model, T=Tᵢ, S=Sᵢ)
                 coupled_model = OceanSeaIceModel(ocean, nothing; atmosphere, radiation)
-                test_tracer_budget(coupled_model, Sᵒᶜ, Δt, 4; rtol=√eps(eltype(grid)))
+                test_tracer_budget(coupled_model, Sᵒᶜ, Δt, 4; heat_rtol=1e-11, freshwater_rtol=√eps(eltype(grid)))
             end
         end
     end

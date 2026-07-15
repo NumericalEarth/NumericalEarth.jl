@@ -1,5 +1,5 @@
 using Adapt: Adapt
-using Oceananigans.ImmersedBoundaries: inactive_cell
+using Oceananigans.Grids: inactive_cell
 using Oceananigans.Operators: ∂zᶜᶜᶜ
 
 struct TwoColorRadiation{FT, J}
