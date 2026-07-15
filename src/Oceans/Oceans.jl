@@ -12,9 +12,9 @@ using Oceananigans.BoundaryConditions: DefaultBoundaryCondition, DiscreteBoundar
 using Oceananigans.BuoyancyFormulations: SeawaterBuoyancy
 using Oceananigans.Coriolis: HydrostaticSphericalCoriolis
 using Oceananigans.Fields: Field, CenterField, set!, interior
-using Oceananigans.Forcings: MultipleForcings
+using Oceananigans.Forcings: MultipleForcings, DiscreteForcing
 using Oceananigans.Grids: Grids, inactive_node, Face, Center, xspacings, yspacings, RectilinearGrid
-using Oceananigans.ImmersedBoundaries: ImmersedBoundaryGrid, ImmersedBoundaryCondition
+using Oceananigans.ImmersedBoundaries: ImmersedBoundaryGrid, ImmersedBoundaryCondition, MutableGridOfSomeKind
 using Oceananigans.Models.HydrostaticFreeSurfaceModels: HydrostaticFreeSurfaceModel
 using Oceananigans.Models.HydrostaticFreeSurfaceModels.SplitExplicitFreeSurfaces: SplitExplicitFreeSurface
 using Oceananigans.Models.NonhydrostaticModels: NonhydrostaticModel
@@ -199,6 +199,8 @@ end
 @inline net_flux(condition) = condition
 @inline net_flux(bc::MultipleFluxes) = bc.flux_field
 @inline net_flux(bc::DiscreteBoundaryFunction) = net_flux(bc.func)
+@inline net_flux(f::DiscreteForcing)   = f.parameters
+@inline net_flux(mf::MultipleForcings) = net_flux(mf.forcings[1])
 
 function EarthSystemModels.InterfaceComputations.net_fluxes(ocean::OceananigansModelSimulations)
     # TODO: Generalize this to work with any ocean model
@@ -208,7 +210,15 @@ function EarthSystemModels.InterfaceComputations.net_fluxes(ocean::OceananigansM
 
     tracers = ocean.model.tracers
     ocean_surface_tracer_fluxes = NamedTuple(name => net_flux(tracers[name].boundary_conditions.top.condition) for name in keys(tracers))
-    return merge(ocean_surface_tracer_fluxes, net_ocean_surface_fluxes)
+
+    freshwater_volume_flux = extract_freshwater_flux(ocean.model.tracers.S.boundary_conditions.top.condition)
+    heat_exchange = freshwater_exchange(ocean.model.tracers.T.boundary_conditions.top.condition)
+
+    fluxes = merge(ocean_surface_tracer_fluxes, net_ocean_surface_fluxes,
+                   (; η = freshwater_volume_flux,
+                      freshwater_heat_content = heat_exchange.content_flux))
+
+    return fluxes
 end
 
 end # module
