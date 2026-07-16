@@ -98,13 +98,14 @@ end
 
 @testset "Tracer budget closure under surface fluxes" begin
     for arch in test_architectures
-        for fold_topology in (RightFaceFolded,
-                              RightCenterFolded)
+        for z in (MutableVerticalDiscretization((-100, 0)), (-100, 0))
+            for fold_topology in (RightFaceFolded,
+                                  RightCenterFolded)
                               
-            @info ".. on $(typeof(arch)) with $fold_topology topology"
+            @info ".. on $(typeof(arch)) with $(typeof(z)) and $fold_topology topology"
             underlying_grid = TripolarGrid(arch;
                                            size = (20, 20, 20),
-                                           z = MutableVerticalDiscretization((-100, 0)),
+                                           z,
                                            halo = (7, 7, 4),
                                            fold_topology)
 
@@ -179,6 +180,7 @@ end
                 coupled_model = OceanSeaIceModel(ocean, sea_ice; atmosphere, radiation)
                 test_tracer_budget(coupled_model, Sᵒᶜ, Δt, 4; rtol=2√eps(eltype(new_grid)))
             end
+        end
         end
     end
 end
