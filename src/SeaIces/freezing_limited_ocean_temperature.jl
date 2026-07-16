@@ -32,7 +32,7 @@ function EarthSystemModels.materialize_sea_ice(sea_ice::FreezingLimitedOceanTemp
     return FreezingLimitedOceanTemperature(sea_ice.liquidus, frazil_heat)
 end
 
-EarthSystemModels.materialize_sea_ice(sea_ice::FreezingLimitedOceanTemperature, ::Nothing) = sea_ice
+EarthSystemModels.materialize_sea_ice!(sea_ice::FreezingLimitedOceanTemperature, ::Nothing) = sea_ice
 
 # Extend interface methods to work with a `FreezingLimitedOceanTemperature`
 EarthSystemModels.sea_ice_concentration(::FreezingLimitedOceanTemperature) = ZeroField()

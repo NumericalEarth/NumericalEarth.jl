@@ -86,10 +86,6 @@ end
 function Oceananigans.TimeSteppers.reconcile_state!(model::ESM)
     initialize!(model.interfaces.exchanger, model)
     update_state!(model)
-    # Second call re-derives Jᵀ from the post-clamp SST: a sea-ice component
-    # (e.g. FreezingLimitedOceanTemperature) may have clamped T in the first call,
-    # so the stored Jᵀ is stale.  After the second call, reconcile_state! is
-    # idempotent w.r.t. maybe_prepare_first_time_step!.
     update_state!(model)
     return nothing
 end
@@ -142,7 +138,7 @@ Called from inside the [`EarthSystemModel`](@ref) constructor before `ComponentI
 is built. Default: no-op, returning `sea_ice` unchanged. Sea ice types that require
 grid-allocated diagnostic fields (e.g. `FreezingLimitedOceanTemperature`) overload this.
 """
-materialize_sea_ice(sea_ice, ocean) = sea_ice
+materialize_sea_ice!(sea_ice, ocean) = sea_ice
 
 """
     EarthSystemModel(radiation, atmosphere, land, sea_ice, ocean;

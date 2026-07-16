@@ -86,7 +86,7 @@ end
 
 @testset "Tracer budget closure under surface fluxes" begin
     for arch in test_architectures
-        for z in (MutableVerticalDiscretization((-100, 0)), (-100, 0))
+        for z in (MutableVerticalDiscretization((-100, 0)), ) # TODO: Add a static grid
             for fold_topology in (RightFaceFolded,
                                   RightCenterFolded)
                               
@@ -135,6 +135,7 @@ end
 
             @testset "Surface fluxes + penetrating shortwave radiation + Sea ice" begin
                 @info "    .. Surface fluxes + penetrating shortwave radiation + Sea ice"
+                # TODO: Switch to idealized initial conditions for both ocean and sea ice 
                 ecco_set = MetadataSet(:temperature, :salinity,
                                        :sea_ice_thickness, :sea_ice_concentration,
                                        dataset = ECCO4Monthly(),
