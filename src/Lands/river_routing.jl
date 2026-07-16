@@ -1,7 +1,8 @@
-using Oceananigans.Grids: inactive_node, λnodes, φnodes
+using Oceananigans.Grids: inactive_node, λnodes, φnodes, znodes
 using Oceananigans.Operators: Azᶜᶜᶜ
 using Oceananigans.Architectures: on_architecture
-using Oceananigans.Fields: interior
+using Oceananigans.Fields: interior, CenterField, set!
+using Oceananigans.TurbulenceClosures: VerticalScalarDiffusivity
 
 #####
 ##### River routing: map river-mouth discharge onto coastal ocean cells
@@ -125,12 +126,13 @@ end
 
 """
     build_river_routing(target_grid, outlet_i, outlet_j, outlet_λ, outlet_φ, outlet_weight;
-                        maximum_search_radius = 5)
+                        maximum_search_radius = 5, n_spread_cells = 8)
 
-Map each river mouth at `(outlet_λ, outlet_φ)` to the nearest active ocean cell of
-`target_grid`, returning a [`RiverRouting`](@ref). River mouths with no active ocean
-cell within `maximum_search_radius` mean cell widths are dropped (and reported), so
-the global freshwater budget is conserved up to the dropped discharge.
+Map each river mouth at `(outlet_λ, outlet_φ)` to its `n_spread_cells` nearest active ocean
+cells of `target_grid`, splitting the discharge equally among them so no single coarse
+coastal cell receives a runaway flux, and returning a [`RiverRouting`](@ref). River mouths
+with no active ocean cell within `maximum_search_radius` mean cell widths are dropped (and
+reported), so the global freshwater budget is conserved up to the dropped discharge.
 
 `outlet_weight[n]` is the per-mouth factor that converts the outlet's stored value into
 a mass discharge (kg s⁻¹): the deposited flux is `outlet_weight[n] * value[outlet_n] /
@@ -138,7 +140,8 @@ Aᵒᶜᵉᵃⁿ`. For a volumetric discharge (m³ s⁻¹) it is the freshwater 
 per-area mass flux (kg m⁻² s⁻¹) it is the source-cell area. Both conserve total mass.
 """
 function build_river_routing(target_grid, outlet_i, outlet_j, outlet_λ, outlet_φ, outlet_weight;
-                             maximum_search_radius = 5)
+                             maximum_search_radius = 5,
+                             n_spread_cells = 8)
 
     arch = architecture(target_grid)
     FT = eltype(target_grid)
@@ -159,16 +162,21 @@ function build_river_routing(target_grid, outlet_i, outlet_j, outlet_λ, outlet_
     wet_i, wet_j, wet_λ, wet_φ = wet_cells(wet, λc, φc)
     max_degrees = maximum_search_radius * (360 / Nx + 180 / Ny) / 2
 
+    # Split each mouth's discharge equally among its `n_spread_cells` nearest ocean cells so
+    # no single coarse coastal cell receives a runaway freshwater flux (which crashes salinity).
     contributions = Dict{Tuple{Int, Int}, Vector{Tuple{Int, Int, FT}}}()
     dropped = 0
     for n in eachindex(outlet_i)
-        i★, j★ = nearest_active_cell(wet_i, wet_j, wet_λ, wet_φ, outlet_λ[n], outlet_φ[n], max_degrees)
-        if i★ == 0
+        targets = nearest_active_cells(wet_i, wet_j, wet_λ, wet_φ, outlet_λ[n], outlet_φ[n],
+                                       max_degrees, n_spread_cells)
+        if isempty(targets)
             dropped += 1
             continue
         end
-        push!(get!(contributions, (i★, j★), Tuple{Int, Int, FT}[]),
-              (outlet_i[n], outlet_j[n], convert(FT, outlet_weight[n])))
+        w = convert(FT, outlet_weight[n]) / length(targets)
+        for (i★, j★) in targets
+            push!(get!(contributions, (i★, j★), Tuple{Int, Int, FT}[]), (outlet_i[n], outlet_j[n], w))
+        end
     end
 
     if dropped > 0
@@ -235,19 +243,16 @@ function wet_cells(wet, λc, φc)
     return wet_i, wet_j, wet_λ, wet_φ
 end
 
-function nearest_active_cell(wet_i, wet_j, wet_λ, wet_φ, λₒ, φₒ, max_degrees)
-    best_i = 0
-    best_j = 0
-    best_d = max_degrees^2
+function nearest_active_cells(wet_i, wet_j, wet_λ, wet_φ, λₒ, φₒ, max_degrees, K)
+    cap = max_degrees^2
+    candidates = Tuple{Float64, Int}[]
     for n in eachindex(wet_i)
         d = squared_distance(λₒ, φₒ, wet_λ[n], wet_φ[n])
-        if d < best_d
-            best_d = d
-            best_i = wet_i[n]
-            best_j = wet_j[n]
-        end
+        d < cap && push!(candidates, (d, n))
     end
-    return best_i, best_j
+    sort!(candidates; by = first)
+    nfound = min(K, length(candidates))
+    return [(wet_i[candidates[m][2]], wet_j[candidates[m][2]]) for m in 1:nfound]
 end
 
 #####
@@ -308,4 +313,39 @@ end
         end
         flux[target_i[c], target_j[c], 1] += accumulated
     end
+end
+
+#####
+##### Enhanced vertical mixing at river mouths (cf. NEMO `rn_avt_rnf` over `rn_hrnf`)
+#####
+
+@inline river_mouth_κ(i, j, k, grid, clock, fields, mask) = @inbounds mask[i, j, k]
+
+"""
+    river_mouth_vertical_diffusivity(grid, river_routing; κ = 0.1, mixing_depth = 10)
+
+Return a `VerticalScalarDiffusivity` that applies an extra tracer diffusivity `κ` (m² s⁻¹)
+over the top `mixing_depth` metres at the ocean cells that receive river runoff (the targets
+in `river_routing`, a `NamedTuple` of [`RiverRouting`](@ref)), and zero everywhere else. Added
+alongside the ocean's main closure, it mixes the fresh river plume downward at river mouths so
+the surface cell cannot be freshened to zero — the same idea as NEMO's `rn_avt_rnf`/`rn_hrnf`.
+"""
+function river_mouth_vertical_diffusivity(grid, river_routing; κ = 0.1, mixing_depth = 10)
+    zc = Array(znodes(grid, Center()))
+    Nz = size(grid, 3)
+    mask_data = zeros(eltype(grid), size(grid)...)
+
+    for routing in values(river_routing)
+        ti = Array(routing.target_i)
+        tj = Array(routing.target_j)
+        for n in eachindex(ti), k in 1:Nz
+            zc[k] > -mixing_depth && (mask_data[ti[n], tj[n], k] = κ)
+        end
+    end
+
+    mask = CenterField(grid)
+    set!(mask, mask_data)
+
+    return VerticalScalarDiffusivity(κ = river_mouth_κ, discrete_form = true,
+                                     loc = (Center, Center, Center), parameters = mask)
 end

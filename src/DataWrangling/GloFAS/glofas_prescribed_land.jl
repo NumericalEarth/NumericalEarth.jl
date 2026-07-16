@@ -42,6 +42,7 @@ function GloFASPrescribedLand(grid;
                               region = nothing,
                               freshwater_density = 1000,
                               maximum_search_radius = 5,
+                              n_spread_cells = 8,
                               other_kw...)
 
     arch = architecture(grid)
@@ -59,7 +60,7 @@ function GloFASPrescribedLand(grid;
     # GloFAS stores a volumetric discharge (m³ s⁻¹), so the mass-rate scale is the freshwater density.
     outlet_weight = fill(convert(eltype(grid), freshwater_density), length(outlet_i))
     routing = build_river_routing(grid, outlet_i, outlet_j, outlet_λ, outlet_φ, outlet_weight;
-                                  maximum_search_radius)
+                                  maximum_search_radius, n_spread_cells)
 
     freshwater_flux = (; rivers = discharge)
 

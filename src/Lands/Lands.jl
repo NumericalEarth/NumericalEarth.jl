@@ -4,6 +4,7 @@ export AbstractLand,
        PrescribedLand,
        RiverRouting,
        build_river_routing,
+       river_mouth_vertical_diffusivity,
        coastal_outlet_indices,
        # Composable container
        SlabLand,
