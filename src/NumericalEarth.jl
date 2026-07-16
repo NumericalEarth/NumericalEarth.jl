@@ -118,6 +118,7 @@ export
     WOAClimatology, WOAAnnual, WOAMonthly,
     CopernicusAlbedo, CopernicusAlbedoClimatology, build_monthly_climatology!,
     GLORYSDaily, GLORYSMonthly, GLORYSStatic,
+    AVISOMetadata, AVISODaily, AVISOMonthly, AVISOMetadatum,
     RepeatYearJRA55, MultiYearJRA55,
     ERA5HourlySingleLevel, ERA5MonthlySingleLevel,
     ERA5HourlyPressureLevels, ERA5MonthlyPressureLevels,
