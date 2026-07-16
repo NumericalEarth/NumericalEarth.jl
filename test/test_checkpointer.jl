@@ -16,7 +16,7 @@ function make_coupled_model(grid)
 
     arch = architecture(grid)
     atmosphere = JRA55PrescribedAtmosphere(arch)
-    land = JRA55PrescribedLand(arch)
+    land = JRA55PrescribedLand(grid)
     radiation = JRA55PrescribedRadiation(arch)
 
     return OceanSeaIceModel(ocean, sea_ice; atmosphere, land, radiation)

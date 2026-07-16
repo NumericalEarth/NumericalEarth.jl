@@ -93,7 +93,7 @@ set!(ocean.model, MetadataSet(:temperature, :salinity; dataset=ECCO4Monthly(), d
 
 atmosphere = JRA55PrescribedAtmosphere(arch)
 radiation  = JRA55PrescribedRadiation(arch)
-land       = JRA55PrescribedLand(arch)
+land       = JRA55PrescribedLand(grid)
 
 # ## The coupled simulation
 

@@ -149,7 +149,7 @@ using NumericalEarth.JRA55: download_JRA55_cache
         @test atmosphere isa PrescribedAtmosphere
 
         # Test JRA55PrescribedLand loads river and iceberg data with correct frequency
-        land = JRA55PrescribedLand(arch; time_indices_in_memory=2)
+        land = JRA55PrescribedLand(target_grid; time_indices_in_memory=2)
         @test land isa NumericalEarth.Lands.PrescribedLand
         @test haskey(land.freshwater_flux, :rivers)
         @test haskey(land.freshwater_flux, :icebergs)

@@ -100,7 +100,7 @@ set!(sea_ice.model, ecco_set)   # picks up :sea_ice_thickness, :sea_ice_concentr
 # In the radiation component we prescribed a latitude-dependent ocean albedo due to
 # Large & Yeager 2009.
 
-land = JRA55PrescribedLand(arch)
+land = JRA55PrescribedLand(grid)
 atmosphere = JRA55PrescribedAtmosphere(arch)
 
 ocean_surface = SurfaceRadiationProperties(albedo = LatitudeDependentAlbedo())
