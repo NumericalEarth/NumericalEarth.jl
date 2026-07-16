@@ -136,7 +136,8 @@ the deposited flux is `outlet_weight[n] * value[outlet_n] / Aᵒᶜᵉᵃⁿ`. F
 freshwater density; for a per-area mass flux (kg m⁻² s⁻¹) it is the source-cell area. Both conserve the total mass delivered.
 """
 function build_river_routing(target_grid, outlet_i, outlet_j, outlet_λ, outlet_φ, outlet_weight;
-                             maximum_search_radius = 5)
+                             maximum_search_radius = 5,
+                             n_spread_cells = 8)
 
     arch = architecture(target_grid)
     FT = eltype(target_grid)
@@ -157,21 +158,26 @@ function build_river_routing(target_grid, outlet_i, outlet_j, outlet_λ, outlet_
     wet_i, wet_j, wet_λ, wet_φ = wet_cells(wet, λc, φc)
     max_degrees = maximum_search_radius * (360 / Nx + 180 / Ny) / 2
 
+    # Split each mouth's discharge equally among its `n_spread_cells` nearest ocean cells so
+    # no single coarse coastal cell receives a runaway freshwater flux (which crashes salinity).
     contributions = Dict{Tuple{Int, Int}, Vector{Tuple{Int, Int, FT}}}()
     dropped = 0
     for n in eachindex(outlet_i)
-        i★, j★ = nearest_active_cell(wet_i, wet_j, wet_λ, wet_φ, outlet_λ[n], outlet_φ[n], max_degrees)
-        if i★ == 0
+        targets = nearest_active_cells(wet_i, wet_j, wet_λ, wet_φ, outlet_λ[n], outlet_φ[n],
+                                       max_degrees, n_spread_cells)
+        if isempty(targets)
             dropped += 1
             continue
         end
-        push!(get!(contributions, (i★, j★), Tuple{Int, Int, FT}[]),
-              (outlet_i[n], outlet_j[n], convert(FT, outlet_weight[n])))
+        w = convert(FT, outlet_weight[n]) / length(targets)
+        for (i★, j★) in targets
+            push!(get!(contributions, (i★, j★), Tuple{Int, Int, FT}[]), (outlet_i[n], outlet_j[n], w))
+        end
     end
 
     if dropped > 0
         @warn string(dropped, " of ", length(outlet_i), " river mouths had no active ocean ",
-                     "cell within ", maximum_search_radius, " cells and were dropped.")
+                     "cell in range and were dropped.")
     end
 
     target_i = Int[]
@@ -233,19 +239,16 @@ function wet_cells(wet, λc, φc)
     return wet_i, wet_j, wet_λ, wet_φ
 end
 
-function nearest_active_cell(wet_i, wet_j, wet_λ, wet_φ, λₒ, φₒ, max_degrees)
-    best_i = 0
-    best_j = 0
-    best_d = max_degrees^2
+function nearest_active_cells(wet_i, wet_j, wet_λ, wet_φ, λₒ, φₒ, max_degrees, K)
+    cap = max_degrees^2
+    candidates = Tuple{Float64, Int}[]
     for n in eachindex(wet_i)
         d = squared_distance(λₒ, φₒ, wet_λ[n], wet_φ[n])
-        if d < best_d
-            best_d = d
-            best_i = wet_i[n]
-            best_j = wet_j[n]
-        end
+        d < cap && push!(candidates, (d, n))
     end
-    return best_i, best_j
+    sort!(candidates; by = first)
+    nfound = min(K, length(candidates))
+    return [(wet_i[candidates[m][2]], wet_j[candidates[m][2]]) for m in 1:nfound]
 end
 
 #####

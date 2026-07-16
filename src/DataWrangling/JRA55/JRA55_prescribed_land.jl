@@ -31,6 +31,7 @@ function JRA55PrescribedLand(grid;
                              time_indexing = Cyclical(),
                              region = nothing,
                              maximum_search_radius = 5,
+                             n_spread_cells = 8,
                              other_kw...)
 
     arch = architecture(grid)
@@ -43,17 +44,17 @@ function JRA55PrescribedLand(grid;
     Fic = JRA55FieldTimeSeries(:iceberg_freshwater_flux)
 
     freshwater_flux = (; rivers = Fri, icebergs = Fic)
-    river_routing = map(fts -> build_flux_routing(grid, fts; maximum_search_radius), freshwater_flux)
+    river_routing = map(fts -> build_flux_routing(grid, fts; maximum_search_radius, n_spread_cells), freshwater_flux)
 
     return PrescribedLand(freshwater_flux; river_routing)
 end
 
 # Route a per-area mass-flux component: nonzero forcing-grid cells are mouths, weighted by
 # their source-cell area so the mass delivered to the ocean equals ∫ flux dA at the source.
-function build_flux_routing(grid, flux_fts; maximum_search_radius = 5)
+function build_flux_routing(grid, flux_fts; maximum_search_radius = 5, n_spread_cells = 8)
     snapshot = flux_fts[1]
     outlet_i, outlet_j, outlet_λ, outlet_φ = positive_outlet_indices(snapshot)
     outlet_weight = source_cell_areas(snapshot.grid, outlet_i, outlet_j)
     return build_river_routing(grid, outlet_i, outlet_j, outlet_λ, outlet_φ, outlet_weight;
-                               maximum_search_radius)
+                               maximum_search_radius, n_spread_cells)
 end

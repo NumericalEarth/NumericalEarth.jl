@@ -680,6 +680,7 @@ function build_grid(dataset::ORCADataset, arch, Nz, depth; Δz_top = nothing)
                     z = z_faces,
                     halo = (8, 8, 8),
                     with_bathymetry = true,
+                    major_basins = 1,
                     active_cells_map = true)
 end
 
