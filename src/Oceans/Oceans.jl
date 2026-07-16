@@ -39,7 +39,9 @@ using ..EarthSystemModels: EarthSystemModels,
                            default_stop_time,
                            heat_capacity,
                            reference_density
-using ..EarthSystemModels.InterfaceComputations: ComponentExchanger
+                           heat_capacity
+
+using ..EarthSystemModels.InterfaceComputations: ComponentExchanger, InterfaceComputations
 
 default_gravitational_acceleration = Oceananigans.defaults.gravitational_acceleration
 default_planet_rotation_rate = Oceananigans.defaults.planet_rotation_rate

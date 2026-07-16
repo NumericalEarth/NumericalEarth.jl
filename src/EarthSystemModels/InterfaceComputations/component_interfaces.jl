@@ -1,8 +1,10 @@
 using KernelAbstractions: @kernel, @index
 using Oceananigans: initialize!
 using Oceananigans.Architectures: architecture
+using Oceananigans.BoundaryConditions: FieldBoundaryConditions
 using Oceananigans.Units: Time
 using Oceananigans.Grids: inactive_node, topology
+using Oceananigans.OrthogonalSphericalShellGrids: OrthogonalSphericalShellGrids
 using Oceananigans.Utils: launch!, KernelParameters
 using Oceananigans.Operators: ℑxᶜᵃᵃ, ℑyᵃᶜᵃ
 using Oceananigans.Units: Time
@@ -48,6 +50,13 @@ end
 @inline computed_fluxes(interface::AtmosphereInterface)  = interface.fluxes
 @inline computed_fluxes(interface::SeaIceOceanInterface) = interface.fluxes
 
+vector_component_boundary_conditions(grid, loc) = FieldBoundaryConditions(grid, loc)
+
+function vector_component_boundary_conditions(grid::OrthogonalSphericalShellGrids.TripolarGridOfSomeKind, loc)
+    north_bc = OrthogonalSphericalShellGrids.north_fold_boundary_condition(grid)(-1)
+    return FieldBoundaryConditions(grid, loc; north = north_bc)
+end
+
 """
     AtmosphereSurfaceFluxes{F}
 
@@ -70,9 +79,11 @@ end
 
 function AtmosphereSurfaceFluxes(grid)
     F = Field{Center, Center, Nothing}
+    velocity_bcs = vector_component_boundary_conditions(grid, (Center(), Center(), nothing))
     return AtmosphereSurfaceFluxes(F(grid), F(grid), F(grid),
-                                   F(grid), F(grid), F(grid),
-                                   F(grid), F(grid))
+                                   F(grid; boundary_conditions = velocity_bcs),
+                                   F(grid; boundary_conditions = velocity_bcs),
+                                   F(grid), F(grid), F(grid))
 end
 
 AtmosphereSurfaceFluxes(::Nothing) = AtmosphereSurfaceFluxes(ntuple(_ -> ZeroField(), 8)...)
@@ -107,7 +118,10 @@ end
 
 function AtmosphereSeaIceFluxes(grid)
     F = Field{Center, Center, Nothing}
-    return AtmosphereSeaIceFluxes(F(grid), F(grid), F(grid), F(grid), F(grid))
+    velocity_bcs = vector_component_boundary_conditions(grid, (Center(), Center(), nothing))
+    return AtmosphereSeaIceFluxes(F(grid), F(grid), F(grid),
+                                  F(grid; boundary_conditions = velocity_bcs),
+                                  F(grid; boundary_conditions = velocity_bcs))
 end
 
 AtmosphereSeaIceFluxes(::Nothing) = AtmosphereSeaIceFluxes(ntuple(_ -> ZeroField(), 5)...)
@@ -137,9 +151,11 @@ end
 
 function SeaIceOceanFluxes(grid)
     C  = Field{Center, Center, Nothing}
+    x_velocity_bcs = vector_component_boundary_conditions(grid, (Face(), Center(), nothing))
+    y_velocity_bcs = vector_component_boundary_conditions(grid, (Center(), Face(), nothing))
     return SeaIceOceanFluxes(C(grid), C(grid), C(grid), C(grid),
-                             Field{Face, Center, Nothing}(grid),
-                             Field{Center, Face, Nothing}(grid))
+                             Field{Face, Center, Nothing}(grid; boundary_conditions = x_velocity_bcs),
+                             Field{Center, Face, Nothing}(grid; boundary_conditions = y_velocity_bcs))
 end
 
 SeaIceOceanFluxes(::Nothing) = SeaIceOceanFluxes(ntuple(_ -> ZeroField(), 6)...)

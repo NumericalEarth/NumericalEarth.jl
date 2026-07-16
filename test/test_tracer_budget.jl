@@ -7,7 +7,8 @@ using Oceananigans.Operators: volume
 using Oceananigans.Units
 using NumericalEarth.Oceans: get_radiative_forcing
 
-function test_tracer_budget(coupled_model, Δt, nsteps; rtol=1e-8)
+# Heat and freshwater have different noise floors, so they get separate tolerances.
+function test_tracer_budget(coupled_model, Sᵒᶜ, Δt, nsteps; heat_rtol, freshwater_rtol)
     ocean = coupled_model.ocean
     grid  = ocean.model.grid
 
@@ -65,7 +66,7 @@ function test_tracer_budget(coupled_model, Δt, nsteps; rtol=1e-8)
         # the freshwater's own enthalpy Σᵢ Tᵢ Jʷᵢ is what remains.
         heat_content_tendency = sum(ρᵒᶜ * cᵒᶜ * ΔVT)
         expected_heat_content_tendency = (previous_radiative_rate - previous_heat_flux + previous_enthalpy) * last_Δt
-        @test isapprox(heat_content_tendency, expected_heat_content_tendency; rtol)
+        @test isapprox(heat_content_tendency, expected_heat_content_tendency; rtol=heat_rtol)
 
         budget_scale = max(abs(previous_heat_flux), abs(previous_radiative_rate),
                            abs(previous_enthalpy), one(previous_heat_flux))
@@ -74,12 +75,12 @@ function test_tracer_budget(coupled_model, Δt, nsteps; rtol=1e-8)
         # Volume grows by exactly the surface-integrated freshwater volume flux.
         volume_tendency = sum(ΔVV)
         expected_volume_tendency = previous_volume_flux * last_Δt
-        @test isapprox(volume_tendency, expected_volume_tendency; rtol)
+        @test isapprox(volume_tendency, expected_volume_tendency; rtol=freshwater_rtol)
     end
 
     # Freshwater carries no salt, so the total salt content is conserved over the run.
     compute!(ΔVS)
-    @test abs(sum(ΔVS)) / ∫S⁻ < rtol
+    @test abs(sum(ΔVS)) / ∫S⁻ < freshwater_rtol
 
     return nothing
 end
@@ -109,25 +110,28 @@ end
             radiation  = JRA55PrescribedRadiation(arch; time_indices_in_memory)
             atmosphere = JRA55PrescribedAtmosphere(arch; time_indices_in_memory)
 
-            en4_set = MetadataSet(:temperature, :salinity, dataset = EN4Monthly(), date = DateTime(1993, 1, 1))
-            Δt  = 605seconds
+            # An idealized, stably stratified initial state
+            Tᵢ(λ, φ, z) = 2 + 26 * cosd(φ)^2 * exp(z / 30)
+            Sᵢ(λ, φ, z) = 35 - 1//2 * exp(z / 30)
+
+            Δt = 605seconds
             Sᵒᶜ = 35 # reference salinity [psu]
             free_surface = SplitExplicitFreeSurface(substeps=20)
 
             # Without shortwave penetration
             @testset "Surface-only fluxes" begin
                 ocean = ocean_simulation(deepcopy(grid); free_surface, radiative_forcing=nothing)
-                set!(ocean.model, en4_set)
+                set!(ocean.model, T=Tᵢ, S=Sᵢ)
                 coupled_model = OceanSeaIceModel(ocean, nothing; atmosphere, radiation)
-                test_tracer_budget(coupled_model, Δt, 4)
+                test_tracer_budget(coupled_model, Sᵒᶜ, Δt, 4; heat_rtol=1e-11, freshwater_rtol=√eps(eltype(grid)))
             end
 
             # With penetrative shortwave radiation
             @testset "Surface fluxes + Penetrating shortwave radiation" begin
                 ocean = ocean_simulation(deepcopy(grid); free_surface)
-                set!(ocean.model, en4_set)
+                set!(ocean.model, T=Tᵢ, S=Sᵢ)
                 coupled_model = OceanSeaIceModel(ocean, nothing; atmosphere, radiation)
-                test_tracer_budget(coupled_model, Δt, 4)
+                test_tracer_budget(coupled_model, Sᵒᶜ, Δt, 4; heat_rtol=1e-11, freshwater_rtol=√eps(eltype(grid)))
             end
         end
     end
