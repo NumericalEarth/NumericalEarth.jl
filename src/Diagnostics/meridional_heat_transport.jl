@@ -113,7 +113,7 @@ Arguments
      retained from the beginning of that timestep, so all budget terms refer to the
      same coupling interval. The completed budget is stored in
      `esm.interfaces.budgets.ocean_heat.residual` after every coupled timestep.
-     Oceananigans' `RegriddedField` recomputes the remapping whenever an
+     Oceananigans' `RegriddedOperation` recomputes the remapping whenever an
      output writer materializes the diagnostic. Thus `TimeInterval(interval)` writes
      the most recently completed timestep, while `AveragedTimeInterval(interval)`
      samples and time-averages the completed budget from every timestep when using the
@@ -230,7 +230,7 @@ function meridional_heat_transport_via_ocean_heat_content(esm; destination_grid=
     column_budget = budget.residual
 
     if destination_grid !== nothing
-        column_budget = RegriddedField(column_budget, destination_grid)
+        column_budget = RegriddedOperation(column_budget, destination_grid)
     end
 
     zonal_budget = Field(Integral(column_budget, dims=1))

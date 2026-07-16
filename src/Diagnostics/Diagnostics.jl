@@ -9,10 +9,10 @@ using KernelAbstractions: @index, @kernel
 import ConservativeRegridding # Load OceananigansConservativeRegriddingExt.
 
 using Oceananigans: Oceananigans
-using Oceananigans.AbstractOperations: CumulativeIntegral, Integral
+using Oceananigans.AbstractOperations: CumulativeIntegral, Integral, RegriddedOperation
 using Oceananigans.Architectures: architecture
 using Oceananigans.BoundaryConditions: DiscreteBoundaryFunction, FieldBoundaryConditions, fill_halo_regions!
-using Oceananigans.Fields: RegriddedField, Field, FieldStatus, ZeroField
+using Oceananigans.Fields: Field, FieldStatus, ZeroField
 using Oceananigans.Grids: new_data, inactive_cell, znode, Face, Center,
                           LatitudeLongitudeGrid, OrthogonalSphericalShellGrid
 using Oceananigans.ImmersedBoundaries: ImmersedBoundaryGrid, MutableGridOfSomeKind
