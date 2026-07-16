@@ -234,6 +234,6 @@ function meridional_heat_transport_via_ocean_heat_content(esm; destination_grid=
     end
 
     zonal_budget = Field(Integral(column_budget, dims=1))
-    MHT = CumulativeIntegral(-zonal_budget, dims=2)
+    MHT = CumulativeIntegral(-zonal_budget, dims=2) |> Field
     return MHT
 end

@@ -82,12 +82,13 @@ function EarthSystemModels.ocean_heat_budget(ocean::OceananigansModelSimulations
     ∂t_H = Field{Center, Center, Nothing}(grid)
     Qˢ = Field{Center, Center, Nothing}(grid)
     Qʳ = Field{Center, Center, Nothing}(grid)
+    Qᶠ = Field{Center, Center, Nothing}(grid)
     B = Field{Center, Center, Nothing}(grid)
 
     forcing = get_radiative_forcing(ocean)
     R = ocean_radiative_heat_flux(forcing, model, ρᵒᶜ, cᵒᶜ)
 
-    return OceanHeatBudget(H, H⁻, ∂t_H, Qˢ, R, Qʳ, B)
+    return OceanHeatBudget(H, H⁻, ∂t_H, Qˢ, R, Qʳ, Qᶠ, B)
 end
 
 ocean_radiative_heat_flux(::Nothing, model, ρᵒᶜ, cᵒᶜ) = nothing

@@ -29,15 +29,16 @@ function Oceananigans.TimeSteppers.time_step!(coupled_model::EarthSystemModel, �
     !isnothing(sea_ice)    && time_step!(sea_ice, Δt)
     !isnothing(ocean)      && time_step!(ocean, Δt)
 
-    # Complete the budget for the coupling interval using the heat content and
-    # interface fluxes retained immediately before the component steps above.
-    complete_ocean_heat_budget!(ocean_heat, coupled_model, Δt)
-
     # TODO:
     # - Store fractional ice-free / ice-covered _time_ for more
     #   accurate flux computation?
     tick!(coupled_model.clock, Δt)
     update_state!(coupled_model)
+
+    # `update_state!` diagnoses and applies the frazil correction directly to
+    # ocean temperature. Complete the interval afterward so both that heat
+    # content change and its newly diagnosed flux belong to the same budget.
+    complete_ocean_heat_budget!(ocean_heat, coupled_model, Δt)
 
     return nothing
 end

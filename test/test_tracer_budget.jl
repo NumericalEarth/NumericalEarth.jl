@@ -18,15 +18,12 @@ function test_tracer_budget(coupled_model, Δt, nsteps; rtol=1e-8)
     T = ocean.model.tracers.T
     S = ocean.model.tracers.S
 
-    # The surface tracer fluxes are discrete boundary conditions (the virtual salt flux and heat
-    # exchange are evaluated live), so the applied fluxes are read from the assembled net-flux
-    # fields rather than integrated from the boundary condition.
-    Jᵀ  = coupled_model.interfaces.net_fluxes.ocean.T   # surface heat flux (turbulent + radiative)
-    Jʷ  = coupled_model.interfaces.net_fluxes.ocean.η   # freshwater volume flux
-    Jᴴ = coupled_model.interfaces.net_fluxes.ocean.freshwater_heat_content # Σᵢ Tᵢ Jʷᵢ (rain − evap at SST)
-    heat_rate     = Integral(ρᵒᶜ * cᵒᶜ * Jᵀ,  dims=(1, 2))
-    enthalpy_rate = Integral(ρᵒᶜ * cᵒᶜ * Jᴴ, dims=(1, 2))
+    # Use the same interface-flux definitions as the coupled heat-budget cache.
+    Jʷ = coupled_model.interfaces.net_fluxes.ocean.η
+    heat_rate     = Integral(net_ocean_heat_flux(coupled_model), dims=(1, 2))
+    enthalpy_rate = Integral(ocean_freshwater_heat_flux(coupled_model), dims=(1, 2))
     volume_rate   = Integral(Jʷ, dims=(1, 2))
+    heat_budget_rate = Integral(coupled_model.interfaces.budgets.ocean_heat.residual, dims=(1, 2))
 
     penetrating_radiation = get_radiative_forcing(ocean)
     radiative_rate = if isnothing(penetrating_radiation)
@@ -69,6 +66,10 @@ function test_tracer_budget(coupled_model, Δt, nsteps; rtol=1e-8)
         heat_content_tendency = sum(ρᵒᶜ * cᵒᶜ * ΔVT)
         expected_heat_content_tendency = (previous_radiative_rate - previous_heat_flux + previous_enthalpy) * last_Δt
         @test isapprox(heat_content_tendency, expected_heat_content_tendency; rtol)
+
+        budget_scale = max(abs(previous_heat_flux), abs(previous_radiative_rate),
+                           abs(previous_enthalpy), one(previous_heat_flux))
+        @test isapprox(completed_heat_budget, zero(completed_heat_budget); atol=rtol * budget_scale)
 
         # Volume grows by exactly the surface-integrated freshwater volume flux.
         volume_tendency = sum(ΔVV)

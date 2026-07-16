@@ -2,7 +2,7 @@ module Diagnostics
 
 export MixedLayerDepthField, MixedLayerDepthOperand
 export meridional_heat_transport, MeridionalFluxMethod, TendencyMethod
-export net_ocean_heat_flux, sea_ice_ocean_heat_flux, atmosphere_ocean_heat_flux,
+export net_ocean_heat_flux, sea_ice_ocean_heat_flux, atmosphere_ocean_heat_flux, ocean_freshwater_heat_flux,
        net_ocean_freshwater_flux, sea_ice_ocean_freshwater_flux, atmosphere_ocean_freshwater_flux
 
 using KernelAbstractions: @index, @kernel
@@ -15,7 +15,7 @@ using Oceananigans.BoundaryConditions: DiscreteBoundaryFunction, FieldBoundaryCo
 using Oceananigans.Fields: RegriddedField, Field, FieldStatus, ZeroField
 using Oceananigans.Grids: new_data, inactive_cell, znode, Face, Center,
                           LatitudeLongitudeGrid, OrthogonalSphericalShellGrid
-using Oceananigans.ImmersedBoundaries: ImmersedBoundaryGrid
+using Oceananigans.ImmersedBoundaries: ImmersedBoundaryGrid, MutableGridOfSomeKind
 using Oceananigans.Models: buoyancy_operation
 using Oceananigans.Utils: launch!
 

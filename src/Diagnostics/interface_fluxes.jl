@@ -1,5 +1,5 @@
 
-import ..EarthSystemModels: net_ocean_heat_flux
+import ..EarthSystemModels: net_ocean_heat_flux, ocean_freshwater_heat_flux, frazil_heat_flux
 
 @inline flux_field(condition) = condition
 @inline flux_field(bc::MultipleFluxes) = bc.flux_field
@@ -84,6 +84,24 @@ function net_ocean_heat_flux(esm::EarthSystemModel)
     ρᵒᶜ = esm.interfaces.ocean_properties.reference_density
     cᵒᶜ = esm.interfaces.ocean_properties.heat_capacity
     return ρᵒᶜ * cᵒᶜ * net_ocean_temperature_flux(esm)
+end
+
+"""
+    ocean_freshwater_heat_flux(esm::EarthSystemModel)
+
+Return the heat carried into the ocean by freshwater at the ocean surface
+temperature (W m⁻²).
+"""
+ocean_freshwater_heat_flux(esm::EarthSystemModel) =
+    ocean_freshwater_heat_flux(esm, esm.ocean.model.grid)
+
+ocean_freshwater_heat_flux(esm::EarthSystemModel, grid) = ZeroField()
+
+function ocean_freshwater_heat_flux(esm::EarthSystemModel, ::MutableGridOfSomeKind)
+    ρᵒᶜ = esm.interfaces.ocean_properties.reference_density
+    cᵒᶜ = esm.interfaces.ocean_properties.heat_capacity
+    Jᴴ = esm.interfaces.net_fluxes.ocean.freshwater_heat_content
+    return ρᵒᶜ * cᵒᶜ * Jᴴ
 end
 
 """
