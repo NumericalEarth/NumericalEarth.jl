@@ -332,6 +332,9 @@ function omip_simulation(config::Symbol = :halfdegree;
                          with_snow = false,
                          with_ice_dynamics = true,
                          normalize_salinity = true,
+                         river_mixing = true,
+                         river_mixing_κ = 0.1,
+                         river_mixing_depth = 10,
                          diagnostics = true,
                          field_mean_interval = 5days,
                          surface_averaging_interval = 5days,
@@ -354,19 +357,6 @@ function omip_simulation(config::Symbol = :halfdegree;
 
     grid = build_grid(cfg, arch, Nz, depth; Δz_top)
 
-    ocean = build_ocean(cfg, grid;
-                        κ_skew, κ_symmetric, Cᵇ,
-                        biharmonic_timescale,
-                        biharmonic_viscosity,
-                        vertical_closure,
-                        implicit_vertical_advection,
-                        Cᵂu★,
-                        restoring_dir, piston_velocity,
-                        start_date, end_date)
-
-    snow_thermodynamics = with_snow ? NumericalEarth.SeaIces.default_snow_thermodynamics(grid) : nothing
-    sea_ice = build_sea_ice(cfg, grid, ocean; restoring_dir, snow_thermodynamics, with_ice_dynamics)
-
     # When staging_dir is provided, JRA55 data is read from fast scratch
     # with symlink fallback to the slow source directory.
     if !isnothing(staging_dir)
@@ -376,11 +366,34 @@ function omip_simulation(config::Symbol = :halfdegree;
         atmosphere_dir = forcing_dir
     end
 
-    atmosphere, radiation, land = omip_forcing(arch, sea_ice;
-                                               forcing_dir = atmosphere_dir,
-                                               start_date,
-                                               end_date,
-                                               backend_size)
+    # Build the land before the ocean so its river routing can seed enhanced vertical mixing at
+    # river mouths — an extra closure that keeps concentrated runoff from freshening a cell to zero.
+    land = JRA55PrescribedLand(grid; dir = atmosphere_dir, dataset = MultiYearJRA55(),
+                               start_date, end_date, time_indices_in_memory = backend_size, prefetch = true)
+
+    river_κ = river_mixing ?
+        river_mouth_vertical_diffusivity(grid, land.river_routing; κ = river_mixing_κ, mixing_depth = river_mixing_depth) :
+        nothing
+
+    ocean = build_ocean(cfg, grid;
+                        κ_skew, κ_symmetric, Cᵇ,
+                        biharmonic_timescale,
+                        biharmonic_viscosity,
+                        vertical_closure,
+                        implicit_vertical_advection,
+                        Cᵂu★,
+                        restoring_dir, piston_velocity,
+                        additional_tracer_closure = river_κ,
+                        start_date, end_date)
+
+    snow_thermodynamics = with_snow ? NumericalEarth.SeaIces.default_snow_thermodynamics(grid) : nothing
+    sea_ice = build_sea_ice(cfg, grid, ocean; restoring_dir, snow_thermodynamics, with_ice_dynamics)
+
+    atmosphere, radiation = omip_forcing(arch, sea_ice;
+                                         forcing_dir = atmosphere_dir,
+                                         start_date,
+                                         end_date,
+                                         backend_size)
 
     coupled = build_coupled_model(ocean, sea_ice, atmosphere, radiation, land, flux_configuration;
                                   velocity_formulation)
@@ -588,6 +601,31 @@ function omip_closure(vertical_closure::Symbol;
     return filter(!isnothing, (primary, eddy, horizontal_viscosity, background))
 end
 
+# Enhanced vertical mixing at river mouths (cf. NEMO `rn_avt_rnf` over `rn_hrnf`): an extra tracer
+# diffusivity `κ` over the top `mixing_depth` metres at the routed river-mouth cells, mixing the
+# fresh plume downward so a coastal surface cell cannot be freshened to zero. Added to the closure.
+@inline river_mouth_κ(i, j, k, grid, clock, fields, mask) = @inbounds mask[i, j, k]
+
+function river_mouth_vertical_diffusivity(grid, river_routing; κ = 0.1, mixing_depth = 10)
+    zc = Array(znodes(grid, Center()))
+    Nz = size(grid, 3)
+    mask_data = zeros(eltype(grid), size(grid)...)
+
+    for routing in values(river_routing)
+        ti = Array(routing.target_i)
+        tj = Array(routing.target_j)
+        for n in eachindex(ti), k in 1:Nz
+            zc[k] > -mixing_depth && (mask_data[ti[n], tj[n], k] = κ)
+        end
+    end
+
+    mask = CenterField(grid)
+    set!(mask, mask_data)
+
+    return VerticalScalarDiffusivity(κ = river_mouth_κ, discrete_form = true,
+                                     loc = (Center, Center, Center), parameters = mask)
+end
+
 #####
 ##### Salinity restoring (shared by both configurations)
 #####
@@ -752,6 +790,7 @@ function build_ocean(config, grid;
                      vertical_closure = :catke,
                      implicit_vertical_advection = true,
                      Cᵂu★ = nothing,
+                     additional_tracer_closure = nothing,
                      start_date, end_date)
 
     salt_restoring = salinity_surface_restoring(grid, WOAMonthly(); restoring_dir, piston_velocity)
@@ -759,6 +798,7 @@ function build_ocean(config, grid;
                            κ_skew, κ_symmetric, Cᵇ,
                            biharmonic_timescale, biharmonic_viscosity,
                            Cᵂu★)
+    closure = isnothing(additional_tracer_closure) ? closure : (closure..., additional_tracer_closure)
     coriolis = HydrostaticSphericalCoriolis(scheme = Oceananigans.Coriolis.EnstrophyConserving())
 
     time_discretization = implicit_vertical_advection ?
