@@ -243,7 +243,7 @@ end
 
 function build_land_mask(grid)
     if grid isa ImmersedBoundaryGrid
-        bh = Array(interior(grid.immersed_boundary.bottom_height, :, :, 1))
+        bh = Array(interior(Oceananigans.ImmersedBoundaries.bottom_height_field(grid), :, :, 1))
         return bh .>= 0
     else
         return falses(size(grid, 1), size(grid, 2))
@@ -254,7 +254,7 @@ function build_ocean_mask_3d(grid)
     Nx, Ny, Nz = size(grid)
     mask = ones(Nx, Ny, Nz)
     if grid isa ImmersedBoundaryGrid
-        bh = Array(interior(grid.immersed_boundary.bottom_height, :, :, 1))
+        bh = Array(interior(Oceananigans.ImmersedBoundaries.bottom_height_field(grid), :, :, 1))
         zc = znodes(grid, Center())
         for k in 1:Nz, j in 1:Ny, i in 1:Nx
             zc[k] < bh[i, j] && (mask[i, j, k] = 0.0)

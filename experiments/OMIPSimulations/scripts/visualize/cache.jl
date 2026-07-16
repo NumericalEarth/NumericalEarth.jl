@@ -955,7 +955,7 @@ const REGRIDDER_CACHE = Dict{Any, Any}()
 function regridder_cache_key(grid)
     key = Any[string(nameof(typeof(grid))), size(grid)]
     if grid isa ImmersedBoundaryGrid
-        bh = Array(interior(grid.immersed_boundary.bottom_height, :, :, 1))
+        bh = Array(interior(Oceananigans.ImmersedBoundaries.bottom_height_field(grid), :, :, 1))
         push!(key, hash(bh))
     end
     return Tuple(key)
