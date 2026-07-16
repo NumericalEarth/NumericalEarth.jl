@@ -14,9 +14,6 @@ apply_air_sea_ice_radiative_fluxes!(::Any) = nothing
 function Oceananigans.TimeSteppers.time_step!(coupled_model::EarthSystemModel, Δt; callbacks=[])
     maybe_prepare_first_time_step!(coupled_model, Δt, callbacks)
 
-    ocean_heat = coupled_model.interfaces.budgets.ocean_heat
-    prepare_ocean_heat_budget!(ocean_heat, coupled_model)
-
     radiation  = coupled_model.radiation
     atmosphere = coupled_model.atmosphere
     land       = coupled_model.land
@@ -34,11 +31,6 @@ function Oceananigans.TimeSteppers.time_step!(coupled_model::EarthSystemModel, �
     #   accurate flux computation?
     tick!(coupled_model.clock, Δt)
     update_state!(coupled_model)
-
-    # `update_state!` diagnoses and applies the frazil correction directly to
-    # ocean temperature. Complete the interval afterward so both that heat
-    # content change and its newly diagnosed flux belong to the same budget.
-    complete_ocean_heat_budget!(ocean_heat, coupled_model, Δt)
 
     return nothing
 end

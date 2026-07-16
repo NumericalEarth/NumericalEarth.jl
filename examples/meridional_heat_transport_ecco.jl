@@ -76,7 +76,9 @@ end
 add_callback!(simulation, progress, IterationInterval(200))
 
 mht_vT = Field(meridional_heat_transport(esm, MeridionalFluxMethod()))
-mht_OHC = Field(meridional_heat_transport(esm, TendencyMethod()))
+temperature_budget = BudgetComputation(:temperature, esm)
+add_callback!(temperature_budget, simulation)
+mht_OHC = Field(meridional_heat_transport(temperature_budget, TendencyMethod()))
 
 ocean.output_writers[:mth] = JLD2Writer(ocean.model, (; mht_vT, mht_OHC);
                                         schedule = TimeInterval(3hours),

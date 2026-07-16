@@ -163,9 +163,10 @@ for arch in test_architectures
         atmosphere = PrescribedAtmosphere(tripolar_grid, [0.0])
         esm = OceanOnlyModel(ocean; atmosphere)
 
-        # The tendency-based MHT diagnostic uses the completed ocean heat budget.
-        budget = esm.interfaces.budgets.ocean_heat
-        @test budget !== nothing
+        # The tendency-based MHT diagnostic uses a budget callback.
+        simulation = Simulation(esm; Δt = 10, stop_iteration = 3)
+        budget = BudgetComputation(:temperature, esm)
+        add_callback!(budget, simulation)
 
         # A constant heat budget should remain constant after regridding.
         regridded_budget = Field(RegriddedOperation(budget.residual, destination_grid))
@@ -176,7 +177,7 @@ for arch in test_architectures
         # Remove the test value before advancing the model.
         set!(budget.residual, 0)
 
-        mht = Field(meridional_heat_transport(esm, TendencyMethod(); destination_grid))
+        mht = Field(meridional_heat_transport(budget, TendencyMethod(); destination_grid))
 
         mktempdir() do dir
             iteration_filename = joinpath(dir, "iteration_mht.jld2")
@@ -184,19 +185,18 @@ for arch in test_architectures
             outputs = (; mht)
 
             # Save MHT after every model iteration.
-            ocean.output_writers[:iteration_mht] = JLD2Writer(ocean.model, outputs;
+            simulation.output_writers[:iteration_mht] = JLD2Writer(simulation.model, outputs;
                                                                schedule = IterationInterval(1),
                                                                filename = iteration_filename,
                                                                overwrite_existing = true)
 
             # Save one MHT average over the full 30-second simulation.
-            ocean.output_writers[:averaged_mht] = JLD2Writer(ocean.model, outputs;
+            simulation.output_writers[:averaged_mht] = JLD2Writer(simulation.model, outputs;
                                                               schedule = AveragedTimeInterval(30),
                                                               filename = averaged_filename,
                                                               overwrite_existing = true)
 
             # Run three iterations with a 10-second time step.
-            simulation = Simulation(esm; Δt = 10, stop_iteration = 3)
             run!(simulation)
 
             iteration_mht = FieldTimeSeries(iteration_filename, "mht")

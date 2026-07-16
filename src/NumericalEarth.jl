@@ -141,6 +141,7 @@ export
     initialize!,
     net_ocean_heat_flux, sea_ice_ocean_heat_flux, atmosphere_ocean_heat_flux, ocean_freshwater_heat_flux,
     net_ocean_freshwater_flux, sea_ice_ocean_freshwater_flux, atmosphere_ocean_freshwater_flux,
+    BudgetComputation,
     meridional_heat_transport, MeridionalFluxMethod, TendencyMethod,
     location,
     native_grid,

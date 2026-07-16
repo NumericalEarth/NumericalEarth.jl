@@ -19,7 +19,8 @@ the total ocean heat content and the ocean heat uptake.
 Arguments
 =========
 
-* `esm`: An EarthSystemModel.
+* `esm`: An EarthSystemModel for MeridionalFluxMethod().
+* `budget`: A BudgetComputation for TendencyMethod().
 
 * The method for the computation. Available options are: `MeridionalFluxMethod()` (default)
   and `TendencyMethod()`.
@@ -111,9 +112,8 @@ Arguments
      The tendency is evaluated as the finite difference in column heat content over
      the most recently completed coupled timestep. Surface and radiative fluxes are
      retained from the beginning of that timestep, so all budget terms refer to the
-     same coupling interval. The completed budget is stored in
-     `esm.interfaces.budgets.ocean_heat.residual` after every coupled timestep.
-     Oceananigans' `RegriddedOperation` recomputes the remapping whenever an
+     same coupling interval. The completed budget is stored in a BudgetComputation callback after every
+     coupled timestep. Oceananigans' RegriddedOperation recomputes the remapping whenever an
      output writer materializes the diagnostic. Thus `TimeInterval(interval)` writes
      the most recently completed timestep, while `AveragedTimeInterval(interval)`
      samples and time-averages the completed budget from every timestep when using the
@@ -181,14 +181,12 @@ function meridional_heat_transport(esm::EarthSystemModel,
     return meridional_heat_transport_via_meridional_heat_flux(esm; reference_temperature)
 end
 
-function meridional_heat_transport(esm::EarthSystemModel,
-                                   ::TendencyMethod;
-                                   reference_temperature=0,
+function meridional_heat_transport(budget::BudgetComputation,
+                                   ::TendencyMethod=TendencyMethod();
                                    destination_grid=nothing)
-    grid = underlying_grid(esm.ocean.model.grid)
+    grid = underlying_grid(budget.residual.grid)
     validate_tendency_destination(grid, destination_grid)
-
-    return meridional_heat_transport_via_ocean_heat_content(esm; destination_grid)
+    return meridional_heat_transport_via_ocean_heat_content(budget; destination_grid)
 end
 
 function meridional_heat_transport(::EarthSystemModel, method; kwargs...)
@@ -221,12 +219,7 @@ function meridional_heat_transport_via_meridional_heat_flux(esm; reference_tempe
     return MHT
 end
 
-function meridional_heat_transport_via_ocean_heat_content(esm; destination_grid=nothing)
-    budget = esm.interfaces.budgets.ocean_heat
-
-    budget === nothing &&
-        throw(ArgumentError("TendencyMethod() requires a prognostic Oceananigans ocean."))
-
+function meridional_heat_transport_via_ocean_heat_content(budget; destination_grid=nothing)
     column_budget = budget.residual
 
     if destination_grid !== nothing

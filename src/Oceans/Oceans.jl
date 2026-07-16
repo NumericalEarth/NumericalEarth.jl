@@ -32,7 +32,6 @@ using SeawaterPolynomials: SeawaterPolynomials
 using SeawaterPolynomials.TEOS10: TEOS10EquationOfState
 
 using ..EarthSystemModels: EarthSystemModels,
-                           OceanHeatBudget,
                            ocean_surface_velocities,
                            ocean_surface_salinity,
                            DegreesKelvin,
@@ -72,36 +71,6 @@ include("multiple_surface_fluxes.jl")
 include("ocean_simulation.jl")
 include("nonhydrostatic_ocean_simulation.jl")
 include("assemble_net_ocean_fluxes.jl")
-
-function EarthSystemModels.ocean_heat_budget(ocean::OceananigansModelSimulations)
-    model = ocean.model
-    grid = model.grid
-    ρᵒᶜ = reference_density(ocean)
-    cᵒᶜ = heat_capacity(ocean)
-
-    H = Field(Integral(ρᵒᶜ * cᵒᶜ * model.tracers.T, dims=3))
-    H⁻ = Field{Center, Center, Nothing}(grid)
-    ∂t_H = Field{Center, Center, Nothing}(grid)
-    Qˢ = Field{Center, Center, Nothing}(grid)
-    Qʳ = Field{Center, Center, Nothing}(grid)
-    Qᶠ = Field{Center, Center, Nothing}(grid)
-    B = Field{Center, Center, Nothing}(grid)
-
-    forcing = get_radiative_forcing(ocean)
-    R = ocean_radiative_heat_flux(forcing, model, ρᵒᶜ, cᵒᶜ)
-
-    return OceanHeatBudget(H, H⁻, ∂t_H, Qˢ, R, Qʳ, Qᶠ, B)
-end
-
-ocean_radiative_heat_flux(::Nothing, model, ρᵒᶜ, cᵒᶜ) = nothing
-
-function ocean_radiative_heat_flux(forcing, model, ρᵒᶜ, cᵒᶜ)
-    operation = KernelFunctionOperation{Center, Center, Center}(forcing,
-                                                                model.grid,
-                                                                model.clock,
-                                                                Oceananigans.fields(model))
-    return Field(Integral(ρᵒᶜ * cᵒᶜ * operation, dims=3))
-end
 
 #####
 ##### Extend utility functions to grab the state of the ocean
