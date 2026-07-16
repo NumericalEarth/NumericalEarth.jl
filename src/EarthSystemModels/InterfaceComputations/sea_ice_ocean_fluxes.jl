@@ -202,8 +202,8 @@ end
     # =============================================
     # Returns interfacial heat flux, melt rate qᵐ, and interface T, S
     𝒬ⁱᵒ, qᵐ, Tᵦ, Sᵦ = compute_interface_heat_flux(flux_formulation,
-                                                   ocean_surface_state, ice_state,
-                                                   liquidus, ocean_properties, ℰ, u★)
+                                                  ocean_surface_state, ice_state,
+                                                  liquidus, ocean_properties, ℰ, u★)
 
     # Store interface values and heat flux
     @inbounds 𝒬ⁱⁿ[i, j, 1] = 𝒬ⁱᵒ
