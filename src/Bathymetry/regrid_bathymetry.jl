@@ -487,7 +487,7 @@ function remove_minor_basins!(zb::Field, keep_major_basins)
     for j in 1:Ny, i in 1:Nx
         label = labels[i, j]
         if label > 0 && !(label in major_basins)
-            zb_data[i, j] = 0  # Flatten this cell (make it land)
+            @inbounds zb_data[i, j] = 0  # Flatten this cell (make it land)
         end
     end
 
