@@ -3,11 +3,9 @@ include("download_utils.jl")
 
 using CUDA: @allowscalar
 using Oceananigans.AbstractOperations: KernelFunctionOperation
-using Oceananigans.Fields: ZeroField
 using Oceananigans.Grids: MutableVerticalDiscretization
 using Oceananigans.Operators: volume
 using Oceananigans.Units
-using NumericalEarth.Diagnostics: frazil_heat_flux
 using NumericalEarth.Oceans: get_radiative_forcing
 
 # Heat and freshwater have different noise floors, so they get separate tolerances.
@@ -18,7 +16,6 @@ function test_tracer_budget(coupled_model, Sᵒᶜ, Δt, nsteps; heat_rtol, fres
     ocean_properties = coupled_model.interfaces.ocean_properties
     ρᵒᶜ = ocean_properties.reference_density
     cᵒᶜ = ocean_properties.heat_capacity
-    Sᵒᶜ = reference_salinity
 
     T = ocean.model.tracers.T
     S = ocean.model.tracers.S
@@ -138,6 +135,11 @@ end
 
             @testset "Surface fluxes + penetrating shortwave radiation + Sea ice" begin
                 @info "    .. Surface fluxes + penetrating shortwave radiation + Sea ice"
+                ecco_set = MetadataSet(:temperature, :salinity,
+                                       :sea_ice_thickness, :sea_ice_concentration,
+                                       dataset = ECCO4Monthly(),
+                                       date = DateTime(1993, 1, 1))
+
                 for name in (:sea_ice_thickness, :sea_ice_concentration)
                     metadata = ecco_set[name]
                     download_dataset_with_fallback(metadata_path(metadata);
@@ -152,7 +154,10 @@ end
                 set!(ocean.model, ecco_set)
                 set!(sea_ice.model, ecco_set)
                 coupled_model = OceanSeaIceModel(ocean, sea_ice; atmosphere, radiation)
-                test_tracer_budget(coupled_model, Sᵒᶜ, Δt, 4; rtol=2√eps(eltype(new_grid)))
+                tolerance = 2√eps(eltype(new_grid))
+                test_tracer_budget(coupled_model, Sᵒᶜ, Δt, 4;
+                                   heat_rtol=tolerance,
+                                   freshwater_rtol=tolerance)
             end
         end
         end
