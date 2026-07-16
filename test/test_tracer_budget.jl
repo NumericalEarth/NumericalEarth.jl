@@ -10,12 +10,8 @@ using Oceananigans.Units
 using NumericalEarth.Diagnostics: frazil_heat_flux
 using NumericalEarth.Oceans: get_radiative_forcing
 
-<<<<<<< HEAD
-function test_tracer_budget(coupled_model, reference_salinity, Δt, nsteps; rtol)
-=======
 # Heat and freshwater have different noise floors, so they get separate tolerances.
 function test_tracer_budget(coupled_model, Sᵒᶜ, Δt, nsteps; heat_rtol, freshwater_rtol)
->>>>>>> main
     ocean = coupled_model.ocean
     grid  = ocean.model.grid
 
@@ -27,20 +23,6 @@ function test_tracer_budget(coupled_model, Sᵒᶜ, Δt, nsteps; heat_rtol, fres
     T = ocean.model.tracers.T
     S = ocean.model.tracers.S
 
-<<<<<<< HEAD
-    heat_rate       = Integral(net_ocean_heat_flux(coupled_model), dims=(1, 2))
-    freshwater_rate = Integral(net_ocean_freshwater_flux(coupled_model; reference_salinity = Sᵒᶜ), dims=(1, 2))
-
-    # frazil_heat_flux is updated in update_state! at the END of each time_step!, so it
-    # reflects the clamping applied in that step. We measure it both before and after each
-    # step so that the expected budget uses the post-step (current) value rather than the
-    # pre-step (previous) value, eliminating the one-step lag.
-    # ZeroField has no grid and cannot be integrated, so we short-circuit to zero.
-    frazil = frazil_heat_flux(coupled_model)
-    frazil_rate = frazil isa ZeroField ? nothing : Integral(frazil, dims=(1, 2))
-    measure_frazil() = isnothing(frazil_rate) ? zero(eltype(grid)) :
-                       @allowscalar first(Field(frazil_rate))
-=======
     # The surface tracer fluxes are discrete boundary conditions (the virtual salt flux and heat
     # exchange are evaluated live), so the applied fluxes are read from the assembled net-flux
     # fields rather than integrated from the boundary condition.
@@ -50,7 +32,6 @@ function test_tracer_budget(coupled_model, Sᵒᶜ, Δt, nsteps; heat_rtol, fres
     heat_rate     = Integral(ρᵒᶜ * cᵒᶜ * Jᵀ,  dims=(1, 2))
     enthalpy_rate = Integral(ρᵒᶜ * cᵒᶜ * Jᴴ, dims=(1, 2))
     volume_rate   = Integral(Jʷ, dims=(1, 2))
->>>>>>> main
 
     penetrating_radiation = get_radiative_forcing(ocean)
     radiative_rate = if isnothing(penetrating_radiation)
@@ -75,18 +56,10 @@ function test_tracer_budget(coupled_model, Sᵒᶜ, Δt, nsteps; heat_rtol, fres
         set!(VT⁻, T * volume)
         set!(VV⁻, cell_volume)
 
-<<<<<<< HEAD
-        previous_heat_flux       = @allowscalar first(Field(heat_rate))
-        previous_freshwater_flux = @allowscalar first(Field(freshwater_rate))
-        previous_frazil_rate     = measure_frazil()
-        previous_radiative_rate  = isnothing(radiative_rate) ? zero(previous_heat_flux) :
-                                   @allowscalar first(Field(radiative_rate))
-=======
         previous_heat_flux      = @allowscalar first(Field(heat_rate))
         previous_enthalpy       = @allowscalar first(Field(enthalpy_rate))
         previous_volume_flux    = @allowscalar first(Field(volume_rate))
         previous_radiative_rate = isnothing(radiative_rate) ? zero(previous_heat_flux) : @allowscalar first(Field(radiative_rate))
->>>>>>> main
 
         time_step!(coupled_model, Δt)
         last_Δt = ocean.model.clock.last_Δt
@@ -101,35 +74,10 @@ function test_tracer_budget(coupled_model, Sᵒᶜ, Δt, nsteps; heat_rtol, fres
         expected_heat_content_tendency = (previous_radiative_rate - previous_heat_flux + previous_enthalpy) * last_Δt
         @test isapprox(heat_content_tendency, expected_heat_content_tendency; rtol=heat_rtol)
 
-<<<<<<< HEAD
-        current_frazil_rate = measure_frazil()
-
-        # net_ocean_heat_flux = ρᵒᶜ * Jᵀ + frazil_heat. Jᵀ is set before the ocean step so
-        # previous_heat_flux correctly captures the surface flux applied this step.
-        # frazil_heat is set after the step, so we replace previous_frazil_rate with the
-        # post-step current_frazil_rate to get exact budget closure.
-        expected_heat_content_tendency       = (previous_radiative_rate
-                                                - previous_heat_flux
-                                                + previous_frazil_rate
-                                                - current_frazil_rate) * last_Δt
-        expected_freshwater_content_tendency = -previous_freshwater_flux * last_Δt
-
-        heat_rtol       = abs(heat_content_tendency - expected_heat_content_tendency) /
-                          max(abs(expected_heat_content_tendency), eps(typeof(expected_heat_content_tendency)))
-        freshwater_rtol = abs(freshwater_content_tendency - expected_freshwater_content_tendency) /
-                          max(abs(expected_freshwater_content_tendency), eps(typeof(expected_freshwater_content_tendency)))
-
-        @debug "Heat budget rtol: $heat_rtol (tolerance: $rtol)"
-        @test isapprox(heat_content_tendency, expected_heat_content_tendency; rtol)
-
-        @debug "Freshwater budget rtol: $freshwater_rtol (tolerance: $rtol)"
-        @test isapprox(freshwater_content_tendency, expected_freshwater_content_tendency; rtol)
-=======
         # Volume grows by exactly the surface-integrated freshwater volume flux.
         volume_tendency = sum(ΔVV)
         expected_volume_tendency = previous_volume_flux * last_Δt
         @test isapprox(volume_tendency, expected_volume_tendency; rtol=freshwater_rtol)
->>>>>>> main
     end
 
     # Freshwater carries no salt, so the total salt content is conserved over the run.
@@ -164,52 +112,14 @@ end
             radiation  = JRA55PrescribedRadiation(arch; time_indices_in_memory)
             atmosphere = JRA55PrescribedAtmosphere(arch; time_indices_in_memory)
 
-<<<<<<< HEAD
-            ecco_set = MetadataSet(:temperature, :salinity,
-                                   :sea_ice_thickness, :sea_ice_concentration,
-                                   dataset = ECCO4Monthly(),
-                                   date = DateTime(1993, 1, 1))
-=======
             # An idealized, stably stratified initial state
             Tᵢ(λ, φ, z) = 2 + 26 * cosd(φ)^2 * exp(z / 30)
             Sᵢ(λ, φ, z) = 35 - 1//2 * exp(z / 30)
->>>>>>> main
 
             Δt = 605seconds
             Sᵒᶜ = 35 # reference salinity [psu]
             free_surface = SplitExplicitFreeSurface(substeps=20)
 
-<<<<<<< HEAD
-            # OceanSeaIceModel without SeaIce
-            @testset "Surface-only fluxes without shortwave penetration" begin
-                @info "    .. Surface-only fluxes without shortwave penetration"
-                new_grid = deepcopy(grid) # because the grid is mutable
-                ocean = ocean_simulation(new_grid; free_surface, radiative_forcing=nothing)
-                set!(ocean.model, ecco_set)
-                coupled_model = OceanSeaIceModel(ocean, nothing; atmosphere, radiation)
-                test_tracer_budget(coupled_model, Sᵒᶜ, Δt, 4; rtol=2√eps(eltype(new_grid)))
-            end
-
-            @testset "Surface fluxes + OceanOnlyModel" begin
-                @info "    .. Surface fluxes + OceanOnlyModel"
-                new_grid = deepcopy(grid) # because the grid is mutable
-                ocean = ocean_simulation(new_grid; free_surface)
-                set!(ocean.model, ecco_set)
-                coupled_model = OceanOnlyModel(ocean; atmosphere, radiation)
-                # rtol scales with nsteps: computing ΔVT = T_new⋅V - T_old⋅V subtracts two large
-                # numbers; the O(eps⋅|T⋅V|) absolute error per step accumulates additively.
-                test_tracer_budget(coupled_model, Sᵒᶜ, Δt, 4; rtol=2√eps(eltype(new_grid)))
-            end
-
-            # With penetrative shortwave radiation
-            @testset "Surface fluxes + penetrating shortwave radiation" begin
-                @info "    .. Surface fluxes + penetrating shortwave radiation"
-                new_grid = deepcopy(grid) # because the grid is mutable
-                ocean = ocean_simulation(new_grid; free_surface)
-                set!(ocean.model, ecco_set)
-                coupled_model = OceanSeaIceModel(ocean, nothing; atmosphere, radiation)
-                test_tracer_budget(coupled_model, Sᵒᶜ, Δt, 4; rtol=2√eps(eltype(new_grid)))
-=======
             # Without shortwave penetration
             @testset "Surface-only fluxes" begin
                 ocean = ocean_simulation(deepcopy(grid); free_surface, radiative_forcing=nothing)
@@ -224,7 +134,6 @@ end
                 set!(ocean.model, T=Tᵢ, S=Sᵢ)
                 coupled_model = OceanSeaIceModel(ocean, nothing; atmosphere, radiation)
                 test_tracer_budget(coupled_model, Sᵒᶜ, Δt, 4; heat_rtol=1e-11, freshwater_rtol=√eps(eltype(grid)))
->>>>>>> main
             end
 
             @testset "Surface fluxes + penetrating shortwave radiation + Sea ice" begin
