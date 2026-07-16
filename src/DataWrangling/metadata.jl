@@ -24,6 +24,16 @@ Create a bounding box with `latitude`, `longitude`, and `z` bounds on the sphere
 BoundingBox(; longitude=nothing, latitude=nothing, z=nothing) =
     BoundingBox(longitude, latitude, z)
 
+"""
+    BoundingBox(grid; padding = 0)
+
+Create a `BoundingBox` spanning the horizontal extent of `grid`, widened on every
+side by `padding` (degrees).
+"""
+BoundingBox(grid::AbstractGrid; padding = 0) =
+    BoundingBox(longitude = extrema(λnodes(grid, Face(), Center(), Center())) .+ (-padding, padding),
+                latitude  = extrema(φnodes(grid, Center(), Face(), Center())) .+ (-padding, padding))
+
 #####
 ##### Column region and interpolation types
 #####
@@ -116,8 +126,9 @@ Keyword Arguments
 - `dataset`: Supported datasets are returned by [`supported_datasets`](@ref).
 
 - `dates`: The dates of the dataset (`Dates.AbstractDateTime` or `CFTime.AbstractCFDateTime`).
-           Note that `dates` can either be a range or a vector of dates, representing a time-series.
-           For a single date, use [`Metadatum`](@ref).
+           Note that `dates` can either be a range or a vector of dates, representing a time-series,
+           or a `(start_date, end_date)` tuple, which expands to the dataset's native dates in that
+           window (the cadence is the dataset's own). For a single date, use [`Metadatum`](@ref).
 
 - `start_date`: If `dates = nothing`, we can prescribe the first date of metadata as a date
                 (`Dates.AbstractDateTime` or `CFTime.AbstractCFDateTime`). If outside the
@@ -146,6 +157,8 @@ function Metadata(variable_name;
                   start_date = nothing,
                   end_date = nothing)
 
+    dates = expand_dates(dataset, variable_name, dates)
+
     # crop dates if _either_ a start date or an end date is provided
     if !isnothing(start_date) || !isnothing(end_date)
 
@@ -166,6 +179,16 @@ end
 
 const AnyDateTime  = Union{AbstractCFDateTime, Dates.AbstractDateTime}
 const Metadatum{V} = Metadata{V, <:Union{AnyDateTime, Nothing}} where V
+
+"""
+    expand_dates(dataset, variable_name, dates)
+
+Return `dates`, expanding a `(start_date, end_date)` tuple to the dataset's native dates
+in that window — the cadence is the dataset's own.
+"""
+expand_dates(dataset, variable_name, dates) = dates
+expand_dates(dataset, variable_name, dates::Tuple{<:AnyDateTime, <:AnyDateTime}) =
+    compute_native_date_range(all_dates(dataset, variable_name), first(dates), last(dates))
 
 function Base.size(metadata::Metadata)
     Nx, Ny, Nz = size(metadata.dataset, metadata.name)
@@ -250,8 +273,16 @@ Base.summary(md::Metadata) = string(metaprefix(md),
                                     "{", datasetstr(md), "} of ",
                                     md.name, " for ", datestr(md))
 
-# If only one date, it's a single element array
+# A Metadatum holds a single date, so it acts as a length-1 collection whose sole element is
+# itself; the generic Metadata methods below index `dates`, which a scalar date cannot support.
 Base.length(metadata::Metadatum) = 1
+@propagate_inbounds function Base.getindex(m::Metadatum, i::Int)
+    @boundscheck i == 1 || throw(BoundsError(m, i))
+    return m
+end
+Base.first(m::Metadatum) = m
+Base.last(m::Metadatum) = m
+Base.iterate(m::Metadatum, i::Int=1) = i == 1 ? (m, 2) : nothing
 
 @propagate_inbounds Base.getindex(m::Metadata, i::Int) =
     Metadata(m.name, m.dataset, m.dates[i], m.region, m.dir, getfilename(m.filename, i))
@@ -269,13 +300,6 @@ Base.length(metadata::Metadatum) = 1
         return nothing
     end
 end
-
-# Implementation for 1 date
-Base.axes(metadata::Metadatum)    = 1
-Base.first(metadata::Metadatum)   = metadata
-Base.last(metadata::Metadatum)    = metadata
-Base.iterate(metadata::Metadatum) = (metadata, nothing)
-Base.iterate(::Metadatum, ::Any)  = nothing
 
 metadata_path(metadata::Metadatum) = joinpath(metadata.dir, metadata.filename)
 
@@ -650,6 +674,22 @@ Return the default directory to which `dataset` is downloaded.
 function default_download_directory end
 
 """
+    default_horizontal_padding(dataset)
+
+Return the default horizontal padding (degrees) added around a bounding box requested
+from `dataset`, providing margin for interpolation stencils at the boundary.
+"""
+function default_horizontal_padding end
+
+"""
+    matching_single_level_dataset(dataset)
+
+Return the single-level (surface) dataset sharing `dataset`'s product family and temporal
+cadence — e.g. the surface companion of a pressure-level reanalysis product.
+"""
+function matching_single_level_dataset end
+
+"""
     dataset_variable_name(metadata)
 
 Return the name used for the variable `metadata.name` in its raw dataset file.
@@ -745,6 +785,10 @@ struct MicromolePerKilogram end
 struct MicromolePerLiter end
 struct NanomolePerKilogram end
 struct NanomolePerLiter end
+struct CentigramPerCubicCentimeter end
+struct HectogramPerCubicMeter end
+struct GramPerKilogram end
+struct DecigramPerKilogram end
 
 struct InverseSign end
 struct InverseGravity end
@@ -757,8 +801,20 @@ struct MillimetersPerHour end     # liquid precipitation rate in mm/hr → kg/m�
 struct MetersPerHour end          # liquid precipitation depth in m/hr → kg/m²/s (ERA5 total_precipitation)
 struct JoulesPerSquareMeterPerHour end # radiative energy accumulated over 1 hr, J/m² → mean flux W/m² (ERA5 ssrd/strd)
 
-# Fallback
+"""
+    conversion_units(metadatum)
+
+Return the units of the source variable in the given dataset referenced by `metadatum`.
+These units will be used to apply automatic conversions to standard units for `NumericalEarth`.
+"""
 conversion_units(metadatum) = nothing
+
+"""
+    missing_value(metadatum)
+
+Return the value used by the underlying dataset to represent missing data. Defaults to `missing`.
+"""
+missing_value(metadatum) = missing
 
 #####
 ##### Utilities
@@ -769,18 +825,38 @@ conversion_units(metadatum) = nothing
 
 Compute the range of `native_dates` that fall within the specified `start_date` and `end_date`.
 """
+comparable_datetime(date::Dates.AbstractDateTime) = DateTime(date)
+comparable_datetime(date::AbstractCFDateTime) = DateTime(date)
+
 function compute_native_date_range(native_dates, start_date, end_date)
-    if last(native_dates) < end_date
-        @warn "`end_date` ($end_date) is after the last date in the dataset $(last(native_dates))"
+    start_datetime = comparable_datetime(start_date)
+    end_datetime = comparable_datetime(end_date)
+    first_native_datetime = comparable_datetime(first(native_dates))
+    last_native_datetime = comparable_datetime(last(native_dates))
+
+    if last_native_datetime < end_datetime
+        @warn "`end_date` ($end_date) is after the last date in the dataset $last_native_datetime"
     end
 
-    if last(native_dates) < start_date
-       throw(ArgumentError("`start_date` ($start_date) is after the last date in the dataset $(last(native_dates))"))
+    if start_datetime < first_native_datetime
+       @warn "`start_date` ($start_date) is before the first date in the dataset $first_native_datetime"
     end
 
-    start_idx = findfirst(x -> x ≥ start_date, native_dates)
-    end_idx   = findfirst(x -> x ≥ end_date,   native_dates)
-    start_idx = (start_idx > 1 && native_dates[start_idx] > start_date) ? start_idx - 1 : start_idx
+    if end_datetime < start_datetime
+       @warn "`end_date` ($end_date) is before the `start_date` ($start_date)"
+    end
+
+    if start_datetime < first_native_datetime && end_datetime < first_native_datetime
+        throw(ArgumentError("both `start_date` ($start_date) and `end_date` ($end_date) are before the first date in the dataset $first_native_datetime"))
+    end
+
+    if last_native_datetime < start_datetime && last_native_datetime < end_datetime
+        throw(ArgumentError("both `start_date` ($start_date) and `end_date` ($end_date) are after the last date in the dataset $last_native_datetime"))
+    end
+
+    start_idx = findfirst(x -> comparable_datetime(x) ≥ start_datetime, native_dates)
+    end_idx   = findfirst(x -> comparable_datetime(x) ≥ end_datetime, native_dates)
+    start_idx = (start_idx > 1 && comparable_datetime(native_dates[start_idx]) > start_datetime) ? start_idx - 1 : start_idx
     end_idx   = isnothing(end_idx) ? length(native_dates) : end_idx
 
     return native_dates[start_idx:end_idx]

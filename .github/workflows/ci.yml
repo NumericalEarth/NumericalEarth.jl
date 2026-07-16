@@ -30,6 +30,7 @@ env:
   COPERNICUS_PASSWORD: ${{ secrets.COPERNICUSMARINE_SERVICE_PASSWORD }}
   CDSAPI_URL: "https://cds.climate.copernicus.eu/api"
   CDSAPI_KEY: ${{ secrets.CDSAPI_KEY }}
+  DESTINE_ACCESS_TOKEN: ${{ secrets.DESTINE_ACCESS_TOKEN }}
   DATADEPS_ALWAYS_ACCEPT: true
   JULIA_PKG_SERVER_REGISTRY_PREFERENCE: 'eager'
 
@@ -82,7 +83,14 @@ jobs:
           cache-scratchspaces: false
       - uses: julia-actions/julia-runtest@v1
         with:
-          test_args: '--verbose'
+          # Cap parallelism at 2 workers. ParallelTestRunner's default_njobs
+          # assumes ~2 GiB per worker, but the Breeze-compilation and bathymetry
+          # tests peak at 2.5-3.5 GiB RSS each. On the 16 GiB GitHub-hosted
+          # runner, the default (4 = core count) intermittently OOMs when several
+          # heavy tests coincide, and the runner reports it as
+          # "The operation was canceled." Two workers keep peak memory well
+          # within budget while staying comfortably under the job timeout.
+          test_args: '--verbose --jobs=2'
       - uses: julia-actions/julia-processcoverage@v1
       - uses: codecov/codecov-action@v5
         with:
@@ -145,7 +153,19 @@ jobs:
         run: |
           # Run tests in verbose mode
           TEST_ARGS=(--verbose)
-          TEST_ARGS+=(--jobs=$(($(nproc) - 1)))
+          # Cap parallelism at 4 workers. `nproc - 1` (== 7 on the 8-vCPU GPU
+          # runner) oversubscribes the box: the GPU job runs the full, heaviest
+          # test set (Breeze compilation, nested atmosphere, ocean-sea-ice,
+          # bathymetry), so workers frequently hit ParallelTestRunner's RSS
+          # limit and get recycled. Each recycle spawns a fresh Malt worker, and
+          # under the resulting contention a spawn occasionally exceeds Malt's
+          # fixed 30 s connect timeout -- which aborts the whole run with
+          # "Worker process exited before we could connect / Timeout" (not OOM;
+          # earlyoom never fires and swap is untouched). Four workers keep half
+          # the cores free for the manager and worker spawns while staying well
+          # under the job timeout. See the CPU job for the sibling OOM cap.
+          njobs=$(($(nproc) - 1))
+          TEST_ARGS+=(--jobs=$((njobs < 4 ? njobs : 4)))
           echo "runtest_test_args=${TEST_ARGS[@]}" | tee -a "${GITHUB_ENV}"
       - name: Update registry
         shell: julia --color=yes {0}
@@ -235,7 +255,7 @@ jobs:
               using Pkg;
               Pkg.test(; coverage=true,
                         julia_args=["--check-bounds=yes", "--compiled-modules=yes", "-O0"],
-                        test_args=["--verbose", "test_cds_downloading", "test_jra55_ecco_en4_etopo_downloading", "test_glorys_downloading"])
+                        test_args=["--verbose", "test_cds_downloading", "test_jra55_ecco_en4_etopo_downloading", "test_glorys_downloading", "test_copernicus_dem_downloading"])
           '
       - uses: julia-actions/julia-processcoverage@v1
       - uses: codecov/codecov-action@v5

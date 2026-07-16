@@ -53,14 +53,13 @@ ERA5_dataset_variable_names = Dict(
     :total_cloud_cover               => "total_cloud_cover",
     :evaporation                     => "evaporation",
     :mean_evaporation_rate           => "mean_evaporation_rate",
-    :specific_humidity               => "specific_humidity",
     :eastward_stokes_drift           => "u_component_stokes_drift",
     :northward_stokes_drift          => "v_component_stokes_drift",
     :significant_wave_height         => "significant_height_of_combined_wind_waves_and_swell",
     :mean_wave_period                => "mean_wave_period",
     :mean_wave_direction             => "mean_wave_direction",
     :geopotential                    => "geopotential",
-    :topography                       => "geopotential",
+    :topography                      => "geopotential",
 )
 
 # NetCDF short variable names (what's actually in the downloaded files)
@@ -86,14 +85,13 @@ ERA5_netcdf_variable_names = Dict(
     :total_cloud_cover               => "tcc",
     :evaporation                     => "e",
     :mean_evaporation_rate           => "avg_ie", # shortName: mer
-    :specific_humidity               => "q",
     :eastward_stokes_drift           => "ust",
     :northward_stokes_drift          => "vst",
     :significant_wave_height         => "swh",
     :mean_wave_period                => "mwp",
     :mean_wave_direction             => "mwd",
     :geopotential                    => "z",
-    :topography                       => "z",
+    :topography                      => "z",
 )
 
 # Variables available for download

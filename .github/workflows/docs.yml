@@ -1,11 +1,13 @@
 name: Documentation
 
 on:
+  workflow_dispatch:
   pull_request:
     paths: &paths
       - ".github/workflows/docs.yml"
       - "docs/**"
       - "examples/**"
+      - "ext/**"
       - "src/**"
       - "Project.toml"
   push:

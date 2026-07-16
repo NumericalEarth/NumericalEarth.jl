@@ -3,7 +3,7 @@ using ...Radiations: PrescribedRadiation, SurfaceRadiationProperties, default_st
 """
     OSPapaPrescribedRadiation(architecture = CPU(), FT = Float32;
                               start_date = first_date(OSPapaHourly(), :shortwave_radiation),
-                              end_date   = last_date(OSPapaHourly(), :shortwave_radiation),
+                              end_date = last_date(OSPapaHourly(), :shortwave_radiation),
                               dir = download_OSPapa_cache,
                               max_gap_hours = 72,
                               ocean_surface = SurfaceRadiationProperties(0.05, 0.97),
@@ -15,7 +15,7 @@ observations on a single-column grid.
 """
 function OSPapaPrescribedRadiation(architecture = CPU(), FT = Float32;
                                    start_date = first_date(OSPapaHourly(), :shortwave_radiation),
-                                   end_date   = last_date(OSPapaHourly(), :shortwave_radiation),
+                                   end_date = last_date(OSPapaHourly(), :shortwave_radiation),
                                    dir = download_OSPapa_cache,
                                    max_gap_hours = 72,
                                    ocean_surface = SurfaceRadiationProperties(0.05, 0.97),
@@ -23,7 +23,7 @@ function OSPapaPrescribedRadiation(architecture = CPU(), FT = Float32;
                                    stefan_boltzmann_constant = default_stefan_boltzmann_constant)
 
     mdkw = (; dataset = OSPapaHourly(), start_date, end_date, dir)
-    surface_grid = RectilinearGrid(architecture, FT; size=(), topology=(Flat, Flat, Flat))
+    surface_grid = RectilinearGrid(architecture, FT; size = (), topology = (Flat, Flat, Flat))
 
     function ospapa_fts(name)
         md = Metadata(name; mdkw...)

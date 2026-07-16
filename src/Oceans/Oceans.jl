@@ -5,21 +5,24 @@ export ocean_simulation, SlabOcean, PrescribedOcean
 using Adapt: Adapt, adapt
 using KernelAbstractions: @kernel, @index
 using Oceananigans: Oceananigans
+using Oceananigans.AbstractOperations: KernelFunctionOperation
 using Oceananigans.Advection: WENO, WENOVectorInvariant
 using Oceananigans.BoundaryConditions: DefaultBoundaryCondition, DiscreteBoundaryFunction,
                                        FieldBoundaryConditions, FluxBoundaryCondition, getbc
 using Oceananigans.BuoyancyFormulations: SeawaterBuoyancy
 using Oceananigans.Coriolis: HydrostaticSphericalCoriolis
 using Oceananigans.Fields: Field, CenterField, set!, interior
-using Oceananigans.Forcings: MultipleForcings
-using Oceananigans.Grids: inactive_node, Face, Center, xspacings, yspacings, RectilinearGrid
-using Oceananigans.ImmersedBoundaries: ImmersedBoundaryGrid, ImmersedBoundaryCondition
+using Oceananigans.Forcings: MultipleForcings, DiscreteForcing
+using Oceananigans.Grids: Grids, inactive_node, Face, Center, xspacings, yspacings, RectilinearGrid
+using Oceananigans.ImmersedBoundaries: ImmersedBoundaryGrid, ImmersedBoundaryCondition, MutableGridOfSomeKind
 using Oceananigans.Models.HydrostaticFreeSurfaceModels: HydrostaticFreeSurfaceModel
 using Oceananigans.Models.HydrostaticFreeSurfaceModels.SplitExplicitFreeSurfaces: SplitExplicitFreeSurface
 using Oceananigans.Models.NonhydrostaticModels: NonhydrostaticModel
 using Oceananigans.OrthogonalSphericalShellGrids: OrthogonalSphericalShellGrids, TripolarGrid
 using Oceananigans.Operators: ℑxyᶠᶜᵃ, ℑxyᶜᶠᵃ, ℑxᶠᵃᵃ, ℑyᵃᶠᵃ, ∂xᶠᶜᶜ, ∂yᶜᶠᶜ
 using Oceananigans.Simulations: Simulation
+using Oceananigans.TimeSteppers: Clock
+using Oceananigans.TurbulenceClosures: κzᶜᶜᶠ
 using Oceananigans.TurbulenceClosures.TKEBasedVerticalDiffusivities: CATKEVerticalDiffusivity,
                                                                      CATKEMixingLength,
                                                                      CATKEEquation
@@ -32,8 +35,9 @@ using ..EarthSystemModels: EarthSystemModels,
                            ocean_surface_velocities,
                            ocean_surface_salinity,
                            DegreesKelvin,
+                           default_stop_time,
                            heat_capacity
-using ..EarthSystemModels.InterfaceComputations: ComponentExchanger
+using ..EarthSystemModels.InterfaceComputations: InterfaceComputations, ComponentExchanger
 
 default_gravitational_acceleration = Oceananigans.defaults.gravitational_acceleration
 default_planet_rotation_rate = Oceananigans.defaults.planet_rotation_rate
@@ -78,12 +82,12 @@ EarthSystemModels.ocean_temperature(ocean::OceananigansModelSimulations) = ocean
 
 function EarthSystemModels.ocean_surface_salinity(ocean::OceananigansModelSimulations)
     kᴺ = size(ocean.model.grid, 3)
-    return interior(ocean.model.tracers.S, :, :, kᴺ:kᴺ)
+    return view(ocean.model.tracers.S.data, :, :, kᴺ:kᴺ)
 end
 
 function EarthSystemModels.ocean_surface_temperature(ocean::OceananigansModelSimulations)
     kᴺ = size(ocean.model.grid, 3)
-    return interior(ocean.model.tracers.T, :, :, kᴺ:kᴺ)
+    return view(ocean.model.tracers.T.data, :, :, kᴺ:kᴺ)
 end
 
 function EarthSystemModels.ocean_surface_velocities(ocean::OceananigansModelSimulations)
@@ -110,12 +114,62 @@ function EarthSystemModels.InterfaceComputations.ComponentExchanger(ocean::Ocean
         S = Field{Center, Center, Nothing}(grid)
     end
 
-    return ComponentExchanger((; u, v, T, S), nothing)
+    # Near-surface vertical tracer diffusivity, evaluated lazily inside the
+    # interface flux kernel by formulations that consume it (`InteriorDiffusivity`).
+    model = ocean.model
+    temperature_index = findfirst(name -> name === :T, collect(keys(model.tracers)))
+    κ = KernelFunctionOperation{Center, Center, Nothing}(Σκzᴺ,
+                                                         ocean_grid,
+                                                         model.closure,
+                                                         model.closure_fields,
+                                                         Val(temperature_index),
+                                                         model.clock,
+                                                         Oceananigans.fields(model))
+
+    return ComponentExchanger((; u, v, T, S, κ), nothing)
+end
+
+#####
+##### Near-surface vertical diffusivity assessment
+#####
+
+# Total vertical tracer diffusivity at the surface. Falls back to zero for closures without vertical diffusivity
+@inline Σκzᶜᶜᶠ(i, j, k, grid, closure, K, id, clock, model_fields) = κzᶜᶜᶠ(i, j, k, grid, closure, K, id, clock, model_fields)
+
+@inline Σκzᶜᶜᶠ(i, j, k, grid, closure::Tuple{}, K::Tuple{}, id, clock, model_fields) = zero(grid)
+
+@inline Σκzᶜᶜᶠ(i, j, k, grid, closure::Tuple{<:Any}, K::Tuple{<:Any}, id, clock, model_fields) =
+    κzᶜᶜᶠ(i, j, k, grid, closure[1], K[1], id, clock, model_fields) 
+
+@inline Σκzᶜᶜᶠ(i, j, k, grid, closure::Tuple{<:Any, <:Any}, K::Tuple{<:Any, <:Any}, id, clock, model_fields) =
+    κzᶜᶜᶠ(i, j, k, grid, closure[1], K[1], id, clock, model_fields) +
+    κzᶜᶜᶠ(i, j, k, grid, closure[2], K[2], id, clock, model_fields) 
+
+@inline Σκzᶜᶜᶠ(i, j, k, grid, closure::Tuple{<:Any, <:Any, <:Any}, K::Tuple{<:Any, <:Any, <:Any}, id, clock, model_fields) =
+    κzᶜᶜᶠ(i, j, k, grid, closure[1], K[1], id, clock, model_fields) +
+    κzᶜᶜᶠ(i, j, k, grid, closure[2], K[2], id, clock, model_fields) +
+    κzᶜᶜᶠ(i, j, k, grid, closure[3], K[3], id, clock, model_fields) 
+
+@inline Σκzᶜᶜᶠ(i, j, k, grid, closure::Tuple{<:Any, <:Any, <:Any, <:Any}, K::Tuple{<:Any, <:Any, <:Any, <:Any}, id, clock, model_fields) =
+    κzᶜᶜᶠ(i, j, k, grid, closure[1], K[1], id, clock, model_fields) +
+    κzᶜᶜᶠ(i, j, k, grid, closure[2], K[2], id, clock, model_fields) +
+    κzᶜᶜᶠ(i, j, k, grid, closure[3], K[3], id, clock, model_fields) +
+    κzᶜᶜᶠ(i, j, k, grid, closure[4], K[4], id, clock, model_fields) 
+
+@inline Σκzᶜᶜᶠ(i, j, k, grid, closure::Tuple, K::Tuple, id, clock, model_fields) =
+    κzᶜᶜᶠ(i, j, k, grid,  closure[1],     K[1],     id, clock, model_fields) +
+    Σκzᶜᶜᶠ(i, j, k, grid, closure[2:end], K[2:end], id, clock, model_fields)
+
+@inline function Σκzᴺ(i, j, k, grid, closure, K, id, clock, model_fields)
+    Nz = size(grid, 3)
+    return Σκzᶜᶜᶠ(i, j, Nz, grid, closure, K, id, clock, model_fields)
 end
 
 @inline net_flux(condition) = condition
 @inline net_flux(bc::MultipleFluxes) = bc.flux_field
 @inline net_flux(bc::DiscreteBoundaryFunction) = net_flux(bc.func)
+@inline net_flux(f::DiscreteForcing)   = f.parameters
+@inline net_flux(mf::MultipleForcings) = net_flux(mf.forcings[1])
 
 function EarthSystemModels.InterfaceComputations.net_fluxes(ocean::OceananigansModelSimulations)
     # TODO: Generalize this to work with any ocean model
@@ -125,7 +179,15 @@ function EarthSystemModels.InterfaceComputations.net_fluxes(ocean::OceananigansM
 
     tracers = ocean.model.tracers
     ocean_surface_tracer_fluxes = NamedTuple(name => net_flux(tracers[name].boundary_conditions.top.condition) for name in keys(tracers))
-    return merge(ocean_surface_tracer_fluxes, net_ocean_surface_fluxes)
+
+    freshwater_volume_flux = extract_freshwater_flux(ocean.model.tracers.S.boundary_conditions.top.condition)
+    heat_exchange = freshwater_exchange(ocean.model.tracers.T.boundary_conditions.top.condition)
+
+    fluxes = merge(ocean_surface_tracer_fluxes, net_ocean_surface_fluxes,
+                   (; η = freshwater_volume_flux,
+                      freshwater_heat_content = heat_exchange.content_flux))
+
+    return fluxes
 end
 
 end # module

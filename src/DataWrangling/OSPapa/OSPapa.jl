@@ -17,10 +17,9 @@ using Oceananigans.Grids: Bounded, Flat, Center, RectilinearGrid
 using Oceananigans.OutputReaders: FieldTimeSeries
 using Oceananigans.Units: Units
 using NCDatasets: NCDatasets, NCDataset, defDim, defVar
-using Scratch: Scratch, @get_scratch!
 using Thermodynamics: q_vap_from_RH, Liquid
 
-using ..DataWrangling: DownloadProgress
+using ..DataWrangling: DataWrangling, DownloadProgress
 using ...Atmospheres: PrescribedAtmosphere, PrescribedPrecipitationFlux, AtmosphereThermodynamicsParameters
 
 using ..DataWrangling: Metadata, Metadatum, metadata_path, first_date, last_date,
@@ -56,7 +55,7 @@ const OSPAPA_LATITUDE  = 50.1
 download_OSPapa_cache::String = ""
 
 function __init__()
-    global download_OSPapa_cache = @get_scratch!("OSPapa")
+    global download_OSPapa_cache = DataWrangling.download_cache("OSPapa")
 end
 
 function download_ospapa_file(dir=download_OSPapa_cache)
