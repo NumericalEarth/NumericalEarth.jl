@@ -83,10 +83,7 @@ function InterfaceComputations.compute_sea_ice_ocean_fluxes!(cm::FreezingLimited
     ρᵒᶜ = ocean_properties.reference_density
     cᵒᶜ = ocean_properties.heat_capacity
 
-    # During reconcile_state! at construction, ocean.model.clock.iteration == 0 because no
-    # time step has run yet. ocean.Δt at that point is the construction-time estimate, not
-    # the actual simulation Δt. Passing Inf gives δE * Δz / Inf = 0, so frazil_heat = 0
-    # while temperatures are still clamped correctly.
+    # Guard for ocean.model.clock.iteration == 0
     Δt_frazil = ocean.model.clock.iteration == 0 ? convert(typeof(Δt), Inf) : Δt
 
     launch!(arch, grid, :xy, _freeze_ocean_temperature!, 𝒬ᶠʳᶻ, Tᵒᶜ, Sᵒᶜ, liquidus, grid, ρᵒᶜ, cᵒᶜ, Δt_frazil)
