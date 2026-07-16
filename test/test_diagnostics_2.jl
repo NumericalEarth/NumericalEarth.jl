@@ -163,27 +163,65 @@ for arch in test_architectures
         atmosphere = PrescribedAtmosphere(tripolar_grid, [0.0])
         esm = OceanOnlyModel(ocean; atmosphere)
 
-        mht = Field(meridional_heat_transport(esm, TendencyMethod(); destination_grid))
-        @test all(iszero, interior(mht))
-
+        # The tendency-based MHT diagnostic uses the completed ocean heat budget.
         budget = esm.interfaces.budgets.ocean_heat
         @test budget !== nothing
 
-        time_step!(esm, 1)
-        compute!(mht)
-        @test all(iszero, interior(mht))
-
-        # The same operation must conservatively remap newly completed budgets;
-        # reconstructing the diagnostic between output samples is not required.
+        # A constant heat budget should remain constant after regridding.
+        regridded_budget = Field(RegriddedOperation(budget.residual, destination_grid))
         set!(budget.residual, 1)
-        compute!(mht)
-        unit_budget_mht = Array(interior(mht))
+        compute!(regridded_budget)
+        @test all(isone, Array(interior(regridded_budget)))
 
-        set!(budget.residual, 2)
-        compute!(mht)
-        double_budget_mht = Array(interior(mht))
+        # Remove the test value before advancing the model.
+        set!(budget.residual, 0)
 
-        @test any(x -> !iszero(x), unit_budget_mht)
-        @test all(isapprox.(double_budget_mht, 2 .* unit_budget_mht))
+        mht = Field(meridional_heat_transport(esm, TendencyMethod(); destination_grid))
+
+        mktempdir() do dir
+            iteration_filename = joinpath(dir, "iteration_mht.jld2")
+            averaged_filename = joinpath(dir, "averaged_mht.jld2")
+            outputs = (; mht)
+
+            # Save MHT after every model iteration.
+            ocean.output_writers[:iteration_mht] = JLD2Writer(ocean.model, outputs;
+                                                               schedule = IterationInterval(1),
+                                                               filename = iteration_filename,
+                                                               overwrite_existing = true)
+
+            # Save one MHT average over the full 30-second simulation.
+            ocean.output_writers[:averaged_mht] = JLD2Writer(ocean.model, outputs;
+                                                              schedule = AveragedTimeInterval(30),
+                                                              filename = averaged_filename,
+                                                              overwrite_existing = true)
+
+            # Run three iterations with a 10-second time step.
+            simulation = Simulation(esm; Δt = 10, stop_iteration = 3)
+            run!(simulation)
+
+            iteration_mht = FieldTimeSeries(iteration_filename, "mht")
+            averaged_mht = FieldTimeSeries(averaged_filename, "mht")
+
+            # The first completed iteration is saved at 10 seconds.
+            first_iteration = findfirst(==(10), iteration_mht.times)
+            @test first_iteration !== nothing
+            first_mht = Array(interior(iteration_mht[first_iteration]))
+
+            # Heat transport through the South Pole should be small compared with
+            # global ocean heat transport, allowing for numerical roundoff.
+            @test abs(first_mht[1, 1, 1]) < 1e8
+
+            # Collect the three completed-iteration values at 10, 20, and 30 seconds.
+            completed_iterations = findall(t -> 0 < t <= 30, iteration_mht.times)
+            @test length(completed_iterations) == 3
+            iteration_values = [Array(interior(iteration_mht[n])) for n in completed_iterations]
+            expected_average = sum(iteration_values) / 3
+
+            # The saved 30-second average should equal the mean of those three values.
+            half_minute_average = findfirst(==(30), averaged_mht.times)
+            @test half_minute_average !== nothing
+            averaged_values = Array(interior(averaged_mht[half_minute_average]))
+            @test all(isapprox.(averaged_values, expected_average))
+        end
     end
 end
