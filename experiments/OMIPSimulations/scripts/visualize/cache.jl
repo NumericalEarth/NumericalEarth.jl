@@ -303,7 +303,7 @@ const FTS_VARS = (
     fields_file   = ((:to_fts, "to"), (:so_fts, "so"), (:bo_fts, "bo"),
                      (:uo_fts, "uo"), (:vo_fts, "vo"),
                      (:uvol_fts, "uvol"), (:vvol_fts, "vvol")),
-    averages_file = ((:tosga_fts, "tosga"), (:soga_fts, "soga"),
+    averages_file = ((:tosga_fts, "tosga"), (:soga_fts, "soga"), (:zosga_fts, "zosga"),
                      (:to_h_fts,  "to_h"),  (:so_h_fts,  "so_h")),
 )
 
@@ -800,6 +800,10 @@ end
 LOADERS[:global_mean_salinity_timeseries] =
     disk_cached(:global_mean_salinity_timeseries; source_fts_syms = :soga_fts) do c
     total_jld2_scalar_timeseries(get_field(c, :averages_file), "soga")
+end
+LOADERS[:global_mean_ssh_timeseries] =
+    disk_cached(:global_mean_ssh_timeseries; source_fts_syms = :zosga_fts) do c
+    total_jld2_scalar_timeseries(get_field(c, :averages_file), "zosga")
 end
 
 LOADERS[:time_in_years] = c ->
