@@ -2,6 +2,8 @@ using SeawaterPolynomials.TEOS10: TEOS10EquationOfState
 
 """
     nonhydrostatic_ocean_simulation(grid;
+                                    clock = Clock(grid),
+                                    stop_time = default_stop_time(grid, clock),
                                     Δt = 1,
                                     closure = nothing,
                                     tracers = (:T, :S),
@@ -23,6 +25,11 @@ timestepping is needed.
 
 ## Keyword Arguments
 
+- `clock`: Clock for the underlying model. Defaults to `Clock(grid)`, a numeric clock starting at `time = 0`. 
+  Pass a `DateTime`-based clock to step the simulation in calendar time (e.g. when coupling).
+- `stop_time`: Stop time for the simulation. Defaults to `Inf` for numeric clocks, or 
+  `DateTime(9999, 12, 31, 23, 59, 59)` for `DateTime` clocks. On Reactant architectures it defaults to `nothing`, since 
+  Reactant does not support `stop_time`.
 - `Δt`: Timestep used by the `Simulation`. Defaults to `1` second.
 - `closure`: Turbulence closure. Defaults to `nothing` (implicit LES via WENO advection scheme).
 - `tracers`: Tuple of tracer names. Defaults to `(:T, :S)`.
@@ -36,6 +43,8 @@ timestepping is needed.
 - `verbose`: If `true`, prints additional setup information.
 """
 function nonhydrostatic_ocean_simulation(grid;
+                                         clock = Clock(grid),
+                                         stop_time = default_stop_time(grid, clock),
                                          Δt = 1,
                                          closure = nothing,
                                          tracers = (:T, :S),
@@ -49,8 +58,8 @@ function nonhydrostatic_ocean_simulation(grid;
                                          verbose = false)
 
     # Set up boundary conditions using Field
-    top_zonal_momentum_flux      = τx = Field{Face, Center, Nothing}(grid)
-    top_meridional_momentum_flux = τy = Field{Center, Face, Nothing}(grid)
+    top_zonal_momentum_flux      = τx = Field{Face,   Center, Nothing}(grid)
+    top_meridional_momentum_flux = τy = Field{Center, Face,   Nothing}(grid)
     top_ocean_heat_flux          = Jᵀ = Field{Center, Center, Nothing}(grid)
     top_salt_flux                = Jˢ = Field{Center, Center, Nothing}(grid)
 
@@ -68,6 +77,7 @@ function nonhydrostatic_ocean_simulation(grid;
     buoyancy = SeawaterBuoyancy(; gravitational_acceleration, equation_of_state)
 
     ocean_model = NonhydrostaticModel(grid;
+                                      clock,
                                       buoyancy,
                                       closure,
                                       advection,
@@ -76,7 +86,7 @@ function nonhydrostatic_ocean_simulation(grid;
                                       forcing,
                                       boundary_conditions)
 
-    ocean = Simulation(ocean_model; Δt, verbose)
+    ocean = Simulation(ocean_model; Δt, stop_time, verbose)
 
     return ocean
 end

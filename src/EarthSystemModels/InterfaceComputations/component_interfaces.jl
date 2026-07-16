@@ -1,8 +1,10 @@
 using KernelAbstractions: @kernel, @index
 using Oceananigans: initialize!
 using Oceananigans.Architectures: architecture
+using Oceananigans.BoundaryConditions: FieldBoundaryConditions
 using Oceananigans.Units: Time
 using Oceananigans.Grids: inactive_node, topology
+using Oceananigans.OrthogonalSphericalShellGrids: OrthogonalSphericalShellGrids
 using Oceananigans.Utils: launch!, KernelParameters
 using Oceananigans.Operators: ℑxᶜᵃᵃ, ℑyᵃᶜᵃ
 using Oceananigans.Units: Time
@@ -48,6 +50,13 @@ end
 @inline computed_fluxes(interface::AtmosphereInterface)  = interface.fluxes
 @inline computed_fluxes(interface::SeaIceOceanInterface) = interface.fluxes
 
+vector_component_boundary_conditions(grid, loc) = FieldBoundaryConditions(grid, loc)
+
+function vector_component_boundary_conditions(grid::OrthogonalSphericalShellGrids.TripolarGridOfSomeKind, loc)
+    north_bc = OrthogonalSphericalShellGrids.north_fold_boundary_condition(grid)(-1)
+    return FieldBoundaryConditions(grid, loc; north = north_bc)
+end
+
 """
     AtmosphereSurfaceFluxes{F}
 
@@ -70,9 +79,11 @@ end
 
 function AtmosphereSurfaceFluxes(grid)
     F = Field{Center, Center, Nothing}
+    velocity_bcs = vector_component_boundary_conditions(grid, (Center(), Center(), nothing))
     return AtmosphereSurfaceFluxes(F(grid), F(grid), F(grid),
-                                   F(grid), F(grid), F(grid),
-                                   F(grid), F(grid))
+                                   F(grid; boundary_conditions = velocity_bcs),
+                                   F(grid; boundary_conditions = velocity_bcs),
+                                   F(grid), F(grid), F(grid))
 end
 
 AtmosphereSurfaceFluxes(::Nothing) = AtmosphereSurfaceFluxes(ntuple(_ -> ZeroField(), 8)...)
@@ -107,7 +118,10 @@ end
 
 function AtmosphereSeaIceFluxes(grid)
     F = Field{Center, Center, Nothing}
-    return AtmosphereSeaIceFluxes(F(grid), F(grid), F(grid), F(grid), F(grid))
+    velocity_bcs = vector_component_boundary_conditions(grid, (Center(), Center(), nothing))
+    return AtmosphereSeaIceFluxes(F(grid), F(grid), F(grid),
+                                  F(grid; boundary_conditions = velocity_bcs),
+                                  F(grid; boundary_conditions = velocity_bcs))
 end
 
 AtmosphereSeaIceFluxes(::Nothing) = AtmosphereSeaIceFluxes(ntuple(_ -> ZeroField(), 5)...)
@@ -130,23 +144,27 @@ struct SeaIceOceanFluxes{C, FX, FY}
     interface_heat :: C
     frazil_heat    :: C
     salt           :: C
+    freshwater     :: C
     x_momentum     :: FX
     y_momentum     :: FY
 end
 
 function SeaIceOceanFluxes(grid)
     C  = Field{Center, Center, Nothing}
-    return SeaIceOceanFluxes(C(grid), C(grid), C(grid),
-                             Field{Face, Center, Nothing}(grid),
-                             Field{Center, Face, Nothing}(grid))
+    x_velocity_bcs = vector_component_boundary_conditions(grid, (Face(), Center(), nothing))
+    y_velocity_bcs = vector_component_boundary_conditions(grid, (Center(), Face(), nothing))
+    return SeaIceOceanFluxes(C(grid), C(grid), C(grid), C(grid),
+                             Field{Face, Center, Nothing}(grid; boundary_conditions = x_velocity_bcs),
+                             Field{Center, Face, Nothing}(grid; boundary_conditions = y_velocity_bcs))
 end
 
-SeaIceOceanFluxes(::Nothing) = SeaIceOceanFluxes(ntuple(_ -> ZeroField(), 5)...)
+SeaIceOceanFluxes(::Nothing) = SeaIceOceanFluxes(ntuple(_ -> ZeroField(), 6)...)
 
 Adapt.adapt_structure(to, fluxes::SeaIceOceanFluxes) =
     SeaIceOceanFluxes(Adapt.adapt(to, fluxes.interface_heat),
                       Adapt.adapt(to, fluxes.frazil_heat),
                       Adapt.adapt(to, fluxes.salt),
+                      Adapt.adapt(to, fluxes.freshwater),
                       Adapt.adapt(to, fluxes.x_momentum),
                       Adapt.adapt(to, fluxes.y_momentum))
 
@@ -154,6 +172,7 @@ Oceananigans.Architectures.on_architecture(arch, fluxes::SeaIceOceanFluxes) =
     SeaIceOceanFluxes(on_architecture(arch, fluxes.interface_heat),
                       on_architecture(arch, fluxes.frazil_heat),
                       on_architecture(arch, fluxes.salt),
+                      on_architecture(arch, fluxes.freshwater),
                       on_architecture(arch, fluxes.x_momentum),
                       on_architecture(arch, fluxes.y_momentum))
 
@@ -174,9 +193,10 @@ struct ZeroFluxes{Z}
     interface_heat        :: Z
     frazil_heat           :: Z
     salt                  :: Z
+    freshwater            :: Z
 end
 
-ZeroFluxes() = ZeroFluxes(ntuple(_ -> ZeroField(), 11)...)
+ZeroFluxes() = ZeroFluxes(ntuple(_ -> ZeroField(), 12)...)
 
 @inline computed_fluxes(::Nothing) = ZeroFluxes()
 
@@ -347,7 +367,10 @@ Keyword Arguments
 - `freshwater_density`: reference density of freshwater. Default: `default_freshwater_density`.
 - `atmosphere_ocean_fluxes`: flux formulation for atmosphere-ocean interface. Default: `SimilarityTheoryFluxes()`.
 - `atmosphere_sea_ice_fluxes`: flux formulation for atmosphere-sea ice interface. Default: `SimilarityTheoryFluxes()`.
-- `atmosphere_ocean_interface_temperature`: temperature formulation for atmosphere-ocean interface. Default: `BulkTemperature()`.
+- `atmosphere_ocean_interface_temperature`: temperature formulation for atmosphere-ocean interface.
+   Options are `BulkTemperature()` (default) and `SkinTemperature(internal_flux)`, where for the ocean
+   `internal_flux` is a `DiffusiveFlux(κ, δ)` with either a prescribed diffusivity `κ` or an
+   `InteriorDiffusivity()` assessed from the ocean turbulence closure.
 - `atmosphere_ocean_interface_specific_humidity`: specific humidity formulation. Default: `default_ao_specific_humidity(ocean)`.
 - `atmosphere_sea_ice_interface_temperature`: temperature formulation for atmosphere-sea ice interface. Default: `default_ai_temperature(sea_ice)`.
 - `ocean_reference_density`: reference density for the ocean. Default: `reference_density(ocean)`.
@@ -473,14 +496,15 @@ default_al_specific_humidity(land) =
 # passing `atmosphere_land_fluxes = SimilarityTheoryFluxes(...)` with explicit
 # roughness lengths (constants, `Field`s, or roughness-length models such as
 # `LandRoughnessLength`) to `ComponentInterfaces` / `AtmosphereLandModel`.
-default_atmosphere_land_fluxes(::Nothing, FT) = nothing
+default_atmosphere_land_fluxes(::Nothing, FT; kw...) = nothing
 
-function default_atmosphere_land_fluxes(land, FT)
+function default_atmosphere_land_fluxes(land, FT; solver_stop_criteria = nothing)
     return SimilarityTheoryFluxes(FT;
                                    stability_functions          = atmosphere_land_stability_functions(FT),
                                    momentum_roughness_length    = convert(FT, 0.1),
                                    temperature_roughness_length = convert(FT, 0.01),
-                                   water_vapor_roughness_length = convert(FT, 0.01))
+                                   water_vapor_roughness_length = convert(FT, 0.01),
+                                   solver_stop_criteria)
 end
 
 #####

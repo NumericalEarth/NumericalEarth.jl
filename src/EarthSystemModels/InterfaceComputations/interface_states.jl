@@ -30,7 +30,6 @@ function Base.summary(q★::ImpureSaturationSpecificHumidity)
         "Liquid"
     end
 
-
     return string("ImpureSaturationSpecificHumidity{$phase_str}(water_mole_fraction=",
                   prettysummary(q★.water_mole_fraction), ")")
 end
@@ -48,7 +47,7 @@ ImpureSaturationSpecificHumidity(phase) = ImpureSaturationSpecificHumidity(phase
 @inline compute_water_mole_fraction(x_H₂O::Number, salinity) = x_H₂O
 
 # COARE 3.6 / Edson (2013) pressure-based saturation specific humidity:
-#   qₛ = εᵈᵛ⁻¹ pᵛ⁺ / (p − (1 − ε) pᵛ⁺),   εᵈᵛ⁻¹ = Rᵈ / Rᵥ
+#   qₛ = εᵈᵛ⁻¹ pᵛ⁺ / (p − (1 − εᵈᵛ⁻¹) pᵛ⁺),   εᵈᵛ⁻¹ = Rᵈ / Rᵥ
 # Direct evaluation at the atmospheric pressure p. The 6th positional
 # argument `qᵃᵗ` is accepted (and ignored) so the same call site can
 # dispatch on either `ImpureSaturationSpecificHumidity` or
@@ -58,11 +57,17 @@ ImpureSaturationSpecificHumidity(phase) = ImpureSaturationSpecificHumidity(phase
     CT = eltype(ℂᵃᵗ)
     T  = convert(CT, Tₛ)
     p  = convert(CT, pᵃᵗ)
-    
+
     # Raoult's law on the saturation vapor pressure.
     χ_H₂O = compute_water_mole_fraction(formulation.water_mole_fraction, Sₛ)
     pᵛ⁺   = χ_H₂O * AtmosphericThermodynamics.saturation_vapor_pressure(ℂᵃᵗ, T, formulation.phase)
     εᵈᵛ⁻¹ = 1 / AtmosphericThermodynamics.Parameters.Rv_over_Rd(ℂᵃᵗ)
+
+    # Guard against unphysically warm interface temperatures: once pᵛ⁺ exceeds
+    # p / (1 − εᵈᵛ⁻¹) the denominator below turns negative, producing a negative
+    # qₛ that drives a runaway spurious-condensation instability. In the physical
+    # regime pᵛ⁺ ≪ p the cap is inert; it keeps qₛ ∈ [0, 1).
+    pᵛ⁺   = min(pᵛ⁺, convert(CT, 0.999) * p)
     qₛ    = εᵈᵛ⁻¹ * pᵛ⁺ / (p - (1 - εᵈᵛ⁻¹) * pᵛ⁺)
 
     return convert(FT, qₛ)
@@ -77,6 +82,10 @@ end
     p  = convert(CT, pᵃᵗ)
     pᵛ⁺   = AtmosphericThermodynamics.saturation_vapor_pressure(ℂᵃᵗ, T, phase)
     εᵈᵛ⁻¹ = 1 / AtmosphericThermodynamics.Parameters.Rv_over_Rd(ℂᵃᵗ)
+
+    # Same negative-denominator guard as in `surface_specific_humidity` above;
+    # inert in the physical regime pᵛ⁺ ≪ p.
+    pᵛ⁺   = min(pᵛ⁺, convert(CT, 0.999) * p)
     return εᵈᵛ⁻¹ * pᵛ⁺ / (p - (1 - εᵈᵛ⁻¹) * pᵛ⁺)
 end
 
@@ -98,6 +107,8 @@ end
 struct BulkHumidity{Φ}
     phase :: Φ
 end
+
+BulkHumidity(; phase=AtmosphericThermodynamics.Liquid()) = BulkHumidity(phase)
 
 Base.summary(::BulkHumidity{Φ}) where Φ =
     string("BulkHumidity{", Φ === AtmosphericThermodynamics.Liquid ? "Liquid" : "Ice", "}")
@@ -348,10 +359,43 @@ end
 
 SkinTemperature(internal_flux; max_ΔT=5) = SkinTemperature(internal_flux, max_ΔT)
 
-struct DiffusiveFlux{Z, K}
-    δ :: Z # Boundary layer thickness, as a first guess we will use half the grid spacing
+"""
+    DiffusiveFlux(κ, δ)
+
+Internal flux ``J = - κ (Tₛ - Tᵢ) / δ`` between the interior temperature ``Tᵢ``,
+located a distance ``δ`` below the interface (typically half the spacing of the topmost
+interior cell), and the interface temperature ``Tₛ``. The diffusivity `κ` (m² s⁻¹) is
+either a prescribed constant or an [`InteriorDiffusivity`](@ref) assessed from the
+interior model.
+"""
+struct DiffusiveFlux{K, Z}
     κ :: K # diffusivity in m² s⁻¹
+    δ :: Z # Boundary layer thickness, as a first guess we will use half the grid spacing
 end
+
+"""
+    InteriorDiffusivity(FT = Oceananigans.defaults.FloatType; minimum_diffusivity = 1.4e-7)
+
+Diffusivity for a [`DiffusiveFlux`](@ref) that is assessed from the interior model (for example the near-surface
+vertical diffusivity predicted by the ocean turbulence closure) instead of being prescribed. The assessed value is floored by
+`minimum_diffusivity`, which defaults to the molecular thermal diffusivity of seawater, guarding stably-stratified conditions
+in which modeled diffusivities vanish.
+"""
+struct InteriorDiffusivity{FT}
+    minimum_diffusivity :: FT
+end
+
+InteriorDiffusivity(FT::DataType = Oceananigans.defaults.FloatType; minimum_diffusivity = 1.4e-7) =  InteriorDiffusivity(convert(FT, minimum_diffusivity))
+
+@inline internal_diffusivity(κ::Number, Ψᵢ) = κ
+@inline internal_diffusivity(d::InteriorDiffusivity, Ψᵢ) = max(Ψᵢ.κ, d.minimum_diffusivity)
+
+# A skin temperature whose internal flux uses the interior model's diffusivity
+const IDST = SkinTemperature{<:DiffusiveFlux{<:InteriorDiffusivity}}
+
+# We try to keep the parameter space clean. If we do not need the diffusivity we remove it.
+assemble_interior_fields(state, temperature_formulation) = Base.structdiff(state, NamedTuple{(:κ,)})
+assemble_interior_fields(state, temperature_formulation::IDST) = state
 
 # The flux balance is solved by computing
 #
@@ -388,11 +432,13 @@ end
 #
 # corresponding to a linearization of the outgoing longwave radiation term.
 @inline function flux_balance_temperature(st::SkinTemperature{<:DiffusiveFlux}, Ψₛ, ℙₛ, 𝒬ᵀ, 𝒬ᵛ, ℐꜛˡʷ, Qd, Ψᵢ, ℙᵢ, Ψₐ, ℙₐ)
-    Qa = 𝒬ᵛ + ℐꜛˡʷ + Qd # Net flux (positive out of the ocean)
+    FT = typeof(Ψₛ.temperature)
     F  = st.internal_flux
+    κ  = convert(FT, internal_diffusivity(F.κ, Ψᵢ))
+    δ  = convert(FT, F.δ)
     ρ  = ℙᵢ.reference_density
     c  = ℙᵢ.heat_capacity
-    Qa = (𝒬ᵛ + ℐꜛˡʷ + Qd) # Net flux excluding sensible heat (positive out of the ocean)
+    Qa = 𝒬ᵛ + ℐꜛˡʷ + Qd # Net flux excluding sensible heat (positive out of the ocean)
     λ  = 1 / (ρ * c) # m³ K J⁻¹
     Jᵀ = Qa * λ
 
@@ -403,10 +449,11 @@ end
     # Flux balance: T★ = (Tᵢ κ - (Jᵀ + Ωc Tᵃᵗ) δ) / (κ - Ωc δ)
     # where Ωc = 𝒬ᵀ λ / ΔT. Multiply through by ΔT to avoid Inf when ΔT → 0.
     Ωᵀ = 𝒬ᵀ * λ  # unnormalized sensible heat coefficient (= Ωc * ΔT)
-    D  = F.κ * ΔT - Ωᵀ * F.δ
-    T★ = (Ψᵢ.T * F.κ * ΔT - (Jᵀ * ΔT + Ωᵀ * Tᵃᵗ) * F.δ) / D
-
-    return ifelse(D == 0, Ψₛ.temperature, T★)
+    D  = κ * ΔT - Ωᵀ * δ
+    T★ = (Ψᵢ.T * κ * ΔT - (Jᵀ * ΔT + Ωᵀ * Tᵃᵗ) * δ) / D
+    T★ = ifelse(D == 0, Ψₛ.temperature, T★)
+    max_ΔT = convert(FT, st.max_ΔT)
+    return Ψᵢ.T + clamp(T★ - Ψᵢ.T, -max_ΔT, max_ΔT)
 end
 
 # Solve the surface flux balance equation:
@@ -721,7 +768,7 @@ end
                                        q_formulation,
                                        land_state,
                                        Tₛ, qₛ)
-    FT  = eltype(grid)
+    FT  = typeof(Tₛ)
     energy    = interface_energy_state(i, j, grid, q_formulation, land_state)
     hydrology = interface_hydrology_state(i, j, grid, q_formulation, land_state)
     return AirLandInterfaceState(fluxes, velocities, convert(FT, Tₛ), convert(FT, qₛ), hydrology, energy)
