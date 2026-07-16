@@ -1,4 +1,5 @@
 using Oceananigans.OrthogonalSphericalShellGrids: TripolarGridOfSomeKind
+using Oceananigans.ImmersedBoundaries: bottom_height_field
 using Oceananigans.Fields: convert_to_0_360
 using ..DataWrangling: BoundingBox
 
@@ -191,7 +192,7 @@ function label_ocean_basins(grid::ImmersedBoundaryGrid; barriers=nothing)
     cpu_grid = on_architecture(CPU(), grid)
 
     TX = topology(cpu_grid, 1)
-    zb = cpu_grid.immersed_boundary.bottom_height
+    zb = bottom_height_field(cpu_grid)
 
     # If barriers are specified, apply them to a copy of the bathymetry.
     # Using `similar(zb)` preserves the field type, which allows for future
