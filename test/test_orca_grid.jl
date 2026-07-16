@@ -41,7 +41,7 @@ end
     @test mesh_meta.name == :mesh_mask
     @test mesh_meta.dataset isa ORCATwelfth
 
-    @test default_south_rows_to_remove(ORCATwelfth()) == 0
+    @test default_south_rows_to_remove(ORCATwelfth()) == 460
     @test occursin("eORCA12", metadata_path(mesh_meta))
     @test occursin("eORCA12", metadata_path(bathy_meta))
 end
@@ -97,8 +97,7 @@ end
 
 @testset "ORCAGrid with south_rows_to_remove on $(arch)" for arch in test_architectures
     Nremove = 40
-    grid = ORCAGrid(arch; dataset=ORCAOne(), Nz=5, z=(-5000, 0), halo=(4, 4, 4),
-                    south_rows_to_remove=Nremove)
+    grid = ORCAGrid(arch; dataset=ORCAOne(), Nz=5, z=(-5000, 0), halo=(4, 4, 4), south_rows_to_remove=Nremove)
 
     @test grid isa ImmersedBoundaryGrid
     underlying = grid.underlying_grid
