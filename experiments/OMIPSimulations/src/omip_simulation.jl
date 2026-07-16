@@ -4,9 +4,11 @@ using Oceananigans.Operators: Δzᶜᶜᶜ
 using Oceananigans.Grids: λnode, φnode, znode, Center
 using Oceananigans.Architectures: on_architecture, architecture
 using Oceananigans.DistributedComputations: @root
-using Oceananigans.BoundaryConditions: DiscreteBoundaryFunction, getbc
+using Oceananigans.BoundaryConditions: DiscreteBoundaryFunction, getbc, fill_halo_regions!
 using Oceananigans.Fields: CenterField, interior
+using Oceananigans.ImmersedBoundaries: bottom_height_field
 using Oceananigans.Utils: launch!
+using NumericalEarth.Bathymetry: remove_minor_basins!
 using NumericalEarth.Oceans: MultipleFluxes, FreshwaterExchange
 using SeawaterPolynomials.TEOS10: Sᴬ_from_Sᴾ, Θ_from_T
 using Oceananigans.TurbulenceClosures: IsopycnalSkewSymmetricDiffusivity,
@@ -368,8 +370,13 @@ function omip_simulation(config::Symbol = :halfdegree;
 
     # Build the land before the ocean so its river routing can seed enhanced vertical mixing at
     # river mouths — an extra closure that keeps concentrated runoff from freshening a cell to zero.
+    # Closing the shallow Ob/Yenisei gulfs relocates their mouths ~2–3° onto the deeper Kara Sea shelf,
+    # so the routing search must reach that far. A fixed geographic reach keeps it resolution-independent.
+    Nx, Ny, _ = size(grid)
+    maximum_search_radius = max(5, ceil(Int, 3 / ((360 / Nx + 180 / Ny) / 2)))
     land = JRA55PrescribedLand(grid; dir = atmosphere_dir, dataset = MultiYearJRA55(),
-                               start_date, end_date, time_indices_in_memory = backend_size, prefetch = true)
+                               start_date, end_date, time_indices_in_memory = backend_size, prefetch = true,
+                               maximum_search_radius)
 
     river_κ = river_mixing ?
         river_mouth_vertical_diffusivity(grid, land.river_routing; κ = river_mixing_κ, mixing_depth = river_mixing_depth) :
@@ -622,7 +629,8 @@ function river_mouth_vertical_diffusivity(grid, river_routing; κ = 0.1, mixing_
     mask = CenterField(grid)
     set!(mask, mask_data)
 
-    return VerticalScalarDiffusivity(κ = river_mouth_κ, discrete_form = true,
+    return VerticalScalarDiffusivity(VerticallyImplicitTimeDiscretization();
+                                     κ = river_mouth_κ, discrete_form = true,
                                      loc = (Center, Center, Center), parameters = mask)
 end
 
@@ -707,12 +715,44 @@ build_grid(::Val{:orca}, arch, Nz, depth; Δz_top = nothing)          = build_gr
 build_grid(::Val{:quarterdegree}, arch, Nz, depth; Δz_top = nothing) = build_grid(ORCAQuarter(), arch, Nz, depth; Δz_top)
 build_grid(::Val{:twelfthdegree}, arch, Nz, depth; Δz_top = nothing) = build_grid(ORCATwelfth(), arch, Nz, depth; Δz_top)
 
+# The Gulf of Ob and the Yenisei Gulf are ~5 m deep for hundreds of kilometres, so their full river
+# discharge lands in a single 1.5 m top cell with no water column to mix into and the salinity collapses.
+# Closing the sub-`minimum_depth` cells of each gulf turns them to land; the river routing then relocates
+# the discharge onto the deeper Kara Sea shelf just north, where the top ~10 m spans five cells.
+# Boxes are (λ_min, λ_max, φ_min, φ_max) in degrees.
+const kara_river_closures = ((68.0, 77.0, 66.0, 72.6),   # Gulf of Ob
+                             (77.0, 85.0, 70.0, 73.8))    # Yenisei Gulf
+
+@kernel function _close_shallow_regions!(bottom_height, grid, regions, minimum_depth)
+    i, j = @index(Global, NTuple)
+    λ = λnode(i, j, 1, grid, Center(), Center(), Center())
+    φ = φnode(i, j, 1, grid, Center(), Center(), Center())
+    @inbounds z = bottom_height[i, j, 1]
+    shallow = (z < 0) & (z > -minimum_depth)
+    closed = false
+    for (λ₀, λ₁, φ₀, φ₁) in regions
+        closed = closed | (shallow & (λ ≥ λ₀) & (λ ≤ λ₁) & (φ ≥ φ₀) & (φ ≤ φ₁))
+    end
+    @inbounds bottom_height[i, j, 1] = ifelse(closed, oftype(z, 100), z)
+end
+
+function close_shallow_river_regions(grid; regions = kara_river_closures, minimum_depth = 10)
+    arch      = architecture(grid)
+    underlying = grid.underlying_grid
+    bottom    = bottom_height_field(grid)
+    launch!(arch, underlying, :xy, _close_shallow_regions!, bottom, underlying, regions,
+            convert(eltype(grid), minimum_depth))
+    fill_halo_regions!(bottom)
+    remove_minor_basins!(bottom, 1)
+    return ImmersedBoundaryGrid(underlying, GridFittedBottom(bottom); active_cells_map = true)
+end
+
 function build_grid(dataset::ORCADataset, arch, Nz, depth; Δz_top = nothing)
 
     scale = exponential_scale(Nz, depth, Δz_top)
     z_faces = ExponentialDiscretization(Nz, -depth, 0; scale, mutable=true)
 
-    return ORCAGrid(arch;
+    grid = ORCAGrid(arch;
                     dataset,
                     Nz,
                     z = z_faces,
@@ -720,6 +760,8 @@ function build_grid(dataset::ORCADataset, arch, Nz, depth; Δz_top = nothing)
                     with_bathymetry = true,
                     major_basins = 1,
                     active_cells_map = true)
+
+    return close_shallow_river_regions(grid)
 end
 
 # Locally-runnable testing configuration: the NEMO eORCA1 (~1ᵒ) mesh, used to reproduce the
