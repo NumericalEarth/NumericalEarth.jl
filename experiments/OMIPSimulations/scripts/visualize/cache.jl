@@ -303,7 +303,8 @@ const FTS_VARS = (
     fields_file   = ((:to_fts, "to"), (:so_fts, "so"), (:bo_fts, "bo"),
                      (:uo_fts, "uo"), (:vo_fts, "vo"),
                      (:uvol_fts, "uvol"), (:vvol_fts, "vvol")),
-    averages_file = ((:tosga_fts, "tosga"), (:soga_fts, "soga"), (:zosga_fts, "zosga"),
+    averages_file = ((:zosga_fts, "zosga"), (:voco_fts, "voco"),
+                     (:soco_fts,  "soco"),  (:hoco_fts, "hoco"), (:sivol_fts, "sivol"),
                      (:to_h_fts,  "to_h"),  (:so_h_fts,  "so_h")),
 )
 
@@ -793,18 +794,32 @@ end
 ##### Time-series scalars + horizontal-mean profiles
 #####
 
-LOADERS[:global_mean_temperature_timeseries] =
-    disk_cached(:global_mean_temperature_timeseries; source_fts_syms = :tosga_fts) do c
-    total_jld2_scalar_timeseries(get_field(c, :averages_file), "tosga")
-end
-LOADERS[:global_mean_salinity_timeseries] =
-    disk_cached(:global_mean_salinity_timeseries; source_fts_syms = :soga_fts) do c
-    total_jld2_scalar_timeseries(get_field(c, :averages_file), "soga")
-end
+# Global volume-means as Integral/Volume (both z-star-live), not `Average` (frozen denominator).
+LOADERS[:ocean_volume_timeseries] = c ->
+    total_jld2_scalar_timeseries(get_field(c, :averages_file), "voco")
+LOADERS[:global_mean_temperature_timeseries] = c ->
+    total_jld2_scalar_timeseries(get_field(c, :averages_file), "hoco") ./
+    get_field(c, :ocean_volume_timeseries)
+LOADERS[:global_mean_salinity_timeseries] = c ->
+    total_jld2_scalar_timeseries(get_field(c, :averages_file), "soco") ./
+    get_field(c, :ocean_volume_timeseries)
 LOADERS[:global_mean_ssh_timeseries] =
     disk_cached(:global_mean_ssh_timeseries; source_fts_syms = :zosga_fts) do c
     total_jld2_scalar_timeseries(get_field(c, :averages_file), "zosga")
 end
+
+# Conservation-check content timeseries. `soco = ∫S dV` [psu·m³] → salt mass via
+# ρ/1000; `sivol = ∫hℵ dA` [m³] → ice salt mass via ρ_ice·S_ice/1000. Their sum is
+# the ocean+ice total salt, which the freshwater mass-flux design should conserve.
+# `hoco = ∫Θ dV` [°C·m³] → ocean heat via ρ·cp.
+LOADERS[:ocean_salt_content_timeseries] = c ->
+    (ρ_ocean / 1000) .* total_jld2_scalar_timeseries(get_field(c, :averages_file), "soco")
+LOADERS[:sea_ice_salt_content_timeseries] = c ->
+    (ρ_ice * S_ice / 1000) .* total_jld2_scalar_timeseries(get_field(c, :averages_file), "sivol")
+LOADERS[:total_salt_content_timeseries] = c ->
+    get_field(c, :ocean_salt_content_timeseries) .+ get_field(c, :sea_ice_salt_content_timeseries)
+LOADERS[:ocean_heat_content_timeseries] = c ->
+    (ρ_ocean * cp_ocean) .* total_jld2_scalar_timeseries(get_field(c, :averages_file), "hoco")
 
 LOADERS[:time_in_years] = c ->
     total_jld2_timeseries_times(get_field(c, :averages_file)) ./ (365.25 * 24 * 3600)

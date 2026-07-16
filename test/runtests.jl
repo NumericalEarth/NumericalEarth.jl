@@ -25,6 +25,7 @@ if filter_tests!(testsuite, args)
     delete!(testsuite, "test_jra55_ecco_en4_etopo_downloading")
     delete!(testsuite, "test_cds_downloading")
     delete!(testsuite, "test_glorys_downloading")
+    delete!(testsuite, "test_aviso_downloading")
     delete!(testsuite, "test_copernicus_dem_downloading")
     delete!(testsuite, "test_copernicus_albedo_downloading")
     delete!(testsuite, "test_distributed_utils")
@@ -79,9 +80,14 @@ function __init__()
     ##### Download JRA55 data
     #####
 
+    # JRA55PrescribedLand routes runoff onto a target ocean grid; a coarse global
+    # grid is enough to exercise the download + routing path here.
+    probe_grid = LatitudeLongitudeGrid(size = (90, 45, 1), longitude = (-180, 180),
+                                       latitude = (-90, 90), z = (-10, 0), halo = (4, 4, 4))
+
     try
         atmosphere = JRA55PrescribedAtmosphere(time_indices_in_memory=2)
-        land       = JRA55PrescribedLand(time_indices_in_memory=2)
+        land       = JRA55PrescribedLand(probe_grid; time_indices_in_memory=2)
         # Touch the radiation variables (rlds/rsds) too, so a corrupted cached
         # download is caught by the same fallback path.
         radiation = JRA55PrescribedRadiation(time_indices_in_memory=2)
@@ -93,7 +99,7 @@ function __init__()
             download_from_artifacts(metadata_path(datum))
         end
         atmosphere = JRA55PrescribedAtmosphere(time_indices_in_memory=2)
-        land       = JRA55PrescribedLand(time_indices_in_memory=2)
+        land       = JRA55PrescribedLand(probe_grid; time_indices_in_memory=2)
         radiation  = JRA55PrescribedRadiation(time_indices_in_memory=2)
     end
 

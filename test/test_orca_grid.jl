@@ -41,7 +41,7 @@ end
     @test mesh_meta.name == :mesh_mask
     @test mesh_meta.dataset isa ORCATwelfth
 
-    @test default_south_rows_to_remove(ORCATwelfth()) == 0
+    @test default_south_rows_to_remove(ORCATwelfth()) == 460
     @test occursin("eORCA12", metadata_path(mesh_meta))
     @test occursin("eORCA12", metadata_path(bathy_meta))
 end

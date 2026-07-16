@@ -43,7 +43,7 @@ function omip_forcing(arch, sea_ice;
                                          ocean_surface   = SurfaceRadiationProperties(0.06, 1.00),
                                          sea_ice_surface = SurfaceRadiationProperties(sea_ice_albedo, 1.0))
 
-    land = JRA55PrescribedLand(arch; kw...)
+    land = JRA55PrescribedLand(sea_ice.model.grid; kw...)
 
     return atmosphere, radiation, land
 end

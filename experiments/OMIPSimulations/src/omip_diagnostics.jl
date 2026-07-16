@@ -1,6 +1,6 @@
 
 using JLD2
-using Oceananigans.AbstractOperations: KernelFunctionOperation
+using Oceananigans.AbstractOperations: KernelFunctionOperation, Integral
 using Oceananigans.Operators: Axᶠᶜᶜ, Ayᶜᶠᶜ, ℑxᶜᵃᵃ, ℑyᵃᶜᵃ
 
 # Volumetric face fluxes [m³/s] for offline transport diagnostics
@@ -25,6 +25,10 @@ using Oceananigans.Operators: Axᶠᶜᶜ, Ayᶜᶠᶜ, ℑxᶜᵃᵃ, ℑyᵃ�
 
 @inline ke_at_ccc(i, j, k, grid, u, v) =
     (ℑxᶜᵃᵃ(i, j, k, grid, ψ², u) + ℑyᵃᶜᵃ(i, j, k, grid, ψ², v)) / 2
+
+# Unit operand so `Integral` returns ∫dV = ocean volume (z-star-live, immersed cells
+# carry zero metric). Closes the freshwater budget: volume drift = net water added.
+@inline one_at_ccc(i, j, k, grid) = one(grid)
 
 """
     add_omip_diagnostics!(simulation; kwargs...)
@@ -193,24 +197,23 @@ function add_omip_diagnostics!(simulation;
                                                     overwrite_existing = true,
                                                     jld2_kw = Dict(:compress => ZstdFilter()))
 
-    # Global means and horizontal-mean depth profiles for T, S, b.
-    # `:zosga` (global-mean free-surface displacement) is a Boussinesq mass-conservation check.
-    # `:kega` and (when CATKE is in use) `:tkega` are written as scalars
-    ke_op = KernelFunctionOperation{Center, Center, Center}(ke_at_ccc, grid, u, v)
+    # `:zosga` (area-mean free-surface displacement) is a Boussinesq mass-conservation check;
+    # the horizontal metric is fixed, so the 2-D `Average` is exact. Depth profiles are per-level
+    # area-means (also exact). Global volume-means, in contrast, are stored as exact `Integral`s and
+    # divided by `:voco` in the visualizer, because `Average` freezes its volume denominator at
+    # construction — wrong on a z-star grid. `:soco`/`:hoco` double as salt/heat content (×ρ/1000
+    # for salt kg, ×ρ·cp for heat J); `:sivol` closes the ocean+ice salt budget via the ice reservoir.
+    vol_op = KernelFunctionOperation{Center, Center, Center}(one_at_ccc, grid)
     average_outputs = Dict{Symbol, Any}(
-        :tosga => Average(T),
-        :soga  => Average(S),
-        :bga   => Average(bop),
         :zosga => Average(η),
-        :kega  => Average(ke_op),
         :to_h  => Average(T,   dims=(1, 2)),
         :so_h  => Average(S,   dims=(1, 2)),
         :bo_h  => Average(bop, dims=(1, 2)),
+        :voco  => Integral(vol_op),
+        :soco  => Integral(S),
+        :hoco  => Integral(T),
+        :sivol => Integral(hi * ℵi),
     )
-
-    if haskey(ocean.model.tracers, :e)
-        average_outputs[:tkega] = Average(ocean.model.tracers.e)
-    end
 
     simulation.output_writers[:averages] = JLD2Writer(ocean.model, average_outputs;
                                                       schedule = AveragedTimeInterval(field_mean_interval),

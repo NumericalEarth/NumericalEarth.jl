@@ -103,6 +103,7 @@ const FIG_REGISTRY = [
     (n = 25, file = "fig25_equatorial_undercurrent.jl",   fn = :fig25),
     (n = 26, file = "fig26_amoc_rapid.jl",                fn = :fig26),
     (n = 27, file = "fig27_ssh_drift.jl",                 fn = :fig27),
+    (n = 28, file = "fig28_content_conservation.jl",      fn = :fig28),
 ]
 
 # ══════════════════════════════════════════════════════════════
