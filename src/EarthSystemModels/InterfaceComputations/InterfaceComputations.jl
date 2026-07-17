@@ -53,6 +53,9 @@ export
     CompositeSurfaceHumidity,
     CanopyAirSpace,
     CanopyInterception,
+    TiledLandInterface,
+    bare_canopy_air_space,
+    leaf_area_index_cover_fraction,
     FarquharPhotosynthesis,
     AbstractStomatalConductance,
     MedlynConductance,
@@ -159,6 +162,7 @@ include("atmosphere_state_correction.jl")
 include("atmosphere_ocean_fluxes.jl")
 include("atmosphere_sea_ice_fluxes.jl")
 include("atmosphere_land_fluxes.jl")
+include("tiled_land_interface.jl")
 include("sea_ice_ocean_fluxes.jl")
 
 end # module

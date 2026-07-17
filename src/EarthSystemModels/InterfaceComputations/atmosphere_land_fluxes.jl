@@ -122,7 +122,7 @@ function compute_atmosphere_land_fluxes!(coupled_model, atmosphere_land_interfac
     # Prescribed leaf area index off the canopy formulation (or `nothing`),
     # reduced to a kernel-friendly value plus its host-side time interpolator.
     leaf_area_index = canopy_leaf_area_index(interface_properties.specific_humidity_formulation)
-    vegetation, leaf_area_index_time_interpolator = kernel_leaf_area_index(leaf_area_index, arch, clock.time)
+    vegetation, leaf_area_index_time_interpolator = kernel_surface_field(leaf_area_index, arch, clock.time)
 
     radiation = coupled_model.radiation
     radiation_kernel_props = kernel_radiation_properties(radiation)
@@ -168,38 +168,41 @@ end
 @inline land_field_value(x, i, j) = @inbounds x[i, j, 1]
 
 #####
-##### Prescribed, possibly time-varying surface inputs (LAI today; roughness /
-##### albedo maps are future consumers). `surface_field_value` reads the per-cell
-##### value from a `Number`, a static `Field`, or — for a `FieldTimeSeries`
-##### interpolated to the model clock — a kernel-friendly `PrescribedLAIData`
-##### bundle. The bundle mirrors the atmosphere state interpolation: the FTS
-##### itself never enters the kernel (its `adapt_structure` does not preserve
-##### `.data`), so the driver extracts `.data` + `backend` + `time_indexing`.
+##### Prescribed, possibly time-varying surface inputs — the leaf area index the
+##### canopy conductance reads and the vegetation fraction the tiled interface
+##### blends with (roughness / albedo maps are future consumers).
+##### `surface_field_value` reads the per-cell value from a `Number`, a static
+##### `Field`, or — for a `FieldTimeSeries` interpolated to the model clock — a
+##### kernel-friendly `PrescribedSurfaceData` bundle. The bundle mirrors the
+##### atmosphere state interpolation: the FTS itself never enters the kernel (its
+##### `adapt_structure` does not preserve `.data`), so `kernel_surface_field`
+##### extracts `.data` + `backend` + `time_indexing` on the host.
 #####
 
-struct PrescribedLAIData{D, B, T}
+struct PrescribedSurfaceData{D, B, T}
     data          :: D
     backend       :: B
     time_indexing :: T
 end
 
-Adapt.adapt_structure(to, p::PrescribedLAIData) =
-    PrescribedLAIData(adapt(to, p.data), adapt(to, p.backend), adapt(to, p.time_indexing))
+Adapt.adapt_structure(to, p::PrescribedSurfaceData) =
+    PrescribedSurfaceData(adapt(to, p.data), adapt(to, p.backend), adapt(to, p.time_indexing))
 
 @inline surface_field_value(x, i, j, time_interpolator) = land_field_value(x, i, j)
-@inline surface_field_value(x::PrescribedLAIData, i, j, time_interpolator) =
+@inline surface_field_value(x::PrescribedSurfaceData, i, j, time_interpolator) =
     interpolate(FractionalIndices(i, j, nothing), time_interpolator, x.data, x.backend, x.time_indexing)
 
-# Host-side: reduce a prescribed-LAI spec to a kernel-friendly value plus the
-# time index used to interpolate it. Constants and static fields pass through
-# untouched (`nothing` interpolator); a `FieldTimeSeries` is reduced to its
-# arrays and its time index is precomputed on the host.
-@inline kernel_leaf_area_index(leaf_area_index, arch, time) = (leaf_area_index, nothing)
-@inline function kernel_leaf_area_index(leaf_area_index::FieldTimeSeries, arch, time)
-    time_interpolator = cpu_interpolating_time_indices(arch, leaf_area_index.times,
-                                                       leaf_area_index.time_indexing, time)
-    bundle = PrescribedLAIData(leaf_area_index.data, leaf_area_index.backend,
-                               leaf_area_index.time_indexing)
+# Host-side: reduce a prescribed-surface spec (LAI, vegetation fraction, …) to a
+# kernel-friendly value plus the time index used to interpolate it. Constants and
+# static fields pass through untouched (`nothing` interpolator); a
+# `FieldTimeSeries` is reduced to its arrays and its time index is precomputed on
+# the host.
+@inline kernel_surface_field(surface_field, arch, time) = (surface_field, nothing)
+@inline function kernel_surface_field(surface_field::FieldTimeSeries, arch, time)
+    time_interpolator = cpu_interpolating_time_indices(arch, surface_field.times,
+                                                       surface_field.time_indexing, time)
+    bundle = PrescribedSurfaceData(surface_field.data, surface_field.backend,
+                                   surface_field.time_indexing)
     return bundle, time_interpolator
 end
 

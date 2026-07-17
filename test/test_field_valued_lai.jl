@@ -7,7 +7,7 @@ using Oceananigans.OutputReaders: FieldTimeSeries
 using Oceananigans.TimeSteppers: update_state!
 using NumericalEarth.EarthSystemModels.InterfaceComputations:
     CanopyConductanceHumidity, JarvisConductance,
-    surface_field_value, kernel_leaf_area_index, PrescribedLAIData,
+    surface_field_value, kernel_surface_field, PrescribedSurfaceData,
     interface_vegetation_state
 using NumericalEarth.Lands: SlabLand, SlabEnergy, SaturatedSurface
 using NumericalEarth.Atmospheres: PrescribedAtmosphere
@@ -45,11 +45,11 @@ using NumericalEarth.Atmospheres: PrescribedAtmosphere
         set!(lai_fts[1], 1)   # LAI = 1 at t = 0
         set!(lai_fts[2], 5)   # LAI = 5 at t = 100
 
-        bundle, titp0   = kernel_leaf_area_index(lai_fts, arch, 0.0)
-        _,      titpmid = kernel_leaf_area_index(lai_fts, arch, 50.0)
-        _,      titp1   = kernel_leaf_area_index(lai_fts, arch, 100.0)
+        bundle, titp0   = kernel_surface_field(lai_fts, arch, 0.0)
+        _,      titpmid = kernel_surface_field(lai_fts, arch, 50.0)
+        _,      titp1   = kernel_surface_field(lai_fts, arch, 100.0)
 
-        @test bundle isa PrescribedLAIData
+        @test bundle isa PrescribedSurfaceData
         @test surface_field_value(bundle, 1, 1, titp0)   ≈ FT(1)
         @test surface_field_value(bundle, 1, 1, titpmid) ≈ FT(3)   # midpoint
         @test surface_field_value(bundle, 1, 1, titp1)   ≈ FT(5)
