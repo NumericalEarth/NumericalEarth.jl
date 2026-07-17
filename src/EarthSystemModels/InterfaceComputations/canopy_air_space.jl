@@ -40,6 +40,52 @@
 end
 
 """
+    struct CanopyInterception
+
+Interface-side parameters of the wet-canopy (interception) vapor branch. A wet
+canopy evaporates intercepted water at the *potential* (stomata-free) rate through
+the leaf boundary layer only, so the leaf vapor conductance blends the dry
+(stomatal) `g_c` with a wet `g_wet = LAI · gᵇ · Mᵈ` by the wet fraction
+
+```math
+f_{wet} = (Wᶜ / Wᶜᵐᵃˣ)^{2/3}, \\qquad Wᶜᵐᵃˣ = c · LAI
+```
+
+([Deardorff, 1978](@cite deardorff1978)). `Wᶜ` is the prognostic canopy water
+store carried by an [`InterceptingHydrology`](@ref); pass the *same*
+`capacity_per_leaf_area` `c` to both. The leaf boundary conductance `gᵇ` is the
+`leaf_boundary_conductance` already on the [`CanopyAirSpace`](@ref).
+
+Fields:
+- `capacity_per_leaf_area` : `c`, canopy water capacity per unit LAI (kg m⁻² ≈ 0.1 mm/LAI).
+- `minimum_leaf_area_index` : LAI floor guarding `Wᶜᵐᵃˣ > 0` in the `f_wet` denominator.
+"""
+struct CanopyInterception{FT}
+    capacity_per_leaf_area  :: FT
+    minimum_leaf_area_index :: FT
+end
+
+CanopyInterception(FT=Oceananigans.defaults.FloatType;
+                   capacity_per_leaf_area = 0.1,
+                   minimum_leaf_area_index = 0.01) =
+    CanopyInterception(convert(FT, capacity_per_leaf_area),
+                       convert(FT, minimum_leaf_area_index))
+
+Base.summary(::CanopyInterception) = "CanopyInterception"
+
+# Deardorff (1978) wet fraction f_wet = (Wᶜ/Wᶜᵐᵃˣ)^(2/3). No interception ⇒ 0,
+# recovering the dry CAS bit-for-bit.
+@inline wet_canopy_fraction(::Nothing, hydrology, LAI) = zero(LAI)
+@inline function wet_canopy_fraction(interception::CanopyInterception, hydrology, LAI)
+    FT        = typeof(LAI)
+    Wᶜ        = convert(FT, hydrology.canopy_water_storage)
+    c         = interception.capacity_per_leaf_area
+    LAI_floor = interception.minimum_leaf_area_index
+    Wᶜᵐᵃˣ     = c * max(LAI, LAI_floor)
+    return clamp((max(Wᶜ, zero(FT)) / Wᶜᵐᵃˣ)^convert(FT, 2//3), zero(FT), one(FT))
+end
+
+"""
     struct CanopyAirSpace
 
 Two-source canopy + soil surface with a diagnostic canopy-air node. Solves the
@@ -57,9 +103,11 @@ Fields:
 - `leaf_boundary_conductance` : per-leaf boundary-layer conductance `gᵇ` (m s⁻¹) → `gˡʰ = ρcₚ·LAI·gᵇ`.
 - `undercanopy_conductance` : ground↔canopy-air conductance (m s⁻¹) → `gᵍʰ = ρcₚ·gᵘᶜ`.
 - `inner_iterations`, `relaxation` : damped-Newton settings for the coupled solve.
+- `interception` : wet-canopy vapor branch parameters (a [`CanopyInterception`](@ref)),
+  or `nothing` for a dry canopy (the default; recovers the current CAS bit-for-bit).
 - `phase` : saturation phase (Liquid).
 """
-struct CanopyAirSpace{S, C, RF, FT, Φ}
+struct CanopyAirSpace{S, C, RF, FT, I, Φ}
     soil                      :: S
     canopy                    :: C
     soil_skin_flux            :: RF
@@ -73,6 +121,7 @@ struct CanopyAirSpace{S, C, RF, FT, Φ}
     undercanopy_conductance   :: FT
     inner_iterations          :: Int
     relaxation                :: FT
+    interception              :: I
     phase                     :: Φ
 end
 
@@ -90,6 +139,7 @@ function CanopyAirSpace(FT=Oceananigans.defaults.FloatType;
                         undercanopy_conductance   = 0.013,
                         inner_iterations          = 40,
                         relaxation                = 1//2,
+                        interception              = nothing,
                         phase                     = AtmosphericThermodynamics.Liquid())
 
     return CanopyAirSpace(soil, canopy, soil_skin_flux,
@@ -98,7 +148,7 @@ function CanopyAirSpace(FT=Oceananigans.defaults.FloatType;
                           convert(FT, extinction), convert(FT, clumping),
                           convert(FT, leaf_boundary_conductance),
                           convert(FT, undercanopy_conductance),
-                          inner_iterations, convert(FT, relaxation), phase)
+                          inner_iterations, convert(FT, relaxation), interception, phase)
 end
 
 Base.summary(::CanopyAirSpace) = "CanopyAirSpace"
@@ -108,8 +158,15 @@ Base.show(io::IO, c::CanopyAirSpace) =
 # Materialization / identity — delegate to the sub-models so the per-cell interface
 # state carries the soil saturation, bulk temperature, and LAI the branches read.
 @inline interface_phase(c::CanopyAirSpace) = interface_phase(c.soil)
+# The soil branch always publishes the saturation 𝒮; a canopy with interception
+# additionally pulls the prognostic canopy water store Wᶜ (→ f_wet).
 @inline interface_hydrology_state(i, j, grid, c::CanopyAirSpace, land_state) =
+    canopy_air_space_hydrology_state(c.interception, i, j, grid, c, land_state)
+@inline canopy_air_space_hydrology_state(::Nothing, i, j, grid, c, land_state) =
     interface_hydrology_state(i, j, grid, c.soil, land_state)
+@inline canopy_air_space_hydrology_state(::CanopyInterception, i, j, grid, c, land_state) =
+    merge(interface_hydrology_state(i, j, grid, c.soil, land_state),
+          (canopy_water_storage = land_field_value(land_state.canopy_water_storage, i, j),))
 @inline interface_energy_state(i, j, grid, c::CanopyAirSpace, land_state) =
     interface_energy_state(i, j, grid, c.soil, land_state)
 @inline canopy_leaf_area_index(c::CanopyAirSpace) = canopy_leaf_area_index(c.canopy)
@@ -155,6 +212,13 @@ uses the `Δ`-multiplied Kirchhoff form so it stays finite as the flux vanishes.
     gᵍʰ = ρᵃᵗ * cᵖ * c.undercanopy_conductance
     Λ   = convert(FT, skin_conductance(c.soil_skin_flux))
 
+    # Wet-canopy vapor branch. `f_wet` (Deardorff 1978) blends the dry stomatal
+    # conductance `g_c` with the stomata-free wet-leaf conductance `g_wet = LAI·gᵇ·Mᵈ`,
+    # so intercepted water evaporates at the potential rate through the leaf boundary
+    # layer. `f_wet = 0` (no interception) recovers the dry CAS bit-for-bit.
+    f_wet = wet_canopy_fraction(c.interception, Ψₛ.hydrology, LAI)
+    g_wet = LAI * c.leaf_boundary_conductance * convert(FT, default_dry_air_molar_mass)
+
     # Shortwave split + longwave emissivities (broadband).
     σ   = Ψᵣ.σ
     SW  = Ψᵣ.ℐꜜˢʷ
@@ -178,14 +242,18 @@ uses the `Δ`-multiplied Kirchhoff form so it stays finite as the flux vanishes.
         g_c, qᵛ   = canopy_conductance_terms(c.canopy, Tᵛ, Ψₛ, Ψₐ, Ψᵣ, ℙₐ)
         Gᵉ, qᵉ, _, _ = dry_layer_terms(c.soil, Tⁱⁿ, Ψₛ, Ψₐ, ℙₐ)
 
+        # Blended leaf vapor conductance: dry (stomatal) g_c over the transpiring
+        # fraction, wet (boundary-layer) g_wet over the wetted fraction f_wet.
+        g_leaf = (1 - f_wet) * g_c + f_wet * g_wet
+
         # Δ-multiplied Kirchhoff node (as the humidity node in CompositeSurfaceHumidity);
         # guard the transient case where the aerodynamic and surface conductances cancel
         # (Dᵀ ≈ 0) before the outer MO loop is consistent, keeping the node finite.
         Dᵀ  = (gᵍʰ + gˡʰ) * Δθᵃ + 𝒬ᵀ
         Tᵃᶜ★ = ((gᵍʰ * Tⁱⁿ + gˡʰ * Tᵛ) * Δθᵃ + 𝒬ᵀ * θᵃᵗ) / Dᵀ
         Tᵃᶜ = ifelse((Dᵀ == 0) | !isfinite(Tᵃᶜ★), Tᵃᶜ, Tᵃᶜ★)
-        Dᵠ  = (Gᵉ + g_c) * Δqᵃ + Jᵃ
-        qᵃᶜ★ = ((Gᵉ * qᵉ + g_c * qᵛ) * Δqᵃ + Jᵃ * qᵃᵗ) / Dᵠ
+        Dᵠ  = (Gᵉ + g_leaf) * Δqᵃ + Jᵃ
+        qᵃᶜ★ = ((Gᵉ * qᵉ + g_leaf * qᵛ) * Δqᵃ + Jᵃ * qᵃᵗ) / Dᵠ
         qᵃᶜ = ifelse((Dᵠ == 0) | !isfinite(qᵃᶜ★), qᵃᶜ, qᵃᶜ★)
 
         LWd_c     = (1 - ε_c) * LWd + ε_c * σ * Tᵛ^4
@@ -194,8 +262,8 @@ uses the `Δ`-multiplied Kirchhoff form so it stays finite as the flux vanishes.
         ground_lw = ε_g * (LWd_c - σ * Tⁱⁿ^4)
 
         Rᵥ   = canopy_SW + canopy_lw
-        resᵥ = Rᵥ - gˡʰ * (Tᵛ - Tᵃᶜ) - ℒ * g_c * (qᵛ - qᵃᶜ)
-        dRᵥ  = -8 * ε_c * σ * Tᵛ^3 - gˡʰ - ℒ * g_c * saturation_humidity_slope(ℂᵃᵗ, Tᵛ, pᵃᵗ, c.phase)
+        resᵥ = Rᵥ - gˡʰ * (Tᵛ - Tᵃᶜ) - ℒ * g_leaf * (qᵛ - qᵃᶜ)
+        dRᵥ  = -8 * ε_c * σ * Tᵛ^3 - gˡʰ - ℒ * g_leaf * saturation_humidity_slope(ℂᵃᵗ, Tᵛ, pᵃᵗ, c.phase)
         Tᵛ   = ifelse(abs(dRᵥ) < tiny, Tᵃᶜ, Tᵛ - clamp(relax * resᵥ / dRᵥ, -max_ΔT, max_ΔT))
         Tᵛ   = clamp(Tᵛ, Tₗₒ, Tₕᵢ)
 
@@ -210,6 +278,7 @@ uses the `Δ`-multiplied Kirchhoff form so it stays finite as the flux vanishes.
     # the effective radiating (LST) temperature σ T_eff⁴ ≡ LWu (upwelling to space).
     g_c, qᵛ   = canopy_conductance_terms(c.canopy, Tᵛ, Ψₛ, Ψₐ, Ψᵣ, ℙₐ)
     Gᵉ, qᵉ, _, _ = dry_layer_terms(c.soil, Tⁱⁿ, Ψₛ, Ψₐ, ℙₐ)
+    g_leaf = (1 - f_wet) * g_c + f_wet * g_wet
     LWd_c = (1 - ε_c) * LWd + ε_c * σ * Tᵛ^4
     LWu_g = ε_g * σ * Tⁱⁿ^4 + (1 - ε_g) * LWd_c
     LWu   = (1 - ε_c) * LWu_g + ε_c * σ * Tᵛ^4
@@ -217,16 +286,17 @@ uses the `Δ`-multiplied Kirchhoff form so it stays finite as the flux vanishes.
 
     Hᵛ    = gˡʰ * (Tᵛ - Tᵃᶜ)
     Hᵍ    = gᵍʰ * (Tⁱⁿ - Tᵃᶜ)
-    LEᵛ   = ℒ * g_c * (qᵛ - qᵃᶜ)
+    LEᵛ   = ℒ * g_leaf * (qᵛ - qᵃᶜ)              # total leaf latent (transpiration + wet-canopy)
     LEᵍ   = ℒ * Gᵉ * (qᵉ - qᵃᶜ)
     Gcond = Λ * (Tⁱⁿ - Tˡᵃ)
+    E_wet = f_wet * g_wet * (qᵛ - qᵃᶜ)           # wet-canopy evaporation, mass flux (kg m⁻² s⁻¹, up)
 
     return (; Tᵛ = convert(FT, Tᵛ), Tⁱⁿ = convert(FT, Tⁱⁿ),
               Tᵃᶜ = convert(FT, Tᵃᶜ), qᵃᶜ = convert(FT, qᵃᶜ),
               Teff = convert(FT, Teff),
               Hᵛ = convert(FT, Hᵛ), Hᵍ = convert(FT, Hᵍ),
               LEᵛ = convert(FT, LEᵛ), LEᵍ = convert(FT, LEᵍ),
-              Gcond = convert(FT, Gcond))
+              Gcond = convert(FT, Gcond), E_wet = convert(FT, E_wet))
 end
 
 @inline compute_interface_temperature(c::CanopyAirSpace,

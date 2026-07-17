@@ -52,6 +52,7 @@ export
     CanopyConductanceHumidity,
     CompositeSurfaceHumidity,
     CanopyAirSpace,
+    CanopyInterception,
     FarquharPhotosynthesis,
     AbstractStomatalConductance,
     MedlynConductance,

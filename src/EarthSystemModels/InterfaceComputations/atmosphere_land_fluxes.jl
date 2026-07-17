@@ -52,7 +52,8 @@ end
      canopy_latent_heat   = Field{Center, Center, Nothing}(grid),   # leaf transpiration LEᵛ
      soil_latent_heat     = Field{Center, Center, Nothing}(grid),   # soil evaporation LEᵍ
      canopy_sensible_heat = Field{Center, Center, Nothing}(grid),   # leaf sensible Hᵛ
-     soil_sensible_heat   = Field{Center, Center, Nothing}(grid))   # ground sensible Hᵍ
+     soil_sensible_heat   = Field{Center, Center, Nothing}(grid),   # ground sensible Hᵍ
+     canopy_evaporation   = Field{Center, Center, Nothing}(grid))   # wet-canopy evaporation E_wet (kg m⁻² s⁻¹, up)
 
 # Store the diagnostic surface temperature(s) from the converged interface state.
 # Ordinary closures write the single skin temperature; a `CanopyAirSpace` re-runs its
@@ -74,6 +75,7 @@ end
         Ts.soil_latent_heat[i, j, 1]     = sol.LEᵍ
         Ts.canopy_sensible_heat[i, j, 1] = sol.Hᵛ
         Ts.soil_sensible_heat[i, j, 1]   = sol.Hᵍ
+        Ts.canopy_evaporation[i, j, 1]   = sol.E_wet
     end
     return nothing
 end
@@ -112,7 +114,8 @@ function compute_atmosphere_land_fluxes!(coupled_model, atmosphere_land_interfac
     # temperature, etc. from them.
     land_exchanger_state = exchanger.land.state
     land_state = (T = land_exchanger_state.T,
-                  saturation = land_exchanger_state.saturation)
+                  saturation = land_exchanger_state.saturation,
+                  canopy_water_storage = land_exchanger_state.canopy_water_storage)
 
     land_properties = atmosphere_land_surface_properties(land_exchanger_state)
 
