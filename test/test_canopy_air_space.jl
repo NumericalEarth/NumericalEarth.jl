@@ -80,6 +80,18 @@ end
         Es = Array(interior(model.land.fluxes.surface_energy_flux))[1, 1, 1]
         @test Es ≈ -Gᶜ atol = 1e-6
 
+        # Two-source flux shares: the leaf/ground sensible and latent shares are finite
+        # and sum to the atmosphere-facing totals (node continuity).
+        Hᵛ  = Array(interior(Ts.canopy_sensible_heat))[1, 1, 1]
+        Hᵍ  = Array(interior(Ts.soil_sensible_heat))[1, 1, 1]
+        LEᵛ = Array(interior(Ts.canopy_latent_heat))[1, 1, 1]
+        LEᵍ = Array(interior(Ts.soil_latent_heat))[1, 1, 1]
+        @test all(isfinite, (Hᵛ, Hᵍ, LEᵛ, LEᵍ))
+        @test Hᵛ + Hᵍ ≈ 𝒬ᵀ rtol = 1e-2
+        @test LEᵛ + LEᵍ ≈ 𝒬ᵛ rtol = 1e-2
+        # Sunlit dense canopy: transpiration is the larger latent source.
+        @test LEᵛ > LEᵍ
+
         # A brighter sun warms the leaf.
         model_dark = canopy_air_space_model(arch, cas; shortwave = 0.0)
         Tᵛ_dark = Array(interior(model_dark.interfaces.atmosphere_land_interface.temperature.canopy))[1, 1, 1]
