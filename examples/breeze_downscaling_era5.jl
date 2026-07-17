@@ -1,8 +1,9 @@
-# # ERA5 → 12 km convection-permitting hindcast (Breeze + NestedModel)
+# # ERA5 → 25 km central-Pacific hindcast (Breeze + NestedModel)
 #
-# A limited-area model (LAM) example that downscales ERA5 reanalysis to a ~12 km Breeze compressible
-# atmosphere over the U.S. Southern Great Plains, for the Midlatitude Continental Convective Clouds
-# Experiment (MC3E) 20 May 2011 squall-line case ([Fan2017](@citet)).
+# A limited-area model (LAM) example that downscales ERA5 reanalysis to a ~25 km Breeze compressible
+# atmosphere over a ~30° square of the central North Pacific centered on the Hawaiian islands:
+# trade-wind flow and its inversion-capped moist marine boundary layer, with the wakes and orographic
+# clouds of the islands' volcanoes, and every open boundary over ocean.
 #
 # `nested_atmosphere_model(grid, dataset; dates, …)` builds the whole nest: an ERA5 "parent"
 # `PrescribedAtmosphere` on its native 0.25° pressure-level grid, driving a Breeze "child" through open
@@ -17,12 +18,14 @@
 #   terrain-consistent `w̃ ≈ 0`, and a dynamical-initialization (DFI) pass that balances `ρw`.
 # - Integrates the compressible equations with split-explicit acoustic substepping, 1-moment
 #   mixed-phase microphysics, Coriolis, bulk surface drag, and Rayleigh damping.
-# - Writes and animates horizontal slices.
+# - Writes and animates horizontal slices and a vertical section.
 #
 # ## What it does NOT do (yet)
-# - Single nest only (ERA5 → 12 km; coarsened 4× from Fan's 3 km Domain 3 for a fast configuration).
+# - Single nest only, and a light one: 25 km is only a ~1.1× refinement of ERA5's native 0.25° grid,
+#   so this is closer to a regional replay of the reanalysis than a convection-permitting downscaling.
 # - No land/ocean coupling (surface stress is a bulk-drag stand-in) and no boundary-layer or cumulus
-#   parameterization: diffusion is numerical, and deep convection is resolved on the grid.
+#   parameterization: at 25 km convection is neither resolved nor parameterized, so what convection
+#   occurs collapses to grid scale — fine for a demo, not for rainfall statistics.
 
 using NumericalEarth
 using Oceananigans
@@ -36,7 +39,7 @@ using CUDA
 using Printf
 using Dates: DateTime, Second
 
-# This 12 km LAM (150×136×50 ≈ 1.0M cells, split-explicit) targets a CUDA GPU; switch to `CPU()` only
+# This 25 km LAM (133×133×50 ≈ 0.9M cells, split-explicit) targets a CUDA GPU; switch to `CPU()` only
 # for a small smoke test.
 arch = GPU()
 
@@ -45,28 +48,31 @@ Oceananigans.defaults.FloatType = Float32
 
 # ## Configuration
 #
-# Domain centered on the DOE Atmospheric Radiation Measurement (ARM) Southern Great Plains (SGP) site
-# in Lamont, OK — the 3 km Domain 3 of the WRF telescoping nest in [Fan2017](@citet), coarsened 4×
-# and driven directly by ERA5.
+# Domain centered on the Hawaiian island chain: a ~30° square whose open boundaries all lie over
+# the Pacific, so the lateral forcing never crosses continental terrain.
 
 ## dates
-duration = 18hours
+name = "hawaii"
+duration = 3hours #20minutes #4 * 24hours
 start_date = DateTime(2011, 05, 20, 0)
 stop_date = start_date + Second(duration)
 
 ## location
-φ₀, λ₀ = 36.605, -97.485    # center latitude, longitude (deg)
-Lλ, Lφ = 16.7, 15.1
+φ₀, λ₀ = 20.8, -157.5    # center latitude, longitude (deg): mid-chain, between Oʻahu and the Big Island
+Lλ, Lφ = 30.0, 30.0
 
-## horizontal resolution
-Nx, Ny = 150, 136 # grid cells (ERA5 → 12 km)
+## horizontal resolution: grid spacing in degrees; the cell counts follow from the extent
+## (which stays fixed, so the realized spacing Lλ/Nx only approximates Δλ)
+Δλ = Δφ = 0.1   # ≈ 25 km in latitude (a light refinement of ERA5's native 0.25°)
+Nx = round(Int, Lλ / Δλ)
+Ny = round(Int, Lφ / Δφ)
 
 dates = (start_date, stop_date)
 λ_west, λ_east   = λ₀ .+ [-1, 1] .* Lλ / 2
 φ_south, φ_north = φ₀ .+ [-1, 1] .* Lφ / 2
 
-# Vertical grid matched to [Fan2017](@citet)'s WRF nest: `Nz = 50` cells, a constant 60 m surface
-# cell, 490 m maximum spacing, and a model top at ~20 km (~50 hPa).
+# Stretched vertical grid: `Nz = 50` cells, a constant 60 m surface cell, 490 m maximum spacing,
+# and a model top at ~20 km (~50 hPa).
 
 z = ReferenceToStretchedDiscretization(extent = 19525.0,
                                        bias = :left,
@@ -119,8 +125,10 @@ model = nested_atmosphere_model(grid, dataset;
                                 dir = era5_datadir,
                                 terrain = ETOPO2022(),
                                 terrain_blend_width = relax_width,
+                                terrain_smoothing_passes = 1,
                                 relaxation_rate = 1/300,
                                 relaxation_width = relax_width,
+                                bottom_drag_coefficient = 1.1e-3,  ## neutral log-law (κ / log(z₁/z₀))², open-ocean z₀ ≈ 2×10⁻⁴ m at the 30 m first-cell center
                                 momentum_advection = WENO(order = 5))
 
 # The realized parent region (child + padding, snapped to the native 0.25° grid) serves the domain
@@ -130,17 +138,17 @@ era5_region = BoundingBox(parent.grid)
 
 # ## Nested domains
 #
-# Visualize the nesting before stepping the model — the ERA5 forcing region and the 12 km LAM child,
+# Visualize the nesting before stepping the model — the ERA5 forcing region and the 25 km LAM child,
 # over ETOPO relief with Natural Earth state/country boundaries — so the domain geometry is written
 # even if the run is cut short.
 
 fig = visualize_nested_domain(grid;
                               parent = era5_region,
                               padding = 2.5,
-                              title = "ERA5 → 12 km LAM nest (MC3E squall line, ARM SGP)",
-                              label = "12 km LAM (child)",
+                              title = "ERA5 → 25 km LAM nest (Hawaiʻi, central North Pacific)",
+                              label = "25 km LAM (child)",
                               parent_label = "ERA5 parent",
-                              landmarks = tuple("ARM SGP" => (λ₀, φ₀)))
+                              landmarks = tuple("Honolulu" => (-157.86, 21.31)))
 
 save("era5_breeze_domains.png", fig)
 
@@ -153,46 +161,46 @@ fig
 
 # ## Simulation
 #
-# A plain `Simulation` steps the `NestedModel`. `bulk_drag` fills the coupling bottom-stress fields
-# (pre-wired by `atmosphere_model` for the forthcoming SlabLand coupling) with a bulk neutral log-law
-# surface stress — the dominant near-surface momentum sink until a land model is attached. The
-# acoustic modes are substepped, so the adaptive outer Δt is bounded by the (slower) advective CFL.
+# A plain `Simulation` steps the `NestedModel`. The `bottom_drag_coefficient` above installed Breeze
+# `BulkDrag` bottom boundary conditions on the momentum densities — a bulk surface stress from the
+# face-located near-surface velocity, with surface density from ERA5's skin temperature — the dominant
+# near-surface momentum sink until a land model is attached. The acoustic modes are substepped, so the
+# adaptive outer Δt is bounded by the (slower) advective CFL.
 
-Δt = 10
+Δt = 1
 simulation = Simulation(model; Δt, stop_time=duration)
-add_callback!(simulation, bulk_drag(model), IterationInterval(1))
 conjure_time_step_wizard!(simulation, IterationInterval(3); cfl=0.5, max_Δt=Δt)
 
 # ## Output
 #
-# Two `JLD2Writer`s save 2-D horizontal slices of online diagnostics — never the 3-D fields, which
-# would overflow the disk. On the terrain-following grid a constant reference level ≈ constant height
-# above ground near the surface, so `k_aloft` is the reference level nearest 2 km. Each output is an
-# `AbstractOperation` (Breeze's diagnostic accessors) that the writer computes and slices at save
-# time via `indices` — so `θᵥ`/`|U|` land as surface fields and `w`/`qᵛ`/`qʳ` as 2-km-AGL fields.
+# Three `JLD2Writer`s save 2-D slices of one shared `fields` NamedTuple of online diagnostics —
+# never the 3-D fields, which would overflow the disk. Each output is an `AbstractOperation`
+# (Breeze's diagnostic accessors) that every writer computes and slices at save time via its own
+# `indices`: horizontal slices at the surface and at `k_aloft` (the reference level nearest 2 km —
+# on the terrain-following grid a constant reference level ≈ constant height above ground near the
+# surface), and a zonal x-z section at `j_section`, the latitude row through Maui.
 
 child = model.child
 k_aloft = searchsortedfirst(Array(znodes(grid, Center())), 2000)
+j_section = searchsortedfirst(Array(φnodes(grid, Center(), Center(), Center())), φ₀)
 
-surface_fields = (θᵥ = VirtualPotentialTemperature(child),
-                  U  = sqrt(child.velocities.u^2 + child.velocities.v^2))
+fields = (θᵛ = VirtualPotentialTemperature(child),
+          U  = sqrt(child.velocities.u^2 + child.velocities.v^2),
+          w  = child.velocities.w,
+          qᵛ = specific_humidity(child),
+          qʳ = child.microphysical_fields.qʳ)
 
-aloft_fields   = (w  = child.velocities.w,
-                  qᵛ = specific_humidity(child),
-                  qʳ = child.microphysical_fields.qʳ)
+surface_filename = name * "_surface.jld2"
+aloft_filename   = name * "_aloft.jld2"
+section_filename = name * "_section.jld2"
 
-surface_filename = "era5_breeze_surface.jld2"
-aloft_filename   = "era5_breeze_aloft.jld2"
 schedule = TimeInterval(20minutes)
-simulation.output_writers[:surface] = JLD2Writer(child, surface_fields; schedule,
-                                                 filename = surface_filename,
-                                                 indices = (:, :, 1),
-                                                 overwrite_existing = true)
+slice_writer(indices, filename) = JLD2Writer(child, fields; schedule, filename, indices,
+                                             overwrite_existing = true)
 
-simulation.output_writers[:aloft]   = JLD2Writer(child, aloft_fields; schedule,
-                                                 filename = aloft_filename,
-                                                 indices = (:, :, k_aloft),
-                                                 overwrite_existing = true)
+simulation.output_writers[:surface] = slice_writer((:, :, 1),         surface_filename)
+simulation.output_writers[:aloft]   = slice_writer((:, :, k_aloft),   aloft_filename)
+simulation.output_writers[:section] = slice_writer((:, j_section, :), section_filename)
 
 function progress(sim)
     child = sim.model.child
@@ -200,7 +208,7 @@ function progress(sim)
     ρ  = child.dynamics.total_density
     qᵛ = specific_humidity(child)
     qʳ = child.microphysical_fields.qʳ
-    @info @sprintf("iter=%4d, t=%s, Δt=%s, max|u|=(%7.2f, %7.2f, %6.2f)  ρ ∈ [%.4f, %.4f], qᵛ ∈ [%.4g, %.4g], qʳ ∈ [%.2g, %.2g]",
+    @info @sprintf("iter=%4d, t=%s, Δt=%s, max|u|=(%7.2f, %7.2f, %6.2f), ρ ∈ [%.4f, %.4f], qᵛ ∈ [%.4g, %.4g], qʳ ∈ [%.2g, %.2g]",
                    sim.model.clock.iteration, prettytime(sim), prettytime(sim.Δt),
                    maximum(abs, u), maximum(abs, v), maximum(abs, w), minimum(ρ), maximum(ρ),
                    minimum(qᵛ), maximum(qᵛ), minimum(qʳ), maximum(qʳ))
@@ -213,21 +221,30 @@ add_callback!(simulation, progress, IterationInterval(100))
 
 run!(simulation)
 
+#=
+u, v, w = child.velocities
+U = Field(sqrt(u^2 + v^2), indices=(:, :, 1))
+fig = Figure()
+ax = Axis(fig[1, 1])
+heatmap!(ax, U; colormap = :speed, colorrange = (0, 30))
+save("era5_breeze_25km_U.png", fig)
+=#
+
 # ## Cascade animation
 #
 # A 2-row × 5-column animation of the downscaling: row 1 the ERA5 parent (dashed rectangle = child
-# extent), row 2 the Breeze child. Columns are near-surface θᵥ′ (referenced pointwise to t=0, so the
+# extent), row 2 the Breeze child. Columns are near-surface θᵛ′ (referenced pointwise to t=0, so the
 # terrain/stratification background cancels and the cold pool stands out) and wind speed |U|, then
 # w, qᵛ, qʳ at 2 km. The saved slices load straight back as `FieldTimeSeries` and plot directly —
 # `heatmap!` reads each 2-D `Field`'s own coordinates and moves it host-side, so there is no manual
-# indexing, and the θᵥ′ anomaly `θᵥ[n] - θᵥ[1]` is a lazy field operation.
+# indexing, and the θᵛ′ anomaly `θᵛ[n] - θᵛ[1]` is a lazy field operation.
 
-θᵥ_series = FieldTimeSeries(surface_filename, "θᵥ")
+θᵛ_series = FieldTimeSeries(surface_filename, "θᵛ")
 U_series  = FieldTimeSeries(surface_filename, "U")
 w_series  = FieldTimeSeries(aloft_filename, "w")
 qᵛ_series = FieldTimeSeries(aloft_filename, "qᵛ")
 qʳ_series = FieldTimeSeries(aloft_filename, "qʳ")
-times = θᵥ_series.times
+times = θᵛ_series.times
 
 # The parent is prescribed (no output file). Its rows are reconstructed at each frame time from the
 # parent's own raw ERA5 fields — which are full-in-memory `FieldTimeSeries` — via `breeze_prognostic_state`,
@@ -251,7 +268,7 @@ function parent_slices(t)
                         parent.temperature[Time(t)], parent.specific_humidity[Time(t)],
                         qˡ, qⁱ, parent.pressure)
     u, v = parent.velocities.u[Time(t)], parent.velocities.v[Time(t)]
-    return (θᵥ = slice(θˡⁱ * (1 + ε * qᵗ),           1),
+    return (θᵛ = slice(θˡⁱ * (1 + ε * qᵗ),           1),
             U  = slice(sqrt(u^2 + v^2),              1),
             w  = slice(-ω_series[Time(t)] / (ρ * g), k_parent),
             qᵛ = slice(qᵗ,                           k_parent))
@@ -261,13 +278,13 @@ nothing #hide
 
 # One column each: title, colormap, and the child/parent 2-D fields as functions of the frame `n`.
 # `nothing` parent ⇒ blank panel (rain). Fixed, illustrative color ranges (this is a demo, not a
-# tuned figure); `w` alone differs ~10× between parent and child, so it carries a range per row.
+# tuned figure); `w` alone differs between parent and child, so it carries a range per row.
 g_per_kg(field) = 1f3 * field
-columns = [(title = "θᵥ′ₛ (K)",       colormap = :balance, child_range = (-6, 6),  parent_range = (-6, 6),
-            child = n -> θᵥ_series[n] - θᵥ_series[1], parent = n -> parent_frames[n].θᵥ - parent_frames[1].θᵥ),
-           (title = "|U|ₛ (m s⁻¹)",   colormap = :speed,   child_range = (0, 30),  parent_range = (0, 30),
+columns = [(title = "θᵛ′ₛ (K)",       colormap = :balance, child_range = (-6, 6),  parent_range = (-6, 6),
+            child = n -> θᵛ_series[n] - θᵛ_series[1], parent = n -> parent_frames[n].θᵛ - parent_frames[1].θᵛ),
+           (title = "|U|ₛ (m s⁻¹)",   colormap = :speed,   child_range = (0, 20),  parent_range = (0, 20),
             child = n -> U_series[n],                 parent = n -> parent_frames[n].U),
-           (title = "w₂ₖₘ (m s⁻¹)",   colormap = :balance, child_range = (-3, 3),  parent_range = (-0.3, 0.3),
+           (title = "w₂ₖₘ (m s⁻¹)",   colormap = :balance, child_range = (-1, 1),  parent_range = (-0.3, 0.3),
             child = n -> w_series[n],                 parent = n -> parent_frames[n].w),
            (title = "qᵛ₂ₖₘ (g kg⁻¹)", colormap = :dense,   child_range = (0, 15),  parent_range = (0, 15),
             child = n -> g_per_kg(qᵛ_series[n]),      parent = n -> g_per_kg(parent_frames[n].qᵛ)),
@@ -296,7 +313,7 @@ function panel!(ax, field_of, colormap, colorrange)
 end
 
 Label(fig_cascade[0, 1:5],
-      @lift(@sprintf("MC3E 20 May 2011 — ERA5 → 12 km Breeze — t = %.1f h", times[$cascade_n] / 3600)),
+      @lift(@sprintf("Hawaiʻi 20 May 2011 — ERA5 → 25 km Breeze — t = %.1f h", times[$cascade_n] / 3600)),
       fontsize = 20, tellwidth = false)
 
 for (i, column) in enumerate(columns)
@@ -313,15 +330,15 @@ for (i, column) in enumerate(columns)
         lines!(parent_ax, boxλ, boxφ; color = :black, linestyle = :dash, linewidth = 1.5)
         if column.parent_range == column.child_range
             Colorbar(fig_cascade[3, i], hmc; vertical = false, flipaxis = false, height = 10)
-        else   ## w differs ~10× parent-to-child — a colorbar per row
+        else   ## w differs parent-to-child — a colorbar per row
             Colorbar(fig_cascade[3, i], hmp; vertical = false, flipaxis = false, height = 10, label = "ERA5")
-            Colorbar(fig_cascade[4, i], hmc; vertical = false, flipaxis = false, height = 10, label = "12 km")
+            Colorbar(fig_cascade[4, i], hmc; vertical = false, flipaxis = false, height = 10, label = "25 km")
         end
     end
     hidedecorations!(parent_ax); hidedecorations!(child_ax)
     if i == 1
         text!(parent_ax, 0.03, 0.97; text = "ERA5",         space = :relative, align = (:left, :top), color = :white, fontsize = 15, font = :bold)
-        text!(child_ax,  0.03, 0.97; text = "Breeze 12 km", space = :relative, align = (:left, :top), color = :white, fontsize = 15, font = :bold)
+        text!(child_ax,  0.03, 0.97; text = "Breeze 25 km", space = :relative, align = (:left, :top), color = :white, fontsize = 15, font = :bold)
     end
 end
 CairoMakie.record(fig_cascade, "era5_cascade_2row.mp4", eachindex(times); framerate = 8) do nn
@@ -330,3 +347,50 @@ end
 nothing #hide
 
 # ![](era5_cascade_2row.mp4)
+
+# ## Section animation
+#
+# The vertical structure along the zonal x-z section through Maui: wind speed (the trade-wind layer
+# near the surface, split and decelerated in the islands' wakes, and the subtropical jet aloft),
+# vertical velocity (orographic ascent on the windward slopes, lee waves downstream), and water vapor
+# (the moist marine boundary layer capped by the trade inversion near 2 km, exactly the `k_aloft`
+# level of the horizontal slices). The section slices load back as `FieldTimeSeries` of
+# 2-D fields on the terrain-following grid, and `heatmap!` maps them to physical ``(λ, z)``
+# coordinates directly — one `@lift` per panel is the whole animation machinery.
+
+U_section  = FieldTimeSeries(section_filename, "U")
+w_section  = FieldTimeSeries(section_filename, "w")
+qᵛ_section = FieldTimeSeries(section_filename, "qᵛ")
+
+φ_section = Array(φnodes(grid, Center(), Center(), Center()))[j_section]
+
+section_n = Observable(1)
+Uₙ  = @lift U_section[$section_n]
+wₙ  = @lift w_section[$section_n]
+qᵛₙ = @lift g_per_kg(qᵛ_section[$section_n])
+
+fig_section = Figure(size = (1000, 900))
+
+Label(fig_section[0, 1:2],
+      @lift(@sprintf("Hawaiʻi 20 May 2011 — vertical structure at %.2f°N — t = %.1f h",
+                     φ_section, times[$section_n] / 3600)),
+      fontsize = 20, tellwidth = false)
+
+ax_U = Axis(fig_section[1, 1]; ylabel = "z (m)", title = "|U| (m s⁻¹)")
+ax_w = Axis(fig_section[2, 1]; ylabel = "z (m)", title = "w (m s⁻¹)")
+ax_q = Axis(fig_section[3, 1]; ylabel = "z (m)", xlabel = "longitude (°)", title = "qᵛ (g kg⁻¹)")
+
+hm_U = heatmap!(ax_U, Uₙ;  colormap = :speed,   colorrange = (0, 40))
+hm_w = heatmap!(ax_w, wₙ;  colormap = :balance, colorrange = (-1, 1))
+hm_q = heatmap!(ax_q, qᵛₙ; colormap = :dense,   colorrange = (0, 15))
+
+Colorbar(fig_section[1, 2], hm_U)
+Colorbar(fig_section[2, 2], hm_w)
+Colorbar(fig_section[3, 2], hm_q)
+
+CairoMakie.record(fig_section, "era5_section_xz.mp4", eachindex(times); framerate = 8) do nn
+    section_n[] = nn
+end
+nothing #hide
+
+# ![](era5_section_xz.mp4)

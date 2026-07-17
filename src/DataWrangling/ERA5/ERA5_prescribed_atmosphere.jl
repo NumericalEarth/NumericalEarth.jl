@@ -1,4 +1,4 @@
-using ...Atmospheres: PrescribedAtmosphere, PrescribedPrecipitationFlux,
+using ...Atmospheres: Atmospheres, PrescribedAtmosphere, PrescribedPrecipitationFlux,
                       AtmosphereThermodynamicsParameters
 using ...EarthSystemModels.InterfaceComputations: saturation_specific_humidity
 using Oceananigans.AbstractOperations: KernelFunctionOperation
@@ -220,5 +220,5 @@ end
 Dataset-dispatched constructor: build an [`ERA5PrescribedAtmosphere`](@ref) over `bounding_box`
 at `dates` on `dataset`'s native grid. Keyword arguments flow to `ERA5PrescribedAtmosphere`.
 """
-PrescribedAtmosphere(bounding_box::BoundingBox, dates, dataset::ERA5PressureLevelsDataset; kw...) =
+Atmospheres.PrescribedAtmosphere(bounding_box::BoundingBox, dates, dataset::ERA5PressureLevelsDataset; kw...) =
     ERA5PrescribedAtmosphere(bounding_box, dates; dataset, kw...)
