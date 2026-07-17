@@ -43,12 +43,19 @@ export
     AtmosphereLandModel,
     NestedModel,
     NestedSimulation,
+    nested_atmosphere_model,
     parent_boundary_conditions,
     parent_forcings,
     # Atmosphere-land interface closures
+    BulkHumidity,
     SkinHumidity,
     FractionalHumidity,
     CriticalSaturation,
+    DryLayerHumidity,
+    StorageBasedDryLayerDepth,
+    DryLayerVaporPistonVelocity,
+    ConstantTortuosity,
+    PowerLawTortuosity,
     ElevationCorrection,
     atmosphere_land_interface,
     SlabOcean,
@@ -76,6 +83,8 @@ export
     TabulatedAlbedo,
     SeaIceAlbedo,
     SimilarityTheoryFluxes,
+    FixedIterations,
+    ConvergenceStopCriteria,
     CoefficientBasedFluxes,
     SimilarityScales,
     MomentumRoughnessLength,
@@ -89,6 +98,11 @@ export
     SlabLand,
     SlabEnergy,
     BucketHydrology,
+    WaterCoupledEnergy,
+    VariablySaturatedHydrology,
+    VanGenuchtenRetention, VanGenuchtenConductivity,
+    NoDeepLiquidFlux, FreeDrainageFlux, DarcyDeepLiquidFlux, LinearReservoirDrainage,
+    NoRunoff, InfiltrationCapacityRunoff,
     surface_temperature,
     regrid_bathymetry,
     regrid_topography,
@@ -105,19 +119,23 @@ export
     ASTERGEDv3,
     CopernicusAlbedo, CopernicusAlbedoClimatology, build_monthly_climatology!,
     GLORYSDaily, GLORYSMonthly, GLORYSStatic,
+    AVISOMetadata, AVISODaily, AVISOMonthly, AVISOMetadatum,
     RepeatYearJRA55, MultiYearJRA55,
     ERA5HourlySingleLevel, ERA5MonthlySingleLevel,
     ERA5HourlyPressureLevels, ERA5MonthlyPressureLevels,
     OSPapaHourly,
     JRA55FieldTimeSeries,
-    ORCA1, ORCA12,
+    ORCAOne, ORCAQuarter, ORCATwelfth,
     ORCAGrid,
     first_date, last_date, all_dates,
     LinearlyTaperedPolarMask,
     DatasetRestoring,
+    atmosphere_model,
     atmosphere_simulation,
     breeze_prognostic_state,
+    bulk_drag,
     hydrostatic_pressure_from_surface,
+    density_from_pressure,
     ocean_simulation,
     sea_ice_simulation,
     default_sea_ice,
@@ -127,16 +145,62 @@ export
     net_ocean_freshwater_flux, sea_ice_ocean_freshwater_flux, atmosphere_ocean_freshwater_flux,
     meridional_heat_transport,
     location,
-    native_grid
+    native_grid,
+    natural_earth_lines,
+    surface_elevation,
+    exchange_state!,
+    total_density,
+    visualize_nested_domain
 
 using DataDeps: DataDeps
-using Oceananigans: Oceananigans
+using Oceananigans: Oceananigans, initialize!
 using Oceananigans.Architectures: CPU
 using Oceananigans.Grids: _node
 using Oceananigans.ImmersedBoundaries: ImmersedBoundaryGrid, GridFittedBottom
 using Oceananigans.OutputReaders: GPUAdaptedFieldTimeSeries, FieldTimeSeries
 
 import Oceananigans: location
+
+"""
+    natural_earth_lines(name; scale = 50)
+
+Return `(longitudes, latitudes)` for the Natural Earth feature layer `name` (e.g.
+`"admin_1_states_provinces_lines"` or `"admin_0_boundary_lines_land"`) as NaN-separated
+vectors, ready to draw as disjoint segments with a plotting backend, as in
+`lines!(axis, longitudes, latitudes)`. `scale` selects the Natural Earth resolution
+(`10`, `50`, or `110`).
+
+Requires `NaturalEarth` and `GeoInterface` to be loaded — the method lives in
+`NumericalEarthNaturalEarthExt`.
+"""
+function natural_earth_lines end
+
+"""
+    visualize_nested_domain(grid; parent = nothing, kw...)
+
+Return a `Makie.Figure` mapping the domain of `grid` — a topography/bathymetry basemap
+with the domain drawn as a box — for checking a configuration's geography before running.
+When `parent` (a `BoundingBox` or another grid) is given, its region is drawn as a second
+box, visualizing the nesting; omit it to map a single domain.
+
+Keyword arguments
+=================
+
+- `parent`: a `BoundingBox` or grid whose region is drawn as the outer (parent) box. Default: `nothing`.
+- `padding`: margin (degrees) between the outermost region and the map edge. Default: `2.5`.
+- `resolution`: basemap sampling resolution (degrees). Default: `1/30`.
+- `dataset`: relief dataset for the basemap. Default: `ETOPO2022()`.
+- `boundaries`: draw Natural Earth state/country boundary lines (requires `NaturalEarth`
+  and `GeoInterface` to be loaded). Default: `true`.
+- `landmarks`: `label => (λ, φ)` pairs marked with stars, e.g. `tuple("ARM SGP" => (-97.485, 36.605))`.
+  Default: `tuple()`.
+- `label`, `parent_label`: legend labels for the two domain boxes. Defaults: `"grid"`, `"parent"`.
+- `title`: axis title. Default: `""`.
+
+Requires a Makie backend (e.g. `CairoMakie`) to be loaded — the method lives in
+`NumericalEarthMakieExt`.
+"""
+function visualize_nested_domain end
 
 const SomeKindOfFieldTimeSeries = Union{FieldTimeSeries,
                                         GPUAdaptedFieldTimeSeries}
@@ -183,6 +247,7 @@ include("InitialConditions/InitialConditions.jl")
 include("DataWrangling/DataWrangling.jl")
 include("Bathymetry/Bathymetry.jl")
 include("Diagnostics/Diagnostics.jl")
+include("NestedModels/NestedModels.jl")   # last: wraps a parent + a child (any component) model
 
 using .Grids
 using .DataWrangling
@@ -197,7 +262,8 @@ using .Oceans
 using .SeaIces
 using .Diagnostics
 using .EarthSystemModels: ComponentInterfaces, MomentumRoughnessLength, ScalarRoughnessLength, default_sea_ice
-using .EarthSystemModels.NestedSimulations: NestedModel, NestedSimulation, parent_boundary_conditions, parent_forcings
+using .NestedModels
+using .NestedModels: NestedModel, NestedSimulation, nested_atmosphere_model, parent_boundary_conditions, parent_forcings
 using .DataWrangling.ETOPO
 using .DataWrangling.ECCO
 using .DataWrangling.GLORYS

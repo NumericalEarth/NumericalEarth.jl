@@ -21,7 +21,7 @@ function build_test_model(arch)
     θ₀ = 285
 
     atmosphere = atmosphere_simulation(grid; potential_temperature=θ₀)
-    set!(atmosphere.model, θ=atmosphere.model.dynamics.reference_state.potential_temperature, u=1)
+    set!(atmosphere.model, θ=atmosphere.model.dynamics.reference_state.surface_potential_temperature, u=1)
 
     sst_grid = RectilinearGrid(arch,
                                size = grid.Nx,
@@ -49,7 +49,7 @@ function build_land_test_model(arch)
     θ₀ = 285
 
     atmosphere = atmosphere_simulation(grid; potential_temperature=θ₀)
-    set!(atmosphere.model, θ=atmosphere.model.dynamics.reference_state.potential_temperature, u=5)
+    set!(atmosphere.model, θ=atmosphere.model.dynamics.reference_state.surface_potential_temperature, u=5)
 
     land_grid = RectilinearGrid(arch,
                                 size = grid.Nx,
@@ -96,31 +96,29 @@ end
         end
 
         @testset "Time stepping on $A" begin
-            model = build_test_model(arch)
-            SST = model.ocean.temperature
-            SST_before = Array(interior(SST))
-
-            simulation = Simulation(model, Δt=10, stop_iteration=10)
-            run!(simulation)
-
-            @test model.clock.iteration == 10
-            @test model.clock.time > 0
-
-            SST_after = Array(interior(SST))
-            # SST should have changed and contain no NaN
-            @test !any(isnan, SST_after)
-            @test SST_after ≉ SST_before
+            # KNOWN BROKEN on Breeze 0.7 (NumericalEarth/Breeze.jl#827): the coupled solver is
+            # unstable at Δt = 10 s — the stable Δt dropped below 5 s vs ≥10 s on Breeze 0.6. The
+            # failure mode is arch-dependent: CPU throws a θ^γ DomainError, GPU integrates to NaN.
+            # Fold the would-be success into ONE @test_broken so it records broken on either arch
+            # (throw or false) and flips to an error (prompting re-enable) once the run is clean again.
+            @test_broken begin
+                model = build_test_model(arch)
+                SST_before = Array(interior(model.ocean.temperature))
+                run!(Simulation(model, Δt=10, stop_iteration=10))
+                SST_after = Array(interior(model.ocean.temperature))
+                model.clock.iteration == 10 && !any(isnan, SST_after) && SST_after ≉ SST_before
+            end
         end
 
         @testset "SST responds to fluxes on $A" begin
-            model = build_test_model(arch)
-
-            simulation = Simulation(model, Δt=10, stop_iteration=50)
-            run!(simulation)
-
-            # Check that the ESM interface fluxes are nonzero
-            ao_fluxes = model.interfaces.atmosphere_ocean_interface.fluxes
-            @test maximum(abs, ao_fluxes.sensible_heat) > 0
+            # KNOWN BROKEN on Breeze 0.7 (same coupled-solver instability at Δt = 10 s as above;
+            # NumericalEarth/Breeze.jl#827). CPU throws, GPU yields NaN fluxes — both record broken.
+            @test_broken begin
+                model = build_test_model(arch)
+                run!(Simulation(model, Δt=10, stop_iteration=50))
+                fluxes = model.interfaces.atmosphere_ocean_interface.fluxes
+                !any(isnan, fluxes.sensible_heat) && maximum(abs, fluxes.sensible_heat) > 0
+            end
         end
     end
 end
