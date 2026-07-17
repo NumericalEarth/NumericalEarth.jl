@@ -27,7 +27,7 @@ FreezingLimitedOceanTemperature(FT::DataType=Oceananigans.defaults.FloatType; li
 
 const FreezingLimitedEarthSystemModel = EarthSystemModel{R, A, L, <:FreezingLimitedOceanTemperature, O, <:NoSeaIceInterface} where {R, A, L, O}
 
-function EarthSystemModels.materialize_sea_ice(sea_ice::FreezingLimitedOceanTemperature, ocean)
+function EarthSystemModels.materialize_sea_ice!(sea_ice::FreezingLimitedOceanTemperature, ocean)
     frazil_heat = Field{Center, Center, Nothing}(ocean.model.grid)
     return FreezingLimitedOceanTemperature(sea_ice.liquidus, frazil_heat)
 end
