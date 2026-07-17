@@ -37,6 +37,7 @@ EarthSystemModels.materialize_sea_ice!(sea_ice::FreezingLimitedOceanTemperature,
 # Extend interface methods to work with a `FreezingLimitedOceanTemperature`
 EarthSystemModels.sea_ice_concentration(::FreezingLimitedOceanTemperature) = ZeroField()
 EarthSystemModels.sea_ice_thickness(::FreezingLimitedOceanTemperature) = ZeroField()
+EarthSystemModels.intercepted_snowfall(::FreezingLimitedOceanTemperature) = ZeroField()
 
 # does not matter
 EarthSystemModels.reference_density(::FreezingLimitedOceanTemperature) = 0
