@@ -651,13 +651,12 @@ function download_glofas_month(name, dataset, dates; region, dir, skip_existing,
 
     mkpath(dir)
     sorted_dts = sort(unique([dt for (dt, _) in pending]))
-    dt_to_tidx = Dict(dt => i for (i, dt) in enumerate(sorted_dts))
     request = build_glofas_request(dataset, sorted_dts, region)
 
     dt0 = first(sorted_dts)
     tmp_path = joinpath(dir, "_tmp_glofas_$(Dates.year(dt0))$(lpad(Dates.month(dt0), 2, '0')).nc")
     nc_varname = GloFAS_netcdf_variable_names[name]
-    nc_triples = [(nc_varname, dt_to_tidx[dt], path) for (dt, path) in pending]
+    nc_triples = [(nc_varname, dt, path) for (dt, path) in pending]
 
     @root begin
         glofas_retrieve(glofas_product(dataset), request, tmp_path)

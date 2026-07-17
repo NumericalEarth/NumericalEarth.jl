@@ -1191,6 +1191,50 @@ end
             end
         end
     end
+
+    @testset "split_era5_nc_multistep selects timesteps by valid_time, not request position" begin
+        # Regression: CDS expands `day × time` into a Cartesian product, so a window that
+        # crosses midnight (e.g. requesting [day N 23:00, day N+1 00:00]) comes back with
+        # extra, sorted timesteps. The split must key on valid_time; keying on the request
+        # position silently assigns the wrong hour to each output file.
+        mktempdir() do dir
+            src_path = joinpath(dir, "src.nc")
+            # What CDS returns for day=[16,17] × time=[23:00, 00:00], sorted ascending:
+            times = [DateTime(2005, 2, 16, 0), DateTime(2005, 2, 16, 23),
+                     DateTime(2005, 2, 17, 0), DateTime(2005, 2, 17, 23)]
+            NCDatasets.Dataset(src_path, "c") do ds
+                NCDatasets.defDim(ds, "longitude", 2)
+                NCDatasets.defDim(ds, "latitude",  2)
+                NCDatasets.defDim(ds, "valid_time", length(times))
+                NCDatasets.defVar(ds, "longitude", Float64, ("longitude",))[:] = [-1.0, 1.0]
+                NCDatasets.defVar(ds, "latitude",  Float64, ("latitude",))[:]  = [40.0, 41.0]
+                tv = NCDatasets.defVar(ds, "valid_time", Float64, ("valid_time",);
+                                       attrib = ["units" => "seconds since 1970-01-01"])
+                tv[:] = times
+                u = NCDatasets.defVar(ds, "t", Float32, ("longitude", "latitude", "valid_time"))
+                for k in eachindex(times), j in 1:2, i in 1:2
+                    u[i, j, k] = Float32(k)          # marker == source timestep index
+                end
+            end
+
+            # Request only the two datetimes we actually want (timesteps 2 and 3 of `times`).
+            want = [DateTime(2005, 2, 16, 23), DateTime(2005, 2, 17, 0)]
+            triples = [("t", want[1], joinpath(dir, "a.nc")),
+                       ("t", want[2], joinpath(dir, "b.nc"))]
+            CDSExt.split_era5_nc_multistep(src_path, triples,
+                                           Set(["longitude", "latitude", "valid_time"]),
+                                           Set(["valid_time"]))
+
+            # a.nc must hold valid_time 16T23:00 (marker 2), b.nc 17T00:00 (marker 3).
+            # The old positional split would have written markers 1 and 2.
+            for (want_dt, fname, marker) in [(want[1], "a.nc", 2f0), (want[2], "b.nc", 3f0)]
+                NCDatasets.Dataset(joinpath(dir, fname), "r") do dst
+                    @test dst["valid_time"][1] == want_dt
+                    @test all(==(marker), dst["t"].var[:])
+                end
+            end
+        end
+    end
 end
 
 @testset "ERA5 CDSAPIExt is_zip and foreach_nc" begin
