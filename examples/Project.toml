@@ -1,0 +1,26 @@
+[deps]
+Breeze = "660aa2fb-d4c8-4359-a52c-9c057bc511da"
+CDSAPI = "8a7b9de3-9c00-473e-88b4-7eccd7ef2fea"
+CUDA = "052768ef-5323-5732-b1bb-66c8b64840ba"
+CairoMakie = "13f3f980-e62b-5c42-98c6-ff1f3baf88f0"
+CloudMicrophysics = "6a9e3e04-43cd-43ba-94b9-e8782df3c71b"
+CopernicusClimateDataStore = "bce3f73f-acea-4481-bd86-df89ecc2cb46"
+Dates = "ade2ca70-3891-5945-98fb-dc099432e06a"
+GeoInterface = "cf35fbd7-0cd7-5166-be24-54bfbe79505f"
+NaturalEarth = "436b0209-26ab-4e65-94a9-6526d86fea76"
+NumericalEarth = "904d977b-046a-4731-8b86-9235c0d1ef02"
+Oceananigans = "9e8cae18-63c1-5223-a75c-80ca9d6e9a09"
+Printf = "de0858da-6303-5e67-8744-51eddeeeb8d7"
+RRTMGP = "a01a1ee8-cea4-48fc-987c-fc7878d79da1"
+
+[sources]
+NumericalEarth = {path = ".."}
+# The downscaling example needs unreleased Breeze PRs #791, #855, #856, and #857;
+# this branch is their merge. Drop the pin once they are released.
+Breeze = {url = "https://github.com/NumericalEarth/Breeze.jl.git", rev = "glw/rrtmgp-nested-integration"}
+
+[compat]
+Breeze = "0.7.3"
+CUDA = "6"
+CairoMakie = "0.15"
+Oceananigans = "0.110"
