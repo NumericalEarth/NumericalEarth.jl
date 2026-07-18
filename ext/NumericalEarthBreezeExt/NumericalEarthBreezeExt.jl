@@ -19,5 +19,6 @@ include("breeze_prognostic_state.jl")
 include("breeze_state_exchanger.jl")
 include("breeze_nested_atmosphere.jl")
 include("breeze_air_land_radiation.jl")
+include("breeze_surface_albedo.jl")
 
 end # module NumericalEarthBreezeExt

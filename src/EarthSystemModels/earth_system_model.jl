@@ -124,10 +124,24 @@ alias their internal flux divergence onto `radiation.flux_divergence`, so the
 atmosphere's tendency machinery reads from the same field the coupled
 `radiation` writes. Default: no-op, returning `atmosphere` unchanged.
 
-Called from inside the [`EarthSystemModel`](@ref) constructor before
-`ComponentInterfaces` is built.
+Called from inside the [`EarthSystemModel`](@ref) constructor, after
+`ComponentInterfaces` is built (so the radiation has already been bound to the
+interfaces' surface temperature — see
+[`materialize_earth_system_surface_temperature`](@ref)).
 """
 materialize_earth_system_radiation!(atmosphere, radiation) = atmosphere
+
+"""
+    materialize_earth_system_surface_temperature(radiation, interfaces)
+
+Return `radiation` with its surface temperature bound to the coupled interfaces'
+diagnostic surface (skin) temperature — the interface-formulation field the atmosphere
+actually sees, which coincides with a land's prognostic temperature only for bulk
+formulations — when `radiation` supports late binding and carries none of its own.
+Radiation components that read a surface temperature (e.g. Breeze's
+`RadiativeTransferModel`) overload this. Default: no-op, returning `radiation` unchanged.
+"""
+materialize_earth_system_surface_temperature(radiation, interfaces) = radiation
 
 """
     EarthSystemModel(radiation, atmosphere, land, sea_ice, ocean;
@@ -217,11 +231,6 @@ function EarthSystemModel(radiation, atmosphere, land, sea_ice, ocean;
         end
     end
 
-    # Materialize any radiation skeletons in the atmosphere against the
-    # coupled-model radiation. No-op by default; Breeze (or any other
-    # atmosphere with an internal radiation handle) overloads this.
-    atmosphere = materialize_earth_system_radiation!(atmosphere, radiation)
-
     # Contains information about flux contributions: bulk formula, prescribed fluxes, etc.
     if isnothing(interfaces) && !(isnothing(atmosphere) && isnothing(sea_ice))
         interfaces = ComponentInterfaces(atmosphere, ocean, sea_ice;
@@ -233,6 +242,12 @@ function EarthSystemModel(radiation, atmosphere, land, sea_ice, ocean;
                                          sea_ice_heat_capacity,
                                          interface_kw...)
     end
+
+    # Bind the interfaces' skin temperature into the radiation, then materialize the
+    # atmosphere's radiation skeletons against it — in that order, so the atmosphere's
+    # proxy aliases the bound radiation. Both are no-ops by default.
+    radiation  = materialize_earth_system_surface_temperature(radiation, interfaces)
+    atmosphere = materialize_earth_system_radiation!(atmosphere, radiation)
 
     arch = architecture(interfaces.exchanger.grid)
 

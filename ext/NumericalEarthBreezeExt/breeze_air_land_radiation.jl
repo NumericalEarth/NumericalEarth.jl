@@ -18,6 +18,16 @@
 
 const BreezeRTM = Breeze.RadiativeTransferModel
 
+# Bind the interfaces' diagnostic skin temperature — what the atmosphere actually sees;
+# equal to land.temperature only for bulk formulations — into an RTM constructed without
+# one. Explicit construction wins; with no land interface, Breeze errors at first solve.
+function NumericalEarth.EarthSystemModels.materialize_earth_system_surface_temperature(rtm::BreezeRTM, interfaces)
+    isnothing(rtm.surface_properties.surface_temperature) || return rtm
+    Tˢ = NumericalEarth.EarthSystemModels.surface_temperature(interfaces)
+    isnothing(Tˢ) && return rtm
+    return @set rtm.surface_properties.surface_temperature = Tˢ
+end
+
 # The turbulent-flux kernel asks the radiation for "kernel properties" used to
 # augment its interface energy balance. With a Breeze RTM the radiative
 # contribution to the surface energy balance is handled separately by
