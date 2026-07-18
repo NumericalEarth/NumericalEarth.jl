@@ -1,5 +1,7 @@
 using Oceananigans.Grids: Center
-using Breeze.AtmosphereModels: thermodynamic_density, dynamics_density, surface_pressure
+using Oceananigans.Fields: compute!
+using Breeze.AtmosphereModels: thermodynamic_density, dynamics_density, surface_pressure,
+                               surface_precipitation_flux
 using GPUArraysCore: @allowscalar
 using NumericalEarth.Atmospheres: AtmosphereThermodynamicsParameters
 using NumericalEarth.EarthSystemModels: component_model
@@ -47,6 +49,16 @@ NumericalEarth.EarthSystemModels.boundary_layer_height(::BreezeAtmosphereSim) = 
 
 function NumericalEarth.EarthSystemModels.InterfaceComputations.ComponentExchanger(atmosphere::BreezeAtmosphere, exchange_grid;
                                                                                    correction = nothing)
+    # Breeze's surface rain-flux diagnostic (positive down, kg m⁻² s⁻¹): built once, computed
+    # each `interpolate_state!`. Schemes with no precipitating species define no method —
+    # fall back to an inert zero field.
+    # TODO: move the fallback into Breeze; add a snow analog (Jˢⁿ stays zero below).
+    Jʳⁿ = if applicable(surface_precipitation_flux, atmosphere, atmosphere.microphysics)
+        surface_precipitation_flux(atmosphere)
+    else
+        Oceananigans.CenterField(exchange_grid)
+    end
+
     state = (; u    = Oceananigans.CenterField(exchange_grid),
                v    = Oceananigans.CenterField(exchange_grid),
                T    = Oceananigans.CenterField(exchange_grid),
@@ -54,7 +66,7 @@ function NumericalEarth.EarthSystemModels.InterfaceComputations.ComponentExchang
                q    = Oceananigans.CenterField(exchange_grid),
                ℐꜜˢʷ = Oceananigans.CenterField(exchange_grid),
                ℐꜜˡʷ = Oceananigans.CenterField(exchange_grid),
-               Jʳⁿ  = Oceananigans.CenterField(exchange_grid),
+               Jʳⁿ  = Jʳⁿ,
                Jˢⁿ  = Oceananigans.CenterField(exchange_grid))
 
     correction = NumericalEarth.EarthSystemModels.InterfaceComputations.materialize_correction(correction, exchange_grid, atmosphere)
@@ -79,7 +91,6 @@ NumericalEarth.EarthSystemModels.InterfaceComputations.ComponentExchanger(atmos:
         state.p[i, j, 1]    = p₀
         state.ℐꜜˢʷ[i, j, 1] = 0
         state.ℐꜜˡʷ[i, j, 1] = 0
-        state.Jʳⁿ[i, j, 1]  = 0
         state.Jˢⁿ[i, j, 1]  = 0
     end
 end
@@ -105,6 +116,8 @@ function NumericalEarth.EarthSystemModels.interpolate_state!(exchanger, exchange
             _interpolate_breeze_state!,
             state, u, v, T, ρqᵛᵉ, ρ₀, p₀)
 
+    compute!(state.Jʳⁿ)   # refresh the rain diagnostic (no-op for the zero-field fallback)
+
     return nothing
 end
 
@@ -119,6 +132,12 @@ function NumericalEarth.EarthSystemModels.InterfaceComputations.net_fluxes(atmos
     # Momentum flux fields (direct FluxBoundaryCondition on ρu, ρv)
     ρu = atmosphere.momentum.ρu.boundary_conditions.bottom.condition
     ρv = atmosphere.momentum.ρv.boundary_conditions.bottom.condition
+
+    # BulkDrag bottoms would break the extraction below and double-count the coupler's stress.
+    ρu isa Oceananigans.Field || throw(ArgumentError(
+        "the atmosphere's bottom momentum boundary condition is $(summary(ρu)), not a coupling " *
+        "flux field, so its surface stress cannot come from the coupler. Build the atmosphere " *
+        "without `bottom_drag_coefficient` (Breeze `BulkDrag`) when coupling to land or ocean."))
 
     # Energy flux field: ρe BC was converted to ρθ by Breeze's materialization,
     # wrapped in EnergyFluxBoundaryConditionFunction.
