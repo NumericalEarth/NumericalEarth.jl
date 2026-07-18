@@ -144,8 +144,20 @@ Radiation components that read a surface temperature (e.g. Breeze's
 materialize_earth_system_surface_temperature(radiation, interfaces) = radiation
 
 """
+    default_earth_system_clock(atmosphere)
+
+Return the coupled model's default clock: its time type follows the atmosphere's own
+clock when one is present (a `Simulation`'s clock type is fixed by its grid and cannot
+be coerced, so e.g. a `Float32` atmosphere gets a `Float32` coupled clock), and falls
+back to `Float64`.
+"""
+default_earth_system_clock(atmosphere::Simulation) = Clock{typeof(component_model(atmosphere).clock.time)}(time = 0)
+default_earth_system_clock(atmosphere::AbstractPrescribedComponent) = Clock{typeof(atmosphere.clock.time)}(time = 0)
+default_earth_system_clock(atmosphere) = Clock{Float64}(time = 0)
+
+"""
     EarthSystemModel(radiation, atmosphere, land, sea_ice, ocean;
-                     clock = Clock{Float64}(time=0),
+                     clock = default_earth_system_clock(atmosphere),
                      ocean_reference_density = reference_density(ocean),
                      ocean_heat_capacity = heat_capacity(ocean),
                      sea_ice_reference_density = reference_density(sea_ice),
@@ -178,7 +190,8 @@ Arguments
 Keyword Arguments
 ==================
 
-- `clock`: Keeps track of time.
+- `clock`: Keeps track of time. Defaults to a clock whose time type matches the
+  atmosphere's (`Float64` without an atmosphere).
 - `ocean_reference_density`: Reference density for the ocean. Defaults to value from ocean model.
 - `ocean_heat_capacity`: Heat capacity for the ocean. Defaults to value from ocean model.
 - `sea_ice_reference_density`: Reference density for sea ice. Defaults to value from sea ice model.
@@ -187,7 +200,7 @@ Keyword Arguments
   To customize the sea ice-ocean heat flux formulation, create interfaces manually using `ComponentInterfaces`.
 """
 function EarthSystemModel(radiation, atmosphere, land, sea_ice, ocean;
-                          clock = Clock{Float64}(time=0),
+                          clock = default_earth_system_clock(atmosphere),
                           ocean_reference_density = reference_density(ocean),
                           ocean_heat_capacity = heat_capacity(ocean),
                           sea_ice_reference_density = reference_density(sea_ice),
