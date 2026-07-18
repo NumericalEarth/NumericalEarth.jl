@@ -1,6 +1,7 @@
 include("runtests_setup.jl")
 
 using Breeze
+using Breeze.Microphysics: DCMIP2016KesslerMicrophysics
 using NumericalEarth
 using Oceananigans
 using Oceananigans.Units
@@ -85,7 +86,7 @@ function build_nested_land_test_model(arch; microphysics = SaturationAdjustment(
                                   z = (0, 10kilometers),
                                   topology = (Periodic, Flat, Bounded))
 
-    parent = PrescribedAtmosphere(parent_grid, [0.0, 1day])
+    parent = PrescribedAtmosphere(parent_grid, [0.0, 1days])
     atmosphere = Simulation(NestedModel(parent, child); Δt=10)
 
     land_grid = RectilinearGrid(arch,
