@@ -37,8 +37,7 @@ using NumericalEarth
 using Oceananigans
 using Oceananigans.Units          # `minutes` for the output schedule (not re-exported by Oceananigans)
 using Breeze
-using CopernicusClimateDataStore # activates NumericalEarthCopernicusClimateDataStoreExt (ERA5 downloads)
-using CDSAPI                     # activates NumericalEarthCDSAPIExt (Copernicus land-albedo downloads)
+using CDSAPI                     # activates NumericalEarthCDSAPIExt (ERA5 + Copernicus land-albedo downloads)
 using CloudMicrophysics          # nested_atmosphere_model's default microphysics → 1-moment mixed-phase
 using RRTMGP                     # activates Breeze's radiative-transfer extension (RadiativeTransferModel)
 using CairoMakie                 # loads Makie → NumericalEarthMakieExt (`visualize_nested_domain`)
