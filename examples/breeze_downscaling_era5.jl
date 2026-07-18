@@ -410,10 +410,17 @@ qᵛ_section = FieldTimeSeries(section_filename, "qᵛ")
 
 φ_section = Array(φnodes(grid, Center(), Center(), Center()))[j_section]
 
+## Type-erased observables: the per-frame fields' concrete types can differ in hidden
+## parameters, which a `@lift`-typed Observable rejects at the second frame.
 section_n = Observable(1)
-Uₙ  = @lift U_section[$section_n]
-wₙ  = @lift w_section[$section_n]
-qᵛₙ = @lift g_per_kg(qᵛ_section[$section_n])
+Uₙ  = Observable{Any}(U_section[1])
+wₙ  = Observable{Any}(w_section[1])
+qᵛₙ = Observable{Any}(g_per_kg(qᵛ_section[1]))
+on(section_n) do n
+    Uₙ[]  = U_section[n]
+    wₙ[]  = w_section[n]
+    qᵛₙ[] = g_per_kg(qᵛ_section[n])
+end
 
 fig_section = Figure(size = (1000, 900))
 
