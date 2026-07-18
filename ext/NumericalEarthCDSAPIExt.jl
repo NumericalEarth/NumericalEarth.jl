@@ -699,7 +699,7 @@ function build_albedo_request(name, dates)
     return Dict{String, Any}(
         "variable"              => collect(albedo_cds_request_variables[name]),
         "satellite"             => satellites,
-        "sensor"                => ["vgt"],
+        "sensor"                => "vgt",   ## the live CDS schema wants a scalar here, unlike every other key
         "product_version"       => ["v2"],
         "horizontal_resolution" => ["1km"],
         "year"                  => years,
