@@ -277,4 +277,25 @@ function build_era5_area(bbox::BBOX)
     return (lat = (lat_min, lat_max), lon = (lon_min, lon_max))
 end
 
+#####
+##### Copernicus land surface albedo, through the package's native CDS client (≥ 0.2).
+##### This backend only supplies `retrieve`; the request construction, extraction, and
+##### repacking live in the CopernicusLandAlbedo module.
+#####
+
+using NumericalEarth.DataWrangling.CopernicusLandAlbedo: ALBEDO_CDS_PRODUCT,
+                                                         CopernicusAlbedoDatasetMetadata,
+                                                         download_albedo_dekads!
+
+function Downloads.download(metadata::CopernicusAlbedoDatasetMetadata; kwargs...)
+    isdefined(CopernicusClimateDataStore, :retrieve) || throw(ArgumentError(
+        "Downloading the Copernicus land albedo needs CopernicusClimateDataStore ≥ 0.2, " *
+        "whose native CDS client provides `retrieve`."))
+
+    return download_albedo_dekads!(metadata; kwargs...) do request, path
+        CopernicusClimateDataStore.retrieve(ALBEDO_CDS_PRODUCT, request, path)
+    end
+end
+
 end # module NumericalEarthCopernicusClimateDataStoreExt
+
