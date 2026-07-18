@@ -227,6 +227,9 @@ end
             @test model.land.clock.time ≈ nest.child.clock.time
         end
 
+        # CPU only: Breeze's Kessler kernel fails GPU compilation (Breeze.jl#858).
+        arch isa GPU && continue
+
         @testset "Child rain reaches the exchanger and the land bucket on $A" begin
             # Kessler child with rain in the column: after one coupled step the surface rain
             # flux must be positive and assembled into the land's precipitation accumulator;
