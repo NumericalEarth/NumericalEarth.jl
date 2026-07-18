@@ -2,6 +2,7 @@ include("runtests_setup.jl")
 
 using Breeze
 using Breeze.Microphysics: DCMIP2016KesslerMicrophysics
+using Breeze.Thermodynamics: TetensFormula
 using NumericalEarth
 using Oceananigans
 using Oceananigans.Units
@@ -68,7 +69,9 @@ end
 
 # The land setup with the child wrapped in a NestedModel (inert prescribed parent) inside
 # a Simulation — the shape a parent-driven LAM presents to AtmosphereLandModel.
-function build_nested_land_test_model(arch; microphysics = SaturationAdjustment(equilibrium = WarmPhaseEquilibrium()))
+function build_nested_land_test_model(arch;
+                                      microphysics = SaturationAdjustment(equilibrium = WarmPhaseEquilibrium()),
+                                      thermodynamic_constants = ThermodynamicConstants())
     grid = RectilinearGrid(arch,
                            size = (16, 16), halo = (5, 5),
                            x = (-10kilometers, 10kilometers),
@@ -77,7 +80,7 @@ function build_nested_land_test_model(arch; microphysics = SaturationAdjustment(
 
     θ₀ = 285
 
-    child = atmosphere_model(grid; potential_temperature=θ₀, microphysics)
+    child = atmosphere_model(grid; potential_temperature=θ₀, microphysics, thermodynamic_constants)
     set!(child, θ=child.dynamics.reference_state.surface_potential_temperature, u=5)
 
     parent_grid = RectilinearGrid(arch,
@@ -227,14 +230,14 @@ end
             @test model.land.clock.time ≈ nest.child.clock.time
         end
 
-        # CPU only: Breeze's Kessler kernel fails GPU compilation (Breeze.jl#858).
-        arch isa GPU && continue
-
         @testset "Child rain reaches the exchanger and the land bucket on $A" begin
             # Kessler child with rain in the column: after one coupled step the surface rain
             # flux must be positive and assembled into the land's precipitation accumulator;
-            # the non-precipitating default carries the zero-flux fallback.
-            model = build_nested_land_test_model(arch; microphysics = DCMIP2016KesslerMicrophysics())
+            # the non-precipitating default carries the zero-flux fallback. Kessler requires
+            # Tetens saturation constants (Breeze.jl#858).
+            model = build_nested_land_test_model(arch;
+                microphysics = DCMIP2016KesslerMicrophysics(),
+                thermodynamic_constants = ThermodynamicConstants(saturation_vapor_pressure = TetensFormula(liquid_temperature_offset = 36)))
             child = model.atmosphere.model.child
             set!(child.microphysical_fields.ρqʳ, 1e-3)
             time_step!(model, 1)
