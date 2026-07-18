@@ -28,6 +28,12 @@ function NumericalEarth.EarthSystemModels.materialize_earth_system_surface_tempe
     return @set rtm.surface_properties.surface_temperature = Tˢ
 end
 
+# A Breeze RTM needs no exchange state (the flux kernel takes the zero-radiation-state
+# path, and Phase 4 reads the RTM's surface fluxes directly). Without this method the
+# generic (state, regridder) constructor would store the RTM itself as state and pass
+# its solver internals into the flux kernel — which cannot compile on GPU.
+NumericalEarth.EarthSystemModels.InterfaceComputations.ComponentExchanger(::BreezeRTM, exchange_grid; kw...) = nothing
+
 # The turbulent-flux kernel asks the radiation for "kernel properties" used to
 # augment its interface energy balance. With a Breeze RTM the radiative
 # contribution to the surface energy balance is handled separately by
