@@ -1060,7 +1060,7 @@ end
         end
     end
 
-    coord_vars = CDSExt.ERA5_COORD_VARS
+    coord_vars = ERA5_COORD_VARS
 
     @testset "ncvar_copy! preserves data, attributes, fill value" begin
         mktempdir() do dir
