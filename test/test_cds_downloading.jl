@@ -14,6 +14,9 @@ using NumericalEarth.DataWrangling.ERA5: ERA5HourlyPressureLevels, ERA5MonthlyPr
                                          ERA5_all_pressure_levels, ERA5PL_dataset_variable_names,
                                          ERA5PL_netcdf_variable_names, pressure_field
 using NumericalEarth.DataWrangling.ERA5: split_era5_nc_by_datetime, ERA5_COORD_VARS, ERA5_TIME_DIMNAMES
+# ERA5-owned batching / NetCDF helpers are exercised at their owner module, not through the
+# CDS extension (the extension no longer re-imports the ones it does not itself use).
+using NumericalEarth.DataWrangling.ERA5: max_dts_per_cds_request, is_zip, ncvar_copy!, ncvar_copy_tslice!
 
 # Internal extension module — exposes dispatch helpers and NetCDF utilities
 # that are not part of the public API but worth pinning behavior for.
@@ -860,13 +863,13 @@ end
 
     @testset "max_dts_per_cds_request: arithmetic" begin
         # Single-level, single variable: max_dts = 5000 / (1 * 1) = 5000
-        @test CDSExt.max_dts_per_cds_request(sl, 1) == 5000
+        @test max_dts_per_cds_request(sl, 1) == 5000
         # Pressure-level (5 levels) × 1 var → 5000 / 5 = 1000
-        @test CDSExt.max_dts_per_cds_request(pl_5, 1) == 1000
+        @test max_dts_per_cds_request(pl_5, 1) == 1000
         # Pressure-level (37 levels) × 5 vars → 5000 / 185 = 27
-        @test CDSExt.max_dts_per_cds_request(pl_21, 5) == fld(5000, 5 * 37)
+        @test max_dts_per_cds_request(pl_21, 5) == fld(5000, 5 * 37)
         # Tiny custom limit floored at 1
-        @test CDSExt.max_dts_per_cds_request(pl_21, 5; max_fields=10) == 1
+        @test max_dts_per_cds_request(pl_21, 5; max_fields=10) == 1
     end
 
     @testset "ordering: batches come out chronologically" begin
@@ -1070,7 +1073,7 @@ end
                     for (dname, dlen) in src.dim
                         NCDatasets.defDim(dst, dname, dlen)
                     end
-                    CDSExt.ncvar_copy!(dst, src["u"], "u")
+                    ncvar_copy!(dst, src["u"], "u")
                 end
             end
 
@@ -1103,12 +1106,12 @@ end
                         out_len = dname in time_dimnames ? 1 : dlen
                         NCDatasets.defDim(dst, dname, out_len)
                     end
-                    CDSExt.ncvar_copy_tslice!(dst, src["u"], "u", tidx, time_dimnames)
+                    ncvar_copy_tslice!(dst, src["u"], "u", tidx, time_dimnames)
                     # `valid_time` is a coord variable in the file — copy that too,
                     # using the same tslice path. Exercises the has_time branch.
-                    CDSExt.ncvar_copy_tslice!(dst, src["valid_time"], "valid_time", tidx, time_dimnames)
+                    ncvar_copy_tslice!(dst, src["valid_time"], "valid_time", tidx, time_dimnames)
                     # `longitude` has no time dim — exercises the !has_time branch.
-                    CDSExt.ncvar_copy_tslice!(dst, src["longitude"], "longitude", tidx, time_dimnames)
+                    ncvar_copy_tslice!(dst, src["longitude"], "longitude", tidx, time_dimnames)
                 end
             end
 
@@ -1245,21 +1248,21 @@ end
             open(zip_path, "w") do io
                 write(io, UInt8[0x50, 0x4b, 0x03, 0x04, 0x00, 0x00])
             end
-            @test CDSExt.is_zip(zip_path) == true
+            @test is_zip(zip_path) == true
 
             # File with arbitrary non-magic bytes (NetCDF-3 starts with "CDF\x01")
             nc_path = joinpath(tmp, "fake.nc")
             open(nc_path, "w") do io
                 write(io, UInt8[0x43, 0x44, 0x46, 0x01])
             end
-            @test CDSExt.is_zip(nc_path) == false
+            @test is_zip(nc_path) == false
 
             # Short file (<4 bytes) — length check guards against false positives
             short_path = joinpath(tmp, "short.bin")
             open(short_path, "w") do io
                 write(io, UInt8[0x50, 0x4b])   # only 2 of the 4 magic bytes
             end
-            @test CDSExt.is_zip(short_path) == false
+            @test is_zip(short_path) == false
         end
     end
 
