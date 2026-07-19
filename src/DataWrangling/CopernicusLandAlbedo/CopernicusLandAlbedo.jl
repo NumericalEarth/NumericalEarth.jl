@@ -3,6 +3,7 @@ module CopernicusLandAlbedo
 export CopernicusAlbedo, CopernicusAlbedoClimatology, build_monthly_climatology!
 
 using Dates: Dates, DateTime, Month, year, month, daysinmonth
+using DocStringExtensions: TYPEDSIGNATURES
 using Downloads: Downloads
 using NCDatasets: NCDataset, defVar, nomissing
 using Oceananigans.DistributedComputations: @root
@@ -415,7 +416,7 @@ const ALBEDO_CDS_PRODUCT = "satellite-albedo"
 const CopernicusAlbedoDatasetMetadata = Metadata{<:CopernicusAlbedo}
 
 """
-    build_albedo_request(name, dates) -> Dict{String, Any}
+$(TYPEDSIGNATURES)
 
 Construct the CDS request for the 1 km v2 black-sky/white-sky albedo pair covering
 `dates`, which must share a `(year, month)` (CDS interprets `year`/`month`/
@@ -491,7 +492,7 @@ function repack_albedo_batch(nc_files, batch, path_of, destination_names, expect
 end
 
 """
-    download_albedo_dekads!(retrieve, metadata; skip_existing=true, cleanup=true)
+$(TYPEDSIGNATURES)
 
 Download the dekadal black-sky and white-sky broadband albedo for every date of
 `metadata`, one CDS request per calendar month issued through `retrieve(request, path)`

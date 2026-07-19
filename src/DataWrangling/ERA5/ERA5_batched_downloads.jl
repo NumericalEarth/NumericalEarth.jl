@@ -37,7 +37,7 @@ nc_varnames(::ERA5Dataset)               = ERA5_netcdf_variable_names
 nc_varnames(::ERA5PressureLevelsDataset) = ERA5PL_netcdf_variable_names
 
 """
-    group_by_calendar_month(datetimes)
+$(TYPEDSIGNATURES)
 
 Group an iterable of `DateTime`s by `(year, month)`. Returns a `Dict` whose
 keys are `Tuple{Int, Int}` `(year, month)` pairs and whose values are the
@@ -54,7 +54,7 @@ fields_per_datetime(dataset::ERA5Dataset)               = 1
 fields_per_datetime(dataset::ERA5PressureLevelsDataset) = length(dataset.pressure_levels)
 
 """
-    max_dts_per_cds_request(dataset, num_vars; max_fields=$(CDS_MAX_FIELDS_PER_REQUEST))
+$(TYPEDSIGNATURES)
 
 Maximum number of datetimes that can share a single CDS request before the
 per-request cost limit is hit. Pressure-level datasets multiply by the number
@@ -66,7 +66,7 @@ max_dts_per_cds_request(dataset, num_vars; max_fields=CDS_MAX_FIELDS_PER_REQUEST
     max(1, fld(max_fields, num_vars * fields_per_datetime(dataset)))
 
 """
-    batch_datetimes_for_cds(datetimes, dataset, num_vars; max_fields=$(CDS_MAX_FIELDS_PER_REQUEST))
+$(TYPEDSIGNATURES)
 
 Split `datetimes` into contiguous batches that each fit in one CDS request:
 each batch shares a `(year, month)` and contains at most
@@ -103,7 +103,7 @@ function is_zip(path)
 end
 
 """
-    foreach_nc(f, download_path, cleanup_dir)
+$(TYPEDSIGNATURES)
 
 If `download_path` is a ZIP archive (as CDS returns when mixing variable step types),
 extract all NetCDF files and call `f(nc_path)` on each. Otherwise call `f` directly
@@ -128,7 +128,7 @@ end
 #####
 
 """
-    split_era5_nc(src_path, nc_name_path_pairs, coordinate_vars)
+$(TYPEDSIGNATURES)
 
 Split a multi-variable NetCDF into individual per-variable files (single time step).
 """
@@ -157,7 +157,7 @@ function split_era5_nc(src_path, nc_name_path_pairs, coordinate_vars)
 end
 
 """
-    split_era5_nc_multistep(src, nc_varname_tidx_path_triples, coordinate_vars, time_dimnames)
+$(TYPEDSIGNATURES)
 
 Split a multi-timestep NetCDF into individual per-variable, per-timestep files.
 `nc_varname_tidx_path_triples` is a vector of `(nc_varname, time_index, dst_path)`;
@@ -193,7 +193,7 @@ function split_era5_nc_multistep(src::NCDatasets.NCDataset, nc_varname_tidx_path
 end
 
 """
-    split_era5_nc_by_datetime(src_path, nc_varname_dt_path_triples, coordinate_vars, time_dimnames)
+$(TYPEDSIGNATURES)
 
 Split a multi-timestep NetCDF into individual per-variable, per-timestep files, locating each
 requested `DateTime` in the file's own time coordinate. `nc_varname_dt_path_triples` is a
