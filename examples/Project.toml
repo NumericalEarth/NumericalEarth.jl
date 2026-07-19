@@ -14,8 +14,6 @@ RRTMGP = "a01a1ee8-cea4-48fc-987c-fc7878d79da1"
 
 [sources]
 NumericalEarth = {path = ".."}
-# The downscaling example needs unreleased Breeze PRs #791, #855, #856, and #857;
-# this branch is their merge. Drop the pin once they are released.
 Breeze = {url = "https://github.com/NumericalEarth/Breeze.jl.git", rev = "glw/rrtmgp-nested-integration"}
 
 [compat]

@@ -33,8 +33,6 @@ Suppressor = "fd094767-a336-5f1f-9728-57cf17d0bbfb"
 
 [sources]
 NumericalEarth = {path = ".."}
-# The downscaling example needs unreleased Breeze PRs #791, #855, and #856;
-# this branch is their merge. Drop the pin once they are released.
 Breeze = {url = "https://github.com/NumericalEarth/Breeze.jl.git", rev = "glw/rrtmgp-nested-integration"}
 
 [compat]
