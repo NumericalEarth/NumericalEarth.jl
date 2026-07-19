@@ -146,13 +146,13 @@ materialize_earth_system_surface_temperature(radiation, interfaces) = radiation
 """
     default_earth_system_clock(atmosphere)
 
-Return the coupled model's default clock: its time type follows the atmosphere's own
-clock when one is present (a `Simulation`'s clock type is fixed by its grid and cannot
-be coerced, so e.g. a `Float32` atmosphere gets a `Float32` coupled clock), and falls
-back to `Float64`.
+Return the coupled model's default clock. A `Simulation` atmosphere's clock type is fixed
+by its grid and cannot be coerced, so the coupled clock adopts it (e.g. a `Float32`
+atmosphere gets a `Float32` coupled clock). Otherwise the clock defaults to `Float64`:
+prescribed atmospheres carry a coercible clock, so `adopt_clock` reconciles them to the
+authoritative model clock rather than the other way around.
 """
 default_earth_system_clock(atmosphere::Simulation) = Clock{typeof(component_model(atmosphere).clock.time)}(time = 0)
-default_earth_system_clock(atmosphere::AbstractPrescribedComponent) = Clock{typeof(atmosphere.clock.time)}(time = 0)
 default_earth_system_clock(atmosphere) = Clock{Float64}(time = 0)
 
 """
