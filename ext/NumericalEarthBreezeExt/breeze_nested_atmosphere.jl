@@ -28,8 +28,6 @@ using Oceananigans:
     NormalFlowBoundaryCondition,
     Field,
     CenterField,
-    XFaceField,
-    YFaceField,
     Center, Face,
     set!
 
