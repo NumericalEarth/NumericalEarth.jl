@@ -12,20 +12,19 @@ using NCDatasets: NCDatasets, name, path
 using NumericalEarth: NumericalEarth
 using NumericalEarth.DataWrangling: Metadatum, MetadataSet, default_download_directory, metadata_path
 using NumericalEarth.DataWrangling.ERA5: ERA5Dataset, ERA5Metadata, ERA5Metadatum,
-                                         ERA5_dataset_variable_names, ERA5_netcdf_variable_names,
+                                         ERA5_dataset_variable_names,
                                          ERA5PressureLevelsDataset,
-                                         ERA5PressureMetadata, ERA5PressureMetadatum,
-                                         ERA5PL_dataset_variable_names, ERA5PL_netcdf_variable_names,
-                                         ERA5_TIME_DIMNAMES, ERA5_COORD_VARS,
+                                         ERA5PressureMetadatum,
+                                         ERA5PL_dataset_variable_names,
+                                         ERA5_TIME_DIMNAMES,
                                          coord_vars, nc_varnames,
-                                         group_by_calendar_month, max_dts_per_cds_request,
-                                         batch_datetimes_for_cds, is_zip, foreach_nc,
+                                         group_by_calendar_month,
+                                         batch_datetimes_for_cds, foreach_nc,
                                          split_era5_nc, split_era5_nc_multistep,
-                                         split_era5_nc_by_datetime,
-                                         ncvar_copy!, ncvar_copy_tslice!
+                                         split_era5_nc_by_datetime
 using NumericalEarth.DataWrangling.GloFAS: GloFASDataset, GloFASMetadata, GloFASMetadatum,
                                            GloFAS_netcdf_variable_names
-using NumericalEarth.DataWrangling.CopernicusLandAlbedo: CopernicusAlbedo, ALBEDO_CDS_PRODUCT,
+using NumericalEarth.DataWrangling.CopernicusLandAlbedo: ALBEDO_CDS_PRODUCT,
                                                          download_albedo_dekads!
 
 #####
