@@ -244,7 +244,7 @@ aloft_filename   = name * "_aloft.jld2"
 section_filename = name * "_section.jld2"
 
 schedule = TimeInterval(20minutes)
-slice_writer(indices, filename) = JLD2Writer(child, fields; schedule, filename, indices,
+slice_writer(indices, filename) = JLD2Writer(model, fields; schedule, filename, indices,
                                              overwrite_existing = true)
 
 simulation.output_writers[:surface] = slice_writer((:, :, 1),         surface_filename)
@@ -253,7 +253,7 @@ simulation.output_writers[:section] = slice_writer((:, j_section, :), section_fi
 
 land_filename = name * "_land.jld2"
 land_fields = (Tˡᵃ = land.temperature, 𝒮 = land.saturation)
-simulation.output_writers[:land] = JLD2Writer(child, land_fields; schedule,
+simulation.output_writers[:land] = JLD2Writer(model, land_fields; schedule,
                                               filename = land_filename,
                                               overwrite_existing = true)
 
