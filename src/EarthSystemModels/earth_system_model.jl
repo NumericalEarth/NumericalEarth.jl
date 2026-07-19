@@ -132,7 +132,7 @@ interfaces' surface temperature — see
 materialize_earth_system_radiation!(atmosphere, radiation) = atmosphere
 
 """
-    materialize_earth_system_surface_temperature(radiation, interfaces)
+$(TYPEDSIGNATURES)
 
 Return `radiation` with its surface temperature bound to the coupled interfaces'
 diagnostic surface (skin) temperature — the interface-formulation field the atmosphere
@@ -144,7 +144,7 @@ Radiation components that read a surface temperature (e.g. Breeze's
 materialize_earth_system_surface_temperature(radiation, interfaces) = radiation
 
 """
-    default_earth_system_clock(atmosphere)
+$(TYPEDSIGNATURES)
 
 Return the coupled model's default clock. A `Simulation` atmosphere's clock type is fixed
 by its grid and cannot be coerced, so the coupled clock adopts it (e.g. a `Float32`
