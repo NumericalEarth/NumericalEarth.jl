@@ -298,4 +298,3 @@ function Downloads.download(metadata::CopernicusAlbedoDatasetMetadata; kwargs...
 end
 
 end # module NumericalEarthCopernicusClimateDataStoreExt
-
