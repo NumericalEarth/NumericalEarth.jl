@@ -3,8 +3,8 @@
 #####
 
 using DocStringExtensions: TYPEDSIGNATURES
-using Oceananigans.Architectures: on_architecture, CPU
-using Oceananigans.Fields: CenterField, interior, set!
+using Oceananigans.Architectures: architecture, on_architecture
+using Oceananigans.Fields: CenterField, interior
 using Oceananigans.Grids: znode
 using Oceananigans.BoundaryConditions: fill_halo_regions!
 
@@ -33,8 +33,8 @@ interpolating pressure to the node heights) avoids the spurious near-surface den
 sub-surface-clamped pressure interpolation produces over high terrain.
 
 `surface_pressure` and `orography` are `(Nx, Ny)` arrays. The moisture fields `qᵛ`, `qᶜ`, `qⁱ`
-are optional `Field`s; omitting them gives the dry result (`Rᵐ = Rᵈ`). One-time host computation
-(not a kernel) — it loops over columns on the CPU.
+are optional `Field`s; omitting them gives the dry result (`Rᵐ = Rᵈ`). The calculation launches
+one kernel thread per horizontal column, integrating upward through `k`.
 
 ```jldoctest
 using Oceananigans
@@ -55,39 +55,57 @@ round(Int, interior(p)[1, 1, 1] / 100)  # surface pressure (hPa) at the lowest l
 983
 ```
 """
+@kernel function _hydrostatic_pressure_from_surface!(p, grid, temperature, qᵛ, qᶜ, qⁱ,
+                                                     surface_pressure, orography, Rᵈ, Rᵛ, g)
+    i, j = @index(Global, NTuple)
+
+    Nz = size(grid, 3)
+
+    T⁻ = @inbounds temperature[i, j, 1]
+    qᵛ⁻ = isnothing(qᵛ) ? zero(T⁻) : @inbounds qᵛ[i, j, 1]
+    qᶜ⁻ = isnothing(qᶜ) ? zero(T⁻) : @inbounds qᶜ[i, j, 1]
+    qⁱ⁻ = isnothing(qⁱ) ? zero(T⁻) : @inbounds qⁱ[i, j, 1]
+
+    z⁻   = znode(i, j, 1, grid, Center(), Center(), Face())
+    RᵐT⁻ = ((1 - qᵛ⁻ - qᶜ⁻ - qⁱ⁻) * Rᵈ + qᵛ⁻ * Rᵛ) * T⁻
+    p⁻   = @inbounds surface_pressure[i, j] * exp(-g * (z⁻ - orography[i, j]) / RᵐT⁻)
+
+    for k in 1:Nz
+        zᵏ = znode(i, j, k, grid, Center(), Center(), Center())
+        Tᵏ = @inbounds temperature[i, j, k]
+        qᵛᵏ = isnothing(qᵛ) ? zero(Tᵏ) : @inbounds qᵛ[i, j, k]
+        qᶜᵏ = isnothing(qᶜ) ? zero(Tᵏ) : @inbounds qᶜ[i, j, k]
+        qⁱᵏ = isnothing(qⁱ) ? zero(Tᵏ) : @inbounds qⁱ[i, j, k]
+        RᵐTᵏ = ((1 - qᵛᵏ - qᶜᵏ - qⁱᵏ) * Rᵈ + qᵛᵏ * Rᵛ) * Tᵏ
+
+        @inbounds p[i, j, k] = p⁻ * exp(-g * (zᵏ - z⁻) / ((RᵐT⁻ + RᵐTᵏ) / 2))
+
+        z⁻ = zᵏ
+        RᵐT⁻ = RᵐTᵏ
+        @inbounds p⁻ = p[i, j, k]
+    end
+end
+
 function hydrostatic_pressure_from_surface(temperature, surface_pressure, orography;
                                            qᵛ = nothing, qᶜ = nothing, qⁱ = nothing,
                                            dry_gas_constant,
                                            vapor_gas_constant,
                                            gravitational_acceleration)
     grid = temperature.grid
-    Nx, Ny, Nz = size(grid)
-    cpu_grid = on_architecture(CPU(), grid)
+    arch = architecture(grid)
 
-    Tᵃ, qᵛᵃ, qᶜᵃ, qⁱᵃ = interior_temperature_and_moisture(temperature, qᵛ, qᶜ, qⁱ)
+    surface_pressure = on_architecture(arch, surface_pressure)
+    orography = on_architecture(arch, orography)
 
     Rᵈ = dry_gas_constant
     Rᵛ = vapor_gas_constant
     g  = gravitational_acceleration
 
-    moist_RT(i, j, k) = ((1 - qᵛᵃ[i, j, k] - qᶜᵃ[i, j, k] - qⁱᵃ[i, j, k]) * Rᵈ +
-                         qᵛᵃ[i, j, k] * Rᵛ) * Tᵃ[i, j, k]
-
-    p = similar(Tᵃ)
-    for j in 1:Ny, i in 1:Nx
-        z⁻   = znode(i, j, 1, cpu_grid, Center(), Center(), Face())    # grid bottom face
-        RᵐT⁻ = moist_RT(i, j, 1)
-        p⁻   = surface_pressure[i, j] * exp(-g * (z⁻ - orography[i, j]) / RᵐT⁻)
-        for k in 1:Nz
-            zᵏ   = znode(i, j, k, cpu_grid, Center(), Center(), Center())
-            RᵐTᵏ = moist_RT(i, j, k)
-            p[i, j, k] = p⁻ * exp(-g * (zᵏ - z⁻) / ((RᵐT⁻ + RᵐTᵏ) / 2))
-            z⁻ = zᵏ; RᵐT⁻ = RᵐTᵏ; p⁻ = p[i, j, k]
-        end
-    end
-
     pressure = CenterField(grid)
-    set!(pressure, p)
+
+    launch!(arch, grid, :xy, _hydrostatic_pressure_from_surface!,
+            pressure, grid, temperature, qᵛ, qᶜ, qⁱ, surface_pressure, orography, Rᵈ, Rᵛ, g)
+
     fill_halo_regions!(pressure)
     return pressure
 end
