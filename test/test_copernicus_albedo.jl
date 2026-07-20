@@ -1,12 +1,12 @@
 include("runtests_setup.jl")
 
 using NumericalEarth.DataWrangling: BoundingBox, Metadatum,
-                                    is_three_dimensional, default_inpainting,
-                                    dataset_variable_name, metadata_filename,
-                                    longitude_name, latitude_name, all_dates
+    is_three_dimensional, default_inpainting,
+    dataset_variable_name, metadata_filename,
+    longitude_name, latitude_name, all_dates
 using NumericalEarth.DataWrangling.CopernicusLandAlbedo: bluesky_blend, copernicus_albedo_decode,
-                                                         copernicus_albedo_dekadal_dates, albedo_satellite,
-                                                         albedo_cds_request_variables
+    copernicus_albedo_dekadal_dates, albedo_satellite,
+    albedo_cds_request_variables
 using Dates: DateTime, Day, day, month, daysinmonth
 
 @testset "Copernicus land albedo helpers" begin
