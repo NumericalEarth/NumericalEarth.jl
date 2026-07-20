@@ -402,7 +402,7 @@ U_section  = FieldTimeSeries(section_filename, "U")
 w_section  = FieldTimeSeries(section_filename, "w")
 qᵛ_section = FieldTimeSeries(section_filename, "qᵛ")
 
-φ_section = Array(φnodes(grid, Center(), Center(), Center()))[j_section]
+φ_section = φnode(j_section, grid, Center())
 
 ## Type-erased observables: the per-frame fields' concrete types can differ in hidden
 ## parameters, which a `@lift`-typed Observable rejects at the second frame.
