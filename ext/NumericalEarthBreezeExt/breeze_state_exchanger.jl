@@ -77,15 +77,14 @@ update_field_time_series!(::PrognosticStateFTS, ::Time) = nothing
 
         ρ  = air_density(Tᵢ, qᵛᵢ, qˡ, qⁱ, pᵢ, Rᵈ, Rᵛ)
         qᵗ = qᵛᵢ + qˡ + qⁱ
-        ρd = ρ * (1 - qᵗ)
         θᵢ = liquid_ice_potential_temperature(Tᵢ, qˡ, qⁱ, pᵢ, pˢᵗ, Rᵈ, cᵖᵈ, ℒˡ, ℒⁱ)
 
-        ρᵈ[i, j, k]  = ρd
-        ρθ[i, j, k]  = ρd * θᵢ
-        ρu[i, j, k]  = ρd * u[i, j, k]
-        ρv[i, j, k]  = ρd * v[i, j, k]
+        ρᵈ[i, j, k]  = ρ * (1 - qᵗ)
+        ρθ[i, j, k]  = ρᵈ[i, j, k] * θᵢ
+        ρu[i, j, k]  = ρᵈ[i, j, k] * u[i, j, k]
+        ρv[i, j, k]  = ρᵈ[i, j, k] * v[i, j, k]
         ρqᵛ[i, j, k] = ρ * qᵛᵢ
-        θ[i, j, k]   = θᵢ   # intensive parent θ, carried for the intensive-θ Davies relaxation
+        θ[i, j, k]   = θᵢ
     end
 end
 
