@@ -135,9 +135,8 @@ DataWrangling.default_download_directory(::AbstractCopernicusAlbedo) = download_
 # at any k, as the interface flux kernels do via `stateindex` at k = Nz (matches ASTERGED).
 Oceananigans.Fields.location(::CopernicusAlbedoMetadatum) = (Center, Center, Nothing)
 
-# Analytic native interfaces of the fixed 1/112° global product (40320×15680): longitude
-# −180..180, latitude −60..80 (Δλ·40320 = 360, Δφ·15680 = 140 ⇒ 80 − 140 = −60). File-free,
-# so `native_grid(metadata)` (and hence `construct_native_grid`'s `restrict`) needs no download.
+# Analytic interfaces of the fixed 1/112° global product (40320×15680): longitude
+# −180..180, latitude −60..80 (Δφ·15680 = 140 ⇒ 80 − 140 = −60).
 DataWrangling.longitude_interfaces(::CopernicusAlbedoMetadata) = (-180, 180)
 DataWrangling.latitude_interfaces(::CopernicusAlbedoMetadata)  = (-60, 80)
 
@@ -367,9 +366,8 @@ function DataWrangling.retrieve_data(metadatum::CopernicusAlbedoMetadatum)
     end
 
     # Files store latitude north→south; flip to ascending to match the native grid.
-    # `reversed_latitude_axis` governs the COORDINATE flip in `read_file_coords`, while this
-    # override owns the matching DATA flip — the two must stay in sync (see the row inversion
-    # above, which is the same north→south ⇄ ascending mapping applied to the data).
+    # `reversed_latitude_axis` flips the coordinate in `read_file_coords`; this override
+    # owns the matching data flip, so the two must stay in sync.
     return reverse(α, dims = 2)
 end
 

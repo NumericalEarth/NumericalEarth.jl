@@ -85,7 +85,7 @@ end
     dataset = CopernicusAlbedo()
     date = DateTime(2019, 7, 10)
     Nx_full, Ny_full, _ = size(dataset, :albedo)
-    @test (Nx_full, Ny_full) == (40320, 15680)  # #2: analytic 1/112° grid unchanged
+    @test (Nx_full, Ny_full) == (40320, 15680)  # analytic 1/112° grid unchanged
     Δλ = 360 / Nx_full
     Δφ = 140 / Ny_full  # latitude spans 80 − (−60) = 140°
 
@@ -99,14 +99,14 @@ end
     for region in windowed
         metadatum = Metadatum(:albedo; dataset, region, date)
 
-        # #2: the native grid is file-free — this must work with nothing downloaded.
+        # The native grid is file-free — this must work with nothing downloaded.
         grid = native_grid(metadatum)
 
         win = albedo_read_window(metadatum)
         @test win !== nothing
         icols, jrows = win
 
-        # #1 core safety: the window is EXACTLY the native-grid cell count, so
+        # The window is EXACTLY the native-grid cell count, so
         # region_info recomputes di = dj = 0 (bit-exact with global-then-slice).
         @test length(icols) == size(grid, 1)
         @test length(jrows) == size(grid, 2)
