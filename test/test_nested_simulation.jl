@@ -313,6 +313,30 @@ end
     @test ext.davies_forcing_variables(state, nothing) == (ρᵈ = :ρᵈ, ρθ = :ρθ, ρu = :ρu, ρv = :ρv)
 end
 
+# Unit test that the state exchanger carries the specific members (`θ`, `u`, `v`) consistently with the
+# density-weighted ones — `ρθ = ρᵈ·θ`, `ρu = ρᵈ·u`, `ρv = ρᵈ·v`, and `u`/`v` are verbatim parent copies.
+# This is the invariant the intensive (`SpecificForcing`) Davies relaxation relies on.
+@testset "state exchanger: specific θ/u/v are the intensive partners of ρθ/ρu/ρv" begin
+    ext = Base.get_extension(NumericalEarth, :NumericalEarthBreezeExt)
+    grid = RectilinearGrid(size = (8, 8, 4), x = (-1, 1), y = (-1, 1), z = (0, 1),
+                           topology = (Bounded, Bounded, Bounded))
+    parent = PrescribedAtmosphere(grid, [0.0, 1.0, 2.0])   # ≥3 times for the exchanger's moving window
+    set!(parent.temperature,       (x, y, z, t) -> 290 + 5z)
+    set!(parent.specific_humidity, (x, y, z, t) -> 0.005)
+    set!(parent.pressure,          (x, y, z, t) -> 9e4)
+    set!(parent.velocities.u,      (x, y, z, t) -> 10x)
+    set!(parent.velocities.v,      (x, y, z, t) -> -5y)
+
+    ex = ext.state_exchanger(parent, 1e5, ThermodynamicConstants();
+                             condensates = (qᶜˡ = nothing, qʳ = nothing, qᶜⁱ = nothing, qˢ = nothing))
+    es = ex.prognostic
+    @test interior(es.ρθ[1]) ≈ interior(es.ρᵈ[1]) .* interior(es.θ[1])   # ρθ = ρᵈ·θ
+    @test interior(es.ρu[1]) ≈ interior(es.ρᵈ[1]) .* interior(es.u[1])   # ρu = ρᵈ·u
+    @test interior(es.ρv[1]) ≈ interior(es.ρᵈ[1]) .* interior(es.v[1])
+    @test interior(es.u[1])  ≈ interior(parent.velocities.u[1])          # u/v are verbatim parent copies
+    @test interior(es.v[1])  ≈ interior(parent.velocities.v[1])
+end
+
 # Integration test for the example's production path: a Breeze `AtmosphereModel`
 # driven as a `NestedSimulation` child via the direct-wiring primitives
 # (`atmosphere_simulation(…).model` + `parent_boundary_conditions`). Exercises the
