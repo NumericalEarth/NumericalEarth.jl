@@ -109,25 +109,44 @@ function earthdata_download_cached(url, cache_dir; attempts = 3)
     return earthdata_download(url, path; attempts)
 end
 
-# Query CMR for the ASTER GED tile `.h5` download URLs intersecting `bbox`,
-# de-duplicated by granule (CMR lists both a protected and a public endpoint per
-# granule; keep the protected `data#` endpoint).
-function NumericalEarth.DataWrangling.ASTERGED.earthdata_cmr_granules(short_name, version, bbox::BoundingBox)
-    url = asterged_cmr_granules_url(short_name, version, bbox)
-    urls = String[]
-    mktempdir() do tmp
-        json_path = joinpath(tmp, "cmr_granules.json")
-        Downloads.download(url, json_path)
-        text = read(json_path, String)
-        for match in eachmatch(r"https://[^\"]+\.h5", text)
-            push!(urls, match.match)
+# Anonymous CMR search request, retried on transient failures.
+function cmr_download(url, path; attempts = 3)
+    for attempt in 1:attempts
+        try
+            Downloads.download(url, path)
+            return path
+        catch error
+            rm(path, force = true)
+            attempt == attempts && rethrow()
+            @warn "CMR granule query failed (attempt $attempt of $attempts); retrying..." url error
+            sleep(2attempt)
         end
     end
+end
+
+# Query CMR for the ASTER GED tile `.h5` download URLs intersecting `bbox`, paging
+# until a short page signals the last one, and keeping one download URL per granule
+# (preferring a protected `data`-host endpoint).
+function NumericalEarth.DataWrangling.ASTERGED.earthdata_cmr_granules(short_name, version, bbox::BoundingBox; page_size = 2000)
     by_granule = Dict{String, String}()
-    for u in urls
-        key = basename(u)
-        if !haskey(by_granule, key) || occursin("protected", u)
-            by_granule[key] = u
+    mktempdir() do tmp
+        page_num = 1
+        while true
+            url = asterged_cmr_granules_url(short_name, version, bbox; page_size, page_num)
+            json_path = joinpath(tmp, string("cmr_granules_", page_num, ".json"))
+            cmr_download(url, json_path)
+            text = read(json_path, String)
+            granules_on_page = Set{String}()
+            for match in eachmatch(r"https://[^\"]+\.h5", text)
+                u = match.match
+                key = basename(u)
+                push!(granules_on_page, key)
+                if !haskey(by_granule, key) || occursin("protected", u)
+                    by_granule[key] = u
+                end
+            end
+            length(granules_on_page) < page_size && break
+            page_num += 1
         end
     end
     return collect(values(by_granule))
@@ -163,7 +182,10 @@ function NumericalEarth.DataWrangling.ASTERGED.asterged_tiles_to_netcdf(metadatu
     coefficients = OGAWA_SCHMUGGE_2004_BROADBAND_COEFFICIENTS
 
     # Query CMR over the native extent (padded a cell) so every file cell is covered.
-    query = BoundingBox(longitude = (longitude[1] - Δλ, longitude[end] + Δλ),
+    # CMR needs [-180, 180] longitudes; fold so a grid labeled in any convention works
+    # (a folded west > east tells CMR the box crosses the antimeridian).
+    to_pm180(λ) = rem(λ, 360, RoundNearest)
+    query = BoundingBox(longitude = (to_pm180(longitude[1] - Δλ), to_pm180(longitude[end] + Δλ)),
                         latitude  = (latitude[1]  - Δφ, latitude[end]  + Δφ))
     granule_urls = NumericalEarth.DataWrangling.ASTERGED.earthdata_cmr_granules(short_name, version, query)
     isempty(granule_urls) &&

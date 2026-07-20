@@ -107,9 +107,10 @@ function (d::DownloadProgress)(total, now; filename="")
 end
 
 """
-    netrc_downloader(username, password, machine, dir)
+    netrc_downloader(username, password, machine, dir; verify_ssl = true)
 
 Create a downloader that uses a netrc file to authenticate with the given machine.
+Pass `verify_ssl = false` only for hosts serving an untrusted CA certificate.
 This downloader writes the username and password in a file named `auth.netrc` (for Unix) and
 `auth_netrc` (for Windows), located in the directory `dir`.
 To avoid leaving the password on disk after the downloader has been used,
@@ -125,13 +126,14 @@ mktempdir(dir) do tmp
 end
 ```
 """
-function netrc_downloader(username, password, machine, dir)
+function netrc_downloader(username, password, machine, dir; verify_ssl = true)
     netrc_file = netrc_permission_file(username, password, machine, dir)
     downloader = Downloads.Downloader()
     easy_hook  = (easy, _) -> begin
         Downloads.Curl.setopt(easy, LibCURL.CURLOPT_NETRC_FILE, netrc_file)
-        # Bypass certificate verification because ecco.jpl.nasa.gov is using an untrusted CA certificate
-        Downloads.Curl.setopt(easy, LibCURL.CURLOPT_SSL_VERIFYPEER, false)
+        # ecco.jpl.nasa.gov serves an untrusted CA certificate; `verify_ssl = false`
+        # bypasses peer verification for such hosts.
+        verify_ssl || Downloads.Curl.setopt(easy, LibCURL.CURLOPT_SSL_VERIFYPEER, false)
     end
     downloader.easy_hook = easy_hook
     return downloader

@@ -283,7 +283,7 @@ function Downloads.download(metadata::ECCOMetadata)
     @root mktempdir(dir) do tmp
 
         # Write down the username and password in a .netrc file
-        downloader = netrc_downloader(username, password, "ecco.jpl.nasa.gov", tmp)
+        downloader = netrc_downloader(username, password, "ecco.jpl.nasa.gov", tmp; verify_ssl = false)
         ntasks = Threads.nthreads()
 
         asyncmap(metadata; ntasks) do metadatum # Distribute the download among tasks

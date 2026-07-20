@@ -175,6 +175,14 @@ function broadband_map(decoded_bands, coefficients)
     return dropdims(sum(weights .* decoded_bands; dims = 1); dims = 1)
 end
 
+# Native spacing along an axis; for a degenerate single-cell axis, fall back to the
+# tile's own (identical) spacing so the index map avoids dividing by a zero span.
+function axis_spacing(axis, tile_axis)
+    length(axis)      > 1 && return (axis[end] - axis[1]) / (length(axis) - 1)
+    length(tile_axis) > 1 && return abs(tile_axis[2] - tile_axis[1])
+    return one(eltype(axis))
+end
+
 """
     place_tile!(field, tile_values, tile_longitude, tile_latitude, longitude, latitude)
 
@@ -184,16 +192,21 @@ mapping each tile-cell center to its native index. `NaN` tile cells are skipped 
 a valid value from an adjacent tile at a shared boundary is not overwritten. Cells
 outside the tile's footprint are left untouched. Value-based indexing, so it does
 not care whether the tile stores latitude ascending or descending.
+
+Longitude offsets are folded into `[-180, 180]`, so a `[-180, 180]` tile lands on a
+grid labeled in any convention (including one crossing the antimeridian). This
+assumes the region spans less than 180° of longitude.
 """
 function place_tile!(field, tile_values, tile_longitude, tile_latitude, longitude, latitude)
     Nx, Ny = size(field)
-    Δλ = (longitude[end] - longitude[1]) / max(length(longitude) - 1, 1)
-    Δφ = (latitude[end]  - latitude[1])  / max(length(latitude)  - 1, 1)
+    Δλ = axis_spacing(longitude, tile_longitude)
+    Δφ = axis_spacing(latitude,  tile_latitude)
     for (jl, φ) in enumerate(tile_latitude)
         jr = round(Int, (φ - latitude[1]) / Δφ) + 1
         (1 ≤ jr ≤ Ny) || continue
         for (il, λ) in enumerate(tile_longitude)
-            ic = round(Int, (λ - longitude[1]) / Δλ) + 1
+            # Fold into [-180, 180] so a [-180, 180] tile lands on any-convention grid labels.
+            ic = round(Int, rem(λ - longitude[1], 360, RoundNearest) / Δλ) + 1
             (1 ≤ ic ≤ Nx) || continue
             v = tile_values[il, jl]
             isnan(v) || (@inbounds field[ic, jr] = v)
@@ -299,21 +312,22 @@ asterged_short_name(::Val{:low_1km})   = "AG1KM"
 asterged_version(::ASTERGEDv3) = "003"
 
 """
-    asterged_cmr_granules_url(short_name, version, bbox; page_size = 200)
+    asterged_cmr_granules_url(short_name, version, bbox; page_size = 2000, page_num = 1)
 
-Build the NASA CMR (Common Metadata Repository) granule-search URL for the ASTER
-GED product `short_name` / `version` whose 1°×1° HDF5 tiles intersect the `bbox`
-`BoundingBox` (encoded `W,S,E,N`). CMR search is anonymous; only the tile download
-itself needs Earthdata credentials.
+Build the NASA CMR (Common Metadata Repository) granule-search URL for page
+`page_num` of the ASTER GED product `short_name` / `version` whose 1°×1° HDF5 tiles
+intersect the `bbox` `BoundingBox` (encoded `W,S,E,N`, longitudes in `[-180, 180]`).
+CMR search is anonymous; only the tile download itself needs Earthdata credentials.
 """
-function asterged_cmr_granules_url(short_name, version, bbox::BoundingBox; page_size = 200)
+function asterged_cmr_granules_url(short_name, version, bbox::BoundingBox; page_size = 2000, page_num = 1)
     west, east = bbox.longitude
     south, north = bbox.latitude
     return string("https://cmr.earthdata.nasa.gov/search/granules.json",
                   "?short_name=", short_name,
                   "&version=", version,
                   "&bounding_box=", west, ",", south, ",", east, ",", north,
-                  "&page_size=", page_size)
+                  "&page_size=", page_size,
+                  "&page_num=", page_num)
 end
 
 #####

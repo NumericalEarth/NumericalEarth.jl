@@ -133,6 +133,39 @@ end
     @test count(isnan, field) == 1
 end
 
+@testset "ASTER GED place_tile! folds tile longitudes onto a 0–360 grid" begin
+    # Grid labeled in the 0–360 convention (e.g. a Pacific domain), as native_grid
+    # relabels it; tiles store longitude in [-180, 180], so placement must fold.
+    longitude = collect(200.005:0.01:200.045)   # 5 cells, labeled 200…
+    latitude  = collect(0.005:0.01:0.025)        # 3 cells
+    field = fill(NaN32, length(longitude), length(latitude))
+
+    tile_longitude = [200.015, 200.025, 200.035] .- 360   # same cells in [-180, 180]
+    tile_latitude  = [0.005, 0.015, 0.025]
+    tile_values    = Float32[10il + jl for il in 1:3, jl in 1:3]
+
+    place_tile!(field, tile_values, tile_longitude, tile_latitude, longitude, latitude)
+
+    @test all(isnan, field[1, :])                 # column 1 (200.005) untouched
+    @test field[2, 1] == tile_values[1, 1]        # -159.985 → 200.015 → col 2
+    @test field[4, 3] == tile_values[3, 3]        # -159.965 → 200.035 → col 4
+end
+
+@testset "ASTER GED place_tile! handles a single-cell axis" begin
+    longitude = [10.005]                          # degenerate 1-cell longitude axis
+    latitude  = collect(45.005:0.01:45.025)       # 3 cells
+    field = fill(NaN32, 1, length(latitude))
+
+    tile_longitude = [10.005, 10.015]             # 2nd cell falls outside the 1-cell grid
+    tile_latitude  = [45.005, 45.015, 45.025]
+    tile_values    = Float32[10il + jl for il in 1:2, jl in 1:3]
+
+    place_tile!(field, tile_values, tile_longitude, tile_latitude, longitude, latitude)
+
+    @test field[1, 1] == tile_values[1, 1]        # placed, no divide-by-zero crash
+    @test field[1, 3] == tile_values[1, 3]
+end
+
 @testset "ASTER GED dataset interfaces" begin
     for resolution in (:high_100m, :low_1km)
         ds = ASTERGEDv3(; resolution)
