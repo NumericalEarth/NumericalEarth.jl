@@ -1,13 +1,13 @@
 include("runtests_setup.jl")
 
 using NumericalEarth.DataWrangling: BoundingBox, Metadatum, native_grid,
-                                    is_three_dimensional, default_inpainting,
-                                    dataset_variable_name, metadata_filename,
-                                    longitude_name, latitude_name, all_dates
-using NumericalEarth.DataWrangling.CopernicusLandAlbedo: bluesky_blend, decode_albedo,
-                                                         dekadal_dates, albedo_satellite,
-                                                         albedo_cds_request_variables,
-                                                         albedo_read_window
+    is_three_dimensional, default_inpainting,
+    dataset_variable_name, metadata_filename,
+    longitude_name, latitude_name, all_dates
+using NumericalEarth.DataWrangling.CopernicusLandAlbedo: bluesky_blend, copernicus_albedo_decode,
+    copernicus_albedo_dekadal_dates, albedo_satellite,
+    albedo_cds_request_variables,
+    albedo_read_window
 using Oceananigans.Grids: λnodes, φnodes
 using Dates: DateTime, Day, day, month, daysinmonth
 
@@ -16,18 +16,18 @@ using Dates: DateTime, Day, day, month, daysinmonth
     @test bluesky_blend(0.3, 0.5, 1.0) == 0.5
     @test bluesky_blend(0.3, 0.5, 0.2) ≈ 0.34
 
-    @test decode_albedo(0.37) === 0.37f0
-    @test decode_albedo(0) === 0.0f0
-    @test decode_albedo(1) === 1.0f0
-    @test isnan(decode_albedo(-0.01))
-    @test isnan(decode_albedo(1.2))
-    @test isnan(decode_albedo(missing))
-    @test isnan(decode_albedo(NaN32))
-    @test isnan(bluesky_blend(decode_albedo(missing), 0.5f0, 0.2f0))
+    @test copernicus_albedo_decode(0.37) === 0.37f0
+    @test copernicus_albedo_decode(0) === 0.0f0
+    @test copernicus_albedo_decode(1) === 1.0f0
+    @test isnan(copernicus_albedo_decode(-0.01))
+    @test isnan(copernicus_albedo_decode(1.2))
+    @test isnan(copernicus_albedo_decode(missing))
+    @test isnan(copernicus_albedo_decode(NaN32))
+    @test isnan(bluesky_blend(copernicus_albedo_decode(missing), 0.5f0, 0.2f0))
 end
 
 @testset "Copernicus land albedo dekadal dates" begin
-    dates = dekadal_dates(DateTime(2019, 1, 10), DateTime(2019, 12, 31))
+    dates = copernicus_albedo_dekadal_dates(DateTime(2019, 1, 10), DateTime(2019, 12, 31))
     @test length(dates) == 36
     @test issorted(dates)
     @test all(d -> day(d) in (10, 20, daysinmonth(d)), dates)
