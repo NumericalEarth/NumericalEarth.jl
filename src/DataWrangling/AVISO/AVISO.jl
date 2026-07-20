@@ -46,14 +46,8 @@ const AVISO_dataset_variable_names = Dict(
     :meridional_geostrophic_velocity => "vgos",
 )
 
-const AVISO_monthly_dataset_variable_names = Dict(
-    :sea_level_anomaly => "sla",
-)
-
-DataWrangling.available_variables(::AVISODaily) = AVISO_dataset_variable_names
-DataWrangling.available_variables(::AVISOMonthly) = AVISO_monthly_dataset_variable_names
-DataWrangling.dataset_variable_name(metadata::Metadata{<:AVISODaily}) = AVISO_dataset_variable_names[metadata.name]
-DataWrangling.dataset_variable_name(metadata::Metadata{<:AVISOMonthly}) = AVISO_monthly_dataset_variable_names[metadata.name]
+DataWrangling.available_variables(::AVISODataset) = AVISO_dataset_variable_names
+DataWrangling.dataset_variable_name(metadata::Metadata{<:AVISODataset}) = AVISO_dataset_variable_names[metadata.name]
 DataWrangling.dataset_location(::AVISODataset, name) = (Center, Center, Nothing)
 DataWrangling.is_three_dimensional(::Metadata{<:AVISODataset}) = false
 DataWrangling.default_inpainting(metadata::Metadata{<:AVISODataset}) = nothing
