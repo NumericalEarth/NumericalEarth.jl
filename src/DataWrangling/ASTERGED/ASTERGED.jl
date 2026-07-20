@@ -4,7 +4,6 @@ export ASTERGEDv3
 
 using Downloads: Downloads
 using Oceananigans: Center
-using Oceananigans.Architectures: architecture, on_architecture
 using Oceananigans.DistributedComputations: @root
 
 using ..DataWrangling: DataWrangling, AbstractStaticDataset, Metadatum,
@@ -33,8 +32,7 @@ end
 # biases broadband ε low by ~0.02 over low-emissivity deserts.
 const OGAWA_SCHMUGGE_2004_BROADBAND_COEFFICIENTS = [0.088, 0.053, 0.174, 0.380, 0.305]
 
-# The `/Land_Water_Map/LWmap` coding is documented inconsistently (LP DAAC User
-# Guide says 1/2, GEE says 0/1); real AG100 v003 tiles hold 0 = land, 1 = water.
+# AG100 v003 tiles hold 0 = land, 1 = water.
 # `fill_water` exposes a `water_code` keyword in case a future tile differs.
 const ASTERGED_WATER_CODE = 1
 
@@ -52,8 +50,8 @@ grid, distributed as HDF5 in 1°×1° tiles. Two resolutions are supported:
 - `:high_100m` — 100 m (3 arcsec, 1000×1000 px/tile). Primary.
 - `:low_1km` — 1 km (30 arcsec, 100×100 px/tile). Coarser sibling.
 
-Internally these map to NASA's product short names (`AG100` / `AG1KM`, where
-`AG` abbreviates ASTER GED), which appear in CMR queries and tile filenames.
+Internally these map to NASA's product short names (`AG100` / `AG1KM`,
+which appear in CMR queries and tile filenames.
 
 The dataset provides five narrowband emissivities (ASTER TIR bands 10–14); a
 longwave scheme needs a single broadband value, so `retrieve_data` collapses the
@@ -72,17 +70,14 @@ windows only: construct the `Metadatum` with a longitude/latitude `BoundingBox`.
 
 Reading the HDF5 tiles requires `ArchGDAL` (with the HDF5 driver) and NASA
 Earthdata credentials (`EARTHDATA_USERNAME` / `EARTHDATA_PASSWORD`); that path
-lives in `ext/NumericalEarthArchGDALExt.jl` and is gated behind a fallback error
-when `ArchGDAL` is not loaded. The pure decode/broadband/water-fill core
-(`decode_mean`, `decode_sdev`, `broadband_emissivity`) needs neither and is
-unit-tested directly.
+lives in `ext/NumericalEarthArchGDALExt.jl`.
 
 Data source: https://www.earthdata.nasa.gov/data/catalog/lpcloud-ag100-003
 Reference: Hulley et al. (2015), GRL, doi:10.1002/2015GL065564.
 """
 struct ASTERGEDv3 <: AbstractStaticDataset
     resolution :: Symbol                        # :high_100m (100 m) or :low_1km (1 km)
-    broadband_coefficients :: Vector{Float64}   # 5-vector for the ε_broadband synthesis
+    broadband_coefficients :: Vector{Float64}    # 5-vector for the ε_broadband synthesis
     water_emissivity :: Float64                 # constant substituted where the tile land-water map says water
 end
 
@@ -96,8 +91,7 @@ Construct an [`ASTERGEDv3`](@ref) dataset. `resolution` is `:high_100m`
 emissivity synthesis vector (default from [Ogawa & Schmugge (2004)](@cite ogawa2004mapping),
 8.0–13.5 µm window). `water_emissivity` is the emissivity substituted over water cells, where
 ASTER GED has no retrieval; the default is the shared `default_water_emissivity`
-(0.97) that the ocean-surface radiation defaults also use, so a coupled domain
-has one consistent water value.
+(0.97) that the ocean-surface radiation defaults also use.
 
 ```jldoctest
 julia> using NumericalEarth
@@ -128,28 +122,25 @@ ASTERGED_dataset_variable_names = Dict(
     :emissivity_uncertainty => "/Emissivity/SDev",
 )
 
-#####
-##### Pure, unit-testable core (no credentials / IO)
-#####
+"""
+    asterged_decode_emissivity(DN)
+
+Decode a raw ASTER GED `/Emissivity/Mean` digital number to a `Float32`
+emissivity: fill value −9999 maps to `NaN`, otherwise scale by **0.001**
+(`ε = 0.001 · DN`).
+"""
+@inline asterged_decode_emissivity(DN) = ifelse(DN == -9999, NaN32, 0.001f0 * DN)
 
 """
-    decode_mean(DN)
+    asterged_decode_uncertainty(DN)
 
-Decode a raw `/Emissivity/Mean` digital number to a `Float32` emissivity: fill
-value −9999 maps to `NaN`, otherwise scale by **0.001** (`ε = 0.001 · DN`).
+Decode a raw ASTER GED `/Emissivity/SDev` digital number to a `Float32`
+emissivity standard deviation: fill value −9999 maps to `NaN`, otherwise scale
+by **0.0001** (`σ = 1.0e-4 · DN`). Note the scale differs from
+[`asterged_decode_emissivity`](@ref)'s 0.001 by 10× — decoding SDev with the
+Mean scale is a silent 10× error.
 """
-@inline decode_mean(DN) = ifelse(DN == -9999, NaN32, 0.001f0 * DN)
-
-"""
-    decode_sdev(DN)
-
-Decode a raw `/Emissivity/SDev` digital number to a `Float32` emissivity
-standard deviation: fill value −9999 maps to `NaN`, otherwise scale by
-**0.0001** (`σ = 1.0e-4 · DN`). Note the scale differs from
-[`decode_mean`](@ref)'s 0.001 by 10× — decoding SDev with the Mean scale is a
-silent 10× error.
-"""
-@inline decode_sdev(DN) = ifelse(DN == -9999, NaN32, 1f-4 * DN)
+@inline asterged_decode_uncertainty(DN) = ifelse(DN == -9999, NaN32, 1f-4 * DN)
 
 """
     broadband_emissivity(ε_vector, coefficients)
@@ -177,12 +168,13 @@ broadband_uncertainty(σ_vector, coefficients) =
 
 Collapse a decoded emissivity array of shape `(5, Nx, Ny)` (band index first, as
 in the HDF5 `/Emissivity/Mean` layout) to a broadband `(Nx, Ny)` array — the
-array form of [`broadband_emissivity`](@ref). A broadcast + reduction along the
-band dimension, so it runs on whatever architecture holds `decoded_bands`.
+array form of [`broadband_emissivity`](@ref), a broadcast + reduction along the
+band dimension.
 """
 function broadband_emissivity_map(decoded_bands, coefficients)
-    weights = on_architecture(architecture(decoded_bands), reshape(coefficients, :, 1, 1))
-    return Float32.(dropdims(sum(weights .* decoded_bands; dims = 1); dims = 1))
+    FT = eltype(decoded_bands)
+    weights = reshape(FT.(coefficients), :, 1, 1)
+    return dropdims(sum(weights .* decoded_bands; dims = 1); dims = 1)
 end
 
 """
@@ -193,8 +185,9 @@ As [`broadband_emissivity_map`](@ref) but combines per-band standard deviations
 of [`broadband_uncertainty`](@ref).
 """
 function broadband_uncertainty_map(decoded_sdev_bands, coefficients)
-    weights = on_architecture(architecture(decoded_sdev_bands), reshape(coefficients, :, 1, 1))
-    return Float32.(sqrt.(dropdims(sum(weights .^ 2 .* decoded_sdev_bands .^ 2; dims = 1); dims = 1)))
+    FT = eltype(decoded_sdev_bands)
+    weights = reshape(FT.(coefficients), :, 1, 1)
+    return sqrt.(dropdims(sum(weights .^ 2 .* decoded_sdev_bands .^ 2; dims = 1); dims = 1))
 end
 
 """
@@ -218,8 +211,6 @@ end
 DataWrangling.available_variables(::ASTERGEDv3) = ASTERGED_dataset_variable_names
 DataWrangling.default_download_directory(::ASTERGEDv3) = download_ASTERGED_cache
 
-# The regional NetCDF written by the download step (see the ArchGDAL extension)
-# already stores latitude south→north to match the model grid, so no flip here.
 DataWrangling.reversed_latitude_axis(::ASTERGEDv3) = false
 
 # Follow CopernicusDEM: the native lat/lon hull is global integer-degree tile
@@ -342,7 +333,7 @@ digital numbers, collapse the five narrowband emissivities to a single broadband
 value (or propagate the per-band uncertainty for `:emissivity_uncertainty`), and
 fill water cells with the dataset's `water_emissivity` (zero uncertainty).
 Retrieval gaps stay `NaN` for the downstream inpainting. Returns a regional
-`(Nx, Ny)` array. The decode/broadband/fill steps are the pure, unit-tested core.
+`(Nx, Ny)` array.
 """
 function DataWrangling.retrieve_data(metadata::ASTERGEDMetadatum)
     path = metadata_path(metadata)
@@ -355,12 +346,12 @@ function DataWrangling.retrieve_data(metadata::ASTERGEDMetadatum)
     if metadata.name === :emissivity
         mean_dn = ds[ASTERGED_MEAN_LAYER][:, :, :]
         close(ds)
-        emissivity = broadband_emissivity_map(decode_mean.(mean_dn), coefficients)
+        emissivity = broadband_emissivity_map(asterged_decode_emissivity.(mean_dn), coefficients)
         return fill_water(emissivity, land_water_map, water_emissivity)
     elseif metadata.name === :emissivity_uncertainty
         sdev_dn = ds[ASTERGED_SDEV_LAYER][:, :, :]
         close(ds)
-        uncertainty = broadband_uncertainty_map(decode_sdev.(sdev_dn), coefficients)
+        uncertainty = broadband_uncertainty_map(asterged_decode_uncertainty.(sdev_dn), coefficients)
         return fill_water(uncertainty, land_water_map, 0)
     else
         close(ds)

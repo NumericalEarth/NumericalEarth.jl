@@ -3,7 +3,7 @@ include("runtests_setup.jl")
 using NCDatasets: NCDataset, defDim, defVar
 
 using NumericalEarth.DataWrangling.ASTERGED
-using NumericalEarth.DataWrangling.ASTERGED: decode_mean, decode_sdev,
+using NumericalEarth.DataWrangling.ASTERGED: asterged_decode_emissivity, asterged_decode_uncertainty,
     broadband_emissivity, broadband_emissivity_map, broadband_uncertainty_map,
     fill_water, OGAWA_SCHMUGGE_2004_BROADBAND_COEFFICIENTS, ASTERGED_WATER_CODE
 using NumericalEarth.DataWrangling: longitude_interfaces, latitude_interfaces,
@@ -23,17 +23,17 @@ using Oceananigans.Fields: location
 
 @testset "ASTER GED decode scaling" begin
     # Mean scale is 0.001; fill −9999 → NaN (not −9.999).
-    @test decode_mean(950) ≈ 0.95
-    @test decode_mean(982) ≈ 0.982
-    @test isnan(decode_mean(-9999))
-    @test decode_mean(-9999) != -9.999
+    @test asterged_decode_emissivity(950) ≈ 0.95
+    @test asterged_decode_emissivity(982) ≈ 0.982
+    @test isnan(asterged_decode_emissivity(-9999))
+    @test asterged_decode_emissivity(-9999) != -9.999
 
     # SDev scale is 0.0001 — 10× smaller than Mean. Decoding with the Mean scale
     # would be a silent 10× error.
-    @test decode_sdev(120) ≈ 0.012
-    @test decode_sdev(120) != decode_mean(120)
-    @test decode_mean(120) ≈ 10 * decode_sdev(120)
-    @test isnan(decode_sdev(-9999))
+    @test asterged_decode_uncertainty(120) ≈ 0.012
+    @test asterged_decode_uncertainty(120) != asterged_decode_emissivity(120)
+    @test asterged_decode_emissivity(120) ≈ 10 * asterged_decode_uncertainty(120)
+    @test isnan(asterged_decode_uncertainty(-9999))
 end
 
 @testset "ASTER GED broadband synthesis" begin
@@ -62,13 +62,14 @@ end
     # Synthetic tile: (5 bands, Nx, Ny). Bands differ so a transposed reduction
     # would give a different (wrong) answer.
     Nx, Ny = 4, 3
-    decoded = Array{Float64}(undef, 5, Nx, Ny)
+    decoded = Array{Float32}(undef, 5, Nx, Ny)
     for b in 1:5, i in 1:Nx, j in 1:Ny
         decoded[b, i, j] = 0.90 + 0.01 * b
     end
 
     ε = broadband_emissivity_map(decoded, coefficients)
     @test size(ε) == (Nx, Ny)
+    @test eltype(ε) == Float32
 
     expected = broadband_emissivity([0.91, 0.92, 0.93, 0.94, 0.95], coefficients)
     @test all(ε .≈ Float32(expected))
@@ -81,7 +82,7 @@ end
     # A fill (−9999) in any band decodes to NaN and propagates to the broadband.
     raw = fill(Int16(950), 5, 2, 2)
     raw[3, 1, 1] = Int16(-9999)
-    ε = broadband_emissivity_map(decode_mean.(raw), coefficients)
+    ε = broadband_emissivity_map(asterged_decode_emissivity.(raw), coefficients)
     @test isnan(ε[1, 1])
     @test all(isfinite, ε[2:end, :][:])
 end
@@ -113,8 +114,9 @@ end
 
     # SDev raw of 120 → 0.012 per band. Broadband uncertainty ≤ max band σ.
     raw = fill(Int16(120), 5, 2, 2)
-    σ = broadband_uncertainty_map(decode_sdev.(raw), coefficients)
+    σ = broadband_uncertainty_map(asterged_decode_uncertainty.(raw), coefficients)
     @test size(σ) == (2, 2)
+    @test eltype(σ) == Float32
     @test all(0 .< σ .<= 0.012 + eps())
 end
 

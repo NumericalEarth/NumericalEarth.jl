@@ -12,9 +12,7 @@ export PrescribedRadiation,
 # CODATA 2018 value of the Stefan–Boltzmann constant, in W m⁻² K⁻⁴.
 const default_stefan_boltzmann_constant = 5.670374419e-8
 
-# Broadband longwave emissivity of a water surface, shared by the ocean-surface
-# radiation defaults and dataset water fills (e.g. ASTER GED) so a coupled
-# domain has one consistent water value.
+# Broadband longwave emissivity of a water surface
 const default_water_emissivity = 0.97
 
 using Adapt: Adapt

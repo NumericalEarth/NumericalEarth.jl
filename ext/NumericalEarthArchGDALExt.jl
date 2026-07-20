@@ -60,18 +60,15 @@ end
 ##### `/Geolocation/*` arrays) through GDAL's HDF5 driver, clips + mosaics them to
 ##### the region, and writes a regional NetCDF of *raw digital numbers* (no scale
 ##### applied — the ASTERGED module decodes/blends/masks on read). The tile `.h5`
-##### is the download unit: Mean, SDev and LWmap are subdatasets of the same file,
-##### not separately downloadable. ASTER GED is
-##### already on a plain geographic (WGS84 lat/lon) grid, so no reprojection is
-##### needed; the coordinates come from the `/Geolocation/*` arrays (the HDF5
-##### subdatasets carry an identity geotransform).
+##### is the download unit: Mean, SDev and LWmap are subdatasets of the same file.
+##### The coordinates come from the `/Geolocation/*` arrays.
 #####
 ##### Requires GDAL_jll built with the HDF5 driver.
 #####
 
 # Earthdata-authenticated download of a single tile, retried on transient
-# failures (Earthdata Cloud drops connections occasionally). Credentials come
-# from the EARTHDATA_USERNAME / EARTHDATA_PASSWORD environment variables.
+# failures. Credentials come from the EARTHDATA_USERNAME / EARTHDATA_PASSWORD 
+# environment variables.
 function earthdata_download(url, path; attempts = 3)
     username = get(ENV, "EARTHDATA_USERNAME", nothing)
     password = get(ENV, "EARTHDATA_PASSWORD", nothing)
