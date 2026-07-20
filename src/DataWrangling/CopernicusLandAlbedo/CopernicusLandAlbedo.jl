@@ -34,8 +34,8 @@ diffuse fraction of the downwelling shortwave radiation:
 @inline bluesky_blend(α_bs, α_ws, f) = (1 - f) * α_bs + f * α_ws
 
 # Missing (the decoded fill value) and out-of-range values map to NaN; albedo ∈ [0, 1].
-@inline decode_albedo(α::Number) = ifelse((α < 0) | (α > 1), NaN32, Float32(α))
-@inline decode_albedo(::Missing) = NaN32
+@inline copernicus_albedo_decode(α::Number) = ifelse((α < 0) | (α > 1), NaN32, Float32(α))
+@inline copernicus_albedo_decode(::Missing) = NaN32
 
 #####
 ##### Dataset types
@@ -153,7 +153,7 @@ DataWrangling.latitude_interfaces(metadata::CopernicusAlbedoMetadata) =
 #####
 
 # CGLS dekads are stamped on day 10, day 20, and the last day of each month.
-function dekadal_dates(start_date, end_date)
+function copernicus_albedo_dekadal_dates(start_date, end_date)
     dates = DateTime[]
     d = DateTime(year(start_date), month(start_date), 1)
     while d ≤ end_date
@@ -174,7 +174,7 @@ const last_albedo_date  = DateTime(2020, 6, 30)
 # SPOT ends May 2014; PROBA-V takes over from June 2014.
 albedo_satellite(date) = date < DateTime(2014, 6, 1) ? "spot" : "proba"
 
-DataWrangling.all_dates(::CopernicusAlbedo, variable) = dekadal_dates(first_albedo_date, last_albedo_date)
+DataWrangling.all_dates(::CopernicusAlbedo, variable) = copernicus_albedo_dekadal_dates(first_albedo_date, last_albedo_date)
 
 # 12 climatological months; the year is arbitrary, only the month matters.
 DataWrangling.all_dates(::CopernicusAlbedoClimatology, variable) = [DateTime(2018, m, 1) for m in 1:12]
@@ -305,8 +305,8 @@ function DataWrangling.retrieve_data(metadatum::CopernicusAlbedoMetadatum)
         chunk = 1120
         for j in 1:chunk:Ny
             rows = j:min(j + chunk - 1, Ny)
-            α_bs = decode_albedo.(ds[blacksky_name][:, rows])
-            α_ws = decode_albedo.(ds[whitesky_name][:, rows])
+            α_bs = copernicus_albedo_decode.(ds[blacksky_name][:, rows])
+            α_ws = copernicus_albedo_decode.(ds[whitesky_name][:, rows])
             @. blended[:, rows] = bluesky_blend(α_bs, α_ws, f)
         end
         blended
@@ -387,7 +387,7 @@ function write_monthly_mean(filepath, source_paths, variable_names, latitude_chu
 
                 for path in source_paths
                     NCDataset(path) do ds
-                        α = decode_albedo.(ds[name][:, rows])
+                        α = copernicus_albedo_decode.(ds[name][:, rows])
                         @. Σα += ifelse(isnan(α), 0f0, α)
                         @. n += !isnan(α)
                     end
