@@ -131,12 +131,7 @@ DataWrangling.latitude_name(::CopernicusAlbedoMetadata)  = "lat"
 DataWrangling.default_inpainting(::CopernicusAlbedoMetadata) = nothing
 DataWrangling.default_download_directory(::AbstractCopernicusAlbedo) = download_CopernicusLandAlbedo_cache
 
-# Albedo is a surface property: a reduced (`Nothing` z-location) field can be indexed
-# at any k, as the interface flux kernels do via `stateindex` at k = Nz (matches ASTERGED).
 Oceananigans.Fields.location(::CopernicusAlbedoMetadatum) = (Center, Center, Nothing)
-
-# Analytic interfaces of the fixed 1/112° global product (40320×15680): longitude
-# −180..180, latitude −60..80 (Δφ·15680 = 140 ⇒ 80 − 140 = −60).
 DataWrangling.longitude_interfaces(::CopernicusAlbedoMetadata) = (-180, 180)
 DataWrangling.latitude_interfaces(::CopernicusAlbedoMetadata)  = (-60, 80)
 
@@ -281,11 +276,11 @@ end
 
 #####
 ##### Reading — blend the black-sky/white-sky pair into the blue-sky array. Regional
-##### reads hyperslab exactly the native-grid cell window off disk (no global
-##### materialization), so `retrieve_data` and `read_file_coords` must window identically.
+##### reads hyperslab exactly the native-grid cell window off disk with no global
+##### materialization, so `retrieve_data` and `read_file_coords` must window identically.
 #####
 
-# 1-based native CELL range covered by `bbox` on the axis `(left, right)` split into `N`
+# 1-based native cell range covered by `bbox` on the axis `(left, right)` split into `N`
 # cells — must match `restrict()` in metadata_field.jl (returned count = `i⁺ - i⁻`, so the
 # cell range `(i⁻+1):i⁺` has that same length, pinning the region offset to di = dj = 0).
 function albedo_cell_range(bbox, interfaces, N)
@@ -303,11 +298,10 @@ end
 """
     albedo_read_window(metadatum)
 
-Global native CELL window `(icols, jrows)` (columns and ascending-frame rows) covering
+Global native cell window `(icols, jrows)` (columns and ascending-frame rows) covering
 the metadatum's `BoundingBox`, mirroring `construct_native_grid`'s `restrict`. Returns
 `nothing` for the global path (no region, or a longitude window that spans/wraps the
-±180 seam), in which case the caller reads the whole global grid. Pure integer math — no
-file I/O — so the offline native grid can pin `length(icols)`/`length(jrows)` against it.
+±180 seam), in which case the caller reads the whole global grid.
 """
 function albedo_read_window(metadatum)
     region = metadatum.region
@@ -323,8 +317,6 @@ function albedo_read_window(metadatum)
     span = bbox_longitude[2] - bbox_longitude[1]
     (span == 360 || (bbox_longitude[1] ≥ left && bbox_longitude[2] > right)) && return nothing
     icols = albedo_cell_range(bbox_longitude, native_longitude, Nx)
-
-    # Latitude — restrict() on (−60, 80) gives the ascending-frame cell range.
     jrows = albedo_cell_range(region.latitude, DataWrangling.latitude_interfaces(metadatum), Ny)
 
     return icols, jrows
@@ -334,15 +326,14 @@ function DataWrangling.retrieve_data(metadatum::CopernicusAlbedoMetadatum)
     path = metadata_path(metadatum)
     blacksky_name, whitesky_name = copernicus_albedo_variables[metadatum.name]
     f = Float32(metadatum.dataset.diffuse_fraction)
-    win = albedo_read_window(metadatum)
+    window = albedo_read_window(metadatum)
 
-    α = if isnothing(win)
+    α = if isnothing(window)
         NCDataset(path) do ds
             Nx = ds.dim["lon"]
             Ny = ds.dim["lat"]
             blended = Array{Float32}(undef, Nx, Ny)
-            # Read in latitude bands to cap the transient decoded (Union{Missing, Float64})
-            # array; the full 632M-pixel grid decoded at once is ~5 GB.
+            # Read in latitude bands to cap the transient decoded (Union{Missing, Float64}) array
             chunk = 1120
             for j in 1:chunk:Ny
                 rows = j:min(j + chunk - 1, Ny)
@@ -353,7 +344,7 @@ function DataWrangling.retrieve_data(metadatum::CopernicusAlbedoMetadatum)
             blended
         end
     else
-        icols, jrows = win
+        icols, jrows = window
         _, Ny, _ = size(metadatum.dataset, metadatum.name)
         # The file stores latitude north→south, so the ascending cells `jrows` sit at file
         # rows (Ny − last + 1):(Ny − first + 1). Only this hyperslab leaves disk.
@@ -366,13 +357,9 @@ function DataWrangling.retrieve_data(metadatum::CopernicusAlbedoMetadatum)
     end
 
     # Files store latitude north→south; flip to ascending to match the native grid.
-    # `reversed_latitude_axis` flips the coordinate in `read_file_coords`; this override
-    # owns the matching data flip, so the two must stay in sync.
     return reverse(α, dims = 2)
 end
 
-# Window the coordinates through the SAME `albedo_read_window` as the data, so the
-# regional read is bit-exact with the global-then-slice path (region offset di = dj = 0).
 function DataWrangling.read_file_coords(metadatum::CopernicusAlbedoMetadatum)
     λc, φc = NCDataset(metadata_path(metadatum)) do ds
         nomissing(ds[DataWrangling.longitude_name(metadatum)][:]),
