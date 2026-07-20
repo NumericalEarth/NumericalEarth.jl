@@ -50,11 +50,21 @@ appear in CMR queries and tile filenames.
 ASTER GED provides five narrowband emissivities (TIR bands 10–14). A longwave
 scheme needs a single broadband value, so the download step collapses the five
 bands to one broadband emissivity using the [Ogawa & Schmugge (2004)](@cite ogawa2004mapping)
-coefficients. Cells with no retrieval (persistent cloud, screened snow) and cells
-over water — ASTER GED reports no emissivity over water — decode to `NaN` and are
-filled by the default `NearestNeighborInpainting` when building a `Field`, so the
-returned field is finite everywhere. The emissivity `Field` can be passed directly
-to `SurfaceRadiationProperties` as its `emissivity`.
+coefficients.
+
+The product retrieves an emissivity almost everywhere, including over water,
+where it reports a physical value (open-ocean broadband ε ≈ 0.98). Genuine gaps
+appear only where a clear-sky retrieval was never obtained (persistent cloud in the
+humid tropics, summertime snow screened as cloud); the product stores its fill value
+there, which decodes to `NaN`. Those `NaN`s are filled when a `Field` is built — see
+the gap-filling note below. The finite emissivity `Field` can be passed directly to
+`SurfaceRadiationProperties` as its `emissivity`.
+
+!!! note "Gap filling"
+    Building a `Field` fills every `NaN` gap with the default
+    `NearestNeighborInpainting(Inf)` — each gap takes the value of the nearest valid
+    cell — so the returned field is finite everywhere. This step is blind to the land/water 
+    map the tiles carry and the land-water map is not read.
 
 Because ASTER GED is a fine regional-window raster, it is read in regional windows
 only: build the `Metadatum` with a longitude/latitude `BoundingBox`, most simply
@@ -71,9 +81,8 @@ lives in `ext/NumericalEarthArchGDALExt.jl`.
     Being a static clear-sky mean, the product also misses temporal effects on the
     model's own timescale — soil-moisture-driven emissivity changes during rain/TC
     events, vegetation phenology, and snow (ε is 0.03–0.08 higher under snow) — and
-    the clear-sky sampling biases it toward dry states. Over water the returned
-    values are inpainted land, not physical; a coupled model should override
-    emissivity where its own mask says ocean.
+    the clear-sky sampling biases it toward dry states. Over water the returned value
+    is ASTER GED's own retrieval (≈ 0.98 over open ocean).
 
 Data source: https://www.earthdata.nasa.gov/data/catalog/lpcloud-ag100-003
 Reference: Hulley et al. (2015), GRL, doi:10.1002/2015GL065564.
@@ -282,8 +291,10 @@ DataWrangling.is_three_dimensional(::ASTERGEDMetadatum) = false
 DataWrangling.dataset_variable_name(metadata::ASTERGEDMetadatum) =
     ASTERGED_variable_names[metadata.name]
 
-# Retrieval gaps and water decode to NaN; inpaint from the nearest valid cell.
-# `Inf` iterations so no gap is left as the zero a capped inpainting would write.
+# Clear-sky retrieval gaps (persistent cloud, screened snow) decode to NaN; fill each
+# from the nearest valid cell. `Inf` iterations so no gap is left as the zero a capped
+# inpainting would write. Deliberately surface-agnostic (the land/water map is not
+# read) — see the "Gap filling" note in the `ASTERGEDv3` docstring for the subtlety.
 DataWrangling.default_inpainting(::ASTERGEDMetadatum) = NearestNeighborInpainting(Inf)
 
 # The regional NetCDF is variable-independent, so key the inpainted cache on the
@@ -332,16 +343,16 @@ end
 
 #####
 ##### Data retrieval — the regional NetCDF already holds the decoded broadband
-##### floats (with NaN over gaps/water), so this is a dumb reader; the decode /
-##### broadband / assembly happens at download time (see the ArchGDAL extension).
+##### floats (with NaN over clear-sky retrieval gaps), so this is a dumb reader; the
+##### decode / broadband / assembly happens at download time (see the ArchGDAL extension).
 #####
 
 """
     retrieve_data(metadata::ASTERGEDMetadatum)
 
 Read the regional broadband `Float32` field for `metadata.name` from the NetCDF
-written by the download step (see `asterged_tiles_to_netcdf`). Gaps and water are
-`NaN` for the downstream inpainting. Returns a regional `(Nx, Ny)` array.
+written by the download step (see `asterged_tiles_to_netcdf`). Clear-sky retrieval
+gaps are `NaN` for the downstream inpainting. Returns a regional `(Nx, Ny)` array.
 """
 function DataWrangling.retrieve_data(metadata::ASTERGEDMetadatum)
     haskey(ASTERGED_variable_names, metadata.name) ||

@@ -65,7 +65,8 @@ end
 ##### and `/Geolocation/*` subdatasets through GDAL's HDF5 driver, decodes and
 ##### collapses the five TIR bands to one broadband float per cell, and writes a
 ##### regional NetCDF of the broadband emissivity + uncertainty on the analytic
-##### native grid (NaN over gaps/water, for the downstream inpainting).
+##### native grid (NaN over clear-sky retrieval gaps, for the downstream inpainting;
+##### the land/water map is not read — see the `ASTERGEDv3` docstring).
 #####
 ##### Requires GDAL_jll built with the HDF5 driver.
 #####
