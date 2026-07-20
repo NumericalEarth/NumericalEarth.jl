@@ -343,19 +343,14 @@ boxφ = [φ_south, φ_south, φ_north, φ_north, φ_south]
 fig_cascade = Figure(size = (1500, 700))
 cascade_n = Observable(1)
 
-## CairoMakie locks each heatmap's data to the first frame's concrete array type, but these lazy
-## field operations convert to *different* array types across frames (the parent's pressure-level
-## slices especially). Materialize every frame to a host matrix on its grid's own λ/φ, so the plotted
-## type stays fixed and the axes read geographic coordinates.
-host_matrix(field) = interior(Field(field), :, :, 1) |> Array
-
+## Each column's per-frame field is a lazy operation whose concrete type drifts across frames
+## (the parent's pressure-level slices especially), which a `@lift`-typed Observable would reject —
+## hence `Observable{Any}`. `heatmap!` reads each field's own λ/φ and moves it host-side, so the
+## field goes straight in; no manual node arrays or materialization.
 function panel!(ax, field_of, colormap, colorrange)
-    grid = Field(field_of(1)).grid
-    λ = Array(λnodes(grid, Center(), Center(), Center()))
-    φ = Array(φnodes(grid, Center(), Center(), Center()))
-    data = Observable(host_matrix(field_of(1)))
-    on(nn -> (data[] = host_matrix(field_of(nn))), cascade_n)
-    return heatmap!(ax, λ, φ, data; colormap, colorrange)
+    frame = Observable{Any}(field_of(1))
+    on(nn -> frame[] = field_of(nn), cascade_n)
+    return heatmap!(ax, frame; colormap, colorrange)
 end
 
 Label(fig_cascade[0, 1:5],
