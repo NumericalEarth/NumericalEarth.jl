@@ -761,7 +761,7 @@ function build_grid(dataset::ORCADataset, arch, Nz, depth; Δz_top = nothing)
                     major_basins = 1,
                     active_cells_map = true)
 
-    return close_shallow_river_regions(grid)
+    return grid # close_shallow_river_regions(grid)
 end
 
 # Locally-runnable testing configuration: the NEMO eORCA1 (~1ᵒ) mesh, used to reproduce the
@@ -854,7 +854,7 @@ function build_ocean(config, grid;
                              coriolis,
                              timestepper = :SplitRungeKutta3,
                              materialize_buoyancy_gradients = config_materialize_buoyancy_gradients(config),
-                             free_surface = SplitExplicitFreeSurface(grid; substeps=70),
+                             free_surface = SplitExplicitFreeSurface(grid; substeps=100),
                              additional_surface_fluxes = (; S = salt_restoring),
                              closure)
 
