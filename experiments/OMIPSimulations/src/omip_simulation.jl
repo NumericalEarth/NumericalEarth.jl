@@ -8,6 +8,7 @@ using Oceananigans.BoundaryConditions: DiscreteBoundaryFunction, getbc, fill_hal
 using Oceananigans.Fields: CenterField, interior
 using Oceananigans.ImmersedBoundaries: bottom_height_field
 using Oceananigans.Utils: launch!
+using Adapt: Adapt
 using NumericalEarth.Bathymetry: remove_minor_basins!
 using NumericalEarth.Oceans: MultipleFluxes, FreshwaterExchange
 using SeawaterPolynomials.TEOS10: Sᴬ_from_Sᴾ, Θ_from_T
@@ -163,60 +164,68 @@ function build_coupled_model(ocean, sea_ice, atmosphere, radiation, land, flux_c
 end
 
 #####
-##### Salinity flux normalization
+##### Conservative salinity restoring
 #####
 #
-# At each callback, subtract the global mean of the *restoring* flux alone from the
-# bulk-flux Field, so the restoring contributes zero net global salt while the physical
-# coupled and freshwater fluxes keep their real global means. Standard OMIP practice
-# (e.g. NorESM/BLOM) normalizes the restoring flux to a zero global mean.
-#
-# The restoring rides inside the salinity BC's `FreshwaterExchange` (which also carries
-# the freshwater volume flux); `restoring_flux` extracts only the restoring term. A bare
-# 2D `Field` BC has no restoring, so its normalizer is a no-op.
+# The surface-salinity restoring must inject zero net salt globally (standard OMIP practice,
+# e.g. NorESM/BLOM). `ConservativeSurfaceFluxRestoring` wraps a bare `SurfaceFluxRestoring` and
+# stores a pre-corrected, zero-wet-mean flux (`corrected_flux = raw - ⟨raw⟩`, immersed cells
+# excluded from the mean) that the salinity top BC reads directly via `getbc`. Because the stored
+# field is always its own zero-mean field, the applied restoring integrates to zero over the wet
+# ocean exactly, independently of when `update_restoring_flux!` refreshes it from the model state.
 
-@kernel function _materialize_top_flux!(buffer, additional, grid, clock, fields)
+struct ConservativeSurfaceFluxRestoring{R, F, M} <: Function
+    flux           :: R   # wrapped raw surface-flux restoring (getbc-compatible)
+    corrected_flux :: F   # 2D field storing raw - ⟨raw⟩; read by the boundary condition
+    mean_flux      :: M   # Field(Average(corrected_flux, dims=(1,2))) — host-side scratch
+end
+
+function ConservativeSurfaceFluxRestoring(flux, grid)
+    corrected_flux = Field{Center, Center, Nothing}(grid)
+    mean_flux = Field(Average(corrected_flux, dims=(1, 2)))
+    return ConservativeSurfaceFluxRestoring(flux, corrected_flux, mean_flux)
+end
+
+# The boundary condition reads only the pre-corrected field; `mean_flux` (a reduction over
+# `corrected_flux`) is host-side scratch and is dropped on the device.
+Adapt.adapt_structure(to, sf::ConservativeSurfaceFluxRestoring) =
+    ConservativeSurfaceFluxRestoring(Adapt.adapt(to, sf.flux),
+                                     Adapt.adapt(to, sf.corrected_flux),
+                                     nothing)
+
+@inline Oceananigans.BoundaryConditions.getbc(sf::ConservativeSurfaceFluxRestoring, i, j, grid, clock, fields) =
+    @inbounds sf.corrected_flux[i, j, 1]
+
+@kernel function _materialize_surface_flux!(buffer, flux, grid, clock, fields)
     i, j = @index(Global, NTuple)
-    @inbounds buffer[i, j, 1] = getbc(additional, i, j, grid, clock, fields)
+    @inbounds buffer[i, j, 1] = getbc(flux, i, j, grid, clock, fields)
 end
 
-struct NormalizeSalinity{F, A, B, M}
-    flux_field       :: F   # bulk flux field (gets corrected each call)
-    restoring        :: A   # restoring flux callable (or `nothing`)
-    restoring_buffer :: B   # 2D scratch field for the materialized restoring flux
-    mean_restoring   :: M   # Field(Average(restoring_buffer, dims=(1,2)))
-end
-
-# The restoring rides inside a `FreshwaterExchange` alongside the freshwater volume flux;
-# extract only the restoring term so the freshwater flux keeps its real global mean.
-restoring_flux(fe::FreshwaterExchange) = fe.additional
-restoring_flux(additional) = additional
-
-salinity_normalizer(bc::DiscreteBoundaryFunction) = salinity_normalizer(bc.func)
-
-function salinity_normalizer(mf::MultipleFluxes)
-    flux_field       = mf.flux_field
-    restoring        = restoring_flux(mf.additional_fluxes)
-    restoring_buffer = similar(flux_field)
-    fill!(parent(restoring_buffer), 0)
-    mean_restoring   = Field(Average(restoring_buffer, dims=(1, 2)))
-    return NormalizeSalinity(flux_field, restoring, restoring_buffer, mean_restoring)
-end
-
-salinity_normalizer(f::Field) = NormalizeSalinity(f, nothing, nothing, nothing)
-
-function (n::NormalizeSalinity)(sim)
-    isnothing(n.restoring) && return nothing
-    model  = sim.model.ocean.model
+# Refresh the stored zero-mean restoring flux from the current model state: materialize the wrapped
+# raw flux, compute its wet-area mean (immersed cells excluded), and subtract it in place.
+function update_restoring_flux!(sf::ConservativeSurfaceFluxRestoring, model)
     grid   = model.grid
     arch   = architecture(grid)
     fields = merge(model.velocities, model.tracers)
-    launch!(arch, grid, :xy, _materialize_top_flux!,
-            n.restoring_buffer, n.restoring, grid, model.clock, fields)
-    compute!(n.mean_restoring)
-    parent(n.flux_field) .-= n.mean_restoring
+    launch!(arch, grid, :xy, _materialize_surface_flux!, sf.corrected_flux, sf.flux, grid, model.clock, fields)
+    compute!(sf.mean_flux)
+    interior(sf.corrected_flux) .-= interior(sf.mean_flux)
     return nothing
 end
+
+# Pull the `ConservativeSurfaceFluxRestoring` off the salinity top BC, or `nothing` when the
+# restoring is not conservative-corrected (a bare `SurfaceFluxRestoring` or a plain field).
+conservative_restoring(bc::DiscreteBoundaryFunction)         = conservative_restoring(bc.func)
+conservative_restoring(mf::MultipleFluxes)                   = conservative_restoring(mf.additional_fluxes)
+conservative_restoring(fe::FreshwaterExchange)               = conservative_restoring(fe.additional)
+conservative_restoring(sf::ConservativeSurfaceFluxRestoring) = sf
+conservative_restoring(other)                                = nothing
+
+struct RefreshSalinityRestoring{R}
+    restoring :: R
+end
+
+(r::RefreshSalinityRestoring)(sim) = update_restoring_flux!(r.restoring, sim.model.ocean.model)
 
 #####
 ##### Main simulation builder
@@ -390,6 +399,7 @@ function omip_simulation(config::Symbol = :halfdegree;
                         implicit_vertical_advection,
                         Cᵂu★,
                         restoring_dir, piston_velocity,
+                        normalize_salinity,
                         additional_tracer_closure = river_κ,
                         start_date, end_date)
 
@@ -426,9 +436,13 @@ function omip_simulation(config::Symbol = :halfdegree;
         add_callback!(simulation, staging_callback, IterationInterval(1440))
     end
 
-    if normalize_salinity
-        NS = salinity_normalizer(ocean.model.tracers.S.boundary_conditions.top.condition)
-        add_callback!(simulation, NS, IterationInterval(1))
+    # Keep the surface-salinity restoring globally salt-conserving: refresh its stored
+    # zero-mean flux from the ocean state each step. Primed once here so the first step
+    # already sees a valid corrected flux.
+    salt_restoring = conservative_restoring(ocean.model.tracers.S.boundary_conditions.top.condition)
+    if !isnothing(salt_restoring)
+        update_restoring_flux!(salt_restoring, ocean.model)
+        add_callback!(simulation, RefreshSalinityRestoring(salt_restoring), IterationInterval(1))
     end
 
 
@@ -639,13 +653,16 @@ end
 #####
 
 # Surface-only restoring, applied uniformly in space (no ice mask).
-# Wrapped as a `SurfaceFluxRestoring` so it rides on the ocean's top-flux BC
-# via the `additional_surface_fluxes` kwarg of `ocean_simulation`.
+# Wrapped in a `ConservativeSurfaceFluxRestoring` so it rides on the ocean's top-flux BC
+# via the `additional_surface_fluxes` kwarg of `ocean_simulation` while injecting zero net
+# salt globally (OMIP zero-global-mean convention). The stored corrected flux is refreshed
+# each step by `update_restoring_flux!` (registered as a callback in `omip_simulation`).
 # WOA Practical Salinity is converted to TEOS-10 Absolute Salinity at setup so
 # the restoring target matches the ocean prognostic-S convention.
 function salinity_surface_restoring(grid, dataset;
                                     restoring_dir,
-                                    piston_velocity)
+                                    piston_velocity,
+                                    conservative = true)
 
     Nz = size(grid, 3)
     Δz_surface = CUDA.@allowscalar Δzᶜᶜᶜ(1, 1, Nz, grid)
@@ -660,7 +677,9 @@ function salinity_surface_restoring(grid, dataset;
 
     woa_salinity_fts_to_teos10!(restoring.field_time_series)
 
-    return SurfaceFluxRestoring(restoring)
+    surface_restoring = SurfaceFluxRestoring(restoring)
+
+    return conservative ? ConservativeSurfaceFluxRestoring(surface_restoring, grid) : surface_restoring
 end
 
 #####
@@ -832,10 +851,11 @@ function build_ocean(config, grid;
                      vertical_closure = :catke,
                      implicit_vertical_advection = true,
                      Cᵂu★ = nothing,
+                     normalize_salinity = true,
                      additional_tracer_closure = nothing,
                      start_date, end_date)
 
-    salt_restoring = salinity_surface_restoring(grid, WOAMonthly(); restoring_dir, piston_velocity)
+    salt_restoring = salinity_surface_restoring(grid, WOAMonthly(); restoring_dir, piston_velocity, conservative = normalize_salinity)
     closure = omip_closure(vertical_closure;
                            κ_skew, κ_symmetric, Cᵇ,
                            biharmonic_timescale, biharmonic_viscosity,

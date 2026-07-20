@@ -65,8 +65,10 @@ Environment variables (physics):
                 Must satisfy 0 < DZ_TOP < depth/Nz. Default: unset (scale=1300).
 
 Equatorial-MLD tuning knobs (closure parameters; configuration switches):
-  NORMALIZE_SALINITY Set to "true" to normalize the salinity flux to the
-                surface salinity. Default: false.
+  NORMALIZE_SALINITY "true" (default) applies the conservative, salt-conserving
+                surface-salinity restoring (zero global mean). Set to "false" to use
+                the raw un-normalized restoring (the old, non-conserving behavior),
+                e.g. for A/B comparison. Default: true.
   CATKE_CWUSTAR `Cᵂu★` of CATKEEquation: surface shear-driven TKE flux
                 coefficient. Higher → more wind-injected TKE → deeper
                 equatorial ML. Default (Oceananigans): 3.179.
@@ -216,7 +218,7 @@ RUN_NAME="$CONFIG"
 [[ "${CLOSURE:-catke}" == "kpp"      ]]        && RUN_NAME="${RUN_NAME}_kpp"
 [[ "${CLOSURE:-catke}" == "nemo_tke" ]]        && RUN_NAME="${RUN_NAME}_nemotke"
 [[ "${WIND_VELOCITY:-false}" == "true" ]]      && RUN_NAME="${RUN_NAME}_wind"
-[[ "${NORMALIZE_SALINITY:-false}" == "true" ]] && RUN_NAME="${RUN_NAME}_normsalt"
+[[ "${NORMALIZE_SALINITY:-true}" == "false" ]] && RUN_NAME="${RUN_NAME}_rawsalt"
 [[ -n "${CB:-}" ]]                             && RUN_NAME="${RUN_NAME}_cb${CB}"
 [[ "$KSKEW" != "$DEFAULT_KSKEW" ]]             && RUN_NAME="${RUN_NAME}_kskew${KSKEW}"
 [[ "$KSYMM" != "$DEFAULT_KSYMM" ]]             && RUN_NAME="${RUN_NAME}_ksymm${KSYMM}"
@@ -343,8 +345,14 @@ DZ_TOP_KWARG=""
 CATKE_CWUSTAR_KWARG=""
 [[ -n "$CATKE_CWUSTAR" ]] && CATKE_CWUSTAR_KWARG="Cᵂu★ = ${CATKE_CWUSTAR},"
 
-NORMALIZE_SALINITY_KWARG=""
-[[ "$NORMALIZE_SALINITY" == "true" ]] && NORMALIZE_SALINITY_KWARG="normalize_salinity = true,"
+# Pass the value explicitly (default true = conservative restoring) so the Julia-side default
+# never silently overrides a "false" request.
+NORMALIZE_SALINITY="${NORMALIZE_SALINITY:-true}"
+case "$NORMALIZE_SALINITY" in
+    true|false) ;;
+    *) echo "NORMALIZE_SALINITY must be 'true' or 'false', got '$NORMALIZE_SALINITY'" >&2; exit 1 ;;
+esac
+NORMALIZE_SALINITY_KWARG="normalize_salinity = ${NORMALIZE_SALINITY},"
 
 BACKEND_KWARG=""
 [[ -n "$BACKEND_SIZE" ]] && BACKEND_KWARG="backend_size = ${BACKEND_SIZE},"
