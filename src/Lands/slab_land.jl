@@ -274,7 +274,9 @@ function Oceananigans.restore_prognostic_state!(land::SlabLand, state)
     restore_prognostic_state!(land.temperature,   state.temperature)
     restore_prognostic_state!(land.water_storage, state.water_storage)
     extra = hasproperty(state, :prognostic) ? state.prognostic : (;)
-    map(restore_prognostic_state!, values(land.prognostic), values(extra))
+    for name in keys(land.prognostic)
+        hasproperty(extra, name) && restore_prognostic_state!(land.prognostic[name], extra[name])
+    end
     update_state!(land)
     return land
 end

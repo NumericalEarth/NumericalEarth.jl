@@ -265,6 +265,33 @@ end
     end
 end
 
+@testset "Checkpoint restore is keyed by name, not position" begin
+    for arch in test_architectures
+        FT = Float64
+        grid = LatitudeLongitudeGrid(arch, FT; size = 1, latitude = 10, longitude = 10,
+                                     z = (-1, 0), topology = (Flat, Flat, Bounded))
+        mkland(store) = (l = SlabLand(grid; energy = SlabEnergy(FT),
+                             hydrology = InterceptingHydrology(FT; soil = soil_hydrology(FT), leaf_area_index = 3.0));
+                         set!(l; T = 290, M = 120, canopy_water_storage = store); l)
+
+        # A checkpoint whose prognostic tuple carries an extra *leading* key (schema drift):
+        # a by-position restore would load the wrong (0.99) value; by-name loads 0.17.
+        sa = Oceananigans.prognostic_state(mkland(0.17))
+        sb = Oceananigans.prognostic_state(mkland(0.99))
+        drifted = merge(sa, (; prognostic = merge((bogus = sb.prognostic.canopy_water_storage,), sa.prognostic)))
+        land = mkland(0.0)
+        Oceananigans.restore_prognostic_state!(land, drifted)
+        @test scalar(land.prognostic.canopy_water_storage) == 0.17
+
+        # A legacy checkpoint with no `:prognostic` field restores gracefully, leaving the store
+        # at its current value (no crash, no length-mismatch mispairing).
+        legacy = (; clock = sa.clock, temperature = sa.temperature, water_storage = sa.water_storage)
+        land2 = mkland(0.42)
+        Oceananigans.restore_prognostic_state!(land2, legacy)
+        @test scalar(land2.prognostic.canopy_water_storage) == 0.42
+    end
+end
+
 @testset "Float32 type stability" begin
     for arch in test_architectures
         FT = Float32

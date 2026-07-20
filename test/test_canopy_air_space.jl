@@ -4,9 +4,11 @@ using Oceananigans
 using Oceananigans: set!, interior
 using Oceananigans.TimeSteppers: update_state!
 using NumericalEarth.EarthSystemModels.InterfaceComputations:
-    CanopyAirSpace, CanopyConductanceHumidity, DryLayerHumidity, StorageBasedDryLayerDepth,
-    DryLayerVaporPistonVelocity, ConstantTortuosity, CriticalSaturation, InteractiveAbsorbedPAR,
-    SoilConductiveFlux, SoilSkinTemperature, canopy_air_space_solve,
+    CanopyAirSpace, CanopyConductanceHumidity, CanopyInterception, DryLayerHumidity, StorageBasedDryLayerDepth,
+    DryLayerVaporPistonVelocity, ConstantTortuosity, PowerLawTortuosity, CriticalSaturation, InteractiveAbsorbedPAR,
+    SoilConductiveFlux, SoilSkinTemperature, canopy_air_space_solve, dry_layer_terms,
+    compute_interface_temperature, compute_interface_humidity, interface_temperature_and_humidity,
+    saturation_specific_humidity, default_dry_air_molar_mass, AtmosphericThermodynamics,
     AirLandInterfaceState, InterfaceFluxScales, InterfaceVelocities, AirLandRadiationState
 using NumericalEarth.Atmospheres: PrescribedAtmosphere, AtmosphereThermodynamicsParameters
 using NumericalEarth.Lands: SlabLand, SlabEnergy, BucketHydrology
@@ -129,5 +131,121 @@ end
         Ψᵢ = (u = FT(0), v = FT(0), T = FT(298))
         Ψᵣ = AirLandRadiationState(FT(5.670374e-8), FT(0), FT(0), FT(600), FT(350))
         @inferred canopy_air_space_solve(cas, Ψₛ, Ψₐ, Ψᵢ, Ψᵣ, ℙₐ)
+    end
+end
+
+# The wet-canopy vapor mass conductance is g_wet = ρᵃᵗ·LAI·gᵇ. A molar-mass factor (Mᵈ ≈ 0.029)
+# in place of the air density (ρᵃᵗ ≈ 1.2) would make it ~40× too small — smaller than the dry
+# stomatal conductance, so a wet leaf would evaporate *slower* than a dry one.
+@testset "Wet-canopy vapor conductance scales with air density" begin
+    FT = Float64
+    ℂ  = AtmosphereThermodynamicsParameters(FT)
+    ℙₐ = (thermodynamics_parameters = ℂ, gravitational_acceleration = FT(9.81))
+    LAI = 3.0; gᵇ = 0.02; c = 0.1
+    cas = CanopyAirSpace(FT;
+        soil = DryLayerHumidity(FT;
+            dry_layer_depth = StorageBasedDryLayerDepth(FT; maximum_dry_layer_depth = 0.015,
+                                dry_layer_onset_saturation = 0.5, dry_layer_exponent = 2),
+            vapor_exchange = DryLayerVaporPistonVelocity(FT; minimum_dry_layer_depth = 1e-3,
+                                molecular_diffusivity = 2.4e-5, tortuosity = ConstantTortuosity()),
+            thermal_exchange_depth = 0.05, porosity = 0.4),
+        canopy = CanopyConductanceHumidity(FT; leaf_area_index = LAI,
+                                moisture_stress = CriticalSaturation(0.5), absorbed_par = InteractiveAbsorbedPAR(FT)),
+        leaf_boundary_conductance = gᵇ,
+        interception = CanopyInterception(FT; capacity_per_leaf_area = c))
+
+    Ψₐ  = (z = FT(10), u = FT(3), v = FT(0), T = FT(305), p = FT(101325), q = FT(0.006), h_bℓ = FT(600))  # dry, warm → demand
+    Ψᵢ  = (u = FT(0), v = FT(0), T = FT(298))
+    Ψᵣ  = AirLandRadiationState(FT(5.670374e-8), FT(0), FT(0), FT(600), FT(350))
+    flx = InterfaceFluxScales(FT(0.26), FT(1e-3), FT(-1e-3)); vel = InterfaceVelocities(FT(0), FT(0))
+    Wᶜᵐᵃˣ = c * LAI
+
+    Ψwet = AirLandInterfaceState(flx, vel, FT(300), FT(0.012),
+            (saturation = FT(0.3), canopy_water_storage = FT(Wᶜᵐᵃˣ)), (temperature = FT(298),), (leaf_area_index = FT(LAI),))
+    Ψdry = AirLandInterfaceState(flx, vel, FT(300), FT(0.012),
+            (saturation = FT(0.3), canopy_water_storage = FT(0)), (temperature = FT(298),), (leaf_area_index = FT(LAI),))
+    wet = canopy_air_space_solve(cas, Ψwet, Ψₐ, Ψᵢ, Ψᵣ, ℙₐ)
+    dry = canopy_air_space_solve(cas, Ψdry, Ψₐ, Ψᵢ, Ψᵣ, ℙₐ)
+
+    @test wet.LEᵛ > dry.LEᵛ        # a wet leaf evaporates faster than the dry (stomatal) leaf
+    @test wet.E_wet > 0
+    @test dry.E_wet == 0
+
+    ρᵃᵗ = AtmosphericThermodynamics.air_density(ℂ, Ψₐ.T, Ψₐ.p, Ψₐ.q)
+    qᵛ  = saturation_specific_humidity(ℂ, wet.Tᵛ, Ψₐ.p, cas.phase)
+    E_ρ = (ρᵃᵗ * LAI * gᵇ) * (qᵛ - wet.qᵃᶜ)                          # correct (air density)
+    E_M = (default_dry_air_molar_mass * LAI * gᵇ) * (qᵛ - wet.qᵃᶜ)   # erroneous (molar mass)
+    @test wet.E_wet ≈ E_ρ rtol = 1e-6
+    @test wet.E_wet / E_M ≈ ρᵃᵗ / default_dry_air_molar_mass rtol = 1e-3   # ≈ 40, not 1
+end
+
+# The CanopyAirSpace soil branch blends the dry-layer series conductance with the saturated-skin
+# wet branch (weight `f_dry` from the soil model). With a Millington–Quirk (power-law) tortuosity
+# the raw Gᵉ collapses to ≈ 0 at saturation; the blend must keep the soil evaporating.
+@testset "Saturated soil keeps evaporating (dry-layer wet blend in CanopyAirSpace)" begin
+    FT = Float64
+    ℂ  = AtmosphereThermodynamicsParameters(FT)
+    ℙₐ = (thermodynamics_parameters = ℂ, gravitational_acceleration = FT(9.81))
+    soil = DryLayerHumidity(FT;
+        dry_layer_depth = StorageBasedDryLayerDepth(FT; maximum_dry_layer_depth = 0.015,
+                            dry_layer_onset_saturation = 0.5, dry_layer_exponent = 2),
+        vapor_exchange = DryLayerVaporPistonVelocity(FT; minimum_dry_layer_depth = 1e-3,
+                            molecular_diffusivity = 2.4e-5, tortuosity = PowerLawTortuosity()),
+        thermal_exchange_depth = 0.05, porosity = 0.4)
+    # Bare soil (LAI = 0) isolates the soil branch from the canopy.
+    bare(gᵘᶜ) = CanopyAirSpace(FT; soil,
+        canopy = CanopyConductanceHumidity(FT; leaf_area_index = 0.0,
+                            moisture_stress = CriticalSaturation(0.5), absorbed_par = InteractiveAbsorbedPAR(FT)),
+        soil_skin_flux = SoilConductiveFlux(1.5, 0.05), undercanopy_conductance = gᵘᶜ)
+
+    Ψₐ  = (z = FT(10), u = FT(3), v = FT(0), T = FT(305), p = FT(101325), q = FT(0.006), h_bℓ = FT(600))
+    Ψᵢ  = (u = FT(0), v = FT(0), T = FT(298))
+    Ψᵣ  = AirLandRadiationState(FT(5.670374e-8), FT(0), FT(0), FT(600), FT(350))
+    flx = InterfaceFluxScales(FT(0.26), FT(1e-3), FT(-1e-3)); vel = InterfaceVelocities(FT(0), FT(0))
+    Ψ(𝒮) = AirLandInterfaceState(flx, vel, FT(300), FT(0.012), (saturation = FT(𝒮),),
+            (temperature = FT(300),), (leaf_area_index = FT(0),))
+    LEᵍ(gᵘᶜ, 𝒮) = canopy_air_space_solve(bare(gᵘᶜ), Ψ(𝒮), Ψₐ, Ψᵢ, Ψᵣ, ℙₐ).LEᵍ
+
+    # A saturated soil evaporates a substantial positive latent flux (the pre-fix stall gives ≈ 0),
+    # rising monotonically as the soil↔canopy-air path opens up.
+    E = [LEᵍ(g, 0.99) for g in (0.05, 0.5, 5.0)]
+    @test all(E .> 50)
+    @test issorted(E)
+
+    # Dry limit: at low saturation the dry-branch weight f_dry ≈ 1, so the blended soil
+    # conductance reduces to the raw dry-layer Gᵉ (the blend is inactive where the soil is dry).
+    Gᵉ, qᵉ, f_dry, qⁱⁿ⁺ = dry_layer_terms(soil, FT(300), Ψ(0.1), Ψₐ, ℙₐ)
+    ρᵃᵗ = AtmosphericThermodynamics.air_density(ℂ, Ψₐ.T, Ψₐ.p, Ψₐ.q)
+    @test f_dry > 0.99
+    @test f_dry * Gᵉ + (1 - f_dry) * (ρᵃᵗ * 0.5) ≈ Gᵉ rtol = 0.02
+end
+
+# A CanopyAirSpace in both interface slots is a combined formulation: one shared solve returns
+# both Tᵃᶜ and qᵃᶜ. This must be bit-identical to running the two separate solves.
+@testset "Combined CanopyAirSpace solve equals separate temperature/humidity solves" begin
+    for FT in (Float32, Float64)
+        ℂ  = AtmosphereThermodynamicsParameters(FT)
+        ℙₐ = (thermodynamics_parameters = ℂ, gravitational_acceleration = FT(9.81))
+        cas = CanopyAirSpace(FT;
+            soil = DryLayerHumidity(FT;
+                dry_layer_depth = StorageBasedDryLayerDepth(FT; maximum_dry_layer_depth = 0.015,
+                                    dry_layer_onset_saturation = 0.5, dry_layer_exponent = 2),
+                vapor_exchange = DryLayerVaporPistonVelocity(FT; minimum_dry_layer_depth = 1e-3,
+                                    molecular_diffusivity = 2.4e-5, tortuosity = ConstantTortuosity()),
+                thermal_exchange_depth = 0.05, porosity = 0.4),
+            canopy = CanopyConductanceHumidity(FT; leaf_area_index = 3.0,
+                                    moisture_stress = CriticalSaturation(0.5), absorbed_par = InteractiveAbsorbedPAR(FT)))
+        Ψₛ = AirLandInterfaceState(InterfaceFluxScales(FT(0.26), FT(1e-3), FT(-1e-3)),
+                InterfaceVelocities(FT(0), FT(0)), FT(300), FT(0.012),
+                (saturation = FT(0.3),), (temperature = FT(298),), (leaf_area_index = FT(3),))
+        Ψₐ = (z = FT(10), u = FT(3), v = FT(0), T = FT(300), p = FT(101325), q = FT(0.008), h_bℓ = FT(600))
+        Ψᵢ = (u = FT(0), v = FT(0), T = FT(298))
+        Ψᵣ = AirLandRadiationState(FT(5.670374e-8), FT(0), FT(0), FT(600), FT(350))
+
+        Tₛ = compute_interface_temperature(cas, Ψₛ, Ψₐ, Ψᵢ, Ψᵣ, ℙₐ, ℙₐ, ℙₐ)
+        qₛ = compute_interface_humidity(cas, Tₛ, Ψₛ, Ψₐ, Ψᵢ, Ψᵣ, ℙₐ)
+        Tc, qc = interface_temperature_and_humidity(cas, cas, Ψₛ, Ψₐ, Ψᵢ, Ψᵣ, ℙₐ, ℙₐ, ℙₐ)
+        @test Tc === Tₛ
+        @test qc === qₛ
     end
 end

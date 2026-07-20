@@ -45,7 +45,7 @@ end
 Interface-side parameters of the wet-canopy (interception) vapor branch. A wet
 canopy evaporates intercepted water at the *potential* (stomata-free) rate through
 the leaf boundary layer only, so the leaf vapor conductance blends the dry
-(stomatal) `g_c` with a wet `g_wet = LAI · gᵇ · Mᵈ` by the wet fraction
+(stomatal) `g_c` with a wet `g_wet = ρᵃᵗ · LAI · gᵇ` by the wet fraction
 
 ```math
 f_{wet} = (Wᶜ / Wᶜᵐᵃˣ)^{2/3}, \\qquad Wᶜᵐᵃˣ = c · LAI
@@ -210,14 +210,16 @@ uses the `Δ`-multiplied Kirchhoff form so it stays finite as the flux vanishes.
 
     gˡʰ = ρᵃᵗ * cᵖ * LAI * c.leaf_boundary_conductance
     gᵍʰ = ρᵃᵗ * cᵖ * c.undercanopy_conductance
+    gᵍʷ = ρᵃᵗ * c.undercanopy_conductance   # undercanopy vapor conductance (wet-soil limit)
     Λ   = convert(FT, skin_conductance(c.soil_skin_flux))
 
     # Wet-canopy vapor branch. `f_wet` (Deardorff 1978) blends the dry stomatal
-    # conductance `g_c` with the stomata-free wet-leaf conductance `g_wet = LAI·gᵇ·Mᵈ`,
-    # so intercepted water evaporates at the potential rate through the leaf boundary
-    # layer. `f_wet = 0` (no interception) recovers the dry CAS bit-for-bit.
+    # conductance `g_c` with the stomata-free wet-leaf conductance `g_wet = ρᵃᵗ·LAI·gᵇ`
+    # (the boundary-layer vapor mass conductance), so intercepted water evaporates at the
+    # potential rate through the leaf boundary layer. `f_wet = 0` (no interception)
+    # recovers the dry CAS bit-for-bit.
     f_wet = wet_canopy_fraction(c.interception, Ψₛ.hydrology, LAI)
-    g_wet = LAI * c.leaf_boundary_conductance * convert(FT, default_dry_air_molar_mass)
+    g_wet = ρᵃᵗ * LAI * c.leaf_boundary_conductance
 
     # Shortwave split + longwave emissivities (broadband).
     σ   = Ψᵣ.σ
@@ -240,7 +242,14 @@ uses the `Δ`-multiplied Kirchhoff form so it stays finite as the flux vanishes.
 
     for _ in 1:c.inner_iterations
         g_c, qᵛ   = canopy_conductance_terms(c.canopy, Tᵛ, Ψₛ, Ψₐ, Ψᵣ, ℙₐ)
-        Gᵉ, qᵉ, _, _ = dry_layer_terms(c.soil, Tⁱⁿ, Ψₛ, Ψₐ, ℙₐ)
+        Gᵉ, qᵉ, f_dry, qⁱⁿ⁺ = dry_layer_terms(c.soil, Tⁱⁿ, Ψₛ, Ψₐ, ℙₐ)
+
+        # Blend the dry-layer series soil branch (front qᵉ through Gᵉ) with the
+        # saturated-skin wet branch (qⁱⁿ⁺ through the undercanopy conductance gᵍʷ),
+        # weight `f_dry` from the soil model.
+        Gᵉ⁺ = f_dry * Gᵉ + (1 - f_dry) * gᵍʷ
+        qᵉ  = ifelse(Gᵉ⁺ > tiny, (f_dry * Gᵉ * qᵉ + (1 - f_dry) * gᵍʷ * qⁱⁿ⁺) / Gᵉ⁺, qⁱⁿ⁺)
+        Gᵉ  = Gᵉ⁺
 
         # Blended leaf vapor conductance: dry (stomatal) g_c over the transpiring
         # fraction, wet (boundary-layer) g_wet over the wetted fraction f_wet.
@@ -277,7 +286,10 @@ uses the `Δ`-multiplied Kirchhoff form so it stays finite as the flux vanishes.
     # Converged diagnostics: per-surface flux shares, the skin→slab conduction, and
     # the effective radiating (LST) temperature σ T_eff⁴ ≡ LWu (upwelling to space).
     g_c, qᵛ   = canopy_conductance_terms(c.canopy, Tᵛ, Ψₛ, Ψₐ, Ψᵣ, ℙₐ)
-    Gᵉ, qᵉ, _, _ = dry_layer_terms(c.soil, Tⁱⁿ, Ψₛ, Ψₐ, ℙₐ)
+    Gᵉ, qᵉ, f_dry, qⁱⁿ⁺ = dry_layer_terms(c.soil, Tⁱⁿ, Ψₛ, Ψₐ, ℙₐ)
+    Gᵉ⁺ = f_dry * Gᵉ + (1 - f_dry) * gᵍʷ
+    qᵉ  = ifelse(Gᵉ⁺ > tiny, (f_dry * Gᵉ * qᵉ + (1 - f_dry) * gᵍʷ * qⁱⁿ⁺) / Gᵉ⁺, qⁱⁿ⁺)
+    Gᵉ  = Gᵉ⁺
     g_leaf = (1 - f_wet) * g_c + f_wet * g_wet
     LWd_c = (1 - ε_c) * LWd + ε_c * σ * Tᵛ^4
     LWu_g = ε_g * σ * Tⁱⁿ^4 + (1 - ε_g) * LWd_c
@@ -308,3 +320,11 @@ end
 
 @inline compute_interface_humidity(c::CanopyAirSpace, Tₛ, Ψₛ, Ψₐ, Ψᵢ, Ψᵣ, ℙₐ) =
     canopy_air_space_solve(c, Ψₛ, Ψₐ, Ψᵢ, Ψᵣ, ℙₐ).qᵃᶜ
+
+# Combined temperature + humidity: one shared solve returns both the canopy-air node
+# temperature Tᵃᶜ and humidity qᵃᶜ, so the per-iterate inner solve runs once, not twice.
+@inline function interface_temperature_and_humidity(c::CanopyAirSpace, ::CanopyAirSpace,
+                                                    Ψₛ, Ψₐ, Ψᵢ, Ψᵣ, ℙₛ, ℙₐ, ℙᵢ)
+    sol = canopy_air_space_solve(c, Ψₛ, Ψₐ, Ψᵢ, Ψᵣ, ℙₐ)
+    return sol.Tᵃᶜ, sol.qᵃᶜ
+end
