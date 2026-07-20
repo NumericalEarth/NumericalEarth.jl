@@ -62,13 +62,10 @@ function davies_relaxation_mask(grid, width; ramp = CosineRamp())
     end
 end
 
-# Davies relaxation variable set, dispatched on the parent kind. A PRESCRIBED reference parent (e.g. ERA5)
-# is relaxed on the INTENSIVE fields — specific `u`/`v`/`θ`, which Breeze wraps in `SpecificForcing`
-# (target ρᵈ_child·⟨parent⟩) — so the near-wall density transient neither corrupts velocity/temperature nor
-# bleeds the `ρθ` (compressible-pressure) acoustic restoring force (the boundary cold rim). A LIVE
-# prognostic parent (telescoping nest) is relaxed on the density-weighted `ρu`/`ρv`/`ρθ`, matching the
-# parent's own conserved densities at the boundary. `ρᵈ` (mass) is always density-weighted; the caller
-# merges the moisture density in separately.
+# Davies relaxation variable set, dispatched on the parent kind. A prescribed reference parent
+# is relaxed on the intensive fields — specific `u`/`v`/`θ`, which Breeze wraps in `SpecificForcing` whereas
+# a live prognostic parent (in a telescoping nest) is relaxed on the density-weighted `ρu`/`ρv`/`ρθ`, matching the
+# parent's own conserved densities at the boundary.
 davies_forcing_variables(prognostic, ::PrescribedAtmosphere) =
     (ρᵈ = prognostic.ρᵈ, θ = prognostic.θ, u = prognostic.u, v = prognostic.v)
 
@@ -247,7 +244,7 @@ function NumericalEarth.NestedModels.nested_atmosphere_model(
     # calls `mask(x, y, z)`, so wrap a scalar mask in a callable. The density `ρᵈ` is relaxed alongside
     # the momentum/energy/moisture — the mass field, following WRF (nudges dry mass μ) and MPAS (nudges ρ);
     # without it the un-relaxed near-wall density drives a persistent lateral-wall residual (ρw creep) that
-    # a top sponge cannot damp. Whether momentum/energy relax on their INTENSIVE (specific) or the
+    # a top sponge cannot damp. Whether momentum/energy relax on their specific or
     # density-weighted forms is chosen by `davies_forcing_variables`, dispatched on the parent kind.
     relax_mask = relaxation_mask isa Number ? Returns(relaxation_mask) : relaxation_mask
     davies = if isnothing(relaxation_rate)

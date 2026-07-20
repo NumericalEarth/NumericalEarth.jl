@@ -296,9 +296,8 @@ end
 end
 
 # Unit test for the Breeze-ext helper that selects the Davies relaxation variable set by parent kind:
-# a PRESCRIBED (reference) parent relaxes the INTENSIVE specific u/v/θ (child-density-weighted via a
-# `SpecificForcing`), while a LIVE prognostic parent relaxes the density-weighted ρu/ρv/ρθ. `ρᵈ` is
-# always density-weighted; the caller merges the moisture density separately.
+# a prescribed parent relaxes the specific u/v/θ (child-density-weighted via a
+# `SpecificForcing`), while a prognostic parent relaxes the density-weighted ρu/ρv/ρθ.
 @testset "davies_forcing_variables selects intensive vs extensive by parent kind" begin
     ext = Base.get_extension(NumericalEarth, :NumericalEarthBreezeExt)
     # sentinel members — the helper only selects members by key, so distinguishable values suffice
