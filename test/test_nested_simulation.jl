@@ -295,6 +295,25 @@ end
     @test all(interior(s2.θˡⁱ) .< θ)   # condensate loading lowers θˡⁱ below the dry θ
 end
 
+# Unit test for the Breeze-ext helper that selects the Davies relaxation variable set by parent kind:
+# a PRESCRIBED (reference) parent relaxes the INTENSIVE specific u/v/θ (child-density-weighted via a
+# `SpecificForcing`), while a LIVE prognostic parent relaxes the density-weighted ρu/ρv/ρθ. `ρᵈ` is
+# always density-weighted; the caller merges the moisture density separately.
+@testset "davies_forcing_variables selects intensive vs extensive by parent kind" begin
+    ext = Base.get_extension(NumericalEarth, :NumericalEarthBreezeExt)
+    # sentinel members — the helper only selects members by key, so distinguishable values suffice
+    state = (ρᵈ = :ρᵈ, ρu = :ρu, ρv = :ρv, ρθ = :ρθ, ρqᵛ = :ρqᵛ, θ = :θ, u = :u, v = :v)
+
+    grid = RectilinearGrid(size = (4, 4, 4), x = (0, 1), y = (0, 1), z = (0, 1),
+                           topology = (Bounded, Bounded, Bounded))
+    prescribed = PrescribedAtmosphere(grid, [0.0])
+
+    # Prescribed reference parent → intensive: specific u/v/θ (+ mass ρᵈ)
+    @test ext.davies_forcing_variables(state, prescribed) == (ρᵈ = :ρᵈ, θ = :θ, u = :u, v = :v)
+    # Any non-PrescribedAtmosphere (live prognostic parent) → extensive: density-weighted ρu/ρv/ρθ
+    @test ext.davies_forcing_variables(state, nothing) == (ρᵈ = :ρᵈ, ρθ = :ρθ, ρu = :ρu, ρv = :ρv)
+end
+
 # Integration test for the example's production path: a Breeze `AtmosphereModel`
 # driven as a `NestedSimulation` child via the direct-wiring primitives
 # (`atmosphere_simulation(…).model` + `parent_boundary_conditions`). Exercises the

@@ -62,6 +62,19 @@ function davies_relaxation_mask(grid, width; ramp = CosineRamp())
     end
 end
 
+# Davies relaxation variable set, dispatched on the parent kind. A PRESCRIBED reference parent (e.g. ERA5)
+# is relaxed on the INTENSIVE fields — specific `u`/`v`/`θ`, which Breeze wraps in `SpecificForcing`
+# (target ρᵈ_child·⟨parent⟩) — so the near-wall density transient neither corrupts velocity/temperature nor
+# bleeds the `ρθ` (compressible-pressure) acoustic restoring force (the boundary cold rim). A LIVE
+# prognostic parent (telescoping nest) is relaxed on the density-weighted `ρu`/`ρv`/`ρθ`, matching the
+# parent's own conserved densities at the boundary. `ρᵈ` (mass) is always density-weighted; the caller
+# merges the moisture density in separately.
+davies_forcing_variables(prognostic, ::PrescribedAtmosphere) =
+    (ρᵈ = prognostic.ρᵈ, θ = prognostic.θ, u = prognostic.u, v = prognostic.v)
+
+davies_forcing_variables(prognostic, parent) =
+    (ρᵈ = prognostic.ρᵈ, ρθ = prognostic.ρθ, ρu = prognostic.ρu, ρv = prognostic.ρv)
+
 # Cubic-ramp (smoothstep) Rayleigh mask over the top `depth` metres of the domain, for the ρw lid sponge.
 # `z_top` is read once host-side under `@allowscalar`: a `znode` on a terrain-following GPU grid
 # indexes the (device) terrain arrays, which is otherwise disallowed. `s` is the normalized distance
@@ -231,16 +244,17 @@ function NumericalEarth.NestedModels.nested_atmosphere_model(
     nested_bcs = parent_boundary_conditions(child_grid; variables = bc_variables, sides, bc_types)
 
     # Interior Davies relaxation toward the precomputed prognostics. Oceananigans' FTS `Relaxation`
-    # calls `mask(x, y, z)`, so wrap a scalar mask in a callable. The density `ρᵈ` is relaxed
-    # alongside the momentum/energy/moisture — the mass field, following WRF (nudges dry mass μ) and
-    # MPAS (nudges ρ); without it the un-relaxed near-wall density drives a persistent lateral-wall
-    # residual (ρw creep) that a top sponge cannot damp.
+    # calls `mask(x, y, z)`, so wrap a scalar mask in a callable. The density `ρᵈ` is relaxed alongside
+    # the momentum/energy/moisture — the mass field, following WRF (nudges dry mass μ) and MPAS (nudges ρ);
+    # without it the un-relaxed near-wall density drives a persistent lateral-wall residual (ρw creep) that
+    # a top sponge cannot damp. Whether momentum/energy relax on their INTENSIVE (specific) or the
+    # density-weighted forms is chosen by `davies_forcing_variables`, dispatched on the parent kind.
     relax_mask = relaxation_mask isa Number ? Returns(relaxation_mask) : relaxation_mask
     davies = if isnothing(relaxation_rate)
         NamedTuple()
     else
-        dry_forcing_variables = (ρᵈ = prognostic.ρᵈ, θ = prognostic.θ, ρu = prognostic.ρu, ρv = prognostic.ρv)
-        variables = merge(dry_forcing_variables, moist_variables)
+        forcing_variables = davies_forcing_variables(prognostic, parent_atmosphere)
+        variables = merge(forcing_variables, moist_variables)
         parent_forcings(; variables, rate = relaxation_rate, mask = relax_mask)
     end
 
