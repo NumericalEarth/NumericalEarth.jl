@@ -230,16 +230,16 @@ function NumericalEarth.NestedModels.nested_atmosphere_model(
 
     nested_bcs = parent_boundary_conditions(child_grid; variables = bc_variables, sides, bc_types)
 
-    # Interior Davies relaxation toward the precomputed (density-weighted) prognostics. Oceananigans'
-    # FTS `Relaxation` calls `mask(x, y, z)`, so wrap a scalar mask in a callable. The density `ρᵈ` is
-    # relaxed alongside the momentum/energy/moisture — the mass field, following WRF (nudges dry mass μ)
-    # and MPAS (nudges ρ); without it the un-relaxed near-wall density drives a persistent lateral-wall
+    # Interior Davies relaxation toward the precomputed prognostics. Oceananigans' FTS `Relaxation`
+    # calls `mask(x, y, z)`, so wrap a scalar mask in a callable. The density `ρᵈ` is relaxed
+    # alongside the momentum/energy/moisture — the mass field, following WRF (nudges dry mass μ) and
+    # MPAS (nudges ρ); without it the un-relaxed near-wall density drives a persistent lateral-wall
     # residual (ρw creep) that a top sponge cannot damp.
     relax_mask = relaxation_mask isa Number ? Returns(relaxation_mask) : relaxation_mask
     davies = if isnothing(relaxation_rate)
         NamedTuple()
     else
-        dry_forcing_variables = (ρᵈ = prognostic.ρᵈ, ρθ = prognostic.ρθ, ρu = prognostic.ρu, ρv = prognostic.ρv)
+        dry_forcing_variables = (ρᵈ = prognostic.ρᵈ, θ = prognostic.θ, ρu = prognostic.ρu, ρv = prognostic.ρv)
         variables = merge(dry_forcing_variables, moist_variables)
         parent_forcings(; variables, rate = relaxation_rate, mask = relax_mask)
     end
