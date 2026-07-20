@@ -5,10 +5,13 @@ export CopernicusAlbedo, CopernicusAlbedoClimatology, build_monthly_climatology!
 using Dates: Dates, DateTime, Month, year, month, daysinmonth
 using Downloads: Downloads
 using NCDatasets: NCDataset, defVar, nomissing
+using Oceananigans: Center
 using Oceananigans.DistributedComputations: @root
 
-using ..DataWrangling: DataWrangling, Metadata, Metadatum,
-                       metadata_path, default_download_directory
+using ..DataWrangling: DataWrangling, Metadata, Metadatum, BoundingBox,
+                       metadata_path, default_download_directory, native_convention_longitude
+
+import Oceananigans
 
 download_CopernicusLandAlbedo_cache::String = ""
 function __init__()
@@ -128,25 +131,15 @@ DataWrangling.latitude_name(::CopernicusAlbedoMetadata)  = "lat"
 DataWrangling.default_inpainting(::CopernicusAlbedoMetadata) = nothing
 DataWrangling.default_download_directory(::AbstractCopernicusAlbedo) = download_CopernicusLandAlbedo_cache
 
-# Recover grid interfaces from the pixel-center coordinates in the file, so the native
-# grid matches the file's half-pixel registration exactly.
-function albedo_native_interfaces(path)
-    NCDataset(path) do ds
-        λ = Float64.(ds["lon"][:])
-        φ = Float64.(ds["lat"][:])
-        Δλ = (λ[end] - λ[1]) / (length(λ) - 1)
-        Δφ = (φ[end] - φ[1]) / (length(φ) - 1)
-        longitude = (λ[1] - Δλ / 2, λ[end] + Δλ / 2)
-        latitude = extrema((φ[1] - Δφ / 2, φ[end] + Δφ / 2))
-        return longitude, latitude
-    end
-end
+# Albedo is a surface property: a reduced (`Nothing` z-location) field can be indexed
+# at any k, as the interface flux kernels do via `stateindex` at k = Nz (matches ASTERGED).
+Oceananigans.Fields.location(::CopernicusAlbedoMetadatum) = (Center, Center, Nothing)
 
-DataWrangling.longitude_interfaces(metadata::CopernicusAlbedoMetadata) =
-    first(albedo_native_interfaces(metadata_path(first(metadata))))
-
-DataWrangling.latitude_interfaces(metadata::CopernicusAlbedoMetadata) =
-    last(albedo_native_interfaces(metadata_path(first(metadata))))
+# Analytic native interfaces of the fixed 1/112° global product (40320×15680): longitude
+# −180..180, latitude −60..80 (Δλ·40320 = 360, Δφ·15680 = 140 ⇒ 80 − 140 = −60). File-free,
+# so `native_grid(metadata)` (and hence `construct_native_grid`'s `restrict`) needs no download.
+DataWrangling.longitude_interfaces(::CopernicusAlbedoMetadata) = (-180, 180)
+DataWrangling.latitude_interfaces(::CopernicusAlbedoMetadata)  = (-60, 80)
 
 #####
 ##### Dates
@@ -288,33 +281,110 @@ function coordinate_name(source, candidates)
 end
 
 #####
-##### Reading — blend the black-sky/white-sky pair into the global blue-sky array.
+##### Reading — blend the black-sky/white-sky pair into the blue-sky array. Regional
+##### reads hyperslab exactly the native-grid cell window off disk (no global
+##### materialization), so `retrieve_data` and `read_file_coords` must window identically.
 #####
+
+# 1-based native CELL range covered by `bbox` on the axis `(left, right)` split into `N`
+# cells — must match `restrict()` in metadata_field.jl (returned count = `i⁺ - i⁻`, so the
+# cell range `(i⁻+1):i⁺` has that same length, pinning the region offset to di = dj = 0).
+function albedo_cell_range(bbox, interfaces, N)
+    left, right = interfaces
+    Δ = (right - left) / N
+    i⁻ = clamp(floor(Int, (bbox[1] - left) / Δ - 1/2), 0, N)
+    i⁺ = clamp(ceil( Int, (bbox[2] - left) / Δ + 1/2), 0, N)
+    if i⁺ ≤ i⁻
+        i⁺ = min(i⁻ + 1, N)
+        i⁻ = max(i⁺ - 1, 0)
+    end
+    return (i⁻ + 1):i⁺
+end
+
+"""
+    albedo_read_window(metadatum)
+
+Global native CELL window `(icols, jrows)` (columns and ascending-frame rows) covering
+the metadatum's `BoundingBox`, mirroring `construct_native_grid`'s `restrict`. Returns
+`nothing` for the global path (no region, or a longitude window that spans/wraps the
+±180 seam), in which case the caller reads the whole global grid. Pure integer math — no
+file I/O — so the offline native grid can pin `length(icols)`/`length(jrows)` against it.
+"""
+function albedo_read_window(metadatum)
+    region = metadatum.region
+    (region isa BoundingBox && !isnothing(region.longitude) && !isnothing(region.latitude)) || return nothing
+
+    Nx, Ny, _ = size(metadatum.dataset, metadatum.name)
+
+    # Longitude — mirror restrict_longitude(): map the bbox into the native convention,
+    # then bail to the global path if it spans 360° or wraps past the +180 seam.
+    native_longitude = DataWrangling.longitude_interfaces(metadatum)
+    bbox_longitude = native_convention_longitude(region.longitude, native_longitude)
+    left, right = native_longitude
+    span = bbox_longitude[2] - bbox_longitude[1]
+    (span == 360 || (bbox_longitude[1] ≥ left && bbox_longitude[2] > right)) && return nothing
+    icols = albedo_cell_range(bbox_longitude, native_longitude, Nx)
+
+    # Latitude — restrict() on (−60, 80) gives the ascending-frame cell range.
+    jrows = albedo_cell_range(region.latitude, DataWrangling.latitude_interfaces(metadatum), Ny)
+
+    return icols, jrows
+end
 
 function DataWrangling.retrieve_data(metadatum::CopernicusAlbedoMetadatum)
     path = metadata_path(metadatum)
     blacksky_name, whitesky_name = copernicus_albedo_variables[metadatum.name]
     f = Float32(metadatum.dataset.diffuse_fraction)
+    win = albedo_read_window(metadatum)
 
-    α = NCDataset(path) do ds
-        Nx = ds.dim["lon"]
-        Ny = ds.dim["lat"]
-        blended = Array{Float32}(undef, Nx, Ny)
-        # Read in latitude bands to cap the transient decoded (Union{Missing, Float64})
-        # array; the full 632M-pixel grid decoded at once is ~5 GB.
-        chunk = 1120
-        for j in 1:chunk:Ny
-            rows = j:min(j + chunk - 1, Ny)
-            α_bs = decode_albedo.(ds[blacksky_name][:, rows])
-            α_ws = decode_albedo.(ds[whitesky_name][:, rows])
-            @. blended[:, rows] = bluesky_blend(α_bs, α_ws, f)
+    α = if isnothing(win)
+        NCDataset(path) do ds
+            Nx = ds.dim["lon"]
+            Ny = ds.dim["lat"]
+            blended = Array{Float32}(undef, Nx, Ny)
+            # Read in latitude bands to cap the transient decoded (Union{Missing, Float64})
+            # array; the full 632M-pixel grid decoded at once is ~5 GB.
+            chunk = 1120
+            for j in 1:chunk:Ny
+                rows = j:min(j + chunk - 1, Ny)
+                α_bs = decode_albedo.(ds[blacksky_name][:, rows])
+                α_ws = decode_albedo.(ds[whitesky_name][:, rows])
+                @. blended[:, rows] = bluesky_blend(α_bs, α_ws, f)
+            end
+            blended
         end
-        blended
+    else
+        icols, jrows = win
+        _, Ny, _ = size(metadatum.dataset, metadatum.name)
+        # The file stores latitude north→south, so the ascending cells `jrows` sit at file
+        # rows (Ny − last + 1):(Ny − first + 1). Only this hyperslab leaves disk.
+        file_rows = (Ny - last(jrows) + 1):(Ny - first(jrows) + 1)
+        NCDataset(path) do ds
+            α_bs = decode_albedo.(ds[blacksky_name][icols, file_rows])
+            α_ws = decode_albedo.(ds[whitesky_name][icols, file_rows])
+            bluesky_blend.(α_bs, α_ws, f)
+        end
     end
 
-    # Files store latitude north→south; flip to south→north to match the grid.
-    α = reverse(α, dims = 2)
-    return reshape(α, size(α, 1), size(α, 2), 1)
+    # Files store latitude north→south; flip to ascending to match the native grid.
+    # `reversed_latitude_axis` governs the COORDINATE flip in `read_file_coords`, while this
+    # override owns the matching DATA flip — the two must stay in sync (see the row inversion
+    # above, which is the same north→south ⇄ ascending mapping applied to the data).
+    return reverse(α, dims = 2)
+end
+
+# Window the coordinates through the SAME `albedo_read_window` as the data, so the
+# regional read is bit-exact with the global-then-slice path (region offset di = dj = 0).
+function DataWrangling.read_file_coords(metadatum::CopernicusAlbedoMetadatum)
+    λc, φc = NCDataset(metadata_path(metadatum)) do ds
+        nomissing(ds[DataWrangling.longitude_name(metadatum)][:]),
+        nomissing(ds[DataWrangling.latitude_name(metadatum)][:])
+    end
+    reverse!(φc)  # file latitude is north→south; make ascending to match the data flip
+    win = albedo_read_window(metadatum)
+    isnothing(win) && return λc, φc
+    icols, jrows = win
+    return λc[icols], φc[jrows]
 end
 
 #####
@@ -376,8 +446,8 @@ function write_monthly_mean(filepath, source_paths, variable_names, latitude_chu
         defVar(destination, "lon", λ, ("lon",))
         defVar(destination, "lat", φ, ("lat",))
 
-        for name in variable_names
-            monthly_mean = defVar(destination, name, Float32, ("lon", "lat");
+        for variable_name in variable_names
+            monthly_mean = defVar(destination, variable_name, Float32, ("lon", "lat");
                                   deflatelevel = 2, shuffle = true)
 
             for j in 1:latitude_chunk:Ny
@@ -387,7 +457,7 @@ function write_monthly_mean(filepath, source_paths, variable_names, latitude_chu
 
                 for path in source_paths
                     NCDataset(path) do ds
-                        α = decode_albedo.(ds[name][:, rows])
+                        α = decode_albedo.(ds[variable_name][:, rows])
                         @. Σα += ifelse(isnan(α), 0f0, α)
                         @. n += !isnan(α)
                     end

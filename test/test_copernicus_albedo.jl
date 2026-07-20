@@ -1,12 +1,14 @@
 include("runtests_setup.jl")
 
-using NumericalEarth.DataWrangling: BoundingBox, Metadatum,
+using NumericalEarth.DataWrangling: BoundingBox, Metadatum, native_grid,
                                     is_three_dimensional, default_inpainting,
                                     dataset_variable_name, metadata_filename,
                                     longitude_name, latitude_name, all_dates
 using NumericalEarth.DataWrangling.CopernicusLandAlbedo: bluesky_blend, decode_albedo,
                                                          dekadal_dates, albedo_satellite,
-                                                         albedo_cds_request_variables
+                                                         albedo_cds_request_variables,
+                                                         albedo_read_window
+using Oceananigans.Grids: λnodes, φnodes
 using Dates: DateTime, Day, day, month, daysinmonth
 
 @testset "Copernicus land albedo helpers" begin
@@ -60,7 +62,7 @@ end
     @test dataset_variable_name(metadatum) == "AL_DH_BB"
     @test longitude_name(metadatum) == "lon"
     @test latitude_name(metadatum) == "lat"
-    @test location(metadatum) == (Center, Center, Center)
+    @test location(metadatum) == (Center, Center, Nothing)
     @test albedo_cds_request_variables[:albedo] == ("albb_dh", "albb_bh")
 
     # Filenames are keyed by date and variable but not by region, so one global
@@ -77,4 +79,64 @@ end
     @test january != july
     @test occursin("2018-2019", january)
     @test occursin("m07", july)
+end
+
+@testset "Copernicus land albedo native grid and read window" begin
+    dataset = CopernicusAlbedo()
+    date = DateTime(2019, 7, 10)
+    Nx_full, Ny_full, _ = size(dataset, :albedo)
+    @test (Nx_full, Ny_full) == (40320, 15680)  # #2: analytic 1/112° grid unchanged
+    Δλ = 360 / Nx_full
+    Δφ = 140 / Ny_full  # latitude spans 80 − (−60) = 140°
+
+    # A small mid-latitude box, a box hugging the north edge (80°N), a box hugging the
+    # south edge (−60°S), and an antimeridian-crossing box (global fallback).
+    windowed = (BoundingBox(longitude = (-114, -109), latitude = (33, 38)),
+                BoundingBox(longitude = (10, 14),      latitude = (77, 80)),
+                BoundingBox(longitude = (10, 14),      latitude = (-60, -56)))
+    fallback = BoundingBox(longitude = (175, 185), latitude = (0, 5))
+
+    for region in windowed
+        metadatum = Metadatum(:albedo; dataset, region, date)
+
+        # #2: the native grid is file-free — this must work with nothing downloaded.
+        grid = native_grid(metadatum)
+
+        win = albedo_read_window(metadatum)
+        @test win !== nothing
+        icols, jrows = win
+
+        # #1 core safety: the window is EXACTLY the native-grid cell count, so
+        # region_info recomputes di = dj = 0 (bit-exact with global-then-slice).
+        @test length(icols) == size(grid, 1)
+        @test length(jrows) == size(grid, 2)
+
+        # The window's implied cell-center bounds match the native grid's node extent.
+        # `atol` sits well below the native cell size (Δ ≈ 0.0089°) so a one-cell
+        # misalignment still fails, while Float32 node storage (~1e-5 noise) passes.
+        λn = λnodes(grid, Center(), Center(), Center())
+        φn = φnodes(grid, Center(), Center(), Center())
+        λ_win = (-180 + (first(icols) - 0.5) * Δλ, -180 + (last(icols) - 0.5) * Δλ)
+        φ_win = ( -60 + (first(jrows) - 0.5) * Δφ,  -60 + (last(jrows) - 0.5) * Δφ)
+        @test λ_win[1] ≈ minimum(λn)  atol = 1e-3
+        @test λ_win[2] ≈ maximum(λn)  atol = 1e-3
+        @test φ_win[1] ≈ minimum(φn)  atol = 1e-3
+        @test φ_win[2] ≈ maximum(φn)  atol = 1e-3
+
+        # Ascending → file-row (north→south) inversion, as in `retrieve_data`.
+        file_rows = (Ny_full - last(jrows) + 1):(Ny_full - first(jrows) + 1)
+        @test length(file_rows) == length(jrows)
+        @test first(file_rows) ≥ 1 && last(file_rows) ≤ Ny_full
+        # Northmost native cell (last(jrows)) sits at the smallest (northernmost) file row.
+        @test first(file_rows) == Ny_full - last(jrows) + 1
+        @test last(file_rows)  == Ny_full - first(jrows) + 1
+    end
+
+    # A window crossing the ±180 seam falls back to the global read path.
+    metadatum = Metadatum(:albedo; dataset, region = fallback, date)
+    @test native_grid(metadatum) isa Oceananigans.Grids.AbstractGrid  # still constructible
+    @test albedo_read_window(metadatum) === nothing
+
+    # No region at all is also the global path.
+    @test albedo_read_window(Metadatum(:albedo; dataset, date)) === nothing
 end
