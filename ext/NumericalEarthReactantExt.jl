@@ -26,10 +26,8 @@ function reconcile_state!(model::ReactantESM)
     return nothing
 end
 
-# On `ReactantState` the clock iteration is a traced scalar, so the generic
-# `if iteration == 0` first-step guard can't branch inside a compiled loop. Make the
-# hook a no-op and do the first-step refresh explicitly in `first_time_step!`, as
-# Oceananigans does for its own Reactant models.
+# On `ReactantState` the traced clock iteration can't drive the `iteration == 0`
+# first-step guard in a compiled loop, so refresh explicitly in `first_time_step!`.
 maybe_prepare_first_time_step!(::ReactantESM, Δt, callbacks) = nothing
 
 function first_time_step!(model::ReactantESM, Δt)

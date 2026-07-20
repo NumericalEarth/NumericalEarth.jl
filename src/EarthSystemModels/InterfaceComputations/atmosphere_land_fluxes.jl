@@ -174,10 +174,8 @@ end
 
     q_formulation = interface_properties.specific_humidity_formulation
 
-    # Bulk land temperature serves as the initial skin-temperature guess. `FT` is
-    # taken from the field value, not `eltype(grid)`: inside a Reactant-raised
-    # kernel the grid's scalar metrics are traced numbers, so `eltype(grid)` is a
-    # traced type that plain field values cannot be `convert`ed to.
+    # Bulk land temperature is the initial skin-temperature guess. Take `FT` from the
+    # field value, not `eltype(grid)`, which is a traced type inside a Reactant kernel.
     Tₛ = land_field_value(land_state.T, i, j)
     FT = typeof(Tₛ)
 

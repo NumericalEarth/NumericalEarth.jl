@@ -53,15 +53,10 @@ end
     @test any(state.T .!= 0)
 end
 
-# The exchanger regridder and construction-time flux state are set up when the model is built,
-# but a coupled model whose prognostic state is `set!` *after* construction must reconcile that
-# state on the first compiled step (issue #403). Under `@trace` the generic
-# `if clock.iteration == 0` first-step guard cannot branch on the traced iteration, so the
-# coupled-model Reactant extension makes `maybe_prepare_first_time_step!` a no-op and routes the
-# refresh through `first_time_step!`. This checks that a compiled run using `first_time_step!`
-# reproduces the eager CPU result after a post-construction `set!` of the skin temperature —
-# without the fix the first compiled step consumes the pre-`set!` flux state and drifts by tens
-# of kelvin.
+# A coupled model whose state is `set!` *after* construction must reconcile that state on the
+# first compiled step (issue #403): under `@trace` the `if clock.iteration == 0` guard can't
+# branch on the traced iteration, so the Reactant extension no-ops `maybe_prepare_first_time_step!`
+# and refreshes through `first_time_step!`. Without the fix the first step drifts by tens of K.
 @testset "AtmosphereLandModel first-step reconcile under Reactant (issue #403)" begin
     IC = NumericalEarth.EarthSystemModels.InterfaceComputations
 
@@ -77,10 +72,8 @@ end
         set!(atmos.pressure, 101325)
         update_state!(atmos)
         land = SlabLand(grid)
-        # These are the default atmosphere--land fluxes except for FixedIterations, which
-        # gives the flux solver a fixed trip count so the compiled and eager paths trace
-        # identically — the default convergence criterion is a data-dependent `while` loop
-        # that would not.
+        # Default atmosphere--land fluxes, but with FixedIterations so the flux solver has a fixed
+        # trip count — the default `while`-loop convergence criterion won't trace identically.
         FT = eltype(grid)
         fluxes = IC.SimilarityTheoryFluxes(FT;
                                            stability_functions          = IC.atmosphere_land_stability_functions(FT),
