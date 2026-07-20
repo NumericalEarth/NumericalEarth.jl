@@ -124,10 +124,6 @@ function child_prognostic_field_time_series(parent_atmosphere; time_indices_in_m
     build() = FieldTimeSeries{Center, Center, Center}(grid, times;
                                                       backend = PrognosticStateBackend(1, window),
                                                       time_indexing = Cyclical())
-    # `θ`, `u`, `v` are the *intensive* (specific) members — the parent liquid-ice potential temperature
-    # and horizontal velocities — carried so the child can relax intensive θ/u/v (via `θ`/`u`/`v`-keyed
-    # `SpecificForcing`, target ρᵈ_child·⟨parent⟩) rather than the density-weighted ρθ/ρu/ρv; they ride the
-    # same moving window as the density-weighted members.
     return (ρᵈ = build(), ρu = build(), ρv = build(), ρθ = build(), ρqᵛ = build(), θ = build(), u = build(), v = build())
 end
 
