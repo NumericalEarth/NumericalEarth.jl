@@ -147,20 +147,20 @@ case "$CONFIG" in
 run!(sim, pickup=:latest)"
         ;;
     quarterdegree)
-        DEFAULT_KSKEW=0;    DEFAULT_KSYMM=0;   NZ=100; DEFAULT_DT="20minutes"; DEFAULT_DZ_TOP="1.5"
-        DEFAULT_BIHARMONIC="nothing"; ARCH="Distributed(GPU(), partition=Partition(1, 2))"; GPUS_PER_NODE=2
+        DEFAULT_KSKEW=0;    DEFAULT_KSYMM=0;   NZ=100; DEFAULT_DT="2"; DEFAULT_DZ_TOP="1.5"
+        DEFAULT_BIHARMONIC="nothing"; ARCH="GPU()"; GPUS_PER_NODE=1
         EXTRA_USING="using Oceananigans.DistributedComputations"
         FILE_SPLIT=""
         RUN_CMD="sim.stop_time = 365days
 run!(sim)
 
-sim.Δt = 30minutes
+sim.Δt = 20minutes
 sim.stop_time = 300 * 365days
 run!(sim; pickup = true)"
         ;;
     orca)
-        DEFAULT_KSKEW=500;  DEFAULT_KSYMM=250; NZ=70;  DEFAULT_DT="20minutes"; DEFAULT_DZ_TOP="1.5"
-        DEFAULT_BIHARMONIC="10days"; ARCH="GPU()"; GPUS_PER_NODE=1
+        DEFAULT_KSKEW=800;  DEFAULT_KSYMM=800; NZ=70;  DEFAULT_DT="30minutes"; DEFAULT_DZ_TOP="1.5"
+        DEFAULT_BIHARMONIC="50days"; ARCH="GPU()"; GPUS_PER_NODE=1
         EXTRA_USING=""; FILE_SPLIT=""
         RUN_CMD="sim.stop_time = 720day
 run!(sim; pickup = :latest)
@@ -168,7 +168,7 @@ run!(sim; pickup = :latest)
 sim.stop_time = 300 * 365days
 sim.Δt = 30minutes
 
-run!(sim)
+run!(sim; pickup = :latest)
 "
         ;;
     twelfthdegree)
@@ -250,7 +250,7 @@ fi
 if [[ "${PARTITION}" == "default" ]]; then
     TIME="${TIME:-05:00:00}"
 else
-    TIME="${TIME:-120:00:00}"
+    TIME="${TIME:-30:00:00}"
 fi
 SBATCH_ARGS+=(--time="${TIME}")
 
