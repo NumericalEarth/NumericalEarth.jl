@@ -5,9 +5,15 @@ using Downloads: Downloads
 using NCDatasets: NCDataset, defDim, defVar
 using NumericalEarth: NumericalEarth
 
-using NumericalEarth.DataWrangling: BoundingBox, netrc_downloader
-using NumericalEarth.DataWrangling.ASTERGED: asterged_short_name,
-                                             asterged_version, asterged_cmr_granules_url
+using Oceananigans: Center, CPU
+using Oceananigans.Grids: λnodes, φnodes
+
+using NumericalEarth.DataWrangling: BoundingBox, netrc_downloader, native_grid
+using NumericalEarth.DataWrangling.ASTERGED: asterged_short_name, asterged_version,
+                                             asterged_cmr_granules_url,
+                                             asterged_decode_emissivity, asterged_decode_uncertainty,
+                                             broadband_map, place_tile!,
+                                             OGAWA_SCHMUGGE_2004_BROADBAND_COEFFICIENTS
 
 function NumericalEarth.DataWrangling.IBCAO.reproject_ibcao_to_netcdf(tiff_path, nc_path)
     ArchGDAL.read(tiff_path) do src
@@ -53,22 +59,19 @@ end
 #####
 ##### ASTER GED emissivity ingest (HDF5 tiles on a plain lat/lon grid)
 #####
-#####
-##### Resolves the 1°×1° HDF5 tiles intersecting a BoundingBox via NASA CMR,
-##### downloads them with Earthdata credentials, reads the `/Emissivity/Mean`,
-##### `/Emissivity/SDev` and `/Land_Water_Map/LWmap` subdatasets (+ the
-##### `/Geolocation/*` arrays) through GDAL's HDF5 driver, clips + mosaics them to
-##### the region, and writes a regional NetCDF of *raw digital numbers* (no scale
-##### applied — the ASTERGED module decodes/blends/masks on read). The tile `.h5`
-##### is the download unit: Mean, SDev and LWmap are subdatasets of the same file.
-##### The coordinates come from the `/Geolocation/*` arrays.
+##### Resolves the 1°×1° HDF5 tiles intersecting the region via NASA CMR, downloads
+##### them with Earthdata credentials (cached per tile, so overlapping regions and
+##### both variables reuse them), reads the `/Emissivity/Mean`, `/Emissivity/SDev`
+##### and `/Geolocation/*` subdatasets through GDAL's HDF5 driver, decodes and
+##### collapses the five TIR bands to one broadband float per cell, and writes a
+##### regional NetCDF of the broadband emissivity + uncertainty on the analytic
+##### native grid (NaN over gaps/water, for the downstream inpainting).
 #####
 ##### Requires GDAL_jll built with the HDF5 driver.
 #####
 
-# Earthdata-authenticated download of a single tile, retried on transient
-# failures. Credentials come from the EARTHDATA_USERNAME / EARTHDATA_PASSWORD 
-# environment variables.
+# Earthdata-authenticated download of a single tile, retried on transient failures.
+# Credentials come from the EARTHDATA_USERNAME / EARTHDATA_PASSWORD env variables.
 function earthdata_download(url, path; attempts = 3)
     username = get(ENV, "EARTHDATA_USERNAME", nothing)
     password = get(ENV, "EARTHDATA_PASSWORD", nothing)
@@ -80,7 +83,7 @@ function earthdata_download(url, path; attempts = 3)
         error("NASA Earthdata credentials not found: EARTHDATA_PASSWORD is not set. " *
               "Register free at https://urs.earthdata.nasa.gov.")
     end
-  
+
     mktempdir() do tmp
         downloader = netrc_downloader(username, password, "urs.earthdata.nasa.gov", tmp)
         for attempt in 1:attempts
@@ -96,6 +99,14 @@ function earthdata_download(url, path; attempts = 3)
         end
     end
     return path
+end
+
+# Persistent per-tile cache: overlapping regions and both variables reuse tiles
+# instead of re-downloading. `basename(url)` is the tile granule name.
+function earthdata_download_cached(url, cache_dir; attempts = 3)
+    path = joinpath(cache_dir, basename(url))
+    isfile(path) && return path
+    return earthdata_download(url, path; attempts)
 end
 
 # Query CMR for the ASTER GED tile `.h5` download URLs intersecting `bbox`,
@@ -131,105 +142,64 @@ function read_asterged_subdataset(h5_path, layer)
     end
 end
 
-# Index in the sorted vector `sorted` whose value is closest to `x`.
-function nearest_index(sorted, x)
-    i = searchsortedfirst(sorted, x)
-    i <= 1 && return 1
-    i > length(sorted) && return length(sorted)
-    return (x - sorted[i-1]) <= (sorted[i] - x) ? i - 1 : i
-end
-
 function NumericalEarth.DataWrangling.ASTERGED.asterged_tiles_to_netcdf(metadatum, nc_path::AbstractString)
+    dataset = metadatum.dataset
     bbox = metadatum.region
     (bbox isa BoundingBox && !isnothing(bbox.longitude) && !isnothing(bbox.latitude)) ||
         error("asterged_tiles_to_netcdf requires a BoundingBox region.")
 
-    short_name = asterged_short_name(metadatum.dataset)
-    version = asterged_version(metadatum.dataset)
+    # Target axes = the same native grid the Field will use, so tile cells land on
+    # file cells by construction (no empirical axis reconstruction, no half-pixel
+    # registration guesswork).
+    grid = native_grid(metadatum, CPU())
+    longitude = collect(λnodes(grid, Center()))
+    latitude  = collect(φnodes(grid, Center()))
+    Nx, Ny = length(longitude), length(latitude)
+    Δλ = (longitude[end] - longitude[1]) / max(Nx - 1, 1)
+    Δφ = (latitude[end]  - latitude[1])  / max(Ny - 1, 1)
 
-    granule_urls = NumericalEarth.DataWrangling.ASTERGED.earthdata_cmr_granules(short_name, version, bbox)
+    short_name = asterged_short_name(dataset)
+    version = asterged_version(dataset)
+    coefficients = OGAWA_SCHMUGGE_2004_BROADBAND_COEFFICIENTS
+
+    # Query CMR over the native extent (padded a cell) so every file cell is covered.
+    query = BoundingBox(longitude = (longitude[1] - Δλ, longitude[end] + Δλ),
+                        latitude  = (latitude[1]  - Δφ, latitude[end]  + Δφ))
+    granule_urls = NumericalEarth.DataWrangling.ASTERGED.earthdata_cmr_granules(short_name, version, query)
     isempty(granule_urls) &&
         error("CMR returned no $(short_name).$(version) tiles for region $(bbox).")
 
-    west, east = bbox.longitude
-    south, north = bbox.latitude
-    margin = 0.02  # pad the clip a few native cells so the model grid stays covered
+    emissivity  = fill(NaN32, Nx, Ny)
+    uncertainty = fill(NaN32, Nx, Ny)
 
-    mktempdir() do tmp
-        # Download the intersecting tiles.
-        hdf_paths = String[]
-        for (n, url) in enumerate(granule_urls)
-            hdf_path = joinpath(tmp, string(short_name, "_tile_", n, ".h5"))
-            earthdata_download(url, hdf_path)
-            push!(hdf_paths, hdf_path)
-        end
+    tile_cache = joinpath(dirname(nc_path), string(short_name, "_tiles"))
+    mkpath(tile_cache)
 
-        # Read + clip each tile to the (padded) bbox using its geolocation arrays.
-        # Per tile the mean/sdev arrays are (Nx, Ny, 5) with longitude increasing
-        # along dim 1 and latitude *decreasing* along dim 2 (north→south).
-        clipped = NamedTuple[]
-        for h5 in hdf_paths
-            longitude = Float64.(read_asterged_subdataset(h5, "//Geolocation/Longitude")[:, 1, 1])
-            latitude  = Float64.(read_asterged_subdataset(h5, "//Geolocation/Latitude")[1, :, 1])
+    for url in granule_urls
+        h5 = earthdata_download_cached(url, tile_cache)
 
-            ii = findall(λ -> (west - margin) <= λ <= (east + margin), longitude)
-            jj = findall(φ -> (south - margin) <= φ <= (north + margin), latitude)
-            (isempty(ii) || isempty(jj)) && continue
+        tile_longitude = Float64.(read_asterged_subdataset(h5, "//Geolocation/Longitude")[:, 1, 1])
+        tile_latitude  = Float64.(read_asterged_subdataset(h5, "//Geolocation/Latitude")[1, :, 1])
 
-            mean_dn = read_asterged_subdataset(h5, "//Emissivity/Mean")[ii, jj, :]
-            sdev_dn = read_asterged_subdataset(h5, "//Emissivity/SDev")[ii, jj, :]
-            lwmap   = read_asterged_subdataset(h5, "//Land_Water_Map/LWmap")[ii, jj, 1]
+        # GDAL returns (Nx, Ny, 5) band-last; permute to the band-first (5, Nx, Ny)
+        # the broadband collapse expects.
+        mean_bands = permutedims(asterged_decode_emissivity.(read_asterged_subdataset(h5, "//Emissivity/Mean")), (3, 1, 2))
+        sdev_bands = permutedims(asterged_decode_uncertainty.(read_asterged_subdataset(h5, "//Emissivity/SDev")), (3, 1, 2))
 
-            push!(clipped, (longitude = longitude[ii], latitude = latitude[jj],
-                            mean_dn = mean_dn, sdev_dn = sdev_dn, lwmap = lwmap))
-        end
-        isempty(clipped) &&
-            error("No ASTER GED tile cells fell within region $(bbox).")
+        place_tile!(emissivity,  broadband_map(mean_bands, coefficients), tile_longitude, tile_latitude, longitude, latitude)
+        place_tile!(uncertainty, broadband_map(sdev_bands, coefficients), tile_longitude, tile_latitude, longitude, latitude)
+    end
 
-        # Build the mosaic coordinate axes (ascending; south→north for latitude)
-        # by taking the sorted union of the clipped tiles' cell centers. Rounding
-        # collapses the Float32 boundary cell shared by adjacent tiles.
-        all_longitude = sort(unique(round.(vcat((t.longitude for t in clipped)...), digits = 6)))
-        all_latitude  = sort(unique(round.(vcat((t.latitude  for t in clipped)...), digits = 6)))
-        Nx = length(all_longitude)
-        Ny = length(all_latitude)
+    all(isnan, emissivity) &&
+        error("No ASTER GED tile cells fell within region $(bbox).")
 
-        # Scatter each tile's clipped cells onto the mosaic grid. Unfilled cells
-        # get the emissivity fill (-9999 → NaN on decode) and land (0) for LWmap.
-        mean_out = fill(Int16(-9999), 5, Nx, Ny)
-        sdev_out = fill(Int16(-9999), 5, Nx, Ny)
-        lwmap_out = zeros(Int16, Nx, Ny)
-        for t in clipped
-            for (jl, φ) in enumerate(t.latitude)
-                j = nearest_index(all_latitude, φ)
-                for (il, λ) in enumerate(t.longitude)
-                    i = nearest_index(all_longitude, λ)
-                    @views mean_out[:, i, j] .= Int16.(t.mean_dn[il, jl, :])
-                    @views sdev_out[:, i, j] .= Int16.(t.sdev_dn[il, jl, :])
-                    lwmap_out[i, j] = Int16(t.lwmap[il, jl])
-                end
-            end
-        end
-
-        NCDataset(nc_path, "c") do ds
-            defDim(ds, "band", 5)
-            defDim(ds, "lon", Nx)
-            defDim(ds, "lat", Ny)
-            lon_var = defVar(ds, "lon", Float64, ("lon",);
-                             attrib = ["units" => "degrees_east", "long_name" => "longitude"])
-            lat_var = defVar(ds, "lat", Float64, ("lat",);
-                             attrib = ["units" => "degrees_north", "long_name" => "latitude"])
-            lon_var[:] = all_longitude
-            lat_var[:] = all_latitude
-
-            # Raw digital numbers, no CF scale/offset — the ASTERGED module decodes.
-            mean_var = defVar(ds, "emissivity_mean", Int16, ("band", "lon", "lat"))
-            mean_var[:, :, :] = mean_out
-            sdev_var = defVar(ds, "emissivity_sdev", Int16, ("band", "lon", "lat"))
-            sdev_var[:, :, :] = sdev_out
-            lwmap_var = defVar(ds, "land_water_map", Int16, ("lon", "lat"))
-            lwmap_var[:, :] = lwmap_out
-        end
+    NCDataset(nc_path, "c") do ds
+        defDim(ds, "lon", Nx)
+        defDim(ds, "lat", Ny)
+        defVar(ds, "lon", Float64, ("lon",); attrib = ["units" => "degrees_east", "long_name" => "longitude"])[:] = longitude
+        defVar(ds, "lat", Float64, ("lat",); attrib = ["units" => "degrees_north", "long_name" => "latitude"])[:] = latitude
+        defVar(ds, "emissivity", Float32, ("lon", "lat"))[:, :] = emissivity
+        defVar(ds, "emissivity_uncertainty", Float32, ("lon", "lat"))[:, :] = uncertainty
     end
 
     return nothing
