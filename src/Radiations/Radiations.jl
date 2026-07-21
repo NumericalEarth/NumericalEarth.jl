@@ -25,7 +25,7 @@ using Oceananigans.Units: Time
 using Oceananigans.Utils: launch!, prettysummary, interpolator
 
 using ..NumericalEarth: NumericalEarth, stateindex
-using ..EarthSystemModels: EarthSystemModels, AbstractPrescribedComponent, sea_ice_concentration
+using ..EarthSystemModels: EarthSystemModels, AbstractPrescribedComponent, sea_ice_concentration, set_prescribed_field!
 using ..EarthSystemModels.InterfaceComputations: interface_kernel_parameters,
                                                  ComponentExchanger,
                                                  kernel_radiation_properties,
