@@ -185,10 +185,6 @@ pages = [
     ],
     "Interface fluxes" => "interface_fluxes.md",
 
-    "Land" => [
-        "OpenLandMap-soilDB (30 m)" => "land/openlandmap_soildb.md",
-    ],
-
     "Appendix" => [
         "Notation" => "appendix/notation.md",
     ],
