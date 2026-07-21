@@ -3,7 +3,7 @@ include("download_utils.jl")
 
 using CopernicusMarine
 using NumericalEarth
-using NumericalEarth.DataWrangling: BoundingBox, available_variables, metadata_path
+using NumericalEarth.DataWrangling: BoundingBox, metadata_path
 using Oceananigans.Fields: interior
 using Oceananigans.Grids: Bounded, Flat, LatitudeLongitudeGrid, topology
 using Oceananigans.OutputReaders: time_indices
@@ -30,9 +30,16 @@ end
 @testset "Downloading AVISO data" begin
     region = BoundingBox(longitude=(200, 202), latitude=(35, 37))
     date = DateTime(2020, 1, 1)
+    datasets_and_variables = (
+        (AVISODaily(), (:free_surface,
+                        :sea_level_anomaly,
+                        :zonal_geostrophic_velocity,
+                        :meridional_geostrophic_velocity)),
+        (AVISOMonthly(), (:sea_level_anomaly,)),
+    )
 
-    for dataset in (AVISODaily(), AVISOMonthly())
-        for variable in keys(available_variables(dataset))
+    for (dataset, variables) in datasets_and_variables
+        for variable in variables
             metadatum = Metadatum(variable; dataset, date, region)
             filepath = metadata_path(metadatum)
             isfile(filepath) && rm(filepath; force=true)
