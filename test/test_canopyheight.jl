@@ -2,7 +2,6 @@ include("runtests_setup.jl")
 
 using NumericalEarth.DataWrangling.CanopyHeight
 using NumericalEarth.DataWrangling.CanopyHeight: mask_glad, mask_eth, coarsen_canopy_height,
-                                                 roughness_length, displacement_height,
                                                  eth_tile_token, eth_tiles_in_bbox, eth_tile_urls,
                                                  canopy_height_cog_to_netcdf
 using NumericalEarth.DataWrangling: longitude_interfaces, latitude_interfaces,
@@ -68,40 +67,6 @@ end
     @test all(0 .<= finite .<= 40)
 
     @test_throws ArgumentError coarsen_canopy_height(fine, 0)
-end
-
-#####
-##### Roughness / displacement derivation endpoints (exposed coefficients).
-#####
-
-@testset "Roughness from canopy height" begin
-    # Bare, endpoint: zero canopy height → zero roughness and displacement.
-    @test roughness_length(0.0, 0.10)    == 0.0
-    @test displacement_height(0.0, 0.70) == 0.0
-
-    # Standard 20 m canopy.
-    @test roughness_length(20.0, 0.10)    == 2.0
-    @test displacement_height(20.0, 0.70) == 14.0
-
-    # ClimaLand alternative momentum coefficient (0.13).
-    @test roughness_length(10.0, 0.13) ≈ 1.3
-
-    roughness = RoughnessFromCanopyHeight()
-    @test roughness.momentum_roughness_coefficient == 0.10
-    @test roughness.displacement_coefficient == 0.70
-
-    props = roughness(20.0)
-    @test props.momentum_roughness_length == 2.0
-    @test props.displacement_height == 14.0
-
-    # Coefficients are exposed and configurable.
-    climaland = RoughnessFromCanopyHeight(; momentum_roughness_coefficient = 0.13)
-    @test climaland(10.0).momentum_roughness_length ≈ 1.3
-
-    # The closure broadcasts elementwise over a field of heights.
-    heights = [0.0, 5.0, 30.0]
-    ℓ = [roughness(h).momentum_roughness_length for h in heights]
-    @test ℓ == [0.0, 0.5, 3.0]
 end
 
 #####

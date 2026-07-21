@@ -1,6 +1,6 @@
 module CanopyHeight
 
-export ETHCanopyHeight, GLADCanopyHeight, RoughnessFromCanopyHeight
+export ETHCanopyHeight, GLADCanopyHeight
 
 using Downloads: Downloads
 using Oceananigans: Center
@@ -8,8 +8,6 @@ using Oceananigans.DistributedComputations: @root
 
 using ..DataWrangling: DataWrangling, AbstractStaticDataset, Metadatum,
                        metadata_path, BoundingBox
-
-using NCDatasets: Dataset
 
 import Oceananigans
 
@@ -244,76 +242,6 @@ function coarsen_canopy_height(fine::AbstractMatrix, factor::Integer)
 
     return coarse
 end
-
-#####
-##### Roughness / displacement closure (exposed coefficients, separate from data)
-#####
-
-"""
-    roughness_length(canopy_height, coefficient)
-
-Momentum roughness length `ℓ_m = coefficient · canopy_height`. The coefficient
-is a modeling choice (`0.10` is a common surface-layer value; ClimaLand uses
-`0.13` for vegetation), so it is exposed, never hardcoded in the data layer.
-"""
-@inline roughness_length(canopy_height, coefficient) = coefficient * canopy_height
-
-"""
-    displacement_height(canopy_height, coefficient)
-
-Zero-plane displacement height `d = coefficient · canopy_height` (`0.70` is the
-standard surface-layer value).
-"""
-@inline displacement_height(canopy_height, coefficient) = coefficient * canopy_height
-
-"""
-    RoughnessFromCanopyHeight(FT=Float64; momentum_roughness_coefficient = 0.10,
-                                          displacement_coefficient = 0.70)
-
-A small closure turning a canopy height `h_c` into aerodynamic surface-layer
-properties via the standard rules
-
-    ℓ_m = momentum_roughness_coefficient · h_c        (default 0.10)
-    d   = displacement_coefficient       · h_c        (default 0.70)
-
-The coefficients belong to the roughness *closure*, not the data layer — the
-canopy-height dataset delivers a clean `h_c` field, and this callable derives
-`ℓ_m` and `d` from it. ClimaLand's `z0m = 0.13·h_c` is an alternative choice for
-`momentum_roughness_coefficient`. Calling the closure on a height returns a
-`NamedTuple` `(; momentum_roughness_length, displacement_height)`; it broadcasts
-elementwise over arrays and `Field`s.
-
-```jldoctest
-julia> using NumericalEarth.DataWrangling.CanopyHeight
-
-julia> roughness = RoughnessFromCanopyHeight();
-
-julia> roughness(20.0)
-(momentum_roughness_length = 2.0, displacement_height = 14.0)
-```
-"""
-struct RoughnessFromCanopyHeight{FT}
-    momentum_roughness_coefficient :: FT
-    displacement_coefficient       :: FT
-end
-
-function RoughnessFromCanopyHeight(FT = Float64;
-                                   momentum_roughness_coefficient = 0.10,
-                                   displacement_coefficient = 0.70)
-    return RoughnessFromCanopyHeight{FT}(convert(FT, momentum_roughness_coefficient),
-                                         convert(FT, displacement_coefficient))
-end
-
-@inline (r::RoughnessFromCanopyHeight)(canopy_height) =
-    (momentum_roughness_length = roughness_length(canopy_height, r.momentum_roughness_coefficient),
-     displacement_height       = displacement_height(canopy_height, r.displacement_coefficient))
-
-Base.summary(r::RoughnessFromCanopyHeight) =
-    string("RoughnessFromCanopyHeight(momentum_roughness_coefficient = ",
-           r.momentum_roughness_coefficient,
-           ", displacement_coefficient = ", r.displacement_coefficient, ")")
-
-Base.show(io::IO, r::RoughnessFromCanopyHeight) = print(io, summary(r))
 
 #####
 ##### Download (regional COG → NetCDF via the ArchGDAL extension)
