@@ -3,12 +3,14 @@ using ..EarthSystemModels: EarthSystemModel, reference_density, heat_capacity
 struct MeridionalFluxMethod end
 struct TendencyMethod end
 """
-    meridional_heat_transport(esm::EarthSystemModel, MeridionalFluxMethod();
+    meridional_heat_transport(simulation::Simulation, MeridionalFluxMethod();
                               reference_temperature = 0)
+    meridional_heat_transport(simulation::Simulation, TendencyMethod();
+                              destination_grid = nothing)
 
-Return the meridional heat transport for the coupled `esm::EarthSystemModel` using either
-two methods: either by directly computing the meridional heat flux or indirectly using
-the total ocean heat content and the ocean heat uptake.
+Return the meridional heat transport for a coupled `simulation` using either direct
+meridional heat fluxes or the ocean heat-content tendency. A `BudgetComputation` callback
+must be registered on `simulation` before using `TendencyMethod()`.
 
 !!! warning "The flux method only works on LatitudeLongitudeGrid"
 
@@ -19,8 +21,8 @@ the total ocean heat content and the ocean heat uptake.
 Arguments
 =========
 
-* `esm`: An EarthSystemModel for MeridionalFluxMethod().
-* `budget`: A BudgetComputation for TendencyMethod().
+* `simulation`: A `Simulation` of an `EarthSystemModel`. For `TendencyMethod()`, the
+  simulation must contain exactly one registered `BudgetComputation` callback.
 
 * The method for the computation. Available options are: `MeridionalFluxMethod()` (default)
   and `TendencyMethod()`.
@@ -159,8 +161,9 @@ atmosphere = PrescribedAtmosphere(grid, [0.0])
 radiation = PrescribedRadiation(grid)
 
 esm = OceanSeaIceModel(ocean, sea_ice; atmosphere, radiation)
+simulation = Simulation(esm; Δt=1)
 
-mht = meridional_heat_transport(esm)
+mht = meridional_heat_transport(simulation)
 
 # output
 
@@ -169,10 +172,13 @@ Integral of BinaryOperation at (Center, Face, Center) over dims (1, 3)
     └── grid: 4×5×2 RectilinearGrid{Float64, Periodic, Bounded, Bounded} on CPU with 3×3×2 halo
 ```
 """
-function meridional_heat_transport(esm::EarthSystemModel,
+function meridional_heat_transport(simulation::Simulation,
                                    ::MeridionalFluxMethod=MeridionalFluxMethod();
-                                   reference_temperature=0,
-                                   destination_grid=nothing)
+                                   reference_temperature=0)
+    esm = simulation.model
+    esm isa EarthSystemModel ||
+        throw(ArgumentError("Meridional heat transport requires a Simulation of an EarthSystemModel."))
+
     grid = underlying_grid(esm.ocean.model.grid)
     validate_meridional_flux_grid(grid)
 
@@ -181,15 +187,28 @@ function meridional_heat_transport(esm::EarthSystemModel,
     return meridional_heat_transport_via_meridional_heat_flux(esm; reference_temperature)
 end
 
-function meridional_heat_transport(budget::BudgetComputation,
-                                   ::TendencyMethod=TendencyMethod();
+function meridional_heat_transport(simulation::Simulation,
+                                   ::TendencyMethod;
                                    destination_grid=nothing)
+    budgets = [callback.func for callback in values(simulation.callbacks)
+               if callback.func isa BudgetComputation]
+
+    if isempty(budgets)
+        throw(ArgumentError("TendencyMethod() requires a BudgetComputation callback. " *
+                            "Create a budget and register it with " *
+                            "add_callback!(simulation, budget) first."))
+    elseif length(budgets) > 1
+        throw(ArgumentError("TendencyMethod() requires exactly one BudgetComputation callback, " *
+                            "but the simulation has $(length(budgets))."))
+    end
+
+    budget = only(budgets)
     grid = underlying_grid(budget.residual.grid)
     validate_tendency_destination(grid, destination_grid)
     return meridional_heat_transport_via_ocean_heat_content(budget; destination_grid)
 end
 
-function meridional_heat_transport(::EarthSystemModel, method; kwargs...)
+function meridional_heat_transport(::Simulation, method; kwargs...)
     throw(ArgumentError("Unknown method $(method); choose either MeridionalFluxMethod() or TendencyMethod()."))
 end
 

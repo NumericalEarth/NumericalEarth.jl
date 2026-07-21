@@ -130,10 +130,11 @@ for arch in test_architectures
 
         atmosphere = PrescribedAtmosphere(grid, [0.0])
         esm = OceanOnlyModel(ocean; atmosphere)
+        simulation = Simulation(esm; Δt = 10)
 
         set!(ocean.model, v=1, T=1)
 
-        mht = Field(meridional_heat_transport(esm))
+        mht = Field(meridional_heat_transport(simulation))
         compute!(mht)
 
         @allowscalar begin
@@ -166,7 +167,17 @@ for arch in test_architectures
         # The tendency-based MHT diagnostic uses a budget callback.
         simulation = Simulation(esm; Δt = 10, stop_iteration = 3)
         budget = BudgetComputation(:temperature, esm)
-        add_callback!(budget, simulation)
+        @test_throws ArgumentError meridional_heat_transport(simulation, TendencyMethod(); destination_grid)
+        add_callback!(simulation, budget)
+        @test_throws MethodError meridional_heat_transport(budget, TendencyMethod(); destination_grid)
+
+        cached_fields = (budget.previous_heat_content,
+                         budget.tendency,
+                         budget.surface_flux,
+                         budget.applied_radiative_heat_flux,
+                         budget.freshwater_heat_flux,
+                         budget.residual)
+        @test all(field -> location(field) === (Center, Center, Nothing), cached_fields)
 
         # A constant heat budget should remain constant after regridding.
         regridded_budget = Field(RegriddedOperation(budget.residual, destination_grid))
@@ -177,7 +188,7 @@ for arch in test_architectures
         # Remove the test value before advancing the model.
         set!(budget.residual, 0)
 
-        mht = Field(meridional_heat_transport(budget, TendencyMethod(); destination_grid))
+        mht = Field(meridional_heat_transport(simulation, TendencyMethod(); destination_grid))
 
         mktempdir() do dir
             iteration_filename = joinpath(dir, "iteration_mht.jld2")

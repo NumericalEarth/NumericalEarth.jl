@@ -26,7 +26,7 @@ function test_tracer_budget(coupled_model, Sᵒᶜ, Δt, nsteps; heat_rtol, fres
     volume_rate   = Integral(Jʷ, dims=(1, 2))
     simulation = Simulation(coupled_model; Δt, stop_iteration=nsteps, verbose=false)
     budget = BudgetComputation(:temperature, coupled_model)
-    add_callback!(budget, simulation)
+    add_callback!(simulation, budget)
     heat_budget_rate = Integral(budget.residual, dims=(1, 2))
 
     penetrating_radiation = get_radiative_forcing(ocean)

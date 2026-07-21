@@ -12,7 +12,7 @@ using Oceananigans: Oceananigans
 using Oceananigans.AbstractOperations: CumulativeIntegral, Integral, KernelFunctionOperation, RegriddedOperation
 using Oceananigans.Architectures: architecture
 using Oceananigans.BoundaryConditions: DiscreteBoundaryFunction, FieldBoundaryConditions, fill_halo_regions!
-using Oceananigans.Fields: Field, FieldStatus, ZeroField, CenterField
+using Oceananigans.Fields: Field, FieldStatus, ZeroField
 using Oceananigans.Grids: new_data, inactive_cell, znode, Face, Center,
                           LatitudeLongitudeGrid, OrthogonalSphericalShellGrid
 using Oceananigans.ImmersedBoundaries: ImmersedBoundaryGrid, MutableGridOfSomeKind

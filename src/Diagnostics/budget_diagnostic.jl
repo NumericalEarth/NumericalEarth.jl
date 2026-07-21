@@ -5,7 +5,7 @@ Track the ocean temperature budget for a coupled model.
 
 ```julia
 budget = BudgetComputation(:temperature, model)
-add_callback!(budget, simulation)
+add_callback!(simulation, budget)
 ```
 
 The callback runs once after every timestep. It saves the fields needed to
@@ -38,12 +38,13 @@ function BudgetComputation(tracer_name::Symbol, esm::EarthSystemModel)
     cᵒᶜ = heat_capacity(ocean)
 
     H = Field(Integral(ρᵒᶜ * cᵒᶜ * model.tracers.T, dims=3))
-    H⁻ = CenterField(grid)
-    ∂t_H = CenterField(grid)
-    Qˢ = CenterField(grid)
-    Qʳ = CenterField(grid)
-    Qᶠ = CenterField(grid)
-    B = CenterField(grid)
+    ColumnField = Field{Center, Center, Nothing}
+    H⁻ = ColumnField(grid)
+    ∂t_H = ColumnField(grid)
+    Qˢ = ColumnField(grid)
+    Qʳ = ColumnField(grid)
+    Qᶠ = ColumnField(grid)
+    B = ColumnField(grid)
 
     forcing = get_radiative_forcing(ocean)
     R = radiative_heat_flux(forcing, model, ρᵒᶜ, cᵒᶜ)
@@ -160,7 +161,8 @@ function Oceananigans.restore_prognostic_state!(callback::Callback{P, <:BudgetCo
     return callback
 end
 
-function Oceananigans.Simulations.add_callback!(budget::BudgetComputation, simulation::Simulation;
+function Oceananigans.Simulations.add_callback!(simulation::Simulation, budget::BudgetComputation;
                                                  name=:temperature_budget)
-    return Oceananigans.Simulations.add_callback!(simulation, budget; name)
+    callback = Callback(budget)
+    return Oceananigans.Simulations.add_callback!(simulation, callback; name)
 end
