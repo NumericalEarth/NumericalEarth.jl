@@ -1,11 +1,22 @@
 include("runtests_setup.jl")
 
 using NumericalEarth
-using NumericalEarth.DataWrangling: BoundingBox, all_dates, dataset_variable_name,
-                                    is_three_dimensional
+using NumericalEarth.DataWrangling: BoundingBox, all_dates, available_variables,
+                                    dataset_variable_name, is_three_dimensional
 using Oceananigans: location
 
 @testset "AVISO metadata tests" begin
+    daily_variables = Dict(
+        :free_surface => "adt",
+        :sea_level_anomaly => "sla",
+        :zonal_geostrophic_velocity => "ugos",
+        :meridional_geostrophic_velocity => "vgos",
+    )
+    monthly_variables = Dict(:sea_level_anomaly => "sla")
+
+    @test available_variables(AVISODaily()) == daily_variables
+    @test available_variables(AVISOMonthly()) == monthly_variables
+
     dataset = AVISOMonthly()
     region = BoundingBox(longitude=(200, 202), latitude=(35, 37))
     dates = DateTime(2020, 1, 1):Month(1):DateTime(2020, 2, 1)

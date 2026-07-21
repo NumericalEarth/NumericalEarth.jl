@@ -3,7 +3,7 @@ include("download_utils.jl")
 
 using CopernicusMarine
 using NumericalEarth
-using NumericalEarth.DataWrangling: BoundingBox, metadata_path
+using NumericalEarth.DataWrangling: BoundingBox, available_variables, metadata_path
 using Oceananigans.Fields: interior
 using Oceananigans.Grids: Bounded, Flat, LatitudeLongitudeGrid, topology
 using Oceananigans.OutputReaders: time_indices
@@ -28,25 +28,25 @@ using Oceananigans.OutputReaders: time_indices
 end
 
 @testset "Downloading AVISO data" begin
-    variables = (:free_surface, :sea_level_anomaly, :zonal_geostrophic_velocity, :meridional_geostrophic_velocity)
     region = BoundingBox(longitude=(200, 202), latitude=(35, 37))
-    dataset = AVISOMonthly()
     date = DateTime(2020, 1, 1)
 
-    for variable in variables
-        metadatum = Metadatum(variable; dataset, date, region)
-        filepath = metadata_path(metadatum)
-        isfile(filepath) && rm(filepath; force=true)
-        download(metadatum)
-        @test isfile(filepath)
+    for dataset in (AVISODaily(), AVISOMonthly())
+        for variable in keys(available_variables(dataset))
+            metadatum = Metadatum(variable; dataset, date, region)
+            filepath = metadata_path(metadatum)
+            isfile(filepath) && rm(filepath; force=true)
+            download(metadatum)
+            @test isfile(filepath)
+        end
     end
 end
 
-@testset "Download and set AVISO free_surface" begin
+@testset "Download and set AVISO sea_level_anomaly" begin
     dataset = AVISOMonthly()
     region = BoundingBox(longitude=(200, 202), latitude=(35, 37))
     dates = DateTime(2020, 1, 1):Month(1):DateTime(2020, 2, 1)
-    metadata = Metadata(:free_surface; dates, dataset, region)
+    metadata = Metadata(:sea_level_anomaly; dates, dataset, region)
 
     download(metadata)
     for datum in metadata
@@ -70,8 +70,7 @@ end
         set!(target, datum; inpainting=nothing)
         @test all(isfinite.(Array(interior(target))))
 
-        restoring = DatasetRestoring(metadata, arch; rate=1/1000, inpainting=nothing)
-        fts = restoring.field_time_series
+        fts = FieldTimeSeries(metadata, arch; inpainting=nothing)
         @test fts isa FieldTimeSeries
         @test size(interior(fts), 3) == 1
         @test length(fts.times) == length(dates)

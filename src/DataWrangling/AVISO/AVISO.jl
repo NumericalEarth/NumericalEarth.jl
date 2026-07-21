@@ -90,7 +90,7 @@ function DataWrangling.metadata_filename(::AVISODaily, name, date, region)
 end
 
 function DataWrangling.metadata_filename(::AVISOMonthly, name, date, region)
-    var = AVISO_dataset_variable_names[name]
+    var = AVISO_monthly_dataset_variable_names[name]
     return string(var, "_AVISOMonthly_", Dates.format(date, "yyyy-mm-dd"), ".nc")
 end
 
