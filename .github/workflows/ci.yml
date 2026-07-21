@@ -26,8 +26,8 @@ permissions:
 env:
   ECCO_USERNAME: ${{ secrets.ECCO_USERNAME }}
   ECCO_WEBDAV_PASSWORD: ${{ secrets.ECCO_WEBDAV_PASSWORD }}
-  COPERNICUS_USERNAME: ${{ secrets.COPERNICUSMARINE_SERVICE_USERNAME }}
-  COPERNICUS_PASSWORD: ${{ secrets.COPERNICUSMARINE_SERVICE_PASSWORD }}
+  COPERNICUSMARINE_SERVICE_USERNAME: ${{ secrets.COPERNICUSMARINE_SERVICE_USERNAME }}
+  COPERNICUSMARINE_SERVICE_PASSWORD: ${{ secrets.COPERNICUSMARINE_SERVICE_PASSWORD }}
   CDSAPI_URL: "https://cds.climate.copernicus.eu/api"
   CDSAPI_KEY: ${{ secrets.CDSAPI_KEY }}
   DESTINE_ACCESS_TOKEN: ${{ secrets.DESTINE_ACCESS_TOKEN }}
@@ -248,7 +248,7 @@ jobs:
               using Pkg;
               Pkg.test(; coverage=true,
                         julia_args=["--check-bounds=yes", "--compiled-modules=yes", "-O0"],
-                        test_args=["--verbose", "test_cds_downloading", "test_jra55_ecco_en4_etopo_downloading", "test_glorys_downloading", "test_copernicus_dem_downloading"])
+                        test_args=["--verbose", "test_cds_downloading", "test_jra55_ecco_en4_etopo_downloading", "test_glorys_downloading", "test_aviso_downloading", "test_copernicus_dem_downloading"])
           '
       - uses: julia-actions/julia-processcoverage@v1
       - uses: codecov/codecov-action@v5

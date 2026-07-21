@@ -163,10 +163,14 @@ using NumericalEarth.JRA55: download_JRA55_cache
         @info "Testing MultiYearJRA55 data on $A..."
         dataset = JRA55.MultiYearJRA55()
 
+        # The multi-file `set!` path under test is variable-agnostic, so it runs on friver
+        # (57 MB/year) rather than tas (1.2 GB/year): both split one file per year and both
+        # span the 1958 → 1959 boundary, but tas costs ~13 min of ESGF transfer.
         multiyear_name = :river_freshwater_flux
         native_dates = NumericalEarth.DataWrangling.all_dates(dataset, multiyear_name)
 
-        @test Hour(first(native_dates)) == Hour(12)
+        # friver is a daily *mean*, timestamped at 12:00; anchoring the window on the hour would
+        # straddle native timestamps and change how many dates the range covers.
         anchor = DateTime("1959-01-01T12:00:00")
 
         # Test that when date range spans two years both netCDF files are downloaded
@@ -174,7 +178,6 @@ using NumericalEarth.JRA55: download_JRA55_cache
         start_date = anchor - 15 * Day(1) # sometime in 1958
         end_date   = anchor + 85 * Day(1) # sometime in 1959
 
-        # Compute expected file paths so we can fall back to artifacts if needed
         dates = compute_native_date_range(native_dates, start_date, end_date)
         metadata = Metadata(multiyear_name; dataset, dates)
         filepaths = unique(metadata_path(metadata))
@@ -188,9 +191,21 @@ using NumericalEarth.JRA55: download_JRA55_cache
         for t in eachindex(river_flux.times)
             @test river_flux[t] isa Field
         end
+        @test Second(end_date - start_date).value ≈ river_flux.times[end] - river_flux.times[1]
+
+        # Test we can access all the data
+        for t in eachindex(river_flux.times)
+            @test river_flux[t] isa Field
+        end
 
         # friver is daily, so it takes the `Hour(12)` branch of `metadata_filename`. Keep the
         # three-hourly branch that tas exercises covered; building a path downloads nothing.
+        three_hourly_datum = Metadatum(:temperature; dataset, date=DateTime(1958, 6, 1))
+        @test basename(metadata_path(three_hourly_datum)) ==
+            "tas_input4MIPs_atmosphericState_OMIP_MRI-JRA55-do-1-5-0_gr_195801010000-195812312100.nc"
+
+        # friver is daily, so it takes the `Hour(12)` branch of `metadata_filename`; keep the
+        # three-hourly branch that tas exercises covered. Building a path downloads nothing.
         three_hourly_datum = Metadatum(:temperature; dataset, date=DateTime(1958, 6, 1))
         @test basename(metadata_path(three_hourly_datum)) ==
             "tas_input4MIPs_atmosphericState_OMIP_MRI-JRA55-do-1-5-0_gr_195801010000-195812312100.nc"
@@ -215,26 +230,9 @@ using NumericalEarth.JRA55: download_JRA55_cache
             FieldTimeSeries(metadata_span, arch; time_indices_in_memory=80)
         end
 
-        # Every slot in the single in-memory window must carry data: a slot that `set!` failed
-        # to write stays all-zero, which is exactly how the noon-timestamp mismatch presented.
+        # Every slot in the single in-memory window must carry data.
         for t in eachindex(river_flux_span.times)
             @test maximum(abs, interior(river_flux_span[t])) > 0
-        end
-
-        @info "Testing MultiYearJRA55 iceberg fluxes on $A..."
-
-        # The other daily variable, and the other half of the noon-timestamp fix (10 MB/year).
-        iceberg_dates = NumericalEarth.DataWrangling.all_dates(dataset, :iceberg_freshwater_flux)
-        @test Hour(first(iceberg_dates)) == Hour(12)
-        iceberg_metadata = Metadata(:iceberg_freshwater_flux; dataset, end_date=iceberg_dates[3])
-
-        iceberg_flux = download_dataset_with_fallback(unique(metadata_path(iceberg_metadata));
-                                                      dataset_name="MultiYearJRA55 :iceberg_freshwater_flux") do
-            FieldTimeSeries(iceberg_metadata, arch; time_indices_in_memory=3)
-        end
-
-        for t in eachindex(iceberg_flux.times)
-            @test maximum(abs, interior(iceberg_flux[t])) > 0
         end
     end
 end

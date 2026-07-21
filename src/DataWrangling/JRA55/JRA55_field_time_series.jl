@@ -110,7 +110,7 @@ function Oceananigans.Fields.set!(fts::JRA55NetCDFFTSMultipleYears, backend=fts.
         close(ds)
     end
 
-    # An unmatched slot would otherwise keep its initial zeros and read as valid data.
+    # An unmatched slot would otherwise keep its initial zeros and read back as valid data.
     if length(filled_slots) != length(slot_dates)
         missing_dates = slot_dates[setdiff(eachindex(slot_dates), filled_slots)]
         error("$(length(missing_dates)) of $(length(slot_dates)) requested $name timestamps are absent " *
