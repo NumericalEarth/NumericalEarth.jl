@@ -65,8 +65,9 @@ end
 ##### and `/Geolocation/*` subdatasets through GDAL's HDF5 driver, decodes and
 ##### collapses the five TIR bands to one broadband float per cell, and writes a
 ##### regional NetCDF of the broadband emissivity + uncertainty on the analytic
-##### native grid (NaN over clear-sky retrieval gaps, for the downstream inpainting;
-##### the land/water map is not read — see the `ASTERGEDv3` docstring).
+##### native grid (NaN over clear-sky retrieval gaps, for the downstream inpainting).
+##### The tiles' land/water map is read and written as `land_water_map`, so the
+##### inpainting fills land and water gaps separately (see the `ASTERGEDv3` docstring).
 #####
 ##### Requires GDAL_jll built with the HDF5 driver.
 #####
@@ -194,6 +195,9 @@ function NumericalEarth.DataWrangling.ASTERGED.asterged_tiles_to_netcdf(metadatu
 
     emissivity  = fill(NaN32, Nx, Ny)
     uncertainty = fill(NaN32, Nx, Ny)
+    # 0 = land, 1 = water (GEE coding on the AG100/AG1KM tiles — not the LP DAAC 1/2
+    # coding). Cells outside every tile stay NaN and are treated as land downstream.
+    land_water_map = fill(NaN32, Nx, Ny)
 
     tile_cache = joinpath(dirname(nc_path), string(short_name, "_tiles"))
     mkpath(tile_cache)
@@ -209,8 +213,12 @@ function NumericalEarth.DataWrangling.ASTERGED.asterged_tiles_to_netcdf(metadatu
         mean_bands = permutedims(asterged_decode_emissivity.(read_asterged_subdataset(h5, "//Emissivity/Mean")), (3, 1, 2))
         sdev_bands = permutedims(asterged_decode_uncertainty.(read_asterged_subdataset(h5, "//Emissivity/SDev")), (3, 1, 2))
 
-        place_tile!(emissivity,  broadband_map(mean_bands, coefficients), tile_longitude, tile_latitude, longitude, latitude)
-        place_tile!(uncertainty, broadband_map(sdev_bands, coefficients), tile_longitude, tile_latitude, longitude, latitude)
+        # LWmap has no fill value, so every cell copies (place_tile! only skips NaN sources).
+        lwmap_tile = Float32.(read_asterged_subdataset(h5, "//Land_Water_Map/LWmap")[:, :, 1])
+
+        place_tile!(emissivity,     broadband_map(mean_bands, coefficients), tile_longitude, tile_latitude, longitude, latitude)
+        place_tile!(uncertainty,    broadband_map(sdev_bands, coefficients), tile_longitude, tile_latitude, longitude, latitude)
+        place_tile!(land_water_map, lwmap_tile,                              tile_longitude, tile_latitude, longitude, latitude)
     end
 
     all(isnan, emissivity) &&
@@ -223,6 +231,7 @@ function NumericalEarth.DataWrangling.ASTERGED.asterged_tiles_to_netcdf(metadatu
         defVar(ds, "lat", Float64, ("lat",); attrib = ["units" => "degrees_north", "long_name" => "latitude"])[:] = latitude
         defVar(ds, "emissivity", Float32, ("lon", "lat"))[:, :] = emissivity
         defVar(ds, "emissivity_uncertainty", Float32, ("lon", "lat"))[:, :] = uncertainty
+        defVar(ds, "land_water_map", Float32, ("lon", "lat"))[:, :] = land_water_map
     end
 
     return nothing

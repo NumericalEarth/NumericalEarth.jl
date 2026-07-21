@@ -239,6 +239,16 @@ function binary_data_size end
 default_mask_value(dataset) = NaN
 
 """
+    inpainting_regions(metadata, field)
+
+Optional per-cell region-label `Field` (same grid and location as `field`) that
+makes nearest-neighbor inpainting surface-aware: a `NaN` gap is filled only from
+neighbors sharing its label. Return `nothing` (default) for surface-agnostic
+inpainting. Dispatch on the dataset type (e.g. an ASTER GED land/water partition).
+"""
+inpainting_regions(metadata, field) = nothing
+
+"""
     AbstractStaticDataset
 
 Supertype for datasets without a time dimension. Provides default no-op implementations for the date-related interface

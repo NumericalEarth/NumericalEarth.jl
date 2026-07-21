@@ -9,7 +9,7 @@ using NumericalEarth.DataWrangling.ASTERGED: asterged_decode_emissivity, asterge
 using NumericalEarth.DataWrangling: longitude_interfaces, latitude_interfaces,
     dataset_variable_name, validate_dataset_coverage, metadata_filename,
     is_three_dimensional, default_inpainting, native_grid, default_horizontal_padding,
-    NearestNeighborInpainting, supported_datasets
+    NearestNeighborInpainting, supported_datasets, inpainting_regions
 using NumericalEarth: stateindex
 
 using Oceananigans.Grids: λnodes, φnodes
@@ -231,7 +231,8 @@ end
 # Write a regional NetCDF of decoded broadband floats with the exact layout the
 # ArchGDAL download step produces, so `Field(metadatum, arch)` runs the full
 # retrieve/inpaint pipeline without credentials or network.
-function write_synthetic_asterged_netcdf(path, λc, φc, emissivity, uncertainty)
+function write_synthetic_asterged_netcdf(path, λc, φc, emissivity, uncertainty;
+                                         land_water_map = zeros(Float32, length(λc), length(φc)))
     NCDataset(path, "c") do ds
         defDim(ds, "lon", length(λc))
         defDim(ds, "lat", length(φc))
@@ -239,6 +240,8 @@ function write_synthetic_asterged_netcdf(path, λc, φc, emissivity, uncertainty
         defVar(ds, "lat", Float64, ("lat",))[:] = φc
         defVar(ds, "emissivity", Float32, ("lon", "lat"))[:, :] = emissivity
         defVar(ds, "emissivity_uncertainty", Float32, ("lon", "lat"))[:, :] = uncertainty
+        # All-land by default; the surface-aware test passes a land/water partition.
+        defVar(ds, "land_water_map", Float32, ("lon", "lat"))[:, :] = land_water_map
     end
     return path
 end
@@ -277,5 +280,46 @@ end
             ϵ = stateindex(properties.emissivity, 3, 3, 7, field.grid, nothing, (Center, Center, Center))
             @test ϵ ≈ 0.95 atol = 1e-4
         end
+    end
+end
+
+@testset "ASTER GED surface-aware inpainting [$(typeof(arch))]" for arch in test_architectures
+    mktempdir() do dir
+        dataset = ASTERGEDv3()
+        region  = BoundingBox(longitude = (10.0, 10.1), latitude = (45.0, 45.1))
+        metadatum = Metadatum(:emissivity; dataset, region, dir)
+
+        grid_native = native_grid(metadatum, CPU())
+        λc = λnodes(grid_native, Center())
+        φc = φnodes(grid_native, Center())
+        Nx, Ny = length(λc), length(φc)
+
+        # Left half land (ε = 0.96), right half water (ε = 0.99).
+        water_cols = (Nx ÷ 2 + 1):Nx
+        land_water_map = zeros(Float32, Nx, Ny)
+        land_water_map[water_cols, :] .= 1f0
+
+        emissivity = fill(0.96f0, Nx, Ny)
+        emissivity[water_cols, :] .= 0.99f0
+        uncertainty = fill(0.01f0, Nx, Ny)
+
+        # A land gap on the coastline: its east neighbor is water, so a surface-agnostic
+        # fill would pull it toward 0.99.
+        gap_i = Nx ÷ 2
+        gap_j = Ny ÷ 2
+        emissivity[gap_i, gap_j] = NaN32
+
+        write_synthetic_asterged_netcdf(metadata_path(metadatum), λc, φc, emissivity, uncertainty; land_water_map)
+
+        # `inpainting_regions` returns the water partition as a reduced Bool field.
+        skeleton = Field{Center, Center, Nothing}(native_grid(metadatum, arch))
+        regions = inpainting_regions(metadatum, skeleton)
+        @test location(regions) == (Center, Center, Nothing)
+        @test Array(interior(regions, :, :, 1)) == (land_water_map .== 1)
+
+        field = Field(metadatum, arch)
+        values = Array(interior(field, :, :, 1))
+        @test all(isfinite, values)
+        @test values[gap_i, gap_j] ≈ 0.96f0 atol = 1e-4   # filled from land, not the 0.99 water
     end
 end

@@ -62,9 +62,9 @@ the gap-filling note below. The finite emissivity `Field` can be passed directly
 
 !!! note "Gap filling"
     Building a `Field` fills every `NaN` gap with the default
-    `NearestNeighborInpainting(Inf)` — each gap takes the value of the nearest valid
-    cell — so the returned field is finite everywhere. This step is blind to the land/water 
-    map the tiles carry and the land-water map is not read.
+    `NearestNeighborInpainting(Inf)`, so the returned field is finite everywhere. The
+    fill is surface-aware: it reads the tiles' land/water map and inpaints land and
+    water separately.
 
 Because ASTER GED is a fine regional-window raster, it is read in regional windows
 only: build the `Metadatum` with a longitude/latitude `BoundingBox`, most simply
@@ -292,10 +292,25 @@ DataWrangling.dataset_variable_name(metadata::ASTERGEDMetadatum) =
     ASTERGED_variable_names[metadata.name]
 
 # Clear-sky retrieval gaps (persistent cloud, screened snow) decode to NaN; fill each
-# from the nearest valid cell. `Inf` iterations so no gap is left as the zero a capped
-# inpainting would write. Deliberately surface-agnostic (the land/water map is not
-# read) — see the "Gap filling" note in the `ASTERGEDv3` docstring for the subtlety.
+# from the nearest valid cell of the same surface class. `Inf` iterations so no gap is
+# left as the zero a capped inpainting would write. The land/water partition comes from
+# `inpainting_regions` below, so land gaps fill only from land and water only from water.
 DataWrangling.default_inpainting(::ASTERGEDMetadatum) = NearestNeighborInpainting(Inf)
+
+# Land/water partition (0 = land, 1 = water) so inpainting fills land gaps only from
+# land and water gaps only from water.
+function DataWrangling.inpainting_regions(metadata::ASTERGEDMetadatum, field)
+    ds = DataWrangling.Dataset(metadata_path(metadata))
+    lwmap = ds["land_water_map"][:, :]
+    close(ds)
+
+    grid = field.grid
+    arch = Oceananigans.Architectures.architecture(grid)
+    regions = Oceananigans.Fields.Field{Center, Center, Nothing}(grid, Bool)   # true = water
+    water = Oceananigans.Architectures.on_architecture(arch, Array{Bool}(lwmap .== 1))
+    Oceananigans.Fields.interior(regions, :, :, 1) .= water
+    return regions
+end
 
 # The regional NetCDF is variable-independent, so key the inpainted cache on the
 # variable name too (otherwise emissivity and uncertainty would collide).
