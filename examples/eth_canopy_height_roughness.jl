@@ -13,15 +13,19 @@
 #     no credentials)
 #   * `using CairoMakie` — figures
 #
-# Leaf-area index and IGBP land cover would come from MODIS (`MCD15A3H`, `MCD12Q1(:IGBP)`).
-# Here land cover is a uniform deciduous-broadleaf class and LAI a smooth gradient, so the
-# maps isolate the effect of the measured canopy-height field; swapping in the MODIS fields
-# makes the land-cover and LAI inputs data-driven with no change to the closure call.
+# Only the canopy height here is real data (ETH). Leaf-area index and IGBP land cover would
+# come from MODIS (`MCD15A3H`, `MCD12Q1(:IGBP)`), which are not wired on this branch, so they
+# are synthetic stand-ins: land cover is a uniform deciduous-broadleaf class, and LAI is an
+# imposed south→north gradient — a deliberate sweep spanning sparse-to-dense canopy, kept
+# independent of the height field so the closure's LAI regime dependence (skimming in `z0m`,
+# monotone `d0`) is visible on its own. Swapping in the MODIS fields makes both inputs
+# data-driven with no change to the `compute_canopy_roughness!` call.
 
 using NumericalEarth
 using NumericalEarth.DataWrangling: BoundingBox, Metadatum
 using NumericalEarth.DataWrangling.CanopyHeight: ETHCanopyHeight
-using NumericalEarth.DataWrangling.CanopyRoughness: compute_canopy_roughness!
+using NumericalEarth.DataWrangling.CanopyRoughness: compute_canopy_roughness!,
+                                                    canopy_roughness, canopy_drag_parameters
 using Oceananigans
 using Oceananigans.Fields: set!, interior
 using Oceananigans.Grids: λnodes, φnodes
@@ -85,8 +89,8 @@ hc_range = (0, maximum(finite(hc)))
 z0_range = (0, maximum(finite(Z)))
 fig = Figure(size = (1400, 900))
 Label(fig[0, 1:4], "ETH canopy height → Raupach roughness — Bavarian pre-Alps"; fontsize = 20, font = :bold)
-panel!(fig, (1, 1), "canopy height h_c",         hc,  hc_range, :YlGn,    "m")
-panel!(fig, (1, 3), "leaf-area index Λ",         lai, (0, 7),   :YlGn,    "m²/m²")
+panel!(fig, (1, 1), "canopy height h_c (ETH)",   hc,  hc_range, :YlGn,    "m")
+panel!(fig, (1, 3), "leaf-area index Λ (synthetic)", lai, (0, 7), :YlGn,  "m²/m²")
 panel!(fig, (2, 1), "z₀ (measured height)",      Z,   z0_range, :viridis, "m")
 panel!(fig, (2, 3), "d₀ (measured height)",      D,   (0, maximum(finite(D))), :magma, "m")
 save(joinpath(outdir, "fig1_inputs_roughness.png"), fig)
@@ -100,15 +104,38 @@ panel!(fig, (1, 3), "z₀ (class-average height)",         Zc, z0_range, :viridi
 panel!(fig, (1, 5), "z₀ measured − class",               ΔZ, (-Δmax, Δmax), :balance, "m")
 save(joinpath(outdir, "fig2_measured_vs_class.png"), fig)
 
-# (3) Scale and regime dependence: z₀ vs h_c, z₀ vs LAI, d₀ vs LAI.
+# (3) Scale and regime dependence. Left: over the domain, z₀ scales with the measured
+# height (the real-data scatter). Middle/right: the LAI dependence isolated at fixed
+# heights (the closure evaluated directly), since over the domain the height spread would
+# otherwise mask it. Deciduous broadleaf (IGBP 4) → drag group 2; Λ is capped at Λₘₐₓ.
+p = canopy_drag_parameters(Float64, 2)
+Λmax = p.maximum_area_index
+Λs = 0:0.05:7
+heights = (5.0, 15.0, 30.0)
+z0_of(h) = [canopy_roughness(Λ, h, p, 0.4, 0.193, 20)[1] for Λ in Λs]
+d0_of(h) = [canopy_roughness(Λ, h, p, 0.4, 0.193, 20)[2] for Λ in Λs]
+
 mask = isfinite.(vec(hc)) .& isfinite.(vec(Z))
 fig = Figure(size = (1500, 460))
-ax1 = Axis(fig[1, 1]; xlabel = "canopy height h_c (m)", ylabel = "z₀ (m)", title = "z₀ scales with height")
+ax1 = Axis(fig[1, 1]; xlabel = "canopy height h_c (m)", ylabel = "z₀ (m)",
+           title = "z₀ scales with height (measured h_c)")
 scatter!(ax1, vec(hc)[mask], vec(Z)[mask]; markersize = 4, color = (:navy, 0.3))
-ax2 = Axis(fig[1, 2]; xlabel = "LAI (m²/m²)", ylabel = "z₀ (m)", title = "z₀ non-monotonic in LAI (skimming)")
-scatter!(ax2, vec(lai)[mask], vec(Z)[mask]; markersize = 4, color = (:seagreen, 0.3))
-ax3 = Axis(fig[1, 3]; xlabel = "LAI (m²/m²)", ylabel = "d₀ (m)", title = "d₀ monotone in LAI")
-scatter!(ax3, vec(lai)[mask], vec(D)[mask]; markersize = 4, color = (:firebrick, 0.3))
+
+ax2 = Axis(fig[1, 2]; xlabel = "LAI (m²/m²)", ylabel = "z₀ (m)",
+           title = "z₀ vs LAI at fixed height: peak near Λ≈1.2, then Λ-capped")
+for h in heights
+    lines!(ax2, Λs, z0_of(h); linewidth = 2, label = "h = $(Int(h)) m")
+end
+vlines!(ax2, [Λmax]; color = :gray50, linestyle = :dash)
+axislegend(ax2; position = :rt)
+
+ax3 = Axis(fig[1, 3]; xlabel = "LAI (m²/m²)", ylabel = "d₀ (m)",
+           title = "d₀ vs LAI at fixed height: monotone, then Λ-capped")
+for h in heights
+    lines!(ax3, Λs, d0_of(h); linewidth = 2, label = "h = $(Int(h)) m")
+end
+vlines!(ax3, [Λmax]; color = :gray50, linestyle = :dash)
+axislegend(ax3; position = :rb)
 save(joinpath(outdir, "fig3_scale_regime.png"), fig)
 
 @info "wrote figures" outdir
