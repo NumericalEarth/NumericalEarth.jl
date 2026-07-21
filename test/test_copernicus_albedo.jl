@@ -116,8 +116,10 @@ end
         # misalignment still fails, while Float32 node storage (~1e-5 noise) passes.
         λn = λnodes(grid, Center(), Center(), Center())
         φn = φnodes(grid, Center(), Center(), Center())
-        λ_win = (-180 + (first(icols) - 0.5) * Δλ, -180 + (last(icols) - 0.5) * Δλ)
-        φ_win = ( -60 + (first(jrows) - 0.5) * Δφ,  -60 + (last(jrows) - 0.5) * Δφ)
+        # File coordinates label pixel centers, so the native interfaces sit half a cell
+        # out (left = −180 − Δλ/2, bottom = −60 + Δφ/2); centers are interface + (i − ½)Δ.
+        λ_win = (-180 - Δλ/2 + (first(icols) - 0.5) * Δλ, -180 - Δλ/2 + (last(icols) - 0.5) * Δλ)
+        φ_win = ( -60 + Δφ/2 + (first(jrows) - 0.5) * Δφ,  -60 + Δφ/2 + (last(jrows) - 0.5) * Δφ)
         @test λ_win[1] ≈ minimum(λn)  atol = 1e-3
         @test λ_win[2] ≈ maximum(λn)  atol = 1e-3
         @test φ_win[1] ≈ minimum(φn)  atol = 1e-3

@@ -132,8 +132,8 @@ DataWrangling.default_inpainting(::CopernicusAlbedoMetadata) = nothing
 DataWrangling.default_download_directory(::AbstractCopernicusAlbedo) = download_CopernicusLandAlbedo_cache
 
 Oceananigans.Fields.location(::CopernicusAlbedoMetadatum) = (Center, Center, Nothing)
-DataWrangling.longitude_interfaces(::CopernicusAlbedoMetadata) = (-180, 180)
-DataWrangling.latitude_interfaces(::CopernicusAlbedoMetadata)  = (-60, 80)
+DataWrangling.longitude_interfaces(::CopernicusAlbedoMetadata) = (-180 - 1/224, 180 - 1/224)
+DataWrangling.latitude_interfaces(::CopernicusAlbedoMetadata)  = (-60 + 1/224, 80 + 1/224)
 
 #####
 ##### Dates
