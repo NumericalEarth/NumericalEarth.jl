@@ -1,5 +1,4 @@
 include("runtests_setup.jl")
-include("download_utils.jl")
 
 using CUDA: @allowscalar
 using Oceananigans.AbstractOperations: KernelFunctionOperation
@@ -113,6 +112,11 @@ end
             Tᵢ(λ, φ, z) = 2 + 26 * cosd(φ)^2 * exp(z / 30)
             Sᵢ(λ, φ, z) = 35 - 1//2 * exp(z / 30)
 
+            # Sea ice is largest at the poles and tapers to zero over 20° of latitude.
+            polar_ice_fraction(φ) = clamp((abs(φ) - 70) / 20, 0, 1)
+            hᵢ(λ, φ) = 2 * polar_ice_fraction(φ)
+            ℵᵢ(λ, φ) = polar_ice_fraction(φ)
+
             Δt = 605seconds
             Sᵒᶜ = 35 # reference salinity [psu]
             free_surface = SplitExplicitFreeSurface(substeps=20)
@@ -135,25 +139,11 @@ end
 
             @testset "Surface fluxes + penetrating shortwave radiation + Sea ice" begin
                 @info "    .. Surface fluxes + penetrating shortwave radiation + Sea ice"
-                # TODO: Switch to idealized initial conditions for both ocean and sea ice 
-                ecco_set = MetadataSet(:temperature, :salinity,
-                                       :sea_ice_thickness, :sea_ice_concentration,
-                                       dataset = ECCO4Monthly(),
-                                       date = DateTime(1993, 1, 1))
-
-                for name in (:sea_ice_thickness, :sea_ice_concentration)
-                    metadata = ecco_set[name]
-                    download_dataset_with_fallback(metadata_path(metadata);
-                                                   dataset_name = "ECCO4Monthly $name") do
-                        download(metadata)
-                    end
-                end
-
                 new_grid = deepcopy(grid) # because the grid is mutable
                 ocean = ocean_simulation(new_grid; free_surface)
                 sea_ice = sea_ice_simulation(new_grid, ocean)
-                set!(ocean.model, ecco_set)
-                set!(sea_ice.model, ecco_set)
+                set!(ocean.model, T=Tᵢ, S=Sᵢ)
+                set!(sea_ice.model, h=hᵢ, ℵ=ℵᵢ)
                 coupled_model = OceanSeaIceModel(ocean, sea_ice; atmosphere, radiation)
                 tolerance = 2√eps(eltype(new_grid))
                 test_tracer_budget(coupled_model, Sᵒᶜ, Δt, 4;
