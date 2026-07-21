@@ -144,6 +144,11 @@ end
     @test GHSBuiltS().epoch == 2020
     @test GHSBuiltS(resolution = 10).epoch == 2018
     @test_throws ArgumentError GHSBuiltS(resolution = 30)
+
+    # Epoch must match the published product matrix.
+    @test GHSBuiltS(resolution = 100, epoch = 1975) isa GHSBuiltS   # valid endpoint
+    @test_throws ArgumentError GHSBuiltS(resolution = 10, epoch = 2020)   # 10 m is 2018-only
+    @test_throws ArgumentError GHSBuiltS(resolution = 100, epoch = 1999)  # not a 5-year step
 end
 
 #####

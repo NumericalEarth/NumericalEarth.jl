@@ -152,3 +152,22 @@ end
     @test_throws ArgumentError urban_roughness(H, λp; method = :bogus)
     @test_throws ArgumentError urban_roughness(H, λp; frontal_area = :bogus)
 end
+
+@testset "Overrides compose with a base parameters object" begin
+    base = UrbanRoughnessParameters(Float64; array_constant = 3.59, bare_soil_roughness = 0.05)
+    merged = UrbanRoughnessParameters(base; bare_soil_roughness = 0.20)
+    @test merged.array_constant == 3.59       # untouched field keeps the base value
+    @test merged.bare_soil_roughness == 0.20  # named override is applied
+
+    grid = LatitudeLongitudeGrid(CPU(), Float64; size = (3, 3),
+                                 longitude = (0, 1), latitude = (0, 1),
+                                 topology = (Bounded, Bounded, Flat))
+    λp = Field{Center, Center, Nothing}(grid); set!(λp, 0.3)
+    H  = Field{Center, Center, Nothing}(grid); set!(H, 15.0)
+
+    # A base `parameters` plus a keyword override must keep the base's other fields,
+    # not silently reset them to the defaults.
+    z0_override, _ = urban_roughness(H, λp; method = :macdonald, parameters = base, bare_soil_roughness = 0.20)
+    z0_merged,   _ = urban_roughness(H, λp; method = :macdonald, parameters = merged)
+    @test all(interior(z0_override) .≈ interior(z0_merged))
+end
