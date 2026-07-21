@@ -117,11 +117,6 @@ end
             Tᵢ(λ, φ, z) = 2 + 26 * cosd(φ)^2 * exp(z / 30)
             Sᵢ(λ, φ, z) = 35 - 1//2 * exp(z / 30)
 
-            # Sea ice is largest at the poles and tapers to zero over 20° of latitude.
-            polar_ice_fraction(φ) = clamp((abs(φ) - 70) / 20, 0, 1)
-            hᵢ(λ, φ) = 2 * polar_ice_fraction(φ)
-            ℵᵢ(λ, φ) = polar_ice_fraction(φ)
-
             Δt = 605seconds
             Sᵒᶜ = 35 # reference salinity [psu]
             free_surface = SplitExplicitFreeSurface(substeps=20)
@@ -130,9 +125,7 @@ end
             @testset "Surface-only fluxes" begin
                 ocean = ocean_simulation(deepcopy(grid); free_surface, radiative_forcing=nothing)
                 set!(ocean.model, T=Tᵢ, S=Sᵢ)
-                sea_ice = sea_ice_simulation(ocean.model.grid, ocean; dynamics=nothing)
-                set!(sea_ice.model, h=hᵢ, ℵ=ℵᵢ)
-                coupled_model = OceanSeaIceModel(ocean, sea_ice; atmosphere, radiation)
+                coupled_model = OceanSeaIceModel(ocean, nothing; atmosphere, radiation)
                 test_tracer_budget(coupled_model, Sᵒᶜ, Δt, 4; heat_rtol=1e-11, freshwater_rtol=√eps(eltype(grid)))
             end
 
@@ -140,9 +133,7 @@ end
             @testset "Surface fluxes + Penetrating shortwave radiation" begin
                 ocean = ocean_simulation(deepcopy(grid); free_surface)
                 set!(ocean.model, T=Tᵢ, S=Sᵢ)
-                sea_ice = sea_ice_simulation(ocean.model.grid, ocean; dynamics=nothing)
-                set!(sea_ice.model, h=hᵢ, ℵ=ℵᵢ)
-                coupled_model = OceanSeaIceModel(ocean, sea_ice; atmosphere, radiation)
+                coupled_model = OceanSeaIceModel(ocean, nothing; atmosphere, radiation)
                 test_tracer_budget(coupled_model, Sᵒᶜ, Δt, 4; heat_rtol=1e-11, freshwater_rtol=√eps(eltype(grid)))
             end
         end
