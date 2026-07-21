@@ -31,10 +31,7 @@ end
     region = BoundingBox(longitude=(200, 202), latitude=(35, 37))
     date = DateTime(2020, 1, 1)
     datasets_and_variables = (
-        (AVISODaily(), (:free_surface,
-                        :sea_level_anomaly,
-                        :zonal_geostrophic_velocity,
-                        :meridional_geostrophic_velocity)),
+        (AVISODaily(), (:sea_level_anomaly),
         (AVISOMonthly(), (:sea_level_anomaly,)),
     )
 
