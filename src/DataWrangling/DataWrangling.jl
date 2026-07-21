@@ -8,6 +8,7 @@ export Metadata, Metadatum, MetadataSet, DatewiseFilename, ECCOMetadatum, EN4Met
 export validate_dataset_coverage, metadata_filename
 export BoundingBox, Column, Linear, Nearest
 export WOAClimatology, WOAAnnual, WOAMonthly
+export AVISOMetadata, AVISODaily, AVISOMonthly, AVISOMetadatum
 export metadata_time_step, metadata_epoch
 export supported_datasets
 export LinearlyTaperedPolarMask
@@ -25,8 +26,8 @@ using Oceananigans.Architectures: AbstractArchitecture, CPU, architecture,
                                   on_architecture, child_architecture
 using Oceananigans.BoundaryConditions: fill_halo_regions!, FieldBoundaryConditions
 using Oceananigans.DistributedComputations: DistributedComputations, @root
-using Oceananigans.Grids: AbstractGrid, Center, Flat, Bounded,
-                          LatitudeLongitudeGrid, RectilinearGrid
+using Oceananigans.Grids: AbstractGrid, Center, Face, Flat, Bounded,
+                          LatitudeLongitudeGrid, RectilinearGrid, λnodes, φnodes
 using Oceananigans.Fields: Fields, Field, interpolate, interpolate!, interior, set!
 using Oceananigans.Grids: node
 using Oceananigans.OutputReaders: OnDisk, AbstractInMemoryBackend, Cyclical,
@@ -349,6 +350,7 @@ end
 include("ETOPO/ETOPO.jl")
 include("ECCO/ECCO.jl")
 include("GLORYS/GLORYS.jl")
+include("AVISO/AVISO.jl")
 include("ERA5/ERA5.jl")
 include("EN4/EN4.jl")
 include("ORCA/ORCA.jl")
@@ -363,10 +365,12 @@ include("IBCAO/IBCAO.jl")
 include("CopernicusDEM/CopernicusDEM.jl")
 include("MODISLand/MODISLand.jl")
 include("CanopyRoughness/CanopyRoughness.jl")
+include("CopernicusLandAlbedo/CopernicusLandAlbedo.jl")
 
 using .ETOPO
 using .ECCO
 using .GLORYS
+using .AVISO
 using .ERA5
 using .EN4
 using .ORCA
@@ -380,6 +384,7 @@ using .IBCAO
 using .CopernicusDEM
 using .MODISLand
 using .CanopyRoughness
+using .CopernicusLandAlbedo
 
 function dataset_modules()
     modules = Module[]

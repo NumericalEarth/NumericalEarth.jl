@@ -13,9 +13,16 @@ export
     SkinHumidity,
     FractionalHumidity,
     CriticalSaturation,
+    DryLayerHumidity,
+    StorageBasedDryLayerDepth,
+    DryLayerVaporPistonVelocity,
+    ConstantTortuosity,
+    PowerLawTortuosity,
     ElevationCorrection,
     atmosphere_land_interface,
     SimilarityTheoryFluxes,
+    FixedIterations,
+    ConvergenceStopCriteria,
     LandRoughnessLength,
     CoefficientBasedFluxes,
     FreezingLimitedOceanTemperature,
@@ -67,10 +74,6 @@ using .InterfaceComputations
 
 include("earth_system_model.jl")
 include("time_step_earth_system_model.jl")
-
-include("NestedSimulations/NestedSimulations.jl")
-
-using .NestedSimulations
 
 #####
 #####  Fallbacks for no-interface models

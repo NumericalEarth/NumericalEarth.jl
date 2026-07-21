@@ -181,10 +181,11 @@ using ClimaSeaIce.SeaIceThermodynamics: LinearLiquidus, melting_temperature
 end
 
 @testset "Salt flux sign conventions in coupled model" begin
-    # Test that computed salt fluxes have the correct sign based on ocean temperature:
-    # - Warm ocean (T > Tₘ) → melting → q > 0 → Jˢ > 0 (fresh meltwater dilutes ocean)
-    # - Cold ocean (T < Tₘ) → freezing → q < 0 → Jˢ < 0 (brine rejection adds salt)
-    # Sign convention: Jˢ > 0 means salinity is extracted from ocean
+    # The sea-ice/ocean exchange splits into a freshwater volume flux Jʷ and the salt the ice itself
+    # holds, Jˢ = Eᵢ Sˢⁱ / ρᵒᶜ. The Sᴺ-weighted dilution rides on Jʷ and is applied live in the ocean
+    # salinity boundary condition, so Jˢ carries the ice salinity alone.
+    # Sign conventions: Jˢ > 0 extracts salt from the ocean, Jʷ > 0 adds volume to it.
+    # - Warm ocean (T > Tₘ) → melting → Jʷ > 0, and the melting ice releases its salt, so Jˢ < 0
 
     for arch in test_architectures
         A = typeof(arch)
@@ -218,30 +219,33 @@ end
 
                 # Get the computed fluxes
                 Jˢ = coupled_model.interfaces.sea_ice_ocean_interface.fluxes.salt
+                Jʷ = coupled_model.interfaces.sea_ice_ocean_interface.fluxes.freshwater
                 𝒬ⁱⁿ = coupled_model.interfaces.sea_ice_ocean_interface.fluxes.interface_heat
 
                 # Warm ocean should cause melting → Qᵢ > 0 (heat into ice)
                 𝒬ⁱⁿ_cpu = Array(interior(𝒬ⁱⁿ, :, :, 1))
                 @test all(𝒬ⁱⁿ_cpu .> 0)
 
-                # During melting, fresh meltwater dilutes ocean → Jˢ > 0
+                # Melting adds meltwater volume to the ocean
+                Jʷ_cpu = Array(interior(Jʷ, :, :, 1))
+                @test all(Jʷ_cpu .> 0)
+
+                # ... and releases the salt held in the ice into it
                 Jˢ_cpu = Array(interior(Jˢ, :, :, 1))
-                @test all(Jˢ_cpu .> 0)
+                @test all(Jˢ_cpu .< 0)
             end
         end
     end
 end
 
 @testset "Salt flux unit consistency" begin
-    # This test verifies that the salt flux has correct units after the fix
-    # that adds the freshwater density conversion: Jˢ = (q / ρf) * (Sᵦ - S_ice)
+    # The salt flux Jˢ = Eᵢ Sˢⁱ / ρᵒᶜ must come out in psu m s⁻¹, consistent with the
+    # atmosphere-ocean salinity flux:
+    # - Eᵢ is a mass flux (kg m⁻² s⁻¹)
+    # - dividing by ρᵒᶜ (kg m⁻³) gives a volume flux (m s⁻¹)
+    # - multiplying by the ice salinity (psu) gives psu m s⁻¹
     #
-    # The key insight is that:
-    # - q is a mass flux (kg/m²/s)
-    # - Dividing by ρf (kg/m³) gives a volume flux (m/s)
-    # - Multiplying by salinity difference gives psu × m/s, consistent with atmosphere-ocean
-    #
-    # Without this fix, salt flux would be ~1000× too large, causing instability.
+    # Missing the density conversion would make the flux ~1000× too large and destabilize the ocean.
 
     for arch in test_architectures
         A = typeof(arch)
