@@ -3,7 +3,8 @@ include("runtests_setup.jl")
 using NumericalEarth.DataWrangling: BoundingBox, Metadatum, native_grid,
     is_three_dimensional, default_inpainting,
     dataset_variable_name, metadata_filename,
-    longitude_name, latitude_name, all_dates
+    longitude_name, latitude_name, all_dates,
+    longitude_interfaces, latitude_interfaces
 using NumericalEarth.DataWrangling.CopernicusLandAlbedo: bluesky_blend, copernicus_albedo_decode,
     copernicus_albedo_dekadal_dates, albedo_satellite,
     albedo_cds_request_variables,
@@ -88,6 +89,12 @@ end
     @test (Nx_full, Ny_full) == (40320, 15680)  # analytic 1/112° grid unchanged
     Δλ = 360 / Nx_full
     Δφ = 140 / Ny_full  # latitude spans 80 − (−60) = 140°
+
+    # The analytic native interfaces span a uniform 1/112° grid in both directions.
+    λ₁, λ₂ = longitude_interfaces(Metadatum(:albedo; dataset, date))
+    φ₁, φ₂ = latitude_interfaces(Metadatum(:albedo; dataset, date))
+    @test (λ₂ - λ₁) / Nx_full ≈ 1/112
+    @test (φ₂ - φ₁) / Ny_full ≈ 1/112
 
     # A small mid-latitude box, a box hugging the north edge (80°N), a box hugging the
     # south edge (−60°S), and an antimeridian-crossing box (global fallback).
