@@ -141,7 +141,7 @@ end
                 @info "    .. Surface fluxes + penetrating shortwave radiation + Sea ice"
                 new_grid = deepcopy(grid) # because the grid is mutable
                 ocean = ocean_simulation(new_grid; free_surface)
-                sea_ice = sea_ice_simulation(new_grid, ocean)
+                sea_ice = sea_ice_simulation(new_grid, ocean; dynamics=nothing)
                 set!(ocean.model, T=Tᵢ, S=Sᵢ)
                 set!(sea_ice.model, h=hᵢ, ℵ=ℵᵢ)
                 coupled_model = OceanSeaIceModel(ocean, sea_ice; atmosphere, radiation)
