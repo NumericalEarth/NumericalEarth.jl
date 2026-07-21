@@ -275,6 +275,8 @@ using .DataWrangling.OSPapa
 using .DataWrangling.ERA5
 using .DataWrangling.SoilGrids
 using .DataWrangling.CopernicusLandAlbedo
+using .DataWrangling.GHSL
+using .DataWrangling.UrbanRoughness
 
 using PrecompileTools: @setup_workload, @compile_workload
 
