@@ -66,7 +66,17 @@ function ghsl_download_tile(dataset, row, column, cache_dir)
     mkpath(cache_dir)
     url = GHSL.ghsl_tile_url(dataset, row, column)
     zip_path = joinpath(cache_dir, basename(url))
-    isfile(zip_path) || Downloads.download(url, zip_path)
+    # Download to a staging file and rename on success, so an interrupted transfer
+    # never leaves a truncated archive that the `isfile` guard would keep forever.
+    if !isfile(zip_path)
+        staging = zip_path * ".part"
+        try
+            Downloads.download(url, staging)
+            mv(staging, zip_path; force = true)
+        finally
+            rm(staging; force = true)
+        end
+    end
     inner_tif = GHSL.ghsl_tile_tif_name(dataset, row, column)
     return string("/vsizip/", zip_path, "/", inner_tif)
 end
@@ -86,7 +96,22 @@ function NumericalEarth.DataWrangling.GHSL.ghsl_tiles_to_netcdf(metadatum::GHSL.
 
     cache_dir = joinpath(dirname(nc_path), "tiles")
     tiles = GHSL.ghsl_tiles_in_bbox(region)
-    sources = [ghsl_download_tile(dataset, row, column, cache_dir) for (row, column) in tiles]
+
+    # JRC omits all-ocean tiles from the grid, so a coastal window can reference a tile
+    # that 404s; skip those and mosaic the land tiles that do exist.
+    sources = String[]
+    for (row, column) in tiles
+        source = try
+            ghsl_download_tile(dataset, row, column, cache_dir)
+        catch err
+            (err isa Downloads.RequestError && err.response.status == 404) || rethrow()
+            @warn "GHSL tile R$(row)_C$(column) is not published (likely all-ocean); skipping."
+            nothing
+        end
+        isnothing(source) || push!(sources, source)
+    end
+    isempty(sources) &&
+        error("No GHSL tiles are published for the requested region; it may be entirely ocean.")
 
     datasets = [ArchGDAL.read(source) for source in sources]
     raw, longitude, latitude = try
@@ -96,6 +121,7 @@ function NumericalEarth.DataWrangling.GHSL.ghsl_tiles_to_netcdf(metadatum::GHSL.
              "-te",    string(west), string(south), string(east), string(north),
              "-tr",    string(Δ), string(Δ),
              "-r",     "bilinear",
+             "-dstnodata", "nan",  # honor the source no-data: keep it out of the bilinear blend and write NaN for gaps
              "-ot",    "Float32"]) do warped
             data = Float64.(ArchGDAL.read(warped, 1))
             data = reverse(data, dims = 2)  # GDAL writes y north→south

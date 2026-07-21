@@ -98,6 +98,10 @@ end
 function GHSBuiltS(; resolution = 100, epoch = resolution == 10 ? 2018 : 2020)
     resolution ∈ (10, 100) ||
         throw(ArgumentError("GHSBuiltS resolution must be 10 or 100 metres, got $resolution."))
+    valid_epochs = resolution == 10 ? (2018,) : Tuple(1975:5:2030)
+    epoch ∈ valid_epochs ||
+        throw(ArgumentError("GHSBuiltS at $(resolution) m is only published for epochs " *
+                            "$(valid_epochs), got $epoch."))
     return GHSBuiltS(resolution, epoch)
 end
 
@@ -320,7 +324,7 @@ ghsl_tile_tif_name(dataset::AbstractGHSLDataset, row, column) =
 #####
 
 """
-    mask_building_height(value, no_data = 0)
+    mask_building_height(value, no_data = -200)
 
 Map a raw GHS-BUILT-H ANBH `value` (metres) to a masked `Float64`: the product
 no-data sentinel `no_data` and any negative value become `NaN`; all physical

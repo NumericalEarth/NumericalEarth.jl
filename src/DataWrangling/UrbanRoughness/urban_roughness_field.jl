@@ -44,7 +44,7 @@ function compute_urban_roughness!(z0m, d0, λp, H, grid;
                                   parameters = UrbanRoughnessParameters(eltype(grid)),
                                   kw...)
     arch = architecture(grid)
-    p = isempty(kw) ? parameters : UrbanRoughnessParameters(eltype(grid); kw...)
+    p = isempty(kw) ? parameters : UrbanRoughnessParameters(parameters; kw...)
     launch!(arch, grid, :xy, _compute_urban_roughness!,
             z0m, d0, λp, H, grid, method_code(method), estimator_code(frontal_area), p)
     return z0m, d0

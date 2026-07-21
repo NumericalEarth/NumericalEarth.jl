@@ -72,6 +72,26 @@ function UrbanRoughnessParameters(FT = Oceananigans.defaults.FloatType;
                                         convert(FT, maximum_displacement_ratio))
 end
 
+# Rebuild from an existing set of parameters, overriding only the named fields; keeps
+# the base values for the rest instead of falling back to the defaults.
+UrbanRoughnessParameters(base::UrbanRoughnessParameters{FT};
+                         array_constant = base.array_constant,
+                         drag_coefficient = base.drag_coefficient,
+                         correction_factor = base.correction_factor,
+                         von_karman_constant = base.von_karman_constant,
+                         kanda_displacement = base.kanda_displacement,
+                         kanda_roughness = base.kanda_roughness,
+                         building_width = base.building_width,
+                         height_variability = base.height_variability,
+                         maximum_height_ratio = base.maximum_height_ratio,
+                         bare_soil_roughness = base.bare_soil_roughness,
+                         minimum_built_fraction = base.minimum_built_fraction,
+                         maximum_displacement_ratio = base.maximum_displacement_ratio) where FT =
+    UrbanRoughnessParameters(FT; array_constant, drag_coefficient, correction_factor,
+                             von_karman_constant, kanda_displacement, kanda_roughness,
+                             building_width, height_variability, maximum_height_ratio,
+                             bare_soil_roughness, minimum_built_fraction, maximum_displacement_ratio)
+
 # Method codes carried into the kernel (Symbols are not kernel-safe).
 const MACDONALD = 0
 const KANDA     = 1
