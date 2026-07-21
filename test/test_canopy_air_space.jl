@@ -152,7 +152,7 @@ end
         canopy = CanopyConductanceHumidity(FT; leaf_area_index = LAI,
                                 moisture_stress = CriticalSaturation(0.5), absorbed_par = InteractiveAbsorbedPAR(FT)),
         leaf_boundary_conductance = gᵇ,
-        interception = CanopyInterception(FT; capacity_per_leaf_area = c))
+        interception = CanopyInterception())
 
     Ψₐ  = (z = FT(10), u = FT(3), v = FT(0), T = FT(305), p = FT(101325), q = FT(0.006), h_bℓ = FT(600))  # dry, warm → demand
     Ψᵢ  = (u = FT(0), v = FT(0), T = FT(298))
@@ -161,9 +161,9 @@ end
     Wᶜᵐᵃˣ = c * LAI
 
     Ψwet = AirLandInterfaceState(flx, vel, FT(300), FT(0.012),
-            (saturation = FT(0.3), canopy_water_storage = FT(Wᶜᵐᵃˣ)), (temperature = FT(298),), (leaf_area_index = FT(LAI),))
+            (saturation = FT(0.3), canopy_water_storage = FT(Wᶜᵐᵃˣ), canopy_water_capacity = FT(Wᶜᵐᵃˣ)), (temperature = FT(298),), (leaf_area_index = FT(LAI),))
     Ψdry = AirLandInterfaceState(flx, vel, FT(300), FT(0.012),
-            (saturation = FT(0.3), canopy_water_storage = FT(0)), (temperature = FT(298),), (leaf_area_index = FT(LAI),))
+            (saturation = FT(0.3), canopy_water_storage = FT(0), canopy_water_capacity = FT(Wᶜᵐᵃˣ)), (temperature = FT(298),), (leaf_area_index = FT(LAI),))
     wet = canopy_air_space_solve(cas, Ψwet, Ψₐ, Ψᵢ, Ψᵣ, ℙₐ)
     dry = canopy_air_space_solve(cas, Ψdry, Ψₐ, Ψᵢ, Ψᵣ, ℙₐ)
 

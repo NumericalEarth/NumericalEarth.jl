@@ -297,6 +297,9 @@ surface_saturation(land::SlabLand) = saturation(land.hydrology, land)
 surface_canopy_water_storage(land::SlabLand) =
     hasproperty(land.prognostic, :canopy_water_storage) ? land.prognostic.canopy_water_storage : ZeroField()
 
+surface_canopy_water_capacity(land::SlabLand) =
+    hasproperty(land.diagnostics, :canopy_water_capacity) ? land.diagnostics.canopy_water_capacity : ZeroField()
+
 #####
 ##### EarthSystemModel interface — generic SlabLand coupling.
 #####
@@ -402,9 +405,10 @@ surface `saturation`. Aerodynamic roughness lengths belong to the atmosphere-lan
 flux closure (`atmosphere_land_fluxes`), not the land state.
 """
 function EarthSystemModels.InterfaceComputations.ComponentExchanger(land::SlabLand, grid)
-    state = (T                    = surface_temperature(land),
-             saturation           = surface_saturation(land),
-             canopy_water_storage = surface_canopy_water_storage(land))
+    state = (T                     = surface_temperature(land),
+             saturation            = surface_saturation(land),
+             canopy_water_storage  = surface_canopy_water_storage(land),
+             canopy_water_capacity = surface_canopy_water_capacity(land))
     return ComponentExchanger(state, nothing)
 end
 

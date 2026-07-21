@@ -186,15 +186,16 @@ end
         blended_fluxes.temperature_scale[i, j, 1] = f * veg_fluxes.temperature_scale[i, j, 1] + g * bare_fluxes.temperature_scale[i, j, 1]
         blended_fluxes.water_vapor_scale[i, j, 1] = f * veg_fluxes.water_vapor_scale[i, j, 1] + g * bare_fluxes.water_vapor_scale[i, j, 1]
 
-        blended_temperature.interface[i, j, 1]            = f * veg_temperature.interface[i, j, 1]            + g * bare_temperature.interface[i, j, 1]
-        blended_temperature.canopy[i, j, 1]               = f * veg_temperature.canopy[i, j, 1]               + g * bare_temperature.canopy[i, j, 1]
-        blended_temperature.soil_skin[i, j, 1]            = f * veg_temperature.soil_skin[i, j, 1]            + g * bare_temperature.soil_skin[i, j, 1]
-        blended_temperature.ground_heat_flux[i, j, 1]     = f * veg_temperature.ground_heat_flux[i, j, 1]     + g * bare_temperature.ground_heat_flux[i, j, 1]
-        blended_temperature.canopy_latent_heat[i, j, 1]   = f * veg_temperature.canopy_latent_heat[i, j, 1]   + g * bare_temperature.canopy_latent_heat[i, j, 1]
-        blended_temperature.soil_latent_heat[i, j, 1]     = f * veg_temperature.soil_latent_heat[i, j, 1]     + g * bare_temperature.soil_latent_heat[i, j, 1]
-        blended_temperature.canopy_sensible_heat[i, j, 1] = f * veg_temperature.canopy_sensible_heat[i, j, 1] + g * bare_temperature.canopy_sensible_heat[i, j, 1]
-        blended_temperature.soil_sensible_heat[i, j, 1]   = f * veg_temperature.soil_sensible_heat[i, j, 1]   + g * bare_temperature.soil_sensible_heat[i, j, 1]
-        blended_temperature.canopy_evaporation[i, j, 1]   = f * veg_temperature.canopy_evaporation[i, j, 1]   + g * bare_temperature.canopy_evaporation[i, j, 1]
+        blended_temperature.interface[i, j, 1]              = f * veg_temperature.interface[i, j, 1]              + g * bare_temperature.interface[i, j, 1]
+        blended_temperature.canopy[i, j, 1]                 = f * veg_temperature.canopy[i, j, 1]                 + g * bare_temperature.canopy[i, j, 1]
+        blended_temperature.soil_skin[i, j, 1]              = f * veg_temperature.soil_skin[i, j, 1]              + g * bare_temperature.soil_skin[i, j, 1]
+        blended_temperature.ground_heat_flux[i, j, 1]        = f * veg_temperature.ground_heat_flux[i, j, 1]        + g * bare_temperature.ground_heat_flux[i, j, 1]
+        blended_temperature.canopy_latent_heat[i, j, 1]     = f * veg_temperature.canopy_latent_heat[i, j, 1]     + g * bare_temperature.canopy_latent_heat[i, j, 1]
+        blended_temperature.soil_latent_heat[i, j, 1]       = f * veg_temperature.soil_latent_heat[i, j, 1]       + g * bare_temperature.soil_latent_heat[i, j, 1]
+        blended_temperature.canopy_sensible_heat[i, j, 1]   = f * veg_temperature.canopy_sensible_heat[i, j, 1]   + g * bare_temperature.canopy_sensible_heat[i, j, 1]
+        blended_temperature.soil_sensible_heat[i, j, 1]     = f * veg_temperature.soil_sensible_heat[i, j, 1]     + g * bare_temperature.soil_sensible_heat[i, j, 1]
+        blended_temperature.canopy_evaporation[i, j, 1]     = f * veg_temperature.canopy_evaporation[i, j, 1]     + g * bare_temperature.canopy_evaporation[i, j, 1]
+        blended_temperature.canopy_wet_latent_heat[i, j, 1] = f * veg_temperature.canopy_wet_latent_heat[i, j, 1] + g * bare_temperature.canopy_wet_latent_heat[i, j, 1]
 
         # Effective (LST) temperature: area-weight in radiance (T⁴) space (σ cancels),
         # σ Teff⁴ = f · LWu_veg + (1−f) · LWu_bare.

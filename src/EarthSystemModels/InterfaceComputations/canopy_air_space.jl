@@ -42,7 +42,7 @@ end
 """
     struct CanopyInterception
 
-Interface-side parameters of the wet-canopy (interception) vapor branch. A wet
+Marker enabling the wet-canopy (interception) vapor branch of a [`CanopyAirSpace`](@ref). A wet
 canopy evaporates intercepted water at the *potential* (stomata-free) rate through
 the leaf boundary layer only, so the leaf vapor conductance blends the dry
 (stomatal) `g_c` with a wet `g_wet = ρᵃᵗ · LAI · gᵇ` by the wet fraction
@@ -51,38 +51,26 @@ the leaf boundary layer only, so the leaf vapor conductance blends the dry
 f_{wet} = (Wᶜ / Wᶜᵐᵃˣ)^{2/3}, \\qquad Wᶜᵐᵃˣ = c · LAI
 ```
 
-([Deardorff, 1978](@cite deardorff1978)). `Wᶜ` is the prognostic canopy water
-store carried by an [`InterceptingHydrology`](@ref); pass the *same*
-`capacity_per_leaf_area` `c` to both. The leaf boundary conductance `gᵇ` is the
-`leaf_boundary_conductance` already on the [`CanopyAirSpace`](@ref).
-
-Fields:
-- `capacity_per_leaf_area` : `c`, canopy water capacity per unit LAI (kg m⁻² ≈ 0.1 mm/LAI).
-- `minimum_leaf_area_index` : LAI floor guarding `Wᶜᵐᵃˣ > 0` in the `f_wet` denominator.
+([Deardorff, 1978](@cite deardorff1978)). The store `Wᶜ` and its capacity `Wᶜᵐᵃˣ = c·LAI`
+are owned by the [`InterceptingHydrology`](@ref) wrapping the soil; the interface reads both
+and normalizes `f_wet` by the store's *own* capacity. The leaf boundary conductance `gᵇ` is the
+`leaf_boundary_conductance` on the [`CanopyAirSpace`](@ref).
 """
-struct CanopyInterception{FT}
-    capacity_per_leaf_area  :: FT
-    minimum_leaf_area_index :: FT
-end
-
-CanopyInterception(FT=Oceananigans.defaults.FloatType;
-                   capacity_per_leaf_area = 0.1,
-                   minimum_leaf_area_index = 0.01) =
-    CanopyInterception(convert(FT, capacity_per_leaf_area),
-                       convert(FT, minimum_leaf_area_index))
+struct CanopyInterception end
 
 Base.summary(::CanopyInterception) = "CanopyInterception"
 
-# Deardorff (1978) wet fraction f_wet = (Wᶜ/Wᶜᵐᵃˣ)^(2/3). No interception ⇒ 0,
-# recovering the dry CAS bit-for-bit.
+# Deardorff (1978) wet fraction f_wet = (Wᶜ/Wᶜᵐᵃˣ)^(2/3), normalized by the store's own
+# capacity Wᶜᵐᵃˣ (published by `InterceptingHydrology`). No interception ⇒ 0, recovering the
+# dry CAS bit-for-bit; a zero capacity (no store, or a bare tile) also gives 0.
 @inline wet_canopy_fraction(::Nothing, hydrology, LAI) = zero(LAI)
-@inline function wet_canopy_fraction(interception::CanopyInterception, hydrology, LAI)
-    FT        = typeof(LAI)
-    Wᶜ        = convert(FT, hydrology.canopy_water_storage)
-    c         = interception.capacity_per_leaf_area
-    LAI_floor = interception.minimum_leaf_area_index
-    Wᶜᵐᵃˣ     = c * max(LAI, LAI_floor)
-    return clamp((max(Wᶜ, zero(FT)) / Wᶜᵐᵃˣ)^convert(FT, 2//3), zero(FT), one(FT))
+@inline function wet_canopy_fraction(::CanopyInterception, hydrology, LAI)
+    FT    = typeof(LAI)
+    Wᶜ    = convert(FT, hydrology.canopy_water_storage)
+    Wᶜᵐᵃˣ = convert(FT, hydrology.canopy_water_capacity)
+    return ifelse(Wᶜᵐᵃˣ > zero(FT),
+                  clamp((max(Wᶜ, zero(FT)) / Wᶜᵐᵃˣ)^convert(FT, 2//3), zero(FT), one(FT)),
+                  zero(FT))
 end
 
 """
@@ -166,7 +154,8 @@ Base.show(io::IO, c::CanopyAirSpace) =
     interface_hydrology_state(i, j, grid, c.soil, land_state)
 @inline canopy_air_space_hydrology_state(::CanopyInterception, i, j, grid, c, land_state) =
     merge(interface_hydrology_state(i, j, grid, c.soil, land_state),
-          (canopy_water_storage = land_field_value(land_state.canopy_water_storage, i, j),))
+          (canopy_water_storage  = land_field_value(land_state.canopy_water_storage, i, j),
+           canopy_water_capacity = land_field_value(land_state.canopy_water_capacity, i, j)))
 @inline interface_energy_state(i, j, grid, c::CanopyAirSpace, land_state) =
     interface_energy_state(i, j, grid, c.soil, land_state)
 @inline canopy_leaf_area_index(c::CanopyAirSpace) = canopy_leaf_area_index(c.canopy)
@@ -302,13 +291,15 @@ uses the `Δ`-multiplied Kirchhoff form so it stays finite as the flux vanishes.
     LEᵍ   = ℒ * Gᵉ * (qᵉ - qᵃᶜ)
     Gcond = Λ * (Tⁱⁿ - Tˡᵃ)
     E_wet = f_wet * g_wet * (qᵛ - qᵃᶜ)           # wet-canopy evaporation, mass flux (kg m⁻² s⁻¹, up)
+    LE_wet = ℒ * E_wet                           # wet-canopy latent heat (W m⁻², up); LEᵛ − LE_wet = transpiration
 
     return (; Tᵛ = convert(FT, Tᵛ), Tⁱⁿ = convert(FT, Tⁱⁿ),
               Tᵃᶜ = convert(FT, Tᵃᶜ), qᵃᶜ = convert(FT, qᵃᶜ),
               Teff = convert(FT, Teff),
               Hᵛ = convert(FT, Hᵛ), Hᵍ = convert(FT, Hᵍ),
               LEᵛ = convert(FT, LEᵛ), LEᵍ = convert(FT, LEᵍ),
-              Gcond = convert(FT, Gcond), E_wet = convert(FT, E_wet))
+              Gcond = convert(FT, Gcond), E_wet = convert(FT, E_wet),
+              LE_wet = convert(FT, LE_wet))
 end
 
 @inline compute_interface_temperature(c::CanopyAirSpace,

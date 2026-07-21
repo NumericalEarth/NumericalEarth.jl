@@ -39,8 +39,7 @@ throughfall, drains the wet canopy at the potential rate `E_wet` supplied by the
 interface, sheds drip over capacity, and routes throughfall to `soil`.
 
 `leaf_area_index` should be the *same* LAI object passed to the interface
-[`CanopyConductanceHumidity`](@ref); `capacity_per_leaf_area` (`c`) the same as the
-interface [`CanopyInterception`](@ref). A `Number` or static `Field` LAI runs on CPU
+[`CanopyConductanceHumidity`](@ref). A `Number` or static `Field` LAI runs on CPU
 and GPU; a `FieldTimeSeries` (time-varying LAI) currently runs on **CPU only** (the
 series is indexed in-kernel, which does not adapt to GPU — a follow-up).
 
@@ -97,7 +96,8 @@ flux_variables(h::InterceptingHydrology) =
 
 diagnostic_variables(h::InterceptingHydrology) =
     merge_unique(diagnostic_variables(h.soil),
-                 (:throughfall, :canopy_water_storage_tendency, :wet_canopy_evaporation))
+                 (:throughfall, :canopy_water_storage_tendency, :wet_canopy_evaporation,
+                  :canopy_water_capacity))
 
 # Delegate the initial-field builders to the wrapped soil so any soil-specific field
 # shapes are preserved; interception's own fields fall through to the defaults.
@@ -175,7 +175,23 @@ function time_step!(h::InterceptingHydrology, land, Δt, time)
     return nothing
 end
 
-update_diagnostics!(h::InterceptingHydrology, land) = update_diagnostics!(h.soil, land)
+# Refresh the wrapped soil's diagnostics, then publish the store capacity `Wᶜᵐᵃˣ = c·LAI`
+# the interface reads to normalize `f_wet` — kept fresh here so a time-varying LAI stays
+# current and the first coupled flux computation already sees a nonzero capacity.
+function update_diagnostics!(h::InterceptingHydrology, land)
+    update_diagnostics!(h.soil, land)
+    arch = architecture(land.grid)
+    launch!(arch, land.grid, :xy, _canopy_capacity!,
+            land.diagnostics.canopy_water_capacity, h, land.grid, land.clock.time)
+    return nothing
+end
+
+@kernel function _canopy_capacity!(capacity, h, grid, time)
+    i, j = @index(Global, NTuple)
+    FT  = eltype(grid)
+    LAI = convert(FT, stateindex(h.leaf_area_index, i, j, 1, grid, Time(time), (Center, Center, Center)))
+    @inbounds capacity[i, j, 1] = h.capacity_per_leaf_area * LAI
+end
 
 saturation(h::InterceptingHydrology, land) = saturation(h.soil, land)
 

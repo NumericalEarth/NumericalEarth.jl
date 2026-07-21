@@ -47,7 +47,7 @@ function interception_model(arch, FT; leaf_area_index = 3.0, capacity = 0.1, rai
     land = SlabLand(grid; energy = SlabEnergy(FT), hydrology)
     set!(land; T = 298, M = water_storage)
 
-    cas_interception = interception ? CanopyInterception(FT; capacity_per_leaf_area = capacity) : nothing
+    cas_interception = interception ? CanopyInterception() : nothing
     cas = CanopyAirSpace(FT;
         soil = soil_humidity_branch(FT),
         canopy = CanopyConductanceHumidity(FT; leaf_area_index,

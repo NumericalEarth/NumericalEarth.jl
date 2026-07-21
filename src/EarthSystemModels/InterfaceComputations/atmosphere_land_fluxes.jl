@@ -44,16 +44,17 @@ end
 # radiation is internalized and the slab is driven by conduction.
 @inline build_interface_temperature(temperature_formulation, grid) = Field{Center, Center, Nothing}(grid)
 @inline build_interface_temperature(::CanopyAirSpace, grid) =
-    (interface            = Field{Center, Center, Nothing}(grid),   # canopy-air node Tᵃᶜ (what MOST sees)
-     canopy               = Field{Center, Center, Nothing}(grid),   # leaf temperature Tᵛ
-     soil_skin            = Field{Center, Center, Nothing}(grid),   # soil-skin temperature Tⁱⁿ
-     effective            = Field{Center, Center, Nothing}(grid),   # radiating (LST) temperature Teff
-     ground_heat_flux     = Field{Center, Center, Nothing}(grid),   # skin→bulk conduction Gcond
-     canopy_latent_heat   = Field{Center, Center, Nothing}(grid),   # leaf transpiration LEᵛ
-     soil_latent_heat     = Field{Center, Center, Nothing}(grid),   # soil evaporation LEᵍ
-     canopy_sensible_heat = Field{Center, Center, Nothing}(grid),   # leaf sensible Hᵛ
-     soil_sensible_heat   = Field{Center, Center, Nothing}(grid),   # ground sensible Hᵍ
-     canopy_evaporation   = Field{Center, Center, Nothing}(grid))   # wet-canopy evaporation E_wet (kg m⁻² s⁻¹, up)
+    (interface              = Field{Center, Center, Nothing}(grid),   # canopy-air node Tᵃᶜ (what MOST sees)
+     canopy                 = Field{Center, Center, Nothing}(grid),   # leaf temperature Tᵛ
+     soil_skin              = Field{Center, Center, Nothing}(grid),   # soil-skin temperature Tⁱⁿ
+     effective              = Field{Center, Center, Nothing}(grid),   # radiating (LST) temperature Teff
+     ground_heat_flux        = Field{Center, Center, Nothing}(grid),   # skin→bulk conduction Gcond
+     canopy_latent_heat     = Field{Center, Center, Nothing}(grid),   # leaf transpiration LEᵛ
+     soil_latent_heat       = Field{Center, Center, Nothing}(grid),   # soil evaporation LEᵍ
+     canopy_sensible_heat   = Field{Center, Center, Nothing}(grid),   # leaf sensible Hᵛ
+     soil_sensible_heat     = Field{Center, Center, Nothing}(grid),   # ground sensible Hᵍ
+     canopy_evaporation     = Field{Center, Center, Nothing}(grid),   # wet-canopy evaporation E_wet (kg m⁻² s⁻¹, up)
+     canopy_wet_latent_heat = Field{Center, Center, Nothing}(grid))   # wet-canopy latent heat ℒ·E_wet (W m⁻², up)
 
 # Store the diagnostic surface temperature(s) from the converged interface state.
 # Ordinary closures write the single skin temperature; a `CanopyAirSpace` re-runs its
@@ -66,16 +67,17 @@ end
 @inline function store_interface_temperature!(Ts, i, j, cas::CanopyAirSpace, Ψₛ, Ψₐ, Ψᵢ, Ψᵣ, ℙₐ)
     sol = canopy_air_space_solve(cas, Ψₛ, Ψₐ, Ψᵢ, Ψᵣ, ℙₐ)
     @inbounds begin
-        Ts.interface[i, j, 1]            = sol.Tᵃᶜ
-        Ts.canopy[i, j, 1]               = sol.Tᵛ
-        Ts.soil_skin[i, j, 1]            = sol.Tⁱⁿ
-        Ts.effective[i, j, 1]            = sol.Teff
-        Ts.ground_heat_flux[i, j, 1]     = sol.Gcond
-        Ts.canopy_latent_heat[i, j, 1]   = sol.LEᵛ
-        Ts.soil_latent_heat[i, j, 1]     = sol.LEᵍ
-        Ts.canopy_sensible_heat[i, j, 1] = sol.Hᵛ
-        Ts.soil_sensible_heat[i, j, 1]   = sol.Hᵍ
-        Ts.canopy_evaporation[i, j, 1]   = sol.E_wet
+        Ts.interface[i, j, 1]              = sol.Tᵃᶜ
+        Ts.canopy[i, j, 1]                 = sol.Tᵛ
+        Ts.soil_skin[i, j, 1]              = sol.Tⁱⁿ
+        Ts.effective[i, j, 1]              = sol.Teff
+        Ts.ground_heat_flux[i, j, 1]        = sol.Gcond
+        Ts.canopy_latent_heat[i, j, 1]     = sol.LEᵛ
+        Ts.soil_latent_heat[i, j, 1]       = sol.LEᵍ
+        Ts.canopy_sensible_heat[i, j, 1]   = sol.Hᵛ
+        Ts.soil_sensible_heat[i, j, 1]     = sol.Hᵍ
+        Ts.canopy_evaporation[i, j, 1]     = sol.E_wet
+        Ts.canopy_wet_latent_heat[i, j, 1] = sol.LE_wet
     end
     return nothing
 end
@@ -115,7 +117,8 @@ function compute_atmosphere_land_fluxes!(coupled_model, atmosphere_land_interfac
     land_exchanger_state = exchanger.land.state
     land_state = (T = land_exchanger_state.T,
                   saturation = land_exchanger_state.saturation,
-                  canopy_water_storage = land_exchanger_state.canopy_water_storage)
+                  canopy_water_storage = land_exchanger_state.canopy_water_storage,
+                  canopy_water_capacity = land_exchanger_state.canopy_water_capacity)
 
     land_properties = atmosphere_land_surface_properties(land_exchanger_state)
 
