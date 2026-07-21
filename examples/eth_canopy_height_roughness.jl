@@ -38,10 +38,11 @@ mkpath(outdir)
 
 # ## Inputs
 # A 0.5°×0.5° box over the Bavarian pre-Alps: Alpine forest to the south, farmland to the
-# north — a legible tall-canopy / short-canopy mix. The target grid coarsens the ETH mosaic
-# (0.001°, ~111 m) to ~500 m cells.
+# north — a legible tall-canopy / short-canopy mix. The target grid is 500×500, matching the
+# ETH mosaic's 0.001° (~110 m) native resolution over this window — the finest detail the
+# anonymously-served product carries.
 region = BoundingBox(longitude = (11.0, 11.5), latitude = (47.5, 48.0))
-grid = LatitudeLongitudeGrid(CPU(), Float64; size = (100, 100),
+grid = LatitudeLongitudeGrid(CPU(), Float64; size = (500, 500),
                              longitude = (11.0, 11.5), latitude = (47.5, 48.0),
                              topology = (Bounded, Bounded, Flat))
 
