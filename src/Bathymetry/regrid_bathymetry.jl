@@ -311,6 +311,79 @@ function regrid_topography(target_grid, metadata; kw...)
     return elevation
 end
 
+@inline nan_to_zero(x) = ifelse(isnan(x), zero(x), x)
+
+"""
+    bare_earth_elevation(surface_elevation::Field, object_heights::Field...)
+
+Estimate bare-earth land elevation from a Digital Surface Model (DSM) by removing
+sub-grid object heights. A DSM such as [`GLO30`](@ref) measures the top of whatever
+sits on the ground — canopy over forest, roofs over cities — so at resolutions
+where individual trees and buildings are sub-grid it reports the surface *raised*
+by the mean object height. Subtracting the object heights (`object_heights`, e.g. a
+canopy-height field and a building-height field) recovers the ground beneath them,
+
+    z_bare = max(surface_elevation − maxₖ object_heightₖ, 0)
+
+clamped at sea level. The object heights are combined by their per-cell maximum,
+with missing values (`NaN`) contributing zero — so a canopy field that is `NaN` off
+vegetation and a building field that is `NaN` off built-up areas compose into a
+single object-height field. All inputs must share the same `grid`. The height
+removed here is exactly the displacement the surface-layer roughness closure
+reintroduces as drag, so the object lift is accounted for once.
+
+Returns a `Field{Center, Center, Nothing}`.
+
+```jldoctest
+using NumericalEarth
+using Oceananigans
+
+grid = LatitudeLongitudeGrid(size = (4, 4), longitude = (0, 1), latitude = (0, 1),
+                             topology = (Bounded, Bounded, Flat))
+
+surface  = set!(Field{Center, Center, Nothing}(grid), 100)  # 100 m DSM
+canopy   = set!(Field{Center, Center, Nothing}(grid), 30)   # 30 m canopy
+building = set!(Field{Center, Center, Nothing}(grid), 10)   # 10 m buildings
+
+z = bare_earth_elevation(surface, canopy, building)
+maximum(z)
+
+# output
+70.0
+```
+"""
+function bare_earth_elevation(surface_elevation::Field, object_heights::Field...)
+    grid = surface_elevation.grid
+
+    object_height = Field{Center, Center, Nothing}(grid)
+    for h in object_heights
+        interior(object_height) .= max.(interior(object_height), nan_to_zero.(interior(h)))
+    end
+
+    z_bare = Field{Center, Center, Nothing}(grid)
+    interior(z_bare) .= max.(interior(surface_elevation) .- interior(object_height), 0)
+    fill_halo_regions!(z_bare)
+
+    return z_bare
+end
+
+"""
+    bare_earth_elevation(grid::AbstractGrid, object_heights::Field...;
+                         dataset = GLO30(), region = nothing, kw...)
+
+Regrid the DSM `dataset` onto `grid` with [`regrid_topography`](@ref) and remove the
+`object_heights`, returning the bare-earth elevation `Field`. `dataset` defaults to
+Copernicus [`GLO30`](@ref), which requires a bounded `region` ([`BoundingBox`](@ref)).
+Remaining keyword arguments (`interpolation_passes`, `cache`, …) are forwarded to
+`regrid_topography`.
+"""
+function bare_earth_elevation(grid::AbstractGrid, object_heights::Field...;
+                              dataset = GLO30(), region = nothing, kw...)
+    metadatum = Metadatum(:bottom_height; dataset, region)
+    surface_elevation = regrid_topography(grid, metadatum; kw...)
+    return bare_earth_elevation(surface_elevation, object_heights...)
+end
+
 # Regridding bathymetry for distributed grids, we handle the whole process
 # on just one rank, and share the results with the other processors.
 function regrid_bathymetry(target_grid::DistributedGrid, metadata;
