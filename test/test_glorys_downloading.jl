@@ -15,9 +15,10 @@ using Oceananigans.Fields: location
     # set_region_data! indexes past the file at the domain edge). No network needed.
     CMExt = Base.get_extension(NumericalEarth, :NumericalEarthCopernicusMarineExt)
     bbox = BoundingBox(longitude=(200, 202), latitude=(35, 37))
+    dataset = GLORYSDaily()
 
-    lon = CMExt.longitude_bounds_kw(bbox)
-    lat = CMExt.latitude_bounds_kw(bbox)
+    lon = CMExt.longitude_bounds_kw(bbox, dataset)
+    lat = CMExt.latitude_bounds_kw(bbox, dataset)
 
     @test lon.minimum_longitude ≈ 200 - 2/12
     @test lon.maximum_longitude ≈ 202 + 2/12
@@ -26,7 +27,7 @@ using Oceananigans.Fields: location
 
     # Latitude padding clamps to the poles.
     polar = BoundingBox(longitude=(0, 10), latitude=(-89.95, 89.95))
-    plat = CMExt.latitude_bounds_kw(polar)
+    plat = CMExt.latitude_bounds_kw(polar, dataset)
     @test plat.minimum_latitude == -90
     @test plat.maximum_latitude == 90
 end

@@ -35,10 +35,7 @@ Returns
 A `NamedTuple` of `Oceananigans.Forcings.Relaxation` ready to splat into the
 `forcing` kwarg of an Oceananigans / Breeze model constructor.
 """
-function parent_forcings(; variables,
-                          rate,
-                          mask = 1)
-
+function parent_forcings(; variables, rate, mask=1)
     field_pairs = []
     for (child_name, fts) in pairs(variables)
         r = rate isa NamedTuple ? getproperty(rate, child_name) : rate

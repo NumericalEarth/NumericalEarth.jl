@@ -2,7 +2,7 @@ include("runtests_setup.jl")
 
 using CUDA
 using Oceananigans.BoundaryConditions: DiscreteBoundaryFunction
-using NumericalEarth.Oceans: MultipleFluxes, net_flux
+using NumericalEarth.Oceans: MultipleFluxes, FreshwaterExchange, net_flux
 using NumericalEarth.EarthSystemModels.InterfaceComputations: net_fluxes
 
 # A constant top-cell tendency `G`, mimicking the part of a `DatasetRestoring`
@@ -22,22 +22,33 @@ end
                                      longitude = (0, 360),
                                      z = (-100, 0))
 
-        # The grid has uniform Δz = 100 / 4 = 25 m at the top cell.
-        Δz_top = 25.0
-
         @testset "default path: no additional_fluxes" begin
             ocean = ocean_simulation(grid; warn=false)
             S_top = ocean.model.tracers.S.boundary_conditions.top
             T_top = ocean.model.tracers.T.boundary_conditions.top
+            u_top = ocean.model.velocities.u.boundary_conditions.top
 
-            # Plain FluxBoundaryCondition over a writable Field
-            @test S_top.condition isa Field
-            @test T_top.condition isa Field
+            # Tracer top boundary conditions always pair the solver's flux field with the
+            # freshwater exchange, so they are wrapped even with no user-supplied flux.
+            @test S_top.condition isa DiscreteBoundaryFunction
+            @test T_top.condition isa DiscreteBoundaryFunction
+            @test S_top.condition.func isa MultipleFluxes
+            @test T_top.condition.func isa MultipleFluxes
+            @test S_top.condition.func.additional_fluxes isa FreshwaterExchange
+            @test T_top.condition.func.additional_fluxes isa FreshwaterExchange
+            @test S_top.condition.func.additional_fluxes.additional === nothing
+            @test T_top.condition.func.additional_fluxes.additional === nothing
 
-            # net_fluxes returns those same fields (no unwrap needed)
+            # Momentum carries no freshwater exchange: a plain FluxBoundaryCondition over a writable Field
+            @test u_top.condition isa Field
+
+            # net_fluxes unwraps to the writable flux fields the coupled solver writes into
             nf = net_fluxes(ocean)
-            @test nf.S === S_top.condition
-            @test nf.T === T_top.condition
+            @test nf.S isa Field
+            @test nf.T isa Field
+            @test nf.S === S_top.condition.func.flux_field
+            @test nf.T === T_top.condition.func.flux_field
+            @test nf.u === u_top.condition
         end
 
         @testset "wrapped path: salinity restoring" begin
@@ -49,10 +60,9 @@ end
             S_top = ocean.model.tracers.S.boundary_conditions.top
             T_top = ocean.model.tracers.T.boundary_conditions.top
 
-            # S is wrapped, T is left alone
-            @test S_top.condition isa DiscreteBoundaryFunction
-            @test S_top.condition.func isa MultipleFluxes
-            @test T_top.condition isa Field
+            # The user flux rides along inside S's freshwater exchange; T keeps an empty slot
+            @test S_top.condition.func.additional_fluxes.additional isa ConstantTendency
+            @test T_top.condition.func.additional_fluxes.additional === nothing
 
             fr = S_top.condition.func
             @test fr.flux_field isa Field
@@ -62,9 +72,9 @@ end
             nf = net_fluxes(ocean)
             @test nf.S isa Field
             @test nf.S === fr.flux_field
-            @test nf.T === T_top.condition
+            @test nf.T === T_top.condition.func.flux_field
 
-            # Math: J_solver = 0 by default, so BC value = -G * Δz_top
+            # J_solver = 0 by default and the freshwater volume flux is still zero, so only G survives
             fields = ocean.model.tracers
             CUDA.@allowscalar val = S_top.condition.func(2, 2, grid, ocean.model.clock, fields)
             @test val ≈ G
