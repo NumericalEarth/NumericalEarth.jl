@@ -90,14 +90,14 @@ end
 
 @testset "Tracer budget closure under surface fluxes" begin
     for arch in test_architectures
-        for fold_topology in (RightFaceFolded,
-                              # RightCenterFolded # requires https://github.com/CliMA/Oceananigans.jl/pull/5099
-                              )
-
-            @info ".. on $(typeof(arch)) with $fold_topology topology"
+        for z in (MutableVerticalDiscretization((-100, 0)), ) # TODO: Add a static grid
+            for fold_topology in (RightFaceFolded,
+                                  RightCenterFolded)
+                              
+            @info ".. on $(typeof(arch)) with $(typeof(z)) and $fold_topology topology"
             underlying_grid = TripolarGrid(arch;
                                            size = (20, 20, 20),
-                                           z = MutableVerticalDiscretization((-100, 0)),
+                                           z,
                                            halo = (7, 7, 4),
                                            fold_topology)
 
@@ -116,6 +116,11 @@ end
             # An idealized, stably stratified initial state
             Tᵢ(λ, φ, z) = 2 + 26 * cosd(φ)^2 * exp(z / 30)
             Sᵢ(λ, φ, z) = 35 - 1//2 * exp(z / 30)
+
+            # Sea ice is largest at the poles and tapers to zero over 20° of latitude.
+            polar_ice_fraction(φ) = clamp((abs(φ) - 70) / 20, 0, 1)
+            hᵢ(λ, φ) = 2 * polar_ice_fraction(φ)
+            ℵᵢ(λ, φ) = polar_ice_fraction(φ)
 
             Δt = 605seconds
             Sᵒᶜ = 35 # reference salinity [psu]
@@ -136,6 +141,21 @@ end
                 coupled_model = OceanSeaIceModel(ocean, nothing; atmosphere, radiation)
                 test_tracer_budget(coupled_model, Sᵒᶜ, Δt, 4; heat_rtol=1e-11, freshwater_rtol=√eps(eltype(grid)))
             end
+
+            @testset "Surface fluxes + penetrating shortwave radiation + Sea ice" begin
+                @info "    .. Surface fluxes + penetrating shortwave radiation + Sea ice"
+                new_grid = deepcopy(grid) # because the grid is mutable
+                ocean = ocean_simulation(new_grid; free_surface)
+                sea_ice = sea_ice_simulation(new_grid, ocean; dynamics=nothing)
+                set!(ocean.model, T=Tᵢ, S=Sᵢ)
+                set!(sea_ice.model, h=hᵢ, ℵ=ℵᵢ)
+                coupled_model = OceanSeaIceModel(ocean, sea_ice; atmosphere, radiation)
+                tolerance = 2√eps(eltype(new_grid))
+                test_tracer_budget(coupled_model, Sᵒᶜ, Δt, 4;
+                                   heat_rtol=tolerance,
+                                   freshwater_rtol=tolerance)
+            end
+        end
         end
     end
 end
