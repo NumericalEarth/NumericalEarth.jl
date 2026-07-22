@@ -18,6 +18,10 @@ export AbstractLand,
        NoDeepLiquidFlux, FreeDrainageFlux, DarcyDeepLiquidFlux, LinearReservoirDrainage,
        NoRunoff, InfiltrationCapacityRunoff,
        VariablySaturatedHydrology,
+       # Urban aerodynamic roughness closures
+       AbstractUrbanRoughness, MacdonaldRoughness, KandaRoughness, LookupRoughness,
+       IsotropicFrontalArea, CuboidFrontalArea,
+       urban_roughness, compute_urban_roughness!, roughness_lengths,
        # Atmosphere-facing accessors
        surface_temperature, surface_saturation
 
@@ -32,6 +36,7 @@ instead.
 abstract type AbstractLand end
 
 using Adapt: Adapt
+using DocStringExtensions: TYPEDEF, TYPEDFIELDS, TYPEDSIGNATURES
 using KernelAbstractions: @kernel, @index
 using Oceananigans: Oceananigans, prognostic_state, restore_prognostic_state!
 using Oceananigans.Architectures: architecture
@@ -51,6 +56,10 @@ using ..EarthSystemModels.InterfaceComputations: interface_kernel_parameters, Co
 include("energy_balance/energy_balance.jl")
 include("hydrology/hydrology.jl")
 include("properties/property_providers.jl")
+
+# Urban aerodynamic roughness closures.
+include("roughness/urban_roughness_closure.jl")
+include("roughness/urban_roughness_field.jl")
 
 # Container.
 include("slab_land.jl")

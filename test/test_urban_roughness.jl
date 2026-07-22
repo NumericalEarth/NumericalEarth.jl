@@ -2,7 +2,7 @@ using NumericalEarth
 using Oceananigans
 using Test
 
-using NumericalEarth.DataWrangling.UrbanRoughness:
+using NumericalEarth.Lands:
     AbstractUrbanRoughness, MacdonaldRoughness, KandaRoughness, LookupRoughness,
     IsotropicFrontalArea, CuboidFrontalArea,
     urban_roughness, roughness_lengths, compute_urban_roughness!, frontal_area_index,

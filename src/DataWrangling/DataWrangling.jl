@@ -364,7 +364,6 @@ include("GEBCO/GEBCO.jl")
 include("IBCAO/IBCAO.jl")
 include("CopernicusDEM/CopernicusDEM.jl")
 include("GHSL/GHSL.jl")
-include("UrbanRoughness/UrbanRoughness.jl")
 include("CopernicusLandAlbedo/CopernicusLandAlbedo.jl")
 
 using .ETOPO
@@ -383,7 +382,6 @@ using .GEBCO
 using .IBCAO
 using .CopernicusDEM
 using .GHSL
-using .UrbanRoughness
 using .CopernicusLandAlbedo
 
 function dataset_modules()

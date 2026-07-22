@@ -19,7 +19,7 @@
 using NumericalEarth
 using NumericalEarth.DataWrangling: BoundingBox, Metadatum
 using NumericalEarth.DataWrangling.GHSL: GHSBuiltH, GHSBuiltS
-using NumericalEarth.DataWrangling.UrbanRoughness: urban_roughness, KandaRoughness, MacdonaldRoughness
+using NumericalEarth.Lands: urban_roughness, KandaRoughness, MacdonaldRoughness
 using Oceananigans
 using Oceananigans.Grids: λnodes, φnodes
 using Oceananigans.Fields: interior

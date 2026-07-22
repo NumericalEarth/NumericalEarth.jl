@@ -3,11 +3,6 @@
 ##### height H) → momentum roughness length z0 and zero-plane displacement d0.
 #####
 
-using Oceananigans: Center, launch!
-using Oceananigans.Architectures: architecture
-using Oceananigans.Fields: Field
-using KernelAbstractions: @kernel, @index
-
 @kernel function _compute_urban_roughness!(z0m, d0, λp, H, grid, closure)
     i, j = @index(Global, NTuple)
     FT = eltype(grid)

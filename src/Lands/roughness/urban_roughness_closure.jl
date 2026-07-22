@@ -162,7 +162,7 @@ Construct a [`MacdonaldRoughness`](@ref) closure. Keyword arguments override the
 documented above.
 
 ```jldoctest
-julia> using NumericalEarth.DataWrangling.UrbanRoughness
+julia> using NumericalEarth.Lands
 
 julia> MacdonaldRoughness()
 MacdonaldRoughness{Float64} with IsotropicFrontalArea()
@@ -222,7 +222,7 @@ change the array constant, frontal-area estimator or floors; remaining keywords 
 the Kanda fields documented above.
 
 ```jldoctest
-julia> using NumericalEarth.DataWrangling.UrbanRoughness
+julia> using NumericalEarth.Lands
 
 julia> KandaRoughness()
 KandaRoughness{Float64} correcting MacdonaldRoughness{Float64} with IsotropicFrontalArea()
@@ -270,7 +270,7 @@ Construct a [`LookupRoughness`](@ref) closure. Keyword arguments override the fi
 documented above.
 
 ```jldoctest
-julia> using NumericalEarth.DataWrangling.UrbanRoughness
+julia> using NumericalEarth.Lands
 
 julia> LookupRoughness()
 LookupRoughness{Float64}
