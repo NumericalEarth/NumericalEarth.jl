@@ -3,14 +3,17 @@ include("runtests_setup.jl")
 using NumericalEarth: ESAWorldCover
 using NumericalEarth.DataWrangling.WorldCover: mode_aggregate, class_fraction,
                                                class_fractions, vegetation_fraction,
-                                               aggregate_blockwise,
+                                               aggregate_blockwise, aggregate_landcover,
+                                               worldcover_window,
                                                class_fraction_variable_name,
                                                ESA_WORLDCOVER_CLASS_CODES,
                                                ESA_WORLDCOVER_CLASS_NAMES,
                                                ESA_WORLDCOVER_FRACTION_VARIABLE_NAMES,
                                                ESA_WORLDCOVER_VEGETATED_CLASSES,
-                                               ESA_WORLDCOVER_MISSING_VALUE
-using NumericalEarth.DataWrangling: longitude_interfaces, latitude_interfaces,
+                                               ESA_WORLDCOVER_MISSING_VALUE,
+                                               ESA_WORLDCOVER_NATIVE_STEP
+using Oceananigans.Grids: λnodes, φnodes
+using NumericalEarth.DataWrangling: longitude_interfaces, latitude_interfaces, native_grid,
                                     dataset_variable_name, validate_dataset_coverage,
                                     metadata_filename, is_three_dimensional,
                                     missing_value, available_variables
@@ -163,8 +166,11 @@ end
     @test isnan(missing_value(Metadatum(:cropland_fraction; dataset, region)))
 
     filename = metadata_filename(dataset, :vegetation_fraction, nothing, region)
-    @test startswith(filename, "ESA_WorldCover_v200_f12_vegetation_fraction_")
+    @test startswith(filename, "ESA_WorldCover_v200_f12_")
     @test endswith(filename, ".nc")
+    # One materialized file holds every band, so the filename is variable-independent.
+    @test metadata_filename(dataset, :vegetation_fraction, nothing, region) ==
+          metadata_filename(dataset, :landcover_class, nothing, region)
 end
 
 @testset "ESA WorldCover requires a bounded region" begin
@@ -191,4 +197,64 @@ end
     # The aggregation factor is encoded, so caches at different resolutions don't collide.
     @test metadata_filename(dataset, :vegetation_fraction, nothing, region_a) !=
           metadata_filename(ESAWorldCover(aggregation_factor = 120), :vegetation_fraction, nothing, region_a)
+end
+
+@testset "single-pass aggregate_landcover matches the reference helpers" begin
+    # 4×4 raster with a fully-no-data block (top-left), factor 2 → 2×2 coarse.
+    codes = UInt8[ 0  0 40 80
+                   0  0 40 80
+                  30 30 95 10
+                  30 90 95 95]
+    factor = 2
+    aggregated = aggregate_landcover(codes, factor)
+
+    @test aggregated.landcover_class == aggregate_blockwise(codes, factor, mode_aggregate)
+    @test aggregated.vegetation_fraction ==
+          aggregate_blockwise(codes, factor, block -> vegetation_fraction(block))
+    for name in keys(ESA_WORLDCOVER_CLASS_NAMES)
+        c = ESA_WORLDCOVER_CLASS_NAMES[name]
+        @test aggregated.class_fractions[name] ==
+              aggregate_blockwise(codes, factor, block -> class_fraction(block, c))
+    end
+
+    # Per-class fractions sum to 1 over blocks with valid pixels, 0 over the no-data block.
+    total = sum(values(aggregated.class_fractions))
+    @test all(f -> f ≈ 1 || f == 0, total)
+    @test any(iszero, total)  # the all-no-data block
+end
+
+@testset "materialized window is a superset of and cell-aligned with the native grid" begin
+    dataset = ESAWorldCover()
+    factor = dataset.aggregation_factor
+    Δ = factor * ESA_WORLDCOVER_NATIVE_STEP
+    ε = Δ / 100
+
+    # Edges exactly on cell faces (5.45, 4.8, …) are the case that used to shift the
+    # field by one cell; arbitrary and western-hemisphere edges are covered too.
+    regions = (BoundingBox(longitude = (5.45, 5.95),     latitude = (52.05, 52.45)),
+               BoundingBox(longitude = (4.8, 5.0),       latitude = (52.3, 52.5)),
+               BoundingBox(longitude = (5.4507, 5.933),  latitude = (52.018, 52.474)),
+               BoundingBox(longitude = (-3.42, -3.05),   latitude = (55.88, 56.13)))
+
+    for region in regions
+        grid = native_grid(Metadatum(:vegetation_fraction; dataset, region))
+        λc = Array(λnodes(grid, Center()))
+        φc = Array(φnodes(grid, Center()))
+
+        i₁, i₂, j₁, j₂ = worldcover_window(region.longitude, region.latitude, factor)
+        west  = i₁ * ESA_WORLDCOVER_NATIVE_STEP
+        south = j₁ * ESA_WORLDCOVER_NATIVE_STEP
+        nx = (i₂ - i₁) ÷ factor
+        ny = (j₂ - j₁) ÷ factor
+        file_λ = collect(range(west  + Δ / 2, step = Δ, length = nx))
+        file_φ = collect(range(south + Δ / 2, step = Δ, length = ny))
+
+        # The window covers every native-grid center...
+        @test file_λ[1] ≤ minimum(λc) + ε && maximum(λc) ≤ file_λ[end] + ε
+        @test file_φ[1] ≤ minimum(φc) + ε && maximum(φc) ≤ file_φ[end] + ε
+        # ...and each native center coincides with a file center, so the offset-based
+        # read-back places data with no whole-cell or sub-cell registration shift.
+        @test all(λ -> any(fλ -> abs(fλ - λ) < ε, file_λ), λc)
+        @test all(φ -> any(fφ -> abs(fφ - φ) < ε, file_φ), φc)
+    end
 end

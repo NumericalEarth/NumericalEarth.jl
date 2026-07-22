@@ -105,62 +105,67 @@ function ensure_curl_ca_bundle!()
 end
 
 function WorldCover.worldcover_cog_to_netcdf(metadatum::WorldCover.ESAWorldCoverMetadatum, nc_path)
-    # Read the anonymous, unsigned public bucket.
     ensure_curl_ca_bundle!()
-    ArchGDAL.setconfigoption("AWS_NO_SIGN_REQUEST", "YES")
-    ArchGDAL.setconfigoption("AWS_REGION", "eu-central-1")
 
     dataset = metadatum.dataset
     region  = metadatum.region
-    λ₁, λ₂  = region.longitude
-    φ₁, φ₂  = region.latitude
 
     factor = dataset.aggregation_factor
     native_step = WorldCover.ESA_WORLDCOVER_NATIVE_STEP
 
-    # Snap the window to a global aggregated-cell boundary: floor/ceil to the
-    # nearest native pixel, then to the nearest multiple of `factor`. This keeps
-    # the window a whole number of aggregated cells AND aligns those cells with
-    # the global aggregated grid the DataWrangling native grid is built on, so
-    # the read-back offset is exact (no sub-cell registration shift).
-    i₁ = factor * fld(floor(Int, λ₁ / native_step), factor)
-    i₂ = factor * cld(ceil( Int, λ₂ / native_step), factor)
-    j₁ = factor * fld(floor(Int, φ₁ / native_step), factor)
-    j₂ = factor * cld(ceil( Int, φ₂ / native_step), factor)
-
+    i₁, i₂, j₁, j₂ = WorldCover.worldcover_window(region.longitude, region.latitude, factor)
     west  = i₁ * native_step
     east  = i₂ * native_step
     south = j₁ * native_step
     north = j₂ * native_step
 
-    # Build a VRT mosaic over the intersecting tiles, then read the raw codes on
-    # the snapped window at native resolution with nearest resampling.
     tile_urls = [worldcover_tile_url(dataset, tile)
-                 for tile in worldcover_tiles((λ₁, λ₂), (φ₁, φ₂))]
-    sources = [ArchGDAL.read(url) for url in tile_urls]
+                 for tile in worldcover_tiles(region.longitude, region.latitude)]
 
-    codes = ArchGDAL.gdalbuildvrt(sources) do mosaic
-        ArchGDAL.gdalwarp([mosaic],
-            ["-te", string(west), string(south), string(east), string(north),
-             "-tr", string(native_step), string(native_step),
-             "-r",  "near",
-             "-ot", "Byte"]) do windowed
-            # (Nx, Ny) with y north-to-south (GDAL convention).
-            data = UInt8.(ArchGDAL.read(windowed, 1))
-            reverse(data, dims = 2)  # flip to south-to-north
+    # Read the anonymous, unsigned public bucket; `environment` restores any prior
+    # AWS/GDAL config afterwards, so a signed `/vsis3` read elsewhere in the same
+    # session is not left with signing disabled.
+    codes = ArchGDAL.environment(globalconfig = ["AWS_NO_SIGN_REQUEST" => "YES",
+                                                 "AWS_REGION" => "eu-central-1"]) do
+        # ESA WorldCover only publishes tiles that contain land; a 3° cell that is
+        # entirely ocean (or outside coverage) has no tile, so skip a URL that
+        # fails to open instead of aborting the whole read.
+        sources = ArchGDAL.IDataset[]
+        for url in tile_urls
+            try
+                push!(sources, ArchGDAL.read(url))
+            catch tile_error
+                @warn "Skipping unavailable ESA WorldCover tile" url exception = tile_error
+            end
+        end
+        isempty(sources) && error("No ESA WorldCover tiles are published for the region " *
+                                  "longitude $(region.longitude), latitude $(region.latitude); " *
+                                  "it may be entirely ocean or outside the product's coverage " *
+                                  "(land only, 60°S–84°N).")
+
+        # Build a VRT mosaic over the available tiles, then read the raw codes on
+        # the snapped window at native resolution with nearest resampling.
+        try
+            ArchGDAL.gdalbuildvrt(sources) do mosaic
+                ArchGDAL.gdalwarp([mosaic],
+                    ["-te", string(west), string(south), string(east), string(north),
+                     "-tr", string(native_step), string(native_step),
+                     "-r",  "near",
+                     "-ot", "Byte"]) do windowed
+                    # (Nx, Ny) with y north-to-south (GDAL convention).
+                    data = UInt8.(ArchGDAL.read(windowed, 1))
+                    reverse(data, dims = 2)  # flip to south-to-north
+                end
+            end
+        finally
+            foreach(ArchGDAL.destroy, sources)
         end
     end
-    foreach(ArchGDAL.destroy, sources)
 
-    # Aggregate onto the coarse lat/lon grid by the integer factor.
-    class_field = WorldCover.aggregate_blockwise(codes, factor, WorldCover.mode_aggregate)
-    vegetation  = WorldCover.aggregate_blockwise(codes, factor,
-                                                    block -> WorldCover.vegetation_fraction(block))
-
-    class_names = WorldCover.ESA_WORLDCOVER_CLASS_NAMES
-    fraction_fields = map(values(class_names)) do c
-        WorldCover.aggregate_blockwise(codes, factor, block -> WorldCover.class_fraction(block, c))
-    end
+    # Aggregate onto the coarse lat/lon grid by the integer factor in one pass.
+    aggregated  = WorldCover.aggregate_landcover(codes, factor)
+    class_field = aggregated.landcover_class
+    vegetation  = aggregated.vegetation_fraction
 
     nx, ny = size(class_field)
     Δ = factor * native_step
@@ -188,7 +193,7 @@ function WorldCover.worldcover_cog_to_netcdf(metadatum::WorldCover.ESAWorldCover
                                                "units" => "1"])
         vegetation_variable[:, :] = Float32.(vegetation)
 
-        for (name, fraction) in zip(keys(class_names), fraction_fields)
+        for (name, fraction) in pairs(aggregated.class_fractions)
             band = string(WorldCover.class_fraction_variable_name(name))
             fraction_variable = defVar(ds, band, Float32, ("lon", "lat");
                                        attrib = ["long_name" => string(name, " area fraction"),

@@ -78,7 +78,11 @@ const ESA_WORLDCOVER_VEGETATED_CLASSES = (10, 20, 30, 40, 90, 95)
 ##### cell still samples ~144 sub-pixels.
 #####
 
-const ESA_WORLDCOVER_NATIVE_STEP = 1 / 12000   # 10 m in degrees
+# 10 m ≈ 1°/12000. The integer pixel-per-degree count is the primitive: window
+# snapping multiplies coordinates by it (exact) rather than dividing by the
+# rounded native step (two roundings, unstable at exact pixel boundaries).
+const ESA_WORLDCOVER_PIXELS_PER_DEGREE = 12000
+const ESA_WORLDCOVER_NATIVE_STEP = 1 / ESA_WORLDCOVER_PIXELS_PER_DEGREE   # degrees
 
 # WorldCover covers all land except Antarctica; northern limit ≈ 84°N.
 const ESA_WORLDCOVER_LONGITUDE_INTERFACES = (-180, 180)
@@ -279,6 +283,85 @@ function aggregate_blockwise(codes::AbstractMatrix, factor::Integer, reduction)
     return coarse
 end
 
+# Legend index (1-based) of a class code, or 0 for no-data / unknown codes.
+@inline function class_index_of(code)
+    for (k, c) in enumerate(ESA_WORLDCOVER_CLASS_CODES)
+        c == code && return k
+    end
+    return 0
+end
+
+# Majority class, vegetation fraction, and all per-class fractions for one block,
+# counted in a single pass. Equivalent to `mode_aggregate` / `vegetation_fraction`
+# / `class_fraction` (verified in the tests) but ~13× cheaper across the ingest.
+function block_landcover(block, vegetated_classes = ESA_WORLDCOVER_VEGETATED_CLASSES)
+    counts = zeros(Int, length(ESA_WORLDCOVER_CLASS_CODES))
+    for pixel in block
+        k = class_index_of(pixel)
+        k == 0 || (counts[k] += 1)
+    end
+    valid = sum(counts)
+
+    best_index = 0
+    best_count = 0
+    for k in eachindex(counts)
+        counts[k] > best_count && (best_count = counts[k]; best_index = k)
+    end
+    landcover_class = best_index == 0 ? 0 : ESA_WORLDCOVER_CLASS_CODES[best_index]
+
+    fractions = ntuple(k -> valid == 0 ? 0.0 : counts[k] / valid, length(counts))
+
+    vegetated = 0
+    for k in eachindex(counts)
+        ESA_WORLDCOVER_CLASS_CODES[k] in vegetated_classes && (vegetated += counts[k])
+    end
+    vegetation = valid == 0 ? 0.0 : vegetated / valid
+
+    return (; landcover_class, vegetation, fractions)
+end
+
+"""
+    aggregate_landcover(codes, factor; vegetated_classes = ESA_WORLDCOVER_VEGETATED_CLASSES)
+
+Reduce the fine `codes` raster onto the coarse grid by an INTEGER `factor` in a
+single pass per block, returning `(; landcover_class, vegetation_fraction,
+class_fractions)`: the majority class code, the vegetated area fraction `f_veg`,
+and a `NamedTuple` of per-class area fractions keyed by the verbose class names.
+No-data (`0`) pixels are excluded from every count.
+"""
+function aggregate_landcover(codes::AbstractMatrix, factor::Integer;
+                             vegetated_classes = ESA_WORLDCOVER_VEGETATED_CLASSES)
+    coarse = aggregate_blockwise(codes, factor, block -> block_landcover(block, vegetated_classes))
+    landcover_class = map(block -> block.landcover_class, coarse)
+    vegetation      = map(block -> block.vegetation, coarse)
+    fraction_arrays = ntuple(k -> map(block -> block.fractions[k], coarse),
+                             length(ESA_WORLDCOVER_CLASS_CODES))
+    class_fractions = NamedTuple{keys(ESA_WORLDCOVER_CLASS_NAMES)}(fraction_arrays)
+    return (; landcover_class, vegetation_fraction = vegetation, class_fractions)
+end
+
+"""
+    worldcover_window(longitude_bounds, latitude_bounds, factor)
+
+Global native-pixel index bounds `(i₁, i₂, j₁, j₂)` of the read window covering a
+region at aggregation `factor`. The window snaps to the global aggregated-cell
+lattice and is padded by one aggregated cell on every side, guaranteeing it is a
+strict superset of the native grid that `construct_native_grid` builds (whose
+center-bracketing can extend up to one aggregated cell past the region edges).
+The read-back maps grid cells to file cells by an integer offset with no
+interpolation, so a narrower window would misregister the field by a whole cell.
+"""
+function worldcover_window(longitude_bounds, latitude_bounds, factor)
+    pixels = ESA_WORLDCOVER_PIXELS_PER_DEGREE
+    λ₁, λ₂ = longitude_bounds
+    φ₁, φ₂ = latitude_bounds
+    i₁ = factor * fld(floor(Int, λ₁ * pixels), factor) - factor
+    i₂ = factor * cld(ceil( Int, λ₂ * pixels), factor) + factor
+    j₁ = factor * fld(floor(Int, φ₁ * pixels), factor) - factor
+    j₂ = factor * cld(ceil( Int, φ₂ * pixels), factor) + factor
+    return i₁, i₂, j₁, j₂
+end
+
 #####
 ##### DataWrangling interface
 #####
@@ -299,10 +382,14 @@ function Base.size(dataset::ESAWorldCover, variable)
     return (Nx, Ny, 1)
 end
 
+# One materialization writes every band (majority class, vegetation fraction, and
+# each per-class fraction) into a single NetCDF, so the filename is
+# variable-independent: all variables of a region/factor share one cached file and
+# it is fetched and aggregated only once.
 function DataWrangling.metadata_filename(dataset::ESAWorldCover, name, date, region)
     return string("ESA_WorldCover_", version_string(dataset),
                   "_f", dataset.aggregation_factor, "_",
-                  name, "_", region_suffix(region), ".nc")
+                  region_suffix(region), ".nc")
 end
 
 region_suffix(::Nothing) = "global"

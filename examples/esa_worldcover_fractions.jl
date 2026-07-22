@@ -87,6 +87,7 @@ array(field) = Array(interior(field))[:, :, 1]
 # to its legend index so the categorical palette and legend line up.
 
 class_index = map(array(class_native)) do code
+    isnan(code) && return NaN                        # no-data cells (ocean / outside coverage)
     i = findfirst(==(round(Int, code)), class_codes)
     isnothing(i) ? NaN : Float64(i)
 end
