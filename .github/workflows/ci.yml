@@ -40,70 +40,63 @@ env:
 
 jobs:
   cpu_tests:
-    name: (CPU) - Julia ${{ matrix.version }}
-    runs-on: ${{ matrix.os }}
+    name: (CPU) - Julia 1.12.5
+    runs-on: ubuntu-latest
+    # The image ships a depot with `test/` already instantiated at `--check-bounds=yes`, which is
+    # exactly how this job runs, so the packages arrive precompiled and no Actions cache is needed. 
+    container:
+      image: ghcr.io/numericalearth/numerical-earth-docker-images:test-julia_1.12.5
     timeout-minutes: 120
-    strategy:
-      fail-fast: false
-      matrix:
-        version:
-          - "1.12.5"
-        os:
-          - ubuntu-latest
-        arch:
-          - "default"
+    env:
+      OPENBLAS_NUM_THREADS: 1
+      # Redirect temp to the workspace volume to keep large downloads and compiled artifacts off
+      # the container's overlay filesystem.
+      TMPDIR: /__w/_temp
+      # Writable depot first, the image's read-only depot second.
+      JULIA_DEPOT_PATH: '/__w/_temp/depot:/usr/local/share/julia:'
     steps:
-      - name: Show available storage before cleanup
-        run: |
-          echo " --> df -h /"
-          df -h /
-          echo " --> df -a /"
-          df -a /
-      - name: Free Disk Space
-        uses: jlumbroso/free-disk-space@54081f138730dfa15788a46383842cd2f914a1be # v1.3.1
-        with:
-          tool-cache: true
-          large-packages: false
-      - name: Cleanup /opt
-        run: |
-          sudo rm -rf /opt/*
-      - name: Show available storage after cleanup
-        run: |
-          echo " --> df -h /"
-          df -h /
-          echo " --> df -a /"
-          df -a /
       - uses: actions/checkout@v6
-      - uses: julia-actions/setup-julia@v3
+      - name: Create workspace temp directories
+        run: mkdir -p "${TMPDIR}"
+      - name: Configure git safe directory
+        run: git config --global --add safe.directory ${PWD}
+      - name: Copy LocalPreferences
+        run: cp -v /usr/local/share/julia/environments/numericalearth/LocalPreferences.toml test/.
+      - name: df before tests
+        run: df -hT
+      - name: Update registry
+        shell: julia --color=yes {0}
+        run: |
+          using Pkg
+          Pkg.Registry.rm("General")
+          Pkg.Registry.add("General")
+          Pkg.Registry.update()
+      # ParallelTestRunner schedules longest-first from a duration history it keeps in a
+      # scratchspace, which is otherwise thrown away between runs: every duration then defaults to
+      # Inf, the sort is a no-op and the order falls back to random -- leaving a 38 min test to
+      # start last and run alone. A few KB, keyed to ParallelTestRunner's UUID.
+      - uses: actions/cache@v4
         with:
-          version: ${{ matrix.version }}
-          arch: ${{ matrix.arch }}
-      - uses: julia-actions/cache@v3
-        with:
-          cache-scratchspaces: false
-      - uses: julia-actions/julia-runtest@v1
-        with:
-          # Cap parallelism at 2 workers. ParallelTestRunner's default_njobs
-          # assumes ~2 GiB per worker, but the Breeze-compilation and bathymetry
-          # tests peak at 2.5-3.5 GiB RSS each. On the 16 GiB GitHub-hosted
-          # runner, the default (4 = core count) intermittently OOMs when several
-          # heavy tests coincide, and the runner reports it as
-          # "The operation was canceled." Two workers keep peak memory well
-          # within budget while staying comfortably under the job timeout.
-          test_args: '--verbose --jobs=2'
+          path: /__w/_temp/depot/scratchspaces/d3525ed8-44d0-4b2c-a655-542cee43accc/durations
+          key: julia-test-durations;job=cpu_tests;${{ github.run_id }}
+          restore-keys: julia-test-durations;job=cpu_tests;
+      - name: Run tests
+        run: |
+          julia --project --color=yes --check-bounds=yes -e '
+              using Pkg;
+              Pkg.test(; coverage=true,
+                       julia_args=["--check-bounds=yes", "--compiled-modules=yes", "-O0"],
+                       test_args=["--verbose", "--jobs=3"])
+          '
       - uses: julia-actions/julia-processcoverage@v1
       - uses: codecov/codecov-action@v5
         with:
           files: lcov.info
           token: ${{ secrets.CODECOV_TOKEN }}
-      - name: Show available storage at the end
+      - name: df at the end
         if: always()
         timeout-minutes: 2
-        run: |
-          echo " --> df -h /"
-          df -h /
-          echo " --> df -a /"
-          df -a /
+        run: df -hT
 
   #####
   ##### GPU tests (AWS self-hosted runners with Docker)
@@ -196,7 +189,7 @@ jobs:
           df -h /
           echo " --> df -a /"
           df -a /
-
+          
   #####
   ##### Specialized tests (GitHub-hosted runners)
   #####
@@ -262,7 +255,7 @@ jobs:
         with:
           files: lcov.info
           token: ${{ secrets.CODECOV_TOKEN }}
-  
+
   reactant:
     name: Reactant extension - Julia ${{ matrix.version }} - ${{ matrix.os }} - ${{ matrix.arch }} - ${{ github.event_name }}
     runs-on: ${{ matrix.os }}
@@ -304,14 +297,22 @@ jobs:
           arch: ${{ matrix.arch }}
       - uses: julia-actions/cache@v3
         with:
+          # `test/reactant` is a much smaller environment than `test`, so it gets its own
+          # (small) cache rather than sharing the `env=test` one.
+          cache-name: julia-cache;env=reactant
           cache-scratchspaces: false
+      # Runs against test/reactant/Project.toml, which carries Reactant and nothing else it
+      # doesn't need. Reactant is the sole path to Enzyme (316 s, the largest single
+      # precompile unit) and pulls the very large Reactant_jll artifact; keeping it out of
+      # the shared test env stops every other job from precompiling ~9 min of code it never
+      # calls, and keeps their cache inside GitHub's 10 GB budget.
       - name: Run tests
         run: |
-          julia --project --color=yes --check-bounds=yes -e '
-              using Pkg;
-              Pkg.test(; coverage=true,
-                        julia_args=["--check-bounds=yes", "--compiled-modules=yes", "-O0"],
-                        test_args=["--verbose", "test_reactant"])
+          julia --project=test/reactant --color=yes --check-bounds=yes -O0 \
+                --code-coverage=@${PWD}/src -e '
+              using Pkg
+              Pkg.instantiate()
+              include("test/reactant/test_reactant.jl")
           '
       - uses: julia-actions/julia-processcoverage@v1
       - uses: codecov/codecov-action@v5
@@ -357,7 +358,6 @@ jobs:
     needs:
       - cpu_tests
       - gpu_tests
-      - cds_downloading
       - reactant
     runs-on: ubuntu-latest
     if: ${{ success() }}
