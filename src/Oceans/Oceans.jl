@@ -5,7 +5,7 @@ export ocean_simulation, SlabOcean, PrescribedOcean
 using Adapt: Adapt, adapt
 using KernelAbstractions: @kernel, @index
 using Oceananigans: Oceananigans
-using Oceananigans.AbstractOperations: Integral, KernelFunctionOperation
+using Oceananigans.AbstractOperations: KernelFunctionOperation
 using Oceananigans.Advection: WENO, WENOVectorInvariant
 using Oceananigans.BoundaryConditions: DefaultBoundaryCondition, DiscreteBoundaryFunction,
                                        FieldBoundaryConditions, FluxBoundaryCondition, getbc
@@ -36,8 +36,6 @@ using ..EarthSystemModels: EarthSystemModels,
                            ocean_surface_salinity,
                            DegreesKelvin,
                            default_stop_time,
-                           heat_capacity,
-                           reference_density
                            heat_capacity
 
 using ..EarthSystemModels.InterfaceComputations: ComponentExchanger, InterfaceComputations
