@@ -57,6 +57,15 @@ end
     wide = BoundingBox(longitude = (-2.0, 6.0), latitude = (44.0, 52.0))
     @test length(ghsl_tiles_in_bbox(wide)) >= 2
     @test issorted(ghsl_tiles_in_bbox(wide))
+
+    # Regression: a window spanning many tiles must not silently drop any. Every tile hit
+    # by a dense point sampling of the window must be returned (a fixed-count sampling
+    # skipped whole tile rows once the window spanned more than a handful of tiles).
+    tall = BoundingBox(longitude = (0.0, 1.0), latitude = (-60.0, 60.0))
+    sampled = Set(ghsl_tile_index(λ, φ)
+                  for φ in range(-60, 60; length = 400), λ in range(0, 1; length = 20))
+    @test sampled ⊆ Set(ghsl_tiles_in_bbox(tall))
+    @test issorted(ghsl_tiles_in_bbox(tall))
 end
 
 #####
@@ -69,14 +78,13 @@ end
     @test mask_building_height(12.5) == 12.5
     @test mask_building_height(180)  == 180.0
 
-    # No-data sentinel and negatives → NaN.
-    @test isnan(mask_building_height(-200))
-    @test isnan(mask_building_height(-1))
+    # The warp writes the no-data gap as NaN; negatives are defensively masked too.
     @test isnan(mask_building_height(NaN))
-    @test isnan(mask_building_height(5, 5))     # configurable no-data
+    @test isnan(mask_building_height(-1))
+    @test isnan(mask_building_height(-200))
 
-    # Broadcasts elementwise, as used in the warp step.
-    raw = Float64[0, 8, -200, 25, -1]
+    # Broadcasts elementwise, as used post-warp.
+    raw = Float64[0, 8, NaN, 25, -1]
     masked = mask_building_height.(raw)
     @test masked[1] == 0 && masked[2] == 8 && masked[4] == 25
     @test isnan(masked[3]) && isnan(masked[5])

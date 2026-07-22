@@ -266,18 +266,31 @@ end
 """
     ghsl_tiles_in_bbox(region::BoundingBox)
 
-Return the sorted unique `(row, column)` GHSL tiles whose Mollweide cells intersect
-`region`. Mollweide is nonlinear, so the window is sampled on a grid of points (not
-just corners) to catch every tile it crosses.
+Return the sorted `(row, column)` GHSL tiles whose 1000 km Mollweide cells intersect
+`region`. A lat/lon window maps to a curved quadrilateral in Mollweide, so rather than
+point-sample (which silently skips tiles once a window spans more than a few), take the
+window's Mollweide `(x, y)` bounding box and return every tile in the corresponding index
+range: `y` is monotone in latitude, and `x` is linear in longitude and scales with `cos θ`
+(largest at the equator-most latitude), so the extremes are attained among the corners and
+the equator-most edge. Exact for regional windows; a complete (never-missing) superset for
+any window.
 """
 function ghsl_tiles_in_bbox(region::BoundingBox)
     λ₁, λ₂ = region.longitude
     φ₁, φ₂ = region.latitude
-    tiles = Tuple{Int, Int}[]
-    for φ in range(φ₁, φ₂; length = 8), λ in range(λ₁, λ₂; length = 8)
-        push!(tiles, ghsl_tile_index(λ, φ))
+    φ_maxx = clamp(0, min(φ₁, φ₂), max(φ₁, φ₂))
+    xmin = ymin =  Inf
+    xmax = ymax = -Inf
+    for φ in (φ₁, φ₂, φ_maxx), λ in (λ₁, λ₂)
+        x, y = longitude_latitude_to_mollweide(λ, φ)
+        xmin = min(xmin, x); xmax = max(xmax, x)
+        ymin = min(ymin, y); ymax = max(ymax, y)
     end
-    return sort!(unique!(tiles))
+    col_lo = clamp(floor(Int, (xmin - GHSL_ORIGIN_X) / GHSL_TILE_SIZE) + 1, 1, GHSL_COLUMNS)
+    col_hi = clamp(floor(Int, (xmax - GHSL_ORIGIN_X) / GHSL_TILE_SIZE) + 1, 1, GHSL_COLUMNS)
+    row_lo = clamp(floor(Int, (GHSL_ORIGIN_Y - ymax) / GHSL_TILE_SIZE) + 1, 1, GHSL_ROWS)
+    row_hi = clamp(floor(Int, (GHSL_ORIGIN_Y - ymin) / GHSL_TILE_SIZE) + 1, 1, GHSL_ROWS)
+    return [(row, col) for row in row_lo:row_hi for col in col_lo:col_hi]
 end
 
 #####
@@ -324,13 +337,12 @@ ghsl_tile_tif_name(dataset::AbstractGHSLDataset, row, column) =
 #####
 
 """
-    mask_building_height(value, no_data = -200)
+    mask_building_height(value)
 
-Map a raw GHS-BUILT-H ANBH `value` (metres) to a masked `Float64`: the product
-no-data sentinel `no_data` and any negative value become `NaN`; all physical
-heights (including the legitimate non-built value `0`) are kept. GHSL ANBH tiles
-carry no-data as a negative fill, so masking negatives is the robust rule; pass a
-different `no_data` to override.
+Map a GHS-BUILT-H ANBH `value` (metres) to a masked `Float64`, keeping every physical
+height (including the legitimate non-built value `0`). GHSL declares its no-data as a
+positive sentinel (`255`) that the Mollweide→EPSG:4326 warp has already written as `NaN`;
+this pass carries that gap through and defensively maps any negative to `NaN`.
 
 ```jldoctest
 julia> using NumericalEarth.DataWrangling.GHSL: mask_building_height
@@ -341,22 +353,22 @@ julia> mask_building_height(12.5)
 julia> mask_building_height(0)
 0.0
 
-julia> isnan(mask_building_height(-200))
+julia> isnan(mask_building_height(NaN))   # the warp writes the no-data gap as NaN
 true
 ```
 """
-@inline mask_building_height(value, no_data = -200) =
-    ifelse((value == no_data) | (value < 0) | !isfinite(value),
-           oftype(float(value), NaN), float(value))
+@inline mask_building_height(value) =
+    ifelse((value < 0) | !isfinite(value), oftype(float(value), NaN), float(value))
 
 """
     built_surface_to_fraction(surface, cell_area)
 
 Convert a GHS-BUILT-S built-up `surface` (m² of buildings within a native cell) to
-the plan-area fraction `λp = surface / cell_area`, clamped to `[0, 1]`. A negative
-or non-finite `surface` (no-data) maps to `NaN`. `cell_area` is the native cell
-area in m² (`100 × 100` at 100 m, `10 × 10` at 10 m). Must be applied *before* any
-spatial averaging so a no-data cell never corrupts a mean.
+the plan-area fraction `λp = surface / cell_area`, clamped to `[0, 1]`. `cell_area` is the
+native cell area in m² (`100 × 100` at 100 m, `10 × 10` at 10 m). GHSL declares its no-data
+as a positive sentinel (`65535` at 100 m, `255` at 10 m) that the warp excludes from the
+bilinear blend and writes as `NaN`, so a non-finite `surface` (or a spurious negative) maps
+to `NaN` without a no-data cell ever contaminating a resampled mean.
 
 ```jldoctest
 julia> using NumericalEarth.DataWrangling.GHSL: built_surface_to_fraction

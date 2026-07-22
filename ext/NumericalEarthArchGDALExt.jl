@@ -5,7 +5,7 @@ using NCDatasets: NCDataset, defDim, defVar
 using Downloads: Downloads
 using NumericalEarth: NumericalEarth
 
-using NumericalEarth.DataWrangling: BoundingBox
+using NumericalEarth.DataWrangling: BoundingBox, dataset_variable_name
 const GHSL = NumericalEarth.DataWrangling.GHSL
 
 function NumericalEarth.DataWrangling.IBCAO.reproject_ibcao_to_netcdf(tiff_path, nc_path)
@@ -87,7 +87,7 @@ function NumericalEarth.DataWrangling.GHSL.ghsl_tiles_to_netcdf(metadatum::GHSL.
     (region isa BoundingBox && !isnothing(region.longitude) && !isnothing(region.latitude)) ||
         error("ghsl_tiles_to_netcdf requires a BoundingBox region.")
 
-    name = GHSL.DataWrangling.dataset_variable_name(metadatum)
+    name = dataset_variable_name(metadatum)
     resolution_m = GHSL.native_resolution(dataset)
     Δ = resolution_m / 111320  # target degree pixel size
 
