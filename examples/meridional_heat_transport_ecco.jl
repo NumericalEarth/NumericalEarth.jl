@@ -5,7 +5,7 @@ using Dates
 using Statistics
 using Printf
 
-using CUDA; CUDA.device!(3)
+using CUDA
 
 arch = GPU()
 Nx = 360
@@ -13,14 +13,17 @@ Ny = 180
 Nz = 50
 
 depth = 5000meters
-z = ExponentialDiscretization(Nz, -depth, 0; scale = depth/4)
+z = MutableVerticalDiscretization(ExponentialDiscretization(Nz, -depth, 0; scale = depth/4))
 
-# underlying_grid = TripolarGrid(arch; size = (Nx, Ny, Nz), halo = (5, 5, 4), z)
-underlying_grid = LatitudeLongitudeGrid(arch; size = (Nx, Ny, Nz), halo = (5, 5, 4), z, longitude = (0, 360), latitude = (-80, 80))
+underlying_grid = TripolarGrid(arch; size = (Nx, Ny, Nz), halo = (5, 5, 4), z)
+
+destination_grid = LatitudeLongitudeGrid(arch; size = (Nx, Ny, Nz), halo = (5, 5, 4), z, longitude = (0, 360), latitude = (-89, 89))
+
 bottom_height = regrid_bathymetry(underlying_grid;
                                   minimum_depth = 10,
                                   interpolation_passes = 10,
                                   major_basins = 2)
+
 grid = ImmersedBoundaryGrid(underlying_grid, GridFittedBottom(bottom_height);
                             active_cells_map=true)
 
@@ -75,12 +78,12 @@ end
 # And add it as a callback to the simulation.
 add_callback!(simulation, progress, IterationInterval(200))
 
-mht_vT = Field(meridional_heat_transport(simulation, MeridionalFluxMethod()))
+# mht_vT = Field(meridional_heat_transport(simulation, MeridionalFluxMethod())) # This currently is not supported with Othrogonal grids, so we use the OHC method instead.
 temperature_budget = BudgetComputation(:temperature, esm)
 add_callback!(simulation, temperature_budget)
-mht_OHC = Field(meridional_heat_transport(simulation, TendencyMethod()))
+mht_OHC = Field(meridional_heat_transport(simulation; destination_grid))
 
-ocean.output_writers[:mth] = JLD2Writer(ocean.model, (; mht_vT, mht_OHC);
+ocean.output_writers[:mth] = JLD2Writer(ocean.model, (; mht_OHC);
                                         schedule = TimeInterval(3hours),
                                         filename = "ocean_one_degree_mht",
                                         overwrite_existing = true)
@@ -91,26 +94,26 @@ run!(simulation)
 
 using Oceananigans
 
-mht_vT  = FieldTimeSeries("ocean_one_degree_mht.jld2", "mht_vT"; backend = OnDisk())
+# mht_vT  = FieldTimeSeries("ocean_one_degree_mht.jld2", "mht_vT"; backend = OnDisk())
 mht_OHC = FieldTimeSeries("ocean_one_degree_mht.jld2", "mht_OHC"; backend = OnDisk())
 
-times = mht_vT.times
+times = mht_OHC.times
 Nt = length(times)
 
-grid = mht_vT.grid
-Ny = size(mht_vT.grid, 2)
+grid = mht_OHC.grid
+Ny = size(mht_OHC.grid, 2)
 
-mht_vT_mean  = deepcopy(mht_vT[1][1, :, 1])
+# mht_vT_mean  = deepcopy(mht_vT[1][1, :, 1])
 mht_OHC_mean = deepcopy(mht_OHC[1][1, :, 1])
 
 for iter in 1:Nt
     @info "iteration $iter out of $Nt"
-    mht_vT_mean  +=  mht_vT[iter][1, :, 1]
+    # mht_vT_mean  +=  mht_vT[iter][1, :, 1]
     mht_OHC_mean += mht_OHC[iter][1, :, 1]
 end
 
 @. mht_OHC_mean = mht_OHC_mean / Nt
-@. mht_vT_mean = mht_vT_mean / Nt
+# @. mht_vT_mean = mht_vT_mean / Nt
 
 using CairoMakie
 
@@ -119,7 +122,7 @@ ax = Axis(fig[1, 1], xlabel="latitude (deg)", ylabel="MHT (PW)")
 
 φ = φnodes(grid, Face())
 
-lines!(ax, φ, mht_vT_mean[1:Ny+1]  / 1e15, linewidth=4, label="via vT")
+# lines!(ax, φ, mht_vT_mean[1:Ny+1]  / 1e15, linewidth=4, label="via vT")
 lines!(ax, φ, mht_OHC_mean[1:Ny+1] / 1e15, linewidth=4, label="via OHC")
 Legend(fig[2, :], ax, orientation=:horizontal)
 Label(fig[0, :], "Meridional heat transport", fontsize=16, tellwidth=false)

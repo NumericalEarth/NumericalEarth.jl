@@ -3,14 +3,14 @@ using ..EarthSystemModels: EarthSystemModel, reference_density, heat_capacity
 struct MeridionalFluxMethod end
 struct TendencyMethod end
 """
+    meridional_heat_transport(simulation::Simulation, method = TendencyMethod();
+                              destination_grid = nothing)
     meridional_heat_transport(simulation::Simulation, MeridionalFluxMethod();
                               reference_temperature = 0)
-    meridional_heat_transport(simulation::Simulation, TendencyMethod();
-                              destination_grid = nothing)
 
 Return the meridional heat transport for a coupled `simulation` using either direct
 meridional heat fluxes or the ocean heat-content tendency. A `BudgetComputation` callback
-must be registered on `simulation` before using `TendencyMethod()`.
+must be registered on `simulation` before using the default `TendencyMethod()`.
 
 !!! warning "The flux method only works on LatitudeLongitudeGrid"
 
@@ -24,8 +24,8 @@ Arguments
 * `simulation`: A `Simulation` of an `EarthSystemModel`. For `TendencyMethod()`, the
   simulation must contain exactly one registered `BudgetComputation` callback.
 
-* The method for the computation. Available options are: `MeridionalFluxMethod()` (default)
-  and `TendencyMethod()`.
+* The method for the computation. Available options are: `TendencyMethod()` (default)
+  and `MeridionalFluxMethod()`.
 
   `MeridionalFluxMethod()` computes the meridional heat transport directly by summing
   the meridional heat flux; `TendencyMethod()` computes the meridional heat
@@ -142,7 +142,7 @@ Keyword Arguments
 Example
 =======
 
-```jldoctest
+```julia
 using ..NumericalEarth
 using Oceananigans
 
@@ -162,18 +162,14 @@ radiation = PrescribedRadiation(grid)
 
 esm = OceanSeaIceModel(ocean, sea_ice; atmosphere, radiation)
 simulation = Simulation(esm; Δt=1)
+budget = BudgetComputation(:temperature, esm)
+add_callback!(simulation, budget)
 
 mht = meridional_heat_transport(simulation)
-
-# output
-
-Integral of BinaryOperation at (Center, Face, Center) over dims (1, 3)
-└── operand: BinaryOperation at (Center, Face, Center)
-    └── grid: 4×5×2 RectilinearGrid{Float64, Periodic, Bounded, Bounded} on CPU with 3×3×2 halo
 ```
 """
 function meridional_heat_transport(simulation::Simulation,
-                                   ::MeridionalFluxMethod=MeridionalFluxMethod();
+                                   ::MeridionalFluxMethod;
                                    reference_temperature=0)
     esm = simulation.model
     esm isa EarthSystemModel ||
@@ -188,7 +184,7 @@ function meridional_heat_transport(simulation::Simulation,
 end
 
 function meridional_heat_transport(simulation::Simulation,
-                                   ::TendencyMethod;
+                                   ::TendencyMethod=TendencyMethod();
                                    destination_grid=nothing)
     budgets = [callback.func for callback in values(simulation.callbacks)
                if callback.func isa BudgetComputation]
