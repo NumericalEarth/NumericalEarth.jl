@@ -15,6 +15,41 @@ ocean_freshwater_temperature_flux(esm, ::MutableGridOfSomeKind) =
 ocean_freshwater_temperature_flux(esm::EarthSystemModel) =
     ocean_freshwater_temperature_flux(esm, esm.ocean.model.grid)
 
+@inline function top_advective_temperature_flux(i, j, k, grid, advection, fields)
+    kᴺ = grid.Nz + 1
+    area = Azᶜᶜᶠ(i, j, kᴺ, grid)
+    flux = _advective_tracer_flux_z(i, j, kᴺ, grid, advection, fields.w, fields.T)
+    return flux / area
+end
+
+ocean_top_advective_temperature_flux(esm, T, ::MutableGridOfSomeKind) = ZeroField()
+
+function ocean_top_advective_temperature_flux(esm, T, grid)
+    model = esm.ocean.model
+    fields = (w = model.transport_velocities.w, T)
+    return KernelFunctionOperation{Center, Center, Nothing}(top_advective_temperature_flux,
+                                                            grid,
+                                                            model.advection.T,
+                                                            fields)
+end
+
+ocean_top_advective_temperature_flux(esm::EarthSystemModel, T=esm.ocean.model.tracers.T) =
+    ocean_top_advective_temperature_flux(esm, T, esm.ocean.model.grid)
+
+"""
+    ocean_top_advective_heat_flux(esm::EarthSystemModel, T=esm.ocean.model.tracers.T)
+
+Return the outward-positive heat flux through the fixed upper computational
+boundary. This is zero when the vertical grid follows the free surface. Pass the
+temperature field used by the corresponding time-integration stage when checking
+a discrete time-step budget.
+"""
+function ocean_top_advective_heat_flux(esm::EarthSystemModel, T=esm.ocean.model.tracers.T)
+    ρᵒᶜ = esm.interfaces.ocean_properties.reference_density
+    cᵒᶜ = esm.interfaces.ocean_properties.heat_capacity
+    return ρᵒᶜ * cᵒᶜ * ocean_top_advective_temperature_flux(esm, T)
+end
+
 ###########################
 ### Temperature fluxes
 ###########################
