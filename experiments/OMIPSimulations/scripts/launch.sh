@@ -226,6 +226,7 @@ RUN_NAME="$CONFIG"
 [[ -n "${BIHVISC:-}" ]]                        && RUN_NAME="${RUN_NAME}_bihvisc${BIHVISC}"
 [[ "$DZ_TOP" != "$DEFAULT_DZ_TOP" ]]           && RUN_NAME="${RUN_NAME}_dz${DZ_TOP}"
 [[ -n "${CATKE_CWUSTAR:-}" ]]                  && RUN_NAME="${RUN_NAME}_cwu${CATKE_CWUSTAR}"
+[[ -n "${PVEL:-}" ]]                           && RUN_NAME="${RUN_NAME}_pvel${PVEL}"
 
 REPORT_NAME="${REPORT_NAME:-${RUN_NAME}_report}"
 JOB_NAME="${JOB_NAME:-$RUN_NAME}"
@@ -250,9 +251,9 @@ if [[ "${PARTITION}" != "default" ]]; then
 fi
 
 if [[ "${PARTITION}" == "default" ]]; then
-    TIME="${TIME:-05:00:00}"
+    TIME="${TIME:-120:00:00}"
 else
-    TIME="${TIME:-30:00:00}"
+    TIME="${TIME:-12:00:00}"
 fi
 SBATCH_ARGS+=(--time="${TIME}")
 
@@ -361,6 +362,9 @@ FLUX_KWARG=""
 [[ "$NCAR" == "true" ]]        && FLUX_KWARG="flux_configuration = :ncar,"
 [[ "$CORRECTED" == "true" ]]   && FLUX_KWARG="flux_configuration = :corrected,"
 
+PVELKWARG=""
+[[ -n "$PVEL" ]] && PVELKWARG="piston_velocity = ${PVEL},"
+
 CLOSURE_KWARG=""
 [[ "${CLOSURE:-catke}" == "simple"   ]] && CLOSURE_KWARG="vertical_closure = :simple,"
 [[ "${CLOSURE:-catke}" == "nori"     ]] && CLOSURE_KWARG="vertical_closure = :nori,"
@@ -407,6 +411,7 @@ sim = omip_simulation(:${CONFIG};
                       ${SNOW_KWARG}
                       ${ICE_DYNAMICS_KWARG}
                       ${DIAGNOSTICS_KWARG}
+                      ${PVELKWARG}
                       ${CATKE_CWUSTAR_KWARG}
                       ${NORMALIZE_SALINITY_KWARG}
                       Δt = ${DT},

@@ -855,7 +855,13 @@ function build_ocean(config, grid;
                      additional_tracer_closure = nothing,
                      start_date, end_date)
 
-    salt_restoring = salinity_surface_restoring(grid, WOAMonthly(); restoring_dir, piston_velocity, conservative = normalize_salinity)
+    additional_surface_fluxes = if piston_velocity == 0
+        NamedTuple()
+    else
+        salt_restoring = salinity_surface_restoring(grid, WOAMonthly(); restoring_dir, piston_velocity, conservative = normalize_salinity)
+        (; S = salt_restoring)
+    end
+
     closure = omip_closure(vertical_closure;
                            κ_skew, κ_symmetric, Cᵇ,
                            biharmonic_timescale, biharmonic_viscosity,
@@ -875,7 +881,7 @@ function build_ocean(config, grid;
                              timestepper = :SplitRungeKutta3,
                              materialize_buoyancy_gradients = config_materialize_buoyancy_gradients(config),
                              free_surface = SplitExplicitFreeSurface(grid; substeps=100),
-                             additional_surface_fluxes = (; S = salt_restoring),
+                             additional_surface_fluxes,
                              closure)
 
     # Load WOA Annual T (in-situ, °C) and S (Practical) onto the model grid,
