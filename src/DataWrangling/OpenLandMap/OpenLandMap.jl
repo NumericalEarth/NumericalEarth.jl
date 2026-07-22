@@ -168,6 +168,13 @@ function DataWrangling.validate_dataset_coverage(grid, metadata::OpenLandMapSoil
               "    metadatum = Metadatum(:clay_fraction; dataset = OpenLandMapSoilDB(),\n" *
               "                          region = BoundingBox(longitude = (λ₁, λ₂), latitude = (φ₁, φ₂)))")
     end
+
+    # Coverage is latitudes −56° to 76° (longitude is global); reject a box with no overlap.
+    φ_south, φ_north = DataWrangling.latitude_interfaces(metadata.dataset)
+    if region.latitude[2] < φ_south || region.latitude[1] > φ_north
+        error("OpenLandMapSoilDB latitude coverage is $(φ_south)° to $(φ_north)°; " *
+              "requested latitude = $(region.latitude).")
+    end
     return nothing
 end
 

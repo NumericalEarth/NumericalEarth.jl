@@ -53,18 +53,18 @@ end
 ##### OpenLandMap-soilDB windowed COG reader
 #####
 
+const vsicurl_configured = Ref(false)
+
 function configure_vsicurl!()
+    vsicurl_configured[] && return nothing
     ArchGDAL.setconfigoption("GDAL_DISABLE_READDIR_ON_OPEN", "EMPTY_DIR")
-    ArchGDAL.setconfigoption("CPL_VSIL_CURL_ALLOWED_EXTENSIONS", ".tif")
     ArchGDAL.setconfigoption("GDAL_HTTP_MULTIRANGE", "YES")
 
-    # GDAL's bundled libcurl reads its CA bundle from CURL_CA_BUNDLE and does not
-    # reliably fall back to a system trust store, which breaks https /vsicurl reads.
-    # Point it at Julia's cross-platform CA roots unless the user already set it, so
-    # an explicit override wins.
+    # Point GDAL's bundled libcurl at Julia's CA roots (its libcurl ignores the system store); user override wins.
     if !haskey(ENV, "CURL_CA_BUNDLE")
         ENV["CURL_CA_BUNDLE"] = NetworkOptions.ca_roots_path()
     end
+    vsicurl_configured[] = true
     return nothing
 end
 
@@ -74,7 +74,7 @@ function decode_cog_window(raw, scale, offset, nodata)
     decoded = Array{Float32}(undef, size(raw))
     @inbounds for idx in eachindex(raw)
         value = Float64(raw[idx])
-        is_nodata = !isnothing(nodata) && value == nodata
+        is_nodata = !isnothing(nodata) && isequal(value, nodata)
         decoded[idx] = is_nodata ? NaN32 : Float32(value * scale + offset)
     end
     return decoded
@@ -122,10 +122,14 @@ function OpenLandMap.read_cog_window(source, bbox::BoundingBox)
         width  = ArchGDAL.width(ds)
         height = ArchGDAL.height(ds)
 
-        xoff  = clamp(floor(Int, (W - x0) / dx), 0, width - 1)
-        yoff  = clamp(floor(Int, (N - y0) / dy), 0, height - 1)
-        xsize = clamp(ceil(Int, (E - x0) / dx) - xoff, 1, width - xoff)
-        ysize = clamp(ceil(Int, (S - y0) / dy) - yoff, 1, height - yoff)
+        # Pad one native cell on each side so the window is a strict superset of the
+        # framework's center-bracketed native grid; otherwise the grid can hold one
+        # more cell than the file, forcing a clamped read that shifts the whole
+        # window by a pixel and duplicates the outermost row/column.
+        xoff  = clamp(floor(Int, (W - x0) / dx) - 1, 0, width - 1)
+        yoff  = clamp(floor(Int, (N - y0) / dy) - 1, 0, height - 1)
+        xsize = clamp(ceil(Int, (E - x0) / dx) + 1 - xoff, 1, width - xoff)
+        ysize = clamp(ceil(Int, (S - y0) / dy) + 1 - yoff, 1, height - yoff)
 
         band   = ArchGDAL.getband(ds, 1)
         scale  = ArchGDAL.getscale(band)
