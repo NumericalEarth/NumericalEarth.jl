@@ -5,11 +5,16 @@
 # `z₀ₘ` and zero-plane displacement `d₀` per cell with the urban morphometric closure
 # (Macdonald 1998 / Kanda 2013), and render diagnostic maps + profiles.
 #
+# The model runs on the built fraction's native **10 m** grid (`GHSBuiltS(resolution = 10)`),
+# so the maps resolve street-block structure. Building height is 100 m (the only resolution
+# GHSL publishes); since `z₀ₘ` and `d₀` scale with height, the roughness magnitude carries
+# 100 m structure textured by the 10 m coverage.
+#
 # Requirements:
 #   * `using ArchGDAL` (for the World-Mollweide → EPSG:4326 reprojection)
 #   * `using CairoMakie` for the figures
-# GHSL is open access — no authentication. The first run downloads two ~20 MB
-# Mollweide tiles (cached afterwards); the rest is seconds.
+# GHSL is open access — no authentication. The first run downloads the intersecting
+# Mollweide tiles (the 10 m built-surface tile is ~470 MB; cached afterwards).
 
 using NumericalEarth
 using NumericalEarth.DataWrangling: BoundingBox, Metadatum
@@ -26,18 +31,18 @@ outdir = joinpath(@__DIR__, "ghsl_urban_roughness_figures")
 mkpath(outdir)
 
 # ## Region and target grid
-# Greater London: a dense core (City / Westminster) grading out through suburbs to
-# rural surroundings — a clean isolated → skimming built-fraction gradient.
-region = BoundingBox(longitude = (-0.55, 0.35), latitude = (51.25, 51.75))
-grid = LatitudeLongitudeGrid(CPU(), Float64; size = (450, 250),
-                             longitude = (-0.55, 0.35), latitude = (51.25, 51.75),
-                             topology = (Bounded, Bounded, Flat))
+# Inner London (City / Westminster / Docklands out to the inner suburbs): dense core →
+# suburb gradient. We run on the built fraction's native 10 m grid (~3800 × 1560 cells) so
+# the fine raster is used at full resolution rather than downsampled.
+region = BoundingBox(longitude = (-0.28, 0.06), latitude = (51.42, 51.56))
 
 # ## Ingest the building morphometry
-# `H` — mean net building height (ANBH, 100 m); `λp` — plan-area built fraction
-# (BUILT-S, converted from m²/cell). Both are reprojected from Mollweide in the adapter.
-H  = Field(Metadatum(:building_height;   dataset = GHSBuiltH(), region), grid)
-λp = Field(Metadatum(:built_up_fraction; dataset = GHSBuiltS(), region), grid)
+# `λp` — plan-area built fraction from the 10 m built-surface product (m²/cell → fraction),
+# built directly on its native 10 m grid. `H` — mean net building height (ANBH, 100 m),
+# interpolated up onto that grid. Both reprojected from Mollweide in the adapter.
+λp   = Field(Metadatum(:built_up_fraction; dataset = GHSBuiltS(resolution = 10), region), CPU())
+grid = λp.grid
+H    = Field(Metadatum(:building_height; dataset = GHSBuiltH(), region), grid)
 
 # ## Urban roughness closure
 # Kanda (2013) is the default (height-heterogeneity aware); Macdonald (1998) for
@@ -54,7 +59,7 @@ Hm, λpm = sl(H), sl(λp)
 z0k, d0k = sl(z0m_kanda), sl(d0_kanda)
 z0mac, d0mac = sl(z0m_macd), sl(d0_macd)
 
-@info "GHSL urban roughness over Greater London" building_height_range=extrema(finite(Hm)) built_fraction_range=extrema(finite(λpm)) z0m_kanda_range=extrema(finite(z0k)) d0_kanda_range=extrema(finite(d0k))
+@info "GHSL urban roughness over Inner London" building_height_range=extrema(finite(Hm)) built_fraction_range=extrema(finite(λpm)) z0m_kanda_range=extrema(finite(z0k)) d0_kanda_range=extrema(finite(d0k))
 
 function panel!(fig, pos, title, A, crange, cmap, clabel)
     ax = Axis(fig[pos...]; title, aspect = DataAspect()); hidedecorations!(ax)
@@ -68,7 +73,7 @@ end
 # Kanda − Macdonald anomaly, largest over the dense, height-heterogeneous core.
 z0_range = (0, 2.5); d0_range = (0, 20)
 fig = Figure(size = (1150, 1500))
-Label(fig[0, 1:4], "GHSL urban morphometry → roughness — Greater London\nKanda (2013) vs Macdonald (1998)"; fontsize = 20, font = :bold)
+Label(fig[0, 1:4], "GHSL urban morphometry → roughness — Inner London (10 m built fraction)\nKanda (2013) vs Macdonald (1998)"; fontsize = 20, font = :bold)
 panel!(fig, (1, 1), "building height H (m)",  Hm,    (0, 25),  :inferno, "m")
 panel!(fig, (1, 3), "built fraction λp",       λpm,   (0, 1),   :turbo,   "–")
 panel!(fig, (2, 1), "z₀ₘ — Kanda (m)",         z0k,   z0_range, :viridis, "m")
@@ -100,16 +105,21 @@ lines!(ax, centers, binned(z0mac); linewidth = 3, label = "Macdonald")
 axislegend(ax; position = :rt)
 save(joinpath(outdir, "fig2_z0_vs_lambda.png"), fig)
 
-# (3) West→east transect through the dense core, at the central latitude.
+# (3) West→east transect through the core. At 10 m each cell alternates building/street,
+# so we average over a ~1 km latitudinal band (and lightly along-track) to read the
+# core→suburb envelope rather than per-building spikes.
 jmid = size(grid, 2) ÷ 2
+band = (jmid - 50):(jmid + 50)
+movmean(v, w) = [mean(@view v[max(1, i - w):min(length(v), i + w)]) for i in eachindex(v)]
+profile(A) = movmean([mean(filter(isfinite, @view A[i, band])) for i in axes(A, 1)], 25)
 fig = Figure(size = (1100, 640))
-Label(fig[0, 1:1], "Transect at $(round(φ[jmid], digits = 3))°N — core → suburb → rural"; fontsize = 16, font = :bold)
+Label(fig[0, 1:1], "Transect at $(round(φ[jmid], digits = 3))°N — core → inner suburb (1 km band mean)"; fontsize = 16, font = :bold)
 ax1 = Axis(fig[1, 1]; ylabel = "H (m) / d₀ (m)", xlabel = "longitude")
 ax2 = Axis(fig[1, 1]; ylabel = "λp / z₀ₘ (m)", yaxisposition = :right); hidespines!(ax2); hidexdecorations!(ax2)
-lH  = lines!(ax1, λ, Hm[:, jmid];  color = :black,     linewidth = 2)
-ld  = lines!(ax1, λ, d0k[:, jmid]; color = :firebrick, linewidth = 2)
-lλ  = lines!(ax2, λ, λpm[:, jmid]; color = :seagreen,  linewidth = 2)
-lz  = lines!(ax2, λ, z0k[:, jmid]; color = :navy,      linewidth = 2)
+lH  = lines!(ax1, λ, profile(Hm);  color = :black,     linewidth = 2)
+ld  = lines!(ax1, λ, profile(d0k); color = :firebrick, linewidth = 2)
+lλ  = lines!(ax2, λ, profile(λpm); color = :seagreen,  linewidth = 2)
+lz  = lines!(ax2, λ, profile(z0k); color = :navy,      linewidth = 2)
 axislegend(ax1, [lH, ld, lλ, lz], ["H", "d₀", "λp", "z₀ₘ"]; position = :rt)
 save(joinpath(outdir, "fig3_transect.png"), fig)
 
