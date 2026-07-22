@@ -140,7 +140,7 @@ export
     default_sea_ice,
     sea_ice_dynamics,
     initialize!,
-    net_ocean_heat_flux, sea_ice_ocean_heat_flux, atmosphere_ocean_heat_flux,
+    net_ocean_heat_flux, sea_ice_ocean_heat_flux, atmosphere_ocean_heat_flux, ocean_freshwater_heat_flux,
     net_ocean_freshwater_flux, sea_ice_ocean_freshwater_flux, atmosphere_ocean_freshwater_flux,
     meridional_heat_transport,
     location,

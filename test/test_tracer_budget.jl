@@ -5,6 +5,7 @@ using Oceananigans.AbstractOperations: KernelFunctionOperation
 using Oceananigans.Grids: MutableVerticalDiscretization
 using Oceananigans.Operators: volume
 using Oceananigans.Units
+using NumericalEarth.Diagnostics: net_ocean_heat_flux
 using NumericalEarth.Oceans: get_radiative_forcing
 
 # Heat and freshwater have different noise floors, so they get separate tolerances.
@@ -19,14 +20,10 @@ function test_tracer_budget(coupled_model, Sᵒᶜ, Δt, nsteps; heat_rtol, fres
     T = ocean.model.tracers.T
     S = ocean.model.tracers.S
 
-    # The surface tracer fluxes are discrete boundary conditions (the virtual salt flux and heat
-    # exchange are evaluated live), so the applied fluxes are read from the assembled net-flux
-    # fields rather than integrated from the boundary condition.
-    Jᵀ  = coupled_model.interfaces.net_fluxes.ocean.T   # surface heat flux (turbulent + radiative)
+    # This diagnostic includes all heat crossing the ocean surface.
+    Jᵀ  = net_ocean_heat_flux(coupled_model)
     Jʷ  = coupled_model.interfaces.net_fluxes.ocean.η   # freshwater volume flux
-    Jᴴ = coupled_model.interfaces.net_fluxes.ocean.freshwater_heat_content # Σᵢ Tᵢ Jʷᵢ (rain − evap at SST)
-    heat_rate     = Integral(ρᵒᶜ * cᵒᶜ * Jᵀ,  dims=(1, 2))
-    enthalpy_rate = Integral(ρᵒᶜ * cᵒᶜ * Jᴴ, dims=(1, 2))
+    heat_rate     = Integral(Jᵀ, dims=(1, 2))
     volume_rate   = Integral(Jʷ, dims=(1, 2))
 
     penetrating_radiation = get_radiative_forcing(ocean)
@@ -53,7 +50,6 @@ function test_tracer_budget(coupled_model, Sᵒᶜ, Δt, nsteps; heat_rtol, fres
         set!(VV⁻, cell_volume)
 
         previous_heat_flux      = @allowscalar first(Field(heat_rate))
-        previous_enthalpy       = @allowscalar first(Field(enthalpy_rate))
         previous_volume_flux    = @allowscalar first(Field(volume_rate))
         previous_radiative_rate = isnothing(radiative_rate) ? zero(previous_heat_flux) : @allowscalar first(Field(radiative_rate))
 
@@ -63,11 +59,9 @@ function test_tracer_budget(coupled_model, Sᵒᶜ, Δt, nsteps; heat_rtol, fres
         compute!(ΔVT)
         compute!(ΔVV)
 
-        # Heat content changes by the surface heat flux plus the enthalpy carried by the freshwater
-        # (rain − evaporation at SST). The live Tᴺ Jʷ exchange cancels the z-star ambient carry, so
-        # the freshwater's own enthalpy Σᵢ Tᵢ Jʷᵢ is what remains.
+        # Net heat flux is positive out of the ocean.
         heat_content_tendency = sum(ρᵒᶜ * cᵒᶜ * ΔVT)
-        expected_heat_content_tendency = (previous_radiative_rate - previous_heat_flux + previous_enthalpy) * last_Δt
+        expected_heat_content_tendency = (previous_radiative_rate - previous_heat_flux) * last_Δt
         @test isapprox(heat_content_tendency, expected_heat_content_tendency; rtol=heat_rtol)
 
         # Volume grows by exactly the surface-integrated freshwater volume flux.

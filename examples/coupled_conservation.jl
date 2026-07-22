@@ -204,17 +204,16 @@ end
 
 # `flux_state` reads the internal exchanges the budgets need. `Jʷ` is the ocean freshwater volume flux
 # (m³ s⁻¹, positive adds volume) that forces the free surface, `Jˢ` the salt the sea ice carries (positive
-# extracts salt from the ocean), `𝒬ᴴ` the enthalpy the atmospheric freshwater brings in with its volume, and
-# `∂ₜM` the rate at which sea-ice thermodynamics change the ice+snow mass.
+# extracts salt from the ocean), and `∂ₜM` is the rate at which sea-ice thermodynamics change
+# the ice+snow mass.
 
 function flux_state(coupled_model)
     Jʷ  = ∫dA(coupled_model.interfaces.net_fluxes.ocean.η)
     Jˢ  = ∫dA(coupled_model.interfaces.net_fluxes.ocean.S)
-    𝒬ᴴ  = ρᵒᶜ * cᵒᶜ * ∫dA(coupled_model.interfaces.net_fluxes.ocean.freshwater_heat_content)
     mass_fluxes = coupled_model.sea_ice.model.mass_fluxes
     ∂ₜM = ∫dA(mass_fluxes.thermodynamics.ice) + ∫dA(mass_fluxes.thermodynamics.snow) +
           ∫dA(mass_fluxes.intercepted_snowfall)
-    return (; Jʷ, Jˢ, 𝒬ᴴ, ∂ₜM)
+    return (; Jʷ, Jˢ, ∂ₜM)
 end
 
 # ## Running the freeze-melt cycle
@@ -262,7 +261,6 @@ history = (t     = Float64[],
            𝒮ᵒᶜ   = Float64[],
            V     = Float64[],
            𝒬     = Float64[],
-           𝒬ᴴ    = Float64[],
            𝒬ᶠʳᶻ  = Float64[],
            Ṁ     = Float64[],
            Jʷ    = Float64[],
@@ -285,7 +283,6 @@ function record!(history, coupled_model, phase_id, 𝒬, Ṁ)
     push!(history.𝒮ᵒᶜ,   st.𝒮ᵒᶜ)
     push!(history.V,     st.V)
     push!(history.𝒬,     𝒬)
-    push!(history.𝒬ᴴ,    fx.𝒬ᴴ)
     push!(history.𝒬ᶠʳᶻ,  𝒬f)
     push!(history.Ṁ,     Ṁ)
     push!(history.Jʷ,    fx.Jʷ)
@@ -341,7 +338,6 @@ function phase_switch_callback(simulation)
     phase_ctx[]     = (; phase_id = 2, 𝒬ᵖ, Jᶜ = melt_phase.Jᶜ, Jˢⁿ = melt_phase.Jˢⁿ)
     history.𝒬[end]  = net_top_heat_flux(simulation.model)  + 𝒬ᵖ
     history.Ṁ[end]  = net_freshwater_flux(simulation.model, melt_phase.Jᶜ, melt_phase.Jˢⁿ)
-    history.𝒬ᴴ[end] = fx.𝒬ᴴ
     history.Jʷ[end] = fx.Jʷ
     history.Jˢ[end] = fx.Jˢ
     return nothing
@@ -423,13 +419,13 @@ nothing #hide
 # (mutating ocean `T` and writing `𝒬ᶠʳᶻ`) but the corresponding ice mass gain is consumed only during
 # step `n + 1`. At a diagnostic snapshot the ocean shows the warming while the ice has not yet grown.
 # We anticipate this one-step pending quantity by adding `𝒬ᶠʳᶻ(n) * Δt⁺` to `Eᵢₛ(n)` so the energy budget closure
-# is not polluted by bookkeeping lag. The freshwater brings its own enthalpy `𝒬ᴴ` across the surface with its
-# volume, so it is an energy input alongside the surface heat flux.
+# is not polluted by bookkeeping lag. The ocean heat-flux diagnostic already includes the
+# freshwater enthalpy that enters with volume.
 
 δE  = history.𝒬ᶠʳᶻ .* Δt⁺
 Ẽᵢₛ = history.Eᵢₛ .+ δE
 ΔE  = (Ẽᵢₛ .+ history.ℋᵒᶜ) .- (Ẽᵢₛ[1] + history.ℋᵒᶜ[1])
-∫𝒬  = accumulate_rate(history.𝒬) .+ accumulate_rate(history.𝒬ᴴ)
+∫𝒬  = accumulate_rate(history.𝒬)
 nothing #hide
 
 # ## Visualizing the budgets
