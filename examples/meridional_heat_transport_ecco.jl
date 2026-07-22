@@ -48,7 +48,7 @@ land       = JRA55PrescribedLand(arch)
 radiation  = JRA55PrescribedRadiation(arch)
 esm = OceanSeaIceModel(ocean, sea_ice; atmosphere, land, radiation)
 
-simulation = Simulation(esm; Δt=20minutes, stop_time=5*365days)
+simulation = Simulation(esm; Δt=20minutes, stop_time=20days)
 
 wall_time = Ref(time_ns())
 
@@ -83,7 +83,7 @@ temperature_budget = BudgetComputation(:temperature, esm)
 add_callback!(simulation, temperature_budget)
 mht_OHC = Field(meridional_heat_transport(simulation; destination_grid))
 
-ocean.output_writers[:mth] = JLD2Writer(ocean.model, (; mht_OHC);
+ocean.output_writers[:mht] = JLD2Writer(ocean.model, (; mht_OHC);
                                         schedule = TimeInterval(3hours),
                                         filename = "ocean_one_degree_mht",
                                         overwrite_existing = true)
@@ -104,15 +104,15 @@ grid = mht_OHC.grid
 Ny = size(mht_OHC.grid, 2)
 
 # mht_vT_mean  = deepcopy(mht_vT[1][1, :, 1])
-mht_OHC_mean = deepcopy(mht_OHC[1][1, :, 1])
+mht_OHC_avg = deepcopy(mht_OHC[1][1, :, 1])
 
 for iter in 1:Nt
     @info "iteration $iter out of $Nt"
     # mht_vT_mean  +=  mht_vT[iter][1, :, 1]
-    mht_OHC_mean += mht_OHC[iter][1, :, 1]
+    mht_OHC_avg += mht_OHC[iter][1, :, 1]
 end
 
-@. mht_OHC_mean = mht_OHC_mean / Nt
+@. mht_OHC_avg = mht_OHC_avg / Nt
 # @. mht_vT_mean = mht_vT_mean / Nt
 
 using CairoMakie
@@ -123,7 +123,7 @@ ax = Axis(fig[1, 1], xlabel="latitude (deg)", ylabel="MHT (PW)")
 φ = φnodes(grid, Face())
 
 # lines!(ax, φ, mht_vT_mean[1:Ny+1]  / 1e15, linewidth=4, label="via vT")
-lines!(ax, φ, mht_OHC_mean[1:Ny+1] / 1e15, linewidth=4, label="via OHC")
+lines!(ax, φ, mht_OHC_avg[1:Ny+1] / 1e15, linewidth=4, label="via OHC")
 Legend(fig[2, :], ax, orientation=:horizontal)
 Label(fig[0, :], "Meridional heat transport", fontsize=16, tellwidth=false)
 
