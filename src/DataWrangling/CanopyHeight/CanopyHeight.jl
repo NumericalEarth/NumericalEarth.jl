@@ -102,21 +102,19 @@ DataWrangling.default_download_directory(::CanopyHeightDataset) = download_Canop
 DataWrangling.longitude_interfaces(::CanopyHeightDataset) = (-180, 180)
 DataWrangling.latitude_interfaces(::CanopyHeightDataset)  = (-90, 90)
 
-# Global native pixel counts (only used to set the windowed-read target cell size
-# Δ = 360/Nx). GLAD is 30 m = 0.00025° = 1/4000°. ETH's native 10 m 3° COG tiles
-# are no longer served anonymously (see the host note below): the anonymously
-# readable ETH product is the pre-downsampled global mosaic, whose finest grid is
-# 0.001° (~111 m) → 360000 × 144000 over −60°…84° latitude, so 360/Nx = 0.001°.
-Base.size(::ETHCanopyHeight,  variable) = (360_000,   144_000, 1)
+# Global native pixel counts (used to set the windowed-read target cell size
+# Δ = 360/Nx). ETH is 10 m = 1/12000° → 4_320_000 × 2_160_000; GLAD is 30 m =
+# 0.00025° = 1/4000°.
+Base.size(::ETHCanopyHeight,  variable) = (4_320_000, 2_160_000, 1)
 Base.size(::GLADCanopyHeight, variable) = (1_440_000, 720_000, 1)
 
 dataset_prefix(::ETHCanopyHeight)  = "ETHCanopyHeight"
 dataset_prefix(::GLADCanopyHeight) = "GLADCanopyHeight"
 
-# One regional NetCDF per product per region, materialized from the COG(s); it
-# holds all variables of the product (ETH: Map + SD).
+# One regional NetCDF per product per variable per region, materialized from the
+# COG tiles (ETH ships separate `_Map` height and `_Map_SD` uncertainty layers).
 DataWrangling.metadata_filename(dataset::CanopyHeightDataset, name, date, region) =
-    string(dataset_prefix(dataset), "_", region_suffix(region), ".nc")
+    string(dataset_prefix(dataset), "_", string(name), "_", region_suffix(region), ".nc")
 
 region_suffix(::Nothing) = "global"
 
@@ -247,25 +245,20 @@ end
 ##### Download (regional COG → NetCDF via the ArchGDAL extension)
 #####
 
-# ETH share host, 3°×3° full-resolution (10 m) COG tiles named by their SW-corner
-# lat/lon token (e.g. "N51E004"). NOTE (verified 2026-07 against the live host):
-# this `.../version1/3deg_cogs/` path no longer serves the tiles anonymously — it
-# now 301-redirects to the dataset DOI landing page, so the 10 m tiles are only
-# reachable through the DOI record, not via `/vsicurl/`. The `eth_tile_*` helpers
-# below still encode the (unchanged, correct) 3° tile addressing for that archive.
-const ETH_COG_HOST = "https://share.phys.ethz.ch/~pf/nlangdata/" *
-                     "ETH_GlobalCanopyHeight_10m_2020_version1/3deg_cogs"
-
-# The anonymously readable ETH product is the pre-downsampled global mosaic
-# (single COG, EPSG:4326, 255 = no-data). The finest publicly served grid is
-# 0.001° (~111 m) — adequate for ~1 km land cells — and is windowed via /vsicurl.
-const ETH_DOWNSAMPLED_HOST = "https://share.phys.ethz.ch/~pf/nlangdata/" *
-                             "ETH_GlobalCanopyHeight_10m_2020_version1_downsampled"
-
-const ETH_MOSAIC_RESOLUTION = 0.001  # degrees; finest anonymously served ETH grid
-
-eth_mosaic_url() = "/vsicurl/" * ETH_DOWNSAMPLED_HOST *
-    "/ETH_GlobalCanopyHeight_10m_2020_mosaic_Map_0.001deg.tif"
+# ETH ships the full-resolution 10 m product as 3°×3° Cloud-Optimized GeoTIFF tiles
+# (EPSG:4326, 255 = no-data), named by their SW-corner lat/lon token (e.g. "N45E009"),
+# with a `_Map.tif` canopy-height layer and a `_Map_SD.tif` uncertainty layer. They are
+# served anonymously from an ETH libdrive public share exposed as a Nextcloud WebDAV
+# endpoint. That endpoint honours HTTP range requests — so `/vsicurl/` windows the COGs
+# without downloading whole 3° tiles — but only when the request carries a browser
+# User-Agent and the public read-only share token as basic-auth credentials; both are
+# set on the GDAL HTTP driver in the ArchGDAL extension.
+const ETH_WEBDAV_HOST = "https://libdrive.ethz.ch/public.php/webdav/3deg_cogs"
+const ETH_LIBDRIVE_TOKEN = "cO8or7iOe5dT2Rt"     # public read-only share token (CC-BY data)
+const ETH_TILE_RESOLUTION = 1 / 12000            # degrees (~9.3 m), the native 10 m grid
+const ETH_BROWSER_USER_AGENT =
+    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 " *
+    "(KHTML, like Gecko) Chrome/126 Safari/537.36"
 
 # GLAD Global Forest Canopy Height 2019 ships as seven continental 30 m GeoTIFF
 # mosaics (not one global file) on the GLAD geog host, named by a continent code:
@@ -309,15 +302,21 @@ function eth_tiles_in_bbox(region::BoundingBox)
     return sort!(unique!(tokens))
 end
 
-"""
-    eth_tile_urls(region::BoundingBox, variable_layer)
+# COG filename suffix per variable: the height layer is `_Map`, the uncertainty `_Map_SD`.
+eth_layer_suffix(::Val{:canopy_height})             = "Map"
+eth_layer_suffix(::Val{:canopy_height_uncertainty}) = "Map_SD"
+eth_layer_suffix(name::Symbol) = eth_layer_suffix(Val(name))
 
-`/vsicurl/`-prefixed URLs of the ETH COG tiles (for the `"Map"` or `"SD"` layer)
-intersecting `region`, ready to be mosaicked and windowed by GDAL.
 """
-eth_tile_urls(region::BoundingBox, layer) =
-    ["/vsicurl/" * ETH_COG_HOST * "/ETH_GlobalCanopyHeight_10m_2020_" *
-     token * "_" * layer * ".tif" for token in eth_tiles_in_bbox(region)]
+    eth_tile_urls(region::BoundingBox, name)
+
+`/vsicurl/`-prefixed WebDAV URLs of the ETH 10 m COG tiles for variable `name`
+(`:canopy_height` → `_Map`, `:canopy_height_uncertainty` → `_Map_SD`) whose 3° cells
+intersect `region`, ready to be mosaicked and windowed by GDAL.
+"""
+eth_tile_urls(region::BoundingBox, name) =
+    ["/vsicurl/" * ETH_WEBDAV_HOST * "/ETH_GlobalCanopyHeight_10m_2020_" *
+     token * "_" * eth_layer_suffix(name) * ".tif" for token in eth_tiles_in_bbox(region)]
 
 """
     glad_continent(longitude, latitude)

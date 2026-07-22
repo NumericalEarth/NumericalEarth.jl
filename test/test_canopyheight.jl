@@ -87,9 +87,14 @@ end
     wide = BoundingBox(longitude = (2.0, 7.0), latitude = (50.0, 53.0))
     @test length(eth_tiles_in_bbox(wide)) >= 2
 
-    urls = eth_tile_urls(region, "Map")
+    urls = eth_tile_urls(region, :canopy_height)
     @test all(startswith.(urls, "/vsicurl/"))
+    @test all(occursin.("libdrive.ethz.ch/public.php/webdav", urls))
     @test all(endswith.(urls, "_Map.tif"))
+
+    # The uncertainty layer is the `_Map_SD` sibling of each tile.
+    sd_urls = eth_tile_urls(region, :canopy_height_uncertainty)
+    @test all(endswith.(sd_urls, "_Map_SD.tif"))
 end
 
 #####

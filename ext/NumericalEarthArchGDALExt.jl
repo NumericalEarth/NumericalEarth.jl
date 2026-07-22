@@ -1,6 +1,7 @@
 module NumericalEarthArchGDALExt
 
 using ArchGDAL: ArchGDAL
+using ArchGDAL.GDAL: cplsetconfigoption
 using NCDatasets: NCDataset, defDim, defVar
 using NumericalEarth: NumericalEarth
 
@@ -26,14 +27,14 @@ function configure_vsicurl!()
     if !haskey(ENV, "CURL_CA_BUNDLE") && !haskey(ENV, "SSL_CERT_FILE")
         ca = findfirst(isfile, _ca_bundle_candidates())
         if ca === nothing
-            ArchGDAL.GDAL.cplsetconfigoption("GDAL_HTTP_UNSAFESSL", "YES")
+            cplsetconfigoption("GDAL_HTTP_UNSAFESSL", "YES")
         else
             ENV["CURL_CA_BUNDLE"] = _ca_bundle_candidates()[ca]
         end
     end
-    ArchGDAL.GDAL.cplsetconfigoption("CPL_VSIL_CURL_ALLOWED_EXTENSIONS", ".tif")
-    ArchGDAL.GDAL.cplsetconfigoption("GDAL_HTTP_MAX_RETRY", "3")
-    ArchGDAL.GDAL.cplsetconfigoption("GDAL_HTTP_RETRY_DELAY", "1")
+    cplsetconfigoption("CPL_VSIL_CURL_ALLOWED_EXTENSIONS", ".tif")
+    cplsetconfigoption("GDAL_HTTP_MAX_RETRY", "3")
+    cplsetconfigoption("GDAL_HTTP_RETRY_DELAY", "1")
     return nothing
 end
 
@@ -139,22 +140,26 @@ function write_canopy_netcdf(nc_path, longitude, latitude, layers)
     return nothing
 end
 
-# ETH: window the anonymously served pre-downsampled global mosaic (single COG),
-# mask the no-data byte (255) to NaN — keeping non-forest zeros — and write one
-# regional NetCDF. The full-resolution 10 m 3° tiles are no longer served
-# anonymously (they 301-redirect to the DOI), so only the `"Map"` layer of the
-# 0.001° mosaic is available here; `"SD"` (uncertainty) needs the DOI archive.
-# Nearest-neighbour resampling keeps the categorical 255 no-data byte exact so
-# `mask_eth` catches it (bilinear would blend 255 into a valid neighbour).
+# ETH: window the intersecting 3° 10 m COG tiles (libdrive WebDAV) for the requested
+# layer at the native resolution, mask the no-data byte (255) to NaN — keeping non-forest
+# zeros — and write one regional NetCDF. The WebDAV endpoint needs a browser User-Agent
+# and the public read-only share token as basic-auth credentials, and it honours HTTP
+# range requests, so `/vsicurl/` fetches only the windowed COG blocks rather than whole
+# 415 MB tiles. Nearest-neighbour resampling keeps the categorical 255 no-data byte exact
+# so `mask_eth` catches it (bilinear would blend 255 into a valid neighbour).
 function CanopyHeight.canopy_height_cog_to_netcdf(metadatum::CanopyHeight.ETHCanopyHeightMetadatum, nc_path)
-    region  = metadatum.region
-    resolution = CanopyHeight.ETH_MOSAIC_RESOLUTION
-    missing_value = 255
+    cplsetconfigoption("GDAL_HTTP_USERAGENT", CanopyHeight.ETH_BROWSER_USER_AGENT)
+    cplsetconfigoption("GDAL_HTTP_USERPWD", CanopyHeight.ETH_LIBDRIVE_TOKEN * ":")
+    cplsetconfigoption("GDAL_DISABLE_READDIR_ON_OPEN", "EMPTY_DIR")
 
-    sources = [CanopyHeight.eth_mosaic_url()]
+    region = metadatum.region
+    resolution = CanopyHeight.ETH_TILE_RESOLUTION
+
+    sources = CanopyHeight.eth_tile_urls(region, metadatum.name)
     raw = warp_canopy_layer(sources, region.longitude, region.latitude, resolution;
                             resampling = "near")
-    layers = Dict("Map" => CanopyHeight.mask_eth.(raw, missing_value))
+    layer = NumericalEarth.DataWrangling.dataset_variable_name(metadatum)   # "Map" or "SD"
+    layers = Dict(layer => CanopyHeight.mask_eth.(raw, 255))
 
     write_canopy_netcdf(nc_path, region.longitude, region.latitude, layers)
     return nothing
