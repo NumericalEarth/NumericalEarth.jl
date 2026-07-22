@@ -6,6 +6,9 @@ using NumericalEarth.DataWrangling: BoundingBox, all_dates, dataset_variable_nam
 using Oceananigans: location
 
 @testset "AVISO metadata tests" begin
+    interfaces = NumericalEarth.DataWrangling.AVISO.coordinate_interfaces([0.0, 0.125, 0.25])
+    @test interfaces == range(-0.0625, 0.3125; length=4)
+
     dataset = AVISOMonthly()
     region = BoundingBox(longitude=(200, 202), latitude=(35, 37))
     dates = DateTime(2020, 1, 1):Month(1):DateTime(2020, 2, 1)
