@@ -512,7 +512,5 @@ end
 #####
 
 Oceananigans.prognostic_state(::ComponentInterfaces) = nothing
-
 Oceananigans.restore_prognostic_state!(ci::ComponentInterfaces, state) = ci
-
 Oceananigans.restore_prognostic_state!(ci::ComponentInterfaces, ::Nothing) = ci
