@@ -328,7 +328,8 @@ canopy-height field and a building-height field) recovers the ground beneath the
 clamped at sea level. The object heights are combined by their per-cell maximum,
 with missing values (`NaN`) contributing zero — so a canopy field that is `NaN` off
 vegetation and a building field that is `NaN` off built-up areas compose into a
-single object-height field. All inputs must share the same `grid`. The height
+single object-height field. A `NaN` in `surface_elevation` (no-data, e.g. over water)
+is likewise treated as sea level. All inputs must share the same `grid`. The height
 removed here is exactly the displacement the surface-layer roughness closure
 reintroduces as drag, so the object lift is accounted for once.
 
@@ -361,7 +362,7 @@ function bare_earth_elevation(surface_elevation::Field, object_heights::Field...
     end
 
     z_bare = Field{Center, Center, Nothing}(grid)
-    interior(z_bare) .= max.(interior(surface_elevation) .- interior(object_height), 0)
+    interior(z_bare) .= max.(nan_to_zero.(interior(surface_elevation)) .- interior(object_height), 0)
     fill_halo_regions!(z_bare)
 
     return z_bare
@@ -369,16 +370,21 @@ end
 
 """
     bare_earth_elevation(grid::AbstractGrid, object_heights::Field...;
-                         dataset = GLO30(), region = nothing, kw...)
+                         dataset = GLO30(),
+                         region = BoundingBox(grid; padding = default_horizontal_padding(dataset)),
+                         kw...)
 
 Regrid the DSM `dataset` onto `grid` with [`regrid_topography`](@ref) and remove the
 `object_heights`, returning the bare-earth elevation `Field`. `dataset` defaults to
-Copernicus [`GLO30`](@ref), which requires a bounded `region` ([`BoundingBox`](@ref)).
-Remaining keyword arguments (`interpolation_passes`, `cache`, …) are forwarded to
-`regrid_topography`.
+Copernicus [`GLO30`](@ref). `region` defaults to the horizontal extent of `grid` (widened
+by the dataset's `default_horizontal_padding`), so the DSM is windowed to the grid
+automatically; pass a [`BoundingBox`](@ref) to override. Remaining keyword arguments
+(`interpolation_passes`, `cache`, …) are forwarded to `regrid_topography`.
 """
 function bare_earth_elevation(grid::AbstractGrid, object_heights::Field...;
-                              dataset = GLO30(), region = nothing, kw...)
+                              dataset = GLO30(),
+                              region = BoundingBox(grid; padding = default_horizontal_padding(dataset)),
+                              kw...)
     metadatum = Metadatum(:bottom_height; dataset, region)
     surface_elevation = regrid_topography(grid, metadatum; kw...)
     return bare_earth_elevation(surface_elevation, object_heights...)

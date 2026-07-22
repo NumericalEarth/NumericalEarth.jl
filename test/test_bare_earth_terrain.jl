@@ -1,6 +1,7 @@
 include("runtests_setup.jl")
 
 using NumericalEarth.Bathymetry: bare_earth_elevation, regrid_topography
+using NumericalEarth.DataWrangling: validate_dataset_coverage, default_horizontal_padding
 using NumericalEarth.DataWrangling.CopernicusDEM: GLO30
 using NumericalEarth.ETOPO
 
@@ -88,9 +89,14 @@ end
     end
 end
 
-@testset "bare_earth_elevation — GLO30 requires a bounded region" begin
-    grid   = land_grid(CPU())
-    object = height_field(grid, 25.0)
-    # The default DSM (GLO30) is a global 30 m product; without a region it must error.
-    @test_throws ErrorException bare_earth_elevation(grid, object; dataset = GLO30())
+@testset "bare_earth_elevation — GLO30 region derived from the grid" begin
+    grid = land_grid(CPU())
+
+    # The global 30 m product must be windowed: a GLO30 metadatum with no region is rejected.
+    @test_throws ErrorException validate_dataset_coverage(grid, Metadatum(:bottom_height; dataset = GLO30()))
+
+    # The grid-level method derives that window from the grid, so the region it builds
+    # passes validation without the caller supplying a BoundingBox.
+    region = BoundingBox(grid; padding = default_horizontal_padding(GLO30()))
+    @test validate_dataset_coverage(grid, Metadatum(:bottom_height; dataset = GLO30(), region)) === nothing
 end

@@ -20,8 +20,9 @@ using OffsetArrays: OffsetArrays, OffsetArray
 using NCDatasets: NCDatasets, Dataset
 using Printf: Printf
 
-using ..DataWrangling: DataWrangling, Metadatum, native_grid, metadata_path,
-                       dataset_variable_name, validate_dataset_coverage
+using ..DataWrangling: DataWrangling, Metadatum, BoundingBox, native_grid, metadata_path,
+                       dataset_variable_name, validate_dataset_coverage,
+                       default_horizontal_padding
 using ..DataWrangling.ETOPO: ETOPO2022
 using ..DataWrangling.CopernicusDEM: GLO30
 

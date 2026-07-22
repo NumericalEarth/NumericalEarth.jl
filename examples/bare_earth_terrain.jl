@@ -121,8 +121,8 @@ correction = ElevationCorrection(z_bare, z_reference)
 
 transect_latitude = -3.0
 jrow = searchsortedfirst(φ, transect_latitude)
-transect_dsm  = Array(interior(z_dsm, :, jrow, 1))
-transect_bare = Array(interior(z_bare, :, jrow, 1))
+transect_dsm  = interior(z_dsm,  :, jrow, 1)
+transect_bare = interior(z_bare, :, jrow, 1)
 
 # ## Visualization
 
