@@ -25,9 +25,8 @@ end
 
 Supertype for the Global Human Settlement Layer (GHSL) R2023A built-up rasters
 (European Commission JRC). All are distributed in the World Mollweide projection
-(ESRI:54009) and so require a reprojection to EPSG:4326 in the read path — the one
-ingestion difference from the geographic land rasters. Open access, no
-authentication.
+(ESRI:54009) and so require a reprojection to EPSG:4326 in the read path. 
+Open access, no authentication.
 
 Data source: https://human-settlement.emergency.copernicus.eu
 """
@@ -37,9 +36,9 @@ abstract type AbstractGHSLDataset <: AbstractStaticDataset end
     GHSBuiltH
 
 GHS-BUILT-H R2023A average net building height (ANBH, epoch 2018, 100 m, World
-Mollweide ESRI:54009). Provides `:building_height` — the mean height in metres of
+Mollweide ESRI:54009). Provides `:building_height` — the mean height in meters of
 the built-up pixels within each cell. A height of `0` over non-built land is a
-valid value, not missing, so the field is not inpainted; only the product no-data
+valid value, not missing, so the field is not inpainted. Only the product no-data
 is masked to `NaN`.
 
 Because it is a global 100 m product on a 1000 km Mollweide tile grid, it is read
@@ -68,7 +67,7 @@ buildings, obtained from the built-up surface (m² per cell) by dividing by the
 native cell area and clamping to `[0, 1]`. A fraction of `0` over non-built land is
 a valid value, not missing.
 
-`resolution` selects the native pixel size in metres (`10` or `100`); `epoch` the
+`resolution` selects the native pixel size in meters (`10` or `100`); `epoch` the
 reference year. The 10 m product is only published for `epoch = 2018`; the 100 m
 product covers 1975–2030 in 5-year steps. The default `100`/`2020` pairs naturally
 with a ~100 m model grid and the epoch-2018 [`GHSBuiltH`](@ref) height; pass
@@ -97,7 +96,7 @@ end
 
 function GHSBuiltS(; resolution = 100, epoch = resolution == 10 ? 2018 : 2020)
     resolution ∈ (10, 100) ||
-        throw(ArgumentError("GHSBuiltS resolution must be 10 or 100 metres, got $resolution."))
+        throw(ArgumentError("GHSBuiltS resolution must be 10 or 100 meters, got $resolution."))
     valid_epochs = resolution == 10 ? (2018,) : Tuple(1975:5:2030)
     epoch ∈ valid_epochs ||
         throw(ArgumentError("GHSBuiltS at $(resolution) m is only published for epochs " *
@@ -138,7 +137,7 @@ DataWrangling.default_download_directory(::AbstractGHSLDataset) = download_GHSL_
 DataWrangling.longitude_interfaces(::AbstractGHSLDataset) = (-180, 180)
 DataWrangling.latitude_interfaces(::AbstractGHSLDataset)  = (-90, 90)
 
-# Native pixel size of each product in metres (sets the windowed-read target Δ = 360/Nx).
+# Native pixel size of each product in meters (sets the windowed-read target Δ = 360/Nx).
 native_resolution(::GHSBuiltH) = 100
 native_resolution(dataset::GHSBuiltS) = dataset.resolution
 
@@ -199,13 +198,13 @@ DataWrangling.default_inpainting(::GHSLMetadatum) = nothing
 Oceananigans.Fields.location(::GHSLMetadatum) = (Center, Center, Center)
 
 #####
-##### GHSL World-Mollweide (ESRI:54009) tile grid — pure, dependency-free
+##### GHSL World-Mollweide (ESRI:54009) tile grid
 #####
 #####
 ##### R2023A tiles a global Mollweide grid of 18 rows × 36 columns of 1000 km
 ##### squares, indexed `R{row}_C{col}` from the upper-left (NW) corner. Selecting the
 ##### tiles intersecting a lat/lon window needs the forward Mollweide projection and
-##### the tile-index arithmetic below; the tile download + warp itself lives in the
+##### the tile-index arithmetic below. The tile download + warp itself lives in the
 ##### ArchGDAL extension.
 #####
 
@@ -224,7 +223,7 @@ const GHSL_ROWS         = 18
     longitude_latitude_to_mollweide(longitude, latitude)
 
 Forward World-Mollweide (ESRI:54009) projection: map `(longitude, latitude)` in
-degrees (central meridian 0°) to `(x, y)` in metres. The auxiliary angle `θ` solves
+degrees (central meridian 0°) to `(x, y)` in meters. The auxiliary angle `θ` solves
 `2θ + sin 2θ = π sin(latitude)` by Newton iteration.
 """
 function longitude_latitude_to_mollweide(longitude, latitude)
@@ -339,7 +338,7 @@ ghsl_tile_tif_name(dataset::AbstractGHSLDataset, row, column) =
 """
     mask_building_height(value)
 
-Map a GHS-BUILT-H ANBH `value` (metres) to a masked `Float64`, keeping every physical
+Map a GHS-BUILT-H ANBH `value` (meters) to a masked `Float64`, keeping every physical
 height (including the legitimate non-built value `0`). GHSL declares its no-data as a
 positive sentinel (`255`) that the Mollweide→EPSG:4326 warp has already written as `NaN`;
 this pass carries that gap through and defensively maps any negative to `NaN`.

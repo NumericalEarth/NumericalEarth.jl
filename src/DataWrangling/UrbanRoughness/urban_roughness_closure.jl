@@ -4,11 +4,7 @@
 ##### Aerodynamic momentum roughness length z0 and zero-plane displacement d0 for the
 ##### urban (built-up) surface, from the plan-area fraction λp and mean building height H.
 ##### Each closure is a distinct type dispatched by `roughness_lengths`, tied together by
-##### `AbstractUrbanRoughness`: [`MacdonaldRoughness`](@ref) (the Macdonald et al. (1998)
-##### obstacle-array morphometry), [`KandaRoughness`](@ref) (the Kanda et al. (2013)
-##### height-heterogeneity correction of the Macdonald z0), and [`LookupRoughness`](@ref)
-##### (a rule-of-thumb fallback). Buildings are non-porous bluff bodies, so these are
-##### separate from the vegetation (Raupach) closure. Pure, allocation-free, kernel-safe.
+##### `AbstractUrbanRoughness`.
 #####
 
 """
@@ -301,10 +297,10 @@ Base.show(io::IO, c::AbstractUrbanRoughness) = print(io, summary(c))
 
 # Clamp to the physical range, floor to bare soil below the built-fraction threshold, and
 # return honest NaN gaps for invalid (NaN / negative-height) inputs. Shared by all closures.
-@inline function finalize_roughness_lengths(z0, d0, λ, valid, z0_soil, λ_minimum)
-    z0_soil = oftype(z0, z0_soil)  # unify with the computed type so a narrower-FT closure stays Union-free
-    bare = λ < λ_minimum
-    z0 = ifelse(bare, z0_soil, max(z0, z0_soil))
+@inline function finalize_roughness_lengths(z0, d0, λ, valid, z0ˢ, λmin)
+    z0ˢ = oftype(z0, z0ˢ)  # unify with the computed type so a narrower-FT closure stays Union-free
+    bare = λ < λmin
+    z0 = ifelse(bare, z0ˢ, max(z0, z0ˢ))
     d0 = ifelse(bare, zero(d0), d0)
     gap = oftype(z0, NaN)
     return ifelse(valid, z0, gap), ifelse(valid, d0, gap)
@@ -313,7 +309,7 @@ end
 """
 $(TYPEDSIGNATURES)
 
-Momentum roughness length `z0` and zero-plane displacement `d0` (metres) of a built-up
+Momentum roughness length `z0` and zero-plane displacement `d0` (meters) of a built-up
 surface with plan-area fraction `λp` and mean building height `h`, under `closure`.
 Returns `(z0, d0)`. Endpoints reduce cleanly: `λp → 0` returns the bare-soil `(z0, 0)`;
 `λp → 1` is the skimming limit (`d0/h` capped below 1). An invalid (`NaN`/negative) input
@@ -322,12 +318,12 @@ returns `(NaN, NaN)`.
 @inline function roughness_lengths(c::MacdonaldRoughness{FT}, λp, h) where FT
     valid = isfinite(λp) & isfinite(h) & (h >= 0)
     λ = clamp(λp, zero(FT), one(FT))
-    hh = max(h, zero(FT))
+    h = max(h, zero(FT))
 
     d0h = macdonald_displacement_ratio(λ, c.array_constant, c.maximum_displacement_ratio)
-    λf = frontal_area_index(c.frontal_area, λ, hh)
-    z0 = hh * macdonald_roughness_ratio(λf, d0h, c.drag_coefficient, c.von_karman_constant, c.correction_factor)
-    d0 = hh * d0h
+    λf = frontal_area_index(c.frontal_area, λ, h)
+    z0 = h * macdonald_roughness_ratio(λf, d0h, c.drag_coefficient, c.von_karman_constant, c.correction_factor)
+    d0 = h * d0h
 
     return finalize_roughness_lengths(z0, d0, λ, valid, c.bare_soil_roughness, c.minimum_built_fraction)
 end
@@ -336,19 +332,19 @@ end
     m = c.macdonald
     valid = isfinite(λp) & isfinite(h) & (h >= 0)
     λ = clamp(λp, zero(FT), one(FT))
-    hh = max(h, zero(FT))
+    h = max(h, zero(FT))
 
-    σh = c.height_variability * hh
-    hmax = c.maximum_height_ratio * hh
+    σh = c.height_variability * h
+    hmax = c.maximum_height_ratio * h
 
     d0hᵐ = macdonald_displacement_ratio(λ, m.array_constant, m.maximum_displacement_ratio)
-    λf = frontal_area_index(m.frontal_area, λ, hh)
-    z0ᵐ = hh * macdonald_roughness_ratio(λf, d0hᵐ, m.drag_coefficient, m.von_karman_constant, m.correction_factor)
+    λf = frontal_area_index(m.frontal_area, λ, h)
+    z0ᵐ = h * macdonald_roughness_ratio(λf, d0hᵐ, m.drag_coefficient, m.von_karman_constant, m.correction_factor)
 
     a0, b0, c0 = c.displacement_constants
     a1, b1, c1 = c.roughness_constants
-    z0 = kanda_roughness_length(z0ᵐ, λ, hh, σh, a1, b1, c1)
-    d0 = min(kanda_displacement_height(λ, hh, σh, hmax, a0, b0, c0), m.maximum_displacement_ratio * hh)
+    z0 = kanda_roughness_length(z0ᵐ, λ, h, σh, a1, b1, c1)
+    d0 = min(kanda_displacement_height(λ, h, σh, hmax, a0, b0, c0), m.maximum_displacement_ratio * h)
 
     return finalize_roughness_lengths(z0, d0, λ, valid, m.bare_soil_roughness, m.minimum_built_fraction)
 end
@@ -356,10 +352,10 @@ end
 @inline function roughness_lengths(c::LookupRoughness{FT}, λp, h) where FT
     valid = isfinite(λp) & isfinite(h) & (h >= 0)
     λ = clamp(λp, zero(FT), one(FT))
-    hh = max(h, zero(FT))
+    h = max(h, zero(FT))
 
-    z0 = c.bare_soil_roughness + c.roughness_height_fraction * hh
-    d0 = c.displacement_height_fraction * hh
+    z0 = c.bare_soil_roughness + c.roughness_height_fraction * h
+    d0 = c.displacement_height_fraction * h
 
     return finalize_roughness_lengths(z0, d0, λ, valid, c.bare_soil_roughness, c.minimum_built_fraction)
 end

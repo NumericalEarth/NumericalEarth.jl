@@ -47,8 +47,8 @@ H    = Field(Metadatum(:building_height; dataset = GHSBuiltH(), region), grid)
 # ## Urban roughness closure
 # Kanda (2013) is the default (height-heterogeneity aware); Macdonald (1998) for
 # comparison. Both consume the same `(H, λp)` fields.
-z0m_kanda, d0_kanda = urban_roughness(H, λp; closure = KandaRoughness())
-z0m_macd,  d0_macd  = urban_roughness(H, λp; closure = MacdonaldRoughness())
+z0m_kanda, d0_kanda = urban_roughness(H, λp; closure = KandaRoughness(eltype(grid)))
+z0m_macd,  d0_macd  = urban_roughness(H, λp; closure = MacdonaldRoughness(eltype(grid)))
 
 # ## Figures
 λ = Array(λnodes(grid, Center())); φ = Array(φnodes(grid, Center()))

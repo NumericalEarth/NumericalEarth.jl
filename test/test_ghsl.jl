@@ -19,7 +19,7 @@ using Oceananigans.Fields: location
 #####
 
 @testset "GHSL Mollweide projection and tile index" begin
-    # Origin and equator map to the centre of the Mollweide plane.
+    # Origin and equator map to the center of the Mollweide plane.
     x0, y0 = longitude_latitude_to_mollweide(0, 0)
     @test x0 ≈ 0 atol = 1e-6
     @test y0 ≈ 0 atol = 1e-6

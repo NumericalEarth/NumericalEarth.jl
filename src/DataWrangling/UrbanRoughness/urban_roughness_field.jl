@@ -13,15 +13,15 @@ using KernelAbstractions: @kernel, @index
     FT = eltype(grid)
     @inbounds λij = convert(FT, λp[i, j, 1])
     @inbounds Hij = convert(FT, H[i, j, 1])
-    z0, dd = roughness_lengths(closure, λij, Hij)
-    @inbounds z0m[i, j, 1] = z0
-    @inbounds d0[i, j, 1] = dd
+    z0ij, d0ij = roughness_lengths(closure, λij, Hij)
+    @inbounds z0m[i, j, 1] = z0ij
+    @inbounds d0[i, j, 1] = d0ij
 end
 
 """
 $(TYPEDSIGNATURES)
 
-Fill `z0m` and `d0` (metres) in place from a built-up-fraction field `λp` and a mean
+Fill `z0m` and `d0` (meters) in place from a built-up-fraction field `λp` and a mean
 building-height field `H` on `grid`, applying `closure` (an [`AbstractUrbanRoughness`](@ref),
 default [`KandaRoughness`](@ref)) over every cell.
 """
