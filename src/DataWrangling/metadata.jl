@@ -677,9 +677,10 @@ function default_download_directory end
     default_horizontal_padding(dataset)
 
 Return the default horizontal padding (degrees) added around a bounding box requested
-from `dataset`, providing margin for interpolation stencils at the boundary.
+from `dataset`, providing margin for interpolation stencils at the boundary. Defaults to
+`0` (no padding); datasets that need margin extend this.
 """
-function default_horizontal_padding end
+default_horizontal_padding(dataset) = 0
 
 """
     matching_single_level_dataset(dataset)
