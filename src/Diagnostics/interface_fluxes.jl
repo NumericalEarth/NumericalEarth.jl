@@ -76,13 +76,15 @@ end
 """
     net_ocean_temperature_flux(esm::EarthSystemModel)
 
-Return the complete net temperature flux (K m s⁻¹) out of the ocean surface.
-Freshwater heat is included for mutable grids and is zero for fixed grids.
+Return the complete outward-positive temperature flux (K m s⁻¹) for the ocean
+heat inventory. Mutable grids include freshwater heat. Fixed grids include heat
+advected through their stationary upper boundary.
 """
 function net_ocean_temperature_flux(esm::EarthSystemModel)
     Jᵀ = flux_field(esm.ocean.model.tracers.T.boundary_conditions.top.condition)
     Jᴴ = ocean_freshwater_temperature_flux(esm)
-    return Jᵀ - Jᴴ + frazil_temperature_flux(esm)
+    Jᵃ = ocean_top_advective_temperature_flux(esm)
+    return Jᵀ - Jᴴ + frazil_temperature_flux(esm) + Jᵃ
 end
 
 

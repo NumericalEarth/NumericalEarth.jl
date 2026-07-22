@@ -1,22 +1,12 @@
 include("runtests_setup.jl")
 
 using CUDA: @allowscalar
-using Oceananigans: UpdateStateCallsite
 using Oceananigans.AbstractOperations: KernelFunctionOperation
 using Oceananigans.Grids: MutableVerticalDiscretization
-using Oceananigans.ImmersedBoundaries: MutableGridOfSomeKind
-using Oceananigans.Simulations: Callback
 using Oceananigans.Operators: volume
 using Oceananigans.Units
-using NumericalEarth.Diagnostics: net_ocean_heat_flux, ocean_top_advective_heat_flux
+using NumericalEarth.Diagnostics: net_ocean_heat_flux
 using NumericalEarth.Oceans: get_radiative_forcing
-
-function cache_penultimate_stage_temperature!(model, temperature)
-    if model.clock.stage == model.timestepper.Nstages - 1
-        set!(temperature, model.tracers.T)
-    end
-    return nothing
-end
 
 # Heat and freshwater have different noise floors, so they get separate tolerances.
 function test_tracer_budget(coupled_model, Sᵒᶜ, Δt, nsteps; heat_rtol, freshwater_rtol)
@@ -55,21 +45,6 @@ function test_tracer_budget(coupled_model, Sᵒᶜ, Δt, nsteps; heat_rtol, fres
     set!(VS⁻, S * volume)
     ∫S⁻ = sum(VS⁻)
 
-    stage_temperature = grid isa MutableGridOfSomeKind ? nothing : CenterField(grid)
-    stage_heat_rate = if isnothing(stage_temperature)
-        nothing
-    else
-        stage_flux = ocean_top_advective_heat_flux(coupled_model, stage_temperature)
-        Integral(stage_flux, dims=(1, 2))
-    end
-
-    callback_name = gensym(:tracer_budget_stage_temperature)
-    if !isnothing(stage_temperature)
-        ocean.callbacks[callback_name] = Callback(cache_penultimate_stage_temperature!;
-                                                   parameters=stage_temperature,
-                                                   callsite=UpdateStateCallsite())
-    end
-
     for _ = 1:nsteps
         set!(VT⁻, T * volume)
         set!(VV⁻, cell_volume)
@@ -84,22 +59,16 @@ function test_tracer_budget(coupled_model, Sᵒᶜ, Δt, nsteps; heat_rtol, fres
         compute!(ΔVT)
         compute!(ΔVV)
 
-        # Fixed grids exchange heat through their stationary upper boundary.
-        # Use the tracer state and transport from the final split-RK stage, which
-        # is the tendency that advances the tracer over the complete time step.
-        stage_heat_flux = isnothing(stage_heat_rate) ? zero(previous_heat_flux) :
-                          @allowscalar first(Field(stage_heat_rate))
+        # Net heat flux is positive out of the ocean.
         heat_content_tendency = sum(ρᵒᶜ * cᵒᶜ * ΔVT)
-        expected_heat_tendency = (previous_radiative_rate - previous_heat_flux - stage_heat_flux) * last_Δt
-        @test isapprox(heat_content_tendency, expected_heat_tendency; rtol=heat_rtol)
+        expected_heat_content_tendency = (previous_radiative_rate - previous_heat_flux) * last_Δt
+        @test isapprox(heat_content_tendency, expected_heat_content_tendency; rtol=heat_rtol)
 
         # Volume grows by exactly the surface-integrated freshwater volume flux.
         volume_tendency = sum(ΔVV)
         expected_volume_tendency = previous_volume_flux * last_Δt
         @test isapprox(volume_tendency, expected_volume_tendency; rtol=freshwater_rtol)
     end
-
-    !isnothing(stage_temperature) && pop!(ocean.callbacks, callback_name)
 
     # Freshwater carries no salt, so the total salt content is conserved over the run.
     compute!(ΔVS)
