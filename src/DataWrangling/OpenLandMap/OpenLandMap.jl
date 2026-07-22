@@ -29,8 +29,7 @@ Delivers static soil texture mass fractions (`:sand_fraction`, `:silt_fraction`,
 `:clay_fraction`, in kg/kg) and fine-earth bulk density (`:bulk_density`, in
 kg/m³) over the three native depth intervals 0–30, 30–60, and 60–100 cm — stored
 as a three-dimensional field whose vertical axis carries the depths (deepest
-first), mirroring [`SoilGrids2`](@ref). Data are plain geographic EPSG:4326 so no
-reprojection is needed.
+first). Data are plain geographic EPSG:4326 so no reprojection is needed.
 
 Because the global grid is ~1.44M × 528k cells, this dataset is read in regional
 windows only: construct the [`Metadatum`](@ref) with a longitude/latitude
@@ -60,9 +59,6 @@ struct OpenLandMapSoilDB <: AbstractStaticDataset end
 
 const OpenLandMapSoilDBMetadatum = Metadatum{<:OpenLandMapSoilDB}
 
-# Variable-name mapping from NumericalEarth names to the short names used inside
-# the regional NetCDF we materialize. These match SoilGrids2's scheme so a future
-# pedotransfer function is source-agnostic.
 OpenLandMap_dataset_variable_names = Dict(
     :sand_fraction => "sand",
     :silt_fraction => "silt",
@@ -81,8 +77,7 @@ OpenLandMap_cog_sources = Dict(
 
 const OpenLandMap_s3_base = "https://s3.opengeohub.org/global-soil"
 
-# Depth intervals, deepest first, so the stacked vertical axis increases upward
-# and matches `z_interfaces`.
+# Depth intervals, deepest first.
 const OpenLandMap_depths = ("b60cm..100cm", "b30cm..60cm", "b0cm..30cm")
 
 const OpenLandMap_date_range = "20200101_20221231"
@@ -132,10 +127,8 @@ end
 
 Oceananigans.Fields.location(::OpenLandMapSoilDBMetadatum) = (Center, Center, Center)
 
-# Masked cells (ice, sand deserts, water, outside −56°–76°) stay NaN by default,
-# mirroring SoilGrids2: shallow nearest-neighbor inpainting would 0-fill masks it
-# cannot reach in a few passes, and 0 is a spurious soil value. Pass an explicit
-# `inpainting = NearestNeighborInpainting(n)` to `Field` to fill them.
+# Masked cells (ice, sand deserts, water, outside −56°–76°) stay NaN by default.
+# Pass an explicit `inpainting = NearestNeighborInpainting(n)` to `Field` to fill them.
 DataWrangling.default_inpainting(::OpenLandMapSoilDBMetadatum) = nothing
 
 DataWrangling.inpainted_metadata_path(metadata::OpenLandMapSoilDBMetadatum) =

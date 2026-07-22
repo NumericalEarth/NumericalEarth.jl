@@ -60,7 +60,6 @@ function configure_vsicurl!()
     ArchGDAL.setconfigoption("GDAL_DISABLE_READDIR_ON_OPEN", "EMPTY_DIR")
     ArchGDAL.setconfigoption("GDAL_HTTP_MULTIRANGE", "YES")
 
-    # Point GDAL's bundled libcurl at Julia's CA roots (its libcurl ignores the system store); user override wins.
     if !haskey(ENV, "CURL_CA_BUNDLE")
         ENV["CURL_CA_BUNDLE"] = NetworkOptions.ca_roots_path()
     end
@@ -81,7 +80,7 @@ function decode_cog_window(raw, scale, offset, nodata)
 end
 
 # The windowing math and the north→south row reversal below assume a north-up,
-# axis-aligned geographic (EPSG:4326, degrees) grid; fail loudly on anything else.
+# axis-aligned geographic (EPSG:4326, degrees) grid.
 function validate_geographic_northup(dataset, geotransform)
     _, dx, rx, _, ry, dy = geotransform
     (rx == 0 && ry == 0) ||
@@ -107,8 +106,6 @@ function validate_geographic_northup(dataset, geotransform)
     return nothing
 end
 
-# Dispatch on `bbox::BoundingBox` (more specific than the module fallback) so this
-# adds a specialization rather than overwriting a method during precompilation.
 function OpenLandMap.read_cog_window(source, bbox::BoundingBox)
     configure_vsicurl!()
 
