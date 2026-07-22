@@ -19,22 +19,21 @@ using NumericalEarth.DataWrangling.CanopyRoughness: compute_canopy_roughness!,
                                                     class_canopy_height
 using Oceananigans
 using Oceananigans.Fields: set!, interior
-using Oceananigans.Grids: λnodes, φnodes
 using Statistics: mean
 using ArchGDAL, CairoMakie
 
 # ## Inputs
-# A 0.5°×0.5° box over the Bavarian pre-Alps (Alpine forest + farmland), on a 500×500 grid
-# matching the ETH mosaic's 0.001° (~110 m) native resolution.
-region = BoundingBox(longitude = (11.0, 11.5), latitude = (47.5, 48.0))
-grid = LatitudeLongitudeGrid(CPU(); size = (500, 500), longitude = (11.0, 11.5),
-                             latitude = (47.5, 48.0), topology = (Bounded, Bounded, Flat))
+# A 0.1°×0.1° box over the Bavarian pre-Alps (forest + farmland). The canopy height is read on
+# the ETH product's native ~10 m grid (a windowed COG) and everything downstream runs on that
+# same grid — no resampling, so the maps show the true 10 m detail.
+region = BoundingBox(longitude = (11.0, 11.1), latitude = (47.6, 47.7))
+canopy_height = Field(Metadatum(:canopy_height; dataset = ETHCanopyHeight(), region), CPU())
+grid = canopy_height.grid   # the ETH native 10 m grid over the window (~1200 × 1200)
 
-canopy_height = Field(Metadatum(:canopy_height; dataset = ETHCanopyHeight(), region), grid)
-
+φ₁, φ₂ = region.latitude
 land_cover = Field{Center, Center, Nothing}(grid); set!(land_cover, 4)   # deciduous broadleaf (synthetic)
 lai = Field{Center, Center, Nothing}(grid)
-set!(lai, (λ, φ) -> 0.5 + 6.5 * (φ - 47.5) / 0.5)                         # synthetic south→north sweep
+set!(lai, (λ, φ) -> clamp(0.5 + 6.5 * (φ - φ₁) / (φ₂ - φ₁), 0.5, 7.0))    # synthetic south→north sweep
 
 # ## Roughness: measured height field vs the class-average height alone
 z0, d0 = Field{Center, Center, Nothing}(grid), Field{Center, Center, Nothing}(grid)
@@ -45,29 +44,27 @@ compute_canopy_roughness!(z0_class, d0_class, lai, land_cover, grid)      # omit
 
 # ## Figures
 outdir = joinpath(@__DIR__, "eth_canopy_roughness_figures"); mkpath(outdir)
-λ, φ = Array(λnodes(grid, Center())), Array(φnodes(grid, Center()))
-arr(f) = Array(interior(f, :, :, 1))
-finite(a) = filter(isfinite, vec(a))
-hclass = class_canopy_height(Float64, 4)   # deciduous-broadleaf class height (m)
+finite(f) = filter(isfinite, vec(Array(interior(f))))   # for color-range scalars only
+hclass = class_canopy_height(Float64, 4)                # deciduous-broadleaf class height (m)
 
-function heat!(fig, pos, title, A, crange, cmap)
+function heat!(fig, pos, title, field, crange, cmap)
     ax = Axis(fig[pos...]; title, aspect = DataAspect()); hidedecorations!(ax)
-    hm = heatmap!(ax, λ, φ, A; colorrange = crange, colormap = cmap, nan_color = :gray82)
+    hm = heatmap!(ax, field; colorrange = crange, colormap = cmap, nan_color = :gray82)
     Colorbar(fig[pos[1], pos[2] + 1], hm; width = 11)
 end
 
 # (1) Headline — measured height moves the roughness. Gray in `h_c` is ETH no-data (lakes,
 # unobserved pixels); the closure fills those cells with the class-average height, so
 # `z₀` carries no gaps.
-H, Z, Zc = arr(canopy_height), arr(z0), arr(z0_class)
-zrange = (0, maximum(finite(Z)))
-Δ = Z .- Zc; Δmax = maximum(abs, finite(Δ))
+zmax = maximum(finite(z0))
+Δz0 = z0 - z0_class
+Δmax = maximum(abs, filter(isfinite, vec(Array(interior(z0)) .- Array(interior(z0_class)))))
 fig = Figure(size = (1250, 1150))
-Label(fig[0, 1:4], "Measured ETH canopy height moves the roughness"; fontsize = 20, font = :bold)
-heat!(fig, (1, 1), "canopy height h_c (ETH)",                                  H,  (0, maximum(finite(H))), :YlGn)
-heat!(fig, (1, 3), "z₀ from measured h_c",                                     Z,  zrange, :viridis)
-heat!(fig, (2, 1), "z₀ from class-average height ($(round(hclass, digits=1)) m, no h_c field)", Zc, zrange, :viridis)
-heat!(fig, (2, 3), "z₀ difference (measured − class)",                         Δ,  (-Δmax, Δmax), :balance)
+Label(fig[0, 1:4], "Measured ETH canopy height moves the roughness (native 10 m)"; fontsize = 20, font = :bold)
+heat!(fig, (1, 1), "canopy height h_c (ETH)",                                  canopy_height, (0, maximum(finite(canopy_height))), :YlGn)
+heat!(fig, (1, 3), "z₀ from measured h_c",                                     z0,       (0, zmax), :viridis)
+heat!(fig, (2, 1), "z₀ from class-average height ($(round(hclass, digits=1)) m, no h_c field)", z0_class, (0, zmax), :viridis)
+heat!(fig, (2, 3), "z₀ difference (measured − class)",                         Δz0,      (-Δmax, Δmax), :balance)
 save(joinpath(outdir, "fig1_roughness_maps.png"), fig)
 
 # (2) The closure's LAI regime dependence, isolated at fixed heights (deciduous broadleaf →
@@ -87,4 +84,4 @@ vlines!(axd, [p.maximum_area_index]; color = :gray50, linestyle = :dash)
 axislegend(axz; position = :rt); axislegend(axd; position = :rb)
 save(joinpath(outdir, "fig2_lai_regime.png"), fig)
 
-@info "canopy roughness" h_c_max = round(maximum(finite(H)), digits = 1) z0_measured_mean = round(mean(finite(Z)), digits = 2) z0_class = round(mean(finite(Zc)), digits = 2) Δz0_mean = round(mean(finite(Δ)), digits = 2)
+@info "canopy roughness (native 10 m)" h_c_max = round(maximum(finite(canopy_height)), digits = 1) z0_measured_mean = round(mean(finite(z0)), digits = 2) z0_class = round(mean(finite(z0_class)), digits = 2)
