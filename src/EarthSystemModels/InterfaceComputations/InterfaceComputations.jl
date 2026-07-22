@@ -31,6 +31,7 @@ export
     atmosphere_land_stability_functions,
     atmosphere_sea_ice_stability_functions,
     large_yeager_stability_functions,
+    jimenez_stability_functions,
     compute_atmosphere_ocean_fluxes!,
     compute_atmosphere_sea_ice_fluxes!,
     compute_atmosphere_land_fluxes!,
