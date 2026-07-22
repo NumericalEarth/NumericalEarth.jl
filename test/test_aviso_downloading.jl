@@ -8,6 +8,8 @@ using Oceananigans.Fields: interior
 using Oceananigans.Grids: Bounded, Flat, LatitudeLongitudeGrid, topology
 using Oceananigans.OutputReaders: time_indices
 
+const AVISO_TEST_DIR = mktempdir()
+
 @testset "AVISO CopernicusMarine fetch padding" begin
     CMExt = Base.get_extension(NumericalEarth, :NumericalEarthCopernicusMarineExt)
     bbox = BoundingBox(longitude=(200, 202), latitude=(35, 37))
@@ -32,9 +34,8 @@ end
     date = DateTime(2020, 1, 1)
 
     for dataset in (AVISODaily(), AVISOMonthly())
-        metadatum = Metadatum(:sea_level_anomaly; dataset, date, region)
+        metadatum = Metadatum(:sea_level_anomaly; dataset, date, region, dir=AVISO_TEST_DIR)
         filepath = metadata_path(metadatum)
-        isfile(filepath) && rm(filepath; force=true)
         download(metadatum)
         @test isfile(filepath)
     end
@@ -44,7 +45,7 @@ end
     dataset = AVISOMonthly()
     region = BoundingBox(longitude=(200, 202), latitude=(35, 37))
     dates = DateTime(2020, 1, 1):Month(1):DateTime(2020, 2, 1)
-    metadata = Metadata(:sea_level_anomaly; dates, dataset, region)
+    metadata = Metadata(:sea_level_anomaly; dates, dataset, region, dir=AVISO_TEST_DIR)
 
     download(metadata)
     for datum in metadata
