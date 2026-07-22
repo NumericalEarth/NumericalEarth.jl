@@ -3,7 +3,7 @@
 #####
 ##### Aerodynamic momentum roughness length z0 and zero-plane displacement d0 for the
 ##### urban (built-up) surface, from the plan-area fraction λp and mean building height H.
-##### Each closure is a distinct type dispatched by `roughness_lengths`, tied together by
+##### Each closure is a distinct type dispatched by `aerodynamic_parameters`, tied together by
 ##### `AbstractUrbanRoughness`.
 #####
 
@@ -12,7 +12,7 @@
 
 Supertype of the urban morphometric roughness closures. A closure maps the plan-area
 built fraction `λp` and mean building height `h` to the momentum roughness length `z0`
-and zero-plane displacement `d0` via [`roughness_lengths`](@ref); it is also callable as
+and zero-plane displacement `d0` via [`aerodynamic_parameters`](@ref); it is also callable as
 `closure(λp, h)`.
 """
 abstract type AbstractUrbanRoughness end
@@ -297,7 +297,7 @@ Base.show(io::IO, c::AbstractUrbanRoughness) = print(io, summary(c))
 
 # Clamp to the physical range, floor to bare soil below the built-fraction threshold, and
 # return honest NaN gaps for invalid (NaN / negative-height) inputs. Shared by all closures.
-@inline function finalize_roughness_lengths(z0, d0, λ, valid, z0ˢ, λmin)
+@inline function finalize_aerodynamic_parameters(z0, d0, λ, valid, z0ˢ, λmin)
     z0ˢ = oftype(z0, z0ˢ)  # unify with the computed type so a narrower-FT closure stays Union-free
     bare = λ < λmin
     z0 = ifelse(bare, z0ˢ, max(z0, z0ˢ))
@@ -315,7 +315,7 @@ Returns `(z0, d0)`. Endpoints reduce cleanly: `λp → 0` returns the bare-soil 
 `λp → 1` is the skimming limit (`d0/h` capped below 1). An invalid (`NaN`/negative) input
 returns `(NaN, NaN)`.
 """
-@inline function roughness_lengths(c::MacdonaldRoughness{FT}, λp, h) where FT
+@inline function aerodynamic_parameters(c::MacdonaldRoughness{FT}, λp, h) where FT
     valid = isfinite(λp) & isfinite(h) & (h >= 0)
     λ = clamp(λp, zero(FT), one(FT))
     h = max(h, zero(FT))
@@ -325,10 +325,10 @@ returns `(NaN, NaN)`.
     z0 = h * macdonald_roughness_ratio(λf, d0h, c.drag_coefficient, c.von_karman_constant, c.correction_factor)
     d0 = h * d0h
 
-    return finalize_roughness_lengths(z0, d0, λ, valid, c.bare_soil_roughness, c.minimum_built_fraction)
+    return finalize_aerodynamic_parameters(z0, d0, λ, valid, c.bare_soil_roughness, c.minimum_built_fraction)
 end
 
-@inline function roughness_lengths(c::KandaRoughness{FT}, λp, h) where FT
+@inline function aerodynamic_parameters(c::KandaRoughness{FT}, λp, h) where FT
     m = c.macdonald
     valid = isfinite(λp) & isfinite(h) & (h >= 0)
     λ = clamp(λp, zero(FT), one(FT))
@@ -346,10 +346,10 @@ end
     z0 = kanda_roughness_length(z0ᵐ, λ, h, σh, a1, b1, c1)
     d0 = min(kanda_displacement_height(λ, h, σh, hmax, a0, b0, c0), m.maximum_displacement_ratio * h)
 
-    return finalize_roughness_lengths(z0, d0, λ, valid, m.bare_soil_roughness, m.minimum_built_fraction)
+    return finalize_aerodynamic_parameters(z0, d0, λ, valid, m.bare_soil_roughness, m.minimum_built_fraction)
 end
 
-@inline function roughness_lengths(c::LookupRoughness{FT}, λp, h) where FT
+@inline function aerodynamic_parameters(c::LookupRoughness{FT}, λp, h) where FT
     valid = isfinite(λp) & isfinite(h) & (h >= 0)
     λ = clamp(λp, zero(FT), one(FT))
     h = max(h, zero(FT))
@@ -357,7 +357,7 @@ end
     z0 = c.bare_soil_roughness + c.roughness_height_fraction * h
     d0 = c.displacement_height_fraction * h
 
-    return finalize_roughness_lengths(z0, d0, λ, valid, c.bare_soil_roughness, c.minimum_built_fraction)
+    return finalize_aerodynamic_parameters(z0, d0, λ, valid, c.bare_soil_roughness, c.minimum_built_fraction)
 end
 
-@inline (c::AbstractUrbanRoughness)(λp, h) = roughness_lengths(c, λp, h)
+@inline (c::AbstractUrbanRoughness)(λp, h) = aerodynamic_parameters(c, λp, h)

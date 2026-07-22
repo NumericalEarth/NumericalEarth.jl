@@ -8,7 +8,7 @@
     FT = eltype(grid)
     @inbounds λij = convert(FT, λp[i, j, 1])
     @inbounds Hij = convert(FT, H[i, j, 1])
-    z0ij, d0ij = roughness_lengths(closure, λij, Hij)
+    z0ij, d0ij = aerodynamic_parameters(closure, λij, Hij)
     @inbounds z0m[i, j, 1] = z0ij
     @inbounds d0[i, j, 1] = d0ij
 end

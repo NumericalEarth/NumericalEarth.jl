@@ -5,14 +5,14 @@ using Test
 using NumericalEarth.Lands:
     AbstractUrbanRoughness, MacdonaldRoughness, KandaRoughness, LookupRoughness,
     IsotropicFrontalArea, CuboidFrontalArea,
-    urban_roughness, roughness_lengths, compute_urban_roughness!, frontal_area_index,
+    urban_roughness, aerodynamic_parameters, compute_urban_roughness!, frontal_area_index,
     macdonald_displacement_ratio, macdonald_roughness_ratio,
     kanda_displacement_height, kanda_roughness_length
 
 using Oceananigans.Fields: interior, set!
 
-z0m_point(λp, H; closure = KandaRoughness()) = roughness_lengths(closure, λp, H)[1]
-d0_point(λp, H; closure = KandaRoughness()) = roughness_lengths(closure, λp, H)[2]
+z0m_point(λp, H; closure = KandaRoughness()) = aerodynamic_parameters(closure, λp, H)[1]
+d0_point(λp, H; closure = KandaRoughness()) = aerodynamic_parameters(closure, λp, H)[2]
 
 @testset "Macdonald morphometric endpoints" begin
     A = MacdonaldRoughness().array_constant
@@ -55,18 +55,18 @@ end
     kanda = KandaRoughness()
     macd  = MacdonaldRoughness()
     # Below the built-fraction floor the cell reduces to bare soil (prescribed z0, d0 = 0).
-    z0b, d0b = roughness_lengths(kanda, 0.0, H)
+    z0b, d0b = aerodynamic_parameters(kanda, 0.0, H)
     @test z0b ≈ macd.bare_soil_roughness   # Kanda inherits the wrapped Macdonald floor
     @test d0b == 0
 
     # Full coverage: displacement is capped strictly below the building height.
-    _, d0s = roughness_lengths(macd, 1.0, H)
+    _, d0s = aerodynamic_parameters(macd, 1.0, H)
     @test d0s / H < 1
     @test d0s / H ≈ macd.maximum_displacement_ratio
 
     # Invalid inputs become honest NaN gaps.
     for (λ, h) in ((NaN, H), (0.3, NaN), (0.3, -5.0))
-        z0, d0 = roughness_lengths(kanda, λ, h)
+        z0, d0 = aerodynamic_parameters(kanda, λ, h)
         @test isnan(z0) && isnan(d0)
     end
 end
@@ -79,7 +79,7 @@ end
     # The estimator choice changes the roughness (the dominant Macdonald uncertainty).
     iso = MacdonaldRoughness(frontal_area = IsotropicFrontalArea())
     cub = MacdonaldRoughness(frontal_area = CuboidFrontalArea(building_width = 10.0))
-    @test roughness_lengths(iso, 0.2, 15.0)[1] != roughness_lengths(cub, 0.2, 15.0)[1]
+    @test aerodynamic_parameters(iso, 0.2, 15.0)[1] != aerodynamic_parameters(cub, 0.2, 15.0)[1]
 
     # Kanda roughness reduces to a1·z0_Macdonald for a height-homogeneous canopy (σh → 0).
     a1 = KandaRoughness().roughness_constants[1]
@@ -93,7 +93,7 @@ end
 @testset "Lookup fallback" begin
     H = 12.0
     lookup = LookupRoughness()
-    z0, d0 = roughness_lengths(lookup, 0.4, H)
+    z0, d0 = aerodynamic_parameters(lookup, 0.4, H)
     @test z0 ≈ lookup.bare_soil_roughness + lookup.roughness_height_fraction * H
     @test d0 ≈ lookup.displacement_height_fraction * H
 end
@@ -103,7 +103,7 @@ end
         for closure in (MacdonaldRoughness(FT), KandaRoughness(FT), LookupRoughness(FT))
             for (λ, h) in ((FT(0), FT(10)), (FT(1e-6), FT(10)), (FT(0.3), FT(0)),
                            (FT(1), FT(30)), (FT(0.5), FT(1e3)))
-                z0, d0 = roughness_lengths(closure, λ, h)
+                z0, d0 = aerodynamic_parameters(closure, λ, h)
                 @test isfinite(z0) && isfinite(d0)
                 @test z0 isa FT && d0 isa FT
                 @test z0 ≥ 0 && d0 ≥ 0
@@ -113,11 +113,11 @@ end
 end
 
 @testset "Mixed-FT closure stays Union-free (kernel/GPU safety)" begin
-    # A closure whose FT differs from the grid eltype must not make roughness_lengths
+    # A closure whose FT differs from the grid eltype must not make aerodynamic_parameters
     # return a Union — that breaks the launched kernel (dynamic dispatch) on the GPU.
     for (Tgrid, Tclosure) in ((Float64, Float32), (Float32, Float64))
         for closure in (MacdonaldRoughness(Tclosure), KandaRoughness(Tclosure), LookupRoughness(Tclosure))
-            z0, d0 = @inferred roughness_lengths(closure, Tgrid(0.3), Tgrid(15))
+            z0, d0 = @inferred aerodynamic_parameters(closure, Tgrid(0.3), Tgrid(15))
             @test typeof(z0) == typeof(d0)
             @test isfinite(z0) && isfinite(d0)
         end
@@ -143,7 +143,7 @@ end
     # Uniform urban patch: the field builder reproduces the scalar closure exactly.
     set!(λp, 0.3); set!(H, 15.0)
     z0m, d0 = urban_roughness(H, λp; closure = KandaRoughness())
-    z0ref, d0ref = roughness_lengths(KandaRoughness(), 0.3, 15.0)
+    z0ref, d0ref = aerodynamic_parameters(KandaRoughness(), 0.3, 15.0)
     @test all(≈(z0ref), interior(z0m))
     @test all(≈(d0ref), interior(d0))
 
@@ -162,10 +162,10 @@ end
 
 @testset "The default closure is Kanda" begin
     H = 15.0
-    @test roughness_lengths(KandaRoughness(), 0.3, H) == (z0m_point(0.3, H), d0_point(0.3, H))
+    @test aerodynamic_parameters(KandaRoughness(), 0.3, H) == (z0m_point(0.3, H), d0_point(0.3, H))
     # The callable-struct form matches the function form.
     kanda = KandaRoughness()
-    @test kanda(0.3, H) == roughness_lengths(kanda, 0.3, H)
+    @test kanda(0.3, H) == aerodynamic_parameters(kanda, 0.3, H)
 end
 
 @testset "Closure construction and composition" begin

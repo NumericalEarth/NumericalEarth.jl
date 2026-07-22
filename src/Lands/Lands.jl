@@ -21,7 +21,7 @@ export AbstractLand,
        # Urban aerodynamic roughness closures
        AbstractUrbanRoughness, MacdonaldRoughness, KandaRoughness, LookupRoughness,
        IsotropicFrontalArea, CuboidFrontalArea,
-       urban_roughness, compute_urban_roughness!, roughness_lengths,
+       urban_roughness, compute_urban_roughness!, aerodynamic_parameters,
        # Atmosphere-facing accessors
        surface_temperature, surface_saturation
 
