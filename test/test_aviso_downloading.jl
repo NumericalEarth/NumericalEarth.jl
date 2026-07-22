@@ -30,19 +30,13 @@ end
 @testset "Downloading AVISO data" begin
     region = BoundingBox(longitude=(200, 202), latitude=(35, 37))
     date = DateTime(2020, 1, 1)
-    datasets_and_variables = (
-        (AVISODaily(), (:sea_level_anomaly),
-        (AVISOMonthly(), (:sea_level_anomaly,)),
-    )
 
-    for (dataset, variables) in datasets_and_variables
-        for variable in variables
-            metadatum = Metadatum(variable; dataset, date, region)
-            filepath = metadata_path(metadatum)
-            isfile(filepath) && rm(filepath; force=true)
-            download(metadatum)
-            @test isfile(filepath)
-        end
+    for dataset in (AVISODaily(), AVISOMonthly())
+        metadatum = Metadatum(:sea_level_anomaly; dataset, date, region)
+        filepath = metadata_path(metadatum)
+        isfile(filepath) && rm(filepath; force=true)
+        download(metadatum)
+        @test isfile(filepath)
     end
 end
 
