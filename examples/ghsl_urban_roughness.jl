@@ -19,7 +19,7 @@
 using NumericalEarth
 using NumericalEarth.DataWrangling: BoundingBox, Metadatum
 using NumericalEarth.DataWrangling.GHSL: GHSBuiltH, GHSBuiltS
-using NumericalEarth.DataWrangling.UrbanRoughness: urban_roughness
+using NumericalEarth.DataWrangling.UrbanRoughness: urban_roughness, KandaRoughness, MacdonaldRoughness
 using Oceananigans
 using Oceananigans.Grids: λnodes, φnodes
 using Oceananigans.Fields: interior
@@ -47,8 +47,8 @@ H    = Field(Metadatum(:building_height; dataset = GHSBuiltH(), region), grid)
 # ## Urban roughness closure
 # Kanda (2013) is the default (height-heterogeneity aware); Macdonald (1998) for
 # comparison. Both consume the same `(H, λp)` fields.
-z0m_kanda, d0_kanda = urban_roughness(H, λp; method = :kanda)
-z0m_macd,  d0_macd  = urban_roughness(H, λp; method = :macdonald)
+z0m_kanda, d0_kanda = urban_roughness(H, λp; closure = KandaRoughness())
+z0m_macd,  d0_macd  = urban_roughness(H, λp; closure = MacdonaldRoughness())
 
 # ## Figures
 λ = Array(λnodes(grid, Center())); φ = Array(φnodes(grid, Center()))
