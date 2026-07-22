@@ -6,7 +6,10 @@ export net_ocean_heat_flux, sea_ice_ocean_heat_flux, atmosphere_ocean_heat_flux,
        net_ocean_freshwater_flux, sea_ice_ocean_freshwater_flux, atmosphere_ocean_freshwater_flux
 
 using KernelAbstractions: @index, @kernel
-using ConservativeRegridding # Load OceananigansConservativeRegriddingExt.
+using ConservativeRegridding: ConservativeRegridding
+
+# Load OceananigansConservativeRegriddingExt so RegriddedOperation can use it.
+const conservative_regridding_dependency = ConservativeRegridding
 
 using Oceananigans: Oceananigans
 using Oceananigans.AbstractOperations: CumulativeIntegral, Integral, KernelFunctionOperation, RegriddedOperation
