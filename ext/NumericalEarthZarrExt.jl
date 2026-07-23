@@ -42,7 +42,10 @@ end
 # store `dsm` as (lon, lat); both coordinates are ascending. Ascending vs descending
 # is detected and handled regardless, so only the coordinate names and dimension
 # order are assumed here.
-function CopernicusDEM.zarr_to_netcdf(metadatum::CopernicusDEM.CopernicusDEMMetadatum, nc_path)
+#
+# The gateway intermittently 403s valid requests under concurrent CI load; retry
+# with backoff rather than failing on the first hiccup.
+function CopernicusDEM.zarr_to_netcdf(metadatum::CopernicusDEM.CopernicusDEMMetadatum, nc_path; max_retries = 3)
     token = get(ENV, "DESTINE_ACCESS_TOKEN", nothing)
     isnothing(token) && error(
         "Set the DESTINE_ACCESS_TOKEN environment variable to read Copernicus DEM. " *
@@ -50,51 +53,60 @@ function CopernicusDEM.zarr_to_netcdf(metadatum::CopernicusDEM.CopernicusDEMMeta
         "https://earthdatahub.destine.eu/account-settings#my-personal-access-tokens.")
 
     url = string("https://edh:", token, "@", CopernicusDEM.zarr_host_path(metadatum.dataset))
-    store = zopen(url; consolidated = true)
 
-    grid = native_grid(metadatum)
-    λ₁, λ₂ = x_domain(grid)
-    φ₁, φ₂ = y_domain(grid)
-    Nx, Ny, _ = size(grid)
+    for attempt in 1:max_retries
+        try
+            store = zopen(url; consolidated = true)
 
-    Δλ = (λ₂ - λ₁) / Nx
-    Δφ = (φ₂ - φ₁) / Ny
-    first_longitude = λ₁ + Δλ / 2
-    first_latitude  = φ₁ + Δφ / 2
+            grid = native_grid(metadatum)
+            λ₁, λ₂ = x_domain(grid)
+            φ₁, φ₂ = y_domain(grid)
+            Nx, Ny, _ = size(grid)
 
-    longitude = store["lon"][:]
-    latitude  = store["lat"][:]
+            Δλ = (λ₂ - λ₁) / Nx
+            Δφ = (φ₂ - φ₁) / Ny
+            first_longitude = λ₁ + Δλ / 2
+            first_latitude  = φ₁ + Δφ / 2
 
-    longitude_range, longitude_ascending = ascending_window(longitude, first_longitude, Nx)
-    latitude_range,  latitude_ascending  = ascending_window(latitude,  first_latitude,  Ny)
+            longitude = store["lon"][:]
+            latitude  = store["lat"][:]
 
-    variable_name = CopernicusDEM.dataset_zarr_variable_name
-    elevation = Float32.(store[variable_name][longitude_range, latitude_range])  # (lon, lat)
+            longitude_range, longitude_ascending = ascending_window(longitude, first_longitude, Nx)
+            latitude_range,  latitude_ascending  = ascending_window(latitude,  first_latitude,  Ny)
 
-    # The native LatitudeLongitudeGrid is ascending in both lon and lat.
-    longitude_ascending || (elevation = reverse(elevation, dims = 1))
-    latitude_ascending  || (elevation = reverse(elevation, dims = 2))
+            variable_name = CopernicusDEM.dataset_zarr_variable_name
+            elevation = Float32.(store[variable_name][longitude_range, latitude_range])  # (lon, lat)
 
-    window_longitude = longitude_ascending ? longitude[longitude_range] : reverse(longitude[longitude_range])
-    window_latitude  = latitude_ascending  ? latitude[latitude_range]   : reverse(latitude[latitude_range])
+            # The native LatitudeLongitudeGrid is ascending in both lon and lat.
+            longitude_ascending || (elevation = reverse(elevation, dims = 1))
+            latitude_ascending  || (elevation = reverse(elevation, dims = 2))
 
-    NCDataset(nc_path, "c") do dataset
-        defDim(dataset, "lon", length(window_longitude))
-        defDim(dataset, "lat", length(window_latitude))
+            window_longitude = longitude_ascending ? longitude[longitude_range] : reverse(longitude[longitude_range])
+            window_latitude  = latitude_ascending  ? latitude[latitude_range]   : reverse(latitude[latitude_range])
 
-        longitude_variable = defVar(dataset, "lon", Float64, ("lon",);
-                                    attrib = ["units" => "degrees_east", "long_name" => "longitude"])
-        latitude_variable  = defVar(dataset, "lat", Float64, ("lat",);
-                                    attrib = ["units" => "degrees_north", "long_name" => "latitude"])
-        elevation_variable = defVar(dataset, "z", Float32, ("lon", "lat");
-                                    attrib = ["units" => "m", "long_name" => "surface elevation"])
+            NCDataset(nc_path, "c") do dataset
+                defDim(dataset, "lon", length(window_longitude))
+                defDim(dataset, "lat", length(window_latitude))
 
-        longitude_variable[:] = window_longitude
-        latitude_variable[:]  = window_latitude
-        elevation_variable[:, :] = elevation
+                longitude_variable = defVar(dataset, "lon", Float64, ("lon",);
+                                            attrib = ["units" => "degrees_east", "long_name" => "longitude"])
+                latitude_variable  = defVar(dataset, "lat", Float64, ("lat",);
+                                            attrib = ["units" => "degrees_north", "long_name" => "latitude"])
+                elevation_variable = defVar(dataset, "z", Float32, ("lon", "lat");
+                                            attrib = ["units" => "m", "long_name" => "surface elevation"])
+
+                longitude_variable[:] = window_longitude
+                latitude_variable[:]  = window_latitude
+                elevation_variable[:, :] = elevation
+            end
+
+            return nothing
+        catch e
+            attempt < max_retries || rethrow(e)
+            @warn "Copernicus DEM Zarr read attempt $attempt/$max_retries failed; retrying..." exception=(e, catch_backtrace())
+            sleep(5.0 * attempt)
+        end
     end
-
-    return nothing
 end
 
 # A contiguous block of `count` storage indices into `coordinate` whose values
