@@ -3,6 +3,7 @@ module NumericalEarthArchGDALExt
 using ArchGDAL: ArchGDAL
 using ArchGDAL.GDAL: cplsetconfigoption
 using NCDatasets: NCDataset, defDim, defVar
+using NetworkOptions: NetworkOptions
 using NumericalEarth: NumericalEarth
 using Oceananigans: Center
 using Oceananigans.Fields: Field, interior
@@ -10,36 +11,23 @@ using Oceananigans.Fields: Field, interior
 const ETHSentinel2Canopy = NumericalEarth.DataWrangling.ETHSentinel2Canopy
 const BoundingBox = NumericalEarth.DataWrangling.BoundingBox
 
-# Candidate CA-certificate bundles, most portable first: Julia's own bundled
-# `cert.pem`, then the common system locations (macOS/BSD, Debian/Ubuntu, RHEL).
-_ca_bundle_candidates() = (
-    normpath(Sys.BINDIR, "..", "share", "julia", "cert.pem"),
-    "/etc/ssl/cert.pem",
-    "/etc/ssl/certs/ca-certificates.crt",
-    "/etc/pki/tls/certs/ca-bundle.crt",
-)
+# Configure GDAL's /vsicurl HTTP driver for anonymous COG reads, once per session.
+# GDAL_jll's bundled libcurl has no CA store on some platforms (notably macOS), so an
+# https open fails with "HTTP response code ... : 0" (a transport-layer TLS failure,
+# not a 404). Point libcurl at a CA bundle via `CURL_CA_BUNDLE` (respected at request
+# time) unless the caller already set one; `NetworkOptions.ca_roots_path()` resolves
+# the platform's trust store — Julia's bundled `cert.pem` by default, or whatever
+# `SSL_CERT_FILE`/`JULIA_SSL_CA_ROOTS_PATH` point at.
+const vsicurl_configured = Ref(false)
 
-# Configure GDAL's /vsicurl HTTP driver for anonymous COG reads. GDAL_jll's
-# bundled libcurl has no CA store on some platforms (notably macOS), so an https
-# open fails with "HTTP response code ... : 0" (a transport-layer TLS failure,
-# not a 404). Point libcurl at a CA bundle via `CURL_CA_BUNDLE` (respected at
-# request time) unless the caller already set one; if no bundle is found, fall
-# back to skipping verification so anonymous public COGs still load.
 function configure_vsicurl!()
-    if !haskey(ENV, "CURL_CA_BUNDLE") && !haskey(ENV, "SSL_CERT_FILE")
-        candidates = _ca_bundle_candidates()
-        ca = findfirst(isfile, candidates)
-        if ca === nothing
-            @warn("No CA-certificate bundle found; disabling GDAL TLS verification for this " *
-                  "session (GDAL_HTTP_UNSAFESSL=YES). Set CURL_CA_BUNDLE or SSL_CERT_FILE to a " *
-                  "CA bundle to keep verification on.", maxlog=1)
-            cplsetconfigoption("GDAL_HTTP_UNSAFESSL", "YES")
-        else
-            ENV["CURL_CA_BUNDLE"] = candidates[ca]
-        end
+    vsicurl_configured[] && return nothing
+    if !haskey(ENV, "CURL_CA_BUNDLE")
+        ENV["CURL_CA_BUNDLE"] = NetworkOptions.ca_roots_path()
     end
     cplsetconfigoption("GDAL_HTTP_MAX_RETRY", "3")
     cplsetconfigoption("GDAL_HTTP_RETRY_DELAY", "1")
+    vsicurl_configured[] = true
     return nothing
 end
 
