@@ -1,19 +1,32 @@
 #####
 ##### Surface energy balance coupling for the Breeze RRTMGP `RadiativeTransferModel`.
 #####
-##### The RTM lives at `coupled_model.radiation`. Its surface-level flux fields
-##### already bake in albedo and emissivity at the surface (RRTMGP handles
-##### both reflection of downwelling shortwave and ε σ Tₛ⁴ for upwelling
-##### longwave internally), so we simply add the *net radiative flux* to the
-##### slab's `surface_energy_flux` accumulator. Both use the "positive flux =
-##### upward" sign convention (downwelling components are negative), so the
-##### net upward radiative flux at the surface face `k = 1` is
+##### The RTM lives at `coupled_model.radiation`. We add the *net upward radiative flux*
+##### at the surface to the slab's `surface_energy_flux` accumulator, using the "positive
+##### flux = upward" sign convention (downwelling components are stored negative).
 #####
-#####    ℐˡʷꜛ + ℐˡʷꜜ + ℐˢʷꜜ
+##### Longwave is complete in the RTM's fields: `upwelling_longwave_flux` already bakes in
+##### surface emission and reflection (ε σ Tₛ⁴ + (1-ε)·LW↓, from RRTMGP's emissivity
+##### boundary condition), so `ℐˡʷꜛ + ℐˡʷꜜ` is the net upward longwave.
 #####
-##### This runs in `update_state!` after the turbulent (sensible + latent)
-##### flux has been written to `surface_energy_flux`, so the kernel adds the
-##### radiative term on top.
+##### Shortwave is NOT: RRTMGP reflects the surface albedo internally, but Breeze stores
+##### only the *gross* downwelling shortwave (`downwelling_shortwave_flux = -SW↓`, total
+##### direct + diffuse) — there is no upwelling-shortwave field to read back. Adding `ℐˢʷꜜ`
+##### unmodified would deposit 100 % of SW↓ in the surface regardless of albedo. We instead
+##### keep only the absorbed fraction, subtracting the reflected `α·SW↓`: the net upward
+##### shortwave is `(1 - α)·ℐˢʷꜜ` (= -(1-α)·SW↓). `α` is the RTM's surface albedo; this is
+##### exact when its direct and diffuse albedos coincide — a single `surface_albedo` or a
+##### `CopernicusAlbedo()` (the coupled configuration).
+##### TODO: an exact correction for *distinct* direct/diffuse albedos needs the direct/diffuse
+##### split of SW↓, which Breeze does not expose — better fixed in Breeze by storing the
+##### surface net (or upwelling) shortwave.
+#####
+##### So the net upward radiative flux at the surface face `k = 1` is
+#####
+#####    ℐˡʷꜛ + ℐˡʷꜜ + (1 - α)·ℐˢʷꜜ
+#####
+##### This runs in `update_state!` after the turbulent (sensible + latent) flux has been
+##### written to `surface_energy_flux`, so the kernel adds the radiative term on top.
 #####
 
 const BreezeRTM = Breeze.RadiativeTransferModel
@@ -44,9 +57,12 @@ NumericalEarth.EarthSystemModels.InterfaceComputations.ComponentExchanger(::Bree
 NumericalEarth.EarthSystemModels.InterfaceComputations.kernel_radiation_properties(::BreezeRTM) =
     (surface_properties = NamedTuple(),)
 
-@kernel function _apply_breeze_air_land_radiative_fluxes!(Es, ℐˡʷꜛ, ℐˡʷꜜ, ℐˢʷꜜ)
+@kernel function _apply_breeze_air_land_radiative_fluxes!(Es, ℐˡʷꜛ, ℐˡʷꜜ, ℐˢʷꜜ, α)
     i, j = @index(Global, NTuple)
-    @inbounds Es[i, j, 1] += ℐˡʷꜛ[i, j, 1] + ℐˡʷꜜ[i, j, 1] + ℐˢʷꜜ[i, j, 1]
+    # Longwave is already net (emission + reflection baked into `ℐˡʷꜛ`). `ℐˢʷꜜ` is the
+    # GROSS downwelling shortwave — RRTMGP stores no upwelling-SW field — so keep only the
+    # absorbed fraction `(1 - α)·ℐˢʷꜜ`; the reflected `α·SW↓` is not deposited in the surface.
+    @inbounds Es[i, j, 1] += ℐˡʷꜛ[i, j, 1] + ℐˡʷꜜ[i, j, 1] + (1 - α[i, j, 1]) * ℐˢʷꜜ[i, j, 1]
 end
 
 # Dispatch on `EarthSystemModel{<:BreezeRTM}`: the existing generic
@@ -69,11 +85,20 @@ function NumericalEarth.EarthSystemModels.apply_air_land_radiative_fluxes!(
     rtm = coupled_model.radiation
     grid = land.grid
     arch = architecture(grid)
+
+    # RRTMGP applies the surface albedo internally but Breeze stores only the gross
+    # downwelling shortwave, so the kernel subtracts the reflected fraction `α·SW↓`.
+    # `direct_surface_albedo` equals `diffuse_surface_albedo` for a single `surface_albedo`
+    # or a `CopernicusAlbedo()` (the coupled configuration); RRTMGP always materializes it
+    # to an indexable `Field`/`ConstantField`.
+    α = rtm.surface_properties.direct_surface_albedo
+
     launch!(arch, grid, :xy,
             _apply_breeze_air_land_radiative_fluxes!,
             Es,
             rtm.upwelling_longwave_flux,
             rtm.downwelling_longwave_flux,
-            rtm.downwelling_shortwave_flux)
+            rtm.downwelling_shortwave_flux,
+            α)
     return nothing
 end
