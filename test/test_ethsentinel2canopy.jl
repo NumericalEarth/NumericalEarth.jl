@@ -1,9 +1,9 @@
 include("runtests_setup.jl")
 
-using NumericalEarth.DataWrangling.CanopyHeight
-using NumericalEarth.DataWrangling.CanopyHeight: mask_glad, mask_eth,
-                                                 eth_tile_token, eth_tiles_in_bbox, eth_tile_urls,
-                                                 canopy_height_cog_to_netcdf, canopy_height_field
+using NumericalEarth.DataWrangling.ETHSentinel2Canopy
+using NumericalEarth.DataWrangling.ETHSentinel2Canopy: mask_eth,
+                                              eth_tile_token, eth_tiles_in_bbox, eth_tile_urls,
+                                              canopy_height_cog_to_netcdf, canopy_height_field
 using NumericalEarth.DataWrangling: longitude_interfaces, latitude_interfaces,
                                     dataset_variable_name, validate_dataset_coverage,
                                     metadata_filename, available_variables,
@@ -12,29 +12,19 @@ using NumericalEarth.DataWrangling: longitude_interfaces, latitude_interfaces,
 using Oceananigans.Fields: location
 
 #####
-##### Pure no-data masking: GLAD categorical fill codes and ETH no-data byte.
+##### Pure no-data masking: the ETH no-data byte.
 #####
 
 @testset "Canopy-height no-data masking" begin
-    # Non-forest height 0 is a *valid* value and must be kept, never masked.
-    @test mask_glad(0)  == 0.0
-    @test mask_glad(37) == 37.0
-    @test mask_glad(60) == 60.0            # top of GLAD's valid range
-
-    # GLAD fill codes 101 (water), 102 (snow/ice), 103 (no-data) → NaN.
-    @test isnan(mask_glad(101))
-    @test isnan(mask_glad(102))
-    @test isnan(mask_glad(103))
-
-    # ETH: no-data byte (255) → NaN, valid heights (incl. 0) kept.
+    # ETH: no-data byte (255) → NaN, valid heights (incl. the non-forest value 0) kept.
     @test mask_eth(0)   == 0.0
     @test mask_eth(23)  == 23.0
     @test isnan(mask_eth(255))
     @test isnan(mask_eth(200, 200))        # configurable no-data
 
     # Masking is elementwise-broadcastable (as used in the COG read).
-    codes = Float32[0, 12, 101, 60, 103]
-    masked = mask_glad.(codes)
+    codes = Float32[0, 12, 255, 60, 255]
+    masked = mask_eth.(codes)
     @test masked[1] == 0
     @test masked[2] == 12
     @test masked[4] == 60
@@ -74,40 +64,36 @@ end
 #####
 
 @testset "Canopy-height dataset interface" begin
-    for dataset in (ETHCanopyHeight(), GLADCanopyHeight())
-        @test longitude_interfaces(dataset) == (-180, 180)
-        @test latitude_interfaces(dataset)  == (-90, 90)
-        Nx, Ny, Nz = size(dataset, :canopy_height)
-        @test Nz == 1
-        @test Nx > Ny > 0
+    dataset = ETHSentinel2CanopyHeight()
+    @test longitude_interfaces(dataset) == (-180, 180)
+    @test latitude_interfaces(dataset)  == (-90, 90)
+    Nx, Ny, Nz = size(dataset, :canopy_height)
+    @test Nz == 1
+    @test Nx > Ny > 0
 
-        region = BoundingBox(longitude = (4, 5), latitude = (51, 52))
-        meta = Metadatum(:canopy_height; dataset, region)
+    region = BoundingBox(longitude = (4, 5), latitude = (51, 52))
+    meta = Metadatum(:canopy_height; dataset, region)
 
-        @test dataset_variable_name(meta) == "Map"
-        @test is_three_dimensional(meta) == false
-        @test default_inpainting(meta) === nothing
-        @test location(meta) == (Center, Center, Center)
+    @test dataset_variable_name(meta) == "Map"
+    @test is_three_dimensional(meta) == false
+    @test default_inpainting(meta) === nothing
+    @test location(meta) == (Center, Center, Center)
 
-        filename = metadata_filename(dataset, :canopy_height, nothing, region)
-        @test endswith(filename, ".nc")
-        @test occursin("lon_", filename) && occursin("lat_", filename)
-    end
+    filename = metadata_filename(dataset, :canopy_height, nothing, region)
+    @test endswith(filename, ".nc")
+    @test occursin("lon_", filename) && occursin("lat_", filename)
 
-    # ETH exposes both the height map and its uncertainty layer; GLAD only the map.
-    eth = ETHCanopyHeight()
-    @test Set(keys(available_variables(eth))) == Set((:canopy_height, :canopy_height_uncertainty))
-    sd = Metadatum(:canopy_height_uncertainty; dataset = eth,
+    # ETH exposes both the height map and its uncertainty layer.
+    @test Set(keys(available_variables(dataset))) == Set((:canopy_height, :canopy_height_uncertainty))
+    sd = Metadatum(:canopy_height_uncertainty; dataset,
                    region = BoundingBox(longitude = (4, 5), latitude = (51, 52)))
     @test dataset_variable_name(sd) == "SD"
-
-    @test Set(keys(available_variables(GLADCanopyHeight()))) == Set((:canopy_height,))
 
     # Region-keyed filenames disambiguate different windows.
     region_a = BoundingBox(longitude = (4, 5), latitude = (51, 52))
     region_b = BoundingBox(longitude = (0, 2), latitude = (45, 47))
-    @test metadata_filename(eth, :canopy_height, nothing, region_a) !=
-          metadata_filename(eth, :canopy_height, nothing, region_b)
+    @test metadata_filename(dataset, :canopy_height, nothing, region_a) !=
+          metadata_filename(dataset, :canopy_height, nothing, region_b)
 end
 
 #####
@@ -122,12 +108,12 @@ end
                                  topology = (Bounded, Bounded, Flat))
 
     # No region → must error.
-    meta_global = Metadatum(:canopy_height; dataset = ETHCanopyHeight())
+    meta_global = Metadatum(:canopy_height; dataset = ETHSentinel2CanopyHeight())
     @test_throws ErrorException validate_dataset_coverage(grid, meta_global)
 
     # Bounded region → passes validation.
     region = BoundingBox(longitude = (4, 5), latitude = (51, 52))
-    meta_region = Metadatum(:canopy_height; dataset = ETHCanopyHeight(), region)
+    meta_region = Metadatum(:canopy_height; dataset = ETHSentinel2CanopyHeight(), region)
     @test validate_dataset_coverage(grid, meta_region) === nothing
 end
 
@@ -138,11 +124,11 @@ end
 
 @testset "Canopy-height COG read is extension-gated" begin
     region = BoundingBox(longitude = (4, 5), latitude = (51, 52))
-    meta = Metadatum(:canopy_height; dataset = ETHCanopyHeight(), region)
+    meta = Metadatum(:canopy_height; dataset = ETHSentinel2CanopyHeight(), region)
     grid = LatitudeLongitudeGrid(CPU(); size = (4, 4), longitude = (4, 5), latitude = (51, 52),
                                  topology = (Bounded, Bounded, Flat))
     if isnothing(Base.get_extension(NumericalEarth, :NumericalEarthArchGDALExt))
         @test_throws ErrorException canopy_height_cog_to_netcdf(meta, tempname() * ".nc")
-        @test_throws ErrorException canopy_height_field(grid, ETHCanopyHeight())
+        @test_throws ErrorException canopy_height_field(grid, ETHSentinel2CanopyHeight())
     end
 end

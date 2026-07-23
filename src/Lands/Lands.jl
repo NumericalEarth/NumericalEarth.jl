@@ -21,6 +21,7 @@ export AbstractLand,
        # Aerodynamic roughness closure (drag partition)
        DragPartitionParameters, DragPartitionRoughness, canopy_drag_parameters, canopy_roughness,
        aerodynamic_parameters, compute_aerodynamic_roughness!, canopy_roughness_climatology,
+       drag_partition_group, representative_canopy_height, is_vegetated, nonvegetated_roughness,
        # Atmosphere-facing accessors
        surface_temperature, surface_saturation
 
@@ -41,7 +42,7 @@ using Oceananigans: Oceananigans, prognostic_state, restore_prognostic_state!
 using Oceananigans.Architectures: architecture
 using Oceananigans.BoundaryConditions: fill_halo_regions!
 using Oceananigans.Fields: AbstractField, CenterField, Field, Center, Face, ZeroField
-using Oceananigans.Grids: grid_name, Center, Face, φnode
+using Oceananigans.Grids: grid_name, Center, Face
 using Oceananigans.OutputReaders: update_field_time_series!, extract_field_time_series, FieldTimeSeries
 using Oceananigans.TimeSteppers: Clock, tick!, update_state!
 using Oceananigans.Units: Time
@@ -56,7 +57,7 @@ include("energy_balance/energy_balance.jl")
 include("hydrology/hydrology.jl")
 include("properties/property_providers.jl")
 
-# Aerodynamic roughness closure (drag partition): canopy height + LAI + IGBP land cover
+# Aerodynamic roughness closure (drag partition): canopy height + LAI
 # → momentum roughness length z0 and zero-plane displacement d0.
 include("roughness/canopy_roughness_closure.jl")
 include("roughness/canopy_classes.jl")

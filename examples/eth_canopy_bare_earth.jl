@@ -15,7 +15,7 @@
 # from the windowed COGs (anonymous `/vsicurl/`). Needs `using ArchGDAL` and `using CairoMakie`.
 
 using NumericalEarth
-using NumericalEarth.DataWrangling.CanopyHeight: ETHCanopyHeight, canopy_height_field
+using NumericalEarth.DataWrangling.ETHSentinel2Canopy: ETHSentinel2CanopyHeight, canopy_height_field
 using NumericalEarth.Lands: DragPartitionRoughness, compute_aerodynamic_roughness!
 using Oceananigans
 using Oceananigans.Fields: set!, interior
@@ -36,18 +36,18 @@ z_dsm = regrid_topography(grid; dataset = ETOPO2022())
 # (coarse-graining, not point interpolation), reading only the windowed COG blocks via
 # `/vsicurl/`. Canopy height over non-forest is a valid `0`; only the no-data byte is
 # masked to `NaN`.
-canopy_height = canopy_height_field(grid, ETHCanopyHeight())
+canopy_height = canopy_height_field(grid, ETHSentinel2CanopyHeight())
 
 # ## (1) Bare-earth terrain — DSM minus the measured canopy
 z_bare  = bare_earth_elevation(z_dsm, canopy_height)
 removed = compute!(Field(z_dsm - z_bare))      # the canopy lift removed from the terrain
 
 # ## (2) Roughness — the same canopy through the Raupach closure
-# The basin is evergreen broadleaf forest (IGBP 2); a uniform dense canopy (LAI 5) here.
+# The basin is evergreen broadleaf forest, a uniform dense canopy (LAI 5) here.
+# `DragPartitionRoughness()` defaults to the `:evergreen_broadleaf_forest` class.
 lai = Field{Center, Center, Nothing}(grid); set!(lai, 5)
-land_cover = Field{Center, Center, Nothing}(grid); set!(land_cover, 2)
 z0, d0 = Field{Center, Center, Nothing}(grid), Field{Center, Center, Nothing}(grid)
-compute_aerodynamic_roughness!(z0, d0, DragPartitionRoughness(), (; land_cover, lai, canopy_height), grid)
+compute_aerodynamic_roughness!(z0, d0, DragPartitionRoughness(), (; lai, canopy_height), grid)
 
 # ## Figures
 outdir = joinpath(@__DIR__, "eth_canopy_bare_earth_figures"); mkpath(outdir)

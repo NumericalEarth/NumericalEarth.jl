@@ -7,7 +7,7 @@ using NumericalEarth: NumericalEarth
 using Oceananigans: Center
 using Oceananigans.Fields: Field, interior
 
-const CanopyHeight = NumericalEarth.DataWrangling.CanopyHeight
+const ETHSentinel2Canopy = NumericalEarth.DataWrangling.ETHSentinel2Canopy
 const BoundingBox = NumericalEarth.DataWrangling.BoundingBox
 
 # Candidate CA-certificate bundles, most portable first: Julia's own bundled
@@ -24,18 +24,20 @@ _ca_bundle_candidates() = (
 # open fails with "HTTP response code ... : 0" (a transport-layer TLS failure,
 # not a 404). Point libcurl at a CA bundle via `CURL_CA_BUNDLE` (respected at
 # request time) unless the caller already set one; if no bundle is found, fall
-# back to skipping verification so anonymous public COGs still load. Restricting
-# the allowed extensions to `.tif` avoids probing sidecar files that don't exist.
+# back to skipping verification so anonymous public COGs still load.
 function configure_vsicurl!()
     if !haskey(ENV, "CURL_CA_BUNDLE") && !haskey(ENV, "SSL_CERT_FILE")
-        ca = findfirst(isfile, _ca_bundle_candidates())
+        candidates = _ca_bundle_candidates()
+        ca = findfirst(isfile, candidates)
         if ca === nothing
+            @warn("No CA-certificate bundle found; disabling GDAL TLS verification for this " *
+                  "session (GDAL_HTTP_UNSAFESSL=YES). Set CURL_CA_BUNDLE or SSL_CERT_FILE to a " *
+                  "CA bundle to keep verification on.", maxlog=1)
             cplsetconfigoption("GDAL_HTTP_UNSAFESSL", "YES")
         else
-            ENV["CURL_CA_BUNDLE"] = _ca_bundle_candidates()[ca]
+            ENV["CURL_CA_BUNDLE"] = candidates[ca]
         end
     end
-    cplsetconfigoption("CPL_VSIL_CURL_ALLOWED_EXTENSIONS", ".tif")
     cplsetconfigoption("GDAL_HTTP_MAX_RETRY", "3")
     cplsetconfigoption("GDAL_HTTP_RETRY_DELAY", "1")
     return nothing
@@ -83,7 +85,7 @@ function NumericalEarth.DataWrangling.IBCAO.reproject_ibcao_to_netcdf(tiff_path,
 end
 
 #####
-##### Canopy-height COG (ETH / GLAD) → regional NetCDF
+##### Canopy-height COG (ETH) → regional NetCDF
 #####
 
 # Mosaic + window the intersecting COG tiles under `geometry` (the gdalwarp `-te`/`-tr`
@@ -92,7 +94,7 @@ end
 # published tile is a legitimate miss (open ocean), not an error — skip the ones that
 # fail to open and mosaic the rest. `identity.` narrows the collected vector back to the
 # concrete dataset type so `gdalwarp`'s `Vector{<:AbstractDataset}` method still dispatches.
-function warp_canopy_sources(sources, geometry; resampling)
+function warp_canopy_sources(sources, geometry; resampling, nodata = nothing)
     configure_vsicurl!()
     opened = []
     for source in sources
@@ -104,8 +106,12 @@ function warp_canopy_sources(sources, geometry; resampling)
     isempty(opened) && error("No canopy-height tiles cover the requested region; " *
                              "it may lie entirely over ocean.")
     datasets = identity.(opened)
+    # Declare the categorical no-data byte so `-r average` drops it from cell means rather
+    # than blending it in; all-no-data cells then come out as `nodata` for the caller to mask.
+    nodata_options = isnothing(nodata) ? String[] :
+                     String["-srcnodata", string(nodata), "-dstnodata", string(nodata)]
     options = vcat(String["-t_srs", "EPSG:4326"], geometry,
-                   String["-r", resampling, "-ot", "Float32"])
+                   String["-r", resampling, "-ot", "Float32"], nodata_options)
     try
         return ArchGDAL.gdalwarp(datasets, options) do warped
             # GDAL returns (Nx, Ny) with latitude north→south; flip to south→north.
@@ -120,20 +126,21 @@ function warp_canopy_sources(sources, geometry; resampling)
 end
 
 # Window the tiles onto the region bbox at a fixed resolution (native-resolution read).
-warp_canopy_layer(sources, longitude, latitude, resolution; resampling = "bilinear") =
+warp_canopy_layer(sources, longitude, latitude, resolution; resampling = "near", nodata = nothing) =
     warp_canopy_sources(sources,
         String["-te", string(longitude[1]), string(latitude[1]),
                string(longitude[2]), string(latitude[2]),
-               "-tr", string(resolution), string(resolution)]; resampling)
+               "-tr", string(resolution), string(resolution)]; resampling, nodata)
 
 # Area-average the tiles onto an explicit (Nx, Ny) grid over the bbox. `-ts` pins the
 # output to the grid's cell count (so it drops straight into a grid Field) and `-r average`
-# coarse-grains the native pixels within each cell — not point interpolation.
-warp_canopy_onto_grid(sources, longitude, latitude, Nx, Ny; resampling = "average") =
+# coarse-grains the native pixels within each cell — not point interpolation. `nodata`
+# excludes the product no-data byte from those means (see `warp_canopy_sources`).
+warp_canopy_onto_grid(sources, longitude, latitude, Nx, Ny; resampling = "average", nodata = nothing) =
     warp_canopy_sources(sources,
         String["-te", string(longitude[1]), string(latitude[1]),
                string(longitude[2]), string(latitude[2]),
-               "-ts", string(Nx), string(Ny)]; resampling)
+               "-ts", string(Nx), string(Ny)]; resampling, nodata)
 
 function write_canopy_netcdf(nc_path, longitude, latitude, layers)
     λ₁, λ₂ = longitude
@@ -172,38 +179,19 @@ end
 # range requests, so `/vsicurl/` fetches only the windowed COG blocks rather than whole
 # 415 MB tiles. Nearest-neighbour resampling keeps the categorical 255 no-data byte exact
 # so `mask_eth` catches it (bilinear would blend 255 into a valid neighbour).
-function CanopyHeight.canopy_height_cog_to_netcdf(metadatum::CanopyHeight.ETHCanopyHeightMetadatum, nc_path)
-    cplsetconfigoption("GDAL_HTTP_USERAGENT", CanopyHeight.ETH_BROWSER_USER_AGENT)
-    cplsetconfigoption("GDAL_HTTP_USERPWD", CanopyHeight.ETH_LIBDRIVE_TOKEN * ":")
+function ETHSentinel2Canopy.canopy_height_cog_to_netcdf(metadatum::ETHSentinel2Canopy.ETHSentinel2CanopyHeightMetadatum, nc_path)
+    cplsetconfigoption("GDAL_HTTP_USERAGENT", ETHSentinel2Canopy.ETH_BROWSER_USER_AGENT)
+    cplsetconfigoption("GDAL_HTTP_USERPWD", ETHSentinel2Canopy.ETH_LIBDRIVE_TOKEN * ":")
     cplsetconfigoption("GDAL_DISABLE_READDIR_ON_OPEN", "EMPTY_DIR")
 
     region = metadatum.region
-    resolution = CanopyHeight.ETH_TILE_RESOLUTION
+    resolution = ETHSentinel2Canopy.ETH_TILE_RESOLUTION
 
-    sources = CanopyHeight.eth_tile_urls(region, metadatum.name)
+    sources = ETHSentinel2Canopy.eth_tile_urls(region, metadatum.name)
     raw = warp_canopy_layer(sources, region.longitude, region.latitude, resolution;
                             resampling = "near")
     layer = NumericalEarth.DataWrangling.dataset_variable_name(metadatum)   # "Map" or "SD"
-    layers = Dict(layer => CanopyHeight.mask_eth.(raw, 255))
-
-    write_canopy_netcdf(nc_path, region.longitude, region.latitude, layers)
-    return nothing
-end
-
-# GLAD: window the intersecting continental forest-height mosaic(s), mask the
-# categorical fill codes (101/102/103) to NaN *before* any averaging, keep
-# non-forest zeros. Best-effort host (see `CanopyHeight.GLAD_COG_HOST`).
-function CanopyHeight.canopy_height_cog_to_netcdf(metadatum::CanopyHeight.GLADCanopyHeightMetadatum, nc_path)
-    dataset = metadatum.dataset
-    region  = metadatum.region
-    resolution = 360 / Base.size(dataset, :canopy_height)[1]
-
-    sources = CanopyHeight.glad_tile_urls(region)
-    # Nearest-neighbor read so the categorical fill codes (101/102/103) are never
-    # blended before `mask_glad` converts them to NaN.
-    raw = warp_canopy_layer(sources, region.longitude, region.latitude, resolution;
-                            resampling = "near")
-    layers = Dict("Map" => CanopyHeight.mask_glad.(raw))
+    layers = Dict(layer => ETHSentinel2Canopy.mask_eth.(raw, 255))
 
     write_canopy_netcdf(nc_path, region.longitude, region.latitude, layers)
     return nothing
@@ -221,25 +209,17 @@ function canopy_field(grid, data)
     return h
 end
 
-function CanopyHeight.canopy_height_field(grid, ::CanopyHeight.ETHCanopyHeight;
+function ETHSentinel2Canopy.canopy_height_field(grid, ::ETHSentinel2Canopy.ETHSentinel2CanopyHeight;
                                           name = :canopy_height, resampling = "average")
-    cplsetconfigoption("GDAL_HTTP_USERAGENT", CanopyHeight.ETH_BROWSER_USER_AGENT)
-    cplsetconfigoption("GDAL_HTTP_USERPWD", CanopyHeight.ETH_LIBDRIVE_TOKEN * ":")
+    cplsetconfigoption("GDAL_HTTP_USERAGENT", ETHSentinel2Canopy.ETH_BROWSER_USER_AGENT)
+    cplsetconfigoption("GDAL_HTTP_USERPWD", ETHSentinel2Canopy.ETH_LIBDRIVE_TOKEN * ":")
     cplsetconfigoption("GDAL_DISABLE_READDIR_ON_OPEN", "EMPTY_DIR")
 
     region = BoundingBox(grid)
-    sources = CanopyHeight.eth_tile_urls(region, name)
+    sources = ETHSentinel2Canopy.eth_tile_urls(region, name)
     raw = warp_canopy_onto_grid(sources, region.longitude, region.latitude,
-                                size(grid, 1), size(grid, 2); resampling)
-    return canopy_field(grid, CanopyHeight.mask_eth.(raw, 255))
-end
-
-function CanopyHeight.canopy_height_field(grid, ::CanopyHeight.GLADCanopyHeight; resampling = "average")
-    region = BoundingBox(grid)
-    sources = CanopyHeight.glad_tile_urls(region)
-    raw = warp_canopy_onto_grid(sources, region.longitude, region.latitude,
-                                size(grid, 1), size(grid, 2); resampling)
-    return canopy_field(grid, CanopyHeight.mask_glad.(raw))
+                                size(grid, 1), size(grid, 2); resampling, nodata = 255)
+    return canopy_field(grid, ETHSentinel2Canopy.mask_eth.(raw, 255))
 end
 
 end # module NumericalEarthArchGDALExt

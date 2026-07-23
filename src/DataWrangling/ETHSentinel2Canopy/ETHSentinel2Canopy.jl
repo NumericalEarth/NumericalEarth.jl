@@ -1,6 +1,6 @@
-module CanopyHeight
+module ETHSentinel2Canopy
 
-export ETHCanopyHeight, GLADCanopyHeight, canopy_height_field
+export ETHSentinel2CanopyHeight, canopy_height_field
 
 using Downloads: Downloads
 using Oceananigans: Center
@@ -11,17 +11,17 @@ using ..DataWrangling: DataWrangling, AbstractStaticDataset, Metadatum,
 
 import Oceananigans
 
-download_CanopyHeight_cache::String = ""
+download_ETHSentinel2Canopy_cache::String = ""
 function __init__()
-    global download_CanopyHeight_cache = DataWrangling.download_cache("CanopyHeight")
+    global download_ETHSentinel2Canopy_cache = DataWrangling.download_cache("ETHSentinel2Canopy")
 end
 
 #####
-##### Dataset types
+##### Dataset type
 #####
 
 """
-    ETHCanopyHeight
+    ETHSentinel2CanopyHeight
 
 ETH Global Sentinel-2 10 m Canopy Height Model (Lang et al. 2023, version 1,
 epoch 2020). A continuous, global, EPSG:4326 Cloud-Optimized-GeoTIFF (COG)
@@ -46,74 +46,43 @@ Earth*, Nat. Ecol. Evol. 7:1778–1789, doi:10.1038/s41559-023-02206-6; data DOI
 
 Data source: https://langnico.github.io/globalcanopyheight/
 """
-struct ETHCanopyHeight <: AbstractStaticDataset end
+struct ETHSentinel2CanopyHeight <: AbstractStaticDataset end
 
-"""
-    GLADCanopyHeight
-
-GLAD Global Forest Canopy Height (Potapov et al. 2021, epoch 2019). A 30 m
-(0.00025°), EPSG:4326, 8-bit GeoTIFF calibrated to GEDI RH95. Valid heights are
-`0–60` m; the fill codes `101` (water), `102` (snow/ice) and `103` (no-data)
-must be masked to `NaN` *before* any spatial averaging (see [`mask_glad`](@ref)).
-
-Shares the COG read path with [`ETHCanopyHeight`](@ref); documented as a coarser
-fallback and cross-check (forest-focused, GEDI-blind above ±51.6° latitude).
-
-Reference: Potapov, P. et al. (2021), *Mapping global forest canopy height…*,
-Remote Sens. Environ. 253, 112165, doi:10.1016/j.rse.2020.112165.
-
-Data source: https://glad.umd.edu/dataset/gedi/
-"""
-struct GLADCanopyHeight <: AbstractStaticDataset end
-
-const CanopyHeightDataset  = Union{ETHCanopyHeight, GLADCanopyHeight}
-const CanopyHeightMetadatum = Metadatum{<:CanopyHeightDataset}
-
-const ETHCanopyHeightMetadatum  = Metadatum{<:ETHCanopyHeight}
-const GLADCanopyHeightMetadatum = Metadatum{<:GLADCanopyHeight}
+const ETHSentinel2CanopyHeightMetadatum = Metadatum{<:ETHSentinel2CanopyHeight}
 
 #####
 ##### Variables
 #####
 
-# ETH ships both a height map and an uncertainty layer; GLAD ships only the map.
-ETHCanopyHeight_variable_names = Dict(
+# ETH ships both a height map and an uncertainty layer.
+ETHSentinel2CanopyHeight_variable_names = Dict(
     :canopy_height             => "Map",
     :canopy_height_uncertainty => "SD",
 )
 
-GLADCanopyHeight_variable_names = Dict(
-    :canopy_height => "Map",
-)
+DataWrangling.available_variables(::ETHSentinel2CanopyHeight) = ETHSentinel2CanopyHeight_variable_names
 
-DataWrangling.available_variables(::ETHCanopyHeight)  = ETHCanopyHeight_variable_names
-DataWrangling.available_variables(::GLADCanopyHeight) = GLADCanopyHeight_variable_names
-
-DataWrangling.dataset_variable_name(data::ETHCanopyHeightMetadatum)  = ETHCanopyHeight_variable_names[data.name]
-DataWrangling.dataset_variable_name(data::GLADCanopyHeightMetadatum) = GLADCanopyHeight_variable_names[data.name]
+DataWrangling.dataset_variable_name(data::ETHSentinel2CanopyHeightMetadatum) = ETHSentinel2CanopyHeight_variable_names[data.name]
 
 #####
 ##### Dataset interface
 #####
 
-DataWrangling.default_download_directory(::CanopyHeightDataset) = download_CanopyHeight_cache
+DataWrangling.default_download_directory(::ETHSentinel2CanopyHeight) = download_ETHSentinel2Canopy_cache
 
-# Both products are already geographic (EPSG:4326), global hull.
-DataWrangling.longitude_interfaces(::CanopyHeightDataset) = (-180, 180)
-DataWrangling.latitude_interfaces(::CanopyHeightDataset)  = (-90, 90)
+# Already geographic (EPSG:4326), global hull.
+DataWrangling.longitude_interfaces(::ETHSentinel2CanopyHeight) = (-180, 180)
+DataWrangling.latitude_interfaces(::ETHSentinel2CanopyHeight)  = (-90, 90)
 
-# Global native pixel counts (used to set the windowed-read target cell size
-# Δ = 360/Nx). ETH is 10 m = 1/12000° → 4_320_000 × 2_160_000; GLAD is 30 m =
-# 0.00025° = 1/4000°.
-Base.size(::ETHCanopyHeight,  variable) = (4_320_000, 2_160_000, 1)
-Base.size(::GLADCanopyHeight, variable) = (1_440_000, 720_000, 1)
+# Global native pixel count (used to set the windowed-read target cell size
+# Δ = 360/Nx): ETH is 10 m = 1/12000° → 4_320_000 × 2_160_000.
+Base.size(::ETHSentinel2CanopyHeight, variable) = (4_320_000, 2_160_000, 1)
 
-dataset_prefix(::ETHCanopyHeight)  = "ETHCanopyHeight"
-dataset_prefix(::GLADCanopyHeight) = "GLADCanopyHeight"
+dataset_prefix(::ETHSentinel2CanopyHeight) = "ETHSentinel2CanopyHeight"
 
-# One regional NetCDF per product per variable per region, materialized from the
-# COG tiles (ETH ships separate `_Map` height and `_Map_SD` uncertainty layers).
-DataWrangling.metadata_filename(dataset::CanopyHeightDataset, name, date, region) =
+# One regional NetCDF per variable per region, materialized from the COG tiles
+# (ETH ships separate `_Map` height and `_Map_SD` uncertainty layers).
+DataWrangling.metadata_filename(dataset::ETHSentinel2CanopyHeight, name, date, region) =
     string(dataset_prefix(dataset), "_", string(name), "_", region_suffix(region), ".nc")
 
 region_suffix(::Nothing) = "global"
@@ -127,7 +96,7 @@ end
 bound_str(::Nothing) = "nothing"
 bound_str(bounds) = string(bounds[1], "_", bounds[2])
 
-function DataWrangling.validate_dataset_coverage(grid, metadata::CanopyHeightMetadatum)
+function DataWrangling.validate_dataset_coverage(grid, metadata::ETHSentinel2CanopyHeightMetadatum)
     region = metadata.region
     if !(region isa BoundingBox) || isnothing(region.longitude) || isnothing(region.latitude)
         prefix = dataset_prefix(metadata.dataset)
@@ -146,47 +115,22 @@ end
 ##### Metadatum interface
 #####
 
-DataWrangling.is_three_dimensional(::CanopyHeightMetadatum) = false
+DataWrangling.is_three_dimensional(::ETHSentinel2CanopyHeightMetadatum) = false
 
 # The regional NetCDF we materialize stores coordinates as "lon"/"lat".
-DataWrangling.longitude_name(::CanopyHeightMetadatum) = "lon"
-DataWrangling.latitude_name(::CanopyHeightMetadatum)  = "lat"
+DataWrangling.longitude_name(::ETHSentinel2CanopyHeightMetadatum) = "lon"
+DataWrangling.latitude_name(::ETHSentinel2CanopyHeightMetadatum)  = "lat"
 
 # NEVER inpaint: a canopy height of 0 over non-forest is a valid value, not a gap.
-# The no-data byte (255) and GLAD fill codes (101/102/103) are masked to NaN in the
-# COG read (see `mask_eth` / `mask_glad`), so the on-disk sentinel is already NaN and
-# the default `missing_value` (NaN passthrough) applies.
-DataWrangling.default_inpainting(::CanopyHeightMetadatum) = nothing
+# The no-data byte (255) is masked to NaN in the COG read (see `mask_eth`), so the
+# on-disk sentinel is already NaN and the default `missing_value` (NaN passthrough) applies.
+DataWrangling.default_inpainting(::ETHSentinel2CanopyHeightMetadatum) = nothing
 
-Oceananigans.Fields.location(::CanopyHeightMetadatum) = (Center, Center, Center)
+Oceananigans.Fields.location(::ETHSentinel2CanopyHeightMetadatum) = (Center, Center, Center)
 
 #####
 ##### Pure no-data masking (unit-testable core)
 #####
-
-"""
-    mask_glad(code)
-
-Map a raw GLAD canopy-height byte `code` to a masked `Float64` height: the fill
-codes `101` (water), `102` (snow/ice) and `103` (no-data) — and anything above
-them — become `NaN`; all valid heights (including the legitimate non-forest
-value `0`) are kept unchanged. Must be applied *before* any spatial averaging so
-the categorical fill codes never corrupt a cell mean.
-
-```jldoctest
-julia> using NumericalEarth.DataWrangling.CanopyHeight: mask_glad
-
-julia> mask_glad(0)
-0.0
-
-julia> mask_glad(37)
-37.0
-
-julia> isnan(mask_glad(101))
-true
-```
-"""
-@inline mask_glad(code) = ifelse(code >= 101, oftype(float(code), NaN), float(code))
 
 """
     mask_eth(x, missing_value = 255)
@@ -216,16 +160,6 @@ const ETH_TILE_RESOLUTION = 1 / 12000            # degrees (~9.3 m), the native 
 const ETH_BROWSER_USER_AGENT =
     "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 " *
     "(KHTML, like Gecko) Chrome/126 Safari/537.36"
-
-# GLAD Global Forest Canopy Height 2019 ships as seven continental 30 m GeoTIFF
-# mosaics (not one global file) on the GLAD geog host, named by a continent code:
-# `Forest_height_2019_<CONT>.tif`. NOTE (verified 2026-07): every candidate tile
-# URL returned HTTP 404 from this environment (the host resolves but rejects the
-# path), so the GLAD read is documented best-effort / unverified — ETH is primary.
-const GLAD_COG_HOST = "https://glad.geog.umd.edu/Potapov/Forest_height_2019"
-
-# Continent codes covering the GLAD tiling (used to pick the intersecting tile).
-const GLAD_CONTINENTS = ("NAM", "SAM", "EURA", "NAFR", "SAFR", "AUS", "SASIA", "NASIA")
 
 """
     eth_tile_token(longitude, latitude)
@@ -279,43 +213,7 @@ eth_tile_urls(region::BoundingBox, name) =
     ["/vsicurl/" * ETH_WEBDAV_HOST * "/ETH_GlobalCanopyHeight_10m_2020_" *
      token * "_" * eth_layer_suffix(name) * ".tif" for token in eth_tiles_in_bbox(region)]
 
-"""
-    glad_continent(longitude, latitude)
-
-Coarse map of a point to the GLAD continental-mosaic code (`"NAM"`, `"SAM"`,
-`"EURA"`, `"NAFR"`, `"SAFR"`, `"AUS"`, `"SASIA"`, `"NASIA"`). This is a
-best-effort classifier for picking the intersecting GLAD tile; the boundaries are
-approximate (GLAD's tiles follow continental outlines, not a lat/lon lattice).
-"""
-function glad_continent(longitude, latitude)
-    λ = longitude
-    φ = latitude
-    if λ < -30                                   # Americas
-        return φ >= 12 ? "NAM" : "SAM"
-    elseif λ < 60                                # Europe / Africa
-        return φ >= 12 ? (φ >= 36 ? "EURA" : "NAFR") : (φ >= -35 ? "NAFR" : "SAFR")
-    elseif λ < 120                               # W/Central Asia
-        return φ >= 30 ? (φ >= 55 ? "NASIA" : "EURA") : "SASIA"
-    else                                         # E Asia / Oceania
-        return φ >= 30 ? "NASIA" : (φ >= -10 ? "SASIA" : "AUS")
-    end
-end
-
-"""
-    glad_tile_urls(region::BoundingBox)
-
-`/vsicurl/`-prefixed URLs of the GLAD continental mosaics intersecting `region`
-(deduplicated over the bbox corners). Best-effort: see [`GLAD_COG_HOST`](@ref).
-"""
-function glad_tile_urls(region::BoundingBox)
-    λ₁, λ₂ = region.longitude
-    φ₁, φ₂ = region.latitude
-    continents = unique!([glad_continent(λ, φ) for λ in (λ₁, λ₂) for φ in (φ₁, φ₂)])
-    return ["/vsicurl/" * GLAD_COG_HOST * "/Forest_height_2019_" * c * ".tif"
-            for c in continents]
-end
-
-function Downloads.download(metadatum::CanopyHeightMetadatum)
+function Downloads.download(metadatum::ETHSentinel2CanopyHeightMetadatum)
     DataWrangling.validate_dataset_coverage(nothing, metadatum)
     nc_path = metadata_path(metadatum)
     @root if !isfile(nc_path)
@@ -334,10 +232,11 @@ canopy_height_cog_to_netcdf(metadatum, nc_path) =
 """
     canopy_height_field(grid, dataset; name = :canopy_height, resampling = "average")
 
-Read `dataset` canopy height directly onto `grid`, area-averaging (`-r average`) the native
-COG pixels within each grid cell — coarse-graining rather than point interpolation, the
-correct reduction from a 10–30 m raster onto a coarse model cell. Only the windowed COG
-blocks are read (anonymous `/vsicurl/`), so no full-resolution regional file is materialized.
+Read `dataset` canopy height directly onto `grid`, area-averaging (`-r average`, with the
+no-data byte excluded from each cell mean) the native COG pixels within each grid cell —
+coarse-graining rather than point interpolation, the correct reduction from a 10 m raster
+onto a coarse model cell. Only the windowed COG blocks are read (anonymous `/vsicurl/`), so
+no full-resolution regional file is materialized.
 
 Returns a `Field{Center, Center, Nothing}(grid)`: canopy height over non-forest is a valid
 `0`, tiles absent over ocean are skipped, and the product no-data code is masked to `NaN`.
@@ -347,4 +246,4 @@ canopy_height_field(grid, dataset; kw...) =
     error("Reading a canopy-height Cloud-Optimized GeoTIFF onto a grid requires the " *
           "ArchGDAL package. Load it with `using ArchGDAL`.")
 
-end # module CanopyHeight
+end # module ETHSentinel2Canopy

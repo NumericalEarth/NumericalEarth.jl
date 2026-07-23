@@ -49,6 +49,16 @@ function DragPartitionParameters(FT=Oceananigans.defaults.FloatType;
                                    convert(FT, maximum_area_index))
 end
 
+# The five Borak et al. (2025) drag-partition groups. IGBP classes map onto these via
+# `drag_partition_group` (canopy_classes.jl); `canopy_drag_parameters(FT, class)` resolves a
+# class to its group's parameters.
+drag_group_parameters(FT, group::Symbol) = drag_group_parameters(FT, Val(group))
+drag_group_parameters(FT, ::Val{:boreal})    = DragPartitionParameters{FT}(0.21, 0.0030, 0.27, 0.28, 1.90, 1.90)
+drag_group_parameters(FT, ::Val{:broadleaf}) = DragPartitionParameters{FT}(0.31, 0.0030, 0.31, 0.36, 1.15, 1.70)
+drag_group_parameters(FT, ::Val{:grassland}) = DragPartitionParameters{FT}(0.43, 0.0030, 0.32, 0.49, 1.30, 1.30)
+drag_group_parameters(FT, ::Val{:cropland})  = DragPartitionParameters{FT}(0.31, 0.0030, 0.29, 0.39, 1.55, 1.50)
+drag_group_parameters(FT, ::Val{:shrubland}) = DragPartitionParameters{FT}(0.50, 0.0030, 0.38, 0.48, 1.00, 1.60)
+
 """
 $(TYPEDSIGNATURES)
 
@@ -107,7 +117,7 @@ von Kármán constant and `ψₕ` the roughness-sublayer influence function.
 ```jldoctest
 julia> using NumericalEarth.Lands
 
-julia> p = canopy_drag_parameters(Float64, 2);   # broadleaf-forest drag group
+julia> p = canopy_drag_parameters(Float64, :evergreen_broadleaf_forest);
 
 julia> z0, d0 = canopy_roughness(6.0, 24.72, p, 0.4, 0.193, 20);
 
@@ -126,8 +136,8 @@ end
 $(TYPEDSIGNATURES)
 
 Semi-empirical displacement height `d0 ≈ ⅔h` from canopy height alone
-(Brutsaert 1982; Parlange & Brutsaert 1989). This is the height-only fallback used
-where the drag partition cannot be evaluated (no valid land-cover class).
+(Brutsaert 1982; Parlange & Brutsaert 1989) — a height-only estimate, independent of
+the drag partition.
 """
 @inline semiempirical_displacement(h) = 2h / 3
 
@@ -135,24 +145,31 @@ where the drag partition cannot be evaluated (no valid land-cover class).
 $(TYPEDSIGNATURES)
 
 Semi-empirical roughness length `z0 ≈ d0/5` from canopy height alone — the height-only
-fallback paired with [`semiempirical_displacement`](@ref).
+estimate paired with [`semiempirical_displacement`](@ref).
 """
 @inline semiempirical_roughness(h) = semiempirical_displacement(h) / 5
 
 """
 $(TYPEDEF)
 
-Drag-partition canopy roughness closure (Raupach 1994 / Jasinski 2005). Holds the shared
+Drag-partition canopy roughness closure (Raupach 1994 / Jasinski 2005, Borak et al. 2025).
+Holds the drag-partition parameters and representative canopy height for a single IGBP
+vegetation class (`vegetation_type`, default `:evergreen_broadleaf_forest`; see
+[`canopy_drag_parameters`](@ref) and [`representative_canopy_height`](@ref)) plus the shared
 closure constants (von Kármán constant, roughness-sublayer influence, fixed-point iteration
-count); the per-cell vegetation group, canopy height and area index come from the `cell`
-passed to [`aerodynamic_parameters`](@ref), which selects the drag group from the IGBP land
-cover, falls back to the class-average height where the measured height is missing, and
-returns the prescribed constants over non-vegetated classes. This is the canopy peer of the
-urban morphometric closures under the shared `aerodynamic_parameters(closure, cell)` contract.
+count). The per-cell area index and canopy height come from the `cell` passed to
+[`aerodynamic_parameters`](@ref); where no measured height is supplied the class's
+representative height fills in. A closure evaluates through the
+`aerodynamic_parameters(closure, cell)` contract, so other roughness closures can be added
+against the same interface.
 
 $(TYPEDFIELDS)
 """
 struct DragPartitionRoughness{FT}
+    "drag-partition parameters for the canopy vegetation class"
+    parameters :: DragPartitionParameters{FT}
+    "representative canopy height (m), the fallback where no measured height is supplied"
+    representative_height :: FT
     "von Kármán constant `κ`"
     von_karman_constant :: FT
     "roughness-sublayer influence `ψₕ`"
@@ -162,8 +179,12 @@ struct DragPartitionRoughness{FT}
 end
 
 DragPartitionRoughness(FT = Oceananigans.defaults.FloatType;
+                       vegetation_type = :evergreen_broadleaf_forest,
+                       parameters = canopy_drag_parameters(FT, vegetation_type),
+                       representative_height = representative_canopy_height(FT, vegetation_type),
                        von_karman_constant = VON_KARMAN_CONSTANT,
                        sublayer_influence = SUBLAYER_INFLUENCE,
                        iterations = CLOSURE_ITERATIONS) =
-    DragPartitionRoughness(convert(FT, von_karman_constant),
+    DragPartitionRoughness(parameters, convert(FT, representative_height),
+                           convert(FT, von_karman_constant),
                            convert(FT, sublayer_influence), Int(iterations))
