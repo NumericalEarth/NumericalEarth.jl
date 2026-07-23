@@ -4,9 +4,77 @@ using ..SeaIces: FreezingLimitedEarthSystemModel
 @inline flux_field(bc::MultipleFluxes) = bc.flux_field
 @inline flux_field(bc::DiscreteBoundaryFunction) = flux_field(bc.func)
 
+@inline additional_temperature_flux(condition) = nothing
+@inline additional_temperature_flux(bc::DiscreteBoundaryFunction) = additional_temperature_flux(bc.func)
+@inline additional_temperature_flux(bc::MultipleFluxes) = bc.additional_fluxes.additional
+
+@inline function evaluate_additional_temperature_flux(i, j, k, grid, clock, fields, additional_flux)
+    return Oceananigans.BoundaryConditions.getbc(additional_flux, i, j, grid, clock, fields)
+end
+
+ocean_additional_temperature_flux(esm, T, ::Nothing) = 0
+
+function ocean_additional_temperature_flux(esm, T, additional_flux)
+    model = esm.ocean.model
+    fields = merge(Oceananigans.fields(model), (; T))
+    return KernelFunctionOperation{Center, Center, Nothing}(evaluate_additional_temperature_flux,
+                                                            model.grid,
+                                                            model.clock,
+                                                            fields,
+                                                            additional_flux)
+end
+
+function ocean_additional_temperature_flux(esm, T)
+    top_condition = esm.ocean.model.tracers.T.boundary_conditions.top.condition
+    additional_flux = additional_temperature_flux(top_condition)
+    return ocean_additional_temperature_flux(esm, T, additional_flux)
+end
+
 const NoSeaIceOceanInterfaceModel = Union{NoSeaIceInterfaceModel,
                                           NoOceanInterfaceModel,
                                           NoInterfaceModel}
+
+ocean_freshwater_temperature_flux(esm, grid) = ZeroField()
+ocean_freshwater_temperature_flux(esm, ::MutableGridOfSomeKind) =
+    esm.interfaces.net_fluxes.ocean.freshwater_heat_content
+
+ocean_freshwater_temperature_flux(esm::EarthSystemModel) =
+    ocean_freshwater_temperature_flux(esm, esm.ocean.model.grid)
+
+@inline function top_advective_temperature_flux(i, j, k, grid, advection, fields)
+    kᴺ = grid.Nz + 1
+    area = Oceananigans.Operators.Azᶜᶜᶠ(i, j, kᴺ, grid)
+    flux = Oceananigans.Advection._advective_tracer_flux_z(i, j, kᴺ, grid, advection, fields.w, fields.T)
+    return ifelse(iszero(area), zero(grid), flux / area)
+end
+
+ocean_top_advective_temperature_flux(esm, T, ::MutableGridOfSomeKind) = ZeroField()
+
+function ocean_top_advective_temperature_flux(esm, T, grid)
+    model = esm.ocean.model
+    fields = (w = model.transport_velocities.w, T)
+    return KernelFunctionOperation{Center, Center, Nothing}(top_advective_temperature_flux,
+                                                            grid,
+                                                            model.advection.T,
+                                                            fields)
+end
+
+ocean_top_advective_temperature_flux(esm::EarthSystemModel, T=esm.ocean.model.tracers.T) =
+    ocean_top_advective_temperature_flux(esm, T, esm.ocean.model.grid)
+
+"""
+    ocean_top_advective_heat_flux(esm::EarthSystemModel, T=esm.ocean.model.tracers.T)
+
+Return the outward-positive heat flux through the fixed upper computational
+boundary. This is zero when the vertical grid follows the free surface. Pass the
+temperature field used by the corresponding time-integration stage when checking
+a discrete time-step budget.
+"""
+function ocean_top_advective_heat_flux(esm::EarthSystemModel, T=esm.ocean.model.tracers.T)
+    ρᵒᶜ = esm.interfaces.ocean_properties.reference_density
+    cᵒᶜ = esm.interfaces.ocean_properties.heat_capacity
+    return ρᵒᶜ * cᵒᶜ * ocean_top_advective_temperature_flux(esm, T)
+end
 
 ###########################
 ### Temperature fluxes
@@ -34,11 +102,19 @@ end
 """
     net_ocean_temperature_flux(esm::EarthSystemModel)
 
-Return the net temperature flux (K m s⁻¹) at the ocean's surface in a coupled `esm`.
+Return the complete outward-positive temperature flux (K m s⁻¹) for the ocean
+heat inventory. Mutable grids include freshwater heat. Fixed grids include heat
+advected through their stationary upper boundary. User-provided additional
+temperature fluxes are included on both grid types.
 """
-function net_ocean_temperature_flux(esm::EarthSystemModel)
+function net_ocean_temperature_flux(esm::EarthSystemModel, T=esm.ocean.model.tracers.T)
     Jᵀ = flux_field(esm.ocean.model.tracers.T.boundary_conditions.top.condition)
-    return Jᵀ + frazil_temperature_flux(esm)
+    Jᴴ = ocean_freshwater_temperature_flux(esm)
+    Jᵃ = ocean_top_advective_temperature_flux(esm, T)
+    J⁺ = ocean_additional_temperature_flux(esm, T)
+    J = Jᵀ + J⁺ - Jᴴ
+    J = J + frazil_temperature_flux(esm)
+    return J + Jᵃ
 end
 
 
@@ -85,29 +161,26 @@ frazil_heat_flux(::NoSeaIceOceanInterfaceModel) = ZeroField()
 """
     net_ocean_heat_flux(esm::EarthSystemModel)
 
-Return the net heat flux (W m⁻²) at the ocean's surface in a coupled `esm`.
+Return the complete outward-positive heat flux (W m⁻²) at the ocean surface.
+This includes surface exchange, frazil heat, and freshwater heat on a mutable
+grid. It also includes any user-provided additional temperature flux.
 """
-function net_ocean_heat_flux(esm::EarthSystemModel)
+function net_ocean_heat_flux(esm::EarthSystemModel, T=esm.ocean.model.tracers.T)
     ρᵒᶜ = esm.interfaces.ocean_properties.reference_density
     cᵒᶜ = esm.interfaces.ocean_properties.heat_capacity
-    return ρᵒᶜ * cᵒᶜ * net_ocean_temperature_flux(esm)
+    return ρᵒᶜ * cᵒᶜ * net_ocean_temperature_flux(esm, T)
 end
 
 """
     ocean_freshwater_heat_flux(esm::EarthSystemModel)
 
 Return the heat carried into the ocean by freshwater at the ocean surface
-temperature (W m⁻²).
+temperature (W m⁻²), positive into the ocean.
 """
-ocean_freshwater_heat_flux(esm::EarthSystemModel) =
-    ocean_freshwater_heat_flux(esm, esm.ocean.model.grid)
-
-ocean_freshwater_heat_flux(esm::EarthSystemModel, grid) = ZeroField()
-
-function ocean_freshwater_heat_flux(esm::EarthSystemModel, ::MutableGridOfSomeKind)
+function ocean_freshwater_heat_flux(esm::EarthSystemModel)
     ρᵒᶜ = esm.interfaces.ocean_properties.reference_density
     cᵒᶜ = esm.interfaces.ocean_properties.heat_capacity
-    Jᴴ = esm.interfaces.net_fluxes.ocean.freshwater_heat_content
+    Jᴴ = ocean_freshwater_temperature_flux(esm)
     return ρᵒᶜ * cᵒᶜ * Jᴴ
 end
 
