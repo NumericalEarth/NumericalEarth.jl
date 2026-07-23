@@ -9,6 +9,7 @@ using Oceananigans.TimeSteppers: VerticallyImplicitTimeDiscretization, AdaptiveV
 using Oceananigans.TurbulenceClosures.TKEBasedVerticalDiffusivities: CATKEVerticalDiffusivity,
                                                                      CATKEMixingLength,
                                                                      CATKEEquation
+using Oceananigans.BuoyancyFormulations: LinearEquationOfState
 using SeawaterPolynomials.TEOS10: TEOS10EquationOfState
 using Statistics: mean
 
@@ -518,8 +519,10 @@ Grids.grid(ocean::OceananigansModelSimulations) = ocean.model.grid
 #####
 
 EarthSystemModels.reference_density(eos::TEOS10EquationOfState) = eos.reference_density
+EarthSystemModels.reference_density(eos::LinearEquationOfState) = 1026.0
 EarthSystemModels.reference_density(buoyancy_formulation::SeawaterBuoyancy) = EarthSystemModels.reference_density(buoyancy_formulation.equation_of_state)
 EarthSystemModels.reference_density(ocean::OceananigansModelSimulations) = EarthSystemModels.reference_density(ocean.model.buoyancy.formulation)
+
 
 EarthSystemModels.heat_capacity(ocean::OceananigansModelSimulations) = heat_capacity(ocean.model.buoyancy.formulation)
 EarthSystemModels.heat_capacity(buoyancy_formulation::SeawaterBuoyancy) = heat_capacity(buoyancy_formulation.equation_of_state)
@@ -528,3 +531,4 @@ function EarthSystemModels.heat_capacity(::TEOS10EquationOfState{FT}) where FT
     cₚ⁰ = SeawaterPolynomials.TEOS10.teos10_reference_heat_capacity
     return convert(FT, cₚ⁰)
 end
+EarthSystemModels.heat_capacity(::LinearEquationOfState{FT}) where FT = 3991.86795711963
