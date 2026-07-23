@@ -4,6 +4,7 @@ export BuildingFootprints3D, building_morphometry
 
 using Downloads: Downloads
 using Oceananigans: Center
+using Oceananigans.Architectures: architecture, on_architecture
 using Oceananigans.Fields: Field, interior
 using Oceananigans.Grids: cpu_face_constructor_x, cpu_face_constructor_y
 using Oceananigans.DistributedComputations: @root
@@ -293,9 +294,11 @@ function building_morphometry(target_grid; dataset = BuildingFootprints3D(), reg
 
     reduced = reduce_morphometry(height, longitudes, latitudes, target_grid)
 
+    # The reduction runs on the host; move each result onto the target architecture (CPU or GPU).
+    arch = architecture(target_grid)
     return map(reduced) do array
         field = Field{Center, Center, Nothing}(target_grid)
-        interior(field) .= reshape(array, size(array, 1), size(array, 2), 1)
+        interior(field) .= on_architecture(arch, reshape(array, size(array, 1), size(array, 2), 1))
         field
     end
 end
