@@ -11,7 +11,7 @@ using Oceananigans.BoundaryConditions: DefaultBoundaryCondition, DiscreteBoundar
                                        FieldBoundaryConditions, FluxBoundaryCondition, getbc
 using Oceananigans.BuoyancyFormulations: SeawaterBuoyancy
 using Oceananigans.Coriolis: HydrostaticSphericalCoriolis
-using Oceananigans.Fields: Field, CenterField, set!, interior
+using Oceananigans.Fields: Field, CenterField, AbstractField, set!, interior
 using Oceananigans.Forcings: MultipleForcings, DiscreteForcing
 using Oceananigans.Grids: Grids, inactive_node, Face, Center, xspacings, yspacings, RectilinearGrid
 using Oceananigans.ImmersedBoundaries: ImmersedBoundaryGrid, ImmersedBoundaryCondition, MutableGridOfSomeKind
