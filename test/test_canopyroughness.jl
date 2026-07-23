@@ -1,13 +1,14 @@
 include("runtests_setup.jl")
 
-using NumericalEarth.DataWrangling.CanopyRoughness
-using NumericalEarth.DataWrangling.CanopyRoughness:
-    DragPartitionParameters, canopy_roughness, canopy_wind_ratio,
+using NumericalEarth.Lands
+using NumericalEarth.Lands:
+    DragPartitionParameters, DragPartitionRoughness, aerodynamic_parameters,
+    canopy_roughness, canopy_wind_ratio,
     zero_plane_displacement, canopy_roughness_length,
     semiempirical_roughness, semiempirical_displacement,
     canopy_drag_parameters, drag_partition_group, is_vegetated,
-    class_canopy_height, nonvegetated_roughness, snow_adjusted,
-    compute_canopy_roughness!, canopy_roughness_climatology
+    class_canopy_height, nonvegetated_roughness,
+    compute_aerodynamic_roughness!, canopy_roughness_climatology
 
 using Oceananigans.Fields: interior, set!
 using Oceananigans.OutputReaders: FieldTimeSeries
@@ -18,6 +19,7 @@ const ψh = 0.193
 const iters = 20
 
 params(g) = canopy_drag_parameters(Float64, g)
+dp = DragPartitionRoughness(Float64)   # default config (κ, ψₕ, iters) = (0.4, 0.193, 20)
 
 #####
 ##### Raupach (1994) / Jasinski (2005) drag-partition closure: per-class oracle + ordering.
@@ -50,6 +52,12 @@ params(g) = canopy_drag_parameters(Float64, g)
     # Semi-empirical relations are exact closed forms (d0 = 2h/3, z0 = d0/5).
     @test semiempirical_displacement(24.72) ≈ 2 * 24.72 / 3
     @test semiempirical_roughness(24.72)    ≈ 2 * 24.72 / 3 / 5
+
+    # DragPartitionRoughness exposes the shared `aerodynamic_parameters(closure, cell)`
+    # contract: over an EBF (IGBP 2) cell it reproduces the raw scalar closure for group 2.
+    cell = (; land_cover = 2, lai = 6.0, canopy_height = 24.72, latitude = 0.0)
+    @test aerodynamic_parameters(dp, cell) == canopy_roughness(6.0, 24.72, params(2), κ, ψh, iters)
+    @test dp(cell) == aerodynamic_parameters(dp, cell)
 end
 
 @testset "LAI dependence: monotone d0, skimming z0" begin
@@ -85,8 +93,6 @@ end
     @test class_canopy_height(Float64, 12) == 1.32
     @test class_canopy_height(Float64, 2)  == 24.72
     @test class_canopy_height(Float64, 17) == 0        # non-veg: no canopy
-
-    @test snow_adjusted(params(1)).substrate_drag_coefficient == 0.0020
 end
 
 @testset "Kernel safety: finite everywhere, correct eltype" begin
@@ -115,29 +121,29 @@ scalarfield(grid) = Field{Center, Center, Nothing}(grid)
     Λ, lc = scalarfield(grid), scalarfield(grid)
     z0m, d0 = scalarfield(grid), scalarfield(grid)
 
-    # Uniform cropland (IGBP 12) at Λ = 3, no height field → the builder must match the
+    # Uniform cropland (IGBP 12) at Λ = 3, no height property → the builder must match the
     # scalar closure evaluated at the class-average crop height.
     set!(Λ, 3); set!(lc, 12)
-    compute_canopy_roughness!(z0m, d0, Λ, lc, grid)
+    compute_aerodynamic_roughness!(z0m, d0, dp, (; land_cover = lc, lai = Λ), grid)
     z0ref, d0ref = canopy_roughness(3.0, class_canopy_height(Float64, 12), params(4), κ, ψh, iters)
     @test all(≈(z0ref), interior(z0m))
     @test all(≈(d0ref), interior(d0))
 
-    # The 5-arg convenience method is exactly `canopy_height = nothing`.
+    # Omitting the canopy_height property is exactly `canopy_height = nothing`.
     z0n, d0n = scalarfield(grid), scalarfield(grid)
-    compute_canopy_roughness!(z0n, d0n, Λ, lc, nothing, grid)
+    compute_aerodynamic_roughness!(z0n, d0n, dp, (; land_cover = lc, lai = Λ, canopy_height = nothing), grid)
     @test interior(z0n) == interior(z0m)
     @test interior(d0n) == interior(d0)
 
     # Water (IGBP 17): prescribed constants regardless of LAI/height.
     set!(lc, 17)
-    compute_canopy_roughness!(z0m, d0, Λ, lc, grid)
+    compute_aerodynamic_roughness!(z0m, d0, dp, (; land_cover = lc, lai = Λ), grid)
     @test all(≈(0.0010), interior(z0m))
     @test all(≈(0.005),  interior(d0))
 
     # Invalid LAI over a vegetated cell → honest NaN gap.
     set!(lc, 12); set!(Λ, 1e30)
-    compute_canopy_roughness!(z0m, d0, Λ, lc, grid)
+    compute_aerodynamic_roughness!(z0m, d0, dp, (; land_cover = lc, lai = Λ), grid)
     @test all(isnan, interior(z0m))
     @test all(isnan, interior(d0))
 end
@@ -154,7 +160,7 @@ end
 
     # A measured 30 m canopy taller than the class average must raise z0m and d0.
     set!(hc, 30.0)
-    compute_canopy_roughness!(z0m, d0, Λ, lc, hc, grid)
+    compute_aerodynamic_roughness!(z0m, d0, dp, (; land_cover = lc, lai = Λ, canopy_height = hc), grid)
     z0_meas, d0_meas = canopy_roughness(5.0, 30.0, params(2), κ, ψh, iters)
     z0_class, d0_class = canopy_roughness(5.0, hclass, params(2), κ, ψh, iters)
     @test all(≈(z0_meas), interior(z0m))
@@ -163,7 +169,7 @@ end
 
     # A scalar height broadcasts identically to a uniform field.
     z0s, d0s = scalarfield(grid), scalarfield(grid)
-    compute_canopy_roughness!(z0s, d0s, Λ, lc, 30.0, grid)
+    compute_aerodynamic_roughness!(z0s, d0s, dp, (; land_cover = lc, lai = Λ, canopy_height = 30.0), grid)
     @test interior(z0s) == interior(z0m)
     @test interior(d0s) == interior(d0)
 
@@ -174,7 +180,7 @@ end
     H[2, 1, 1] = 0.0      # zero reading → class height
     H[1, 2, 1] = NaN      # no observation → class height
     H[2, 2, 1] = 10.0     # measured → 10 m
-    compute_canopy_roughness!(z0m, d0, Λ, lc, hc, grid)
+    compute_aerodynamic_roughness!(z0m, d0, dp, (; land_cover = lc, lai = Λ, canopy_height = hc), grid)
     Z = interior(z0m)
     @test Z[1, 1, 1] ≈ canopy_roughness(5.0, 30.0,   params(2), κ, ψh, iters)[1]
     @test Z[2, 1, 1] ≈ canopy_roughness(5.0, hclass, params(2), κ, ψh, iters)[1]
@@ -200,6 +206,6 @@ end
 
     # The static height feeds through: the driver matches the per-slice builder.
     z0check, d0check = scalarfield(grid), scalarfield(grid)
-    compute_canopy_roughness!(z0check, d0check, lai[2], lc, hc, grid)
+    compute_aerodynamic_roughness!(z0check, d0check, dp, (; land_cover = lc, lai = lai[2], canopy_height = hc), grid)
     @test interior(z0ts[2]) == interior(z0check)
 end

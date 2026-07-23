@@ -4,8 +4,11 @@ using ArchGDAL: ArchGDAL
 using ArchGDAL.GDAL: cplsetconfigoption
 using NCDatasets: NCDataset, defDim, defVar
 using NumericalEarth: NumericalEarth
+using Oceananigans: Center
+using Oceananigans.Fields: Field, interior
 
 const CanopyHeight = NumericalEarth.DataWrangling.CanopyHeight
+const BoundingBox = NumericalEarth.DataWrangling.BoundingBox
 
 # Candidate CA-certificate bundles, most portable first: Julia's own bundled
 # `cert.pem`, then the common system locations (macOS/BSD, Debian/Ubuntu, RHEL).
@@ -83,22 +86,28 @@ end
 ##### Canopy-height COG (ETH / GLAD) → regional NetCDF
 #####
 
-# Mosaic + window the intersecting COG tiles for `layer` ("Map"/"SD") onto the
-# region bbox at the product's native resolution, returning the height array in
-# (Nx, Ny) order with latitude increasing south→north.
-function warp_canopy_layer(sources, longitude, latitude, resolution; resampling = "bilinear")
+# Mosaic + window the intersecting COG tiles under `geometry` (the gdalwarp `-te`/`-tr`
+# or `-te`/`-ts` options), returning the height array in (Nx, Ny) order with latitude
+# increasing south→north. A canopy product tiles only over land, so a 3° cell with no
+# published tile is a legitimate miss (open ocean), not an error — skip the ones that
+# fail to open and mosaic the rest. `identity.` narrows the collected vector back to the
+# concrete dataset type so `gdalwarp`'s `Vector{<:AbstractDataset}` method still dispatches.
+function warp_canopy_sources(sources, geometry; resampling)
     configure_vsicurl!()
-    λ₁, λ₂ = longitude
-    φ₁, φ₂ = latitude
-    # Open each source COG/URL; `gdalwarp` mosaics + windows the whole vector.
-    datasets = [ArchGDAL.read(source) for source in sources]
+    opened = []
+    for source in sources
+        try
+            push!(opened, ArchGDAL.read(source))
+        catch
+        end
+    end
+    isempty(opened) && error("No canopy-height tiles cover the requested region; " *
+                             "it may lie entirely over ocean.")
+    datasets = identity.(opened)
+    options = vcat(String["-t_srs", "EPSG:4326"], geometry,
+                   String["-r", resampling, "-ot", "Float32"])
     try
-        return ArchGDAL.gdalwarp(datasets,
-            ["-t_srs", "EPSG:4326",
-             "-te",    string(λ₁), string(φ₁), string(λ₂), string(φ₂),
-             "-tr",    string(resolution), string(resolution),
-             "-r",     resampling,
-             "-ot",    "Float32"]) do warped
+        return ArchGDAL.gdalwarp(datasets, options) do warped
             # GDAL returns (Nx, Ny) with latitude north→south; flip to south→north.
             data = Float32.(ArchGDAL.read(warped, 1))
             return reverse(data, dims = 2)
@@ -109,6 +118,22 @@ function warp_canopy_layer(sources, longitude, latitude, resolution; resampling 
         end
     end
 end
+
+# Window the tiles onto the region bbox at a fixed resolution (native-resolution read).
+warp_canopy_layer(sources, longitude, latitude, resolution; resampling = "bilinear") =
+    warp_canopy_sources(sources,
+        String["-te", string(longitude[1]), string(latitude[1]),
+               string(longitude[2]), string(latitude[2]),
+               "-tr", string(resolution), string(resolution)]; resampling)
+
+# Area-average the tiles onto an explicit (Nx, Ny) grid over the bbox. `-ts` pins the
+# output to the grid's cell count (so it drops straight into a grid Field) and `-r average`
+# coarse-grains the native pixels within each cell — not point interpolation.
+warp_canopy_onto_grid(sources, longitude, latitude, Nx, Ny; resampling = "average") =
+    warp_canopy_sources(sources,
+        String["-te", string(longitude[1]), string(latitude[1]),
+               string(longitude[2]), string(latitude[2]),
+               "-ts", string(Nx), string(Ny)]; resampling)
 
 function write_canopy_netcdf(nc_path, longitude, latitude, layers)
     λ₁, λ₂ = longitude
@@ -182,6 +207,39 @@ function CanopyHeight.canopy_height_cog_to_netcdf(metadatum::CanopyHeight.GLADCa
 
     write_canopy_netcdf(nc_path, region.longitude, region.latitude, layers)
     return nothing
+end
+
+#####
+##### Direct area-averaged read onto a model grid (coarse-graining, no NetCDF)
+#####
+
+# Drop a masked (Nx, Ny) canopy array straight into a grid Field; `-ts` guarantees the
+# array matches the grid's cell count.
+function canopy_field(grid, data)
+    h = Field{Center, Center, Nothing}(grid)
+    interior(h, :, :, 1) .= data
+    return h
+end
+
+function CanopyHeight.canopy_height_field(grid, ::CanopyHeight.ETHCanopyHeight;
+                                          name = :canopy_height, resampling = "average")
+    cplsetconfigoption("GDAL_HTTP_USERAGENT", CanopyHeight.ETH_BROWSER_USER_AGENT)
+    cplsetconfigoption("GDAL_HTTP_USERPWD", CanopyHeight.ETH_LIBDRIVE_TOKEN * ":")
+    cplsetconfigoption("GDAL_DISABLE_READDIR_ON_OPEN", "EMPTY_DIR")
+
+    region = BoundingBox(grid)
+    sources = CanopyHeight.eth_tile_urls(region, name)
+    raw = warp_canopy_onto_grid(sources, region.longitude, region.latitude,
+                                size(grid, 1), size(grid, 2); resampling)
+    return canopy_field(grid, CanopyHeight.mask_eth.(raw, 255))
+end
+
+function CanopyHeight.canopy_height_field(grid, ::CanopyHeight.GLADCanopyHeight; resampling = "average")
+    region = BoundingBox(grid)
+    sources = CanopyHeight.glad_tile_urls(region)
+    raw = warp_canopy_onto_grid(sources, region.longitude, region.latitude,
+                                size(grid, 1), size(grid, 2); resampling)
+    return canopy_field(grid, CanopyHeight.mask_glad.(raw))
 end
 
 end # module NumericalEarthArchGDALExt

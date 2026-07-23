@@ -1,13 +1,13 @@
 include("runtests_setup.jl")
 
 using NumericalEarth.DataWrangling.CanopyHeight
-using NumericalEarth.DataWrangling.CanopyHeight: mask_glad, mask_eth, coarsen_canopy_height,
+using NumericalEarth.DataWrangling.CanopyHeight: mask_glad, mask_eth,
                                                  eth_tile_token, eth_tiles_in_bbox, eth_tile_urls,
-                                                 canopy_height_cog_to_netcdf
+                                                 canopy_height_cog_to_netcdf, canopy_height_field
 using NumericalEarth.DataWrangling: longitude_interfaces, latitude_interfaces,
                                     dataset_variable_name, validate_dataset_coverage,
                                     metadata_filename, available_variables,
-                                    is_three_dimensional, default_inpainting, missing_value
+                                    is_three_dimensional, default_inpainting
 
 using Oceananigans.Fields: location
 
@@ -39,34 +39,6 @@ using Oceananigans.Fields: location
     @test masked[2] == 12
     @test masked[4] == 60
     @test isnan(masked[3]) && isnan(masked[5])
-end
-
-#####
-##### Antialiased downsampling: mask-before-average, plausible range preserved.
-#####
-
-@testset "Canopy-height coarsening" begin
-    # 4×4 of a constant height coarsened 2× → 2×2 of the same height.
-    fine = fill(15.0, 4, 4)
-    coarse = coarsen_canopy_height(fine, 2)
-    @test size(coarse) == (2, 2)
-    @test all(coarse .== 15.0)
-
-    # NaN fill cells are dropped from the mean, not propagated.
-    block = [10.0 NaN; 20.0 30.0]        # one 2×2 block; mean of finite = 20
-    @test coarsen_canopy_height(block, 2)[1, 1] == 20.0
-
-    # A block that is all NaN stays NaN.
-    @test isnan(coarsen_canopy_height(fill(NaN, 2, 2), 2)[1, 1])
-
-    # Coarsening a plausible 10 m field keeps the result in a plausible [0, ~40 m] range.
-    fine_realistic = clamp.(20 .+ 5 .* randn(40, 40), 0, 40)
-    coarse_realistic = coarsen_canopy_height(fine_realistic, 10)
-    @test size(coarse_realistic) == (4, 4)
-    finite = filter(isfinite, coarse_realistic)
-    @test all(0 .<= finite .<= 40)
-
-    @test_throws ArgumentError coarsen_canopy_height(fine, 0)
 end
 
 #####
@@ -128,8 +100,6 @@ end
     sd = Metadatum(:canopy_height_uncertainty; dataset = eth,
                    region = BoundingBox(longitude = (4, 5), latitude = (51, 52)))
     @test dataset_variable_name(sd) == "SD"
-    @test missing_value(Metadatum(:canopy_height; dataset = eth,
-                                  region = BoundingBox(longitude = (4, 5), latitude = (51, 52)))) == 255
 
     @test Set(keys(available_variables(GLADCanopyHeight()))) == Set((:canopy_height,))
 
@@ -169,7 +139,10 @@ end
 @testset "Canopy-height COG read is extension-gated" begin
     region = BoundingBox(longitude = (4, 5), latitude = (51, 52))
     meta = Metadatum(:canopy_height; dataset = ETHCanopyHeight(), region)
+    grid = LatitudeLongitudeGrid(CPU(); size = (4, 4), longitude = (4, 5), latitude = (51, 52),
+                                 topology = (Bounded, Bounded, Flat))
     if isnothing(Base.get_extension(NumericalEarth, :NumericalEarthArchGDALExt))
         @test_throws ErrorException canopy_height_cog_to_netcdf(meta, tempname() * ".nc")
+        @test_throws ErrorException canopy_height_field(grid, ETHCanopyHeight())
     end
 end

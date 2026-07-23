@@ -7,6 +7,10 @@
 ##### Borak et al. (2025). Pure, allocation-free and kernel-safe.
 #####
 
+const VON_KARMAN_CONSTANT = 0.4
+const SUBLAYER_INFLUENCE = 0.193   # ψₕ (Raupach 1995)
+const CLOSURE_ITERATIONS = 20
+
 """
 $(TYPEDEF)
 
@@ -44,20 +48,6 @@ function DragPartitionParameters(FT=Oceananigans.defaults.FloatType;
                                    convert(FT, displacement_coefficient),
                                    convert(FT, maximum_area_index))
 end
-
-"""
-$(TYPEDSIGNATURES)
-
-Return a copy of `p` with the substrate drag coefficient lowered to the snow-covered
-value (`Cˢ = 0.0020`), as prescribed when the land-cover product flags snow present.
-"""
-@inline snow_adjusted(p::DragPartitionParameters{FT}) where FT =
-    DragPartitionParameters(p.form_drag_coefficient,
-                            convert(FT, 0.0020),
-                            p.maximum_friction_ratio,
-                            p.sublayer_decay_coefficient,
-                            p.displacement_coefficient,
-                            p.maximum_area_index)
 
 """
 $(TYPEDSIGNATURES)
@@ -115,7 +105,7 @@ area index `Λ` and height `h`, sharing the wind ratio `γ`. Returns `(z0, d0)`.
 von Kármán constant and `ψₕ` the roughness-sublayer influence function.
 
 ```jldoctest
-julia> using NumericalEarth.DataWrangling.CanopyRoughness
+julia> using NumericalEarth.Lands
 
 julia> p = canopy_drag_parameters(Float64, 2);   # broadleaf-forest drag group
 
@@ -148,3 +138,32 @@ Semi-empirical roughness length `z0 ≈ d0/5` from canopy height alone — the h
 fallback paired with [`semiempirical_displacement`](@ref).
 """
 @inline semiempirical_roughness(h) = semiempirical_displacement(h) / 5
+
+"""
+$(TYPEDEF)
+
+Drag-partition canopy roughness closure (Raupach 1994 / Jasinski 2005). Holds the shared
+closure constants (von Kármán constant, roughness-sublayer influence, fixed-point iteration
+count); the per-cell vegetation group, canopy height and area index come from the `cell`
+passed to [`aerodynamic_parameters`](@ref), which selects the drag group from the IGBP land
+cover, falls back to the class-average height where the measured height is missing, and
+returns the prescribed constants over non-vegetated classes. This is the canopy peer of the
+urban morphometric closures under the shared `aerodynamic_parameters(closure, cell)` contract.
+
+$(TYPEDFIELDS)
+"""
+struct DragPartitionRoughness{FT}
+    "von Kármán constant `κ`"
+    von_karman_constant :: FT
+    "roughness-sublayer influence `ψₕ`"
+    sublayer_influence :: FT
+    "fixed-point iterations for the wind ratio `γ`"
+    iterations :: Int
+end
+
+DragPartitionRoughness(FT = Oceananigans.defaults.FloatType;
+                       von_karman_constant = VON_KARMAN_CONSTANT,
+                       sublayer_influence = SUBLAYER_INFLUENCE,
+                       iterations = CLOSURE_ITERATIONS) =
+    DragPartitionRoughness(convert(FT, von_karman_constant),
+                           convert(FT, sublayer_influence), Int(iterations))

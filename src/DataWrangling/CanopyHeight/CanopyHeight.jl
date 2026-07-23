@@ -1,6 +1,6 @@
 module CanopyHeight
 
-export ETHCanopyHeight, GLADCanopyHeight
+export ETHCanopyHeight, GLADCanopyHeight, canopy_height_field
 
 using Downloads: Downloads
 using Oceananigans: Center
@@ -132,7 +132,9 @@ function DataWrangling.validate_dataset_coverage(grid, metadata::CanopyHeightMet
     if !(region isa BoundingBox) || isnothing(region.longitude) || isnothing(region.latitude)
         prefix = dataset_prefix(metadata.dataset)
         error("$(prefix)() must be used with a bounded region. " *
-              "Build the metadatum with a longitude/latitude BoundingBox, e.g.\n" *
+              "Read it onto a grid directly with\n" *
+              "    canopy_height_field(grid, $(prefix)())\n" *
+              "or build the metadatum with a longitude/latitude BoundingBox, e.g.\n" *
               "    metadatum = Metadatum(:canopy_height; dataset = $(prefix)(),\n" *
               "                          region = BoundingBox(longitude = (λ₁, λ₂), latitude = (φ₁, φ₂)))\n" *
               "    Field(metadatum, grid)")
@@ -151,13 +153,10 @@ DataWrangling.longitude_name(::CanopyHeightMetadatum) = "lon"
 DataWrangling.latitude_name(::CanopyHeightMetadatum)  = "lat"
 
 # NEVER inpaint: a canopy height of 0 over non-forest is a valid value, not a gap.
-# Only explicit no-data / GLAD fill codes are masked to NaN (in the COG read).
+# The no-data byte (255) and GLAD fill codes (101/102/103) are masked to NaN in the
+# COG read (see `mask_eth` / `mask_glad`), so the on-disk sentinel is already NaN and
+# the default `missing_value` (NaN passthrough) applies.
 DataWrangling.default_inpainting(::CanopyHeightMetadatum) = nothing
-
-# ETH `Map`/`SD` COGs use 255 as the no-data byte; canopy heights never reach it.
-# GLAD's categorical fill codes (101/102/103) are masked to NaN at read time
-# (see `mask_glad`), so no scalar missing_value applies.
-DataWrangling.missing_value(::ETHCanopyHeightMetadatum) = 255
 
 Oceananigans.Fields.location(::CanopyHeightMetadatum) = (Center, Center, Center)
 
@@ -198,48 +197,6 @@ byte (`missing_value`, default `255`) becomes `NaN`; all valid heights
 """
 @inline mask_eth(x, missing_value = 255) =
     ifelse(x == missing_value, oftype(float(x), NaN), float(x))
-
-#####
-##### Antialiased downsampling (10 m → coarse cell); NaN-mask first
-#####
-
-"""
-    coarsen_canopy_height(fine, factor)
-
-Antialiased block-mean downsampling of a fine 2-D canopy-height array `fine`
-onto a grid coarsened by integer `factor` in each dimension — the reference for
-taking a 10 m raster onto a ~1 km model cell. No-data must already be `NaN`
-(via [`mask_glad`](@ref) / [`mask_eth`](@ref)): each coarse cell averages only
-the finite fine cells beneath it, and is `NaN` only if every contributing fine
-cell is `NaN`. This mirrors the NaN-aware, mask-before-average discipline of the
-multi-pass coarsening in `interpolate_bathymetry_in_passes`.
-"""
-function coarsen_canopy_height(fine::AbstractMatrix, factor::Integer)
-    factor >= 1 || throw(ArgumentError("coarsening factor must be ≥ 1, got $factor"))
-    Nx, Ny = size(fine)
-    Cx = cld(Nx, factor)
-    Cy = cld(Ny, factor)
-    coarse = fill(convert(float(eltype(fine)), NaN), Cx, Cy)
-
-    for J in 1:Cy, I in 1:Cx
-        Σ = zero(float(eltype(fine)))
-        n = 0
-        for j in ((J - 1) * factor + 1):min(J * factor, Ny)
-            for i in ((I - 1) * factor + 1):min(I * factor, Nx)
-                v = fine[i, j]
-                if !isnan(v)
-                    Σ += v
-                    n += 1
-                end
-            end
-        end
-        if n > 0
-            coarse[I, J] = Σ / n
-        end
-    end
-
-    return coarse
-end
 
 #####
 ##### Download (regional COG → NetCDF via the ArchGDAL extension)
@@ -293,6 +250,10 @@ Return the sorted unique ETH tile tokens whose 3° cells intersect `region`.
 function eth_tiles_in_bbox(region::BoundingBox)
     λ₁, λ₂ = region.longitude
     φ₁, φ₂ = region.latitude
+    (λ₁ < λ₂ && φ₁ < φ₂) ||
+        error("BoundingBox bounds must be ascending, got longitude = ($λ₁, $λ₂), latitude = ($φ₁, $φ₂). " *
+              "Windowed COG reads do not support inverted or antimeridian-crossing bounds; " *
+              "split an antimeridian-crossing region at ±180°.")
     tokens = String[]
     for lat0 in (3 * fld(φ₁, 3)):3:(3 * fld(φ₂, 3))
         for lon0 in (3 * fld(λ₁, 3)):3:(3 * fld(λ₂, 3))
@@ -369,5 +330,21 @@ end
 canopy_height_cog_to_netcdf(metadatum, nc_path) =
     error("Reading the $(dataset_prefix(metadatum.dataset)) Cloud-Optimized GeoTIFF " *
           "requires the ArchGDAL package. Load it with `using ArchGDAL`.")
+
+"""
+    canopy_height_field(grid, dataset; name = :canopy_height, resampling = "average")
+
+Read `dataset` canopy height directly onto `grid`, area-averaging (`-r average`) the native
+COG pixels within each grid cell — coarse-graining rather than point interpolation, the
+correct reduction from a 10–30 m raster onto a coarse model cell. Only the windowed COG
+blocks are read (anonymous `/vsicurl/`), so no full-resolution regional file is materialized.
+
+Returns a `Field{Center, Center, Nothing}(grid)`: canopy height over non-forest is a valid
+`0`, tiles absent over ocean are skipped, and the product no-data code is masked to `NaN`.
+Requires the `ArchGDAL` package (`using ArchGDAL`).
+"""
+canopy_height_field(grid, dataset; kw...) =
+    error("Reading a canopy-height Cloud-Optimized GeoTIFF onto a grid requires the " *
+          "ArchGDAL package. Load it with `using ArchGDAL`.")
 
 end # module CanopyHeight
