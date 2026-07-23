@@ -21,7 +21,7 @@ export AbstractLand,
        # Urban aerodynamic roughness closures
        AbstractUrbanRoughness, MacdonaldRoughness, KandaRoughness, LookupRoughness,
        IsotropicFrontalArea, CuboidFrontalArea,
-       urban_roughness, compute_urban_roughness!, aerodynamic_parameters,
+       urban_roughness, compute_aerodynamic_roughness!, aerodynamic_parameters,
        # Atmosphere-facing accessors
        surface_temperature, surface_saturation
 
@@ -42,7 +42,7 @@ using Oceananigans: Oceananigans, prognostic_state, restore_prognostic_state!
 using Oceananigans.Architectures: architecture
 using Oceananigans.BoundaryConditions: fill_halo_regions!
 using Oceananigans.Fields: AbstractField, CenterField, Field, Center, Face, ZeroField
-using Oceananigans.Grids: grid_name, Center, Face
+using Oceananigans.Grids: grid_name, Center, Face, φnode
 using Oceananigans.OutputReaders: update_field_time_series!, extract_field_time_series
 using Oceananigans.TimeSteppers: Clock, tick!, update_state!
 using Oceananigans.Units: Time

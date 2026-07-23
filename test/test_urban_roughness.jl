@@ -5,7 +5,7 @@ using Test
 using NumericalEarth.Lands:
     AbstractUrbanRoughness, MacdonaldRoughness, KandaRoughness, LookupRoughness,
     IsotropicFrontalArea, CuboidFrontalArea,
-    urban_roughness, aerodynamic_parameters, compute_urban_roughness!, frontal_area_index,
+    urban_roughness, aerodynamic_parameters, compute_aerodynamic_roughness!, frontal_area_index,
     macdonald_displacement_ratio, macdonald_roughness_ratio,
     kanda_displacement_height, kanda_roughness_length
 
@@ -149,13 +149,15 @@ end
 
     # Non-built patch reduces to bare soil everywhere.
     set!(λp, 0)
-    compute_urban_roughness!(z0m, d0, λp, H, grid; closure = MacdonaldRoughness())
+    compute_aerodynamic_roughness!(z0m, d0, MacdonaldRoughness(),
+                                   (; plan_area_fraction = λp, building_height = H), grid)
     @test all(≈(MacdonaldRoughness().bare_soil_roughness), interior(z0m))
     @test all(≈(0), interior(d0))
 
     # Invalid inputs propagate to NaN gaps.
     set!(λp, 0.3); set!(H, NaN)
-    compute_urban_roughness!(z0m, d0, λp, H, grid; closure = KandaRoughness())
+    compute_aerodynamic_roughness!(z0m, d0, KandaRoughness(),
+                                   (; plan_area_fraction = λp, building_height = H), grid)
     @test all(isnan, interior(z0m))
     @test all(isnan, interior(d0))
 end
@@ -187,4 +189,24 @@ end
     # The wrapped Macdonald's bare-soil floor governs the on-grid Kanda result.
     z0m, _ = urban_roughness(H, λp; closure = kanda)
     @test all(≈(0.05), interior(z0m))
+end
+
+@testset "Cell contract and mixed-type property sampling" begin
+    kanda = KandaRoughness()
+    # The cell contract reads only the closure's own keys and matches the scalar form.
+    cell = (; plan_area_fraction = 0.3, building_height = 15.0, latitude = 51.5)
+    @test aerodynamic_parameters(kanda, cell) == aerodynamic_parameters(kanda, 0.3, 15.0)
+
+    # The shared grid builder samples a Field and a uniform scalar property via property_value.
+    grid = LatitudeLongitudeGrid(CPU(), Float64; size = (4, 4),
+                                 longitude = (-0.1, 0.1), latitude = (51.4, 51.6),
+                                 topology = (Bounded, Bounded, Flat))
+    z0m = Field{Center, Center, Nothing}(grid)
+    d0  = Field{Center, Center, Nothing}(grid)
+    λp  = Field{Center, Center, Nothing}(grid); set!(λp, 0.3)
+    compute_aerodynamic_roughness!(z0m, d0, kanda,
+                                   (; plan_area_fraction = λp, building_height = 15.0), grid)
+    z0ref, d0ref = aerodynamic_parameters(kanda, 0.3, 15.0)
+    @test all(≈(z0ref), interior(z0m))
+    @test all(≈(d0ref), interior(d0))
 end

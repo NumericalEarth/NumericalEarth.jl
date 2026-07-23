@@ -361,3 +361,12 @@ end
 end
 
 @inline (c::AbstractUrbanRoughness)(λp, h) = aerodynamic_parameters(c, λp, h)
+
+"""
+$(TYPEDSIGNATURES)
+
+Shared grid-builder contract: evaluate the closure from a per-cell `cell` NamedTuple,
+reading only this closure's own keys (`plan_area_fraction`, `building_height`).
+"""
+@inline aerodynamic_parameters(c::AbstractUrbanRoughness, cell) =
+    aerodynamic_parameters(c, cell.plan_area_fraction, cell.building_height)

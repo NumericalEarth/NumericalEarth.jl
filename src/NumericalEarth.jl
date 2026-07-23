@@ -106,7 +106,7 @@ export
     # Urban aerodynamic roughness closures
     AbstractUrbanRoughness, MacdonaldRoughness, KandaRoughness, LookupRoughness,
     IsotropicFrontalArea, CuboidFrontalArea,
-    urban_roughness, compute_urban_roughness!, aerodynamic_parameters,
+    urban_roughness, compute_aerodynamic_roughness!, aerodynamic_parameters,
     surface_temperature,
     regrid_bathymetry,
     regrid_topography,
