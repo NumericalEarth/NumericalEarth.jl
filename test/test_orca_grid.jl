@@ -97,7 +97,8 @@ end
 
 @testset "ORCAGrid with south_rows_to_remove on $(arch)" for arch in test_architectures
     Nremove = 40
-    grid = ORCAGrid(arch; dataset=ORCAOne(), Nz=5, z=(-5000, 0), halo=(4, 4, 4), south_rows_to_remove=Nremove)
+    grid = ORCAGrid(arch; dataset=ORCAOne(), Nz=5, z=(-5000, 0), halo=(4, 4, 4),
+                    south_rows_to_remove=Nremove)
 
     @test grid isa ImmersedBoundaryGrid
     underlying = grid.underlying_grid
@@ -192,22 +193,32 @@ end
     λFF, φFF = read_coordinate("glamf"), read_coordinate("gphif")
     close(ds)
 
-    reconstructed = Bathymetry.reconstruct_orca_mesh_from_CC_FF_points(λCC, φCC, λFF, φFF; radius = Oceananigans.defaults.planet_radius)
+    reconstructed = Bathymetry.reconstruct_orca_mesh_from_CC_FF_points(λCC, φCC, λFF, φFF;
+                                                                       radius = Oceananigans.defaults.planet_radius)
 
+    # Both read paths must agree on shape and on NEMO's y-indexing: `halo_filled_data` applies the
+    # +1 Face-y shift exactly once, so neither path may pre-shift.
     for name in (:e1t, :e2t, :e1u, :e2u, :e1v, :e2v, :e1f, :e2f, :λFC, :λCF, :λFF, :φFF)
         @test size(getproperty(reconstructed, name)) == size(getproperty(staggered, name))
     end
 
+    # NEMO stores degenerate padding metrics (e1t = 4 m) in the southern rows that `south_rows_to_remove`
+    # discards, so compare only the rows the grid actually keeps.
     south = default_south_rows_to_remove(ORCAOne()) + 1
     for name in (:e1t, :e2t, :e1u, :e2u, :e1v, :e2v, :e1f, :e2f)
         reference = getproperty(staggered, name)[:, south:end]
         computed  = getproperty(reconstructed, name)[:, south:end]
         error     = abs.(computed .- reference) ./ max.(abs.(reference), 1e-6)
 
+        # Reconstruction from coordinates is approximate; the tail sits at the tripolar poles where the
+        # stored Float32 coordinates stop resolving the sub-metre spacing.
         @test median(error) < 1e-3
         @test count(>(0.01), error) / length(error) < 0.02
     end
 
+    # A metric of exactly zero is never physical: it makes `minimum_xspacing` vanish and the
+    # split-explicit substep count diverge. Zeros here mean the periodic overlap columns were wrapped
+    # onto their own duplicates.
     for name in (:e1t, :e2t, :e1u, :e2u, :e2v)
         @test count(==(0), getproperty(reconstructed, name)) == 0
     end

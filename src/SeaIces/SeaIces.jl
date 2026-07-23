@@ -5,10 +5,12 @@ export sea_ice_simulation, FreezingLimitedOceanTemperature
 using Oceananigans: Oceananigans
 using Oceananigans.Architectures: architecture
 using Oceananigans.Coriolis: HydrostaticSphericalCoriolis
+using Oceananigans.BoundaryConditions: BoundaryCondition, FieldBoundaryConditions, FluxBoundaryCondition, Zipper
 using Oceananigans.Fields: Field, ZeroField
 using Oceananigans.Grids: inactive_node, Face, Center
+using Oceananigans.ImmersedBoundaries: ImmersedBoundaryCondition
 using Oceananigans.Models.HydrostaticFreeSurfaceModels: HydrostaticFreeSurfaceModel
-using Oceananigans.Operators: ℑxᶠᵃᵃ, ℑyᵃᶠᵃ
+using Oceananigans.Operators: ℑxᶠᵃᵃ, ℑyᵃᶠᵃ, ℑxyᶠᶜᵃ, ℑxyᶜᶠᵃ
 using Oceananigans.OrthogonalSphericalShellGrids: OrthogonalSphericalShellGrids
 using Oceananigans.Simulations: Simulation
 using Oceananigans.TimeSteppers: Clock

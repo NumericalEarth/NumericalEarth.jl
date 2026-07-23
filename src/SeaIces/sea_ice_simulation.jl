@@ -1,10 +1,13 @@
 using ClimaSeaIce: ClimaSeaIce, SeaIceModel, PhaseTransitions, ConductiveFlux,
-                   sea_ice_slab_thermodynamics, snow_slab_thermodynamics
+                   sea_ice_slab_thermodynamics, snow_slab_thermodynamics,
+                   default_sea_ice_boundary_conditions
 using ClimaSeaIce.SeaIceThermodynamics.HeatBoundaryConditions: PrescribedTemperature
 using ClimaSeaIce.SeaIceThermodynamics: IceWaterThermalEquilibrium, IceSnowConductiveFlux
-using ClimaSeaIce.SeaIceDynamics: SplitExplicitSolver, SemiImplicitStress, SeaIceMomentumEquation, StressBalanceFreeDrift
+using ClimaSeaIce.SeaIceDynamics: SplitExplicitSolver, SemiImplicitStress, SeaIceMomentumEquation, StressBalanceFreeDrift,
+                                  maybe_extended_grid
 using ClimaSeaIce.Rheologies: ElastoViscoPlasticRheology
 
+using Oceananigans.OrthogonalSphericalShellGrids: TripolarGridOfSomeKind
 using Oceananigans.TimeSteppers: SplitRungeKuttaTimeStepper
 
 using ..EarthSystemModels: ocean_surface_salinity, ocean_surface_velocities, reference_density
@@ -15,12 +18,29 @@ default_rotation_rate = Oceananigans.defaults.planet_rotation_rate
 ocean_reference_density(ocean::Simulation, FT) = convert(FT, reference_density(ocean))
 ocean_reference_density(::Nothing, FT) = convert(FT, 1026.0)
 
+@inline ϕ²(i, j, k, grid, ϕ)    = @inbounds ϕ[i, j, k]^2
+@inline spᶠᶜᶜ(i, j, k, grid, Φ) = @inbounds sqrt(Φ.u[i, j, k]^2 + ℑxyᶠᶜᵃ(i, j, k, grid, ϕ², Φ.v))
+@inline spᶜᶠᶜ(i, j, k, grid, Φ) = @inbounds sqrt(Φ.v[i, j, k]^2 + ℑxyᶜᶠᵃ(i, j, k, grid, ϕ², Φ.u))
+
+@inline u_immersed_side_drag(i, j, k, grid, clock, Φ, μ) = @inbounds - μ * Φ.u[i, j, k] * spᶠᶜᶜ(i, j, k, grid, Φ)
+@inline v_immersed_side_drag(i, j, k, grid, clock, Φ, μ) = @inbounds - μ * Φ.v[i, j, k] * spᶜᶠᶜ(i, j, k, grid, Φ)
+
 function default_snow_thermodynamics(grid)
     FT = eltype(grid)
     snow_conductivity = FT(0.31)
     snow_surface_temperature = Field{Center, Center, Nothing}(grid)
     top_heat_boundary_condition = PrescribedTemperature(snow_surface_temperature.data)
     return snow_slab_thermodynamics(grid; conductivity = snow_conductivity, top_heat_boundary_condition)
+end
+
+correct_tripolar_bcs(grid, bcs) = bcs
+
+function correct_tripolar_bcs(grid::TripolarGridOfSomeKind, bcs)
+    if bcs.north isa BoundaryCondition && bcs.north.classification isa Zipper
+        north = BoundaryCondition(bcs.north.classification, - bcs.north.condition)
+        bcs = FieldBoundaryConditions(bcs.west, bcs.east, bcs.south, north, bcs.bottom, bcs.top, bcs.immersed)
+    end
+    return bcs
 end
 
 """
@@ -99,6 +119,7 @@ function sea_ice_simulation(grid, ocean=nothing;
                             ice_consolidation_thickness = 0.05, # m
                             sea_ice_density = 900, # kg m⁻³
                             snow_density = 330, # kg m⁻³
+                            side_drag_coefficient = 3e-3,
                             dynamics = sea_ice_dynamics(grid, ocean),
                             bottom_heat_boundary_condition = nothing,
                             top_heat_boundary_condition = nothing,
@@ -137,6 +158,16 @@ function sea_ice_simulation(grid, ocean=nothing;
     top_heat_flux    = Field{Center, Center, Nothing}(grid)
     snowfall         = Field{Center, Center, Nothing}(grid)
 
+    side_drag_coefficient = convert(eltype(grid), side_drag_coefficient)
+    u_bc = FluxBoundaryCondition(u_immersed_side_drag, discrete_form=true, parameters=side_drag_coefficient)
+    v_bc = FluxBoundaryCondition(v_immersed_side_drag, discrete_form=true, parameters=side_drag_coefficient)
+
+    immersed_u_bc = ImmersedBoundaryCondition(south=u_bc, north=u_bc)
+    immersed_v_bc = ImmersedBoundaryCondition(west=v_bc,  east=v_bc)
+
+    u_bcs = correct_tripolar_bcs(grid, FieldBoundaryConditions(grid, (Face(), Center(), nothing); immersed = immersed_u_bc))
+    v_bcs = correct_tripolar_bcs(grid, FieldBoundaryConditions(grid, (Center(), Face(), nothing); immersed = immersed_v_bc))
+
     # Build the sea ice model
     sea_ice_model = SeaIceModel(grid;
                                 clock,
@@ -153,6 +184,7 @@ function sea_ice_simulation(grid, ocean=nothing;
                                 dynamics,
                                 timestepper,
                                 bottom_heat_flux,
+                                boundary_conditions = (u=u_bcs, v=v_bcs),
                                 top_heat_flux)
 
     verbose = false
@@ -164,43 +196,30 @@ end
 default_coriolis(ocean::Simulation) = ocean.model.coriolis
 default_coriolis(ocean::Nothing) = HydrostaticSphericalCoriolis(; rotation_rate=default_rotation_rate)
 
-default_solver(grid, ocean) = SplitExplicitSolver(grid; substeps=120)
-
-# We assume RK3 has a larger timestep
-function default_solver(grid, ocean::Simulation)
-    substeps = if ocean.model.timestepper isa SplitRungeKuttaTimeStepper
-        240
-    else
-        120
-    end
-    return SplitExplicitSolver(grid; substeps)
-end
-
 function sea_ice_dynamics(grid, ocean=nothing;
                           sea_ice_ocean_drag_coefficient = 3.24e-3,
                           rheology = ElastoViscoPlasticRheology(),
                           coriolis = default_coriolis(ocean),
                           free_drift = nothing,
-                          solver = default_solver(grid, ocean))
+                          solver = SplitExplicitSolver(grid; substeps=100))
 
     SSU, SSV = ocean_surface_velocities(ocean)
     FT = eltype(grid)
     sea_ice_ocean_drag_coefficient = convert(FT, sea_ice_ocean_drag_coefficient)
     ρₑ = ocean_reference_density(ocean, FT)
 
-    # Set up boundary conditions
-    x_stress_bcs = InterfaceComputations.vector_component_boundary_conditions(grid, (Face(), Center(), nothing))
-    y_stress_bcs = InterfaceComputations.vector_component_boundary_conditions(grid, (Center(), Face(), nothing))
-  
     τo  = SemiImplicitStress(uₑ=SSU, vₑ=SSV, Cᴰ=sea_ice_ocean_drag_coefficient, ρₑ=ρₑ)
-    τua = Field{Face, Center, Nothing}(grid, boundary_conditions = x_stress_bcs)
-    τva = Field{Center, Face, Nothing}(grid, boundary_conditions = y_stress_bcs)
+
+    velocity_grid = maybe_extended_grid(solver, grid)
+
+    τua = Field{Face, Center, Nothing}(velocity_grid; boundary_conditions = default_sea_ice_boundary_conditions(velocity_grid, :u))
+    τva = Field{Center, Face, Nothing}(velocity_grid; boundary_conditions = default_sea_ice_boundary_conditions(velocity_grid, :v))
 
     if isnothing(free_drift)
         free_drift = StressBalanceFreeDrift((u=τua, v=τva), τo)
     end
 
-    return SeaIceMomentumEquation(grid;
+    return SeaIceMomentumEquation(velocity_grid;
                                   coriolis,
                                   top_momentum_stress = (u=τua, v=τva),
                                   bottom_momentum_stress = τo,
@@ -218,6 +237,8 @@ EarthSystemModels.sea_ice_concentration(sea_ice::Simulation{<:SeaIceModel}) = se
 EarthSystemModels.intercepted_snowfall(sea_ice::Simulation{<:SeaIceModel}) = sea_ice.model.mass_fluxes.intercepted_snowfall
 
 EarthSystemModels.heat_capacity(sea_ice::Simulation{<:SeaIceModel}) = sea_ice.model.phase_transitions.heat_capacity
+# `sea_ice.model.sea_ice_density` is wrapped as a `ConstantField` by `SeaIceModel`;
+# the scalar value lives on `phase_transitions.density`.
 EarthSystemModels.reference_density(sea_ice::Simulation{<:SeaIceModel}) = sea_ice.model.phase_transitions.density
 
 function InterfaceComputations.net_fluxes(sea_ice::Simulation{<:SeaIceModel})

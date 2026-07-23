@@ -76,6 +76,9 @@ function PrescribedRadiation(downwelling_shortwave::FieldTimeSeries,
     FT    = eltype(downwelling_shortwave)
 
     if isnothing(clock)
+        # Float64 clock: a Float32 clock drifts by ~16 s/tick once the absolute time
+        # exceeds ~1e8 s, desyncing from the coupled clock and walking the prescribed-FTS
+        # prefetch window one step behind the interpolation, which reads out of bounds.
         clock = Clock{Float64}(time = 0)
     end
 

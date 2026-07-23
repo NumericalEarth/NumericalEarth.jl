@@ -15,13 +15,15 @@ JRA55PrescribedAtmosphere(arch::Distributed; kw...) =
                               dir = download_JRA55_cache,
                               time_indices_in_memory = 10,
                               time_indexing = Cyclical(),
+                              prefetch = true,
                               surface_layer_height = 10,  # meters
                               region = nothing,
                               other_kw...)
 
 Return a [`PrescribedAtmosphere`](@ref) representing JRA55 reanalysis data. Each atmospheric field is constructed via
 `FieldTimeSeries(::JRA55Metadata)`, which uses a `DatasetBackend` parameterised by JRA55 metadata so that the JRA55-specific
-`set!` (chunked-yearly NetCDF) is dispatched.
+`set!` (chunked-yearly NetCDF) is dispatched. With `prefetch = true` each variable's next sliding window is loaded
+asynchronously on a background thread so the reload spike is hidden behind compute.
 The `region` keyword restricts the atmosphere to a sub-domain of the global JRA55 grid.
 
 Note: downwelling shortwave / longwave radiation is now part of the
@@ -35,11 +37,12 @@ function JRA55PrescribedAtmosphere(architecture = CPU();
                                    dir = download_JRA55_cache,
                                    time_indices_in_memory = 10,
                                    time_indexing = Cyclical(),
+                                   prefetch = true,
                                    surface_layer_height = 10,  # meters
                                    region = nothing,
                                    other_kw...)
 
-    kw = (; time_indexing, time_indices_in_memory)
+    kw = (; time_indexing, time_indices_in_memory, prefetch)
     kw = merge(kw, other_kw)
 
     jra55_fts(name) = FieldTimeSeries(Metadata(name; dataset, start_date, end_date, dir, region), architecture; kw...)

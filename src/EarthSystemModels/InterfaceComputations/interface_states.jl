@@ -11,6 +11,11 @@ struct InterfaceProperties{Q, T, V}
     velocity_formulation :: V
 end
 
+Adapt.adapt_structure(to, p::InterfaceProperties) =
+    InterfaceProperties(Adapt.adapt(to, p.specific_humidity_formulation),
+                        Adapt.adapt(to, p.temperature_formulation),
+                        Adapt.adapt(to, p.velocity_formulation))
+
 #####
 ##### Interface specific humidity formulations
 #####
@@ -490,6 +495,7 @@ end
     T★ = (Tᵦ + β * R * Tₛ⁻ - Ωc * R * Tᵃᵗ - Qa * R) / D
     T★ = ifelse(D == 0, Tₛ⁻, T★)
     T★ = ifelse(isnan(T★), Tₛ⁻, T★)
+
 
     # Cap the temperature step for iteration stability
     ΔT★ = T★ - Tₛ⁻

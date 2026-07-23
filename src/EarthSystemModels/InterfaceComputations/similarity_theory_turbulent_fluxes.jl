@@ -224,16 +224,20 @@ struct LogarithmicSimilarityProfile end
 struct COARELogarithmicSimilarityProfile end
 
 @inline function similarity_profile(::LogarithmicSimilarityProfile, stability_function, h, ℓ, L)
-    ζ = h / L
+    Φn = log(h / ℓ)
+    ζ  = h / L
     ψh = stability_profile(stability_function, ζ)
     ψℓ = stability_profile(stability_function, ℓ / L)
-    return log(h / ℓ) - ψh + ψℓ
+    Φm = Φn / 1000 # stability correction cannot overwhelm the log profile
+    return max(Φn - ψh + ψℓ, Φm)
 end
 
 @inline function similarity_profile(::COARELogarithmicSimilarityProfile, stability_function, h, ℓ, L)
-    ζ = h / L
+    Φn = log(h / ℓ)
+    ζ  = h / L
     ψh = stability_profile(stability_function, ζ)
-    return log(h / ℓ) - ψh
+    Φm = Φn / 1000 # stability correction cannot overwhelm the log profile
+    return max(Φn - ψh, Φm)
 end
 
 # `local_roughness_length(ℓ, interior_properties, ::Val{R})` is the
@@ -297,8 +301,7 @@ function iterate_interface_fluxes(flux_formulation::SimilarityTheoryFluxes,
 
     # Extract roughness lengths, resolving field-aware land formulations from
     # local per-cell interior properties.
-    roughness_lengths = local_roughness_lengths(flux_formulation.roughness_lengths,
-                                                interior_properties)
+    roughness_lengths = local_roughness_lengths(flux_formulation.roughness_lengths, interior_properties)
     ℓu = roughness_lengths.momentum
     ℓθ = roughness_lengths.temperature
     ℓq = roughness_lengths.water_vapor
