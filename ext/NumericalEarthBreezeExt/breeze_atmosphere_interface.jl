@@ -1,6 +1,6 @@
 using Oceananigans.Grids: Center
 using Oceananigans.Fields: compute!
-using Breeze.AtmosphereModels: thermodynamic_density, dynamics_density, surface_pressure,
+using Breeze.AtmosphereModels: thermodynamic_density, dynamics_pressure,
                                surface_precipitation_flux
 using GPUArraysCore: @allowscalar
 using NumericalEarth.Atmospheres: AtmosphereThermodynamicsParameters
@@ -80,15 +80,15 @@ NumericalEarth.EarthSystemModels.InterfaceComputations.ComponentExchanger(atmos:
 ##### Interpolate atmospheric state onto exchange grid
 #####
 
-@kernel function _interpolate_breeze_state!(state, u, v, T, ρqᵛᵉ, ρ₀, p₀)
+@kernel function _interpolate_breeze_state!(state, u, v, T, ρqᵛᵉ, ρ, p)
     i, j = @index(Global, NTuple)
 
     @inbounds begin
         state.u[i, j, 1]    = u[i, j, 1]
         state.v[i, j, 1]    = v[i, j, 1]
         state.T[i, j, 1]    = T[i, j, 1]
-        state.q[i, j, 1]    = ρqᵛᵉ[i, j, 1] / ρ₀[i, j, 1]
-        state.p[i, j, 1]    = p₀
+        state.q[i, j, 1]    = ρqᵛᵉ[i, j, 1] / ρ[i, j, 1]
+        state.p[i, j, 1]    = p[i, j, 1]
         state.ℐꜜˢʷ[i, j, 1] = 0
         state.ℐꜜˡʷ[i, j, 1] = 0
         state.Jˢⁿ[i, j, 1]  = 0
@@ -101,20 +101,20 @@ function NumericalEarth.EarthSystemModels.interpolate_state!(exchanger, exchange
     T = atmosphere.temperature
     ρqᵛᵉ = atmosphere.moisture_density
 
-    # Near-surface density (to convert moisture density ρqᵛ → specific humidity) and
-    # surface pressure, via dynamics-generic accessors so coupling works for *both*
-    # anelastic atmospheres (reference-state density) and compressible terrain-following
-    # atmospheres (prognostic density). Reaching into
-    # `dynamics.reference_state` directly is anelastic-only (it is `nothing` for
-    # `CompressibleDynamics`).
-    ρ₀ = dynamics_density(atmosphere.dynamics)
-    p₀ = surface_pressure(atmosphere.dynamics)
+    # Near-surface density and pressure for the flux solver, via dynamics-generic accessors.
+    # `total_density` (ρ = ρᵈ + Σρˣ, not the dry `dynamics_density`) makes q = ρqᵛ/ρ the specific
+    # humidity, not the mixing ratio; `dynamics_pressure` is the per-column pressure the solver
+    # rebuilds air density from — `surface_pressure` is a single scalar that biases fluxes over
+    # terrain. Both collapse to the (uniform) reference state on the anelastic core.
+    # `total_density` is qualified: the ext also imports `NestedModels.total_density`.
+    ρ = Breeze.AtmosphereModels.total_density(atmosphere.dynamics)
+    p = dynamics_pressure(atmosphere.dynamics)
 
     arch = architecture(exchange_grid)
     kernel_parameters = interface_kernel_parameters(exchange_grid)
     launch!(arch, exchange_grid, kernel_parameters,
             _interpolate_breeze_state!,
-            state, u, v, T, ρqᵛᵉ, ρ₀, p₀)
+            state, u, v, T, ρqᵛᵉ, ρ, p)
 
     compute!(state.Jʳⁿ)   # refresh the rain diagnostic (no-op for the zero-field fallback)
 
