@@ -103,6 +103,10 @@ export
     VanGenuchtenRetention, VanGenuchtenConductivity,
     NoDeepLiquidFlux, FreeDrainageFlux, DarcyDeepLiquidFlux, LinearReservoirDrainage,
     NoRunoff, InfiltrationCapacityRunoff,
+    # Urban aerodynamic roughness closures
+    AbstractUrbanRoughness, MacdonaldRoughness, KandaRoughness, LookupRoughness,
+    IsotropicFrontalArea, CuboidFrontalArea,
+    urban_roughness, compute_aerodynamic_roughness!, aerodynamic_parameters,
     surface_temperature,
     regrid_bathymetry,
     regrid_topography,
@@ -275,6 +279,7 @@ using .DataWrangling.OSPapa
 using .DataWrangling.ERA5
 using .DataWrangling.SoilGrids
 using .DataWrangling.CopernicusLandAlbedo
+using .DataWrangling.GHSL
 
 using PrecompileTools: @setup_workload, @compile_workload
 

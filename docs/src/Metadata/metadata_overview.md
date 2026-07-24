@@ -210,4 +210,6 @@ NumericalEarth currently ships connectors for the following data products:
 | `SoilGrids 2.0`     | Global profiles of soil texture, bulk density, and organic content in upper 2 meters  | [SoilGrids documentation](https://docs.isric.org/globaldata/soilgrids/)                                   |
 | `CopernicusAlbedo` | `:albedo` — dekadal blue-sky broadband surface albedo on the global 1 km CGLS grid | [CGLS Surface Albedo](https://cds.climate.copernicus.eu/datasets/satellite-albedo) |
 | `CopernicusAlbedoClimatology` | `:albedo` — 12-month climatology of the CGLS blue-sky broadband albedo | [CGLS Surface Albedo](https://cds.climate.copernicus.eu/datasets/satellite-albedo) |
+| `GHSBuiltH`        | `:building_height` — mean net building height (ANBH, 100 m, epoch 2018) over a regional window; reprojected from GHSL World-Mollweide (needs `ArchGDAL`) | [GHSL GHS-BUILT-H](https://human-settlement.emergency.copernicus.eu) |
+| `GHSBuiltS`        | `:built_up_fraction` — plan-area built-up fraction (10 m or 100 m) over a regional window; reprojected from GHSL World-Mollweide (needs `ArchGDAL`) | [GHSL GHS-BUILT-S](https://human-settlement.emergency.copernicus.eu) |
 
