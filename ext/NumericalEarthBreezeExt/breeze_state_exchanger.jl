@@ -64,8 +64,8 @@ end
 const PrognosticStateFTS = FieldTimeSeries{<:Any, <:Any, <:Any, <:Any, <:PrognosticStateBackend}
 update_field_time_series!(::PrognosticStateFTS, ::Time) = nothing
 
-@kernel function _compute_child_prognostics!(ρᵈ, ρu, ρv, ρθ, ρqᵛ,
-                                             T, qᵛ, qᶜˡ, qʳ, qᶜⁱ, qˢ, p, u, v,
+@kernel function _compute_child_prognostics!(ρᵈ, ρu, ρv, ρθ, ρqᵛ, θ, u, v,
+                                             T, qᵛ, qᶜˡ, qʳ, qᶜⁱ, qˢ, p, uₚ, vₚ,
                                              pˢᵗ, Rᵈ, Rᵛ, cᵖᵈ, ℒˡ, ℒⁱ)
     i, j, k = @index(Global, NTuple)
     @inbounds begin
@@ -77,14 +77,21 @@ update_field_time_series!(::PrognosticStateFTS, ::Time) = nothing
 
         ρ  = air_density(Tᵢ, qᵛᵢ, qˡ, qⁱ, pᵢ, Rᵈ, Rᵛ)
         qᵗ = qᵛᵢ + qˡ + qⁱ
-        ρd = ρ * (1 - qᵗ)
-        θ  = liquid_ice_potential_temperature(Tᵢ, qˡ, qⁱ, pᵢ, pˢᵗ, Rᵈ, cᵖᵈ, ℒˡ, ℒⁱ)
+        θᵢ = liquid_ice_potential_temperature(Tᵢ, qˡ, qⁱ, pᵢ, pˢᵗ, Rᵈ, cᵖᵈ, ℒˡ, ℒⁱ)
 
-        ρᵈ[i, j, k]  = ρd
-        ρθ[i, j, k]  = ρd * θ
-        ρu[i, j, k]  = ρd * u[i, j, k]
-        ρv[i, j, k]  = ρd * v[i, j, k]
+        ρᵈ[i, j, k]  = ρ * (1 - qᵗ)
+        ρθ[i, j, k]  = ρᵈ[i, j, k] * θᵢ
+        ρu[i, j, k]  = ρᵈ[i, j, k] * uₚ[i, j, k]
+        ρv[i, j, k]  = ρᵈ[i, j, k] * vₚ[i, j, k]
         ρqᵛ[i, j, k] = ρ * qᵛᵢ
+
+        # When performing Davies `Relaxation` to a `PrescribedAtmosphere` parent, we construct
+        # `SpecificForcing`s with these intensive quantities
+        #
+        # Note: we can do a memory optimization here for `parent_atmosphere.velocities.*`
+        θ[i, j, k] = θᵢ
+        u[i, j, k] = uₚ[i, j, k]
+        v[i, j, k] = vₚ[i, j, k]
     end
 end
 
@@ -117,7 +124,7 @@ function child_prognostic_field_time_series(parent_atmosphere; time_indices_in_m
     build() = FieldTimeSeries{Center, Center, Center}(grid, times;
                                                       backend = PrognosticStateBackend(1, window),
                                                       time_indexing = Cyclical())
-    return (ρᵈ = build(), ρu = build(), ρv = build(), ρθ = build(), ρqᵛ = build())
+    return (ρᵈ = build(), ρu = build(), ρv = build(), ρθ = build(), ρqᵛ = build(), θ = build(), u = build(), v = build())
 end
 
 # Fill the derived FTS's resident window with one fused
@@ -134,7 +141,7 @@ function compute_child_prognostics!(prognostic, parent_atmosphere, pˢᵗ, const
 
     for n in time_indices(prognostic.ρᵈ)
         launch!(arch, grid, :xyz, _compute_child_prognostics!,
-                prognostic.ρᵈ[n], prognostic.ρu[n], prognostic.ρv[n], prognostic.ρθ[n], prognostic.ρqᵛ[n],
+                prognostic.ρᵈ[n], prognostic.ρu[n], prognostic.ρv[n], prognostic.ρθ[n], prognostic.ρqᵛ[n], prognostic.θ[n], prognostic.u[n], prognostic.v[n],
                 parent_atmosphere.temperature[n], parent_atmosphere.specific_humidity[n],
                 source_snapshot(condensates.qᶜˡ, n), source_snapshot(condensates.qʳ, n),
                 source_snapshot(condensates.qᶜⁱ, n), source_snapshot(condensates.qˢ, n),
