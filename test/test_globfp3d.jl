@@ -59,12 +59,18 @@ using Oceananigans.Fields: location
     @test sum(mq.built_up_fraction) > 0
     @test all(0 .<= mq.built_up_fraction .<= 1)
 
-    # A stretched target grid has no constant step, so the reduction rejects it rather than
-    # silently binning against a bogus Δλ/Δφ from its face vector.
+    # A latitude/longitude-stretched target grid bins each fine cell by the target cell faces, so
+    # it reduces correctly (one building per quadrant lands in the right cell with distinct values).
     stretched = LatitudeLongitudeGrid(CPU(), Float64; size = (2, 2),
-                                      longitude = [0.0, 2Δ, 6Δ], latitude = (0, 6Δ),
+                                      longitude = [0.0, 2Δ, 6Δ],   # unequal columns
+                                      latitude  = [0.0, 4Δ, 6Δ],   # unequal rows
                                       topology = (Bounded, Bounded, Flat))
-    @test_throws ErrorException reduce_morphometry(height, lon, lat, stretched)
+    hq = zeros(6, 6)
+    hq[1, 1] = 10; hq[3, 1] = 20; hq[1, 5] = 30; hq[3, 5] = 40
+    ms = reduce_morphometry(hq, lon, lat, stretched)
+    @test ms.mean_building_height    ≈ [10.0 30.0; 20.0 40.0]
+    @test ms.maximum_building_height ≈ [10.0 30.0; 20.0 40.0]
+    @test ms.built_up_fraction       ≈ [1/8 1/4; 1/16 1/8]
 
     # A degenerate 1×1 fine raster has no fine step to difference: return a result, not a crash.
     m1 = reduce_morphometry(fill(20.0, 1, 1), [3Δ], [3Δ], target)

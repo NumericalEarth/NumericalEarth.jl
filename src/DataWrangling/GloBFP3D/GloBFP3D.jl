@@ -3,10 +3,10 @@ module GloBFP3D
 export BuildingFootprints3D, building_morphometry
 
 using Downloads: Downloads
-using Oceananigans: Center
+using Oceananigans: Center, Face
 using Oceananigans.Architectures: architecture, on_architecture
 using Oceananigans.Fields: Field, interior
-using Oceananigans.Grids: cpu_face_constructor_x, cpu_face_constructor_y, LatitudeLongitudeGrid
+using Oceananigans.Grids: LatitudeLongitudeGrid, λnodes, φnodes
 using Oceananigans.DistributedComputations: @root
 
 using ..DataWrangling: DataWrangling, AbstractStaticDataset, Metadatum,
@@ -186,26 +186,19 @@ end
 ##### Hmax, and the windward wall area (from height steps) for the frontal-area index λf.
 #####
 
-# 0-based target cell of a fine cell center on a regular target grid.
-@inline function target_cell_index(longitude, latitude, west, south, Δλ, Δφ)
-    I = floor(Int, (longitude - west) / Δλ) + 1
-    J = floor(Int, (latitude  - south) / Δφ) + 1
-    return I, J
-end
-
-# `cpu_face_constructor_*` returns a 2-tuple `(left, right)` for a regular dimension and the full
-# face vector for a stretched one. The binning above needs a constant step, so require regular.
-regular_extent(extent::Tuple, _) = extent
-regular_extent(::AbstractVector, dimension) =
-    error("building_morphometry needs a regularly spaced target grid, but its $dimension is " *
-          "stretched. Pass a LatitudeLongitudeGrid with uniform longitude/latitude spacing.")
+# Target cell each fine coordinate falls in, from the target cell `faces`. Resolved once per fine
+# row/column (not per cell), so the hot loop stays O(1) per fine cell for regular and stretched
+# grids alike. `searchsortedlast` returns 0 or `N+1` outside the target hull (filtered by the
+# bounds check in the loop).
+target_index_map(faces, coordinates) = Int[searchsortedlast(faces, c) for c in coordinates]
 
 """
     reduce_morphometry(height, longitudes, latitudes, target_grid)
 
 Reduce a fine building-height raster — `height` (m, `0` where unbuilt) on the regular grid of
-cell-center `longitudes`/`latitudes` (degrees) — onto `target_grid` (a coarser regular
-`LatitudeLongitudeGrid`). Returns a NamedTuple of `(Nx, Ny)` arrays:
+cell-center `longitudes`/`latitudes` (degrees) — onto `target_grid` (a coarser
+`LatitudeLongitudeGrid`, regular or latitude/longitude-stretched). Returns a NamedTuple of
+`(Nx, Ny)` arrays:
 
 - `built_up_fraction` `λp` — fraction of fine cells that are built.
 - `mean_building_height` `H` — mean height over the **built** fine cells (area-weighted).
@@ -215,21 +208,23 @@ cell-center `longitudes`/`latitudes` (degrees) — onto `target_grid` (a coarser
 - `frontal_area_index` `λf` — windward wall area from height steps, direction-averaged:
   `(Σₓ|ΔH|·dy + Σᵧ|ΔH|·dx) / (4·A)`.
 
-Empty target cells are `0`. The fine raster is geographic (EPSG:4326), so `target_grid` must
-be a `LatitudeLongitudeGrid` (coarser than the raster); the latitude-varying cell size is
+Empty target cells are `0`. The fine raster is geographic (EPSG:4326), so `target_grid` must be a
+`LatitudeLongitudeGrid` (coarser than the raster); each fine cell is placed by the target cell
+faces, so a latitude/longitude-stretched grid works too, and the latitude-varying cell size is
 carried through the metric `dx`/`dy` in `λf`.
 """
 function reduce_morphometry(height, longitudes, latitudes, target_grid::LatitudeLongitudeGrid)
-    west, east   = regular_extent(cpu_face_constructor_x(target_grid), "longitude")
-    south, north = regular_extent(cpu_face_constructor_y(target_grid), "latitude")
     Nx = size(target_grid, 1)
     Ny = size(target_grid, 2)
-    Δλ = (east - west) / Nx
-    Δφ = (north - south) / Ny
+    λfaces   = λnodes(target_grid, Face())
+    φfaces   = φnodes(target_grid, Face())
+    φcenters = φnodes(target_grid, Center())
 
     nx, ny = size(height)
     Δλ_fine = nx > 1 ? longitudes[2] - longitudes[1] : zero(eltype(longitudes))
     Δφ_fine = ny > 1 ? latitudes[2]  - latitudes[1]  : zero(eltype(latitudes))
+    Imap = target_index_map(λfaces, longitudes)
+    Jmap = target_index_map(φfaces, latitudes)
 
     count_total = zeros(Int, Nx, Ny)
     count_built = zeros(Int, Nx, Ny)
@@ -240,7 +235,8 @@ function reduce_morphometry(height, longitudes, latitudes, target_grid::Latitude
     Σstep_y     = zeros(Float64, Nx, Ny)
 
     @inbounds for j in 1:ny, i in 1:nx
-        I, J = target_cell_index(longitudes[i], latitudes[j], west, south, Δλ, Δφ)
+        I = Imap[i]
+        J = Jmap[j]
         (1 <= I <= Nx && 1 <= J <= Ny) || continue
         h = height[i, j]
         count_total[I, J] += 1
@@ -265,7 +261,7 @@ function reduce_morphometry(height, longitudes, latitudes, target_grid::Latitude
     # (Δx = radius·cosd(φ)·deg2rad(Δλ), Δy = radius·deg2rad(Δφ)).
     R = target_grid.radius
     for J in 1:Ny
-        φc = south + (J - 1/2) * Δφ
+        φc = φcenters[J]
         dy = R * deg2rad(Δφ_fine)
         dx = R * deg2rad(Δλ_fine) * cosd(φc)
         for I in 1:Nx
