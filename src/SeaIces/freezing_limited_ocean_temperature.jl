@@ -85,7 +85,7 @@ function InterfaceComputations.compute_sea_ice_ocean_fluxes!(cm::FreezingLimited
     cᵒᶜ = ocean_properties.heat_capacity
 
     # Guard for ocean.model.clock.iteration == 0
-    Δt_frazil = ocean.model.clock.iteration == 0 ? convert(typeof(Δt), Inf) : Δt
+    Δt_frazil = ifelse(ocean.model.clock.iteration == 0, convert(typeof(Δt), Inf), Δt)
 
     launch!(arch, grid, :xy, _freeze_ocean_temperature!, 𝒬ᶠʳᶻ, Tᵒᶜ, Sᵒᶜ, liquidus, grid, ρᵒᶜ, cᵒᶜ, Δt_frazil)
 
