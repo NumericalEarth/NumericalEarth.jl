@@ -1,7 +1,7 @@
 include("runtests_setup.jl")
 
 using NumericalEarth.Bathymetry: bare_earth_elevation, regrid_topography
-using NumericalEarth.DataWrangling: validate_dataset_coverage, default_horizontal_padding
+using NumericalEarth.DataWrangling: validate_dataset_coverage, default_region
 using NumericalEarth.DataWrangling.CopernicusDEM: GLO30
 using NumericalEarth.ETOPO
 
@@ -77,8 +77,9 @@ end
     for arch in test_architectures
         grid = land_grid(arch)
 
-        # ETOPO stands in for a DSM here (it is the dataset available without a
-        # token); the GLO-30 path is identical but network/credential-gated.
+        # ETOPO stands in for a DSM here (it is the dataset available without a token). ETOPO
+        # reads globally, GLO-30 is windowed to the grid — the only difference is the region
+        # `regrid_topography` auto-derives; the subtraction below is identical for both.
         object = height_field(grid, 25.0)
         z_dsm  = regrid_topography(grid; dataset = ETOPO2022())
         z_bare = bare_earth_elevation(grid, object; dataset = ETOPO2022())
@@ -89,14 +90,18 @@ end
     end
 end
 
-@testset "bare_earth_elevation — GLO30 region derived from the grid" begin
+@testset "bare_earth_elevation — region auto-derived per dataset" begin
     grid = land_grid(CPU())
 
     # The global 30 m product must be windowed: a GLO30 metadatum with no region is rejected.
     @test_throws ErrorException validate_dataset_coverage(grid, Metadatum(:bottom_height; dataset = GLO30()))
 
-    # The grid-level method derives that window from the grid, so the region it builds
-    # passes validation without the caller supplying a BoundingBox.
-    region = BoundingBox(grid; padding = default_horizontal_padding(GLO30()))
+    # GLO30 derives a bounded window from the grid, so the metadatum passes validation
+    # without the caller supplying a BoundingBox.
+    region = default_region(GLO30(), grid)
+    @test region isa BoundingBox
     @test validate_dataset_coverage(grid, Metadatum(:bottom_height; dataset = GLO30(), region)) === nothing
+
+    # ETOPO is a global file read whole, so it needs no window.
+    @test default_region(ETOPO2022(), grid) === nothing
 end
