@@ -57,8 +57,8 @@ include("energy_balance/energy_balance.jl")
 include("hydrology/hydrology.jl")
 include("properties/property_providers.jl")
 
-# Aerodynamic roughness closure (drag partition): canopy height + LAI
-# → momentum roughness length z0 and zero-plane displacement d0.
+# Aerodynamic roughness closure (drag partition): canopy height + leaf area index
+# → momentum roughness length ℓᵐ and zero-plane displacement d.
 include("roughness/canopy_roughness_closure.jl")
 include("roughness/canopy_classes.jl")
 include("roughness/canopy_roughness_field.jl")

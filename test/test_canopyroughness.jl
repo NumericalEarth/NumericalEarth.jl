@@ -9,27 +9,26 @@ using NumericalEarth.Lands:
     is_vegetated, nonvegetated_roughness,
     compute_aerodynamic_roughness!, canopy_roughness_climatology
 
-using Oceananigans.Fields: interior, set!
 using Oceananigans.OutputReaders: FieldTimeSeries
 using Statistics: mean
 
-const κ  = 0.4
-const ψh = 0.193
+const ϰ = 0.4
+const ψ = 0.193
 const iters = 20
 
 params(class) = canopy_drag_parameters(Float64, class)
-dp = DragPartitionRoughness(Float64)   # default :evergreen_broadleaf_forest, (κ, ψₕ, iters) = (0.4, 0.193, 20)
+dp = DragPartitionRoughness(Float64)   # default :evergreen_broadleaf_forest, (ϰ, ψ, iters) = (0.4, 0.193, 20)
 
 #####
 ##### Raupach (1994) / Jasinski (2005) drag-partition closure: per-class oracle + ordering.
 #####
 
 @testset "Drag-partition closure" begin
-    # Per-class oracle: at a representative growing-season Λ and per-class height the full
-    # closure reproduces the class-integrated satellite estimates z0i, d0i of Borak et al.
+    # Per-class oracle: at a representative growing-season leaf area index and per-class height
+    # the full closure reproduces the class-integrated satellite estimates ℓᵐi, di of Borak et al.
     # (2025) Table 5 (their class-averaged product), to within the spread of its
-    # seasonal/spatial averaging, and stays at or below the semi-empirical z0e.
-    # (IGBP class, height, Λ, z0i, z0e, d0i, d0e)
+    # seasonal/spatial averaging, and stays at or below the semi-empirical ℓᵐe.
+    # (IGBP class, height, leaf area index, ℓᵐi, ℓᵐe, di, de)
     oracle = Dict(
         "EBF" => (:evergreen_broadleaf_forest,  24.72, 6.0, 1.16, 3.30, 21.18, 16.48),
         "DBF" => (:deciduous_broadleaf_forest,  17.43, 5.0, 0.98, 2.32, 14.42, 11.62),
@@ -37,47 +36,47 @@ dp = DragPartitionRoughness(Float64)   # default :evergreen_broadleaf_forest, (�
         "GRS" => (:grassland,                    1.39, 1.5, 0.14, 0.19,  0.97,  0.93),
         "CRP" => (:cropland,                     1.32, 3.0, 0.13, 0.18,  0.72,  0.88))
 
-    for (_, (class, h, Λ, z0i, z0e, d0i, d0e)) in oracle
-        z0, d0 = canopy_roughness(Λ, h, params(class), κ, ψh, iters)
-        @test abs(z0 - z0i) ≤ 0.25          # reproduces the class-integrated satellite z0
-        @test abs(d0 - d0i) ≤ 1.0           # reproduces the class-integrated satellite d0
-        @test z0 ≤ z0e + 0.05               # drag partition skims below the height-only rule
+    for (_, (class, h, 𝒜, ℓᵐi, ℓᵐe, di, de)) in oracle
+        ℓᵐ, d = canopy_roughness(𝒜, h, params(class), ϰ, ψ, iters)
+        @test abs(ℓᵐ - ℓᵐi) ≤ 0.25          # reproduces the class-integrated satellite ℓᵐ
+        @test abs(d - di) ≤ 1.0             # reproduces the class-integrated satellite d
+        @test ℓᵐ ≤ ℓᵐe + 0.05               # drag partition skims below the height-only rule
     end
 
     # Forest roughness/displacement dwarf non-forest.
-    z0_forest, d0_forest = canopy_roughness(6.0, 24.72, params(:evergreen_broadleaf_forest), κ, ψh, iters)
-    z0_crop,   d0_crop   = canopy_roughness(3.0,  1.32, params(:cropland), κ, ψh, iters)
-    @test z0_forest > 10z0_crop
-    @test d0_forest > 10d0_crop
+    ℓᵐ_forest, d_forest = canopy_roughness(6.0, 24.72, params(:evergreen_broadleaf_forest), ϰ, ψ, iters)
+    ℓᵐ_crop,   d_crop   = canopy_roughness(3.0,  1.32, params(:cropland), ϰ, ψ, iters)
+    @test ℓᵐ_forest > 10ℓᵐ_crop
+    @test d_forest > 10d_crop
 
-    # Semi-empirical relations are exact closed forms (d0 = 2h/3, z0 = d0/5).
+    # Semi-empirical relations are exact closed forms (d = 2h/3, ℓᵐ = d/5).
     @test semiempirical_displacement(24.72) ≈ 2 * 24.72 / 3
     @test semiempirical_roughness(24.72)    ≈ 2 * 24.72 / 3 / 5
 
     # DragPartitionRoughness exposes the shared `aerodynamic_parameters(closure, cell)`
     # contract: over a cell it reproduces the raw scalar closure for its vegetation class.
-    cell = (; lai = 6.0, canopy_height = 24.72)
-    @test aerodynamic_parameters(dp, cell) == canopy_roughness(6.0, 24.72, params(:evergreen_broadleaf_forest), κ, ψh, iters)
+    cell = (; leaf_area_index = 6.0, canopy_height = 24.72)
+    @test aerodynamic_parameters(dp, cell) == canopy_roughness(6.0, 24.72, params(:evergreen_broadleaf_forest), ϰ, ψ, iters)
     @test dp(cell) == aerodynamic_parameters(dp, cell)
 
     # A non-default vegetation class selects different parameters.
     grass = DragPartitionRoughness(Float64; vegetation_type = :grassland)
-    @test aerodynamic_parameters(grass, (; lai = 1.5, canopy_height = 1.39)) ==
-          canopy_roughness(1.5, 1.39, params(:grassland), κ, ψh, iters)
+    @test aerodynamic_parameters(grass, (; leaf_area_index = 1.5, canopy_height = 1.39)) ==
+          canopy_roughness(1.5, 1.39, params(:grassland), ϰ, ψ, iters)
 end
 
-@testset "LAI dependence: monotone d0, skimming z0" begin
-    p = params(:cropland)  # Λmax = 1.5
-    Λs = 0.2:0.2:1.4
-    d0(Λ) = zero_plane_displacement(Λ, canopy_wind_ratio(Λ, p, iters), 1.32, p)
-    @test issorted(d0.(Λs))                                # d0 monotone increasing
-    # Λmax caps only the wind ratio; displacement keeps rising past it toward the canopy top.
-    @test d0(5.0) > d0(1.5)
+@testset "Leaf-area-index dependence: monotone d, skimming ℓᵐ" begin
+    p = params(:cropland)  # 𝒜ᶜ = 1.5
+    indices = 0.2:0.2:1.4
+    d(𝒜) = zero_plane_displacement(𝒜, canopy_wind_ratio(𝒜, p, iters), 1.32, p)
+    @test issorted(d.(indices))                            # d monotone increasing
+    # 𝒜ᶜ caps only the wind ratio; displacement keeps rising past it toward the canopy top.
+    @test d(5.0) > d(1.5)
 
-    # z0 is non-monotonic and keeps skimming: it falls as density grows past Λmax.
-    z0(Λ) = canopy_roughness(Λ, 1.32, p, κ, ψh, iters)[1]
-    @test z0(3.0) < z0(1.0)                                # dense canopy skims → lower z0
-    @test z0(5.0) < z0(3.0)                                # skimming continues past Λmax
+    # ℓᵐ is non-monotonic and keeps skimming: it falls as density grows past 𝒜ᶜ.
+    ℓᵐ(𝒜) = canopy_roughness(𝒜, 1.32, p, ϰ, ψ, iters)[1]
+    @test ℓᵐ(3.0) < ℓᵐ(1.0)                                # dense canopy skims → lower ℓᵐ
+    @test ℓᵐ(5.0) < ℓᵐ(3.0)                                # skimming continues past 𝒜ᶜ
 end
 
 @testset "IGBP class taxonomy" begin
@@ -116,11 +115,11 @@ end
 @testset "Kernel safety: finite everywhere, correct eltype" begin
     for FT in (Float32, Float64)
         p = canopy_drag_parameters(FT, :cropland)
-        for (Λ, h) in ((FT(0), FT(1.32)), (FT(1e-6), FT(1.32)), (FT(3), FT(0)), (FT(1e3), FT(1.32)))
-            z0, d0 = canopy_roughness(Λ, h, p, FT(0.4), FT(0.193), iters)
-            @test isfinite(z0) && isfinite(d0)
-            @test z0 isa FT && d0 isa FT
-            @test z0 ≥ 0 && d0 ≥ 0
+        for (𝒜, h) in ((FT(0), FT(1.32)), (FT(1e-6), FT(1.32)), (FT(3), FT(0)), (FT(1e3), FT(1.32)))
+            ℓᵐ, d = canopy_roughness(𝒜, h, p, FT(0.4), FT(0.193), iters)
+            @test isfinite(ℓᵐ) && isfinite(d)
+            @test ℓᵐ isa FT && d isa FT
+            @test ℓᵐ ≥ 0 && d ≥ 0
         end
     end
 end
@@ -136,107 +135,109 @@ scalarfield(grid) = Field{Center, Center, Nothing}(grid)
 
 @testset "On-grid builder matches the scalar closure" begin
     grid = grid2()
-    Λ, hc = scalarfield(grid), scalarfield(grid)
-    z0m, d0 = scalarfield(grid), scalarfield(grid)
+    leaf_area_index, h = scalarfield(grid), scalarfield(grid)
+    ℓᵐ, d = scalarfield(grid), scalarfield(grid)
 
-    # Uniform evergreen-broadleaf canopy (Λ = 5, 24.72 m) → the builder matches the scalar closure.
-    set!(Λ, 5); set!(hc, 24.72)
-    compute_aerodynamic_roughness!(z0m, d0, dp, (; lai = Λ, canopy_height = hc), grid)
-    z0ref, d0ref = canopy_roughness(5.0, 24.72, params(:evergreen_broadleaf_forest), κ, ψh, iters)
-    @test all(≈(z0ref), interior(z0m))
-    @test all(≈(d0ref), interior(d0))
+    # Uniform evergreen-broadleaf canopy (𝒜 = 5, 24.72 m) → the builder matches the scalar closure.
+    set!(leaf_area_index, 5); set!(h, 24.72)
+    compute_aerodynamic_roughness!(ℓᵐ, d, dp, (; leaf_area_index, canopy_height = h), grid)
+    ℓᵐref, dref = canopy_roughness(5.0, 24.72, params(:evergreen_broadleaf_forest), ϰ, ψ, iters)
+    @test all(≈(ℓᵐref), interior(ℓᵐ))
+    @test all(≈(dref), interior(d))
 
     # A scalar height broadcasts identically to a uniform field.
-    z0s, d0s = scalarfield(grid), scalarfield(grid)
-    compute_aerodynamic_roughness!(z0s, d0s, dp, (; lai = Λ, canopy_height = 24.72), grid)
-    @test interior(z0s) == interior(z0m)
-    @test interior(d0s) == interior(d0)
+    ℓᵐs, ds = scalarfield(grid), scalarfield(grid)
+    compute_aerodynamic_roughness!(ℓᵐs, ds, dp, (; leaf_area_index, canopy_height = 24.72), grid)
+    @test interior(ℓᵐs) == interior(ℓᵐ)
+    @test interior(ds) == interior(d)
 
     # Omitting canopy_height → the class representative height (EBF 24.72) fills every cell;
-    # since hc was also 24.72, the result matches the explicit-field build.
-    z0f, d0f = scalarfield(grid), scalarfield(grid)
-    compute_aerodynamic_roughness!(z0f, d0f, dp, (; lai = Λ), grid)
-    @test interior(z0f) == interior(z0m)
-    @test interior(d0f) == interior(d0)
+    # since h was also 24.72, the result matches the explicit-field build.
+    ℓᵐf, df = scalarfield(grid), scalarfield(grid)
+    compute_aerodynamic_roughness!(ℓᵐf, df, dp, (; leaf_area_index), grid)
+    @test interior(ℓᵐf) == interior(ℓᵐ)
+    @test interior(df) == interior(d)
 
-    # Invalid LAI → honest NaN gap.
-    set!(Λ, 1e30)
-    compute_aerodynamic_roughness!(z0m, d0, dp, (; lai = Λ, canopy_height = hc), grid)
-    @test all(isnan, interior(z0m))
-    @test all(isnan, interior(d0))
+    # Invalid leaf area index → honest NaN gap.
+    set!(leaf_area_index, 1e30)
+    compute_aerodynamic_roughness!(ℓᵐ, d, dp, (; leaf_area_index, canopy_height = h), grid)
+    @test all(isnan, interior(ℓᵐ))
+    @test all(isnan, interior(d))
 end
 
 @testset "Per-cell canopy height and gaps" begin
     grid = grid2()
-    Λ, hc = scalarfield(grid), scalarfield(grid)
-    z0m, d0 = scalarfield(grid), scalarfield(grid)
-    set!(Λ, 5)
+    leaf_area_index, h = scalarfield(grid), scalarfield(grid)
+    ℓᵐ, d = scalarfield(grid), scalarfield(grid)
+    set!(leaf_area_index, 5)
 
-    H = interior(hc)
+    H = interior(h)
     H[1, 1, 1] = 30.0     # tall measured canopy
-    H[2, 1, 1] = 0.0      # non-forest reading → z0 = 0
+    H[2, 1, 1] = 0.0      # non-forest reading → ℓᵐ = 0
     H[1, 2, 1] = NaN      # no observation → NaN gap
     H[2, 2, 1] = 10.0     # short measured canopy
-    compute_aerodynamic_roughness!(z0m, d0, dp, (; lai = Λ, canopy_height = hc), grid)
-    Z = interior(z0m)
-    @test Z[1, 1, 1] ≈ canopy_roughness(5.0, 30.0, params(:evergreen_broadleaf_forest), κ, ψh, iters)[1]
-    @test Z[2, 1, 1] == 0                                  # h = 0 → z0 = 0
-    @test isnan(Z[1, 2, 1])                                # NaN height → gap
-    @test Z[2, 2, 1] ≈ canopy_roughness(5.0, 10.0, params(:evergreen_broadleaf_forest), κ, ψh, iters)[1]
-    @test Z[1, 1, 1] > Z[2, 2, 1]                          # taller canopy → rougher
+    compute_aerodynamic_roughness!(ℓᵐ, d, dp, (; leaf_area_index, canopy_height = h), grid)
+    L = interior(ℓᵐ)
+    @test L[1, 1, 1] ≈ canopy_roughness(5.0, 30.0, params(:evergreen_broadleaf_forest), ϰ, ψ, iters)[1]
+    @test L[2, 1, 1] == 0                                  # h = 0 → ℓᵐ = 0
+    @test isnan(L[1, 2, 1])                                # NaN height → gap
+    @test L[2, 2, 1] ≈ canopy_roughness(5.0, 10.0, params(:evergreen_broadleaf_forest), ϰ, ψ, iters)[1]
+    @test L[1, 1, 1] > L[2, 2, 1]                          # taller canopy → rougher
 end
 
 @testset "Climatology driver" begin
     grid = grid2()
-    hc = scalarfield(grid)
-    set!(hc, 25.0)
+    h = scalarfield(grid)
+    set!(h, 25.0)
 
-    lai = FieldTimeSeries{Center, Center, Nothing}(grid, [0.0, 1.0])
-    set!(lai[1], 0.5); set!(lai[2], 5.0)
+    leaf_area_index = FieldTimeSeries{Center, Center, Nothing}(grid, [0.0, 1.0])
+    set!(leaf_area_index[1], 0.5); set!(leaf_area_index[2], 5.0)
 
-    z0ts, d0ts = canopy_roughness_climatology(lai, hc)
-    @test size(z0ts) == size(lai)
-    # Displacement rises with the summer LAI increase; roughness skims down as the dense
-    # summer canopy closes (past the z0 peak).
-    @test mean(interior(d0ts[2])) > mean(interior(d0ts[1]))
-    @test mean(interior(z0ts[2])) < mean(interior(z0ts[1]))
+    ℓᵐts, dts = canopy_roughness_climatology(leaf_area_index, h)
+    @test size(ℓᵐts) == size(leaf_area_index)
+    # Displacement rises with the summer leaf-area increase; roughness skims down as the dense
+    # summer canopy closes (past the ℓᵐ peak).
+    @test mean(interior(dts[2])) > mean(interior(dts[1]))
+    @test mean(interior(ℓᵐts[2])) < mean(interior(ℓᵐts[1]))
 
     # The static height feeds through: the driver matches the per-slice builder.
-    z0check, d0check = scalarfield(grid), scalarfield(grid)
-    compute_aerodynamic_roughness!(z0check, d0check, dp, (; lai = lai[2], canopy_height = hc), grid)
-    @test interior(z0ts[2]) == interior(z0check)
+    ℓᵐcheck, dcheck = scalarfield(grid), scalarfield(grid)
+    compute_aerodynamic_roughness!(ℓᵐcheck, dcheck, dp,
+                                   (; leaf_area_index = leaf_area_index[2], canopy_height = h), grid)
+    @test interior(ℓᵐts[2]) == interior(ℓᵐcheck)
 
     # Without a canopy height, the climatology uses the class representative height.
-    z0rep, d0rep = canopy_roughness_climatology(lai)
-    z0repcheck = scalarfield(grid); d0repcheck = scalarfield(grid)
-    compute_aerodynamic_roughness!(z0repcheck, d0repcheck, dp, (; lai = lai[2]), grid)
-    @test interior(z0rep[2]) == interior(z0repcheck)
+    ℓᵐrep, drep = canopy_roughness_climatology(leaf_area_index)
+    ℓᵐrepcheck = scalarfield(grid); drepcheck = scalarfield(grid)
+    compute_aerodynamic_roughness!(ℓᵐrepcheck, drepcheck, dp,
+                                   (; leaf_area_index = leaf_area_index[2]), grid)
+    @test interior(ℓᵐrep[2]) == interior(ℓᵐrepcheck)
 end
 
-@testset "Tunable LAI ceiling, Field and FieldTimeSeries canopy height" begin
+@testset "Tunable leaf-area ceiling, Field and FieldTimeSeries canopy height" begin
     grid = grid2()
 
-    # `maximum_valid_area_index` is a closure field the user can raise: a finite LAI above the
-    # default ceiling (10) gaps, and lifting the ceiling admits it.
-    hi = DragPartitionRoughness(Float64; maximum_valid_area_index = 15)
+    # `maximum_valid_leaf_area_index` is a closure field the user can raise: a finite index above
+    # the default ceiling (10) gaps, and lifting the ceiling admits it.
+    hi = DragPartitionRoughness(Float64; maximum_valid_leaf_area_index = 15)
     @test all(isnan,    canopy_roughness(dp, 12.0, 24.72))    # 12 > default ceiling → NaN gap
     @test all(isfinite, canopy_roughness(hi, 12.0, 24.72))    # raised ceiling admits it
 
     # A spatially-varying canopy-height Field flows through the unified `canopy_roughness`.
-    lai = scalarfield(grid); set!(lai, 5)
-    hc  = scalarfield(grid)
-    H = interior(hc); H[1, 1, 1] = 30.0; H[2, 2, 1] = 10.0
-    z0, d0 = canopy_roughness(dp, lai, hc)
-    @test interior(z0)[1, 1, 1] ≈ canopy_roughness(5.0, 30.0, params(:evergreen_broadleaf_forest), κ, ψh, iters)[1]
-    @test interior(z0)[2, 2, 1] ≈ canopy_roughness(5.0, 10.0, params(:evergreen_broadleaf_forest), κ, ψh, iters)[1]
+    leaf_area_index = scalarfield(grid); set!(leaf_area_index, 5)
+    h = scalarfield(grid)
+    H = interior(h); H[1, 1, 1] = 30.0; H[2, 2, 1] = 10.0
+    ℓᵐ, d = canopy_roughness(dp, leaf_area_index, h)
+    @test interior(ℓᵐ)[1, 1, 1] ≈ canopy_roughness(5.0, 30.0, params(:evergreen_broadleaf_forest), ϰ, ψ, iters)[1]
+    @test interior(ℓᵐ)[2, 2, 1] ≈ canopy_roughness(5.0, 10.0, params(:evergreen_broadleaf_forest), ϰ, ψ, iters)[1]
 
-    # A FieldTimeSeries canopy height is indexed per period alongside `lai`.
-    laits = FieldTimeSeries{Center, Center, Nothing}(grid, [0.0, 1.0])
-    set!(laits[1], 5.0); set!(laits[2], 5.0)
-    hcts = FieldTimeSeries{Center, Center, Nothing}(grid, [0.0, 1.0])
-    set!(hcts[1], 20.0); set!(hcts[2], 30.0)
-    z0ts, d0ts = canopy_roughness(dp, laits, hcts)
-    @test all(interior(z0ts[1]) .≈ canopy_roughness(5.0, 20.0, params(:evergreen_broadleaf_forest), κ, ψh, iters)[1])
-    @test all(interior(z0ts[2]) .≈ canopy_roughness(5.0, 30.0, params(:evergreen_broadleaf_forest), κ, ψh, iters)[1])
-    @test interior(z0ts[2]) != interior(z0ts[1])             # height varies in time → z0 varies
+    # A FieldTimeSeries canopy height is indexed per period alongside the leaf area index.
+    𝒜ts = FieldTimeSeries{Center, Center, Nothing}(grid, [0.0, 1.0])
+    set!(𝒜ts[1], 5.0); set!(𝒜ts[2], 5.0)
+    hts = FieldTimeSeries{Center, Center, Nothing}(grid, [0.0, 1.0])
+    set!(hts[1], 20.0); set!(hts[2], 30.0)
+    ℓᵐts, dts = canopy_roughness(dp, 𝒜ts, hts)
+    @test all(interior(ℓᵐts[1]) .≈ canopy_roughness(5.0, 20.0, params(:evergreen_broadleaf_forest), ϰ, ψ, iters)[1])
+    @test all(interior(ℓᵐts[2]) .≈ canopy_roughness(5.0, 30.0, params(:evergreen_broadleaf_forest), ϰ, ψ, iters)[1])
+    @test interior(ℓᵐts[2]) != interior(ℓᵐts[1])             # height varies in time → ℓᵐ varies
 end

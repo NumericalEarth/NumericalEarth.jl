@@ -1,8 +1,8 @@
 #####
 ##### Drag-partition roughness-sublayer closure
 #####
-##### Momentum roughness length z0 and zero-plane displacement d0 from canopy area
-##### index Λ and canopy height h, following the drag-partition roughness sublayer of
+##### Momentum roughness length ℓᵐ and zero-plane displacement d from the leaf area index 𝒜
+##### and canopy height h, following the drag-partition roughness sublayer of
 ##### Raupach (1994) as parameterized by Jasinski et al. (2005) and compiled by
 ##### Borak et al. (2025).
 #####
@@ -26,8 +26,8 @@ struct DragPartitionParameters{FT}
     sublayer_decay_coefficient :: FT
     "displacement coefficient `α`"
     displacement_coefficient :: FT
-    "critical (skimming) canopy area index `Λₘₐₓ`"
-    maximum_area_index :: FT
+    "critical (skimming) leaf area index `𝒜ᶜ`"
+    critical_leaf_area_index :: FT
 end
 
 function DragPartitionParameters(FT=Oceananigans.defaults.FloatType;
@@ -36,13 +36,13 @@ function DragPartitionParameters(FT=Oceananigans.defaults.FloatType;
                                  maximum_friction_ratio,
                                  sublayer_decay_coefficient,
                                  displacement_coefficient,
-                                 maximum_area_index)
+                                 critical_leaf_area_index)
     return DragPartitionParameters(convert(FT, form_drag_coefficient),
                                    convert(FT, substrate_drag_coefficient),
                                    convert(FT, maximum_friction_ratio),
                                    convert(FT, sublayer_decay_coefficient),
                                    convert(FT, displacement_coefficient),
-                                   convert(FT, maximum_area_index))
+                                   convert(FT, critical_leaf_area_index))
 end
 
 # The five Borak et al. (2025) drag-partition groups. IGBP classes map onto these via
@@ -59,19 +59,21 @@ drag_group_parameters(FT, ::Val{:shrubland}) = DragPartitionParameters{FT}(0.50,
 $(TYPEDSIGNATURES)
 
 Wind-to-friction-velocity ratio `γ ≡ Uh/u★` solved by fixed-point iteration of
-`γ = (Cˢ + Λ·Cᴿ/2)^(-1/2) · exp(c·Λ·γ/4)` (Eq. 4 of [Borak et al. (2025)](@cite borak2025global)),
-then capped so `u★/Uh ≤ (u★/Uh)ₘₐₓ`. `Λ` is limited to `Λₘₐₓ` here (the skimming cap on the
-wind ratio); displacement and roughness downstream use the full `Λ`.
+`γ = (Cˢ + 𝒜Cᴿ/2)^(-1/2) · exp(c𝒜γ/4)` (Eq. 4 of [Borak et al. (2025)](@cite borak2025global),
+whose canopy area index is the `leaf_area_index` `𝒜` here and whose `c` is the
+`sublayer_decay_coefficient`), then capped so `u★/Uh ≤ (u★/Uh)ₘₐₓ`. The index is limited to the
+critical index `𝒜ᶜ` here (the skimming cap on the wind ratio); displacement and roughness
+downstream use the full index.
 """
-@inline function canopy_wind_ratio(Λ, p::DragPartitionParameters, iterations)
+@inline function canopy_wind_ratio(leaf_area_index, p::DragPartitionParameters, iterations)
     Cᴿ = p.form_drag_coefficient
     Cˢ = p.substrate_drag_coefficient
-    c  = p.sublayer_decay_coefficient
-    Λ  = min(max(Λ, 0), p.maximum_area_index)
-    γ₀ = inv(sqrt(Cˢ + Λ * Cᴿ / 2))
+    𝒜  = max(leaf_area_index, 0)
+    𝒜ᶜ = p.critical_leaf_area_index
+    γ₀ = inv(sqrt(Cˢ + min(𝒜, 𝒜ᶜ) * Cᴿ / 2))
     γ  = γ₀
     for _ in 1:iterations
-        γ = γ₀ * exp(c * Λ * γ / 4)
+        γ = γ₀ * exp(p.sublayer_decay_coefficient * min(𝒜, 𝒜ᶜ) * γ / 4)
     end
     return max(γ, inv(p.maximum_friction_ratio))
 end
@@ -79,65 +81,66 @@ end
 """
 $(TYPEDSIGNATURES)
 
-Zero-plane displacement height `d0` from `d0/h = (βΛ/(2+βΛ))·(1 − α/(γ√Λ))` with
-`β = Cᴿ/Cˢ` (Eq. 5 of [Borak et al. (2025)](@cite borak2025global)).
-Monotonic and near-linear in `Λ`, so it carries a clean seasonal signal.
-Uses the actual `Λ` (not capped at `Λₘₐₓ`). `Λₘₐₓ` limits only the wind ratio `γ`
+Zero-plane displacement height `d` from `d/h = 𝒜/(2Cˢ/Cᴿ + 𝒜) · (1 − α/(γ√𝒜))`
+(Eq. 5 of [Borak et al. (2025)](@cite borak2025global), with their `β = Cᴿ/Cˢ` written out and
+their `α` the `displacement_coefficient`).
+Monotonic and near-linear in the leaf area index, so it carries a clean seasonal signal.
+Uses the actual index (not capped at `𝒜ᶜ`). `𝒜ᶜ` limits only the wind ratio `γ`
 (the skimming cap on `u★/Uh`), while displacement keeps rising toward `h` as the canopy
-densifies — so `d0` reaches the class-averaged values of Borak et al. (2025, Table 5).
+densifies — so `d` reaches the class-averaged values of Borak et al. (2025, Table 5).
 """
-@inline function zero_plane_displacement(Λ, γ, h, p::DragPartitionParameters)
+@inline function zero_plane_displacement(leaf_area_index, γ, h, p::DragPartitionParameters)
     Cᴿ = p.form_drag_coefficient
     Cˢ = p.substrate_drag_coefficient
-    α  = p.displacement_coefficient
-    Λ  = max(Λ, 0)
-    β  = Cᴿ / Cˢ
-    invsqrtΛ = ifelse(Λ > 0, inv(sqrt(Λ)), zero(Λ))
-    d0h = (β * Λ / (2 + β * Λ)) * (1 - α / γ * invsqrtΛ)
-    return h * clamp(d0h, 0, 1)
+    𝒜  = max(leaf_area_index, 0)
+    dh = 𝒜 / (2 * Cˢ / Cᴿ + 𝒜) *
+         (1 - p.displacement_coefficient / γ * ifelse(𝒜 > 0, inv(sqrt(𝒜)), zero(𝒜)))
+    return h * clamp(dh, 0, 1)
 end
 
 """
 $(TYPEDSIGNATURES)
 
-Momentum roughness length `z0` from `z0/h = (1 − d0/h)·exp(−κγ + ψₕ)`
-(Eq. 3 of [Borak et al. (2025)](@cite borak2025global)). Logarithmic and non-monotonic in
-`Λ`: roughness rises, peaks, then falls as the canopy densifies (the skimming effect).
+Momentum roughness length `ℓᵐ` from `ℓᵐ/h = (1 − d/h)·exp(−ϰγ + ψ)`
+(Eq. 3 of [Borak et al. (2025)](@cite borak2025global)), where `ϰ` is the von Kármán constant
+and `ψ` the roughness-sublayer influence. Logarithmic and non-monotonic in the leaf area index:
+roughness rises, peaks, then falls as the canopy densifies (the skimming effect).
 """
-@inline function canopy_roughness_length(γ, d0, h, κ, ψₕ)
-    d0h = ifelse(h > 0, d0 / h, zero(d0))
-    return h * (1 - d0h) * exp(-κ * γ + ψₕ)
+@inline function canopy_roughness_length(γ, d, h, ϰ, sublayer_influence)
+    dh = ifelse(h > 0, d / h, zero(d))
+    return h * (1 - dh) * exp(-ϰ * γ + sublayer_influence)
 end
 
 """
 $(TYPEDSIGNATURES)
 
-Momentum roughness length `z0` and zero-plane displacement `d0` (meters) for a canopy of
-area index `Λ` and height `h`, sharing the wind ratio `γ`. Returns `(z0, d0)`. `κ` is the
-von Kármán constant and `ψₕ` the roughness-sublayer influence function.
+Momentum roughness length `ℓᵐ` and zero-plane displacement `d` (meters) for a canopy of
+`leaf_area_index` and height `h`, sharing the wind ratio `γ`. Returns `(ℓᵐ, d)`. `ϰ` is the
+von Kármán constant and `sublayer_influence` the roughness-sublayer influence function.
 
 ```jldoctest
 julia> using NumericalEarth.Lands
 
 julia> p = canopy_drag_parameters(Float64, :evergreen_broadleaf_forest);
 
-julia> z0, d0 = canopy_roughness(6.0, 24.72, p, 0.4, 0.193, 20);
+julia> ℓᵐ, d = canopy_roughness(6.0, 24.72, p, 0.4, 0.193, 20);
 
-julia> round.((z0, d0), digits=2)
+julia> round.((ℓᵐ, d), digits=2)
 (1.22, 21.05)
 ```
 """
-@inline function canopy_roughness(Λ, h, p::DragPartitionParameters, κ, ψₕ, iterations)
-    γ  = canopy_wind_ratio(Λ, p, iterations)
-    d0 = zero_plane_displacement(Λ, γ, h, p)
-    z0 = canopy_roughness_length(γ, d0, h, κ, ψₕ)
-    return z0, d0
+@inline function canopy_roughness(leaf_area_index, h, p::DragPartitionParameters,
+                                  ϰ, sublayer_influence, iterations)
+    γ  = canopy_wind_ratio(leaf_area_index, p, iterations)
+    d  = zero_plane_displacement(leaf_area_index, γ, h, p)
+    ℓᵐ = canopy_roughness_length(γ, d, h, ϰ, sublayer_influence)
+    return ℓᵐ, d
 end
 
 """
 $(TYPEDSIGNATURES)
 
-Semi-empirical displacement height `d0 ≈ ⅔h` from canopy height alone
+Semi-empirical displacement height `d ≈ ⅔h` from canopy height alone
 (Brutsaert 1982; Parlange & Brutsaert 1989) — a height-only estimate, independent of
 the drag partition.
 """
@@ -146,7 +149,7 @@ the drag partition.
 """
 $(TYPEDSIGNATURES)
 
-Semi-empirical roughness length `z0 ≈ d0/5` from canopy height alone — the height-only
+Semi-empirical roughness length `ℓᵐ ≈ d/5` from canopy height alone — the height-only
 estimate paired with [`semiempirical_displacement`](@ref).
 """
 @inline semiempirical_roughness(h) = semiempirical_displacement(h) / 5
@@ -161,9 +164,19 @@ Holds the drag-partition parameters and representative canopy height for a singl
 vegetation class (`vegetation_type`, default `:evergreen_broadleaf_forest`; see
 [`canopy_drag_parameters`](@ref) and [`representative_canopy_height`](@ref)) plus the shared
 closure constants (von Kármán constant, roughness-sublayer influence, fixed-point iteration
-count). The per-cell area index and canopy height come from the `cell` passed to
+count). The per-cell leaf area index and canopy height come from the `cell` passed to
 [`aerodynamic_parameters`](@ref); where no measured height is supplied the class's
-representative height fills in. A closure evaluates through the
+representative height fills in.
+
+Raupach's theory is posed in terms of a *plant* area index (leaves plus stems and branches) and
+depends on it through a frontal area — the `/2` in the wind ratio, for randomly oriented
+elements. The per-class drag coefficients are regressed against satellite *leaf* area index, so
+`leaf_area_index` is the calibrated input and the woody area is already absorbed into `Cᴿ`.
+Adding a stem area index on top would double-count it. Note this also means leaf-off roughness
+is only as good as that absorption: a deciduous canopy at `leaf_area_index ≈ 0` still has bare
+branches the closure does not see.
+
+A closure evaluates through the
 `aerodynamic_parameters(closure, cell)` contract, so other roughness closures can be added
 against the same interface.
 
@@ -174,12 +187,12 @@ struct DragPartitionRoughness{FT}
     parameters :: DragPartitionParameters{FT}
     "representative canopy height (m), the fallback where no measured height is supplied"
     representative_height :: FT
-    "von Kármán constant `κ`"
+    "von Kármán constant `ϰ`"
     von_karman_constant :: FT
-    "roughness-sublayer influence `ψₕ` (constant 0.193; [Raupach 1995](@cite raupach1995corrigenda))"
+    "roughness-sublayer influence (constant 0.193; [Raupach 1995](@cite raupach1995corrigenda))"
     sublayer_influence :: FT
-    "data-quality ceiling on the leaf-area index; a larger `lai` is treated as fill/artifact and gapped"
-    maximum_valid_area_index :: FT
+    "data-quality ceiling on the leaf area index; a larger index is treated as fill/artifact and gapped"
+    maximum_valid_leaf_area_index :: FT
     "fixed-point iterations for the wind ratio `γ`"
     iterations :: Int
 end
@@ -189,10 +202,10 @@ DragPartitionRoughness(FT = Oceananigans.defaults.FloatType;
                        parameters = canopy_drag_parameters(FT, vegetation_type),
                        representative_height = representative_canopy_height(FT, vegetation_type),
                        von_karman_constant = 0.4,
-                       sublayer_influence = 0.193,        # ψₕ (Raupach 1995)
-                       maximum_valid_area_index = 10,     # data-quality ceiling; larger lai is fill/artifact
+                       sublayer_influence = 0.193,             # Raupach (1995)
+                       maximum_valid_leaf_area_index = 10,     # data-quality ceiling; larger is fill/artifact
                        iterations = 20) =
     DragPartitionRoughness(parameters, convert(FT, representative_height),
                            convert(FT, von_karman_constant),
                            convert(FT, sublayer_influence),
-                           convert(FT, maximum_valid_area_index), Int(iterations))
+                           convert(FT, maximum_valid_leaf_area_index), Int(iterations))

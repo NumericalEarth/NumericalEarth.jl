@@ -192,12 +192,12 @@ Surface specific humidity `qˢ` solved from a vapor-flux balance at the land
 surface, the humidity analogue of [`SkinTemperature`](@ref).
 
 Vapor reaches the surface by diffusing up from saturated soil at the saturation
-depth `d` (the `surface_thickness`), where the soil air is saturated at `qᵛ⁺(Tᵢ)` —
+depth `δˢ` (the `surface_thickness`), where the soil air is saturated at `qᵛ⁺(Tᵢ)` —
 evaluated at the interior (bulk land) temperature, since the reservoir sits at
-depth below the surface. Fick's law across `d` gives the internal (soil) vapor flux
+depth below the surface. Fick's law across `δˢ` gives the internal (soil) vapor flux
 
 ```math
-J^q = - κ^q/d \\, (qˢ - qᵛ⁺)
+J^q = - κ^q/δ^s \\, (qˢ - qᵛ⁺)
 ```
 
 with soil vapor diffusivity `κ^q` (`vapor_diffusivity`). The surface is massless,
@@ -206,8 +206,8 @@ carried away by turbulence — `qˢ` is solved inside the interface fixed-point
 iteration (see `compute_interface_humidity`), exactly as `SkinTemperature` solves
 `Tₛ` from a surface energy balance.
 
-`surface_thickness` is a `Number` (fixed `d`). A future
-`WetnessDependentSurfaceThickness` will let `d` grow as the soil dries, making
+`surface_thickness` is a `Number` (fixed `δˢ`). A future
+`WetnessDependentSurfaceThickness` will let `δˢ` grow as the soil dries, making
 evaporation self-limiting.
 """
 struct SkinHumidity{D, K, Φ}
@@ -223,10 +223,10 @@ Base.summary(::SkinHumidity{D, K, Φ}) where {D, K, Φ} =
     string("SkinHumidity{", Φ === AtmosphericThermodynamics.Liquid ? "Liquid" : "Ice", "}")
 Base.show(io::IO, q::SkinHumidity) = print(io, summary(q))
 
-# Saturation depth d. For a fixed `Number` thickness it is the number itself;
+# Saturation depth δˢ. For a fixed `Number` thickness it is the number itself;
 # a future `WetnessDependentSurfaceThickness` will dispatch here on the land
 # water state carried by the interface state.
-@inline surface_layer_thickness(d::Number, Ψₛ) = d
+@inline surface_layer_thickness(δˢ::Number, Ψₛ) = δˢ
 
 struct SalinityConstituent{FT}
     molar_mass :: FT
@@ -598,9 +598,9 @@ end
 end
 
 # `SkinHumidity`: solve the surface vapor-flux balance for qˢ. The soil delivers
-# vapor by diffusion from the saturation depth `d`,
+# vapor by diffusion from the saturation depth `δˢ`,
 #
-#     Jˢᵒⁱˡ = gˢ (qᵛ⁺ - qˢ),     gˢ = κ^q / d   (positive upward),
+#     Jˢᵒⁱˡ = gˢ (qᵛ⁺ - qˢ),     gˢ = κ^q / δˢ   (positive upward),
 #
 # which must equal the atmospheric vapor flux carried away by turbulence,
 #
@@ -619,7 +619,7 @@ end
 #
 # The reservoir is saturated at the *bulk land* temperature `Tᵈ` (the energy
 # component of the interface state), not the skin temperature: the saturated soil
-# sits at depth `d` below the surface, so its temperature is the deep soil
+# sits at depth `δˢ` below the surface, so its temperature is the deep soil
 # temperature — the same deep endpoint the conductive heat flux uses. `Tₛ` is
 # therefore unused here (`qˢ` is decoupled from the skin temperature, as a dry
 # skin implies).
@@ -631,12 +631,12 @@ end
     Tᵃᵗ = Ψₐ.T
     ρᵃᵗ = AtmosphericThermodynamics.air_density(ℂᵃᵗ, Tᵃᵗ, pᵃᵗ, qᵃᵗ)
 
-    Tᵈ  = Ψₛ.energy.temperature # bulk land temperature at the saturation depth `d`
+    Tᵈ  = Ψₛ.energy.temperature # bulk land temperature at the saturation depth `δˢ`
     qᵛ⁺ = saturation_specific_humidity(ℂᵃᵗ, Tᵈ, pᵃᵗ, q.phase)
 
-    d  = surface_layer_thickness(q.surface_thickness, Ψₛ)
+    δˢ = surface_layer_thickness(q.surface_thickness, Ψₛ)
     κ  = q.vapor_diffusivity
-    gˢ = κ / d # soil vapor conductance
+    gˢ = κ / δˢ # soil vapor conductance
 
     u★  = Ψₛ.fluxes.u★
     q★  = Ψₛ.fluxes.q★

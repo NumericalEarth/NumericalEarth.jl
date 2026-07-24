@@ -3,7 +3,7 @@
 ##### MODIS MCD12Q1 (`LC_Type1`) but are named here rather than coded. Each vegetated class maps
 ##### to one of the five Borak et al. (2025) drag-partition groups (`drag_partition_group`,
 ##### Table 2), carries a representative canopy height (`representative_canopy_height`, Table 4);
-##### the four non-vegetated classes carry prescribed roughness constants (`nonvegetated_roughness`,
+##### the four non-vegetated classes carry prescribed `(ℓᵐ, d)` constants (`nonvegetated_roughness`,
 ##### Table 3). The five group parameter sets live in `canopy_roughness_closure.jl`.
 #####
 
@@ -42,7 +42,7 @@ julia> using NumericalEarth.Lands
 
 julia> p = canopy_drag_parameters(Float64, :evergreen_broadleaf_forest);
 
-julia> p.maximum_area_index
+julia> p.critical_leaf_area_index
 1.7
 ```
 """
@@ -74,7 +74,7 @@ representative_canopy_height(FT, ::Val{:cropland_vegetation_mosaic})  = FT(1.40)
 """
 $(TYPEDSIGNATURES)
 
-Prescribed momentum roughness length and zero-plane displacement `(z0, d0)` (meters) for a
+Prescribed momentum roughness length and zero-plane displacement `(ℓᵐ, d)` (meters) for a
 non-vegetated IGBP class ([Borak et al. 2025](@cite borak2025global), Table 3): `:urban`,
 `:snow_and_ice`, `:water`, `:barren`.
 """
