@@ -3,7 +3,7 @@ include("runtests_setup.jl")
 using NumericalEarth.DataWrangling.GloBFP3D
 using NumericalEarth.DataWrangling.GloBFP3D: reduce_morphometry, native_region_grid,
                                              parse_tile_bounds, tile_intersects,
-                                             native_cell_size, native_resolution,
+                                             native_cell_size, native_cell_steps, native_resolution,
                                              globfp3d_rasterize_to_netcdf
 using NumericalEarth.DataWrangling: BoundingBox, Metadatum,
                                     longitude_interfaces, latitude_interfaces,
@@ -20,7 +20,7 @@ using Oceananigans.Fields: location
 @testset "GloBFP3D morphometry reduction" begin
     # 6×6 fine raster of 10 m cells at the equator; a 30 m building filling the 3×3 block in
     # the middle → a 30 m × 30 m × 30 m block. One target cell covering the whole raster.
-    Δ = 10 / 111320
+    Δ = rad2deg(10 / Oceananigans.defaults.planet_radius)   # 10 m N–S at the default planet radius
     lon = [(i - 1/2) * Δ for i in 1:6]
     lat = [(j - 1/2) * Δ for j in 1:6]
     height = zeros(6, 6); height[2:4, 2:4] .= 30.0
@@ -61,12 +61,16 @@ using Oceananigans.Fields: location
 end
 
 @testset "GloBFP3D native aggregation grid" begin
-    Δ = native_cell_size(BuildingFootprints3D())
+    dataset = BuildingFootprints3D()
     region = BoundingBox(longitude = (-74.02, -73.93), latitude = (40.70, 40.82))
-    g = native_region_grid(region, Δ)
-    @test g.west ≤ -74.02 && g.west + g.Nx * g.Δ ≥ -73.93
-    @test g.south ≤ 40.70 && g.south + g.Ny * g.Δ ≥ 40.82
-    @test g.Δ ≈ Δ
+    Δλ, Δφ = native_cell_steps(dataset, region)
+    g = native_region_grid(region, Δλ, Δφ)
+    @test g.west ≤ -74.02 && g.west + g.Nx * g.Δλ ≥ -73.93
+    @test g.south ≤ 40.70 && g.south + g.Ny * g.Δφ ≥ 40.82
+    @test g.Δλ ≈ Δλ && g.Δφ ≈ Δφ
+    # Cells are ~square in meters at the region centre: Δλ·cos(φ) ≈ Δφ (Δλ > Δφ away from equator).
+    @test Δλ > Δφ
+    @test Δλ * cosd(sum(region.latitude) / 2) ≈ Δφ rtol = 1e-6
 end
 
 #####

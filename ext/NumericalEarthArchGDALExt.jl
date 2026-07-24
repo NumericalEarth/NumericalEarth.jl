@@ -121,8 +121,8 @@ end
 # Burn the footprint `Height` attribute of one tile onto the region raster grid, combining
 # with what is already there by max (tiles are disjoint, so this is just the union).
 function globfp3d_rasterize_tile!(height, vsi_path, grid)
-    east  = grid.west  + grid.Nx * grid.Δ
-    north = grid.south + grid.Ny * grid.Δ
+    east  = grid.west  + grid.Nx * grid.Δλ
+    north = grid.south + grid.Ny * grid.Δφ
     ArchGDAL.read(vsi_path) do dataset
         ArchGDAL.gdalrasterize(dataset,
             ["-a", "Height",
@@ -151,15 +151,16 @@ function NumericalEarth.DataWrangling.GloBFP3D.globfp3d_rasterize_to_netcdf(
     isempty(tiles) &&
         error("No 3D-GloBFP tiles intersect the requested region $(summary(region)).")
 
-    grid = GloBFP3D.native_region_grid(region, GloBFP3D.native_cell_size(dataset))
+    Δλ, Δφ = GloBFP3D.native_cell_steps(dataset, region)
+    grid = GloBFP3D.native_region_grid(region, Δλ, Δφ)
     height = zeros(Float64, grid.Nx, grid.Ny)
     for tile in tiles
         vsi_path = globfp3d_download_tile(tile, cache_dir)
         globfp3d_rasterize_tile!(height, vsi_path, grid)
     end
 
-    longitude = [grid.west  + (i - 1/2) * grid.Δ for i in 1:grid.Nx]
-    latitude  = [grid.south + (j - 1/2) * grid.Δ for j in 1:grid.Ny]
+    longitude = [grid.west  + (i - 1/2) * grid.Δλ for i in 1:grid.Nx]
+    latitude  = [grid.south + (j - 1/2) * grid.Δφ for j in 1:grid.Ny]
 
     staging = nc_path * ".part"
     NCDataset(staging, "c") do ds

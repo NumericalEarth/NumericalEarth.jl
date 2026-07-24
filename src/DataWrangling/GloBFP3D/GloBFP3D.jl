@@ -6,7 +6,7 @@ using Downloads: Downloads
 using Oceananigans: Center
 using Oceananigans.Architectures: architecture, on_architecture
 using Oceananigans.Fields: Field, interior
-using Oceananigans.Grids: cpu_face_constructor_x, cpu_face_constructor_y
+using Oceananigans.Grids: cpu_face_constructor_x, cpu_face_constructor_y, LatitudeLongitudeGrid
 using Oceananigans.DistributedComputations: @root
 
 using ..DataWrangling: DataWrangling, AbstractStaticDataset, Metadatum,
@@ -19,9 +19,6 @@ function __init__()
     global download_GloBFP3D_cache = DataWrangling.download_cache("GloBFP3D")
 end
 
-# 1° ≈ this many meters at the equator (matches the GHSL convention).
-const METERS_PER_DEGREE = 111320.0
-
 #####
 ##### Dataset type
 #####
@@ -33,18 +30,13 @@ const METERS_PER_DEGREE = 111320.0
 polygons (LoD1), each carrying an estimated `Height` (m), distributed globally as per-tile
 shapefiles in EPSG:4326.
 
-The adapter **rasterizes** the footprint heights onto a fine grid — `resolution` meters
-(default 3 m) — producing a single decoded field, `:building_height` (the height of the
+The adapter **rasterizes** the footprint heights onto a fine grid of `resolution` meters
+(default 3 m), producing a single decoded field. `:building_height` (the height of the
 building covering each cell, `0` where unbuilt). This fine building-height raster is the
 accurate common source for per-cell morphometry: [`building_morphometry`](@ref) reduces it
 onto any (coarser) target grid, computing the mean/maximum height, height standard deviation,
-built-up fraction, frontal-area index, and gross building lift — each with the estimator
+built-up fraction, frontal-area index, and gross building lift, each with the estimator
 appropriate to it.
-
-Rasterizing (rather than binning footprint centroids) fills each footprint over the cells it
-covers, so the built fraction and the lift stay correct even when cells are smaller than
-buildings — which is what makes a fine grid, and a subsequent digital-surface-model
-correction, meaningful.
 
 Because it is a global vector product, it is read in regional windows only: construct the
 `Metadatum` with a longitude/latitude `BoundingBox`. The windowed tile download + rasterization
@@ -103,7 +95,29 @@ DataWrangling.longitude_interfaces(::BuildingFootprints3D) = (-180, 180)
 DataWrangling.latitude_interfaces(::BuildingFootprints3D)  = (-90, 90)
 
 native_resolution(dataset::BuildingFootprints3D) = dataset.resolution
-native_cell_size(dataset::BuildingFootprints3D) = native_resolution(dataset) / METERS_PER_DEGREE
+
+# Degree span of a `resolution`-meter arc on the default planet, using the same metric a
+# LatitudeLongitudeGrid does (`meters = radius · deg2rad(degrees)`), so the rasterization
+# resolution and the grid agree. There is no target grid at ingest time, so we take the
+# global default radius (a custom-radius grid shifts this by < 0.1%).
+native_cell_size(dataset::BuildingFootprints3D) =
+    rad2deg(native_resolution(dataset) / Oceananigans.defaults.planet_radius)
+
+"""
+    native_cell_steps(dataset, region)
+
+Longitude/latitude cell steps (degrees) that give ~`resolution`-meter cells in **both**
+directions. The north–south step is [`native_cell_size`](@ref); the east–west step divides by
+`cos(latitude)` at the region's centre so the cells are metrically square there. A regular grid
+needs a constant longitude step, so the metric size is exact at the centre and varies negligibly
+across a regional window.
+"""
+function native_cell_steps(dataset::BuildingFootprints3D, region::BoundingBox)
+    Δφ = native_cell_size(dataset)
+    φ_center = sum(extrema(region.latitude)) / 2
+    Δλ = Δφ / cosd(φ_center)
+    return Δλ, Δφ
+end
 
 # Nominal global native size in EPSG:4326 (only the windowed portion is materialized).
 function Base.size(dataset::BuildingFootprints3D, variable)
@@ -159,24 +173,24 @@ Oceananigans.Fields.location(::BuildingFootprints3DMetadatum) = (Center, Center,
 #####
 
 """
-    native_region_grid(region::BoundingBox, Δ; pad = 2)
+    native_region_grid(region::BoundingBox, Δλ, Δφ; pad = 2)
 
-Regular lat/lon raster of cell size `Δ` (degrees) covering `region`, snapped to the global
-lattice anchored at `(-180, -90)` and padded by `pad` cells on each side. Returns
-`(; west, south, Δ, Nx, Ny)`.
+Regular lat/lon raster of longitude/latitude cell steps `Δλ`/`Δφ` (degrees) covering `region`,
+snapped to the global lattice anchored at `(-180, -90)` and padded by `pad` cells on each side.
+Returns `(; west, south, Δλ, Δφ, Nx, Ny)`.
 """
-function native_region_grid(region::BoundingBox, Δ; pad = 2)
+function native_region_grid(region::BoundingBox, Δλ, Δφ; pad = 2)
     west, east   = extrema(region.longitude)
     south, north = extrema(region.latitude)
-    i₀ = floor(Int, (west  + 180) / Δ) - pad
-    j₀ = floor(Int, (south +  90) / Δ) - pad
-    i₁ = ceil(Int,  (east  + 180) / Δ) + pad
-    j₁ = ceil(Int,  (north +  90) / Δ) + pad
-    return (; west = -180 + i₀ * Δ, south = -90 + j₀ * Δ, Δ, Nx = i₁ - i₀, Ny = j₁ - j₀)
+    i₀ = floor(Int, (west  + 180) / Δλ) - pad
+    j₀ = floor(Int, (south +  90) / Δφ) - pad
+    i₁ = ceil(Int,  (east  + 180) / Δλ) + pad
+    j₁ = ceil(Int,  (north +  90) / Δφ) + pad
+    return (; west = -180 + i₀ * Δλ, south = -90 + j₀ * Δφ, Δλ, Δφ, Nx = i₁ - i₀, Ny = j₁ - j₀)
 end
 
 #####
-##### Per-cell morphometry from the fine building-height raster (pure, unit-testable)
+##### Per-cell morphometry from the fine building-height raster
 #####
 #####
 ##### Each variable is reduced from the fine cells falling in a target cell with the
@@ -207,9 +221,11 @@ cell-center `longitudes`/`latitudes` (degrees) — onto `target_grid` (a coarser
 - `frontal_area_index` `λf` — windward wall area from height steps, direction-averaged:
   `(Σₓ|ΔH|·dy + Σᵧ|ΔH|·dx) / (4·A)`.
 
-Empty target cells are `0`. `target_grid` must be coarser than the fine raster.
+Empty target cells are `0`. The fine raster is geographic (EPSG:4326), so `target_grid` must
+be a `LatitudeLongitudeGrid` (coarser than the raster); the latitude-varying cell size is
+carried through the metric `dx`/`dy` in `λf`.
 """
-function reduce_morphometry(height, longitudes, latitudes, target_grid)
+function reduce_morphometry(height, longitudes, latitudes, target_grid::LatitudeLongitudeGrid)
     west, east   = cpu_face_constructor_x(target_grid)
     south, north = cpu_face_constructor_y(target_grid)
     Nx = size(target_grid, 1)
@@ -251,10 +267,13 @@ function reduce_morphometry(height, longitudes, latitudes, target_grid)
     gross_building_height   = zeros(Float64, Nx, Ny)
     frontal_area_index      = zeros(Float64, Nx, Ny)
 
+    # Metric fine-cell sizes on the target grid's sphere, as Oceananigans measures them
+    # (Δx = radius·cosd(φ)·deg2rad(Δλ), Δy = radius·deg2rad(Δφ)).
+    R = target_grid.radius
     for J in 1:Ny
         φc = south + (J - 1/2) * Δφ
-        dy = Δφ_fine * METERS_PER_DEGREE
-        dx = Δλ_fine * METERS_PER_DEGREE * cosd(φc)
+        dy = R * deg2rad(Δφ_fine)
+        dx = R * deg2rad(Δλ_fine) * cosd(φc)
         for I in 1:Nx
             nt = count_total[I, J]
             nb = count_built[I, J]
@@ -286,7 +305,7 @@ over `region`. Returns a NamedTuple of `Field`s (`mean_building_height`, `buildi
 via [`reduce_morphometry`](@ref); see there for the per-variable estimators. Downloading and
 rasterizing the footprints requires `using ArchGDAL`.
 """
-function building_morphometry(target_grid; dataset = BuildingFootprints3D(), region)
+function building_morphometry(target_grid::LatitudeLongitudeGrid; dataset = BuildingFootprints3D(), region)
     metadatum = Metadatum(:building_height; dataset, region)
     Downloads.download(metadatum)
     height = DataWrangling.retrieve_data(metadatum)
