@@ -60,27 +60,69 @@ end
 """
 $(TYPEDSIGNATURES)
 
-Build cyclic climatologies of momentum roughness length `z0m` and zero-plane displacement
-`d0` from a leaf-area-index `FieldTimeSeries` `lai` (one seasonal cycle of periods), using the
-drag parameters of `vegetation_type` (default `:evergreen_broadleaf_forest`). Pass a static
-`canopy_height` to drive the height, or leave it `nothing` to use the class's representative
-height. Remaining keyword arguments (`von_karman_constant`, `sublayer_influence`, `iterations`)
-are forwarded to [`DragPartitionRoughness`](@ref). Returns `(z0m, d0)` as `FieldTimeSeries`
-sharing `lai`'s grid and times.
+Momentum roughness length `z0` and zero-plane displacement `d0` (meters) from a
+`DragPartitionRoughness` `closure` applied to a leaf-area index `lai`, returning output that
+matches the shape of `lai`:
+
+  - `lai::Number` → a scalar `(z0, d0)` pair;
+  - `lai::AbstractField` → a `(z0, d0)` pair of `Field`s on `lai`'s grid;
+  - `lai::FieldTimeSeries` → a `(z0, d0)` pair of `FieldTimeSeries` (a cyclic climatology,
+    sharing `lai`'s grid and times).
+
+`canopy_height` drives the height and defaults to the closure's representative canopy height;
+pass a `Number` or a `Field` to override it. A non-finite or out-of-range `lai`, or a
+non-finite/negative `canopy_height`, yields `NaN` gaps.
+
+```jldoctest
+julia> using NumericalEarth.Lands
+
+julia> closure = DragPartitionRoughness(Float64; vegetation_type = :evergreen_broadleaf_forest);
+
+julia> z0, d0 = canopy_roughness(closure, 6.0, 24.72);
+
+julia> round.((z0, d0), digits = 2)
+(1.22, 21.05)
+```
+"""
+@inline canopy_roughness(closure::DragPartitionRoughness, lai::Number,
+                         canopy_height::Number = closure.representative_height) =
+    aerodynamic_parameters(closure, (; lai, canopy_height))
+
+function canopy_roughness(closure::DragPartitionRoughness, lai::AbstractField,
+                          canopy_height = closure.representative_height)
+    grid = lai.grid
+    z0 = Field{Center, Center, Nothing}(grid)
+    d0 = Field{Center, Center, Nothing}(grid)
+    compute_aerodynamic_roughness!(z0, d0, closure, (; lai, canopy_height), grid)
+    return z0, d0
+end
+
+function canopy_roughness(closure::DragPartitionRoughness, lai::FieldTimeSeries,
+                          canopy_height = closure.representative_height)
+    grid  = lai.grid
+    times = lai.times
+    z0 = FieldTimeSeries{Center, Center, Nothing}(grid, times)
+    d0 = FieldTimeSeries{Center, Center, Nothing}(grid, times)
+    for n in eachindex(times)
+        compute_aerodynamic_roughness!(z0[n], d0[n], closure, (; lai = lai[n], canopy_height), grid)
+    end
+    return z0, d0
+end
+
+"""
+$(TYPEDSIGNATURES)
+
+Cyclic climatology of momentum roughness length `z0m` and zero-plane displacement `d0` from a
+leaf-area-index `FieldTimeSeries` `lai` (one seasonal cycle of periods). A convenience wrapper
+that builds a [`DragPartitionRoughness`](@ref) for `vegetation_type` (default
+`:evergreen_broadleaf_forest`) — forwarding `von_karman_constant`, `sublayer_influence`, and
+`iterations` — and applies it to `lai` through [`canopy_roughness`](@ref). Pass a static
+`canopy_height` to drive the height, or leave it `nothing` for the class's representative
+height. Returns `(z0m, d0)` as `FieldTimeSeries`.
 """
 function canopy_roughness_climatology(lai::FieldTimeSeries, canopy_height = nothing;
                                       vegetation_type = :evergreen_broadleaf_forest, kw...)
-    grid    = lai.grid
-    times   = lai.times
-    closure = DragPartitionRoughness(eltype(grid); vegetation_type, kw...)
-
-    z0m = FieldTimeSeries{Center, Center, Nothing}(grid, times)
-    d0  = FieldTimeSeries{Center, Center, Nothing}(grid, times)
-
-    for n in eachindex(times)
-        properties = isnothing(canopy_height) ? (; lai = lai[n]) : (; lai = lai[n], canopy_height)
-        compute_aerodynamic_roughness!(z0m[n], d0[n], closure, properties, grid)
-    end
-
-    return z0m, d0
+    closure = DragPartitionRoughness(eltype(lai.grid); vegetation_type, kw...)
+    return isnothing(canopy_height) ? canopy_roughness(closure, lai) :
+                                      canopy_roughness(closure, lai, canopy_height)
 end

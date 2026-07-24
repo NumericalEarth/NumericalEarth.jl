@@ -9,6 +9,7 @@
 #
 # The canopy the DSM overstates the ground by is exactly the canopy that sets the surface
 # roughness — the terrain subtraction and the roughness closure share one measured field.
+# A final section verifies the roughness closure itself against idealized cases.
 #
 # DSM stand-in: ETOPO 2022 (token-free; `GLO30()` is the commercial-use 30 m surface model).
 # The ETH product is 10 m; `canopy_height_field` area-averages it onto the land grid straight
@@ -16,7 +17,9 @@
 
 using NumericalEarth
 using NumericalEarth.DataWrangling.ETHSentinel2Canopy: ETHSentinel2CanopyHeight, canopy_height_field
-using NumericalEarth.Lands: DragPartitionRoughness, compute_aerodynamic_roughness!
+using NumericalEarth.Lands: DragPartitionRoughness, compute_aerodynamic_roughness!,
+                            canopy_roughness, canopy_wind_ratio,
+                            canopy_drag_parameters, representative_canopy_height
 using Oceananigans
 using Oceananigans.Fields: set!, interior
 using ArchGDAL   # activates the COG-read extension used by canopy_height_field
@@ -81,3 +84,90 @@ axislegend(ax; position = :rt)
 save(joinpath(outdir, "fig2_transect.png"), fig)
 
 @info "canopy + DSM" h_c_max = round(maximum(finite(canopy_height)), digits = 1) dsm_range = round.((minimum(finite(z_dsm)), zmax), digits = 1) removed_canopy_max = round(maximum(finite(removed)), digits = 1) z0_mean = round(sum(finite(z0)) / length(finite(z0)), digits = 2)
+
+# ## (3) Is the roughness closure right? Idealized verification
+#
+# The `z₀` map above is only as trustworthy as the closure behind it. Driving that same
+# closure with idealized inputs recovers its mathematical signatures and its physical
+# magnitudes — the behavior expected from Raupach (1994) and the class values tabulated by
+# Borak et al. (2025). `canopy_roughness(closure, Λ, h)` is the scalar form of the operator
+# that filled the `z₀` field above; it also accepts a `Field` or a `FieldTimeSeries`.
+
+closure = DragPartitionRoughness()                  # evergreen broadleaf forest defaults
+Λmax    = closure.parameters.maximum_area_index
+h₀      = representative_canopy_height(Float64, :evergreen_broadleaf_forest)
+
+fig = Figure(size = (1500, 1080), fontsize = 15)
+Label(fig[0, 1:2], "Drag-partition roughness closure — idealized verification"; fontsize = 21, font = :bold)
+
+# **(1) Λ-response.** Sweeping leaf-area index Λ at the reference height (lengths as a fraction
+# of canopy height h): displacement `d₀/h` climbs monotonically toward the canopy top, while
+# roughness `z₀/h` is non-monotonic — it peaks then *keeps falling* as the canopy densifies.
+# That falling branch is the signature of skimming flow: a denser canopy is aerodynamically
+# smoother. Λₘₐₓ caps only the wind ratio `u★/Uh`; both lengths use the full Λ.
+Λs  = range(0, 6; length = 241)
+d0h = [canopy_roughness(closure, Λ, h₀)[2] / h₀ for Λ in Λs]
+z0h = [canopy_roughness(closure, Λ, h₀)[1] / h₀ for Λ in Λs]
+
+ax1 = Axis(fig[1, 1]; xlabel = "leaf-area index Λ", ylabel = "fraction of canopy height h",
+           title = "(1) Λ-response: d₀/h monotone, z₀/h skims past Λₘₐₓ")
+lines!(ax1, Λs, d0h; linewidth = 3, color = :navy,    label = "d₀/h  (displacement)")
+lines!(ax1, Λs, z0h; linewidth = 3, color = :crimson, label = "z₀/h  (roughness)")
+vlines!(ax1, [Λmax]; color = :gray50, linestyle = :dash)
+text!(ax1, Λmax, 0.02; text = " Λₘₐₓ (u★/Uh cap)", color = :gray40, align = (:left, :bottom))
+axislegend(ax1; position = :rc)
+
+# **(2) Wind ratio.** The internal ratio γ = Uh/u★ *falls* as the canopy densifies (form drag
+# raises u★/Uh) and is floored at each class's cap 1/(u★/Uh)ₘₐₓ, so the friction ratio never
+# runs away; every vegetation class relaxes onto its own floor.
+ax2 = Axis(fig[1, 2]; xlabel = "leaf-area index Λ", ylabel = "wind ratio  γ = Uh/u★",
+           title = "(2) γ falls with Λ, floored at its cap 1/(u★/Uh)ₘₐₓ")
+for (class, color) in ((:evergreen_broadleaf_forest, :seagreen),
+                       (:cropland, :sienna), (:grassland, :goldenrod))
+    parameters = canopy_drag_parameters(Float64, class)
+    lines!(ax2, Λs, [canopy_wind_ratio(Λ, parameters, closure.iterations) for Λ in Λs];
+           linewidth = 3, color, label = replace(String(class), "_" => " "))
+    hlines!(ax2, [1 / parameters.maximum_friction_ratio]; color, linestyle = :dash)
+end
+axislegend(ax2; position = :rb)
+
+# **(3) Height scaling.** At fixed Λ both lengths are *exactly* linear in canopy height h
+# (`z₀ = h·f(Λ)`, `d₀ = h·g(Λ)`), passing through the origin, and sit close to the height-only
+# rules of thumb `d₀ ≈ 2h/3` and `z₀ ≈ d₀/5` (Brutsaert 1982).
+hs   = range(0, 30; length = 121)
+d0_h = [canopy_roughness(closure, 5.0, h)[2] for h in hs]
+z0_h = [canopy_roughness(closure, 5.0, h)[1] for h in hs]
+
+ax3 = Axis(fig[2, 1]; xlabel = "canopy height h (m)", ylabel = "length (m)",
+           title = "(3) z₀, d₀ scale linearly with h  (vs semi-empirical rules)")
+lines!(ax3, hs, d0_h; linewidth = 3, color = :navy,    label = "d₀ closure (Λ = 5)")
+lines!(ax3, hs, z0_h; linewidth = 3, color = :crimson, label = "z₀ closure (Λ = 5)")
+lines!(ax3, hs, 2 .* hs ./ 3;  linewidth = 2, linestyle = :dash, color = :navy,    label = "d₀ = 2h/3 (Brutsaert)")
+lines!(ax3, hs, 2 .* hs ./ 15; linewidth = 2, linestyle = :dash, color = :crimson, label = "z₀ = d₀/5")
+axislegend(ax3; position = :lt)
+
+# **(4) Magnitudes.** Evaluated at each IGBP class's representative (Λ, h), the closure `z₀`
+# sits at the class-integrated end (`z₀ⁱ`) of the range spanned by the two reference estimates
+# of Borak et al. (2025, Table 5), reproducing the forest ≫ crop, grass ordering.
+oracle = [("EBF", :evergreen_broadleaf_forest,  24.72, 6.0, 1.16, 3.30),
+          ("DBF", :deciduous_broadleaf_forest,  17.43, 5.0, 0.98, 2.32),
+          ("ENF", :evergreen_needleleaf_forest, 16.62, 4.0, 1.36, 2.22),
+          ("GRS", :grassland,                    1.39, 1.5, 0.14, 0.19),
+          ("CRP", :cropland,                     1.32, 3.0, 0.13, 0.18)]
+x        = 1:length(oracle)
+z0_class = [canopy_roughness(DragPartitionRoughness(Float64; vegetation_type = class), Λ, h)[1]
+            for (_, class, h, Λ, _, _) in oracle]
+
+ax4 = Axis(fig[2, 2]; ylabel = "momentum roughness z₀ (m)",
+           xticks = (x, [row[1] for row in oracle]),
+           title = "(4) magnitudes vs Borak et al. (2025) Table 5")
+rangebars!(ax4, x, [min(row[5], row[6]) for row in oracle], [max(row[5], row[6]) for row in oracle];
+           whiskerwidth = 18, linewidth = 3, color = :gray70, label = "Borak z₀ range")
+scatter!(ax4, x, z0_class; markersize = 16, color = :black, label = "closure")
+axislegend(ax4; position = :rt)
+
+save(joinpath(outdir, "fig3_closure_verification.png"), fig)
+
+# ![](eth_canopy_bare_earth_figures/fig3_closure_verification.png)
+
+fig

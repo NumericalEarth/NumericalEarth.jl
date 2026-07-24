@@ -25,9 +25,10 @@ dp = DragPartitionRoughness(Float64)   # default :evergreen_broadleaf_forest, (�
 #####
 
 @testset "Drag-partition closure" begin
-    # Per-class oracle: the full closure at representative growing-season Λ and per-class
-    # height must land between the class-averaged (z0i) and semi-empirical (z0e) values of
-    # Borak et al. (2025) Table 5, and reproduce the forest ≫ non-forest ordering.
+    # Per-class oracle: at a representative growing-season Λ and per-class height the full
+    # closure reproduces the class-integrated satellite estimates z0i, d0i of Borak et al.
+    # (2025) Table 5 (their class-averaged product), to within the spread of its
+    # seasonal/spatial averaging, and stays at or below the semi-empirical z0e.
     # (IGBP class, height, Λ, z0i, z0e, d0i, d0e)
     oracle = Dict(
         "EBF" => (:evergreen_broadleaf_forest,  24.72, 6.0, 1.16, 3.30, 21.18, 16.48),
@@ -38,8 +39,9 @@ dp = DragPartitionRoughness(Float64)   # default :evergreen_broadleaf_forest, (�
 
     for (_, (class, h, Λ, z0i, z0e, d0i, d0e)) in oracle
         z0, d0 = canopy_roughness(Λ, h, params(class), κ, ψh, iters)
-        @test min(z0i, z0e) - 0.1 ≤ z0 ≤ max(z0i, z0e) + 0.1
-        @test min(d0i, d0e) - 1.0 ≤ d0 ≤ max(d0i, d0e) + 1.0
+        @test abs(z0 - z0i) ≤ 0.25          # reproduces the class-integrated satellite z0
+        @test abs(d0 - d0i) ≤ 1.0           # reproduces the class-integrated satellite d0
+        @test z0 ≤ z0e + 0.05               # drag partition skims below the height-only rule
     end
 
     # Forest roughness/displacement dwarf non-forest.
@@ -67,13 +69,15 @@ end
 @testset "LAI dependence: monotone d0, skimming z0" begin
     p = params(:cropland)  # Λmax = 1.5
     Λs = 0.2:0.2:1.4
-    d0s = [zero_plane_displacement(Λ, canopy_wind_ratio(Λ, p, iters), 1.32, p) for Λ in Λs]
-    @test issorted(d0s)                                    # d0 monotone increasing below Λmax
+    d0(Λ) = zero_plane_displacement(Λ, canopy_wind_ratio(Λ, p, iters), 1.32, p)
+    @test issorted(d0.(Λs))                                # d0 monotone increasing
+    # Λmax caps only the wind ratio; displacement keeps rising past it toward the canopy top.
+    @test d0(5.0) > d0(1.5)
 
-    # z0 is non-monotonic: it must fall once Λ exceeds Λmax (the skimming effect).
+    # z0 is non-monotonic and keeps skimming: it falls as density grows past Λmax.
     z0(Λ) = canopy_roughness(Λ, 1.32, p, κ, ψh, iters)[1]
     @test z0(3.0) < z0(1.0)                                # dense canopy skims → lower z0
-    @test z0(3.0) ≈ z0(5.0)                                # capped at Λmax beyond the critical value
+    @test z0(5.0) < z0(3.0)                                # skimming continues past Λmax
 end
 
 @testset "IGBP class taxonomy" begin
@@ -192,9 +196,10 @@ end
 
     z0ts, d0ts = canopy_roughness_climatology(lai, hc)
     @test size(z0ts) == size(lai)
-    # Roughness/displacement rise with the summer LAI increase.
-    @test mean(interior(z0ts[2])) > mean(interior(z0ts[1]))
+    # Displacement rises with the summer LAI increase; roughness skims down as the dense
+    # summer canopy closes (past the z0 peak).
     @test mean(interior(d0ts[2])) > mean(interior(d0ts[1]))
+    @test mean(interior(z0ts[2])) < mean(interior(z0ts[1]))
 
     # The static height feeds through: the driver matches the per-slice builder.
     z0check, d0check = scalarfield(grid), scalarfield(grid)

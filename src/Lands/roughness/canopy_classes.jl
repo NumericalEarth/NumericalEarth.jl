@@ -10,7 +10,7 @@
 """
 $(TYPEDSIGNATURES)
 
-Borak et al. (2025) drag-partition group for an IGBP vegetation class — one of `:boreal`,
+[Borak et al. (2025)](@cite borak2025global) drag-partition group for an IGBP vegetation class — one of `:boreal`,
 `:broadleaf`, `:grassland`, `:cropland`, `:shrubland`. Woody savanna is split by name into
 `:woody_savanna` (broadleaf) and `:boreal_woody_savanna` (boreal). Non-vegetated classes have
 no group; use [`nonvegetated_roughness`](@ref) for those.
@@ -34,8 +34,8 @@ drag_partition_group(::Val{:cropland_vegetation_mosaic})  = :cropland
 """
 $(TYPEDSIGNATURES)
 
-Drag-partition parameters (Borak et al. 2025) for an IGBP vegetation `class` in `FloatType`
-`FT`, resolved through the class's [`drag_partition_group`](@ref).
+Drag-partition parameters ([Borak et al. 2025](@cite borak2025global), Table 2) for an IGBP
+vegetation `class` in `FloatType` `FT`, resolved through the class's [`drag_partition_group`](@ref).
 
 ```jldoctest
 julia> using NumericalEarth.Lands
@@ -51,8 +51,9 @@ canopy_drag_parameters(FT, class::Symbol) = drag_group_parameters(FT, drag_parti
 """
 $(TYPEDSIGNATURES)
 
-Representative canopy height (m) for an IGBP vegetation class (Borak et al. 2025, Table 4) —
-the fallback height where no measured canopy height is supplied to the closure.
+Representative canopy height (m) for an IGBP vegetation class (ICESat-2 class means of
+[Borak et al. (2025)](@cite borak2025global), Table 4) — the fallback height where no
+measured canopy height is supplied to the closure.
 """
 representative_canopy_height(FT, class::Symbol) = representative_canopy_height(FT, Val(class))
 representative_canopy_height(FT, ::Val{:evergreen_needleleaf_forest}) = FT(16.62)
@@ -74,8 +75,8 @@ representative_canopy_height(FT, ::Val{:cropland_vegetation_mosaic})  = FT(1.40)
 $(TYPEDSIGNATURES)
 
 Prescribed momentum roughness length and zero-plane displacement `(z0, d0)` (meters) for a
-non-vegetated IGBP class (Borak et al. 2025, Table 3): `:urban`, `:snow_and_ice`, `:water`,
-`:barren`.
+non-vegetated IGBP class ([Borak et al. 2025](@cite borak2025global), Table 3): `:urban`,
+`:snow_and_ice`, `:water`, `:barren`.
 """
 nonvegetated_roughness(FT, class::Symbol) = nonvegetated_roughness(FT, Val(class))
 nonvegetated_roughness(FT, ::Val{:urban})        = (FT(0.8000), FT(4.83))
