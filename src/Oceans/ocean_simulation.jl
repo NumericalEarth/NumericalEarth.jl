@@ -226,6 +226,9 @@ Simulation of NonhydrostaticModel{CPU, RectilinearGrid}(time = 0 seconds, iterat
 ```
 """
 function ocean_simulation(grid; model::Symbol = :hydrostatic, kwargs...)
+    warn = get(kwargs, :warn, true)
+    warn && warn_for_fixed_vertical_grid(grid)
+
     if model === :hydrostatic
         return hydrostatic_ocean_simulation(grid; kwargs...)
     elseif model === :nonhydrostatic
@@ -234,6 +237,15 @@ function ocean_simulation(grid; model::Symbol = :hydrostatic, kwargs...)
         throw(ArgumentError("ocean_simulation: unknown model $(repr(model)); " *
                             "use :hydrostatic (default) or :nonhydrostatic."))
     end
+end
+
+warn_for_fixed_vertical_grid(::MutableGridOfSomeKind) = nothing
+
+function warn_for_fixed_vertical_grid(grid)
+    @warn "`ocean_simulation` does not ensure exact discrete tracer budget " *
+          "closure on a fixed vertical grid. Use a mutable vertical grid for " *
+          "tracer budget analyses."
+    return nothing
 end
 
 """
