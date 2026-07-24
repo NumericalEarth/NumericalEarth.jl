@@ -204,8 +204,27 @@ function meridional_heat_transport(simulation::Simulation,
     return meridional_heat_transport_via_ocean_heat_content(budget; destination_grid)
 end
 
+function meridional_heat_transport(::BudgetComputation, ::TendencyMethod=TendencyMethod(); kwargs...)
+    message = """
+    meridional_heat_transport does not accept a BudgetComputation directly.
+
+    Add the budget to the simulation as a callback first, then pass the
+    simulation to meridional_heat_transport. For example:
+
+        budget = BudgetComputation(:temperature, esm)
+        add_callback!(simulation, budget)
+        mht = meridional_heat_transport(simulation; destination_grid = latlon_grid)
+
+    BudgetComputation stores heat-budget history while the simulation runs.
+    The MHT diagnostic needs the simulation so it can find that registered
+    callback and use the completed budget at the right time.
+    """
+
+    throw(ArgumentError(message))
+end
+
 function meridional_heat_transport(::Simulation, method; kwargs...)
-    throw(ArgumentError("Unknown method $(method); choose either MeridionalFluxMethod() or TendencyMethod()."))
+    throw(ArgumentError(string("Unknown method ", method, "; choose either MeridionalFluxMethod() or TendencyMethod().")))
 end
 
 underlying_grid(grid::ImmersedBoundaryGrid) = grid.underlying_grid
@@ -220,10 +239,15 @@ validate_tendency_destination(::OrthogonalSphericalShellGrid, ::Nothing) =
     throw(ArgumentError("TendencyMethod() on an OrthogonalSphericalShellGrid requires a `destination_grid`."))
 
 validate_tendency_destination(grid, ::Nothing) = nothing
-validate_tendency_destination(grid, ::LatitudeLongitudeGrid) = nothing
-
 validate_tendency_destination(grid, destination_grid) =
-    throw(ArgumentError("The `destination_grid` must be a LatitudeLongitudeGrid."))
+    validate_tendency_destination_grid(underlying_grid(destination_grid))
+
+validate_tendency_destination_grid(::LatitudeLongitudeGrid) = nothing
+validate_tendency_destination_grid(::RectilinearGrid) = nothing
+
+validate_tendency_destination_grid(destination_grid) =
+    throw(ArgumentError("The `destination_grid` must be a LatitudeLongitudeGrid, " *
+                        "a RectilinearGrid, or an ImmersedBoundaryGrid wrapped around one of those grids."))
 
 function meridional_heat_transport_via_meridional_heat_flux(esm; reference_temperature)
     ρᵒᶜ = reference_density(esm.ocean)
