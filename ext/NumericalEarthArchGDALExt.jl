@@ -1,6 +1,7 @@
 module NumericalEarthArchGDALExt
 
 using ArchGDAL: ArchGDAL
+using GDAL: OGREnvelope, ogr_l_getextent, vsireaddirrecursive
 using NCDatasets: NCDataset, defDim, defVar
 using Downloads: Downloads
 using NumericalEarth: NumericalEarth
@@ -53,11 +54,10 @@ end
 ##### 3D-GloBFP building-footprint ingest (per-tile shapefiles → per-cell morphometry)
 #####
 #####
-##### Discovers the figshare tile `.zip`s intersecting a BoundingBox, downloads them, reads
-##### the EPSG:4326 footprint polygons under a spatial filter (never the whole continental
-##### layer), reduces them to per-cell morphometry with the pure `GloBFP3D` core, and writes
-##### a regional multi-variable lat/lon NetCDF that the shared `Field(::Metadatum, grid)`
-##### path reads and regrids.
+##### Discovers the figshare tile `.zip`s intersecting a BoundingBox, downloads them, rasterizes
+##### the EPSG:4326 footprint `Height`s onto a fine lat/lon raster, and writes a regional
+##### building-height NetCDF. The shared `Field(::Metadatum, grid)` path reads and regrids it, and
+##### `building_morphometry` reduces it to per-cell morphometry.
 #####
 
 # Fetch and cache the tile catalog: (name, download_url, west, south, east, north) for every
@@ -78,15 +78,24 @@ function globfp3d_tile_catalog(cache_dir)
 
     mkpath(cache_dir)
     entries = NamedTuple[]
-    file_regex = r"\"name\":\s*\"([^\"]+\.zip)\"[^{}]*?\"download_url\":\s*\"([^\"]+)\""
+    # figshare file objects are flat JSON (no nested braces), so match each object and read its
+    # `name`/`download_url` independently: order-independent, and a link-only file (null
+    # `download_url`) simply fails the url match and is skipped. Non-file objects are filtered by
+    # `parse_tile_bounds`.
+    object_regex = r"\{[^{}]*\}"
+    name_regex   = r"\"name\"\s*:\s*\"([^\"]+)\""
+    url_regex    = r"\"download_url\"\s*:\s*\"([^\"]+)\""
     for id in GloBFP3D.FIGSHARE_ARTICLE_IDS
         json = sprint() do io
             Downloads.download(GloBFP3D.figshare_article_url(id), io)
         end
-        for m in eachmatch(file_regex, json)
-            bounds = GloBFP3D.parse_tile_bounds(m[1])
+        for object in eachmatch(object_regex, json)
+            name = match(name_regex, object.match)
+            url  = match(url_regex,  object.match)
+            (isnothing(name) || isnothing(url)) && continue
+            bounds = GloBFP3D.parse_tile_bounds(name[1])
             isnothing(bounds) && continue
-            push!(entries, (; name = String(m[1]), url = String(m[2]),
+            push!(entries, (; name = String(name[1]), url = String(url[1]),
                               west = bounds.west, south = bounds.south,
                               east = bounds.east, north = bounds.north))
         end
@@ -114,25 +123,56 @@ function globfp3d_download_tile(entry, cache_dir)
             rm(staging; force = true)
         end
     end
-    inner_shp = replace(entry.name, r"\.zip$" => ".shp")
-    return string("/vsizip/", zip_path, "/", inner_shp)
+    return globfp3d_vsi_shapefile(zip_path)
 end
 
-# Burn the footprint `Height` attribute of one tile onto the region raster grid, combining
-# with what is already there by max (tiles are disjoint, so this is just the union).
+# The shapefile inside a tile archive can have a different basename than the zip, or sit in a
+# subfolder, so find the `.shp` by listing the archive recursively instead of assuming its name.
+function globfp3d_vsi_shapefile(zip_path)
+    vsi_root = string("/vsizip/", zip_path)
+    entries = vsireaddirrecursive(vsi_root)
+    (isnothing(entries) || isempty(entries)) &&
+        error("Could not list the 3D-GloBFP tile archive $zip_path.")
+    index = findfirst(name -> endswith(lowercase(name), ".shp"), entries)
+    isnothing(index) &&
+        error("No shapefile (.shp) found inside 3D-GloBFP tile archive $zip_path.")
+    return string(vsi_root, "/", entries[index])
+end
+
+# Burn the footprint `Height`s of one tile onto the region raster, over just the window the tile's
+# features occupy — found from the layer extent, which bounds every footprint including any that
+# overhangs the nominal tile edge — so cost scales with the tile rather than the whole region.
+# Disjoint tiles combine by max (a plain union).
 function globfp3d_rasterize_tile!(height, vsi_path, grid)
-    east  = grid.west  + grid.Nx * grid.Δλ
-    north = grid.south + grid.Ny * grid.Δφ
     ArchGDAL.read(vsi_path) do dataset
+        layer = ArchGDAL.getlayer(dataset, 0)
+        envelope = Ref(OGREnvelope(0, 0, 0, 0))
+        ogr_l_getextent(layer, envelope, true)
+        extent = envelope[]
+
+        i₁ = clamp(floor(Int, (extent.MinX - grid.west)  / grid.Δλ) + 1, 1, grid.Nx)
+        i₂ = clamp(ceil( Int, (extent.MaxX - grid.west)  / grid.Δλ),     1, grid.Nx)
+        j₁ = clamp(floor(Int, (extent.MinY - grid.south) / grid.Δφ) + 1, 1, grid.Ny)
+        j₂ = clamp(ceil( Int, (extent.MaxY - grid.south) / grid.Δφ),     1, grid.Ny)
+        (i₁ ≤ i₂ && j₁ ≤ j₂) || return nothing
+
+        west  = grid.west  + (i₁ - 1) * grid.Δλ
+        south = grid.south + (j₁ - 1) * grid.Δφ
+        Nx = i₂ - i₁ + 1
+        Ny = j₂ - j₁ + 1
+        east  = west  + Nx * grid.Δλ
+        north = south + Ny * grid.Δφ
+
         ArchGDAL.gdalrasterize(dataset,
             ["-a", "Height",
              "-init", "0", "-a_nodata", "0",
-             "-te", string(grid.west), string(grid.south), string(east), string(north),
-             "-ts", string(grid.Nx), string(grid.Ny),
+             "-te", string(west), string(south), string(east), string(north),
+             "-ts", string(Nx), string(Ny),
              "-ot", "Float32"]) do raster
             tile_height = Float64.(ArchGDAL.read(raster, 1))
             tile_height = reverse(tile_height, dims = 2)  # GDAL writes y north→south
-            @. height = max(height, tile_height)
+            window = view(height, i₁:i₂, j₁:j₂)
+            @. window = max(window, tile_height)
         end
     end
     return nothing
@@ -151,8 +191,8 @@ function NumericalEarth.DataWrangling.GloBFP3D.globfp3d_rasterize_to_netcdf(
     isempty(tiles) &&
         error("No 3D-GloBFP tiles intersect the requested region $(summary(region)).")
 
-    Δλ, Δφ = GloBFP3D.native_cell_steps(dataset, region)
-    grid = GloBFP3D.native_region_grid(region, Δλ, Δφ)
+    Δ = GloBFP3D.native_cell_size(dataset)
+    grid = GloBFP3D.native_region_grid(region, Δ, Δ)
     height = zeros(Float64, grid.Nx, grid.Ny)
     for tile in tiles
         vsi_path = globfp3d_download_tile(tile, cache_dir)

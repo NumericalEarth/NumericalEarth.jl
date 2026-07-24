@@ -3,7 +3,7 @@ include("runtests_setup.jl")
 using NumericalEarth.DataWrangling.GloBFP3D
 using NumericalEarth.DataWrangling.GloBFP3D: reduce_morphometry, native_region_grid,
                                              parse_tile_bounds, tile_intersects,
-                                             native_cell_size, native_cell_steps, native_resolution,
+                                             native_cell_size, native_resolution,
                                              globfp3d_rasterize_to_netcdf
 using NumericalEarth.DataWrangling: BoundingBox, Metadatum,
                                     longitude_interfaces, latitude_interfaces,
@@ -58,19 +58,32 @@ using Oceananigans.Fields: location
     mq = reduce_morphometry(height, lon, lat, quad)
     @test sum(mq.built_up_fraction) > 0
     @test all(0 .<= mq.built_up_fraction .<= 1)
+
+    # A stretched target grid has no constant step, so the reduction rejects it rather than
+    # silently binning against a bogus Δλ/Δφ from its face vector.
+    stretched = LatitudeLongitudeGrid(CPU(), Float64; size = (2, 2),
+                                      longitude = [0.0, 2Δ, 6Δ], latitude = (0, 6Δ),
+                                      topology = (Bounded, Bounded, Flat))
+    @test_throws ErrorException reduce_morphometry(height, lon, lat, stretched)
+
+    # A degenerate 1×1 fine raster has no fine step to difference: return a result, not a crash.
+    m1 = reduce_morphometry(fill(20.0, 1, 1), [3Δ], [3Δ], target)
+    @test m1.mean_building_height[1, 1]  ≈ 20
+    @test m1.built_up_fraction[1, 1]     ≈ 1
+    @test m1.frontal_area_index[1, 1]    == 0
 end
 
 @testset "GloBFP3D native aggregation grid" begin
     dataset = BuildingFootprints3D()
     region = BoundingBox(longitude = (-74.02, -73.93), latitude = (40.70, 40.82))
-    Δλ, Δφ = native_cell_steps(dataset, region)
-    g = native_region_grid(region, Δλ, Δφ)
+    Δ = native_cell_size(dataset)
+    g = native_region_grid(region, Δ, Δ)
     @test g.west ≤ -74.02 && g.west + g.Nx * g.Δλ ≥ -73.93
     @test g.south ≤ 40.70 && g.south + g.Ny * g.Δφ ≥ 40.82
-    @test g.Δλ ≈ Δλ && g.Δφ ≈ Δφ
-    # Cells are ~square in meters at the region centre: Δλ·cos(φ) ≈ Δφ (Δλ > Δφ away from equator).
-    @test Δλ > Δφ
-    @test Δλ * cosd(sum(region.latitude) / 2) ≈ Δφ rtol = 1e-6
+    @test g.Δλ ≈ Δ && g.Δφ ≈ Δ
+    # Uniform in degrees, so the raster is a sub-window of the global lattice the shared
+    # `Field(::Metadatum)` read path assumes (a latitude-dependent Δλ would misalign it).
+    @test g.Δλ == g.Δφ
 end
 
 #####

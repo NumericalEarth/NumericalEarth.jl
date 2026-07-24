@@ -96,28 +96,15 @@ DataWrangling.latitude_interfaces(::BuildingFootprints3D)  = (-90, 90)
 
 native_resolution(dataset::BuildingFootprints3D) = dataset.resolution
 
-# Degree span of a `resolution`-meter arc on the default planet, using the same metric a
-# LatitudeLongitudeGrid does (`meters = radius · deg2rad(degrees)`), so the rasterization
-# resolution and the grid agree. There is no target grid at ingest time, so we take the
-# global default radius (a custom-radius grid shifts this by < 0.1%).
+# Degree step of a `resolution`-meter arc on the default planet, using the same metric a
+# LatitudeLongitudeGrid does (`meters = radius · deg2rad(degrees)`). The raster uses this step in
+# BOTH longitude and latitude — a uniform lat/lon grid — so it is a sub-window of the global
+# lattice the shared `Field(::Metadatum)` read path assumes (from `longitude_interfaces` + `size`);
+# a latitude-dependent Δλ would misalign that integer-offset read. Cells are thus ~`resolution` m
+# N–S and ~`resolution`·cos φ m E–W. Ingest has no target grid, so we use the global default
+# radius (a custom-radius grid shifts this by < 0.1%).
 native_cell_size(dataset::BuildingFootprints3D) =
     rad2deg(native_resolution(dataset) / Oceananigans.defaults.planet_radius)
-
-"""
-    native_cell_steps(dataset, region)
-
-Longitude/latitude cell steps (degrees) that give ~`resolution`-meter cells in **both**
-directions. The north–south step is [`native_cell_size`](@ref); the east–west step divides by
-`cos(latitude)` at the region's centre so the cells are metrically square there. A regular grid
-needs a constant longitude step, so the metric size is exact at the centre and varies negligibly
-across a regional window.
-"""
-function native_cell_steps(dataset::BuildingFootprints3D, region::BoundingBox)
-    Δφ = native_cell_size(dataset)
-    φ_center = sum(extrema(region.latitude)) / 2
-    Δλ = Δφ / cosd(φ_center)
-    return Δλ, Δφ
-end
 
 # Nominal global native size in EPSG:4326 (only the windowed portion is materialized).
 function Base.size(dataset::BuildingFootprints3D, variable)
@@ -206,6 +193,13 @@ end
     return I, J
 end
 
+# `cpu_face_constructor_*` returns a 2-tuple `(left, right)` for a regular dimension and the full
+# face vector for a stretched one. The binning above needs a constant step, so require regular.
+regular_extent(extent::Tuple, _) = extent
+regular_extent(::AbstractVector, dimension) =
+    error("building_morphometry needs a regularly spaced target grid, but its $dimension is " *
+          "stretched. Pass a LatitudeLongitudeGrid with uniform longitude/latitude spacing.")
+
 """
     reduce_morphometry(height, longitudes, latitudes, target_grid)
 
@@ -226,16 +220,16 @@ be a `LatitudeLongitudeGrid` (coarser than the raster); the latitude-varying cel
 carried through the metric `dx`/`dy` in `λf`.
 """
 function reduce_morphometry(height, longitudes, latitudes, target_grid::LatitudeLongitudeGrid)
-    west, east   = cpu_face_constructor_x(target_grid)
-    south, north = cpu_face_constructor_y(target_grid)
+    west, east   = regular_extent(cpu_face_constructor_x(target_grid), "longitude")
+    south, north = regular_extent(cpu_face_constructor_y(target_grid), "latitude")
     Nx = size(target_grid, 1)
     Ny = size(target_grid, 2)
     Δλ = (east - west) / Nx
     Δφ = (north - south) / Ny
 
     nx, ny = size(height)
-    Δλ_fine = longitudes[2] - longitudes[1]
-    Δφ_fine = latitudes[2]  - latitudes[1]
+    Δλ_fine = nx > 1 ? longitudes[2] - longitudes[1] : zero(eltype(longitudes))
+    Δφ_fine = ny > 1 ? latitudes[2]  - latitudes[1]  : zero(eltype(latitudes))
 
     count_total = zeros(Int, Nx, Ny)
     count_built = zeros(Int, Nx, Ny)
@@ -281,7 +275,8 @@ function reduce_morphometry(height, longitudes, latitudes, target_grid::Latitude
                 built_up_fraction[I, J]     = nb / nt
                 gross_building_height[I, J] = Σheight[I, J] / nt
                 cell_area = nt * dx * dy
-                frontal_area_index[I, J] = (Σstep_x[I, J] * dy + Σstep_y[I, J] * dx) / (4 * cell_area)
+                frontal_area_index[I, J] = cell_area > 0 ?
+                    (Σstep_x[I, J] * dy + Σstep_y[I, J] * dx) / (4 * cell_area) : 0.0
             end
             if nb > 0
                 m = Σheight[I, J] / nb
@@ -372,8 +367,8 @@ function Downloads.download(metadatum::BuildingFootprints3DMetadatum)
     return nc_path
 end
 
-# Implemented in ext/NumericalEarthArchGDALExt.jl once `ArchGDAL` is loaded. The fallback
-# below fires only when the extension is not active (mirrors GHSL.ghsl_tiles_to_netcdf).
+# Implemented in ext/NumericalEarthArchGDALExt.jl once `ArchGDAL` is loaded. This fallback
+# fires only when the extension is not active.
 globfp3d_rasterize_to_netcdf(metadatum, nc_path) =
     error("Reading the 3D-GloBFP footprint shapefiles requires the ArchGDAL package " *
           "(for the OGR vector read + rasterization). Load it with `using ArchGDAL`.")
