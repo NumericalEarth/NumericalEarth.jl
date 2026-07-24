@@ -65,7 +65,7 @@ height_range = (0, max(robust_range(m.mean_building_height)[2], robust_range(m.m
 
 function panel!(layout, i, j, field, title, units; colormap = :viridis, colorrange = robust_range(field))
     ax = Axis(layout[i, 2j - 1]; title, xlabel = "longitude", ylabel = "latitude", aspect = DataAspect())
-    hm = heatmap!(ax, λ, φ, interior(field)[:, :, 1]; colormap, colorrange)
+    hm = heatmap!(ax, field; colormap, colorrange)
     Colorbar(layout[i, 2j], hm; label = units)
     return ax
 end
