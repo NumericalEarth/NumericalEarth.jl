@@ -41,7 +41,7 @@ building_height = Field(Metadatum(:building_height; dataset, region), CPU())
 fig1 = Figure(size = (760, 900))
 ax1 = Axis(fig1[1, 1]; title = "3D-GloBFP building height (rasterized, 3 m) — Manhattan",
            xlabel = "longitude", ylabel = "latitude", aspect = DataAspect())
-hm1 = heatmap!(ax1, λf3, φf3, interior(building_height)[:, :, 1]; colormap = :viridis, colorrange = (0, 120))
+hm1 = heatmap!(ax1, building_height; colormap = :viridis, colorrange = (0, 120))
 Colorbar(fig1[1, 2], hm1; label = "building height (m)")
 save("globfp3d_building_height.png", fig1)
 fig1
