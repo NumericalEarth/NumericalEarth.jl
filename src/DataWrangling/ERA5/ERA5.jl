@@ -1,7 +1,7 @@
 module ERA5
 
 # 2-D data
-export ERA5HourlySingleLevel, ERA5MonthlySingleLevel
+export ERA5HourlySingleLevel, ERA5MonthlySingleLevel, ERA5YearlySingleLevel
 
 # 3-D data
 export ERA5HourlyPressureLevels, ERA5MonthlyPressureLevels, ERA5_all_pressure_levels, pressure_field, hPa
@@ -129,6 +129,7 @@ function DataWrangling.metadata_filename(dataset::ERA5Dataset, name, date, regio
     return string(prefix, ".nc")
 end
 
+
 function inpainted_metadata_filename(metadata::ERA5Metadatum)
     without_extension = metadata.filename[1:end-3]
     return without_extension * "_inpainted.jld2"
@@ -137,10 +138,20 @@ end
 DataWrangling.inpainted_metadata_path(metadata::ERA5Metadatum) = joinpath(metadata.dir, inpainted_metadata_filename(metadata))
 
 #####
+##### Pure Julia CDS client (replaces Python era5cli)
+#####
+
+# CDS client is loaded via NumericalEarthCDSClientExt extension when HTTP/JSON3 are available
+# The extension exports: download_era5, read_cds_credentials, cds_variable_name
+# Users need to: using HTTP, JSON3  (or just using HTTP if JSON3 is already loaded)
+
+#####
 ##### Single-level and pressure-level specifics
 #####
 
+include("ERA5_variables.jl")
 include("ERA5_single_levels.jl")
+include("ERA5_field_time_series.jl")  # Yearly file reading (like JRA55)
 include("ERA5_pressure_levels.jl")
 include("ERA5_batched_downloads.jl")
 include("ERA5_prescribed_radiation.jl")

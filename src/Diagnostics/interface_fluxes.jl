@@ -1,3 +1,4 @@
+using ..SeaIces: FreezingLimitedEarthSystemModel
 
 @inline flux_field(condition) = condition
 @inline flux_field(bc::MultipleFluxes) = bc.flux_field
@@ -23,6 +24,12 @@ function frazil_temperature_flux(esm::EarthSystemModel)
 end
 
 frazil_temperature_flux(::NoSeaIceOceanInterfaceModel) = ZeroField()
+
+function frazil_temperature_flux(esm::FreezingLimitedEarthSystemModel)
+    ρᵒᶜ = esm.interfaces.ocean_properties.reference_density
+    cᵒᶜ = esm.interfaces.ocean_properties.heat_capacity
+    return 1 / (ρᵒᶜ * cᵒᶜ) * frazil_heat_flux(esm)
+end
 
 """
     net_ocean_temperature_flux(esm::EarthSystemModel)
@@ -70,6 +77,8 @@ Return the two-dimensional frazil heat flux (W m⁻²) in a coupled `esm`.
 """
 frazil_heat_flux(esm::EarthSystemModel) =
     esm.interfaces.sea_ice_ocean_interface.fluxes.frazil_heat
+
+frazil_heat_flux(esm::FreezingLimitedEarthSystemModel) = esm.sea_ice.frazil_heat
 
 frazil_heat_flux(::NoSeaIceOceanInterfaceModel) = ZeroField()
 

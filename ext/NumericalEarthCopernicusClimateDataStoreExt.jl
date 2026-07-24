@@ -9,6 +9,9 @@ using Oceananigans.DistributedComputations: @root
 using NumericalEarth.DataWrangling: MetadataSet, available_variables, metadata_filename, metadata_path
 using NumericalEarth.DataWrangling.ERA5: ERA5Dataset, ERA5PressureLevelsDataset,
                                          ERA5Metadata, ERA5Metadatum, hPa,
+                                         ERA5_dataset_variable_names, ERA5PL_dataset_variable_names,
+                                         ERA5YearlySingleLevel, ERA5MonthlySingleLevel,
+                                         ERA5HourlyPressureLevels, ERA5MonthlyPressureLevels,
                                          batch_datetimes_for_cds, coord_vars, nc_varnames,
                                          split_era5_nc_by_datetime, ERA5_TIME_DIMNAMES
 
@@ -230,6 +233,177 @@ function download_era5cli_month(names, dataset, dates;
 end
 
 #####
+##### Helper functions for generic ERA5 download
+#####
+
+"""
+    variable_name_mapping(dataset)
+
+Return the appropriate variable name dictionary for the dataset type.
+"""
+variable_name_mapping(::Union{ERA5YearlySingleLevel, ERA5MonthlySingleLevel}) = ERA5_dataset_variable_names
+variable_name_mapping(::Union{ERA5HourlyPressureLevels, ERA5MonthlyPressureLevels}) = ERA5PL_dataset_variable_names
+
+"""
+    pressure_levels(dataset)
+
+Extract pressure levels from dataset if applicable, otherwise return nothing.
+"""
+pressure_levels(::Union{ERA5YearlySingleLevel, ERA5MonthlySingleLevel}) = nothing
+pressure_levels(dataset::Union{ERA5HourlyPressureLevels, ERA5MonthlyPressureLevels}) = dataset.pressure_levels
+
+"""
+    date_keywords(dataset, date)
+
+Build date keyword arguments for CDS API based on dataset granularity.
+"""
+function date_keywords(::ERA5YearlySingleLevel, date)
+    return (; years = Dates.year(date))
+end
+
+function date_keywords(::ERA5MonthlySingleLevel, date)
+    return (; year = Dates.year(date), month = Dates.month(date))
+end
+
+function date_keywords(::ERA5HourlyPressureLevels, date)
+    return (;
+        startyear = Dates.year(date),
+        months = Dates.month(date),
+        days = Dates.day(date),
+        hours = Dates.hour(date)
+    )
+end
+
+function date_keywords(::ERA5MonthlyPressureLevels, date)
+    return (; year = Dates.year(date), month = Dates.month(date))
+end
+
+"""
+    cds_download_function(dataset)
+
+Select the appropriate CopernicusClimateDataStore download function.
+"""
+cds_download_function(::ERA5YearlySingleLevel) = CopernicusClimateDataStore.yearly
+cds_download_function(::Union{ERA5MonthlySingleLevel, ERA5MonthlyPressureLevels}) = CopernicusClimateDataStore.monthly
+cds_download_function(::ERA5HourlyPressureLevels) = CopernicusClimateDataStore.hourly
+
+#####
+##### Generic download implementation
+#####
+
+# The hourly datasets use the batched path above. Yearly and monthly datasets instead
+# use the package's native `yearly` / `monthly` entry points because their metadata
+# filenames represent an entire year or month rather than one hourly timestep.
+const NativeGranularityERA5Dataset = Union{ERA5YearlySingleLevel,
+                                           ERA5MonthlySingleLevel,
+                                           ERA5MonthlyPressureLevels}
+
+const NativeGranularityERA5Metadata =
+    NumericalEarth.DataWrangling.Metadata{<:NativeGranularityERA5Dataset}
+
+const NativeGranularityERA5MetadataSet =
+    MetadataSet{<:NativeGranularityERA5Dataset}
+
+function Downloads.download(metadata::NativeGranularityERA5Metadata; kwargs...)
+    paths = Array{String}(undef, length(metadata))
+    for (m, metadatum) in enumerate(metadata)
+        paths[m] = Downloads.download(metadatum; kwargs...)
+    end
+    return paths
+end
+
+function Downloads.download(mset::NativeGranularityERA5MetadataSet; kwargs...)
+    paths = String[]
+    for metadata in mset
+        downloaded = Downloads.download(metadata; kwargs...)
+        if downloaded isa AbstractVector
+            append!(paths, downloaded)
+        else
+            push!(paths, downloaded)
+        end
+    end
+    return paths
+end
+
+"""
+    Downloads.download(meta::NumericalEarth.DataWrangling.Metadatum{<:Union{ERA5YearlySingleLevel,
+                                                                             ERA5MonthlySingleLevel,
+                                                                             ERA5MonthlyPressureLevels}};
+                      skip_existing=true, threads=Threads.nthreads(), additional_kw...)
+
+Generic ERA5 download supporting yearly and monthly datasets.
+
+Downloads are optimized based on dataset granularity:
+- Yearly: 8760-8784 hours in single file
+- Monthly: ~720-744 hours in single file
+
+Multiple metadata pointing to the same temporal unit (year/month) share one file.
+"""
+function Downloads.download(meta::NumericalEarth.DataWrangling.Metadatum{<:Union{ERA5YearlySingleLevel,
+                                                                                   ERA5MonthlySingleLevel,
+                                                                                   ERA5MonthlyPressureLevels}};
+                            skip_existing = true,
+                            threads = Threads.nthreads(),
+                            additional_kw...)
+
+    # Common setup
+    output_directory = meta.dir
+    output_filename = NumericalEarth.DataWrangling.metadata_filename(meta)
+    output_path = joinpath(output_directory, output_filename)
+
+    # Skip if file already exists
+    if skip_existing && isfile(output_path)
+        return output_path
+    end
+
+    # Ensure output directory exists
+    mkpath(output_directory)
+
+    # Get dataset-specific mappings and parameters
+    dataset = meta.dataset
+    var_mapping = variable_name_mapping(dataset)
+    variable_name = var_mapping[meta.name]
+    date_kw = date_keywords(dataset, meta.dates)
+    pl = pressure_levels(dataset)
+    download_fn = cds_download_function(dataset)
+
+    # Convert pressure levels from Pa to hPa if present
+    pl_hPa = isnothing(pl) ? nothing : [round(Int, p * 1e-2) for p in pl]
+
+    # Build area constraint from region
+    area = build_era5_area(meta.region)
+
+    # Build output prefix (filename without extension)
+    output_prefix = first(splitext(output_filename))
+
+    # Download using the appropriate CDS function
+    @root begin
+        downloaded_files = download_fn(;
+            variables = variable_name,
+            date_kw...,  # Splat dataset-specific date keywords
+            area = area,
+            pressure_levels = pl_hPa,
+            format = "netcdf",
+            outputprefix = output_prefix,
+            directory = output_directory,
+            overwrite = !skip_existing,
+            threads = threads,
+            additional_kw...
+        )
+
+        # Handle potential filename mismatch
+        if !isempty(downloaded_files)
+            downloaded_file = first(downloaded_files)
+            if downloaded_file != output_path && isfile(downloaded_file)
+                mv(downloaded_file, output_path; force=true)
+            end
+        end
+    end
+
+    return output_path
+end
+
+#####
 ##### Area/bounding box utilities
 #####
 
@@ -252,15 +426,14 @@ function era5cli_request_area(bbox::BBOX, dataset, names::Vector{Symbol})
     lat = bbox.latitude
     padded = BBOX(longitude = (lon[1] - 2Δλ, lon[2] + 2Δλ),
                   latitude  = (max(lat[1] - 2Δφ, -90), min(lat[2] + 2Δφ, 90)))
-    return build_era5_area(padded)
+    return build_era5cli_area(padded)
 end
 
+build_era5cli_area(::Nothing) = nothing
 build_era5_area(::Nothing) = nothing
 
-function build_era5_area(bbox::BBOX)
-    # ERA5/era5cli uses (lat_max, lon_min, lat_min, lon_max) ordering
+function era5_area_extrema(bbox::BBOX)
     # BoundingBox has longitude = (west, east), latitude = (south, north)
-
     lon = bbox.longitude
     lat = bbox.latitude
 
@@ -268,13 +441,26 @@ function build_era5_area(bbox::BBOX)
         return nothing
     end
 
-    lon_min = lon[1]  # west
-    lon_max = lon[2]  # east
-    lat_min = lat[1]  # south
-    lat_max = lat[2]  # north
+    west  = lon[1]
+    east  = lon[2]
+    south = lat[1]
+    north = lat[2]
 
-    # Return in era5cli order: (lat_max, lon_min, lat_min, lon_max)
-    return (lat = (lat_min, lat_max), lon = (lon_min, lon_max))
+    return (; west, east, south, north)
+end
+
+function build_era5cli_area(bbox::BBOX)
+    extrema = era5_area_extrema(bbox)
+    isnothing(extrema) && return nothing
+    return (lat = (extrema.south, extrema.north),
+            lon = (extrema.west, extrema.east))
+end
+
+function build_era5_area(bbox::BBOX)
+    extrema = era5_area_extrema(bbox)
+    isnothing(extrema) && return nothing
+    # CopernicusClimateDataStore.monthly / yearly take [south, west, north, east].
+    return [extrema.south, extrema.west, extrema.north, extrema.east]
 end
 
 #####
