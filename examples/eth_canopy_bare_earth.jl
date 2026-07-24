@@ -119,17 +119,20 @@ axislegend(ax1; position = :rc)
 
 # **(2) Wind ratio.** The internal ratio γ = Uh/u★ *falls* as the canopy densifies (form drag
 # raises u★/Uh) and is floored at each class's cap 1/(u★/Uh)ₘₐₓ, so the friction ratio never
-# runs away; every vegetation class relaxes onto its own floor.
+# runs away; every vegetation class relaxes onto its own floor. Log–log axes spread the steep
+# small-Λ decay and separate the per-class floors.
+Λγ  = 10 .^ range(log10(0.05), log10(6); length = 200)   # log-spaced; Λ > 0 for the log axis
 ax2 = Axis(fig[1, 2]; xlabel = "leaf-area index Λ", ylabel = "wind ratio  γ = Uh/u★",
-           title = "(2) γ falls with Λ, floored at its cap 1/(u★/Uh)ₘₐₓ")
+           xscale = log10, yscale = log10,
+           title = "(2) γ falls with Λ, floored at its cap 1/(u★/Uh)ₘₐₓ  (log–log)")
 for (class, color) in ((:evergreen_broadleaf_forest, :seagreen),
                        (:cropland, :sienna), (:grassland, :goldenrod))
     parameters = canopy_drag_parameters(Float64, class)
-    lines!(ax2, Λs, [canopy_wind_ratio(Λ, parameters, closure.iterations) for Λ in Λs];
+    lines!(ax2, Λγ, [canopy_wind_ratio(Λ, parameters, closure.iterations) for Λ in Λγ];
            linewidth = 3, color, label = replace(String(class), "_" => " "))
     hlines!(ax2, [1 / parameters.maximum_friction_ratio]; color, linestyle = :dash)
 end
-axislegend(ax2; position = :rb)
+axislegend(ax2; position = :rt)
 
 # **(3) Height scaling.** At fixed Λ both lengths are *exactly* linear in canopy height h
 # (`z₀ = h·f(Λ)`, `d₀ = h·g(Λ)`), passing through the origin, and sit close to the height-only
@@ -147,13 +150,14 @@ lines!(ax3, hs, 2 .* hs ./ 15; linewidth = 2, linestyle = :dash, color = :crimso
 axislegend(ax3; position = :lt)
 
 # **(4) Magnitudes.** Evaluated at each IGBP class's representative (Λ, h), the closure `z₀`
-# sits at the class-integrated end (`z₀ⁱ`) of the range spanned by the two reference estimates
-# of Borak et al. (2025, Table 5), reproducing the forest ≫ crop, grass ordering.
-oracle = [("EBF", :evergreen_broadleaf_forest,  24.72, 6.0, 1.16, 3.30),
-          ("DBF", :deciduous_broadleaf_forest,  17.43, 5.0, 0.98, 2.32),
-          ("ENF", :evergreen_needleleaf_forest, 16.62, 4.0, 1.36, 2.22),
-          ("GRS", :grassland,                    1.39, 1.5, 0.14, 0.19),
-          ("CRP", :cropland,                     1.32, 3.0, 0.13, 0.18)]
+# reproduces `z₀ⁱ`, the class-integrated satellite estimate of Borak et al. (2025, Table 5) —
+# which sits below the height-only semi-empirical `z₀ᵉ` because the drag partition skims
+# roughness down relative to the rule of thumb — and reproduces the forest ≫ crop, grass order.
+oracle = [("Evergreen\nbroadleaf",  :evergreen_broadleaf_forest,  24.72, 6.0, 1.16, 3.30),
+          ("Deciduous\nbroadleaf",  :deciduous_broadleaf_forest,  17.43, 5.0, 0.98, 2.32),
+          ("Evergreen\nneedleleaf", :evergreen_needleleaf_forest, 16.62, 4.0, 1.36, 2.22),
+          ("Grassland",             :grassland,                    1.39, 1.5, 0.14, 0.19),
+          ("Cropland",              :cropland,                     1.32, 3.0, 0.13, 0.18)]
 x        = 1:length(oracle)
 z0_class = [canopy_roughness(DragPartitionRoughness(Float64; vegetation_type = class), Λ, h)[1]
             for (_, class, h, Λ, _, _) in oracle]
@@ -161,9 +165,11 @@ z0_class = [canopy_roughness(DragPartitionRoughness(Float64; vegetation_type = c
 ax4 = Axis(fig[2, 2]; ylabel = "momentum roughness z₀ (m)",
            xticks = (x, [row[1] for row in oracle]),
            title = "(4) magnitudes vs Borak et al. (2025) Table 5")
-rangebars!(ax4, x, [min(row[5], row[6]) for row in oracle], [max(row[5], row[6]) for row in oracle];
-           whiskerwidth = 18, linewidth = 3, color = :gray70, label = "Borak z₀ range")
-scatter!(ax4, x, z0_class; markersize = 16, color = :black, label = "closure")
+scatter!(ax4, x, [row[6] for row in oracle]; marker = :utriangle, markersize = 15, color = :gray70,
+         label = "Borak z₀ᵉ  (semi-empirical, height-only)")
+scatter!(ax4, x, [row[5] for row in oracle]; marker = :circle, markersize = 15, color = :black,
+         label = "Borak z₀ⁱ  (class-integrated)")
+scatter!(ax4, x, z0_class; marker = :diamond, markersize = 15, color = :crimson, label = "closure")
 axislegend(ax4; position = :rt)
 
 save(joinpath(outdir, "fig3_closure_verification.png"), fig)
