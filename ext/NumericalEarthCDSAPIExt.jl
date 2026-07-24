@@ -930,6 +930,9 @@ Construct the CDS request for the 1 km v2 black-sky/white-sky albedo pair coveri
 function build_albedo_request(name, dates)
     dts = dates isa AbstractVector ? dates : [dates]
 
+    length(unique((Dates.year(dt), Dates.month(dt)) for dt in dts)) == 1 ||
+        error("build_albedo_request expects dates within one calendar month; got $(dts).")
+
     years  = unique(string.(Dates.year.(dts)))
     months = unique(lpad.(string.(Dates.month.(dts)), 2, '0'))
     days   = unique(lpad.(string.(Dates.day.(dts)), 2, '0'))
@@ -1031,8 +1034,10 @@ function Downloads.download(metadata::AlbedoMetadata; skip_existing=true, cleanu
             nc_files = extract_albedo_files(tmp_download, extraction_dir)
             repack_albedo_batch(nc_files, batch, path_of, destination_names, expected_size)
         finally
+            # Gate both on `cleanup` so `cleanup=false` keeps the raw download and the
+            # extracted NetCDFs for debugging.
             cleanup && rm(tmp_download; force=true)
-            rm(extraction_dir; recursive=true, force=true)
+            cleanup && rm(extraction_dir; recursive=true, force=true)
         end
     end
 
