@@ -106,6 +106,7 @@ export
     surface_temperature,
     regrid_bathymetry,
     regrid_topography,
+    smooth_topography!,
     Metadata, Metadatum, MetadataSet,
     BoundingBox,
     Column, Linear, Nearest,

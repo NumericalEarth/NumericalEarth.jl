@@ -11,6 +11,7 @@ export standard_atmosphere_z_interfaces, mean_geopotential_z_interfaces
 export ERA5PrescribedAtmosphere, ERA5PrescribedRadiation
 
 using Dates: Dates, DateTime, Month, Hour
+using DocStringExtensions: TYPEDSIGNATURES
 using Downloads: Downloads
 using Oceananigans: Oceananigans, location
 using Oceananigans.Architectures: CPU
@@ -23,7 +24,7 @@ using NCDatasets: NCDatasets
 using Printf: Printf, @sprintf
 using Statistics: Statistics, mean
 
-using ..DataWrangling: DataWrangling, Metadata, Metadatum, BoundingBox, InverseGravity,
+using ..DataWrangling: DataWrangling, Metadata, Metadatum, MetadataSet, BoundingBox, InverseGravity,
                        MetersPerHour, JoulesPerSquareMeterPerHour, metadata_path,
                        native_grid, dataset_variable_name, available_variables, retrieve_data,
                        first_date, last_date, native_times, set_metadata_field!, DatasetBackend,
@@ -152,6 +153,7 @@ include("ERA5_variables.jl")
 include("ERA5_single_levels.jl")
 include("ERA5_field_time_series.jl")  # Yearly file reading (like JRA55)
 include("ERA5_pressure_levels.jl")
+include("ERA5_batched_downloads.jl")
 include("ERA5_prescribed_radiation.jl")
 include("ERA5_prescribed_atmosphere.jl")
 

@@ -16,6 +16,7 @@ Dates = "ade2ca70-3891-5945-98fb-dc099432e06a"
 Documenter = "e30172f5-a6a5-5a46-863b-614d45cd2de4"
 DocumenterCitations = "daee34ce-89f3-4625-b898-19384cb65244"
 Enzyme = "7da242da-08ed-463a-9acd-ee780be4f1d9"
+GeoInterface = "cf35fbd7-0cd7-5166-be24-54bfbe79505f"
 KernelAbstractions = "63c18a36-062a-441e-b654-da1e3ab1ce7c"
 Literate = "98b081ad-f1c9-55d3-8b20-4c87d4299306"
 LiveServer = "16fef848-5104-11e9-1b77-fb7a48bbb589"
@@ -26,12 +27,14 @@ Oceananigans = "9e8cae18-63c1-5223-a75c-80ca9d6e9a09"
 PythonCall = "6099a3de-0909-46bc-b1f4-468b9a2dfc0d"
 RRTMGP = "a01a1ee8-cea4-48fc-987c-fc7878d79da1"
 Reactant = "3c362404-f566-11ee-1572-e11a4b42c853"
+Revise = "295af30f-e4ad-537b-8983-00126c2a3abe"
 SeawaterPolynomials = "d496a93d-167e-4197-9f49-d3af4ff8fe40"
 SpeedyWeather = "9e226e20-d153-4fed-8a5b-493def4f21a9"
 Suppressor = "fd094767-a336-5f1f-9728-57cf17d0bbfb"
 
 [sources]
 NumericalEarth = {path = ".."}
+Breeze = {url = "https://github.com/NumericalEarth/Breeze.jl.git", rev = "glw/rrtmgp-nested-integration"}
 
 [compat]
 Breeze = "0.7.3"

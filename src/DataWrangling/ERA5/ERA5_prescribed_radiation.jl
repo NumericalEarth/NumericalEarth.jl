@@ -49,6 +49,11 @@ function ERA5PrescribedRadiation(architecture = CPU();
     kw = (; time_indexing, time_indices_in_memory)
     kw = merge(kw, other_kw)
 
+    # Both bands ride one batched download (see the `MetadataSet` backends)
+    mset = MetadataSet(:downwelling_shortwave_radiation, :downwelling_longwave_radiation;
+                       dataset, start_date, end_date, dir, region)
+    Downloads.download(mset)
+
     ℐꜜˢʷ_meta = Metadata(:downwelling_shortwave_radiation; dataset, start_date, end_date, dir, region)
     ℐꜜˡʷ_meta = Metadata(:downwelling_longwave_radiation;  dataset, start_date, end_date, dir, region)
 

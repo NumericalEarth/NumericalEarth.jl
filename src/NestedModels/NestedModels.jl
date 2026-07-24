@@ -30,7 +30,11 @@ using Oceananigans.BoundaryConditions: NormalFlowBoundaryCondition, FieldBoundar
 using Oceananigans.Simulations: Simulation
 using Oceananigans.Units: Time
 
+using ..EarthSystemModels: EarthSystemModels, component_model
+using ..EarthSystemModels.InterfaceComputations: InterfaceComputations, ComponentExchanger
+
 include("nested_model.jl")
+include("nested_component.jl")
 include("nested_simulation.jl")
 include("interpolated_fts_boundary.jl")
 include("parent_boundary_conditions.jl")

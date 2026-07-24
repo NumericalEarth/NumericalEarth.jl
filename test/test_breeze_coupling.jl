@@ -1,10 +1,12 @@
 include("runtests_setup.jl")
 
 using Breeze
+using Breeze.Microphysics: DCMIP2016KesslerMicrophysics
+using Breeze.Thermodynamics: TetensFormula
 using NumericalEarth
 using Oceananigans
 using Oceananigans.Units
-using Oceananigans.TimeSteppers: update_state!
+using Oceananigans.TimeSteppers: time_step!, update_state!
 using Test
 
 NumericalEarthBreezeExt = Base.get_extension(NumericalEarth, :NumericalEarthBreezeExt)
@@ -63,6 +65,43 @@ function build_land_test_model(arch)
     model = AtmosphereLandModel(atmosphere, land)
 
     return model
+end
+
+# The land setup with the child wrapped in a NestedModel (inert prescribed parent) inside
+# a Simulation — the shape a parent-driven LAM presents to AtmosphereLandModel.
+function build_nested_land_test_model(arch;
+                                      microphysics = SaturationAdjustment(equilibrium = WarmPhaseEquilibrium()),
+                                      thermodynamic_constants = ThermodynamicConstants())
+    grid = RectilinearGrid(arch,
+                           size = (16, 16), halo = (5, 5),
+                           x = (-10kilometers, 10kilometers),
+                           z = (0, 10kilometers),
+                           topology = (Periodic, Flat, Bounded))
+
+    θ₀ = 285
+
+    child = atmosphere_model(grid; potential_temperature=θ₀, microphysics, thermodynamic_constants)
+    set!(child, θ=child.dynamics.reference_state.surface_potential_temperature, u=5)
+
+    parent_grid = RectilinearGrid(arch,
+                                  size = (8, 8),
+                                  x = (-10kilometers, 10kilometers),
+                                  z = (0, 10kilometers),
+                                  topology = (Periodic, Flat, Bounded))
+
+    parent = PrescribedAtmosphere(parent_grid, [0.0, 1days])
+    atmosphere = Simulation(NestedModel(parent, child); Δt=10)
+
+    land_grid = RectilinearGrid(arch,
+                                size = grid.Nx,
+                                halo = grid.Hx,
+                                x = (-10kilometers, 10kilometers),
+                                topology = (Periodic, Flat, Flat))
+
+    land = SlabLand(land_grid)
+    set!(land; T=θ₀ + 5)
+
+    return AtmosphereLandModel(atmosphere, land)
 end
 
 @testset "AtmosphereOceanModel with Breeze" begin
@@ -147,6 +186,70 @@ end
             @test Array(interior(ρu_bc)) ≈ Array(interior(al.fluxes.x_momentum))
             @test Array(interior(ρv_bc)) ≈ Array(interior(al.fluxes.y_momentum))
             @test maximum(abs, interior(ρu_bc)) > 0
+        end
+    end
+end
+
+@testset "AtmosphereLandModel with a nested Breeze atmosphere" begin
+    for arch in test_architectures
+        A = typeof(arch)
+
+        @testset "Simulation(NestedModel) couples like its child on $A" begin
+            model = build_nested_land_test_model(arch)
+
+            @test model isa EarthSystemModel
+            @test model.atmosphere isa Simulation
+            @test model.atmosphere.model isa NestedModel
+            @test !isnothing(model.interfaces.atmosphere_land_interface)
+
+            update_state!(model)
+
+            child = model.atmosphere.model.child
+            al = model.interfaces.atmosphere_land_interface
+
+            ρu_bc = child.momentum.ρu.boundary_conditions.bottom.condition
+            ρv_bc = child.momentum.ρv.boundary_conditions.bottom.condition
+
+            # The net fluxes extracted through the nest ARE the child's bottom-flux BC fields.
+            @test model.interfaces.net_fluxes.atmosphere.ρu === ρu_bc
+            @test model.interfaces.net_fluxes.atmosphere.ρv === ρv_bc
+
+            # MOST land surface stress reaches the nested child's bottom BC.
+            @test Array(interior(ρu_bc)) ≈ Array(interior(al.fluxes.x_momentum))
+            @test Array(interior(ρv_bc)) ≈ Array(interior(al.fluxes.y_momentum))
+            @test maximum(abs, interior(ρu_bc)) > 0
+        end
+
+        @testset "Coupled step keeps parent and child clocks synchronized on $A" begin
+            model = build_nested_land_test_model(arch)
+            time_step!(model, 1)
+
+            nest = model.atmosphere.model
+            @test nest.child.clock.time ≈ 1
+            @test nest.parent.clock.time ≈ nest.child.clock.time
+            @test model.land.clock.time ≈ nest.child.clock.time
+        end
+
+        @testset "Child rain reaches the exchanger and the land bucket on $A" begin
+            # Kessler child with rain in the column: after one coupled step the surface rain
+            # flux must be positive and assembled into the land's precipitation accumulator;
+            # the non-precipitating default carries the zero-flux fallback. Kessler requires
+            # Tetens saturation constants (Breeze.jl#858).
+            model = build_nested_land_test_model(arch;
+                microphysics = DCMIP2016KesslerMicrophysics(),
+                thermodynamic_constants = ThermodynamicConstants(saturation_vapor_pressure = TetensFormula(liquid_temperature_offset = 36)))
+            child = model.atmosphere.model.child
+            set!(child.microphysical_fields.ρqʳ, 1e-3)
+            time_step!(model, 1)
+
+            Jʳⁿ = model.interfaces.exchanger.atmosphere.state.Jʳⁿ
+            @test maximum(Array(interior(Jʳⁿ))) > 0
+            @test maximum(Array(interior(model.land.fluxes.precipitation))) > 0
+
+            dry = build_nested_land_test_model(arch)
+            update_state!(dry)
+            Jʳⁿ_dry = dry.interfaces.exchanger.atmosphere.state.Jʳⁿ
+            @test all(iszero, Array(interior(Jʳⁿ_dry)))
         end
     end
 end

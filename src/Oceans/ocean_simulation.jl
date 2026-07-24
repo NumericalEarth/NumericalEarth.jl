@@ -84,7 +84,7 @@ Adapt.adapt_structure(to, f::FreshwaterExchange{name}) where name =
 @inline carried_tracer_flux(f::FreshwaterExchange, ::Val{name}, i, j, grid, fields) where name =
     @inbounds surface_tracer_value(fields, Val(name), i, j, grid.Nz) * f.carrying_flux[i, j, 1] - f.content_flux[i, j, 1]
 
-# The temperature carried flux is required only for mutable grids to cancel the volume movement. 
+# The temperature carried flux is required only for mutable grids to cancel the volume movement.
 # On the other hand, it is required always for salinity
 @inline freshwater_exchange_flux(f::FreshwaterExchange, name::Val{:S}, i, j, grid, fields) = carried_tracer_flux(f, name, i, j, grid, fields)
 @inline freshwater_exchange_flux(f::FreshwaterExchange, name::Val{:T}, i, j, grid, fields) = zero(grid)
@@ -420,7 +420,7 @@ function hydrostatic_ocean_simulation(grid;
     # Set up boundary conditions
     x_velocity_bcs = InterfaceComputations.vector_component_boundary_conditions(grid, (Face(), Center(), nothing))
     y_velocity_bcs = InterfaceComputations.vector_component_boundary_conditions(grid, (Center(), Face(), nothing))
-  
+
     top_zonal_momentum_flux      = τˣ = Field{Face, Center, Nothing}(grid; boundary_conditions = x_velocity_bcs)
     top_meridional_momentum_flux = τʸ = Field{Center, Face, Nothing}(grid; boundary_conditions = y_velocity_bcs)
     top_ocean_heat_flux          = Jᵀ = Field{Center, Center, Nothing}(grid)

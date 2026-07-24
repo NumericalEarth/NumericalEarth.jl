@@ -124,10 +124,36 @@ alias their internal flux divergence onto `radiation.flux_divergence`, so the
 atmosphere's tendency machinery reads from the same field the coupled
 `radiation` writes. Default: no-op, returning `atmosphere` unchanged.
 
-Called from inside the [`EarthSystemModel`](@ref) constructor before
-`ComponentInterfaces` is built.
+Called from inside the [`EarthSystemModel`](@ref) constructor, after
+`ComponentInterfaces` is built (so the radiation has already been bound to the
+interfaces' surface temperature — see
+[`materialize_earth_system_surface_temperature`](@ref)).
 """
 materialize_earth_system_radiation!(atmosphere, radiation) = atmosphere
+
+"""
+$(TYPEDSIGNATURES)
+
+Return `radiation` with its surface temperature bound to the coupled interfaces'
+diagnostic surface (skin) temperature — the interface-formulation field the atmosphere
+actually sees, which coincides with a land's prognostic temperature only for bulk
+formulations — when `radiation` supports late binding and carries none of its own.
+Radiation components that read a surface temperature (e.g. Breeze's
+`RadiativeTransferModel`) overload this. Default: no-op, returning `radiation` unchanged.
+"""
+materialize_earth_system_surface_temperature(radiation, interfaces) = radiation
+
+"""
+$(TYPEDSIGNATURES)
+
+Return the coupled model's default clock. A `Simulation` atmosphere's clock type is fixed
+by its grid and cannot be coerced, so the coupled clock adopts it (e.g. a `Float32`
+atmosphere gets a `Float32` coupled clock). Otherwise the clock defaults to `Float64`:
+prescribed atmospheres carry a coercible clock, so `adopt_clock` reconciles them to the
+authoritative model clock rather than the other way around.
+"""
+default_earth_system_clock(atmosphere::Simulation) = Clock{typeof(component_model(atmosphere).clock.time)}(time = 0)
+default_earth_system_clock(atmosphere) = Clock{Float64}(time = 0)
 
 """
     materialize_sea_ice(sea_ice, ocean)
@@ -141,7 +167,7 @@ materialize_sea_ice!(sea_ice, ocean) = sea_ice
 
 """
     EarthSystemModel(radiation, atmosphere, land, sea_ice, ocean;
-                     clock = Clock{Float64}(time=0),
+                     clock = default_earth_system_clock(atmosphere),
                      ocean_reference_density = reference_density(ocean),
                      ocean_heat_capacity = heat_capacity(ocean),
                      sea_ice_reference_density = reference_density(sea_ice),
@@ -174,7 +200,8 @@ Arguments
 Keyword Arguments
 ==================
 
-- `clock`: Keeps track of time.
+- `clock`: Keeps track of time. Defaults to a clock whose time type matches the
+  atmosphere's (`Float64` without an atmosphere).
 - `ocean_reference_density`: Reference density for the ocean. Defaults to value from ocean model.
 - `ocean_heat_capacity`: Heat capacity for the ocean. Defaults to value from ocean model.
 - `sea_ice_reference_density`: Reference density for sea ice. Defaults to value from sea ice model.
@@ -183,7 +210,7 @@ Keyword Arguments
   To customize the sea ice-ocean heat flux formulation, create interfaces manually using `ComponentInterfaces`.
 """
 function EarthSystemModel(radiation, atmosphere, land, sea_ice, ocean;
-                          clock = Clock{Float64}(time=0),
+                          clock = default_earth_system_clock(atmosphere),
                           ocean_reference_density = reference_density(ocean),
                           ocean_heat_capacity = heat_capacity(ocean),
                           sea_ice_reference_density = reference_density(sea_ice),
@@ -227,11 +254,6 @@ function EarthSystemModel(radiation, atmosphere, land, sea_ice, ocean;
         end
     end
 
-    # Materialize any radiation skeletons in the atmosphere against the
-    # coupled-model radiation. No-op by default; Breeze (or any other
-    # atmosphere with an internal radiation handle) overloads this.
-    atmosphere = materialize_earth_system_radiation!(atmosphere, radiation)
-
     sea_ice = materialize_sea_ice!(sea_ice, ocean)
 
     # Contains information about flux contributions: bulk formula, prescribed fluxes, etc.
@@ -245,6 +267,12 @@ function EarthSystemModel(radiation, atmosphere, land, sea_ice, ocean;
                                          sea_ice_heat_capacity,
                                          interface_kw...)
     end
+
+    # Bind the interfaces' skin temperature into the radiation, then materialize the
+    # atmosphere's radiation skeletons against it — in that order, so the atmosphere's
+    # proxy aliases the bound radiation. Both are no-ops by default.
+    radiation  = materialize_earth_system_surface_temperature(radiation, interfaces)
+    atmosphere = materialize_earth_system_radiation!(atmosphere, radiation)
 
     arch = architecture(interfaces.exchanger.grid)
 

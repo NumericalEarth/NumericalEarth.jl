@@ -13,6 +13,10 @@ using NumericalEarth.DataWrangling.ERA5: ERA5HourlySingleLevel, ERA5MonthlySingl
 using NumericalEarth.DataWrangling.ERA5: ERA5HourlyPressureLevels, ERA5MonthlyPressureLevels,
                                          ERA5_all_pressure_levels, ERA5PL_dataset_variable_names,
                                          ERA5PL_netcdf_variable_names, pressure_field
+using NumericalEarth.DataWrangling.ERA5: split_era5_nc_by_datetime, ERA5_COORD_VARS, ERA5_TIME_DIMNAMES
+# ERA5-owned batching / NetCDF helpers are exercised at their owner module, not through the
+# CDS extension (the extension no longer re-imports the ones it does not itself use).
+using NumericalEarth.DataWrangling.ERA5: max_dts_per_cds_request, is_zip, ncvar_copy!, ncvar_copy_tslice!
 
 # Internal extension module — exposes dispatch helpers and NetCDF utilities
 # that are not part of the public API but worth pinning behavior for.
@@ -666,7 +670,7 @@ end
             @test length(plan.nc_triples) == 2
             # All triples carry the netcdf short name for :temperature on single-level
             @test all(t -> first(t) == "t2m", plan.nc_triples)
-            # Triples carry the requested datetime; the timestep is resolved by valid_time at split time
+            # Triples carry the pending datetimes, matched against the file's time coordinate
             @test Set(t[2] for t in plan.nc_triples) == Set([dt1, dt2])
         end
 
@@ -859,13 +863,13 @@ end
 
     @testset "max_dts_per_cds_request: arithmetic" begin
         # Single-level, single variable: max_dts = 5000 / (1 * 1) = 5000
-        @test CDSExt.max_dts_per_cds_request(sl, 1) == 5000
+        @test max_dts_per_cds_request(sl, 1) == 5000
         # Pressure-level (5 levels) × 1 var → 5000 / 5 = 1000
-        @test CDSExt.max_dts_per_cds_request(pl_5, 1) == 1000
+        @test max_dts_per_cds_request(pl_5, 1) == 1000
         # Pressure-level (37 levels) × 5 vars → 5000 / 185 = 27
-        @test CDSExt.max_dts_per_cds_request(pl_21, 5) == fld(5000, 5 * 37)
+        @test max_dts_per_cds_request(pl_21, 5) == fld(5000, 5 * 37)
         # Tiny custom limit floored at 1
-        @test CDSExt.max_dts_per_cds_request(pl_21, 5; max_fields=10) == 1
+        @test max_dts_per_cds_request(pl_21, 5; max_fields=10) == 1
     end
 
     @testset "ordering: batches come out chronologically" begin
@@ -873,6 +877,58 @@ end
         batches = CDSExt.batch_datetimes_for_cds(scrambled, sl, 1)
         flattened = reduce(vcat, batches)
         @test flattened == sort(dates)
+    end
+end
+
+@testset "ERA5 split_era5_nc_by_datetime" begin
+    # A synthetic multi-step file standing in for a CDS delivery. CDS expands
+    # year/month/day/time into a Cartesian product, so the file deliberately holds
+    # more datetimes than the split requests — matching must go by time value.
+    file_times = [DateTime(2005, 2, 16, 0), DateTime(2005, 2, 16, 6),
+                  DateTime(2005, 2, 16, 12), DateTime(2005, 2, 16, 18)]
+
+    mktempdir() do tmp
+        src_path = joinpath(tmp, "multistep.nc")
+        NCDataset(src_path, "c") do ds
+            defDim(ds, "longitude", 3)
+            defDim(ds, "latitude", 2)
+            defDim(ds, "valid_time", length(file_times))
+            defVar(ds, "longitude", [0.0, 0.25, 0.5], ("longitude",))
+            defVar(ds, "latitude", [40.0, 40.25], ("latitude",))
+            time_var = defVar(ds, "valid_time", Float64, ("valid_time",),
+                              attrib = Dict("units" => "seconds since 1970-01-01"))
+            time_var[:] = file_times
+            t2m = defVar(ds, "t2m", Float32, ("longitude", "latitude", "valid_time"))
+            for i in 1:length(file_times)
+                t2m[:, :, i] .= Float32(i)
+            end
+        end
+
+        @testset "extracts requested datetimes regardless of file position" begin
+            dst_18 = joinpath(tmp, "t2m_18.nc")
+            dst_06 = joinpath(tmp, "t2m_06.nc")
+            triples = [("t2m", DateTime(2005, 2, 16, 18), dst_18),
+                       ("t2m", DateTime(2005, 2, 16, 6),  dst_06)]
+
+            split_era5_nc_by_datetime(src_path, triples, ERA5_COORD_VARS, ERA5_TIME_DIMNAMES)
+
+            NCDataset(dst_18) do ds
+                @test ds.dim["valid_time"] == 1
+                @test ds["valid_time"][1] == DateTime(2005, 2, 16, 18)
+                @test all(ds["t2m"][:, :, 1] .== 4)
+            end
+            NCDataset(dst_06) do ds
+                @test ds["valid_time"][1] == DateTime(2005, 2, 16, 6)
+                @test all(ds["t2m"][:, :, 1] .== 2)
+            end
+        end
+
+        @testset "missing datetime errors loudly" begin
+            dst = joinpath(tmp, "t2m_missing.nc")
+            triples = [("t2m", DateTime(2005, 2, 17, 0), dst)]
+            @test_throws ErrorException split_era5_nc_by_datetime(src_path, triples,
+                                                                  ERA5_COORD_VARS, ERA5_TIME_DIMNAMES)
+        end
     end
 end
 
@@ -1004,7 +1060,7 @@ end
         end
     end
 
-    coord_vars = CDSExt.ERA5_COORD_VARS
+    coord_vars = ERA5_COORD_VARS
 
     @testset "ncvar_copy! preserves data, attributes, fill value" begin
         mktempdir() do dir
@@ -1017,7 +1073,7 @@ end
                     for (dname, dlen) in src.dim
                         NCDatasets.defDim(dst, dname, dlen)
                     end
-                    CDSExt.ncvar_copy!(dst, src["u"], "u")
+                    ncvar_copy!(dst, src["u"], "u")
                 end
             end
 
@@ -1050,12 +1106,12 @@ end
                         out_len = dname in time_dimnames ? 1 : dlen
                         NCDatasets.defDim(dst, dname, out_len)
                     end
-                    CDSExt.ncvar_copy_tslice!(dst, src["u"], "u", tidx, time_dimnames)
+                    ncvar_copy_tslice!(dst, src["u"], "u", tidx, time_dimnames)
                     # `valid_time` is a coord variable in the file — copy that too,
                     # using the same tslice path. Exercises the has_time branch.
-                    CDSExt.ncvar_copy_tslice!(dst, src["valid_time"], "valid_time", tidx, time_dimnames)
+                    ncvar_copy_tslice!(dst, src["valid_time"], "valid_time", tidx, time_dimnames)
                     # `longitude` has no time dim — exercises the !has_time branch.
-                    CDSExt.ncvar_copy_tslice!(dst, src["longitude"], "longitude", tidx, time_dimnames)
+                    ncvar_copy_tslice!(dst, src["longitude"], "longitude", tidx, time_dimnames)
                 end
             end
 
@@ -1192,21 +1248,21 @@ end
             open(zip_path, "w") do io
                 write(io, UInt8[0x50, 0x4b, 0x03, 0x04, 0x00, 0x00])
             end
-            @test CDSExt.is_zip(zip_path) == true
+            @test is_zip(zip_path) == true
 
             # File with arbitrary non-magic bytes (NetCDF-3 starts with "CDF\x01")
             nc_path = joinpath(tmp, "fake.nc")
             open(nc_path, "w") do io
                 write(io, UInt8[0x43, 0x44, 0x46, 0x01])
             end
-            @test CDSExt.is_zip(nc_path) == false
+            @test is_zip(nc_path) == false
 
             # Short file (<4 bytes) — length check guards against false positives
             short_path = joinpath(tmp, "short.bin")
             open(short_path, "w") do io
                 write(io, UInt8[0x50, 0x4b])   # only 2 of the 4 magic bytes
             end
-            @test CDSExt.is_zip(short_path) == false
+            @test is_zip(short_path) == false
         end
     end
 
