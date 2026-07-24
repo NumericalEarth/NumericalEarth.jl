@@ -1,5 +1,6 @@
 include("runtests_setup.jl")
 
+using Oceananigans.Grids: MutableVerticalDiscretization
 using NumericalEarth.Diagnostics: Diagnostics
 
 for arch in test_architectures
@@ -113,4 +114,39 @@ for arch in test_architectures
             end
         end
     end
+end
+
+@testset "Freshwater heat flux on fixed and mutable grids" begin
+    for arch in test_architectures
+        for z in ((-1, 0), MutableVerticalDiscretization((-1, 0)))
+            grid = RectilinearGrid(arch;
+                                   size = (4, 5, 2),
+                                   x = (0, 1), y = (0, 1),
+                                   z = z,
+                                   topology = (Periodic, Bounded, Bounded))
+
+            ocean = ocean_simulation(grid;
+                                     momentum_advection = nothing,
+                                     tracer_advection = nothing,
+                                     closure = nothing,
+                                     coriolis = nothing)
+            atmosphere = PrescribedAtmosphere(grid, [0.0])
+            esm = OceanOnlyModel(ocean; atmosphere)
+
+            Jᵀ = Diagnostics.flux_field(ocean.model.tracers.T.boundary_conditions.top.condition)
+            Jᴴ = esm.interfaces.net_fluxes.ocean.freshwater_heat_content
+            fill!(Jᵀ, 2.0)
+            fill!(Jᴴ, 0.5)
+
+            effective_flux = Field(Diagnostics.net_ocean_temperature_flux(esm))
+            freshwater_heat_flux = Diagnostics.ocean_freshwater_heat_flux(esm)
+            ρᵒᶜ = esm.interfaces.ocean_properties.reference_density
+            cᵒᶜ = esm.interfaces.ocean_properties.heat_capacity
+            expected_flux = z isa MutableVerticalDiscretization ? 1.5 : 2.0
+            expected_freshwater_heat_flux =
+                z isa MutableVerticalDiscretization ? ρᵒᶜ * cᵒᶜ * 0.5 : 0
+            @allowscalar @test effective_flux[1, 1, 1] ≈ expected_flux
+        end
+    end
+            @allowscalar @test freshwater_heat_flux[1, 1, 1] ≈ expected_freshwater_heat_flux
 end
