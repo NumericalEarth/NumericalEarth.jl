@@ -201,18 +201,22 @@ end
     Field(metadata::Metadatum, arch=CPU();
           inpainting = default_inpainting(metadata),
           mask = nothing,
+          regions = nothing,
           halo = (3, 3, 3),
           cache_inpainted_data = true)
 
 Return a `Field` on `arch`itecture described by `metadata` with `halo` size.
 If not `nothing`, the `inpainting` method is used to fill the cells
 within the specified `mask`. `mask` is set to `compute_mask` for non-nothing
-`inpainting`. Keyword argument `cache_inpainted_data` dictates whether the inpainted
-data is cached to avoid recomputing it; default: `true`.
+`inpainting`. `regions` is an optional per-cell region-label `Field` making the
+inpainting surface-aware (see `inpaint_mask!`); it defaults to
+`inpainting_regions(metadata, field)`. Keyword argument `cache_inpainted_data`
+dictates whether the inpainted data is cached to avoid recomputing it; default: `true`.
 """
 function Oceananigans.Fields.Field(metadata::Metadatum, arch=CPU();
                                    inpainting = default_inpainting(metadata),
                                    mask = nothing,
+                                   regions = nothing,
                                    halo = (3, 3, 3),
                                    cache_inpainted_data = true)
 
@@ -231,14 +235,23 @@ function Oceananigans.Fields.Field(metadata::Metadatum, arch=CPU();
     field = Field{LX, LY, LZ}(grid)
 
     if !isnothing(inpainting)
+        # Resolve the optional region partition before the cache lookup so the cache
+        # key can distinguish a surface-aware result from a surface-agnostic one.
+        if isnothing(regions)
+            regions = inpainting_regions(metadata, field)
+        end
+        regions_applied = !isnothing(regions)
+
         inpainted_path = inpainted_metadata_path(metadata)
         if isfile(inpainted_path)
             # apply a load guard for corrupted files
             loaded = false
             try
                 jldopen(inpainted_path, "r") do file
+                    cached_regions_applied = haskey(file, "regions_applied") && file["regions_applied"]
                     if haskey(file, "inpainting_maxiter") &&
-                       file["inpainting_maxiter"] == inpainting.maxiter
+                       file["inpainting_maxiter"] == inpainting.maxiter &&
+                       cached_regions_applied == regions_applied
                         copyto!(parent(field), file["data"])
                         loaded = true
                     end
@@ -278,7 +291,7 @@ function Oceananigans.Fields.Field(metadata::Metadatum, arch=CPU();
 
         start_time = time_ns()
 
-        inpaint_mask!(field, mask; inpainting)
+        inpaint_mask!(field, mask; inpainting, regions)
         fill_halo_regions!(field)
 
         elapsed = 1e-9 * (time_ns() - start_time)
@@ -289,6 +302,7 @@ function Oceananigans.Fields.Field(metadata::Metadatum, arch=CPU();
             file = jldopen(inpainted_path, "w+")
             file["data"] = on_architecture(CPU(), parent(field))
             file["inpainting_maxiter"] = inpainting.maxiter
+            file["regions_applied"] = regions_applied
             close(file)
         end
     end

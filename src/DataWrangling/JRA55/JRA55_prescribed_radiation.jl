@@ -1,4 +1,5 @@
-using ...Radiations: PrescribedRadiation, SurfaceRadiationProperties, default_stefan_boltzmann_constant
+using ...Radiations: PrescribedRadiation, SurfaceRadiationProperties, default_stefan_boltzmann_constant,
+                     default_water_emissivity
 
 JRA55PrescribedRadiation(arch::Distributed; kw...) =
     JRA55PrescribedRadiation(child_architecture(arch); kw...)
@@ -11,7 +12,7 @@ JRA55PrescribedRadiation(arch::Distributed; kw...) =
                              dir = download_JRA55_cache,
                              time_indices_in_memory = 10,
                              time_indexing = Cyclical(),
-                             ocean_surface = SurfaceRadiationProperties(0.05, 0.97),
+                             ocean_surface = SurfaceRadiationProperties(0.05, default_water_emissivity),
                              sea_ice_surface = SurfaceRadiationProperties(0.7, 1.0),
                              snow_surface = nothing,
                              land_surface = nothing,
@@ -32,7 +33,7 @@ function JRA55PrescribedRadiation(architecture = CPU();
                                   dir = download_JRA55_cache,
                                   time_indices_in_memory = 10,
                                   time_indexing = Cyclical(),
-                                  ocean_surface = SurfaceRadiationProperties(0.05, 0.97),
+                                  ocean_surface = SurfaceRadiationProperties(0.05, default_water_emissivity),
                                   sea_ice_surface = SurfaceRadiationProperties(0.7, 1.0),
                                   snow_surface = nothing,
                                   land_surface = nothing,

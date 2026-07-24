@@ -13,42 +13,40 @@ end
 
 propagate_horizontally!(field, ::Nothing, substituting_field=deepcopy(field); kw...) = field
 
-function propagating(field, mask, iter, inpainting::NearestNeighborInpainting)
-    nans = sum(isnan, field; condition=interior(mask))
-    return nans > 0 && iter < inpainting.maxiter
-end
-
 """
-    propagate_horizontally!(inpainting, field, mask [, substituting_field=deepcopy(field)])
+    propagate_horizontally!(inpainting, field, mask [, regions=nothing, substituting_field=deepcopy(field)])
 
 Horizontally propagate the values of `field` into the `mask`.
 In other words, cells where `mask[i, j, k] == false` are preserved,
 and cells where `mask[i, j, k] == true` are painted over.
 
 The first argument `inpainting` is the inpainting algorithm to use in the `_propagate_field!` step.
+
+`regions` is an optional per-cell region-label `Field` (same grid and location as
+`field`): a `NaN` gap is then filled only from neighbors sharing its label
+(surface-aware inpainting). `regions === nothing` (default) leaves the fill
+surface-agnostic — behavior identical to a single-class field.
 """
 function propagate_horizontally!(inpainting::NearestNeighborInpainting, field, mask,
-                                 substituting_field=deepcopy(field))
-    iter  = 0
-    grid  = field.grid
-    arch  = architecture(grid)
+                                 regions = nothing,
+                                 substituting_field = deepcopy(field))
+    grid = field.grid
+    arch = architecture(grid)
 
     launch!(arch, grid, size(field), _nan_mask!, field, mask)
     fill_halo_regions!(field)
+    # The donor stencil reads regions[i±1, j±1], which land in halo cells.
+    isnothing(regions) || fill_halo_regions!(regions)
 
-    # Need temporary field to avoid a race condition
-    parent(substituting_field) .= parent(field)
+    propagate_step!(inpainting, field, mask, regions, substituting_field)
 
-    while propagating(field, mask, iter, inpainting)
-        launch!(arch, grid, size(field), _propagate_field!, substituting_field, inpainting, field)
-        launch!(arch, grid, size(field), _substitute_values!, field, substituting_field)
-
-        @debug begin
-            nans = sum(isnan, field; condition=interior(mask))
-            "Propagate pass: $iter, remaining NaNs: $nans"
-        end
-
-        iter += 1
+    # Ungated cleanup: a gap with no reachable same-region donor (an isolated island
+    # of its class within the window) is filled from the nearest valid cell of any
+    # class so the field stays finite. Runs on the residual NaNs only, so the
+    # same-region fills already made are preserved.
+    if !isnothing(regions) && sum(isnan, field; condition = interior(mask)) > 0
+        fill_halo_regions!(field)
+        propagate_step!(inpainting, field, mask, nothing, substituting_field)
     end
 
     launch!(arch, grid, size(field), _fill_nans!, field)
@@ -57,11 +55,48 @@ function propagate_horizontally!(inpainting::NearestNeighborInpainting, field, m
     return field
 end
 
+# One propagate/substitute sweep repeated until the field is inpainted, `maxiter` is
+# reached, or a pass fills nothing (stalled — no donor reachable for the remaining
+# gaps, e.g. an all-NaN connected component or a class with no valid donor).
+function propagate_step!(inpainting, field, mask, regions, substituting_field)
+    grid = field.grid
+    arch = architecture(grid)
+    iter = 0
+    previous_nans = -1
+
+    # Temporary field to avoid a race condition between propagate and substitute.
+    parent(substituting_field) .= parent(field)
+
+    while true
+        nans = sum(isnan, field; condition = interior(mask))
+        (nans == 0 || nans == previous_nans || iter ≥ inpainting.maxiter) && break
+        previous_nans = nans
+
+        launch!(arch, grid, size(field), _propagate_field!, substituting_field, inpainting, field, regions)
+        launch!(arch, grid, size(field), _substitute_values!, field, substituting_field)
+        iter += 1
+    end
+
+    return field
+end
+
+# Region gating for the nearest-neighbor donor stencil. `regions === nothing` makes
+# every gate `true` (surface-agnostic); otherwise a neighbor donates only if it shares
+# the query cell's label. Mirrors Oceananigans' `active_weighted_ℑ*` gating
+# (Operators/interpolation_operators.jl), with an equality-of-label gate replacing the
+# peripheral-node gate.
+@inline region_label(::Nothing, i, j, k) = false
+@inline region_label(regions, i, j, k) = @inbounds regions[i, j, k]
+
+@inline same_region(::Nothing, i, j, k, rc) = true
+@inline same_region(regions, i, j, k, rc) = @inbounds regions[i, j, k] == rc
+
 # Maybe we can remove this propagate field in lieu of a diffusion,
 # Still we'll need to do this a couple of steps on the original grid
-@kernel function _propagate_field!(substituting_field, ::NearestNeighborInpainting, field)
+@kernel function _propagate_field!(substituting_field, ::NearestNeighborInpainting, field, regions)
     i, j, k = @index(Global, NTuple)
 
+    rc = region_label(regions, i, j, k)
     @inbounds begin
         nw = field[i - 1, j, k]
         ns = field[i, j - 1, k]
@@ -69,15 +104,16 @@ end
         nn = field[i, j + 1, k]
     end
 
-    neighbors = (nw, ne, nn, ns)
-    FT = eltype(field)
-    donors = 0
-    value = zero(FT)
+    # A neighbor donates only if it is valid and shares the query cell's region label.
+    # (`false * NaN` is Julia's strong zero `0.0`, so masked/gated neighbors drop out.)
+    cw = !isnan(nw) & same_region(regions, i - 1, j, k, rc)
+    ce = !isnan(ne) & same_region(regions, i + 1, j, k, rc)
+    cn = !isnan(nn) & same_region(regions, i, j + 1, k, rc)
+    cs = !isnan(ns) & same_region(regions, i, j - 1, k, rc)
 
-    for n in neighbors
-        donors += !isnan(n)
-        value += !isnan(n) * n
-    end
+    FT = eltype(field)
+    donors = cw + ce + cn + cs
+    value  = cw * nw + ce * ne + cn * nn + cs * ns
 
     FT_NaN = convert(FT, NaN)
     @inbounds substituting_field[i, j, k] = ifelse(value == 0, FT_NaN, value / donors)
@@ -103,7 +139,7 @@ end
 end
 
 """
-    inpaint_mask!(field, mask; inpainting=NearestNeighborInpainting(Inf))
+    inpaint_mask!(field, mask; inpainting=NearestNeighborInpainting(Inf), regions=nothing)
 
 Inpaint `field` within `mask`, using values outside `mask`.
 In other words, regions where `mask[i, j, k] == 1` is inpainted
@@ -121,8 +157,14 @@ Arguments
                 `NearestNeighborInpainting(maxiter)`, where an average
                 of the valid surrounding values is used `maxiter` times.
                 Default: `NearestNeighborInpainting(Inf)`.
+
+- `regions`: Optional per-cell region-label `Field` (same grid and location as
+             `field`) making the horizontal fill surface-aware — a gap is filled
+             only from neighbors sharing its label. `nothing` (default) keeps the
+             fill surface-agnostic. The vertical `continue_downwards!` step is not
+             region-gated.
 """
-function inpaint_mask!(field, mask; inpainting=NearestNeighborInpainting(Inf))
+function inpaint_mask!(field, mask; inpainting=NearestNeighborInpainting(Inf), regions=nothing)
 
     if inpainting isa Int
         inpainting = NearestNeighborInpainting(inpainting)
@@ -132,7 +174,7 @@ function inpaint_mask!(field, mask; inpainting=NearestNeighborInpainting(Inf))
         continue_downwards!(field, mask)
     end
 
-    propagate_horizontally!(inpainting, field, mask)
+    propagate_horizontally!(inpainting, field, mask, regions)
 
     return field
 end

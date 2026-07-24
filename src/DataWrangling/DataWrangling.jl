@@ -107,9 +107,10 @@ function (d::DownloadProgress)(total, now; filename="")
 end
 
 """
-    netrc_downloader(username, password, machine, dir)
+    netrc_downloader(username, password, machine, dir; verify_ssl = true)
 
 Create a downloader that uses a netrc file to authenticate with the given machine.
+Pass `verify_ssl = false` only for hosts serving an untrusted CA certificate.
 This downloader writes the username and password in a file named `auth.netrc` (for Unix) and
 `auth_netrc` (for Windows), located in the directory `dir`.
 To avoid leaving the password on disk after the downloader has been used,
@@ -125,13 +126,14 @@ mktempdir(dir) do tmp
 end
 ```
 """
-function netrc_downloader(username, password, machine, dir)
+function netrc_downloader(username, password, machine, dir; verify_ssl = true)
     netrc_file = netrc_permission_file(username, password, machine, dir)
     downloader = Downloads.Downloader()
     easy_hook  = (easy, _) -> begin
         Downloads.Curl.setopt(easy, LibCURL.CURLOPT_NETRC_FILE, netrc_file)
-        # Bypass certificate verification because ecco.jpl.nasa.gov is using an untrusted CA certificate
-        Downloads.Curl.setopt(easy, LibCURL.CURLOPT_SSL_VERIFYPEER, false)
+        # ecco.jpl.nasa.gov serves an untrusted CA certificate; `verify_ssl = false`
+        # bypasses peer verification for such hosts.
+        verify_ssl || Downloads.Curl.setopt(easy, LibCURL.CURLOPT_SSL_VERIFYPEER, false)
     end
     downloader.easy_hook = easy_hook
     return downloader
@@ -235,6 +237,16 @@ function binary_data_grid end
 function binary_data_size end
 
 default_mask_value(dataset) = NaN
+
+"""
+    inpainting_regions(metadata, field)
+
+Optional per-cell region-label `Field` (same grid and location as `field`) that
+makes nearest-neighbor inpainting surface-aware: a `NaN` gap is filled only from
+neighbors sharing its label. Return `nothing` (default) for surface-agnostic
+inpainting. Dispatch on the dataset type (e.g. an ASTER GED land/water partition).
+"""
+inpainting_regions(metadata, field) = nothing
 
 """
     AbstractStaticDataset
@@ -363,6 +375,7 @@ include("IBCSO/IBCSO.jl")
 include("GEBCO/GEBCO.jl")
 include("IBCAO/IBCAO.jl")
 include("CopernicusDEM/CopernicusDEM.jl")
+include("ASTERGED/ASTERGED.jl")
 include("CopernicusLandAlbedo/CopernicusLandAlbedo.jl")
 
 using .ETOPO
@@ -380,6 +393,7 @@ using .IBCSO
 using .GEBCO
 using .IBCAO
 using .CopernicusDEM
+using .ASTERGED
 using .CopernicusLandAlbedo
 
 function dataset_modules()
