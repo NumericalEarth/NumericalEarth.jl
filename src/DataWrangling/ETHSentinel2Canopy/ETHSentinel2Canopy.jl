@@ -139,17 +139,14 @@ valid heights (including the legitimate non-forest value `0`) are kept unchanged
 # ETH ships the full-resolution 10 m product as 3°×3° Cloud-Optimized GeoTIFF tiles
 # (EPSG:4326, 255 = no-data), named by their SW-corner lat/lon token (e.g. "N45E009"),
 # with a `_Map.tif` canopy-height layer and a `_Map_SD.tif` uncertainty layer. They are
-# served anonymously from an ETH libdrive public share exposed as a Nextcloud WebDAV
-# endpoint. That endpoint honors HTTP range requests — so `/vsicurl/` windows the COGs
-# without downloading whole 3° tiles — but only when the request carries a browser
-# User-Agent and the public read-only share token as basic-auth credentials; both are
-# set on the GDAL HTTP driver in the ArchGDAL extension.
+# served from an ETH libdrive public share exposed as a Nextcloud WebDAV endpoint (the
+# archival deposit behind DOI 10.3929/ethz-b-000609802). The endpoint honors HTTP range
+# requests — so `/vsicurl/` windows the COGs without downloading whole 3° tiles — and
+# needs only the public read-only share token as basic-auth credentials, set on the GDAL
+# HTTP driver in the ArchGDAL extension.
 const ETH_WEBDAV_HOST = "https://libdrive.ethz.ch/public.php/webdav/3deg_cogs"
 const ETH_LIBDRIVE_TOKEN = "cO8or7iOe5dT2Rt"     # public read-only share token (CC-BY data)
 const ETH_TILE_RESOLUTION = 1 / 12000            # degrees (~9.3 m), the native 10 m grid
-const ETH_BROWSER_USER_AGENT =
-    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 " *
-    "(KHTML, like Gecko) Chrome/126 Safari/537.36"
 
 """
     eth_tile_token(longitude, latitude)

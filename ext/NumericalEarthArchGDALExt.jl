@@ -57,11 +57,11 @@ function with_gdal_config(f, options)
     end
 end
 
-# Credentials for the ETH libdrive WebDAV share: a browser User-Agent and the public
-# read-only share token as basic-auth, plus the /vsicurl directory-listing suppression.
+# Credentials for the ETH libdrive WebDAV share: the public read-only share token as
+# basic-auth (the endpoint accepts any HTTP client, so no User-Agent is set), plus the
+# /vsicurl directory-listing suppression.
 eth_http_config() =
-    ["GDAL_HTTP_USERAGENT"          => ETHSentinel2Canopy.ETH_BROWSER_USER_AGENT,
-     "GDAL_HTTP_USERPWD"            => ETHSentinel2Canopy.ETH_LIBDRIVE_TOKEN * ":",
+    ["GDAL_HTTP_USERPWD"            => ETHSentinel2Canopy.ETH_LIBDRIVE_TOKEN * ":",
      "GDAL_DISABLE_READDIR_ON_OPEN" => "EMPTY_DIR"]
 
 function NumericalEarth.DataWrangling.IBCAO.reproject_ibcao_to_netcdf(tiff_path, nc_path)
@@ -208,11 +208,11 @@ end
 
 # ETH: window the intersecting 3° 10 m COG tiles (libdrive WebDAV) for the requested
 # layer at the native resolution, mask the no-data byte (255) to NaN — keeping non-forest
-# zeros — and write one regional NetCDF. The WebDAV endpoint needs a browser User-Agent
-# and the public read-only share token as basic-auth credentials, and it honors HTTP
-# range requests, so `/vsicurl/` fetches only the windowed COG blocks rather than whole
-# 415 MB tiles. Nearest-neighbor resampling keeps the categorical 255 no-data byte exact
-# so `mask_eth` catches it (bilinear would blend 255 into a valid neighbor).
+# zeros — and write one regional NetCDF. The WebDAV endpoint needs the public read-only
+# share token as basic-auth credentials and honors HTTP range requests, so `/vsicurl/`
+# fetches only the windowed COG blocks rather than whole 415 MB tiles. Nearest-neighbor
+# resampling keeps the categorical 255 no-data byte exact so `mask_eth` catches it
+# (bilinear would blend 255 into a valid neighbor).
 function ETHSentinel2Canopy.canopy_height_cog_to_netcdf(metadatum::ETHSentinel2Canopy.ETHSentinel2CanopyHeightMetadatum, nc_path)
     region = metadatum.region
     resolution = ETHSentinel2Canopy.ETH_TILE_RESOLUTION
