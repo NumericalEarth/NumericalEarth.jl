@@ -34,6 +34,16 @@ BoundingBox(grid::AbstractGrid; padding = 0) =
     BoundingBox(longitude = extrema(λnodes(grid, Face(), Center(), Center())) .+ (-padding, padding),
                 latitude  = extrema(φnodes(grid, Center(), Face(), Center())) .+ (-padding, padding))
 
+# `cells` grid cells of margin (degrees) so boundary target cells interpolate from real
+# source data instead of extrapolating past the window edge.
+function grid_cell_padding(grid; cells = 2)
+    λ = λnodes(grid, Face(), Center(), Center())
+    φ = φnodes(grid, Center(), Face(), Center())
+    Δλ = (last(λ) - first(λ)) / (length(λ) - 1)
+    Δφ = (last(φ) - first(φ)) / (length(φ) - 1)
+    return cells * max(Δλ, Δφ)
+end
+
 #####
 ##### Column region and interpolation types
 #####
@@ -680,6 +690,16 @@ Return the default horizontal padding (degrees) added around a bounding box requ
 from `dataset`, providing margin for interpolation stencils at the boundary.
 """
 function default_horizontal_padding end
+
+"""
+    default_region(dataset, grid)
+
+Return the default `region` to window `dataset` to when regridding onto `grid`, or `nothing`
+to read the dataset globally. Global-file datasets (e.g. ETOPO) default to `nothing`; datasets
+that must be read in windows (e.g. the global 30 m Copernicus DEM) return a `BoundingBox`
+derived from `grid`.
+"""
+default_region(dataset, grid) = nothing
 
 """
     matching_single_level_dataset(dataset)
