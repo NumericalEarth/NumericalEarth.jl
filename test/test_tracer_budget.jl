@@ -19,6 +19,10 @@ function test_tracer_budget(coupled_model, Sᵒᶜ, Δt, nsteps; heat_rtol, fres
     T = ocean.model.tracers.T
     S = ocean.model.tracers.S
 
+    # A passive tracer `:C` with zero freshwater concentration is diluted like salt, so its total
+    # content is conserved. Track it only when the simulation carries it.
+    has_passive_tracer = haskey(ocean.model.tracers, :C)
+
     # The surface tracer fluxes are discrete boundary conditions (the virtual salt flux and heat
     # exchange are evaluated live), so the applied fluxes are read from the assembled net-flux
     # fields rather than integrated from the boundary condition.
@@ -47,6 +51,13 @@ function test_tracer_budget(coupled_model, Sᵒᶜ, Δt, nsteps; heat_rtol, fres
 
     set!(VS⁻, S * volume)
     ∫S⁻ = sum(VS⁻)
+
+    if has_passive_tracer
+        C = ocean.model.tracers.C
+        VC⁻ = CenterField(grid); ΔVC = Field(C * volume - VC⁻)
+        set!(VC⁻, C * volume)
+        ∫C⁻ = sum(VC⁻)
+    end
 
     for _ = 1:nsteps
         set!(VT⁻, T * volume)
@@ -79,6 +90,12 @@ function test_tracer_budget(coupled_model, Sᵒᶜ, Δt, nsteps; heat_rtol, fres
     # Freshwater carries no salt, so the total salt content is conserved over the run.
     compute!(ΔVS)
     @test abs(sum(ΔVS)) / ∫S⁻ < freshwater_rtol
+
+    # A passive tracer with zero freshwater concentration is diluted like salt: content is conserved.
+    if has_passive_tracer
+        compute!(ΔVC)
+        @test abs(sum(ΔVC)) / ∫C⁻ < freshwater_rtol
+    end
 
     return nothing
 end
@@ -121,10 +138,10 @@ end
             Sᵒᶜ = 35 # reference salinity [psu]
             free_surface = SplitExplicitFreeSurface(substeps=20)
 
-            # Without shortwave penetration
+            # Without shortwave penetration; also carry a passive tracer diluted like salt.
             @testset "Surface-only fluxes" begin
-                ocean = ocean_simulation(deepcopy(grid); free_surface, radiative_forcing=nothing)
-                set!(ocean.model, T=Tᵢ, S=Sᵢ)
+                ocean = ocean_simulation(deepcopy(grid); tracers=(:T, :S, :C), free_surface, radiative_forcing=nothing)
+                set!(ocean.model, T=Tᵢ, S=Sᵢ, C=Sᵢ)
                 coupled_model = OceanSeaIceModel(ocean, nothing; atmosphere, radiation)
                 test_tracer_budget(coupled_model, Sᵒᶜ, Δt, 4; heat_rtol=1e-11, freshwater_rtol=√eps(eltype(grid)))
             end
