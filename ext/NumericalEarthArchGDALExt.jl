@@ -11,13 +11,12 @@ using Oceananigans.Fields: Field, interior
 const ETHSentinel2Canopy = NumericalEarth.DataWrangling.ETHSentinel2Canopy
 const BoundingBox = NumericalEarth.DataWrangling.BoundingBox
 
-# Configure GDAL's /vsicurl HTTP driver for anonymous COG reads, once per session.
-# GDAL_jll's bundled libcurl has no CA store on some platforms (notably macOS), so an
-# https open fails with "HTTP response code ... : 0" (a transport-layer TLS failure,
-# not a 404). Point libcurl at a CA bundle via `CURL_CA_BUNDLE` (respected at request
-# time) unless the caller already set one; `NetworkOptions.ca_roots_path()` resolves
-# the platform's trust store — Julia's bundled `cert.pem` by default, or whatever
-# `SSL_CERT_FILE`/`JULIA_SSL_CA_ROOTS_PATH` point at.
+# Point GDAL's /vsicurl libcurl at a CA bundle, once per session. GDAL_jll's bundled libcurl
+# has no CA store on some platforms (notably macOS), so an https open otherwise fails with
+# "HTTP response code ... : 0" (a transport-layer TLS failure, not a 404). `CURL_CA_BUNDLE`
+# is respected at request time; leave a caller-set value alone. `NetworkOptions.ca_roots_path()`
+# resolves the platform trust store (Julia's bundled `cert.pem`, or `SSL_CERT_FILE` /
+# `JULIA_SSL_CA_ROOTS_PATH`). The HTTP retry options are scoped per-read in `eth_http_config`.
 const vsicurl_configured = Ref(false)
 
 function configure_vsicurl!()
@@ -25,8 +24,6 @@ function configure_vsicurl!()
     if !haskey(ENV, "CURL_CA_BUNDLE")
         ENV["CURL_CA_BUNDLE"] = NetworkOptions.ca_roots_path()
     end
-    cplsetconfigoption("GDAL_HTTP_MAX_RETRY", "3")
-    cplsetconfigoption("GDAL_HTTP_RETRY_DELAY", "1")
     vsicurl_configured[] = true
     return nothing
 end
@@ -57,11 +54,14 @@ function with_gdal_config(f, options)
     end
 end
 
-# Credentials for the ETH libdrive WebDAV share: the public read-only share token as
-# basic-auth, plus the /vsicurl directory-listing suppression.
+# GDAL config for the ETH libdrive WebDAV read, scoped per-read by `with_gdal_config`: the
+# public read-only share token as basic-auth, /vsicurl directory-listing suppression, and
+# transient-failure retries. Scoping keeps the token from leaking into later unrelated reads.
 eth_http_config() =
     ["GDAL_HTTP_USERPWD"            => ETHSentinel2Canopy.ETH_LIBDRIVE_TOKEN * ":",
-     "GDAL_DISABLE_READDIR_ON_OPEN" => "EMPTY_DIR"]
+     "GDAL_DISABLE_READDIR_ON_OPEN" => "EMPTY_DIR",
+     "GDAL_HTTP_MAX_RETRY"          => "3",
+     "GDAL_HTTP_RETRY_DELAY"        => "1"]
 
 function NumericalEarth.DataWrangling.IBCAO.reproject_ibcao_to_netcdf(tiff_path, nc_path)
     ArchGDAL.read(tiff_path) do src
@@ -135,6 +135,13 @@ function warp_canopy_sources(sources, geometry; resampling, nodata = nothing)
         "nothing — but a network, TLS, or credential failure produces the same empty " *
         "result. Underlying read errors:\n" *
         join(("  $source: $(sprint(showerror, err))" for (source, err) in read_errors), "\n"))
+    # A land tile that fails transiently is dropped just like an absent ocean tile, so its
+    # area silently returns as no-data/NaN — warn so the hole is at least visible.
+    isempty(read_errors) || @warn string(
+        length(read_errors), " of ", length(sources), " canopy-height tiles were dropped ",
+        "and return no-data/NaN. Absent tiles over open ocean are expected, but a network, ",
+        "TLS, or credential failure looks identical here. Dropped:\n",
+        join(("  $source: $(sprint(showerror, err))" for (source, err) in read_errors), "\n"))
     datasets = identity.(opened)
     # Declare the categorical no-data byte so `-r average` drops it from cell means rather
     # than blending it in; all-no-data cells then come out as `nodata` for the caller to mask.
@@ -196,8 +203,9 @@ function write_canopy_netcdf(nc_path, longitude, latitude, layers)
         lat_var[:] = latitude
 
         for (name, data) in layers
+            long_name = name == "SD" ? "canopy height standard deviation" : "canopy height"
             var = defVar(ds, name, Float32, ("lon", "lat");
-                         attrib = ["long_name" => "canopy height", "units" => "m"])
+                         attrib = ["long_name" => long_name, "units" => "m"])
             var[:, :] = data
         end
     end

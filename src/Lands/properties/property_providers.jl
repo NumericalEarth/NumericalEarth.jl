@@ -22,8 +22,7 @@ Unsupported input types raise a `MethodError` at construction time.
     property_value(prop, i, j[, k=1])
 
 Evaluate a land property at `(i, j, k)`. Defined for `Number`,
-`AbstractArray`, `AbstractField`, and `Nothing` (a missing property,
-read as `NaN` so a closure can fall back); unsupported types raise a
+`AbstractArray`, and `AbstractField`; unsupported types raise a
 `MethodError` at compile time. We avoid a catch-all throwing fallback
 here because GPUCompiler cannot lower the
 `throw(ArgumentError("…\$(typeof(p))…"))` codepath (it needs runtime
@@ -38,4 +37,3 @@ same memory.
 @inline property_value(p::Number, i, j, k=1) = p
 @inline property_value(p::AbstractArray, i, j, k=1) = @inbounds p[i, j, k]
 @inline property_value(p::AbstractField, i, j, k=1) = @inbounds p[i, j, k]
-@inline property_value(::Nothing, i, j, k=1) = NaN

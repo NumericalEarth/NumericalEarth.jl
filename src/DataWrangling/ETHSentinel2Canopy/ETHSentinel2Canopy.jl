@@ -175,9 +175,13 @@ function eth_tiles_in_bbox(region::BoundingBox)
         error("BoundingBox bounds must be ascending, got longitude = ($λ₁, $λ₂), latitude = ($φ₁, $φ₂). " *
               "Windowed COG reads do not support inverted or antimeridian-crossing bounds; " *
               "split an antimeridian-crossing region at ±180°.")
+    # An upper bound landing exactly on a 3° line touches the next tile only along its edge
+    # (zero-area overlap), so exclude that tile from the SW-corner lattice.
+    λhi = 3 * fld(λ₂, 3); λhi == λ₂ && (λhi -= 3)
+    φhi = 3 * fld(φ₂, 3); φhi == φ₂ && (φhi -= 3)
     tokens = String[]
-    for lat0 in (3 * fld(φ₁, 3)):3:(3 * fld(φ₂, 3))
-        for lon0 in (3 * fld(λ₁, 3)):3:(3 * fld(λ₂, 3))
+    for lat0 in (3 * fld(φ₁, 3)):3:φhi
+        for lon0 in (3 * fld(λ₁, 3)):3:λhi
             push!(tokens, eth_tile_token(lon0, lat0))
         end
     end

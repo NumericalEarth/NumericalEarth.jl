@@ -50,6 +50,10 @@ end
     wide = BoundingBox(longitude = (2.0, 7.0), latitude = (50.0, 53.0))
     @test length(eth_tiles_in_bbox(wide)) >= 2
 
+    # An upper bound exactly on a 3° line only touches the next tile at its edge, so that
+    # tile is excluded: (3, 6) × (51, 54) is one tile, not four.
+    @test eth_tiles_in_bbox(BoundingBox(longitude = (3.0, 6.0), latitude = (51.0, 54.0))) == ["N51E003"]
+
     urls = eth_tile_urls(region, :canopy_height)
     @test all(startswith.(urls, "/vsicurl/"))
     @test all(occursin.("libdrive.ethz.ch/public.php/webdav", urls))
