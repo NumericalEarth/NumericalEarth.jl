@@ -155,6 +155,16 @@ end
     region = BoundingBox(longitude = (-0.2, 0.1), latitude = (51.4, 51.6))
     region_md = Metadatum(:building_height; dataset = BuildingFootprints3D(), region)
     @test validate_dataset_coverage(grid, region_md) === nothing
+
+    # An antimeridian-crossing region (west > east) is rejected rather than expanded to near-global.
+    crossing = BoundingBox(longitude = (179.9, -179.9), latitude = (-17.0, -16.0))
+    crossing_md = Metadatum(:building_height; dataset = BuildingFootprints3D(), region = crossing)
+    @test_throws ErrorException validate_dataset_coverage(grid, crossing_md)
+
+    # Swapped latitude bounds are rejected too.
+    flipped = BoundingBox(longitude = (-0.2, 0.1), latitude = (51.6, 51.4))
+    flipped_md = Metadatum(:building_height; dataset = BuildingFootprints3D(), region = flipped)
+    @test_throws ErrorException validate_dataset_coverage(grid, flipped_md)
 end
 
 #####

@@ -66,14 +66,10 @@ end
 function globfp3d_tile_catalog(cache_dir)
     catalog_path = joinpath(cache_dir, "tile_catalog.tsv")
     if isfile(catalog_path)
-        entries = NamedTuple[]
-        for line in eachline(catalog_path)
-            name, url, W, S, E, N = split(line, '\t')
-            push!(entries, (; name = String(name), url = String(url),
-                              west = parse(Float64, W), south = parse(Float64, S),
-                              east = parse(Float64, E), north = parse(Float64, N)))
-        end
-        return entries
+        entries = read_tile_catalog(catalog_path)
+        isnothing(entries) || return entries
+        # A malformed or partial catalog (e.g. an interrupted legacy write) is discarded and rebuilt.
+        rm(catalog_path; force = true)
     end
 
     mkpath(cache_dir)
@@ -102,12 +98,32 @@ function globfp3d_tile_catalog(cache_dir)
     end
     isempty(entries) && error("Could not build the 3D-GloBFP tile catalog from figshare.")
 
-    open(catalog_path, "w") do io
+    staging = catalog_path * ".part"
+    open(staging, "w") do io
         for e in entries
             println(io, join((e.name, e.url, e.west, e.south, e.east, e.north), '\t'))
         end
     end
+    mv(staging, catalog_path; force = true)
     return entries
+end
+
+# Read a cached tile catalog, returning `nothing` (so the caller rebuilds) if any line is not the
+# expected six tab-separated fields with parseable coordinates — e.g. a truncated last line from an
+# interrupted write, or a legacy format.
+function read_tile_catalog(catalog_path)
+    entries = NamedTuple[]
+    for line in eachline(catalog_path)
+        isempty(line) && continue
+        fields = split(line, '\t')
+        length(fields) == 6 || return nothing
+        name, url, W, S, E, N = fields
+        coordinates = tryparse.(Float64, (W, S, E, N))
+        any(isnothing, coordinates) && return nothing
+        west, south, east, north = coordinates
+        push!(entries, (; name = String(name), url = String(url), west, south, east, north))
+    end
+    return isempty(entries) ? nothing : entries
 end
 
 # Download a tile archive (idempotent, staged rename), returning the `/vsizip/` path to the
@@ -115,7 +131,7 @@ end
 function globfp3d_download_tile(entry, cache_dir)
     zip_path = joinpath(cache_dir, entry.name)
     if !isfile(zip_path)
-        staging = zip_path * ".part"
+        staging = tempname(cache_dir)  # unique per process, so concurrent fetches don't collide
         try
             Downloads.download(entry.url, staging)
             mv(staging, zip_path; force = true)
@@ -147,7 +163,9 @@ function globfp3d_rasterize_tile!(height, vsi_path, grid)
     ArchGDAL.read(vsi_path) do dataset
         layer = ArchGDAL.getlayer(dataset, 0)
         envelope = Ref(OGREnvelope(0, 0, 0, 0))
-        ogr_l_getextent(layer, envelope, true)
+        err = ogr_l_getextent(layer, envelope, true)
+        err == 0 ||  # OGRERR_NONE; a nonzero code leaves envelope at (0,0,0,0) → an off-target window
+            error("Failed to compute the extent of the 3D-GloBFP tile layer at $vsi_path (OGRErr $err).")
         extent = envelope[]
 
         i₁ = clamp(floor(Int, (extent.MinX - grid.west)  / grid.Δλ) + 1, 1, grid.Nx)

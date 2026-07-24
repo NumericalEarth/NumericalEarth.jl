@@ -137,6 +137,14 @@ function DataWrangling.validate_dataset_coverage(grid, metadata::BuildingFootpri
               "                          region = BoundingBox(longitude = (λ₁, λ₂), latitude = (φ₁, φ₂)))\n" *
               "    Field(metadatum, grid)")
     end
+    west, east   = region.longitude
+    south, north = region.latitude
+    if !(west < east) || !(south < north)
+        error("$(summary(metadata.dataset)) needs a region with strictly increasing bounds " *
+              "(longitude[1] < longitude[2] and latitude[1] < latitude[2]); got $(summary(region)). " *
+              "A region crossing the antimeridian (west > east, e.g. (179, -179)) is not supported — " *
+              "split it into two regions on either side of 180°.")
+    end
     return nothing
 end
 
@@ -167,8 +175,8 @@ snapped to the global lattice anchored at `(-180, -90)` and padded by `pad` cell
 Returns `(; west, south, Δλ, Δφ, Nx, Ny)`.
 """
 function native_region_grid(region::BoundingBox, Δλ, Δφ; pad = 2)
-    west, east   = extrema(region.longitude)
-    south, north = extrema(region.latitude)
+    west, east   = region.longitude
+    south, north = region.latitude
     i₀ = floor(Int, (west  + 180) / Δλ) - pad
     j₀ = floor(Int, (south +  90) / Δφ) - pad
     i₁ = ceil(Int,  (east  + 180) / Δλ) + pad
@@ -345,8 +353,8 @@ end
 Whether a tile's `bounds` (from [`parse_tile_bounds`](@ref)) overlaps `region`.
 """
 function tile_intersects(bounds, region::BoundingBox)
-    λ₁, λ₂ = extrema(region.longitude)
-    φ₁, φ₂ = extrema(region.latitude)
+    λ₁, λ₂ = region.longitude
+    φ₁, φ₂ = region.latitude
     return !(bounds.east < λ₁ || bounds.west > λ₂ || bounds.north < φ₁ || bounds.south > φ₂)
 end
 
