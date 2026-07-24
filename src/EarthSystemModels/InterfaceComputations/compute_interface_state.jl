@@ -57,6 +57,17 @@ end
     return Ψₛⁿ
 end
 
+# Interface temperature and specific humidity for one iterate. Split formulations
+# compute them in sequence (humidity from the just-updated temperature). A combined
+# formulation (a `CanopyAirSpace` in both interface slots) overrides this to solve the
+# coupled node once and return both, instead of running the inner solve twice.
+@inline function interface_temperature_and_humidity(temperature_formulation, humidity_formulation,
+                                                    Ψₛ, Ψₐ, Ψᵢ, Ψᵣ, ℙₛ, ℙₐ, ℙᵢ)
+    Tₛ = compute_interface_temperature(temperature_formulation, Ψₛ, Ψₐ, Ψᵢ, Ψᵣ, ℙₛ, ℙₐ, ℙᵢ)
+    qₛ = compute_interface_humidity(humidity_formulation, Tₛ, Ψₛ, Ψₐ, Ψᵢ, Ψᵣ, ℙₐ)
+    return Tₛ, qₛ
+end
+
 """
     iterate_interface_state(flux_formulation, Ψₛⁿ⁻¹, Ψₐ, Ψᵢ, Qᵣ, ℙₛ, ℙₐ, ℙᵢ)
 
@@ -75,28 +86,18 @@ and interior properties `ℙₛ`, `ℙₐ`, and `ℙᵢ`.
                                          atmosphere_properties,
                                          interior_properties)
 
-    Tₛ = compute_interface_temperature(interface_properties.temperature_formulation,
-                                       approximate_interface_state,
-                                       atmosphere_state,
-                                       interior_state,
-                                       radiation_state,
-                                       interface_properties,
-                                       atmosphere_properties,
-                                       interior_properties)
-
     FT = eltype(approximate_interface_state)
 
-    # Recompute the interface specific humidity from the just-updated temperature.
-    # Diagnostic formulations (`ImpureSaturationSpecificHumidity`, `BulkHumidity`)
-    # evaluate qₛ explicitly; `SkinHumidity` solves a vapor-flux balance for qₛ
-    # using the previous iterate's turbulent fluxes (analogue of `SkinTemperature`).
-    q_formulation = interface_properties.specific_humidity_formulation
     qᵃᵗ = atmosphere_state.q
-    qₛ = compute_interface_humidity(q_formulation, Tₛ,
-                                    approximate_interface_state,
-                                    atmosphere_state,
-                                    interior_state,
-                                    atmosphere_properties)
+    Tₛ, qₛ = interface_temperature_and_humidity(interface_properties.temperature_formulation,
+                                                interface_properties.specific_humidity_formulation,
+                                                approximate_interface_state,
+                                                atmosphere_state,
+                                                interior_state,
+                                                radiation_state,
+                                                interface_properties,
+                                                atmosphere_properties,
+                                                interior_properties)
 
     # Compute the specific humidity increment
     Δq = qᵃᵗ - qₛ

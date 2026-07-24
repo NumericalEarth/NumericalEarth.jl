@@ -2,8 +2,9 @@ module InterfaceComputations
 
 using Adapt: Adapt, adapt
 using Oceananigans: Oceananigans
-using Oceananigans.Fields: AbstractField, Field, Face, Center
+using Oceananigans.Fields: AbstractField, Field, Face, Center, FractionalIndices, interpolate
 using Oceananigans.Grids: Flat, topology
+using Oceananigans.OutputReaders: FieldTimeSeries, cpu_interpolating_time_indices
 using Oceananigans.Simulations: Simulation
 using Oceananigans.Utils: KernelParameters, worksize
 
@@ -23,6 +24,10 @@ export
     SkinTemperature,
     BulkTemperature,
     DiffusiveFlux,
+    SoilConductiveFlux,
+    EnergyBalanceTemperature,
+    SoilSkin,
+    SoilSkinTemperature,
     InteriorDiffusivity,
     ConvectiveGustiness,
     SubgridVelocityCorrection,
@@ -44,6 +49,22 @@ export
     DryLayerVaporPistonVelocity,
     ConstantTortuosity,
     PowerLawTortuosity,
+    CanopyConductanceHumidity,
+    CompositeSurfaceHumidity,
+    CanopyAirSpace,
+    CanopyInterception,
+    TiledLandInterface,
+    bare_canopy_air_space,
+    leaf_area_index_cover_fraction,
+    FarquharPhotosynthesis,
+    AbstractStomatalConductance,
+    MedlynConductance,
+    JarvisConductance,
+    AbstractAbsorbedPAR,
+    PrescribedAbsorbedPAR,
+    InteractiveAbsorbedPAR,
+    PlainArrhenius,
+    PeakedArrhenius,
     ElevationCorrection,
     atmosphere_land_interface,
     # Sea ice-ocean heat flux formulations
@@ -55,6 +76,9 @@ export
 using ..EarthSystemModels: EarthSystemModels,
                            default_gravitational_acceleration,
                            default_freshwater_density,
+                           default_gas_constant,
+                           default_dry_air_molar_mass,
+                           celsius_to_kelvin,
                            thermodynamics_parameters,
                            surface_layer_height,
                            boundary_layer_height
@@ -116,6 +140,12 @@ end
 include("roughness_lengths.jl")
 include("interface_states.jl")
 include("dry_layer_humidity.jl")
+include("photosynthesis.jl")
+include("stomatal_conductance.jl")
+include("absorbed_par.jl")
+include("canopy_conductance.jl")
+include("composite_surface_humidity.jl")
+include("canopy_air_space.jl")
 include("compute_interface_state.jl")
 include("similarity_theory_turbulent_fluxes.jl")
 include("coefficient_based_turbulent_fluxes.jl")
@@ -132,6 +162,7 @@ include("atmosphere_state_correction.jl")
 include("atmosphere_ocean_fluxes.jl")
 include("atmosphere_sea_ice_fluxes.jl")
 include("atmosphere_land_fluxes.jl")
+include("tiled_land_interface.jl")
 include("sea_ice_ocean_fluxes.jl")
 
 end # module
