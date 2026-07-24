@@ -61,7 +61,7 @@ function compute_atmosphere_land_fluxes!(coupled_model, atmosphere_land_interfac
     interface_temperature = atmosphere_land_interface.temperature
     interface_properties = atmosphere_land_interface.properties
     atmosphere_properties = (thermodynamics_parameters = thermodynamics_parameters(coupled_model.atmosphere),
-                             surface_layer_height = surface_layer_height(coupled_model.atmosphere),
+                             surface_layer_height = coupled_model.interfaces.properties.surface_layer_height,
                              gravitational_acceleration = coupled_model.interfaces.properties.gravitational_acceleration)
 
     # Land surface state from the exchanger. `interface_energy_state` /
@@ -111,10 +111,6 @@ end
 @inline atmosphere_land_surface_properties(land_state) = (;)
 @inline local_atmosphere_land_surface_properties(land_properties, i, j) = (;)
 
-# Per-cell scalar from a constant or a `Field`.
-@inline land_field_value(x::Number, i, j) = x
-@inline land_field_value(x, i, j) = @inbounds x[i, j, 1]
-
 #####
 ##### Land surface state materialized into the interface state.
 #####
@@ -126,7 +122,7 @@ end
 #####
 
 @inline land_saturation(i, j, grid, land_state) =
-    (saturation = land_field_value(land_state.saturation, i, j),)
+    (saturation = state2dindex(land_state.saturation, i, j),)
 
 # Hydrology state, per humidity formulation.
 @inline interface_hydrology_state(i, j, grid, ::BulkHumidity, land_state) = land_saturation(i, j, grid, land_state)
@@ -141,9 +137,9 @@ end
 # (the SkinHumidity reservoir and the DryLayerHumidity dry-layer model)
 # pull it from the materialized land state.
 @inline interface_energy_state(i, j, grid, ::SkinHumidity, land_state) =
-    (temperature = land_field_value(land_state.T, i, j),)
+    (temperature = state2dindex(land_state.T, i, j),)
 @inline interface_energy_state(i, j, grid, ::DryLayerHumidity, land_state) =
-    (temperature = land_field_value(land_state.T, i, j),)
+    (temperature = state2dindex(land_state.T, i, j),)
 @inline interface_energy_state(i, j, grid, interface_model, land_state) = (;) # default: pulls nothing
 
 @kernel function _compute_atmosphere_land_interface_state!(interface_fluxes,
@@ -173,11 +169,11 @@ end
     q_formulation = interface_properties.specific_humidity_formulation
 
     # Bulk land temperature serves as the initial skin-temperature guess.
-    Tₛ = land_field_value(land_state.T, i, j)
+    Tₛ = state2dindex(land_state.T, i, j)
     FT = typeof(Tₛ)
 
     ℂᵃᵗ = atmosphere_properties.thermodynamics_parameters
-    zᵃᵗ = atmosphere_properties.surface_layer_height
+    zᵃᵗ = state2dindex(atmosphere_properties.surface_layer_height, i, j)
 
     local_atmosphere_state = (z = zᵃᵗ,
                               u = uᵃᵗ,
@@ -185,7 +181,7 @@ end
                               T = Tᵃᵗ,
                               p = pᵃᵗ,
                               q = qᵃᵗ,
-                              h_bℓ = atmosphere_state.h_bℓ)
+                              h_bℓ = state2dindex(atmosphere_state.h_bℓ, i, j))
 
     # Surface velocities are zero for land.
     uₛ = zero(FT)

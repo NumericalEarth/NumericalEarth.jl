@@ -469,7 +469,13 @@ function ComponentInterfaces(atmosphere, ocean, sea_ice=nothing;
     exchanger = StateExchanger(exchange_grid, radiation, atmosphere, land, ocean, sea_ice;
                                atmosphere_correction = exchanger_correction)
 
-    properties = (; gravitational_acceleration)
+    # The surface-layer (MOST reference) height is fixed by the atmosphere grid, so
+    # build it once here rather than per coupled step. Scalar for prescribed
+    # atmospheres; a per-column 2-D field for grid-aware atmospheres (Breeze). The
+    # boundary-layer height is *not* cached here: it evolves with the closure and is
+    # refreshed every step in the flux builders.
+    properties = (; gravitational_acceleration,
+                    surface_layer_height = surface_layer_height(atmosphere, exchange_grid))
 
     return ComponentInterfaces(ao_interface,
                                ai_interface,
