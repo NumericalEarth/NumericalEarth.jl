@@ -125,25 +125,27 @@ end
 ##### model then derives `β`, the reservoir temperature, etc. from what it pulled.
 #####
 
-@inline land_saturation(i, j, grid, land_state) =
-    (saturation = land_field_value(land_state.saturation, i, j),)
+# Per-cell surface saturation; land models override this to return their own value.
+@inline land_saturation(i, j, grid, land_state) = land_field_value(land_state.saturation, i, j)
 
-# Hydrology state, per humidity formulation.
-@inline interface_hydrology_state(i, j, grid, ::BulkHumidity, land_state) = land_saturation(i, j, grid, land_state)
+# Hydrology state, per humidity formulation. The caller adds the `saturation` key.
+@inline interface_hydrology_state(i, j, grid, ::BulkHumidity, land_state) =
+    (; saturation = land_saturation(i, j, grid, land_state))
 @inline interface_hydrology_state(i, j, grid, q::FractionalHumidity, land_state) =
     interface_hydrology_state(i, j, grid, q.efficiency, land_state)
-@inline interface_hydrology_state(i, j, grid, ::CriticalSaturation, land_state) = land_saturation(i, j, grid, land_state)
+@inline interface_hydrology_state(i, j, grid, ::CriticalSaturation, land_state) =
+    (; saturation = land_saturation(i, j, grid, land_state))
 @inline interface_hydrology_state(i, j, grid, ::DryLayerHumidity, land_state) =
-    land_saturation(i, j, grid, land_state)
+    (; saturation = land_saturation(i, j, grid, land_state))
 @inline interface_hydrology_state(i, j, grid, interface_model, land_state) = (;) # default: pulls nothing
 
 # Energy state: humidity formulations that need the bulk land temperature
 # (the SkinHumidity reservoir and the DryLayerHumidity dry-layer model)
 # pull it from the materialized land state.
 @inline interface_energy_state(i, j, grid, ::SkinHumidity, land_state) =
-    (temperature = land_field_value(land_state.T, i, j),)
+    (; temperature = land_field_value(land_state.T, i, j))
 @inline interface_energy_state(i, j, grid, ::DryLayerHumidity, land_state) =
-    (temperature = land_field_value(land_state.T, i, j),)
+    (; temperature = land_field_value(land_state.T, i, j))
 @inline interface_energy_state(i, j, grid, interface_model, land_state) = (;) # default: pulls nothing
 
 @kernel function _compute_atmosphere_land_interface_state!(interface_fluxes,
@@ -172,7 +174,8 @@ end
 
     q_formulation = interface_properties.specific_humidity_formulation
 
-    # Bulk land temperature serves as the initial skin-temperature guess.
+    # Bulk land temperature is the initial skin-temperature guess. Take `FT` from the
+    # field value, not `eltype(grid)`, which is a traced type inside a Reactant kernel.
     Tₛ = land_field_value(land_state.T, i, j)
     FT = typeof(Tₛ)
 

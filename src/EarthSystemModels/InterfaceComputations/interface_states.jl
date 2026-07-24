@@ -768,6 +768,7 @@ end
                                        q_formulation,
                                        land_state,
                                        Tₛ, qₛ)
+    # `typeof(Tₛ)`, not `eltype(grid)`, which is a traced type inside a Reactant kernel.
     FT  = typeof(Tₛ)
     energy    = interface_energy_state(i, j, grid, q_formulation, land_state)
     hydrology = interface_hydrology_state(i, j, grid, q_formulation, land_state)
