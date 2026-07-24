@@ -1,6 +1,5 @@
 [deps]
 Accessors = "7d9f7c33-5ae7-4f3b-8dc6-eff91059b697"
-ArchGDAL = "c9ce4bd3-c3d5-55b8-8973-c0e20141b8c3"
 Breeze = "660aa2fb-d4c8-4359-a52c-9c057bc511da"
 CDSAPI = "8a7b9de3-9c00-473e-88b4-7eccd7ef2fea"
 CFTime = "179af706-886a-5703-950a-314cd64e0468"
@@ -35,7 +34,6 @@ Suppressor = "fd094767-a336-5f1f-9728-57cf17d0bbfb"
 NumericalEarth = {path = ".."}
 
 [compat]
-ArchGDAL = "0.10"
 Breeze = "0.7.3"
 CUDA = "6"
 CairoMakie = "0.15"
