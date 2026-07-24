@@ -5,6 +5,8 @@ using Dates
 using Statistics
 using Printf
 
+using NumericalEarth.Bathymetry: Interpolate
+
 using CUDA; CUDA.device!(3)
 
 arch = GPU()
@@ -19,7 +21,7 @@ underlying_grid = TripolarGrid(arch; size = (Nx, Ny, Nz), halo = (5, 5, 4), z)
 underlying_grid = LatitudeLongitudeGrid(arch; size = (Nx, Ny, Nz), halo = (5, 5, 4), z, longitude = (0, 360), latitude = (-80, 80))
 bottom_height = regrid_bathymetry(underlying_grid;
                                   minimum_depth = 10,
-                                  interpolation_passes = 10,
+                                  method = Interpolate(10),
                                   major_basins = 2)
 grid = ImmersedBoundaryGrid(underlying_grid, GridFittedBottom(bottom_height);
                             active_cells_map=true)
