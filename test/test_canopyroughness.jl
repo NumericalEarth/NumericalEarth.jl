@@ -212,3 +212,31 @@ end
     compute_aerodynamic_roughness!(z0repcheck, d0repcheck, dp, (; lai = lai[2]), grid)
     @test interior(z0rep[2]) == interior(z0repcheck)
 end
+
+@testset "Tunable LAI ceiling, Field and FieldTimeSeries canopy height" begin
+    grid = grid2()
+
+    # `maximum_valid_area_index` is a closure field the user can raise: a finite LAI above the
+    # default ceiling (10) gaps, and lifting the ceiling admits it.
+    hi = DragPartitionRoughness(Float64; maximum_valid_area_index = 15)
+    @test all(isnan,    canopy_roughness(dp, 12.0, 24.72))    # 12 > default ceiling → NaN gap
+    @test all(isfinite, canopy_roughness(hi, 12.0, 24.72))    # raised ceiling admits it
+
+    # A spatially-varying canopy-height Field flows through the unified `canopy_roughness`.
+    lai = scalarfield(grid); set!(lai, 5)
+    hc  = scalarfield(grid)
+    H = interior(hc); H[1, 1, 1] = 30.0; H[2, 2, 1] = 10.0
+    z0, d0 = canopy_roughness(dp, lai, hc)
+    @test interior(z0)[1, 1, 1] ≈ canopy_roughness(5.0, 30.0, params(:evergreen_broadleaf_forest), κ, ψh, iters)[1]
+    @test interior(z0)[2, 2, 1] ≈ canopy_roughness(5.0, 10.0, params(:evergreen_broadleaf_forest), κ, ψh, iters)[1]
+
+    # A FieldTimeSeries canopy height is indexed per period alongside `lai`.
+    laits = FieldTimeSeries{Center, Center, Nothing}(grid, [0.0, 1.0])
+    set!(laits[1], 5.0); set!(laits[2], 5.0)
+    hcts = FieldTimeSeries{Center, Center, Nothing}(grid, [0.0, 1.0])
+    set!(hcts[1], 20.0); set!(hcts[2], 30.0)
+    z0ts, d0ts = canopy_roughness(dp, laits, hcts)
+    @test all(interior(z0ts[1]) .≈ canopy_roughness(5.0, 20.0, params(:evergreen_broadleaf_forest), κ, ψh, iters)[1])
+    @test all(interior(z0ts[2]) .≈ canopy_roughness(5.0, 30.0, params(:evergreen_broadleaf_forest), κ, ψh, iters)[1])
+    @test interior(z0ts[2]) != interior(z0ts[1])             # height varies in time → z0 varies
+end

@@ -6,8 +6,6 @@
 ##### vegetation-type parameters.
 #####
 
-const MAXIMUM_VALID_LAI = 10       # physical LAI ceiling; larger values are fill/artifacts
-
 """
 $(TYPEDSIGNATURES)
 
@@ -20,7 +18,7 @@ or a non-finite/negative `canopy_height`, returns `NaN` gaps.
     Λ₀ = convert(FT, cell.lai)
     h₀ = convert(FT, cell.canopy_height)
 
-    valid = isfinite(Λ₀) & (Λ₀ ≥ 0) & (Λ₀ ≤ MAXIMUM_VALID_LAI) & isfinite(h₀) & (h₀ ≥ 0)
+    valid = isfinite(Λ₀) & (Λ₀ ≥ 0) & (Λ₀ ≤ closure.maximum_valid_area_index) & isfinite(h₀) & (h₀ ≥ 0)
     Λ = ifelse(valid, Λ₀, zero(FT))
     h = ifelse(valid, h₀, zero(FT))
 
@@ -70,7 +68,8 @@ matches the shape of `lai`:
     sharing `lai`'s grid and times).
 
 `canopy_height` drives the height and defaults to the closure's representative canopy height;
-pass a `Number` or a `Field` to override it. A non-finite or out-of-range `lai`, or a
+override it with a `Number`, a spatially-varying `Field`, or — with a `lai::FieldTimeSeries` —
+a `FieldTimeSeries` sharing `lai`'s periods. A non-finite or out-of-range `lai`, or a
 non-finite/negative `canopy_height`, yields `NaN` gaps.
 
 ```jldoctest
@@ -97,6 +96,10 @@ function canopy_roughness(closure::DragPartitionRoughness, lai::AbstractField,
     return z0, d0
 end
 
+# Canopy height for period `n`: index a FieldTimeSeries per period; share a scalar or static Field.
+@inline canopy_height_at_period(canopy_height, n) = canopy_height
+@inline canopy_height_at_period(canopy_height::FieldTimeSeries, n) = canopy_height[n]
+
 function canopy_roughness(closure::DragPartitionRoughness, lai::FieldTimeSeries,
                           canopy_height = closure.representative_height)
     grid  = lai.grid
@@ -104,7 +107,8 @@ function canopy_roughness(closure::DragPartitionRoughness, lai::FieldTimeSeries,
     z0 = FieldTimeSeries{Center, Center, Nothing}(grid, times)
     d0 = FieldTimeSeries{Center, Center, Nothing}(grid, times)
     for n in eachindex(times)
-        compute_aerodynamic_roughness!(z0[n], d0[n], closure, (; lai = lai[n], canopy_height), grid)
+        hₙ = canopy_height_at_period(canopy_height, n)
+        compute_aerodynamic_roughness!(z0[n], d0[n], closure, (; lai = lai[n], canopy_height = hₙ), grid)
     end
     return z0, d0
 end

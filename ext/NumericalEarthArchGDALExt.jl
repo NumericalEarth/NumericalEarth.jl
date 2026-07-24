@@ -37,7 +37,7 @@ end
 const GDAL_CONFIG_UNSET = "__numericalearth_gdal_config_unset_sentinel__"
 
 # Set GDAL config `options` (key => value pairs) for the duration of `f`, then restore each
-# to its prior value — or unset it — afterwards. GDAL config is process-global, so leaving
+# to its prior value or unset it afterwards. GDAL config is process-global, so leaving
 # per-host basic-auth credentials (the ETH share token) set would leak them into any later,
 # unrelated `/vsicurl/` read in the same session; scoping keeps them local to the read.
 function with_gdal_config(f, options)
@@ -58,8 +58,7 @@ function with_gdal_config(f, options)
 end
 
 # Credentials for the ETH libdrive WebDAV share: the public read-only share token as
-# basic-auth (the endpoint accepts any HTTP client, so no User-Agent is set), plus the
-# /vsicurl directory-listing suppression.
+# basic-auth, plus the /vsicurl directory-listing suppression.
 eth_http_config() =
     ["GDAL_HTTP_USERPWD"            => ETHSentinel2Canopy.ETH_LIBDRIVE_TOKEN * ":",
      "GDAL_DISABLE_READDIR_ON_OPEN" => "EMPTY_DIR"]

@@ -82,7 +82,7 @@ $(TYPEDSIGNATURES)
 Zero-plane displacement height `d0` from `d0/h = (βΛ/(2+βΛ))·(1 − α/(γ√Λ))` with
 `β = Cᴿ/Cˢ` (Eq. 5 of [Borak et al. (2025)](@cite borak2025global)).
 Monotonic and near-linear in `Λ`, so it carries a clean seasonal signal.
-Uses the actual `Λ` (not capped at `Λₘₐₓ`): `Λₘₐₓ` limits only the wind ratio `γ`
+Uses the actual `Λ` (not capped at `Λₘₐₓ`). `Λₘₐₓ` limits only the wind ratio `γ`
 (the skimming cap on `u★/Uh`), while displacement keeps rising toward `h` as the canopy
 densifies — so `d0` reaches the class-averaged values of Borak et al. (2025, Table 5).
 """
@@ -178,6 +178,8 @@ struct DragPartitionRoughness{FT}
     von_karman_constant :: FT
     "roughness-sublayer influence `ψₕ` (constant 0.193; [Raupach 1995](@cite raupach1995corrigenda))"
     sublayer_influence :: FT
+    "data-quality ceiling on the leaf-area index; a larger `lai` is treated as fill/artifact and gapped"
+    maximum_valid_area_index :: FT
     "fixed-point iterations for the wind ratio `γ`"
     iterations :: Int
 end
@@ -187,8 +189,10 @@ DragPartitionRoughness(FT = Oceananigans.defaults.FloatType;
                        parameters = canopy_drag_parameters(FT, vegetation_type),
                        representative_height = representative_canopy_height(FT, vegetation_type),
                        von_karman_constant = 0.4,
-                       sublayer_influence = 0.193,   # ψₕ (Raupach 1995)
+                       sublayer_influence = 0.193,        # ψₕ (Raupach 1995)
+                       maximum_valid_area_index = 10,     # data-quality ceiling; larger lai is fill/artifact
                        iterations = 20) =
     DragPartitionRoughness(parameters, convert(FT, representative_height),
                            convert(FT, von_karman_constant),
-                           convert(FT, sublayer_influence), Int(iterations))
+                           convert(FT, sublayer_influence),
+                           convert(FT, maximum_valid_area_index), Int(iterations))
