@@ -9,7 +9,8 @@ using NumericalEarth.DataWrangling: longitude_interfaces, latitude_interfaces,
                                     metadata_filename, available_variables,
                                     is_three_dimensional, default_inpainting
 
-using Oceananigans.Fields: location
+using Oceananigans.Fields: location, interior
+using ArchGDAL   # loads NumericalEarthArchGDALExt so the real COG read path is exercised
 
 #####
 ##### Pure no-data masking: the ETH no-data byte.
@@ -131,4 +132,56 @@ end
         @test_throws ErrorException canopy_height_cog_to_netcdf(meta, tempname() * ".nc")
         @test_throws ErrorException canopy_height_field(grid, ETHSentinel2CanopyHeight())
     end
+end
+
+#####
+##### The real windowed-COG read path, driven by a synthetic local GeoTIFF (no network):
+##### mosaic/window via gdalwarp, the north→south orientation flip, geotransform-derived
+##### coordinates, and no-data masking.
+#####
+
+@testset "Windowed COG read on a synthetic GeoTIFF" begin
+    ext = Base.get_extension(NumericalEarth, :NumericalEarthArchGDALExt)
+    @test !isnothing(ext)
+
+    # 6×4 EPSG:4326 Byte raster over lon (0, 6), lat (50, 54) at 1° pixels, north-up.
+    # The pixel value encodes its own center latitude; the no-data byte (255) sits at the
+    # north-west corner so we can check both orientation and masking.
+    nx, ny = 6, 4
+    band = UInt8[round(UInt8, 54.0 - (row - 0.5)) for col in 1:nx, row in 1:ny]
+    band[1, 1] = 255
+
+    tif = tempname() * ".tif"
+    ArchGDAL.create(tif; driver = ArchGDAL.getdriver("GTiff"),
+                    width = nx, height = ny, nbands = 1, dtype = UInt8) do ds
+        ArchGDAL.setgeotransform!(ds, [0.0, 1.0, 0.0, 54.0, 0.0, -1.0])
+        ArchGDAL.setproj!(ds, ArchGDAL.toWKT(ArchGDAL.importEPSG(4326)))
+        ArchGDAL.write!(ArchGDAL.getband(ds, 1), band)
+    end
+
+    warped = ext.warp_canopy_onto_grid([tif], (0.0, 6.0), (50.0, 54.0), nx, ny;
+                                       resampling = "near", nodata = 255)
+
+    # Cell centers come straight off the warped geotransform.
+    @test warped.longitude ≈ [0.5, 1.5, 2.5, 3.5, 4.5, 5.5]
+    @test warped.latitude  ≈ [50.5, 51.5, 52.5, 53.5]
+
+    # Rows run south→north after the flip: j = 1 is the southernmost row.
+    @test warped.data[1, 1]   ≈ 50            # south row center latitude 50.5 → byte 50
+    @test warped.data[end, end] ≈ 54          # north row
+    @test warped.data[1, end] == 255f0        # north-west no-data byte preserved (near resampling)
+
+    masked = mask_eth.(warped.data, 255)
+    @test isnan(masked[1, end])               # no-data → NaN
+    @test all(isfinite, masked[:, 1])         # valid south row kept, zeros are not masked
+
+    # canopy_field drops the masked array onto a matching grid, oriented south→north.
+    grid = LatitudeLongitudeGrid(CPU(); size = (nx, ny),
+                                 longitude = (0, 6), latitude = (50, 54),
+                                 topology = (Bounded, Bounded, Flat))
+    h = ext.canopy_field(grid, masked)
+    H = Array(interior(h))
+    @test size(H) == (nx, ny, 1)
+    @test H[1, 1, 1] ≈ 50                      # south
+    @test isnan(H[1, ny, 1])                   # north-west gap
 end

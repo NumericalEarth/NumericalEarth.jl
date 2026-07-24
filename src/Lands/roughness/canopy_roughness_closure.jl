@@ -7,10 +7,6 @@
 ##### Borak et al. (2025). Pure, allocation-free and kernel-safe.
 #####
 
-const VON_KARMAN_CONSTANT = 0.4
-const SUBLAYER_INFLUENCE = 0.193   # ψₕ (Raupach 1995)
-const CLOSURE_ITERATIONS = 20
-
 """
 $(TYPEDEF)
 
@@ -110,7 +106,7 @@ end
 """
 $(TYPEDSIGNATURES)
 
-Momentum roughness length `z0` and zero-plane displacement `d0` (metres) for a canopy of
+Momentum roughness length `z0` and zero-plane displacement `d0` (meters) for a canopy of
 area index `Λ` and height `h`, sharing the wind ratio `γ`. Returns `(z0, d0)`. `κ` is the
 von Kármán constant and `ψₕ` the roughness-sublayer influence function.
 
@@ -182,9 +178,9 @@ DragPartitionRoughness(FT = Oceananigans.defaults.FloatType;
                        vegetation_type = :evergreen_broadleaf_forest,
                        parameters = canopy_drag_parameters(FT, vegetation_type),
                        representative_height = representative_canopy_height(FT, vegetation_type),
-                       von_karman_constant = VON_KARMAN_CONSTANT,
-                       sublayer_influence = SUBLAYER_INFLUENCE,
-                       iterations = CLOSURE_ITERATIONS) =
+                       von_karman_constant = 0.4,
+                       sublayer_influence = 0.193,   # ψₕ (Raupach 1995)
+                       iterations = 20) =
     DragPartitionRoughness(parameters, convert(FT, representative_height),
                            convert(FT, von_karman_constant),
                            convert(FT, sublayer_influence), Int(iterations))

@@ -83,18 +83,8 @@ dataset_prefix(::ETHSentinel2CanopyHeight) = "ETHSentinel2CanopyHeight"
 # One regional NetCDF per variable per region, materialized from the COG tiles
 # (ETH ships separate `_Map` height and `_Map_SD` uncertainty layers).
 DataWrangling.metadata_filename(dataset::ETHSentinel2CanopyHeight, name, date, region) =
-    string(dataset_prefix(dataset), "_", string(name), "_", region_suffix(region), ".nc")
-
-region_suffix(::Nothing) = "global"
-
-function region_suffix(region::BoundingBox)
-    λ = region.longitude
-    φ = region.latitude
-    return string("lon_", bound_str(λ), "_lat_", bound_str(φ))
-end
-
-bound_str(::Nothing) = "nothing"
-bound_str(bounds) = string(bounds[1], "_", bounds[2])
+    string(dataset_prefix(dataset), "_", string(name), "_",
+           DataWrangling.bounded_region_suffix(region), ".nc")
 
 function DataWrangling.validate_dataset_coverage(grid, metadata::ETHSentinel2CanopyHeightMetadatum)
     region = metadata.region
@@ -135,9 +125,9 @@ Oceananigans.Fields.location(::ETHSentinel2CanopyHeightMetadatum) = (Center, Cen
 """
     mask_eth(x, missing_value = 255)
 
-Map a raw ETH canopy-height value `x` to a masked `Float64` height: the no-data
-byte (`missing_value`, default `255`) becomes `NaN`; all valid heights
-(including the legitimate non-forest value `0`) are kept unchanged.
+Map a raw ETH canopy-height value `x` to a masked floating-point height (the float
+type of `x`): the no-data byte (`missing_value`, default `255`) becomes `NaN`; all
+valid heights (including the legitimate non-forest value `0`) are kept unchanged.
 """
 @inline mask_eth(x, missing_value = 255) =
     ifelse(x == missing_value, oftype(float(x), NaN), float(x))
@@ -150,7 +140,7 @@ byte (`missing_value`, default `255`) becomes `NaN`; all valid heights
 # (EPSG:4326, 255 = no-data), named by their SW-corner lat/lon token (e.g. "N45E009"),
 # with a `_Map.tif` canopy-height layer and a `_Map_SD.tif` uncertainty layer. They are
 # served anonymously from an ETH libdrive public share exposed as a Nextcloud WebDAV
-# endpoint. That endpoint honours HTTP range requests — so `/vsicurl/` windows the COGs
+# endpoint. That endpoint honors HTTP range requests — so `/vsicurl/` windows the COGs
 # without downloading whole 3° tiles — but only when the request carries a browser
 # User-Agent and the public read-only share token as basic-auth credentials; both are
 # set on the GDAL HTTP driver in the ArchGDAL extension.

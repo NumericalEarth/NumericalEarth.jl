@@ -73,7 +73,7 @@ representative_canopy_height(FT, ::Val{:cropland_vegetation_mosaic})  = FT(1.40)
 """
 $(TYPEDSIGNATURES)
 
-Prescribed momentum roughness length and zero-plane displacement `(z0, d0)` (metres) for a
+Prescribed momentum roughness length and zero-plane displacement `(z0, d0)` (meters) for a
 non-vegetated IGBP class (Borak et al. 2025, Table 3): `:urban`, `:snow_and_ice`, `:water`,
 `:barren`.
 """

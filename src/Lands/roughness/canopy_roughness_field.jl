@@ -11,7 +11,7 @@ const MAXIMUM_VALID_LAI = 10       # physical LAI ceiling; larger values are fil
 """
 $(TYPEDSIGNATURES)
 
-Momentum roughness length `z0` and zero-plane displacement `d0` (metres) for one cell under
+Momentum roughness length `z0` and zero-plane displacement `d0` (meters) for one cell under
 the drag-partition canopy closure. `cell` carries `lai` and `canopy_height`; the closure's
 vegetation-type drag parameters set `(z0, d0)` from them. A non-finite or out-of-range `lai`,
 or a non-finite/negative `canopy_height`, returns `NaN` gaps.
@@ -44,7 +44,7 @@ end
 """
 $(TYPEDSIGNATURES)
 
-Fill `z0m` and `d0` (metres) in place by applying `closure` over `grid`, reading the per-cell
+Fill `z0m` and `d0` (meters) in place by applying `closure` over `grid`, reading the per-cell
 surface fields from the `properties` NamedTuple (each a scalar, array or `Field`). For
 [`DragPartitionRoughness`](@ref) the properties are `(; lai, canopy_height)`; `canopy_height`
 may be omitted, in which case the closure's representative canopy height fills every cell.
@@ -64,17 +64,15 @@ Build cyclic climatologies of momentum roughness length `z0m` and zero-plane dis
 `d0` from a leaf-area-index `FieldTimeSeries` `lai` (one seasonal cycle of periods), using the
 drag parameters of `vegetation_type` (default `:evergreen_broadleaf_forest`). Pass a static
 `canopy_height` to drive the height, or leave it `nothing` to use the class's representative
-height. Returns `(z0m, d0)` as `FieldTimeSeries` sharing `lai`'s grid and times.
+height. Remaining keyword arguments (`von_karman_constant`, `sublayer_influence`, `iterations`)
+are forwarded to [`DragPartitionRoughness`](@ref). Returns `(z0m, d0)` as `FieldTimeSeries`
+sharing `lai`'s grid and times.
 """
 function canopy_roughness_climatology(lai::FieldTimeSeries, canopy_height = nothing;
-                                      vegetation_type = :evergreen_broadleaf_forest,
-                                      von_karman_constant = VON_KARMAN_CONSTANT,
-                                      sublayer_influence = SUBLAYER_INFLUENCE,
-                                      iterations = CLOSURE_ITERATIONS)
+                                      vegetation_type = :evergreen_broadleaf_forest, kw...)
     grid    = lai.grid
     times   = lai.times
-    closure = DragPartitionRoughness(eltype(grid); vegetation_type, von_karman_constant,
-                                     sublayer_influence, iterations)
+    closure = DragPartitionRoughness(eltype(grid); vegetation_type, kw...)
 
     z0m = FieldTimeSeries{Center, Center, Nothing}(grid, times)
     d0  = FieldTimeSeries{Center, Center, Nothing}(grid, times)

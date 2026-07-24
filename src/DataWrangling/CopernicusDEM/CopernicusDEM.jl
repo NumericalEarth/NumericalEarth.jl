@@ -78,18 +78,7 @@ DataWrangling.dataset_variable_name(data::CopernicusDEMMetadatum) =
     CopernicusDEM_bathymetry_variable_names[data.name]
 
 DataWrangling.metadata_filename(dataset::CopernicusDEMDataset, name, date, region) =
-    string(dataset_prefix(dataset), "_", region_suffix(region), ".nc")
-
-region_suffix(::Nothing) = "global"
-
-function region_suffix(region::BoundingBox)
-    λ = region.longitude
-    φ = region.latitude
-    return string("lon_", bound_str(λ), "_lat_", bound_str(φ))
-end
-
-bound_str(::Nothing) = "nothing"
-bound_str(bounds) = string(bounds[1], "_", bounds[2])
+    string(dataset_prefix(dataset), "_", DataWrangling.bounded_region_suffix(region), ".nc")
 
 function DataWrangling.validate_dataset_coverage(grid, metadata::CopernicusDEMMetadatum)
     region = metadata.region
