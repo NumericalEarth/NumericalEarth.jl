@@ -364,6 +364,7 @@ include("GEBCO/GEBCO.jl")
 include("IBCAO/IBCAO.jl")
 include("CopernicusDEM/CopernicusDEM.jl")
 include("CopernicusLandAlbedo/CopernicusLandAlbedo.jl")
+include("WorldCover/WorldCover.jl")
 
 using .ETOPO
 using .ECCO
@@ -381,6 +382,7 @@ using .GEBCO
 using .IBCAO
 using .CopernicusDEM
 using .CopernicusLandAlbedo
+using .WorldCover
 
 function dataset_modules()
     modules = Module[]

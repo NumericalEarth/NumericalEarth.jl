@@ -117,6 +117,7 @@ export
     EN4Monthly,
     WOAClimatology, WOAAnnual, WOAMonthly,
     CopernicusAlbedo, CopernicusAlbedoClimatology, build_monthly_climatology!,
+    ESAWorldCover,
     GLORYSDaily, GLORYSMonthly, GLORYSStatic,
     AVISOMetadata, AVISODaily, AVISOMonthly, AVISOMetadatum,
     RepeatYearJRA55, MultiYearJRA55,
@@ -275,6 +276,7 @@ using .DataWrangling.OSPapa
 using .DataWrangling.ERA5
 using .DataWrangling.SoilGrids
 using .DataWrangling.CopernicusLandAlbedo
+using .DataWrangling.WorldCover
 
 using PrecompileTools: @setup_workload, @compile_workload
 
