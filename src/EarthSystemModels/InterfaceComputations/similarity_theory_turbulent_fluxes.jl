@@ -98,7 +98,7 @@ end
     mahrt_sun_subgrid_velocity(Δx; threshold = 5e3)
 
 Return the mesoscale subgrid velocity [m/s] for grid spacing `Δx` [m] following
-[Mahrt and Sun (1995)](https://doi.org/10.1175/1520-0493(1995)123<3032:TSVOMF>2.0.CO;2),
+[Mahrt and Sun (1995)](https://doi.org/10.1175/1520-0493(1995)123<3032:TSVSIT>2.0.CO;2),
 as implemented in the revised MM5 surface layer scheme of [Jiménez et al. (2012)](https://doi.org/10.1175/MWR-D-11-00056.1):
 
 ```math
