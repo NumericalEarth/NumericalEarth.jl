@@ -22,7 +22,7 @@ using Printf: Printf
 
 using ..DataWrangling: DataWrangling, Metadatum, BoundingBox, native_grid, metadata_path,
                        dataset_variable_name, validate_dataset_coverage,
-                       default_horizontal_padding
+                       default_region
 using ..DataWrangling.ETOPO: ETOPO2022
 using ..DataWrangling.CopernicusDEM: GLO30
 

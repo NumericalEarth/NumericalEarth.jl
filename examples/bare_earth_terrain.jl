@@ -23,9 +23,10 @@
 #
 # !!! note "DSM source"
 #     The commercial-use DSM for this workflow is Copernicus GLO-30 (30 m); pass
-#     `dataset = GLO30()` with a `BoundingBox` region and set `DESTINE_ACCESS_TOKEN`
-#     (see [`GLO30`](@ref)). Here we use ETOPO 2022 so the script runs without a
-#     token — the subtraction, the figures, and the correction wiring are identical.
+#     `dataset = GLO30()` and set `DESTINE_ACCESS_TOKEN` (see [`GLO30`](@ref)) — the
+#     grid-derived window is added automatically. Here we use ETOPO 2022 so the script
+#     runs without a token; ETOPO reads globally while GLO-30 is windowed to the grid,
+#     but the subtraction, the figures, and the correction wiring are identical.
 #
 # !!! note "Object heights"
 #     A canopy-height dataset supplies the object height over vegetation (a
