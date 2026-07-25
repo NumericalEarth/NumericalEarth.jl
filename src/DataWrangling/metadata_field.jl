@@ -55,6 +55,27 @@ function restrict(bbox_interfaces, interfaces::AbstractVector, N)
     return interfaces[i⁻:i⁺], rN
 end
 
+"""
+    native_cell_range(bounds, interfaces, N)
+
+The 1-based native cell range covered by `bounds` on an axis spanning `interfaces` in `N`
+cells. Mirrors [`restrict`](@ref), so a dataset that hyperslabs this range off disk hands
+`set_region_data!` exactly as many cells as the native grid has — pinning the region
+offset to zero instead of relying on a float comparison between the grid's nodes and the
+file's coordinates.
+"""
+function native_cell_range(bounds, interfaces, N)
+    left, right = interfaces
+    Δ = (right - left) / N
+    i⁻ = clamp(floor(Int, (bounds[1] - left) / Δ - 1/2), 0, N)
+    i⁺ = clamp(ceil( Int, (bounds[2] - left) / Δ + 1/2), 0, N)
+    if i⁺ ≤ i⁻
+        i⁺ = min(i⁻ + 1, N)
+        i⁻ = max(i⁺ - 1, 0)
+    end
+    return (i⁻ + 1):i⁺
+end
+
 native_convention_longitude(::Nothing, native) = nothing
 
 # Map a bbox longitude into the native longitude convention

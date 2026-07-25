@@ -24,6 +24,9 @@ using NumericalEarth.DataWrangling.CopernicusLandAlbedo: CopernicusAlbedo,
                                                          copernicus_albedo_variables,
                                                          albedo_satellite, find_albedo_variable,
                                                          repack_albedo_pair
+using NumericalEarth.DataWrangling.CopernicusLandVegetation: CopernicusVegetation,
+                                                            vegetation_cds_request_variables,
+                                                            vegetation_request_area
 
 #####
 ##### Dispatch helpers — encapsulate single-level vs pressure-level differences
@@ -950,19 +953,19 @@ function build_albedo_request(name, dates)
     )
 end
 
-# The delivery is either a ZIP of per-variable NetCDF files or a single NetCDF.
-function extract_albedo_files(download_path, extraction_dir)
+# The delivery is either a ZIP of NetCDF files or a single NetCDF.
+function extract_delivered_nc_files(download_path, extraction_dir, fallback_name)
     if is_zip(download_path)
         run(`unzip -qo $download_path -d $extraction_dir`)
     else
-        cp(download_path, joinpath(extraction_dir, "albedo.nc"); force=true)
+        cp(download_path, joinpath(extraction_dir, fallback_name); force=true)
     end
     return filter(p -> endswith(p, ".nc"), readdir(extraction_dir; join=true))
 end
 
 # The dekad a delivered file belongs to, from its time coordinate (authoritative)
 # or the timestamp in its filename.
-function albedo_file_date(path)
+function delivered_file_date(path)
     date = NCDatasets.Dataset(path) do ds
         haskey(ds, "time") || return nothing
         t = ds["time"][1]
@@ -972,14 +975,14 @@ function albedo_file_date(path)
 
     stamp = match(r"_(\d{8})\d{0,6}_", basename(path))
     isnothing(stamp) &&
-        error("Cannot determine the date of the delivered albedo file $(basename(path)).")
+        error("Cannot determine the date of the delivered file $(basename(path)).")
     return Dates.DateTime(stamp[1], Dates.dateformat"yyyymmdd")
 end
 
 function repack_albedo_batch(nc_files, batch, path_of, destination_names, expected_size)
     members = Dict{Dates.DateTime, Dict{Symbol, Tuple{String, String}}}()
     for path in nc_files
-        date = albedo_file_date(path)
+        date = delivered_file_date(path)
         entry = get!(members, date, Dict{Symbol, Tuple{String, String}}())
         blacksky_name = find_albedo_variable(path, albedo_source_variable_candidates.blacksky)
         whitesky_name = find_albedo_variable(path, albedo_source_variable_candidates.whitesky)
@@ -1031,8 +1034,117 @@ function Downloads.download(metadata::AlbedoMetadata; skip_existing=true, cleanu
         extraction_dir = mktempdir(dir)
         try
             retrieve_with_retries(ALBEDO_CDS_PRODUCT, request, tmp_download)
-            nc_files = extract_albedo_files(tmp_download, extraction_dir)
+            nc_files = extract_delivered_nc_files(tmp_download, extraction_dir, "albedo.nc")
             repack_albedo_batch(nc_files, batch, path_of, destination_names, expected_size)
+        finally
+            # Gate both on `cleanup` so `cleanup=false` keeps the raw download and the
+            # extracted NetCDFs for debugging.
+            cleanup && rm(tmp_download; force=true)
+            cleanup && rm(extraction_dir; recursive=true, force=true)
+        end
+    end
+
+    return metadata_path(metadata)
+end
+
+#####
+##### Copernicus land leaf area index (C3S `satellite-lai-fapar` catalogue entry)
+#####
+##### One CDS request per calendar month fetches every dekad of that month, subset
+##### server-side to the metadata's region — the global 1/336° grid holds 5.7 billion
+##### cells per dekad, so a whole-globe download is impractical. Each delivered file is
+##### already a compact single-date NetCDF, so it is filed under the name
+##### `metadata_filename` computes instead of being repacked.
+#####
+
+const VEGETATION_CDS_PRODUCT = "satellite-lai-fapar"
+
+# V4.1 is the consolidated 300 m record; the 300 m collection is Sentinel-3 only, with
+# LAI/fAPAR retrieved jointly from the OLCI and SLSTR broadband albedos.
+const VEGETATION_PRODUCT_VERSION = "v4_1"
+
+const VegetationMetadata = NumericalEarth.DataWrangling.Metadata{<:CopernicusVegetation}
+
+"""
+    build_vegetation_request(name, dates, region) -> Dict{String, Any}
+
+Construct the CDS request for the 300 m Sentinel-3 leaf area index covering `dates`,
+which must share a `(year, month)` (CDS interprets `year`/`month`/`nominal_day` as a
+Cartesian product, and the valid nominal days differ by month). `region` is subset
+server-side; a `nothing` region requests the whole globe.
+"""
+function build_vegetation_request(name, dates, region)
+    dts = dates isa AbstractVector ? dates : [dates]
+
+    length(unique((Dates.year(dt), Dates.month(dt)) for dt in dts)) == 1 ||
+        error("build_vegetation_request expects dates within one calendar month; got $(dts).")
+
+    request = Dict{String, Any}(
+        "variable"              => [vegetation_cds_request_variables[name]],
+        "satellite"             => ["sentinel_3"],
+        "sensor"                => "olci_and_slstr",
+        "horizontal_resolution" => ["300m"],
+        "product_version"       => [VEGETATION_PRODUCT_VERSION],
+        "year"                  => unique(string.(Dates.year.(dts))),
+        "month"                 => unique(lpad.(string.(Dates.month.(dts)), 2, '0')),
+        "nominal_day"           => unique(lpad.(string.(Dates.day.(dts)), 2, '0')),
+    )
+
+    area = vegetation_request_area(region)
+    isnothing(area) || (request["area"] = area)
+
+    return request
+end
+
+# File each delivered dekad under the local name for its date. The `time` coordinate is
+# authoritative, so a delivery that returns extra or reordered dates still lands correctly.
+function file_vegetation_batch(nc_files, batch, path_of)
+    delivered = Dict{Dates.DateTime, String}()
+    for path in nc_files
+        delivered[delivered_file_date(path)] = path
+    end
+
+    for date in batch
+        haskey(delivered, date) ||
+            error("The CDS delivery is missing the leaf area index for $date; ",
+                  "it contained dates $(sort!(collect(keys(delivered)))).")
+        mv(delivered[date], path_of[date]; force=true)
+    end
+
+    return nothing
+end
+
+"""
+    download(metadata::Metadata{<:CopernicusVegetation}; skip_existing=true, cleanup=true)
+
+Download the dekadal 300 m leaf area index for every date of `metadata` from the C3S
+`satellite-lai-fapar` catalogue entry, one CDS request per calendar month, subset to
+`metadata.region`. Requires `~/.cdsapirc` credentials and acceptance of the Copernicus
+Global Land product licence on the CDS portal.
+"""
+function Downloads.download(metadata::VegetationMetadata; skip_existing=true, cleanup=true)
+    meta_filename = NumericalEarth.DataWrangling.metadata_filename
+    dates = metadata.dates isa AbstractVector ? metadata.dates : [metadata.dates]
+    dir = metadata.dir
+    mkpath(dir)
+
+    dt_path_pairs = [(dt, joinpath(dir, meta_filename(metadata.dataset, metadata.name, dt, metadata.region)))
+                     for dt in dates]
+    pending = skip_existing ? filter(dt_path -> !isfile(dt_path[2]), dt_path_pairs) : dt_path_pairs
+    isempty(pending) && return metadata_path(metadata)
+
+    path_of = Dict(dt => path for (dt, path) in pending)
+    monthly = group_by_calendar_month([dt for (dt, _) in pending])
+
+    @root for key in sort(collect(keys(monthly)))
+        batch = sort(unique(monthly[key]))
+        request = build_vegetation_request(metadata.name, batch, metadata.region)
+        tmp_download = joinpath(dir, "_tmp_vegetation_$(key[1])$(lpad(key[2], 2, '0')).download")
+        extraction_dir = mktempdir(dir)
+        try
+            retrieve_with_retries(VEGETATION_CDS_PRODUCT, request, tmp_download)
+            nc_files = extract_delivered_nc_files(tmp_download, extraction_dir, "leaf_area_index.nc")
+            file_vegetation_batch(nc_files, batch, path_of)
         finally
             # Gate both on `cleanup` so `cleanup=false` keeps the raw download and the
             # extracted NetCDFs for debugging.

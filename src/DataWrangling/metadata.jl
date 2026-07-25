@@ -821,6 +821,26 @@ missing_value(metadatum) = missing
 #####
 
 """
+    dekadal_dates(start_date, end_date)
+
+Return the dekadal (10-daily) dates between `start_date` and `end_date` inclusive.
+Copernicus Global Land products stamp three composites per month, on day 10, day 20,
+and the last day of the month.
+"""
+function dekadal_dates(start_date, end_date)
+    dates = DateTime[]
+    date = DateTime(Dates.year(start_date), Dates.month(start_date), 1)
+    while date ≤ end_date
+        for day in (10, 20, Dates.daysinmonth(date))
+            dekad = DateTime(Dates.year(date), Dates.month(date), day)
+            start_date ≤ dekad ≤ end_date && push!(dates, dekad)
+        end
+        date += Dates.Month(1)
+    end
+    return dates
+end
+
+"""
     compute_native_date_range(native_dates, start_date, end_date)
 
 Compute the range of `native_dates` that fall within the specified `start_date` and `end_date`.
