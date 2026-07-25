@@ -3,14 +3,15 @@ using ..EarthSystemModels: EarthSystemModel, reference_density, heat_capacity
 struct MeridionalFluxMethod end
 struct TendencyMethod end
 """
-    meridional_heat_transport(simulation::Simulation, method = TendencyMethod();
-                              destination_grid = nothing)
-    meridional_heat_transport(simulation::Simulation, MeridionalFluxMethod();
-                              reference_temperature = 0)
+    meridional_transport(simulation, name, method = TendencyMethod();
+                          destination_grid = nothing)
+    meridional_transport(simulation, :temperature, MeridionalFluxMethod();
+                          reference_temperature = 0)
 
-Return the meridional heat transport for a coupled `simulation` using either direct
-meridional heat fluxes or the ocean heat-content tendency. A `BudgetComputation` callback
-must be registered on `simulation` before using the default `TendencyMethod()`.
+Return a meridional transport for a coupled `simulation`. Supported tendency-based
+budget names are `:temperature`, `:salinity`, and `:mass`. A matching
+`BudgetComputation` callback must be registered on `simulation` before using
+`TendencyMethod()`.
 
 !!! warning "The flux method only works on LatitudeLongitudeGrid"
 
@@ -22,7 +23,7 @@ Arguments
 =========
 
 * `simulation`: A `Simulation` of an `EarthSystemModel`. For `TendencyMethod()`, the
-  simulation must contain exactly one registered `BudgetComputation` callback.
+  simulation must contain exactly one registered `BudgetComputation` callback for the requested name.
 
 * The method for the computation. Available options are: `TendencyMethod()` (default)
   and `MeridionalFluxMethod()`.
@@ -165,12 +166,16 @@ simulation = Simulation(esm; Δt=1)
 budget = BudgetComputation(:temperature, esm)
 add_callback!(simulation, budget)
 
-mht = meridional_heat_transport(simulation)
+mht = meridional_transport(simulation, :temperature)
 ```
 """
-function meridional_heat_transport(simulation::Simulation,
-                                   ::MeridionalFluxMethod;
-                                   reference_temperature=0)
+function meridional_transport(simulation::Simulation,
+                                tracer_name::Symbol,
+                                ::MeridionalFluxMethod;
+                                reference_temperature=0)
+    tracer_name === :temperature ||
+        throw(ArgumentError("MeridionalFluxMethod() is only defined for :temperature. Use TendencyMethod() for :salinity and :mass."))
+
     esm = simulation.model
     esm isa EarthSystemModel ||
         throw(ArgumentError("Meridional heat transport requires a Simulation of an EarthSystemModel."))
@@ -183,49 +188,50 @@ function meridional_heat_transport(simulation::Simulation,
     return meridional_heat_transport_via_meridional_heat_flux(esm; reference_temperature)
 end
 
-function meridional_heat_transport(simulation::Simulation,
-                                   ::TendencyMethod=TendencyMethod();
-                                   destination_grid=nothing)
-    budgets = [callback.func for callback in values(simulation.callbacks)
-               if callback.func isa BudgetComputation]
-
-    if isempty(budgets)
-        throw(ArgumentError("TendencyMethod() requires a BudgetComputation callback. " *
-                            "Create a budget and register it with " *
-                            "add_callback!(simulation, budget) first."))
-    elseif length(budgets) > 1
-        throw(ArgumentError("TendencyMethod() requires exactly one BudgetComputation callback, " *
-                            "but the simulation has $(length(budgets))."))
-    end
-
-    budget = only(budgets)
+function meridional_transport(simulation::Simulation,
+                                tracer_name::Symbol,
+                                ::TendencyMethod=TendencyMethod();
+                                destination_grid=nothing)
+    budget = budget_computation(simulation, tracer_name)
     grid = underlying_grid(budget.residual.grid)
     validate_tendency_destination(grid, destination_grid)
-    return meridional_heat_transport_via_ocean_heat_content(budget; destination_grid)
+    return meridional_transport_via_column_budget(budget; destination_grid)
 end
 
-function meridional_heat_transport(::BudgetComputation, ::TendencyMethod=TendencyMethod(); kwargs...)
+function meridional_transport(::BudgetComputation, args...; kwargs...)
     message = """
-    meridional_heat_transport does not accept a BudgetComputation directly.
+    meridional_transport does not accept a BudgetComputation directly.
 
     Add the budget to the simulation as a callback first, then pass the
-    simulation to meridional_heat_transport. For example:
+    simulation and the budget name to meridional_transport. For example:
 
         budget = BudgetComputation(:temperature, esm)
         add_callback!(simulation, budget)
-        mht = meridional_heat_transport(simulation; destination_grid = latlon_grid)
+        transport = meridional_transport(simulation, :temperature; destination_grid = latlon_grid)
 
-    BudgetComputation stores heat-budget history while the simulation runs.
-    The MHT diagnostic needs the simulation so it can find that registered
+    BudgetComputation stores budget history while the simulation runs. The
+    transport diagnostic needs the simulation so it can find the registered
     callback and use the completed budget at the right time.
     """
 
     throw(ArgumentError(message))
 end
 
-function meridional_heat_transport(::Simulation, method; kwargs...)
+function meridional_transport(::Simulation, tracer_name::Symbol, method; kwargs...)
     throw(ArgumentError(string("Unknown method ", method, "; choose either MeridionalFluxMethod() or TendencyMethod().")))
 end
+
+meridional_transport(simulation::Simulation, method::MeridionalFluxMethod; kwargs...) =
+    meridional_transport(simulation, :temperature, method; kwargs...)
+
+meridional_transport(simulation::Simulation, method::TendencyMethod=TendencyMethod(); kwargs...) =
+    meridional_transport(simulation, :temperature, method; kwargs...)
+
+meridional_heat_transport(simulation::Simulation, method= TendencyMethod(); kwargs...) =
+    meridional_transport(simulation, :temperature, method; kwargs...)
+
+meridional_heat_transport(budget::BudgetComputation, args...; kwargs...) =
+    meridional_transport(budget, args...; kwargs...)
 
 underlying_grid(grid::ImmersedBoundaryGrid) = grid.underlying_grid
 underlying_grid(grid) = grid
@@ -249,6 +255,21 @@ validate_tendency_destination_grid(destination_grid) =
     throw(ArgumentError("The `destination_grid` must be a LatitudeLongitudeGrid, " *
                         "a RectilinearGrid, or an ImmersedBoundaryGrid wrapped around one of those grids."))
 
+function budget_computation(simulation::Simulation, tracer_name::Symbol)
+    budgets = [callback.func for callback in values(simulation.callbacks)
+               if callback.func isa BudgetComputation && callback.func.tracer_name === tracer_name]
+
+    if isempty(budgets)
+        throw(ArgumentError("TendencyMethod() requires a BudgetComputation(:" * string(tracer_name) * ", model) callback. " *
+                            "Create that budget and register it with add_callback!(simulation, budget) first."))
+    elseif length(budgets) > 1
+        throw(ArgumentError("TendencyMethod() requires exactly one BudgetComputation(:" * string(tracer_name) * ", model) callback, " *
+                            "but the simulation has " * string(length(budgets)) * "."))
+    end
+
+    return only(budgets)
+end
+
 function meridional_heat_transport_via_meridional_heat_flux(esm; reference_temperature)
     ρᵒᶜ = reference_density(esm.ocean)
     cᵒᶜ = heat_capacity(esm.ocean)
@@ -258,7 +279,7 @@ function meridional_heat_transport_via_meridional_heat_flux(esm; reference_tempe
     return MHT
 end
 
-function meridional_heat_transport_via_ocean_heat_content(budget; destination_grid=nothing)
+function meridional_transport_via_column_budget(budget; destination_grid=nothing)
     column_budget = budget.residual
 
     if destination_grid !== nothing

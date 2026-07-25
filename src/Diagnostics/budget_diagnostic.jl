@@ -1,12 +1,14 @@
 """
-    BudgetComputation(:temperature, model)
+    BudgetComputation(name, model)
 
-Track the ocean temperature budget for a coupled model.
+Track an ocean column budget for a coupled model.
 
 ```julia
 budget = BudgetComputation(:temperature, model)
 add_callback!(simulation, budget)
 ```
+
+Supported budgets are `:temperature`, `:salinity`, and `:mass`.
 
 The callback runs once after every timestep. It saves the fields needed to
 finish the next budget, so restarting from a checkpoint preserves the budget.
@@ -31,20 +33,18 @@ Base.summary(budget::BudgetComputation) =
 
 Base.show(io::IO, budget::BudgetComputation) = print(io, summary(budget))
 
-function BudgetComputation(tracer_name::Symbol, esm::EarthSystemModel)
-    tracer_name === :temperature ||
-        throw(ArgumentError("BudgetComputation currently supports only :temperature."))
+BudgetComputation(tracer_name::Symbol, esm::EarthSystemModel) =
+    BudgetComputation(Val(tracer_name), tracer_name, esm)
 
+function BudgetComputation(kind::Val, tracer_name::Symbol, esm::EarthSystemModel)
     ocean = esm.ocean
     hasproperty(ocean, :model) ||
-        throw(ArgumentError("BudgetComputation(:temperature, model) requires a prognostic Oceananigans ocean."))
+        throw(ArgumentError("BudgetComputation(name, model) requires a prognostic Oceananigans ocean."))
 
     model = ocean.model
     grid = model.grid
-    ρᵒᶜ = reference_density(ocean)
-    cᵒᶜ = heat_capacity(ocean)
 
-    H = Field(Integral(ρᵒᶜ * cᵒᶜ * model.tracers.T, dims=3))
+    H = budget_inventory(kind, esm)
     ColumnField = Field{Center, Center, Nothing}
     H⁻ = ColumnField(grid)
     ∂t_H = ColumnField(grid)
@@ -52,11 +52,44 @@ function BudgetComputation(tracer_name::Symbol, esm::EarthSystemModel)
     Qʳ = ColumnField(grid)
     B = ColumnField(grid)
 
-    forcing = get_radiative_forcing(ocean)
-    R = radiative_heat_flux(forcing, model, ρᵒᶜ, cᵒᶜ)
+    R = budget_radiative_flux(kind, esm)
 
     return BudgetComputation(tracer_name, H, H⁻, ∂t_H, Qˢ, R, Qʳ, B)
 end
+
+function budget_inventory(::Val{:temperature}, esm)
+    ocean = esm.ocean
+    model = ocean.model
+    ρᵒᶜ = reference_density(ocean)
+    cᵒᶜ = heat_capacity(ocean)
+    return Field(Integral(ρᵒᶜ * cᵒᶜ * model.tracers.T, dims=3))
+end
+
+budget_inventory(::Val{:salinity}, esm) =
+    Field(Integral(esm.ocean.model.tracers.S, dims=3))
+
+function budget_inventory(::Val{:mass}, esm)
+    ocean = esm.ocean
+    model = ocean.model
+    ρᵒᶜ = reference_density(ocean)
+    return Field(Integral(0 * model.tracers.T + ρᵒᶜ, dims=3))
+end
+
+function budget_inventory(::Val{name}, esm) where name
+    throw(ArgumentError("BudgetComputation supports :temperature, :salinity, and :mass, not :" * string(name) * "."))
+end
+
+function budget_radiative_flux(::Val{:temperature}, esm)
+    ocean = esm.ocean
+    model = ocean.model
+    ρᵒᶜ = reference_density(ocean)
+    cᵒᶜ = heat_capacity(ocean)
+    forcing = get_radiative_forcing(ocean)
+    return radiative_heat_flux(forcing, model, ρᵒᶜ, cᵒᶜ)
+end
+
+budget_radiative_flux(::Val{:salinity}, esm) = nothing
+budget_radiative_flux(::Val{:mass}, esm) = nothing
 
 radiative_heat_flux(::Nothing, model, ρᵒᶜ, cᵒᶜ) = nothing
 
@@ -82,20 +115,26 @@ end
 function cache_budget!(budget::BudgetComputation, esm)
     Oceananigans.compute!(budget.heat_content)
     Oceananigans.set!(budget.previous_heat_content, budget.heat_content)
-
-    # The previous frazil flux has already changed ocean temperature. Store
-    # only the fluxes that will be applied during the next timestep.
-    surface_flux = net_ocean_heat_flux(esm) - frazil_heat_flux(esm)
-    Oceananigans.set!(budget.surface_flux, surface_flux)
-
+    Oceananigans.set!(budget.surface_flux, budget_surface_flux(Val(budget.tracer_name), esm))
     cache_radiative_heat_flux!(budget.applied_radiative_heat_flux, budget.radiative_heat_flux)
     return nothing
 end
 
+function budget_surface_flux(::Val{:temperature}, esm)
+    # The previous frazil flux has already changed ocean temperature. Store
+    # only the fluxes that will be applied during the next timestep.
+    return net_ocean_heat_flux(esm) - frazil_heat_flux(esm)
+end
+
+budget_surface_flux(::Val{:salinity}, esm) = net_ocean_salinity_flux(esm)
+
+# `net_ocean_freshwater_flux` is positive into the ocean. The budget residual
+# uses outward-positive surface fluxes, so mass gets the opposite sign.
+budget_surface_flux(::Val{:mass}, esm) = - net_ocean_freshwater_flux(esm)
+
 function complete_budget!(budget::BudgetComputation, esm, Δt)
-    # The new frazil flux has now changed ocean temperature. Include it in
-    # the surface flux for this completed timestep.
-    Oceananigans.set!(budget.surface_flux, budget.surface_flux + frazil_heat_flux(esm))
+    Oceananigans.set!(budget.surface_flux,
+                      completed_surface_flux(Val(budget.tracer_name), budget.surface_flux, esm))
 
     Oceananigans.compute!(budget.heat_content)
     Oceananigans.set!(budget.tendency,
@@ -105,6 +144,15 @@ function complete_budget!(budget::BudgetComputation, esm, Δt)
     Oceananigans.set!(budget.residual, residual)
     return nothing
 end
+
+function completed_surface_flux(::Val{:temperature}, surface_flux, esm)
+    # The new frazil flux has now changed ocean temperature. Include it in
+    # the surface flux for this completed timestep.
+    return surface_flux + frazil_heat_flux(esm)
+end
+
+completed_surface_flux(::Val{:salinity}, surface_flux, esm) = surface_flux
+completed_surface_flux(::Val{:mass}, surface_flux, esm) = surface_flux
 
 function Oceananigans.initialize!(budget::BudgetComputation, simulation)
     cache_budget!(budget, simulation.model)
@@ -164,7 +212,8 @@ function Oceananigans.restore_prognostic_state!(callback::Callback{P, <:BudgetCo
 end
 
 function Oceananigans.Simulations.add_callback!(simulation::Simulation, budget::BudgetComputation;
-                                                 name=:temperature_budget)
+                                                 name=nothing)
+    name = isnothing(name) ? Symbol(budget.tracer_name, :_budget) : name
     iteration = simulation.model.clock.iteration
     callback = Callback(budget)
 

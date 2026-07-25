@@ -185,7 +185,7 @@ for arch in test_architectures
 
         set!(ocean.model, v=1, T=1)
 
-        mht = Field(meridional_heat_transport(simulation, MeridionalFluxMethod()))
+        mht = Field(meridional_transport(simulation, :temperature, MeridionalFluxMethod()))
         compute!(mht)
 
         @allowscalar begin
@@ -194,7 +194,7 @@ for arch in test_architectures
         end
     end
 
-    @testset "Tripolar tendency-based meridional heat transport [$A]" begin
+    @testset "Tripolar tendency-based meridional transport [$A]" begin
         underlying_grid = TripolarGrid(arch;
                                        size = (32, 16, 2),
                                        z = MutableVerticalDiscretization((-100, 0)))
@@ -238,9 +238,13 @@ for arch in test_architectures
 
                 simulation = Simulation(esm; Δt = 10, stop_iteration = 4)
                 budget = BudgetComputation(:temperature, esm)
-                @test_throws ArgumentError meridional_heat_transport(simulation; destination_grid=latlon_grid)
+                salinity_budget = BudgetComputation(:salinity, esm)
+                mass_budget = BudgetComputation(:mass, esm)
+                @test_throws ArgumentError meridional_transport(simulation, :temperature; destination_grid=latlon_grid)
                 add_callback!(simulation, budget)
-                @test_throws ArgumentError meridional_heat_transport(budget, TendencyMethod(); destination_grid=latlon_grid)
+                add_callback!(simulation, salinity_budget)
+                add_callback!(simulation, mass_budget)
+                @test_throws ArgumentError meridional_transport(budget, TendencyMethod(); destination_grid=latlon_grid)
 
                 ρᵒᶜ = esm.interfaces.ocean_properties.reference_density
                 cᵒᶜ = esm.interfaces.ocean_properties.heat_capacity
@@ -260,25 +264,29 @@ for arch in test_architectures
                     applied_radiation = Field(Integral(budget.applied_radiative_heat_flux, dims=(1, 2))),
                     native_residual = Field(Integral(budget.residual, dims=(1, 2))),
                     regridded_residual = Field(Integral(regridded_residual, dims=(1, 2))),
+                    salinity_residual = Field(Integral(salinity_budget.residual, dims=(1, 2))),
+                    mass_residual = Field(Integral(mass_budget.residual, dims=(1, 2))),
                     residual = Field(Integral(budget.residual, dims=(1, 2))))
 
                 debug_callback = Callback(report_mht_budget_terms!, IterationInterval(1);
                                           parameters=(; timestepper, fields=debug_fields))
                 add_callback!(simulation, debug_callback; name=:mht_budget_debug)
 
-                mht = Field(meridional_heat_transport(simulation; destination_grid = latlon_grid))
+                mht = Field(meridional_transport(simulation, :temperature; destination_grid = latlon_grid))
+                salinity_transport = Field(meridional_transport(simulation, :salinity; destination_grid = latlon_grid))
+                mass_transport = Field(meridional_transport(simulation, :mass; destination_grid = latlon_grid))
 
                 mktempdir() do dir
-                    iteration_filename = joinpath(dir, "iteration_mht.jld2")
-                    averaged_filename = joinpath(dir, "averaged_mht.jld2")
-                    outputs = (; mht)
+                    iteration_filename = joinpath(dir, "iteration_mt.jld2")
+                    averaged_filename = joinpath(dir, "averaged_mt.jld2")
+                    outputs = (mht, salinity_transport, mass_transport)
 
-                    simulation.output_writers[:iteration_mht] = JLD2Writer(simulation.model, outputs;
+                    simulation.output_writers[:iteration_mt] = JLD2Writer(simulation.model, outputs;
                                                                            schedule = IterationInterval(1),
                                                                            filename = iteration_filename,
                                                                            overwrite_existing = true)
 
-                    simulation.output_writers[:averaged_mht] = JLD2Writer(simulation.model, outputs;
+                    simulation.output_writers[:averaged_mt] = JLD2Writer(simulation.model, outputs;
                                                                           schedule = AveragedTimeInterval(40),
                                                                           filename = averaged_filename,
                                                                           overwrite_existing = true)
@@ -287,32 +295,60 @@ for arch in test_architectures
 
                     iteration_mht = FieldTimeSeries(iteration_filename, "mht")
                     averaged_mht = FieldTimeSeries(averaged_filename, "mht")
+                    iteration_mst = FieldTimeSeries(iteration_filename, "salinity_transport")
+                    averaged_mst = FieldTimeSeries(averaged_filename, "salinity_transport")
+                    iteration_mt = FieldTimeSeries(iteration_filename, "mass_transport")
+                    averaged_mt = FieldTimeSeries(averaged_filename, "mass_transport")
 
                     completed_iterations = findall(t -> 0 < t <= 40, iteration_mht.times)
                     @test iteration_mht.times[completed_iterations] == [10, 20, 30, 40]
-                    iteration_values = [Array(interior(iteration_mht[n])) for n in completed_iterations]
+                    iteration_values_mht = [Array(interior(iteration_mht[n])) for n in completed_iterations]
+                    iteration_values_mst = [Array(interior(iteration_mst[n])) for n in completed_iterations]
+                    iteration_values_mt = [Array(interior(iteration_mt[n])) for n in completed_iterations]
 
                     # The final latitude contains the cumulative global heat budget.
                     # It should be tiny compared with the strongest interior transport.
-                    @test all(values -> all(isfinite, values), iteration_values)
-                    peak_transport = maximum(maximum(abs, values) for values in iteration_values)
-                    @test peak_transport > 1e8
+                    @test all(values -> all(isfinite, values), iteration_values_mht)
+                    peak_transport_mht = maximum(maximum(abs, values) for values in iteration_values_mht)
+                    @test peak_transport_mht > 1e8
+                    peak_transport_mst = maximum(maximum(abs, values) for values in iteration_values_mst)
+                    @test peak_transport_mst > 1e8
+                    peak_transport_mt = maximum(maximum(abs, values) for values in iteration_values_mt)
+                    @test peak_transport_mt > 1e8
 
-                    closure_tolerance = max(5e9, 5e-6 * peak_transport)
-                    for values in iteration_values
+
+                    closure_tolerance = max(5e9, 5e-6 * peak_transport_mht)
+                    for values in iteration_values_mht
                         southern_boundary = values[1, 1, 1]
                         northern_boundary = values[1, size(values, 2), 1]
                         @test abs(southern_boundary) < closure_tolerance
                         @test abs(northern_boundary) < closure_tolerance
                     end
 
+                    closure_tolerance = max(5e9, 5e-6 * peak_transport_mst)
+                    for values in iteration_values_mst
+                        southern_boundary = values[1, 1, 1]
+                        northern_boundary = values[1, size(values, 2), 1]
+                        @test abs(southern_boundary) < closure_tolerance
+                        @test abs(northern_boundary) < closure_tolerance
+                    end
+
+                    closure_tolerance = max(5e9, 5e-6 * peak_transport_mt)
+                    for values in iteration_values_mt
+                        southern_boundary = values[1, 1, 1]
+                        northern_boundary = values[1, size(values, 2), 1]
+                        @test abs(southern_boundary) < closure_tolerance
+                        @test abs(northern_boundary) < closure_tolerance
+                    end
+
+
                     # Time-dependent forcing and tracer evolution should produce
                     # new public MHT fields rather than one repeated cached value.
-                    changes = [maximum(abs, iteration_values[n] - iteration_values[n-1])
-                               for n in 2:length(iteration_values)]
+                    changes = [maximum(abs, iteration_values_mht[n] - iteration_values_mht[n-1])
+                               for n in 2:length(iteration_values_mht)]
                     @test any(>(1e8), changes)
 
-                    expected_average = sum(iteration_values) / length(iteration_values)
+                    expected_average = sum(iteration_values_mht) / length(iteration_values_mht)
                     full_average = findfirst(==(40), averaged_mht.times)
                     @test full_average !== nothing
                     averaged_values = Array(interior(averaged_mht[full_average]))
