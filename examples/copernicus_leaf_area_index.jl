@@ -205,6 +205,19 @@ nothing #hide
 # ![](copernicus_leaf_area_index.png)
 #
 # The maps carry the river network as missing data at every date while the canopy between
-# the channels stays high through the year, which is the behaviour to expect if the region,
-# the half-cell coordinate convention, and the north→south latitude order are all being
-# handled correctly: a coordinate error would smear the rivers or move them between dates.
+# the channels stays roughly flat through the year, which is the behaviour to expect if the
+# region, the half-cell coordinate convention, and the north→south latitude order are all
+# being handled correctly: a coordinate error would smear the rivers or move them between
+# dates.
+#
+# One caveat on the magnitudes, which matters if these values are fed to a canopy or
+# roughness parameterization. Closed Amazon canopy carries a true leaf area index of
+# roughly 5–6; an effective leaf area index should still land near 3–4 once foliage
+# clumping is accounted for, yet the regional mean here is about 1.7. The product's own
+# quality assessment documents this: noise over equatorial forest that translates into
+# unexpectedly low retrievals, on top of a substantial negative bias against ground
+# measurements. Screening does not recover it — the low values are spread across the
+# scene rather than concentrated in the pixels the retrieval flags mark, and applying the
+# high-uncertainty flag lowers the mean slightly instead of raising it. Treat tropical
+# values from this record as a lower bound, and calibrate against an independent product
+# before using them quantitatively.
