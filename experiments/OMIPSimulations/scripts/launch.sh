@@ -251,9 +251,9 @@ if [[ "${PARTITION}" != "default" ]]; then
 fi
 
 if [[ "${PARTITION}" == "default" ]]; then
-    TIME="${TIME:-120:00:00}"
+    TIME="${TIME:-05:00:00}"
 else
-    TIME="${TIME:-12:00:00}"
+    TIME="${TIME:-120:00:00}"
 fi
 SBATCH_ARGS+=(--time="${TIME}")
 
