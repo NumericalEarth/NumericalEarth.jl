@@ -248,20 +248,35 @@ end
 # content flux as well leaves the carried heat flux unchanged: the water removed leaves at the local
 # surface temperature, so closing the water budget stays heat-neutral.
 
-struct NormalizeFreshwaterFlux{F, H, S, T, I}
-    freshwater_flux     :: F   # assembled Σᵢ Jʷᵢ (the `FreshwaterExchange` carrying flux)
-    heat_content_flux   :: H   # Σᵢ Tᵢ Jʷᵢ
-    surface_temperature :: S   # ocean SST, the temperature the removed water carries
-    mean_total          :: T   # ⟨Jʷ⟩, wet-area mean (immersed cells excluded)
-    mean_sea_ice        :: I   # ⟨Jʷⁱᵒ⟩, or `nothing` without sea ice
+# `:none` disables the correction, `:timestep` removes the instantaneous global mean, and `:annual`
+# removes a running mean relaxed over a year. `Bool` is accepted for `:none` / `:timestep`.
+freshwater_normalization(mode::Symbol) = mode
+freshwater_normalization(mode::Bool) = ifelse(mode, :timestep, :none)
+
+function freshwater_averaging_timescale(mode)
+    normalization = freshwater_normalization(mode)
+    normalization ∈ (:none, :timestep, :annual) ||
+        throw(ArgumentError("normalize_freshwater must be :none, :timestep or :annual, got $normalization"))
+    return normalization === :annual ? 365.25days : nothing
 end
 
-function NormalizeFreshwaterFlux(coupled_model)
+struct NormalizeFreshwaterFlux{F, H, S, T, I, R, FT}
+    freshwater_flux     :: F    # assembled Σᵢ Jʷᵢ (the `FreshwaterExchange` carrying flux)
+    heat_content_flux   :: H    # Σᵢ Tᵢ Jʷᵢ
+    surface_temperature :: S    # ocean SST, the temperature the removed water carries
+    mean_total          :: T    # ⟨Jʷ⟩, wet-area mean (immersed cells excluded)
+    mean_sea_ice        :: I    # ⟨Jʷⁱᵒ⟩, or `nothing` without sea ice
+    running_mean        :: R    # lagged ⟨Jʷᵃᵒ⟩, or `nothing` to correct the instantaneous mean
+    memory_coefficient  :: FT   # Δt / averaging_timescale
+end
+
+function NormalizeFreshwaterFlux(coupled_model, Δt, averaging_timescale)
     ocean_model = coupled_model.ocean.model
+    FT = eltype(ocean_model.grid)
     Jʷ = extract_freshwater_flux(ocean_model.tracers.S.boundary_conditions.top.condition)
     Jᴴ = freshwater_exchange(ocean_model.tracers.T.boundary_conditions.top.condition).content_flux
     kᴺ = size(ocean_model.grid, 3)
-    Tᴺ = interior(ocean_model.tracers.T, :, :, kᴺ:kᴺ) 
+    Tᴺ = interior(ocean_model.tracers.T, :, :, kᴺ:kᴺ)
 
     sea_ice_interface = coupled_model.interfaces.sea_ice_ocean_interface
     mean_sea_ice = if isnothing(sea_ice_interface)
@@ -270,21 +285,37 @@ function NormalizeFreshwaterFlux(coupled_model)
         Field(Average(computed_fluxes(sea_ice_interface).freshwater, dims = (1, 2)))
     end
 
-    return NormalizeFreshwaterFlux(Jʷ, Jᴴ, Tᴺ, Field(Average(Jʷ, dims = (1, 2))), mean_sea_ice)
+    mean_total = Field(Average(Jʷ, dims = (1, 2)))
+
+    running_mean, α = if isnothing(averaging_timescale)
+        nothing, zero(FT)
+    else
+        fill!(similar(interior(mean_total)), 0), convert(FT, Δt / averaging_timescale)
+    end
+
+    return NormalizeFreshwaterFlux(Jʷ, Jᴴ, Tᴺ, mean_total, mean_sea_ice, running_mean, α)
 end
 
 @inline sea_ice_freshwater_mean(::Nothing) = 0
 @inline sea_ice_freshwater_mean(mean_sea_ice) = (compute!(mean_sea_ice); interior(mean_sea_ice))
 
+@inline freshwater_correction(::Nothing, instantaneous_mean, α) = instantaneous_mean
+
+@inline function freshwater_correction(running_mean, instantaneous_mean, α)
+    running_mean .+= α .* (instantaneous_mean .- running_mean)
+    return running_mean
+end
+
 # The reduced means stay 1×1×1 arrays and are broadcast against the 2-D flux fields: reading one as a
-# scalar would index a GPU array from the host. Keeping `⟨Jʷ⟩ - ⟨Jʷⁱᵒ⟩` inside each broadcast also
-# fuses it, so no intermediate is materialized on the device each step.
+# scalar would index a GPU array from the host. The lazy `⟨Jʷ⟩ - ⟨Jʷⁱᵒ⟩` also fuses into whichever
+# broadcast consumes it, so no intermediate is materialized on the device each step.
 function (n::NormalizeFreshwaterFlux)(sim)
     compute!(n.mean_total)
-    Jʷ  = interior(n.mean_total)
+    Jʷ   = interior(n.mean_total)
     Jʷⁱᵒ = sea_ice_freshwater_mean(n.mean_sea_ice)
-    interior(n.freshwater_flux)   .-= Jʷ .- Jʷⁱᵒ
-    interior(n.heat_content_flux) .-= (Jʷ .- Jʷⁱᵒ) .* n.surface_temperature
+    correction = freshwater_correction(n.running_mean, Jʷ .- Jʷⁱᵒ, n.memory_coefficient)
+    interior(n.freshwater_flux)   .-= correction
+    interior(n.heat_content_flux) .-= correction .* n.surface_temperature
     return nothing
 end
 
@@ -339,9 +370,16 @@ plumbing is needed because `NumericalEarth.EarthSystemModels` provides
 - `restoring_dir`: directory for restoring/IC climatology. Default: `"climatology"`.
 - `piston_velocity`: surface salinity restoring piston velocity in m/day. Default: `1/6`.
   Restoring is applied uniformly over the ocean surface, including under sea ice.
-- `normalize_freshwater::Bool`: if `true`, remove the global mean of the atmospheric surface freshwater
-  flux each step so the global ocean volume stays fixed, correcting the freshwater heat content
-  alongside it so the adjustment is heat-neutral. The sea-ice exchange is excluded. Default: `false`.
+- `normalize_freshwater`: removal of the global mean of the atmospheric surface freshwater flux, which
+  holds the global ocean volume fixed. The freshwater heat content is corrected alongside it so the
+  adjustment leaves the carried heat flux unchanged, and the sea-ice exchange is excluded so the
+  ocean + sea-ice water budget is untouched. Options:
+    * `:none` (or `false`, the default): no correction.
+    * `:timestep` (or `true`): remove the instantaneous global mean. Pins the volume exactly, so any
+      residual drift is an internal leak rather than forcing imbalance — but also removes the physical
+      seasonal cycle of land water storage, which is comparable in size to the secular imbalance.
+    * `:annual`: remove a running mean relaxed toward the instantaneous one over a year, which removes
+      the drift while leaving the seasonal cycle in place. The correction spins up over the first year.
 - `start_date`, `end_date`: bracket for forcing/restoring metadata. Defaults: 1958-01-01 .. 2018-01-01.
 - `Δt`: simulation time step. Per-config default: `5minutes` for `:twelfthdegree`, `20minutes` for
   `:quarterdegree`, `30minutes` otherwise.
@@ -513,8 +551,9 @@ function omip_simulation(config::Symbol = :halfdegree;
     # Hold the global ocean volume fixed by removing the global mean of the atmospheric freshwater
     # flux. Registered after the flux assembly at the end of `update_state!`, so the correction is in
     # place for the ocean step that consumes it.
-    if normalize_freshwater
-        add_callback!(simulation, NormalizeFreshwaterFlux(coupled), IterationInterval(1))
+    if freshwater_normalization(normalize_freshwater) !== :none
+        averaging_timescale = freshwater_averaging_timescale(normalize_freshwater)
+        add_callback!(simulation, NormalizeFreshwaterFlux(coupled, Δt, averaging_timescale), IterationInterval(1))
     end
 
 

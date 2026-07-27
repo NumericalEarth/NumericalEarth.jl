@@ -69,11 +69,16 @@ Equatorial-MLD tuning knobs (closure parameters; configuration switches):
                 surface-salinity restoring (zero global mean). Set to "false" to use
                 the raw un-normalized restoring (the old, non-conserving behavior),
                 e.g. for A/B comparison. Default: true.
-  NORMALIZE_FRESHWATER "true" removes the global mean of the atmospheric surface
-                freshwater flux each step, holding the global ocean volume fixed
-                (standard OMIP-2 practice; the sea-ice exchange is excluded and the
-                freshwater heat content is corrected alongside so the adjustment is
-                heat-neutral). Default: false.
+  NORMALIZE_FRESHWATER Removes the global mean of the atmospheric surface freshwater
+                flux, holding the global ocean volume fixed (standard OMIP-2 practice;
+                the sea-ice exchange is excluded and the freshwater heat content is
+                corrected alongside so the carried heat flux is unchanged). Options:
+                  none      no correction (default; "false" also accepted)
+                  timestep  remove the instantaneous global mean; pins volume exactly
+                            but also removes the seasonal land-water-storage cycle,
+                            which is comparable in size ("true" also accepted)
+                  annual    remove a running mean relaxed over a year; keeps the
+                            seasonal cycle, spins up over the first ~2 years
   CATKE_CWUSTAR `Cᵂu★` of CATKEEquation: surface shear-driven TKE flux
                 coefficient. Higher → more wind-injected TKE → deeper
                 equatorial ML. Default (Oceananigans): 3.179.
@@ -224,7 +229,10 @@ RUN_NAME="$CONFIG"
 [[ "${CLOSURE:-catke}" == "nemo_tke" ]]        && RUN_NAME="${RUN_NAME}_nemotke"
 [[ "${WIND_VELOCITY:-false}" == "true" ]]      && RUN_NAME="${RUN_NAME}_wind"
 [[ "${NORMALIZE_SALINITY:-true}" == "false" ]] && RUN_NAME="${RUN_NAME}_rawsalt"
-[[ "${NORMALIZE_FRESHWATER:-false}" == "true" ]] && RUN_NAME="${RUN_NAME}_fwnorm"
+case "${NORMALIZE_FRESHWATER:-none}" in
+  true|timestep) RUN_NAME="${RUN_NAME}_fwnorm" ;;
+  annual)        RUN_NAME="${RUN_NAME}_fwnormann" ;;
+esac
 [[ -n "${CB:-}" ]]                             && RUN_NAME="${RUN_NAME}_cb${CB}"
 [[ "$KSKEW" != "$DEFAULT_KSKEW" ]]             && RUN_NAME="${RUN_NAME}_kskew${KSKEW}"
 [[ "$KSYMM" != "$DEFAULT_KSYMM" ]]             && RUN_NAME="${RUN_NAME}_ksymm${KSYMM}"
@@ -361,12 +369,14 @@ case "$NORMALIZE_SALINITY" in
 esac
 NORMALIZE_SALINITY_KWARG="normalize_salinity = ${NORMALIZE_SALINITY},"
 
-NORMALIZE_FRESHWATER="${NORMALIZE_FRESHWATER:-false}"
+NORMALIZE_FRESHWATER="${NORMALIZE_FRESHWATER:-none}"
 case "$NORMALIZE_FRESHWATER" in
-    true|false) ;;
-    *) echo "NORMALIZE_FRESHWATER must be 'true' or 'false', got '$NORMALIZE_FRESHWATER'" >&2; exit 1 ;;
+    none|false)    NORMALIZE_FRESHWATER_JULIA=":none" ;;
+    timestep|true) NORMALIZE_FRESHWATER_JULIA=":timestep" ;;
+    annual)        NORMALIZE_FRESHWATER_JULIA=":annual" ;;
+    *) echo "NORMALIZE_FRESHWATER must be none|timestep|annual, got '$NORMALIZE_FRESHWATER'" >&2; exit 1 ;;
 esac
-NORMALIZE_FRESHWATER_KWARG="normalize_freshwater = ${NORMALIZE_FRESHWATER},"
+NORMALIZE_FRESHWATER_KWARG="normalize_freshwater = ${NORMALIZE_FRESHWATER_JULIA},"
 
 BACKEND_KWARG=""
 [[ -n "$BACKEND_SIZE" ]] && BACKEND_KWARG="backend_size = ${BACKEND_SIZE},"
