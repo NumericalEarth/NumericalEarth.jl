@@ -21,7 +21,13 @@ struct BathymetryRegridding
     interpolation_passes :: Int
     major_basins         :: Float64
     dataset              :: String
+    region               :: String
 end
+
+# A windowed regrid and a global regrid of the same dataset+grid must not share a cache
+# file, so the region is part of the key.
+region_key(::Nothing) = "global"
+region_key(bbox::BoundingBox) = string(bbox.longitude, "_", bbox.latitude)
 
 function BathymetryRegridding(grid, metadata;
                               height_above_water = nothing,
@@ -36,6 +42,7 @@ function BathymetryRegridding(grid, metadata;
     FT = eltype(grid)
     grid_type_name = string(typeof(grid).name.wrapper)
     dataset_name = string(typeof(metadata.dataset))
+    region_name = region_key(metadata.region)
     haw = isnothing(height_above_water) ? nothing : Float64(height_above_water)
 
     return BathymetryRegridding(grid_type_name,
@@ -48,7 +55,8 @@ function BathymetryRegridding(grid, metadata;
                                 Float64(minimum_depth),
                                 Int(interpolation_passes),
                                 Float64(major_basins),
-                                dataset_name)
+                                dataset_name,
+                                region_name)
 end
 
 function Base.:(==)(a::BathymetryRegridding, b::BathymetryRegridding)
@@ -62,7 +70,8 @@ function Base.:(==)(a::BathymetryRegridding, b::BathymetryRegridding)
            a.minimum_depth        == b.minimum_depth &&
            a.interpolation_passes == b.interpolation_passes &&
            a.major_basins         == b.major_basins &&
-           a.dataset              == b.dataset
+           a.dataset              == b.dataset &&
+           a.region               == b.region
 end
 
 function Base.hash(c::BathymetryRegridding, h::UInt)
@@ -77,6 +86,7 @@ function Base.hash(c::BathymetryRegridding, h::UInt)
     h = hash(c.interpolation_passes, h)
     h = hash(c.major_basins, h)
     h = hash(c.dataset, h)
+    h = hash(c.region, h)
     return h
 end
 
@@ -278,8 +288,9 @@ end
 
 Regrid bathymetry from `dataset` onto `target_grid`. Default: `dataset = ETOPO2022()`.
 """
-function regrid_bathymetry(target_grid; dataset = ETOPO2022(), cache = true, kw...)
-    metadatum = Metadatum(:bottom_height; dataset)
+function regrid_bathymetry(target_grid; dataset = ETOPO2022(),
+                           region = default_region(dataset, target_grid), cache = true, kw...)
+    metadatum = Metadatum(:bottom_height; dataset, region)
     return regrid_bathymetry(target_grid, metadatum; cache, kw...)
 end
 
@@ -369,24 +380,16 @@ function bare_earth_elevation(surface_elevation::Field, object_heights::Field...
 end
 
 """
-    bare_earth_elevation(grid::AbstractGrid, object_heights::Field...;
-                         dataset = GLO30(),
-                         region = BoundingBox(grid; padding = default_horizontal_padding(dataset)),
-                         kw...)
+    bare_earth_elevation(grid::AbstractGrid, object_heights::Field...; dataset = GLO30(), kw...)
 
 Regrid the DSM `dataset` onto `grid` with [`regrid_topography`](@ref) and remove the
 `object_heights`, returning the bare-earth elevation `Field`. `dataset` defaults to
-Copernicus [`GLO30`](@ref). `region` defaults to the horizontal extent of `grid` (widened
-by the dataset's `default_horizontal_padding`), so the DSM is windowed to the grid
-automatically; pass a [`BoundingBox`](@ref) to override. Remaining keyword arguments
-(`interpolation_passes`, `cache`, …) are forwarded to `regrid_topography`.
+Copernicus [`GLO30`](@ref). Datasets that must be read in windows are windowed to `grid`
+automatically; keyword arguments (`region`, `interpolation_passes`, `cache`, …) are
+forwarded to `regrid_topography`.
 """
-function bare_earth_elevation(grid::AbstractGrid, object_heights::Field...;
-                              dataset = GLO30(),
-                              region = BoundingBox(grid; padding = default_horizontal_padding(dataset)),
-                              kw...)
-    metadatum = Metadatum(:bottom_height; dataset, region)
-    surface_elevation = regrid_topography(grid, metadatum; kw...)
+function bare_earth_elevation(grid::AbstractGrid, object_heights::Field...; dataset = GLO30(), kw...)
+    surface_elevation = regrid_topography(grid; dataset, kw...)
     return bare_earth_elevation(surface_elevation, object_heights...)
 end
 
