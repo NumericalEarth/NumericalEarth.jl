@@ -274,13 +274,17 @@ function NormalizeFreshwaterFlux(coupled_model)
 end
 
 @inline sea_ice_freshwater_mean(::Nothing) = 0
-@inline sea_ice_freshwater_mean(mean_sea_ice) = (compute!(mean_sea_ice); @inbounds mean_sea_ice[1, 1, 1])
+@inline sea_ice_freshwater_mean(mean_sea_ice) = (compute!(mean_sea_ice); interior(mean_sea_ice))
 
+# The reduced means stay 1×1×1 arrays and are broadcast against the 2-D flux fields: reading one as a
+# scalar would index a GPU array from the host. Keeping `⟨Jʷ⟩ - ⟨Jʷⁱᵒ⟩` inside each broadcast also
+# fuses it, so no intermediate is materialized on the device each step.
 function (n::NormalizeFreshwaterFlux)(sim)
     compute!(n.mean_total)
-    atmospheric_mean = @inbounds n.mean_total[1, 1, 1] - sea_ice_freshwater_mean(n.mean_sea_ice)
-    interior(n.freshwater_flux) .-= atmospheric_mean
-    interior(n.heat_content_flux) .-= atmospheric_mean .* n.surface_temperature
+    Jʷ  = interior(n.mean_total)
+    Jʷⁱᵒ = sea_ice_freshwater_mean(n.mean_sea_ice)
+    interior(n.freshwater_flux)   .-= Jʷ .- Jʷⁱᵒ
+    interior(n.heat_content_flux) .-= (Jʷ .- Jʷⁱᵒ) .* n.surface_temperature
     return nothing
 end
 
@@ -334,7 +338,7 @@ plumbing is needed because `NumericalEarth.EarthSystemModels` provides
 - `forcing_dir`: directory for JRA55 forcing data. Default: `"forcing_data"`.
 - `restoring_dir`: directory for restoring/IC climatology. Default: `"climatology"`.
 - `piston_velocity`: surface salinity restoring piston velocity in m/day. Default: `1/6`.
-  Restoring is automatically masked by sea ice concentration (no restoring under ice).
+  Restoring is applied uniformly over the ocean surface, including under sea ice.
 - `normalize_freshwater::Bool`: if `true`, remove the global mean of the atmospheric surface freshwater
   flux each step so the global ocean volume stays fixed, correcting the freshwater heat content
   alongside it so the adjustment is heat-neutral. The sea-ice exchange is excluded. Default: `false`.
