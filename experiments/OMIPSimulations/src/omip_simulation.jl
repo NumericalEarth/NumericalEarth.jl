@@ -316,9 +316,7 @@ function (n::NormalizeFreshwaterFlux)(sim)
     correction = freshwater_correction(n.running_mean, Jʷ .- Jʷⁱᵒ, n.memory_coefficient)
     interior(n.freshwater_flux)   .-= correction
     interior(n.heat_content_flux) .-= correction .* n.surface_temperature
-
     fill_halo_regions!(n.freshwater_flux)
-    fill_halo_regions!(n.heat_content_flux)
 
     return nothing
 end
@@ -1019,7 +1017,7 @@ end
 function build_sea_ice(config, grid, ocean; restoring_dir, snow_thermodynamics = nothing, with_ice_dynamics = true)
     dynamics = with_ice_dynamics ? NumericalEarth.SeaIces.sea_ice_dynamics(grid, ocean) : nothing
     sea_ice = sea_ice_simulation(grid, ocean;
-                                 advection = WENO(order=7, minimum_buffer_upwind_order=1, weight_computation=NormalDivision),
+                                 advection = ClimaSeaIce.IncrementalRemapping(),
                                  dynamics,
                                  snow_thermodynamics)
 
