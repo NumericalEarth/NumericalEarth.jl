@@ -10,7 +10,8 @@ using Oceananigans.ImmersedBoundaries: bottom_height_field
 using Oceananigans.Utils: launch!
 using Adapt: Adapt
 using NumericalEarth.Bathymetry: remove_minor_basins!
-using NumericalEarth.Oceans: MultipleFluxes, FreshwaterExchange
+using NumericalEarth.Oceans: MultipleFluxes, FreshwaterExchange, extract_freshwater_flux, freshwater_exchange
+using NumericalEarth.EarthSystemModels.InterfaceComputations: computed_fluxes
 using SeawaterPolynomials.TEOS10: Sᴬ_from_Sᴾ, Θ_from_T
 using Oceananigans.TurbulenceClosures: IsopycnalSkewSymmetricDiffusivity,
                                        ConvectiveAdjustmentVerticalDiffusivity
@@ -228,6 +229,61 @@ end
 (r::RefreshSalinityRestoring)(sim) = update_restoring_flux!(r.restoring, sim.model.ocean.model)
 
 #####
+##### Global freshwater-flux normalization
+#####
+#
+# A forced configuration cannot close its surface water budget: precipitation and runoff are prescribed
+# while evaporation is computed from the model state, so the global mean net freshwater flux is non-zero
+# and the ocean drifts in volume. Most OMIP-2 models remove that mean each step (Tsujino et al. 2020);
+# ICON-O normalizes the global mean sea level daily for the same reason. Only the atmospheric part is
+# corrected: the sea-ice exchange moves water between reservoirs rather than adding it, so normalizing it
+# would break the ocean + sea-ice water budget. Its mean is recovered as ⟨Jʷᵃᵒ⟩ = ⟨Jʷ⟩ - ⟨Jʷⁱᵒ⟩, since the
+# assembled flux carries both. Subtracting in place also fixes the salinity dilution, because
+# `carried_tracer_flux` reads the same field.
+
+# The salinity content flux is a `ZeroField` (incoming freshwater carries no salt), so salt follows the
+# correction through `Sᴺ · carrying_flux` on its own. The heat content flux `Jᴴ = Tᵒᶜ Jʷᵃᵒ` does not: since
+# the salinity/temperature top BCs evaluate `cᴺ · carrying_flux - content_flux`, correcting only the
+# carrying flux would leave a spurious surface heat flux `-ρ cₚ Tᵒᶜ ⟨Jʷᵃᵒ⟩`. Removing `Tᵒᶜ ⟨Jʷᵃᵒ⟩` from the
+# content flux as well leaves the carried heat flux unchanged: the water removed leaves at the local
+# surface temperature, so closing the water budget stays heat-neutral.
+
+struct NormalizeFreshwaterFlux{F, H, S, T, I}
+    freshwater_flux     :: F   # assembled Σᵢ Jʷᵢ (the `FreshwaterExchange` carrying flux)
+    heat_content_flux   :: H   # Σᵢ Tᵢ Jʷᵢ
+    surface_temperature :: S   # ocean SST, the temperature the removed water carries
+    mean_total          :: T   # ⟨Jʷ⟩, wet-area mean (immersed cells excluded)
+    mean_sea_ice        :: I   # ⟨Jʷⁱᵒ⟩, or `nothing` without sea ice
+end
+
+function NormalizeFreshwaterFlux(coupled_model)
+    ocean_model = coupled_model.ocean.model
+    Jʷ = extract_freshwater_flux(ocean_model.tracers.S.boundary_conditions.top.condition)
+    Jᴴ = freshwater_exchange(ocean_model.tracers.T.boundary_conditions.top.condition).content_flux
+    Tᴺ = view(interior(ocean_model.tracers.T), :, :, size(ocean_model.grid, 3):size(ocean_model.grid, 3))
+
+    sea_ice_interface = coupled_model.interfaces.sea_ice_ocean_interface
+    mean_sea_ice = if isnothing(sea_ice_interface)
+        nothing
+    else
+        Field(Average(computed_fluxes(sea_ice_interface).freshwater, dims = (1, 2)))
+    end
+
+    return NormalizeFreshwaterFlux(Jʷ, Jᴴ, Tᴺ, Field(Average(Jʷ, dims = (1, 2))), mean_sea_ice)
+end
+
+@inline sea_ice_freshwater_mean(::Nothing) = 0
+@inline sea_ice_freshwater_mean(mean_sea_ice) = (compute!(mean_sea_ice); @inbounds mean_sea_ice[1, 1, 1])
+
+function (n::NormalizeFreshwaterFlux)(sim)
+    compute!(n.mean_total)
+    atmospheric_mean = @inbounds n.mean_total[1, 1, 1] - sea_ice_freshwater_mean(n.mean_sea_ice)
+    interior(n.freshwater_flux) .-= atmospheric_mean
+    interior(n.heat_content_flux) .-= atmospheric_mean .* n.surface_temperature
+    return nothing
+end
+
+#####
 ##### Main simulation builder
 #####
 
@@ -278,6 +334,9 @@ plumbing is needed because `NumericalEarth.EarthSystemModels` provides
 - `restoring_dir`: directory for restoring/IC climatology. Default: `"climatology"`.
 - `piston_velocity`: surface salinity restoring piston velocity in m/day. Default: `1/6`.
   Restoring is automatically masked by sea ice concentration (no restoring under ice).
+- `normalize_freshwater::Bool`: if `true`, remove the global mean of the atmospheric surface freshwater
+  flux each step so the global ocean volume stays fixed, correcting the freshwater heat content
+  alongside it so the adjustment is heat-neutral. The sea-ice exchange is excluded. Default: `false`.
 - `start_date`, `end_date`: bracket for forcing/restoring metadata. Defaults: 1958-01-01 .. 2018-01-01.
 - `Δt`: simulation time step. Per-config default: `5minutes` for `:twelfthdegree`, `20minutes` for
   `:quarterdegree`, `30minutes` otherwise.
@@ -343,6 +402,7 @@ function omip_simulation(config::Symbol = :halfdegree;
                          with_snow = false,
                          with_ice_dynamics = true,
                          normalize_salinity = true,
+                         normalize_freshwater = false,
                          river_mixing = true,
                          river_mixing_κ = 0.1,
                          river_mixing_depth = 10,
@@ -443,6 +503,13 @@ function omip_simulation(config::Symbol = :halfdegree;
     if !isnothing(salt_restoring)
         update_restoring_flux!(salt_restoring, ocean.model)
         add_callback!(simulation, RefreshSalinityRestoring(salt_restoring), IterationInterval(1))
+    end
+
+    # Hold the global ocean volume fixed by removing the global mean of the atmospheric freshwater
+    # flux. Registered after the flux assembly at the end of `update_state!`, so the correction is in
+    # place for the ocean step that consumes it.
+    if normalize_freshwater
+        add_callback!(simulation, NormalizeFreshwaterFlux(coupled), IterationInterval(1))
     end
 
 
