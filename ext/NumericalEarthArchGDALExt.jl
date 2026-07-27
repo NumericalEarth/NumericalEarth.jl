@@ -151,14 +151,14 @@ function warp_canopy_sources(sources, geometry; resampling, nodata = nothing)
                    String["-r", resampling, "-ot", "Float32"], nodata_options)
     try
         return ArchGDAL.gdalwarp(datasets, options) do warped
-            gt = ArchGDAL.getgeotransform(warped)   # [x₀, Δλ, 0, y₀, 0, -Δφ]
+            λ₀, Δλ, _, φ₀, _, Δφ = ArchGDAL.getgeotransform(warped)   # Δφ < 0, rows run north→south
             band = Float32.(ArchGDAL.read(warped, 1))
             Nx, Ny = size(band)
-            # GDAL rows run north→south; flip to south→north. Cell centers come from the
-            # geotransform, so they stay exact even when `-tr` snaps the extent to whole pixels.
+            # Cell centers off the geotransform stay exact even when `-tr` snaps the extent
+            # to whole pixels. Reverse the rows and the latitudes together: north→south→north.
             data = reverse(band, dims = 2)
-            longitude = [gt[1] + (i - 0.5) * gt[2] for i in 1:Nx]
-            latitude  = [gt[4] + (Ny - j + 0.5) * gt[6] for j in 1:Ny]
+            longitude = [λ₀ + (i - 0.5) * Δλ for i in 1:Nx]
+            latitude  = reverse([φ₀ + (j - 0.5) * Δφ for j in 1:Ny])
             return (; data, longitude, latitude)
         end
     finally
