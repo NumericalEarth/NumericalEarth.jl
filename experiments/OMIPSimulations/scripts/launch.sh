@@ -69,6 +69,11 @@ Equatorial-MLD tuning knobs (closure parameters; configuration switches):
                 surface-salinity restoring (zero global mean). Set to "false" to use
                 the raw un-normalized restoring (the old, non-conserving behavior),
                 e.g. for A/B comparison. Default: true.
+  NORMALIZE_FRESHWATER "true" removes the global mean of the atmospheric surface
+                freshwater flux each step, holding the global ocean volume fixed
+                (standard OMIP-2 practice; the sea-ice exchange is excluded and the
+                freshwater heat content is corrected alongside so the adjustment is
+                heat-neutral). Default: false.
   CATKE_CWUSTAR `Cᵂu★` of CATKEEquation: surface shear-driven TKE flux
                 coefficient. Higher → more wind-injected TKE → deeper
                 equatorial ML. Default (Oceananigans): 3.179.
@@ -219,6 +224,7 @@ RUN_NAME="$CONFIG"
 [[ "${CLOSURE:-catke}" == "nemo_tke" ]]        && RUN_NAME="${RUN_NAME}_nemotke"
 [[ "${WIND_VELOCITY:-false}" == "true" ]]      && RUN_NAME="${RUN_NAME}_wind"
 [[ "${NORMALIZE_SALINITY:-true}" == "false" ]] && RUN_NAME="${RUN_NAME}_rawsalt"
+[[ "${NORMALIZE_FRESHWATER:-false}" == "true" ]] && RUN_NAME="${RUN_NAME}_fwnorm"
 [[ -n "${CB:-}" ]]                             && RUN_NAME="${RUN_NAME}_cb${CB}"
 [[ "$KSKEW" != "$DEFAULT_KSKEW" ]]             && RUN_NAME="${RUN_NAME}_kskew${KSKEW}"
 [[ "$KSYMM" != "$DEFAULT_KSYMM" ]]             && RUN_NAME="${RUN_NAME}_ksymm${KSYMM}"
@@ -355,6 +361,13 @@ case "$NORMALIZE_SALINITY" in
 esac
 NORMALIZE_SALINITY_KWARG="normalize_salinity = ${NORMALIZE_SALINITY},"
 
+NORMALIZE_FRESHWATER="${NORMALIZE_FRESHWATER:-false}"
+case "$NORMALIZE_FRESHWATER" in
+    true|false) ;;
+    *) echo "NORMALIZE_FRESHWATER must be 'true' or 'false', got '$NORMALIZE_FRESHWATER'" >&2; exit 1 ;;
+esac
+NORMALIZE_FRESHWATER_KWARG="normalize_freshwater = ${NORMALIZE_FRESHWATER},"
+
 BACKEND_KWARG=""
 [[ -n "$BACKEND_SIZE" ]] && BACKEND_KWARG="backend_size = ${BACKEND_SIZE},"
 
@@ -414,6 +427,7 @@ sim = omip_simulation(:${CONFIG};
                       ${PVELKWARG}
                       ${CATKE_CWUSTAR_KWARG}
                       ${NORMALIZE_SALINITY_KWARG}
+                      ${NORMALIZE_FRESHWATER_KWARG}
                       Δt = ${DT},
                       forcing_dir = \"${FORCING_DIR}\",
                       ${STAGING_KWARG}
