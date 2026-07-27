@@ -13,11 +13,9 @@ Ny = 180
 Nz = 50
 
 depth = 5000meters
-z = MutableVerticalDiscretization(ExponentialDiscretization(Nz, -depth, 0; scale = depth/4))
+z = ExponentialDiscretization(Nz, -depth, 0, mutable=true; scale = depth/4)
 
 underlying_grid = TripolarGrid(arch; size = (Nx, Ny, Nz), halo = (5, 5, 4), z)
-
-destination_grid = LatitudeLongitudeGrid(arch; size = (Nx, Ny, Nz), halo = (5, 5, 4), z, longitude = (0, 360), latitude = (-89, 89))
 
 bottom_height = regrid_bathymetry(underlying_grid;
                                   minimum_depth = 10,
@@ -25,6 +23,21 @@ bottom_height = regrid_bathymetry(underlying_grid;
                                   major_basins = 2)
 
 grid = ImmersedBoundaryGrid(underlying_grid, GridFittedBottom(bottom_height);
+                            active_cells_map=true)
+
+underlying_grid = LatitudeLongitudeGrid(arch;
+                                    size = (Nx, Ny, 1),
+                                    halo = (5, 5, 4),
+                                    z = (-1, 0),
+                                    longitude = (0, 360),
+                                    latitude = (-89, 89))
+
+bottom_height = regrid_bathymetry(underlying_grid;
+                                  minimum_depth = 10,
+                                  interpolation_passes = 10,
+                                  major_basins = 2)
+
+destination_grid = ImmersedBoundaryGrid(underlying_grid, GridFittedBottom(bottom_height);
                             active_cells_map=true)
 
 free_surface       = SplitExplicitFreeSurface(grid; substeps=70)
