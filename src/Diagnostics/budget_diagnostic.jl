@@ -63,7 +63,7 @@ const MASS_BUDGET_PROPERTIES = (:tracer_name,
                                 :surface_mass_flux,
                                 :residual)
 
-function Base.propertynames(budget::BudgetComputation, private=false)
+function Base.propertynames(budget::BudgetComputation, private::Bool=false)
     names = budget.tracer_name === :temperature ? HEAT_BUDGET_PROPERTIES :
             budget.tracer_name === :salinity ? SALINITY_BUDGET_PROPERTIES :
             MASS_BUDGET_PROPERTIES
