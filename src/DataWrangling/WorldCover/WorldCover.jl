@@ -3,8 +3,15 @@ module WorldCover
 export ESAWorldCover
 
 using Downloads: Downloads
-using Oceananigans: Center
+using KernelAbstractions: @kernel, @index
+using Oceananigans: Center, location
+using Oceananigans.Architectures: architecture, child_architecture
+using Oceananigans.BoundaryConditions: fill_halo_regions!
 using Oceananigans.DistributedComputations: @root
+using Oceananigans.Fields: Field, regrid_in_x!, regrid_in_y!
+using Oceananigans.Grids: LatitudeLongitudeGrid, topology,
+                          cpu_face_constructor_x, cpu_face_constructor_y
+using Oceananigans.Utils: launch!
 
 using ..DataWrangling: DataWrangling, AbstractStaticDataset, Metadatum,
                        metadata_path, BoundingBox, Dataset
@@ -17,20 +24,7 @@ import Oceananigans
 ##### No-data is 0 (0 is not a valid class; valid classes start at 10).
 #####
 
-"""
-    ESA_WORLDCOVER_MISSING_VALUE
-
-The no-data code used by ESA WorldCover. `0` is not a valid land-cover class,
-so it flags pixels outside coverage and is masked before any aggregation.
-"""
-const ESA_WORLDCOVER_MISSING_VALUE = 0
-
-"""
-    ESA_WORLDCOVER_CLASS_NAMES
-
-`NamedTuple` mapping each verbose class name to its ESA WorldCover code. The
-step near the top of the legend is non-uniform (…90, 95, 100).
-"""
+# Verbose class name → LCCS code, in ascending order.
 const ESA_WORLDCOVER_CLASS_NAMES = (tree_cover              = 10,
                                     shrubland               = 20,
                                     grassland               = 30,
@@ -43,25 +37,11 @@ const ESA_WORLDCOVER_CLASS_NAMES = (tree_cover              = 10,
                                     mangroves               = 95,
                                     moss_and_lichen         = 100)
 
-"""
-    ESA_WORLDCOVER_CLASS_CODES
-
-The 11 ESA WorldCover land-cover class codes, in ascending order.
-"""
 const ESA_WORLDCOVER_CLASS_CODES = values(ESA_WORLDCOVER_CLASS_NAMES)
 
-"""
-    ESA_WORLDCOVER_VEGETATED_CLASSES
-
-The class codes counted as vegetated when forming `vegetation_fraction`:
-tree cover (10), shrubland (20), grassland (30), cropland (40), herbaceous
-wetland (90), and mangroves (95).
-
-Whether bare/sparse vegetation (60) and moss/lichen (100) count as vegetated is
-a modeling choice; they are excluded here. This set is exposed deliberately so a
-model can override the vegetation definition through the `vegetated_classes`
-argument of [`vegetation_fraction`](@ref).
-"""
+# Classes counted as vegetated when forming vegetation_fraction. Excluding
+# bare/sparse vegetation (60) and moss/lichen (100) is a modeling choice,
+# overridable via the vegetated_classes argument of vegetation_fraction.
 const ESA_WORLDCOVER_VEGETATED_CLASSES = (10, 20, 30, 40, 90, 95)
 
 #####
@@ -84,10 +64,6 @@ const ESA_WORLDCOVER_VEGETATED_CLASSES = (10, 20, 30, 40, 90, 95)
 const ESA_WORLDCOVER_PIXELS_PER_DEGREE = 12000
 const ESA_WORLDCOVER_NATIVE_STEP = 1 / ESA_WORLDCOVER_PIXELS_PER_DEGREE   # degrees
 
-# WorldCover covers all land except Antarctica; northern limit ≈ 84°N.
-const ESA_WORLDCOVER_LONGITUDE_INTERFACES = (-180, 180)
-const ESA_WORLDCOVER_LATITUDE_INTERFACES  = (-60, 84)
-
 download_ESAWorldCover_cache::String = ""
 function __init__()
     global download_ESAWorldCover_cache = DataWrangling.download_cache("ESAWorldCover")
@@ -100,7 +76,7 @@ ESA WorldCover global 10 m land-cover classification.
 
 `version` selects the release: `:v200` (2021, the default) or `:v100` (2020).
 The two versions use different algorithms and ESA warns they are **not**
-comparable for change detection — pick one.
+comparable for change detection.
 
 `aggregation_factor` is the integer number of 10 m pixels averaged per side into
 one aggregated cell (`12` → ~110 m, the default; `120` → ~1 km, cheaper for a
@@ -108,12 +84,12 @@ large region). Class codes are never averaged: the fine raster is reduced
 block-wise into a majority class field, a vegetation-fraction field, and one
 per-class area-fraction field.
 
-The `Map` band is a `UInt8` class code (see [`ESA_WORLDCOVER_CLASS_NAMES`](@ref));
+The `Map` band is a `UInt8` class code (see `ESA_WORLDCOVER_CLASS_NAMES`);
 no-data is `0`. Because the source is a 10 m categorical raster, it is read in
 regional windows only: build the `Metadatum` with a longitude/latitude
 [`BoundingBox`](@ref). Available variables are `:landcover_class` (majority),
 `:vegetation_fraction` (the mosaic weight `f_veg`), and a per-class
-`:<class>_fraction` for each name in [`ESA_WORLDCOVER_CLASS_NAMES`](@ref)
+`:<class>_fraction` for each name in `ESA_WORLDCOVER_CLASS_NAMES`
 (e.g. `:cropland_fraction`).
 
 Reading the anonymous Cloud-Optimized GeoTIFF tiles from the public
@@ -166,12 +142,7 @@ The per-class area-fraction variable name for `class_name`
 """
 class_fraction_variable_name(class_name::Symbol) = Symbol(class_name, :_fraction)
 
-"""
-    ESA_WORLDCOVER_FRACTION_VARIABLE_NAMES
-
-The 11 per-class area-fraction variable names, one per entry of
-[`ESA_WORLDCOVER_CLASS_NAMES`](@ref).
-"""
+# The 11 per-class area-fraction variable names, one per class.
 const ESA_WORLDCOVER_FRACTION_VARIABLE_NAMES =
     map(class_fraction_variable_name, keys(ESA_WORLDCOVER_CLASS_NAMES))
 
@@ -190,7 +161,7 @@ const ESAWorldCoverMetadatum = Metadatum{<:ESAWorldCover}
 #####
 ##### Pure aggregation helpers (the main, unit-testable deliverable).
 ##### These operate on plain arrays of `UInt8` (or `Integer`) class codes with
-##### NO IO. `codes` is a block of fine 10 m pixels covering one coarse cell.
+##### no IO. `codes` is a block of fine 10 m pixels covering one coarse cell.
 ##### No-data (0) pixels are excluded from every count.
 #####
 
@@ -225,7 +196,7 @@ Return the area fraction of class `c` over `codes`, the count of pixels equal to
 no valid pixels.
 """
 function class_fraction(codes, c)
-    valid = count(!=(ESA_WORLDCOVER_MISSING_VALUE), codes)
+    valid = count(!=(0), codes)
     valid == 0 && return 0.0
     return count(==(c), codes) / valid
 end
@@ -250,7 +221,7 @@ Return the fraction of valid (non-`0`) pixels in `codes` belonging to the
 modeling choice and is passed as an argument so it can be overridden.
 """
 function vegetation_fraction(codes; vegetated_classes = ESA_WORLDCOVER_VEGETATED_CLASSES)
-    valid = count(!=(ESA_WORLDCOVER_MISSING_VALUE), codes)
+    valid = count(!=(0), codes)
     valid == 0 && return 0.0
     vegetated = count(c -> c in vegetated_classes, codes)
     return vegetated / valid
@@ -259,8 +230,8 @@ end
 """
     aggregate_blockwise(codes, factor, reduction)
 
-Reduce the fine 2-D `codes` raster onto a coarse grid by an INTEGER `factor`,
-applying `reduction` (e.g. [`mode_aggregate`](@ref) or a
+Reduce the fine 2-D `codes` raster onto a coarse grid by an integer `factor`,
+applying `reduction` (e.g. `mode_aggregate` or a
 `block -> class_fraction(block, c)` closure) to each non-overlapping
 `factor × factor` block. Integer-factor aggregation keeps the coarse-cell
 boundaries aligned with fine-pixel boundaries — no reprojection of the
@@ -368,14 +339,15 @@ end
 
 DataWrangling.available_variables(::ESAWorldCover) = ESAWorldCover_dataset_variable_names
 DataWrangling.default_download_directory(dataset::ESAWorldCover) = download_ESAWorldCover_cache
-DataWrangling.longitude_interfaces(::ESAWorldCover) = ESA_WORLDCOVER_LONGITUDE_INTERFACES
-DataWrangling.latitude_interfaces(::ESAWorldCover)  = ESA_WORLDCOVER_LATITUDE_INTERFACES
+DataWrangling.longitude_interfaces(::ESAWorldCover) = (-180, 180)
+# WorldCover covers all land except Antarctica; northern limit ≈ 84°N.
+DataWrangling.latitude_interfaces(::ESAWorldCover)  = (-60, 84)
 
 # Global size at the aggregated resolution. A regional `BoundingBox` sub-windows
 # this in `construct_native_grid`; only the window is ever materialized.
 function Base.size(dataset::ESAWorldCover, variable)
-    λ₁, λ₂ = ESA_WORLDCOVER_LONGITUDE_INTERFACES
-    φ₁, φ₂ = ESA_WORLDCOVER_LATITUDE_INTERFACES
+    λ₁, λ₂ = DataWrangling.longitude_interfaces(dataset)
+    φ₁, φ₂ = DataWrangling.latitude_interfaces(dataset)
     Δ = aggregated_step(dataset)
     Nx = round(Int, (λ₂ - λ₁) / Δ)
     Ny = round(Int, (φ₂ - φ₁) / Δ)
@@ -429,9 +401,109 @@ DataWrangling.default_inpainting(::ESAWorldCoverMetadatum) = nothing
 # in-band missing sentinel — use `NaN`, which never equals a real value and
 # therefore masks nothing.
 DataWrangling.missing_value(data::ESAWorldCoverMetadatum) =
-    data.name === :landcover_class ? ESA_WORLDCOVER_MISSING_VALUE : NaN
+    data.name === :landcover_class ? 0 : NaN
 
 Oceananigans.Fields.location(::ESAWorldCoverMetadatum) = (Center, Center, Center)
+
+#####
+##### Regridding onto a model grid
+#####
+##### The fraction products are regridded conservatively (area-weighted), so each
+##### target cell carries the true area fraction of every class and the fractions
+##### still sum to one. The categorical `:landcover_class` is then the argmax of
+##### those fractions — the class covering the most area of the target cell.
+##### Bilinear interpolation of the codes would instead invent intermediate,
+##### non-legend classes. Both extend the shared `interpolate_physical!` regrid
+##### hook, dispatched on the metadatum.
+#####
+
+function DataWrangling.interpolate_physical!(target, native, metadata::ESAWorldCoverMetadatum)
+    if metadata.name === :landcover_class
+        majority_class_regrid!(target, metadata)
+    else
+        conservative_regrid!(target, native)
+    end
+    return target
+end
+
+# Conservative (area-weighted) horizontal regrid via chained one-dimensional
+# `regrid!` passes through an intermediate grid — the latitude/longitude analog
+# of `InitialConditions.three_dimensional_regrid!`. Because `regrid!` is a linear
+# area average, the per-class fractions still sum to one on the target grid.
+# TODO: collapse to Oceananigans' native multi-axis regrid once
+# CliMA/Oceananigans.jl#5716 lands.
+function conservative_regrid!(target, native)
+    target_grid = target.grid
+    source_grid = native.grid
+    arch = child_architecture(architecture(target_grid))
+
+    Ns = size(source_grid)
+    Nt = size(target_grid)
+
+    # Regrid latitude first (keeping the source longitude), then longitude.
+    latitude_grid = LatitudeLongitudeGrid(arch; size = (Ns[1], Nt[2]),
+                                          longitude = cpu_face_constructor_x(source_grid),
+                                          latitude  = cpu_face_constructor_y(target_grid),
+                                          topology  = topology(target_grid))
+    LX, LY, LZ = location(native)
+    latitude_field = Field{LX, LY, LZ}(latitude_grid)
+
+    regrid_in_y!(latitude_field, latitude_grid, source_grid, native)
+    regrid_in_x!(target, target_grid, latitude_grid, latitude_field)
+    return target
+end
+
+# Majority class of each target cell: the class holding the largest conservatively
+# regridded area fraction. This keeps the class consistent with the fraction
+# fields and confined to the legend. Refining rather than coarsening needs no
+# special case — the conservative regrid then reduces to the containing native
+# cell, whose majority class the target inherits. Ties resolve to the lower code,
+# matching `mode_aggregate`, because the classes accumulate in ascending order.
+function majority_class_regrid!(target, metadata)
+    grid = target.grid
+    arch = child_architecture(architecture(grid))
+    LX, LY, LZ = location(metadata)
+
+    fraction = Field{LX, LY, LZ}(grid)
+    largest_fraction = Field{LX, LY, LZ}(grid)
+    total_fraction = Field{LX, LY, LZ}(grid)
+
+    fill!(target, 0)
+    fill!(largest_fraction, 0)
+    fill!(total_fraction, 0)
+
+    for (name, code) in zip(ESA_WORLDCOVER_FRACTION_VARIABLE_NAMES, ESA_WORLDCOVER_CLASS_CODES)
+        fraction_metadatum = Metadatum(name; dataset = metadata.dataset,
+                                       region = metadata.region, dir = metadata.dir)
+        conservative_regrid!(fraction, Field(fraction_metadatum, arch))
+        launch!(arch, grid, :xyz, _accumulate_majority_class!,
+                target, largest_fraction, total_fraction, fraction, code)
+    end
+
+    launch!(arch, grid, :xyz, _mask_uncovered_class!, target, total_fraction)
+    fill_halo_regions!(target)
+    return target
+end
+
+@kernel function _accumulate_majority_class!(target, largest_fraction, total_fraction, fraction, code)
+    i, j, k = @index(Global, NTuple)
+    @inbounds begin
+        f = fraction[i, j, k]
+        larger = f > largest_fraction[i, j, k]
+        largest_fraction[i, j, k] = ifelse(larger, f, largest_fraction[i, j, k])
+        target[i, j, k] = ifelse(larger, convert(eltype(target), code), target[i, j, k])
+        total_fraction[i, j, k] += f
+    end
+end
+
+# Cells outside the product's coverage have no valid pixels, so every fraction is
+# zero and no class holds a majority.
+@kernel function _mask_uncovered_class!(target, total_fraction)
+    i, j, k = @index(Global, NTuple)
+    FT = eltype(target)
+    @inbounds covered = total_fraction[i, j, k] > convert(FT, 1//2)
+    @inbounds target[i, j, k] = ifelse(covered, target[i, j, k], convert(FT, NaN))
+end
 
 #####
 ##### Download / materialization

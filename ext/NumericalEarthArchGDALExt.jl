@@ -52,11 +52,10 @@ end
 #####
 ##### The `Map` band is a UInt8 land-cover class code (no-data = 0). Class codes
 ##### must never be averaged, so we read the raw 10 m codes windowed to the bbox
-##### with NEAREST resampling (which only clips/aligns — it never invents an
+##### with nearest resampling (which only clips/aligns — it never invents an
 ##### intermediate code), then aggregate onto the coarse lat/lon grid by an
-##### INTEGER factor using the pure helpers in the WorldCover module
-##### (`mode_aggregate`, `class_fraction`, `vegetation_fraction`). This keeps the
-##### categorical field on its native EPSG:4326 grid — no reprojection.
+##### integer factor using `aggregate_landcover` from the WorldCover module. This
+##### keeps the categorical field on its native EPSG:4326 grid — no reprojection.
 #####
 
 # S3 key for one 3°×3° tile named by its SW corner (e.g. "N51E006").

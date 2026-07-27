@@ -12,8 +12,10 @@
 #
 # The 10 m `Map` band is *categorical*: its byte value is a class code, not a
 # quantity, so it is never averaged. The ingest counts codes over each aggregated
-# cell to form area fractions, then the shared bilinear regrid lands those
-# continuous fractions on the model grid.
+# cell to form area fractions. Onto the model grid the fractions are regridded
+# conservatively (area-weighted, so they still sum to one), and the categorical
+# majority class is the argmax of those fractions — the class covering the most
+# area of each cell, never a blend, so no intermediate code is ever invented.
 
 # ## Load packages
 using NumericalEarth
@@ -58,15 +60,16 @@ class_colors = map(last, values(legend))
 
 # ## Load the fields
 #
-# `f_veg` on both the native aggregated grid and the model grid; the majority
-# class on its native grid (integer codes); and every per-class fraction and the
-# majority class on the model grid. Each is one `Field(Metadatum(...), grid)` call
-# through the shared ingestion path — the first materializes the regional NetCDF
-# from the anonymous S3 tiles, the rest read cached bands.
+# `f_veg` and the majority class on both the native aggregated grid and the model
+# grid, plus every per-class fraction on the model grid. Each is one
+# `Field(Metadatum(...), grid)` call — the first materializes the regional NetCDF
+# from the anonymous S3 tiles, the rest read cached bands. The model-grid fractions
+# ride the conservative regrid; the model-grid class rides nearest-neighbor.
 
 fveg_native = Field(Metadatum(:vegetation_fraction; dataset, region), CPU())
 fveg_model  = Field(Metadatum(:vegetation_fraction; dataset, region), grid)
 class_native = Field(Metadatum(:landcover_class; dataset, region), CPU())
+class_model  = Field(Metadatum(:landcover_class; dataset, region), grid)
 
 fraction_fields = NamedTuple(name => Field(Metadatum(Symbol(name, :_fraction); dataset, region), grid)
                              for name in class_names)
@@ -81,25 +84,55 @@ fraction_sum = sum(interior(f) for f in fraction_fields)
 
 array(field) = Array(interior(field))[:, :, 1]
 
-# ## Majority land-cover class
+# ## Physical checks
 #
-# On its native grid the majority class is an exact legend code. We map each code
-# to its legend index so the categorical palette and legend line up.
+# Before plotting, confirm the pipeline is physically consistent on the model grid.
+# The categorical class must stay on exact legend codes (nearest-neighbor never
+# blends); the conservative regrid must keep the eleven fractions summing to one
+# and inside `[0, 1]`; and `f_veg` must equal the sum of the vegetated-class
+# fractions (the vegetation definition ESA WorldCover's tree/shrub/grass/crop/
+# wetland/mangrove classes imply).
 
-class_index = map(array(class_native)) do code
+model_codes = filter(!isnan, unique(round.(Int, vec(array(class_model)))))
+@info "model-grid majority-class codes ⊆ legend (no invented codes): $(issubset(model_codes, class_codes))"
+
+fraction_sum_model = sum(array(fraction_fields[name]) for name in class_names)
+@info "Σ class fractions (model grid): extrema = $(extrema(filter(!isnan, fraction_sum_model)))"
+@info "f_veg (model grid): extrema = $(extrema(filter(!isnan, array(fveg_model)))), any NaN = $(any(isnan, array(fveg_model)))"
+
+vegetated_codes = (10, 20, 30, 40, 90, 95)   # tree, shrub, grass, crop, herbaceous wetland, mangrove
+vegetated_names = [name for name in class_names if legend[name][1] in vegetated_codes]
+fveg_from_classes = sum(array(fraction_fields[name]) for name in vegetated_names)
+@info "max |f_veg − Σ vegetated fractions| (model grid): $(maximum(abs.(array(fveg_model) .- fveg_from_classes)))"
+
+# ## Majority land-cover class: native vs model grid
+#
+# On the native grid the majority class is an exact legend code. On the model grid
+# it is the argmax of the conservatively regridded fractions — the class covering
+# the most area of each cell — so it stays on exact legend codes and agrees with
+# the fraction fields. We map each code to its legend index so the categorical
+# palette and legend line up.
+
+to_class_index(field) = map(array(field)) do code
     isnan(code) && return NaN                        # no-data cells (ocean / outside coverage)
     i = findfirst(==(round(Int, code)), class_codes)
     isnothing(i) ? NaN : Float64(i)
 end
 
-fig = Figure(size = (900, 720), fontsize = 15)
-ax = Axis(fig[1, 1]; title = "Majority land-cover class (native ~110 m)",
-          xlabel = "longitude", ylabel = "latitude")
-heatmap!(ax, λ_native, φ_native, class_index;
-         colormap = cgrad(collect(class_colors), categorical = true),
-         colorrange = (0.5, length(class_codes) + 0.5))
-present = sort(unique(filter(!isnan, vec(class_index))))
-Legend(fig[1, 2],
+class_index_native = to_class_index(class_native)
+class_index_model  = to_class_index(class_model)
+
+fig = Figure(size = (1180, 640), fontsize = 15)
+for (col, panel) in enumerate((("native ~110 m", λ_native, φ_native, class_index_native),
+                               ("model grid (area majority)", λ_model, φ_model, class_index_model)))
+    title, λ, φ, class_index = panel
+    ax = Axis(fig[1, col]; title = "Majority class ($title)", xlabel = "longitude", ylabel = "latitude")
+    heatmap!(ax, λ, φ, class_index;
+             colormap = cgrad(collect(class_colors), categorical = true),
+             colorrange = (0.5, length(class_codes) + 0.5))
+end
+present = sort(unique(filter(!isnan, vcat(vec(class_index_native), vec(class_index_model)))))
+Legend(fig[1, 3],
        [PolyElement(color = class_colors[Int(i)]) for i in present],
        [replace(string(class_names[Int(i)]), "_" => " ") for i in present],
        "class"; framevisible = false)
@@ -146,8 +179,8 @@ fig
 #
 # The eleven per-class fractions sum to ≈ 1 over every valid cell (left). The
 # aggregated pattern is preserved from the native ~110 m grid to the model grid
-# (right two panels): the regrid smooths but does not move the forest, cities, or
-# lakes.
+# (right two panels): the conservative regrid area-averages but does not move the
+# forest, cities, or lakes.
 
 @info "sum-of-fractions over the domain: extrema = $(extrema(filter(!isnan, fraction_sum)))"
 

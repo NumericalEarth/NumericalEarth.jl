@@ -10,7 +10,6 @@ using NumericalEarth.DataWrangling.WorldCover: mode_aggregate, class_fraction,
                                                ESA_WORLDCOVER_CLASS_NAMES,
                                                ESA_WORLDCOVER_FRACTION_VARIABLE_NAMES,
                                                ESA_WORLDCOVER_VEGETATED_CLASSES,
-                                               ESA_WORLDCOVER_MISSING_VALUE,
                                                ESA_WORLDCOVER_NATIVE_STEP
 using Oceananigans.Grids: λnodes, φnodes
 using NumericalEarth.DataWrangling: longitude_interfaces, latitude_interfaces, native_grid,
@@ -28,7 +27,6 @@ using NumericalEarth.DataWrangling: longitude_interfaces, latitude_interfaces, n
     @test ESA_WORLDCOVER_CLASS_CODES == (10, 20, 30, 40, 50, 60, 70, 80, 90, 95, 100)
     @test length(ESA_WORLDCOVER_CLASS_CODES) == 11
     @test values(ESA_WORLDCOVER_CLASS_NAMES) == ESA_WORLDCOVER_CLASS_CODES
-    @test ESA_WORLDCOVER_MISSING_VALUE == 0
     # 0 is not a valid class; the legend starts at 10.
     @test !(0 in ESA_WORLDCOVER_CLASS_CODES)
     # Step from 90 to 95 is 5, not 10 — must not assume a regular stride.
