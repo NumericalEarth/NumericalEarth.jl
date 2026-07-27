@@ -37,20 +37,6 @@ function analytical_immersed_grid(underlying_grid::LatitudeLongitudeGrid;
     return ImmersedBoundaryGrid(underlying_grid, GridFittedBottom(bottom_height); active_cells_map)
 end
 
-# TEMPORARY DEBUGGING: remove this callback after the mutable-grid MHT
-# nonclosure has been identified.
-function report_mht_budget_terms!(simulation, debug)
-    simulation.model.clock.iteration == 0 && return nothing
-
-    terms = map(debug.fields) do field
-        compute!(field)
-        return only(Array(interior(field)))
-    end
-
-    @info "DEBUG mutable-grid MHT budget" timestepper=debug.timestepper iteration=simulation.model.clock.iteration terms
-    return nothing
-end
-
 for arch in test_architectures
     A = typeof(arch)
     @info "Testing InterfaceFluxOutputs [$A]..."
@@ -249,22 +235,6 @@ for arch in test_architectures
 
                 applied_surface_flux = budget.residual - budget.tendency + budget.applied_radiative_heat_flux
                 regridded_residual = RegriddedOperation(budget.residual, latlon_grid)
-                debug_fields = (;
-                    applied_surface = Field(Integral(applied_surface_flux, dims=(1, 2))),
-                    cached_next_surface = Field(Integral(budget.surface_flux, dims=(1, 2))),
-                    heat_content_tendency = Field(Integral(budget.tendency, dims=(1, 2))),
-                    raw_ocean_boundary = Field(Integral(ρᵒᶜ * cᵒᶜ * raw_temperature_flux, dims=(1, 2))),
-                    freshwater_enthalpy = Field(Integral(ocean_freshwater_heat_flux(esm), dims=(1, 2))),
-                    interface_heat = Field(Integral(sea_ice_ocean_fluxes.interface_heat, dims=(1, 2))),
-                    frazil_heat = Field(Integral(Diagnostics.frazil_heat_flux(esm), dims=(1, 2))),
-                    applied_radiation = Field(Integral(budget.applied_radiative_heat_flux, dims=(1, 2))),
-                    native_residual = Field(Integral(budget.residual, dims=(1, 2))),
-                    regridded_residual = Field(Integral(regridded_residual, dims=(1, 2))),
-                    residual = Field(Integral(budget.residual, dims=(1, 2))))
-
-                debug_callback = Callback(report_mht_budget_terms!, IterationInterval(1);
-                                          parameters=(; timestepper, fields=debug_fields))
-                add_callback!(simulation, debug_callback; name=:mht_budget_debug)
 
                 mht = Field(meridional_heat_transport(simulation; destination_grid = latlon_grid))
 
