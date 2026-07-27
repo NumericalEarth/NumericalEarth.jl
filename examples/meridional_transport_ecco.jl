@@ -61,7 +61,7 @@ land       = JRA55PrescribedLand(arch)
 radiation  = JRA55PrescribedRadiation(arch)
 esm = OceanSeaIceModel(ocean, sea_ice; atmosphere, land, radiation)
 
-simulation = Simulation(esm; Δt=20minutes, stop_time=20days)
+simulation = Simulation(esm; Δt=20minutes, stop_time=365days)
 
 wall_time = Ref(time_ns())
 
@@ -93,12 +93,26 @@ add_callback!(simulation, progress, IterationInterval(200))
 
 # mht_vT = Field(meridional_heat_transport(simulation, MeridionalFluxMethod())) # This currently is not supported with Othrogonal grids, so we use the OHC method instead.
 temperature_budget = BudgetComputation(:temperature, esm)
-add_callback!(simulation, temperature_budget)
-mht_OHC = Field(meridional_heat_transport(simulation; destination_grid))
+budget_salinity = BudgetComputation(:salinity, esm)
+budget_mass = BudgetComputation(:mass, esm)
 
-ocean.output_writers[:mht] = JLD2Writer(ocean.model, (; mht_OHC);
+add_callback!(simulation, temperature_budget)
+add_callback!(simulation, budget_salinity)
+add_callback!(simulation, budget_mass)
+
+mht_field = Field(meridional_transport(simulation, :temperature, TendencyMethod(); destination_grid))
+mst_field = Field(meridional_transport(simulation, :salinity, TendencyMethod(); destination_grid))
+mt_field = Field(meridional_transport(simulation, :mass, TendencyMethod(); destination_grid))
+
+budget_outputs = (
+    mht                   = mht_field,
+    mst                   = mst_field,
+    mt                    = mt_field
+)
+
+ocean.output_writers[:merid_trans] = JLD2Writer(ocean.model, budget_outputs;
                                         schedule = TimeInterval(3hours),
-                                        filename = "ocean_one_degree_mht",
+                                        filename = "ocean_one_degree_mt",
                                         overwrite_existing = true)
 
 run!(simulation)
@@ -107,37 +121,49 @@ run!(simulation)
 
 using Oceananigans
 
-# mht_vT  = FieldTimeSeries("ocean_one_degree_mht.jld2", "mht_vT"; backend = OnDisk())
-mht_OHC = FieldTimeSeries("ocean_one_degree_mht.jld2", "mht_OHC"; backend = OnDisk())
+mht = FieldTimeSeries("ocean_one_degree_mt.jld2", "mht"; backend = OnDisk())
+mst = FieldTimeSeries("ocean_one_degree_mt.jld2", "mst"; backend = OnDisk())
+mt = FieldTimeSeries("ocean_one_degree_mt.jld2", "mt"; backend = OnDisk())
 
-times = mht_OHC.times
+times = mht.times
 Nt = length(times)
 
-grid = mht_OHC.grid
-Ny = size(mht_OHC.grid, 2)
+grid = mht.grid
+Ny = size(mht.grid, 2)
 
-# mht_vT_mean  = deepcopy(mht_vT[1][1, :, 1])
-mht_OHC_avg = deepcopy(mht_OHC[1][1, :, 1])
+mht_avg = zeros(eltype(mht[1]), size(interior(mht[1])[1, :, 1]))
+mst_avg = zeros(eltype(mst[1]), size(interior(mst[1])[1, :, 1]))
+mt_avg = zeros(eltype(mt[1]), size(interior(mt[1])[1, :, 1]))
 
 for iter in 1:Nt
     @info "iteration $iter out of $Nt"
-    # mht_vT_mean  +=  mht_vT[iter][1, :, 1]
-    mht_OHC_avg += mht_OHC[iter][1, :, 1]
+    mht_values = vec(Array(interior(mht[iter])))
+    mst_values = vec(Array(interior(mst[iter])))
+    mt_values = vec(Array(interior(mt[iter])))
+
+    mht_avg .+= mht_values
+    mst_avg .+= mst_values
+    mt_avg .+= mt_values
 end
 
-@. mht_OHC_avg = mht_OHC_avg / Nt
-# @. mht_vT_mean = mht_vT_mean / Nt
+mht_avg ./= Nt
+mst_avg ./= Nt
+mt_avg ./= Nt
 
 using CairoMakie
 
 fig = Figure()
-ax = Axis(fig[1, 1], xlabel="latitude (deg)", ylabel="MHT (PW)")
+ax1 = Axis(fig[1, 1], xlabel="latitude (deg)", ylabel="MHT (PW)")
+ax2 = Axis(fig[2, 1], xlabel="latitude (deg)", ylabel="MST (kg/s)")
+ax3 = Axis(fig[3, 1], xlabel="latitude (deg)", ylabel="MT (m³ s⁻¹)")
 
 φ = φnodes(grid, Face())
 
-# lines!(ax, φ, mht_vT_mean[1:Ny+1]  / 1e15, linewidth=4, label="via vT")
-lines!(ax, φ, mht_OHC_avg[1:Ny+1] / 1e15, linewidth=4, label="via OHC")
-Legend(fig[2, :], ax, orientation=:horizontal)
-Label(fig[0, :], "Meridional heat transport", fontsize=16, tellwidth=false)
+lines!(ax1, φ, mht_avg / 1e15, linewidth=4)
+xlims!(ax1, extrema(φ))
+lines!(ax2, φ, mst_avg, linewidth=4)
+xlims!(ax2, extrema(φ))
+lines!(ax3, φ, mt_avg, linewidth=4)
+xlims!(ax3, extrema(φ))
 
-save("mht.png", fig)
+save("merid_trans_ecco.png", fig)
