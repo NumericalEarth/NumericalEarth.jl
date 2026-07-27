@@ -260,7 +260,8 @@ function NormalizeFreshwaterFlux(coupled_model)
     ocean_model = coupled_model.ocean.model
     Jʷ = extract_freshwater_flux(ocean_model.tracers.S.boundary_conditions.top.condition)
     Jᴴ = freshwater_exchange(ocean_model.tracers.T.boundary_conditions.top.condition).content_flux
-    Tᴺ = view(interior(ocean_model.tracers.T), :, :, size(ocean_model.grid, 3):size(ocean_model.grid, 3))
+    kᴺ = size(ocean_model.grid, 3)
+    Tᴺ = interior(ocean_model.tracers.T, :, :, kᴺ:kᴺ) 
 
     sea_ice_interface = coupled_model.interfaces.sea_ice_ocean_interface
     mean_sea_ice = if isnothing(sea_ice_interface)
