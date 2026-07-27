@@ -316,6 +316,10 @@ function (n::NormalizeFreshwaterFlux)(sim)
     correction = freshwater_correction(n.running_mean, Jʷ .- Jʷⁱᵒ, n.memory_coefficient)
     interior(n.freshwater_flux)   .-= correction
     interior(n.heat_content_flux) .-= correction .* n.surface_temperature
+
+    fill_halo_regions!(n.freshwater_flux)
+    fill_halo_regions!(n.heat_content_flux)
+
     return nothing
 end
 
