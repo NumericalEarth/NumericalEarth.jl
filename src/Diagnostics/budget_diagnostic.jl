@@ -10,6 +10,18 @@ add_callback!(simulation, budget)
 
 Supported budgets are `:temperature`, `:salinity`, and `:mass`.
 
+Each budget exposes names that describe its terms:
+
+* `:temperature`: `heat_content`, `previous_heat_content`,
+  `heat_content_tendency`, `surface_heat_flux`, `radiative_heat_flux`,
+  `applied_radiative_heat_flux`, and `residual`.
+* `:salinity`: `salinity_content`, `previous_salinity_content`,
+  `salinity_content_tendency`, `surface_salinity_flux`, and `residual`.
+* `:mass`: `mass_content`, `previous_mass_content`,
+  `mass_content_tendency`, `surface_mass_flux`, and `residual`.
+
+Call `propertynames(budget)` to list the terms for a particular budget.
+
 The callback runs once after every timestep. It saves the fields needed to
 finish the next budget, so restarting from a checkpoint preserves the budget.
 The residual field contains the budget from the most recently completed timestep.
@@ -26,6 +38,57 @@ struct BudgetComputation{H, P, T, S, R, A, B}
     radiative_heat_flux :: R
     applied_radiative_heat_flux :: A
     residual :: B
+end
+
+const HEAT_BUDGET_PROPERTIES = (:tracer_name,
+                                :heat_content,
+                                :previous_heat_content,
+                                :heat_content_tendency,
+                                :surface_heat_flux,
+                                :radiative_heat_flux,
+                                :applied_radiative_heat_flux,
+                                :residual)
+
+const SALINITY_BUDGET_PROPERTIES = (:tracer_name,
+                                    :salinity_content,
+                                    :previous_salinity_content,
+                                    :salinity_content_tendency,
+                                    :surface_salinity_flux,
+                                    :residual)
+
+const MASS_BUDGET_PROPERTIES = (:tracer_name,
+                                :mass_content,
+                                :previous_mass_content,
+                                :mass_content_tendency,
+                                :surface_mass_flux,
+                                :residual)
+
+function Base.propertynames(budget::BudgetComputation, private=false)
+    names = budget.tracer_name === :temperature ? HEAT_BUDGET_PROPERTIES :
+            budget.tracer_name === :salinity ? SALINITY_BUDGET_PROPERTIES :
+            MASS_BUDGET_PROPERTIES
+    return private ? (names..., fieldnames(typeof(budget))...) : names
+end
+
+function Base.getproperty(budget::BudgetComputation, name::Symbol)
+    tracer_name = getfield(budget, :tracer_name)
+
+    if tracer_name === :temperature
+        name === :heat_content_tendency && return getfield(budget, :tendency)
+        name === :surface_heat_flux && return getfield(budget, :surface_flux)
+    elseif tracer_name === :salinity
+        name === :salinity_content && return getfield(budget, :heat_content)
+        name === :previous_salinity_content && return getfield(budget, :previous_heat_content)
+        name === :salinity_content_tendency && return getfield(budget, :tendency)
+        name === :surface_salinity_flux && return getfield(budget, :surface_flux)
+    elseif tracer_name === :mass
+        name === :mass_content && return getfield(budget, :heat_content)
+        name === :previous_mass_content && return getfield(budget, :previous_heat_content)
+        name === :mass_content_tendency && return getfield(budget, :tendency)
+        name === :surface_mass_flux && return getfield(budget, :surface_flux)
+    end
+
+    return getfield(budget, name)
 end
 
 Base.summary(budget::BudgetComputation) =

@@ -226,6 +226,29 @@ for arch in test_architectures
                 budget = BudgetComputation(:temperature, esm)
                 salinity_budget = BudgetComputation(:salinity, esm)
                 mass_budget = BudgetComputation(:mass, esm)
+
+                @test propertynames(budget) == (:tracer_name, :heat_content,
+                                                :previous_heat_content,
+                                                :heat_content_tendency,
+                                                :surface_heat_flux,
+                                                :radiative_heat_flux,
+                                                :applied_radiative_heat_flux,
+                                                :residual)
+                @test propertynames(salinity_budget) == (:tracer_name,
+                                                         :salinity_content,
+                                                         :previous_salinity_content,
+                                                         :salinity_content_tendency,
+                                                         :surface_salinity_flux,
+                                                         :residual)
+                @test propertynames(mass_budget) == (:tracer_name, :mass_content,
+                                                     :previous_mass_content,
+                                                     :mass_content_tendency,
+                                                     :surface_mass_flux,
+                                                     :residual)
+                @test salinity_budget.salinity_content isa Field
+                @test salinity_budget.surface_salinity_flux isa Field
+                @test mass_budget.mass_content isa Field
+                @test mass_budget.surface_mass_flux isa Field
                 @test_throws ArgumentError meridional_transport(simulation, :temperature; destination_grid=latlon_grid)
                 add_callback!(simulation, budget)
                 add_callback!(simulation, salinity_budget)
@@ -237,7 +260,9 @@ for arch in test_architectures
                 raw_temperature_flux = Diagnostics.flux_field(ocean.model.tracers.T.boundary_conditions.top.condition)
                 sea_ice_ocean_fluxes = esm.interfaces.sea_ice_ocean_interface.fluxes
 
-                applied_surface_flux = budget.residual - budget.tendency + budget.applied_radiative_heat_flux
+                applied_surface_flux = budget.residual -
+                                       budget.heat_content_tendency +
+                                       budget.applied_radiative_heat_flux
                 regridded_residual = RegriddedOperation(budget.residual, latlon_grid)
 
                 mht = Field(meridional_transport(simulation, :temperature; destination_grid = latlon_grid))
