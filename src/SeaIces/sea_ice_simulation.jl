@@ -123,7 +123,7 @@ function sea_ice_simulation(grid, ocean=nothing;
                             dynamics = sea_ice_dynamics(grid, ocean),
                             bottom_heat_boundary_condition = nothing,
                             top_heat_boundary_condition = nothing,
-                            timestepper = :SplitRungeKutta3,
+                            timestepper = :ForwardEuler,
                             phase_transitions = PhaseTransitions(eltype(grid);
                                                                  heat_capacity=ice_heat_capacity,
                                                                  density=sea_ice_density),
@@ -201,7 +201,7 @@ function sea_ice_dynamics(grid, ocean=nothing;
                           rheology = ElastoViscoPlasticRheology(),
                           coriolis = default_coriolis(ocean),
                           free_drift = nothing,
-                          solver = SplitExplicitSolver(grid; substeps=100))
+                          solver = SplitExplicitSolver(grid; substeps=150))
 
     SSU, SSV = ocean_surface_velocities(ocean)
     FT = eltype(grid)
