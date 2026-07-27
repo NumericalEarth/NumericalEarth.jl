@@ -189,11 +189,18 @@ function budget_surface_flux(::Val{:temperature}, esm)
     return net_ocean_heat_flux(esm) - frazil_heat_flux(esm)
 end
 
-budget_surface_flux(::Val{:salinity}, esm) = net_ocean_salinity_flux(esm)
+budget_surface_flux(::Val{:salinity}, esm) = salinity_budget_surface_flux(esm)
 
-# `net_ocean_freshwater_flux` is positive into the ocean. The budget residual
-# uses outward-positive surface fluxes, so mass gets the opposite sign.
-budget_surface_flux(::Val{:mass}, esm) = - net_ocean_freshwater_flux(esm)
+mass_budget_surface_flux(esm, grid) = ZeroField()
+
+# Only a mutable grid admits freshwater mass. Freshwater volume flux is
+# positive into the ocean, while the budget surface term is positive outward.
+function mass_budget_surface_flux(esm, ::MutableGridOfSomeKind)
+    ρᵒᶜ = reference_density(esm.ocean)
+    return - ρᵒᶜ * esm.interfaces.net_fluxes.ocean.η
+end
+
+budget_surface_flux(::Val{:mass}, esm) = mass_budget_surface_flux(esm, esm.ocean.model.grid)
 
 function complete_budget!(budget::BudgetComputation, esm, Δt)
     Oceananigans.set!(budget.surface_flux,

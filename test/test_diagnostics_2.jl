@@ -1,6 +1,7 @@
 include("runtests_setup.jl")
 
 using NumericalEarth.Diagnostics: Diagnostics
+using Oceananigans.Grids: MutableVerticalDiscretization
 
 struct ConstantAdditionalTemperatureFlux{T}
     value :: T
@@ -52,6 +53,8 @@ for arch in test_architectures
     frazil_heat_flux_value = 0.2
     interface_heat_flux_value = 0.3
     sea_ice_ocean_salt_flux_value = 0.9
+    atmosphere_ocean_freshwater_volume_flux_value = 0.007
+    sea_ice_ocean_freshwater_volume_flux_value = 0.002
 
     model_configurations = ((name = "OceanOnlyModel", with_sea_ice = false),
                             (name = "OceanSeaIceModel", with_sea_ice = true))
@@ -78,11 +81,16 @@ for arch in test_architectures
             fill!(T_flux, T_flux_value)
             fill!(S_flux, S_flux_value)
 
+            sea_ice_freshwater_volume_flux = config.with_sea_ice ? sea_ice_ocean_freshwater_volume_flux_value : 0
+            net_freshwater_volume_flux = atmosphere_ocean_freshwater_volume_flux_value + sea_ice_freshwater_volume_flux
+            fill!(esm.interfaces.net_fluxes.ocean.η, net_freshwater_volume_flux)
+
             if config.with_sea_ice
                 sea_ice_ocean_fluxes = esm.interfaces.sea_ice_ocean_interface.fluxes
                 fill!(sea_ice_ocean_fluxes.frazil_heat, frazil_heat_flux_value)
                 fill!(sea_ice_ocean_fluxes.interface_heat, interface_heat_flux_value)
                 fill!(sea_ice_ocean_fluxes.salt, sea_ice_ocean_salt_flux_value)
+                fill!(sea_ice_ocean_fluxes.freshwater, sea_ice_freshwater_volume_flux)
             end
 
             expected_frazil_heat = config.with_sea_ice ? frazil_heat_flux_value : 0
@@ -92,6 +100,7 @@ for arch in test_architectures
             ρᵒᶜ = esm.interfaces.ocean_properties.reference_density
             cᵒᶜ = esm.interfaces.ocean_properties.heat_capacity
             Sᵒᶜ = 35.0
+            set!(ocean.model, S=Sᵒᶜ)
 
             # exported diagnostics
             net_ocean_heat = net_ocean_heat_flux(esm)
@@ -111,11 +120,13 @@ for arch in test_architectures
             sea_ice_ocean_salinity = Diagnostics.sea_ice_ocean_salinity_flux(esm)
             atmosphere_ocean_salinity = Diagnostics.atmosphere_ocean_salinity_flux(esm)
 
+            salinity_budget_surface = Diagnostics.salinity_budget_surface_flux(esm)
+            mass_budget_surface = Diagnostics.budget_surface_flux(Val(:mass), esm)
             for f in (frazil_temperature, net_ocean_temperature, sea_ice_ocean_temperature,
                       atmosphere_ocean_temperature, frazil_heat, net_ocean_heat, sea_ice_ocean_heat,
                       atmosphere_ocean_heat, net_ocean_salinity, sea_ice_ocean_salinity,
                       atmosphere_ocean_salinity, net_ocean_freshwater, sea_ice_ocean_freshwater,
-                      atmosphere_ocean_freshwater)
+                      atmosphere_ocean_freshwater, salinity_budget_surface, mass_budget_surface)
 
                 @test f isa Oceananigans.Fields.AbstractField
 
@@ -143,11 +154,56 @@ for arch in test_architectures
                 @test atmosphere_ocean_salinity[1, 1, 1] ≈ S_flux_value - expected_sea_ice_ocean_salt
                 @test net_ocean_salinity[1, 1, 1] ≈ atmosphere_ocean_salinity[1, 1, 1] + sea_ice_ocean_salinity[1, 1, 1]
 
-                @test net_ocean_freshwater[1, 1, 1] ≈ - ρᵒᶜ / Sᵒᶜ * S_flux_value
-                @test sea_ice_ocean_freshwater[1, 1, 1] ≈ - ρᵒᶜ / Sᵒᶜ * expected_sea_ice_ocean_salt
-                @test atmosphere_ocean_freshwater[1, 1, 1] ≈ - ρᵒᶜ / Sᵒᶜ * (S_flux_value - expected_sea_ice_ocean_salt)
+                @test salinity_budget_surface[1, 1, 1] ≈ S_flux_value + Sᵒᶜ * net_freshwater_volume_flux
+                @test mass_budget_surface[1, 1, 1] == 0
+
+                expected_net_freshwater = - ρᵒᶜ * net_freshwater_volume_flux - ρᵒᶜ / Sᵒᶜ * S_flux_value
+                expected_sea_ice_freshwater = - ρᵒᶜ * sea_ice_freshwater_volume_flux - ρᵒᶜ / Sᵒᶜ * expected_sea_ice_ocean_salt
+                expected_atmosphere_freshwater = expected_net_freshwater - expected_sea_ice_freshwater
+                @test net_ocean_freshwater[1, 1, 1] ≈ expected_net_freshwater
+                @test sea_ice_ocean_freshwater[1, 1, 1] ≈ expected_sea_ice_freshwater
+                @test atmosphere_ocean_freshwater[1, 1, 1] ≈ expected_atmosphere_freshwater
                 @test net_ocean_freshwater[1, 1, 1] ≈ atmosphere_ocean_freshwater[1, 1, 1] + sea_ice_ocean_freshwater[1, 1, 1]
             end
+        end
+    end
+
+    @testset "Mutable-grid freshwater-content and mass fluxes [$A]" begin
+        mutable_grid = RectilinearGrid(arch;
+                                       size = (4, 5, 2),
+                                       x = (0, 1),
+                                       y = (0, 1),
+                                       z = MutableVerticalDiscretization((-1, 0)),
+                                       topology = (Periodic, Bounded, Bounded))
+
+        ocean = ocean_simulation(mutable_grid;
+                                 momentum_advection = nothing,
+                                 tracer_advection = nothing,
+                                 closure = nothing,
+                                 coriolis = nothing)
+        atmosphere = PrescribedAtmosphere(mutable_grid, [0.0])
+        esm = OceanOnlyModel(ocean; atmosphere)
+
+        Sᵒᶜ = 35.0
+        Jˢ_value = 0.4
+        Jʷ_value = 0.007
+        ρᵒᶜ = esm.interfaces.ocean_properties.reference_density
+        set!(ocean.model, S=Sᵒᶜ)
+        fill!(Diagnostics.flux_field(ocean.model.tracers.S.boundary_conditions.top.condition), Jˢ_value)
+        fill!(esm.interfaces.net_fluxes.ocean.η, Jʷ_value)
+
+        salinity_surface_flux = Diagnostics.salinity_budget_surface_flux(esm)
+        freshwater_content_flux = net_ocean_freshwater_flux(esm; reference_salinity=Sᵒᶜ)
+        mass_surface_flux = Diagnostics.budget_surface_flux(Val(:mass), esm)
+
+        for flux in (salinity_surface_flux, freshwater_content_flux, mass_surface_flux)
+            compute!(flux)
+        end
+
+        @allowscalar begin
+            @test salinity_surface_flux[1, 1, 1] ≈ Jˢ_value
+            @test freshwater_content_flux[1, 1, 1] ≈ - ρᵒᶜ * Jʷ_value - ρᵒᶜ / Sᵒᶜ * Jˢ_value
+            @test mass_surface_flux[1, 1, 1] ≈ - ρᵒᶜ * Jʷ_value
         end
     end
 

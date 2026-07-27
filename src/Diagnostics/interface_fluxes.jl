@@ -205,32 +205,73 @@ interface in a coupled `esm`.
 atmosphere_ocean_salinity_flux(esm::EarthSystemModel) =
     net_ocean_salinity_flux(esm) - sea_ice_ocean_salinity_flux(esm)
 
+@inline function surface_salinity_volume_flux(i, j, k, grid, salinity, freshwater_volume_flux)
+    return @inbounds salinity[i, j, grid.Nz] * freshwater_volume_flux[i, j, 1]
+end
+
+function ocean_surface_salinity_volume_flux(esm::EarthSystemModel, freshwater_volume_flux)
+    model = esm.ocean.model
+    salinity = model.tracers.S
+    return KernelFunctionOperation{Center, Center, Nothing}(surface_salinity_volume_flux,
+                                                            model.grid,
+                                                            salinity,
+                                                            freshwater_volume_flux)
+end
+
+ocean_surface_salinity_volume_flux(esm::EarthSystemModel) =
+    ocean_surface_salinity_volume_flux(esm, esm.interfaces.net_fluxes.ocean.η)
+
+
+salinity_budget_surface_flux(esm, ::MutableGridOfSomeKind) = net_ocean_salinity_flux(esm)
+salinity_budget_surface_flux(esm, grid) =
+    net_ocean_salinity_flux(esm) + ocean_surface_salinity_volume_flux(esm)
+
+salinity_budget_surface_flux(esm::EarthSystemModel) =
+    salinity_budget_surface_flux(esm, esm.ocean.model.grid)
+
 
 ###########################
-### Freshwater mass fluxes
+### Freshwater-content fluxes
 ###########################
 
 """
     net_ocean_freshwater_flux(esm::EarthSystemModel)
 
-Return the net freshwater mass flux (kg m⁻² s⁻¹) at the ocean's surface in a coupled `esm`.
+Return the outward-positive freshwater-content flux (kg m⁻² s⁻¹) at the ocean
+surface. On a mutable grid this includes both the explicit freshwater volume
+flux and changes in salt content relative to `reference_salinity`.
 """
 function net_ocean_freshwater_flux(esm::EarthSystemModel; reference_salinity = 35)
     ρᵒᶜ = esm.interfaces.ocean_properties.reference_density
     Sᵒᶜ = convert(typeof(ρᵒᶜ), reference_salinity)
-    return - ρᵒᶜ / Sᵒᶜ * net_ocean_salinity_flux(esm)
+    Jʷ = esm.interfaces.net_fluxes.ocean.η
+    Jˢ = salinity_budget_surface_flux(esm)
+
+    if esm.ocean.model.grid isa MutableGridOfSomeKind
+        return - ρᵒᶜ * Jʷ - ρᵒᶜ / Sᵒᶜ * Jˢ
+    else
+        return - ρᵒᶜ / Sᵒᶜ * Jˢ
+    end
 end
 
 """
     sea_ice_ocean_freshwater_flux(esm::EarthSystemModel)
 
-Return the sea ice-ocean freshwater mass flux (kg m⁻² s⁻¹) at the sea ice-ocean interface
-in a coupled `esm`.
+Return the outward-positive sea ice-ocean freshwater-content flux
+(kg m⁻² s⁻¹) at the sea ice-ocean interface in a coupled `esm`.
 """
 function sea_ice_ocean_freshwater_flux(esm::EarthSystemModel; reference_salinity = 35)
     ρᵒᶜ = esm.interfaces.ocean_properties.reference_density
     Sᵒᶜ = convert(typeof(ρᵒᶜ), reference_salinity)
-    return - ρᵒᶜ / Sᵒᶜ * sea_ice_ocean_salinity_flux(esm)
+    Jʷⁱᵒ = esm.interfaces.sea_ice_ocean_interface.fluxes.freshwater
+    Jˢⁱᵒ = sea_ice_ocean_salinity_flux(esm)
+
+    if esm.ocean.model.grid isa MutableGridOfSomeKind
+        return - ρᵒᶜ * Jʷⁱᵒ - ρᵒᶜ / Sᵒᶜ * Jˢⁱᵒ
+    else
+        Jˢᵛⁱᵒ = ocean_surface_salinity_volume_flux(esm, Jʷⁱᵒ)
+        return - ρᵒᶜ / Sᵒᶜ * (Jˢⁱᵒ + Jˢᵛⁱᵒ)
+    end
 end
 
 sea_ice_ocean_freshwater_flux(::NoSeaIceOceanInterfaceModel; kwargs...) = ZeroField()
@@ -238,11 +279,10 @@ sea_ice_ocean_freshwater_flux(::NoSeaIceOceanInterfaceModel; kwargs...) = ZeroFi
 """
     atmosphere_ocean_freshwater_flux(esm::EarthSystemModel)
 
-Return the atmosphere-ocean freshwater mass flux (kg m⁻² s⁻¹) at the atmosphere-ocean
-interface in a coupled `esm`.
+Return the outward-positive atmosphere-ocean freshwater-content flux
+(kg m⁻² s⁻¹) at the atmosphere-ocean interface in a coupled `esm`.
 """
 function atmosphere_ocean_freshwater_flux(esm::EarthSystemModel; reference_salinity = 35)
-    ρᵒᶜ = esm.interfaces.ocean_properties.reference_density
-    Sᵒᶜ = convert(typeof(ρᵒᶜ), reference_salinity)
-    return - ρᵒᶜ / Sᵒᶜ * atmosphere_ocean_salinity_flux(esm)
+    return net_ocean_freshwater_flux(esm; reference_salinity) -
+           sea_ice_ocean_freshwater_flux(esm; reference_salinity)
 end
