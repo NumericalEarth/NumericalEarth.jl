@@ -2,6 +2,7 @@ module Diagnostics
 
 export MixedLayerDepthField, MixedLayerDepthOperand
 export meridional_heat_transport
+export regridded_transport_operation, velocity_transport_regridder
 export net_ocean_heat_flux, sea_ice_ocean_heat_flux, atmosphere_ocean_heat_flux, frazil_heat_flux,
        net_ocean_freshwater_flux, sea_ice_ocean_freshwater_flux, atmosphere_ocean_freshwater_flux
 
@@ -23,6 +24,7 @@ using ..Oceans: MultipleFluxes
 
 include("mixed_layer_depth.jl")
 include("meridional_heat_transport.jl")
+include("velocity_transport_regridding.jl")
 include("interface_fluxes.jl")
 
 end # module
