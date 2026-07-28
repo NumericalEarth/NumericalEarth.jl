@@ -10,10 +10,10 @@ first:
   same region share their cells one for one.
 
 The product targets **true** leaf area index: per-biome foliage clumping is applied inside
-the retrieval itself. Two-stream inversion records (the C3S 300 m record this repository also
-ingests) report the **effective** quantity instead. A canopy closure calibrated against MODIS
-therefore expects these values directly, with no clumping conversion in between — which is
-the main reason to keep both records.
+the retrieval itself. Two-stream inversion records report the **effective** quantity instead,
+and converting between them costs a factor of the clumping index. A canopy closure calibrated
+against MODIS therefore expects these values directly, with no conversion in between — which
+is the reason this is the leaf-area source here.
 
 ## Credentials
 
@@ -94,9 +94,8 @@ lai_screening_mask(:other_quality, :cloudy, :snow_or_ice)  # build your own
 lai_rejection_flags(qc, extra_qc)                       # what one pixel fails
 ```
 
-Unlike the C3S adapter, screening is **on** by default:
-`recommended_lai_screening()` keeps only good-quality pixels retrieved by the main
-radiative-transfer algorithm under a clear or assumed-clear sky. Pass
+Screening is **on** by default: `recommended_lai_screening()` keeps only good-quality pixels
+retrieved by the main radiative-transfer algorithm under a clear or assumed-clear sky. Pass
 `MCD15A2H(screened_flags = 0x0000)` to keep every retrieval the product marks as valid.
 
 Snow, aerosol, cirrus, and cloud-shadow detections are deliberately *not* in the default.

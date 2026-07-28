@@ -129,15 +129,16 @@ end
 @printf("  measured on the model grid   : %.2f%%\n",
         100 * gap_fraction(Field(deep_composite, grid)))
 
-# ## The magnitude, against the 300 m record
+# ## Is the magnitude right?
 #
-# The other leaf-area example reads the C3S 300 m record over this same box and finds a regional
-# mean near 1.7, where closed rainforest carries a true leaf area index of roughly 5–6 and should
-# still reach 3–4 as an *effective* quantity. Reading MCD15A2H over the same box separates a real
-# difference of definition from a bias.
+# Worth checking before the field is used for anything, because a leaf-area record can be
+# self-consistent and still sit in the wrong place. Closed rainforest carries a *true* leaf area
+# index of roughly 5–6, and this box is closed rainforest, so the composite has to land there —
+# a two-stream inversion record reporting the *effective* quantity over the same box would read
+# considerably lower, and the difference is one of definition rather than of quality.
 
 @printf("\nCentral Amazon, %s composite\n", deep.years)
-@printf("  MCD15A2H mean Λ : %.2f m² m⁻²   (C3S over the same box: 1.70)\n", nanmean(Λdeep))
+@printf("  MCD15A2H mean Λ : %.2f m² m⁻²   (closed rainforest is 5-6)\n", nanmean(Λdeep))
 
 axis_kw = (xlabel = "Longitude (ᵒ)", ylabel = "Latitude (ᵒ)")
 Λrange = (0, 7)
