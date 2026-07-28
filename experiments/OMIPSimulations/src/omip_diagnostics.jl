@@ -203,6 +203,9 @@ function add_omip_diagnostics!(simulation;
     # divided by `:voco` in the visualizer, because `Average` freezes its volume denominator at
     # construction — wrong on a z-star grid. `:soco`/`:hoco` double as salt/heat content (×ρ/1000
     # for salt kg, ×ρ·cp for heat J); `:sivol` closes the ocean+ice salt budget via the ice reservoir.
+    # `:sivol`/`:snvol` also close the *water* budget: freshwater normalization corrects only the
+    # atmospheric part of the surface flux, so `:voco` alone is expected to move with the sea-ice
+    # exchange. The conserved quantity is ocean + ice + snow, weighted by their densities.
     vol_op = KernelFunctionOperation{Center, Center, Center}(one_at_ccc, grid)
     average_outputs = Dict{Symbol, Any}(
         :zosga => Average(η),
@@ -214,6 +217,10 @@ function add_omip_diagnostics!(simulation;
         :hoco  => Integral(T),
         :sivol => Integral(hi * ℵi),
     )
+
+    if !isnothing(hs)
+        average_outputs[:snvol] = Integral(hs * ℵi)
+    end
 
     simulation.output_writers[:averages] = JLD2Writer(ocean.model, average_outputs;
                                                       schedule = AveragedTimeInterval(field_mean_interval),

@@ -3,9 +3,12 @@
 # conserve; a flat total with an ocean/ice see-saw means the drift is reservoir
 # exchange, a drifting total means a genuine leak (e.g. unnormalized restoring).
 # Ocean heat content and ocean volume are shown alongside (volume drift = net water
-# added). Salt in Gt (1e12 kg), heat in ZJ (1e21 J), volume in km³.
+# added). Water is split the same way as salt: freshwater normalization corrects only the
+# atmospheric part of the surface flux, so ocean volume alone is expected to move with the
+# sea-ice exchange — ocean + ice + snow, in freshwater-equivalent volume, is the quantity
+# that should stay flat. Salt in Gt (1e12 kg), heat in ZJ (1e21 J), volume in km³.
 function fig28(caches, labels, cases)
-    fig = Figure(size = (1500, 800), fontsize = 14)
+    fig = Figure(size = (1900, 800), fontsize = 14)
 
     ax_ocean  = Axis(fig[1, 1]; xlabel = "Time (years)", ylabel = "Δ salt (Gt)",
                      title = "Ocean salt content drift")
@@ -17,8 +20,10 @@ function fig28(caches, labels, cases)
                      title = "Ocean heat content drift")
     ax_volume = Axis(fig[2, 2]; xlabel = "Time (years)", ylabel = "Δ volume (km³)",
                      title = "Ocean volume drift")
+    ax_water  = Axis(fig[2, 3]; xlabel = "Time (years)", ylabel = "Δ volume (km³)",
+                     title = "Total water drift (ocean + ice + snow)")
 
-    for ax in (ax_ocean, ax_ice, ax_total, ax_volume)
+    for ax in (ax_ocean, ax_ice, ax_total, ax_volume, ax_water)
         hlines!(ax, [0]; color = (:black, 0.4), linestyle = :dash, linewidth = 1)
     end
 
@@ -29,6 +34,7 @@ function fig28(caches, labels, cases)
         total_salt    = get_field(caches[lab], :total_salt_content_timeseries)   ./ 1e12
         ocean_heat    = get_field(caches[lab], :ocean_heat_content_timeseries)   ./ 1e21
         ocean_volume  = get_field(caches[lab], :ocean_volume_timeseries)         ./ 1e9
+        total_water   = get_field(caches[lab], :total_water_volume_timeseries)   ./ 1e9
 
         lines!(ax_ocean,  time_in_years, ocean_salt   .- ocean_salt[1];
                color = case_colors[i], linewidth = CASE_LINEWIDTH, label = lab)
@@ -40,8 +46,10 @@ function fig28(caches, labels, cases)
                color = case_colors[i], linewidth = CASE_LINEWIDTH, label = lab)
         lines!(ax_volume, time_in_years, ocean_volume .- ocean_volume[1];
                color = case_colors[i], linewidth = CASE_LINEWIDTH, label = lab)
+        lines!(ax_water,  time_in_years, total_water  .- total_water[1];
+               color = case_colors[i], linewidth = CASE_LINEWIDTH, label = lab)
     end
 
-    Legend(fig[2, 3], ax_total)
+    Legend(fig[1:2, 4], ax_total)
     savefig(fig, "fig28_content_conservation.png")
 end

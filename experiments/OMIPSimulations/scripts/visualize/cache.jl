@@ -821,6 +821,28 @@ LOADERS[:total_salt_content_timeseries] = c ->
 LOADERS[:ocean_heat_content_timeseries] = c ->
     (ρ_ocean * cp_ocean) .* total_jld2_scalar_timeseries(get_field(c, :averages_file), "hoco")
 
+# Water-budget check. Freshwater normalization removes only the global mean of the *atmospheric*
+# flux, so `voco` is expected to move with the sea-ice exchange — the conserved quantity is
+# ocean + ice + snow in freshwater-equivalent volume. `snvol` is absent from runs predating the
+# snow diagnostic; those carry no snow reservoir, so a zero series is the correct stand-in.
+function optional_scalar_timeseries(path, name, fallback_length)
+    return try
+        total_jld2_scalar_timeseries(path, name)
+    catch
+        zeros(fallback_length)
+    end
+end
+
+LOADERS[:sea_ice_water_volume_timeseries] = c ->
+    (ρ_ice / ρ_ocean) .* total_jld2_scalar_timeseries(get_field(c, :averages_file), "sivol")
+LOADERS[:snow_water_volume_timeseries] = c ->
+    (ρ_snow / ρ_ocean) .* optional_scalar_timeseries(get_field(c, :averages_file), "snvol",
+                                                     length(get_field(c, :ocean_volume_timeseries)))
+LOADERS[:total_water_volume_timeseries] = c ->
+    get_field(c, :ocean_volume_timeseries)         .+
+    get_field(c, :sea_ice_water_volume_timeseries) .+
+    get_field(c, :snow_water_volume_timeseries)
+
 LOADERS[:time_in_years] = c ->
     total_jld2_timeseries_times(get_field(c, :averages_file)) ./ (365.25 * 24 * 3600)
 
