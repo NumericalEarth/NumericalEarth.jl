@@ -1,4 +1,4 @@
-using ConservativeRegridding: Regridder, regrid!
+using ConservativeRegridding: ConservativeRegridding, Regridder, regrid!
 using Oceananigans.Architectures: architecture
 using Oceananigans.BoundaryConditions: BoundaryConditions, fill_halo_regions!
 using Oceananigans.Operators: intrinsic_vector
