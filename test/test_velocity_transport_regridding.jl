@@ -55,12 +55,40 @@ function east_north_transport(integrated_u, integrated_v, grid, extension)
     return east_transport, north_transport
 end
 
+function valid_source_u_face(grid, i, j, extension)
+    λ₁, φ₁, λ₂, φ₂ = extension.source_u_segment_endpoints(grid, i, j)
+    segment_length = hypot(λ₂ - λ₁, φ₂ - φ₁)
+    return all(isfinite, (λ₁, φ₁, λ₂, φ₂, segment_length)) && segment_length > eps(Float64)
+end
+
+function valid_source_v_face(grid, i, j, extension)
+    λ₁, φ₁, λ₂, φ₂ = extension.source_v_segment_endpoints(grid, i, j)
+    segment_length = hypot(λ₂ - λ₁, φ₂ - φ₁)
+    return all(isfinite, (λ₁, φ₁, λ₂, φ₂, segment_length)) && segment_length > eps(Float64)
+end
+
 function remove_global_mean_transport!(source_u, source_v, extension)
     grid = on_architecture(CPU(), source_u.grid)
-    integrated_u, integrated_v = manually_integrated_transports(source_u, source_v)
-    source_east, source_north = east_north_transport(integrated_u, integrated_v, grid, extension)
     Nxᵤ, Nyᵤ, Nz = size(source_u)
     Nxᵥ, Nyᵥ, _ = size(source_v)
+    u_data = Array(interior(source_u))
+    v_data = Array(interior(source_v))
+
+    for j in 1:Nyᵤ, i in 1:Nxᵤ
+        valid_source_u_face(grid, i, j, extension) && continue
+        u_data[i, j, :] .= 0
+    end
+
+    for j in 1:Nyᵥ, i in 1:Nxᵥ
+        valid_source_v_face(grid, i, j, extension) && continue
+        v_data[i, j, :] .= 0
+    end
+
+    set!(source_u, u_data)
+    set!(source_v, v_data)
+
+    integrated_u, integrated_v = manually_integrated_transports(source_u, source_v)
+    source_east, source_north = east_north_transport(integrated_u, integrated_v, grid, extension)
     east_east = 0.0
     east_north = 0.0
     north_north = 0.0
@@ -68,6 +96,7 @@ function remove_global_mean_transport!(source_u, source_v, extension)
     # These coefficients describe the two global geographic velocity modes in
     # the native C-grid basis. Removing them makes the test flow globally closed.
     for j in 1:Nyᵤ, i in 1:Nxᵤ
+        valid_source_u_face(grid, i, j, extension) || continue
         column_area = sum(Δyᶠᶜᵃ(i, j, k, grid) * Δzᶠᶜᶜ(i, j, k, grid) for k in 1:Nz)
         east, north = extension.face_basis_u(grid, i, j)
         east_east += column_area * east^2
@@ -76,6 +105,7 @@ function remove_global_mean_transport!(source_u, source_v, extension)
     end
 
     for j in 1:Nyᵥ, i in 1:Nxᵥ
+        valid_source_v_face(grid, i, j, extension) || continue
         column_area = sum(Δxᶜᶠᵃ(i, j, k, grid) * Δzᶜᶠᶜ(i, j, k, grid) for k in 1:Nz)
         east, north = extension.face_basis_v(grid, i, j)
         east_east += column_area * east^2
@@ -86,15 +116,15 @@ function remove_global_mean_transport!(source_u, source_v, extension)
     determinant = east_east * north_north - east_north^2
     east_correction = (source_east * north_north - source_north * east_north) / determinant
     north_correction = (source_north * east_east - source_east * east_north) / determinant
-    u_data = Array(interior(source_u))
-    v_data = Array(interior(source_v))
 
     for k in 1:Nz, j in 1:Nyᵤ, i in 1:Nxᵤ
+        valid_source_u_face(grid, i, j, extension) || continue
         east, north = extension.face_basis_u(grid, i, j)
         u_data[i, j, k] -= east_correction * east + north_correction * north
     end
 
     for k in 1:Nz, j in 1:Nyᵥ, i in 1:Nxᵥ
+        valid_source_v_face(grid, i, j, extension) || continue
         east, north = extension.face_basis_v(grid, i, j)
         v_data[i, j, k] -= east_correction * east + north_correction * north
     end
@@ -118,6 +148,7 @@ tripolar_size(::Type{RightCenterFolded}) = (16, 8, 3)
         source_grid = TripolarGrid(arch;
                                    size = tripolar_size(fold_topology),
                                    z = (-300, 0),
+                                   southernmost_latitude = -75,
                                    fold_topology)
         source_u = XFaceField(source_grid)
         source_v = YFaceField(source_grid)
