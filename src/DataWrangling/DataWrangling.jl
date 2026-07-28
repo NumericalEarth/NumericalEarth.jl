@@ -15,6 +15,7 @@ export LinearlyTaperedPolarMask
 export DatasetRestoring, SurfaceFluxRestoring
 export ERA5HourlySingleLevel, ERA5MonthlySingleLevel, ERA5HourlyPressureLevels, ERA5MonthlyPressureLevels
 export native_grid
+export fill_gaps!, fill_seasonal_gaps!, gap_fill_provenance, gap_fill_denial, time_average
 
 using Adapt: Adapt
 using Downloads: Downloads
@@ -266,6 +267,7 @@ include("metadata_field.jl")
 include("dataset_backend.jl")
 include("metadata_field_time_series.jl")
 include("inpainting.jl")
+include("time_average.jl")
 include("restoring.jl")
 
 function metadata_time_step end
@@ -365,6 +367,7 @@ include("IBCAO/IBCAO.jl")
 include("CopernicusDEM/CopernicusDEM.jl")
 include("CopernicusLandAlbedo/CopernicusLandAlbedo.jl")
 include("CopernicusLandVegetation/CopernicusLandVegetation.jl")
+include("MODISLand/MODISLand.jl")
 
 using .ETOPO
 using .ECCO
@@ -383,6 +386,7 @@ using .IBCAO
 using .CopernicusDEM
 using .CopernicusLandAlbedo
 using .CopernicusLandVegetation
+using .MODISLand
 
 function dataset_modules()
     modules = Module[]
