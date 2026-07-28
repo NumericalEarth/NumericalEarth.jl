@@ -261,68 +261,119 @@ function freshwater_averaging_timescale(mode)
     return normalization === :annual ? 365.25days : nothing
 end
 
-struct NormalizeFreshwaterFlux{F, H, S, T, I, R, FT}
-    freshwater_flux     :: F    # assembled Σᵢ Jʷᵢ (the `FreshwaterExchange` carrying flux)
-    heat_content_flux   :: H    # Σᵢ Tᵢ Jʷᵢ
-    surface_temperature :: S    # ocean SST, the temperature the removed water carries
-    mean_total          :: T    # ⟨Jʷ⟩, wet-area mean (immersed cells excluded)
-    mean_sea_ice        :: I    # ⟨Jʷⁱᵒ⟩, or `nothing` without sea ice
-    running_mean        :: R    # lagged ⟨Jʷᵃᵒ⟩, or `nothing` to correct the instantaneous mean
-    memory_coefficient  :: FT   # Δt / averaging_timescale
+"""
+    mutable struct ReferenceWater{FT}
+
+The total water the normalization holds the model to. Mutable so it can be re-anchored on restart
+while the enclosing normalization stays immutable and concretely typed.
+"""
+mutable struct ReferenceWater{FT}
+    value :: FT
 end
 
-function NormalizeFreshwaterFlux(coupled_model, Δt, averaging_timescale)
+"""
+    struct NormalizeTotalWater{R, FT}
+
+Removes the drift in total ocean + sea-ice + snow water by adjusting the free surface, rescaling
+tracer concentrations by the same factor so their content is unchanged.
+"""
+struct NormalizeTotalWater{R, FT}
+    reference_water :: R     # the total water to hold to, in freshwater-equivalent volume
+    wet_area        :: FT    # ∫dA over wet columns, the area the correction is spread over
+    relaxation      :: FT    # fraction of the excess removed each step
+end
+
+function NormalizeTotalWater(coupled_model, Δt, averaging_timescale)
+    grid = coupled_model.ocean.model.grid
+    FT = eltype(grid)
+
+    unit_area = Field{Center, Center, Nothing}(grid)
+    set!(unit_area, 1)
+    wet_area = only(interior(compute!(Field(Integral(unit_area)))))
+
+    relaxation = isnothing(averaging_timescale) ? one(FT) : convert(FT, Δt / averaging_timescale)
+    reference_water = ReferenceWater(convert(FT, total_water(coupled_model)))
+
+    return NormalizeTotalWater(reference_water, convert(FT, wet_area), relaxation)
+end
+
+# Remove the volume drift by adjusting the free surface. Avoids problems with spurious convection 
+# appearing where it should not when using a surface restoring.
+@kernel function _correct_sea_level!(η, T, S, grid, δ, k_top)
+    i, j = @index(Global, NTuple)
+    h = Oceananigans.Grids.static_column_depthᶜᶜᵃ(i, j, grid)
+    @inbounds ηⁿ = η[i, j, k_top]
+    H = h + ηⁿ
+    d = δ
+    correctable = (h > 0) & (H - d > 0)
+    f = ifelse(correctable, H / (H - d), one(grid))
+
+    for k in 1:size(grid, 3)
+        @inbounds T[i, j, k] *= f
+        @inbounds S[i, j, k] *= f
+    end
+
+    @inbounds η[i, j, k_top] = ηⁿ - ifelse(correctable, d, zero(grid))
+end
+
+function correct_sea_level!(ocean_model, δ)
+    grid = ocean_model.grid
+    Nx, Ny, Nz = size(grid)
+    η = ocean_model.free_surface.displacement
+
+    launch!(architecture(grid), grid, Oceananigans.Utils.KernelParameters(1:Nx, 1:Ny), _correct_sea_level!,
+            η, ocean_model.tracers.T, ocean_model.tracers.S, grid, δ, Nz + 1)
+
+    # Refresh `σⁿ` from the corrected `η`.
+    launch!(architecture(grid), grid, Oceananigans.Models.surface_kernel_parameters(grid),
+            Oceananigans.Models.HydrostaticFreeSurfaceModels._update_zstar_scaling!, η, grid)
+
+    return nothing
+end
+
+@inline uniform_value(ρ) = ρ
+@inline uniform_value(ρ::Oceananigans.Fields.ConstantField) = ρ.constant
+
+"""
+    total_water(coupled_model)
+
+Water held by the ocean, sea ice and snow in freshwater-equivalent volume, up to the fixed reference
+volume `V₀` that cancels when differences are taken. `∫η dA` is a reduction over wet columns rather
+than over every cell, which keeps the summation roundoff orders of magnitude below the drift being
+removed.
+"""
+function total_water(coupled_model)
     ocean_model = coupled_model.ocean.model
-    FT = eltype(ocean_model.grid)
-    Jʷ = extract_freshwater_flux(ocean_model.tracers.S.boundary_conditions.top.condition)
-    Jᴴ = freshwater_exchange(ocean_model.tracers.T.boundary_conditions.top.condition).content_flux
-    kᴺ = size(ocean_model.grid, 3)
-    Tᴺ = interior(ocean_model.tracers.T, :, :, kᴺ:kᴺ)
+    W = only(interior(compute!(Field(Integral(ocean_model.free_surface.displacement)))))
 
-    sea_ice_interface = coupled_model.interfaces.sea_ice_ocean_interface
-    mean_sea_ice = if isnothing(sea_ice_interface)
-        nothing
-    else
-        Field(Average(computed_fluxes(sea_ice_interface).freshwater, dims = (1, 2)))
+    sea_ice = coupled_model.sea_ice
+    isnothing(sea_ice) && return W
+
+    si = sea_ice.model
+    ρᵒ = coupled_model.interfaces.ocean_properties.reference_density
+    Vⁱ = only(interior(compute!(Field(Integral(si.ice_thickness * si.ice_concentration)))))
+    W += uniform_value(si.sea_ice_density) / ρᵒ * Vⁱ
+
+    hˢ = si.snow_thickness
+    if !isnothing(hˢ)
+        Vˢ = only(interior(compute!(Field(Integral(hˢ * si.ice_concentration)))))
+        W += uniform_value(si.snow_density) / ρᵒ * Vˢ
     end
 
-    mean_total = Field(Average(Jʷ, dims = (1, 2)))
-
-    running_mean, α = if isnothing(averaging_timescale)
-        nothing, zero(FT)
-    else
-        fill!(similar(interior(mean_total)), 0), convert(FT, Δt / averaging_timescale)
-    end
-
-    return NormalizeFreshwaterFlux(Jʷ, Jᴴ, Tᴺ, mean_total, mean_sea_ice, running_mean, α)
+    return W
 end
 
-@inline sea_ice_freshwater_mean(::Nothing) = 0
-@inline sea_ice_freshwater_mean(mean_sea_ice) = (compute!(mean_sea_ice); interior(mean_sea_ice))
+# Checkpoint the reference state
+Oceananigans.Simulations.callback_state(n::NormalizeTotalWater) = (; reference_water = n.reference_water.value)
 
-@inline freshwater_correction(::Nothing, instantaneous_mean, α) = instantaneous_mean
-
-@inline function freshwater_correction(running_mean, instantaneous_mean, α)
-    running_mean .+= α .* (instantaneous_mean .- running_mean)
-    return running_mean
+function Oceananigans.Simulations.restore_callback_state!(n::NormalizeTotalWater, state)
+    n.reference_water.value = state.reference_water
+    return n
 end
 
-# The reduced means stay 1×1×1 arrays and are broadcast against the 2-D flux fields: reading one as a
-# scalar would index a GPU array from the host. The lazy `⟨Jʷ⟩ - ⟨Jʷⁱᵒ⟩` also fuses into whichever
-# broadcast consumes it, so no intermediate is materialized on the device each step.
-function (n::NormalizeFreshwaterFlux)(sim)
-    compute!(n.mean_total)
-    Jʷ   = interior(n.mean_total)
-    Jʷⁱᵒ = sea_ice_freshwater_mean(n.mean_sea_ice)
-    correction = freshwater_correction(n.running_mean, Jʷ .- Jʷⁱᵒ, n.memory_coefficient)
-    interior(n.freshwater_flux)   .-= correction
-    interior(n.heat_content_flux) .-= correction .* n.surface_temperature
-
-    mask_immersed_field!(n.freshwater_flux)
-    mask_immersed_field!(n.heat_content_flux)
-    fill_halo_regions!(n.freshwater_flux)
-    fill_halo_regions!(n.heat_content_flux)
-
+function (n::NormalizeTotalWater)(sim)
+    excess = total_water(sim.model) - n.reference_water.value
+    correct_sea_level!(sim.model.ocean.model, n.relaxation * excess / n.wet_area)
     return nothing
 end
 
@@ -377,16 +428,20 @@ plumbing is needed because `NumericalEarth.EarthSystemModels` provides
 - `restoring_dir`: directory for restoring/IC climatology. Default: `"climatology"`.
 - `piston_velocity`: surface salinity restoring piston velocity in m/day. Default: `1/6`.
   Restoring is applied uniformly over the ocean surface, including under sea ice.
-- `normalize_freshwater`: removal of the global mean of the atmospheric surface freshwater flux, which
-  holds the global ocean volume fixed. The freshwater heat content is corrected alongside it so the
-  adjustment leaves the carried heat flux unchanged, and the sea-ice exchange is excluded so the
-  ocean + sea-ice water budget is untouched. Options:
+- `normalize_freshwater`: removal of the drift in total ocean + sea-ice + snow water, held to its
+  initial value by lowering or raising the free surface. Tracer concentrations are rescaled by the
+  same factor within each column, so heat and salt content are unchanged and the stratification is
+  scaled rather than shifted — a surface-flux correction instead lands on the top cell alone, which
+  crosses convection thresholds in marginally-stable columns. Because the controller measures the
+  total rather than predicting it from a flux, it is self-correcting, ignores ocean--sea-ice exchange
+  (which leaves the total untouched), and still catches snowfall intercepted by the ice and
+  sublimation off it. Options:
     * `:none` (or `false`, the default): no correction.
-    * `:timestep` (or `true`): remove the instantaneous global mean. Pins the volume exactly, so any
-      residual drift is an internal leak rather than forcing imbalance — but also removes the physical
-      seasonal cycle of land water storage, which is comparable in size to the secular imbalance.
-    * `:annual`: remove a running mean relaxed toward the instantaneous one over a year, which removes
-      the drift while leaving the seasonal cycle in place. The correction spins up over the first year.
+    * `:timestep` (or `true`): remove the whole excess each step. Pins the total exactly, but also
+      removes the physical seasonal cycle of land water storage, which is comparable in size to the
+      secular imbalance.
+    * `:annual`: remove `Δt / 365.25days` of the excess each step, which removes the drift while
+      leaving the seasonal cycle in place.
 - `start_date`, `end_date`: bracket for forcing/restoring metadata. Defaults: 1958-01-01 .. 2018-01-01.
 - `Δt`: simulation time step. Per-config default: `5minutes` for `:twelfthdegree`, `20minutes` for
   `:quarterdegree`, `30minutes` otherwise.
@@ -560,7 +615,7 @@ function omip_simulation(config::Symbol = :halfdegree;
     # place for the ocean step that consumes it.
     if freshwater_normalization(normalize_freshwater) !== :none
         averaging_timescale = freshwater_averaging_timescale(normalize_freshwater)
-        add_callback!(simulation, NormalizeFreshwaterFlux(coupled, Δt, averaging_timescale), IterationInterval(1))
+        add_callback!(simulation, NormalizeTotalWater(coupled, Δt, averaging_timescale), IterationInterval(1))
     end
 
 
