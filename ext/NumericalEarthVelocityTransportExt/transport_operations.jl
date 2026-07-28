@@ -1,5 +1,6 @@
 mutable struct SharedTransportStatus{T}
     last_time :: Union{Nothing, T}
+    untimed_components :: UInt8
     computations :: Int
 end
 
@@ -16,20 +17,35 @@ struct RegriddedTransportCache{R, U, V, SU, SV, B, S}
     status :: S
 end
 
-struct RegriddedUTransportOperand{C}
-    cache :: C
+const RegriddedUTransportOperation =
+    RegriddedOperation{Face, Center, Nothing, G, T, S, D, R} where
+        {G, T, S, D, R <: RegriddedTransportCache}
+
+const RegriddedVTransportOperation =
+    RegriddedOperation{Center, Face, Nothing, G, T, S, D, R} where
+        {G, T, S, D, R <: RegriddedTransportCache}
+
+function should_compute_transport!(status, time, component)
+    if isnothing(time)
+        component_already_served = !iszero(status.untimed_components & component)
+
+        if component_already_served || iszero(status.untimed_components)
+            status.untimed_components = component
+            return true
+        end
+
+        status.untimed_components |= component
+        return false
+    end
+
+    status.untimed_components = 0x00
+    already_computed = status.last_time == time
+    status.last_time = time
+    return !already_computed
 end
 
-struct RegriddedVTransportOperand{C}
-    cache :: C
-end
-
-const RegriddedUTransportField = Field{Face, Center, Nothing, <:RegriddedUTransportOperand}
-const RegriddedVTransportField = Field{Center, Face, Nothing, <:RegriddedVTransportOperand}
-
-function compute_regridded_transport!(cache, time)
-    already_computed = !isnothing(time) && cache.status.last_time == time
-    already_computed && return nothing
+function compute_regridded_transport!(cache, time, component)
+    should_compute_transport!(cache.status, time, component) || return nothing
 
     compute_at!(cache.vertically_integrated_u, time)
     compute_at!(cache.vertically_integrated_v, time)
@@ -45,7 +61,6 @@ function compute_regridded_transport!(cache, time)
     mul!(cache.destination_v_buffer, regridder.Wvu, cache.source_u_buffer)
     mul!(cache.destination_v_buffer, regridder.Wvv, cache.source_v_buffer, 1.0, 1.0)
 
-    cache.status.last_time = time
     cache.status.computations += 1
     return nothing
 end
@@ -57,52 +72,66 @@ function copy_regridded_transport!(field, buffer)
     return field
 end
 
-function Oceananigans.Fields.compute!(field::RegriddedUTransportField, time=nothing)
-    cache = field.operand.cache
-    compute_regridded_transport!(cache, time)
-    return copy_regridded_transport!(field, cache.destination_u_buffer)
+function Fields.compute_at!(operation::RegriddedUTransportOperation, time)
+    cache = operation.regridder
+    compute_regridded_transport!(cache, time, 0x01)
+    copy_regridded_transport!(operation.destination, cache.destination_u_buffer)
+    return nothing
 end
 
-function Oceananigans.Fields.compute!(field::RegriddedVTransportField, time=nothing)
-    cache = field.operand.cache
-    compute_regridded_transport!(cache, time)
-    return copy_regridded_transport!(field, cache.destination_v_buffer)
+function Fields.compute_at!(operation::RegriddedVTransportOperation, time)
+    cache = operation.regridder
+    compute_regridded_transport!(cache, time, 0x02)
+    copy_regridded_transport!(operation.destination, cache.destination_v_buffer)
+    return nothing
 end
 
-function regridded_transport_field(grid, operand, location)
-    indices = (:, :, :)
-    boundary_conditions = FieldBoundaryConditions(grid, location)
-    data = new_data(grid, location, indices)
-    return Field(location, grid, data, boundary_conditions, indices, operand, nothing)
+function transport_component_operation(destination::AbstractField{LX, LY, LZ, G, T},
+                                       cache,
+                                       source) where {LX, LY, LZ, G, T}
+    S = typeof(source)
+    D = typeof(destination)
+    R = typeof(cache)
+    return RegriddedOperation{LX, LY, LZ, G, T, S, D, R}(destination.grid,
+                                                          source,
+                                                          destination,
+                                                          cache)
 end
 
-function Diagnostics.regridded_transport_operation(source_u::AbstractField{Face, Center, Center},
-                                                    source_v::AbstractField{Center, Face, Center},
-                                                    destination_grid;
-                                                    time=zero(eltype(source_u.grid)))
-    source_u.grid === source_v.grid ||
-        throw(ArgumentError("source_u and source_v must be defined on the same grid"))
+function Oceananigans.AbstractOperations.RegriddedOperation(
+    source::NamedTuple{
+        (:u, :v),
+        <:Tuple{
+            <:AbstractField{Face, Center, Center},
+            <:AbstractField{Center, Face, Center},
+        },
+    },
+    destination_grid;
+    time = zero(eltype(source.u.grid)),
+)
+    source.u.grid === source.v.grid ||
+        throw(ArgumentError("source.u and source.v must be defined on the same grid"))
 
     # Integrating first keeps the expensive three-dimensional fields on their
     # original architecture. Only two horizontal transport arrays move to CPU.
     # TODO: Move the reusable C-grid operation into Oceananigans if it gains an
     # optional geometry interface. NumericalEarth should then keep only this
     # diagnostic constructor.
-    vertically_integrated_u = Field(Integral(source_u * Δy; dims=3); compute=false)
-    vertically_integrated_v = Field(Integral(source_v * Δx; dims=3); compute=false)
+    vertically_integrated_u = Field(Integral(source.u * Δy; dims=3); compute=false)
+    vertically_integrated_v = Field(Integral(source.v * Δx; dims=3); compute=false)
 
     cpu_destination_grid = on_architecture(CPU(), destination_grid)
-    regridder = Diagnostics.velocity_transport_regridder(cpu_destination_grid, source_u.grid)
+    regridder = Diagnostics.velocity_transport_regridder(cpu_destination_grid, source.u.grid)
 
     source_u_buffer = zeros(Float64, prod(regridder.source_u_size))
     source_v_buffer = zeros(Float64, prod(regridder.source_v_size))
     destination_u_buffer = zeros(Float64, prod(regridder.destination_u_size))
     destination_v_buffer = zeros(Float64, prod(regridder.destination_v_size))
-    status = SharedTransportStatus{typeof(time)}(nothing, 0)
+    status = SharedTransportStatus{typeof(time)}(nothing, 0x00, 0)
 
     cache = RegriddedTransportCache(regridder,
-                                    source_u,
-                                    source_v,
+                                    source.u,
+                                    source.v,
                                     vertically_integrated_u,
                                     vertically_integrated_v,
                                     source_u_buffer,
@@ -111,10 +140,29 @@ function Diagnostics.regridded_transport_operation(source_u::AbstractField{Face,
                                     destination_v_buffer,
                                     status)
 
-    u_operand = RegriddedUTransportOperand(cache)
-    v_operand = RegriddedVTransportOperand(cache)
-    u = regridded_transport_field(cpu_destination_grid, u_operand, (Face(), Center(), nothing))
-    v = regridded_transport_field(cpu_destination_grid, v_operand, (Center(), Face(), nothing))
+    destination_u = Field{Face, Center, Nothing}(cpu_destination_grid)
+    destination_v = Field{Center, Face, Nothing}(cpu_destination_grid)
+    u = transport_component_operation(destination_u, cache, source)
+    v = transport_component_operation(destination_v, cache, source)
 
     return (; u, v)
+end
+
+function Fields.Field(
+    operations::NamedTuple{
+        (:u, :v),
+        <:Tuple{<:RegriddedUTransportOperation, <:RegriddedVTransportOperation},
+    };
+    kwargs...,
+)
+    return (; u=Field(operations.u; kwargs...),
+              v=Field(operations.v; kwargs...))
+end
+
+function Diagnostics.regridded_transport_operation(source_u::AbstractField{Face, Center, Center},
+                                                    source_v::AbstractField{Center, Face, Center},
+                                                    destination_grid;
+                                                    kwargs...)
+    operations = RegriddedOperation((; u=source_u, v=source_v), destination_grid; kwargs...)
+    return Field(operations)
 end

@@ -1,13 +1,13 @@
 module NumericalEarthVelocityTransportExt
 
 using Oceananigans: Oceananigans
-using Oceananigans.AbstractOperations: Integral
+using Oceananigans.AbstractOperations: Integral, RegriddedOperation
 using Oceananigans.Architectures: CPU, on_architecture
-using Oceananigans.BoundaryConditions: FieldBoundaryConditions, fill_halo_regions!
-using Oceananigans.Fields: AbstractField, Field, XFaceField, YFaceField,
+using Oceananigans.BoundaryConditions: fill_halo_regions!
+using Oceananigans.Fields: Fields, AbstractField, Field, XFaceField, YFaceField,
                            compute_at!, interior
 using Oceananigans.Grids: Center, Face, LatitudeLongitudeGrid, RightFaceFolded,
-                          new_data, ξnode, ηnode
+                          ξnode, ηnode
 using Oceananigans.ImmersedBoundaries: ImmersedBoundaryGrid
 using Oceananigans.Operators: Δx, Δy, extrinsic_vector
 using Oceananigans.OrthogonalSphericalShellGrids: TripolarGrid

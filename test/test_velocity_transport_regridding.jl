@@ -2,8 +2,8 @@ include("runtests_setup.jl")
 
 using LibGEOS
 
-using NumericalEarth.Diagnostics: regridded_transport_operation
-using Oceananigans.Fields: compute_at!, interior, set!
+using Oceananigans.AbstractOperations: RegriddedOperation
+using Oceananigans.Fields: Field, interior, set!
 using Oceananigans.Grids: RightCenterFolded, RightFaceFolded
 using Oceananigans.Operators: Δxᶜᶠᵃ, Δyᶠᶜᵃ, Δzᶜᶠᶜ, Δzᶠᶜᶜ
 using Oceananigans.OrthogonalSphericalShellGrids: TripolarGrid
@@ -140,12 +140,11 @@ tripolar_size(::Type{RightCenterFolded}) = (16, 8, 3)
         transport_scale = sum(abs, manually_integrated_u) + sum(abs, manually_integrated_v)
         @test max(abs(source_east), abs(source_north)) / transport_scale < 1e-12
 
-        transport = regridded_transport_operation(source_u, source_v, destination_grid)
-        compute_at!(transport.u, 1.0)
-        compute_at!(transport.v, 1.0)
+        operations = RegriddedOperation((; u=source_u, v=source_v), destination_grid)
+        transport = Field(operations)
 
-        cache = transport.u.operand.cache
-        @test cache === transport.v.operand.cache && cache.status.computations == 1
+        cache = operations.u.regridder
+        @test cache === operations.v.regridder && cache.status.computations == 1
 
         destination_u = Array(interior(transport.u))
         destination_v = Array(interior(transport.v))

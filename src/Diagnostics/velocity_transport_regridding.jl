@@ -16,9 +16,12 @@ end
 """
 $(TYPEDSIGNATURES)
 
-Return lazy destination `u` and `v` transport fields for a pair of native
-C-grid face-normal flux densities. The vertical integral is evaluated before
-the two-dimensional conservative remap.
+Compatibility wrapper that returns lazy destination `u` and `v` transport
+fields for a pair of native C-grid face-normal flux densities. New code should
+use `Field(RegriddedOperation((; u, v), destination_grid))`.
+
+The vertical integral is evaluated before the two-dimensional conservative
+remap.
 
 This method is supplied by the optional velocity-transport extension. Load
 `LibGEOS` before calling it.
