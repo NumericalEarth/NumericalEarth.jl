@@ -8,9 +8,7 @@ using Oceananigans: Center, location
 using Oceananigans.Architectures: architecture, child_architecture
 using Oceananigans.BoundaryConditions: fill_halo_regions!
 using Oceananigans.DistributedComputations: @root
-using Oceananigans.Fields: Field, regrid_in_x!, regrid_in_y!
-using Oceananigans.Grids: LatitudeLongitudeGrid, topology,
-                          cpu_face_constructor_x, cpu_face_constructor_y
+using Oceananigans.Fields: Field, regrid!
 using Oceananigans.Utils: launch!
 
 using ..DataWrangling: DataWrangling, AbstractStaticDataset, Metadatum,
@@ -408,9 +406,9 @@ Oceananigans.Fields.location(::ESAWorldCoverMetadatum) = (Center, Center, Center
 #####
 ##### Regridding onto a model grid
 #####
-##### The fraction products are regridded conservatively (area-weighted), so each
-##### target cell carries the true area fraction of every class and the fractions
-##### still sum to one. The categorical `:landcover_class` is then the argmax of
+##### The fraction products ride Oceananigans' conservative (area-weighted)
+##### `regrid!`, so each target cell carries the true area fraction of every class
+##### and the fractions still sum to one. The categorical `:landcover_class` is the argmax of
 ##### those fractions — the class covering the most area of the target cell.
 ##### Bilinear interpolation of the codes would instead invent intermediate,
 ##### non-legend classes. Both extend the shared `interpolate_physical!` regrid
@@ -421,35 +419,8 @@ function DataWrangling.interpolate_physical!(target, native, metadata::ESAWorldC
     if metadata.name === :landcover_class
         majority_class_regrid!(target, metadata)
     else
-        conservative_regrid!(target, native)
+        regrid!(target, native)
     end
-    return target
-end
-
-# Conservative (area-weighted) horizontal regrid via chained one-dimensional
-# `regrid!` passes through an intermediate grid — the latitude/longitude analog
-# of `InitialConditions.three_dimensional_regrid!`. Because `regrid!` is a linear
-# area average, the per-class fractions still sum to one on the target grid.
-# TODO: collapse to Oceananigans' native multi-axis regrid once
-# CliMA/Oceananigans.jl#5716 lands.
-function conservative_regrid!(target, native)
-    target_grid = target.grid
-    source_grid = native.grid
-    arch = child_architecture(architecture(target_grid))
-
-    Ns = size(source_grid)
-    Nt = size(target_grid)
-
-    # Regrid latitude first (keeping the source longitude), then longitude.
-    latitude_grid = LatitudeLongitudeGrid(arch; size = (Ns[1], Nt[2]),
-                                          longitude = cpu_face_constructor_x(source_grid),
-                                          latitude  = cpu_face_constructor_y(target_grid),
-                                          topology  = topology(target_grid))
-    LX, LY, LZ = location(native)
-    latitude_field = Field{LX, LY, LZ}(latitude_grid)
-
-    regrid_in_y!(latitude_field, latitude_grid, source_grid, native)
-    regrid_in_x!(target, target_grid, latitude_grid, latitude_field)
     return target
 end
 
@@ -475,7 +446,7 @@ function majority_class_regrid!(target, metadata)
     for (name, code) in zip(ESA_WORLDCOVER_FRACTION_VARIABLE_NAMES, ESA_WORLDCOVER_CLASS_CODES)
         fraction_metadatum = Metadatum(name; dataset = metadata.dataset,
                                        region = metadata.region, dir = metadata.dir)
-        conservative_regrid!(fraction, Field(fraction_metadatum, arch))
+        regrid!(fraction, Field(fraction_metadatum, arch))
         launch!(arch, grid, :xyz, _accumulate_majority_class!,
                 target, largest_fraction, total_fraction, fraction, code)
     end
