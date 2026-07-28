@@ -117,7 +117,6 @@ export
     EN4Monthly,
     WOAClimatology, WOAAnnual, WOAMonthly,
     CopernicusAlbedo, CopernicusAlbedoClimatology, build_monthly_climatology!,
-    CopernicusVegetation, retrieval_flag_mask, unusable_retrieval_flags,
     MCD15A2H, MCD12Q1, MODISLAIClimatology, build_lai_climatology!,
     retained_retrieval_metadatum,
     lai_screening_mask, recommended_lai_screening, lai_rejection_flags,
@@ -289,7 +288,6 @@ using .DataWrangling.OSPapa
 using .DataWrangling.ERA5
 using .DataWrangling.SoilGrids
 using .DataWrangling.CopernicusLandAlbedo
-using .DataWrangling.CopernicusLandVegetation
 using .DataWrangling.MODISLand
 
 using PrecompileTools: @setup_workload, @compile_workload

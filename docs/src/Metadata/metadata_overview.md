@@ -210,7 +210,6 @@ NumericalEarth currently ships connectors for the following data products:
 | `SoilGrids 2.0`     | Global profiles of soil texture, bulk density, and organic content in upper 2 meters  | [SoilGrids documentation](https://docs.isric.org/globaldata/soilgrids/)                                   |
 | `CopernicusAlbedo` | `:albedo` — dekadal blue-sky broadband surface albedo on the global 1 km CGLS grid | [CGLS Surface Albedo](https://cds.climate.copernicus.eu/datasets/satellite-albedo) |
 | `CopernicusAlbedoClimatology` | `:albedo` — 12-month climatology of the CGLS blue-sky broadband albedo | [CGLS Surface Albedo](https://cds.climate.copernicus.eu/datasets/satellite-albedo) |
-| `CopernicusVegetation` | `:leaf_area_index` — dekadal *effective* leaf area index on the global 300 m C3S grid | [C3S LAI and fAPAR](https://cds.climate.copernicus.eu/datasets/satellite-lai-fapar) |
 | `MCD15A2H` | `:leaf_area_index`, `:fpar`, `:leaf_area_index_uncertainty` — 8-day 500 m MODIS composites | [MCD15A2H V061](https://www.earthdata.nasa.gov/data/catalog/lpcloud-mcd15a2h-061) |
 | `MODISLAIClimatology` | 46-period seasonal climatology of an [`MCD15A2H`](@ref) variable | [MCD15A2H V061](https://www.earthdata.nasa.gov/data/catalog/lpcloud-mcd15a2h-061) |
 | `MCD12Q1` | `:landcover_class`, `:quality_flag`, `:land_water_mask` — annual 500 m land cover on [`MCD15A2H`](@ref)'s lattice | [MCD12Q1 V061](https://www.earthdata.nasa.gov/data/catalog/lpcloud-mcd12q1-061) |

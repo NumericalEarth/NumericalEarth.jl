@@ -366,7 +366,6 @@ include("GEBCO/GEBCO.jl")
 include("IBCAO/IBCAO.jl")
 include("CopernicusDEM/CopernicusDEM.jl")
 include("CopernicusLandAlbedo/CopernicusLandAlbedo.jl")
-include("CopernicusLandVegetation/CopernicusLandVegetation.jl")
 include("MODISLand/MODISLand.jl")
 
 using .ETOPO
@@ -385,7 +384,6 @@ using .GEBCO
 using .IBCAO
 using .CopernicusDEM
 using .CopernicusLandAlbedo
-using .CopernicusLandVegetation
 using .MODISLand
 
 function dataset_modules()
