@@ -6,9 +6,10 @@ using Oceananigans.Architectures: on_architecture, architecture
 using Oceananigans.DistributedComputations: @root
 using Oceananigans.BoundaryConditions: DiscreteBoundaryFunction, getbc, fill_halo_regions!
 using Oceananigans.Fields: CenterField, interior
-using Oceananigans.ImmersedBoundaries: bottom_height_field
+using Oceananigans.ImmersedBoundaries: bottom_height_field, mask_immersed_field!
 using Oceananigans.Utils: launch!
 using Adapt: Adapt
+using ClimaSeaIce
 using NumericalEarth.Bathymetry: remove_minor_basins!
 using NumericalEarth.Oceans: MultipleFluxes, FreshwaterExchange, extract_freshwater_flux, freshwater_exchange
 using NumericalEarth.EarthSystemModels.InterfaceComputations: computed_fluxes
@@ -316,7 +317,11 @@ function (n::NormalizeFreshwaterFlux)(sim)
     correction = freshwater_correction(n.running_mean, Jʷ .- Jʷⁱᵒ, n.memory_coefficient)
     interior(n.freshwater_flux)   .-= correction
     interior(n.heat_content_flux) .-= correction .* n.surface_temperature
+
+    mask_immersed_field!(n.freshwater_flux)
+    mask_immersed_field!(n.heat_content_flux)
     fill_halo_regions!(n.freshwater_flux)
+    fill_halo_regions!(n.heat_content_flux)
 
     return nothing
 end
