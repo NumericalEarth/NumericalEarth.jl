@@ -1,8 +1,10 @@
 struct ERA5HourlySingleLevel <: ERA5Dataset end
 struct ERA5MonthlySingleLevel <: ERA5Dataset end
+struct ERA5YearlySingleLevel <: ERA5Dataset end
 
 dataset_name(::ERA5HourlySingleLevel)  = "ERA5HourlySingleLevel"
 dataset_name(::ERA5MonthlySingleLevel) = "ERA5MonthlySingleLevel"
+dataset_name(::ERA5YearlySingleLevel)  = "ERA5YearlySingleLevel"
 
 # Wave variables are on a 0.5° grid (720×361), atmospheric variables on 0.25° (1440×721)
 const ERA5_wave_variables = Set([
@@ -17,6 +19,7 @@ const ERA5_wave_variables = Set([
 # ERA5 reanalysis data available from 1940 to present (we use a practical range here)
 DataWrangling.all_dates(::ERA5HourlySingleLevel,  var) = range(DateTime("1940-01-01"), stop=DateTime("2024-12-31"), step=Hour(1))
 DataWrangling.all_dates(::ERA5MonthlySingleLevel, var) = range(DateTime("1940-01-01"), stop=DateTime("2024-12-01"), step=Month(1))
+DataWrangling.all_dates(::ERA5YearlySingleLevel, var) = range(DateTime("1940-01-01"), stop=DateTime("2024-12-31"), step=Hour(1))
 
 # ERA5 single-level data is a spatially 2-D dataset
 DataWrangling.is_three_dimensional(::ERA5Metadata) = false
@@ -151,5 +154,61 @@ function DataWrangling.retrieve_data(metadata::ERA5Metadatum)
     # Add singleton z-dimension for 3D field compatibility
     # Return as (Nx, Ny, 1)
     return reshape(data_2d, size(data_2d, 1), size(data_2d, 2), 1)
+end
+
+#####
+##### ERA5YearlySingleLevel filename: year-based like JRA55
+#####
+
+# ERA5YearlySingleLevel: yearly files - one file per year per variable
+# All hours of a year point to the same file (like JRA55)
+function DataWrangling.metadata_filename(::ERA5YearlySingleLevel, name, date, region)
+    var = ERA5_dataset_variable_names[name]
+    year = Dates.year(date)
+
+    # Build region suffix if present
+    w, e = bbox_strs(isnothing(region) ? nothing : region.longitude)
+    s, n = bbox_strs(isnothing(region) ? nothing : region.latitude)
+    suffix = isnothing(region) ? "" : string(w, e, s, n)
+
+    # Format: variable_YYYY_bbox.nc or variable_YYYY.nc
+    return string(var, "_", year, suffix, ".nc")
+end
+
+# For ERA5YearlySingleLevel, all dates in a year use the SAME file
+# So return a single String, not a DatewiseFilename!
+function DataWrangling.build_filename(dataset::ERA5YearlySingleLevel, name, dates::AbstractArray, region)
+    # All dates should be in the same year for now
+    # Return the filename for the first date (which covers all dates in that year)
+    return DataWrangling.metadata_filename(dataset, name, dates[1], region)
+end
+
+#####
+##### ERA5MonthlySingleLevel filename: month-based
+#####
+
+# ERA5MonthlySingleLevel: monthly files - one file per month per variable
+# All hours of a month point to the same file
+function DataWrangling.metadata_filename(::ERA5MonthlySingleLevel, name, date, region)
+    var = ERA5_dataset_variable_names[name]
+    year = Dates.year(date)
+    month = Dates.month(date)
+
+    # Build region suffix if present
+    w, e = bbox_strs(isnothing(region) ? nothing : region.longitude)
+    s, n = bbox_strs(isnothing(region) ? nothing : region.latitude)
+    suffix = isnothing(region) ? "" : string(w, e, s, n)
+
+    # Format: variable_YYYY_MM_bbox.nc or variable_YYYY_MM.nc
+    month_str = lpad(month, 2, '0')
+    return string(var, "_", year, "_", month_str, suffix, ".nc")
+end
+
+# For ERA5MonthlySingleLevel, all dates in a month use the SAME file
+# So return a single String, not a DatewiseFilename!
+function DataWrangling.build_filename(dataset::ERA5MonthlySingleLevel, name, dates::AbstractArray, region)
+    # All dates should be in the same month
+    # Return the filename for the first date (which covers all dates in that month)
+    return DataWrangling.metadata_filename(dataset, name, dates[1], region)
 end
 
