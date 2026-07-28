@@ -649,18 +649,35 @@ Keyword Argument
 ================
 - `start_time`: The start time for calculating the time difference. Defaults to the first
                 date in the metadata.
+
+Each date is advanced by the dataset's [`time_window_offset`](@ref), so a product whose
+files are stamped at the *start* of an averaging window lands on the time its values
+actually represent.
 """
 function native_times(metadata; start_time=first(metadata).dates)
     times = zeros(length(metadata))
     for (t, data) in enumerate(metadata)
         date = data.dates
         delta = date - start_time
-        delta = Second(delta).value
+        delta = Second(delta).value + time_window_offset(data)
         times[t] = delta
     end
 
     return times
 end
+
+"""
+    time_window_offset(metadatum)
+
+The offset in seconds from the date a file is stamped with to the time the value it holds
+represents. Zero for an instantaneous sample, which is the default; half the averaging
+window for a product whose stamps label the start of a compositing period.
+
+Leaving a composited product at zero gives every temporal interpolation of it a systematic
+phase lead of half a period — harmless where the field barely moves, a real error across a
+green-up or a spin-up.
+"""
+time_window_offset(metadatum) = 0
 
 ####
 #### Metadata interface

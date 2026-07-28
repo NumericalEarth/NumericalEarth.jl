@@ -4,7 +4,8 @@ using NumericalEarth.DataWrangling: BoundingBox, Metadatum, Metadata, native_gri
     is_three_dimensional, default_inpainting, dataset_variable_name, metadata_filename,
     longitude_name, latitude_name, all_dates, native_times, available_variables,
     longitude_interfaces, latitude_interfaces, validate_dataset_coverage,
-    retrieve_data, read_file_coords, region_info, composite_dates, fill_gaps!
+    retrieve_data, read_file_coords, region_info, composite_dates, fill_gaps!,
+    time_window_offset
 using NumericalEarth.DataWrangling.MODISLand: MODISLand, mask_lai_fill, lai_screening_flags,
     parse_granule_name, select_granules, cmr_granules_url, regional_lattice,
     periods_per_year, period_index, reduce_retained, stored_granule_layers,
@@ -728,7 +729,7 @@ end
     @test all(isnan, Λ[2, 1, 4:6])
 end
 
-@testset "MODIS composite window" begin
+@testset "MODIS composite window and stamp offset" begin
     dataset = MCD15A2H()
 
     # An 8-day composite is stamped at the start of its window, so its value sits four days
@@ -739,6 +740,23 @@ end
           (DateTime(2018, 12, 27), DateTime(2019, 1, 1))          # five days, common year
     @test composite_window(dataset, DateTime(2020, 12, 26)) ==
           (DateTime(2020, 12, 26), DateTime(2021, 1, 1))          # six days, leap year
+
+    region = BoundingBox(longitude = (-92.5, -91.5), latitude = (36.5, 37.5))
+    metadatum = Metadatum(:leaf_area_index; dataset, region, date = DateTime(2018, 1, 1))
+    @test time_window_offset(metadatum) == 4 * 86400
+
+    # A class map is not a temporal composite, so it keeps the default of no offset.
+    @test time_window_offset(Metadatum(:landcover_class; dataset = MCD12Q1(), region,
+                                       date = DateTime(2015))) == 0
+
+    # The 46 climatological stamps then span exactly one year rather than 46 × 8 = 368 days,
+    # which is what a cyclic series has to wrap on.
+    climatology = Metadata(:leaf_area_index; dataset = MODISLAIClimatology(), region)
+    times = native_times(climatology)
+    @test times[1] == 4 * 86400
+    @test times[2] - times[1] == 8 * 86400
+    @test times[end] - times[end - 1] == 6.5 * 86400
+    @test times[end] - times[1] + (times[end] - times[end - 1]) == 365 * 86400
 end
 
 @testset "MODIS land-cover change flag" begin

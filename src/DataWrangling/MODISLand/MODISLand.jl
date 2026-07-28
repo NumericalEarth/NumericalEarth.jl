@@ -806,6 +806,15 @@ function composite_window(dataset, date)
     return start, min(stop, year_start + Dates.Year(1))
 end
 
+# The stamp names the first day of the composite, so the value it holds represents the
+# middle of its window — four days later for a full 8-day period, and less for the short
+# one that ends the year.
+function DataWrangling.time_window_offset(metadatum::Union{MODISLAIMetadatum,
+                                                           MODISLAIClimatologyMetadatum})
+    start, stop = composite_window(metadatum.dataset, metadatum.dates)
+    return Dates.value(Dates.Second(stop - start)) / 2
+end
+
 #####
 ##### Filenames
 #####
