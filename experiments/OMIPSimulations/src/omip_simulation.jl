@@ -262,23 +262,23 @@ function freshwater_averaging_timescale(mode)
 end
 
 """
-    mutable struct ReferenceWater{FT}
-
-The total water the normalization holds the model to. Mutable so it can be re-anchored on restart
-while the enclosing normalization stays immutable and concretely typed.
-"""
-mutable struct ReferenceWater{FT}
-    value :: FT
-end
-
-"""
-    struct NormalizeTotalWater{R, FT}
+    struct NormalizeTotalWater{S, O, I, N, A, FT}
 
 Removes the drift in total ocean + sea-ice + snow water by adjusting the free surface, rescaling
-tracer concentrations by the same factor so their content is unchanged.
+tracer concentrations by the same factor so their content is unchanged. The reductions that measure
+the total are materialized once here and recomputed in place, so stepping allocates nothing. The
+reference, total and correction stay 1×1×1 arrays that are only ever combined by broadcasting:
+reading one as a scalar would index a GPU array from the host.
 """
-struct NormalizeTotalWater{R, FT}
-    reference_water :: R     # the total water to hold to, in freshwater-equivalent volume
+struct NormalizeTotalWater{S, O, I, N, A, FT}
+    surface_height  :: S     # workspace holding `η` on the ocean grid (see `compute_total_water!`)
+    ocean_water     :: O     # ∫η dA
+    sea_ice_water   :: I     # ∫hⁱ ℵ dA, or `nothing` without sea ice
+    snow_water      :: N     # ∫hˢ ℵ dA, or `nothing` without snow
+    reference_water :: A     # total water to hold to, in freshwater-equivalent volume
+    total_water     :: A     # workspace for the current total
+    correction      :: A     # workspace for δ, the sea-level adjustment
+    density_ratios  :: NTuple{2, FT}   # ρⁱ/ρᵒ and ρˢ/ρᵒ
     wet_area        :: FT    # ∫dA over wet columns, the area the correction is spread over
     relaxation      :: FT    # fraction of the excess removed each step
 end
@@ -289,12 +289,36 @@ function NormalizeTotalWater(coupled_model, Δt, averaging_timescale)
 
     unit_area = Field{Center, Center, Nothing}(grid)
     set!(unit_area, 1)
-    wet_area = only(interior(compute!(Field(Integral(unit_area)))))
+    wet_area = Array(interior(compute!(Field(Integral(unit_area)))))[1]
 
+    surface_height = Field{Center, Center, Nothing}(grid)
+    ocean_water = Field(Integral(surface_height))
+
+    sea_ice = coupled_model.sea_ice
+    ρᵒ = coupled_model.interfaces.ocean_properties.reference_density
+
+    sea_ice_water, snow_water, density_ratios = if isnothing(sea_ice)
+        nothing, nothing, (zero(FT), zero(FT))
+    else
+        si = sea_ice.model
+        hˢ = si.snow_thickness
+        (Field(Integral(si.ice_thickness * si.ice_concentration)),
+         isnothing(hˢ) ? nothing : Field(Integral(hˢ * si.ice_concentration)),
+         (convert(FT, uniform_value(si.sea_ice_density) / ρᵒ),
+          convert(FT, uniform_value(si.snow_density) / ρᵒ)))
+    end
+
+    reference_water, total_water, correction = (similar(interior(ocean_water)) for _ in 1:3)
     relaxation = isnothing(averaging_timescale) ? one(FT) : convert(FT, Δt / averaging_timescale)
-    reference_water = ReferenceWater(convert(FT, total_water(coupled_model)))
 
-    return NormalizeTotalWater(reference_water, convert(FT, wet_area), relaxation)
+    normalization = NormalizeTotalWater(surface_height, ocean_water, sea_ice_water, snow_water,
+                                        reference_water, total_water, correction, density_ratios,
+                                        convert(FT, wet_area), relaxation)
+
+    compute_total_water!(normalization, coupled_model)
+    reference_water .= total_water
+
+    return normalization
 end
 
 # Remove the volume drift by adjusting the free surface. Avoids problems with spurious convection 
@@ -304,7 +328,7 @@ end
     h = Oceananigans.Grids.static_column_depthᶜᶜᵃ(i, j, grid)
     @inbounds ηⁿ = η[i, j, k_top]
     H = h + ηⁿ
-    d = δ
+    @inbounds d = δ[1, 1, 1]
     correctable = (h > 0) & (H - d > 0)
     f = ifelse(correctable, H / (H - d), one(grid))
 
@@ -335,45 +359,41 @@ end
 @inline uniform_value(ρ::Oceananigans.Fields.ConstantField) = ρ.constant
 
 """
-    total_water(coupled_model)
+    compute_total_water!(n::NormalizeTotalWater, coupled_model)
 
-Water held by the ocean, sea ice and snow in freshwater-equivalent volume, up to the fixed reference
-volume `V₀` that cancels when differences are taken. `∫η dA` is a reduction over wet columns rather
-than over every cell, which keeps the summation roundoff orders of magnitude below the drift being
-removed.
+Accumulate into `n.total_water` the water held by the ocean, sea ice and snow in freshwater-equivalent
+volume, up to the fixed reference volume `V₀` that cancels when differences are taken. `∫η dA` is a
+reduction over wet columns rather than over every cell, which keeps the summation roundoff orders of
+magnitude below the drift being removed. Recomputes `n`'s reductions in place and allocates nothing.
 """
-function total_water(coupled_model)
-    ocean_model = coupled_model.ocean.model
-    W = only(interior(compute!(Field(Integral(ocean_model.free_surface.displacement)))))
+function compute_total_water!(n::NormalizeTotalWater, coupled_model)
+    # `Integral` over the free surface's own grid over-counts: with a `SplitExplicitFreeSurface` the
+    # displacement lives on a grid with extended halos, and reducing there returns an area 1.5× the
+    # wet area. Copying onto the ocean grid, where the same reduction gives ∫dA correctly, costs one
+    # 2-D copy per step against three reductions of the same size.
+    interior(n.surface_height) .= interior(coupled_model.ocean.model.free_surface.displacement)
+    n.total_water .= interior(compute!(n.ocean_water))
 
-    sea_ice = coupled_model.sea_ice
-    isnothing(sea_ice) && return W
+    ρⁱ, ρˢ = n.density_ratios
+    isnothing(n.sea_ice_water) || (n.total_water .+= ρⁱ .* interior(compute!(n.sea_ice_water)))
+    isnothing(n.snow_water)    || (n.total_water .+= ρˢ .* interior(compute!(n.snow_water)))
 
-    si = sea_ice.model
-    ρᵒ = coupled_model.interfaces.ocean_properties.reference_density
-    Vⁱ = only(interior(compute!(Field(Integral(si.ice_thickness * si.ice_concentration)))))
-    W += uniform_value(si.sea_ice_density) / ρᵒ * Vⁱ
-
-    hˢ = si.snow_thickness
-    if !isnothing(hˢ)
-        Vˢ = only(interior(compute!(Field(Integral(hˢ * si.ice_concentration)))))
-        W += uniform_value(si.snow_density) / ρᵒ * Vˢ
-    end
-
-    return W
+    return n.total_water
 end
 
 # Checkpoint the reference state
-Oceananigans.Simulations.callback_state(n::NormalizeTotalWater) = (; reference_water = n.reference_water.value)
+Oceananigans.Simulations.callback_state(n::NormalizeTotalWater) =
+    (; reference_water = Array(n.reference_water)[1])
 
 function Oceananigans.Simulations.restore_callback_state!(n::NormalizeTotalWater, state)
-    n.reference_water.value = state.reference_water
+    n.reference_water .= state.reference_water
     return n
 end
 
 function (n::NormalizeTotalWater)(sim)
-    excess = total_water(sim.model) - n.reference_water.value
-    correct_sea_level!(sim.model.ocean.model, n.relaxation * excess / n.wet_area)
+    compute_total_water!(n, sim.model)
+    n.correction .= n.relaxation .* (n.total_water .- n.reference_water) ./ n.wet_area
+    correct_sea_level!(sim.model.ocean.model, n.correction)
     return nothing
 end
 
