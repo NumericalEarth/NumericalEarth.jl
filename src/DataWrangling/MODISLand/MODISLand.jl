@@ -6,7 +6,7 @@ export MCD15A2H, MCD12Q1, MODISLAIClimatology, build_lai_climatology!,
        mask_lai_landcover, modis_landcover_class_names,
        landcover_class_names, igbp_class_names, igbp_non_vegetated_classes,
        class_fraction, class_fractions,
-       class_maximum_gap, landcover_change_flag,
+       class_maximum_gap, landcover_change_flag, zero_non_vegetated!,
        period_index, composite_window
 
 using Dates: Dates, DateTime, Day, dayofyear
@@ -1325,6 +1325,55 @@ function class_maximum_gap(land_cover; periods = igbp_maximum_gap_periods, defau
         class = round(Int, code)
         return (1 ≤ class ≤ length(periods)) ? periods[class] : default
     end
+end
+
+"""
+    zero_non_vegetated!(series, land_cover; classes = igbp_non_vegetated_classes)
+
+Write a leaf area index of zero into every cell of `series` whose land-cover class is in
+`classes` — water, urban, permanent snow and barren by default. Returns `series`.
+
+These are the cells [`fill_seasonal_gaps!`](@ref) deliberately leaves missing, because the
+product does not retrieve there and borrowing a neighbour's canopy for them would be an
+invention. Zero is not a stand-in for the missing value: it is the value. Leaf area per unit
+ground area over open water is zero.
+
+Run it **after** the fill and **before** landing the series on a model grid, which is the
+order that leaves nothing for the regrid's stencil to spread — a `NaN` at a shoreline
+otherwise dilates into its neighbours, while a zero blends into the cell mean correctly,
+since leaf area is already per unit *ground* area.
+
+Keep the class field alongside the result. Zero says there is no canopy; it does not say
+whether the surface is a lake or a car park, and those want roughness lengths four orders of
+magnitude apart. A canopy closure fed this field alone reads a city as smoother than a wheat
+field.
+
+Score a fill before zeroing, never after: [`gap_fill_denial`](@ref) samples cells that carry
+a value, so zeroed water would enter the sample as truth the chain reproduces exactly.
+"""
+function zero_non_vegetated!(data::AbstractArray, land_cover;
+                             classes = igbp_non_vegetated_classes)
+
+    Λ = DataWrangling.seasonal_array(data)
+    codes = DataWrangling.horizontal_array(land_cover)
+
+    size(codes) == size(Λ)[1:2] ||
+        throw(ArgumentError("The land-cover array is $(size(codes)) but the series is " *
+                            "$(size(Λ)[1:2]) in space; both must be on the same lattice."))
+
+    for t in axes(Λ, 3), j in axes(Λ, 2), i in axes(Λ, 1)
+        code = codes[i, j]
+        isfinite(code) && round(Int, code) in classes && (Λ[i, j, t] = 0)
+    end
+
+    return data
+end
+
+function zero_non_vegetated!(fts::DataWrangling.FieldTimeSeries, land_cover; kw...)
+    data = Array(DataWrangling.interior(fts))
+    zero_non_vegetated!(data, land_cover; kw...)
+    copyto!(DataWrangling.interior(fts), data)
+    return fts
 end
 
 """

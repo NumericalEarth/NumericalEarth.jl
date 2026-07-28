@@ -614,3 +614,42 @@ end
 # whatever consumes the field: compare the roughness distribution over **filled** cells against
 # **observed** ones. If they differ systematically, the gap fill is biasing the field it exists
 # to serve, and every check above can still pass.
+
+# ## What the model is handed
+#
+# Everything the chain leaves missing is water, urban, permanent snow or barren — measured
+# below, it is *all* of it, with no vegetated cell left dry in either treatment. Those cells
+# are not missing a value. Their leaf area per unit ground area is zero, and that is the value
+# to write.
+#
+# Scoring came first on purpose: `gap_fill_denial` samples cells that carry a value, so zeroed
+# water entering the sample as truth the chain reproduces exactly would inflate every score.
+
+for (name, series) in ("climatology" => Λfilled, "2019" => Λ2019)
+    left = isnan.(horizontal(series))
+    vegetated_left = count(t -> left[t] && !non_vegetated[t[1], t[2]], CartesianIndices(left))
+    @printf("\n%s: %.3f%% left unfilled, of which %d cell-periods are vegetated\n",
+            name, 100 * mean(left), vegetated_left)
+
+    zero_non_vegetated!(series, classes)
+    @printf("  after zeroing the non-vegetated classes : %d NaN remaining\n",
+            count(isnan, horizontal(series)))
+end
+
+# Zeroing before the regrid rather than after is what keeps the model grid clean: a `NaN` at a
+# shoreline dilates into its neighbours through the interpolation stencil, while a zero blends
+# into the cell mean correctly, because leaf area is already per unit *ground* area. A model
+# cell half lake and half forest genuinely carries half the forest's leaf area.
+
+Λmodel = Field{Center, Center, Nothing}(grid)
+Oceananigans.Fields.interpolate!(Λmodel, Λfilled[peak])
+
+@printf("\nOn the %d x %d model grid at the seasonal peak\n", size(grid, 1), size(grid, 2))
+@printf("  cells with no value : %d\n", count(isnan, Array(interior(Λmodel))))
+@printf("  regional mean Λ     : %.3f m² m⁻²\n", nanmean(Λmodel))
+
+# The class field has to travel with it. Zero says there is no canopy; it does not say whether
+# the surface is a lake or a car park, and those want roughness lengths four orders of
+# magnitude apart. A canopy closure handed this field alone would read a city as smoother than
+# a wheat field — which is why `class_fractions` above is part of the deliverable and not a
+# diagnostic.

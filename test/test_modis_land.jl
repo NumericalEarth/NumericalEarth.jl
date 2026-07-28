@@ -759,6 +759,42 @@ end
     @test times[end] - times[1] + (times[end] - times[end - 1]) == 365 * 86400
 end
 
+@testset "Zeroing the non-vegetated classes" begin
+    Λ = fill(NaN32, 3, 1, 4)
+    Λ[1, 1, :] .= 1f0:4f0                          # forest, observed
+    Λ[3, 1, 2] = 7                                 # a stray retrieval over water
+
+    codes = Float32[igbp_class_names.deciduous_broadleaf_forest;
+                    igbp_class_names.water;
+                    igbp_class_names.urban;;]
+
+    zero_non_vegetated!(Λ, codes)
+
+    # The two non-vegetated columns carry zero at every period — leaf area per unit ground
+    # area over water and tarmac is zero, not unknown.
+    @test all(iszero, Λ[2, 1, :])
+    @test all(iszero, Λ[3, 1, :])
+    @test count(isnan, Λ) == 0
+
+    # A vegetated column is untouched, and so is a value the product did retrieve over a
+    # non-vegetated cell: the class decides, not the presence of a value.
+    @test Λ[1, 1, :] == Float32[1, 2, 3, 4]
+
+    # Cells with no class at all are left alone — nothing says they carry no canopy.
+    unclassified = fill(NaN32, 2, 1, 3)
+    zero_non_vegetated!(unclassified, fill(NaN32, 2, 1))
+    @test all(isnan, unclassified)
+
+    # Which classes count is a keyword, because a different legend numbers them differently.
+    grassland = reshape(Float32[NaN, NaN], 2, 1, 1)
+    zero_non_vegetated!(grassland, Float32[igbp_class_names.grassland; igbp_class_names.water;;];
+                        classes = (igbp_class_names.grassland,))
+    @test iszero(grassland[1, 1, 1])
+    @test isnan(grassland[2, 1, 1])
+
+    @test_throws ArgumentError zero_non_vegetated!(fill(NaN32, 3, 1, 4), fill(NaN32, 2, 1))
+end
+
 @testset "MODIS land-cover change flag" begin
     # Two ends that each hold one class, and differ: changed.
     forest_to_pasture = reshape(Float32[4, 4, 4, 10, 10, 10, 10], 1, 1, 7)

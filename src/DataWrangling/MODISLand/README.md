@@ -218,6 +218,26 @@ fill_seasonal_gaps!(Λ2019, classes; anchor = Λ, cyclic = false)
 `gap_fill_denial` scores any of this by withholding values the chain would otherwise have
 kept and comparing the estimates against them, per class. It needs no new downloads.
 
+What the chain leaves missing is the non-vegetated classes, and measured over both demo boxes
+that is *all* of it — no vegetated cell runs out of donors. Those cells are not missing a
+value: leaf area per unit ground area over water or tarmac is zero, and that is the value to
+write.
+
+```julia
+zero_non_vegetated!(Λ, classes)     # after the fill, before the regrid
+```
+
+Do it in that order. A `NaN` at a shoreline dilates into its neighbours through the
+interpolation stencil, while a zero blends into the cell mean correctly — leaf area is
+already per unit ground area, so a model cell half lake and half forest genuinely carries
+half the forest's. Score the fill before zeroing, never after: `gap_fill_denial` samples
+cells that carry a value, and zeroed water would enter the sample as truth the chain
+reproduces exactly.
+
+Keep the class field alongside the result. Zero says there is no canopy; it does not say
+whether the surface is a lake or a car park, and those want roughness lengths four orders of
+magnitude apart.
+
 An averaging cadence is a plain function on the filled series rather than another product.
 The composites are window averages already and 8-day periods do not nest inside months, so
 the samples straddling each edge are split by their days of overlap:
