@@ -248,7 +248,7 @@ build_lai_climatology!(deep; region, periods = low_period:low_period)
         100 * mean(year_gaps), 100 * maximum(year_gaps), 100 * mean(seasonal_gaps))
 
 # Whatever compositing leaves behind is filled along the time axis. A seasonal series is
-# periodic, so December's neighbour is January: `fill_gaps!(cyclic = true)` interpolates across
+# periodic, so December's neighbor is January: `fill_gaps!(cyclic = true)` interpolates across
 # the wrap instead of extending the last valid value, which is what an open-series fill would do
 # at both ends. The rivers stay missing at every period, so the fill cannot close them — and
 # should not.
@@ -305,7 +305,7 @@ scatterlines!(ax, day_of_year, 100 .* filled_gaps, color = :steelblue, markersiz
 scatter!(ax, [day_of_year[wettest]], [100 * gap_fraction(Λwettest)],
          color = :firebrick, marker = :star5, markersize = 20,
          label = "cloudiest period, $(deep.years)")
-hlines!(ax, [100 * class_fraction], color = :grey40, linestyle = :dash,
+hlines!(ax, [100 * class_fraction], color = :gray40, linestyle = :dash,
         label = "land-cover classes (the floor)")
 axislegend(ax, position = :rt)
 
@@ -317,7 +317,7 @@ axislegend(ax, position = :rt)
 # dilation is a perimeter effect rather than an area one. The peak period's gaps are almost
 # entirely the connected river network, which has little perimeter for its area and grows by
 # about a third; the low period's are the scattered cells the temporal fill could not reach, and
-# each isolated cell recruits its three neighbours. Gap *geometry*, not gap fraction, sets what
+# each isolated cell recruits its three neighbors. Gap *geometry*, not gap fraction, sets what
 # the regrid costs.
 
 function on_model_grid(native)

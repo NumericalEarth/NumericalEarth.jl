@@ -48,7 +48,7 @@ end
     shape = seasonal_shape(Nt)
     Λ = uniform_series(shape, 8, 8)
 
-    # One cell sits at twice its neighbours' level and is missing at one period.
+    # One cell sits at twice its neighbors' level and is missing at one period.
     Λ[3, 3, :] .= 2 .* shape
     Λ[3, 3, 5] = NaN32
     classes = fill(Float32(2), 8, 8)
@@ -85,7 +85,7 @@ end
     @test Λ[3, 3, 7] ≈ 3 * near_zero[7] rtol = 1e-5
 
     # A cell is excluded from its own donor pool: with the target left in, a cell at twice
-    # its neighbours' level would drag the donor towards itself and the scaling towards one.
+    # its neighbors' level would drag the donor toward itself and the scaling toward one.
     Λ = uniform_series(shape, 4, 4)
     Λ[2, 2, :] .= 5 .* shape
     Λ[2, 2, 6] = NaN32
@@ -138,7 +138,7 @@ end
     end
 
     # A deciduous cell at the class boundary must not be filled from its evergreen
-    # neighbours: they are one cell away and carry the wrong seasonal shape entirely.
+    # neighbors: they are one cell away and carry the wrong seasonal shape entirely.
     Λ[5, 4, 3] = NaN32
     fill_seasonal_gaps!(Λ, classes; cyclic = true, maximum_gap = 0, block_size = 4,
                         minimum_donors = 4)
@@ -154,7 +154,7 @@ end
     Λ = uniform_series(shape, 32, 32)
 
     # Period 5 is blank across three rings of blocks around block (2, 2) — synoptic overcast,
-    # which is exactly the case a fixed neighbourhood is empty for.
+    # which is exactly the case a fixed neighborhood is empty for.
     for j in 1:32, i in 1:32
         bi, bj = (i - 1) ÷ block + 1, (j - 1) ÷ block + 1
         (abs(bi - 2) ≤ 2 && abs(bj - 2) ≤ 2) && (Λ[i, j, 5] = NaN32)

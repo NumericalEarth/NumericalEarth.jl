@@ -95,7 +95,7 @@ function set!(fts::DatasetFieldTimeSeries, backend=fts.backend)
         # On the dataset's own grid, read straight onto the slice instead of building a native
         # field and interpolating it onto an identical grid — which is what `set!(field, metadatum)`
         # does unconditionally. The round trip is numerically the identity wherever the data is
-        # complete, but its bilinear stencil spreads every missing cell into its neighbours, so a
+        # complete, but its bilinear stencil spreads every missing cell into its neighbors, so a
         # dataset with honest gaps has its gap fraction inflated by the read. `ERA5_pressure_levels`
         # already carries this path for its own series type; this is the generic form of it.
         if on_native_grid(backend) && isnothing(inpainting)

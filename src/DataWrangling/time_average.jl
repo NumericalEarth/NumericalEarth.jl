@@ -54,7 +54,7 @@ overlap returns a value and one with none returns `NaN`.
 
 Returns `(; series, edges)`: the averaged series and the `Nw + 1` window edges. For a
 `FieldTimeSeries` input the result is a `FieldTimeSeries` on the same grid whose times are
-the window centres, on the same origin as the input's — which holds when `first(bounds)` is
+the window centers, on the same origin as the input's — which holds when `first(bounds)` is
 the date the input's own time axis is measured from.
 """
 function time_average(data::AbstractArray, bounds, window)
@@ -104,9 +104,9 @@ function time_average(fts::FieldTimeSeries, bounds, window)
     averaged, edges = time_average(Array(interior(fts)), bounds, window)
 
     origin = DateTime(first(bounds))
-    centres = [edges[w] + (edges[w + 1] - edges[w]) ÷ 2 for w in 1:(length(edges) - 1)]
-    times = [convert(eltype(fts.grid), Dates.value(Millisecond(centre - origin)) / 1000)
-             for centre in centres]
+    centers = [edges[w] + (edges[w + 1] - edges[w]) ÷ 2 for w in 1:(length(edges) - 1)]
+    times = [convert(eltype(fts.grid), Dates.value(Millisecond(center - origin)) / 1000)
+             for center in centers]
 
     LX, LY, LZ = location(fts)
     output = FieldTimeSeries{LX, LY, LZ}(fts.grid, times)

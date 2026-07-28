@@ -3,7 +3,7 @@
 # Compositing a leaf-area period across years removes cloud that is random from one year to
 # the next. It cannot remove cloud that recurs at the same calendar period every year — the
 # ITCZ, a monsoon, a windward slope — and neither can interpolating along the seasonal axis,
-# because the neighbouring periods are cloudy for the same reason. What is left has to be
+# because the neighboring periods are cloudy for the same reason. What is left has to be
 # borrowed from somewhere else, and that is only safe if the borrowing knows what it is
 # borrowing from: averaging across a forest/cropland boundary injects a biased value, and an
 # aerodynamic-roughness closure downstream sits where more leaf area gives *less* roughness,
@@ -16,7 +16,7 @@
 # water in one box, with a leaf-area cycle that swings by a factor of several between
 # leaf-off and full canopy. That range is the point — a class-keyed temporal tolerance and a
 # shape-preserving fill can only be falsified where the classes have *different* seasonal
-# behaviour, which a single-class evergreen box cannot show.
+# behavior, which a single-class evergreen box cannot show.
 #
 # ## Install dependencies
 #
@@ -148,7 +148,7 @@ axis_kw = (xlabel = "Longitude (ᵒ)", ylabel = "Latitude (ᵒ)")
 Λrange = (0, 6)
 
 ## Only nine of the seventeen IGBP classes occur in this box, so the map is drawn over a
-## compact index of the ones present and the colourbar spells them out. A 1-17 numeric scale
+## compact index of the ones present and the colorbar spells them out. A 1-17 numeric scale
 ## would be unreadable and would spend most of its range on classes that are not here.
 class_position = Dict(code => n for (n, code) in enumerate(present))
 class_index = [isnan(code) ? NaN32 : Float32(class_position[Int(code)]) for code in class_codes]
@@ -158,13 +158,13 @@ fig = Figure(size = (1600, 950))
 
 ax = Axis(fig[1, 1]; title = "One 8-day composite, $(Dates.format(date, "u dd yyyy"))", axis_kw...)
 plot = heatmap!(ax, Λsingle, colormap = :viridis, colorrange = Λrange,
-                nan_color = :grey80)
+                nan_color = :gray80)
 Colorbar(fig[1, 2], plot, label = "Λ (m² m⁻²)")
 
 ax = Axis(fig[1, 3]; title = "MCD12Q1 IGBP class (native 500 m grid)", axis_kw...)
 plot = heatmap!(ax, native_field(class_index),
                 colormap = cgrad(:tab10, length(present), categorical = true),
-                colorrange = (0.5, length(present) + 0.5), nan_color = :grey80)
+                colorrange = (0.5, length(present) + 0.5), nan_color = :gray80)
 Colorbar(fig[1, 4], plot, ticks = (1:length(present), class_labels))
 
 ax = Axis(fig[2, 1]; title = "Deciduous broadleaf fraction (model grid)", axis_kw...)
@@ -291,12 +291,12 @@ low, peak = argmin(seasonal_mean), argmax(seasonal_mean)
         seasonal_mean[peak] / seasonal_mean[low])
 
 # The provenance and reach fields are what make the result defensible rather than opaque. A
-# fill that reached four hundred kilometres is not the same datum as one that reached fifteen.
+# fill that reached four hundred kilometers is not the same datum as one that reached fifteen.
 #
 # Read the shares below before drawing conclusions about the donor stages from this box:
 # five years of compositing over a mid-latitude continental interior already brings the
 # residual to within a fraction of a percent of the non-vegetated floor, so almost everything
-# is observed and the donor stages barely fire. That is the favourable case, not the case
+# is observed and the donor stages barely fire. That is the favorable case, not the case
 # they exist for. The single year below is where they carry the result.
 
 provenance_share = Dict(name => mean(filled.provenance .== code)
@@ -336,7 +336,7 @@ changed = landcover_change_flag(annual_classes; window = 2)
 provenance_map(slice) =
     native_field(ifelse.(slice .== gap_fill_provenance.unfilled, UInt8(4), slice))
 
-provenance_colours = cgrad([:grey70, :goldenrod, :seagreen, :steelblue, :firebrick], 5,
+provenance_colors = cgrad([:gray70, :goldenrod, :seagreen, :steelblue, :firebrick], 5,
                            categorical = true)
 provenance_ticks = (0:4, ["observed", "temporal", "scaled", "class mean", "unfilled"])
 
@@ -351,12 +351,12 @@ fig = Figure(size = (1500, 900))
 ax = Axis(fig[1, 1]; axis_kw...,
           title = "Filled climatology, annual low ($(Dates.format(period_date(low), "u dd")))")
 heatmap!(ax, native_field(after[:, :, low]), colormap = :viridis, colorrange = Λrange,
-         nan_color = :grey80)
+         nan_color = :gray80)
 
 ax = Axis(fig[1, 2]; axis_kw...,
           title = "Filled climatology, seasonal peak ($(Dates.format(period_date(peak), "u dd")))")
 plot = heatmap!(ax, native_field(after[:, :, peak]), colormap = :viridis,
-                colorrange = Λrange, nan_color = :grey80)
+                colorrange = Λrange, nan_color = :gray80)
 Colorbar(fig[1, 3], plot, label = "Λ (m² m⁻²)")
 
 ax = Axis(fig[2, 1]; xlabel = "Day of year", ylabel = "Λ (m² m⁻²)",
@@ -367,7 +367,7 @@ scatter!(ax, day_of_year[[low, peak]], seasonal_mean[[low, peak]], color = :fire
 
 ax = Axis(fig[2, 2]; xlabel = "Day of year", ylabel = "Cells with no value (%)",
           title = "Gap fraction, cumulative by stage")
-scatterlines!(ax, day_of_year, 100 .* raw_gaps, color = :grey40, markersize = 6,
+scatterlines!(ax, day_of_year, 100 .* raw_gaps, color = :gray40, markersize = 6,
               label = "composited only")
 scatterlines!(ax, day_of_year, 100 .* temporal_gaps, color = :goldenrod, markersize = 6,
               label = "+ temporal")
@@ -384,14 +384,14 @@ nothing #hide
 
 # ![](modis_landcover_gap_fill_climatology.png)
 #
-# The peak and the low share one colour scale, which is the point of putting them side by
-# side: this canopy swings by more than a factor of eight, and the grey cells are the water
+# The peak and the low share one color scale, which is the point of putting them side by
+# side: this canopy swings by more than a factor of eight, and the gray cells are the water
 # and built-up surfaces that are never filled.
 #
 # The gap panel is the honest result rather than a flattering one. Five years of compositing
 # over a mid-latitude continental interior lands within a tenth of a percent of the
 # non-vegetated floor before any filling, so the three filled lines sit on top of each other
-# just above it and only the grey unfilled line has any structure. This box does not need the
+# just above it and only the gray unfilled line has any structure. This box does not need the
 # donor stages. The single year below does, and that is where they can be seen working.
 
 # ## The time axis
@@ -402,10 +402,10 @@ nothing #hide
 # read path applies that offset, and a series that did not would hand every interpolation a
 # four-day phase lead.
 
-## A representative cell for every curve below: deciduous broadleaf, nearest the box centre.
-centre = size(class_codes) .÷ 2
+## A representative cell for every curve below: deciduous broadleaf, nearest the box center.
+center = size(class_codes) .÷ 2
 deciduous = findall(==(Float32(igbp_class_names.deciduous_broadleaf_forest)), class_codes)
-i, j = Tuple(argmin(cell -> (cell[1] - centre[1])^2 + (cell[2] - centre[2])^2, deciduous))
+i, j = Tuple(argmin(cell -> (cell[1] - center[1])^2 + (cell[2] - center[2])^2, deciduous))
 
 times = Λfilled.times
 
@@ -435,7 +435,7 @@ ax = Axis(fig[1, 1]; xlabel = "Day of year", ylabel = "Λ (m² m⁻²)",
 lines!(ax, collect(green_up), [sample((day - 1) * 86400) for day in green_up],
        color = :seagreen, label = "interpolated")
 scatter!(ax, times ./ 86400 .+ 1, after[i, j, :], color = :firebrick, markersize = 9,
-         label = "composites, at their window centres")
+         label = "composites, at their window centers")
 xlims!(ax, first(green_up), last(green_up))
 axislegend(ax, position = :lt)
 
@@ -540,21 +540,21 @@ fig = Figure(size = (1600, 1150))
 ax = Axis(fig[1, 1]; axis_kw...,
           title = "2019-$(worst_date) as read ($(round(100 * single_year_gaps[worst_2019], digits = 1))% missing)")
 heatmap!(ax, native_field(raw_2019[:, :, worst_2019]), colormap = :viridis,
-         colorrange = Λrange, nan_color = :grey80)
+         colorrange = Λrange, nan_color = :gray80)
 
 ax = Axis(fig[1, 2]; axis_kw..., title = "2019-$worst_date after the chain")
 plot = heatmap!(ax, native_field(filled_2019[:, :, worst_2019]), colormap = :viridis,
-                colorrange = Λrange, nan_color = :grey80)
+                colorrange = Λrange, nan_color = :gray80)
 Colorbar(fig[1, 3], plot, label = "Λ (m² m⁻²)")
 
 ax = Axis(fig[1, 4]; axis_kw..., title = "What produced each cell")
 plot = heatmap!(ax, provenance_map(anchored.provenance[:, :, worst_2019]),
-                colormap = provenance_colours, colorrange = (-0.5, 4.5))
+                colormap = provenance_colors, colorrange = (-0.5, 4.5))
 Colorbar(fig[1, 5], plot, ticks = provenance_ticks)
 
 ax = Axis(fig[2, 1:3]; xlabel = "Days from 1 January 2019", ylabel = "Λ (m² m⁻²)",
           title = "One deciduous cell: 2019 against the $(climatology.years) climatology")
-lines!(ax, elapsed.(target.dates), climatology_2019[i, j, :], color = :grey40,
+lines!(ax, elapsed.(target.dates), climatology_2019[i, j, :], color = :gray40,
        linestyle = :dash, label = "climatology (the anchor)")
 lines!(ax, elapsed.(target.dates), filled_2019[i, j, :], color = :seagreen, linewidth = 2,
        label = "2019, filled")
@@ -637,7 +637,7 @@ for (name, series) in ("climatology" => Λfilled, "2019" => Λ2019)
 end
 
 # Zeroing before the regrid rather than after is what keeps the model grid clean: a `NaN` at a
-# shoreline dilates into its neighbours through the interpolation stencil, while a zero blends
+# shoreline dilates into its neighbors through the interpolation stencil, while a zero blends
 # into the cell mean correctly, because leaf area is already per unit *ground* area. A model
 # cell half lake and half forest genuinely carries half the forest's leaf area.
 

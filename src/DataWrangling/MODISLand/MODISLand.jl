@@ -84,7 +84,7 @@ non-vegetated classification of the same MODIS land cover the retrieval itself i
 Reading them is how a surface-property closure learns which cells are not vegetated without a
 separate land-cover product. They are **class codes**, so read them on the product's own grid:
 interpolating them onto another grid averages 250 against 254 into 252, which is a different
-class. A finer land-cover product (and a nearest-neighbour regrid) is the right tool once the
+class. A finer land-cover product (and a nearest-neighbor regrid) is the right tool once the
 model grid differs.
 """
 @inline mask_lai_landcover(DN) =
@@ -416,7 +416,7 @@ end
 
 Keep the granule `urls` whose composite begins on `date`, one per sinusoidal tile: the
 most recently processed, so a reprocessed tile supersedes its predecessor. A bounding-box
-granule search returns the neighbouring composites too (their date ranges overlap the
+granule search returns the neighboring composites too (their date ranges overlap the
 requested day), which is why the date is matched rather than trusted.
 """
 function select_granules(urls, date)
@@ -1334,13 +1334,13 @@ Write a leaf area index of zero into every cell of `series` whose land-cover cla
 `classes` — water, urban, permanent snow and barren by default. Returns `series`.
 
 These are the cells [`fill_seasonal_gaps!`](@ref) deliberately leaves missing, because the
-product does not retrieve there and borrowing a neighbour's canopy for them would be an
+product does not retrieve there and borrowing a neighbor's canopy for them would be an
 invention. Zero is not a stand-in for the missing value: it is the value. Leaf area per unit
 ground area over open water is zero.
 
 Run it **after** the fill and **before** landing the series on a model grid, which is the
 order that leaves nothing for the regrid's stencil to spread — a `NaN` at a shoreline
-otherwise dilates into its neighbours, while a zero blends into the cell mean correctly,
+otherwise dilates into its neighbors, while a zero blends into the cell mean correctly,
 since leaf area is already per unit *ground* area.
 
 Keep the class field alongside the result. Zero says there is no canopy; it does not say

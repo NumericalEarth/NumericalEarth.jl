@@ -361,7 +361,7 @@ end
     h10 = only(filter(u -> occursin("h10v05", u), selected))
     @test parse_granule_name(basename(h10)).production == 2020340132006
 
-    # A date with no granule selects nothing rather than falling back to a neighbour.
+    # A date with no granule selects nothing rather than falling back to a neighbor.
     @test isempty(select_granules(urls, DateTime(2020, 7, 11)))
 
     # The record has holes where an instrument outage prevented a composite, so "no granule"
@@ -913,7 +913,7 @@ end
     # A series built on the dataset's own grid must reproduce the single-date read exactly. It is
     # tempting to let the generic path build a native field and interpolate it onto an identical
     # grid, but that round trip is only the identity where the data is complete: its bilinear
-    # stencil spreads every gap into its neighbours, so a dataset with honest gaps has its gap
+    # stencil spreads every gap into its neighbors, so a dataset with honest gaps has its gap
     # fraction silently inflated by the read.
     mktempdir() do dir
         dataset = MCD15A2H()
@@ -941,7 +941,7 @@ end
 end
 
 @testset "Cyclic gap filling" begin
-    # A seasonal series is one period of a periodic signal, so its ends are neighbours.
+    # A seasonal series is one period of a periodic signal, so its ends are neighbors.
     # The gap spans indices 5 and 1, so it interpolates from 4 (at index 4) to 2 (at index
     # 2): index 5 sits a third of the way across and index 1 two thirds.
     wrapped = Float32[NaN, 2, 3, 4, NaN]
@@ -949,7 +949,7 @@ end
     @test wrapped ≈ Float32[8/3, 2, 3, 4, 10/3] rtol = 1e-6
 
     # Without the wrap the same gaps are filled with the nearest valid value, the
-    # open-series behaviour every existing caller relies on.
+    # open-series behavior every existing caller relies on.
     open = Float32[NaN, 2, 3, 4, NaN]
     fill_gaps!(open; max_gap = 2)
     @test open == Float32[2, 2, 3, 4, 4]

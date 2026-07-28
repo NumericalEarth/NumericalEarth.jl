@@ -70,7 +70,7 @@ function modis_subdataset(granule_path, layer)
     end
 end
 
-# Mosaic one layer of `granule_paths` onto the regional lattice. Nearest-neighbour
+# Mosaic one layer of `granule_paths` onto the regional lattice. Nearest-neighbor
 # resampling throughout: the source and target cell sizes agree to within a percent, and
 # every layer is either a bit-packed quality byte or a digital number whose out-of-range
 # codes carry meaning — averaging either would invent values. Uncovered cells take the fill

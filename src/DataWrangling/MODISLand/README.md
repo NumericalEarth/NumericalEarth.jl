@@ -41,7 +41,7 @@ the native grid share their cells one for one. That pins the region offset of th
 zero instead of leaving it to a floating-point comparison between the grid's nodes and the
 file's coordinates.
 
-Resampling is nearest-neighbour throughout. The source and target cell sizes agree to within
+Resampling is nearest-neighbor throughout. The source and target cell sizes agree to within
 a percent, and every stored layer is either a bit-packed quality byte or a digital number
 whose out-of-range codes carry meaning — averaging either would invent values. Cells the
 granules do not cover take the fill code 255, which the read path rejects on both the digital
@@ -79,7 +79,7 @@ The quality screen does not apply to them: a cloudy urban pixel is still urban. 
 
 These are **class codes**, so read them on the product's own grid. Interpolating them onto
 another grid averages 250 against 254 into 252, which is a different class; a finer land-cover
-product with a nearest-neighbour regrid is the right tool once the model grid differs.
+product with a nearest-neighbor regrid is the right tool once the model grid differs.
 
 ## Quality screening
 
@@ -172,7 +172,7 @@ label at 500 m is not reliable enough to call a change on.
 
 Compositing across years removes cloud that is random from one year to the next. Cloud that
 recurs at the same calendar period every year — the ITCZ, a monsoon, a windward slope —
-survives it, and survives interpolation along the seasonal axis too, because the neighbouring
+survives it, and survives interpolation along the seasonal axis too, because the neighboring
 periods are cloudy for the same reason. `fill_seasonal_gaps!` borrows the rest, using the
 class field to decide how far and from whom:
 
@@ -198,8 +198,8 @@ Three stages run in order, and none rewrites an observation:
    the class actually determines.
 3. The donor curve itself, for cells with no valid period to scale by.
 
-The donor pool is an expanding stencil over blocks of cells: a fixed few-kilometre
-neighbourhood is empty exactly when it is needed, so the search grows its radius until it
+The donor pool is an expanding stencil over blocks of cells: a fixed few-kilometer
+neighborhood is empty exactly when it is needed, so the search grows its radius until it
 finds enough same-class donors. `filled.reach` records how far each cell had to go, and
 `filled.provenance` which stage produced each value.
 
@@ -226,7 +226,7 @@ write.
 zero_non_vegetated!(Λ, classes)     # after the fill, before the regrid
 ```
 
-Do it in that order. A `NaN` at a shoreline dilates into its neighbours through the
+Do it in that order. A `NaN` at a shoreline dilates into its neighbors through the
 interpolation stencil, while a zero blends into the cell mean correctly — leaf area is
 already per unit ground area, so a model cell half lake and half forest genuinely carries
 half the forest's. Score the fill before zeroing, never after: `gap_fill_denial` samples
