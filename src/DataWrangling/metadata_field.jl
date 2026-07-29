@@ -103,7 +103,7 @@ function construct_native_grid(metadata, ::Nothing, arch; halo)
     if is_three_dimensional(metadata)
         z = z_interfaces(metadata)
         return LatitudeLongitudeGrid(arch, FT; size = (Nx, Ny, Nz),
-                                     halo, longitude, latitude, z)
+                                     halo, longitude, latitude, z = z)
     else
         return LatitudeLongitudeGrid(arch, FT; size = (Nx, Ny),
                                      halo = halo[1:2], longitude, latitude,
@@ -137,7 +137,7 @@ function construct_native_grid(metadata, bbox::BoundingBox, arch; halo)
     if is_three_dimensional(metadata)
         z = z_interfaces(metadata)
         return LatitudeLongitudeGrid(arch, FT; size = (Nx, Ny, Nz),
-                                     halo, longitude, latitude, z,
+                                     halo, longitude, latitude, z = z,
                                      topology = (TX, Bounded, Bounded))
     else
         return LatitudeLongitudeGrid(arch, FT; size = (Nx, Ny),
@@ -156,7 +156,7 @@ function construct_native_grid(metadata, col::Column, arch; halo)
         _, _, Nz, _ = size(metadata)
         z = z_interfaces(metadata)
         return RectilinearGrid(arch, FT; size = Nz, halo = halo[3],
-                               x, y, z, topology = (Flat, Flat, Bounded))
+                               x = x, y = y, z = z, topology = (Flat, Flat, Bounded))
     else
         return RectilinearGrid(arch, FT; size = (), halo = (),
                                x, y, topology = (Flat, Flat, Flat))
