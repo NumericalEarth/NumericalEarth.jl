@@ -267,6 +267,7 @@ include("metadata_field.jl")
 include("dataset_backend.jl")
 include("metadata_field_time_series.jl")
 include("inpainting.jl")
+include("gap_filling.jl")
 include("time_average.jl")
 include("restoring.jl")
 
