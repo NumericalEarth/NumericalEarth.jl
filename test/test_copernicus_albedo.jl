@@ -4,10 +4,9 @@ using NumericalEarth.DataWrangling: BoundingBox, Metadatum, native_grid,
     is_three_dimensional, default_inpainting,
     dataset_variable_name, metadata_filename,
     longitude_name, latitude_name, all_dates,
-    longitude_interfaces, latitude_interfaces,
-    dekadal_dates
+    longitude_interfaces, latitude_interfaces
 using NumericalEarth.DataWrangling.CopernicusLandAlbedo: bluesky_blend, copernicus_albedo_decode,
-    albedo_satellite,
+    copernicus_albedo_dekadal_dates, albedo_satellite,
     albedo_cds_request_variables,
     albedo_read_window
 using Oceananigans.Grids: λnodes, φnodes
@@ -29,7 +28,7 @@ using Dates: DateTime, Day, day, month, daysinmonth
 end
 
 @testset "Copernicus land albedo dekadal dates" begin
-    dates = dekadal_dates(DateTime(2019, 1, 10), DateTime(2019, 12, 31))
+    dates = copernicus_albedo_dekadal_dates(DateTime(2019, 1, 10), DateTime(2019, 12, 31))
     @test length(dates) == 36
     @test issorted(dates)
     @test all(d -> day(d) in (10, 20, daysinmonth(d)), dates)

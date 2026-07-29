@@ -17,7 +17,7 @@ using Oceananigans.DistributedComputations: @root
 using Statistics: mean
 
 using ..DataWrangling: DataWrangling, Metadata, Metadatum, BoundingBox,
-                       metadata_path, default_download_directory, composite_dates,
+                       metadata_path, default_download_directory,
                        native_cell_range, native_convention_longitude, netrc_downloader
 
 import Oceananigans
@@ -743,8 +743,42 @@ DataWrangling.conversion_units(::MODISLandCoverMetadatum) = nothing
 ##### Dates
 #####
 
+"""
+    modis_composite_dates(start_date, end_date, period_days)
+
+Return the year-anchored composite dates between `start_date` and `end_date` inclusive: in
+each year, day-of-year `1, 1 + period_days, 1 + 2 * period_days, …` up to the last period
+that begins within that year.
+
+MODIS land products restart their compositing period at day-of-year 1 every January, so
+the last period of a year is short (5 days, or 6 in a leap year, for an 8-day product) and
+the sequence is *not* a uniform cadence across a year boundary. Stepping uniformly from the
+first date instead would drift out of phase after one year and request composites that do
+not exist.
+
+```jldoctest
+julia> using Dates, NumericalEarth.DataWrangling.MODISLand
+
+julia> dates = MODISLand.modis_composite_dates(DateTime(2020), DateTime(2021, 12, 31), 8);
+
+julia> length(dates), dates[46], dates[47]
+(92, DateTime("2020-12-26T00:00:00"), DateTime("2021-01-01T00:00:00"))
+```
+"""
+function modis_composite_dates(start_date, end_date, period_days)
+    dates = DateTime[]
+    for year in Dates.year(start_date):Dates.year(end_date)
+        january_first = DateTime(year, 1, 1)
+        for day in 1:period_days:Dates.daysinyear(year)
+            date = january_first + Dates.Day(day - 1)
+            start_date ≤ date ≤ end_date && push!(dates, date)
+        end
+    end
+    return dates
+end
+
 DataWrangling.all_dates(dataset::MODISLAIDataset, variable) =
-    composite_dates(first_composite_date(dataset), last_composite_date(dataset),
+    modis_composite_dates(first_composite_date(dataset), last_composite_date(dataset),
                     composite_period_days(dataset))
 
 """
@@ -754,7 +788,7 @@ The number of composites a year of `dataset` holds — 46 for an 8-day product. 
 compositing period restarts at day-of-year 1 every January, so the last period of a year
 is short and the count is the same in leap and common years.
 """
-periods_per_year(dataset) = length(composite_dates(climatology_year_start(),
+periods_per_year(dataset) = length(modis_composite_dates(climatology_year_start(),
                                                    climatology_year_end(),
                                                    composite_period_days(dataset)))
 
@@ -764,7 +798,7 @@ climatology_year_start() = DateTime(2018, 1, 1)
 climatology_year_end()   = DateTime(2018, 12, 31)
 
 DataWrangling.all_dates(climatology::MODISLAIClimatology, variable) =
-    composite_dates(climatology_year_start(), climatology_year_end(),
+    modis_composite_dates(climatology_year_start(), climatology_year_end(),
                     composite_period_days(climatology))
 
 # One map per calendar year, stamped on 1 January — not a day-stepped composite cadence.

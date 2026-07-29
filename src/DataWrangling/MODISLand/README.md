@@ -279,7 +279,7 @@ fill_gaps!(Λ; max_gap = 4, cyclic = true)
 - Composite dates are **year-anchored**: day-of-year 1, 9, 17, …, 361, restarting every
   January, so a year holds exactly 46 periods and the last one is short. Stepping uniformly
   by 8 days from the first date drifts out of phase after a year and requests composites that
-  do not exist — `composite_dates` handles this.
+  do not exist — `modis_composite_dates` handles this.
 - A composite is stamped at the **start** of its window, so the value it holds represents
   four days later. `native_times` applies that offset, which is also what makes the 46
   climatological stamps span exactly one year rather than 46 × 8 = 368 days — the period a

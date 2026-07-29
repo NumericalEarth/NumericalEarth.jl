@@ -838,60 +838,6 @@ missing_value(metadatum) = missing
 #####
 
 """
-    dekadal_dates(start_date, end_date)
-
-Return the dekadal (10-daily) dates between `start_date` and `end_date` inclusive.
-Copernicus Global Land products stamp three composites per month, on day 10, day 20,
-and the last day of the month.
-"""
-function dekadal_dates(start_date, end_date)
-    dates = DateTime[]
-    date = DateTime(Dates.year(start_date), Dates.month(start_date), 1)
-    while date ≤ end_date
-        for day in (10, 20, Dates.daysinmonth(date))
-            dekad = DateTime(Dates.year(date), Dates.month(date), day)
-            start_date ≤ dekad ≤ end_date && push!(dates, dekad)
-        end
-        date += Dates.Month(1)
-    end
-    return dates
-end
-
-"""
-    composite_dates(start_date, end_date, period_days)
-
-Return the year-anchored composite dates between `start_date` and `end_date` inclusive: in
-each year, day-of-year `1, 1 + period_days, 1 + 2 * period_days, …` up to the last period
-that begins within that year.
-
-MODIS land products restart their compositing period at day-of-year 1 every January, so
-the last period of a year is short (5 days, or 6 in a leap year, for an 8-day product) and
-the sequence is *not* a uniform cadence across a year boundary. Stepping uniformly from the
-first date instead would drift out of phase after one year and request composites that do
-not exist.
-
-```jldoctest
-julia> using Dates, NumericalEarth.DataWrangling
-
-julia> dates = DataWrangling.composite_dates(DateTime(2020), DateTime(2021, 12, 31), 8);
-
-julia> length(dates), dates[46], dates[47]
-(92, DateTime("2020-12-26T00:00:00"), DateTime("2021-01-01T00:00:00"))
-```
-"""
-function composite_dates(start_date, end_date, period_days)
-    dates = DateTime[]
-    for year in Dates.year(start_date):Dates.year(end_date)
-        january_first = DateTime(year, 1, 1)
-        for day in 1:period_days:Dates.daysinyear(year)
-            date = january_first + Dates.Day(day - 1)
-            start_date ≤ date ≤ end_date && push!(dates, date)
-        end
-    end
-    return dates
-end
-
-"""
     compute_native_date_range(native_dates, start_date, end_date)
 
 Compute the range of `native_dates` that fall within the specified `start_date` and `end_date`.

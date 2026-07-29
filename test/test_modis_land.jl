@@ -4,9 +4,10 @@ using NumericalEarth.DataWrangling: BoundingBox, Metadatum, Metadata, native_gri
     is_three_dimensional, default_inpainting, dataset_variable_name, metadata_filename,
     longitude_name, latitude_name, all_dates, native_times, available_variables,
     longitude_interfaces, latitude_interfaces, validate_dataset_coverage,
-    retrieve_data, read_file_coords, region_info, composite_dates, fill_gaps!,
+    retrieve_data, read_file_coords, region_info, fill_gaps!,
     time_window_offset
 using NumericalEarth.DataWrangling.MODISLand: MODISLand, mask_lai_fill, lai_screening_flags,
+    modis_composite_dates,
     parse_granule_name, select_granules, cmr_granules_url, regional_lattice,
     periods_per_year, period_index, reduce_retained, stored_granule_layers,
     MODIS_LAI_SCALE, MODIS_FPAR_SCALE, MODIS_LAI_LANDCOVER_CODES,
@@ -292,7 +293,7 @@ end
     @test length(native_times(metadata)) == length(metadata.dates)
 
     # The generator itself, independent of the product.
-    quarterly = composite_dates(DateTime(2020), DateTime(2021, 12, 31), 90)
+    quarterly = modis_composite_dates(DateTime(2020), DateTime(2021, 12, 31), 90)
     @test dayofyear.(quarterly) == [1, 91, 181, 271, 361, 1, 91, 181, 271, 361]
 end
 

@@ -2,7 +2,7 @@ module CopernicusLandAlbedo
 
 export CopernicusAlbedo, CopernicusAlbedoClimatology, build_monthly_climatology!
 
-using Dates: Dates, DateTime, year, month
+using Dates: Dates, DateTime, Month, year, month, daysinmonth
 using Downloads: Downloads
 using NCDatasets: NCDataset, defVar, nomissing
 using Oceananigans: Center
@@ -10,7 +10,7 @@ using Oceananigans.DistributedComputations: @root
 
 using ..DataWrangling: DataWrangling, Metadata, Metadatum, BoundingBox,
                        metadata_path, default_download_directory,
-                       native_convention_longitude, dekadal_dates, native_cell_range
+                       native_convention_longitude, native_cell_range
 
 import Oceananigans
 
@@ -140,6 +140,20 @@ DataWrangling.latitude_interfaces(::CopernicusAlbedoMetadata)  = (-60 + 1/224, 8
 ##### Dates
 #####
 
+# CGLS dekads are stamped on day 10, day 20, and the last day of each month.
+function copernicus_albedo_dekadal_dates(start_date, end_date)
+    dates = DateTime[]
+    d = DateTime(year(start_date), month(start_date), 1)
+    while d ≤ end_date
+        for day in (10, 20, daysinmonth(d))
+            t = DateTime(year(d), month(d), day)
+            start_date ≤ t ≤ end_date && push!(dates, t)
+        end
+        d += Month(1)
+    end
+    return dates
+end
+
 # C3S coverage of the 1 km v2 collection: SPOT/VGT from April 1998, PROBA-V until
 # June 2020 (verified against the `satellite-albedo` request constraints).
 const first_albedo_date = DateTime(1998, 4, 10)
@@ -148,7 +162,7 @@ const last_albedo_date  = DateTime(2020, 6, 30)
 # SPOT ends May 2014; PROBA-V takes over from June 2014.
 albedo_satellite(date) = date < DateTime(2014, 6, 1) ? "spot" : "proba"
 
-DataWrangling.all_dates(::CopernicusAlbedo, variable) = dekadal_dates(first_albedo_date, last_albedo_date)
+DataWrangling.all_dates(::CopernicusAlbedo, variable) = copernicus_albedo_dekadal_dates(first_albedo_date, last_albedo_date)
 
 # 12 climatological months; the year is arbitrary, only the month matters.
 DataWrangling.all_dates(::CopernicusAlbedoClimatology, variable) = [DateTime(2018, m, 1) for m in 1:12]
