@@ -79,6 +79,13 @@ Equatorial-MLD tuning knobs (closure parameters; configuration switches):
                             which is comparable in size ("true" also accepted)
                   annual    remove a running mean relaxed over a year; keeps the
                             seasonal cycle, spins up over the first ~2 years
+  SKEW_FORMULATION How the GM skew flux is discretized. Ignored when KSKEW=0.
+                  diffusive  add it to the tracer flux (default)
+                  advective  build the eddy-induced velocity and advect with it,
+                             which also exposes the bolus transport as a model
+                             field. Equivalent continuously, not discretely, so
+                             the two give different answers run-to-run.
+                Adds "_gmadv" to the run name when set to advective.
   CATKE_CWUSTAR `Cᵂu★` of CATKEEquation: surface shear-driven TKE flux
                 coefficient. Higher → more wind-injected TKE → deeper
                 equatorial ML. Default (Oceananigans): 3.179.
@@ -233,6 +240,7 @@ case "${NORMALIZE_FRESHWATER:-none}" in
   true|timestep) RUN_NAME="${RUN_NAME}_fwnorm" ;;
   annual)        RUN_NAME="${RUN_NAME}_fwnormann" ;;
 esac
+[[ "${SKEW_FORMULATION:-diffusive}" == "advective" ]] && RUN_NAME="${RUN_NAME}_gmadv"
 [[ -n "${CB:-}" ]]                             && RUN_NAME="${RUN_NAME}_cb${CB}"
 [[ "$KSKEW" != "$DEFAULT_KSKEW" ]]             && RUN_NAME="${RUN_NAME}_kskew${KSKEW}"
 [[ "$KSYMM" != "$DEFAULT_KSYMM" ]]             && RUN_NAME="${RUN_NAME}_ksymm${KSYMM}"
@@ -378,6 +386,13 @@ case "$NORMALIZE_FRESHWATER" in
 esac
 NORMALIZE_FRESHWATER_KWARG="normalize_freshwater = ${NORMALIZE_FRESHWATER_JULIA},"
 
+SKEW_FORMULATION="${SKEW_FORMULATION:-diffusive}"
+case "$SKEW_FORMULATION" in
+    diffusive|advective) ;;
+    *) echo "SKEW_FORMULATION must be diffusive|advective, got '$SKEW_FORMULATION'" >&2; exit 1 ;;
+esac
+SKEW_FORMULATION_KWARG="skew_flux_formulation = :${SKEW_FORMULATION},"
+
 BACKEND_KWARG=""
 [[ -n "$BACKEND_SIZE" ]] && BACKEND_KWARG="backend_size = ${BACKEND_SIZE},"
 
@@ -438,6 +453,7 @@ sim = omip_simulation(:${CONFIG};
                       ${CATKE_CWUSTAR_KWARG}
                       ${NORMALIZE_SALINITY_KWARG}
                       ${NORMALIZE_FRESHWATER_KWARG}
+                      ${SKEW_FORMULATION_KWARG}
                       Δt = ${DT},
                       forcing_dir = \"${FORCING_DIR}\",
                       ${STAGING_KWARG}

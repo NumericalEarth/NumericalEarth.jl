@@ -302,7 +302,8 @@ const FTS_VARS = (
                      (:sithick_fts, "sithick")),
     fields_file   = ((:to_fts, "to"), (:so_fts, "so"), (:bo_fts, "bo"),
                      (:uo_fts, "uo"), (:vo_fts, "vo"),
-                     (:uvol_fts, "uvol"), (:vvol_fts, "vvol")),
+                     (:uvol_fts, "uvol"), (:vvol_fts, "vvol"),
+                     (:vvolgm_fts, "vvolgm")),
     averages_file = ((:zosga_fts, "zosga"), (:voco_fts, "voco"),
                      (:soco_fts,  "soco"),  (:hoco_fts, "hoco"), (:sivol_fts, "sivol"),
                      (:to_h_fts,  "to_h"),  (:so_h_fts,  "so_h")),
@@ -1075,6 +1076,7 @@ const SURFACE_LATLON_FIELDS = (
     :near_surface_zonal_velocity, :near_surface_meridional_velocity,
     :sic_mean, :sic_march, :sic_september,
     :mld_min, :mld_max, :mld_min_dbm, :mld_max_dbm,
+    :barotropic_streamfunction,
 )
 
 for sym in SURFACE_LATLON_FIELDS
@@ -1215,6 +1217,11 @@ LOADERS[:zonal_mld_max_dbm] = c -> zonal_mld(c, :mld_max_dbm)
 # Δz — no extra grid metrics needed offline. The Atlantic basin mask is
 # from `Bathymetry.atlantic_ocean_basin`, computed via flood-fill with
 # Cape Agulhas and Drake Passage barriers and a 65°N northern cap.
+#
+# `:amoc` is the residual streamfunction: the resolved (Eulerian) transport in
+# `vvol` plus the parameterized GM transport in `vvolgm`, which is what RAPID
+# and CMIP `msftmz` measure. Runs without GM, and runs predating the `vvolgm`
+# diagnostic, carry no bolus file and fall back to the Eulerian part alone.
 
 LOADERS[:atlantic_mask_2d] = disk_cached(:atlantic_mask_2d) do c
     basin = atlantic_ocean_basin(get_field(c, :grid))
@@ -1234,23 +1241,53 @@ LOADERS[:amoc_latitudes] = c -> begin
             for j in 1:Ny+1]
 end
 
-LOADERS[:amoc] = disk_cached(:amoc; source_fts_syms = :vvol_fts) do c
-    vvol_mean = compute_time_mean(get_field(c, :vvol_fts);
-                                   start_time = c.start_time,
-                                   stop_time  = c.stop_time)
-    atl = get_field(c, :atlantic_mask_2d)
-    Nx, Ny, Nz = size(vvol_mean)
+# `nothing` when the run carries no bolus flux, so the callers can fall back to
+# the Eulerian transport alone. Mirrors `optional_scalar_timeseries`.
+function optional_field(c, sym)
+    return try
+        get_field(c, sym)
+    catch
+        nothing
+    end
+end
+
+# ψ(j, z) = -∫_{-H}^{z} ∑_atl v dx dz'.
+# Oceananigans has k=1 at the bottom, so a cumulative sum along k integrates
+# from -H upward; the leading minus flips the sign so a positive value renders
+# the NADW cell as red on a balance colormap.
+# Sized from the basin mask, not the flux: a `(Center, Face, Center)` field carries Ny+1 rows on a
+# `Bounded` y-topology, against Ny for the mask. ORCA's fold gives Ny, so the two agree there.
+function overturning_streamfunction(volume_flux, atl)
+    Nx, Ny = size(atl)
+    Nz = size(volume_flux, 3)
     transport_per_layer = zeros(Ny, Nz)
     for k in 1:Nz, j in 1:Ny, i in 1:Nx
         atl[i, j] || continue
-        transport_per_layer[j, k] += vvol_mean[i, j, k]
+        transport_per_layer[j, k] += volume_flux[i, j, k]
     end
-    # ψ(j, z) = -∫_{-H}^{z} ∑_atl v dx dz'.
-    # Oceananigans has k=1 at the bottom, so a cumulative sum along k
-    # integrates from -H upward; the leading minus flips the sign so a
-    # positive value renders the NADW cell as red on a balance colormap.
     return -cumsum(transport_per_layer; dims = 2) ./ 1e6   # Sv
 end
+
+LOADERS[:amoc_eulerian] = disk_cached(:amoc_eulerian; source_fts_syms = :vvol_fts) do c
+    vvol_mean = compute_time_mean(get_field(c, :vvol_fts);
+                                   start_time = c.start_time,
+                                   stop_time  = c.stop_time)
+    return overturning_streamfunction(vvol_mean, get_field(c, :atlantic_mask_2d))
+end
+
+# Keyed on `:vvol_fts` rather than `:vvolgm_fts`: both live in the same `_fields`
+# file, so its stamp invalidates this too, and keying on a symbol that may not
+# resolve would throw for runs without GM.
+LOADERS[:amoc_bolus] = disk_cached(:amoc_bolus; source_fts_syms = :vvol_fts) do c
+    vvolgm_fts = optional_field(c, :vvolgm_fts)
+    isnothing(vvolgm_fts) && return zeros(size(get_field(c, :amoc_eulerian)))
+    vvolgm_mean = compute_time_mean(vvolgm_fts;
+                                     start_time = c.start_time,
+                                     stop_time  = c.stop_time)
+    return overturning_streamfunction(vvolgm_mean, get_field(c, :atlantic_mask_2d))
+end
+
+LOADERS[:amoc] = c -> get_field(c, :amoc_eulerian) .+ get_field(c, :amoc_bolus)
 
 #####
 ##### AMOC at 26.5°N (RAPID-MOCHA latitude)
@@ -1261,6 +1298,9 @@ end
 # latitudes to find the j closest to 26.5°N.
 
 const RAPID_LATITUDE = 26.5
+
+# Floor for the AMOC-index search, in metres.
+const AMOC_INDEX_MINIMUM_DEPTH = 500
 
 LOADERS[:amoc_26n_j] = c -> begin
     lats = get_field(c, :amoc_latitudes)
@@ -1279,21 +1319,26 @@ end
 # Cheap per snapshot (O(Nx·Nz)) so this covers the full record even on
 # tenth-degree grids. Disk-cached on vvol_fts so reruns are instant.
 LOADERS[:amoc_max_timeseries] = disk_cached(:amoc_max_timeseries; source_fts_syms = :vvol_fts) do c
-    vvol_fts = get_field(c, :vvol_fts)
-    atl      = get_field(c, :atlantic_mask_2d)
-    j        = get_field(c, :amoc_26n_j)
+    vvol_fts   = get_field(c, :vvol_fts)
+    vvolgm_fts = optional_field(c, :vvolgm_fts)
+    atl        = get_field(c, :atlantic_mask_2d)
+    j          = get_field(c, :amoc_26n_j)
     Nx, Ny, Nz = size(get_field(c, :grid))
+    # The index tracks the NADW cell, so the search skips the top 500 m: the GM streamfunction spikes
+    # to several Sv against the surface taper, and would otherwise win the maximum outright.
+    deep = findall(<(-AMOC_INDEX_MINIMUM_DEPTH), get_field(c, :depth))
     Nt = length(vvol_fts.times)
     ψ_max = zeros(Nt)
     for n in 1:Nt
         slice = Array(interior(vvol_fts[n]))
+        isnothing(vvolgm_fts) || (slice = slice .+ Array(interior(vvolgm_fts[n])))
         col = zeros(Nz)
         @inbounds for k in 1:Nz, i in 1:Nx
             atl[i, j] || continue
             col[k] += slice[i, j, k]
         end
         ψ_z = -cumsum(col) ./ 1e6   # Sv, sign matches :amoc
-        ψ_max[n] = maximum(ψ_z)
+        ψ_max[n] = maximum(view(ψ_z, deep))
     end
     # Convert to decimal calendar year using the JRA55-do epoch the rest
     # of the visualize pipeline assumes (`compute_monthly_means` uses
@@ -1301,6 +1346,28 @@ LOADERS[:amoc_max_timeseries] = disk_cached(:amoc_max_timeseries; source_fts_sym
     year_start = 1958.0
     times_year = year_start .+ vvol_fts.times ./ years
     return (year = times_year, psi_max = ψ_max)
+end
+
+#####
+##### Barotropic streamfunction
+#####
+#
+#     Ψ(i, j) = -∑_{j' ≤ j} ∑_k uvol(i, j', k)
+#
+# with `u = -∂Ψ/∂y`, `v = ∂Ψ/∂x` and `Ψ = 0` at the southern boundary. `uvol = u · Aˣ` already carries
+# Δy and Δz, so the vertical sum is the depth-integrated zonal transport and the meridional cumulative
+# sum closes the streamfunction — no offline metrics. Under this convention subtropical gyres are
+# positive, subpolar gyres negative, and the ACC comes out negative with magnitude equal to the Drake
+# Passage transport (its reference is the Antarctic coast, where Ψ = 0).
+#
+# The cumulation runs along model j-rows, so the result is only meaningful south of the tripolar fold.
+
+LOADERS[:barotropic_streamfunction] = disk_cached(:barotropic_streamfunction; source_fts_syms = :uvol_fts) do c
+    uvol_mean = compute_time_mean(get_field(c, :uvol_fts);
+                                   start_time = c.start_time,
+                                   stop_time  = c.stop_time)
+    depth_integrated = dropdims(sum(uvol_mean; dims = 3); dims = 3)
+    return masked!(c, -cumsum(depth_integrated; dims = 2) ./ 1e6)   # Sv
 end
 
 #####
