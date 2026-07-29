@@ -15,7 +15,8 @@ using NumericalEarth.Oceans: MultipleFluxes, FreshwaterExchange, extract_freshwa
 using NumericalEarth.EarthSystemModels.InterfaceComputations: computed_fluxes
 using SeawaterPolynomials.TEOS10: Sᴬ_from_Sᴾ, Θ_from_T
 using Oceananigans.TurbulenceClosures: IsopycnalSkewSymmetricDiffusivity,
-                                       ConvectiveAdjustmentVerticalDiffusivity
+                                       ConvectiveAdjustmentVerticalDiffusivity,
+                                       AdvectiveFormulation, DiffusiveFormulation
 using Oceananigans.Utils: NormalDivision
 using NumericalEarth.EarthSystemModels.InterfaceComputations: COARELogarithmicSimilarityProfile,
                                                               WindDependentWaveFormulation,
@@ -441,6 +442,10 @@ plumbing is needed because `NumericalEarth.EarthSystemModels` provides
 - `κ_skew`, `κ_symmetric`: GM/Redi diffusivities. Per-config defaults: `nothing` (no isopycnal
   diffusivity) for the eddy-resolving `:quarterdegree`/`:twelfthdegree` and for `:test`, `800` for
   `:orca`, `250` for `:halfdegree`.
+- `skew_flux_formulation`: how the GM skew flux is discretized. `:diffusive` (default) adds it to
+  the tracer flux; `:advective` builds the eddy-induced velocity and advects with it, which also
+  makes the bolus transport available as a model field. Equivalent continuously, not discretely.
+  Ignored when `κ_skew` is `nothing`.
 - `biharmonic_timescale`: horizontal biharmonic-viscosity timescale. Per-config default: `nothing`
   (no biharmonic viscosity) for `:quarterdegree`/`:twelfthdegree`, `10days` for `:test`, `50days`
   otherwise.
@@ -507,6 +512,7 @@ function omip_simulation(config::Symbol = :halfdegree;
                          Δz_top = ConfigDefault(),
                          κ_skew = ConfigDefault(),
                          κ_symmetric = ConfigDefault(),
+                         skew_flux_formulation = :diffusive,
                          Cᵇ = 0.28,
                          biharmonic_timescale = ConfigDefault(),
                          biharmonic_viscosity = nothing,
@@ -582,6 +588,7 @@ function omip_simulation(config::Symbol = :halfdegree;
                         biharmonic_viscosity,
                         vertical_closure,
                         implicit_vertical_advection,
+                        skew_flux_formulation,
                         Cᵂu★,
                         restoring_dir, piston_velocity,
                         normalize_salinity,
@@ -756,6 +763,15 @@ end
       z >= -100 ? 1e-2 :
                   1e-5
 
+# GM discretization. The two forms are equivalent continuously but not discretely: `:diffusive`
+# adds a skew flux to the tracer equation, `:advective` builds an eddy-induced velocity and advects
+# with it. Only the latter puts the bolus transport into a velocity field the rest of the model
+# (and `bolus_meridional_volume_flux_operation`) can read directly.
+gm_skew_flux_formulation(formulation::Symbol) =
+    formulation === :diffusive ? DiffusiveFormulation() :
+    formulation === :advective ? AdvectiveFormulation() :
+    throw(ArgumentError("skew_flux_formulation must be :diffusive or :advective, got :$formulation"))
+
 # Build a vertical-mixing closure tuple. The eddy and horizontal
 # components are common to every option; the primary vertical closure
 # and any background κ/ν are selected by `vertical_closure`.
@@ -763,6 +779,7 @@ function omip_closure(vertical_closure::Symbol;
                       κ_skew, κ_symmetric, Cᵇ = 0.28,
                       biharmonic_timescale,
                       biharmonic_viscosity = nothing,
+                      skew_flux_formulation = :diffusive,
                       Cᵂu★ = nothing)
 
     primary, background = if vertical_closure == :catke
@@ -799,7 +816,8 @@ function omip_closure(vertical_closure::Symbol;
     eddy  = if isnothing(κ_skew) | isnothing(κ_symmetric)
         nothing
     else
-        IsopycnalSkewSymmetricDiffusivity(; κ_skew, κ_symmetric)
+        IsopycnalSkewSymmetricDiffusivity(; κ_skew, κ_symmetric,
+                                          skew_flux_formulation = gm_skew_flux_formulation(skew_flux_formulation))
     end
 
     horizontal_viscosity = if !isnothing(biharmonic_viscosity)
@@ -1043,6 +1061,7 @@ function build_ocean(config, grid;
                      biharmonic_viscosity = nothing,
                      vertical_closure = :catke,
                      implicit_vertical_advection = true,
+                     skew_flux_formulation = :diffusive,
                      Cᵂu★ = nothing,
                      normalize_salinity = true,
                      additional_tracer_closure = nothing,
@@ -1058,6 +1077,7 @@ function build_ocean(config, grid;
     closure = omip_closure(vertical_closure;
                            κ_skew, κ_symmetric, Cᵇ,
                            biharmonic_timescale, biharmonic_viscosity,
+                           skew_flux_formulation,
                            Cᵂu★)
     closure = isnothing(additional_tracer_closure) ? closure : (closure..., additional_tracer_closure)
     coriolis = HydrostaticSphericalCoriolis(scheme = Oceananigans.Coriolis.EnstrophyConserving())

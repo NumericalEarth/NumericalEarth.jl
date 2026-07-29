@@ -1,7 +1,8 @@
 
 using JLD2
 using Oceananigans.AbstractOperations: KernelFunctionOperation, Integral
-using Oceananigans.Operators: Axᶠᶜᶜ, Ayᶜᶠᶜ, ℑxᶜᵃᵃ, ℑyᵃᶜᵃ
+using Oceananigans.Operators: Axᶠᶜᶜ, Ayᶜᶠᶜ, ℑxᶜᵃᵃ, ℑyᵃᶜᵃ, δzᵃᵃᶜ, Δz⁻¹ᶜᶠᶜ
+using Oceananigans.TurbulenceClosures: IsopycnalSkewSymmetricDiffusivity, getclosure, κ_ϵSyᶜᶠᶠ
 
 # Volumetric face fluxes [m³/s] for offline transport diagnostics
 # (e.g. AMOC streamfunction). Saved as 3-D fields on the velocity faces
@@ -9,6 +10,37 @@ using Oceananigans.Operators: Axᶠᶜᶜ, Ayᶜᶠᶜ, ℑxᶜᵃᵃ, ℑyᵃ�
 # directly without re-deriving Δx/Δz on the visualizer side.
 @inline zonal_volume_flux(i, j, k, grid, u)      = @inbounds u[i, j, k] * Axᶠᶜᶜ(i, j, k, grid)
 @inline meridional_volume_flux(i, j, k, grid, v) = @inbounds v[i, j, k] * Ayᶜᶠᶜ(i, j, k, grid)
+
+# GM eddy-induced meridional velocity v★ = -δz(κ ϵ Sʸ) / Δz, for the `DiffusiveFormulation`, where GM
+# enters as a skew tracer flux and v★ is never materialized. Built from the same helpers Oceananigans
+# uses for the `AdvectiveFormulation`, so the two formulations give bitwise-identical diagnostics.
+@inline function skew_meridional_velocity(i, j, k, grid, clock, closure, buoyancy, model_fields)
+    closure = getclosure(i, j, closure)
+    κ = closure.κ_skew
+    limiter = closure.slope_limiter
+    return - δzᵃᵃᶜ(i, j, k, grid, κ_ϵSyᶜᶠᶠ, clock, limiter, κ, buoyancy, model_fields) * Δz⁻¹ᶜᶠᶜ(i, j, k, grid)
+end
+
+"""
+    bolus_meridional_velocity(model)
+
+Return the GM eddy-induced meridional velocity — the field the `AdvectiveFormulation` already advects
+with, or an operation rebuilding it under the `DiffusiveFormulation`. `nothing` without a skew
+diffusivity, so the eddy-resolving configurations write no identically-zero field to disk.
+"""
+function bolus_meridional_velocity(model)
+    closures = model.closure isa Tuple ? model.closure : (model.closure,)
+    K        = model.closure isa Tuple ? model.closure_fields : (model.closure_fields,)
+
+    n = findfirst(c -> c isa IsopycnalSkewSymmetricDiffusivity && !isnothing(c.κ_skew), closures)
+    isnothing(n) && return nothing
+
+    hasproperty(K[n], :v) && return K[n].v
+
+    return KernelFunctionOperation{Center, Face, Center}(skew_meridional_velocity, model.grid,
+                                                         model.clock, closures[n], model.buoyancy,
+                                                         fields(model))
+end
 
 # Square-then-interpolate helpers for the centred velocity-squared
 # diagnostics (`uosq`, `vosq`, `kega`). Same pattern as `ϕ²` /
@@ -187,6 +219,14 @@ function add_omip_diagnostics!(simulation;
 
     if haskey(ocean.model.tracers, :e)
         field_outputs[:tke] = ocean.model.tracers.e
+    end
+
+    # Same ×Aʸ wrapper as `vvol`, so the two add directly offline into the residual streamfunction.
+    # Column-integrating this flux telescopes to zero, which is why the bolus moves the overturning
+    # but leaves full-depth strait transports untouched.
+    vgm = bolus_meridional_velocity(ocean.model)
+    if !isnothing(vgm)
+        field_outputs[:vvolgm] = KernelFunctionOperation{Center, Face, Center}(meridional_volume_flux, grid, vgm)
     end
 
     simulation.output_writers[:fields] = JLD2Writer(ocean.model, field_outputs;
