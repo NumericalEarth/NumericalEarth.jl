@@ -33,8 +33,12 @@ Environment variables (physics):
   SNOW          Set to "true" to enable snow thermodynamics
   ICE_DYNAMICS  Set to "false" to disable sea-ice dynamics (thermo-only ice).
                 Default: true.
-  KSKEW         Isopycnal skew diffusivity κ_skew (default: per-config; 0 = off)
-  KSYMM         Isopycnal symmetric diffusivity κ_symmetric (default: per-config; 0 = off)
+  KSKEW         Isopycnal skew diffusivity κ_skew (default: per-config; 0 = off;
+                "nemo" = NEMO's Treguier et al. 1997 coefficient, Ro² × baroclinic
+                growth rate, recomputed each step and depth-uniform)
+  KSYMM         Isopycnal symmetric diffusivity κ_symmetric (default: per-config; 0 = off;
+                "nemo" as above, but rising to its reference value in the tropics
+                with a floor of one fifth of it, per NEMO nn_aht_ijk_t = 21)
   BIHARMONIC    Biharmonic viscosity timescale (default: per-config; "nothing" = off)
   BIHVISC       Constant biharmonic viscosity ν in m^4/s (default: unset).
                 When set, overrides BIHARMONIC and uses ν directly instead of
@@ -220,6 +224,8 @@ export DZ_TOP="${DZ_TOP:-$DEFAULT_DZ_TOP}"
 export BIHARMONIC="${BIHARMONIC:-$DEFAULT_BIHARMONIC}"
 KSKEW_JULIA="$KSKEW"; [[ "$KSKEW" == "0" ]] && KSKEW_JULIA="nothing"
 KSYMM_JULIA="$KSYMM"; [[ "$KSYMM" == "0" ]] && KSYMM_JULIA="nothing"
+[[ "$KSKEW" == "nemo" ]] && KSKEW_JULIA=":nemo"
+[[ "$KSYMM" == "nemo" ]] && KSYMM_JULIA=":nemo"
 export KSKEW_JULIA KSYMM_JULIA
 export NZ DT ARCH EXTRA_USING FILE_SPLIT RUN_CMD
 
