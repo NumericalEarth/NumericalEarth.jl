@@ -495,9 +495,7 @@ departure = filter(!isnan, vec(filled_2019 .- climatology_2019))
 # samples that straddle each edge have to be split by their days of overlap; the unweighted
 # alternative is worst exactly where the field moves fastest.
 
-bounds = [target.dates; last(composite_window(MCD15A2H(), last(target.dates)))]
-
-Λbimonthly, edges = time_average(Λ2019, bounds, Month(2))
+Λbimonthly, edges = time_average(Λ2019, target, Month(2))
 
 windows = 1:length(edges)-1
 

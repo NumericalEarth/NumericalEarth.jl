@@ -650,9 +650,9 @@ Keyword Argument
 - `start_time`: The start time for calculating the time difference. Defaults to the first
                 date in the metadata.
 
-Each date is advanced by the dataset's [`time_window_offset`](@ref), so a product whose
-files are stamped at the *start* of an averaging window lands on the time its values
-actually represent.
+Each date is shifted by the dataset's [`time_window_offset`](@ref), which places a
+window-averaged sample at the midpoint of its window rather than at the date its file is
+stamped with.
 """
 function native_times(metadata; start_time=first(metadata).dates)
     times = zeros(length(metadata))
@@ -667,17 +667,62 @@ function native_times(metadata; start_time=first(metadata).dates)
 end
 
 """
+    sample_window(metadatum)
+
+The `(start, stop)` dates of the averaging window the value in `metadatum` represents.
+Defaults to a zero-width window at the stamp itself, which is an instantaneous sample; a
+product whose files hold window composites extends this with its own compositing rule.
+"""
+sample_window(metadatum) = (metadatum.dates, metadatum.dates)
+
+"""
     time_window_offset(metadatum)
 
-The offset in seconds from the date a file is stamped with to the time the value it holds
-represents. Zero for an instantaneous sample, which is the default; half the averaging
-window for a product whose stamps label the start of a compositing period.
+The offset in seconds from the date a file is stamped with to the midpoint of its
+[`sample_window`](@ref), which is where a window mean equals the value of the field itself
+and so where a linearly interpolating `FieldTimeSeries` has to place it.
 
-Leaving a composited product at zero gives every temporal interpolation of it a systematic
-phase lead of half a period — harmless where the field barely moves, a real error across a
-green-up or a spin-up.
+Zero for an instantaneous sample, half a period for a stamp that labels the start of a
+compositing window, and negative for one that labels the end.
 """
-time_window_offset(metadatum) = 0
+function time_window_offset(metadatum)
+    start, stop = sample_window(metadatum)
+    stamp = comparable_datetime(metadatum.dates)
+    start_offset = Dates.value(Dates.Second(comparable_datetime(start) - stamp))
+    stop_offset = Dates.value(Dates.Second(comparable_datetime(stop) - stamp))
+    return (start_offset + stop_offset) / 2
+end
+
+"""
+    sample_bounds(metadata)
+
+The `length(metadata) + 1` dates delimiting `metadata`'s samples, in the form
+[`time_average`](@ref) takes: sample `n` covers `[bounds[n], bounds[n+1])`. The interior
+bounds are the stamps themselves, and the last one closes the final sample with the end of
+its [`sample_window`](@ref).
+
+Defined only for a product whose samples tile time and whose stamps open their windows. An
+instantaneous product reports a zero-width `sample_window`, so where its samples end is a
+modeling choice rather than a property of the data, and this throws instead of guessing one.
+"""
+function sample_bounds(metadata::Metadata)
+    metadatum = last(metadata)
+    window_start, window_stop = sample_window(metadatum)
+    stamp = comparable_datetime(metadatum.dates)
+
+    comparable_datetime(window_start) < comparable_datetime(window_stop) ||
+        throw(ArgumentError("`sample_bounds` needs a dataset whose samples tile time, and " *
+                            "$(metadata.dataset) reports instantaneous samples. Pass the " *
+                            "bounds explicitly to say what interval each sample stands for."))
+
+    comparable_datetime(window_start) == stamp ||
+        throw(ArgumentError("`sample_bounds` reads every stamp as the start of the interval " *
+                            "its sample covers, and $(metadata.dataset) stamps a sample at " *
+                            "$stamp for the window opening $(window_start). Pass the bounds " *
+                            "explicitly."))
+
+    return [comparable_datetime.(metadata.dates); comparable_datetime(window_stop)]
+end
 
 ####
 #### Metadata interface

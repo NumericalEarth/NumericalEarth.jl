@@ -277,7 +277,7 @@ end
 
 #####
 ##### Reading — blend the black-sky/white-sky pair into the blue-sky array. Regional
-##### reads hyperslab exactly the native-grid cell window off disk with no global
+##### reads take exactly the native-grid cell window off disk with no global
 ##### materialization, so `retrieve_data` and `read_file_coords` must window identically.
 #####
 
@@ -333,7 +333,7 @@ function DataWrangling.retrieve_data(metadatum::CopernicusAlbedoMetadatum)
         icols, jrows = window
         _, Ny, _ = size(metadatum.dataset, metadatum.name)
         # The file stores latitude north→south, so the ascending cells `jrows` sit at file
-        # rows (Ny − last + 1):(Ny − first + 1). Only this hyperslab leaves disk.
+        # rows (Ny − last + 1):(Ny − first + 1). Only this window leaves disk.
         file_rows = (Ny - last(jrows) + 1):(Ny - first(jrows) + 1)
         NCDataset(path) do ds
             α_bs = copernicus_albedo_decode.(ds[blacksky_name][icols, file_rows])

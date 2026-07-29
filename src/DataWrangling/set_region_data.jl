@@ -16,22 +16,18 @@ function compute_bounding_nodes(grid, LH, hnodes)
     return h₁, h₂
 end
 
-# `ε` forgives the difference between the grid's nodes and the file's coordinates so the
-# slice doesn't lose a cell at each end. Nodes are usually stored in Float32 and are built
-# by accumulating a spacing, so a node can sit several ULPs from the file coordinate it
-# should match. An eps-scaled tolerance does not cover that on a fine grid — at 1/336° a
-# latitude node lands ~5e-6 from its coordinate while eps(Float32)|φ| is ~4.5e-6 — and the
-# index then moves a whole cell. Tolerate a quarter of the file's local spacing instead:
-# far above the node noise, and far below the half spacing that decides which cell a node
-# belongs to.
 function compute_bounding_indices(bounds::Tuple, hc)
     h₁, h₂ = bounds
     Nh = length(hc)
     i₁ = max(searchsortedfirst(hc, h₁ - bounding_index_tolerance(hc, h₁)),  1)
-    i₂ = min( searchsortedlast(hc, h₂ + bounding_index_tolerance(hc, h₂)), Nh)
+    i₂ = min(searchsortedlast(hc, h₂ + bounding_index_tolerance(hc, h₂)), Nh)
     return i₁, i₂
 end
 
+# A Float32 node accumulated from a spacing can sit several units in the last place (ULPs) from
+# the file coordinate it should match, which shifts an exact search by a whole cell. That noise
+# outgrows an eps-scaled tolerance on a fine grid, so tolerate a quarter of the local spacing:
+# above the node noise, below the half spacing that decides which cell a coordinate belongs to.
 function bounding_index_tolerance(hc, h)
     float_noise = eps(Float32) * max(one(eltype(hc)), abs(h))
     length(hc) < 2 && return float_noise

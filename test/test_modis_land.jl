@@ -1,11 +1,11 @@
 include("runtests_setup.jl")
 
-using NumericalEarth.DataWrangling: BoundingBox, Metadatum, Metadata, native_grid,
+using NumericalEarth.DataWrangling: DataWrangling, BoundingBox, Metadatum, Metadata, native_grid,
     is_three_dimensional, default_inpainting, dataset_variable_name, metadata_filename,
     longitude_name, latitude_name, all_dates, native_times, available_variables,
     longitude_interfaces, latitude_interfaces, validate_dataset_coverage,
     retrieve_data, read_file_coords, region_info, fill_gaps!,
-    time_window_offset
+    time_window_offset, sample_window, sample_bounds, time_average
 using NumericalEarth.DataWrangling.MODISLand: MODISLand, mask_lai_fill, lai_screening_flags,
     modis_composite_dates,
     parse_granule_name, select_granules, cmr_granules_url, regional_lattice,
@@ -16,7 +16,7 @@ using NumericalEarth.DataWrangling.MODISLand: MODISLand, mask_lai_fill, lai_scre
     modis_lai_class_names, modis_plant_functional_type_names, igbp_maximum_gap_periods
 using Oceananigans.Grids: λnodes, φnodes, topology, Bounded
 using NCDatasets: NCDataset, defDim, defVar
-using Dates: DateTime, Day, dayofyear
+using Dates: DateTime, Day, Month, dayofyear
 using Statistics: mean
 
 # The lattice the sinusoidal granules are reprojected onto, 1/240°.
@@ -730,6 +730,14 @@ end
     @test all(isnan, Λ[2, 1, 4:6])
 end
 
+# No product in the tree stamps a sample at the end of its window, so a stand-in pins the sign.
+struct EndStampedMetadatum
+    dates :: DateTime
+end
+
+DataWrangling.sample_window(metadatum::EndStampedMetadatum) =
+    (metadatum.dates - Day(8), metadatum.dates)
+
 @testset "MODIS composite window and stamp offset" begin
     dataset = MCD15A2H()
 
@@ -744,11 +752,17 @@ end
 
     region = BoundingBox(longitude = (-92.5, -91.5), latitude = (36.5, 37.5))
     metadatum = Metadatum(:leaf_area_index; dataset, region, date = DateTime(2018, 1, 1))
+    @test sample_window(metadatum) == (DateTime(2018, 1, 1), DateTime(2018, 1, 9))
     @test time_window_offset(metadatum) == 4 * 86400
 
-    # A class map is not a temporal composite, so it keeps the default of no offset.
-    @test time_window_offset(Metadatum(:landcover_class; dataset = MCD12Q1(), region,
-                                       date = DateTime(2015))) == 0
+    # A class map is not a temporal composite, so its window is a point and its offset zero.
+    class_metadatum = Metadatum(:landcover_class; dataset = MCD12Q1(), region,
+                                date = DateTime(2015))
+    @test sample_window(class_metadatum) == (DateTime(2015), DateTime(2015))
+    @test time_window_offset(class_metadatum) == 0
+
+    # A stamp that closes its window instead puts the value half a period earlier.
+    @test time_window_offset(EndStampedMetadatum(DateTime(2018, 1, 9))) == -4 * 86400
 
     # The 46 climatological stamps then span exactly one year rather than 46 × 8 = 368 days,
     # which is what a cyclic series has to wrap on.
@@ -758,6 +772,39 @@ end
     @test times[2] - times[1] == 8 * 86400
     @test times[end] - times[end - 1] == 6.5 * 86400
     @test times[end] - times[1] + (times[end] - times[end - 1]) == 365 * 86400
+end
+
+@testset "Averaging bounds from metadata" begin
+    region = BoundingBox(longitude = (-92.5, -91.5), latitude = (36.5, 37.5))
+    dates = [DateTime(2018, 12, 11), DateTime(2018, 12, 19), DateTime(2018, 12, 27)]
+    metadata = Metadata(:leaf_area_index; dataset = MCD15A2H(), region, dates)
+
+    # The stamps close with the end of the last composite, which is the short five-day period
+    # ending a common year rather than another eight days.
+    @test sample_bounds(metadata) == [dates; DateTime(2019, 1, 1)]
+
+    # Handing `time_average` the metadata is the same call as building those bounds by hand.
+    grid = LatitudeLongitudeGrid(size = (1, 1, 1), longitude = (-92.5, -91.5),
+                                 latitude = (36.5, 37.5), z = (0, 1))
+    ramp = FieldTimeSeries{Center, Center, Center}(grid, native_times(metadata))
+    for n in 1:3
+        interior(ramp[n]) .= n
+    end
+
+    averaged, edges = time_average(ramp, metadata, Month(1))
+    by_hand, _ = time_average(ramp, sample_bounds(metadata), Month(1))
+
+    @test interior(averaged) == interior(by_hand)
+    @test edges == [DateTime(2018, 12, 11), DateTime(2019, 1, 1)]
+
+    # The last composite is the short five-day period, so it carries five days of weight
+    # against the eight of each of its predecessors.
+    @test interior(averaged)[1, 1, 1, 1] ≈ (8 * 1 + 8 * 2 + 5 * 3) / 21
+
+    # An instantaneous product has no window with which to close the series.
+    class_map = Metadata(:landcover_class; dataset = MCD12Q1(), region,
+                         dates = [DateTime(2015)])
+    @test_throws ArgumentError sample_bounds(class_map)
 end
 
 @testset "Zeroing the non-vegetated classes" begin

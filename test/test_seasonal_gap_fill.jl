@@ -290,44 +290,63 @@ end
                                                igbp_class_names.deciduous_broadleaf_forest])
 end
 
-@testset "Time averaging" begin
-    # Eight 8-day composites of a ramp, averaged onto calendar months. The windows do not
-    # nest, so the samples that straddle an edge have to be split by days of overlap.
+# Eight 8-day composites of a ramp, averaged onto calendar months. The windows do not nest, so
+# the samples that straddle an edge have to be split by days of overlap. Averaged where the
+# series lives: no `@allowscalar` anywhere, so a reduction that only ran on the host would fail
+# here on a GPU.
+@testset "Time averaging [$arch]" for arch in test_architectures
     dates = [DateTime(2019, 1, 1) + Day(8 * (n - 1)) for n in 1:8]
     bounds = [dates; dates[end] + Day(8)]
-    ramp = reshape(Float32.(1:8), 1, 1, 8)
+
+    grid = LatitudeLongitudeGrid(arch, size = (2, 1, 1), longitude = (0, 1),
+                                 latitude = (0, 1), z = (0, 1))
+    ramp = FieldTimeSeries{Center, Center, Center}(grid, Float64.(0:7))
+    for n in 1:8
+        interior(ramp[n]) .= n
+    end
 
     averaged, edges = time_average(ramp, bounds, Month(1))
+    values = Array(interior(averaged))
 
+    @test architecture(averaged.grid) == arch
     @test edges == [DateTime(2019, 1, 1), DateTime(2019, 2, 1), DateTime(2019, 3, 1),
                     DateTime(2019, 3, 6)]
-    @test size(averaged) == (1, 1, 3)
+    @test length(averaged.times) == length(edges) - 1 == 3
 
     # January holds composites 1-3 whole and seven of composite 4's eight days.
-    @test averaged[1, 1, 1] ≈ (8 * 1 + 8 * 2 + 8 * 3 + 7 * 4) / 31
+    @test values[1, 1, 1, 1] ≈ (8 * 1 + 8 * 2 + 8 * 3 + 7 * 4) / 31
     # February takes composite 4's last day, 5-7 whole, and three days of 8.
-    @test averaged[1, 1, 2] ≈ (1 * 4 + 8 * 5 + 8 * 6 + 8 * 7 + 3 * 8) / 28
-    @test averaged[1, 1, 3] ≈ 8
+    @test values[1, 1, 1, 2] ≈ (1 * 4 + 8 * 5 + 8 * 6 + 8 * 7 + 3 * 8) / 28
+    @test values[1, 1, 1, 3] ≈ 8
 
     # An unweighted mean of the same samples is a different number, which is the reason the
     # weighting is not optional.
-    @test !isapprox(averaged[1, 1, 1], mean(1:4))
+    @test !isapprox(values[1, 1, 1, 1], mean(1:4))
 
-    # NaN samples drop out and the rest are renormalized, rather than poisoning the window.
-    gappy = copy(ramp)
-    gappy[1, 1, 2] = NaN32
-    averaged, _ = time_average(gappy, bounds, Month(1))
-    @test averaged[1, 1, 1] ≈ (8 * 1 + 8 * 3 + 7 * 4) / 23
+    # A NaN sample drops out of the cell that carries it and the rest renormalize, while the
+    # neighboring column keeps the sample. That per-cell weight is why the accumulator cannot
+    # be one number per window.
+    gap = Array(interior(ramp[2]))
+    gap[1, 1, 1] = NaN
+    copyto!(interior(ramp[2]), gap)
+
+    gappy = Array(interior(first(time_average(ramp, bounds, Month(1)))))
+    @test gappy[1, 1, 1, 1] ≈ (8 * 1 + 8 * 3 + 7 * 4) / 23
+    @test gappy[2, 1, 1, 1] ≈ (8 * 1 + 8 * 2 + 8 * 3 + 7 * 4) / 31
 
     # A window with nothing valid in it stays missing.
-    empty_series = fill(NaN32, 1, 1, 8)
-    averaged, _ = time_average(empty_series, bounds, Month(1))
-    @test all(isnan, averaged)
+    for n in 1:8
+        interior(ramp[n]) .= NaN
+    end
+    @test all(isnan, Array(interior(first(time_average(ramp, bounds, Month(1))))))
 
     # A window as long as the record returns the record's own weighted mean.
-    averaged, edges = time_average(ramp, bounds, Year(1))
-    @test length(edges) == 2
-    @test averaged[1, 1, 1] ≈ mean(1:8)
+    for n in 1:8
+        interior(ramp[n]) .= n
+    end
+    whole_record, record_edges = time_average(ramp, bounds, Year(1))
+    @test length(record_edges) == 2
+    @test Array(interior(whole_record))[1, 1, 1, 1] ≈ mean(1:8)
 
     @test_throws ArgumentError time_average(ramp, dates, Month(1))
 end

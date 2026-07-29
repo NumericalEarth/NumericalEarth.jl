@@ -242,9 +242,11 @@ The composites are window averages already and 8-day periods do not nest inside 
 the samples straddling each edge are split by their days of overlap:
 
 ```julia
-bounds = [metadata.dates; DateTime(2020, 1, 1)]
-Λbimonthly, edges = time_average(Λ2019, bounds, Month(2))
+Λbimonthly, edges = time_average(Λ2019, metadata, Month(2))
 ```
+
+The metadata closes the last sample's window with the dataset's own compositing rule, which
+a spacing assumption gets wrong for the short period that ends each year.
 
 ## Usage
 

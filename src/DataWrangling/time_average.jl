@@ -3,22 +3,26 @@ using Dates: Dates, DateTime, Millisecond
 #####
 ##### Averaging a series onto a coarser cadence
 #####
-##### A model rarely wants a product's native cadence. The reduction is a plain eager
-##### function rather than a dataset or a file format: a preprocessed temporal average earns
-##### disk when it collapses years of downloads into a handful of files, which is what a
-##### multi-year climatology does, and a two-month mean of an already-local series collapses
-##### eight arrays into one.
-#####
-##### TODO: a lazily evaluated, reduced `FieldTimeSeries` is the shape of the upstream
-##### `FieldTimeSeriesOperation` work in Oceananigans. Replace this with that when it lands
-##### rather than growing bespoke lazy machinery here.
+##### TODO: a lazily evaluated, reduced `FieldTimeSeries` is related to upstream
+##### `FieldTimeSeriesOperation` work in Oceananigans (CliMA/Oceananigans.jl#5761).
+##### Replace this with that when it lands.
 #####
 
-# How much of a sample's window falls inside an output window. The unit is arbitrary — the
-# weights are normalized — so milliseconds, which every date difference is exactly.
+const MILLISECONDS_PER_DAY = Dates.value(Millisecond(Dates.Day(1)))
+
+# Days, rather than the exact millisecond count, so the weights stay small enough to
+# accumulate in the series' own eltype and the kernel needs no Float64.
 @inline function window_overlap(sample_start, sample_stop, window_start, window_stop)
     overlap = min(sample_stop, window_stop) - max(sample_start, window_start)
-    return max(0, Dates.value(Millisecond(overlap)))
+    return max(0, Dates.value(Millisecond(overlap)) / MILLISECONDS_PER_DAY)
+end
+
+function validate_average_bounds(bounds, Nt)
+    length(bounds) == Nt + 1 ||
+        throw(ArgumentError("time_average needs one more bound than the series has times " *
+                            "($(Nt + 1)); got $(length(bounds)). The extra bound closes the " *
+                            "last sample's window."))
+    return nothing
 end
 
 function average_window_edges(bounds, window)
@@ -30,17 +34,56 @@ function average_window_edges(bounds, window)
     return edges
 end
 
-"""
-    time_average(series, bounds, window)
+# Every cell shares the same weights, so the dates are resolved once on the host and the
+# kernel reads scalars out of an `(Nt, Nw)` matrix.
+function overlap_weights(FT, bounds, edges)
+    Nt = length(bounds) - 1
+    Nw = length(edges) - 1
+    ω = zeros(FT, Nt, Nw)
 
-Average `series` — a `FieldTimeSeries`, or an array whose last dimension is time — onto
-windows of length `window`, tiling `bounds` from its first date.
+    for w in 1:Nw, n in 1:Nt
+        ω[n, w] = window_overlap(DateTime(bounds[n]), DateTime(bounds[n + 1]),
+                                 edges[w], edges[w + 1])
+    end
+
+    return ω
+end
+
+@kernel function _time_average!(averaged, data, ω, Nt, Nw)
+    i, j, k = @index(Global, NTuple)
+    FT = eltype(averaged)
+
+    for w in 1:Nw
+        total = zero(FT)
+        weight = zero(FT)
+
+        for n in 1:Nt
+            value = @inbounds data[i, j, k, n]
+            ωₙ = @inbounds ω[n, w]
+
+            # Each cell renormalizes over its own valid samples, so a cloudy pixel drops the
+            # sample while its neighbor keeps it.
+            counts = (ωₙ > 0) & !isnan(value)
+            total += ifelse(counts, ωₙ * value, zero(FT))
+            weight += ifelse(counts, ωₙ, zero(FT))
+        end
+
+        @inbounds averaged[i, j, k, w] = ifelse(weight > 0, total / weight, convert(FT, NaN))
+    end
+end
+
+"""
+    time_average(fts, metadata, window)
+    time_average(fts, bounds, window)
+
+Average the `FieldTimeSeries` `fts` onto windows of length `window`, tiling `bounds` from its
+first date.
 
 `bounds` gives the `Nt + 1` dates delimiting the samples: sample `n` covers
-`[bounds[n], bounds[n+1])`. For a composited product those are the composite start dates
-with the end of the last one appended, and they are asked for rather than inferred because a
-product whose cadence restarts every January has a short final window that no spacing rule
-recovers.
+`[bounds[n], bounds[n+1])`. Passing the `metadata` the series was read from derives them
+with [`sample_bounds`](@ref), which is what a composited product wants: the composite start
+dates with the end of the last one appended, where that end comes from the dataset's own
+compositing rule rather than a spacing assumption a year-anchored cadence would break.
 
 Samples are weighted by their **days of overlap** with each output window. Two things make
 that mandatory rather than tidy. Each value is already a window composite, so integrating a
@@ -52,65 +95,39 @@ straddle each edge, which is largest exactly across a green-up.
 `NaN` samples are skipped and the remaining weights renormalized, so a window with any valid
 overlap returns a value and one with none returns `NaN`.
 
-Returns `(; series, edges)`: the averaged series and the `Nw + 1` window edges. For a
-`FieldTimeSeries` input the result is a `FieldTimeSeries` on the same grid whose times are
-the window centers, on the same origin as the input's — which holds when `first(bounds)` is
-the date the input's own time axis is measured from.
+Returns `(; series, edges)`: the averaged `FieldTimeSeries` and the `Nw + 1` window edges. The
+result lives on the input's grid, and its times are the window centers on the same origin as
+the input's, which holds when `first(bounds)` is the date the input's own time axis is measured
+from and is automatic for the `metadata` form, whose first bound is the first stamp that
+[`native_times`](@ref) measures from by default. The edges come back because the windows are
+not uniform — the last one is whatever the record leaves over — so a series carrying only its
+centers cannot say what interval each value covers.
+
+The reduction runs on the series' own architecture, so one on a GPU grid stays on the device;
+only the dates resolve to weights on the host.
 """
-function time_average(data::AbstractArray, bounds, window)
-    Nt = size(data)[end]
-    length(bounds) == Nt + 1 ||
-        throw(ArgumentError("time_average needs one more bound than the series has times " *
-                            "($(Nt + 1)); got $(length(bounds)). The extra bound closes the " *
-                            "last sample's window."))
+function time_average(fts::FieldTimeSeries, bounds, window)
+    Nt = size(interior(fts))[end]
+    validate_average_bounds(bounds, Nt)
 
     edges = average_window_edges(bounds, window)
     Nw = length(edges) - 1
-    spatial = size(data)[1:end-1]
-
-    averaged = fill(convert(eltype(data), NaN), spatial..., Nw)
-    total = zeros(Float64, spatial...)
-    weight = zeros(Float64, spatial...)
-    indices = CartesianIndices(spatial)
-
-    for w in 1:Nw
-        fill!(total, 0)
-        fill!(weight, 0)
-
-        for n in 1:Nt
-            ω = window_overlap(DateTime(bounds[n]), DateTime(bounds[n + 1]),
-                               edges[w], edges[w + 1])
-            ω > 0 || continue
-            sample = selectdim(data, ndims(data), n)
-
-            for I in indices
-                value = sample[I]
-                isnan(value) && continue
-                total[I] += ω * value
-                weight[I] += ω
-            end
-        end
-
-        output = selectdim(averaged, ndims(averaged), w)
-        for I in indices
-            weight[I] > 0 && (output[I] = total[I] / weight[I])
-        end
-    end
-
-    return (; series = averaged, edges)
-end
-
-function time_average(fts::FieldTimeSeries, bounds, window)
-    averaged, edges = time_average(Array(interior(fts)), bounds, window)
+    grid = fts.grid
+    arch = architecture(grid)
+    FT = eltype(grid)
 
     origin = DateTime(first(bounds))
-    centers = [edges[w] + (edges[w + 1] - edges[w]) ÷ 2 for w in 1:(length(edges) - 1)]
-    times = [convert(eltype(fts.grid), Dates.value(Millisecond(center - origin)) / 1000)
-             for center in centers]
+    centers = [edges[w] + (edges[w + 1] - edges[w]) ÷ 2 for w in 1:Nw]
+    times = [convert(FT, Dates.value(Millisecond(center - origin)) / 1000) for center in centers]
 
     LX, LY, LZ = location(fts)
-    output = FieldTimeSeries{LX, LY, LZ}(fts.grid, times)
-    copyto!(interior(output), averaged)
+    output = FieldTimeSeries{LX, LY, LZ}(grid, times)
+
+    ω = on_architecture(arch, overlap_weights(FT, bounds, edges))
+    launch!(arch, grid, :xyz, _time_average!, interior(output), interior(fts), ω, Nt, Nw)
 
     return (; series = output, edges)
 end
+
+time_average(fts::FieldTimeSeries, metadata::Metadata, window) =
+    time_average(fts, sample_bounds(metadata), window)

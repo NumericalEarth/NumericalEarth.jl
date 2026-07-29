@@ -59,8 +59,8 @@ end
     native_cell_range(bounds, interfaces, N)
 
 The 1-based native cell range covered by `bounds` on an axis spanning `interfaces` in `N`
-cells. Mirrors [`restrict`](@ref), so a dataset that hyperslabs this range off disk hands
-`set_region_data!` exactly as many cells as the native grid has — pinning the region
+cells. Mirrors [`restrict`](@ref), so a dataset that reads this range off disk hands
+`set_region_data!` exactly as many cells as the native grid has, pinning the region
 offset to zero instead of relying on a float comparison between the grid's nodes and the
 file's coordinates.
 """

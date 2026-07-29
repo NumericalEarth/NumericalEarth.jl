@@ -37,7 +37,8 @@ end
 
     bbox = BoundingBox(longitude = (-91.6, -91.2), latitude = (37.2, 37.6))
 
-    # The grid's nodes are Float32 and land a few ULPs off the file's Float64 coordinates.
+    # The grid's nodes are Float32 and land a few units in the last place (ULPs) off the file's
+    # Float64 coordinates.
     # The offset must still come out exactly, whatever margin the file carries.
     for before in 0:3, after in 0:3
         @test lattice_offset(bbox, longitude_interfaces, latitude_interfaces,
